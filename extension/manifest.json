@@ -1,12 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Media Master 2026",
-  "version": "23.0",
+  "version": "24.0",
   "description": "10-Band EQ, CORS Unlock, Per-Site Audio Manager.",
   "permissions": [
     "tabs",
     "scripting",
-    "storage"
+    "storage",
+    "tabCapture",
+    "offscreen"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -40,6 +42,17 @@
       ],
       "run_at": "document_start",
       "world": "ISOLATED"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "offscreen.html",
+        "offscreen.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ],
   "commands": {
