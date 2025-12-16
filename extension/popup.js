@@ -413,7 +413,7 @@ async function initCard(container, tmpl, tab, dict) {
                 if (!isRequesting) {
                     isRequesting = true;
                     let buffer = null;
-                    try {
+                        
                     try {
                         if (capturing) {
                             const res = await chrome.runtime.sendMessage({ target: "offscreen", action: "getViz", tabId: tab.id }).catch(()=>null);
