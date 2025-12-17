@@ -69,7 +69,18 @@ async function handleCaptureToggle(tabId, enabled, config) {
             }
             
             chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (streamId) => {
+                if (chrome.runtime.lastError) {
+                    console.warn("Capture failed:", chrome.runtime.lastError.message);
+                    // 检测是否需要用户交互 (Chrome 策略)
+                    if (chrome.runtime.lastError.message.includes("invoked")) {
+                        chrome.tabs.sendMessage(tabId, { action: "CAPTURE_NEEDS_GESTURE" }).catch(()=>{});
+                    } else {
+                        chrome.tabs.sendMessage(tabId, { action: "showToast", text: "Capture failed: " + chrome.runtime.lastError.message }).catch(()=>{});
+                    }
+                    return;
+                }
                 if (!streamId) return;
+                
                 chrome.runtime.sendMessage({ 
                     target: "offscreen", 
                     action: "start", 
@@ -88,6 +99,13 @@ async function handleCaptureToggle(tabId, enabled, config) {
         }
     } catch (e) { console.error(e); }
 }
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.status === 'loading' && captureMap.get(tabId)) {
+        console.log(`[VM] Tab ${tabId} scanning/reloading, clearing capture state.`);
+        handleCaptureToggle(tabId, false);
+    }
+});
 
 chrome.tabs.onRemoved.addListener((tabId) => {
     if (captureMap.get(tabId)) handleCaptureToggle(tabId, false);

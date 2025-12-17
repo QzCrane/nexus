@@ -196,30 +196,16 @@ async function initCard(container, tmpl, tab, dict) {
     let config = status ? clean(status.config) : { ...DEFAULT };
     const domain = getDomain(tab.url);
     
-    // ===============================================
-    // 逻辑重构：Popup 拥有绝对控制权
-    // ===============================================
-    
-    // 初始化逻辑：不再被动等待 getStatus 的 mode
-    // 而是根据配置直接决定当前应该是 Native 还是 Capture
-    let capturing = isCaptureActive; 
+    let capturing = isCaptureActive || (status && status.mode === 'CAPTURE');
 
-    // 如果配置中已经在白名单，或者音量已经 > 100，或者后台已经开启，则强制为 Capture
-    const checkMode = async () => {
-        // 1. 检查后台实际状态
-        const bgState = await chrome.runtime.sendMessage({ action: "getCaptureState", tabId: tab.id }).catch(()=>false);
-        // 2. 检查用户强制列表
-        const regList = (await chrome.storage.local.get(['userRegistry'])).userRegistry || [];
-        const isForced = regList.includes(domain);
-        
-        // 综合判断
-        if (bgState || isForced || config.volume > 100) {
-            capturing = true;
-        } else {
-            capturing = false;
-        }
-    };
-    await checkMode();
+    // Auto-Activate Logic:
+    // If status says 'CAPTURE' mode (strategy) but isCaptureActive is FALSE, 
+    // it means we are in Fallback Mode. Opening the popup is a User Gesture.
+    // So we try to activate capture NOW.
+    if (!isCaptureActive && status && status.mode === 'CAPTURE') {
+        chrome.runtime.sendMessage({ action: "toggleCapture", tabId: tab.id, enabled: true, config: config, forceStrategy: true });
+        capturing = true; // Optimistically update UI
+    }
 
     const sliderRow = card.querySelector('.eq-sliders-row');
     const eqCanvas = card.querySelector('.eq-curve-canvas');
@@ -244,9 +230,32 @@ async function initCard(container, tmpl, tab, dict) {
     ui.maskText.innerHTML = `<div>${dict.paused}</div><div style="font-size:11px; opacity:0.7; margin-top:4px; font-weight:400;">${dict.clickToResume}</div>`;
     ui.title.innerText = tab.title; ui.title.title = tab.title; ui.domain.innerText = domain; ui.icon.src = tab.favIconUrl || 'icon.png';
 
-    // 核心渲染函数
+    // ===============================================
+    // 核心修复：建立更稳健的连接机制
+    // ===============================================
+    
+    // 连接状态标识
+    let isConnected = false;
+
+    // 尝试建立连接 (带重试机制)
+    const connectToTab = async (tabId) => {
+        try {
+            // 1. 即使是 Native 模式，也建议保持一个 Port 连接以感知页面生命周期
+            const port = chrome.tabs.connect(tabId, {name: "popup-connection"});
+            port.onDisconnect.addListener(() => {
+                isConnected = false;
+                // 如果是意外断开，用户体验上可能需要置灰 UI，但在短时操作中通常无需处理
+            });
+            return port;
+        } catch(e) {
+            console.error("Connection failed", e);
+            return null;
+        }
+    };
+
+    // 初始渲染函数
     const render = () => {
-        if (!ui.card) return;
+        if (!ui.card) return; // 防御性检查
 
         const disabled = !config.enabled; 
         const muted = config.muted;
@@ -254,8 +263,6 @@ async function initCard(container, tmpl, tab, dict) {
         ui.card.classList.toggle('disabled', disabled); 
         ui.card.classList.toggle('muted', muted);
         ui.mask.classList.toggle('hidden', !disabled); 
-        
-        // 双向绑定开关
         ui.enable.checked = config.enabled;
 
         ui.slider.value = config.volume;
@@ -263,87 +270,78 @@ async function initCard(container, tmpl, tab, dict) {
         ui.val.innerText = muted ? 'MUTE' : config.volume + '%';
         ui.mute.classList.toggle('active', muted);
         
-        // 颜色逻辑：只要处于 Capture 模式（无论是否因为 >100% 触发），都显示紫色
         if (capturing) {
-            ui.fill.style.backgroundColor = '#7c3aed';
-            ui.val.style.color = '#7c3aed';
+            ui.fill.style.backgroundColor = (muted || config.volume === 0) ? '#9ca3af' : '#7c3aed';
+            ui.val.style.color = (muted || config.volume === 0) ? '#9ca3af' : '#7c3aed';
         } else {
-            ui.fill.style.backgroundColor = ''; 
-            ui.val.style.color = '';
+            ui.fill.style.backgroundColor = (muted || config.volume === 0) ? '#9ca3af' : ''; 
+            ui.val.style.color = (muted || config.volume === 0) ? '#9ca3af' : '';
         }
+
+        // Logic for Volume Icon in Popup (3-state)
+        // Mute -> 🔇 | Vol <= 100 -> 🔊 | Vol > 100 -> 🚀
+        ui.mute.innerHTML = ''; // Clear icon
+        const iconSpan = document.createElement('span');
+        iconSpan.style.fontSize = '16px';
+        
+        // Treat Volume 0 as Mute visually
+        if (muted || config.volume === 0) {
+            iconSpan.innerText = '🔇';
+            ui.mute.style.opacity = '0.7';
+        } else {
+             ui.mute.style.opacity = '1';
+             iconSpan.innerText = config.volume > 100 ? '🚀' : '🔊';
+        }
+        ui.mute.appendChild(iconSpan);
 
         ui.comp.checked = config.compressor; 
         ui.bass.checked = config.bass; 
         ui.mono.checked = config.mono;
         
+        // 更新 EQ 滑块
         ui.eqInputs.forEach((inp, i) => {
-            if (document.activeElement !== inp) inp.value = config.eqValues[i]; 
+            // 避免在用户拖动时强制重写导致抖动
+            if (document.activeElement !== inp) {
+                inp.value = config.eqValues[i]; 
+            }
             const v = config.eqValues[i];
             ui.eqVals[i].innerText = (v > 0 ? '+' : '') + v.toFixed(1); 
             ui.eqVals[i].style.color = v === 0 ? '#9ca3af' : '#2563eb';
         });
+        
+        // 绘制曲线
         drawEqCurve(ctx, config.eqValues, metrics);
     };
     renderRef = render; 
+    
+    // 强制初始渲染
     render();
 
-    // 2. 消息监听
+    // 2. 消息监听：处理来自 Content Script 的被动更新 (如快捷键调节)
     const onMessageListener = (msg, sender) => {
+        // 过滤无关消息
         if (msg.action === "syncUI" && msg.config && (!sender.tab || sender.tab.id === tab.id)) {
+            // 更新本地 Config
             config = msg.config; 
-            // 收到同步消息时，也要检查模式
-            checkMode().then(render);
+            render();
+            // 如果处于开启状态，视觉上应该有反馈？(根据需求可选)
         }
         if (msg.action === "captureStateChange" && (msg.tabId === tab.id || (sender.tab && sender.tab.id === tab.id))) {
             capturing = msg.enabled;
+            // Capture 状态变化对 UI 颜色有重大影响，立即重绘
             render();
         }
     };
     chrome.runtime.onMessage.addListener(onMessageListener);
-    window.addEventListener('unload', () => chrome.runtime.onMessage.removeListener(onMessageListener));
+    
+    // 清理逻辑：在 UI 销毁时移除监听 (虽然 Popup 销毁会自动清理，但保持良好习惯)
+    window.addEventListener('unload', () => {
+        chrome.runtime.onMessage.removeListener(onMessageListener);
+    });
 
-    // 3. 核心更新逻辑：Popup 决定一切
     const update = (changes) => {
         config = { ...config, ...changes };
-        
-        // 自动模式切换判断
-        if (changes.volume !== undefined) {
-            // 获取强制列表
-            chrome.storage.local.get(['userRegistry'], (res) => {
-                const list = res.userRegistry || [];
-                const isForced = list.includes(domain);
-                
-                // 触发条件：音量 > 100% 或 在强制名单中
-                const confirmCapture = config.volume > 100 || isForced;
-
-                if (confirmCapture && !capturing) {
-                    capturing = true;
-                    chrome.runtime.sendMessage({ action: "toggleCapture", tabId: tab.id, enabled: true, config });
-                } else if (!confirmCapture && capturing) {
-                    // 只有当音量 <= 100 且 不在强制名单时，才退回 Native
-                    capturing = false;
-                    chrome.runtime.sendMessage({ action: "toggleCapture", tabId: tab.id, enabled: false, config });
-                } else {
-                    // 状态不变，只同步参数
-                    if (capturing) chrome.runtime.sendMessage({ action: "updateCaptureConfig", tabId: tab.id, config });
-                }
-                
-                render(); // 本地立即响应 UI，无需等待
-            });
-        } 
-        else if (changes.enabled !== undefined) {
-            // 开关切换逻辑处理
-            if (!changes.enabled && capturing) {
-                capturing = false;
-                chrome.runtime.sendMessage({ action: "toggleCapture", tabId: tab.id, enabled: false, config });
-            }
-            // 如果开启？保持当前模式或者重新检查，这里简单处理为仅同步配置
-        }
-        else {
-             // 其它参数 (EQ, Effects) 变化
-             if (capturing) chrome.runtime.sendMessage({ action: "updateCaptureConfig", tabId: tab.id, config });
-        }
-        
+        if (capturing) chrome.runtime.sendMessage({ action: "updateCaptureConfig", tabId: tab.id, config });
         sendToTab(tab.id, { action: "updateConfig", config });
         render();
     };
@@ -407,13 +405,19 @@ async function initCard(container, tmpl, tab, dict) {
     if (document.body.contains(card)) {
         // 【卡顿修复】增加 isRequesting 锁，防止请求堆积
         let isRequesting = false;
+        let lastDraw = 0;
         
-        const loop = async () => {
+        const loop = async (timestamp) => {
+            if (timestamp - lastDraw < 32) { // Cap at ~30 FPS
+                requestAnimationFrame(loop);
+                return;
+            }
+            lastDraw = timestamp;
+
             if (config.enabled && !config.muted) {
                 if (!isRequesting) {
                     isRequesting = true;
                     let buffer = null;
-                        
                     try {
                         if (capturing) {
                             const res = await chrome.runtime.sendMessage({ target: "offscreen", action: "getViz", tabId: tab.id }).catch(()=>null);
@@ -432,7 +436,7 @@ async function initCard(container, tmpl, tab, dict) {
             }
             requestAnimationFrame(loop);
         };
-        loop();
+        requestAnimationFrame(loop);
     }
     return true;
 }
