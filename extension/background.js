@@ -1,5 +1,49 @@
 let captureMap = new Map();
 let captureLocks = new Map(); // Mutex locks to prevent race conditions on same tab
+let badgeState = new Map(); // 用于跟踪每个标签页的角标状态
+
+// ============================================
+// 角标更新功能
+// ============================================
+/**
+ * 更新指定标签页的插件图标角标
+ * @param {number} tabId - 标签页ID
+ * @param {number} volume - 音量值 (0-800)
+ * @param {boolean} muted - 是否静音
+ * @param {boolean} isCapture - 是否为劫持模式（用于决定颜色）
+ */
+function updateBadge(tabId, volume, muted, isCapture) {
+    if (!tabId) return;
+    
+    let badgeText = '';
+    let badgeColor = isCapture ? '#7c3aed' : '#2563eb'; // 劫持=紫色，原生=蓝色
+    
+    if (muted || volume === 0) {
+        badgeText = 'M'; // 静音时显示 M
+        badgeColor = '#9ca3af'; // 灰色
+    } else {
+        // 显示音量数字
+        badgeText = volume.toString();
+    }
+    
+    // 更新状态
+    badgeState.set(tabId, { volume, muted, isCapture, text: badgeText });
+    
+    // 设置角标文本和颜色
+    chrome.action.setBadgeText({ tabId, text: badgeText });
+    chrome.action.setBadgeBackgroundColor({ tabId, color: badgeColor });
+    chrome.action.setBadgeTextColor({ tabId, color: '#ffffff' });
+}
+
+/**
+ * 清除指定标签页的角标
+ * @param {number} tabId - 标签页ID
+ */
+function clearBadge(tabId) {
+    if (!tabId) return;
+    badgeState.delete(tabId);
+    chrome.action.setBadgeText({ tabId, text: '' });
+}
 
 // Ensure offscreen document exists
 async function ensureOffscreen() {
@@ -134,6 +178,50 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
          // We can broadcast to runtime to reach Popup.
          chrome.runtime.sendMessage({ ...msg, fromBackground: true }).catch(()=>{});
     }
+    
+    // 自动添加域名到劫持列表
+    if (msg.action === "addToRegistry") {
+        const domain = msg.domain;
+        if (!domain) {
+            sendResponse({ success: false });
+            return true;
+        }
+        
+        chrome.storage.local.get(['userRegistry'], (res) => {
+            const registry = res.userRegistry || [];
+            // 检查是否已存在（包括子域名匹配）
+            const exists = registry.some(d => domain.includes(d) || d.includes(domain));
+            if (exists) {
+                sendResponse({ success: false, reason: 'exists' });
+                return;
+            }
+            
+            // 添加到列表
+            registry.push(domain);
+            chrome.storage.local.set({ userRegistry: registry }, () => {
+                sendResponse({ success: true });
+            });
+        });
+        return true; // 保持消息通道开启
+    }
+    
+    // 更新角标（全局，不分模式、网站、音量）
+    if (msg.action === "updateBadge") {
+        const targetTabId = msg.tabId || (sender.tab ? sender.tab.id : null);
+        if (targetTabId && msg.volume !== undefined) {
+            updateBadge(targetTabId, msg.volume, msg.muted || false, msg.isCapture || false);
+        }
+        return true;
+    }
+    
+    // 清除角标
+    if (msg.action === "clearBadge") {
+        const targetTabId = msg.tabId || (sender.tab ? sender.tab.id : null);
+        if (targetTabId) {
+            clearBadge(targetTabId);
+        }
+        return true;
+    }
 });
 
 // Shortcuts
@@ -148,12 +236,19 @@ chrome.commands.onCommand.addListener(async (command) => {
 
 // Clean up on tab close/nav
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.status === 'loading' && captureMap.get(tabId)) {
-        console.log(`[VM] Tab ${tabId} reloading, force stopping capture.`);
-        handleCaptureToggle(tabId, false);
+    if (changeInfo.status === 'loading') {
+        // 页面重新加载时清除角标
+        clearBadge(tabId);
+        
+        if (captureMap.get(tabId)) {
+            console.log(`[VM] Tab ${tabId} reloading, force stopping capture.`);
+            handleCaptureToggle(tabId, false);
+        }
     }
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
+    // 标签页关闭时清理状态
+    clearBadge(tabId);
     if (captureMap.get(tabId)) handleCaptureToggle(tabId, false);
 });

@@ -201,24 +201,39 @@ document.addEventListener('DOMContentLoaded', async () => {
              // 静默处理：content script 可能尚未加载
          }
          
-         if (await initCard(mainStage, tmpl, activeTab, dict, userRegistry)) {
+         // 尝试初始化当前标签页卡片
+         const mainCardSuccess = await initCard(mainStage, tmpl, activeTab, dict, userRegistry);
+         if (mainCardSuccess) {
              emptyState.classList.add('hidden');
-         } else {
-             emptyState.classList.remove('hidden');
          }
-    } else {
-         emptyState.classList.remove('hidden');
+         // 如果当前标签页没有音频，暂时不显示 empty-state，等检查完后台标签后再决定
     }
 
-    const audibles = await chrome.tabs.query({ audible: true });
-    for (const tab of audibles) {
+    // 查询所有标签页（不仅是 audible 的），让 content.js 的 isPlaying 逻辑决定是否显示
+    // 这样暂停后的标签页也能在30秒内保留
+    const allTabs = await chrome.tabs.query({});
+    let hasBgAudio = false;
+    for (const tab of allTabs) {
         if (activeTab && tab.id === activeTab.id) continue;
         if (isRestricted(tab.url)) continue; 
         if (await initCard(bgStack, tmpl, tab, dict, userRegistry)) {
-             bgHeader.classList.remove('hidden'); 
+             bgHeader.classList.remove('hidden');
+             hasBgAudio = true;
         }
     }
     bgBadge.innerText = bgStack.children.length;
+    
+    // 最终决定是否显示 empty-state
+    const hasMainCard = mainStage.children.length > 0;
+    const hasAnyCard = hasMainCard || hasBgAudio;
+    
+    if (!hasAnyCard) {
+        // 全浏览器都没有音频，显示"无音频信号"
+        emptyState.classList.remove('hidden');
+    } else {
+        // 有任何音频卡片，隐藏 empty-state
+        emptyState.classList.add('hidden');
+    }
 });
 
 async function initCard(container, tmpl, tab, dict, userRegistry) {
@@ -227,7 +242,12 @@ async function initCard(container, tmpl, tab, dict, userRegistry) {
     const status = await sendToTab(tab.id, { action: "getStatus" });
     const isCaptureActive = await chrome.runtime.sendMessage({ action: "getCaptureState", tabId: tab.id }).catch(()=>false);
     
-    if ((!status || !status.hasAudio) && !tab.audible && !isCaptureActive) return false;
+    // 只有正在播放的媒体才显示卡片（而不是仅有媒体元素）
+    // tab.audible 表示标签页正在发出声音
+    // isCaptureActive 表示正在使用 Capture 模式
+    // status.isPlaying 表示有正在播放的媒体
+    const hasActiveMedia = tab.audible || isCaptureActive || (status && status.isPlaying);
+    if (!hasActiveMedia) return false;
     
     const card = tmpl.content.cloneNode(true).querySelector('.glass-card');
     container.appendChild(card);
@@ -236,21 +256,26 @@ async function initCard(container, tmpl, tab, dict, userRegistry) {
     const domain = getDomain(tab.url);
     
     // =====================================================
-    // 核心修复：动态 Capture 状态判断
-    // 问题1：首次打开时 Capture 尚未启动完成，getCaptureState 返回 false
-    // 问题2：关闭频谱后需要根据音量动态切换颜色
-    // 解决：使用动态计算函数，在每次渲染时重新计算 capturing 状态
+    // 核心：动态 Capture 状态判断（与 content.js 策略同步）
+    // 懒惰劫持：用户未交互且音量=100% -> NATIVE 模式
+    // 用户已交互 -> 根据频谱和音量判断
     // =====================================================
-    const RESTRICTED_DOMAINS = ['douyin.com', 'live.douyin.com', 'netflix.com', 'spotify.com', 'disneyplus.com', 'hulu.com'];
+    const RESTRICTED_DOMAINS = ['douyin.com', 'live.douyin.com', 'netflix.com', 'spotify.com'];
     const effectiveRegistry = Array.from(new Set([...(userRegistry || []), ...RESTRICTED_DOMAINS]));
     const isRestrictedSite = effectiveRegistry.some(d => domain.includes(d) || d.includes(domain));
     
     // 动态状态跟踪
-    let isCaptureActiveLocal = isCaptureActive; // 本地缓存的 capture 状态
+    let isCaptureActiveLocal = isCaptureActive;
+    let userInteractedLocal = status && status.userInteracted; // 从 content.js 获取
     
     // 动态计算 capturing 状态的函数
     // 每次 render 时调用，确保颜色与实际模式同步
     const getCapturing = () => {
+        // 如果用户未交互且音量=100%且未静音 -> NATIVE 模式（懒惰劫持）
+        if (!userInteractedLocal && config.volume === 100 && !config.muted) {
+            return false;
+        }
+        
         const vizOn = gSettings && gSettings.visualizerEnabled !== false;
         // 对于受限站点：
         // - 频谱开启 -> 必定 CAPTURE 模式
@@ -260,8 +285,9 @@ async function initCard(container, tmpl, tab, dict, userRegistry) {
         return isCaptureActiveLocal || (status && status.mode === 'CAPTURE') || predictedCapture;
     };
     
-    // 用于首次延迟启动 loop 的判断（静态快照）
-    const initialPredictedCapture = isRestrictedSite && ((gSettings && gSettings.visualizerEnabled !== false) || (config.volume > 100));
+    // 用于首次延迟启动 loop 的判断
+    const initialPredictedCapture = isRestrictedSite && userInteractedLocal && 
+        ((gSettings && gSettings.visualizerEnabled !== false) || (config.volume > 100));
 
     const sliderRow = card.querySelector('.eq-sliders-row');
     const eqCanvas = card.querySelector('.eq-curve-canvas');
@@ -393,12 +419,11 @@ async function initCard(container, tmpl, tab, dict, userRegistry) {
 
     // 2. 消息监听：处理来自 Content Script 的被动更新 (如快捷键调节)
     const onMessageListener = (msg, sender) => {
-        // 过滤无关消息
-        if (msg.action === "syncUI" && msg.config && (!sender.tab || sender.tab.id === tab.id)) {
+        // 过滤无关消息：syncUI 必须来自对应的 Content Script (sender.tab 必须存在且 ID 匹配)
+        if (msg.action === "syncUI" && msg.config && sender.tab && sender.tab.id === tab.id) {
             // 更新本地 Config
             config = msg.config; 
             render();
-            // 如果处于开启状态，视觉上应该有反馈？(根据需求可选)
         }
         if (msg.action === "captureStateChange" && (msg.tabId === tab.id || (sender.tab && sender.tab.id === tab.id))) {
             isCaptureActiveLocal = msg.enabled;
@@ -414,9 +439,13 @@ async function initCard(container, tmpl, tab, dict, userRegistry) {
     });
 
     const update = (changes) => {
+        userInteractedLocal = true; // 用户已交互，切换到完整策略
         config = { ...config, ...changes };
         if (getCapturing()) chrome.runtime.sendMessage({ action: "updateCaptureConfig", tabId: tab.id, config });
         sendToTab(tab.id, { action: "updateConfig", config });
+        // 直接更新角标（双重保障，即使 content.js 还未准备好也能更新）
+        // 颜色与当前策略一致
+        chrome.runtime.sendMessage({ action: "updateBadge", tabId: tab.id, volume: config.volume, muted: config.muted, isCapture: getCapturing() }).catch(() => {});
         render();
     };
 
