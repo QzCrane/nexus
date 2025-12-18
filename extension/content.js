@@ -3,171 +3,178 @@
     window.VMInjected = true;
 
     // ============================================
-    // 1. Constants & State
+    // 1. Constants & Enums
     // ============================================
-    const STRATEGY = { NATIVE: 'NATIVE', CAPTURE: 'CAPTURE' };
-    const DEFAULT_REGISTRY = {
-        'douyin.com': STRATEGY.CAPTURE,
-        'live.douyin.com': STRATEGY.CAPTURE,
-        'netflix.com': STRATEGY.CAPTURE,
-        'spotify.com': STRATEGY.CAPTURE,
-        'youtube.com': STRATEGY.NATIVE,
-        'bilibili.com': STRATEGY.NATIVE
+    const MODE = {
+        NATIVE_WEBAUDIO: 'NATIVE_WEBAUDIO', // Used for Non-Restricted (YouTube), full features
+        NATIVE_LITE: 'NATIVE_LITE',         // Used for Restricted (Douyin) + Viz OFF + Vol <= 100
+        CAPTURE: 'CAPTURE'                  // Used for Restricted (Douyin) + (Viz ON OR Vol > 100)
     };
 
-    let ctx; 
-    let activeAnalyser = null;
-    let SITE_REGISTRY = { ...DEFAULT_REGISTRY };
-    
-    // Core Config
+    const RESTRICTED_DOMAINS = [
+        'douyin.com', 'live.douyin.com', 'netflix.com', 
+        'spotify.com', 'disneyplus.com', 'hulu.com'
+    ];
+
+    // ============================================
+    // 2. State & Config
+    // ============================================
     let config = { enabled: true, volume: 100, muted: false, compressor: false, mono: false, bass: false, eqValues: [0,0,0,0,0,0,0,0,0,0] };
-    let globalSettings = { osdEnabled: true, lang: 'en-US' };
-    let currentStrategy = STRATEGY.NATIVE;
-    let isCaptureActive = false; // Synced from background
-    let isFallbackMode = false;  // NEW: Indicates we are in Capture Strategy but Capture failed (Waiting for Gesture)
+    let globalSettings = { osdEnabled: true, visualizerEnabled: true, lang: 'en-US' }; 
+    let userRegistry = [];
     
-    // UI State
-    let isPopupOpen = false;
-    let osdContainer = null;
-    let osdTimer = null;
-
-    // Load Settings
-    chrome.storage.local.get(['userRegistry', 'siteSettings', 'globalSettings'], (res) => {
-        if (res.userRegistry) res.userRegistry.forEach(d => SITE_REGISTRY[d] = STRATEGY.CAPTURE);
-        if (res.siteSettings?.[location.hostname]) config = res.siteSettings[location.hostname];
-        if (res.globalSettings) globalSettings = res.globalSettings;
-        init();
-        showOSD(); // Test OSD
-    });
-
-    try {
-        chrome.runtime.onConnect.addListener((port) => {
-             if (port.name === "popup-connection") {
-                 isPopupOpen = true;
-                 port.onDisconnect.addListener(() => isPopupOpen = false);
-             }
-        });
-    } catch(e){}
-
+    // Runtime State
+    let ctx = null;            // AudioContext for NATIVE_WEBAUDIO
+    let activeMode = null;     // The actual running mode
+    let isCaptureActive = false; // The TRUE state from Background
+    let isPendingCapture = false; // Lock to prevent spamming capture requests
+    
     // ============================================
-    // 2. Strategy Engine
+    // 3. Logic Engine (The Brain)
     // ============================================
-    function determineStrategy(hostname) {
-        for (const [domain, strategy] of Object.entries(SITE_REGISTRY)) {
-            if (hostname.includes(domain)) return strategy;
-        }
-        return STRATEGY.NATIVE;
+    function isRestrictedSite() {
+        const host = window.location.hostname;
+        return RESTRICTED_DOMAINS.some(d => host.includes(d)) || userRegistry.includes(host);
     }
 
-    function fastCorsCheck(el) {
-        if (currentStrategy === STRATEGY.CAPTURE) return false;
+    /**
+     * Calculates the DESIRED mode based on current config.
+     * This is the single source of truth for strategy.
+     */
+    function calculateDesiredMode() {
+        if (!config.enabled) return MODE.NATIVE_LITE; // Disabled -> Safe Lite Mode
 
-        const src = el.currentSrc || el.src;
-        if (!src) return true;
-        if (src.startsWith('blob:') || src.startsWith('data:')) return true;
+        const restricted = isRestrictedSite();
+        const vizOn = globalSettings.visualizerEnabled !== false; // Default to true if undefined
+        const vol = config.volume;
 
-        try {
-            const srcUrl = new URL(src);
-            if (srcUrl.hostname === window.location.hostname) return true;
-            if (el.crossOrigin && el.crossOrigin.toLowerCase() === 'anonymous') return true;
-
-            // CORS Failure detected
-            console.warn("[VM] CORS Conflict -> Switching to CAPTURE", src);
-            const domain = window.location.hostname;
-            chrome.storage.local.get(['userRegistry'], (r) => {
-                const list = r.userRegistry || [];
-                if (!list.includes(domain)) {
-                     chrome.storage.local.set({ userRegistry: [...list, domain] });
-                }
-            });
-            switchStrategy(STRATEGY.CAPTURE);
-            showToast("Detected CORS - Switched to Capture Mode");
-            return false;
-        } catch(e) {
-            return true;
-        }
-    }
-
-    function switchStrategy(newStrategy) {
-        if (currentStrategy === newStrategy) return;
-        currentStrategy = newStrategy;
-        if (newStrategy === STRATEGY.CAPTURE) activateCaptureMode();
-        else {
-             scan();
-        }
-    }
-
-    // ============================================
-    // 3. Initialization & Scanning
-    // ============================================
-    // ============================================
-    // 3. Initialization & Scanning
-    // ============================================
-    function init() {
-        currentStrategy = determineStrategy(window.location.hostname);
-        
-        // Performance: Debounce scan to avoid UI lag on high-freq DOM updates (e.g. Douyin comments)
-        const debouncedScan = debounce(scan, 500);
-        const observer = new MutationObserver((mutations) => { debouncedScan(); });
-        observer.observe(document.documentElement, { childList: true, subtree: true });
-        
-        scan();
-        
-        // Sync Capture State on Load (Fixes "Blue Bar after Refresh" bug)
-        chrome.runtime.sendMessage({ action: "getCaptureState" }, (isActive) => {
-            if (isActive) {
-                isCaptureActive = true;
-                applyState();
+        if (!restricted) {
+            // Non-Restricted (YouTube): Always WebAudio
+            return MODE.NATIVE_WEBAUDIO;
+        } else {
+            // Restricted (Douyin):
+            if (vizOn) {
+                // Strategy A: Viz ON -> Force Capture (Global Hijack)
+                return MODE.CAPTURE;
+            } else {
+                // Strategy B: Viz OFF -> Hybrid
+                if (vol > 100) return MODE.CAPTURE; // Need amplification -> Capture
+                return MODE.NATIVE_LITE;            // Normal volume -> Native Lite
             }
-        });
-
-        ['click', 'keydown', 'mousedown', 'touchstart', 'scroll'].forEach(evt => 
-            document.addEventListener(evt, () => { if(ctx && ctx.state === 'suspended') ctx.resume(); }, {passive:true})
-        );
-    }
-    
-    function debounce(func, wait) {
-        let timeout;
-        return function(...args) {
-            clearTimeout(timeout);
-            timeout = setTimeout(() => func.apply(this, args), wait);
-        };
+        }
     }
 
-    function scan() { document.querySelectorAll('video, audio').forEach(initAudio); }
-
-    // ... (rest of initAudio) ...
-
-
-
-    function initAudio(el) {
-        if (el.dataset.vmAttached) return;
+    /**
+     * Applies the calculated state.
+     * Transitions modes and updates parameters.
+     */
+    function applyState() {
+        const desired = calculateDesiredMode();
         
-        // Immediate check strategy
-        if (currentStrategy === STRATEGY.CAPTURE) {
-            activateCaptureMode();
-            el.dataset.vmAttached = "true";
-            // Even in capture mode (or fallback), we might want to ensure volume is applied
-            applyState();
-            return;
+        // --- 1. Mode Transition ---
+        if (desired !== activeMode) {
+            console.log(`[VM] Mode Switch: ${activeMode} -> ${desired}`);
+            
+            // Cleanup Old Mode
+            if (activeMode === MODE.NATIVE_WEBAUDIO) cleanupWebAudio();
+            if (activeMode === MODE.CAPTURE && desired !== MODE.CAPTURE) requestCapture(false);
+
+            activeMode = desired;
         }
 
-        if (!fastCorsCheck(el)) return;
+        // --- 2. Mode Execution ---
+        
+        if (activeMode === MODE.CAPTURE) {
+            // Requirement: Force Capture Active
+            if (!isCaptureActive && !isPendingCapture) requestCapture(true);
+            
+            // DOM Audio Control:
+            // In Capture Mode, the Tab is MUTED by Chrome (usually).
+            // We set DOM elem to Volume 1.0 / Unmuted to ensure signal goes to TabCapture.
+            // Volume control happens in Offscreen.
+            document.querySelectorAll('video, audio').forEach(el => {
+                // Avoid setting if already correct to prevent stutter
+                if (Math.abs(el.volume - 1) > 0.01) el.volume = 1;
+                if (el.muted) el.muted = false; 
+            });
+        } 
+        
+        else if (activeMode === MODE.NATIVE_LITE) {
+            // Pure DOM Control
+            const domVol = config.muted ? 0 : Math.min(1, config.volume / 100);
+            document.querySelectorAll('video, audio').forEach(el => {
+                if (Math.abs(el.volume - domVol) > 0.01) el.volume = domVol;
+                if (el.muted !== config.muted) el.muted = config.muted;
+            });
+        }
 
+        else if (activeMode === MODE.NATIVE_WEBAUDIO) {
+            ensureWebAudio(); 
+            updateWebAudioParams();
+        }
+    }
+
+    // ============================================
+    // 4. Controller (Actions)
+    // ============================================
+    function requestCapture(enabled) {
+        if (isPendingCapture) return;
+        isPendingCapture = true;
+        
+        console.log(`[VM] Requesting Capture: ${enabled}`);
+        chrome.runtime.sendMessage({ 
+            action: "toggleCapture", 
+            enabled: enabled, 
+            config: config 
+        }, () => {
+             // Unlock after a short delay to allow background to process
+             setTimeout(() => { isPendingCapture = false; }, 500);
+        });
+    }
+
+    // ============================================
+    // 5. Audio Engine (Native WebAudio)
+    // ============================================
+    function cleanupWebAudio() {
+        if (ctx) {
+            try { ctx.close(); } catch(e){}
+            ctx = null;
+        }
+        document.querySelectorAll('video, audio').forEach(el => {
+            delete el._vm;
+            el.dataset.vmAttached = "false";
+        });
+    }
+
+    function ensureWebAudio() {
+        if (ctx && ctx.state !== 'closed') {
+             if (ctx.state === 'suspended') ctx.resume();
+             return;
+        }
+        
         try {
             const AC = window.AudioContext || window.webkitAudioContext;
-            if (!ctx) ctx = new AC();
-            if (ctx.state === 'suspended') ctx.resume();
+            ctx = new AC();
+            scanNodes();
+        } catch(e) { console.error(e); }
+    }
 
-            let source;
-            try { 
-                source = ctx.createMediaElementSource(el); 
-            } catch (e) {
-                switchStrategy(STRATEGY.CAPTURE);
-                return;
+    function scanNodes() {
+        if (activeMode !== MODE.NATIVE_WEBAUDIO || !ctx) return;
+        document.querySelectorAll('video, audio').forEach(attachNode);
+    }
+
+    function attachNode(el) {
+        if (el._vm || el.dataset.vmAttached === "true") return;
+
+        try {
+            // Tweak crossOrigin for WebAudio
+            if (!el.crossOrigin && !el.src.startsWith('data:') && !el.src.startsWith('blob:')) {
+                el.crossOrigin = "anonymous";
             }
 
-            const gain = ctx.createGain(); 
+            const source = ctx.createMediaElementSource(el);
+            const gain = ctx.createGain();
             const bass = ctx.createBiquadFilter(); bass.type = 'lowshelf'; bass.frequency.value = 200;
             const comp = ctx.createDynamicsCompressor();
             const analyser = ctx.createAnalyser(); analyser.fftSize = 256;
@@ -175,7 +182,7 @@
                 const n = ctx.createBiquadFilter(); n.type = 'peaking'; n.frequency.value = f; n.Q.value = 1.4; return n;
             });
 
-            // CONNECT CHAIN: Source -> Gain -> Bass -> EQ -> Comp -> Analyser -> Dest
+            // Connect: Source -> Gain -> Bass -> EQ -> Comp -> Analyser -> Dest
             let head = source;
             head.connect(gain); head = gain;
             head.connect(bass); head = bass;
@@ -186,135 +193,160 @@
 
             el._vm = { source, gain, bass, comp, eqNodes, analyser };
             el.dataset.vmAttached = "true";
-            activeAnalyser = analyser;
-
-            const resume = () => { 
-                if(ctx.state === 'suspended') ctx.resume(); 
-                activeAnalyser = analyser;
-                applyStateToElement(el); 
-            };
+            
+            const resume = () => { if(ctx && ctx.state === 'suspended') ctx.resume(); };
             el.addEventListener('play', resume);
-            el.addEventListener('playing', resume);
             
-            el.addEventListener('volumechange', () => {
-                if (currentStrategy === STRATEGY.NATIVE && !isCaptureActive && !config.muted && !isFallbackMode) {
-                    if (Math.abs(el.volume - 1) > 0.01 || el.muted) {
-                        el.volume = 1;
-                        el.muted = false;
-                    }
-                }
-            });
-
-            applyStateToElement(el);
-            el.volume = 1;
-            el.muted = false;
-
-        } catch (e) {
-            console.error(e);
+        } catch(e) {
+            // 静默处理 CORS 错误，这在多媒体页面是正常的（例如广告元素）
+            // console.debug("[VM] WebAudio Attach Failed (likely CORS)", e);
         }
     }
 
-    // ============================================
-    // 4. Core Logic (Updated for Fallback)
-    // ============================================
-    function applyState() {
-        // CASE 1: Active Capture. Lock Native to 100%.
-        if (isCaptureActive) {
-            document.querySelectorAll('video, audio').forEach(el => {
-                 if (el.muted && !config.muted) el.muted = false;
-                 if (el.volume !== 1) el.volume = 1; 
-            });
-            return;
-        }
+    function updateWebAudioParams() {
+        if (!ctx || activeMode !== MODE.NATIVE_WEBAUDIO) return;
+        const t = ctx.currentTime; const r = 0.05;
+        const v = config.muted ? 0 : (config.volume / 100); // 0.0 - 8.0
 
-        // CASE 2: Fallback Mode (Capture needed but not active). Use Native Volume 0-100%.
-        // This solves the "First Load" issue.
-        if (currentStrategy === STRATEGY.CAPTURE && !isCaptureActive) {
-            isFallbackMode = true; // Mark as fallback
-            const fallbackVol = config.muted ? 0 : Math.min(1, config.volume / 100);
-            document.querySelectorAll('video, audio').forEach(el => {
-                // Only touch if significant diff to prevent fighting native controls
-                if (Math.abs(el.volume - fallbackVol) > 0.01) el.volume = fallbackVol;
-                if (el.muted !== config.muted) el.muted = config.muted;
-            });
-            return;
-        }
-        
-        isFallbackMode = false;
-        
-        // CASE 3: Native WebAudio Strategy
-        if (ctx && ctx.state === 'suspended') ctx.resume();
-        document.querySelectorAll('video, audio').forEach(applyStateToElement);
-    }
-
-    function applyStateToElement(el) {
-        if (!el._vm) return;
-        const { gain, bass, comp, eqNodes } = el._vm;
-        const t = ctx.currentTime;
-        const r = 0.05;
-
-        if (!config.enabled) {
-            gain.gain.setTargetAtTime(1, t, r);
-            bass.gain.setTargetAtTime(0, t, r);
-            eqNodes.forEach(n => n.gain.setTargetAtTime(0, t, r));
-            comp.threshold.setTargetAtTime(-3, t, r); 
-            comp.ratio.setTargetAtTime(1, t, r);
-            return;
-        }
-
-        const v = config.muted ? 0 : (config.volume / 100);
-        gain.gain.setTargetAtTime(v, t, r);
-        bass.gain.setTargetAtTime(config.bass ? 10 : 0, t, r);
-        gain.channelCount = config.mono ? 1 : 2;
-        gain.channelCountMode = config.mono ? 'explicit' : 'max';
-
-        if (config.compressor) {
-            comp.threshold.setTargetAtTime(-24, t, r);
-            comp.ratio.setTargetAtTime(12, t, r);
-        } else {
-            comp.threshold.setTargetAtTime(-3, t, r);
-            comp.ratio.setTargetAtTime(20, t, r);
-        }
-        eqNodes.forEach((n, i) => n.gain.setTargetAtTime(config.eqValues[i], t, r));
-    }
-
-    function activateCaptureMode() {
-        if (isCaptureActive) return;
-        // Attempt to start capture. If it fails (no gesture), Background will send CAPTURE_NEEDS_GESTURE
-        chrome.runtime.sendMessage({ action: "toggleCapture", enabled: true, config: config, forceStrategy: true });
-    }
-
-    // ============================================
-    // 5. Messages
-    // ============================================
-    chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-        if (msg.action === "getStatus") {
-             const els = document.querySelectorAll('video, audio');
-             let mode = (isCaptureActive || currentStrategy === STRATEGY.CAPTURE) ? 'CAPTURE' : 'NATIVE';
-             sendResponse({ config, hasAudio: els.length > 0, mode });
-        }
-        else if (msg.action === "updateConfig") {
-            config = { ...config, ...msg.config };
+        document.querySelectorAll('video, audio').forEach(el => {
+            if (!el._vm) return;
+            const { gain, bass, comp, eqNodes } = el._vm;
             
-            // If we are in Fallback Mode, ANY user interaction (like changing volume via popup) 
-            // is a valid user gesture. So we RETRY capture immediately!
-            if (isFallbackMode) {
-                activateCaptureMode();
+            gain.gain.setTargetAtTime(v, t, r);
+            gain.channelCount = config.mono ? 1 : 2;
+            bass.gain.setTargetAtTime(config.bass ? 10 : 0, t, r);
+
+            if (config.compressor) {
+                comp.threshold.setTargetAtTime(-24, t, r);
+                comp.ratio.setTargetAtTime(12, t, r);
+            } else {
+                comp.threshold.setTargetAtTime(-10, t, r);
+                comp.ratio.setTargetAtTime(1, t, r);
             }
-            
+            eqNodes.forEach((n, i) => n.gain.setTargetAtTime(config.eqValues[i], t, r));
+        });
+    }
+
+    // ============================================
+    // 6. UI Helpers (OSD)
+    // ============================================
+    let osdContainer = null;
+    let osdTimer = null;
+
+    function showOSD() {
+        if (config.enabled && !globalSettings.osdEnabled) return;
+        if (!osdContainer) createOSD();
+        
+        const osd = osdContainer.getElementById('osd');
+        const fill = osdContainer.getElementById('fill');
+        const val = osdContainer.getElementById('val');
+        const icon = osdContainer.getElementById('icon');
+        
+        osd.className = 'osd visible';
+        
+        // Color Logic
+        const isCapture = (activeMode === MODE.CAPTURE);
+        osd.classList.toggle('capture', isCapture);
+
+        const isMuted = config.muted || config.volume === 0;
+        osd.classList.toggle('muted', isMuted);
+
+        fill.style.width = Math.min(100, (config.volume / 800) * 100) + '%';
+        val.innerText = isMuted ? 'MUTE' : config.volume + '%';
+        icon.innerText = isMuted ? '🔇' : (config.volume > 100 ? '🚀' : '🔊');
+
+        clearTimeout(osdTimer);
+        osdTimer = setTimeout(() => osd.classList.remove('visible'), 2000);
+    }
+
+    function createOSD() {
+        const host = document.createElement('div');
+        host.style.cssText = "position: fixed; top: 15%; left: 50%; transform: translateX(-50%); z-index: 2147483647; pointer-events: none;";
+        document.body.appendChild(host);
+        
+        const shadow = host.attachShadow({mode: 'open'});
+        shadow.innerHTML = `
+            <style>
+                .osd { background: rgba(20,20,30,0.85); backdrop-filter: blur(8px); padding: 12px 20px; border-radius: 30px; color: white; display: flex; align-items: center; gap: 12px; font-family: system-ui, sans-serif; transition: opacity 0.2s, transform 0.2s; opacity: 0; transform: translateY(-10px); }
+                .osd.visible { opacity: 1; transform: translateY(0); }
+                .bar-bg { width: 120px; height: 6px; background: rgba(255,255,255,0.2); border-radius: 3px; overflow: hidden; position: relative; }
+                .bar-fill { height: 100%; width: 0%; transition: width 0.05s linear; border-radius: 3px; }
+                .marker { position: absolute; left: 12.5%; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,0.6); z-index: 5; box-shadow: 0 0 2px rgba(0,0,0,0.5); }
+                .text { font-weight: 600; font-size: 14px; min-width: 40px; text-align: right; }
+                
+                .bar-fill { background: #3b82f6; } /* Blue (Default) */
+                .osd.capture .bar-fill { background: #8b5cf6; } /* Purple (Capture) */
+                .osd.muted .bar-fill { background: #9ca3af !important; } /* Gray (Muted) */
+                .osd.muted #icon { opacity: 0.6; }
+            </style>
+            <div class="osd" id="osd">
+                <span id="icon">🔊</span>
+                <div class="bar-bg">
+                    <div class="marker"></div>
+                    <div class="bar-fill" id="fill"></div>
+                </div>
+                <span class="text" id="val">100%</span>
+            </div>
+        `;
+        osdContainer = shadow;
+    }
+
+    // ============================================
+    // 7. Initialization & Events
+    // ============================================
+    function init() {
+         // Efficient Observer
+         let timeout;
+         const observer = new MutationObserver(() => {
+             clearTimeout(timeout);
+             timeout = setTimeout(() => {
+                if (activeMode === MODE.NATIVE_WEBAUDIO) scanNodes();
+                // Re-apply state to ensure any new videos adhere to current policy
+                applyState();
+             }, 500);
+         });
+         observer.observe(document.body, { childList: true, subtree: true });
+         
+         // Aggressive Resume on ANY interaction or visibility change
+         ['click', 'keydown', 'mousedown', 'touchstart', 'scroll', 'mousemove'].forEach(evt => 
+             document.addEventListener(evt, () => { 
+                 if(ctx && ctx.state === 'suspended') ctx.resume(); 
+             }, {passive:true})
+         );
+         
+         applyState();
+    }
+
+    // Load Settings
+    chrome.storage.local.get(['siteSettings', 'globalSettings', 'userRegistry'], (res) => {
+        if (res.siteSettings?.[location.hostname]) config = res.siteSettings[location.hostname];
+        if (res.globalSettings) globalSettings = res.globalSettings;
+        if (res.userRegistry) userRegistry = res.userRegistry;
+        
+        // Initial Sync
+        chrome.runtime.sendMessage({ action: "getCaptureState" }, (isActive) => {
+            isCaptureActive = isActive;
+            init(); 
+        });
+    });
+
+    // Message Handling
+    chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+        if (msg.action === "updateConfig") {
+            config = { ...config, ...msg.config };
             applyState();
-            if (isCaptureActive) chrome.runtime.sendMessage({ action: "updateCaptureConfig", config }).catch(()=>{});
+            // Sync current state to popup if needed, or if capture active sync offscreen
+            if (activeMode === MODE.CAPTURE) {
+                chrome.runtime.sendMessage({ action: "updateCaptureConfig", config }).catch(()=>{});
+            }
+        }
+        else if (msg.action === "globalSettingsUpdate") {
+            globalSettings = { ...globalSettings, ...msg.settings };
+            applyState(); 
         }
         else if (msg.action === "captureStateChange") {
             isCaptureActive = msg.enabled;
-            if (isCaptureActive) isFallbackMode = false;
-            applyState();
-        }
-        else if (msg.action === "CAPTURE_NEEDS_GESTURE") {
-            // Background says: "I tried, but I need a user gesture."
-            // So we stay in Fallback Mode. We don't spam toasts.
-            isFallbackMode = true;
-            console.log("[VM] Capture Waiting for Gesture (Fallback Mode Active)");
+            isPendingCapture = false; // Reset lock
             applyState();
         }
         else if (msg.action === "shortcutTrigger") {
@@ -323,132 +355,53 @@
             if (msg.command === "volume_down") config.volume = Math.max(config.volume - 10, 0);
             if (msg.command === "toggle_mute") config.muted = !config.muted;
             
-            // Shortcut is a USER GESTURE. Retry capture!
-            if (isFallbackMode) {
-                activateCaptureMode();
-                showOSD(); // Optimization: Show OSD makes it feel responsive
-            } else {
-                applyState();
-                showOSD();
-            }
+            applyState(); // Mode switch might happen here
+            showOSD();
             
-            // CRITICAL FIX: Sync volume change to Offscreen audio processor if capturing!
-            if (isCaptureActive) {
-                chrome.runtime.sendMessage({ action: "updateCaptureConfig", config }).catch(()=>{});
+            if (activeMode === MODE.CAPTURE) {
+                 chrome.runtime.sendMessage({ action: "updateCaptureConfig", config }).catch(()=>{});
             }
-            
-            try { chrome.runtime.sendMessage({ action: "syncUI", config }); } catch(e){}
+            chrome.runtime.sendMessage({ action: "syncUI", config }).catch(()=>{});
         }
-        else if (msg.action === "showToast") {
-             showToast(msg.text);
+        else if (msg.action === "getStatus") {
+            // 增强处理：如果首次调用时 activeMode 还未初始化，主动触发
+            if (activeMode === null) {
+                applyState(); // 立即初始化
+            }
+            // Attempt to wake up audio when Popup opens
+            if (activeMode === MODE.NATIVE_WEBAUDIO) {
+                ensureWebAudio();
+                // 给一点时间让 AudioContext 初始化
+                if (ctx && ctx.state === 'suspended') {
+                    ctx.resume().catch(() => {});
+                }
+            }
+            
+            sendResponse({ 
+                config, 
+                hasAudio: document.querySelectorAll('video, audio').length > 0, 
+                mode: activeMode 
+            });
         }
         else if (msg.action === "getVisualizerData") {
-            if (activeAnalyser) {
-                const data = new Uint8Array(activeAnalyser.frequencyBinCount);
-                activeAnalyser.getByteFrequencyData(data);
-                sendResponse({ buffer: Array.from(data) });
-            } else {
-                sendResponse({ buffer: null });
-            }
+             // 增强处理：如果 ctx 存在但处于 suspended，先尝试 resume
+             if (activeMode === MODE.NATIVE_WEBAUDIO && ctx) {
+                 if (ctx.state === 'suspended') {
+                     ctx.resume().catch(() => {});
+                 }
+                 if (ctx.state === 'running' || ctx.state === 'suspended') {
+                     // Return viz data from content script ONLY in Native WebAudio mode
+                     const el = document.querySelector('video, audio');
+                     if (el && el._vm && el._vm.analyser) {
+                         const data = new Uint8Array(el._vm.analyser.frequencyBinCount);
+                         el._vm.analyser.getByteFrequencyData(data);
+                         sendResponse({ buffer: Array.from(data) });
+                         return;
+                     }
+                 }
+             }
+             sendResponse({ buffer: null });
         }
     });
-
-    // ============================================
-    // 6. UI Helpers
-    // ============================================
-    const nativeRequestFullscreen = Element.prototype.requestFullscreen;
-    Element.prototype.requestFullscreen = function(options) {
-        if (isCaptureActive) {
-            const container = this.closest('.xgplayer-container, .bilibili-player-area, .html5-video-player') || this;
-            enterFakeFullscreen(container);
-            return Promise.resolve();
-        }
-        return nativeRequestFullscreen.apply(this, arguments);
-    };
-    function enterFakeFullscreen(el) { el.classList.add('vm-fs-target'); document.body.classList.add('vm-fake-fs'); el.dispatchEvent(new Event('fullscreenchange', { bubbles: true })); }
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.body.classList.contains('vm-fake-fs')) exitFakeFullscreen(); }, true);
-    function exitFakeFullscreen() { 
-        document.querySelectorAll('.vm-fs-target').forEach(el => el.classList.remove('vm-fs-target')); 
-        document.body.classList.remove('vm-fake-fs'); 
-        document.dispatchEvent(new Event('fullscreenchange', { bubbles: true }));
-    }
-    const fsStyle = document.createElement('style');
-    fsStyle.innerHTML = `body.vm-fake-fs { overflow: hidden !important; } .vm-fs-target { position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; z-index: 2147483647 !important; background: #000 !important; }`;
-    (document.head || document.documentElement).appendChild(fsStyle);
-
-    function showToast(text) {
-        const div = document.createElement('div');
-        div.style.cssText = "position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #222; color: #fff; padding: 6px 12px; border-radius: 4px; font-size: 13px; z-index: 2147483647; font-family: sans-serif;";
-        div.textContent = text;
-        document.body.appendChild(div);
-        setTimeout(() => div.remove(), 2500);
-    }
-
-    function showOSD() {
-        if (isPopupOpen || !config.enabled || !globalSettings.osdEnabled) return;
-        if (!osdContainer) {
-            const host = document.createElement('div');
-            host.style.cssText = "position: fixed; top: 15%; left: 50%; transform: translateX(-50%); z-index: 2147483647; pointer-events: none;";
-            document.body.appendChild(host);
-            const shadow = host.attachShadow({mode: 'open'});
-            shadow.innerHTML = `
-                <style>
-                    .osd { background: rgba(20,20,30,0.85); backdrop-filter: blur(8px); padding: 12px 20px; border-radius: 30px; color: white; display: flex; align-items: center; gap: 12px; font-family: system-ui, sans-serif; transition: opacity 0.2s, transform 0.2s; opacity: 0; transform: translateY(-10px); box-shadow: 0 4px 15px rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); }
-                    .osd.visible { opacity: 1; transform: translateY(0); }
-                    .bar-bg { width: 120px; height: 6px; background: rgba(255,255,255,0.2); border-radius: 3px; overflow: hidden; position: relative; }
-                    .bar-fill { height: 100%; background: #3b82f6; width: 0%; transition: width 0.05s linear; border-radius: 3px; }
-                    .marker { position: absolute; left: 12.5%; top: 0; bottom: 0; width: 2px; background: #fff; opacity: 0.8; z-index: 2; box-shadow: 0 0 2px rgba(0,0,0,0.5); }
-                    .text { font-weight: 600; font-size: 14px; min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
-                    
-                    /* ULTRA PRIORITY FIX of CSS Specificity */
-                    /* Muted: Gray */
-                    .osd.muted .bar-fill,
-                    .osd.capture.muted .bar-fill { background: #9ca3af !important; }
-                    
-                    .osd.muted #icon { opacity: 0.6; } 
-                    
-                    /* Capture: Purple (Only if NOT muted) */
-                    .osd.capture .bar-fill { background: #8b5cf6; }
-                </style>
-                <div class="osd" id="osd">
-                    <span id="icon">🔊</span>
-                    <div class="bar-bg">
-                        <div class="marker"></div>
-                        <div class="bar-fill" id="fill"></div>
-                    </div>
-                    <span class="text" id="val">100%</span>
-                </div>
-            `;
-            osdContainer = shadow;
-        }
-        const osd = osdContainer.getElementById('osd');
-        const fill = osdContainer.getElementById('fill');
-        const val = osdContainer.getElementById('val');
-        const icon = osdContainer.getElementById('icon');
-        
-        osd.className = 'osd visible';
-        // Reset classes
-        osd.classList.remove('capture', 'muted');
-        
-        // Visual Logic: If strategy is Capture, make it Purple (even in fallback), unless Muted
-        if (isCaptureActive || currentStrategy === STRATEGY.CAPTURE) {
-             osd.classList.add('capture');
-        }
-        
-        const isActuallyMuted = config.muted || config.volume === 0;
-        if (isActuallyMuted) osd.classList.add('muted');
-        
-        fill.style.width = Math.min(100, (config.volume / 800) * 100) + '%';
-        val.innerText = isActuallyMuted ? 'MUTE' : config.volume + '%';
-        
-        if (isActuallyMuted) {
-            icon.innerText = '🔇';
-        } else {
-            icon.innerText = config.volume > 100 ? '🚀' : '🔊';
-        }
-
-        clearTimeout(osdTimer);
-        osdTimer = setTimeout(() => osd.classList.remove('visible'), 2000);
-    }
 
 })();

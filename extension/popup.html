@@ -7,74 +7,101 @@
 </head>
 
 <body>
+  <div class="app-wrapper">
+    <div class="view-container">
 
-  <div class="view-container">
-
-    <div id="view-main" class="view active">
-      <div class="nav-island">
-        <div class="brand">Volume Master <span class="ver">2026</span></div>
-        <div class="nav-right">
-          <button id="btn-settings" class="btn-icon" title="Settings">⚙️</button>
-          <button id="btn-shortcuts" class="btn-icon" title="Shortcuts">⌨️</button>
-        </div>
-      </div>
-
-      <div id="main-stage"></div>
-
-      <div id="empty-state" class="empty-container">
-        <div class="empty-blob"></div>
-        <div class="empty-text" data-i18n="noAudio">No Audio Signal</div>
-      </div>
-
-      <div class="stack-header hidden" id="bg-header">
-        <span data-i18n="bgTitle">Background</span>
-        <span id="bg-badge" class="badge">0</span>
-      </div>
-      <div id="bg-stack" class="bg-stack"></div>
-    </div>
-
-    <div id="view-settings" class="view">
-      <div class="nav-island">
-        <button id="btn-back" class="btn-icon">←</button>
-        <div class="brand" data-i18n="settingsTitle">Settings</div>
-        <div class="nav-placeholder"></div>
-      </div>
-
-      <div class="settings-list">
-        <div class="setting-item">
-          <div class="setting-label">
-            <div data-i18n="osdLabel">OSD Popup</div>
-            <div class="setting-sub" data-i18n="osdSub">Show overlay when using shortcuts</div>
+      <div id="view-main" class="view active">
+        <div class="nav-island">
+          <div class="brand">Volume Master <span class="ver">2026</span></div>
+          <div class="nav-right">
+            <button id="btn-settings" class="btn-icon" title="Settings">⚙️</button>
+            <button id="btn-shortcuts" class="btn-icon" title="Shortcuts">⌨️</button>
           </div>
-          <label class="switch-main">
-            <input type="checkbox" id="set-osd">
-            <span class="slider-round"></span>
-          </label>
         </div>
 
-        <div class="setting-item">
-          <div class="setting-label" data-i18n="langLabel">Language</div>
-          <select id="set-lang" class="setting-select">
-            <option value="en-US">English</option>
-            <option value="zh-CN">简体中文</option>
-          </select>
+        <div id="main-stage"></div>
+
+        <div id="empty-state" class="empty-container">
+          <div class="empty-blob"></div>
+          <div class="empty-text" data-i18n="noAudio">No Audio Signal</div>
         </div>
 
-        <div class="setting-item-col">
-          <div class="setting-label">
-            <div data-i18n="captureListLabel">Force Capture Mode</div>
-            <div class="setting-sub" data-i18n="captureListSub">One domain per line (e.g. douyin.com)</div>
+        <div class="stack-header hidden" id="bg-header">
+          <span data-i18n="bgTitle">Background</span>
+          <span id="bg-badge" class="badge">0</span>
+        </div>
+        <div id="bg-stack" class="bg-stack"></div>
+      </div>
+
+      <div id="view-settings" class="view">
+        <div class="nav-island">
+          <button id="btn-back" class="btn-icon">←</button>
+          <div class="brand" data-i18n="settingsTitle">Settings</div>
+          <div class="nav-placeholder" style="width:32px"></div>
+        </div>
+
+        <!-- Group 1: Interface -->
+        <div class="setting-group-title" data-i18n="grpInterface">Interface</div>
+        <div class="setting-card">
+          <div class="setting-item">
+            <div class="setting-label">
+              <div data-i18n="osdLabel">OSD Popup</div>
+              <div class="setting-sub" data-i18n="osdSub">Overlay when using shortcuts</div>
+            </div>
+            <label class="switch-main">
+              <input type="checkbox" id="set-osd">
+              <span class="slider-round"></span>
+            </label>
           </div>
-          <textarea id="set-registry" class="setting-area" placeholder="example.com" spellcheck="false"></textarea>
-          <div class="setting-actions">
-            <button id="btn-save-registry" class="btn-primary" data-i18n="save">Save</button>
+
+          <div class="setting-item">
+            <div class="setting-label">
+              <div data-i18n="vizLabel">Visualizer</div>
+              <div class="setting-sub" data-i18n="vizSub">Show dynamic audio bars</div>
+            </div>
+            <label class="switch-main">
+              <input type="checkbox" id="set-viz">
+              <span class="slider-round"></span>
+            </label>
           </div>
+          
+          <!-- Explanation moved inside the card but slightly styled -->
+          <div style="padding: 0 16px 16px 16px;">
+              <div class="setting-desc" data-i18n="vizDesc">Disabling this allows "Native Lite" mode for restricted sites, saving resources until >100% volume.</div>
+          </div>
+        </div>
+
+        <!-- Group 2: General -->
+        <div class="setting-group-title" data-i18n="grpGeneral">General</div>
+        <div class="setting-card">
+          <div class="setting-item">
+            <div class="setting-label" data-i18n="langLabel">Language</div>
+            <select id="set-lang" class="setting-select">
+              <option value="en-US">English</option>
+              <option value="zh-CN">简体中文</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Group 3: Advanced (Registry) -->
+        <div id="registry-group">
+            <div class="setting-group-title" data-i18n="grpAdvanced">Advanced</div>
+            <div class="setting-card" style="padding: 16px;">
+              <div class="setting-label">
+                <div data-i18n="captureListLabel">Force Capture Mode</div>
+                <div class="setting-sub" data-i18n="captureListSub">One domain per line (e.g. douyin.com)</div>
+              </div>
+              <textarea id="set-registry" class="nice-textarea" placeholder="example.com" spellcheck="false"></textarea>
+              <div class="setting-actions">
+                <button id="btn-save-registry" class="btn-primary" data-i18n="save">Save</button>
+              </div>
+            </div>
         </div>
 
         <div class="version-info">Ver 24.0 • Ultra Build</div>
       </div>
-    </div>
 
+    </div>
   </div>
 
   <template id="tmpl-card">
