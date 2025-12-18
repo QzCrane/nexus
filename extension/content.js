@@ -59,119 +59,169 @@
         return RESTRICTED_DOMAINS.some(d => host.includes(d)) || userRegistry.includes(host);
     }
 
+    // ============================================
+    // 播放页检测配置
+    // ============================================
     /**
-     * 检测当前是否在视频播放页（而非推荐页预览）
-     * 通过 URL 路径、参数、hash 等多种方式综合判断
+     * 网站播放页检测规则配置
      * 
-     * 核心逻辑：
-     * 1. 检查 URL 路径是否包含视频相关关键词
-     * 2. 检查 URL 参数是否包含视频标识（如 modal_id, v, video_id 等）
-     * 3. 检查 hash 是否包含视频标识
-     * 4. 对于特定网站使用特定规则
+     * 配置说明：
+     * - hostPattern: 域名匹配模式（字符串或正则）
+     * - liveSubdomains: 直播子域名列表（这些子域名下的所有页面都视为播放页）
+     * - pathPatterns: 路径匹配模式列表（匹配任一则为播放页）
+     * - pathRegex: 路径正则匹配列表（用于复杂匹配）
+     * 
+     * 添加新网站只需在此配置中增加条目
+     */
+    const SITE_PLAY_PAGE_RULES = [
+        {
+            name: '抖音',
+            hostPattern: 'douyin.com',
+            liveSubdomains: ['live'],  // live.douyin.com 整站为播放页
+            pathPatterns: ['/video/', '/live/'],
+        },
+        {
+            name: 'YouTube',
+            hostPattern: 'youtube.com',
+            pathPatterns: ['/watch', '/embed/', '/shorts/'],
+        },
+        {
+            name: 'Bilibili',
+            hostPattern: 'bilibili.com',
+            pathPatterns: ['/video/', '/bangumi/', '/cheese/'],
+        },
+        {
+            name: 'Netflix',
+            hostPattern: 'netflix.com',
+            pathPatterns: ['/watch/'],
+        },
+        {
+            name: 'TikTok',
+            hostPattern: 'tiktok.com',
+            pathPatterns: ['/video/'],
+            pathRegex: [/\/@[\w.-]+\/video\//],  // /@用户名/video/xxx
+        },
+        {
+            name: 'Spotify',
+            hostPattern: 'spotify.com',
+            pathPatterns: ['/track/', '/episode/'],
+        },
+    ];
+
+    /**
+     * 通用播放页 URL 参数（这些参数存在时认为是播放页）
+     */
+    const VIDEO_URL_PARAMS = [
+        'modal_id',     // 抖音模态视频
+        'video_id',     // 通用视频ID
+        'vid',          // 视频ID缩写
+        'v',            // YouTube 视频ID
+        'bvid',         // Bilibili BV号
+        'aid',          // Bilibili AV号
+        'ep_id',        // Bilibili 番剧剧集ID
+    ];
+
+    /**
+     * Hash 中的播放页关键词（正则匹配）
+     */
+    const HASH_VIDEO_KEYWORDS = /video|modal|play|watch/i;
+
+    /**
+     * 通用路径匹配模式（兜底规则，适用于未配置的网站）
+     */
+    const GENERIC_PATH_PATTERNS = [
+        /\/video\//i,      // /video/xxx
+        /\/watch/i,        // /watch 或 /watch?v=xxx
+        /\/play\//i,       // /play/xxx
+        /\/v\//i,          // /v/xxx（短链）
+        /\/live\//i,       // /live/xxx
+        /\/embed\//i,      // /embed/xxx
+        /\/player\//i,     // /player/xxx
+        /\/episode\//i,    // /episode/xxx
+        /\/track\//i,      // /track/xxx
+        /\/clip\//i,       // /clip/xxx
+    ];
+
+    /**
+     * 检测当前是否在视频播放页（而非推荐页/预览）
+     * 
+     * 检测优先级：
+     * 1. URL 参数检测（如 modal_id, v 等）
+     * 2. Hash 关键词检测
+     * 3. 网站特定规则检测
+     * 4. 通用路径模式兜底
+     * 
+     * @returns {boolean} 是否为播放页
      */
     function isVideoPlayPage() {
         const path = window.location.pathname;
         const host = window.location.hostname;
         const search = window.location.search;
         const hash = window.location.hash;
-        const href = window.location.href;
         
-        // ========== 通用参数检测 ==========
-        // 这些参数通常表示正在播放特定视频
-        const videoParams = ['modal_id', 'video_id', 'vid', 'v', 'bvid', 'aid', 'ep_id'];
+        // ========== 1. 通用 URL 参数检测 ==========
         const urlParams = new URLSearchParams(search);
-        const hasVideoParam = videoParams.some(p => urlParams.has(p));
-        
-        // 检查 hash 中是否有视频标识（如 #/video/xxx 或 #modal_id=xxx）
-        const hashHasVideo = /video|modal|play|watch/i.test(hash);
-        
-        // 如果有视频参数或 hash 中有视频标识，认为是播放页
-        if (hasVideoParam || hashHasVideo) {
+        const hasVideoParam = VIDEO_URL_PARAMS.some(p => urlParams.has(p));
+        if (hasVideoParam) {
             return true;
         }
         
-        // ========== 网站特定规则 ==========
+        // ========== 2. Hash 关键词检测 ==========
+        if (HASH_VIDEO_KEYWORDS.test(hash)) {
+            return true;
+        }
         
-        // 抖音 (douyin.com)
-        // - live.douyin.com/xxx → 直播子域名，整个都是播放页
-        // - /video/xxx → 直接视频页
-        // - /live/xxx → 直播页
-        // - 任何路径 + modal_id 参数 → 模态视频（已在上面处理）
-        if (host.includes('douyin.com')) {
-            // live.douyin.com 子域名下的所有页面都是直播播放页
-            if (host.startsWith('live.')) {
-                return true;
+        // ========== 3. 网站特定规则检测 ==========
+        for (const rule of SITE_PLAY_PAGE_RULES) {
+            // 检查域名是否匹配
+            if (!host.includes(rule.hostPattern)) continue;
+            
+            // 检查是否为直播子域名（整站视为播放页）
+            if (rule.liveSubdomains) {
+                for (const sub of rule.liveSubdomains) {
+                    if (host.startsWith(sub + '.')) {
+                        return true;
+                    }
+                }
             }
-            return path.includes('/video/') || path.includes('/live/');
+            
+            // 检查路径匹配
+            if (rule.pathPatterns) {
+                if (rule.pathPatterns.some(p => path.includes(p))) {
+                    return true;
+                }
+            }
+            
+            // 检查正则匹配
+            if (rule.pathRegex) {
+                if (rule.pathRegex.some(r => r.test(path))) {
+                    return true;
+                }
+            }
+            
+            // 匹配到网站但路径不符合，直接返回 false
+            // 避免继续用通用规则误判
+            return false;
         }
         
-        // YouTube (youtube.com)
-        // - /watch?v=xxx → 视频页
-        // - /embed/xxx → 嵌入播放
-        // - /shorts/xxx → 短视频
-        if (host.includes('youtube.com')) {
-            return path.includes('/watch') || path.includes('/embed/') || path.includes('/shorts/');
-        }
-        
-        // Bilibili (bilibili.com)
-        // - /video/BVxxx → 视频页
-        // - /bangumi/play/xxx → 番剧播放
-        // - /cheese/play/xxx → 课程播放
-        if (host.includes('bilibili.com')) {
-            return path.includes('/video/') || path.includes('/bangumi/') || path.includes('/cheese/');
-        }
-        
-        // Netflix (netflix.com)
-        // - /watch/xxx → 视频播放
-        if (host.includes('netflix.com')) {
-            return path.includes('/watch/');
-        }
-        
-        // TikTok (tiktok.com)
-        // - /@user/video/xxx → 视频页
-        // - /video/xxx → 视频页
-        if (host.includes('tiktok.com')) {
-            return path.includes('/video/') || /\/@[\w.-]+\/video\//.test(path);
-        }
-        
-        // Spotify (spotify.com)
-        // - /track/xxx, /episode/xxx → 播放页
-        if (host.includes('spotify.com')) {
-            return path.includes('/track/') || path.includes('/episode/');
-        }
-        
-        // ========== 通用路径模式匹配 ==========
-        const genericPathPatterns = [
-            /\/video\//i,      // /video/xxx
-            /\/watch/i,        // /watch, /watch?v=xxx
-            /\/play\//i,       // /play/xxx
-            /\/v\//i,          // /v/xxx (短链)
-            /\/live\//i,       // /live/xxx
-            /\/embed\//i,      // /embed/xxx
-            /\/player\//i,     // /player/xxx
-            /\/episode\//i,    // /episode/xxx
-            /\/track\//i,      // /track/xxx
-            /\/clip\//i,       // /clip/xxx
-        ];
-        
-        // 首页/推荐页通常是根路径或特定路径
-        // 注意：这个检查要在通用模式匹配之前，避免误判
+        // ========== 4. 通用路径模式兜底 ==========
+        // 首页/推荐页通常是根路径，排除
         if (path === '/' || path === '') {
             return false;
         }
         
-        return genericPathPatterns.some(pattern => pattern.test(path));
+        return GENERIC_PATH_PATTERNS.some(pattern => pattern.test(path));
     }
 
     /**
-     * Calculates the DESIRED mode based on current config.
-     * This is the single source of truth for strategy.
+     * 计算期望的音频处理模式
+     * 这是策略的唯一真相来源
      * 
      * 完整策略逻辑：
      * 
      * 【推荐页预览场景】（isVideoPlayPage = false）
      * - 用户未交互：原生模式（非受限=NATIVE_WEBAUDIO，受限=NATIVE_LITE）
-     * - 用户已交互：全音量劫持模式（受限网站=CAPTURE，非受限=NATIVE_WEBAUDIO）
+     * - 用户已交互：全音量劫持模式（CAPTURE）- 所有网站统一
      * 
      * 【播放页场景】（isVideoPlayPage = true，无论用户是否交互）
      * - 跨域不限制网站：全音量原生模式（NATIVE_WEBAUDIO）
@@ -209,10 +259,10 @@
                 // 用户未交互：默认原生模式（节省资源）
                 return restricted ? MODE.NATIVE_LITE : MODE.NATIVE_WEBAUDIO;
             } else {
-                // 用户已交互：需要完整音量控制
-                // 非受限网站用 NATIVE_WEBAUDIO（已支持 0-800%）
-                // 受限网站必须用 CAPTURE（劫持模式）
-                return restricted ? MODE.CAPTURE : MODE.NATIVE_WEBAUDIO;
+                // 用户已交互：全部使用劫持模式
+                // 推荐页预览视频可能无法被原生模式控制（如 YouTube 首页）
+                // 因此统一使用 CAPTURE 模式以确保音量控制生效
+                return MODE.CAPTURE;
             }
         }
     }
