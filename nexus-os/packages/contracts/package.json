@@ -1,0 +1,25 @@
+{
+	"name": "@nexus/contracts",
+	"version": "0.0.1",
+	"description": "NEXUS 纯契约层 - 只包含接口和类型定义，不含任何业务逻辑",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc",
+		"dev": "tsc --watch"
+	},
+	"devDependencies": {
+		"typescript": "^5.3.0",
+		"chrome-types": "^0.1.327"
+	},
+	"files": [
+		"dist"
+	]
+}

@@ -1,0 +1,92 @@
+/**
+ * SPECTRA Popup - I18N 东亚语言 (中文、日语、韩语)
+ */
+
+import type { I18NDict } from '../../types';
+
+/** 简体中文 */
+export const ZH_CN: I18NDict = {
+  settingsTitle: '设置',
+  osdLabel: '屏幕提示 (OSD)',
+  osdSub: '快捷键调节时显示',
+  vizLabel: '动态频谱',
+  vizSub: '显示可视化音频条',
+  vizDesc: '关闭后，受限网站 (如抖音) 将预设使用极其省电的原生模式，仅在音量超过100%时自动切换增强模式。',
+  langLabel: '语言 (Language)',
+  noAudio: '无音频信号',
+  bgTitle: '后台播放',
+  paused: '增强已暂停',
+  clickToResume: '点击恢复',
+  comp: '防爆音',
+  bass: '低音',
+  mono: '单声道',
+  eqTitle: '🎚️ 10段均衡器',
+  reset: '重置',
+  save: '保存',
+  resetTooltip: '将当前标签页的音量和均衡器恢复为默认值',
+  saveTooltip: '将当前配置保存为该网站 (域名) 的永久默认配置',
+  captureListLabel: '强制劫持列表',
+  captureListSub: '每行一个域名 (如 douyin.com)',
+  grpInterface: '界面',
+  grpGeneral: '通用',
+  grpAdvanced: '高级',
+  autoAddedToast: (domain: string) => `🔧 已自动添加 ${domain} 到劫持列表`,
+};
+
+/** 日语 */
+export const JA_JP: I18NDict = {
+  settingsTitle: '設定',
+  osdLabel: 'OSDポップアップ',
+  osdSub: 'ショートカット使用時に表示',
+  vizLabel: 'ビジュアライザー',
+  vizSub: 'ダイナミックオーディオバーを表示',
+  vizDesc: '無効にすると、制限付きサイトでは音量が100%を超えるまでネイティブライトモードを使用し、リソースを節約します。',
+  langLabel: '言語',
+  noAudio: 'オーディオ信号なし',
+  bgTitle: 'バックグラウンド',
+  paused: 'オーディオ拡張一時停止中',
+  clickToResume: 'クリックして再開',
+  comp: 'コンプレッサー',
+  bass: '低音',
+  mono: 'モノラル',
+  eqTitle: '🎚️ 10バンドEQ',
+  reset: 'リセット',
+  save: '保存',
+  resetTooltip: '音量とEQをデフォルト値にリセット',
+  saveTooltip: '現在の設定をこのドメインのデフォルトとして保存',
+  captureListLabel: '強制キャプチャモード',
+  captureListSub: '1行に1ドメイン',
+  grpInterface: 'インターフェース',
+  grpGeneral: '一般',
+  grpAdvanced: '詳細',
+  autoAddedToast: (domain: string) => `🔧 ${domain} をキャプチャリストに自動追加しました`,
+};
+
+/** 韩语 */
+export const KO_KR: I18NDict = {
+  settingsTitle: '설정',
+  osdLabel: 'OSD 팝업',
+  osdSub: '단축키 사용 시 표시',
+  vizLabel: '비주얼라이저',
+  vizSub: '동적 오디오 바 표시',
+  vizDesc: '비활성화하면 제한된 사이트에서 볼륨이 100%를 초과할 때까지 네이티브 라이트 모드를 사용하여 리소스를 절약합니다.',
+  langLabel: '언어',
+  noAudio: '오디오 신호 없음',
+  bgTitle: '백그라운드',
+  paused: '오디오 향상 일시 중지됨',
+  clickToResume: '클릭하여 재개',
+  comp: '컴프레서',
+  bass: '베이스',
+  mono: '모노',
+  eqTitle: '🎚️ 10밴드 EQ',
+  reset: '초기화',
+  save: '저장',
+  resetTooltip: '볼륨 및 EQ를 기본값으로 재설정',
+  saveTooltip: '현재 설정을 이 도메인의 기본값으로 저장',
+  captureListLabel: '강제 캡처 모드',
+  captureListSub: '한 줄에 하나의 도메인',
+  grpInterface: '인터페이스',
+  grpGeneral: '일반',
+  grpAdvanced: '고급',
+  autoAddedToast: (domain: string) => `🔧 ${domain}을(를) 캡처 목록에 자동 추가했습니다`,
+};
