@@ -21,6 +21,7 @@ export function registerTabStateHandlers(): void {
 			hasMediaElement: false,
 			lastAudibleTime: 0,
 			lastActivatedTime: now,
+			userManuallyActivated: false, // Content Script 上报不算主动激活
 		};
 
 		tabAudioStates.set(tabId, {
@@ -37,14 +38,16 @@ export function registerTabStateHandlers(): void {
 		const visibleTabs: number[] = [];
 
 		for (const [tabId, state] of tabAudioStates.entries()) {
+			// 🔴 关键：必须是当前 session 中用户主动激活过的标签
+			if (!state.userManuallyActivated) continue;
+
 			// 检查是否应该显示这个标签页
 			const isCaptureActive = captureStates.get(tabId) === true;
 			const hasMedia = state.hasMediaElement;
-			const wasActivated = state.lastActivatedTime > 0;
 			const isRecentlyAudible = now - state.lastAudibleTime < TAB_VISIBLE_THRESHOLD_MS;
 
-			// 符合条件：有媒体 或 正在 Capture 或 (曾被激活且60秒内有声)
-			if (hasMedia || isCaptureActive || (wasActivated && isRecentlyAudible)) {
+			// 符合条件：(有媒体 或 正在 Capture 或 60秒内有声) 且 主动激活过
+			if (hasMedia || isCaptureActive || isRecentlyAudible) {
 				visibleTabs.push(tabId);
 			}
 		}

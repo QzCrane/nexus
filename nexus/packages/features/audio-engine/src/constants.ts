@@ -127,8 +127,10 @@ export const CompleteSiteRules: readonly CompleteSiteRule[] = [
     hostPattern: 'douyin.com',
     isRestricted: true,
     liveSubdomains: ['live'],
-    playPaths: ['/video', '/live'],
-    previewPaths: ['/', '/jingxuan', '/recommend', '/hot', '/discover', '/search']
+    // 抖音首页就是视频流播放页，需要 CAPTURE 支持
+    playPaths: ['/', '/video', '/live'],
+    // 仅搜索/推荐/发现等明确的"浏览列表"页面视为预览
+    previewPaths: ['/jingxuan', '/recommend', '/hot', '/discover', '/search']
   },
   {
     name: 'YouTube',

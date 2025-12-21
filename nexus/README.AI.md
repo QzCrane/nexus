@@ -36,16 +36,17 @@ import { createMessenger } from "@nexus/kernel"; // 运行时
 
 ## 消息速查
 
-| Action                 | 请求                           | 响应                         |
-| ---------------------- | ------------------------------ | ---------------------------- |
-| `AUDIO_GET_STATUS`     | void                           | `{ config, hasAudio, mode }` |
-| `AUDIO_SET_CONFIG`     | `{ config }`                   | `{ success }`                |
-| `AUDIO_GET_VISUALIZER` | void                           | `{ buffer }`                 |
-| `CAPTURE_TOGGLE`       | `{ enabled }`                  | `{ status }`                 |
-| `CAPTURE_GET_STATE`    | `{ tabId? }`                   | `boolean`                    |
-| `BADGE_UPDATE`         | `{ volume, muted, isCapture }` | void                         |
-| `SETTINGS_GET`         | void                           | `GlobalSettings`             |
-| `SETTINGS_UPDATE`      | `{ settings }`                 | `{ success }`                |
+| Action                  | 请求                           | 响应                         |
+| ----------------------- | ------------------------------ | ---------------------------- |
+| `AUDIO_GET_STATUS`      | void                           | `{ config, hasAudio, mode }` |
+| `AUDIO_SET_CONFIG`      | `{ config }`                   | `{ success }`                |
+| `AUDIO_GET_VISUALIZER`  | void                           | `{ buffer }`                 |
+| `CAPTURE_TOGGLE`        | `{ enabled }`                  | `{ status }`                 |
+| `CAPTURE_GET_STATE`     | `{ tabId? }`                   | `boolean`                    |
+| `CAPTURE_UPDATE_CONFIG` | `{ tabId, config }`            | void                         |
+| `BADGE_UPDATE`          | `{ volume, muted, isCapture }` | void                         |
+| `SETTINGS_GET`          | void                           | `GlobalSettings`             |
+| `SETTINGS_UPDATE`       | `{ settings }`                 | `{ success }`                |
 
 完整列表：`packages/contracts/src/messages.contracts.ts`
 

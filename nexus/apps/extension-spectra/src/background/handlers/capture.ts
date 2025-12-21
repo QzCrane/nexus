@@ -108,6 +108,27 @@ export function registerCaptureHandlers(): void {
 		if (!tabId) return false;
 		return captureStates.get(tabId) ?? false;
 	});
+
+	// 🔴 直接更新 Offscreen 配置 (NEXUS 契约: CAPTURE_UPDATE_CONFIG)
+	// 用于 Popup 在 Capture 模式下直接同步配置到 Offscreen，避免中间层延迟
+	router.on('CAPTURE_UPDATE_CONFIG', async (req, sender) => {
+		const tabId = req.tabId;
+		if (!tabId) return;
+
+		// 只有已激活 Capture 的标签才处理
+		if (!captureStates.get(tabId)) {
+			swLog.debug(`CAPTURE_UPDATE_CONFIG ignored: Tab ${tabId} not capturing`);
+			return;
+		}
+
+		swLog.debug(`CAPTURE_UPDATE_CONFIG: Tab ${tabId}, vol=${req.config.volume}`);
+		chrome.runtime.sendMessage({
+			target: 'offscreen',
+			action: 'updateConfig',
+			tabId,
+			config: req.config
+		}).catch(() => { });
+	});
 }
 
 /**

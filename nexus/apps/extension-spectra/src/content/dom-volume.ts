@@ -16,6 +16,9 @@ const lockedElements = new WeakSet<HTMLMediaElement>();
 let targetVolume = 1;
 let targetMuted = false;
 
+/** 音量锁是否激活 (WebAudio/Capture 接管时应禁用) */
+let lockEnabled = true;
+
 /**
  * 设置所有媒体元素的 DOM 音量
  * @param volume - 音量值 (0-1)
@@ -71,6 +74,9 @@ export function setDomVolume(volume: number, muted: boolean): void {
  */
 function setupVolumeLock(media: HTMLMediaElement): void {
 	media.addEventListener('volumechange', () => {
+		// WebAudio/Capture 接管时不恢复音量
+		if (!lockEnabled) return;
+
 		// 检查音量是否被外部修改
 		const volumeDiff = Math.abs(media.volume - targetVolume);
 		const mutedDiff = media.muted !== targetMuted;
@@ -78,6 +84,7 @@ function setupVolumeLock(media: HTMLMediaElement): void {
 		if (volumeDiff > 0.01 || mutedDiff) {
 			// 延迟恢复，避免死循环
 			requestAnimationFrame(() => {
+				if (!lockEnabled) return;
 				if (Math.abs(media.volume - targetVolume) > 0.01) {
 					log.debug('[DOM] 检测到音量被外部修改，恢复到:', (targetVolume * 100).toFixed(0) + '%');
 					media.volume = targetVolume;
@@ -107,5 +114,34 @@ export function isAnyMediaPlaying(): boolean {
 		if (!media.paused) return true;
 	}
 	return false;
+}
+
+/**
+ * 释放音量锁定 (WebAudio/Capture 接管时调用)
+ * 
+ * 将 DOM 音量设为 1 并禁用自动恢复，让高级模式完全控制音频
+ */
+export function releaseVolumeLock(): void {
+	lockEnabled = false;
+	targetVolume = 1;
+	targetMuted = false;
+	// 将所有媒体元素 DOM 音量设为 1，由高级模式通过 GainNode 控制实际音量
+	document.querySelectorAll('video, audio').forEach((el) => {
+		const media = el as HTMLMediaElement;
+		try {
+			media.volume = 1;
+			media.muted = false;
+		} catch {
+			// 静默处理
+		}
+	});
+}
+
+/**
+ * 重新启用音量锁定 (回退到 NATIVE_LITE 时调用)
+ */
+export function enableVolumeLock(volume: number, muted: boolean): void {
+	lockEnabled = true;
+	setDomVolume(volume, muted);
 }
 

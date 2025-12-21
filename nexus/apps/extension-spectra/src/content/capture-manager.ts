@@ -76,6 +76,15 @@ export function createCaptureManager(messenger: NexusMessenger) {
 			}
 			return false;
 		},
+
+		/** 同步配置到已激活的 Capture (用于滚轮/快捷键调音量) */
+		syncConfig(config: AudioConfig): void {
+			if (!isCaptureActive) return;
+			if (!isExtensionContextValid()) return;
+
+			// 发送 CAPTURE_TOGGLE 带 enabled=true 会触发 Background 的配置同步逻辑
+			safeSend(() => messenger.send('CAPTURE_TOGGLE', { enabled: true, config })).catch(() => { });
+		},
 	};
 }
 

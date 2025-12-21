@@ -22,10 +22,9 @@ export function createGetCapturing(
 /**
  * 创建配置更新函数 (NEXUS 架构)
  * 
- * 核心逻辑：
- * 1. 发送配置给 Content Script。
- * 2. Content Script 计算新模式 (NATIVE/CAPTURE) 并返回。
- * 3. Popup 根据新模式决定是否触发/停止 Capture (由于此处有用户手势，触发极高概率成功)。
+ * 核心逻辑改进 (v24.1):
+ * - Capture 模式：直接通过 CAPTURE_UPDATE_CONFIG 同步到 Offscreen，避免 Content Script 中转
+ * - Native 模式：发送给 Content Script 处理
  */
 export function createUpdateFn(
   state: CardInternalState,
@@ -35,14 +34,34 @@ export function createUpdateFn(
   _getGlobalSettings: () => GlobalSettings
 ): (changes: Partial<AudioConfig>) => void {
   return async (changes: Partial<AudioConfig>) => {
-    // 标记用户已交互 (本地更新，Content 也会更新)
+    // 标记用户已交互
     state.userInteracted = true;
 
-    // 乐观更新：合并本地配置以防渲染滞后
+    // 乐观更新：合并本地配置
     state.config = { ...state.config, ...changes };
     const config = state.config;
 
-    // 1. 同步到 Content Script 并获取最新策略状态
+    // 🔴 关键改进：Capture 模式下直接同步到 Offscreen
+    if (state.isCaptureActive) {
+      // 1. 直接发送到 Offscreen (最短路径)
+      sendToBackground('CAPTURE_UPDATE_CONFIG', { tabId, config });
+
+      // 2. 同时通知 Content Script 更新本地状态 (用于角标和 UI 同步)
+      sendToTab(tabId, 'AUDIO_SET_CONFIG', { config }).catch(() => { });
+
+      // 3. 同步角标
+      sendToBackground('BADGE_UPDATE', {
+        tabId,
+        volume: config.volume,
+        muted: config.muted,
+        isCapture: true,
+      });
+
+      render();
+      return;
+    }
+
+    // Native 模式：发送给 Content Script 并获取策略建议
     const response = await sendToTab<{
       success: boolean;
       state: { mode: string; config: AudioConfig };
@@ -53,21 +72,17 @@ export function createUpdateFn(
       const wasCapturing = state.isCaptureActive;
       const needsCapture = suggestedMode === 'CAPTURE';
 
-      // 2. 如果策略建议 CAPTURE 但当前未激活，则触发 (关键：利用当前用户手势)
+      // 如果策略建议 CAPTURE，则触发 (利用当前用户手势)
       if (needsCapture && !wasCapturing) {
         state.isCaptureActive = true;
         state.actualMode = 'CAPTURE';
         sendToBackground('CAPTURE_TOGGLE', { enabled: true, config, tabId });
       }
-      // 3. 如果策略建议 NATIVE 但当前已激活，则停止
+      // 如果策略建议 NATIVE 但当前已激活，则停止
       else if (!needsCapture && wasCapturing) {
         state.isCaptureActive = false;
         state.actualMode = suggestedMode as any;
         sendToBackground('CAPTURE_TOGGLE', { enabled: false, config, tabId });
-      }
-      // 4. 如果都在 CAPTURE 中，同步配置给 Offscreen
-      else if (needsCapture && wasCapturing) {
-        sendToBackground('CAPTURE_TOGGLE', { enabled: true, config, tabId });
       }
 
       // 同步角标
@@ -79,7 +94,7 @@ export function createUpdateFn(
       });
     }
 
-    // 重新渲染
     render();
   };
 }
+

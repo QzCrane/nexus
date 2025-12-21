@@ -21,6 +21,7 @@ export function setupLifecycleListeners(): void {
 			tabAudioStates.set(activeInfo.tabId, {
 				...existing,
 				lastActivatedTime: now,
+				userManuallyActivated: true, // 标记为当前 session 主动激活
 			});
 		} else {
 			// 首次激活，创建初始状态
@@ -28,6 +29,7 @@ export function setupLifecycleListeners(): void {
 				hasMediaElement: false,
 				lastAudibleTime: 0,
 				lastActivatedTime: now,
+				userManuallyActivated: true, // 标记为当前 session 主动激活
 			});
 		}
 	});

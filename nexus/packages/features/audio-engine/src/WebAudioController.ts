@@ -137,23 +137,40 @@ export class WebAudioController {
   }
 
   /**
-   * 清理所有音频资源
+   * 进入旁通模式 (而非销毁)
+   * 
+   * 重要：MediaElementAudioSourceNode 一旦创建就无法断开。
+   * 关闭 AudioContext 会导致媒体元素无法播放（视频卡死）。
+   * 因此改为将增益设为 1、禁用所有效果，保持音频链路畅通。
    */
   cleanup(): void {
-    if (this.ctx) {
-      try {
-        this.ctx.close();
-      } catch (e) {
-        // 静默处理关闭失败
-      }
-      this.ctx = null;
-    }
+    if (!this.ctx) return;
 
-    // 清理所有媒体元素的附加节点
+    // 不再关闭 AudioContext，改为设置旁通参数
+    const t = this.ctx.currentTime;
+    const r = AudioParams.SMOOTH_TIME_FAST;
+
     document.querySelectorAll('video, audio').forEach((el) => {
       const mediaEl = el as AudioMediaElement;
-      delete mediaEl._vm;
-      mediaEl.dataset.vmAttached = 'false';
+      if (!mediaEl._vm) return;
+
+      const { gain, bass, comp, eqNodes } = mediaEl._vm;
+
+      // 增益设为 1 (透传)
+      gain.gain.setTargetAtTime(1, t, r);
+      gain.channelCount = 2;
+
+      // 禁用低音增强
+      bass.gain.setTargetAtTime(0, t, r);
+
+      // 禁用压缩器
+      comp.threshold.setTargetAtTime(CompressorNativeOff.threshold, t, r);
+      comp.ratio.setTargetAtTime(CompressorNativeOff.ratio, t, r);
+
+      // EQ 归零
+      eqNodes.forEach((node) => {
+        node.gain.setTargetAtTime(0, t, r);
+      });
     });
   }
 

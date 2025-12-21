@@ -139,7 +139,19 @@ export class PolicyEngine implements IPolicyEngine {
    * 判断当前 URL 是否为预览页 (而非正式播放页)
    */
   public isPreviewPage(url: UrlInfo): boolean {
-    const { domain: hostname, pathname } = url;
+    const { domain: hostname, pathname, fullUrl } = url;
+
+    // 🔴 优先检测：如果 URL 有视频参数，则绝对不是预览页
+    // 例如 /jingxuan?modal_id=xxx 虽然路径是预览页，但有弹窗视频播放
+    try {
+      const parsed = new URL(fullUrl);
+      const hasVideoParam = UrlDetection.VIDEO_PARAMS.some(p => parsed.searchParams.has(p));
+      if (hasVideoParam) {
+        return false; // 有视频参数 = 正在播放 = 不是预览页
+      }
+    } catch {
+      // URL 解析失败，继续后续检测
+    }
 
     // 1. 根路径判断需站点特定。通用规则中不再包含强制根路径为预览页。
     // 因为像抖音这样的站点，其首页就是主播放页。
@@ -204,16 +216,20 @@ export class PolicyEngine implements IPolicyEngine {
 
   /**
    * 判断当前 URL 是否为视频播放页
+   * 
+   * 简化架构 (v24.1)：优先通用规则，站点规则仅用于直播子域名
+   * 
+   * 检测优先级：
+   * 1. 视频参数 (modal_id/v/bvid 等) → 绝对播放页
+   * 2. 通用路径模式 (/video//watch/play 等) → 高概率播放页
+   * 3. Hash 关键词 → 可能是播放页
+   * 4. 直播子域名 (live.xxx.com) → 整站播放页
+   * 5. 预览页排除 → 最后检查
    */
   public isVideoPlayPage(url: UrlInfo): boolean {
-    // 1. 优先使用“预览页”匹配。如果匹配到预览页规则，直接排除
-    if (this.isPreviewPage(url)) {
-      return false;
-    }
-
     const { domain: hostname, pathname, fullUrl } = url;
 
-    // 解析 URL 参数 (从 fullUrl)
+    // 解析 URL 参数和 Hash
     let searchParams = new URLSearchParams();
     let hash = '';
     try {
@@ -224,51 +240,37 @@ export class PolicyEngine implements IPolicyEngine {
       // 容错
     }
 
-    // 2. 通用 URL 参数检测 (bvid, video_id 等)
+    // ========== 1. 视频参数检测 (最高优先级) ==========
     const hasVideoParam = UrlDetection.VIDEO_PARAMS.some(p => searchParams.has(p));
     if (hasVideoParam) {
       return true;
     }
 
-    // ========== 2. Hash 关键词检测 ==========
+    // ========== 2. 通用路径模式检测 ==========
+    if (UrlDetection.GENERIC_PATH_PATTERNS.some(pattern => pattern.test(pathname))) {
+      return true;
+    }
+
+    // ========== 3. Hash 关键词检测 ==========
     if (UrlDetection.HASH_VIDEO_KEYWORDS.test(hash)) {
       return true;
     }
 
-    // ========== 3. 网站特定规则检测 ==========
+    // ========== 4. 直播子域名检测 ==========
     for (const rule of this.siteRules) {
-      // 检查域名是否匹配
       if (!hostname.includes(rule.hostPattern)) continue;
-
-      // 检查是否为直播子域名（整站视为播放页）
-      if (rule.liveSubdomains) {
-        for (const sub of rule.liveSubdomains) {
-          if (hostname.startsWith(sub + '.')) {
-            return true;
-          }
-        }
+      if (rule.liveSubdomains?.some(sub => hostname.startsWith(sub + '.'))) {
+        return true;
       }
-
-      // 检查路径匹配
-      if (rule.pathPatterns) {
-        if (rule.pathPatterns.some(p => this.matchesPathPattern(pathname, p))) {
-          return true;
-        }
-      }
-
-      // 检查正则匹配
-      if (rule.pathRegex) {
-        if (rule.pathRegex.some(r => r.test(pathname))) {
-          return true;
-        }
-      }
-
-      // 匹配到网站但路径不符合，继续尝试后续的通用检测
-      break;
     }
 
-    // ========== 4. 通用路径模式兜底 ==========
-    return UrlDetection.GENERIC_PATH_PATTERNS.some(pattern => pattern.test(pathname));
+    // ========== 5. 预览页排除 ==========
+    if (this.isPreviewPage(url)) {
+      return false;
+    }
+
+    // 不确定的情况：默认非播放页 (省 CPU)
+    return false;
   }
 
   // ============================================
@@ -306,6 +308,10 @@ export class PolicyEngine implements IPolicyEngine {
   // ============================================
 
   private matchesPathPattern(pathname: string, pattern: string): boolean {
+    // 特殊处理根路径：只有精确匹配 '/' 或空路径时才匹配
+    if (pattern === '/') {
+      return pathname === '/' || pathname === '';
+    }
     if (pattern.endsWith('/')) {
       return pathname.startsWith(pattern);
     }

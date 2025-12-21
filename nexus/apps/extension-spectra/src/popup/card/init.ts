@@ -2,7 +2,7 @@
  * SPECTRA Popup - initCard 主函数
  */
 
-import { DefaultSiteRules } from '@nexus/audio-engine';
+
 import type { GlobalSettings } from '@nexus/kernel';
 import type { I18NDict, ContentStatusResponse } from '../types';
 import { getDomain, sendToTab, sendToBackground, ensureInjected } from '../utils/dom';
@@ -25,12 +25,11 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   if (!tab.id) return false;
   const tabId = tab.id;
 
-  // 1. 尝试获取状态，如果获取不到再尝试注入 (优化性能，避免重复注入导致卡顿)
-  let status = await sendToTab<ContentStatusResponse>(tabId, 'AUDIO_GET_STATUS', {});
+  // 1. 尝试获取状态，不再自动注入 (用户需刷新标签页以激活扩展)
+  const status = await sendToTab<ContentStatusResponse>(tabId, 'AUDIO_GET_STATUS', {});
   if (!status) {
-    if (!await ensureInjected(tabId)) return false;
-    // 注入后再次尝试获取
-    status = await sendToTab<ContentStatusResponse>(tabId, 'AUDIO_GET_STATUS', {});
+    // Content Script 未加载或上下文已失效，跳过此标签页
+    return false;
   }
 
   const isCaptureActive = await sendToBackground<boolean>('CAPTURE_GET_STATE', { tabId });
@@ -42,15 +41,18 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   const domain = getDomain(tab.url || '');
   const effectiveRegistry = getEffectiveRegistry(userRegistry);
 
-  // 关键：排除已知原生支持的站点 (确保 B 站永远不会在初次加载时被判受限)
-  const isWellKnownSite = DefaultSiteRules.some(r => domain.includes(r.hostPattern));
-  const isRestrictedSite = !isWellKnownSite && effectiveRegistry.some(
+  // 根据 Content Script 返回的模式判断是否受限（不再使用错误的 isWellKnownSite 逻辑）
+  const isRestrictedSite = effectiveRegistry.some(
     (d) => domain === d || domain.endsWith('.' + d)
   );
 
+  // 🔴 关键：根据 mode 和 isCaptureActive 预判颜色
+  // 如果 mode 是 CAPTURE 或已激活 Capture，初始就显示紫色
+  const predictedCapture = isCaptureActive || status?.mode === 'CAPTURE';
+
   const state: CardInternalState = {
     config: status ? cleanConfig(status.config) : cleanConfig(null),
-    isCaptureActive: !!isCaptureActive,
+    isCaptureActive: !!predictedCapture, // 使用预判值
     userInteracted: status?.userInteracted ?? false,
     isRestrictedSite,
     actualMode: status?.mode ?? null,

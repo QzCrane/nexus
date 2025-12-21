@@ -25,8 +25,18 @@ export function isEffectivelyCapturing(
 	return state.activeMode === AudioMode.CAPTURE && captureManager.isActive();
 }
 
+/** 首次角标更新延迟 (ms)，等待 Capture 激活完成 */
+const FIRST_BADGE_DELAY_MS = 500;
+
+/** 是否已完成首次延迟 */
+let firstBadgeDelayDone = false;
+
 /**
  * 更新扩展图标角标
+ * 
+ * 优化策略：
+ * - 使用 hash 去重，避免高频重复更新
+ * - 首次更新延迟 500ms，等待 Capture 激活完成，避免蓝→紫闪烁
  * 
  * @param deps 依赖对象
  * @param state 执行器状态
@@ -43,6 +53,18 @@ export function updateBadge(
 
 	// 只有状态变化时才发送消息，避免高频刷新导致角标闪烁
 	if (hash === internalState.lastBadgeHash) return;
+
+	// 首次更新时延迟发送，等待 Capture 激活完成
+	if (!firstBadgeDelayDone && !captureManager.isActive()) {
+		setTimeout(() => {
+			firstBadgeDelayDone = true;
+			// 延迟后重新触发更新
+			updateBadge(deps, state, internalState);
+		}, FIRST_BADGE_DELAY_MS);
+		return;
+	}
+	firstBadgeDelayDone = true;
+
 	internalState.lastBadgeHash = hash;
 
 	safeSend(() => messenger.send('BADGE_UPDATE', {

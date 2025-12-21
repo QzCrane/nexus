@@ -57,7 +57,12 @@ export interface TabAudioState {
 	lastAudibleTime: number;
 	/** 用户最后切换到该标签页的时间戳 (ms) */
 	lastActivatedTime: number;
+	/** 用户是否在当前 session 中主动激活过 (区分扩展重载前的旧状态) */
+	userManuallyActivated: boolean;
 }
+
+/** 当前 Service Worker 会话 ID (每次重载递增) */
+export const currentSessionId = Date.now();
 
 /** Tab 音频状态映射 (tabId -> TabAudioState) */
 export const tabAudioStates = new Map<number, TabAudioState>();
