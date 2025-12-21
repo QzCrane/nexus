@@ -3,6 +3,7 @@
  */
 
 import type { GlobalSettings } from '@nexus/kernel';
+import { OffscreenActions } from '@nexus/contracts';
 import { TIMING } from '../constants';
 import { sendToTab } from '../utils/dom';
 import { drawViz } from './draw-viz';
@@ -69,7 +70,7 @@ export function createVizLoop(params: VizLoopParams): () => void {
             // 从 offscreen 获取 (Capture 模式)
             const res = await chrome.runtime.sendMessage({
               target: 'offscreen',
-              action: 'getViz',
+              action: OffscreenActions.OFFSCREEN_GET_VIZ,
               tabId,
             }).catch(() => null);
 

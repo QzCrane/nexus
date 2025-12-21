@@ -5,6 +5,7 @@
  */
 
 import type { AudioConfig } from '@nexus/kernel';
+import { Actions } from '@nexus/contracts';
 import { storage, captureStates, BADGE_COLORS } from './state';
 import { swLog } from '../shared/logger';
 
@@ -50,7 +51,7 @@ export function setupShortcutListeners(): void {
 		// 通知 Content Script 更新音频图
 		try {
 			await chrome.tabs.sendMessage(tab.id, {
-				action: 'SHORTCUT_TRIGGER',
+				action: Actions.SHORTCUT_TRIGGER,
 				payload: { command, config: mergedConfig }
 			});
 		} catch {

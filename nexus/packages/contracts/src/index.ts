@@ -78,3 +78,9 @@ export type {
 } from './settings.contracts.js';
 
 export { DEFAULT_GLOBAL_SETTINGS } from './settings.contracts.js';
+
+// ============================================
+// 消息 Action 常量
+// ============================================
+export { Actions, OffscreenActions, NEXUS_ACTIONS, OFFSCREEN_ACTIONS } from './actions.js';
+export type { NexusActionName, OffscreenActionName } from './actions.js';

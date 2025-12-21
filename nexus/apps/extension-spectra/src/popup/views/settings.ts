@@ -3,6 +3,7 @@
  */
 
 import type { GlobalSettings } from '@nexus/kernel';
+import { Actions } from '@nexus/contracts';
 import { DefaultRestrictedDomains } from '@nexus/audio-engine';
 import type { I18NDict, RenderCallback } from '../types';
 import { getSettingsUIElements, $$ } from '../utils/dom';
@@ -74,7 +75,7 @@ export async function initSettings(): Promise<SettingsState> {
       tabs.forEach((t) => {
         if (t.id) {
           chrome.tabs.sendMessage(t.id, {
-            action: 'globalSettingsUpdate',
+            action: Actions.GLOBAL_SETTINGS_UPDATE,
             settings: gSettings,
           }).catch(() => { });
         }

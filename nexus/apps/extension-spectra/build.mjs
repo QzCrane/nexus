@@ -27,6 +27,7 @@ console.log('✓ Copied public files');
 // 通用构建配置
 const commonResolve = {
   alias: {
+    '@nexus/contracts': resolve(__dirname, '../../packages/contracts/dist/index.js'),
     '@nexus/kernel': resolve(__dirname, '../../packages/nexus-kernel/dist/index.js'),
     '@nexus/audio-engine': resolve(__dirname, '../../packages/features/audio-engine/dist/index.js')
   }

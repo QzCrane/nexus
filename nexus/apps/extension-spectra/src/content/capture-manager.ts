@@ -5,6 +5,7 @@
  */
 
 import type { NexusMessenger, AudioConfig } from '@nexus/kernel';
+import { Actions } from '@nexus/contracts';
 import { safeSend, isExtensionContextValid } from './context-guard';
 import { logger } from '../shared/logger';
 
@@ -67,7 +68,7 @@ export function createCaptureManager(messenger: NexusMessenger) {
 
 		/** 处理消息回调 */
 		handleMessage(message: { action?: string; payload?: { enabled?: boolean }; enabled?: boolean }): boolean {
-			if (message.action === 'CAPTURE_STATE_CHANGE' || message.action === 'captureStateChange') {
+			if (message.action === Actions.CAPTURE_STATE_CHANGE) {
 				const enabled = message.payload?.enabled ?? message.enabled ?? false;
 				log.capture(`State change received: ${enabled ? 'ON' : 'OFF'}`);
 				isCaptureActive = enabled;

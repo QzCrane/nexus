@@ -300,6 +300,78 @@ function checkSourceFileLength() {
 }
 
 // ============================================
+// 检查 7：硬编码 Action 字符串
+// ============================================
+function checkHardcodedActions() {
+  console.log('\n📋 检查硬编码的 Action 字符串...\n');
+  
+  // 从 actions.ts 动态读取 Action 列表 (单一真相源)
+  const actionsFile = path.join(ROOT, 'packages/contracts/src/actions.ts');
+  if (!fs.existsSync(actionsFile)) {
+    warn('actions.ts 不存在，跳过硬编码检查');
+    return;
+  }
+  
+  const actionsContent = fs.readFileSync(actionsFile, 'utf-8');
+  const actionMatches = actionsContent.match(/'[A-Z_]+'/g) || [];
+  const KNOWN_ACTIONS = [...new Set(actionMatches.map(m => m.replace(/'/g, '')))];
+  
+  if (KNOWN_ACTIONS.length === 0) {
+    warn('未能从 actions.ts 解析出 Action 列表');
+    return;
+  }
+  
+  const violations = [];
+  
+  function scanDir(dir) {
+    if (!fs.existsSync(dir)) return;
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        scanDir(fullPath);
+      } else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.d.ts')) {
+        const relativePath = fullPath.replace(ROOT + path.sep, '').replace(/\\/g, '/');
+        // 跳过常量定义文件
+        if (relativePath.includes('actions.ts')) continue;
+        if (relativePath.includes('messages.contracts.ts')) continue;
+        if (relativePath.includes('messages/definitions.ts')) continue;
+        
+        const content = fs.readFileSync(fullPath, 'utf-8');
+        const lines = content.split('\n');
+        
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          for (const action of KNOWN_ACTIONS) {
+            const patterns = [
+              `action: '${action}'`,
+              `action: "${action}"`,
+              `case '${action}':`,
+              `case "${action}":`,
+            ];
+            for (const pattern of patterns) {
+              if (line.includes(pattern)) {
+                violations.push({ path: relativePath, line: i + 1, action });
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  scanDir(path.join(ROOT, 'apps/extension-spectra/src'));
+  
+  if (violations.length > 0) {
+    for (const v of violations) {
+      error(`硬编码 Action: ${v.path}:${v.line} (${v.action}) - 应使用 Actions 常量`);
+    }
+  } else {
+    ok(`无硬编码的 Action 字符串 (检查了 ${KNOWN_ACTIONS.length} 个 Action)`);
+  }
+}
+
+// ============================================
 // 主函数
 // ============================================
 function main() {
@@ -313,6 +385,7 @@ function main() {
   checkDuplicateDefinitions();
   checkDependencyDirection();
   checkSourceFileLength();
+  checkHardcodedActions();
   
   console.log('\n' + '='.repeat(60));
   if (errors > 0) {

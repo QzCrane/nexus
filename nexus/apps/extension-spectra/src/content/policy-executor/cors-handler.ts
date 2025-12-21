@@ -5,14 +5,8 @@
  * - 设置 CORS 检测回调
  * - 实现"主权判定"逻辑：一旦成功连接 WebAudio 就标记为 SAFE
  * - 自动添加/移除受限域名注册表
- * 
- * 核心逻辑：
- * - 进网站后开始主权判定
- * - 只要有一个媒体元素成功连接 WebAudio，站点即被永久标记为 SAFE
- * - 屏蔽所有后续报错（忽略广告干扰）
  */
 
-import { DefaultSiteRules } from '@nexus/audio-engine';
 import { safeSend } from '../context-guard';
 import { showToast } from '../toast';
 import { logger } from '../../shared/logger';
@@ -23,10 +17,6 @@ const log = logger.content;
 
 /**
  * 设置 CORS 检测回调
- * 
- * @param deps 依赖对象
- * @param internalState 内部状态（corsStatus）
- * @param onStatusChange 状态变化时的回调（触发 applyState）
  */
 export function setupCorsCallback(
 	deps: PolicyExecutorDeps,
@@ -40,7 +30,7 @@ export function setupCorsCallback(
 		(hostname) => {
 			if (internalState.corsStatus !== 'PENDING') return;
 
-			// 延迟 1.5 秒判定，给"成功的视频"留出反应时间 (防止 Ad 先报错)
+			// 延迟判定，给成功的视频留反应时间（防止广告误报）
 			setTimeout(() => {
 				if (internalState.corsStatus !== 'PENDING') return;
 
@@ -70,15 +60,9 @@ export function setupCorsCallback(
 			log.info(`[CORS] Decision: SAFE for ${hostname}`);
 			internalState.corsStatus = 'SAFE';
 
-			// 自愈逻辑: 如果该站点是已知可以原生支持的 (如 B站)，
-			// 但由于某种原因它在受限注册表里，则将其移除，彻底根治"变紫"
-			const isWellKnownSite = DefaultSiteRules.some(rule => hostname.includes(rule.hostPattern));
-			if (isWellKnownSite) {
-				log.info(`[CORS] Healing well-known site: ${hostname}`);
-				safeSend(() => messenger.send('REGISTRY_REMOVE_DOMAIN', { domain: hostname })).catch(() => { });
-			}
+			// 自愈：若曾被错误加入受限列表，则移除
+			safeSend(() => messenger.send('REGISTRY_REMOVE_DOMAIN', { domain: hostname })).catch(() => { });
 
-			// 一旦判定为安全，立即刷新一次状态，确保变蓝
 			onStatusChange();
 		}
 	);

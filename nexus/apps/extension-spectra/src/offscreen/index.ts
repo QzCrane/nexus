@@ -9,6 +9,7 @@
 
 import { AudioParams, CompressorOn, CompressorNativeOff } from '@nexus/audio-engine';
 import type { AudioConfig } from '@nexus/kernel';
+import { OffscreenActions } from '@nexus/contracts';
 
 /** 音频处理器实例 */
 interface AudioProcessor {
@@ -28,16 +29,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 	if (msg.target !== 'offscreen') return;
 
 	switch (msg.action) {
-		case 'start':
+		case OffscreenActions.OFFSCREEN_START:
 			startCapture(msg.tabId, msg.streamId, msg.config);
 			break;
-		case 'stop':
+		case OffscreenActions.OFFSCREEN_STOP:
 			stopCapture(msg.tabId);
 			break;
-		case 'updateConfig':
+		case OffscreenActions.OFFSCREEN_UPDATE_CONFIG:
 			updateAudio(msg.tabId, msg.config);
 			break;
-		case 'getViz': {
+		case OffscreenActions.OFFSCREEN_GET_VIZ: {
 			const p = processors.get(msg.tabId);
 			if (p?.analyser) {
 				const data = new Uint8Array(p.analyser.frequencyBinCount);

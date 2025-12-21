@@ -11,6 +11,7 @@
  */
 
 import { AudioMode, predictCapture } from '@nexus/audio-engine';
+import { Actions } from '@nexus/contracts';
 import { safeSend } from '../context-guard';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../types';
 import type { InternalState } from './types';
@@ -92,7 +93,7 @@ export function broadcastUI(
 	// 使用 safeSend 防止扩展重载后的 Context Invalidated 报错
 	safeSend(() => new Promise<void>((resolve, reject) => {
 		chrome.runtime.sendMessage({
-			action: 'UI_SYNC',
+			action: Actions.UI_SYNC,
 			payload: {
 				config: state.config,
 				mode: state.activeMode as any,

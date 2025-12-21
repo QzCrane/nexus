@@ -5,6 +5,7 @@
  */
 
 import type { AudioConfig } from '@nexus/kernel';
+import { Actions } from '@nexus/contracts';
 
 import { PolicyExecutor, PolicyExecutorState } from './policy-executor';
 import { CaptureManager } from './capture-manager';
@@ -36,8 +37,7 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 		if (!msg?.action) return false;
 
 		switch (msg.action) {
-			// ========== NEXUS 格式 ==========
-			case 'AUDIO_SET_CONFIG': {
+			case Actions.AUDIO_SET_CONFIG: {
 				const payload = msg.payload as { config: Partial<AudioConfig> };
 				policyExecutor.updateConfig(payload.config);
 				sendResponse({
@@ -53,8 +53,7 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 				break;
 			}
 
-			// ========== 状态查询 ==========
-			case 'AUDIO_GET_STATUS': {
+			case Actions.AUDIO_GET_STATUS: {
 				if (state.activeMode === null) {
 					policyExecutor.applyState();
 				}
@@ -68,14 +67,12 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 				break;
 			}
 
-			// ========== 频谱数据 ==========
-			case 'AUDIO_GET_VISUALIZER': {
+			case Actions.AUDIO_GET_VISUALIZER: {
 				sendResponse({ buffer: getVisualizerData() });
 				break;
 			}
 
-			// ========== 快捷键触发 ==========
-			case 'SHORTCUT_TRIGGER': {
+			case Actions.SHORTCUT_TRIGGER: {
 				const payload = msg.payload as { command?: string; config?: AudioConfig } | undefined;
 				if (payload?.config) {
 					// 只有音量增减才强制解除静音，静音切换不应强制解除
@@ -86,8 +83,7 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 				break;
 			}
 
-			// ========== Capture 状态变更 ==========
-			case 'CAPTURE_STATE_CHANGE': {
+			case Actions.CAPTURE_STATE_CHANGE: {
 				captureManager.handleMessage(msg as { action?: string; payload?: { enabled?: boolean }; enabled?: boolean });
 				policyExecutor.applyState();
 				policyExecutor.updateBadge();
@@ -95,7 +91,7 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 				// 同时通知 Popup (如果是来自 Background 的自动更新)
 				safeSend(() => new Promise<void>((resolve, reject) => {
 					chrome.runtime.sendMessage({
-						action: 'CAPTURE_STATE_CHANGE',
+						action: Actions.CAPTURE_STATE_CHANGE,
 						payload: { enabled: captureManager.isActive() }
 					}, {}, (response: any) => {
 						if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
@@ -107,12 +103,13 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 				break;
 			}
 
-			// ========== 全局设置更新 ==========
-			case 'GLOBAL_SETTINGS_UPDATE': {
+			case Actions.GLOBAL_SETTINGS_UPDATE: {
 				settingsManager.handleMessage(msg as { action?: string; settings?: { osdEnabled?: boolean; visualizerEnabled?: boolean; lang?: string } });
 				// 关键：修改设置也视为用户交互（表达了增强意图）
 				state.userHasInteracted = true;
+				// 重新应用策略并同步角标颜色
 				policyExecutor.applyState();
+				policyExecutor.updateBadge();
 				sendResponse({ success: true });
 				break;
 			}

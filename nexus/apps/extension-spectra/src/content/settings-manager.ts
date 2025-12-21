@@ -5,6 +5,7 @@
  */
 
 import type { NexusMessenger } from '@nexus/kernel';
+import { Actions } from '@nexus/contracts';
 import { safeSend, isExtensionContextValid } from './context-guard';
 
 /** 全局设置接口 */
@@ -51,7 +52,7 @@ export function createSettingsManager(messenger: NexusMessenger) {
 
 		/** 设置消息监听器 (在 onMessage 回调中调用) */
 		handleMessage(message: { action?: string; settings?: Partial<ContentGlobalSettings> }): boolean {
-			if (message.action === 'GLOBAL_SETTINGS_UPDATE' || message.action === 'globalSettingsUpdate') {
+			if (message.action === Actions.GLOBAL_SETTINGS_UPDATE) {
 				if (message.settings) {
 					settings = { ...settings, ...message.settings };
 				}

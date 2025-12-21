@@ -3,6 +3,7 @@
  */
 
 import type { AudioConfig } from '@nexus/kernel';
+import { Actions } from '@nexus/contracts';
 import type { CardInternalState } from './types';
 
 /** 消息监听参数 */
@@ -29,7 +30,7 @@ export function setupCardMessaging(params: MessagingParams): () => void {
 
     // 1. UI_SYNC: 来自 Content Script 的配置同步
     const isFromTargetTab = (sender.tab?.id === tabId) || (payload.tabId === tabId);
-    if (action === 'UI_SYNC' && isFromTargetTab) {
+    if (action === Actions.UI_SYNC && isFromTargetTab) {
       const config = payload.config || msg.config;
       if (config) {
         if (state.isDragging) {
@@ -48,7 +49,7 @@ export function setupCardMessaging(params: MessagingParams): () => void {
     }
 
     // 2. CAPTURE_STATE_CHANGE: Capture 状态变化
-    if (action === 'CAPTURE_STATE_CHANGE') {
+    if (action === Actions.CAPTURE_STATE_CHANGE) {
       if (payload.tabId === tabId || sender.tab?.id === tabId || payload.tabId === undefined) {
         state.isCaptureActive = !!payload.enabled;
         // 同步更新 actualMode，如果是劫持则强制为 CAPTURE
