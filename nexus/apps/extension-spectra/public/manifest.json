@@ -1,0 +1,84 @@
+{
+  "manifest_version": 3,
+  "name": "Media Master 2026",
+  "version": "24.0",
+  "description": "10-Band EQ, CORS Unlock, Per-Site Audio Manager.",
+  "permissions": [
+    "tabs",
+    "scripting",
+    "storage",
+    "tabCapture",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "128": "icon.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "injector.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "offscreen.html",
+        "offscreen.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ],
+  "commands": {
+    "volume_up": {
+      "suggested_key": {
+        "default": "Alt+Up",
+        "mac": "Alt+Up"
+      },
+      "description": "Volume +10%"
+    },
+    "volume_down": {
+      "suggested_key": {
+        "default": "Alt+Down",
+        "mac": "Alt+Down"
+      },
+      "description": "Volume -10%"
+    },
+    "toggle_mute": {
+      "suggested_key": {
+        "default": "Alt+M",
+        "mac": "Alt+M"
+      },
+      "description": "Mute/Unmute"
+    }
+  },
+  "icons": {
+    "128": "icon.png"
+  }
+}

@@ -6,24 +6,23 @@ trigger: always_on
 
 ## 🚨 必读入口
 
-在 nexus-os/ 中工作时，必须先阅读：
-1. nexus-os/README.AI.md - AI 唯一入口点
+在 nexus/ 中工作时，必须先阅读：
+1. nexus/README.AI.md - AI 唯一入口点
 
 ## 📖 阅读顺序
 
-Level 1: nexus-os/README.AI.md
-Level 2: nexus-os/packages/contracts/src/*.contracts.ts
+Level 1: nexus/README.AI.md
+Level 2: nexus/packages/contracts/src/*.contracts.ts
 Level 3: 目标模块的 .ai-context.md
 Level 4: 仅在必要时读取实现代码
 
-## 🔄 同步更新规则
+## 🔄 工作流 (Workflows)
 
-| 修改内容 | 必须同步更新 |
-|---------|------------|
-| nexus-kernel 的消息类型 | contracts/messages.contracts.ts |
-| audio-engine 的公共 API | contracts/audio.contracts.ts |
-| 新增模块 | 创建 .ai-context.md |
-| 删除功能 | 同步删除 contracts 定义 |
+不再记忆具体操作步骤，**必须**遵循以下标准工作流：
+- **任务结束** -> `/feature-finish` (含文档同步检查)
+- **新模块** -> `/new-module`
+- **发版** -> `/release-spectra`
+- **加依赖** -> `/add-dependency`
 
 ## ❌ 禁止事项
 
