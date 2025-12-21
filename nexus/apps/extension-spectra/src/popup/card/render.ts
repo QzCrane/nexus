@@ -5,6 +5,8 @@
 import type { CardUIElements } from '../types';
 import type { CardInternalState } from './types';
 import { COLORS, AUDIO_UI } from '../constants';
+import type { GlobalSettings } from '@nexus/kernel';
+import { predictCapture } from '@nexus/audio-engine';
 
 /** 渲染参数 */
 export interface RenderParams {
@@ -14,13 +16,15 @@ export interface RenderParams {
   drawEqCurve: (color: string) => void;
   /** 动态获取频谱可视化是否启用 (每次渲染时调用) */
   getVizEnabled: () => boolean;
+  /** 动态获取全局设置 */
+  getGlobalSettings: () => GlobalSettings;
 }
 
 /**
  * 创建卡片渲染函数
  */
 export function createRenderFn(params: RenderParams): () => void {
-  const { ui, state, getCapturing, drawEqCurve, getVizEnabled } = params;
+  const { ui, state, drawEqCurve, getVizEnabled, getGlobalSettings } = params;
 
   return () => {
     if (!ui.card) return;
@@ -43,15 +47,20 @@ export function createRenderFn(params: RenderParams): () => void {
     ui.val.innerText = muted ? 'MUTE' : `${config.volume}%`;
     ui.mute.classList.toggle('active', muted);
 
-    // 动态颜色 (根据 Capture 状态)
-    const isCapturing = getCapturing();
+    // 使用共享的颜色预判函数
+    const settings = getGlobalSettings();
+    const isPredictedCapture = predictCapture({
+      config,
+      isRestricted: state.isRestrictedSite,
+      visualizerEnabled: settings.visualizerEnabled,
+    });
     const isMutedOrZero = muted || config.volume === 0;
 
     // Capture 模式 = 紫色, Native 模式 = 蓝色, 静音 = 灰色
     let fillColor: string;
     if (isMutedOrZero) {
       fillColor = COLORS.MUTED;
-    } else if (isCapturing) {
+    } else if (isPredictedCapture) {
       fillColor = COLORS.CAPTURE;
     } else {
       fillColor = COLORS.NATIVE;

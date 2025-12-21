@@ -1,17 +1,12 @@
 import {
-  AudioMode as AudioModeConst,
-  AudioModeType,
   DefaultRestrictedDomains,
   DefaultSiteRules,
-  DefaultPreviewRules,
-  UrlDetection,
   SitePlayPageRule
 } from './constants.js';
 
 import type {
   IPolicyEngine,
   PolicyContext,
-  UrlInfo,
   AudioMode,
   SiteRule
 } from '@nexus/contracts';
@@ -20,26 +15,25 @@ import type {
 export interface PolicyEngineConfig {
   /** 用户自定义的受限域名列表 */
   userRegistry?: string[];
-  /** 自定义站点规则 (覆盖默认规则) */
-  customSiteRules?: SitePlayPageRule[];
 }
 
 /**
- * 策略引擎类
+ * 策略引擎类 (v3.0 极简版)
  * 
- * 严格遵循契约实现，负责全站音频模式决策。
+ * 决策规则：
+ * 1. 无高级需求 → NATIVE_LITE
+ * 2. 有需求 + 非受限 → NATIVE_WEBAUDIO
+ * 3. 有需求 + 受限 → CAPTURE
  */
 export class PolicyEngine implements IPolicyEngine {
   private readonly restrictedDomains: readonly string[];
   private readonly userRegistry: string[];
-  private readonly siteRules: readonly SitePlayPageRule[];
-  private readonly previewRules: readonly SitePlayPageRule[];
+  private readonly siteRules: readonly SitePlayPageRule[]; // 保留用于 getRuleForDomain
 
   constructor(config: PolicyEngineConfig = {}) {
     this.restrictedDomains = DefaultRestrictedDomains;
     this.userRegistry = config.userRegistry ?? [];
-    this.siteRules = config.customSiteRules ?? DefaultSiteRules;
-    this.previewRules = DefaultPreviewRules;
+    this.siteRules = DefaultSiteRules;
   }
 
   // ============================================
@@ -48,6 +42,9 @@ export class PolicyEngine implements IPolicyEngine {
 
   /**
    * 判断是否需要高级音频处理能力
+   * 
+   * 逻辑与 color-predictor.needsAdvancedProcessing 相同，
+   * 但接口不同（使用 PolicyContext 而非 ColorContext）
    * 
    * 任一条件满足即返回 true：
    * - 音量超过 100%
@@ -85,100 +82,38 @@ export class PolicyEngine implements IPolicyEngine {
   // ============================================
 
   /**
-   * 计算期望的音频处理模式 (V2 简化策略)
+   * 计算期望的音频处理模式 (v3.0 极简策略)
    * 
-   * 决策表:
-   * | # | 页面 | 高级需求 | 受限 | 用户操作 | 模式 |
-   * |---|------|---------|------|---------|------|
-   * | 1 | 任意 | ❌ | 任意 | 任意 | NATIVE_LITE |
-   * | 2 | 播放 | ✅ | ❌ | - | NATIVE_WEBAUDIO |
-   * | 3 | 播放 | ✅ | ✅ | - | CAPTURE |
-   * | 4 | 预览 | ✅ | ❌ | 任意 | NATIVE_WEBAUDIO |
-   * | 5 | 预览 | ✅ | ✅ | ❌ | NATIVE_LITE |
-   * | 6 | 预览 | ✅ | ✅ | ✅ | CAPTURE |
+   * 决策表：
+   * | # | 高级需求 | 受限站点 | 模式 |
+   * |---|---------|---------|------|
+   * | 1 | ❌ | 任意 | NATIVE_LITE |
+   * | 2 | ✅ | ❌ | NATIVE_WEBAUDIO |
+   * | 3 | ✅ | ✅ | CAPTURE |
+   * 
+   * 高级需求 = 音量>100% || 频谱开 || EQ非零 || 压缩器 || 低音
    */
   public readonly calculateMode = (context: PolicyContext): AudioMode => {
-    const { urlInfo, enabled, userInteracted, forceNative } = context;
+    const { enabled, forceNative, urlInfo } = context;
 
-    // 禁用时退出，使用安全的原生精简模式 (🔵 蓝)
+    // 禁用时使用安全模式
     if (!enabled) {
       return 'NATIVE_LITE';
     }
 
-    // 核心判断: 是否有高级需求
-    const needsAdvanced = this.needsAdvancedProcessing(context);
-
-    // ========== 场景 1: 无高级需求 → NATIVE_LITE (最省 CPU) ==========
-    if (!needsAdvanced) {
+    // 规则1: 无高级需求 → NATIVE_LITE (最省 CPU)
+    if (!this.needsAdvancedProcessing(context)) {
       return 'NATIVE_LITE';
     }
 
-    // ========== 有高级需求的情况 ==========
-    const isPlayPage = this.isVideoPlayPage(urlInfo);
+    // 规则2: 有需求 + 非受限 → NATIVE_WEBAUDIO
     const restricted = forceNative ? false : this.isRestrictedSite(urlInfo.domain);
-
-    // 非受限站点: 统一使用 NATIVE_WEBAUDIO (🔵 蓝)
     if (!restricted) {
       return 'NATIVE_WEBAUDIO';
     }
 
-    // ========== 受限站点 + 有高级需求 ==========
-
-    // 场景 3: 播放页 + 受限 → CAPTURE (🟣 紫)
-    if (isPlayPage) {
-      return 'CAPTURE';
-    }
-
-    // 场景 5/6: 预览页 + 受限
-    // 用户未操作 → NATIVE_LITE (等待用户意图明确)
-    // 用户已操作 → CAPTURE
-    return userInteracted ? 'CAPTURE' : 'NATIVE_LITE';
-  }
-
-  /**
-   * 判断当前 URL 是否为预览页 (而非正式播放页)
-   */
-  public isPreviewPage(url: UrlInfo): boolean {
-    const { domain: hostname, pathname, fullUrl } = url;
-
-    // 🔴 优先检测：如果 URL 有视频参数，则绝对不是预览页
-    // 例如 /jingxuan?modal_id=xxx 虽然路径是预览页，但有弹窗视频播放
-    try {
-      const parsed = new URL(fullUrl);
-      const hasVideoParam = UrlDetection.VIDEO_PARAMS.some(p => parsed.searchParams.has(p));
-      if (hasVideoParam) {
-        return false; // 有视频参数 = 正在播放 = 不是预览页
-      }
-    } catch {
-      // URL 解析失败，继续后续检测
-    }
-
-    // 1. 根路径判断需站点特定。通用规则中不再包含强制根路径为预览页。
-    // 因为像抖音这样的站点，其首页就是主播放页。
-    if (pathname === '/' || pathname === '') {
-      // B站和 YTB 的首页确实是预览性质（推荐墙）
-      const isSearchOrHome = hostname.includes('bilibili.com') || hostname.includes('youtube.com');
-      if (isSearchOrHome) return true;
-    }
-
-    // 2. 匹配显式预览规则
-    for (const rule of this.previewRules) {
-      if (!hostname.includes(rule.hostPattern)) continue;
-
-      // 检查子域名 (如 search.bilibili.com)
-      if (rule.liveSubdomains) {
-        for (const sub of rule.liveSubdomains) {
-          if (hostname.startsWith(sub + '.')) return true;
-        }
-      }
-
-      // 检查路径匹配 (如 /search)
-      if (rule.pathPatterns) {
-        if (rule.pathPatterns.some(p => this.matchesPathPattern(pathname, p))) return true;
-      }
-    }
-
-    return false;
+    // 规则3: 有需求 + 受限 → CAPTURE
+    return 'CAPTURE';
   }
 
   /**
@@ -202,75 +137,17 @@ export class PolicyEngine implements IPolicyEngine {
 
   /**
    * 获取域名的特殊规则 (契约实现)
+   * @deprecated v3.0 不再使用播放页规则
    */
   public getRuleForDomain(domain: string): SiteRule | null {
     const rule = this.siteRules.find(r => domain.includes(r.hostPattern));
     if (!rule) return null;
 
     return {
-      type: 'force_capture', // 默认行为
+      type: 'force_capture',
       pattern: rule.hostPattern,
       reason: rule.name
     };
-  }
-
-  /**
-   * 判断当前 URL 是否为视频播放页
-   * 
-   * 简化架构 (v24.1)：优先通用规则，站点规则仅用于直播子域名
-   * 
-   * 检测优先级：
-   * 1. 视频参数 (modal_id/v/bvid 等) → 绝对播放页
-   * 2. 通用路径模式 (/video//watch/play 等) → 高概率播放页
-   * 3. Hash 关键词 → 可能是播放页
-   * 4. 直播子域名 (live.xxx.com) → 整站播放页
-   * 5. 预览页排除 → 最后检查
-   */
-  public isVideoPlayPage(url: UrlInfo): boolean {
-    const { domain: hostname, pathname, fullUrl } = url;
-
-    // 解析 URL 参数和 Hash
-    let searchParams = new URLSearchParams();
-    let hash = '';
-    try {
-      const parsed = new URL(fullUrl);
-      searchParams = parsed.searchParams;
-      hash = parsed.hash;
-    } catch {
-      // 容错
-    }
-
-    // ========== 1. 视频参数检测 (最高优先级) ==========
-    const hasVideoParam = UrlDetection.VIDEO_PARAMS.some(p => searchParams.has(p));
-    if (hasVideoParam) {
-      return true;
-    }
-
-    // ========== 2. 通用路径模式检测 ==========
-    if (UrlDetection.GENERIC_PATH_PATTERNS.some(pattern => pattern.test(pathname))) {
-      return true;
-    }
-
-    // ========== 3. Hash 关键词检测 ==========
-    if (UrlDetection.HASH_VIDEO_KEYWORDS.test(hash)) {
-      return true;
-    }
-
-    // ========== 4. 直播子域名检测 ==========
-    for (const rule of this.siteRules) {
-      if (!hostname.includes(rule.hostPattern)) continue;
-      if (rule.liveSubdomains?.some(sub => hostname.startsWith(sub + '.'))) {
-        return true;
-      }
-    }
-
-    // ========== 5. 预览页排除 ==========
-    if (this.isPreviewPage(url)) {
-      return false;
-    }
-
-    // 不确定的情况：默认非播放页 (省 CPU)
-    return false;
   }
 
   // ============================================

@@ -7,16 +7,17 @@
  * 
  * 设计原则：
  * - 使用 hash 去重，避免高频重复更新
- * - 使用 safeSend 防止扩展重载错误
+ * - 使用策略预判颜色，保证组件一致性
  */
 
-import { AudioMode } from '@nexus/audio-engine';
+import { AudioMode, predictCapture } from '@nexus/audio-engine';
 import { safeSend } from '../context-guard';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../types';
 import type { InternalState } from './types';
 
 /**
  * 判断当前是否处于真正的劫持工作状态
+ * @deprecated 使用 predictCapture 代替
  */
 export function isEffectivelyCapturing(
 	state: PolicyExecutorState,
@@ -25,18 +26,10 @@ export function isEffectivelyCapturing(
 	return state.activeMode === AudioMode.CAPTURE && captureManager.isActive();
 }
 
-/** 首次角标更新延迟 (ms)，等待 Capture 激活完成 */
-const FIRST_BADGE_DELAY_MS = 500;
-
-/** 是否已完成首次延迟 */
-let firstBadgeDelayDone = false;
-
 /**
  * 更新扩展图标角标
  * 
- * 优化策略：
- * - 使用 hash 去重，避免高频重复更新
- * - 首次更新延迟 500ms，等待 Capture 激活完成，避免蓝→紫闪烁
+ * 使用策略预判颜色（predictCapture），而非等待 Capture 激活状态
  * 
  * @param deps 依赖对象
  * @param state 执行器状态
@@ -47,30 +40,25 @@ export function updateBadge(
 	state: PolicyExecutorState,
 	internalState: InternalState
 ): void {
-	const { messenger, captureManager } = deps;
-	const effectivelyCapturing = isEffectivelyCapturing(state, captureManager);
-	const hash = `${state.config.volume}_${state.config.muted || false}_${effectivelyCapturing}`;
+	const { messenger, policyEngine, settingsManager } = deps;
 
-	// 只有状态变化时才发送消息，避免高频刷新导致角标闪烁
+	// 使用共享的颜色预判函数
+	const isPredictedCapture = predictCapture({
+		config: state.config,
+		isRestricted: policyEngine.isRestrictedSite(location.hostname),
+		visualizerEnabled: settingsManager.get().visualizerEnabled,
+	});
+
+	const hash = `${state.config.volume}_${state.config.muted || false}_${isPredictedCapture}`;
+
+	// 只有状态变化时才发送消息，避免高频重复更新
 	if (hash === internalState.lastBadgeHash) return;
-
-	// 首次更新时延迟发送，等待 Capture 激活完成
-	if (!firstBadgeDelayDone && !captureManager.isActive()) {
-		setTimeout(() => {
-			firstBadgeDelayDone = true;
-			// 延迟后重新触发更新
-			updateBadge(deps, state, internalState);
-		}, FIRST_BADGE_DELAY_MS);
-		return;
-	}
-	firstBadgeDelayDone = true;
-
 	internalState.lastBadgeHash = hash;
 
 	safeSend(() => messenger.send('BADGE_UPDATE', {
 		volume: state.config.volume,
 		muted: state.config.muted,
-		isCapture: effectivelyCapturing,
+		isCapture: isPredictedCapture,
 	})).catch(() => { });
 }
 
@@ -86,9 +74,16 @@ export function broadcastUI(
 	state: PolicyExecutorState,
 	internalState: InternalState
 ): void {
-	const { captureManager } = deps;
-	const effectivelyCapturing = isEffectivelyCapturing(state, captureManager);
-	const syncHash = `${JSON.stringify(state.config)}_${effectivelyCapturing}_${state.activeMode}`;
+	const { policyEngine, settingsManager } = deps;
+
+	// 使用共享的颜色预判函数
+	const isPredictedCapture = predictCapture({
+		config: state.config,
+		isRestricted: policyEngine.isRestrictedSite(location.hostname),
+		visualizerEnabled: settingsManager.get().visualizerEnabled,
+	});
+
+	const syncHash = `${JSON.stringify(state.config)}_${isPredictedCapture}_${state.activeMode}`;
 
 	// 只有状态变化时才发送消息，避免高频刷新导致 UI 闪烁/性能问题
 	if (syncHash === internalState.lastSyncHash) return;
@@ -101,7 +96,7 @@ export function broadcastUI(
 			payload: {
 				config: state.config,
 				mode: state.activeMode as any,
-				isCaptureActive: effectivelyCapturing
+				isCaptureActive: isPredictedCapture
 			}
 		}, {}, (response: any) => {
 			if (chrome.runtime.lastError) reject(chrome.runtime.lastError);

@@ -100,10 +100,7 @@ export function createPolicyExecutor(deps: PolicyExecutorDeps, state: PolicyExec
 			url: urlInfo.domain + urlInfo.pathname,
 			volume: state.config.volume,
 			isRestricted: restricted,
-			isPlayPage: policyEngine.isVideoPlayPage(urlInfo),
 			visualizerEnabled: settings.visualizerEnabled,
-			userInteracted: state.userHasInteracted,
-			forceNative: internalState.corsStatus === 'SAFE',
 			决策结果: desiredMode
 		});
 

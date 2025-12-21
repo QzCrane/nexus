@@ -12,11 +12,12 @@
  */
 
 import type { AudioConfig } from '@nexus/kernel';
+import { predictCapture } from '@nexus/audio-engine';
 import { showOSD } from '../osd';
 import { safeSend } from '../context-guard';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../types';
 import type { InternalState } from './types';
-import { updateBadge, isEffectivelyCapturing } from './badge-sync';
+import { updateBadge } from './badge-sync';
 
 /**
  * 统一配置更新接口 - 解决静音/恢复逻辑冲突的核心架构
@@ -36,7 +37,7 @@ export function updateConfig(
 	options: { showOSD?: boolean; unMute?: boolean } = {},
 	applyStateFn: () => void
 ): void {
-	const { messenger, captureManager, settingsManager } = deps;
+	const { messenger, policyEngine, settingsManager } = deps;
 
 	// 1. 标记用户已交互 (用于策略判定)
 	state.userHasInteracted = true;
@@ -55,10 +56,18 @@ export function updateConfig(
 
 	// 4. 触发显示和同步
 	if (options.showOSD) {
+		const settings = settingsManager.get();
+		// 使用共享的颜色预判函数
+		const predictedCapture = predictCapture({
+			config: newConfig,
+			isRestricted: policyEngine.isRestrictedSite(location.hostname),
+			visualizerEnabled: settings.visualizerEnabled,
+		});
+
 		showOSD(
 			state.config,
-			isEffectivelyCapturing(state, captureManager),
-			settingsManager.get(),
+			predictedCapture,
+			settings,
 			state.isPopupOpen
 		);
 	}
@@ -66,3 +75,4 @@ export function updateConfig(
 	// 5. 将配置持久化到 Background
 	safeSend(() => messenger.send('AUDIO_SET_CONFIG', { config: state.config })).catch(() => { });
 }
+

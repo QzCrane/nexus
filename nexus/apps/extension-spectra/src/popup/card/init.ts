@@ -2,7 +2,7 @@
  * SPECTRA Popup - initCard 主函数
  */
 
-
+import { predictCapture } from '@nexus/audio-engine';
 import type { GlobalSettings } from '@nexus/kernel';
 import type { I18NDict, ContentStatusResponse } from '../types';
 import { getDomain, sendToTab, sendToBackground, ensureInjected } from '../utils/dom';
@@ -41,18 +41,23 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   const domain = getDomain(tab.url || '');
   const effectiveRegistry = getEffectiveRegistry(userRegistry);
 
-  // 根据 Content Script 返回的模式判断是否受限（不再使用错误的 isWellKnownSite 逻辑）
+  // 判断是否受限站点
   const isRestrictedSite = effectiveRegistry.some(
     (d) => domain === d || domain.endsWith('.' + d)
   );
 
-  // 🔴 关键：根据 mode 和 isCaptureActive 预判颜色
-  // 如果 mode 是 CAPTURE 或已激活 Capture，初始就显示紫色
-  const predictedCapture = isCaptureActive || status?.mode === 'CAPTURE';
+  // 使用共享的 predictCapture 函数进行初始颜色预判
+  const config = status ? cleanConfig(status.config) : cleanConfig(null);
+  const settings = getGlobalSettings();
+  const initialIsCaptureActive = predictCapture({
+    config,
+    isRestricted: isRestrictedSite,
+    visualizerEnabled: settings.visualizerEnabled,
+  });
 
   const state: CardInternalState = {
-    config: status ? cleanConfig(status.config) : cleanConfig(null),
-    isCaptureActive: !!predictedCapture, // 使用预判值
+    config,
+    isCaptureActive: initialIsCaptureActive,
     userInteracted: status?.userInteracted ?? false,
     isRestrictedSite,
     actualMode: status?.mode ?? null,
@@ -79,6 +84,7 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     getCapturing,
     drawEqCurve,
     getVizEnabled: () => getGlobalSettings().visualizerEnabled !== false,
+    getGlobalSettings,
   });
 
   // 创建更新函数
