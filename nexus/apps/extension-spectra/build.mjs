@@ -83,4 +83,7 @@ await buildEntry('src/content/index.ts', 'content', 'SpectraContent');
 // 4. 构建 popup.js
 await buildEntry('src/popup/index.ts', 'popup', 'SpectraPopup');
 
+// 5. 构建 offscreen.js
+await buildEntry('src/offscreen/index.ts', 'offscreen', 'SpectraOffscreen');
+
 console.log('\n🎉 Build complete! Output: apps/extension-spectra/dist');

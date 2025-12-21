@@ -3,6 +3,7 @@
  */
 
 import type { GlobalSettings } from '@nexus/kernel';
+import { DefaultRestrictedDomains } from '@nexus/audio-engine';
 import type { I18NDict, RenderCallback } from '../types';
 import { getSettingsUIElements, $$ } from '../utils/dom';
 import { getDict, TIMING } from '../constants';
@@ -24,14 +25,6 @@ const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   lang: 'en-US',
 };
 
-/** 默认受限域名列表 */
-const DEFAULT_RESTRICTED_DOMAINS = [
-  'douyin.com',
-  'live.douyin.com',
-  'netflix.com',
-  'spotify.com',
-];
-
 /**
  * 初始化设置页
  * @returns 初始状态
@@ -45,7 +38,7 @@ export async function initSettings(): Promise<SettingsState> {
   const userRegistry: string[] = storage.userRegistry || [];
 
   // 合并用户列表和默认列表
-  const effectiveList = Array.from(new Set([...userRegistry, ...DEFAULT_RESTRICTED_DOMAINS]));
+  const effectiveList = Array.from(new Set([...userRegistry, ...DefaultRestrictedDomains]));
 
   // 初始化 UI 状态
   if (ui.swOsd) ui.swOsd.checked = gSettings.osdEnabled;
@@ -180,5 +173,5 @@ function updateCardsI18n(dict: I18NDict, vizEnabled: boolean): void {
 
 /** 获取合并后的受限域名列表 */
 export function getEffectiveRegistry(userRegistry: string[]): string[] {
-  return Array.from(new Set([...userRegistry, ...DEFAULT_RESTRICTED_DOMAINS]));
+  return Array.from(new Set([...userRegistry, ...DefaultRestrictedDomains]));
 }

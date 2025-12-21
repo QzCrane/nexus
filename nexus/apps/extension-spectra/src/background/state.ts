@@ -5,6 +5,7 @@
  */
 
 import { createRouter, StorageRepository } from '@nexus/kernel';
+import { UIColors } from '@nexus/audio-engine';
 
 // ============================================
 // 类型定义
@@ -18,13 +19,9 @@ export interface BadgeInfo {
 	text: string;
 }
 
-/** 颜色常量 - 与原 config.js COLORS 一致 */
-export const BADGE_COLORS = {
-	CAPTURE: '#7c3aed',   // 紫色 - 劫持模式
-	NATIVE: '#2563eb',    // 蓝色 - 原生模式
-	MUTED: '#9ca3af',     // 灰色 - 静音
-	WHITE: '#ffffff'
-} as const;
+/** 颜色常量 (从 @nexus/audio-engine 统一导入) */
+export const BADGE_COLORS = UIColors;
+
 
 // ============================================
 // 单例实例

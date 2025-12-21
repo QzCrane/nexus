@@ -2,17 +2,10 @@
  * SPECTRA Popup - 颜色常量
  */
 
-/** UI 颜色定义 */
-export const COLORS = {
-  /** 紫色 - Capture 劫持模式 */
-  CAPTURE: '#7c3aed',
-  /** 蓝色 - Native 原生模式 */
-  NATIVE: '#2563eb',
-  /** 灰色 - 静音状态 */
-  MUTED: '#9ca3af',
-  /** 白色 */
-  WHITE: '#ffffff',
-} as const;
+import { UIColors } from '@nexus/audio-engine';
+
+/** UI 颜色定义 (从 @nexus/audio-engine 统一导入) */
+export const COLORS = UIColors;
 
 /** EQ 曲线渐变色 */
 export const EQ_GRADIENT = {
