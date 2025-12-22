@@ -31,6 +31,16 @@ export const ZH_CN: I18NDict = {
   grpGeneral: '通用',
   grpAdvanced: '高级',
   autoAddedToast: (domain: string) => `🔧 已自动添加 ${domain} 到劫持列表`,
+  // 主题相关
+  themeLabel: '主题',
+  themeSub: '选择你偏好的配色方案',
+  themeLight: '浅色',
+  themeDark: '深色',
+  themeSystem: '跟随系统',
+  // 导航按钮 tooltip
+  btnThemeTooltip: '切换主题',
+  btnSettingsTooltip: '设置',
+  btnShortcutsTooltip: '快捷键',
 };
 
 /** 日语 */
@@ -60,6 +70,16 @@ export const JA_JP: I18NDict = {
   grpGeneral: '一般',
   grpAdvanced: '詳細',
   autoAddedToast: (domain: string) => `🔧 ${domain} をキャプチャリストに自動追加しました`,
+  // テーマ関連
+  themeLabel: 'テーマ',
+  themeSub: 'お好みのカラースキームを選択',
+  themeLight: 'ライト',
+  themeDark: 'ダーク',
+  themeSystem: 'システム',
+  // ナビボタン tooltip
+  btnThemeTooltip: 'テーマ切り替え',
+  btnSettingsTooltip: '設定',
+  btnShortcutsTooltip: 'ショートカット',
 };
 
 /** 韩语 */
@@ -88,5 +108,15 @@ export const KO_KR: I18NDict = {
   grpInterface: '인터페이스',
   grpGeneral: '일반',
   grpAdvanced: '고급',
-  autoAddedToast: (domain: string) => `🔧 ${domain}을(를) 캡처 목록에 자동 추가했습니다`,
+  autoAddedToast: (domain: string) => `🔧 ${domain}을(를) 캕처 목록에 자동 추가했습니다`,
+  // 테마 관련
+  themeLabel: '테마',
+  themeSub: '선호하는 색구성표 선택',
+  themeLight: '라이트',
+  themeDark: '다크',
+  themeSystem: '시스템',
+  // 내비 버튼 tooltip
+  btnThemeTooltip: '테마 전환',
+  btnSettingsTooltip: '설정',
+  btnShortcutsTooltip: '단축키',
 };

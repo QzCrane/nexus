@@ -74,7 +74,8 @@ export type {
 export type {
   GlobalSettings,
   SupportedLanguage,
-  IStorageRepository
+  IStorageRepository,
+  ThemeMode
 } from './settings.contracts.js';
 
 export { DEFAULT_GLOBAL_SETTINGS } from './settings.contracts.js';

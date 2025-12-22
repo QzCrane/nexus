@@ -31,6 +31,16 @@ export const ES_ES: I18NDict = {
   grpGeneral: 'General',
   grpAdvanced: 'Avanzado',
   autoAddedToast: (domain: string) => `🔧 ${domain} añadido automáticamente a la lista de captura`,
+  // Tema
+  themeLabel: 'Tema',
+  themeSub: 'Elige tu esquema de colores preferido',
+  themeLight: 'Claro',
+  themeDark: 'Oscuro',
+  themeSystem: 'Sistema',
+  // Tooltips de navegación
+  btnThemeTooltip: 'Cambiar tema',
+  btnSettingsTooltip: 'Configuración',
+  btnShortcutsTooltip: 'Atajos de teclado',
 };
 
 /** 法语 */
@@ -60,6 +70,16 @@ export const FR_FR: I18NDict = {
   grpGeneral: 'Général',
   grpAdvanced: 'Avancé',
   autoAddedToast: (domain: string) => `🔧 ${domain} ajouté automatiquement à la liste de capture`,
+  // Thème
+  themeLabel: 'Thème',
+  themeSub: 'Choisissez votre palette de couleurs préférée',
+  themeLight: 'Clair',
+  themeDark: 'Sombre',
+  themeSystem: 'Système',
+  // Tooltips de navigation
+  btnThemeTooltip: 'Changer le thème',
+  btnSettingsTooltip: 'Paramètres',
+  btnShortcutsTooltip: 'Raccourcis clavier',
 };
 
 /** 德语 */
@@ -89,6 +109,16 @@ export const DE_DE: I18NDict = {
   grpGeneral: 'Allgemein',
   grpAdvanced: 'Erweitert',
   autoAddedToast: (domain: string) => `🔧 ${domain} automatisch zur Capture-Liste hinzugefügt`,
+  // Thema
+  themeLabel: 'Thema',
+  themeSub: 'Wählen Sie Ihr bevorzugtes Farbschema',
+  themeLight: 'Hell',
+  themeDark: 'Dunkel',
+  themeSystem: 'System',
+  // Navigations-Tooltips
+  btnThemeTooltip: 'Thema wechseln',
+  btnSettingsTooltip: 'Einstellungen',
+  btnShortcutsTooltip: 'Tastenkürzel',
 };
 
 /** 俄语 */
@@ -118,4 +148,14 @@ export const RU_RU: I18NDict = {
   grpGeneral: 'Общие',
   grpAdvanced: 'Расширенные',
   autoAddedToast: (domain: string) => `🔧 ${domain} автоматически добавлен в список захвата`,
+  // Тема
+  themeLabel: 'Тема',
+  themeSub: 'Выберите предпочитаемую цветовую схему',
+  themeLight: 'Светлая',
+  themeDark: 'Тёмная',
+  themeSystem: 'Система',
+  // Тултипы бутон навигации
+  btnThemeTooltip: 'Сменить тему',
+  btnSettingsTooltip: 'Настройки',
+  btnShortcutsTooltip: 'Горячие клавиши',
 };

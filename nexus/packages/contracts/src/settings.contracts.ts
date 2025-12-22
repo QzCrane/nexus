@@ -11,6 +11,11 @@
 // ============================================
 
 /**
+ * 主题模式
+ */
+export type ThemeMode = 'light' | 'dark' | 'system';
+
+/**
  * 全局设置
  */
 export interface GlobalSettings {
@@ -20,16 +25,18 @@ export interface GlobalSettings {
   visualizerEnabled: boolean;
   /** 语言 */
   lang: SupportedLanguage;
+  /** 主题模式 */
+  themeMode: ThemeMode;
 }
 
 /**
  * 支持的语言
  */
-export type SupportedLanguage = 
-  | 'en-US' 
-  | 'zh-CN' 
-  | 'zh-TW' 
-  | 'ja-JP' 
+export type SupportedLanguage =
+  | 'en-US'
+  | 'zh-CN'
+  | 'zh-TW'
+  | 'ja-JP'
   | 'ko-KR'
   | 'ru-RU'
   | 'de-DE'
@@ -41,7 +48,8 @@ export type SupportedLanguage =
 export const DEFAULT_GLOBAL_SETTINGS: Readonly<GlobalSettings> = {
   osdEnabled: true,
   visualizerEnabled: true,
-  lang: 'en-US'
+  lang: 'en-US',
+  themeMode: 'system'
 } as const;
 
 // ============================================
@@ -55,26 +63,26 @@ export const DEFAULT_GLOBAL_SETTINGS: Readonly<GlobalSettings> = {
  */
 export interface IStorageRepository {
   // ========== 音频配置 ==========
-  
+
   /** 获取指定域名的音频配置 */
   getAudioConfig(domain: string): Promise<import('./audio.contracts.js').AudioConfig>;
-  
+
   /** 保存域名的音频配置 */
   setAudioConfig(domain: string, config: Partial<import('./audio.contracts.js').AudioConfig>): Promise<void>;
-  
+
   // ========== 全局设置 ==========
-  
+
   /** 获取全局设置 */
   getGlobalSettings(): Promise<GlobalSettings>;
-  
+
   /** 保存全局设置 */
   setGlobalSettings(settings: Partial<GlobalSettings>): Promise<void>;
-  
+
   // ========== 通用 ==========
-  
+
   /** 监听存储变化 */
   onChanged(callback: (changes: Record<string, { oldValue?: unknown; newValue?: unknown }>) => void): () => void;
-  
+
   /** 清除所有数据 */
   clear(): Promise<void>;
 }

@@ -21,5 +21,6 @@ export const DEFAULT_AUDIO_CONFIG: AudioConfig = {
 export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   osdEnabled: true,
   visualizerEnabled: true,
-  lang: 'en-US'
+  lang: 'en-US',
+  themeMode: 'system'
 };

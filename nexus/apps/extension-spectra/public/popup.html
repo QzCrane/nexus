@@ -12,10 +12,13 @@
           <div class="nav-island">
             <div class="brand">Volume Master <span class="ver">2026</span></div>
             <div class="nav-right">
-              <button id="btn-settings" class="btn-icon" title="Settings">
+              <button id="btn-theme" class="btn-icon" title="Toggle Theme" data-i18n-title="btnThemeTooltip">
+                🖥️
+              </button>
+              <button id="btn-settings" class="btn-icon" title="Settings" data-i18n-title="btnSettingsTooltip">
                 ⚙️
               </button>
-              <button id="btn-shortcuts" class="btn-icon" title="Shortcuts">
+              <button id="btn-shortcuts" class="btn-icon" title="Shortcuts" data-i18n-title="btnShortcutsTooltip">
                 ⌨️
               </button>
             </div>
@@ -96,6 +99,20 @@
                 <option value="fr-FR">Français</option>
                 <option value="de-DE">Deutsch</option>
                 <option value="ru-RU">Русский</option>
+              </select>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-label">
+                <div data-i18n="themeLabel">Theme</div>
+                <div class="setting-sub" data-i18n="themeSub">
+                  Choose your preferred color scheme
+                </div>
+              </div>
+              <select id="set-theme" class="setting-select">
+                <option value="light" data-i18n="themeLight">Light</option>
+                <option value="dark" data-i18n="themeDark">Dark</option>
+                <option value="system" data-i18n="themeSystem">System</option>
               </select>
             </div>
           </div>

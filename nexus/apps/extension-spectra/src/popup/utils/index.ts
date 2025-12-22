@@ -14,3 +14,11 @@ export {
   sendToBackground,
   ensureInjected,
 } from './dom';
+
+// 主题管理工具
+export {
+  applyTheme,
+  getEffectiveTheme,
+  getNextThemeMode,
+  THEME_ICONS
+} from './theme';

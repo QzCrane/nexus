@@ -9,6 +9,25 @@
     --danger: #ef4444;
     --radius: 14px;
     --shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.06);
+    --bg: #f1f5f9;
+    --card-border: #ffffff;
+    --switch-bg: #cbd5e1;
+}
+
+/* 深色模式变量 */
+[data-theme="dark"] {
+    --w: #1e293b;
+    --g0: #334155;
+    --g1: #475569;
+    --g2: #94a3b8;
+    --text: #f1f5f9;
+    --primary: #60a5fa;
+    --active: #34d399;
+    --danger: #f87171;
+    --shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.3);
+    --bg: #0f172a;
+    --card-border: #334155;
+    --switch-bg: #475569;
 }
 html {
     width: 390px;
@@ -23,7 +42,7 @@ body {
     margin: 0;
     padding: 0;
     font-family: 'Inter', system-ui, sans-serif;
-    background: #f1f5f9;
+    background: var(--bg);
     color: var(--text);
     user-select: none;
 }
@@ -71,7 +90,7 @@ body {
     width: 100%;
     padding: 12px;
     box-sizing: border-box;
-    background: #f1f5f9;
+    background: var(--bg);
     opacity: 1;
     pointer-events: auto;
     transition: opacity 0.2s;
@@ -92,7 +111,7 @@ body {
     bottom: 0; /* 填满容器 */
     padding: 12px;
     box-sizing: border-box;
-    background: #f1f5f9;
+    background: var(--bg);
     
     overflow-y: auto; /* 内容超出时内部滚动 */
     
@@ -167,7 +186,7 @@ body {
     padding: 0; /* Items have padding */
     margin-bottom: 12px;
     overflow: hidden;
-    border: 1px solid #fff;
+    border: 1px solid var(--card-border);
 }
 
 .setting-group-title {
@@ -240,7 +259,7 @@ body {
 }
 
 .setting-select:hover {
-    background-color: #fff;
+    background-color: var(--w);
     border-color: var(--primary);
 }
 
@@ -263,7 +282,7 @@ body {
 
 .nice-textarea:focus {
     border-color: var(--primary);
-    background: #fff;
+    background: var(--w);
 }
 
 .setting-actions {
@@ -305,7 +324,7 @@ body {
     padding: 16px;
     margin-bottom: 12px;
     position: relative;
-    border: 1px solid #fff;
+    border: 1px solid var(--card-border);
     transition: opacity 0.2s, transform 0.2s;
     /* 增加微动效 */
     overflow: hidden;
@@ -402,7 +421,7 @@ body {
 
 .btn-text:hover {
     color: var(--primary);
-    background: #fff;
+    background: var(--w);
     border-color: var(--primary);
 }
 
@@ -422,7 +441,7 @@ body {
 .slider-round {
     position: absolute;
     inset: 0;
-    background: #cbd5e1;
+    background: var(--switch-bg);
     border-radius: 24px;
     transition: 0.3s;
 }
@@ -434,7 +453,7 @@ body {
     width: 20px;
     left: 2px;
     bottom: 2px;
-    background: #fff;
+    background: var(--w);
     border-radius: 50%;
     transition: 0.3s;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -540,7 +559,7 @@ input:checked+.slider-round:before {
     align-items: center;
     gap: 8px;
     padding: 12px;
-    background: #fff;
+    background: var(--w);
     border-radius: 10px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
     margin-bottom: 4px;
@@ -595,7 +614,7 @@ input:checked+.slider-round:before {
     -webkit-appearance: none;
     width: 22px;
     height: 22px;
-    background: #fff;
+    background: var(--w);
     border: 2px solid var(--primary);
     border-radius: 50%;
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
@@ -618,7 +637,7 @@ input:checked+.slider-round:before {
     position: absolute;
     height: 6px;
     width: 100%;
-    background: #e2e8f0;
+    background: var(--g1);
     border-radius: 3px;
     top: 7px;
     pointer-events: none;
@@ -684,7 +703,7 @@ input:checked+.slider-round:before {
 }
 
 .eq-island {
-    background: #f8fafc;
+    background: var(--g0);
     border-radius: 12px;
     overflow: hidden;
     border: 1px solid var(--border);
@@ -705,7 +724,7 @@ input:checked+.slider-round:before {
     max-height: 0;
     transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     overflow: hidden;
-    background: #fff;
+    background: var(--w);
 }
 
 .eq-drawer.open {
@@ -768,7 +787,7 @@ input:checked+.slider-round:before {
     top: 20px;
     bottom: 20px;
     width: 2px;
-    background: #e2e8f0;
+    background: var(--g1);
     left: 50%;
     transform: translateX(-50%);
     z-index: 0;
@@ -781,7 +800,7 @@ input:checked+.slider-round:before {
     transform: translate(-50%, -50%);
     width: 8px;
     height: 2px;
-    background: #cbd5e1;
+    background: var(--switch-bg);
     z-index: 0;
 }
 
@@ -804,7 +823,7 @@ input:checked+.slider-round:before {
     -webkit-appearance: none;
     width: 10px;
     height: 10px;
-    background: #fff;
+    background: var(--w);
     border: 2px solid var(--g2);
     border-radius: 50%;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);

@@ -138,6 +138,16 @@ export interface I18NDict {
   grpGeneral: string;
   grpAdvanced: string;
   autoAddedToast: (domain: string) => string;
+  // 主题相关
+  themeLabel: string;
+  themeSub: string;
+  themeLight: string;
+  themeDark: string;
+  themeSystem: string;
+  // 导航按钮 tooltip
+  btnThemeTooltip: string;
+  btnSettingsTooltip: string;
+  btnShortcutsTooltip: string;
 }
 
 /** 所有语言的 I18N 映射 */

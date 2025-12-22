@@ -30,4 +30,14 @@ export const EN_US: I18NDict = {
   grpGeneral: 'General',
   grpAdvanced: 'Advanced',
   autoAddedToast: (domain: string) => `🔧 Auto-added ${domain} to capture list`,
+  // 主题相关
+  themeLabel: 'Theme',
+  themeSub: 'Choose your preferred color scheme',
+  themeLight: 'Light',
+  themeDark: 'Dark',
+  themeSystem: 'System',
+  // 导航按钮 tooltip
+  btnThemeTooltip: 'Toggle Theme',
+  btnSettingsTooltip: 'Settings',
+  btnShortcutsTooltip: 'Keyboard Shortcuts',
 };
