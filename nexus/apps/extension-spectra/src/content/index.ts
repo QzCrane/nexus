@@ -52,7 +52,7 @@ if (
 /**
  * SPECTRA 初始化主函数
  */
-function initSpectra(): void {
+async function initSpectra(): Promise<void> {
   log.info('SPECTRA Initializing... v24.0.1');
 
   // ============ 创建核心组件 ============
@@ -82,8 +82,8 @@ function initSpectra(): void {
   // ============ 设置监听器 ============
   setupPopupConnectionListener(state);
 
-  // ============ 创建策略执行器 ============
-  const policyExecutor = createPolicyExecutor(
+  // ============ 创建策略执行器 (异步，从注册表读取 CORS 状态) ============
+  const policyExecutor = await createPolicyExecutor(
     { messenger, policyEngine, audioController, captureManager, settingsManager },
     state
   );
@@ -132,7 +132,7 @@ async function loadConfigAndApply(
   messenger: ReturnType<typeof createMessenger>,
   state: PolicyExecutorState,
   settingsManager: ReturnType<typeof createSettingsManager>,
-  policyExecutor: ReturnType<typeof createPolicyExecutor>
+  policyExecutor: import('./policy-executor').PolicyExecutor
 ): Promise<void> {
   if (!isExtensionContextValid()) {
     log.debug('Extension context invalidated, skipping config load.');

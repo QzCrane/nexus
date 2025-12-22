@@ -3,18 +3,19 @@
  */
 
 import type { GlobalSettings } from '@nexus/kernel';
-import type { ThemeMode } from '@nexus/contracts';
+import type { ThemeMode, DomainEntry } from '@nexus/contracts';
 import { Actions } from '@nexus/contracts';
 import type { I18NDict, RenderCallback } from '../types';
 import { getSettingsUIElements, $ } from '../utils/dom';
 import { applyTheme, THEME_ICONS, getNextThemeMode } from '../utils/theme';
+import { migrateRegistry, formatEntry, parseEntry } from '../utils/registry-helpers';
 import { TIMING } from '../constants';
 import { applyLang, updateCardsI18n } from './i18n-apply';
 
 /** 设置页状态 */
 export interface SettingsState {
   gSettings: GlobalSettings;
-  userRegistry: string[];
+  registryEntries: DomainEntry[];
   dict: I18NDict;
 }
 
@@ -36,13 +37,15 @@ const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
 export async function initSettings(): Promise<SettingsState> {
   const ui = getSettingsUIElements();
 
-  // 从存储加载设置
-  const storage = await chrome.storage.local.get(['globalSettings', 'userRegistry']);
+  // 从存储加载设置 (兼容新旧两种 key)
+  const storage = await chrome.storage.local.get(['globalSettings', 'restrictedRegistry', 'userRegistry']);
   let gSettings: GlobalSettings = storage.globalSettings || { ...DEFAULT_GLOBAL_SETTINGS };
-  const userRegistry: string[] = storage.userRegistry || [];
+
+  // 读取注册表 (优先使用新 key，fallback 到旧 key)
+  let registryEntries: DomainEntry[] = migrateRegistry(storage.restrictedRegistry || storage.userRegistry);
 
   // 初始化 UI 状态
-  initUIState(ui, gSettings, userRegistry);
+  initUIState(ui, gSettings, registryEntries);
 
   // 初始化主题
   initTheme(gSettings.themeMode ?? 'system');
@@ -85,20 +88,22 @@ export async function initSettings(): Promise<SettingsState> {
   bindThemeButtonEvent(() => gSettings, (s) => { gSettings = s; });
   bindRegistryButton(ui);
 
-  return { gSettings, userRegistry, dict };
+  return { gSettings, registryEntries, dict };
 }
 
 /** 初始化 UI 状态 */
 function initUIState(
   ui: ReturnType<typeof getSettingsUIElements>,
   gSettings: GlobalSettings,
-  userRegistry: string[]
+  registryEntries: DomainEntry[]
 ): void {
-  // 直接显示用户注册表，不再合并默认列表
   if (ui.swOsd) ui.swOsd.checked = gSettings.osdEnabled;
   if (ui.swViz) ui.swViz.checked = gSettings.visualizerEnabled !== false;
   if (ui.selLang) ui.selLang.value = gSettings.lang;
-  if (ui.txtRegistry) ui.txtRegistry.value = userRegistry.join('\n');
+  // 显示域名列表，附带来源标记
+  if (ui.txtRegistry) {
+    ui.txtRegistry.value = registryEntries.map(e => formatEntry(e)).join('\n');
+  }
   if (ui.groupRegistry) {
     ui.groupRegistry.style.display = gSettings.visualizerEnabled !== false ? 'block' : 'none';
   }
@@ -150,7 +155,9 @@ function bindRegistryButton(ui: ReturnType<typeof getSettingsUIElements>): void 
   if (!ui.btnSaveReg) return;
   ui.btnSaveReg.onclick = () => {
     const lines = ui.txtRegistry?.value.split('\n').map((l) => l.trim()).filter((l) => l.length > 0) || [];
-    chrome.storage.local.set({ userRegistry: lines }, () => {
+    // 解析带标记的格式，或作为纯域名处理
+    const entries: DomainEntry[] = lines.map(line => parseEntry(line));
+    chrome.storage.local.set({ restrictedRegistry: entries }, () => {
       if (ui.btnSaveReg) {
         const originalText = ui.btnSaveReg.innerText;
         ui.btnSaveReg.innerText = 'OK!';

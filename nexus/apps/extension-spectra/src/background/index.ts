@@ -24,7 +24,6 @@ import { registerRegistryHandlers } from './handlers/registry';
 import { registerTabStateHandlers } from './handlers/tab-state';
 import { setupShortcutListeners } from './shortcuts';
 import { setupLifecycleListeners } from './lifecycle';
-import { DefaultRestrictedDomains } from '@nexus/audio-engine';
 import { swLog } from '../shared/logger';
 
 // ============================================
@@ -52,17 +51,14 @@ setupLifecycleListeners();
 router.listen();
 
 // ============================================
-// 首次安装初始化
+// 首次安装初始化 (v3.1: 无默认列表，依赖 CORS 检测)
 // ============================================
 
 chrome.runtime.onInstalled.addListener(async (details) => {
 	if (details.reason === 'install') {
-		swLog.info('First install detected, initializing userRegistry...');
-		const existing = await storage.getUserRegistry();
-		if (existing.length === 0) {
-			await storage.setUserRegistry([...DefaultRestrictedDomains]);
-			swLog.info(`Initialized userRegistry with ${DefaultRestrictedDomains.length} default domains.`);
-		}
+		// 初始化空注册表，完全依赖 CORS 预检测
+		await storage.registry.init();
+		swLog.info('Installed: 空注册表已初始化，将依赖 CORS 预检测自动填充');
 	}
 });
 

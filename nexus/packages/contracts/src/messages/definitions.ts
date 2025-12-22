@@ -41,6 +41,8 @@ export interface NexusMessages {
 	// ========== 注册表 ==========
 	'REGISTRY_ADD_DOMAIN': { req: { domain: string }; res: { success: boolean; reason?: string } };
 	'REGISTRY_REMOVE_DOMAIN': { req: { domain: string }; res: { success: boolean } };
+	'REGISTRY_QUERY_DOMAIN': { req: { domain: string }; res: { entry: import('../registry.contracts.js').DomainEntry | null } };
+	'REGISTRY_MARK_PROBED': { req: { domain: string; restricted: boolean }; res: { success: boolean; reason?: string } };
 
 	// ========== Tab 状态 ==========
 	'TAB_REPORT_MEDIA': { req: { hasMediaElement: boolean }; res: void };

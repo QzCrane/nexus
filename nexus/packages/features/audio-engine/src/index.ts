@@ -13,7 +13,6 @@ export * from './constants.js';
 
 // 策略引擎
 export { PolicyEngine } from './PolicyEngine.js';
-export type { PolicyEngineConfig } from './PolicyEngine.js';
 export type { PolicyContext, UrlInfo } from '@nexus/contracts';
 
 // WebAudio 控制器

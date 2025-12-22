@@ -41,6 +41,9 @@ export function createMediaObserver(
 			// 再次检查，因为是延迟执行
 			if (!isExtensionContextValid()) return;
 
+			// 触发 CORS 预检测（内部会去重，已检测过的不会重复检测）
+			policyExecutor.probeCors();
+
 			if (state.activeMode === AudioMode.NATIVE_WEBAUDIO) {
 				audioController.scanAndAttach();
 			}

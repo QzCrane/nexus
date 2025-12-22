@@ -1,4 +1,5 @@
 import type { AudioConfig, GlobalSettings } from '@nexus/kernel';
+import type { DomainEntry } from '@nexus/contracts';
 import type { CardUIElements, I18NDict } from '../types';
 
 /** 卡片内部状态 */
@@ -23,7 +24,7 @@ export interface InitCardParams {
   template: HTMLTemplateElement;
   tab: chrome.tabs.Tab;
   dict: I18NDict;
-  userRegistry: string[];
+  registryEntries: DomainEntry[];
   getGlobalSettings: () => GlobalSettings;
   /** EQ 曲线绘制回调 (由 visualizer 模块提供) */
   createEqCurveDrawer?: (

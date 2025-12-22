@@ -163,34 +163,33 @@ export interface PolicyContext {
   visualizerEnabled: boolean;
   /** 是否强制原生模式 (用于自愈/排除特定干扰) */
   forceNative: boolean;
+  /** 是否为受限站点 (由 CORS 检测结果决定) */
+  isRestricted?: boolean;
   /** 完整音频配置 (用于检测高级需求: EQ/压缩/低音) */
   config?: AudioConfig;
 }
 
 /**
- * 策略引擎接口
+ * 策略引擎接口 (v3.2 - 纯计算，无状态)
  * 
  * 决定在特定网站上应该使用哪种音频处理模式。
+ * 受限判断由调用方通过 context.isRestricted 传入。
  */
 export interface IPolicyEngine {
   /** 计算应该使用的音频模式 */
   calculateMode(context: PolicyContext): AudioMode;
 
-  /** 检查域名是否在黑名单 */
-  isBlacklisted(domain: string): boolean;
-
-  /** 获取域名的特殊规则 (如果有) */
+  /** @deprecated v3.0 不使用 */
   getRuleForDomain(domain: string): SiteRule | null;
 }
 
 /**
- * 站点规则
+ * 站点规则 (v3.2 已废弃，仅保留类型兼容)
+ * @deprecated 使用 CORS 动态检测代替
  */
 export interface SiteRule {
-  /** 规则类型 */
   type: 'whitelist' | 'blacklist' | 'force_capture' | 'force_native';
-  /** 匹配模式 (支持通配符) */
   pattern: string;
-  /** 原因说明 */
   reason?: string;
 }
+

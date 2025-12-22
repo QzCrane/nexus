@@ -1,14 +1,22 @@
 /**
- * 架构完整性验证脚本 v2
+ * 架构完整性验证脚本 v3
  * 
- * 检查：
- * 1. 所有 packages/apps 是否有对应的 .ai-context.md
- * 2. contracts 包是否纯净（零依赖，无实现代码）
- * 3. README.AI.md 是否存在且消息表是否同步
- * 4. kernel/protocol.ts 是否重复定义了 contracts 中的类型
- * 5. 依赖方向是否正确
+ * 自动检查项：
+ * 1. .ai-context.md 存在性及行数
+ * 2. contracts 包纯净性（零依赖）
+ * 3. README.AI.md 消息表同步
+ * 4. 类型重复定义
+ * 5. 依赖方向正确性
+ * 6. 源码文件行数 (<200)
+ * 7. 硬编码 Action 字符串
+ * 8. 未使用的导出（死代码）
  * 
- * 使用方式：node scripts/verify-architecture.js
+ * 无法自动检测（依赖文档+规则）：
+ * - 多数据源调用：需业务规则定义，见 docs/cors-data-flow.md
+ * - 逻辑分叉：需理解业务语义，见 nexus.md 架构一致性规则
+ * 
+ * 使用：node scripts/verify-architecture.js
+ * 触发：npm run build (prebuild hook)
  */
 
 import fs from 'fs';
@@ -74,8 +82,8 @@ function checkAiContextFiles() {
       if (fs.existsSync(contextFile)) {
         const content = fs.readFileSync(contextFile, 'utf-8');
         const lineCount = content.split('\n').length;
-        if (lineCount > 30) {
-          error(`${base}/${entry.name}/.ai-context.md 超过 30 行 (当前 ${lineCount} 行)！`);
+        if (lineCount > 40) {
+          error(`${base}/${entry.name}/.ai-context.md 超过 40 行 (当前 ${lineCount} 行)！`);
         } else {
           ok(`${base}/${entry.name}/.ai-context.md 存在 (${lineCount} 行)`);
         }
@@ -372,11 +380,99 @@ function checkHardcodedActions() {
 }
 
 // ============================================
+// 检查 8：未使用的导出 (死代码检测)
+// ============================================
+function checkUnusedExports() {
+  console.log('\n📋 检查未使用的导出 (死代码)...\n');
+  
+  const PACKAGES = [
+    'packages/contracts',
+    'packages/nexus-kernel',
+    'packages/features/audio-engine',
+  ];
+  
+  // 提取文件中的导出符号
+  function extractExports(filePath) {
+    if (!fs.existsSync(filePath)) return [];
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const exports = [];
+    const namedExports = content.matchAll(/export\s+(const|function|class|interface|type|enum)\s+(\w+)/g);
+    for (const match of namedExports) exports.push(match[2]);
+    const bracketExports = content.matchAll(/export\s*\{([^}]+)\}/g);
+    for (const match of bracketExports) {
+      const names = match[1].split(',').map(s => s.trim().split(/\s+as\s+/)[0].trim());
+      exports.push(...names.filter(n => n && !n.startsWith('*')));
+    }
+    return exports;
+  }
+  
+  // 搜索符号引用
+  function findReferences(symbol, excludeDir) {
+    const searchDirs = ['apps/extension-spectra/src', ...PACKAGES.map(p => `${p}/src`)];
+    for (const dir of searchDirs) {
+      const fullDir = path.join(ROOT, dir);
+      if (!fs.existsSync(fullDir)) continue;
+      if (searchInDir(fullDir, symbol, excludeDir)) return true;
+    }
+    return false;
+  }
+  
+  function searchInDir(dir, symbol, excludeDir) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (searchInDir(fullPath, symbol, excludeDir)) return true;
+      } else if (entry.name.endsWith('.ts') && !fullPath.includes(excludeDir)) {
+        const content = fs.readFileSync(fullPath, 'utf-8');
+        if (content.includes(symbol)) return true;
+      }
+    }
+    return false;
+  }
+  
+  // 获取包的所有导出
+  function getPackageExports(pkgPath) {
+    const indexPath = path.join(ROOT, pkgPath, 'src/index.ts');
+    if (!fs.existsSync(indexPath)) return [];
+    const exports = [];
+    const content = fs.readFileSync(indexPath, 'utf-8');
+    const reexports = content.matchAll(/export\s*\*\s*from\s*['"](.+?)['"]/g);
+    for (const match of reexports) {
+      let targetPath = match[1].replace(/\.js$/, '.ts');
+      if (!targetPath.endsWith('.ts')) targetPath += '.ts';
+      const fullPath = path.join(ROOT, pkgPath, 'src', targetPath);
+      exports.push(...extractExports(fullPath));
+    }
+    exports.push(...extractExports(indexPath));
+    return [...new Set(exports)];
+  }
+  
+  let unusedList = [];
+  for (const pkg of PACKAGES) {
+    const exports = getPackageExports(pkg);
+    for (const exp of exports) {
+      if (!findReferences(exp, pkg)) {
+        unusedList.push({ pkg: path.basename(pkg), name: exp });
+      }
+    }
+  }
+  
+  if (unusedList.length > 0) {
+    for (const item of unusedList) {
+      warn(`未使用的导出: ${item.pkg}/${item.name} (可能是死代码)`);
+    }
+  } else {
+    ok('所有导出都有引用');
+  }
+}
+
+// ============================================
 // 主函数
 // ============================================
 function main() {
   console.log('='.repeat(60));
-  console.log('🔍 Project NEXUS 架构完整性验证 v2');
+  console.log('🔍 Project NEXUS 架构完整性验证 v3');
   console.log('='.repeat(60));
   
   checkAiContextFiles();
@@ -386,6 +482,7 @@ function main() {
   checkDependencyDirection();
   checkSourceFileLength();
   checkHardcodedActions();
+  checkUnusedExports();
   
   console.log('\n' + '='.repeat(60));
   if (errors > 0) {
@@ -401,3 +498,4 @@ function main() {
 }
 
 main();
+

@@ -3,15 +3,6 @@
  * 
  * 根据 PolicyEngine 计算的模式执行相应的音频处理策略
  * 
- * 策略表:
- * | 场景 | 条件 | 模式 | 颜色 |
- * |-----|------|------|------|
- * | 推荐页预览 | 用户未操作 | 原生模式 | 🔵 蓝 |
- * | 推荐页预览 | 用户已操作音量 | 全音量劫持 | 🟣 紫 |
- * | 播放页 + 非受限 | 任何情况 | 全音量原生 | 🔵 蓝 |
- * | 播放页 + 受限 + 频谱关 | 0-100% | 原生 | 🔵 蓝 |
- * | 播放页 + 受限 + 频谱关 | >100% | 劫持 | 🟣 紫 |
- * | 播放页 + 受限 + 频谱开 | 任何情况 | 全音量劫持 | 🟣 紫 |
  */
 
 import type { AudioConfig } from '@nexus/kernel';
@@ -23,7 +14,7 @@ import { executeMode, hasUserGesture } from '../mode-executor';
 // 子模块导入
 import type { PolicyExecutor, InternalState } from './types';
 import { updateBadge, broadcastUI } from './badge-sync';
-import { setupCorsCallback } from './cors-handler';
+import { setupCorsCallback, probeCorsOnMediaDetected, initCorsStatus } from './cors-handler';
 import { updateConfig } from './config-updater';
 
 const log = logger.content;
@@ -35,15 +26,20 @@ const log = logger.content;
  * @param state 共享状态对象
  * @returns 策略执行器实例
  */
-export function createPolicyExecutor(deps: PolicyExecutorDeps, state: PolicyExecutorState): PolicyExecutor {
+export async function createPolicyExecutor(deps: PolicyExecutorDeps, state: PolicyExecutorState): Promise<PolicyExecutor> {
 	const { policyEngine, audioController, captureManager, settingsManager } = deps;
+
+	// 从注册表初始化 CORS 状态
+	const initialCorsStatus = await initCorsStatus(deps.messenger);
 
 	// 内部状态 - 不对外暴露
 	const internalState: InternalState = {
-		corsStatus: 'PENDING',
+		corsStatus: initialCorsStatus,
 		lastBadgeHash: '',
 		lastSyncHash: '',
 	};
+
+	log.debug(`[SPECTRA] CORS 初始化: ${initialCorsStatus}`);
 
 	/**
 	 * 获取当前 URL 信息 (适配契约)
@@ -63,7 +59,9 @@ export function createPolicyExecutor(deps: PolicyExecutorDeps, state: PolicyExec
 	function applyState(): void {
 		const settings = settingsManager.get();
 		const urlInfo = getUrlInfo();
-		const restricted = policyEngine.isRestrictedSite(urlInfo.domain);
+
+		// 受限站点判断：CORS 检测结果决定
+		const isRestricted = internalState.corsStatus === 'RESTRICTED';
 
 		const context: PolicyContext = {
 			urlInfo,
@@ -72,6 +70,7 @@ export function createPolicyExecutor(deps: PolicyExecutorDeps, state: PolicyExec
 			visualizerEnabled: settings.visualizerEnabled,
 			userInteracted: state.userHasInteracted,
 			forceNative: internalState.corsStatus === 'SAFE',
+			isRestricted,
 			hasMediaElement: true, // 简化处理
 			hasAudioContext: audioController.isReady(),
 			config: state.config,
@@ -99,7 +98,7 @@ export function createPolicyExecutor(deps: PolicyExecutorDeps, state: PolicyExec
 		log.debug('[SPECTRA] 策略计算:', {
 			url: urlInfo.domain + urlInfo.pathname,
 			volume: state.config.volume,
-			isRestricted: restricted,
+			isRestricted,
 			visualizerEnabled: settings.visualizerEnabled,
 			决策结果: desiredMode
 		});
@@ -132,6 +131,9 @@ export function createPolicyExecutor(deps: PolicyExecutorDeps, state: PolicyExec
 	// 初始化 CORS 回调
 	setupCorsCallback(deps, internalState, applyState);
 
+	// CORS 预检测：发现音频时立即检测，结果缓存到注册表
+	probeCorsOnMediaDetected(deps.messenger);
+
 	// 返回公共接口
 	return {
 		applyState,
@@ -141,6 +143,7 @@ export function createPolicyExecutor(deps: PolicyExecutorDeps, state: PolicyExec
 		markUserInteracted: () => { state.userHasInteracted = true; },
 		getActiveMode: () => state.activeMode,
 		getUrlInfo,
+		probeCors: () => probeCorsOnMediaDetected(deps.messenger),
 	};
 }
 

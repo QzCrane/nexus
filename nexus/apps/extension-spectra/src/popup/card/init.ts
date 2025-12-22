@@ -20,7 +20,7 @@ import { prepareCardDom } from './dom-init';
  * @returns 是否成功创建卡片
  */
 export async function initCard(params: InitCardParams): Promise<boolean> {
-  const { container, template, tab, dict, userRegistry, getGlobalSettings, createEqCurveDrawer } = params;
+  const { container, template, tab, dict, registryEntries, getGlobalSettings, createEqCurveDrawer } = params;
 
   if (!tab.id) return false;
   const tabId = tab.id;
@@ -40,9 +40,10 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
 
   const domain = getDomain(tab.url || '');
 
-  // 判断是否受限站点 (直接使用用户注册表)
-  const isRestrictedSite = userRegistry.some(
-    (d) => domain === d || domain.endsWith('.' + d)
+  // 判断是否受限站点 (初始值从注册表推断，后续由 UI_SYNC 消息实时同步)
+  // 匹配逻辑：当前域名包含注册表条目，如 "www.douyin.com".includes("douyin.com")
+  const isRestrictedSite = registryEntries.some(e =>
+    e.restricted !== false && domain.includes(e.domain)
   );
 
   // 🔴 优先从域名存储读取已保存配置 (实现刷新后沿用)
@@ -57,8 +58,8 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     visualizerEnabled: settings.visualizerEnabled,
   });
 
-  // 优先使用 Background 返回的实际 Capture 状态，只有未获取到时才用预判
-  const effectiveCaptureState = isCaptureActive ?? predictedCapture;
+  // Capture 状态判断：实际状态 || 预判（预判用于首次打开 Popup 时触发）
+  const effectiveCaptureState = isCaptureActive || predictedCapture;
 
   const state: CardInternalState = {
     config,
@@ -125,17 +126,9 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   // 初始渲染
   render();
 
-  // 🔴 Popup 打开触发策略：如果有频谱需求但 Capture 未激活，主动触发
+  // Popup 打开触发策略：如果有频谱需求但 Capture 未激活，主动触发
   // 理由：打开 Popup 本身就是强用户手势，表达了增强意图
-  console.log('[SPECTRA Popup] Capture 触发检测:', {
-    visualizerEnabled: settings.visualizerEnabled,
-    isRestrictedSite,
-    isCaptureActive,
-    domain,
-    userRegistry,
-  });
   if (settings.visualizerEnabled && isRestrictedSite && !isCaptureActive) {
-    console.log('[SPECTRA Popup] 触发 Capture');
     sendToBackground('CAPTURE_TOGGLE', { enabled: true, config, tabId });
     state.isCaptureActive = true; // 乐观更新
     render(); // 重新渲染以更新颜色

@@ -30,23 +30,25 @@ export function isEffectivelyCapturing(
 /**
  * 更新扩展图标角标
  * 
- * 使用策略预判颜色（predictCapture），而非等待 Capture 激活状态
+ * 使用 internalState.corsStatus 判断受限状态，确保与策略执行器一致
  * 
  * @param deps 依赖对象
  * @param state 执行器状态
- * @param internalState 内部状态（用于 hash 去重）
+ * @param internalState 内部状态（含 CORS 状态和 hash 去重）
  */
 export function updateBadge(
 	deps: PolicyExecutorDeps,
 	state: PolicyExecutorState,
 	internalState: InternalState
 ): void {
-	const { messenger, policyEngine, settingsManager } = deps;
+	const { messenger, settingsManager } = deps;
 
-	// 使用共享的颜色预判函数
+	// 🔴 核心修复：使用 internalState.corsStatus 判断，与策略执行器保持一致
+	const isRestricted = internalState.corsStatus === 'RESTRICTED';
+
 	const isPredictedCapture = predictCapture({
 		config: state.config,
-		isRestricted: policyEngine.isRestrictedSite(location.hostname),
+		isRestricted,
 		visualizerEnabled: settingsManager.get().visualizerEnabled,
 	});
 
@@ -68,19 +70,21 @@ export function updateBadge(
  * 
  * @param deps 依赖对象
  * @param state 执行器状态
- * @param internalState 内部状态（用于 hash 去重）
+ * @param internalState 内部状态（含 CORS 状态和 hash 去重）
  */
 export function broadcastUI(
 	deps: PolicyExecutorDeps,
 	state: PolicyExecutorState,
 	internalState: InternalState
 ): void {
-	const { policyEngine, settingsManager } = deps;
+	const { settingsManager } = deps;
 
-	// 使用共享的颜色预判函数
+	// 🔴 核心修复：使用 internalState.corsStatus 判断，与角标和策略执行器保持一致
+	const isRestricted = internalState.corsStatus === 'RESTRICTED';
+
 	const isPredictedCapture = predictCapture({
 		config: state.config,
-		isRestricted: policyEngine.isRestrictedSite(location.hostname),
+		isRestricted,
 		visualizerEnabled: settingsManager.get().visualizerEnabled,
 	});
 
@@ -97,7 +101,8 @@ export function broadcastUI(
 			payload: {
 				config: state.config,
 				mode: state.activeMode as any,
-				isCaptureActive: isPredictedCapture
+				isCaptureActive: isPredictedCapture,
+				isRestricted, // 🔴 新增：传递受限状态给 Popup，确保颜色一致
 			}
 		}, {}, (response: any) => {
 			if (chrome.runtime.lastError) reject(chrome.runtime.lastError);

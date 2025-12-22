@@ -45,6 +45,9 @@ export function setupCardMessaging(params: MessagingParams): () => void {
       if (payload.isCaptureActive !== undefined) state.isCaptureActive = payload.isCaptureActive;
       else if (msg.isCaptureActive !== undefined) state.isCaptureActive = msg.isCaptureActive;
 
+      // 🔴 新增：同步受限状态，确保 UI 颜色与角标一致
+      if (payload.isRestricted !== undefined) state.isRestrictedSite = payload.isRestricted;
+
       render();
     }
 

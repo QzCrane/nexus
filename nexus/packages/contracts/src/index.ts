@@ -81,6 +81,16 @@ export type {
 export { DEFAULT_GLOBAL_SETTINGS } from './settings.contracts.js';
 
 // ============================================
+// 注册表契约
+// ============================================
+export type {
+  DomainSource,
+  DomainEntry,
+  RegistryStorage,
+  RegistryResult
+} from './registry.contracts.js';
+
+// ============================================
 // 消息 Action 常量
 // ============================================
 export { Actions, OffscreenActions, NEXUS_ACTIONS, OFFSCREEN_ACTIONS } from './actions.js';

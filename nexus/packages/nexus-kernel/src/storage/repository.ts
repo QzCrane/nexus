@@ -12,6 +12,7 @@ import {
 import * as audioConfig from './audio-config.js';
 import * as globalSettings from './global-settings.js';
 import * as userRegistry from './user-registry.js';
+import * as restrictedRegistry from './restricted-registry.js';
 
 /** 类型安全的 Storage 仓库 (兼容层) */
 export class StorageRepository {
@@ -24,11 +25,24 @@ export class StorageRepository {
   getGlobalSettings = globalSettings.getGlobalSettings;
   setGlobalSettings = globalSettings.setGlobalSettings;
 
-  // 用户注册表
+  // 用户注册表 (旧接口，保持兼容)
   getUserRegistry = userRegistry.getUserRegistry;
   addToUserRegistry = userRegistry.addToUserRegistry;
   removeFromUserRegistry = userRegistry.removeFromUserRegistry;
   setUserRegistry = userRegistry.setUserRegistry;
+
+  // 受限注册表 (新接口，三合一)
+  registry = {
+    init: restrictedRegistry.initRegistry,
+    get: restrictedRegistry.getRegistry,
+    query: restrictedRegistry.queryDomain,
+    isRestricted: restrictedRegistry.isRestricted,
+    add: restrictedRegistry.addDomain,
+    remove: restrictedRegistry.removeDomain,
+    markProbed: restrictedRegistry.markProbed,
+    getDomainList: restrictedRegistry.getDomainList,
+    set: restrictedRegistry.setRegistry,
+  };
 
   /** 监听存储变化 */
   onChanged(callback: (changes: { [key: string]: chrome.storage.StorageChange }) => void): () => void {
@@ -42,3 +56,4 @@ export class StorageRepository {
     return () => chrome.storage.onChanged.removeListener(listener);
   }
 }
+

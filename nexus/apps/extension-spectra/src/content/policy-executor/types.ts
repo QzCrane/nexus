@@ -25,6 +25,8 @@ export interface PolicyExecutor {
 	getActiveMode(): string | null;
 	/** 获取当前 URL 信息 */
 	getUrlInfo(): UrlInfo;
+	/** 触发 CORS 预检测 */
+	probeCors(): void;
 }
 
 /**

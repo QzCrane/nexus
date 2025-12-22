@@ -30,7 +30,7 @@ async function main(): Promise<void> {
   initNavigation();
 
   // 初始化设置页
-  const { gSettings, userRegistry, dict } = await initSettings();
+  const { gSettings, registryEntries, dict } = await initSettings();
 
   // 获取全局设置的函数 (供卡片使用)
   let currentSettings = gSettings;
@@ -73,7 +73,7 @@ async function main(): Promise<void> {
       template,
       tab: activeTab,
       dict,
-      userRegistry,
+      registryEntries,
       getGlobalSettings,
       createEqCurveDrawer,
     });
@@ -109,7 +109,7 @@ async function main(): Promise<void> {
         template,
         tab,
         dict,
-        userRegistry,
+        registryEntries,
         getGlobalSettings,
         createEqCurveDrawer,
       });
@@ -133,7 +133,7 @@ async function main(): Promise<void> {
         template,
         tab,
         dict,
-        userRegistry,
+        registryEntries,
         getGlobalSettings,
         createEqCurveDrawer,
       });

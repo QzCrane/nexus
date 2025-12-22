@@ -37,7 +37,7 @@ export function updateConfig(
 	options: { showOSD?: boolean; unMute?: boolean } = {},
 	applyStateFn: () => void
 ): void {
-	const { messenger, policyEngine, settingsManager } = deps;
+	const { messenger, settingsManager } = deps;
 
 	// 1. 标记用户已交互 (用于策略判定)
 	state.userHasInteracted = true;
@@ -57,10 +57,11 @@ export function updateConfig(
 	// 4. 触发显示和同步
 	if (options.showOSD) {
 		const settings = settingsManager.get();
-		// 使用共享的颜色预判函数
+		// 🔴 使用 internalState.corsStatus 判断，与 badge-sync 保持一致
+		const isRestricted = internalState.corsStatus === 'RESTRICTED';
 		const predictedCapture = predictCapture({
 			config: newConfig,
-			isRestricted: policyEngine.isRestrictedSite(location.hostname),
+			isRestricted,
 			visualizerEnabled: settings.visualizerEnabled,
 		});
 
