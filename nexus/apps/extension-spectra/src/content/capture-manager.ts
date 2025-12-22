@@ -83,8 +83,8 @@ export function createCaptureManager(messenger: NexusMessenger) {
 			if (!isCaptureActive) return;
 			if (!isExtensionContextValid()) return;
 
-			// 发送 CAPTURE_TOGGLE 带 enabled=true 会触发 Background 的配置同步逻辑
-			safeSend(() => messenger.send('CAPTURE_TOGGLE', { enabled: true, config })).catch(() => { });
+			// 🔴 使用 CAPTURE_UPDATE_CONFIG 而非 CAPTURE_TOGGLE，避免互斥锁阻塞
+			safeSend(() => messenger.send('CAPTURE_UPDATE_CONFIG', { config })).catch(() => { });
 		},
 	};
 }

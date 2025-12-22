@@ -48,9 +48,10 @@ export function setupCardMessaging(params: MessagingParams): () => void {
       render();
     }
 
-    // 2. CAPTURE_STATE_CHANGE: Capture 状态变化
+    // 2. CAPTURE_STATE_CHANGE: Capture 状态变化 (严格匹配 tabId)
     if (action === Actions.CAPTURE_STATE_CHANGE) {
-      if (payload.tabId === tabId || sender.tab?.id === tabId || payload.tabId === undefined) {
+      const msgTabId = payload.tabId ?? sender.tab?.id;
+      if (msgTabId === tabId) {
         state.isCaptureActive = !!payload.enabled;
         // 同步更新 actualMode，如果是劫持则强制为 CAPTURE
         if (state.isCaptureActive) {

@@ -5,7 +5,6 @@
 import type { GlobalSettings } from '@nexus/kernel';
 import type { ThemeMode } from '@nexus/contracts';
 import { Actions } from '@nexus/contracts';
-import { DefaultRestrictedDomains } from '@nexus/audio-engine';
 import type { I18NDict, RenderCallback } from '../types';
 import { getSettingsUIElements, $ } from '../utils/dom';
 import { applyTheme, THEME_ICONS, getNextThemeMode } from '../utils/theme';
@@ -95,11 +94,11 @@ function initUIState(
   gSettings: GlobalSettings,
   userRegistry: string[]
 ): void {
-  const effectiveList = Array.from(new Set([...userRegistry, ...DefaultRestrictedDomains]));
+  // 直接显示用户注册表，不再合并默认列表
   if (ui.swOsd) ui.swOsd.checked = gSettings.osdEnabled;
   if (ui.swViz) ui.swViz.checked = gSettings.visualizerEnabled !== false;
   if (ui.selLang) ui.selLang.value = gSettings.lang;
-  if (ui.txtRegistry) ui.txtRegistry.value = effectiveList.join('\n');
+  if (ui.txtRegistry) ui.txtRegistry.value = userRegistry.join('\n');
   if (ui.groupRegistry) {
     ui.groupRegistry.style.display = gSettings.visualizerEnabled !== false ? 'block' : 'none';
   }
@@ -172,7 +171,3 @@ function broadcastSettings(gSettings: GlobalSettings): void {
   });
 }
 
-/** 获取合并后的受限域名列表 */
-export function getEffectiveRegistry(userRegistry: string[]): string[] {
-  return Array.from(new Set([...userRegistry, ...DefaultRestrictedDomains]));
-}

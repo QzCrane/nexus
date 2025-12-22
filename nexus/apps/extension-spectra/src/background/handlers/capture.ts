@@ -96,8 +96,9 @@ export function registerCaptureHandlers(): void {
 		return captureStates.get(tabId) ?? false;
 	});
 
-	router.on('CAPTURE_UPDATE_CONFIG', async (req) => {
-		const tabId = req.tabId;
+	router.on('CAPTURE_UPDATE_CONFIG', async (req, sender) => {
+		// 🔴 支持从 sender.tab.id 获取 tabId，使 Content Script 可以发送配置更新
+		const tabId = req.tabId ?? sender.tab?.id;
 		if (!tabId || !captureStates.get(tabId)) return;
 
 		swLog.debug(`CAPTURE_UPDATE_CONFIG: Tab ${tabId}, vol=${req.config.volume}`);

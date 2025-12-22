@@ -15,7 +15,7 @@
  * - lifecycle.ts   Tab 生命周期
  */
 
-import { router } from './state';
+import { router, storage } from './state';
 import { registerAudioHandlers } from './handlers/audio';
 import { registerSettingsHandlers } from './handlers/settings';
 import { registerCaptureHandlers } from './handlers/capture';
@@ -24,6 +24,7 @@ import { registerRegistryHandlers } from './handlers/registry';
 import { registerTabStateHandlers } from './handlers/tab-state';
 import { setupShortcutListeners } from './shortcuts';
 import { setupLifecycleListeners } from './lifecycle';
+import { DefaultRestrictedDomains } from '@nexus/audio-engine';
 import { swLog } from '../shared/logger';
 
 // ============================================
@@ -49,5 +50,20 @@ setupLifecycleListeners();
 // ============================================
 
 router.listen();
+
+// ============================================
+// 首次安装初始化
+// ============================================
+
+chrome.runtime.onInstalled.addListener(async (details) => {
+	if (details.reason === 'install') {
+		swLog.info('First install detected, initializing userRegistry...');
+		const existing = await storage.getUserRegistry();
+		if (existing.length === 0) {
+			await storage.setUserRegistry([...DefaultRestrictedDomains]);
+			swLog.info(`Initialized userRegistry with ${DefaultRestrictedDomains.length} default domains.`);
+		}
+	}
+});
 
 swLog.info('Background Service Worker started.');

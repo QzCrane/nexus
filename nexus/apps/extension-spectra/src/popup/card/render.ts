@@ -24,7 +24,7 @@ export interface RenderParams {
  * 创建卡片渲染函数
  */
 export function createRenderFn(params: RenderParams): () => void {
-  const { ui, state, drawEqCurve, getVizEnabled, getGlobalSettings } = params;
+  const { ui, state, getCapturing, drawEqCurve, getVizEnabled, getGlobalSettings } = params;
 
   return () => {
     if (!ui.card) return;
@@ -47,20 +47,23 @@ export function createRenderFn(params: RenderParams): () => void {
     ui.val.innerText = muted ? 'MUTE' : `${config.volume}%`;
     ui.mute.classList.toggle('active', muted);
 
-    // 使用共享的颜色预判函数
+    // 颜色判断：优先使用实际 Capture 状态，确保与可视化同步
+    const actualCapturing = getCapturing();
     const settings = getGlobalSettings();
-    const isPredictedCapture = predictCapture({
+    // 预判用于：Capture 未激活时根据策略预判颜色（比如设置变更后尚未重新激活）
+    const isPredictedCapture = !actualCapturing && predictCapture({
       config,
       isRestricted: state.isRestrictedSite,
       visualizerEnabled: settings.visualizerEnabled,
     });
+    const isCapture = actualCapturing || isPredictedCapture;
     const isMutedOrZero = muted || config.volume === 0;
 
     // Capture 模式 = 紫色, Native 模式 = 蓝色, 静音 = 灰色
     let fillColor: string;
     if (isMutedOrZero) {
       fillColor = COLORS.MUTED;
-    } else if (isPredictedCapture) {
+    } else if (isCapture) {
       fillColor = COLORS.CAPTURE;
     } else {
       fillColor = COLORS.NATIVE;
@@ -68,6 +71,8 @@ export function createRenderFn(params: RenderParams): () => void {
 
     ui.fill.style.backgroundColor = fillColor;
     ui.val.style.color = fillColor;
+    // 同步滑块圆点边框颜色 (通过 CSS 变量)
+    ui.slider.style.setProperty('--slider-accent', fillColor);
 
     // 音量图标 (3态: 静音/正常/增强)
     renderVolumeIcon(ui.mute, muted, config.volume);

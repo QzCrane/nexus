@@ -21,7 +21,7 @@ export interface NexusMessages {
 	// ========== Capture 模式 ==========
 	'CAPTURE_TOGGLE': { req: { enabled: boolean; config?: AudioConfig; tabId?: number }; res: { status: 'processing' | 'error'; error?: string } };
 	'CAPTURE_GET_STATE': { req: { tabId?: number }; res: boolean };
-	'CAPTURE_UPDATE_CONFIG': { req: { tabId: number; config: AudioConfig }; res: void };
+	'CAPTURE_UPDATE_CONFIG': { req: { tabId?: number; config: AudioConfig }; res: void };
 	'CAPTURE_STATE_CHANGE': { req: { tabId?: number; enabled: boolean }; res: void };
 
 	// ========== 全局设置 ==========

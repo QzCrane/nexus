@@ -6,7 +6,6 @@ export { initNavigation } from './navigation';
 export {
   initSettings,
   cardRenderCallbacks,
-  getEffectiveRegistry,
   type SettingsState,
 } from './settings';
 

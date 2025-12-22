@@ -73,7 +73,7 @@ import { createMessenger } from "@nexus/kernel"; // 运行时
 
 **高级需求** = 音量>100% || 频谱开启 || EQ 非零 || 压缩器 || 低音增强
 
-**受限站点** = `DefaultRestrictedDomains` + 用户注册表 (动态 CORS 检测)
+**受限站点** = `userRegistry` (首次安装用 `DefaultRestrictedDomains` 初始化，之后用户完全控制 + CORS 自动检测)
 
 ## ❌ 禁止事项
 

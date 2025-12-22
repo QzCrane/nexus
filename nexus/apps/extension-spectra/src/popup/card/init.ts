@@ -3,10 +3,10 @@
  */
 
 import { predictCapture } from '@nexus/audio-engine';
-import type { GlobalSettings } from '@nexus/kernel';
+import { getAudioConfig, type GlobalSettings } from '@nexus/kernel';
 import type { I18NDict, ContentStatusResponse } from '../types';
 import { getDomain, sendToTab, sendToBackground, ensureInjected } from '../utils/dom';
-import { getEffectiveRegistry, cardRenderCallbacks } from '../views/settings';
+import { cardRenderCallbacks } from '../views/settings';
 import { getCardUIElements } from './ui-elements';
 import { cleanConfig, type CardInternalState, type InitCardParams } from './types';
 import { createGetCapturing, createUpdateFn } from './state';
@@ -39,25 +39,30 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   if (!hasActiveMedia) return false;
 
   const domain = getDomain(tab.url || '');
-  const effectiveRegistry = getEffectiveRegistry(userRegistry);
 
-  // 判断是否受限站点
-  const isRestrictedSite = effectiveRegistry.some(
+  // 判断是否受限站点 (直接使用用户注册表)
+  const isRestrictedSite = userRegistry.some(
     (d) => domain === d || domain.endsWith('.' + d)
   );
 
-  // 使用共享的 predictCapture 函数进行初始颜色预判
-  const config = status ? cleanConfig(status.config) : cleanConfig(null);
+  // 🔴 优先从域名存储读取已保存配置 (实现刷新后沿用)
+  const savedConfig = await getAudioConfig(domain);
+  // 配置优先级：域名存储 > 默认值（默认100）
+  const config = cleanConfig(savedConfig);
+
   const settings = getGlobalSettings();
-  const initialIsCaptureActive = predictCapture({
+  const predictedCapture = predictCapture({
     config,
     isRestricted: isRestrictedSite,
     visualizerEnabled: settings.visualizerEnabled,
   });
 
+  // 优先使用 Background 返回的实际 Capture 状态，只有未获取到时才用预判
+  const effectiveCaptureState = isCaptureActive ?? predictedCapture;
+
   const state: CardInternalState = {
     config,
-    isCaptureActive: initialIsCaptureActive,
+    isCaptureActive: effectiveCaptureState,
     userInteracted: status?.userInteracted ?? false,
     isRestrictedSite,
     actualMode: status?.mode ?? null,
@@ -119,6 +124,22 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
 
   // 初始渲染
   render();
+
+  // 🔴 Popup 打开触发策略：如果有频谱需求但 Capture 未激活，主动触发
+  // 理由：打开 Popup 本身就是强用户手势，表达了增强意图
+  console.log('[SPECTRA Popup] Capture 触发检测:', {
+    visualizerEnabled: settings.visualizerEnabled,
+    isRestrictedSite,
+    isCaptureActive,
+    domain,
+    userRegistry,
+  });
+  if (settings.visualizerEnabled && isRestrictedSite && !isCaptureActive) {
+    console.log('[SPECTRA Popup] 触发 Capture');
+    sendToBackground('CAPTURE_TOGGLE', { enabled: true, config, tabId });
+    state.isCaptureActive = true; // 乐观更新
+    render(); // 重新渲染以更新颜色
+  }
 
   // 启动可视化循环 (仅当 canvas 在文档中)
   if (ui.canvas) {
