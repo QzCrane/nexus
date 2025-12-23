@@ -48,6 +48,7 @@ export function createPlainLogger(tag: string) {
 		warn: (...args: unknown[]) => console.warn(fullPrefix, ...args),
 		error: (...args: unknown[]) => console.error(fullPrefix, ...args),
 		debug: (...args: unknown[]) => console.debug(fullPrefix, ...args),
+		capture: (...args: unknown[]) => console.log(`${fullPrefix} [CAPTURE]`, ...args),
 	};
 }
 
