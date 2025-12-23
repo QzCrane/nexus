@@ -7,10 +7,9 @@
  * v3.7: 修复暂停/静音时检测中断问题，改为监听 play 事件继续检测
  */
 
-export type CorsCheckCallback = (restricted: boolean) => void;
+import { corsLogger as corsLog } from '@nexus/kernel';
 
-// 日志前缀
-const LOG_PREFIX = '[SPECTRA][CORS-Checker]';
+export type CorsCheckCallback = (restricted: boolean) => void;
 
 /**
  * 延迟检查 CORS 状态
@@ -30,7 +29,7 @@ export function scheduleCorsCheck(
 	let settled = false;
 	const hostname = window.location.hostname;
 
-	console.log(`${LOG_PREFIX} 开始检测 ${hostname}，媒体状态: paused=${el.paused}, muted=${el.muted}, volume=${el.volume}`);
+	corsLog.start(hostname, el);
 
 	const check = () => {
 		if (settled) return; // 已结束，不再检测
@@ -41,12 +40,12 @@ export function scheduleCorsCheck(
 		const sum = data.reduce((a, b) => a + b, 0);
 		const hasData = sum > 0;
 
-		console.log(`${LOG_PREFIX} 检测 #${checkCount}/${maxChecks}: 数据总和=${sum}, hasData=${hasData}`);
+		corsLog.check(checkCount, maxChecks, sum, hasData);
 
 		if (hasData) {
 			// 有数据 = SAFE
 			settled = true;
-			console.log(`${LOG_PREFIX} ✅ 结果: SAFE (有音频数据)`);
+			corsLog.safe();
 			onResult(false);
 			return;
 		}
@@ -58,7 +57,7 @@ export function scheduleCorsCheck(
 			if (checkCount >= maxChecks) {
 				// 多次全零 = RESTRICTED (CORS 限制)
 				settled = true;
-				console.log(`${LOG_PREFIX} ❌ 结果: RESTRICTED (${maxChecks}次全零)`);
+				corsLog.restricted(maxChecks);
 				onResult(true);
 			} else {
 				// 条件满足但无数据，继续检查
@@ -66,10 +65,10 @@ export function scheduleCorsCheck(
 			}
 		} else {
 			// v3.7: 视频暂停/静音，监听 play 事件后继续检测
-			console.log(`${LOG_PREFIX} ⏸️ 媒体未播放，等待 play 事件...`);
+			corsLog.waiting();
 			const onPlay = () => {
 				el.removeEventListener('play', onPlay);
-				console.log(`${LOG_PREFIX} ▶️ 检测到 play 事件，重置检测`);
+				corsLog.resumed();
 				checkCount = 0; // 重置计数
 				setTimeout(check, 100); // 减少延迟
 			};
@@ -80,4 +79,5 @@ export function scheduleCorsCheck(
 	// 首次检查延迟 100ms
 	setTimeout(check, 100);
 }
+
 

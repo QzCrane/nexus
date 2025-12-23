@@ -38,3 +38,7 @@ export * from './messages/index.js';
 
 // 存储访问
 export * from './storage/index.js';
+
+// 日志
+export * from './logger.js';
+

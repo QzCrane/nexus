@@ -57,9 +57,8 @@ else           → CAPTURE (紫)
 
 ## 持久化 (v3.7)
 
-**SAFE 和 RESTRICTED 站点均入表**
-
-`REGISTRY_MARK_PROBED` → `chrome.storage.restrictedRegistry` → 下次 `initCorsStatus()` 读取
+- SAFE 和 RESTRICTED 站点均入表
+- `REGISTRY_MARK_PROBED` → `chrome.storage.restrictedRegistry` → 下次 `initCorsStatus()` 读取
 
 | restricted | 含义     | UI 显示  |
 | ---------- | -------- | -------- |
