@@ -95,8 +95,18 @@ export function setupCorsCallback(
 			log.info(`[CORS] Decision: SAFE for ${hostname}`);
 			internalState.corsStatus = 'SAFE';
 
-			// 标记已检测为安全
+			const settings = settingsManager.get();
+			// 标记已检测为安全并添加到安全列表
 			safeSend(() => messenger.send('REGISTRY_MARK_PROBED', { domain: hostname, restricted: false }))
+				.then((response) => {
+					if (response?.success && response.reason !== 'updated') {
+						const lang = settings.lang || 'en-US';
+						const message = lang.startsWith('zh')
+							? `✓ 已添加 ${hostname} 到安全列表`
+							: `✓ Added ${hostname} to safe list`;
+						showToast(message);
+					}
+				})
 				.catch(() => { });
 
 			onStatusChange();

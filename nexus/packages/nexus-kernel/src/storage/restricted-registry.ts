@@ -90,7 +90,7 @@ export async function removeDomain(domain: string): Promise<RegistryResult> {
 	return { success: true };
 }
 
-/** 标记域名已预检测 */
+/** 标记域名已预检测 (v3.7: SAFE 站点也入表) */
 export async function markProbed(domain: string, restricted: boolean): Promise<RegistryResult> {
 	const entries = await getRegistry();
 	const existing = entries.find(e => domain.includes(e.domain));
@@ -99,11 +99,11 @@ export async function markProbed(domain: string, restricted: boolean): Promise<R
 		existing.probed = true;
 		existing.restricted = restricted;
 		await chrome.storage.local.set({ [KEY]: entries });
-		return { success: true, entry: existing };
+		return { success: true, reason: 'updated', entry: existing };
 	}
 
-	// 不在表中: 受限站点入表，安全站点跳过
-	return restricted ? addDomain(domain, 'auto', true) : { success: true };
+	// v3.7: 无论 restricted 还是 safe 都入表，方便缓存和 UI 显示
+	return addDomain(domain, 'auto', restricted);
 }
 
 /** 获取纯域名列表 (兼容旧接口) */

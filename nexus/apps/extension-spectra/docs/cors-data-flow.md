@@ -1,4 +1,4 @@
-# CORS 数据流 (v3.4)
+# CORS 数据流 (v3.7)
 
 ## 检测流程
 
@@ -12,14 +12,18 @@
            发现媒体元素 (readyState>=2 且正在播放)
                      │
                      ▼
-           probeWithTempContext()
-           创建临时 AudioContext + AnalyserNode
+           WebAudioController.attachNode()
+           创建 AudioContext + AnalyserNode
+                     │
+                     ▼
+           scheduleCorsCheck() 延迟检测
            读取 getByteFrequencyData()
                      │
                      ├─ 有数据 → SAFE
-                     └─ 全零 → RESTRICTED (CORS 限制)
-                              │
-                              ▼
+                     ├─ 全零×5 → RESTRICTED (CORS 限制)
+                     └─ 暂停/静音 → 监听 play 事件后继续
+                               │
+                               ▼
            internalState.corsStatus 更新
            REGISTRY_MARK_PROBED 持久化
            applyState() 触发模式重计算
@@ -33,12 +37,12 @@ CORS 限制仅在读取音频数据时体现：`AnalyserNode.getByteFrequencyDat
 
 ## 职责
 
-| 组件            | 写/读 | 数据                       |
-| --------------- | ----- | -------------------------- |
-| cors-handler    | 写    | `internalState.corsStatus` |
-| cors-prober     | 探测  | AnalyserNode 数据检测      |
-| policy-executor | 读    | → `context.isRestricted`   |
-| badge-sync      | 读    | → 角标颜色                 |
+| 组件            | 写/读 | 数据                          |
+| --------------- | ----- | ----------------------------- |
+| cors-handler    | 写    | `internalState.corsStatus`    |
+| cors-checker    | 探测  | AnalyserNode 数据 + play 事件 |
+| policy-executor | 读    | → `context.isRestricted`      |
+| badge-sync      | 读    | → 角标颜色                    |
 
 ## 决策
 
@@ -51,6 +55,13 @@ isRestricted = corsStatus !== 'SAFE'  // PENDING 保守视为受限
 else           → CAPTURE (紫)
 ```
 
-## 持久化
+## 持久化 (v3.7)
+
+**SAFE 和 RESTRICTED 站点均入表**
 
 `REGISTRY_MARK_PROBED` → `chrome.storage.restrictedRegistry` → 下次 `initCorsStatus()` 读取
+
+| restricted | 含义     | UI 显示  |
+| ---------- | -------- | -------- |
+| true       | 需要劫持 | 劫持列表 |
+| false      | 原生可控 | 安全列表 |

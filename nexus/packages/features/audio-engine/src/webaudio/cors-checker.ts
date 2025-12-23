@@ -1,11 +1,16 @@
 /**
- * CORS 数据检查器
+ * CORS 数据检查器 (v3.7)
  * 
  * 通过读取 AnalyserNode 数据判断 CORS 状态
  * CORS 限制会导致数据全零
+ * 
+ * v3.7: 修复暂停/静音时检测中断问题，改为监听 play 事件继续检测
  */
 
 export type CorsCheckCallback = (restricted: boolean) => void;
+
+// 日志前缀
+const LOG_PREFIX = '[SPECTRA][CORS-Checker]';
 
 /**
  * 延迟检查 CORS 状态
@@ -22,26 +27,57 @@ export function scheduleCorsCheck(
 	let checkCount = 0;
 	const maxChecks = 5;
 	const checkInterval = 200; // ms
+	let settled = false; // 是否已产生最终结果
+	const hostname = window.location.hostname;
+
+	console.log(`${LOG_PREFIX} 开始检测 ${hostname}，媒体状态: paused=${el.paused}, muted=${el.muted}, volume=${el.volume}`);
 
 	const check = () => {
+		if (settled) return; // 已结束，不再检测
 		checkCount++;
+
 		const data = new Uint8Array(analyser.frequencyBinCount);
 		analyser.getByteFrequencyData(data);
-		const hasData = data.some(v => v > 0);
+		const sum = data.reduce((a, b) => a + b, 0);
+		const hasData = sum > 0;
+
+		console.log(`${LOG_PREFIX} 检测 #${checkCount}/${maxChecks}: 数据总和=${sum}, hasData=${hasData}`);
 
 		if (hasData) {
 			// 有数据 = SAFE
+			settled = true;
+			console.log(`${LOG_PREFIX} ✅ 结果: SAFE (有音频数据)`);
 			onResult(false);
-		} else if (checkCount >= maxChecks) {
-			// 多次全零 = RESTRICTED (CORS 限制)
-			onResult(true);
-		} else if (!el.paused && !el.muted && el.volume > 0) {
-			// 条件满足但无数据，继续检查
-			setTimeout(check, checkInterval);
+			return;
 		}
-		// 如果视频暂停/静音，不判定，等待后续
+
+		// 检查是否应该继续
+		const canCheck = !el.paused && !el.muted && el.volume > 0;
+
+		if (canCheck) {
+			if (checkCount >= maxChecks) {
+				// 多次全零 = RESTRICTED (CORS 限制)
+				settled = true;
+				console.log(`${LOG_PREFIX} ❌ 结果: RESTRICTED (${maxChecks}次全零)`);
+				onResult(true);
+			} else {
+				// 条件满足但无数据，继续检查
+				setTimeout(check, checkInterval);
+			}
+		} else {
+			// v3.7: 视频暂停/静音，监听 play 事件后继续检测
+			console.log(`${LOG_PREFIX} ⏸️ 媒体未播放，等待 play 事件...`);
+			const onPlay = () => {
+				el.removeEventListener('play', onPlay);
+				console.log(`${LOG_PREFIX} ▶️ 检测到 play 事件，重置检测`);
+				checkCount = 0; // 重置计数
+				setTimeout(check, 300); // 延迟让音频数据填充
+			};
+			el.addEventListener('play', onPlay, { once: true });
+		}
 	};
 
 	// 首次检查延迟 300ms，让音频数据有时间填充
 	setTimeout(check, 300);
 }
+
