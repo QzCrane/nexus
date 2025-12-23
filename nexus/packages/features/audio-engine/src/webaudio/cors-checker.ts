@@ -25,9 +25,9 @@ export function scheduleCorsCheck(
 	onResult: CorsCheckCallback
 ): void {
 	let checkCount = 0;
-	const maxChecks = 5;
-	const checkInterval = 200; // ms
-	let settled = false; // 是否已产生最终结果
+	const maxChecks = 3;        // 减少到 3 次
+	const checkInterval = 80;   // 减少到 80ms
+	let settled = false;
 	const hostname = window.location.hostname;
 
 	console.log(`${LOG_PREFIX} 开始检测 ${hostname}，媒体状态: paused=${el.paused}, muted=${el.muted}, volume=${el.volume}`);
@@ -71,13 +71,13 @@ export function scheduleCorsCheck(
 				el.removeEventListener('play', onPlay);
 				console.log(`${LOG_PREFIX} ▶️ 检测到 play 事件，重置检测`);
 				checkCount = 0; // 重置计数
-				setTimeout(check, 300); // 延迟让音频数据填充
+				setTimeout(check, 100); // 减少延迟
 			};
 			el.addEventListener('play', onPlay, { once: true });
 		}
 	};
 
-	// 首次检查延迟 300ms，让音频数据有时间填充
-	setTimeout(check, 300);
+	// 首次检查延迟 100ms
+	setTimeout(check, 100);
 }
 
