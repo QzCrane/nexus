@@ -1,5 +1,5 @@
 /**
- * 架构完整性验证脚本 v3
+ * 架构完整性验证脚本 v4
  * 
  * 自动检查项：
  * 1. .ai-context.md 存在性及行数
@@ -10,6 +10,7 @@
  * 6. 源码文件行数 (<200)
  * 7. 硬编码 Action 字符串
  * 8. 未使用的导出（死代码）
+ * 9. HTML 资源引用完整性 (防止引用不存在的文件)
  * 
  * 无法自动检测（依赖文档+规则）：
  * - 多数据源调用：需业务规则定义，见 docs/cors-data-flow.md
@@ -468,6 +469,67 @@ function checkUnusedExports() {
 }
 
 // ============================================
+// 检查 9：HTML 资源引用完整性
+// ============================================
+function checkHtmlResourceReferences() {
+  console.log('\n📋 检查 HTML 资源引用...\n');
+  
+  const publicDir = path.join(ROOT, 'apps/extension-spectra/public');
+  if (!fs.existsSync(publicDir)) return;
+  
+  const htmlFiles = fs.readdirSync(publicDir).filter(f => f.endsWith('.html'));
+  let issues = [];
+  
+  for (const htmlFile of htmlFiles) {
+    const htmlPath = path.join(publicDir, htmlFile);
+    const content = fs.readFileSync(htmlPath, 'utf-8');
+    
+    // 提取 <script src="..."> 引用
+    const scriptRefs = content.matchAll(/<script\s+src=["']([^"']+)["']/g);
+    for (const match of scriptRefs) {
+      const ref = match[1];
+      if (ref.startsWith('http') || ref.startsWith('//')) continue; // 跳过外部链接
+      
+      // 检查文件是否存在于 public 目录
+      const refPath = path.join(publicDir, ref);
+      const isPublicFile = fs.existsSync(refPath);
+      
+      // 检查是否是构建产物 (src 目录对应的 .ts 文件)
+      const tsEquivalent = ref.replace('.js', '.ts');
+      const srcPaths = [
+        path.join(ROOT, 'apps/extension-spectra/src', tsEquivalent),
+        path.join(ROOT, 'apps/extension-spectra/src', ref.replace('.js', ''), 'index.ts'),
+      ];
+      const isBuildOutput = srcPaths.some(p => fs.existsSync(p));
+      
+      if (!isPublicFile && !isBuildOutput) {
+        issues.push({ html: htmlFile, ref, type: 'script' });
+      }
+    }
+    
+    // 提取 <link href="..."> 引用
+    const linkRefs = content.matchAll(/<link\s+[^>]*href=["']([^"']+)["']/g);
+    for (const match of linkRefs) {
+      const ref = match[1];
+      if (ref.startsWith('http') || ref.startsWith('//')) continue;
+      
+      const refPath = path.join(publicDir, ref);
+      if (!fs.existsSync(refPath)) {
+        issues.push({ html: htmlFile, ref, type: 'link' });
+      }
+    }
+  }
+  
+  if (issues.length > 0) {
+    for (const issue of issues) {
+      error(`${issue.html}: 引用的 ${issue.ref} 不存在！`);
+    }
+  } else {
+    ok('所有 HTML 资源引用有效');
+  }
+}
+
+// ============================================
 // 主函数
 // ============================================
 function main() {
@@ -483,6 +545,7 @@ function main() {
   checkSourceFileLength();
   checkHardcodedActions();
   checkUnusedExports();
+  checkHtmlResourceReferences();
   
   console.log('\n' + '='.repeat(60));
   if (errors > 0) {

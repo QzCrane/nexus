@@ -8,6 +8,16 @@
 /** 日志前缀 */
 const PREFIX = '[SPECTRA]';
 
+/** Logger 接口 - 所有 logger 工厂函数必须实现 */
+export interface Logger {
+	log: (...args: unknown[]) => void;
+	info: (...args: unknown[]) => void;
+	warn: (...args: unknown[]) => void;
+	error: (...args: unknown[]) => void;
+	debug: (...args: unknown[]) => void;
+	capture: (...args: unknown[]) => void;
+}
+
 /** 日志级别颜色 */
 export const LOG_COLORS = {
 	log: 'color: #3b82f6; font-weight: bold;',      // 蓝色
@@ -23,7 +33,7 @@ export const LOG_COLORS = {
  * 创建带标签的日志器（带颜色）
  * @param tag - 模块标签 (如 'Content', 'Background', 'CORS')
  */
-export function createLogger(tag: string) {
+export function createLogger(tag: string): Logger {
 	const fullPrefix = `${PREFIX} [${tag}]`;
 
 	return {
@@ -32,6 +42,7 @@ export function createLogger(tag: string) {
 		warn: (...args: unknown[]) => console.warn(`%c${fullPrefix}`, LOG_COLORS.warn, ...args),
 		error: (...args: unknown[]) => console.error(`%c${fullPrefix}`, LOG_COLORS.error, ...args),
 		debug: (...args: unknown[]) => console.debug(`%c${fullPrefix}`, LOG_COLORS.debug, ...args),
+		capture: (...args: unknown[]) => console.log(`%c${fullPrefix} [CAPTURE]`, LOG_COLORS.capture, ...args),
 	};
 }
 
@@ -39,7 +50,7 @@ export function createLogger(tag: string) {
  * 创建无颜色日志器（Service Worker 用）
  * Service Worker DevTools 不完全支持 %c
  */
-export function createPlainLogger(tag: string) {
+export function createPlainLogger(tag: string): Logger {
 	const fullPrefix = `${PREFIX} [${tag}]`;
 
 	return {
