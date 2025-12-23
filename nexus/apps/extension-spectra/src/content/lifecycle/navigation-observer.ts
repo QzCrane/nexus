@@ -52,18 +52,18 @@ export function createNavigationObserver(deps: NavigationObserverDeps): () => vo
 	// 监听 popstate (浏览器后退/前进)
 	window.addEventListener('popstate', handleNavigation);
 
-	// 拦截 history.pushState
+	// 拦截 history.pushState - 异步处理避免阻塞
 	const originalPushState = history.pushState;
 	history.pushState = function (...args) {
 		originalPushState.apply(this, args);
-		handleNavigation();
+		setTimeout(handleNavigation, 0);  // 异步，避免阻塞页面渲染
 	};
 
-	// 拦截 history.replaceState
+	// 拦截 history.replaceState - 异步处理避免阻塞
 	const originalReplaceState = history.replaceState;
 	history.replaceState = function (...args) {
 		originalReplaceState.apply(this, args);
-		handleNavigation();
+		setTimeout(handleNavigation, 0);  // 异步，避免阻塞页面渲染
 	};
 
 	// 返回清理函数

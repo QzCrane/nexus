@@ -1,17 +1,15 @@
 /**
- * CORS 数据检查器 (v3.9)
+ * CORS 数据检查器 (v3.11)
  * 
  * 通过读取 AnalyserNode 数据判断 CORS 状态
  * CORS 限制会导致数据全零
  * 
+ * v3.11: 简化检测策略
+ *   - 延迟 500ms 后直接启动观察模式
+ *   - 每 500ms 检测一次，持续 6 秒
+ *   - 期间检测到数据 → SAFE，超时 → RESTRICTED
  * v3.9: 增强预览视频识别
- *   - 静音元素直接跳过 (无法产生音频数据)
- *   - 循环播放元素跳过 (大概率是预览/背景)
- *   - src 包含预览关键词时跳过
- *   - 短视频+低音量时跳过
  * v3.8: 修复B站浏览页误判问题
- *   - 添加音频轨道检查，避免静音预览视频被误判
- * v3.7: 修复暂停/静音时检测中断问题，改为监听 play 事件继续检测
  */
 
 import { corsLogger as corsLog } from '@nexus/kernel';
@@ -63,7 +61,13 @@ function hasActiveAudio(el: HTMLMediaElement): boolean {
 }
 
 /**
- * 延迟检查 CORS 状态
+ * CORS 状态检测
+ * 
+ * v3.11 策略（简化版）：
+ * - 延迟 500ms 后开始观察
+ * - 每 500ms 检测一次，持续 6 秒
+ * - 期间任意检测到数据 → SAFE
+ * - 超时仍无数据 → RESTRICTED
  * 
  * @param analyser 要检查的 AnalyserNode
  * @param el 媒体元素（用于检查播放状态）
@@ -74,77 +78,82 @@ export function scheduleCorsCheck(
 	el: HTMLMediaElement,
 	onResult: CorsCheckCallback
 ): void {
-	let checkCount = 0;
-	const maxChecks = 3;        // 减少到 3 次
-	const checkInterval = 80;   // 减少到 80ms
+	const observeTimeout = 6000;   // 观察超时 (6秒)
+	const observeInterval = 500;   // 观察间隔
+	const startDelay = 500;        // 启动延迟
 	let settled = false;
+	let observeTimer: ReturnType<typeof setInterval> | null = null;
+	let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
 	const hostname = window.location.hostname;
 
 	corsLog.start(hostname, el);
 
-	const check = () => {
-		if (settled) return; // 已结束，不再检测
-		checkCount++;
+	// 清理函数
+	const cleanup = () => {
+		if (observeTimer) clearInterval(observeTimer);
+		if (timeoutTimer) clearTimeout(timeoutTimer);
+	};
 
+	// 检测音频数据
+	const hasAudioData = (): boolean => {
 		const data = new Uint8Array(analyser.frequencyBinCount);
 		analyser.getByteFrequencyData(data);
 		const sum = data.reduce((a, b) => a + b, 0);
-		const hasData = sum > 0;
+		if (sum > 0) corsLog.log(`📊 ${hostname}: 检测到音频数据 (sum=${sum})`);
+		return sum > 0;
+	};
 
-		corsLog.check(checkCount, maxChecks, sum, hasData);
-
-		if (hasData) {
-			// 有数据 = SAFE
-			settled = true;
-			corsLog.safe();
-			onResult(false);
+	// 启动观察
+	const startObserving = () => {
+		// 先检查播放条件
+		if (el.paused || el.muted) {
+			corsLog.waiting();
+			// 等待播放/取消静音后再开始
+			const onReady = () => {
+				el.removeEventListener('play', onReady);
+				el.removeEventListener('volumechange', onReady);
+				if (settled) return;
+				corsLog.resumed();
+				startObserving();
+			};
+			el.addEventListener('play', onReady, { once: true });
+			el.addEventListener('volumechange', onReady, { once: true });
 			return;
 		}
 
-		// 检查播放条件
-		const isPlaying = !el.paused;
-		const hasVolume = !el.muted && el.volume > 0;
-		const canCheck = isPlaying && hasVolume;
+		corsLog.log(`🔍 ${hostname}: 开始观察 (${observeTimeout / 1000}秒)`);
 
-		if (canCheck) {
-			// v3.8: 在判定 RESTRICTED 前，检查是否真的有音频轨道
-			if (checkCount >= maxChecks) {
-				// 检查媒体是否有音频轨道
-				if (!hasActiveAudio(el)) {
-					// 无音频轨道的预览视频，不做结论
-					corsLog.log(`⏸️ ${hostname}: 无音频轨道,跳过检测`);
-					// 不调用 onResult，保持 PENDING，等待用户进入播放页
-					return;
-				}
-				// 有音频轨道但全零 = RESTRICTED (CORS 限制)
+		// 定时检测
+		observeTimer = setInterval(() => {
+			if (settled) { cleanup(); return; }
+			if (el.paused || el.muted) return; // 暂停/静音时跳过
+
+			if (hasAudioData()) {
 				settled = true;
-				corsLog.restricted(maxChecks);
-				onResult(true);
-			} else {
-				// 条件满足但无数据，继续检查
-				setTimeout(check, checkInterval);
+				cleanup();
+				corsLog.safe();
+				onResult(false);
 			}
-		} else {
-			// v3.7: 视频暂停/静音，监听事件后继续检测
-			corsLog.waiting();
+		}, observeInterval);
 
-			const tryResume = () => {
-				el.removeEventListener('play', tryResume);
-				el.removeEventListener('volumechange', tryResume);
-				if (settled) return;
-				corsLog.resumed();
-				checkCount = 0; // 重置计数
-				setTimeout(check, 150);
-			};
+		// 超时判定
+		timeoutTimer = setTimeout(() => {
+			if (settled) { cleanup(); return; }
+			cleanup();
 
-			// 监听 play 和 volumechange 事件
-			el.addEventListener('play', tryResume, { once: true });
-			el.addEventListener('volumechange', tryResume, { once: true });
-		}
+			// 最终确认：检查是否有音频轨道
+			if (!hasActiveAudio(el)) {
+				corsLog.log(`⏸️ ${hostname}: 超时但无音频轨道，保持 PENDING`);
+				return;
+			}
+
+			settled = true;
+			corsLog.log(`❌ ${hostname}: 观察超时，判定 RESTRICTED`);
+			onResult(true);
+		}, observeTimeout);
 	};
 
-	// 首次检查延迟 150ms，等待媒体加载
-	setTimeout(check, 150);
+	// 延迟启动
+	setTimeout(startObserving, startDelay);
 }
-
 

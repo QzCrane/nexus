@@ -39,7 +39,10 @@ export async function createPolicyExecutor(deps: PolicyExecutorDeps, state: Poli
 		lastSyncHash: '',
 	};
 
-	log.debug(`[SPECTRA] CORS 初始化: ${initialCorsStatus}`);
+	// 显示 CORS 初始化状态
+	const statusDesc = initialCorsStatus === 'PENDING' ? '未知(需检测)'
+		: initialCorsStatus === 'SAFE' ? '安全(已缓存)' : '受限(已缓存)';
+	log.info(`[CORS] 初始化: ${initialCorsStatus} (${statusDesc})`);
 
 	/**
 	 * 获取当前 URL 信息 (适配契约)
@@ -139,6 +142,28 @@ export async function createPolicyExecutor(deps: PolicyExecutorDeps, state: Poli
 
 	// CORS 预检测：发现音频时立即检测，结果缓存到注册表
 	probeCorsOnMediaDetected(deps.messenger, internalState, applyState);
+
+	// 页面加载时主动探测：如果 CORS 是 PENDING，等待媒体元素出现后启动检测
+	if (internalState.corsStatus === 'PENDING') {
+		const tryStartCorsDetection = (attempt: number, maxAttempts: number) => {
+			const mediaCount = document.querySelectorAll('video, audio').length;
+
+			if (mediaCount > 0) {
+				log.info(`[CORS] 发现 ${mediaCount} 个媒体元素，启动检测...`);
+				audioController.initialize().then(() => {
+					audioController.scanAndAttach();
+				});
+			} else if (attempt < maxAttempts) {
+				// 延迟后重试
+				setTimeout(() => tryStartCorsDetection(attempt + 1, maxAttempts), 1000);
+			} else {
+				log.info('[CORS] 未发现媒体元素，等待 DOM 变化触发');
+			}
+		};
+
+		// 首次延迟 500ms 后开始检查，最多检查 5 次
+		setTimeout(() => tryStartCorsDetection(1, 5), 500);
+	}
 
 	// 返回公共接口
 	return {

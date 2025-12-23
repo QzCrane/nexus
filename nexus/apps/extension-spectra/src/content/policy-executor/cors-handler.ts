@@ -64,18 +64,20 @@ export function setupCorsCallback(
 	const { messenger, audioController, settingsManager } = deps;
 
 	audioController.setCallbacks(
-		// 失败回调: 发现跨域限制 (立即判定，成功回调可覆盖)
+		// 失败回调: 发现跨域限制（仅 PENDING 时生效）
 		(hostname) => {
+			// 只有 PENDING 时才能判定 RESTRICTED
+			// 如果已经是 SAFE，不允许回退
 			if (internalState.corsStatus !== 'PENDING') return;
 
 			log.info(`[CORS] Decision: RESTRICTED for ${hostname}`);
 			internalState.corsStatus = 'RESTRICTED';
 
 			const settings = settingsManager.get();
-			// 标记已检测并添加到注册表
 			safeSend(() => messenger.send('REGISTRY_MARK_PROBED', { domain: hostname, restricted: true }))
 				.then((response) => {
-					if (response?.success && response.reason !== 'updated') {
+					// 始终显示 Toast，让用户知道检测结果
+					if (response?.success) {
 						const lang = settings.lang || 'en-US';
 						const message = lang.startsWith('zh')
 							? `🔧 已添加 ${hostname} 到劫持列表`
@@ -87,26 +89,29 @@ export function setupCorsCallback(
 
 			onStatusChange();
 		},
-		// 成功回调: 证明站点支持 WebAudio（只有 PENDING 时才更新）
+		// 成功回调: 检测到音频数据 = 一定是 SAFE（可覆盖 RESTRICTED）
 		(hostname) => {
-			// 只有在 PENDING 状态才更新为 SAFE
-			// 如果已经是 RESTRICTED 或 SAFE，不再改变状态
-			if (internalState.corsStatus !== 'PENDING') return;
+			// 已经是 SAFE 则跳过
+			if (internalState.corsStatus === 'SAFE') return;
 
-			log.info(`[CORS] Decision: SAFE for ${hostname}`);
+			// 检测到数据就是 SAFE，可以覆盖之前的 RESTRICTED 误判
+			const wasRestricted = internalState.corsStatus === 'RESTRICTED';
+			if (wasRestricted) {
+				log.info(`[CORS] Correcting: ${hostname} RESTRICTED -> SAFE`);
+			} else {
+				log.info(`[CORS] Decision: SAFE for ${hostname}`);
+			}
 			internalState.corsStatus = 'SAFE';
 
 			const settings = settingsManager.get();
-			// 标记已检测为安全并添加到安全列表
 			safeSend(() => messenger.send('REGISTRY_MARK_PROBED', { domain: hostname, restricted: false }))
 				.then((response) => {
-					if (response?.success && response.reason !== 'updated') {
-						const lang = settings.lang || 'en-US';
-						const message = lang.startsWith('zh')
-							? `✓ 已添加 ${hostname} 到安全列表`
-							: `✓ Added ${hostname} to safe list`;
-						showToast(message);
-					}
+					// 无论是新增还是更正，都显示 Toast
+					const lang = settings.lang || 'en-US';
+					const message = wasRestricted
+						? (lang.startsWith('zh') ? `✓ 已更正 ${hostname} 为安全站点` : `✓ Corrected ${hostname} to safe`)
+						: (lang.startsWith('zh') ? `✓ 已添加 ${hostname} 到安全列表` : `✓ Added ${hostname} to safe list`);
+					if (response?.success) showToast(message);
 				})
 				.catch(() => { });
 
@@ -154,16 +159,9 @@ export async function probeCorsOnMediaDetected(
 			return;
 		}
 
-		// 2. 检查页面元素是否已被 WebAudioController 绑定
-		const attachedEl = document.querySelector('video[data-vm-attached="true"], audio[data-vm-attached="true"]');
-		if (attachedEl) {
-			log.debug(`[CORS Sync] ${hostname}: SAFE (发现已绑定元素)`);
-			if (internalState) internalState.corsStatus = 'SAFE';
-			safeSend(() => messenger.send('REGISTRY_MARK_PROBED', { domain: hostname, restricted: false }))
-				.catch(() => { });
-			onStatusChange?.();
-			return;
-		}
+		// 注意：data-vm-attached 只表示已绑定 AudioContext，不代表 CORS 检测完成
+		// createMediaElementSource() 不会因 CORS 抛错，所以绑定成功不等于跨域可用
+		// 真正的 CORS 判定由 scheduleCorsCheck 读取 AnalyserNode 数据后决定
 
 		// 3. 发现正在播放的媒体元素 → 主动探测
 		// 查找适合探测的元素：非静音、正在播放、有足够时长

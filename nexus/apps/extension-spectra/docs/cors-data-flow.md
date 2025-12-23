@@ -1,4 +1,4 @@
-# CORS 数据流 (v3.9)
+# CORS 数据流 (v3.12)
 
 ## 检测流程
 
@@ -8,28 +8,26 @@
   └─ 不在表中 → corsStatus = PENDING
                      │
                      ▼
-           probeCorsOnMediaDetected()
-           发现媒体元素 (readyState>=2 且正在播放)
+           tryStartCorsDetection() 主动探测
+           延迟 500ms 开始，每秒检查媒体元素
+           最多检查 5 次
                      │
-                     ▼
+                     ▼ (发现媒体元素)
            WebAudioController.attachNode()
            创建 AudioContext + AnalyserNode
                      │
-                     ▼
-           scheduleCorsCheck() 延迟检测
-           读取 getByteFrequencyData()
-                     │
-                     ├─ 有数据 → SAFE
-                     ├─ 全零×3 + hasActiveAudio → RESTRICTED
-                     ├─ 全零×3 + 无音频轨道 → 跳过 (保持 PENDING)
-                     └─ 暂停/静音 → 监听 play/volumechange 继续
+                     ├─ 媒体暂停/静音 → 等待 play 事件
+                     └─ 媒体播放中 → 观察模式 (6秒)
                                │
-                               ▼
+                               ├─ 有音频数据 → SAFE + Toast
+                               └─ 超时无数据 → RESTRICTED + Toast
+                                         │
+                                         ▼
            internalState.corsStatus 更新
            REGISTRY_MARK_PROBED 持久化
            applyState() 触发模式重计算
 
-SPA 导航 → navigation-observer 监听
+SPA 导航 → navigation-observer 异步监听
   ├─ popstate (后退/前进)
   └─ pushState/replaceState (SPA 路由)
            │
@@ -41,7 +39,9 @@ SPA 导航 → navigation-observer 监听
 
 **`createMediaElementSource()` 不会因跨域抛出错误！**
 
-CORS 限制仅在读取音频数据时体现：`AnalyserNode.getByteFrequencyData()` 返回全零
+- 绑定成功 ≠ CORS 可用
+- 真正判定在 `AnalyserNode.getByteFrequencyData()`
+- 跨域限制时返回全零
 
 ## 职责
 
@@ -51,7 +51,6 @@ CORS 限制仅在读取音频数据时体现：`AnalyserNode.getByteFrequencyDat
 | cors-checker        | 探测  | AnalyserNode 数据 + play 事件 |
 | navigation-observer | 触发  | SPA 路径变化 → probeCors()    |
 | policy-executor     | 读    | → `context.isRestricted`      |
-| badge-sync          | 读    | → 角标颜色                    |
 
 ## 决策
 
@@ -64,12 +63,9 @@ isRestricted = corsStatus !== 'SAFE'  // PENDING 保守视为受限
 else           → CAPTURE (紫)
 ```
 
-## 持久化 (v3.7)
+## v3.12 改进
 
-- SAFE 和 RESTRICTED 站点均入表
-- `REGISTRY_MARK_PROBED` → `chrome.storage.restrictedRegistry` → 下次 `initCorsStatus()` 读取
-
-| restricted | 含义     | UI 显示  |
-| ---------- | -------- | -------- |
-| true       | 需要劫持 | 劫持列表 |
-| false      | 原生可控 | 安全列表 |
+- 主动探测：页面加载后自动检查媒体元素
+- 重试机制：最多 5 次检查，每次间隔 1 秒
+- Toast 保证：所有入库操作均有 Toast 提示
+- 误判更正：SAFE 可覆盖 RESTRICTED
