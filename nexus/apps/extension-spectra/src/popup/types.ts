@@ -137,6 +137,11 @@ export interface I18NDict {
   grpInterface: string;
   grpGeneral: string;
   grpAdvanced: string;
+  // 注册表 UI
+  tabRestricted: string;
+  tabSafe: string;
+  filterPlaceholder: string;
+  registryHint: string;
   autoAddedToast: (domain: string) => string;
   // 主题相关
   themeLabel: string;

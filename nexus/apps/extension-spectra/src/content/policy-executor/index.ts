@@ -133,7 +133,7 @@ export async function createPolicyExecutor(deps: PolicyExecutorDeps, state: Poli
 	setupCorsCallback(deps, internalState, applyState);
 
 	// CORS 预检测：发现音频时立即检测，结果缓存到注册表
-	probeCorsOnMediaDetected(deps.messenger);
+	probeCorsOnMediaDetected(deps.messenger, internalState, applyState);
 
 	// 返回公共接口
 	return {
@@ -144,7 +144,7 @@ export async function createPolicyExecutor(deps: PolicyExecutorDeps, state: Poli
 		markUserInteracted: () => { state.userHasInteracted = true; },
 		getActiveMode: () => state.activeMode,
 		getUrlInfo,
-		probeCors: () => probeCorsOnMediaDetected(deps.messenger),
+		probeCors: () => probeCorsOnMediaDetected(deps.messenger, internalState, applyState),
 	};
 }
 

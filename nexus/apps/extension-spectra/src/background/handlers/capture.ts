@@ -46,9 +46,13 @@ export function registerCaptureHandlers(): void {
 
 				const streamId = await new Promise<string>((resolve, reject) => {
 					chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (sid) => {
-						if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
-						else if (!sid) reject(new Error('No Stream ID returned'));
-						else resolve(sid);
+						if (chrome.runtime.lastError) {
+							reject(new Error(chrome.runtime.lastError.message || 'Tab capture failed'));
+						} else if (!sid) {
+							reject(new Error('No Stream ID returned'));
+						} else {
+							resolve(sid);
+						}
 					});
 				});
 
@@ -81,8 +85,8 @@ export function registerCaptureHandlers(): void {
 
 			return { status: 'processing' as const };
 		} catch (e) {
-			const errorMsg = e instanceof Error ? e.message : String(e);
-			swLog.error(`Capture Toggle Failed (Tab ${tabId}):`, e);
+			const errorMsg = e instanceof Error ? e.message : JSON.stringify(e);
+			swLog.error(`Capture Toggle Failed (Tab ${tabId}): ${errorMsg}`);
 			captureStates.set(tabId, false);
 			return { status: 'error' as const, error: errorMsg };
 		} finally {

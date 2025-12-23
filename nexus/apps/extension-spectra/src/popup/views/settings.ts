@@ -8,9 +8,10 @@ import { Actions } from '@nexus/contracts';
 import type { I18NDict, RenderCallback } from '../types';
 import { getSettingsUIElements, $ } from '../utils/dom';
 import { applyTheme, THEME_ICONS, getNextThemeMode } from '../utils/theme';
-import { migrateRegistry, formatEntry, parseEntry } from '../utils/registry-helpers';
+import { migrateRegistry } from '../utils/registry-helpers';
 import { TIMING } from '../constants';
 import { applyLang, updateCardsI18n } from './i18n-apply';
+import { initRegistryUI } from './registry-ui';
 
 /** 设置页状态 */
 export interface SettingsState {
@@ -68,10 +69,6 @@ export async function initSettings(): Promise<SettingsState> {
     const btnTheme = $<HTMLButtonElement>('btn-theme');
     if (btnTheme) btnTheme.textContent = THEME_ICONS[gSettings.themeMode];
 
-    // 更新显示状态
-    if (ui.groupRegistry) {
-      ui.groupRegistry.style.display = gSettings.visualizerEnabled ? 'block' : 'none';
-    }
 
     // 保存并广播
     chrome.storage.local.set({ globalSettings: gSettings });
@@ -86,7 +83,9 @@ export async function initSettings(): Promise<SettingsState> {
   // 绑定事件
   bindSettingsEvents(ui, saveSettings);
   bindThemeButtonEvent(() => gSettings, (s) => { gSettings = s; });
-  bindRegistryButton(ui);
+
+  // 初始化注册表 UI
+  initRegistryUI(registryEntries);
 
   return { gSettings, registryEntries, dict };
 }
@@ -95,18 +94,11 @@ export async function initSettings(): Promise<SettingsState> {
 function initUIState(
   ui: ReturnType<typeof getSettingsUIElements>,
   gSettings: GlobalSettings,
-  registryEntries: DomainEntry[]
+  _registryEntries: DomainEntry[]
 ): void {
   if (ui.swOsd) ui.swOsd.checked = gSettings.osdEnabled;
   if (ui.swViz) ui.swViz.checked = gSettings.visualizerEnabled !== false;
   if (ui.selLang) ui.selLang.value = gSettings.lang;
-  // 显示域名列表，附带来源标记
-  if (ui.txtRegistry) {
-    ui.txtRegistry.value = registryEntries.map(e => formatEntry(e)).join('\n');
-  }
-  if (ui.groupRegistry) {
-    ui.groupRegistry.style.display = gSettings.visualizerEnabled !== false ? 'block' : 'none';
-  }
 }
 
 /** 初始化主题 */
@@ -147,23 +139,6 @@ function bindThemeButtonEvent(
     const selTheme = $<HTMLSelectElement>('set-theme');
     if (selTheme) selTheme.value = nextMode;
     chrome.storage.local.set({ globalSettings: updated });
-  };
-}
-
-/** 绑定注册表保存按钮 */
-function bindRegistryButton(ui: ReturnType<typeof getSettingsUIElements>): void {
-  if (!ui.btnSaveReg) return;
-  ui.btnSaveReg.onclick = () => {
-    const lines = ui.txtRegistry?.value.split('\n').map((l) => l.trim()).filter((l) => l.length > 0) || [];
-    // 解析带标记的格式，或作为纯域名处理
-    const entries: DomainEntry[] = lines.map(line => parseEntry(line));
-    chrome.storage.local.set({ restrictedRegistry: entries }, () => {
-      if (ui.btnSaveReg) {
-        const originalText = ui.btnSaveReg.innerText;
-        ui.btnSaveReg.innerText = 'OK!';
-        setTimeout(() => { if (ui.btnSaveReg) ui.btnSaveReg.innerText = originalText; }, TIMING.BUTTON_FEEDBACK_DURATION);
-      }
-    });
   };
 }
 

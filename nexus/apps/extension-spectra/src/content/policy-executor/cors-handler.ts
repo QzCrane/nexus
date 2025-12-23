@@ -1,20 +1,17 @@
 /**
- * 策略执行器 - CORS 检测处理 (v3.2)
+ * 策略执行器 - CORS 检测处理 (v3.3)
  * 
  * 职责：
  * - 初始化时查表获取 CORS 状态
  * - 设置 WebAudioController 回调，绑定成功/失败时更新注册表
- * - probeCorsOnMediaDetected 仅做快速检查，不执行破坏性探测
- * 
- * 设计原则：
- * - 完全依赖 WebAudioController 实际绑定结果
- * - 不创建独立 AudioContext 探测（避免破坏媒体元素）
- * - 检测结果持久化到 restrictedRegistry
+ * - 主动探测未知域名的 CORS 状态
  */
+
 
 import { safeSend } from '../context-guard';
 import { showToast } from '../toast';
 import { logger } from '../../shared/logger';
+import { probeWithTempContext } from './cors-prober';
 import type { PolicyExecutorDeps } from '../types';
 import type { InternalState, CorsStatus } from './types';
 
@@ -88,9 +85,11 @@ export function setupCorsCallback(
 
 			onStatusChange();
 		},
-		// 成功回调: 证明站点支持 WebAudio
+		// 成功回调: 证明站点支持 WebAudio（只有 PENDING 时才更新）
 		(hostname) => {
-			if (internalState.corsStatus === 'SAFE') return;
+			// 只有在 PENDING 状态才更新为 SAFE
+			// 如果已经是 RESTRICTED 或 SAFE，不再改变状态
+			if (internalState.corsStatus !== 'PENDING') return;
 
 			log.info(`[CORS] Decision: SAFE for ${hostname}`);
 			internalState.corsStatus = 'SAFE';
@@ -105,17 +104,19 @@ export function setupCorsCallback(
 }
 
 /**
- * CORS 预检测（发现音频时调用）
+ * CORS 主动探测（发现音频时调用）
  * 
- * v3.2 改进：不再创建独立 AudioContext 探测，避免破坏媒体元素绑定
- * 依赖 WebAudioController.setCallbacks() 的成功/失败回调来更新注册表
+ * v3.3 改进：主动探测未知域名，使用临时 AudioContext 测试
  * 
- * 此函数仅做快速检查：
- * 1. 查表：是否已检测过
- * 2. 检查页面元素是否已被 WebAudioController 绑定（直接判定 SAFE）
+ * 流程：
+ * 1. 查表：已检测过 → 直接返回
+ * 2. 检查已绑定元素 → SAFE
+ * 3. 未知域名 → 主动探测（临时 AudioContext）
  */
 export async function probeCorsOnMediaDetected(
-	messenger: Pick<PolicyExecutorDeps['messenger'], 'send'>
+	messenger: Pick<PolicyExecutorDeps['messenger'], 'send'>,
+	internalState?: InternalState,
+	onStatusChange?: () => void
 ): Promise<void> {
 	const hostname = window.location.hostname;
 
@@ -127,25 +128,62 @@ export async function probeCorsOnMediaDetected(
 
 		if (result?.entry?.probed) {
 			log.debug(`[CORS Probe] ${hostname}: 已检测过 (${result.entry.restricted ? 'RESTRICTED' : 'SAFE'})`);
+			// 如果本地状态还是 PENDING，同步更新
+			if (internalState && internalState.corsStatus === 'PENDING') {
+				internalState.corsStatus = result.entry.restricted ? 'RESTRICTED' : 'SAFE';
+				onStatusChange?.();
+			}
 			return;
 		}
 
 		// 2. 检查页面元素是否已被 WebAudioController 绑定
-		const mediaEl = document.querySelector('video[data-vm-attached="true"], audio[data-vm-attached="true"]');
-		if (mediaEl) {
-			// 已绑定 = SAFE
-			log.debug(`[CORS Probe] ${hostname}: SAFE (发现已绑定的媒体元素)`);
+		const attachedEl = document.querySelector('video[data-vm-attached="true"], audio[data-vm-attached="true"]');
+		if (attachedEl) {
+			log.debug(`[CORS Probe] ${hostname}: SAFE (发现已绑定元素)`);
+			if (internalState) internalState.corsStatus = 'SAFE';
 			safeSend(() => messenger.send('REGISTRY_MARK_PROBED', { domain: hostname, restricted: false }))
 				.catch(() => { });
+			onStatusChange?.();
 			return;
 		}
 
-		// 3. 未检测过且无绑定元素：等待 WebAudioController 的回调
-		// 不主动探测，避免破坏媒体元素
-		log.debug(`[CORS Probe] ${hostname}: 等待 WebAudioController 回调判定`);
+		// 3. 主动探测：找一个未绑定的媒体元素进行测试
+		const testEl = document.querySelector('video:not([data-vm-attached]), audio:not([data-vm-attached])') as HTMLMediaElement | null;
+		if (!testEl) {
+			log.debug(`[CORS Probe] ${hostname}: 无可用媒体元素，等待后续检测`);
+			return;
+		}
+
+		// 执行主动探测
+		const probeResult = await probeWithTempContext(testEl);
+
+		// null = 元素未就绪或已探测过
+		if (probeResult === null) {
+			log.debug(`[CORS Probe] ${hostname}: 跳过 (未就绪或已探测)`);
+			return;
+		}
+
+		log.info(`[CORS Probe] ${hostname}: 主动探测结果 = ${probeResult ? 'RESTRICTED' : 'SAFE'}`);
+
+		// 更新本地状态
+		if (internalState) {
+			internalState.corsStatus = probeResult ? 'RESTRICTED' : 'SAFE';
+		}
+
+		// 记录到注册表
+		safeSend(() => messenger.send('REGISTRY_MARK_PROBED', { domain: hostname, restricted: probeResult }))
+			.then((response) => {
+				if (response?.success && probeResult && response.reason !== 'updated') {
+					showToast(`🔧 检测到 ${hostname} 需要劫持模式`);
+				}
+			})
+			.catch(() => { });
+
+		// 触发策略重新计算
+		onStatusChange?.();
 
 	} catch (err) {
-		log.debug(`[CORS Probe] 查表失败: ${err}`);
-		// 失败时也不主动探测，等待回调
+		log.debug(`[CORS Probe] 探测失败: ${err}`);
 	}
 }
+

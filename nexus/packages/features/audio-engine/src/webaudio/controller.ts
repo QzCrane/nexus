@@ -69,7 +69,8 @@ export class WebAudioController {
 	/** 附加音频处理节点 */
 	attachNode(el: HTMLMediaElement): boolean {
 		const mediaEl = el as AudioMediaElement;
-		if (mediaEl._vm || mediaEl.dataset.vmAttached === 'true' || !this.ctx) return false;
+		// 跳过：已绑定 | 已被 CORS 探测占用 | 无 AudioContext
+		if (mediaEl._vm || mediaEl.dataset.vmAttached === 'true' || mediaEl.dataset.vmProbed === 'true' || !this.ctx) return false;
 
 		try {
 			if (!el.crossOrigin && el.src && !el.src.startsWith('data:') && !el.src.startsWith('blob:')) {

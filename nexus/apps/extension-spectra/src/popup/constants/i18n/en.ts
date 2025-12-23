@@ -28,7 +28,11 @@ export const EN_US: I18NDict = {
   captureListSub: 'One domain per line (e.g. tiktok.com)',
   grpInterface: 'Interface',
   grpGeneral: 'General',
-  grpAdvanced: 'Advanced',
+  grpAdvanced: 'Site Registry',
+  tabRestricted: '🔒 Need Capture',
+  tabSafe: '✅ Safe Sites',
+  filterPlaceholder: '🔍 Filter...',
+  registryHint: 'Sites are auto-detected. Manually add if needed.',
   autoAddedToast: (domain: string) => `🔧 Auto-added ${domain} to capture list`,
   // 主题相关
   themeLabel: 'Theme',

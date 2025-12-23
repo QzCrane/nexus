@@ -12,13 +12,28 @@
           <div class="nav-island">
             <div class="brand">Volume Master <span class="ver">2026</span></div>
             <div class="nav-right">
-              <button id="btn-theme" class="btn-icon" title="Toggle Theme" data-i18n-title="btnThemeTooltip">
+              <button
+                id="btn-theme"
+                class="btn-icon"
+                title="Toggle Theme"
+                data-i18n-title="btnThemeTooltip"
+              >
                 🖥️
               </button>
-              <button id="btn-settings" class="btn-icon" title="Settings" data-i18n-title="btnSettingsTooltip">
+              <button
+                id="btn-settings"
+                class="btn-icon"
+                title="Settings"
+                data-i18n-title="btnSettingsTooltip"
+              >
                 ⚙️
               </button>
-              <button id="btn-shortcuts" class="btn-icon" title="Shortcuts" data-i18n-title="btnShortcutsTooltip">
+              <button
+                id="btn-shortcuts"
+                class="btn-icon"
+                title="Shortcuts"
+                data-i18n-title="btnShortcutsTooltip"
+              >
                 ⌨️
               </button>
             </div>
@@ -123,26 +138,48 @@
               Advanced
             </div>
             <div class="setting-card" style="padding: 16px">
-              <div class="setting-label">
-                <div data-i18n="captureListLabel">Force Capture Mode</div>
-                <div class="setting-sub" data-i18n="captureListSub">
-                  One domain per line (e.g. douyin.com)
-                </div>
-              </div>
-              <textarea
-                id="set-registry"
-                class="nice-textarea"
-                placeholder="example.com"
-                spellcheck="false"
-              ></textarea>
-              <div class="setting-actions">
+              <!-- 标签页切换 -->
+              <div class="registry-tabs">
                 <button
-                  id="btn-save-registry"
-                  class="btn-primary"
-                  data-i18n="save"
+                  id="tab-restricted"
+                  class="registry-tab active"
+                  data-i18n="tabRestricted"
                 >
-                  Save
+                  🔒 Need Capture
                 </button>
+                <button id="tab-safe" class="registry-tab" data-i18n="tabSafe">
+                  ✅ Safe Sites
+                </button>
+              </div>
+
+              <!-- 搜索框 -->
+              <div class="registry-search">
+                <input
+                  type="text"
+                  id="registry-filter"
+                  class="registry-filter-input"
+                  placeholder="🔍 Filter..."
+                  data-i18n-placeholder="filterPlaceholder"
+                />
+              </div>
+
+              <!-- 域名列表 -->
+              <div id="registry-list" class="registry-list"></div>
+
+              <!-- 添加新域名 -->
+              <div class="registry-add">
+                <input
+                  type="text"
+                  id="registry-new-domain"
+                  class="registry-add-input"
+                  placeholder="example.com"
+                />
+                <button id="btn-add-domain" class="btn-small">+</button>
+              </div>
+
+              <!-- 提示文字 -->
+              <div class="setting-sub registry-hint" data-i18n="registryHint">
+                Sites are auto-detected. Manually add if needed.
               </div>
             </div>
           </div>
