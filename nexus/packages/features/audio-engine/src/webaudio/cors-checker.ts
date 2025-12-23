@@ -17,20 +17,24 @@ import { corsLogger as corsLog } from '@nexus/kernel';
 export type CorsCheckCallback = (restricted: boolean) => void;
 
 /**
- * 检查媒体元素是否有可用的音频
+ * 检查媒体元素是否是"主视频"，值得进行 CORS 判定
  * 
- * @returns true = 有音频轨道，可检测；false = 无音频，应跳过
+ * 只有满足以下条件的元素才进行 CORS 判定：
+ * - 非静音、非循环
+ * - 尺寸足够大（排除小的广告/封面视频）
+ * - 非预览视频
+ * 
+ * @returns true = 是主视频，应检测；false = 应跳过
  */
-function hasActiveAudio(el: HTMLMediaElement): boolean {
+function isMainVideo(el: HTMLMediaElement): boolean {
 	// 检查 1: 使用 audioTracks API (部分浏览器支持)
 	const audioTracks = (el as HTMLVideoElement & { audioTracks?: { length: number } }).audioTracks;
 	if (audioTracks && audioTracks.length === 0) {
 		return false; // 明确无音频轨道
 	}
 
-	// 检查 2: 静音状态 = 无法检测 CORS (无论是否有音频)
+	// 检查 2: 静音状态 = 无法检测 CORS
 	if (el.muted) {
-		// 静音视频无法产生音频数据，不做结论
 		return false;
 	}
 
@@ -41,24 +45,32 @@ function hasActiveAudio(el: HTMLMediaElement): boolean {
 
 	// 检查 4: src 包含预览关键词
 	const src = el.src || el.currentSrc || '';
-	const previewKeywords = ['preview', 'thumb', 'poster', 'cover', 'banner'];
+	const previewKeywords = ['preview', 'thumb', 'poster', 'cover', 'banner', 'ad', 'logo'];
 	if (previewKeywords.some(kw => src.toLowerCase().includes(kw))) {
 		return false;
 	}
 
-	// 检查 5: 短视频 (<60s) 且音量很低 = 可能是预览
-	if (el.duration < 60 && el.volume < 0.1) {
+	// 检查 5: 视频尺寸过小 = 可能是广告/封面
+	if (el instanceof HTMLVideoElement) {
+		// 视频宽度或高度小于 200px，认为是小视频
+		if (el.videoWidth > 0 && el.videoWidth < 200) return false;
+		if (el.videoHeight > 0 && el.videoHeight < 150) return false;
+
+		// 元素在页面上的可见尺寸也要检查
+		const rect = el.getBoundingClientRect();
+		if (rect.width < 200 || rect.height < 150) return false;
+	}
+
+	// 检查 6: 短视频 (<30s) 且音量很低 = 可能是预览
+	if (el.duration > 0 && el.duration < 30 && el.volume < 0.3) {
 		return false;
 	}
 
-	// 检查 6: 视频元素检查 videoWidth (排除纯音频伪装)
-	if (el instanceof HTMLVideoElement && el.videoWidth === 0 && el.videoHeight === 0) {
-		return true; // 纯音频，应检测
-	}
-
-	// 默认假设有音频（保守策略）
 	return true;
 }
+
+// 保留旧函数名作为别名，保持兼容
+const hasActiveAudio = isMainVideo;
 
 /**
  * CORS 状态检测
@@ -129,6 +141,11 @@ export function scheduleCorsCheck(
 			if (el.paused || el.muted) return; // 暂停/静音时跳过
 
 			if (hasAudioData()) {
+				// 🔴 关键检查：只有主视频的结果才被采信
+				if (!isMainVideo(el)) {
+					corsLog.log(`⚠️ ${hostname}: 检测到数据但非主视频，忽略`);
+					return;
+				}
 				settled = true;
 				cleanup();
 				corsLog.safe();

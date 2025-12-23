@@ -24,6 +24,18 @@ export function registerBadgeHandlers(): void {
 
 		const { volume, muted, isCapture } = req;
 
+		// 🔴 新增：默认配置（音量100%，未静音，非 Capture）时不显示角标
+		const isDefaultConfig = volume === 100 && !muted && !isCapture;
+		if (isDefaultConfig) {
+			badgeState.delete(tabId);
+			try {
+				await chrome.action.setBadgeText({ tabId, text: '' });
+			} catch {
+				// 静默处理
+			}
+			return;
+		}
+
 		// 计算角标文字
 		let badgeText = '';
 		let badgeColor: string = isCapture ? BADGE_COLORS.CAPTURE : BADGE_COLORS.NATIVE;
