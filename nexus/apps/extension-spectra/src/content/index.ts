@@ -29,6 +29,7 @@ import {
   setupUserGestureListeners,
   setupPopupConnectionListener,
   setupFullscreenHandler,
+  createNavigationObserver,
   cleanupIntervals,
 } from './lifecycle';
 
@@ -102,6 +103,7 @@ async function initSpectra(): Promise<void> {
   // ============ 生命周期管理 ============
   let cleanupObserver: (() => void) | null = null;
   let cleanupFullscreen: (() => void) | null = null;
+  let cleanupNavigation: (() => void) | null = null;
   const intervals: { stateReapply?: ReturnType<typeof setInterval>; mediaReport?: ReturnType<typeof setInterval> } = {};
 
   // 上下文失效时的清理回调
@@ -109,6 +111,7 @@ async function initSpectra(): Promise<void> {
     cleanupIntervals(intervals);
     cleanupObserver?.();
     cleanupFullscreen?.();
+    cleanupNavigation?.();
     log.debug('Extension context invalidated, cleanup complete.');
   };
 
@@ -124,6 +127,12 @@ async function initSpectra(): Promise<void> {
 
   // 全屏处理器：全屏切换时临时暂停/恢复 Capture
   cleanupFullscreen = setupFullscreenHandler(state, policyExecutor, captureManager);
+
+  // SPA 导航观察器：路径变化时触发 CORS 重新检测
+  cleanupNavigation = createNavigationObserver({
+    policyExecutor,
+    onNavigate: () => policyExecutor.applyState(),
+  });
 
   // ============ 初始化加载 ============
   loadConfigAndApply(messenger, state, settingsManager, policyExecutor);

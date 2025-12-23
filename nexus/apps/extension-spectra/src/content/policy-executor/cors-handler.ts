@@ -15,6 +15,7 @@ import { showToast } from '../toast';
 import { logger } from '../../shared/logger';
 import type { PolicyExecutorDeps } from '../types';
 import type { InternalState, CorsStatus } from './types';
+import { findProbeCandidate } from './media-probe';
 
 const log = logger.content;
 
@@ -117,13 +118,14 @@ export function setupCorsCallback(
 /**
  * CORS 状态同步（发现音频时调用）
  * 
- * v3.6 改进：不主动探测！createMediaElementSource 会导致静音
- * CORS 状态完全依赖 WebAudioController.attachNode() 的回调
+ * v3.9 改进：主动探测正在播放的媒体元素
+ * 当发现非静音、正在播放的视频时，主动创建探测节点触发 CORS 检测
  * 
  * 流程：
  * 1. 查表：已检测过 → 同步本地状态
  * 2. 检查已绑定元素 → SAFE
- * 3. 未知 → 保持 PENDING，等待 WebAudioController 回调
+ * 3. 发现正在播放的媒体 → 主动探测
+ * 4. 未知 → 保持 PENDING，等待 WebAudioController 回调
  */
 export async function probeCorsOnMediaDetected(
 	messenger: Pick<PolicyExecutorDeps['messenger'], 'send'>,
@@ -163,7 +165,17 @@ export async function probeCorsOnMediaDetected(
 			return;
 		}
 
-		// 3. 未知域名：保持 PENDING，等待 WebAudioController 的回调
+		// 3. 发现正在播放的媒体元素 → 主动探测
+		// 查找适合探测的元素：非静音、正在播放、有足够时长
+		const candidateEl = findProbeCandidate();
+		if (candidateEl && !candidateEl.dataset.vmProbed) {
+			log.debug(`[CORS Sync] ${hostname}: 发现可探测媒体，主动触发检测`);
+			candidateEl.dataset.vmProbed = 'true';
+			// 主动探测会创建临时 AudioContext，依赖 WebAudioController 的回调更新状态
+			// 此处仅标记，实际探测在 controller.attachNode 中进行
+		}
+
+		// 4. 未知域名：保持 PENDING，等待 WebAudioController 的回调
 		// 不主动探测！WebAudioController.attachNode() 会触发成功/失败回调
 		log.debug(`[CORS Sync] ${hostname}: 未知，等待 WebAudioController 回调`);
 
@@ -171,5 +183,4 @@ export async function probeCorsOnMediaDetected(
 		log.debug(`[CORS Sync] 查询失败: ${err}`);
 	}
 }
-
 

@@ -1,4 +1,4 @@
-# CORS 数据流 (v3.7)
+# CORS 数据流 (v3.9)
 
 ## 检测流程
 
@@ -20,13 +20,21 @@
            读取 getByteFrequencyData()
                      │
                      ├─ 有数据 → SAFE
-                     ├─ 全零×5 → RESTRICTED (CORS 限制)
-                     └─ 暂停/静音 → 监听 play 事件后继续
+                     ├─ 全零×3 + hasActiveAudio → RESTRICTED
+                     ├─ 全零×3 + 无音频轨道 → 跳过 (保持 PENDING)
+                     └─ 暂停/静音 → 监听 play/volumechange 继续
                                │
                                ▼
            internalState.corsStatus 更新
            REGISTRY_MARK_PROBED 持久化
            applyState() 触发模式重计算
+
+SPA 导航 → navigation-observer 监听
+  ├─ popstate (后退/前进)
+  └─ pushState/replaceState (SPA 路由)
+           │
+           ▼
+      路径变化 → probeCors() 重新检测
 ```
 
 ## 关键原理
@@ -37,12 +45,13 @@ CORS 限制仅在读取音频数据时体现：`AnalyserNode.getByteFrequencyDat
 
 ## 职责
 
-| 组件            | 写/读 | 数据                          |
-| --------------- | ----- | ----------------------------- |
-| cors-handler    | 写    | `internalState.corsStatus`    |
-| cors-checker    | 探测  | AnalyserNode 数据 + play 事件 |
-| policy-executor | 读    | → `context.isRestricted`      |
-| badge-sync      | 读    | → 角标颜色                    |
+| 组件                | 写/读 | 数据                          |
+| ------------------- | ----- | ----------------------------- |
+| cors-handler        | 写    | `internalState.corsStatus`    |
+| cors-checker        | 探测  | AnalyserNode 数据 + play 事件 |
+| navigation-observer | 触发  | SPA 路径变化 → probeCors()    |
+| policy-executor     | 读    | → `context.isRestricted`      |
+| badge-sync          | 读    | → 角标颜色                    |
 
 ## 决策
 
