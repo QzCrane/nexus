@@ -1,4 +1,4 @@
-# CORS 数据流 (v3.3)
+# CORS 数据流 (v3.4)
 
 ## 检测流程
 
@@ -9,24 +9,36 @@
                      │
                      ▼
            probeCorsOnMediaDetected()
-           发现媒体元素 → probeWithTempContext()
-                     │ 临时 AudioContext 探测
+           发现媒体元素 (readyState>=2 且正在播放)
+                     │
                      ▼
-           corsStatus = SAFE/RESTRICTED
+           probeWithTempContext()
+           创建临时 AudioContext + AnalyserNode
+           读取 getByteFrequencyData()
+                     │
+                     ├─ 有数据 → SAFE
+                     └─ 全零 → RESTRICTED (CORS 限制)
+                              │
+                              ▼
+           internalState.corsStatus 更新
            REGISTRY_MARK_PROBED 持久化
-
-WebAudioController.attachNode() 也可更新 corsStatus
+           applyState() 触发模式重计算
 ```
+
+## 关键原理
+
+**`createMediaElementSource()` 不会因跨域抛出错误！**
+
+CORS 限制仅在读取音频数据时体现：`AnalyserNode.getByteFrequencyData()` 返回全零
 
 ## 职责
 
 | 组件            | 写/读 | 数据                       |
 | --------------- | ----- | -------------------------- |
 | cors-handler    | 写    | `internalState.corsStatus` |
-| cors-prober     | 探测  | 临时 AudioContext 测试     |
+| cors-prober     | 探测  | AnalyserNode 数据检测      |
 | policy-executor | 读    | → `context.isRestricted`   |
 | badge-sync      | 读    | → 角标颜色                 |
-| popup/messaging | 读    | → `state.isRestrictedSite` |
 
 ## 决策
 
