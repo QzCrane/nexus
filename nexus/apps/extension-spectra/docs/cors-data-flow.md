@@ -32,7 +32,7 @@ PolicyEngine.calculateMode(context.isRestricted)
 
 ```text
 needsAdvanced = volume>100 || visualizer || EQ || compressor || bass
-isRestricted = corsStatus === 'RESTRICTED'
+isRestricted = corsStatus !== 'SAFE'  // PENDING 保守视为受限
 
 !needsAdvanced → NATIVE_LITE (蓝)
 !isRestricted  → NATIVE_WEBAUDIO (蓝)

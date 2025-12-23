@@ -61,7 +61,8 @@ export async function createPolicyExecutor(deps: PolicyExecutorDeps, state: Poli
 		const urlInfo = getUrlInfo();
 
 		// 受限站点判断：CORS 检测结果决定
-		const isRestricted = internalState.corsStatus === 'RESTRICTED';
+		// PENDING 也视为受限（保守策略：首次访问跨域站点避免短暂无声）
+		const isRestricted = internalState.corsStatus !== 'SAFE';
 
 		const context: PolicyContext = {
 			urlInfo,

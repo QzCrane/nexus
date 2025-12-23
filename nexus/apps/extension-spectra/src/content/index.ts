@@ -28,6 +28,7 @@ import {
   reportMediaState,
   setupUserGestureListeners,
   setupPopupConnectionListener,
+  setupFullscreenHandler,
   cleanupIntervals,
 } from './lifecycle';
 
@@ -100,12 +101,14 @@ async function initSpectra(): Promise<void> {
 
   // ============ 生命周期管理 ============
   let cleanupObserver: (() => void) | null = null;
+  let cleanupFullscreen: (() => void) | null = null;
   const intervals: { stateReapply?: ReturnType<typeof setInterval>; mediaReport?: ReturnType<typeof setInterval> } = {};
 
   // 上下文失效时的清理回调
   const handleContextInvalid = () => {
     cleanupIntervals(intervals);
     cleanupObserver?.();
+    cleanupFullscreen?.();
     log.debug('Extension context invalidated, cleanup complete.');
   };
 
@@ -118,6 +121,9 @@ async function initSpectra(): Promise<void> {
 
   // 用户手势监听
   setupUserGestureListeners(state, audioController, policyExecutor);
+
+  // 全屏处理器：全屏切换时临时暂停/恢复 Capture
+  cleanupFullscreen = setupFullscreenHandler(state, policyExecutor, captureManager);
 
   // ============ 初始化加载 ============
   loadConfigAndApply(messenger, state, settingsManager, policyExecutor);

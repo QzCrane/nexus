@@ -45,7 +45,7 @@ nexus/
 |    ✅    |  ✅  | CAPTURE         | 🟣  |
 
 **高级需求** = volume>100 || visualizer || EQ || compressor || bass
-**受限判断** = `internalState.corsStatus === 'RESTRICTED'` (见 cors-data-flow.md)
+**受限判断** = `internalState.corsStatus !== 'SAFE'` (PENDING 保守视为受限)
 
 ## 禁止
 

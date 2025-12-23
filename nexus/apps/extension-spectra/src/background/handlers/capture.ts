@@ -82,7 +82,7 @@ export function registerCaptureHandlers(): void {
 			return { status: 'processing' as const };
 		} catch (e) {
 			const errorMsg = e instanceof Error ? e.message : String(e);
-			swLog.error(`Capture Toggle Failed (Tab ${tabId}):`, { msg: errorMsg });
+			swLog.error(`Capture Toggle Failed (Tab ${tabId}):`, e);
 			captureStates.set(tabId, false);
 			return { status: 'error' as const, error: errorMsg };
 		} finally {

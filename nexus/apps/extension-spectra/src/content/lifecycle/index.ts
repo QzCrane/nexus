@@ -15,4 +15,5 @@ export {
 	setupUserGestureListeners,
 	setupPopupConnectionListener
 } from './user-interaction';
+export { setupFullscreenHandler } from './fullscreen-handler';
 
