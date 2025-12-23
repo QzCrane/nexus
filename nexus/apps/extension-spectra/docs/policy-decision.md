@@ -1,12 +1,22 @@
-# 策略决策 (v3.2)
+# 策略决策 (v3.5)
+
+## 延迟激活 (v3.5 新增)
+
+**核心原则**：未操作 + 音量正常 → 不启动高级模式，节省 CPU
+
+```text
+用户未交互 AND 音量 ≤ 100% → NATIVE_LITE (即使站点需要劫持)
+用户打开 Popup 或快捷键 → 正常策略生效
+```
 
 ## 决策表
 
-| 高级需求 | 受限 |      模式       | 色  |
-| :------: | :--: | :-------------: | :-: |
-|    ❌    | 任意 |   NATIVE_LITE   | 🔵  |
-|    ✅    |  ❌  | NATIVE_WEBAUDIO | 🔵  |
-|    ✅    |  ✅  |     CAPTURE     | 🟣  |
+| 已交互 | 高级需求 | 受限 |      模式       | 色  |
+| :----: | :------: | :--: | :-------------: | :-: |
+|   ❌   |   任意   | 任意 |   NATIVE_LITE   | 🔵  |
+|   ✅   |    ❌    | 任意 |   NATIVE_LITE   | 🔵  |
+|   ✅   |    ✅    |  ❌  | NATIVE_WEBAUDIO | 🔵  |
+|   ✅   |    ✅    |  ✅  |     CAPTURE     | 🟣  |
 
 ## 高级需求
 
@@ -20,24 +30,16 @@
 | NATIVE_WEBAUDIO | WebAudio 链   | 中   |
 | CAPTURE         | Tab Capture   | 高   |
 
-## CORS 检测
+## CORS 检测 (v3.4)
 
-```text
-页面加载 → initCorsStatus() 查表
-    │
-已检测? → 用缓存
-    │ 否
-WebAudioController.attachNode()
-    │
-成功 → SAFE → 入表
-失败 → RESTRICTED → 入表 (后续成功可覆盖)
-```
+使用 `AnalyserNode.getByteFrequencyData()` 读取数据判断：
+
+- 有数据 → SAFE
+- 全零 → RESTRICTED
+
+详见: `docs/cors-data-flow.md`
 
 ## 实现位置
 
 - PolicyEngine: `packages/features/audio-engine/src/PolicyEngine.ts`
 - CORS 检测: `content/policy-executor/cors-handler.ts`
-
-## 相关
-
-- 数据流: `docs/cors-data-flow.md`

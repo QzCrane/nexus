@@ -3,6 +3,7 @@
  */
 
 import { AudioParams, CompressorOn, CompressorNativeOff } from '../constants.js';
+import { scheduleCorsCheck } from './cors-checker.js';
 import type {
 	AudioConfig, AudioNodeSet, AudioMediaElement,
 	CorsDetectedCallback, CorsSuccessCallback
@@ -77,7 +78,8 @@ export class WebAudioController {
 				el.crossOrigin = 'anonymous';
 			}
 			const source = this.ctx.createMediaElementSource(el);
-			this.handleCorsSuccess();
+			// 注意：createMediaElementSource 不会因 CORS 抛出错误！
+			// 需要延迟检查 AnalyserNode 数据来判断是否真的 SAFE
 
 			const gain = this.ctx.createGain();
 			const bass = this.ctx.createBiquadFilter();
@@ -112,12 +114,19 @@ export class WebAudioController {
 				if (this.ctx?.state === 'suspended') this.ctx.resume().catch(() => { });
 			});
 
+			// 延迟检查 CORS：读取 AnalyserNode 数据判断是否有实际音频
+			scheduleCorsCheck(analyser, el, (restricted) => {
+				if (restricted) this.handleCorsDetected();
+				else this.handleCorsSuccess();
+			});
+
 			return true;
 		} catch {
 			this.handleCorsDetected();
 			return false;
 		}
 	}
+
 
 	/** 更新音频参数 */
 	updateParams(config: AudioConfig): void {

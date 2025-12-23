@@ -1,17 +1,18 @@
 /**
- * 策略执行器 - CORS 检测处理 (v3.3)
+ * 策略执行器 - CORS 检测处理 (v3.6)
  * 
  * 职责：
  * - 初始化时查表获取 CORS 状态
  * - 设置 WebAudioController 回调，绑定成功/失败时更新注册表
- * - 主动探测未知域名的 CORS 状态
+ * - 同步已检测的 CORS 状态到本地
+ * 
+ * 重要：不主动探测！createMediaElementSource 会导致静音
  */
 
 
 import { safeSend } from '../context-guard';
 import { showToast } from '../toast';
 import { logger } from '../../shared/logger';
-import { probeWithTempContext } from './cors-prober';
 import type { PolicyExecutorDeps } from '../types';
 import type { InternalState, CorsStatus } from './types';
 
@@ -104,14 +105,15 @@ export function setupCorsCallback(
 }
 
 /**
- * CORS 主动探测（发现音频时调用）
+ * CORS 状态同步（发现音频时调用）
  * 
- * v3.3 改进：主动探测未知域名，使用临时 AudioContext 测试
+ * v3.6 改进：不主动探测！createMediaElementSource 会导致静音
+ * CORS 状态完全依赖 WebAudioController.attachNode() 的回调
  * 
  * 流程：
- * 1. 查表：已检测过 → 直接返回
+ * 1. 查表：已检测过 → 同步本地状态
  * 2. 检查已绑定元素 → SAFE
- * 3. 未知域名 → 主动探测（临时 AudioContext）
+ * 3. 未知 → 保持 PENDING，等待 WebAudioController 回调
  */
 export async function probeCorsOnMediaDetected(
 	messenger: Pick<PolicyExecutorDeps['messenger'], 'send'>,
@@ -120,6 +122,11 @@ export async function probeCorsOnMediaDetected(
 ): Promise<void> {
 	const hostname = window.location.hostname;
 
+	// 如果已有确定的状态，不再处理
+	if (internalState && internalState.corsStatus !== 'PENDING') {
+		return;
+	}
+
 	try {
 		// 1. 查表：是否已检测过
 		const result = await safeSend(() =>
@@ -127,9 +134,8 @@ export async function probeCorsOnMediaDetected(
 		);
 
 		if (result?.entry?.probed) {
-			log.debug(`[CORS Probe] ${hostname}: 已检测过 (${result.entry.restricted ? 'RESTRICTED' : 'SAFE'})`);
-			// 如果本地状态还是 PENDING，同步更新
-			if (internalState && internalState.corsStatus === 'PENDING') {
+			log.debug(`[CORS Sync] ${hostname}: 已检测过 (${result.entry.restricted ? 'RESTRICTED' : 'SAFE'})`);
+			if (internalState) {
 				internalState.corsStatus = result.entry.restricted ? 'RESTRICTED' : 'SAFE';
 				onStatusChange?.();
 			}
@@ -139,7 +145,7 @@ export async function probeCorsOnMediaDetected(
 		// 2. 检查页面元素是否已被 WebAudioController 绑定
 		const attachedEl = document.querySelector('video[data-vm-attached="true"], audio[data-vm-attached="true"]');
 		if (attachedEl) {
-			log.debug(`[CORS Probe] ${hostname}: SAFE (发现已绑定元素)`);
+			log.debug(`[CORS Sync] ${hostname}: SAFE (发现已绑定元素)`);
 			if (internalState) internalState.corsStatus = 'SAFE';
 			safeSend(() => messenger.send('REGISTRY_MARK_PROBED', { domain: hostname, restricted: false }))
 				.catch(() => { });
@@ -147,43 +153,13 @@ export async function probeCorsOnMediaDetected(
 			return;
 		}
 
-		// 3. 主动探测：找一个未绑定的媒体元素进行测试
-		const testEl = document.querySelector('video:not([data-vm-attached]), audio:not([data-vm-attached])') as HTMLMediaElement | null;
-		if (!testEl) {
-			log.debug(`[CORS Probe] ${hostname}: 无可用媒体元素，等待后续检测`);
-			return;
-		}
-
-		// 执行主动探测
-		const probeResult = await probeWithTempContext(testEl);
-
-		// null = 元素未就绪或已探测过
-		if (probeResult === null) {
-			log.debug(`[CORS Probe] ${hostname}: 跳过 (未就绪或已探测)`);
-			return;
-		}
-
-		log.info(`[CORS Probe] ${hostname}: 主动探测结果 = ${probeResult ? 'RESTRICTED' : 'SAFE'}`);
-
-		// 更新本地状态
-		if (internalState) {
-			internalState.corsStatus = probeResult ? 'RESTRICTED' : 'SAFE';
-		}
-
-		// 记录到注册表
-		safeSend(() => messenger.send('REGISTRY_MARK_PROBED', { domain: hostname, restricted: probeResult }))
-			.then((response) => {
-				if (response?.success && probeResult && response.reason !== 'updated') {
-					showToast(`🔧 检测到 ${hostname} 需要劫持模式`);
-				}
-			})
-			.catch(() => { });
-
-		// 触发策略重新计算
-		onStatusChange?.();
+		// 3. 未知域名：保持 PENDING，等待 WebAudioController 的回调
+		// 不主动探测！WebAudioController.attachNode() 会触发成功/失败回调
+		log.debug(`[CORS Sync] ${hostname}: 未知，等待 WebAudioController 回调`);
 
 	} catch (err) {
-		log.debug(`[CORS Probe] 探测失败: ${err}`);
+		log.debug(`[CORS Sync] 查询失败: ${err}`);
 	}
 }
+
 

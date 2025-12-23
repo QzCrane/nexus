@@ -1,111 +1,64 @@
 /**
- * 策略执行器 - CORS 主动探测器 (v3.4)
+ * 策略执行器 - CORS 状态管理 (v3.6)
  * 
- * 职责：使用临时 AudioContext + AnalyserNode 探测域名 CORS 状态
+ * 重要：createMediaElementSource() 会永久劫持元素音频！
+ * 不能用于探测，否则会导致视频静音。
  * 
- * 原理：createMediaElementSource() 不会因跨域抛出错误！
- * 真正的 CORS 限制体现在读取音频数据时（AnalyserNode 返回全零）
+ * v3.6 方案：
+ * - 不主动探测，完全依赖 WebAudioController.attachNode() 的回调
+ * - 成功回调 → SAFE
+ * - 失败回调 → RESTRICTED
+ * - 未触发回调 → 保持 PENDING，等待用户交互后再启动
  */
 
 import { logger } from '../../shared/logger';
 
 const log = logger.content;
 
-/** 已探测的域名集合（防止重复探测） */
-const probedDomains = new Set<string>();
+/** 已确认 CORS 状态的域名 */
+const confirmedDomains = new Map<string, boolean>(); // true = RESTRICTED
 
 /**
- * 检查媒体元素是否已就绪且正在播放
- */
-function isMediaReady(el: HTMLMediaElement): boolean {
-	// 必须有实际的媒体数据（readyState >= 2 表示有足够数据）
-	if (el.readyState < 2) return false;
-	// 必须正在播放或已有时间进度
-	if (el.paused && el.currentTime === 0) return false;
-	return true;
-}
-
-/**
- * 检查域名是否已探测过
+ * 检查域名是否已确认 CORS 状态
  */
 export function isDomainProbed(hostname: string): boolean {
-	return probedDomains.has(hostname);
+	return confirmedDomains.has(hostname);
 }
 
 /**
- * 使用临时 AudioContext + AnalyserNode 探测 CORS
- * 
- * 关键：读取音频数据，如果全为零则表示 CORS 限制
- * 
- * @returns true = RESTRICTED, false = SAFE, null = 元素未就绪或已探测过
+ * 获取已确认的 CORS 状态
+ * @returns true = RESTRICTED, false = SAFE, undefined = 未确认
  */
-export async function probeWithTempContext(el: HTMLMediaElement): Promise<boolean | null> {
-	const hostname = window.location.hostname;
-
-	// 已探测过的域名返回 null
-	if (probedDomains.has(hostname)) {
-		log.debug(`[CORS Prober] ${hostname}: 已探测过，跳过`);
-		return null;
-	}
-
-	// 检查元素是否就绪
-	if (!isMediaReady(el)) {
-		log.debug(`[CORS Prober] ${hostname}: 媒体未就绪 (readyState=${el.readyState}, paused=${el.paused})`);
-		return null;
-	}
-
-	try {
-		const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-		const tempCtx = new AC();
-
-		// 如果 AudioContext 被暂停，需要恢复
-		if (tempCtx.state === 'suspended') {
-			await tempCtx.resume();
-		}
-
-		try {
-			const source = tempCtx.createMediaElementSource(el);
-			const analyser = tempCtx.createAnalyser();
-			analyser.fftSize = 32; // 最小值，用于快速检测
-
-			source.connect(analyser);
-			analyser.connect(tempCtx.destination);
-
-			// 读取频域数据
-			const data = new Uint8Array(analyser.frequencyBinCount);
-			analyser.getByteFrequencyData(data);
-
-			// 检查是否全为零（CORS 限制会导致全零）
-			const hasData = data.some(v => v > 0);
-
-			// 标记元素和域名
-			el.dataset.vmProbed = 'true';
-			probedDomains.add(hostname);
-
-			if (hasData) {
-				log.info(`[CORS Prober] ${hostname}: 探测成功 (SAFE) - 有音频数据`);
-				await tempCtx.close();
-				return false; // SAFE
-			} else {
-				log.info(`[CORS Prober] ${hostname}: 探测失败 (RESTRICTED) - 数据全零`);
-				await tempCtx.close();
-				return true; // RESTRICTED
-			}
-
-		} catch (err) {
-			// 绑定失败（元素已被其他 AudioContext 使用）
-			probedDomains.add(hostname);
-			log.debug(`[CORS Prober] ${hostname}: 绑定失败 - ${err}`);
-			await tempCtx.close();
-			// 绑定失败不确定是否 CORS，保守返回 null
-			return null;
-		}
-
-	} catch {
-		probedDomains.add(hostname);
-		log.debug(`[CORS Prober] ${hostname}: AudioContext 创建失败`);
-		return true; // 保守视为 RESTRICTED
-	}
+export function getConfirmedCorsStatus(hostname: string): boolean | undefined {
+	return confirmedDomains.get(hostname);
 }
+
+/**
+ * 标记域名 CORS 状态（由 WebAudioController 回调触发）
+ */
+export function markDomainCorsStatus(hostname: string, restricted: boolean): void {
+	if (confirmedDomains.has(hostname)) {
+		log.debug(`[CORS Status] ${hostname}: 已标记过，跳过`);
+		return;
+	}
+	confirmedDomains.set(hostname, restricted);
+	log.info(`[CORS Status] ${hostname}: 确认为 ${restricted ? 'RESTRICTED' : 'SAFE'}`);
+}
+
+/**
+ * 占位函数 - 不执行任何探测
+ * 
+ * 探测完全依赖 WebAudioController.attachNode() 的成功/失败回调
+ * 这个函数只是为了保持接口兼容
+ * 
+ * @returns 始终返回 null（需要等待回调）
+ */
+export async function probeWithTempContext(_el: HTMLMediaElement): Promise<boolean | null> {
+	// 不执行任何探测！createMediaElementSource 会导致元素静音
+	// CORS 状态完全依赖 WebAudioController 的回调
+	return null;
+}
+
+
 
 

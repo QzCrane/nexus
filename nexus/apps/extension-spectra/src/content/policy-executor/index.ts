@@ -60,19 +60,24 @@ export async function createPolicyExecutor(deps: PolicyExecutorDeps, state: Poli
 		const settings = settingsManager.get();
 		const urlInfo = getUrlInfo();
 
-		// 受限站点判断：CORS 检测结果决定
-		// PENDING 也视为受限（保守策略：首次访问跨域站点避免短暂无声）
-		const isRestricted = internalState.corsStatus !== 'SAFE';
+		// 受限站点判断 (v3.6)：只有确认 RESTRICTED 才使用 CAPTURE
+		// PENDING 状态尝试 NATIVE_WEBAUDIO 来触发 CORS 检测
+		const isRestricted = internalState.corsStatus === 'RESTRICTED';
+
+		// 用户已交互 + CORS 未知 → 需要触发 CORS 检测
+		// 强制 needsAdvanced，让策略返回 NATIVE_WEBAUDIO 而不是 NATIVE_LITE
+		const needsCorsDetection = state.userHasInteracted && internalState.corsStatus === 'PENDING';
 
 		const context: PolicyContext = {
 			urlInfo,
 			enabled: state.config.enabled,
 			volume: state.config.volume,
-			visualizerEnabled: settings.visualizerEnabled,
+			// 如果需要 CORS 检测，临时开启"需要高级处理"标志
+			visualizerEnabled: settings.visualizerEnabled || needsCorsDetection,
 			userInteracted: state.userHasInteracted,
-			forceNative: internalState.corsStatus === 'SAFE',
+			forceNative: false,
 			isRestricted,
-			hasMediaElement: true, // 简化处理
+			hasMediaElement: true,
 			hasAudioContext: audioController.isReady(),
 			config: state.config,
 		};
