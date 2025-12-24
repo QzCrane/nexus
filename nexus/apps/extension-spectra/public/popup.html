@@ -468,6 +468,19 @@
                 <option value="system" data-i18n="themeSystem">System</option>
               </select>
             </div>
+
+            <div class="setting-item">
+              <div class="setting-label">
+                <div data-i18n="pauseRetentionLabel">Pause Retention</div>
+                <div class="setting-sub" data-i18n="pauseRetentionSub">
+                  Keep paused tabs in UI (0=forever)
+                </div>
+              </div>
+              <div class="setting-input-row">
+                <input type="number" id="set-pause-retention" class="setting-number-input" min="0" max="3600" step="10" value="60" />
+                <span class="setting-unit" data-i18n="pauseRetentionUnit">seconds</span>
+              </div>
+            </div>
           </div>
 
           <!-- Group 3: Advanced (Registry) -->

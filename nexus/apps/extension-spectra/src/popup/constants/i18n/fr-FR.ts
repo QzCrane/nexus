@@ -60,4 +60,7 @@ export const FR_FR: I18NDict = {
 	spHotkeyLast: 'Dernier actif',
 	btnPause: 'Pause/Lecture',
 	btnPip: 'Image dans l\'image',
+	pauseRetentionLabel: 'Rétention de pause',
+	pauseRetentionSub: 'Garder les onglets en pause dans UI (0=permanent)',
+	pauseRetentionUnit: 'secondes',
 };

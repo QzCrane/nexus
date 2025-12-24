@@ -60,4 +60,7 @@ export const RU_RU: I18NDict = {
 	spHotkeyLast: 'Последняя активная',
 	btnPause: 'Пауза/Воспроизведение',
 	btnPip: 'Картинка в картинке',
+	pauseRetentionLabel: 'Удержание паузы',
+	pauseRetentionSub: 'Хранить паузы в UI (0=навсегда)',
+	pauseRetentionUnit: 'секунд',
 };

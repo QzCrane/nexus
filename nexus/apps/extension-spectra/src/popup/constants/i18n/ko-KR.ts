@@ -60,4 +60,7 @@ export const KO_KR: I18NDict = {
 	spHotkeyLast: '마지막 활성',
 	btnPause: '일시정지/재생',
 	btnPip: '화면 속 화면',
+	pauseRetentionLabel: '일시정지 유지',
+	pauseRetentionSub: '일시정지된 탭을 UI에 유지 (0=영구)',
+	pauseRetentionUnit: '초',
 };

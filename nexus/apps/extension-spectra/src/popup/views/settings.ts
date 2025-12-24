@@ -29,6 +29,7 @@ const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   visualizerEnabled: true,
   lang: 'en-US',
   themeMode: 'system',
+  pauseRetentionSeconds: 60,
 };
 
 /**
@@ -57,11 +58,13 @@ export async function initSettings(): Promise<SettingsState> {
   // 设置变更处理函数
   const saveSettings = () => {
     const selTheme = $<HTMLSelectElement>('set-theme');
+    const pauseRetentionInput = $<HTMLInputElement>('set-pause-retention');
     gSettings = {
       osdEnabled: ui.swOsd?.checked ?? true,
       visualizerEnabled: ui.swViz?.checked ?? true,
       lang: (ui.selLang?.value as GlobalSettings['lang']) ?? 'en-US',
       themeMode: (selTheme?.value as ThemeMode) ?? 'system',
+      pauseRetentionSeconds: parseInt(pauseRetentionInput?.value || '60', 10),
     };
 
     // 应用主题并更新按钮图标
@@ -99,6 +102,8 @@ function initUIState(
   if (ui.swOsd) ui.swOsd.checked = gSettings.osdEnabled;
   if (ui.swViz) ui.swViz.checked = gSettings.visualizerEnabled !== false;
   if (ui.selLang) ui.selLang.value = gSettings.lang;
+  const pauseRetentionInput = $<HTMLInputElement>('set-pause-retention');
+  if (pauseRetentionInput) pauseRetentionInput.value = String(gSettings.pauseRetentionSeconds ?? 60);
 }
 
 /** 初始化主题 */
@@ -120,6 +125,8 @@ function bindSettingsEvents(
   if (ui.selLang) ui.selLang.onchange = saveSettings;
   const selTheme = $<HTMLSelectElement>('set-theme');
   if (selTheme) selTheme.onchange = saveSettings;
+  const pauseRetentionInput = $<HTMLInputElement>('set-pause-retention');
+  if (pauseRetentionInput) pauseRetentionInput.onchange = saveSettings;
 }
 
 /** 绑定主题按钮事件 */
