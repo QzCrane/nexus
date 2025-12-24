@@ -39,6 +39,11 @@ export interface CardUIElements {
   tMono: HTMLElement;
   tEq: HTMLElement;
   vizIsland: HTMLElement | null;
+  // 媒体控制
+  btnPause: HTMLElement | null;
+  btnPip: HTMLElement | null;
+  speedInput: HTMLInputElement | null;
+  speedBtns: NodeListOf<HTMLElement>;
 }
 
 /** 设置页 UI 元素引用 */

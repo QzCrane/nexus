@@ -36,5 +36,10 @@ export function getCardUIElements(card: HTMLElement): CardUIElements {
     tMono: card.querySelector('[data-i18n="mono"]') as HTMLElement,
     tEq: card.querySelector('[data-i18n="eqTitle"]') as HTMLElement,
     vizIsland: card.querySelector('.viz-island') as HTMLElement | null,
+    // 媒体控制
+    btnPause: card.querySelector('.btn-pause'),
+    btnPip: card.querySelector('.btn-pip'),
+    speedInput: card.querySelector('.speed-input'),
+    speedBtns: card.querySelectorAll('.btn-speed'),
   };
 }

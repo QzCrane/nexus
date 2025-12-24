@@ -12,6 +12,7 @@ import { CaptureManager } from './capture-manager';
 import { SettingsManager } from './settings-manager';
 import { hasMediaElements, isAnyMediaPlaying } from './dom-volume';
 import { safeSend } from './context-guard';
+import { togglePlay, togglePip, setSpeed, getMediaState } from './media-control';
 
 /** 消息处理器依赖 */
 export interface MessageHandlerDeps {
@@ -114,6 +115,30 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 				policyExecutor.applyState();
 				policyExecutor.updateBadge();
 				sendResponse({ success: true });
+				break;
+			}
+
+			// ========== 媒体控制 ==========
+			case Actions.MEDIA_TOGGLE_PLAY: {
+				const playing = togglePlay();
+				sendResponse({ playing });
+				break;
+			}
+
+			case Actions.MEDIA_TOGGLE_PIP: {
+				togglePip().then(active => sendResponse({ active }));
+				return true; // 异步
+			}
+
+			case Actions.MEDIA_SET_SPEED: {
+				const payload = msg.payload as { speed?: number } | undefined;
+				const speed = setSpeed(payload?.speed ?? 1);
+				sendResponse({ speed });
+				break;
+			}
+
+			case Actions.MEDIA_GET_STATE: {
+				sendResponse(getMediaState());
 				break;
 			}
 		}

@@ -8,6 +8,7 @@ import type { CardInternalState } from './types';
 import { AUDIO_UI, TIMING } from '../constants';
 import { getDomain, sendToBackground } from '../utils/dom';
 import { DEFAULT_CONFIG } from './types';
+import { bindMediaControls } from './media-events';
 
 /** 事件绑定参数 */
 export interface EventsParams {
@@ -149,4 +150,7 @@ export function bindCardEvents(params: EventsParams): void {
 
   // 重置按钮
   ui.btnReset.onclick = () => update(DEFAULT_CONFIG);
+
+  // ========== 媒体控制 ==========
+  bindMediaControls(ui, tabId);
 }

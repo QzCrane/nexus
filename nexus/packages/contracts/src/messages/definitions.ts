@@ -44,6 +44,12 @@ export interface NexusMessages {
 	'REGISTRY_QUERY_DOMAIN': { req: { domain: string }; res: { entry: import('../registry.contracts.js').DomainEntry | null } };
 	'REGISTRY_MARK_PROBED': { req: { domain: string; restricted: boolean }; res: { success: boolean; reason?: string } };
 
+	// ========== 媒体控制 ==========
+	'MEDIA_TOGGLE_PLAY': { req: void; res: { playing: boolean } };
+	'MEDIA_TOGGLE_PIP': { req: void; res: { active: boolean } };
+	'MEDIA_SET_SPEED': { req: { speed: number }; res: { speed: number } };
+	'MEDIA_GET_STATE': { req: void; res: { playing: boolean; speed: number; pipActive: boolean } };
+
 	// ========== Tab 状态 ==========
 	'TAB_REPORT_MEDIA': { req: { hasMediaElement: boolean }; res: void };
 	'TAB_GET_VISIBLE_TABS': { req: void; res: { tabs: number[] } };
