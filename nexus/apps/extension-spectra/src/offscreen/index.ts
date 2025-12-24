@@ -19,6 +19,8 @@ interface AudioProcessor {
 	bass: BiquadFilterNode;
 	comp: DynamicsCompressorNode;
 	eqNodes: BiquadFilterNode[];
+	panner: StereoPannerNode;
+	delayNode: DelayNode;
 	analyser: AnalyserNode;
 }
 
@@ -98,18 +100,18 @@ async function startCapture(tabId: number, streamId: string, config: AudioConfig
 			return n;
 		});
 
-		// 4. 连接节点
+		// 声道平衡 + 延迟
+		const panner = ctx.createStereoPanner();
+		const delayNode = ctx.createDelay(1); // 最大 1 秒
+
+		// 4. 连接节点: Source -> Gain -> Bass -> EQ -> Comp -> Panner -> Delay -> Analyser -> Dest
 		let head: AudioNode = source;
-		head.connect(bass);
-		head = bass;
-		eqNodes.forEach(n => {
-			head.connect(n);
-			head = n;
-		});
-		head.connect(comp);
-		head = comp;
-		head.connect(gain);
-		head = gain;
+		head.connect(gain); head = gain;
+		head.connect(bass); head = bass;
+		eqNodes.forEach(n => { head.connect(n); head = n; });
+		head.connect(comp); head = comp;
+		head.connect(panner); head = panner;
+		head.connect(delayNode); head = delayNode;
 		head.connect(analyser);
 		analyser.connect(ctx.destination);
 
@@ -119,7 +121,7 @@ async function startCapture(tabId: number, streamId: string, config: AudioConfig
 		}
 
 		// 保存处理器状态
-		processors.set(tabId, { ctx, stream, gain, bass, comp, eqNodes, analyser });
+		processors.set(tabId, { ctx, stream, gain, bass, comp, eqNodes, panner, delayNode, analyser });
 
 		// 立即应用配置
 		updateAudio(tabId, config);
@@ -183,4 +185,11 @@ function updateAudio(tabId: number, config: AudioConfig): void {
 		p.comp.threshold.setTargetAtTime(CompressorNativeOff.threshold, t, r);
 		p.comp.ratio.setTargetAtTime(CompressorNativeOff.ratio, t, r);
 	}
+
+	// 应用声道平衡
+	p.panner.pan.setTargetAtTime(Math.max(-1, Math.min(1, config.pan ?? 0)), t, r);
+
+	// 应用延迟 (转换 ms 到 s)
+	const delayMs = Math.max(0, config.delay ?? 0);
+	p.delayNode.delayTime.setTargetAtTime(delayMs / 1000, t, r);
 }
