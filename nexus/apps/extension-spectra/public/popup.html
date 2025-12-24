@@ -26,33 +26,69 @@
             <div class="sp-section">
               <div class="sp-section-title">🔊 Audio</div>
               <div class="sp-chips-row">
-                <label class="sp-chip"><input type="checkbox" class="sp-sw-comp" /><span data-i18n="comp">Compressor</span></label>
-                <label class="sp-chip"><input type="checkbox" class="sp-sw-bass" /><span data-i18n="bass">Bass</span></label>
-                <label class="sp-chip"><input type="checkbox" class="sp-sw-mono" /><span data-i18n="mono">Mono</span></label>
+                <label class="sp-chip"
+                  ><input type="checkbox" class="sp-sw-comp" /><span
+                    data-i18n="comp"
+                    >Compressor</span
+                  ></label
+                >
+                <label class="sp-chip"
+                  ><input type="checkbox" class="sp-sw-bass" /><span
+                    data-i18n="bass"
+                    >Bass</span
+                  ></label
+                >
+                <label class="sp-chip"
+                  ><input type="checkbox" class="sp-sw-mono" /><span
+                    data-i18n="mono"
+                    >Mono</span
+                  ></label
+                >
               </div>
               <div class="sp-slider-row">
                 <span class="sp-label">Pan</span>
                 <span class="sp-label-side">L</span>
-                <input type="range" class="sp-slider sp-pan" min="-1" max="1" step="0.1" value="0" />
+                <input
+                  type="range"
+                  class="sp-slider sp-pan"
+                  min="-1"
+                  max="1"
+                  step="0.1"
+                  value="0"
+                />
                 <span class="sp-label-side">R</span>
               </div>
               <div class="sp-slider-row">
                 <span class="sp-label">Delay</span>
-                <input type="range" class="sp-slider sp-delay" min="-500" max="500" step="10" value="0" />
+                <input
+                  type="range"
+                  class="sp-slider sp-delay"
+                  min="-500"
+                  max="500"
+                  step="10"
+                  value="0"
+                />
                 <span class="sp-value sp-delay-val">0ms</span>
               </div>
             </div>
 
-            <!-- 🏃 Speed -->
+            <!-- ⤵ Speed -->
             <div class="sp-section">
-              <div class="sp-section-title">🏃 Speed</div>
+              <div class="sp-section-title" data-i18n="spSpeed">⚡ Speed</div>
               <div class="sp-speed-row">
                 <span class="sp-label-side">0.25x</span>
-                <input type="range" class="sp-slider sp-speed-slider" min="0.25" max="16" step="0.05" value="1" />
+                <input
+                  type="range"
+                  class="sp-slider sp-speed-slider"
+                  min="0.25"
+                  max="16"
+                  step="0.05"
+                  value="1"
+                />
                 <span class="sp-label-side">16x</span>
               </div>
               <div class="sp-speed-input-row">
-                <span class="sp-label">Value:</span>
+                <span class="sp-label" data-i18n="spValue">Value:</span>
                 <input type="text" class="sp-speed-input" value="1.0" />
                 <span>x</span>
               </div>
@@ -60,78 +96,164 @@
 
             <!-- 🎚️ EQ -->
             <div class="sp-section sp-eq-section">
-              <div class="sp-section-title">🎚️ 10-Band EQ</div>
+              <div class="sp-section-title" data-i18n="eqTitle">
+                🎚️ 10-Band EQ
+              </div>
               <div class="sp-eq-full">
-                <canvas class="sp-eq-curve-canvas" width="180" height="80"></canvas>
+                <canvas
+                  class="sp-eq-curve-canvas"
+                  width="180"
+                  height="80"
+                ></canvas>
                 <div class="sp-eq-sliders-row">
                   <div class="sp-eq-col-full">
                     <span class="sp-eq-val">0</span>
                     <div class="sp-eq-track"></div>
                     <div class="sp-eq-zero"></div>
-                    <input type="range" class="sp-eq-input" data-i="0" min="-12" max="12" step="0.1" value="0" />
+                    <input
+                      type="range"
+                      class="sp-eq-input"
+                      data-i="0"
+                      min="-12"
+                      max="12"
+                      step="0.1"
+                      value="0"
+                    />
                     <span class="sp-eq-hz">32</span>
                   </div>
                   <div class="sp-eq-col-full">
                     <span class="sp-eq-val">0</span>
                     <div class="sp-eq-track"></div>
                     <div class="sp-eq-zero"></div>
-                    <input type="range" class="sp-eq-input" data-i="1" min="-12" max="12" step="0.1" value="0" />
+                    <input
+                      type="range"
+                      class="sp-eq-input"
+                      data-i="1"
+                      min="-12"
+                      max="12"
+                      step="0.1"
+                      value="0"
+                    />
                     <span class="sp-eq-hz">64</span>
                   </div>
                   <div class="sp-eq-col-full">
                     <span class="sp-eq-val">0</span>
                     <div class="sp-eq-track"></div>
                     <div class="sp-eq-zero"></div>
-                    <input type="range" class="sp-eq-input" data-i="2" min="-12" max="12" step="0.1" value="0" />
+                    <input
+                      type="range"
+                      class="sp-eq-input"
+                      data-i="2"
+                      min="-12"
+                      max="12"
+                      step="0.1"
+                      value="0"
+                    />
                     <span class="sp-eq-hz">125</span>
                   </div>
                   <div class="sp-eq-col-full">
                     <span class="sp-eq-val">0</span>
                     <div class="sp-eq-track"></div>
                     <div class="sp-eq-zero"></div>
-                    <input type="range" class="sp-eq-input" data-i="3" min="-12" max="12" step="0.1" value="0" />
+                    <input
+                      type="range"
+                      class="sp-eq-input"
+                      data-i="3"
+                      min="-12"
+                      max="12"
+                      step="0.1"
+                      value="0"
+                    />
                     <span class="sp-eq-hz">250</span>
                   </div>
                   <div class="sp-eq-col-full">
                     <span class="sp-eq-val">0</span>
                     <div class="sp-eq-track"></div>
                     <div class="sp-eq-zero"></div>
-                    <input type="range" class="sp-eq-input" data-i="4" min="-12" max="12" step="0.1" value="0" />
+                    <input
+                      type="range"
+                      class="sp-eq-input"
+                      data-i="4"
+                      min="-12"
+                      max="12"
+                      step="0.1"
+                      value="0"
+                    />
                     <span class="sp-eq-hz">500</span>
                   </div>
                   <div class="sp-eq-col-full">
                     <span class="sp-eq-val">0</span>
                     <div class="sp-eq-track"></div>
                     <div class="sp-eq-zero"></div>
-                    <input type="range" class="sp-eq-input" data-i="5" min="-12" max="12" step="0.1" value="0" />
+                    <input
+                      type="range"
+                      class="sp-eq-input"
+                      data-i="5"
+                      min="-12"
+                      max="12"
+                      step="0.1"
+                      value="0"
+                    />
                     <span class="sp-eq-hz">1k</span>
                   </div>
                   <div class="sp-eq-col-full">
                     <span class="sp-eq-val">0</span>
                     <div class="sp-eq-track"></div>
                     <div class="sp-eq-zero"></div>
-                    <input type="range" class="sp-eq-input" data-i="6" min="-12" max="12" step="0.1" value="0" />
+                    <input
+                      type="range"
+                      class="sp-eq-input"
+                      data-i="6"
+                      min="-12"
+                      max="12"
+                      step="0.1"
+                      value="0"
+                    />
                     <span class="sp-eq-hz">2k</span>
                   </div>
                   <div class="sp-eq-col-full">
                     <span class="sp-eq-val">0</span>
                     <div class="sp-eq-track"></div>
                     <div class="sp-eq-zero"></div>
-                    <input type="range" class="sp-eq-input" data-i="7" min="-12" max="12" step="0.1" value="0" />
+                    <input
+                      type="range"
+                      class="sp-eq-input"
+                      data-i="7"
+                      min="-12"
+                      max="12"
+                      step="0.1"
+                      value="0"
+                    />
                     <span class="sp-eq-hz">4k</span>
                   </div>
                   <div class="sp-eq-col-full">
                     <span class="sp-eq-val">0</span>
                     <div class="sp-eq-track"></div>
                     <div class="sp-eq-zero"></div>
-                    <input type="range" class="sp-eq-input" data-i="8" min="-12" max="12" step="0.1" value="0" />
+                    <input
+                      type="range"
+                      class="sp-eq-input"
+                      data-i="8"
+                      min="-12"
+                      max="12"
+                      step="0.1"
+                      value="0"
+                    />
                     <span class="sp-eq-hz">8k</span>
                   </div>
                   <div class="sp-eq-col-full">
                     <span class="sp-eq-val">0</span>
                     <div class="sp-eq-track"></div>
                     <div class="sp-eq-zero"></div>
-                    <input type="range" class="sp-eq-input" data-i="9" min="-12" max="12" step="0.1" value="0" />
+                    <input
+                      type="range"
+                      class="sp-eq-input"
+                      data-i="9"
+                      min="-12"
+                      max="12"
+                      step="0.1"
+                      value="0"
+                    />
                     <span class="sp-eq-hz">16k</span>
                   </div>
                 </div>
@@ -140,44 +262,87 @@
 
             <!-- 🎬 Video -->
             <div class="sp-section">
-              <div class="sp-section-title">🎬 Video</div>
+              <div class="sp-section-title" data-i18n="spVideo">🎬 Video</div>
               <div class="sp-btn-grid">
-                <button class="sp-btn" data-action="rotate" title="Rotate">↻</button>
-                <button class="sp-btn" data-action="mirror" title="Mirror">↔</button>
-                <button class="sp-btn" data-action="crop" title="Crop">⬜</button>
-                <button class="sp-btn" data-action="screenshot" title="Screenshot">📷</button>
+                <button class="sp-btn" data-action="rotate" title="Rotate" data-i18n-title="spRotate">
+                  ↻
+                </button>
+                <button class="sp-btn" data-action="mirror" title="Mirror" data-i18n-title="spMirror">
+                  ↔
+                </button>
+                <button class="sp-btn" data-action="crop" title="Crop" data-i18n-title="spCrop">
+                  ⬜
+                </button>
+                <button class="sp-btn" data-action="screenshot" title="Screenshot" data-i18n-title="spScreenshot">
+                  📷
+                </button>
               </div>
               <div class="sp-slider-row">
-                <span class="sp-label">Brightness</span>
-                <input type="range" class="sp-slider sp-brightness" min="50" max="150" step="1" value="100" />
+                <span class="sp-label" data-i18n="spBrightness">Brightness</span>
+                <input
+                  type="range"
+                  class="sp-slider sp-brightness"
+                  min="50"
+                  max="150"
+                  step="1"
+                  value="100"
+                />
                 <span class="sp-value sp-brightness-val">100%</span>
               </div>
               <div class="sp-slider-row">
-                <span class="sp-label">Contrast</span>
-                <input type="range" class="sp-slider sp-contrast" min="50" max="150" step="1" value="100" />
+                <span class="sp-label" data-i18n="spContrast">Contrast</span>
+                <input
+                  type="range"
+                  class="sp-slider sp-contrast"
+                  min="50"
+                  max="150"
+                  step="1"
+                  value="100"
+                />
                 <span class="sp-value sp-contrast-val">100%</span>
               </div>
               <div class="sp-markers-row">
-                <button class="sp-btn sp-btn-marker" data-action="mark-a">A</button>
-                <button class="sp-btn sp-btn-marker" data-action="mark-b">B</button>
-                <button class="sp-btn sp-btn-loop" data-action="ab-loop">🔁</button>
+                <button class="sp-btn sp-btn-marker" data-action="mark-a">
+                  A
+                </button>
+                <button class="sp-btn sp-btn-marker" data-action="mark-b">
+                  B
+                </button>
+                <button class="sp-btn sp-btn-loop" data-action="ab-loop">
+                  🔁
+                </button>
               </div>
             </div>
 
             <!-- ⌨️ Hotkey Target -->
             <div class="sp-section">
-              <div class="sp-section-title">⌨️ Hotkey Target</div>
+              <div class="sp-section-title" data-i18n="spHotkey">⌨️ Hotkey Target</div>
               <div class="sp-radio-group">
-                <label class="sp-radio"><input type="radio" name="hotkey-target" value="current" checked /><span>This Tab</span></label>
-                <label class="sp-radio"><input type="radio" name="hotkey-target" value="pinned" /><span>Pinned</span></label>
-                <label class="sp-radio"><input type="radio" name="hotkey-target" value="last" /><span>Last Active</span></label>
+                <label class="sp-radio"
+                  ><input
+                    type="radio"
+                    name="hotkey-target"
+                    value="current"
+                    checked
+                  /><span data-i18n="spHotkeyThis">This Tab</span></label
+                >
+                <label class="sp-radio"
+                  ><input
+                    type="radio"
+                    name="hotkey-target"
+                    value="pinned"
+                  /><span data-i18n="spHotkeyPinned">Pinned</span></label
+                >
+                <label class="sp-radio"
+                  ><input type="radio" name="hotkey-target" value="last" /><span data-i18n="spHotkeyLast">Last Active</span></label
+                >
               </div>
             </div>
           </div>
 
           <div class="side-panel-footer">
-            <button class="sp-btn-action sp-btn-reset">↺ Reset</button>
-            <button class="sp-btn-action sp-btn-save">💾 Save</button>
+            <button class="sp-btn-action sp-btn-reset">↺ <span data-i18n="reset"></span>Reset</span></button>
+            <button class="sp-btn-action sp-btn-save">💾 <span data-i18n="save">Save</span></button>
           </div>
         </div>
 
@@ -415,20 +580,48 @@
             <div class="vol-number">100%</div>
           </div>
 
-
           <!-- 速率控制 + 媒体按钮 -->
           <div class="media-control-row">
             <div class="speed-control">
-              <button class="btn-speed" data-delta="-0.5" title="-0.5x">«</button>
-              <button class="btn-speed" data-delta="-0.1" title="-0.1x">‹</button>
+              <button class="btn-speed" data-delta="-0.5" title="-0.5x">
+                «
+              </button>
+              <button class="btn-speed" data-delta="-0.1" title="-0.1x">
+                ‹
+              </button>
               <input type="text" class="speed-input" value="1.0" />
-              <button class="btn-speed" data-delta="0.1" title="+0.1x">›</button>
-              <button class="btn-speed" data-delta="0.5" title="+0.5x">»</button>
+              <button class="btn-speed" data-delta="0.1" title="+0.1x">
+                ›
+              </button>
+              <button class="btn-speed" data-delta="0.5" title="+0.5x">
+                »
+              </button>
             </div>
             <div class="media-buttons">
-              <button class="btn-media btn-pause" title="Pause/Play">⏸</button>
-              <button class="btn-media btn-pip" title="Picture-in-Picture"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><rect x="12" y="10" width="8" height="6" rx="1" fill="currentColor"/></svg></button>
-              <button class="btn-media btn-goto-tab hidden" title="Go to Tab">←</button>
+              <button class="btn-media btn-pause" title="Pause/Play" data-i18n-title="btnPause">⏸</button>
+              <button class="btn-media btn-pip" title="Picture-in-Picture" data-i18n-title="btnPip">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <rect x="2" y="3" width="20" height="14" rx="2" />
+                  <rect
+                    x="12"
+                    y="10"
+                    width="8"
+                    height="6"
+                    rx="1"
+                    fill="currentColor"
+                  />
+                </svg>
+              </button>
+              <button class="btn-media btn-goto-tab hidden" title="Go to Tab">
+                ←
+              </button>
             </div>
           </div>
         </div>
