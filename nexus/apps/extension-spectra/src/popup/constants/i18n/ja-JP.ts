@@ -60,7 +60,11 @@ export const JA_JP: I18NDict = {
 	spHotkeyLast: '最後にアクティブ',
 	btnPause: '一時停止/再生',
 	btnPip: 'ピクチャーインピクチャー',
+	btnHotkeyTarget: 'ホットキー対象',
+	btnGotoTab: 'タブへ移動',
 	pauseRetentionLabel: '一時停止保持',
 	pauseRetentionSub: '一時停止タブをUIに保持 (0=永久)',
 	pauseRetentionUnit: '秒',
+	tipPinPanel: 'パネルを固定',
+	tipClose: '閉じる',
 };

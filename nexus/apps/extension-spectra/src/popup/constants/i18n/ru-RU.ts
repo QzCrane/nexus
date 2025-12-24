@@ -60,7 +60,11 @@ export const RU_RU: I18NDict = {
 	spHotkeyLast: 'Последняя активная',
 	btnPause: 'Пауза/Воспроизведение',
 	btnPip: 'Картинка в картинке',
+	btnHotkeyTarget: 'Цель горячей клавиши',
+	btnGotoTab: 'Перейти на вкладку',
 	pauseRetentionLabel: 'Удержание паузы',
 	pauseRetentionSub: 'Хранить паузы в UI (0=навсегда)',
 	pauseRetentionUnit: 'секунд',
+	tipPinPanel: 'Закрепить панель',
+	tipClose: 'Закрыть',
 };

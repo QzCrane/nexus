@@ -60,7 +60,11 @@ export const ES_ES: I18NDict = {
 	spHotkeyLast: 'Último activo',
 	btnPause: 'Pausar/Reproducir',
 	btnPip: 'Imagen en imagen',
+	btnHotkeyTarget: 'Destino atajo',
+	btnGotoTab: 'Ir a pestaña',
 	pauseRetentionLabel: 'Retención de pausa',
 	pauseRetentionSub: 'Mantener pestañas pausadas en UI (0=permanente)',
 	pauseRetentionUnit: 'segundos',
+	tipPinPanel: 'Fijar panel',
+	tipClose: 'Cerrar',
 };

@@ -61,10 +61,15 @@ export interface I18NDict {
 	// 媒体控制
 	btnPause: string;
 	btnPip: string;
+	btnHotkeyTarget: string;
+	btnGotoTab: string;
 	// 设置项
 	pauseRetentionLabel: string;
 	pauseRetentionSub: string;
 	pauseRetentionUnit: string;
+	// 通用悬停提示
+	tipPinPanel: string;
+	tipClose: string;
 }
 
 /** 所有语言的 I18N 映射 */

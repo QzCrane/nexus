@@ -60,7 +60,11 @@ export const DE_DE: I18NDict = {
 	spHotkeyLast: 'Zuletzt aktiv',
 	btnPause: 'Pause/Wiedergabe',
 	btnPip: 'Bild-in-Bild',
+	btnHotkeyTarget: 'Hotkey-Ziel',
+	btnGotoTab: 'Zum Tab',
 	pauseRetentionLabel: 'Pause-Aufbewahrung',
 	pauseRetentionSub: 'Pausierte Tabs in UI behalten (0=dauerhaft)',
 	pauseRetentionUnit: 'Sekunden',
+	tipPinPanel: 'Panel anheften',
+	tipClose: 'Schließen',
 };

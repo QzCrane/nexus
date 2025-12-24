@@ -16,8 +16,8 @@
               <span class="side-panel-title">Settings</span>
             </div>
             <div class="side-panel-actions">
-              <button class="btn-pin" title="Pin Panel">📌</button>
-              <button class="btn-close-panel" title="Close">✕</button>
+              <button class="btn-pin" title="Pin Panel" data-i18n-title="tipPinPanel">📌</button>
+              <button class="btn-close-panel" title="Close" data-i18n-title="tipClose">✕</button>
             </div>
           </div>
 
@@ -313,31 +313,6 @@
                 </button>
               </div>
             </div>
-
-            <!-- ⌨️ Hotkey Target -->
-            <div class="sp-section">
-              <div class="sp-section-title" data-i18n="spHotkey">⌨️ Hotkey Target</div>
-              <div class="sp-radio-group">
-                <label class="sp-radio"
-                  ><input
-                    type="radio"
-                    name="hotkey-target"
-                    value="current"
-                    checked
-                  /><span data-i18n="spHotkeyThis">This Tab</span></label
-                >
-                <label class="sp-radio"
-                  ><input
-                    type="radio"
-                    name="hotkey-target"
-                    value="pinned"
-                  /><span data-i18n="spHotkeyPinned">Pinned</span></label
-                >
-                <label class="sp-radio"
-                  ><input type="radio" name="hotkey-target" value="last" /><span data-i18n="spHotkeyLast">Last Active</span></label
-                >
-              </div>
-            </div>
           </div>
 
           <div class="side-panel-footer">
@@ -620,11 +595,11 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><rect x="11" y="11" width="9" height="6" rx="1" fill="currentColor"/></svg>
               </button>
               <!-- 快捷键目标 -->
-              <button class="btn-media btn-hotkey-target" title="Hotkey Target">
+              <button class="btn-media btn-hotkey-target" title="Hotkey Target" data-i18n-title="btnHotkeyTarget">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M12 22v-4m-3 3l3-3 3 3"/></svg>
               </button>
               <!-- 返回标签页 (仅后台卡片显示) -->
-              <button class="btn-media btn-goto-tab hidden" title="Go to Tab">
+              <button class="btn-media btn-goto-tab hidden" title="Go to Tab" data-i18n-title="btnGotoTab">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l-4 4 4 4m-4-4h11a4 4 0 000-8h-1"/></svg>
               </button>
             </div>

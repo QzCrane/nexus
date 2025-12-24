@@ -60,7 +60,11 @@ export const ZH_CN: I18NDict = {
 	spHotkeyLast: '上次活动',
 	btnPause: '暂停/播放',
 	btnPip: '画中画',
+	btnHotkeyTarget: '快捷键目标',
+	btnGotoTab: '转到标签页',
 	pauseRetentionLabel: '暂停保留',
 	pauseRetentionSub: '暂停的标签页在UI中保留时间 (0=永久)',
 	pauseRetentionUnit: '秒',
+	tipPinPanel: '固定面板',
+	tipClose: '关闭',
 };
