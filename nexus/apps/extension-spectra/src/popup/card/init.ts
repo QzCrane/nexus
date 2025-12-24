@@ -37,7 +37,18 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
 
   // 判断是否有活跃媒体
   const hasActiveMedia = tab.audible || isCaptureActive || (status?.isPlaying);
-  if (!hasActiveMedia) return false;
+  if (!hasActiveMedia) {
+    // 检查暂停保留时间
+    const pauseRetentionSeconds = getGlobalSettings().pauseRetentionSeconds ?? 60;
+    if (pauseRetentionSeconds > 0 && status.pausedAt) {
+      const pausedSeconds = (Date.now() - status.pausedAt) / 1000;
+      if (pausedSeconds > pauseRetentionSeconds) {
+        // 暂停时间超限，不显示卡片
+        return false;
+      }
+    }
+    // 暂停时间未超限或设置为永久保留，继续显示
+  }
 
   const domain = getDomain(tab.url || '');
 

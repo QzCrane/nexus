@@ -7,7 +7,7 @@
 import type { AudioConfig, GlobalSettings } from '@nexus/kernel';
 
 // 重导出 I18N 类型
-export { I18NDict, I18NMap } from './types/i18n.types';
+export type { I18NDict, I18NMap } from './types/i18n.types';
 
 // ============================================
 // UI 元素引用类型
@@ -97,6 +97,8 @@ export interface ContentStatusResponse {
   isPlaying: boolean;
   mode: 'NATIVE_WEBAUDIO' | 'NATIVE_LITE' | 'CAPTURE';
   userInteracted: boolean;
+  /** 暂停时间戳 (ms)，null 表示正在播放 */
+  pausedAt: number | null;
 }
 
 /** 可视化数据响应 */
