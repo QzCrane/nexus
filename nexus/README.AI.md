@@ -25,16 +25,19 @@ nexus/
 
 ## 消息速查
 
-| Action            | 请求                           | 响应                       |
-| ----------------- | ------------------------------ | -------------------------- |
-| AUDIO_GET_STATUS  | void                           | `{config, hasAudio, mode}` |
-| AUDIO_SET_CONFIG  | `{config}`                     | `{success}`                |
-| CAPTURE_TOGGLE    | `{enabled}`                    | `{status}`                 |
-| CAPTURE_GET_STATE | `{tabId?}`                     | boolean                    |
-| BADGE_UPDATE      | `{volume, muted, isCapture}`   | void                       |
-| UI_SYNC           | `{config, mode, isRestricted}` | void                       |
+| Action            | 请求                          | 响应                       |
+| ----------------- | ----------------------------- | -------------------------- |
+| AUDIO_GET_STATUS  | void                          | `{config, hasAudio, mode}` |
+| AUDIO_SET_CONFIG  | `{config}`                    | `{success}`                |
+| CAPTURE_TOGGLE    | `{enabled}`                   | `{status}`                 |
+| CAPTURE_GET_STATE | `{tabId?}`                    | boolean                    |
+| MEDIA_TOGGLE_PLAY | void                          | `{playing}`                |
+| MEDIA_SET_SPEED   | `{speed}`                     | `{speed}`                  |
+| VIDEO_ROTATE      | void                          | `{rotation}`               |
+| VIDEO_MIRROR      | void                          | `{mirrored}`               |
+| VIDEO_SET_FILTER  | `{brightness?,contrast?,...}` | `{applied}`                |
 
-完整列表：`packages/contracts/src/messages.contracts.ts`
+完整列表：`packages/contracts/src/messages/definitions.ts`
 
 ## 策略 v3.2
 
@@ -61,14 +64,15 @@ nexus/
 - CORS: 跨域用 Tab Capture
 - 全屏: Capture 模式与全屏冲突，需 injector.js 拦截延迟处理
 
-## 文档同步
+## 文档同步（每次修改必须）
 
-| 修改类型  | 必须同步                  |
-| --------- | ------------------------- |
-| 公共 API  | `.ai-context.md`          |
-| 消息类型  | 消息速查表 + contracts    |
-| 策略逻辑  | `docs/policy-decision.md` |
-| 状态/同步 | `docs/cors-data-flow.md`  |
+| 修改类型         | 必须同步                      |
+| ---------------- | ----------------------------- |
+| 新增模块/文件    | 目标包 `.ai-context.md`       |
+| 新增消息类型     | 消息速查表 + contracts        |
+| 修改 AudioConfig | `audio-engine/.ai-context.md` |
+| 修改策略逻辑     | `docs/policy-decision.md`     |
+| 修改状态/同步    | `docs/cors-data-flow.md`      |
 
 ## 工作流
 

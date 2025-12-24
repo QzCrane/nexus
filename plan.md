@@ -71,12 +71,12 @@ Infra:   rust-core (WASM)
 | 2.1.4  | 速率控制 0.1x-16x  | playbackRate            |  B1  |  ✅  |
 | 2.1.5  | 画中画             | requestPictureInPicture |  B1  |  ✅  |
 | 2.1.7  | 暂停/播放          | video.pause/play        |  B1  |  ✅  |
-| 2.1.1  | 旋转 90°/180°/270° | CSS transform           |  B2  |  ⬜  |
-| 2.1.2  | 水平镜像           | CSS scaleX(-1)          |  B2  |  ⬜  |
-| 2.1.9  | 截图 + 下载        | Canvas drawImage        |  B2  |  ⬜  |
-| 2.1.3  | 去黑边             | object-fit + 裁剪       |  B3  |  ⬜  |
-| 2.1.6  | 全屏               | requestFullscreen       |  B3  |  ⬜  |
-| 2.1.8  | 时间跳转 ± 帧/秒   | currentTime             |  B3  |  ⬜  |
+| 2.1.1  | 旋转 90°/180°/270° | CSS transform           |  B2  |  ✅  |
+| 2.1.2  | 水平镜像           | CSS scaleX(-1)          |  B2  |  ✅  |
+| 2.1.9  | 截图 + 下载        | Canvas drawImage        |  B2  |  ✅  |
+| 2.1.3  | 去黑边             | object-fit + 裁剪       |  B3  |  ✅  |
+| 2.1.6  | 全屏               | requestFullscreen       |  B3  |  ✅  |
+| 2.1.8  | 时间跳转 ± 帧/秒   | currentTime             |  B3  |  ✅  |
 | 2.1.10 | 时间标记点         | 存储 + 跳转             |  B4  |  ⬜  |
 | 2.1.11 | AB 循环            | 区间重复播放            |  B4  |  ⬜  |
 
@@ -84,17 +84,17 @@ Infra:   rust-core (WASM)
 
 | ID    | 功能         | 技术                 | 批次 | 状态 |
 | ----- | ------------ | -------------------- | :--: | :--: |
-| 2.2.1 | 声道平衡     | StereoPannerNode     |  B3  |  ⬜  |
-| 2.2.2 | 声画同步延迟 | DelayNode ±500ms     |  B3  |  ⬜  |
+| 2.2.1 | 声道平衡     | StereoPannerNode     | B3.5 |  ✅  |
+| 2.2.2 | 声画同步延迟 | DelayNode ±500ms     | B3.5 |  ✅  |
 | 2.2.3 | 变速变调     | playbackRate + pitch |  B4  |  ⬜  |
 
 #### 视觉滤镜 (FX)
 
 | ID    | 功能               | 技术       | 批次 | 状态 |
 | ----- | ------------------ | ---------- | :--: | :--: |
-| 2.3.1 | 亮度/对比度/饱和度 | CSS filter |  B4  |  ⬜  |
-| 2.3.2 | 灰度/反色          | CSS filter |  B4  |  ⬜  |
-| 2.3.3 | 背景变暗           | 遮罩层     |  B4  |  ⬜  |
+| 2.3.1 | 亮度/对比度/饱和度 | CSS filter |  B4  |  ✅  |
+| 2.3.2 | 灰度/反色          | CSS filter |  B4  |  ✅  |
+| 2.3.3 | 背景变暗           | 遮罩层     |  B4  |  ✅  |
 
 #### 其他
 

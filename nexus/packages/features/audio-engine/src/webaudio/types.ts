@@ -11,6 +11,8 @@ export interface AudioConfig {
 	mono: boolean;
 	bass: boolean;
 	eqValues: number[];
+	pan: number;
+	delay: number;
 }
 
 /** 附加到媒体元素的音频节点集合 */
@@ -21,6 +23,8 @@ export interface AudioNodeSet {
 	comp: DynamicsCompressorNode;
 	eqNodes: BiquadFilterNode[];
 	analyser: AnalyserNode;
+	panner: StereoPannerNode;
+	delayNode: DelayNode;
 }
 
 /** 扩展的 HTMLMediaElement */

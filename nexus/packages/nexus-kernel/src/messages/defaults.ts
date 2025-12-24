@@ -14,7 +14,9 @@ export const DEFAULT_AUDIO_CONFIG: AudioConfig = {
   compressor: false,
   mono: false,
   bass: false,
-  eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  pan: 0,
+  delay: 0
 };
 
 /** 全局设置默认值 */

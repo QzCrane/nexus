@@ -1,16 +1,11 @@
 /**
- * 音频服务契约 (Audio Service Contracts)
- * 
- * 定义音频引擎的所有公共接口和类型。
- * AI 在编写任何需要音频功能的代码时，只需读取此文件即可。
- * 
- * @packageDocumentation
+ * 音频服务契约 - 音频引擎公共接口和类型
  */
 
 import type { Result, VolumeLevel, TabId } from './common.types.js';
 
 // ============================================
-// 数据类型 (Data Types)
+// 数据类型
 // ============================================
 
 /**
@@ -33,6 +28,10 @@ export interface AudioConfig {
   bass: boolean;
   /** 10段均衡器值 (-12 到 +12) */
   eqValues: number[];
+  /** 声道平衡 (-1 左声道, 0 中间, 1 右声道) */
+  pan: number;
+  /** 声画同步延迟 (-500 到 +500 毫秒, 正值=音频延后) */
+  delay: number;
 }
 
 /**
@@ -45,7 +44,9 @@ export const DEFAULT_AUDIO_CONFIG: Readonly<AudioConfig> = {
   compressor: false,
   mono: false,
   bass: false,
-  eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  pan: 0,
+  delay: 0
 } as const;
 
 /**

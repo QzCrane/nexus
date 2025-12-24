@@ -50,6 +50,19 @@ export interface NexusMessages {
 	'MEDIA_SET_SPEED': { req: { speed: number }; res: { speed: number } };
 	'MEDIA_GET_STATE': { req: void; res: { playing: boolean; speed: number; pipActive: boolean } };
 
+	// ========== 视频变换 ==========
+	'VIDEO_ROTATE': { req: void; res: { rotation: number } };
+	'VIDEO_MIRROR': { req: void; res: { mirrored: boolean } };
+	'VIDEO_SCREENSHOT': { req: void; res: { dataUrl: string | null } };
+	'VIDEO_FULLSCREEN': { req: void; res: { active: boolean } };
+	'VIDEO_CROP': { req: void; res: { cropped: boolean } };
+	'VIDEO_SEEK': { req: { delta: number }; res: { currentTime: number } };
+
+	// ========== 视觉滤镜 ==========
+	'VIDEO_SET_FILTER': { req: { brightness?: number; contrast?: number; saturate?: number; grayscale?: boolean; invert?: boolean }; res: { applied: boolean } };
+	'VIDEO_RESET_FILTER': { req: void; res: { reset: boolean } };
+	'VIDEO_DIM_BACKGROUND': { req: { enabled?: boolean; opacity?: number }; res: { active: boolean; opacity: number } };
+
 	// ========== Tab 状态 ==========
 	'TAB_REPORT_MEDIA': { req: { hasMediaElement: boolean }; res: void };
 	'TAB_GET_VISIBLE_TABS': { req: void; res: { tabs: number[] } };

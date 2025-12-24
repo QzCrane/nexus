@@ -5,6 +5,7 @@
 
 import type { AudioConfig } from '@nexus/kernel';
 import { bindSidePanelControls, syncSidePanelState } from './controls';
+import { bindVideoControls, setVideoControlTabId } from './video-controls';
 
 /** 侧边面板状态 */
 interface SidePanelState {
@@ -158,6 +159,10 @@ function openSidePanel(tabId: number, title: string, faviconUrl: string): void {
 		// 使用 getConfig 获取最新配置
 		bindSidePanelControls(reg.getConfig(), reg.update);
 	}
+
+	// 绑定视频控制按钮
+	setVideoControlTabId(tabId);
+	bindVideoControls();
 }
 
 /** 关闭侧边面板 */

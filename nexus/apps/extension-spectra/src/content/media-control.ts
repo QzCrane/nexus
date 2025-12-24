@@ -119,3 +119,17 @@ export function getMediaState(): { playing: boolean; speed: number; pipActive: b
 		pipActive: !!document.pictureInPictureElement,
 	};
 }
+
+/** 时间跳转 (增量，单位秒) */
+export function seekVideo(delta: number): number {
+	const video = getPrimaryVideo();
+	if (!video) {
+		log.warn('No video element found');
+		return 0;
+	}
+
+	const newTime = Math.max(0, Math.min(video.duration || 0, video.currentTime + delta));
+	video.currentTime = newTime;
+	log.info(`Seek to ${newTime.toFixed(2)}s (delta: ${delta}s)`);
+	return newTime;
+}

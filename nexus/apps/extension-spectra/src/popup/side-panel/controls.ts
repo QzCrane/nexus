@@ -16,6 +16,9 @@ interface SidePanelControls {
 	eqCanvas: HTMLCanvasElement | null;
 	eqInputs: NodeListOf<HTMLInputElement>;
 	eqVals: NodeListOf<HTMLElement>;
+	panSlider: HTMLInputElement | null;
+	delaySlider: HTMLInputElement | null;
+	delayVal: HTMLElement | null;
 }
 
 let currentConfig: AudioConfig | null = null;
@@ -29,6 +32,7 @@ function getControls(): SidePanelControls {
 			comp: null, bass: null, mono: null,
 			speedSlider: null, speedInput: null,
 			eqCanvas: null, eqInputs: empty, eqVals: empty as unknown as NodeListOf<HTMLElement>,
+			panSlider: null, delaySlider: null, delayVal: null,
 		};
 	}
 	return {
@@ -40,6 +44,9 @@ function getControls(): SidePanelControls {
 		eqCanvas: panel.querySelector('.sp-eq-curve-canvas'),
 		eqInputs: panel.querySelectorAll('.sp-eq-input'),
 		eqVals: panel.querySelectorAll('.sp-eq-val'),
+		panSlider: panel.querySelector('.sp-pan'),
+		delaySlider: panel.querySelector('.sp-delay'),
+		delayVal: panel.querySelector('.sp-delay-val'),
 	};
 }
 
@@ -68,6 +75,26 @@ export function bindSidePanelControls(
 	// Speed (预留，待 AudioConfig 添加 speed 属性)
 	if (c.speedSlider) c.speedSlider.value = '1';
 	if (c.speedInput) c.speedInput.value = '1.00';
+
+	// Pan 声道平衡
+	if (c.panSlider) {
+		c.panSlider.value = String(config.pan ?? 0);
+		c.panSlider.oninput = (e) => {
+			const pan = parseFloat((e.target as HTMLInputElement).value);
+			updateFn({ pan });
+		};
+	}
+
+	// Delay 声画同步
+	if (c.delaySlider) {
+		c.delaySlider.value = String(config.delay ?? 0);
+		if (c.delayVal) c.delayVal.textContent = `${config.delay ?? 0}ms`;
+		c.delaySlider.oninput = (e) => {
+			const delay = parseInt((e.target as HTMLInputElement).value, 10);
+			if (c.delayVal) c.delayVal.textContent = `${delay}ms`;
+			updateFn({ delay });
+		};
+	}
 
 	// EQ sliders
 	bindEq(c, config, updateFn);
@@ -118,6 +145,15 @@ export function syncSidePanelState(config: AudioConfig): void {
 	if (c.comp) c.comp.checked = config.compressor;
 	if (c.bass) c.bass.checked = config.bass;
 	if (c.mono) c.mono.checked = config.mono;
+
+	// Pan
+	if (c.panSlider) c.panSlider.value = String(config.pan ?? 0);
+
+	// Delay
+	if (c.delaySlider) {
+		c.delaySlider.value = String(config.delay ?? 0);
+		if (c.delayVal) c.delayVal.textContent = `${config.delay ?? 0}ms`;
+	}
 
 	c.eqInputs.forEach((inp, i) => {
 		const v = config.eqValues?.[i] ?? 0;

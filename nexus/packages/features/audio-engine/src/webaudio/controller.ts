@@ -98,16 +98,22 @@ export class WebAudioController {
 				return node;
 			});
 
-			// 连接: Source -> Gain -> Bass -> EQ -> Comp -> Analyser -> Dest
+			// 声道平衡 + 延迟节点
+			const panner = this.ctx.createStereoPanner();
+			const delayNode = this.ctx.createDelay(1); // 最大 1 秒
+
+			// 连接: Source -> Gain -> Bass -> EQ -> Comp -> Panner -> Delay -> Analyser -> Dest
 			let head: AudioNode = source;
 			head.connect(gain); head = gain;
 			head.connect(bass); head = bass;
 			eqNodes.forEach((n) => { head.connect(n); head = n; });
 			head.connect(comp); head = comp;
+			head.connect(panner); head = panner;
+			head.connect(delayNode); head = delayNode;
 			head.connect(analyser);
 			analyser.connect(this.ctx.destination);
 
-			mediaEl._vm = { source, gain, bass, comp, eqNodes, analyser };
+			mediaEl._vm = { source, gain, bass, comp, eqNodes, analyser, panner, delayNode };
 			mediaEl.dataset.vmAttached = 'true';
 
 			el.addEventListener('play', () => {
@@ -137,7 +143,7 @@ export class WebAudioController {
 		document.querySelectorAll('video, audio').forEach((el) => {
 			const mediaEl = el as AudioMediaElement;
 			if (!mediaEl._vm) return;
-			const { gain, bass, comp, eqNodes } = mediaEl._vm;
+			const { gain, bass, comp, eqNodes, panner, delayNode } = mediaEl._vm;
 
 			gain.gain.setTargetAtTime(v, t, r);
 			gain.channelCount = config.mono ? 1 : 2;
@@ -152,6 +158,13 @@ export class WebAudioController {
 			}
 
 			eqNodes.forEach((n, i) => n.gain.setTargetAtTime(config.eqValues[i] ?? 0, t, r));
+
+			// 声道平衡
+			panner.pan.setTargetAtTime(Math.max(-1, Math.min(1, config.pan ?? 0)), t, r);
+
+			// 延迟 (转换 ms 到 s, 只支持正值即音频延后)
+			const delayMs = Math.max(0, config.delay ?? 0);
+			delayNode.delayTime.setTargetAtTime(delayMs / 1000, t, r);
 		});
 	}
 
