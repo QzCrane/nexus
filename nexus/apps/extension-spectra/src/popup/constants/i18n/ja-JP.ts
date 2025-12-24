@@ -1,0 +1,45 @@
+/**
+ * SPECTRA Popup - I18N 日语
+ */
+
+import type { I18NDict } from '../../types';
+
+export const JA_JP: I18NDict = {
+	settingsTitle: '設定',
+	osdLabel: 'OSDポップアップ',
+	osdSub: 'ショートカット使用時に表示',
+	vizLabel: 'ビジュアライザー',
+	vizSub: 'ダイナミックオーディオバーを表示',
+	vizDesc: '無効にすると、制限付きサイトでは音量が100%を超えるまでネイティブライトモードを使用し、リソースを節約します。',
+	langLabel: '言語',
+	noAudio: 'オーディオ信号なし',
+	bgTitle: 'バックグラウンド',
+	paused: 'オーディオ拡張一時停止中',
+	clickToResume: 'クリックして再開',
+	comp: 'コンプレッサー',
+	bass: '低音',
+	mono: 'モノラル',
+	eqTitle: '🎚️ 10バンドEQ',
+	reset: 'リセット',
+	save: '保存',
+	resetTooltip: '音量とEQをデフォルト値にリセット',
+	saveTooltip: '現在の設定をこのドメインのデフォルトとして保存',
+	captureListLabel: '強制キャプチャモード',
+	captureListSub: '1行に1ドメイン',
+	grpInterface: 'インターフェース',
+	grpGeneral: '一般',
+	grpAdvanced: 'サイトレジストリ',
+	tabRestricted: '🔒 キャプチャ必要',
+	tabSafe: '✅ 安全なサイト',
+	filterPlaceholder: '🔍 フィルター...',
+	registryHint: 'サイトは自動検出されます。必要に応じて手動で追加できます。',
+	autoAddedToast: (domain: string) => `🔧 ${domain} をキャプチャリストに自動追加しました`,
+	themeLabel: 'テーマ',
+	themeSub: 'お好みのカラースキームを選択',
+	themeLight: 'ライト',
+	themeDark: 'ダーク',
+	themeSystem: 'システム',
+	btnThemeTooltip: 'テーマ切り替え',
+	btnSettingsTooltip: '設定',
+	btnShortcutsTooltip: 'ショートカット',
+};

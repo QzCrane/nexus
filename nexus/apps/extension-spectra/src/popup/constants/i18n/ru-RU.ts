@@ -1,0 +1,45 @@
+/**
+ * SPECTRA Popup - I18N 俄语
+ */
+
+import type { I18NDict } from '../../types';
+
+export const RU_RU: I18NDict = {
+	settingsTitle: 'Настройки',
+	osdLabel: 'OSD-уведомление',
+	osdSub: 'Показывать при использовании горячих клавиш',
+	vizLabel: 'Визуализатор',
+	vizSub: 'Показывать динамические аудиобары',
+	vizDesc: 'Отключение экономит ресурсы на ограниченных сайтах, используя Native Lite режим до громкости > 100%.',
+	langLabel: 'Язык',
+	noAudio: 'Нет аудиосигнала',
+	bgTitle: 'Фон',
+	paused: 'Улучшение аудио приостановлено',
+	clickToResume: 'Нажмите для возобновления',
+	comp: 'Компрессор',
+	bass: 'Бас',
+	mono: 'Моно',
+	eqTitle: '🎚️ 10-полосный EQ',
+	reset: 'Сброс',
+	save: 'Сохранить',
+	resetTooltip: 'Сбросить громкость и EQ к значениям по умолчанию',
+	saveTooltip: 'Сохранить текущие настройки как стандартные для этого домена',
+	captureListLabel: 'Принудительный режим захвата',
+	captureListSub: 'Один домен на строку',
+	grpInterface: 'Интерфейс',
+	grpGeneral: 'Общие',
+	grpAdvanced: 'Реестр сайтов',
+	tabRestricted: '🔒 Требуется захват',
+	tabSafe: '✅ Безопасные сайты',
+	filterPlaceholder: '🔍 Фильтр...',
+	registryHint: 'Сайты определяются автоматически. Добавляйте вручную при необходимости.',
+	autoAddedToast: (domain: string) => `🔧 ${domain} автоматически добавлен в список захвата`,
+	themeLabel: 'Тема',
+	themeSub: 'Выберите предпочитаемую цветовую схему',
+	themeLight: 'Светлая',
+	themeDark: 'Тёмная',
+	themeSystem: 'Система',
+	btnThemeTooltip: 'Сменить тему',
+	btnSettingsTooltip: 'Настройки',
+	btnShortcutsTooltip: 'Горячие клавиши',
+};

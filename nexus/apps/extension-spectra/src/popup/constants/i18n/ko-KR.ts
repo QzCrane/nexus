@@ -1,0 +1,45 @@
+/**
+ * SPECTRA Popup - I18N 韩语
+ */
+
+import type { I18NDict } from '../../types';
+
+export const KO_KR: I18NDict = {
+	settingsTitle: '설정',
+	osdLabel: 'OSD 팝업',
+	osdSub: '단축키 사용 시 표시',
+	vizLabel: '비주얼라이저',
+	vizSub: '동적 오디오 바 표시',
+	vizDesc: '비활성화하면 제한된 사이트에서 볼륨이 100%를 초과할 때까지 네이티브 라이트 모드를 사용하여 리소스를 절약합니다.',
+	langLabel: '언어',
+	noAudio: '오디오 신호 없음',
+	bgTitle: '백그라운드',
+	paused: '오디오 향상 일시 중지됨',
+	clickToResume: '클릭하여 재개',
+	comp: '컴프레서',
+	bass: '베이스',
+	mono: '모노',
+	eqTitle: '🎚️ 10밴드 EQ',
+	reset: '초기화',
+	save: '저장',
+	resetTooltip: '볼륨 및 EQ를 기본값으로 재설정',
+	saveTooltip: '현재 설정을 이 도메인의 기본값으로 저장',
+	captureListLabel: '강제 캡처 모드',
+	captureListSub: '한 줄에 하나의 도메인',
+	grpInterface: '인터페이스',
+	grpGeneral: '일반',
+	grpAdvanced: '사이트 레지스트리',
+	tabRestricted: '🔒 캡처 필요',
+	tabSafe: '✅ 안전한 사이트',
+	filterPlaceholder: '🔍 필터...',
+	registryHint: '사이트는 자동 감지됩니다. 필요시 수동 추가하세요.',
+	autoAddedToast: (domain: string) => `🔧 ${domain}을(를) 캡처 목록에 자동 추가했습니다`,
+	themeLabel: '테마',
+	themeSub: '선호하는 색구성표 선택',
+	themeLight: '라이트',
+	themeDark: '다크',
+	themeSystem: '시스템',
+	btnThemeTooltip: '테마 전환',
+	btnSettingsTooltip: '설정',
+	btnShortcutsTooltip: '단축키',
+};

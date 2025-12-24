@@ -1,0 +1,45 @@
+/**
+ * SPECTRA Popup - I18N 简体中文
+ */
+
+import type { I18NDict } from '../../types';
+
+export const ZH_CN: I18NDict = {
+	settingsTitle: '设置',
+	osdLabel: '屏幕提示 (OSD)',
+	osdSub: '快捷键调节时显示',
+	vizLabel: '动态频谱',
+	vizSub: '显示可视化音频条',
+	vizDesc: '关闭后，受限网站 (如抖音) 将预设使用极其省电的原生模式，仅在音量超过100%时自动切换增强模式。',
+	langLabel: '语言 (Language)',
+	noAudio: '无音频信号',
+	bgTitle: '后台播放',
+	paused: '增强已暂停',
+	clickToResume: '点击恢复',
+	comp: '防爆音',
+	bass: '低音',
+	mono: '单声道',
+	eqTitle: '🎚️ 10段均衡器',
+	reset: '重置',
+	save: '保存',
+	resetTooltip: '将当前标签页的音量和均衡器恢复为默认值',
+	saveTooltip: '将当前配置保存为该网站 (域名) 的永久默认配置',
+	captureListLabel: '强制劫持列表',
+	captureListSub: '每行一个域名 (如 douyin.com)',
+	grpInterface: '界面',
+	grpGeneral: '通用',
+	grpAdvanced: '站点注册表',
+	tabRestricted: '🔒 需要劫持',
+	tabSafe: '✅ 安全站点',
+	filterPlaceholder: '🔍 过滤...',
+	registryHint: '站点已自动检测。如有需要可手动添加。',
+	autoAddedToast: (domain: string) => `🔧 已自动添加 ${domain} 到劫持列表`,
+	themeLabel: '主题',
+	themeSub: '选择你偏好的配色方案',
+	themeLight: '浅色',
+	themeDark: '深色',
+	themeSystem: '跟随系统',
+	btnThemeTooltip: '切换主题',
+	btnSettingsTooltip: '设置',
+	btnShortcutsTooltip: '快捷键',
+};

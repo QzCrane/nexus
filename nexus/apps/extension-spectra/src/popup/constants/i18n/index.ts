@@ -4,8 +4,13 @@
 
 import type { I18NMap } from '../../types';
 import { EN_US } from './en';
-import { ZH_CN, JA_JP, KO_KR } from './asia';
-import { ES_ES, FR_FR, DE_DE, RU_RU } from './europe';
+import { ZH_CN } from './zh-CN';
+import { JA_JP } from './ja-JP';
+import { KO_KR } from './ko-KR';
+import { ES_ES } from './es-ES';
+import { FR_FR } from './fr-FR';
+import { DE_DE } from './de-DE';
+import { RU_RU } from './ru-RU';
 
 /** 完整的国际化字典映射 */
 export const I18N: I18NMap = {
@@ -25,14 +30,17 @@ export const DEFAULT_LANG = 'en-US';
 /** 支持的语言列表 */
 export const SUPPORTED_LANGS = Object.keys(I18N) as Array<keyof typeof I18N>;
 
-/**
- * 获取指定语言的字典，fallback 到英语
- */
+/** 获取指定语言的字典，fallback 到英语 */
 export function getDict(lang: string) {
   return I18N[lang] || I18N[DEFAULT_LANG];
 }
 
 // 重导出各语言字典
 export { EN_US } from './en';
-export { ZH_CN, JA_JP, KO_KR } from './asia';
-export { ES_ES, FR_FR, DE_DE, RU_RU } from './europe';
+export { ZH_CN } from './zh-CN';
+export { JA_JP } from './ja-JP';
+export { KO_KR } from './ko-KR';
+export { ES_ES } from './es-ES';
+export { FR_FR } from './fr-FR';
+export { DE_DE } from './de-DE';
+export { RU_RU } from './ru-RU';

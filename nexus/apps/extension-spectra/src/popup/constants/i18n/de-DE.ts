@@ -1,0 +1,45 @@
+/**
+ * SPECTRA Popup - I18N 德语
+ */
+
+import type { I18NDict } from '../../types';
+
+export const DE_DE: I18NDict = {
+	settingsTitle: 'Einstellungen',
+	osdLabel: 'OSD-Popup',
+	osdSub: 'Anzeige bei Tastenkürzel',
+	vizLabel: 'Visualizer',
+	vizSub: 'Dynamische Audiobars anzeigen',
+	vizDesc: 'Deaktivieren spart Ressourcen auf eingeschränkten Seiten durch Native Lite Modus bis Lautstärke > 100%.',
+	langLabel: 'Sprache',
+	noAudio: 'Kein Audiosignal',
+	bgTitle: 'Hintergrund',
+	paused: 'Audioverbesserung pausiert',
+	clickToResume: 'Klicken zum Fortsetzen',
+	comp: 'Kompressor',
+	bass: 'Bass',
+	mono: 'Mono',
+	eqTitle: '🎚️ 10-Band EQ',
+	reset: 'Zurücksetzen',
+	save: 'Speichern',
+	resetTooltip: 'Lautstärke und EQ auf Standardwerte zurücksetzen',
+	saveTooltip: 'Aktuelle Einstellungen als Standard für diese Domain speichern',
+	captureListLabel: 'Erzwungener Capture-Modus',
+	captureListSub: 'Eine Domain pro Zeile',
+	grpInterface: 'Oberfläche',
+	grpGeneral: 'Allgemein',
+	grpAdvanced: 'Seiten-Registrierung',
+	tabRestricted: '🔒 Capture erforderlich',
+	tabSafe: '✅ Sichere Seiten',
+	filterPlaceholder: '🔍 Filtern...',
+	registryHint: 'Seiten werden automatisch erkannt. Fügen Sie bei Bedarf manuell hinzu.',
+	autoAddedToast: (domain: string) => `🔧 ${domain} automatisch zur Capture-Liste hinzugefügt`,
+	themeLabel: 'Thema',
+	themeSub: 'Wählen Sie Ihr bevorzugtes Farbschema',
+	themeLight: 'Hell',
+	themeDark: 'Dunkel',
+	themeSystem: 'System',
+	btnThemeTooltip: 'Thema wechseln',
+	btnSettingsTooltip: 'Einstellungen',
+	btnShortcutsTooltip: 'Tastenkürzel',
+};

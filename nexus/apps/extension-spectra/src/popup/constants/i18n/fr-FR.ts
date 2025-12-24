@@ -1,0 +1,45 @@
+/**
+ * SPECTRA Popup - I18N 法语
+ */
+
+import type { I18NDict } from '../../types';
+
+export const FR_FR: I18NDict = {
+	settingsTitle: 'Paramètres',
+	osdLabel: 'Popup OSD',
+	osdSub: 'Afficher lors des raccourcis',
+	vizLabel: 'Visualiseur',
+	vizSub: 'Afficher les barres audio dynamiques',
+	vizDesc: "Désactiver économise les ressources sur les sites restreints en utilisant le mode Natif Lite jusqu'à ce que le volume dépasse 100%.",
+	langLabel: 'Langue',
+	noAudio: 'Pas de signal audio',
+	bgTitle: 'Arrière-plan',
+	paused: 'Amélioration audio en pause',
+	clickToResume: 'Cliquez pour reprendre',
+	comp: 'Compresseur',
+	bass: 'Basses',
+	mono: 'Mono',
+	eqTitle: '🎚️ EQ 10 bandes',
+	reset: 'Réinitialiser',
+	save: 'Enregistrer',
+	resetTooltip: "Réinitialiser le volume et l'EQ aux valeurs par défaut",
+	saveTooltip: 'Enregistrer les paramètres actuels comme défaut pour ce domaine',
+	captureListLabel: 'Mode capture forcée',
+	captureListSub: 'Un domaine par ligne',
+	grpInterface: 'Interface',
+	grpGeneral: 'Général',
+	grpAdvanced: 'Registre des sites',
+	tabRestricted: '🔒 Capture nécessaire',
+	tabSafe: '✅ Sites sûrs',
+	filterPlaceholder: '🔍 Filtrer...',
+	registryHint: 'Les sites sont détectés automatiquement. Ajoutez manuellement si nécessaire.',
+	autoAddedToast: (domain: string) => `🔧 ${domain} ajouté automatiquement à la liste de capture`,
+	themeLabel: 'Thème',
+	themeSub: 'Choisissez votre palette de couleurs préférée',
+	themeLight: 'Clair',
+	themeDark: 'Sombre',
+	themeSystem: 'Système',
+	btnThemeTooltip: 'Changer le thème',
+	btnSettingsTooltip: 'Paramètres',
+	btnShortcutsTooltip: 'Raccourcis clavier',
+};
