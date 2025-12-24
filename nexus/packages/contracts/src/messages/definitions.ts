@@ -47,8 +47,8 @@ export interface NexusMessages {
 	// ========== 媒体控制 ==========
 	'MEDIA_TOGGLE_PLAY': { req: void; res: { playing: boolean } };
 	'MEDIA_TOGGLE_PIP': { req: void; res: { active: boolean } };
-	'MEDIA_SET_SPEED': { req: { speed: number }; res: { speed: number } };
-	'MEDIA_GET_STATE': { req: void; res: { playing: boolean; speed: number; pipActive: boolean } };
+	'MEDIA_SET_SPEED': { req: { speed: number; preservePitch?: boolean }; res: { speed: number; preservePitch: boolean } };
+	'MEDIA_GET_STATE': { req: void; res: { playing: boolean; speed: number; pipActive: boolean; preservePitch: boolean } };
 
 	// ========== 视频变换 ==========
 	'VIDEO_ROTATE': { req: void; res: { rotation: number } };
@@ -62,6 +62,18 @@ export interface NexusMessages {
 	'VIDEO_SET_FILTER': { req: { brightness?: number; contrast?: number; saturate?: number; grayscale?: boolean; invert?: boolean }; res: { applied: boolean } };
 	'VIDEO_RESET_FILTER': { req: void; res: { reset: boolean } };
 	'VIDEO_DIM_BACKGROUND': { req: { enabled?: boolean; opacity?: number }; res: { active: boolean; opacity: number } };
+
+	// ========== AB 循环 ==========
+	'VIDEO_AB_SET_A': { req: void; res: { pointA: number | null } };
+	'VIDEO_AB_SET_B': { req: void; res: { pointB: number | null; looping: boolean } };
+	'VIDEO_AB_CLEAR': { req: void; res: { cleared: boolean } };
+	'VIDEO_AB_GET_STATE': { req: void; res: { pointA: number | null; pointB: number | null; looping: boolean } };
+
+	// ========== 时间标记 ==========
+	'VIDEO_MARKER_ADD': { req: { label?: string }; res: { id: string; time: number; label: string } };
+	'VIDEO_MARKER_REMOVE': { req: { id: string }; res: { removed: boolean } };
+	'VIDEO_MARKER_JUMP': { req: { id: string }; res: { jumped: boolean; time: number } };
+	'VIDEO_MARKER_LIST': { req: void; res: { markers: Array<{ id: string; time: number; label: string }> } };
 
 	// ========== Tab 状态 ==========
 	'TAB_REPORT_MEDIA': { req: { hasMediaElement: boolean }; res: void };

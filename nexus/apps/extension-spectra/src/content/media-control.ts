@@ -90,33 +90,44 @@ export async function togglePip(): Promise<boolean> {
 	}
 }
 
-/** 设置播放速率 */
-export function setSpeed(speed: number): number {
+/** 设置播放速率 (支持音高保持) */
+export function setSpeed(speed: number, preservePitch?: boolean): { speed: number; preservePitch: boolean } {
 	const clampedSpeed = Math.max(0.1, Math.min(16, speed));
 	const medias = getAllMedia();
 
+	// preservesPitch 默认 true (浏览器默认行为)
+	const shouldPreservePitch = preservePitch ?? true;
+
 	medias.forEach(m => {
 		m.playbackRate = clampedSpeed;
+		// HTMLMediaElement.preservesPitch (Chrome 86+, Firefox 80+)
+		if ('preservesPitch' in m) {
+			(m as HTMLMediaElement & { preservesPitch: boolean }).preservesPitch = shouldPreservePitch;
+		}
 	});
 
-	log.info(`Speed set to ${clampedSpeed}x`);
-	return clampedSpeed;
+	log.info(`Speed set to ${clampedSpeed}x, preservePitch=${shouldPreservePitch}`);
+	return { speed: clampedSpeed, preservePitch: shouldPreservePitch };
 }
 
 /** 调整速率（增量） */
-export function adjustSpeed(delta: number): number {
+export function adjustSpeed(delta: number): { speed: number; preservePitch: boolean } {
 	const video = getPrimaryVideo();
 	const currentSpeed = video?.playbackRate ?? 1;
 	return setSpeed(currentSpeed + delta);
 }
 
 /** 获取当前媒体状态 */
-export function getMediaState(): { playing: boolean; speed: number; pipActive: boolean } {
+export function getMediaState(): { playing: boolean; speed: number; pipActive: boolean; preservePitch: boolean } {
 	const video = getPrimaryVideo();
+	const preservePitch = video && 'preservesPitch' in video
+		? (video as HTMLMediaElement & { preservesPitch: boolean }).preservesPitch
+		: true;
 	return {
 		playing: video ? !video.paused : false,
 		speed: video?.playbackRate ?? 1,
 		pipActive: !!document.pictureInPictureElement,
+		preservePitch,
 	};
 }
 

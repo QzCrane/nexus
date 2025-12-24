@@ -8,6 +8,8 @@ import { Actions } from '@nexus/contracts';
 import { togglePlay, togglePip, setSpeed, getMediaState, seekVideo } from './media-control';
 import { rotateVideo, toggleMirror, takeScreenshot, toggleFullscreen, toggleCrop } from './video-transform';
 import { setVideoFilter, resetVideoFilter, toggleDimBackground } from './video-filter';
+import { setPointA, setPointB, clearABLoop, getABState } from './ab-loop';
+import { addMarker, removeMarker, jumpToMarker, listMarkers } from './time-marker';
 
 /** 媒体消息 Payload 类型 */
 type MsgPayload = { speed?: number; delta?: number; brightness?: number; contrast?: number; saturate?: number; grayscale?: boolean; invert?: boolean } | undefined;
@@ -36,8 +38,9 @@ export function handleMediaMessage(
 		}
 
 		case Actions.MEDIA_SET_SPEED: {
-			const speed = setSpeed(p?.speed ?? 1);
-			sendResponse({ speed });
+			const sp = payload as { speed?: number; preservePitch?: boolean } | undefined;
+			const result = setSpeed(sp?.speed ?? 1, sp?.preservePitch);
+			sendResponse(result);
 			return true;
 		}
 
@@ -97,6 +100,56 @@ export function handleMediaMessage(
 			const dp = payload as { enabled?: boolean; opacity?: number } | undefined;
 			const result = toggleDimBackground(dp);
 			sendResponse(result);
+			return true;
+		}
+
+		case Actions.VIDEO_AB_SET_A: {
+			const pointA = setPointA();
+			sendResponse({ pointA });
+			return true;
+		}
+
+		case Actions.VIDEO_AB_SET_B: {
+			const result = setPointB();
+			sendResponse(result);
+			return true;
+		}
+
+		case Actions.VIDEO_AB_CLEAR: {
+			const cleared = clearABLoop();
+			sendResponse({ cleared });
+			return true;
+		}
+
+		case Actions.VIDEO_AB_GET_STATE: {
+			sendResponse(getABState());
+			return true;
+		}
+
+		case Actions.VIDEO_MARKER_ADD: {
+			const mp = payload as { label?: string } | undefined;
+			const marker = addMarker(mp?.label);
+			if (marker) sendResponse(marker);
+			else sendResponse({ id: '', time: 0, label: '' });
+			return true;
+		}
+
+		case Actions.VIDEO_MARKER_REMOVE: {
+			const mp = payload as { id: string } | undefined;
+			const removed = removeMarker(mp?.id ?? '');
+			sendResponse({ removed });
+			return true;
+		}
+
+		case Actions.VIDEO_MARKER_JUMP: {
+			const mp = payload as { id: string } | undefined;
+			const result = jumpToMarker(mp?.id ?? '');
+			sendResponse(result);
+			return true;
+		}
+
+		case Actions.VIDEO_MARKER_LIST: {
+			sendResponse({ markers: listMarkers() });
 			return true;
 		}
 
