@@ -14,6 +14,7 @@ import { createRenderFn } from './render';
 import { bindCardEvents } from './events';
 import { setupCardMessaging } from './messaging';
 import { prepareCardDom } from './dom-init';
+import { bindCardIconClick, registerCard } from '../side-panel';
 
 /**
  * 初始化单个音频卡片
@@ -112,6 +113,14 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     onMetricsUpdate: updateMetrics,
     render,
   });
+
+  // 绑定图标点击事件 (打开侧边面板)
+  if (ui.icon) {
+    bindCardIconClick(ui.icon, tabId, tab.title || '', tab.favIconUrl || '');
+  }
+
+  // 注册卡片信息供侧边面板使用
+  registerCard(tabId, state.config, update, () => state.config);
 
   // 设置消息监听
   const cleanupMessaging = setupCardMessaging({ tabId, state, render });

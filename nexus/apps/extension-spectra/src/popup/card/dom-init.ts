@@ -26,11 +26,11 @@ export function prepareCardDom(params: {
 	const ui = getCardUIElements(cardEl);
 	const domain = getDomain(tab.url || '');
 
-	// 3. 设置初始 UI 文本
-	ui.tComp.innerText = dict.comp;
-	ui.tBass.innerText = dict.bass;
-	ui.tMono.innerText = dict.mono;
-	ui.tEq.innerText = dict.eqTitle;
+	// 3. 设置初始 UI 文本 (部分元素可能已移至侧边面板，需要空值检查)
+	if (ui.tComp) ui.tComp.innerText = dict.comp;
+	if (ui.tBass) ui.tBass.innerText = dict.bass;
+	if (ui.tMono) ui.tMono.innerText = dict.mono;
+	if (ui.tEq) ui.tEq.innerText = dict.eqTitle;
 	ui.btnSave.innerText = dict.save;
 	ui.btnSave.title = dict.saveTooltip;
 	ui.btnReset.innerText = dict.reset;

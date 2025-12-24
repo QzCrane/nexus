@@ -77,10 +77,10 @@ export function createRenderFn(params: RenderParams): () => void {
     // 音量图标 (3态: 静音/正常/增强)
     renderVolumeIcon(ui.mute, muted, config.volume);
 
-    // 功能开关
-    ui.comp.checked = config.compressor;
-    ui.bass.checked = config.bass;
-    ui.mono.checked = config.mono;
+    // 功能开关 (可能已移至侧边面板，需要空值检查)
+    if (ui.comp) ui.comp.checked = config.compressor;
+    if (ui.bass) ui.bass.checked = config.bass;
+    if (ui.mono) ui.mono.checked = config.mono;
 
     // EQ 滑块
     ui.eqInputs.forEach((inp, i) => {

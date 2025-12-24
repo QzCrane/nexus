@@ -25,10 +25,18 @@ import { drawEqCurve } from './draw-eq-curve';
  * 供 initCard 使用的工厂函数
  */
 export function createEqCurveDrawer(
-  canvas: HTMLCanvasElement,
-  sliderRow: HTMLElement,
+  canvas: HTMLCanvasElement | null,
+  sliderRow: HTMLElement | null,
   getEqValues: () => number[]
 ): { draw: (color?: string) => void; updateMetrics: () => void } {
+  // 空值检查 (EQ 可能已移至侧边面板)
+  if (!canvas || !sliderRow) {
+    return {
+      draw: () => { },
+      updateMetrics: () => { },
+    };
+  }
+
   const ctx = canvas.getContext('2d');
   if (!ctx) {
     return {

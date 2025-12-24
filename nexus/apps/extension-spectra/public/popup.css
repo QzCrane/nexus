@@ -31,10 +31,14 @@
 }
 html {
   width: 390px;
-  height: auto; /* Correct: Allow popup to shrink/grow */
-
-  /* The Magic Fix: Force scrollbar track on root to reserve width always */
+  height: auto;
   overflow-y: scroll;
+  overflow-x: hidden;
+}
+
+/* 展开侧边面板时动态扩展宽度 */
+html.side-panel-open {
+  width: 610px; /* 220 + 390 */
 }
 
 body {
@@ -45,14 +49,14 @@ body {
   background: var(--bg);
   color: var(--text);
   user-select: none;
+  position: relative;
 }
 
-/* 核心修复：滚动容器隔离 */
-/* Wrapper just acts as styling container now */
+/* 主容器：使用 position 让主 UI 固定在右侧 */
 .app-wrapper {
   width: 100%;
-  height: auto;
-  overflow: visible;
+  min-height: 100%;
+  position: relative;
 }
 
 /* Modern Scrollbar Style */
@@ -79,26 +83,24 @@ body {
 .view-container {
   position: relative;
   width: 100%;
-  overflow: hidden;
-  /* 高度自适应展开动画 */
-  transition: min-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* 主UI：始终在文档流中，始终决定容器高度 */
+/* 主 UI：始终固定在右侧 */
 #view-main {
-  position: relative; /* 关键：始终在文档流 */
-  width: 100%;
+  width: 390px;
+  margin-left: auto; /* 关键：始终靠右 */
   padding: 12px;
   box-sizing: border-box;
   background: var(--bg);
   opacity: 1;
   pointer-events: auto;
   transition: opacity 0.2s;
+  position: relative;
   z-index: 1;
 }
 
 #view-main:not(.active) {
-  opacity: 0; /* 隐藏但仍占据空间 */
+  opacity: 0;
   pointer-events: none;
 }
 
@@ -1017,4 +1019,553 @@ input:checked + .slider-round:before {
 .registry-hint {
   text-align: center;
   margin-top: 4px;
+}
+
+/* ========== 速率控制 + 媒体按钮 ========== */
+.media-control-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--w);
+  border-radius: 10px;
+  margin-top: 4px;
+}
+
+/* 速率控制组 [«][‹][1.0x][›][»] */
+.speed-control {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.btn-speed {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--g1);
+  background: var(--g0);
+  color: var(--text);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-speed:hover {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.btn-speed:active {
+  transform: scale(0.95);
+}
+
+.speed-input {
+  width: 48px;
+  height: 28px;
+  border: 1px solid var(--g1);
+  background: var(--w);
+  color: var(--text);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  outline: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.speed-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+/* 媒体按钮组 [⏸][⛶][←] */
+.media-buttons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-media {
+  width: 32px;
+  height: 28px;
+  border: 1px solid var(--g1);
+  background: var(--g0);
+  color: var(--text);
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-media:hover {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.btn-media:active {
+  transform: scale(0.95);
+}
+
+/* 暂停按钮激活状态 (正在播放) */
+.btn-pause.playing {
+  background: var(--active);
+  color: #fff;
+  border-color: var(--active);
+}
+
+/* 画中画激活状态 */
+.btn-pip.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+/* 返回标签页按钮 (仅后台卡片显示) */
+.btn-goto-tab {
+  font-size: 12px;
+}
+
+/* ========== 左侧扩展面板 ========== */
+.side-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 0;
+  background: var(--w);
+  border-right: 1px solid var(--g1);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 50;
+  transition: width 0.25s ease;
+}
+
+.side-panel.open {
+  width: 220px;
+}
+
+.side-panel.pinned {
+  width: 220px;
+}
+
+/* 面板头部 */
+.side-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--g1);
+  background: var(--g0);
+  flex-shrink: 0;
+}
+
+.side-panel-tab-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.side-panel-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+.side-panel-title {
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.side-panel-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.side-panel-actions button {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  opacity: 0.6;
+  transition: 0.15s;
+}
+
+.side-panel-actions button:hover {
+  opacity: 1;
+  background: var(--g1);
+}
+
+.btn-pin.active {
+  opacity: 1;
+  background: var(--primary);
+  color: #fff;
+}
+
+/* 面板内容区 - 可滚动 */
+.side-panel-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+/* 面板底部 */
+.side-panel-footer {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--g1);
+  background: var(--g0);
+  flex-shrink: 0;
+}
+
+/* 分区样式 */
+.sp-section {
+  background: var(--g0);
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 6px;
+}
+
+.sp-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--g2);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* Chips 行 */
+.sp-chips-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.sp-chip {
+  flex: 1;
+  display: flex;
+  cursor: pointer;
+}
+
+.sp-chip input {
+  display: none;
+}
+
+.sp-chip span {
+  flex: 1;
+  text-align: center;
+  padding: 4px 2px;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--g2);
+  background: var(--w);
+  border: 1px solid var(--g1);
+  border-radius: 4px;
+  transition: 0.15s;
+}
+
+.sp-chip input:checked + span {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+/* 滑块行 */
+.sp-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.sp-label {
+  font-size: 9px;
+  color: var(--g2);
+  width: 40px;
+  flex-shrink: 0;
+}
+
+.sp-label-side {
+  font-size: 8px;
+  color: var(--g2);
+}
+
+.sp-slider {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--g1);
+  border-radius: 2px;
+  outline: none;
+}
+
+.sp-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  background: var(--primary);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.sp-value {
+  font-size: 9px;
+  color: var(--text);
+  width: 36px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Speed 区域 */
+.sp-speed-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.sp-speed-input-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sp-speed-input {
+  width: 50px;
+  height: 22px;
+  border: 1px solid var(--g1);
+  border-radius: 4px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--w);
+  color: var(--text);
+}
+
+/* EQ 区域 - 完整版 (参照原版 eq-island 结构) */
+.sp-eq-section {
+  padding: 4px;
+}
+
+.sp-eq-full {
+  position: relative;
+  background: var(--w);
+  border-radius: 6px;
+  padding: 6px;
+  height: 120px; /* 固定高度 */
+  box-sizing: border-box;
+}
+
+.sp-eq-curve-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.5;
+}
+
+.sp-eq-sliders-row {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  position: relative;
+  z-index: 10;
+  height: 100%;
+}
+
+.sp-eq-col-full {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  height: 100%;
+  justify-content: space-between;
+}
+
+.sp-eq-val {
+  font-size: 8px;
+  color: var(--primary);
+  font-weight: 700;
+  height: 12px;
+}
+
+.sp-eq-track {
+  position: absolute;
+  top: 16px;
+  bottom: 16px;
+  width: 2px;
+  background: var(--g1);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 0;
+}
+
+.sp-eq-zero {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 6px;
+  height: 2px;
+  background: var(--switch-bg);
+  z-index: 0;
+}
+
+/* 使用旋转技术实现垂直滑块 (原版) */
+.sp-eq-input {
+  -webkit-appearance: none;
+  width: 80px;
+  height: 18px;
+  background: transparent;
+  transform: rotate(-90deg);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin-top: -9px;
+  margin-left: -40px;
+  cursor: pointer;
+  z-index: 10;
+}
+
+.sp-eq-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  background: var(--w);
+  border: 2px solid var(--g2);
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  cursor: pointer;
+}
+
+.sp-eq-input:hover::-webkit-slider-thumb {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.sp-eq-hz {
+  font-size: 7px;
+  color: var(--g2);
+  height: 12px;
+}
+
+/* 按钮网格 */
+.sp-btn-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.sp-btn {
+  height: 28px;
+  border: 1px solid var(--g1);
+  background: var(--w);
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: 0.15s;
+}
+
+.sp-btn:hover {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.sp-btn.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+/* 标记行 */
+.sp-markers-row {
+  display: flex;
+  gap: 4px;
+}
+
+.sp-btn-marker {
+  flex: 1;
+}
+
+.sp-btn-loop {
+  width: 40px;
+}
+
+/* 单选组 */
+.sp-radio-group {
+  display: flex;
+  gap: 8px;
+}
+
+.sp-radio {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+}
+
+.sp-radio input {
+  width: 10px;
+  height: 10px;
+  accent-color: var(--primary);
+}
+
+.sp-radio span {
+  font-size: 9px;
+  color: var(--text);
+}
+
+/* 底部按钮 */
+.sp-btn-action {
+  flex: 1;
+  height: 28px;
+  border: 1px solid var(--g1);
+  background: var(--w);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.15s;
+}
+
+.sp-btn-action:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.sp-btn-save {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.sp-btn-save:hover {
+  opacity: 0.9;
 }

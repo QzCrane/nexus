@@ -92,43 +92,47 @@ export function bindCardEvents(params: EventsParams): void {
   // 静音按钮
   ui.mute.onclick = () => update({ muted: !state.config.muted });
 
-  // 功能开关
-  ui.comp.onchange = (e) => update({ compressor: (e.target as HTMLInputElement).checked });
-  ui.bass.onchange = (e) => update({ bass: (e.target as HTMLInputElement).checked });
-  ui.mono.onchange = (e) => update({ mono: (e.target as HTMLInputElement).checked });
+  // 功能开关 (可能已移至侧边面板，需要空值检查)
+  if (ui.comp) ui.comp.onchange = (e) => update({ compressor: (e.target as HTMLInputElement).checked });
+  if (ui.bass) ui.bass.onchange = (e) => update({ bass: (e.target as HTMLInputElement).checked });
+  if (ui.mono) ui.mono.onchange = (e) => update({ mono: (e.target as HTMLInputElement).checked });
 
-  // EQ 抽屉展开/收起
-  ui.eqTrigger.onclick = () => {
-    ui.eqDrawer.classList.toggle('open');
-    const arrow = ui.eqTrigger.querySelector('.eq-arrow');
-    if (arrow) {
-      arrow.textContent = ui.eqDrawer.classList.contains('open') ? '▲' : '▼';
-    }
-    setTimeout(onMetricsUpdate, TIMING.EQ_DRAWER_DELAY);
-  };
-
-  // EQ 滑块
-  ui.eqInputs.forEach((inp, i) => {
-    inp.oninput = (e) => {
-      const arr = [...state.config.eqValues];
-      arr[i] = parseFloat((e.target as HTMLInputElement).value);
-      update({ eqValues: arr });
+  // EQ 抽屉展开/收起 (可能已移至侧边面板，需要空值检查)
+  if (ui.eqTrigger && ui.eqDrawer) {
+    ui.eqTrigger.onclick = () => {
+      ui.eqDrawer.classList.toggle('open');
+      const arrow = ui.eqTrigger.querySelector('.eq-arrow');
+      if (arrow) {
+        arrow.textContent = ui.eqDrawer.classList.contains('open') ? '▲' : '▼';
+      }
+      setTimeout(onMetricsUpdate, TIMING.EQ_DRAWER_DELAY);
     };
+  }
 
-    // 滚轮调节
-    inp.parentElement?.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      let v = parseFloat(inp.value);
-      v = e.deltaY < 0
-        ? Math.min(v + AUDIO_UI.EQ_STEP, AUDIO_UI.EQ_MAX)
-        : Math.max(v - AUDIO_UI.EQ_STEP, AUDIO_UI.EQ_MIN);
-      v = Math.round(v * 10) / 10;
+  // EQ 滑块 (可能已移至侧边面板)
+  if (ui.eqInputs && ui.eqInputs.length > 0) {
+    ui.eqInputs.forEach((inp, i) => {
+      inp.oninput = (e) => {
+        const arr = [...state.config.eqValues];
+        arr[i] = parseFloat((e.target as HTMLInputElement).value);
+        update({ eqValues: arr });
+      };
 
-      const arr = [...state.config.eqValues];
-      arr[i] = v;
-      update({ eqValues: arr });
-    }, { passive: false });
-  });
+      // 滚轮调节
+      inp.parentElement?.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        let v = parseFloat(inp.value);
+        v = e.deltaY < 0
+          ? Math.min(v + AUDIO_UI.EQ_STEP, AUDIO_UI.EQ_MAX)
+          : Math.max(v - AUDIO_UI.EQ_STEP, AUDIO_UI.EQ_MIN);
+        v = Math.round(v * 10) / 10;
+
+        const arr = [...state.config.eqValues];
+        arr[i] = v;
+        update({ eqValues: arr });
+      }, { passive: false });
+    });
+  }
 
   // 保存按钮
   ui.btnSave.onclick = () => {

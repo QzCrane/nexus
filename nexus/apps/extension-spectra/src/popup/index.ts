@@ -10,6 +10,7 @@ import { initSettings } from './views/settings';
 import { initCard } from './card';
 import { createEqCurveDrawer } from './visualizer';
 import { createMessenger } from '@nexus/kernel';
+import { initSidePanel } from './side-panel';
 
 /**
  * Popup 初始化主函数
@@ -28,6 +29,9 @@ async function main(): Promise<void> {
 
   // 初始化视图导航
   initNavigation();
+
+  // 初始化侧边面板
+  initSidePanel();
 
   // 初始化设置页
   const { gSettings, registryEntries, dict } = await initSettings();
