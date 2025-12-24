@@ -156,6 +156,9 @@ export interface I18NDict {
   btnSettingsTooltip: string;
   btnShortcutsTooltip: string;
   // 侧边面板
+  spAudio: string;
+  spPan: string;
+  spDelay: string;
   spSpeed: string;
   spValue: string;
   spVideo: string;

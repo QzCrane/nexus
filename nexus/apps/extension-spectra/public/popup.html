@@ -24,7 +24,7 @@
           <div class="side-panel-content">
             <!-- 🔊 Audio -->
             <div class="sp-section">
-              <div class="sp-section-title">🔊 Audio</div>
+              <div class="sp-section-title" data-i18n="spAudio">🔊 Audio</div>
               <div class="sp-chips-row">
                 <label class="sp-chip"
                   ><input type="checkbox" class="sp-sw-comp" /><span
@@ -46,7 +46,7 @@
                 >
               </div>
               <div class="sp-slider-row">
-                <span class="sp-label">Pan</span>
+                <span class="sp-label" data-i18n="spPan">Pan</span>
                 <span class="sp-label-side">L</span>
                 <input
                   type="range"
@@ -59,7 +59,7 @@
                 <span class="sp-label-side">R</span>
               </div>
               <div class="sp-slider-row">
-                <span class="sp-label">Delay</span>
+                <span class="sp-label" data-i18n="spDelay">Delay</span>
                 <input
                   type="range"
                   class="sp-slider sp-delay"
@@ -600,23 +600,9 @@
             <div class="media-buttons">
               <button class="btn-media btn-pause" title="Pause/Play" data-i18n-title="btnPause">⏸</button>
               <button class="btn-media btn-pip" title="Picture-in-Picture" data-i18n-title="btnPip">
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <rect x="2" y="3" width="20" height="14" rx="2" />
-                  <rect
-                    x="12"
-                    y="10"
-                    width="8"
-                    height="6"
-                    rx="1"
-                    fill="currentColor"
-                  />
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="3" width="20" height="14" rx="2"/>
+                  <rect x="12" y="10" width="8" height="6" rx="1" fill="currentColor"/>
                 </svg>
               </button>
               <button class="btn-media btn-goto-tab hidden" title="Go to Tab">
