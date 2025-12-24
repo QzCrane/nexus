@@ -142,22 +142,36 @@ export interface I18NDict {
   grpInterface: string;
   grpGeneral: string;
   grpAdvanced: string;
-  // 注册表 UI
   tabRestricted: string;
   tabSafe: string;
   filterPlaceholder: string;
   registryHint: string;
   autoAddedToast: (domain: string) => string;
-  // 主题相关
   themeLabel: string;
   themeSub: string;
   themeLight: string;
   themeDark: string;
   themeSystem: string;
-  // 导航按钮 tooltip
   btnThemeTooltip: string;
   btnSettingsTooltip: string;
   btnShortcutsTooltip: string;
+  // 侧边面板
+  spSpeed: string;
+  spValue: string;
+  spVideo: string;
+  spRotate: string;
+  spMirror: string;
+  spCrop: string;
+  spScreenshot: string;
+  spBrightness: string;
+  spContrast: string;
+  spHotkey: string;
+  spHotkeyThis: string;
+  spHotkeyPinned: string;
+  spHotkeyLast: string;
+  // 媒体控制
+  btnPause: string;
+  btnPip: string;
 }
 
 /** 所有语言的 I18N 映射 */
