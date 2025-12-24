@@ -39,6 +39,8 @@ export function getCardUIElements(card: HTMLElement): CardUIElements {
     // 媒体控制
     btnPause: card.querySelector('.btn-pause'),
     btnPip: card.querySelector('.btn-pip'),
+    btnHotkeyTarget: card.querySelector('.btn-hotkey-target'),
+    btnGotoTab: card.querySelector('.btn-goto-tab'),
     speedInput: card.querySelector('.speed-input'),
     speedBtns: card.querySelectorAll('.btn-speed'),
   };

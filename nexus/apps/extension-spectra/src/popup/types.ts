@@ -42,6 +42,8 @@ export interface CardUIElements {
   // 媒体控制
   btnPause: HTMLElement | null;
   btnPip: HTMLElement | null;
+  btnHotkeyTarget: HTMLElement | null;
+  btnGotoTab: HTMLElement | null;
   speedInput: HTMLInputElement | null;
   speedBtns: NodeListOf<HTMLElement>;
 }

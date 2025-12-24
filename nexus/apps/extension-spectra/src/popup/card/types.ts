@@ -26,6 +26,8 @@ export interface InitCardParams {
   dict: I18NDict;
   registryEntries: DomainEntry[];
   getGlobalSettings: () => GlobalSettings;
+  /** 是否后台卡片 (显示返回标签页按钮) */
+  isBackground?: boolean;
   /** EQ 曲线绘制回调 (由 visualizer 模块提供) */
   createEqCurveDrawer?: (
     canvas: HTMLCanvasElement,
@@ -60,6 +62,8 @@ export const DEFAULT_CONFIG: AudioConfig = {
   compressor: false,
   mono: false,
   bass: false,
+  pan: 0,
+  delay: 0,
   eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 };
 

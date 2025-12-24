@@ -598,15 +598,21 @@
               </button>
             </div>
             <div class="media-buttons">
-              <button class="btn-media btn-pause" title="Pause/Play" data-i18n-title="btnPause">⏸</button>
-              <button class="btn-media btn-pip" title="Picture-in-Picture" data-i18n-title="btnPip">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="2" y="3" width="20" height="14" rx="2"/>
-                  <rect x="12" y="10" width="8" height="6" rx="1" fill="currentColor"/>
-                </svg>
+              <!-- 暂停/播放 -->
+              <button class="btn-media btn-pause" title="Pause/Play" data-i18n-title="btnPause">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
               </button>
+              <!-- 画中画 -->
+              <button class="btn-media btn-pip" title="Picture-in-Picture" data-i18n-title="btnPip">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><rect x="11" y="9" width="9" height="7" rx="1" fill="currentColor"/></svg>
+              </button>
+              <!-- 快捷键目标 (箭头指向屏幕) -->
+              <button class="btn-media btn-hotkey-target" title="Hotkey Target">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M12 21v-4m0 0l-3 3m3-3l3 3"/></svg>
+              </button>
+              <!-- 返回标签页 (仅后台卡片显示) -->
               <button class="btn-media btn-goto-tab hidden" title="Go to Tab">
-                ←
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l-4 4 4 4m-4-4h11a4 4 0 000-8h-1"/></svg>
               </button>
             </div>
           </div>

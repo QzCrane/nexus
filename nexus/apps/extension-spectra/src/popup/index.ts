@@ -116,6 +116,7 @@ async function main(): Promise<void> {
         registryEntries,
         getGlobalSettings,
         createEqCurveDrawer,
+        isBackground: true,
       });
 
       if (success) {
@@ -140,6 +141,7 @@ async function main(): Promise<void> {
         registryEntries,
         getGlobalSettings,
         createEqCurveDrawer,
+        isBackground: true,
       });
 
       if (success) {

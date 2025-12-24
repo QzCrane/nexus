@@ -74,6 +74,11 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   // 准备 DOM 并设置文本 (现在返回正确的 ui 引用)
   const { ui, cardEl } = prepareCardDom({ template, container, tab, dict });
 
+  // 后台卡片：显示返回标签页按钮
+  if (params.isBackground && ui.btnGotoTab) {
+    ui.btnGotoTab.classList.remove('hidden');
+  }
+
   // 创建 Capture 判断函数
   const getCapturing = createGetCapturing(state);
 
