@@ -62,7 +62,8 @@ nexus/
 - AudioContext: 每 tab 一个，需 resume()
 - MV3: 无持久状态，用 chrome.storage
 - CORS: 跨域用 Tab Capture
-- 全屏: Capture 模式与全屏冲突，需 injector.js 拦截延迟处理
+- 全屏: Capture 模式与全屏冲突，需 injector.js 拦截
+- **音频链统一**: Native/Capture 使用相同节点链 (含 Panner + Delay)
 
 ## 文档同步（每次修改必须）
 
