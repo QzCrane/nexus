@@ -1,132 +1,141 @@
 /**
  * SPECTRA Popup - 侧边面板 EQ 曲线绘制
- * 复刻原版 draw-eq-curve.ts 的 Catmull-Rom 样条曲线实现
+ * 1:1 复刻原版 draw-eq-curve.ts + MetricsCache 实现
  */
 
-/** 曲线控制点 */
-interface Point {
-	x: number;
-	y: number;
+import { MetricsCache, type MetricsCacheData } from '../visualizer/metrics-cache';
+import { drawEqCurve } from '../visualizer/draw-eq-curve';
+
+/** 缓存实例 */
+let metricsCache: MetricsCache | null = null;
+let cachedCanvas: HTMLCanvasElement | null = null;
+let cachedInputs: NodeListOf<HTMLInputElement> | null = null;
+
+/**
+ * 内部绘制函数 (用于 MetricsCache 回调，避免循环)
+ */
+function internalDraw(): void {
+	if (!cachedCanvas || !cachedInputs || cachedInputs.length === 0) return;
+	if (!metricsCache || !metricsCache.isValid) return;
+
+	const ctx = cachedCanvas.getContext('2d');
+	if (!ctx) return;
+
+	const values: number[] = [];
+	cachedInputs.forEach((inp) => values.push(parseFloat(inp.value) || 0));
+	drawEqCurve(ctx, values, metricsCache, '#2563eb');
 }
 
-/** 缓存数据 */
-interface CacheData {
-	xCoords: number[];
-	midY: number;
-	width: number;
-	height: number;
-	scaleFactor: number;
+/**
+ * 初始化侧边面板 EQ 曲线绘制器
+ * 
+ * 使用原版 MetricsCache 和 drawEqCurve
+ */
+export function initSidePanelEqCurve(
+	canvas: HTMLCanvasElement | null,
+	sliderRow: HTMLElement | null,
+	inputs: NodeListOf<HTMLInputElement>
+): void {
+	if (!canvas || !sliderRow || inputs.length === 0) return;
+
+	const ctx = canvas.getContext('2d');
+	if (!ctx) return;
+
+	// 缓存引用
+	cachedCanvas = canvas;
+	cachedInputs = inputs;
+
+	// 销毁旧的缓存
+	if (metricsCache) metricsCache.destroy();
+
+	// 创建新的 MetricsCache (回调使用内部函数避免循环)
+	metricsCache = new MetricsCache(sliderRow, canvas, internalDraw);
 }
 
-/** 计算滑块位置并绘制曲线 */
+/**
+ * 绘制侧边面板 EQ 曲线
+ * 
+ * 使用原版 drawEqCurve 函数
+ */
 export function drawSidePanelEqCurve(
 	canvas: HTMLCanvasElement | null,
 	inputs: NodeListOf<HTMLInputElement>
 ): void {
 	if (!canvas || inputs.length === 0) return;
+
 	const ctx = canvas.getContext('2d');
 	if (!ctx) return;
-
-	// 计算缓存数据
-	const container = canvas.parentElement;
-	if (!container) return;
-
-	const canvasRect = canvas.getBoundingClientRect();
-	const cache: CacheData = {
-		xCoords: [],
-		midY: canvasRect.height / 2,
-		width: canvasRect.width,
-		height: canvasRect.height,
-		scaleFactor: (canvasRect.height - 20) / 24, // -12 to +12 dB
-	};
-
-	// 计算每个滑块的 X 坐标
-	inputs.forEach((inp) => {
-		const r = inp.getBoundingClientRect();
-		cache.xCoords.push((r.left - canvasRect.left) + (r.width / 2));
-	});
 
 	// 获取 EQ 值
 	const values: number[] = [];
 	inputs.forEach((inp) => values.push(parseFloat(inp.value) || 0));
 
-	// 构建控制点
-	const points: Point[] = [];
-
-	// 左边界延伸点
-	points.push({
-		x: -20,
-		y: cache.midY - (values[0]! * cache.scaleFactor),
-	});
-
-	// 10 个滑块位置
-	for (let i = 0; i < values.length; i++) {
-		points.push({
-			x: cache.xCoords[i]!,
-			y: cache.midY - (values[i]! * cache.scaleFactor),
-		});
+	// 优先使用 MetricsCache
+	if (metricsCache && metricsCache.isValid) {
+		drawEqCurve(ctx, values, metricsCache, '#2563eb');
+		return;
 	}
 
-	// 右边界延伸点
-	points.push({
-		x: cache.width + 20,
-		y: cache.midY - (values[values.length - 1]! * cache.scaleFactor),
-	});
+	// 降级：直接计算并绘制
+	fallbackDraw(ctx, canvas, inputs, values);
+}
 
-	// 更新 canvas 尺寸
+/**
+ * 降级绘制 (缓存不可用时)
+ */
+function fallbackDraw(
+	ctx: CanvasRenderingContext2D,
+	canvas: HTMLCanvasElement,
+	inputs: NodeListOf<HTMLInputElement>,
+	values: number[]
+): void {
+	const canvasRect = canvas.getBoundingClientRect();
+	if (canvasRect.width === 0 || canvasRect.height === 0) return;
+
 	const dpr = window.devicePixelRatio || 1;
+
+	// 更新 canvas 物理尺寸
 	if (canvas.width !== canvasRect.width * dpr) {
 		canvas.width = canvasRect.width * dpr;
 		canvas.height = canvasRect.height * dpr;
 	}
 
-	// 重置并缩放
-	ctx.resetTransform();
-	ctx.scale(dpr, dpr);
-	ctx.clearRect(0, 0, cache.width, cache.height);
+	const w = canvasRect.width;
+	const h = canvasRect.height;
+	const midY = h / 2;
+	const scaleFactor = (h - 20) / 24; // -12 ~ +12 dB
 
-	if (points.length < 2) return;
+	// 计算 X 坐标
+	const xCoords: number[] = [];
+	inputs.forEach((inp) => {
+		const r = inp.getBoundingClientRect();
+		xCoords.push((r.left - canvasRect.left) + (r.width / 2));
+	});
 
-	// Catmull-Rom 样条曲线
-	const path = new Path2D();
-	path.moveTo(points[0]!.x, points[0]!.y);
+	// 构建缓存数据
+	const cache: MetricsCacheData = {
+		xCoords: new Float32Array(xCoords),
+		midY,
+		width: w,
+		height: h,
+		dpr,
+		scaleFactor,
+		isValid: true,
+	};
 
-	for (let i = 0; i < points.length - 1; i++) {
-		const p0 = points[i === 0 ? 0 : i - 1]!;
-		const p1 = points[i]!;
-		const p2 = points[i + 1]!;
-		const p3 = points[i + 2] ?? p2;
-
-		const tension = 0.5;
-		const cp1x = p1.x + (p2.x - p0.x) * tension * 0.33;
-		const cp1y = p1.y + (p2.y - p0.y) * tension * 0.33;
-		const cp2x = p2.x - (p3.x - p1.x) * tension * 0.33;
-		const cp2y = p2.y - (p3.y - p1.y) * tension * 0.33;
-
-		path.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
-	}
-
-	// 填充区域
-	const fillPath = new Path2D(path);
-	fillPath.lineTo(cache.width, cache.height);
-	fillPath.lineTo(0, cache.height);
-	fillPath.closePath();
-
-	// 渐变填充
-	const color = '#2563eb';
-	const grad = ctx.createLinearGradient(0, 0, 0, cache.height);
-	grad.addColorStop(0, 'rgba(37, 99, 235, 0.25)');
-	grad.addColorStop(1, 'rgba(37, 99, 235, 0)');
-	ctx.fillStyle = grad;
-	ctx.fill(fillPath);
-
-	// 描边
-	ctx.shadowColor = 'rgba(37, 99, 235, 0.5)';
-	ctx.shadowBlur = 8;
-	ctx.shadowOffsetY = 2;
-	ctx.lineWidth = 2;
-	ctx.strokeStyle = color;
-	ctx.lineCap = 'round';
-	ctx.lineJoin = 'round';
-	ctx.stroke(path);
+	drawEqCurve(ctx, values, cache, '#2563eb');
 }
+
+/**
+ * 销毁缓存
+ */
+export function destroySidePanelEqCurve(): void {
+	if (metricsCache) {
+		metricsCache.destroy();
+		metricsCache = null;
+	}
+	cachedCanvas = null;
+	cachedInputs = null;
+}
+
+

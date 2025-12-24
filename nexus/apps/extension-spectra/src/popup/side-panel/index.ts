@@ -160,14 +160,12 @@ function openSidePanel(tabId: number, title: string, faviconUrl: string): void {
 	}
 }
 
-/**
- * 关闭侧边面板
- */
+/** 关闭侧边面板 */
 function closeSidePanel(): void {
 	if (!elements) return;
-
 	state.isOpen = false;
 	state.currentTabId = null;
+	// 同时移除两个类，css transition让动画同步
 	elements.panel.classList.remove('open');
 	document.documentElement.classList.remove('side-panel-open');
 }

@@ -30,19 +30,20 @@
   --switch-bg: #475569;
 }
 html {
-  width: 390px;
+  width: 390px; /* 默认宽度 */
   height: auto;
   overflow-y: scroll;
   overflow-x: hidden;
 }
 
-/* 展开侧边面板时动态扩展宽度 */
+/* 展开侧边面板时：宽度立即变大，无min-height限制 */
 html.side-panel-open {
-  width: 610px; /* 220 + 390 */
+  width: 650px;
 }
 
 body {
   width: 100%;
+  min-width: 390px;
   margin: 0;
   padding: 0;
   font-family: "Inter", system-ui, sans-serif;
@@ -50,12 +51,17 @@ body {
   color: var(--text);
   user-select: none;
   position: relative;
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-end; /* 关键：内容靠右对齐 */
 }
 
-/* 主容器：使用 position 让主 UI 固定在右侧 */
+/* 主容器：固定宽度，高度由内容决定，不被拉伸 */
 .app-wrapper {
-  width: 100%;
-  min-height: 100%;
+  width: 390px; /* 固定宽度 */
+  min-width: 390px;
+  flex-shrink: 0;
+  align-self: flex-start; /* 高度由内容决定，不被min-height拉伸 */
   position: relative;
 }
 
@@ -85,10 +91,9 @@ body {
   width: 100%;
 }
 
-/* 主 UI：始终固定在右侧 */
+/* 主 UI：填充固定宽度的父容器 */
 #view-main {
-  width: 390px;
-  margin-left: auto; /* 关键：始终靠右 */
+  width: 100%;
   padding: 12px;
   box-sizing: border-box;
   background: var(--bg);
@@ -1137,26 +1142,27 @@ input:checked + .slider-round:before {
 
 /* ========== 左侧扩展面板 ========== */
 .side-panel {
-  position: absolute;
+  position: fixed;
   top: 0;
-  left: 0;
-  bottom: 0;
-  width: 0;
+  bottom: 0; /* 填满popup高度，不超出 */
+  right: 390px; /* 右边紧贴主UI左边 */
+  width: 260px;
   background: var(--w);
   border-right: 1px solid var(--g1);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   z-index: 50;
-  transition: width 0.25s ease;
+  box-shadow: -2px 4px 16px rgba(0, 0, 0, 0.1);
+  /* 默认隐藏，无动画 */
+  visibility: hidden;
+  opacity: 0;
 }
 
+/* 展开状态：直接显示 */
 .side-panel.open {
-  width: 220px;
-}
-
-.side-panel.pinned {
-  width: 220px;
+  visibility: visible;
+  opacity: 1;
 }
 
 /* 面板头部 */

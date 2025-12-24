@@ -4,7 +4,7 @@
  */
 
 import type { AudioConfig } from '@nexus/kernel';
-import { drawSidePanelEqCurve } from './eq-curve';
+import { initSidePanelEqCurve, drawSidePanelEqCurve } from './eq-curve';
 
 /** 侧边面板控件元素 */
 interface SidePanelControls {
@@ -79,6 +79,11 @@ function bindEq(
 	config: AudioConfig,
 	updateFn: (changes: Partial<AudioConfig>) => void
 ): void {
+	// 初始化 MetricsCache (1:1 复刻原版)
+	const panel = document.getElementById('side-panel');
+	const sliderRow = panel?.querySelector('.sp-eq-sliders-row') as HTMLElement | null;
+	initSidePanelEqCurve(c.eqCanvas, sliderRow, c.eqInputs);
+
 	c.eqInputs.forEach((inp, i) => {
 		const v = config.eqValues?.[i] ?? 0;
 		inp.value = String(v);
