@@ -64,6 +64,7 @@ nexus/
 - CORS: 跨域用 Tab Capture
 - 全屏: Capture 模式与全屏冲突，需 injector.js 拦截
 - **音频链统一**: Native/Capture 使用相同节点链 (含 Panner + Delay)
+- 所有文本信息都必须无损压缩以节省token，如上下文文档，注释等
 
 ## 文档同步（每次修改必须）
 
