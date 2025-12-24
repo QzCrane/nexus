@@ -78,19 +78,21 @@ export function bindMediaControls(ui: CardUIElements, tabId: number): void {
 
 	// 快捷键目标按钮 - 切换当前标签页为快捷键目标
 	if (ui.btnHotkeyTarget) {
-		ui.btnHotkeyTarget.onclick = () => {
-			// 存储当前 tabId 作为快捷键目标
-			chrome.storage.local.set({ hotkeyTargetTabId: tabId }, () => {
-				const btn = ui.btnHotkeyTarget!;
-				// 视觉反馈：按钮变绿 + 闪烁
-				btn.classList.add('active', 'flash');
-				btn.title = '✓ Hotkey Target Set';
+		const btn = ui.btnHotkeyTarget;
 
-				// 1.5秒后恢复
-				setTimeout(() => {
-					btn.classList.remove('active', 'flash');
-					btn.title = 'Hotkey Target';
-				}, 1500);
+		// 初始化：读取 storage 判断当前 tabId 是否为热键目标
+		chrome.storage.local.get(['hotkeyTargetTabId'], (result) => {
+			if (result.hotkeyTargetTabId === tabId) {
+				btn.classList.add('active');
+			}
+		});
+
+		// 点击切换：设置当前 tabId 为热键目标
+		btn.onclick = () => {
+			chrome.storage.local.set({ hotkeyTargetTabId: tabId }, () => {
+				// 更新所有卡片的热键按钮状态
+				document.querySelectorAll('.btn-hotkey-target').forEach(b => b.classList.remove('active'));
+				btn.classList.add('active');
 			});
 		};
 	}

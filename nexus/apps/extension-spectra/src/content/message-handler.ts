@@ -10,14 +10,9 @@ import { Actions } from '@nexus/contracts';
 import { PolicyExecutor, PolicyExecutorState } from './policy-executor';
 import { CaptureManager } from './capture-manager';
 import { SettingsManager } from './settings-manager';
-import { hasMediaElements, isAnyMediaPlaying } from './dom-volume';
+import { hasMediaElements, isAnyMediaPlaying, getPausedAt } from './dom-volume';
 import { safeSend } from './context-guard';
 import { handleMediaMessage } from './media-message-handler';
-
-/** 暂停时间戳 (ms)，null 表示正在播放 */
-let pausedAt: number | null = null;
-/** 上一次的播放状态 */
-let lastPlayingState: boolean | null = null;
 
 /** 消息处理器依赖 */
 export interface MessageHandlerDeps {
@@ -66,12 +61,8 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 				// 始终重新计算策略以触发 CORS 检测
 				policyExecutor.applyState();
 
-				// 更新暂停时间戳
+				// isAnyMediaPlaying 会自动更新 pausedAt
 				const isPlaying = isAnyMediaPlaying();
-				if (lastPlayingState !== isPlaying) {
-					pausedAt = isPlaying ? null : Date.now();
-					lastPlayingState = isPlaying;
-				}
 
 				sendResponse({
 					config: state.config,
@@ -79,7 +70,7 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 					isPlaying,
 					mode: state.activeMode,
 					userInteracted: state.userHasInteracted,
-					pausedAt,
+					pausedAt: getPausedAt(),
 				});
 				break;
 			}

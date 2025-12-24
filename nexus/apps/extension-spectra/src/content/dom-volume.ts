@@ -104,14 +104,41 @@ export function hasMediaElements(): boolean {
 	return document.querySelectorAll('video, audio').length > 0;
 }
 
+// 重导出暂停追踪功能
+export { getPausedAt } from './pause-tracker';
+import { updatePausedAt, needsTracking, setupPauseTracking } from './pause-tracker';
+
 /**
  * 检测是否有正在播放的媒体
+ * 同时更新暂停时间戳
  */
 export function isAnyMediaPlaying(): boolean {
 	const elements = document.querySelectorAll('video, audio');
+	let hasPlaying = false;
+
 	for (const el of elements) {
 		const media = el as HTMLMediaElement;
-		if (!media.paused) return true;
+		if (!media.paused) hasPlaying = true;
+
+		// 为新媒体元素添加暂停追踪
+		if (needsTracking(media)) {
+			setupPauseTracking(media, isAnyMediaPlayingRaw);
+		}
+	}
+
+	// 更新暂停时间戳
+	updatePausedAt(hasPlaying, elements.length > 0);
+
+	return hasPlaying;
+}
+
+/**
+ * 原始检测 (不更新 pausedAt)
+ */
+function isAnyMediaPlayingRaw(): boolean {
+	const elements = document.querySelectorAll('video, audio');
+	for (const el of elements) {
+		if (!(el as HTMLMediaElement).paused) return true;
 	}
 	return false;
 }

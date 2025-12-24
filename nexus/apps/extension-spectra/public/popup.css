@@ -1111,6 +1111,11 @@ input:checked + .slider-round:before {
   justify-content: center;
 }
 
+.btn-media svg {
+  width: 16px;
+  height: 16px;
+}
+
 .btn-media:hover {
   background: var(--primary);
   color: #fff;
@@ -1140,26 +1145,11 @@ input:checked + .slider-round:before {
   font-size: 12px;
 }
 
-/* 热键目标按钮激活状态 */
+/* 热键目标按钮激活状态 (蓝色) */
 .btn-hotkey-target.active {
-  background: var(--active);
+  background: var(--primary);
   color: #fff;
-  border-color: var(--active);
-}
-
-/* 按钮闪烁动画 */
-.btn-media.flash {
-  animation: btn-flash 0.3s ease 2;
-}
-
-@keyframes btn-flash {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.15);
-  }
+  border-color: var(--primary);
 }
 
 /* ========== 左侧扩展面板 ========== */
