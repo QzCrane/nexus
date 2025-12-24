@@ -1140,6 +1140,28 @@ input:checked + .slider-round:before {
   font-size: 12px;
 }
 
+/* 热键目标按钮激活状态 */
+.btn-hotkey-target.active {
+  background: var(--active);
+  color: #fff;
+  border-color: var(--active);
+}
+
+/* 按钮闪烁动画 */
+.btn-media.flash {
+  animation: btn-flash 0.3s ease 2;
+}
+
+@keyframes btn-flash {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+}
+
 /* ========== 左侧扩展面板 ========== */
 .side-panel {
   position: fixed;
@@ -1465,7 +1487,7 @@ input:checked + .slider-round:before {
   background: var(--w);
   border: 2px solid var(--g2);
   border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   cursor: pointer;
 }
 

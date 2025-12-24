@@ -6,6 +6,7 @@
 
 import type { CardUIElements } from '../types';
 import { sendToTab } from '../utils/dom';
+import { syncSidePanelSpeed } from '../side-panel/controls';
 
 /** 暂停图标 SVG */
 const PAUSE_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
@@ -53,8 +54,11 @@ export function bindMediaControls(ui: CardUIElements, tabId: number): void {
 		const updateSpeed = async (speed: number) => {
 			const clampedSpeed = Math.max(0.1, Math.min(16, speed));
 			const res = await sendToTab<{ speed: number }>(tabId, 'MEDIA_SET_SPEED', { speed: clampedSpeed });
-			if (res && ui.speedInput) {
-				ui.speedInput.value = res.speed.toFixed(2);
+			if (res) {
+				const finalSpeed = res.speed;
+				if (ui.speedInput) ui.speedInput.value = finalSpeed.toFixed(2);
+				// 同步侧边面板速度
+				syncSidePanelSpeed(finalSpeed);
 			}
 		};
 
@@ -77,9 +81,16 @@ export function bindMediaControls(ui: CardUIElements, tabId: number): void {
 		ui.btnHotkeyTarget.onclick = () => {
 			// 存储当前 tabId 作为快捷键目标
 			chrome.storage.local.set({ hotkeyTargetTabId: tabId }, () => {
-				ui.btnHotkeyTarget?.classList.add('active');
-				// 2秒后移除激活状态
-				setTimeout(() => ui.btnHotkeyTarget?.classList.remove('active'), 2000);
+				const btn = ui.btnHotkeyTarget!;
+				// 视觉反馈：按钮变绿 + 闪烁
+				btn.classList.add('active', 'flash');
+				btn.title = '✓ Hotkey Target Set';
+
+				// 1.5秒后恢复
+				setTimeout(() => {
+					btn.classList.remove('active', 'flash');
+					btn.title = 'Hotkey Target';
+				}, 1500);
 			});
 		};
 	}

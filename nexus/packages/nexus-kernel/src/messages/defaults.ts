@@ -24,5 +24,6 @@ export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   osdEnabled: true,
   visualizerEnabled: true,
   lang: 'en-US',
-  themeMode: 'system'
+  themeMode: 'system',
+  pauseRetentionSeconds: 60
 };

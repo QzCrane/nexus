@@ -5,6 +5,10 @@
 
 import type { AudioConfig } from '@nexus/kernel';
 import { initSidePanelEqCurve, drawSidePanelEqCurve } from './eq-curve';
+import { bindSpeedControls, addWheelSupport, syncSidePanelSpeed } from './speed-controls';
+
+// 导出供外部使用
+export { syncSidePanelSpeed };
 
 /** 侧边面板控件元素 */
 interface SidePanelControls {
@@ -53,12 +57,30 @@ function getControls(): SidePanelControls {
 /** 绑定侧边面板控件 */
 export function bindSidePanelControls(
 	config: AudioConfig,
-	updateFn: (changes: Partial<AudioConfig>) => void
+	updateFn: (changes: Partial<AudioConfig>) => void,
+	tabId: number
 ): void {
 	currentConfig = config;
 	const c = getControls();
 
 	// Audio chips
+	bindAudioChips(c, config, updateFn);
+
+	// Speed 速度控制
+	bindSpeedControls(c, tabId);
+
+	// Pan 声道平衡 + 滚轮
+	bindPanControl(c, config, updateFn);
+
+	// Delay 声画同步 + 滚轮
+	bindDelayControl(c, config, updateFn);
+
+	// EQ sliders
+	bindEq(c, config, updateFn);
+}
+
+/** 绑定音频开关 */
+function bindAudioChips(c: SidePanelControls, config: AudioConfig, updateFn: (changes: Partial<AudioConfig>) => void): void {
 	if (c.comp) {
 		c.comp.checked = config.compressor;
 		c.comp.onchange = (e) => updateFn({ compressor: (e.target as HTMLInputElement).checked });
@@ -71,21 +93,19 @@ export function bindSidePanelControls(
 		c.mono.checked = config.mono;
 		c.mono.onchange = (e) => updateFn({ mono: (e.target as HTMLInputElement).checked });
 	}
+}
 
-	// Speed (预留，待 AudioConfig 添加 speed 属性)
-	if (c.speedSlider) c.speedSlider.value = '1';
-	if (c.speedInput) c.speedInput.value = '1.00';
-
-	// Pan 声道平衡
+/** 绑定声道平衡 */
+function bindPanControl(c: SidePanelControls, config: AudioConfig, updateFn: (changes: Partial<AudioConfig>) => void): void {
 	if (c.panSlider) {
 		c.panSlider.value = String(config.pan ?? 0);
-		c.panSlider.oninput = (e) => {
-			const pan = parseFloat((e.target as HTMLInputElement).value);
-			updateFn({ pan });
-		};
+		c.panSlider.oninput = (e) => updateFn({ pan: parseFloat((e.target as HTMLInputElement).value) });
+		addWheelSupport(c.panSlider, 0.1, -1, 1, (v) => updateFn({ pan: v }));
 	}
+}
 
-	// Delay 声画同步
+/** 绑定延迟控制 */
+function bindDelayControl(c: SidePanelControls, config: AudioConfig, updateFn: (changes: Partial<AudioConfig>) => void): void {
 	if (c.delaySlider) {
 		c.delaySlider.value = String(config.delay ?? 0);
 		if (c.delayVal) c.delayVal.textContent = `${config.delay ?? 0}ms`;
@@ -94,19 +114,15 @@ export function bindSidePanelControls(
 			if (c.delayVal) c.delayVal.textContent = `${delay}ms`;
 			updateFn({ delay });
 		};
+		addWheelSupport(c.delaySlider, 10, -500, 500, (v) => {
+			if (c.delayVal) c.delayVal.textContent = `${v}ms`;
+			updateFn({ delay: v });
+		});
 	}
-
-	// EQ sliders
-	bindEq(c, config, updateFn);
 }
 
 /** 绑定 EQ 滑块 */
-function bindEq(
-	c: SidePanelControls,
-	config: AudioConfig,
-	updateFn: (changes: Partial<AudioConfig>) => void
-): void {
-	// 初始化 MetricsCache (1:1 复刻原版)
+function bindEq(c: SidePanelControls, config: AudioConfig, updateFn: (changes: Partial<AudioConfig>) => void): void {
 	const panel = document.getElementById('side-panel');
 	const sliderRow = panel?.querySelector('.sp-eq-sliders-row') as HTMLElement | null;
 	initSidePanelEqCurve(c.eqCanvas, sliderRow, c.eqInputs);
@@ -127,6 +143,20 @@ function bindEq(
 			arr[i] = parseFloat((e.target as HTMLInputElement).value);
 			updateFn({ eqValues: arr });
 		};
+
+		// EQ 滑块滚轮支持
+		inp.parentElement?.addEventListener('wheel', (e) => {
+			e.preventDefault();
+			let v = parseFloat(inp.value);
+			v = e.deltaY < 0 ? Math.min(v + 0.5, 12) : Math.max(v - 0.5, -12);
+			v = Math.round(v * 10) / 10;
+			inp.value = String(v);
+			updateValDisplay(c.eqVals[i], v);
+			drawSidePanelEqCurve(c.eqCanvas, c.eqInputs);
+			const arr = [...(currentConfig?.eqValues ?? Array(10).fill(0))];
+			arr[i] = v;
+			updateFn({ eqValues: arr });
+		}, { passive: false });
 	});
 
 	drawSidePanelEqCurve(c.eqCanvas, c.eqInputs);
@@ -145,11 +175,7 @@ export function syncSidePanelState(config: AudioConfig): void {
 	if (c.comp) c.comp.checked = config.compressor;
 	if (c.bass) c.bass.checked = config.bass;
 	if (c.mono) c.mono.checked = config.mono;
-
-	// Pan
 	if (c.panSlider) c.panSlider.value = String(config.pan ?? 0);
-
-	// Delay
 	if (c.delaySlider) {
 		c.delaySlider.value = String(config.delay ?? 0);
 		if (c.delayVal) c.delayVal.textContent = `${config.delay ?? 0}ms`;

@@ -157,7 +157,7 @@ function openSidePanel(tabId: number, title: string, faviconUrl: string): void {
 	const reg = cardRegistry.get(tabId);
 	if (reg) {
 		// 使用 getConfig 获取最新配置
-		bindSidePanelControls(reg.getConfig(), reg.update);
+		bindSidePanelControls(reg.getConfig(), reg.update, tabId);
 	}
 
 	// 绑定视频控制按钮

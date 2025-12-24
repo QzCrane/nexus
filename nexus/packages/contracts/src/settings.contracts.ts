@@ -27,6 +27,8 @@ export interface GlobalSettings {
   lang: SupportedLanguage;
   /** 主题模式 */
   themeMode: ThemeMode;
+  /** 暂停保留时间 (秒)，音频暂停后保留在UI中的时间，0=永久 */
+  pauseRetentionSeconds: number;
 }
 
 /**
@@ -49,7 +51,8 @@ export const DEFAULT_GLOBAL_SETTINGS: Readonly<GlobalSettings> = {
   osdEnabled: true,
   visualizerEnabled: true,
   lang: 'en-US',
-  themeMode: 'system'
+  themeMode: 'system',
+  pauseRetentionSeconds: 60
 } as const;
 
 // ============================================
