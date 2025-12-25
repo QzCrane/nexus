@@ -8,6 +8,7 @@
 - **模块上下文**: 目标包 `.ai-context.md`
 - **数据流/同步**: `docs/cors-data-flow.md`
 - **决策策略**: `docs/policy-decision.md`
+- **压缩规范**: `docs/ai-rules/documentation.md`
 
 ## 📡 核心消息
 
