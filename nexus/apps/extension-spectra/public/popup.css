@@ -52,20 +52,14 @@ body {
   color: var(--text);
   user-select: none;
   position: relative;
-  /* 使用 float 布局，它是除了绝对定位外最稳固的靠右方式 */
-  display: block;
+  /* 终极方案：Grid 布局 + 右对齐 */
+  display: grid;
+  justify-content: end; /* 这里的 end 是行轴的终点（右侧） */
+  grid-template-columns: 390px; /* 强制主内容列宽 */
 }
 
-/* Clearfix for body to contain float */
-body::after {
-  content: "";
-  display: table;
-  clear: both;
-}
-
-/* 主容器：右浮动，刚性锚定右侧 */
+/* 主容器 */
 .app-wrapper {
-  float: right;
   width: 390px;
   min-width: 390px;
   position: relative;
