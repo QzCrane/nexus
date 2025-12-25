@@ -13,10 +13,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ========== 配置 ==========
 const CONFIG = {
-  sourceIcon: path.resolve(__dirname, '../apps/extension-spectra/public/icon.png'),
+  sourceIcon: path.resolve(__dirname, '../apps/extension-spectra/public/icon_transparent.png'),
   outputDir: path.resolve(__dirname, '../apps/extension-spectra/public/icons'),
   sizes: [16, 48, 128],  // Chrome扩展标准尺寸
-  addWhiteBg: true,      // 是否添加白色背景（解决透明图标显示灰色问题）
 };
 
 async function generateIcons() {
@@ -35,21 +34,15 @@ async function generateIcons() {
   const metadata = await sharp(sourceBuffer).metadata();
   console.log(`[ICON] 源图标尺寸: ${metadata.width}x${metadata.height}`);
 
-  // 生成各尺寸
+  // 生成各尺寸（保留透明通道）
   for (const size of CONFIG.sizes) {
     const outputPath = path.join(CONFIG.outputDir, `icon${size}.png`);
     
-    let pipeline = sharp(sourceBuffer).resize(size, size, {
-      fit: 'contain',
-      background: { r: 255, g: 255, b: 255, alpha: 0 }
-    });
-
-    // 添加白色背景（可选）
-    if (CONFIG.addWhiteBg) {
-      pipeline = pipeline.flatten({ background: { r: 255, g: 255, b: 255 } });
-    }
-
-    await pipeline.png().toFile(outputPath);
+    await sharp(sourceBuffer)
+      .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png()
+      .toFile(outputPath);
+    
     console.log(`[ICON] ✓ 生成: icon${size}.png`);
   }
 
