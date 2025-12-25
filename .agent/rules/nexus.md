@@ -1,43 +1,23 @@
----
+﻿---
 trigger: always_on
 ---
+## 📖 阅读顺序
+1. README.AI.md (总览)  2. contracts (契约)  3. 目标 .ai-context.md  4. 实现代码
 
-## 必读
+## ⚖️ 架构一致性
+修改前必读: docs/cors-data-flow.md
 
-在 nexus/ 中工作时先读 [nexus/README.AI.md](cci:7://file:///c:/Users/QzCrane/Desktop/VolumeBooster/nexus/README.AI.md:0:0-0:0)
+## 🛠 工作流
+- 结束任务: /feature-finish
+- 新建模块: /new-module
+- 发布版本: /release-spectra
 
-## 阅读顺序
+## 🔍 条件阅读
+- 改架构: docs/ai-rules/architectural.md
+- 改状态: docs/cors-data-flow.md
+- 改策略: docs/policy-decision.md
 
-1. README.AI.md → 2. contracts → 3. 目标 .ai-context.md → 4. 实现代码
-
-## 架构一致性
-
-**修改状态/数据流前必须**：
-
-1. 读 [docs/cors-data-flow.md](cci:7://file:///c:/Users/QzCrane/Desktop/VolumeBooster/nexus/apps/extension-spectra/docs/cors-data-flow.md:0:0-0:0) 确认数据源
-2. 确保单一写入方，所有读取方用同一数据源
-3. 修改后更新数据流文档
-4. 清理死代码
-
-## 工作流
-
-| 触发     | 命令               |
-| -------- | ------------------ |
-| 任务结束 | `/feature-finish`  |
-| 新模块   | `/new-module`      |
-| 发版     | `/release-spectra` |
-
-## 禁止
-
-- 深层路径导入
-- contracts 导入实现代码
-- 绕过数据流架构
-- 遗留死代码
-
-## 条件性阅读
-
-| 情况        | 必读                           |
-| ----------- | ------------------------------ |
-| 改架构      | docs/ai-rules/architectural.md |
-| 改状态/同步 | docs/cors-data-flow.md         |
-| 改策略      | docs/policy-decision.md        |
+## 🚫 绝对严禁
+- ❌ 深层路径导入、循环依赖。
+- ❌ contracts 引入实现。
+- ❌ 绕过数据流架构、残留过期代码。
