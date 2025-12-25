@@ -126,9 +126,13 @@ function openSidePanel(tabId: number, title: string, faviconUrl: string): void {
 
 	// 添加打开类
 	document.documentElement.classList.add('side-panel-open');
-	// 使用 RAF 确保窗口调整尺寸后再显示面板，避免闪烁
+
+	// 双重 RAF：确保 Layout 和 Paint 完全完成后再触发 CSS Transition
+	// 这能有效规避首次打开时的布局抖动
 	requestAnimationFrame(() => {
-		elements?.panel.classList.add('open');
+		requestAnimationFrame(() => {
+			elements?.panel.classList.add('open');
+		});
 	});
 
 	// 绑定控件事件

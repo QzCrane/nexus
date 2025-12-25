@@ -52,21 +52,26 @@ body {
   color: var(--text);
   user-select: none;
   position: relative;
-  /* 回滚到 Flex 布局，这对 Chrome 扩展最稳定 */
-  display: flex;
-  flex-direction: row;
-  justify-content: flex-end; /* 靠右对齐 */
+  /* 使用 float 布局，它是除了绝对定位外最稳固的靠右方式 */
+  display: block;
 }
 
-/* 主容器：固定宽度 */
+/* Clearfix for body to contain float */
+body::after {
+  content: "";
+  display: table;
+  clear: both;
+}
+
+/* 主容器：右浮动，刚性锚定右侧 */
 .app-wrapper {
+  float: right;
   width: 390px;
   min-width: 390px;
-  flex-shrink: 0;
   position: relative;
-  /* 确保 main UI 始终有背景色，防止透明穿透 */
+  /* 确保 main UI 始终有背景色 */
   background: var(--bg);
-  z-index: 100; /* 确保 Main UI 层级高于侧边栏阴影 */
+  z-index: 100;
 }
 
 /* Modern Scrollbar Style */
