@@ -67,4 +67,7 @@ export const DE_DE: I18NDict = {
 	pauseRetentionUnit: 'Sekunden',
 	tipPinPanel: 'Panel anheften',
 	tipClose: 'Schließen',
+	tipAdvancedSettings: 'Erweiterte Einstellungen öffnen',
+	spResetFx: '↺ Effekte zurücksetzen',
+	spSaveFx: '💾 Effekte speichern',
 };

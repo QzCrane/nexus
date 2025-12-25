@@ -67,4 +67,7 @@ export const ZH_CN: I18NDict = {
 	pauseRetentionUnit: '秒',
 	tipPinPanel: '固定面板',
 	tipClose: '关闭',
+	tipAdvancedSettings: '点击打开高级设置',
+	spResetFx: '↺ 重置效果',
+	spSaveFx: '💾 保存效果',
 };

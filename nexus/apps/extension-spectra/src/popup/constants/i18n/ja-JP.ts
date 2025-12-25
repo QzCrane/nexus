@@ -67,4 +67,7 @@ export const JA_JP: I18NDict = {
 	pauseRetentionUnit: '秒',
 	tipPinPanel: 'パネルを固定',
 	tipClose: '閉じる',
+	tipAdvancedSettings: '詳細設定を開く',
+	spResetFx: '↺ エフェクトをリセット',
+	spSaveFx: '💾 エフェクトを保存',
 };

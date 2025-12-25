@@ -67,4 +67,7 @@ export const KO_KR: I18NDict = {
 	pauseRetentionUnit: '초',
 	tipPinPanel: '패널 고정',
 	tipClose: '닫기',
+	tipAdvancedSettings: '고급 설정 열기',
+	spResetFx: '↺ 효과 초기화',
+	spSaveFx: '💾 효과 저장',
 };

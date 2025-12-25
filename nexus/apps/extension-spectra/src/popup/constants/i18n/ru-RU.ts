@@ -67,4 +67,7 @@ export const RU_RU: I18NDict = {
 	pauseRetentionUnit: 'секунд',
 	tipPinPanel: 'Закрепить панель',
 	tipClose: 'Закрыть',
+	tipAdvancedSettings: 'Открыть дополнительные настройки',
+	spResetFx: '↺ Сбросить эффекты',
+	spSaveFx: '💾 Сохранить эффекты',
 };

@@ -70,6 +70,10 @@ export interface I18NDict {
 	// 通用悬停提示
 	tipPinPanel: string;
 	tipClose: string;
+	tipAdvancedSettings: string;
+	// 侧边面板按钮
+	spResetFx: string;
+	spSaveFx: string;
 }
 
 /** 所有语言的 I18N 映射 */

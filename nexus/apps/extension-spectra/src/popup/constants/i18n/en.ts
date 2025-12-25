@@ -67,4 +67,7 @@ export const EN_US: I18NDict = {
   pauseRetentionUnit: 'seconds',
   tipPinPanel: 'Pin Panel',
   tipClose: 'Close',
+  tipAdvancedSettings: 'Click for advanced settings',
+  spResetFx: '↺ Reset Effects',
+  spSaveFx: '💾 Save Effects',
 };
