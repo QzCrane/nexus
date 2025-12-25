@@ -83,4 +83,6 @@ export const EN_US: I18NDict = {
   grpPresets: 'Saved Presets',
   presetsHint: 'No saved presets. Use 💾 button on cards to save.',
   btnClearPresets: 'Clear All',
+  // 遥控
+  btnRemoteTooltip: 'Remote Control',
 };

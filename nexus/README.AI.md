@@ -47,6 +47,7 @@
 - FX: 亮度/对比度/饱和度, 灰度/反色, 背景暗化
 - Playback: 速率 0.25x-16x, AB 循环, 时间标记
 - Settings: 热键入口, 域名预设管理
+- Remote: QR 码生成, 手机遥控 (进行中)
 - Engine: CORS 探测, Sticky Badge
 
 ---

@@ -83,4 +83,6 @@ export const KO_KR: I18NDict = {
 	grpPresets: '저장된 프리셋',
 	presetsHint: '프리셋 없음. 카드의 💾 버튼으로 저장.',
 	btnClearPresets: '모두 삭제',
+	// 리모컨
+	btnRemoteTooltip: '리모컨',
 };

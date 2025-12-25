@@ -83,4 +83,6 @@ export const FR_FR: I18NDict = {
 	grpPresets: 'Presets sauvegardés',
 	presetsHint: 'Aucun preset. Utilisez 💾 sur les cartes pour sauvegarder.',
 	btnClearPresets: 'Tout supprimer',
+	// Télécommande
+	btnRemoteTooltip: 'Télécommande',
 };

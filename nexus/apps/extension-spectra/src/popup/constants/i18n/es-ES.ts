@@ -83,4 +83,6 @@ export const ES_ES: I18NDict = {
 	grpPresets: 'Presets guardados',
 	presetsHint: 'Sin presets. Usa 💾 en las tarjetas para guardar.',
 	btnClearPresets: 'Eliminar todo',
+	// Control remoto
+	btnRemoteTooltip: 'Control remoto',
 };

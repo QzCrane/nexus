@@ -11,6 +11,7 @@ import { initCard } from './card';
 import { createEqCurveDrawer } from './visualizer';
 import { createMessenger } from '@nexus/kernel';
 import { initSidePanel } from './side-panel';
+import { bindRemoteUI } from '../remote';
 
 /**
  * Popup 初始化主函数
@@ -32,6 +33,9 @@ async function main(): Promise<void> {
 
   // 初始化侧边面板
   initSidePanel();
+
+  // 初始化遥控功能
+  bindRemoteUI();
 
   // 初始化设置页
   const { gSettings, registryEntries, dict } = await initSettings();

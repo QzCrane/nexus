@@ -83,4 +83,6 @@ export const DE_DE: I18NDict = {
 	grpPresets: 'Gespeicherte Presets',
 	presetsHint: 'Keine Presets. 💾-Taste auf Karten zum Speichern.',
 	btnClearPresets: 'Alle löschen',
+	// Fernbedienung
+	btnRemoteTooltip: 'Fernbedienung',
 };

@@ -87,6 +87,8 @@ export interface I18NDict {
 	grpPresets: string;
 	presetsHint: string;
 	btnClearPresets: string;
+	// 遥控
+	btnRemoteTooltip: string;
 }
 
 /** 所有语言的 I18N 映射 */

@@ -83,4 +83,6 @@ export const RU_RU: I18NDict = {
 	grpPresets: 'Сохранённые пресеты',
 	presetsHint: 'Нет пресетов. Нажмите 💾 на карточках для сохранения.',
 	btnClearPresets: 'Очистить все',
+	// Пульт
+	btnRemoteTooltip: 'Пульт',
 };

@@ -83,4 +83,6 @@ export const ZH_CN: I18NDict = {
 	grpPresets: '域名预设',
 	presetsHint: '暂无预设。使用卡片上的 💾 按钮保存。',
 	btnClearPresets: '清空全部',
+	// 遥控
+	btnRemoteTooltip: '手机遥控',
 };

@@ -8,14 +8,15 @@
 
 ### SPECTRA - 专业媒体播放器
 
-| 优先级 | 模块   | 功能                         | 技术      | 商业 |
-| :----: | ------ | ---------------------------- | --------- | :--: |
-|   P0   | Audio  | 800%音量/10 段 EQ/压限器     | WebAudio  | FREE |
-|   P0   | Video  | 旋转/镜像/去黑边/速率/画中画 | CSS+JS    | FREE |
-|   P0   | Tool   | 截图/AB 循环/时间标记        | Canvas+JS | FREE |
-|   P1   | AI     | 人声分离                     | WASM+ONNX | PRO  |
-|   P1   | Remote | 手机遥控                     | WebSocket | FREE |
-|   P2   | Audio  | 空间音频/声画同步/声道平衡   | WebAudio  | PRO  |
+| 优先级 | 模块   | 功能                         | 技术              | 商业 | 状态 |
+| :----: | ------ | ---------------------------- | ----------------- | :--: | :--: |
+|   P0   | Audio  | 800%音量/10 段 EQ/压限器     | WebAudio          | FREE |  ✅  |
+|   P0   | Video  | 旋转/镜像/去黑边/速率/画中画 | CSS+JS            | FREE |  ✅  |
+|   P0   | Tool   | 截图/AB 循环/时间标记        | Canvas+JS         | FREE |  ✅  |
+|   P1   | AI     | 人声分离                     | WASM+ONNX         | PRO  |  ⬜  |
+|   P1   | Remote | 手机遥控 (QR→WebRTC)         | WebSocket         | FREE |  ⬜  |
+|   P1   | Stream | 标签页直播共享               | tabCapture+WebRTC | PRO  |  ⬜  |
+|   P2   | Audio  | 空间音频/声画同步/声道平衡   | WebAudio          | PRO  |  ✅  |
 
 ### CORTEX - AI 信息中心
 

@@ -78,6 +78,12 @@ export interface NexusMessages {
 	// ========== Tab 状态 ==========
 	'TAB_REPORT_MEDIA': { req: { hasMediaElement: boolean }; res: void };
 	'TAB_GET_VISIBLE_TABS': { req: void; res: { tabs: number[] } };
+
+	// ========== 遥控 (Remote) ==========
+	'REMOTE_GET_SESSION': { req: void; res: { sessionId: string | null; peerId: string | null; connected: boolean } };
+	'REMOTE_CREATE_SESSION': { req: void; res: { sessionId: string; peerId: string } };
+	'REMOTE_CLOSE_SESSION': { req: void; res: { closed: boolean } };
+	'REMOTE_COMMAND': { req: { command: 'volume_up' | 'volume_down' | 'mute' | 'play_pause' | 'next' | 'prev' }; res: { executed: boolean } };
 }
 
 /** Action 名称联合类型 */
