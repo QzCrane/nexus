@@ -72,4 +72,11 @@ export const EN_US: I18NDict = {
   spSaveFx: '💾 Save Effects',
   spResetFxTip: 'Reset EQ/Pan/Delay (independent of main UI)',
   spSaveFxTip: 'Save effect preset for this site (independent of main UI)',
+  // 新增控件
+  spFullscreen: 'Fullscreen',
+  spDim: 'Dim Background',
+  spSeek: 'Seek',
+  spSaturate: 'Saturate',
+  spGrayscale: 'Grayscale',
+  spInvert: 'Invert',
 };

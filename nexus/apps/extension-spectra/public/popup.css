@@ -1174,7 +1174,8 @@ input:checked + .slider-round:before {
   visibility: hidden;
   opacity: 0;
   transform: translateX(20px); /* 改为正值，从右侧（主界面下方）滑出 */
-  transition: opacity 0.25s cubic-bezier(0.2, 0, 0, 1), transform 0.25s cubic-bezier(0.2, 0, 0, 1), visibility 0s linear 0.25s;
+  transition: opacity 0.25s cubic-bezier(0.2, 0, 0, 1),
+    transform 0.25s cubic-bezier(0.2, 0, 0, 1), visibility 0s linear 0.25s;
 }
 
 /* 展开状态：直接显示 */
@@ -1182,7 +1183,8 @@ input:checked + .slider-round:before {
   visibility: visible;
   opacity: 1;
   transform: translateX(0);
-  transition: opacity 0.25s cubic-bezier(0.2, 0, 0, 1), transform 0.25s cubic-bezier(0.2, 0, 0, 1), visibility 0s linear 0s;
+  transition: opacity 0.25s cubic-bezier(0.2, 0, 0, 1),
+    transform 0.25s cubic-bezier(0.2, 0, 0, 1), visibility 0s linear 0s;
 }
 
 /* 面板头部 */
@@ -1504,7 +1506,7 @@ input:checked + .slider-round:before {
 /* 按钮网格 */
 .sp-btn-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 4px;
   margin-bottom: 6px;
 }
@@ -1531,10 +1533,50 @@ input:checked + .slider-round:before {
   border-color: var(--primary);
 }
 
+/* 时间跳转行 */
+.sp-seek-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.sp-seek-btns {
+  display: flex;
+  gap: 3px;
+  flex: 1;
+}
+
+.sp-btn-small {
+  flex: 1;
+  height: 22px;
+  border: 1px solid var(--g1);
+  background: var(--w);
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.15s;
+  color: var(--text);
+}
+
+.sp-btn-small:hover {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+/* 滤镜开关行 */
+.sp-filter-chips {
+  margin-top: 4px;
+  margin-bottom: 6px;
+}
+
 /* 标记行 */
 .sp-markers-row {
   display: flex;
   gap: 4px;
+  margin-top: 4px;
 }
 
 .sp-btn-marker {
@@ -1638,4 +1680,3 @@ input:checked + .slider-round:before {
   font-size: 12px;
   color: var(--g2);
 }
-

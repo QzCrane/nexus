@@ -72,4 +72,11 @@ export const ZH_CN: I18NDict = {
 	spSaveFx: '💾 保存效果',
 	spResetFxTip: '重置 EQ/平衡/延迟（独立于主界面）',
 	spSaveFxTip: '保存效果预设到此网站（独立于主界面）',
+	// 新增控件
+	spFullscreen: '全屏',
+	spDim: '背景变暗',
+	spSeek: '跳转',
+	spSaturate: '饱和度',
+	spGrayscale: '灰度',
+	spInvert: '反色',
 };

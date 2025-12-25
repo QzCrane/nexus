@@ -72,4 +72,11 @@ export const ES_ES: I18NDict = {
 	spSaveFx: '💾 Guardar efectos',
 	spResetFxTip: 'Restablecer EQ/Pan/Delay (independiente de UI principal)',
 	spSaveFxTip: 'Guardar preset de efectos (independiente de UI principal)',
+	// Nuevo
+	spFullscreen: 'Pantalla completa',
+	spDim: 'Oscurecer fondo',
+	spSeek: 'Buscar',
+	spSaturate: 'Saturación',
+	spGrayscale: 'Escala de grises',
+	spInvert: 'Invertir',
 };

@@ -72,4 +72,11 @@ export const JA_JP: I18NDict = {
 	spSaveFx: '💾 エフェクトを保存',
 	spResetFxTip: 'EQ/パン/ディレイをリセット（メインUIと独立）',
 	spSaveFxTip: 'エフェクトプリセットを保存（メインUIと独立）',
+	// 新増
+	spFullscreen: 'フルスクリーン',
+	spDim: '背景暗転',
+	spSeek: 'シーク',
+	spSaturate: '彩度',
+	spGrayscale: 'グレースケール',
+	spInvert: '反転',
 };

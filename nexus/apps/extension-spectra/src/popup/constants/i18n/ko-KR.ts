@@ -72,4 +72,11 @@ export const KO_KR: I18NDict = {
 	spSaveFx: '💾 효과 저장',
 	spResetFxTip: 'EQ/팬/딜레이 초기화 (메인 UI와 독립)',
 	spSaveFxTip: '효과 프리셋 저장 (메인 UI와 독립)',
+	// 새 항목
+	spFullscreen: '전체화면',
+	spDim: '배경 어둡게',
+	spSeek: '탐색',
+	spSaturate: '채도',
+	spGrayscale: '그레이스케일',
+	spInvert: '반전',
 };

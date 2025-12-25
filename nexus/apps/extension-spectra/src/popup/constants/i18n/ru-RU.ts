@@ -72,4 +72,11 @@ export const RU_RU: I18NDict = {
 	spSaveFx: '💾 Сохранить эффекты',
 	spResetFxTip: 'Сбросить EQ/Pan/Delay (независимо от основного UI)',
 	spSaveFxTip: 'Сохранить пресет эффектов (независимо от основного UI)',
+	// Новое
+	spFullscreen: 'Полноэкранный',
+	spDim: 'Затемнить фон',
+	spSeek: 'Перемотка',
+	spSaturate: 'Насыщенность',
+	spGrayscale: 'Оттенки серого',
+	spInvert: 'Инверсия',
 };

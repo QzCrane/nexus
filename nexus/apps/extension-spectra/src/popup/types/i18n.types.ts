@@ -76,6 +76,13 @@ export interface I18NDict {
 	spSaveFx: string;
 	spResetFxTip: string;
 	spSaveFxTip: string;
+	// 新增视频控件
+	spFullscreen: string;
+	spDim: string;
+	spSeek: string;
+	spSaturate: string;
+	spGrayscale: string;
+	spInvert: string;
 }
 
 /** 所有语言的 I18N 映射 */
