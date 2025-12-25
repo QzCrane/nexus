@@ -74,6 +74,8 @@ export interface I18NDict {
 	// 侧边面板按钮
 	spResetFx: string;
 	spSaveFx: string;
+	spResetFxTip: string;
+	spSaveFxTip: string;
 }
 
 /** 所有语言的 I18N 映射 */

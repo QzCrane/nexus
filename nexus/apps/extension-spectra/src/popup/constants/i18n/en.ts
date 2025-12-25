@@ -70,4 +70,6 @@ export const EN_US: I18NDict = {
   tipAdvancedSettings: 'Click for advanced settings',
   spResetFx: '↺ Reset Effects',
   spSaveFx: '💾 Save Effects',
+  spResetFxTip: 'Reset EQ/Pan/Delay (independent of main UI)',
+  spSaveFxTip: 'Save effect preset for this site (independent of main UI)',
 };

@@ -53,17 +53,25 @@ export function updateCardsI18n(dict: I18NDict, vizEnabled: boolean): void {
 			if (el && typeof value === 'string') el.textContent = value;
 		});
 
-		// 更新按钮
+		// 更新卡片按钮 title
 		const btnSave = card.querySelector('.btn-save') as HTMLElement | null;
 		const btnReset = card.querySelector('.btn-reset') as HTMLElement | null;
-		if (btnSave) {
-			btnSave.innerText = dict.save;
-			btnSave.title = dict.saveTooltip;
-		}
-		if (btnReset) {
-			btnReset.innerText = dict.reset;
-			btnReset.title = dict.resetTooltip;
-		}
+		if (btnSave) btnSave.title = dict.saveTooltip;
+		if (btnReset) btnReset.title = dict.resetTooltip;
+
+		// 更新媒体控制按钮 title
+		const btnPause = card.querySelector('.btn-pause') as HTMLElement | null;
+		const btnPip = card.querySelector('.btn-pip') as HTMLElement | null;
+		const btnHotkey = card.querySelector('.btn-hotkey-target') as HTMLElement | null;
+		const btnGotoTab = card.querySelector('.btn-goto-tab') as HTMLElement | null;
+		if (btnPause) btnPause.title = dict.btnPause;
+		if (btnPip) btnPip.title = dict.btnPip;
+		if (btnHotkey) btnHotkey.title = dict.btnHotkeyTarget;
+		if (btnGotoTab) btnGotoTab.title = dict.btnGotoTab;
+
+		// 更新 favicon 图标悬停提示
+		const metaIcon = card.querySelector('.meta-icon') as HTMLElement | null;
+		if (metaIcon) metaIcon.title = dict.tipAdvancedSettings;
 
 		// 更新暂停遮罩文本
 		const maskText = card.querySelector('.sleep-text') as HTMLElement | null;
@@ -77,4 +85,33 @@ export function updateCardsI18n(dict: I18NDict, vizEnabled: boolean): void {
 			vizIsland.classList.toggle('hidden', !vizEnabled);
 		}
 	});
+
+	// 更新侧边面板按钮
+	updateSidePanelI18n(dict);
+}
+
+/**
+ * 更新侧边面板 i18n
+ */
+function updateSidePanelI18n(dict: I18NDict): void {
+	const panel = document.getElementById('side-panel');
+	if (!panel) return;
+
+	// Footer 按钮
+	const btnReset = panel.querySelector('.sp-btn-reset') as HTMLElement | null;
+	const btnSave = panel.querySelector('.sp-btn-save') as HTMLElement | null;
+	if (btnReset) {
+		btnReset.textContent = dict.spResetFx;
+		btnReset.title = dict.spResetFxTip;
+	}
+	if (btnSave) {
+		btnSave.textContent = dict.spSaveFx;
+		btnSave.title = dict.spSaveFxTip;
+	}
+
+	// Pin 和 Close 按钮
+	const btnPin = panel.querySelector('.btn-pin') as HTMLElement | null;
+	const btnClose = panel.querySelector('.btn-close-panel') as HTMLElement | null;
+	if (btnPin) btnPin.title = dict.tipPinPanel;
+	if (btnClose) btnClose.title = dict.tipClose;
 }

@@ -70,4 +70,6 @@ export const RU_RU: I18NDict = {
 	tipAdvancedSettings: 'Открыть дополнительные настройки',
 	spResetFx: '↺ Сбросить эффекты',
 	spSaveFx: '💾 Сохранить эффекты',
+	spResetFxTip: 'Сбросить EQ/Pan/Delay (независимо от основного UI)',
+	spSaveFxTip: 'Сохранить пресет эффектов (независимо от основного UI)',
 };

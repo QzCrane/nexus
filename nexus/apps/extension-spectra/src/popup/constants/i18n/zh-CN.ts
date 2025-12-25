@@ -70,4 +70,6 @@ export const ZH_CN: I18NDict = {
 	tipAdvancedSettings: '点击打开高级设置',
 	spResetFx: '↺ 重置效果',
 	spSaveFx: '💾 保存效果',
+	spResetFxTip: '重置 EQ/平衡/延迟（独立于主界面）',
+	spSaveFxTip: '保存效果预设到此网站（独立于主界面）',
 };

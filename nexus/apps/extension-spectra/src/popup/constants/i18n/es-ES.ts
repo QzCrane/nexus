@@ -70,4 +70,6 @@ export const ES_ES: I18NDict = {
 	tipAdvancedSettings: 'Abrir configuración avanzada',
 	spResetFx: '↺ Restablecer efectos',
 	spSaveFx: '💾 Guardar efectos',
+	spResetFxTip: 'Restablecer EQ/Pan/Delay (independiente de UI principal)',
+	spSaveFxTip: 'Guardar preset de efectos (independiente de UI principal)',
 };

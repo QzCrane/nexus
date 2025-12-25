@@ -70,4 +70,6 @@ export const JA_JP: I18NDict = {
 	tipAdvancedSettings: '詳細設定を開く',
 	spResetFx: '↺ エフェクトをリセット',
 	spSaveFx: '💾 エフェクトを保存',
+	spResetFxTip: 'EQ/パン/ディレイをリセット（メインUIと独立）',
+	spSaveFxTip: 'エフェクトプリセットを保存（メインUIと独立）',
 };

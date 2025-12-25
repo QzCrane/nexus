@@ -70,4 +70,6 @@ export const KO_KR: I18NDict = {
 	tipAdvancedSettings: '고급 설정 열기',
 	spResetFx: '↺ 효과 초기화',
 	spSaveFx: '💾 효과 저장',
+	spResetFxTip: 'EQ/팬/딜레이 초기화 (메인 UI와 독립)',
+	spSaveFxTip: '효과 프리셋 저장 (메인 UI와 독립)',
 };
