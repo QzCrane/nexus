@@ -1,45 +1,25 @@
-# 策略决策 (v3.5)
+# 策略决策
 
-## 延迟激活 (v3.5 新增)
+**核心原则**：调节行为或进入劫持才激活增强模式，否则保持 `LITE` 模式以节省资源。
 
-**核心原则**：未操作 + 音量正常 → 不启动高级模式，节省 CPU
+## 决策矩阵
 
-```text
-用户未交互 AND 音量 ≤ 100% → NATIVE_LITE (即使站点需要劫持)
-用户打开 Popup 或快捷键 → 正常策略生效
-```
+| 有交互 | 有需求 | 受限 |     模式     | 色  |
+| :----: | :----: | :--: | :----------: | :-: |
+|   ❌   |  任意  | 任意 |   **LITE**   | 🔵  |
+|   ✅   |   ❌   | 任意 |   **LITE**   | 🔵  |
+|   ✅   |   ✅   |  ❌  | **WEBAUDIO** | 🔵  |
+|   ✅   |   ✅   |  ✅  | **CAPTURE**  | 🟣  |
 
-## 决策表
+## 触发定义
 
-| 已交互 | 高级需求 | 受限 |      模式       | 色  |
-| :----: | :------: | :--: | :-------------: | :-: |
-|   ❌   |   任意   | 任意 |   NATIVE_LITE   | 🔵  |
-|   ✅   |    ❌    | 任意 |   NATIVE_LITE   | 🔵  |
-|   ✅   |    ✅    |  ❌  | NATIVE_WEBAUDIO | 🔵  |
-|   ✅   |    ✅    |  ✅  |     CAPTURE     | 🟣  |
+- **需求 (Needs)**: volume > 100 | EQ | comp | bass | viz
+- **交互 (Interacted)**:
+  - 手持调节除 `enabled` 外的参数。
+  - **劫持即交互**: `isPredictedCapture` 为真（Enabled & Restricted & Needs）自动触发交互状态。
 
-## 高级需求
+## 模式说明
 
-`volume>100 || visualizer || EQ非零 || compressor || bass`
-
-## 模式
-
-| 模式            | 说明          | CPU  |
-| --------------- | ------------- | ---- |
-| NATIVE_LITE     | DOM 控 0-100% | 极低 |
-| NATIVE_WEBAUDIO | WebAudio 链   | 中   |
-| CAPTURE         | Tab Capture   | 高   |
-
-## CORS 检测 (v3.4)
-
-使用 `AnalyserNode.getByteFrequencyData()` 读取数据判断：
-
-- 有数据 → SAFE
-- 全零 → RESTRICTED
-
-详见: `docs/cors-data-flow.md`
-
-## 实现位置
-
-- PolicyEngine: `packages/features/audio-engine/src/PolicyEngine.ts`
-- CORS 检测: `content/policy-executor/cors-handler.ts`
+- **LITE**: DOM 原始控制 (0-100%)。
+- **WEBAUDIO**: 页面内 WebAudio 链路。
+- **CAPTURE**: Tab Capture 劫持（高 CPU）。

@@ -1,93 +1,37 @@
-# NEXUS AI 入口
+# NEXUS AI
 
-## 阅读策略
+`@contracts ← @kernel ← @features ← @apps`
 
-| 任务类型      | 必读                           | 禁读     |
-| ------------- | ------------------------------ | -------- |
-| 理解架构      | 本文件                         | 实现代码 |
-| 修改模块      | 本文件 → 目标 `.ai-context.md` | 其他模块 |
-| 修复 Bug      | 堆栈涉及的文件                 | 全局扫描 |
-| 修改状态/同步 | `docs/cors-data-flow.md`       | -        |
+## 📖 阅读索引
 
-## 项目结构
+- **快速入门**: 本文件
+- **模块上下文**: 目标包 `.ai-context.md`
+- **数据流/同步**: `docs/cors-data-flow.md`
+- **决策策略**: `docs/policy-decision.md`
 
-```text
-nexus/
-├── packages/contracts/     # 纯类型层 (首读)
-├── packages/nexus-kernel/  # RPC + Storage
-├── packages/features/audio-engine/  # WebAudio
-└── apps/extension-spectra/ # Chrome 扩展
-```
+## 📡 核心消息
 
-## 依赖
+- `AUDIO_GET/SET`: 音频状态
+- `CAPTURE_TOGGLE/GET`: 劫持控制
+- `MEDIA_PLAY/SPEED`: 媒体控制
+- `VIDEO_ROTATE/FILT`: 画面控制
+  _定义见: `messages/definitions.ts`_
 
-`@nexus/contracts ← @nexus/kernel ← @nexus/audio-engine ← extension-spectra`
+## ⚖️ 策略 v3.2 (模式 & 颜色)
 
-## 消息速查
+1. **LITE** (🔵): 无高级需求 (默认)
+2. **WEB** (🔵): 有需求 & 安全站点
+3. **CAPTURE** (🟣): 有需求 & 受限站点
+   _高级需求: volume>100 | EQ | comp | bass | viz_
 
-| Action            | 请求                          | 响应                       |
-| ----------------- | ----------------------------- | -------------------------- |
-| AUDIO_GET_STATUS  | void                          | `{config, hasAudio, mode}` |
-| AUDIO_SET_CONFIG  | `{config}`                    | `{success}`                |
-| CAPTURE_TOGGLE    | `{enabled}`                   | `{status}`                 |
-| CAPTURE_GET_STATE | `{tabId?}`                    | boolean                    |
-| MEDIA_TOGGLE_PLAY | void                          | `{playing}`                |
-| MEDIA_SET_SPEED   | `{speed}`                     | `{speed}`                  |
-| VIDEO_ROTATE      | void                          | `{rotation}`               |
-| VIDEO_MIRROR      | void                          | `{mirrored}`               |
-| VIDEO_SET_FILTER  | `{brightness?,contrast?,...}` | `{applied}`                |
+## ⚠️ 绝对禁令
 
-完整列表：`packages/contracts/src/messages/definitions.ts`
+- ❌ 硬编码 Action 或 URL 规则
+- ❌ 绕过数据流架构 (必读 `cors-data-flow.md`)
+- ❌ 持久化内存状态 (MV3 必须用 chrome.storage)
 
-## 策略 v3.2
+## 🛠 工作流
 
-| 高级需求 | 受限 | 模式            | 色  |
-| :------: | :--: | --------------- | :-: |
-|    ❌    | 任意 | NATIVE_LITE     | 🔵  |
-|    ✅    |  ❌  | NATIVE_WEBAUDIO | 🔵  |
-|    ✅    |  ✅  | CAPTURE         | 🟣  |
-
-**高级需求** = volume>100 || visualizer || EQ || compressor || bass
-**受限判断** = `internalState.corsStatus !== 'SAFE'` (PENDING 保守视为受限)
-
-## 禁止
-
-- URL 路径规则表 (仅用 CORS 检测)
-- 重复定义常量 (从 audio-engine 导入)
-- 硬编码 Action (用 `Actions` 常量)
-- 绕过数据流架构 (见 cors-data-flow.md)
-
-## 关键约束
-
-- AudioContext: 每 tab 一个，需 resume()
-- MV3: 无持久状态，用 chrome.storage
-- CORS: 跨域用 Tab Capture
-- 全屏: Capture 模式与全屏冲突，需 injector.js 拦截
-- **音频链统一**: Native/Capture 使用相同节点链 (含 Panner + Delay)
-- 所有文本信息都必须无损压缩以节省token，如上下文文档，注释等
-
-## 文档同步（每次修改必须）
-
-| 修改类型         | 必须同步                      |
-| ---------------- | ----------------------------- |
-| 新增模块/文件    | 目标包 `.ai-context.md`       |
-| 新增消息类型     | 消息速查表 + contracts        |
-| 修改 AudioConfig | `audio-engine/.ai-context.md` |
-| 修改策略逻辑     | `docs/policy-decision.md`     |
-| 修改状态/同步    | `docs/cors-data-flow.md`      |
-
-## 工作流
-
-| 触发         | 命令               |
-| ------------ | ------------------ |
-| 任务交付前   | `/feature-finish`  |
-| 新建 Package | `/new-module`      |
-| 发版         | `/release-spectra` |
-
-## 文档索引
-
-| 文档     | 路径                             | 触发        |
-| -------- | -------------------------------- | ----------- |
-| 架构约束 | `docs/ai-rules/architectural.md` | 改架构      |
-| 策略表   | `docs/policy-decision.md`        | 改策略      |
-| 数据流   | `docs/cors-data-flow.md`         | 改状态/同步 |
+- 完成任务: `/feature-finish`
+- 新建模块: `/new-module`
+- 发布版本: `/release-spectra`

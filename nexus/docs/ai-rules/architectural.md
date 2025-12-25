@@ -1,51 +1,24 @@
 # 架构约束
 
-## 依赖方向
+**核心原则**: 单向依赖，层级清晰。
 
-```
-@nexus/contracts (底层，零依赖)
-       ↑
-@nexus/kernel ← @nexus/audio-engine
-       ↑
-extension-spectra (顶层)
-```
+## 依赖链
 
-✅ 允许：上层 → 下层
-❌ 禁止：下层 → 上层，循环依赖
+`Contracts (Types) ← Kernel (IPC) ← Audio-Engine (Logic) ← Spectra (App)`
 
-## 导入规则
+## 导入规范
 
-```typescript
-// ✅ 正确
-import type { AudioConfig } from "@nexus/contracts";
-import { createMessenger } from "@nexus/kernel";
+- **禁止**: 深层路径导入、循环依赖、底层引用上层实现。
+- **允许**: 仅通过包入口（Entry Points）导出。
 
-// ❌ 禁止
-import { x } from "@nexus/kernel/src/internal/...";
-```
+## 职责定位
 
-## 包职责
+- **Contracts**: 纯接口定义，禁止任何逻辑。
+- **Kernel**: RPC、存储中转，禁止业务实现。
+- **Audio-Engine**: WebAudio 链路，禁止 UI 与 Chrome 插件 API。
+- **Spectra**: UI 交互与 Chrome API 调度。
 
-| 包           | 允许         | 禁止           |
-| ------------ | ------------ | -------------- |
-| contracts    | 接口、类型   | 实现代码       |
-| kernel       | 消息、存储   | 业务逻辑       |
-| audio-engine | 音频逻辑     | UI、Chrome API |
-| extension    | UI、粘合代码 | 可复用逻辑     |
+## 策略禁令
 
-## 命名规则
-
-- 契约：`*.contracts.ts`
-- 类型：`*.types.ts`
-- 内部：`internal/` 目录
-
-## 策略约束 (v3.0)
-
-**当前策略：行为检测**，判断依据：
-
-- 音量 > 100%
-- 频谱可视化开启
-- EQ 非零 / 压缩器 / 低音增强
-
-❌ **禁止添加 URL 路径规则表**（已弃用）
-❌ **禁止在策略中匹配 URL 路径**
+- **禁止**: 硬编码 URL 路径、规则表。
+- **依据**: 仅由 WebAudio 行为检测判断级别。

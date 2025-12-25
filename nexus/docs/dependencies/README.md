@@ -1,17 +1,17 @@
-# 依赖库
+# 依赖库与工作流
 
-## chrome-types
+**环境**: pnpm workspace
 
-Chrome Extension API 类型，直接使用 `chrome.*` 命名空间。
+## 核心依赖
 
-常用：`chrome.tabs`, `chrome.runtime`, `chrome.storage`, `chrome.action`
+- `chrome-types`: 提供 `chrome.*` 命名空间类型。
 
-## pnpm workspace
+## 常用命令
 
-```bash
-pnpm install          # 安装
-pnpm build            # 构建全部
-pnpm --filter @nexus/kernel build  # 单包构建
-```
+- `pnpm install`: 安装依赖。
+- `pnpm build`: 全量构建。
+- `pnpm --filter [name] build`: 单包构建。
 
-包引用：`"@nexus/contracts": "workspace:*"`
+## 引用规则
+
+引用内部包需使用 `"@nexus/[name]": "workspace:*"`。

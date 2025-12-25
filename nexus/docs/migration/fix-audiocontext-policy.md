@@ -1,68 +1,20 @@
-# SPECTRA 调试完成报告
+# 调试修复报告 (v2025-12-20)
 
-> 📅 **更新时间**：2025-12-20 15:15
-> ✅ **状态**：构建成功
+**状态**: 已验证 ✅
 
----
+## 修复项
 
-## 本次修复
+- **UI 颜色**: 基于 `actualMode` 准确显示（Blue=Native, Purple=Capture）。
+- **频谱渲染**: 动态 `getVizEnabled()` 实时响应设置变更。
+- **日志标准**: 统一 `[SPECTRA]` 前缀过滤。
 
-### 1. UI 音量条颜色问题 ✅
+## 模块清单
 
-- Bilibili 等非受限网站现在正确显示蓝色
-- 使用 `actualMode` 而不是预测来判断 Capture 状态
+- `shared/logger`: 统一日志。
+- `content/policy-executor`: 模式调度核心。
+- `content/capture-manager`: 劫持生命周期控制。
 
-### 2. 设置返回后频谱UI不更新 ✅
+## 调试指引
 
-- `vizEnabled` 改为 `getVizEnabled()` 函数
-- 每次渲染时动态获取最新设置
-
-### 3. 统一日志模块 ✅
-
-- 所有日志使用 `[SPECTRA]` 前缀
-- 在控制台输入 `[SPECTRA]` 即可过滤
-
----
-
-## 新增模块
-
-```
-src/shared/
-└── logger.ts           # 统一日志模块
-
-src/content/
-├── index.ts            # 入口点
-├── context-guard.ts    # 扩展上下文检查
-├── settings-manager.ts # 全局设置管理
-├── capture-manager.ts  # Capture 模式管理 (含详细日志)
-├── policy-executor.ts  # 策略执行器
-├── message-handler.ts  # 消息处理器
-├── dom-volume.ts       # DOM 音量控制
-├── osd.ts              # 屏幕提示
-└── toast.ts            # Toast 通知
-```
-
----
-
-## 调试方法
-
-### 1. 过滤日志
-
-在浏览器 DevTools 控制台输入过滤器：`[SPECTRA]`
-
-### 2. 检查 Capture 模式
-
-- Content Script 日志：`[SPECTRA] [Content] [CAPTURE]`
-- Background 日志：`[SPECTRA] [Background] [CAPTURE]`
-
-### 3. 检查模式切换
-
-查找：`[SPECTRA] [Content] Mode: xxx -> yyy`
-
----
-
-## 待测试
-
-1. **打开抖音** → 开启频谱 → 查看控制台是否有 CAPTURE 日志
-2. **检查 Bilibili** → 音量条应该是蓝色
-3. **修改设置后返回** → 频谱显示状态应该立即更新
+- 控制台过滤: `[SPECTRA]`
+- 模式日志: 关注 `Mode: xxx -> yyy` 转换。
