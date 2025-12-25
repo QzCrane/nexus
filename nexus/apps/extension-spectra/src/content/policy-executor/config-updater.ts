@@ -40,7 +40,16 @@ export function updateConfig(
 	const { messenger, settingsManager } = deps;
 
 	// 1. 标记用户已交互 (用于策略判定)
-	state.userHasInteracted = true;
+	// 规则：开关 UI 行为不应激活角标，排除单纯的 enabled 变化，仅当其他配置项真正发生改变时激活
+	const isOperation = Object.entries(changes).some(([k, v]) => {
+		if (k === 'enabled') return false;
+		// 只有当值确实发生变化时才认为是操作 (防止全量同步触发误判)
+		return v !== (state.config as any)[k];
+	});
+
+	if (isOperation) {
+		state.userHasInteracted = true;
+	}
 
 	// 2. 联动逻辑：如果指定了解除静音，或者音量发生了变化 (且非显式静音操作)，则解除静音
 	const newConfig = { ...state.config, ...changes };

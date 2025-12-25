@@ -55,9 +55,6 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 			}
 
 			case Actions.AUDIO_GET_STATUS: {
-				// 用户打开 Popup = 表达了交互意图
-				state.userHasInteracted = true;
-
 				// 始终重新计算策略以触发 CORS 检测
 				policyExecutor.applyState();
 

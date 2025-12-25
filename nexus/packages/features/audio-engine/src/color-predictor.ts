@@ -45,5 +45,5 @@ export function needsAdvancedProcessing(ctx: ColorContext): boolean {
  * 规则：受限站点 + 有高级需求 = CAPTURE
  */
 export function predictCapture(ctx: ColorContext): boolean {
-	return ctx.isRestricted && needsAdvancedProcessing(ctx);
+	return ctx.config.enabled && ctx.isRestricted && needsAdvancedProcessing(ctx);
 }

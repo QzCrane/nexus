@@ -52,6 +52,12 @@ export function updateBadge(
 		visualizerEnabled: settingsManager.get().visualizerEnabled,
 	});
 
+	// 规则 3：劫持模式本身属于明确使用行为
+	// 规则 2：一旦激活，以后此标签页都是显示状态
+	if (isPredictedCapture) {
+		state.userHasInteracted = true;
+	}
+
 	const hash = `${state.config.volume}_${state.config.muted || false}_${isPredictedCapture}_${state.userHasInteracted}`;
 
 	// 只有状态变化时才发送消息，避免高频重复更新

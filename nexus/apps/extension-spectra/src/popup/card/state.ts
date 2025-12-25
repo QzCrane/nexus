@@ -34,8 +34,11 @@ export function createUpdateFn(
   _getGlobalSettings: () => GlobalSettings
 ): (changes: Partial<AudioConfig>) => void {
   return async (changes: Partial<AudioConfig>) => {
-    // 标记用户已交互
-    state.userInteracted = true;
+    // 判断是否为有效的"操作"行为 (忽略单纯的 enabled 开关切换，避免打开开关时显示角标)
+    const isOperation = Object.keys(changes).some(k => k !== 'enabled');
+    if (isOperation) {
+      state.userInteracted = true;
+    }
 
     // 乐观更新：合并本地配置
     state.config = { ...state.config, ...changes };
@@ -50,11 +53,15 @@ export function createUpdateFn(
       sendToTab(tabId, 'AUDIO_SET_CONFIG', { config }).catch(() => { });
 
       // 3. 同步角标
+      // 规则: 劫持模式本身属于明确使用行为，直接显示，且触发 sticky 状态
+      state.userInteracted = true;
+
       sendToBackground('BADGE_UPDATE', {
         tabId,
         volume: config.volume,
         muted: config.muted,
-        isCapture: true,
+        isCapture: true, // Capture 模式始终发送 true
+        userInteracted: state.userInteracted,
       });
 
       render();
@@ -86,11 +93,17 @@ export function createUpdateFn(
       }
 
       // 同步角标
+      // 如果需要 Capture，则视为使用行为
+      if (needsCapture) {
+        state.userInteracted = true;
+      }
+
       sendToBackground('BADGE_UPDATE', {
         tabId,
         volume: config.volume,
         muted: config.muted,
         isCapture: needsCapture,
+        userInteracted: state.userInteracted,
       });
     }
 

@@ -151,13 +151,14 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   // 初始渲染
   render();
 
-  // Popup 打开触发策略：如果有频谱需求但 Capture 未激活，主动触发
-  // 理由：打开 Popup 本身就是强用户手势，表达了增强意图
+  // 🔴 移除：Popup 打开不再自动触发劫持，遵循"开关 UI 不激活角标"规则
+  /* 
   if (settings.visualizerEnabled && isRestrictedSite && !isCaptureActive) {
     sendToBackground('CAPTURE_TOGGLE', { enabled: true, config, tabId });
-    state.isCaptureActive = true; // 乐观更新
-    render(); // 重新渲染以更新颜色
+    state.isCaptureActive = true;
+    render();
   }
+  */
 
   // 启动可视化循环 (仅当 canvas 在文档中)
   if (ui.canvas) {
