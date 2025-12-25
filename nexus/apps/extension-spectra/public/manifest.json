@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Media Master 2026",
+  "name": "SPECTRA",
   "version": "24.0",
   "description": "10-Band EQ, CORS Unlock, Per-Site Audio Manager.",
   "permissions": [
@@ -19,7 +19,9 @@
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
-      "128": "icon.png"
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
     }
   },
   "content_scripts": [
@@ -79,6 +81,8 @@
     }
   },
   "icons": {
-    "128": "icon.png"
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   }
 }
