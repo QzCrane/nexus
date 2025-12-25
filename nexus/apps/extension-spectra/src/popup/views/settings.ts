@@ -12,6 +12,7 @@ import { migrateRegistry } from '../utils/registry-helpers';
 import { TIMING } from '../constants';
 import { applyLang, updateCardsI18n } from './i18n-apply';
 import { initRegistryUI } from './registry-ui';
+import { initPresetsUI } from './presets-ui';
 
 /** 设置页状态 */
 export interface SettingsState {
@@ -89,6 +90,9 @@ export async function initSettings(): Promise<SettingsState> {
 
   // 初始化注册表 UI
   initRegistryUI(registryEntries);
+
+  // 初始化预设管理 UI
+  initPresetsUI();
 
   return { gSettings, registryEntries, dict };
 }

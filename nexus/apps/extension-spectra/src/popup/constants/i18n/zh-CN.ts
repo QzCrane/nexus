@@ -79,4 +79,8 @@ export const ZH_CN: I18NDict = {
 	spSaturate: '饱和度',
 	spGrayscale: '灰度',
 	spInvert: '反色',
+	// 预设管理
+	grpPresets: '域名预设',
+	presetsHint: '暂无预设。使用卡片上的 💾 按钮保存。',
+	btnClearPresets: '清空全部',
 };

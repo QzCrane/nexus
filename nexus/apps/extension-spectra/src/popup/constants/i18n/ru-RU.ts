@@ -79,4 +79,8 @@ export const RU_RU: I18NDict = {
 	spSaturate: 'Насыщенность',
 	spGrayscale: 'Оттенки серого',
 	spInvert: 'Инверсия',
+	// Управление пресетами
+	grpPresets: 'Сохранённые пресеты',
+	presetsHint: 'Нет пресетов. Нажмите 💾 на карточках для сохранения.',
+	btnClearPresets: 'Очистить все',
 };

@@ -79,4 +79,8 @@ export const EN_US: I18NDict = {
   spSaturate: 'Saturate',
   spGrayscale: 'Grayscale',
   spInvert: 'Invert',
+  // 预设管理
+  grpPresets: 'Saved Presets',
+  presetsHint: 'No saved presets. Use 💾 button on cards to save.',
+  btnClearPresets: 'Clear All',
 };

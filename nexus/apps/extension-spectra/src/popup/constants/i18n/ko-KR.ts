@@ -79,4 +79,8 @@ export const KO_KR: I18NDict = {
 	spSaturate: '채도',
 	spGrayscale: '그레이스케일',
 	spInvert: '반전',
+	// 프리셋 관리
+	grpPresets: '저장된 프리셋',
+	presetsHint: '프리셋 없음. 카드의 💾 버튼으로 저장.',
+	btnClearPresets: '모두 삭제',
 };

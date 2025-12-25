@@ -83,6 +83,10 @@ export interface I18NDict {
 	spSaturate: string;
 	spGrayscale: string;
 	spInvert: string;
+	// 预设管理
+	grpPresets: string;
+	presetsHint: string;
+	btnClearPresets: string;
 }
 
 /** 所有语言的 I18N 映射 */

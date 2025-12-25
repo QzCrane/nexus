@@ -79,4 +79,8 @@ export const JA_JP: I18NDict = {
 	spSaturate: '彩度',
 	spGrayscale: 'グレースケール',
 	spInvert: '反転',
+	// プリセット管理
+	grpPresets: '保存済みプリセット',
+	presetsHint: 'プリセットなし。カードの💾ボタンで保存。',
+	btnClearPresets: 'すべて削除',
 };

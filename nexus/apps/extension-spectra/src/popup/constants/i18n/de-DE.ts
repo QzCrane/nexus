@@ -79,4 +79,8 @@ export const DE_DE: I18NDict = {
 	spSaturate: 'Sättigung',
 	spGrayscale: 'Graustufen',
 	spInvert: 'Invertieren',
+	// Preset-Verwaltung
+	grpPresets: 'Gespeicherte Presets',
+	presetsHint: 'Keine Presets. 💾-Taste auf Karten zum Speichern.',
+	btnClearPresets: 'Alle löschen',
 };
