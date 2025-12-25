@@ -17,8 +17,7 @@
 - 修改音频模式决策 → docs/policy-decision.md
 - 调整跨端状态同步 → docs/cors-data-flow.md
 - 引入新 Action → contracts/src/messages/definitions.ts
-- 修改依赖/构建 → docs/dependencies/
-- 重构/拆分文件 → docs/ai-rules/code-quality.md
+- 修改依赖/构建/规则 → docs/ai-rules.md
 
 ---
 
@@ -65,3 +64,28 @@
 - Stealth: 非调节行为禁止触发 Badge
 - Code: 源码 >200 行 / .ai-context.md >30 行
 - Storage: 禁止绕过 kernel 直接用 chrome.storage
+
+---
+
+## 上下文索引
+
+### 规则
+
+- docs/ai-rules.md: 架构+质量+压缩+安全+依赖
+
+### 架构
+
+- apps/extension-spectra/docs/policy-decision.md: 模式决策矩阵
+- apps/extension-spectra/docs/cors-data-flow.md: CORS 探测流程
+
+### 模块 (.ai-context.md)
+
+- packages/contracts/: 纯类型层
+- packages/nexus-kernel/: RPC+Storage+日志
+- packages/features/audio-engine/: WebAudio 节点链
+- apps/extension-spectra/: 扩展顶层
+- └─ src/popup/: Popup UI
+- └─ src/content/: Content Script
+- └─ src/background/: Service Worker
+- └─ src/content/policy-executor/: CORS+模式
+- └─ src/content/lifecycle/: 定时器+观察器
