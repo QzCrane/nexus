@@ -36,6 +36,7 @@
 - packages/nexus-kernel (@nexus/kernel): RPC+Storage+日志
 - packages/features/audio-engine (@nexus/audio-engine): WebAudio 节点链
 - apps/extension-spectra (@nexus/spectra): 扩展入口+UI
+- scripts/: 构建/资源处理脚本 (图标生成、架构验证)
 
 ---
 
