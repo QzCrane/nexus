@@ -125,8 +125,11 @@ function openSidePanel(tabId: number, title: string, faviconUrl: string): void {
 	elements.title.textContent = title || 'Settings';
 
 	// 添加打开类
-	elements.panel.classList.add('open');
 	document.documentElement.classList.add('side-panel-open');
+	// 使用 RAF 确保窗口调整尺寸后再显示面板，避免闪烁
+	requestAnimationFrame(() => {
+		elements?.panel.classList.add('open');
+	});
 
 	// 绑定控件事件
 	const reg = getCardReg(tabId);
@@ -144,8 +147,14 @@ function closeSidePanel(): void {
 	if (!elements) return;
 	state.isOpen = false;
 	state.currentTabId = null;
+
+	// 先触发淡出动画
 	elements.panel.classList.remove('open');
-	document.documentElement.classList.remove('side-panel-open');
+
+	// 等待动画结束后调整窗口尺寸 (200ms 匹配 CSS)
+	setTimeout(() => {
+		document.documentElement.classList.remove('side-panel-open');
+	}, 200);
 }
 
 /** 获取当前打开的 tabId */
