@@ -29,7 +29,7 @@ export interface NexusMessages {
 	'SETTINGS_GET': { req: void; res: GlobalSettings };
 
 	// ========== 角标 ==========
-	'BADGE_UPDATE': { req: { tabId?: number; volume: number; muted: boolean; isCapture: boolean }; res: void };
+	'BADGE_UPDATE': { req: { tabId?: number; volume: number; muted: boolean; isCapture: boolean; userInteracted?: boolean }; res: void };
 	'BADGE_CLEAR': { req: { tabId?: number }; res: void };
 
 	// ========== UI 同步 ==========

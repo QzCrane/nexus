@@ -52,7 +52,7 @@ export function updateBadge(
 		visualizerEnabled: settingsManager.get().visualizerEnabled,
 	});
 
-	const hash = `${state.config.volume}_${state.config.muted || false}_${isPredictedCapture}`;
+	const hash = `${state.config.volume}_${state.config.muted || false}_${isPredictedCapture}_${state.userHasInteracted}`;
 
 	// 只有状态变化时才发送消息，避免高频重复更新
 	if (hash === internalState.lastBadgeHash) return;
@@ -62,7 +62,8 @@ export function updateBadge(
 		volume: state.config.volume,
 		muted: state.config.muted,
 		isCapture: isPredictedCapture,
-	})).catch(() => { });
+		userInteracted: state.userHasInteracted,
+	} as any)).catch(() => { });
 }
 
 /**

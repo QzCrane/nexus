@@ -7,10 +7,66 @@
 import { AudioMode } from '@nexus/audio-engine';
 import type { AudioConfig } from '@nexus/kernel';
 import type { PolicyExecutorDeps, PolicyExecutorState } from './types';
-import { setDomVolume, isAnyMediaPlaying, releaseVolumeLock, enableVolumeLock } from './dom-volume';
+import { setDomVolume, isAnyMediaPlaying, releaseVolumeLock, enableVolumeLock, setNativeVolumeCallback } from './dom-volume';
 import { logger } from '../shared/logger';
 
 const log = logger.content;
+
+/** 当前状态引用，供回调使用 */
+let currentState: PolicyExecutorState | null = null;
+let currentDeps: PolicyExecutorDeps | null = null;
+let currentUpdateBadge: (() => void) | null = null;
+let currentBroadcastUI: (() => void) | null = null;
+
+/**
+ * 初始化模式执行器的回调 (供 policy-executor 调用)
+ * 
+ * @param deps 策略执行器依赖
+ * @param state 共享状态对象
+ * @param updateBadge 角标更新函数 (已绑定 internalState)
+ * @param broadcastUI UI 广播函数 (已绑定 internalState)
+ */
+export function initModeExecutorCallbacks(
+	deps: PolicyExecutorDeps,
+	state: PolicyExecutorState,
+	updateBadge: () => void,
+	broadcastUI: () => void
+): void {
+	currentState = state;
+	currentDeps = deps;
+	currentUpdateBadge = updateBadge;
+	currentBroadcastUI = broadcastUI;
+
+	// 注册原生音量变化回调
+	// volume: 0-1 为 NATIVE_LITE 模式直接同步
+	//         -1 为高级模式下的静音切换 (保持当前音量不变)
+	setNativeVolumeCallback((volume, muted) => {
+		if (!currentState || !currentDeps) return;
+
+		// 高级模式静音切换：volume=-1 表示保持音量不变
+		if (volume < 0) {
+			currentState.config.muted = muted;
+			log.debug(`[SPECTRA] 原生静音切换: ${muted}`);
+		} else {
+			// NATIVE_LITE 模式：将 DOM 音量 (0-1) 转换为配置音量 (0-100)
+			const configVolume = Math.round(volume * 100);
+			currentState.config.volume = configVolume;
+			currentState.config.muted = muted;
+			log.debug(`[SPECTRA] 原生音量同步: ${configVolume}% (静音: ${muted})`);
+		}
+
+		// 更新角标
+		currentUpdateBadge?.();
+
+		// 广播给 Popup UI
+		currentBroadcastUI?.();
+
+		// 🔴 关键：保存到域名存储，让 Popup 重新打开时能获取最新值
+		currentDeps.messenger.send('AUDIO_SET_CONFIG', {
+			config: currentState.config,
+		}).catch(() => { });
+	});
+}
 
 /**
  * 检测用户手势

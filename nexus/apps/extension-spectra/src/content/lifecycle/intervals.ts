@@ -39,16 +39,18 @@ export function createStateReapplyInterval(
 	onContextInvalid?: () => void
 ): ReturnType<typeof setInterval> {
 	return setInterval(() => {
+		// 页面不可见时跳过，节省 CPU
+		if (document.hidden) return;
+
 		if (!isExtensionContextValid()) {
 			onContextInvalid?.();
-			log.debug('Extension context invalidated, stopping periodic tasks.');
 			return;
 		}
 
 		if (state.activeMode === AudioMode.NATIVE_LITE || state.activeMode === AudioMode.NATIVE_WEBAUDIO) {
 			policyExecutor.applyState();
 		}
-	}, 2000);
+	}, 3000); // 3秒间隔
 }
 
 /**

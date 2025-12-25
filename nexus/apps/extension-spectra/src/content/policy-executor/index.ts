@@ -9,7 +9,7 @@ import type { AudioConfig } from '@nexus/kernel';
 import { AudioMode, type PolicyContext, type UrlInfo } from '@nexus/audio-engine';
 import { logger } from '../../shared/logger';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../types';
-import { executeMode, hasUserGesture } from '../mode-executor';
+import { executeMode, hasUserGesture, initModeExecutorCallbacks } from '../mode-executor';
 
 // 子模块导入
 import type { PolicyExecutor, InternalState } from './types';
@@ -43,6 +43,11 @@ export async function createPolicyExecutor(deps: PolicyExecutorDeps, state: Poli
 	const statusDesc = initialCorsStatus === 'PENDING' ? '未知(需检测)'
 		: initialCorsStatus === 'SAFE' ? '安全(已缓存)' : '受限(已缓存)';
 	log.info(`[CORS] 初始化: ${initialCorsStatus} (${statusDesc})`);
+
+	// 如果 CORS 状态已知（缓存命中），跳过重复检测
+	if (initialCorsStatus !== 'PENDING') {
+		audioController.setSkipCorsCheck(true);
+	}
 
 	/**
 	 * 获取当前 URL 信息 (适配契约)
@@ -103,17 +108,17 @@ export async function createPolicyExecutor(deps: PolicyExecutorDeps, state: Poli
 
 		const desiredMode = policyEngine.calculateMode(context);
 
-		// 策略调试日志
-		log.debug('[SPECTRA] 策略计算:', {
-			url: urlInfo.domain + urlInfo.pathname,
-			volume: state.config.volume,
-			isRestricted,
-			visualizerEnabled: settings.visualizerEnabled,
-			决策结果: desiredMode
-		});
-
 		// 模式变更处理
 		if (desiredMode !== state.activeMode) {
+			// 策略调试日志 (仅在模式变更时输出)
+			log.debug('[SPECTRA] 策略计算:', {
+				url: urlInfo.domain + urlInfo.pathname,
+				volume: state.config.volume,
+				isRestricted,
+				visualizerEnabled: settings.visualizerEnabled,
+				决策结果: desiredMode
+			});
+
 			log.mode(state.activeMode, desiredMode);
 
 			// 清理旧模式
@@ -139,6 +144,15 @@ export async function createPolicyExecutor(deps: PolicyExecutorDeps, state: Poli
 
 	// 初始化 CORS 回调
 	setupCorsCallback(deps, internalState, applyState);
+
+	// 初始化原生音量跟随回调 (网站音量优先)
+	// 传递 updateBadge 和 broadcastUI 闭包，已绑定 deps/state/internalState
+	initModeExecutorCallbacks(
+		deps,
+		state,
+		() => updateBadge(deps, state, internalState),
+		() => broadcastUI(deps, state, internalState)
+	);
 
 	// CORS 预检测：发现音频时立即检测，结果缓存到注册表
 	probeCorsOnMediaDetected(deps.messenger, internalState, applyState);

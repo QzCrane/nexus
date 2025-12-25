@@ -6,6 +6,7 @@
 
 import { DEFAULT_AUDIO_CONFIG } from '@nexus/kernel';
 import { getCurrentPanelTabId, getCardRegistration } from './index';
+import { syncSidePanelState } from './controls';
 
 /** 效果预设 storage key 前缀 */
 const FX_PRESET_PREFIX = 'preset_fx_';
@@ -14,12 +15,14 @@ const FX_PRESET_PREFIX = 'preset_fx_';
  * 绑定侧边面板 Footer 按钮事件
  */
 export function bindFooterActions(): void {
-	const btnReset = document.querySelector('.sp-btn-reset');
-	const btnSave = document.querySelector('.sp-btn-save');
+	const btnReset = document.querySelector('.sp-btn-reset') as HTMLButtonElement | null;
+	const btnSave = document.querySelector('.sp-btn-save') as HTMLButtonElement | null;
 
 	btnReset?.addEventListener('click', handleReset);
 	btnSave?.addEventListener('click', handleSave);
 }
+
+
 
 /** 重置：恢复效果到默认值 (保留音量) */
 function handleReset(): void {
@@ -29,14 +32,19 @@ function handleReset(): void {
 	const reg = getCardRegistration(tabId);
 	if (!reg) return;
 
-	// 只重置效果参数，保留音量和增强开关
-	reg.update({
+	// 重置效果参数
+	const resetValues = {
 		eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
 		pan: DEFAULT_AUDIO_CONFIG.pan,
 		delay: DEFAULT_AUDIO_CONFIG.delay,
-	});
+	};
 
-	console.log('[SPECTRA] 效果预设已重置');
+	// 发送到 Content Script / Offscreen 应用配置
+	reg.update(resetValues);
+
+	// 同步侧边面板 UI (关键：确保滑块位置与配置同步)
+	const newConfig = { ...reg.getConfig(), ...resetValues };
+	syncSidePanelState(newConfig);
 }
 
 /** 保存：将效果配置存储到域名预设 */
@@ -60,8 +68,6 @@ async function handleSave(): Promise<void> {
 
 	const key = `${FX_PRESET_PREFIX}${domain}`;
 	await chrome.storage.local.set({ [key]: fxPreset });
-
-	console.log(`[SPECTRA] 效果预设已保存: ${domain}`);
 }
 
 /**

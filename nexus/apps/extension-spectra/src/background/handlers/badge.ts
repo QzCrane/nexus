@@ -22,17 +22,15 @@ export function registerBadgeHandlers(): void {
 			return;
 		}
 
-		const { volume, muted, isCapture } = req;
+		const { volume, muted, isCapture, userInteracted } = req;
 
-		// 🔴 新增：默认配置（音量100%，未静音，非 Capture）时不显示角标
+		// 🔴 用户未交互且为默认配置时不显示角标
 		const isDefaultConfig = volume === 100 && !muted && !isCapture;
-		if (isDefaultConfig) {
+		if (!userInteracted && isDefaultConfig) {
 			badgeState.delete(tabId);
 			try {
 				await chrome.action.setBadgeText({ tabId, text: '' });
-			} catch {
-				// 静默处理
-			}
+			} catch { }
 			return;
 		}
 
@@ -44,7 +42,6 @@ export function registerBadgeHandlers(): void {
 			badgeText = 'M';
 			badgeColor = BADGE_COLORS.MUTED;
 		} else {
-			// 显示音量数字
 			badgeText = volume.toString();
 		}
 
@@ -57,7 +54,6 @@ export function registerBadgeHandlers(): void {
 			await chrome.action.setBadgeBackgroundColor({ tabId, color: badgeColor });
 			await chrome.action.setBadgeTextColor({ tabId, color: BADGE_COLORS.WHITE });
 		} catch {
-			// 标签页可能在设置过程中被关闭，忽略错误
 			badgeState.delete(tabId);
 		}
 	});

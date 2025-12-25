@@ -34,6 +34,7 @@ html {
   height: auto;
   overflow-y: scroll;
   overflow-x: hidden;
+  scroll-behavior: smooth; /* 平滑滚动 */
 }
 
 /* 展开侧边面板时：宽度立即变大，无min-height限制 */
@@ -121,6 +122,7 @@ body {
   background: var(--bg);
 
   overflow-y: auto; /* 内容超出时内部滚动 */
+  scroll-behavior: smooth; /* 平滑滚动 */
 
   opacity: 0;
   pointer-events: none;
@@ -1243,6 +1245,7 @@ input:checked + .slider-round:before {
 .side-panel-content {
   flex: 1;
   overflow-y: auto;
+  scroll-behavior: smooth; /* 平滑滚动 */
   padding: 8px;
 }
 
@@ -1586,6 +1589,17 @@ input:checked + .slider-round:before {
 
 .sp-btn-save:hover {
   opacity: 0.9;
+  color: #fff;
+}
+
+.sp-btn-action:active {
+  transform: scale(0.95);
+  opacity: 0.8;
+}
+
+.sp-btn-save:active {
+  transform: scale(0.95);
+  opacity: 0.7;
 }
 
 /* ========== 设置页数字输入 ========== */
