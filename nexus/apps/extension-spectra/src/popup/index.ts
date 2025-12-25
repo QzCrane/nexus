@@ -165,6 +165,10 @@ async function main(): Promise<void> {
   } else {
     emptyState.classList.add('hidden');
   }
+
+  // 卡片创建完成后应用 i18n (模板克隆后的元素)
+  const { updateCardsI18n } = await import('./views/i18n-apply');
+  updateCardsI18n(dict, gSettings.visualizerEnabled);
 }
 
 // 等待 DOM 加载完成后执行
