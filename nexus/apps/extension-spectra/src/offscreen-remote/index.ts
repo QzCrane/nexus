@@ -7,7 +7,12 @@
 import Peer, { DataConnection } from 'peerjs';
 
 /** 遥控命令类型 */
-type RemoteCommand = 'volume_up' | 'volume_down' | 'mute' | 'play_pause' | 'seek_forward' | 'seek_backward';
+type RemoteCommand =
+	| 'volume_up' | 'volume_down' | 'volume_max' | 'volume_100'
+	| 'mute' | 'play_pause'
+	| 'seek_forward' | 'seek_backward' | 'seek_forward_30' | 'seek_backward_30'
+	| 'speed_up' | 'speed_down' | 'speed_reset'
+	| 'fullscreen' | 'pip';
 
 /** 会话状态 */
 interface RemoteSession {

@@ -119,6 +119,9 @@ function showModal(qrDataUrl: string, sessionId: string): void {
 		if (e.target === modal) closeModal(false);
 	});
 
+	// 动态调整 popup 高度
+	adjustPopupHeight(true);
+
 	// 定时检查连接状态
 	statusInterval = window.setInterval(async () => {
 		const res = await chrome.runtime.sendMessage({ action: Actions.REMOTE_GET_SESSION });
@@ -136,6 +139,21 @@ function showModal(qrDataUrl: string, sessionId: string): void {
 	}, 1000);
 }
 
+/** 调整 popup 高度 */
+function adjustPopupHeight(expand: boolean): void {
+	const body = document.body;
+	const MIN_HEIGHT = 520; // 遥控弹窗最小高度
+
+	if (expand) {
+		const currentHeight = body.offsetHeight;
+		if (currentHeight < MIN_HEIGHT) {
+			body.style.minHeight = `${MIN_HEIGHT}px`;
+		}
+	} else {
+		body.style.minHeight = '';
+	}
+}
+
 /**
  * 关闭弹窗
  * @param closeConnection 是否同时关闭连接
@@ -151,9 +169,13 @@ function closeModal(closeConnection = false): void {
 			statusInterval = null;
 		}
 
+		// 恢复 popup 高度
+		adjustPopupHeight(false);
+
 		// 只在明确要求时关闭连接
 		if (closeConnection) {
 			chrome.runtime.sendMessage({ action: Actions.REMOTE_CLOSE_SESSION });
 		}
 	}
 }
+

@@ -210,20 +210,45 @@
       <div class="volume-label">音量</div>
     </div>
 
+    <!-- 音量控制 -->
     <div class="btn-row">
       <button class="btn" id="btn-vol-down">−</button>
       <button class="btn btn-large" id="btn-play-pause">⏸</button>
       <button class="btn" id="btn-vol-up">+</button>
     </div>
 
+    <!-- 静音和快捷音量 -->
     <div class="btn-row">
       <button class="btn btn-mute" id="btn-mute">🔇</button>
+      <button class="btn" id="btn-vol-100" title="100%">1x</button>
+      <button class="btn" id="btn-vol-max" title="最大">🔊</button>
     </div>
 
+    <!-- 跳转控制 -->
     <div class="seek-section">
       <div class="seek-row">
+        <button class="btn btn-seek" id="btn-seek-back-30">⏪ 30s</button>
         <button class="btn btn-seek" id="btn-seek-back">⏪ 10s</button>
         <button class="btn btn-seek" id="btn-seek-forward">10s ⏩</button>
+        <button class="btn btn-seek" id="btn-seek-forward-30">30s ⏩</button>
+      </div>
+    </div>
+
+    <!-- 速度控制 -->
+    <div class="seek-section">
+      <div class="volume-label" style="margin-bottom: 10px;">播放速度 <span id="speed-display">1.0x</span></div>
+      <div class="seek-row">
+        <button class="btn btn-seek" id="btn-speed-down">−0.25</button>
+        <button class="btn btn-seek" id="btn-speed-reset">重置</button>
+        <button class="btn btn-seek" id="btn-speed-up">+0.25</button>
+      </div>
+    </div>
+
+    <!-- 视频控制 -->
+    <div class="seek-section">
+      <div class="btn-row">
+        <button class="btn" id="btn-fullscreen" title="全屏">⛶</button>
+        <button class="btn" id="btn-pip" title="画中画">📺</button>
       </div>
     </div>
   </div>
@@ -335,6 +360,9 @@
       if (state.playing !== undefined) {
         document.getElementById('btn-play-pause').textContent = state.playing ? '⏸' : '▶';
       }
+      if (state.speed !== undefined) {
+        document.getElementById('speed-display').textContent = state.speed.toFixed(2) + 'x';
+      }
     }
 
     function showError(msg) {
@@ -345,10 +373,19 @@
     // 按钮事件
     document.getElementById('btn-vol-up').onclick = () => sendCommand('volume_up');
     document.getElementById('btn-vol-down').onclick = () => sendCommand('volume_down');
+    document.getElementById('btn-vol-100').onclick = () => sendCommand('volume_100');
+    document.getElementById('btn-vol-max').onclick = () => sendCommand('volume_max');
     document.getElementById('btn-mute').onclick = () => sendCommand('mute');
     document.getElementById('btn-play-pause').onclick = () => sendCommand('play_pause');
     document.getElementById('btn-seek-back').onclick = () => sendCommand('seek_backward');
     document.getElementById('btn-seek-forward').onclick = () => sendCommand('seek_forward');
+    document.getElementById('btn-seek-back-30').onclick = () => sendCommand('seek_backward_30');
+    document.getElementById('btn-seek-forward-30').onclick = () => sendCommand('seek_forward_30');
+    document.getElementById('btn-speed-down').onclick = () => sendCommand('speed_down');
+    document.getElementById('btn-speed-up').onclick = () => sendCommand('speed_up');
+    document.getElementById('btn-speed-reset').onclick = () => sendCommand('speed_reset');
+    document.getElementById('btn-fullscreen').onclick = () => sendCommand('fullscreen');
+    document.getElementById('btn-pip').onclick = () => sendCommand('pip');
   </script>
 </body>
 </html>
