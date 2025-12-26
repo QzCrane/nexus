@@ -55,13 +55,6 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 					delete (configChanges as any).toggleMute;
 				}
 
-				// 🔴 调试：追踪收到的配置
-				console.log('[SPECTRA] [DEBUG] AUDIO_SET_CONFIG 完整:', {
-					payloadConfig: JSON.stringify(payload.config),
-					configChanges: JSON.stringify(configChanges),
-					hasMutedKey: 'muted' in payload.config,
-				});
-
 				policyExecutor.updateConfig(configChanges);
 				sendResponse({
 					success: true,

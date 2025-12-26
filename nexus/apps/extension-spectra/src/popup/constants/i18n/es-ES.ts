@@ -85,4 +85,12 @@ export const ES_ES: I18NDict = {
 	btnClearPresets: 'Eliminar todo',
 	// Control remoto
 	btnRemoteTooltip: 'Control remoto',
+	remoteModalTitle: '📱 Control remoto',
+	remoteSessionCode: 'Código de sesión',
+	remoteConnected: '✅ Conectado',
+	remoteWaiting: 'Esperando conexión...',
+	remoteHint: '📱 Escanea el código QR o copia el enlace<br>⚡ Cerrar este diálogo no desconecta',
+	remoteDisconnect: '🔌 Desconectar y cerrar',
+	remoteCopied: '¡Copiado!',
+	remoteOpenLinkTitle: 'Clic para abrir en nueva pestaña',
 };

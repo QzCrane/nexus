@@ -85,4 +85,12 @@ export const KO_KR: I18NDict = {
 	btnClearPresets: '모두 삭제',
 	// 리모컨
 	btnRemoteTooltip: '리모컨',
+	remoteModalTitle: '📱 리모컨',
+	remoteSessionCode: '세션 코드',
+	remoteConnected: '✅ 연결됨',
+	remoteWaiting: '연결 대기 중...',
+	remoteHint: '📱 스마트폰으로 QR 코드를 스캔하거나 링크를 복사<br>⚡ 이 대화상자를 닫아도 연결이 끊어지지 않습니다',
+	remoteDisconnect: '🔌 연결 해제 및 닫기',
+	remoteCopied: '복사됨!',
+	remoteOpenLinkTitle: '클릭하여 새 탭에서 열기',
 };

@@ -47,7 +47,7 @@
 - FX: 亮度/对比度/饱和度, 灰度/反色, 背景暗化
 - Playback: 速率 0.25x-16x, AB 循环, 时间标记
 - Settings: 热键入口, 域名预设管理
-- Remote: QR 码生成, 手机遥控 (进行中)
+- Remote: 多会话遥控, QR 码连接, 移动端 UI
 - Engine: CORS 探测, Sticky Badge
 
 ---
@@ -57,6 +57,7 @@
 - 音频: AUDIO_GET/SET, UI_SYNC → 节点参数+UI 反馈
 - 劫持: CAPTURE_TOGGLE/STATE_CHANGE → Capture 生命周期
 - 视频: VIDEO_ROTATE/SCREENSHOT/AB_SET → 变换+高级播放
+- 遥控: REMOTE_CREATE/GET/CLOSE_SESSION → PeerJS WebRTC
 - 同步: TAB_REPORT_MEDIA, MEDIA_REPORT → 5s 心跳
 
 ---
@@ -68,6 +69,7 @@
 - Stealth: 非调节行为禁止触发 Badge
 - Code: 源码 >200 行 / .ai-context.md >30 行
 - Storage: 禁止绕过 kernel 直接用 chrome.storage
+- TempFields: toggleMute/volumeDelta 仅作临时指令，禁止持久化
 
 ---
 
@@ -93,3 +95,5 @@
 - └─ src/background/: Service Worker
 - └─ src/content/policy-executor/: CORS+模式
 - └─ src/content/lifecycle/: 定时器+观察器
+- └─ src/remote/: 遥控弹窗+QR
+- └─ src/offscreen-remote/: WebRTC Offscreen

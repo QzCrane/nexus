@@ -83,6 +83,14 @@ export const ZH_CN: I18NDict = {
 	grpPresets: '域名预设',
 	presetsHint: '暂无预设。使用卡片上的 💾 按钮保存。',
 	btnClearPresets: '清空全部',
-	// 遥控
+	// 遥控器
 	btnRemoteTooltip: '手机遥控',
+	remoteModalTitle: '📱 手机遥控',
+	remoteSessionCode: '会话码',
+	remoteConnected: '✅ 已连接',
+	remoteWaiting: '等待连接...',
+	remoteHint: '📱 用手机扫描二维码或复制链接打开<br>⚡ 关闭弹窗不会断开连接',
+	remoteDisconnect: '🔌 断开并关闭',
+	remoteCopied: '已复制!',
+	remoteOpenLinkTitle: '点击在新标签页打开遥控器',
 };

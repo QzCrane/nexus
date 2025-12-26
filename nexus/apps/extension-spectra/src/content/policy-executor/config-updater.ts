@@ -18,9 +18,6 @@ import { safeSend } from '../context-guard';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../types';
 import type { InternalState } from './types';
 import { updateBadge } from './badge-sync';
-import { logger } from '../../shared/logger';
-
-const log = logger.content;
 
 /**
  * 统一配置更新接口 - 解决静音/恢复逻辑冲突的核心架构
@@ -61,17 +58,7 @@ export function updateConfig(
 		newConfig.muted = false;
 	}
 
-	// 🔴 调试：追踪静音状态
-	if (newConfig.muted) {
-		log.debug(`[DEBUG] muted=true 来源:`, {
-			changesMuted: (changes as any).muted,
-			changesMutedType: typeof (changes as any).muted,
-			stateConfigMuted: state.config.muted,
-			newConfigMuted: newConfig.muted,
-		});
-	}
-
-	// 🔴 关键修复：清理临时字段，防止污染 state.config
+	// 清理临时字段，防止污染 state.config
 	delete (newConfig as any).toggleMute;
 	delete (newConfig as any).volumeDelta;
 

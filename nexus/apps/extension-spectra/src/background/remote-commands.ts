@@ -12,8 +12,8 @@ export type RemoteCommand =
 	| 'play_pause' | 'seek_forward' | 'seek_backward' | 'seek_forward_30' | 'seek_backward_30'
 	| 'speed_up' | 'speed_down' | 'speed_reset' | 'fullscreen' | 'pip';
 
-/** 状态回调类型 */
-type StateCallback = (state: RemoteState) => void;
+/** 状态回调类型 (需传递 tabId) */
+type StateCallback = (tabId: number, state: RemoteState) => void;
 
 /** 遥控器状态 */
 export interface RemoteState {
@@ -129,7 +129,7 @@ export async function syncState(tabId: number): Promise<void> {
 			tabFavIcon,
 		};
 
-		stateCallback(state);
+		stateCallback(tabId, state);
 	} catch (e) {
 		// 静默失败
 	}

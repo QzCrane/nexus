@@ -5,15 +5,31 @@
  */
 
 import { Actions } from '@nexus/contracts';
+import type { I18NDict } from '../popup/types';
 
 /** 遥控弹窗状态 */
 let isModalOpen = false;
 let statusInterval: number | null = null;
+let currentDict: I18NDict | null = null;
 
 /**
  * 是否打开
  */
 export const isRemoteModalOpen = () => isModalOpen;
+
+/**
+ * 设置当前语言字典
+ */
+export function setRemoteI18n(dict: I18NDict): void {
+	currentDict = dict;
+}
+
+/**
+ * 获取 i18n 文本 (带默认值回退)
+ */
+function t(key: keyof I18NDict, fallback: string): string {
+	return (currentDict?.[key] as string) || fallback;
+}
 
 /**
  * 显示遥控弹窗
@@ -23,29 +39,38 @@ export function renderRemoteModal(qrDataUrl: string, sessionId: string, isConnec
 	if (existing) existing.remove();
 
 	const statusClass = isConnected ? 'connected' : '';
-	const statusText = isConnected ? '✅ 已连接' : '等待连接...';
+	const statusText = isConnected
+		? t('remoteConnected', '✅ 已连接')
+		: t('remoteWaiting', '等待连接...');
 
 	const modal = document.createElement('div');
 	modal.id = 'remote-modal';
 	modal.className = 'remote-modal';
+
+	// 🔴 构建遥控器连接 URL
+	const remoteUrl = `https://nexus-remote.pages.dev/?s=${sessionId}`;
+
 	modal.innerHTML = `
 		<div class="remote-modal-content">
 			<div class="remote-modal-header">
-				<span>📱 手机遥控</span>
+				<span>${t('remoteModalTitle', '📱 手机遥控')}</span>
 				<button class="remote-modal-close">✕</button>
 			</div>
 			<div class="remote-modal-body">
 				<img src="${qrDataUrl}" alt="QR Code" class="remote-qr" />
 				<div class="remote-session-id">
-					<span>会话码</span>
+					<span>${t('remoteSessionCode', '会话码')}</span>
 					<code>${sessionId}</code>
+				</div>
+				<div class="remote-url">
+					<a href="${remoteUrl}" target="_blank" rel="noopener" title="${t('remoteOpenLinkTitle', '点击在新标签页打开遥控器')}">${remoteUrl}</a>
 				</div>
 				<div class="remote-status">
 					<span class="remote-status-dot ${statusClass}"></span>
 					<span class="remote-status-text">${statusText}</span>
 				</div>
-				<p class="remote-hint">📱 用手机扫描二维码，打开遥控页面连接<br>⚡ 关闭弹窗不会断开连接</p>
-				<button class="remote-disconnect-btn">🔌 断开并关闭</button>
+				<p class="remote-hint">${t('remoteHint', '📱 用手机扫描二维码或复制链接打开<br>⚡ 关闭弹窗不会断开连接')}</p>
+				<button class="remote-disconnect-btn">${t('remoteDisconnect', '🔌 断开并关闭')}</button>
 			</div>
 		</div>
 	`;
@@ -61,7 +86,7 @@ export function renderRemoteModal(qrDataUrl: string, sessionId: string, isConnec
 	codeElem?.addEventListener('click', () => {
 		navigator.clipboard.writeText(sessionId);
 		const oldText = codeElem.textContent;
-		codeElem.textContent = 'COPIED!';
+		codeElem.textContent = t('remoteCopied', '已复制!');
 		setTimeout(() => { if (codeElem) codeElem.textContent = oldText; }, 1000);
 	});
 
@@ -83,10 +108,10 @@ export function renderRemoteModal(qrDataUrl: string, sessionId: string, isConnec
 		if (dot && text && res) {
 			if (res.connected) {
 				dot.classList.add('connected');
-				text.textContent = '✅ 已连接';
+				text.textContent = t('remoteConnected', '✅ 已连接');
 			} else {
 				dot.classList.remove('connected');
-				text.textContent = '等待连接...';
+				text.textContent = t('remoteWaiting', '等待连接...');
 			}
 		}
 	}, 1000);

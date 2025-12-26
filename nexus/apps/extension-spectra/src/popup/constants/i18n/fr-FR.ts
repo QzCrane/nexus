@@ -85,4 +85,12 @@ export const FR_FR: I18NDict = {
 	btnClearPresets: 'Tout supprimer',
 	// Télécommande
 	btnRemoteTooltip: 'Télécommande',
+	remoteModalTitle: '📱 Télécommande',
+	remoteSessionCode: 'Code de session',
+	remoteConnected: '✅ Connecté',
+	remoteWaiting: 'En attente de connexion...',
+	remoteHint: '📱 Scannez le QR code ou copiez le lien<br>⚡ Fermer cette fenêtre ne déconnecte pas',
+	remoteDisconnect: '🔌 Déconnecter et fermer',
+	remoteCopied: 'Copié!',
+	remoteOpenLinkTitle: 'Cliquez pour ouvrir dans un nouvel onglet',
 };

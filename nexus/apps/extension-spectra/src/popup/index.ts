@@ -34,11 +34,13 @@ async function main(): Promise<void> {
   // 初始化侧边面板
   initSidePanel();
 
-  // 初始化遥控功能
-  bindRemoteUI();
-
-  // 初始化设置页
+  // 初始化设置页 (需要先获取 dict 用于 i18n)
   const { gSettings, registryEntries, dict } = await initSettings();
+
+  // 初始化遥控功能 (传入当前标签页 ID 和 i18n 字典)
+  if (activeTab?.id) {
+    bindRemoteUI(activeTab.id, dict);
+  }
 
   // 获取全局设置的函数 (供卡片使用)
   let currentSettings = gSettings;

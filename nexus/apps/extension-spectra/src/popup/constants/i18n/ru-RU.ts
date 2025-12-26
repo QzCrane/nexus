@@ -85,4 +85,12 @@ export const RU_RU: I18NDict = {
 	btnClearPresets: 'Очистить все',
 	// Пульт
 	btnRemoteTooltip: 'Пульт',
+	remoteModalTitle: '📱 Пульт управления',
+	remoteSessionCode: 'Код сессии',
+	remoteConnected: '✅ Подключено',
+	remoteWaiting: 'Ожидание подключения...',
+	remoteHint: '📱 Отсканируйте QR-код или скопируйте ссылку<br>⚡ Закрытие окна не отключит соединение',
+	remoteDisconnect: '🔌 Отключить и закрыть',
+	remoteCopied: 'Скопировано!',
+	remoteOpenLinkTitle: 'Нажмите, чтобы открыть в новой вкладке',
 };

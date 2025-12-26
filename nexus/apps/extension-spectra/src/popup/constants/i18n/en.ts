@@ -83,6 +83,14 @@ export const EN_US: I18NDict = {
   grpPresets: 'Saved Presets',
   presetsHint: 'No saved presets. Use 💾 button on cards to save.',
   btnClearPresets: 'Clear All',
-  // 遥控
+  // 遥控器
   btnRemoteTooltip: 'Remote Control',
+  remoteModalTitle: '📱 Remote Control',
+  remoteSessionCode: 'Session Code',
+  remoteConnected: '✅ Connected',
+  remoteWaiting: 'Waiting for connection...',
+  remoteHint: '📱 Scan QR code or copy link to connect<br>⚡ Closing this dialog won\'t disconnect',
+  remoteDisconnect: '🔌 Disconnect & Close',
+  remoteCopied: 'Copied!',
+  remoteOpenLinkTitle: 'Click to open remote in new tab',
 };

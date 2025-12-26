@@ -24,9 +24,8 @@ export function registerBadgeHandlers(): void {
 
 		const { volume, muted, isCapture, userInteracted } = req;
 
-		// 🔴 用户未交互且为默认配置时不显示角标
-		const isDefaultConfig = volume === 100 && !muted && !isCapture;
-		if (!userInteracted && isDefaultConfig) {
+		// 🔴 用户未交互时完全不显示角标（即使网站自己调节了音量）
+		if (!userInteracted) {
 			badgeState.delete(tabId);
 			try {
 				await chrome.action.setBadgeText({ tabId, text: '' });

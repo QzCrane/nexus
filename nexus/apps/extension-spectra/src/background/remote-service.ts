@@ -47,10 +47,10 @@ async function closeOffscreen(): Promise<void> {
 	} catch { /* 可能已关闭 */ }
 }
 
-/** 发送状态到 offscreen (转发给手机) */
-function sendStateToOffscreen(state: RemoteState): void {
+/** 发送状态到 offscreen (转发给指定标签页的手机) */
+function sendStateToOffscreen(tabId: number, state: RemoteState): void {
 	if (offscreenCreated) {
-		chrome.runtime.sendMessage({ type: 'REMOTE_OFFSCREEN_SEND_STATE', state });
+		chrome.runtime.sendMessage({ type: 'REMOTE_OFFSCREEN_SEND_STATE', tabId, state });
 	}
 }
 
@@ -75,13 +75,14 @@ export function initRemoteService(): void {
 			return true;
 		}
 
-		// 获取状态
+		// 获取状态 (支持按 tabId 查询特定标签页)
 		if (message.action === Actions.REMOTE_GET_SESSION) {
 			if (!offscreenCreated) {
 				sendResponse({ session: null, connected: false });
 				return false;
 			}
-			chrome.runtime.sendMessage({ type: 'REMOTE_OFFSCREEN_GET_STATUS' })
+			const tabId = message.tabId || sender.tab?.id;
+			chrome.runtime.sendMessage({ type: 'REMOTE_OFFSCREEN_GET_STATUS', tabId })
 				.then((res) => sendResponse(res))
 				.catch(() => sendResponse({ session: null, connected: false }));
 			return true;

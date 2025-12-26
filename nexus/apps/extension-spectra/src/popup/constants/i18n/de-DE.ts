@@ -85,4 +85,12 @@ export const DE_DE: I18NDict = {
 	btnClearPresets: 'Alle löschen',
 	// Fernbedienung
 	btnRemoteTooltip: 'Fernbedienung',
+	remoteModalTitle: '📱 Fernbedienung',
+	remoteSessionCode: 'Sitzungscode',
+	remoteConnected: '✅ Verbunden',
+	remoteWaiting: 'Warte auf Verbindung...',
+	remoteHint: '📱 QR-Code scannen oder Link kopieren<br>⚡ Das Schließen trennt nicht die Verbindung',
+	remoteDisconnect: '🔌 Trennen und schließen',
+	remoteCopied: 'Kopiert!',
+	remoteOpenLinkTitle: 'Klicken um in neuem Tab zu öffnen',
 };

@@ -83,6 +83,14 @@ export const JA_JP: I18NDict = {
 	grpPresets: '保存済みプリセット',
 	presetsHint: 'プリセットなし。カードの💾ボタンで保存。',
 	btnClearPresets: 'すべて削除',
-	// リモート
+	// リモコン
 	btnRemoteTooltip: 'リモコン',
+	remoteModalTitle: '📱 リモコン',
+	remoteSessionCode: 'セッションコード',
+	remoteConnected: '✅ 接続済み',
+	remoteWaiting: '接続待ち...',
+	remoteHint: '📱 スマホでQRコードをスキャンまたはリンクをコピー<br>⚡ ダイアログを閉じても切断されません',
+	remoteDisconnect: '🔌 切断して閉じる',
+	remoteCopied: 'コピー済み!',
+	remoteOpenLinkTitle: 'クリックして新しいタブで開く',
 };

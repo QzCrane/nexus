@@ -4,6 +4,7 @@
 
 import { predictCapture } from '@nexus/audio-engine';
 import { getAudioConfig, type GlobalSettings } from '@nexus/kernel';
+import { Actions } from '@nexus/contracts';
 import type { I18NDict, ContentStatusResponse } from '../types';
 import { getDomain, sendToTab, sendToBackground, ensureInjected } from '../utils/dom';
 import { cardRenderCallbacks } from '../views/settings';
@@ -35,9 +36,21 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
 
   const isCaptureActive = await sendToBackground<boolean>('CAPTURE_GET_STATE', { tabId });
 
+  // 检查当前标签页是否有遥控器连接
+  let isRemoteActive = false;
+  try {
+    const remoteStatus = await chrome.runtime.sendMessage({
+      action: Actions.REMOTE_GET_SESSION,
+      tabId,
+    });
+    isRemoteActive = remoteStatus?.connected === true;
+  } catch { /* 静默处理 */ }
+
   // 判断是否有活跃媒体
   const hasActiveMedia = tab.audible || isCaptureActive || (status?.isPlaying);
-  if (!hasActiveMedia) {
+
+  // 遥控器连接时，跳过暂停保留判断，始终显示卡片
+  if (!hasActiveMedia && !isRemoteActive) {
     // 检查暂停保留时间
     const pauseRetentionSeconds = getGlobalSettings().pauseRetentionSeconds ?? 60;
     if (pauseRetentionSeconds > 0 && status.pausedAt) {

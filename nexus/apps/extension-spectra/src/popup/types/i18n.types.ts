@@ -87,8 +87,16 @@ export interface I18NDict {
 	grpPresets: string;
 	presetsHint: string;
 	btnClearPresets: string;
-	// 遥控
+	// 遥控器
 	btnRemoteTooltip: string;
+	remoteModalTitle: string;
+	remoteSessionCode: string;
+	remoteConnected: string;
+	remoteWaiting: string;
+	remoteHint: string;
+	remoteDisconnect: string;
+	remoteCopied: string;
+	remoteOpenLinkTitle: string;
 }
 
 /** 所有语言的 I18N 映射 */
