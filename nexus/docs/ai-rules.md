@@ -38,7 +38,7 @@
 
 标准结构:
 
-```
+```text
 module/
 ├── index.ts     # 唯一出口
 ├── types.ts     # 领域类型
@@ -62,7 +62,7 @@ module/
 - 2 列映射 → `A: B` 或 `A → B`
 - 流程链 → `A → B → C`
 - ≥3 列对比 → 表格
-- 约束列表 → `- ` 列表
+- 约束列表 → `-` 列表
 
 压缩词汇 (禁用 → 替代):
 
@@ -101,16 +101,17 @@ module/
 
 **环境**: pnpm workspace
 
-核心依赖:
+命令:
 
-- chrome-types: chrome.\* 命名空间类型
+- `pnpm install`: 安装依赖
+- `pnpm build`: 全量构建
+- `pnpm --filter [name] build`: 单包构建
 
-常用命令:
+内部包引用: `"@nexus/[name]": "workspace:*"`
 
-- pnpm install: 安装依赖
-- pnpm build: 全量构建
-- pnpm --filter [name] build: 单包构建
+依赖规则:
 
-引用规则:
-
-- 内部包: "@nexus/[name]": "workspace:\*"
+- 引入前必查 → [dependencies/README.md](dependencies/README.md)
+- 同类库禁止重复 (如 lodash vs underscore)
+- 安装后须登记清单 (库名/版本/用途/日期)
+- 删除须同步更新清单
