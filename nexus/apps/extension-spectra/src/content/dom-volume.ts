@@ -38,7 +38,8 @@ export function setDomVolume(volume: number, muted: boolean): void {
 		}
 	});
 
-	requestAnimationFrame(() => { settingByPlugin = false; });
+	// 🔴 使用 setTimeout 替代 requestAnimationFrame，增加防抖时间
+	setTimeout(() => { settingByPlugin = false; }, 100);
 	if (applied > 0) log.debug(`[DOM] 音量应用: ${(volume * 100).toFixed(0)}% → ${applied}/${els.length}`);
 }
 
@@ -101,11 +102,13 @@ function isAnyMediaPlayingRaw(): boolean {
 /** 释放音量同步 (高级模式接管) */
 export function releaseVolumeLock(): void {
 	syncEnabled = false;
+	settingByPlugin = true;  // 🔴 阻止 volumechange 回调
 	targetVolume = 1;
 	targetMuted = false;
 	document.querySelectorAll('video, audio').forEach((el) => {
 		try { (el as HTMLMediaElement).volume = 1; (el as HTMLMediaElement).muted = false; } catch { }
 	});
+	setTimeout(() => { settingByPlugin = false; }, 100);
 }
 
 /** 重新启用音量同步 (回退到 NATIVE_LITE) */
