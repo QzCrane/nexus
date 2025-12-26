@@ -24,6 +24,7 @@ import { registerRegistryHandlers } from './handlers/registry';
 import { registerTabStateHandlers } from './handlers/tab-state';
 import { setupShortcutListeners } from './shortcuts';
 import { setupLifecycleListeners } from './lifecycle';
+import { initRemoteService } from './remote-service';
 import { swLog } from '../shared/logger';
 
 // ============================================
@@ -36,6 +37,7 @@ registerCaptureHandlers();
 registerBadgeHandlers();
 registerRegistryHandlers();
 registerTabStateHandlers();
+initRemoteService();
 
 // ============================================
 // 设置事件监听器

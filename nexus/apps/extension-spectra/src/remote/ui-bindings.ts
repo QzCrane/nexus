@@ -1,14 +1,18 @@
 /**
- * SPECTRA Remote - UI 绑定
+ * SPECTRA Remote - Popup UI 绑定
+ * 
+ * 职责：与 background 通信，显示遥控弹窗
  */
 
 import { generateRemoteQR } from './qr-generator.js';
-import { createSession, closeSession, getSession } from './session.js';
-import { initPeer, closePeer, isConnected, type RemoteCommand } from './peer-connection.js';
 import { Actions } from '@nexus/contracts';
 
 /** 遥控弹窗状态 */
 let isModalOpen = false;
+let statusInterval: number | null = null;
+
+/** 遥控页面托管 URL */
+const REMOTE_HOST = 'https://nexus-remote.pages.dev';
 
 /**
  * 绑定遥控按钮事件
@@ -37,14 +41,29 @@ async function toggleRemoteModal(): Promise<void> {
 	}
 
 	try {
-		// 创建会话
-		const session = createSession();
+		// 获取当前标签页 ID
+		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+		const tabId = tab?.id;
 
-		// 初始化 PeerJS
-		await initPeer(session, handleRemoteCommand);
+		if (!tabId) {
+			console.error('[SPECTRA Remote] 无法获取当前标签页');
+			return;
+		}
 
-		// 生成 QR 码 (使用托管URL，手机可访问)
-		const REMOTE_HOST = 'https://nexus-remote.pages.dev';
+		// 通过消息让 background 创建会话
+		const response = await chrome.runtime.sendMessage({
+			action: Actions.REMOTE_CREATE_SESSION,
+			tabId,
+		});
+
+		if (!response?.success) {
+			console.error('[SPECTRA Remote] 创建会话失败:', response?.error);
+			return;
+		}
+
+		const { session } = response;
+
+		// 生成 QR 码
 		const qrDataUrl = await generateRemoteQR(session.sessionId, REMOTE_HOST);
 
 		// 显示弹窗
@@ -61,46 +80,11 @@ async function toggleRemoteModal(): Promise<void> {
 }
 
 /**
- * 处理遥控命令
- */
-function handleRemoteCommand(cmd: RemoteCommand): void {
-	// 获取当前活动标签页并发送命令
-	chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-		const tabId = tabs[0]?.id;
-		if (!tabId) return;
-
-		switch (cmd) {
-			case 'volume_up':
-				chrome.tabs.sendMessage(tabId, { action: Actions.AUDIO_SET_CONFIG, config: { volumeDelta: 10 } });
-				break;
-			case 'volume_down':
-				chrome.tabs.sendMessage(tabId, { action: Actions.AUDIO_SET_CONFIG, config: { volumeDelta: -10 } });
-				break;
-			case 'mute':
-				chrome.tabs.sendMessage(tabId, { action: Actions.AUDIO_SET_CONFIG, config: { toggleMute: true } });
-				break;
-			case 'play_pause':
-				chrome.tabs.sendMessage(tabId, { action: Actions.MEDIA_TOGGLE_PLAY });
-				break;
-			case 'seek_forward':
-				chrome.tabs.sendMessage(tabId, { action: Actions.VIDEO_SEEK, delta: 10 });
-				break;
-			case 'seek_backward':
-				chrome.tabs.sendMessage(tabId, { action: Actions.VIDEO_SEEK, delta: -10 });
-				break;
-		}
-	});
-}
-
-
-/**
  * 显示遥控弹窗
  */
 function showModal(qrDataUrl: string, sessionId: string): void {
 	const existing = document.getElementById('remote-modal');
 	if (existing) existing.remove();
-
-	const connectedClass = isConnected() ? 'connected' : '';
 
 	const modal = document.createElement('div');
 	modal.id = 'remote-modal';
@@ -114,14 +98,14 @@ function showModal(qrDataUrl: string, sessionId: string): void {
 			<div class="remote-modal-body">
 				<img src="${qrDataUrl}" alt="QR Code" class="remote-qr" />
 				<div class="remote-session-id">
-					<span>会话码: </span>
+					<span>会话码</span>
 					<code>${sessionId}</code>
 				</div>
-				<div class="remote-status ${connectedClass}">
+				<div class="remote-status">
 					<span class="remote-status-dot"></span>
-					<span class="remote-status-text">${isConnected() ? '已连接' : '等待连接...'}</span>
+					<span class="remote-status-text">等待连接...</span>
 				</div>
-			<p class="remote-hint">� 用手机扫描二维码，打开遥控页面连接</p>
+				<p class="remote-hint">📱 用手机扫描二维码，打开遥控页面连接<br>⚡ 关闭弹窗不会断开连接</p>
 			</div>
 		</div>
 	`;
@@ -129,35 +113,47 @@ function showModal(qrDataUrl: string, sessionId: string): void {
 	document.body.appendChild(modal);
 	isModalOpen = true;
 
-	// 绑定关闭
-	modal.querySelector('.remote-modal-close')?.addEventListener('click', closeModal);
+	// 绑定关闭按钮 (不断开连接)
+	modal.querySelector('.remote-modal-close')?.addEventListener('click', () => closeModal(false));
 	modal.addEventListener('click', (e) => {
-		if (e.target === modal) closeModal();
+		if (e.target === modal) closeModal(false);
 	});
 
 	// 定时检查连接状态
-	const statusInterval = setInterval(() => {
+	statusInterval = window.setInterval(async () => {
+		const res = await chrome.runtime.sendMessage({ action: Actions.REMOTE_GET_SESSION });
 		const dot = modal.querySelector('.remote-status-dot');
 		const text = modal.querySelector('.remote-status-text');
-		if (dot && text) {
-			if (isConnected()) {
+		if (dot && text && res) {
+			if (res.connected) {
 				dot.classList.add('connected');
-				text.textContent = '已连接';
+				text.textContent = '✅ 已连接';
+			} else {
+				dot.classList.remove('connected');
+				text.textContent = '等待连接...';
 			}
 		}
-		if (!isModalOpen) clearInterval(statusInterval);
 	}, 1000);
 }
 
 /**
  * 关闭弹窗
+ * @param closeConnection 是否同时关闭连接
  */
-function closeModal(): void {
+function closeModal(closeConnection = false): void {
 	const modal = document.getElementById('remote-modal');
 	if (modal) {
 		modal.remove();
-		closePeer();
-		closeSession();
 		isModalOpen = false;
+
+		if (statusInterval) {
+			clearInterval(statusInterval);
+			statusInterval = null;
+		}
+
+		// 只在明确要求时关闭连接
+		if (closeConnection) {
+			chrome.runtime.sendMessage({ action: Actions.REMOTE_CLOSE_SESSION });
+		}
 	}
 }
