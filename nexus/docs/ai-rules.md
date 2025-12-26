@@ -111,7 +111,7 @@ module/
 
 依赖规则:
 
-- 引入前必查 → [dependencies/README.md](dependencies/README.md)
+- 引入前必查 → [dependencies.md](dependencies.md)
 - 同类库禁止重复 (如 lodash vs underscore)
 - 安装后须登记清单 (库名/版本/用途/日期)
 - 删除须同步更新清单

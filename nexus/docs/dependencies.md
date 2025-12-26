@@ -1,6 +1,6 @@
 # 依赖清单
 
-> 规则 → [ai-rules.md](../ai-rules.md#环境与依赖)
+> 规则 → [ai-rules.md](ai-rules.md#环境与依赖)
 
 ## 运行时
 
