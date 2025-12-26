@@ -116,8 +116,8 @@ export async function syncState(tabId: number): Promise<void> {
 			const tab = await chrome.tabs.get(tabId);
 			tabTitle = tab.title || '';
 			tabDomain = tab.url ? new URL(tab.url).hostname : '';
-			tabFavIcon = tab.favIconUrl || '';
-		} catch { /* 静默 */ }
+			tabFavIcon = await fetchFaviconAsDataUrl(tab.favIconUrl || '');
+		} catch { /* 静默和忽略错误 */ }
 
 		const state: RemoteState = {
 			volume: audioRes?.config?.volume ?? 100,
@@ -142,4 +142,26 @@ function sendToTab(tabId: number, message: object): Promise<unknown> {
 			resolve(response);
 		});
 	});
+}
+
+/** Fetch favicon url to base64 data uri */
+async function fetchFaviconAsDataUrl(url: string): Promise<string> {
+	if (!url) return '';
+	// Skip data URIs, they are already good
+	if (url.startsWith('data:')) return url;
+
+	try {
+		// 使用 fetch 获取图片数据
+		const response = await fetch(url);
+		const blob = await response.blob();
+
+		return new Promise((resolve) => {
+			const reader = new FileReader();
+			reader.onloadend = () => resolve(reader.result as string);
+			reader.onerror = () => resolve(''); // Fallback to empty
+			reader.readAsDataURL(blob);
+		});
+	} catch (err) {
+		return ''; // Fetch failed, fallback to empty (client might use google S2)
+	}
 }
