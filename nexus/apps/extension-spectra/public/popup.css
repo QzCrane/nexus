@@ -1859,6 +1859,9 @@ input:checked + .slider-round:before {
   letter-spacing: 3px;
   display: block;
   margin-top: 4px;
+  cursor: pointer;
+  user-select: all; /* 点击全选，方便复制 */
+  -webkit-user-select: all;
 }
 
 .remote-hint {

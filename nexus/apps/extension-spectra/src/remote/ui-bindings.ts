@@ -130,6 +130,16 @@ function showModal(qrDataUrl: string, sessionId: string, isConnected = false): v
 
 	// 绑定关闭按钮 (不断开连接)
 	modal.querySelector('.remote-modal-close')?.addEventListener('click', () => closeModal(false));
+
+	// 完善：点击连接码自动复制
+	const codeElem = modal.querySelector('.remote-session-id code');
+	codeElem?.addEventListener('click', () => {
+		navigator.clipboard.writeText(sessionId);
+		const oldText = codeElem.textContent;
+		codeElem.textContent = 'COPIED!';
+		setTimeout(() => { if (codeElem) codeElem.textContent = oldText; }, 1000);
+	});
+
 	modal.addEventListener('click', (e) => {
 		if (e.target === modal) closeModal(false);
 	});

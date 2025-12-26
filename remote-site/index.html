@@ -501,7 +501,9 @@
     $('btn-cancel').onclick = () => {
       hideConnectOverlay();
     };
-    sessionInput.onkeydown = e => e.key === 'Enter' && $('btn-connect').click();
+    sessionInput.onkeydown = e => {
+      if (e.key === 'Enter') $('btn-connect').click();
+    };
 
     // 添加新会话按钮
     // 显示连接弹窗
