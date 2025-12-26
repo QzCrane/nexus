@@ -45,6 +45,7 @@
       color: var(--text);
       padding: 16px;
       padding-bottom: env(safe-area-inset-bottom, 16px);
+      overflow-x: hidden;
     }
 
     /* 已连接后顶部对齐 */
@@ -481,8 +482,11 @@
         const sid = urlSession.toUpperCase();
         sessionInput.value = sid; // 同步填入输入框
         createSession(sid);
-      } else if (saved.length > 0) {
-        saved.forEach(sid => createSession(sid));
+      }
+      
+      // 如果没有任何连接，则显示连接界面
+      if (sessions.size === 0) {
+        hideRemoteView();
       }
     }
 
@@ -668,7 +672,7 @@
       document.body.classList.remove('connected');
       statusDot.classList.remove('connected');
       statusText.textContent = '未连接';
-      showConnectOverlay(); // 自动弹出连接层
+      showConnectOverlay(); // 始终确保弹出连接层
     }
 
     // 初始化
