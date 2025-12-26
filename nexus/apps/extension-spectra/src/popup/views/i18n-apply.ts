@@ -35,6 +35,15 @@ export function applyLang(lang: string): I18NDict {
 		}
 	});
 
+	// 处理 placeholder 属性
+	$$<HTMLInputElement>('[data-i18n-placeholder]').forEach((el) => {
+		const key = el.dataset.i18nPlaceholder as keyof I18NDict;
+		const value = dict[key];
+		if (typeof value === 'string') {
+			el.placeholder = value;
+		}
+	});
+
 	return dict;
 }
 

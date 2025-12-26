@@ -2,7 +2,7 @@
  * SPECTRA Popup - I18N 统一导出
  */
 
-import type { I18NMap } from '../../types';
+import type { I18NMap, I18NDict } from '../../types';
 import { EN_US } from './en';
 import { ZH_CN } from './zh-CN';
 import { JA_JP } from './ja-JP';
@@ -31,8 +31,8 @@ export const DEFAULT_LANG = 'en-US';
 export const SUPPORTED_LANGS = Object.keys(I18N) as Array<keyof typeof I18N>;
 
 /** 获取指定语言的字典，fallback 到英语 */
-export function getDict(lang: string) {
-  return I18N[lang] || I18N[DEFAULT_LANG];
+export function getDict(lang: string): I18NDict {
+  return I18N[lang] || I18N[DEFAULT_LANG]!;
 }
 
 // 重导出各语言字典

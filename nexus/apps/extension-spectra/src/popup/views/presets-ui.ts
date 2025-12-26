@@ -1,15 +1,11 @@
-/**
- * SPECTRA Popup - 域名预设管理 UI
- * 
- * 职责：管理 siteSettings 中保存的域名音量/EQ 预设
- */
-
 import type { AudioConfig } from '@nexus/kernel';
+import type { I18NDict } from '../types';
 
 /** 预设列表容器 */
 let listEl: HTMLElement | null = null;
 let emptyEl: HTMLElement | null = null;
 let clearBtn: HTMLButtonElement | null = null;
+let currentDict: I18NDict | null = null;
 
 /**
  * 初始化预设管理面板
@@ -81,7 +77,7 @@ function createPresetItem(domain: string, config: Partial<AudioConfig>): HTMLEle
 	const deleteBtn = document.createElement('button');
 	deleteBtn.className = 'btn-preset-delete';
 	deleteBtn.textContent = '✕';
-	deleteBtn.title = 'Delete';
+	deleteBtn.title = currentDict?.tipDelete || 'Delete';
 	deleteBtn.onclick = () => handleDeletePreset(domain);
 
 	item.appendChild(domainEl);
@@ -118,4 +114,12 @@ async function handleClearAll(): Promise<void> {
 async function loadAllPresets(): Promise<Record<string, Partial<AudioConfig>>> {
 	const result = await chrome.storage.local.get(['siteSettings']);
 	return (result.siteSettings as Record<string, Partial<AudioConfig>>) || {};
+}
+
+/**
+ * 更新预设管理 UI 的 i18n
+ */
+export function updatePresetsI18n(dict: I18NDict): void {
+	currentDict = dict;
+	refreshPresetsList();
 }

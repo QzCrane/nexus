@@ -6,4 +6,4 @@
  */
 
 export { generateRemoteQR } from './qr-generator.js';
-export { bindRemoteUI } from './ui-bindings.js';
+export { bindRemoteUI, updateRemoteI18n } from './ui-bindings.js';

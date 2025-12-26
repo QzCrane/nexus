@@ -67,6 +67,7 @@ export const ES_ES: I18NDict = {
 	pauseRetentionUnit: 'segundos',
 	tipPinPanel: 'Fijar panel',
 	tipClose: 'Cerrar',
+	tipDelete: 'Eliminar',
 	tipAdvancedSettings: 'Abrir configuración avanzada',
 	spResetFx: '↺ Restablecer efectos',
 	spSaveFx: '💾 Guardar efectos',
@@ -93,4 +94,9 @@ export const ES_ES: I18NDict = {
 	remoteDisconnect: '🔌 Desconectar y cerrar',
 	remoteCopied: '¡Copiado!',
 	remoteOpenLinkTitle: 'Clic para abrir en nueva pestaña',
+	remoteConnectedTooltip: 'Control remoto conectado',
+	registryEmptyRestricted: 'No hay sitios que requieran captura',
+	registryEmptySafe: 'No hay sitios seguros',
+	corsAddedSafe: (domain: string) => `✓ ${domain} añadido a la lista segura`,
+	corsCorrectedSafe: (domain: string) => `✓ ${domain} corregido como seguro`,
 };

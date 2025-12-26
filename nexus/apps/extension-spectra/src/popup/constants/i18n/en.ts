@@ -67,6 +67,7 @@ export const EN_US: I18NDict = {
   pauseRetentionUnit: 'seconds',
   tipPinPanel: 'Pin Panel',
   tipClose: 'Close',
+  tipDelete: 'Delete',
   tipAdvancedSettings: 'Click for advanced settings',
   spResetFx: '↺ Reset Effects',
   spSaveFx: '💾 Save Effects',
@@ -93,4 +94,9 @@ export const EN_US: I18NDict = {
   remoteDisconnect: '🔌 Disconnect & Close',
   remoteCopied: 'Copied!',
   remoteOpenLinkTitle: 'Click to open remote in new tab',
+  remoteConnectedTooltip: 'Remote Connected',
+  registryEmptyRestricted: 'No sites need capture',
+  registryEmptySafe: 'No safe sites',
+  corsAddedSafe: (domain: string) => `✓ Added ${domain} to safe list`,
+  corsCorrectedSafe: (domain: string) => `✓ Corrected ${domain} to safe`,
 };

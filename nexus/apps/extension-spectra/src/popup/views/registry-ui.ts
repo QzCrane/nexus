@@ -6,6 +6,7 @@
 
 import type { DomainEntry } from '@nexus/contracts';
 import { $ } from '../utils/dom';
+import type { I18NDict } from '../types';
 
 /** 当前显示的标签页 */
 type TabType = 'restricted' | 'safe';
@@ -24,6 +25,7 @@ interface RegistryUIElements {
 let currentTab: TabType = 'restricted';
 let allEntries: DomainEntry[] = [];
 let filterText = '';
+let currentDict: I18NDict | null = null;
 
 /** 获取 UI 元素 */
 function getUIElements(): RegistryUIElements {
@@ -50,8 +52,8 @@ function renderList(ui: RegistryUIElements): void {
 
 	if (filtered.length === 0) {
 		const emptyMsg = currentTab === 'restricted'
-			? '暂无需要劫持的站点'
-			: '暂无安全站点';
+			? (currentDict?.registryEmptyRestricted ?? 'No sites need capture')
+			: (currentDict?.registryEmptySafe ?? 'No safe sites');
 		ui.listContainer.innerHTML = `<div class="registry-empty">${emptyMsg}</div>`;
 		return;
 	}
@@ -60,7 +62,7 @@ function renderList(ui: RegistryUIElements): void {
 		<div class="registry-item" data-domain="${e.domain}">
 			<span class="registry-item-domain">${e.domain}</span>
 			<span class="registry-item-source">${e.source === 'auto' ? 'AUTO' : 'USER'}</span>
-			<button class="registry-item-delete" title="Delete">×</button>
+			<button class="registry-item-delete" title="${currentDict?.tipDelete || 'Delete'}">×</button>
 		</div>
 	`).join('');
 
@@ -150,4 +152,14 @@ export function initRegistryUI(entries: DomainEntry[]): void {
 			addDomain(ui.newDomainInput.value, ui);
 		}
 	});
+}
+
+/**
+ * 更新注册表 UI 的 i18n
+ * @param dict 语言字典
+ */
+export function updateRegistryI18n(dict: I18NDict): void {
+	currentDict = dict;
+	const ui = getUIElements();
+	renderList(ui);
 }

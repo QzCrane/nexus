@@ -67,6 +67,7 @@ export const DE_DE: I18NDict = {
 	pauseRetentionUnit: 'Sekunden',
 	tipPinPanel: 'Panel anheften',
 	tipClose: 'Schließen',
+	tipDelete: 'Löschen',
 	tipAdvancedSettings: 'Erweiterte Einstellungen öffnen',
 	spResetFx: '↺ Effekte zurücksetzen',
 	spSaveFx: '💾 Effekte speichern',
@@ -93,4 +94,9 @@ export const DE_DE: I18NDict = {
 	remoteDisconnect: '🔌 Trennen und schließen',
 	remoteCopied: 'Kopiert!',
 	remoteOpenLinkTitle: 'Klicken um in neuem Tab zu öffnen',
+	remoteConnectedTooltip: 'Fernbedienung verbunden',
+	registryEmptyRestricted: 'Keine Seiten benötigen Capture',
+	registryEmptySafe: 'Keine sicheren Seiten',
+	corsAddedSafe: (domain: string) => `✓ ${domain} zur sicheren Liste hinzugefügt`,
+	corsCorrectedSafe: (domain: string) => `✓ ${domain} als sicher korrigiert`,
 };

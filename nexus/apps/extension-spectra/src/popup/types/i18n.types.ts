@@ -70,6 +70,7 @@ export interface I18NDict {
 	// 通用悬停提示
 	tipPinPanel: string;
 	tipClose: string;
+	tipDelete: string;
 	tipAdvancedSettings: string;
 	// 侧边面板按钮
 	spResetFx: string;
@@ -97,6 +98,13 @@ export interface I18NDict {
 	remoteDisconnect: string;
 	remoteCopied: string;
 	remoteOpenLinkTitle: string;
+	remoteConnectedTooltip: string;
+	// 注册表空状态
+	registryEmptyRestricted: string;
+	registryEmptySafe: string;
+	// CORS 提示 (Content Script 使用)
+	corsAddedSafe: (domain: string) => string;
+	corsCorrectedSafe: (domain: string) => string;
 }
 
 /** 所有语言的 I18N 映射 */

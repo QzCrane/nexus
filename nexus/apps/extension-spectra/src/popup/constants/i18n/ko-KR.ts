@@ -67,6 +67,7 @@ export const KO_KR: I18NDict = {
 	pauseRetentionUnit: '초',
 	tipPinPanel: '패널 고정',
 	tipClose: '닫기',
+	tipDelete: '삭제',
 	tipAdvancedSettings: '고급 설정 열기',
 	spResetFx: '↺ 효과 초기화',
 	spSaveFx: '💾 효과 저장',
@@ -93,4 +94,9 @@ export const KO_KR: I18NDict = {
 	remoteDisconnect: '🔌 연결 해제 및 닫기',
 	remoteCopied: '복사됨!',
 	remoteOpenLinkTitle: '클릭하여 새 탭에서 열기',
+	remoteConnectedTooltip: '리모컨이 연결되었습니다',
+	registryEmptyRestricted: '캡처가 필요한 사이트가 없습니다',
+	registryEmptySafe: '안전한 사이트가 없습니다',
+	corsAddedSafe: (domain: string) => `✓ ${domain}을(를) 안전한 목록에 추가했습니다`,
+	corsCorrectedSafe: (domain: string) => `✓ ${domain}을(를) 안전한 사이트로 수정했습니다`,
 };

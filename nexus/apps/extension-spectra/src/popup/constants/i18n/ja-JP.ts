@@ -67,6 +67,7 @@ export const JA_JP: I18NDict = {
 	pauseRetentionUnit: '秒',
 	tipPinPanel: 'パネルを固定',
 	tipClose: '閉じる',
+	tipDelete: '削除',
 	tipAdvancedSettings: '詳細設定を開く',
 	spResetFx: '↺ エフェクトをリセット',
 	spSaveFx: '💾 エフェクトを保存',
@@ -93,4 +94,9 @@ export const JA_JP: I18NDict = {
 	remoteDisconnect: '🔌 切断して閉じる',
 	remoteCopied: 'コピー済み!',
 	remoteOpenLinkTitle: 'クリックして新しいタブで開く',
+	remoteConnectedTooltip: 'リモコン接続済み',
+	registryEmptyRestricted: 'キャプチャが必要なサイトはありません',
+	registryEmptySafe: '安全なサイトはありません',
+	corsAddedSafe: (domain: string) => `✓ ${domain} を安全なリストに追加しました`,
+	corsCorrectedSafe: (domain: string) => `✓ ${domain} を安全なサイトに修正しました`,
 };

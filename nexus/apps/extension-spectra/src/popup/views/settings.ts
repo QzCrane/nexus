@@ -11,8 +11,9 @@ import { applyTheme, THEME_ICONS, getNextThemeMode } from '../utils/theme';
 import { migrateRegistry } from '../utils/registry-helpers';
 import { TIMING } from '../constants';
 import { applyLang, updateCardsI18n } from './i18n-apply';
-import { initRegistryUI } from './registry-ui';
-import { initPresetsUI } from './presets-ui';
+import { initRegistryUI, updateRegistryI18n } from './registry-ui';
+import { initPresetsUI, updatePresetsI18n } from './presets-ui';
+import { updateRemoteI18n } from '../../remote';
 
 /** 设置页状态 */
 export interface SettingsState {
@@ -81,6 +82,9 @@ export async function initSettings(): Promise<SettingsState> {
     // 更新语言和卡片
     dict = applyLang(gSettings.lang);
     updateCardsI18n(dict, gSettings.visualizerEnabled);
+    updateRegistryI18n(dict);
+    updatePresetsI18n(dict);
+    updateRemoteI18n(dict);
     cardRenderCallbacks.forEach((cb) => cb());
   };
 
@@ -90,9 +94,14 @@ export async function initSettings(): Promise<SettingsState> {
 
   // 初始化注册表 UI
   initRegistryUI(registryEntries);
+  updateRegistryI18n(dict);
 
   // 初始化预设管理 UI
   initPresetsUI();
+  updatePresetsI18n(dict);
+
+  // 初始化遥控 I18N
+  updateRemoteI18n(dict);
 
   return { gSettings, registryEntries, dict };
 }

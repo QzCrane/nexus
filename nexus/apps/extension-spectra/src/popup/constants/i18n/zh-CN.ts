@@ -67,6 +67,7 @@ export const ZH_CN: I18NDict = {
 	pauseRetentionUnit: '秒',
 	tipPinPanel: '固定面板',
 	tipClose: '关闭',
+	tipDelete: '删除',
 	tipAdvancedSettings: '点击打开高级设置',
 	spResetFx: '↺ 重置效果',
 	spSaveFx: '💾 保存效果',
@@ -93,4 +94,9 @@ export const ZH_CN: I18NDict = {
 	remoteDisconnect: '🔌 断开并关闭',
 	remoteCopied: '已复制!',
 	remoteOpenLinkTitle: '点击在新标签页打开遥控器',
+	remoteConnectedTooltip: '遥控器已连接',
+	registryEmptyRestricted: '暂无需要劫持的站点',
+	registryEmptySafe: '暂无安全站点',
+	corsAddedSafe: (domain: string) => `✓ 已添加 ${domain} 到安全列表`,
+	corsCorrectedSafe: (domain: string) => `✓ 已更正 ${domain} 为安全站点`,
 };

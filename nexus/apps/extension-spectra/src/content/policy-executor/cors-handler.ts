@@ -16,6 +16,7 @@ import { logger } from '../../shared/logger';
 import type { PolicyExecutorDeps } from '../types';
 import type { InternalState, CorsStatus } from './types';
 import { findProbeCandidate } from './media-probe';
+import { getDict } from '../../popup/constants/i18n';
 
 const log = logger.content;
 
@@ -78,11 +79,8 @@ export function setupCorsCallback(
 				.then((response) => {
 					// 始终显示 Toast，让用户知道检测结果
 					if (response?.success) {
-						const lang = settings.lang || 'en-US';
-						const message = lang.startsWith('zh')
-							? `🔧 已添加 ${hostname} 到劫持列表`
-							: `🔧 Added ${hostname} to capture list`;
-						showToast(message);
+						const dict = getDict(settings.lang || 'en-US');
+						showToast(dict.autoAddedToast(hostname));
 					}
 				})
 				.catch(() => { });
@@ -107,10 +105,10 @@ export function setupCorsCallback(
 			safeSend(() => messenger.send('REGISTRY_MARK_PROBED', { domain: hostname, restricted: false }))
 				.then((response) => {
 					// 无论是新增还是更正，都显示 Toast
-					const lang = settings.lang || 'en-US';
+					const dict = getDict(settings.lang || 'en-US');
 					const message = wasRestricted
-						? (lang.startsWith('zh') ? `✓ 已更正 ${hostname} 为安全站点` : `✓ Corrected ${hostname} to safe`)
-						: (lang.startsWith('zh') ? `✓ 已添加 ${hostname} 到安全列表` : `✓ Added ${hostname} to safe list`);
+						? dict.corsCorrectedSafe(hostname)
+						: dict.corsAddedSafe(hostname);
 					if (response?.success) showToast(message);
 				})
 				.catch(() => { });

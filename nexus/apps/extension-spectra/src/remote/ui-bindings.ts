@@ -13,6 +13,9 @@ import type { I18NDict } from '../popup/types';
 /** 遥控页面托管 URL */
 const REMOTE_HOST = 'https://nexus-remote.pages.dev';
 
+/** 语言字典 */
+let currentDict: I18NDict | null = null;
+
 /** 当前标签页 ID */
 let currentTabId: number | null = null;
 
@@ -30,6 +33,7 @@ export function bindRemoteUI(tabId: number, dict?: I18NDict): void {
 
 	// 设置 i18n
 	if (dict) {
+		currentDict = dict;
 		setRemoteI18n(dict);
 	}
 
@@ -40,6 +44,23 @@ export function bindRemoteUI(tabId: number, dict?: I18NDict): void {
 
 	// 启动连接状态检查
 	startStatusCheck();
+}
+
+/**
+ * 更新遥控模块的 i18n
+ */
+export function updateRemoteI18n(dict: I18NDict): void {
+	currentDict = dict;
+	setRemoteI18n(dict);
+	// 立即更新一次 UI 标题
+	const btnRemote = document.getElementById('btn-remote');
+	if (btnRemote) {
+		if (isConnected) {
+			btnRemote.title = dict.remoteConnectedTooltip;
+		} else {
+			btnRemote.title = dict.btnRemoteTooltip;
+		}
+	}
 }
 
 /**
@@ -79,11 +100,11 @@ async function checkAndUpdateStatus(): Promise<void> {
 		if (res?.connected) {
 			isConnected = true;
 			btnRemote.classList.add('remote-connected');
-			btnRemote.title = '遥控器已连接';
+			if (currentDict) btnRemote.title = currentDict.remoteConnectedTooltip;
 		} else {
 			isConnected = false;
 			btnRemote.classList.remove('remote-connected');
-			btnRemote.title = '手机遥控';
+			if (currentDict) btnRemote.title = currentDict.btnRemoteTooltip;
 		}
 	} catch {
 		isConnected = false;

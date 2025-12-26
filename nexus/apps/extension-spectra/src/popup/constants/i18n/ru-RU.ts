@@ -67,6 +67,7 @@ export const RU_RU: I18NDict = {
 	pauseRetentionUnit: 'секунд',
 	tipPinPanel: 'Закрепить панель',
 	tipClose: 'Закрыть',
+	tipDelete: 'Удалить',
 	tipAdvancedSettings: 'Открыть дополнительные настройки',
 	spResetFx: '↺ Сбросить эффекты',
 	spSaveFx: '💾 Сохранить эффекты',
@@ -93,4 +94,9 @@ export const RU_RU: I18NDict = {
 	remoteDisconnect: '🔌 Отключить и закрыть',
 	remoteCopied: 'Скопировано!',
 	remoteOpenLinkTitle: 'Нажмите, чтобы открыть в новой вкладке',
+	remoteConnectedTooltip: 'Пульт подключен',
+	registryEmptyRestricted: 'Нет сайтов, требующих захвата',
+	registryEmptySafe: 'Нет безопасных сайтов',
+	corsAddedSafe: (domain: string) => `✓ ${domain} добавлен в белый список`,
+	corsCorrectedSafe: (domain: string) => `✓ ${domain} исправлен как безопасный`,
 };

@@ -40,8 +40,8 @@ export function renderRemoteModal(qrDataUrl: string, sessionId: string, isConnec
 
 	const statusClass = isConnected ? 'connected' : '';
 	const statusText = isConnected
-		? t('remoteConnected', '✅ 已连接')
-		: t('remoteWaiting', '等待连接...');
+		? t('remoteConnected', '✅ Connected')
+		: t('remoteWaiting', 'Waiting for connection...');
 
 	const modal = document.createElement('div');
 	modal.id = 'remote-modal';
@@ -53,24 +53,24 @@ export function renderRemoteModal(qrDataUrl: string, sessionId: string, isConnec
 	modal.innerHTML = `
 		<div class="remote-modal-content">
 			<div class="remote-modal-header">
-				<span>${t('remoteModalTitle', '📱 手机遥控')}</span>
+				<span>${t('remoteModalTitle', '📱 Remote Control')}</span>
 				<button class="remote-modal-close">✕</button>
 			</div>
 			<div class="remote-modal-body">
 				<img src="${qrDataUrl}" alt="QR Code" class="remote-qr" />
 				<div class="remote-session-id">
-					<span>${t('remoteSessionCode', '会话码')}</span>
+					<span>${t('remoteSessionCode', 'Session Code')}</span>
 					<code>${sessionId}</code>
 				</div>
 				<div class="remote-url">
-					<a href="${remoteUrl}" target="_blank" rel="noopener" title="${t('remoteOpenLinkTitle', '点击在新标签页打开遥控器')}">${remoteUrl}</a>
+					<a href="${remoteUrl}" target="_blank" rel="noopener" title="${t('remoteOpenLinkTitle', 'Click to open remote in new tab')}">${remoteUrl}</a>
 				</div>
 				<div class="remote-status">
 					<span class="remote-status-dot ${statusClass}"></span>
 					<span class="remote-status-text">${statusText}</span>
 				</div>
-				<p class="remote-hint">${t('remoteHint', '📱 用手机扫描二维码或复制链接打开<br>⚡ 关闭弹窗不会断开连接')}</p>
-				<button class="remote-disconnect-btn">${t('remoteDisconnect', '🔌 断开并关闭')}</button>
+				<p class="remote-hint">${t('remoteHint', '📱 Scan QR code or copy link to connect<br>⚡ Closing this dialog won\'t disconnect')}</p>
+				<button class="remote-disconnect-btn">${t('remoteDisconnect', '🔌 Disconnect & Close')}</button>
 			</div>
 		</div>
 	`;
@@ -86,7 +86,7 @@ export function renderRemoteModal(qrDataUrl: string, sessionId: string, isConnec
 	codeElem?.addEventListener('click', () => {
 		navigator.clipboard.writeText(sessionId);
 		const oldText = codeElem.textContent;
-		codeElem.textContent = t('remoteCopied', '已复制!');
+		codeElem.textContent = t('remoteCopied', 'Copied!');
 		setTimeout(() => { if (codeElem) codeElem.textContent = oldText; }, 1000);
 	});
 
@@ -108,10 +108,10 @@ export function renderRemoteModal(qrDataUrl: string, sessionId: string, isConnec
 		if (dot && text && res) {
 			if (res.connected) {
 				dot.classList.add('connected');
-				text.textContent = t('remoteConnected', '✅ 已连接');
+				text.textContent = t('remoteConnected', '✅ Connected');
 			} else {
 				dot.classList.remove('connected');
-				text.textContent = t('remoteWaiting', '等待连接...');
+				text.textContent = t('remoteWaiting', 'Waiting for connection...');
 			}
 		}
 	}, 1000);
