@@ -97,11 +97,17 @@ function updateSidePanelI18n(dict: I18NDict): void {
 	const panel = document.getElementById('side-panel');
 	if (!panel) return;
 
-	// Footer 按钮 (纯图标，只设置 title)
+	// Footer 按钮
 	const btnReset = panel.querySelector('.sp-btn-reset') as HTMLElement | null;
 	const btnSave = panel.querySelector('.sp-btn-save') as HTMLElement | null;
-	if (btnReset) btnReset.title = dict.spResetFxTip;
-	if (btnSave) btnSave.title = dict.spSaveFxTip;
+	if (btnReset) {
+		btnReset.textContent = dict.spResetFx;
+		btnReset.title = dict.spResetFxTip;
+	}
+	if (btnSave) {
+		btnSave.textContent = dict.spSaveFx;
+		btnSave.title = dict.spSaveFxTip;
+	}
 
 	// Pin 和 Close 按钮
 	const btnPin = panel.querySelector('.btn-pin') as HTMLElement | null;

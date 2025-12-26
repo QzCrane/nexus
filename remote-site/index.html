@@ -259,6 +259,15 @@
         <button class="btn" id="btn-seek-forward-30">⏭<span class="btn-label">+30s</span></button>
       </div>
     </div>
+
+    <!-- 视频控制 (需要鼠标在视频上) -->
+    <div class="control-section">
+      <div class="section-title">视频控制 <span style="font-size:10px;opacity:0.6">(需鼠标悬停视频)</span></div>
+      <div class="btn-grid cols-2">
+        <button class="btn" id="btn-fullscreen">⛶<span class="btn-label">全屏</span></button>
+        <button class="btn" id="btn-pip">📺<span class="btn-label">画中画</span></button>
+      </div>
+    </div>
   </div>
 
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -348,6 +357,8 @@
     $('btn-speed-down').onclick = () => sendCmd('speed_down');
     $('btn-speed-up').onclick = () => sendCmd('speed_up');
     $('btn-speed-reset').onclick = () => sendCmd('speed_reset');
+    $('btn-fullscreen').onclick = () => sendCmd('fullscreen');
+    $('btn-pip').onclick = () => sendCmd('pip');
   </script>
 </body>
 </html>
