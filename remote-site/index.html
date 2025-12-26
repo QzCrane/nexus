@@ -84,8 +84,8 @@
     }
     .status-dot.connected { background: var(--success); }
 
-    /* 全屏视图容器 */
-    .view-stage {
+    /* 全屏浮层容器 - 覆盖在主面板之上 */
+    .view-overlay {
       position: fixed;
       top: 0;
       left: 0;
@@ -96,44 +96,52 @@
       align-items: center;
       justify-content: center;
       padding: 20px;
-      background: var(--bg);
-      z-index: 10;
+      background: rgba(15, 23, 42, 0.85); /* 半透明深色背景 */
+      backdrop-filter: blur(12px);         /* 毛玻璃效果 */
+      -webkit-backdrop-filter: blur(12px);
+      z-index: 1000;                       /* 确保在最顶层 */
+      animation: fadeIn 0.3s;
     }
-    .view-stage.active { display: flex; }
+    .view-overlay.active { display: flex; }
     
-    /* 连接表单卡片 */
-    .connect-card {
+    /* 统一的中央卡片结构 */
+    .portal-card {
       width: 100%;
       max-width: 320px;
+      background: var(--card);
+      padding: 30px 24px;
+      border-radius: 28px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.4);
       display: flex;
       flex-direction: column;
-      gap: 16px;
-      background: var(--card);
-      padding: 24px;
-      border-radius: 20px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      gap: 20px;
+      position: relative;
     }
-    .connect-card h2 { font-size: 18px; text-align: center; margin-bottom: 4px; }
-    .connect-card p { font-size: 12px; color: var(--text-dim); text-align: center; margin-bottom: 8px; }
     
-    .connect-card input {
+    .portal-card h2 { font-size: 20px; text-align: center; margin: 0; }
+    .portal-card p { font-size: 13px; color: var(--text-dim); text-align: center; margin: 0; line-height: 1.5; }
+    
+    .portal-card input {
       width: 100%;
-      padding: 16px;
-      border: 2px solid rgba(255, 255, 255, 0.15);
-      border-radius: 12px;
-      background: rgba(0,0,0,0.2);
-      color: var(--text);
-      font-size: 20px;
+      padding: 18px;
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      background: rgba(0,0,0,0.3);
+      color: var(--accent);
+      font-size: 24px;
+      font-weight: 800;
       text-align: center;
-      letter-spacing: 4px;
+      letter-spacing: 6px;
       text-transform: uppercase;
+      transition: 0.2s;
     }
-    .connect-card input:focus { outline: none; border-color: var(--accent); }
+    .portal-card input:focus { outline: none; border-color: var(--accent); background: rgba(0,0,0,0.5); }
     
     .btn-action {
       padding: 16px;
       border: none;
-      border-radius: 12px;
+      border-radius: 14px;
       font-size: 16px;
       font-weight: 700;
       cursor: pointer;
@@ -142,43 +150,43 @@
     .btn-primary {
       background: linear-gradient(135deg, var(--accent), var(--accent2));
       color: #fff;
+      box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
     }
     .btn-secondary {
       background: transparent;
       color: var(--text-dim);
-      border: 1px solid var(--text-dim);
-      margin-top: 8px;
+      border: 1px solid rgba(255,255,255,0.1);
     }
     
-    /* 连接中反馈 */
-    .loading-content {
+    /* 加载状态特有样式 */
+    .portal-loading {
       text-align: center;
-      animation: fadeIn 0.5s;
+      padding: 20px 0;
     }
-    .loading-icon {
-      font-size: 48px;
-      margin-bottom: 20px;
+    .loading-pulse {
+      font-size: 50px;
+      margin-bottom: 24px;
       display: inline-block;
-      animation: pulse 1.5s infinite;
+      animation: pulseScale 1.8s infinite ease-in-out;
     }
-    .loading-text { font-size: 18px; font-weight: 600; color: var(--accent); }
-    .loading-sub { font-size: 13px; color: var(--text-dim); margin-top: 8px; }
+    .loading-title { font-size: 18px; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
+    .loading-target { font-family: monospace; font-size: 14px; color: var(--text-dim); letter-spacing: 1px; }
 
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-    @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.7; } }
+    @keyframes pulseScale { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.15); opacity: 0.6; } }
     
-    .error-msg { color: var(--danger); font-size: 13px; text-align: center; min-height: 18px; margin-top: 8px; }
+    .error-msg { color: var(--danger); font-size: 12px; text-align: center; min-height: 18px; }
 
-    /* 遥控器界面 */
+    /* 遥控器界面 - 作为底座常驻 */
     .remote-view {
-      display: none;
+      display: flex; /* 始终开启 */
       width: 100%;
       max-width: 320px;
       flex-direction: column;
       gap: 16px;
-      padding-top: 60px; /* 为 header 留出空间 */
+      padding-top: 60px;
+      box-sizing: border-box;
     }
-    .remote-view.active { display: flex; }
 
     /* 音量显示 */
     .volume-display {
@@ -388,24 +396,30 @@
     </div>
   </div>
 
-  <!-- 视图 1: 输入连接码 -->
-  <div class="view-stage" id="view-connect">
-    <div class="connect-card">
-      <h2>🔗 连接 SPECTRA</h2>
-      <p>输入插件端显示的 6 位会话码</p>
-      <input type="text" id="session-input" placeholder="会话码" maxlength="6" autocomplete="off" inputmode="text" autocapitalize="characters">
-      <button class="btn-action btn-primary" id="btn-connect">立即连接</button>
-      <button class="btn-action btn-secondary" id="btn-cancel">取消</button>
+  <!-- 视图 1: 连接引导/添加 -->
+  <div class="view-overlay" id="view-connect">
+    <div class="portal-card">
+      <div>
+        <h2>🔗 连接会话</h2>
+        <p>输入插件端显示的 6 位校验码</p>
+      </div>
+      <input type="text" id="session-input" placeholder="000000" maxlength="6" autocomplete="off" inputmode="text" autocapitalize="characters">
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <button class="btn-action btn-primary" id="btn-connect">开启连接</button>
+        <button class="btn-action btn-secondary" id="btn-cancel">返回面板</button>
+      </div>
       <p class="error-msg" id="error-msg"></p>
     </div>
   </div>
 
-  <!-- 视图 2: 正在连接提示 -->
-  <div class="view-stage" id="view-loading">
-    <div class="loading-content">
-      <div class="loading-icon">📡</div>
-      <div class="loading-text">正在建立连接...</div>
-      <div class="loading-sub" id="loading-target">目标会话: -</div>
+  <!-- 视图 2: 正在连接反馈 -->
+  <div class="view-overlay" id="view-loading">
+    <div class="portal-card">
+      <div class="portal-loading">
+        <div class="loading-pulse">📡</div>
+        <div class="loading-title">正在建立链接...</div>
+        <div class="loading-target" id="loading-target">TARGET: -</div>
+      </div>
     </div>
   </div>
 
@@ -520,34 +534,39 @@
       if (!sid || sid.length < 4) return showError('请输入会话码');
       if (sessions.has(sid) && sessions.get(sid).connected) return showError('此会话已连接');
       
-      showLoadingView(sid);
+      showLoadingOverlay(sid);
       createSession(sid);
     };
     $('btn-cancel').onclick = () => {
-      if (sessions.size > 0) showRemoteView();
+      hideOverlays();
     };
     sessionInput.onkeydown = e => {
       if (e.key === 'Enter') $('btn-connect').click();
     };
 
     // 添加新会话按钮
-    // 显示连接输入页
-    function showConnectView() {
-      switchView(viewConnect);
+    // 显示全屏连接浮层
+    function showConnectOverlay() {
+      switchOverlay(viewConnect);
       showError('');
-      // 如果已经有连接，显示取消按钮，否则隐藏
-      $('btn-cancel').style.display = sessions.size > 0 ? 'block' : 'none';
+      // 如果没有活跃会话，隐藏取消按钮（强制必须连接一次）
+      $('btn-cancel').style.visibility = sessions.size > 0 ? 'visible' : 'hidden';
       sessionInput.focus();
     }
 
-    // 显示连接中页面
-    function showLoadingView(sid) {
-      loadingTarget.textContent = `目标会话: ${sid}`;
-      switchView(viewLoading);
+    // 显示全屏连接中浮层
+    function showLoadingOverlay(sid) {
+      loadingTarget.textContent = `TARGET: ${sid}`;
+      switchOverlay(viewLoading);
     }
 
-    function switchView(target) {
-      [viewConnect, viewLoading, remoteView].forEach(v => v.classList.remove('active'));
+    // 隐藏所有浮层
+    function hideOverlays() {
+      [viewConnect, viewLoading].forEach(v => v.classList.remove('active'));
+    }
+
+    function switchOverlay(target) {
+      hideOverlays();
       target.classList.add('active');
     }
 
@@ -570,7 +589,7 @@
           session.connected = true;
           switchSession(sid);
           renderSessionTabs();
-          showRemoteView();
+          hideOverlays();
         });
         session.conn.on('data', data => {
           if (data.type === 'state') {
@@ -589,7 +608,7 @@
       setTimeout(() => {
         if (sessions.has(sid) && !sessions.get(sid).connected) {
           showError(`${sid}: 连接超时`);
-          showConnectView();
+          showConnectOverlay();
           removeSession(sid);
         }
       }, 10000);
@@ -619,9 +638,9 @@
       // 如果删除的是当前激活的，切换到其他
       if (activeSessionId === sid) {
         activeSessionId = null;
-        const next = sessions.keys().next().value;
+        const next = Array.from(sessions.keys())[0];
         if (next) switchSession(next);
-        else hideRemoteView();
+        else showConnectOverlay();
       }
     }
 
@@ -667,7 +686,7 @@
       addBtn.id = 'btn-add-session';
       addBtn.innerHTML = '➕ 新连接';
       addBtn.onclick = () => {
-        showConnectView();
+        showConnectOverlay();
       };
       sessionsBar.appendChild(addBtn);
 
@@ -687,18 +706,18 @@
       });
     }
 
-    // 显示遥控器视图
+    // 显示主面板视图
     function showRemoteView() {
-      switchView(remoteView);
+      hideOverlays();
       document.body.classList.add('connected');
     }
 
-    // 隐藏遥控器视图 (仅在完全没有会话时使用)
+    // 隐藏主面板视图 (仅在完全没有会话时显示引导)
     function hideRemoteView() {
       document.body.classList.remove('connected');
       statusDot.classList.remove('connected');
       statusText.textContent = '未连接';
-      showConnectView();
+      showConnectOverlay();
     }
 
     // 初始化
