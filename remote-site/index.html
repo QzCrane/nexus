@@ -459,7 +459,7 @@
 
     <!-- Current Session Info -->
     <div class="tab-info" id="tab-info">
-      <img id="tab-icon" class="tab-icon" src="" alt="Icon" onerror="this.style.display='none'">
+      <img id="tab-icon" class="tab-icon" src="" alt="Icon">
       <div class="tab-text">
         <div class="tab-title" id="tab-title">Waiting for sync...</div>
         <div class="tab-domain" id="tab-domain">-</div>
@@ -730,14 +730,28 @@
       if (s.speed !== undefined) $('speed-display').textContent = s.speed.toFixed(2) + 'x';
       if (s.tabTitle !== undefined) $('tab-title').textContent = s.tabTitle || 'Waiting...';
       if (s.tabDomain !== undefined) $('tab-domain').textContent = s.tabDomain || '-';
-      if (s.tabFavIcon !== undefined) {
-          const icon = $('tab-icon');
-          if (s.tabFavIcon) {
-            icon.src = s.tabFavIcon;
-            icon.style.display = 'block';
-          } else {
-            icon.style.display = 'none';
-          }
+      
+      const icon = $('tab-icon');
+      const domain = s.tabDomain || $('tab-domain').textContent;
+      
+      // Icon cleanup & fallback logic
+      icon.onerror = () => {
+        if (domain && domain !== '-' && !icon.src.includes('google.com')) {
+           icon.src = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+        } else {
+           icon.style.display = 'none';
+        }
+      };
+
+      if (s.tabFavIcon) {
+        icon.src = s.tabFavIcon;
+        icon.style.display = 'block';
+      } else if (s.tabDomain && s.tabDomain !== '-') {
+         // Fallback immediately if no direct icon but we have domain
+         icon.src = `https://www.google.com/s2/favicons?domain=${s.tabDomain}&sz=64`;
+         icon.style.display = 'block';
+      } else if (!icon.src && !s.tabFavIcon) {
+        icon.style.display = 'none';
       }
     }
 
