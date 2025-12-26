@@ -187,6 +187,7 @@
     }
     .btn-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
     .btn-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+    .btn-grid.cols-5 { grid-template-columns: repeat(5, 1fr); }
     .btn-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
 
     /* 按钮样式 */
@@ -317,22 +318,13 @@
       </div>
     </div>
 
-    <!-- 播放控制 -->
+    <!-- 播放 + 进度控制 (合并) -->
     <div class="control-section">
-      <div class="btn-grid cols-3">
+      <div class="btn-grid cols-5">
+        <button class="btn" id="btn-seek-back-30">⏮<span class="btn-label">-30s</span></button>
         <button class="btn" id="btn-seek-back">⏪<span class="btn-label">-10s</span></button>
         <button class="btn btn-play" id="btn-play-pause">⏸</button>
         <button class="btn" id="btn-seek-forward">⏩<span class="btn-label">+10s</span></button>
-      </div>
-    </div>
-
-    <!-- 进度跳转 (10s/30s 统一) -->
-    <div class="control-section">
-      <div class="section-title">进度跳转</div>
-      <div class="btn-grid cols-4">
-        <button class="btn" id="btn-seek-back-30">⏮<span class="btn-label">-30s</span></button>
-        <button class="btn" id="btn-seek-back-2">⏪<span class="btn-label">-10s</span></button>
-        <button class="btn" id="btn-seek-forward-2">⏩<span class="btn-label">+10s</span></button>
         <button class="btn" id="btn-seek-forward-30">⏭<span class="btn-label">+30s</span></button>
       </div>
     </div>
@@ -473,9 +465,6 @@
     $('btn-play-pause').onclick = () => sendCmd('play_pause');
     $('btn-seek-back').onclick = () => sendCmd('seek_backward');
     $('btn-seek-forward').onclick = () => sendCmd('seek_forward');
-    // 进度跳转区新按钮
-    $('btn-seek-back-2').onclick = () => sendCmd('seek_backward');
-    $('btn-seek-forward-2').onclick = () => sendCmd('seek_forward');
     $('btn-seek-back-30').onclick = () => sendCmd('seek_backward_30');
     $('btn-seek-forward-30').onclick = () => sendCmd('seek_forward_30');
     $('btn-speed-down').onclick = () => sendCmd('speed_down');

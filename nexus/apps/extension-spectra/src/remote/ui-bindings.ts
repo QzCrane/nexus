@@ -41,6 +41,16 @@ async function toggleRemoteModal(): Promise<void> {
 	}
 
 	try {
+		// 先检查是否已有会话
+		const existingSession = await chrome.runtime.sendMessage({ action: Actions.REMOTE_GET_SESSION });
+
+		if (existingSession?.session) {
+			// 已有会话，复用显示
+			const qrDataUrl = await generateRemoteQR(existingSession.session.sessionId, REMOTE_HOST);
+			showModal(qrDataUrl, existingSession.session.sessionId, existingSession.connected);
+			return;
+		}
+
 		// 获取当前标签页 ID
 		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 		const tabId = tab?.id;
@@ -67,7 +77,7 @@ async function toggleRemoteModal(): Promise<void> {
 		const qrDataUrl = await generateRemoteQR(session.sessionId, REMOTE_HOST);
 
 		// 显示弹窗
-		showModal(qrDataUrl, session.sessionId);
+		showModal(qrDataUrl, session.sessionId, false);
 	} catch (err) {
 		console.error('[SPECTRA Remote] 初始化失败:', err);
 	} finally {
@@ -81,10 +91,14 @@ async function toggleRemoteModal(): Promise<void> {
 
 /**
  * 显示遥控弹窗
+ * @param isConnected 初始连接状态
  */
-function showModal(qrDataUrl: string, sessionId: string): void {
+function showModal(qrDataUrl: string, sessionId: string, isConnected = false): void {
 	const existing = document.getElementById('remote-modal');
 	if (existing) existing.remove();
+
+	const statusClass = isConnected ? 'connected' : '';
+	const statusText = isConnected ? '✅ 已连接' : '等待连接...';
 
 	const modal = document.createElement('div');
 	modal.id = 'remote-modal';
@@ -102,10 +116,11 @@ function showModal(qrDataUrl: string, sessionId: string): void {
 					<code>${sessionId}</code>
 				</div>
 				<div class="remote-status">
-					<span class="remote-status-dot"></span>
-					<span class="remote-status-text">等待连接...</span>
+					<span class="remote-status-dot ${statusClass}"></span>
+					<span class="remote-status-text">${statusText}</span>
 				</div>
 				<p class="remote-hint">📱 用手机扫描二维码，打开遥控页面连接<br>⚡ 关闭弹窗不会断开连接</p>
+				<button class="remote-disconnect-btn">🔌 断开并关闭</button>
 			</div>
 		</div>
 	`;
@@ -118,6 +133,9 @@ function showModal(qrDataUrl: string, sessionId: string): void {
 	modal.addEventListener('click', (e) => {
 		if (e.target === modal) closeModal(false);
 	});
+
+	// 绑定断开按钮 (断开并关闭)
+	modal.querySelector('.remote-disconnect-btn')?.addEventListener('click', () => closeModal(true));
 
 	// 动态调整 popup 高度
 	adjustPopupHeight(true);

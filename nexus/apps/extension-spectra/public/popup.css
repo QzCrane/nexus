@@ -1775,8 +1775,12 @@ input:checked + .slider-round:before {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .remote-modal-content {
@@ -1791,8 +1795,14 @@ input:checked + .slider-round:before {
 }
 
 @keyframes slideUp {
-  from { transform: translateY(20px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 .remote-modal-header {
@@ -1842,7 +1852,7 @@ input:checked + .slider-round:before {
 }
 
 .remote-session-id code {
-  font-family: 'Consolas', monospace;
+  font-family: "Consolas", monospace;
   font-size: 22px;
   font-weight: 700;
   color: var(--primary);
@@ -1885,8 +1895,34 @@ input:checked + .slider-round:before {
 }
 
 @keyframes remotePulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* 断开连接按钮 */
+.remote-disconnect-btn {
+  display: block;
+  width: 100%;
+  margin-top: 16px;
+  padding: 10px;
+  border: 1px solid var(--danger);
+  background: transparent;
+  color: var(--danger);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.15s;
+}
+
+.remote-disconnect-btn:hover {
+  background: var(--danger);
+  color: #fff;
 }
 
 /* 按钮加载状态 */
@@ -1897,7 +1933,10 @@ input:checked + .slider-round:before {
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
-

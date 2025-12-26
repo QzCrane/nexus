@@ -37,18 +37,18 @@ export async function executeCommand(cmd: RemoteCommand, tabId: number): Promise
 	let response: unknown;
 
 	switch (cmd) {
-		// ===== 音量控制 =====
+		// ===== 音量控制 (均破除静音) =====
 		case 'volume_up':
-			response = await sendToTab(tabId, { action: Actions.AUDIO_SET_CONFIG, payload: { config: { volumeDelta: 10 } } });
+			response = await sendToTab(tabId, { action: Actions.AUDIO_SET_CONFIG, payload: { config: { volumeDelta: 10, muted: false } } });
 			break;
 		case 'volume_down':
-			response = await sendToTab(tabId, { action: Actions.AUDIO_SET_CONFIG, payload: { config: { volumeDelta: -10 } } });
+			response = await sendToTab(tabId, { action: Actions.AUDIO_SET_CONFIG, payload: { config: { volumeDelta: -10, muted: false } } });
 			break;
 		case 'volume_max':
-			response = await sendToTab(tabId, { action: Actions.AUDIO_SET_CONFIG, payload: { config: { volume: 800 } } });
+			response = await sendToTab(tabId, { action: Actions.AUDIO_SET_CONFIG, payload: { config: { volume: 800, muted: false } } });
 			break;
 		case 'volume_100':
-			response = await sendToTab(tabId, { action: Actions.AUDIO_SET_CONFIG, payload: { config: { volume: 100 } } });
+			response = await sendToTab(tabId, { action: Actions.AUDIO_SET_CONFIG, payload: { config: { volume: 100, muted: false } } });
 			break;
 		case 'mute':
 			response = await sendToTab(tabId, { action: Actions.AUDIO_SET_CONFIG, payload: { config: { toggleMute: true } } });
