@@ -5,7 +5,7 @@
 import QRCode from 'qrcode';
 
 /** 遥控页面默认 URL */
-const DEFAULT_REMOTE_URL = 'https://spectra-remote.pages.dev';
+const DEFAULT_REMOTE_URL = 'https://nexus-remote.pages.dev';
 
 /**
  * 生成遥控二维码

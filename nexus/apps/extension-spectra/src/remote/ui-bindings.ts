@@ -44,8 +44,7 @@ async function toggleRemoteModal(): Promise<void> {
 		await initPeer(session, handleRemoteCommand);
 
 		// 生成 QR 码 (使用托管URL，手机可访问)
-		// 暂时使用本地URL用于测试，部署后改为公网URL
-		const REMOTE_HOST = 'https://spectra-remote.pages.dev';
+		const REMOTE_HOST = 'https://nexus-remote.pages.dev';
 		const qrDataUrl = await generateRemoteQR(session.sessionId, REMOTE_HOST);
 
 		// 显示弹窗
@@ -122,7 +121,7 @@ function showModal(qrDataUrl: string, sessionId: string): void {
 					<span class="remote-status-dot"></span>
 					<span class="remote-status-text">${isConnected() ? '已连接' : '等待连接...'}</span>
 				</div>
-			<p class="remote-hint">📌 功能开发中：需部署遥控页面到公网后方可使用</p>
+			<p class="remote-hint">� 用手机扫描二维码，打开遥控页面连接</p>
 			</div>
 		</div>
 	`;
