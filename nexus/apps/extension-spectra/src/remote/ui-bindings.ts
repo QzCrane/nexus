@@ -29,22 +29,36 @@ async function toggleRemoteModal(): Promise<void> {
 		return;
 	}
 
-	// 创建会话
-	const session = createSession();
-
-	// 初始化 PeerJS
-	try {
-		await initPeer(session, handleRemoteCommand);
-	} catch (err) {
-		console.error('[SPECTRA Remote] PeerJS 初始化失败:', err);
+	// 显示加载状态
+	const btnRemote = document.getElementById('btn-remote');
+	if (btnRemote) {
+		btnRemote.classList.add('loading');
+		btnRemote.textContent = '⏳';
 	}
 
-	// 生成 QR 码 (指向本地 remote.html 或托管页面)
-	const remoteUrl = chrome.runtime.getURL('remote.html');
-	const qrDataUrl = await generateRemoteQR(session.sessionId, remoteUrl);
+	try {
+		// 创建会话
+		const session = createSession();
 
-	// 显示弹窗
-	showModal(qrDataUrl, session.sessionId);
+		// 初始化 PeerJS
+		await initPeer(session, handleRemoteCommand);
+
+		// 生成 QR 码 (使用托管URL，手机可访问)
+		// 暂时使用本地URL用于测试，部署后改为公网URL
+		const REMOTE_HOST = 'https://spectra-remote.pages.dev';
+		const qrDataUrl = await generateRemoteQR(session.sessionId, REMOTE_HOST);
+
+		// 显示弹窗
+		showModal(qrDataUrl, session.sessionId);
+	} catch (err) {
+		console.error('[SPECTRA Remote] 初始化失败:', err);
+	} finally {
+		// 恢复按钮状态
+		if (btnRemote) {
+			btnRemote.classList.remove('loading');
+			btnRemote.textContent = '📱';
+		}
+	}
 }
 
 /**
@@ -108,7 +122,7 @@ function showModal(qrDataUrl: string, sessionId: string): void {
 					<span class="remote-status-dot"></span>
 					<span class="remote-status-text">${isConnected() ? '已连接' : '等待连接...'}</span>
 				</div>
-				<p class="remote-hint">扫描二维码或访问 remote.html</p>
+			<p class="remote-hint">📌 功能开发中：需部署遥控页面到公网后方可使用</p>
 			</div>
 		</div>
 	`;
