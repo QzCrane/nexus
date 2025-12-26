@@ -268,9 +268,9 @@
 
     /* 主播放按钮 */
     .btn-play {
-      font-size: 32px;
+      font-size: 28px;
       background: linear-gradient(135deg, var(--accent), var(--accent2));
-      min-height: 70px;
+      /* min-height removed to match others (60px) */
     }
 
     /* 静音按钮 */
@@ -297,9 +297,9 @@
       width: 40px;
       height: 40px;
       border-radius: 8px;
-      object-fit: cover;
-      background: rgba(255,255,255,0.05);
-      font-size: 0; /* Hide alt text if broken */
+      object-fit: contain; /* Ensure icon fits */
+      background: transparent; /* Remove gray background */
+      font-size: 0;
     }
     .tab-text {
       flex: 1;
