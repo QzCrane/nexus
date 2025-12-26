@@ -119,6 +119,13 @@ function getStatus() {
 	};
 }
 
+/** 发送状态到手机 */
+function sendStateToMobile(state: unknown): void {
+	if (connection?.open) {
+		connection.send({ type: 'state', ...state as object });
+	}
+}
+
 // 监听来自 background 的消息
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	if (message.type === 'REMOTE_OFFSCREEN_CREATE') {
@@ -138,7 +145,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 		return true;
 	}
 
+	// 接收状态更新并发送给手机
+	if (message.type === 'REMOTE_OFFSCREEN_SEND_STATE') {
+		sendStateToMobile(message.state);
+		return false;
+	}
+
 	return false;
 });
 
 console.log(LOG, 'Offscreen ready');
+

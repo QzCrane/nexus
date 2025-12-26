@@ -1,11 +1,11 @@
 /**
  * SPECTRA Remote - Background 服务 (管理 Offscreen)
  * 
- * 职责：创建/管理 offscreen document，转发消息
+ * 职责：创建/管理 offscreen document，转发消息，状态同步
  */
 
 import { Actions } from '@nexus/contracts';
-import { executeCommand, type RemoteCommand } from './remote-commands';
+import { executeCommand, setStateCallback, type RemoteCommand, type RemoteState } from './remote-commands';
 
 const LOG = '[SPECTRA Remote BG]';
 let offscreenCreated = false;
@@ -14,7 +14,6 @@ let offscreenCreated = false;
 async function ensureOffscreen(): Promise<void> {
 	if (offscreenCreated) return;
 
-	// 检查是否已存在 (使用 try-catch 兼容旧版 Chrome)
 	try {
 		const contexts = await (chrome.runtime as any).getContexts({
 			contextTypes: ['OFFSCREEN_DOCUMENT'],
@@ -26,10 +25,9 @@ async function ensureOffscreen(): Promise<void> {
 			return;
 		}
 	} catch {
-		// getContexts 不可用，尝试直接创建
+		// getContexts 不可用
 	}
 
-	// 创建 offscreen document
 	await chrome.offscreen.createDocument({
 		url: 'offscreen-remote.html',
 		reasons: ['WEB_RTC'] as any,
@@ -37,24 +35,30 @@ async function ensureOffscreen(): Promise<void> {
 	});
 
 	offscreenCreated = true;
-	console.log(LOG, 'Offscreen document created');
+	console.log(LOG, 'Offscreen created');
 }
 
 /** 关闭 offscreen document */
 async function closeOffscreen(): Promise<void> {
 	if (!offscreenCreated) return;
-
 	try {
 		await chrome.offscreen.closeDocument();
 		offscreenCreated = false;
-		console.log(LOG, 'Offscreen document closed');
-	} catch (e) {
-		// 可能已经关闭
+	} catch { /* 可能已关闭 */ }
+}
+
+/** 发送状态到 offscreen (转发给手机) */
+function sendStateToOffscreen(state: RemoteState): void {
+	if (offscreenCreated) {
+		chrome.runtime.sendMessage({ type: 'REMOTE_OFFSCREEN_SEND_STATE', state });
 	}
 }
 
 /** 初始化消息监听 */
 export function initRemoteService(): void {
+	// 设置状态回调
+	setStateCallback(sendStateToOffscreen);
+
 	chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		// 创建会话
 		if (message.action === Actions.REMOTE_CREATE_SESSION) {
@@ -65,10 +69,7 @@ export function initRemoteService(): void {
 			}
 
 			ensureOffscreen()
-				.then(() => chrome.runtime.sendMessage({
-					type: 'REMOTE_OFFSCREEN_CREATE',
-					tabId,
-				}))
+				.then(() => chrome.runtime.sendMessage({ type: 'REMOTE_OFFSCREEN_CREATE', tabId }))
 				.then((res) => sendResponse(res))
 				.catch((e) => sendResponse({ success: false, error: e.message }));
 			return true;

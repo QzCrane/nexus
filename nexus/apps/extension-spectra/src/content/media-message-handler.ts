@@ -5,7 +5,7 @@
  */
 
 import { Actions } from '@nexus/contracts';
-import { togglePlay, togglePip, setSpeed, getMediaState, seekVideo } from './media-control';
+import { togglePlay, togglePip, setSpeed, adjustSpeed, getMediaState, seekVideo } from './media-control';
 import { rotateVideo, toggleMirror, takeScreenshot, toggleFullscreen, toggleCrop } from './video-transform';
 import { setVideoFilter, resetVideoFilter, toggleDimBackground } from './video-filter';
 import { setPointA, setPointB, clearABLoop, getABState } from './ab-loop';
@@ -38,8 +38,11 @@ export function handleMediaMessage(
 		}
 
 		case Actions.MEDIA_SET_SPEED: {
-			const sp = payload as { speed?: number; preservePitch?: boolean } | undefined;
-			const result = setSpeed(sp?.speed ?? 1, sp?.preservePitch);
+			const sp = payload as { speed?: number; delta?: number; preservePitch?: boolean } | undefined;
+			// 支持绝对速度或增量
+			const result = sp?.delta !== undefined
+				? adjustSpeed(sp.delta)
+				: setSpeed(sp?.speed ?? 1, sp?.preservePitch);
 			sendResponse(result);
 			return true;
 		}
