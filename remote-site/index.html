@@ -287,21 +287,39 @@
     .tab-info {
       background: var(--card);
       border-radius: 12px;
-      padding: 10px 14px;
-      text-align: center;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-align: left;
+    }
+    .tab-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      object-fit: cover;
+      background: rgba(255,255,255,0.05);
+      font-size: 0; /* Hide alt text if broken */
+    }
+    .tab-text {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
     }
     .tab-title {
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 600;
       color: var(--text);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      margin-bottom: 2px;
     }
     .tab-domain {
       font-size: 11px;
       color: var(--text-dim);
-      margin-top: 2px;
     }
 
     /* 主题切换按钮 */
@@ -441,8 +459,11 @@
 
     <!-- Current Session Info -->
     <div class="tab-info" id="tab-info">
-      <div class="tab-title" id="tab-title">Waiting for sync...</div>
-      <div class="tab-domain" id="tab-domain">-</div>
+      <img id="tab-icon" class="tab-icon" src="" alt="Icon" onerror="this.style.display='none'">
+      <div class="tab-text">
+        <div class="tab-title" id="tab-title">Waiting for sync...</div>
+        <div class="tab-domain" id="tab-domain">-</div>
+      </div>
     </div>
 
     <!-- Connected Badge Removed -->
@@ -709,6 +730,15 @@
       if (s.speed !== undefined) $('speed-display').textContent = s.speed.toFixed(2) + 'x';
       if (s.tabTitle !== undefined) $('tab-title').textContent = s.tabTitle || 'Waiting...';
       if (s.tabDomain !== undefined) $('tab-domain').textContent = s.tabDomain || '-';
+      if (s.tabFavIcon !== undefined) {
+          const icon = $('tab-icon');
+          if (s.tabFavIcon) {
+            icon.src = s.tabFavIcon;
+            icon.style.display = 'block';
+          } else {
+            icon.style.display = 'none';
+          }
+      }
     }
 
     function showError(msg) {

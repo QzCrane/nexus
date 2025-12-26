@@ -23,6 +23,7 @@ export interface RemoteState {
 	speed: number;
 	tabTitle?: string;  // 标签页标题
 	tabDomain?: string; // 标签页域名
+	tabFavIcon?: string; // 标签页图标 URL
 }
 
 let stateCallback: StateCallback | null = null;
@@ -110,10 +111,12 @@ export async function syncState(tabId: number): Promise<void> {
 		// 获取标签页信息
 		let tabTitle = '';
 		let tabDomain = '';
+		let tabFavIcon = '';
 		try {
 			const tab = await chrome.tabs.get(tabId);
 			tabTitle = tab.title || '';
 			tabDomain = tab.url ? new URL(tab.url).hostname : '';
+			tabFavIcon = tab.favIconUrl || '';
 		} catch { /* 静默 */ }
 
 		const state: RemoteState = {
@@ -123,6 +126,7 @@ export async function syncState(tabId: number): Promise<void> {
 			speed: mediaRes?.speed ?? 1,
 			tabTitle,
 			tabDomain,
+			tabFavIcon,
 		};
 
 		stateCallback(state);
