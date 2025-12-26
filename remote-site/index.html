@@ -83,15 +83,31 @@
     }
     .status-dot.connected { background: var(--success); }
 
-    /* 连接界面 */
-    .connect-view {
+    /* 连接弹窗 (Modal) */
+    .connect-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
       width: 100%;
-      max-width: 280px;
+      height: 100%;
+      background: var(--bg-solid);
+      z-index: 1000;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .connect-overlay.active { display: flex; }
+    
+    .connect-card {
+      width: 100%;
+      max-width: 300px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 16px;
     }
-    .connect-view input {
+    .connect-card input {
       width: 100%;
       padding: 14px;
       border: 2px solid rgba(255, 255, 255, 0.15);
@@ -102,43 +118,37 @@
       text-align: center;
       letter-spacing: 6px;
       text-transform: uppercase;
-      -webkit-appearance: none;
-      appearance: none;
-      -webkit-user-select: text;
-      user-select: text;
-      touch-action: manipulation;
     }
-    .connect-view input:focus {
-      outline: none;
-      border-color: var(--accent);
-    }
-    .connect-view button {
+    .connect-card input:focus { outline: none; border-color: var(--accent); }
+    
+    .connect-btns { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+    .btn-action {
       padding: 14px;
       border: none;
       border-radius: 12px;
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
-      color: var(--text);
       font-size: 15px;
       font-weight: 600;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: 0.2s;
     }
-    /* 连接按钮 loading 状态 */
-    .connect-view button.loading {
-      opacity: 0.7;
-      pointer-events: none;
-      animation: pulse 1s infinite;
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff;
     }
-    @keyframes pulse {
-      0%, 100% { opacity: 0.7; }
-      50% { opacity: 0.4; }
+    .btn-secondary {
+      background: var(--card);
+      color: var(--text-dim);
     }
-    .error-msg {
-      color: var(--danger);
+    .loading-spinner {
+      display: none;
+      margin-top: 10px;
       font-size: 13px;
-      text-align: center;
-      min-height: 18px;
+      color: var(--accent);
+      font-weight: 600;
+      animation: blink 1s infinite;
     }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .error-msg { color: var(--danger); font-size: 13px; text-align: center; min-height: 18px; margin-top: 4px; }
 
     /* 遥控器界面 */
     .remote-view {
@@ -323,17 +333,20 @@
       margin-left: 2px;
     }
     .btn-add-session {
-      width: 100%;
-      padding: 8px;
-      margin-bottom: 10px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 12px;
       border: 2px dashed var(--text-dim);
       border-radius: 8px;
       background: transparent;
       color: var(--text-dim);
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 600;
       cursor: pointer;
       transition: 0.2s;
+      white-space: nowrap;
     }
     .btn-add-session:hover {
       border-color: var(--accent);
@@ -355,11 +368,21 @@
     </div>
   </div>
 
-  <!-- 连接界面 -->
-  <div class="connect-view" id="connect-view">
-    <input type="text" id="session-input" placeholder="会话码" maxlength="6" autocomplete="off" inputmode="text" autocapitalize="characters">
-    <button id="btn-connect">连接</button>
-    <p class="error-msg" id="error-msg"></p>
+  <!-- 连接弹窗 -->
+  <div class="connect-overlay" id="connect-overlay">
+    <div class="connect-card">
+      <div style="text-align: center; margin-bottom: 10px;">
+        <h2 style="font-size: 18px; color: var(--text);">🔗 添加新连接</h2>
+        <p style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">输入 SPECTRA 端显示的会话码</p>
+      </div>
+      <input type="text" id="session-input" placeholder="会话码" maxlength="6" autocomplete="off" inputmode="text" autocapitalize="characters">
+      <div class="connect-btns">
+        <button class="btn-action btn-primary" id="btn-connect">立即连接</button>
+        <button class="btn-action btn-secondary" id="btn-cancel">取消</button>
+      </div>
+      <div class="loading-spinner" id="loading-spinner">📡 正在尝试建立连接...</div>
+      <p class="error-msg" id="error-msg"></p>
+    </div>
   </div>
 
   <!-- 遥控器界面 -->
@@ -368,7 +391,6 @@
     <div class="sessions-bar" id="sessions-bar">
       <!-- 动态生成的会话标签 -->
     </div>
-    <button class="btn-add-session" id="btn-add-session">➕ 添加连接</button>
 
     <!-- 当前会话信息 -->
     <div class="tab-info" id="tab-info">
@@ -376,8 +398,7 @@
       <div class="tab-domain" id="tab-domain">-</div>
     </div>
 
-    <!-- 当前连接码 -->
-    <div class="session-badge" id="session-badge"></div>
+    <!-- 当前连接码已移除 -->
 
     <!-- 音量 -->
     <div class="volume-display">
@@ -423,12 +444,13 @@
   <script>
     const $ = id => document.getElementById(id);
     const sessionInput = $('session-input');
-    const connectView = $('connect-view');
+    const connectOverlay = $('connect-overlay');
     const remoteView = $('remote-view');
     const statusDot = $('status-dot');
     const statusText = $('status-text');
     const errorMsg = $('error-msg');
     const sessionsBar = $('sessions-bar');
+    const loadingSpinner = $('loading-spinner');
 
     // ========== 多会话管理器 ==========
     const sessions = new Map(); // sid -> { peer, conn, state, connected }
@@ -456,7 +478,9 @@
     function init() {
       const saved = loadSavedSessions();
       if (urlSession) {
-        createSession(urlSession.toUpperCase());
+        const sid = urlSession.toUpperCase();
+        sessionInput.value = sid; // 同步填入输入框
+        createSession(sid);
       } else if (saved.length > 0) {
         saved.forEach(sid => createSession(sid));
       }
@@ -465,18 +489,29 @@
     $('btn-connect').onclick = () => {
       const sid = sessionInput.value.trim().toUpperCase();
       if (!sid || sid.length < 4) return showError('请输入会话码');
-      if (sessions.has(sid)) return showError('此会话已存在');
+      if (sessions.has(sid) && sessions.get(sid).connected) return showError('此会话已连接');
+      
+      showLoading(true);
       createSession(sid);
-      sessionInput.value = '';
+    };
+    $('btn-cancel').onclick = () => {
+      hideConnectOverlay();
     };
     sessionInput.onkeydown = e => e.key === 'Enter' && $('btn-connect').click();
 
     // 添加新会话按钮
-    $('btn-add-session').onclick = () => {
-      remoteView.classList.remove('active');
-      connectView.classList.remove('hidden');
-      document.body.classList.remove('connected');
-    };
+    // 显示连接弹窗
+    function showConnectOverlay() {
+      connectOverlay.classList.add('active');
+      showError('');
+      showLoading(false);
+      sessionInput.focus();
+    }
+
+    // 隐藏连接弹窗
+    function hideConnectOverlay() {
+      connectOverlay.classList.remove('active');
+    }
 
     // 创建新会话连接
     function createSession(sid) {
@@ -495,6 +530,8 @@
         session.conn = session.peer.connect(`spectra-${sid}`);
         session.conn.on('open', () => {
           session.connected = true;
+          showLoading(false);
+          hideConnectOverlay();
           switchSession(sid);
           renderSessionTabs();
           showRemoteView();
@@ -516,9 +553,16 @@
       setTimeout(() => {
         if (sessions.has(sid) && !sessions.get(sid).connected) {
           showError(`${sid}: 连接超时`);
+          showLoading(false);
           removeSession(sid);
         }
       }, 10000);
+    }
+
+    function showLoading(show) {
+      loadingSpinner.style.display = show ? 'block' : 'none';
+      $('btn-connect').disabled = show;
+      $('btn-connect').style.opacity = show ? '0.6' : '1';
     }
 
     // 处理会话断开
@@ -574,7 +618,7 @@
       if (s.muted !== undefined) $('btn-mute').classList.toggle('muted', s.muted);
       if (s.playing !== undefined) $('btn-play-pause').textContent = s.playing ? '⏸' : '▶️';
       if (s.speed !== undefined) $('speed-display').textContent = s.speed.toFixed(2) + 'x';
-      if (s.tabTitle !== undefined) $('tab-title').textContent = s.tabTitle || '未知';
+      if (s.tabTitle !== undefined) $('tab-title').textContent = s.tabTitle || '待命中...';
       if (s.tabDomain !== undefined) $('tab-domain').textContent = s.tabDomain || '-';
     }
 
@@ -585,6 +629,17 @@
     // 渲染会话标签栏
     function renderSessionTabs() {
       sessionsBar.innerHTML = '';
+      
+      // 添加连接按钮并入横向列表
+      const addBtn = document.createElement('button');
+      addBtn.className = 'btn-add-session';
+      addBtn.id = 'btn-add-session';
+      addBtn.innerHTML = '➕ 新连接';
+      addBtn.onclick = () => {
+        showConnectOverlay();
+      };
+      sessionsBar.appendChild(addBtn);
+
       sessions.forEach((s, sid) => {
         const tab = document.createElement('div');
         tab.className = 'session-tab' + (sid === activeSessionId ? ' active' : '') + (!s.connected ? ' disconnected' : '');
@@ -594,6 +649,7 @@
             removeSession(sid);
           } else {
             switchSession(sid);
+            sessionInput.value = sid; // 切换会话时同步更新输入框码
           }
         };
         sessionsBar.appendChild(tab);
@@ -602,18 +658,17 @@
 
     // 显示遥控器视图
     function showRemoteView() {
-      connectView.classList.add('hidden');
       remoteView.classList.add('active');
       document.body.classList.add('connected');
     }
 
-    // 隐藏遥控器视图
+    // 隐藏遥控器视图 (仅在完全没有会话时使用)
     function hideRemoteView() {
       remoteView.classList.remove('active');
-      connectView.classList.remove('hidden');
       document.body.classList.remove('connected');
       statusDot.classList.remove('connected');
       statusText.textContent = '未连接';
+      showConnectOverlay(); // 自动弹出连接层
     }
 
     // 初始化
