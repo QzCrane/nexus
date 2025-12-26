@@ -286,6 +286,60 @@
       margin-bottom: 12px;
     }
 
+    /* 会话列表栏 */
+    .sessions-bar {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding: 4px 0;
+      margin-bottom: 8px;
+    }
+    .session-tab {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 10px;
+      background: var(--card);
+      border: 2px solid transparent;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .session-tab.active {
+      border-color: var(--accent);
+      color: var(--text);
+      background: var(--card-hover);
+    }
+    .session-tab.disconnected {
+      opacity: 0.5;
+    }
+    .session-tab .close-btn {
+      font-size: 10px;
+      opacity: 0.6;
+      margin-left: 2px;
+    }
+    .btn-add-session {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 10px;
+      border: 2px dashed var(--text-dim);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-dim);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .btn-add-session:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
     .hidden { display: none !important; }
   </style>
 </head>
@@ -310,7 +364,13 @@
 
   <!-- 遥控器界面 -->
   <div class="remote-view" id="remote-view">
-    <!-- 标签页信息 -->
+    <!-- 会话列表 -->
+    <div class="sessions-bar" id="sessions-bar">
+      <!-- 动态生成的会话标签 -->
+    </div>
+    <button class="btn-add-session" id="btn-add-session">➕ 添加连接</button>
+
+    <!-- 当前会话信息 -->
     <div class="tab-info" id="tab-info">
       <div class="tab-title" id="tab-title">等待同步...</div>
       <div class="tab-domain" id="tab-domain">-</div>
@@ -368,75 +428,145 @@
     const statusDot = $('status-dot');
     const statusText = $('status-text');
     const errorMsg = $('error-msg');
+    const sessionsBar = $('sessions-bar');
 
-    let peer = null, conn = null;
+    // ========== 多会话管理器 ==========
+    const sessions = new Map(); // sid -> { peer, conn, state, connected }
+    let activeSessionId = null; // 当前激活的会话ID
+    const STORAGE_KEY = 'spectra_sessions';
+
+    // 从 localStorage 恢复会话列表
+    function loadSavedSessions() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+        return saved.filter(s => s && s.length >= 4);
+      } catch { return []; }
+    }
+
+    // 保存会话列表到 localStorage
+    function saveSessions() {
+      const sids = Array.from(sessions.keys());
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(sids));
+    }
 
     // 从URL获取会话码
     const urlSession = new URLSearchParams(location.search).get('s');
-    if (urlSession) {
-      sessionInput.value = urlSession;
-      connect();
+
+    // 初始化：恢复保存的会话 或 从 URL 连接
+    function init() {
+      const saved = loadSavedSessions();
+      if (urlSession) {
+        createSession(urlSession.toUpperCase());
+      } else if (saved.length > 0) {
+        saved.forEach(sid => createSession(sid));
+      }
     }
 
-    $('btn-connect').onclick = connect;
-    sessionInput.onkeydown = e => e.key === 'Enter' && connect();
-
-    function connect() {
+    $('btn-connect').onclick = () => {
       const sid = sessionInput.value.trim().toUpperCase();
       if (!sid || sid.length < 4) return showError('请输入会话码');
-      
-      const btnConnect = $('btn-connect');
-      showError('');
-      statusText.textContent = '连接中...';
-      // 按钮进入 loading 状态
-      btnConnect.classList.add('loading');
-      btnConnect.textContent = '连接中...';
-      
-      peer = new Peer();
-      peer.on('open', () => {
-        conn = peer.connect(`spectra-${sid}`);
-        conn.on('open', () => {
-          statusDot.classList.add('connected');
-          statusText.textContent = '已连接';
-          connectView.classList.add('hidden');
-          remoteView.classList.add('active');
-          document.body.classList.add('connected'); // 切换为顶部对齐
-          // 显示连接码
-          $('session-badge').textContent = '🔗 ' + sid;
-          resetConnectBtn();
-        });
-        conn.on('data', data => {
-          if (data.type === 'state') updateUI(data);
-        });
-        conn.on('close', disconnect);
-        conn.on('error', e => { showError('连接失败: ' + e.message); resetConnectBtn(); });
-      });
-      peer.on('error', e => {
-        showError(e.type === 'peer-unavailable' ? '会话不存在' : '错误: ' + e.message);
-        resetConnectBtn();
-      });
-      setTimeout(() => { if (!conn?.open) { showError('连接超时'); resetConnectBtn(); } }, 10000);
-    }
+      if (sessions.has(sid)) return showError('此会话已存在');
+      createSession(sid);
+      sessionInput.value = '';
+    };
+    sessionInput.onkeydown = e => e.key === 'Enter' && $('btn-connect').click();
 
-    // 重置连接按钮状态
-    function resetConnectBtn() {
-      const btn = $('btn-connect');
-      btn.classList.remove('loading');
-      btn.textContent = '连接';
-    }
-
-    function disconnect() {
-      statusDot.classList.remove('connected');
-      statusText.textContent = '已断开';
+    // 添加新会话按钮
+    $('btn-add-session').onclick = () => {
       remoteView.classList.remove('active');
       connectView.classList.remove('hidden');
-      document.body.classList.remove('connected'); // 恢复居中
-      conn?.close(); peer?.destroy();
-      conn = peer = null;
+      document.body.classList.remove('connected');
+    };
+
+    // 创建新会话连接
+    function createSession(sid) {
+      if (sessions.has(sid)) return;
+      
+      const session = { peer: null, conn: null, state: {}, connected: false };
+      sessions.set(sid, session);
+      saveSessions();
+      renderSessionTabs();
+      
+      showError('');
+      statusText.textContent = `连接 ${sid}...`;
+      
+      session.peer = new Peer();
+      session.peer.on('open', () => {
+        session.conn = session.peer.connect(`spectra-${sid}`);
+        session.conn.on('open', () => {
+          session.connected = true;
+          switchSession(sid);
+          renderSessionTabs();
+          showRemoteView();
+        });
+        session.conn.on('data', data => {
+          if (data.type === 'state') {
+            session.state = { ...session.state, ...data };
+            if (activeSessionId === sid) updateUI(data);
+          }
+        });
+        session.conn.on('close', () => handleDisconnect(sid));
+        session.conn.on('error', e => handleDisconnect(sid, e.message));
+      });
+      session.peer.on('error', e => {
+        const msg = e.type === 'peer-unavailable' ? '会话不存在' : e.message;
+        showError(`${sid}: ${msg}`);
+        removeSession(sid);
+      });
+      setTimeout(() => {
+        if (sessions.has(sid) && !sessions.get(sid).connected) {
+          showError(`${sid}: 连接超时`);
+          removeSession(sid);
+        }
+      }, 10000);
     }
 
+    // 处理会话断开
+    function handleDisconnect(sid, errMsg) {
+      const s = sessions.get(sid);
+      if (s) {
+        s.connected = false;
+        renderSessionTabs();
+        if (activeSessionId === sid) statusText.textContent = errMsg ? `错误: ${errMsg}` : '已断开';
+      }
+    }
+
+    // 移除会话
+    function removeSession(sid) {
+      const s = sessions.get(sid);
+      if (s) {
+        s.conn?.close();
+        s.peer?.destroy();
+      }
+      sessions.delete(sid);
+      saveSessions();
+      renderSessionTabs();
+      // 如果删除的是当前激活的，切换到其他
+      if (activeSessionId === sid) {
+        activeSessionId = null;
+        const next = sessions.keys().next().value;
+        if (next) switchSession(next);
+        else hideRemoteView();
+      }
+    }
+
+    // 切换激活会话
+    function switchSession(sid) {
+      if (!sessions.has(sid)) return;
+      activeSessionId = sid;
+      const s = sessions.get(sid);
+      statusDot.classList.toggle('connected', s.connected);
+      statusText.textContent = s.connected ? '已连接' : '未连接';
+      $('session-badge').textContent = '🔗 ' + sid;
+      updateUI(s.state);
+      renderSessionTabs();
+    }
+
+    // 发送命令到当前会话
     function sendCmd(cmd) {
-      if (conn?.open) conn.send({ type: 'command', command: cmd });
+      if (!activeSessionId) return;
+      const s = sessions.get(activeSessionId);
+      if (s?.conn?.open) s.conn.send({ type: 'command', command: cmd });
     }
 
     function updateUI(s) {
@@ -444,7 +574,6 @@
       if (s.muted !== undefined) $('btn-mute').classList.toggle('muted', s.muted);
       if (s.playing !== undefined) $('btn-play-pause').textContent = s.playing ? '⏸' : '▶️';
       if (s.speed !== undefined) $('speed-display').textContent = s.speed.toFixed(2) + 'x';
-      // 标签页信息
       if (s.tabTitle !== undefined) $('tab-title').textContent = s.tabTitle || '未知';
       if (s.tabDomain !== undefined) $('tab-domain').textContent = s.tabDomain || '-';
     }
@@ -452,6 +581,43 @@
     function showError(msg) {
       errorMsg.textContent = msg;
     }
+
+    // 渲染会话标签栏
+    function renderSessionTabs() {
+      sessionsBar.innerHTML = '';
+      sessions.forEach((s, sid) => {
+        const tab = document.createElement('div');
+        tab.className = 'session-tab' + (sid === activeSessionId ? ' active' : '') + (!s.connected ? ' disconnected' : '');
+        tab.innerHTML = `${sid} <span class="close-btn">✕</span>`;
+        tab.onclick = (e) => {
+          if (e.target.classList.contains('close-btn')) {
+            removeSession(sid);
+          } else {
+            switchSession(sid);
+          }
+        };
+        sessionsBar.appendChild(tab);
+      });
+    }
+
+    // 显示遥控器视图
+    function showRemoteView() {
+      connectView.classList.add('hidden');
+      remoteView.classList.add('active');
+      document.body.classList.add('connected');
+    }
+
+    // 隐藏遥控器视图
+    function hideRemoteView() {
+      remoteView.classList.remove('active');
+      connectView.classList.remove('hidden');
+      document.body.classList.remove('connected');
+      statusDot.classList.remove('connected');
+      statusText.textContent = '未连接';
+    }
+
+    // 初始化
+    init();
 
     // 主题切换
     const btnTheme = $('btn-theme');

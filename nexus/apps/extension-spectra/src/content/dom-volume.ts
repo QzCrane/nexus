@@ -54,7 +54,8 @@ function setupVolumeMonitor(media: HTMLMediaElement): void {
 			if (muteDiff) {
 				targetMuted = newMuted;
 				log.debug(`[DOM] 高级模式静音切换: ${newMuted}`);
-				onNativeVolumeChange?.(newMuted ? 0 : -1, newMuted);
+				// 🔴 始终发送 -1 表示不修改音量，避免错误地把 volume 设为 0
+				onNativeVolumeChange?.(-1, newMuted);
 			}
 			return;
 		}
