@@ -20,7 +20,7 @@ const CONFIG = {
   // 源文件优先级（按顺序尝试）
   sources: [
     'icon_transparent.png',
-    'icon.svg'
+    // 'icon.svg'
   ],
   // 标准尺寸
   sizes: [16, 48, 128],
