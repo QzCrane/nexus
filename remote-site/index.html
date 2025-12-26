@@ -190,7 +190,7 @@
       max-width: 320px;
       flex-direction: column;
       gap: 16px;
-      padding-top: 60px; /* 为 header 留出空间 */
+      padding-top: 10px; /* Reduced from 60px */
       opacity: 1;
       transition: opacity 0.3s;
     }
@@ -448,6 +448,9 @@
       <!-- 动态生成的会话标签 -->
     </div>
 
+    <!-- Active Session Badge -->
+    <div class="session-badge" id="session-badge">🔗 -</div>
+
     <!-- Current Session Info -->
     <div class="tab-info" id="tab-info">
       <div class="tab-title" id="tab-title">Waiting for sync...</div>
@@ -697,7 +700,10 @@
       const s = sessions.get(sid);
       statusDot.classList.toggle('connected', s.connected);
       statusText.textContent = s.connected ? 'Connected' : 'Disconnected';
-      $('session-badge').textContent = '🔗 ' + sid;
+      
+      const badge = $('session-badge');
+      if (badge) badge.textContent = '� Controlling: ' + sid;
+      
       updateUI(s.state);
       renderSessionTabs();
     }
