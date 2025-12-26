@@ -24,48 +24,58 @@ export type RemoteCommand =
 
 /**
  * 执行遥控命令
+ * 注意：消息格式必须与 content script 处理器一致 (payload 包装)
  */
 export function executeCommand(cmd: RemoteCommand, tabId: number): void {
 	switch (cmd) {
+		// ===== 音量控制 =====
 		case 'volume_up':
-			chrome.tabs.sendMessage(tabId, { action: Actions.AUDIO_SET_CONFIG, config: { volumeDelta: 10 } });
+			chrome.tabs.sendMessage(tabId, { action: Actions.AUDIO_SET_CONFIG, payload: { config: { volumeDelta: 10 } } });
 			break;
 		case 'volume_down':
-			chrome.tabs.sendMessage(tabId, { action: Actions.AUDIO_SET_CONFIG, config: { volumeDelta: -10 } });
+			chrome.tabs.sendMessage(tabId, { action: Actions.AUDIO_SET_CONFIG, payload: { config: { volumeDelta: -10 } } });
 			break;
 		case 'volume_max':
-			chrome.tabs.sendMessage(tabId, { action: Actions.AUDIO_SET_CONFIG, config: { volume: 800 } });
+			chrome.tabs.sendMessage(tabId, { action: Actions.AUDIO_SET_CONFIG, payload: { config: { volume: 800 } } });
 			break;
 		case 'volume_100':
-			chrome.tabs.sendMessage(tabId, { action: Actions.AUDIO_SET_CONFIG, config: { volume: 100 } });
+			chrome.tabs.sendMessage(tabId, { action: Actions.AUDIO_SET_CONFIG, payload: { config: { volume: 100 } } });
 			break;
 		case 'mute':
-			chrome.tabs.sendMessage(tabId, { action: Actions.AUDIO_SET_CONFIG, config: { toggleMute: true } });
+			chrome.tabs.sendMessage(tabId, { action: Actions.AUDIO_SET_CONFIG, payload: { config: { toggleMute: true } } });
 			break;
+
+		// ===== 播放控制 =====
 		case 'play_pause':
 			chrome.tabs.sendMessage(tabId, { action: Actions.MEDIA_TOGGLE_PLAY });
 			break;
+
+		// ===== 跳转控制 =====
 		case 'seek_forward':
-			chrome.tabs.sendMessage(tabId, { action: Actions.VIDEO_SEEK, delta: 10 });
+			chrome.tabs.sendMessage(tabId, { action: Actions.VIDEO_SEEK, payload: { delta: 10 } });
 			break;
 		case 'seek_backward':
-			chrome.tabs.sendMessage(tabId, { action: Actions.VIDEO_SEEK, delta: -10 });
+			chrome.tabs.sendMessage(tabId, { action: Actions.VIDEO_SEEK, payload: { delta: -10 } });
 			break;
 		case 'seek_forward_30':
-			chrome.tabs.sendMessage(tabId, { action: Actions.VIDEO_SEEK, delta: 30 });
+			chrome.tabs.sendMessage(tabId, { action: Actions.VIDEO_SEEK, payload: { delta: 30 } });
 			break;
 		case 'seek_backward_30':
-			chrome.tabs.sendMessage(tabId, { action: Actions.VIDEO_SEEK, delta: -30 });
+			chrome.tabs.sendMessage(tabId, { action: Actions.VIDEO_SEEK, payload: { delta: -30 } });
 			break;
+
+		// ===== 速度控制 =====
 		case 'speed_up':
-			chrome.tabs.sendMessage(tabId, { action: Actions.MEDIA_SET_SPEED, delta: 0.25 });
+			chrome.tabs.sendMessage(tabId, { action: Actions.MEDIA_SET_SPEED, payload: { delta: 0.25 } });
 			break;
 		case 'speed_down':
-			chrome.tabs.sendMessage(tabId, { action: Actions.MEDIA_SET_SPEED, delta: -0.25 });
+			chrome.tabs.sendMessage(tabId, { action: Actions.MEDIA_SET_SPEED, payload: { delta: -0.25 } });
 			break;
 		case 'speed_reset':
-			chrome.tabs.sendMessage(tabId, { action: Actions.MEDIA_SET_SPEED, speed: 1 });
+			chrome.tabs.sendMessage(tabId, { action: Actions.MEDIA_SET_SPEED, payload: { speed: 1 } });
 			break;
+
+		// ===== 视频控制 =====
 		case 'fullscreen':
 			chrome.tabs.sendMessage(tabId, { action: Actions.VIDEO_FULLSCREEN });
 			break;
