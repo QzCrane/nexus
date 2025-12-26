@@ -106,6 +106,7 @@
       appearance: none;
       -webkit-user-select: text;
       user-select: text;
+      touch-action: manipulation;
     }
     .connect-view input:focus {
       outline: none;
@@ -272,6 +273,19 @@
     }
     .theme-toggle:active { transform: scale(0.9); }
 
+    /* 连接码徽章 */
+    .session-badge {
+      background: var(--accent);
+      color: #fff;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-align: center;
+      margin-bottom: 12px;
+    }
+
     .hidden { display: none !important; }
   </style>
 </head>
@@ -289,7 +303,7 @@
 
   <!-- 连接界面 -->
   <div class="connect-view" id="connect-view">
-    <input type="text" id="session-input" placeholder="会话码" maxlength="6" autocomplete="off">
+    <input type="text" id="session-input" placeholder="会话码" maxlength="6" autocomplete="off" inputmode="text" autocapitalize="characters">
     <button id="btn-connect">连接</button>
     <p class="error-msg" id="error-msg"></p>
   </div>
@@ -301,6 +315,9 @@
       <div class="tab-title" id="tab-title">等待同步...</div>
       <div class="tab-domain" id="tab-domain">-</div>
     </div>
+
+    <!-- 当前连接码 -->
+    <div class="session-badge" id="session-badge"></div>
 
     <!-- 音量 -->
     <div class="volume-display">
@@ -339,14 +356,7 @@
       </div>
     </div>
 
-    <!-- 视频控制 (需要鼠标在视频上) -->
-    <div class="control-section">
-      <div class="section-title">视频控制 <span style="font-size:10px;opacity:0.6">(需鼠标悬停视频)</span></div>
-      <div class="btn-grid cols-2">
-        <button class="btn" id="btn-fullscreen">⛶<span class="btn-label">全屏</span></button>
-        <button class="btn" id="btn-pip">📺<span class="btn-label">画中画</span></button>
-      </div>
-    </div>
+    <!-- 视频控制已移除（全屏/PiP需要用户手势，无法远程触发） -->
   </div>
 
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -391,6 +401,8 @@
           connectView.classList.add('hidden');
           remoteView.classList.add('active');
           document.body.classList.add('connected'); // 切换为顶部对齐
+          // 显示连接码
+          $('session-badge').textContent = '🔗 ' + sid;
           resetConnectBtn();
         });
         conn.on('data', data => {
@@ -470,8 +482,7 @@
     $('btn-speed-down').onclick = () => sendCmd('speed_down');
     $('btn-speed-up').onclick = () => sendCmd('speed_up');
     $('btn-speed-reset').onclick = () => sendCmd('speed_reset');
-    $('btn-fullscreen').onclick = () => sendCmd('fullscreen');
-    $('btn-pip').onclick = () => sendCmd('pip');
+    // 全屏/PiP 已移除 (浏览器安全策略需要用户手势)
   </script>
 </body>
 </html>
