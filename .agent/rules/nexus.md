@@ -11,4 +11,4 @@ trigger: always_on
    架构层 (2): policy-decision.md, cors-data-flow.md
    模块层 (11): _.ai-context.md
    工作流 (4): .agent/workflows/_.md
-3. 不要尝试直接修改此文件，ai 没有权限
+3. 不要尝试直接修改此文件，aiagent 权限被 antigravity 拒绝

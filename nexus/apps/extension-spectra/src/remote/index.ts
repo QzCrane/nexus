@@ -8,3 +8,5 @@ export { generateRemoteQR } from './qr-generator.js';
 export { getSession, createSession, closeSession } from './session.js';
 export type { RemoteSession } from './session.js';
 export { bindRemoteUI } from './ui-bindings.js';
+export { initPeer, closePeer, isConnected } from './peer-connection.js';
+export type { RemoteCommand } from './peer-connection.js';
