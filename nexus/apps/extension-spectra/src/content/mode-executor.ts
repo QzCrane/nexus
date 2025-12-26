@@ -48,11 +48,12 @@ export function initModeExecutorCallbacks(
 			currentState.config.muted = muted;
 			log.debug(`[SPECTRA] 原生静音切换: ${muted}`);
 		} else {
-			// NATIVE_LITE 模式：将 DOM 音量 (0-1) 转换为配置音量 (0-100)
+			// NATIVE_LITE 模式：只同步 volume，不同步 muted
+			// 🔴 关键修复：muted 状态由用户显式操作控制，不应被网站的原生 muted 覆盖
 			const configVolume = Math.round(volume * 100);
 			currentState.config.volume = configVolume;
-			currentState.config.muted = muted;
-			log.debug(`[SPECTRA] 原生音量同步: ${configVolume}% (静音: ${muted})`);
+			// 不再同步 muted: currentState.config.muted = muted;
+			log.debug(`[SPECTRA] 原生音量同步: ${configVolume}%`);
 		}
 
 		// 更新角标

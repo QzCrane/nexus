@@ -64,11 +64,16 @@ export function updateConfig(
 	// 🔴 调试：追踪静音状态
 	if (newConfig.muted) {
 		log.debug(`[DEBUG] muted=true 来源:`, {
-			changes,
+			changesMuted: (changes as any).muted,
+			changesMutedType: typeof (changes as any).muted,
 			stateConfigMuted: state.config.muted,
 			newConfigMuted: newConfig.muted,
 		});
 	}
+
+	// 🔴 关键修复：清理临时字段，防止污染 state.config
+	delete (newConfig as any).toggleMute;
+	delete (newConfig as any).volumeDelta;
 
 	// 3. 应用并保存状态
 	state.config = newConfig;

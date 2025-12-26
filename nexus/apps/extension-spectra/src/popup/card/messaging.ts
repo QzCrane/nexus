@@ -33,11 +33,17 @@ export function setupCardMessaging(params: MessagingParams): () => void {
     if (action === Actions.UI_SYNC && isFromTargetTab) {
       const config = payload.config || msg.config;
       if (config) {
+        // 🔴 关键修复：清理临时字段，防止污染 Popup 状态
+        const cleanedConfig = { ...config };
+        delete (cleanedConfig as any).toggleMute;
+        delete (cleanedConfig as any).volumeDelta;
+
         if (state.isDragging) {
-          const { volume, ...otherConfig } = config;
+          // 拖动时同时排除 volume 和 muted，防止覆盖用户操作
+          const { volume, muted, ...otherConfig } = cleanedConfig;
           state.config = { ...state.config, ...otherConfig };
         } else {
-          state.config = config;
+          state.config = cleanedConfig;
         }
       }
 

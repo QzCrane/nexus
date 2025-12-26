@@ -45,7 +45,12 @@ export function registerAudioHandlers(): void {
 		} catch { }
 
 		if (domain && req.config) {
-			await storage.setAudioConfig(domain, req.config);
+			// 🔴 关键修复：清除临时字段，防止污染存储
+			const cleanConfig = { ...req.config };
+			delete (cleanConfig as any).toggleMute;
+			delete (cleanConfig as any).volumeDelta;
+
+			await storage.setAudioConfig(domain, cleanConfig);
 			swLog.debug(`[SW] Saved audio config for ${domain}`);
 		}
 		return { success: true };

@@ -67,7 +67,7 @@ export const DEFAULT_CONFIG: AudioConfig = {
   eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 };
 
-/** 清理配置对象，确保所有字段存在 */
+/** 清理配置对象，确保所有字段存在，并移除临时字段 */
 export function cleanConfig(config: Partial<AudioConfig> | null): AudioConfig {
   const c = { ...DEFAULT_CONFIG, ...config };
   if (!Array.isArray(c.eqValues)) {
@@ -76,5 +76,8 @@ export function cleanConfig(config: Partial<AudioConfig> | null): AudioConfig {
   if (c.enabled === undefined) {
     c.enabled = true;
   }
+  // 🔴 关键修复：移除临时字段，防止污染
+  delete (c as any).toggleMute;
+  delete (c as any).volumeDelta;
   return c;
 }
