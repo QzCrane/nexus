@@ -254,7 +254,10 @@
       font-size: 22px;
       cursor: pointer;
       transition: all 0.15s;
-      min-height: 60px;
+      cursor: pointer;
+      transition: all 0.15s;
+      height: 68px; /* Fixed height to prevent layout shifts */
+      padding: 0;
     }
     .btn:active {
       transform: scale(0.95);
@@ -726,7 +729,16 @@
     function updateUI(s) {
       if (s.volume !== undefined) $('vol-display').textContent = s.volume + '%';
       if (s.muted !== undefined) $('btn-mute').classList.toggle('muted', s.muted);
-      if (s.playing !== undefined) $('btn-play-pause').textContent = s.playing ? '⏸' : '▶️';
+      if (s.playing !== undefined) {
+        const btn = $('btn-play-pause');
+        // Use spans with fixed styling to prevent jumping
+        if (s.playing) {
+           btn.innerHTML = '<span style="font-family:Segoe UI Symbol, sans-serif; font-size:24px;">⏸</span>';
+        } else {
+           // Play icon often needs slight optical correction
+           btn.innerHTML = '<span style="font-family:Segoe UI Symbol, sans-serif; font-size:24px; margin-left:4px;">▶</span>';
+        }
+      }
       if (s.speed !== undefined) $('speed-display').textContent = s.speed.toFixed(2) + 'x';
       if (s.tabTitle !== undefined) $('tab-title').textContent = s.tabTitle || 'Waiting...';
       if (s.tabDomain !== undefined) $('tab-domain').textContent = s.tabDomain || '-';
