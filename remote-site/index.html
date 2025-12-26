@@ -7,8 +7,10 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     
+    /* 深色主题 (默认) */
     :root {
       --bg: linear-gradient(145deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
+      --bg-solid: #0f0f1a;
       --card: rgba(255, 255, 255, 0.05);
       --card-hover: rgba(255, 255, 255, 0.1);
       --accent: #667eea;
@@ -18,6 +20,19 @@
       --text: #fff;
       --text-dim: rgba(255, 255, 255, 0.6);
     }
+    /* 浅色主题 */
+    :root.light {
+      --bg: linear-gradient(145deg, #f5f7fa 0%, #e4e8ef 50%, #dfe5ed 100%);
+      --bg-solid: #f5f7fa;
+      --card: rgba(0, 0, 0, 0.04);
+      --card-hover: rgba(0, 0, 0, 0.08);
+      --accent: #5a67d8;
+      --accent2: #6b46c1;
+      --success: #38a169;
+      --danger: #e53e3e;
+      --text: #1a202c;
+      --text-dim: rgba(26, 32, 44, 0.6);
+    }
     
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -26,9 +41,15 @@
       display: flex;
       flex-direction: column;
       align-items: center;
+      justify-content: center; /* 垂直居中 */
       color: var(--text);
       padding: 16px;
       padding-bottom: env(safe-area-inset-bottom, 16px);
+    }
+
+    /* 已连接后顶部对齐 */
+    body.connected {
+      justify-content: flex-start;
     }
 
     /* 头部 */
@@ -81,6 +102,10 @@
       text-align: center;
       letter-spacing: 6px;
       text-transform: uppercase;
+      -webkit-appearance: none;
+      appearance: none;
+      -webkit-user-select: text;
+      user-select: text;
     }
     .connect-view input:focus {
       outline: none;
@@ -95,6 +120,17 @@
       font-size: 15px;
       font-weight: 600;
       cursor: pointer;
+      transition: all 0.2s;
+    }
+    /* 连接按钮 loading 状态 */
+    .connect-view button.loading {
+      opacity: 0.7;
+      pointer-events: none;
+      animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.7; }
+      50% { opacity: 0.4; }
     }
     .error-msg {
       color: var(--danger);
@@ -196,10 +232,52 @@
       color: var(--accent);
     }
 
+    /* 标签页信息 */
+    .tab-info {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 10px 14px;
+      text-align: center;
+    }
+    .tab-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tab-domain {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 2px;
+    }
+
+    /* 主题切换按钮 */
+    .theme-toggle {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      width: 36px;
+      height: 36px;
+      border: none;
+      border-radius: 50%;
+      background: var(--card-hover);
+      color: var(--text);
+      font-size: 18px;
+      cursor: pointer;
+      z-index: 100;
+      transition: transform 0.2s;
+    }
+    .theme-toggle:active { transform: scale(0.9); }
+
     .hidden { display: none !important; }
   </style>
 </head>
 <body>
+  <!-- 主题切换 -->
+  <button class="theme-toggle" id="btn-theme">🌙</button>
+
   <div class="header">
     <h1>📱 SPECTRA Remote</h1>
     <div class="status">
@@ -217,6 +295,12 @@
 
   <!-- 遥控器界面 -->
   <div class="remote-view" id="remote-view">
+    <!-- 标签页信息 -->
+    <div class="tab-info" id="tab-info">
+      <div class="tab-title" id="tab-title">等待同步...</div>
+      <div class="tab-domain" id="tab-domain">-</div>
+    </div>
+
     <!-- 音量 -->
     <div class="volume-display">
       <div class="volume-value" id="vol-display">100%</div>
@@ -242,6 +326,17 @@
       </div>
     </div>
 
+    <!-- 进度跳转 (10s/30s 统一) -->
+    <div class="control-section">
+      <div class="section-title">进度跳转</div>
+      <div class="btn-grid cols-4">
+        <button class="btn" id="btn-seek-back-30">⏮<span class="btn-label">-30s</span></button>
+        <button class="btn" id="btn-seek-back-2">⏪<span class="btn-label">-10s</span></button>
+        <button class="btn" id="btn-seek-forward-2">⏩<span class="btn-label">+10s</span></button>
+        <button class="btn" id="btn-seek-forward-30">⏭<span class="btn-label">+30s</span></button>
+      </div>
+    </div>
+
     <!-- 速度控制 -->
     <div class="control-section">
       <div class="section-title">播放速度 <span class="speed-value" id="speed-display">1.00x</span></div>
@@ -249,14 +344,6 @@
         <button class="btn" id="btn-speed-down">🐢<span class="btn-label">-0.25</span></button>
         <button class="btn" id="btn-speed-reset">🔄<span class="btn-label">重置</span></button>
         <button class="btn" id="btn-speed-up">🐇<span class="btn-label">+0.25</span></button>
-      </div>
-    </div>
-
-    <!-- 快捷跳转 -->
-    <div class="control-section">
-      <div class="btn-grid cols-2">
-        <button class="btn" id="btn-seek-back-30">⏮<span class="btn-label">-30s</span></button>
-        <button class="btn" id="btn-seek-forward-30">⏭<span class="btn-label">+30s</span></button>
       </div>
     </div>
 
@@ -296,8 +383,12 @@
       const sid = sessionInput.value.trim().toUpperCase();
       if (!sid || sid.length < 4) return showError('请输入会话码');
       
+      const btnConnect = $('btn-connect');
       showError('');
       statusText.textContent = '连接中...';
+      // 按钮进入 loading 状态
+      btnConnect.classList.add('loading');
+      btnConnect.textContent = '连接中...';
       
       peer = new Peer();
       peer.on('open', () => {
@@ -307,17 +398,27 @@
           statusText.textContent = '已连接';
           connectView.classList.add('hidden');
           remoteView.classList.add('active');
+          document.body.classList.add('connected'); // 切换为顶部对齐
+          resetConnectBtn();
         });
         conn.on('data', data => {
           if (data.type === 'state') updateUI(data);
         });
         conn.on('close', disconnect);
-        conn.on('error', e => showError('连接失败: ' + e.message));
+        conn.on('error', e => { showError('连接失败: ' + e.message); resetConnectBtn(); });
       });
       peer.on('error', e => {
         showError(e.type === 'peer-unavailable' ? '会话不存在' : '错误: ' + e.message);
+        resetConnectBtn();
       });
-      setTimeout(() => { if (!conn?.open) showError('连接超时'); }, 10000);
+      setTimeout(() => { if (!conn?.open) { showError('连接超时'); resetConnectBtn(); } }, 10000);
+    }
+
+    // 重置连接按钮状态
+    function resetConnectBtn() {
+      const btn = $('btn-connect');
+      btn.classList.remove('loading');
+      btn.textContent = '连接';
     }
 
     function disconnect() {
@@ -325,6 +426,7 @@
       statusText.textContent = '已断开';
       remoteView.classList.remove('active');
       connectView.classList.remove('hidden');
+      document.body.classList.remove('connected'); // 恢复居中
       conn?.close(); peer?.destroy();
       conn = peer = null;
     }
@@ -338,11 +440,30 @@
       if (s.muted !== undefined) $('btn-mute').classList.toggle('muted', s.muted);
       if (s.playing !== undefined) $('btn-play-pause').textContent = s.playing ? '⏸' : '▶️';
       if (s.speed !== undefined) $('speed-display').textContent = s.speed.toFixed(2) + 'x';
+      // 标签页信息
+      if (s.tabTitle !== undefined) $('tab-title').textContent = s.tabTitle || '未知';
+      if (s.tabDomain !== undefined) $('tab-domain').textContent = s.tabDomain || '-';
     }
 
     function showError(msg) {
       errorMsg.textContent = msg;
     }
+
+    // 主题切换
+    const btnTheme = $('btn-theme');
+    let isDark = true;
+    // 从 localStorage 恢复
+    if (localStorage.getItem('theme') === 'light') {
+      document.documentElement.classList.add('light');
+      btnTheme.textContent = '☀️';
+      isDark = false;
+    }
+    btnTheme.onclick = () => {
+      isDark = !isDark;
+      document.documentElement.classList.toggle('light', !isDark);
+      btnTheme.textContent = isDark ? '🌙' : '☀️';
+      localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    };
 
     // 按钮事件
     $('btn-vol-down').onclick = () => sendCmd('volume_down');
@@ -352,6 +473,9 @@
     $('btn-play-pause').onclick = () => sendCmd('play_pause');
     $('btn-seek-back').onclick = () => sendCmd('seek_backward');
     $('btn-seek-forward').onclick = () => sendCmd('seek_forward');
+    // 进度跳转区新按钮
+    $('btn-seek-back-2').onclick = () => sendCmd('seek_backward');
+    $('btn-seek-forward-2').onclick = () => sendCmd('seek_forward');
     $('btn-seek-back-30').onclick = () => sendCmd('seek_backward_30');
     $('btn-seek-forward-30').onclick = () => sendCmd('seek_forward_30');
     $('btn-speed-down').onclick = () => sendCmd('speed_down');

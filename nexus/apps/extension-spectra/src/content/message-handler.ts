@@ -39,8 +39,23 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 
 		switch (msg.action) {
 			case Actions.AUDIO_SET_CONFIG: {
-				const payload = msg.payload as { config: Partial<AudioConfig> };
-				policyExecutor.updateConfig(payload.config);
+				const payload = msg.payload as { config: Partial<AudioConfig> & { volumeDelta?: number; toggleMute?: boolean } };
+				const configChanges = { ...payload.config };
+
+				// 处理音量增量 (遥控器使用)
+				if (payload.config.volumeDelta !== undefined) {
+					const currentVol = state.config.volume;
+					configChanges.volume = Math.max(0, Math.min(800, currentVol + payload.config.volumeDelta));
+					delete (configChanges as any).volumeDelta;
+				}
+
+				// 处理静音切换 (遥控器使用)
+				if (payload.config.toggleMute) {
+					configChanges.muted = !state.config.muted;
+					delete (configChanges as any).toggleMute;
+				}
+
+				policyExecutor.updateConfig(configChanges);
 				sendResponse({
 					success: true,
 					state: {

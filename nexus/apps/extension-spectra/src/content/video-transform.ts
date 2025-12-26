@@ -161,13 +161,20 @@ export async function toggleFullscreen(): Promise<boolean> {
 	}
 
 	try {
+		let result: boolean;
 		if (document.fullscreenElement === video) {
 			await document.exitFullscreen();
-			return false;
+			result = false;
 		} else {
 			await video.requestFullscreen();
-			return true;
+			result = true;
 		}
+		// 恢复焦点，防止后续操作失效
+		setTimeout(() => {
+			video.focus();
+			document.body.focus();
+		}, 100);
+		return result;
 	} catch (e) {
 		log.error('Fullscreen toggle failed:', e);
 		return false;

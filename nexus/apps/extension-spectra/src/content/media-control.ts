@@ -73,17 +73,24 @@ export async function togglePip(): Promise<boolean> {
 	}
 
 	try {
+		let result: boolean;
 		if (document.pictureInPictureElement === video) {
 			await document.exitPictureInPicture();
-			return false;
+			result = false;
 		} else {
 			// 先退出当前 PiP（如有）
 			if (document.pictureInPictureElement) {
 				await document.exitPictureInPicture();
 			}
 			await video.requestPictureInPicture();
-			return true;
+			result = true;
 		}
+		// 恢复焦点，防止后续操作失效
+		setTimeout(() => {
+			video.focus();
+			document.body.focus();
+		}, 100);
+		return result;
 	} catch (e) {
 		log.error('PiP toggle failed:', e);
 		return false;

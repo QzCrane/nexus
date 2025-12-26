@@ -31,9 +31,8 @@ export function prepareCardDom(params: {
 	if (ui.tBass) ui.tBass.innerText = dict.bass;
 	if (ui.tMono) ui.tMono.innerText = dict.mono;
 	if (ui.tEq) ui.tEq.innerText = dict.eqTitle;
-	ui.btnSave.innerText = dict.save;
+	// 主面板按钮：纯图标，只设置 title
 	ui.btnSave.title = dict.saveTooltip;
-	ui.btnReset.innerText = dict.reset;
 	ui.btnReset.title = dict.resetTooltip;
 	ui.maskText.innerHTML = `<div>${dict.paused}</div><div style="font-size:11px; opacity:0.7; margin-top:4px; font-weight:400;">${dict.clickToResume}</div>`;
 	ui.title.innerText = tab.title || '';

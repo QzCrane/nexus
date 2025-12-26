@@ -21,6 +21,8 @@ export interface RemoteState {
 	muted: boolean;
 	playing: boolean;
 	speed: number;
+	tabTitle?: string;  // 标签页标题
+	tabDomain?: string; // 标签页域名
 }
 
 let stateCallback: StateCallback | null = null;
@@ -105,11 +107,22 @@ async function syncState(tabId: number): Promise<void> {
 		// 获取媒体状态
 		const mediaRes = await sendToTab(tabId, { action: Actions.MEDIA_GET_STATE }) as { playing?: boolean; speed?: number } | undefined;
 
+		// 获取标签页信息
+		let tabTitle = '';
+		let tabDomain = '';
+		try {
+			const tab = await chrome.tabs.get(tabId);
+			tabTitle = tab.title || '';
+			tabDomain = tab.url ? new URL(tab.url).hostname : '';
+		} catch { /* 静默 */ }
+
 		const state: RemoteState = {
 			volume: audioRes?.config?.volume ?? 100,
 			muted: audioRes?.config?.muted ?? false,
 			playing: mediaRes?.playing ?? audioRes?.isPlaying ?? false,
 			speed: mediaRes?.speed ?? 1,
+			tabTitle,
+			tabDomain,
 		};
 
 		stateCallback(state);
