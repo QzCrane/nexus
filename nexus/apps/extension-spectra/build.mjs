@@ -87,4 +87,8 @@ await buildEntry('src/popup/index.ts', 'popup', 'SpectraPopup');
 // 5. 构建 offscreen.js
 await buildEntry('src/offscreen/index.ts', 'offscreen', 'SpectraOffscreen');
 
+// 6. 构建 offscreen-remote.js (PeerJS WebRTC)
+await buildEntry('src/offscreen-remote/index.ts', 'offscreen-remote', 'SpectraOffscreenRemote');
+
 console.log('\n🎉 Build complete! Output: apps/extension-spectra/dist');
+
