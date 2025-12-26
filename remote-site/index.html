@@ -322,18 +322,7 @@
     }
     .theme-toggle:active { transform: scale(0.9); }
 
-    /* 连接码徽章 */
-    .session-badge {
-      background: var(--accent);
-      color: #fff;
-      padding: 4px 10px;
-      border-radius: 12px;
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 1px;
-      text-align: center;
-      margin-bottom: 12px;
-    }
+    /* Session Badge Removed */
 
     /* 会话列表栏 */
     .sessions-bar {
@@ -448,8 +437,7 @@
       <!-- 动态生成的会话标签 -->
     </div>
 
-    <!-- Active Session Badge -->
-    <div class="session-badge" id="session-badge">🔗 -</div>
+    <!-- Active Session Badge Removed -->
 
     <!-- Current Session Info -->
     <div class="tab-info" id="tab-info">
@@ -701,8 +689,7 @@
       statusDot.classList.toggle('connected', s.connected);
       statusText.textContent = s.connected ? 'Connected' : 'Disconnected';
       
-      const badge = $('session-badge');
-      if (badge) badge.textContent = '� Controlling: ' + sid;
+      /* Badge update removed */
       
       updateUI(s.state);
       renderSessionTabs();
