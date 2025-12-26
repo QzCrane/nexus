@@ -107,6 +107,8 @@ Infra:   rust-core (WASM)
 
 > **批次说明**: B1=核心播放 | B2=视频变换 | B3=音频增强 | B4=高级功能
 
+二维码生成和解析器
+
 ### Phase 3 🛡️ WASM 壁垒 (W3-W6)
 
 - [ ] rust-core 初始化
