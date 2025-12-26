@@ -363,6 +363,14 @@
       color: var(--text);
       background: var(--card-hover);
     }
+    .session-tab .active-dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      background: var(--success);
+      border-radius: 50%;
+      margin-right: 4px;
+    }
     .session-tab.disconnected {
       opacity: 0.5;
     }
@@ -533,9 +541,11 @@
         createSession(sid);
       }
       
-      // 如果没有任何连接，则显示连接界面 (保留底层背景)
+      // If no connections, show input (forced)
       if (sessions.size === 0) {
-        showConnectModal(false); // 不可取消
+        sessionInput.value = ''; // Clear for fresh start if not from URL
+        if (urlSession) sessionInput.value = urlSession.toUpperCase();
+        showConnectModal(false); 
       } else {
         renderSessionTabs();
       }
@@ -716,30 +726,35 @@
     function renderSessionTabs() {
       sessionsBar.innerHTML = '';
       
-      // 添加连接按钮并入横向列表
-      const addBtn = document.createElement('button');
-      addBtn.className = 'btn-add-session';
-      addBtn.id = 'btn-add-session';
-      addBtn.innerHTML = '➕ New';
-      addBtn.onclick = () => {
-        showConnectModal(true); // cancellable
-      };
-      sessionsBar.appendChild(addBtn);
-
       sessions.forEach((s, sid) => {
         const tab = document.createElement('div');
         tab.className = 'session-tab' + (sid === activeSessionId ? ' active' : '') + (!s.connected ? ' disconnected' : '');
-        tab.innerHTML = `${sid} <span class="close-btn">✕</span>`;
+        
+        // Add active marker if active
+        const marker = (sid === activeSessionId) ? '<span class="active-dot"></span>' : '';
+        tab.innerHTML = `${marker}${sid} <span class="close-btn">✕</span>`;
+        
         tab.onclick = (e) => {
           if (e.target.classList.contains('close-btn')) {
             removeSession(sid);
           } else {
             switchSession(sid);
-            sessionInput.value = sid; // 切换会话时同步更新输入框码
+            // Don't auto-fill input on tab switch, only on fresh scan or init
           }
         };
         sessionsBar.appendChild(tab);
       });
+
+      // Add "New" button at the END
+      const addBtn = document.createElement('button');
+      addBtn.className = 'btn-add-session';
+      addBtn.id = 'btn-add-session';
+      addBtn.innerHTML = '➕ New';
+      addBtn.onclick = () => {
+        sessionInput.value = ''; // Clear input for new connection
+        showConnectModal(true); 
+      };
+      sessionsBar.appendChild(addBtn);
     }
 
     // 移除旧的视图切换函数
