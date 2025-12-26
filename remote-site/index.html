@@ -84,72 +84,119 @@
     }
     .status-dot.connected { background: var(--success); }
 
-    /* 集成式入口卡片样式 - 与面板融为一体 */
-    .portal-section {
-      width: 100%;
-      background: var(--card);
-      padding: 30px 20px;
-      border-radius: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-      animation: fadeIn 0.4s ease-out;
-    }
-    .portal-section h2 { font-size: 19px; text-align: center; margin: 0; }
-    .portal-section p { font-size: 13px; color: var(--text-dim); text-align: center; margin: 0; }
-    
-    .portal-input-group { position: relative; width: 100%; }
-    .portal-input-group input {
-      width: 100%;
-      padding: 16px;
-      border: 2px solid rgba(255, 255, 255, 0.1);
-      border-radius: 12px;
-      background: rgba(0,0,0,0.2);
-      color: var(--accent);
-      font-size: 22px;
-      font-weight: 800;
-      text-align: center;
-      letter-spacing: 4px;
-      text-transform: uppercase;
-      box-sizing: border-box;
-    }
-    .portal-input-group input:focus { outline: none; border-color: var(--accent); }
-
-    /* 全屏弹窗样式 - 仅用于添加连接 */
+    /* 模态遮罩 (取代原来的 view-stage) */
     .modal-overlay {
       position: fixed;
-      inset: 0;
-      background: rgba(15, 23, 42, 0.9);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      z-index: 2000;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
       display: none;
       align-items: center;
       justify-content: center;
-      padding: 20px;
+      background: rgba(0, 0, 0, 0.85); /* 深色遮罩 */
+      backdrop-filter: blur(8px);      /* 毛玻璃效果 */
+      z-index: 1000;
+      opacity: 0;
+      transition: opacity 0.3s;
     }
-    .modal-overlay.active { display: flex; }
+    .modal-overlay.active { 
+      display: flex; 
+      opacity: 1;
+    }
     
-    /* 正在连接状态样式 */
-    .loading-view { text-align: center; padding: 20px 0; }
-    .loading-view .icon { font-size: 40px; margin-bottom: 16px; animation: pulse 1.5s infinite; display: block; }
-    .loading-view .text { color: var(--accent); font-weight: 700; margin-bottom: 4px; }
-    .loading-view .sid { font-size: 12px; color: var(--text-dim); font-family: monospace; }
-
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    /* 所有的模态内容容器 */
+    .modal-view {
+      display: none;
+      width: 100%;
+      max-width: 320px;
+      flex-direction: column;
+      align-items: center;
+    }
+    .modal-view.active { display: flex; }
     
-    .error-msg { color: var(--danger); font-size: 12px; text-align: center; min-height: 18px; }
-    .hidden { display: none !important; }
+    /* 连接表单卡片 */
+    .connect-card {
+      width: 100%;
+      max-width: 320px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: var(--card);
+      padding: 24px;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .connect-card h2 { font-size: 18px; text-align: center; margin-bottom: 4px; }
+    .connect-card p { font-size: 12px; color: var(--text-dim); text-align: center; margin-bottom: 8px; }
+    
+    .connect-card input {
+      width: 100%;
+      padding: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      background: rgba(0,0,0,0.2);
+      color: var(--text);
+      font-size: 20px;
+      text-align: center;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+    }
+    .connect-card input:focus { outline: none; border-color: var(--accent); }
+    
+    .btn-action {
+      padding: 16px;
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff;
+    }
+    .btn-secondary {
+      background: transparent;
+      color: var(--text-dim);
+      border: 1px solid var(--text-dim);
+      margin-top: 8px;
+    }
+    
+    /* 连接中反馈 */
+    .loading-content {
+      text-align: center;
+      animation: fadeIn 0.5s;
+    }
+    .loading-icon {
+      font-size: 48px;
+      margin-bottom: 20px;
+      display: inline-block;
+      animation: pulse 1.5s infinite;
+    }
+    .loading-text { font-size: 18px; font-weight: 600; color: var(--accent); }
+    .loading-sub { font-size: 13px; color: var(--text-dim); margin-top: 8px; }
 
-    /* 遥控器界面 - 作为底座常驻 */
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.7; } }
+    
+    .error-msg { color: var(--danger); font-size: 13px; text-align: center; min-height: 18px; margin-top: 8px; }
+
+    /* 遥控器界面 - 始终显示在底层 */
     .remote-view {
-      display: flex; /* 始终开启 */
+      display: flex;
       width: 100%;
       max-width: 320px;
       flex-direction: column;
       gap: 16px;
-      padding-top: 60px;
-      box-sizing: border-box;
+      padding-top: 60px; /* 为 header 留出空间 */
+      opacity: 1;
+      transition: opacity 0.3s;
+    }
+    /* 当模态框打开时，底层稍微变暗/模糊 (可选，这里用 opacity) */
+    body.modal-open .remote-view {
+      filter: blur(2px);
     }
 
     /* 音量显示 */
@@ -360,59 +407,39 @@
     </div>
   </div>
 
-  <!-- ➕ 新添加连接专用弹窗 (仅在已进入后使用) -->
-  <div class="modal-overlay" id="modal-portal">
-    <div class="portal-section" style="max-width: 320px;">
-      <div style="text-align: right; margin-bottom: -30px; position: relative; z-index: 10;">
-        <span id="close-modal" style="cursor: pointer; padding: 10px; opacity: 0.6;">✕</span>
+  <!-- 模态遮罩层 -->
+  <div class="modal-overlay" id="modal-layer">
+    
+    <!-- 视图 1: 输入连接码 -->
+    <div class="modal-view" id="view-connect">
+      <div class="connect-card">
+        <h2>🔗 连接 SPECTRA</h2>
+        <p>输入插件端显示的 6 位会话码</p>
+        <input type="text" id="session-input" placeholder="会话码" maxlength="6" autocomplete="off" inputmode="text" autocapitalize="characters">
+        <button class="btn-action btn-primary" id="btn-connect">立即连接</button>
+        <button class="btn-action btn-secondary" id="btn-cancel">取消</button>
+        <p class="error-msg" id="error-msg"></p>
       </div>
-      <h2>🔗 添加新连接</h2>
-      <p>输入插件端显示的 6 位校验码</p>
-      <div class="portal-input-group">
-        <input type="text" id="modal-session-input" placeholder="000000" maxlength="6" autocomplete="off" inputmode="text" autocapitalize="characters">
-      </div>
-      <button class="btn-action btn-primary" id="btn-modal-connect">立即连接</button>
-      <p class="error-msg" id="modal-error-msg"></p>
     </div>
+
+    <!-- 视图 2: 正在连接提示 -->
+    <div class="modal-view" id="view-loading">
+      <div class="loading-content">
+        <div class="loading-icon">📡</div>
+        <div class="loading-text">正在建立连接...</div>
+        <div class="loading-sub" id="loading-target">目标会话: -</div>
+      </div>
+    </div>
+
   </div>
 
-  <!-- 遥控器界面 -->
+  <!-- 遥控器界面 (主底层) -->
   <div class="remote-view" id="remote-view">
     <!-- 会话列表 -->
     <div class="sessions-bar" id="sessions-bar">
       <!-- 动态生成的会话标签 -->
-
     </div>
 
-    <div id="main-content">
-      <!-- 集成式入口区域：输入、加载或提示 -->
-      <div id="portal-area">
-        <!-- 初始进入时的连接表单 -->
-        <div class="portal-section" id="initial-portal">
-          <h2>🔗 连接 SPECTRA</h2>
-          <p>输入插件端显示的 6 位校验码</p>
-          <div class="portal-input-group">
-            <input type="text" id="session-input" placeholder="000000" maxlength="6" autocomplete="off" inputmode="text" autocapitalize="characters">
-          </div>
-          <button class="btn-action btn-primary" id="btn-connect">立即连接</button>
-          <p class="error-msg" id="error-msg"></p>
-        </div>
-
-        <!-- 初始连接时的正在连接视图 -->
-        <div class="loading-view hidden" id="initial-loading">
-          <span class="icon">📡</span>
-          <div class="text">正在建立连接...</div>
-          <div class="sid" id="initial-loading-target">TARGET: -</div>
-        </div>
-      </div>
-
-      <!-- 实际遥控控制组件 (已进入状态) -->
-      <div id="control-area" class="hidden">
-        <!-- 音量显示 -->
-        <div class="volume-display">
-          <div class="vol-label">Volume</div>
-          <div class="vol-value" id="vol-display">0%</div>
-        </div>
     <!-- 当前会话信息 -->
     <div class="tab-info" id="tab-info">
       <div class="tab-title" id="tab-title">等待同步...</div>
@@ -465,18 +492,15 @@
   <script>
     const $ = id => document.getElementById(id);
     const sessionInput = $('session-input');
-    const modalInput = $('modal-session-input');
-    const portalArea = $('portal-area');
-    const initialPortal = $('initial-portal');
-    const initialLoading = $('initial-loading');
-    const controlArea = $('control-area');
-    const modalPortal = $('modal-portal');
-    
+    const modalLayer = $('modal-layer');
+    const viewConnect = $('view-connect');
+    const viewLoading = $('view-loading');
+    const remoteView = $('remote-view');
     const statusDot = $('status-dot');
     const statusText = $('status-text');
     const errorMsg = $('error-msg');
-    const modalErrorMsg = $('modal-error-msg');
     const sessionsBar = $('sessions-bar');
+    const loadingTarget = $('loading-target');
 
     // ========== 多会话管理器 ==========
     const sessions = new Map(); // sid -> { peer, conn, state, connected }
@@ -506,62 +530,69 @@
       if (urlSession) {
         const sid = urlSession.toUpperCase();
         sessionInput.value = sid; // 同步填入输入框
-        showInitialLoading(sid);
         createSession(sid);
-      } else if (saved.length === 0) {
-        showInitialLanding();
+      }
+      
+      // 如果没有任何连接，则显示连接界面 (保留底层背景)
+      if (sessions.size === 0) {
+        showConnectModal(false); // 不可取消
       } else {
-        // 如果有保存的会话，尝试连接第一个
-        saved.forEach(sid => createSession(sid));
-        // 默认激活第一个会话
-        if (sessions.size > 0) {
-          switchSession(Array.from(sessions.keys())[0]);
-          showRemoteView();
-        } else {
-          showInitialLanding();
-        }
+        renderSessionTabs();
       }
     }
 
-    // 网页初始入口连接逻辑
     $('btn-connect').onclick = () => {
       const sid = sessionInput.value.trim().toUpperCase();
-      if (!sid || sid.length < 4) return showError(errorMsg, '请输入有效会话码');
+      if (!sid || sid.length < 4) return showError('请输入会话码');
+      if (sessions.has(sid) && sessions.get(sid).connected) return showError('此会话已连接');
       
-      showInitialLoading(sid);
+      showLoadingModal(sid);
       createSession(sid);
     };
-
-    // 进入后的弹窗添加逻辑
-    $('btn-modal-connect').onclick = () => {
-      const sid = modalInput.value.trim().toUpperCase();
-      if (!sid || sid.length < 4) return showError(modalErrorMsg, '请输入有效会话码');
-      if (sessions.has(sid)) return showError(modalErrorMsg, '此会话已存在');
-      
-      // 弹窗连接时，直接创建，成功后会自动关闭
-      createSession(sid);
-      $('btn-modal-connect').disabled = true;
-      $('btn-modal-connect').textContent = '连接中...';
+    $('btn-cancel').onclick = () => {
+      closeModal();
     };
-
-    $('close-modal').onclick = () => {
-      modalPortal.classList.remove('active');
-    };
-
-    function showInitialLoading(sid) {
-      initialPortal.classList.add('hidden');
-      initialLoading.classList.remove('hidden');
-      $('initial-loading-target').textContent = `TARGET: ${sid}`;
-    }
-
-    function hideInitialLoading() {
-      initialPortal.classList.remove('hidden');
-      initialLoading.classList.add('hidden');
-    }
     sessionInput.onkeydown = e => {
       if (e.key === 'Enter') $('btn-connect').click();
     };
 
+    // 添加新会话按钮
+    // 显示连接输入页
+    // 打开连接模态框
+    function showConnectModal(cancellable = true) {
+      modalLayer.classList.add('active');
+      document.body.classList.add('modal-open');
+      
+      viewConnect.classList.add('active');
+      viewLoading.classList.remove('active');
+      
+      showError('');
+      // 如果可取消，显示取消按钮，否则隐藏
+      $('btn-cancel').style.display = cancellable ? 'block' : 'none';
+      sessionInput.focus();
+    }
+
+    // 打开加载模态框
+    function showLoadingModal(sid) {
+      modalLayer.classList.add('active');
+      document.body.classList.add('modal-open');
+      
+      viewConnect.classList.remove('active');
+      viewLoading.classList.add('active');
+      
+      loadingTarget.textContent = `目标会话: ${sid}`;
+    }
+
+    // 关闭模态框
+    function closeModal() {
+      modalLayer.classList.remove('active');
+      document.body.classList.remove('modal-open');
+      // 稍微延时清理 active 类，防止动画闪烁
+      setTimeout(() => {
+         viewConnect.classList.remove('active');
+         viewLoading.classList.remove('active');
+      }, 300);
+    }
 
     // 创建新会话连接
     function createSession(sid) {
@@ -582,12 +613,7 @@
           session.connected = true;
           switchSession(sid);
           renderSessionTabs();
-          showRemoteView();
-          
-          // 成功连接后清空状态
-          modalPortal.classList.remove('active');
-          $('btn-modal-connect').disabled = false;
-          $('btn-modal-connect').textContent = '立即连接';
+          closeModal(); // 连接成功，关闭模态框
         });
         session.conn.on('data', data => {
           if (data.type === 'state') {
@@ -605,15 +631,10 @@
       });
       setTimeout(() => {
         if (sessions.has(sid) && !sessions.get(sid).connected) {
-          const s = sessions.get(sid);
-          handleDisconnect(sid, '连接超时');
-          if (modalPortal.classList.contains('active')) {
-            showError(modalErrorMsg, '连接超时');
-            $('btn-modal-connect').disabled = false;
-          } else {
-            hideInitialLoading();
-            showError(errorMsg, '连接超时');
-          }
+          showError(`${sid}: 连接超时`);
+          // 回到输入界面，不要全关
+          viewLoading.classList.remove('active');
+          viewConnect.classList.add('active'); 
           removeSession(sid);
         }
       }, 10000);
@@ -643,9 +664,14 @@
       // 如果删除的是当前激活的，切换到其他
       if (activeSessionId === sid) {
         activeSessionId = null;
-        const next = Array.from(sessions.keys())[0];
+        const next = sessions.keys().next().value;
         if (next) switchSession(next);
-        else showInitialLanding();
+        else {
+           // 如果没有连接了，强制显示连接框(不可取消)
+           showConnectModal(false);
+           statusText.textContent = '未连接';
+           statusDot.classList.remove('connected');
+        }
       }
     }
 
@@ -668,8 +694,17 @@
       if (s?.conn?.open) s.conn.send({ type: 'command', command: cmd });
     }
 
-    function showError(elem, msg) {
-      elem.textContent = msg;
+    function updateUI(s) {
+      if (s.volume !== undefined) $('vol-display').textContent = s.volume + '%';
+      if (s.muted !== undefined) $('btn-mute').classList.toggle('muted', s.muted);
+      if (s.playing !== undefined) $('btn-play-pause').textContent = s.playing ? '⏸' : '▶️';
+      if (s.speed !== undefined) $('speed-display').textContent = s.speed.toFixed(2) + 'x';
+      if (s.tabTitle !== undefined) $('tab-title').textContent = s.tabTitle || '待命中...';
+      if (s.tabDomain !== undefined) $('tab-domain').textContent = s.tabDomain || '-';
+    }
+
+    function showError(msg) {
+      errorMsg.textContent = msg;
     }
 
     // 渲染会话标签栏
@@ -682,9 +717,7 @@
       addBtn.id = 'btn-add-session';
       addBtn.innerHTML = '➕ 新连接';
       addBtn.onclick = () => {
-        modalPortal.classList.add('active');
-        modalInput.focus();
-        modalErrorMsg.textContent = '';
+        showConnectModal(true); // 可取消
       };
       sessionsBar.appendChild(addBtn);
 
@@ -704,39 +737,10 @@
       });
     }
 
-    // 显示控制视图
-    function showRemoteView() {
-      portalArea.classList.add('hidden');
-      controlArea.classList.remove('hidden');
-      document.body.classList.add('connected');
-    }
+    // 移除旧的视图切换函数
+    // showRemoteView / hideRemoteView 已不再需要，逻辑并入 modal 控制
 
-    // 重置并显示初始引导
-    function showInitialLanding() {
-      document.body.classList.remove('connected');
-      controlArea.classList.add('hidden');
-      portalArea.classList.remove('hidden');
-      hideInitialLoading();
-      statusDot.classList.remove('connected');
-      statusText.textContent = '未连接';
-    }
-    
     // 初始化
-    const urlSession = new URLSearchParams(location.search).get('s');
-    function init() {
-      const saved = loadSavedSessions();
-      if (urlSession) {
-        const sid = urlSession.toUpperCase();
-        sessionInput.value = sid;
-        showInitialLoading(sid);
-        createSession(sid);
-      } else if (saved.length === 0) {
-        showInitialLanding();
-      } else {
-        // 有保存的连接，但需要用户手动选择或自动连接第一个
-        showInitialLanding();
-      }
-    }
     init();
 
     // 主题切换
