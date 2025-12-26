@@ -5,183 +5,195 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>SPECTRA Remote</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    
+    :root {
+      --bg: linear-gradient(145deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
+      --card: rgba(255, 255, 255, 0.05);
+      --card-hover: rgba(255, 255, 255, 0.1);
+      --accent: #667eea;
+      --accent2: #764ba2;
+      --success: #4caf50;
+      --danger: #f44336;
+      --text: #fff;
+      --text-dim: rgba(255, 255, 255, 0.6);
+    }
     
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      background: var(--bg);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
       align-items: center;
-      color: #fff;
-      padding: 20px;
+      color: var(--text);
+      padding: 16px;
+      padding-bottom: env(safe-area-inset-bottom, 16px);
     }
 
+    /* 头部 */
     .header {
       text-align: center;
-      margin-bottom: 30px;
+      margin-bottom: 20px;
+      width: 100%;
     }
-
     .header h1 {
-      font-size: 24px;
+      font-size: 20px;
       font-weight: 700;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
       -webkit-background-clip: text;
+      background-clip: text;
       -webkit-text-fill-color: transparent;
     }
-
     .status {
       display: flex;
       align-items: center;
-      gap: 8px;
-      margin-top: 10px;
-      font-size: 14px;
-      color: #a0a0a0;
+      justify-content: center;
+      gap: 6px;
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--text-dim);
     }
-
     .status-dot {
-      width: 10px;
-      height: 10px;
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
-      background: #f44336;
-      animation: pulse 2s infinite;
+      background: var(--danger);
     }
+    .status-dot.connected { background: var(--success); }
 
-    .status-dot.connected {
-      background: #4caf50;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
-    }
-
-    .controls {
+    /* 连接界面 */
+    .connect-view {
+      width: 100%;
+      max-width: 280px;
       display: flex;
       flex-direction: column;
-      gap: 20px;
+      gap: 12px;
+    }
+    .connect-view input {
       width: 100%;
-      max-width: 300px;
-    }
-
-    .volume-section {
+      padding: 14px;
+      border: 2px solid rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      background: var(--card);
+      color: var(--text);
+      font-size: 18px;
       text-align: center;
-    }
-
-    .volume-display {
-      font-size: 48px;
-      font-weight: 700;
-      color: #667eea;
-    }
-
-    .volume-label {
-      font-size: 12px;
-      color: #a0a0a0;
+      letter-spacing: 6px;
       text-transform: uppercase;
     }
-
-    .btn-row {
-      display: flex;
-      gap: 15px;
-      justify-content: center;
-    }
-
-    .btn {
-      width: 70px;
-      height: 70px;
-      border: none;
-      border-radius: 50%;
-      background: rgba(255, 255, 255, 0.1);
-      color: #fff;
-      font-size: 28px;
-      cursor: pointer;
-      transition: all 0.2s;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .btn:active {
-      transform: scale(0.95);
-      background: rgba(102, 126, 234, 0.4);
-    }
-
-    .btn-large {
-      width: 90px;
-      height: 90px;
-      font-size: 36px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-
-    .btn-mute {
-      background: rgba(244, 67, 54, 0.3);
-    }
-
-    .btn-mute.active {
-      background: #f44336;
-    }
-
-    .seek-section {
-      margin-top: 20px;
-    }
-
-    .seek-row {
-      display: flex;
-      gap: 10px;
-      justify-content: center;
-    }
-
-    .btn-seek {
-      width: 60px;
-      height: 50px;
-      border-radius: 12px;
-      font-size: 16px;
-    }
-
-    .error-msg {
-      color: #f44336;
-      font-size: 14px;
-      text-align: center;
-      margin-top: 20px;
-      display: none;
-    }
-
-    .input-section {
-      margin-top: 20px;
-      width: 100%;
-      max-width: 300px;
-    }
-
-    .input-section input {
-      width: 100%;
-      padding: 12px 16px;
-      border: 2px solid rgba(255, 255, 255, 0.2);
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.1);
-      color: #fff;
-      font-size: 20px;
-      text-align: center;
-      letter-spacing: 4px;
-      text-transform: uppercase;
-    }
-
-    .input-section input:focus {
+    .connect-view input:focus {
       outline: none;
-      border-color: #667eea;
+      border-color: var(--accent);
     }
-
-    .btn-connect {
-      width: 100%;
-      margin-top: 10px;
+    .connect-view button {
       padding: 14px;
       border: none;
       border-radius: 12px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: #fff;
-      font-size: 16px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: var(--text);
+      font-size: 15px;
       font-weight: 600;
       cursor: pointer;
+    }
+    .error-msg {
+      color: var(--danger);
+      font-size: 13px;
+      text-align: center;
+      min-height: 18px;
+    }
+
+    /* 遥控器界面 */
+    .remote-view {
+      display: none;
+      width: 100%;
+      max-width: 320px;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .remote-view.active { display: flex; }
+
+    /* 音量显示 */
+    .volume-display {
+      text-align: center;
+      padding: 16px;
+      background: var(--card);
+      border-radius: 16px;
+    }
+    .volume-value {
+      font-size: 48px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .volume-label { font-size: 12px; color: var(--text-dim); }
+
+    /* 控制区块 */
+    .control-section {
+      background: var(--card);
+      border-radius: 16px;
+      padding: 12px;
+    }
+    .section-title {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      padding-left: 4px;
+    }
+
+    /* 按钮网格 */
+    .btn-grid {
+      display: grid;
+      gap: 8px;
+    }
+    .btn-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+    .btn-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+    .btn-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+
+    /* 按钮样式 */
+    .btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 14px 8px;
+      border: none;
+      border-radius: 12px;
+      background: var(--card-hover);
+      color: var(--text);
+      font-size: 22px;
+      cursor: pointer;
+      transition: all 0.15s;
+      min-height: 60px;
+    }
+    .btn:active {
+      transform: scale(0.95);
+      background: rgba(102, 126, 234, 0.3);
+    }
+    .btn-label {
+      font-size: 10px;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+
+    /* 主播放按钮 */
+    .btn-play {
+      font-size: 32px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      min-height: 70px;
+    }
+
+    /* 静音按钮 */
+    .btn.muted { background: var(--danger); }
+
+    /* 速度显示 */
+    .speed-value {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--accent);
     }
 
     .hidden { display: none !important; }
@@ -197,195 +209,145 @@
   </div>
 
   <!-- 连接界面 -->
-  <div id="connect-view" class="input-section">
-    <input type="text" id="session-input" placeholder="输入会话码" maxlength="6" autocomplete="off">
-    <button class="btn-connect" id="btn-connect">连接</button>
+  <div class="connect-view" id="connect-view">
+    <input type="text" id="session-input" placeholder="会话码" maxlength="6" autocomplete="off">
+    <button id="btn-connect">连接</button>
     <p class="error-msg" id="error-msg"></p>
   </div>
 
   <!-- 遥控器界面 -->
-  <div id="remote-view" class="controls hidden">
-    <div class="volume-section">
-      <div class="volume-display" id="volume-display">100%</div>
+  <div class="remote-view" id="remote-view">
+    <!-- 音量 -->
+    <div class="volume-display">
+      <div class="volume-value" id="vol-display">100%</div>
       <div class="volume-label">音量</div>
     </div>
 
     <!-- 音量控制 -->
-    <div class="btn-row">
-      <button class="btn" id="btn-vol-down">−</button>
-      <button class="btn btn-large" id="btn-play-pause">⏸</button>
-      <button class="btn" id="btn-vol-up">+</button>
+    <div class="control-section">
+      <div class="btn-grid cols-4">
+        <button class="btn" id="btn-vol-down">➖<span class="btn-label">-10</span></button>
+        <button class="btn" id="btn-vol-up">➕<span class="btn-label">+10</span></button>
+        <button class="btn" id="btn-vol-100">1️⃣<span class="btn-label">100%</span></button>
+        <button class="btn" id="btn-mute">🔇<span class="btn-label">静音</span></button>
+      </div>
     </div>
 
-    <!-- 静音和快捷音量 -->
-    <div class="btn-row">
-      <button class="btn btn-mute" id="btn-mute">🔇</button>
-      <button class="btn" id="btn-vol-100" title="100%">1x</button>
-      <button class="btn" id="btn-vol-max" title="最大">🔊</button>
-    </div>
-
-    <!-- 跳转控制 -->
-    <div class="seek-section">
-      <div class="seek-row">
-        <button class="btn btn-seek" id="btn-seek-back-30">⏪ 30s</button>
-        <button class="btn btn-seek" id="btn-seek-back">⏪ 10s</button>
-        <button class="btn btn-seek" id="btn-seek-forward">10s ⏩</button>
-        <button class="btn btn-seek" id="btn-seek-forward-30">30s ⏩</button>
+    <!-- 播放控制 -->
+    <div class="control-section">
+      <div class="btn-grid cols-3">
+        <button class="btn" id="btn-seek-back">⏪<span class="btn-label">-10s</span></button>
+        <button class="btn btn-play" id="btn-play-pause">⏸</button>
+        <button class="btn" id="btn-seek-forward">⏩<span class="btn-label">+10s</span></button>
       </div>
     </div>
 
     <!-- 速度控制 -->
-    <div class="seek-section">
-      <div class="volume-label" style="margin-bottom: 10px;">播放速度 <span id="speed-display">1.0x</span></div>
-      <div class="seek-row">
-        <button class="btn btn-seek" id="btn-speed-down">−0.25</button>
-        <button class="btn btn-seek" id="btn-speed-reset">重置</button>
-        <button class="btn btn-seek" id="btn-speed-up">+0.25</button>
+    <div class="control-section">
+      <div class="section-title">播放速度 <span class="speed-value" id="speed-display">1.00x</span></div>
+      <div class="btn-grid cols-3">
+        <button class="btn" id="btn-speed-down">🐢<span class="btn-label">-0.25</span></button>
+        <button class="btn" id="btn-speed-reset">🔄<span class="btn-label">重置</span></button>
+        <button class="btn" id="btn-speed-up">🐇<span class="btn-label">+0.25</span></button>
       </div>
     </div>
 
-    <!-- 视频控制 -->
-    <div class="seek-section">
-      <div class="btn-row">
-        <button class="btn" id="btn-fullscreen" title="全屏">⛶</button>
-        <button class="btn" id="btn-pip" title="画中画">📺</button>
+    <!-- 快捷跳转 -->
+    <div class="control-section">
+      <div class="btn-grid cols-2">
+        <button class="btn" id="btn-seek-back-30">⏮<span class="btn-label">-30s</span></button>
+        <button class="btn" id="btn-seek-forward-30">⏭<span class="btn-label">+30s</span></button>
       </div>
     </div>
   </div>
 
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <script>
-    const sessionInput = document.getElementById('session-input');
-    const btnConnect = document.getElementById('btn-connect');
-    const connectView = document.getElementById('connect-view');
-    const remoteView = document.getElementById('remote-view');
-    const statusDot = document.getElementById('status-dot');
-    const statusText = document.getElementById('status-text');
-    const errorMsg = document.getElementById('error-msg');
-    const volumeDisplay = document.getElementById('volume-display');
+    const $ = id => document.getElementById(id);
+    const sessionInput = $('session-input');
+    const connectView = $('connect-view');
+    const remoteView = $('remote-view');
+    const statusDot = $('status-dot');
+    const statusText = $('status-text');
+    const errorMsg = $('error-msg');
 
-    let peer = null;
-    let conn = null;
+    let peer = null, conn = null;
 
-    // 从 URL 获取会话码
-    const urlParams = new URLSearchParams(window.location.search);
-    const sessionFromUrl = urlParams.get('s');
-    if (sessionFromUrl) {
-      sessionInput.value = sessionFromUrl;
+    // 从URL获取会话码
+    const urlSession = new URLSearchParams(location.search).get('s');
+    if (urlSession) {
+      sessionInput.value = urlSession;
       connect();
     }
 
-    btnConnect.onclick = connect;
-    sessionInput.onkeydown = (e) => { if (e.key === 'Enter') connect(); };
+    $('btn-connect').onclick = connect;
+    sessionInput.onkeydown = e => e.key === 'Enter' && connect();
 
     function connect() {
-      const sessionId = sessionInput.value.trim().toUpperCase();
-      if (!sessionId || sessionId.length < 4) {
-        showError('请输入有效的会话码');
-        return;
-      }
-
+      const sid = sessionInput.value.trim().toUpperCase();
+      if (!sid || sid.length < 4) return showError('请输入会话码');
+      
       showError('');
       statusText.textContent = '连接中...';
-
-      // 创建 Peer
+      
       peer = new Peer();
-
       peer.on('open', () => {
-        // 连接到扩展端
-        conn = peer.connect(`spectra-${sessionId}`);
-
+        conn = peer.connect(`spectra-${sid}`);
         conn.on('open', () => {
           statusDot.classList.add('connected');
           statusText.textContent = '已连接';
           connectView.classList.add('hidden');
-          remoteView.classList.remove('hidden');
+          remoteView.classList.add('active');
         });
-
-        conn.on('data', (data) => {
-          if (data.type === 'state') {
-            updateUI(data);
-          }
+        conn.on('data', data => {
+          if (data.type === 'state') updateUI(data);
         });
-
-        conn.on('close', () => {
-          disconnect();
-        });
-
-        conn.on('error', (err) => {
-          showError('连接失败: ' + err.message);
-        });
+        conn.on('close', disconnect);
+        conn.on('error', e => showError('连接失败: ' + e.message));
       });
-
-      peer.on('error', (err) => {
-        if (err.type === 'peer-unavailable') {
-          showError('会话不存在或已过期');
-        } else {
-          showError('连接错误: ' + err.message);
-        }
+      peer.on('error', e => {
+        showError(e.type === 'peer-unavailable' ? '会话不存在' : '错误: ' + e.message);
       });
-
-      // 超时处理
-      setTimeout(() => {
-        if (!conn || !conn.open) {
-          showError('连接超时，请检查会话码');
-        }
-      }, 10000);
+      setTimeout(() => { if (!conn?.open) showError('连接超时'); }, 10000);
     }
 
     function disconnect() {
       statusDot.classList.remove('connected');
       statusText.textContent = '已断开';
-      remoteView.classList.add('hidden');
+      remoteView.classList.remove('active');
       connectView.classList.remove('hidden');
-      if (conn) conn.close();
-      if (peer) peer.destroy();
-      conn = null;
-      peer = null;
+      conn?.close(); peer?.destroy();
+      conn = peer = null;
     }
 
-    function sendCommand(cmd) {
-      if (conn && conn.open) {
-        conn.send({ type: 'command', command: cmd });
-      }
+    function sendCmd(cmd) {
+      if (conn?.open) conn.send({ type: 'command', command: cmd });
     }
 
-    function updateUI(state) {
-      if (state.volume !== undefined) {
-        volumeDisplay.textContent = state.volume + '%';
-      }
-      if (state.muted !== undefined) {
-        document.getElementById('btn-mute').classList.toggle('active', state.muted);
-      }
-      if (state.playing !== undefined) {
-        document.getElementById('btn-play-pause').textContent = state.playing ? '⏸' : '▶';
-      }
-      if (state.speed !== undefined) {
-        document.getElementById('speed-display').textContent = state.speed.toFixed(2) + 'x';
-      }
+    function updateUI(s) {
+      if (s.volume !== undefined) $('vol-display').textContent = s.volume + '%';
+      if (s.muted !== undefined) $('btn-mute').classList.toggle('muted', s.muted);
+      if (s.playing !== undefined) $('btn-play-pause').textContent = s.playing ? '⏸' : '▶️';
+      if (s.speed !== undefined) $('speed-display').textContent = s.speed.toFixed(2) + 'x';
     }
 
     function showError(msg) {
       errorMsg.textContent = msg;
-      errorMsg.style.display = msg ? 'block' : 'none';
     }
 
     // 按钮事件
-    document.getElementById('btn-vol-up').onclick = () => sendCommand('volume_up');
-    document.getElementById('btn-vol-down').onclick = () => sendCommand('volume_down');
-    document.getElementById('btn-vol-100').onclick = () => sendCommand('volume_100');
-    document.getElementById('btn-vol-max').onclick = () => sendCommand('volume_max');
-    document.getElementById('btn-mute').onclick = () => sendCommand('mute');
-    document.getElementById('btn-play-pause').onclick = () => sendCommand('play_pause');
-    document.getElementById('btn-seek-back').onclick = () => sendCommand('seek_backward');
-    document.getElementById('btn-seek-forward').onclick = () => sendCommand('seek_forward');
-    document.getElementById('btn-seek-back-30').onclick = () => sendCommand('seek_backward_30');
-    document.getElementById('btn-seek-forward-30').onclick = () => sendCommand('seek_forward_30');
-    document.getElementById('btn-speed-down').onclick = () => sendCommand('speed_down');
-    document.getElementById('btn-speed-up').onclick = () => sendCommand('speed_up');
-    document.getElementById('btn-speed-reset').onclick = () => sendCommand('speed_reset');
-    document.getElementById('btn-fullscreen').onclick = () => sendCommand('fullscreen');
-    document.getElementById('btn-pip').onclick = () => sendCommand('pip');
+    $('btn-vol-down').onclick = () => sendCmd('volume_down');
+    $('btn-vol-up').onclick = () => sendCmd('volume_up');
+    $('btn-vol-100').onclick = () => sendCmd('volume_100');
+    $('btn-mute').onclick = () => sendCmd('mute');
+    $('btn-play-pause').onclick = () => sendCmd('play_pause');
+    $('btn-seek-back').onclick = () => sendCmd('seek_backward');
+    $('btn-seek-forward').onclick = () => sendCmd('seek_forward');
+    $('btn-seek-back-30').onclick = () => sendCmd('seek_backward_30');
+    $('btn-seek-forward-30').onclick = () => sendCmd('seek_forward_30');
+    $('btn-speed-down').onclick = () => sendCmd('speed_down');
+    $('btn-speed-up').onclick = () => sendCmd('speed_up');
+    $('btn-speed-reset').onclick = () => sendCmd('speed_reset');
   </script>
 </body>
 </html>
