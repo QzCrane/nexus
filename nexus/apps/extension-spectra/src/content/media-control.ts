@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from '../shared/logger';
+import { simulateMouseHover } from './focus-helper';
 
 const log = createLogger('MediaControl');
 
@@ -85,11 +86,8 @@ export async function togglePip(): Promise<boolean> {
 			await video.requestPictureInPicture();
 			result = true;
 		}
-		// 恢复焦点，防止后续操作失效
-		setTimeout(() => {
-			video.focus();
-			document.body.focus();
-		}, 100);
+		// 延迟恢复焦点 (等待 PiP 动画完成)
+		setTimeout(() => simulateMouseHover(video), 200);
 		return result;
 	} catch (e) {
 		log.error('PiP toggle failed:', e);

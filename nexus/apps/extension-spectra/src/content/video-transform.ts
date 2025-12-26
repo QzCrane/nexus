@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from '../shared/logger';
+import { simulateMouseHover } from './focus-helper';
 
 const log = createLogger('VideoTransform');
 
@@ -148,9 +149,6 @@ export function takeScreenshot(): string | null {
 	}
 }
 
-// ============================================
-// 高级视频控制
-// ============================================
 
 /** 切换全屏 */
 export async function toggleFullscreen(): Promise<boolean> {
@@ -169,11 +167,8 @@ export async function toggleFullscreen(): Promise<boolean> {
 			await video.requestFullscreen();
 			result = true;
 		}
-		// 恢复焦点，防止后续操作失效
-		setTimeout(() => {
-			video.focus();
-			document.body.focus();
-		}, 100);
+		// 延迟恢复焦点 (等待全屏/退出动画完成)
+		setTimeout(() => simulateMouseHover(video), 200);
 		return result;
 	} catch (e) {
 		log.error('Fullscreen toggle failed:', e);

@@ -97,8 +97,8 @@ export async function executeCommand(cmd: RemoteCommand, tabId: number): Promise
 	await syncState(tabId);
 }
 
-/** 获取并发送状态 */
-async function syncState(tabId: number): Promise<void> {
+/** 获取并发送状态 (初始同步/命令后同步) */
+export async function syncState(tabId: number): Promise<void> {
 	if (!stateCallback) return;
 
 	try {

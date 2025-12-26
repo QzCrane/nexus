@@ -62,8 +62,9 @@ async function createSession(tabId: number): Promise<RemoteSession> {
 				console.log(LOG, 'DataChannel open');
 				if (session) session.connected = true;
 				conn.send({ type: 'connected' });
-				// 通知 background 状态变化
+				// 通知 background 状态变化 + 请求初始状态同步
 				chrome.runtime.sendMessage({ type: 'REMOTE_STATUS_CHANGE', connected: true });
+				chrome.runtime.sendMessage({ type: 'REMOTE_REQUEST_SYNC', tabId: session?.tabId });
 			});
 
 			conn.on('data', (data) => handleData(data));

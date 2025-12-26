@@ -107,6 +107,15 @@ export function initRemoteService(): void {
 			return false;
 		}
 
+		// 来自 offscreen 的初始状态同步请求
+		if (message.type === 'REMOTE_REQUEST_SYNC') {
+			const { tabId } = message as { tabId?: number };
+			if (tabId) {
+				import('./remote-commands').then(m => m.syncState(tabId));
+			}
+			return false;
+		}
+
 		return false;
 	});
 
