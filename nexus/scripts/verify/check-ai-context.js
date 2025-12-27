@@ -1,13 +1,15 @@
 /**
  * 检查 .ai-context.md 文件
+ * 软限位: 目标 ≤40 行，警告 >50 行，错误 >80 行
  */
 
 import fs from 'fs';
 import path from 'path';
 import { error, ok, warn } from './utils.js';
 
-const MAX_LINES = 40;
-const WARN_LINES = 60;
+const SOFT_LIMIT = 40;  // 目标行数 (超过仅提示)
+const WARN_LINES = 50;  // 警告阈值
+const ERROR_LINES = 80; // 错误阈值 (信息过于冗长)
 
 export function checkAiContextFiles(ROOT) {
 	console.log('\n📋 检查 .ai-context.md 文件...\n');
@@ -36,10 +38,10 @@ export function checkAiContextFiles(ROOT) {
 			if (fs.existsSync(contextFile)) {
 				const content = fs.readFileSync(contextFile, 'utf-8');
 				const lineCount = content.split('\n').length;
-				if (lineCount > WARN_LINES) {
-					error(`${base}/${entry.name}/.ai-context.md 超过 ${WARN_LINES} 行 (当前 ${lineCount} 行)！`);
-				} else if (lineCount > MAX_LINES) {
-					warn(`${base}/${entry.name}/.ai-context.md 超过 ${MAX_LINES} 行 (当前 ${lineCount} 行)，建议压缩`);
+				if (lineCount > ERROR_LINES) {
+					error(`${base}/${entry.name}/.ai-context.md 超过 ${ERROR_LINES} 行 (当前 ${lineCount} 行)，信息过于冗长！`);
+				} else if (lineCount > WARN_LINES) {
+					warn(`${base}/${entry.name}/.ai-context.md 超过 ${WARN_LINES} 行 (当前 ${lineCount} 行)，建议压缩`);
 				} else {
 					ok(`${base}/${entry.name}/.ai-context.md (${lineCount} 行)`);
 				}
