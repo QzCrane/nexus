@@ -8,23 +8,38 @@ description: Extension Spectra 发布标准流程 (测试 + 打包)
 
 ## 1. 版本控制
 
-- 同步修改 `package.json` 和 `manifest.json` 的版本号 (SemVer)。
+- 同步修改版本号 (SemVer):
+  - `apps/extension-spectra/package.json`
+  - `apps/extension-spectra/public/manifest.json`
 
-## 2. 质量门禁 (强制)
+## 2. 质量门禁
 
 // turbo
 
-- 冒烟测试: `pnpm test:e2e`
-  // turbo
-- 功能回归: `pnpm test:volume`
+```bash
+cd nexus ; pnpm build
+cd apps/extension-spectra ; pnpm test:e2e
+```
 
 ## 3. 构建打包
 
 // turbo
 
-- `pnpm build` -> 验证 `dist/` 完整性。
-- 压缩 `dist/` 至 `releases/spectra-v<VER>.zip`。
+```bash
+cd nexus/apps/extension-spectra
+Compress-Archive -Path .\dist\* -DestinationPath .\spectra-v<VER>.zip -Force
+```
 
-## 4. 交付
+验证 zip 大小应 <1MB (无冗余资源文件)。
 
-- 在提交信息中简述 Changelog。
+## 4. 商店素材
+
+- `_locales/`: 9 语言扩展国际化 (manifest 引用)
+- `store-listings/`: 9 语言商店详细描述
+- 宣传图 + 截图: 手动准备
+
+## 5. 交付
+
+- 提交信息简述 Changelog
+- 上传至 Chrome Developer Dashboard
+- 填写商店信息 (从 store-listings 复制)
