@@ -868,7 +868,7 @@ input:checked + .slider-round:before {
 }
 
 .bg-stack .glass-card {
-  background: rgba(255, 255, 255, 0.8);
+  background: color-mix(in srgb, var(--w) 80%, transparent);
 }
 
 .empty-container {

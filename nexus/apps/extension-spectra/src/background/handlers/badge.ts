@@ -2,10 +2,24 @@
  * SPECTRA Background - 角标处理器
  * 
  * 处理扩展图标角标相关的消息
+ * 
+ * 角标显示规则（v2）：
+ * - 仅当配置处于"默认原生状态"时隐藏角标：
+ *   1. 音量 == 100%
+ *   2. 非静音
+ *   3. 非捕获模式
+ * - 其他所有情况都显示角标（包括从预设加载的配置）
  */
 
 import { router, badgeState, BADGE_COLORS } from '../state';
 import { isTabExists } from '../helpers';
+
+/**
+ * 判断是否处于默认原生状态（不需要显示角标）
+ */
+function isDefaultNativeState(volume: number, muted: boolean, isCapture: boolean): boolean {
+	return volume === 100 && !muted && !isCapture;
+}
 
 /**
  * 注册角标相关的消息处理器
@@ -22,10 +36,11 @@ export function registerBadgeHandlers(): void {
 			return;
 		}
 
-		const { volume, muted, isCapture, userInteracted } = req;
+		const { volume, muted, isCapture } = req;
 
-		// 🔴 用户未交互时完全不显示角标（即使网站自己调节了音量）
-		if (!userInteracted) {
+		// 🔴 新规则：仅在默认原生状态时隐藏角标
+		// 即使用户未交互，只要配置不是默认值也要显示角标（如从预设加载）
+		if (isDefaultNativeState(volume, muted, isCapture)) {
 			badgeState.delete(tabId);
 			try {
 				await chrome.action.setBadgeText({ tabId, text: '' });
