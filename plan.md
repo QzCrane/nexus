@@ -14,7 +14,7 @@
 |   P0   | Video  | 旋转/镜像/去黑边/速率/画中画 | CSS+JS            | FREE |  ✅  |
 |   P0   | Tool   | 截图/AB 循环/时间标记        | Canvas+JS         | FREE |  ✅  |
 |   P1   | AI     | 人声分离                     | WASM+ONNX         | PRO  |  ⬜  |
-|   P1   | Remote | 手机遥控 (QR→WebRTC)         | WebSocket         | FREE |  ⬜  |
+|   P1   | Remote | 手机遥控 (QR→WebRTC)         | PeerJS+WebRTC     | FREE |  ✅  |
 |   P1   | Stream | 标签页直播共享               | tabCapture+WebRTC | PRO  |  ⬜  |
 |   P2   | Audio  | 空间音频/声画同步/声道平衡   | WebAudio          | PRO  |  ✅  |
 
@@ -102,7 +102,7 @@ Infra:   rust-core (WASM)
 | ID    | 功能           | 技术        | 批次 | 状态 |
 | ----- | -------------- | ----------- | :--: | :--: |
 | 2.4.1 | 切回后台标签页 | chrome.tabs |  B2  |  ✅  |
-| 2.4.2 | 热键编辑器     | 配置面板    |  B4  |  ✅  |
+| 2.4.2 | 热键编辑器     | Options 页  |  B4  |  ✅  |
 | 2.4.3 | URL 规则条件   | 域名配置    |  B4  |  ✅  |
 
 > **批次说明**: B1=核心播放 | B2=视频变换 | B3=音频增强 | B4=高级功能

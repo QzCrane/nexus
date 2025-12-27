@@ -46,8 +46,9 @@
 - Video: 旋转/镜像, 画中画, 全屏, 截图, 去黑边, 时间跳转
 - FX: 亮度/对比度/饱和度, 灰度/反色, 背景暗化
 - Playback: 速率 0.25x-16x, AB 循环, 时间标记
-- Settings: 热键入口, 域名预设管理
+- Settings: 域名预设管理, 热键编辑器 (Options 页)
 - Remote: 多会话遥控, QR 码连接, 移动端 UI
+- Hotkeys: 可配置快捷键, 70+ 动作, 按键录入
 - Engine: CORS 探测, Sticky Badge
 
 ---
@@ -93,7 +94,9 @@
 - └─ src/popup/: Popup UI
 - └─ src/content/: Content Script
 - └─ src/background/: Service Worker
+- └─ src/options/: 快捷键配置 (Slots+网站)
 - └─ src/content/policy-executor/: CORS+模式
 - └─ src/content/lifecycle/: 定时器+观察器
 - └─ src/remote/: 遥控弹窗+QR
 - └─ src/offscreen-remote/: WebRTC Offscreen
+- └─ src/options/: 快捷键编辑器 Settings 页

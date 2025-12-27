@@ -21,9 +21,17 @@ export function initNavigation(): NavigationState {
 
   const btnSettings = $<HTMLElement>('btn-settings');
   const btnBack = $<HTMLElement>('btn-back');
+  const btnHotkeys = $<HTMLElement>('btn-hotkeys');
   const btnShortcuts = $<HTMLElement>('btn-shortcuts');
 
-  // 快捷键设置按钮
+  // ⌨️ 网页内热键 → 打开 Options 页 (自定义快捷键编辑器)
+  if (btnHotkeys) {
+    btnHotkeys.onclick = () => {
+      chrome.runtime.openOptionsPage();
+    };
+  }
+
+  // 🌐 全局快捷键 → 打开 Chrome 扩展快捷键设置
   if (btnShortcuts) {
     btnShortcuts.onclick = () => {
       chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });

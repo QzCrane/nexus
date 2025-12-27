@@ -4,3 +4,4 @@
 
 export { StorageRepository } from './repository.js';
 export { getAudioConfig, setAudioConfig, removeAudioConfig } from './audio-config.js';
+export { getHotkeySettings, setHotkeySettings, resetHotkeySettings } from './hotkey-settings.js';

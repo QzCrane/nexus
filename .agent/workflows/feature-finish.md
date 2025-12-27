@@ -1,29 +1,50 @@
 ---
-description: 任务交付门禁 (测试 + 文档同步)
+description: 任务交付门禁 (测试 + 文档同步 + 提交)
 ---
 
 # Feature Finish
 
 交付前必检，确认质量与文档对齐。
 
-## 1. 文档同步 (手动)
+## 1. 上下文工程更新
 
-- [ ] 模块 `.ai-context.md` 已更新。
-- [ ] 消息速查表 (`README.AI.md`) 已同步。
-- [ ] 依赖记录 (`docs/dependencies/`) 已登记。
+- [ ] 模块 `.ai-context.md`
+- [ ] `README.AI.md` 消息速查表，模块索引等
+- [ ] 依赖及规则 (`docs/ai-rules.md`)
+- [ ] 更新所有相关 .md
+- [ ] 告知用户如何更新 `nexus.md`
 
 ## 2. 自动化验证
 
 // turbo
 
 ```bash
-node nexus/scripts/verify-architecture.js
-cd nexus && pnpm build
-cd apps/extension-spectra && pnpm test:e2e
+pnpm build
 ```
+
+(在 nexus 目录执行)
 
 ## 3. 最终清单 (审计)
 
-- [ ] 源码 ≤ 200 行；`.ai-context.md` ≤ 30 行。
-- [ ] 无硬编码，日志统一 `[SPECTRA]` 前缀。
-- [ ] 确保文档信息熵极高（无损压缩）。
+- [ ] 源码 ≤ 200 行；警告数无增长
+- [ ] 无硬编码 Action；日志 `[SPECTRA]` 前缀
+- [ ] 文档信息熵极高 (无损压缩)
+
+## 4. 提交推送
+
+// turbo-all
+
+```bash
+git add -A
+git commit -m "feat: <简述功能>"
+git push
+```
+
+(在 nexus 目录执行)
+
+## 注意
+
+- 步骤 1 需手动确认
+- 步骤 2-4 可使用 turbo 自动执行
+- 提交信息遵循 Conventional Commits
+- PowerShell 不支持 `&&`，每条命令单独执行，或使用 ; 分隔

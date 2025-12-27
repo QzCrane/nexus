@@ -91,6 +91,29 @@ export type {
 } from './registry.contracts.js';
 
 // ============================================
+// 快捷键契约
+// ============================================
+export type {
+  HotkeyAction,
+  KeyModifiers,
+  KeyCombo,
+  HotkeyBinding,
+  HotkeyParams,
+  HotkeyConditions,
+  HotkeySettings,
+  SlotMapping,
+  SiteHotkeyConfig
+} from './hotkeys.contracts.js';
+
+export {
+  HOTKEY_ACTIONS,
+  DEFAULT_MODIFIERS,
+  DEFAULT_HOTKEY_SETTINGS,
+  DEFAULT_SLOTS,
+  PRESET_BINDINGS
+} from './hotkeys.contracts.js';
+
+// ============================================
 // 消息 Action 常量
 // ============================================
 export { Actions, OffscreenActions, NEXUS_ACTIONS, OFFSCREEN_ACTIONS } from './actions.js';

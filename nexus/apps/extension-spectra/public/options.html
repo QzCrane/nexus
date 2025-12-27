@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SPECTRA Options</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- 头部 -->
+      <header class="header">
+        <div class="logo">
+          <img src="icons/icon48.png" alt="SPECTRA" />
+          <h1>SPECTRA</h1>
+        </div>
+        <div class="header-actions">
+          <select id="lang-select" class="lang-select">
+            <option value="en-US">English</option>
+            <option value="zh-CN">简体中文</option>
+            <option value="ja-JP">日本語</option>
+            <option value="ko-KR">한국어</option>
+            <option value="es-ES">Español</option>
+            <option value="fr-FR">Français</option>
+            <option value="de-DE">Deutsch</option>
+            <option value="ru-RU">Русский</option>
+          </select>
+          <button id="theme-toggle" class="btn-icon" title="Toggle Theme">🌙</button>
+        </div>
+      </header>
+
+      <!-- 主内容区 -->
+      <main class="main">
+        <!-- Chrome 全局快捷键 -->
+        <section class="section">
+          <div class="section-header">
+            <h2 data-i18n="opt_chrome_title">🌐 Chrome Global Shortcuts</h2>
+            <a href="chrome://extensions/shortcuts" id="chrome-shortcuts-link" class="link-btn">
+              <span data-i18n="opt_chrome_open">Open Chrome Settings</span> →
+            </a>
+          </div>
+          <p class="section-desc" data-i18n="opt_chrome_desc">
+            These shortcuts work system-wide, even when Chrome is in background.
+          </p>
+          <div id="slots-list" class="slots-list">
+            <!-- JS 动态渲染 -->
+          </div>
+        </section>
+
+        <!-- 网站独立配置 -->
+        <section class="section">
+          <div class="section-header">
+            <h2 data-i18n="opt_site_title">📑 Per-Site Hotkeys</h2>
+            <div class="site-selector">
+              <select id="site-select" class="site-select">
+                <option value="" data-i18n="opt_site_add">+ Add current site...</option>
+              </select>
+              <button id="site-add-current" class="btn btn-small" data-i18n="opt_site_add_btn">Add</button>
+            </div>
+          </div>
+          <p class="section-desc" data-i18n="opt_site_desc">
+            Custom hotkeys for specific websites. Disabled by default.
+          </p>
+
+          <!-- 网站配置面板 (选中网站后显示) -->
+          <div id="site-config" class="site-config hidden">
+            <div class="site-config-header">
+              <span id="site-domain" class="site-domain"></span>
+              <label class="toggle-label">
+                <input type="checkbox" id="site-enabled" />
+                <span data-i18n="opt_site_enable">Enable on this site</span>
+              </label>
+              <button id="site-delete" class="btn btn-danger btn-small" data-i18n="opt_site_delete">Delete</button>
+            </div>
+
+            <div id="site-bindings-list" class="bindings-list">
+              <!-- JS 动态渲染 -->
+            </div>
+
+            <button id="site-add-binding" class="btn btn-secondary" data-i18n="opt_site_add_key">
+              + Add Hotkey
+            </button>
+          </div>
+
+          <!-- 空状态 -->
+          <div id="site-empty" class="empty-state">
+            <p data-i18n="opt_site_empty">
+              No site-specific hotkeys configured. Select a site to customize.
+            </p>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- 编辑弹窗 -->
+    <div id="edit-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 data-i18n="modal_edit_title">Edit Hotkey</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <!-- 按键录入 -->
+          <div class="form-group">
+            <label data-i18n="modal_key">Key Combination</label>
+            <input
+              type="text"
+              id="edit-key"
+              class="key-input"
+              readonly
+              placeholder="Click and press keys..."
+            />
+          </div>
+
+          <!-- 动作选择 -->
+          <div class="form-group">
+            <label data-i18n="modal_action">Action</label>
+            <select id="edit-action" class="action-select"></select>
+          </div>
+
+          <!-- 参数 -->
+          <div id="params-container" class="form-group hidden">
+            <label id="params-label">Value</label>
+            <input type="text" id="edit-params" class="params-input" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="modal-cancel" class="btn btn-secondary" data-i18n="modal_cancel">Cancel</button>
+          <button id="modal-save" class="btn btn-primary" data-i18n="modal_save">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

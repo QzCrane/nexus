@@ -40,6 +40,7 @@ export interface I18NDict {
 	themeSystem: string;
 	btnThemeTooltip: string;
 	btnSettingsTooltip: string;
+	btnHotkeysTooltip: string;
 	btnShortcutsTooltip: string;
 	// 侧边面板
 	spAudio: string;

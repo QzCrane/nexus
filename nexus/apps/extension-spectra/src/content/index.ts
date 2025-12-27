@@ -32,6 +32,7 @@ import {
   createNavigationObserver,
   cleanupIntervals,
 } from './lifecycle';
+import { initHotkeyListener, setCachedConfig } from './hotkey-listener';
 
 const log = logger.content;
 
@@ -104,6 +105,7 @@ async function initSpectra(): Promise<void> {
   let cleanupObserver: (() => void) | null = null;
   let cleanupFullscreen: (() => void) | null = null;
   let cleanupNavigation: (() => void) | null = null;
+  let cleanupHotkeys: (() => void) | null = null;
   const intervals: { stateReapply?: ReturnType<typeof setInterval>; mediaReport?: ReturnType<typeof setInterval> } = {};
 
   // 上下文失效时的清理回调
@@ -112,6 +114,7 @@ async function initSpectra(): Promise<void> {
     cleanupObserver?.();
     cleanupFullscreen?.();
     cleanupNavigation?.();
+    cleanupHotkeys?.();
     log.debug('Extension context invalidated, cleanup complete.');
   };
 
@@ -134,8 +137,14 @@ async function initSpectra(): Promise<void> {
     onNavigate: () => policyExecutor.applyState(),
   });
 
+  // 快捷键监听器
+  initHotkeyListener().then(cleanup => { cleanupHotkeys = cleanup; });
+
   // ============ 初始化加载 ============
   loadConfigAndApply(messenger, state, settingsManager, policyExecutor);
+
+  // 同步配置到快捷键动作模块
+  setCachedConfig(state.config);
 
   log.info('Content Script initialized.');
 }

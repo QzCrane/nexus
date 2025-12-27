@@ -24,6 +24,7 @@
       "128": "icons/icon128.png"
     }
   },
+  "options_page": "options.html",
   "content_scripts": [
     {
       "matches": [
@@ -78,6 +79,60 @@
         "mac": "Alt+M"
       },
       "description": "Mute/Unmute"
+    },
+    "speed_up": {
+      "suggested_key": {
+        "default": "Alt+S"
+      },
+      "description": "Speed +0.1x"
+    },
+    "slot_01": {
+      "description": "Custom Slot 1"
+    },
+    "slot_02": {
+      "description": "Custom Slot 2"
+    },
+    "slot_03": {
+      "description": "Custom Slot 3"
+    },
+    "slot_04": {
+      "description": "Custom Slot 4"
+    },
+    "slot_05": {
+      "description": "Custom Slot 5"
+    },
+    "slot_06": {
+      "description": "Custom Slot 6"
+    },
+    "slot_07": {
+      "description": "Custom Slot 7"
+    },
+    "slot_08": {
+      "description": "Custom Slot 8"
+    },
+    "slot_09": {
+      "description": "Custom Slot 9"
+    },
+    "slot_10": {
+      "description": "Custom Slot 10"
+    },
+    "slot_11": {
+      "description": "Custom Slot 11"
+    },
+    "slot_12": {
+      "description": "Custom Slot 12"
+    },
+    "slot_13": {
+      "description": "Custom Slot 13"
+    },
+    "slot_14": {
+      "description": "Custom Slot 14"
+    },
+    "slot_15": {
+      "description": "Custom Slot 15"
+    },
+    "slot_16": {
+      "description": "Custom Slot 16"
     }
   },
   "icons": {
