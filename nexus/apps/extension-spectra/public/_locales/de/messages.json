@@ -1,0 +1,10 @@
+{
+	"extName": {
+		"message": "SPECTRA - Lautstärke-Verstärker, EQ & Mediensteuerung",
+		"description": "Extension name"
+	},
+	"extDescription": {
+		"message": "800% Verstärkung, 10-Band-EQ, Videosteuerung, Fernbedienung. 🔵🟣 Intelligenter Dualmodus: null CPU im nativen Modus, alle Websites kompatibel.",
+		"description": "Extension description"
+	}
+}

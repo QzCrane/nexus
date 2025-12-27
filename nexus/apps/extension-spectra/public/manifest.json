@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "SPECTRA",
-  "version": "24.0",
-  "description": "10-Band EQ, CORS Unlock, Per-Site Audio Manager.",
+  "name": "__MSG_extName__",
+  "version": "1.0.0",
+  "description": "__MSG_extDescription__",
+  "default_locale": "en",
   "permissions": [
     "tabs",
     "scripting",

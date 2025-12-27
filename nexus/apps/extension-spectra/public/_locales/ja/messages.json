@@ -1,0 +1,10 @@
+{
+	"extName": {
+		"message": "SPECTRA - ボリュームブースター、EQ & メディアコントロール",
+		"description": "Extension name"
+	},
+	"extDescription": {
+		"message": "800% 音量ブースト、10バンドEQ、動画コントロール、スマホリモコン。🔵🟣 スマートデュアルモード：ネイティブモードCPUゼロ、全サイト自動対応。",
+		"description": "Extension description"
+	}
+}

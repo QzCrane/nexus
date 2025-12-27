@@ -1,0 +1,10 @@
+{
+	"extName": {
+		"message": "SPECTRA - 音量增强 & 均衡器 & 媒体控制",
+		"description": "Extension name"
+	},
+	"extDescription": {
+		"message": "800% 音量增强，10 段均衡器，视频控制，手机遥控。🔵🟣 智能双模式：原生模式 CPU 零消耗，自动切换兼容所有网站。",
+		"description": "Extension description"
+	}
+}

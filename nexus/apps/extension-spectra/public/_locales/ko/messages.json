@@ -1,0 +1,10 @@
+{
+	"extName": {
+		"message": "SPECTRA - 볼륨 부스터, EQ & 미디어 컨트롤",
+		"description": "Extension name"
+	},
+	"extDescription": {
+		"message": "800% 볼륨 부스트, 10밴드 EQ, 동영상 제어, 모바일 리모컨. 🔵🟣 스마트 듀얼모드: 네이티브 모드 CPU 제로, 모든 사이트 자동 호환.",
+		"description": "Extension description"
+	}
+}

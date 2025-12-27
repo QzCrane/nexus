@@ -1,0 +1,10 @@
+{
+	"extName": {
+		"message": "SPECTRA - Amplificador de Volumen, EQ y Control Multimedia",
+		"description": "Extension name"
+	},
+	"extDescription": {
+		"message": "800% amplificación, EQ 10 bandas, controles de video, control remoto. 🔵🟣 Modo dual inteligente: CPU cero en modo nativo, compatible con todos los sitios.",
+		"description": "Extension description"
+	}
+}

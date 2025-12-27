@@ -1,0 +1,10 @@
+{
+	"extName": {
+		"message": "SPECTRA - Volume Booster, EQ & Media Control",
+		"description": "Extension name"
+	},
+	"extDescription": {
+		"message": "800% volume boost, 10-band EQ, video controls, mobile remote. 🔵🟣 Smart dual-mode: zero CPU in native mode, auto-switch for all sites.",
+		"description": "Extension description"
+	}
+}
