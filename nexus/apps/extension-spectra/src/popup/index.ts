@@ -12,11 +12,15 @@ import { createEqCurveDrawer } from './visualizer';
 import { createMessenger } from '@nexus/kernel';
 import { initSidePanel } from './side-panel';
 import { bindRemoteUI } from '../remote';
+import { enableSmoothScroll } from '../shared/smooth-scroll';
 
 /**
  * Popup 初始化主函数
  */
 async function main(): Promise<void> {
+  // 启用 Mac 风格丝滑滚动
+  enableSmoothScroll();
+
   const messenger = createMessenger('popup');
 
   // 获取当前活动标签页

@@ -9,9 +9,13 @@ import { initI18n } from './i18n';
 import { initSlotsEditor } from './slots-editor';
 import { initSiteEditor } from './site-editor';
 import { initModal } from './modal';
+import { enableSmoothScroll } from '../shared/smooth-scroll';
 
 async function init(): Promise<void> {
 	console.log('[SPECTRA] Options page initializing...');
+
+	// 启用 Mac 风格丝滑滚动
+	enableSmoothScroll();
 
 	// 初始化主题
 	initTheme();
