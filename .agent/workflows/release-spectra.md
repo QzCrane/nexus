@@ -6,6 +6,8 @@ description: Extension Spectra 发布标准流程 (测试 + 打包)
 
 发布前强制质量门禁。
 
+## 0. 提交、推送
+
 ## 1. 版本控制
 
 - 同步修改版本号 (SemVer):
