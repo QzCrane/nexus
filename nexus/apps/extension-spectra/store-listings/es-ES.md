@@ -18,7 +18,7 @@ Refuerzo 800%, EQ, video, remoto. 🔵🟣 Modo dual de alto rendimiento, compat
 ❌ Cambios de volumen que refrescan la página o causan lag.
 ❌ Código pesado que dispara el uso de CPU y calienta tu equipo.
 
-**SPECTRA soluciona TODOS estos problemas.**
+**Como desarrollador independiente, mi visión con SPECTRA no era solo crear un potente amplificador de volumen, sino un centro de control de accesibilidad total. Con un ecualizador de 10 bandas integrado, rotación de video y un revolucionario control remoto Web, mi objetivo es brindar un nivel de control sin precedentes para todos, especialmente para quienes tienen necesidades visuales/auditivas o limitaciones de movilidad física.**
 
 ---
 
@@ -38,12 +38,12 @@ SPECTRA cuenta con un motor de conmutación inteligente líder en la industria:
 • **Compatibilidad universal**: Funciona a la perfección incluso en sitios con medios protegidos.
 • **Extremadamente ligero**: Código optimizado que ahorra batería y recursos del sistema.
 
-🎵 **Potencia de Audio**
-• **Refuerzo de volumen al 800%** - Amplifica los videos con sonido bajo.
-• **Ecualizador pro de 10 bandas** - Ajuste preciso de 32Hz a 16kHz.
-• **Compresor y Limitador nativo** - Sonido cristalino sin distorsión, incluso al máximo nivel.
+🎵 **Potencia de Audio (Listo para Accesibilidad)**
+• **Refuerzo de volumen al 800%** - Amplificación potente para usuarios que necesitan mayor claridad de audio.
+• **Ecualizador pro de 10 bandas** - Ajuste preciso de 32Hz a 16kHz para compensar necesidades de frecuencias específicas.
+• **Compresor y Limitador nativo** - Sonido cristalino sin distorsión, protegiendo su audición de picos repentinos.
 • **Bass Boost** - Siente frecuencias bajas profundas y potentes.
-• **Balance Estéreo** - Ajuste flexible de los canales izquierdo/derecho.
+• **Balance Estéreo** - Ajuste flexible de los canales izquierdo/derecho para necesidades de audición unilateral.
 
 🎬 **Control de Video**
 • **Velocidad de reproducción** - Control de precisión de 0.25x a 16x.
@@ -52,8 +52,8 @@ SPECTRA cuenta con un motor de conmutación inteligente líder en la industria:
 • **Captura de pantalla HD** - Captura cualquier fotograma al instante.
 • **Bucle AB** - Repite secciones para estudio o diversión.
 
-📱 **Control Remoto Móvil**
-• **Remoto instantáneo para móvil** - Escanea el QR y listo. Tu teléfono es el mando.
+📱 **Control Remoto Revolucionario (Soporte de Movilidad)**
+• **Remoto instantáneo para móvil** - Escanea el QR y listo. Tu teléfono es el mando. Ideal para usuarios a los que les resulta difícil mover el ratón o el teclado, permitiendo el control desde la distancia.
 • **Gestión multi-pestaña** - Cambia y controla varias pestañas desde un solo teléfono.
 
 ⌨️ **Atajos de Teclado Avanzados**
