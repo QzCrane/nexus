@@ -3,23 +3,14 @@
  * 
  * 处理扩展图标角标相关的消息
  * 
- * 角标显示规则（v2）：
- * - 仅当配置处于"默认原生状态"时隐藏角标：
- *   1. 音量 == 100%
- *   2. 非静音
- *   3. 非捕获模式
- * - 其他所有情况都显示角标（包括从预设加载的配置）
+ * 角标显示规则（v3）：
+ * - 仅当用户"明确使用了插件增强功能"时才显示角标
+ * - userInteracted 由 content script 判断并传入
+ * - 一旦显示角标，该标签页永久显示（sticky）
  */
 
 import { router, badgeState, BADGE_COLORS } from '../state';
 import { isTabExists } from '../helpers';
-
-/**
- * 判断是否处于默认原生状态（不需要显示角标）
- */
-function isDefaultNativeState(volume: number, muted: boolean, isCapture: boolean): boolean {
-	return volume === 100 && !muted && !isCapture;
-}
 
 /**
  * 注册角标相关的消息处理器
@@ -36,11 +27,11 @@ export function registerBadgeHandlers(): void {
 			return;
 		}
 
-		const { volume, muted, isCapture } = req;
+		const { volume, muted, isCapture, userInteracted } = req;
 
-		// 🔴 新规则：仅在默认原生状态时隐藏角标
-		// 即使用户未交互，只要配置不是默认值也要显示角标（如从预设加载）
-		if (isDefaultNativeState(volume, muted, isCapture)) {
+		// 🔴 v3 规则：未使用增强功能时不显示角标
+		// userInteracted 由 content script 的 hasEnhancedUsage() 判断后设置
+		if (!userInteracted) {
 			badgeState.delete(tabId);
 			try {
 				await chrome.action.setBadgeText({ tabId, text: '' });
