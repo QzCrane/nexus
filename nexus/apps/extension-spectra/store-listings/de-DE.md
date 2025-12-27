@@ -4,83 +4,64 @@
 
 SPECTRA - Lautstärke-Verstärker, EQ & Mediensteuerung
 
-## Kurzbeschreibung
+## Zusammenfassung (Max. 132 Zeichen)
 
-800% Lautstärkeverstärkung, 10-Band-EQ, Videosteuerung, Mobile-Fernbedienung. Native Erfahrung, optimierte Leistung.
+800% Verstärker, EQ, Video, Fernbedienung. 🔵🟣 Hochleistungs-Dualmodus, kompatibel mit allen Websites.
 
 ## Detaillierte Beschreibung
 
-🚀 **Warum SPECTRA? Weil andere Erweiterungen Probleme haben.**
+🚀 **Warum SPECTRA? Weil andere Erweiterungen fehlerhaft sind.**
 
-Haben Sie genug von Erweiterungen, die:
-❌ Ihr Audio beim Öffnen von Seiten zufällig stummschalten?
-❌ Seiten unerwartet aktualisieren?
-❌ Videos nicht ohne F11 im Vollbildmodus anzeigen können?
-❌ Verwirrende, schwer zu bedienende Oberflächen haben?
+Haben Sie genug von Problemen wie:
+❌ Plötzliche Stummschaltung beim Öffnen neuer Seiten?
+❌ Defekter Vollbildmodus, der Sie zwingt, F11 zu drücken?
+❌ Lautstärkeeinstellungen, die Seiten-Reloads oder Lags verursachen?
+❌ Aufgeblähter Code, der die CPU belastet und den Akku leert?
 
-**SPECTRA löst ALL diese Probleme.**
+**SPECTRA löst ALLE diese Probleme.**
+
+---
+
+🔵🟣 **Innovation: Die Ultra-Performance Dual-Modus Architektur**
+
+SPECTRA verfügt über eine branchenführende intelligente Umschalteinheit:
+
+• 🔵 **Native Modus**: Verstärkt den Ton direkt über die Browser-Engine. **Null CPU-Zusatzlast**, keine Verzögerung und maximale Audio-Treue.
+• 🟣 **Capture Modus**: Wird automatisch für komplexe Cross-Origin-Inhalte aktiviert, um Stabilität auf TikTok, Netflix, Disney+ usw. sicherzustellen.
 
 ---
 
 ✅ **Was SPECTRA anders macht**
 
-• **Kein zufälliges Stummschalten** - Lautstärke bleibt genau dort, wo Sie sie eingestellt haben
-• **Keine Seitenaktualisierungsprobleme** - Bewegen Sie Ihre Maus frei, nichts geht kaputt
-• **Echter Vollbildmodus** - Ein Klick, kein F11 nötig
-• **Funktioniert immer** - Auch auf CORS-geschützten Seiten (TikTok, Netflix, etc.)
+• **Nahtlose Konsistenz**: Die Lautstärke bleibt genau dort, wo Sie sie eingestellt haben.
+• **Echter Vollbild-Support**: Ein-Klick-Vollbild-Erlebnis ohne F11.
+• **Universelle Kompatibilität**: Funktioniert dort reibungslos, wo andere scheitern.
+• **Extrem Leichtgewicht**: Optimierter Code schont Akku und Systemressourcen.
 
-🎨 **Saubere, intuitive Benutzeroberfläche**
+🎵 **Audio Powerhouse**
+• **800% Lautstärkeschub** - Verstärkt selbst leiseste Videos.
+• **10-Band Pro Equalizer** - Präzises Tuning von 32Hz bis 16kHz.
+• **Nativer Kompressor & Limiter** - Kristallklarer Sound ohne Verzerrung bei hoher Lautstärke.
+• **Bass Boost** - Tiefe, druckvolle Bassfrequenzen.
+• **Stereo-Balance** - Flexible Kanalanpassung links/rechts.
 
-• **Ein-Klick-Steuerung** - Kein Suchen in Menüs
-• **Visuelle EQ-Kurve** - Sehen Sie Ihre Anpassungen in Echtzeit
-• **Dunkles/Helles Design** - Nach Ihren Vorlieben
-• **Mehrsprachig** - EN, 中文, 日本語, 한국어, ES, FR, DE, RU
+🎬 **Video-Steuerung**
+• **Wiedergabegeschwindigkeit** - 0.25x bis 16x Präzisionssteuerung.
+• **Rotation & Spiegelung** - Videos in jedem Winkel anpassen.
+• **Bild-im-Bild (PiP)** - Videos schweben lassen, während Sie arbeiten.
+• **HD Screenshots** - Jeden Moment sofort festhalten.
+• **AB Loop** - Abschnitte wiederholen (ideal zum Lernen).
 
----
+📱 **Mobile Fernbedienung**
+• **Sofort-Fernbedienung** - QR scannen, kein App-Download nötig. Ihr Handy ist die Fernbedienung.
+• **Multi-Tab Management** - Mehrere Tabs von einem Handy aus steuern.
 
-🎵 **Audio-Funktionen**
+⌨️ **Fortgeschrittene Hotkeys**
+• Über 70 anpassbare atomare Aktionen.
+• Unterstützung für globale Chrome-Hotkeys.
 
-• **Lautstärke bis 800% verstärken** - Leise Videos verstärken
-• **10-Band-Equalizer** - Feinabstimmung von 32Hz bis 16kHz
-• **Kompressor & Limiter** - Keine Verzerrung bei hoher Lautstärke
-• **Bass-Boost** - Tiefe, kraftvolle Bässe
-• **Stereo-Balance** - Links/Rechts-Kanäle anpassen
-• **Audio-Verzögerung** - Audio mit Video synchronisieren
+🔒 **Datenschutz & Sicherheit**
+• Keine Datensammlung. Alle Einstellungen sind lokal.
+• Minimale Berechtigungen – ich frage nur nach dem Nötigsten.
 
----
-
-🎬 **Video-Funktionen**
-
-• **Wiedergabegeschwindigkeit** - 0.25x bis 16x
-• **Video-Rotation** - 90°/180°/270°
-• **Spiegeln/Kippen** - Horizontale Spiegelung
-• **Bild-in-Bild** - Schwebendes Videofenster
-• **Screenshot** - Jeden Frame erfassen
-• **AB-Schleife** - Jeden Abschnitt wiederholen
-
----
-
-⌨️ **Tastaturkürzel**
-
-• **Über 70 konfigurierbare Aktionen**
-• **Chrome Globale Tastenkürzel**
-• **Seiten-spezifische Konfiguration**
-
----
-
-📱 **Fernbedienung**
-
-• **Vom Handy steuern** - QR scannen, keine App nötig
-• **Multi-Session-Unterstützung** - Mehrere Tabs steuern
-
----
-
-🔒 **Datenschutz**
-
-• Keine Datenerfassung
-• Alle Einstellungen lokal gespeichert
-• Leichtgewichtig, minimale Ressourcennutzung
-
----
-
-⭐ **Gefällt Ihnen SPECTRA? Hinterlassen Sie eine 5-Sterne-Bewertung!**
+⭐ **Lieben Sie SPECTRA? Geben Sie mir eine 5-Sterne-Bewertung! Ihr Support hilft mir.**

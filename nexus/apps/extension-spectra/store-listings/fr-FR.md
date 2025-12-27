@@ -4,83 +4,64 @@
 
 SPECTRA - Amplificateur de Volume, EQ & Contrôle Média
 
-## Description courte
+## Résumé (Max 132 caract.)
 
-800% d'amplification du volume, EQ 10 bandes, contrôles vidéo, télécommande mobile. Expérience native, performance optimisée.
+Boost 800%, EQ, vidéo, télécommande. 🔵🟣 Mode dual haute performance, compatible avec tous les sites.
 
 ## Description détaillée
 
-🚀 **Pourquoi SPECTRA ? Parce que les autres extensions ont des problèmes.**
+🚀 **Pourquoi SPECTRA ? Parce que les autres extensions ne fonctionnent pas.**
 
-Fatigué des extensions qui :
-❌ Coupent le son aléatoirement à l'ouverture des pages ?
-❌ Rafraîchissent les pages de manière inattendue ?
-❌ Ne peuvent pas mettre les vidéos en plein écran sans F11 ?
-❌ Ont des interfaces confuses et difficiles à utiliser ?
+Vous en avez assez des problèmes avec les amplificateurs classiques ?
+❌ Muet inattendu lors de l'ouverture d'une nouvelle page.
+❌ Plein écran défectueux qui oblige à utiliser la touche F11.
+❌ Rafraîchissement de la page ou lag lors du réglage du volume.
+❌ Code lourd qui fait exploser l'utilisation du CPU.
 
 **SPECTRA résout TOUS ces problèmes.**
 
 ---
 
+🔵🟣 **Innovation : Architecture Double Mode Haute Performance**
+
+SPECTRA dispose d'un moteur de commutation intelligent unique :
+
+• 🔵 **Mode Natif** : Pour l'audio standard, il amplifie le son via le cœur du navigateur. **Consommation CPU nulle**, zéro latence et fidélité maximale.
+• 🟣 **Mode Capture** : S'active automatiquement pour les contenus protégés (CORS), garantissant une stabilité sur TikTok, Netflix, Disney+, etc.
+
+---
+
 ✅ **Ce qui rend SPECTRA différent**
 
-• **Pas de coupure aléatoire** - Le volume reste exactement où vous l'avez réglé
-• **Pas de problème de rafraîchissement** - Déplacez votre souris librement, rien ne casse
-• **Vrai plein écran** - Un clic, pas besoin de F11
-• **Fonctionne toujours** - Même sur les sites protégés par CORS (TikTok, Netflix, etc.)
+• **Stabilité continue** : Le volume reste exactement là où vous l'avez réglé.
+• **Vrai Plein Écran** : Une expérience plein écran réelle en un clic, sans F11.
+• **Compatibilité universelle** : Fonctionne parfaitement là où les autres échouent.
+• **Extrêmement léger** : Code optimisé pour économiser la batterie et les ressources système.
 
-🎨 **Interface propre et intuitive**
+🎵 **Puissance Audio**
+• **Boost de volume à 800%** - Amplifiez les vidéos les moins puissantes.
+• **Égaliseur Pro 10 bandes** - Réglage fin de 32Hz à 16kHz.
+• **Compresseur & Limiteur natif** - Son cristallin sans distorsion à haut volume.
+• **Bass Boost** - Ressentez des basses profondes et percutantes.
+• **Balance Stéréo** - Réglage flexible des canaux gauche/droite.
 
-• **Contrôles en un clic** - Pas besoin de chercher dans les menus
-• **Courbe EQ visuelle** - Voyez vos réglages en temps réel
-• **Thème sombre/clair** - Selon vos préférences
-• **Multilingue** - EN, 中文, 日本語, 한국어, ES, FR, DE, RU
+🎬 **Maîtrise Vidéo**
+• **Vitesse de lecture** - Contrôle précis de 0.25x à 16x.
+• **Rotation & Miroir** - Gérez les vidéos sous n'importe quel angle.
+• **Picture-in-Picture (PiP)** - Sortez vos vidéos pour travailler en même temps.
+• **Captures d'écran HD** - Capturez n'importe quelle image instantanément.
+• **Boucle AB** - Répétez des sections pour l'apprentissage.
 
----
+📱 **Télécommande Mobile**
+• **Remote instantanée** : Scannez le QR, votre téléphone devient une télécommande.
+• **Gestion multi-onglets** : Contrôlez plusieurs onglets depuis un seul téléphone.
 
-🎵 **Fonctions audio**
+⌨️ **Raccourcis Clavier Avancés**
+• Plus de 70 actions personnalisables.
+• Support des raccourcis globaux Chrome.
 
-• **Amplification jusqu'à 800%** - Amplifiez les vidéos silencieuses
-• **Égaliseur 10 bandes** - Réglage fin de 32Hz à 16kHz
-• **Compresseur et limiteur** - Pas de distorsion à haut volume
-• **Boost des basses** - Basses profondes et puissantes
-• **Balance stéréo** - Ajustez les canaux gauche/droite
-• **Délai audio** - Synchronisez l'audio avec la vidéo
+🔒 **Confidentialité et Sécurité**
+• Zéro collecte de données. Tous les réglages restent locaux.
+• Permissions minimales : je ne demande que le nécessaire.
 
----
-
-🎬 **Fonctions vidéo**
-
-• **Vitesse de lecture** - 0.25x à 16x
-• **Rotation vidéo** - 90°/180°/270°
-• **Miroir/Retourner** - Miroir horizontal
-• **Picture-in-Picture** - Fenêtre vidéo flottante
-• **Capture d'écran** - Capturez n'importe quelle image
-• **Boucle AB** - Répétez n'importe quelle section
-
----
-
-⌨️ **Raccourcis clavier**
-
-• **Plus de 70 actions configurables**
-• **Raccourcis globaux Chrome**
-• **Configuration par site**
-
----
-
-📱 **Télécommande**
-
-• **Contrôlez depuis votre téléphone** - Scannez le QR, pas d'app nécessaire
-• **Support multi-session** - Contrôlez plusieurs onglets
-
----
-
-🔒 **Confidentialité**
-
-• Aucune collecte de données
-• Tous les paramètres stockés localement
-• Léger, utilisation minimale des ressources
-
----
-
-⭐ **Vous aimez SPECTRA ? Laissez un avis 5 étoiles !**
+⭐ **Vous aimez SPECTRA ? Donnez-moi 5 étoiles ! Votre soutien me motive.**
