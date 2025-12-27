@@ -38,8 +38,9 @@ export function updateBadge(
 		visualizerEnabled: settingsManager.get().visualizerEnabled,
 	});
 
-	// 捕获模式自动激活 sticky（其他配置变化由 config-updater.ts 处理）
-	if (isPredictedCapture) {
+	// 捕获模式或超原生音量 → 自动激活 sticky
+	// 其他配置变化由 config-updater.ts 在用户 UI 操作时触发
+	if (isPredictedCapture || state.config.volume > 100) {
 		state.userHasInteracted = true;
 	}
 
