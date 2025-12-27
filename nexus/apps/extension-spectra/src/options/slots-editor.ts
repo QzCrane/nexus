@@ -6,7 +6,7 @@
 
 import type { HotkeySettings, HotkeyAction } from '@nexus/contracts';
 import { HOTKEY_ACTIONS, DEFAULT_HOTKEY_SETTINGS } from '@nexus/contracts';
-import { t } from './i18n';
+import { t, getActionName, getCurrentLang, onLangChange } from './i18n';
 
 // 预设命令 (manifest.json 中定义)
 const PRESET_COMMANDS = ['volume_up', 'volume_down', 'toggle_mute', 'speed_up'];
@@ -18,6 +18,8 @@ let settings: HotkeySettings = { ...DEFAULT_HOTKEY_SETTINGS };
 export async function initSlotsEditor(): Promise<void> {
 	await loadSettings();
 	renderSlots();
+	// 语言变化时重新渲染
+	onLangChange(renderSlots);
 }
 
 /** 加载设置 */
@@ -112,5 +114,5 @@ function formatCommandName(cmd: string): string {
 
 /** 格式化动作名 */
 function formatActionName(action: string): string {
-	return action.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+	return getActionName(action, getCurrentLang());
 }

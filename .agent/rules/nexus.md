@@ -10,5 +10,6 @@ trigger: always_on
    规则层 (1): docs/ai-rules.md
    架构层 (2): policy-decision.md, cors-data-flow.md
    模块层 (12): .ai-context.md
-   工作流 (4): .agent/workflows/_.md
+   工作流 (4): .agent/workflows/\_.md
 3. 不要尝试直接修改此文件，aiagent 权限被 antigravity 拒绝，你需要告知我如何修改
+4. 每次回答前压缩上下文
