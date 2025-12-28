@@ -1,7 +1,7 @@
 {
 	"name": "@nexus/contracts",
 	"version": "0.0.1",
-	"description": "NEXUS 纯契约层 - 只包含接口和类型定义，不含任何业务逻辑",
+	"description": "NEXUS pure contracts layer - contains only interfaces and type definitions, no business logic",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",

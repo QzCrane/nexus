@@ -8,7 +8,7 @@
   </head>
   <body>
     <div id="app">
-      <!-- 头部 -->
+      <!-- Header -->
       <header class="header">
         <div class="logo">
           <img src="icons/icon48.png" alt="SPECTRA" />
@@ -29,9 +29,9 @@
         </div>
       </header>
 
-      <!-- 主内容区 -->
+      <!-- Main Content -->
       <main class="main">
-        <!-- Chrome 全局快捷键 -->
+        <!-- Chrome Global Shortcuts -->
         <section class="section">
           <div class="section-header">
             <h2 data-i18n="opt_chrome_title">🌐 Chrome Global Shortcuts</h2>
@@ -43,11 +43,11 @@
             These shortcuts work system-wide, even when Chrome is in background.
           </p>
           <div id="slots-list" class="slots-list">
-            <!-- JS 动态渲染 -->
+            <!-- JS dynamic render -->
           </div>
         </section>
 
-        <!-- 网站独立配置 -->
+        <!-- Per-site Configuration -->
         <section class="section">
           <div class="section-header">
             <h2 data-i18n="opt_site_title">📑 Per-Site Hotkeys</h2>
@@ -62,7 +62,7 @@
             Custom hotkeys for specific websites. Disabled by default.
           </p>
 
-          <!-- 网站配置面板 (选中网站后显示) -->
+          <!-- Site config panel (shown when site selected) -->
           <div id="site-config" class="site-config hidden">
             <div class="site-config-header">
               <span id="site-domain" class="site-domain"></span>
@@ -74,7 +74,7 @@
             </div>
 
             <div id="site-bindings-list" class="bindings-list">
-              <!-- JS 动态渲染 -->
+              <!-- JS dynamic render -->
             </div>
 
             <button id="site-add-binding" class="btn btn-secondary" data-i18n="opt_site_add_key">
@@ -82,7 +82,7 @@
             </button>
           </div>
 
-          <!-- 空状态 -->
+          <!-- Empty state -->
           <div id="site-empty" class="empty-state">
             <p data-i18n="opt_site_empty">
               No site-specific hotkeys configured. Select a site to customize.
@@ -92,7 +92,7 @@
       </main>
     </div>
 
-    <!-- 编辑弹窗 -->
+    <!-- Edit Modal -->
     <div id="edit-modal" class="modal hidden">
       <div class="modal-backdrop"></div>
       <div class="modal-content">
@@ -101,7 +101,7 @@
           <button class="modal-close">&times;</button>
         </div>
         <div class="modal-body">
-          <!-- 按键录入 -->
+          <!-- Key input -->
           <div class="form-group">
             <label data-i18n="modal_key">Key Combination</label>
             <input
@@ -113,13 +113,13 @@
             />
           </div>
 
-          <!-- 动作选择 -->
+          <!-- Action select -->
           <div class="form-group">
             <label data-i18n="modal_action">Action</label>
             <select id="edit-action" class="action-select"></select>
           </div>
 
-          <!-- 参数 -->
+          <!-- Parameters -->
           <div id="params-container" class="form-group hidden">
             <label id="params-label">Value</label>
             <input type="text" id="edit-params" class="params-input" />

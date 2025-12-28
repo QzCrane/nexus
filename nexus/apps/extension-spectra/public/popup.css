@@ -14,7 +14,7 @@
   --switch-bg: #cbd5e1;
 }
 
-/* 深色模式变量 */
+/* Dark mode variables */
 [data-theme="dark"] {
   --w: #1e293b;
   --g0: #334155;
@@ -30,14 +30,14 @@
   --switch-bg: #475569;
 }
 html {
-  width: 390px; /* 默认宽度 */
+  width: 390px; /* default width */
   height: auto;
   overflow-y: scroll;
   overflow-x: hidden;
-  scroll-behavior: smooth; /* 平滑滚动 */
+  scroll-behavior: smooth; /* smooth scrolling */
 }
 
-/* 展开侧边面板时：宽度立即变大，无min-height限制 */
+/* Side panel expanded: width increases immediately, no min-height constraint */
 html.side-panel-open {
   width: 650px;
 }
@@ -52,18 +52,18 @@ body {
   color: var(--text);
   user-select: none;
   position: relative;
-  /* 终极方案：Grid 布局 + 右对齐 */
+  /* Grid layout + right alignment */
   display: grid;
-  justify-content: end; /* 这里的 end 是行轴的终点（右侧） */
-  grid-template-columns: 390px; /* 强制主内容列宽 */
+  justify-content: end; /* align to the end of row axis (right) */
+  grid-template-columns: 390px; /* fixed main content column width */
 }
 
-/* 主容器 */
+/* Main container */
 .app-wrapper {
   width: 390px;
   min-width: 390px;
   position: relative;
-  /* 确保 main UI 始终有背景色 */
+  /* ensure main UI always has background color */
   background: var(--bg);
   z-index: 100;
 }
@@ -94,7 +94,7 @@ body {
   width: 100%;
 }
 
-/* 主 UI：填充固定宽度的父容器 */
+/* Main UI: fill fixed-width parent container */
 #view-main {
   width: 100%;
   padding: 12px;
@@ -112,19 +112,19 @@ body {
   pointer-events: none;
 }
 
-/* 设置页：绝对定位覆盖层，不影响高度 */
+/* Settings page: absolute positioned overlay, does not affect height */
 #view-settings {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  bottom: 0; /* 填满容器 */
+  bottom: 0; /* fill container */
   padding: 12px;
   box-sizing: border-box;
   background: var(--bg);
 
-  overflow-y: auto; /* 内容超出时内部滚动 */
-  scroll-behavior: smooth; /* 平滑滚动 */
+  overflow-y: auto; /* scroll when content overflows */
+  scroll-behavior: smooth; /* smooth scrolling */
 
   opacity: 0;
   pointer-events: none;
@@ -172,7 +172,7 @@ body {
 .btn-icon {
   background: var(--g0);
   border: 1px solid var(--g1);
-  font-size: 14px; /* 统一图标大小 */
+  font-size: 14px; /* unified icon size */
   cursor: pointer;
   opacity: 0.75;
   width: 32px;
@@ -341,30 +341,30 @@ body {
   position: relative;
   border: 1px solid var(--card-border);
   transition: opacity 0.2s, transform 0.2s;
-  /* 增加微动效 */
+  /* subtle micro-animation */
   overflow: hidden;
-  /* 关键：防止头部圆角溢出 */
+  /* prevent header rounded corners overflow */
 }
 
 .glass-card.disabled {
   opacity: 1;
-  /* 保持1，让 header 清晰可见 */
+  /* keep at 1, let header remain visible */
   filter: none;
 }
 
-/* 2. 重构顶部栏：变为置顶的Header，层级最高 */
+/* 2. Card top header: sticky header with highest z-index */
 .card-top {
   position: relative;
   z-index: 30;
-  /* 关键：高于 sleep-mask (20) */
+  /* above sleep-mask (z-index: 20) */
   background: var(--w);
-  /* 必须不透明，遮挡下方的 mask */
+  /* must be opaque to cover the mask below */
 
-  /* 负边距技术：抵消 glass-card 的 16px padding */
+  /* negative margin to offset glass-card 16px padding */
   margin: -16px -16px 12px -16px;
   padding: 12px 16px;
 
-  /* 视觉分割 */
+  /* visual separator */
   border-bottom: 1px solid rgba(0, 0, 0, 0.04);
 
   display: flex;
@@ -489,13 +489,13 @@ input:checked + .slider-round:before {
   transform: translateX(20px);
 }
 
-/* 3. 调整休眠遮罩：现在它会被 card-top 盖住头部 */
+/* 3. Sleep mask: now covered by card-top header */
 .sleep-mask {
   position: absolute;
   inset: 0;
-  /* 这里的 top 可以微调，或者直接依靠 z-index 让 card-top 盖住它 */
+  /* can adjust top, or rely on z-index to let card-top cover it */
   background: rgba(255, 255, 255, 0.85);
-  /* 稍微加深一点不透明度，增强对比 */
+  /* slightly increase opacity for better contrast */
   backdrop-filter: blur(4px);
   z-index: 20;
 
@@ -503,26 +503,26 @@ input:checked + .slider-round:before {
   align-items: center;
   justify-content: center;
 
-  /* 动画 */
+  /* animation */
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* 当卡片被禁用时的状态 */
+/* Card disabled state */
 .glass-card.disabled .sleep-mask {
   opacity: 1;
   pointer-events: auto;
 }
 
-/* 4. 优化休眠内容的布局，避开头部区域 */
+/* 4. Sleep content layout: avoid header area */
 .sleep-content {
   text-align: center;
   color: var(--primary);
-  /* 改用主色调，看起来更活跃 */
+  /* use primary color for more active appearance */
   font-weight: 700;
   transform: translateY(20px);
-  /* 视觉居中修正，因为头部占了空间 */
+  /* visual centering fix since header takes space */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1041,7 +1041,7 @@ input:checked + .slider-round:before {
   margin-top: 4px;
 }
 
-/* ========== 速率控制 + 媒体按钮 ========== */
+/* ========== Speed Control + Media Buttons ========== */
 .media-control-row {
   display: flex;
   justify-content: space-between;
@@ -1052,7 +1052,7 @@ input:checked + .slider-round:before {
   margin-top: 4px;
 }
 
-/* 速率控制组 [«][‹][1.0x][›][»] */
+/* Speed control group [«][‹][1.0x][›][»] */
 .speed-control {
   display: flex;
   align-items: center;
@@ -1104,7 +1104,7 @@ input:checked + .slider-round:before {
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
 }
 
-/* 媒体按钮组 [⏸][⛶][←] */
+/* Media buttons group [⏸][⛶][←] */
 .media-buttons {
   display: flex;
   align-items: center;
@@ -1141,55 +1141,55 @@ input:checked + .slider-round:before {
   transform: scale(0.95);
 }
 
-/* 暂停按钮激活状态 (正在播放) */
+/* Pause button active state (playing) */
 .btn-pause.playing {
   background: var(--active);
   color: #fff;
   border-color: var(--active);
 }
 
-/* 画中画激活状态 */
+/* Picture-in-Picture active state */
 .btn-pip.active {
   background: var(--primary);
   color: #fff;
   border-color: var(--primary);
 }
 
-/* 返回标签页按钮 (仅后台卡片显示) */
+/* Go to tab button (background cards only) */
 .btn-goto-tab {
   font-size: 12px;
 }
 
-/* 热键目标按钮激活状态 (蓝色) */
+/* Hotkey target button active state (blue) */
 .btn-hotkey-target.active {
   background: var(--primary);
   color: #fff;
   border-color: var(--primary);
 }
 
-/* ========== 左侧扩展面板 ========== */
+/* ========== Side Panel ========== */
 .side-panel {
   position: fixed;
   top: 0;
-  bottom: 0; /* 填满popup高度，不超出 */
-  right: 390px; /* 右边紧贴主UI左边 */
+  bottom: 0; /* fill popup height, don't overflow */
+  right: 390px; /* right edge aligned with main UI left edge */
   width: 260px;
   background: var(--w);
   border-right: 1px solid var(--g1);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  z-index: 90; /* 低于 App Wrapper (100)，产生从主界面下方划出的感觉 */
+  z-index: 90; /* below App Wrapper (100), creates slide-out effect */
   box-shadow: -2px 4px 16px rgba(0, 0, 0, 0.1);
-  /* 默认隐藏，无动画 */
+  /* hidden by default, no animation */
   visibility: hidden;
   opacity: 0;
-  transform: translateX(20px); /* 改为正值，从右侧（主界面下方）滑出 */
+  transform: translateX(20px); /* positive value, slide from right (under main UI) */
   transition: opacity 0.25s cubic-bezier(0.2, 0, 0, 1),
     transform 0.25s cubic-bezier(0.2, 0, 0, 1), visibility 0s linear 0.25s;
 }
 
-/* 展开状态：直接显示 */
+/* Expanded state: show immediately */
 .side-panel.open {
   visibility: visible;
   opacity: 1;
@@ -1198,7 +1198,7 @@ input:checked + .slider-round:before {
     transform 0.25s cubic-bezier(0.2, 0, 0, 1), visibility 0s linear 0s;
 }
 
-/* 面板头部 */
+/* Panel header */
 .side-panel-header {
   display: flex;
   justify-content: space-between;
@@ -1260,15 +1260,15 @@ input:checked + .slider-round:before {
   color: #fff;
 }
 
-/* 面板内容区 - 可滚动 */
+/* Panel content area - scrollable */
 .side-panel-content {
   flex: 1;
   overflow-y: auto;
-  scroll-behavior: smooth; /* 平滑滚动 */
+  scroll-behavior: smooth; /* smooth scrolling */
   padding: 8px;
 }
 
-/* 面板底部 */
+/* Panel footer */
 .side-panel-footer {
   display: flex;
   gap: 8px;
@@ -1278,7 +1278,7 @@ input:checked + .slider-round:before {
   flex-shrink: 0;
 }
 
-/* 分区样式 */
+/* Section styles */
 .sp-section {
   background: var(--g0);
   border-radius: 8px;
@@ -1295,7 +1295,7 @@ input:checked + .slider-round:before {
   letter-spacing: 0.3px;
 }
 
-/* Chips 行 */
+/* Chips row */
 .sp-chips-row {
   display: flex;
   gap: 4px;
@@ -1331,7 +1331,7 @@ input:checked + .slider-round:before {
   border-color: var(--primary);
 }
 
-/* 滑块行 */
+/* Slider row */
 .sp-slider-row {
   display: flex;
   align-items: center;
@@ -1378,7 +1378,7 @@ input:checked + .slider-round:before {
   font-variant-numeric: tabular-nums;
 }
 
-/* Speed 区域 */
+/* Speed section */
 .sp-speed-row {
   display: flex;
   align-items: center;
@@ -1404,7 +1404,7 @@ input:checked + .slider-round:before {
   color: var(--text);
 }
 
-/* EQ 区域 - 完整版 (参照原版 eq-island 结构) */
+/* EQ section - full version (based on original eq-island structure) */
 .sp-eq-section {
   padding: 4px;
 }
@@ -1414,7 +1414,7 @@ input:checked + .slider-round:before {
   background: var(--w);
   border-radius: 6px;
   padding: 6px;
-  height: 120px; /* 固定高度 */
+  height: 120px; /* fixed height */
   box-sizing: border-box;
 }
 
@@ -1476,7 +1476,7 @@ input:checked + .slider-round:before {
   z-index: 0;
 }
 
-/* 使用旋转技术实现垂直滑块 (原版) */
+/* Rotation technique for vertical slider (original) */
 .sp-eq-input {
   -webkit-appearance: none;
   width: 80px;
@@ -1514,7 +1514,7 @@ input:checked + .slider-round:before {
   height: 12px;
 }
 
-/* 按钮网格 */
+/* Button grid */
 .sp-btn-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
@@ -1544,7 +1544,7 @@ input:checked + .slider-round:before {
   border-color: var(--primary);
 }
 
-/* 时间跳转行 */
+/* Time seek row */
 .sp-seek-row {
   display: flex;
   align-items: center;
@@ -1577,13 +1577,13 @@ input:checked + .slider-round:before {
   border-color: var(--primary);
 }
 
-/* 滤镜开关行 */
+/* Filter toggle row */
 .sp-filter-chips {
   margin-top: 4px;
   margin-bottom: 6px;
 }
 
-/* 标记行 */
+/* Marker row */
 .sp-markers-row {
   display: flex;
   gap: 4px;
@@ -1598,7 +1598,7 @@ input:checked + .slider-round:before {
   width: 40px;
 }
 
-/* 单选组 */
+/* Radio group */
 .sp-radio-group {
   display: flex;
   gap: 8px;
@@ -1622,7 +1622,7 @@ input:checked + .slider-round:before {
   color: var(--text);
 }
 
-/* 底部按钮 */
+/* Footer buttons */
 .sp-btn-action {
   flex: 1;
   height: 28px;
@@ -1661,7 +1661,7 @@ input:checked + .slider-round:before {
   opacity: 0.7;
 }
 
-/* ========== 设置页数字输入 ========== */
+/* ========== Settings page number input ========== */
 .setting-input-row {
   display: flex;
   align-items: center;
@@ -1692,7 +1692,7 @@ input:checked + .slider-round:before {
   color: var(--g2);
 }
 
-/* ========== 域名预设管理 ========== */
+/* ========== Domain presets management ========== */
 .presets-list {
   max-height: 180px;
   overflow-y: auto;
@@ -1767,7 +1767,7 @@ input:checked + .slider-round:before {
   color: #fff;
 }
 
-/* ========== 遥控弹窗 ========== */
+/* ========== Remote control modal ========== */
 .remote-modal {
   position: fixed;
   top: 0;
@@ -1871,11 +1871,11 @@ input:checked + .slider-round:before {
   display: block;
   margin-top: 4px;
   cursor: pointer;
-  user-select: all; /* 点击全选，方便复制 */
+  user-select: all; /* click to select all for easy copying */
   -webkit-user-select: all;
 }
 
-/* 遥控器连接链接 */
+/* Remote control connection link */
 .remote-url {
   margin-bottom: 8px;
   padding: 6px 8px;
@@ -1937,7 +1937,7 @@ input:checked + .slider-round:before {
   }
 }
 
-/* 断开连接按钮 */
+/* Disconnect button */
 .remote-disconnect-btn {
   display: block;
   width: 100%;
@@ -1958,7 +1958,7 @@ input:checked + .slider-round:before {
   color: #fff;
 }
 
-/* 按钮加载状态 */
+/* Button loading state */
 .btn-icon.loading {
   pointer-events: none;
   opacity: 0.7;
@@ -1974,7 +1974,7 @@ input:checked + .slider-round:before {
   }
 }
 
-/* 遥控器已连接状态 */
+/* Remote connected state */
 .btn-icon.remote-connected {
   background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   color: #fff;

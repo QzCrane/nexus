@@ -8,7 +8,7 @@
   <body>
     <div class="app-wrapper">
       <div class="view-container">
-        <!-- 左侧扩展面板 -->
+        <!-- Side Panel (expandable) -->
         <div id="side-panel" class="side-panel">
           <div class="side-panel-header">
             <div class="side-panel-tab-info">
@@ -275,7 +275,7 @@
             <!-- 🎬 Video -->
             <div class="sp-section">
               <div class="sp-section-title" data-i18n="spVideo">🎬 Video</div>
-              <!-- 视频变换按钮组 -->
+              <!-- Video Transform Buttons -->
               <div class="sp-btn-grid">
                 <button
                   class="sp-btn"
@@ -327,7 +327,7 @@
                 </button>
               </div>
 
-              <!-- 时间跳转 -->
+              <!-- Time Seek -->
               <div class="sp-seek-row">
                 <span class="sp-label" data-i18n="spSeek">Seek</span>
                 <div class="sp-seek-btns">
@@ -382,7 +382,7 @@
                 </div>
               </div>
 
-              <!-- 滤镜滑块 -->
+              <!-- Filter Sliders -->
               <div class="sp-slider-row">
                 <span class="sp-label" data-i18n="spBrightness"
                   >Brightness</span
@@ -422,7 +422,7 @@
                 <span class="sp-value sp-saturate-val">100%</span>
               </div>
 
-              <!-- 滤镜开关 -->
+              <!-- Filter Toggles -->
               <div class="sp-chips-row sp-filter-chips">
                 <label class="sp-chip"
                   ><input type="checkbox" class="sp-sw-grayscale" /><span
@@ -438,7 +438,7 @@
                 >
               </div>
 
-              <!-- AB循环 -->
+              <!-- AB Loop -->
               <div class="sp-markers-row">
                 <button class="sp-btn sp-btn-marker" data-action="mark-a">
                   A
@@ -632,7 +632,7 @@
               Advanced
             </div>
             <div class="setting-card" style="padding: 16px">
-              <!-- 标签页切换 -->
+              <!-- Tab Switcher -->
               <div class="registry-tabs">
                 <button
                   id="tab-restricted"
@@ -646,7 +646,7 @@
                 </button>
               </div>
 
-              <!-- 搜索框 -->
+              <!-- Search Box -->
               <div class="registry-search">
                 <input
                   type="text"
@@ -657,10 +657,10 @@
                 />
               </div>
 
-              <!-- 域名列表 -->
+              <!-- Domain List -->
               <div id="registry-list" class="registry-list"></div>
 
-              <!-- 添加新域名 -->
+              <!-- Add New Domain -->
               <div class="registry-add">
                 <input
                   type="text"
@@ -671,28 +671,28 @@
                 <button id="btn-add-domain" class="btn-small">+</button>
               </div>
 
-              <!-- 提示文字 -->
+              <!-- Hint Text -->
               <div class="setting-sub registry-hint" data-i18n="registryHint">
                 Sites are auto-detected. Manually add if needed.
               </div>
             </div>
           </div>
 
-          <!-- Group 4: URL规则条件 (域名预设) -->
+          <!-- Group 4: URL Rule Presets -->
           <div id="presets-group">
             <div class="setting-group-title" data-i18n="grpPresets">
               Saved Presets
             </div>
             <div class="setting-card" style="padding: 16px">
-              <!-- 预设列表 -->
+              <!-- Presets List -->
               <div id="presets-list" class="presets-list"></div>
 
-              <!-- 空状态提示 -->
+              <!-- Empty State Hint -->
               <div id="presets-empty" class="setting-sub presets-hint" data-i18n="presetsHint">
                 No saved presets. Use 💾 button on cards to save.
               </div>
 
-              <!-- 清空按钮 -->
+              <!-- Clear Button -->
               <div class="presets-actions">
                 <button id="btn-clear-presets" class="btn-small-danger" data-i18n="btnClearPresets">
                   Clear All
@@ -771,7 +771,7 @@
             <div class="vol-number">100%</div>
           </div>
 
-          <!-- 速率控制 + 媒体按钮 -->
+          <!-- Speed Control + Media Buttons -->
           <div class="media-control-row">
             <div class="speed-control">
               <button class="btn-speed" data-delta="-0.5" title="-0.5x">
@@ -789,7 +789,7 @@
               </button>
             </div>
             <div class="media-buttons">
-              <!-- 暂停/播放 -->
+              <!-- Pause/Play -->
               <button
                 class="btn-media btn-pause"
                 title="Pause/Play"
@@ -800,7 +800,7 @@
                   <rect x="14" y="6" width="4" height="12" />
                 </svg>
               </button>
-              <!-- 画中画 -->
+              <!-- Picture-in-Picture -->
               <button
                 class="btn-media btn-pip"
                 title="Picture-in-Picture"
@@ -823,7 +823,7 @@
                   />
                 </svg>
               </button>
-              <!-- 快捷键目标 -->
+              <!-- Hotkey Target -->
               <button
                 class="btn-media btn-hotkey-target"
                 title="Hotkey Target"
@@ -839,7 +839,7 @@
                   <path d="M12 22v-4m-3 3l3-3 3 3" />
                 </svg>
               </button>
-              <!-- 返回标签页 (仅后台卡片显示) -->
+              <!-- Go to Tab (background cards only) -->
               <button
                 class="btn-media btn-goto-tab hidden"
                 title="Go to Tab"
