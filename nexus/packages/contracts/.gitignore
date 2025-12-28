@@ -1,11 +1,11 @@
-# 编译产物应输出到 dist/，而非 src/
-# 此 .gitignore 防止意外提交编译产物到源码目录
+# Build artifacts should go to dist/, not src/
+# This .gitignore prevents accidental commit of compiled files to source directory
 
-# 禁止 src/ 下的编译产物
+# Ignore compiled files in src/
 src/*.js
 src/*.js.map
 src/*.d.ts
 src/*.d.ts.map
 
-# dist/ 目录由 turbo/pnpm 管理，不提交
+# dist/ is managed by turbo/pnpm, do not commit
 dist/

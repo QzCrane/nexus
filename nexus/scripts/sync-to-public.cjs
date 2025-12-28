@@ -169,6 +169,18 @@ function main() {
     console.log('  [COPY] LICENSE');
   }
 
+  // Post-process: Patch package.json to remove internal script references
+  console.log('  [POST] Patching package.json for public repo...');
+  const pkgPath = path.join(CONFIG.destDir, 'package.json');
+  if (fs.existsSync(pkgPath)) {
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    // Remove scripts that reference excluded directories
+    const scriptsToRemove = ['verify', 'prebuild', 'sync-public'];
+    scriptsToRemove.forEach(s => delete pkg.scripts?.[s]);
+    fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, '\t') + '\n');
+    console.log('  [PATCH] package.json (removed internal scripts)');
+  }
+
   // Git operations
   console.log('\n========================================');
   console.log('  Git Operations');
