@@ -1,19 +1,16 @@
 /**
- * SPECTRA Popup - 卡片媒体控制事件
+ * SPECTRA Popup - Card Media Events
  *
- * 职责：绑定 Pause/Play、PiP、Speed、Hotkey Target 控件事件
+ * Responsibilities: Bind Pause/Play, PiP, Speed, Hotkey Target controls.
  */
 
 import type { CardUIElements } from '../types';
 import { sendToTab } from '../utils/dom';
 import { syncSidePanelSpeed } from '../side-panel/controls';
 
-/** 暂停图标 SVG */
 const PAUSE_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
-/** 播放图标 SVG */
 const PLAY_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
 
-/** 绑定媒体控制事件 */
 export function bindMediaControls(ui: CardUIElements, tabId: number): void {
 	// Pause/Play
 	if (ui.btnPause) {
@@ -35,7 +32,7 @@ export function bindMediaControls(ui: CardUIElements, tabId: number): void {
 		};
 	}
 
-	// Speed 按钮
+	// Speed Buttons
 	ui.speedBtns.forEach(btn => {
 		btn.onclick = async () => {
 			const delta = parseFloat(btn.dataset.delta || '0');
@@ -49,7 +46,7 @@ export function bindMediaControls(ui: CardUIElements, tabId: number): void {
 		};
 	});
 
-	// Speed 输入框 - change + wheel
+	// Speed Input - change + wheel
 	if (ui.speedInput) {
 		const updateSpeed = async (speed: number) => {
 			const clampedSpeed = Math.max(0.1, Math.min(16, speed));
@@ -57,7 +54,7 @@ export function bindMediaControls(ui: CardUIElements, tabId: number): void {
 			if (res) {
 				const finalSpeed = res.speed;
 				if (ui.speedInput) ui.speedInput.value = finalSpeed.toFixed(2);
-				// 同步侧边面板速度
+				// Sync Side Panel
 				syncSidePanelSpeed(finalSpeed);
 			}
 		};
@@ -67,7 +64,7 @@ export function bindMediaControls(ui: CardUIElements, tabId: number): void {
 			updateSpeed(speed);
 		};
 
-		// 滚轮支持
+		// Wheel support
 		ui.speedInput.onwheel = (e) => {
 			e.preventDefault();
 			const current = parseFloat(ui.speedInput!.value) || 1;
@@ -76,28 +73,27 @@ export function bindMediaControls(ui: CardUIElements, tabId: number): void {
 		};
 	}
 
-	// 快捷键目标按钮 - 切换当前标签页为快捷键目标
+	// Hotkey Target Button
 	if (ui.btnHotkeyTarget) {
 		const btn = ui.btnHotkeyTarget;
 
-		// 初始化：读取 storage 判断当前 tabId 是否为热键目标
+		// Init: Check storage
 		chrome.storage.local.get(['hotkeyTargetTabId'], (result) => {
 			if (result.hotkeyTargetTabId === tabId) {
 				btn.classList.add('active');
 			}
 		});
 
-		// 点击切换：设置当前 tabId 为热键目标
+		// Toggle: Set current tab as target
 		btn.onclick = () => {
 			chrome.storage.local.set({ hotkeyTargetTabId: tabId }, () => {
-				// 更新所有卡片的热键按钮状态
 				document.querySelectorAll('.btn-hotkey-target').forEach(b => b.classList.remove('active'));
 				btn.classList.add('active');
 			});
 		};
 	}
 
-	// 返回标签页按钮 - 激活该标签页
+	// Goto Tab Button
 	if (ui.btnGotoTab) {
 		ui.btnGotoTab.onclick = () => {
 			chrome.tabs.update(tabId, { active: true });

@@ -1,33 +1,14 @@
-/**
- * NEXUS 音频引擎 - 颜色预判工具
- * 
- * 统一所有组件的颜色判断逻辑，基于策略预判而非激活状态
- */
+// goal: unified heuristics for predicting UI color states (e.g., CAPTURE vs NATIVE) based on audit policy
 
 import type { AudioConfig } from '@nexus/contracts';
 
-/**
- * 颜色判断上下文
- */
 export interface ColorContext {
-	/** 音频配置 */
 	config: AudioConfig;
-	/** 是否受限站点 */
 	isRestricted: boolean;
-	/** 频谱可视化是否开启 */
 	visualizerEnabled: boolean;
 }
 
-/**
- * 判断是否有高级音频需求
- * 
- * 任一条件满足即返回 true：
- * - 音量 > 100%
- * - 频谱开启
- * - EQ 非零
- * - 压缩器开启
- * - 低音增强开启
- */
+// eff: returns true if any advanced audio feature is enabled
 export function needsAdvancedProcessing(ctx: ColorContext): boolean {
 	const { config, visualizerEnabled } = ctx;
 	return (
@@ -39,11 +20,7 @@ export function needsAdvancedProcessing(ctx: ColorContext): boolean {
 	);
 }
 
-/**
- * 预判是否应该使用 CAPTURE 模式（紫色）
- * 
- * 规则：受限站点 + 有高级需求 = CAPTURE
- */
+// eff: returns true if the environment warrants CAPTURE mode (Restricted + Advanced Needs)
 export function predictCapture(ctx: ColorContext): boolean {
 	return ctx.config.enabled && ctx.isRestricted && needsAdvancedProcessing(ctx);
 }

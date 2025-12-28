@@ -1,7 +1,7 @@
 /**
- * SPECTRA Content Script - 视觉滤镜
+ * SPECTRA Content Script - Visual Filters
  *
- * 职责：视频亮度、对比度、饱和度、灰度、反色等 CSS filter
+ * Responsibility: Video brightness, contrast, saturation, grayscale, invert using CSS filters
  */
 
 import { createLogger } from '../shared/logger';
@@ -9,22 +9,20 @@ import { createLogger } from '../shared/logger';
 const log = createLogger('VideoFilter');
 
 // ============================================
-// 滤镜状态
+// Filter State
 // ============================================
 
-/** 滤镜配置 */
 interface FilterState {
-	brightness: number; // 0-200, 100=默认
-	contrast: number;   // 0-200, 100=默认
-	saturate: number;   // 0-200, 100=默认
+	brightness: number; // 0-200, 100=default
+	contrast: number;   // 0-200, 100=default
+	saturate: number;   // 0-200, 100=default
 	grayscale: boolean;
 	invert: boolean;
 }
 
-/** 每个视频独立的滤镜状态 */
+/** Per-video filter state */
 const filterState = new WeakMap<HTMLVideoElement, FilterState>();
 
-/** 默认滤镜值 */
 const DEFAULT_FILTER: FilterState = {
 	brightness: 100,
 	contrast: 100,
@@ -33,7 +31,6 @@ const DEFAULT_FILTER: FilterState = {
 	invert: false
 };
 
-/** 获取或初始化滤镜状态 */
 function getState(video: HTMLVideoElement): FilterState {
 	let state = filterState.get(video);
 	if (!state) {
@@ -43,7 +40,6 @@ function getState(video: HTMLVideoElement): FilterState {
 	return state;
 }
 
-/** 获取主视频元素 */
 function getPrimaryVideo(): HTMLVideoElement | null {
 	const videos = Array.from(document.querySelectorAll('video'));
 	if (!videos.length) return null;
@@ -65,10 +61,10 @@ function getPrimaryVideo(): HTMLVideoElement | null {
 }
 
 // ============================================
-// 滤镜操作
+// Filter Operations
 // ============================================
 
-/** 应用 CSS filter */
+/** Apply CSS filter */
 function applyFilter(video: HTMLVideoElement): void {
 	const state = getState(video);
 	const filters: string[] = [];
@@ -83,7 +79,7 @@ function applyFilter(video: HTMLVideoElement): void {
 	log.info(`Filter applied: ${filters.join(' ') || 'none'}`);
 }
 
-/** 设置滤镜 (部分更新) */
+/** Set Filter (partial update) */
 export function setVideoFilter(params: Partial<FilterState>): boolean {
 	const video = getPrimaryVideo();
 	if (!video) {
@@ -102,7 +98,7 @@ export function setVideoFilter(params: Partial<FilterState>): boolean {
 	return true;
 }
 
-/** 重置滤镜 */
+/** Reset Filter */
 export function resetVideoFilter(): boolean {
 	const video = getPrimaryVideo();
 	if (!video) {
@@ -116,13 +112,13 @@ export function resetVideoFilter(): boolean {
 }
 
 // ============================================
-// 背景变暗
+// Dim Background
 // ============================================
 
 const DIM_OVERLAY_ID = 'spectra-dim-overlay';
 let dimState = { active: false, opacity: 0.7 };
 
-/** 切换背景变暗 */
+/** Toggle Dim Background */
 export function toggleDimBackground(params?: { enabled?: boolean; opacity?: number }): { active: boolean; opacity: number } {
 	const video = getPrimaryVideo();
 	if (!video) {
@@ -130,7 +126,7 @@ export function toggleDimBackground(params?: { enabled?: boolean; opacity?: numb
 		return dimState;
 	}
 
-	// 更新状态
+	// Update state
 	if (params?.enabled !== undefined) dimState.active = params.enabled;
 	else dimState.active = !dimState.active;
 	if (params?.opacity !== undefined) dimState.opacity = Math.max(0, Math.min(1, params.opacity));
@@ -145,7 +141,7 @@ export function toggleDimBackground(params?: { enabled?: boolean; opacity?: numb
 			document.body.appendChild(overlay);
 		}
 		overlay.style.opacity = String(dimState.opacity);
-		// 提升视频 z-index
+		// Promote video z-index
 		video.style.position = 'relative';
 		video.style.zIndex = '2147483647';
 		log.info(`Dim background: ON (opacity=${dimState.opacity})`);
@@ -157,4 +153,5 @@ export function toggleDimBackground(params?: { enabled?: boolean; opacity?: numb
 
 	return dimState;
 }
+
 

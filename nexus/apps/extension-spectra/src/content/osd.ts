@@ -1,13 +1,9 @@
-/**
- * SPECTRA Content Script - OSD 屏幕提示
- * 
- * 负责在用户使用快捷键调节音量时显示屏幕提示
- */
+// goal: provides transient visual feedback (On-Screen Display) for audio parameter adjustments
+// note: implemented via Shadow DOM to prevent host site CSS collision and pollution
 
 import type { AudioConfig } from '@nexus/kernel';
 import type { ContentGlobalSettings } from './settings-manager';
 
-/** OSD 状态 */
 interface OSDState {
 	container: ShadowRoot | null;
 	timer: ReturnType<typeof setTimeout> | null;
@@ -18,18 +14,15 @@ const state: OSDState = {
 	timer: null,
 };
 
-/**
- * 显示 OSD 提示
- */
+// eff: renders or updates the OSD element based on current audio configuration
+// rule: suppressed if the extension popup is open or if OSD is disabled in global settings
 export function showOSD(
 	config: AudioConfig,
 	isCapture: boolean,
 	settings: ContentGlobalSettings,
 	isPopupOpen: boolean
 ): void {
-	// 如果 Popup 已打开或 OSD 被禁用，不显示
-	if (isPopupOpen || !settings.osdEnabled) return;
-	if (!config.enabled) return;
+	if (isPopupOpen || !settings.osdEnabled || !config.enabled) return;
 
 	if (!state.container) createOSD();
 	if (!state.container) return;
@@ -43,13 +36,13 @@ export function showOSD(
 
 	osd.classList.add('visible');
 
-	// 颜色逻辑：Capture = 紫色, Native = 蓝色
+	// note: visual theme shifts between Blue (Native) and Purple (Capture) modes
 	osd.classList.toggle('capture', isCapture);
 
 	const isMuted = config.muted || config.volume === 0;
 	osd.classList.toggle('muted', isMuted);
 
-	// 进度条宽度 (800% 为最大)
+	// inv: progress bar scale is normalized against the 800% maximum boost limit
 	fill.style.width = Math.min(100, (config.volume / 800) * 100) + '%';
 	val.innerText = isMuted ? 'MUTE' : config.volume + '%';
 	icon.innerText = isMuted ? '🔇' : (config.volume > 100 ? '🚀' : '🔊');
@@ -58,7 +51,7 @@ export function showOSD(
 	state.timer = setTimeout(() => osd.classList.remove('visible'), 2000);
 }
 
-/** 创建 OSD DOM 结构 */
+// eff: injects a host element and attaches an open ShadowRoot to contain the OSD UI
 function createOSD(): void {
 	if (!document.body) return;
 

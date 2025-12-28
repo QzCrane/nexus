@@ -1,17 +1,15 @@
 /**
- * SPECTRA Popup - 注册表 UI 控制器
+ * SPECTRA Popup - Registry UI Controller
  * 
- * 职责：管理注册表列表的展示和交互
+ * Manages registry list logic and interaction.
  */
 
 import type { DomainEntry } from '@nexus/contracts';
 import { $ } from '../utils/dom';
 import type { I18NDict } from '../types';
 
-/** 当前显示的标签页 */
 type TabType = 'restricted' | 'safe';
 
-/** UI 元素引用 */
 interface RegistryUIElements {
 	tabRestricted: HTMLButtonElement | null;
 	tabSafe: HTMLButtonElement | null;
@@ -21,13 +19,11 @@ interface RegistryUIElements {
 	btnAdd: HTMLButtonElement | null;
 }
 
-/** 状态 */
 let currentTab: TabType = 'restricted';
 let allEntries: DomainEntry[] = [];
 let filterText = '';
 let currentDict: I18NDict | null = null;
 
-/** 获取 UI 元素 */
 function getUIElements(): RegistryUIElements {
 	return {
 		tabRestricted: $<HTMLButtonElement>('tab-restricted'),
@@ -39,11 +35,9 @@ function getUIElements(): RegistryUIElements {
 	};
 }
 
-/** 渲染列表 */
 function renderList(ui: RegistryUIElements): void {
 	if (!ui.listContainer) return;
 
-	// 过滤和筛选
 	const filtered = allEntries.filter(e => {
 		const matchTab = currentTab === 'restricted' ? e.restricted !== false : e.restricted === false;
 		const matchFilter = !filterText || e.domain.toLowerCase().includes(filterText.toLowerCase());
@@ -66,7 +60,6 @@ function renderList(ui: RegistryUIElements): void {
 		</div>
 	`).join('');
 
-	// 绑定删除事件
 	ui.listContainer.querySelectorAll('.registry-item-delete').forEach(btn => {
 		btn.addEventListener('click', (e) => {
 			const item = (e.target as HTMLElement).closest('.registry-item') as HTMLElement;
@@ -76,18 +69,15 @@ function renderList(ui: RegistryUIElements): void {
 	});
 }
 
-/** 删除域名 */
 function deleteDomain(domain: string, ui: RegistryUIElements): void {
 	allEntries = allEntries.filter(e => e.domain !== domain);
 	saveAndRender(ui);
 }
 
-/** 添加域名 */
 function addDomain(domain: string, ui: RegistryUIElements): void {
 	const cleaned = domain.trim().toLowerCase();
 	if (!cleaned) return;
 
-	// 检查重复
 	if (allEntries.some(e => e.domain === cleaned)) return;
 
 	allEntries.push({
@@ -100,49 +90,37 @@ function addDomain(domain: string, ui: RegistryUIElements): void {
 
 	saveAndRender(ui);
 
-	// 清空输入
 	if (ui.newDomainInput) ui.newDomainInput.value = '';
 }
 
-/** 保存并重新渲染 */
 function saveAndRender(ui: RegistryUIElements): void {
 	chrome.storage.local.set({ restrictedRegistry: allEntries });
 	renderList(ui);
 }
 
-/** 切换标签页 */
 function switchTab(tab: TabType, ui: RegistryUIElements): void {
 	currentTab = tab;
 
-	// 更新按钮样式
 	if (ui.tabRestricted) ui.tabRestricted.classList.toggle('active', tab === 'restricted');
 	if (ui.tabSafe) ui.tabSafe.classList.toggle('active', tab === 'safe');
 
 	renderList(ui);
 }
 
-/**
- * 初始化注册表 UI
- * @param entries 初始数据
- */
 export function initRegistryUI(entries: DomainEntry[]): void {
 	allEntries = entries;
 	const ui = getUIElements();
 
-	// 初始渲染
 	renderList(ui);
 
-	// 标签页切换
 	ui.tabRestricted?.addEventListener('click', () => switchTab('restricted', ui));
 	ui.tabSafe?.addEventListener('click', () => switchTab('safe', ui));
 
-	// 搜索过滤
 	ui.filterInput?.addEventListener('input', (e) => {
 		filterText = (e.target as HTMLInputElement).value;
 		renderList(ui);
 	});
 
-	// 添加域名
 	ui.btnAdd?.addEventListener('click', () => {
 		if (ui.newDomainInput) addDomain(ui.newDomainInput.value, ui);
 	});
@@ -154,10 +132,6 @@ export function initRegistryUI(entries: DomainEntry[]): void {
 	});
 }
 
-/**
- * 更新注册表 UI 的 i18n
- * @param dict 语言字典
- */
 export function updateRegistryI18n(dict: I18NDict): void {
 	currentDict = dict;
 	const ui = getUIElements();

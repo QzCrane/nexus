@@ -1,8 +1,6 @@
-/**
- * NEXUS Audio Engine - 时间常量
- */
+// goal: central timing configuration for UI, capture logic, and polling intervals
+// note: all values are in milliseconds (ms)
 
-/** 时间相关常量 (毫秒) */
 export const Timing = {
 	OSD_DURATION: 2000,
 	TOAST_DURATION: 3000,

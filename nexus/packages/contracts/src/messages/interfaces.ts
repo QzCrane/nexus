@@ -1,10 +1,8 @@
-/**
- * NEXUS 消息协议 - 接口定义
- */
+// goal: defines messaging interfaces for both client (messenger) and server (router) roles
 
 import type { NexusAction, NexusRequest, NexusResponse } from './definitions.js';
 
-/** 消息发送端接口 (Popup/Content) */
+// goal: generic client for sending and receiving Nexus protocol messages
 export interface INexusMessenger {
 	send<A extends NexusAction>(
 		action: A,
@@ -23,7 +21,7 @@ export interface INexusMessenger {
 	): () => void;
 }
 
-/** 消息路由器接口 (Background) */
+// goal: central message dispatcher for background script
 export interface INexusRouter {
 	on<A extends NexusAction>(
 		action: A,
@@ -33,6 +31,7 @@ export interface INexusRouter {
 		) => NexusResponse<A> | Promise<NexusResponse<A>>
 	): this;
 
+	// eff: begin listening to chrome.runtime.onMessage
 	listen(): void;
 	destroy(): void;
 }

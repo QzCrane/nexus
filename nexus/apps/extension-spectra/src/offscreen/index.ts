@@ -1,17 +1,12 @@
 /**
- * SPECTRA Offscreen Document - 音频处理
- * 
- * 职责：处理 Tab Capture 模式下的音频
- * - 接收来自 Background 的流 ID
- * - 创建 WebAudio 处理链
- * - 应用音量/EQ/压缩/低音增强
+ * // goal: Handle audio processing in offscreen document
+ * // eff: Creates WebAudio chain (Source -> Gain -> Bass -> EQ -> Comp -> Panner -> Delay -> Analyser -> Dest)
  */
 
 import { AudioParams, CompressorOn, CompressorNativeOff } from '@nexus/audio-engine';
 import type { AudioConfig } from '@nexus/kernel';
 import { OffscreenActions } from '@nexus/contracts';
 
-/** 音频处理器实例 */
 interface AudioProcessor {
 	ctx: AudioContext;
 	stream: MediaStream;
@@ -26,7 +21,6 @@ interface AudioProcessor {
 
 const processors = new Map<number, AudioProcessor>();
 
-// 消息监听
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 	if (msg.target !== 'offscreen') return;
 
@@ -49,19 +43,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 			} else {
 				sendResponse({ buffer: null });
 			}
-			return true; // 异步响应
+			return true; // async response
 		}
 	}
 });
 
 /**
- * 开始捕获并处理音频
+ * // pre: valid tabId and streamId
+ * // eff: Initializes AudioContext and node graph
  */
 async function startCapture(tabId: number, streamId: string, config: AudioConfig): Promise<void> {
 	if (processors.has(tabId)) return;
 
 	try {
-		// 1. 获取来自 Tab 的媒体流
+		// eff: Get MediaStream
 		const stream = await navigator.mediaDevices.getUserMedia({
 			audio: {
 				mandatory: {
@@ -72,26 +67,26 @@ async function startCapture(tabId: number, streamId: string, config: AudioConfig
 			video: false
 		});
 
-		// 2. 创建 AudioContext
+
 		const ctx = new AudioContext();
 
-		// 3. 构建处理链路：Source -> Bass -> EQ -> Comp -> Gain -> Analyser -> Destination
+		// eff: Build Chain
 		const source = ctx.createMediaStreamSource(stream);
 		const gain = ctx.createGain();
 
-		// 低音增强 (Bass Boost)
+
 		const bass = ctx.createBiquadFilter();
 		bass.type = 'lowshelf';
 		bass.frequency.value = AudioParams.BASS_FREQUENCY;
 
-		// 动态压缩器 (Compressor)
+
 		const comp = ctx.createDynamicsCompressor();
 
-		// 分析器 (Visualizer)
+
 		const analyser = ctx.createAnalyser();
 		analyser.fftSize = AudioParams.FFT_SIZE;
 
-		// 10段均衡器 (EQ)
+
 		const eqNodes = AudioParams.EQ_FREQUENCIES.map(f => {
 			const n = ctx.createBiquadFilter();
 			n.type = 'peaking';
@@ -100,11 +95,11 @@ async function startCapture(tabId: number, streamId: string, config: AudioConfig
 			return n;
 		});
 
-		// 声道平衡 + 延迟
-		const panner = ctx.createStereoPanner();
-		const delayNode = ctx.createDelay(1); // 最大 1 秒
 
-		// 4. 连接节点: Source -> Gain -> Bass -> EQ -> Comp -> Panner -> Delay -> Analyser -> Dest
+		const panner = ctx.createStereoPanner();
+		const delayNode = ctx.createDelay(1); // inv: Max 1s
+
+		// eff: Connect Nodes
 		let head: AudioNode = source;
 		head.connect(gain); head = gain;
 		head.connect(bass); head = bass;
@@ -115,24 +110,21 @@ async function startCapture(tabId: number, streamId: string, config: AudioConfig
 		head.connect(analyser);
 		analyser.connect(ctx.destination);
 
-		// 5. 强制 Resume AudioContext
+		// rule: Force Resume
 		if (ctx.state === 'suspended') {
 			await ctx.resume();
 		}
 
-		// 保存处理器状态
+
 		processors.set(tabId, { ctx, stream, gain, bass, comp, eqNodes, panner, delayNode, analyser });
 
-		// 立即应用配置
+
 		updateAudio(tabId, config);
 	} catch (e) {
 		console.error('[SPECTRA] Offscreen capture failed:', e);
 	}
 }
 
-/**
- * 停止捕获
- */
 function stopCapture(tabId: number): void {
 	const p = processors.get(tabId);
 	if (p) {
@@ -142,38 +134,33 @@ function stopCapture(tabId: number): void {
 	}
 }
 
-/**
- * 更新音频参数
- */
 function updateAudio(tabId: number, config: AudioConfig): void {
 	const p = processors.get(tabId);
 	if (!p) return;
 
-	// 确保 AudioContext 处于运行状态
 	if (p.ctx.state === 'suspended') {
 		p.ctx.resume();
 	}
 
-	// 计算 Gain 值：0-100% -> 0.0-1.0, 100-800% -> 1.0-8.0
+	// rule: Gain 0-100% -> 0.0-1.0, 100-800% -> 1.0-8.0
 	const val = config.muted ? 0 : config.volume;
 	const gainVal = val / 100;
 
 	const t = p.ctx.currentTime;
 	const r = AudioParams.SMOOTH_TIME;
 
-	// 应用音量
 	p.gain.gain.setTargetAtTime(gainVal, t, r);
 	p.gain.channelCount = config.mono ? 1 : 2;
 
-	// 应用低音
+
 	p.bass.gain.setTargetAtTime(config.bass ? AudioParams.BASS_GAIN : 0, t, r);
 
-	// 应用 EQ
+
 	p.eqNodes.forEach((n, i) => {
 		n.gain.setTargetAtTime(config.eqValues?.[i] || 0, t, r);
 	});
 
-	// 应用压缩器参数
+
 	if (config.compressor) {
 		p.comp.threshold.setTargetAtTime(CompressorOn.threshold, t, r);
 		p.comp.knee.setTargetAtTime(CompressorOn.knee, t, r);
@@ -181,15 +168,15 @@ function updateAudio(tabId: number, config: AudioConfig): void {
 		p.comp.attack.setTargetAtTime(CompressorOn.attack, t, r);
 		p.comp.release.setTargetAtTime(CompressorOn.release, t, r);
 	} else {
-		// 关闭压缩器时，使用透明参数
+		// rule: Transparent params when off
 		p.comp.threshold.setTargetAtTime(CompressorNativeOff.threshold, t, r);
 		p.comp.ratio.setTargetAtTime(CompressorNativeOff.ratio, t, r);
 	}
 
-	// 应用声道平衡
+
 	p.panner.pan.setTargetAtTime(Math.max(-1, Math.min(1, config.pan ?? 0)), t, r);
 
-	// 应用延迟 (转换 ms 到 s)
+	// rule: ms to s
 	const delayMs = Math.max(0, config.delay ?? 0);
 	p.delayNode.delayTime.setTargetAtTime(delayMs / 1000, t, r);
 }

@@ -1,8 +1,4 @@
-/**
- * SPECTRA Content Script - 媒体消息处理器
- *
- * 职责：处理 MEDIA_* 和 VIDEO_* 系列消息
- */
+// goal: routes media and video-related messages from the background script to specialized content handlers
 
 import { Actions } from '@nexus/contracts';
 import { togglePlay, togglePip, setSpeed, adjustSpeed, getMediaState, seekVideo } from './media-control';
@@ -11,13 +7,10 @@ import { setVideoFilter, resetVideoFilter, toggleDimBackground } from './video-f
 import { setPointA, setPointB, clearABLoop, getABState } from './ab-loop';
 import { addMarker, removeMarker, jumpToMarker, listMarkers } from './time-marker';
 
-/** 媒体消息 Payload 类型 */
 type MsgPayload = { speed?: number; delta?: number; brightness?: number; contrast?: number; saturate?: number; grayscale?: boolean; invert?: boolean } | undefined;
 
-/**
- * 处理媒体控制消息
- * @returns true if handled, false if not a media action
- */
+// eff: executes media/video actions based on the provided Action type and dispatches results via sendResponse
+// post: returns true if the action was recognized and handled within this module
 export function handleMediaMessage(
 	action: string,
 	payload: unknown,
@@ -39,7 +32,6 @@ export function handleMediaMessage(
 
 		case Actions.MEDIA_SET_SPEED: {
 			const sp = payload as { speed?: number; delta?: number; preservePitch?: boolean } | undefined;
-			// 支持绝对速度或增量
 			const result = sp?.delta !== undefined
 				? adjustSpeed(sp.delta)
 				: setSpeed(sp?.speed ?? 1, sp?.preservePitch);

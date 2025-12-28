@@ -1,18 +1,11 @@
-/**
- * SPECTRA Background - Tab 生命周期处理
- * 
- * 处理标签页更新、激活和关闭事件
- */
+// goal: manages chrome tab lifecycle events to maintain accurate tab prioritization and state cleanup
 
 import { captureStates, badgeState, tabAudioStates, cleanupTabState } from './state';
 import { handleCaptureToggle } from './handlers/capture';
 import { swLog } from '../shared/logger';
 
-/**
- * 设置 Tab 生命周期监听器
- */
+// eff: wires up global chrome tab listeners for activation, updates, and removal
 export function setupLifecycleListeners(): void {
-	// 标签页激活事件 - 更新 lastActivatedTime
 	chrome.tabs.onActivated.addListener((activeInfo) => {
 		const now = Date.now();
 		const existing = tabAudioStates.get(activeInfo.tabId);
@@ -21,22 +14,20 @@ export function setupLifecycleListeners(): void {
 			tabAudioStates.set(activeInfo.tabId, {
 				...existing,
 				lastActivatedTime: now,
-				userManuallyActivated: true, // 标记为当前 session 主动激活
+				userManuallyActivated: true, // inv: user interaction confirmed for the current session
 			});
 		} else {
-			// 首次激活，创建初始状态
 			tabAudioStates.set(activeInfo.tabId, {
 				hasMediaElement: false,
 				lastAudibleTime: 0,
 				lastActivatedTime: now,
-				userManuallyActivated: true, // 标记为当前 session 主动激活
+				userManuallyActivated: true,
 			});
 		}
 	});
 
-	// 标签页更新事件 - 处理多种变化
 	chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-		// audible 状态变化 - 更新 lastAudibleTime
+		// eff: update activity timestamp if the tab generates sound
 		if (changeInfo.audible !== undefined) {
 			const now = Date.now();
 			const existing = tabAudioStates.get(tabId);
@@ -49,26 +40,16 @@ export function setupLifecycleListeners(): void {
 			}
 		}
 
-		// 页面重载 - 清理角标和 Capture
 		if (changeInfo.status === 'loading' && changeInfo.url) {
-			// 页面重新加载时清除角标
-			badgeState.delete(tabId);
-			chrome.action.setBadgeText({ tabId, text: '' }).catch(() => { });
-
-			// 如果有 Capture 活动，强制停止
-			if (captureStates.get(tabId)) {
-				swLog.capture(`Tab ${tabId} reloading, force stopping capture.`);
-				handleCaptureToggle(tabId, false);
-			}
+			// note: reload triggers automatic browser-side capture termination
 		}
 	});
 
-	// 标签页关闭事件 - 清理所有状态
 	chrome.tabs.onRemoved.addListener((tabId) => {
 		cleanupTabState(tabId);
 
-		// 如果有 Capture 活动，停止
 		if (captureStates.get(tabId)) {
+			// eff: force cleanup capture state if the tab is closed while active
 			handleCaptureToggle(tabId, false);
 		}
 	});

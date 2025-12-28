@@ -1,13 +1,13 @@
 /**
- * SPECTRA Popup - 颜色常量
+ * SPECTRA Popup - Color Constants
  */
 
 import { UIColors } from '@nexus/audio-engine';
 
-/** UI 颜色定义 (从 @nexus/audio-engine 统一导入) */
+/** UI Color Definitions (imported from @nexus/audio-engine) */
 export const COLORS = UIColors;
 
-/** EQ 曲线渐变色 */
+/** EQ Curve Gradients */
 export const EQ_GRADIENT = {
   TOP: 'rgba(37, 99, 235, 0.25)',
   BOTTOM: 'rgba(37, 99, 235, 0.0)',

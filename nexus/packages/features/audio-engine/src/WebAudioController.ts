@@ -1,7 +1,3 @@
-/**
- * NEXUS Audio Engine - WebAudio 控制器入口
- * 
- * 从拆分的模块统一导出
- */
+// goal: aggregation point for all WebAudio control and configuration logic
 
 export * from './webaudio/index.js';

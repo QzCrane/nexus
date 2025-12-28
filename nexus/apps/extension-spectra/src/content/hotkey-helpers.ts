@@ -1,29 +1,25 @@
-/**
- * SPECTRA Content Script - 快捷键辅助函数
- *
- * 通过消息通道与 Background 通信的辅助函数
- */
+// goal: helper utilities for translating content-script hotkey interactions into background-layer commands
 
 import type { HotkeyAction, HotkeyParams, AudioConfig } from '@nexus/contracts';
 import { Actions } from '@nexus/contracts';
 import { listMarkers } from './time-marker';
 import { showToast } from './toast';
 
-// 状态缓存 (用于获取当前音量等)
+// cachedConfig: volatile memory cache for rapidly changing audio parameters (e.g., volume scrolling)
 let cachedConfig: Partial<AudioConfig> = { volume: 100, muted: false };
 
-/** 设置缓存配置 (由外部模块调用) */
 export function setCachedConfig(config: Partial<AudioConfig>): void {
 	cachedConfig = { ...cachedConfig, ...config };
 }
 
-/** 发送音量动作 */
+// eff: calculates new volume/mute states and dispatches AUDIO_SET_CONFIG to the background service worker
 export function sendVolumeAction(action: HotkeyAction, params?: HotkeyParams): void {
 	const step = params?.step ?? 10;
 	let newConfig: Partial<AudioConfig> = {};
 
 	switch (action) {
 		case 'volume_up':
+			// inv: cap volume at 800% to prevent extreme digital clipping
 			newConfig = { volume: Math.min(800, (cachedConfig.volume ?? 100) + step) };
 			break;
 		case 'volume_down':
@@ -43,7 +39,7 @@ export function sendVolumeAction(action: HotkeyAction, params?: HotkeyParams): v
 	});
 }
 
-/** 发送音频重置 */
+// eff: resets all domain-specific audio processing (EQ, gain, compression) to baseline values
 export function sendAudioReset(): void {
 	chrome.runtime.sendMessage({
 		action: Actions.AUDIO_SET_CONFIG,
@@ -51,12 +47,12 @@ export function sendAudioReset(): void {
 	});
 }
 
-/** 发送 Capture 切换 */
 export function sendCaptureToggle(): void {
 	chrome.runtime.sendMessage({ action: Actions.CAPTURE_TOGGLE });
 }
 
-/** 跳转到标记点 */
+// goal: navigate the video playhead to the nearest user-defined marker
+// eff: updates HTMLVideoElement.currentTime and displays a confirmation toast
 export function jumpMarker(forward: boolean): void {
 	const markers = listMarkers();
 	if (!markers.length) return;
@@ -79,7 +75,7 @@ export function jumpMarker(forward: boolean): void {
 	}
 }
 
-/** 切换视频循环 */
+// eff: toggles the native 'loop' attribute on the primary video element
 export function toggleLoop(): void {
 	const video = document.querySelector('video');
 	if (video) {
@@ -88,7 +84,7 @@ export function toggleLoop(): void {
 	}
 }
 
-/** 发送标签页动作 */
+// eff: dispatches browser-level tab management commands (pin, mute) to the background
 export function sendTabAction(action: HotkeyAction): void {
 	chrome.runtime.sendMessage({ action: action === 'tab_pin' ? 'TAB_PIN' : 'TAB_MUTE' });
 }

@@ -1,8 +1,4 @@
-/**
- * NEXUS Audio Engine - 常量入口
- * 
- * 统一导出所有常量，外部只需 import from './constants'
- */
+// goal: aggregation point for audio engine constants including parameters, colors, and timing
 
 export * from './constants/audio-params.js';
 export * from './constants/ui-colors.js';

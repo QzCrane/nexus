@@ -1,9 +1,5 @@
-/**
- * SPECTRA Content Script - 快捷键监听器
- *
- * 网站独立配置，默认关闭
- * 用户需在 Options 页为特定网站启用
- */
+// goal: intercepts keyboard events for site-specific custom hotkeys and manages their lifecycle
+// rule: hotkeys are disabled by default per domain and require explicit user enablement for privacy and performance
 
 import type { HotkeySettings, HotkeyBinding, KeyCombo, SiteHotkeyConfig } from '@nexus/contracts';
 import { DEFAULT_HOTKEY_SETTINGS } from '@nexus/contracts';
@@ -11,58 +7,54 @@ import { createLogger } from '../shared/logger';
 import { executeHotkeyAction, setCachedConfig } from './hotkey-actions';
 import { showToast } from './toast';
 
-const log = createLogger('Hotkeys');
+const logger = createLogger('Hotkeys');
 
-// 当前配置
 let settings: HotkeySettings = { ...DEFAULT_HOTKEY_SETTINGS };
 
-/** 初始化快捷键监听器 */
+// eff: initializes the hotkey subsystem by loading settings and attaching DOM/storage listeners
+// post: returns a cleanup function to detach all listeners when the content script is purged
 export async function initHotkeyListener(): Promise<() => void> {
 	await loadSettings();
 	chrome.storage.onChanged.addListener(handleStorageChange);
 	document.addEventListener('keydown', handleKeydown, true);
-	log.info('Hotkey listener initialized');
+	logger.info('Hotkey listener initialized');
 	return () => {
 		document.removeEventListener('keydown', handleKeydown, true);
 		chrome.storage.onChanged.removeListener(handleStorageChange);
 	};
 }
 
-/** 存储变化处理 */
+// eff: synchronizes the in-memory settings cache when external updates occur (e.g., from the popup)
 function handleStorageChange(changes: { [key: string]: chrome.storage.StorageChange }): void {
 	if (changes.hotkeySettings?.newValue) {
 		settings = changes.hotkeySettings.newValue;
-		log.debug('Settings updated');
+		logger.debug('Settings updated');
 	}
 }
 
-/** 加载配置 */
 async function loadSettings(): Promise<void> {
 	try {
 		const result = await chrome.storage.local.get('hotkeySettings');
 		if (result.hotkeySettings) settings = result.hotkeySettings;
-	} catch { /* context invalid */ }
+	} catch { }
 }
 
-/** 获取当前网站配置 */
+// post: returns the active configuration for the current domain if it exists and is enabled
 function getSiteConfig(): SiteHotkeyConfig | null {
 	const domain = location.hostname;
 	const site = settings.sites[domain];
-	// 网站配置不存在或未启用 → 不处理
 	if (!site || !site.enabled) return null;
 	return site;
 }
 
-/** 处理键盘事件 */
+// eff: intercepts 'keydown' events, validates against site-specific bindings, and executes if matched
+// rule: suppressed if the event target is an input element to avoid disrupting standard typing
 function handleKeydown(e: KeyboardEvent): void {
-	// 获取网站配置 (默认关闭)
 	const site = getSiteConfig();
 	if (!site) return;
 
-	// 忽略输入框
 	if (isInputElement(e.target)) return;
 
-	// 查找匹配绑定
 	const binding = findMatch(e, site.bindings);
 	if (!binding) return;
 
@@ -71,7 +63,7 @@ function handleKeydown(e: KeyboardEvent): void {
 	executeWithOSD(binding);
 }
 
-/** 执行动作并显示 OSD */
+// eff: triggers a visual notification (OSD) and executes the linked functional action
 function executeWithOSD(binding: HotkeyBinding): void {
 	const silent = ['none', 'open_popup', 'open_options', 'open_url', 'run_js'];
 	if (!silent.includes(binding.action)) {
@@ -80,7 +72,6 @@ function executeWithOSD(binding: HotkeyBinding): void {
 	executeHotkeyAction(binding.action, binding.params);
 }
 
-/** 格式化动作标签 */
 function formatLabel(action: string, params?: { step?: number }): string {
 	const map: Record<string, string> = {
 		play_pause: '⏯️', speed_up: `⏩ +${params?.step ?? 0.1}x`, speed_down: `⏪ -${params?.step ?? 0.1}x`,
@@ -90,14 +81,14 @@ function formatLabel(action: string, params?: { step?: number }): string {
 	return map[action] ?? action.replace(/_/g, ' ');
 }
 
-/** 判断输入框 */
+// post: returns true if the element accepts user text/interaction input
 function isInputElement(t: EventTarget | null): boolean {
 	if (!t || !(t instanceof HTMLElement)) return false;
 	const tag = t.tagName.toLowerCase();
 	return tag === 'input' || tag === 'textarea' || tag === 'select' || t.isContentEditable;
 }
 
-/** 查找匹配绑定 */
+// role: matches a physical KeyboardEvent against defined key/modifier combinations
 function findMatch(e: KeyboardEvent, bindings: HotkeyBinding[]): HotkeyBinding | null {
 	const combo: KeyCombo = {
 		code: e.code,
@@ -110,7 +101,6 @@ function findMatch(e: KeyboardEvent, bindings: HotkeyBinding[]): HotkeyBinding |
 	return null;
 }
 
-/** 匹配按键组合 */
 function matchCombo(a: KeyCombo, b: KeyCombo): boolean {
 	return a.code === b.code
 		&& a.modifiers.ctrl === b.modifiers.ctrl

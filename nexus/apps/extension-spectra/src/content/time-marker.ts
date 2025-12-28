@@ -1,16 +1,8 @@
-/**
- * SPECTRA Content Script - 时间标记
- *
- * 职责：添加/删除/跳转时间标记点
- */
+// goal: manages transient in-page time markers for quick navigation within video elements
 
 import { createLogger } from '../shared/logger';
 
 const log = createLogger('Marker');
-
-// ============================================
-// 类型定义
-// ============================================
 
 interface TimeMarker {
 	id: string;
@@ -18,22 +10,20 @@ interface TimeMarker {
 	label: string;
 }
 
-// 标记列表（每个页面独立，不持久化）
+// markers: volatile list of user-defined timestamps; reset on page reload
 const markers: TimeMarker[] = [];
 
-/** 生成唯一 ID */
 function generateId(): string {
 	return `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
-/** 格式化时间 */
 function formatTime(seconds: number): string {
 	const m = Math.floor(seconds / 60);
 	const s = Math.floor(seconds % 60);
 	return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-/** 获取主视频元素 */
+// post: returns the largest visible video element on the page, or the first available video as fallback
 function getPrimaryVideo(): HTMLVideoElement | null {
 	const videos = Array.from(document.querySelectorAll('video'));
 	if (!videos.length) return null;
@@ -50,11 +40,7 @@ function getPrimaryVideo(): HTMLVideoElement | null {
 	return visible[0] ?? null;
 }
 
-// ============================================
-// 公共 API
-// ============================================
-
-/** 添加标记点 */
+// eff: captures the current timestamp of the primary video and creates a labeled marker
 export function addMarker(label?: string): TimeMarker | null {
 	const video = getPrimaryVideo();
 	if (!video) {
@@ -71,12 +57,12 @@ export function addMarker(label?: string): TimeMarker | null {
 	};
 
 	markers.push(marker);
-	markers.sort((a, b) => a.time - b.time); // 按时间排序
+	// rule: markers are always kept chronologically sorted for UI consistency
+	markers.sort((a, b) => a.time - b.time);
 	log.info(`Added marker: ${marker.label} at ${formatTime(time)}`);
 	return marker;
 }
 
-/** 删除标记点 */
 export function removeMarker(id: string): boolean {
 	const index = markers.findIndex(m => m.id === id);
 	if (index === -1) {
@@ -89,7 +75,7 @@ export function removeMarker(id: string): boolean {
 	return true;
 }
 
-/** 跳转到标记点 */
+// eff: updates the primary video's playback head to the marker's timestamp
 export function jumpToMarker(id: string): { jumped: boolean; time: number } {
 	const video = getPrimaryVideo();
 	const marker = markers.find(m => m.id === id);
@@ -104,7 +90,6 @@ export function jumpToMarker(id: string): { jumped: boolean; time: number } {
 	return { jumped: true, time: marker.time };
 }
 
-/** 获取所有标记点 */
 export function listMarkers(): TimeMarker[] {
 	return [...markers];
 }

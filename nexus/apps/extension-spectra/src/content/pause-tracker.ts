@@ -1,27 +1,16 @@
-/**
- * SPECTRA Content Script - 媒体暂停追踪
- * 
- * 追踪媒体暂停时间戳，用于暂停保留时间功能
- */
+// goal: tracks silence duration by monitoring media pause timestamps for domain-agnostic pause retention logic
 
-/** 暂停时间戳 (ms)，null 表示正在播放 */
+// pausedAt: epoch timestamp (ms) when all media stopped playing; null if any media is active
 let pausedAt: number | null = null;
 
-/** 已绑定暂停追踪的元素 */
+// pauseTracked: WeakSet to avoid redundant event listener attachment while preventing memory leaks
 const pauseTracked = new WeakSet<HTMLMediaElement>();
 
-/**
- * 获取暂停时间戳
- */
 export function getPausedAt(): number | null {
 	return pausedAt;
 }
 
-/**
- * 更新暂停时间戳
- * @param hasPlaying 是否有正在播放的媒体
- * @param hasElements 是否有媒体元素
- */
+// eff: updates the global pause timestamp based on aggregate playback state
 export function updatePausedAt(hasPlaying: boolean, hasElements: boolean): void {
 	if (hasPlaying) {
 		pausedAt = null;
@@ -30,23 +19,15 @@ export function updatePausedAt(hasPlaying: boolean, hasElements: boolean): void 
 	}
 }
 
-/**
- * 检查是否需要为媒体元素设置暂停追踪
- */
 export function needsTracking(media: HTMLMediaElement): boolean {
 	return !pauseTracked.has(media);
 }
 
-/**
- * 标记媒体元素已设置追踪
- */
 export function markTracked(media: HTMLMediaElement): void {
 	pauseTracked.add(media);
 }
 
-/**
- * 设置媒体暂停追踪监听器
- */
+// eff: attaches 'pause' and 'play' listeners to a media element to maintain the global silence duration state
 export function setupPauseTracking(media: HTMLMediaElement, isAnyPlayingFn: () => boolean): void {
 	media.addEventListener('pause', () => {
 		if (!isAnyPlayingFn()) {

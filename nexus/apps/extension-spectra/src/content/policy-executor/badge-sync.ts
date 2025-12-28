@@ -1,13 +1,5 @@
-/**
- * 策略执行器 - 角标与 UI 同步
- * 
- * 角标显示规则（v4）：
- * - 用户通过插件UI操作任何配置 → 激活 sticky → 显示角标
- * - 网站自己调节 → 不显示
- * - 只打开UI不操作 → 不显示
- * - 捕获模式自动激活 sticky
- * - 一旦 sticky 激活，该标签页永久显示角标
- */
+// goal: synchronizes internal audio state with browser badge and popup UI
+// rule: badge ONLY appears if user explicitly interacted with UI or capture is active (sticky display)
 
 import { AudioMode, predictCapture } from '@nexus/audio-engine';
 import { Actions } from '@nexus/contracts';
@@ -15,7 +7,7 @@ import { safeSend } from '../context-guard';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../types';
 import type { InternalState } from './types';
 
-/** @deprecated 使用 predictCapture 代替 */
+// note: kept for legacy compatibility, prefer predictCapture for mode-based logic
 export function isEffectivelyCapturing(
 	state: PolicyExecutorState,
 	captureManager: PolicyExecutorDeps['captureManager']
@@ -23,7 +15,7 @@ export function isEffectivelyCapturing(
 	return state.activeMode === AudioMode.CAPTURE && captureManager.isActive();
 }
 
-/** 更新扩展图标角标 */
+// eff: updates the extension icon badge text/color based on volume boosts and capture state
 export function updateBadge(
 	deps: PolicyExecutorDeps,
 	state: PolicyExecutorState,
@@ -38,8 +30,7 @@ export function updateBadge(
 		visualizerEnabled: settingsManager.get().visualizerEnabled,
 	});
 
-	// 捕获模式或超原生音量 → 自动激活 sticky
-	// 其他配置变化由 config-updater.ts 在用户 UI 操作时触发
+	// rule: force sticky badge if volume > 100% or capture mode is engaged
 	if (isPredictedCapture || state.config.volume > 100) {
 		state.userHasInteracted = true;
 	}
@@ -48,6 +39,7 @@ export function updateBadge(
 	if (hash === internalState.lastBadgeHash) return;
 	internalState.lastBadgeHash = hash;
 
+	// note: BADGE_UPDATE is handled by background worker (badge.ts)
 	safeSend(() => messenger.send('BADGE_UPDATE', {
 		volume: state.config.volume,
 		muted: state.config.muted,
@@ -56,7 +48,7 @@ export function updateBadge(
 	} as any)).catch(() => { });
 }
 
-/** 广播状态给 Popup UI */
+// goal: broadcasts current configuration to open popup windows to ensure UI consistency
 export function broadcastUI(
 	deps: PolicyExecutorDeps,
 	state: PolicyExecutorState,

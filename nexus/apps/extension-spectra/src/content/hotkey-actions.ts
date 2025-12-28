@@ -1,8 +1,4 @@
-/**
- * SPECTRA Content Script - 快捷键动作执行器
- *
- * 根据动作类型执行对应操作
- */
+// goal: routes global hotkey actions to their respective functional handlers (media, video, audio, etc.)
 
 import type { HotkeyAction, HotkeyParams } from '@nexus/contracts';
 import { createLogger } from '../shared/logger';
@@ -21,17 +17,15 @@ import {
 	sendTabAction,
 } from './hotkey-helpers';
 
-// 重导出 setCachedConfig
 export { setCachedConfig } from './hotkey-helpers';
 
 const log = createLogger('HotkeyActions');
 
-/** 执行快捷键动作 */
+// eff: executes the requested action by delegating to specialized module handlers
 export function executeHotkeyAction(action: HotkeyAction, params?: HotkeyParams): void {
 	log.debug(`Executing action: ${action}`, params);
 
 	switch (action) {
-		// ========== 播放控制 ==========
 		case 'play_pause': togglePlay(); break;
 		case 'seek_forward_5s': seekVideo(5); break;
 		case 'seek_forward_10s': seekVideo(10); break;
@@ -42,13 +36,11 @@ export function executeHotkeyAction(action: HotkeyAction, params?: HotkeyParams)
 		case 'seek_frame_forward': seekVideo(1 / 30); break;
 		case 'seek_frame_backward': seekVideo(-1 / 30); break;
 
-		// ========== 速度控制 ==========
 		case 'speed_up': adjustSpeed(params?.step ?? 0.1); break;
 		case 'speed_down': adjustSpeed(-(params?.step ?? 0.1)); break;
 		case 'speed_reset': setSpeed(1); break;
 		case 'speed_set': if (params?.speed) setSpeed(params.speed); break;
 
-		// ========== 音量控制 ==========
 		case 'volume_up':
 		case 'volume_down':
 		case 'volume_mute':
@@ -56,11 +48,9 @@ export function executeHotkeyAction(action: HotkeyAction, params?: HotkeyParams)
 			sendVolumeAction(action, params);
 			break;
 
-		// ========== 音频增强 ==========
 		case 'audio_reset': sendAudioReset(); break;
 		case 'capture_toggle': sendCaptureToggle(); break;
 
-		// ========== 视频控制 ==========
 		case 'fullscreen_toggle': toggleFullscreen(); break;
 		case 'pip_toggle': togglePip(); break;
 		case 'rotate_cw':
@@ -69,7 +59,6 @@ export function executeHotkeyAction(action: HotkeyAction, params?: HotkeyParams)
 		case 'screenshot': takeScreenshot(); break;
 		case 'dim_background': toggleDimBackground(); break;
 
-		// ========== 标记与循环 ==========
 		case 'marker_add': addMarker(); showToast('Marker added'); break;
 		case 'marker_jump_prev': jumpMarker(false); break;
 		case 'marker_jump_next': jumpMarker(true); break;
@@ -78,19 +67,17 @@ export function executeHotkeyAction(action: HotkeyAction, params?: HotkeyParams)
 		case 'ab_clear': clearABLoop(); showToast('AB loop cleared'); break;
 		case 'loop_toggle': toggleLoop(); break;
 
-		// ========== FX ==========
 		case 'fx_reset': resetVideoFilter(); break;
 
-		// ========== 标签页 ==========
 		case 'tab_pin':
 		case 'tab_mute': sendTabAction(action); break;
 
-		// ========== 其他 ==========
 		case 'open_options':
 			chrome.runtime.sendMessage({ action: 'OPEN_OPTIONS' });
 			break;
 		case 'run_js':
 			if (params?.script) {
+				// note: eval is utilized for user-defined custom logic strings
 				try { eval(params.script); } catch (e) { log.error('Script error:', e); }
 			}
 			break;

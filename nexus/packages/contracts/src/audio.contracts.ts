@@ -1,42 +1,23 @@
-/**
- * 音频服务契约 - 音频引擎公共接口和类型
- */
+// goal: defines core audio data structures and service interfaces for the audio engine
 
 import type { Result, VolumeLevel, TabId } from './common.types.js';
 
-// ============================================
-// 数据类型
-// ============================================
-
-/**
- * 音频配置
- * 
- * 存储每个标签页/域名的音频设置。
- */
+// inv: 0-800 range where 100 is unity gain
 export interface AudioConfig {
-  /** 是否启用音频处理 */
   enabled: boolean;
-  /** 音量 (0-800，100 为原始音量) */
   volume: number;
-  /** 是否静音 */
   muted: boolean;
-  /** 是否启用压缩器 (防爆音) */
   compressor: boolean;
-  /** 是否强制单声道 */
   mono: boolean;
-  /** 是否启用低音增强 */
   bass: boolean;
-  /** 10段均衡器值 (-12 到 +12) */
+  // inv: 10-band array, range -12 to +12
   eqValues: number[];
-  /** 声道平衡 (-1 左声道, 0 中间, 1 右声道) */
+  // inv: -1 (left) to 1 (right)
   pan: number;
-  /** 声画同步延迟 (-500 到 +500 毫秒, 正值=音频延后) */
+  // inv: -500ms to +500ms, positive means audio delay
   delay: number;
 }
 
-/**
- * 音频配置默认值
- */
 export const DEFAULT_AUDIO_CONFIG: Readonly<AudioConfig> = {
   enabled: true,
   volume: 100,
@@ -49,98 +30,49 @@ export const DEFAULT_AUDIO_CONFIG: Readonly<AudioConfig> = {
   delay: 0
 } as const;
 
-/**
- * 音频处理模式
- */
+// Types of audio processing engines
 export type AudioMode =
-  | 'NATIVE_WEBAUDIO'  // 原生 WebAudio API 注入
-  | 'NATIVE_LITE'      // 轻量模式 (仅音量)
-  | 'CAPTURE'          // Tab Capture 模式
-  | 'DISABLED';        // 禁用
+  | 'NATIVE_WEBAUDIO'  // direct injection via WebAudio
+  | 'NATIVE_LITE'      // lightweight mode for overhead reduction
+  | 'CAPTURE'          // browser tab capture mode (prevents CORS issues)
+  | 'DISABLED';
 
-/**
- * 音频状态 (运行时)
- */
+// Runtime state of the audio engine
 export interface AudioState {
-  /** 当前配置 */
   config: AudioConfig;
-  /** 当前模式 */
   mode: AudioMode;
-  /** 是否有音频元素 */
   hasAudio: boolean;
-  /** 是否正在播放 */
   isPlaying: boolean;
-  /** 用户是否已交互过 */
   userInteracted: boolean;
-  /** 是否检测到 CORS */
   corsBlocked: boolean;
 }
 
-// ============================================
-// 服务接口 (Service Interfaces) - The Contract
-// ============================================
-
-/**
- * 音频服务接口
- * 
- * AI 在编写使用音频服务的代码时，只需了解这个接口。
- * 具体实现细节位于 `@nexus/audio-engine` 内部。
- * 
- * @example
- * ```typescript
- * function createPlayer(audioService: IAudioService) {
- *   audioService.setVolume(150);
- *   audioService.on('stateChange', state => console.log(state));
- * }
- * ```
- */
+// goal: abstract interface for audio control, implementation in @nexus/audio-engine
 export interface IAudioService {
-  // ========== 查询 ==========
-
-  /** 获取当前音频状态 */
   getState(): AudioState;
 
-  /** 获取可视化数据 (频谱分析) */
+  // eff: returns frequency data for visualization
   getVisualizerData(): Float32Array | null;
 
-  // ========== 命令 ==========
-
-  /** 设置音量 */
   setVolume(level: number): Result<void>;
 
-  /** 切换静音 */
   toggleMute(): Result<boolean>;
 
-  /** 更新配置 (部分更新) */
   updateConfig(config: Partial<AudioConfig>): Result<void>;
 
-  /** 切换 Capture 模式 */
+  // eff: switch to tab capture mode, requires user permission
   setCaptureMode(enabled: boolean): Promise<Result<void>>;
 
-  // ========== 事件 ==========
-
-  /** 监听状态变化 */
   on(event: 'stateChange', handler: (state: AudioState) => void): () => void;
 
-  /** 监听 CORS 检测 */
   on(event: 'corsDetected', handler: () => void): () => void;
 
-  // ========== 生命周期 ==========
-
-  /** 初始化服务 */
   init(): Promise<Result<void>>;
 
-  /** 销毁服务，释放资源 */
+  // post: release all hardware and memory resources
   dispose(): void;
 }
 
-// ============================================
-// 策略引擎接口
-// ============================================
-
-/**
- * URL 信息
- */
 export interface UrlInfo {
   fullUrl: string;
   domain: string;
@@ -148,46 +80,32 @@ export interface UrlInfo {
   isIframe: boolean;
 }
 
-/**
- * 策略上下文
- */
+// Input for audio mode policy calculation
 export interface PolicyContext {
   urlInfo: UrlInfo;
   hasMediaElement: boolean;
   hasAudioContext: boolean;
   userInteracted: boolean;
-  /** 插件是否启用 */
   enabled: boolean;
-  /** 当前音量 */
   volume: number;
-  /** 频谱是否开启 */
   visualizerEnabled: boolean;
-  /** 是否强制原生模式 (用于自愈/排除特定干扰) */
+  // rule: force native mode for specific self-healing scenarios
   forceNative: boolean;
-  /** 是否为受限站点 (由 CORS 检测结果决定) */
+  // rule: determined by CORS detection results
   isRestricted?: boolean;
-  /** 完整音频配置 (用于检测高级需求: EQ/压缩/低音) */
   config?: AudioConfig;
 }
 
-/**
- * 策略引擎接口 (v3.2 - 纯计算，无状态)
- * 
- * 决定在特定网站上应该使用哪种音频处理模式。
- * 受限判断由调用方通过 context.isRestricted 传入。
- */
+// goal: stateless engine to determine optimal audio mode based on environment
 export interface IPolicyEngine {
-  /** 计算应该使用的音频模式 */
+  // eff: compute the best mode for the given context
   calculateMode(context: PolicyContext): AudioMode;
 
-  /** @deprecated v3.0 不使用 */
+  /** @deprecated v3.0 */
   getRuleForDomain(domain: string): SiteRule | null;
 }
 
-/**
- * 站点规则 (v3.2 已废弃，仅保留类型兼容)
- * @deprecated 使用 CORS 动态检测代替
- */
+/** @deprecated moved to dynamic CORS detection */
 export interface SiteRule {
   type: 'whitelist' | 'blacklist' | 'force_capture' | 'force_native';
   pattern: string;

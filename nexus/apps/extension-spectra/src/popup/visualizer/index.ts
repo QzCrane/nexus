@@ -1,35 +1,28 @@
 /**
- * SPECTRA Popup - Visualizer 模块导出
+ * SPECTRA Popup - Visualizer Module Exports
  */
 
-// MetricsCache
 export { MetricsCache, type MetricsCacheData } from './metrics-cache';
 
-// 绘制函数
 export { drawViz } from './draw-viz';
 export { drawEqCurve } from './draw-eq-curve';
 
-// 动画循环
 export { createVizLoop, type VizLoopParams } from './loop';
-
-// ============================================
-// 工厂函数：创建 EQ 曲线绘制器
-// ============================================
 
 import { MetricsCache } from './metrics-cache';
 import { drawEqCurve } from './draw-eq-curve';
 
 /**
- * 创建 EQ 曲线绘制器
+ * Creates EQ Curve Drawer
  * 
- * 供 initCard 使用的工厂函数
+ * Factory for initCard
  */
 export function createEqCurveDrawer(
   canvas: HTMLCanvasElement | null,
   sliderRow: HTMLElement | null,
   getEqValues: () => number[]
 ): { draw: (color?: string) => void; updateMetrics: () => void } {
-  // 空值检查 (EQ 可能已移至侧边面板)
+  // Check if elements exist (EQ might be in side panel)
   if (!canvas || !sliderRow) {
     return {
       draw: () => { },

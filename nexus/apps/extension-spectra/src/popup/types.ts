@@ -1,19 +1,13 @@
 /**
- * SPECTRA Popup - 类型定义
+ * SPECTRA Popup - Type Definitions
  * 
- * 定义 Popup UI 所需的所有接口和类型
+ * Interface definitions for Popup UI.
  */
 
 import type { AudioConfig, GlobalSettings } from '@nexus/kernel';
 
-// 重导出 I18N 类型
 export type { I18NDict, I18NMap } from './types/i18n.types';
 
-// ============================================
-// UI 元素引用类型
-// ============================================
-
-/** 卡片内 UI 元素引用 */
 export interface CardUIElements {
   card: HTMLElement;
   title: HTMLElement;
@@ -42,7 +36,7 @@ export interface CardUIElements {
   tMono: HTMLElement;
   tEq: HTMLElement;
   vizIsland: HTMLElement | null;
-  // 媒体控制
+  // Media Controls
   btnPause: HTMLElement | null;
   btnPip: HTMLElement | null;
   btnHotkeyTarget: HTMLElement | null;
@@ -51,7 +45,6 @@ export interface CardUIElements {
   speedBtns: NodeListOf<HTMLElement>;
 }
 
-/** 设置页 UI 元素引用 */
 export interface SettingsUIElements {
   swOsd: HTMLInputElement | null;
   swViz: HTMLInputElement | null;
@@ -61,11 +54,6 @@ export interface SettingsUIElements {
   btnSaveReg: HTMLElement | null;
 }
 
-// ============================================
-// 状态类型
-// ============================================
-
-/** 卡片内部状态 */
 export interface CardState {
   config: AudioConfig;
   isCaptureActive: boolean;
@@ -73,7 +61,6 @@ export interface CardState {
   isConnected: boolean;
 }
 
-/** EQ 曲线绘制缓存 */
 export interface MetricsCacheData {
   row: HTMLElement;
   canvas: HTMLCanvasElement;
@@ -86,35 +73,21 @@ export interface MetricsCacheData {
   isValid: boolean;
 }
 
-// ============================================
-// 消息类型 (Legacy 兼容)
-// ============================================
-
-/** Content Script 状态响应 */
 export interface ContentStatusResponse {
   config: AudioConfig;
   hasAudio: boolean;
   isPlaying: boolean;
   mode: 'NATIVE_WEBAUDIO' | 'NATIVE_LITE' | 'CAPTURE';
   userInteracted: boolean;
-  /** 暂停时间戳 (ms)，null 表示正在播放 */
+  // Null means playing
   pausedAt: number | null;
 }
 
-/** 可视化数据响应 */
 export interface VisualizerDataResponse {
   buffer: number[] | null;
 }
 
-// ============================================
-// 回调类型
-// ============================================
-
 export type RenderCallback = () => void;
 export type MetricsChangeCallback = () => void;
-
-// ============================================
-// 重导出常用类型
-// ============================================
 
 export type { AudioConfig, GlobalSettings };

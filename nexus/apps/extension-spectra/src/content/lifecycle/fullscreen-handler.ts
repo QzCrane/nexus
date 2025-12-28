@@ -1,9 +1,6 @@
 /**
- * Content Script - 全屏处理器
- * 
- * 简化方案：
- * - SPECTRA_PAUSE_FOR_FULLSCREEN: requestFullscreen 被调用，关闭 Capture
- * - SPECTRA_FULLSCREEN_ENTERED: 进入全屏成功，延迟恢复 Capture
+ * // goal: Manage capture state during fullscreen transitions
+ * // rule: Disable capture on FS request, restore after entered or timeout
  */
 
 import { AudioMode } from '@nexus/audio-engine';
@@ -19,7 +16,7 @@ interface FullscreenHandlerConfig {
 }
 
 const DEFAULT_CONFIG: FullscreenHandlerConfig = {
-	restoreDelayMs: 500,  // 进入全屏后延迟恢复
+	restoreDelayMs: 500,
 	enabled: true,
 };
 
@@ -35,9 +32,9 @@ export function setupFullscreenHandler(
 	let savedVolume: number | null = null;
 	let restoreTimer: ReturnType<typeof setTimeout> | null = null;
 	let pausedForFullscreen = false;
-	let pauseCount = 0;  // 防止重复恢复
+	let pauseCount = 0;  // inv: Prevent duplicate restores
 
-	/** 全屏请求时关闭 Capture */
+	// goal: Temporarily disable capture to allow native FS
 	function handlePause(): void {
 		const isCapture = captureManager.isActive() || state.activeMode === AudioMode.CAPTURE;
 		if (!isCapture) return;
@@ -50,28 +47,28 @@ export function setupFullscreenHandler(
 		if (!pausedForFullscreen) {
 			savedVolume = state.config.volume;
 			pausedForFullscreen = true;
-			log.info(`[FS] 全屏请求，暂存音量 ${savedVolume}%，关闭劫持`);
+			log.info(`[FS] Fullscreen request, saving volume ${savedVolume}%, disabling hijack`);
 			captureManager.request(false, state.config);
 		}
 
-		// 安全网：如果 3 秒内没有进入全屏，恢复
+		// rule: Safety net (timeout 3s)
 		restoreTimer = setTimeout(() => {
-			if (pauseCount !== currentPause) return;  // 已被新请求覆盖
+			if (pauseCount !== currentPause) return;  // Overridden by new request
 			restoreTimer = null;
 			if (pausedForFullscreen) {
-				log.info('[FS] 超时未进入全屏，恢复劫持');
+				log.info('[FS] Fullscreen timeout, reviving hijack');
 				restoreCapture();
 			}
 		}, 3000);
 	}
 
-	/** 进入全屏成功，延迟恢复 */
+	// goal: Re-enable capture after transition
 	function handleEntered(): void {
 		if (!pausedForFullscreen) return;
 
 		if (restoreTimer) { clearTimeout(restoreTimer); restoreTimer = null; }
 
-		log.info('[FS] 进入全屏成功，延迟恢复');
+		log.info('[FS] Fullscreen entered, restoring delayed');
 
 		restoreTimer = setTimeout(() => {
 			restoreTimer = null;
@@ -79,7 +76,7 @@ export function setupFullscreenHandler(
 		}, cfg.restoreDelayMs);
 	}
 
-	/** 恢复 Capture */
+	// goal: Restore state
 	function restoreCapture(): void {
 		if (!pausedForFullscreen) return;
 		pausedForFullscreen = false;
@@ -90,7 +87,7 @@ export function setupFullscreenHandler(
 		}
 
 		const vol = savedVolume ?? state.config.volume;
-		log.info(`[FS] 恢复劫持，音量 ${vol}%`);
+		log.info(`[FS] Restoring hijack, volume ${vol}%`);
 		state.userHasInteracted = true;
 		captureManager.request(true, { ...state.config, volume: vol });
 		savedVolume = null;
@@ -105,7 +102,7 @@ export function setupFullscreenHandler(
 	}
 
 	window.addEventListener('message', handleMessage);
-	log.debug('[FS] 全屏处理器已启用');
+	log.debug('[FS] Fullscreen Handler enabled');
 
 	return () => {
 		window.removeEventListener('message', handleMessage);

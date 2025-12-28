@@ -1,8 +1,8 @@
 /**
- * SPECTRA Content Script - 视频变换
+ * SPECTRA Content Script - Video Transform
  *
- * 职责：视频旋转、镜像、截图功能
- * 使用 CSS transform 实现视觉变换，不修改视频源
+ * Responsibility: Video rotation, mirroring, screenshot
+ * Uses CSS transform for visual changes without modifying the source.
  */
 
 import { createLogger } from '../shared/logger';
@@ -11,13 +11,12 @@ import { simulateMouseHover } from './focus-helper';
 const log = createLogger('VideoTransform');
 
 // ============================================
-// 状态管理
+// State Management
 // ============================================
 
-/** 当前变换状态 (每个视频元素独立) */
+/** Current transform state (per video) */
 const transformState = new WeakMap<HTMLVideoElement, { rotation: number; mirrored: boolean }>();
 
-/** 获取或初始化变换状态 */
 function getState(video: HTMLVideoElement): { rotation: number; mirrored: boolean } {
 	let state = transformState.get(video);
 	if (!state) {
@@ -27,7 +26,6 @@ function getState(video: HTMLVideoElement): { rotation: number; mirrored: boolea
 	return state;
 }
 
-/** 获取主视频元素 */
 function getPrimaryVideo(): HTMLVideoElement | null {
 	const videos = Array.from(document.querySelectorAll('video'));
 	if (!videos.length) return null;
@@ -49,10 +47,10 @@ function getPrimaryVideo(): HTMLVideoElement | null {
 }
 
 // ============================================
-// 变换操作
+// Transform Operations
 // ============================================
 
-/** 应用 CSS transform */
+/** Apply CSS transform */
 function applyTransform(video: HTMLVideoElement): void {
 	const state = getState(video);
 	const transforms: string[] = [];
@@ -68,7 +66,7 @@ function applyTransform(video: HTMLVideoElement): void {
 	log.info(`Transform applied: rotation=${state.rotation}, mirrored=${state.mirrored}`);
 }
 
-/** 旋转视频 (每次 +90°) */
+/** Rotate Video (+90°) */
 export function rotateVideo(): number {
 	const video = getPrimaryVideo();
 	if (!video) {
@@ -82,7 +80,7 @@ export function rotateVideo(): number {
 	return state.rotation;
 }
 
-/** 切换镜像 */
+/** Toggle Mirror */
 export function toggleMirror(): boolean {
 	const video = getPrimaryVideo();
 	if (!video) {
@@ -96,7 +94,7 @@ export function toggleMirror(): boolean {
 	return state.mirrored;
 }
 
-/** 截图并返回 dataUrl */
+/** Screenshot */
 export function takeScreenshot(): string | null {
 	const video = getPrimaryVideo();
 	if (!video) {
@@ -112,31 +110,31 @@ export function takeScreenshot(): string | null {
 		const ctx = canvas.getContext('2d');
 		if (!ctx) return null;
 
-		// 应用变换到画布
+		// Apply transforms to canvas
 		const state = getState(video);
 		ctx.save();
 
-		// 移动到中心
+		// Center
 		ctx.translate(canvas.width / 2, canvas.height / 2);
 
-		// 应用旋转
+		// Rotate
 		if (state.rotation !== 0) {
 			ctx.rotate((state.rotation * Math.PI) / 180);
 		}
 
-		// 应用镜像
+		// Mirror
 		if (state.mirrored) {
 			ctx.scale(-1, 1);
 		}
 
-		// 绘制视频
+		// Draw
 		ctx.drawImage(video, -video.videoWidth / 2, -video.videoHeight / 2);
 		ctx.restore();
 
 		const dataUrl = canvas.toDataURL('image/png');
 		log.info(`Screenshot taken: ${canvas.width}x${canvas.height}`);
 
-		// 自动触发下载
+		// Trigger Download
 		const link = document.createElement('a');
 		link.href = dataUrl;
 		link.download = `screenshot_${Date.now()}.png`;
@@ -149,8 +147,7 @@ export function takeScreenshot(): string | null {
 	}
 }
 
-
-/** 切换全屏 */
+/** Toggle Fullscreen */
 export async function toggleFullscreen(): Promise<boolean> {
 	const video = getPrimaryVideo();
 	if (!video) {
@@ -167,7 +164,7 @@ export async function toggleFullscreen(): Promise<boolean> {
 			await video.requestFullscreen();
 			result = true;
 		}
-		// 延迟恢复焦点 (等待全屏/退出动画完成)
+		// Delay focus restore
 		setTimeout(() => simulateMouseHover(video), 200);
 		return result;
 	} catch (e) {
@@ -176,10 +173,9 @@ export async function toggleFullscreen(): Promise<boolean> {
 	}
 }
 
-/** 裁剪状态 */
 const cropState = new WeakMap<HTMLVideoElement, boolean>();
 
-/** 切换去黑边 (object-fit: cover) */
+/** Toggle Crop (object-fit: cover) */
 export function toggleCrop(): boolean {
 	const video = getPrimaryVideo();
 	if (!video) {
@@ -190,7 +186,7 @@ export function toggleCrop(): boolean {
 	const isCropped = cropState.get(video) ?? false;
 	const newCropped = !isCropped;
 
-	// cover = 裁剪填满，contain = 保持比例留黑边
+	// cover = fill, contain = fit
 	video.style.objectFit = newCropped ? 'cover' : 'contain';
 	cropState.set(video, newCropped);
 

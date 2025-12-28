@@ -29,10 +29,37 @@
 ## §2 代码
 
 硬限: 源码 ≤200 行 | index.ts≤50 行 | 函数>50 行预警 | 文件>150 行预警
-
 结构: `module/{index.ts, types.ts, core.ts, [feature].ts}`
-
 红线: >200 行禁新增 | 单文件单职责 | 目录深度 ≤3
+
+## §2.1 注释规则
+
+[Logic]
+Default: ∅ (不写)
+Priority: Rename > Type/Constraint > Effect > Why > None
+Valid: Atomic(line) ∧ Head ∧ Non-derivable(English)
+
+[Scope & Fields]
+File (Module/Pkg) : {goal, tradeoff, ban, risk}
+Func (Fn/Method) : {pre, post, inv, eff}
+Line (Stmt/Expr) : {inv, rule, @tag}
+
+[Filter]
+Discard IF:
+
+- Info derivable from Code/Naming/Type (信息可推导)
+- Pure & self-explanatory (无副作用且自解释)
+- Noise: Line-by-line | Emotion | TODO | Old-code | Author
+
+[Validation]
+Write ONLY IF:
+
+- Cannot be derived (不可推导) OR
+- Constrains future dev (限制未来) OR
+- Deletion causes error (删除致错)
+
+[Output]
+Template: `// field: <content>`
 
 ---
 

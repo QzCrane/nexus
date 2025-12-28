@@ -1,4 +1,4 @@
-/** Action 名称 - 法语 */
+/** Action Names - French */
 export const fr: Record<string, string> = {
 	none: '(non défini)', play_pause: 'Lecture/Pause', seek_forward_5s: 'Avancer 5s',
 	seek_forward_10s: 'Avancer 10s', seek_forward_30s: 'Avancer 30s',

@@ -1,10 +1,6 @@
 /**
- * Content Script - 用户交互处理
- * 
- * 职责：
- * - 监听用户手势事件（click, keydown 等）
- * - 用于解锁 AudioContext（Chrome 自动播放策略）
- * - Popup 连接状态追踪
+ * // goal: Unlock AudioContext via user gestures and track popup connection
+ * // risk: Missing interaction event prevents audio start in strict autoplay policies
  */
 
 import { AudioMode, WebAudioController } from '@nexus/audio-engine';
@@ -15,11 +11,8 @@ import type { PolicyExecutor } from '../policy-executor';
 const log = logger.content;
 
 /**
- * 设置用户手势监听，用于解锁 AudioContext
- * 
- * @param state 状态对象
- * @param audioController WebAudio 控制器
- * @param policyExecutor 策略执行器
+ * // goal: Unlock WebAudio on first interaction
+ * // eff: Adds one-time event listeners to document
  */
 export function setupUserGestureListeners(
 	state: PolicyExecutorState,
@@ -40,11 +33,8 @@ export function setupUserGestureListeners(
 }
 
 /**
- * 设置 Popup 连接监听
- * 
- * 用于追踪 Popup 是否打开，以决定是否显示 OSD
- * 
- * @param state 状态对象
+ * // goal: Track popup visibility state
+ * // eff: Updates state.isPopupOpen on connect/disconnect
  */
 export function setupPopupConnectionListener(state: PolicyExecutorState): void {
 	chrome.runtime.onConnect.addListener((port) => {

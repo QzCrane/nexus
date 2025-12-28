@@ -1,7 +1,5 @@
 /**
- * Content Script - 生命周期模块索引
- * 
- * 导出所有生命周期相关功能
+ * // goal: Export lifecycle functionality (MediaObserver, Intervals, UserInteraction, Fullscreen, Navigation)
  */
 
 export { createMediaObserver, hasMediaElements } from './media-observer';

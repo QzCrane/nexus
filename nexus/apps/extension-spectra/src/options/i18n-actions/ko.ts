@@ -1,4 +1,4 @@
-/** Action 名称 - 韩语 */
+/** Action Names - Korean */
 export const ko: Record<string, string> = {
 	none: '(미설정)', play_pause: '재생/일시정지', seek_forward_5s: '5초 앞으로',
 	seek_forward_10s: '10초 앞으로', seek_forward_30s: '30초 앞으로',

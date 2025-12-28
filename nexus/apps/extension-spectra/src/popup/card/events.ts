@@ -1,5 +1,5 @@
 /**
- * SPECTRA Popup - 卡片事件绑定
+ * SPECTRA Popup - Card Event Binding
  */
 
 import type { AudioConfig } from '@nexus/kernel';
@@ -10,7 +10,6 @@ import { getDomain, sendToBackground } from '../utils/dom';
 import { DEFAULT_CONFIG } from './types';
 import { bindMediaControls } from './media-events';
 
-/** 事件绑定参数 */
 export interface EventsParams {
   ui: CardUIElements;
   state: CardInternalState;
@@ -22,19 +21,16 @@ export interface EventsParams {
   render: () => void;
 }
 
-/**
- * 绑定卡片所有事件
- */
 export function bindCardEvents(params: EventsParams): void {
   const { ui, state, tabId, tabUrl, update, getCapturing, onMetricsUpdate } = params;
   const domain = getDomain(tabUrl);
 
-  // 启用/禁用开关
+  // Enable/Disable switch
   ui.enable.onchange = (e) => {
     const enabled = (e.target as HTMLInputElement).checked;
     update({ enabled });
 
-    // 禁用时关闭 Capture (NEXUS 格式)
+    // Close Capture when disabled
     if (!enabled && getCapturing()) {
       state.isCaptureActive = false;
       sendToBackground('CAPTURE_TOGGLE', {
@@ -45,40 +41,33 @@ export function bindCardEvents(params: EventsParams): void {
     }
   };
 
-  // 点击遮罩恢复
   ui.mask.onclick = () => update({ enabled: true });
 
-  // 辅助：处理音量变更逻辑
   const handleVolume = (val: string | number) => {
     const v = typeof val === 'string' ? parseInt(val, 10) : val;
     update({ volume: v, muted: false });
   };
 
-  // 音量滑块 - 基础事件
   ui.slider.oninput = (e) => {
     state.isDragging = true;
     handleVolume((e.target as HTMLInputElement).value);
   };
 
-  // 音量滑块 - 结束交互时恢复同步
+  // Sync state on interaction end
   const endDragging = () => {
     state.isDragging = false;
-    // 立即手动触发一次渲染，确保如果在此期间收到了消息，能同步到最新且准确的状态
-    params.render ? params.render() : null; // 注意：EventsParams 里没有 render，但可以通过 props 注入或使用 update 带来的 render
+    params.render ? params.render() : null;
   };
 
-  // 这里的 update 函数已经包含了渲染逻辑，所以只要停止 dragging 标记，下次 sync 就会生效
   ui.slider.onchange = () => {
     state.isDragging = false;
   };
 
-  // 增加鼠标/触摸结束监听，更保险
   ui.slider.onmouseup = () => { state.isDragging = false; };
   ui.slider.ontouchend = () => { state.isDragging = false; };
   ui.slider.onmousedown = () => { state.isDragging = true; };
   ui.slider.ontouchstart = () => { state.isDragging = true; };
 
-  // 滑块区域滚轮
   ui.sliderArea.addEventListener('wheel', (e) => {
     e.preventDefault();
     if (!state.config.enabled) return;
@@ -90,15 +79,14 @@ export function bindCardEvents(params: EventsParams): void {
     handleVolume(v);
   }, { passive: false });
 
-  // 静音按钮
   ui.mute.onclick = () => update({ muted: !state.config.muted });
 
-  // 功能开关 (可能已移至侧边面板，需要空值检查)
+  // Switches (might be in Side Panel)
   if (ui.comp) ui.comp.onchange = (e) => update({ compressor: (e.target as HTMLInputElement).checked });
   if (ui.bass) ui.bass.onchange = (e) => update({ bass: (e.target as HTMLInputElement).checked });
   if (ui.mono) ui.mono.onchange = (e) => update({ mono: (e.target as HTMLInputElement).checked });
 
-  // EQ 抽屉展开/收起 (可能已移至侧边面板，需要空值检查)
+  // EQ Drawer (might be in Side Panel)
   if (ui.eqTrigger && ui.eqDrawer) {
     ui.eqTrigger.onclick = () => {
       ui.eqDrawer.classList.toggle('open');
@@ -110,7 +98,7 @@ export function bindCardEvents(params: EventsParams): void {
     };
   }
 
-  // EQ 滑块 (可能已移至侧边面板)
+  // EQ Sliders
   if (ui.eqInputs && ui.eqInputs.length > 0) {
     ui.eqInputs.forEach((inp, i) => {
       inp.oninput = (e) => {
@@ -119,7 +107,6 @@ export function bindCardEvents(params: EventsParams): void {
         update({ eqValues: arr });
       };
 
-      // 滚轮调节
       inp.parentElement?.addEventListener('wheel', (e) => {
         e.preventDefault();
         let v = parseFloat(inp.value);
@@ -135,7 +122,6 @@ export function bindCardEvents(params: EventsParams): void {
     });
   }
 
-  // 保存按钮
   ui.btnSave.onclick = () => {
     chrome.storage.local.get(['siteSettings'], (r) => {
       const s = (r.siteSettings as Record<string, AudioConfig>) || {};
@@ -148,9 +134,7 @@ export function bindCardEvents(params: EventsParams): void {
     });
   };
 
-  // 重置按钮
   ui.btnReset.onclick = () => update(DEFAULT_CONFIG);
 
-  // ========== 媒体控制 ==========
   bindMediaControls(ui, tabId);
 }

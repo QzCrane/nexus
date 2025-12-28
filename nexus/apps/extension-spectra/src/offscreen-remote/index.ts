@@ -1,13 +1,13 @@
 /**
- * SPECTRA Remote - Offscreen PeerJS 服务 (多会话版)
+ * SPECTRA Remote - Offscreen PeerJS Service (Multi-Session)
  * 
- * 职责：在 Offscreen Document 中运行多个 PeerJS 连接
- * 设计：每个标签页有独立的 session，通过 tabId 区分
+ * Responsibility: Run multiple PeerJS connections in Offscreen Document
+ * Design: Each tab has an isolated session, distinguished by tabId
  */
 
 import Peer, { DataConnection } from 'peerjs';
 
-/** 遥控命令类型 */
+/** Remote Commands */
 type RemoteCommand =
 	| 'volume_up' | 'volume_down' | 'volume_max' | 'volume_100'
 	| 'mute' | 'play_pause'
@@ -15,7 +15,6 @@ type RemoteCommand =
 	| 'speed_up' | 'speed_down' | 'speed_reset'
 	| 'fullscreen' | 'pip';
 
-/** 会话状态 */
 interface RemoteSession {
 	sessionId: string;
 	peerId: string;
@@ -25,12 +24,11 @@ interface RemoteSession {
 	connection: DataConnection | null;
 }
 
-/** 多会话存储：tabId -> session */
+/** Session Store: tabId -> session */
 const sessions = new Map<number, RemoteSession>();
 
 const LOG = '[SPECTRA Remote Offscreen]';
 
-/** 生成会话 ID */
 function generateSessionId(): string {
 	const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 	let id = '';
@@ -40,9 +38,8 @@ function generateSessionId(): string {
 	return id;
 }
 
-/** 创建会话 (不会顶掉其他 tabId 的会话) */
+/** Create Session (Preserves existing session for tabId) */
 async function createSession(tabId: number): Promise<RemoteSession> {
-	// 如果该 tabId 已有会话，直接返回
 	const existing = sessions.get(tabId);
 	if (existing) {
 		return existing;
@@ -77,7 +74,7 @@ async function createSession(tabId: number): Promise<RemoteSession> {
 				console.log(LOG, `[Tab ${tabId}] DataChannel open`);
 				session.connected = true;
 				conn.send({ type: 'connected' });
-				// 通知 background 状态变化 + 请求初始状态同步
+				// Notify background of status change + request sync
 				chrome.runtime.sendMessage({ type: 'REMOTE_STATUS_CHANGE', tabId, connected: true });
 				chrome.runtime.sendMessage({ type: 'REMOTE_REQUEST_SYNC', tabId });
 			});
@@ -103,7 +100,6 @@ async function createSession(tabId: number): Promise<RemoteSession> {
 	});
 }
 
-/** 处理收到的数据 */
 function handleData(data: unknown, tabId: number): void {
 	if (!data || typeof data !== 'object') return;
 	const msg = data as { type: string; command?: RemoteCommand };
@@ -117,7 +113,6 @@ function handleData(data: unknown, tabId: number): void {
 	}
 }
 
-/** 关闭指定标签页会话 */
 async function closeSession(tabId: number): Promise<void> {
 	const session = sessions.get(tabId);
 	if (!session) return;
@@ -128,10 +123,10 @@ async function closeSession(tabId: number): Promise<void> {
 	console.log(LOG, `[Tab ${tabId}] Session closed`);
 }
 
-/** 获取会话状态 (按 tabId) */
+/** Get Session Status (by tabId) */
 function getStatus(tabId?: number) {
 	if (!tabId) {
-		// 未指定 tabId，返回第一个会话 (兼容旧逻辑)
+		// Fallback: return first session if no tabId
 		const first = sessions.values().next().value;
 		return first
 			? { session: { sessionId: first.sessionId, tabId: first.tabId }, connected: first.connected }
@@ -148,7 +143,7 @@ function getStatus(tabId?: number) {
 	};
 }
 
-/** 发送状态到指定标签页的手机 */
+/** Send State to Mobile (for specific tab) */
 function sendStateToMobile(tabId: number, state: unknown): void {
 	const session = sessions.get(tabId);
 	if (session?.connection?.open) {
@@ -156,7 +151,7 @@ function sendStateToMobile(tabId: number, state: unknown): void {
 	}
 }
 
-// 监听来自 background 的消息
+// Background Message Listener
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	if (message.type === 'REMOTE_OFFSCREEN_CREATE') {
 		createSession(message.tabId)
@@ -175,13 +170,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 		if (tabId) {
 			closeSession(tabId).then(() => sendResponse({ success: true }));
 		} else {
-			// 关闭所有会话
+			// Close all
 			Promise.all([...sessions.keys()].map(closeSession)).then(() => sendResponse({ success: true }));
 		}
 		return true;
 	}
 
-	// 接收状态更新并发送给指定标签页的手机
 	if (message.type === 'REMOTE_OFFSCREEN_SEND_STATE') {
 		if (message.tabId) {
 			sendStateToMobile(message.tabId, message.state);

@@ -1,5 +1,5 @@
 /**
- * SPECTRA Options - 弹窗管理
+ * SPECTRA Options - Modal Management
  */
 
 import type { HotkeyBinding, KeyCombo, HotkeyAction } from '@nexus/contracts';
@@ -9,7 +9,7 @@ import { formatKeyCombo, formatParams, parseParams } from './formatters';
 let currentBinding: HotkeyBinding | null = null;
 let onSaveCallback: ((binding: HotkeyBinding) => void) | null = null;
 
-// DOM 元素
+// DOM Elements
 const modal = document.getElementById('edit-modal')!;
 const keyInput = document.getElementById('edit-key') as HTMLInputElement;
 const actionSelect = document.getElementById('edit-action') as HTMLSelectElement;
@@ -20,10 +20,9 @@ const saveBtn = document.getElementById('modal-save')!;
 const closeBtn = modal.querySelector('.modal-close')!;
 const backdrop = modal.querySelector('.modal-backdrop')!;
 
-// 当前录入的按键
+// Currently recorded key
 let recordedKey: KeyCombo = { code: '', modifiers: { ...DEFAULT_MODIFIERS } };
 
-/** 初始化弹窗 */
 export function initModal(): void {
 	populateActionSelect();
 	closeBtn.addEventListener('click', closeModal);
@@ -36,9 +35,9 @@ export function initModal(): void {
 	actionSelect.addEventListener('change', handleActionChange);
 }
 
-/** 打开编辑弹窗 */
+/** Open Edit Modal */
 export function openModal(binding: HotkeyBinding | null, onSave: (b: HotkeyBinding) => void): void {
-	// 创建新绑定或编辑现有
+	// Create new or edit existing
 	currentBinding = binding ? { ...binding } : {
 		id: `binding_${Date.now()}`,
 		enabled: true,
@@ -58,14 +57,13 @@ export function openModal(binding: HotkeyBinding | null, onSave: (b: HotkeyBindi
 	modal.classList.remove('hidden');
 }
 
-/** 关闭弹窗 */
 export function closeModal(): void {
 	modal.classList.add('hidden');
 	currentBinding = null;
 	onSaveCallback = null;
 }
 
-/** 处理按键录入 */
+/** Handle Key Recording */
 function handleKeyRecord(e: KeyboardEvent): void {
 	e.preventDefault();
 	e.stopPropagation();
@@ -77,7 +75,6 @@ function handleKeyRecord(e: KeyboardEvent): void {
 	keyInput.value = formatKeyCombo(recordedKey);
 }
 
-/** 处理动作变化 */
 function handleActionChange(): void {
 	const action = actionSelect.value as HotkeyAction;
 	const needsParams = ['speed_set', 'volume_set', 'run_js', 'open_url'].includes(action);
@@ -93,7 +90,6 @@ function handleActionChange(): void {
 	}
 }
 
-/** 处理保存 */
 function handleSave(): void {
 	if (!currentBinding || !onSaveCallback) return;
 	if (!recordedKey.code) return;
@@ -105,7 +101,6 @@ function handleSave(): void {
 	closeModal();
 }
 
-/** 填充动作下拉 */
 function populateActionSelect(): void {
 	const groups: Record<string, HotkeyAction[]> = {
 		'Playback': ['play_pause', 'seek_forward_5s', 'seek_forward_10s', 'seek_forward_30s', 'seek_backward_5s', 'seek_backward_10s', 'seek_backward_30s', 'seek_frame_forward', 'seek_frame_backward'],
@@ -131,5 +126,4 @@ function populateActionSelect(): void {
 	}
 }
 
-// 重导出 formatKeyCombo 供 hotkey-editor 使用
 export { formatKeyCombo } from './formatters';

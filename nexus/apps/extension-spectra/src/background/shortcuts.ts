@@ -1,22 +1,17 @@
-/**
- * SPECTRA Background - 快捷键处理
- * 
- * 处理 Chrome 全局快捷键 (manifest commands)
- * - 预设: volume_up, volume_down, toggle_mute, speed_up
- * - 自定义 Slot: slot_01 ~ slot_16
- */
+// goal: handles global chrome keyboard shortcuts (manifest commands and custom slots)
+// rule: standard commands are mapped directly; custom slots (slot_1-16) use user-defined mappings
 
 import type { AudioConfig, HotkeySettings, HotkeyAction } from '@nexus/contracts';
 import { Actions, DEFAULT_AUDIO_CONFIG, DEFAULT_HOTKEY_SETTINGS } from '@nexus/contracts';
 import { storage } from './state';
 import { swLog } from '../shared/logger';
 
-// 域名配置内存缓存 (解决快速连击竞态条件)
+// configCache: memory cache for domain-specific audio settings to prevent race conditions during rapid key presses
 const configCache = new Map<string, AudioConfig>();
-// Slot 映射缓存
+// slotMapping: active mapping of manifest slot IDs to functional hotkey actions
 let slotMapping: Record<string, HotkeyAction> = { ...DEFAULT_HOTKEY_SETTINGS.slots };
 
-/** 读取配置 (优先缓存) */
+// eff: retrieves audio configuration with memory-first caching
 async function getConfigWithCache(domain: string): Promise<AudioConfig> {
 	const cached = configCache.get(domain);
 	if (cached) return cached;
@@ -25,28 +20,26 @@ async function getConfigWithCache(domain: string): Promise<AudioConfig> {
 	return stored;
 }
 
-/** 写入配置 (同步更新缓存，异步持久化) */
+// eff: updates both memory cache and persistent storage for a domain
 function setConfigWithCache(domain: string, config: AudioConfig): void {
 	configCache.set(domain, config);
 	storage.setAudioConfig(domain, config).catch(() => { });
 }
 
-/** 加载 Slot 映射 */
+// eff: synchronizes slotMapping from local storage
 async function loadSlotMapping(): Promise<void> {
 	try {
 		const result = await chrome.storage.local.get('hotkeySettings');
 		if (result.hotkeySettings?.slots) {
 			slotMapping = result.hotkeySettings.slots;
 		}
-	} catch { /* ignore */ }
+	} catch { }
 }
 
-/** 设置快捷键监听器 */
+// eff: initializes global listeners for chrome.commands and storage-based hotkey updates
 export function setupShortcutListeners(): void {
-	// 初始加载 Slot 映射
 	loadSlotMapping();
 
-	// 监听存储变化
 	chrome.storage.onChanged.addListener((changes) => {
 		if (changes.hotkeySettings?.newValue?.slots) {
 			slotMapping = changes.hotkeySettings.newValue.slots;
@@ -56,7 +49,6 @@ export function setupShortcutListeners(): void {
 	chrome.commands.onCommand.addListener(async (command) => {
 		swLog.debug(`Shortcut command: ${command}`);
 
-		// 获取当前活动标签页
 		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 		if (!tab?.id || !tab.url) return;
 
@@ -67,24 +59,21 @@ export function setupShortcutListeners(): void {
 			return;
 		}
 
-		// 解析 action
 		let action: HotkeyAction | undefined;
 		if (command.startsWith('slot_')) {
 			action = slotMapping[command];
 			if (!action || action === 'none') return;
 		} else {
-			// 直接命令映射
 			action = resolveDirectCommand(command);
 		}
 
 		if (!action) return;
 
-		// 执行 action
 		await executeAction(action, tab.id, domain);
 	});
 }
 
-/** 直接命令 → action 映射 */
+// goal: maps literal manifest command names to unified HotkeyActions
 function resolveDirectCommand(command: string): HotkeyAction | undefined {
 	const map: Record<string, HotkeyAction> = {
 		volume_up: 'volume_up',
@@ -95,7 +84,7 @@ function resolveDirectCommand(command: string): HotkeyAction | undefined {
 	return map[command];
 }
 
-/** 执行 action */
+// eff: resolves the hotkey action into either a background state update or a content script notification
 async function executeAction(action: HotkeyAction, tabId: number, domain: string): Promise<void> {
 	const oldConfig = await getConfigWithCache(domain);
 	let newConfig: Partial<AudioConfig> = {};
@@ -116,19 +105,18 @@ async function executeAction(action: HotkeyAction, tabId: number, domain: string
 		case 'play_pause':
 		case 'pip_toggle':
 		case 'fullscreen_toggle':
-			// 这些 action 需要发送到 Content Script 执行
+			// rule: complex media/video operations are delegated to the content script handler
 			try {
 				await chrome.tabs.sendMessage(tabId, {
 					action: Actions.SHORTCUT_TRIGGER,
 					payload: { command: action }
 				});
-			} catch { /* Content Script 可能未加载 */ }
+			} catch { }
 			return;
 		default:
 			return;
 	}
 
-	// 音量相关: 更新配置并通知
 	const mergedConfig = { ...oldConfig, ...newConfig };
 	setConfigWithCache(domain, mergedConfig);
 
@@ -137,5 +125,5 @@ async function executeAction(action: HotkeyAction, tabId: number, domain: string
 			action: Actions.SHORTCUT_TRIGGER,
 			payload: { command: action, config: mergedConfig }
 		});
-	} catch { /* Content Script 可能未加载 */ }
+	} catch { }
 }

@@ -1,8 +1,5 @@
-/**
- * NEXUS Audio Engine - WebAudio 类型
- */
+// goal: defines internal type structures for the WebAudio graph and related callbacks
 
-/** 音频配置结构 */
 export interface AudioConfig {
 	enabled: boolean;
 	volume: number;
@@ -15,7 +12,7 @@ export interface AudioConfig {
 	delay: number;
 }
 
-/** 附加到媒体元素的音频节点集合 */
+// goal: represents a complete set of audio nodes attached to a single media element
 export interface AudioNodeSet {
 	source: MediaElementAudioSourceNode;
 	gain: GainNode;
@@ -27,11 +24,10 @@ export interface AudioNodeSet {
 	delayNode: DelayNode;
 }
 
-/** 扩展的 HTMLMediaElement */
 export interface AudioMediaElement extends HTMLMediaElement {
+	// _vm: internal property storing the AudioNodeSet to persist the graph connection
 	_vm?: AudioNodeSet;
 }
 
-/** CORS 回调类型 */
 export type CorsDetectedCallback = (hostname: string) => void;
 export type CorsSuccessCallback = (hostname: string) => void;

@@ -1,35 +1,27 @@
 /**
- * SPECTRA Popup - 侧边面板视频控制事件
+ * SPECTRA Popup - Side Panel Video Controls
  *
- * 职责：绑定侧边面板 Video 区块的按钮/滑块/开关事件
+ * Bind events for buttons/sliders/switches in the Video section of side panel.
  */
 
 import { sendToTab } from '../utils/dom';
 
-/** 当前活动 tabId */
 let currentTabId: number | null = null;
 
-/** 设置当前 tabId */
 export function setVideoControlTabId(tabId: number): void {
 	currentTabId = tabId;
 }
 
-/** 绑定视频控制按钮 */
 export function bindVideoControls(): void {
 	const panel = document.getElementById('side-panel');
 	if (!panel) return;
 
-	// 绑定按钮事件
 	bindButtons(panel);
-	// 绑定滤镜滑块
 	bindFilterSliders(panel);
-	// 绑定滤镜开关
 	bindFilterSwitches(panel);
-	// 绑定时间跳转
 	bindSeekButtons(panel);
 }
 
-/** 绑定视频变换按钮 */
 function bindButtons(panel: HTMLElement): void {
 	const btns = panel.querySelectorAll<HTMLButtonElement>('.sp-btn[data-action]');
 
@@ -91,7 +83,6 @@ function bindButtons(panel: HTMLElement): void {
 	});
 }
 
-/** 绑定滤镜滑块 (亮度/对比度/饱和度) */
 function bindFilterSliders(panel: HTMLElement): void {
 	const sliders = [
 		{ cls: '.sp-brightness', val: '.sp-brightness-val', key: 'brightness' },
@@ -115,7 +106,6 @@ function bindFilterSliders(panel: HTMLElement): void {
 	});
 }
 
-/** 绑定滤镜开关 (灰度/反色) */
 function bindFilterSwitches(panel: HTMLElement): void {
 	const grayscale = panel.querySelector<HTMLInputElement>('.sp-sw-grayscale');
 	const invert = panel.querySelector<HTMLInputElement>('.sp-sw-invert');
@@ -135,7 +125,6 @@ function bindFilterSwitches(panel: HTMLElement): void {
 	}
 }
 
-/** 绑定时间跳转按钮 */
 function bindSeekButtons(panel: HTMLElement): void {
 	const seekBtns = panel.querySelectorAll<HTMLButtonElement>('.sp-btn-small[data-action="seek"]');
 

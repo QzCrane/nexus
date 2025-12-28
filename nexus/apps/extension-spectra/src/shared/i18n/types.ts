@@ -1,8 +1,7 @@
 /**
- * SPECTRA Shared - 国际化类型定义
+ * SPECTRA Shared - I18N Type Definitions
  */
 
-/** 国际化字典项 */
 export interface I18NDict {
 	settingsTitle: string;
 	osdLabel: string;
@@ -41,7 +40,7 @@ export interface I18NDict {
 	btnThemeTooltip: string;
 	btnSettingsTooltip: string;
 	btnShortcutsTooltip: string;
-	// 侧边面板
+	// Side Panel
 	spAudio: string;
 	spPan: string;
 	spDelay: string;
@@ -58,36 +57,36 @@ export interface I18NDict {
 	spHotkeyThis: string;
 	spHotkeyPinned: string;
 	spHotkeyLast: string;
-	// 媒体控制
+	// Media Controls
 	btnPause: string;
 	btnPip: string;
 	btnHotkeyTarget: string;
 	btnGotoTab: string;
-	// 设置项
+	// Settings
 	pauseRetentionLabel: string;
 	pauseRetentionSub: string;
 	pauseRetentionUnit: string;
-	// 通用悬停提示
+	// Common Tooltips
 	tipPinPanel: string;
 	tipClose: string;
 	tipAdvancedSettings: string;
-	// 侧边面板按钮
+	// Side Panel Buttons
 	spResetFx: string;
 	spSaveFx: string;
 	spResetFxTip: string;
 	spSaveFxTip: string;
-	// 新增视频控件
+	// Video Controls
 	spFullscreen: string;
 	spDim: string;
 	spSeek: string;
 	spSaturate: string;
 	spGrayscale: string;
 	spInvert: string;
-	// 预设管理
+	// Presets
 	grpPresets: string;
 	presetsHint: string;
 	btnClearPresets: string;
-	// 遥控器
+	// Remote Control
 	btnRemoteTooltip: string;
 	remoteModalTitle: string;
 	remoteSessionCode: string;
@@ -98,13 +97,12 @@ export interface I18NDict {
 	remoteCopied: string;
 	remoteOpenLinkTitle: string;
 	remoteConnectedTooltip: string;
-	// 注册表空状态
+	// Registry Empty States
 	registryEmptyRestricted: string;
 	registryEmptySafe: string;
-	// CORS 提示 (Content Script 使用)
+	// CORS Tips (Content Script)
 	corsAddedSafe: (domain: string) => string;
 	corsCorrectedSafe: (domain: string) => string;
 }
 
-/** 所有语言的 I18N 映射 */
 export type I18NMap = Record<string, I18NDict>;

@@ -1,15 +1,11 @@
-/**
- * SPECTRA Background - Capture 处理器
- */
+// goal: manages tab capture session lifecycle, including stream ID acquisition and offscreen routing
 
 import { router, captureStates, captureLocks } from '../state';
 import { ensureOffscreen } from '../helpers';
 import { swLog } from '../../shared/logger';
 import { Actions, OffscreenActions } from '@nexus/contracts';
 
-/**
- * 注册 Capture 相关的消息处理器
- */
+// eff: registers listeners for CAPTURE_TOGGLE, CAPTURE_GET_STATE, and CAPTURE_UPDATE_CONFIG actions
 export function registerCaptureHandlers(): void {
 	router.on('CAPTURE_TOGGLE', async (req, sender) => {
 		const tabId = req.tabId ?? sender.tab?.id;
@@ -20,6 +16,7 @@ export function registerCaptureHandlers(): void {
 			return { status: 'error' as const, error: 'No tab ID' };
 		}
 
+		// inv: lock prevents concurrent toggle requests for the same tab within 500ms
 		if (captureLocks.get(tabId)) {
 			swLog.debug(`CAPTURE_TOGGLE skipped: Tab ${tabId} is locked`);
 			return { status: 'processing' as const };
@@ -44,6 +41,7 @@ export function registerCaptureHandlers(): void {
 
 				await ensureOffscreen();
 
+				// eff: request a MediaStream ID for the target tab to be consumed by the offscreen AudioContext
 				const streamId = await new Promise<string>((resolve, reject) => {
 					chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (sid) => {
 						if (chrome.runtime.lastError) {
@@ -90,6 +88,7 @@ export function registerCaptureHandlers(): void {
 			captureStates.set(tabId, false);
 			return { status: 'error' as const, error: errorMsg };
 		} finally {
+			// note: release lock after a fixed delay to ensure state transitions complete
 			setTimeout(() => captureLocks.delete(tabId), 500);
 		}
 	});
@@ -101,7 +100,6 @@ export function registerCaptureHandlers(): void {
 	});
 
 	router.on('CAPTURE_UPDATE_CONFIG', async (req, sender) => {
-		// 🔴 支持从 sender.tab.id 获取 tabId，使 Content Script 可以发送配置更新
 		const tabId = req.tabId ?? sender.tab?.id;
 		if (!tabId || !captureStates.get(tabId)) return;
 
@@ -115,7 +113,7 @@ export function registerCaptureHandlers(): void {
 	});
 }
 
-/** 处理 Capture 切换 */
+// eff: internal helper to force stop capture and broadcast state change
 export function handleCaptureToggle(tabId: number, enabled: boolean): void {
 	if (!enabled && captureStates.get(tabId)) {
 		chrome.runtime.sendMessage({ target: 'offscreen', action: OffscreenActions.OFFSCREEN_STOP, tabId });

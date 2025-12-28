@@ -1,6 +1,4 @@
-/**
- * NEXUS Kernel - Storage 模块导出
- */
+// goal: aggregation point for all storage related repositories and utility functions
 
 export { StorageRepository } from './repository.js';
 export { getAudioConfig, setAudioConfig, removeAudioConfig } from './audio-config.js';

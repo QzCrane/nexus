@@ -1,7 +1,6 @@
 /**
- * SPECTRA Content Script - AB 循环
- *
- * 职责：设置 A/B 点，自动循环播放区间
+ * // goal: Set A/B points and manage loop playback
+ * // eff: Monitors video time and seeks back to A when B is reached
  */
 
 import { createLogger } from '../shared/logger';
@@ -9,7 +8,7 @@ import { createLogger } from '../shared/logger';
 const log = createLogger('ABLoop');
 
 // ============================================
-// 状态
+// State
 // ============================================
 
 interface ABState {
@@ -26,7 +25,6 @@ const abState: ABState = {
 	listener: null
 };
 
-/** 获取主视频元素 */
 function getPrimaryVideo(): HTMLVideoElement | null {
 	const videos = Array.from(document.querySelectorAll('video'));
 	if (!videos.length) return null;
@@ -46,10 +44,12 @@ function getPrimaryVideo(): HTMLVideoElement | null {
 }
 
 // ============================================
-// 循环逻辑
+// Loop Logic
 // ============================================
 
-/** 开始循环监听 */
+/**
+ * // eff: Adds timeupdate listener to video
+ */
 function startLoop(video: HTMLVideoElement): void {
 	if (abState.listener) return;
 
@@ -66,7 +66,9 @@ function startLoop(video: HTMLVideoElement): void {
 	log.info('AB loop started');
 }
 
-/** 停止循环监听 */
+/**
+ * // eff: Removes timeupdate listener
+ */
 function stopLoop(): void {
 	if (abState.listener) {
 		abState.listener();
@@ -77,10 +79,13 @@ function stopLoop(): void {
 }
 
 // ============================================
-// 公共 API
+// Public API
 // ============================================
 
-/** 设置 A 点 (起点) */
+/**
+ * // goal: Mark start point (A)
+ * // eff: Clears existing loop, saves currentTime as A
+ */
 export function setPointA(): number | null {
 	const video = getPrimaryVideo();
 	if (!video) {
@@ -89,13 +94,16 @@ export function setPointA(): number | null {
 	}
 
 	abState.pointA = video.currentTime;
-	abState.pointB = null; // 重置 B 点
+	abState.pointB = null; // Reset Point B
 	stopLoop();
 	log.info(`Set point A: ${abState.pointA.toFixed(2)}s`);
 	return abState.pointA;
 }
 
-/** 设置 B 点 (终点) 并开始循环 */
+/**
+ * // goal: Mark end point (B) and start looping
+ * // pre: Point A must be set and < current time
+ */
 export function setPointB(): { pointB: number | null; looping: boolean } {
 	const video = getPrimaryVideo();
 	if (!video || abState.pointA === null) {
@@ -115,7 +123,9 @@ export function setPointB(): { pointB: number | null; looping: boolean } {
 	return { pointB: abState.pointB, looping: true };
 }
 
-/** 清除 AB 循环 */
+/**
+ * // goal: Reset AB state
+ */
 export function clearABLoop(): boolean {
 	stopLoop();
 	abState.pointA = null;
@@ -124,7 +134,6 @@ export function clearABLoop(): boolean {
 	return true;
 }
 
-/** 获取 AB 循环状态 */
 export function getABState(): { pointA: number | null; pointB: number | null; looping: boolean } {
 	return {
 		pointA: abState.pointA,

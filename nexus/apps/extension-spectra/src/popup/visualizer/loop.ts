@@ -1,5 +1,5 @@
 /**
- * SPECTRA Popup - 可视化动画循环
+ * SPECTRA Popup - Viz Loop
  */
 
 import type { GlobalSettings } from '@nexus/kernel';
@@ -8,23 +8,22 @@ import { TIMING } from '../constants';
 import { sendToTab } from '../utils/dom';
 import { drawViz } from './draw-viz';
 
-/** 动画循环参数 */
 export interface VizLoopParams {
   canvas: HTMLCanvasElement;
   tabId: number;
   getConfig: () => { enabled: boolean; muted: boolean };
   getCapturing: () => boolean;
   getGlobalSettings: () => GlobalSettings;
-  /** 是否首次预测为 Capture (需要延迟启动) */
+  /** Whether initially predicted as Capture (needs delay start) */
   initialPredictedCapture: boolean;
-  /** 当前是否已激活 Capture */
+  /** Whether Capture is active */
   isCaptureActive: boolean;
 }
 
 /**
- * 创建可视化动画循环
+ * Creates visualization loop
  * 
- * @returns 启动函数
+ * @returns Start function
  */
 export function createVizLoop(params: VizLoopParams): () => void {
   const {
@@ -42,7 +41,7 @@ export function createVizLoop(params: VizLoopParams): () => void {
   let loopStarted = false;
 
   const loop = async (timestamp: number) => {
-    // 帧率限制 (~30 FPS)
+    // Frame rate limit (~30 FPS)
     if (timestamp - lastDraw < TIMING.VIZ_FRAME_INTERVAL) {
       requestAnimationFrame(loop);
       return;
@@ -53,7 +52,6 @@ export function createVizLoop(params: VizLoopParams): () => void {
     const gSettings = getGlobalSettings();
 
     if (config.enabled && !config.muted) {
-      // 检查全局可视化开关
       if (gSettings.visualizerEnabled === false) {
         drawViz(canvas, null, true, getCapturing());
         requestAnimationFrame(loop);
@@ -67,7 +65,7 @@ export function createVizLoop(params: VizLoopParams): () => void {
 
         try {
           if (currentCapturing) {
-            // 从 offscreen 获取 (Capture 模式)
+            // mode: Capture -> Offscreen
             const res = await chrome.runtime.sendMessage({
               target: 'offscreen',
               action: OffscreenActions.OFFSCREEN_GET_VIZ,
@@ -77,31 +75,29 @@ export function createVizLoop(params: VizLoopParams): () => void {
             if (res?.buffer) {
               buffer = res.buffer;
             } else {
-              // Fallback: 从 content.js 获取 (NEXUS 格式)
+              // Fallback: Content (NEXUS format)
               const data = await sendToTab<{ buffer: number[] }>(tabId, 'AUDIO_GET_VISUALIZER', {});
               if (data?.buffer) buffer = data.buffer;
             }
           } else {
-            // 从 content.js 获取 (Native 模式, NEXUS 格式)
+            // mode: Native -> Content
             const data = await sendToTab<{ buffer: number[] }>(tabId, 'AUDIO_GET_VISUALIZER', {});
             if (data?.buffer) buffer = data.buffer;
           }
         } catch {
-          // 静默失败
+          // silent fail
         }
 
         drawViz(canvas, buffer, false, currentCapturing);
         isRequesting = false;
       }
     } else {
-      // 禁用或静音时清空
       drawViz(canvas, null, true, getCapturing());
     }
 
     requestAnimationFrame(loop);
   };
 
-  // 启动函数
   const startLoop = () => {
     if (!loopStarted) {
       loopStarted = true;
@@ -109,9 +105,7 @@ export function createVizLoop(params: VizLoopParams): () => void {
     }
   };
 
-  // 返回启动函数 (可能需要延迟调用)
   return () => {
-    // 如果是预测的 Capture 模式且尚未激活，延迟启动
     if (initialPredictedCapture && !isCaptureActive) {
       setTimeout(startLoop, TIMING.CAPTURE_INIT_DELAY);
     } else {

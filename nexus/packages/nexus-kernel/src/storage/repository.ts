@@ -1,8 +1,5 @@
-/**
- * NEXUS Kernel - Storage Repository
- * 
- * 统一导出拆分后的存储模块，保持向后兼容
- */
+// goal: type-safe storage repository providing unified access to split storage modules
+// note: acts as a compatibility layer for audio config, settings, and domain registries
 
 import {
   AudioConfig, DEFAULT_AUDIO_CONFIG,
@@ -14,24 +11,23 @@ import * as globalSettings from './global-settings.js';
 import * as userRegistry from './user-registry.js';
 import * as restrictedRegistry from './restricted-registry.js';
 
-/** 类型安全的 Storage 仓库 (兼容层) */
 export class StorageRepository {
-  // 音频配置
+  // Audio config operations
   getAudioConfig = audioConfig.getAudioConfig;
   setAudioConfig = audioConfig.setAudioConfig;
   removeAudioConfig = audioConfig.removeAudioConfig;
 
-  // 全局设置
+  // Global settings operations
   getGlobalSettings = globalSettings.getGlobalSettings;
   setGlobalSettings = globalSettings.setGlobalSettings;
 
-  // 用户注册表 (旧接口，保持兼容)
+  // @deprecated: legacy user registry interfaces
   getUserRegistry = userRegistry.getUserRegistry;
   addToUserRegistry = userRegistry.addToUserRegistry;
   removeFromUserRegistry = userRegistry.removeFromUserRegistry;
   setUserRegistry = userRegistry.setUserRegistry;
 
-  // 受限注册表 (新接口，三合一)
+  // Restricted domain registry (v3.0+)
   registry = {
     init: restrictedRegistry.initRegistry,
     get: restrictedRegistry.getRegistry,
@@ -44,7 +40,7 @@ export class StorageRepository {
     set: restrictedRegistry.setRegistry,
   };
 
-  /** 监听存储变化 */
+  // eff: subscribes to 'local' storage area changes
   onChanged(callback: (changes: { [key: string]: chrome.storage.StorageChange }) => void): () => void {
     const listener = (
       changes: { [key: string]: chrome.storage.StorageChange },

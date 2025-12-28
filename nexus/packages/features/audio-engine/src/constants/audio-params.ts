@@ -1,8 +1,5 @@
-/**
- * NEXUS Audio Engine - 音频处理参数
- */
+// goal: central definition of audio processing parameters, thresholds, and modes
 
-/** 音频处理模式枚举 */
 export const AudioMode = {
 	NATIVE_WEBAUDIO: 'NATIVE_WEBAUDIO',
 	NATIVE_LITE: 'NATIVE_LITE',
@@ -11,7 +8,6 @@ export const AudioMode = {
 
 export type AudioModeType = typeof AudioMode[keyof typeof AudioMode];
 
-/** 音频处理参数 */
 export const AudioParams = {
 	EQ_FREQUENCIES: [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000] as const,
 	EQ_Q: 1.4,
@@ -27,13 +23,12 @@ export const AudioParams = {
 	EQ_STEP: 0.1
 } as const;
 
-/** 压缩器参数 - 开启 */
+// goal: aggressive compression settings to prevent clipping/distortion during high gain
 export const CompressorOn = {
 	threshold: -24, knee: 30, ratio: 12, attack: 0.003, release: 0.25
 } as const;
 
-/** 压缩器参数 - 关闭 (旁通) */
 export const CompressorOff = { threshold: 0, ratio: 1 } as const;
 
-/** 压缩器参数 - 原生模式关闭 */
+// note: used as a bypass state during NATIVE mode cleanup
 export const CompressorNativeOff = { threshold: -10, ratio: 1 } as const;

@@ -1,5 +1,5 @@
 /**
- * SPECTRA Options - 标签页切换
+ * SPECTRA Options - Tab Switching
  */
 
 export function initTabs(): void {
@@ -11,11 +11,11 @@ export function initTabs(): void {
 			const tabId = btn.dataset.tab;
 			if (!tabId) return;
 
-			// 切换导航状态
+			// Toggle nav state
 			navBtns.forEach(b => b.classList.remove('active'));
 			btn.classList.add('active');
 
-			// 切换内容区
+			// Toggle content area
 			tabContents.forEach(content => {
 				content.classList.toggle('hidden', content.id !== `tab-${tabId}`);
 			});

@@ -1,39 +1,26 @@
 /**
- * SPECTRA Remote - Modal 渲染层
+ * SPECTRA Remote - Modal Renderer
  * 
- * 职责：负责遥控弹窗的 DOM 创建、销毁与连接状态同步
+ * Creates/Destroys remote control modal and syncs connection status.
  */
 
 import { Actions } from '@nexus/contracts';
 import type { I18NDict } from '../popup/types';
 
-/** 遥控弹窗状态 */
 let isModalOpen = false;
 let statusInterval: number | null = null;
 let currentDict: I18NDict | null = null;
 
-/**
- * 是否打开
- */
 export const isRemoteModalOpen = () => isModalOpen;
 
-/**
- * 设置当前语言字典
- */
 export function setRemoteI18n(dict: I18NDict): void {
 	currentDict = dict;
 }
 
-/**
- * 获取 i18n 文本 (带默认值回退)
- */
 function t(key: keyof I18NDict, fallback: string): string {
 	return (currentDict?.[key] as string) || fallback;
 }
 
-/**
- * 显示遥控弹窗
- */
 export function renderRemoteModal(qrDataUrl: string, sessionId: string, isConnected = false): void {
 	const existing = document.getElementById('remote-modal');
 	if (existing) existing.remove();
@@ -47,7 +34,6 @@ export function renderRemoteModal(qrDataUrl: string, sessionId: string, isConnec
 	modal.id = 'remote-modal';
 	modal.className = 'remote-modal';
 
-	// 🔴 构建遥控器连接 URL
 	const remoteUrl = `https://nexus-remote.pages.dev/?s=${sessionId}`;
 
 	modal.innerHTML = `
@@ -78,10 +64,8 @@ export function renderRemoteModal(qrDataUrl: string, sessionId: string, isConnec
 	document.body.appendChild(modal);
 	isModalOpen = true;
 
-	// 绑定关闭按钮 (不断开连接)
 	modal.querySelector('.remote-modal-close')?.addEventListener('click', () => closeRemoteModal(false));
 
-	// 完善：点击连接码自动复制
 	const codeElem = modal.querySelector('.remote-session-id code');
 	codeElem?.addEventListener('click', () => {
 		navigator.clipboard.writeText(sessionId);
@@ -94,13 +78,10 @@ export function renderRemoteModal(qrDataUrl: string, sessionId: string, isConnec
 		if (e.target === modal) closeRemoteModal(false);
 	});
 
-	// 绑定断开按钮 (断开并关闭)
 	modal.querySelector('.remote-disconnect-btn')?.addEventListener('click', () => closeRemoteModal(true));
 
-	// 动态调整 popup 高度
 	adjustPopupHeight(true);
 
-	// 定时检查连接状态
 	statusInterval = window.setInterval(async () => {
 		const res = await chrome.runtime.sendMessage({ action: Actions.REMOTE_GET_SESSION });
 		const dot = modal.querySelector('.remote-status-dot');
@@ -117,7 +98,6 @@ export function renderRemoteModal(qrDataUrl: string, sessionId: string, isConnec
 	}, 1000);
 }
 
-/** 调整 popup 高度 */
 function adjustPopupHeight(expand: boolean): void {
 	const body = document.body;
 	const MIN_HEIGHT = 520;
@@ -132,9 +112,6 @@ function adjustPopupHeight(expand: boolean): void {
 	}
 }
 
-/**
- * 关闭弹窗
- */
 export function closeRemoteModal(closeConnection = false): void {
 	const modal = document.getElementById('remote-modal');
 	if (modal) {

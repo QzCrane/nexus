@@ -1,7 +1,3 @@
-/**
- * NEXUS 消息协议契约
- * 
- * 从拆分的模块统一导出
- */
+// goal: unified entry point for Nexus message protocol contracts
 
 export * from './messages/index.js';

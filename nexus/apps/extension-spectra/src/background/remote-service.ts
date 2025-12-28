@@ -1,8 +1,5 @@
-/**
- * SPECTRA Remote - Background 服务 (管理 Offscreen)
- * 
- * 职责：创建/管理 offscreen document，转发消息，状态同步
- */
+// goal: manages the offscreen document lifecycle for PeerJS remote control connectivity
+// note: acts as a bridge between the remote controller (mobile) and specific browser tabs
 
 import { Actions } from '@nexus/contracts';
 import { executeCommand, setStateCallback, type RemoteCommand, type RemoteState } from './remote-commands';
@@ -10,7 +7,7 @@ import { executeCommand, setStateCallback, type RemoteCommand, type RemoteState 
 const LOG = '[SPECTRA Remote BG]';
 let offscreenCreated = false;
 
-/** 确保 offscreen document 存在 */
+// eff: creates the offscreen document if it doesn't exist, using 'WEB_RTC' for PeerJS data channels
 async function ensureOffscreen(): Promise<void> {
 	if (offscreenCreated) return;
 
@@ -24,9 +21,7 @@ async function ensureOffscreen(): Promise<void> {
 			offscreenCreated = true;
 			return;
 		}
-	} catch {
-		// getContexts 不可用
-	}
+	} catch { }
 
 	await chrome.offscreen.createDocument({
 		url: 'offscreen-remote.html',
@@ -38,29 +33,27 @@ async function ensureOffscreen(): Promise<void> {
 	console.log(LOG, 'Offscreen created');
 }
 
-/** 关闭 offscreen document */
+// eff: closes the offscreen document and resets the singleton flag
 async function closeOffscreen(): Promise<void> {
 	if (!offscreenCreated) return;
 	try {
 		await chrome.offscreen.closeDocument();
 		offscreenCreated = false;
-	} catch { /* 可能已关闭 */ }
+	} catch { }
 }
 
-/** 发送状态到 offscreen (转发给指定标签页的手机) */
+// eff: pushes unified RemoteState to the offscreen worker for mobile sync
 function sendStateToOffscreen(tabId: number, state: RemoteState): void {
 	if (offscreenCreated) {
 		chrome.runtime.sendMessage({ type: 'REMOTE_OFFSCREEN_SEND_STATE', tabId, state });
 	}
 }
 
-/** 初始化消息监听 */
+// eff: registers listeners for remote session lifecycle (create, status, close) and command execution
 export function initRemoteService(): void {
-	// 设置状态回调
 	setStateCallback(sendStateToOffscreen);
 
 	chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-		// 创建会话
 		if (message.action === Actions.REMOTE_CREATE_SESSION) {
 			const tabId = message.tabId || sender.tab?.id;
 			if (!tabId) {
@@ -75,7 +68,6 @@ export function initRemoteService(): void {
 			return true;
 		}
 
-		// 获取状态 (支持按 tabId 查询特定标签页)
 		if (message.action === Actions.REMOTE_GET_SESSION) {
 			if (!offscreenCreated) {
 				sendResponse({ session: null, connected: false });
@@ -88,7 +80,6 @@ export function initRemoteService(): void {
 			return true;
 		}
 
-		// 关闭会话
 		if (message.action === Actions.REMOTE_CLOSE_SESSION) {
 			if (!offscreenCreated) {
 				sendResponse({ success: true });
@@ -101,14 +92,12 @@ export function initRemoteService(): void {
 			return true;
 		}
 
-		// 来自 offscreen 的命令执行请求
 		if (message.type === 'REMOTE_EXECUTE_COMMAND') {
 			const { command, tabId } = message as { command: RemoteCommand; tabId: number };
 			executeCommand(command, tabId);
 			return false;
 		}
 
-		// 来自 offscreen 的初始状态同步请求
 		if (message.type === 'REMOTE_REQUEST_SYNC') {
 			const { tabId } = message as { tabId?: number };
 			if (tabId) {

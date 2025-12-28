@@ -1,7 +1,7 @@
 /**
- * SPECTRA Options - 网站配置编辑器
- * 
- * 为特定网站配置独立快捷键 (默认关闭)
+ * SPECTRA Options - Site Config Editor
+ *
+ * Configure site-specific hotkeys (default disabled)
  */
 
 import type { HotkeySettings, HotkeyBinding } from '@nexus/contracts';
@@ -11,14 +11,12 @@ import { openModal } from './modal';
 let settings: HotkeySettings = { ...DEFAULT_HOTKEY_SETTINGS };
 let selectedSite: string | null = null;
 
-/** 初始化网站配置编辑器 */
 export async function initSiteEditor(): Promise<void> {
 	await loadSettings();
 	renderSiteSelector();
 	bindEvents();
 }
 
-/** 加载设置 */
 async function loadSettings(): Promise<void> {
 	try {
 		const result = await chrome.storage.local.get('hotkeySettings');
@@ -26,12 +24,10 @@ async function loadSettings(): Promise<void> {
 	} catch { /* ignore */ }
 }
 
-/** 保存设置 */
 async function saveSettings(): Promise<void> {
 	await chrome.storage.local.set({ hotkeySettings: settings });
 }
 
-/** 渲染网站选择器 */
 function renderSiteSelector(): void {
 	const select = document.getElementById('site-select') as HTMLSelectElement | null;
 	if (!select) return;
@@ -44,7 +40,6 @@ function renderSiteSelector(): void {
 	});
 }
 
-/** 绑定事件 */
 function bindEvents(): void {
 	const select = document.getElementById('site-select') as HTMLSelectElement | null;
 	select?.addEventListener('change', () => select.value ? selectSite(select.value) : hideSiteConfig());
@@ -54,7 +49,7 @@ function bindEvents(): void {
 	const enabledCb = document.getElementById('site-enabled') as HTMLInputElement | null;
 	enabledCb?.addEventListener('change', async () => {
 		if (selectedSite && settings.sites[selectedSite]) {
-			settings.sites[selectedSite].enabled = enabledCb.checked;
+			settings.sites[selectedSite]!.enabled = enabledCb.checked;
 			await saveSettings();
 		}
 	});
@@ -69,7 +64,6 @@ function bindEvents(): void {
 	});
 }
 
-/** 选择网站 */
 function selectSite(domain: string): void {
 	selectedSite = domain;
 	const config = settings.sites[domain];
@@ -83,14 +77,12 @@ function selectSite(domain: string): void {
 	renderBindings();
 }
 
-/** 隐藏配置面板 */
 function hideSiteConfig(): void {
 	selectedSite = null;
 	document.getElementById('site-config')?.classList.add('hidden');
 	document.getElementById('site-empty')?.classList.remove('hidden');
 }
 
-/** 添加当前网站 */
 async function addCurrentSite(): Promise<void> {
 	try {
 		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -105,7 +97,6 @@ async function addCurrentSite(): Promise<void> {
 	} catch (e) { console.error('Failed to add site:', e); }
 }
 
-/** 删除网站 */
 async function deleteSite(): Promise<void> {
 	if (!selectedSite || !confirm(`Delete configuration for ${selectedSite}?`)) return;
 	delete settings.sites[selectedSite];
@@ -114,7 +105,6 @@ async function deleteSite(): Promise<void> {
 	hideSiteConfig();
 }
 
-/** 渲染绑定列表 */
 function renderBindings(): void {
 	const container = document.getElementById('site-bindings-list');
 	if (!container || !selectedSite) return;
@@ -127,7 +117,6 @@ function renderBindings(): void {
 	});
 }
 
-/** 创建绑定行 */
 function createBindingRow(binding: HotkeyBinding, index: number): HTMLElement {
 	const row = document.createElement('div');
 	row.className = 'binding-row';
@@ -165,7 +154,6 @@ function createBindingRow(binding: HotkeyBinding, index: number): HTMLElement {
 	return row;
 }
 
-/** 格式化按键组合 */
 function formatKeyCombo(key: { code: string; modifiers: typeof DEFAULT_MODIFIERS }): string {
 	const parts: string[] = [];
 	if (key.modifiers.ctrl) parts.push('Ctrl');

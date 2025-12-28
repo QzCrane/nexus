@@ -1,16 +1,11 @@
 /**
- * SPECTRA Popup - 频谱条绘制
+ * SPECTRA Popup - Spectrum Bar Drawing
  */
 
 import { COLORS, UI_SIZES, VIZ_PARAMS } from '../constants';
 
 /**
- * 绘制频谱条可视化
- * 
- * @param canvas - 目标画布
- * @param data - 频率数据数组 (0-255)
- * @param isMuted - 是否静音
- * @param isCapture - 是否 Capture 模式
+ * Draws spectrum bar visualization
  */
 export function drawViz(
   canvas: HTMLCanvasElement,
@@ -24,10 +19,9 @@ export function drawViz(
   const w = canvas.width;
   const h = canvas.height;
 
-  // 清空画布
+  // Clear canvas
   ctx.clearRect(0, 0, w, h);
 
-  // 静音或无数据时不绘制
   if (!data || isMuted) return;
 
   const barW = UI_SIZES.VIZ_BAR_WIDTH;
@@ -35,7 +29,6 @@ export function drawViz(
   const count = Math.floor(w / (barW + gap));
   const step = Math.floor(data.length / count) || 1;
 
-  // 根据模式选择颜色
   ctx.fillStyle = isCapture ? COLORS.CAPTURE : COLORS.NATIVE;
 
   for (let i = 0; i < count; i++) {

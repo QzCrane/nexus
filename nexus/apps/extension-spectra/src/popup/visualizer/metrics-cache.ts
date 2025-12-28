@@ -1,12 +1,11 @@
 /**
  * SPECTRA Popup - MetricsCache
  * 
- * 缓存 EQ 滑块位置坐标，用于绘制平滑曲线
+ * Caches EQ slider position coordinates for smooth curve drawing.
  */
 
 import { TIMING } from '../constants';
 
-/** MetricsCache 数据 */
 export interface MetricsCacheData {
   xCoords: Float32Array;
   midY: number;
@@ -18,9 +17,9 @@ export interface MetricsCacheData {
 }
 
 /**
- * EQ 曲线绘制缓存类
+ * EQ Curve Drawing Cache Class
  * 
- * 监听滑块行元素的尺寸变化，自动更新坐标缓存
+ * Monitors slider row element size changes and automatically updates coordinate cache.
  */
 export class MetricsCache implements MetricsCacheData {
   private row: HTMLElement;
@@ -45,14 +44,12 @@ export class MetricsCache implements MetricsCacheData {
     this.canvas = canvas;
     this.onChange = onChange || null;
 
-    // 监听尺寸变化
     this.observer = new ResizeObserver(() => this.update());
     this.observer.observe(rowElement);
 
-    // 初始更新
     this.update();
 
-    // 初始化循环 (确保首次渲染成功)
+    // Ensure first render success
     const initLoop = (count: number) => {
       if (this.update() || count <= 0) return;
       requestAnimationFrame(() => initLoop(count - 1));
@@ -60,10 +57,6 @@ export class MetricsCache implements MetricsCacheData {
     initLoop(TIMING.METRICS_INIT_LOOPS);
   }
 
-  /**
-   * 更新坐标缓存
-   * @returns 是否更新成功
-   */
   update(): boolean {
     if (!this.row) return false;
 
@@ -73,7 +66,7 @@ export class MetricsCache implements MetricsCacheData {
     const canvasRect = this.canvas.getBoundingClientRect();
     this.dpr = window.devicePixelRatio || 1;
 
-    // 更新画布物理尺寸
+    // Update canvas physical size
     const physW = canvasRect.width * this.dpr;
     const physH = canvasRect.height * this.dpr;
     if (this.canvas.width !== physW || this.canvas.height !== physH) {
@@ -85,15 +78,13 @@ export class MetricsCache implements MetricsCacheData {
     this.height = canvasRect.height;
     this.midY = (rect.top - canvasRect.top) + (rect.height / 2);
 
-    // 计算缩放因子
     const inputs = this.row.querySelectorAll('input');
     const firstInput = inputs[0];
     if (inputs.length > 0 && firstInput) {
       const inputRect = firstInput.getBoundingClientRect();
-      this.scaleFactor = (inputRect.height - 12) / 24;
+      this.scaleFactor = (inputRect.height - 12) / 24; // 12/24 based on CSS calc
     }
 
-    // 计算每个滑块的 X 坐标
     inputs.forEach((input, i) => {
       const r = input.getBoundingClientRect();
       this.xCoords[i] = (r.left - canvasRect.left) + (r.width / 2);
@@ -105,7 +96,6 @@ export class MetricsCache implements MetricsCacheData {
     return true;
   }
 
-  /** 销毁观察器 */
   destroy(): void {
     this.observer.disconnect();
   }

@@ -1,7 +1,7 @@
 /**
- * SPECTRA Options - 主入口
- * 
- * Chrome Slots 配置 + 网站独立配置 + 国际化 + 主题
+ * SPECTRA Options - Main Entry
+ *
+ * Configures Chrome Slots, Site Settings, I18n, and Theme.
  */
 
 import { initTheme } from './theme';
@@ -14,25 +14,20 @@ import { enableSmoothScroll } from '../shared/smooth-scroll';
 async function init(): Promise<void> {
 	console.log('[SPECTRA] Options page initializing...');
 
-	// 启用 Mac 风格丝滑滚动
+	// Mac-style Smooth Scroll
 	enableSmoothScroll();
 
-	// 初始化主题
 	initTheme();
 
-	// 初始化国际化
 	await initI18n();
 
-	// 初始化弹窗
 	initModal();
 
-	// 初始化 Chrome Slots 编辑器
 	await initSlotsEditor();
 
-	// 初始化网站配置编辑器
 	await initSiteEditor();
 
-	// Chrome shortcuts 链接处理
+	// Chrome shortcuts link
 	const link = document.getElementById('chrome-shortcuts-link');
 	if (link) {
 		link.addEventListener('click', (e) => {

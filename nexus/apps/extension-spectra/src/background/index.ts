@@ -1,19 +1,5 @@
-/**
- * SPECTRA - Background Service Worker (入口)
- * 
- * 核心职责:
- * 1. 处理来自 Popup/Content 的 RPC 消息
- * 2. 管理 Tab Capture 状态
- * 3. 更新扩展图标角标
- * 4. 处理快捷键事件
- * 
- * 模块结构:
- * - state.ts       状态管理
- * - helpers.ts     辅助函数
- * - handlers/      消息处理器
- * - shortcuts.ts   快捷键处理
- * - lifecycle.ts   Tab 生命周期
- */
+// goal: service worker entry point for SPECTRA
+// note: coordinates message routing between popup, content script, offscreen, and remote services
 
 import { router, storage } from './state';
 import { registerAudioHandlers } from './handlers/audio';
@@ -27,10 +13,7 @@ import { setupLifecycleListeners } from './lifecycle';
 import { initRemoteService } from './remote-service';
 import { swLog } from '../shared/logger';
 
-// ============================================
-// 注册所有消息处理器
-// ============================================
-
+// eff: initialize all functional modules and start message routing
 registerAudioHandlers();
 registerSettingsHandlers();
 registerCaptureHandlers();
@@ -39,28 +22,16 @@ registerRegistryHandlers();
 registerTabStateHandlers();
 initRemoteService();
 
-// ============================================
-// 设置事件监听器
-// ============================================
-
 setupShortcutListeners();
 setupLifecycleListeners();
 
-// ============================================
-// 启动消息路由
-// ============================================
-
 router.listen();
 
-// ============================================
-// 首次安装初始化 (v3.1: 无默认列表，依赖 CORS 检测)
-// ============================================
-
+// eff: ensure core storage modules (registry, config) are initialized on fresh install
 chrome.runtime.onInstalled.addListener(async (details) => {
 	if (details.reason === 'install') {
-		// 初始化空注册表，完全依赖 CORS 预检测
 		await storage.registry.init();
-		swLog.info('Installed: 空注册表已初始化，将依赖 CORS 预检测自动填充');
+		swLog.info('Installed: empty registry initialized, awaiting CORS-based population');
 	}
 });
 

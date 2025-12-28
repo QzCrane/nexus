@@ -1,5 +1,5 @@
 /**
- * SPECTRA Popup - Views 导出
+ * SPECTRA Popup - Views Exports
  */
 
 export { initNavigation } from './navigation';
@@ -9,5 +9,4 @@ export {
   type SettingsState,
 } from './settings';
 
-// i18n 工具
 export { applyLang, updateCardsI18n } from './i18n-apply';

@@ -1,12 +1,9 @@
 /**
- * SPECTRA Popup - 获取卡片 UI 元素
+ * SPECTRA Popup - Get Card UI Elements
  */
 
 import type { CardUIElements } from '../types';
 
-/**
- * 从卡片元素中获取所有 UI 元素引用
- */
 export function getCardUIElements(card: HTMLElement): CardUIElements {
   return {
     card,
@@ -36,7 +33,7 @@ export function getCardUIElements(card: HTMLElement): CardUIElements {
     tMono: card.querySelector('[data-i18n="mono"]') as HTMLElement,
     tEq: card.querySelector('[data-i18n="eqTitle"]') as HTMLElement,
     vizIsland: card.querySelector('.viz-island') as HTMLElement | null,
-    // 媒体控制
+    // Media Controls
     btnPause: card.querySelector('.btn-pause'),
     btnPip: card.querySelector('.btn-pip'),
     btnHotkeyTarget: card.querySelector('.btn-hotkey-target'),

@@ -1,30 +1,23 @@
-/**
- * 策略执行器 - 媒体元素探测辅助
- * 
- * 职责：查找适合 CORS 探测的媒体元素
- */
+// goal: identifies suitable media elements to trigger CORS probing via AudioContext attachment
 
-/**
- * 查找适合 CORS 探测的媒体元素
- * 
- * 条件：非静音、正在播放、时长 >= 5s、未被探测过、非循环
- */
+// post: returns a media element that is actively playing with audible volume and meaningful duration
 export function findProbeCandidate(): HTMLMediaElement | null {
 	const elements = document.querySelectorAll('video, audio');
 
 	for (const el of elements) {
 		const media = el as HTMLMediaElement;
 
-		// 跳过已探测/已绑定的元素
+		// inv: skip elements that are already under management or have been previously probed in the current session
 		if (media.dataset.vmProbed === 'true' || media.dataset.vmAttached === 'true') {
 			continue;
 		}
 
-		// 条件检查：正在播放 + 非静音 + 有音量 + 时长足够
+		// rule: candidate must be audible (>5% volume) and playing to ensure AnalyserNode can capture data
 		const isPlaying = !media.paused && !media.ended;
 		const hasAudio = !media.muted && media.volume > 0.05;
+		// note: infinite duration (live streams) or elements > 5s are preferred; skip short looping previews
 		const hasEnoughDuration = media.duration >= 5 || isNaN(media.duration);
-		const isNotLoop = !media.loop;  // 排除循环预览视频
+		const isNotLoop = !media.loop;
 
 		if (isPlaying && hasAudio && hasEnoughDuration && isNotLoop) {
 			return media;

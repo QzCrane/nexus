@@ -1,5 +1,5 @@
 /**
- * SPECTRA Options - i18n 字典
+ * SPECTRA Options - i18n Dictionary
  */
 
 export const DICT: Record<string, Record<string, string>> = {

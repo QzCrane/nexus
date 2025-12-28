@@ -1,7 +1,7 @@
 /**
- * SPECTRA Content Script - 消息处理器
+ * SPECTRA Content Script - Message Handler
  * 
- * 负责处理来自 Popup/Background 的消息
+ * Handles messages from Popup/Background
  */
 
 import type { AudioConfig } from '@nexus/kernel';
@@ -14,7 +14,6 @@ import { hasMediaElements, isAnyMediaPlaying, getPausedAt } from './dom-volume';
 import { safeSend } from './context-guard';
 import { handleMediaMessage } from './media-message-handler';
 
-/** 消息处理器依赖 */
 export interface MessageHandlerDeps {
 	state: PolicyExecutorState;
 	policyExecutor: PolicyExecutor;
@@ -24,7 +23,7 @@ export interface MessageHandlerDeps {
 }
 
 /**
- * 创建消息处理器
+ * Create Message Handler
  */
 export function createMessageHandler(deps: MessageHandlerDeps): (
 	message: unknown,
@@ -42,14 +41,14 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 				const payload = msg.payload as { config: Partial<AudioConfig> & { volumeDelta?: number; toggleMute?: boolean } };
 				const configChanges = { ...payload.config };
 
-				// 处理音量增量 (遥控器使用)
+				// Handle volume delta (Remote)
 				if (payload.config.volumeDelta !== undefined) {
 					const currentVol = state.config.volume;
 					configChanges.volume = Math.max(0, Math.min(800, currentVol + payload.config.volumeDelta));
 					delete (configChanges as any).volumeDelta;
 				}
 
-				// 处理静音切换 (遥控器使用)
+				// Handle mute toggle (Remote)
 				if (payload.config.toggleMute) {
 					configChanges.muted = !state.config.muted;
 					delete (configChanges as any).toggleMute;
@@ -70,10 +69,10 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 			}
 
 			case Actions.AUDIO_GET_STATUS: {
-				// 始终重新计算策略以触发 CORS 检测
+				// Always apply state to trigger CORS check
 				policyExecutor.applyState();
 
-				// isAnyMediaPlaying 会自动更新 pausedAt
+				// isAnyMediaPlaying updates pausedAt automatically
 				const isPlaying = isAnyMediaPlaying();
 
 				sendResponse({
@@ -95,7 +94,7 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 			case Actions.SHORTCUT_TRIGGER: {
 				const payload = msg.payload as { command?: string; config?: AudioConfig } | undefined;
 				if (payload?.config) {
-					// 只有音量增减才强制解除静音，静音切换不应强制解除
+					// Only force unmute on volume change, not on toggle mute
 					const shouldUnmute = payload.command !== 'toggle_mute';
 					policyExecutor.updateConfig(payload.config, { showOSD: true, unMute: shouldUnmute });
 				}
@@ -108,7 +107,7 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 				policyExecutor.applyState();
 				policyExecutor.updateBadge();
 
-				// 同时通知 Popup (如果是来自 Background 的自动更新)
+				// Notify Popup (if from background auto-update)
 				safeSend(() => new Promise<void>((resolve, reject) => {
 					chrome.runtime.sendMessage({
 						action: Actions.CAPTURE_STATE_CHANGE,
@@ -125,22 +124,22 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 
 			case Actions.GLOBAL_SETTINGS_UPDATE: {
 				settingsManager.handleMessage(msg as { action?: string; settings?: { osdEnabled?: boolean; visualizerEnabled?: boolean; lang?: string } });
-				// 关键：修改设置也视为用户交互（表达了增强意图）
+				// Critical: Setting change counts as user interaction
 				state.userHasInteracted = true;
-				// 重新应用策略并同步角标颜色
+				// Re-apply state and sync badge
 				policyExecutor.applyState();
 				policyExecutor.updateBadge();
 				sendResponse({ success: true });
 				break;
 			}
 
-			// ========== 媒体/视频控制 (委托到独立处理器) ==========
+			// ========== Media/Video Control (Delegated) ==========
 			default:
 				if (handleMediaMessage(msg.action, msg.payload, sendResponse)) {
 					return true;
 				}
 		}
 
-		return true; // 异步响应
+		return true; // Async response
 	};
 }

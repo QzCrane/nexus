@@ -1,5 +1,5 @@
 /**
- * SPECTRA Popup - Utils 导出
+ * SPECTRA Popup - Utils Exports
  */
 
 export {
@@ -15,7 +15,6 @@ export {
   ensureInjected,
 } from './dom';
 
-// 主题管理工具
 export {
   applyTheme,
   getEffectiveTheme,

@@ -1,5 +1,5 @@
 /**
- * SPECTRA Options - 国际化
+ * SPECTRA Options - Internationalization
  */
 
 import { DICT } from './i18n-dict';
@@ -7,7 +7,6 @@ import { DICT } from './i18n-dict';
 let currentLang = 'en-US';
 let onLangChangeCallbacks: (() => void)[] = [];
 
-/** 初始化国际化 */
 export async function initI18n(): Promise<void> {
 	try {
 		const result = await chrome.storage.local.get('globalSettings');
@@ -28,7 +27,7 @@ export async function initI18n(): Promise<void> {
 				});
 			} catch { /* ignore */ }
 			applyI18n();
-			// 触发所有回调 (重新渲染动态内容)
+			// Trigger callbacks (re-render dynamic content)
 			onLangChangeCallbacks.forEach(cb => cb());
 		});
 	}
@@ -36,7 +35,6 @@ export async function initI18n(): Promise<void> {
 	applyI18n();
 }
 
-/** 应用国际化 */
 function applyI18n(): void {
 	const dict = DICT[currentLang] ?? DICT['en-US'];
 	if (!dict) return;
@@ -49,21 +47,19 @@ function applyI18n(): void {
 	});
 }
 
-/** 获取翻译 */
+/** Get Translation */
 export function t(key: string): string {
 	const dict = DICT[currentLang] ?? DICT['en-US'];
 	return dict?.[key] ?? key;
 }
 
-/** 获取当前语言 */
 export function getCurrentLang(): string {
 	return currentLang;
 }
 
-/** 注册语言变化回调 */
 export function onLangChange(callback: () => void): void {
 	onLangChangeCallbacks.push(callback);
 }
 
-// 重导出 Action 名称
+// Re-export Action Names
 export { getActionName } from './i18n-actions';

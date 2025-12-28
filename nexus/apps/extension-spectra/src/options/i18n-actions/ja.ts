@@ -1,4 +1,4 @@
-/** Action 名称 - 日语 */
+/** Action Names - Japanese */
 export const ja: Record<string, string> = {
 	none: '(未設定)', play_pause: '再生/一時停止', seek_forward_5s: '5秒進む',
 	seek_forward_10s: '10秒進む', seek_forward_30s: '30秒進む',

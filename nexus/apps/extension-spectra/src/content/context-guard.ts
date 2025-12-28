@@ -1,30 +1,20 @@
-/**
- * SPECTRA Content Script - 扩展健康检查
- * 
- * 负责检测扩展上下文是否仍然有效，防止重新加载后的旧脚本报错
- */
+// goal: prevents "Extension context invalidated" runtime errors by validating the environment before browser API calls
 
 import { logger } from '../shared/logger';
 
 const log = logger.content;
 
-/**
- * 检查扩展上下文是否仍然有效
- * 当扩展被重新加载后，旧的 content script 仍在运行但 chrome.runtime 会失效
- */
+// post: returns true if the extension runtime is still active; false if reloaded or updated
 export function isExtensionContextValid(): boolean {
 	try {
-		// 尝试访问 chrome.runtime.id，如果上下文已失效会抛出异常
 		return !!chrome.runtime?.id;
 	} catch {
 		return false;
 	}
 }
 
-/**
- * 安全发送消息 - 在发送前检查上下文有效性
- * 如果上下文已失效，静默返回而不抛出错误
- */
+// eff: executes a message-sending function only if the context is valid, suppressing invalidation errors
+// post: returns the actual result or a fallback value if the context is lost
 export async function safeSend<T>(
 	sendFn: () => Promise<T>,
 	fallback?: T
@@ -36,7 +26,7 @@ export async function safeSend<T>(
 	try {
 		return await sendFn();
 	} catch (e) {
-		// 检查是否是上下文失效错误
+		// rule: specifically intercept known invalidation patterns to prevent unhandled promise rejections
 		if (String(e).includes('Extension context invalidated') ||
 			String(e).includes('message port closed')) {
 			log.debug('Extension context invalidated during send.');

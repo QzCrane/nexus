@@ -1,16 +1,15 @@
 /**
- * SPECTRA Popup - 侧边面板速度控件
+ * SPECTRA Popup - Side Panel Speed Controls
  */
 
 import { sendToTab } from '../utils/dom';
 
-/** 速度控件接口 */
 interface SpeedControls {
 	speedSlider: HTMLInputElement | null;
 	speedInput: HTMLInputElement | null;
 }
 
-/** 辅助：添加滚轮支持 */
+/** Helper: Add wheel support */
 export function addWheelSupport(
 	slider: HTMLInputElement | null,
 	step: number,
@@ -28,7 +27,6 @@ export function addWheelSupport(
 	}, { passive: false });
 }
 
-/** 绑定速度控件 */
 export function bindSpeedControls(c: SpeedControls, tabId: number): void {
 	const updateSpeed = async (speed: number) => {
 		const clampedSpeed = Math.max(0.25, Math.min(16, speed));
@@ -71,13 +69,13 @@ export function bindSpeedControls(c: SpeedControls, tabId: number): void {
 	}
 }
 
-/** 同步卡片速度输入框 */
+/** Sync card input from side panel */
 function syncCardSpeedInput(speed: number): void {
 	const cardInputs = document.querySelectorAll('.speed-input') as NodeListOf<HTMLInputElement>;
 	cardInputs.forEach(inp => inp.value = speed.toFixed(2));
 }
 
-/** 同步速度显示 (导出供外部调用) */
+/** Sync speed display (export for external use) */
 export function syncSidePanelSpeed(speed: number): void {
 	const panel = document.getElementById('side-panel');
 	if (!panel) return;

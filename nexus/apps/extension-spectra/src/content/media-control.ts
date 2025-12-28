@@ -1,31 +1,22 @@
-/**
- * SPECTRA Content Script - 媒体控制
- *
- * 职责：提供视频暂停/播放、画中画、速率控制等操作
- * 优先操作主视频（最大的可见 video 元素）
- */
+// goal: provides direct DOM control for playback, picture-in-picture, and playback rate orchestration
+// rule: operations always target the "primary" video element, defined as the largest visible video on the page
 
 import { createLogger } from '../shared/logger';
 import { simulateMouseHover } from './focus-helper';
 
 const log = createLogger('MediaControl');
 
-// ============================================
-// 核心工具函数
-// ============================================
-
-/** 获取主视频元素 (最大的可见 video) */
+// role: logic for identifying the primary video element based on viewport area
 function getPrimaryVideo(): HTMLVideoElement | null {
 	const videos = Array.from(document.querySelectorAll('video'));
 	if (!videos.length) return null;
 
-	// 按面积排序，取最大的可见视频
 	const visible = videos.filter(v => {
 		const rect = v.getBoundingClientRect();
 		return rect.width > 0 && rect.height > 0;
 	});
 
-	if (!visible.length) return videos[0] ?? null; // fallback 到第一个
+	if (!visible.length) return videos[0] ?? null;
 
 	visible.sort((a, b) => {
 		const aRect = a.getBoundingClientRect();
@@ -36,7 +27,6 @@ function getPrimaryVideo(): HTMLVideoElement | null {
 	return visible[0] ?? null;
 }
 
-/** 获取所有媒体元素 */
 function getAllMedia(): HTMLMediaElement[] {
 	return [
 		...Array.from(document.querySelectorAll('video')),
@@ -44,11 +34,6 @@ function getAllMedia(): HTMLMediaElement[] {
 	];
 }
 
-// ============================================
-// 媒体操作函数
-// ============================================
-
-/** 切换播放/暂停 */
 export function togglePlay(): boolean {
 	const video = getPrimaryVideo();
 	if (!video) {
@@ -65,7 +50,7 @@ export function togglePlay(): boolean {
 	}
 }
 
-/** 切换画中画 */
+// eff: toggles Picture-in-Picture mode and attempts to restore focus to the video element afterwards
 export async function togglePip(): Promise<boolean> {
 	const video = getPrimaryVideo();
 	if (!video) {
@@ -79,14 +64,13 @@ export async function togglePip(): Promise<boolean> {
 			await document.exitPictureInPicture();
 			result = false;
 		} else {
-			// 先退出当前 PiP（如有）
 			if (document.pictureInPictureElement) {
 				await document.exitPictureInPicture();
 			}
 			await video.requestPictureInPicture();
 			result = true;
 		}
-		// 延迟恢复焦点 (等待 PiP 动画完成)
+		// note: delay focus restoration to allow for PiP transition animations to complete
 		setTimeout(() => simulateMouseHover(video), 200);
 		return result;
 	} catch (e) {
@@ -95,17 +79,16 @@ export async function togglePip(): Promise<boolean> {
 	}
 }
 
-/** 设置播放速率 (支持音高保持) */
+// eff: applies playback rate to all media elements on the page
+// rule: speed is clamped between 0.1x and 16.0x (browser limitation)
 export function setSpeed(speed: number, preservePitch?: boolean): { speed: number; preservePitch: boolean } {
 	const clampedSpeed = Math.max(0.1, Math.min(16, speed));
 	const medias = getAllMedia();
-
-	// preservesPitch 默认 true (浏览器默认行为)
 	const shouldPreservePitch = preservePitch ?? true;
 
 	medias.forEach(m => {
 		m.playbackRate = clampedSpeed;
-		// HTMLMediaElement.preservesPitch (Chrome 86+, Firefox 80+)
+		// note: HTMLMediaElement.preservesPitch is a standard for maintaining audio pitch during speed shifts
 		if ('preservesPitch' in m) {
 			(m as HTMLMediaElement & { preservesPitch: boolean }).preservesPitch = shouldPreservePitch;
 		}
@@ -115,14 +98,12 @@ export function setSpeed(speed: number, preservePitch?: boolean): { speed: numbe
 	return { speed: clampedSpeed, preservePitch: shouldPreservePitch };
 }
 
-/** 调整速率（增量） */
 export function adjustSpeed(delta: number): { speed: number; preservePitch: boolean } {
 	const video = getPrimaryVideo();
 	const currentSpeed = video?.playbackRate ?? 1;
 	return setSpeed(currentSpeed + delta);
 }
 
-/** 获取当前媒体状态 */
 export function getMediaState(): { playing: boolean; speed: number; pipActive: boolean; preservePitch: boolean } {
 	const video = getPrimaryVideo();
 	const preservePitch = video && 'preservesPitch' in video
@@ -136,7 +117,6 @@ export function getMediaState(): { playing: boolean; speed: number; pipActive: b
 	};
 }
 
-/** 时间跳转 (增量，单位秒) */
 export function seekVideo(delta: number): number {
 	const video = getPrimaryVideo();
 	if (!video) {

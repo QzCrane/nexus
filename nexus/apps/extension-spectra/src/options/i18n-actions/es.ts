@@ -1,4 +1,4 @@
-/** Action 名称 - 西班牙语 */
+/** Action Names - Spanish */
 export const es: Record<string, string> = {
 	none: '(sin asignar)', play_pause: 'Reproducir/Pausar', seek_forward_5s: 'Adelantar 5s',
 	seek_forward_10s: 'Adelantar 10s', seek_forward_30s: 'Adelantar 30s',

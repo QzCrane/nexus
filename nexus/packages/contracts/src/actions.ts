@@ -1,10 +1,6 @@
-/**
- * NEXUS 消息 Action 定义 (单一真相源)
- * 
- * 所有消息名称在这里统一定义，类型和常量都从这里派生
- */
+// goal: single source of truth for message action names and constants
 
-// ========== 消息名称列表 ==========
+// Action name list
 export const NEXUS_ACTIONS = [
 	'AUDIO_GET_STATUS',
 	'AUDIO_SET_CONFIG',
@@ -60,13 +56,13 @@ export const OFFSCREEN_ACTIONS = [
 	'OFFSCREEN_GET_VIZ',
 ] as const;
 
-// ========== 类型 ==========
+// Derived types
 export type NexusActionName = typeof NEXUS_ACTIONS[number];
 export type OffscreenActionName = typeof OFFSCREEN_ACTIONS[number];
 
-// ========== 运行时常量对象 (自动生成) ==========
 type ActionMap<T extends readonly string[]> = { [K in T[number]]: K };
 
+// eff: transform string array to key-pair identical object for runtime usage
 function createActionMap<T extends readonly string[]>(actions: T): ActionMap<T> {
 	const map = {} as ActionMap<T>;
 	for (const action of actions) {
@@ -75,8 +71,5 @@ function createActionMap<T extends readonly string[]>(actions: T): ActionMap<T> 
 	return map;
 }
 
-/** NEXUS 消息常量 */
 export const Actions = createActionMap(NEXUS_ACTIONS);
-
-/** Offscreen 消息常量 */
 export const OffscreenActions = createActionMap(OFFSCREEN_ACTIONS);

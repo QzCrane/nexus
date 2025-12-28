@@ -1,35 +1,6 @@
-/**
- * @nexus/contracts - 纯契约层
- * 
- * 这个包只包含接口和类型定义，不含任何业务逻辑。
- * 
- * ## 设计目的
- * 
- * 1. **最小化 AI 上下文** - AI 只需读取这里即可了解所有公共 API
- * 2. **分离关注点** - 契约与实现完全分离
- * 3. **跨包类型共享** - 所有包共用同一套类型定义
- * 
- * ## 使用示例
- * 
- * ```typescript
- * import type { 
- *   IAudioService, 
- *   AudioConfig,
- *   NexusMessages 
- * } from '@nexus/contracts';
- * 
- * // 依赖接口而非具体实现
- * function createPlayer(audioService: IAudioService) {
- *   audioService.setVolume(150);
- * }
- * ```
- * 
- * @packageDocumentation
- */
+// goal: pure contract layer with zero logic for cross-package type sharing and AI context efficiency
 
-// ============================================
-// 通用类型
-// ============================================
+// Common types
 export type {
   Result,
   Maybe,
@@ -40,9 +11,7 @@ export type {
   Unsubscribe
 } from './common.types.js';
 
-// ============================================
-// 音频契约
-// ============================================
+// Audio contracts
 export type {
   AudioConfig,
   AudioMode,
@@ -56,9 +25,7 @@ export type {
 
 export { DEFAULT_AUDIO_CONFIG } from './audio.contracts.js';
 
-// ============================================
-// 消息契约
-// ============================================
+// Messaging contracts
 export type {
   NexusMessages,
   NexusAction,
@@ -68,9 +35,7 @@ export type {
   INexusRouter
 } from './messages.contracts.js';
 
-// ============================================
-// 设置契约
-// ============================================
+// Settings contracts
 export type {
   GlobalSettings,
   SupportedLanguage,
@@ -80,9 +45,7 @@ export type {
 
 export { DEFAULT_GLOBAL_SETTINGS } from './settings.contracts.js';
 
-// ============================================
-// 注册表契约
-// ============================================
+// Registry contracts
 export type {
   DomainSource,
   DomainEntry,
@@ -90,9 +53,7 @@ export type {
   RegistryResult
 } from './registry.contracts.js';
 
-// ============================================
-// 快捷键契约
-// ============================================
+// Hotkey contracts
 export type {
   HotkeyAction,
   KeyModifiers,
@@ -113,8 +74,6 @@ export {
   PRESET_BINDINGS
 } from './hotkeys.contracts.js';
 
-// ============================================
-// 消息 Action 常量
-// ============================================
+// Message Action constants
 export { Actions, OffscreenActions, NEXUS_ACTIONS, OFFSCREEN_ACTIONS } from './actions.js';
 export type { NexusActionName, OffscreenActionName } from './actions.js';

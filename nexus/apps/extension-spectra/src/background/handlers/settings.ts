@@ -1,11 +1,9 @@
-/**
- * SPECTRA Background - 设置处理器
- */
+// goal: handles messages for retrieving and updating global extension settings
 
 import { router, storage } from '../state';
 import { Actions } from '@nexus/contracts';
 
-/** 注册设置相关的消息处理器 */
+// eff: registers listeners for SETTINGS_GET and SETTINGS_UPDATE actions
 export function registerSettingsHandlers(): void {
 	router.on('SETTINGS_GET', async () => {
 		return storage.getGlobalSettings();
@@ -14,6 +12,7 @@ export function registerSettingsHandlers(): void {
 	router.on('SETTINGS_UPDATE', async (req) => {
 		await storage.setGlobalSettings(req.settings);
 
+		// eff: broadcasts the updated settings to all open tabs to ensure cross-tab UI consistency
 		const tabs = await chrome.tabs.query({});
 		for (const tab of tabs) {
 			if (tab.id) {

@@ -1,8 +1,4 @@
-/**
- * SPECTRA Background - 处理器索引
- * 
- * 统一导出所有消息处理器
- */
+// goal: aggregation point for all functional message handlers in the background service worker
 
 export { registerAudioHandlers } from './audio';
 export { registerSettingsHandlers } from './settings';

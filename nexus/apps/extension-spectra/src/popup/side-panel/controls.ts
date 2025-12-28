@@ -1,16 +1,14 @@
 /**
- * SPECTRA Popup - 侧边面板控件绑定
- * 职责：绑定侧边面板中的 Audio/EQ 等控件事件
+ * SPECTRA Popup - Side Panel Control Binding
+ * Binding Audio/EQ controls in the side panel.
  */
 
 import type { AudioConfig } from '@nexus/kernel';
 import { initSidePanelEqCurve, drawSidePanelEqCurve } from './eq-curve';
 import { bindSpeedControls, addWheelSupport, syncSidePanelSpeed } from './speed-controls';
 
-// 导出供外部使用
 export { syncSidePanelSpeed };
 
-/** 侧边面板控件元素 */
 interface SidePanelControls {
 	comp: HTMLInputElement | null;
 	bass: HTMLInputElement | null;
@@ -27,7 +25,6 @@ interface SidePanelControls {
 
 let currentConfig: AudioConfig | null = null;
 
-/** 获取侧边面板控件元素 */
 function getControls(): SidePanelControls {
 	const panel = document.getElementById('side-panel');
 	const empty = document.querySelectorAll('.never-match') as NodeListOf<HTMLInputElement>;
@@ -54,7 +51,6 @@ function getControls(): SidePanelControls {
 	};
 }
 
-/** 绑定侧边面板控件 */
 export function bindSidePanelControls(
 	config: AudioConfig,
 	updateFn: (changes: Partial<AudioConfig>) => void,
@@ -66,20 +62,19 @@ export function bindSidePanelControls(
 	// Audio chips
 	bindAudioChips(c, config, updateFn);
 
-	// Speed 速度控制
+	// Speed
 	bindSpeedControls(c, tabId);
 
-	// Pan 声道平衡 + 滚轮
+	// Pan + Wheel
 	bindPanControl(c, config, updateFn);
 
-	// Delay 声画同步 + 滚轮
+	// Delay + Wheel
 	bindDelayControl(c, config, updateFn);
 
 	// EQ sliders
 	bindEq(c, config, updateFn);
 }
 
-/** 绑定音频开关 */
 function bindAudioChips(c: SidePanelControls, config: AudioConfig, updateFn: (changes: Partial<AudioConfig>) => void): void {
 	if (c.comp) {
 		c.comp.checked = config.compressor;
@@ -95,7 +90,6 @@ function bindAudioChips(c: SidePanelControls, config: AudioConfig, updateFn: (ch
 	}
 }
 
-/** 绑定声道平衡 */
 function bindPanControl(c: SidePanelControls, config: AudioConfig, updateFn: (changes: Partial<AudioConfig>) => void): void {
 	if (c.panSlider) {
 		c.panSlider.value = String(config.pan ?? 0);
@@ -104,7 +98,6 @@ function bindPanControl(c: SidePanelControls, config: AudioConfig, updateFn: (ch
 	}
 }
 
-/** 绑定延迟控制 */
 function bindDelayControl(c: SidePanelControls, config: AudioConfig, updateFn: (changes: Partial<AudioConfig>) => void): void {
 	if (c.delaySlider) {
 		c.delaySlider.value = String(config.delay ?? 0);
@@ -121,7 +114,6 @@ function bindDelayControl(c: SidePanelControls, config: AudioConfig, updateFn: (
 	}
 }
 
-/** 绑定 EQ 滑块 */
 function bindEq(c: SidePanelControls, config: AudioConfig, updateFn: (changes: Partial<AudioConfig>) => void): void {
 	const panel = document.getElementById('side-panel');
 	const sliderRow = panel?.querySelector('.sp-eq-sliders-row') as HTMLElement | null;
@@ -144,7 +136,7 @@ function bindEq(c: SidePanelControls, config: AudioConfig, updateFn: (changes: P
 			updateFn({ eqValues: arr });
 		};
 
-		// EQ 滑块滚轮支持
+		// EQ Slider Wheel
 		inp.parentElement?.addEventListener('wheel', (e) => {
 			e.preventDefault();
 			let v = parseFloat(inp.value);
@@ -162,12 +154,10 @@ function bindEq(c: SidePanelControls, config: AudioConfig, updateFn: (changes: P
 	drawSidePanelEqCurve(c.eqCanvas, c.eqInputs);
 }
 
-/** 更新值显示 */
 function updateValDisplay(el: HTMLElement | undefined, v: number): void {
 	if (el) el.innerText = (v > 0 ? '+' : '') + v.toFixed(1);
 }
 
-/** 同步侧边面板状态 */
 export function syncSidePanelState(config: AudioConfig): void {
 	currentConfig = config;
 	const c = getControls();

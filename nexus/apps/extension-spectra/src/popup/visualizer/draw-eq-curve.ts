@@ -1,23 +1,17 @@
 /**
- * SPECTRA Popup - EQ 曲线绘制
+ * SPECTRA Popup - EQ Curve Drawing
  */
 
 import { EQ_GRADIENT, UI_SIZES } from '../constants';
 import type { MetricsCacheData } from './metrics-cache';
 
-/** 曲线控制点 */
 interface Point {
   x: number;
   y: number;
 }
 
 /**
- * 绘制 EQ 曲线
- * 
- * @param ctx - 2D 渲染上下文
- * @param values - EQ 值数组 (10段, -12 ~ +12 dB)
- * @param cache - 坐标缓存数据
- * @param color - 曲线主色 (可选)
+ * Draws smooth EQ curve using Catmull-Rom spline
  */
 export function drawEqCurve(
   ctx: CanvasRenderingContext2D,
@@ -30,20 +24,19 @@ export function drawEqCurve(
   const w = cache.width;
   const h = cache.height;
 
-  // 构建控制点
   const points: Point[] = [];
 
-  // 确保 values 至少有 10 个元素
+  // Padding values to ensure at least 10 elements
   const safeValues = [...values];
   while (safeValues.length < 10) safeValues.push(0);
 
-  // 左边界延伸点
+  // Left boundary extension
   points.push({
     x: -20,
     y: cache.midY - (safeValues[0]! * cache.scaleFactor),
   });
 
-  // 10 个滑块位置
+  // 10 slider positions
   for (let i = 0; i < 10; i++) {
     points.push({
       x: cache.xCoords[i]!,
@@ -51,20 +44,20 @@ export function drawEqCurve(
     });
   }
 
-  // 右边界延伸点
+  // Right boundary extension
   points.push({
     x: w + 20,
     y: cache.midY - (safeValues[9]! * cache.scaleFactor),
   });
 
-  // 重置变换并设置 DPR 缩放
+  // Reset transform & apply DPR
   ctx.resetTransform();
   ctx.scale(cache.dpr, cache.dpr);
   ctx.clearRect(0, 0, w, h);
 
   if (points.length < 2) return;
 
-  // 使用 Catmull-Rom 样条绘制平滑曲线
+  // Catmull-Rom spline
   const path = new Path2D();
   const firstPoint = points[0]!;
   path.moveTo(firstPoint.x, firstPoint.y);
@@ -84,20 +77,20 @@ export function drawEqCurve(
     path.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
   }
 
-  // 创建填充区域
+  // Fill area
   const fillPath = new Path2D(path);
   fillPath.lineTo(w, h);
   fillPath.lineTo(0, h);
   fillPath.closePath();
 
-  // 渐变填充 (基于主色)
+  // Gradient fill (based on main color)
   const grad = ctx.createLinearGradient(0, 0, 0, h);
   grad.addColorStop(0, color.replace(')', ', 0.25)').replace('rgb', 'rgba'));
   grad.addColorStop(1, color.replace(')', ', 0.0)').replace('rgb', 'rgba'));
   ctx.fillStyle = grad;
   ctx.fill(fillPath);
 
-  // 描边曲线
+  // Stroke curve
   ctx.shadowColor = color.replace(')', ', 0.5)').replace('rgb', 'rgba');
   ctx.shadowBlur = UI_SIZES.EQ_CURVE_SHADOW_BLUR;
   ctx.shadowOffsetY = 2;

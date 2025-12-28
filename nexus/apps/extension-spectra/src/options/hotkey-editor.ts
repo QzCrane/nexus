@@ -1,54 +1,46 @@
 /**
- * SPECTRA Options - 快捷键编辑器
+ * SPECTRA Options - Hotkey Editor
  */
 
 import type { HotkeyBinding, HotkeySettings } from '@nexus/contracts';
 import { DEFAULT_MODIFIERS, PRESET_BINDINGS } from '@nexus/contracts';
 import { openModal, formatKeyCombo } from './modal';
 
-// DOM 元素
+// DOM Elements
 const listContainer = document.getElementById('hotkeys-list')!;
 const emptyState = document.getElementById('hotkeys-empty')!;
 const enabledToggle = document.getElementById('hotkeys-enabled') as HTMLInputElement;
 const addBtn = document.getElementById('hotkeys-add')!;
 const resetBtn = document.getElementById('hotkeys-reset')!;
 
-// 当前配置
+// Current Settings
 let settings: HotkeySettings = { enabled: true, bindings: [] };
 
-/** 初始化快捷键编辑器 */
 export async function initHotkeyEditor(): Promise<void> {
-	// 加载配置
 	await loadSettings();
-
-	// 渲染列表
 	renderList();
 
-	// 事件绑定
 	enabledToggle.addEventListener('change', handleToggleEnabled);
 	addBtn.addEventListener('click', handleAdd);
 	resetBtn.addEventListener('click', handleReset);
 }
 
-/** 加载配置 */
 async function loadSettings(): Promise<void> {
 	const result = await chrome.storage.local.get('hotkeySettings');
 	if (result.hotkeySettings) {
 		settings = result.hotkeySettings;
 	} else {
-		// 使用预设
+		// Use presets
 		settings = { enabled: true, bindings: [...PRESET_BINDINGS] };
 	}
 	enabledToggle.checked = settings.enabled;
 }
 
-/** 保存配置 */
 async function saveSettings(): Promise<void> {
 	await chrome.storage.local.set({ hotkeySettings: settings });
 	console.log('[SPECTRA] Hotkey settings saved');
 }
 
-/** 渲染列表 */
 function renderList(): void {
 	listContainer.innerHTML = '';
 
@@ -65,7 +57,6 @@ function renderList(): void {
 	});
 }
 
-/** 创建单个快捷键项 */
 function createHotkeyItem(binding: HotkeyBinding, index: number): HTMLElement {
 	const item = document.createElement('div');
 	item.className = `hotkey-item${binding.enabled ? '' : ' disabled'}`;
@@ -81,7 +72,7 @@ function createHotkeyItem(binding: HotkeyBinding, index: number): HTMLElement {
 		</div>
 	`;
 
-	// 启用切换
+	// Toggle Enable
 	const checkbox = item.querySelector('.hotkey-enable') as HTMLInputElement;
 	checkbox.addEventListener('change', () => {
 		binding.enabled = checkbox.checked;
@@ -89,7 +80,7 @@ function createHotkeyItem(binding: HotkeyBinding, index: number): HTMLElement {
 		saveSettings();
 	});
 
-	// 编辑
+	// Edit
 	const editBtn = item.querySelector('.edit')!;
 	editBtn.addEventListener('click', () => {
 		openModal(binding, (updated) => {
@@ -99,7 +90,7 @@ function createHotkeyItem(binding: HotkeyBinding, index: number): HTMLElement {
 		});
 	});
 
-	// 删除
+	// Delete
 	const deleteBtn = item.querySelector('.delete')!;
 	deleteBtn.addEventListener('click', () => {
 		settings.bindings.splice(index, 1);
@@ -110,13 +101,11 @@ function createHotkeyItem(binding: HotkeyBinding, index: number): HTMLElement {
 	return item;
 }
 
-/** 切换总开关 */
 function handleToggleEnabled(): void {
 	settings.enabled = enabledToggle.checked;
 	saveSettings();
 }
 
-/** 添加新快捷键 */
 function handleAdd(): void {
 	const newBinding: HotkeyBinding = {
 		id: `custom-${Date.now()}`,
@@ -132,7 +121,7 @@ function handleAdd(): void {
 	});
 }
 
-/** 重置为预设 */
+/** Reset to Presets */
 async function handleReset(): Promise<void> {
 	if (!confirm('Reset all hotkeys to defaults?')) return;
 
@@ -142,7 +131,6 @@ async function handleReset(): Promise<void> {
 	renderList();
 }
 
-/** 格式化动作名称 */
 function formatActionName(action: string): string {
 	return action
 		.replace(/_/g, ' ')

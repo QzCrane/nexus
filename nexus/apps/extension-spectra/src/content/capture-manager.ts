@@ -1,8 +1,5 @@
-/**
- * SPECTRA Content Script - Capture 模式管理
- * 
- * 负责与 Background 通信管理 Tab Capture 状态
- */
+// goal: manages tab capture lifecycle and state from the content script context
+// ban: direct WebAudio manipulation is prohibited in the content script; all processing is delegated to the offscreen worker
 
 import type { NexusMessenger, AudioConfig } from '@nexus/kernel';
 import { Actions } from '@nexus/contracts';
@@ -11,33 +8,27 @@ import { logger } from '../shared/logger';
 
 const log = logger.content;
 
-/**
- * 创建 Capture 管理器
- */
+// goal: factory for managing capture state, requests, and configuration synchronization
 export function createCaptureManager(messenger: NexusMessenger) {
-	/** Capture 是否活跃 */
 	let isCaptureActive = false;
-	/** 是否正在请求切换 */
 	let isPending = false;
 
 	return {
-		/** 获取当前 Capture 状态 */
 		isActive(): boolean {
 			return isCaptureActive;
 		},
 
-		/** 设置 Capture 状态 (由消息回调调用) */
 		setActive(active: boolean): void {
 			isCaptureActive = active;
 			isPending = false;
 		},
 
-		/** 是否正在请求中 */
 		isPending(): boolean {
 			return isPending;
 		},
 
-		/** 请求切换 Capture 模式 */
+		// eff: sends a CAPTURE_TOGGLE request to the background service worker
+		// rule: suppresses requests if a toggle is already pending or if the extension context is invalidated
 		request(enabled: boolean, config: AudioConfig): void {
 			if (isPending) {
 				log.debug('Capture request skipped: pending');
@@ -60,13 +51,14 @@ export function createCaptureManager(messenger: NexusMessenger) {
 					log.error('Capture request failed:', e);
 				})
 				.finally(() => {
+					// note: use a 500ms debounce to match the background capture lock
 					setTimeout(() => {
 						isPending = false;
 					}, 500);
 				});
 		},
 
-		/** 处理消息回调 */
+		// eff: synchronizes local capture state with broadcasted background updates
 		handleMessage(message: { action?: string; payload?: { enabled?: boolean }; enabled?: boolean }): boolean {
 			if (message.action === Actions.CAPTURE_STATE_CHANGE) {
 				const enabled = message.payload?.enabled ?? message.enabled ?? false;
@@ -78,12 +70,11 @@ export function createCaptureManager(messenger: NexusMessenger) {
 			return false;
 		},
 
-		/** 同步配置到已激活的 Capture (用于滚轮/快捷键调音量) */
+		// goal: sends high-frequency audio parameter updates (EQ, volume) to the active capture session
 		syncConfig(config: AudioConfig): void {
-			if (!isCaptureActive) return;
-			if (!isExtensionContextValid()) return;
+			if (!isCaptureActive || !isExtensionContextValid()) return;
 
-			// 🔴 使用 CAPTURE_UPDATE_CONFIG 而非 CAPTURE_TOGGLE，避免互斥锁阻塞
+			// note: uses a dedicated update action to bypass background toggle locks
 			safeSend(() => messenger.send('CAPTURE_UPDATE_CONFIG', { config })).catch(() => { });
 		},
 	};

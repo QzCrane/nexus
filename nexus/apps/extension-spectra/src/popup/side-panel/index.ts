@@ -1,6 +1,6 @@
 /**
- * SPECTRA Popup - 侧边面板逻辑
- * 职责：点击 favicon 展开/收起左侧扩展面板，固定/取消固定
+ * SPECTRA Popup - Side Panel Logic
+ * Toggle side panel, pinning, and manage state.
  */
 
 import type { AudioConfig } from '@nexus/kernel';
@@ -9,17 +9,14 @@ import { bindVideoControls, setVideoControlTabId } from './video-controls';
 import { bindFooterActions } from './footer-actions';
 import { getCardRegistration as getCardReg, updateCardConfig as updateReg } from './registry';
 
-// 重导出 registry 函数
 export { registerCard, getCardRegistration } from './registry';
 
-/** 侧边面板状态 */
 interface SidePanelState {
 	isOpen: boolean;
 	isPinned: boolean;
 	currentTabId: number | null;
 }
 
-/** 侧边面板元素引用 */
 interface SidePanelElements {
 	panel: HTMLElement;
 	icon: HTMLImageElement;
@@ -36,20 +33,14 @@ const state: SidePanelState = {
 
 let elements: SidePanelElements | null = null;
 
-/**
- * 更新已注册卡片的配置 (带同步)
- */
 export function updateCardConfig(tabId: number, config: AudioConfig): void {
 	updateReg(tabId, config);
-	// 如果当前打开的是这个 tab，同步侧边面板
+	// Sync panel if active for this tab
 	if (state.isOpen && state.currentTabId === tabId) {
 		syncSidePanelState(config);
 	}
 }
 
-/**
- * 初始化侧边面板
- */
 export function initSidePanel(): void {
 	const panel = document.getElementById('side-panel');
 	if (!panel) return;
@@ -62,17 +53,17 @@ export function initSidePanel(): void {
 		btnClose: panel.querySelector('.btn-close-panel') as HTMLElement,
 	};
 
-	// 固定按钮点击
+	// Pin Button
 	elements.btnPin?.addEventListener('click', () => {
 		state.isPinned = !state.isPinned;
 		elements?.btnPin.classList.toggle('active', state.isPinned);
 		chrome.storage.local.set({ sidePanelPinned: state.isPinned });
 	});
 
-	// 关闭按钮点击
+	// Close Button
 	elements.btnClose?.addEventListener('click', () => closeSidePanel());
 
-	// 点击面板外区域关闭（非固定时）
+	// Close on outside click (if not pinned)
 	document.addEventListener('click', (e) => {
 		if (!state.isOpen || state.isPinned) return;
 		const target = e.target as HTMLElement;
@@ -81,18 +72,18 @@ export function initSidePanel(): void {
 		}
 	});
 
-	// 从存储恢复固定状态
+	// Restore Pin state
 	chrome.storage.local.get(['sidePanelPinned'], (r) => {
 		state.isPinned = r.sidePanelPinned ?? false;
 		elements?.btnPin.classList.toggle('active', state.isPinned);
 	});
 
-	// 绑定 Footer 按钮
+	// Footer Actions
 	bindFooterActions();
 }
 
 /**
- * 绑定卡片图标点击事件
+ * Bind Card Icon Click
  */
 export function bindCardIconClick(
 	iconEl: HTMLElement,
@@ -114,59 +105,49 @@ export function bindCardIconClick(
 	});
 }
 
-/** 打开侧边面板 */
 function openSidePanel(tabId: number, title: string, faviconUrl: string): void {
 	if (!elements) return;
 	state.isOpen = true;
 	state.currentTabId = tabId;
 
-	// 更新面板头部信息
 	elements.icon.src = faviconUrl || '';
 	elements.title.textContent = title || 'Settings';
 
-	// 添加打开类
 	document.documentElement.classList.add('side-panel-open');
 
-	// 双重 RAF：确保 Layout 和 Paint 完全完成后再触发 CSS Transition
-	// 这能有效规避首次打开时的布局抖动
+	// Double RAF for smooth transition
 	requestAnimationFrame(() => {
 		requestAnimationFrame(() => {
 			elements?.panel.classList.add('open');
 		});
 	});
 
-	// 绑定控件事件
 	const reg = getCardReg(tabId);
 	if (reg) {
 		bindSidePanelControls(reg.getConfig(), reg.update, tabId);
 	}
 
-	// 绑定视频控制按钮
 	setVideoControlTabId(tabId);
 	bindVideoControls();
 }
 
-/** 关闭侧边面板 */
 function closeSidePanel(): void {
 	if (!elements) return;
 	state.isOpen = false;
 	state.currentTabId = null;
 
-	// 先触发淡出动画
 	elements.panel.classList.remove('open');
 
-	// 等待动画结束后调整窗口尺寸 (200ms 匹配 CSS)
+	// Wait for animation (200ms)
 	setTimeout(() => {
 		document.documentElement.classList.remove('side-panel-open');
 	}, 200);
 }
 
-/** 获取当前打开的 tabId */
 export function getCurrentPanelTabId(): number | null {
 	return state.currentTabId;
 }
 
-/** 检查面板是否打开 */
 export function isSidePanelOpen(): boolean {
 	return state.isOpen;
 }

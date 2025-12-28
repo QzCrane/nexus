@@ -1,10 +1,5 @@
-/**
- * SPECTRA Content Script - Toast 通知
- * 
- * 负责显示临时通知消息 (如自动添加域名到劫持列表)
- */
+// goal: provides transient visual notifications for background processes (e.g. auto-registry additions)
 
-/** Toast 状态 */
 interface ToastState {
 	container: ShadowRoot | null;
 	timer: ReturnType<typeof setTimeout> | null;
@@ -15,9 +10,7 @@ const state: ToastState = {
 	timer: null,
 };
 
-/**
- * 显示 Toast 通知
- */
+// eff: displays a toast message for 3 seconds; re-uses existing shadow host if available
 export function showToast(message: string): void {
 	if (!document.body) return;
 
@@ -36,7 +29,7 @@ export function showToast(message: string): void {
 	state.timer = setTimeout(() => toast.classList.remove('visible'), 3000);
 }
 
-/** 创建 Toast DOM 结构 */
+// goal: injects a shadow DOM host into the page to prevent host site CSS from polluting toast styles
 function createToast(): void {
 	if (!document.body) return;
 

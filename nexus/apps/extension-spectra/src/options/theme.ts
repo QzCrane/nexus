@@ -1,16 +1,15 @@
 /**
- * SPECTRA Options - 主题切换
+ * SPECTRA Options - Theme Switching
  */
 
 const THEME_KEY = 'theme';
 
-/** 初始化主题 */
 export function initTheme(): void {
-	// 加载保存的主题
+	// Load saved theme
 	const saved = localStorage.getItem(THEME_KEY) ?? 'system';
 	applyTheme(saved);
 
-	// 绑定切换按钮
+	// Bind toggle button
 	const btn = document.getElementById('theme-toggle');
 	if (btn) {
 		btn.addEventListener('click', () => {
@@ -24,7 +23,6 @@ export function initTheme(): void {
 	}
 }
 
-/** 应用主题 */
 function applyTheme(theme: string): void {
 	if (theme === 'system') {
 		const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -34,7 +32,6 @@ function applyTheme(theme: string): void {
 	}
 }
 
-/** 更新图标 */
 function updateIcon(theme: string): void {
 	const btn = document.getElementById('theme-toggle');
 	if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';

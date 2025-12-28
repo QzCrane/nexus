@@ -1,5 +1,5 @@
 /**
- * SPECTRA Popup - 设置页逻辑
+ * SPECTRA Popup - Settings Page Logic
  */
 
 import type { GlobalSettings } from '@nexus/kernel';
@@ -15,17 +15,14 @@ import { initRegistryUI, updateRegistryI18n } from './registry-ui';
 import { initPresetsUI, updatePresetsI18n } from './presets-ui';
 import { updateRemoteI18n } from '../../remote';
 
-/** 设置页状态 */
 export interface SettingsState {
   gSettings: GlobalSettings;
   registryEntries: DomainEntry[];
   dict: I18NDict;
 }
 
-/** 卡片渲染回调数组 (供设置变更时触发重绘) */
 export const cardRenderCallbacks: RenderCallback[] = [];
 
-/** 默认全局设置 */
 const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   osdEnabled: true,
   visualizerEnabled: true,
@@ -35,29 +32,25 @@ const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
 };
 
 /**
- * 初始化设置页
- * @returns 初始状态
+ * Initializes settings page
+ * @returns Initial state
  */
 export async function initSettings(): Promise<SettingsState> {
   const ui = getSettingsUIElements();
 
-  // 从存储加载设置 (兼容新旧两种 key)
+  // Load settings (compat with old/new keys)
   const storage = await chrome.storage.local.get(['globalSettings', 'restrictedRegistry', 'userRegistry']);
   let gSettings: GlobalSettings = storage.globalSettings || { ...DEFAULT_GLOBAL_SETTINGS };
 
-  // 读取注册表 (优先使用新 key，fallback 到旧 key)
+  // Read registry (new key > old key)
   let registryEntries: DomainEntry[] = migrateRegistry(storage.restrictedRegistry || storage.userRegistry);
 
-  // 初始化 UI 状态
   initUIState(ui, gSettings, registryEntries);
 
-  // 初始化主题
   initTheme(gSettings.themeMode ?? 'system');
 
-  // 应用语言
   let dict = applyLang(gSettings.lang);
 
-  // 设置变更处理函数
   const saveSettings = () => {
     const selTheme = $<HTMLSelectElement>('set-theme');
     const pauseRetentionInput = $<HTMLInputElement>('set-pause-retention');
@@ -69,17 +62,14 @@ export async function initSettings(): Promise<SettingsState> {
       pauseRetentionSeconds: parseInt(pauseRetentionInput?.value || '60', 10),
     };
 
-    // 应用主题并更新按钮图标
     applyTheme(gSettings.themeMode);
     const btnTheme = $<HTMLButtonElement>('btn-theme');
     if (btnTheme) btnTheme.textContent = THEME_ICONS[gSettings.themeMode];
 
 
-    // 保存并广播
     chrome.storage.local.set({ globalSettings: gSettings });
     broadcastSettings(gSettings);
 
-    // 更新语言和卡片
     dict = applyLang(gSettings.lang);
     updateCardsI18n(dict, gSettings.visualizerEnabled);
     updateRegistryI18n(dict);
@@ -88,25 +78,20 @@ export async function initSettings(): Promise<SettingsState> {
     cardRenderCallbacks.forEach((cb) => cb());
   };
 
-  // 绑定事件
   bindSettingsEvents(ui, saveSettings);
   bindThemeButtonEvent(() => gSettings, (s) => { gSettings = s; });
 
-  // 初始化注册表 UI
   initRegistryUI(registryEntries);
   updateRegistryI18n(dict);
 
-  // 初始化预设管理 UI
   initPresetsUI();
   updatePresetsI18n(dict);
 
-  // 初始化遥控 I18N
   updateRemoteI18n(dict);
 
   return { gSettings, registryEntries, dict };
 }
 
-/** 初始化 UI 状态 */
 function initUIState(
   ui: ReturnType<typeof getSettingsUIElements>,
   gSettings: GlobalSettings,
@@ -119,7 +104,6 @@ function initUIState(
   if (pauseRetentionInput) pauseRetentionInput.value = String(gSettings.pauseRetentionSeconds ?? 60);
 }
 
-/** 初始化主题 */
 function initTheme(themeMode: ThemeMode): void {
   applyTheme(themeMode);
   const selTheme = $<HTMLSelectElement>('set-theme');
@@ -128,7 +112,6 @@ function initTheme(themeMode: ThemeMode): void {
   if (btnTheme) btnTheme.textContent = THEME_ICONS[themeMode];
 }
 
-/** 绑定标准设置事件 */
 function bindSettingsEvents(
   ui: ReturnType<typeof getSettingsUIElements>,
   saveSettings: () => void
@@ -142,7 +125,6 @@ function bindSettingsEvents(
   if (pauseRetentionInput) pauseRetentionInput.onchange = saveSettings;
 }
 
-/** 绑定主题按钮事件 */
 function bindThemeButtonEvent(
   getSettings: () => GlobalSettings,
   setSettings: (s: GlobalSettings) => void
@@ -162,7 +144,6 @@ function bindThemeButtonEvent(
   };
 }
 
-/** 广播设置到所有标签页 */
 function broadcastSettings(gSettings: GlobalSettings): void {
   chrome.tabs.query({}, (tabs) => {
     tabs.forEach((t) => {
