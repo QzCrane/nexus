@@ -1,15 +1,12 @@
-/**
- * SPECTRA Options - Theme Switching
- */
+// goal: manages the options page theme persistence and visual toggle state
 
 const THEME_KEY = 'theme';
 
+// eff: restores the user's preferred theme from storage and binds the toggle button listener
 export function initTheme(): void {
-	// Load saved theme
 	const saved = localStorage.getItem(THEME_KEY) ?? 'system';
 	applyTheme(saved);
 
-	// Bind toggle button
 	const btn = document.getElementById('theme-toggle');
 	if (btn) {
 		btn.addEventListener('click', () => {
@@ -23,6 +20,7 @@ export function initTheme(): void {
 	}
 }
 
+// eff: injects the theme identifier into the document root for CSS targeting, resolving 'system' to light/dark
 function applyTheme(theme: string): void {
 	if (theme === 'system') {
 		const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;

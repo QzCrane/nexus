@@ -1,11 +1,10 @@
-/**
- * SPECTRA Popup - Card DOM Init
- */
+// goal: handles the creation and initial population of a tab control card's DOM structure from a template
 
 import type { I18NDict, CardUIElements } from '../types';
 import { getDomain } from '../utils/dom';
 import { getCardUIElements } from './ui-elements';
 
+// eff: clones the card template, injects tab-specific metadata and translations, and appends it to the popup container
 export function prepareCardDom(params: {
 	template: HTMLTemplateElement;
 	container: HTMLElement;
@@ -21,7 +20,7 @@ export function prepareCardDom(params: {
 	const ui = getCardUIElements(cardEl);
 	const domain = getDomain(tab.url || '');
 
-	// Some elements might be in side panel, check existence
+	// note: apply static i18n dictionary values to text nodes that don't change during the tab lifecycle
 	if (ui.tComp) ui.tComp.innerText = dict.comp;
 	if (ui.tBass) ui.tBass.innerText = dict.bass;
 	if (ui.tMono) ui.tMono.innerText = dict.mono;

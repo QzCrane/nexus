@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - Card Module Exports
- */
+// goal: aggregation layer for the card component, orchestrating state, rendering, and cross-process messaging for individual tab controls
 
 export { initCard } from './init';
 

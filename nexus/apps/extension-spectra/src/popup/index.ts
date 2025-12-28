@@ -1,8 +1,4 @@
-/**
- * SPECTRA Popup - Main Entry
- * 
- * Aggregates all modules and initializes Popup UI.
- */
+// goal: main entry point for the SPECTRA popup; orchestrates UI initialization and tab-specific card rendering
 
 import { $, isRestrictedUrl } from './utils';
 import { initNavigation } from './views/navigation';
@@ -14,6 +10,7 @@ import { initSidePanel } from './side-panel';
 import { bindRemoteUI } from '../remote';
 import { enableSmoothScroll } from '../shared/smooth-scroll';
 
+// eff: bootstraps the popup UI by identifying active tabs, loading settings, and rendering control cards
 async function main(): Promise<void> {
   enableSmoothScroll();
 
@@ -24,7 +21,7 @@ async function main(): Promise<void> {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     activeTab = tabs[0] || null;
   } catch {
-    // Silent fail
+    // note: failure to query tabs usually indicates the popup was opened in a non-browser context (e.g. devtools)
   }
 
   initNavigation();
@@ -39,6 +36,7 @@ async function main(): Promise<void> {
   let currentSettings = gSettings;
   const getGlobalSettings = () => currentSettings;
 
+  // goal: keep local popup state in sync with global setting updates from the background
   chrome.storage.onChanged.addListener((changes) => {
     if (changes.globalSettings?.newValue) {
       currentSettings = changes.globalSettings.newValue;
@@ -57,14 +55,16 @@ async function main(): Promise<void> {
     return;
   }
 
+  // rule: main-stage is reserved for the current active tab only
   if (activeTab && !isRestrictedUrl(activeTab.url)) {
     try {
+      // eff: establish a persistent port to the active tab's content script to keep the session alive
       const port = chrome.tabs.connect(activeTab.id!, { name: 'popup-connection' });
       port.onDisconnect.addListener(() => {
         void chrome.runtime.lastError;
       });
     } catch {
-      // Silent fail
+      // note: fail silently if the content script is not yet injected or compatible
     }
 
     const mainCardSuccess = await initCard({
@@ -85,6 +85,7 @@ async function main(): Promise<void> {
   let hasBgAudio = false;
 
   try {
+    // goal: render cards for other tabs that were recently audibly active to allow multi-tab management
     const result = await messenger.send('TAB_GET_VISIBLE_TABS');
     const visibleTabIds = result?.tabs ?? [];
     const allTabs = await chrome.tabs.query({});
@@ -113,6 +114,7 @@ async function main(): Promise<void> {
       }
     }
   } catch {
+    // rule: if the prioritized list is unavailable, fallback to iterating all tabs (less performant)
     console.debug('[SPECTRA Popup] TAB_GET_VISIBLE_TABS not available, falling back.');
     const allTabs = await chrome.tabs.query({});
 
@@ -145,6 +147,7 @@ async function main(): Promise<void> {
   const hasMainCard = mainStage.children.length > 0;
   const hasAnyCard = hasMainCard || hasBgAudio;
 
+  // post: toggle empty state UI if no manageable media tabs were discovered
   if (!hasAnyCard) {
     emptyState.classList.remove('hidden');
   } else {

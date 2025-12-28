@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - Card Event Binding
- */
+// goal: binds native DOM events (clicks, inputs, wheel, touch) to audio configuration updates and registry persistence
 
 import type { AudioConfig } from '@nexus/kernel';
 import type { CardUIElements } from '../types';
@@ -21,16 +19,16 @@ export interface EventsParams {
   render: () => void;
 }
 
+// eff: attaches event listeners to the card UI components, managing the lifecycle of user interactions
 export function bindCardEvents(params: EventsParams): void {
   const { ui, state, tabId, tabUrl, update, getCapturing, onMetricsUpdate } = params;
   const domain = getDomain(tabUrl);
 
-  // Enable/Disable switch
   ui.enable.onchange = (e) => {
     const enabled = (e.target as HTMLInputElement).checked;
     update({ enabled });
 
-    // Close Capture when disabled
+    // rule: explicitly terminate the background capture session if the user disables the master switch
     if (!enabled && getCapturing()) {
       state.isCaptureActive = false;
       sendToBackground('CAPTURE_TOGGLE', {
@@ -53,21 +51,19 @@ export function bindCardEvents(params: EventsParams): void {
     handleVolume((e.target as HTMLInputElement).value);
   };
 
-  // Sync state on interaction end
-  const endDragging = () => {
+  // note: manage dragging state across various input modalities to prevent "flicker" during external UI sync
+  const _endDragging = () => {
     state.isDragging = false;
-    params.render ? params.render() : null;
+    params.render?.();
   };
 
-  ui.slider.onchange = () => {
-    state.isDragging = false;
-  };
-
+  ui.slider.onchange = () => { state.isDragging = false; };
   ui.slider.onmouseup = () => { state.isDragging = false; };
   ui.slider.ontouchend = () => { state.isDragging = false; };
   ui.slider.onmousedown = () => { state.isDragging = true; };
   ui.slider.ontouchstart = () => { state.isDragging = true; };
 
+  // eff: enable rapid volume adjustment via mouse wheel with preventDefault to avoid scrolling the popup body
   ui.sliderArea.addEventListener('wheel', (e) => {
     e.preventDefault();
     if (!state.config.enabled) return;
@@ -81,12 +77,10 @@ export function bindCardEvents(params: EventsParams): void {
 
   ui.mute.onclick = () => update({ muted: !state.config.muted });
 
-  // Switches (might be in Side Panel)
   if (ui.comp) ui.comp.onchange = (e) => update({ compressor: (e.target as HTMLInputElement).checked });
   if (ui.bass) ui.bass.onchange = (e) => update({ bass: (e.target as HTMLInputElement).checked });
   if (ui.mono) ui.mono.onchange = (e) => update({ mono: (e.target as HTMLInputElement).checked });
 
-  // EQ Drawer (might be in Side Panel)
   if (ui.eqTrigger && ui.eqDrawer) {
     ui.eqTrigger.onclick = () => {
       ui.eqDrawer.classList.toggle('open');
@@ -94,11 +88,11 @@ export function bindCardEvents(params: EventsParams): void {
       if (arrow) {
         arrow.textContent = ui.eqDrawer.classList.contains('open') ? '▲' : '▼';
       }
+      // note: trigger metric recalculation after the CSS transition finishes to align the curve spline
       setTimeout(onMetricsUpdate, TIMING.EQ_DRAWER_DELAY);
     };
   }
 
-  // EQ Sliders
   if (ui.eqInputs && ui.eqInputs.length > 0) {
     ui.eqInputs.forEach((inp, i) => {
       inp.oninput = (e) => {
@@ -127,6 +121,7 @@ export function bindCardEvents(params: EventsParams): void {
       const s = (r.siteSettings as Record<string, AudioConfig>) || {};
       s[domain] = state.config;
       chrome.storage.local.set({ siteSettings: s }, () => {
+        // feedback: provide a transient visual confirmation on the save button
         const old = ui.btnSave.innerText;
         ui.btnSave.innerText = 'OK';
         setTimeout(() => { ui.btnSave.innerText = old; }, TIMING.BUTTON_FEEDBACK_DURATION);

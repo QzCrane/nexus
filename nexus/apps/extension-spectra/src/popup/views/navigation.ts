@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - View Navigation
- */
+// goal: manages transitions between the main control view and the settings panel within the popup
 
 import { $, $required } from '../utils/dom';
 import { UI_SIZES } from '../constants';
@@ -12,6 +10,7 @@ interface NavigationState {
   viewContainer: HTMLElement;
 }
 
+// eff: initializes click handlers for view switching and manages container min-height during transitions
 export function initNavigation(): NavigationState {
   const viewMain = $required<HTMLElement>('view-main');
   const viewSettings = $required<HTMLElement>('view-settings');
@@ -41,6 +40,7 @@ export function initNavigation(): NavigationState {
       viewMain.classList.remove('active');
       viewSettings.classList.add('active');
 
+      // rule: ensure the settings view has a minimum height to avoid layout collapse if the main view was very small
       if (mainHeight < UI_SIZES.SETTINGS_MIN_HEIGHT) {
         viewContainer.style.minHeight = `${UI_SIZES.SETTINGS_MIN_HEIGHT}px`;
       }
@@ -53,7 +53,7 @@ export function initNavigation(): NavigationState {
       viewMain.classList.add('active');
       viewContainer.style.minHeight = '';
 
-      // Force rerender to sync UI state
+      // note: trigger rerender of all cards on return to main view to ensure UI state (sliders, toggles) is perfectly synced
       requestAnimationFrame(() => {
         cardRenderCallbacks.forEach((cb) => cb());
       });

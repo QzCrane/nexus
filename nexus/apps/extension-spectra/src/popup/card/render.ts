@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - Card Render Fn
- */
+// goal: orchestrates DOM updates for a tab control card, syncing visual state with internal audio configuration
 
 import type { CardUIElements } from '../types';
 import type { CardInternalState } from './types';
@@ -17,6 +15,7 @@ export interface RenderParams {
   getGlobalSettings: () => GlobalSettings;
 }
 
+// post: returns a sync-render function that updates HTML elements, CSS variables, and canvas overlays based on current state
 export function createRenderFn(params: RenderParams): () => void {
   const { ui, state, getCapturing, drawEqCurve, getVizEnabled, getGlobalSettings } = params;
 
@@ -40,7 +39,7 @@ export function createRenderFn(params: RenderParams): () => void {
 
     const actualCapturing = getCapturing();
     const settings = getGlobalSettings();
-    // Predictive logic when Capture not active
+    // note: use predictive logic to determine if the next volume change will likely trigger a capture transition
     const isPredictedCapture = !actualCapturing && predictCapture({
       config,
       isRestricted: state.isRestrictedSite,
@@ -49,7 +48,7 @@ export function createRenderFn(params: RenderParams): () => void {
     const isCapture = actualCapturing || isPredictedCapture;
     const isMutedOrZero = muted || config.volume === 0;
 
-    // Capture = Purple, Native = Blue, Muted = Gray
+    // rule: dynamic color coding to indicate source/mode status (Gray: Silenced, Purple: High-Fidelity Capture, Blue: Standard)
     let fillColor: string;
     if (isMutedOrZero) {
       fillColor = COLORS.MUTED;
@@ -65,14 +64,12 @@ export function createRenderFn(params: RenderParams): () => void {
 
     renderVolumeIcon(ui.mute, muted, config.volume);
 
-    // Switches (might be in Side Panel)
     if (ui.comp) ui.comp.checked = config.compressor;
     if (ui.bass) ui.bass.checked = config.bass;
     if (ui.mono) ui.mono.checked = config.mono;
 
-    // EQ Sliders
     ui.eqInputs.forEach((inp, i) => {
-      // Prevent jitter while dragging
+      // rule: skip input value updates if the element is focused to prevent "cursor jumping" during user interaction
       if (document.activeElement !== inp) {
         inp.value = String(config.eqValues?.[i] ?? 0);
       }
@@ -92,6 +89,7 @@ export function createRenderFn(params: RenderParams): () => void {
   };
 }
 
+// eff: updates the mute button icon glyph and transparency based on silence/boost status
 function renderVolumeIcon(muteBtn: HTMLElement, muted: boolean, volume: number): void {
   muteBtn.innerHTML = '';
   const iconSpan = document.createElement('span');

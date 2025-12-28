@@ -1,7 +1,4 @@
-/**
- * SPECTRA Popup - Side Panel Control Binding
- * Binding Audio/EQ controls in the side panel.
- */
+// goal: binds advanced audio controls in the side panel to configuration update functions and state synchronization
 
 import type { AudioConfig } from '@nexus/kernel';
 import { initSidePanelEqCurve, drawSidePanelEqCurve } from './eq-curve';
@@ -25,6 +22,7 @@ interface SidePanelControls {
 
 let currentConfig: AudioConfig | null = null;
 
+// note: retrieve all side panel elements globally to support dynamic tab switching and lazy initialization
 function getControls(): SidePanelControls {
 	const panel = document.getElementById('side-panel');
 	const empty = document.querySelectorAll('.never-match') as NodeListOf<HTMLInputElement>;
@@ -51,6 +49,7 @@ function getControls(): SidePanelControls {
 	};
 }
 
+// eff: binds all side panel sliders, inputs, and switches to the provided update function for a specific tab
 export function bindSidePanelControls(
 	config: AudioConfig,
 	updateFn: (changes: Partial<AudioConfig>) => void,
@@ -59,19 +58,10 @@ export function bindSidePanelControls(
 	currentConfig = config;
 	const c = getControls();
 
-	// Audio chips
 	bindAudioChips(c, config, updateFn);
-
-	// Speed
 	bindSpeedControls(c, tabId);
-
-	// Pan + Wheel
 	bindPanControl(c, config, updateFn);
-
-	// Delay + Wheel
 	bindDelayControl(c, config, updateFn);
-
-	// EQ sliders
 	bindEq(c, config, updateFn);
 }
 
@@ -127,6 +117,7 @@ function bindEq(c: SidePanelControls, config: AudioConfig, updateFn: (changes: P
 		inp.oninput = (e) => {
 			const val = parseFloat((e.target as HTMLInputElement).value);
 			updateValDisplay(c.eqVals[i], val);
+			// note: immediately redraw the visual curve during input for responsive feedback, but defer config persistence to 'onchange' or 'onwheel'
 			drawSidePanelEqCurve(c.eqCanvas, c.eqInputs);
 		};
 
@@ -136,7 +127,6 @@ function bindEq(c: SidePanelControls, config: AudioConfig, updateFn: (changes: P
 			updateFn({ eqValues: arr });
 		};
 
-		// EQ Slider Wheel
 		inp.parentElement?.addEventListener('wheel', (e) => {
 			e.preventDefault();
 			let v = parseFloat(inp.value);
@@ -158,6 +148,7 @@ function updateValDisplay(el: HTMLElement | undefined, v: number): void {
 	if (el) el.innerText = (v > 0 ? '+' : '') + v.toFixed(1);
 }
 
+// eff: bulk updates the side panel UI elements when the active tab's audio configuration changes externally
 export function syncSidePanelState(config: AudioConfig): void {
 	currentConfig = config;
 	const c = getControls();

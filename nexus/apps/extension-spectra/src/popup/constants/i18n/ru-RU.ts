@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - I18N 俄语
- */
+// goal: provides the Russian (ru-RU) localization dictionary for the SPECTRA popup
 
 import type { I18NDict } from '../../types';
 

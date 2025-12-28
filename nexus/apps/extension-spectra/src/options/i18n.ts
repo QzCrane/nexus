@@ -1,12 +1,11 @@
-/**
- * SPECTRA Options - Internationalization
- */
+// goal: manages internationalization for the options page, including language persistence and dynamic text injection
 
 import { DICT } from './i18n-dict';
 
 let currentLang = 'en-US';
 let onLangChangeCallbacks: (() => void)[] = [];
 
+// eff: loads the preferred language from global settings, binds the selector, and performs the initial text injection
 export async function initI18n(): Promise<void> {
 	try {
 		const result = await chrome.storage.local.get('globalSettings');
@@ -27,7 +26,7 @@ export async function initI18n(): Promise<void> {
 				});
 			} catch { /* ignore */ }
 			applyI18n();
-			// Trigger callbacks (re-render dynamic content)
+			// note: notify dynamic modules (like the slots editor) to re-render in the new language
 			onLangChangeCallbacks.forEach(cb => cb());
 		});
 	}
@@ -35,6 +34,7 @@ export async function initI18n(): Promise<void> {
 	applyI18n();
 }
 
+// eff: traverses the DOM for elements with 'data-i18n' attributes and injects the corresponding dictionary value
 function applyI18n(): void {
 	const dict = DICT[currentLang] ?? DICT['en-US'];
 	if (!dict) return;
@@ -47,7 +47,7 @@ function applyI18n(): void {
 	});
 }
 
-/** Get Translation */
+// post: returns the translated string for a given key, defaulting to the key itself if no match is found
 export function t(key: string): string {
 	const dict = DICT[currentLang] ?? DICT['en-US'];
 	return dict?.[key] ?? key;
@@ -57,9 +57,9 @@ export function getCurrentLang(): string {
 	return currentLang;
 }
 
+// eff: registers a callback to be executed whenever the user changes the active interface language
 export function onLangChange(callback: () => void): void {
 	onLangChangeCallbacks.push(callback);
 }
 
-// Re-export Action Names
 export { getActionName } from './i18n-actions';

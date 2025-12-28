@@ -1,6 +1,4 @@
-/**
- * // goal: Export lifecycle functionality (MediaObserver, Intervals, UserInteraction, Fullscreen, Navigation)
- */
+// goal: re-exports standard lifecycle management components including media observers, reporting intervals, and event listeners
 
 export { createMediaObserver, hasMediaElements } from './media-observer';
 export {

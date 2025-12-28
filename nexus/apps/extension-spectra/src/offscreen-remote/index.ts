@@ -1,13 +1,8 @@
-/**
- * SPECTRA Remote - Offscreen PeerJS Service (Multi-Session)
- * 
- * Responsibility: Run multiple PeerJS connections in Offscreen Document
- * Design: Each tab has an isolated session, distinguished by tabId
- */
+// goal: manages multi-session PeerJS connectivity within an offscreen document for remote control
+// rule: each browser tab maintains an isolated session identified by its tabId to allow concurrent remote control
 
 import Peer, { DataConnection } from 'peerjs';
 
-/** Remote Commands */
 type RemoteCommand =
 	| 'volume_up' | 'volume_down' | 'volume_max' | 'volume_100'
 	| 'mute' | 'play_pause'
@@ -24,7 +19,7 @@ interface RemoteSession {
 	connection: DataConnection | null;
 }
 
-/** Session Store: tabId -> session */
+// sessions: tabId -> RemoteSession; high-volatile cache for active WebRTC pairings
 const sessions = new Map<number, RemoteSession>();
 
 const LOG = '[SPECTRA Remote Offscreen]';
@@ -38,7 +33,7 @@ function generateSessionId(): string {
 	return id;
 }
 
-/** Create Session (Preserves existing session for tabId) */
+// post: returns an existing session for the tabId or creates a new PeerJS instance
 async function createSession(tabId: number): Promise<RemoteSession> {
 	const existing = sessions.get(tabId);
 	if (existing) {
@@ -74,7 +69,7 @@ async function createSession(tabId: number): Promise<RemoteSession> {
 				console.log(LOG, `[Tab ${tabId}] DataChannel open`);
 				session.connected = true;
 				conn.send({ type: 'connected' });
-				// Notify background of status change + request sync
+				// eff: notify background to trigger UI updates and immediate state broadcast
 				chrome.runtime.sendMessage({ type: 'REMOTE_STATUS_CHANGE', tabId, connected: true });
 				chrome.runtime.sendMessage({ type: 'REMOTE_REQUEST_SYNC', tabId });
 			});
@@ -105,6 +100,7 @@ function handleData(data: unknown, tabId: number): void {
 	const msg = data as { type: string; command?: RemoteCommand };
 	if (msg.type === 'command' && msg.command) {
 		console.log(LOG, `[Tab ${tabId}] Command:`, msg.command);
+		// eff: tunnels remote commands to the background router for execution
 		chrome.runtime.sendMessage({
 			type: 'REMOTE_EXECUTE_COMMAND',
 			command: msg.command,
@@ -113,6 +109,7 @@ function handleData(data: unknown, tabId: number): void {
 	}
 }
 
+// eff: destroys the PeerJS instance and closes associated DataChannels to release network resources
 async function closeSession(tabId: number): Promise<void> {
 	const session = sessions.get(tabId);
 	if (!session) return;
@@ -123,7 +120,6 @@ async function closeSession(tabId: number): Promise<void> {
 	console.log(LOG, `[Tab ${tabId}] Session closed`);
 }
 
-/** Get Session Status (by tabId) */
 function getStatus(tabId?: number) {
 	if (!tabId) {
 		// Fallback: return first session if no tabId
@@ -143,7 +139,7 @@ function getStatus(tabId?: number) {
 	};
 }
 
-/** Send State to Mobile (for specific tab) */
+// eff: serializes the current tab state and sends it over the WebRTC DataChannel to the mobile remote
 function sendStateToMobile(tabId: number, state: unknown): void {
 	const session = sessions.get(tabId);
 	if (session?.connection?.open) {
@@ -151,7 +147,7 @@ function sendStateToMobile(tabId: number, state: unknown): void {
 	}
 }
 
-// Background Message Listener
+// eff: listens for messages from the extension's background script to manage PeerJS sessions
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	if (message.type === 'REMOTE_OFFSCREEN_CREATE') {
 		createSession(message.tabId)

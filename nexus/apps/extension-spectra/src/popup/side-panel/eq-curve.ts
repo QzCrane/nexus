@@ -1,7 +1,4 @@
-/**
- * SPECTRA Popup - Side Panel EQ Curve
- * Clone of draw-eq-curve.ts + MetricsCache implementation.
- */
+// goal: renders the EQ curve in the side panel by bridging input slider positions with the spline drawing utility
 
 import { MetricsCache, type MetricsCacheData } from '../visualizer/metrics-cache';
 import { drawEqCurve } from '../visualizer/draw-eq-curve';
@@ -22,15 +19,13 @@ function internalDraw(): void {
 	drawEqCurve(ctx, values, metricsCache, '#2563eb');
 }
 
+// eff: initializes the metrics observer and establishes the relationship between UI sliders and their canvas coordinates
 export function initSidePanelEqCurve(
 	canvas: HTMLCanvasElement | null,
 	sliderRow: HTMLElement | null,
 	inputs: NodeListOf<HTMLInputElement>
 ): void {
 	if (!canvas || !sliderRow || inputs.length === 0) return;
-
-	const ctx = canvas.getContext('2d');
-	if (!ctx) return;
 
 	cachedCanvas = canvas;
 	cachedInputs = inputs;
@@ -40,6 +35,7 @@ export function initSidePanelEqCurve(
 	metricsCache = new MetricsCache(sliderRow, canvas, internalDraw);
 }
 
+// eff: draws the current EQ curve on the canvas, attempting to use cached metrics first
 export function drawSidePanelEqCurve(
 	canvas: HTMLCanvasElement | null,
 	inputs: NodeListOf<HTMLInputElement>
@@ -57,9 +53,11 @@ export function drawSidePanelEqCurve(
 		return;
 	}
 
+	// rule: use fallback for initial render or when dimensions are changing and the ResizeObserver hasn't fired yet
 	fallbackDraw(ctx, canvas, inputs, values);
 }
 
+// eff: performs a synchronous, one-time metric calculation and draw for situations where the MetricsCache observer is unavailable
 function fallbackDraw(
 	ctx: CanvasRenderingContext2D,
 	canvas: HTMLCanvasElement,
@@ -71,7 +69,7 @@ function fallbackDraw(
 
 	const dpr = window.devicePixelRatio || 1;
 
-	// Update canvas physical size
+	// note: ensure canvas internal resolution matches display density for visual sharpness
 	if (canvas.width !== canvasRect.width * dpr) {
 		canvas.width = canvasRect.width * dpr;
 		canvas.height = canvasRect.height * dpr;
@@ -80,7 +78,7 @@ function fallbackDraw(
 	const w = canvasRect.width;
 	const h = canvasRect.height;
 	const midY = h / 2;
-	const scaleFactor = (h - 20) / 24; // -12 ~ +12 dB
+	const scaleFactor = (h - 20) / 24; // map 24dB range (-12 to +12) to canvas height with padding
 
 	const xCoords: number[] = [];
 	inputs.forEach((inp) => {
@@ -101,6 +99,7 @@ function fallbackDraw(
 	drawEqCurve(ctx, values, cache, '#2563eb');
 }
 
+// post: cleans up DOM observers and shared references to prevent memory leaks after panel is dismissed
 export function destroySidePanelEqCurve(): void {
 	if (metricsCache) {
 		metricsCache.destroy();

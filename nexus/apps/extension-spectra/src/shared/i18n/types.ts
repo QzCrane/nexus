@@ -1,8 +1,7 @@
-/**
- * SPECTRA Shared - I18N Type Definitions
- */
+// goal: defines the schema for internationalization dictionaries shared across SPECTRA components
 
 export interface I18NDict {
+	// group: core settings and visualization
 	settingsTitle: string;
 	osdLabel: string;
 	osdSub: string;
@@ -20,6 +19,7 @@ export interface I18NDict {
 	eqTitle: string;
 	reset: string;
 	save: string;
+	// group: interactive tooltips
 	resetTooltip: string;
 	saveTooltip: string;
 	captureListLabel: string;
@@ -40,7 +40,7 @@ export interface I18NDict {
 	btnThemeTooltip: string;
 	btnSettingsTooltip: string;
 	btnShortcutsTooltip: string;
-	// Side Panel
+	// group: side panel controls (video/audio manipulation)
 	spAudio: string;
 	spPan: string;
 	spDelay: string;
@@ -57,36 +57,35 @@ export interface I18NDict {
 	spHotkeyThis: string;
 	spHotkeyPinned: string;
 	spHotkeyLast: string;
-	// Media Controls
+	// group: media transport buttons
 	btnPause: string;
 	btnPip: string;
 	btnHotkeyTarget: string;
 	btnGotoTab: string;
-	// Settings
+	// group: background tab management
 	pauseRetentionLabel: string;
 	pauseRetentionSub: string;
 	pauseRetentionUnit: string;
-	// Common Tooltips
+	// group: specific action tooltips
 	tipPinPanel: string;
 	tipClose: string;
 	tipAdvancedSettings: string;
-	// Side Panel Buttons
 	spResetFx: string;
 	spSaveFx: string;
 	spResetFxTip: string;
 	spSaveFxTip: string;
-	// Video Controls
+	// group: video transformation effects
 	spFullscreen: string;
 	spDim: string;
 	spSeek: string;
 	spSaturate: string;
 	spGrayscale: string;
 	spInvert: string;
-	// Presets
+	// group: preset persistence
 	grpPresets: string;
 	presetsHint: string;
 	btnClearPresets: string;
-	// Remote Control
+	// group: remote control bridge strings
 	btnRemoteTooltip: string;
 	remoteModalTitle: string;
 	remoteSessionCode: string;
@@ -97,10 +96,10 @@ export interface I18NDict {
 	remoteCopied: string;
 	remoteOpenLinkTitle: string;
 	remoteConnectedTooltip: string;
-	// Registry Empty States
+	// group: empty state placeholders for registry lists
 	registryEmptyRestricted: string;
 	registryEmptySafe: string;
-	// CORS Tips (Content Script)
+	// group: content script notifications
 	corsAddedSafe: (domain: string) => string;
 	corsCorrectedSafe: (domain: string) => string;
 }

@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - Utils Exports
- */
+// goal: aggregates and re-exports common popup utilities for DOM manipulation, messaging, and theme management
 
 export {
   messenger,

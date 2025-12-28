@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - Card State Management
- */
+// goal: manages the internal state of a tab control card and orchestrates configuration updates across background and content scripts
 
 import type { AudioConfig, GlobalSettings } from '@nexus/kernel';
 import type { CardInternalState } from './types';
@@ -14,6 +12,7 @@ export function createGetCapturing(
   };
 }
 
+// post: returns an async update function that applies changes optimistically and routes commands based on the active capture mode
 export function createUpdateFn(
   state: CardInternalState,
   tabId: number,
@@ -22,32 +21,28 @@ export function createUpdateFn(
   _getGlobalSettings: () => GlobalSettings
 ): (changes: Partial<AudioConfig>) => void {
   return async (changes: Partial<AudioConfig>) => {
-    // Ignore simple enable/disable toggles for "Interacted" logic
+    // rule: only mark "user interacted" if the change involves an actual audio parameter (not just opening the card)
     const isOperation = Object.keys(changes).some(k => k !== 'enabled');
     if (isOperation) {
       state.userInteracted = true;
     }
 
-    // Optimistic update
+    // eff: apply changes immediately to local state for responsive UI feedback
     state.config = { ...state.config, ...changes };
     const config = state.config;
 
-    // Capture Mode: Direct Sync to Offscreen
     if (state.isCaptureActive) {
-      // 1. Direct to Offscreen
+      // mode: Capture -> Update the offscreen document directly and notify content script for UI synchronization
       sendToBackground('CAPTURE_UPDATE_CONFIG', { tabId, config });
-
-      // 2. Notify Content Script (for badge/UI sync)
       sendToTab(tabId, 'AUDIO_SET_CONFIG', { config }).catch(() => { });
 
-      // 3. Sync Badge
+      // note: ensure badge reflects the active capture and volume status immediately
       state.userInteracted = true;
-
       sendToBackground('BADGE_UPDATE', {
         tabId,
         volume: config.volume,
         muted: config.muted,
-        isCapture: true, // Always true for Capture mode
+        isCapture: true,
         userInteracted: state.userInteracted,
       });
 
@@ -55,7 +50,7 @@ export function createUpdateFn(
       return;
     }
 
-    // Native Mode: Delegate to Content Script
+    // mode: Native -> Delegate processing to the content script; handle potential mode escalation (e.g. forced capture for CORS)
     const response = await sendToTab<{
       success: boolean;
       state: { mode: string; config: AudioConfig };
@@ -66,20 +61,17 @@ export function createUpdateFn(
       const wasCapturing = state.isCaptureActive;
       const needsCapture = suggestedMode === 'CAPTURE';
 
-      // Switch to Capture if suggested
+      // rule: if the content script requests mode escalation, trigger background capture toggle
       if (needsCapture && !wasCapturing) {
         state.isCaptureActive = true;
         state.actualMode = 'CAPTURE';
         sendToBackground('CAPTURE_TOGGLE', { enabled: true, config, tabId });
-      }
-      // Switch to Native if suggested
-      else if (!needsCapture && wasCapturing) {
+      } else if (!needsCapture && wasCapturing) {
         state.isCaptureActive = false;
         state.actualMode = suggestedMode as any;
         sendToBackground('CAPTURE_TOGGLE', { enabled: false, config, tabId });
       }
 
-      // Sync Badge
       if (needsCapture) {
         state.userInteracted = true;
       }

@@ -1,7 +1,5 @@
-/**
- * // goal: Detect dynamic media additions
- * // rule: Debounced (500ms) observation of DOM subtree changes
- */
+// goal: provides real-time detection of dynamic media element additions via DOM mutation monitoring
+// rule: uses a 500ms debounce to prevent performance degradation during rapid DOM updates
 
 import { AudioMode } from '@nexus/audio-engine';
 import { WebAudioController } from '@nexus/audio-engine';
@@ -9,10 +7,8 @@ import { isExtensionContextValid } from '../context-guard';
 import type { PolicyExecutorState } from '../types';
 import type { PolicyExecutor } from '../policy-executor';
 
-/**
- * // eff: Starts MutationObserver
- * // post: Returns cleanup function
- */
+// eff: initializes a MutationObserver on the document root and triggers state re-application upon change detection
+// post: returns a cleanup function to disconnect the observer and clear pending timeouts
 export function createMediaObserver(
 	state: PolicyExecutorState,
 	audioController: WebAudioController,
@@ -21,14 +17,9 @@ export function createMediaObserver(
 	let observerTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	const observer = new MutationObserver(() => {
-		// rule: Stop processing if extension context is invalid
-
+		// rule: execution is halted if the extension context becomes invalid (e.g. extension updated/reloaded)
 		if (observerTimeout) clearTimeout(observerTimeout);
 		observerTimeout = setTimeout(() => {
-			// rule: Re-check validity (delayed execution)
-
-			// eff: Trigger CORS probe (internal deduping prevents redundant checks)
-
 			if (state.activeMode === AudioMode.NATIVE_WEBAUDIO) {
 				audioController.scanAndAttach();
 			}
@@ -41,16 +32,13 @@ export function createMediaObserver(
 		subtree: true,
 	});
 
-	// Return cleanup function
 	return () => {
 		if (observerTimeout) clearTimeout(observerTimeout);
 		observer.disconnect();
 	};
 }
 
-/**
- * // inv: true if any audio/video tag exists
- */
+// inv: returns true if at least one <audio> or <video> element exists in the current document
 export function hasMediaElements(): boolean {
 	const audioCount = document.querySelectorAll('audio').length;
 	const videoCount = document.querySelectorAll('video').length;

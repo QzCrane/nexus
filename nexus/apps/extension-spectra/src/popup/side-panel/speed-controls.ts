@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - Side Panel Speed Controls
- */
+// goal: manages video playback speed controls in the side panel with cross-card synchronization
 
 import { sendToTab } from '../utils/dom';
 
@@ -9,7 +7,7 @@ interface SpeedControls {
 	speedInput: HTMLInputElement | null;
 }
 
-/** Helper: Add wheel support */
+// eff: attaches a wheel listener to a numeric slider or input, enabling high-precision adjustments with defined steps and bounds
 export function addWheelSupport(
 	slider: HTMLInputElement | null,
 	step: number,
@@ -18,6 +16,7 @@ export function addWheelSupport(
 	onUpdate: (value: number) => void
 ): void {
 	if (!slider) return;
+	// note: passive: false is required to support preventDefault() and block page scrolling during adjustment
 	slider.addEventListener('wheel', (e) => {
 		e.preventDefault();
 		let v = parseFloat(slider.value);
@@ -27,6 +26,7 @@ export function addWheelSupport(
 	}, { passive: false });
 }
 
+// eff: binds side panel speed slider and input to the current tab's content script, ensuring bidirectional UI sync
 export function bindSpeedControls(c: SpeedControls, tabId: number): void {
 	const updateSpeed = async (speed: number) => {
 		const clampedSpeed = Math.max(0.25, Math.min(16, speed));
@@ -69,13 +69,13 @@ export function bindSpeedControls(c: SpeedControls, tabId: number): void {
 	}
 }
 
-/** Sync card input from side panel */
+// note: propagates speed changes from the advanced panel back to the main card UI for visual consistency
 function syncCardSpeedInput(speed: number): void {
 	const cardInputs = document.querySelectorAll('.speed-input') as NodeListOf<HTMLInputElement>;
 	cardInputs.forEach(inp => inp.value = speed.toFixed(2));
 }
 
-/** Sync speed display (export for external use) */
+// eff: updates the side panel speed UI elements when the value is changed elsewhere (e.g. from the main card or content script sync)
 export function syncSidePanelSpeed(speed: number): void {
 	const panel = document.getElementById('side-panel');
 	if (!panel) return;

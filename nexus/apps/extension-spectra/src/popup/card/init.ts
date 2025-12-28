@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - initCard
- */
+// goal: main entry point for initializing a tab control card, aggregating status probing, DOM setup, and event binding
 
 import { predictCapture } from '@nexus/audio-engine';
 import { getAudioConfig, type GlobalSettings } from '@nexus/kernel';
@@ -17,16 +15,17 @@ import { setupCardMessaging } from './messaging';
 import { prepareCardDom } from './dom-init';
 import { bindCardIconClick, registerCard } from '../side-panel';
 
+// post: returns true if card was successfully initialized and appended to the container; false if the tab is non-responsive or should be skipped
 export async function initCard(params: InitCardParams): Promise<boolean> {
   const { container, template, tab, dict, registryEntries, getGlobalSettings, createEqCurveDrawer } = params;
 
   if (!tab.id) return false;
   const tabId = tab.id;
 
-  // Check audio status
+  // note: probe the content script to verify connectivity and retrieve the current playback/paused state
   const status = await sendToTab<ContentStatusResponse>(tabId, 'AUDIO_GET_STATUS', {});
   if (!status) {
-    // Content Script died
+    // rule: abort card creation if the content script is dead or unreachable (e.g. extension updated but page not refreshed)
     return false;
   }
 
@@ -39,11 +38,11 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
       tabId,
     });
     isRemoteActive = remoteStatus?.connected === true;
-  } catch { /* Silent */ }
+  } catch { /* silent fail */ }
 
   const hasActiveMedia = tab.audible || isCaptureActive || (status?.isPlaying);
 
-  // Retention logic
+  // rule: retention logic ensures a card stays visible for a grace period after audio stops, allowing the user to resume control
   if (!hasActiveMedia && !isRemoteActive) {
     const pauseRetentionSeconds = getGlobalSettings().pauseRetentionSeconds ?? 60;
     if (pauseRetentionSeconds > 0 && status.pausedAt) {
@@ -60,7 +59,7 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     e.restricted !== false && domain.includes(e.domain)
   );
 
-  // Load priority: Saved > Default
+  // note: priority is Saved Profile > Default Values; cleanConfig ensures the object adheres to the latest AudioConfig schema
   const savedConfig = await getAudioConfig(domain);
   const config = cleanConfig(savedConfig);
 
@@ -126,19 +125,19 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     bindCardIconClick(ui.icon, tabId, tab.title || '', tab.favIconUrl || '');
   }
 
+  // note: register the update handle globally so settings can trigger re-renders from the Settings view
   registerCard(tabId, state.config, update, () => state.config);
 
   const cleanupMessaging = setupCardMessaging({ tabId, state, render });
   window.addEventListener('unload', cleanupMessaging);
 
   cardRenderCallbacks.push(() => {
-    // Render UI
     render();
   });
 
   render();
 
-  // Start Viz Loop
+  // goal: dynamically import the visualizer loop to optimize initial popup load time
   if (ui.canvas) {
     const { createVizLoop } = await import('../visualizer/loop');
     const startViz = createVizLoop({

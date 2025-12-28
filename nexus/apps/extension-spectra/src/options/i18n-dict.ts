@@ -1,6 +1,4 @@
-/**
- * SPECTRA Options - i18n Dictionary
- */
+// goal: defines static text translations for the options page UI in all supported locales
 
 export const DICT: Record<string, Record<string, string>> = {
 	'en-US': {

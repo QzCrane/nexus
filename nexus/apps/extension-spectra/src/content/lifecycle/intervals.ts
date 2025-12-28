@@ -1,7 +1,5 @@
-/**
- * // goal: Maintain periodic check tasks
- * // eff: Handles state reapplication and media reporting
- */
+// goal: manages background periodic tasks for state persistence and media status synchronization
+// note: specific intervals are chosen to balance UI responsiveness and CPU consumption
 
 import { AudioMode } from '@nexus/audio-engine';
 import { isExtensionContextValid, safeSend } from '../context-guard';
@@ -13,25 +11,19 @@ import { hasMediaElements } from './media-observer';
 
 const log = logger.content;
 
-/**
- * Cleanup functions for intervals
- */
 interface IntervalCleanup {
 	stateReapply: ReturnType<typeof setInterval>;
 	mediaReport: ReturnType<typeof setInterval>;
 }
 
-/**
- * // rule: Interval 3s, skip if hidden or context invalid
- * // eff: Re-applies state for NATIVE modes
- */
+// eff: sets up a 3-second heartbeat to re-sync DSP nodes if the browser detaches them during page suspension
+// rule: skips execution if the document is hidden or the extension context has been invalidated
 export function createStateReapplyInterval(
 	state: PolicyExecutorState,
 	policyExecutor: PolicyExecutor,
 	onContextInvalid?: () => void
 ): ReturnType<typeof setInterval> {
 	return setInterval(() => {
-		// Skip when page hidden to save CPU
 		if (document.hidden) return;
 
 		if (!isExtensionContextValid()) {
@@ -42,13 +34,10 @@ export function createStateReapplyInterval(
 		if (state.activeMode === AudioMode.NATIVE_LITE || state.activeMode === AudioMode.NATIVE_WEBAUDIO) {
 			policyExecutor.applyState();
 		}
-	}, 3000); // 3 seconds interval
+	}, 3000);
 }
 
-/**
- * // rule: Interval 5s
- * // eff: Sends TAB_REPORT_MEDIA
- */
+// eff: sets up a 5-second polling task to inform the background service about the presence of media elements
 export function createMediaReportInterval(
 	messenger: NexusMessenger,
 	onContextInvalid?: () => void
@@ -62,21 +51,17 @@ export function createMediaReportInterval(
 	}, 5000);
 }
 
-/**
- * // eff: Checks DOM and updates background state
- */
+// eff: performs a DOM scan for media tags and transmits the discovery state to the kernel
 export function reportMediaState(messenger: NexusMessenger): void {
 	if (!isExtensionContextValid()) return;
 
 	const hasMedia = hasMediaElements();
 	safeSend(() => messenger.send('TAB_REPORT_MEDIA', { hasMediaElement: hasMedia })).catch(() => {
-		// Silent error
+		// note: failures usually indicate a closing tab session
 	});
 }
 
-/**
- * // eff: Clears all active intervals
- */
+// eff: terminates all active timers to prevent memory leaks during module disposal
 export function cleanupIntervals(intervals: Partial<IntervalCleanup>): void {
 	if (intervals.stateReapply) clearInterval(intervals.stateReapply);
 	if (intervals.mediaReport) clearInterval(intervals.mediaReport);

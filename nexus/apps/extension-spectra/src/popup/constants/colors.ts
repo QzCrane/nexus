@@ -1,13 +1,10 @@
-/**
- * SPECTRA Popup - Color Constants
- */
+// goal: centralizes visual theme tokens and canvas draw styles for the popup UI
 
 import { UIColors } from '@nexus/audio-engine';
 
-/** UI Color Definitions (imported from @nexus/audio-engine) */
 export const COLORS = UIColors;
 
-/** EQ Curve Gradients */
+// EQ_GRADIENT: drawing parameters for the equalizer's frequency response curve canvas
 export const EQ_GRADIENT = {
   TOP: 'rgba(37, 99, 235, 0.25)',
   BOTTOM: 'rgba(37, 99, 235, 0.0)',

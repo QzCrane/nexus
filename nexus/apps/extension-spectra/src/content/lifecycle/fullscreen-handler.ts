@@ -1,7 +1,5 @@
-/**
- * // goal: Manage capture state during fullscreen transitions
- * // rule: Disable capture on FS request, restore after entered or timeout
- */
+// goal: orchestrates capture state transitions during fullscreen requests to bypass browser-imposed restriction on capturing elements while entering fullscreen
+// note: some browsers (e.g. Chrome) prohibit requestFullscreen() if the tab is being "captured" via tabCapture API; we briefly detach to allow the transition
 
 import { AudioMode } from '@nexus/audio-engine';
 import { logger } from '../../shared/logger';
@@ -20,6 +18,8 @@ const DEFAULT_CONFIG: FullscreenHandlerConfig = {
 	enabled: true,
 };
 
+// eff: sets up inter-process message listeners to coordinate capture suspension and restoration
+// post: returns a cleanup function to remove event listeners and clear pending timers
 export function setupFullscreenHandler(
 	state: PolicyExecutorState,
 	_policyExecutor: unknown,
@@ -32,9 +32,9 @@ export function setupFullscreenHandler(
 	let savedVolume: number | null = null;
 	let restoreTimer: ReturnType<typeof setTimeout> | null = null;
 	let pausedForFullscreen = false;
-	let pauseCount = 0;  // inv: Prevent duplicate restores
+	let pauseCount = 0;  // inv: strictly increments to avoid race conditions with multiple rapid FS requests
 
-	// goal: Temporarily disable capture to allow native FS
+	// eff: temporarily kills tab capture and saves current volume to satisfy browser "user interaction" requirements for FS
 	function handlePause(): void {
 		const isCapture = captureManager.isActive() || state.activeMode === AudioMode.CAPTURE;
 		if (!isCapture) return;
@@ -51,9 +51,9 @@ export function setupFullscreenHandler(
 			captureManager.request(false, state.config);
 		}
 
-		// rule: Safety net (timeout 3s)
+		// rule: if the transition isn't completed within 3s, automatically restore capture to ensure audio isn't permanently lost
 		restoreTimer = setTimeout(() => {
-			if (pauseCount !== currentPause) return;  // Overridden by new request
+			if (pauseCount !== currentPause) return;
 			restoreTimer = null;
 			if (pausedForFullscreen) {
 				log.info('[FS] Fullscreen timeout, reviving hijack');
@@ -62,7 +62,7 @@ export function setupFullscreenHandler(
 		}, 3000);
 	}
 
-	// goal: Re-enable capture after transition
+	// eff: restores capture after a short delay to ensure the native fullscreen transition has visually stabilized
 	function handleEntered(): void {
 		if (!pausedForFullscreen) return;
 
@@ -76,7 +76,7 @@ export function setupFullscreenHandler(
 		}, cfg.restoreDelayMs);
 	}
 
-	// goal: Restore state
+	// eff: re-activates the tab capture session with the previously saved volume setting
 	function restoreCapture(): void {
 		if (!pausedForFullscreen) return;
 		pausedForFullscreen = false;

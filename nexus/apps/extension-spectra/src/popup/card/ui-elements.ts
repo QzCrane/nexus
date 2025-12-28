@@ -1,9 +1,8 @@
-/**
- * SPECTRA Popup - Get Card UI Elements
- */
+// goal: utility for retrieving and casting references to all interactive DOM elements within a tab control card
 
 import type { CardUIElements } from '../types';
 
+// eff: queries the card container for sliders, toggles, buttons, and display labels, returning a typed element map
 export function getCardUIElements(card: HTMLElement): CardUIElements {
   return {
     card,
@@ -33,7 +32,7 @@ export function getCardUIElements(card: HTMLElement): CardUIElements {
     tMono: card.querySelector('[data-i18n="mono"]') as HTMLElement,
     tEq: card.querySelector('[data-i18n="eqTitle"]') as HTMLElement,
     vizIsland: card.querySelector('.viz-island') as HTMLElement | null,
-    // Media Controls
+    // Media Controls: context-sensitive buttons for playback, PiP, and tab focus management
     btnPause: card.querySelector('.btn-pause'),
     btnPip: card.querySelector('.btn-pip'),
     btnHotkeyTarget: card.querySelector('.btn-hotkey-target'),

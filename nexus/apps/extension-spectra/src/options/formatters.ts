@@ -1,10 +1,8 @@
-/**
- * SPECTRA Options - Formatters
- */
+// goal: provides utility functions for formatting and parsing UI-facing hotkey strings and action parameters
 
 import type { KeyCombo, HotkeyAction, HotkeyBinding } from '@nexus/contracts';
 
-/** Format KeyCombo for display */
+// eff: converts a KeyCombo object into a standardized, human-readable string (e.g., 'Ctrl + Alt + K')
 export function formatKeyCombo(key: KeyCombo): string {
 	const parts: string[] = [];
 	if (key.modifiers.ctrl) parts.push('Ctrl');
@@ -12,7 +10,7 @@ export function formatKeyCombo(key: KeyCombo): string {
 	if (key.modifiers.shift) parts.push('Shift');
 	if (key.modifiers.meta) parts.push('Meta');
 
-	// Convert code to readable name
+	// note: strip internal 'Key', 'Digit', 'Arrow' prefixes to simplify display labels
 	let keyName = key.code
 		.replace('Key', '')
 		.replace('Digit', '')
@@ -24,12 +22,14 @@ export function formatKeyCombo(key: KeyCombo): string {
 	return parts.join(' + ') || '(none)';
 }
 
+// eff: transforms an internal snake_case action identifier into a Title Case display name
 export function formatActionName(action: string): string {
 	return action
 		.replace(/_/g, ' ')
 		.replace(/\b\w/g, c => c.toUpperCase());
 }
 
+// eff: serializes optional action parameters into an editable string representation based on the action type
 export function formatParams(action: HotkeyAction, params: NonNullable<HotkeyBinding['params']>): string {
 	switch (action) {
 		case 'speed_set': return String(params.speed ?? '');
@@ -40,6 +40,7 @@ export function formatParams(action: HotkeyAction, params: NonNullable<HotkeyBin
 	}
 }
 
+// eff: converts raw user input strings back into structured parameters appropriate for the selected HotkeyAction
 export function parseParams(action: HotkeyAction, value: string): HotkeyBinding['params'] {
 	switch (action) {
 		case 'speed_set': return { speed: parseFloat(value) || 1 };

@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - Registry Helpers
- */
+// goal: provides utility functions for migrating, formatting, and parsing domain registry entries within the popup UI
 
 import type { DomainEntry, DomainSource } from '@nexus/contracts';
 
@@ -9,13 +7,13 @@ const SOURCE_LABELS: Record<DomainSource, string> = {
 	auto: '',
 };
 
+// post: returns a normalized array of DomainEntry objects, ensuring backward compatibility with legacy string-only storage formats
 export function migrateRegistry(rawData: unknown): DomainEntry[] {
 	if (!rawData) return [];
-	// Already new format
 	if (Array.isArray(rawData) && rawData.length > 0 && typeof rawData[0] === 'object') {
 		return rawData as DomainEntry[];
 	}
-	// Old format: string[]
+	// rule: convert legacy string[] registries into full DomainEntry objects with 'user' source
 	if (Array.isArray(rawData) && rawData.every(d => typeof d === 'string')) {
 		return (rawData as string[]).map((domain, i) => ({
 			domain, source: 'user' as DomainSource, probed: false, addedAt: Date.now() - i,
@@ -28,8 +26,8 @@ export function formatEntry(e: DomainEntry): string {
 	return `${SOURCE_LABELS[e.source] || ''} ${e.domain}`.trim();
 }
 
+// eff: strips UI-only decorators (emojis) and returns a clean DomainEntry object for persistence
 export function parseEntry(line: string): DomainEntry {
-	// Remove possible source markers
 	const cleaned = line.replace(/^[📋✏️🔍]\s*/, '').trim();
 	return { domain: cleaned, source: 'user', probed: false, addedAt: Date.now() };
 }

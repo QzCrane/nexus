@@ -1,7 +1,6 @@
-/**
- * SPECTRA Options - Tab Switching
- */
+// goal: manages the navigation and content visibility for different settings categories (e.g. general, site-specific)
 
+// eff: binds click listeners to navigation buttons to toggle corresponding tab content areas
 export function initTabs(): void {
 	const navBtns = document.querySelectorAll<HTMLButtonElement>('.nav-btn');
 	const tabContents = document.querySelectorAll<HTMLElement>('.tab-content');
@@ -11,11 +10,9 @@ export function initTabs(): void {
 			const tabId = btn.dataset.tab;
 			if (!tabId) return;
 
-			// Toggle nav state
 			navBtns.forEach(b => b.classList.remove('active'));
 			btn.classList.add('active');
 
-			// Toggle content area
 			tabContents.forEach(content => {
 				content.classList.toggle('hidden', content.id !== `tab-${tabId}`);
 			});

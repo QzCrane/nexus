@@ -1,4 +1,4 @@
-/** Action Names - German */
+// goal: defines localized hotkey action names for German locale
 export const de: Record<string, string> = {
 	none: '(nicht belegt)', play_pause: 'Wiedergabe/Pause', seek_forward_5s: '5s vorwärts',
 	seek_forward_10s: '10s vorwärts', seek_forward_30s: '30s vorwärts',

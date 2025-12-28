@@ -1,7 +1,5 @@
-/**
- * // goal: Unlock AudioContext via user gestures and track popup connection
- * // risk: Missing interaction event prevents audio start in strict autoplay policies
- */
+// goal: manages environmental triggers that affect audio processing, such as user interaction requirements and UI state tracking
+// note: many browsers prohibit WebAudio initialization until a trust-building user gesture occurs
 
 import { AudioMode, WebAudioController } from '@nexus/audio-engine';
 import { logger } from '../../shared/logger';
@@ -10,16 +8,14 @@ import type { PolicyExecutor } from '../policy-executor';
 
 const log = logger.content;
 
-/**
- * // goal: Unlock WebAudio on first interaction
- * // eff: Adds one-time event listeners to document
- */
+// eff: binds temporary listeners to high-confidence interaction events (click, keypress) to trigger AudioContext.resume()
 export function setupUserGestureListeners(
 	state: PolicyExecutorState,
 	audioController: WebAudioController,
 	policyExecutor: PolicyExecutor
 ): void {
 	const handleUserGestureUnlock = () => {
+		// rule: only attempts unlock if currently in a mode that relies on browser-side Web Audio nodes
 		if (state.activeMode === AudioMode.NATIVE_WEBAUDIO && !audioController.isReady()) {
 			log.debug('User gesture detected, retrying WebAudio init.');
 			policyExecutor.applyState();
@@ -32,10 +28,7 @@ export function setupUserGestureListeners(
 	});
 }
 
-/**
- * // goal: Track popup visibility state
- * // eff: Updates state.isPopupOpen on connect/disconnect
- */
+// eff: monitors the presence of the extension popup to optimize visualizer calculations and background reporting frequency
 export function setupPopupConnectionListener(state: PolicyExecutorState): void {
 	chrome.runtime.onConnect.addListener((port) => {
 		if (port.name === 'popup-connection') {

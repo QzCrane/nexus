@@ -1,14 +1,10 @@
-/**
- * SPECTRA Popup - Side Panel Footer Actions
- * Reset/Save effect presets (EQ/Pan/Delay).
- * Note: Independent of main UI card volume presets.
- */
+// goal: manages the reset and persistence of advanced effect presets (EQ, Pan, Delay) in the side panel
 
 import { DEFAULT_AUDIO_CONFIG } from '@nexus/kernel';
 import { getCurrentPanelTabId, getCardRegistration } from './index';
 import { syncSidePanelState } from './controls';
 
-/** Effect Preset prefix */
+// note: effect presets are stored separately from general audio config to allow users to apply complex EQ profiles without overriding master volume
 const FX_PRESET_PREFIX = 'preset_fx_';
 
 export function bindFooterActions(): void {
@@ -19,7 +15,7 @@ export function bindFooterActions(): void {
 	btnSave?.addEventListener('click', handleSave);
 }
 
-/** Reset: Restore effects to default (preserve volume) */
+// eff: reverts the side panel's effect settings to factory defaults while preserving the current tab's volume level
 function handleReset(): void {
 	const tabId = getCurrentPanelTabId();
 	if (tabId === null) return;
@@ -39,7 +35,7 @@ function handleReset(): void {
 	syncSidePanelState(newConfig);
 }
 
-/** Save: Store effect config to domain preset */
+// eff: captures only the effect-related values from the current tab and saves them as a domain-specific preset
 async function handleSave(): Promise<void> {
 	const tabId = getCurrentPanelTabId();
 	if (tabId === null) return;
@@ -51,7 +47,7 @@ async function handleSave(): Promise<void> {
 	if (!domain) return;
 
 	const config = reg.getConfig();
-	// Only save effects
+	// rule: exclude persistent volume/mute state to prevent jarring jumps when presets are reused across sessions
 	const fxPreset = {
 		eqValues: config.eqValues,
 		pan: config.pan,
@@ -62,9 +58,7 @@ async function handleSave(): Promise<void> {
 	await chrome.storage.local.set({ [key]: fxPreset });
 }
 
-/**
- * Load FX Preset (called by openSidePanel)
- */
+// post: retrieves a stored effect profile for the specified domain, returns null if no custom preset exists
 export async function loadFxPreset(domain: string): Promise<{
 	eqValues?: number[];
 	pan?: number;

@@ -1,8 +1,4 @@
-/**
- * SPECTRA Popup - Presets UI
- * 
- * Manages presets list and deletion.
- */
+// goal: manages the presets management interface, allowing users to view and delete domain-specific audio configurations
 
 import type { AudioConfig } from '@nexus/kernel';
 import type { I18NDict } from '../types';
@@ -12,6 +8,7 @@ let emptyEl: HTMLElement | null = null;
 let clearBtn: HTMLButtonElement | null = null;
 let currentDict: I18NDict | null = null;
 
+// eff: identifies list containers and attaches the global clear-all listener
 export function initPresetsUI(): void {
 	listEl = document.getElementById('presets-list');
 	emptyEl = document.getElementById('presets-empty');
@@ -24,6 +21,7 @@ export function initPresetsUI(): void {
 	refreshPresetsList();
 }
 
+// goal: synchronizes the UI with the latest 'siteSettings' storage by serializing domain-specific configs into list items
 async function refreshPresetsList(): Promise<void> {
 	if (!listEl || !emptyEl) return;
 
@@ -51,6 +49,7 @@ async function refreshPresetsList(): Promise<void> {
 	}
 }
 
+// post: returns a formatted list item element with domain, volume summary, and an inline delete button
 function createPresetItem(domain: string, config: Partial<AudioConfig>): HTMLElement {
 	const item = document.createElement('div');
 	item.className = 'preset-item';
@@ -76,6 +75,7 @@ function createPresetItem(domain: string, config: Partial<AudioConfig>): HTMLEle
 	return item;
 }
 
+// eff: removes a specific domain key from 'siteSettings' and refreshes the view
 async function handleDeletePreset(domain: string): Promise<void> {
 	const result = await chrome.storage.local.get(['siteSettings']);
 	const settings = (result.siteSettings as Record<string, Partial<AudioConfig>>) || {};
@@ -86,6 +86,7 @@ async function handleDeletePreset(domain: string): Promise<void> {
 	refreshPresetsList();
 }
 
+// rule: destructive operation; wipes all site-specific configurations stored in local storage
 async function handleClearAll(): Promise<void> {
 	await chrome.storage.local.remove(['siteSettings']);
 	refreshPresetsList();
@@ -96,6 +97,7 @@ async function loadAllPresets(): Promise<Record<string, Partial<AudioConfig>>> {
 	return (result.siteSettings as Record<string, Partial<AudioConfig>>) || {};
 }
 
+// goal: updates the local dictionary reference and triggers a list refresh to localize tooltips/empty-states
 export function updatePresetsI18n(dict: I18NDict): void {
 	currentDict = dict;
 	refreshPresetsList();

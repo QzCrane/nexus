@@ -1,6 +1,4 @@
-/**
- * SPECTRA Options - Modal Management
- */
+// goal: manages the lifecycle and event logic for the hotkey editing modal
 
 import type { HotkeyBinding, KeyCombo, HotkeyAction } from '@nexus/contracts';
 import { DEFAULT_MODIFIERS } from '@nexus/contracts';
@@ -8,8 +6,8 @@ import { formatKeyCombo, formatParams, parseParams } from './formatters';
 
 let currentBinding: HotkeyBinding | null = null;
 let onSaveCallback: ((binding: HotkeyBinding) => void) | null = null;
+let recordedKey: KeyCombo = { code: '', modifiers: { ...DEFAULT_MODIFIERS } };
 
-// DOM Elements
 const modal = document.getElementById('edit-modal')!;
 const keyInput = document.getElementById('edit-key') as HTMLInputElement;
 const actionSelect = document.getElementById('edit-action') as HTMLSelectElement;
@@ -20,9 +18,7 @@ const saveBtn = document.getElementById('modal-save')!;
 const closeBtn = modal.querySelector('.modal-close')!;
 const backdrop = modal.querySelector('.modal-backdrop')!;
 
-// Currently recorded key
-let recordedKey: KeyCombo = { code: '', modifiers: { ...DEFAULT_MODIFIERS } };
-
+// eff: initializes the modal singleton and attaches static event listeners
 export function initModal(): void {
 	populateActionSelect();
 	closeBtn.addEventListener('click', closeModal);
@@ -35,9 +31,8 @@ export function initModal(): void {
 	actionSelect.addEventListener('change', handleActionChange);
 }
 
-/** Open Edit Modal */
+// eff: opens the configuration modal, initializing it with existing binding data or sensible defaults for new entries
 export function openModal(binding: HotkeyBinding | null, onSave: (b: HotkeyBinding) => void): void {
-	// Create new or edit existing
 	currentBinding = binding ? { ...binding } : {
 		id: `binding_${Date.now()}`,
 		enabled: true,
@@ -63,10 +58,11 @@ export function closeModal(): void {
 	onSaveCallback = null;
 }
 
-/** Handle Key Recording */
+// eff: captures raw keyboard events into a KeyCombo object while blocking default browser interventions
 function handleKeyRecord(e: KeyboardEvent): void {
 	e.preventDefault();
 	e.stopPropagation();
+	// rule: ignore standalone modifier presses to allow users to build combinations like Ctrl+Shift+K
 	if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
 	recordedKey = {
 		code: e.code,
@@ -75,6 +71,7 @@ function handleKeyRecord(e: KeyboardEvent): void {
 	keyInput.value = formatKeyCombo(recordedKey);
 }
 
+// eff: toggles the visibility of the parameters input field based on whether the selected action requires additional data (e.g. Speed set)
 function handleActionChange(): void {
 	const action = actionSelect.value as HotkeyAction;
 	const needsParams = ['speed_set', 'volume_set', 'run_js', 'open_url'].includes(action);
@@ -90,6 +87,7 @@ function handleActionChange(): void {
 	}
 }
 
+// post: validates the recorded key and executes the save callback with the final HotkeyBinding configuration
 function handleSave(): void {
 	if (!currentBinding || !onSaveCallback) return;
 	if (!recordedKey.code) return;

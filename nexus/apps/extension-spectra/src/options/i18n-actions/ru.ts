@@ -1,4 +1,4 @@
-/** Action Names - Russian */
+// goal: defines localized hotkey action names for Russian locale
 export const ru: Record<string, string> = {
 	none: '(не назначено)', play_pause: 'Воспр./Пауза', seek_forward_5s: 'Вперёд 5с',
 	seek_forward_10s: 'Вперёд 10с', seek_forward_30s: 'Вперёд 30с',

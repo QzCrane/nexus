@@ -1,13 +1,10 @@
-/**
- * SPECTRA Popup - Type Definitions
- * 
- * Interface definitions for Popup UI.
- */
+// goal: centralizes type definitions for the SPECTRA popup UI, element mapping, and transient state
 
 import type { AudioConfig, GlobalSettings } from '@nexus/kernel';
 
 export type { I18NDict, I18NMap } from './types/i18n.types';
 
+// CardUIElements: DOM references for a single tab management card
 export interface CardUIElements {
   card: HTMLElement;
   title: HTMLElement;
@@ -36,7 +33,6 @@ export interface CardUIElements {
   tMono: HTMLElement;
   tEq: HTMLElement;
   vizIsland: HTMLElement | null;
-  // Media Controls
   btnPause: HTMLElement | null;
   btnPip: HTMLElement | null;
   btnHotkeyTarget: HTMLElement | null;
@@ -45,6 +41,7 @@ export interface CardUIElements {
   speedBtns: NodeListOf<HTMLElement>;
 }
 
+// SettingsUIElements: DOM references for the global settings view in the side panel
 export interface SettingsUIElements {
   swOsd: HTMLInputElement | null;
   swViz: HTMLInputElement | null;
@@ -54,6 +51,7 @@ export interface SettingsUIElements {
   btnSaveReg: HTMLElement | null;
 }
 
+// CardState: UI-specific transient state for a tab card
 export interface CardState {
   config: AudioConfig;
   isCaptureActive: boolean;
@@ -61,6 +59,7 @@ export interface CardState {
   isConnected: boolean;
 }
 
+// MetricsCacheData: internal drawing metrics for the smooth EQ analyzer and visualizer
 export interface MetricsCacheData {
   row: HTMLElement;
   canvas: HTMLCanvasElement;
@@ -73,13 +72,15 @@ export interface MetricsCacheData {
   isValid: boolean;
 }
 
+// ContentStatusResponse: unified response format from the content script reporting its live audio state
 export interface ContentStatusResponse {
   config: AudioConfig;
   hasAudio: boolean;
   isPlaying: boolean;
+  // mode: identifies the current signal path (Standard WebAudio or Tab Capture)
   mode: 'NATIVE_WEBAUDIO' | 'NATIVE_LITE' | 'CAPTURE';
   userInteracted: boolean;
-  // Null means playing
+  // pausedAt: epoch timestamp when playback stopped; null if currently playing
   pausedAt: number | null;
 }
 

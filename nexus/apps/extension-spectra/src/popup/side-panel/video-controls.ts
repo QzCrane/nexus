@@ -1,17 +1,15 @@
-/**
- * SPECTRA Popup - Side Panel Video Controls
- *
- * Bind events for buttons/sliders/switches in the Video section of side panel.
- */
+// goal: binds interactive video manipulation controls (filters, transforms, A/B loops) in the side panel to content script actions
 
 import { sendToTab } from '../utils/dom';
 
 let currentTabId: number | null = null;
 
+// eff: sets the target tab for all subsequent video control commands
 export function setVideoControlTabId(tabId: number): void {
 	currentTabId = tabId;
 }
 
+// eff: identifies and initializes all video-related UI components within the side panel container
 export function bindVideoControls(): void {
 	const panel = document.getElementById('side-panel');
 	if (!panel) return;
@@ -22,6 +20,7 @@ export function bindVideoControls(): void {
 	bindSeekButtons(panel);
 }
 
+// note: handles discrete action buttons like rotation, mirroring, and A/B marker placement via a centralized switch
 function bindButtons(panel: HTMLElement): void {
 	const btns = panel.querySelectorAll<HTMLButtonElement>('.sp-btn[data-action]');
 
@@ -44,6 +43,7 @@ function bindButtons(panel: HTMLElement): void {
 					break;
 				}
 				case 'screenshot': {
+					// note: triggering a screenshot typically involves content script capturing the video element into a canvas
 					await sendToTab<{ dataUrl: string | null }>(currentTabId, 'VIDEO_SCREENSHOT', {});
 					break;
 				}
@@ -73,6 +73,7 @@ function bindButtons(panel: HTMLElement): void {
 					break;
 				}
 				case 'ab-loop': {
+					// note: reset both A and B markers globally when clearing the loop
 					await sendToTab(currentTabId, 'VIDEO_AB_CLEAR', {});
 					panel.querySelector('.sp-btn-marker[data-action="mark-a"]')?.classList.remove('active');
 					panel.querySelector('.sp-btn-marker[data-action="mark-b"]')?.classList.remove('active');
@@ -125,6 +126,7 @@ function bindFilterSwitches(panel: HTMLElement): void {
 	}
 }
 
+// eff: attaches click handlers to seek buttons providing discrete jumps (e.g. +/- 5s, +/- 30s) based on dataset deltas
 function bindSeekButtons(panel: HTMLElement): void {
 	const seekBtns = panel.querySelectorAll<HTMLButtonElement>('.sp-btn-small[data-action="seek"]');
 

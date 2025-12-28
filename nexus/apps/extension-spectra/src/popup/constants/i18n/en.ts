@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - I18N 英语
- */
+// goal: provides the English (en-US) localization dictionary for the SPECTRA popup
 
 import type { I18NDict } from '../../types';
 
@@ -74,18 +72,18 @@ export const EN_US: I18NDict = {
   spSaveFx: '💾 Save Effects',
   spResetFxTip: 'Reset EQ/Pan/Delay (independent of main UI)',
   spSaveFxTip: 'Save effect preset for this site (independent of main UI)',
-  // 新增控件
+  // group: video transformation controls
   spFullscreen: 'Fullscreen',
   spDim: 'Dim Background',
   spSeek: 'Seek',
   spSaturate: 'Saturate',
   spGrayscale: 'Grayscale',
   spInvert: 'Invert',
-  // 预设管理
+  // group: preset management
   grpPresets: 'Saved Presets',
   presetsHint: 'No saved presets. Use 💾 button on cards to save.',
   btnClearPresets: 'Clear All',
-  // 遥控器
+  // group: remote control bridge
   btnRemoteTooltip: 'Remote Control',
   remoteModalTitle: '📱 Remote Control',
   remoteSessionCode: 'Session Code',

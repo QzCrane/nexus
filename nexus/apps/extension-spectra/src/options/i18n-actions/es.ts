@@ -1,4 +1,4 @@
-/** Action Names - Spanish */
+// goal: defines localized hotkey action names for Spanish locale
 export const es: Record<string, string> = {
 	none: '(sin asignar)', play_pause: 'Reproducir/Pausar', seek_forward_5s: 'Adelantar 5s',
 	seek_forward_10s: 'Adelantar 10s', seek_forward_30s: 'Adelantar 30s',

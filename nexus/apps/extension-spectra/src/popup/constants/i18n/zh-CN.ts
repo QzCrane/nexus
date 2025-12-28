@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - I18N 简体中文
- */
+// goal: provides the Simplified Chinese (zh-CN) localization dictionary for the SPECTRA popup
 
 import type { I18NDict } from '../../types';
 
@@ -74,18 +72,18 @@ export const ZH_CN: I18NDict = {
 	spSaveFx: '💾 保存效果',
 	spResetFxTip: '重置 EQ/平衡/延迟（独立于主界面）',
 	spSaveFxTip: '保存效果预设到此网站（独立于主界面）',
-	// 新增控件
+	// group: video transformation controls
 	spFullscreen: '全屏',
 	spDim: '背景变暗',
 	spSeek: '跳转',
 	spSaturate: '饱和度',
 	spGrayscale: '灰度',
 	spInvert: '反色',
-	// 预设管理
+	// group: preset management
 	grpPresets: '域名预设',
 	presetsHint: '暂无预设。使用卡片上的 💾 按钮保存。',
 	btnClearPresets: '清空全部',
-	// 遥控器
+	// group: remote control bridge
 	btnRemoteTooltip: '手机遥控',
 	remoteModalTitle: '📱 手机遥控',
 	remoteSessionCode: '会话码',

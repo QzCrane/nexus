@@ -1,6 +1,4 @@
-/**
- * // goal: Provide internal translation for action names (fallback)
- */
+// goal: provides localized display names for all supported hotkey actions across different languages
 
 import { ja } from './i18n-actions/ja';
 import { ko } from './i18n-actions/ko';
@@ -9,7 +7,7 @@ import { fr } from './i18n-actions/fr';
 import { de } from './i18n-actions/de';
 import { ru } from './i18n-actions/ru';
 
-
+// note: English serves as the primary fallback if a translation is missing in the target locale
 const en: Record<string, string> = {
 	none: '(unbound)', play_pause: 'Play/Pause', seek_forward_5s: 'Forward 5s',
 	seek_forward_10s: 'Forward 10s', seek_forward_30s: 'Forward 30s',
@@ -32,7 +30,6 @@ const en: Record<string, string> = {
 	run_js: 'Run JS', open_url: 'Open URL',
 };
 
-
 const zh: Record<string, string> = {
 	none: '(未绑定)', play_pause: '播放/暂停', seek_forward_5s: '前进 5 秒',
 	seek_forward_10s: '前进 10 秒', seek_forward_30s: '前进 30 秒',
@@ -54,13 +51,12 @@ const zh: Record<string, string> = {
 	run_js: '执行 JS', open_url: '打开 URL',
 };
 
-
 const LANG_MAP: Record<string, Record<string, string>> = {
 	'en-US': en, 'zh-CN': zh, 'ja-JP': ja, 'ko-KR': ko,
 	'es-ES': es, 'fr-FR': fr, 'de-DE': de, 'ru-RU': ru,
 };
 
-
+// post: returns the localized name for an action, falling back to English or an auto-formatted identifier if necessary
 export function getActionName(action: string, lang: string): string {
 	const dict = LANG_MAP[lang];
 	return dict?.[action] ?? en[action] ?? action.replace(/_/g, ' ');

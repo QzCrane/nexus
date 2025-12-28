@@ -1,8 +1,4 @@
-/**
- * SPECTRA Options - Site Config Editor
- *
- * Configure site-specific hotkeys (default disabled)
- */
+// goal: handles the per-site hotkey configuration interface, allowing domain-specific overrides for global shortcuts
 
 import type { HotkeySettings, HotkeyBinding } from '@nexus/contracts';
 import { DEFAULT_HOTKEY_SETTINGS, DEFAULT_MODIFIERS } from '@nexus/contracts';
@@ -11,6 +7,7 @@ import { openModal } from './modal';
 let settings: HotkeySettings = { ...DEFAULT_HOTKEY_SETTINGS };
 let selectedSite: string | null = null;
 
+// eff: initializes the site editor by loading saved configurations and populating the domain selector
 export async function initSiteEditor(): Promise<void> {
 	await loadSettings();
 	renderSiteSelector();
@@ -28,6 +25,7 @@ async function saveSettings(): Promise<void> {
 	await chrome.storage.local.set({ hotkeySettings: settings });
 }
 
+// eff: updates the domain dropdown with all currently configured websites from the user's settings
 function renderSiteSelector(): void {
 	const select = document.getElementById('site-select') as HTMLSelectElement | null;
 	if (!select) return;
@@ -64,6 +62,7 @@ function bindEvents(): void {
 	});
 }
 
+// eff: displays the configuration sub-panel for the chosen domain and populates its current key bindings
 function selectSite(domain: string): void {
 	selectedSite = domain;
 	const config = settings.sites[domain];
@@ -83,11 +82,13 @@ function hideSiteConfig(): void {
 	document.getElementById('site-empty')?.classList.remove('hidden');
 }
 
+// eff: probes the currently active browser tab to automatically add its domain to the custom hotkeys list
 async function addCurrentSite(): Promise<void> {
 	try {
 		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 		if (!tab?.url) return;
 		const domain = new URL(tab.url).hostname;
+		// rule: prevent Duplicate entries and ignore internal chrome:// or about:blank pages
 		if (!domain || settings.sites[domain]) { alert('Site already exists or invalid URL'); return; }
 		settings.sites[domain] = { enabled: false, bindings: [] };
 		await saveSettings();
@@ -105,6 +106,7 @@ async function deleteSite(): Promise<void> {
 	hideSiteConfig();
 }
 
+// Note: renderBindings and createBindingRow handle the visual representation of individual hotkey assignments
 function renderBindings(): void {
 	const container = document.getElementById('site-bindings-list');
 	if (!container || !selectedSite) return;

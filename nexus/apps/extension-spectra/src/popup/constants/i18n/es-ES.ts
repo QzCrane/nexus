@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - I18N 西班牙语
- */
+// goal: provides the Spanish (es-ES) localization dictionary for the SPECTRA popup
 
 import type { I18NDict } from '../../types';
 

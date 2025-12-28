@@ -1,19 +1,16 @@
-/**
- * SPECTRA Options - Chrome Slots Editor
- *
- * Configure Chrome Command Slot -> Action mapping
- */
+// goal: manages the mapping between Chrome command 'slots' (from manifest.json) and SPECTRA hotkey actions
 
 import type { HotkeySettings, HotkeyAction } from '@nexus/contracts';
 import { HOTKEY_ACTIONS, DEFAULT_HOTKEY_SETTINGS } from '@nexus/contracts';
 import { t, getActionName, getCurrentLang, onLangChange } from './i18n';
 
-// Preset commands (defined in manifest.json)
+// note: PRESET_COMMANDS must match the specific shortcut keys defined in the manifest; they cannot be renamed but their actions can be changed
 const PRESET_COMMANDS = ['volume_up', 'volume_down', 'toggle_mute', 'speed_up'];
 const SLOT_COMMANDS = Array.from({ length: 16 }, (_, i) => `slot_${String(i + 1).padStart(2, '0')}`);
 
 let settings: HotkeySettings = { ...DEFAULT_HOTKEY_SETTINGS };
 
+// eff: initializes the slots editor by loading persistence state and establishing an i18n re-render listener
 export async function initSlotsEditor(): Promise<void> {
 	await loadSettings();
 	renderSlots();
@@ -33,20 +30,19 @@ async function saveSettings(): Promise<void> {
 	await chrome.storage.local.set({ hotkeySettings: settings });
 }
 
+// eff: generates the UI list for both preset and generic command slots, populating them with localized action names
 function renderSlots(): void {
 	const container = document.getElementById('slots-list');
 	if (!container) return;
 
 	container.innerHTML = '';
 
-	// Preset Commands (Read-only, show bound action)
 	PRESET_COMMANDS.forEach(cmd => {
 		const action = settings.slots[cmd] ?? 'none';
 		const row = createSlotRow(cmd, action, true);
 		container.appendChild(row);
 	});
 
-	// Custom Slots (Editable)
 	SLOT_COMMANDS.forEach(cmd => {
 		const action = settings.slots[cmd] ?? 'none';
 		const row = createSlotRow(cmd, action, false);
@@ -54,6 +50,7 @@ function renderSlots(): void {
 	});
 }
 
+// eff: creates a single configuration row with a command label and an action selector
 function createSlotRow(command: string, action: HotkeyAction, readonly: boolean): HTMLElement {
 	const row = document.createElement('div');
 	row.className = 'slot-row';

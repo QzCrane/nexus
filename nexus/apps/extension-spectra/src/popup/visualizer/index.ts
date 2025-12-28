@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - Visualizer Module Exports
- */
+// goal: entry point for the visualizer module, providing factory functions for EQ curve rendering and metrics management
 
 export { MetricsCache, type MetricsCacheData } from './metrics-cache';
 
@@ -12,17 +10,13 @@ export { createVizLoop, type VizLoopParams } from './loop';
 import { MetricsCache } from './metrics-cache';
 import { drawEqCurve } from './draw-eq-curve';
 
-/**
- * Creates EQ Curve Drawer
- * 
- * Factory for initCard
- */
+// goal: factory function to initialize an EQ curve drawer with persistent metrics and a canvas context
 export function createEqCurveDrawer(
   canvas: HTMLCanvasElement | null,
   sliderRow: HTMLElement | null,
   getEqValues: () => number[]
 ): { draw: (color?: string) => void; updateMetrics: () => void } {
-  // Check if elements exist (EQ might be in side panel)
+  // note: gracefully degrades if elements are missing (e.g. side panel target not yet rendered)
   if (!canvas || !sliderRow) {
     return {
       draw: () => { },

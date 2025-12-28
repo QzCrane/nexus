@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - DOM Utilities
- */
+// goal: provides streamlined DOM selection helpers and unified cross-process messaging for the popup context
 
 import type { SettingsUIElements } from '../types';
 import { RESTRICTED_URL_PREFIXES } from '../constants';
@@ -12,6 +10,7 @@ export function $<T extends HTMLElement>(id: string): T | null {
   return document.getElementById(id) as T | null;
 }
 
+// $required: strictly selects an element by ID or throws if missing to prevent silent UI failures
 export function $required<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id) as T | null;
   if (!el) throw new Error(`Required element #${id} not found`);
@@ -22,6 +21,7 @@ export function $$<T extends Element>(selector: string, parent: ParentNode = doc
   return parent.querySelectorAll<T>(selector);
 }
 
+// post: returns a mapped object of DOM references for the global settings panel
 export function getSettingsUIElements(): SettingsUIElements {
   return {
     swOsd: $<HTMLInputElement>('set-osd'),
@@ -41,11 +41,13 @@ export function getDomain(url: string): string {
   }
 }
 
+// rule: identifies browser-internal or restricted URLs (e.g. chrome://, edge://) where extensions are disabled
 export function isRestrictedUrl(url: string | undefined): boolean {
   if (!url) return true;
   return RESTRICTED_URL_PREFIXES.some(prefix => url.startsWith(prefix));
 }
 
+// eff: tunnels messages from the popup to a specific tab via the kernel messenger
 export async function sendToTab<T = unknown>(tabId: number, action: string, payload: unknown = {}): Promise<T | null> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -56,6 +58,7 @@ export async function sendToTab<T = unknown>(tabId: number, action: string, payl
   }
 }
 
+// eff: tunnels messages from the popup to the background worker via the kernel messenger
 export async function sendToBackground<T = unknown>(action: string, payload: unknown = {}): Promise<T | null> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -66,6 +69,7 @@ export async function sendToBackground<T = unknown>(action: string, payload: unk
   }
 }
 
+// goal: forces re-injection of the content script if the context was invalidated or missing
 export async function ensureInjected(tabId: number): Promise<boolean> {
   try {
     await chrome.scripting.executeScript({

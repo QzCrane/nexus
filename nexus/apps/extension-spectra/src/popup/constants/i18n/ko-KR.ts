@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - I18N 韩语
- */
+// goal: provides the Korean (ko-KR) localization dictionary for the SPECTRA popup
 
 import type { I18NDict } from '../../types';
 

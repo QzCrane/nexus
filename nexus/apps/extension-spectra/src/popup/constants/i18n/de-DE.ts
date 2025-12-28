@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - I18N 德语
- */
+// goal: provides the German (de-DE) localization dictionary for the SPECTRA popup
 
 import type { I18NDict } from '../../types';
 

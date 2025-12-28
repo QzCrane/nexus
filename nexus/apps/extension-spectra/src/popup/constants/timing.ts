@@ -1,23 +1,19 @@
-/**
- * SPECTRA Popup - Timing & UI Constants
- */
+// goal: defines timing thresholds, rendering intervals, and visual proportions for the popup UI
 
-/** Timing Constants (ms) */
+// TIMING: values in milliseconds controlling animation synchronization and renderer updates
 export const TIMING = {
-  /** Capture Init Delay */
+  // CAPTURE_INIT_DELAY: allowance for Chrome's offscreen document to bootstrap before sending commands
   CAPTURE_INIT_DELAY: 300,
-  /** Visualizer Frame Interval (~30 FPS) */
+  // VIZ_FRAME_INTERVAL: target interval (~30 FPS) for polling visualizer data from content/offscreen
   VIZ_FRAME_INTERVAL: 32,
-  /** Delay before updating metrics after EQ drawer animation */
+  // EQ_DRAWER_DELAY: matches CSS transition time to ensure canvas resizing triggers after the drawer is fully open
   EQ_DRAWER_DELAY: 310,
-  /** MetricsCache Init Loops */
   METRICS_INIT_LOOPS: 20,
   BUTTON_FEEDBACK_DURATION: 1000,
 } as const;
 
-/** UI Size Constants (px) */
+// UI_SIZES: pixel-based dimensions for canvas drawing and layout constraints
 export const UI_SIZES = {
-  /** Settings Min Height */
   SETTINGS_MIN_HEIGHT: 480,
   VIZ_BAR_WIDTH: 3,
   VIZ_BAR_GAP: 1,
@@ -25,7 +21,6 @@ export const UI_SIZES = {
   EQ_CURVE_SHADOW_BLUR: 8,
 } as const;
 
-/** Visualizer Params */
 export const VIZ_PARAMS = {
   HEIGHT_FACTOR: 0.9,
   MIN_VISIBLE_HEIGHT: 1,

@@ -1,13 +1,10 @@
-/**
- * SPECTRA Popup - I18N Application Logic
- * 
- * Handles language switching and card text updates.
- */
+// goal: orchestrates the live application of internationalized strings across the popup's static and dynamic elements
 
 import type { I18NDict } from '../types';
 import { $$ } from '../utils/dom';
 import { getDict } from '../constants';
 
+// eff: iterates through all elements with data-i18n attributes and replaces their text/titles/placeholders with localized strings
 export function applyLang(lang: string): I18NDict {
 	const dict = getDict(lang);
 	if (!dict) return getDict('en-US')!;
@@ -39,6 +36,7 @@ export function applyLang(lang: string): I18NDict {
 	return dict;
 }
 
+// goal: updates text/tooltips for dynamically generated tab cards and side panel components
 export function updateCardsI18n(dict: I18NDict, vizEnabled: boolean): void {
 	$$<HTMLElement>('.glass-card').forEach((card) => {
 		const keys: Array<keyof I18NDict> = ['comp', 'bass', 'mono', 'eqTitle'];
@@ -79,6 +77,7 @@ export function updateCardsI18n(dict: I18NDict, vizEnabled: boolean): void {
 	updateSidePanelI18n(dict);
 }
 
+// eff: updates localized text/tooltips for the slide-out side panel (Settings / Registry)
 function updateSidePanelI18n(dict: I18NDict): void {
 	const panel = document.getElementById('side-panel');
 	if (!panel) return;

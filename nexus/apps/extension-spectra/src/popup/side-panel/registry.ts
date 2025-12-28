@@ -1,7 +1,4 @@
-/**
- * SPECTRA Popup - Side Panel Card Registry
- * Manage card config and update function registration.
- */
+// goal: provides a centralized registry to store and retrieve tab-specific audio configurations and their respective update handlers
 
 import type { AudioConfig } from '@nexus/kernel';
 
@@ -11,9 +8,9 @@ export interface CardRegistration {
 	getConfig: () => AudioConfig;
 }
 
-/** Registered Cards (tabId -> registration) */
 const cardRegistry = new Map<number, CardRegistration>();
 
+// eff: registers a tab's current state and its update function, enabling settings in the side panel to trigger re-renders in the main card
 export function registerCard(
 	tabId: number,
 	config: AudioConfig,

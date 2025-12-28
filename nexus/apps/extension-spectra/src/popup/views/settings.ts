@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - Settings Page Logic
- */
+// goal: manages the global settings panel logic, including persistence, theme/language switching, and cross-tab broadcasting
 
 import type { GlobalSettings } from '@nexus/kernel';
 import type { ThemeMode, DomainEntry } from '@nexus/contracts';
@@ -21,6 +19,7 @@ export interface SettingsState {
   dict: I18NDict;
 }
 
+// cardRenderCallbacks: registry of UI update hooks triggered when global settings (like visualization toggle) change
 export const cardRenderCallbacks: RenderCallback[] = [];
 
 const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
@@ -31,18 +30,14 @@ const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   pauseRetentionSeconds: 60,
 };
 
-/**
- * Initializes settings page
- * @returns Initial state
- */
+// post: loads settings from local storage, initializes the side-panel UI, and returns the unified state
 export async function initSettings(): Promise<SettingsState> {
   const ui = getSettingsUIElements();
 
-  // Load settings (compat with old/new keys)
+  // Load settings: maintains compatibility with both modern 'globalSettings' and legacy individual registry keys
   const storage = await chrome.storage.local.get(['globalSettings', 'restrictedRegistry', 'userRegistry']);
   let gSettings: GlobalSettings = storage.globalSettings || { ...DEFAULT_GLOBAL_SETTINGS };
 
-  // Read registry (new key > old key)
   let registryEntries: DomainEntry[] = migrateRegistry(storage.restrictedRegistry || storage.userRegistry);
 
   initUIState(ui, gSettings, registryEntries);
@@ -66,10 +61,10 @@ export async function initSettings(): Promise<SettingsState> {
     const btnTheme = $<HTMLButtonElement>('btn-theme');
     if (btnTheme) btnTheme.textContent = THEME_ICONS[gSettings.themeMode];
 
-
     chrome.storage.local.set({ globalSettings: gSettings });
     broadcastSettings(gSettings);
 
+    // eff: cascade i18n updates across all UI components (Cards, Registry, Presets, Remote)
     dict = applyLang(gSettings.lang);
     updateCardsI18n(dict, gSettings.visualizerEnabled);
     updateRegistryI18n(dict);
@@ -125,6 +120,7 @@ function bindSettingsEvents(
   if (pauseRetentionInput) pauseRetentionInput.onchange = saveSettings;
 }
 
+// goal: providing a quick-flip toggle for theme mode via the header button, synced with the settings dropdown
 function bindThemeButtonEvent(
   getSettings: () => GlobalSettings,
   setSettings: (s: GlobalSettings) => void
@@ -144,6 +140,7 @@ function bindThemeButtonEvent(
   };
 }
 
+// eff: broadcasts updated settings to all open tabs to allow immediate UI (OSD, visualizer) state synchronization
 function broadcastSettings(gSettings: GlobalSettings): void {
   chrome.tabs.query({}, (tabs) => {
     tabs.forEach((t) => {

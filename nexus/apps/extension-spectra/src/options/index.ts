@@ -1,8 +1,4 @@
-/**
- * SPECTRA Options - Main Entry
- *
- * Configures Chrome Slots, Site Settings, I18n, and Theme.
- */
+// goal: entry point for the SPECTRA settings page, coordinating theme, i18n, and editor module initialization
 
 import { initTheme } from './theme';
 import { initI18n } from './i18n';
@@ -11,27 +7,24 @@ import { initSiteEditor } from './site-editor';
 import { initModal } from './modal';
 import { enableSmoothScroll } from '../shared/smooth-scroll';
 
+// eff: initializes global page behaviors and sub-modules in sequence
 async function init(): Promise<void> {
 	console.log('[SPECTRA] Options page initializing...');
 
-	// Mac-style Smooth Scroll
 	enableSmoothScroll();
-
 	initTheme();
 
 	await initI18n();
-
 	initModal();
 
 	await initSlotsEditor();
-
 	await initSiteEditor();
 
-	// Chrome shortcuts link
 	const link = document.getElementById('chrome-shortcuts-link');
 	if (link) {
 		link.addEventListener('click', (e) => {
 			e.preventDefault();
+			// note: browser security prevents direct navigation to chrome:// urls via href; must use chrome.tabs.create
 			chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
 		});
 	}

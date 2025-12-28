@@ -1,8 +1,4 @@
-/**
- * SPECTRA Popup - Registry UI Controller
- * 
- * Manages registry list logic and interaction.
- */
+// goal: manages the domain registry UI, allowing users to categorize domains as either 'restricted' (needs capture) or 'safe'
 
 import type { DomainEntry } from '@nexus/contracts';
 import { $ } from '../utils/dom';
@@ -35,10 +31,12 @@ function getUIElements(): RegistryUIElements {
 	};
 }
 
+// eff: filters registry entries based on the current search text and active category tab, then reconstructs the list DOM
 function renderList(ui: RegistryUIElements): void {
 	if (!ui.listContainer) return;
 
 	const filtered = allEntries.filter(e => {
+		// rule: 'restricted' domains must have the restricted property truthy; 'safe' domains must have it falsy
 		const matchTab = currentTab === 'restricted' ? e.restricted !== false : e.restricted === false;
 		const matchFilter = !filterText || e.domain.toLowerCase().includes(filterText.toLowerCase());
 		return matchTab && matchFilter;
@@ -74,6 +72,7 @@ function deleteDomain(domain: string, ui: RegistryUIElements): void {
 	saveAndRender(ui);
 }
 
+// eff: normalizes the domain input and adds it to the in-memory registry with a specific category tag
 function addDomain(domain: string, ui: RegistryUIElements): void {
 	const cleaned = domain.trim().toLowerCase();
 	if (!cleaned) return;
@@ -93,6 +92,7 @@ function addDomain(domain: string, ui: RegistryUIElements): void {
 	if (ui.newDomainInput) ui.newDomainInput.value = '';
 }
 
+// goal: persists the latest registry state to local storage and updates the visible list
 function saveAndRender(ui: RegistryUIElements): void {
 	chrome.storage.local.set({ restrictedRegistry: allEntries });
 	renderList(ui);
@@ -107,6 +107,7 @@ function switchTab(tab: TabType, ui: RegistryUIElements): void {
 	renderList(ui);
 }
 
+// goal: bootstraps listeners for search input, category switching, and new domain addition
 export function initRegistryUI(entries: DomainEntry[]): void {
 	allEntries = entries;
 	const ui = getUIElements();
@@ -132,6 +133,7 @@ export function initRegistryUI(entries: DomainEntry[]): void {
 	});
 }
 
+// post: updates the localized UI dictionary and triggers a list rerender to update tooltips and empty states
 export function updateRegistryI18n(dict: I18NDict): void {
 	currentDict = dict;
 	const ui = getUIElements();

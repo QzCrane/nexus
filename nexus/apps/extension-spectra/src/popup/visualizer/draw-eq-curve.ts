@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - EQ Curve Drawing
- */
+// goal: renders a smooth, interpolated curve on a canvas to represent the 10-band equalizer settings
 
 import { EQ_GRADIENT, UI_SIZES } from '../constants';
 import type { MetricsCacheData } from './metrics-cache';
@@ -10,9 +8,7 @@ interface Point {
   y: number;
 }
 
-/**
- * Draws smooth EQ curve using Catmull-Rom spline
- */
+// eff: calculates spline points from slider offsets and draws a styled curve with gradient fills and shadows
 export function drawEqCurve(
   ctx: CanvasRenderingContext2D,
   values: number[],
@@ -26,17 +22,16 @@ export function drawEqCurve(
 
   const points: Point[] = [];
 
-  // Padding values to ensure at least 10 elements
+  // note: ensures exactly 10 bands are processed, padding with neutral 0dB if necessary
   const safeValues = [...values];
   while (safeValues.length < 10) safeValues.push(0);
 
-  // Left boundary extension
+  // note: extend points beyond the canvas edges to ensure the curve appears continuous at the boundaries
   points.push({
     x: -20,
     y: cache.midY - (safeValues[0]! * cache.scaleFactor),
   });
 
-  // 10 slider positions
   for (let i = 0; i < 10; i++) {
     points.push({
       x: cache.xCoords[i]!,
@@ -44,20 +39,19 @@ export function drawEqCurve(
     });
   }
 
-  // Right boundary extension
   points.push({
     x: w + 20,
     y: cache.midY - (safeValues[9]! * cache.scaleFactor),
   });
 
-  // Reset transform & apply DPR
+  // rule: always reset transform and apply DPR scaling to maintain sharpness on high-density displays
   ctx.resetTransform();
   ctx.scale(cache.dpr, cache.dpr);
   ctx.clearRect(0, 0, w, h);
 
   if (points.length < 2) return;
 
-  // Catmull-Rom spline
+  // goal: implement a centripetal Catmull-Rom spline via cubic Bezier segments for a smooth "liquid" curve appearance
   const path = new Path2D();
   const firstPoint = points[0]!;
   path.moveTo(firstPoint.x, firstPoint.y);
@@ -77,20 +71,19 @@ export function drawEqCurve(
     path.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
   }
 
-  // Fill area
   const fillPath = new Path2D(path);
   fillPath.lineTo(w, h);
   fillPath.lineTo(0, h);
   fillPath.closePath();
 
-  // Gradient fill (based on main color)
+  // note: generate a dynamic linear gradient that fades from the theme color to transparent at the bottom
   const grad = ctx.createLinearGradient(0, 0, 0, h);
   grad.addColorStop(0, color.replace(')', ', 0.25)').replace('rgb', 'rgba'));
   grad.addColorStop(1, color.replace(')', ', 0.0)').replace('rgb', 'rgba'));
   ctx.fillStyle = grad;
   ctx.fill(fillPath);
 
-  // Stroke curve
+  // rule: apply a subtle bloom effect via shadowBlur and a thick stroke to make the curve feel "premium"
   ctx.shadowColor = color.replace(')', ', 0.5)').replace('rgb', 'rgba');
   ctx.shadowBlur = UI_SIZES.EQ_CURVE_SHADOW_BLUR;
   ctx.shadowOffsetY = 2;

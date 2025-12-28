@@ -1,22 +1,15 @@
-/**
- * SPECTRA Popup - Audio Constants
- *
- * Imported from @nexus/audio-engine where possible. Popup-specific constants defined here.
- */
+// goal: defines visual and interaction bounds for audio parameters within the popup UI
 
-/** Popup UI Specific Audio Constants */
 export const AUDIO_UI = {
-  /** Max Volume (%) - Slider range */
+  // MAX_VOLUME: maps to the maximum allowable boost (800%) in the volume slider
   MAX_VOLUME: 800,
-  /** Volume Step - Wheel adjustment */
+  // VOLUME_STEP: incremental value for mouse wheel or keyboard adjustments
   VOLUME_STEP: 10,
-  /** EQ Min (dB) */
+  // EQ_MIN/MAX: decibel range for the graphic equalizer UI
   EQ_MIN: -12,
-  /** EQ Max (dB) */
   EQ_MAX: 12,
-  /** EQ Step (dB) */
   EQ_STEP: 0.1,
 } as const;
 
-/** Default EQ Values (10 bands flat) */
+// DEFAULT_EQ_VALUES: initial flat gain (0dB) for all 10 frequency bands
 export const DEFAULT_EQ_VALUES = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] as const;

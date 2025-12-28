@@ -1,11 +1,8 @@
-/**
- * Chrome Extension API 类型扩展
- * 补充 chrome-types 中缺失的 MV3 API 类型
- */
+// goal: supplements missing Manifest V3 type definitions for Chrome Extension APIs
 
 declare namespace chrome {
   namespace offscreen {
-    type Reason = 
+    type Reason =
       | 'AUDIO_PLAYBACK'
       | 'BLOBS'
       | 'CLIPBOARD'

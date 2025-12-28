@@ -1,7 +1,4 @@
-/**
- * SPECTRA Popup - Side Panel Logic
- * Toggle side panel, pinning, and manage state.
- */
+// goal: manages the lifecycle and visibility of the advanced settings side panel in the popup
 
 import type { AudioConfig } from '@nexus/kernel';
 import { bindSidePanelControls, syncSidePanelState } from './controls';
@@ -33,14 +30,15 @@ const state: SidePanelState = {
 
 let elements: SidePanelElements | null = null;
 
+// eff: updates the internal registry and refreshes the panel UI if it's currently focused on the modified tab
 export function updateCardConfig(tabId: number, config: AudioConfig): void {
 	updateReg(tabId, config);
-	// Sync panel if active for this tab
 	if (state.isOpen && state.currentTabId === tabId) {
 		syncSidePanelState(config);
 	}
 }
 
+// goal: initializes panel DOM references and global event listeners for pinning and dismissal
 export function initSidePanel(): void {
 	const panel = document.getElementById('side-panel');
 	if (!panel) return;
@@ -53,17 +51,15 @@ export function initSidePanel(): void {
 		btnClose: panel.querySelector('.btn-close-panel') as HTMLElement,
 	};
 
-	// Pin Button
 	elements.btnPin?.addEventListener('click', () => {
 		state.isPinned = !state.isPinned;
 		elements?.btnPin.classList.toggle('active', state.isPinned);
 		chrome.storage.local.set({ sidePanelPinned: state.isPinned });
 	});
 
-	// Close Button
 	elements.btnClose?.addEventListener('click', () => closeSidePanel());
 
-	// Close on outside click (if not pinned)
+	// rule: auto-dismiss panel on outside clicks ONLY if the pinning toggle is inactive
 	document.addEventListener('click', (e) => {
 		if (!state.isOpen || state.isPinned) return;
 		const target = e.target as HTMLElement;
@@ -72,19 +68,15 @@ export function initSidePanel(): void {
 		}
 	});
 
-	// Restore Pin state
 	chrome.storage.local.get(['sidePanelPinned'], (r) => {
 		state.isPinned = r.sidePanelPinned ?? false;
 		elements?.btnPin.classList.toggle('active', state.isPinned);
 	});
 
-	// Footer Actions
 	bindFooterActions();
 }
 
-/**
- * Bind Card Icon Click
- */
+// eff: attaches a toggle listener to a card icon to open/close advanced settings for that specific tab
 export function bindCardIconClick(
 	iconEl: HTMLElement,
 	tabId: number,
@@ -105,6 +97,7 @@ export function bindCardIconClick(
 	});
 }
 
+// eff: slides in the advanced panel and binds controls to the target tab's update handle
 function openSidePanel(tabId: number, title: string, faviconUrl: string): void {
 	if (!elements) return;
 	state.isOpen = true;
@@ -115,7 +108,7 @@ function openSidePanel(tabId: number, title: string, faviconUrl: string): void {
 
 	document.documentElement.classList.add('side-panel-open');
 
-	// Double RAF for smooth transition
+	// note: double requestAnimationFrame ensures the 'side-panel-open' layout shift is committed before the 'open' transform starts
 	requestAnimationFrame(() => {
 		requestAnimationFrame(() => {
 			elements?.panel.classList.add('open');
@@ -131,6 +124,7 @@ function openSidePanel(tabId: number, title: string, faviconUrl: string): void {
 	bindVideoControls();
 }
 
+// eff: slides out the panel and cleans up transition classes after the CSS animation completes
 function closeSidePanel(): void {
 	if (!elements) return;
 	state.isOpen = false;
@@ -138,7 +132,7 @@ function closeSidePanel(): void {
 
 	elements.panel.classList.remove('open');
 
-	// Wait for animation (200ms)
+	// note: 200ms delay matches the CSS transition-duration defined in popup.css
 	setTimeout(() => {
 		document.documentElement.classList.remove('side-panel-open');
 	}, 200);

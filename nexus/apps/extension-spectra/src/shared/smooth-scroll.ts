@@ -1,13 +1,10 @@
-/**
- * Smooth Scroll Engine
- * 
- * Uses requestAnimationFrame + ease-out-quart for Mac-like inertial scrolling.
- */
+// goal: implements a Mac-like inertial smooth scrolling engine using requestAnimationFrame and ease-out-quart
+// note: this helps eliminate UI stutter and provides a more premium interaction feel
 
 const CONFIG = {
 	sensitivity: 0.6,
 	duration: 600,
-	// ease-out-quart
+	// group: easing function (ease-out-quart)
 	easing: (t: number) => 1 - Math.pow(1 - t, 4),
 };
 
@@ -27,6 +24,7 @@ const state: ScrollState = {
 	startTime: 0,
 };
 
+// eff: executes the frame-by-frame scroll position update until the target is reached or animation is cancelled
 function animateScroll(timestamp: number): void {
 	if (!state.container) return;
 
@@ -48,6 +46,7 @@ function animateScroll(timestamp: number): void {
 	}
 }
 
+// eff: calculates the final scroll destination and initiates the animation loop
 function scrollTo(container: HTMLElement, targetY: number): void {
 	if (state.animationId !== null) {
 		cancelAnimationFrame(state.animationId);
@@ -64,10 +63,12 @@ function scrollTo(container: HTMLElement, targetY: number): void {
 	state.animationId = requestAnimationFrame(animateScroll);
 }
 
+// eff: intercepts native wheel events to apply custom smooth scrolling logic
 function handleWheel(event: WheelEvent): void {
 	const container = findScrollableParent(event.target as HTMLElement);
 	if (!container) return;
 
+	// rule: prevent native scrolling to allow the smooth engine to take full control
 	event.preventDefault();
 
 	const delta = event.deltaY * CONFIG.sensitivity;
@@ -80,6 +81,7 @@ function handleWheel(event: WheelEvent): void {
 	scrollTo(container, currentTarget + delta);
 }
 
+// post: returns the nearest scrollable parent element or documentElement if none found
 function findScrollableParent(element: HTMLElement | null): HTMLElement | null {
 	while (element && element !== document.body) {
 		const style = getComputedStyle(element);
@@ -103,11 +105,13 @@ function findScrollableParent(element: HTMLElement | null): HTMLElement | null {
 	return null;
 }
 
+// eff: attaches wheel listeners to the specified root to enable inertial scrolling
 export function enableSmoothScroll(root: Document | HTMLElement = document): void {
 	root.addEventListener('wheel', handleWheel as EventListener, { passive: false });
 	console.log('[SPECTRA] Smooth scroll enabled');
 }
 
+// eff: detaches listeners and halts any ongoing scroll animations
 export function disableSmoothScroll(root: Document | HTMLElement = document): void {
 	root.removeEventListener('wheel', handleWheel as EventListener);
 	if (state.animationId !== null) {

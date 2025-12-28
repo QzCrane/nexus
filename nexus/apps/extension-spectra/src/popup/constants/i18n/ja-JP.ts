@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - I18N 日语
- */
+// goal: provides the Japanese (ja-JP) localization dictionary for the SPECTRA popup
 
 import type { I18NDict } from '../../types';
 
@@ -74,18 +72,18 @@ export const JA_JP: I18NDict = {
 	spSaveFx: '💾 エフェクトを保存',
 	spResetFxTip: 'EQ/パン/ディレイをリセット（メインUIと独立）',
 	spSaveFxTip: 'エフェクトプリセットを保存（メインUIと独立）',
-	// 新増
+	// group: video transformation controls
 	spFullscreen: 'フルスクリーン',
 	spDim: '背景暗転',
 	spSeek: 'シーク',
 	spSaturate: '彩度',
 	spGrayscale: 'グレースケール',
 	spInvert: '反転',
-	// プリセット管理
+	// group: preset management
 	grpPresets: '保存済みプリセット',
 	presetsHint: 'プリセットなし。カードの💾ボタンで保存。',
 	btnClearPresets: 'すべて削除',
-	// リモコン
+	// group: remote control bridge
 	btnRemoteTooltip: 'リモコン',
 	remoteModalTitle: '📱 リモコン',
 	remoteSessionCode: 'セッションコード',

@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - I18N Type Definitions
- */
+// goal: defines the schema for internationalization dictionaries used across the popup and content script overlays
 
 export interface I18NDict {
 	settingsTitle: string;
@@ -41,7 +39,8 @@ export interface I18NDict {
 	btnSettingsTooltip: string;
 	btnHotkeysTooltip: string;
 	btnShortcutsTooltip: string;
-	// Side Panel
+
+	// note: side panel specific labels for advanced audio and video effects
 	spAudio: string;
 	spPan: string;
 	spDelay: string;
@@ -58,37 +57,38 @@ export interface I18NDict {
 	spHotkeyThis: string;
 	spHotkeyPinned: string;
 	spHotkeyLast: string;
-	// Media Controls
+
+	// note: media playback and focus management tooltips
 	btnPause: string;
 	btnPip: string;
 	btnHotkeyTarget: string;
 	btnGotoTab: string;
-	// Settings
+
+	// note: application-wide settings (e.g. state retention)
 	pauseRetentionLabel: string;
 	pauseRetentionSub: string;
 	pauseRetentionUnit: string;
-	// Common Tooltips
+
+	// note: reusable interface string tokens
 	tipPinPanel: string;
 	tipClose: string;
 	tipDelete: string;
 	tipAdvancedSettings: string;
-	// Side Panel Buttons
 	spResetFx: string;
 	spSaveFx: string;
 	spResetFxTip: string;
 	spSaveFxTip: string;
-	// Video Controls
 	spFullscreen: string;
 	spDim: string;
 	spSeek: string;
 	spSaturate: string;
 	spGrayscale: string;
 	spInvert: string;
-	// Presets
 	grpPresets: string;
 	presetsHint: string;
 	btnClearPresets: string;
-	// Remote Control
+
+	// note: remote synchronization and mobile connection UI
 	btnRemoteTooltip: string;
 	remoteModalTitle: string;
 	remoteSessionCode: string;
@@ -99,10 +99,12 @@ export interface I18NDict {
 	remoteCopied: string;
 	remoteOpenLinkTitle: string;
 	remoteConnectedTooltip: string;
-	// Registry Empty States
+
+	// note: empty states for tab registry filtering
 	registryEmptyRestricted: string;
 	registryEmptySafe: string;
-	// CORS Tips (Content Script)
+
+	// note: CORS injection and domain correction feedback
 	corsAddedSafe: (domain: string) => string;
 	corsCorrectedSafe: (domain: string) => string;
 }

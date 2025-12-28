@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - I18N 法语
- */
+// goal: provides the French (fr-FR) localization dictionary for the SPECTRA popup
 
 import type { I18NDict } from '../../types';
 

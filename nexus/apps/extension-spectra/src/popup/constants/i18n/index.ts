@@ -1,6 +1,4 @@
-/**
- * SPECTRA Popup - I18N Exports
- */
+// goal: aggregates all localized dictionaries and provides utility functions for language resolution
 
 import type { I18NMap, I18NDict } from '../../types';
 import { EN_US } from './en';
@@ -27,6 +25,7 @@ export const DEFAULT_LANG = 'en-US';
 
 export const SUPPORTED_LANGS = Object.keys(I18N) as Array<keyof typeof I18N>;
 
+// post: returns the dictionary for the requested language or falls back to the default (en-US)
 export function getDict(lang: string): I18NDict {
   return I18N[lang] || I18N[DEFAULT_LANG]!;
 }

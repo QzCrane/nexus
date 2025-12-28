@@ -1,19 +1,19 @@
+// goal: defines internal types, state interfaces, and configuration defaults for the popup tab card component
+
 import type { AudioConfig, GlobalSettings } from '@nexus/kernel';
 import type { DomainEntry } from '@nexus/contracts';
 import type { CardUIElements, I18NDict } from '../types';
 
-/** Card Internal State */
 export interface CardInternalState {
   config: AudioConfig;
   isCaptureActive: boolean;
   userInteracted: boolean;
   isRestrictedSite: boolean;
   actualMode: 'NATIVE_WEBAUDIO' | 'NATIVE_LITE' | 'CAPTURE' | null;
-  /** Whether slider is being dragged */
+  // isDragging: flag to prevent UI jitter by skipping re-renders while the user is actively manipulating sliders
   isDragging: boolean;
 }
 
-/** initCard Params */
 export interface InitCardParams {
   container: HTMLElement;
   template: HTMLTemplateElement;
@@ -22,7 +22,6 @@ export interface InitCardParams {
   registryEntries: DomainEntry[];
   getGlobalSettings: () => GlobalSettings;
   isBackground?: boolean;
-  /** EQ Curve Drawer callback (from visualizer module) */
   createEqCurveDrawer?: (
     canvas: HTMLCanvasElement,
     sliderRow: HTMLElement,
@@ -30,7 +29,7 @@ export interface InitCardParams {
   ) => { draw: (color?: string) => void; updateMetrics: () => void };
 }
 
-/** Card Context (Passed to sub-modules) */
+// CardContext: unified handle passed to sub-modules (rendering, messaging, events) to access shared tab state and UI refs
 export interface CardContext {
   tab: chrome.tabs.Tab;
   domain: string;
@@ -53,7 +52,7 @@ export const DEFAULT_CONFIG: AudioConfig = {
   eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 };
 
-/** Clean Config Object */
+// post: returns deep-merged and validated AudioConfig object, ensuring eqValues array presence and removing transient command fields
 export function cleanConfig(config: Partial<AudioConfig> | null): AudioConfig {
   const c = { ...DEFAULT_CONFIG, ...config };
   if (!Array.isArray(c.eqValues)) {
@@ -62,7 +61,7 @@ export function cleanConfig(config: Partial<AudioConfig> | null): AudioConfig {
   if (c.enabled === undefined) {
     c.enabled = true;
   }
-  // Remove temporary fields
+  // note: strip internal command triggers used for temporary sync that shouldn't persist in the configuration state
   delete (c as any).toggleMute;
   delete (c as any).volumeDelta;
   return c;

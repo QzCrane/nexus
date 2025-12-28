@@ -1,21 +1,19 @@
-/**
- * SPECTRA Options - Hotkey Editor
- */
+// goal: manages the global hotkey configuration interface, including CRUD operations for key bindings and toggle master switch
 
-import type { HotkeyBinding, HotkeySettings } from '@nexus/contracts';
+import type { HotkeyBinding, SiteHotkeyConfig } from '@nexus/contracts';
 import { DEFAULT_MODIFIERS, PRESET_BINDINGS } from '@nexus/contracts';
 import { openModal, formatKeyCombo } from './modal';
 
-// DOM Elements
 const listContainer = document.getElementById('hotkeys-list')!;
 const emptyState = document.getElementById('hotkeys-empty')!;
 const enabledToggle = document.getElementById('hotkeys-enabled') as HTMLInputElement;
 const addBtn = document.getElementById('hotkeys-add')!;
 const resetBtn = document.getElementById('hotkeys-reset')!;
 
-// Current Settings
-let settings: HotkeySettings = { enabled: true, bindings: [] };
+// note: using SiteHotkeyConfig structure for legacy global bindings list; this module is currently inactive in the main bundle
+let settings: SiteHotkeyConfig = { enabled: true, bindings: [] };
 
+// eff: initializes the hotkey editor by fetching saved settings and binding static UI controls
 export async function initHotkeyEditor(): Promise<void> {
 	await loadSettings();
 	renderList();
@@ -25,12 +23,12 @@ export async function initHotkeyEditor(): Promise<void> {
 	resetBtn.addEventListener('click', handleReset);
 }
 
+// eff: retrieves settings from chrome.storage, falling back to PRESET_BINDINGS if the user has no custom config
 async function loadSettings(): Promise<void> {
 	const result = await chrome.storage.local.get('hotkeySettings');
 	if (result.hotkeySettings) {
 		settings = result.hotkeySettings;
 	} else {
-		// Use presets
 		settings = { enabled: true, bindings: [...PRESET_BINDINGS] };
 	}
 	enabledToggle.checked = settings.enabled;
@@ -41,6 +39,7 @@ async function saveSettings(): Promise<void> {
 	console.log('[SPECTRA] Hotkey settings saved');
 }
 
+// eff: reconstructs the DOM list of hotkey bindings based on the current in-memory settings
 function renderList(): void {
 	listContainer.innerHTML = '';
 
@@ -57,6 +56,7 @@ function renderList(): void {
 	});
 }
 
+// eff: generates a single hotkey entry element with attached event listeners for enabling, editing, or deletion
 function createHotkeyItem(binding: HotkeyBinding, index: number): HTMLElement {
 	const item = document.createElement('div');
 	item.className = `hotkey-item${binding.enabled ? '' : ' disabled'}`;
@@ -72,7 +72,6 @@ function createHotkeyItem(binding: HotkeyBinding, index: number): HTMLElement {
 		</div>
 	`;
 
-	// Toggle Enable
 	const checkbox = item.querySelector('.hotkey-enable') as HTMLInputElement;
 	checkbox.addEventListener('change', () => {
 		binding.enabled = checkbox.checked;
@@ -80,7 +79,6 @@ function createHotkeyItem(binding: HotkeyBinding, index: number): HTMLElement {
 		saveSettings();
 	});
 
-	// Edit
 	const editBtn = item.querySelector('.edit')!;
 	editBtn.addEventListener('click', () => {
 		openModal(binding, (updated) => {
@@ -90,7 +88,6 @@ function createHotkeyItem(binding: HotkeyBinding, index: number): HTMLElement {
 		});
 	});
 
-	// Delete
 	const deleteBtn = item.querySelector('.delete')!;
 	deleteBtn.addEventListener('click', () => {
 		settings.bindings.splice(index, 1);
@@ -106,6 +103,7 @@ function handleToggleEnabled(): void {
 	saveSettings();
 }
 
+// eff: opens the creation modal with a fresh binding template and appends the result to the global settings
 function handleAdd(): void {
 	const newBinding: HotkeyBinding = {
 		id: `custom-${Date.now()}`,
@@ -121,7 +119,7 @@ function handleAdd(): void {
 	});
 }
 
-/** Reset to Presets */
+// post: overwrites all custom bindings with the hardcoded PRESET_BINDINGS after user confirmation
 async function handleReset(): Promise<void> {
 	if (!confirm('Reset all hotkeys to defaults?')) return;
 
