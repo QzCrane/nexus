@@ -1,121 +1,196 @@
-# Project NEXUS 实施方案
+# NEXUS 实施方案
 
-## 概览
+## 三驾马车
 
-**三驾马车**: SPECTRA(声光/Popup) + CORTEX(大脑/SidePanel) + HALO(结界/SidePanel)
+**SPECTRA**(媒体/Popup) + **CORTEX**(AI/SidePanel) + **HALO**(工具/SidePanel)
 
-## 产品功能矩阵
+---
 
-### SPECTRA - 专业媒体播放器
+## 快速抢占计划 (2026 Q1)
 
-| 优先级 | 模块   | 功能                         | 技术              | 商业 | 状态 |
-| :----: | ------ | ---------------------------- | ----------------- | :--: | :--: |
-|   P0   | Audio  | 800%音量/10 段 EQ/压限器     | WebAudio          | FREE |  ✅  |
-|   P0   | Video  | 旋转/镜像/去黑边/速率/画中画 | CSS+JS            | FREE |  ✅  |
-|   P0   | Tool   | 截图/AB 循环/时间标记        | Canvas+JS         | FREE |  ✅  |
-|   P1   | AI     | 人声分离                     | WASM+ONNX         | PRO  |  ⬜  |
-|   P1   | Remote | 手机遥控 (QR→WebRTC)         | PeerJS+WebRTC     | FREE |  ✅  |
-|   P1   | Stream | 标签页直播共享               | tabCapture+WebRTC | PRO  |  ⬜  |
-|   P2   | Audio  | 空间音频/声画同步/声道平衡   | WebAudio          | PRO  |  ✅  |
+### 🎯 顶替目标 (有问题的头部扩展)
 
-### CORTEX - AI 信息中心
+| 周次 | 目标扩展         | 痛点               | 顶替方案             |    插件    |
+| :--: | ---------------- | ------------------ | -------------------- | :--------: |
+| W1-2 | Dark Reader      | 拖慢/崩溃/配置复杂 | 轻量 CSS 注入+白名单 |    HALO    |
+| W3-4 | Video Speed Ctrl | 仅速率/无 EQ/UI 陋 | 速率+音频一体        | SPECTRA ✅ |
+| W5-6 | OneTab/Toby      | 付费墙/停更        | 免费+AI 搜索标签     |    HALO    |
+| W7-8 | Lightshot        | 上传服务器/单一    | 本地保存+批注        |    HALO    |
 
-| 优先级 | 功能                 | 技术             | 商业 |
-| :----: | -------------------- | ---------------- | :--: |
-|   P1   | 听歌识曲             | ACRCloud         | FREE |
-|   P2   | 双语字幕/AI 摘要/OCR | Gemini+Tesseract | PRO  |
+### ⚡ 冲刺路线
 
-### HALO - 极客工具箱
+```text
+W1-2: HALO v0.1 深色模式 (顶替 Dark Reader)
+      ├─ 轻量CSS反色 (非DOM遍历)
+      ├─ 一键开关 + 站点白名单
+      └─ 性能: <50ms 加载
 
-| 优先级 | 功能                        | 技术         |
-| :----: | --------------------------- | ------------ |
-|   P3   | 命令面板/万年历/番茄钟/冥想 | Fuzzy+Alarms |
+W3-4: SPECTRA v1.1 审核通过 + 小迭代
+      ├─ SponsorBlock 集成 (P2)
+      └─ YouTube UI简化
+
+W5-6: HALO v0.2 标签管理 + 截图
+      ├─ 标签分组 + 一键保存/恢复
+      ├─ AI模糊搜索标签
+      └─ 截图 + 本地批注
+
+W7-8: CORTEX v0.1 听歌识曲
+      ├─ ACRCloud API
+      └─ 三插件联动基础
+```
+
+---
+
+## 功能矩阵 (精简版)
+
+### SPECTRA v1.0 ✅ 已提交审核
+
+| 模块   | 功能                           | 状态 |
+| ------ | ------------------------------ | :--: |
+| Audio  | 800%/EQ/压限/声道/延迟         |  ✅  |
+| Video  | 速率 16x/旋转/镜像/画中画/截图 |  ✅  |
+| Tool   | AB 循环/时间标记/背景暗化      |  ✅  |
+| Remote | 手机遥控 QR+WebRTC             |  ✅  |
+
+### SPECTRA 后续
+
+|  P  | 功能                 | 交付 |
+| :-: | -------------------- | :--: |
+|  1  | 人声分离 (WASM+ONNX) |  Q1  |
+|  1  | 标签页直播共享       |  Q2  |
+|  2  | SponsorBlock 跳过    |  W3  |
+|  2  | 字幕下载             |  Q2  |
+
+### HALO (新建)
+
+|  P  | 功能             | 交付 |
+| :-: | ---------------- | :--: |
+|  1  | 深色模式         |  W2  |
+|  1  | 二维码生成/扫描  |  W4  |
+|  1  | 丝滑滚动         |  W4  |
+|  2  | 标签分组+AI 搜索 |  W6  |
+|  2  | 截图+本地批注    |  W6  |
+|  2  | 剪贴板历史       |  W8  |
+|  3  | 网站时间限制     |  Q2  |
+
+### CORTEX (新建)
+
+|  P  | 功能                | 交付 |
+| :-: | ------------------- | :--: |
+|  1  | 听歌识曲            |  W8  |
+|  1  | AI 摘要 (本地 ONNX) |  Q2  |
+|  2  | 双语字幕            |  Q2  |
+|  2  | OCR                 |  Q3  |
+
+---
+
+## 开源策略 (双仓库)
+
+```text
+nexus/ (私有)  ──pnpm sync-public──→  nexus-public/ → github.com/QzCrane/spectra
+```
+
+### 仓库配置
+
+| 仓库            | 用途     | 可见性  | 内容         |
+| --------------- | -------- | :-----: | ------------ |
+| QzCrane/nexus   | 开发备份 | Private | 完整+AI 工程 |
+| QzCrane/spectra | 开源发布 | Public  | 干净代码     |
+
+### 同步排除
+
+| 排除项                | 原因        |
+| --------------------- | ----------- |
+| scripts/              | AI 工程脚本 |
+| docs/                 | 内部文档    |
+| .agent/               | 工作流      |
+| store-listings/       | 商店描述    |
+| test/                 | 测试代码    |
+| \*.ai-context.md      | 上下文      |
+| plan.md, README.AI.md | 内部计划    |
+
+### 命令
+
+```bash
+pnpm sync-public              # 同步到nexus-public
+cd ../nexus-public && git push  # 推送到GitHub
+```
+
+---
+
+## 英文迁移
+
+| 类别   | 策略                        |
+| ------ | --------------------------- |
+| 新代码 | **强制英文注释**            |
+| 旧代码 | 逐步迁移 (168 文件/1748 处) |
+| commit | 英文                        |
+| 文档   | 内部中文,公开英文           |
+| 检测   | `pnpm verify` 自动统计      |
+
+---
 
 ## 架构
 
 ```text
-Apps:    SPECTRA ←→ CORTEX ←→ HALO
-            ↓          ↓         ↓
-Packages: audio-engine | ai-engine | zen-engine
-            ↓          ↓         ↓
-Kernel:  [Typed RPC Bus] [Storage Repo] [Cross-Ext Msg]
-            ↓
-Infra:   rust-core (WASM)
+Apps: SPECTRA ←→ CORTEX ←→ HALO
+         ↓          ↓         ↓
+Pkgs: audio-engine|ai-engine|zen-engine
+         ↓
+Kernel: RPC Bus + Storage + Cross-Ext
+         ↓
+Infra: rust-core (WASM)
 ```
 
-**依赖链**: contracts ← kernel ← features ← apps
+---
 
-## 技术选型
+## 护城河
 
-| 层   | 技术                        | 用途          |
-| ---- | --------------------------- | ------------- |
-| 计算 | Rust → WASM + AudioWorklet  | 人声分离/压缩 |
-| 通信 | WebSocket + Protobuf        | 手机遥控      |
-| 渲染 | React 18 + Zustand + Framer | Side Panel    |
+```text
+L4 生态 │ 三插件互通 + NEXUS Bus
+L3 AI   │ 本地ONNX (无云依赖)
+L2 性能 │ WASM + AudioWorklet
+L1 信任 │ 开源 + 零遥测
+L0 功能 │ 800%+EQ+速率+遥控 ✅
+```
 
-## 实施路线
+---
 
-### Phase 1 ✅ 基础设施
+## 市场洞察 (2025.12)
 
-- [x] Monorepo (pnpm+turbo)
-- [x] nexus-kernel + audio-engine
-- [x] extension-spectra MV3
+### 头部痛点 → 机会
 
-### Phase 2 🚀 功能扩展 (W1-W2)
+| 扩展        | 痛点        | 我们         |
+| ----------- | ----------- | ------------ |
+| Dark Reader | 慢/崩溃     | HALO 轻量    |
+| OneTab      | 付费/停更   | HALO 免费    |
+| GPT Wrapper | 69%隐私风险 | CORTEX 本地  |
+| Video Speed | 仅速率      | SPECTRA 全能 |
 
-**UI 策略**: 原生 TS+HTML，Popup 内下拉控制面板
+### 用户挫败 TOP3
 
-#### 视频控制 (Content Script 操作)
+| 痛点     |    频次    | 对策            |
+| -------- | :--------: | --------------- |
+| 性能拖累 | ⭐⭐⭐⭐⭐ | WASM+按需激活   |
+| MV3 迁移 | ⭐⭐⭐⭐⭐ | 原生 MV3 无遗留 |
+| 虚假评价 |  ⭐⭐⭐⭐  | 开源可审计      |
 
-| ID     | 功能               | 技术                    | 批次 | 状态 |
-| ------ | ------------------ | ----------------------- | :--: | :--: |
-| 2.1.4  | 速率控制 0.1x-16x  | playbackRate            |  B1  |  ✅  |
-| 2.1.5  | 画中画             | requestPictureInPicture |  B1  |  ✅  |
-| 2.1.7  | 暂停/播放          | video.pause/play        |  B1  |  ✅  |
-| 2.1.1  | 旋转 90°/180°/270° | CSS transform           |  B2  |  ✅  |
-| 2.1.2  | 水平镜像           | CSS scaleX(-1)          |  B2  |  ✅  |
-| 2.1.9  | 截图 + 下载        | Canvas drawImage        |  B2  |  ✅  |
-| 2.1.3  | 去黑边             | object-fit + 裁剪       |  B3  |  ✅  |
-| 2.1.6  | 全屏               | requestFullscreen       |  B3  |  ✅  |
-| 2.1.8  | 时间跳转 ± 帧/秒   | currentTime             |  B3  |  ✅  |
-| 2.1.10 | 时间标记点         | 存储 + 跳转             |  B4  |  ✅  |
-| 2.1.11 | AB 循环            | 区间重复播放            |  B4  |  ✅  |
+### 2025 安全事件
 
-#### 音频控制 (已有基础扩展)
+- Phantom Shuttle 窃取 170+站密码
+- Trust Wallet 恶意版本窃$7M
+- 30+扩展账户被劫持注入恶意更新
+- AI 扩展窃取 ChatGPT/Claude 对话
 
-| ID    | 功能         | 技术                 | 批次 | 状态 |
-| ----- | ------------ | -------------------- | :--: | :--: |
-| 2.2.1 | 声道平衡     | StereoPannerNode     | B3.5 |  ✅  |
-| 2.2.2 | 声画同步延迟 | DelayNode ±500ms     | B3.5 |  ✅  |
-| 2.2.3 | 变速变调     | playbackRate + pitch |  B4  |  ✅  |
+→ **启示**: 开源+零遥测+最小权限
 
-#### 视觉滤镜 (FX)
+---
 
-| ID    | 功能               | 技术       | 批次 | 状态 |
-| ----- | ------------------ | ---------- | :--: | :--: |
-| 2.3.1 | 亮度/对比度/饱和度 | CSS filter |  B4  |  ✅  |
-| 2.3.2 | 灰度/反色          | CSS filter |  B4  |  ✅  |
-| 2.3.3 | 背景变暗           | 遮罩层     |  B4  |  ✅  |
+## 长线 (2026)
 
-#### 其他
-
-| ID    | 功能           | 技术        | 批次 | 状态 |
-| ----- | -------------- | ----------- | :--: | :--: |
-| 2.4.1 | 切回后台标签页 | chrome.tabs |  B2  |  ✅  |
-| 2.4.2 | 热键编辑器     | Options 页  |  B4  |  ✅  |
-| 2.4.3 | URL 规则条件   | 域名配置    |  B4  |  ✅  |
-
-> **批次说明**: B1=核心播放 | B2=视频变换 | B3=音频增强 | B4=高级功能
-
-二维码生成和解析器
-
-### Phase 3 🛡️ WASM 壁垒 (W3-W6)
-
-- [ ] rust-core 初始化
-- [ ] AudioWorklet 集成
-- [ ] ONNX 人声分离
-
-### Phase 4 🔮 生态扩展
-
-- [ ] CORTEX / HALO Side Panel
-- [ ] 跨插件 NEXUS Bus
+| 季度 | 重点    | 交付                      |
+| :--: | ------- | ------------------------- |
+|  Q1  | 抢占    | HALO 深色+标签+截图       |
+|  Q2  | AI 壁垒 | 人声分离+听歌识曲+AI 摘要 |
+|  Q3  | 付费    | PRO 订阅体系              |
+|  Q4  | 生态    | 移动 APP+云同步           |
