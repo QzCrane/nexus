@@ -18,13 +18,17 @@
 
 ---
 
-## 开源
+## 开源 (双仓库同步)
 
-nexus(私有) → `pnpm sync-public` → nexus-public/ → github.com/QzCrane/spectra
+**每次开发完成后必须同步双仓库**:
 
-流程: 复制 → 修补 pkg → Squash 单提交 → 构建验证 → 清理产物 → `git push -f`
+1. `git add + commit + push` (nexus)
+2. `pnpm sync-public`
+3. `cd ../nexus-public && git push -f origin main`
 
-排除: scripts/ docs/ .agent/ store-listings/ test/ assets/ \*.ai-context.md plan.md + 空包(ui-kit/ai-engine/zen-engine)
+nexus(私有) → nexus-public/ → github.com/QzCrane/spectra
+
+排除: scripts/ docs/ .agent/ store-listings/ test/ assets/ \*.ai-context.md + 空包
 
 ---
 
