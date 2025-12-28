@@ -215,18 +215,21 @@ function main() {
     // Check if there are changes
     const status = execSync('git status --porcelain', { cwd: CONFIG.destDir }).toString();
     if (status.trim()) {
-      // Squash all commits into one: reset to first commit then recommit
+      // Squash all commits: create orphan branch with clean history
       console.log('Squashing commits into single release commit...');
       
-      // Get current branch
-      const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: CONFIG.destDir }).toString().trim();
+      // Use orphan branch approach (works on all platforms)
+      execSync('git checkout --orphan temp_squash', { cwd: CONFIG.destDir, stdio: 'ignore' });
+      execSync('git add -A', { cwd: CONFIG.destDir, stdio: 'ignore' });
       
-      // Soft reset to initial state (keeps files, removes commits)
-      execSync('git reset --soft $(git rev-list --max-parents=0 HEAD)', { cwd: CONFIG.destDir, shell: true });
-      
-      // Create clean single commit
       const releaseMsg = 'feat: SPECTRA v1.0 - Professional Media Controller';
       execSync(`git commit -m "${releaseMsg}"`, { cwd: CONFIG.destDir, stdio: 'inherit' });
+      
+      // Replace main with squashed branch
+      try {
+        execSync('git branch -D main', { cwd: CONFIG.destDir, stdio: 'ignore' });
+      } catch (e) { /* branch may not exist */ }
+      execSync('git branch -m main', { cwd: CONFIG.destDir, stdio: 'ignore' });
       
       console.log('\n✅ Squashed to single commit!');
       console.log('\nTo push (requires force):');
