@@ -55,6 +55,10 @@ const CONFIG = {
     'packages/ui-kit',
     'packages/features/ai-engine',
     'packages/features/zen-engine',
+    
+    // === Unreleased Apps ===
+    'apps/extension-halo',            // HALO in development
+    'apps/extension-cortex',          // CORTEX planned
   ],
   // Commit message prefix
   commitPrefix: 'sync:',

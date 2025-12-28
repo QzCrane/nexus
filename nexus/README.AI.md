@@ -1,6 +1,6 @@
 # NEXUS AI Portal
 
-**DNA**: Contracts ← Kernel ← Audio-Engine ← Spectra
+**DNA**: Contracts ← Kernel ← {Audio-Engine, Zen-Engine, UI-Kit} ← {Spectra, Halo}
 
 ---
 
@@ -46,19 +46,23 @@ nexus(私有) → nexus-public/ → github.com/QzCrane/spectra
 
 ## 模块
 
-| 包                  | 职责        |
-| ------------------- | ----------- |
-| @nexus/contracts    | 类型定义源  |
-| @nexus/kernel       | RPC+Storage |
-| @nexus/audio-engine | WebAudio 链 |
-| @nexus/spectra      | 扩展入口    |
+| 包                  | 职责             |
+| ------------------- | ---------------- |
+| @nexus/contracts    | 类型定义源       |
+| @nexus/kernel       | RPC+Storage+Log  |
+| @nexus/ui-kit       | 共享 UI 组件     |
+| @nexus/audio-engine | WebAudio 链      |
+| @nexus/zen-engine   | 深色/滚动/效能   |
+| @nexus/spectra      | 媒体扩展 (Popup) |
+| @nexus/halo         | 效能扩展 (Panel) |
 
 ---
 
 ## 功能
 
-Audio: 800%/EQ/压限/声道/延迟 | Video: 速率 16x/旋转/镜像/PiP/截图 | FX: 亮度/对比度/灰度/暗化
-Playback: AB 循环/标记 | Remote: 多会话遥控/QR | Hotkeys: 70+动作 | Engine: CORS/Badge
+**SPECTRA**: Audio 800%/EQ/压限/声道/延迟 | Video 速率 16x/旋转/镜像/PiP/截图 | AB 循环/标记 | 遥控 QR+WebRTC
+
+**HALO**: 深色模式(SVG 矩阵) | 平滑滚动 | 二维码 | 标签管理(规划) | 截图(规划)
 
 ---
 
@@ -90,7 +94,7 @@ Contracts 禁逻辑 | 改同步读 cors-data-flow | 非调节禁 Badge | 源码 
 
 规则: docs/ai-rules.md
 架构: policy-decision.md, cors-data-flow.md
-模块: packages/{contracts,nexus-kernel,audio-engine}/.ai-context.md + apps/extension-spectra/.ai-context.md
+模块: packages/{contracts,nexus-kernel,ui-kit}/.ai-context.md + packages/features/{audio-engine,zen-engine}/.ai-context.md + apps/{extension-spectra,extension-halo}/.ai-context.md
 
 ---
 

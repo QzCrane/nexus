@@ -1,0 +1,29 @@
+/* ===== HALO SMART DARK MODE (SVG MATRIX) ===== */
+
+/* 定义 SVG 滤镜：智能亮度反转，保留色彩饱和度 */
+@namespace svg url(http://www.w3.org/2000/svg);
+
+html {
+  /* 通过 JS 注入 SVG 定义，ID 必须匹配 */
+  filter: url('#halo-dark-mode-filter') !important;
+    
+  background-color: #111 !important;
+}
+
+/* ===== 滚动条优化 ===== */
+::-webkit-scrollbar { background-color: #202020 !important; width: 12px !important; }
+::-webkit-scrollbar-track { background-color: #202020 !important; }
+::-webkit-scrollbar-thumb { background-color: #444 !important; border-radius: 6px !important; border: 2px solid #202020 !important; }
+
+/* ===== 媒体与图片保护 (排除滤镜) ===== */
+/* 不需要再反转回来了，因为上面的矩阵是"智能变黑"，
+   但图片还是会被处理，所以对图片我们直接"取消滤镜" */
+
+img, video, iframe, canvas, svg,
+[style*="background-image"],
+.ytp-cued-thumbnail-overlay-image,
+.ytd-thumbnail {
+  filter: none !important; 
+}
+
+/* 针对已经很黑的元素，可能不需要处理，视情况而定 */

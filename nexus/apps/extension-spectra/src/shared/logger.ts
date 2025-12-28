@@ -6,7 +6,7 @@ export { createPlainLogger, LOG_COLORS } from '@nexus/kernel';
 
 // post: returns a logger instance with injected [SPECTRA] prefixes and specialized capture/mode tracking methods
 export function createLogger(tag: string) {
-	const base = kernelCreateLogger(tag);
+	const base = kernelCreateLogger(tag, 'SPECTRA');
 	const fullPrefix = `[SPECTRA] [${tag}]`;
 
 	return {

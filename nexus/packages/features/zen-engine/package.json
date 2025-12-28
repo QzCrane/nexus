@@ -1,0 +1,21 @@
+{
+	"name": "@nexus/zen-engine",
+	"version": "0.1.0",
+	"private": true,
+	"description": "HALO feature engine: dark mode, smooth scroll, and utilities",
+	"type": "module",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"scripts": {
+		"build": "tsc",
+		"dev": "tsc --watch"
+	},
+	"dependencies": {
+		"@nexus/contracts": "workspace:*",
+		"@nexus/kernel": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/chrome": "^0.0.268",
+		"typescript": "^5.3.0"
+	}
+}

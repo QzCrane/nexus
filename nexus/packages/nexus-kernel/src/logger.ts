@@ -1,6 +1,6 @@
-// goal: unified logging infrastructure using [SPECTRA] prefix for easy filtering
+// goal: unified logging infrastructure with configurable product prefix for multi-extension support
 
-const PREFIX = '[SPECTRA]';
+export type NexusProduct = 'SPECTRA' | 'HALO' | 'CORTEX' | 'NEXUS';
 
 export interface Logger {
 	log: (...args: unknown[]) => void;
@@ -22,8 +22,8 @@ export const LOG_COLORS = {
 };
 
 // eff: creates a colored logger for browser contexts (Popup/Content)
-export function createLogger(tag: string): Logger {
-	const fullPrefix = `${PREFIX} [${tag}]`;
+export function createLogger(tag: string, product: NexusProduct = 'NEXUS'): Logger {
+	const fullPrefix = `[${product}] [${tag}]`;
 
 	return {
 		log: (...args: unknown[]) => console.log(`%c${fullPrefix}`, LOG_COLORS.log, ...args),
@@ -36,8 +36,8 @@ export function createLogger(tag: string): Logger {
 }
 
 // eff: creates a plain logger for Service Worker (limited colors support)
-export function createPlainLogger(tag: string): Logger {
-	const fullPrefix = `${PREFIX} [${tag}]`;
+export function createPlainLogger(tag: string, product: NexusProduct = 'NEXUS'): Logger {
+	const fullPrefix = `[${product}] [${tag}]`;
 
 	return {
 		log: (...args: unknown[]) => console.log(fullPrefix, ...args),
@@ -49,7 +49,7 @@ export function createPlainLogger(tag: string): Logger {
 	};
 }
 
-const CORS_PREFIX = `%c${PREFIX} [CORS]`;
+const CORS_PREFIX = `%c[SPECTRA] [CORS]`;
 
 // corsLogger: specialized logger for CORS detection logic
 export const corsLogger = {

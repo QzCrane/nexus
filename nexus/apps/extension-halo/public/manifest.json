@@ -1,0 +1,45 @@
+{
+	"manifest_version": 3,
+	"name": "HALO - Ultimate Utility Toolset",
+	"version": "0.1.0",
+	"description": "Zero upload. Zero tracking. Zero cost. Dark mode, QR generator, and more.",
+	"permissions": [
+		"storage",
+		"activeTab",
+		"scripting"
+	],
+	"action": {
+		"default_popup": "popup.html",
+		"default_title": "HALO"
+	},
+	"background": {
+		"service_worker": "background.js"
+	},
+	"content_scripts": [
+		{
+			"matches": [
+				"<all_urls>"
+			],
+			"js": [
+				"content.js"
+			],
+			"run_at": "document_start",
+			"all_frames": true
+		}
+	],
+	"web_accessible_resources": [
+		{
+			"resources": [
+				"dark-mode.css"
+			],
+			"matches": [
+				"<all_urls>"
+			]
+		}
+	],
+	"icons": {
+		"16": "icon16.png",
+		"48": "icon48.png",
+		"128": "icon128.png"
+	}
+}
