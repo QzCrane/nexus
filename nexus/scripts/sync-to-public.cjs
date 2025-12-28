@@ -118,7 +118,7 @@ function copyDir(src, dest, basePath = '') {
 }
 
 /**
- * Clean destination directory (except .git)
+ * Clean destination directory (except .git) with retry for locked files
  */
 function cleanDest(dest) {
   if (!fs.existsSync(dest)) return;
@@ -127,7 +127,24 @@ function cleanDest(dest) {
   for (const entry of entries) {
     if (entry.name === '.git') continue;
     const fullPath = path.join(dest, entry.name);
-    fs.rmSync(fullPath, { recursive: true, force: true });
+    
+    // Retry logic for Windows file locking issues
+    let retries = 3;
+    while (retries > 0) {
+      try {
+        fs.rmSync(fullPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+        break;
+      } catch (err) {
+        retries--;
+        if (retries === 0) {
+          console.error(`  [WARN] Could not remove ${entry.name}: ${err.message}`);
+          console.error('         Please close any programs using the nexus-public directory.');
+        } else {
+          // Wait a bit and retry
+          require('child_process').execSync('timeout /t 1 /nobreak', { stdio: 'ignore', shell: true });
+        }
+      }
+    }
   }
 }
 
@@ -239,8 +256,16 @@ function main() {
     
     console.log('\n✅ Build verification passed!');
     
+    // Stop turbo daemon before cleanup to prevent file locks
+    console.log('\nStopping turbo daemon...');
+    try {
+      execSync('npx turbo daemon stop', { cwd: CONFIG.destDir, stdio: 'ignore' });
+    } catch (e) {
+      // Ignore if daemon is not running
+    }
+    
     // Clean build artifacts
-    console.log('\nCleaning build artifacts...');
+    console.log('Cleaning build artifacts...');
     const artifactDirs = [
       'node_modules',
       'packages/contracts/dist',
