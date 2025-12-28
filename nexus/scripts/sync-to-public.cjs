@@ -28,6 +28,7 @@ const CONFIG = {
     'docs',                           // All docs
     'store-listings',                 // Chrome store listings
     'store-assets',                   // Store promotional assets
+    'assets',                          // Development assets (screenshots, scripts)
     'privacy-justifications.md',
     'policy-decision.md',
     'cors-data-flow.md',
@@ -49,6 +50,11 @@ const CONFIG = {
     // === Test/Dev Only ===
     'test',
     '*.log',
+    
+    // === Unused/Empty Packages ===
+    'packages/ui-kit',
+    'packages/features/ai-engine',
+    'packages/features/zen-engine',
   ],
   // Commit message prefix
   commitPrefix: 'sync:',
@@ -179,6 +185,18 @@ function main() {
     scriptsToRemove.forEach(s => delete pkg.scripts?.[s]);
     fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, '\t') + '\n');
     console.log('  [PATCH] package.json (removed internal scripts)');
+  }
+
+  // Post-process: Patch tsconfig.base.json to remove references to excluded packages
+  console.log('  [POST] Patching tsconfig.base.json for public repo...');
+  const tsconfigPath = path.join(CONFIG.destDir, 'tsconfig.base.json');
+  if (fs.existsSync(tsconfigPath)) {
+    const tsconfig = JSON.parse(fs.readFileSync(tsconfigPath, 'utf8'));
+    // Remove paths for excluded packages
+    const pathsToRemove = ['@nexus/ui-kit', '@nexus/ai-engine', '@nexus/zen-engine'];
+    pathsToRemove.forEach(p => delete tsconfig.compilerOptions?.paths?.[p]);
+    fs.writeFileSync(tsconfigPath, JSON.stringify(tsconfig, null, '  ') + '\n');
+    console.log('  [PATCH] tsconfig.base.json (removed unused package paths)');
   }
 
   // Git operations
