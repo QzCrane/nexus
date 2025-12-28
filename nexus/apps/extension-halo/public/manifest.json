@@ -27,16 +27,6 @@
 			"all_frames": true
 		}
 	],
-	"web_accessible_resources": [
-		{
-			"resources": [
-				"dark-mode.css"
-			],
-			"matches": [
-				"<all_urls>"
-			]
-		}
-	],
 	"icons": {
 		"16": "icon16.png",
 		"48": "icon48.png",

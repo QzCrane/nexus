@@ -6,7 +6,9 @@ export {
 	disableDarkMode,
 	isDarkModeEnabled,
 	toggleDarkMode,
-	type DarkModeConfig
+	DARK_MODE_PRESETS,
+	type DarkModeConfig,
+	type DarkModePreset
 } from './dark-mode.js';
 
 // Smooth scroll engine

@@ -37,8 +37,8 @@ export function Toggle({
 		<div className={`toggle-wrapper ${className}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
 			{(label || sublabel) && (
 				<div className="toggle-labels">
-					{label && <div className="toggle-label" style={{ fontWeight: 500 }}>{label}</div>}
-					{sublabel && <div className="toggle-sublabel" style={{ fontSize: '12px', color: '#666' }}>{sublabel}</div>}
+					{label && <div className="toggle-label" style={{ fontWeight: 500, color: '#e0e0e0' }}>{label}</div>}
+					{sublabel && <div className="toggle-sublabel" style={{ fontSize: '12px', color: '#888' }}>{sublabel}</div>}
 				</div>
 			)}
 			<button
@@ -56,11 +56,11 @@ export function Toggle({
 					padding: '2px',
 					cursor: disabled ? 'not-allowed' : 'pointer',
 					opacity: disabled ? 0.5 : 1,
-					backgroundColor: checked ? '#6200ee' : '#e0e0e0',
+					backgroundColor: checked ? '#4CAF50' : '#444',
 					border: 'none',
 					transition: 'background-color 0.2s ease',
-					width: size === 'sm' ? '32px' : size === 'md' ? '40px' : '48px',
-					height: size === 'sm' ? '16px' : size === 'md' ? '20px' : '24px'
+					width: size === 'sm' ? '32px' : size === 'md' ? '44px' : '52px',
+					height: size === 'sm' ? '16px' : size === 'md' ? '24px' : '28px'
 				}}
 			>
 				<span

@@ -1,4 +1,4 @@
-// goal: reusable card container component for consistent UI layout
+// goal: reusable card container component for consistent UI layout (dark theme)
 
 import React from 'react';
 
@@ -13,26 +13,26 @@ export interface CardProps {
 
 const PADDING_MAP = {
 	none: '0',
-	sm: '8px',
-	md: '15px',
+	sm: '10px',
+	md: '14px',
 	lg: '20px'
 };
 
 const VARIANT_STYLES = {
 	default: {
-		background: 'var(--card-bg, #f8f9fa)',
+		background: '#2a2a2a',
 		border: 'none',
 		boxShadow: 'none'
 	},
 	outlined: {
 		background: 'transparent',
-		border: '1px solid var(--border-color, #e0e0e0)',
+		border: '1px solid #444',
 		boxShadow: 'none'
 	},
 	elevated: {
-		background: 'var(--card-bg, #fff)',
+		background: '#2a2a2a',
 		border: 'none',
-		boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+		boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
 	}
 };
 
@@ -52,13 +52,13 @@ export function Card({
 			style={{
 				...variantStyle,
 				padding: PADDING_MAP[padding],
-				borderRadius: '8px'
+				borderRadius: '10px'
 			}}
 		>
 			{(title || subtitle) && (
 				<div className="card-header" style={{ marginBottom: padding !== 'none' ? '10px' : '0' }}>
-					{title && <div className="card-title" style={{ fontWeight: 600, fontSize: '14px' }}>{title}</div>}
-					{subtitle && <div className="card-subtitle" style={{ fontSize: '12px', color: '#666' }}>{subtitle}</div>}
+					{title && <div className="card-title" style={{ fontWeight: 600, fontSize: '14px', color: '#fff' }}>{title}</div>}
+					{subtitle && <div className="card-subtitle" style={{ fontSize: '12px', color: '#888' }}>{subtitle}</div>}
 				</div>
 			)}
 			{children}
