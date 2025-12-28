@@ -92,4 +92,4 @@ pnpm workspace | `pnpm install/build/--filter [name] build` | 内部包: `"@nexu
 
 ## §6 语言
 
-**已完成** ✅ | 新代码强制英文 | commit 英文 | `pnpm verify`检测
+新代码强制英文 | commit 英文 | `pnpm verify`检测

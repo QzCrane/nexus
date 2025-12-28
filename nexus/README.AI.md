@@ -28,7 +28,7 @@ nexus(私有) → `pnpm sync-public` → nexus-public/ → github.com/QzCrane/sp
 
 ## 英文迁移
 
-**已完成** ✅ | 新代码强制英文 | commit 英文 | `pnpm verify`检测
+新代码强制英文 | commit 英文 | `pnpm verify`检测
 
 ---
 

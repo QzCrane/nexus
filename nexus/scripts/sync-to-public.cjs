@@ -60,17 +60,25 @@ const CONFIG = {
  * Check if path matches any exclude pattern
  */
 function shouldExclude(relativePath) {
+  const fileName = path.basename(relativePath);
+  
   return CONFIG.excludePatterns.some(pattern => {
-    if (pattern.includes('*')) {
-      // Glob pattern
-      const regex = new RegExp(pattern.replace('*', '.*'));
-      return regex.test(relativePath);
+    if (pattern.startsWith('*.')) {
+      // Extension pattern: *.log should only match files ending with .log
+      const ext = pattern.slice(1); // ".log"
+      return fileName.endsWith(ext);
     }
-    // Exact match or starts with
+    if (pattern.includes('*')) {
+      // Other glob patterns
+      const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+      return regex.test(relativePath) || regex.test(fileName);
+    }
+    // Exact match or path component match
     return relativePath === pattern || 
            relativePath.startsWith(pattern + '/') ||
            relativePath.endsWith('/' + pattern) ||
-           relativePath.includes('/' + pattern + '/');
+           relativePath.includes('/' + pattern + '/') ||
+           fileName === pattern;
   });
 }
 
