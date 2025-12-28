@@ -209,6 +209,66 @@ function main() {
   }
 
   console.log('\n========================================');
+  console.log('  Build Verification');
+  console.log('========================================\n');
+
+  try {
+    console.log('Installing dependencies...');
+    execSync('pnpm install', { cwd: CONFIG.destDir, stdio: 'inherit' });
+    
+    console.log('\nBuilding project...');
+    execSync('pnpm build', { cwd: CONFIG.destDir, stdio: 'inherit' });
+    
+    console.log('\n✅ Build verification passed!');
+    
+    // Clean build artifacts
+    console.log('\nCleaning build artifacts...');
+    const artifactDirs = [
+      'node_modules',
+      'packages/contracts/dist',
+      'packages/contracts/.turbo',
+      'packages/nexus-kernel/dist',
+      'packages/nexus-kernel/.turbo',
+      'packages/features/audio-engine/dist',
+      'packages/features/audio-engine/.turbo',
+      'apps/extension-spectra/dist',
+      'apps/extension-spectra/.turbo',
+      '.turbo',
+      'pnpm-lock.yaml',  // Keep in repo, but generated during install
+    ];
+    
+    for (const dir of artifactDirs) {
+      const fullPath = path.join(CONFIG.destDir, dir);
+      if (fs.existsSync(fullPath)) {
+        fs.rmSync(fullPath, { recursive: true, force: true });
+        console.log(`  [CLEAN] ${dir}`);
+      }
+    }
+    
+    // Remove *.tsbuildinfo files
+    const findTsBuildInfo = (dir) => {
+      if (!fs.existsSync(dir)) return;
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory() && entry.name !== 'node_modules' && entry.name !== '.git') {
+          findTsBuildInfo(fullPath);
+        } else if (entry.name.endsWith('.tsbuildinfo')) {
+          fs.rmSync(fullPath, { force: true });
+          console.log(`  [CLEAN] ${path.relative(CONFIG.destDir, fullPath)}`);
+        }
+      }
+    };
+    findTsBuildInfo(CONFIG.destDir);
+    
+    console.log('\n✅ Build artifacts cleaned!');
+  } catch (e) {
+    console.error('\n❌ Build verification failed!');
+    console.error(e.message);
+    process.exit(1);
+  }
+
+  console.log('\n========================================');
   console.log('  Sync Complete!');
   console.log('========================================\n');
 }

@@ -22,6 +22,8 @@
 
 nexus(私有) → `pnpm sync-public` → nexus-public/ → github.com/QzCrane/spectra
 
+流程: 复制 → 提交 → 构建验证 → 清理产物 → 推送
+
 排除: scripts/ docs/ .agent/ store-listings/ test/ \*.ai-context.md plan.md
 
 ---
