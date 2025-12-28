@@ -10,7 +10,8 @@
 		"lint": "turbo run lint",
 		"typecheck": "turbo run typecheck",
 		"verify": "node scripts/verify-architecture.js",
-		"prebuild": "node scripts/verify-architecture.js"
+		"prebuild": "node scripts/verify-architecture.js",
+		"sync-public": "node scripts/sync-to-public.cjs"
 	},
 	"devDependencies": {
 		"chrome-types": "^0.1.327",

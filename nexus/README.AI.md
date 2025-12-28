@@ -6,97 +6,88 @@
 
 ## 指引
 
-### 任务准备
+**任务准备**: plan.md(路线) → 模块定位 → contracts/.ai-context.md(通信)
 
-1. plan.md (根目录): 功能矩阵+实施路线
-2. 模块职责 (下方): 定位目标模块
-3. contracts/.ai-context.md: 通信+数据结构
+**场景导读**:
 
-### 场景导读
+- 音频模式 → docs/policy-decision.md
+- 状态同步 → docs/cors-data-flow.md
+- 新 Action → contracts/src/messages/definitions.ts
+- 规则/依赖 → docs/ai-rules.md
+- 开源同步 → `pnpm sync-public`
 
-- 修改音频模式决策 → docs/policy-decision.md
-- 调整跨端状态同步 → docs/cors-data-flow.md
-- 引入新 Action → contracts/src/messages/definitions.ts
-- 修改依赖/构建/规则 → docs/ai-rules.md
+---
+
+## 开源
+
+nexus(私有) → `pnpm sync-public` → nexus-public/ → github.com/QzCrane/spectra
+
+排除: scripts/ docs/ .agent/ store-listings/ test/ \*.ai-context.md plan.md
+
+---
+
+## 英文迁移
+
+新代码强制英文 | 旧代码逐步迁移(168 文件/1748 处) | commit 英文 | `pnpm verify`检测
 
 ---
 
 ## 工作流
 
-- /feature-finish: 交付门禁 (测试+文档)
-- /add-dependency: 引入依赖 (查重+登记)
-- /new-module: 新建模块 (脚手架)
-- /release-spectra: 发布 (版本+打包)
+/feature-finish(交付) | /add-dependency(依赖) | /new-module(脚手架) | /release-spectra(发布)
 
 ---
 
-## 模块映射
+## 模块
 
-- packages/contracts (@nexus/contracts): 唯一定义源
-- packages/nexus-kernel (@nexus/kernel): RPC+Storage+日志
-- packages/features/audio-engine (@nexus/audio-engine): WebAudio 节点链
-- apps/extension-spectra (@nexus/spectra): 扩展入口+UI
-- scripts/: 构建/资源处理脚本 (图标生成、架构验证)
-
----
-
-## 功能全景
-
-- Audio: 800% 音量, 10 段 EQ, 压限器, 低音, 声道平衡, 延迟
-- Video: 旋转/镜像, 画中画, 全屏, 截图, 去黑边, 时间跳转
-- FX: 亮度/对比度/饱和度, 灰度/反色, 背景暗化
-- Playback: 速率 0.25x-16x, AB 循环, 时间标记
-- Settings: 域名预设管理, 热键编辑器 (Options 页)
-- Remote: 多会话遥控, QR 码连接, 移动端 UI
-- Hotkeys: 可配置快捷键, 70+ 动作, 按键录入
-- Engine: CORS 探测, Sticky Badge
+| 包                  | 职责        |
+| ------------------- | ----------- |
+| @nexus/contracts    | 类型定义源  |
+| @nexus/kernel       | RPC+Storage |
+| @nexus/audio-engine | WebAudio 链 |
+| @nexus/spectra      | 扩展入口    |
 
 ---
 
-## 通信协议
+## 功能
 
-- 音频: AUDIO_GET/SET, UI_SYNC → 节点参数+UI 反馈
-- 劫持: CAPTURE_TOGGLE/STATE_CHANGE → Capture 生命周期
-- 视频: VIDEO_ROTATE/SCREENSHOT/AB_SET → 变换+高级播放
-- 遥控: REMOTE_CREATE/GET/CLOSE_SESSION → PeerJS WebRTC
-- 同步: TAB_REPORT_MEDIA, MEDIA_REPORT → 5s 心跳
+Audio: 800%/EQ/压限/声道/延迟 | Video: 速率 16x/旋转/镜像/PiP/截图 | FX: 亮度/对比度/灰度/暗化
+Playback: AB 循环/标记 | Remote: 多会话遥控/QR | Hotkeys: 70+动作 | Engine: CORS/Badge
+
+---
+
+## 协议
+
+| 类   | 消息                       | 用途      |
+| ---- | -------------------------- | --------- |
+| 音频 | AUDIO_GET/SET, UI_SYNC     | 节点+反馈 |
+| 劫持 | CAPTURE_TOGGLE/STATE       | 生命周期  |
+| 视频 | VIDEO_ROTATE/SCREENSHOT/AB | 变换+播放 |
+| 遥控 | REMOTE_CREATE/GET/CLOSE    | WebRTC    |
+| 同步 | TAB_REPORT/MEDIA_REPORT    | 5s 心跳   |
 
 ---
 
 ## 红线
 
-- Contracts: 禁止包含逻辑实现
-- Architecture: 改状态同步前必读 cors-data-flow.md
-- Stealth: 非调节行为禁止触发 Badge
-- Code: 源码 >200 行 / .ai-context.md >30 行
-- Storage: 禁止绕过 kernel 直接用 chrome.storage
-- TempFields: toggleMute/volumeDelta 仅作临时指令，禁止持久化
+Contracts 禁逻辑 | 改同步读 cors-data-flow | 非调节禁 Badge | 源码 ≤200 行 | 禁绕 kernel 存储 | toggleMute/volumeDelta 禁持久化 | 新代码英文注释
 
 ---
 
-## 上下文索引
+## 验证 v5
 
-### 规则
+`pnpm verify`: .ai-context | contracts 纯净 | 行数 150/200 | 硬编码 Action | HTML 引用 | 中文注释 | 依赖方向
 
-- docs/ai-rules.md: 架构+质量+压缩+安全+依赖
+---
 
-### 架构
+## 索引
 
-- apps/extension-spectra/docs/policy-decision.md: 模式决策矩阵
-- apps/extension-spectra/docs/cors-data-flow.md: CORS 探测流程
+规则: docs/ai-rules.md
+架构: policy-decision.md, cors-data-flow.md
+模块: packages/{contracts,nexus-kernel,audio-engine}/.ai-context.md + apps/extension-spectra/.ai-context.md
 
-### 模块 (.ai-context.md)
+---
 
-- packages/contracts/: 纯类型层
-- packages/nexus-kernel/: RPC+Storage+日志
-- packages/features/audio-engine/: WebAudio 节点链
-- apps/extension-spectra/: 扩展顶层
-- └─ src/popup/: Popup UI
-- └─ src/content/: Content Script
-- └─ src/background/: Service Worker
-- └─ src/options/: 快捷键配置 (Slots+网站)
-- └─ src/content/policy-executor/: CORS+模式
-- └─ src/content/lifecycle/: 定时器+观察器
-- └─ src/remote/: 遥控弹窗+QR
-- └─ src/offscreen-remote/: WebRTC Offscreen
-- └─ src/options/: 快捷键编辑器 Settings 页
+## 路线 2026
+
+Q1 抢占(HALO 深色+标签) | Q2 AI(人声分离+识曲) | Q3 付费(PRO) | Q4 生态(移动+云)
