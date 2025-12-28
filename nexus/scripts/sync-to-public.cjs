@@ -204,43 +204,40 @@ function main() {
     console.log('  [PATCH] package.json (removed internal scripts)');
   }
 
-  // Post-process: Patch tsconfig.base.json to remove references to excluded packages
-  console.log('  [POST] Patching tsconfig.base.json for public repo...');
-  const tsconfigPath = path.join(CONFIG.destDir, 'tsconfig.base.json');
-  if (fs.existsSync(tsconfigPath)) {
-    const tsconfig = JSON.parse(fs.readFileSync(tsconfigPath, 'utf8'));
-    // Remove paths for excluded packages
-    const pathsToRemove = ['@nexus/ui-kit', '@nexus/ai-engine', '@nexus/zen-engine'];
-    pathsToRemove.forEach(p => delete tsconfig.compilerOptions?.paths?.[p]);
-    fs.writeFileSync(tsconfigPath, JSON.stringify(tsconfig, null, '  ') + '\n');
-    console.log('  [PATCH] tsconfig.base.json (removed unused package paths)');
-  }
-
-  // Git operations
+  // Git operations - squash all commits into one
   console.log('\n========================================');
-  console.log('  Git Operations');
+  console.log('  Git Operations (Squash Mode)');
   console.log('========================================\n');
 
   try {
-    const date = new Date().toISOString().split('T')[0];
-    const commitMsg = `${CONFIG.commitPrefix} ${date}`;
-
     execSync('git add -A', { cwd: CONFIG.destDir, stdio: 'inherit' });
     
     // Check if there are changes
     const status = execSync('git status --porcelain', { cwd: CONFIG.destDir }).toString();
     if (status.trim()) {
-      execSync(`git commit -m "${commitMsg}"`, { cwd: CONFIG.destDir, stdio: 'inherit' });
-      console.log('\n✅ Changes committed!');
-      console.log('\nTo push to remote:');
+      // Squash all commits into one: reset to first commit then recommit
+      console.log('Squashing commits into single release commit...');
+      
+      // Get current branch
+      const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: CONFIG.destDir }).toString().trim();
+      
+      // Soft reset to initial state (keeps files, removes commits)
+      execSync('git reset --soft $(git rev-list --max-parents=0 HEAD)', { cwd: CONFIG.destDir, shell: true });
+      
+      // Create clean single commit
+      const releaseMsg = 'feat: SPECTRA v1.0 - Professional Media Controller';
+      execSync(`git commit -m "${releaseMsg}"`, { cwd: CONFIG.destDir, stdio: 'inherit' });
+      
+      console.log('\n✅ Squashed to single commit!');
+      console.log('\nTo push (requires force):');
       console.log(`  cd ${CONFIG.destDir}`);
-      console.log('  git remote add origin <your-public-repo-url>');
-      console.log('  git push -u origin main');
+      console.log('  git push -f origin main');
     } else {
       console.log('\n⚠️ No changes to commit.');
     }
   } catch (e) {
     console.log('\n⚠️ Git commit skipped (no changes or error).');
+    console.error(e.message);
   }
 
   console.log('\n========================================');
