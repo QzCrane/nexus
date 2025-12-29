@@ -85,7 +85,8 @@ async function createSession(tabId: number): Promise<RemoteSession> {
 		});
 
 		peer.on('error', (err) => {
-			console.error(LOG, `[Tab ${tabId}] Peer error:`, err);
+			// note: network disconnects are expected, downgrade to warn
+			console.warn(LOG, `[Tab ${tabId}] Peer error:`, err.type, err.message);
 			reject(err);
 		});
 

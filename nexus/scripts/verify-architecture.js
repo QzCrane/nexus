@@ -14,6 +14,7 @@ import { checkSourceFileLength } from './verify/check-file-length.js';
 import { checkHardcodedActions } from './verify/check-actions.js';
 import { checkDependencyDirection, checkReadmeAI, checkHtmlResources } from './verify/check-misc.js';
 import { checkChineseComments } from './verify/check-chinese.js';
+import { checkPermissionUsage } from './verify/check-permissions.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,6 +37,7 @@ function main() {
 	checkSourceFileLength(ROOT);
 	checkHardcodedActions(ROOT);
 	checkHtmlResources(ROOT);
+	checkPermissionUsage(ROOT);
 	checkChineseComments(ROOT);
 
 	console.log('\n' + '='.repeat(60));

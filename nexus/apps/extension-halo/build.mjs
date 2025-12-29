@@ -41,18 +41,18 @@ build({
 	outfile: 'dist/content.js',
 }).then(() => console.log('✓ Built content.js')).catch(e => { console.error(e); process.exit(1); });
 
-// Build Popup (React)
-build({
-	...commonConfig,
-	entryPoints: ['src/entry/popup.tsx'],
-	outfile: 'dist/popup.js',
-}).then(() => console.log('✓ Built popup.js')).catch(e => { console.error(e); process.exit(1); });
-
 // Build Background
 build({
 	...commonConfig,
 	entryPoints: ['src/entry/background.ts'],
 	outfile: 'dist/background.js',
 }).then(() => console.log('✓ Built background.js')).catch(e => { console.error(e); process.exit(1); });
+
+// Build SidePanel (React)
+build({
+	...commonConfig,
+	entryPoints: ['src/entry/sidepanel.tsx'],
+	outfile: 'dist/sidepanel.js',
+}).then(() => console.log('✓ Built sidepanel.js')).catch(e => { console.error(e); process.exit(1); });
 
 console.log('\n🎉 HALO build complete!');

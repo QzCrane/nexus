@@ -59,21 +59,22 @@ nexus(私有) → nexus-public/ → github.com/QzCrane/spectra
 
 ## 功能
 
-**SPECTRA**: Audio 800%/EQ/压限/声道/延迟 | Video 速率 16x/旋转/镜像/PiP/截图 | AB 循环/标记 | 遥控 QR+WebRTC
+**SPECTRA**: Audio 800%/EQ/压限/声道/延迟 | Video 速率 16x/旋转/镜像/PiP/截图 | AB 循环/标记 | 遥控 QR+WebRTC | 热键脚本 (UserScripts)
 
-**HALO**: 工具箱(二维码/颜色/JSON/尺子/大纲) | 效率(标签/截图/剪贴板) | AI(识曲/摘要/OCR) | 深色(⏸️ 搁置)
+**HALO** (SidePanel): 核心(✅ 二维码/颜色/JSON/尺子/大纲/设置) | 主题(✅ 暗/亮/跟随+强调色) | 效率(🔜 剪贴板) | 蓝海(🔜 PDF/存档)
 
 ---
 
 ## 协议
 
-| 类   | 消息                       | 用途      |
-| ---- | -------------------------- | --------- |
-| 音频 | AUDIO_GET/SET, UI_SYNC     | 节点+反馈 |
-| 劫持 | CAPTURE_TOGGLE/STATE       | 生命周期  |
-| 视频 | VIDEO_ROTATE/SCREENSHOT/AB | 变换+播放 |
-| 遥控 | REMOTE_CREATE/GET/CLOSE    | WebRTC    |
-| 同步 | TAB_REPORT/MEDIA_REPORT    | 5s 心跳   |
+| 类   | 消息                       | 用途        |
+| ---- | -------------------------- | ----------- |
+| 音频 | AUDIO_GET/SET, UI_SYNC     | 节点+反馈   |
+| 劫持 | CAPTURE_TOGGLE/STATE       | 生命周期    |
+| 视频 | VIDEO_ROTATE/SCREENSHOT/AB | 变换+播放   |
+| 遥控 | REMOTE_CREATE/GET/CLOSE    | WebRTC      |
+| 脚本 | USER_SCRIPT_EXECUTE        | 这里的 eval |
+| 同步 | TAB_REPORT/MEDIA_REPORT    | 5s 心跳     |
 
 ---
 

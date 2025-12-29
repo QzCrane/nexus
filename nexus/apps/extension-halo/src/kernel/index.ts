@@ -1,3 +1,5 @@
-// goal: HALO kernel module exports
-
-export * from './storage.js';
+// goal: HALO kernel re-exports
+export * from './types';
+export * from './storage';
+export * from './settings';
+export * from './theme';

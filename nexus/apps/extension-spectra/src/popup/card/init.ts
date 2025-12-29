@@ -4,7 +4,7 @@ import { predictCapture } from '@nexus/audio-engine';
 import { getAudioConfig, type GlobalSettings } from '@nexus/kernel';
 import { Actions } from '@nexus/contracts';
 import type { I18NDict, ContentStatusResponse } from '../types';
-import { getDomain, sendToTab, sendToBackground, ensureInjected } from '../utils/dom';
+import { getDomain, sendToTab, sendToBackground } from '../utils/dom';
 import { cardRenderCallbacks } from '../views/settings';
 import { getCardUIElements } from './ui-elements';
 import { cleanConfig, type CardInternalState, type InitCardParams } from './types';

@@ -3,8 +3,8 @@
 
 import React, { useState, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
-import type { DarkModeConfig, DarkModeFixes } from './dark-mode';
-import { DEFAULT_CONFIG, DEFAULT_FIXES, DARK_MODE_PRESETS, type DarkModePreset } from './dark-mode';
+import type { DarkModeConfig, DarkModeFixes } from './core';
+import { DEFAULT_CONFIG, DEFAULT_FIXES, DARK_MODE_PRESETS, type DarkModePreset } from './core';
 
 interface Props {
 	config: Partial<DarkModeConfig>;

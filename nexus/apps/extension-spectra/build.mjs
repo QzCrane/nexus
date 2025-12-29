@@ -33,6 +33,11 @@ const commonResolve = {
   }
 };
 
+// detect dev mode
+const isDev = process.argv.includes('--dev') || process.argv.includes('--watch');
+
+// ...
+
 // Build function - uses Rollup output
 async function buildEntry(entry, outputName, globalName) {
   const result = await build({
@@ -51,8 +56,8 @@ async function buildEntry(entry, outputName, globalName) {
           entryFileNames: `${outputName}.js`
         }
       },
-      minify: false,
-      sourcemap: 'inline'
+      minify: !isDev,
+      sourcemap: isDev ? 'inline' : false
     },
     resolve: commonResolve
   });

@@ -6,10 +6,10 @@
   "default_locale": "en",
   "permissions": [
     "tabs",
-    "scripting",
     "storage",
     "tabCapture",
-    "offscreen"
+    "offscreen",
+    "userScripts"
   ],
   "host_permissions": [
     "<all_urls>"

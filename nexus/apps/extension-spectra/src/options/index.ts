@@ -5,6 +5,7 @@ import { initI18n } from './i18n';
 import { initSlotsEditor } from './slots-editor';
 import { initSiteEditor } from './site-editor';
 import { initModal } from './modal';
+import { initUserScriptsSection } from './userscripts';
 import { enableSmoothScroll } from '../shared/smooth-scroll';
 
 // eff: initializes global page behaviors and sub-modules in sequence
@@ -19,6 +20,7 @@ async function init(): Promise<void> {
 
 	await initSlotsEditor();
 	await initSiteEditor();
+	await initUserScriptsSection();
 
 	const link = document.getElementById('chrome-shortcuts-link');
 	if (link) {

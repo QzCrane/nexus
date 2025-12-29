@@ -1,16 +1,20 @@
 {
 	"manifest_version": 3,
 	"name": "HALO - Ultimate Utility Toolset",
-	"version": "0.1.0",
-	"description": "Zero upload. Zero tracking. Zero cost. Dark mode, QR generator, and more.",
+	"version": "0.2.0",
+	"description": "Zero upload. Zero tracking. Zero cost. QR generator, color picker, and more.",
 	"permissions": [
 		"storage",
 		"activeTab",
-		"scripting"
+		"scripting",
+		"sidePanel",
+		"contextMenus"
 	],
 	"action": {
-		"default_popup": "popup.html",
-		"default_title": "HALO"
+		"default_title": "Open HALO Toolbox"
+	},
+	"side_panel": {
+		"default_path": "sidepanel.html"
 	},
 	"background": {
 		"service_worker": "background.js"

@@ -14,12 +14,6 @@ SPECTRA is an audio and video enhancement extension that provides volume amplifi
 Required to detect when users switch between tabs, allowing the extension to apply the correct audio settings for each tab and update the badge indicator showing current volume/mute status.
 ```
 
-### scripting 权限
-
-```
-Required to inject the audio processing script into web pages. This script intercepts HTML5 audio/video elements to apply volume amplification, equalizer, and playback speed adjustments in real-time.
-```
-
 ### storage 权限
 
 ```
@@ -42,6 +36,12 @@ Required to maintain audio processing when the popup is closed. The offscreen do
 
 ```
 Required to inject content scripts into all websites so users can control audio/video on any webpage. The extension only processes media elements and does not collect or transmit any browsing data.
+```
+
+### userScripts 权限
+
+```
+Required to execute user-defined custom hotkey scripts. Users can configure custom JavaScript actions for keyboard shortcuts. This permission provides a secure sandbox for executing these user-created scripts. Scripts are only executed when explicitly triggered by user-configured hotkeys.
 ```
 
 ### 远程代码 (Remote Code) - 如有提示

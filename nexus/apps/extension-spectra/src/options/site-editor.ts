@@ -42,7 +42,14 @@ function bindEvents(): void {
 	const select = document.getElementById('site-select') as HTMLSelectElement | null;
 	select?.addEventListener('change', () => select.value ? selectSite(select.value) : hideSiteConfig());
 
-	document.getElementById('site-add-current')?.addEventListener('click', addCurrentSite);
+	// note: new manual domain input handler
+	const siteInput = document.getElementById('site-input') as HTMLInputElement | null;
+	const addBtn = document.getElementById('site-add-btn');
+
+	addBtn?.addEventListener('click', () => addSiteFromInput(siteInput?.value));
+	siteInput?.addEventListener('keydown', (e) => {
+		if (e.key === 'Enter') addSiteFromInput(siteInput.value);
+	});
 
 	const enabledCb = document.getElementById('site-enabled') as HTMLInputElement | null;
 	enabledCb?.addEventListener('change', async () => {
@@ -60,6 +67,37 @@ function bindEvents(): void {
 			if (site) { site.bindings.push(binding); saveSettings(); renderBindings(); }
 		});
 	});
+}
+
+// eff: validates and adds a new site from manual domain input
+async function addSiteFromInput(rawDomain: string | undefined): Promise<void> {
+	if (!rawDomain) return;
+
+	// note: normalize domain - strip protocol, path, whitespace
+	let domain = rawDomain.trim().toLowerCase();
+	domain = domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+
+	if (!domain || domain.includes(' ')) {
+		alert('Invalid domain format');
+		return;
+	}
+
+	if (settings.sites[domain]) {
+		alert('Site already exists');
+		return;
+	}
+
+	settings.sites[domain] = { enabled: false, bindings: [] };
+	await saveSettings();
+	renderSiteSelector();
+
+	// note: auto-select the newly added site
+	const select = document.getElementById('site-select') as HTMLSelectElement | null;
+	if (select) { select.value = domain; selectSite(domain); }
+
+	// note: clear input field
+	const input = document.getElementById('site-input') as HTMLInputElement | null;
+	if (input) input.value = '';
 }
 
 // eff: displays the configuration sub-panel for the chosen domain and populates its current key bindings
@@ -82,21 +120,6 @@ function hideSiteConfig(): void {
 	document.getElementById('site-empty')?.classList.remove('hidden');
 }
 
-// eff: probes the currently active browser tab to automatically add its domain to the custom hotkeys list
-async function addCurrentSite(): Promise<void> {
-	try {
-		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-		if (!tab?.url) return;
-		const domain = new URL(tab.url).hostname;
-		// rule: prevent Duplicate entries and ignore internal chrome:// or about:blank pages
-		if (!domain || settings.sites[domain]) { alert('Site already exists or invalid URL'); return; }
-		settings.sites[domain] = { enabled: false, bindings: [] };
-		await saveSettings();
-		renderSiteSelector();
-		const select = document.getElementById('site-select') as HTMLSelectElement | null;
-		if (select) { select.value = domain; selectSite(domain); }
-	} catch (e) { console.error('Failed to add site:', e); }
-}
 
 async function deleteSite(): Promise<void> {
 	if (!selectedSite || !confirm(`Delete configuration for ${selectedSite}?`)) return;

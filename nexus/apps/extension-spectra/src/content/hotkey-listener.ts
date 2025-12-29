@@ -15,12 +15,20 @@ let settings: HotkeySettings = { ...DEFAULT_HOTKEY_SETTINGS };
 // post: returns a cleanup function to detach all listeners when the content script is purged
 export async function initHotkeyListener(): Promise<() => void> {
 	await loadSettings();
-	chrome.storage.onChanged.addListener(handleStorageChange);
+
+	// note: guard against extension context invalidation after update/reload
+	if (chrome?.storage?.onChanged) {
+		chrome.storage.onChanged.addListener(handleStorageChange);
+	}
+
 	document.addEventListener('keydown', handleKeydown, true);
 	logger.info('Hotkey listener initialized');
+
 	return () => {
 		document.removeEventListener('keydown', handleKeydown, true);
-		chrome.storage.onChanged.removeListener(handleStorageChange);
+		if (chrome?.storage?.onChanged) {
+			chrome.storage.onChanged.removeListener(handleStorageChange);
+		}
 	};
 }
 

@@ -1,39 +1,113 @@
-// HALO Background Service Worker
-// Handles extension lifecycle and storage initialization
+// goal: HALO Background Service Worker
+// Handles extension lifecycle, storage init, SidePanel control, and context menus
 
-import { STORAGE_KEYS } from '../kernel/storage';
+import { STORAGE_PREFIX } from '../kernel/types';
+import { DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY } from '../kernel/settings';
 
-console.log('[HALO] Background service worker initialized');
+const LOG_TAG = '[HALO]';
 
-// Initialize default settings on install
+console.log(LOG_TAG, 'Background service worker initialized');
+
+// Context menu IDs
+const MENU_OPEN_HALO = 'halo-open';
+const MENU_QR_SELECTION = 'halo-qr-selection';
+const MENU_COLOR_PICK = 'halo-color-pick';
+
+// Initialize on install
 chrome.runtime.onInstalled.addListener(async (details) => {
-	console.log('[HALO] Extension installed/updated', details.reason);
+	console.log(LOG_TAG, 'Extension installed/updated:', details.reason);
 
 	// Set defaults if not already set
 	const storage = await chrome.storage.sync.get([
-		STORAGE_KEYS.DARK_MODE_ENABLED,
-		STORAGE_KEYS.DARK_MODE_WHITELIST
+		`${STORAGE_PREFIX.CORE}active_tool`,
+		SETTINGS_STORAGE_KEY,
 	]);
 
 	const defaults: Record<string, unknown> = {};
 
-	if (storage[STORAGE_KEYS.DARK_MODE_ENABLED] === undefined) {
-		defaults[STORAGE_KEYS.DARK_MODE_ENABLED] = false;
+	if (storage[`${STORAGE_PREFIX.CORE}active_tool`] === undefined) {
+		defaults[`${STORAGE_PREFIX.CORE}active_tool`] = null;
 	}
 
-	if (!storage[STORAGE_KEYS.DARK_MODE_WHITELIST]) {
-		// Default whitelist: sites that typically have good dark modes already
-		defaults[STORAGE_KEYS.DARK_MODE_WHITELIST] = [
-			'github.com',
-			'twitter.com',
-			'x.com',
-			'discord.com'
-		];
+	if (!storage[SETTINGS_STORAGE_KEY]) {
+		defaults[SETTINGS_STORAGE_KEY] = DEFAULT_SETTINGS;
 	}
 
 	if (Object.keys(defaults).length > 0) {
 		await chrome.storage.sync.set(defaults);
-		console.log('[HALO] Default settings initialized:', defaults);
+		console.log(LOG_TAG, 'Default settings initialized');
+	}
+
+	// Create context menus
+	chrome.contextMenus.removeAll(() => {
+		chrome.contextMenus.create({
+			id: MENU_OPEN_HALO,
+			title: '🌟 Open HALO Toolbox',
+			contexts: ['page', 'selection', 'image', 'link'],
+		});
+
+		chrome.contextMenus.create({
+			id: MENU_QR_SELECTION,
+			title: '🔲 Generate QR Code',
+			contexts: ['selection', 'link'],
+		});
+
+		chrome.contextMenus.create({
+			id: MENU_COLOR_PICK,
+			title: '🎨 Pick Color from Page',
+			contexts: ['page'],
+		});
+
+		console.log(LOG_TAG, 'Context menus created');
+	});
+});
+
+// Handle context menu clicks
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+	if (!tab?.id) return;
+
+	switch (info.menuItemId) {
+		case MENU_OPEN_HALO:
+			await chrome.sidePanel.open({ tabId: tab.id });
+			break;
+
+		case MENU_QR_SELECTION:
+			// Open sidepanel with QR tool and prefill text
+			await chrome.sidePanel.open({ tabId: tab.id });
+			const text = info.selectionText || info.linkUrl || '';
+			if (text) {
+				// Send message to sidepanel to prefill QR input
+				setTimeout(() => {
+					chrome.runtime.sendMessage({
+						type: 'HALO_PREFILL_QR',
+						text,
+					});
+				}, 500);
+			}
+			break;
+
+		case MENU_COLOR_PICK:
+			// Activate color eyedropper (future: use EyeDropper API)
+			await chrome.sidePanel.open({ tabId: tab.id });
+			setTimeout(() => {
+				chrome.runtime.sendMessage({
+					type: 'HALO_ACTIVATE_TOOL',
+					toolId: 'color-picker',
+				});
+			}, 500);
+			break;
+	}
+});
+
+// Handle action click - open SidePanel
+chrome.action.onClicked.addListener(async (tab) => {
+	if (tab.id) {
+		try {
+			await chrome.sidePanel.open({ tabId: tab.id });
+			console.log(LOG_TAG, 'SidePanel opened for tab:', tab.id);
+		} catch (e) {
+			console.warn(LOG_TAG, 'Failed to open SidePanel:', e);
+		}
 	}
 });
 
@@ -41,7 +115,9 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 chrome.storage.onChanged.addListener((changes, area) => {
 	if (area === 'sync') {
 		for (const [key, { newValue }] of Object.entries(changes)) {
-			console.log(`[HALO] Storage changed: ${key}`, newValue);
+			if (key.startsWith(STORAGE_PREFIX.CORE) || key === SETTINGS_STORAGE_KEY) {
+				console.log(LOG_TAG, `Storage changed: ${key}`, newValue);
+			}
 		}
 	}
 });

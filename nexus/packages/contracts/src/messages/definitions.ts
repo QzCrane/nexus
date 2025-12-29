@@ -81,6 +81,9 @@ export interface NexusMessages {
 	'REMOTE_CREATE_SESSION': { req: void; res: { sessionId: string; peerId: string } };
 	'REMOTE_CLOSE_SESSION': { req: void; res: { closed: boolean } };
 	'REMOTE_COMMAND': { req: { command: 'volume_up' | 'volume_down' | 'mute' | 'play_pause' | 'next' | 'prev' }; res: { executed: boolean } };
+
+	// User Scripts
+	'USER_SCRIPT_EXECUTE': { req: { script: string }; res: { success: boolean; error?: string } };
 }
 
 export type NexusAction = keyof NexusMessages;

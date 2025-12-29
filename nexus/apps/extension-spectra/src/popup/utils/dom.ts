@@ -69,15 +69,4 @@ export async function sendToBackground<T = unknown>(action: string, payload: unk
   }
 }
 
-// goal: forces re-injection of the content script if the context was invalidated or missing
-export async function ensureInjected(tabId: number): Promise<boolean> {
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ['content.js'],
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
+

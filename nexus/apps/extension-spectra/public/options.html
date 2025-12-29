@@ -47,20 +47,27 @@
           </div>
         </section>
 
-        <!-- Per-site Configuration -->
         <section class="section">
           <div class="section-header">
             <h2 data-i18n="opt_site_title">📑 Per-Site Hotkeys</h2>
-            <div class="site-selector">
-              <select id="site-select" class="site-select">
-                <option value="" data-i18n="opt_site_add">+ Add current site...</option>
-              </select>
-              <button id="site-add-current" class="btn btn-small" data-i18n="opt_site_add_btn">Add</button>
-            </div>
           </div>
           <p class="section-desc" data-i18n="opt_site_desc">
             Custom hotkeys for specific websites. Disabled by default.
           </p>
+          
+          <!-- Add new site -->
+          <div class="site-add-row">
+            <input type="text" id="site-input" class="site-input" data-i18n-placeholder="opt_site_placeholder" placeholder="Enter domain (e.g. youtube.com)" />
+            <button id="site-add-btn" class="btn btn-small" data-i18n="opt_site_add_btn">Add</button>
+          </div>
+          
+          <!-- Existing sites selector -->
+          <div class="site-selector">
+            <label data-i18n="opt_site_select_label">Select site:</label>
+            <select id="site-select" class="site-select">
+              <option value="" data-i18n="opt_site_select_default">-- Select a site --</option>
+            </select>
+          </div>
 
           <!-- Site config panel (shown when site selected) -->
           <div id="site-config" class="site-config hidden">
@@ -88,6 +95,20 @@
               No site-specific hotkeys configured. Select a site to customize.
             </p>
           </div>
+        </section>
+
+        <!-- User Scripts Notice -->
+        <section id="userscripts-section" class="section">
+          <div class="section-header">
+            <h2 data-i18n="opt_userscripts_title">⚙️ Custom Scripts</h2>
+            <span id="userscripts-status" class="status-badge" data-i18n="opt_userscripts_status_disabled">❌ Not enabled</span>
+          </div>
+          <p class="section-desc" data-i18n="opt_userscripts_desc">
+            To use "Run JS" hotkey action, you need to enable User Scripts.
+          </p>
+          <button id="userscripts-enable-btn" class="btn btn-secondary" data-i18n="opt_userscripts_enable">
+            Enable in Chrome Settings
+          </button>
         </section>
       </main>
     </div>

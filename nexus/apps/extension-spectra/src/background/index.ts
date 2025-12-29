@@ -8,6 +8,7 @@ import { registerCaptureHandlers } from './handlers/capture';
 import { registerBadgeHandlers } from './handlers/badge';
 import { registerRegistryHandlers } from './handlers/registry';
 import { registerTabStateHandlers } from './handlers/tab-state';
+import { registerUserScriptsHandler } from './handlers/user-scripts';
 import { setupShortcutListeners } from './shortcuts';
 import { setupLifecycleListeners } from './lifecycle';
 import { initRemoteService } from './remote-service';
@@ -20,6 +21,7 @@ registerCaptureHandlers();
 registerBadgeHandlers();
 registerRegistryHandlers();
 registerTabStateHandlers();
+registerUserScriptsHandler();
 initRemoteService();
 
 setupShortcutListeners();

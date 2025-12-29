@@ -39,10 +39,19 @@ function applyI18n(): void {
 	const dict = DICT[currentLang] ?? DICT['en-US'];
 	if (!dict) return;
 
+	// note: handle textContent translations
 	document.querySelectorAll('[data-i18n]').forEach(el => {
 		const key = el.getAttribute('data-i18n');
 		if (key && dict[key]) {
 			el.textContent = dict[key];
+		}
+	});
+
+	// note: handle placeholder translations for input elements
+	document.querySelectorAll<HTMLInputElement>('[data-i18n-placeholder]').forEach(el => {
+		const key = el.getAttribute('data-i18n-placeholder');
+		if (key && dict[key]) {
+			el.placeholder = dict[key];
 		}
 	});
 }

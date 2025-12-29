@@ -10,7 +10,6 @@ export {
   isRestrictedUrl,
   sendToTab,
   sendToBackground,
-  ensureInjected,
 } from './dom';
 
 export {

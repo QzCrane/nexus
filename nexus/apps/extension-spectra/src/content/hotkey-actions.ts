@@ -77,8 +77,21 @@ export function executeHotkeyAction(action: HotkeyAction, params?: HotkeyParams)
 			break;
 		case 'run_js':
 			if (params?.script) {
-				// note: eval is utilized for user-defined custom logic strings
-				try { eval(params.script); } catch (e) { log.error('Script error:', e); }
+				// note: delegate to background for secure userScripts API execution
+				(async () => {
+					try {
+						const response = await chrome.runtime.sendMessage({
+							action: 'USER_SCRIPT_EXECUTE',
+							payload: { script: params.script }
+						}) as { success: boolean; error?: string } | undefined;
+						if (response && !response.success) {
+							log.warn('User script execution failed:', response.error);
+							showToast(response.error || 'Script execution failed');
+						}
+					} catch (e) {
+						log.error('User script message failed:', e);
+					}
+				})();
 			}
 			break;
 		case 'open_url':
