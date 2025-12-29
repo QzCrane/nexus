@@ -13,9 +13,9 @@ export class WebAudioController {
 	private skipCorsCheck = false;
 
 	// eff: initializes or resumes the AudioContext
-	async initialize(): Promise<boolean> {
+	async initialize(attemptResume = false): Promise<boolean> {
 		if (this.ctx && this.ctx.state !== 'closed') {
-			if (this.ctx.state === 'suspended') {
+			if (this.ctx.state === 'suspended' && attemptResume) {
 				try { await this.ctx.resume(); } catch { return false; }
 			}
 			return this.ctx.state === 'running';
@@ -23,7 +23,7 @@ export class WebAudioController {
 		try {
 			const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
 			this.ctx = new AC();
-			if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => { });
+			if (attemptResume && this.ctx.state === 'suspended') this.ctx.resume().catch(() => { });
 			return this.ctx.state === 'running';
 		} catch { return false; }
 	}

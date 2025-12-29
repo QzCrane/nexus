@@ -26,7 +26,7 @@ pnpm build
 
 ## 3. 最终清单 (审计)
 
-- [ ] 源码 ≤ 200 行；警告数无增长
+- [ ] 警告数无增长
 - [ ] 无硬编码 Action；日志 `[SPECTRA]` 前缀
 - [ ] 文档信息熵极高 (无损压缩)
 
@@ -35,9 +35,7 @@ pnpm build
 // turbo-all
 
 ```bash
-git add -A
-git commit -m "feat: <简述功能>"
-git push
+git add -A ; git commit -m "feat: <简述功能>" ; git push
 ```
 
 (在 nexus 目录执行)

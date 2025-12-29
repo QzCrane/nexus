@@ -92,7 +92,7 @@ export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState
 		if (hasUserGesture(state)) {
 			if (!audioController.isReady()) {
 				// note: direct user gesture is required to successfully resume an AudioContext
-				audioController.initialize().then((success) => {
+				audioController.initialize(true).then((success) => {
 					if (success) {
 						releaseVolumeLock();
 						audioController.scanAndAttach();
