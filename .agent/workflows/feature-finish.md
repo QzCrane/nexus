@@ -26,11 +26,11 @@ pnpm build
 
 ## 3. 最终清单 (审计)
 
+- [ ] 符合verify-architecture各项规则
 - [ ] 警告数无增长
-- [ ] 无硬编码 Action；日志 `[SPECTRA]` 前缀
 - [ ] 文档信息熵极高 (无损压缩)
 
-## 4. 提交推送
+## 4. 提交和推送
 
 // turbo-all
 
