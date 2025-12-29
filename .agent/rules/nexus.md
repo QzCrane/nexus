@@ -9,8 +9,12 @@ trigger: always_on
 入口层 (2): .agent/rules/nexus.md, README.AI.md
 规则层 (1): docs/ai-rules.md
 架构层 (2): policy-decision.md, cors-data-flow.md
-模块层 (13): .ai-context.md
+模块层 (15): .ai-context.md
 工作流 (4): .agent/workflows/\*.md
+
+## 架构
+
+Contracts ← Kernel ← {Audio-Engine, Zen-Engine, UI-Kit} ← {Spectra, Halo}
 
 ## 每次回答前压缩上下文
 
