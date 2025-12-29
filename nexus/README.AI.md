@@ -52,7 +52,6 @@ nexus(私有) → nexus-public/ → github.com/QzCrane/spectra
 | @nexus/kernel       | RPC+Storage+Log  |
 | @nexus/ui-kit       | 共享 UI 组件     |
 | @nexus/audio-engine | WebAudio 链      |
-| @nexus/zen-engine   | 深色/滚动/效能   |
 | @nexus/spectra      | 媒体扩展 (Popup) |
 | @nexus/halo         | 效能扩展 (Panel) |
 
@@ -62,7 +61,7 @@ nexus(私有) → nexus-public/ → github.com/QzCrane/spectra
 
 **SPECTRA**: Audio 800%/EQ/压限/声道/延迟 | Video 速率 16x/旋转/镜像/PiP/截图 | AB 循环/标记 | 遥控 QR+WebRTC
 
-**HALO**: 深色模式(SVG 矩阵) | 平滑滚动 | 二维码 | 标签管理(规划) | 截图(规划)
+**HALO**: 深色模式(darkreader) | 白名单 | 完整配置面板 | 二维码(规划) | 截图(规划)
 
 ---
 
