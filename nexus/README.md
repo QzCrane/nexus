@@ -77,7 +77,7 @@ pnpm dev
 - **Zero Telemetry** - No data collection
 - **Local Only** - All processing on your device
 - **Minimal Permissions** - Only what's needed
-- [Privacy Policy](./PRIVACY_POLICY.md)
+- [Privacy Policy](PRIVACY.md)
 
 ## License
 

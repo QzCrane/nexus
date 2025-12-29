@@ -3,7 +3,7 @@
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
-	"description": "Project NEXUS - Chrome Extension Ecosystem (SPECTRA, CORTEX, HALO)",
+	"description": "Project NEXUS - Chrome Extension Ecosystem (SPECTRA,  HALO)",
 	"scripts": {
 		"dev": "turbo run dev",
 		"build": "turbo run build",

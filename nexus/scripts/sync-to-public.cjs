@@ -182,12 +182,7 @@ function main() {
 
   // Post-process: Copy special files
   console.log('\n  [POST] Copying README and LICENSE...');
-  const readmePublicPath = path.join(CONFIG.srcDir, 'docs/README-PUBLIC.md');
-  const readmeDestPath = path.join(CONFIG.destDir, 'README.md');
-  if (fs.existsSync(readmePublicPath)) {
-    fs.copyFileSync(readmePublicPath, readmeDestPath);
-    console.log('  [COPY] docs/README-PUBLIC.md -> README.md');
-  }
+  // [Removed] README-PUBLIC.md logic (README.md is now in root)
   
   const licensePath = path.join(CONFIG.srcDir, 'LICENSE');
   const licenseDestPath = path.join(CONFIG.destDir, 'LICENSE');
