@@ -14,7 +14,7 @@ const CONFIG = {
   // Source directory (current nexus root)
   srcDir: path.resolve(__dirname, '..'),
   // Target directory (public repo)
-  destDir: path.resolve(__dirname, '../../nexus-public'),
+  destDir: path.resolve(__dirname, '../../spectra-public'),
   // Files/directories to exclude from public repo
   excludePatterns: [
     // === AI Context Engineering ===
@@ -182,7 +182,20 @@ function main() {
 
   // Post-process: Copy special files
   console.log('\n  [POST] Copying README and LICENSE...');
-  // [Removed] README-PUBLIC.md logic (README.md is now in root)
+  // Promote Spectra docs to root
+  const spectraReadme = path.join(CONFIG.srcDir, 'apps/extension-spectra/README.md');
+  const destReadme = path.join(CONFIG.destDir, 'README.md');
+  if (fs.existsSync(spectraReadme)) {
+    fs.copyFileSync(spectraReadme, destReadme);
+    console.log('  [COPY] apps/extension-spectra/README.md -> README.md');
+  }
+
+  const spectraPrivacy = path.join(CONFIG.srcDir, 'apps/extension-spectra/PRIVACY.md');
+  const destPrivacy = path.join(CONFIG.destDir, 'PRIVACY.md');
+  if (fs.existsSync(spectraPrivacy)) {
+    fs.copyFileSync(spectraPrivacy, destPrivacy);
+    console.log('  [COPY] apps/extension-spectra/PRIVACY.md -> PRIVACY.md');
+  }
   
   const licensePath = path.join(CONFIG.srcDir, 'LICENSE');
   const licenseDestPath = path.join(CONFIG.destDir, 'LICENSE');
