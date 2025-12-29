@@ -22,7 +22,10 @@ if (existsSync(distDir)) {
 
 // 1. Copy public directory (contains manifest/icon and other static files)
 cpSync(publicDir, distDir, { recursive: true });
-console.log('✓ Copied public files');
+// Verify build directory exists
+if (!existsSync(distDir)) {
+  console.error("Dist directory not created!");
+}
 
 // Common build configuration
 const commonResolve = {
@@ -97,6 +100,9 @@ await buildEntry('src/offscreen-remote/index.ts', 'offscreen-remote', 'SpectraOf
 
 // 7. Build options.js (settings page)
 await buildEntry('src/options/index.ts', 'options', 'SpectraOptions');
+
+// 8. Build injector.js (Logic for hijacking native APIs)
+await buildEntry('src/injector/index.ts', 'injector', 'SpectraInjector');
 
 console.log('\n🎉 Build complete! Output: apps/extension-spectra/dist');
 

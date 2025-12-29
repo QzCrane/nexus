@@ -19,7 +19,8 @@ description: Extension Spectra 发布标准流程 (测试 + 打包)
 // turbo
 
 ```bash
-cd nexus ; pnpm build
+# 确保使用生产模式构建 (去除 sourcemap, 最小化)
+cd nexus ; pnpm build:prod --filter @nexus/extension-spectra
 cd apps/extension-spectra ; pnpm test:e2e
 ```
 

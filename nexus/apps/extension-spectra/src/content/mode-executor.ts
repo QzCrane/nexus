@@ -97,6 +97,8 @@ export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState
 						releaseVolumeLock();
 						audioController.scanAndAttach();
 						audioController.updateParams(config);
+						// New: Broadcast to injector for WebAudio API hijacking
+						window.postMessage({ type: 'SPECTRA_VOLUME_UPDATE', volume: config.volume }, '*');
 					} else {
 						log.debug('WebAudio init failed -> fallback to DOM');
 						fallbackToDom(config);
@@ -106,6 +108,8 @@ export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState
 				releaseVolumeLock();
 				audioController.scanAndAttach();
 				audioController.updateParams(config);
+				// New: Broadcast to injector for WebAudio API hijacking
+				window.postMessage({ type: 'SPECTRA_VOLUME_UPDATE', volume: config.volume }, '*');
 			}
 		} else {
 			fallbackToDom(config);

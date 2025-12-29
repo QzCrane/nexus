@@ -6,7 +6,8 @@
 	"type": "module",
 	"scripts": {
 		"dev": "node build.mjs --watch",
-		"build": "node build.mjs",
+		"build": "node build.mjs --dev",
+		"build:prod": "node build.mjs",
 		"build:copy": "powershell -Command \"Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue; Copy-Item -Recurse public dist\"",
 		"test:e2e": "pnpm build && tsx test/smoke.spec.ts",
 		"test:volume": "pnpm build && tsx test/verify-volume.spec.ts",

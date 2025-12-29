@@ -32,9 +32,33 @@ export function createMediaObserver(
 		subtree: true,
 	});
 
+	// eff: immediate capture of media playback events to handle short-lived audio (e.g. Google Translate)
+	// rule: bypasses the 500ms observer debounce to attach WebAudio nodes before the clip finishes
+	const immediateAttachHandler = (event: Event) => {
+		const target = event.target as HTMLMediaElement;
+		if (target.nodeName !== 'AUDIO' && target.nodeName !== 'VIDEO') return;
+
+		console.log('[SPECTRA-OBSERVER] Play/Loaded event detected:', target);
+
+		if (state.activeMode === AudioMode.NATIVE_WEBAUDIO) {
+			if (audioController.attachNode(target)) {
+				console.log('[SPECTRA-OBSERVER] Immediate attach SUCCESS');
+				// note: must apply current volume config immediately, otherwise short clips play at 100% until next cycle
+				audioController.updateParams(state.config);
+			} else {
+				console.log('[SPECTRA-OBSERVER] Immediate attach FAILED (Already attached or CORS?)');
+			}
+		}
+	};
+
+	document.addEventListener('play', immediateAttachHandler, true);
+	document.addEventListener('loadeddata', immediateAttachHandler, true);
+
 	return () => {
 		if (observerTimeout) clearTimeout(observerTimeout);
 		observer.disconnect();
+		document.removeEventListener('play', immediateAttachHandler, true);
+		document.removeEventListener('loadeddata', immediateAttachHandler, true);
 	};
 }
 
