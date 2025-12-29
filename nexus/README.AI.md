@@ -40,7 +40,7 @@ nexus(私有) → nexus-public/ → github.com/QzCrane/spectra
 
 ## 工作流
 
-/feature-finish(交付) | /add-dependency(依赖) | /new-module(脚手架) | /release-spectra(发布)
+/feature-finish | /sync-nexus | /release-halo | /add-dependency | /new-module
 
 ---
 
