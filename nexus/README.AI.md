@@ -1,6 +1,6 @@
 # NEXUS AI Portal
 
-**DNA**: Contracts ← Kernel ← {Audio-Engine, Zen-Engine, UI-Kit} ← {Spectra, Halo}
+**DNA**: Contracts ← Kernel ← {Audio-Engine} ← {Spectra, Halo}
 
 ---
 
@@ -46,14 +46,14 @@ nexus(私有) → nexus-public/ → github.com/QzCrane/spectra
 
 ## 模块
 
-| 包                  | 职责             |
-| ------------------- | ---------------- |
-| @nexus/contracts    | 类型定义源       |
-| @nexus/kernel       | RPC+Storage+Log  |
-| @nexus/ui-kit       | 共享 UI 组件     |
-| @nexus/audio-engine | WebAudio 链      |
-| @nexus/spectra      | 媒体扩展 (Popup) |
-| @nexus/halo         | 效能扩展 (Panel) |
+| 包                  | 职责                   |
+| ------------------- | ---------------------- |
+| @nexus/contracts    | 类型定义源             |
+| @nexus/kernel       | RPC+Storage+Log        |
+| @nexus/ui-kit       | 共享 UI 组件           |
+| @nexus/audio-engine | WebAudio 链            |
+| @nexus/spectra      | 媒体扩展 (Popup)       |
+| @nexus/halo         | 万能工具箱 (SidePanel) |
 
 ---
 
@@ -61,7 +61,7 @@ nexus(私有) → nexus-public/ → github.com/QzCrane/spectra
 
 **SPECTRA**: Audio 800%/EQ/压限/声道/延迟 | Video 速率 16x/旋转/镜像/PiP/截图 | AB 循环/标记 | 遥控 QR+WebRTC
 
-**HALO**: 深色模式(darkreader) | 白名单 | 完整配置面板 | 二维码(规划) | 截图(规划)
+**HALO**: 工具箱(二维码/颜色/JSON/尺子/大纲) | 效率(标签/截图/剪贴板) | AI(识曲/摘要/OCR) | 深色(⏸️ 搁置)
 
 ---
 
@@ -93,10 +93,10 @@ Contracts 禁逻辑 | 改同步读 cors-data-flow | 非调节禁 Badge | 源码 
 
 规则: docs/ai-rules.md
 架构: policy-decision.md, cors-data-flow.md
-模块: packages/{contracts,nexus-kernel,ui-kit}/.ai-context.md + packages/features/{audio-engine,zen-engine}/.ai-context.md + apps/{extension-spectra,extension-halo}/.ai-context.md
+模块: packages/{contracts,nexus-kernel,ui-kit}/.ai-context.md + packages/features/audio-engine/.ai-context.md + apps/{extension-spectra,extension-halo}/.ai-context.md
 
 ---
 
 ## 路线 2026
 
-Q1 抢占(HALO 深色+标签) | Q2 AI(人声分离+识曲) | Q3 付费(PRO) | Q4 生态(移动+云)
+Q1 抢占(HALO 工具箱+标签) | Q2 AI(人声分离+识曲) | Q3 付费(PRO) | Q4 生态(移动+云)
