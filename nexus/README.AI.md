@@ -24,7 +24,7 @@
 
 1. `git add + commit + push` (nexus)
 2. `pnpm sync-public`
-3. `cd ../nexus-public && git push -f origin main`
+3. `cd ../nexus-public ; git push -f origin main`
 
 nexus(私有) → nexus-public/ → github.com/QzCrane/spectra
 
