@@ -4,27 +4,33 @@ description: 自动化同步 Nexus 私有库到 Public 开源库，并完成 Git
 
 # Sync Nexus to Public
 
-用于将 Nexus Monorepo 的变更同步到开源仓库 (Spectra)，处理文件过滤、Commit Squash 和自动推送。
+同步 Nexus Monorepo → 开源仓库 (Spectra)，保留 Git 历史。
 
 ## 1. 前置检查
 
-- [ ] 确保 Nexus 仓库已提交 (git status clean)
+- [ ] 确保 Nexus 仓库已提交推送 (`git status` clean)
 - [ ] 确保 `spectra-public` 文件夹与 `nexus` 同级存在
-- [ ] 确保没有占用 `spectra-public` 的进程 (如 VSCode 终端、Turbo 守护进程)
+- [ ] 确保没有占用 `spectra-public` 的进程
 
 ## 2. 执行同步脚本
 
 // turbo
 
 ```bash
-# 停止可能占用文件的后台进程
-taskkill /F /IM turbo.exe 2>$null
-
-# 运行同步脚本 (清理 public -> 复制文件 -> 修正配置 -> 验证构建)
-node scripts/sync-to-public.cjs
+pnpm sync-public
 ```
 
 (在 nexus 目录执行)
+
+脚本会自动：
+
+- 运行 verify-architecture → 检测中文 (error 级别)
+  ↓ (失败则退出)
+- 清理 public 目录 (保留 .git)
+- 复制文件 (排除 excludePatterns)
+- 验证构建
+- git commit (复用 nexus 提交信息)
+- 打印 git push 命令
 
 ## 3. 推送 Public 仓库
 
@@ -32,13 +38,11 @@ node scripts/sync-to-public.cjs
 
 ```bash
 cd ../spectra-public
-git status
-# 注意: sync 脚本通常已经完成了 commit (Squash)
-# 这里只需确认并推送
-git push -f origin main
+git push origin main
 ```
 
-## 4. 验证
+## 4. 排除内容
 
-- [ ] 访问 GitHub 确认提交已更新
-- [ ] 检查 CI/CD 状态 (如果有)
+- `.agent/`, `docs/`, `scripts/`, `store-listings/`
+- `.ai-context.md`, `plan.md`, `README.AI.md`
+- `apps/extension-halo/` (未发布)

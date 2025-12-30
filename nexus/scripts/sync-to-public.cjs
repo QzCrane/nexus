@@ -159,6 +159,17 @@ function main() {
   console.log('  NEXUS → Public Repo Sync');
   console.log('========================================\n');
 
+  // Pre-sync: Run architecture verification
+  console.log('Running architecture verification...\n');
+  try {
+    execSync('node scripts/verify-architecture.js', { cwd: CONFIG.srcDir, stdio: 'inherit' });
+    console.log('\n✅ Architecture verification passed!\n');
+  } catch (e) {
+    console.error('\n❌ Architecture verification failed!');
+    console.error('Please fix errors before syncing to public.\n');
+    process.exit(1);
+  }
+
   console.log(`Source:      ${CONFIG.srcDir}`);
   console.log(`Destination: ${CONFIG.destDir}\n`);
 
@@ -216,9 +227,9 @@ function main() {
     console.log('  [PATCH] package.json (removed internal scripts)');
   }
 
-  // Git operations - squash all commits into one
+  // Git operations - always preserve history
   console.log('\n========================================');
-  console.log('  Git Operations (Squash Mode)');
+  console.log('  Git Operations');
   console.log('========================================\n');
 
   try {
@@ -227,26 +238,22 @@ function main() {
     // Check if there are changes
     const status = execSync('git status --porcelain', { cwd: CONFIG.destDir }).toString();
     if (status.trim()) {
-      // Squash all commits: create orphan branch with clean history
-      console.log('Squashing commits into single release commit...');
+      console.log('Creating sync commit...');
       
-      // Use orphan branch approach (works on all platforms)
-      execSync('git checkout --orphan temp_squash', { cwd: CONFIG.destDir, stdio: 'ignore' });
-      execSync('git add -A', { cwd: CONFIG.destDir, stdio: 'ignore' });
-      
-      const releaseMsg = 'feat: SPECTRA v1.0 - Professional Media Controller';
-      execSync(`git commit -m "${releaseMsg}"`, { cwd: CONFIG.destDir, stdio: 'inherit' });
-      
-      // Replace main with squashed branch
+      // Get latest nexus commit message to use as sync commit
+      let commitMsg;
       try {
-        execSync('git branch -D main', { cwd: CONFIG.destDir, stdio: 'ignore' });
-      } catch (e) { /* branch may not exist */ }
-      execSync('git branch -m main', { cwd: CONFIG.destDir, stdio: 'ignore' });
+        commitMsg = execSync('git log -1 --format=%s', { cwd: CONFIG.srcDir }).toString().trim();
+      } catch (e) {
+        commitMsg = 'chore: sync from nexus';
+      }
       
-      console.log('\n✅ Squashed to single commit!');
-      console.log('\nTo push (requires force):');
+      execSync(`git commit -m "${commitMsg}"`, { cwd: CONFIG.destDir, stdio: 'inherit' });
+      
+      console.log('\n✅ Commit created!');
+      console.log('\nTo push:');
       console.log(`  cd ${CONFIG.destDir}`);
-      console.log('  git push -f origin main');
+      console.log('  git push origin main');
     } else {
       console.log('\n⚠️ No changes to commit.');
     }

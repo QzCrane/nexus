@@ -1,14 +1,25 @@
 /**
  * Check for Chinese characters in source code comments
- * Warns on Chinese in comments for gradual migration to English
+ * Errors on Chinese in public-facing code (blocks sync)
  */
 
 import fs from 'fs';
 import path from 'path';
-import { warn, ok, scanDir } from './utils.js';
+import { error, ok, scanDir } from './utils.js';
 
 // Skip directories
 const SKIP_DIRS = ['node_modules', 'dist', '.turbo', '.git', 'public'];
+
+// Skip apps/dirs that will not be synced to public
+const SKIP_NON_PUBLIC = [
+  'extension-halo',     // unreleased app
+  'test',               // test files not synced
+  'assets',             // dev assets not synced
+  'scripts',            // scripts not synced
+  'ui-kit',             // unused package
+  'ai-engine',          // unused package
+  'zen-engine',         // unused package
+];
 
 // File extensions to check
 const CHECK_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx'];
@@ -35,7 +46,7 @@ function extractComments(content) {
  * Check source files for Chinese characters in comments
  */
 export function checkChineseComments(root) {
-  console.log('\n📝 Checking for Chinese comments (migration reminder)...');
+  console.log('\n📝 Checking for Chinese comments (blocks sync)...');
   
   const dirs = [
     path.join(root, 'apps'),
@@ -44,6 +55,7 @@ export function checkChineseComments(root) {
   
   let filesWithChinese = 0;
   let totalChineseComments = 0;
+  const affectedFiles = [];
   
   for (const dir of dirs) {
     scanDir(dir, (filePath, entry) => {
@@ -53,6 +65,9 @@ export function checkChineseComments(root) {
       // Skip directories
       const relativePath = path.relative(root, filePath);
       if (SKIP_DIRS.some(d => relativePath.includes(d))) return;
+      
+      // Skip non-public apps (e.g., extension-halo)
+      if (SKIP_NON_PUBLIC.some(d => relativePath.includes(d))) return;
       
       try {
         const content = fs.readFileSync(filePath, 'utf-8');
@@ -68,6 +83,9 @@ export function checkChineseComments(root) {
         if (fileChineseCount > 0) {
           filesWithChinese++;
           totalChineseComments += fileChineseCount;
+          if (affectedFiles.length < 5) {
+            affectedFiles.push(relativePath);
+          }
         }
       } catch (e) {
         // Ignore read errors
@@ -76,9 +94,12 @@ export function checkChineseComments(root) {
   }
   
   if (filesWithChinese > 0) {
-    warn(`${filesWithChinese} files contain Chinese comments (${totalChineseComments} total)`);
-    console.log('   → Gradual migration to English recommended');
+    error(`${filesWithChinese} files contain Chinese comments (${totalChineseComments} total)`);
+    affectedFiles.forEach(f => console.log(`   → ${f}`));
+    if (filesWithChinese > 5) {
+      console.log(`   → ... and ${filesWithChinese - 5} more files`);
+    }
   } else {
-    ok('No Chinese comments found');
+    ok('No Chinese comments in public-facing code');
   }
 }
