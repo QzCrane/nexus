@@ -89,6 +89,10 @@ export const zh: TranslationKeys = {
 			name: '滚动',
 			desc: '平滑滚动效果',
 		},
+		tabs: {
+			name: '标签页',
+			desc: '垂直标签管理与搜索',
+		},
 	},
 	settings: {
 		title: '设置',
@@ -272,5 +276,24 @@ export const zh: TranslationKeys = {
 		parse: '解析',
 		input: '输入 URL',
 		output: '输出',
+	},
+	tabsPanel: {
+		searchPlaceholder: '搜索标签页...',
+		close: '关闭',
+		refresh: '刷新',
+		noTabs: '未找到标签页',
+		pinned: '置顶',
+		audible: '发声',
+		filterAll: '全部',
+		filterAudible: '有声音',
+		filterPinned: '已置顶',
+	},
+	screenshotPanel: {
+		captureVisible: '截取当前可视区域',
+		capturing: '截取中...',
+		copy: '复制图片',
+		save: '保存图片',
+		copied: '图片已复制到剪贴板！',
+		downloaded: '图片已保存！',
 	},
 };

@@ -1,51 +1,40 @@
-# NEXUS 开发路线 (plan.md)
+# NEXUS 总项目规划
 
-## 状态
-
-- ✅ 完成 (Done)
-- 🚧 进行中 (In Progress)
-- 🔜 待办 (To Do)
-- 🧊 冻结 (Frozen)
+> **NEXUS**: 下一代浏览器扩展矩阵
 
 ---
 
-## 2026 Q1: 抢占 (HALO 工具箱)
+## 📂 子项目规划
 
-### 阶段 1: 核心工具 (Essentials) [✅]
+### 🛠️ [HALO (万能工具箱)](apps/extension-halo/plan.md)
 
-- [x] QR Code Generator (SVG/PNG download, Icon support)
-- [x] Color Picker (EyeDropper API, Recent colors)
-- [x] Ruler (Overlay, px/cm/in, guides)
-- [x] JSON Formatter (Tree view, validate, minify)
-- [x] Page Outline (H1-H6 navigation)
-- [x] Settings (Theme, Language, Reset)
+> **状态**: 核心功能完备，DevTools 完毕，进入蓝海功能开发期。
 
-### 阶段 2: 开发者工具 (DevTools) [✅]
+- **核心**: QR, Color, JSON, Ruler, Settings [✅]
+- **开发**: Regex, Base64, Hash, UUID, Time, URL [✅]
+- **待办**: PDF 工具箱 (WASM), 网页存档, 截图批注 [🔜]
 
-- [x] Regex Tester (Real-time, Replace, Flags, Presets)
-- [x] Base64 (Encode/Decode, URL safe, File drag)
-- [x] Hash Generator (SHA-1/256/384/512, File support)
-- [x] UUID/ULID (v4/v7/ULID, Batch generation)
-- [x] Timestamp (Converter, current time)
-- [x] URL Tool (Encode/Decode, Parse params)
+### 🎵 [SPECTRA (媒体控制)](apps/extension-spectra/plan.md)
 
-### 阶段 3: 效率体验 (Efficiency) [✅]
+> **状态**: 音视频控制核心稳定，转向 AI 与第三方集成。
 
-- [x] Clipboard Manager (History, Search, Pin, Clean data)
-- [x] Smooth Scroll Logic (Engine, Settings, Profiles)
-
-### 阶段 4: 蓝海特色 (Blue Ocean) [🔜]
-
-- [ ] PDF Tools (Local WASM)
-  - [ ] Merge/Split
-  - [ ] Compress
-  - [ ] Convert (Img <-> PDF)
-- [ ] Web Archive (SingleFile lite)
-- [ ] Dark Mode (Local-first, no remote script) [🧊 Paused]
+- **核心**: 800% Volume, EQ, Video Speed, Filters [✅]
+- **待办**: SponsorBlock, 人声分离 (AI), 实时字幕 [🔜]
 
 ---
 
-## 2026 Q2: AI & Pro
+## 📅 里程碑 (Milestones)
 
-- [ ] Spectra AI (Vocal remover, Speech to Text)
-- [ ] Cloud Sync (User settings, clipboards - Pro feature)
+| 时间        | 目标           | 重点                                               |
+| :---------- | :------------- | :------------------------------------------------- |
+| **2026 Q1** | **HALO 抢占**  | 完成 HALO 工具箱的所有核心与开发者功能，建立口碑。 |
+| **2026 Q2** | **SPECTRA AI** | 引入 WASM AI 能力 (人声分离, STT)，构建技术壁垒。  |
+| **2026 Q3** | **生态互联**   | 实现 HALO 与 SPECTRA 的数据互通与移动端生态扩展。  |
+
+---
+
+## 🔗 全局资源
+
+- [开发规范](docs/ai-rules.md)
+- [商业模式](docs/business-model.md)
+- [数据流架构](docs/cors-data-flow.md)

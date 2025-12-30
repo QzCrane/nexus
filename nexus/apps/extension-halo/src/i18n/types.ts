@@ -211,6 +211,25 @@ export interface TranslationKeys {
 		input: string;
 		output: string;
 	};
+	tabsPanel: {
+		searchPlaceholder: string;
+		close: string;
+		refresh: string;
+		noTabs: string;
+		pinned: string;
+		audible: string;
+		filterAll: string;
+		filterAudible: string;
+		filterPinned: string;
+	};
+	screenshotPanel: {
+		captureVisible: string;
+		capturing: string;
+		copy: string;
+		save: string;
+		copied: string;
+		downloaded: string;
+	};
 }
 
 export type TranslationPath =
@@ -226,4 +245,6 @@ export type TranslationPath =
 	| `hash.${keyof TranslationKeys['hash']}`
 	| `uuid.${keyof TranslationKeys['uuid']}`
 	| `timestamp.${keyof TranslationKeys['timestamp']}`
-	| `url.${keyof TranslationKeys['url']}`;
+	| `url.${keyof TranslationKeys['url']}`
+	| `tabsPanel.${keyof TranslationKeys['tabsPanel']}`
+	| `screenshotPanel.${keyof TranslationKeys['screenshotPanel']}`;

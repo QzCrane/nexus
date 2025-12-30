@@ -8,7 +8,8 @@
 		"activeTab",
 		"scripting",
 		"sidePanel",
-		"contextMenus"
+		"contextMenus",
+		"tabs"
 	],
 	"action": {
 		"default_title": "Open HALO Toolbox"

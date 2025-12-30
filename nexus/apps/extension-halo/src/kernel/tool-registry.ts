@@ -79,15 +79,43 @@ export const TOOL_REGISTRY: ToolMeta[] = [
 		id: 'regex',
 		icon: '.*',
 		category: 'dev',
-		status: 'coming',
+		status: 'ready',
 		keywords: ['regex', 'regexp', 'regular', 'zhengze', '正则'],
 	},
 	{
 		id: 'base64',
 		icon: '🔐',
 		category: 'dev',
-		status: 'coming',
+		status: 'ready',
 		keywords: ['base64', 'encode', 'decode', 'bianma', '编码', '解码'],
+	},
+	{
+		id: 'hash',
+		icon: '#️⃣',
+		category: 'dev',
+		status: 'ready',
+		keywords: ['hash', 'md5', 'sha', 'crypto', 'haxi', '哈希'],
+	},
+	{
+		id: 'uuid',
+		icon: '🆔',
+		category: 'dev',
+		status: 'ready',
+		keywords: ['uuid', 'ulid', 'guid', 'id'],
+	},
+	{
+		id: 'timestamp',
+		icon: '⏰',
+		category: 'dev',
+		status: 'ready',
+		keywords: ['time', 'date', 'timestamp', 'shijian', '时间戳'],
+	},
+	{
+		id: 'url',
+		icon: '🔗',
+		category: 'dev',
+		status: 'ready',
+		keywords: ['url', 'encode', 'decode', 'param', 'wangzhi', '网址'],
 	},
 
 	// === Efficiency ===
@@ -95,16 +123,24 @@ export const TOOL_REGISTRY: ToolMeta[] = [
 		id: 'clipboard',
 		icon: '📎',
 		category: 'efficiency',
-		status: 'coming',
+		status: 'ready',
 		keywords: ['clipboard', 'copy', 'paste', 'jiantiepan', '剪贴板', '复制'],
+	},
+	{
+		id: 'smooth-scroll',
+		icon: '📜',
+		category: 'efficiency',
+		status: 'ready',
+		keywords: ['scroll', 'smooth', 'gundong', '滚动'],
+		features: { contentScript: true },
 	},
 	{
 		id: 'screenshot',
 		icon: '📸',
 		category: 'efficiency',
-		status: 'coming',
+		status: 'ready',
 		keywords: ['screenshot', 'capture', 'jietu', '截图', '截屏'],
-		features: { contentScript: true },
+		features: { contentScript: true }, // Although using tabs API, sometimes we need content script for scroll, keeping it true for future Area selection
 	},
 	{
 		id: 'timer',
@@ -137,6 +173,13 @@ export const TOOL_REGISTRY: ToolMeta[] = [
 		status: 'coming',
 		keywords: ['archive', 'save', 'offline', 'cundang', '存档', '离线'],
 		features: { contentScript: true },
+	},
+	{
+		id: 'tabs',
+		icon: '📑',
+		category: 'efficiency',
+		status: 'ready',
+		keywords: ['tabs', 'manager', 'biaoqian', '标签', '切换', 'vertical'],
 	},
 
 	// === System ===

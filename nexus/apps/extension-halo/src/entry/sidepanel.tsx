@@ -26,6 +26,8 @@ import { HashPanel } from '../tools/hash';
 import { UUIDPanel } from '../tools/uuid';
 import { TimestampPanel } from '../tools/timestamp';
 import { URLPanel } from '../tools/url';
+import { TabsPanel } from '../tools/tabs';
+import { ScreenshotPanel } from '../tools/screenshot';
 
 const logger = createLogger('SidePanel', 'HALO');
 
@@ -37,6 +39,8 @@ const TOOLS: { id: ToolId; icon: string; label: string; ready: boolean }[] = [
 	{ id: 'json-formatter', icon: '{}', label: 'JSON', ready: true },
 	{ id: 'outline', icon: '📋', label: 'Outline', ready: true },
 	{ id: 'clipboard', icon: '📎', label: 'Clip', ready: true },
+	{ id: 'tabs', icon: '📑', label: 'Tabs', ready: true },
+	{ id: 'screenshot', icon: '📸', label: 'Snap', ready: true },
 	{ id: 'smooth-scroll', icon: '↕️', label: 'Scroll', ready: true },
 	{ id: 'regex', icon: '.*', label: 'Regex', ready: true },
 	{ id: 'base64', icon: '64', label: 'B64', ready: true },
@@ -178,6 +182,10 @@ const SidePanel: React.FC = () => {
 					<ClipboardPanel />
 				) : activeTool === 'smooth-scroll' ? (
 					<SmoothScrollPanel />
+				) : activeTool === 'tabs' ? (
+					<TabsPanel />
+				) : activeTool === 'screenshot' ? (
+					<ScreenshotPanel />
 				) : activeTool === 'regex' ? (
 					<RegexPanel />
 				) : activeTool === 'base64' ? (

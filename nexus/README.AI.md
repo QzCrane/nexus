@@ -10,7 +10,7 @@
 
 **场景导读**:
 
-- 音频模式 → docs/policy-decision.md
+- 音频模式 → apps/extension-spectra/docs/policy-decision.md
 - 状态同步 → docs/cors-data-flow.md
 - 新 Action → contracts/src/messages/definitions.ts
 - 规则/依赖 → docs/ai-rules.md
@@ -93,7 +93,9 @@ Contracts 禁逻辑 | 改同步读 cors-data-flow | 非调节禁 Badge | 源码 
 ## 索引
 
 规则: docs/ai-rules.md
-架构: policy-decision.md, cors-data-flow.md
+规划: plan.md, apps/extension-halo/plan.md, apps/extension-spectra/plan.md
+架构: docs/cors-data-flow.md, apps/extension-halo/docs/architecture.md, apps/extension-spectra/docs/policy-decision.md
+调研: apps/extension-halo/docs/research.md
 模块: packages/{contracts,nexus-kernel,ui-kit}/.ai-context.md + packages/features/audio-engine/.ai-context.md + apps/{extension-spectra,extension-halo}/.ai-context.md
 
 ---
