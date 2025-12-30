@@ -6,7 +6,3 @@ venv
 *.log
 *.zip
 .aider*
-
-# Separate Repositories
-spectra-public/
-nexus-public/
