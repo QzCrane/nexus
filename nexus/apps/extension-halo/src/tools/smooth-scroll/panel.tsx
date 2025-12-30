@@ -5,7 +5,7 @@ import { Card, Toggle } from '@nexus/ui-kit';
 import { createLogger } from '@nexus/kernel';
 import { useTranslation } from '../../i18n';
 import type { ScrollSettings } from './types';
-import { DEFAULT_SETTINGS, EASING_OPTIONS, PROFILES, STORAGE_KEY } from './types';
+import { DEFAULT_SETTINGS, EASING_OPTIONS, PROFILES, STORAGE_KEY, CUSTOM_PROFILE_KEY } from './types';
 import { loadSettings, saveSettings, broadcastSettings } from './core';
 
 const logger = createLogger('SmoothScroll', 'HALO');
@@ -52,6 +52,32 @@ export const SmoothScrollPanel: React.FC = () => {
 		await broadcastSettings(updated);
 		showToast(`${profileName} loaded`);
 	}, [showToast]);
+
+	// Custom profile
+	const [hasCustomProfile, setHasCustomProfile] = useState(false);
+
+	useEffect(() => {
+		chrome.storage.sync.get([CUSTOM_PROFILE_KEY], (r) => {
+			setHasCustomProfile(!!r[CUSTOM_PROFILE_KEY]);
+		});
+	}, []);
+
+	const loadCustomProfile = useCallback(async () => {
+		const r = await chrome.storage.sync.get([CUSTOM_PROFILE_KEY]);
+		if (r[CUSTOM_PROFILE_KEY]) {
+			const updated = await saveSettings(r[CUSTOM_PROFILE_KEY]);
+			setSettings(updated);
+			await broadcastSettings(updated);
+			showToast('Custom loaded');
+		}
+	}, [showToast]);
+
+	const saveAsCustom = useCallback(async () => {
+		await chrome.storage.sync.set({ [CUSTOM_PROFILE_KEY]: settings });
+		setHasCustomProfile(true);
+		showToast('Saved as Custom');
+		logger.info('Custom profile saved');
+	}, [settings, showToast]);
 
 	// Config management
 	const handleExport = useCallback(() => {
@@ -116,17 +142,34 @@ export const SmoothScrollPanel: React.FC = () => {
 				</div>
 			</Card>
 
-			{/* Profiles */}
+			{/* Profiles & Config Management */}
 			<Card variant="default" padding="sm">
 				<div style={styles.section}>
-					<span style={styles.sectionTitle}>📋 {t('smoothScroll.loadProfile')}</span>
+					<span style={styles.sectionTitle}>📋 {t('smoothScroll.profiles')}</span>
 					<div style={styles.profileRow}>
 						{Object.keys(PROFILES).map((name) => (
 							<button key={name} style={styles.profileBtn} onClick={() => loadProfile(name as keyof typeof PROFILES)}>
 								{name.charAt(0).toUpperCase() + name.slice(1)}
 							</button>
 						))}
+						{hasCustomProfile && (
+							<button style={{ ...styles.profileBtn, borderColor: 'var(--halo-accent)', color: 'var(--halo-accent)' }} onClick={loadCustomProfile}>
+								⭐ Custom
+							</button>
+						)}
 					</div>
+					<div style={styles.mgmtRow}>
+						<button style={{ ...styles.mgmtBtn, borderColor: 'var(--halo-accent)', color: 'var(--halo-accent)' }} onClick={saveAsCustom} title="Save current settings as Custom profile">
+							💾 {t('smoothScroll.saveCustom')}
+						</button>
+						<button style={styles.mgmtBtn} onClick={handleExport} title="Export config as JSON">
+							📤 {t('smoothScroll.export')}
+						</button>
+						<button style={styles.mgmtBtn} onClick={handleImport} title="Import config from JSON">
+							📥 {t('smoothScroll.import')}
+						</button>
+					</div>
+					<input ref={fileInputRef} type="file" accept=".json" onChange={handleFileChange} style={{ display: 'none' }} />
 				</div>
 			</Card>
 
@@ -193,24 +236,7 @@ export const SmoothScrollPanel: React.FC = () => {
 				</div>
 			</Card>
 
-			{/* Config Management */}
-			<Card variant="default" padding="sm">
-				<div style={styles.section}>
-					<span style={styles.sectionTitle}>⚙️ {t('smoothScroll.configMgmt') || 'Config Management'}</span>
-					<div style={styles.mgmtRow}>
-						<button style={styles.mgmtBtn} onClick={handleExport} title="Export config as JSON">
-							📤 {t('smoothScroll.export') || 'Export'}
-						</button>
-						<button style={styles.mgmtBtn} onClick={handleImport} title="Import config from JSON">
-							📥 {t('smoothScroll.import') || 'Import'}
-						</button>
-						<button style={styles.mgmtBtnDanger} onClick={handleReset} title="Reset to default settings">
-							🔄 {t('smoothScroll.reset') || 'Reset'}
-						</button>
-					</div>
-					<input ref={fileInputRef} type="file" accept=".json" onChange={handleFileChange} style={{ display: 'none' }} />
-				</div>
-			</Card>
+
 
 			{toast && <div style={styles.toast}>{toast}</div>}
 		</div>

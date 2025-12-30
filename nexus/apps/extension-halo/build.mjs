@@ -3,9 +3,18 @@ const { build } = esbuild;
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Run verify-architecture first
+try {
+	console.log('🔍 Running verify-architecture...');
+	execSync('node ../../scripts/verify-architecture.js', { stdio: 'inherit', cwd: __dirname });
+} catch {
+	console.error('⚠️ verify-architecture failed, continuing build...');
+}
 
 // Clean dist
 fs.removeSync('dist');
@@ -54,5 +63,12 @@ build({
 	entryPoints: ['src/entry/sidepanel.tsx'],
 	outfile: 'dist/sidepanel.js',
 }).then(() => console.log('✓ Built sidepanel.js')).catch(e => { console.error(e); process.exit(1); });
+
+// Build SidePanel Init (early theme + smooth scroll)
+build({
+	...commonConfig,
+	entryPoints: ['src/entry/sidepanel-init.ts'],
+	outfile: 'dist/sidepanel-init.js',
+}).then(() => console.log('✓ Built sidepanel-init.js')).catch(e => { console.error(e); process.exit(1); });
 
 console.log('\n🎉 HALO build complete!');

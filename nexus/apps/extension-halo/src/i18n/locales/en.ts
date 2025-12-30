@@ -225,5 +225,10 @@ export const en: TranslationKeys = {
 		fixedBackground: 'Fixed Background Support',
 		profiles: 'Profiles',
 		loadProfile: 'Load Profile',
+		configMgmt: 'Config Management',
+		export: 'Export',
+		import: 'Import',
+		reset: 'Reset',
+		saveCustom: 'Save Custom',
 	},
 };

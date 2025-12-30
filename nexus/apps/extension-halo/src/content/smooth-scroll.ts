@@ -1,10 +1,14 @@
-// goal: Smooth Scroll content script injection (full feature parity)
-// Supports nested scrollable containers
+// goal: Smooth Scroll content script - uses queue-based engine
+// inv: No jumping, silky smooth scrolling
+
+import { scrollTo, configure, clearQueue } from '../tools/smooth-scroll/engine';
+import type { EasingType } from '../tools/smooth-scroll/engine';
+import { findScrollTarget, canScroll, scheduleClearCache } from '../tools/smooth-scroll/utils';
 
 const LOG_TAG = '[HALO:Scroll]';
 
-// ===== TYPES =====
-interface SmoothScrollSettings {
+// ===== SETTINGS =====
+interface ScrollSettings {
 	enabled: boolean;
 	stepSize: number;
 	animationTime: number;
@@ -16,217 +20,155 @@ interface SmoothScrollSettings {
 	keyboard: boolean;
 	touchpad: boolean;
 	middleClickAutoScroll: boolean;
-	fixedBackground: boolean;
-	easing: string;
+	easing: EasingType;
 }
 
-// ===== STATE =====
-let settings: SmoothScrollSettings = {
+let settings: ScrollSettings = {
 	enabled: true,
 	stepSize: 300,
-	animationTime: 600,
+	animationTime: 400,
 	accelerationMax: 3,
 	accelerationDelta: 50,
-	pulseScale: 1,
+	pulseScale: 4,
 	arrowKeyStep: 200,
 	mouseWheel: true,
 	keyboard: true,
 	touchpad: true,
 	middleClickAutoScroll: true,
-	fixedBackground: false,
 	easing: 'spring',
 };
 
-// Animation state per element (WeakMap to avoid memory leaks)
-const animationIds = new WeakMap<Element | Window, number>();
+// ===== STATE =====
 let lastScrollTime = 0;
-let scrollAcceleration = 1;
+let acceleration = 1;
+
+// Middle click state
 let isMiddleScrolling = false;
 let middleScrollStartY = 0;
-let middleScrollOriginY = 0;
 let middleScrollTarget: Element | Window | null = null;
 
-// ===== UTILITIES =====
-/**
- * Find the nearest scrollable ancestor of an element
- */
-function getScrollableAncestor(el: Element | null): Element | Window {
-	while (el && el !== document.body && el !== document.documentElement) {
-		const style = getComputedStyle(el);
-		const overflowY = style.overflowY;
-		// Check if element is scrollable
-		if ((overflowY === 'auto' || overflowY === 'scroll') && el.scrollHeight > el.clientHeight) {
-			return el;
-		}
-		el = el.parentElement;
-	}
-	// Default to window (document scroll)
-	return window;
-}
+// Touchpad detection buffer
+const deltaBuffer: number[] = [];
 
-/**
- * Get current scroll position of target
- */
-function getScrollY(target: Element | Window): number {
-	return target instanceof Window ? target.scrollY : target.scrollTop;
-}
+// ===== TOUCHPAD DETECTION =====
+function isTouchpad(deltaY: number): boolean {
+	if (!deltaY) return false;
 
-/**
- * Get max scroll position of target
- */
-function getMaxScroll(target: Element | Window): number {
-	if (target instanceof Window) {
-		return document.documentElement.scrollHeight - window.innerHeight;
-	}
-	return target.scrollHeight - target.clientHeight;
-}
+	const absDelta = Math.abs(deltaY);
+	deltaBuffer.push(absDelta);
+	if (deltaBuffer.length > 3) deltaBuffer.shift();
 
-/**
- * Set scroll position of target
- */
-function setScrollY(target: Element | Window, y: number): void {
-	if (target instanceof Window) {
-		target.scrollTo(0, y);
-	} else {
-		target.scrollTop = y;
-	}
-}
+	// Mouse wheel typically sends multiples of 120
+	const allDivisibleBy120 = deltaBuffer.every((d) => d % 120 === 0);
+	const allDivisibleBy100 = deltaBuffer.every((d) => d % 100 === 0);
 
-// ===== EASING =====
-function getEasing(t: number): number {
-	switch (settings.easing) {
-		case 'linear': return t;
-		case 'ease': return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
-		case 'ease-out': return 1 - Math.pow(1 - t, 3);
-		case 'spring': return 1 - Math.pow(1 - t, 4) * Math.cos(t * Math.PI * 0.5);
-		default: return 1 - Math.pow(1 - t, 3);
-	}
-}
-
-// ===== CORE SCROLL =====
-function smoothScrollTo(target: Element | Window, targetY: number): void {
-	if (!settings.enabled) return;
-
-	const startY = getScrollY(target);
-	const distance = targetY - startY;
-	if (Math.abs(distance) < 1) return;
-
-	const duration = settings.animationTime;
-	const startTime = performance.now();
-
-	// Cancel previous animation on this target
-	const prevId = animationIds.get(target);
-	if (prevId) cancelAnimationFrame(prevId);
-
-	function animate(currentTime: number): void {
-		const elapsed = currentTime - startTime;
-		const progress = Math.min(elapsed / duration, 1);
-		const eased = getEasing(progress);
-
-		setScrollY(target, startY + distance * eased);
-
-		if (progress < 1) {
-			animationIds.set(target, requestAnimationFrame(animate));
-		} else {
-			animationIds.delete(target);
-		}
-	}
-
-	animationIds.set(target, requestAnimationFrame(animate));
+	return !allDivisibleBy120 && !allDivisibleBy100 && absDelta < 120;
 }
 
 // ===== WHEEL HANDLER =====
 function onWheel(e: WheelEvent): void {
 	if (!settings.enabled || !settings.mouseWheel) return;
+	if (e.defaultPrevented || e.ctrlKey) return;
 
-	// Touchpad detection (small delta + pixel mode)
-	const isTouchpad = Math.abs(e.deltaY) < 50 && e.deltaMode === 0;
-	if (isTouchpad && !settings.touchpad) return;
+	// Touchpad detection
+	const touchpad = isTouchpad(e.deltaY);
+	if (touchpad && !settings.touchpad) return;
 
 	// Find scrollable target
-	const scrollTarget = getScrollableAncestor(e.target as Element);
-
-	// Check if target can scroll
-	const maxScroll = getMaxScroll(scrollTarget);
-	if (maxScroll <= 0) return; // Not scrollable, let browser handle
+	const target = findScrollTarget(e.target as Element);
+	if (!canScroll(target)) return;
 
 	e.preventDefault();
+	scheduleClearCache();
 
 	// Acceleration
-	const now = performance.now();
+	const now = Date.now();
 	if (now - lastScrollTime < settings.accelerationDelta) {
-		scrollAcceleration = Math.min(scrollAcceleration + 0.5, settings.accelerationMax);
+		acceleration = Math.min(acceleration + 0.5, settings.accelerationMax);
 	} else {
-		scrollAcceleration = 1;
+		acceleration = 1;
 	}
 	lastScrollTime = now;
 
-	// Pulse effect
-	const pulse = 1 + (scrollAcceleration - 1) / settings.pulseScale;
-	const deltaY = (e.deltaY > 0 ? 1 : -1) * settings.stepSize * scrollAcceleration * pulse;
+	// Calculate delta
+	let deltaY = e.deltaY;
 
-	const currentY = getScrollY(scrollTarget);
-	const targetY = Math.max(0, Math.min(maxScroll, currentY + deltaY));
-	smoothScrollTo(scrollTarget, targetY);
+	// Normalize line-based scrolling
+	if (e.deltaMode === 1) deltaY *= 40;
+
+	// Apply step size (wheel delta is ~120)
+	if (Math.abs(deltaY) > 1.2) {
+		deltaY = (deltaY > 0 ? 1 : -1) * settings.stepSize * acceleration;
+	}
+
+	scrollTo(target, 0, deltaY);
 }
 
 // ===== KEYBOARD HANDLER =====
 function onKeydown(e: KeyboardEvent): void {
 	if (!settings.enabled || !settings.keyboard) return;
 
-	const target = e.target as HTMLElement;
-	if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+	const el = e.target as HTMLElement;
+	if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable) return;
+	if (e.ctrlKey || e.altKey || e.metaKey) return;
 
-	// Find scrollable target (document.activeElement or focused element)
-	const scrollTarget = getScrollableAncestor(document.activeElement as Element);
-	const maxScroll = getMaxScroll(scrollTarget);
+	const target = findScrollTarget(document.activeElement as Element);
+	if (!canScroll(target)) return;
 
-	let deltaY = 0;
 	const pageHeight = window.innerHeight * 0.9;
+	let deltaY = 0;
 
 	switch (e.key) {
-		case 'ArrowDown': deltaY = settings.arrowKeyStep; break;
-		case 'ArrowUp': deltaY = -settings.arrowKeyStep; break;
-		case 'PageDown': case ' ': deltaY = pageHeight; break;
-		case 'PageUp': deltaY = -pageHeight; break;
-		case 'Home': smoothScrollTo(scrollTarget, 0); e.preventDefault(); return;
-		case 'End': smoothScrollTo(scrollTarget, maxScroll); e.preventDefault(); return;
-		default: return;
+		case 'ArrowDown':
+			deltaY = settings.arrowKeyStep;
+			break;
+		case 'ArrowUp':
+			deltaY = -settings.arrowKeyStep;
+			break;
+		case 'PageDown':
+		case ' ':
+			deltaY = pageHeight;
+			break;
+		case 'PageUp':
+			deltaY = -pageHeight;
+			break;
+		default:
+			return;
 	}
 
 	e.preventDefault();
-	const currentY = getScrollY(scrollTarget);
-	const targetY = Math.max(0, Math.min(maxScroll, currentY + deltaY));
-	smoothScrollTo(scrollTarget, targetY);
+	scrollTo(target, 0, deltaY);
 }
 
-// ===== MIDDLE CLICK AUTO-SCROLL =====
-function onMiddleDown(e: MouseEvent): void {
+// ===== MIDDLE CLICK =====
+function onMouseDown(e: MouseEvent): void {
 	if (!settings.enabled || !settings.middleClickAutoScroll) return;
 	if (e.button !== 1) return;
 
-	// Find scrollable target under cursor
-	middleScrollTarget = getScrollableAncestor(e.target as Element);
-	const maxScroll = getMaxScroll(middleScrollTarget);
-	if (maxScroll <= 0) return; // Not scrollable
+	const target = findScrollTarget(e.target as Element);
+	if (!canScroll(target)) return;
 
 	e.preventDefault();
 	isMiddleScrolling = true;
 	middleScrollStartY = e.clientY;
-	middleScrollOriginY = getScrollY(middleScrollTarget);
+	middleScrollTarget = target;
 	document.body.style.cursor = 'ns-resize';
 }
 
-function onMiddleMove(e: MouseEvent): void {
+function onMouseMove(e: MouseEvent): void {
 	if (!isMiddleScrolling || !middleScrollTarget) return;
 
 	const deltaY = (e.clientY - middleScrollStartY) * 2;
-	const maxScroll = getMaxScroll(middleScrollTarget);
-	const targetY = Math.max(0, Math.min(maxScroll, middleScrollOriginY + deltaY));
-	setScrollY(middleScrollTarget, targetY);
+	middleScrollStartY = e.clientY;
+
+	if (middleScrollTarget instanceof Window) {
+		window.scrollBy(0, deltaY);
+	} else {
+		middleScrollTarget.scrollTop += deltaY;
+	}
 }
 
-function onMiddleUp(e: MouseEvent): void {
+function onMouseUp(e: MouseEvent): void {
 	if (e.button === 1 && isMiddleScrolling) {
 		isMiddleScrolling = false;
 		middleScrollTarget = null;
@@ -234,36 +176,37 @@ function onMiddleUp(e: MouseEvent): void {
 	}
 }
 
-// ===== PUBLIC API =====
-export function updateSettings(newSettings: SmoothScrollSettings): void {
+// ===== API =====
+export function updateSettings(newSettings: ScrollSettings): void {
 	const wasEnabled = settings.enabled;
 	settings = newSettings;
+
+	configure(settings.animationTime, settings.easing);
 
 	if (newSettings.enabled && !wasEnabled) {
 		attachListeners();
 	} else if (!newSettings.enabled && wasEnabled) {
 		detachListeners();
+		clearQueue();
 	}
 
-	console.log(LOG_TAG, 'Settings updated:', newSettings.enabled ? 'ON' : 'OFF');
+	console.log(LOG_TAG, 'Updated:', newSettings.enabled ? 'ON' : 'OFF');
 }
 
 export function attachListeners(): void {
 	window.addEventListener('wheel', onWheel, { passive: false });
 	window.addEventListener('keydown', onKeydown);
-	window.addEventListener('mousedown', onMiddleDown);
-	window.addEventListener('mousemove', onMiddleMove);
-	window.addEventListener('mouseup', onMiddleUp);
-	console.log(LOG_TAG, 'Listeners attached');
+	window.addEventListener('mousedown', onMouseDown);
+	window.addEventListener('mousemove', onMouseMove);
+	window.addEventListener('mouseup', onMouseUp);
 }
 
 export function detachListeners(): void {
 	window.removeEventListener('wheel', onWheel);
 	window.removeEventListener('keydown', onKeydown);
-	window.removeEventListener('mousedown', onMiddleDown);
-	window.removeEventListener('mousemove', onMiddleMove);
-	window.removeEventListener('mouseup', onMiddleUp);
-	console.log(LOG_TAG, 'Listeners detached');
+	window.removeEventListener('mousedown', onMouseDown);
+	window.removeEventListener('mousemove', onMouseMove);
+	window.removeEventListener('mouseup', onMouseUp);
 }
 
 export async function init(): Promise<void> {
@@ -273,19 +216,20 @@ export async function init(): Promise<void> {
 			settings = result.HALO_SMOOTH_SCROLL_SETTINGS;
 		}
 	} catch {
-		console.log(LOG_TAG, 'Using default settings');
+		console.log(LOG_TAG, 'Using defaults');
 	}
+
+	configure(settings.animationTime, settings.easing);
 
 	if (settings.enabled) {
 		attachListeners();
 	}
 
-	// Listen for setting changes
 	chrome.storage.onChanged.addListener((changes, area) => {
 		if (area === 'sync' && changes.HALO_SMOOTH_SCROLL_SETTINGS) {
 			updateSettings(changes.HALO_SMOOTH_SCROLL_SETTINGS.newValue);
 		}
 	});
 
-	console.log(LOG_TAG, 'Initialized');
+	console.log(LOG_TAG, 'Init');
 }

@@ -163,6 +163,11 @@ export interface TranslationKeys {
 		fixedBackground: string;
 		profiles: string;
 		loadProfile: string;
+		configMgmt: string;
+		export: string;
+		import: string;
+		reset: string;
+		saveCustom: string;
 	};
 }
 

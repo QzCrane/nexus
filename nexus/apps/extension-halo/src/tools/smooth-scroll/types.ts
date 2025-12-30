@@ -52,3 +52,6 @@ export const PROFILES = {
 	opera: { ...DEFAULT_SETTINGS, stepSize: 120, animationTime: 300, accelerationMax: 4 },
 	ie: { ...DEFAULT_SETTINGS, stepSize: 60, animationTime: 500, easing: 'ease' as const },
 } as const;
+
+// Custom profile storage key
+export const CUSTOM_PROFILE_KEY = 'HALO_SMOOTH_SCROLL_CUSTOM';

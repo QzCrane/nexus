@@ -225,5 +225,10 @@ export const zh: TranslationKeys = {
 		fixedBackground: '固定背景支持',
 		profiles: '预设配置',
 		loadProfile: '加载配置',
+		configMgmt: '配置管理',
+		export: '导出',
+		import: '导入',
+		reset: '重置',
+		saveCustom: '保存自定义',
 	},
 };
