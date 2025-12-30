@@ -20,6 +20,12 @@ import { OutlinePanel } from '../tools/outline';
 import { SettingsPanel } from '../tools/settings';
 import { ClipboardPanel } from '../tools/clipboard';
 import { SmoothScrollPanel } from '../tools/smooth-scroll';
+import { RegexPanel } from '../tools/regex';
+import { Base64Panel } from '../tools/base64';
+import { HashPanel } from '../tools/hash';
+import { UUIDPanel } from '../tools/uuid';
+import { TimestampPanel } from '../tools/timestamp';
+import { URLPanel } from '../tools/url';
 
 const logger = createLogger('SidePanel', 'HALO');
 
@@ -32,6 +38,12 @@ const TOOLS: { id: ToolId; icon: string; label: string; ready: boolean }[] = [
 	{ id: 'outline', icon: '📋', label: 'Outline', ready: true },
 	{ id: 'clipboard', icon: '📎', label: 'Clip', ready: true },
 	{ id: 'smooth-scroll', icon: '↕️', label: 'Scroll', ready: true },
+	{ id: 'regex', icon: '.*', label: 'Regex', ready: true },
+	{ id: 'base64', icon: '64', label: 'B64', ready: true },
+	{ id: 'hash', icon: '#', label: 'Hash', ready: true },
+	{ id: 'uuid', icon: '🆔', label: 'UUID', ready: true },
+	{ id: 'timestamp', icon: '⏱️', label: 'Time', ready: true },
+	{ id: 'url', icon: '🔗', label: 'URL', ready: true },
 ];
 
 const SidePanel: React.FC = () => {
@@ -166,6 +178,18 @@ const SidePanel: React.FC = () => {
 					<ClipboardPanel />
 				) : activeTool === 'smooth-scroll' ? (
 					<SmoothScrollPanel />
+				) : activeTool === 'regex' ? (
+					<RegexPanel />
+				) : activeTool === 'base64' ? (
+					<Base64Panel />
+				) : activeTool === 'hash' ? (
+					<HashPanel />
+				) : activeTool === 'uuid' ? (
+					<UUIDPanel />
+				) : activeTool === 'timestamp' ? (
+					<TimestampPanel />
+				) : activeTool === 'url' ? (
+					<URLPanel />
 				) : activeTool === 'settings' ? (
 					<SettingsPanel onSettingsChange={handleSettingsChange} />
 				) : activeTool ? (

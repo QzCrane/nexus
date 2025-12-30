@@ -20,6 +20,12 @@ export type ToolId =
 	| 'screenshot'
 	| 'tabs'
 	| 'smooth-scroll'
+	| 'regex'
+	| 'base64'
+	| 'hash'
+	| 'uuid'
+	| 'timestamp'
+	| 'url'
 	| 'settings';
 
 // Message types for inter-context communication
