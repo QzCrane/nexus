@@ -12,6 +12,7 @@ console.log(LOG_TAG, 'Background service worker initialized');
 const MENU_OPEN_HALO = 'halo-open';
 const MENU_QR_SELECTION = 'halo-qr-selection';
 const MENU_COLOR_PICK = 'halo-color-pick';
+const MENU_PDF_LINK = 'halo-pdf-link';
 
 // Initialize on install
 chrome.runtime.onInstalled.addListener(async (details) => {
@@ -58,6 +59,13 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 			contexts: ['page'],
 		});
 
+		chrome.contextMenus.create({
+			id: MENU_PDF_LINK,
+			title: '📕 Open PDF in HALO',
+			contexts: ['link'],
+			targetUrlPatterns: ['*://*/*.pdf', '*://*/*.pdf?*'],
+		});
+
 		console.log(LOG_TAG, 'Context menus created');
 	});
 });
@@ -95,6 +103,21 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 					toolId: 'color-picker',
 				});
 			}, 500);
+			break;
+
+		case MENU_PDF_LINK:
+			// Open sidepanel with PDF tool and store the PDF URL
+			await chrome.sidePanel.open({ tabId: tab.id });
+			const pdfUrl = info.linkUrl;
+			if (pdfUrl) {
+				setTimeout(() => {
+					chrome.runtime.sendMessage({
+						type: 'HALO_ACTIVATE_TOOL',
+						toolId: 'pdf',
+						pdfUrl,
+					});
+				}, 500);
+			}
 			break;
 	}
 });

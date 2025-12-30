@@ -1,0 +1,30 @@
+export const base = {
+	common: {
+		search: '搜索工具...',
+		settings: '设置',
+		tools: '工具',
+		favorites: '收藏',
+		all: '全部',
+		enabled: '已启用',
+		disabled: '已禁用',
+		comingSoon: '即将推出',
+		selectTool: '选择一个工具开始',
+		noResults: '未找到工具',
+		loading: '加载中...',
+		save: '保存',
+		cancel: '取消',
+		reset: '重置',
+		language: '语言',
+	},
+	categories: {
+		general: '通用工具',
+		dev: '开发工具',
+		efficiency: '效率工具',
+		visual: '视觉工具',
+		ai: 'AI 智能',
+	},
+	footer: {
+		zeroTracking: '零追踪',
+		localOnly: '本地处理',
+	},
+};

@@ -1,43 +1,12 @@
 // goal: Tool management hooks
-// eff: Search, filter, sort, pin/unpin, enable/disable
+// eff: Helpers extracted to external files
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import type { ToolMeta, ToolPrefs } from './tool-registry';
-import { TOOL_REGISTRY, TOOL_PREFS_KEY, DEFAULT_TOOL_PREFS, getReadyTools } from './tool-registry';
+import type { ToolMeta, ToolPrefs } from './tool-registry-types';
+import { TOOL_REGISTRY, DEFAULT_TOOL_PREFS, getReadyTools } from './tool-registry';
+import { loadToolPrefs, saveToolPrefs } from './tool-storage-utils';
+import { matchesSearch } from './tool-search-utils';
 import type { ToolCategory } from '../i18n/types';
-
-// Pinyin-like search (simplified - matches first char of Chinese)
-function normalizeSearch(str: string): string {
-	return str.toLowerCase().replace(/\s+/g, '');
-}
-
-function matchesSearch(tool: ToolMeta, query: string): boolean {
-	if (!query) return true;
-	const q = normalizeSearch(query);
-	// Match ID
-	if (tool.id.includes(q)) return true;
-	// Match keywords
-	return tool.keywords.some((kw) => normalizeSearch(kw).includes(q));
-}
-
-// Load tool preferences from storage
-async function loadToolPrefs(): Promise<Record<string, ToolPrefs>> {
-	try {
-		const result = await chrome.storage.local.get(TOOL_PREFS_KEY);
-		return (result[TOOL_PREFS_KEY] as Record<string, ToolPrefs>) || {};
-	} catch {
-		return {};
-	}
-}
-
-// Save tool preferences
-async function saveToolPrefs(prefs: Record<string, ToolPrefs>): Promise<void> {
-	try {
-		await chrome.storage.local.set({ [TOOL_PREFS_KEY]: prefs });
-	} catch {
-		// Ignore errors
-	}
-}
 
 export type SortMode = 'name' | 'usage' | 'category';
 

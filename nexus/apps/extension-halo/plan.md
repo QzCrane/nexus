@@ -53,14 +53,32 @@
 - [x] **Lazy Load**: 路由级代码分包 (React.lazy + Suspense) + ResourceManager 基建
 - [x] **Local Core**: 基于 `pdf-lib` 实现 Merge/Split/Extract/Rotate/Watermark/ImagesToPDF
 - [x] **UI Panel**: 拖拽交互 + 操作选择 (Merge 已验证)
-- [ ] **Full UI**: 完整交互 (Split/Extract/Rotate/Watermark/ImagesToPDF)
-- [ ] **右键菜单**: Context Menu 集成 (Open in HALO PDF)
+- [x] **Full UI**: 完整交互 (Split/Extract/Rotate/Watermark/ImagesToPDF) + 配置面板
+- [x] **右键菜单**: Context Menu 集成 (Open PDF in HALO)
+
+### UI 交互增强 (UX Polish)
+
+- [x] **Command Palette**: Ctrl+K 快速工具搜索 (模糊匹配 + 键盘导航)
+- [x] **Lazy Tool Loader**: 懒加载渲染器 + Skeleton 占位 + 悬停预加载
+- [x] **Enhanced Toolbar**: 固定工具优先 + 动画过渡 + 快捷键提示
+- [x] **集成到 SidePanel**: 替换现有工具栏，接入 Command Palette
+
+### 模块商店 (Module Store)
+
+> **核心**: 用户可选安装/卸载工具模块，类似 VSCode 扩展市场
+
+- [x] **Module Registry**: 模块元数据定义 (核心/可选)
+- [x] **Module Manager**: IndexedDB 持久化 + 安装/卸载/更新逻辑
+- [x] **React Hook**: useModuleManager 响应式状态
+- [x] **Store UI**: 模块浏览/安装/卸载面板
+- [x] **集成到 SidePanel**: 工具栏 + 懒加载 + i18n
+- [x] **动态工具栏**: 根据已安装模块渲染工具按钮
+- [x] **远程 Registry**: 从服务器获取可用模块列表 (支持版本检查与更新)
 
 ### 原子化工具矩阵 (Atomic Modules)
 
 > **目标**: 吞噬 He3 功能，利用 Atomic 架构快速堆叠
 
-- [ ] **Extension Manager**: 侧边栏原生管理 (分组/快捷键)
 - [ ] **Crypto**: JWT / RSA / AES
 - [ ] **Generator**: Lorem Ipsum / Mock Data
 - [ ] **Network**: UA Parser / Curl Converter

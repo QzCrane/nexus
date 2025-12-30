@@ -1,13 +1,14 @@
 // goal: HALO SidePanel main entry
 // tradeoff: Modular architecture with extracted ToolPanelRenderer
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createLogger } from '@nexus/kernel';
 import type { ToolId } from '../kernel/types';
 import { STORAGE_PREFIX } from '../kernel/types';
 import type { HaloSettings } from '../kernel/settings';
 import { loadSettings, getThemeColors, applyTheme } from '../kernel/theme';
+import { useModuleManager } from '../kernel/use-module-manager';
 import { useTranslation } from '../i18n';
 import { ToolPanelRenderer } from '../components/tool-panel-renderer';
 
@@ -31,14 +32,22 @@ const TOOLS: { id: ToolId; icon: string; label: string; ready: boolean }[] = [
 	{ id: 'uuid', icon: '🆔', label: 'UUID', ready: true },
 	{ id: 'timestamp', icon: '⏱️', label: 'Time', ready: true },
 	{ id: 'url', icon: '🔗', label: 'URL', ready: true },
+	{ id: 'module-store', icon: '🧩', label: 'Store', ready: true },
 ];
 
 const SidePanel: React.FC = () => {
 	const { t, ready: i18nReady } = useTranslation();
+	const { isInstalled, loading: modulesLoading } = useModuleManager();
 	const [activeTool, setActiveTool] = useState<ToolId | null>(null);
 	const [settings, setSettings] = useState<HaloSettings | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [showLabels, setShowLabels] = useState(true);
+
+	// Filter tools based on installed modules
+	const visibleTools = useMemo(() => {
+		if (modulesLoading) return TOOLS;
+		return TOOLS.filter((tool) => isInstalled(tool.id));
+	}, [modulesLoading, isInstalled]);
 
 	useEffect(() => {
 		const init = async () => {
@@ -75,7 +84,7 @@ const SidePanel: React.FC = () => {
 		setShowLabels(updated.showToolLabels);
 	}, []);
 
-	if (loading || !i18nReady) {
+	if (loading || !i18nReady || modulesLoading) {
 		return (
 			<div style={styles.container}>
 				<div style={styles.loading}>
@@ -101,7 +110,7 @@ const SidePanel: React.FC = () => {
 			</header>
 
 			<div style={styles.toolbar}>
-				{TOOLS.map((tool) => (
+				{visibleTools.map((tool) => (
 					<button
 						key={tool.id}
 						onClick={() => tool.ready && handleToolSelect(tool.id)}

@@ -1,126 +1,16 @@
 // goal: Global search bar component
-// eff: Fuzzy search with keyboard shortcuts
+// eff: Fuzzy search with keyboard shortcuts. Logic extracted to search-utils.ts and styles to SearchBar.styles.ts
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { ToolMeta } from '../kernel/tool-registry';
 import { TOOL_REGISTRY } from '../kernel/tool-registry';
 import { useTranslation } from '../i18n';
+import { matchTool } from './search-utils';
+import { styles } from './SearchBar.styles';
 
 interface SearchBarProps {
   onSelect: (toolId: string) => void;
   placeholder?: string;
-}
-
-const styles: Record<string, React.CSSProperties> = {
-  wrapper: {
-    position: 'relative',
-    width: '100%',
-  },
-  inputWrapper: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '8px 12px',
-    background: 'var(--halo-bg-secondary)',
-    border: '1px solid var(--halo-border)',
-    borderRadius: '8px',
-    transition: 'border-color 0.15s, box-shadow 0.15s',
-  },
-  inputWrapperFocus: {
-    borderColor: 'var(--halo-accent)',
-    boxShadow: '0 0 0 2px var(--halo-accent-alpha, rgba(124, 58, 237, 0.2))',
-  },
-  icon: {
-    fontSize: '14px',
-    opacity: 0.6,
-  },
-  input: {
-    flex: 1,
-    border: 'none',
-    background: 'transparent',
-    color: 'var(--halo-text)',
-    fontSize: '13px',
-    outline: 'none',
-  },
-  shortcut: {
-    fontSize: '10px',
-    padding: '2px 6px',
-    background: 'var(--halo-bg-tertiary)',
-    borderRadius: '4px',
-    color: 'var(--halo-text-muted)',
-  },
-  dropdown: {
-    position: 'absolute',
-    top: 'calc(100% + 4px)',
-    left: 0,
-    right: 0,
-    background: 'var(--halo-bg-secondary)',
-    border: '1px solid var(--halo-border)',
-    borderRadius: '8px',
-    maxHeight: '300px',
-    overflowY: 'auto',
-    zIndex: 100,
-    boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-  },
-  item: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    padding: '10px 12px',
-    cursor: 'pointer',
-    transition: 'background 0.1s',
-  },
-  itemActive: {
-    background: 'var(--halo-bg-tertiary)',
-  },
-  itemIcon: {
-    fontSize: '16px',
-    width: '24px',
-    textAlign: 'center',
-  },
-  itemInfo: {
-    flex: 1,
-    minWidth: 0,
-  },
-  itemName: {
-    fontSize: '13px',
-    color: 'var(--halo-text)',
-    fontWeight: 500,
-  },
-  itemDesc: {
-    fontSize: '11px',
-    color: 'var(--halo-text-muted)',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  itemStatus: {
-    fontSize: '10px',
-    padding: '2px 6px',
-    borderRadius: '4px',
-  },
-  noResults: {
-    padding: '16px',
-    textAlign: 'center',
-    color: 'var(--halo-text-muted)',
-    fontSize: '13px',
-  },
-};
-
-function normalizeSearch(str: string): string {
-  return str.toLowerCase().replace(/\s+/g, '');
-}
-
-function matchTool(tool: ToolMeta, query: string, t: (k: string) => string): boolean {
-  if (!query) return false;
-  const q = normalizeSearch(query);
-  // ID match
-  if (tool.id.includes(q)) return true;
-  // Keywords match
-  if (tool.keywords.some((kw) => normalizeSearch(kw).includes(q))) return true;
-  // Translated name match
-  const name = normalizeSearch(t(`tools.${tool.id}.name`));
-  return name.includes(q);
 }
 
 export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, placeholder }) => {

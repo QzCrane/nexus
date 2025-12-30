@@ -1,0 +1,30 @@
+export const base = {
+	common: {
+		search: 'Search tools...',
+		settings: 'Settings',
+		tools: 'Tools',
+		favorites: 'Favorites',
+		all: 'All',
+		enabled: 'Enabled',
+		disabled: 'Disabled',
+		comingSoon: 'Coming Soon',
+		selectTool: 'Select a tool to begin',
+		noResults: 'No tools found',
+		loading: 'Loading...',
+		save: 'Save',
+		cancel: 'Cancel',
+		reset: 'Reset',
+		language: 'Language',
+	},
+	categories: {
+		general: 'General',
+		dev: 'Developer',
+		efficiency: 'Efficiency',
+		visual: 'Visual',
+		ai: 'AI & Smart',
+	},
+	footer: {
+		zeroTracking: 'Zero tracking',
+		localOnly: 'Local only',
+	},
+};

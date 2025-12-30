@@ -26,9 +26,16 @@ export function checkHardcodedActions(ROOT) {
 
 	const violations = [];
 	const skipFiles = ['actions.ts', 'messages.contracts.ts', 'definitions.ts'];
+	const srcDirs = [
+		path.join(ROOT, 'apps/extension-spectra/src'),
+		path.join(ROOT, 'apps/extension-halo/src'),
+	];
 
-	scanDir(path.join(ROOT, 'apps/extension-spectra/src'), (fullPath, entry) => {
-		if (!entry.name.endsWith('.ts') || entry.name.endsWith('.d.ts')) return;
+	for (const srcDir of srcDirs) {
+		if (!fs.existsSync(srcDir)) continue;
+		scanDir(srcDir, (fullPath, entry) => {
+			const isTsFile = entry.name.endsWith('.ts') || entry.name.endsWith('.tsx');
+			if (!isTsFile || entry.name.endsWith('.d.ts')) return;
 
 		const relativePath = fullPath.replace(ROOT + path.sep, '').replace(/\\/g, '/');
 		if (skipFiles.some(f => relativePath.includes(f))) return;
@@ -50,7 +57,8 @@ export function checkHardcodedActions(ROOT) {
 				}
 			}
 		}
-	});
+		});
+	}
 
 	if (violations.length > 0) {
 		for (const v of violations) {

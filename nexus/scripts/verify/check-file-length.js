@@ -25,7 +25,8 @@ export function checkSourceFileLength(ROOT) {
 		'packages/contracts/src',
 		'packages/nexus-kernel/src',
 		'packages/features/audio-engine/src',
-		'apps/extension-spectra/src'
+		'apps/extension-spectra/src',
+		'apps/extension-halo/src'
 	];
 
 	let oversizeFiles = [];
@@ -34,7 +35,8 @@ export function checkSourceFileLength(ROOT) {
 
 	for (const srcDir of srcDirs) {
 		scanDir(path.join(ROOT, srcDir), (fullPath, entry) => {
-			if (!entry.name.endsWith('.ts') || entry.name.endsWith('.d.ts')) return;
+			const isTsFile = entry.name.endsWith('.ts') || entry.name.endsWith('.tsx');
+			if (!isTsFile || entry.name.endsWith('.d.ts')) return;
 
 			const content = fs.readFileSync(fullPath, 'utf-8');
 			const lineCount = content.split('\n').length;

@@ -90,7 +90,7 @@ function readAllSourceFiles(dir) {
       const fullPath = path.join(d, item.name);
       if (item.isDirectory()) {
         walk(fullPath);
-      } else if (item.name.endsWith('.ts') || item.name.endsWith('.js')) {
+      } else if (item.name.endsWith('.ts') || item.name.endsWith('.js') || item.name.endsWith('.tsx')) {
         content += fs.readFileSync(fullPath, 'utf8');
       }
     }

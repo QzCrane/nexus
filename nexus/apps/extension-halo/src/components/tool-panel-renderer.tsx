@@ -24,6 +24,7 @@ const URLPanel = lazy(() => import('../tools/url').then((m) => ({ default: m.URL
 const TabsPanel = lazy(() => import('../tools/tabs').then((m) => ({ default: m.TabsPanel })));
 const ScreenshotPanel = lazy(() => import('../tools/screenshot').then((m) => ({ default: m.ScreenshotPanel })));
 const PDFPanel = lazy(() => import('../tools/pdf').then((m) => ({ default: m.PDFPanel })));
+const ModuleStorePanel = lazy(() => import('../tools/module-store').then((m) => ({ default: m.ModuleStorePanel })));
 
 // Tool mapping for rendering
 const TOOL_PANELS: Record<string, React.LazyExoticComponent<React.FC<{ onSettingsChange?: (s: HaloSettings) => void }>>> = {
@@ -37,6 +38,7 @@ const TOOL_PANELS: Record<string, React.LazyExoticComponent<React.FC<{ onSetting
 	'tabs': TabsPanel,
 	'screenshot': ScreenshotPanel,
 	'pdf': PDFPanel,
+	'module-store': ModuleStorePanel,
 	'regex': RegexPanel,
 	'base64': Base64Panel,
 	'hash': HashPanel,

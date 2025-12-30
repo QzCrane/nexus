@@ -27,6 +27,7 @@ export type ToolId =
 	| 'timestamp'
 	| 'url'
 	| 'pdf'
+	| 'module-store'
 	| 'settings';
 
 // Message types for inter-context communication

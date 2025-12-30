@@ -65,41 +65,53 @@ export function checkReadmeAI(ROOT) {
 export function checkHtmlResources(ROOT) {
 	console.log('\n📋 检查 HTML 资源引用...\n');
 
-	const publicDir = path.join(ROOT, 'apps/extension-spectra/public');
-	if (!fs.existsSync(publicDir)) return;
+	const apps = ['extension-spectra', 'extension-halo'];
+	let allIssues = [];
 
-	const htmlFiles = fs.readdirSync(publicDir).filter(f => f.endsWith('.html'));
-	let issues = [];
+	for (const app of apps) {
+		const publicDir = path.join(ROOT, 'apps', app, 'public');
+		if (!fs.existsSync(publicDir)) continue;
 
-	for (const htmlFile of htmlFiles) {
-		const content = fs.readFileSync(path.join(publicDir, htmlFile), 'utf-8');
+		const htmlFiles = fs.readdirSync(publicDir).filter(f => f.endsWith('.html'));
 
-		// 检查 script 引用
-		const scriptRefs = content.matchAll(/<script\s+src=["']([^"']+)["']/g);
-		for (const match of scriptRefs) {
-			const ref = match[1];
-			if (ref.startsWith('http') || ref.startsWith('//')) continue;
+		for (const htmlFile of htmlFiles) {
+			const content = fs.readFileSync(path.join(publicDir, htmlFile), 'utf-8');
 
-			const refPath = path.join(publicDir, ref);
-			const isPublic = fs.existsSync(refPath);
-			const tsPath = ref.replace('.js', '.ts');
-			const srcPaths = [
-				path.join(ROOT, 'apps/extension-spectra/src', tsPath),
-				path.join(ROOT, 'apps/extension-spectra/src', ref.replace('.js', ''), 'index.ts')
-			];
-			const isBuild = srcPaths.some(p => fs.existsSync(p));
+			// 检查 script 引用
+			const scriptRefs = content.matchAll(/<script\s+src=["']([^"']+)["']/g);
+			for (const match of scriptRefs) {
+				const ref = match[1];
+				if (ref.startsWith('http') || ref.startsWith('//')) continue;
 
-			if (!isPublic && !isBuild) {
-				issues.push({ html: htmlFile, ref });
+				const refPath = path.join(publicDir, ref);
+				const isPublic = fs.existsSync(refPath);
+				const baseName = ref.replace('.js', '');
+				const tsPath = ref.replace('.js', '.ts');
+				const tsxPath = ref.replace('.js', '.tsx');
+				const srcPaths = [
+					path.join(ROOT, 'apps', app, 'src', tsPath),
+					path.join(ROOT, 'apps', app, 'src', tsxPath),
+					path.join(ROOT, 'apps', app, 'src', baseName, 'index.ts'),
+					path.join(ROOT, 'apps', app, 'src', baseName, 'index.tsx'),
+					// HALO uses entry/ directory
+					path.join(ROOT, 'apps', app, 'src', 'entry', tsPath),
+					path.join(ROOT, 'apps', app, 'src', 'entry', tsxPath),
+				];
+				const isBuild = srcPaths.some(p => fs.existsSync(p));
+
+				if (!isPublic && !isBuild) {
+					allIssues.push({ app, html: htmlFile, ref });
+				}
 			}
 		}
 	}
 
-	if (issues.length > 0) {
-		for (const issue of issues) {
-			error(`${issue.html}: ${issue.ref} 不存在！`);
+	if (allIssues.length > 0) {
+		for (const issue of allIssues) {
+			error(`[${issue.app}] ${issue.html}: ${issue.ref} 不存在！`);
 		}
 	} else {
 		ok('所有 HTML 资源引用有效');
 	}
 }
+
