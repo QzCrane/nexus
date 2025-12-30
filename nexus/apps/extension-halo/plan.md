@@ -44,15 +44,17 @@
 
 ---
 
-## 📅 阶段 4: 蓝海护城河 (P2) [🚧 启动中]
+## 📅 阶段 4: 蓝海护城河 (P2) [🚧 进行中]
 
 > **Strategy**: 取代 He3 的浏览器原生终极开发者套件 (SidePanel + Local First + Hybrid Engine)
 
 ### PDF 工具箱 (High Priority)
 
-- [ ] **Local Core**: 基于 `pdf-lib` 实现合并/拆分/转换 (验证懒加载架构)
-- [ ] **UI Panel**: 拖拽交互 + 右键菜单集成
-- [ ] **Lazy Load**: 路由级代码分包 + 资源动态加载
+- [x] **Lazy Load**: 路由级代码分包 (React.lazy + Suspense) + ResourceManager 基建
+- [x] **Local Core**: 基于 `pdf-lib` 实现 Merge/Split/Extract/Rotate/Watermark/ImagesToPDF
+- [x] **UI Panel**: 拖拽交互 + 操作选择 (Merge 已验证)
+- [ ] **Full UI**: 完整交互 (Split/Extract/Rotate/Watermark/ImagesToPDF)
+- [ ] **右键菜单**: Context Menu 集成 (Open in HALO PDF)
 
 ### 原子化工具矩阵 (Atomic Modules)
 

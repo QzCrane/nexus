@@ -230,6 +230,16 @@ export interface TranslationKeys {
 		copied: string;
 		downloaded: string;
 	};
+	pdfPanel: {
+		dropHint: string;
+		clickToSelect: string;
+		files: string;
+		pages: string;
+		operation: string;
+		process: string;
+		ready: string;
+		localOnly: string;
+	};
 }
 
 export type TranslationPath =

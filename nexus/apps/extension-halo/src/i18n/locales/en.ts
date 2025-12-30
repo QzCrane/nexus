@@ -296,4 +296,14 @@ export const en: TranslationKeys = {
 		copied: 'Image copied to clipboard!',
 		downloaded: 'Image saved!',
 	},
+	pdfPanel: {
+		dropHint: 'Drop PDFs or images here',
+		clickToSelect: 'or click to select files',
+		files: 'Files',
+		pages: 'pages',
+		operation: 'Operation',
+		process: 'Process',
+		ready: 'Ready!',
+		localOnly: 'All processing runs locally. Your files never leave your device.',
+	},
 };

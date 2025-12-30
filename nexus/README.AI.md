@@ -67,14 +67,7 @@ nexus(私有) → nexus-public/ → github.com/QzCrane/spectra
 
 ## 协议
 
-| 类   | 消息                       | 用途        |
-| ---- | -------------------------- | ----------- |
-| 音频 | AUDIO_GET/SET, UI_SYNC     | 节点+反馈   |
-| 劫持 | CAPTURE_TOGGLE/STATE       | 生命周期    |
-| 视频 | VIDEO_ROTATE/SCREENSHOT/AB | 变换+播放   |
-| 遥控 | REMOTE_CREATE/GET/CLOSE    | WebRTC      |
-| 脚本 | USER_SCRIPT_EXECUTE        | 这里的 eval |
-| 同步 | TAB_REPORT/MEDIA_REPORT    | 5s 心跳     |
+详见: `apps/extension-spectra/docs/protocols.md`
 
 ---
 

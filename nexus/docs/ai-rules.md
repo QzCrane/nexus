@@ -31,6 +31,7 @@
 硬限: 源码 ≤200 行 | index.ts≤50 行 | 函数>50 行预警 | 文件>150 行预警
 结构: `module/{index.ts, types.ts, core.ts, [feature].ts}`
 红线: >200 行禁新增 | 单文件单职责 | 目录深度 ≤3
+预检: 修改前必须 `Pre-check lines` (近 200 行则先重构) | 必须 `Pre-check tree` (确认相对路径)
 
 ## §2.1 注释规则
 

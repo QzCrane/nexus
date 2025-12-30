@@ -296,4 +296,14 @@ export const zh: TranslationKeys = {
 		copied: '图片已复制到剪贴板！',
 		downloaded: '图片已保存！',
 	},
+	pdfPanel: {
+		dropHint: '拖入 PDF 或图片文件',
+		clickToSelect: '或点击选择文件',
+		files: '文件',
+		pages: '页',
+		operation: '操作',
+		process: '处理',
+		ready: '完成！',
+		localOnly: '所有处理均在本地完成，您的文件不会离开设备。',
+	},
 };

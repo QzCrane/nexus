@@ -1,4 +1,4 @@
----
+﻿---
 trigger: always_on
 ---
 
@@ -11,7 +11,7 @@ trigger: always_on
 规则层 (2): ~/nexus/docs/ai-rules.md, ~/nexus/docs/business-model.md
 架构层 (9): 
 ~/nexus/apps/extension-halo/docs/architecture.md、research.md、market-research*.md
-~/nexus/apps/extension-spectra/docs/policy-decision.md, cors-data-flow.md
+~/nexus/apps/extension-spectra/docs/policy-decision.md, protocols.md, cors-data-flow.md
 模块层 (15): .ai-context.md
 工作流 (6): ~/.agent/workflows/*.md
 
@@ -21,4 +21,4 @@ Contracts ← Kernel ← {Audio-Engine, UI-Kit} ← {Spectra, Halo}
 
 ## 每次回答前压缩上下文
 
-## 不要直接修改此文件，aiagent 权限被 antigravity 拒绝，你需要告知我如何修改
+## 不要直接修改此文件，因为 aiagent 修改项目规则权限被 antigravity 拒绝，你需要告知我如何修改
