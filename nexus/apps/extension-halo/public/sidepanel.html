@@ -5,18 +5,155 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>HALO</title>
     <style>
+      :root {
+        --halo-bg: #1a1a1a;
+        --halo-bg-secondary: #242424;
+        --halo-bg-tertiary: #2a2a2a;
+        --halo-text: #f0f0f0;
+        --halo-text-secondary: #b0b0b0;
+        --halo-text-muted: #666666;
+        --halo-border: #444444;
+        --halo-accent: #7c3aed;
+      }
       * {
         margin: 0;
         padding: 0;
         box-sizing: border-box;
       }
+      html {
+        scroll-behavior: smooth;
+      }
       body {
-        background: #1a1a1a;
+        background: var(--halo-bg);
+        color: var(--halo-text);
+        overflow-x: hidden;
+        scroll-behavior: smooth;
+        transition: background 0.2s, color 0.2s;
+      }
+      @keyframes fadeInUp {
+        from { opacity: 0; transform: translate(-50%, 10px); }
+        to { opacity: 1; transform: translate(-50%, 0); }
+      }
+      /* Custom Scrollbar - uses CSS vars */
+      ::-webkit-scrollbar {
+        width: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--halo-border);
+        border-radius: 10px;
+        transition: background 0.2s;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--halo-text-muted);
       }
     </style>
+    <!-- Sync theme initialization to prevent FOUC -->
+    <script>
+      (function() {
+        const DARK = {
+          '--halo-bg': '#1a1a1a',
+          '--halo-bg-secondary': '#242424',
+          '--halo-bg-tertiary': '#2a2a2a',
+          '--halo-text': '#f0f0f0',
+          '--halo-text-secondary': '#b0b0b0',
+          '--halo-text-muted': '#666666',
+          '--halo-border': '#444444'
+        };
+        const LIGHT = {
+          '--halo-bg': '#ffffff',
+          '--halo-bg-secondary': '#f5f5f5',
+          '--halo-bg-tertiary': '#eeeeee',
+          '--halo-text': '#1a1a1a',
+          '--halo-text-secondary': '#555555',
+          '--halo-text-muted': '#888888',
+          '--halo-border': '#dddddd'
+        };
+        try {
+          chrome.storage.sync.get(['HALO_SETTINGS'], function(result) {
+            const s = result.HALO_SETTINGS || {};
+            const mode = s.theme || 'dark';
+            const isDark = mode === 'dark' || 
+              (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+            const colors = isDark ? DARK : LIGHT;
+            const root = document.documentElement;
+            for (const [k, v] of Object.entries(colors)) {
+              root.style.setProperty(k, v);
+            }
+          });
+        } catch(e) { /* extension context only */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script src="sidepanel.js"></script>
+    <!-- SidePanel smooth scroll (extension pages don't use content script) -->
+    <script>
+      (function() {
+        const DEFAULTS = { enabled: true, stepSize: 300, animationTime: 400, accelerationMax: 3, accelerationDelta: 50, pulseScale: 1, easing: 'spring' };
+        let cfg = DEFAULTS;
+        let lastTime = 0, accel = 1, animId = null;
+
+        function ease(t) {
+          switch(cfg.easing) {
+            case 'linear': return t;
+            case 'ease': return t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
+            case 'ease-out': return 1-Math.pow(1-t,3);
+            case 'spring': return 1-Math.pow(1-t,4)*Math.cos(t*Math.PI*0.5);
+            default: return 1-Math.pow(1-t,3);
+          }
+        }
+
+        function scrollTo(el, target) {
+          const start = el.scrollTop, dist = target - start;
+          if (Math.abs(dist) < 1) return;
+          const t0 = performance.now();
+          if (animId) cancelAnimationFrame(animId);
+          function step(now) {
+            const p = Math.min((now - t0) / cfg.animationTime, 1);
+            el.scrollTop = start + dist * ease(p);
+            if (p < 1) animId = requestAnimationFrame(step);
+            else animId = null;
+          }
+          animId = requestAnimationFrame(step);
+        }
+
+        function findScrollable(el) {
+          while (el && el !== document.body) {
+            const s = getComputedStyle(el);
+            if ((s.overflowY === 'auto' || s.overflowY === 'scroll') && el.scrollHeight > el.clientHeight) return el;
+            el = el.parentElement;
+          }
+          return document.documentElement;
+        }
+
+        function onWheel(e) {
+          if (!cfg.enabled) return;
+          const target = findScrollable(e.target);
+          const max = target.scrollHeight - target.clientHeight;
+          if (max <= 0) return;
+          e.preventDefault();
+          const now = performance.now();
+          accel = now - lastTime < cfg.accelerationDelta ? Math.min(accel + 0.5, cfg.accelerationMax) : 1;
+          lastTime = now;
+          const pulse = 1 + (accel - 1) / cfg.pulseScale;
+          const delta = (e.deltaY > 0 ? 1 : -1) * cfg.stepSize * accel * pulse;
+          scrollTo(target, Math.max(0, Math.min(max, target.scrollTop + delta)));
+        }
+
+        window.addEventListener('wheel', onWheel, { passive: false });
+
+        // Load settings
+        chrome.storage.sync.get(['HALO_SMOOTH_SCROLL_SETTINGS'], r => {
+          if (r.HALO_SMOOTH_SCROLL_SETTINGS) cfg = { ...DEFAULTS, ...r.HALO_SMOOTH_SCROLL_SETTINGS };
+        });
+        chrome.storage.onChanged.addListener((c, a) => {
+          if (a === 'sync' && c.HALO_SMOOTH_SCROLL_SETTINGS) cfg = { ...DEFAULTS, ...c.HALO_SMOOTH_SCROLL_SETTINGS.newValue };
+        });
+      })();
+    </script>
   </body>
 </html>

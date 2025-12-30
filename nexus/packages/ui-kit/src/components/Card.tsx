@@ -1,4 +1,4 @@
-// goal: reusable card container component for consistent UI layout (dark theme)
+// goal: reusable card container component for consistent UI layout (theme-aware)
 
 import React from 'react';
 
@@ -18,21 +18,22 @@ const PADDING_MAP = {
 	lg: '20px'
 };
 
+// Use CSS Variables for theme support
 const VARIANT_STYLES = {
 	default: {
-		background: '#2a2a2a',
+		background: 'var(--halo-bg-tertiary, #2a2a2a)',
 		border: 'none',
 		boxShadow: 'none'
 	},
 	outlined: {
 		background: 'transparent',
-		border: '1px solid #444',
+		border: '1px solid var(--halo-border, #444)',
 		boxShadow: 'none'
 	},
 	elevated: {
-		background: '#2a2a2a',
+		background: 'var(--halo-bg-tertiary, #2a2a2a)',
 		border: 'none',
-		boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+		boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
 	}
 };
 
@@ -52,13 +53,14 @@ export function Card({
 			style={{
 				...variantStyle,
 				padding: PADDING_MAP[padding],
-				borderRadius: '10px'
+				borderRadius: '10px',
+				transition: 'background 0.2s, border-color 0.2s'
 			}}
 		>
 			{(title || subtitle) && (
 				<div className="card-header" style={{ marginBottom: padding !== 'none' ? '10px' : '0' }}>
-					{title && <div className="card-title" style={{ fontWeight: 600, fontSize: '14px', color: '#fff' }}>{title}</div>}
-					{subtitle && <div className="card-subtitle" style={{ fontSize: '12px', color: '#888' }}>{subtitle}</div>}
+					{title && <div className="card-title" style={{ fontWeight: 600, fontSize: '14px', color: 'var(--halo-text, #fff)' }}>{title}</div>}
+					{subtitle && <div className="card-subtitle" style={{ fontSize: '12px', color: 'var(--halo-text-muted, #888)' }}>{subtitle}</div>}
 				</div>
 			)}
 			{children}

@@ -111,6 +111,25 @@ chrome.action.onClicked.addListener(async (tab) => {
 	}
 });
 
+// Import history logic (Note: in worker, we might need a separate bundle or shared logic)
+// Since we are using esbuild, we can import from core.
+import { saveToClipboardHistory } from '../tools/clipboard/core';
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+	if (message.type === 'HALO_CLIPBOARD_ADD') {
+		const { text, sourceUrl, sourceTitle } = message;
+		saveToClipboardHistory(
+			text,
+			sourceUrl || sender.url,
+			sourceTitle || sender.tab?.title
+		).then(() => {
+			sendResponse({ success: true });
+		});
+		return true; // async
+	}
+	return false;
+});
+
 // Log storage changes for debugging
 chrome.storage.onChanged.addListener((changes, area) => {
 	if (area === 'sync') {

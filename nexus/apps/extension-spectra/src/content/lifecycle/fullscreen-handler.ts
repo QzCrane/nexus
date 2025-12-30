@@ -5,6 +5,7 @@ import { AudioMode } from '@nexus/audio-engine';
 import { logger } from '../../shared/logger';
 import type { PolicyExecutorState } from '../types';
 import type { CaptureManager } from '../capture-manager';
+import type { PolicyExecutor } from '../policy-executor/types';
 
 const log = logger.content;
 
@@ -22,7 +23,7 @@ const DEFAULT_CONFIG: FullscreenHandlerConfig = {
 // post: returns a cleanup function to remove event listeners and clear pending timers
 export function setupFullscreenHandler(
 	state: PolicyExecutorState,
-	_policyExecutor: unknown,
+	policyExecutor: PolicyExecutor,
 	captureManager: CaptureManager,
 	config: Partial<FullscreenHandlerConfig> = {}
 ): () => void {
@@ -91,6 +92,9 @@ export function setupFullscreenHandler(
 		state.userHasInteracted = true;
 		captureManager.request(true, { ...state.config, volume: vol });
 		savedVolume = null;
+
+		// eff: re-apply volume config to DOM elements to override injector's temporary 100% setting
+		setTimeout(() => policyExecutor.applyState(), 100);
 	}
 
 	function handleMessage(event: MessageEvent): void {

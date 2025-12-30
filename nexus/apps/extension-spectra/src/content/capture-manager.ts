@@ -13,13 +13,21 @@ export function createCaptureManager(messenger: NexusMessenger) {
 	let isCaptureActive = false;
 	let isPending = false;
 
+	// eff: broadcasts capture state to injector (MAIN world) for fullscreen handling
+	function notifyInjector(active: boolean): void {
+		window.postMessage({ type: 'SPECTRA_CAPTURE_STATE', active }, '*');
+	}
+
 	return {
 		isActive(): boolean {
 			return isCaptureActive;
 		},
 
 		setActive(active: boolean): void {
-			isCaptureActive = active;
+			if (isCaptureActive !== active) {
+				isCaptureActive = active;
+				notifyInjector(active);
+			}
 			isPending = false;
 		},
 
@@ -45,7 +53,10 @@ export function createCaptureManager(messenger: NexusMessenger) {
 			safeSend(() => messenger.send('CAPTURE_TOGGLE', { enabled, config }))
 				.then((response) => {
 					log.capture(`Capture response:`, response);
-					isCaptureActive = enabled;
+					if (isCaptureActive !== enabled) {
+						isCaptureActive = enabled;
+						notifyInjector(enabled);
+					}
 				})
 				.catch((e) => {
 					log.error('Capture request failed:', e);
@@ -63,7 +74,10 @@ export function createCaptureManager(messenger: NexusMessenger) {
 			if (message.action === Actions.CAPTURE_STATE_CHANGE) {
 				const enabled = message.payload?.enabled ?? message.enabled ?? false;
 				log.capture(`State change received: ${enabled ? 'ON' : 'OFF'}`);
-				isCaptureActive = enabled;
+				if (isCaptureActive !== enabled) {
+					isCaptureActive = enabled;
+					notifyInjector(enabled);
+				}
 				isPending = false;
 				return true;
 			}

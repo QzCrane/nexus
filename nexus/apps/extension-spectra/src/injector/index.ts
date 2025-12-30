@@ -66,6 +66,9 @@
 	// @ts-ignore
 	const originalWebkitRequestFullscreen = Element.prototype.webkitRequestFullscreen;
 
+	// inv: tracks whether content script is actively capturing tab audio
+	let isCaptureActive = false;
+
 	function setAllMediaVolume(vol: number) {
 		document.querySelectorAll('video, audio').forEach((el) => {
 			try {
@@ -82,14 +85,12 @@
 	});
 
 	async function interceptedRequestFullscreen(this: Element, options?: FullscreenOptions) {
-		// Notify content script to pause capture/processing
-		window.postMessage({ type: 'SPECTRA_PAUSE_FOR_FULLSCREEN' }, '*');
-
-		// Reset native volume to 100%
-		setAllMediaVolume(1);
-
-		// Wait for capture to close (critical timing)
-		await new Promise(r => setTimeout(r, 80));
+		// rule: only pause capture and reset volume when actually in CAPTURE mode
+		if (isCaptureActive) {
+			window.postMessage({ type: 'SPECTRA_PAUSE_FOR_FULLSCREEN' }, '*');
+			setAllMediaVolume(1);
+			await new Promise(r => setTimeout(r, 80));
+		}
 
 		return originalRequestFullscreen.call(this, options);
 	}
@@ -99,9 +100,11 @@
 	if (originalWebkitRequestFullscreen) {
 		// @ts-ignore
 		Element.prototype.webkitRequestFullscreen = async function (options) {
-			window.postMessage({ type: 'SPECTRA_PAUSE_FOR_FULLSCREEN' }, '*');
-			setAllMediaVolume(1);
-			await new Promise(r => setTimeout(r, 80));
+			if (isCaptureActive) {
+				window.postMessage({ type: 'SPECTRA_PAUSE_FOR_FULLSCREEN' }, '*');
+				setAllMediaVolume(1);
+				await new Promise(r => setTimeout(r, 80));
+			}
 			return originalWebkitRequestFullscreen.call(this, options);
 		};
 	}
@@ -160,16 +163,22 @@
 		window.AudioContext = window.webkitAudioContext = Construct;
 	}
 
-	// Listen for volume updates from Content Script
+	// Listen for volume updates and capture state from Content Script
 	window.addEventListener('message', function (event) {
-		if (event.data && event.data.type === 'SPECTRA_VOLUME_UPDATE') {
+		if (!event.data) return;
+
+		if (event.data.type === 'SPECTRA_VOLUME_UPDATE') {
 			globalVolume = event.data.volume;
 			activeBoosters.forEach(node => {
 				try {
-					// Smooth transition to prevent clicking artifacts
 					node.gain.setTargetAtTime(globalVolume, node.context.currentTime, 0.05);
 				} catch (e) { }
 			});
+		}
+
+		// eff: sync capture state from content script to control fullscreen behavior
+		if (event.data.type === 'SPECTRA_CAPTURE_STATE') {
+			isCaptureActive = !!event.data.active;
 		}
 	});
 

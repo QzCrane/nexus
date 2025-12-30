@@ -59,7 +59,7 @@ nexus(私有) → nexus-public/ → github.com/QzCrane/spectra
 
 ## 功能
 
-**SPECTRA**: Audio 800%/EQ/压限/声道/延迟 | Video 速率 16x/旋转/镜像/PiP/截图 | AB 循环/标记 | 遥控 QR+WebRTC | 热键脚本 (UserScripts)
+**SPECTRA**: Audio 800%/EQ/脉冲/声道/延迟 | AudioContext 劫持 (Google 翻译支持) | Video 速率 16x/旋转/镜像/PiP/截图 | AB 循环/标记 | 遥控 QR+WebRTC | 热键脚本 (UserScripts)
 
 **HALO** (SidePanel): 核心(✅ 二维码/颜色/JSON/尺子/大纲/设置) | 主题(✅ 暗/亮/跟随+强调色) | 效率(🔜 剪贴板) | 蓝海(🔜 PDF/存档)
 

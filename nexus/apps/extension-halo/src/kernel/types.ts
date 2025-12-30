@@ -19,6 +19,7 @@ export type ToolId =
 	| 'clipboard'
 	| 'screenshot'
 	| 'tabs'
+	| 'smooth-scroll'
 	| 'settings';
 
 // Message types for inter-context communication

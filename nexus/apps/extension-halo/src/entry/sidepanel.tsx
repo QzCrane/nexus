@@ -9,6 +9,7 @@ import type { ToolId } from '../kernel/types';
 import { STORAGE_PREFIX } from '../kernel/types';
 import type { HaloSettings } from '../kernel/settings';
 import { loadSettings, getThemeColors, applyTheme } from '../kernel/theme';
+import { useTranslation } from '../i18n';
 
 // Tool panels
 import { QRCodePanel } from '../tools/qrcode';
@@ -17,6 +18,8 @@ import { JSONFormatterPanel } from '../tools/json-formatter';
 import { RulerPanel } from '../tools/ruler';
 import { OutlinePanel } from '../tools/outline';
 import { SettingsPanel } from '../tools/settings';
+import { ClipboardPanel } from '../tools/clipboard';
+import { SmoothScrollPanel } from '../tools/smooth-scroll';
 
 const logger = createLogger('SidePanel', 'HALO');
 
@@ -27,10 +30,12 @@ const TOOLS: { id: ToolId; icon: string; label: string; ready: boolean }[] = [
 	{ id: 'ruler', icon: '📐', label: 'Ruler', ready: true },
 	{ id: 'json-formatter', icon: '{}', label: 'JSON', ready: true },
 	{ id: 'outline', icon: '📋', label: 'Outline', ready: true },
-	{ id: 'clipboard', icon: '📎', label: 'Clip', ready: false },
+	{ id: 'clipboard', icon: '📎', label: 'Clip', ready: true },
+	{ id: 'smooth-scroll', icon: '↕️', label: 'Scroll', ready: true },
 ];
 
 const SidePanel: React.FC = () => {
+	const { t, ready: i18nReady } = useTranslation();
 	const [activeTool, setActiveTool] = useState<ToolId | null>(null);
 	const [settings, setSettings] = useState<HaloSettings | null>(null);
 	const [loading, setLoading] = useState(true);
@@ -82,12 +87,12 @@ const SidePanel: React.FC = () => {
 		setActiveTool('settings');
 	}, []);
 
-	if (loading) {
+	if (loading || !i18nReady) {
 		return (
 			<div style={styles.container}>
 				<div style={styles.loading}>
 					<span style={{ fontSize: '24px' }}>🌟</span>
-					<span>Loading...</span>
+					<span>{t('common.loading')}</span>
 				</div>
 			</div>
 		);
@@ -130,7 +135,7 @@ const SidePanel: React.FC = () => {
 							opacity: tool.ready ? 1 : 0.4,
 							cursor: tool.ready ? 'pointer' : 'not-allowed',
 						}}
-						title={tool.ready ? tool.label : `${tool.label} (Coming Soon)`}
+						title={tool.ready ? t(`tools.${tool.id}.name`) : `${t(`tools.${tool.id}.name`)} (${t('common.comingSoon')})`}
 					>
 						<span style={{ fontSize: '16px' }}>{tool.icon}</span>
 						{showLabels && (
@@ -138,7 +143,7 @@ const SidePanel: React.FC = () => {
 								fontSize: '9px', 
 								color: 'var(--halo-text-muted, #888)' 
 							}}>
-								{tool.label}
+								{t(`tools.${tool.id}.name`)}
 							</span>
 						)}
 					</button>
@@ -157,6 +162,10 @@ const SidePanel: React.FC = () => {
 					<JSONFormatterPanel />
 				) : activeTool === 'outline' ? (
 					<OutlinePanel />
+				) : activeTool === 'clipboard' ? (
+					<ClipboardPanel />
+				) : activeTool === 'smooth-scroll' ? (
+					<SmoothScrollPanel />
 				) : activeTool === 'settings' ? (
 					<SettingsPanel onSettingsChange={handleSettingsChange} />
 				) : activeTool ? (
@@ -174,7 +183,7 @@ const SidePanel: React.FC = () => {
 						<div style={styles.placeholder}>
 							<span style={{ fontSize: '48px', opacity: 0.3 }}>👆</span>
 							<p style={{ color: 'var(--halo-text-secondary)', fontSize: '13px' }}>
-								Select a tool to begin
+								{t('common.selectTool')}
 							</p>
 						</div>
 					</Card>
@@ -183,9 +192,9 @@ const SidePanel: React.FC = () => {
 
 			{/* Footer */}
 			<div style={styles.footer}>
-				<span>🔒 Zero tracking</span>
+				<span>🔒 {t('footer.zeroTracking')}</span>
 				<span>•</span>
-				<span>💾 Local only</span>
+				<span>💾 {t('footer.localOnly')}</span>
 			</div>
 		</div>
 	);

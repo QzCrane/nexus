@@ -84,6 +84,16 @@ export interface NexusMessages {
 
 	// User Scripts
 	'USER_SCRIPT_EXECUTE': { req: { script: string }; res: { success: boolean; error?: string } };
+
+	// HALO Tools
+	'HALO_GET_STATUS': { req: void; res: { hostname: string; activeTools: string[] } };
+	'HALO_TOOL_ACTIVATE': { req: { toolId: string }; res: { success: boolean; toolId?: string; error?: string } };
+	'HALO_TOOL_DEACTIVATE': { req: { toolId: string }; res: { success: boolean } };
+	'HALO_RULER_START': { req: void; res: { success: boolean } };
+	'HALO_RULER_CANCEL': { req: void; res: { success: boolean } };
+	'HALO_RULER_RESULT': { req: { data: any }; res: void };
+	'HALO_SCROLL_TO_HEADING': { req: { index: number }; res: { success: boolean; error?: string } };
+	'HALO_CLIPBOARD_ADD': { req: { text: string; sourceUrl?: string; sourceTitle?: string }; res: void };
 }
 
 export type NexusAction = keyof NexusMessages;

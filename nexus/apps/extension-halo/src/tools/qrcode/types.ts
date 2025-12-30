@@ -13,6 +13,16 @@ export interface QRCodeState {
 	history: string[];
 }
 
+export interface ScanResult {
+	data: string;
+	location: {
+		topLeft: { x: number; y: number };
+		topRight: { x: number; y: number };
+		bottomLeft: { x: number; y: number };
+		bottomRight: { x: number; y: number };
+	} | null;
+}
+
 export const DEFAULT_OPTIONS: Omit<QRCodeOptions, 'text'> = {
 	size: 200,
 	errorCorrectionLevel: 'M',
