@@ -78,7 +78,7 @@ pnpm workspace | `pnpm install/build/--filter [name] build` | 内部包: `"@nexu
 
 ### 依赖清单
 
-运行时: qrcode^1.5(QR) peerjs^1.5(WebRTC) @2025-12-26
+运行时: qrcode^1.5(QR) peerjs^1.5(WebRTC) jose^6.x(JWT/Crypto) @2025-12-31
 开发时: @types/qrcode^1.5 @2025-12-26
 
 ---

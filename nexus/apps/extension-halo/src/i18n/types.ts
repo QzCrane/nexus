@@ -7,7 +7,7 @@ import { PanelsDevTranslations } from './types-defs-3';
 import { PanelsExtraTranslations } from './types-defs-4';
 
 export type Locale = 'en' | 'zh';
-export type ToolCategory = 'general' | 'dev' | 'efficiency' | 'visual' | 'ai';
+export type ToolCategory = 'general' | 'dev' | 'efficiency' | 'visual' | 'ai' | 'security' | 'media' | 'browser';
 
 // Translation keys structure
 export interface TranslationKeys extends

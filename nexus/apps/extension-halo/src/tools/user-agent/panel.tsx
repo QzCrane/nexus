@@ -1,0 +1,70 @@
+// goal: User-Agent Switcher panel UI - view and copy UA strings
+
+import React, { useMemo, useCallback } from 'react';
+import { useTranslation } from '../../i18n';
+import { UA_PRESETS, getCurrentUserAgent, parseUserAgent } from './core';
+import { styles } from './panel.styles';
+
+export const UserAgentPanel: React.FC = () => {
+	const { t } = useTranslation();
+	const currentUA = getCurrentUserAgent();
+	const parsed = useMemo(() => parseUserAgent(currentUA), [currentUA]);
+
+	// Copy UA
+	const handleCopy = useCallback((ua: string) => {
+		navigator.clipboard.writeText(ua);
+	}, []);
+
+	// Group presets
+	const desktopPresets = UA_PRESETS.filter((p) => !p.name.includes('iPhone') && !p.name.includes('iPad') && !p.name.includes('Android'));
+	const mobilePresets = UA_PRESETS.filter((p) => p.name.includes('iPhone') || p.name.includes('iPad') || p.name.includes('Android'));
+	const botPresets = UA_PRESETS.filter((p) => p.name.includes('bot'));
+
+	return (
+		<div style={styles.wrapper}>
+			{/* Current UA */}
+			<div style={styles.current}>
+				<div style={styles.label}>{t('userAgent.current')}</div>
+				<div style={styles.value}>{currentUA}</div>
+				<div style={styles.info}>
+					<span style={styles.badge}>{parsed.browser}</span>
+					<span style={styles.badge}>{parsed.os}</span>
+					<span style={styles.badge}>{parsed.device}</span>
+				</div>
+			</div>
+
+			{/* Presets */}
+			<div style={styles.list}>
+				{/* Desktop */}
+				<div style={styles.section}>💻 Desktop</div>
+				{desktopPresets.map((preset) => (
+					<div key={preset.name} style={styles.item} onClick={() => handleCopy(preset.ua)}>
+						<span style={styles.icon}>{preset.icon}</span>
+						<span style={styles.name}>{preset.name}</span>
+						<button style={styles.copyBtn}>📋</button>
+					</div>
+				))}
+
+				{/* Mobile */}
+				<div style={styles.section}>📱 Mobile</div>
+				{mobilePresets.map((preset) => (
+					<div key={preset.name} style={styles.item} onClick={() => handleCopy(preset.ua)}>
+						<span style={styles.icon}>{preset.icon}</span>
+						<span style={styles.name}>{preset.name}</span>
+						<button style={styles.copyBtn}>📋</button>
+					</div>
+				))}
+
+				{/* Bots */}
+				<div style={styles.section}>🤖 Bots</div>
+				{botPresets.map((preset) => (
+					<div key={preset.name} style={styles.item} onClick={() => handleCopy(preset.ua)}>
+						<span style={styles.icon}>{preset.icon}</span>
+						<span style={styles.name}>{preset.name}</span>
+						<button style={styles.copyBtn}>📋</button>
+					</div>
+				))}
+			</div>
+		</div>
+	);
+};

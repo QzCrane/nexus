@@ -1,0 +1,38 @@
+// goal: Module Store panel styles
+
+import type React from 'react';
+
+export const styles: Record<string, React.CSSProperties> = {
+	wrapper: { display: 'flex', flexDirection: 'column', gap: '16px', height: '100%', padding: '12px 0 0 0' },
+	header: { display: 'flex', flexDirection: 'column', gap: '12px', padding: '0 12px' },
+	titleRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', minHeight: '36px' },
+	title: { fontSize: '18px', fontWeight: 700, color: 'var(--halo-text)', display: 'flex', alignItems: 'center', gap: '8px' },
+	tabs: { display: 'flex', gap: '8px', background: 'var(--halo-bg-secondary)', padding: '4px', borderRadius: '8px', width: 'fit-content' },
+	tab: {
+		padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 600,
+		cursor: 'pointer', border: 'none', background: 'transparent',
+		color: 'var(--halo-text-muted)', transition: 'all 0.2s',
+	},
+	tabActive: { background: 'var(--halo-bg)', color: 'var(--halo-text)', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' },
+	tabUpdate: { color: '#22c55e' },
+	list: { display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1, minHeight: 0, padding: '0 12px 16px 12px' },
+	item: {
+		display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 16px',
+		background: 'var(--halo-bg-secondary)', borderRadius: '12px',
+		border: '1px solid var(--halo-border)', transition: 'all 0.2s',
+	},
+	icon: { fontSize: '24px', minWidth: '40px', textAlign: 'center', background: 'var(--halo-bg-tertiary)', borderRadius: '8px', padding: '8px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+	info: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' },
+	name: { fontSize: '14px', fontWeight: 700, color: 'var(--halo-text)', display: 'flex', alignItems: 'center', gap: '8px' },
+	desc: { fontSize: '12px', color: 'var(--halo-text-muted)', lineHeight: '1.4', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' },
+	btn: {
+		padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
+		cursor: 'pointer', border: 'none', transition: 'all 0.15s', minWidth: '80px',
+	},
+	btnInstall: { background: 'var(--halo-accent)', color: '#fff' },
+	btnRefresh: { padding: '8px', borderRadius: '8px', fontSize: '14px', cursor: 'pointer', border: 'none', background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text)', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+	badge: { fontSize: '10px', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 },
+	badgeUpdate: { background: 'rgba(34, 197, 94, 0.2)', color: '#22c55e' },
+	empty: { padding: '48px', textAlign: 'center', color: 'var(--halo-text-muted)', fontSize: '14px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' },
+	stats: { fontSize: '12px', fontWeight: 500, color: 'var(--halo-text-muted)' },
+};

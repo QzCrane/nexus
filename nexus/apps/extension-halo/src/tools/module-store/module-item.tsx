@@ -7,24 +7,27 @@ import { formatModuleSize, type ModuleMeta } from '../../kernel/module-registry'
 
 const styles = {
 	item: {
-		display: 'flex', alignItems: 'center', gap: '12px', padding: '12px',
-		background: 'var(--halo-bg-secondary)', borderRadius: '10px',
-		border: '1px solid var(--halo-border)', transition: 'all 0.15s',
+		display: 'flex', alignItems: 'center', gap: '16px', padding: '16px',
+		background: 'var(--halo-bg-secondary)', borderRadius: '12px',
+		border: '1px solid var(--halo-border)', transition: 'all 0.2s',
+		minHeight: '72px'
 	},
-	icon: { fontSize: '24px', width: '40px', textAlign: 'center' },
-	info: { flex: 1, minWidth: 0 },
-	name: { fontSize: '13px', fontWeight: 600, color: 'var(--halo-text)', display: 'flex', alignItems: 'center', gap: '6px' },
-	desc: { fontSize: '11px', color: 'var(--halo-text-muted)', marginTop: '2px' },
-	meta: { fontSize: '10px', color: 'var(--halo-text-muted)', marginTop: '4px', display: 'flex', gap: '8px' },
+	icon: { fontSize: '24px', minWidth: '40px', textAlign: 'center', background: 'var(--halo-bg-tertiary)', borderRadius: '8px', padding: '8px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+	info: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' },
+	name: { fontSize: '14px', fontWeight: 700, color: 'var(--halo-text)', display: 'flex', alignItems: 'center', gap: '8px' },
+	desc: { fontSize: '12px', color: 'var(--halo-text-muted)', lineHeight: '1.4', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' },
+	meta: { fontSize: '11px', color: 'var(--halo-text-muted)', display: 'flex', gap: '8px', alignItems: 'center' },
+	
 	btn: {
-		padding: '8px 14px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
+		padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
 		cursor: 'pointer', border: 'none', transition: 'all 0.15s', minWidth: '80px',
 	},
 	btnInstall: { background: 'var(--halo-accent)', color: '#fff' },
 	btnUninstall: { background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text-muted)', border: '1px solid var(--halo-border)' },
 	btnDownloading: { background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text-muted)', cursor: 'wait' },
-	btnCore: { background: 'transparent', color: 'var(--halo-text-muted)', fontSize: '10px', cursor: 'default' },
-	badge: { fontSize: '9px', padding: '2px 6px', borderRadius: '4px' },
+	btnCore: { background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text-muted)', fontSize: '10px', cursor: 'default', padding: '4px 8px', borderRadius: '4px' },
+	
+	badge: { fontSize: '10px', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 },
 	badgeCore: { background: 'var(--halo-accent-alpha)', color: 'var(--halo-accent)' },
 	badgeNew: { background: 'rgba(34, 197, 94, 0.2)', color: '#22c55e' },
 };
@@ -42,8 +45,8 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, status, isCore, 
 	const isInstalled = status === 'installed';
 	const isDownloading = status === 'downloading' || status === 'updating';
 
-	const nameKey = `modules.tools.${module.id}.name`;
-	const descKey = `modules.tools.${module.id}.desc`;
+	const nameKey = `tools.${module.id}.name`;
+	const descKey = `tools.${module.id}.desc`;
 	const nameTranslation = t(nameKey);
 	const descTranslation = t(descKey);
 	
@@ -56,32 +59,33 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, status, isCore, 
 			<div style={styles.info}>
 				<div style={styles.name}>
 					{displayName}
-					{isCore && <span style={{ ...styles.badge, ...styles.badgeCore }}>{t('moduleStorePanel.core')}</span>}
 					{!isCore && !isInstalled && <span style={{ ...styles.badge, ...styles.badgeNew }}>{t('moduleStorePanel.new')}</span>}
 				</div>
-				<div style={styles.desc}>{displayDesc}</div>
+				<div style={styles.desc} title={displayDesc}>{displayDesc}</div>
+			</div>
+
+			<div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+				{isCore ? (
+					<span style={styles.btnCore}>{t('moduleStorePanel.builtIn')}</span>
+				) : isDownloading ? (
+					<button style={{ ...styles.btn, ...styles.btnDownloading }} disabled>
+						⏳ {status === 'updating' ? t('moduleStorePanel.updating') : t('moduleStorePanel.installing')}
+					</button>
+				) : isInstalled ? (
+					<button style={{ ...styles.btn, ...styles.btnUninstall }} onClick={onUninstall}>
+						{t('moduleStorePanel.uninstall')}
+					</button>
+				) : (
+					<button style={{ ...styles.btn, ...styles.btnInstall }} onClick={onInstall}>
+						{t('moduleStorePanel.install')}
+					</button>
+				)}
 				<div style={styles.meta}>
 					<span>v{module.version}</span>
 					<span>•</span>
 					<span>{formatModuleSize(module.size)}</span>
 				</div>
 			</div>
-
-			{isCore ? (
-				<span style={styles.btnCore}>{t('moduleStorePanel.builtIn')}</span>
-			) : isDownloading ? (
-				<button style={{ ...styles.btn, ...styles.btnDownloading }} disabled>
-					⏳ {status === 'updating' ? t('moduleStorePanel.updating') : t('moduleStorePanel.installing')}
-				</button>
-			) : isInstalled ? (
-				<button style={{ ...styles.btn, ...styles.btnUninstall }} onClick={onUninstall}>
-					{t('moduleStorePanel.uninstall')}
-				</button>
-			) : (
-				<button style={{ ...styles.btn, ...styles.btnInstall }} onClick={onInstall}>
-					{t('moduleStorePanel.install')}
-				</button>
-			)}
 		</div>
 	);
 };

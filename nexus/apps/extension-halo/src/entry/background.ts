@@ -3,10 +3,14 @@
 
 import { STORAGE_PREFIX } from '../kernel/types';
 import { DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY } from '../kernel/settings';
+import { initUserScriptsEngine } from '../tools/userscripts/engine';
 
 const LOG_TAG = '[HALO]';
 
 console.log(LOG_TAG, 'Background service worker initialized');
+
+// Initialize UserScripts injection engine
+initUserScriptsEngine();
 
 // Context menu IDs
 const MENU_OPEN_HALO = 'halo-open';

@@ -8,6 +8,7 @@ import { modules } from './en-modules/modules';
 import { panelsCore } from './en-modules/panels-core';
 import { panelsDev } from './en-modules/panels-dev';
 import { panelsExtra } from './en-modules/panels-extra';
+import { panelsV6 } from './en-modules/panels-v6';
 
 export const en: TranslationKeys = {
 	...base,
@@ -16,4 +17,5 @@ export const en: TranslationKeys = {
 	...panelsCore,
 	...panelsDev,
 	...panelsExtra,
+	...panelsV6,
 };

@@ -68,8 +68,8 @@ export class ModuleManager {
 		const stored = await getAllStates();
 		stored.forEach((s) => this.states.set(s.id, s));
 
-		// Ensure core modules are always installed
-		for (const mod of CORE_MODULES) {
+		// Ensure all modules are installed by default (as per user request: "all modules must be loaded")
+		for (const mod of ALL_MODULES) {
 			if (!this.states.has(mod.id)) {
 				const state: ModuleState = { id: mod.id, status: 'installed', installedVersion: mod.version, installedAt: Date.now() };
 				this.states.set(mod.id, state);

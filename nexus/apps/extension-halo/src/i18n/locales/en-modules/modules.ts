@@ -92,9 +92,38 @@ export const modules = {
 			name: 'Network Utils',
 			desc: 'UA Parser, Curl converter',
 		},
+
 		'mock-data': {
 			name: 'Mock Data',
 			desc: 'Generate test data',
+		},
+		userscripts: {
+			name: 'UserScripts',
+			desc: 'Inject custom JavaScript',
+		},
+		yaml: {
+			name: 'YAML',
+			desc: 'YAML <> JSON converter',
+		},
+		diff: {
+			name: 'Diff',
+			desc: 'Compare text differences',
+		},
+		'number-base': {
+			name: 'Number Base',
+			desc: 'Convert binary, hex, decimal',
+		},
+		'text-tools': {
+			name: 'Text Tools',
+			desc: 'Case, Sort, Dedupe text',
+		},
+		permissions: {
+			name: 'Permissions',
+			desc: 'Manage extension permissions',
+		},
+		'lorem-ipsum': {
+			name: 'Lorem Ipsum',
+			desc: 'Generate placeholder text',
 		},
 	},
 };

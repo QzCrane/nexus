@@ -16,7 +16,7 @@ export const TOOLS_VISUAL: ToolMeta[] = [
 		id: 'archive',
 		icon: '💾',
 		category: 'visual',
-		status: 'coming',
+		status: 'ready',
 		keywords: ['archive', 'save', 'offline', 'cundang', '存档', '离线'],
 		features: { contentScript: true },
 	},

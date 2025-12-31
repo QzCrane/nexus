@@ -7,6 +7,7 @@ import type { ToolCategory } from '../../i18n/types';
 import { ToolPanelRenderer } from '../tool-panel-renderer';
 import { SearchBar } from '../SearchBar';
 import { commonStyles } from './layouts.styles';
+import { ScrollbarStyles } from './classic-layout-parts';
 import type { LayoutProps } from './types';
 
 export const LauncherLayout: React.FC<LayoutProps & { onToggleMode: () => void }> = ({
@@ -56,6 +57,7 @@ export const LauncherLayout: React.FC<LayoutProps & { onToggleMode: () => void }
 
     return (
         <div style={commonStyles.container}>
+            <ScrollbarStyles />
             <div style={{
                 display: 'flex',
                 width: '200%',
@@ -104,8 +106,8 @@ export const LauncherLayout: React.FC<LayoutProps & { onToggleMode: () => void }
                         </div>
                     </header>
                     
-                    <div style={{ padding: '0 12px 12px 12px', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                        <div style={{ margin: '12px 0' }}>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                        <div style={{ margin: '12px 0', padding: '0 12px' }}>
                            <SearchBar onSelect={(id) => onSelectTool(id as ToolId)} />
                         </div>
 
@@ -116,7 +118,10 @@ export const LauncherLayout: React.FC<LayoutProps & { onToggleMode: () => void }
 
                                 return (
                                     <div key={category} style={commonStyles.categorySection}>
-                                        <div style={commonStyles.categoryTitle}>{t(`categories.${category}`)}</div>
+                                        <div style={{ ...commonStyles.categoryTitle as React.CSSProperties, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span>{t(`categories.${category}`)}</span>
+                                            <span style={{ fontSize: '10px', opacity: 0.6, marginRight: '4px' }}>{tools.length}</span>
+                                        </div>
                                         <div style={commonStyles.toolGrid}>
                                             {tools.map((tool) => {
                                                 const isReady = tool.status === 'ready' || tool.status === 'beta';
@@ -179,13 +184,13 @@ export const LauncherLayout: React.FC<LayoutProps & { onToggleMode: () => void }
                             </button>
                         </div>
                     </header>
-                    <div style={commonStyles.content}>
-                        <ToolPanelRenderer
-                            activeTool={activeTool}
-                            onSettingsChange={onSettingsChange}
-                            selectToolText={t('common.selectTool')}
-                        />
-                    </div>
+                    <div className="halo-scrollbar" style={{ ...commonStyles.content, overflowY: 'auto' }}>
+						<ToolPanelRenderer
+							activeTool={activeTool}
+							onSettingsChange={onSettingsChange}
+							selectToolText={t('common.selectTool')}
+						/>
+					</div>
                 </div>
             </div>
         </div>

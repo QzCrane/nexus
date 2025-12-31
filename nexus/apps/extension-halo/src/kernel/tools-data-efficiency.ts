@@ -48,4 +48,18 @@ export const TOOLS_EFFICIENCY: ToolMeta[] = [
 		status: 'ready',
 		keywords: ['tabs', 'manager', 'biaoqian', '标签', '切换', 'vertical'],
 	},
+	{
+		id: 'permissions',
+		icon: '🔐',
+		category: 'efficiency',
+		status: 'ready',
+		keywords: ['permissions', 'auth', 'quanxian', '权限', '管理'],
+	},
+	{
+		id: 'lorem-ipsum',
+		icon: '📝',
+		category: 'efficiency',
+		status: 'ready',
+		keywords: ['lorem', 'ipsum', 'text', 'dummy', 'wenben', '文本', '填充'],
+	},
 ];

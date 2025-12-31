@@ -92,9 +92,38 @@ export const modules = {
 			name: '网络工具',
 			desc: 'UA 解析, Curl 转换',
 		},
+
 		'mock-data': {
 			name: '模拟数据',
 			desc: '生成测试数据',
+		},
+		userscripts: {
+			name: '用户脚本',
+			desc: '注入自定义 JavaScript',
+		},
+		yaml: {
+			name: 'YAML',
+			desc: 'YAML 与 JSON 互转',
+		},
+		diff: {
+			name: '文本对比',
+			desc: '比对文本差异 (Diff)',
+		},
+		'number-base': {
+			name: '进制转换',
+			desc: '二进制、八进制、十进制、十六进制',
+		},
+		'text-tools': {
+			name: '文本工具',
+			desc: '大小写、排序、去重、统计',
+		},
+		permissions: {
+			name: '权限管理',
+			desc: '管理扩展的可选权限',
+		},
+		'lorem-ipsum': {
+			name: '乱数假文',
+			desc: '生成 Lorem Ipsum 占位文本',
 		},
 	},
 };

@@ -31,16 +31,7 @@ export const InterfaceSettings: React.FC<InterfaceSettingsProps> = ({ settings, 
 					/>
 				</div>
 
-				<div style={styles.row}>
-					<div>
-						<div style={styles.label}>{t('settings.showLabels')}</div>
-						<div style={styles.sublabel}>{t('settings.showLabelsDesc')}</div>
-					</div>
-					<Toggle
-						checked={settings.showToolLabels}
-						onChange={(checked) => onUpdate('showToolLabels', checked)}
-					/>
-				</div>
+
 
 
 			</div>
