@@ -42,16 +42,24 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, status, isCore, 
 	const isInstalled = status === 'installed';
 	const isDownloading = status === 'downloading' || status === 'updating';
 
+	const nameKey = `modules.tools.${module.id}.name`;
+	const descKey = `modules.tools.${module.id}.desc`;
+	const nameTranslation = t(nameKey);
+	const descTranslation = t(descKey);
+	
+	const displayName = nameTranslation === nameKey ? module.name : nameTranslation;
+	const displayDesc = descTranslation === descKey ? module.description : descTranslation;
+
 	return (
 		<div style={styles.item}>
 			<span style={styles.icon as React.CSSProperties}>{module.icon}</span>
 			<div style={styles.info}>
 				<div style={styles.name}>
-					{module.name}
+					{displayName}
 					{isCore && <span style={{ ...styles.badge, ...styles.badgeCore }}>{t('moduleStorePanel.core')}</span>}
 					{!isCore && !isInstalled && <span style={{ ...styles.badge, ...styles.badgeNew }}>{t('moduleStorePanel.new')}</span>}
 				</div>
-				<div style={styles.desc}>{module.description}</div>
+				<div style={styles.desc}>{displayDesc}</div>
 				<div style={styles.meta}>
 					<span>v{module.version}</span>
 					<span>•</span>

@@ -57,7 +57,7 @@ export const OutlinePanel: React.FC = () => {
 	const handleCopyMarkdown = useCallback(async () => {
 		const md = outlineToMarkdown(headings, settings.showNumbers);
 		const ok = await copyToClipboard(md);
-		showToast(ok ? t('outlinePanel.exported') : 'Copy failed');
+		showToast(ok ? t('outlinePanel.exported') : t('outlinePanel.copyFailed'));
 	}, [headings, settings.showNumbers, showToast, t]);
 
 	const handleSettingChange = useCallback(async <K extends keyof OutlineSettings>(
@@ -78,7 +78,7 @@ export const OutlinePanel: React.FC = () => {
 		<div style={styles.wrapper}>
 			<Card variant="default" padding="sm">
 				<div style={styles.optionsRow}>
-					<span>Levels:</span>
+					<span>{t('outlinePanel.levels')}</span>
 					<select
 						value={settings.minLevel}
 						onChange={(e) => handleSettingChange('minLevel', parseInt(e.target.value))}
@@ -88,7 +88,7 @@ export const OutlinePanel: React.FC = () => {
 							<option key={n} value={n}>H{n}</option>
 						))}
 					</select>
-					<span>to</span>
+					<span>{t('outlinePanel.to')}</span>
 					<select
 						value={settings.maxLevel}
 						onChange={(e) => handleSettingChange('maxLevel', parseInt(e.target.value))}
@@ -104,7 +104,7 @@ export const OutlinePanel: React.FC = () => {
 							checked={settings.showNumbers}
 							onChange={(e) => handleSettingChange('showNumbers', e.target.checked)}
 						/>
-						Numbers
+						{t('outlinePanel.numbers')}
 					</label>
 				</div>
 			</Card>
@@ -115,7 +115,7 @@ export const OutlinePanel: React.FC = () => {
 					onClick={handleExtract}
 					disabled={loading}
 				>
-					{loading ? '⏳ Extracting...' : `🔄 ${t('outlinePanel.refresh')}`}
+					{loading ? t('outlinePanel.extracting') : `🔄 ${t('outlinePanel.refresh')}`}
 				</button>
 				{headings.length > 0 && (
 					<button style={styles.btn} onClick={handleCopyMarkdown}>
@@ -138,7 +138,7 @@ export const OutlinePanel: React.FC = () => {
 						))}
 					</div>
 					<div style={styles.stats}>
-						{headings.length} headings • 
+						{headings.length} {t('outlinePanel.headingStats')} • 
 						{Object.entries(levelCounts).map(([lvl, cnt]) => 
 							` H${lvl}: ${cnt}`
 						).join(' •')}

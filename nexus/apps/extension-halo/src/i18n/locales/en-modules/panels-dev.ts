@@ -6,6 +6,9 @@ export const panelsDev = {
 		replaceMode: 'Replace Mode',
 		replacePlaceholder: 'Replacement text...',
 		matches: 'Matches',
+		noMatches: 'No matches',
+		matchInfo: 'Line {{line}}, Col {{col}} (index {{index}})',
+		groups: 'Groups',
 	},
 	base64: {
 		encode: 'Encode',
@@ -18,6 +21,9 @@ export const panelsDev = {
 		outputPlaceholder: 'Result will appear here...',
 		dropFile: 'Drop file here or click to select',
 		swap: 'Swap',
+		chars: 'chars',
+		bytes: 'bytes',
+		readError: 'Failed to read file',
 	},
 	hash: {
 		input: 'Input',
@@ -25,14 +31,25 @@ export const panelsDev = {
 		output: 'Hash',
 	},
 	uuid: {
+		type: 'Type',
 		count: 'Count',
+		uppercase: 'UPPERCASE',
+		hyphens: 'Hyphens',
 		generate: 'Generate UUIDs',
 		placeholder: 'Click Generate to create UUIDs...',
 	},
 	timestamp: {
+		seconds: 'Seconds',
+		milliseconds: 'Milliseconds',
+		tsToDate: 'Timestamp ➡️ Date',
+		dateToTs: 'Date ➡️ Timestamp',
+		timestamp: 'Timestamp',
+		dateString: 'Date String',
+		now: 'Now',
 		input: 'Input',
 		output: 'Result',
 		current: 'Current Time',
+		result: 'Result',
 	},
 	url: {
 		encode: 'Encode',
@@ -40,5 +57,6 @@ export const panelsDev = {
 		parse: 'Parse',
 		input: 'Input URL',
 		output: 'Output',
+		inputPlaceholder: 'Enter URL here...',
 	},
 };

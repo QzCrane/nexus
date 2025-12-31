@@ -72,7 +72,7 @@ export const RulerPanel: React.FC = () => {
 
 	const handleCopyValue = useCallback(async (value: string) => {
 		const ok = await copyToClipboard(value);
-		showToast(ok ? t('colorPanel.copied') : 'Copy failed');
+		showToast(ok ? t('colorPanel.copied') : t('rulerPanel.copyFailed'));
 	}, [showToast, t]);
 
 	return (
@@ -92,14 +92,14 @@ export const RulerPanel: React.FC = () => {
 
 			<Card variant="default" padding="sm">
 				<div style={styles.optionsRow}>
-					<span>Unit:</span>
+					<span>{t('rulerPanel.unit')}</span>
 					<select value={unit} onChange={handleUnitChange} style={styles.select}>
-						<option value="px">Pixels (px)</option>
-						<option value="rem">REM</option>
+						<option value="px">{t('rulerPanel.pixels')}</option>
+						<option value="rem">{t('rulerPanel.rem')}</option>
 					</select>
 					{unit === 'rem' && (
 						<>
-							<span>Base:</span>
+							<span>{t('rulerPanel.base')}</span>
 							<input
 								type="number"
 								value={remBase}
@@ -108,7 +108,7 @@ export const RulerPanel: React.FC = () => {
 								min={1}
 								max={32}
 							/>
-							<span>px</span>
+							<span>{t('smoothScroll.units.px')}</span>
 						</>
 					)}
 				</div>

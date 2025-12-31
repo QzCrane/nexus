@@ -136,17 +136,17 @@ export const RegexPanel: React.FC = () => {
 					</div>
 					<div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '200px', overflow: 'auto' }}>
 						{matches.length === 0 && pattern && validation.valid && (
-							<div style={{ color: 'var(--halo-text-muted)', fontSize: '11px' }}>No matches</div>
+							<div style={{ color: 'var(--halo-text-muted)', fontSize: '11px' }}>{t('regex.noMatches')}</div>
 						)}
 						{matches.map((m, i) => (
 							<div key={i} style={styles.matchItem}>
 								<span style={styles.matchText}>"{m.text}"</span>
 								<div style={styles.matchMeta}>
-									Line {m.line}, Col {m.column} (index {m.index})
+									{t('regex.matchInfo').replace('{{line}}', String(m.line)).replace('{{col}}', String(m.column)).replace('{{index}}', String(m.index))}
 								</div>
 								{m.groups && Object.keys(m.groups).length > 0 && (
 									<div style={styles.matchMeta}>
-										Groups: {JSON.stringify(m.groups)}
+										{t('regex.groups')}: {JSON.stringify(m.groups)}
 									</div>
 								)}
 							</div>

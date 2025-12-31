@@ -26,6 +26,13 @@ export interface BaseTranslations {
 		zeroTracking: string;
 		localOnly: string;
 	};
+	layout: {
+		mode: string;
+		launcher: string;
+		classic: string;
+		showLabels: string;
+		hideLabels: string;
+	};
 }
 
 export interface SettingsTranslations {

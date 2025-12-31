@@ -12,7 +12,7 @@
 
 - **核心**: QR, Color, JSON, Ruler, Settings [✅]
 - **开发**: Regex, Base64, Hash, UUID, Time, URL [✅]
-- **待办**: PDF 工具箱 (WASM), 网页存档, 截图批注 [🔜]
+- **效率**: PDF 工具箱 (Local), 截图批注, 网页存档 [✅]
 
 ### 🎵 [SPECTRA (媒体控制)](apps/extension-spectra/plan.md)
 

@@ -62,7 +62,7 @@ export const ColorPickerPanel: React.FC = () => {
 
 	const handleCopyValue = useCallback(async (value: string, label: string) => {
 		const ok = await copyToClipboard(value);
-		showToast(ok ? t('colorPanel.copied') : 'Copy failed');
+		showToast(ok ? t('colorPanel.copied') : t('colorPanel.copyFailed'));
 	}, [showToast, t]);
 
 	const handleHistoryClick = useCallback((hex: string) => {
@@ -88,7 +88,7 @@ export const ColorPickerPanel: React.FC = () => {
 						value={inputValue}
 						onChange={handleInputChange}
 						onBlur={handleInputBlur}
-						placeholder="#hex or rgb(...)"
+						placeholder={t('colorPanel.inputPlaceholder')}
 						style={styles.textInput}
 					/>
 				</div>
@@ -108,25 +108,25 @@ export const ColorPickerPanel: React.FC = () => {
 				<div
 					style={styles.valueBox}
 					onClick={() => handleCopyValue(color.hex, 'HEX')}
-					title="Click to copy"
+					title={t('colorPanel.clickToCopy')}
 				>
-					<div style={styles.valueLabel}>HEX</div>
+					<div style={styles.valueLabel}>{t('colorPanel.hex')}</div>
 					<div style={styles.valueText}>{color.hex}</div>
 				</div>
 				<div
 					style={styles.valueBox}
 					onClick={() => handleCopyValue(rgbStr, 'RGB')}
-					title="Click to copy"
+					title={t('colorPanel.clickToCopy')}
 				>
-					<div style={styles.valueLabel}>RGB</div>
+					<div style={styles.valueLabel}>{t('colorPanel.rgb')}</div>
 					<div style={styles.valueText}>{color.rgb.r}, {color.rgb.g}, {color.rgb.b}</div>
 				</div>
 				<div
 					style={styles.valueBox}
 					onClick={() => handleCopyValue(hslStr, 'HSL')}
-					title="Click to copy"
+					title={t('colorPanel.clickToCopy')}
 				>
-					<div style={styles.valueLabel}>HSL</div>
+					<div style={styles.valueLabel}>{t('colorPanel.hsl')}</div>
 					<div style={styles.valueText}>{color.hsl.h}°, {color.hsl.s}%, {color.hsl.l}%</div>
 				</div>
 			</div>

@@ -42,16 +42,7 @@ export const InterfaceSettings: React.FC<InterfaceSettingsProps> = ({ settings, 
 					/>
 				</div>
 
-				<div style={styles.row}>
-					<div>
-						<div style={styles.label}>{t('settings.animations')}</div>
-						<div style={styles.sublabel}>{t('settings.animationsDesc')}</div>
-					</div>
-					<Toggle
-						checked={settings.animationsEnabled}
-						onChange={(checked) => onUpdate('animationsEnabled', checked)}
-					/>
-				</div>
+
 			</div>
 		</Card>
 	);

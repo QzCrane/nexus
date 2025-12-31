@@ -58,6 +58,11 @@ export const panelsExtra = {
 		filterAll: 'All',
 		filterAudible: 'Audible',
 		filterPinned: 'Pinned',
+		tooltips: {
+			audible: 'Audible',
+			muted: 'Muted',
+			pinned: 'Pinned',
+		},
 	},
 	screenshotPanel: {
 		captureVisible: 'Capture Visible Area',
@@ -98,6 +103,10 @@ export const panelsExtra = {
 			download: 'Download',
 			processing: 'Processing...',
 		},
+		placeholders: {
+			splitRange: '1-3, 5-7',
+			extractPages: '1, 3, 5-10',
+		},
 	},
 	moduleStorePanel: {
 		title: 'Module Store',
@@ -117,5 +126,6 @@ export const panelsExtra = {
 		install: 'Install',
 		uninstall: 'Uninstall',
 		loading: 'Loading modules...',
+		statsModules: 'modules',
 	},
 };

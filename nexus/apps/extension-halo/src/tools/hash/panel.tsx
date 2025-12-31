@@ -110,31 +110,31 @@ export const HashPanel: React.FC = () => {
 			{/* Input */}
 			<Card variant="default" padding="sm">
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-					<span style={styles.label}>{t('hash.input') || 'Input'}</span>
+					<span style={styles.label}>{t('hash.input')}</span>
 					<textarea
 						style={styles.textarea}
 						value={input}
 						onChange={(e) => setInput(e.target.value)}
-						placeholder={t('hash.placeholder') || 'Enter text to hash...'}
+						placeholder={t('hash.placeholder')}
 					/>
 					
 					{/* Result */}
 					{hash && (
 						<>
 							<div style={styles.row}>
-								<span style={styles.label}>{t('hash.output') || 'Hash'}</span>
+								<span style={styles.label}>{t('hash.output')}</span>
 								<div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}>
 									<label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', cursor: 'pointer' }}>
 										<input type="checkbox" checked={uppercase} onChange={(e) => setUppercase(e.target.checked)} />
-										UPPER
+										{t('uuid.uppercase')}
 									</label>
 									<button style={styles.copyBtn} onClick={copyToClipboard}>
-										📋 {t('common.copy') || 'Copy'}
+										📋 {t('common.copy')}
 									</button>
 								</div>
 							</div>
 							<div style={styles.resultBox}>
-								{loading ? 'Calculating...' : finalHash}
+								{loading ? t('hash.calculating') : finalHash}
 							</div>
 						</>
 					)}
@@ -154,7 +154,7 @@ export const HashPanel: React.FC = () => {
 					onChange={handleFileSelect}
 				/>
 				<label htmlFor="hash-file-input" style={{ cursor: 'pointer' }}>
-					📁 {t('base64.dropFile') || 'Drop file here to hash'}
+					📁 {t('base64.dropFile')}
 				</label>
 			</div>
 		</div>

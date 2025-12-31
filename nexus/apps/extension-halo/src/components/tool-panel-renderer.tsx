@@ -80,14 +80,18 @@ export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({ activeTool
 					<Panel />
 				)
 			) : (
-				<Card variant="default" padding="md">
-					<div style={styles.placeholder}>
-						<span style={{ fontSize: '48px', opacity: 0.3 }}>👆</span>
-						<p style={{ color: 'var(--halo-text-secondary)', fontSize: '13px' }}>
-							{selectToolText}
-						</p>
-					</div>
-				</Card>
+                <div style={{ ...styles.placeholder, height: '100%', flex: 1 }}>
+                    <div style={{ width: 'auto', maxWidth: '300px' }}>
+                        <Card variant="default" padding="md">
+                            <div style={{ padding: '24px', textAlign: 'center' }}>
+                                <span style={{ fontSize: '48px', opacity: 0.3, display: 'block', marginBottom: '16px' }}>👆</span>
+                                <p style={{ color: 'var(--halo-text-secondary)', fontSize: '13px', margin: 0 }}>
+                                    {selectToolText}
+                                </p>
+                            </div>
+                        </Card>
+                    </div>
+                </div>
 			)}
 		</Suspense>
 	);

@@ -33,7 +33,7 @@ export const MeasurementCard: React.FC<MeasurementCardProps> = ({
 					<span
 						style={styles.measureValue}
 						onClick={() => onCopy(widthStr)}
-						title="Click to copy"
+						title={t('rulerPanel.clickToCopy')}
 					>
 						{widthStr}
 					</span>
@@ -43,7 +43,7 @@ export const MeasurementCard: React.FC<MeasurementCardProps> = ({
 					<span
 						style={styles.measureValue}
 						onClick={() => onCopy(heightStr)}
-						title="Click to copy"
+						title={t('rulerPanel.clickToCopy')}
 					>
 						{heightStr}
 					</span>
@@ -54,7 +54,7 @@ export const MeasurementCard: React.FC<MeasurementCardProps> = ({
 				<span
 					style={{ ...styles.measureValue, fontSize: '14px' }}
 					onClick={() => onCopy(diagStr)}
-					title="Click to copy"
+					title={t('rulerPanel.clickToCopy')}
 				>
 					{diagStr}
 				</span>

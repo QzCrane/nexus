@@ -6,7 +6,21 @@ import type { Locale, TranslationKeys } from './types';
 import { en } from './locales/en';
 import { zh } from './locales/zh';
 
-const LOCALES: Record<Locale, TranslationKeys> = { en, zh };
+// Mutable registry for dynamic updates
+const REGISTRY: Record<Locale, TranslationKeys> = { en, zh };
+const listeners = new Set<() => void>();
+
+// Notify all listeners
+const notify = () => listeners.forEach((l) => l());
+
+// Register new translations (e.g. from downloaded modules)
+export function registerTranslations(locale: Locale, data: Partial<TranslationKeys>) {
+	// Simple shallow merge is usually sufficient for new modules adding unique top-level keys
+	// If deep merge is needed, we can expand this
+	REGISTRY[locale] = { ...REGISTRY[locale], ...data };
+	notify();
+}
+
 const STORAGE_KEY = 'halo_locale';
 
 // Get nested value by dot-path
@@ -20,7 +34,13 @@ function getByPath(obj: unknown, path: string): string {
 			return path; // Fallback to key if not found
 		}
 	}
-	return typeof current === 'string' ? current : path;
+	// Handle non-string values (e.g. objects) gracefully
+	if (typeof current !== 'string') {
+		// If it's an object/array, we might want to return it as is or JSON stringify
+		// For now, strict string return relying on fallback
+		return typeof current === 'number' ? String(current) : path;
+	}
+	return current;
 }
 
 // Detect browser language
@@ -35,7 +55,7 @@ async function loadLocale(): Promise<Locale> {
 	try {
 		const result = await chrome.storage.sync.get(STORAGE_KEY);
 		const saved = result[STORAGE_KEY] as Locale | undefined;
-		if (saved && saved in LOCALES) return saved;
+		if (saved && saved in REGISTRY) return saved;
 	} catch {
 		// Ignore errors in non-extension context
 	}
@@ -71,12 +91,21 @@ export const useI18n = (): I18nContextValue => {
 export function useTranslation() {
 	const [locale, setLocaleState] = useState<Locale>('en');
 	const [ready, setReady] = useState(false);
+	const [tick, setTick] = useState(0); // Force re-render on updates
 
 	useEffect(() => {
+		// Initial load
 		loadLocale().then((l) => {
 			setLocaleState(l);
 			setReady(true);
 		});
+
+		// Subscribe to registry updates
+		const onUpdate = () => setTick((t) => t + 1);
+		listeners.add(onUpdate);
+		return () => {
+			listeners.delete(onUpdate);
+		};
 	}, []);
 
 	const setLocale = useCallback((newLocale: Locale) => {
@@ -85,10 +114,10 @@ export function useTranslation() {
 	}, []);
 
 	const t = useCallback((path: string): string => {
-		return getByPath(LOCALES[locale], path);
-	}, [locale]);
+		return getByPath(REGISTRY[locale], path);
+	}, [locale, tick]); // Depend on tick to re-calc when registry changes
 
-	const translations = LOCALES[locale];
+	const translations = REGISTRY[locale];
 
 	return { locale, setLocale, t, translations, ready };
 }
@@ -96,4 +125,4 @@ export function useTranslation() {
 // Provider exports
 export { I18nContext };
 export type { Locale, TranslationKeys };
-export { LOCALES };
+export { REGISTRY as LOCALES };

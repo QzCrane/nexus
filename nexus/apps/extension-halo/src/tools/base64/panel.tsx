@@ -46,7 +46,7 @@ export const Base64Panel: React.FC = () => {
 				setInput(dataUrl);
 				setMode('decode');
 			} catch {
-				setError('Failed to read file');
+				setError(t('base64.readError'));
 			}
 		}
 	}, []);
@@ -59,7 +59,7 @@ export const Base64Panel: React.FC = () => {
 				setInput(dataUrl);
 				setMode('decode');
 			} catch {
-				setError('Failed to read file');
+				setError(t('base64.readError'));
 			}
 		}
 	}, []);
@@ -97,7 +97,7 @@ export const Base64Panel: React.FC = () => {
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
 					<div style={styles.row}>
 						<span style={styles.label}>{t('base64.input') || 'Input'}</span>
-						<span style={styles.info}>{input.length} chars</span>
+						<span style={styles.info}>{input.length} {t('base64.chars')}</span>
 					</div>
 					<textarea
 						style={styles.textarea}
@@ -139,8 +139,8 @@ export const Base64Panel: React.FC = () => {
 					<div style={styles.row}>
 						<span style={styles.label}>{t('base64.output') || 'Output'}</span>
 						<span style={styles.info}>
-							{output.length} chars
-							{mode === 'encode' && output && ` (~${getBase64Size(output)} bytes)`}
+							{output.length} {t('base64.chars')}
+							{mode === 'encode' && output && ` (~${getBase64Size(output)} ${t('base64.bytes')})`}
 						</span>
 					</div>
 					<textarea
@@ -151,16 +151,16 @@ export const Base64Panel: React.FC = () => {
 					/>
 					<div style={styles.row}>
 						<button style={{ ...styles.actionBtn, ...styles.primaryBtn }} onClick={handleCopy}>
-							📋 {t('common.copy') || 'Copy'}
+							📋 {t('common.copy')}
 						</button>
 						<button style={{ ...styles.actionBtn, ...styles.secondaryBtn }} onClick={handleSwap}>
-							🔄 {t('base64.swap') || 'Swap'}
+							🔄 {t('base64.swap')}
 						</button>
 						<button
 							style={{ ...styles.actionBtn, ...styles.secondaryBtn }}
 							onClick={() => { setInput(''); setError(null); }}
 						>
-							🗑️ {t('common.clear') || 'Clear'}
+							🗑️ {t('common.clear')}
 						</button>
 					</div>
 				</div>

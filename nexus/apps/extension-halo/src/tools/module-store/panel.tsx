@@ -104,7 +104,7 @@ export const ModuleStorePanel: React.FC = () => {
 			</div>
 
 			<div style={styles.stats}>
-				<span>📦 {totalInstalled} modules • 💾 {formatModuleSize(totalSize)}</span>
+				<span>📦 {totalInstalled} {t('moduleStorePanel.statsModules')} • 💾 {formatModuleSize(totalSize)}</span>
 				<button style={styles.btnRefresh} onClick={handleRefresh} disabled={remoteLoading}>
 					{remoteLoading ? '⏳' : '🔄'} {t('moduleStorePanel.checkUpdates')}
 				</button>

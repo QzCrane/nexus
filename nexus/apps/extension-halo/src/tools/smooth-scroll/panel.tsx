@@ -68,20 +68,7 @@ export const SmoothScrollPanel: React.FC = () => {
 	return (
 		<div style={styles.wrapper}>
 			{/* Master Toggle */}
-			<Card variant="default" padding="md">
-				<div style={styles.row}>
-					<div>
-						<div style={styles.label}>{t('smoothScroll.enable')}</div>
-						<div style={styles.sublabel}>{t('smoothScroll.enableDesc')}</div>
-					</div>
-					<div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-						<span style={{ ...styles.statusBadge, background: settings.enabled ? 'rgba(34. 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)', color: settings.enabled ? '#22c55e' : '#ef4444' }}>
-							{settings.enabled ? 'ON' : 'OFF'}
-						</span>
-						<Toggle checked={settings.enabled} onChange={(checked) => updateSetting('enabled', checked)} />
-					</div>
-				</div>
-			</Card>
+
 
 			{/* Profiles & Config Management */}
 			<Card variant="default" padding="sm">
@@ -100,13 +87,13 @@ export const SmoothScrollPanel: React.FC = () => {
 						)}
 					</div>
 					<div style={styles.mgmtRow}>
-						<button style={{ ...styles.mgmtBtn, borderColor: 'var(--halo-accent)', color: 'var(--halo-accent)' }} onClick={saveAsCustom} title="Save current settings as Custom profile">
+						<button style={{ ...styles.mgmtBtn, borderColor: 'var(--halo-accent)', color: 'var(--halo-accent)' }} onClick={saveAsCustom} title={t('smoothScroll.saveCustomTitle')}>
 							💾 {t('smoothScroll.saveCustom')}
 						</button>
-						<button style={styles.mgmtBtn} onClick={handleExport} title="Export config as JSON">
+						<button style={styles.mgmtBtn} onClick={handleExport} title={t('smoothScroll.exportTitle')}>
 							📤 {t('smoothScroll.export')}
 						</button>
-						<button style={styles.mgmtBtn} onClick={handleImport} title="Import config from JSON">
+						<button style={styles.mgmtBtn} onClick={handleImport} title={t('smoothScroll.importTitle')}>
 							📥 {t('smoothScroll.import')}
 						</button>
 					</div>

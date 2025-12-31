@@ -61,7 +61,7 @@ export const JSONFormatterPanel: React.FC = () => {
 
 	const handleCopy = useCallback(async () => {
 		const ok = await copyToClipboard(input);
-		showToast(ok ? t('jsonPanel.copied') : 'Copy failed');
+		showToast(ok ? t('jsonPanel.copied') : t('jsonPanel.copyFailed'));
 	}, [input, showToast, t]);
 
 	const handleClear = useCallback(() => {
@@ -75,7 +75,7 @@ export const JSONFormatterPanel: React.FC = () => {
 			setInput(text);
 			setError(null);
 		} catch {
-			showToast('Paste failed');
+			showToast(t('jsonPanel.pasteFailed'));
 		}
 	}, [showToast]);
 
@@ -100,14 +100,14 @@ export const JSONFormatterPanel: React.FC = () => {
 		<div style={styles.wrapper}>
 			<Card variant="default" padding="sm">
 				<div style={styles.optionsRow}>
-					<span>Indent:</span>
+					<span>{t('jsonPanel.indent')}</span>
 					<select
 						value={options.indent}
 						onChange={handleIndentChange}
 						style={styles.select}
 					>
-						<option value={2}>2 spaces</option>
-						<option value={4}>4 spaces</option>
+						<option value={2}>2 {t('jsonPanel.spaces')}</option>
+						<option value={4}>4 {t('jsonPanel.spaces')}</option>
 					</select>
 					<label style={styles.checkbox}>
 						<input
@@ -144,7 +144,7 @@ export const JSONFormatterPanel: React.FC = () => {
 					📋 {t('jsonPanel.copy')}
 				</button>
 				<button style={styles.btn} onClick={handlePaste}>
-					📥 Paste
+					📥 {t('jsonPanel.paste')}
 				</button>
 				<button style={styles.btn} onClick={handleClear} disabled={!input}>
 					🗑️ {t('jsonPanel.clear')}
@@ -152,10 +152,10 @@ export const JSONFormatterPanel: React.FC = () => {
 			</div>
 
 			<div style={styles.statusBar}>
-				<span>{lineCount} lines · {charCount} chars</span>
+				<span>{lineCount} {t('jsonPanel.lines')} · {charCount} {t('jsonPanel.chars')}</span>
 				<span style={{ color: validation.valid ? '#22c55e' : '#ef4444' }}>
-					{validation.valid ? '✓ Valid' : `✗ ${t('jsonPanel.invalidJson')}`}
-					{validation.size && ` · ${validation.size} bytes`}
+					{validation.valid ? t('jsonPanel.valid') : `✗ ${t('jsonPanel.invalidJson')}`}
+					{validation.size && ` · ${validation.size} ${t('jsonPanel.bytes')}`}
 				</span>
 			</div>
 

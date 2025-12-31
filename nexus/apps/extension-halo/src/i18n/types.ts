@@ -16,7 +16,9 @@ export interface TranslationKeys extends
 	ModuleTranslations,
 	PanelsCoreTranslations,
 	PanelsDevTranslations,
-	PanelsExtraTranslations { }
+	PanelsExtraTranslations {
+	[key: string]: any;
+}
 
 export type TranslationPath =
 	| `common.${keyof TranslationKeys['common']}`

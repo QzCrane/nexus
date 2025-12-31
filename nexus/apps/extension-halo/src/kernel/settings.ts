@@ -8,7 +8,6 @@ export interface HaloSettings {
 	compactMode: boolean;
 	showToolLabels: boolean;
 	defaultTool: string | null;
-	animationsEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: HaloSettings = {
@@ -17,7 +16,6 @@ export const DEFAULT_SETTINGS: HaloSettings = {
 	compactMode: false,
 	showToolLabels: true,
 	defaultTool: null,
-	animationsEnabled: true,
 };
 
 export const ACCENT_COLORS = [

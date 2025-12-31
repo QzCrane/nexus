@@ -60,8 +60,12 @@
 
 - [x] **Command Palette**: Ctrl+K 快速工具搜索 (模糊匹配 + 键盘导航)
 - [x] **Lazy Tool Loader**: 懒加载渲染器 + Skeleton 占位 + 悬停预加载
-- [x] **Enhanced Toolbar**: 固定工具优先 + 动画过渡 + 快捷键提示
-- [x] **集成到 SidePanel**: 替换现有工具栏，接入 Command Palette
+- [x] **New Layout Architecture**:
+  - [x] **Dual Mode**: 经典模式 (Toolbar) 与 启动器模式 (Launcher) 一键切换
+  - [x] **Launcher Layout**: 移动端风格首页, 分类网格, 独立搜索入口
+  - [x] **Classic Layout**: 可调节高度工具栏, 优雅滚动条, 智能防误触限制
+  - [x] **Adaptive UI**: 响应式标签显示 (Show/Hide Labels), 自动布局调整
+- [x] **Visual Polish**: 统一滚动条样式 (.halo-scrollbar), 动效优化
 
 ### 模块商店 (Module Store)
 

@@ -64,7 +64,7 @@ export const UUIDPanel: React.FC = () => {
 			<Card variant="default" padding="sm">
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
 					<div style={styles.row}>
-						<span style={styles.label}>Type:</span>
+						<span style={styles.label}>{t('uuid.type')}</span>
 						{UUID_VERSIONS.map(v => (
 							<button
 								key={v}
@@ -77,7 +77,7 @@ export const UUIDPanel: React.FC = () => {
 					</div>
 					
 					<div style={styles.row}>
-						<span style={styles.label}>{t('uuid.count') || 'Count'}:</span>
+						<span style={styles.label}>{t('uuid.count')}:</span>
 						<input
 							type="number"
 							min="1"
@@ -91,18 +91,18 @@ export const UUIDPanel: React.FC = () => {
 					<div style={styles.row}>
 						<label style={styles.checkbox}>
 							<input type="checkbox" checked={uppercase} onChange={(e) => setUppercase(e.target.checked)} />
-							<span>UPPERCASE</span>
+							<span>{t('uuid.uppercase')}</span>
 						</label>
 						{version !== 'ULID' && (
 							<label style={styles.checkbox}>
 								<input type="checkbox" checked={hyphens} onChange={(e) => setHyphens(e.target.checked)} />
-								<span>Hyphens (-)</span>
+								<span>{t('uuid.hyphens')}</span>
 							</label>
 						)}
 					</div>
 
 					<button style={styles.generateBtn} onClick={handleGenerate}>
-						⚡ {t('uuid.generate') || 'Generate'}
+						⚡ {t('uuid.generate')}
 					</button>
 				</div>
 			</Card>
@@ -116,14 +116,14 @@ export const UUIDPanel: React.FC = () => {
 							style={{ ...styles.optionBtn, marginLeft: 'auto' }}
 							onClick={() => navigator.clipboard.writeText(result)}
 						>
-							📋 {t('common.copy') || 'Copy'}
+							📋 {t('common.copy')}
 						</button>
 					</div>
 					<textarea
 						style={styles.textarea}
 						value={result}
 						readOnly
-						placeholder={t('uuid.placeholder') || 'Click Generate...'}
+						placeholder={t('uuid.placeholder')}
 					/>
 				</div>
 			</Card>

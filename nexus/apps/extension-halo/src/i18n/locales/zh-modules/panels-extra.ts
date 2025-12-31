@@ -58,6 +58,11 @@ export const panelsExtra = {
 		filterAll: '全部',
 		filterAudible: '有声音',
 		filterPinned: '已置顶',
+		tooltips: {
+			audible: '播放中',
+			muted: '已静音',
+			pinned: '已置顶',
+		},
 	},
 	screenshotPanel: {
 		captureVisible: '截取当前可视区域',
@@ -98,6 +103,10 @@ export const panelsExtra = {
 			download: '下载',
 			processing: '处理中...',
 		},
+		placeholders: {
+			splitRange: '1-3, 5-7',
+			extractPages: '1, 3, 5-10',
+		},
 	},
 	moduleStorePanel: {
 		title: '模块商店',
@@ -117,5 +126,6 @@ export const panelsExtra = {
 		install: '安装',
 		uninstall: '卸载',
 		loading: '加载模块中...',
+		statsModules: '个模块',
 	},
 };

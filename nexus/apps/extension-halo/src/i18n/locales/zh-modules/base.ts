@@ -15,6 +15,9 @@ export const base = {
 		cancel: '取消',
 		reset: '重置',
 		language: '语言',
+		result: '结果',
+		copy: '复制',
+		back: '返回',
 	},
 	categories: {
 		general: '通用工具',
@@ -26,5 +29,12 @@ export const base = {
 	footer: {
 		zeroTracking: '零追踪',
 		localOnly: '本地处理',
+	},
+	layout: {
+		mode: '模式',
+		launcher: '启动器',
+		classic: '经典',
+		showLabels: '显示标签',
+		hideLabels: '隐藏标签',
 	},
 };

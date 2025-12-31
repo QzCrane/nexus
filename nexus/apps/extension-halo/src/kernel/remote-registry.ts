@@ -35,6 +35,15 @@ interface CachedRegistry {
 // Fetch registry from remote (with cache)
 export const fetchRemoteRegistry = async (forceRefresh = false): Promise<RemoteRegistry | null> => {
 	try {
+		// Dev mode: If using placeholder URL, return local registry immediately to avoid 404s
+		if (REGISTRY_CONFIG.baseUrl.includes('user/halo-modules')) {
+			return {
+				version: '1.0.0',
+				lastUpdated: new Date().toISOString(),
+				modules: ALL_MODULES as RemoteModuleMeta[], // Cast is safe as local modules match structure
+			};
+		}
+
 		// Check cache first
 		if (!forceRefresh) {
 			const cached = await getCachedRegistry();

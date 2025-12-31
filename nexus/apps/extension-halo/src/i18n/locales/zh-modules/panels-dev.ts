@@ -6,6 +6,9 @@ export const panelsDev = {
 		replaceMode: '替换模式',
 		replacePlaceholder: '替换文本...',
 		matches: '匹配结果',
+		noMatches: '无匹配',
+		matchInfo: '行 {{line}}, 列 {{col}} (索引 {{index}})',
+		groups: '分组',
 	},
 	base64: {
 		encode: '编码',
@@ -18,6 +21,9 @@ export const panelsDev = {
 		outputPlaceholder: '结果将显示在这里...',
 		dropFile: '拖放文件或点击选择',
 		swap: '交换',
+		chars: '字符',
+		bytes: '字节',
+		readError: '读取文件失败',
 	},
 	hash: {
 		input: '输入',
@@ -25,14 +31,25 @@ export const panelsDev = {
 		output: '计算结果',
 	},
 	uuid: {
+		type: '类型',
 		count: '数量',
+		uppercase: '大写',
+		hyphens: '连字符',
 		generate: '生成 UUID',
 		placeholder: '点击生成以创建 UUID...',
 	},
 	timestamp: {
+		seconds: '秒',
+		milliseconds: '毫秒',
+		tsToDate: '时间戳 ➡️ 日期',
+		dateToTs: '日期 ➡️ 时间戳',
+		timestamp: '时间戳',
+		dateString: '日期字符串',
+		now: '现在',
 		input: '输入',
 		output: '结果',
 		current: '当前时间',
+		result: '结果',
 	},
 	url: {
 		encode: '编码',
@@ -40,5 +57,6 @@ export const panelsDev = {
 		parse: '解析',
 		input: '输入 URL',
 		output: '输出',
+		inputPlaceholder: '在此输入 URL...',
 	},
 };

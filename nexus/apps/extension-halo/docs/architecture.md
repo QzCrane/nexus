@@ -12,6 +12,13 @@ src/
 │   ├── sidepanel.tsx   # SidePanel 主界面入口 (React)
 │   └── sidepanel-init.ts # 初始化脚本 (处理 CSP 和主题预加载)
 │
+├── components/         # 公共 UI 组件
+│   ├── sidepanel/      # SidePanel 布局系统
+│   │   ├── ClassicLayout.tsx
+│   │   ├── LauncherLayout.tsx
+│   │   └── layouts.styles.ts
+│   └── ...
+│
 ├── kernel/             # 核心基础设施 (与具体业务解耦)
 │   ├── types.ts        # 全局类型 (ToolId, 消息定义)
 │   ├── storage.ts      # 存储封装 (类型安全, Promise化)
@@ -41,8 +48,8 @@ src/
 
 此类工具直接打包进扩展，随 SidePanel 立即加载。
 
-- **准入条件**: 高频使用 + 体积小 (每个 < 50KB)
-- **加载方式**: 静态导入 (Static Import)
+- **准入条件**: 核心高频使用
+- **加载方式**: 懒加载 (React.lazy + Suspense) 以提升首屏速度
 - **当前列表**:
   - 基础: QR, Color, Ruler, JSON, Outline, Settings
   - 开发: Regex, Base64, Hash, UUID, Time, URL

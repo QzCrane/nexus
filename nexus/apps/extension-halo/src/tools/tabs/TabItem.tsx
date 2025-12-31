@@ -5,6 +5,8 @@ import React from 'react';
 import type { TabItem as TabItemType } from './types';
 import { styles } from './panel.styles';
 
+import { useTranslation } from '../../i18n';
+
 interface TabItemProps {
     tab: TabItemType;
     onActivate: (id: number) => void;
@@ -13,6 +15,7 @@ interface TabItemProps {
 }
 
 export const TabItem: React.FC<TabItemProps> = ({ tab, onActivate, onClose, closeLabel }) => {
+    const { t } = useTranslation();
     return (
         <div 
             style={{
@@ -33,9 +36,9 @@ export const TabItem: React.FC<TabItemProps> = ({ tab, onActivate, onClose, clos
             </div>
 
             <div style={styles.indicators}>
-                 {tab.audible && <span style={styles.indicator} title="Audible">🔊</span>}
-                 {tab.mutedInfo?.muted && <span style={styles.indicator} title="Muted">🔇</span>}
-                 {tab.pinned && <span style={styles.indicator} title="Pinned">📌</span>}
+                 {tab.audible && <span style={styles.indicator} title={t('tabsPanel.tooltips.audible')}>🔊</span>}
+                 {tab.mutedInfo?.muted && <span style={styles.indicator} title={t('tabsPanel.tooltips.muted')}>🔇</span>}
+                 {tab.pinned && <span style={styles.indicator} title={t('tabsPanel.tooltips.pinned')}>📌</span>}
             </div>
 
             <div 

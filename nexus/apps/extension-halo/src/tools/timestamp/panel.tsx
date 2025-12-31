@@ -57,8 +57,8 @@ export const TimestampPanel: React.FC = () => {
 					{new Date(now).toLocaleString()}
 				</div>
 				<div style={{ ...styles.row, justifyContent: 'center', marginTop: '10px' }}>
-					<button style={styles.btn} onClick={() => setUnit('s')} disabled={unit === 's'}>Seconds</button>
-					<button style={styles.btn} onClick={() => setUnit('ms')} disabled={unit === 'ms'}>Milliseconds</button>
+					<button style={styles.btn} onClick={() => setUnit('s')} disabled={unit === 's'}>{t('timestamp.seconds')}</button>
+					<button style={styles.btn} onClick={() => setUnit('ms')} disabled={unit === 'ms'}>{t('timestamp.milliseconds')}</button>
 				</div>
 			</Card>
 
@@ -69,18 +69,18 @@ export const TimestampPanel: React.FC = () => {
 						style={{ ...styles.btn, ...(mode === 'ts2date' ? styles.primaryBtn : {}) }}
 						onClick={() => setMode('ts2date')}
 					>
-						Timestamp ➡️ Date
+						{t('timestamp.tsToDate')}
 					</button>
 					<button
 						style={{ ...styles.btn, ...(mode === 'date2ts' ? styles.primaryBtn : {}) }}
 						onClick={() => setMode('date2ts')}
 					>
-						Date ➡️ Timestamp
+						{t('timestamp.dateToTs')}
 					</button>
 				</div>
 
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-					<span style={styles.label}>{mode === 'ts2date' ? 'Timestamp' : 'Date String'}</span>
+					<span style={styles.label}>{mode === 'ts2date' ? t('timestamp.timestamp') : t('timestamp.dateString')}</span>
 					<div style={styles.row}>
 						<input
 							style={styles.input}
@@ -89,14 +89,14 @@ export const TimestampPanel: React.FC = () => {
 							placeholder={mode === 'ts2date' ? String(currentTs) : new Date().toISOString()}
 						/>
 						{mode === 'ts2date' && (
-							<button style={styles.btn} onClick={() => setInput(String(currentTs))}>Current</button>
+							<button style={styles.btn} onClick={() => setInput(String(currentTs))}>{t('timestamp.current')}</button>
 						)}
 						{mode === 'date2ts' && (
-							<button style={styles.btn} onClick={() => setInput(new Date().toISOString())}>Now</button>
+							<button style={styles.btn} onClick={() => setInput(new Date().toISOString())}>{t('timestamp.now')}</button>
 						)}
 					</div>
 
-					<span style={styles.label}>Result</span>
+					<span style={styles.label}>{t('timestamp.result')}</span>
 					<div style={styles.resultBox}>
 						{input ? String(result) : '-'}
 					</div>

@@ -52,14 +52,14 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({ operation, config, set
 				{operation === 'split' && (
 					<div>
 						<label style={labelStyle}>{t('pdfPanel.splitRanges')}</label>
-						<input style={inputStyle} value={config.splitRanges} onChange={(e) => setConfig((c) => ({ ...c, splitRanges: e.target.value }))} placeholder="1-3, 5-7" />
+						<input style={inputStyle} value={config.splitRanges} onChange={(e) => setConfig((c) => ({ ...c, splitRanges: e.target.value }))} placeholder={t('pdfPanel.placeholders.splitRange')} />
 					</div>
 				)}
 
 				{operation === 'extract' && (
 					<div>
 						<label style={labelStyle}>{t('pdfPanel.extractPages')}</label>
-						<input style={inputStyle} value={config.extractPages} onChange={(e) => setConfig((c) => ({ ...c, extractPages: e.target.value }))} placeholder="1, 3, 5-10" />
+						<input style={inputStyle} value={config.extractPages} onChange={(e) => setConfig((c) => ({ ...c, extractPages: e.target.value }))} placeholder={t('pdfPanel.placeholders.extractPages')} />
 					</div>
 				)}
 

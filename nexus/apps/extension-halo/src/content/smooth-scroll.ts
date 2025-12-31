@@ -41,6 +41,11 @@ export function detachListeners(): void {
 }
 
 export async function init(): Promise<void> {
+	// Prevent running on extension pages (SidePanel, etc)
+	if (window.location.protocol === 'chrome-extension:') {
+		return;
+	}
+
 	try {
 		const result = await chrome.storage.sync.get(['HALO_SMOOTH_SCROLL_SETTINGS']);
 		if (result.HALO_SMOOTH_SCROLL_SETTINGS) {

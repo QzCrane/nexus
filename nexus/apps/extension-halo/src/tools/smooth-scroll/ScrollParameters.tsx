@@ -22,32 +22,32 @@ export const ScrollParameters: React.FC<ScrollParametersProps> = ({ settings, up
 				<span style={styles.sectionTitle}>⚡ {t('smoothScroll.behavior')}</span>
 
 				<div style={styles.row}>
-					<div><div style={styles.label}>{t('smoothScroll.stepSize')}</div><div style={styles.sublabel}>px</div></div>
+					<div><div style={styles.label}>{t('smoothScroll.stepSize')}</div><div style={styles.sublabel}>{t('smoothScroll.units.px')}</div></div>
 					<input type="number" value={settings.stepSize} onChange={(e) => updateSetting('stepSize', parseInt(e.target.value) || 100)} style={styles.input} disabled={!settings.enabled} min={10} max={500} />
 				</div>
 
 				<div style={styles.row}>
-					<div><div style={styles.label}>{t('smoothScroll.animationTime')}</div><div style={styles.sublabel}>ms</div></div>
+					<div><div style={styles.label}>{t('smoothScroll.animationTime')}</div><div style={styles.sublabel}>{t('smoothScroll.units.ms')}</div></div>
 					<input type="number" value={settings.animationTime} onChange={(e) => updateSetting('animationTime', parseInt(e.target.value) || 400)} style={styles.input} disabled={!settings.enabled} min={50} max={2000} />
 				</div>
 
 				<div style={styles.row}>
-					<div><div style={styles.label}>{t('smoothScroll.accelerationMax')}</div><div style={styles.sublabel}>x</div></div>
+					<div><div style={styles.label}>{t('smoothScroll.accelerationMax')}</div><div style={styles.sublabel}>{t('smoothScroll.units.x')}</div></div>
 					<input type="number" value={settings.accelerationMax} onChange={(e) => updateSetting('accelerationMax', parseFloat(e.target.value) || 3)} style={styles.input} disabled={!settings.enabled} min={1} max={10} step={0.5} />
 				</div>
 
 				<div style={styles.row}>
-					<div><div style={styles.label}>{t('smoothScroll.accelerationDelta')}</div><div style={styles.sublabel}>ms</div></div>
+					<div><div style={styles.label}>{t('smoothScroll.accelerationDelta')}</div><div style={styles.sublabel}>{t('smoothScroll.units.ms')}</div></div>
 					<input type="number" value={settings.accelerationDelta} onChange={(e) => updateSetting('accelerationDelta', parseInt(e.target.value) || 50)} style={styles.input} disabled={!settings.enabled} min={10} max={300} />
 				</div>
 
 				<div style={styles.row}>
-					<div><div style={styles.label}>{t('smoothScroll.pulseScale')}</div><div style={styles.sublabel}>x</div></div>
+					<div><div style={styles.label}>{t('smoothScroll.pulseScale')}</div><div style={styles.sublabel}>{t('smoothScroll.units.x')}</div></div>
 					<input type="number" value={settings.pulseScale} onChange={(e) => updateSetting('pulseScale', parseFloat(e.target.value) || 4)} style={styles.input} disabled={!settings.enabled} min={1} max={10} step={0.5} />
 				</div>
 
 				<div style={styles.row}>
-					<div><div style={styles.label}>{t('smoothScroll.arrowKeyStep')}</div><div style={styles.sublabel}>px</div></div>
+					<div><div style={styles.label}>{t('smoothScroll.arrowKeyStep')}</div><div style={styles.sublabel}>{t('smoothScroll.units.px')}</div></div>
 					<input type="number" value={settings.arrowKeyStep} onChange={(e) => updateSetting('arrowKeyStep', parseInt(e.target.value) || 50)} style={styles.input} disabled={!settings.enabled} min={10} max={200} />
 				</div>
 

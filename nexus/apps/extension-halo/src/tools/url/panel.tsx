@@ -56,19 +56,19 @@ export const URLPanel: React.FC = () => {
 						style={{ ...styles.modeBtn, ...(mode === 'encode' ? styles.active : styles.inactive) }}
 						onClick={() => setMode('encode')}
 					>
-						Encode
+						{t('url.encode')}
 					</button>
 					<button
 						style={{ ...styles.modeBtn, ...(mode === 'decode' ? styles.active : styles.inactive) }}
 						onClick={() => setMode('decode')}
 					>
-						Decode
+						{t('url.decode')}
 					</button>
 					<button
 						style={{ ...styles.modeBtn, ...(mode === 'parse' ? styles.active : styles.inactive) }}
 						onClick={() => setMode('parse')}
 					>
-						Parse
+						{t('url.parse')}
 					</button>
 				</div>
 			</Card>
@@ -76,12 +76,12 @@ export const URLPanel: React.FC = () => {
 			{/* Input */}
 			<Card variant="default" padding="sm">
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-					<span style={styles.label}>{t('hash.input') || 'Input'}</span>
+					<span style={styles.label}>{t('hash.input')}</span>
 					<textarea
 						style={styles.textarea}
 						value={input}
 						onChange={(e) => setInput(e.target.value)}
-						placeholder="Enter URL to process..."
+						placeholder={t('url.inputPlaceholder')}
 					/>
 				</div>
 			</Card>
@@ -94,7 +94,7 @@ export const URLPanel: React.FC = () => {
 				<Card variant="default" padding="sm">
 					<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
 						<div style={styles.row}>
-							<span style={styles.label}>{t('hash.output') || 'Output'}</span>
+							<span style={styles.label}>{t('hash.output')}</span>
 							<button
 								style={{ marginLeft: 'auto', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '12px' }}
 								onClick={() => {

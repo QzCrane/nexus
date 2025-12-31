@@ -15,6 +15,9 @@ export const base = {
 		cancel: 'Cancel',
 		reset: 'Reset',
 		language: 'Language',
+		result: 'Result',
+		copy: 'Copy',
+		back: 'Back',
 	},
 	categories: {
 		general: 'General',
@@ -26,5 +29,12 @@ export const base = {
 	footer: {
 		zeroTracking: 'Zero tracking',
 		localOnly: 'Local only',
+	},
+	layout: {
+		mode: 'Mode',
+		launcher: 'Launcher',
+		classic: 'Classic',
+		showLabels: 'Show Labels',
+		hideLabels: 'Hide Labels',
 	},
 };

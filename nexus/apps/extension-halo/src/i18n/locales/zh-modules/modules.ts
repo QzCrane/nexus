@@ -84,5 +84,17 @@ export const modules = {
 			name: '模块商店',
 			desc: '安装或卸载工具模块',
 		},
+		crypto: {
+			name: '加密工具',
+			desc: 'JWT, RSA, AES 加密解密',
+		},
+		network: {
+			name: '网络工具',
+			desc: 'UA 解析, Curl 转换',
+		},
+		'mock-data': {
+			name: '模拟数据',
+			desc: '生成测试数据',
+		},
 	},
 };

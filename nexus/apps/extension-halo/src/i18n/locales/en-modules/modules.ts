@@ -84,5 +84,17 @@ export const modules = {
 			name: 'Module Store',
 			desc: 'Install or remove tool modules',
 		},
+		crypto: {
+			name: 'Crypto Tools',
+			desc: 'JWT, RSA, AES encryption',
+		},
+		network: {
+			name: 'Network Utils',
+			desc: 'UA Parser, Curl converter',
+		},
+		'mock-data': {
+			name: 'Mock Data',
+			desc: 'Generate test data',
+		},
 	},
 };

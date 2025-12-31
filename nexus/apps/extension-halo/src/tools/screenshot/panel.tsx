@@ -101,7 +101,7 @@ export const ScreenshotPanel: React.FC = () => {
                     setImage(dataUrl);
                 } catch (err) {
                     console.error('Capture failed', err);
-                    showToast('Capture failed');
+                    showToast(t('screenshotPanel.captureFailed'));
                 } finally {
                     setLoading(false);
                 }
@@ -120,7 +120,7 @@ export const ScreenshotPanel: React.FC = () => {
     const handleCopy = async () => {
         if (!image) return;
         const ok = await copyToClipboard(image);
-        showToast(ok ? t('screenshotPanel.copied') : 'Copy failed');
+        showToast(ok ? t('screenshotPanel.copied') : t('screenshotPanel.copyFailed'));
     };
 
     return (
