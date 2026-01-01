@@ -6,6 +6,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from '../../i18n';
 import type { ToolId, ToolMeta } from '../../kernel';
+import { useSmoothWheel } from '../../kernel/hooks/use-smooth-wheel';
 import { DockItem } from './DockItem';
 
 interface DockTabBarProps {
@@ -19,8 +20,8 @@ interface DockTabBarProps {
 const BASE_SIZE = 38;
 const MAX_SCALE = 1.4;
 const EFFECT_DISTANCE = 70;
-// 增加冗余高度，确保红色删除按钮和阴影不被裁剪
-const MAGNIFY_HEADROOM = 24; 
+// 增加冗余高度至 30px，确保红色删除按钮和图标放大后完全显示
+const MAGNIFY_HEADROOM = 30; 
 const TOOLTIP_DELAY = 100;
 
 export const DockTabBar: React.FC<DockTabBarProps> = ({
@@ -32,6 +33,9 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 	const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
 	const tooltipTimer = useRef<number | null>(null);
 	const [hoveredId, setHoveredId] = useState<ToolId | null>(null);
+
+	// 应用平滑滚动 Hook
+	useSmoothWheel(scrollRef, 'x');
 
 	const dockTools = openTools.filter((id) => {
 		const tool = visibleTools.find((m) => m.id === id);
@@ -54,8 +58,7 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 		setHoveredId(toolId);
 		if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
 		tooltipTimer.current = window.setTimeout(() => {
-			// Position tooltip below the icon
-			setTooltip({ text: toolName, x: rect.left + rect.width / 2, y: rect.bottom + 8 });
+			setTooltip({ text: toolName, x: rect.left + rect.width / 2, y: rect.bottom + 10 });
 		}, TOOLTIP_DELAY);
 	}, []);
 
@@ -65,45 +68,18 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 		setTooltip(null);
 	}, []);
 
-	// 重构滚轮逻辑：直接绑定在滚动容器上，确保能够接收到事件
-	useEffect(() => {
-		const el = scrollRef.current;
-		if (!el) return;
-
-		const handleWheel = (e: WheelEvent) => {
-			// 如果是垂直滚动，则接管并转换为水平位移
-			if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-				// 判定溢出状态
-				if (el.scrollWidth > el.clientWidth + 1) {
-					e.preventDefault();
-					e.stopPropagation();
-
-					let delta = e.deltaY;
-					if (e.deltaMode === 1) delta *= 40; 
-					else if (e.deltaMode === 2) delta *= el.clientWidth;
-
-					el.scrollLeft += delta;
-				}
-			}
-		};
-
-		el.addEventListener('wheel', handleWheel, { passive: false });
-		return () => el.removeEventListener('wheel', handleWheel);
-	}, [dockTools.length]); // 工具数量变化时重新绑定（虽然引用一致，但为了保险）
-
 	if (dockTools.length === 0) return null;
 
-	// 实现完美居中的仿真 Padding
 	const isShort = dockTools.length <= 5;
-	const iconTotalWidth = dockTools.length * (BASE_SIZE + 6); // 38px size + 6px gap
+	const iconTotalWidth = dockTools.length * (BASE_SIZE + 6);
 
 	return (
 		<div style={{
 			position: 'relative',
-			zIndex: 1000, // 强制提升至顶级，防止被 Header 裁剪
+			zIndex: 1000,
 			background: 'transparent',
-			// 将负 Margin 移除，改用相对定位来覆盖 Header，这样不会影响 pointer-events 命中
 			marginTop: `-${MAGNIFY_HEADROOM}px`,
+			overflow: 'visible',
 		}}>
 			<style>{`
 				@keyframes dockTooltipFadeIn {
@@ -133,11 +109,10 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 					justifyContent: 'flex-start',
 					gap: '6px',
 					padding: `0 16px 8px 16px`,
-					// 只有在内容较少时才开启仿真居中
 					paddingLeft: isShort ? `calc(50% - ${iconTotalWidth / 2}px)` : '16px',
 					overflowX: 'auto',
 					overflowY: 'hidden',
-					minHeight: `${BASE_SIZE + MAGNIFY_HEADROOM + 12}px`, // 加一点点底垫
+					minHeight: `${BASE_SIZE + MAGNIFY_HEADROOM + 12}px`,
 					pointerEvents: 'auto',
 					position: 'relative',
 					background: `linear-gradient(to bottom, transparent ${MAGNIFY_HEADROOM}px, var(--halo-bg-secondary) ${MAGNIFY_HEADROOM}px)`,

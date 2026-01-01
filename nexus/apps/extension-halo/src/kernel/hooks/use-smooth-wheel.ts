@@ -58,8 +58,8 @@ export const useSmoothWheel = (ref: RefObject<HTMLElement | null>, direction: 'x
 
 			// Check if we are at boundary AND moving further out
 			const currentPos = direction === 'x' ? el.scrollLeft : el.scrollTop;
-			const isAtStart = currentPos <= 0 && delta < 0;
-			const isAtEnd = currentPos >= maxScroll && delta > 0;
+			const isAtStart = currentPos <= 1 && delta < 0;
+			const isAtEnd = currentPos >= maxScroll - 1 && delta > 0;
 
 			// Only intercept if we have room to move in that direction
 			if (!isAtStart && !isAtEnd) {
