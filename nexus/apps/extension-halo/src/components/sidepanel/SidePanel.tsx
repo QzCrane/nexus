@@ -38,6 +38,11 @@ export const SidePanel: React.FC = () => {
 		);
 	}
 
+	const hasDock = openTools.some(id => {
+		const tool = visibleTools.find(m => m.id === id);
+		return tool && !tool.system && id !== 'settings' && id !== 'module-store' && id !== 'permissions';
+	});
+
 	return (
 		<div style={{ 
 			position: 'relative', width: '100%', height: '100%', 
@@ -50,6 +55,7 @@ export const SidePanel: React.FC = () => {
 				visibleTools={visibleTools}
 				onBack={handleBack}
 				onSelectTool={handleToolSelect}
+				hideBorder={hasDock}
 			/>
 
 			{/* DOCK TAB BAR: macOS-style tab switcher below header */}

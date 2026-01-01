@@ -8,6 +8,7 @@ interface LauncherHeaderProps {
 	visibleTools: ToolMeta[];
 	onBack: () => void;
 	onSelectTool: (id: ToolId) => void;
+	hideBorder?: boolean;
 }
 
 export const LauncherHeader: React.FC<LauncherHeaderProps> = ({
@@ -15,6 +16,7 @@ export const LauncherHeader: React.FC<LauncherHeaderProps> = ({
 	visibleTools,
 	onBack,
 	onSelectTool,
+	hideBorder,
 }) => {
 	const { t } = useTranslation();
 	
@@ -28,7 +30,7 @@ export const LauncherHeader: React.FC<LauncherHeaderProps> = ({
 			padding: '0 8px 0 12px',
 			height: '44px',
 			flexShrink: 0,
-			borderBottom: '1px solid var(--halo-border, #333)',
+			borderBottom: hideBorder ? 'none' : '1px solid var(--halo-border, #333)',
 			background: 'var(--halo-bg-secondary, #222)',
 			boxSizing: 'border-box',
 		}}>
