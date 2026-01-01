@@ -16,6 +16,9 @@ import { LauncherLayout } from './LauncherLayout';
 
 const logger = createLogger('SidePanel', 'HALO');
 const VIEW_MODE_KEY = `${STORAGE_PREFIX.CORE}view_mode`;
+const OPEN_TOOLS_KEY = `${STORAGE_PREFIX.CORE}open_tools`;
+const ACTIVE_TOOL_KEY = `${STORAGE_PREFIX.CORE}active_tool`;
+const MAX_OPEN_TOOLS = 10; // Prevent memory exhaustion
 
 export const SidePanel: React.FC = () => {
     const { t, ready: i18nReady } = useTranslation();
@@ -55,11 +58,19 @@ export const SidePanel: React.FC = () => {
                 setViewMode(modeData[VIEW_MODE_KEY] as 'launcher' | 'classic');
             }
 
-            const storage = await chrome.storage.sync.get([`${STORAGE_PREFIX.CORE}active_tool`]);
-            const saved = storage[`${STORAGE_PREFIX.CORE}active_tool`] as ToolId | null;
-            if (saved && isInstalled(saved)) {
-                 setActiveTool(saved);
-                 setOpenTools([saved]);
+            // Restore open tools and active tool
+            const storage = await chrome.storage.sync.get([ACTIVE_TOOL_KEY, OPEN_TOOLS_KEY]);
+            const savedActive = storage[ACTIVE_TOOL_KEY] as ToolId | null;
+            const savedOpen = (storage[OPEN_TOOLS_KEY] as ToolId[] || []).filter(id => isInstalled(id));
+            
+            if (savedOpen.length > 0) {
+                setOpenTools(savedOpen);
+                // Restore active tool (must be in openTools)
+                if (savedActive && savedOpen.includes(savedActive)) {
+                    setActiveTool(savedActive);
+                } else {
+                    setActiveTool(savedOpen[savedOpen.length - 1]);
+                }
             }
             
             setLoading(false);
@@ -82,8 +93,17 @@ export const SidePanel: React.FC = () => {
         if (tool && tool.status === 'coming') return;
 
         setActiveTool(toolId);
-        setOpenTools(prev => prev.includes(toolId) ? prev : [...prev, toolId]);
-        await chrome.storage.sync.set({ [`${STORAGE_PREFIX.CORE}active_tool`]: toolId });
+        setOpenTools(prev => {
+            if (prev.includes(toolId)) return prev;
+            // Enforce max open tools limit
+            const newOpen = prev.length >= MAX_OPEN_TOOLS 
+                ? [...prev.slice(1), toolId]  // Remove oldest
+                : [...prev, toolId];
+            // Persist
+            chrome.storage.sync.set({ [OPEN_TOOLS_KEY]: newOpen });
+            return newOpen;
+        });
+        await chrome.storage.sync.set({ [ACTIVE_TOOL_KEY]: toolId });
         logger.info('Tool activated:', toolId);
     }, []);
 
@@ -94,16 +114,18 @@ export const SidePanel: React.FC = () => {
                 // If closing active tool, switch to last used or null
                 const next = newOpen.length > 0 ? newOpen[newOpen.length - 1] : null;
                 setActiveTool(next);
-                if (next) chrome.storage.sync.set({ [`${STORAGE_PREFIX.CORE}active_tool`]: next });
-                else chrome.storage.sync.remove([`${STORAGE_PREFIX.CORE}active_tool`]);
+                if (next) chrome.storage.sync.set({ [ACTIVE_TOOL_KEY]: next });
+                else chrome.storage.sync.remove([ACTIVE_TOOL_KEY]);
             }
+            // Persist
+            chrome.storage.sync.set({ [OPEN_TOOLS_KEY]: newOpen });
             return newOpen;
         });
     }, [activeTool]);
 
     const handleBack = useCallback(async () => {
         setActiveTool(null);
-        await chrome.storage.sync.remove([`${STORAGE_PREFIX.CORE}active_tool`]);
+        await chrome.storage.sync.remove([ACTIVE_TOOL_KEY]);
     }, []);
 
     const handleSettingsChange = useCallback((updated: HaloSettings) => {
