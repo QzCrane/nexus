@@ -71,15 +71,18 @@ export const PermissionsPanel: React.FC = () => {
 	const renderPermCard = (perm: PermissionDef, isHost = false) => {
 		const isGranted = states[perm.id] || false;
 		const isLoading = loading === perm.id;
+		
+		// Use special key for all hosts permission
+		const i18nKey = isHost ? 'allHosts' : perm.id;
 
 		return (
 			<div key={perm.id} style={styles.card}>
 				<span style={styles.icon}>{perm.icon}</span>
 				<div style={styles.info}>
-					<div style={styles.name}>{perm.name}</div>
-					<div style={styles.desc}>{perm.description}</div>
+					<div style={styles.name}>{t(`permissions.items.${i18nKey}.name`)}</div>
+					<div style={styles.desc}>{t(`permissions.items.${i18nKey}.desc`)}</div>
 					{perm.requiredBy.length > 0 && (
-						<div style={styles.requiredBy}>🔗 {t('permissions.usedBy')}: {perm.requiredBy.join(', ')}</div>
+						<div style={styles.requiredBy}>🔗 {t('permissions.usedBy')}: {perm.requiredBy.map(id => t(`tools.${id}.name`)).join(', ')}</div>
 					)}
 				</div>
 				{isGranted ? (
