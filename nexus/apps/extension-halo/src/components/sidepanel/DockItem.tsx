@@ -64,6 +64,7 @@ export const DockItem: React.FC<DockItemProps> = ({
 			flexShrink: 0,
 			width: `${baseSize}px`,
 			height: `${baseSize}px`,
+			pointerEvents: 'auto',
 		}}
 	>
 		{/* Visual icon: transforms independently */}

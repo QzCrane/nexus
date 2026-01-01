@@ -77,6 +77,7 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 			background: 'transparent',
 			marginTop: `-${MAGNIFY_HEADROOM}px`,
 			overflow: 'visible',
+			pointerEvents: 'none', // 允许点击穿透到下方的 Header
 		}}>
 			<style>{`
 				@keyframes dockTooltipFadeIn {
@@ -88,7 +89,7 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 					content: '';
 					margin: auto;
 					flex-shrink: 0;
-					width: 16px; /* 最小边距保障 */
+					width: 16px; 
 				}
 			`}</style>
 			
@@ -96,13 +97,8 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 				ref={scrollRef}
 				className="halo-thin-scrollbar dock-scroll-container"
 				onMouseMove={(e) => {
-					const rect = e.currentTarget.getBoundingClientRect();
-					const relativeY = e.clientY - rect.top;
-					if (relativeY < MAGNIFY_HEADROOM) {
-						setMouseX(null);
-					} else {
-						setMouseX(e.clientX);
-					}
+					// 由于容器是 pointer-events: none, 此事件仅由 auto 类型的子元素（图标或背景区）冒泡触发
+					setMouseX(e.clientX);
 				}}
 				onMouseLeave={() => { setMouseX(null); setHoveredId(null); setTooltip(null); }}
 				style={{
@@ -110,15 +106,27 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 					alignItems: 'flex-end',
 					justifyContent: 'flex-start',
 					gap: '6px',
-					padding: `0 0 8px 0`, // 边距由伪元素处理
+					padding: `0 0 8px 0`,
 					overflowX: 'auto',
 					overflowY: 'hidden',
 					minHeight: `${BASE_SIZE + MAGNIFY_HEADROOM + 12}px`,
-					pointerEvents: 'auto',
+					pointerEvents: 'none', // 整个滚动层默认穿透，由子元素控制感应
 					position: 'relative',
-					background: `linear-gradient(to bottom, transparent ${MAGNIFY_HEADROOM}px, var(--halo-bg-secondary) ${MAGNIFY_HEADROOM}px)`,
 				}}
 			>
+				{/* Background Hit Area: 仅覆盖底部 Dock 条，用于捕获滚轮和间隙点击 */}
+				<div style={{
+					position: 'absolute',
+					left: 0,
+					top: MAGNIFY_HEADROOM,
+					right: 0,
+					bottom: 0,
+					background: 'var(--halo-bg-secondary)',
+					pointerEvents: 'auto',
+					zIndex: -1,
+					borderBottom: '1px solid var(--halo-border)',
+				}} />
+
 				{dockTools.map((toolId, index) => {
 					const tool = visibleTools.find((m) => m.id === toolId);
 					if (!tool) return null;
