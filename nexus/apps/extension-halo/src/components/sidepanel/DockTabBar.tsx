@@ -70,9 +70,6 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 
 	if (dockTools.length === 0) return null;
 
-	const isShort = dockTools.length <= 5;
-	const iconTotalWidth = dockTools.length * (BASE_SIZE + 6);
-
 	return (
 		<div style={{
 			position: 'relative',
@@ -86,15 +83,12 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 					from { opacity: 0; transform: translate(-50%, -10px) scale(0.95); }
 					to { opacity: 1; transform: translate(-50%, 0) scale(1); }
 				}
-				.dock-scroll-container::before {
-					content: '';
-					margin-left: auto;
-					flex-shrink: 0;
-				}
+				.dock-scroll-container::before,
 				.dock-scroll-container::after {
 					content: '';
-					margin-right: auto;
+					margin: auto;
 					flex-shrink: 0;
+					width: 16px; /* 最小边距保障 */
 				}
 			`}</style>
 			
@@ -104,8 +98,6 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 				onMouseMove={(e) => {
 					const rect = e.currentTarget.getBoundingClientRect();
 					const relativeY = e.clientY - rect.top;
-					// 只有当鼠标处于 Dock 的原始高度感应区（底部）时才计算放大
-					// 顶部的 MAGNIFY_HEADROOM 区域属于“透传区”，鼠标进入则视为离开
 					if (relativeY < MAGNIFY_HEADROOM) {
 						setMouseX(null);
 					} else {
@@ -118,15 +110,13 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 					alignItems: 'flex-end',
 					justifyContent: 'flex-start',
 					gap: '6px',
-					padding: `0 16px 8px 16px`,
-					paddingLeft: isShort ? `calc(50% - ${iconTotalWidth / 2}px)` : '16px',
+					padding: `0 0 8px 0`, // 边距由伪元素处理
 					overflowX: 'auto',
 					overflowY: 'hidden',
 					minHeight: `${BASE_SIZE + MAGNIFY_HEADROOM + 12}px`,
 					pointerEvents: 'auto',
 					position: 'relative',
 					background: `linear-gradient(to bottom, transparent ${MAGNIFY_HEADROOM}px, var(--halo-bg-secondary) ${MAGNIFY_HEADROOM}px)`,
-					borderBottom: '1px solid var(--halo-border)',
 				}}
 			>
 				{dockTools.map((toolId, index) => {
