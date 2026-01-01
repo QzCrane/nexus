@@ -19,6 +19,7 @@ export interface ModuleMeta {
 	dependencies?: string[];
 	bundleUrl?: string;
 	builtIn?: boolean;
+	system?: boolean;
 }
 
 // Module state (local installation status)
@@ -50,6 +51,7 @@ function buildModuleMeta(tool: GeneratedToolMeta): ModuleMeta {
 		icon: tool.icon,
 		size: tool.size,
 		builtIn: tool.builtIn,
+		system: tool.system,
 		dependencies: tool.dependencies,
 	};
 }

@@ -16,6 +16,7 @@ export interface ToolMeta {
 		contentScript?: boolean;
 		offscreen?: boolean;
 	};
+	system?: boolean;
 }
 
 export interface ToolPrefs {

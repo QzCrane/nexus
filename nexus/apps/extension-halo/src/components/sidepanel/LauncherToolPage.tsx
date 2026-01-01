@@ -29,7 +29,10 @@ export const LauncherToolPage: React.FC<LauncherToolPageProps> = ({
 	const { t } = useTranslation();
 
 	// Filter out system tools from taskbar
-	const taskbarTools = openTools.filter(id => id !== 'settings' && id !== 'module-store');
+	const taskbarTools = openTools.filter(id => {
+		const tool = visibleTools.find(t => t.id === id);
+		return !tool?.system;
+	});
 
 	return (
 		<div style={{ width: '50%', height: '100%', display: 'flex', flexDirection: 'column' }}>

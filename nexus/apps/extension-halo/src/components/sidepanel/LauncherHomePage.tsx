@@ -39,7 +39,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 
 		visibleTools.forEach((tool: ToolMeta) => {
 			// Skip system tools
-			if (tool.id === 'module-store' || tool.id === 'settings') return;
+			if (tool.system) return;
 			
 			if (cats[tool.category]) {
 				cats[tool.category].push(tool);
@@ -58,7 +58,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 	};
 
 	const moduleStore = visibleTools.find(t => t.id === 'module-store');
-	const toolCount = visibleTools.filter(t => t.id !== 'settings' && t.id !== 'module-store').length;
+	const toolCount = visibleTools.filter(t => !t.system).length;
 
 	return (
 		<div style={{ width: '50%', height: '100%', display: 'flex', flexDirection: 'column' }}>

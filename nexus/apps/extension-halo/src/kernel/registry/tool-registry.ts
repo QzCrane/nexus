@@ -13,6 +13,7 @@ export const TOOL_REGISTRY: ToolMeta[] = ALL_MODULES.map(m => ({
 	icon: m.icon,
 	status: m.builtIn ? 'ready' : 'available', // Default status, overridden by module manager
 	keywords: [],
+	system: m.system,
 }));
 
 export * from '../core/tool-registry-types';
