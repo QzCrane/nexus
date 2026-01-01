@@ -101,7 +101,17 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 			<div
 				ref={scrollRef}
 				className="halo-thin-scrollbar dock-scroll-container"
-				onMouseMove={(e) => setMouseX(e.clientX)}
+				onMouseMove={(e) => {
+					const rect = e.currentTarget.getBoundingClientRect();
+					const relativeY = e.clientY - rect.top;
+					// 只有当鼠标处于 Dock 的原始高度感应区（底部）时才计算放大
+					// 顶部的 MAGNIFY_HEADROOM 区域属于“透传区”，鼠标进入则视为离开
+					if (relativeY < MAGNIFY_HEADROOM) {
+						setMouseX(null);
+					} else {
+						setMouseX(e.clientX);
+					}
+				}}
 				onMouseLeave={() => { setMouseX(null); setHoveredId(null); setTooltip(null); }}
 				style={{
 					display: 'flex',

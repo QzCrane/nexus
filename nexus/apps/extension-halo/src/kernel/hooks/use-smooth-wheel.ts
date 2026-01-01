@@ -86,5 +86,5 @@ export const useSmoothWheel = (ref: RefObject<HTMLElement | null>, direction: 'x
 			el.removeEventListener('scroll', syncFromDOM);
 			if (rafId !== null) cancelAnimationFrame(rafId);
 		};
-	}, [ref, direction, stiffness]);
+	}, [ref.current, direction, stiffness]); // CRITICAL: Listen to ref.current to re-bind on mount
 };
