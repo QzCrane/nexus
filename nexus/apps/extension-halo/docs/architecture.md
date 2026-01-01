@@ -81,6 +81,7 @@ icon: string (必需) - 显示图标 (emoji)
 category: string (必需) - general/dev/efficiency/security/media/browser/visual
 size: number (必需) - 估算体积 (bytes)
 builtIn: boolean - 核心模块 (不可卸载)
+system: boolean - 系统功能 (不计入工具统计)
 keywords: string[] - 搜索关键词
 
 ---
