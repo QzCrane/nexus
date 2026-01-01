@@ -1,0 +1,9 @@
+{
+	"id": "settings",
+	"icon": "⚙️",
+	"category": "general",
+	"size": 10000,
+	"builtIn": true,
+	"system": true,
+	"keywords": []
+}

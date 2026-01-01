@@ -1,0 +1,54 @@
+// goal: Protobuf panel UI
+
+import React, { useState, useMemo } from 'react';
+import { useTranslation } from '../../i18n';
+import { decodeProto, parseInput, type ProtoField } from './core';
+import { styles } from './panel.styles';
+
+const FieldNode: React.FC<{ field: ProtoField }> = ({ field }) => (
+    <div style={styles.node}>
+        <span style={styles.field}>Field {field.fieldNumber}</span>
+        <span style={styles.type}>(Wire {field.wireType})</span>
+        {!field.subMessage && <span style={styles.value}>: {String(field.value)}</span>}
+        {field.subMessage && (
+            <div>
+                {field.subMessage.map((sub, i) => <FieldNode key={i} field={sub} />)}
+            </div>
+        )}
+    </div>
+);
+
+export const ProtobufPanel: React.FC = () => {
+    const { t } = useTranslation();
+    const [input, setInput] = useState('');
+
+    const decoded = useMemo(() => {
+        if (!input.trim()) return null;
+        const buffer = parseInput(input.trim());
+        if (!buffer) return null;
+        return decodeProto(buffer);
+    }, [input]);
+
+    return (
+        <div style={styles.wrapper}>
+            <textarea 
+                style={styles.textarea} 
+                value={input} 
+                onChange={(e) => setInput(e.target.value)} 
+                placeholder="Paste Base64 or Hex protobuf data..." 
+            />
+
+            <div style={styles.viewer}>
+                {decoded ? (
+                    decoded.length > 0 ? (
+                        decoded.map((f, i) => <FieldNode key={i} field={f} />)
+                    ) : (
+                        <div style={{color: 'var(--halo-text-muted)'}}>No fields found or invalid format</div>
+                    )
+                ) : (
+                    <div style={{color: 'var(--halo-text-muted)'}}>Waiting for input...</div>
+                )}
+            </div>
+        </div>
+    );
+};

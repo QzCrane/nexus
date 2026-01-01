@@ -1,102 +1,128 @@
-# NEXUS 架构规范 (Architecture Spec)
+# HALO 架构规范 v1.4.0
 
-> 本文档定义了项目的目录结构、集成策略和代码规范。
+> 目录结构/集成策略/代码规范
 
-## §1 系统架构目录
+## §1 目录结构
 
-```text
+```
 src/
-├── entry/              # Chrome 扩展入口
-│   ├── background.ts   # Service Worker (RPC 路由中心)
-│   ├── content.ts      # Content Script (DOM 操作/滚动/覆盖层)
-│   ├── sidepanel.tsx   # SidePanel 主界面入口 (React)
-│   └── sidepanel-init.ts # 初始化脚本 (处理 CSP 和主题预加载)
+├── entry/                      # Chrome 扩展入口
+│   ├── background.ts           # Service Worker (RPC 路由)
+│   ├── content.ts              # Content Script (DOM 操作)
+│   ├── sidepanel.tsx           # SidePanel 主入口 (React)
+│   └── sidepanel-init.ts       # 初始化 (CSP/主题预加载)
 │
-├── components/         # 公共 UI 组件
-│   ├── sidepanel/      # SidePanel 布局系统
-│   │   ├── ClassicLayout.tsx
-│   │   ├── LauncherLayout.tsx
-│   │   └── layouts.styles.ts
-│   └── ...
+├── components/                 # 公共 UI 组件
+│   ├── sidepanel/              # 布局系统 (Classic/Launcher)
+│   ├── lazy-tool-loader.tsx    # 懒加载渲染器
+│   └── _generated-tool-loader.ts # [自动生成] Panel 映射
 │
-├── kernel/             # 核心基础设施 (与具体业务解耦)
-│   ├── types.ts        # 全局类型 (ToolId, 消息定义)
-│   ├── storage.ts      # 存储封装 (类型安全, Promise化)
-│   ├── settings.ts     # 默认配置与常量
-│   ├── theme.ts        # 主题系统 (管理 CSS 变量)
-│   └── logger.ts       # 日志工具
+├── kernel/                     # 核心基础设施
+│   ├── core/                   # types, storage, theme, settings
+│   ├── registry/               # 工具注册表
+│   │   ├── _generated.ts       # [自动生成] 工具元数据
+│   │   ├── module-registry.ts  # 模块管理 (消费生成数据)
+│   │   └── tool-registry.ts    # 工具查询 API
+│   ├── managers/               # 模块管理器
+│   └── hooks/                  # React Hooks
 │
-├── tools/              # 工具模块 (原子化, 独立目录)
-│   ├── [tool-name]/    # 例如: qrcode, regex
-│   │   ├── index.ts    # 模块出口 (只导出 Panel 和必要的 Core)
-│   │   ├── types.ts    # 模块私有类型
-│   │   ├── core.ts     # 纯业务逻辑 (无 UI, 便于测试)
-│   │   ├── panel.tsx   # React UI 组件
-│   │   └── .ai-context.md # 模块专属 AI 上下文
-│   └── ...
+├── tools/                      # 工具模块 (原子化)
+│   └── [tool-name]/
+│       ├── manifest.json       # [必须] 工具元数据 (icon/category/size)
+│       ├── panel.tsx           # [必须] React UI 组件
+│       ├── core.ts             # 纯业务逻辑 (无 UI)
+│       └── .ai-context.md      # 模块 AI 上下文
 │
-└── i18n/               # 国际化系统
-    ├── locales/        # 语言包 (en.ts, zh.ts)
-    └── index.ts        # Hook 封装
+└── i18n/                       # 国际化 (en.ts, zh.ts)
 ```
 
 ---
 
-## §2 集成策略
+## §2 工具注册系统
 
-### 1. 核心工具 (Bundled)
+### 自动生成流程
 
-此类工具直接打包进扩展，随 SidePanel 立即加载。
+```
+tools/*/manifest.json (82个)
+        ↓
+pnpm generate-registry (或 pnpm build 自动执行)
+        ↓
+kernel/registry/_generated.ts  → 工具元数据
+components/_generated-tool-loader.ts → lazy import 映射
+```
 
-- **准入条件**: 核心高频使用
-- **加载方式**: 懒加载 (React.lazy + Suspense) 以提升首屏速度
-- **当前列表**:
-  - 基础: QR, Color, Ruler, JSON, Outline, Settings
-  - 开发: Regex, Base64, Hash, UUID, Time, URL
-  - 效率: Clipboard, Smooth Scroll
+### 新增工具步骤
 
-### 2. 大型模块 (Lazy Loaded)
+1. 创建 `tools/[name]/manifest.json`:
 
-此类工具在用户通过 UI 激活时才加载，避免拖慢启动速度。
+```json
+{
+  "id": "tool-name",
+  "icon": "🔧",
+  "category": "dev",
+  "size": 15000,
+  "builtIn": false,
+  "keywords": []
+}
+```
 
-- **准入条件**: 低频使用 或 体积巨大 (> 1MB，通常涉及 WASM)
-- **加载方式**: 动态导入 (`import()`) + 资源按需获取
-- **规划列表**:
-  - `pdf` (依赖 pdf-lib, ghostscript)
-  - `ai` (依赖 onnx runtime)
-  - `archive` (依赖 singlefile core)
+2. 创建 `tools/[name]/panel.tsx`:
+
+```tsx
+export const ToolNamePanel: React.FC = () => { ... }
+```
+
+3. 运行 `pnpm build` (自动执行 generate-registry)
+
+### manifest.json 字段
+
+| 字段     | 类型     | 必须 | 说明                                                       |
+| :------- | :------- | :--: | :--------------------------------------------------------- |
+| id       | string   |  ✓   | 唯一 ID (kebab-case, 与目录名一致)                         |
+| icon     | string   |  ✓   | 显示图标 (emoji)                                           |
+| category | string   |  ✓   | 分类: general/dev/efficiency/security/media/browser/visual |
+| size     | number   |  ✓   | 估算体积 (bytes)                                           |
+| builtIn  | boolean  |      | 核心模块 (不可卸载)                                        |
+| keywords | string[] |      | 搜索关键词                                                 |
 
 ---
 
 ## §3 代码规范
 
+### 行数限制
+
+|    阈值 | 处理              |
+| ------: | :---------------- |
+|    ≤150 | ✅ 正常           |
+| 150-200 | ⚠️ 警告，建议拆分 |
+|    >200 | ❌ 错误，必须拆分 |
+
+### 豁免文件
+
+- `_generated.ts` / `_generated-tool-loader.ts` (自动生成)
+- `i18n/locales/**/modules.ts` (数据文件)
+
 ### 模块化原则
 
-- **单一职责**: `core.ts` 只负责数据处理和计算，`panel.tsx` 只负责渲染和交互。
-- **解耦**: 工具之间尽量不互相依赖。如果必须通信，通过 `kernel` 的消息总线进行。
-- **接口控制**: `index.ts` 是模块的唯一对外接口，不要直接引用模块内部文件。
-
-### 开发限制
-
-- **文件行数**: 单个文件建议控制在 200 行以内，绝对禁止超过 500 行（必须拆分）。
-- **硬编码**: 禁止在代码中硬编码 URL、复杂规则表，应提取到常数文件或配置中。
-- **注释**: 核心逻辑必须编写**中文注释** (根据用户最新偏好)，解释"为什么这么做"而不仅仅是"做了什么"。
+- `core.ts`: 纯逻辑，无 UI，便于测试
+- `panel.tsx`: 只负责渲染和交互
+- `index.ts`: 模块唯一出口 (≤50 行)
 
 ---
 
-## §4 UI 设计系统
+## §4 UI 设计
 
-必须严格遵循 `@nexus/ui-kit` 和 CSS 变量系统，保持视觉统一。
+遵循 `@nexus/ui-kit` + CSS Variables
 
-- **颜色变量**: `--halo-bg` (背景), `--halo-accent` (强调色), `--halo-text` (文本)
-- **间距**: 使用 4px 网格系统 (4, 8, 12, 16, 24)
-- **字体**: 使用系统字体栈，代码部分使用等宽字体 (monospace)
+- 颜色: `--halo-bg`, `--halo-accent`, `--halo-text`
+- 间距: 4px 网格 (4/8/12/16/24)
+- 字体: 系统字体栈，代码用 monospace
 
 ---
 
 ## §5 通信协议
 
-扩展内部通信统一使用 `chrome.runtime.sendMessage` 实现 RPC 模式。
+RPC 模式: `chrome.runtime.sendMessage`
 
-- **Action 命名**: `HALO_ACTION_NAME` (全大写下划线)
-- **消息格式**: `{ source: 'HALO', action: '...', data: ... }`
+- Action 命名: `HALO_ACTION_NAME` (全大写下划线)
+- 消息格式: `{ source: 'HALO', action: '...', data: ... }`

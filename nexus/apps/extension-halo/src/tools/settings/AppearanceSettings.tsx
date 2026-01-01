@@ -4,8 +4,8 @@
 import React from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
-import type { HaloSettings, ThemeMode } from '../../kernel/settings';
-import { ACCENT_COLORS } from '../../kernel/settings';
+import type { HaloSettings, ThemeMode } from '../../kernel';
+import { ACCENT_COLORS } from '../../kernel';
 import { styles } from './panel.styles';
 
 interface AppearanceSettingsProps {

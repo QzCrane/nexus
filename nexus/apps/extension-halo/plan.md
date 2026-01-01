@@ -1,52 +1,49 @@
-# HALO 功能规划 (合并版)
+# HALO 功能规划 (v1.4.0)
 
 > **定位**: 离线优先的开发者与效率工具箱
 > **竞品对标**: DevToys, IT-Tools, He3, CyberChef
 
-## 📊 功能状态 (59/100+)
+## 📊 功能状态 (80 tools + 2 system)
 
-### ✅ 已完成 (59)
+### ✅ 已完成 (82)
 
-| 分类       | 工具                                                                                                                                                                                                                                                             |
-| :--------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **通用**   | qrcode, color-picker, ruler, json-formatter, outline, clipboard, settings                                                                                                                                                                                        |
-| **开发**   | regex, base64, hash, uuid, timestamp, url, crypto, mock-data, network, cron, html-entity, code-formatter, yaml, number-base, markdown, http-status, ip-lookup, font-inspector, xml-formatter, csv-viewer, headers-viewer, tech-stack, storage-editor, user-agent |
-| **效率**   | smooth-scroll, tabs, screenshot, pdf, text-tools, lorem-ipsum, diff, unit-converter, sticky-notes, pomodoro, timer, shortcuts, todo-list, text-to-speech                                                                                                         |
-| **安全**   | password-gen, totp                                                                                                                                                                                                                                               |
-| **媒体**   | image-tools, exif-reader, color-palette                                                                                                                                                                                                                          |
-| **浏览器** | archive, userscripts, permissions, cookie-manager, reader-mode, bookmark-manager, history-search, table-extractor                                                                                                                                                |
-| **系统**   | module-store                                                                                                                                                                                                                                                     |
-
----
-
-## 🔜 阶段 9: 编解码增强 (P0)
-
-> 对标 CyberChef 链式操作
-
-| 工具            | 功能                            | 复杂度 |
-| :-------------- | :------------------------------ | :----: |
-| **gzip**        | Gzip 压缩/解压                  |   低   |
-| **punycode**    | Punycode ↔ Unicode (国际化域名) |   低   |
-| **morse**       | 摩尔斯电码编解码                |   低   |
-| **jwt-decoder** | JWT 解析/验证 (无签名)          |   中   |
-| **ssl-cert**    | SSL 证书解析 (PEM/DER)          |   中   |
-| **rot13**       | ROT13/ROT47 简单替换            |   低   |
-| **xor**         | XOR 加解密 + 暴力破解           |   中   |
-| **hex-dump**    | 十六进制转储查看器              |   中   |
+| 分类           | 工具数 | 列表                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| :------------- | :----: | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Core**       |   12   | qrcode, screenshot, color-picker, ruler, json-formatter, base64, hash, uuid, timestamp, url, module-store, settings                                                                                                                                                                                                                                                                                                               |
+| **Dev**        |   34   | regex, outline, crypto, network, mock-data, userscripts, yaml, diff, number-base, text-tools, lorem-ipsum, markdown, cron, html-entity, code-formatter, http-status, csv-viewer, ip-lookup, font-inspector, xml-formatter, headers-viewer, tech-stack, storage-editor, user-agent, gzip, jwt-decoder, morse, json-to-csv, sql-formatter, json-path, punycode, rot13, csv-to-json, hex-dump, ssl-cert, xor, protobuf, dom-selector |
+| **Efficiency** |   14   | smooth-scroll, tabs, pdf, clipboard, permissions, unit-converter, sticky-notes, pomodoro, timer, shortcuts, todo-list, text-to-speech, emoji-picker, session-manager                                                                                                                                                                                                                                                              |
+| **Security**   |   5    | password-gen, totp, checksum, random-gen, subresource, csp-analyzer                                                                                                                                                                                                                                                                                                                                                               |
+| **Media**      |   3    | image-tools, exif-reader, color-palette                                                                                                                                                                                                                                                                                                                                                                                           |
+| **Browser**    |   8    | archive, cookie-manager, reader-mode, bookmark-manager, history-search, table-extractor, page-annotate, translate, tab-group                                                                                                                                                                                                                                                                                                      |
 
 ---
 
-## 🔜 阶段 10: 数据转换增强 (P0)
+## 🏗️ 架构优化 (2026-01-01 完成)
 
-| 工具              | 功能                         | 复杂度 |
-| :---------------- | :--------------------------- | :----: |
-| **json-to-csv**   | JSON 数组 → CSV              |   低   |
-| **csv-to-json**   | CSV → JSON 对象              |   低   |
-| **json-to-yaml**  | JSON → YAML (已有 yaml 工具) |   -    |
-| **sql-formatter** | 专业 SQL 格式化              |   中   |
-| **json-path**     | JSONPath 查询                |   中   |
-| **protobuf**      | Protobuf 解码 (Base64→JSON)  |   高   |
-| **avro**          | Avro → JSON                  |   高   |
+### 自动生成注册表系统
+
+- ✅ 创建 `scripts/generate-tool-registry.mjs` → 扫描 `tools/*/manifest.json`
+- ✅ 自动生成 `kernel/registry/_generated.ts` (工具元数据)
+- ✅ 自动生成 `components/_generated-tool-loader.ts` (lazy import 映射)
+- ✅ 重写 `module-registry.ts` 消费生成数据 (145 行 → 80 行, -45%)
+- ✅ 重写 `lazy-tool-loader.tsx` (173 行 → 80 行, -54%)
+- ✅ 删除冗余 `tools-data-*.ts` 文件 (5 个)
+
+**新增工具流程**: 创建 `manifest.json` + `panel.tsx` → `pnpm build` 自动注册
+
+---
+
+## 🔜 阶段 9: 技术债清理 (P0)
+
+| 任务                      | 当前状态 | 目标    |
+| :------------------------ | :------- | :------ |
+| `LauncherLayout.tsx` 拆分 | 299 行   | ≤200 行 |
+| `ClassicLayout.tsx` 拆分  | 182 行   | ≤150 行 |
+| `SidePanel.tsx` 优化      | 158 行   | ≤150 行 |
+
+---
+
+## 🔜 阶段 10: 编解码增强 (P1)
 
 ---
 

@@ -5,8 +5,8 @@ import React, { useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../i18n';
 import type { ToolCategory } from '../i18n/types';
-import type { ToolMeta, ToolPrefs } from '../kernel/tool-registry';
-import type { SortMode } from '../kernel/use-tool-manager';
+import type { ToolMeta, ToolPrefs } from '../kernel';
+import type { SortMode } from '../kernel';
 import { styles } from './ToolManager.styles';
 import { ToolManagerItem } from './ToolManagerItem';
 

@@ -1,7 +1,5 @@
 
-import type { ToolId } from '../../kernel/types';
-import type { HaloSettings } from '../../kernel/settings';
-import type { ToolMeta } from '../../kernel/tool-registry';
+import type { ToolId, HaloSettings, ToolMeta } from '../../kernel';
 
 export interface LayoutProps {
 	activeTool: ToolId | null;
@@ -10,4 +8,6 @@ export interface LayoutProps {
 	settings: HaloSettings | null;
 	onSettingsChange: (s: HaloSettings) => void;
 	visibleTools: ToolMeta[];
+	openTools: ToolId[];
+	onCloseTool: (id: ToolId) => void;
 }

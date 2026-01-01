@@ -20,7 +20,8 @@
 		"history",
 		"bookmarks",
 		"topSites",
-		"notifications"
+		"notifications",
+		"tabGroups"
 	],
 	"optional_host_permissions": [
 		"*://*/*"

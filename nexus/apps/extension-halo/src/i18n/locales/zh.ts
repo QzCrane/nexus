@@ -9,6 +9,7 @@ import { panelsCore } from './zh-modules/panels-core';
 import { panelsDev } from './zh-modules/panels-dev';
 import { panelsExtra } from './zh-modules/panels-extra';
 import { panelsV6 } from './zh-modules/panels-v6';
+import { panelsV7 } from './zh-modules/panels-v7';
 
 export const zh: TranslationKeys = {
 	...base,
@@ -18,4 +19,5 @@ export const zh: TranslationKeys = {
 	...panelsDev,
 	...panelsExtra,
 	...panelsV6,
+	...panelsV7,
 };

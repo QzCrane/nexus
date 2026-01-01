@@ -1,0 +1,8 @@
+{
+	"id": "timestamp",
+	"icon": "⏱️",
+	"category": "dev",
+	"size": 10000,
+	"builtIn": true,
+	"keywords": []
+}

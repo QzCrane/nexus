@@ -3,20 +3,21 @@
 
 import React from 'react';
 import { useTranslation } from '../../i18n';
-import { formatModuleSize, type ModuleMeta } from '../../kernel/module-registry';
+import { formatModuleSize, type ModuleMeta } from '../../kernel';
 
 const styles = {
 	item: {
-		display: 'flex', alignItems: 'center', gap: '16px', padding: '16px',
+		display: 'flex', alignItems: 'center', gap: '8px', padding: '12px',
 		background: 'var(--halo-bg-secondary)', borderRadius: '12px',
 		border: '1px solid var(--halo-border)', transition: 'all 0.2s',
-		minHeight: '72px'
+		minHeight: '64px'
 	},
 	icon: { fontSize: '24px', minWidth: '40px', textAlign: 'center', background: 'var(--halo-bg-tertiary)', borderRadius: '8px', padding: '8px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' },
 	info: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' },
 	name: { fontSize: '14px', fontWeight: 700, color: 'var(--halo-text)', display: 'flex', alignItems: 'center', gap: '8px' },
 	desc: { fontSize: '12px', color: 'var(--halo-text-muted)', lineHeight: '1.4', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' },
 	meta: { fontSize: '11px', color: 'var(--halo-text-muted)', display: 'flex', gap: '8px', alignItems: 'center' },
+	index: { fontSize: '10px', fontWeight: 500, color: 'var(--halo-text-muted)', minWidth: '12px', textAlign: 'center' as const },
 	
 	btn: {
 		padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
@@ -34,13 +35,14 @@ const styles = {
 
 interface ModuleItemProps {
 	module: ModuleMeta;
+	index: number;
 	status: 'installed' | 'available' | 'downloading' | 'updating' | 'error';
 	isCore: boolean;
 	onInstall: () => void;
 	onUninstall: () => void;
 }
 
-export const ModuleItem: React.FC<ModuleItemProps> = ({ module, status, isCore, onInstall, onUninstall }) => {
+export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, isCore, onInstall, onUninstall }) => {
 	const { t } = useTranslation();
 	const isInstalled = status === 'installed';
 	const isDownloading = status === 'downloading' || status === 'updating';
@@ -55,8 +57,9 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, status, isCore, 
 
 	return (
 		<div style={styles.item}>
+			<span style={styles.index}>{index}</span>
 			<span style={styles.icon as React.CSSProperties}>{module.icon}</span>
-			<div style={styles.info}>
+			<div style={styles.info as React.CSSProperties}>
 				<div style={styles.name}>
 					{displayName}
 					{!isCore && !isInstalled && <span style={{ ...styles.badge, ...styles.badgeNew }}>{t('moduleStorePanel.new')}</span>}

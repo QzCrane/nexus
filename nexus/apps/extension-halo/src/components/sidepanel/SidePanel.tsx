@@ -4,13 +4,13 @@
 
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { createLogger } from '@nexus/kernel';
-import type { ToolId } from '../../kernel/types';
-import { STORAGE_PREFIX } from '../../kernel/types';
-import type { HaloSettings } from '../../kernel/settings';
-import { loadSettings, getThemeColors, applyTheme } from '../../kernel/theme';
-import { useModuleManager } from '../../kernel/use-module-manager';
+import type { ToolId } from '../../kernel';
+import { STORAGE_PREFIX } from '../../kernel';
+import type { HaloSettings } from '../../kernel';
+import { loadSettings, getThemeColors, applyTheme } from '../../kernel';
+import { useModuleManager } from '../../kernel';
 import { useTranslation } from '../../i18n';
-import { TOOL_REGISTRY } from '../../kernel/tools-data';
+import { TOOL_REGISTRY } from '../../kernel';
 import { ClassicLayout } from './ClassicLayout';
 import { LauncherLayout } from './LauncherLayout';
 
@@ -21,6 +21,7 @@ export const SidePanel: React.FC = () => {
     const { t, ready: i18nReady } = useTranslation();
     const { isInstalled, loading: modulesLoading } = useModuleManager();
     const [activeTool, setActiveTool] = useState<ToolId | null>(null);
+    const [openTools, setOpenTools] = useState<ToolId[]>([]);
     const [settings, setSettings] = useState<HaloSettings | null>(null);
     const [loading, setLoading] = useState(true);
     const [viewMode, setViewMode] = useState<'launcher' | 'classic'>('launcher');
@@ -31,7 +32,12 @@ export const SidePanel: React.FC = () => {
         // Check if tool is installed (if it's a module) or core (always true if not in module manager?)
         // The useModuleManager hook's isInstalled likely handles module IDs.
         // Assuming TOOL_REGISTRY ids match module ids.
-        return TOOL_REGISTRY.filter((tool) => isInstalled(tool.id));
+        return TOOL_REGISTRY
+            .filter((tool) => isInstalled(tool.id))
+            .map(tool => ({
+                ...tool,
+                status: tool.status === 'available' ? 'ready' : tool.status
+            }));
     }, [modulesLoading, isInstalled]);
 
     useEffect(() => {
@@ -51,7 +57,10 @@ export const SidePanel: React.FC = () => {
 
             const storage = await chrome.storage.sync.get([`${STORAGE_PREFIX.CORE}active_tool`]);
             const saved = storage[`${STORAGE_PREFIX.CORE}active_tool`] as ToolId | null;
-            if (saved) setActiveTool(saved);
+            if (saved && isInstalled(saved)) {
+                 setActiveTool(saved);
+                 setOpenTools([saved]);
+            }
             
             setLoading(false);
         };
@@ -73,9 +82,24 @@ export const SidePanel: React.FC = () => {
         if (tool && tool.status === 'coming') return;
 
         setActiveTool(toolId);
+        setOpenTools(prev => prev.includes(toolId) ? prev : [...prev, toolId]);
         await chrome.storage.sync.set({ [`${STORAGE_PREFIX.CORE}active_tool`]: toolId });
         logger.info('Tool activated:', toolId);
     }, []);
+
+    const handleCloseTool = useCallback((toolId: ToolId) => {
+        setOpenTools(prev => {
+            const newOpen = prev.filter(id => id !== toolId);
+            if (activeTool === toolId) {
+                // If closing active tool, switch to last used or null
+                const next = newOpen.length > 0 ? newOpen[newOpen.length - 1] : null;
+                setActiveTool(next);
+                if (next) chrome.storage.sync.set({ [`${STORAGE_PREFIX.CORE}active_tool`]: next });
+                else chrome.storage.sync.remove([`${STORAGE_PREFIX.CORE}active_tool`]);
+            }
+            return newOpen;
+        });
+    }, [activeTool]);
 
     const handleBack = useCallback(async () => {
         setActiveTool(null);
@@ -115,6 +139,8 @@ export const SidePanel: React.FC = () => {
 
     const commonProps = {
         activeTool,
+        openTools,
+        onCloseTool: handleCloseTool,
         onSelectTool: handleToolSelect,
         onBack: handleBack,
         settings,

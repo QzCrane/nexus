@@ -61,7 +61,13 @@ nexus(私有) → nexus-public/ → github.com/QzCrane/spectra
 
 **SPECTRA**: Audio 800%/EQ/脉冲/声道/延迟 | AudioContext 劫持 (Google 翻译支持) | Video 速率 16x/旋转/镜像/PiP/截图 | AB 循环/标记 | 遥控 QR+WebRTC | 热键脚本 (UserScripts)
 
-**HALO** (SidePanel): 核心(✅ QR/Color/JSON/Ruler/Outline/Settings) | Dev(✅ Regex/Base64/Hash/UUID/Time/URL) | 效率(✅ Clip/Scroll) | 蓝海(🔜 PDF/存档)
+**HALO** (SidePanel 82 tools):
+
+- 自动注册系统: `tools/*/manifest.json` → `pnpm generate-registry` → 自动生成加载器
+- Core(12): QR/Screenshot/Color/Ruler/JSON/Base64/Hash/UUID/Timestamp/URL/ModuleStore/Settings
+- Dev(34): Regex/Crypto/Network/YAML/Markdown/JSONPath/SQL/Protobuf/...
+- Efficiency(14): PDF/Clipboard/Tabs/Timer/Todo/...
+- Security(5) + Media(3) + Browser(8)
 
 ---
 

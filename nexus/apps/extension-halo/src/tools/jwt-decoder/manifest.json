@@ -1,0 +1,8 @@
+{
+	"id": "jwt-decoder",
+	"icon": "🔑",
+	"category": "dev",
+	"size": 15000,
+	"builtIn": false,
+	"keywords": []
+}

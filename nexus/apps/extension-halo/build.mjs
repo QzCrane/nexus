@@ -8,6 +8,14 @@ import { execSync } from 'child_process';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Run generate-registry to ensure tool panels are up-to-date
+try {
+	console.log('📦 Generating tool registry...');
+	execSync('node ../../scripts/generate-tool-registry.mjs', { stdio: 'inherit', cwd: __dirname });
+} catch {
+	console.error('⚠️ generate-registry failed, continuing build...');
+}
+
 // Run verify-architecture first
 try {
 	console.log('🔍 Running verify-architecture...');

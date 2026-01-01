@@ -15,7 +15,13 @@ const LEGACY_FILES = [
 	'packages/nexus-kernel/src/storage/repository.ts',
 	'packages/features/audio-engine/src/constants.ts',
 	'packages/features/audio-engine/src/PolicyEngine.ts',
-	'packages/features/audio-engine/src/WebAudioController.ts'
+	'packages/features/audio-engine/src/WebAudioController.ts',
+	// Auto-generated files (by pnpm generate-registry)
+	'apps/extension-halo/src/kernel/registry/_generated.ts',
+	'apps/extension-halo/src/components/_generated-tool-loader.ts',
+	// i18n module translations (data files, not logic)
+	'apps/extension-halo/src/i18n/locales/en-modules/modules.ts',
+	'apps/extension-halo/src/i18n/locales/zh-modules/modules.ts',
 ];
 
 export function checkSourceFileLength(ROOT) {

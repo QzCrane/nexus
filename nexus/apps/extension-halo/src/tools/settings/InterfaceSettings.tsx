@@ -4,7 +4,7 @@
 import React from 'react';
 import { Card, Toggle } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
-import type { HaloSettings } from '../../kernel/settings';
+import type { HaloSettings } from '../../kernel';
 import { styles } from './panel.styles';
 
 interface InterfaceSettingsProps {

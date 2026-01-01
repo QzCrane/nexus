@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useTranslation } from '../../i18n';
-import type { ToolId } from '../../kernel/types';
+import type { ToolId } from '../../kernel';
 import { ToolPanelRenderer } from '../tool-panel-renderer';
 import { commonStyles } from './layouts.styles';
 import type { LayoutProps } from './types';
@@ -18,6 +18,8 @@ export const ClassicLayout: React.FC<LayoutProps & { onToggleMode: () => void }>
 	onSettingsChange,
 	visibleTools,
 	onToggleMode,
+	openTools,
+	onCloseTool
 }) => {
 	const { t } = useTranslation();
 	const showLabels = settings?.showToolLabels ?? true;
@@ -167,6 +169,7 @@ export const ClassicLayout: React.FC<LayoutProps & { onToggleMode: () => void }>
 			<div className="halo-scrollbar" style={{ ...commonStyles.content, overflowY: 'auto', opacity: isOverlayTool ? 0 : 1 }}>
 				<ToolPanelRenderer 
 					activeTool={isOverlayTool ? null : activeTool} 
+					openTools={openTools}
 					onSettingsChange={onSettingsChange} 
 					selectToolText={t('common.selectTool')} 
 				/>

@@ -1,10 +1,9 @@
 // goal: ClassicLayout sub-components to keep main file under 200 lines
 
 import React from 'react';
-import type { ToolId } from '../../kernel/types';
+import type { ToolId, HaloSettings } from '../../kernel';
 import { commonStyles } from './layouts.styles';
 import { ToolPanelRenderer } from '../tool-panel-renderer';
-import type { HaloSettings } from '../../kernel/settings';
 
 // Scrollbar CSS injection
 export const ScrollbarStyles: React.FC = () => (
@@ -89,6 +88,7 @@ export const ClassicFooter: React.FC<{ t: (key: string) => string }> = ({ t }) =
 interface OverlayPanelProps {
 	activeTool: ToolId | null;
 	visible: boolean;
+	openTools: ToolId[];
 	onBack: () => void;
 	onSettingsChange: (newSettings: HaloSettings) => void;
 	t: (key: string) => string;
@@ -98,6 +98,7 @@ interface OverlayPanelProps {
 export const OverlayPanel: React.FC<OverlayPanelProps> = ({
 	activeTool,
 	visible,
+	openTools,
 	onBack,
 	onSettingsChange,
 	t
@@ -141,9 +142,10 @@ export const OverlayPanel: React.FC<OverlayPanelProps> = ({
 					</button>
 				</div>
 			</header>
-			<div className="halo-scrollbar" style={{ ...commonStyles.content, overflowY: 'auto' }}>
+			<div className="halo-scrollbar" style={{ ...commonStyles.content, overflowY: 'auto', padding: '16px' }}>
 				<ToolPanelRenderer
 					activeTool={renderedTool}
+					openTools={openTools}
 					onSettingsChange={onSettingsChange}
 					selectToolText={t('common.selectTool')}
 				/>

@@ -1,0 +1,8 @@
+{
+	"id": "totp",
+	"icon": "🔐",
+	"category": "security",
+	"size": 30000,
+	"builtIn": false,
+	"keywords": []
+}

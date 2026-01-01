@@ -1,0 +1,8 @@
+{
+	"id": "csp-analyzer",
+	"icon": "🔒",
+	"category": "security",
+	"size": 15000,
+	"builtIn": false,
+	"keywords": []
+}

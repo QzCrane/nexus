@@ -2,8 +2,8 @@
 // eff: Fuzzy search with keyboard shortcuts. Logic extracted to search-utils.ts and styles to SearchBar.styles.ts
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import type { ToolMeta } from '../kernel/tool-registry';
-import { TOOL_REGISTRY } from '../kernel/tool-registry';
+import type { ToolMeta } from '../kernel';
+import { TOOL_REGISTRY } from '../kernel';
 import { useTranslation } from '../i18n';
 import { matchTool } from './search-utils';
 import { styles } from './SearchBar.styles';

@@ -75,7 +75,7 @@ async function saveLocale(locale: Locale): Promise<void> {
 interface I18nContextValue {
 	locale: Locale;
 	setLocale: (locale: Locale) => void;
-	t: (path: string) => string;
+	t: (path: string, options?: { defaultValue?: string }) => string;
 	translations: TranslationKeys;
 }
 
@@ -113,8 +113,12 @@ export function useTranslation() {
 		saveLocale(newLocale);
 	}, []);
 
-	const t = useCallback((path: string): string => {
-		return getByPath(REGISTRY[locale], path);
+	const t = useCallback((path: string, options?: { defaultValue?: string }): string => {
+		const val = getByPath(REGISTRY[locale], path);
+		if (val === path && options?.defaultValue) {
+			return options.defaultValue;
+		}
+		return val;
 	}, [locale, tick]); // Depend on tick to re-calc when registry changes
 
 	const translations = REGISTRY[locale];

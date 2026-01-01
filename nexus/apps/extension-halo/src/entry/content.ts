@@ -3,6 +3,8 @@
 
 import * as Ruler from '../content/ruler';
 import * as SmoothScroll from '../content/smooth-scroll';
+import * as DomSelector from '../content/dom-selector';
+import * as PageAnnotate from '../content/page-annotate';
 
 const LOG_TAG = '[HALO]';
 const t0 = performance.now();
@@ -63,6 +65,28 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 		case 'HALO_RULER_CANCEL':
 			Ruler.cancel();
+			sendResponse({ success: true });
+			break;
+
+		case 'HALO_DOM_SELECTOR_START':
+			DomSelector.start((data) => {
+				chrome.runtime.sendMessage({ type: 'HALO_DOM_SELECTED', payload: data });
+			});
+			sendResponse({ success: true });
+			break;
+
+		case 'HALO_DOM_SELECTOR_STOP':
+			DomSelector.stop();
+			sendResponse({ success: true });
+			break;
+
+		case 'HALO_ANNOTATE_START':
+			PageAnnotate.start();
+			sendResponse({ success: true });
+			break;
+
+		case 'HALO_ANNOTATE_STOP':
+			PageAnnotate.stop();
 			sendResponse({ success: true });
 			break;
 

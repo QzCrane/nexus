@@ -25,6 +25,9 @@ export const base = {
 		efficiency: 'Efficiency',
 		visual: 'Visual',
 		ai: 'AI & Smart',
+		security: 'Security',
+		media: 'Media',
+		browser: 'Browser',
 	},
 	footer: {
 		zeroTracking: 'Zero tracking',

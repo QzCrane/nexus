@@ -25,6 +25,9 @@ export const base = {
 		efficiency: '效率工具',
 		visual: '视觉工具',
 		ai: 'AI 智能',
+		security: '安全工具',
+		media: '媒体工具',
+		browser: '浏览器工具',
 	},
 	footer: {
 		zeroTracking: '零追踪',

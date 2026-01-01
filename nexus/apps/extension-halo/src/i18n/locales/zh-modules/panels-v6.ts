@@ -153,7 +153,28 @@ export const panelsV6 = {
 		encode: '文本 → 摩尔斯', decode: '摩尔斯 → 文本',
 		input: '输入', output: '输出', copy: '复制',
 	},
-	emoji: {
-		search: '搜索表情...', recent: '最近使用',
+	jsonToCsv: {
+		input: 'JSON 输入', output: 'CSV 输出', delimiter: '分隔符', copy: '复制 CSV', download: '下载 CSV',
+	},
+	sql: {
+		format: '格式化', minify: '压缩', copy: '复制',
+	},
+	jsonPath: {
+		matches: '个匹配项', copy: '复制结果',
+	},
+	checksum: {
+		dropFile: '拖放文件以计算哈希', algorithm: '算法', expectedHash: '粘贴预期哈希以验证...',
+	},
+	punycode: {
+		input: '域名 (Unicode / Punycode)', encode: '编码 (转 ASCII)', decode: '解码 (转 Unicode)',
+	},
+	rot13: {
+		input: '输入', output: '输出', mode: '模式', shift: '位移',
+	},
+	csvToJson: {
+		input: 'CSV 输入', output: 'JSON 输出', separator: '分隔符', header: '包含表头',
+	},
+	hexDump: {
+		drop: '拖放文件以查看', offset: '偏移', hex: '十六进制', ascii: 'ASCII',
 	},
 };

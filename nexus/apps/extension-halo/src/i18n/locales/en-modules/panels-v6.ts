@@ -153,7 +153,28 @@ export const panelsV6 = {
 		encode: 'Text → Morse', decode: 'Morse → Text',
 		input: 'Input', output: 'Output', copy: 'Copy',
 	},
-	emoji: {
-		search: 'Search emojis...', recent: 'Recent',
+	jsonToCsv: {
+		input: 'JSON Input', output: 'CSV Output', delimiter: 'Delimiter', copy: 'Copy CSV', download: 'Download CSV',
+	},
+	sql: {
+		format: 'Format', minify: 'Minify', copy: 'Copy',
+	},
+	jsonPath: {
+		matches: 'matches', copy: 'Copy Result',
+	},
+	checksum: {
+		dropFile: 'Drop file here to calculate hash', algorithm: 'Algorithm', expectedHash: 'Paste expected hash to verify...',
+	},
+	punycode: {
+		input: 'Domain (Unicode / Punycode)', encode: 'Encode (to ASCII)', decode: 'Decode (to Unicode)',
+	},
+	rot13: {
+		input: 'Input', output: 'Output', mode: 'Mode', shift: 'Shift',
+	},
+	csvToJson: {
+		input: 'CSV Input', output: 'JSON Output', separator: 'Separator', header: 'Has Header',
+	},
+	hexDump: {
+		drop: 'Drop file here to dump', offset: 'Offset', hex: 'Hex', ascii: 'ASCII',
 	},
 };

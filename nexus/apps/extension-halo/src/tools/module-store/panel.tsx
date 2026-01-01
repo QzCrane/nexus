@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { useTranslation } from '../../i18n';
-import { useModuleManager } from '../../kernel/use-module-manager';
-import { useRemoteRegistry } from '../../kernel/use-remote-registry';
-import { ALL_MODULES, formatModuleSize } from '../../kernel/module-registry';
+import { useModuleManager } from '../../kernel';
+import { useRemoteRegistry } from '../../kernel';
+import { ALL_MODULES, formatModuleSize } from '../../kernel';
 import { ModuleItem } from './module-item';
 import { styles as searchStyles } from '../../components/SearchBar.styles';
 import { normalizeSearch } from '../../components/search-utils';
@@ -76,28 +76,21 @@ export const ModuleStorePanel: React.FC = () => {
 			<div style={styles.header}>
 				<div style={styles.titleRow}>
 					<span style={styles.title}>🧩 {t('moduleStorePanel.title')}</span>
-					<div style={{
-						position: 'absolute',
-						right: '44px',
-						top: '50%',
-						transform: 'translateY(-50%)',
-						width: isSearchFocused || searchQuery ? 'calc(100% - 50px)' : '100px',
-						zIndex: 10,
-						transition: 'width 0.25s cubic-bezier(0.2, 0, 0, 1)',
-						display: 'flex',
-						justifyContent: 'flex-end', // Keep content explicitly handled if needed, but width controls it
-					}}>
+					<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
 						<div style={{
 							...searchStyles.inputWrapper,
 							...(isSearchFocused ? searchStyles.inputWrapperFocus : {}),
 							padding: '4px 8px',
 							height: '32px',
-							width: '100%', // Fill the animated container
-							background: 'var(--halo-bg-secondary)', // Ensure opacity to cover title
+							width: isSearchFocused || searchQuery ? '160px' : '100px',
+							transition: 'width 0.25s cubic-bezier(0.2, 0, 0, 1)',
+							background: 'var(--halo-bg-secondary)',
+							display: 'flex',
+							alignItems: 'center'
 						}}
 						onClick={() => searchInputRef.current?.focus()}
 						>
-							<span style={{ fontSize: '12px', opacity: 0.5 }}>🔍</span>
+							<span style={{ fontSize: '12px', opacity: 0.5, marginRight: '6px' }}>🔍</span>
 							<input
 								ref={searchInputRef}
 								style={{ ...searchStyles.input as React.CSSProperties, fontSize: '12px' }}
@@ -109,10 +102,10 @@ export const ModuleStorePanel: React.FC = () => {
 								placeholder={isSearchFocused || searchQuery ? t('common.search') : ''}
 							/>
 						</div>
+						<button style={styles.btnRefresh} onClick={handleRefresh} disabled={remoteLoading} title={t('moduleStorePanel.checkUpdates')}>
+							{remoteLoading ? '⏳' : '🔄'}
+						</button>
 					</div>
-					<button style={styles.btnRefresh} onClick={handleRefresh} disabled={remoteLoading} title={t('moduleStorePanel.checkUpdates')}>
-						{remoteLoading ? '⏳' : '🔄'}
-					</button>
 				</div>
 				<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
 					<div style={styles.tabs}>
@@ -158,9 +151,10 @@ export const ModuleStorePanel: React.FC = () => {
 			) : (
 				<div style={styles.list}>
 					{displayModules.length > 0 ? (
-						displayModules.map((mod) => (
+						displayModules.map((mod, index) => (
 							<ModuleItem
 								key={mod.id}
+								index={index + 1}
 								module={mod}
 								status={installing === mod.id ? 'downloading' : getStatus(mod.id)}
 								isCore={isCore(mod.id)}

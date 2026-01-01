@@ -11,7 +11,8 @@
 		"typecheck": "turbo run typecheck",
 		"verify": "node scripts/verify-architecture.js",
 		"prebuild": "node scripts/verify-architecture.js",
-		"sync-public": "node scripts/sync-to-public.cjs"
+		"sync-public": "node scripts/sync-to-public.cjs",
+		"generate-registry": "node scripts/generate-tool-registry.mjs"
 	},
 	"devDependencies": {
 		"chrome-types": "^0.1.327",

@@ -1,0 +1,8 @@
+{
+	"id": "password-gen",
+	"icon": "🔐",
+	"category": "security",
+	"size": 25000,
+	"builtIn": false,
+	"keywords": []
+}
