@@ -30,9 +30,7 @@ export const LauncherHeader: React.FC<LauncherHeaderProps> = ({
 			flexShrink: 0,
 			borderBottom: '1px solid var(--halo-border, #333)',
 			background: 'var(--halo-bg-secondary, #222)',
-			zIndex: 50,
 			boxSizing: 'border-box',
-			position: 'relative',
 		}}>
 			<div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
 				{activeTool ? (
