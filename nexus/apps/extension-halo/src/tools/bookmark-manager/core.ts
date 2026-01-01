@@ -4,6 +4,7 @@ import type { BookmarkNode, BookmarkSearchResult } from './types';
 
 // Get all bookmarks
 export async function getAllBookmarks(): Promise<BookmarkNode[]> {
+	if (!chrome.bookmarks) return [];
 	return new Promise((resolve) => {
 		chrome.bookmarks.getTree((nodes) => resolve(nodes as BookmarkNode[]));
 	});
@@ -11,7 +12,7 @@ export async function getAllBookmarks(): Promise<BookmarkNode[]> {
 
 // Search bookmarks
 export async function searchBookmarks(query: string): Promise<BookmarkSearchResult[]> {
-	if (!query.trim()) return [];
+	if (!query.trim() || !chrome.bookmarks) return [];
 
 	return new Promise((resolve) => {
 		chrome.bookmarks.search(query, async (results) => {
@@ -44,6 +45,7 @@ export async function searchBookmarks(query: string): Promise<BookmarkSearchResu
 
 // Delete bookmark
 export async function deleteBookmark(id: string): Promise<void> {
+	if (!chrome.bookmarks) return;
 	return chrome.bookmarks.remove(id);
 }
 
@@ -58,6 +60,7 @@ export function openBookmark(url: string, newTab = false): void {
 
 // Get recent bookmarks
 export async function getRecentBookmarks(limit = 20): Promise<BookmarkSearchResult[]> {
+	if (!chrome.bookmarks) return [];
 	return new Promise((resolve) => {
 		chrome.bookmarks.getRecent(limit, async (results) => {
 			const items: BookmarkSearchResult[] = [];

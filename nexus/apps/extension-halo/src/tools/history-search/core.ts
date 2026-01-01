@@ -4,6 +4,7 @@ import type { HistoryItem } from './types';
 
 // Search history
 export async function searchHistory(query: string, maxResults = 50): Promise<HistoryItem[]> {
+	if (!chrome.history) return [];
 	return new Promise((resolve) => {
 		chrome.history.search(
 			{ text: query, maxResults, startTime: 0 },
@@ -23,11 +24,13 @@ export async function searchHistory(query: string, maxResults = 50): Promise<His
 
 // Delete history item
 export async function deleteHistoryItem(url: string): Promise<void> {
+	if (!chrome.history) return;
 	return chrome.history.deleteUrl({ url });
 }
 
 // Get recent history
 export async function getRecentHistory(maxResults = 30): Promise<HistoryItem[]> {
+	if (!chrome.history) return [];
 	return searchHistory('', maxResults);
 }
 
