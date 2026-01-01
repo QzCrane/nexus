@@ -67,13 +67,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 					<h1 style={commonStyles.title}>HALO</h1>
 				</div>
 				<div style={commonStyles.headerActions}>
-					<button 
-						style={{ ...commonStyles.iconBtn, fontSize: '12px', width: 'auto', padding: '0 6px' }} 
-						onClick={toggleLabels}
-						title={showLabels ? t('layout.hideLabels') : t('layout.showLabels')}
-					>
-						{showLabels ? '📝' : '✖️'}
-					</button>
+
 					<button 
 						style={commonStyles.iconBtn} 
 						onClick={popOutWindow}
@@ -148,7 +142,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 													}}
 													title={isReady ? t(`tools.${tool.id}.name`) : `${t(`tools.${tool.id}.name`)} (${t('common.comingSoon')})`}
 												>
-													<span style={commonStyles.toolIcon}>{tool.icon}</span>
+													<span style={{ ...commonStyles.toolIcon, fontSize: settings?.iconSize === 'large' ? '32px' : settings?.iconSize === 'small' ? '18px' : '24px' }}>{tool.icon}</span>
 													{showLabels && <span style={commonStyles.toolLabel}>{t(`tools.${tool.id}.name`)}</span>}
 												</button>
 											);

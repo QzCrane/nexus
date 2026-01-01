@@ -88,7 +88,7 @@ export const commonStyles: Record<string, CSSProperties> = {
 	},
 	toolGrid: {
 		display: 'grid',
-		gridTemplateColumns: 'repeat(4, 1fr)',
+		gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))',
 		gap: '8px',
 	},
 	resizeHandle: {

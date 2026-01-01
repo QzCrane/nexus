@@ -4,7 +4,7 @@
 import React from 'react';
 import { Card, Toggle } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
-import type { HaloSettings } from '../../kernel';
+import type { HaloSettings, IconSize } from '../../kernel';
 import { styles } from './panel.styles';
 
 interface InterfaceSettingsProps {
@@ -20,6 +20,36 @@ export const InterfaceSettings: React.FC<InterfaceSettingsProps> = ({ settings, 
 			<div style={styles.section}>
 				<span style={styles.sectionTitle}>⚙️ {t('settings.interface')}</span>
 				
+				{/* Show Tool Labels */}
+				<div style={styles.row}>
+					<div>
+						<div style={styles.label}>{t('settings.showLabels')}</div>
+						<div style={styles.sublabel}>{t('settings.showLabelsDesc')}</div>
+					</div>
+					<Toggle
+						checked={settings.showToolLabels}
+						onChange={(checked) => onUpdate('showToolLabels', checked)}
+					/>
+				</div>
+
+				{/* Icon Size */}
+				<div style={styles.row}>
+					<div>
+						<div style={styles.label}>{t('settings.iconSize')}</div>
+						<div style={styles.sublabel}>{t('settings.iconSizeDesc')}</div>
+					</div>
+					<select 
+						style={styles.select}
+						value={settings.iconSize || 'medium'}
+						onChange={(e) => onUpdate('iconSize', e.target.value as IconSize)}
+					>
+						<option value="small">{t('settings.small')}</option>
+						<option value="medium">{t('settings.medium')}</option>
+						<option value="large">{t('settings.large')}</option>
+					</select>
+				</div>
+
+				{/* Compact Mode */}
 				<div style={styles.row}>
 					<div>
 						<div style={styles.label}>{t('settings.compactMode')}</div>
@@ -30,9 +60,6 @@ export const InterfaceSettings: React.FC<InterfaceSettingsProps> = ({ settings, 
 						onChange={(checked) => onUpdate('compactMode', checked)}
 					/>
 				</div>
-
-
-
 
 			</div>
 		</Card>

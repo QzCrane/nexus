@@ -1,12 +1,14 @@
 // goal: Global settings type definitions
 
 export type ThemeMode = 'dark' | 'light' | 'system';
+export type IconSize = 'small' | 'medium' | 'large';
 
 export interface HaloSettings {
 	theme: ThemeMode;
 	accentColor: string;
-	compactMode: boolean;
+	compactMode: boolean; // Keeping for backward compatibility or other uses
 	showToolLabels: boolean;
+	iconSize: IconSize;
 	defaultTool: string | null;
 }
 
@@ -15,6 +17,7 @@ export const DEFAULT_SETTINGS: HaloSettings = {
 	accentColor: '#7c3aed',
 	compactMode: false,
 	showToolLabels: true,
+	iconSize: 'medium',
 	defaultTool: null,
 };
 
