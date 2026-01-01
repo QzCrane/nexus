@@ -35,8 +35,20 @@ export const LauncherToolPage: React.FC<LauncherToolPageProps> = ({
 		return !tool?.system;
 	});
 
+	const activeToolMeta = visibleTools.find(t => t.id === activeTool);
+	const activeIsSystem = activeToolMeta?.system;
+
 	return (
-		<div style={{ width: '50%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+		<div style={{ 
+			width: '50%', 
+			height: '100%', 
+			display: 'flex', 
+			flexDirection: 'column',
+			flexShrink: 0,
+			flexGrow: 0,
+			boxSizing: 'border-box',
+			background: 'var(--halo-bg)'
+		}}>
 			<header style={commonStyles.header}>
 				<div style={commonStyles.headerContent}>
 					<button 
@@ -48,52 +60,64 @@ export const LauncherToolPage: React.FC<LauncherToolPageProps> = ({
 					</button>
 					
 					{/* Taskbar / Tabs */}
-					<div className="halo-scrollbar" style={{ 
-						display: 'flex', alignItems: 'center', gap: '4px',
-						overflowX: 'auto', maxWidth: '100%', paddingBottom: '2px',
-					}}>
-						{taskbarTools.map(toolId => {
-							const tool = visibleTools.find(t => t.id === toolId);
-							if (!tool) return null;
-							const isActive = activeTool === toolId;
-							return (
-								<div 
-									key={toolId}
-									onClick={() => onSelectTool(toolId)}
-									title={t(`tools.${tool.id}.name`)}
-									style={{
-										display: 'flex', alignItems: 'center', gap: '6px',
-										padding: '4px 8px', borderRadius: '6px',
-										background: isActive ? 'var(--halo-bg-tertiary)' : 'transparent',
-										cursor: 'pointer',
-										border: isActive ? '1px solid var(--halo-border)' : '1px solid transparent',
-										opacity: isActive ? 1 : 0.6,
-										maxWidth: isActive ? '160px' : '40px',
-										height: '32px', flexShrink: isActive ? 0 : 1,
-										whiteSpace: 'nowrap', overflow: 'hidden',
-										transition: 'all 0.2s',
-									}}
-								>
-									<span style={{ fontSize: '16px' }}>{tool.icon}</span>
-									{isActive && (
-										<span style={{ fontSize: '13px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-											{t(`tools.${tool.id}.name`)}
-										</span>
-									)}
-									{isActive && (
-										<span 
-											style={{ fontSize: '10px', marginLeft: '4px', opacity: 0.5, cursor: 'pointer', padding: '2px' }}
-											onClick={(e) => { e.stopPropagation(); onCloseTool(toolId); }}
-											onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
-											onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.5')}
-										>
-											✖️
-										</span>
-									)}
-								</div>
-							);
-						})}
-					</div>
+					{taskbarTools.length > 0 && (
+						<div className="halo-scrollbar" style={{ 
+							display: 'flex', alignItems: 'center', gap: '4px',
+							overflowX: 'auto', maxWidth: '100%', paddingBottom: '2px',
+						}}>
+							{taskbarTools.map(toolId => {
+								const tool = visibleTools.find(t => t.id === toolId);
+								if (!tool) return null;
+								const isActive = activeTool === toolId;
+								return (
+									<div 
+										key={toolId}
+										onClick={() => onSelectTool(toolId)}
+										title={t(`tools.${tool.id}.name`)}
+										style={{
+											display: 'flex', alignItems: 'center', gap: '6px',
+											padding: '4px 8px', borderRadius: '6px',
+											background: isActive ? 'var(--halo-bg-tertiary)' : 'transparent',
+											cursor: 'pointer',
+											border: isActive ? '1px solid var(--halo-border)' : '1px solid transparent',
+											opacity: isActive ? 1 : 0.6,
+											maxWidth: isActive ? '160px' : '40px',
+											height: '32px', flexShrink: isActive ? 0 : 1,
+											whiteSpace: 'nowrap', overflow: 'hidden',
+											transition: 'all 0.2s',
+										}}
+									>
+										<span style={{ fontSize: '16px' }}>{tool.icon}</span>
+										{isActive && (
+											<span style={{ fontSize: '13px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+												{t(`tools.${tool.id}.name`)}
+											</span>
+										)}
+										{isActive && (
+											<span 
+												style={{ fontSize: '10px', marginLeft: '4px', opacity: 0.5, cursor: 'pointer', padding: '2px' }}
+												onClick={(e) => { e.stopPropagation(); onCloseTool(toolId); }}
+												onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+												onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.5')}
+											>
+												✖️
+											</span>
+										)}
+									</div>
+								);
+							})}
+						</div>
+					)}
+					
+					{/* Fallback Title for System Tools or Empty Taskbar */}
+					{(activeIsSystem || taskbarTools.length === 0) && activeToolMeta && (
+						<div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '8px' }}>
+                            {activeIsSystem && <span style={{ fontSize: '18px' }}>{activeToolMeta.icon}</span>}
+							<span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--halo-text)' }}>
+								{t(`tools.${activeTool}.name`)}
+							</span>
+						</div>
+					)}
 				</div>
 				<div style={commonStyles.headerActions}>
 					<button 

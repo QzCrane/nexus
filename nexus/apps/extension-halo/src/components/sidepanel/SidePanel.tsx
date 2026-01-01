@@ -138,15 +138,24 @@ export const SidePanel: React.FC = () => {
 	}
 
 	return (
-		<LauncherLayout
-			activeTool={activeTool}
-			openTools={openTools || []} // Safety fallback
-			onCloseTool={handleCloseTool}
-			onSelectTool={handleToolSelect}
-			onBack={handleBack}
-			settings={settings}
-			onSettingsChange={handleSettingsChange}
-			visibleTools={visibleTools}
-		/>
+		<div style={{ 
+			position: 'relative', 
+			width: '100%', 
+			height: '100vh', 
+			overflow: 'hidden', 
+			background: 'var(--halo-bg, #1a1a1a)', 
+			color: 'var(--halo-text)'
+		}}>
+			<LauncherLayout
+				activeTool={activeTool}
+				openTools={openTools || []}
+				onCloseTool={handleCloseTool}
+				onSelectTool={handleToolSelect}
+				onBack={handleBack}
+				settings={settings}
+				onSettingsChange={handleSettingsChange}
+				visibleTools={visibleTools}
+			/>
+		</div>
 	);
 };

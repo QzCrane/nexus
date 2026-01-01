@@ -60,7 +60,15 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 	const toolCount = visibleTools.filter(t => !t.system).length;
 
 	return (
-		<div style={{ width: '50%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+		<div style={{ 
+			width: '50%', 
+			height: '100%', 
+			display: 'flex', 
+			flexDirection: 'column', 
+			flexShrink: 0, 
+			flexGrow: 0,
+			boxSizing: 'border-box'
+		}}>
 			<header style={commonStyles.header}>
 				<div style={commonStyles.headerContent}>
 					<span style={{ fontSize: '20px' }}>🌟</span>
