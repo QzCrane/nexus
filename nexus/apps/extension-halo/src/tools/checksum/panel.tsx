@@ -3,7 +3,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { useTranslation } from '../../i18n';
 import type { HashAlgorithm } from './core';
-import { calculateFileHash, verifyHash, formatFileSize } from './core';
+import { calculateChecksum, verifyChecksum, formatFileSize } from './core';
 import { styles } from './panel.styles';
 
 export const ChecksumPanel: React.FC = () => {
@@ -19,8 +19,8 @@ export const ChecksumPanel: React.FC = () => {
 	const handleFile = useCallback(async (f: File) => {
 		setFile(f);
 		setLoading(true);
-		const h = await calculateFileHash(f, algorithm);
-		setHash(h);
+		const result = await calculateChecksum(f, algorithm);
+		setHash(result.hash);
 		setLoading(false);
 	}, [algorithm]);
 
@@ -36,8 +36,8 @@ export const ChecksumPanel: React.FC = () => {
 		setAlgorithm(alg);
 		if (file) {
 			setLoading(true);
-			const h = await calculateFileHash(file, alg);
-			setHash(h);
+			const result = await calculateChecksum(file, alg);
+			setHash(result.hash);
 			setLoading(false);
 		}
 	}, [file]);
@@ -47,7 +47,7 @@ export const ChecksumPanel: React.FC = () => {
 		navigator.clipboard.writeText(hash);
 	}, [hash]);
 
-	const isMatch = expected ? verifyHash(hash, expected) : null;
+	const isMatch = expected ? verifyChecksum(hash, expected) : null;
 
 	return (
 		<div style={styles.wrapper}>
@@ -68,6 +68,7 @@ export const ChecksumPanel: React.FC = () => {
 			<div style={styles.row}>
 				<span style={{ fontSize: '11px', color: 'var(--halo-text-muted)' }}>{t('checksum.algorithm')}</span>
 				<select style={styles.select} value={algorithm} onChange={(e) => handleAlgorithmChange(e.target.value as HashAlgorithm)}>
+					<option>MD5</option>
 					<option>SHA-1</option>
 					<option>SHA-256</option>
 					<option>SHA-512</option>

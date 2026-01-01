@@ -14,7 +14,6 @@ interface LauncherHomePageProps {
 	settings: HaloSettings | null;
 	onSettingsChange: (settings: HaloSettings) => void;
 	onSelectTool: (id: ToolId) => void;
-	onToggleMode: () => void;
 	collapsedCategories: Record<string, boolean>;
 	toggleCategory: (category: string) => void;
 }
@@ -24,7 +23,6 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 	settings,
 	onSettingsChange,
 	onSelectTool,
-	onToggleMode,
 	collapsedCategories,
 	toggleCategory
 }) => {
@@ -75,13 +73,6 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 						title={showLabels ? t('layout.hideLabels') : t('layout.showLabels')}
 					>
 						{showLabels ? '📝' : '✖️'}
-					</button>
-					<button 
-						style={commonStyles.iconBtn} 
-						onClick={onToggleMode}
-						title={t('layout.mode') + ': ' + t('layout.launcher')}
-					>
-						📱
 					</button>
 					<button 
 						style={commonStyles.iconBtn} 

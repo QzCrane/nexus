@@ -1,8 +1,15 @@
 {
 	"id": "checksum",
-	"icon": "🛡️",
+	"icon": "🔐",
 	"category": "security",
-	"size": 15000,
-	"builtIn": false,
-	"keywords": []
+	"size": 8000,
+	"builtIn": true,
+	"keywords": [
+		"md5",
+		"sha",
+		"hash",
+		"verify",
+		"file",
+		"integrity"
+	]
 }

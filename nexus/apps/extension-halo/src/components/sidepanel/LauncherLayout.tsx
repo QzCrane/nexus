@@ -8,14 +8,13 @@ import { ScrollbarStyles } from './classic-layout-parts';
 import { LauncherHomePage } from './LauncherHomePage';
 import { LauncherToolPage } from './LauncherToolPage';
 
-export const LauncherLayout: React.FC<LayoutProps & { onToggleMode: () => void }> = ({
+export const LauncherLayout: React.FC<LayoutProps> = ({
 	activeTool,
 	onSelectTool,
 	onBack,
 	settings,
 	onSettingsChange,
 	visibleTools,
-	onToggleMode,
 	openTools,
 	onCloseTool
 }) => {
@@ -41,7 +40,6 @@ export const LauncherLayout: React.FC<LayoutProps & { onToggleMode: () => void }
 					settings={settings}
 					onSettingsChange={onSettingsChange}
 					onSelectTool={onSelectTool}
-					onToggleMode={onToggleMode}
 					collapsedCategories={collapsedCategories}
 					toggleCategory={toggleCategory}
 				/>
