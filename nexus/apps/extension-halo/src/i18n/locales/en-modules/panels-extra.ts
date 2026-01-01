@@ -127,6 +127,7 @@ export const panelsExtra = {
 		uninstall: 'Uninstall',
 		loading: 'Loading modules...',
 		statsModules: 'modules',
+		searchPlaceholder: 'Search modules...',
 	},
 	archive: {
 		capture: 'Save This Page',

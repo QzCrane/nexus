@@ -73,8 +73,8 @@ export const modules = {
 			desc: 'Customize HALO appearance & behavior',
 		},
 		'smooth-scroll': {
-			name: 'Scroll',
-			desc: 'Smooth scrolling for all pages',
+			name: 'Smooth Scroll',
+			desc: 'Silky smooth scrolling for all pages',
 		},
 		tabs: {
 			name: 'Tabs',
@@ -333,6 +333,18 @@ export const modules = {
 		'tab-group': {
 			name: 'Tab Group',
 			desc: 'Manage browser tab groups',
+		},
+		'media-sniffer': {
+			name: 'Media Sniffer',
+			desc: 'Detect and download page media',
+		},
+		'code-snippets': {
+			name: 'Code Snippets',
+			desc: 'Save and manage code snippets',
+		},
+		'api-tester': {
+			name: 'API Tester',
+			desc: 'Send HTTP requests and view responses',
 		},
 	},
 };

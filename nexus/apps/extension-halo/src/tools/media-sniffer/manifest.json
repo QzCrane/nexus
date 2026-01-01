@@ -1,0 +1,15 @@
+{
+	"id": "media-sniffer",
+	"icon": "🎬",
+	"category": "media",
+	"size": 25000,
+	"builtIn": false,
+	"keywords": [
+		"video",
+		"image",
+		"audio",
+		"download",
+		"extract",
+		"sniff"
+	]
+}

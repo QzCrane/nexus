@@ -127,6 +127,7 @@ export const panelsExtra = {
 		uninstall: '卸载',
 		loading: '加载模块中...',
 		statsModules: '个模块',
+		searchPlaceholder: '搜索模块...',
 	},
 	archive: {
 		capture: '保存此页面',

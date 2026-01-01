@@ -19,6 +19,17 @@ export interface GeneratedToolMeta {
 
 export const GENERATED_TOOLS: GeneratedToolMeta[] = [
 	{
+		id: 'api-tester',
+		icon: '🚀',
+		category: 'dev',
+		size: 30000,
+		builtIn: false,
+		system: false,
+		keywords: ["api","rest","http","postman","request","fetch"],
+		features: undefined,
+		dependencies: undefined,
+	},
+	{
 		id: 'archive',
 		icon: '💾',
 		category: 'efficiency',
@@ -81,6 +92,17 @@ export const GENERATED_TOOLS: GeneratedToolMeta[] = [
 		builtIn: false,
 		system: false,
 		keywords: [],
+		features: undefined,
+		dependencies: undefined,
+	},
+	{
+		id: 'code-snippets',
+		icon: '📝',
+		category: 'dev',
+		size: 20000,
+		builtIn: false,
+		system: false,
+		keywords: ["snippet","code","template","gist","paste"],
 		features: undefined,
 		dependencies: undefined,
 	},
@@ -393,23 +415,23 @@ export const GENERATED_TOOLS: GeneratedToolMeta[] = [
 		dependencies: undefined,
 	},
 	{
+		id: 'media-sniffer',
+		icon: '🎬',
+		category: 'media',
+		size: 25000,
+		builtIn: false,
+		system: false,
+		keywords: ["video","image","audio","download","extract","sniff"],
+		features: undefined,
+		dependencies: undefined,
+	},
+	{
 		id: 'mock-data',
 		icon: '🎲',
 		category: 'dev',
 		size: 55000,
 		builtIn: false,
 		system: false,
-		keywords: [],
-		features: undefined,
-		dependencies: undefined,
-	},
-	{
-		id: 'module-store',
-		icon: '🧩',
-		category: 'general',
-		size: 15000,
-		builtIn: true,
-		system: true,
 		keywords: [],
 		features: undefined,
 		dependencies: undefined,
@@ -619,17 +641,6 @@ export const GENERATED_TOOLS: GeneratedToolMeta[] = [
 		size: 25000,
 		builtIn: false,
 		system: false,
-		keywords: [],
-		features: undefined,
-		dependencies: undefined,
-	},
-	{
-		id: 'settings',
-		icon: '⚙️',
-		category: 'general',
-		size: 10000,
-		builtIn: true,
-		system: true,
 		keywords: [],
 		features: undefined,
 		dependencies: undefined,
@@ -922,5 +933,5 @@ export const GENERATED_TOOLS: GeneratedToolMeta[] = [
 	}
 ];
 
-export const TOOL_IDS = ['archive', 'base64', 'bookmark-manager', 'checksum', 'clipboard', 'code-formatter', 'color-palette', 'color-picker', 'cookie-manager', 'cron', 'crypto', 'csp-analyzer', 'csv-to-json', 'csv-viewer', 'diff', 'dom-selector', 'emoji-picker', 'exif-reader', 'font-inspector', 'gzip', 'hash', 'headers-viewer', 'hex-dump', 'history-search', 'html-entity', 'http-status', 'image-tools', 'ip-lookup', 'json-formatter', 'json-path', 'json-to-csv', 'jwt-decoder', 'lorem-ipsum', 'markdown', 'mock-data', 'module-store', 'morse', 'network', 'number-base', 'outline', 'page-annotate', 'password-gen', 'pdf', 'permissions', 'pomodoro', 'protobuf', 'punycode', 'qrcode', 'random-gen', 'reader-mode', 'regex', 'rot13', 'ruler', 'screenshot', 'session-manager', 'settings', 'shortcuts', 'smooth-scroll', 'sql-formatter', 'ssl-cert', 'sticky-notes', 'storage-editor', 'subresource', 'tab-group', 'table-extractor', 'tabs', 'tech-stack', 'text-to-speech', 'text-tools', 'timer', 'timestamp', 'todo-list', 'totp', 'translate', 'unit-converter', 'url', 'user-agent', 'userscripts', 'uuid', 'xml-formatter', 'xor', 'yaml'] as const;
+export const TOOL_IDS = ['api-tester', 'archive', 'base64', 'bookmark-manager', 'checksum', 'clipboard', 'code-formatter', 'code-snippets', 'color-palette', 'color-picker', 'cookie-manager', 'cron', 'crypto', 'csp-analyzer', 'csv-to-json', 'csv-viewer', 'diff', 'dom-selector', 'emoji-picker', 'exif-reader', 'font-inspector', 'gzip', 'hash', 'headers-viewer', 'hex-dump', 'history-search', 'html-entity', 'http-status', 'image-tools', 'ip-lookup', 'json-formatter', 'json-path', 'json-to-csv', 'jwt-decoder', 'lorem-ipsum', 'markdown', 'media-sniffer', 'mock-data', 'morse', 'network', 'number-base', 'outline', 'page-annotate', 'password-gen', 'pdf', 'permissions', 'pomodoro', 'protobuf', 'punycode', 'qrcode', 'random-gen', 'reader-mode', 'regex', 'rot13', 'ruler', 'screenshot', 'session-manager', 'shortcuts', 'smooth-scroll', 'sql-formatter', 'ssl-cert', 'sticky-notes', 'storage-editor', 'subresource', 'tab-group', 'table-extractor', 'tabs', 'tech-stack', 'text-to-speech', 'text-tools', 'timer', 'timestamp', 'todo-list', 'totp', 'translate', 'unit-converter', 'url', 'user-agent', 'userscripts', 'uuid', 'xml-formatter', 'xor', 'yaml'] as const;
 export type GeneratedToolId = (typeof TOOL_IDS)[number];

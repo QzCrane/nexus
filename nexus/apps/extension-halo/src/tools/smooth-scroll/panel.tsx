@@ -68,6 +68,22 @@ export const SmoothScrollPanel: React.FC = () => {
 	return (
 		<div style={styles.wrapper}>
 			{/* Master Toggle */}
+			<Card variant="default" padding="md">
+				<div style={{ ...styles.row, marginBottom: 0 }}>
+					<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+						<span style={{ fontSize: '15px', fontWeight: 600, color: 'var(--halo-text)' }}>
+							🚀 {t('smoothScroll.enable')}
+						</span>
+						<span style={{ fontSize: '12px', color: 'var(--halo-text-secondary)', opacity: 0.8 }}>
+							{t('smoothScroll.enableDesc')}
+						</span>
+					</div>
+					<Toggle 
+						checked={settings.enabled} 
+						onChange={(checked) => updateSetting('enabled', checked)} 
+					/>
+				</div>
+			</Card>
 
 
 			{/* Profiles & Config Management */}

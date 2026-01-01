@@ -14,19 +14,23 @@
         --halo-text-muted: #666666;
         --halo-border: #444444;
         --halo-accent: #7c3aed;
+        --halo-input-bg: #2a2a2a;
+        --halo-card-bg: #242424;
       }
-      * {
+      html, body, #root {
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
         margin: 0;
         padding: 0;
-        box-sizing: border-box;
       }
-      html {
-        scroll-behavior: smooth;
+      * {
+        box-sizing: border-box;
       }
       body {
         background: var(--halo-bg);
         color: var(--halo-text);
-        overflow-x: hidden;
+        overflow: hidden; /* Prevent body scroll */
         scroll-behavior: smooth;
         transition: background 0.2s, color 0.2s;
       }
@@ -54,6 +58,21 @@
       }
       ::-webkit-scrollbar-thumb:hover {
         background: var(--halo-text-muted);
+      }
+      /* Thin scrollbar for dock bar */
+      .halo-thin-scrollbar::-webkit-scrollbar {
+        height: 3px;
+      }
+      .halo-thin-scrollbar::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .halo-thin-scrollbar::-webkit-scrollbar-thumb {
+        background: var(--halo-border);
+        border-radius: 3px;
+      }
+      /* Universal smooth scroll for sidepanel - always enabled */
+      *, *::before, *::after {
+        scroll-behavior: smooth;
       }
     </style>
     <!-- CSP-compliant: Early init (theme + smooth scroll) -->

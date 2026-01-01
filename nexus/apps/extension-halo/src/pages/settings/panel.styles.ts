@@ -8,6 +8,7 @@ export const styles: Record<string, React.CSSProperties> = {
 		display: 'flex',
 		flexDirection: 'column',
 		gap: '16px',
+		padding: '0 0 24px 0', // Bottom padding for scroll room
 	},
 	section: {
 		display: 'flex',

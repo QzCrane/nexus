@@ -9,6 +9,7 @@ export const base = {
 		disabled: '已禁用',
 		comingSoon: '即将推出',
 		selectTool: '选择一个工具开始',
+		pinHint: '右键置顶分类',
 		noResults: '未找到工具',
 		loading: '加载中...',
 		save: '保存',
@@ -21,6 +22,7 @@ export const base = {
 		permissionRequired: '需要权限',
 		grantPermission: '授予权限',
 		permissionDesc: '此工具需要访问权限才能工作。',
+		available: '可用',
 	},
 	categories: {
 		general: '通用工具',

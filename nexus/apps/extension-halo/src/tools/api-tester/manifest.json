@@ -1,0 +1,15 @@
+{
+	"id": "api-tester",
+	"icon": "🚀",
+	"category": "dev",
+	"size": 30000,
+	"builtIn": false,
+	"keywords": [
+		"api",
+		"rest",
+		"http",
+		"postman",
+		"request",
+		"fetch"
+	]
+}

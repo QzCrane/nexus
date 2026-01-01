@@ -10,6 +10,8 @@ export interface HaloSettings {
 	showToolLabels: boolean;
 	iconSize: IconSize;
 	defaultTool: string | null;
+	pinnedTools: string[];
+	toolOrder: Record<string, string[]>;
 }
 
 export const DEFAULT_SETTINGS: HaloSettings = {
@@ -19,6 +21,8 @@ export const DEFAULT_SETTINGS: HaloSettings = {
 	showToolLabels: true,
 	iconSize: 'medium',
 	defaultTool: null,
+	pinnedTools: [],
+	toolOrder: {},
 };
 
 export const ACCENT_COLORS = [

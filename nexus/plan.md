@@ -8,10 +8,11 @@
 
 ### 🛠️ [HALO (万能工具箱)](apps/extension-halo/plan.md)
 
-> **状态**: 核心功能完备，DevTools 完毕，进入蓝海功能开发期。
+> **状态**: 核心功能完备，DevTools 完毕，进入高阶 UX 抛光与蓝海功能开发期。
 
-- **核心**: QR, Color, JSON, Ruler, Settings [✅]
-- **开发**: Regex, Base64, Hash, UUID, Time, URL [✅]
+- **核心**: QR, Color, JSON, Ruler, Settings, Permissions [✅]
+- **搜索**: 全语境搜索、拼音检索、中英双语支持 [✅]
+- **架构**: 响应式 i18n 同步、权限系统中心化、系统页面溢出滚动 [✅]
 - **效率**: PDF 工具箱 (Local), 截图批注, 网页存档 [✅]
 
 ### 🎵 [SPECTRA (媒体控制)](apps/extension-spectra/plan.md)

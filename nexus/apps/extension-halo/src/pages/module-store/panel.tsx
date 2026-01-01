@@ -74,38 +74,35 @@ export const ModuleStorePanel: React.FC = () => {
 	return (
 		<div style={styles.wrapper}>
 			<div style={styles.header}>
-				<div style={styles.titleRow}>
-					<span style={styles.title}>🧩 {t('moduleStorePanel.title')}</span>
-					<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-						<div style={{
-							...searchStyles.inputWrapper,
-							...(isSearchFocused ? searchStyles.inputWrapperFocus : {}),
-							padding: '4px 8px',
-							height: '32px',
-							width: isSearchFocused || searchQuery ? '160px' : '100px',
-							transition: 'width 0.25s cubic-bezier(0.2, 0, 0, 1)',
-							background: 'var(--halo-bg-secondary)',
-							display: 'flex',
-							alignItems: 'center'
-						}}
-						onClick={() => searchInputRef.current?.focus()}
-						>
-							<span style={{ fontSize: '12px', opacity: 0.5, marginRight: '6px' }}>🔍</span>
-							<input
-								ref={searchInputRef}
-								style={{ ...searchStyles.input as React.CSSProperties, fontSize: '12px' }}
-								type="text"
-								value={searchQuery}
-								onChange={(e) => setSearchQuery(e.target.value)}
-								onFocus={() => setIsSearchFocused(true)}
-								onBlur={() => setIsSearchFocused(false)}
-								placeholder={isSearchFocused || searchQuery ? t('common.search') : ''}
-							/>
-						</div>
-						<button style={styles.btnRefresh} onClick={handleRefresh} disabled={remoteLoading} title={t('moduleStorePanel.checkUpdates')}>
-							{remoteLoading ? '⏳' : '🔄'}
-						</button>
+				<div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%' }}>
+					<div style={{
+						...searchStyles.inputWrapper,
+						...(isSearchFocused ? searchStyles.inputWrapperFocus : {}),
+						flex: 1,
+						padding: '4px 12px',
+						height: '40px',
+						background: 'var(--halo-bg-secondary)',
+						display: 'flex',
+						alignItems: 'center',
+						cursor: 'text'
+					}}
+					onClick={() => searchInputRef.current?.focus()}
+					>
+						<span style={{ fontSize: '14px', opacity: 0.5, marginRight: '8px' }}>🔍</span>
+						<input
+							ref={searchInputRef}
+							style={{ ...searchStyles.input as React.CSSProperties, fontSize: '14px', width: '100%' }}
+							type="text"
+							value={searchQuery}
+							onChange={(e) => setSearchQuery(e.target.value)}
+							onFocus={() => setIsSearchFocused(true)}
+							onBlur={() => setIsSearchFocused(false)}
+							placeholder={t('moduleStorePanel.searchPlaceholder') || t('common.search')}
+						/>
 					</div>
+					<button style={{ ...styles.btnRefresh, height: '40px', width: '40px' }} onClick={handleRefresh} disabled={remoteLoading} title={t('moduleStorePanel.checkUpdates')}>
+						{remoteLoading ? '⏳' : '🔄'}
+					</button>
 				</div>
 				<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
 					<div style={styles.tabs}>

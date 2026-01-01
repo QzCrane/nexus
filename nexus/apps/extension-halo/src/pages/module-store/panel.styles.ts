@@ -1,12 +1,6 @@
-// goal: Module Store panel styles
-
-import type React from 'react';
-
 export const styles: Record<string, React.CSSProperties> = {
-	wrapper: { display: 'flex', flexDirection: 'column', gap: '16px', height: '100%', padding: '12px 0 0 0' },
-	header: { display: 'flex', flexDirection: 'column', gap: '12px', padding: '0 12px' },
-	titleRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', minHeight: '36px' },
-	title: { fontSize: '18px', fontWeight: 700, color: 'var(--halo-text)', display: 'flex', alignItems: 'center', gap: '8px' },
+	wrapper: { display: 'flex', flexDirection: 'column', gap: '16px', height: '100%', padding: '0' },
+	header: { display: 'flex', flexDirection: 'column', gap: '12px', padding: '0' },
 	tabs: { display: 'flex', gap: '8px', background: 'var(--halo-bg-secondary)', padding: '4px', borderRadius: '8px', width: 'fit-content' },
 	tab: {
 		padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 600,
@@ -15,7 +9,7 @@ export const styles: Record<string, React.CSSProperties> = {
 	},
 	tabActive: { background: 'var(--halo-bg)', color: 'var(--halo-text)', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' },
 	tabUpdate: { color: '#22c55e' },
-	list: { display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1, minHeight: 0, padding: '0 12px 16px 12px' },
+	list: { display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1, minHeight: 0, padding: '0 0 16px 0' },
 	item: {
 		display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 16px',
 		background: 'var(--halo-bg-secondary)', borderRadius: '12px',

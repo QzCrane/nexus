@@ -1,0 +1,132 @@
+// goal: Styles for media-sniffer panel
+
+import type { CSSProperties } from 'react';
+
+export const styles: Record<string, CSSProperties> = {
+	wrapper: {
+		display: 'flex',
+		flexDirection: 'column',
+		gap: '12px',
+		padding: '12px',
+		height: '100%',
+		overflow: 'auto',
+	},
+	header: {
+		display: 'flex',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+		gap: '8px',
+	},
+	filterRow: {
+		display: 'flex',
+		gap: '8px',
+		flexWrap: 'wrap',
+	},
+	chip: {
+		padding: '4px 10px',
+		borderRadius: '12px',
+		border: '1px solid var(--halo-border)',
+		background: 'var(--halo-bg)',
+		cursor: 'pointer',
+		fontSize: '12px',
+		transition: 'all 0.15s',
+	},
+	chipActive: {
+		background: 'var(--halo-accent)',
+		color: 'white',
+		borderColor: 'var(--halo-accent)',
+	},
+	btn: {
+		padding: '8px 14px',
+		borderRadius: '6px',
+		border: 'none',
+		background: 'var(--halo-accent)',
+		color: 'white',
+		cursor: 'pointer',
+		fontWeight: 500,
+		display: 'flex',
+		alignItems: 'center',
+		gap: '6px',
+	},
+	btnSecondary: {
+		padding: '6px 10px',
+		borderRadius: '4px',
+		border: '1px solid var(--halo-border)',
+		background: 'transparent',
+		cursor: 'pointer',
+		fontSize: '12px',
+	},
+	list: {
+		display: 'flex',
+		flexDirection: 'column',
+		gap: '8px',
+	},
+	item: {
+		display: 'flex',
+		alignItems: 'center',
+		gap: '10px',
+		padding: '10px',
+		borderRadius: '8px',
+		border: '1px solid var(--halo-border)',
+		background: 'var(--halo-card-bg)',
+	},
+	preview: {
+		width: '48px',
+		height: '48px',
+		borderRadius: '6px',
+		objectFit: 'cover',
+		background: '#1a1a1a',
+		display: 'flex',
+		alignItems: 'center',
+		justifyContent: 'center',
+		fontSize: '20px',
+		flexShrink: 0,
+	},
+	info: {
+		flex: 1,
+		minWidth: 0,
+		overflow: 'hidden',
+	},
+	filename: {
+		fontWeight: 500,
+		whiteSpace: 'nowrap',
+		overflow: 'hidden',
+		textOverflow: 'ellipsis',
+		fontSize: '13px',
+	},
+	meta: {
+		fontSize: '11px',
+		color: 'var(--halo-text-secondary)',
+		display: 'flex',
+		gap: '8px',
+		marginTop: '2px',
+	},
+	badge: {
+		padding: '2px 6px',
+		borderRadius: '4px',
+		fontSize: '10px',
+		fontWeight: 600,
+		textTransform: 'uppercase',
+	},
+	badgeVideo: {
+		background: 'rgba(239, 68, 68, 0.2)',
+		color: '#ef4444',
+	},
+	badgeAudio: {
+		background: 'rgba(168, 85, 247, 0.2)',
+		color: '#a855f7',
+	},
+	badgeImage: {
+		background: 'rgba(34, 197, 94, 0.2)',
+		color: '#22c55e',
+	},
+	empty: {
+		textAlign: 'center',
+		padding: '40px 20px',
+		color: 'var(--halo-text-secondary)',
+	},
+	stats: {
+		fontSize: '12px',
+		color: 'var(--halo-text-secondary)',
+	},
+};

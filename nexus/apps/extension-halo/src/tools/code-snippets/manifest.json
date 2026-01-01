@@ -1,0 +1,14 @@
+{
+	"id": "code-snippets",
+	"icon": "📝",
+	"category": "dev",
+	"size": 20000,
+	"builtIn": false,
+	"keywords": [
+		"snippet",
+		"code",
+		"template",
+		"gist",
+		"paste"
+	]
+}

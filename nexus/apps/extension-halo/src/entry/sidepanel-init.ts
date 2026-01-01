@@ -78,8 +78,9 @@ function findScrollable(el: HTMLElement | null): HTMLElement {
 }
 
 // ===== Wheel Handler =====
+// inv: Sidepanel smooth scroll is ALWAYS active, ignores the 'enabled' setting
+// The 'enabled' setting only controls web page scroll (via content.ts)
 function onWheel(e: WheelEvent): void {
-	if (!cfg.enabled) return;
 
 	const target = findScrollable(e.target as HTMLElement);
 	const max = target.scrollHeight - target.clientHeight;

@@ -9,6 +9,7 @@ export const base = {
 		disabled: 'Disabled',
 		comingSoon: 'Coming Soon',
 		selectTool: 'Select a tool to begin',
+		pinHint: 'Right click to pin',
 		noResults: 'No tools found',
 		loading: 'Loading...',
 		save: 'Save',
@@ -21,6 +22,7 @@ export const base = {
 		permissionRequired: 'Permission Required',
 		grantPermission: 'Grant Permission',
 		permissionDesc: 'This tool requires permission to work.',
+		available: 'available',
 	},
 	categories: {
 		general: 'General',

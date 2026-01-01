@@ -10,4 +10,6 @@ export interface LayoutProps {
 	visibleTools: ToolMeta[];
 	openTools: ToolId[];
 	onCloseTool: (id: ToolId) => void;
+	onTogglePin: (id: string) => void;
+	onReorderTools: (category: string, ids: string[]) => void;
 }

@@ -5,12 +5,14 @@
 import { lazy } from 'react';
 
 export const generatedToolPanels = {
+	'api-tester': lazy(() => import('../tools/api-tester/panel').then(m => ({ default: m.ApiTesterPanel }))),
 	'archive': lazy(() => import('../tools/archive/panel').then(m => ({ default: m.ArchivePanel }))),
 	'base64': lazy(() => import('../tools/base64/panel').then(m => ({ default: m.Base64Panel }))),
 	'bookmark-manager': lazy(() => import('../tools/bookmark-manager/panel').then(m => ({ default: m.BookmarkManagerPanel }))),
 	'checksum': lazy(() => import('../tools/checksum/panel').then(m => ({ default: m.ChecksumPanel }))),
 	'clipboard': lazy(() => import('../tools/clipboard/panel').then(m => ({ default: m.ClipboardPanel }))),
 	'code-formatter': lazy(() => import('../tools/code-formatter/panel').then(m => ({ default: m.CodeFormatterPanel }))),
+	'code-snippets': lazy(() => import('../tools/code-snippets/panel').then(m => ({ default: m.CodeSnippetsPanel }))),
 	'color-palette': lazy(() => import('../tools/color-palette/panel').then(m => ({ default: m.ColorPalettePanel }))),
 	'color-picker': lazy(() => import('../tools/color-picker/panel').then(m => ({ default: m.ColorPickerPanel }))),
 	'cookie-manager': lazy(() => import('../tools/cookie-manager/panel').then(m => ({ default: m.CookieManagerPanel }))),
@@ -39,8 +41,8 @@ export const generatedToolPanels = {
 	'jwt-decoder': lazy(() => import('../tools/jwt-decoder/panel').then(m => ({ default: m.JwtDecoderPanel }))),
 	'lorem-ipsum': lazy(() => import('../tools/lorem-ipsum/panel').then(m => ({ default: m.LoremIpsumPanel }))),
 	'markdown': lazy(() => import('../tools/markdown/panel').then(m => ({ default: m.MarkdownPanel }))),
+	'media-sniffer': lazy(() => import('../tools/media-sniffer/panel').then(m => ({ default: m.MediaSnifferPanel }))),
 	'mock-data': lazy(() => import('../tools/mock-data/panel').then(m => ({ default: m.MockDataPanel }))),
-	'module-store': lazy(() => import('../tools/module-store/panel').then(m => ({ default: m.ModuleStorePanel }))),
 	'morse': lazy(() => import('../tools/morse/panel').then(m => ({ default: m.MorsePanel }))),
 	'network': lazy(() => import('../tools/network/panel').then(m => ({ default: m.NetworkPanel }))),
 	'number-base': lazy(() => import('../tools/number-base/panel').then(m => ({ default: m.NumberBasePanel }))),
@@ -60,7 +62,6 @@ export const generatedToolPanels = {
 	'ruler': lazy(() => import('../tools/ruler/panel').then(m => ({ default: m.RulerPanel }))),
 	'screenshot': lazy(() => import('../tools/screenshot/panel').then(m => ({ default: m.ScreenshotPanel }))),
 	'session-manager': lazy(() => import('../tools/session-manager/panel').then(m => ({ default: m.SessionManagerPanel }))),
-	'settings': lazy(() => import('../tools/settings/panel').then(m => ({ default: m.SettingsPanel }))),
 	'shortcuts': lazy(() => import('../tools/shortcuts/panel').then(m => ({ default: m.ShortcutsPanel }))),
 	'smooth-scroll': lazy(() => import('../tools/smooth-scroll/panel').then(m => ({ default: m.SmoothScrollPanel }))),
 	'sql-formatter': lazy(() => import('../tools/sql-formatter/panel').then(m => ({ default: m.SqlFormatterPanel }))),

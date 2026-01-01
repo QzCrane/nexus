@@ -81,7 +81,7 @@ icon: string (必需) - 显示图标 (emoji)
 category: string (必需) - general/dev/efficiency/security/media/browser/visual
 size: number (必需) - 估算体积 (bytes)
 builtIn: boolean - 核心模块 (不可卸载)
-system: boolean - 系统功能 (不计入工具统计)
+system: boolean - 系统功能 (不计入工具统计，固定集成至页眉或设置)
 keywords: string[] - 搜索关键词
 
 ---
@@ -118,7 +118,19 @@ keywords: string[] - 搜索关键词
 
 ---
 
-## §5 通信协议
+## §6 全局服务
+
+### 🔍 搜索服务 (Search Service)
+
+- **索引范围**: `ID` + `Name(EN/ZH)` + `Desc(EN/ZH)` + `Keywords` + `Pinyin(全拼/简拼)`
+- **逻辑**: 通过 `search-utils.ts` 实现，支持多语境聚合检索，优先级：ID > Keywords > Text
+
+### 🌐 全局 i18n 同步
+
+- **核心机制**: `Global Signal` + `Listener Set`
+- **行为**: `useTranslation` 钩子共享全局 `globalLocale` 状态。当设置更改时，利用 `notify()` 瞬间触发所有挂载组件的增量重渲染，无需手动刷新页面或重启侧边栏。
+
+## §7 通信协议
 
 RPC 模式: `chrome.runtime.sendMessage`
 

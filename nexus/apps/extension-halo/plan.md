@@ -1,17 +1,17 @@
-# HALO 功能规划 (v1.4.0)
+# HALO 功能规划 (v2.0.0)
 
 > **定位**: 离线优先的开发者与效率工具箱
 > **竞品对标**: DevToys, IT-Tools, He3, CyberChef
 
-## 📊 功能状态 (80 tools + 2 system)
+## 📊 功能状态 (83 tools + 3 system)
 
-### ✅ 已完成 (82)
+### ✅ 已完成 (85)
 
-Core (12): qrcode, screenshot, color-picker, ruler, json-formatter, base64, hash, uuid, timestamp, url, module-store, settings
-Dev (34): regex, outline, crypto, network, mock-data, userscripts, yaml, diff, number-base, text-tools, lorem-ipsum, markdown, cron, html-entity, code-formatter, http-status, csv-viewer, ip-lookup, font-inspector, xml-formatter, headers-viewer, tech-stack, storage-editor, user-agent, gzip, jwt-decoder, morse, json-to-csv, sql-formatter, json-path, punycode, rot13, csv-to-json, hex-dump, ssl-cert, xor, protobuf, dom-selector
-Efficiency (14): smooth-scroll, tabs, pdf, clipboard, permissions, unit-converter, sticky-notes, pomodoro, timer, shortcuts, todo-list, text-to-speech, emoji-picker, session-manager
+Core (13): qrcode, screenshot, color-picker, ruler, json-formatter, base64, hash, uuid, timestamp, url, module-store, settings, permissions
+Dev (37): regex, outline, crypto, network, mock-data, userscripts, yaml, diff, number-base, text-tools, lorem-ipsum, markdown, cron, html-entity, code-formatter, http-status, csv-viewer, ip-lookup, font-inspector, xml-formatter, headers-viewer, tech-stack, storage-editor, user-agent, gzip, jwt-decoder, morse, json-to-csv, sql-formatter, json-path, punycode, rot13, csv-to-json, hex-dump, ssl-cert, xor, protobuf, dom-selector, **code-snippets**, **api-tester**
+Efficiency (13): smooth-scroll, tabs, pdf, clipboard, unit-converter, sticky-notes, pomodoro, timer, shortcuts, todo-list, text-to-speech, emoji-picker, session-manager
 Security (5): password-gen, totp, checksum, random-gen, subresource, csp-analyzer
-Media (3): image-tools, exif-reader, color-palette
+Media (4): image-tools, exif-reader, color-palette, **media-sniffer**
 Browser (8): archive, cookie-manager, reader-mode, bookmark-manager, history-search, table-extractor, page-annotate, translate, tab-group
 
 ---
@@ -27,16 +27,15 @@ Browser (8): archive, cookie-manager, reader-mode, bookmark-manager, history-sea
 - ✅ 重写 `lazy-tool-loader.tsx` (173 行 → 80 行, -54%)
 - ✅ 删除冗余 `tools-data-*.ts` 文件 (5 个)
 
+### 核心体验优化 (2026-01-01 完成)
+
+- ✅ **多语境搜索**: 支持中英双语、ID、拼音(全拼/简拼) 检索
+- ✅ **响应式 i18n**: 切换语言全局实时生效，无需重启
+- ✅ **权限管理收口**: `permissions` 提级为系统工具，集成至页眉
+- ✅ **平滑滚动增强**: 增加主开关与预设配置，对标 SmoothScroll Pro
+- ✅ **界面溢出修复**: 系统页面 (设置/权限/商店) 增加滚动支持
+
 **新增工具流程**: 创建 `manifest.json` + `panel.tsx` → `pnpm build` 自动注册
-
----
-
-## 🔜 阶段 9: 技术债清理 (P0)
-
-任务: 当前状态: 目标
-`LauncherLayout.tsx` 拆分: **✅ 完成** (60 行): ≤200 行
-`ClassicLayout.tsx` 拆分: 182 行: ≤150 行
-`SidePanel.tsx` 优化: 158 行: ≤150 行
 
 ---
 

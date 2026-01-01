@@ -1,22 +1,20 @@
 // goal: Modern Mobile-style Launcher layout with slide transitions
-// eff: Container component orchestrating HomePage and ToolPage
+// eff: Pure content-area manager, Header is handled by SidePanel.tsx
 
 import React, { useState } from 'react';
 import type { LayoutProps } from './types';
-import { commonStyles } from './layouts.styles';
-import { ScrollbarStyles } from './classic-layout-parts';
 import { LauncherHomePage } from './LauncherHomePage';
 import { LauncherToolPage } from './LauncherToolPage';
 
 export const LauncherLayout: React.FC<LayoutProps> = ({
 	activeTool,
 	onSelectTool,
-	onBack,
 	settings,
 	onSettingsChange,
 	visibleTools,
 	openTools,
-	onCloseTool
+	onTogglePin,
+	onReorderTools
 }) => {
 	const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
 
@@ -24,36 +22,41 @@ export const LauncherLayout: React.FC<LayoutProps> = ({
 		setCollapsedCategories(prev => ({ ...prev, [category]: !prev[category] }));
 	};
 
+	const showPage2 = !!activeTool;
+
 	return (
-		<div style={commonStyles.container}>
-			<ScrollbarStyles />
+		<div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
 			<div style={{
+				flex: 1,
 				display: 'flex',
 				width: '200%',
 				height: '100%',
-				transform: activeTool ? 'translateX(-50%)' : 'translateX(0)',
+				transform: showPage2 ? 'translateX(-50%)' : 'translateX(0)',
 				transition: 'transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)',
+				minHeight: 0,
 			}}>
-				{/* PAGE 1: HOME / LAUNCHER */}
-				<LauncherHomePage
-					visibleTools={visibleTools}
-					settings={settings}
-					onSettingsChange={onSettingsChange}
-					onSelectTool={onSelectTool}
-					collapsedCategories={collapsedCategories}
-					toggleCategory={toggleCategory}
-				/>
+				{/* PAGE 1: HOME */}
+				<div style={{ width: '50%', height: '100%', flexShrink: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+					<LauncherHomePage
+						visibleTools={visibleTools}
+						settings={settings}
+						onSelectTool={onSelectTool}
+						collapsedCategories={collapsedCategories}
+						toggleCategory={toggleCategory}
+						onTogglePin={onTogglePin}
+						onReorderTools={onReorderTools}
+						openTools={openTools}
+					/>
+				</div>
 
-				{/* PAGE 2: TOOL VIEW */}
-				<LauncherToolPage
-					activeTool={activeTool}
-					openTools={openTools}
-					visibleTools={visibleTools}
-					onBack={onBack}
-					onSelectTool={onSelectTool}
-					onCloseTool={onCloseTool}
-					onSettingsChange={onSettingsChange}
-				/>
+				{/* PAGE 2: TOOLS / SETTINGS / STORE */}
+				<div style={{ width: '50%', height: '100%', flexShrink: 0, background: 'var(--halo-bg)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+					<LauncherToolPage
+						activeTool={activeTool}
+						openTools={openTools}
+						onSettingsChange={onSettingsChange}
+					/>
+				</div>
 			</div>
 		</div>
 	);

@@ -10,10 +10,11 @@ import { styles } from './SearchBar.styles';
 
 interface SearchBarProps {
   onSelect: (toolId: string) => void;
+  visibleTools: ToolMeta[];
   placeholder?: string;
 }
 
-export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, placeholder }) => {
+export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, visibleTools, placeholder }) => {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [focused, setFocused] = useState(false);
@@ -27,10 +28,10 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, placeholder }) =
       setResults([]);
       return;
     }
-    const matched = TOOL_REGISTRY.filter((tool) => matchTool(tool, query, t));
+    const matched = visibleTools.filter((tool) => matchTool(tool, query, t));
     setResults(matched);
     setActiveIndex(0);
-  }, [query, t]);
+  }, [query, t, visibleTools]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -57,7 +58,8 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, placeholder }) =
     } else if (e.key === 'Enter') {
       e.preventDefault();
       const selected = results[activeIndex];
-      if (selected && (selected.status === 'ready' || selected.status === 'beta')) {
+      const isSystem = selected?.system || selected?.id === 'permissions';
+      if (selected && (selected.status === 'ready' || selected.status === 'beta' || isSystem)) {
         onSelect(selected.id);
         setQuery('');
         inputRef.current?.blur();
@@ -69,7 +71,8 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, placeholder }) =
   }, [results, activeIndex, onSelect]);
 
   const handleSelect = useCallback((tool: ToolMeta) => {
-    if (tool.status === 'ready' || tool.status === 'beta') {
+    const isSystem = tool.system || tool.id === 'permissions';
+    if (tool.status === 'ready' || tool.status === 'beta' || isSystem) {
       onSelect(tool.id);
       setQuery('');
     }

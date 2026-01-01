@@ -1,16 +1,24 @@
 // goal: Tool panel wrapper with lazy loading
-// eff: Centralized Suspense + tool rendering logic
+// eff: Centralized Suspense + tool rendering logic. Excludes system tools from Keep-Alive.
 
 import React from 'react';
 import { Card } from '@nexus/ui-kit';
+import { useTranslation } from '../i18n';
 import type { ToolId, HaloSettings } from '../kernel';
+import { TOOL_REGISTRY } from '../kernel';
 import { LazyToolRenderer } from './lazy-tool-loader';
+import { SettingsPanel } from '../pages/settings';
+import { ModuleStorePanel } from '../pages/module-store';
 
 const styles = {
 	placeholder: {
 		display: 'flex', flexDirection: 'column' as const, alignItems: 'center',
 		justifyContent: 'center', minHeight: '200px', textAlign: 'center' as const,
 	},
+	contentWrapper: {
+		height: '100%', width: '100%', padding: '12px 12px 0 12px', boxSizing: 'border-box' as const,
+		display: 'flex', flexDirection: 'column' as const
+	}
 };
 
 interface ToolPanelRendererProps {
@@ -20,7 +28,14 @@ interface ToolPanelRendererProps {
 	selectToolText: string;
 }
 
-export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({ activeTool, openTools, onSettingsChange, selectToolText }) => {
+export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({ 
+	activeTool, 
+	openTools, 
+	onSettingsChange, 
+	selectToolText 
+}) => {
+	const { t } = useTranslation();
+	
 	const fallbackUI = (
 		<div style={{ ...styles.placeholder, height: '100%', flex: 1 }}>
 			<div style={{ width: 'auto', maxWidth: '300px' }}>
@@ -42,24 +57,46 @@ export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({ activeTool
 
 	return (
 		<>
-			{openTools.map(toolId => (
-				<div 
-					key={toolId} 
-					style={{ 
-						display: activeTool === toolId ? 'block' : 'none', 
-						height: '100%', 
-						flex: 1,
-						maxWidth: '800px',
-						margin: '0 auto',
-						width: '100%'
-					}}
-				>
-					<LazyToolRenderer 
-						toolId={toolId} 
-						onSettingsChange={onSettingsChange}
-					/>
+			{/* System Pages (Rendered only when active) */}
+			{activeTool === 'module-store' && (
+				<div style={{ ...styles.contentWrapper, overflowY: 'auto' }}>
+					<ModuleStorePanel />
 				</div>
-			))}
+			)}
+			
+			{activeTool === 'settings' && (
+				<div style={{ ...styles.contentWrapper, overflowY: 'auto' }}>
+					<SettingsPanel onSettingsChange={onSettingsChange} />
+				</div>
+			)}
+			
+			{activeTool === 'permissions' && (
+				<div style={{ ...styles.contentWrapper, overflowY: 'auto' }}>
+					<LazyToolRenderer toolId="permissions" onSettingsChange={onSettingsChange} />
+				</div>
+			)}
+
+			{/* Standard Tools (Keep Alive) */}
+			{openTools
+				.filter(id => id !== 'settings' && id !== 'module-store' && id !== 'permissions')
+				.map(toolId => {
+					const isActive = activeTool === toolId;
+					
+					return (
+						<div 
+							key={toolId} 
+							style={{ 
+								...styles.contentWrapper,
+								display: isActive ? 'flex' : 'none',
+							}}
+						>
+							<div style={{ flex: 1, overflowY: 'auto', position: 'relative', minHeight: 0 }}>
+								<LazyToolRenderer toolId={toolId} onSettingsChange={onSettingsChange} />
+							</div>
+						</div>
+					);
+				})}
+				
 			{!activeTool && openTools.length > 0 && fallbackUI}
 		</>
 	);

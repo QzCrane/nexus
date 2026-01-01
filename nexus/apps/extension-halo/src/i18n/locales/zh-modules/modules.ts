@@ -73,8 +73,8 @@ export const modules = {
 			desc: '自定义 HALO 外观与行为',
 		},
 		'smooth-scroll': {
-			name: '滚动',
-			desc: '平滑滚动效果',
+			name: '平滑滚动',
+			desc: '丝滑顺畅的页面滚动体验',
 		},
 		tabs: {
 			name: '标签页',
@@ -333,6 +333,18 @@ export const modules = {
 		'tab-group': {
 			name: '标签组',
 			desc: '管理浏览器标签组',
+		},
+		'media-sniffer': {
+			name: '媒体嗅探',
+			desc: '检测并下载页面媒体资源',
+		},
+		'code-snippets': {
+			name: '代码片段',
+			desc: '保存和管理代码片段',
+		},
+		'api-tester': {
+			name: 'API 测试',
+			desc: '发送 HTTP 请求并查看响应',
 		},
 	},
 };

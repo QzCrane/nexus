@@ -59,31 +59,33 @@ export const BookmarkManagerPanel: React.FC = () => {
 
 	if (hasPermission === false) {
 		return (
-			<div style={styles.wrapper}>
-				<Card variant="default" padding="md">
-					<div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', padding: '32px 16px' }}>
-						<span style={{ fontSize: '48px', opacity: 0.8 }}>🔒</span>
-						<div style={{ textAlign: 'center' }}>
-							<h3 style={{ margin: '0 0 8px 0', color: 'var(--halo-text)' }}>{t('common.permissionRequired')}</h3>
-							<p style={{ margin: 0, fontSize: '13px', color: 'var(--halo-text-secondary)' }}>{t('common.permissionDesc')}</p>
+			<div style={{ ...styles.wrapper, height: '100%', justifyContent: 'center', alignItems: 'center' }}>
+				<div style={{ width: '100%', maxWidth: '320px' }}>
+					<Card variant="default" padding="md">
+						<div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', padding: '32px 16px' }}>
+							<span style={{ fontSize: '48px', opacity: 0.8 }}>🔒</span>
+							<div style={{ textAlign: 'center' }}>
+								<h3 style={{ margin: '0 0 8px 0', color: 'var(--halo-text)' }}>{t('common.permissionRequired')}</h3>
+								<p style={{ margin: 0, fontSize: '13px', color: 'var(--halo-text-secondary)' }}>{t('common.permissionDesc')}</p>
+							</div>
+							<button 
+								onClick={request}
+								style={{ 
+									padding: '8px 24px', 
+									background: 'var(--halo-accent)', 
+									color: '#fff', 
+									border: 'none', 
+									borderRadius: '6px', 
+									cursor: 'pointer',
+									fontWeight: 500,
+									transition: 'opacity 0.2s'
+								}}
+							>
+								{t('common.grantPermission')}
+							</button>
 						</div>
-						<button 
-							onClick={request}
-							style={{ 
-								padding: '8px 24px', 
-								background: 'var(--halo-accent)', 
-								color: '#fff', 
-								border: 'none', 
-								borderRadius: '6px', 
-								cursor: 'pointer',
-								fontWeight: 500,
-								transition: 'opacity 0.2s'
-							}}
-						>
-							{t('common.grantPermission')}
-						</button>
-					</div>
-				</Card>
+					</Card>
+				</div>
 			</div>
 		);
 	}
