@@ -1,11 +1,11 @@
 // goal: macOS Dock-style tab bar with proper overflow handling
 // eff: Horizontal scroll + upward magnification without clipping
+// note: Centering items when few, scrolling when many. Tooltip at bottom.
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from '../../i18n';
 import type { ToolId, ToolMeta } from '../../kernel';
-import { useSmoothWheel } from '../../kernel/hooks/use-smooth-wheel';
 import { DockItem } from './DockItem';
 
 interface DockTabBarProps {
@@ -20,13 +20,14 @@ const BASE_SIZE = 38;
 const MAX_SCALE = 1.4;
 const EFFECT_DISTANCE = 70;
 const MAGNIFY_HEADROOM = Math.ceil(BASE_SIZE * (MAX_SCALE - 1));
-const TOOLTIP_DELAY = 300;
+const TOOLTIP_DELAY = 100;
 
 export const DockTabBar: React.FC<DockTabBarProps> = ({
 	openTools, activeTool, visibleTools, onSelectTool, onCloseTool,
 }) => {
 	const { t } = useTranslation();
 	const scrollRef = useRef<HTMLDivElement>(null);
+	const outerRef = useRef<HTMLDivElement>(null); // Added outer ref for better capture
 	const [mouseX, setMouseX] = useState<number | null>(null);
 	const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
 	const tooltipTimer = useRef<number | null>(null);
@@ -49,13 +50,12 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 		return 1 + ratio * ratio * (MAX_SCALE - 1);
 	}, [mouseX]);
 
-	useSmoothWheel(scrollRef, 'x');
-
 	const handleItemEnter = useCallback((toolId: ToolId, toolName: string, rect: DOMRect) => {
 		setHoveredId(toolId);
 		if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
 		tooltipTimer.current = window.setTimeout(() => {
-			setTooltip({ text: toolName, x: rect.left + rect.width / 2, y: rect.top - 10 });
+			// POSITION: BOTTOM (rect.bottom + 8)
+			setTooltip({ text: toolName, x: rect.left + rect.width / 2, y: rect.bottom + 8 });
 		}, TOOLTIP_DELAY);
 	}, []);
 
@@ -65,33 +65,71 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 		setTooltip(null);
 	}, []);
 
+	// ROBUST WHEEL LOGIC: Attach to outer container to capture everything
+	useEffect(() => {
+		const outer = outerRef.current;
+		const inner = scrollRef.current;
+		if (!outer || !inner) return;
+
+		const handleWheel = (e: WheelEvent) => {
+			// Even if internal deltaX/Y are small, we might need to intercept
+			if (Math.abs(e.deltaY) > Math.abs(e.deltaX) * 0.5) {
+				const isScrollable = inner.scrollWidth > inner.clientWidth + 0.5;
+				if (isScrollable) {
+					e.preventDefault();
+					e.stopPropagation();
+
+					let delta = e.deltaY;
+					if (e.deltaMode === 1) delta *= 38; // Match icon size
+					else if (e.deltaMode === 2) delta *= inner.clientWidth;
+
+					inner.scrollLeft += delta;
+				}
+			}
+		};
+
+		outer.addEventListener('wheel', handleWheel, { passive: false });
+		return () => outer.removeEventListener('wheel', handleWheel);
+	}, []);
+
 	if (dockTools.length === 0) return null;
 
 	return (
-		<div style={{
-			position: 'relative',
-			zIndex: 100, 
-			background: 'transparent',
-			// 将 Dock 向上提到 Header 底部边缘，给放大留出空间
-			marginTop: `-${MAGNIFY_HEADROOM}px`,
-			pointerEvents: 'none',
-		}}>
+		<div 
+			ref={outerRef}
+			style={{
+				position: 'relative',
+				zIndex: 100, 
+				background: 'transparent',
+				marginTop: `-${MAGNIFY_HEADROOM}px`,
+				pointerEvents: 'none',
+			}}
+		>
 			<style>{`
 				@keyframes dockTooltipFadeIn {
-					from { opacity: 0; transform: translate(-50%, -100%) scale(0.98); }
-					to { opacity: 1; transform: translate(-50%, -100%) scale(1); }
+					from { opacity: 0; transform: translate(-50%, -8px) scale(0.95); }
+					to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+				}
+				.dock-scroll-container::before {
+					content: '';
+					margin-left: auto;
+				}
+				.dock-scroll-container::after {
+					content: '';
+					margin-right: auto;
 				}
 			`}</style>
-
+			
 			<div
 				ref={scrollRef}
-				className="halo-thin-scrollbar"
+				className="halo-thin-scrollbar dock-scroll-container"
 				onMouseMove={(e) => setMouseX(e.clientX)}
 				onMouseLeave={() => { setMouseX(null); setHoveredId(null); setTooltip(null); }}
 				style={{
 					display: 'flex',
 					alignItems: 'flex-end',
-					justifyContent: dockTools.length <= 5 ? 'center' : 'flex-start',
+					// FIX: Use flex-start to enable scrollLeft, use margin:auto items (via psuedo) for centering
+					justifyContent: 'flex-start',
 					gap: '6px',
 					padding: '0 16px 8px 16px',
 					overflowX: 'auto',
@@ -99,21 +137,10 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 					minHeight: `${BASE_SIZE + MAGNIFY_HEADROOM + 8}px`,
 					pointerEvents: 'auto',
 					position: 'relative',
+					background: `linear-gradient(to bottom, transparent ${MAGNIFY_HEADROOM}px, var(--halo-bg-secondary) ${MAGNIFY_HEADROOM}px)`,
+					borderBottom: '1px solid var(--halo-border)',
 				}}
 			>
-				{/* 背景层：作为滚动内容的底层，宽度自动撑满 scrollWidth */}
-				<div style={{
-					position: 'absolute',
-					bottom: 0,
-					left: 0,
-					minWidth: '100%',
-					// 确保背景层高度刚好覆盖图标条部分
-					height: `${BASE_SIZE + 16}px`, 
-					background: 'var(--halo-bg-secondary)',
-					borderBottom: '1px solid var(--halo-border)',
-					zIndex: -1,
-				}} />
-
 				{dockTools.map((toolId, index) => {
 					const tool = visibleTools.find((m) => m.id === toolId);
 					if (!tool) return null;
@@ -134,25 +161,26 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 				})}
 			</div>
 
-			{/* Custom Tooltip - Portal to body to escape stacking context */}
+			{/* Custom Tooltip - RENDER AT BOTTOM */}
 			{tooltip && createPortal(
 				<div style={{
 					position: 'fixed',
 					left: tooltip.x,
 					top: tooltip.y,
-					transform: 'translate(-50%, -100%)',
-					background: 'rgba(0, 0, 0, 0.8)',
-					backdropFilter: 'blur(8px)',
+					transform: 'translate(-50%, 0)',
+					background: 'rgba(20, 20, 20, 0.85)',
+					backdropFilter: 'blur(10px)',
 					color: 'white',
-					padding: '5px 10px',
+					padding: '4px 10px',
 					borderRadius: '6px',
-					fontSize: '12px',
+					fontSize: '11px',
 					fontWeight: 500,
 					whiteSpace: 'nowrap',
 					pointerEvents: 'none',
 					zIndex: 99999,
-					boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-					animation: 'dockTooltipFadeIn 0.05s ease-out forwards',
+					boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+					animation: 'dockTooltipFadeIn 0.08s ease-out forwards',
+					border: '1px solid rgba(255, 255, 255, 0.1)',
 				}}>
 					{tooltip.text}
 				</div>,

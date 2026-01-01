@@ -15,14 +15,15 @@ export const useSmoothWheel = (ref: RefObject<HTMLElement | null>, direction: 'x
 
 		const syncFromDOM = () => {
 			if (rafId === null) {
-				current = direction === 'x' ? el.scrollLeft : el.scrollTop;
-				target = current;
+				const domPos = direction === 'x' ? el.scrollLeft : el.scrollTop;
+				current = domPos;
+				target = domPos;
 			}
 		};
 
 		const step = () => {
 			const diff = target - current;
-			if (Math.abs(diff) < 0.2) {
+			if (Math.abs(diff) < 0.1) {
 				current = target;
 				if (direction === 'x') el.scrollLeft = Math.round(current);
 				else el.scrollTop = Math.round(current);
@@ -38,42 +39,40 @@ export const useSmoothWheel = (ref: RefObject<HTMLElement | null>, direction: 'x
 		};
 
 		const handleWheel = (e: WheelEvent) => {
-			const isScrollable = direction === 'x'
-				? el.scrollWidth > el.clientWidth
-				: el.scrollHeight > el.clientHeight;
+			const maxScroll = direction === 'x'
+				? el.scrollWidth - el.clientWidth
+				: el.scrollHeight - el.clientHeight;
 
-			if (!isScrollable) return;
+			// IF cannot scroll at all, let browser handle it naturally
+			if (maxScroll <= 0) return;
 
-			// Map wheel to scrolling axis
 			let delta = 0;
 			if (direction === 'x') {
-				// For horizontal containers, use horizontal delta if dominant, else use vertical
 				delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
 			} else {
 				delta = e.deltaY;
 			}
 
-			// Handle different delta modes (lines, pages, pixels)
-			if (e.deltaMode === 1) delta *= 30; // Lines
-			else if (e.deltaMode === 2) delta *= el.clientHeight; // Pages
+			if (e.deltaMode === 1) delta *= 33;
+			else if (e.deltaMode === 2) delta *= el.clientHeight;
 
-			const maxScroll = direction === 'x'
-				? el.scrollWidth - el.clientWidth
-				: el.scrollHeight - el.clientHeight;
+			// Check if we are at boundary AND moving further out
+			const currentPos = direction === 'x' ? el.scrollLeft : el.scrollTop;
+			const isAtStart = currentPos <= 0 && delta < 0;
+			const isAtEnd = currentPos >= maxScroll && delta > 0;
 
-			// Ensure we are in sync before applying delta
-			if (rafId === null) {
-				target = direction === 'x' ? el.scrollLeft : el.scrollTop;
-				current = target;
-			}
-
-			const nextTarget = Math.max(0, Math.min(maxScroll, target + delta));
-
-			// Only intercept if we are actually scrolling or moving
-			if (nextTarget !== target || rafId !== null) {
+			// Only intercept if we have room to move in that direction
+			if (!isAtStart && !isAtEnd) {
 				e.preventDefault();
 				e.stopPropagation();
-				target = nextTarget;
+
+				if (rafId === null) {
+					current = currentPos;
+					target = current;
+				}
+
+				target = Math.max(0, Math.min(maxScroll, target + delta));
+
 				if (rafId === null) {
 					rafId = requestAnimationFrame(step);
 				}
