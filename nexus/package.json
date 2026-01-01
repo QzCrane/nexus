@@ -11,7 +11,8 @@
 		"typecheck": "turbo run typecheck",
 		"verify": "node scripts/verify-architecture.js",
 		"prebuild": "node scripts/verify-architecture.js",
-		"sync-public": "node scripts/sync-to-public.cjs",
+		"sync-spectra": "node scripts/sync-public.cjs spectra",
+		"sync-halo": "node scripts/sync-public.cjs halo",
 		"generate-registry": "node scripts/generate-tool-registry.mjs"
 	},
 	"devDependencies": {

@@ -163,7 +163,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 													onDragEnter(category, tool.id);
 												}}
 												onDrop={(e) => e.preventDefault()}
-												openTools={openTools}
+												isRunning={openTools.includes(tool.id as ToolId)}
 											/>
 										))}
 									</div>

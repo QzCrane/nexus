@@ -7,6 +7,7 @@ import { LauncherHeader } from './LauncherHeader';
 import { DockTabBar } from './DockTabBar';
 import { LauncherLayout } from './LauncherLayout';
 import { useSidePanelState } from './use-sidepanel-state';
+import { EngineStatusProvider } from './EngineStatusProvider';
 
 export const SidePanel: React.FC = () => {
 	const { t, ready: i18nReady } = useTranslation();
@@ -44,44 +45,46 @@ export const SidePanel: React.FC = () => {
 	});
 
 	return (
-		<div style={{ 
-			position: 'relative', width: '100%', height: '100%', 
-			overflow: 'hidden', background: 'var(--halo-bg, #1a1a1a)', 
-			color: 'var(--halo-text)', display: 'flex', flexDirection: 'column'
-		}}>
-			{/* GLOBAL PERSISTENT HEADER: NEVER ANIMATES, FIXED AT TOP */}
-			<LauncherHeader
-				activeTool={activeTool}
-				visibleTools={visibleTools}
-				onBack={handleBack}
-				onSelectTool={handleToolSelect}
-				hideBorder={hasDock}
-			/>
-
-			{/* DOCK TAB BAR: macOS-style tab switcher below header */}
-			<DockTabBar
-				openTools={openTools}
-				activeTool={activeTool}
-				visibleTools={visibleTools}
-				onSelectTool={handleToolSelect}
-				onCloseTool={handleCloseTool}
-			/>
-
-			{/* Main Content Area (Layout with slide transitions) */}
-			<main style={{ flex: 1, overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column' }}>
-				<LauncherLayout
+		<EngineStatusProvider>
+			<div style={{ 
+				position: 'relative', width: '100%', height: '100%', 
+				overflow: 'hidden', background: 'var(--halo-bg, #1a1a1a)', 
+				color: 'var(--halo-text)', display: 'flex', flexDirection: 'column'
+			}}>
+				{/* GLOBAL PERSISTENT HEADER: NEVER ANIMATES, FIXED AT TOP */}
+				<LauncherHeader
 					activeTool={activeTool}
-					openTools={openTools || []}
-					onCloseTool={handleCloseTool}
-					onSelectTool={handleToolSelect}
-					onBack={handleBack}
-					settings={settings}
-					onSettingsChange={handleSettingsChange}
 					visibleTools={visibleTools}
-					onTogglePin={handleTogglePin}
-					onReorderTools={handleReorderTools}
+					onBack={handleBack}
+					onSelectTool={handleToolSelect}
+					hideBorder={hasDock}
 				/>
-			</main>
-		</div>
+
+				{/* DOCK TAB BAR: macOS-style tab switcher below header */}
+				<DockTabBar
+					openTools={openTools}
+					activeTool={activeTool}
+					visibleTools={visibleTools}
+					onSelectTool={handleToolSelect}
+					onCloseTool={handleCloseTool}
+				/>
+
+				{/* Main Content Area (Layout with slide transitions) */}
+				<main style={{ flex: 1, overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column' }}>
+					<LauncherLayout
+						activeTool={activeTool}
+						openTools={openTools || []}
+						onCloseTool={handleCloseTool}
+						onSelectTool={handleToolSelect}
+						onBack={handleBack}
+						settings={settings}
+						onSettingsChange={handleSettingsChange}
+						visibleTools={visibleTools}
+						onTogglePin={handleTogglePin}
+						onReorderTools={handleReorderTools}
+					/>
+				</main>
+			</div>
+		</EngineStatusProvider>
 	);
 };
