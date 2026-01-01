@@ -4,7 +4,7 @@
 
 ## §1 目录结构
 
-```
+```text
 src/
 ├── entry/                      # Chrome 扩展入口
 │   ├── background.ts           # Service Worker (RPC 路由)
@@ -42,7 +42,7 @@ src/
 
 ### 自动生成流程
 
-```
+```text
 tools/*/manifest.json (82个)
         ↓
 pnpm generate-registry (或 pnpm build 自动执行)
@@ -66,24 +66,22 @@ components/_generated-tool-loader.ts → lazy import 映射
 }
 ```
 
-2. 创建 `tools/[name]/panel.tsx`:
+1. 创建 `tools/[name]/panel.tsx`:
 
 ```tsx
 export const ToolNamePanel: React.FC = () => { ... }
 ```
 
-3. 运行 `pnpm build` (自动执行 generate-registry)
+1. 运行 `pnpm build` (自动执行 generate-registry)
 
 ### manifest.json 字段
 
-| 字段     | 类型     | 必须 | 说明                                                       |
-| :------- | :------- | :--: | :--------------------------------------------------------- |
-| id       | string   |  ✓   | 唯一 ID (kebab-case, 与目录名一致)                         |
-| icon     | string   |  ✓   | 显示图标 (emoji)                                           |
-| category | string   |  ✓   | 分类: general/dev/efficiency/security/media/browser/visual |
-| size     | number   |  ✓   | 估算体积 (bytes)                                           |
-| builtIn  | boolean  |      | 核心模块 (不可卸载)                                        |
-| keywords | string[] |      | 搜索关键词                                                 |
+id: string (必需) - 唯一 ID (kebab-case)
+icon: string (必需) - 显示图标 (emoji)
+category: string (必需) - general/dev/efficiency/security/media/browser/visual
+size: number (必需) - 估算体积 (bytes)
+builtIn: boolean - 核心模块 (不可卸载)
+keywords: string[] - 搜索关键词
 
 ---
 
@@ -91,11 +89,10 @@ export const ToolNamePanel: React.FC = () => { ... }
 
 ### 行数限制
 
-|    阈值 | 处理              |
-| ------: | :---------------- |
-|    ≤150 | ✅ 正常           |
-| 150-200 | ⚠️ 警告，建议拆分 |
-|    >200 | ❌ 错误，必须拆分 |
+≤150 行: ✅ 正常
+150-200 行: ⚠️ 警告，建议拆分
+
+> 200 行: ❌ 错误，必须拆分
 
 ### 豁免文件
 

@@ -46,14 +46,13 @@ nexus(私有) → nexus-public/ → github.com/QzCrane/spectra
 
 ## 模块
 
-| 包                  | 职责                   |
-| ------------------- | ---------------------- |
-| @nexus/contracts    | 类型定义源             |
-| @nexus/kernel       | RPC+Storage+Log        |
-| @nexus/ui-kit       | 共享 UI 组件           |
-| @nexus/audio-engine | WebAudio 链            |
-| @nexus/spectra      | 媒体扩展 (Popup)       |
-| @nexus/halo         | 万能工具箱 (SidePanel) |
+包: 职责
+@nexus/contracts: 类型定义源
+@nexus/kernel: RPC+Storage+Log
+@nexus/ui-kit: 共享 UI 组件
+@nexus/audio-engine: WebAudio 链
+@nexus/spectra: 媒体扩展 (Popup)
+@nexus/halo: 万能工具箱 (SidePanel)
 
 ---
 
