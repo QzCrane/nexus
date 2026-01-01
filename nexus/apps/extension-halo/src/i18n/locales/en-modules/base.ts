@@ -18,6 +18,9 @@ export const base = {
 		result: 'Result',
 		copy: 'Copy',
 		back: 'Back',
+		permissionRequired: 'Permission Required',
+		grantPermission: 'Grant Permission',
+		permissionDesc: 'This tool requires permission to work.',
 	},
 	categories: {
 		general: 'General',

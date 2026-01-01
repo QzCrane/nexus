@@ -15,6 +15,7 @@ export * from './managers/remote-registry';
 export * from './hooks/use-module-manager';
 export * from './hooks/use-tool-manager';
 export * from './hooks/use-remote-registry';
+export * from './hooks/use-permission';
 
 export * from './utils/resource-utils';
 export * from './utils/tool-search-utils';

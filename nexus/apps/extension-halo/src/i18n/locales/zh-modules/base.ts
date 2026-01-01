@@ -18,6 +18,9 @@ export const base = {
 		result: '结果',
 		copy: '复制',
 		back: '返回',
+		permissionRequired: '需要权限',
+		grantPermission: '授予权限',
+		permissionDesc: '此工具需要访问权限才能工作。',
 	},
 	categories: {
 		general: '通用工具',

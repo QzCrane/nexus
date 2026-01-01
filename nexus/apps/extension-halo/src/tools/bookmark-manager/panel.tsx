@@ -1,15 +1,18 @@
 // goal: Bookmark Manager panel UI - search and manage bookmarks
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { BookmarkSearchResult } from './types';
 import { searchBookmarks, getRecentBookmarks, deleteBookmark, openBookmark, getFaviconUrl } from './core';
 import { styles } from './panel.styles';
+import { usePermission } from '../../kernel';
 
 type ViewMode = 'search' | 'recent';
 
 export const BookmarkManagerPanel: React.FC = () => {
 	const { t } = useTranslation();
+	const { hasPermission, request } = usePermission('bookmarks');
 	const [mode, setMode] = useState<ViewMode>('recent');
 	const [query, setQuery] = useState('');
 	const [results, setResults] = useState<BookmarkSearchResult[]>([]);
@@ -17,18 +20,18 @@ export const BookmarkManagerPanel: React.FC = () => {
 
 	// Load recent on mount
 	useEffect(() => {
-		if (mode === 'recent') {
+		if (hasPermission !== false && mode === 'recent') {
 			setLoading(true);
 			getRecentBookmarks(30).then((items) => {
 				setResults(items);
 				setLoading(false);
 			});
 		}
-	}, [mode]);
+	}, [mode, hasPermission]);
 
 	// Search bookmarks
 	useEffect(() => {
-		if (mode === 'search' && query.length >= 2) {
+		if (hasPermission !== false && mode === 'search' && query.length >= 2) {
 			setLoading(true);
 			const timer = setTimeout(() => {
 				searchBookmarks(query).then((items) => {
@@ -37,10 +40,10 @@ export const BookmarkManagerPanel: React.FC = () => {
 				});
 			}, 200);
 			return () => clearTimeout(timer);
-		} else if (mode === 'search') {
+		} else if (hasPermission !== false && mode === 'search') {
 			setResults([]);
 		}
-	}, [query, mode]);
+	}, [query, mode, hasPermission]);
 
 	// Handle click
 	const handleClick = useCallback((url: string, e: React.MouseEvent) => {
@@ -53,6 +56,37 @@ export const BookmarkManagerPanel: React.FC = () => {
 		await deleteBookmark(id);
 		setResults((r) => r.filter((x) => x.id !== id));
 	}, []);
+
+	if (hasPermission === false) {
+		return (
+			<div style={styles.wrapper}>
+				<Card variant="default" padding="md">
+					<div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', padding: '32px 16px' }}>
+						<span style={{ fontSize: '48px', opacity: 0.8 }}>🔒</span>
+						<div style={{ textAlign: 'center' }}>
+							<h3 style={{ margin: '0 0 8px 0', color: 'var(--halo-text)' }}>{t('common.permissionRequired')}</h3>
+							<p style={{ margin: 0, fontSize: '13px', color: 'var(--halo-text-secondary)' }}>{t('common.permissionDesc')}</p>
+						</div>
+						<button 
+							onClick={request}
+							style={{ 
+								padding: '8px 24px', 
+								background: 'var(--halo-accent)', 
+								color: '#fff', 
+								border: 'none', 
+								borderRadius: '6px', 
+								cursor: 'pointer',
+								fontWeight: 500,
+								transition: 'opacity 0.2s'
+							}}
+						>
+							{t('common.grantPermission')}
+						</button>
+					</div>
+				</Card>
+			</div>
+		);
+	}
 
 	return (
 		<div style={styles.wrapper}>
