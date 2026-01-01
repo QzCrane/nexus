@@ -93,4 +93,14 @@ pnpm workspace | `pnpm install/build/--filter [name] build` | 内部包: `"@nexu
 
 ## §6 语言
 
-新代码强制英文 | commit 英文 | `pnpm verify`检测
+## 新代码强制英文 | commit 英文 | `pnpm verify`检测
+
+---
+
+## §7 UI & UX
+
+稳定性: 禁引起 Layout Shift 的动态 Padding | 优先用 CSS `margin: auto` 居中
+交互性: 穿透层用 `pointer-events: none` | 事件捕获层用透明 `Hit Area`
+绿标 (Env Badge): 仅限具有 Background Engine 且有 Master Toggle 的工具 (如 Scroll/UserScript/Clipboard)
+裁剪消除: 缩放元素必须预留 `MAGNIFY_HEADROOM` (30px+) | 禁用 `overflow: hidden` 在感应父级
+i18n: 禁硬编码字符串 | 必须登记在 `locales/*` | 系统页面必须支持全局实时同步

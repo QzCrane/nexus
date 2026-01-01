@@ -67,7 +67,7 @@ nexus(私有) → nexus-public/ → github.com/QzCrane/spectra
 - Search: 支持中英双语、多字段匹配、全拼/简拼检索
 - i18n: 响应式全局同步系统 (Signal/Listener)
 - Dev(34): Regex/Crypto/Network/YAML/Markdown/JSONPath/SQL/Protobuf/...
-- Efficiency(13): PDF/Clipboard/Tabs/Timer/SmoothScroll(Pro)/...
+- Efficiency(13): PDF/Clipboard(Monitoring)/Tabs/Timer/SmoothScroll(Pro)/...
 - Security(5) + Media(3) + Browser(8)
 
 ---
@@ -80,7 +80,7 @@ nexus(私有) → nexus-public/ → github.com/QzCrane/spectra
 
 ## 红线
 
-Contracts 禁逻辑 | 改同步读 cors-data-flow | 非调节禁 Badge | 源码 ≤200 行 | 禁绕 kernel 存储 | toggleMute/volumeDelta 禁持久化 | 新代码英文注释
+Contracts 禁逻辑 | 改同步读 cors-data-flow | 非调节/非引擎禁 Badge | 源码 ≤200 行 | 禁绕 kernel 存储 | toggleMute/volumeDelta 禁持久化 | 新代码英文注释 | 禁触发 Layout Shift 的动态 Padding
 
 ---
 

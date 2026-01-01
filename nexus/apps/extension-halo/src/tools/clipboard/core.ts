@@ -1,6 +1,21 @@
 // goal: Clipboard tool core logic
 
-import { ClipboardItem, STORAGE_KEY, MAX_HISTORY } from './types';
+import { ClipboardItem, STORAGE_KEY, SETTINGS_STORAGE_KEY, MAX_HISTORY } from './types';
+
+/**
+ * Get clipboard settings
+ */
+export async function getClipboardSettings(): Promise<{ enabled: boolean }> {
+	const result = await chrome.storage.local.get([SETTINGS_STORAGE_KEY]);
+	return result[SETTINGS_STORAGE_KEY] || { enabled: true };
+}
+
+/**
+ * Update clipboard settings
+ */
+export async function updateClipboardSettings(enabled: boolean): Promise<void> {
+	await chrome.storage.local.set({ [SETTINGS_STORAGE_KEY]: { enabled } });
+}
 
 /**
  * Save text to history

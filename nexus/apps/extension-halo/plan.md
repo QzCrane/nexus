@@ -30,10 +30,17 @@ Browser (8): archive, cookie-manager, reader-mode, bookmark-manager, history-sea
 ### 核心体验优化 (2026-01-01 完成)
 
 - ✅ **多语境搜索**: 支持中英双语、ID、拼音(全拼/简拼) 检索
-- ✅ **响应式 i18n**: 切换语言全局实时生效，无需重启
+- ✅ **响应式 i18n**: 切换语言全局实时生效，包含 **Permissions Panel** 深度国际化
 - ✅ **权限管理收口**: `permissions` 提级为系统工具，集成至页眉
 - ✅ **平滑滚动增强**: 增加主开关与预设配置，对标 SmoothScroll Pro
 - ✅ **界面溢出修复**: 系统页面 (设置/权限/商店) 增加滚动支持
+- ✅ **Dock & UX Polishing**:
+  - **macOS Interaction**: 线性缩放感应区域，脱离原始高度立即缩小。
+  - **Zero-Block Hit Area**: 采用 Layered `pointer-events` 模式，Dock 不再遮挡顶部栏点击。
+  - **True Centering**: 移除冲突的动态 Padding，改用 CSS `margin: auto` 实现完美居中。
+  - **Dynamic Engine Badge**: 实时追踪 SmoothScroll, UserScripts, Clipboard 运行状态。
+
+**新增工具流程**: 创建 `manifest.json` + `panel.tsx` → `pnpm build` 自动注册
 
 **新增工具流程**: 创建 `manifest.json` + `panel.tsx` → `pnpm build` 自动注册
 

@@ -84,5 +84,7 @@ export const panelsCore = {
 		unknownSource: 'Unknown source',
 		pinned: 'Pinned',
 		confirmClear: 'Clear all unpinned items?',
+		enable: 'Enable Monitoring',
+		enableDesc: 'Automatically record copied text in history',
 	},
 };

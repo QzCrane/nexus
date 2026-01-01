@@ -1,4 +1,4 @@
-// goal: Clipboard tool panel UI with i18n support
+	// goal: Clipboard tool panel UI with i18n support
 // eff: Components extracted to reduce file size
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -9,25 +9,35 @@ import {
 	togglePin, 
 	deleteItem, 
 	clearUnpinned, 
-	copyToClipboard 
+	copyToClipboard,
+	getClipboardSettings,
+	updateClipboardSettings
 } from './core';
 import type { ClipboardItem as ClipboardItemType } from './types';
 import { styles } from './panel.styles';
 import { ClipboardItem } from './ClipboardItem';
+import { Toggle } from '@nexus/ui-kit';
 
 export const ClipboardPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [history, setHistory] = useState<ClipboardItemType[]>([]);
 	const [search, setSearch] = useState('');
+	const [enabled, setEnabled] = useState(true);
 	const [toast, setToast] = useState<string | null>(null);
 
 	useEffect(() => {
 		loadHistory();
+		getClipboardSettings().then(s => setEnabled(s.enabled));
 		
 		// Listen for background updates
 		const listener = (changes: any, area: string) => {
-			if (area === 'local' && changes['halo_tool_clipboard_history']) {
-				setHistory(changes['halo_tool_clipboard_history'].newValue || []);
+			if (area === 'local') {
+				if (changes['halo_tool_clipboard_history']) {
+					setHistory(changes['halo_tool_clipboard_history'].newValue || []);
+				}
+				if (changes['halo_tool_clipboard_settings']) {
+					setEnabled(changes['halo_tool_clipboard_settings'].newValue?.enabled ?? true);
+				}
 			}
 		};
 		chrome.storage.onChanged.addListener(listener);
@@ -37,6 +47,11 @@ export const ClipboardPanel: React.FC = () => {
 	const loadHistory = async () => {
 		const h = await getClipboardHistory();
 		setHistory(h);
+	};
+
+	const handleToggle = async (checked: boolean) => {
+		await updateClipboardSettings(checked);
+		setEnabled(checked);
 	};
 
 	const showToast = (msg: string) => {
@@ -78,6 +93,13 @@ export const ClipboardPanel: React.FC = () => {
 	return (
 		<div style={styles.wrapper}>
 			<Card variant="default" padding="sm">
+				<div style={{ ...styles.row, padding: '4px 8px', borderBottom: '1px solid var(--halo-border)', marginBottom: '8px' }}>
+					<div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+						<span style={{ fontSize: '13px', fontWeight: 600 }}>🚀 {t('clipboardPanel.enable')}</span>
+						<span style={{ fontSize: '11px', color: 'var(--halo-text-muted)' }}>{t('clipboardPanel.enableDesc')}</span>
+					</div>
+					<Toggle checked={enabled} onChange={handleToggle} />
+				</div>
 				<div style={styles.searchBar}>
 					<input 
 						style={styles.input}

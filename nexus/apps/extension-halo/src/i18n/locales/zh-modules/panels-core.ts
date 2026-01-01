@@ -84,5 +84,7 @@ export const panelsCore = {
 		unknownSource: '未知来源',
 		pinned: '已置顶',
 		confirmClear: '清除所有未置顶项目？',
+		enable: '开启剪贴板监听',
+		enableDesc: '自动记录网页复制的内容到历史中',
 	},
 };

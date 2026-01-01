@@ -16,17 +16,22 @@ const activeTools = new Set<string>();
 
 // ===== CLIPBOARD TRACKING =====
 document.addEventListener('copy', () => {
-	setTimeout(() => {
-		const selection = document.getSelection()?.toString();
-		if (selection && selection.trim()) {
-			chrome.runtime.sendMessage({
-				type: 'HALO_CLIPBOARD_ADD',
-				text: selection,
-				sourceUrl: window.location.href,
-				sourceTitle: document.title,
-			});
-		}
-	}, 50);
+	chrome.storage.local.get(['halo_tool_clipboard_settings'], (result) => {
+		const settings = result['halo_tool_clipboard_settings'] || { enabled: true };
+		if (!settings.enabled) return;
+
+		setTimeout(() => {
+			const selection = document.getSelection()?.toString();
+			if (selection && selection.trim()) {
+				chrome.runtime.sendMessage({
+					type: 'HALO_CLIPBOARD_ADD',
+					text: selection,
+					sourceUrl: window.location.href,
+					sourceTitle: document.title,
+				});
+			}
+		}, 50);
+	});
 });
 
 // ===== MESSAGE HANDLER =====

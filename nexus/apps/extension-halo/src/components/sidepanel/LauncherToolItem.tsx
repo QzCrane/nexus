@@ -17,11 +17,9 @@ interface LauncherToolItemProps {
 	openTools: ToolId[];
 }
 
-// Environmental Tools: Features that change the browser behavior or stay active
+// Environmental Tools: Features that change the browser behavior or stay active with a master toggle
 const ENVIRONMENTAL_TOOLS: string[] = [
-	'smooth-scroll', 'userscripts', 'page-annotate', 'reader-mode', 
-	'translate', 'cookie-manager', 'storage-editor'
-
+	'smooth-scroll', 'userscripts', 'clipboard'
 ];
 
 export const LauncherToolItem: React.FC<LauncherToolItemProps> = ({
@@ -45,9 +43,7 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = ({
 	const isPinned = settings?.pinnedTools?.includes(tool.id);
 	const isDragging = draggingId === tool.id;
 	const isRunning = openTools.includes(tool.id as ToolId);
-
-	// HCI: Highlight tools that affect browser environment
-	const isEnvTool = ENVIRONMENTAL_TOOLS.includes(tool.id);
+	const [engineEnabled, setEngineEnabled] = React.useState(false);
 
 	// Category high-end color map
 	const mainThemeColor = useMemo(() => {
@@ -63,6 +59,43 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = ({
 			default: return 'var(--halo-accent)';
 		}
 	}, [tool.category]);
+
+	// Track engine status for environmental tools
+	React.useEffect(() => {
+		const isEnv = ENVIRONMENTAL_TOOLS.includes(tool.id);
+		if (!isEnv) return;
+
+		const checkStatus = async () => {
+			if (tool.id === 'smooth-scroll') {
+				const data = await chrome.storage.sync.get('HALO_SMOOTH_SCROLL_SETTINGS');
+				const settings = data['HALO_SMOOTH_SCROLL_SETTINGS'];
+				setEngineEnabled(!!settings?.enabled);
+			} else if (tool.id === 'userscripts') {
+				const data = await chrome.storage.local.get('halo_userscripts');
+				const state = data['halo_userscripts'];
+				setEngineEnabled(!!state?.globalEnabled);
+			} else if (tool.id === 'clipboard') {
+				const data = await chrome.storage.local.get('halo_tool_clipboard_settings');
+				const settings = data['halo_tool_clipboard_settings'];
+				setEngineEnabled(settings?.enabled !== false); // Default to true
+			}
+		};
+
+		checkStatus();
+
+		const listener = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
+			if (tool.id === 'smooth-scroll' && areaName === 'sync' && changes['HALO_SMOOTH_SCROLL_SETTINGS']) {
+				setEngineEnabled(!!changes['HALO_SMOOTH_SCROLL_SETTINGS'].newValue?.enabled);
+			} else if (tool.id === 'userscripts' && areaName === 'local' && changes['halo_userscripts']) {
+				setEngineEnabled(!!changes['halo_userscripts'].newValue?.globalEnabled);
+			} else if (tool.id === 'clipboard' && areaName === 'local' && changes['halo_tool_clipboard_settings']) {
+				setEngineEnabled(changes['halo_tool_clipboard_settings'].newValue?.enabled !== false);
+			}
+		};
+
+		chrome.storage.onChanged.addListener(listener);
+		return () => chrome.storage.onChanged.removeListener(listener);
+	}, [tool.id]);
 
 	return (
 		<div
@@ -135,7 +168,7 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = ({
 					)}
 					
 					{/* Environmental Indicator (Below Running) */}
-					{isEnvTool && (
+					{engineEnabled && (
 						<div style={{ 
 							width: '6px', height: '6px', borderRadius: '50%', 
 							background: '#10b981',

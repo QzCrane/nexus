@@ -10,4 +10,5 @@ export interface ClipboardItem {
 }
 
 export const STORAGE_KEY = 'halo_tool_clipboard_history';
+export const SETTINGS_STORAGE_KEY = 'halo_tool_clipboard_settings';
 export const MAX_HISTORY = 100;
