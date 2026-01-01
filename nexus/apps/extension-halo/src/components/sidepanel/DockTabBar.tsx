@@ -5,6 +5,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from '../../i18n';
 import type { ToolId, ToolMeta } from '../../kernel';
+import { useSmoothWheel } from '../../kernel/hooks/use-smooth-wheel';
 import { DockItem } from './DockItem';
 
 interface DockTabBarProps {
@@ -48,45 +49,13 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 		return 1 + ratio * ratio * (MAX_SCALE - 1);
 	}, [mouseX]);
 
-	// Wheel handler with requestAnimationFrame throttling for smooth scrolling
-	useEffect(() => {
-		const el = scrollRef.current;
-		if (!el) return;
-		
-		let accumulatedDelta = 0;
-		let rafId: number | null = null;
-
-		const performScroll = () => {
-			if (accumulatedDelta !== 0) {
-				el.scrollBy({ left: accumulatedDelta, behavior: 'smooth' });
-				accumulatedDelta = 0;
-			}
-			rafId = null;
-		};
-
-		const handleWheel = (e: WheelEvent) => {
-			if (el.scrollWidth <= el.clientWidth) return;
-			e.preventDefault();
-			e.stopPropagation();
-			// Accumulate delta, RAF will batch and apply
-			accumulatedDelta += e.deltaY !== 0 ? e.deltaY : e.deltaX;
-			if (rafId === null) {
-				rafId = requestAnimationFrame(performScroll);
-			}
-		};
-
-		el.addEventListener('wheel', handleWheel, { passive: false });
-		return () => {
-			el.removeEventListener('wheel', handleWheel);
-			if (rafId !== null) cancelAnimationFrame(rafId);
-		};
-	}, [dockTools.length]);
+	useSmoothWheel(scrollRef, 'x');
 
 	const handleItemEnter = useCallback((toolId: ToolId, toolName: string, rect: DOMRect) => {
 		setHoveredId(toolId);
 		if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
 		tooltipTimer.current = window.setTimeout(() => {
-			setTooltip({ text: toolName, x: rect.left + rect.width / 2, y: rect.top - 8 });
+			setTooltip({ text: toolName, x: rect.left + rect.width / 2, y: rect.top - 10 });
 		}, TOOLTIP_DELAY);
 	}, []);
 
@@ -107,6 +76,13 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 			marginTop: `-${MAGNIFY_HEADROOM}px`,
 			pointerEvents: 'none',
 		}}>
+			<style>{`
+				@keyframes dockTooltipFadeIn {
+					from { opacity: 0; transform: translate(-50%, -90%) scale(0.95); }
+					to { opacity: 1; transform: translate(-50%, -100%) scale(1); }
+				}
+			`}</style>
+
 			{/* 背景层：仅覆盖底部 Dock 条区域，顶部位移与负 margin 抵消 */}
 			<div style={{
 				position: 'absolute',
@@ -165,15 +141,18 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 					left: tooltip.x,
 					top: tooltip.y,
 					transform: 'translate(-50%, -100%)',
-					background: 'rgba(0, 0, 0, 0.85)',
+					background: 'rgba(0, 0, 0, 0.8)',
+					backdropFilter: 'blur(8px)',
 					color: 'white',
-					padding: '4px 8px',
-					borderRadius: '4px',
+					padding: '5px 10px',
+					borderRadius: '6px',
 					fontSize: '12px',
+					fontWeight: 500,
 					whiteSpace: 'nowrap',
 					pointerEvents: 'none',
 					zIndex: 99999,
-					animation: 'fadeInUp 0.15s ease-out',
+					boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+					animation: 'dockTooltipFadeIn 0.1s ease-out forwards',
 				}}>
 					{tooltip.text}
 				</div>,

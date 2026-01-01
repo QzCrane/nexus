@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useTranslation } from '../../i18n';
 import type { ToolId, ToolMeta, HaloSettings } from '../../kernel';
 import type { ToolCategory } from '../../i18n/types';
+import { useSmoothWheel } from '../../kernel/hooks/use-smooth-wheel';
 import { SearchBar } from '../SearchBar';
 import { LauncherToolItem } from './LauncherToolItem';
 import { commonStyles } from './layouts.styles';
@@ -28,7 +29,11 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 	openTools
 }) => {
 	const { t } = useTranslation();
+	const scrollRef = useRef<HTMLDivElement>(null);
 	const [draggingId, setDraggingId] = useState<string | null>(null);
+
+	// Custom smooth scrolling
+	useSmoothWheel(scrollRef, 'y');
 	
 	const showLabels = settings?.showToolLabels ?? true;
 	const isCompact = settings?.compactMode ?? false;
@@ -108,7 +113,10 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 			</div>
 
 			{/* SCROLLABLE CONTENT: Categories and Tools */}
-			<div className="halo-scrollbar" style={{ 
+			<div 
+				ref={scrollRef}
+				className="halo-scrollbar" 
+				style={{ 
 				...commonStyles.toolbar as any, 
 				flex: 1,
 				overflowY: 'auto',

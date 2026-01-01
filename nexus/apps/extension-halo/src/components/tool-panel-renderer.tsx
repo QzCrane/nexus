@@ -1,11 +1,8 @@
-// goal: Tool panel wrapper with lazy loading
-// eff: Centralized Suspense + tool rendering logic. Excludes system tools from Keep-Alive.
-
 import React from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../i18n';
 import type { ToolId, HaloSettings } from '../kernel';
-import { TOOL_REGISTRY } from '../kernel';
+import { useSmoothWheel } from '../kernel/hooks/use-smooth-wheel';
 import { LazyToolRenderer } from './lazy-tool-loader';
 import { SettingsPanel } from '../pages/settings';
 import { ModuleStorePanel } from '../pages/module-store';
@@ -27,6 +24,19 @@ interface ToolPanelRendererProps {
 	onSettingsChange: (s: HaloSettings) => void;
 	selectToolText: string;
 }
+
+/**
+ * Internal scrollable container with custom smooth wheel
+ */
+const SmoothScrollContainer: React.FC<{ children: React.ReactNode; style?: React.CSSProperties }> = ({ children, style }) => {
+	const ref = React.useRef<HTMLDivElement>(null);
+	useSmoothWheel(ref, 'y');
+	return (
+		<div ref={ref} style={{ ...styles.contentWrapper, overflowY: 'auto', ...style }}>
+			{children}
+		</div>
+	);
+};
 
 export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({ 
 	activeTool, 
@@ -59,21 +69,21 @@ export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({
 		<>
 			{/* System Pages (Rendered only when active) */}
 			{activeTool === 'module-store' && (
-				<div style={{ ...styles.contentWrapper, overflowY: 'auto' }}>
+				<SmoothScrollContainer>
 					<ModuleStorePanel />
-				</div>
+				</SmoothScrollContainer>
 			)}
 			
 			{activeTool === 'settings' && (
-				<div style={{ ...styles.contentWrapper, overflowY: 'auto' }}>
+				<SmoothScrollContainer>
 					<SettingsPanel onSettingsChange={onSettingsChange} />
-				</div>
+				</SmoothScrollContainer>
 			)}
 			
 			{activeTool === 'permissions' && (
-				<div style={{ ...styles.contentWrapper, overflowY: 'auto' }}>
+				<SmoothScrollContainer>
 					<LazyToolRenderer toolId="permissions" onSettingsChange={onSettingsChange} />
-				</div>
+				</SmoothScrollContainer>
 			)}
 
 			{/* Standard Tools (Keep Alive) */}
@@ -88,10 +98,13 @@ export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({
 							style={{ 
 								...styles.contentWrapper,
 								display: isActive ? 'flex' : 'none',
+								padding: 0, // Container below SmoothScrollContainer handles padding
 							}}
 						>
-							<div style={{ flex: 1, overflowY: 'auto', position: 'relative', minHeight: 0 }}>
-								<LazyToolRenderer toolId={toolId} onSettingsChange={onSettingsChange} />
+							<div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+								<SmoothScrollContainer style={{ padding: '12px 12px 0 12px' }}>
+									<LazyToolRenderer toolId={toolId} onSettingsChange={onSettingsChange} />
+								</SmoothScrollContainer>
 							</div>
 						</div>
 					);
