@@ -78,24 +78,11 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 		}}>
 			<style>{`
 				@keyframes dockTooltipFadeIn {
-					from { opacity: 0; transform: translate(-50%, -90%) scale(0.95); }
+					from { opacity: 0; transform: translate(-50%, -100%) scale(0.98); }
 					to { opacity: 1; transform: translate(-50%, -100%) scale(1); }
 				}
 			`}</style>
 
-			{/* 背景层：仅覆盖底部 Dock 条区域，顶部位移与负 margin 抵消 */}
-			<div style={{
-				position: 'absolute',
-				bottom: 0,
-				left: 0,
-				right: 0,
-				top: `${MAGNIFY_HEADROOM}px`, // 从 magnification 区域下方开始
-				background: 'var(--halo-bg-secondary)',
-				borderBottom: '1px solid var(--halo-border)',
-				zIndex: -1,
-				pointerEvents: 'auto',
-			}} />
-			
 			<div
 				ref={scrollRef}
 				className="halo-thin-scrollbar"
@@ -106,14 +93,27 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 					alignItems: 'flex-end',
 					justifyContent: dockTools.length <= 5 ? 'center' : 'flex-start',
 					gap: '6px',
-					padding: '0 16px 8px 16px', // 底部留 8px 边距
+					padding: '0 16px 8px 16px',
 					overflowX: 'auto',
-					overflowY: 'hidden', // 关键：现在高度足够，不会切掉顶部
-					// 总高度 = 图标高 + 放大余量 + 底部 padding
+					overflowY: 'hidden',
 					minHeight: `${BASE_SIZE + MAGNIFY_HEADROOM + 8}px`,
 					pointerEvents: 'auto',
+					position: 'relative',
 				}}
 			>
+				{/* 背景层：作为滚动内容的底层，宽度自动撑满 scrollWidth */}
+				<div style={{
+					position: 'absolute',
+					bottom: 0,
+					left: 0,
+					minWidth: '100%',
+					// 确保背景层高度刚好覆盖图标条部分
+					height: `${BASE_SIZE + 16}px`, 
+					background: 'var(--halo-bg-secondary)',
+					borderBottom: '1px solid var(--halo-border)',
+					zIndex: -1,
+				}} />
+
 				{dockTools.map((toolId, index) => {
 					const tool = visibleTools.find((m) => m.id === toolId);
 					if (!tool) return null;
@@ -152,7 +152,7 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 					pointerEvents: 'none',
 					zIndex: 99999,
 					boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-					animation: 'dockTooltipFadeIn 0.1s ease-out forwards',
+					animation: 'dockTooltipFadeIn 0.05s ease-out forwards',
 				}}>
 					{tooltip.text}
 				</div>,
