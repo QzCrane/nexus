@@ -32,6 +32,7 @@ export interface BaseTranslations {
 		classic: string;
 		showLabels: string;
 		hideLabels: string;
+		popOut: string;
 	};
 }
 

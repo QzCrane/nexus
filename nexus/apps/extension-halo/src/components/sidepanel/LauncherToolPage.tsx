@@ -4,6 +4,7 @@
 import React from 'react';
 import { useTranslation } from '../../i18n';
 import type { ToolId, ToolMeta, HaloSettings } from '../../kernel';
+import { popOutWindow } from '../../kernel';
 import { ToolPanelRenderer } from '../tool-panel-renderer';
 import { commonStyles } from './layouts.styles';
 
@@ -95,6 +96,13 @@ export const LauncherToolPage: React.FC<LauncherToolPageProps> = ({
 					</div>
 				</div>
 				<div style={commonStyles.headerActions}>
+					<button 
+						style={commonStyles.iconBtn} 
+						onClick={popOutWindow}
+						title={t('layout.popOut')}
+					>
+						📤
+					</button>
 					<button 
 						style={commonStyles.iconBtn} 
 						onClick={() => onSelectTool('settings' as ToolId)}

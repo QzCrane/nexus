@@ -39,5 +39,6 @@ export const base = {
 		classic: '经典',
 		showLabels: '显示标签',
 		hideLabels: '隐藏标签',
+		popOut: '弹出独立窗口',
 	},
 };

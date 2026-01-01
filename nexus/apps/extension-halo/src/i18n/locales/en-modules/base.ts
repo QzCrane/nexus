@@ -39,5 +39,6 @@ export const base = {
 		classic: 'Classic',
 		showLabels: 'Show Labels',
 		hideLabels: 'Hide Labels',
+		popOut: 'Pop Out Window',
 	},
 };

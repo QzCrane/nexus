@@ -19,3 +19,4 @@ export * from './hooks/use-remote-registry';
 export * from './utils/resource-utils';
 export * from './utils/tool-search-utils';
 export * from './utils/tool-storage-utils';
+export * from './utils/pop-out-window';

@@ -4,6 +4,7 @@
 import React from 'react';
 import { useTranslation } from '../../i18n';
 import type { ToolId, ToolMeta, HaloSettings } from '../../kernel';
+import { popOutWindow } from '../../kernel';
 import type { ToolCategory } from '../../i18n/types';
 import { SearchBar } from '../SearchBar';
 import { commonStyles } from './layouts.styles';
@@ -81,6 +82,13 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 						title={t('layout.mode') + ': ' + t('layout.launcher')}
 					>
 						📱
+					</button>
+					<button 
+						style={commonStyles.iconBtn} 
+						onClick={popOutWindow}
+						title={t('layout.popOut')}
+					>
+						📤
 					</button>
 					{moduleStore && (
 						<button
