@@ -19,7 +19,8 @@ interface DockTabBarProps {
 const BASE_SIZE = 38;
 const MAX_SCALE = 1.4;
 const EFFECT_DISTANCE = 70;
-const MAGNIFY_HEADROOM = Math.ceil(BASE_SIZE * (MAX_SCALE - 1));
+// 增加冗余高度，确保红色删除按钮和阴影不被裁剪
+const MAGNIFY_HEADROOM = 24; 
 const TOOLTIP_DELAY = 100;
 
 export const DockTabBar: React.FC<DockTabBarProps> = ({
@@ -27,7 +28,6 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 }) => {
 	const { t } = useTranslation();
 	const scrollRef = useRef<HTMLDivElement>(null);
-	const outerRef = useRef<HTMLDivElement>(null); // Added outer ref for better capture
 	const [mouseX, setMouseX] = useState<number | null>(null);
 	const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
 	const tooltipTimer = useRef<number | null>(null);
@@ -54,7 +54,7 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 		setHoveredId(toolId);
 		if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
 		tooltipTimer.current = window.setTimeout(() => {
-			// POSITION: BOTTOM (rect.bottom + 8)
+			// Position tooltip below the icon
 			setTooltip({ text: toolName, x: rect.left + rect.width / 2, y: rect.bottom + 8 });
 		}, TOOLTIP_DELAY);
 	}, []);
@@ -65,58 +65,60 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 		setTooltip(null);
 	}, []);
 
-	// ROBUST WHEEL LOGIC: Attach to outer container to capture everything
+	// 重构滚轮逻辑：直接绑定在滚动容器上，确保能够接收到事件
 	useEffect(() => {
-		const outer = outerRef.current;
-		const inner = scrollRef.current;
-		if (!outer || !inner) return;
+		const el = scrollRef.current;
+		if (!el) return;
 
 		const handleWheel = (e: WheelEvent) => {
-			// Even if internal deltaX/Y are small, we might need to intercept
-			if (Math.abs(e.deltaY) > Math.abs(e.deltaX) * 0.5) {
-				const isScrollable = inner.scrollWidth > inner.clientWidth + 0.5;
-				if (isScrollable) {
+			// 如果是垂直滚动，则接管并转换为水平位移
+			if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+				// 判定溢出状态
+				if (el.scrollWidth > el.clientWidth + 1) {
 					e.preventDefault();
 					e.stopPropagation();
 
 					let delta = e.deltaY;
-					if (e.deltaMode === 1) delta *= 38; // Match icon size
-					else if (e.deltaMode === 2) delta *= inner.clientWidth;
+					if (e.deltaMode === 1) delta *= 40; 
+					else if (e.deltaMode === 2) delta *= el.clientWidth;
 
-					inner.scrollLeft += delta;
+					el.scrollLeft += delta;
 				}
 			}
 		};
 
-		outer.addEventListener('wheel', handleWheel, { passive: false });
-		return () => outer.removeEventListener('wheel', handleWheel);
-	}, []);
+		el.addEventListener('wheel', handleWheel, { passive: false });
+		return () => el.removeEventListener('wheel', handleWheel);
+	}, [dockTools.length]); // 工具数量变化时重新绑定（虽然引用一致，但为了保险）
 
 	if (dockTools.length === 0) return null;
 
+	// 实现完美居中的仿真 Padding
+	const isShort = dockTools.length <= 5;
+	const iconTotalWidth = dockTools.length * (BASE_SIZE + 6); // 38px size + 6px gap
+
 	return (
-		<div 
-			ref={outerRef}
-			style={{
-				position: 'relative',
-				zIndex: 100, 
-				background: 'transparent',
-				marginTop: `-${MAGNIFY_HEADROOM}px`,
-				pointerEvents: 'none',
-			}}
-		>
+		<div style={{
+			position: 'relative',
+			zIndex: 1000, // 强制提升至顶级，防止被 Header 裁剪
+			background: 'transparent',
+			// 将负 Margin 移除，改用相对定位来覆盖 Header，这样不会影响 pointer-events 命中
+			marginTop: `-${MAGNIFY_HEADROOM}px`,
+		}}>
 			<style>{`
 				@keyframes dockTooltipFadeIn {
-					from { opacity: 0; transform: translate(-50%, -8px) scale(0.95); }
+					from { opacity: 0; transform: translate(-50%, -10px) scale(0.95); }
 					to { opacity: 1; transform: translate(-50%, 0) scale(1); }
 				}
 				.dock-scroll-container::before {
 					content: '';
 					margin-left: auto;
+					flex-shrink: 0;
 				}
 				.dock-scroll-container::after {
 					content: '';
 					margin-right: auto;
+					flex-shrink: 0;
 				}
 			`}</style>
 			
@@ -128,13 +130,14 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 				style={{
 					display: 'flex',
 					alignItems: 'flex-end',
-					// FIX: Use flex-start to enable scrollLeft, use margin:auto items (via psuedo) for centering
 					justifyContent: 'flex-start',
 					gap: '6px',
-					padding: '0 16px 8px 16px',
+					padding: `0 16px 8px 16px`,
+					// 只有在内容较少时才开启仿真居中
+					paddingLeft: isShort ? `calc(50% - ${iconTotalWidth / 2}px)` : '16px',
 					overflowX: 'auto',
 					overflowY: 'hidden',
-					minHeight: `${BASE_SIZE + MAGNIFY_HEADROOM + 8}px`,
+					minHeight: `${BASE_SIZE + MAGNIFY_HEADROOM + 12}px`, // 加一点点底垫
 					pointerEvents: 'auto',
 					position: 'relative',
 					background: `linear-gradient(to bottom, transparent ${MAGNIFY_HEADROOM}px, var(--halo-bg-secondary) ${MAGNIFY_HEADROOM}px)`,
@@ -161,24 +164,24 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 				})}
 			</div>
 
-			{/* Custom Tooltip - RENDER AT BOTTOM */}
+			{/* Tooltip: Portal to body for absolute escape */}
 			{tooltip && createPortal(
 				<div style={{
 					position: 'fixed',
 					left: tooltip.x,
 					top: tooltip.y,
 					transform: 'translate(-50%, 0)',
-					background: 'rgba(20, 20, 20, 0.85)',
-					backdropFilter: 'blur(10px)',
+					background: 'rgba(20, 20, 20, 0.9)',
+					backdropFilter: 'blur(12px)',
 					color: 'white',
-					padding: '4px 10px',
-					borderRadius: '6px',
+					padding: '5px 12px',
+					borderRadius: '8px',
 					fontSize: '11px',
 					fontWeight: 500,
 					whiteSpace: 'nowrap',
 					pointerEvents: 'none',
-					zIndex: 99999,
-					boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+					zIndex: 999999,
+					boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
 					animation: 'dockTooltipFadeIn 0.08s ease-out forwards',
 					border: '1px solid rgba(255, 255, 255, 0.1)',
 				}}>
