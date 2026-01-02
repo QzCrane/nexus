@@ -1,6 +1,7 @@
-// goal: UserScripts core logic - storage and script management
+// goal: UserScripts core logic - full feature parity with Tampermonkey
+// eff: Storage, CRUD, reorder, import/export, header parsing
 
-import type { UserScript, UserScriptState } from './types';
+import type { UserScript, UserScriptState, ParsedHeader, ScriptExport, ScriptType, UserScriptRunAt } from './types';
 
 const STORAGE_KEY = 'halo_userscripts';
 
@@ -22,11 +23,16 @@ async function saveState(state: UserScriptState): Promise<void> {
 }
 
 // Add new script
-export async function addUserScript(script: Omit<UserScript, 'id' | 'createdAt' | 'updatedAt'>): Promise<UserScript> {
+export async function addUserScript(
+	script: Omit<UserScript, 'id' | 'createdAt' | 'updatedAt' | 'order' | 'runCount'>
+): Promise<UserScript> {
 	const state = await getUserScriptsState();
+	const maxOrder = state.scripts.reduce((max, s) => Math.max(max, s.order), 0);
 	const newScript: UserScript = {
 		...script,
 		id: crypto.randomUUID(),
+		order: maxOrder + 1,
+		runCount: 0,
 		createdAt: Date.now(),
 		updatedAt: Date.now(),
 	};
@@ -71,9 +77,39 @@ export async function toggleGlobalEnabled(): Promise<boolean> {
 	return state.globalEnabled;
 }
 
+// Reorder script (move up/down)
+export async function reorderScript(id: string, direction: 'up' | 'down'): Promise<void> {
+	const state = await getUserScriptsState();
+	const index = state.scripts.findIndex((s) => s.id === id);
+	if (index === -1) return;
+
+	const newIndex = direction === 'up' ? index - 1 : index + 1;
+	if (newIndex < 0 || newIndex >= state.scripts.length) return;
+
+	// Swap positions
+	[state.scripts[index], state.scripts[newIndex]] = [state.scripts[newIndex], state.scripts[index]];
+
+	// Update order values
+	state.scripts.forEach((s, i) => { s.order = i; });
+	await saveState(state);
+}
+
+// Increment run count
+export async function incrementRunCount(id: string): Promise<void> {
+	const state = await getUserScriptsState();
+	const script = state.scripts.find((s) => s.id === id);
+	if (script) {
+		script.runCount++;
+		script.lastRun = Date.now();
+		await saveState(state);
+	}
+}
+
 // Get scripts matching a URL
 export function getMatchingScripts(scripts: UserScript[], url: string): UserScript[] {
-	return scripts.filter((s) => s.enabled && matchesUrl(s.matches, url));
+	return scripts
+		.filter((s) => s.enabled && matchesUrl(s.matches, url) && !matchesUrl(s.excludeMatches || [], url))
+		.sort((a, b) => a.order - b.order);
 }
 
 // URL pattern matching (simplified glob-style)
@@ -93,11 +129,124 @@ function patternToRegex(pattern: string): RegExp {
 	return new RegExp(`^${escaped}$`, 'i');
 }
 
+// Parse Userscript header (// ==UserScript== format)
+export function parseUserScriptHeader(code: string): ParsedHeader | null {
+	const headerMatch = code.match(/\/\/\s*==UserScript==([\s\S]*?)\/\/\s*==\/UserScript==/);
+	if (!headerMatch) return null;
+
+	const lines = headerMatch[1].split('\n');
+	const header: ParsedHeader = {};
+
+	for (const line of lines) {
+		const match = line.match(/\/\/\s*@([\w-]+)\s+(.*)/);
+		if (match) {
+			const [, key, value] = match;
+			const trimmedValue = value.trim();
+
+			// Handle array fields
+			if (key === 'match' || key === 'exclude' || key === 'grant') {
+				if (!header[key]) header[key] = [];
+				(header[key] as string[]).push(trimmedValue);
+			} else {
+				(header as any)[key] = trimmedValue;
+			}
+		}
+	}
+
+	return header;
+}
+
+// Create script from parsed header
+export function createScriptFromHeader(code: string, header: ParsedHeader): Omit<UserScript, 'id' | 'createdAt' | 'updatedAt' | 'order' | 'runCount'> {
+	return {
+		name: header.name || 'Untitled Script',
+		description: header.description || '',
+		code,
+		enabled: true,
+		type: 'javascript',
+		matches: header.match || ['*://*/*'],
+		excludeMatches: header.exclude,
+		runAt: (header['run-at'] as UserScriptRunAt) || 'document_end',
+		version: header.version,
+		author: header.author,
+		homepage: header.homepage,
+		updateUrl: header.updateURL,
+	};
+}
+
+// Export scripts to JSON
+export function exportScripts(scripts: UserScript[]): string {
+	const exportData: ScriptExport = {
+		version: '1.0',
+		exportedAt: Date.now(),
+		scripts,
+	};
+	return JSON.stringify(exportData, null, 2);
+}
+
+// Import scripts from JSON
+export async function importScripts(json: string): Promise<{ imported: number; skipped: number }> {
+	const data = JSON.parse(json) as ScriptExport;
+	if (data.version !== '1.0') throw new Error('Unsupported export version');
+
+	const state = await getUserScriptsState();
+	let imported = 0;
+	let skipped = 0;
+
+	for (const script of data.scripts) {
+		// Skip if script with same name exists
+		if (state.scripts.some(s => s.name === script.name)) {
+			skipped++;
+			continue;
+		}
+
+		const maxOrder = state.scripts.reduce((max, s) => Math.max(max, s.order), 0);
+		state.scripts.push({
+			...script,
+			id: crypto.randomUUID(),
+			order: maxOrder + 1,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		imported++;
+	}
+
+	await saveState(state);
+	return { imported, skipped };
+}
+
+// Install script from URL
+export async function installFromUrl(url: string): Promise<UserScript> {
+	const response = await fetch(url);
+	if (!response.ok) throw new Error(`Failed to fetch: ${response.status}`);
+
+	const code = await response.text();
+	const header = parseUserScriptHeader(code);
+
+	if (header) {
+		const scriptData = createScriptFromHeader(code, header);
+		scriptData.updateUrl = url;
+		return await addUserScript(scriptData);
+	} else {
+		// No header found, create minimal script
+		return await addUserScript({
+			name: new URL(url).pathname.split('/').pop() || 'Imported Script',
+			description: `Imported from ${url}`,
+			code,
+			enabled: true,
+			type: 'javascript',
+			matches: ['*://*/*'],
+			runAt: 'document_end',
+		});
+	}
+}
+
 // Script templates
 export const SCRIPT_TEMPLATES = {
 	adblock: {
 		name: 'Simple Ad Blocker',
 		description: 'Removes common ad elements',
+		type: 'javascript' as ScriptType,
 		code: `// Remove common ad containers
 const adSelectors = [
   '[class*="ad-"]', '[class*="ads-"]', '[id*="ad-"]', '[id*="ads-"]',
@@ -108,33 +257,57 @@ adSelectors.forEach(sel => {
   document.querySelectorAll(sel).forEach(el => el.remove());
 });`,
 		matches: ['*://*/*'],
-		runAt: 'document_end' as const,
+		runAt: 'document_end' as UserScriptRunAt,
 	},
 	darkForce: {
 		name: 'Force Dark Mode',
 		description: 'Apply dark theme to any page',
-		code: `// Force dark mode
-document.documentElement.style.setProperty('--bg', '#1a1a2e', 'important');
-document.documentElement.style.setProperty('--text', '#eaeaea', 'important');
-document.body.style.cssText = 'background: #1a1a2e !important; color: #eaeaea !important;';
-document.querySelectorAll('*').forEach(el => {
-  el.style.backgroundColor = 'inherit';
-  el.style.color = 'inherit';
+		type: 'javascript' as ScriptType,
+		code: `// Force dark mode via filter
+document.documentElement.style.filter = 'invert(1) hue-rotate(180deg)';
+document.querySelectorAll('img, video, picture').forEach(el => {
+  el.style.filter = 'invert(1) hue-rotate(180deg)';
 });`,
 		matches: ['*://*/*'],
-		runAt: 'document_end' as const,
+		runAt: 'document_end' as UserScriptRunAt,
 	},
 	removeOverlay: {
 		name: 'Remove Overlay/Modal',
-		description: 'Remove fixed overlays and modals',
-		code: `// Remove overlays
+		description: 'Remove fixed overlays and restore scroll',
+		type: 'javascript' as ScriptType,
+		code: `// Remove overlays and restore scroll
 setInterval(() => {
   document.querySelectorAll('[style*="position: fixed"]').forEach(el => {
-    if (el.style.zIndex > 1000) el.remove();
+    if (parseInt(el.style.zIndex) > 1000) el.remove();
   });
   document.body.style.overflow = 'auto';
+  document.documentElement.style.overflow = 'auto';
 }, 500);`,
 		matches: ['*://*/*'],
-		runAt: 'document_end' as const,
+		runAt: 'document_end' as UserScriptRunAt,
+	},
+	customCSS: {
+		name: 'Custom CSS',
+		description: 'Inject custom styles',
+		type: 'css' as ScriptType,
+		code: `/* Custom styles */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}`,
+		matches: ['*://*/*'],
+		runAt: 'document_start' as UserScriptRunAt,
+	},
+	blockSpace: {
+		name: 'Block Space Scroll',
+		description: 'Prevent spacebar from scrolling',
+		type: 'javascript' as ScriptType,
+		code: `// Block spacebar scroll
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' && e.target === document.body) {
+    e.preventDefault();
+  }
+}, { capture: true });`,
+		matches: ['*://*/*'],
+		runAt: 'document_start' as UserScriptRunAt,
 	},
 };

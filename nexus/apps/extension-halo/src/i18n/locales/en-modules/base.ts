@@ -26,6 +26,7 @@ export const base = {
 		grantPermission: 'Grant Permission',
 		permissionDesc: 'This tool requires permission to work.',
 		available: 'available',
+		close: 'Close',
 	},
 	categories: {
 		general: 'General',

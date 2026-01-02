@@ -1,45 +1,63 @@
-// goal: UserScripts panel UI - script management
+// goal: UserScripts panel - full Tampermonkey feature parity
+// eff: Master toggle, script list, editor, import/export, templates
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
-import type { UserScript, UserScriptRunAt } from './types';
+import type { UserScript, ScriptType, UserScriptRunAt } from './types';
 import {
 	getUserScriptsState,
 	addUserScript,
+	updateUserScript,
 	deleteUserScript,
 	toggleUserScript,
 	toggleGlobalEnabled,
+	reorderScript,
+	exportScripts,
+	importScripts,
 	SCRIPT_TEMPLATES,
 } from './core';
 import { injectScriptToCurrentTab } from './engine';
 import { styles } from './panel.styles';
-import { useToolState } from '../../kernel';
+import { ScriptItem, ScriptEditor, ImportExportModal, EmptyState, type EditForm } from './panel-parts';
 
+const DEFAULT_FORM: EditForm = {
+	name: '',
+	description: '',
+	code: '',
+	matches: '*://*/*',
+	excludeMatches: '',
+	type: 'javascript',
+	runAt: 'document_end',
+};
 
 export const UserScriptsPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [scripts, setScripts] = useState<UserScript[]>([]); // Synced via loadScripts
+	const [scripts, setScripts] = useState<UserScript[]>([]);
 	const [globalEnabled, setGlobalEnabled] = useState(true);
-	const [showEditor, setShowEditor] = useToolState<boolean>('userscripts-show-editor' as any, false);
-	const [editForm, setEditForm] = useToolState('userscripts-edit-form' as any, { name: '', description: '', code: '', matches: '*://*/*', runAt: 'document_end' as UserScriptRunAt });
+	const [showEditor, setShowEditor] = useState(false);
+	const [editingId, setEditingId] = useState<string | null>(null);
+	const [editForm, setEditForm] = useState<EditForm>(DEFAULT_FORM);
+	const [modalMode, setModalMode] = useState<'import' | 'export' | null>(null);
+	const [exportData, setExportData] = useState('');
+	const [toast, setToast] = useState<string | null>(null);
 
+	const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2000); };
 
-	// Load scripts on mount
-	useEffect(() => {
-		loadScripts();
-	}, []);
-
-	const loadScripts = async () => {
+	const loadScripts = useCallback(async () => {
 		const state = await getUserScriptsState();
 		setScripts(state.scripts);
 		setGlobalEnabled(state.globalEnabled);
-	};
+	}, []);
 
-	// Toggle global
+	useEffect(() => { loadScripts(); }, [loadScripts]);
+
+	// Global toggle
 	const handleGlobalToggle = async () => {
 		const newState = await toggleGlobalEnabled();
 		setGlobalEnabled(newState);
+		showToast(newState
+			? `✅ ${t('userscripts.scriptsEnabled', { defaultValue: 'Scripts enabled' })}`
+			: `⏸️ ${t('userscripts.scriptsDisabled', { defaultValue: 'Scripts disabled' })}`);
 	};
 
 	// Toggle individual script
@@ -50,131 +68,206 @@ export const UserScriptsPanel: React.FC = () => {
 
 	// Delete script
 	const handleDelete = async (id: string) => {
+		if (!confirm(t('userscripts.deleteConfirm', { defaultValue: 'Delete this script?' }))) return;
 		await deleteUserScript(id);
 		await loadScripts();
+		showToast(`🗑️ ${t('userscripts.scriptDeleted', { defaultValue: 'Script deleted' })}`);
 	};
 
-	// Test script on current page
+	// Test script
 	const handleTest = async (script: UserScript) => {
 		const success = await injectScriptToCurrentTab(script);
-		if (success) alert(`✅ ${script.name} executed!`);
-		else alert('❌ Injection failed');
+		showToast(success
+			? `✅ ${script.name} ${t('userscripts.executed', { defaultValue: 'executed!' })}`
+			: `❌ ${t('userscripts.injectionFailed', { defaultValue: 'Injection failed' })}`);
 	};
 
-	// Save new script
+	// Reorder script
+	const handleMove = async (id: string, dir: 'up' | 'down') => {
+		await reorderScript(id, dir);
+		await loadScripts();
+	};
+
+	// Edit script
+	const handleEdit = (script: UserScript) => {
+		setEditingId(script.id);
+		setEditForm({
+			name: script.name,
+			description: script.description,
+			code: script.code,
+			matches: script.matches.join(', '),
+			excludeMatches: script.excludeMatches?.join(', ') || '',
+			type: script.type,
+			runAt: script.runAt,
+		});
+		setShowEditor(true);
+	};
+
+	// Save script
 	const handleSave = async () => {
-		if (!editForm.name || !editForm.code) return;
-		await addUserScript({
-			name: editForm.name,
-			description: editForm.description,
+		if (!editForm.name.trim() || !editForm.code.trim()) {
+			showToast('❌ Name and code required');
+			return;
+		}
+
+		const scriptData = {
+			name: editForm.name.trim(),
+			description: editForm.description.trim(),
 			code: editForm.code,
-			matches: editForm.matches.split(',').map((m) => m.trim()),
+			matches: editForm.matches.split(',').map(m => m.trim()).filter(Boolean),
+			excludeMatches: editForm.excludeMatches ? editForm.excludeMatches.split(',').map(m => m.trim()).filter(Boolean) : undefined,
+			type: editForm.type,
 			runAt: editForm.runAt,
 			enabled: true,
-		});
-		setEditForm({ name: '', description: '', code: '', matches: '*://*/*', runAt: 'document_end' });
+		};
+
+		if (editingId) {
+			await updateUserScript(editingId, scriptData);
+			showToast(`💾 ${t('userscripts.scriptUpdated', { defaultValue: 'Script updated' })}`);
+		} else {
+			await addUserScript(scriptData);
+			showToast(`✅ ${t('userscripts.scriptAdded', { defaultValue: 'Script added' })}`);
+		}
+
+		setEditForm(DEFAULT_FORM);
+		setEditingId(null);
 		setShowEditor(false);
 		await loadScripts();
+	};
+
+	// Cancel edit
+	const handleCancel = () => {
+		setEditForm(DEFAULT_FORM);
+		setEditingId(null);
+		setShowEditor(false);
 	};
 
 	// Load template
 	const loadTemplate = (key: keyof typeof SCRIPT_TEMPLATES) => {
 		const tpl = SCRIPT_TEMPLATES[key];
-		setEditForm({ name: tpl.name, description: tpl.description, code: tpl.code, matches: tpl.matches.join(', '), runAt: tpl.runAt });
+		setEditingId(null);
+		setEditForm({
+			name: tpl.name,
+			description: tpl.description,
+			code: tpl.code,
+			matches: tpl.matches.join(', '),
+			excludeMatches: '',
+			type: tpl.type,
+			runAt: tpl.runAt,
+		});
 		setShowEditor(true);
+	};
+
+	// Export
+	const handleExport = () => {
+		setExportData(exportScripts(scripts));
+		setModalMode('export');
+	};
+
+	// Import
+	const handleImport = async (json: string) => {
+		try {
+			const result = await importScripts(json);
+			showToast(`✅ ${t('userscripts.importSuccess', { defaultValue: `Imported ${result.imported} scripts (${result.skipped} skipped)` })}`);
+			await loadScripts();
+			setModalMode(null);
+		} catch (e) {
+			showToast(`❌ ${t('userscripts.importFailed', { defaultValue: 'Import failed: Invalid JSON' })}`);
+		}
 	};
 
 	return (
 		<div style={styles.wrapper}>
-			{/* Global Toggle */}
-			<Card variant="default" padding="none">
-				<div style={{
-					display: 'flex',
-					justifyContent: 'space-between',
-					alignItems: 'center',
-					padding: '12px',
-					background: globalEnabled ? 'rgba(76, 175, 80, 0.08)' : undefined,
-					transition: 'background 0.3s ease'
-				}}>
-					<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-						<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-							<span style={{ fontSize: '15px', fontWeight: 600 }}>⚡ {t('userscripts.title', { defaultValue: 'User Scripts' })}</span>
-							{globalEnabled && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4CAF50', boxShadow: '0 0 6px #4CAF50' }}></span>}
-						</div>
-						<span style={{ fontSize: '12px', color: 'var(--halo-text-muted)' }}>{t('userscripts.enableDesc', { defaultValue: 'Enable all user scripts' })}</span>
+			{/* Master Toggle */}
+			<div style={{ ...styles.masterCard, ...(globalEnabled ? styles.masterCardActive : {}) }}>
+				<div>
+					<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+						<span style={{ fontSize: '15px', fontWeight: 600 }}>⚡ {t('userscripts.title', { defaultValue: 'User Scripts' })}</span>
+						{globalEnabled && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4CAF50', boxShadow: '0 0 6px #4CAF50' }} />}
 					</div>
-
-					<div
-						style={{ ...styles.toggle, background: globalEnabled ? 'var(--halo-accent)' : 'var(--halo-border)' }}
-						onClick={handleGlobalToggle}
-					>
-						<div style={{ ...styles.toggleKnob, left: globalEnabled ? '18px' : '2px' }} />
+					<div style={{ fontSize: '12px', color: 'var(--halo-text-secondary)', marginTop: '2px' }}>
+						{scripts.length} {t('userscripts.scripts', { defaultValue: 'scripts' })} • {scripts.filter(s => s.enabled).length} {t('userscripts.active', { defaultValue: 'active' })}
 					</div>
 				</div>
-			</Card>
+				<div style={{ ...styles.toggle, ...(globalEnabled ? styles.toggleActive : {}) }} onClick={handleGlobalToggle}>
+					<div style={{ ...styles.toggleKnob, left: globalEnabled ? '18px' : '2px' }} />
+				</div>
+			</div>
+
+			{/* Action buttons */}
+			<div style={styles.btnGroup}>
+				<button style={styles.btn} onClick={() => { setEditingId(null); setEditForm(DEFAULT_FORM); setShowEditor(true); }}>➕ {t('userscripts.addNew', { defaultValue: 'Add Script' })}</button>
+				<button style={styles.btnSecondary} onClick={handleExport}>📤 {t('userscripts.export', { defaultValue: 'Export' })}</button>
+				<button style={styles.btnSecondary} onClick={() => setModalMode('import')}>📥 {t('userscripts.import', { defaultValue: 'Import' })}</button>
+			</div>
 
 			{/* Templates */}
 			<div>
-				<span style={styles.label}>{t('userscripts.templates')}</span>
-				<div style={{ ...styles.row, marginTop: '6px' }}>
-					<button style={styles.btnSecondary} onClick={() => loadTemplate('adblock')}>🚫 Ad Block</button>
-					<button style={styles.btnSecondary} onClick={() => loadTemplate('darkForce')}>🌙 Dark Mode</button>
-					<button style={styles.btnSecondary} onClick={() => loadTemplate('removeOverlay')}>🪟 Remove Overlay</button>
+				<div style={styles.sectionTitle}>📋 {t('userscripts.templates', { defaultValue: 'Templates' })}</div>
+				<div style={styles.templatesGrid}>
+					{Object.entries(SCRIPT_TEMPLATES).map(([key, tpl]) => {
+						// Map template key to i18n key
+						const tplNameKey = key === 'adblock' ? 'tplAdblock'
+							: key === 'darkForce' ? 'tplDarkForce'
+							: key === 'removeOverlay' ? 'tplRemoveOverlay'
+							: key === 'customCSS' ? 'tplCustomCSS'
+							: 'tplBlockSpace';
+						const tplIcon = key === 'adblock' ? '🚫' : key === 'darkForce' ? '🌙' : key === 'removeOverlay' ? '🪟' : key === 'customCSS' ? '🎨' : '⌨️';
+						return (
+							<button key={key} style={styles.templateBtn} onClick={() => loadTemplate(key as keyof typeof SCRIPT_TEMPLATES)}>
+								<span style={styles.templateIcon}>{tplIcon}</span>
+								<span style={{ fontSize: '11px' }}>{t(`userscripts.${tplNameKey}`, { defaultValue: tpl.name.split(' ')[0] })}</span>
+							</button>
+						);
+					})}
 				</div>
 			</div>
 
-			{/* Add New / Editor */}
-			{showEditor ? (
-				<Card variant="default" padding="sm">
-					<input style={styles.input} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} placeholder={t('userscripts.name')} />
-					<input style={{ ...styles.input, marginTop: '6px' }} value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} placeholder={t('userscripts.description')} />
-					<div style={{ ...styles.row, marginTop: '6px' }}>
-						<input style={styles.input} value={editForm.matches} onChange={(e) => setEditForm({ ...editForm, matches: e.target.value })} placeholder="*://*.example.com/*" />
-						<select style={styles.select} value={editForm.runAt} onChange={(e) => setEditForm({ ...editForm, runAt: e.target.value as UserScriptRunAt })}>
-							<option value="document_start">document_start</option>
-							<option value="document_end">document_end</option>
-							<option value="document_idle">document_idle</option>
-						</select>
-					</div>
-					<textarea style={{ ...styles.textarea, marginTop: '6px' }} value={editForm.code} onChange={(e) => setEditForm({ ...editForm, code: e.target.value })} placeholder="// Your JavaScript code here..." />
-					<div style={{ ...styles.row, marginTop: '8px' }}>
-						<button style={styles.btn} onClick={handleSave}>{t('common.save')}</button>
-						<button style={styles.btnSecondary} onClick={() => setShowEditor(false)}>{t('common.cancel')}</button>
-					</div>
-				</Card>
-			) : (
-				<button style={styles.btn} onClick={() => setShowEditor(true)}>➕ {t('userscripts.addNew')}</button>
+			{/* Editor */}
+			{showEditor && (
+				<ScriptEditor form={editForm} onChange={setEditForm} onSave={handleSave} onCancel={handleCancel} isEdit={!!editingId} t={t} />
 			)}
 
 			{/* Script List */}
-			<div>
-				<span style={styles.label}>{t('userscripts.myScripts')} ({scripts.length})</span>
+			<div style={styles.sectionHeader}>
+				<span style={styles.sectionTitle}>📜 {t('userscripts.myScripts', { defaultValue: 'My Scripts' })} ({scripts.length})</span>
 			</div>
+
 			{scripts.length === 0 ? (
-				<div style={styles.emptyState}>
-					<div style={{ fontSize: '32px', marginBottom: '8px' }}>📜</div>
-					{t('userscripts.empty')}
-				</div>
+				<EmptyState t={t} />
 			) : (
-				scripts.map((script) => (
-					<div key={script.id} style={styles.scriptCard}>
-						<div style={styles.scriptHeader}>
-							<span style={styles.scriptTitle}>{script.name}</span>
-							<div
-								style={{ ...styles.toggle, background: script.enabled ? 'var(--halo-accent)' : 'var(--halo-border)' }}
-								onClick={() => handleToggle(script.id)}
-							>
-								<div style={{ ...styles.toggleKnob, left: script.enabled ? '18px' : '2px' }} />
-							</div>
-						</div>
-						<div style={styles.scriptMeta}>{script.description}</div>
-						<div style={styles.scriptMeta}>{script.matches.join(', ')}</div>
-						<div style={styles.row}>
-							<button style={styles.btnSecondary} onClick={() => handleTest(script)}>▶️ {t('userscripts.test')}</button>
-							<button style={styles.btnDanger} onClick={() => handleDelete(script.id)}>🗑️</button>
-						</div>
-					</div>
-				))
+				<div style={styles.scriptList}>
+					{scripts.map((script, i) => (
+						<ScriptItem
+							key={script.id}
+							script={script}
+							isFirst={i === 0}
+							isLast={i === scripts.length - 1}
+							onToggle={() => handleToggle(script.id)}
+							onEdit={() => handleEdit(script)}
+							onDelete={() => handleDelete(script.id)}
+							onTest={() => handleTest(script)}
+							onMove={(dir) => handleMove(script.id, dir)}
+							t={t}
+						/>
+					))}
+				</div>
+			)}
+
+			{/* Import/Export Modal - inline rendering */}
+			{modalMode && (
+				<ImportExportModal mode={modalMode} exportData={exportData} onImport={handleImport} onClose={() => setModalMode(null)} t={t} />
+			)}
+
+			{/* Toast */}
+			{toast && (
+				<div style={{
+					position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)',
+					padding: '10px 20px', borderRadius: '8px', background: '#333', color: '#fff',
+					fontSize: '13px', zIndex: 1001, boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+				}}>
+					{toast}
+				</div>
 			)}
 		</div>
 	);

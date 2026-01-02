@@ -26,6 +26,7 @@ export const base = {
 		grantPermission: '授予权限',
 		permissionDesc: '此工具需要访问权限才能工作。',
 		available: '可用',
+		close: '关闭',
 	},
 	categories: {
 		general: '通用工具',

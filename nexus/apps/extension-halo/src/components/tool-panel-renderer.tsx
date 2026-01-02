@@ -6,6 +6,7 @@ import { useSmoothWheel } from '../kernel/hooks/use-smooth-wheel';
 import { LazyToolRenderer } from './lazy-tool-loader';
 import { SettingsPanel } from '../pages/settings';
 import { ModuleStorePanel } from '../pages/module-store';
+import { PermissionsPanel } from '../pages/permissions';
 
 const styles = {
 	placeholder: {
@@ -82,7 +83,7 @@ export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({
 			
 			{activeTool === 'permissions' && (
 				<SmoothScrollContainer>
-					<LazyToolRenderer toolId="permissions" onSettingsChange={onSettingsChange} />
+					<PermissionsPanel />
 				</SmoothScrollContainer>
 			)}
 

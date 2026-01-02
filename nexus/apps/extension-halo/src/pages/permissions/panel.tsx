@@ -3,17 +3,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
-import type { PermissionDef, PermissionState } from './types';
 import { useToolState } from '../../kernel';
 import {
 	OPTIONAL_PERMISSIONS,
 	HOST_PERMISSIONS,
-	getAllPermissionStates,
-	requestPermission,
-	requestHostPermission,
-	revokePermission,
-	revokeHostPermission,
-} from './core';
+	getPermissionManager,
+	type PermissionDef,
+} from '../../kernel/managers/permission-manager';
 import { styles } from './panel.styles';
 
 // Group permissions by category
@@ -29,15 +25,18 @@ export const PermissionsPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [states, setStates] = useToolState<Record<string, boolean>>('permissions-states' as any, {});
 	const [loading, setLoading] = useState<string | null>(null);
-
+	const pm = getPermissionManager();
 
 	// Load permission states
 	useEffect(() => {
 		loadStates();
+		// Subscribe to external changes
+		const unsubscribe = pm.subscribe(loadStates);
+		return unsubscribe;
 	}, []);
 
 	const loadStates = async () => {
-		const allStates = await getAllPermissionStates();
+		const allStates = await pm.getAllStates();
 		const stateMap: Record<string, boolean> = {};
 		for (const s of allStates) {
 			stateMap[s.id] = s.granted;
@@ -52,9 +51,9 @@ export const PermissionsPanel: React.FC = () => {
 		
 		let success: boolean;
 		if (isGranted) {
-			success = isHost ? await revokeHostPermission(perm.id) : await revokePermission(perm.id);
+			success = isHost ? await pm.revokeHost(perm.id) : await pm.revoke(perm.id);
 		} else {
-			success = isHost ? await requestHostPermission(perm.id) : await requestPermission(perm.id);
+			success = isHost ? await pm.requestHost(perm.id) : await pm.request(perm.id);
 		}
 		
 		if (success) {

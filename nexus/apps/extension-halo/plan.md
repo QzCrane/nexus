@@ -76,6 +76,27 @@ Browser (8): archive, cookie-manager, reader-mode, bookmark-manager, history-sea
 - ✅ **首批核心重构 (83/83)**:
 - ✅ **智能意图触发**: `useClipboardIntent` 自动识别剪切板类型（JWT/JSON/URL/HEX）并引导用户使用对应工具。
 
+### 架构优化 - 极致简洁与性能 (2026-01-02 完成 - v1.7.0)
+
+- ✅ **统一搜索引擎 `unified-search.ts`**:
+  - 全语言索引 + Pinyin (全拼/简拼) + 标题/描述多字段匹配
+  - `registerSearchLocale()` 高扩展性 - 新语言自动支持搜索
+- ✅ **类型统一**: ToolMeta 吸收 ModuleMeta 字段，消除冗余映射
+- ✅ **SidePanelContext**: `useSidePanel()` / `useActiveTool()` / `useToolActions()` 消除 prop drilling
+- ✅ **useToolState 增强**: 支持 `{ area: 'sync'|'local', storageKey, debounceMs }` 配置
+- ✅ **safe-storage 增强**: 支持 sync/local 双区域
+- ✅ **i18n 异步支持**: `waitForI18n()` Promise 可配合 Suspense
+- ✅ **Idle Preload 策略**: `useIdlePreload()` + `requestIdleCallback` 空闲预加载常用工具
+- ✅ **模块拆分**: i18n-core.ts, use-open-tools.ts 精简主文件
+
+### UserScripts Pro - 对标 Tampermonkey (2026-01-02 进行中)
+
+- ✅ **完整功能**: 编辑脚本, 排序(↑↓), JS+CSS 双类型, 导入/导出 JSON, Userscript Header 解析
+- ✅ **执行统计**: 运行次数 + 最后运行时间
+- ✅ **排除模式**: excludeMatches 支持
+- ✅ **5 个模板**: Ad Block, Dark Mode, Remove Overlay, Custom CSS, Block Space
+- 🔧 **待修复**: 国际化完善 | 去掉 wrapper padding | 弹窗改为内联
+
 ---
 
 ## 🔜 阶段 10: 编解码增强 (P1)

@@ -1,20 +1,12 @@
 // goal: Centralized tool registry system
-// eff: Static registry of defaults, logic separated from data
+// eff: Uses unified ToolMeta from ALL_MODULES
 
 import type { ToolCategory } from '../../i18n/types';
 import type { ToolMeta, ToolPrefs } from '../core/tool-registry-types';
 import { ALL_MODULES } from './module-registry';
-// Map ALL_MODULES to ToolMeta format (they are compatible)
-export const TOOL_REGISTRY: ToolMeta[] = ALL_MODULES.map(m => ({
-	id: m.id as any, // Cast to ensure compatibility if ToolId is strict
-	name: m.name,
-	description: m.description,
-	category: m.category,
-	icon: m.icon,
-	status: m.builtIn ? 'ready' : 'available', // Default status, overridden by module manager
-	keywords: [],
-	system: m.system,
-}));
+
+// TOOL_REGISTRY is now directly ALL_MODULES (types are unified)
+export const TOOL_REGISTRY: ToolMeta[] = ALL_MODULES;
 
 export * from '../core/tool-registry-types';
 

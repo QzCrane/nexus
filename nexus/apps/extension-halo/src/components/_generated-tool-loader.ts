@@ -50,7 +50,6 @@ export const generatedToolPanels = {
 	'page-annotate': lazy(() => import('../tools/page-annotate/panel').then(m => ({ default: m.PageAnnotatePanel }))),
 	'password-gen': lazy(() => import('../tools/password-gen/panel').then(m => ({ default: m.PasswordGenPanel }))),
 	'pdf': lazy(() => import('../tools/pdf/panel').then(m => ({ default: m.PDFPanel }))),
-	'permissions': lazy(() => import('../tools/permissions/panel').then(m => ({ default: m.PermissionsPanel }))),
 	'pomodoro': lazy(() => import('../tools/pomodoro/panel').then(m => ({ default: m.PomodoroPanel }))),
 	'protobuf': lazy(() => import('../tools/protobuf/panel').then(m => ({ default: m.ProtobufPanel }))),
 	'punycode': lazy(() => import('../tools/punycode/panel').then(m => ({ default: m.PunycodePanel }))),

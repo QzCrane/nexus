@@ -86,3 +86,47 @@ export const useToolPreload = () => {
 
 // Get available tool IDs from generated registry
 export const getLoadableToolIds = (): ToolId[] => Object.keys(generatedToolPanels) as ToolId[];
+
+/**
+ * Batch preload top N tools on browser idle
+ * @param toolIds Tools to preload, sorted by priority (e.g., by usage count)
+ * @param count Number of tools to preload (default: 5)
+ */
+export function preloadToolsOnIdle(toolIds: ToolId[], count = 5): void {
+	const toPreload = toolIds
+		.filter(id => !preloadedTools.has(id) && id in generatedToolPanels)
+		.slice(0, count);
+
+	if (toPreload.length === 0) return;
+
+	// Use requestIdleCallback if available, fallback to setTimeout
+	const scheduleIdle = typeof requestIdleCallback !== 'undefined' 
+		? requestIdleCallback 
+		: (cb: () => void) => setTimeout(cb, 200);
+
+	scheduleIdle(() => {
+		toPreload.forEach((toolId, index) => {
+			// Stagger preloads to avoid blocking
+			setTimeout(() => {
+				try {
+					const LazyPanel = generatedToolPanels[toolId as LoadableToolId];
+					if (LazyPanel) void Promise.resolve(LazyPanel);
+					preloadedTools.add(toolId);
+				} catch { /* ignore */ }
+			}, index * 50); // 50ms between each preload
+		});
+	});
+}
+
+/**
+ * Hook for idle preloading - call once at app init
+ */
+export function useIdlePreload(priorityToolIds: ToolId[], count = 5) {
+	useEffect(() => {
+		// Delay to let main UI render first
+		const timer = setTimeout(() => {
+			preloadToolsOnIdle(priorityToolIds, count);
+		}, 1000);
+		return () => clearTimeout(timer);
+	}, [priorityToolIds, count]);
+}

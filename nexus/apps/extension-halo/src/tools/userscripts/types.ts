@@ -1,4 +1,8 @@
-// goal: UserScripts type definitions
+// goal: UserScripts type definitions - full feature parity with Tampermonkey
+// eff: Unified types for script management
+
+export type ScriptType = 'javascript' | 'css';
+export type UserScriptRunAt = 'document_start' | 'document_end' | 'document_idle';
 
 export interface UserScript {
 	id: string;
@@ -6,8 +10,20 @@ export interface UserScript {
 	description: string;
 	code: string;
 	enabled: boolean;
-	matches: string[];       // URL patterns, e.g., "*://*.example.com/*"
-	runAt: 'document_start' | 'document_end' | 'document_idle';
+	type: ScriptType;
+	matches: string[];           // URL patterns, e.g., "*://*.example.com/*"
+	excludeMatches?: string[];   // Exclude patterns
+	runAt: UserScriptRunAt;
+	order: number;               // Execution order (lower = earlier)
+	// Metadata
+	version?: string;
+	author?: string;
+	homepage?: string;
+	updateUrl?: string;
+	// Statistics
+	runCount: number;
+	lastRun?: number;
+	// Timestamps
 	createdAt: number;
 	updatedAt: number;
 }
@@ -17,4 +33,23 @@ export interface UserScriptState {
 	globalEnabled: boolean;
 }
 
-export type UserScriptRunAt = UserScript['runAt'];
+// Parsed Userscript header (// ==UserScript== format)
+export interface ParsedHeader {
+	name?: string;
+	description?: string;
+	version?: string;
+	author?: string;
+	match?: string[];
+	exclude?: string[];
+	'run-at'?: string;
+	homepage?: string;
+	updateURL?: string;
+	grant?: string[];
+}
+
+// Export/Import format
+export interface ScriptExport {
+	version: '1.0';
+	exportedAt: number;
+	scripts: UserScript[];
+}

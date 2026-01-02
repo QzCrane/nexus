@@ -57,6 +57,12 @@ export function detectLocale(): Locale {
 	return 'en';
 }
 
+// Promise for async initialization (Suspense-compatible)
+let resolveInit: (() => void) | null = null;
+export const i18nPromise = new Promise<void>((resolve) => {
+	resolveInit = resolve;
+});
+
 // Initialize i18n
 export const initI18n = async () => {
 	if (typeof chrome !== 'undefined' && chrome.storage) {
@@ -75,8 +81,15 @@ export const initI18n = async () => {
 		globalLocale = detectLocale();
 	}
 	i18nReady = true;
+	resolveInit?.();
 	notify();
 };
+
+/**
+ * Wait for i18n to be ready
+ * Usage: await waitForI18n();
+ */
+export const waitForI18n = () => i18nPromise;
 
 // Start initialization
 initI18n();

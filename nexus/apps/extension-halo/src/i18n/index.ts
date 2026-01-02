@@ -14,10 +14,11 @@ import {
 	notify,
 	getByPath,
 	registerTranslations,
+	waitForI18n,
 } from './i18n-core';
 
 // Re-export core functions
-export { registerTranslations };
+export { registerTranslations, waitForI18n };
 
 // i18n context
 interface I18nContextValue {

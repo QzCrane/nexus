@@ -69,10 +69,10 @@ nexus(私有) → {spectra, halo}-public/ → github.com/QzCrane/{spectra, halo}
 - 自动注册系统: `tools/*/manifest.json` → `pnpm generate-registry` → 自动生成 `ToolId` & 加载器
 - 故障隔离: `ToolErrorBoundary` 确保单模块崩溃不影响全局
 - 智能意图: `useClipboardIntent` 智能识别剪贴板内容并推荐工具 (Smart Paste)
-- 核心服务: `useToolState` (防抖持久化), `EngineStatusProvider` (全量播报)
+- 核心服务: `useToolState` (防抖持久化/sync+local), `EngineStatusProvider` (全量播报), `SidePanelContext` (状态集中)
+- 搜索引擎: unified-search.ts (全语言+Pinyin 全拼/简拼+registerSearchLocale 扩展)
+- 性能优化: `useIdlePreload` (空闲预加载), `waitForI18n` (Suspense-ready)
 - Core(13): QR/Screenshot/Color/Ruler/JSON/Base64/Hash/UUID/Timestamp/URL/ModuleStore/Settings/Permissions
-- Search: 支持中英双语、多字段匹配、全拼/简拼检索
-- i18n: 响应式全局同步系统 (Signal/Listener)
 - Dev(34): Regex/Crypto/Network/YAML/Markdown/JSONPath/SQL/Protobuf/...
 - Efficiency(13): PDF/Clipboard(Monitoring)/Tabs/Timer/SmoothScroll(Pro)/...
 - Security(5) + Media(3) + Browser(8)

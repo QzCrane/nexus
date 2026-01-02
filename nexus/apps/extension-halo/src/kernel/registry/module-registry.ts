@@ -1,26 +1,11 @@
 // goal: Module metadata and registry - consumes generated data
-// eff: Types + runtime merge with i18n data
+// eff: Uses unified ToolMeta type from tool-registry-types
 
-import type { ToolCategory } from '../../i18n/types';
+import type { ToolMeta } from '../core/tool-registry-types';
 import { GENERATED_TOOLS, type GeneratedToolMeta } from './_generated';
 
 // Module installation status
 export type ModuleStatus = 'available' | 'installed' | 'downloading' | 'updating' | 'error';
-
-// Module metadata (full, with i18n fields)
-export interface ModuleMeta {
-	id: string;
-	name: string;
-	description: string;
-	version: string;
-	category: ToolCategory;
-	icon: string;
-	size: number;
-	dependencies?: string[];
-	bundleUrl?: string;
-	builtIn?: boolean;
-	system?: boolean;
-}
 
 // Module state (local installation status)
 export interface ModuleState {
@@ -39,38 +24,39 @@ export interface ModuleManagerState {
 	lastSync: number;
 }
 
-// Build ModuleMeta from GeneratedToolMeta (adds i18n placeholder fields)
-// Actual i18n values are resolved at render time via t(`tools.${id}.name`)
-function buildModuleMeta(tool: GeneratedToolMeta): ModuleMeta {
+// Build ToolMeta from GeneratedToolMeta
+function buildToolMeta(tool: GeneratedToolMeta): ToolMeta {
 	return {
 		id: tool.id,
-		name: tool.id, // Placeholder - resolved via i18n at runtime
-		description: '', // Placeholder - resolved via i18n at runtime
-		version: '1.0.0',
-		category: tool.category,
 		icon: tool.icon,
+		category: tool.category,
+		status: tool.builtIn ? 'ready' : 'available',
+		keywords: tool.keywords || [],
+		features: tool.features,
+		system: tool.system,
+		// Module-specific fields
 		size: tool.size,
 		builtIn: tool.builtIn,
-		system: tool.system,
 		dependencies: tool.dependencies,
+		version: '1.0.0',
 	};
 }
 
 // Core modules (builtIn: true)
-export const CORE_MODULES: ModuleMeta[] = GENERATED_TOOLS
+export const CORE_MODULES: ToolMeta[] = GENERATED_TOOLS
 	.filter(t => t.builtIn)
-	.map(buildModuleMeta);
+	.map(buildToolMeta);
 
 // Optional modules (builtIn: false)
-export const OPTIONAL_MODULES: ModuleMeta[] = GENERATED_TOOLS
+export const OPTIONAL_MODULES: ToolMeta[] = GENERATED_TOOLS
 	.filter(t => !t.builtIn)
-	.map(buildModuleMeta);
+	.map(buildToolMeta);
 
 // All modules combined
-export const ALL_MODULES: ModuleMeta[] = GENERATED_TOOLS.map(buildModuleMeta);
+export const ALL_MODULES: ToolMeta[] = GENERATED_TOOLS.map(buildToolMeta);
 
 // Get module by ID
-export const getModuleMeta = (id: string): ModuleMeta | undefined =>
+export const getModuleMeta = (id: string): ToolMeta | undefined =>
 	ALL_MODULES.find(m => m.id === id);
 
 // Format size for display
@@ -80,5 +66,7 @@ export const formatModuleSize = (bytes: number): string => {
 	return `${(bytes / 1048576).toFixed(1)} MB`;
 };
 
-// Re-export generated types for convenience
+// Re-export for backward compatibility
+export { type ToolMeta as ModuleMeta } from '../core/tool-registry-types';
 export { GENERATED_TOOLS, type GeneratedToolMeta } from './_generated';
+
