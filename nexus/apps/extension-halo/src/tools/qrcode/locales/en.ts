@@ -1,0 +1,22 @@
+export const en = {
+	qrcodePanel: {
+		placeholder: 'Enter text or URL... (Ctrl+Enter to generate)',
+		generate: 'Generate QR Code',
+		generating: 'Generating...',
+		copy: 'Copy',
+		save: 'Save',
+		copied: 'Copied!',
+		downloaded: 'Downloaded!',
+		failed: 'Generation failed',
+		recent: 'Recent',
+		scan: 'Scan QR',
+		scanFromImage: 'Upload Image',
+		scanFromClipboard: 'From Clipboard',
+		scanning: 'Scanning...',
+		scanSuccess: 'QR code detected!',
+		scanFailed: 'No QR code found',
+		detectedContent: 'Detected Content',
+		openLink: 'Open Link',
+		copyText: 'Copy Text'
+	}
+};

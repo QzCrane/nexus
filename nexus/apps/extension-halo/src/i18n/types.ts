@@ -2,9 +2,6 @@
 // eff: Type-safe translation keys composed of smaller interfaces
 
 import { BaseTranslations, SettingsTranslations, ModuleTranslations } from './types-defs-1';
-import { PanelsCoreTranslations } from './types-defs-2';
-import { PanelsDevTranslations } from './types-defs-3';
-import { PanelsExtraTranslations } from './types-defs-4';
 
 export type Locale = 'en' | 'zh';
 export type ToolCategory = 'general' | 'dev' | 'efficiency' | 'visual' | 'ai' | 'security' | 'media' | 'browser' | 'active';
@@ -13,10 +10,7 @@ export type ToolCategory = 'general' | 'dev' | 'efficiency' | 'visual' | 'ai' | 
 export interface TranslationKeys extends
 	BaseTranslations,
 	SettingsTranslations,
-	ModuleTranslations,
-	PanelsCoreTranslations,
-	PanelsDevTranslations,
-	PanelsExtraTranslations {
+	ModuleTranslations {
 	[key: string]: any;
 }
 
@@ -28,13 +22,4 @@ export type TranslationPath =
 	| `settings.${keyof TranslationKeys['settings']}`
 	| `toolManager.${keyof TranslationKeys['toolManager']}`
 	| `footer.${keyof TranslationKeys['footer']}`
-	| `regex.${keyof TranslationKeys['regex']}`
-	| `base64.${keyof TranslationKeys['base64']}`
-	| `hash.${keyof TranslationKeys['hash']}`
-	| `uuid.${keyof TranslationKeys['uuid']}`
-	| `timestamp.${keyof TranslationKeys['timestamp']}`
-	| `url.${keyof TranslationKeys['url']}`
-	| `tabsPanel.${keyof TranslationKeys['tabsPanel']}`
-	| `screenshotPanel.${keyof TranslationKeys['screenshotPanel']}`
-	| `moduleStorePanel.${keyof TranslationKeys['moduleStorePanel']}`
-	| `pdfPanel.${keyof TranslationKeys['pdfPanel']}`;
+	| string; // Allow any string for tool-specific keys

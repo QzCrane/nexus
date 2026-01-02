@@ -5,19 +5,11 @@ import type { TranslationKeys } from '../types';
 import { base } from './zh-modules/base';
 import { settings } from './zh-modules/settings';
 import { modules } from './zh-modules/modules';
-import { panelsCore } from './zh-modules/panels-core';
-import { panelsDev } from './zh-modules/panels-dev';
-import { panelsExtra } from './zh-modules/panels-extra';
-import { panelsV6 } from './zh-modules/panels-v6';
-import { panelsV7 } from './zh-modules/panels-v7';
+import { TOOLS_ZH } from './_generated-tools-zh';
 
 export const zh: TranslationKeys = {
 	...base,
 	...settings,
 	...modules,
-	...panelsCore,
-	...panelsDev,
-	...panelsExtra,
-	...panelsV6,
-	...panelsV7,
+	...TOOLS_ZH,
 };

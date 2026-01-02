@@ -56,7 +56,7 @@ nexus(私有) → {spectra, halo}-public/ → github.com/QzCrane/{spectra, halo}
 @nexus/ui-kit: 共享 UI 组件
 @nexus/audio-engine: WebAudio 链 (Zero-Copy 传输)
 @nexus/spectra: 媒体扩展 (Popup)
-@nexus/halo: 万能工具箱 (SidePanel - Centralized Status)
+@nexus/halo: 万能工具箱 (SidePanel - Centralized Status + Decentralized I18n)
 
 ---
 
@@ -66,10 +66,10 @@ nexus(私有) → {spectra, halo}-public/ → github.com/QzCrane/{spectra, halo}
 
 **HALO** (SidePanel 83 tools):
 
-- 自动注册系统: `tools/*/manifest.json` → `pnpm generate-registry` → 自动生成 `ToolId` & 加载器
+- 自动注册系统: `tools/*/manifest.json` + `locales/*` → `pnpm generate-registry` → 自动生成 `ToolId`, Source Map & I18n Aggregation
 - 故障隔离: `ToolErrorBoundary` 确保单模块崩溃不影响全局
 - 智能意图: `useClipboardIntent` 智能识别剪贴板内容并推荐工具 (Smart Paste)
-- 核心服务: `useToolState` (防抖持久化/sync+local), `EngineStatusProvider` (全量播报), `SidePanelContext` (状态集中)
+- 核心服务: `useToolState`, `PermissionManager`(Kernel), `EngineStatusProvider`
 - 搜索引擎: unified-search.ts (全语言+Pinyin 全拼/简拼+registerSearchLocale 扩展)
 - 性能优化: `useIdlePreload` (空闲预加载), `waitForI18n` (Suspense-ready)
 - Core(13): QR/Screenshot/Color/Ruler/JSON/Base64/Hash/UUID/Timestamp/URL/ModuleStore/Settings/Permissions

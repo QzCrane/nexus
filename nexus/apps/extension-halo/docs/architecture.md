@@ -1,19 +1,19 @@
-# HALO 架构 (v1.7.0)
+# HALO 架构 (v2.2.0)
 
-> DNA: SidePanel-only | 零上传 | 原子化模块 (tools/)
+> DNA: SidePanel-only | 零上传 | 原子化模块 (tools/) | 本地优先 | 极致性能
 
 ## 📂 结构
 
 - entry/: background(RPC), content(DOM), sidepanel.tsx(Entry)
 - components/: UI + \_generated-tool-loader.ts(Mapping) + sidepanel/(Context)
-- kernel/: core/, registry/(\_generated.ts), managers/, hooks/, utils/
-- tools/: [tool-name]/{manifest.json, panel.tsx, core.ts, .ai-context.md}
-- i18n/: locales/ (zh.ts, en.ts) + i18n-core.ts(初始化)
+- kernel/: core/, registry/(\_generated.ts), managers/(Permission/Module), hooks/, utils/
+- tools/: [tool-name]/{manifest.json, panel.tsx, core.ts, .ai-context.md, locales/}
+- i18n/: locales/ (zh.ts, en.ts) + i18n-core.ts(初始化/Loader)
 
 ## ⚙️ 自动化注册
 
-tools/\*/manifest.json (83+) → pnpm generate-registry → \_generated.ts & loader.ts
-新增: 创建 manifest + panel → pnpm build 自动注册
+tools/\*/manifest.json (83+) → pnpm generate-registry → \_generated.ts & loader.ts & i18n
+新增: 创建 manifest + panel + locales → pnpm build 自动注册
 
 ## 📏 规范
 
@@ -21,13 +21,14 @@ tools/\*/manifest.json (83+) → pnpm generate-registry → \_generated.ts & loa
 - 模块: core.ts(逻辑) / panel.tsx(UI) / index.ts(出口 ≤50)
 - UI: @nexus/ui-kit + CSS Vars | 4px 网格 | 禁用引起 Layout Shift 的动态 Padding
 
-## 🚀 核心服务
+## 🚀 核心服务 (Core Services)
 
-- 搜索: **unified-search.ts** - 全语言/拼音(全拼+简拼)/多字段/自动扩展新语言
-- i18n: Global Signal + Listener 同步，模块化(i18n-core.ts + index.ts)
-- 状态: **useToolState** (防抖持久化/sync 或 local 可选/跨窗口同步)
-- 性能: EngineStatusProvider | Zero-Copy Data | detachNode(资源销毁)
-- 可靠性: ToolErrorBoundary(故障隔离) | safe-storage(5s 超时/sync+local) | ModuleManager 内存降级
+- **搜索 (Search)**: `unified-search.ts` - 全语言/拼音(全拼+简拼)/多字段/自动扩展
+- **国际化 (i18n)**: 去中心化 (tools/\*/locales) + `waitForI18n()` 异步加载 + 实时切换
+- **状态 (State)**: `useToolState` - 自动序列化/防抖/原子化隔离 (`halo_tool_state_${id}`)
+- **权限 (Permissions)**: `PermissionManager` - 内核级权限与事件总线管理
+- **性能 (Perf)**: EngineStatusProvider | Zero-Copy Data (WebAudio) | detachNode (生命周期清理)
+- **可靠性 (Reliability)**: safe-storage (5s 超时/sync+local) | ModuleManager 内存降级
 
 ## 🔌 通信
 
@@ -36,29 +37,22 @@ RPC: `chrome.runtime.sendMessage` | Type-Safe `ToolId` (Registry Derived + Syste
 ## 🎨 UI 规范
 
 - 组件: 必须优先使用 `@nexus/ui-kit` (Card, Button, Toggle)
-- 布局: 4px 网格 | 禁用 Layout Shift | 强制响应式
+- 布局: 4px 网格 | 禁用 Layout Shift | 强制响应式 | 零交互完成设计
 
-## 🔍 搜索系统 (v1.6.0)
+## 🧩 系统演进
 
-- 引擎: `kernel/utils/unified-search.ts`
-- 特性: 自动注册新语言 | Pinyin 全拼+简拼 | 标题+描述全匹配
-- 扩展: `registerSearchLocale(locale, data)` 注册新语言即可搜索
+### v1.8.0 系统服务化
 
-## 📦 类型统一 (v1.7.0)
+- **Permissions Service**: `PermissionManager` + `pages/permissions` + `usePermission`
+- **Decentralized i18n**: 工具自包含翻译文件，构建时聚合
 
-- **ToolMeta**: 统一工具/模块元数据，消除 ModuleMeta 冗余
-- 模块字段 (size/builtIn/dependencies) 作为可选字段集成到 ToolMeta
-- `ModuleMeta` 保留为 `ToolMeta` 别名，向后兼容
+### v2.0.0 质量工程
 
-## 🧩 状态管理 (v1.7.0)
+- **UI Automation**: Playwright (`test/ui-playwright.spec.ts`) + 截图
+- **Safe Storage**:防止慢速 I/O 挂起 App 初始化
 
-- **SidePanelContext**: 集中管理 SidePanel 状态，消除 prop drilling
-- `useSidePanel()`: 获取全部状态和 actions
-- `useActiveTool()`: 仅获取当前工具 (最小化重渲染)
-- `useToolActions()`: 仅获取工具操作函数
+### v2.2.0 全局持久化
 
-## ⚡ 性能优化 (v1.7.0)
-
-- **i18n Promise**: `waitForI18n()` 支持 async/await，可配合 Suspense
-- **Idle Preload**: `useIdlePreload(toolIds, 5)` 空闲时批量预加载常用工具
-- **Staggered Loading**: 预加载间隔 50ms，避免阻塞主线程
+- **Atomic State**: 基于 ToolId 的原子化存储隔离，增删插件无副作用
+- **Smart Intent**: `useClipboardIntent` 智能识别剪贴板内容类型
+- **Sync Engine**: `halo_tool_state` 支持跨窗口与 Storage 自动同步

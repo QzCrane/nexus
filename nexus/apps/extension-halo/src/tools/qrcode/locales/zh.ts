@@ -1,0 +1,22 @@
+export const zh = {
+	qrcodePanel: {
+		placeholder: '输入文本或网址... (Ctrl+Enter 生成)',
+		generate: '生成二维码',
+		generating: '生成中...',
+		copy: '复制',
+		save: '保存',
+		copied: '已复制！',
+		downloaded: '已保存！',
+		failed: '生成失败',
+		recent: '最近',
+		scan: '扫描二维码',
+		scanFromImage: '上传图片',
+		scanFromClipboard: '从剪贴板',
+		scanning: '扫描中...',
+		scanSuccess: '识别成功！',
+		scanFailed: '未识别到二维码',
+		detectedContent: '识别内容',
+		openLink: '打开链接',
+		copyText: '复制文本'
+	}
+};
