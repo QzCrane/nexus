@@ -12,6 +12,7 @@ export interface HaloSettings {
 	defaultTool: string | null;
 	pinnedTools: string[];
 	toolOrder: Record<string, string[]>;
+	categoryOrder: string[];
 }
 
 export const DEFAULT_SETTINGS: HaloSettings = {
@@ -23,6 +24,7 @@ export const DEFAULT_SETTINGS: HaloSettings = {
 	defaultTool: null,
 	pinnedTools: [],
 	toolOrder: {},
+	categoryOrder: ['pro', 'general', 'dev', 'efficiency', 'visual', 'ai', 'security', 'media', 'browser'],
 };
 
 export const ACCENT_COLORS = [

@@ -36,6 +36,7 @@ export const base = {
 		security: '安全工具',
 		media: '媒体工具',
 		browser: '浏览器工具',
+		pro: '专业增强',
 	},
 	footer: {
 		zeroTracking: '零追踪',

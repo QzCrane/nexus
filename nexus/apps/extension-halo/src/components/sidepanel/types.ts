@@ -12,4 +12,5 @@ export interface LayoutProps {
 	onCloseTool: (id: ToolId) => void;
 	onTogglePin: (id: string) => void;
 	onReorderTools: (category: string, ids: string[]) => void;
+	onReorderCategories: (ids: string[]) => void;
 }

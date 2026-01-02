@@ -116,6 +116,11 @@ export const useSidePanelState = () => {
 		handleSettingsChange({ ...settings, toolOrder: newOrder });
 	}, [settings, handleSettingsChange]);
 
+	const handleReorderCategories = useCallback((categoryIds: string[]) => {
+		if (!settings) return;
+		handleSettingsChange({ ...settings, categoryOrder: categoryIds });
+	}, [settings, handleSettingsChange]);
+
 	return {
 		loading,
 		modulesLoading,
@@ -128,6 +133,7 @@ export const useSidePanelState = () => {
 		handleBack,
 		handleSettingsChange,
 		handleTogglePin,
-		handleReorderTools
+		handleReorderTools,
+		handleReorderCategories
 	};
 };

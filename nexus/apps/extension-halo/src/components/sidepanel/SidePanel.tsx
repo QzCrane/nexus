@@ -23,7 +23,8 @@ export const SidePanel: React.FC = () => {
 		handleBack,
 		handleSettingsChange,
 		handleTogglePin,
-		handleReorderTools
+		handleReorderTools,
+		handleReorderCategories
 	} = useSidePanelState();
 
 	if (loading || !i18nReady || modulesLoading) {
@@ -82,6 +83,7 @@ export const SidePanel: React.FC = () => {
 						visibleTools={visibleTools}
 						onTogglePin={handleTogglePin}
 						onReorderTools={handleReorderTools}
+						onReorderCategories={handleReorderCategories}
 					/>
 				</main>
 			</div>

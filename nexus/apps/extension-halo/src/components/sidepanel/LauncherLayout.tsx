@@ -14,7 +14,8 @@ export const LauncherLayout: React.FC<LayoutProps> = ({
 	visibleTools,
 	openTools,
 	onTogglePin,
-	onReorderTools
+	onReorderTools,
+	onReorderCategories
 }) => {
 	const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
 
@@ -45,6 +46,7 @@ export const LauncherLayout: React.FC<LayoutProps> = ({
 						toggleCategory={toggleCategory}
 						onTogglePin={onTogglePin}
 						onReorderTools={onReorderTools}
+						onReorderCategories={onReorderCategories}
 						openTools={openTools}
 					/>
 				</div>
