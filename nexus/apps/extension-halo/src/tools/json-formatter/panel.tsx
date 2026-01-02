@@ -105,10 +105,24 @@ export const JSONFormatterPanel: React.FC = () => {
 		<div style={styles.wrapper}>
 			<Card variant="default" padding="sm">
 				<div style={styles.optionsRow}>
-					<select value={options.indent} onChange={(e) => setOptions(p => ({ ...p, indent: +e.target.value as any }))} style={styles.select}>
-						<option value={2}>2 {t('jsonPanel.spaces')}</option>
-						<option value={4}>4 {t('jsonPanel.spaces')}</option>
-					</select>
+					{/* Indent: button group */}
+					<div style={{ display: 'inline-flex', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--halo-border)', background: 'var(--halo-bg-tertiary)' }}>
+						{[2, 4].map((n) => (
+							<button
+								key={n}
+								type="button"
+								style={{
+									border: 'none',
+									background: options.indent === n ? 'var(--halo-accent)' : 'transparent',
+									color: options.indent === n ? '#fff' : 'var(--halo-text-muted)',
+									padding: '4px 10px', fontSize: '11px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+								}}
+								onClick={() => setOptions(p => ({ ...p, indent: n as 2 | 4 }))}
+							>
+								{n} {t('jsonPanel.spaces')}
+							</button>
+						))}
+					</div>
 					<label style={styles.checkbox}>
 						<input type="checkbox" checked={options.sortKeys} onChange={(e) => setOptions(p => ({ ...p, sortKeys: e.target.checked }))} />
 						Sort

@@ -2,6 +2,7 @@
 // inv: No jumping, silky smooth scrolling. Logic split into handlers and state.
 
 import { configure, clearQueue } from '../tools/smooth-scroll/engine';
+import { STORAGE_KEY } from '../tools/smooth-scroll/types';
 import { settings, updateStateSettings } from './smooth-scroll-state';
 import type { ScrollSettings } from './smooth-scroll-state';
 import { onWheel, onKeydown, onMouseDown, onMouseMove, onMouseUp } from './smooth-scroll-handlers';
@@ -47,9 +48,9 @@ export async function init(): Promise<void> {
 	}
 
 	try {
-		const result = await chrome.storage.sync.get(['halo_tool_state_smooth-scroll']);
-		if (result['halo_tool_state_smooth-scroll']) {
-			updateStateSettings(result['halo_tool_state_smooth-scroll']);
+		const result = await chrome.storage.sync.get([STORAGE_KEY]);
+		if (result[STORAGE_KEY]) {
+			updateStateSettings(result[STORAGE_KEY]);
 		}
 	} catch {
 		console.log(LOG_TAG, 'Using defaults');
@@ -62,8 +63,8 @@ export async function init(): Promise<void> {
 	}
 
 	chrome.storage.onChanged.addListener((changes, area) => {
-		if (area === 'sync' && changes['halo_tool_state_smooth-scroll']) {
-			updateSettings(changes['halo_tool_state_smooth-scroll'].newValue);
+		if (area === 'sync' && changes[STORAGE_KEY]) {
+			updateSettings(changes[STORAGE_KEY].newValue);
 		}
 	});
 

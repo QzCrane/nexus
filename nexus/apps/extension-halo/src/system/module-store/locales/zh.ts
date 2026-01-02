@@ -1,0 +1,24 @@
+
+export const zh = {
+	moduleStorePanel: {
+		title: '模块商店',
+		installed: '已安装',
+		available: '可用',
+		updates: '更新',
+		all: '全部',
+		checkUpdates: '检查更新',
+		update: '更新',
+		noModules: '未找到模块',
+		allInstalled: '已安装所有模块！',
+		core: '核心',
+		new: '新',
+		builtIn: '内置',
+		installing: '安装中...',
+		updating: '更新中...',
+		install: '安装',
+		uninstall: '卸载',
+		loading: '加载模块中...',
+		statsModules: '个模块',
+		searchPlaceholder: '搜索模块...',
+	},
+};

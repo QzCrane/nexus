@@ -39,50 +39,7 @@ export const base = {
 		browser: '浏览器工具',
 		active: '后台助手',
 	},
-	moduleStorePanel: {
-		searchPlaceholder: '搜索模块商店...',
-		all: '全部',
-		installed: '已安装',
-		available: '可安装',
-		updates: '更新',
-		uninstall: '卸载',
-		install: '安装',
-		builtin: '内置',
-		update: '更新',
-		checkUpdates: '检查更新',
-		loading: '加载中...',
-		noModules: '没有找到模块',
-		allInstalled: '所有模块都已安装',
-	},
-	permissions: {
-		title: '权限管理',
-		subtitle: '管理扩展已获取的敏感权限',
-		privacyNote: 'HALO 仅在通过用户操作激活特定功能时才会请求必要权限。',
-		revoke: '撤销',
-		usedBy: '使用方：',
-		items: {
-			allHosts: {
-				name: '所有网站数据',
-				desc: '允许脚本在所有网页上运行',
-			},
-			pageCapture: {
-				name: '网页截图',
-				desc: '允许捕获网页可见区域内容',
-			},
-			webNavigation: {
-				name: '网页导航',
-				desc: '允许监听网页跳转事件',
-			},
-			clipboardWrite: {
-				name: '剪贴板写入',
-				desc: '允许写入内容到剪贴板',
-			},
-			downloads: {
-				name: '下载管理',
-				desc: '允许下载文件到设备',
-			},
-		},
-	},
+
 	footer: {
 		zeroTracking: '零追踪',
 		localOnly: '本地处理',

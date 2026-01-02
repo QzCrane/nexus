@@ -80,6 +80,9 @@ import { zh as uuid } from '../../tools/uuid/locales/zh';
 import { zh as xml_formatter } from '../../tools/xml-formatter/locales/zh';
 import { zh as xor } from '../../tools/xor/locales/zh';
 import { zh as yaml } from '../../tools/yaml/locales/zh';
+import { zh as module_store } from '../../system/module-store/locales/zh';
+import { zh as permissions } from '../../system/permissions/locales/zh';
+import { zh as settings } from '../../system/settings/locales/zh';
 
 export const TOOLS_ZH = {
 	...api_tester,
@@ -160,4 +163,7 @@ export const TOOLS_ZH = {
 	...xml_formatter,
 	...xor,
 	...yaml,
+	...module_store,
+	...permissions,
+	...settings,
 };

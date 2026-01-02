@@ -1,4 +1,5 @@
-export const settings = {
+
+export const en = {
 	settings: {
 		title: 'Settings',
 		appearance: 'Appearance',

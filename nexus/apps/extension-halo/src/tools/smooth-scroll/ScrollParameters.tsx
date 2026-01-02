@@ -53,9 +53,25 @@ export const ScrollParameters: React.FC<ScrollParametersProps> = ({ settings, up
 
 				<div style={styles.row}>
 					<div style={styles.label}>{t('smoothScroll.easing')}</div>
-					<select value={settings.easing} onChange={(e) => updateSetting('easing', e.target.value as ScrollSettings['easing'])} style={styles.select} disabled={!settings.enabled}>
-						{EASING_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{t(`smoothScroll.easingOptions.${opt.value}` as any)}</option>)}
-					</select>
+					<div style={{ display: 'inline-flex', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--halo-border)', background: 'var(--halo-bg-tertiary)' }}>
+						{EASING_OPTIONS.map((opt) => (
+							<button
+								key={opt.value}
+								type="button"
+								disabled={!settings.enabled}
+								style={{
+									border: 'none',
+									background: settings.easing === opt.value ? 'var(--halo-accent)' : 'transparent',
+									color: settings.easing === opt.value ? '#fff' : 'var(--halo-text-muted)',
+									padding: '4px 8px', fontSize: '10px', fontWeight: 500, cursor: settings.enabled ? 'pointer' : 'not-allowed', transition: 'all 0.15s',
+									opacity: settings.enabled ? 1 : 0.5,
+								}}
+								onClick={() => settings.enabled && updateSetting('easing', opt.value)}
+							>
+								{t(`smoothScroll.easingOptions.${opt.value}` as any)}
+							</button>
+						))}
+					</div>
 				</div>
 			</div>
 		</Card>

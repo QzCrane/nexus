@@ -63,14 +63,26 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({ operation, config, set
 					</div>
 				)}
 
-				{operation === 'rotate' && (
+			{operation === 'rotate' && (
 					<div>
 						<label style={labelStyle}>{t('pdfPanel.rotateAngle')}</label>
-						<select style={selectStyle} value={config.rotateDegrees} onChange={(e) => setConfig((c) => ({ ...c, rotateDegrees: Number(e.target.value) as 90 | 180 | 270 }))}>
-							<option value={90}>90°</option>
-							<option value={180}>180°</option>
-							<option value={270}>270°</option>
-						</select>
+						<div style={{ display: 'inline-flex', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--halo-border)', background: 'var(--halo-bg-tertiary)' }}>
+							{[90, 180, 270].map((deg) => (
+								<button
+									key={deg}
+									type="button"
+									style={{
+										border: 'none',
+										background: config.rotateDegrees === deg ? 'var(--halo-accent)' : 'transparent',
+										color: config.rotateDegrees === deg ? '#fff' : 'var(--halo-text-muted)',
+										padding: '6px 12px', fontSize: '12px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+									}}
+									onClick={() => setConfig((c) => ({ ...c, rotateDegrees: deg as 90 | 180 | 270 }))}
+								>
+									{deg}°
+								</button>
+							))}
+						</div>
 					</div>
 				)}
 
@@ -90,11 +102,23 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({ operation, config, set
 				{operation === 'images-to-pdf' && (
 					<div>
 						<label style={labelStyle}>{t('pdfPanel.pageSize')}</label>
-						<select style={selectStyle} value={config.pageSize} onChange={(e) => setConfig((c) => ({ ...c, pageSize: e.target.value as 'A4' | 'Letter' | 'fit' }))}>
-							<option value="A4">{t('pdfPanel.A4')}</option>
-							<option value="Letter">{t('pdfPanel.Letter')}</option>
-							<option value="fit">{t('pdfPanel.fitImage')}</option>
-						</select>
+						<div style={{ display: 'inline-flex', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--halo-border)', background: 'var(--halo-bg-tertiary)' }}>
+							{(['A4', 'Letter', 'fit'] as const).map((size) => (
+								<button
+									key={size}
+									type="button"
+									style={{
+										border: 'none',
+										background: config.pageSize === size ? 'var(--halo-accent)' : 'transparent',
+										color: config.pageSize === size ? '#fff' : 'var(--halo-text-muted)',
+										padding: '6px 12px', fontSize: '12px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+									}}
+									onClick={() => setConfig((c) => ({ ...c, pageSize: size }))}
+								>
+									{size === 'fit' ? t('pdfPanel.fitImage') : t(`pdfPanel.${size}`)}
+								</button>
+							))}
+						</div>
 					</div>
 				)}
 			</div>

@@ -40,12 +40,28 @@ export const RandomGenPanel: React.FC = () => {
             <div style={styles.toolbar}>
                  <div>
                     <span style={styles.label}>Type</span>
-                    <select style={styles.select} value={type} onChange={(e) => setType(e.target.value as Type)}>
-                        <option value="UUID">UUID v4</option>
-                        <option value="ULID">ULID (Sortable)</option>
-                        <option value="Hex">Hex String</option>
-                        <option value="Base64">Base64 String</option>
-                    </select>
+                    <div style={{ display: 'inline-flex', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--halo-border)', background: 'var(--halo-bg-tertiary)', marginTop: '4px' }}>
+                        {([
+                            { value: 'UUID' as Type, label: 'UUID' },
+                            { value: 'ULID' as Type, label: 'ULID' },
+                            { value: 'Hex' as Type, label: 'Hex' },
+                            { value: 'Base64' as Type, label: 'B64' },
+                        ]).map((opt) => (
+                            <button
+                                key={opt.value}
+                                type="button"
+                                style={{
+                                    border: 'none',
+                                    background: type === opt.value ? 'var(--halo-accent)' : 'transparent',
+                                    color: type === opt.value ? '#fff' : 'var(--halo-text-muted)',
+                                    padding: '4px 8px', fontSize: '10px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+                                }}
+                                onClick={() => setType(opt.value)}
+                            >
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
                  </div>
                  
                  {(type === 'Hex' || type === 'Base64') && (

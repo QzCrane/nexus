@@ -91,10 +91,23 @@ export const RulerPanel: React.FC = () => {
 			<Card variant="default" padding="sm">
 				<div style={styles.optionsRow}>
 					<span>{t('rulerPanel.unit')}</span>
-					<select value={unit} onChange={handleUnitChange} style={styles.select}>
-						<option value="px">{t('rulerPanel.pixels')}</option>
-						<option value="rem">{t('rulerPanel.rem')}</option>
-					</select>
+					<div style={{ display: 'inline-flex', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--halo-border)', background: 'var(--halo-bg-tertiary)' }}>
+						{(['px', 'rem'] as const).map((u) => (
+							<button
+								key={u}
+								type="button"
+								style={{
+									border: 'none',
+									background: unit === u ? 'var(--halo-accent)' : 'transparent',
+									color: unit === u ? '#fff' : 'var(--halo-text-muted)',
+									padding: '4px 12px', fontSize: '11px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+								}}
+								onClick={() => setUnit(u)}
+							>
+								{u === 'px' ? t('rulerPanel.pixels') : t('rulerPanel.rem')}
+							</button>
+						))}
+					</div>
 					{unit === 'rem' && (
 						<>
 							<span>{t('rulerPanel.base')}</span>

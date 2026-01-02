@@ -1,12 +1,13 @@
 // goal: Event handlers for Smooth Scroll
 // eff: Loosely coupled handlers using shared state
 
-import { scheduleClearCache, findScrollTarget, canScroll } from '../tools/smooth-scroll/utils';
+import { scheduleClearCache, findScrollTarget, canScroll, shouldIgnoreInput } from '../tools/smooth-scroll/utils';
 import { scrollTo } from '../tools/smooth-scroll/engine';
 import { settings, state, lastScrollTime, acceleration, updateAcceleration } from './smooth-scroll-state';
 
 // Touchpad detection
 function isTouchpad(deltaY: number): boolean {
+	// ... existing logic ...
 	if (!deltaY) return false;
 	const absDelta = Math.abs(deltaY);
 	state.deltaBuffer.push(absDelta);
@@ -49,9 +50,13 @@ export function onWheel(e: WheelEvent): void {
 
 export function onKeydown(e: KeyboardEvent): void {
 	if (!settings.enabled || !settings.keyboard) return;
-	const el = e.target as HTMLElement;
-	if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable) return;
+
+	// Conflict: If site already handled it (e.g. video control), do not scroll
+	if (e.defaultPrevented) return;
+
 	if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+	if (shouldIgnoreInput(document.activeElement)) return;
 
 	const target = findScrollTarget(document.activeElement as Element);
 	if (!canScroll(target)) return;

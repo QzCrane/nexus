@@ -1,0 +1,27 @@
+
+export const en = {
+	permissions: {
+		title: 'Permission Manager',
+		subtitle: 'Control which features HALO can access',
+		categoryBasic: 'Basic Features',
+		categoryAdvanced: 'Advanced Access',
+		categoryPrivacy: 'Privacy Sensitive',
+		grant: 'Grant',
+		revoke: 'Revoke',
+		usedBy: 'Used by',
+		privacyNote: 'HALO follows a privacy-first approach. Only enable permissions you actually need.',
+		cannotRevoke: 'This permission is required by HALO and cannot be revoked.',
+		items: {
+			pageCapture: { name: 'Page Capture', desc: 'Save complete web pages as MHTML files' },
+			webNavigation: { name: 'Web Navigation', desc: 'Detect page navigation for UserScripts injection' },
+			clipboardRead: { name: 'Clipboard Read', desc: 'Read text from your clipboard' },
+			clipboardWrite: { name: 'Clipboard Write', desc: 'Copy text to your clipboard' },
+			downloads: { name: 'Downloads', desc: 'Manage and save file downloads' },
+			history: { name: 'History', desc: 'Access your browsing history' },
+			bookmarks: { name: 'Bookmarks', desc: 'Access and manage browser bookmarks' },
+			topSites: { name: 'Top Sites', desc: 'Access data for your most visited sites' },
+			notifications: { name: 'Notifications', desc: 'Show system desktop notifications' },
+			allHosts: { name: 'All Websites', desc: 'Allow script injection on any website (required for UserScripts)' },
+		},
+	},
+};

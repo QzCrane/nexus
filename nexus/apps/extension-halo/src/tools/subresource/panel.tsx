@@ -76,11 +76,23 @@ export const SriPanel: React.FC = () => {
 
             <div style={styles.row}>
                 <span style={styles.label}>Algorithm:</span>
-                <select style={styles.select} value={alg} onChange={(e) => setAlg(e.target.value as Algo)}>
-                    <option value="sha256">SHA-256</option>
-                    <option value="sha384">SHA-384</option>
-                    <option value="sha512">SHA-512</option>
-                </select>
+                <div style={{ display: 'inline-flex', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--halo-border)', background: 'var(--halo-bg-tertiary)' }}>
+                    {(['sha256', 'sha384', 'sha512'] as const).map((a) => (
+                        <button
+                            key={a}
+                            type="button"
+                            style={{
+                                border: 'none',
+                                background: alg === a ? 'var(--halo-accent)' : 'transparent',
+                                color: alg === a ? '#fff' : 'var(--halo-text-muted)',
+                                padding: '4px 10px', fontSize: '11px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+                            }}
+                            onClick={() => setAlg(a)}
+                        >
+                            {a.toUpperCase().replace('SHA', 'SHA-')}
+                        </button>
+                    ))}
+                </div>
             </div>
 
             {hashOnly && (

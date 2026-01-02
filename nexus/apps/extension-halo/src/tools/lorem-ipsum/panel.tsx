@@ -48,11 +48,23 @@ export const LoremIpsumPanel: React.FC = () => {
 						min={1}
 						max={100}
 					/>
-					<select style={styles.select} value={unit} onChange={(e) => setUnit(e.target.value as LoremUnit)}>
+					<div style={{ display: 'inline-flex', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--halo-border)', background: 'var(--halo-bg-tertiary)' }}>
 						{UNIT_OPTIONS.map((opt) => (
-							<option key={opt.id} value={opt.id}>{t(`loremIpsum.units.${opt.id}`)}</option>
+							<button
+								key={opt.id}
+								type="button"
+								style={{
+									border: 'none',
+									background: unit === opt.id ? 'var(--halo-accent)' : 'transparent',
+									color: unit === opt.id ? '#fff' : 'var(--halo-text-muted)',
+									padding: '4px 8px', fontSize: '10px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+								}}
+								onClick={() => setUnit(opt.id)}
+							>
+								{t(`loremIpsum.units.${opt.id}`)}
+							</button>
 						))}
-					</select>
+					</div>
 				</div>
 				<label style={{ ...styles.checkbox, marginTop: '10px' }}>
 					<input

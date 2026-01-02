@@ -117,7 +117,7 @@ pnpm workspace | `pnpm install/build/--filter [name] build` | 内部包: `"@nexu
 音频零拷贝: 可视化数据传递强禁 `Array.from` | 必须直接传递或使用 `TypedArray` 映射
 裁剪消除: 缩放元素必须预留 `MAGNIFY_HEADROOM` (30px+) | 禁用 `overflow: hidden` 在感应父级
 资源清理: 必须在 DOM 移除时执行 `detachNode` | 强禁 WebAudio 节点在 SPA 中累积
-i18n: 禁硬编码字符串 | 必须登记在 `locales/*` | 系统页面必须支持全局实时同步
+i18n: 禁硬编码字符串 | 必须下沉至工具目录 (SSOT) | 必须支持全局实时同步
 
 ### 工具面板设计原则 (Halo ToolPanel)
 

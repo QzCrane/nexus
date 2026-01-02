@@ -70,12 +70,23 @@ export const ChecksumPanel: React.FC = () => {
 			{/* Algorithm */}
 			<div style={styles.row}>
 				<span style={{ fontSize: '11px', color: 'var(--halo-text-muted)' }}>{t('checksum.algorithm')}</span>
-				<select style={styles.select} value={algorithm} onChange={(e) => handleAlgorithmChange(e.target.value as HashAlgorithm)}>
-					<option>MD5</option>
-					<option>SHA-1</option>
-					<option>SHA-256</option>
-					<option>SHA-512</option>
-				</select>
+				<div style={{ display: 'inline-flex', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--halo-border)', background: 'var(--halo-bg-tertiary)' }}>
+					{(['MD5', 'SHA-1', 'SHA-256', 'SHA-512'] as HashAlgorithm[]).map((a) => (
+						<button
+							key={a}
+							type="button"
+							style={{
+								border: 'none',
+								background: algorithm === a ? 'var(--halo-accent)' : 'transparent',
+								color: algorithm === a ? '#fff' : 'var(--halo-text-muted)',
+								padding: '4px 8px', fontSize: '10px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+							}}
+							onClick={() => handleAlgorithmChange(a)}
+						>
+							{a}
+						</button>
+					))}
+				</div>
 			</div>
 
 			{/* Hash result */}

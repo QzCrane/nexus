@@ -75,3 +75,44 @@ export function getMaxScroll(target: Element | Window): number {
 export function canScroll(target: Element | Window): boolean {
 	return getMaxScroll(target) > 0;
 }
+
+/**
+ * recursively check for shadow roots and determine if element is interactive
+ */
+export function shouldIgnoreInput(activeElement: Element | null): boolean {
+	if (!activeElement) return false;
+
+	// Drill down into shadow DOMs
+	let current = activeElement;
+	while (current.shadowRoot && current.shadowRoot.activeElement) {
+		current = current.shadowRoot.activeElement;
+	}
+
+	const tagName = current.tagName;
+	const isEditable = (current as HTMLElement).isContentEditable;
+	const role = current.getAttribute('role');
+
+	// Tags that consume keyboard events
+	if (
+		tagName === 'INPUT' ||
+		tagName === 'TEXTAREA' ||
+		tagName === 'SELECT' ||
+		tagName === 'OPTION' ||
+		tagName === 'VIDEO' ||
+		tagName === 'AUDIO' ||
+		tagName === 'BUTTON' || // Buttons sometimes use space/arrows
+		tagName === 'IFRAME'    // Logic inside iframe
+	) {
+		return true;
+	}
+
+	// Dynamic editable content
+	if (isEditable) return true;
+
+	// ARIA roles that implies interaction
+	if (role === 'textbox' || role === 'listbox' || role === 'menu' || role === 'slider' || role === 'switch') {
+		return true;
+	}
+
+	return false;
+}

@@ -5,6 +5,32 @@ import React from 'react';
 import type { UserScript, ScriptType, UserScriptRunAt } from './types';
 import { styles } from './panel.styles';
 
+// Inline segmented control styles
+const segmentedStyles: Record<string, React.CSSProperties> = {
+	wrapper: {
+		display: 'inline-flex',
+		borderRadius: '6px',
+		overflow: 'hidden',
+		border: '1px solid var(--halo-border)',
+		background: 'var(--halo-bg-tertiary)',
+	},
+	button: {
+		border: 'none',
+		background: 'transparent',
+		color: 'var(--halo-text-muted)',
+		padding: '4px 10px',
+		fontSize: '11px',
+		fontWeight: 500,
+		cursor: 'pointer',
+		transition: 'all 0.15s',
+		whiteSpace: 'nowrap',
+	},
+	buttonActive: {
+		background: 'var(--halo-accent)',
+		color: '#fff',
+	},
+};
+
 // Translation function type
 type TFunc = (key: string, opts?: { defaultValue?: string } & Record<string, any>) => string;
 
@@ -182,23 +208,45 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
 					onChange={(e) => update('name', e.target.value)}
 					placeholder={t('userscripts.name', { defaultValue: 'Script name' })}
 				/>
-				<select
-					style={styles.select}
-					value={form.type}
-					onChange={(e) => update('type', e.target.value as ScriptType)}
-				>
-					<option value="javascript">JavaScript</option>
-					<option value="css">CSS</option>
-				</select>
-				<select
-					style={styles.select}
-					value={form.runAt}
-					onChange={(e) => update('runAt', e.target.value as UserScriptRunAt)}
-				>
-					<option value="document_start">document_start</option>
-					<option value="document_end">document_end</option>
-					<option value="document_idle">document_idle</option>
-				</select>
+				{/* Type: button group */}
+				<div style={segmentedStyles.wrapper}>
+					{[
+						{ value: 'javascript' as ScriptType, label: 'JS' },
+						{ value: 'css' as ScriptType, label: 'CSS' },
+					].map((opt) => (
+						<button
+							key={opt.value}
+							type="button"
+							style={{
+								...segmentedStyles.button,
+								...(form.type === opt.value ? segmentedStyles.buttonActive : {}),
+							}}
+							onClick={() => update('type', opt.value)}
+						>
+							{opt.label}
+						</button>
+					))}
+				</div>
+				{/* RunAt: button group */}
+				<div style={segmentedStyles.wrapper}>
+					{[
+						{ value: 'document_start' as UserScriptRunAt, label: 'Start' },
+						{ value: 'document_end' as UserScriptRunAt, label: 'End' },
+						{ value: 'document_idle' as UserScriptRunAt, label: 'Idle' },
+					].map((opt) => (
+						<button
+							key={opt.value}
+							type="button"
+							style={{
+								...segmentedStyles.button,
+								...(form.runAt === opt.value ? segmentedStyles.buttonActive : {}),
+							}}
+							onClick={() => update('runAt', opt.value)}
+						>
+							{opt.label}
+						</button>
+					))}
+				</div>
 			</div>
 			
 			{/* Description */}

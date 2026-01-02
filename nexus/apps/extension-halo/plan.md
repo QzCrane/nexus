@@ -25,6 +25,8 @@
 - **registry.ts**: 动态注册/注销脚本，storage 变化自动同步.
 - **Block Space Scroll**: 两全其美方案 - 阻止滚动 + 手动控制视频播放/暂停.
 
+- **i18n Architecture Refactor**: 去中心化翻译资源 (Tools/System Self-contained) + 自动聚合.
+
 ## 🚧 核心任务 (SIP - v2.3.0)
 
 ### 架构统一与系统隔离 (Unified SSOT & System Isolation)

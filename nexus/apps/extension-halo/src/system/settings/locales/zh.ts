@@ -1,4 +1,5 @@
-export const settings = {
+
+export const zh = {
 	settings: {
 		title: '设置',
 		appearance: '外观',

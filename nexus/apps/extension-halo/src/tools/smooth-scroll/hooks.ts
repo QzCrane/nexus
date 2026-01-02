@@ -6,11 +6,8 @@ import { createLogger } from '@nexus/kernel';
 import { useToolState } from '../../kernel';
 import { useTranslation } from '../../i18n';
 import type { ScrollSettings } from './types';
-import { DEFAULT_SETTINGS, PROFILES, CUSTOM_PROFILE_KEY } from './types';
+import { DEFAULT_SETTINGS, PROFILES, CUSTOM_PROFILE_KEY, STORAGE_KEY } from './types';
 // import { loadSettings, saveSettings, broadcastSettings } from './core'; // Removed
-
-// Actual storage key used by smooth-scroll (different from standard tool state key)
-const SMOOTH_SCROLL_STORAGE_KEY = 'HALO_SMOOTH_SCROLL_SETTINGS';
 
 const logger = createLogger('SmoothScroll', 'HALO');
 
@@ -20,7 +17,7 @@ export function useSmoothScrollSettings() {
 	const [settings, setSettings] = useToolState<ScrollSettings>(
 		'smooth-scroll',
 		DEFAULT_SETTINGS,
-		{ area: 'sync', storageKey: SMOOTH_SCROLL_STORAGE_KEY }
+		{ area: 'sync', storageKey: STORAGE_KEY }
 	);
 	const [toast, setToast] = useState<string | null>(null);
 	const [hasCustomProfile, setHasCustomProfile] = useState(false);

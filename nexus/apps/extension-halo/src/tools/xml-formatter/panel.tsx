@@ -97,10 +97,23 @@ export const XmlFormatterPanel: React.FC = () => {
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
 					<div style={styles.optionsRow}>
 						<span style={styles.label}>{t('xmlFormatter.input') || 'XML Input'}</span>
-						<select style={styles.select} value={indent} onChange={(e) => setIndent(parseInt(e.target.value))}>
-							<option value={2}>2 spaces</option>
-							<option value={4}>4 spaces</option>
-						</select>
+						<div style={{ display: 'inline-flex', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--halo-border)', background: 'var(--halo-bg-tertiary)' }}>
+							{[2, 4].map((n) => (
+								<button
+									key={n}
+									type="button"
+									style={{
+										border: 'none',
+										background: indent === n ? 'var(--halo-accent)' : 'transparent',
+										color: indent === n ? '#fff' : 'var(--halo-text-muted)',
+										padding: '4px 10px', fontSize: '11px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+									}}
+									onClick={() => setIndent(n)}
+								>
+									{n} sp
+								</button>
+							))}
+						</div>
 						<button style={styles.copyBtn} onClick={() => setInput('')}>
 							🗑️ {t('common.clear') || 'Clear'}
 						</button>

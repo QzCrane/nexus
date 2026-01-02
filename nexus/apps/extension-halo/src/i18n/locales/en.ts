@@ -3,16 +3,12 @@
 
 import type { TranslationKeys } from '../types';
 import { base } from './en-modules/base';
-import { settings } from './en-modules/settings';
 import { modules } from './en-modules/modules';
-import { panelsExtra } from './en-modules/panels-extra';
 import { TOOLS_EN } from './_generated-tools-en';
 
 export const en: TranslationKeys = {
 	...base,
-	...settings,
 	...modules,
-	...panelsExtra,
 	...TOOLS_EN,
 };
 

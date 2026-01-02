@@ -64,9 +64,9 @@ nexus(私有) → {spectra, halo}-public/ → github.com/QzCrane/{spectra, halo}
 
 **SPECTRA**: Audio 800%/EQ/脉冲/声道/延迟 | AudioContext 劫持 (Google 翻译支持) | Video 速率 16x/旋转/镜像/PiP/截图 | AB 循环/标记 | 遥控 QR+WebRTC | 热键脚本 (UserScripts)
 
-**HALO** (SidePanel 83 tools):
+**HALO** (SidePanel 85 tools):
 
-- 自动注册系统: `tools/*/manifest.json` + `locales/*` → `pnpm generate-registry` → 自动生成 `ToolId`, Source Map & I18n Aggregation
+- 自动注册系统: `{tools,system}/*/manifest.json` + `locales/*` → `pnpm generate-registry` → 自动生成 `ToolId`, Source Map & I18n Aggregation
 - 故障隔离: `ToolErrorBoundary` 确保单模块崩溃不影响全局
 - 智能意图: `useClipboardIntent` 智能识别剪贴板内容并推荐工具 (Smart Paste)
 - 核心服务: `useToolState`, `PermissionManager`(Kernel), `EngineStatusProvider`

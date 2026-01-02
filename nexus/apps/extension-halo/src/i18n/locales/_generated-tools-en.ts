@@ -80,6 +80,9 @@ import { en as uuid } from '../../tools/uuid/locales/en';
 import { en as xml_formatter } from '../../tools/xml-formatter/locales/en';
 import { en as xor } from '../../tools/xor/locales/en';
 import { en as yaml } from '../../tools/yaml/locales/en';
+import { en as module_store } from '../../system/module-store/locales/en';
+import { en as permissions } from '../../system/permissions/locales/en';
+import { en as settings } from '../../system/settings/locales/en';
 
 export const TOOLS_EN = {
 	...api_tester,
@@ -160,4 +163,7 @@ export const TOOLS_EN = {
 	...xml_formatter,
 	...xor,
 	...yaml,
+	...module_store,
+	...permissions,
+	...settings,
 };
