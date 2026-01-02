@@ -23,7 +23,8 @@ const logger = createLogger('Outline', 'HALO');
 export const OutlinePanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [headings, setHeadings] = useState<HeadingItemType[]>([]);
-	const [settings, setSettings] = useToolState<OutlineSettings>('outline-settings' as any, DEFAULT_SETTINGS);
+	const [storedSettings, setSettings] = useToolState<OutlineSettings>('outline-settings' as any, DEFAULT_SETTINGS);
+	const settings = storedSettings || DEFAULT_SETTINGS;
 	const [loading, setLoading] = useState(false);
 	const [toast, setToast] = useState<string | null>(null);
 
@@ -61,7 +62,7 @@ export const OutlinePanel: React.FC = () => {
 		key: K,
 		value: OutlineSettings[K]
 	) => {
-		setSettings(prev => ({ ...prev, [key]: value }));
+		setSettings(prev => ({ ...(prev || DEFAULT_SETTINGS), [key]: value }));
 	}, []);
 
 

@@ -41,7 +41,8 @@ export function useToolState<T>(
 		const baseValue = getInitialValue();
 		safeStorageGet([storageKey], { [storageKey]: baseValue }, area).then((res) => {
 			if (isMounted) {
-				setState(res[storageKey] as T);
+				const storedValue = res[storageKey] as T | undefined;
+				setState(storedValue !== undefined ? storedValue : baseValue);
 				setIsReady(true);
 			}
 		});

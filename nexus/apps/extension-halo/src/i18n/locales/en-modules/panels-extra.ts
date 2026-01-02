@@ -157,6 +157,7 @@ export const panelsExtra = {
 		revoke: 'Revoke',
 		usedBy: 'Used by',
 		privacyNote: 'HALO follows a privacy-first approach. Only enable permissions you actually need.',
+		cannotRevoke: 'This permission is required by HALO and cannot be revoked.',
 		items: {
 			pageCapture: { name: 'Page Capture', desc: 'Save complete web pages as MHTML files' },
 			webNavigation: { name: 'Web Navigation', desc: 'Detect page navigation for UserScripts injection' },

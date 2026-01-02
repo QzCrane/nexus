@@ -6,7 +6,7 @@ import type { UserScript, ScriptType, UserScriptRunAt } from './types';
 import { styles } from './panel.styles';
 
 // Translation function type
-type TFunc = (key: string, opts?: { defaultValue?: string }) => string;
+type TFunc = (key: string, opts?: { defaultValue?: string } & Record<string, any>) => string;
 
 // Props types
 interface ScriptItemProps {
@@ -18,6 +18,7 @@ interface ScriptItemProps {
 	onDelete: () => void;
 	onTest: () => void;
 	onMove: (dir: 'up' | 'down') => void;
+	isActive?: boolean;
 	t: TFunc;
 }
 
@@ -50,6 +51,7 @@ export const ScriptItem: React.FC<ScriptItemProps> = ({
 	onDelete,
 	onTest,
 	onMove,
+	isActive,
 	t,
 }) => {
 	const formatDate = (ts?: number) => {
@@ -73,6 +75,23 @@ export const ScriptItem: React.FC<ScriptItemProps> = ({
 							...(script.type === 'css' ? styles.scriptBadgeCSS : {}),
 						}}>
 							{script.type.toUpperCase()}
+						</span>
+						{/* Active Status */}
+						<span style={{ 
+							display: 'flex', 
+							alignItems: 'center', 
+							gap: '4px',
+							color: isActive ? '#4CAF50' : 'var(--halo-text-secondary)',
+							fontWeight: isActive ? 600 : 400 
+						}}>
+							<span style={{ 
+								width: '6px', 
+								height: '6px', 
+								borderRadius: '50%', 
+								background: isActive ? '#4CAF50' : '#ccc',
+								boxShadow: isActive ? '0 0 4px #4CAF50' : 'none'
+							}} />
+							{isActive ? t('userscripts.activeOnSite', { defaultValue: 'Active' }) : t('userscripts.inactiveOnSite', { defaultValue: 'Inactive' })}
 						</span>
 						<span>📍 {script.matches.length} {t('userscripts.matches', { defaultValue: 'match' })}{script.matches.length !== 1 ? 'es' : ''}</span>
 						<span>▶️ {script.runCount}x</span>
@@ -127,9 +146,27 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
 	isEdit,
 	t,
 }) => {
+	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+	const lineNumbersRef = React.useRef<HTMLDivElement>(null);
+
 	const update = <K extends keyof EditForm>(key: K, value: EditForm[K]) => {
 		onChange({ ...form, [key]: value });
 	};
+
+	// Sync scrolling
+	const handleScroll = () => {
+		if (textareaRef.current && lineNumbersRef.current) {
+			lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
+		}
+	};
+
+	// Prevent parent scroll
+	const handleWheel = (e: React.WheelEvent) => {
+		e.stopPropagation();
+	};
+
+	// Count lines
+	const lineCount = React.useMemo(() => form.code.split('\n').length, [form.code]);
 
 	return (
 		<div style={styles.editorCard}>
@@ -137,7 +174,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
 				{isEdit ? `✏️ ${t('userscripts.editScript', { defaultValue: 'Edit Script' })}` : `➕ ${t('userscripts.newScript', { defaultValue: 'New Script' })}`}
 			</div>
 			
-			{/* Name & Type row */}
+			{/* Name, Type & RunAt row */}
 			<div style={styles.editorRow}>
 				<input
 					style={styles.input}
@@ -153,24 +190,6 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
 					<option value="javascript">JavaScript</option>
 					<option value="css">CSS</option>
 				</select>
-			</div>
-			
-			{/* Description */}
-			<input
-				style={styles.input}
-				value={form.description}
-				onChange={(e) => update('description', e.target.value)}
-				placeholder={t('userscripts.description', { defaultValue: 'Description (optional)' })}
-			/>
-			
-			{/* Matches & RunAt row */}
-			<div style={styles.editorRow}>
-				<input
-					style={styles.input}
-					value={form.matches}
-					onChange={(e) => update('matches', e.target.value)}
-					placeholder={t('userscripts.matchesPlaceholder', { defaultValue: '*://*.example.com/*' })}
-				/>
 				<select
 					style={styles.select}
 					value={form.runAt}
@@ -182,22 +201,51 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
 				</select>
 			</div>
 			
-			{/* Exclude matches */}
+			{/* Description */}
 			<input
 				style={styles.input}
-				value={form.excludeMatches}
-				onChange={(e) => update('excludeMatches', e.target.value)}
-				placeholder={t('userscripts.excludePlaceholder', { defaultValue: 'Exclude patterns (optional, comma-separated)' })}
+				value={form.description}
+				onChange={(e) => update('description', e.target.value)}
+				placeholder={t('userscripts.description', { defaultValue: 'Description (optional)' })}
 			/>
 			
-			{/* Code editor */}
-			<textarea
-				style={styles.textarea}
-				value={form.code}
-				onChange={(e) => update('code', e.target.value)}
-				placeholder={form.type === 'css' ? t('userscripts.codePlaceholderCSS', { defaultValue: '/* Your CSS here... */' }) : t('userscripts.codePlaceholderJS', { defaultValue: '// Your JavaScript here...' })}
-				spellCheck={false}
-			/>
+			{/* Matches (Multi-line) */}
+			<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+				<textarea
+					style={styles.inputMulti}
+					value={form.matches}
+					onChange={(e) => update('matches', e.target.value)}
+					placeholder={t('userscripts.matchesPlaceholder', { defaultValue: '*://*.example.com/*\n*://*.another.com/*' })}
+				/>
+			</div>
+			
+			{/* Exclude matches (Multi-line) */}
+			<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+				<textarea
+					style={styles.inputMulti}
+					value={form.excludeMatches}
+					onChange={(e) => update('excludeMatches', e.target.value)}
+					placeholder={t('userscripts.excludePlaceholder', { defaultValue: 'Exclude patterns (one per line)\nExample: *://*.example.com/ads/*' })}
+				/>
+			</div>
+			
+			{/* Code editor with line numbers */}
+			<div style={styles.editorContainer} onWheel={handleWheel}>
+				<div style={styles.lineNumbers} ref={lineNumbersRef}>
+					{Array.from({ length: lineCount }, (_, i) => (
+						<div key={i} style={{ height: '18px' }}>{i + 1}</div>
+					))}
+				</div>
+				<textarea
+					ref={textareaRef}
+					style={{ ...styles.codeArea, height: '100%', lineHeight: '18px' }} // Force line-height for sync
+					value={form.code}
+					onChange={(e) => update('code', e.target.value)}
+					onScroll={handleScroll}
+					placeholder={form.type === 'css' ? t('userscripts.codePlaceholderCSS', { defaultValue: '/* Your CSS here... */' }) : t('userscripts.codePlaceholderJS', { defaultValue: '// Your JavaScript here...' })}
+					spellCheck={false}
+				/>
+			</div>
 			
 			{/* Action buttons */}
 			<div style={styles.btnGroup}>

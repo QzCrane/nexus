@@ -4,5 +4,8 @@
 	"category": "visual",
 	"size": 30000,
 	"builtIn": true,
-	"keywords": []
+	"keywords": [],
+	"permissions": [
+		"clipboardWrite"
+	]
 }

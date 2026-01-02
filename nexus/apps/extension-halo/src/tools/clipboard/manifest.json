@@ -4,5 +4,9 @@
 	"category": "efficiency",
 	"size": 32000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"permissions": [
+		"clipboardRead",
+		"clipboardWrite"
+	]
 }

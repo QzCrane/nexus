@@ -1,6 +1,7 @@
-
 // goal: System-level permission management
 // desc: Centralizes Chrome permission handling, definitions, and event monitoring
+
+import { getToolMeta } from '../registry/tool-registry';
 
 export interface PermissionDef {
 	id: string;
@@ -8,7 +9,6 @@ export interface PermissionDef {
 	description: string;
 	icon: string;
 	category: 'basic' | 'advanced' | 'privacy';
-	requiredBy: string[];   // Which features require this permission
 }
 
 export interface PermissionState {
@@ -24,7 +24,6 @@ export const OPTIONAL_PERMISSIONS: PermissionDef[] = [
 		description: 'Save complete web pages as MHTML files',
 		icon: '📥',
 		category: 'basic',
-		requiredBy: ['archive'],
 	},
 	{
 		id: 'webNavigation',
@@ -32,7 +31,6 @@ export const OPTIONAL_PERMISSIONS: PermissionDef[] = [
 		description: 'Detect page navigation for UserScripts injection',
 		icon: '🧭',
 		category: 'basic',
-		requiredBy: ['userscripts'],
 	},
 	{
 		id: 'clipboardRead',
@@ -40,7 +38,6 @@ export const OPTIONAL_PERMISSIONS: PermissionDef[] = [
 		description: 'Read text from your clipboard',
 		icon: '📋',
 		category: 'privacy',
-		requiredBy: ['clipboard'],
 	},
 	{
 		id: 'clipboardWrite',
@@ -48,7 +45,6 @@ export const OPTIONAL_PERMISSIONS: PermissionDef[] = [
 		description: 'Copy text to your clipboard',
 		icon: '📝',
 		category: 'basic',
-		requiredBy: ['clipboard', 'qrcode', 'color-picker'],
 	},
 	{
 		id: 'downloads',
@@ -56,7 +52,6 @@ export const OPTIONAL_PERMISSIONS: PermissionDef[] = [
 		description: 'Manage file downloads',
 		icon: '⬇️',
 		category: 'basic',
-		requiredBy: ['pdf', 'archive'],
 	},
 	{
 		id: 'history',
@@ -64,7 +59,6 @@ export const OPTIONAL_PERMISSIONS: PermissionDef[] = [
 		description: 'Access browsing history',
 		icon: '🕐',
 		category: 'privacy',
-		requiredBy: [],
 	},
 	{
 		id: 'bookmarks',
@@ -72,7 +66,6 @@ export const OPTIONAL_PERMISSIONS: PermissionDef[] = [
 		description: 'Access and manage bookmarks',
 		icon: '⭐',
 		category: 'privacy',
-		requiredBy: [],
 	},
 	{
 		id: 'topSites',
@@ -80,7 +73,6 @@ export const OPTIONAL_PERMISSIONS: PermissionDef[] = [
 		description: 'Access most visited sites data',
 		icon: '📊',
 		category: 'privacy',
-		requiredBy: [],
 	},
 	{
 		id: 'notifications',
@@ -88,7 +80,6 @@ export const OPTIONAL_PERMISSIONS: PermissionDef[] = [
 		description: 'Show desktop notifications',
 		icon: '🔔',
 		category: 'basic',
-		requiredBy: [],
 	},
 ];
 
@@ -99,7 +90,6 @@ export const HOST_PERMISSIONS: PermissionDef = {
 	description: 'Allow script injection on any website (required for UserScripts)',
 	icon: '🌐',
 	category: 'advanced',
-	requiredBy: ['userscripts'],
 };
 
 export class PermissionManager {
@@ -208,10 +198,22 @@ export class PermissionManager {
 
 	// Get permissions required for a specific feature
 	getRequiredPermissions(featureId: string): PermissionDef[] {
-		const required = OPTIONAL_PERMISSIONS.filter((p) => p.requiredBy.includes(featureId));
-		if (HOST_PERMISSIONS.requiredBy.includes(featureId)) {
-			required.push(HOST_PERMISSIONS);
+		const tool = getToolMeta(featureId);
+		if (!tool || !tool.permissions) return [];
+
+		const required: PermissionDef[] = [];
+
+		for (const pid of tool.permissions) {
+			if (pid === '<all_urls>' || pid === '*://*/*') {
+				required.push(HOST_PERMISSIONS);
+				continue;
+			}
+			const def = OPTIONAL_PERMISSIONS.find((p) => p.id === pid);
+			if (def) {
+				required.push(def);
+			}
 		}
+
 		return required;
 	}
 }

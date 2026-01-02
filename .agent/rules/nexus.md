@@ -12,7 +12,7 @@ trigger: always_on
 架构层 (9):
 ~/nexus/apps/extension-halo/docs/architecture.md、research.md、market-research_.md
 ~/nexus/apps/extension-spectra/docs/policy-decision.md, protocols.md, cors-data-flow.md
-模块层 (15): .ai-context.md
+模块层 (16): .ai-context.md
 工作流 (7): ~/.agent/workflows/\*.md
 
 ## 架构

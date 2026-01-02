@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useTranslation } from '../../i18n';
 import { useModuleManager } from '../../kernel';
 import { useRemoteRegistry } from '../../kernel';
@@ -21,6 +21,18 @@ export const ModuleStorePanel: React.FC = () => {
 	const [isSearchFocused, setIsSearchFocused] = useState(false);
 	const searchInputRef = useRef<HTMLInputElement>(null);
 
+	// Ctrl+K keyboard shortcut
+	useEffect(() => {
+		const handleGlobalKey = (e: KeyboardEvent) => {
+			if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+				e.preventDefault();
+				searchInputRef.current?.focus();
+			}
+		};
+		window.addEventListener('keydown', handleGlobalKey);
+		return () => window.removeEventListener('keydown', handleGlobalKey);
+	}, []);
+
 	const handleInstall = useCallback(async (id: string) => {
 		setInstalling(id);
 		try { await install(id); } finally { setInstalling(null); }
@@ -34,7 +46,8 @@ export const ModuleStorePanel: React.FC = () => {
 		await refresh();
 	}, [refresh]);
 
-	const isIgnored = (id: string) => id === 'settings' || id === 'module-store';
+	// System modules should not appear in the store
+	const isIgnored = (id: string) => id === 'settings' || id === 'module-store' || id === 'permissions';
 
 	const filteredInstalled = installedModules.filter(m => !isIgnored(m.id));
 	const filteredAvailable = availableModules.filter(m => !isIgnored(m.id));
@@ -51,7 +64,7 @@ export const ModuleStorePanel: React.FC = () => {
 	);
 
 	const totalInstalled = filteredInstalled.length;
-	const totalSize = filteredInstalled.reduce((sum, m) => sum + m.size, 0);
+	const totalSize = filteredInstalled.reduce((sum, m) => sum + (m.size || 0), 0);
 
 	if (loading) {
 		return (
@@ -81,7 +94,7 @@ export const ModuleStorePanel: React.FC = () => {
 					}}
 					onClick={() => searchInputRef.current?.focus()}
 					>
-						<span style={{ fontSize: '14px', opacity: 0.5, marginRight: '8px' }}>🔍</span>
+					<span style={{ fontSize: '14px', opacity: 0.5, marginRight: '8px' }}>🔍</span>
 						<input
 							ref={searchInputRef}
 							style={{ ...searchStyles.input as React.CSSProperties, fontSize: '14px', width: '100%' }}
@@ -92,6 +105,7 @@ export const ModuleStorePanel: React.FC = () => {
 							onBlur={() => setIsSearchFocused(false)}
 							placeholder={t('moduleStorePanel.searchPlaceholder') || t('common.search')}
 						/>
+						{!isSearchFocused && !searchQuery && <span style={searchStyles.shortcut as React.CSSProperties}>⌘K</span>}
 					</div>
 					<button style={{ ...styles.btnRefresh, height: '40px', width: '40px' }} onClick={handleRefresh} disabled={remoteLoading} title={t('moduleStorePanel.checkUpdates')}>
 						{remoteLoading ? '⏳' : '🔄'}

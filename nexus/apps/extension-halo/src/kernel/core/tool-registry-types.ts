@@ -21,6 +21,7 @@ export interface ToolMeta {
 		offscreen?: boolean;
 	};
 	system?: boolean;
+	permissions?: string[];
 	// Module-specific fields (optional, used by ModuleStore)
 	size?: number;
 	builtIn?: boolean;

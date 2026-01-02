@@ -4,5 +4,8 @@
 	"category": "efficiency",
 	"size": 380000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"permissions": [
+		"downloads"
+	]
 }

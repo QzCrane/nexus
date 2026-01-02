@@ -1,98 +1,61 @@
-// goal: UserScripts injection engine - runs in background service worker
-// eff: Supports JavaScript and CSS injection with run count tracking
+// goal: UserScripts engine - runs in background service worker
+// eff: Handles run count tracking and manual injection from panel
+// NOTE: Primary injection is now handled by chrome.userScripts API (registry.ts)
 
 import type { UserScript } from './types';
-import { getUserScriptsState, getMatchingScripts, incrementRunCount } from './core';
+import { incrementRunCount } from './core';
+import { syncRegisteredScripts } from './registry';
 
 const LOG_TAG = '[HALO:UserScripts]';
 
-// Initialize injection on tab updates
+// Initialize engine - register message listeners
 export function initUserScriptsEngine(): void {
 	console.log(LOG_TAG, 'Engine initialized');
 
-	// Check if optional permission is granted
-	if (!chrome.webNavigation) {
-		console.log(LOG_TAG, 'webNavigation permission not active, skipping listeners');
-		return;
-	}
-
-	// Listen for navigation complete (document_end, document_idle)
-	chrome.webNavigation.onCompleted.addListener(async (details) => {
-		if (details.frameId !== 0) return;
-
-		const state = await getUserScriptsState();
-		if (!state.globalEnabled) return;
-
-		const matchingScripts = getMatchingScripts(state.scripts, details.url);
-		if (matchingScripts.length === 0) return;
-
-		const endScripts = matchingScripts.filter((s) => s.runAt === 'document_end' || s.runAt === 'document_idle');
-		await injectScripts(details.tabId, endScripts);
-	});
-
-	// Listen for document_start injection
-	chrome.webNavigation.onCommitted.addListener(async (details) => {
-		if (details.frameId !== 0) return;
-
-		const state = await getUserScriptsState();
-		if (!state.globalEnabled) return;
-
-		const matchingScripts = getMatchingScripts(state.scripts, details.url);
-		const startScripts = matchingScripts.filter((s) => s.runAt === 'document_start');
-		if (startScripts.length > 0) {
-			await injectScripts(details.tabId, startScripts);
+	// Listen for messages
+	chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+		// Run count updates from content script
+		if (message.type === 'HALO_USERSCRIPT_RAN' && message.scriptId) {
+			incrementRunCount(message.scriptId)
+				.then(() => sendResponse({ success: true }))
+				.catch((e) => sendResponse({ success: false, error: String(e) }));
+			return true; // Async response
 		}
-	});
-}
 
-// Inject scripts via chrome.scripting API
-async function injectScripts(tabId: number, scripts: UserScript[]): Promise<void> {
-	for (const script of scripts) {
-		try {
-			if (script.type === 'css') {
-				await injectCSS(tabId, script);
-			} else {
-				await injectJS(tabId, script);
-			}
-			// Update run count
-			await incrementRunCount(script.id);
-			console.log(LOG_TAG, `Injected: ${script.name} (${script.type})`);
-		} catch (e) {
-			console.warn(LOG_TAG, `Failed to inject ${script.name}:`, e);
+		// Manual sync request (after permission grant)
+		if (message.type === 'HALO_USERSCRIPTS_SYNC') {
+			console.log(LOG_TAG, 'Manual sync requested');
+			syncRegisteredScripts()
+				.then(() => sendResponse({ success: true }))
+				.catch((e) => sendResponse({ success: false, error: String(e) }));
+			return true;
 		}
-	}
-}
 
-// Inject JavaScript
-async function injectJS(tabId: number, script: UserScript): Promise<void> {
-	await chrome.scripting.executeScript({
-		target: { tabId },
-		func: executeUserScript as () => void,
-		args: [script.code, script.name],
-		world: 'MAIN',
-	} as chrome.scripting.ScriptInjection);
-}
-
-// Inject CSS
-async function injectCSS(tabId: number, script: UserScript): Promise<void> {
-	await chrome.scripting.insertCSS({
-		target: { tabId },
-		css: script.code,
+		return false;
 	});
 }
 
-// Wrapper function injected into page
+// Wrapper function injected into page via inline <script> tag
 function executeUserScript(code: string, name: string): void {
 	try {
-		const fn = new Function(code);
-		fn();
-		console.log(`[HALO Script] ${name} executed`);
+		const scriptEl = document.createElement('script');
+		scriptEl.textContent = `
+			try {
+				${code}
+				console.log('[HALO Script] ${name.replace(/'/g, "\\'")} executed');
+			} catch (e) {
+				console.error('[HALO Script] ${name.replace(/'/g, "\\'")} failed:', e);
+			}
+		`;
+		const target = document.head || document.documentElement;
+		target.insertBefore(scriptEl, target.firstChild);
+		scriptEl.remove();
 	} catch (e) {
-		console.error(`[HALO Script] ${name} failed:`, e);
+		console.error(`[HALO Script] ${name} injection failed:`, e);
 	}
 }
 
-// Manual injection for testing from panel
+// Manual injection for testing from panel (uses executeScript API)
 export async function injectScriptToCurrentTab(script: UserScript): Promise<boolean> {
 	try {
 		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -119,4 +82,3 @@ export async function injectScriptToCurrentTab(script: UserScript): Promise<bool
 		return false;
 	}
 }
-

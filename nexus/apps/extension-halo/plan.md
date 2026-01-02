@@ -19,6 +19,12 @@
 - **Quality**: Playwright UI Automation + Safe Storage Timeouts.
 - **Smart Features**: `useClipboardIntent` 智能剪贴板意图识别.
 
+### v2.3.0 UserScripts Pro Architecture (2026-01-02)
+
+- **chrome.userScripts API**: 真正的 `document_start` MAIN world 注入 (Chrome 120+).
+- **registry.ts**: 动态注册/注销脚本，storage 变化自动同步.
+- **Block Space Scroll**: 两全其美方案 - 阻止滚动 + 手动控制视频播放/暂停.
+
 ## 🚧 核心任务 (SIP - v2.3.0)
 
 ### 架构统一与系统隔离 (Unified SSOT & System Isolation)
@@ -69,4 +75,4 @@
 
 ## 📂 关联
 
-- [架构图谱](docs/architecture-registry.md) | [开发规则](../../docs/ai-rules.md)
+- [开发规则](../../docs/ai-rules.md)

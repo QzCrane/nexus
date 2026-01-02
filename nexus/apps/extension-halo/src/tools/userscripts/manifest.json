@@ -4,5 +4,9 @@
 	"category": "dev",
 	"size": 45000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"permissions": [
+		"webNavigation",
+		"*://*/*"
+	]
 }

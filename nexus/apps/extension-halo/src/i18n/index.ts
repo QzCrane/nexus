@@ -24,7 +24,7 @@ export { registerTranslations, waitForI18n };
 interface I18nContextValue {
 	locale: Locale;
 	setLocale: (locale: Locale) => void;
-	t: (path: string, options?: { defaultValue?: string }) => string;
+	t: (path: string, options?: { defaultValue?: string } & Record<string, any>) => string;
 	translations: TranslationKeys;
 }
 
@@ -66,10 +66,19 @@ export function useTranslation() {
 		notify();
 	}, []);
 
-	const t = useCallback((path: string, options?: { defaultValue?: string }): string => {
-		const val = getByPath(REGISTRY[globalLocale], path);
-		if (val === path && options?.defaultValue) {
-			return options.defaultValue;
+	const t = useCallback((path: string, options?: { defaultValue?: string } & Record<string, any>): string => {
+		const { defaultValue, ...params } = options || {};
+		const val = getByPath(REGISTRY[globalLocale], path, params);
+
+		if (val === path && defaultValue) {
+			// If key not found (val === path), return defaultValue
+			// We should also attempt interpolation on defaultValue if needed, but for now simple return is standard
+			// Or we could interpolate defaultValue too:
+			let result = defaultValue;
+			Object.entries(params).forEach(([key, value]) => {
+				result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), String(value));
+			});
+			return result;
 		}
 		return val;
 	}, [tick]);

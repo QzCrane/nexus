@@ -2,6 +2,7 @@
 // eff: Master toggle, script list, editor, import/export, templates
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from '../../i18n';
 import type { UserScript, ScriptType, UserScriptRunAt } from './types';
 import {
@@ -14,6 +15,7 @@ import {
 	reorderScript,
 	exportScripts,
 	importScripts,
+	matchesUrl,
 	SCRIPT_TEMPLATES,
 } from './core';
 import { injectScriptToCurrentTab } from './engine';
@@ -39,6 +41,8 @@ export const UserScriptsPanel: React.FC = () => {
 	const [editForm, setEditForm] = useState<EditForm>(DEFAULT_FORM);
 	const [modalMode, setModalMode] = useState<'import' | 'export' | null>(null);
 	const [exportData, setExportData] = useState('');
+	const [currentUrl, setCurrentUrl] = useState('');
+	const [hasPermission, setHasPermission] = useState(false);
 	const [toast, setToast] = useState<string | null>(null);
 
 	const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2000); };
@@ -50,6 +54,73 @@ export const UserScriptsPanel: React.FC = () => {
 	}, []);
 
 	useEffect(() => { loadScripts(); }, [loadScripts]);
+
+	// Track current URL and Permissions
+	useEffect(() => {
+		const checkStatus = async () => {
+			// Check URL
+			const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+			if (tab?.url) setCurrentUrl(tab.url);
+
+			// Check Permissions (webNavigation for old fallback, userScripts for Chrome 120+)
+			const hasHosts = await chrome.permissions.contains({ origins: ['*://*/*'] });
+			const hasUserScripts = await chrome.permissions.contains({ permissions: ['userScripts'] });
+			// Consider permission granted if we have userScripts OR (webNavigation + hosts)
+			const hasWebNav = await chrome.permissions.contains({ permissions: ['webNavigation'] });
+			setHasPermission(hasUserScripts || (hasWebNav && hasHosts));
+		};
+		checkStatus();
+
+		const onActive = () => checkStatus();
+		const onUpdate = (_: number, change: any, tab: chrome.tabs.Tab) => {
+			if (tab.active && change.url) checkStatus();
+		};
+
+		// Listen for permission changes
+		// @ts-ignore - types might be missing for permission events
+		const onPermChange = () => checkStatus();
+		if (chrome.permissions.onAdded) chrome.permissions.onAdded.addListener(onPermChange);
+		if (chrome.permissions.onRemoved) chrome.permissions.onRemoved.addListener(onPermChange);
+
+		chrome.tabs.onActivated.addListener(onActive);
+		chrome.tabs.onUpdated.addListener(onUpdate);
+
+		return () => {
+			chrome.tabs.onActivated.removeListener(onActive);
+			chrome.tabs.onUpdated.removeListener(onUpdate);
+			if (chrome.permissions.onAdded) chrome.permissions.onAdded.removeListener(onPermChange);
+			if (chrome.permissions.onRemoved) chrome.permissions.onRemoved.removeListener(onPermChange);
+		};
+	}, []);
+
+	// Request Permissions - request userScripts (Chrome 120+) as primary
+	const handleRequestPermission = async () => {
+		// Try to request userScripts permission first (Chrome 120+)
+		let granted = false;
+		try {
+			granted = await chrome.permissions.request({
+				permissions: ['userScripts'],
+				origins: ['*://*/*']
+			});
+		} catch {
+			// userScripts may not be available on older Chrome
+		}
+
+		// Fallback to webNavigation if userScripts failed/unavailable
+		if (!granted) {
+			granted = await chrome.permissions.request({
+				permissions: ['webNavigation'],
+				origins: ['*://*/*']
+			});
+		}
+
+		if (granted) {
+			setHasPermission(true);
+			showToast(`✅ ${t('userscripts.permsGranted', { defaultValue: 'Permissions granted' })}`);
+			// Trigger registry sync to register scripts
+			chrome.runtime.sendMessage({ type: 'HALO_USERSCRIPTS_SYNC' }).catch(() => {});
+		}
+	};
 
 	// Global toggle
 	const handleGlobalToggle = async () => {
@@ -78,7 +149,7 @@ export const UserScriptsPanel: React.FC = () => {
 	const handleTest = async (script: UserScript) => {
 		const success = await injectScriptToCurrentTab(script);
 		showToast(success
-			? `✅ ${script.name} ${t('userscripts.executed', { defaultValue: 'executed!' })}`
+			? `✅ ${t('userscripts.executed', { name: script.name, defaultValue: `${script.name} executed!` })}`
 			: `❌ ${t('userscripts.injectionFailed', { defaultValue: 'Injection failed' })}`);
 	};
 
@@ -95,8 +166,8 @@ export const UserScriptsPanel: React.FC = () => {
 			name: script.name,
 			description: script.description,
 			code: script.code,
-			matches: script.matches.join(', '),
-			excludeMatches: script.excludeMatches?.join(', ') || '',
+			matches: script.matches.join('\n'),
+			excludeMatches: script.excludeMatches?.join('\n') || '',
 			type: script.type,
 			runAt: script.runAt,
 		});
@@ -114,8 +185,8 @@ export const UserScriptsPanel: React.FC = () => {
 			name: editForm.name.trim(),
 			description: editForm.description.trim(),
 			code: editForm.code,
-			matches: editForm.matches.split(',').map(m => m.trim()).filter(Boolean),
-			excludeMatches: editForm.excludeMatches ? editForm.excludeMatches.split(',').map(m => m.trim()).filter(Boolean) : undefined,
+			matches: editForm.matches.split(/[,\n]+/).map(m => m.trim()).filter(Boolean),
+			excludeMatches: editForm.excludeMatches ? editForm.excludeMatches.split(/[,\n]+/).map(m => m.trim()).filter(Boolean) : undefined,
 			type: editForm.type,
 			runAt: editForm.runAt,
 			enabled: true,
@@ -150,7 +221,7 @@ export const UserScriptsPanel: React.FC = () => {
 			name: tpl.name,
 			description: tpl.description,
 			code: tpl.code,
-			matches: tpl.matches.join(', '),
+			matches: tpl.matches.join('\n'),
 			excludeMatches: '',
 			type: tpl.type,
 			runAt: tpl.runAt,
@@ -201,6 +272,32 @@ export const UserScriptsPanel: React.FC = () => {
 				<button style={styles.btnSecondary} onClick={() => setModalMode('import')}>📥 {t('userscripts.import', { defaultValue: 'Import' })}</button>
 			</div>
 
+			{/* Permission Warning */}
+			{!hasPermission && (
+				<div style={{
+					margin: '10px 15px',
+					padding: '10px',
+					background: 'var(--halo-warning-muted)',
+					border: '1px solid var(--halo-warning)',
+					borderRadius: '6px',
+					fontSize: '13px',
+					display: 'flex',
+					flexDirection: 'column',
+					gap: '8px'
+				}}>
+					<div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+						<span>⚠️</span>
+						<span>{t('userscripts.permsMissing', { defaultValue: 'Permissions needed for auto-injection' })}</span>
+					</div>
+					<button 
+						style={{ ...styles.btn, fontSize: '12px', padding: '6px' }}
+						onClick={handleRequestPermission}
+					>
+						{t('userscripts.enableAuto', { defaultValue: 'Enable Auto-Run' })}
+					</button>
+				</div>
+			)}
+
 			{/* Templates */}
 			<div>
 				<div style={styles.sectionTitle}>📋 {t('userscripts.templates', { defaultValue: 'Templates' })}</div>
@@ -248,6 +345,7 @@ export const UserScriptsPanel: React.FC = () => {
 							onDelete={() => handleDelete(script.id)}
 							onTest={() => handleTest(script)}
 							onMove={(dir) => handleMove(script.id, dir)}
+							isActive={hasPermission && currentUrl && globalEnabled ? (matchesUrl(script.matches, currentUrl) && (!script.excludeMatches || !matchesUrl(script.excludeMatches, currentUrl))) : false}
 							t={t}
 						/>
 					))}
@@ -259,15 +357,14 @@ export const UserScriptsPanel: React.FC = () => {
 				<ImportExportModal mode={modalMode} exportData={exportData} onImport={handleImport} onClose={() => setModalMode(null)} t={t} />
 			)}
 
-			{/* Toast */}
-			{toast && (
-				<div style={{
-					position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)',
-					padding: '10px 20px', borderRadius: '8px', background: '#333', color: '#fff',
-					fontSize: '13px', zIndex: 1001, boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-				}}>
-					{toast}
-				</div>
+			{/* Toast - using Portal to escape local stacking/overflow contexts */}
+			{toast && createPortal(
+				<div style={styles.toastContainer}>
+					<div style={styles.toastContent}>
+						{toast}
+					</div>
+				</div>,
+				document.body
 			)}
 		</div>
 	);

@@ -2,7 +2,7 @@
 // eff: Uses unified ToolMeta type from tool-registry-types
 
 import type { ToolMeta } from '../core/tool-registry-types';
-import { GENERATED_TOOLS, type GeneratedToolMeta } from './_generated';
+import { ALL_APPS as GENERATED_TOOLS, type GeneratedToolMeta } from './_generated';
 
 // Module installation status
 export type ModuleStatus = 'available' | 'installed' | 'downloading' | 'updating' | 'error';
@@ -34,6 +34,7 @@ function buildToolMeta(tool: GeneratedToolMeta): ToolMeta {
 		keywords: tool.keywords || [],
 		features: tool.features,
 		system: tool.system,
+		permissions: tool.permissions,
 		// Module-specific fields
 		size: tool.size,
 		builtIn: tool.builtIn,
@@ -68,5 +69,5 @@ export const formatModuleSize = (bytes: number): string => {
 
 // Re-export for backward compatibility
 export { type ToolMeta as ModuleMeta } from '../core/tool-registry-types';
-export { GENERATED_TOOLS, type GeneratedToolMeta } from './_generated';
+export { ALL_APPS as GENERATED_TOOLS, type GeneratedToolMeta } from './_generated';
 

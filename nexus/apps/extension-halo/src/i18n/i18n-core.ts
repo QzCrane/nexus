@@ -33,8 +33,8 @@ export function registerTranslations(locale: Locale, data: Partial<TranslationKe
 	notify();
 }
 
-// Get nested value by dot-path
-export function getByPath(obj: unknown, path: string): string {
+// Get nested value by dot-path and interpolate
+export function getByPath(obj: unknown, path: string, params?: Record<string, any>): string {
 	const parts = path.split('.');
 	let current: unknown = obj;
 	for (const part of parts) {
@@ -44,10 +44,24 @@ export function getByPath(obj: unknown, path: string): string {
 			return path;
 		}
 	}
-	if (typeof current !== 'string') {
-		return typeof current === 'number' ? String(current) : path;
+
+	let result = path;
+	if (typeof current === 'string') {
+		result = current;
+	} else if (typeof current === 'number') {
+		result = String(current);
+	} else {
+		return path;
 	}
-	return current;
+
+	// Interpolate specific params if provided
+	if (params) {
+		Object.entries(params).forEach(([key, value]) => {
+			result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), String(value));
+		});
+	}
+
+	return result;
 }
 
 // Detect browser language

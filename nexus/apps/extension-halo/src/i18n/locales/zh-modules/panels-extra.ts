@@ -157,6 +157,7 @@ export const panelsExtra = {
 		revoke: '撤销',
 		usedBy: '使用者',
 		privacyNote: 'HALO 遵循隐私优先原则。仅启用您实际需要的权限。',
+		cannotRevoke: 'HALO 需要此权限才能正常工作，无法撤销。',
 		items: {
 			pageCapture: { name: '页面捕获', desc: '将网页保存为完整的 MHTML 文件' },
 			webNavigation: { name: '网页导航', desc: '检测页面跳转以便进行脚本注入' },

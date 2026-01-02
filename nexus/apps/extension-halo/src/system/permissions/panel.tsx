@@ -10,6 +10,7 @@ import {
 	getPermissionManager,
 	type PermissionDef,
 } from '../../kernel/managers/permission-manager';
+import { PERMISSION_USAGE_MAP } from '../../kernel/registry/_generated';
 import { styles } from './panel.styles';
 
 // Group permissions by category
@@ -52,6 +53,15 @@ export const PermissionsPanel: React.FC = () => {
 		let success: boolean;
 		if (isGranted) {
 			success = isHost ? await pm.revokeHost(perm.id) : await pm.revoke(perm.id);
+			// Verify actual state after revoke (some permissions can't be revoked due to content_scripts)
+			if (success) {
+				const stillGranted = isHost ? await pm.checkHost(perm.id) : await pm.check(perm.id);
+				if (stillGranted) {
+					// Permission couldn't actually be revoked (likely due to manifest dependencies)
+					alert(t('permissions.cannotRevoke', { defaultValue: 'This permission is required by HALO and cannot be revoked.' }));
+					success = false;
+				}
+			}
 		} else {
 			success = isHost ? await pm.requestHost(perm.id) : await pm.request(perm.id);
 		}
@@ -60,7 +70,7 @@ export const PermissionsPanel: React.FC = () => {
 			await loadStates();
 		}
 		setLoading(null);
-	}, [states]);
+	}, [states, t]);
 
 	const grouped = groupByCategory(OPTIONAL_PERMISSIONS);
 	const categoryLabels: Record<string, string> = {
@@ -75,6 +85,7 @@ export const PermissionsPanel: React.FC = () => {
 		
 		// Use special key for all hosts permission
 		const i18nKey = isHost ? 'allHosts' : perm.id;
+		const toolsUsing = PERMISSION_USAGE_MAP[perm.id] || [];
 
 		return (
 			<div key={perm.id} style={styles.card}>
@@ -82,8 +93,8 @@ export const PermissionsPanel: React.FC = () => {
 				<div style={styles.info}>
 					<div style={styles.name}>{t(`permissions.items.${i18nKey}.name`)}</div>
 					<div style={styles.desc}>{t(`permissions.items.${i18nKey}.desc`)}</div>
-					{perm.requiredBy.length > 0 && (
-						<div style={styles.requiredBy}>🔗 {t('permissions.usedBy')}: {perm.requiredBy.map(id => t(`tools.${id}.name`)).join(', ')}</div>
+					{toolsUsing.length > 0 && (
+						<div style={styles.requiredBy}>🔗 {t('permissions.usedBy')}: {toolsUsing.map(id => t(`tools.${id}.name`)).join(', ')}</div>
 					)}
 				</div>
 				{isGranted ? (
@@ -112,7 +123,7 @@ export const PermissionsPanel: React.FC = () => {
 			{/* Header */}
 			<Card variant="default" padding="sm">
 				<div style={styles.header}>
-					<span style={{ fontSize: '24px' }}>🔐</span>
+					<span style={{ fontSize: '24px' }}>🛡️</span>
 					<div>
 						<div style={styles.title}>{t('permissions.title')}</div>
 						<div style={styles.subtitle}>{t('permissions.subtitle')}</div>

@@ -4,9 +4,7 @@ import { useTranslation } from '../i18n';
 import type { ToolId, HaloSettings } from '../kernel';
 import { useSmoothWheel } from '../kernel/hooks/use-smooth-wheel';
 import { LazyToolRenderer } from './lazy-tool-loader';
-import { SettingsPanel } from '../pages/settings';
-import { ModuleStorePanel } from '../pages/module-store';
-import { PermissionsPanel } from '../pages/permissions';
+
 
 const styles = {
 	placeholder: {
@@ -71,19 +69,19 @@ export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({
 			{/* System Pages (Rendered only when active) */}
 			{activeTool === 'module-store' && (
 				<SmoothScrollContainer>
-					<ModuleStorePanel />
+					<LazyToolRenderer toolId="module-store" />
 				</SmoothScrollContainer>
 			)}
 			
 			{activeTool === 'settings' && (
 				<SmoothScrollContainer>
-					<SettingsPanel onSettingsChange={onSettingsChange} />
+					<LazyToolRenderer toolId="settings" onSettingsChange={onSettingsChange} />
 				</SmoothScrollContainer>
 			)}
 			
 			{activeTool === 'permissions' && (
 				<SmoothScrollContainer>
-					<PermissionsPanel />
+					<LazyToolRenderer toolId="permissions" />
 				</SmoothScrollContainer>
 			)}
 

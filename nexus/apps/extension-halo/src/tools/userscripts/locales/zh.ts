@@ -43,6 +43,6 @@ export const zh = {
 		tplDarkForce: '强制深色',
 		tplRemoveOverlay: '移除弹窗',
 		tplCustomCSS: '自定义样式',
-		tplBlockSpace: '阻止空格'
+		tplBlockSpace: '阻止空格滚动'
 	}
 };

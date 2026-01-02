@@ -113,7 +113,7 @@ export function getMatchingScripts(scripts: UserScript[], url: string): UserScri
 }
 
 // URL pattern matching (simplified glob-style)
-function matchesUrl(patterns: string[], url: string): boolean {
+export function matchesUrl(patterns: string[], url: string): boolean {
 	for (const pattern of patterns) {
 		const regex = patternToRegex(pattern);
 		if (regex.test(url)) return true;
@@ -299,14 +299,67 @@ body {
 	},
 	blockSpace: {
 		name: 'Block Space Scroll',
-		description: 'Prevent spacebar from scrolling',
+		description: 'Prevent spacebar from scrolling (video control works)',
 		type: 'javascript' as ScriptType,
-		code: `// Block spacebar scroll
-document.addEventListener('keydown', e => {
-  if (e.code === 'Space' && e.target === document.body) {
-    e.preventDefault();
-  }
-}, { capture: true });`,
+		code: `// Block space scroll + manually control video play/pause
+(function() {
+    if (window.__halo_space_blocker) return;
+    window.__halo_space_blocker = true;
+
+    // Find the most visible video on the page
+    function findActiveVideo() {
+        const videos = document.querySelectorAll('video');
+        let best = null, bestArea = 0;
+        for (const v of videos) {
+            const rect = v.getBoundingClientRect();
+            // Check if video is visible in viewport
+            if (rect.width > 50 && rect.height > 50 && rect.top < window.innerHeight && rect.bottom > 0) {
+                const area = rect.width * rect.height;
+                if (area > bestArea) { bestArea = area; best = v; }
+            }
+        }
+        return best;
+    }
+
+    function shouldBlock(event) {
+        if (event.code !== 'Space' && event.keyCode !== 32) return false;
+
+        // Find real active element
+        let el = document.activeElement;
+        while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement;
+
+        if (el) {
+            const tag = el.tagName;
+            // Allow typing in text fields
+            if (tag === 'INPUT' || tag === 'TEXTAREA') return false;
+            if (el.isContentEditable || el.getAttribute('contenteditable') === 'true') return false;
+            const role = el.getAttribute('role');
+            if (role === 'textbox' || role === 'searchbox') return false;
+        }
+        return true;
+    }
+
+    function handleSpace(event) {
+        if (!shouldBlock(event)) return;
+
+        // Block scroll completely
+        event.preventDefault();
+        event.stopImmediatePropagation();
+
+        // Only toggle video on keydown (not keyup) to avoid double-toggle
+        if (event.type === 'keydown') {
+            const video = findActiveVideo();
+            if (video) {
+                if (video.paused) video.play().catch(() => {});
+                else video.pause();
+            }
+        }
+    }
+
+    window.addEventListener('keydown', handleSpace, true);
+    window.addEventListener('keyup', handleSpace, true);
+    console.log('[HALO] Space blocker v3 (manual video control)');
+})();`,
 		matches: ['*://*/*'],
 		runAt: 'document_start' as UserScriptRunAt,
 	},

@@ -1,0 +1,13 @@
+{
+	"id": "permissions",
+	"icon": "🛡️",
+	"category": "security",
+	"size": 0,
+	"system": true,
+	"builtIn": true,
+	"keywords": [
+		"security",
+		"access"
+	],
+	"permissions": []
+}

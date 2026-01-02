@@ -1,5 +1,6 @@
 // goal: HALO Content Script Host (modular)
 // Entry point that imports and initializes content modules
+// NOTE: UserScripts injection is now handled by chrome.userScripts API (registry.ts)
 
 import * as Ruler from '../content/ruler';
 import * as SmoothScroll from '../content/smooth-scroll';
@@ -130,3 +131,4 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 SmoothScroll.init();
 
 console.log(LOG_TAG, 'Content script ready in', (performance.now() - t0).toFixed(2), 'ms');
+

@@ -21,7 +21,8 @@
 		"bookmarks",
 		"topSites",
 		"notifications",
-		"tabGroups"
+		"tabGroups",
+		"userScripts"
 	],
 	"optional_host_permissions": [
 		"*://*/*"

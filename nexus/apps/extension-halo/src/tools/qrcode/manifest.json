@@ -4,5 +4,8 @@
 	"category": "general",
 	"size": 45000,
 	"builtIn": true,
-	"keywords": []
+	"keywords": [],
+	"permissions": [
+		"clipboardWrite"
+	]
 }

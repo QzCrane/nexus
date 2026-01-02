@@ -1,0 +1,12 @@
+{
+	"id": "settings",
+	"icon": "⚙️",
+	"category": "general",
+	"size": 0,
+	"system": true,
+	"builtIn": true,
+	"keywords": [
+		"config"
+	],
+	"permissions": []
+}
