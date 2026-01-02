@@ -4,11 +4,14 @@ import React, { useState, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import { encode, decode } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const PunycodePanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [input, setInput] = useState('');
-	const [output, setOutput] = useState('');
+	const [input, setInput] = useToolState<string>('punycode-input' as any, '');
+	const [output, setOutput] = useToolState<string>('punycode-output' as any, '');
+
 
 	const handleEncode = useCallback(() => {
 		// Support multiple lines or space separated domains? let's simple one for now or line by line

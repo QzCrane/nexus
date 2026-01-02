@@ -4,14 +4,17 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { useTranslation } from '../../i18n';
 import { calculateSri, generateTag, type Algo } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const SriPanel: React.FC = () => {
     const { t } = useTranslation();
-    const [url, setUrl] = useState(''); // Optional, for tag generation
-    const [content, setContent] = useState(''); // Raw content to hash
+    const [url, setUrl] = useToolState<string>('subresource-url' as any, '');
+    const [content, setContent] = useToolState<string>('subresource-content' as any, '');
     const [hashOnly, setHashOnly] = useState(''); 
     const [tag, setTag] = useState('');
-    const [alg, setAlg] = useState<Algo>('sha384');
+    const [alg, setAlg] = useToolState<Algo>('subresource-alg' as any, 'sha384');
+
     const [loading, setLoading] = useState(false);
 
     // Fetch content if URL is provided and user clicks fetch?

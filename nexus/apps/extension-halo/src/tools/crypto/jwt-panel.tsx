@@ -5,14 +5,17 @@ import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { decodeJWT, verifyJWTHS, createJWTHS } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const JWTPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [token, setToken] = useState('');
-	const [secret, setSecret] = useState('');
-	const [result, setResult] = useState<{ header?: object; payload?: object; isValid?: boolean; error?: string } | null>(null);
-	const [createMode, setCreateMode] = useState(false);
-	const [payloadInput, setPayloadInput] = useState('{\n  "sub": "1234567890",\n  "name": "John Doe"\n}');
+	const [token, setToken] = useToolState<string>('crypto-jwt-token' as any, '');
+	const [secret, setSecret] = useToolState<string>('crypto-jwt-secret' as any, '');
+	const [result, setResult] = useToolState<{ header?: object; payload?: object; isValid?: boolean; error?: string } | null>('crypto-jwt-res' as any, null);
+	const [createMode, setCreateMode] = useToolState<boolean>('crypto-jwt-mode' as any, false);
+	const [payloadInput, setPayloadInput] = useToolState<string>('crypto-jwt-payload' as any, '{\n  "sub": "1234567890",\n  "name": "John Doe"\n}');
+
 
 	const handleDecode = useCallback(() => {
 		const decoded = decodeJWT(token);

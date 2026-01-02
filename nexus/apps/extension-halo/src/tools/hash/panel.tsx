@@ -6,14 +6,17 @@ import { useTranslation } from '../../i18n';
 import { generateHash, generateHMAC, generateFileHash, verifyHash } from './core';
 import { ALGORITHMS, type HashAlgorithm } from './types';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const HashPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [input, setInput] = useState('');
-	const [hmacKey, setHmacKey] = useState('');
-	const [expectedHash, setExpectedHash] = useState('');
-	const [uppercase, setUppercase] = useState(false);
+	const [input, setInput] = useToolState<string>('hash', '');
+	const [hmacKey, setHmacKey] = useToolState<string>('hash-hmac' as any, '');
+	const [expectedHash, setExpectedHash] = useToolState<string>('hash-verify' as any, '');
+	const [uppercase, setUppercase] = useToolState<boolean>('hash-upper' as any, false);
 	const [loading, setLoading] = useState(false);
+
 	const [hashes, setHashes] = useState<Record<string, string>>({});
 	const [verifyResult, setVerifyResult] = useState<{ match: boolean; algorithm?: string } | null>(null);
 	const [copiedAlgo, setCopiedAlgo] = useState<string | null>(null);

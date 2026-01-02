@@ -6,15 +6,18 @@ import { useTranslation } from '../../i18n';
 import type { UnitCategory } from './types';
 import { UNITS, convertUnit, formatResult, CATEGORY_LABELS } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 const CATEGORIES: UnitCategory[] = ['length', 'weight', 'temperature', 'time', 'data'];
 
 export const UnitConverterPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [category, setCategory] = useState<UnitCategory>('length');
-	const [inputValue, setInputValue] = useState('1');
-	const [fromUnit, setFromUnit] = useState('m');
-	const [toUnit, setToUnit] = useState('km');
+	const [category, setCategory] = useToolState<UnitCategory>('unit-category' as any, 'length');
+	const [inputValue, setInputValue] = useToolState<string>('unit-input' as any, '1');
+	const [fromUnit, setFromUnit] = useToolState<string>('unit-from' as any, 'm');
+	const [toUnit, setToUnit] = useToolState<string>('unit-to' as any, 'km');
+
 
 	const units = useMemo(() => UNITS[category], [category]);
 

@@ -6,6 +6,8 @@ import { useTranslation } from '../../i18n';
 import type { LoremUnit } from './types';
 import { generateLorem } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 const UNIT_OPTIONS: { id: LoremUnit; label: string }[] = [
 	{ id: 'words', label: 'Words' },
@@ -15,10 +17,11 @@ const UNIT_OPTIONS: { id: LoremUnit; label: string }[] = [
 
 export const LoremIpsumPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [count, setCount] = useState(5);
-	const [unit, setUnit] = useState<LoremUnit>('paragraphs');
-	const [startWithLorem, setStartWithLorem] = useState(true);
-	const [output, setOutput] = useState('');
+	const [count, setCount] = useToolState<number>('lorem-ipsum-count' as any, 5);
+	const [unit, setUnit] = useToolState<LoremUnit>('lorem-ipsum-unit' as any, 'paragraphs');
+	const [startWithLorem, setStartWithLorem] = useToolState<boolean>('lorem-ipsum-start' as any, true);
+	const [output, setOutput] = useToolState<string>('lorem-ipsum', '');
+
 
 	// Generate
 	const handleGenerate = useCallback(() => {

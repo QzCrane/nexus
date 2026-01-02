@@ -5,13 +5,16 @@ import { useTranslation } from '../../i18n';
 import type { HashAlgorithm } from './core';
 import { calculateChecksum, verifyChecksum, formatFileSize } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const ChecksumPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [file, setFile] = useState<File | null>(null);
-	const [algorithm, setAlgorithm] = useState<HashAlgorithm>('SHA-256');
+	const [algorithm, setAlgorithm] = useToolState<HashAlgorithm>('checksum-alg' as any, 'SHA-256');
 	const [hash, setHash] = useState('');
-	const [expected, setExpected] = useState('');
+	const [expected, setExpected] = useToolState<string>('checksum-verify' as any, '');
+
 	const [loading, setLoading] = useState(false);
 	const inputRef = useRef<HTMLInputElement>(null);
 

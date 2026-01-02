@@ -6,6 +6,8 @@ import { useTranslation } from '../../i18n';
 import type { NetworkMode, UAResult, CurlParseResult } from './types';
 import { parseUserAgent, parseCurl, generateJS, generatePython } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 const MODES: { id: NetworkMode; label: string }[] = [
 	{ id: 'ua-parser', label: 'UA Parser' },
@@ -15,7 +17,8 @@ const MODES: { id: NetworkMode; label: string }[] = [
 // UA Parser Sub-panel
 const UAParserPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [ua, setUA] = useState(navigator.userAgent);
+	const [ua, setUA] = useToolState<string>('network-ua-input' as any, navigator.userAgent);
+
 	const [result, setResult] = useState<UAResult | null>(null);
 
 	const handleParse = useCallback(() => setResult(parseUserAgent(ua)), [ua]);
@@ -44,9 +47,10 @@ const UAParserPanel: React.FC = () => {
 // Curl Converter Sub-panel
 const CurlConverterPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [curl, setCurl] = useState('');
+	const [curl, setCurl] = useToolState<string>('network-curl-input' as any, '');
 	const [parsed, setParsed] = useState<CurlParseResult | null>(null);
-	const [lang, setLang] = useState<'js' | 'python'>('js');
+	const [lang, setLang] = useToolState<'js' | 'python'>('network-curl-lang' as any, 'js');
+
 
 	const handleParse = useCallback(() => setParsed(parseCurl(curl)), [curl]);
 	const copyCode = () => {
@@ -76,7 +80,8 @@ const CurlConverterPanel: React.FC = () => {
 
 // Main Network Panel
 export const NetworkPanel: React.FC = () => {
-	const [mode, setMode] = useState<NetworkMode>('ua-parser');
+	const [mode, setMode] = useToolState<NetworkMode>('network-mode' as any, 'ua-parser');
+
 
 	return (
 		<div style={styles.wrapper}>

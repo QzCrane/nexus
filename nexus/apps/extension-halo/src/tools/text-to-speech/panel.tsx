@@ -5,11 +5,14 @@ import { useTranslation } from '../../i18n';
 import type { TtsSettings } from './types';
 import { getVoices, speak, stop, pause, resume, isSpeaking, isPaused, getSelectedText, DEFAULT_SETTINGS } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const TextToSpeechPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [text, setText] = useState('');
-	const [settings, setSettings] = useState<TtsSettings>(DEFAULT_SETTINGS);
+	const [text, setText] = useToolState<string>('text-to-speech' as any, '');
+	const [settings, setSettings] = useToolState<TtsSettings>('text-to-speech-settings' as any, DEFAULT_SETTINGS);
+
 	const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
 	const [speaking, setSpeaking] = useState(false);
 	const [paused, setPaused] = useState(false);

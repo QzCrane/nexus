@@ -1,7 +1,8 @@
 // goal: Color Picker tool panel UI with i18n support
 // eff: Logic and styles extracted
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
+
 import { Card } from '@nexus/ui-kit';
 import { createLogger } from '@nexus/kernel';
 import { useTranslation } from '../../i18n';
@@ -17,19 +18,18 @@ import {
 } from './core';
 import { styles } from './panel.styles';
 import { getContrastColor } from './utils';
+import { useToolState } from '../../kernel';
+
 
 const logger = createLogger('ColorPicker', 'HALO');
 
 export const ColorPickerPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [color, setColor] = useState<ColorInfo>(getColorInfo('#7c3aed'));
-	const [inputValue, setInputValue] = useState('#7c3aed');
-	const [history, setHistory] = useState<string[]>([]);
+	const [inputValue, setInputValue] = useToolState<string>('color-picker', '#7c3aed');
+	const color = useMemo(() => getColorInfo(inputValue), [inputValue]);
+	const [history, setHistory] = useToolState<string[]>('color-history' as any, []);
 	const [toast, setToast] = useState<string | null>(null);
 
-	useEffect(() => {
-		loadHistory().then(setHistory);
-	}, []);
 
 	const showToast = useCallback((msg: string) => {
 		setToast(msg);
@@ -37,30 +37,26 @@ export const ColorPickerPanel: React.FC = () => {
 	}, []);
 
 	const handleColorChange = useCallback(async (hex: string) => {
-		const info = getColorInfo(hex);
-		setColor(info);
 		setInputValue(hex);
-		const updated = await saveToHistory(hex);
-		setHistory(updated);
+		if (!history.includes(hex)) {
+			setHistory([hex, ...history.slice(0, 19)]);
+		}
 		logger.info('Color selected:', hex);
-	}, []);
+	}, [history, setHistory, setInputValue]);
+
 
 	const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-		const value = e.target.value;
-		setInputValue(value);
-		const parsed = parseColor(value);
-		if (parsed) {
-			setColor(parsed);
-		}
-	}, []);
+		setInputValue(e.target.value);
+	}, [setInputValue]);
+
 
 	const handleInputBlur = useCallback(async () => {
 		const parsed = parseColor(inputValue);
-		if (parsed) {
-			const updated = await saveToHistory(parsed.hex);
-			setHistory(updated);
+		if (parsed && !history.includes(parsed.hex)) {
+			setHistory([parsed.hex, ...history.slice(0, 19)]);
 		}
-	}, [inputValue]);
+	}, [inputValue, history, setHistory]);
+
 
 	const handleCopyValue = useCallback(async (value: string, label: string) => {
 		const ok = await copyToClipboard(value);

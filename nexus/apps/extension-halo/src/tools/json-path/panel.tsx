@@ -4,11 +4,14 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import { queryJsonPath, EXAMPLE_PATHS } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const JsonPathPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [json, setJson] = useState('');
-	const [path, setPath] = useState('$');
+	const [json, setJson] = useToolState<string>('json-path-input' as any, '');
+	const [path, setPath] = useToolState<string>('json-path-query' as any, '$');
+
 
 	const { results, error } = useMemo(() => {
 		if (!json.trim()) return { results: [], error: null };

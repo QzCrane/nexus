@@ -6,6 +6,8 @@ import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { XmlResult } from './types';
 import { formatXml, minifyXml } from './core';
+import { useToolState } from '../../kernel';
+
 
 const styles: Record<string, React.CSSProperties> = {
 	wrapper: { display: 'flex', flexDirection: 'column', gap: '12px' },
@@ -58,8 +60,9 @@ const styles: Record<string, React.CSSProperties> = {
 
 export const XmlFormatterPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [input, setInput] = useState('');
-	const [indent, setIndent] = useState(2);
+	const [input, setInput] = useToolState<string>('xml-formatter', '');
+	const [indent, setIndent] = useToolState<number>('xml-formatter-indent' as any, 2);
+
 	const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
 	// Calculate both formatted and minified results

@@ -34,6 +34,8 @@ interface LazyToolRendererProps {
 	fallback?: React.ReactNode;
 }
 
+import { ToolErrorBoundary } from './ToolErrorBoundary';
+
 export const LazyToolRenderer: React.FC<LazyToolRendererProps & { [key: string]: any }> = ({ toolId, fallback, ...props }) => {
 	if (!toolId || !(toolId in generatedToolPanels)) {
 		return fallback ? <>{fallback}</> : null;
@@ -41,11 +43,14 @@ export const LazyToolRenderer: React.FC<LazyToolRendererProps & { [key: string]:
 
 	const Panel = generatedToolPanels[toolId as LoadableToolId] as React.ComponentType<any>;
 	return (
-		<Suspense fallback={<LoadingSkeleton />}>
-			<Panel {...props} />
-		</Suspense>
+		<ToolErrorBoundary toolId={toolId}>
+			<Suspense fallback={<LoadingSkeleton />}>
+				<Panel {...props} />
+			</Suspense>
+		</ToolErrorBoundary>
 	);
 };
+
 
 // Preload hook for hover behavior
 export const useToolPreload = () => {

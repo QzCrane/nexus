@@ -4,6 +4,8 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import { parseMarkdown, getPreviewStyles } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 type ViewMode = 'split' | 'edit' | 'preview';
 
@@ -36,8 +38,9 @@ function hello() {
 
 export const MarkdownPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [input, setInput] = useState(SAMPLE_MD);
-	const [viewMode, setViewMode] = useState<ViewMode>('split');
+	const [input, setInput] = useToolState<string>('markdown', SAMPLE_MD);
+	const [viewMode, setViewMode] = useToolState<ViewMode>('markdown-view' as any, 'split');
+
 
 	// Parse markdown to HTML
 	const html = useMemo(() => parseMarkdown(input), [input]);

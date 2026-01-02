@@ -5,11 +5,14 @@ import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { generateRSAKeyPair } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const RSAPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [publicKey, setPublicKey] = useState('');
-	const [privateKey, setPrivateKey] = useState('');
+	const [publicKey, setPublicKey] = useToolState<string>('crypto-rsa-pub' as any, '');
+	const [privateKey, setPrivateKey] = useToolState<string>('crypto-rsa-priv' as any, '');
+
 	const [loading, setLoading] = useState(false);
 
 	const handleGenerate = useCallback(async () => {

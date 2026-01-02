@@ -6,13 +6,16 @@ import { useTranslation } from '../../i18n';
 import type { ImageFormat, ImageConfig, ImageInfo } from './types';
 import { loadImage, getImageInfo, processImage, imageToBase64, downloadBlob, formatSize, DEFAULT_CONFIG } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 const FORMATS: ImageFormat[] = ['png', 'jpeg', 'webp'];
 
 export const ImageToolsPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const fileRef = useRef<HTMLInputElement>(null);
-	const [config, setConfig] = useState<ImageConfig>(DEFAULT_CONFIG);
+	const [config, setConfig] = useToolState<ImageConfig>('image-tools' as any, DEFAULT_CONFIG);
+
 	const [file, setFile] = useState<File | null>(null);
 	const [img, setImg] = useState<HTMLImageElement | null>(null);
 	const [info, setInfo] = useState<ImageInfo | null>(null);

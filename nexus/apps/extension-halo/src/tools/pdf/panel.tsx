@@ -1,7 +1,8 @@
 // goal: PDF Panel UI (main component)
 // eff: Styles extracted to reduce file size
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
+
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { PDFDocument as PDFDoc, PDFOperation, PDFToolState } from './types';
@@ -9,6 +10,8 @@ import { mergePDFs, splitPDF, extractPages, rotatePages, addWatermark, imagesToP
 import { ConfigPanel, DEFAULT_CONFIG, type OperationConfig } from './config-panel';
 import { parseRanges, parsePages, formatSize } from './utils';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 const OPERATIONS: { id: PDFOperation; icon: string; label: string; minFiles: number }[] = [
 	{ id: 'merge', icon: '📎', label: 'Merge', minFiles: 2 },
@@ -21,8 +24,16 @@ const OPERATIONS: { id: PDFOperation; icon: string; label: string; minFiles: num
 
 export const PDFPanel: React.FC = () => {
 	const { t } = useTranslation();
+	const [selectedOperation, setSelectedOperation] = useToolState<PDFOperation | null>('pdf-op' as any, null);
 	const [state, setState] = useState<PDFToolState>({ files: [], selectedOperation: null, processing: false, error: null });
-	const [config, setConfig] = useState<OperationConfig>(DEFAULT_CONFIG);
+	const [config, setConfig] = useToolState<OperationConfig>('pdf-config' as any, DEFAULT_CONFIG);
+
+	// Sync selectedOperation to state for backward compatibility with component logic if needed,
+	// but better to use it directly.
+	useEffect(() => {
+		setState(prev => ({ ...prev, selectedOperation }));
+	}, [selectedOperation]);
+
 	const [dragActive, setDragActive] = useState(false);
 	const [result, setResult] = useState<{ blob: Blob; name: string } | null>(null);
 
@@ -48,7 +59,12 @@ export const PDFPanel: React.FC = () => {
 	const handleDrop = useCallback(async (e: React.DragEvent) => { e.preventDefault(); setDragActive(false); await processFiles(Array.from(e.dataTransfer.files)); }, []);
 	const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => { await processFiles(Array.from(e.target.files || [])); e.target.value = ''; }, []);
 	const handleRemoveFile = useCallback((id: string) => setState((prev) => ({ ...prev, files: prev.files.filter((f) => f.id !== id) })), []);
-	const handleSelectOp = useCallback((op: PDFOperation) => { setState((prev) => ({ ...prev, selectedOperation: op, error: null })); setResult(null); }, []);
+	const handleSelectOp = useCallback((op: PDFOperation) => { 
+		setSelectedOperation(op);
+		setResult(null); 
+		setState(prev => ({ ...prev, error: null }));
+	}, [setSelectedOperation]);
+
 
 	const canExecute = useMemo(() => {
 		if (!state.selectedOperation || state.processing) return false;

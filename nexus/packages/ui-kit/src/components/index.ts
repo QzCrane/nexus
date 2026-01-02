@@ -2,3 +2,5 @@
 
 export { Toggle, type ToggleProps } from './Toggle.js';
 export { Card, type CardProps } from './Card.js';
+export { Button, type ButtonProps } from './Button.js';
+

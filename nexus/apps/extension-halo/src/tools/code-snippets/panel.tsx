@@ -5,13 +5,16 @@ import { useTranslation } from '../../i18n';
 import type { Snippet, Language, SnippetFilter } from './types';
 import { getSnippets, createSnippet, updateSnippet, deleteSnippet, filterSnippets, copyToClipboard, LANGUAGES } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const CodeSnippetsPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [snippets, setSnippets] = useState<Snippet[]>([]);
-	const [filter, setFilter] = useState<SnippetFilter>({ search: '', language: 'all', tag: '' });
+	const [filter, setFilter] = useToolState<SnippetFilter>('code-snippets-filter' as any, { search: '', language: 'all', tag: '' });
 	const [editing, setEditing] = useState<Snippet | null>(null);
 	const [isNew, setIsNew] = useState(false);
+
 
 	// Load snippets
 	const loadSnippets = useCallback(async () => {

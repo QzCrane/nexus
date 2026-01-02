@@ -4,11 +4,14 @@ import React, { useState, useCallback, useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { encode, decode, playMorse } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const MorsePanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [mode, setMode] = useState<'encode' | 'decode'>('encode');
-	const [input, setInput] = useState('');
+	const [mode, setMode] = useToolState<'encode' | 'decode'>('morse-mode' as any, 'encode');
+	const [input, setInput] = useToolState<string>('morse-input' as any, '');
+
 
 	const output = useMemo(() => {
 		if (!input) return '';

@@ -4,14 +4,17 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import { rot13, rot47, rotN } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 type Mode = 'ROT13' | 'ROT47' | 'Custom';
 
 export const Rot13Panel: React.FC = () => {
 	const { t } = useTranslation();
-	const [input, setInput] = useState('');
-    const [mode, setMode] = useState<Mode>('ROT13');
-    const [shift, setShift] = useState(13);
+	const [input, setInput] = useToolState<string>('rot13-input' as any, '');
+    const [mode, setMode] = useToolState<Mode>('rot13-mode' as any, 'ROT13');
+    const [shift, setShift] = useToolState<number>('rot13-shift' as any, 13);
+
 
     const output = useMemo(() => {
         if (!input) return '';

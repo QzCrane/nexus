@@ -89,11 +89,22 @@ pnpm workspace | `pnpm install/build/--filter [name] build` | 内部包: `"@nexu
 排除: scripts/ docs/ .agent/ store-listings/ test/ assets/ \*.ai-context.md plan.md
 规则: 公开库禁包含 AI context / 脚本 / 内部文档 / 历史 commit
 
+**Git 排除规则**:
+
+1. `git add + commit + push` (nexus)
+2. `pnpm sync-spectra` 或 `pnpm sync-halo`
+3. `cd ../spectra-public ; git push -f origin main`
+
+**隔离策略**:
+
+- `.git/info/exclude`: 排除 `*-public/` 避免主库追踪其物理文件
+- `.vscode/settings.json`: `git.ignoredRepositories` 屏蔽子仓库 Git 状态干扰
+
 ---
 
 ## §6 语言
 
-## 新代码强制英文 | commit 英文 | `pnpm verify`检测
+新代码强制英文 | commit 英文 | `pnpm verify`检测
 
 ---
 

@@ -1,94 +1,23 @@
-// goal: i18n core with React hook
-// tradeoff: Simple key-path lookup, no heavy lib dependency
+// goal: i18n hook and context
+// eff: Delegates core logic to i18n-core.ts
 
 import { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import type { Locale, TranslationKeys } from './types';
-import { en } from './locales/en';
-import { zh } from './locales/zh';
+import {
+	STORAGE_KEY,
+	REGISTRY,
+	listeners,
+	globalLocale,
+	i18nReady,
+	setGlobalLocale,
+	setI18nReady,
+	notify,
+	getByPath,
+	registerTranslations,
+} from './i18n-core';
 
-const STORAGE_KEY = 'halo_locale';
-
-// Mutable registry for dynamic updates
-const REGISTRY: Record<Locale, TranslationKeys> = { en, zh };
-const listeners = new Set<() => void>();
-
-// Internal global state to sync all hook instances
-let globalLocale: Locale = 'en';
-let i18nReady = false;
-
-// Notify all listeners
-const notify = () => listeners.forEach((l) => l());
-
-// Register new translations (e.g. from downloaded modules)
-export function registerTranslations(locale: Locale, data: Partial<TranslationKeys>) {
-	REGISTRY[locale] = { ...REGISTRY[locale], ...data };
-	notify();
-}
-
-// Get nested value by dot-path
-function getByPath(obj: unknown, path: string): string {
-	const parts = path.split('.');
-	let current: unknown = obj;
-	for (const part of parts) {
-		if (current && typeof current === 'object' && part in current) {
-			current = (current as Record<string, unknown>)[part];
-		} else {
-			return path;
-		}
-	}
-	if (typeof current !== 'string') {
-		return typeof current === 'number' ? String(current) : path;
-	}
-	return current;
-}
-
-// Detect browser language
-function detectLocale(): Locale {
-	const lang = navigator.language.toLowerCase();
-	if (lang.startsWith('zh')) return 'zh';
-	return 'en';
-}
-
-import { safeStorageGet } from '../kernel/core/safe-storage';
-
-// ... (existing imports)
-
-// ...
-
-const initI18n = async () => {
-	if (typeof chrome !== 'undefined' && chrome.storage) {
-		try {
-			// retry logic encapsulated in safeItems
-			const result = await safeStorageGet([STORAGE_KEY], { [STORAGE_KEY]: undefined } as Partial<Record<string, unknown>>);
-			const saved = result[STORAGE_KEY] as Locale | undefined;
-			if (saved && saved in REGISTRY) {
-				globalLocale = saved;
-			} else {
-				globalLocale = detectLocale();
-			}
-		} catch {
-			globalLocale = detectLocale();
-		}
-	} else {
-		globalLocale = detectLocale();
-	}
-	i18nReady = true;
-	notify();
-};
-
-// Start initialization
-initI18n();
-
-// Listen for external changes (syncs across multiple instances)
-if (typeof chrome !== 'undefined' && chrome.storage) {
-	chrome.storage.onChanged.addListener((changes, area) => {
-		if (area === 'sync' && changes[STORAGE_KEY]) {
-			globalLocale = changes[STORAGE_KEY].newValue;
-			i18nReady = true;
-			notify();
-		}
-	});
-}
+// Re-export core functions
+export { registerTranslations };
 
 // i18n context
 interface I18nContextValue {
@@ -127,8 +56,8 @@ export function useTranslation() {
 	const setLocale = useCallback(async (newLocale: Locale) => {
 		if (newLocale === globalLocale) return;
 
-		globalLocale = newLocale;
-		i18nReady = true;
+		setGlobalLocale(newLocale);
+		setI18nReady(true);
 
 		if (typeof chrome !== 'undefined' && chrome.storage) {
 			await chrome.storage.sync.set({ [STORAGE_KEY]: newLocale });
@@ -142,7 +71,7 @@ export function useTranslation() {
 			return options.defaultValue;
 		}
 		return val;
-	}, [tick]); // tick changes on notify()
+	}, [tick]);
 
 	const translations = REGISTRY[globalLocale];
 
@@ -153,3 +82,4 @@ export function useTranslation() {
 export { I18nContext };
 export type { Locale, TranslationKeys };
 export { REGISTRY as LOCALES };
+

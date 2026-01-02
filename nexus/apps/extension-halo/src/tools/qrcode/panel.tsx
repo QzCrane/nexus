@@ -10,17 +10,20 @@ import { scanQRCodeFromFile, scanQRCodeFromClipboard } from './scan';
 import type { ScanResult, QRCodeOptions } from './types';
 import { DEFAULT_OPTIONS } from './types';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 const logger = createLogger('QRCode', 'HALO');
 type TabMode = 'generate' | 'scan';
 
 export const QRCodePanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [mode, setMode] = useState<TabMode>('generate');
-	const [text, setText] = useState('');
+	const [mode, setMode] = useToolState<TabMode>('qrcode-mode' as any, 'generate');
+	const [text, setText] = useToolState<string>('qrcode', '');
 	const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
-	const [options, setOptions] = useState<Omit<QRCodeOptions, 'text'>>(DEFAULT_OPTIONS);
+	const [options, setOptions] = useToolState<Omit<QRCodeOptions, 'text'>>('qrcode-opts' as any, DEFAULT_OPTIONS);
 	const [loading, setLoading] = useState(false);
+
 	const [history, setHistory] = useState<string[]>([]);
 	const [scanResult, setScanResult] = useState<ScanResult | null>(null);
 	const [toast, setToast] = useState<string | null>(null);

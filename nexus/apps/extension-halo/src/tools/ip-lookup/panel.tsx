@@ -5,11 +5,14 @@ import { useTranslation } from '../../i18n';
 import type { IpInfo } from './types';
 import { getMyIpInfo, lookupIp, isValidIp, formatLocation } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const IpLookupPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [query, setQuery] = useState('');
-	const [info, setInfo] = useState<IpInfo | null>(null);
+	const [query, setQuery] = useToolState<string>('ip-lookup-query' as any, '');
+	const [info, setInfo] = useToolState<IpInfo | null>('ip-lookup-info' as any, null);
+
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState('');
 

@@ -103,9 +103,10 @@ export const SmoothScrollPanel: React.FC = () => {
 					<div style={styles.profileRow}>
 						{Object.keys(PROFILES).map((name) => (
 							<button key={name} style={styles.profileBtn} onClick={() => loadProfile(name as keyof typeof PROFILES)}>
-								{t(`smoothScroll.profilesList.${name}` as any)}
+								{t(`smoothScroll.profilesList.${name}`, { defaultValue: name })}
 							</button>
 						))}
+
 						{hasCustomProfile && (
 							<button style={{ ...styles.profileBtn, borderColor: 'var(--halo-accent)', color: 'var(--halo-accent)' }} onClick={loadCustomProfile}>
 								⭐ {t('smoothScroll.profilesList.custom')}

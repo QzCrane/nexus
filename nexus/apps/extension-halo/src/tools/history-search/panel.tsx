@@ -6,12 +6,14 @@ import { useTranslation } from '../../i18n';
 import type { HistoryItem } from './types';
 import { searchHistory, deleteHistoryItem, getRecentHistory, formatTimeAgo, getFaviconUrl } from './core';
 import { styles } from './panel.styles';
-import { usePermission } from '../../kernel';
+import { useToolState, usePermission } from '../../kernel';
+
 
 export const HistorySearchPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const { hasPermission, request } = usePermission('history');
-	const [query, setQuery] = useState('');
+	const [query, setQuery] = useToolState<string>('history-search' as any, '');
+
 	const [results, setResults] = useState<HistoryItem[]>([]);
 	const [loading, setLoading] = useState(true);
 

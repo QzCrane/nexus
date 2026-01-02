@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import { Card } from '@nexus/ui-kit';
 import type { CryptoMode } from './types';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 import { JWTPanel } from './jwt-panel';
 import { AESPanel } from './aes-panel';
 import { RSAPanel } from './rsa-panel';
@@ -15,7 +17,8 @@ const MODES: { id: CryptoMode; label: string }[] = [
 ];
 
 export const CryptoPanel: React.FC = () => {
-	const [mode, setMode] = useState<CryptoMode>('jwt');
+	const [mode, setMode] = useToolState<CryptoMode>('crypto' as any, 'jwt');
+
 
 	return (
 		<div style={styles.wrapper}>

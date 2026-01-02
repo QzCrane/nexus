@@ -6,6 +6,8 @@ import { useTranslation } from '../../i18n';
 import type { CodeLanguage } from './types';
 import { formatCode, minifyCode } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 const LANGUAGES: { id: CodeLanguage; label: string }[] = [
 	{ id: 'json', label: 'JSON' },
@@ -18,10 +20,11 @@ const LANGUAGES: { id: CodeLanguage; label: string }[] = [
 
 export const CodeFormatterPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [language, setLanguage] = useState<CodeLanguage>('json');
-	const [code, setCode] = useState('');
-	const [indentSize, setIndentSize] = useState(2);
+	const [language, setLanguage] = useToolState<CodeLanguage>('code-formatter-lang' as any, 'json');
+	const [code, setCode] = useToolState<string>('code-formatter-code' as any, '');
+	const [indentSize, setIndentSize] = useToolState<number>('code-formatter-indent' as any, 2);
 	const [error, setError] = useState('');
+
 
 	// Format
 	const handleFormat = useCallback(() => {

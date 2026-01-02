@@ -1,18 +1,12 @@
-// goal: Tool Search Utilities
-// eff: Extracted from use-tool-manager.ts
+// goal: Tool Search Utilities - delegates to unified search engine
+// eff: Backward-compatible wrapper
 
 import type { ToolMeta } from '../core/tool-registry-types';
+import { matchItem, TOOL_SEARCH_OPTIONS } from './unified-search';
 
-// Pinyin-like search (simplified - matches first char of Chinese)
-export function normalizeSearch(str: string): string {
-	return str.toLowerCase().replace(/\s+/g, '');
-}
-
+/**
+ * @deprecated Use matchItem from unified-search.ts directly
+ */
 export function matchesSearch(tool: ToolMeta, query: string): boolean {
-	if (!query) return true;
-	const q = normalizeSearch(query);
-	// Match ID
-	if (tool.id.includes(q)) return true;
-	// Match keywords
-	return tool.keywords.some((kw) => normalizeSearch(kw).includes(q));
+	return matchItem(tool, query, TOOL_SEARCH_OPTIONS);
 }

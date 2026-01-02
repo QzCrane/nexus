@@ -6,43 +6,38 @@ import type { Note } from './types';
 import { NOTE_COLORS } from './types';
 import { getNotes, saveNotes, createNote, deleteNote, getColorConfig } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const StickyNotesPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [notes, setNotes] = useState<Note[]>([]);
+	const [notes, setNotes] = useToolState<Note[]>('sticky-notes' as any, []);
 
-	// Load notes
-	useEffect(() => {
-		getNotes().then(setNotes);
-	}, []);
 
 	// Add new note
 	const handleAdd = useCallback(async () => {
 		const newNote = createNote();
-		const updated = [newNote, ...notes];
-		setNotes(updated);
-		await saveNotes(updated);
-	}, [notes]);
+		setNotes([newNote, ...notes]);
+	}, [notes, setNotes]);
+
 
 	// Update note content
 	const handleUpdate = useCallback(async (id: string, content: string) => {
-		const updated = notes.map((n) => n.id === id ? { ...n, content, updatedAt: Date.now() } : n);
-		setNotes(updated);
-		await saveNotes(updated);
-	}, [notes]);
+		setNotes(notes.map((n) => n.id === id ? { ...n, content, updatedAt: Date.now() } : n));
+	}, [notes, setNotes]);
+
 
 	// Update note color
 	const handleColor = useCallback(async (id: string, color: string) => {
-		const updated = notes.map((n) => n.id === id ? { ...n, color, updatedAt: Date.now() } : n);
-		setNotes(updated);
-		await saveNotes(updated);
-	}, [notes]);
+		setNotes(notes.map((n) => n.id === id ? { ...n, color, updatedAt: Date.now() } : n));
+	}, [notes, setNotes]);
+
 
 	// Delete note
 	const handleDelete = useCallback(async (id: string) => {
-		const updated = await deleteNote(id);
-		setNotes(updated);
-	}, []);
+		setNotes(notes.filter((n) => n.id !== id));
+	}, [notes, setNotes]);
+
 
 	return (
 		<div style={styles.wrapper}>

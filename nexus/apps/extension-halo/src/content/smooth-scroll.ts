@@ -47,9 +47,9 @@ export async function init(): Promise<void> {
 	}
 
 	try {
-		const result = await chrome.storage.sync.get(['HALO_SMOOTH_SCROLL_SETTINGS']);
-		if (result.HALO_SMOOTH_SCROLL_SETTINGS) {
-			updateStateSettings(result.HALO_SMOOTH_SCROLL_SETTINGS);
+		const result = await chrome.storage.sync.get(['halo_tool_state_smooth-scroll']);
+		if (result['halo_tool_state_smooth-scroll']) {
+			updateStateSettings(result['halo_tool_state_smooth-scroll']);
 		}
 	} catch {
 		console.log(LOG_TAG, 'Using defaults');
@@ -62,10 +62,11 @@ export async function init(): Promise<void> {
 	}
 
 	chrome.storage.onChanged.addListener((changes, area) => {
-		if (area === 'sync' && changes.HALO_SMOOTH_SCROLL_SETTINGS) {
-			updateSettings(changes.HALO_SMOOTH_SCROLL_SETTINGS.newValue);
+		if (area === 'sync' && changes['halo_tool_state_smooth-scroll']) {
+			updateSettings(changes['halo_tool_state_smooth-scroll'].newValue);
 		}
 	});
+
 
 	console.log(LOG_TAG, 'Init');
 }

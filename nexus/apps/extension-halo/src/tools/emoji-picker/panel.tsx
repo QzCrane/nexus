@@ -4,6 +4,8 @@ import React, { useState, useCallback, useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { EMOJI_CATEGORIES } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 const CATEGORY_ICONS: Record<string, string> = {
 	smileys: '😀', gestures: '👋', animals: '🐶', food: '🍎', objects: '💡', symbols: '❤️',
@@ -11,9 +13,10 @@ const CATEGORY_ICONS: Record<string, string> = {
 
 export const EmojiPickerPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [search, setSearch] = useState('');
-	const [category, setCategory] = useState<keyof typeof EMOJI_CATEGORIES>('smileys');
-	const [recent, setRecent] = useState<string[]>([]);
+	const [search, setSearch] = useToolState<string>('emoji-search' as any, '');
+	const [category, setCategory] = useToolState<keyof typeof EMOJI_CATEGORIES>('emoji-category' as any, 'smileys');
+	const [recent, setRecent] = useToolState<string[]>('emoji-recent' as any, []);
+
 
 	// Filter emojis
 	const emojis = useMemo(() => {

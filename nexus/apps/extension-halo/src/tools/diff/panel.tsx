@@ -6,13 +6,19 @@ import { useTranslation } from '../../i18n';
 import type { DiffResult, DiffStats } from './types';
 import { diffLines, getDiffStats } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const DiffPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [text1, setText1] = useState('');
-	const [text2, setText2] = useState('');
+	const [state, setState] = useToolState('diff', { text1: '', text2: '' });
+	const { text1, text2 } = state;
+
 	const [diffs, setDiffs] = useState<DiffResult[] | null>(null);
 	const [stats, setStats] = useState<DiffStats | null>(null);
+
+	const setText1 = (val: string) => setState({ ...state, text1: val });
+	const setText2 = (val: string) => setState({ ...state, text2: val });
 
 	// Compare
 	const handleCompare = useCallback(() => {
@@ -23,19 +29,18 @@ export const DiffPanel: React.FC = () => {
 
 	// Swap
 	const handleSwap = useCallback(() => {
-		setText1(text2);
-		setText2(text1);
+		setState({ text1: text2, text2: text1 });
 		setDiffs(null);
 		setStats(null);
-	}, [text1, text2]);
+	}, [text1, text2, setState]);
 
 	// Clear
 	const handleClear = useCallback(() => {
-		setText1('');
-		setText2('');
+		setState({ text1: '', text2: '' });
 		setDiffs(null);
 		setStats(null);
-	}, []);
+	}, [setState]);
+
 
 	return (
 		<div style={styles.wrapper}>

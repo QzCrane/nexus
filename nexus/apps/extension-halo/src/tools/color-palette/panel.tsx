@@ -5,13 +5,16 @@ import { useTranslation } from '../../i18n';
 import type { ColorInfo } from './types';
 import { extractColorsFromImage, loadImageFromFile, getContrastColor } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const ColorPalettePanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [colors, setColors] = useState<ColorInfo[]>([]);
+	const [colors, setColors] = useToolState<ColorInfo[]>('color-palette' as any, []);
 	const [preview, setPreview] = useState<string>('');
 	const [isDragging, setIsDragging] = useState(false);
 	const inputRef = useRef<HTMLInputElement>(null);
+
 
 	// Process image
 	const processImage = useCallback(async (file: File) => {

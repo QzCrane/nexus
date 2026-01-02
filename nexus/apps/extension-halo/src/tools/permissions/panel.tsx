@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { PermissionDef, PermissionState } from './types';
+import { useToolState } from '../../kernel';
 import {
 	OPTIONAL_PERMISSIONS,
 	HOST_PERMISSIONS,
@@ -26,8 +27,9 @@ const groupByCategory = (perms: PermissionDef[]): Record<string, PermissionDef[]
 
 export const PermissionsPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [states, setStates] = useState<Record<string, boolean>>({});
+	const [states, setStates] = useToolState<Record<string, boolean>>('permissions-states' as any, {});
 	const [loading, setLoading] = useState<string | null>(null);
+
 
 	// Load permission states
 	useEffect(() => {

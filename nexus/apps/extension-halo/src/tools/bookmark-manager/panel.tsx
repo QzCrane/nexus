@@ -6,15 +6,17 @@ import { useTranslation } from '../../i18n';
 import type { BookmarkSearchResult } from './types';
 import { searchBookmarks, getRecentBookmarks, deleteBookmark, openBookmark, getFaviconUrl } from './core';
 import { styles } from './panel.styles';
-import { usePermission } from '../../kernel';
+import { useToolState, usePermission } from '../../kernel';
+
 
 type ViewMode = 'search' | 'recent';
 
 export const BookmarkManagerPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const { hasPermission, request } = usePermission('bookmarks');
-	const [mode, setMode] = useState<ViewMode>('recent');
-	const [query, setQuery] = useState('');
+	const [mode, setMode] = useToolState<ViewMode>('bookmark-mode' as any, 'recent');
+	const [query, setQuery] = useToolState<string>('bookmark-query' as any, '');
+
 	const [results, setResults] = useState<BookmarkSearchResult[]>([]);
 	const [loading, setLoading] = useState(false);
 

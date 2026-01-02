@@ -1,19 +1,25 @@
+// goal: SidePanel state management
+// eff: Delegates open tools logic to useOpenTools hook
+
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import type { ToolId, HaloSettings } from '../../kernel';
-import { STORAGE_PREFIX, loadSettings, getThemeColors, applyTheme, TOOL_REGISTRY, saveSettings } from '../../kernel';
+import { loadSettings, getThemeColors, applyTheme, TOOL_REGISTRY, saveSettings } from '../../kernel';
 import { useModuleManager } from '../../kernel';
-import { safeStorageGet, safeStorageSet, safeStorageRemove } from '../../kernel/core/safe-storage';
-
-const OPEN_TOOLS_KEY = `${STORAGE_PREFIX.CORE}open_tools`;
-const ACTIVE_TOOL_KEY = `${STORAGE_PREFIX.CORE}active_tool`;
-const MAX_OPEN_TOOLS = 10;
+import { useOpenTools } from './hooks/use-open-tools';
 
 export const useSidePanelState = () => {
 	const { isInstalled, loading: modulesLoading } = useModuleManager();
-	const [activeTool, setActiveTool] = useState<ToolId | null>(null);
-	const [openTools, setOpenTools] = useState<ToolId[]>([]);
 	const [settings, setSettings] = useState<HaloSettings | null>(null);
 	const [loading, setLoading] = useState(true);
+
+	const {
+		activeTool,
+		openTools,
+		handleToolSelect: baseToolSelect,
+		handleCloseTool,
+		handleBack,
+		loadOpenTools,
+	} = useOpenTools();
 
 	const visibleTools = useMemo(() => {
 		if (modulesLoading) return TOOL_REGISTRY;
@@ -30,19 +36,7 @@ export const useSidePanelState = () => {
 			const s = await loadSettings();
 			setSettings(s);
 			applyTheme(getThemeColors(s.theme, s.accentColor));
-
-			const storage = await safeStorageGet<Record<string, unknown>>([ACTIVE_TOOL_KEY, OPEN_TOOLS_KEY], {});
-			const savedOpen = (storage[OPEN_TOOLS_KEY] as ToolId[] || []).filter(id => isInstalled(id));
-
-			if (savedOpen.length > 0) {
-				setOpenTools(savedOpen);
-				const savedActive = storage[ACTIVE_TOOL_KEY] as ToolId | null;
-				if (savedActive && (savedOpen.includes(savedActive) || savedActive === 'settings' || savedActive === 'module-store' || savedActive === 'permissions')) {
-					setActiveTool(savedActive);
-				} else {
-					setActiveTool(savedOpen[savedOpen.length - 1]);
-				}
-			}
+			await loadOpenTools(isInstalled);
 			setLoading(false);
 		};
 		init();
@@ -51,46 +45,17 @@ export const useSidePanelState = () => {
 			if (message.type === 'HALO_ACTIVATE_TOOL' && message.toolId) {
 				handleToolSelect(message.toolId);
 			}
-			return true; // Keep channel open
+			return true;
 		};
 		chrome.runtime.onMessage.addListener(listener);
 		return () => chrome.runtime.onMessage.removeListener(listener);
-	}, [isInstalled]);
+	}, [isInstalled, loadOpenTools]);
 
 	const handleToolSelect = useCallback(async (toolId: ToolId) => {
 		const tool = TOOL_REGISTRY.find(t => t.id === toolId);
 		if (tool?.status === 'coming') return;
-
-		setActiveTool(toolId);
-		if (toolId !== 'module-store' && toolId !== 'settings' && toolId !== 'permissions') {
-			setOpenTools(prev => {
-				if (prev.includes(toolId)) return prev;
-				const newOpen = prev.length >= MAX_OPEN_TOOLS ? [...prev.slice(1), toolId] : [...prev, toolId];
-				safeStorageSet({ [OPEN_TOOLS_KEY]: newOpen });
-				return newOpen;
-			});
-		}
-		await safeStorageSet({ [ACTIVE_TOOL_KEY]: toolId });
-	}, []);
-
-	const handleCloseTool = useCallback((toolId: ToolId) => {
-		setOpenTools(prev => {
-			const newOpen = prev.filter(id => id !== toolId);
-			if (activeTool === toolId) {
-				const next = newOpen.length > 0 ? newOpen[newOpen.length - 1] : null;
-				setActiveTool(next);
-				if (next) safeStorageSet({ [ACTIVE_TOOL_KEY]: next });
-				else safeStorageRemove([ACTIVE_TOOL_KEY]);
-			}
-			safeStorageSet({ [OPEN_TOOLS_KEY]: newOpen });
-			return newOpen;
-		});
-	}, [activeTool]);
-
-	const handleBack = useCallback(async () => {
-		setActiveTool(null);
-		await safeStorageRemove([ACTIVE_TOOL_KEY]);
-	}, []);
+		await baseToolSelect(toolId);
+	}, [baseToolSelect]);
 
 	const handleSettingsChange = useCallback(async (updated: HaloSettings) => {
 		setSettings(updated);
@@ -137,3 +102,4 @@ export const useSidePanelState = () => {
 		handleReorderCategories
 	};
 };
+

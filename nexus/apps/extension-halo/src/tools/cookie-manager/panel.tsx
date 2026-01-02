@@ -6,11 +6,14 @@ import { useTranslation } from '../../i18n';
 import type { CookieInfo } from './types';
 import { getCookiesForCurrentTab, deleteCookie, exportCookies, formatExpiry } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const CookieManagerPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [cookies, setCookies] = useState<CookieInfo[]>([]);
-	const [search, setSearch] = useState('');
+	const [search, setSearch] = useToolState<string>('cookie-manager' as any, '');
+
 	const [loading, setLoading] = useState(true);
 
 	// Load cookies

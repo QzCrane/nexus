@@ -6,6 +6,9 @@ import React, { useState, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { captureVisible, captureWithDelay, downloadScreenshot, copyToClipboard } from './core';
+import { useToolState } from '../../kernel';
+
+
 
 const DELAY_OPTIONS = [0, 3, 5, 10]; // seconds
 
@@ -56,8 +59,9 @@ export const ScreenshotPanel: React.FC = () => {
     const [image, setImage] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [toast, setToast] = useState<string | null>(null);
-    const [delay, setDelay] = useState(0);
+    const [delay, setDelay] = useToolState<number>('screenshot-delay' as any, 0);
     const [countdown, setCountdown] = useState<number | null>(null);
+
 
     const showToast = useCallback((msg: string) => {
         setToast(msg);

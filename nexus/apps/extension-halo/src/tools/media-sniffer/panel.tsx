@@ -6,6 +6,8 @@ import { useTranslation } from '../../i18n';
 import type { MediaItem, MediaType, ScanResult, FilterConfig } from './types';
 import { filterMedia, downloadMedia, getFilename, formatSize } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 const TYPES: MediaType[] = ['video', 'audio', 'image'];
 const TYPE_ICONS: Record<MediaType, string> = { video: '🎬', audio: '🎵', image: '🖼️' };
@@ -18,9 +20,10 @@ const DEFAULT_FILTER: FilterConfig = {
 
 export const MediaSnifferPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [result, setResult] = useState<ScanResult | null>(null);
-	const [filter, setFilter] = useState<FilterConfig>(DEFAULT_FILTER);
+	const [result, setResult] = useToolState<ScanResult | null>('media-sniffer-result' as any, null);
+	const [filter, setFilter] = useToolState<FilterConfig>('media-sniffer-filter' as any, DEFAULT_FILTER);
 	const [scanning, setScanning] = useState(false);
+
 
 	// Execute scan via content script
 	const handleScan = useCallback(async () => {

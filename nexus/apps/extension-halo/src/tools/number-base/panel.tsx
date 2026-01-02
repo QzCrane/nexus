@@ -6,13 +6,16 @@ import { useTranslation } from '../../i18n';
 import type { Base, BaseConvertResult } from './types';
 import { convertBase, isValidForBase, formatWithGrouping, BASE_LABELS } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 const BASES: Base[] = [2, 8, 10, 16];
 
 export const NumberBasePanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [input, setInput] = useState('');
-	const [fromBase, setFromBase] = useState<Base>(10);
+	const [input, setInput] = useToolState<string>('number-base', '');
+	const [fromBase, setFromBase] = useToolState<Base>('number-base-from' as any, 10);
+
 
 	// Compute result in real-time
 	const result = useMemo<BaseConvertResult | null>(() => {

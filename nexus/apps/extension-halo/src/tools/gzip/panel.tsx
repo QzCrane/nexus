@@ -4,12 +4,15 @@ import React, { useState, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import { compress, decompress, getCompressionRatio } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const GzipPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [mode, setMode] = useState<'compress' | 'decompress'>('compress');
-	const [input, setInput] = useState('');
-	const [output, setOutput] = useState('');
+	const [mode, setMode] = useToolState<'compress' | 'decompress'>('gzip-mode' as any, 'compress');
+	const [input, setInput] = useToolState<string>('gzip-input' as any, '');
+	const [output, setOutput] = useToolState<string>('gzip-output' as any, '');
+
 	const [stats, setStats] = useState({ original: 0, result: 0, ratio: 0 });
 	const [error, setError] = useState('');
 

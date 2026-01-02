@@ -6,11 +6,14 @@ import { useTranslation } from '../../i18n';
 import type { ParsedCsv } from './types';
 import { parseCsv, toCsv, detectDelimiter } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const CsvViewerPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [input, setInput] = useState('');
-	const [delimiter, setDelimiter] = useState(',');
+	const [input, setInput] = useToolState<string>('csv-viewer-input' as any, '');
+	const [delimiter, setDelimiter] = useToolState<string>('csv-viewer-delim' as any, ',');
+
 
 	// Parse CSV
 	const parsed = useMemo<ParsedCsv | null>(() => {

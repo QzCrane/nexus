@@ -11,9 +11,9 @@ import {
 	minifyJSON,
 	validateJSON,
 	copyToClipboard,
-	saveOptions,
-	loadOptions,
 } from './core';
+import { useToolState } from '../../kernel';
+
 import { styles } from './panel.styles';
 
 const logger = createLogger('JSONFormatter', 'HALO');
@@ -63,12 +63,11 @@ const JsonTree: React.FC<{ data: any; label?: string; depth?: number }> = ({ dat
 
 export const JSONFormatterPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [input, setInput] = useState('');
+	const [input, setInput] = useToolState<string>('json-formatter', '');
 	const [error, setError] = useState<string | null>(null);
-	const [options, setOptions] = useState<FormatOptions>(DEFAULT_OPTIONS);
+	const [options, setOptions] = useToolState<FormatOptions>('json-formatter-opts' as any, DEFAULT_OPTIONS);
 	const [toast, setToast] = useState<string | null>(null);
 
-	useEffect(() => { loadOptions().then(setOptions); }, []);
 
 	const showToast = useCallback((msg: string) => {
 		setToast(msg);

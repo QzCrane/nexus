@@ -8,14 +8,17 @@ import { executeRegex, validatePattern, replaceMatches, buildFlagsString } from 
 import type { RegexFlags } from './types';
 import { DEFAULT_FLAGS, PRESETS } from './types';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const RegexPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [pattern, setPattern] = useState('');
-	const [testString, setTestString] = useState('');
-	const [replacement, setReplacement] = useState('');
-	const [flags, setFlags] = useState<RegexFlags>(DEFAULT_FLAGS);
-	const [showReplace, setShowReplace] = useState(false);
+	const [pattern, setPattern] = useToolState<string>('regex', '');
+	const [testString, setTestString] = useToolState<string>('regex-test' as any, '');
+	const [replacement, setReplacement] = useToolState<string>('regex-replace' as any, '');
+	const [flags, setFlags] = useToolState<RegexFlags>('regex-flags' as any, DEFAULT_FLAGS);
+	const [showReplace, setShowReplace] = useToolState<boolean>('regex-show-replace' as any, false);
+
 
 	const validation = useMemo(() => validatePattern(pattern), [pattern]);
 	const matches = useMemo(

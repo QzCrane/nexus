@@ -6,10 +6,13 @@ import { useTranslation } from '../../i18n';
 import type { PasswordConfig } from './types';
 import { generatePassword, generatePasswords, evaluateStrength, DEFAULT_CONFIG } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const PasswordGenPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [config, setConfig] = useState<PasswordConfig>(DEFAULT_CONFIG);
+	const [config, setConfig] = useToolState<PasswordConfig>('password-gen-opts' as any, DEFAULT_CONFIG);
+
 	const [password, setPassword] = useState(() => generatePassword(DEFAULT_CONFIG));
 	const [bulkPasswords, setBulkPasswords] = useState<string[]>([]);
 	const [showBulk, setShowBulk] = useState(false);

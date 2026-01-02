@@ -5,12 +5,15 @@ import { useTranslation } from '../../i18n';
 import type { TodoItem } from './types';
 import { getTodos, addTodo, toggleTodo, deleteTodo, clearCompleted, PRIORITY_COLORS } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const TodoListPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [todos, setTodos] = useState<TodoItem[]>([]);
-	const [input, setInput] = useState('');
-	const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
+	const [input, setInput] = useToolState<string>('todo-input' as any, '');
+	const [filter, setFilter] = useToolState<'all' | 'active' | 'completed'>('todo-filter' as any, 'all');
+
 
 	// Load todos
 	useEffect(() => {

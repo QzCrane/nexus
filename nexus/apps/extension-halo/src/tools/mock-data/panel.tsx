@@ -6,16 +6,19 @@ import { useTranslation } from '../../i18n';
 import type { MockField, MockDataType, MockConfig } from './types';
 import { generateMockData } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 const DATA_TYPES: MockDataType[] = ['name', 'email', 'phone', 'uuid', 'address', 'lorem', 'number', 'date'];
 const FORMATS = ['json', 'csv', 'sql'] as const;
 
 export const MockDataPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [fields, setFields] = useState<MockField[]>([{ name: 'id', type: 'uuid' }, { name: 'name', type: 'name' }, { name: 'email', type: 'email' }]);
-	const [count, setCount] = useState(10);
-	const [format, setFormat] = useState<'json' | 'csv' | 'sql'>('json');
-	const [output, setOutput] = useState('');
+	const [fields, setFields] = useToolState<MockField[]>('mock-data-fields' as any, [{ name: 'id', type: 'uuid' }, { name: 'name', type: 'name' }, { name: 'email', type: 'email' }]);
+	const [count, setCount] = useToolState<number>('mock-data-count' as any, 10);
+	const [format, setFormat] = useToolState<'json' | 'csv' | 'sql'>('mock-data-format' as any, 'json');
+	const [output, setOutput] = useToolState<string>('mock-data-output' as any, '');
+
 
 	const addField = useCallback(() => {
 		setFields((prev) => [...prev, { name: `field${prev.length + 1}`, type: 'name' }]);

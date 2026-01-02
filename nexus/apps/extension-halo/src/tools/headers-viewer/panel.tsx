@@ -5,11 +5,14 @@ import { useTranslation } from '../../i18n';
 import type { HeaderInfo } from './types';
 import { fetchHeaders, getCurrentTabUrl, CATEGORY_COLORS } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const HeadersViewerPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [url, setUrl] = useState('');
-	const [headers, setHeaders] = useState<HeaderInfo[]>([]);
+	const [url, setUrl] = useToolState<string>('headers-viewer-url' as any, '');
+	const [headers, setHeaders] = useToolState<HeaderInfo[]>('headers-viewer-list' as any, []);
+
 	const [loading, setLoading] = useState(false);
 
 	// Load current tab URL

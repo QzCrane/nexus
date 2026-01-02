@@ -6,13 +6,16 @@ import { useTranslation } from '../../i18n';
 import type { EntityMode } from './types';
 import { encodeHtmlSpecial, encodeHtmlNamed, encodeHtmlAll, decodeHtml, getEntityTable } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const HtmlEntityPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [mode, setMode] = useState<EntityMode>('encode');
-	const [input, setInput] = useState('');
-	const [output, setOutput] = useState('');
-	const [showTable, setShowTable] = useState(false);
+	const [mode, setMode] = useToolState<EntityMode>('html-entity-mode' as any, 'encode');
+	const [input, setInput] = useToolState<string>('html-entity-input' as any, '');
+	const [output, setOutput] = useToolState<string>('html-entity-output' as any, '');
+	const [showTable, setShowTable] = useToolState<boolean>('html-entity-table' as any, false);
+
 
 	const entityTable = useMemo(() => getEntityTable(), []);
 

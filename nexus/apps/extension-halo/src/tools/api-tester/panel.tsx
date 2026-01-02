@@ -5,16 +5,19 @@ import { useTranslation } from '../../i18n';
 import type { HttpMethod, RequestConfig, ResponseData, Header } from './types';
 import { executeRequest, formatBody, formatSize, createHeader, DEFAULT_CONFIG } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 
 export const ApiTesterPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [config, setConfig] = useState<RequestConfig>({ ...DEFAULT_CONFIG });
-	const [response, setResponse] = useState<ResponseData | null>(null);
+	const [config, setConfig] = useToolState<RequestConfig>('api-tester-config' as any, { ...DEFAULT_CONFIG });
+	const [response, setResponse] = useToolState<ResponseData | null>('api-tester-res' as any, null);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string>('');
-	const [activeTab, setActiveTab] = useState<'headers' | 'body'>('headers');
+	const [activeTab, setActiveTab] = useToolState<'headers' | 'body'>('api-tester-tab' as any, 'headers');
+
 
 	// Send request
 	const handleSend = useCallback(async () => {

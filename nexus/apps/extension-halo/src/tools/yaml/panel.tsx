@@ -6,6 +6,8 @@ import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { parseYaml, jsonToYaml, detectInputType } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 const resultStyles: Record<string, React.CSSProperties> = {
 	resultSection: {
@@ -36,7 +38,8 @@ const resultStyles: Record<string, React.CSSProperties> = {
 
 export const YamlPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [input, setInput] = useState('');
+	const [input, setInput] = useToolState<string>('yaml', '');
+
 	const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
 	// Auto-detect input type and calculate both conversions

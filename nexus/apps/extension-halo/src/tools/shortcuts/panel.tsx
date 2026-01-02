@@ -4,10 +4,13 @@ import React, { useState, useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { searchShortcuts } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const ShortcutsPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [query, setQuery] = useState('');
+	const [query, setQuery] = useToolState<string>('shortcuts-query' as any, '');
+
 
 	const groups = useMemo(() => searchShortcuts(query), [query]);
 

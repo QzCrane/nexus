@@ -12,5 +12,6 @@ export {
 } from './theme.js';
 
 // React components
-export { Toggle, Card } from './components/index.js';
-export type { ToggleProps, CardProps } from './components/index.js';
+export { Toggle, Card, Button } from './components/index.js';
+export type { ToggleProps, CardProps, ButtonProps } from './components/index.js';
+

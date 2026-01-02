@@ -6,28 +6,21 @@ import { useTranslation } from '../../i18n';
 import type { TotpEntry, TotpCode } from './types';
 import { generateTotp, parseOtpAuthUri, generateId } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 const STORAGE_KEY = 'halo-totp-entries';
 
 export const TotpPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [entries, setEntries] = useState<TotpEntry[]>([]);
+	const [entries, setEntries] = useToolState<TotpEntry[]>('totp' as any, []);
 	const [codes, setCodes] = useState<Record<string, TotpCode>>({});
 	const [showAdd, setShowAdd] = useState(false);
-	const [secretInput, setSecretInput] = useState('');
-	const [nameInput, setNameInput] = useState('');
+	const [secretInput, setSecretInput] = useToolState<string>('totp-secret' as any, '');
+	const [nameInput, setNameInput] = useToolState<string>('totp-name' as any, '');
 
-	// Load entries from storage
-	useEffect(() => {
-		chrome.storage.local.get(STORAGE_KEY, (result) => {
-			if (result[STORAGE_KEY]) setEntries(result[STORAGE_KEY]);
-		});
-	}, []);
 
-	// Save entries to storage
-	useEffect(() => {
-		chrome.storage.local.set({ [STORAGE_KEY]: entries });
-	}, [entries]);
+
 
 	// Update codes every second
 	useEffect(() => {

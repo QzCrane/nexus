@@ -1,7 +1,7 @@
 // goal: Safe chrome storage wrapper with timeout for test environments
 // eff: Prevents initialization hang when chrome.storage is unresponsive
 
-const STORAGE_TIMEOUT = 2000; // 2 seconds per attempt
+const STORAGE_TIMEOUT = 5000; // 5 seconds per attempt
 const MAX_RETRIES = 3;
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -44,37 +44,49 @@ export const withStorageTimeout = async <T>(
 	return fallback;
 };
 
+export type StorageArea = 'local' | 'sync';
+
 /**
- * Safe get from chrome.storage.sync with timeout
+ * Safe get from chrome.storage with timeout
  */
 export const safeStorageGet = async <T extends Record<string, unknown>>(
 	keys: string[],
-	defaults: T
+	defaults: T,
+	area: StorageArea = 'sync'
 ): Promise<T> => {
+	const storage = area === 'local' ? chrome.storage.local : chrome.storage.sync;
 	return withStorageTimeout(
-		() => chrome.storage.sync.get(keys) as Promise<T>,
+		() => storage.get(keys) as Promise<T>,
 		defaults,
 		`get(${keys.join(',')})`
 	);
 };
 
 /**
- * Safe set to chrome.storage.sync with timeout (fire and forget on timeout)
+ * Safe set to chrome.storage with timeout (fire and forget on timeout)
  */
-export const safeStorageSet = async (items: Record<string, unknown>): Promise<void> => {
+export const safeStorageSet = async (
+	items: Record<string, unknown>,
+	area: StorageArea = 'sync'
+): Promise<void> => {
+	const storage = area === 'local' ? chrome.storage.local : chrome.storage.sync;
 	return withStorageTimeout(
-		() => chrome.storage.sync.set(items),
+		() => storage.set(items),
 		undefined,
 		'set'
 	);
 };
 
 /**
- * Safe remove from chrome.storage.sync with timeout
+ * Safe remove from chrome.storage with timeout
  */
-export const safeStorageRemove = async (keys: string[]): Promise<void> => {
+export const safeStorageRemove = async (
+	keys: string[],
+	area: StorageArea = 'sync'
+): Promise<void> => {
+	const storage = area === 'local' ? chrome.storage.local : chrome.storage.sync;
 	return withStorageTimeout(
-		() => chrome.storage.sync.remove(keys),
+		() => storage.remove(keys),
 		undefined,
 		'remove'
 	);

@@ -4,6 +4,8 @@ import React, { useState, useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { decodeProto, parseInput, type ProtoField } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 const FieldNode: React.FC<{ field: ProtoField }> = ({ field }) => (
     <div style={styles.node}>
@@ -20,7 +22,8 @@ const FieldNode: React.FC<{ field: ProtoField }> = ({ field }) => (
 
 export const ProtobufPanel: React.FC = () => {
     const { t } = useTranslation();
-    const [input, setInput] = useState('');
+    const [input, setInput] = useToolState<string>('protobuf-input' as any, '');
+
 
     const decoded = useMemo(() => {
         if (!input.trim()) return null;

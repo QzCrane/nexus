@@ -4,15 +4,18 @@ import React, { useState, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import { generateHex, generateBase64, generateUUID, generateULID } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 type Type = 'UUID' | 'Heterogenous' | 'Hex' | 'Base64' | 'ULID';
 
 export const RandomGenPanel: React.FC = () => {
 	const { t } = useTranslation();
-    const [type, setType] = useState<Type>('UUID');
-    const [length, setLength] = useState(32);
-    const [count, setCount] = useState(1);
-    const [output, setOutput] = useState('');
+    const [type, setType] = useToolState<Type>('random-gen-type' as any, 'UUID');
+    const [length, setLength] = useToolState<number>('random-gen-len' as any, 32);
+    const [count, setCount] = useToolState<number>('random-gen-count' as any, 1);
+    const [output, setOutput] = useToolState<string>('random-gen', '');
+
 
     const handleGenerate = useCallback(() => {
         const results: string[] = [];

@@ -26,8 +26,12 @@
 2. `pnpm sync-spectra` 或 `pnpm sync-halo`
 3. `cd ../spectra-public ; git push -f origin main`
 
-nexus(私有) → {spectra, halo}-public/ → github.com/QzCrane/{spectra, halo}
+**隔离策略**:
 
+- `.git/info/exclude`: 排除 `*-public/` 避免主库追踪其物理文件
+- `.vscode/settings.json`: `git.ignoredRepositories` 屏蔽子仓库 Git 状态干扰
+
+nexus(私有) → {spectra, halo}-public/ → github.com/QzCrane/{spectra, halo}
 排除: scripts/ docs/ .agent/ store-listings/ test/ assets/ \*.ai-context.md + 无关项目
 
 ---
@@ -62,7 +66,10 @@ nexus(私有) → {spectra, halo}-public/ → github.com/QzCrane/{spectra, halo}
 
 **HALO** (SidePanel 83 tools):
 
-- 自动注册系统: `tools/*/manifest.json` → `pnpm generate-registry` → 自动生成加载器
+- 自动注册系统: `tools/*/manifest.json` → `pnpm generate-registry` → 自动生成 `ToolId` & 加载器
+- 故障隔离: `ToolErrorBoundary` 确保单模块崩溃不影响全局
+- 智能意图: `useClipboardIntent` 智能识别剪贴板内容并推荐工具 (Smart Paste)
+- 核心服务: `useToolState` (防抖持久化), `EngineStatusProvider` (全量播报)
 - Core(13): QR/Screenshot/Color/Ruler/JSON/Base64/Hash/UUID/Timestamp/URL/ModuleStore/Settings/Permissions
 - Search: 支持中英双语、多字段匹配、全拼/简拼检索
 - i18n: 响应式全局同步系统 (Signal/Listener)
@@ -96,7 +103,7 @@ Contracts 禁逻辑 | 源码 ≤200 行 | 禁绕 kernel 存储 | 禁触发 Layou
 
 命令: `pnpm test:playwright` (apps/extension-halo)
 
-标准: safe-storage.ts (2s 超时) | i18n 超时 (2s) | ModuleManager 内存降级 (3s)
+标准: safe-storage.ts (5s 超时) | i18n 超时 (2s) | ModuleManager 内存降级 (3s) | Zero-Leaking Detachment
 
 ---
 

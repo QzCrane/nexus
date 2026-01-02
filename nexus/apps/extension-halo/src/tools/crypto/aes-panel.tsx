@@ -4,12 +4,15 @@ import React, { useState, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import { generateAESKey, exportAESKey, importAESKey, encryptAES, decryptAES } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const AESPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [plaintext, setPlaintext] = useState('');
-	const [ciphertext, setCiphertext] = useState('');
-	const [keyBase64, setKeyBase64] = useState('');
+	const [plaintext, setPlaintext] = useToolState<string>('crypto-aes-plain' as any, '');
+	const [ciphertext, setCiphertext] = useToolState<string>('crypto-aes-cipher' as any, '');
+	const [keyBase64, setKeyBase64] = useToolState<string>('crypto-aes-key' as any, '');
+
 	const [error, setError] = useState('');
 
 	const handleGenerateKey = useCallback(async () => {

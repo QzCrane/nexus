@@ -6,12 +6,15 @@ import { useTranslation } from '../../i18n';
 import type { TechDetection, TechCategory } from './types';
 import { detectTechStack, CATEGORY_LABELS } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const TechStackPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [techs, setTechs] = useState<TechDetection[]>([]);
+	const [techs, setTechs] = useToolState<TechDetection[]>('tech-stack' as any, []);
 	const [loading, setLoading] = useState(false);
-	const [scanned, setScanned] = useState(false);
+	const [scanned, setScanned] = useToolState<boolean>('tech-stack-scanned' as any, false);
+
 
 	// Scan page
 	const handleScan = useCallback(async () => {

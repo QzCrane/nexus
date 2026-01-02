@@ -6,6 +6,8 @@ import { useTranslation } from '../../i18n';
 import type { ArchiveEntry } from './types';
 import { captureCurrentPage, downloadArchive, openInViewer, saveEntryMeta, getStoredEntries, deleteEntry } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 const formatSize = (bytes: number): string => {
 	if (bytes < 1024) return `${bytes} B`;
@@ -17,13 +19,10 @@ const formatDate = (ts: number): string => new Date(ts).toLocaleString();
 
 export const ArchivePanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [entries, setEntries] = useState<ArchiveEntry[]>([]);
+	const [entries, setEntries] = useToolState<ArchiveEntry[]>('archive' as any, []);
 	const [isCapturing, setIsCapturing] = useState(false);
-	const [lastCaptured, setLastCaptured] = useState<ArchiveEntry | null>(null);
+	const [lastCaptured, setLastCaptured] = useToolState<ArchiveEntry | null>('archive-last' as any, null);
 
-	useEffect(() => {
-		getStoredEntries().then(setEntries);
-	}, []);
 
 	const handleCapture = useCallback(async () => {
 		setIsCapturing(true);

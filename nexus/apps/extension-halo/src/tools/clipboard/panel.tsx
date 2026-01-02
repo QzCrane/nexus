@@ -2,6 +2,8 @@
 // eff: Components extracted to reduce file size
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { useToolState } from '../../kernel';
+
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { 
@@ -25,8 +27,9 @@ export const ClipboardPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const { setServiceState } = useActiveServices();
 	const [history, setHistory] = useState<ClipboardItemType[]>([]);
-	const [search, setSearch] = useState('');
+	const [search, setSearch] = useToolState<string>('clipboard-search' as any, '');
 	const [enabled, setEnabled] = useState(true);
+
 	const [toast, setToast] = useState<string | null>(null);
 	
 	// Track new items for highlighting

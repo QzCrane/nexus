@@ -4,6 +4,8 @@ import React, { useState, useCallback, useMemo } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { encode, decode, fileToDataURL, getBase64Size, decodeToBinary, downloadContent } from './core';
+import { useToolState } from '../../kernel';
+
 
 const styles: Record<string, React.CSSProperties> = {
 	wrapper: { display: 'flex', flexDirection: 'column', gap: '12px' },
@@ -26,8 +28,9 @@ const styles: Record<string, React.CSSProperties> = {
 
 export const Base64Panel: React.FC = () => {
 	const { t } = useTranslation();
-	const [input, setInput] = useState('');
-	const [urlSafe, setUrlSafe] = useState(false);
+	const [input, setInput] = useToolState<string>('base64', '');
+	const [urlSafe, setUrlSafe] = useToolState<boolean>('base64-urlsafe' as any, false);
+
 	const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
 	const isDataUrl = input.trim().startsWith('data:image/');

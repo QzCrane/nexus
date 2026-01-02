@@ -6,6 +6,8 @@ import { useTranslation } from '../../i18n';
 import type { CaseType, TextToolMode } from './types';
 import { convertCase, getTextStats, dedupeLines, sortLines, trimLines, reverseLines } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 const MODES: { id: TextToolMode; label: string }[] = [
 	{ id: 'case', label: 'Case' },
@@ -27,9 +29,10 @@ const CASE_OPTIONS: { id: CaseType; label: string }[] = [
 
 export const TextToolsPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [mode, setMode] = useState<TextToolMode>('case');
-	const [input, setInput] = useState('');
-	const [caseType, setCaseType] = useState<CaseType>('lower');
+	const [mode, setMode] = useToolState<TextToolMode>('text-tools-mode' as any, 'case');
+	const [input, setInput] = useToolState<string>('text-tools-input' as any, '');
+	const [caseType, setCaseType] = useToolState<CaseType>('text-tools-case' as any, 'lower');
+
 
 	// Compute stats in real-time
 	const stats = useMemo(() => getTextStats(input), [input]);

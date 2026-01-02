@@ -7,11 +7,14 @@ import type { PomodoroConfig, PomodoroState } from './types';
 import { DEFAULT_CONFIG } from './types';
 import { formatTime, getPhaseDuration, getNextPhase, createInitialState, PHASE_LABELS, PHASE_COLORS } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const PomodoroPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [config, setConfig] = useState<PomodoroConfig>(DEFAULT_CONFIG);
-	const [state, setState] = useState<PomodoroState>(() => createInitialState(config));
+	const [config, setConfig] = useToolState<PomodoroConfig>('pomodoro-config' as any, DEFAULT_CONFIG);
+	const [state, setState] = useToolState<PomodoroState>('pomodoro-state' as any, () => createInitialState(config));
+
 	const intervalRef = useRef<number | null>(null);
 
 	// Timer tick

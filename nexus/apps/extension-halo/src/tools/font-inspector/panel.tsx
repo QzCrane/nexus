@@ -5,12 +5,15 @@ import { useTranslation } from '../../i18n';
 import type { FontInfo } from './types';
 import { getPageFonts, groupByFamily, getGoogleFontsUrl } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const FontInspectorPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [fonts, setFonts] = useState<FontInfo[]>([]);
+	const [fonts, setFonts] = useToolState<FontInfo[]>('font-inspector-data' as any, []);
 	const [loading, setLoading] = useState(false);
-	const [scanned, setScanned] = useState(false);
+	const [scanned, setScanned] = useToolState<boolean>('font-inspector-scanned' as any, false);
+
 
 	// Scan page
 	const handleScan = useCallback(async () => {

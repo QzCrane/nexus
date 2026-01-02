@@ -6,11 +6,14 @@ import { useTranslation } from '../../i18n';
 import type { ReaderConfig, ArticleContent } from './types';
 import { extractArticle, DEFAULT_CONFIG, THEMES, FONTS } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const ReaderModePanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [config, setConfig] = useState<ReaderConfig>(DEFAULT_CONFIG);
-	const [article, setArticle] = useState<ArticleContent | null>(null);
+	const [config, setConfig] = useToolState<ReaderConfig>('reader-mode-config' as any, DEFAULT_CONFIG);
+	const [article, setArticle] = useToolState<ArticleContent | null>('reader-mode-article' as any, null);
+
 	const [loading, setLoading] = useState(false);
 
 	// Extract article

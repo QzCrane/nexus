@@ -6,13 +6,16 @@ import { useTranslation } from '../../i18n';
 import { TabItem as TabItemType, TabFilter } from './types';
 import { getTabs, activateTab, closeTab, setupTabListeners } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 import { TabItem } from './TabItem';
 
 export const TabsPanel: React.FC = () => {
     const { t } = useTranslation();
     const [tabs, setTabs] = useState<TabItemType[]>([]);
-    const [search, setSearch] = useState('');
-    const [filter, setFilter] = useState<TabFilter>('all');
+    const [search, setSearch] = useToolState<string>('tabs-search' as any, '');
+    const [filter, setFilter] = useToolState<TabFilter>('tabs-filter' as any, 'all');
+
     const [loading, setLoading] = useState(true);
 
     const refreshTabs = async () => {

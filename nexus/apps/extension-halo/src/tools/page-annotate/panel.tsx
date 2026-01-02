@@ -4,10 +4,13 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from '../../i18n';
 import { startAnnotation, stopAnnotation } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const PageAnnotatePanel: React.FC = () => {
     const { t } = useTranslation();
-    const [active, setActive] = useState(false);
+    const [active, setActive] = useToolState<boolean>('page-annotate-active' as any, false);
+
 
     const toggle = async () => {
         if (active) {
@@ -28,11 +31,12 @@ export const PageAnnotatePanel: React.FC = () => {
         <div style={styles.wrapper}>
             <button style={{...styles.btn, background: active ? '#ef4444' : 'var(--halo-accent)'}} onClick={toggle}>
                 <span style={styles.icon}>{active ? '🛑' : '🖌️'}</span>
-                <span>{active ? t('pageAnnotate.stop', 'Stop Annotation') : t('pageAnnotate.start', 'Start Annotation')}</span>
+                <span>{active ? t('pageAnnotate.stop', { defaultValue: 'Stop Annotation' }) : t('pageAnnotate.start', { defaultValue: 'Start Annotation' })}</span>
             </button>
             <div style={styles.desc}>
-                {active ? t('pageAnnotate.activeDesc', 'Drawing mode active. Use the toolbar on the page.') : t('pageAnnotate.inactiveDesc', 'Click to draw on the current page.')}
+                {active ? t('pageAnnotate.activeDesc', { defaultValue: 'Drawing mode active. Use the toolbar on the page.' }) : t('pageAnnotate.inactiveDesc', { defaultValue: 'Click to draw on the current page.' })}
             </div>
+
         </div>
     );
 };

@@ -4,10 +4,13 @@ import React, { useState, useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { searchStatuses, CATEGORY_INFO } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const HttpStatusPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [query, setQuery] = useState('');
+	const [query, setQuery] = useToolState<string>('http-status', '');
+
 
 	const results = useMemo(() => searchStatuses(query), [query]);
 

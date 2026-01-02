@@ -12,24 +12,21 @@ import {
 	scrollToHeading,
 	outlineToMarkdown,
 	copyToClipboard,
-	loadSettings,
-	saveSettings,
 } from './core';
 import { styles } from './panel.styles';
 import { HeadingItem } from './HeadingItem';
+import { useToolState } from '../../kernel';
+
 
 const logger = createLogger('Outline', 'HALO');
 
 export const OutlinePanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [headings, setHeadings] = useState<HeadingItemType[]>([]);
-	const [settings, setSettings] = useState<OutlineSettings>(DEFAULT_SETTINGS);
+	const [settings, setSettings] = useToolState<OutlineSettings>('outline-settings' as any, DEFAULT_SETTINGS);
 	const [loading, setLoading] = useState(false);
 	const [toast, setToast] = useState<string | null>(null);
 
-	useEffect(() => {
-		loadSettings().then(setSettings);
-	}, []);
 
 	const showToast = useCallback((msg: string) => {
 		setToast(msg);
@@ -64,9 +61,9 @@ export const OutlinePanel: React.FC = () => {
 		key: K,
 		value: OutlineSettings[K]
 	) => {
-		const updated = await saveSettings({ [key]: value });
-		setSettings(updated);
+		setSettings(prev => ({ ...prev, [key]: value }));
 	}, []);
+
 
 	// Calculate level distribution
 	const levelCounts = headings.reduce((acc, h) => {

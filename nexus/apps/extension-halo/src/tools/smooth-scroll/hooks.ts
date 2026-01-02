@@ -3,20 +3,30 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { createLogger } from '@nexus/kernel';
+import { useToolState } from '../../kernel';
 import { useTranslation } from '../../i18n';
 import type { ScrollSettings } from './types';
-import { DEFAULT_SETTINGS, PROFILES, STORAGE_KEY, CUSTOM_PROFILE_KEY } from './types';
-import { loadSettings, saveSettings, broadcastSettings } from './core';
+import { DEFAULT_SETTINGS, PROFILES, CUSTOM_PROFILE_KEY } from './types';
+// import { loadSettings, saveSettings, broadcastSettings } from './core'; // Removed
+
+// Actual storage key used by smooth-scroll (different from standard tool state key)
+const SMOOTH_SCROLL_STORAGE_KEY = 'HALO_SMOOTH_SCROLL_SETTINGS';
 
 const logger = createLogger('SmoothScroll', 'HALO');
 
 export function useSmoothScrollSettings() {
 	const { t } = useTranslation();
-	const [settings, setSettings] = useState<ScrollSettings>(DEFAULT_SETTINGS);
+	// Use sync storage with custom key for backward compatibility
+	const [settings, setSettings] = useToolState<ScrollSettings>(
+		'smooth-scroll',
+		DEFAULT_SETTINGS,
+		{ area: 'sync', storageKey: SMOOTH_SCROLL_STORAGE_KEY }
+	);
 	const [toast, setToast] = useState<string | null>(null);
 	const [hasCustomProfile, setHasCustomProfile] = useState(false);
 
-	useEffect(() => { loadSettings().then(setSettings); }, []);
+	// useEffect(() => { loadSettings().then(setSettings); }, []); // useToolState handles parsing
+
 	useEffect(() => {
 		chrome.storage.sync.get([CUSTOM_PROFILE_KEY], (r) => {
 			setHasCustomProfile(!!r[CUSTOM_PROFILE_KEY]);
@@ -25,30 +35,27 @@ export function useSmoothScrollSettings() {
 
 	const showToast = useCallback((msg: string) => { setToast(msg); setTimeout(() => setToast(null), 1200); }, []);
 
-	const updateSetting = useCallback(async <K extends keyof ScrollSettings>(key: K, value: ScrollSettings[K]) => {
-		const updated = await saveSettings({ [key]: value });
-		setSettings(updated);
-		await broadcastSettings(updated);
+	const updateSetting = useCallback(<K extends keyof ScrollSettings>(key: K, value: ScrollSettings[K]) => {
+		setSettings(prev => ({ ...prev, [key]: value }));
 		logger.info(`Setting updated: ${key}`, value);
-	}, []);
+	}, [setSettings]);
+
 
 	const loadProfile = useCallback(async (profileName: keyof typeof PROFILES) => {
 		const profile = PROFILES[profileName];
-		const updated = await saveSettings(profile);
-		setSettings(updated);
-		await broadcastSettings(updated);
-		showToast(`${t(`smoothScroll.profilesList.${profileName}` as any)} ${t('smoothScroll.toasts.loaded')}`);
-	}, [showToast, t]);
+		setSettings(prev => ({ ...prev, ...profile }));
+		showToast(`${t(`smoothScroll.profilesList.${profileName}`, { defaultValue: profileName })} ${t('smoothScroll.toasts.loaded')}`);
+	}, [showToast, t, setSettings]);
+
 
 	const loadCustomProfile = useCallback(async () => {
 		const r = await chrome.storage.sync.get([CUSTOM_PROFILE_KEY]);
 		if (r[CUSTOM_PROFILE_KEY]) {
-			const updated = await saveSettings(r[CUSTOM_PROFILE_KEY]);
-			setSettings(updated);
-			await broadcastSettings(updated);
+			setSettings(prev => ({ ...prev, ...r[CUSTOM_PROFILE_KEY] }));
 			showToast(`${t('smoothScroll.profilesList.custom')} ${t('smoothScroll.toasts.loaded')}`);
 		}
-	}, [showToast, t]);
+	}, [showToast, t, setSettings]);
+
 
 	const saveAsCustom = useCallback(async () => {
 		await chrome.storage.sync.set({ [CUSTOM_PROFILE_KEY]: settings });
@@ -57,13 +64,12 @@ export function useSmoothScrollSettings() {
 		logger.info('Custom profile saved');
 	}, [settings, showToast, t]);
 
-	const resetSettings = useCallback(async () => {
-		await chrome.storage.sync.set({ [STORAGE_KEY]: DEFAULT_SETTINGS });
+	const resetSettings = useCallback(() => {
 		setSettings(DEFAULT_SETTINGS);
-		await broadcastSettings(DEFAULT_SETTINGS);
 		showToast(t('smoothScroll.toasts.reset'));
 		logger.info('Settings reset to defaults');
-	}, [showToast, t]);
+	}, [showToast, t, setSettings]);
+
 
 	return {
 		settings,

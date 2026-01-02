@@ -4,10 +4,13 @@ import React, { useState, useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { decodeJwt, formatClaim, KNOWN_CLAIMS } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const JwtDecoderPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [token, setToken] = useState('');
+	const [token, setToken] = useToolState<string>('jwt-decoder', '');
+
 
 	const decoded = useMemo(() => decodeJwt(token), [token]);
 

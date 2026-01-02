@@ -4,10 +4,13 @@ import React, { useState, useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { parseCsp, calculateScore } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const CspAnalyzerPanel: React.FC = () => {
     const { t } = useTranslation();
-    const [input, setInput] = useState('');
+    const [input, setInput] = useToolState<string>('csp-analyzer', '');
+
 
     const directives = useMemo(() => parseCsp(input), [input]);
     const score = useMemo(() => calculateScore(directives), [directives]);
@@ -23,9 +26,10 @@ export const CspAnalyzerPanel: React.FC = () => {
 
             {directives.length > 0 && (
                 <div style={styles.score}>
-                    🛡️ {t('cspAnalyzer.score', 'Score')}: {score}/100
+                    🛡️ {t('cspAnalyzer.score', { defaultValue: 'Score' })}: {score}/100
                 </div>
             )}
+
 
             <div style={styles.list}>
                 {directives.map((d, i) => (

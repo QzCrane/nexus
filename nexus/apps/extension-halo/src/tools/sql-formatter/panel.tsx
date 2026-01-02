@@ -4,10 +4,13 @@ import React, { useState, useCallback, useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { formatSql, minifySql, validateSql } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const SqlFormatterPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [input, setInput] = useState('');
+	const [input, setInput] = useToolState<string>('sql-formatter', '');
+
 
 	const validation = useMemo(() => validateSql(input), [input]);
 

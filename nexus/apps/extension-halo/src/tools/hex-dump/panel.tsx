@@ -4,12 +4,17 @@ import React, { useState, useCallback, useRef } from 'react';
 import { useTranslation } from '../../i18n';
 import { createHexDump, type HexChunk } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
+
+
 
 export const HexDumpPanel: React.FC = () => {
 	const { t } = useTranslation();
     const [loading, setLoading] = useState(false);
-    const [chunks, setChunks] = useState<HexChunk[]>([]);
+    const [chunks, setChunks] = useToolState<HexChunk[]>('hex-dump-chunks' as any, []);
 	const inputRef = useRef<HTMLInputElement>(null);
+
 
 	const handleFile = useCallback(async (file: File) => {
         setLoading(true);

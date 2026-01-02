@@ -5,12 +5,15 @@ import { useTranslation } from '../../i18n';
 import type { ExifData } from './types';
 import { parseExif, readFileAsArrayBuffer, formatFileSize } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const ExifReaderPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [exif, setExif] = useState<ExifData | null>(null);
 	const [preview, setPreview] = useState<string>('');
-	const [fileName, setFileName] = useState('');
+	const [fileName, setFileName] = useToolState<string>('exif-reader', '');
+
 	const [fileSize, setFileSize] = useState(0);
 	const [isDragging, setIsDragging] = useState(false);
 	const inputRef = useRef<HTMLInputElement>(null);

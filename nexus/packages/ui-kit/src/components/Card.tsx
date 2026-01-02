@@ -9,6 +9,7 @@ export interface CardProps {
 	className?: string;
 	variant?: 'default' | 'outlined' | 'elevated';
 	padding?: 'none' | 'sm' | 'md' | 'lg';
+	style?: React.CSSProperties;
 }
 
 const PADDING_MAP = {
@@ -43,7 +44,8 @@ export function Card({
 	subtitle, 
 	className = '', 
 	variant = 'default',
-	padding = 'md'
+	padding = 'md',
+	style = {}
 }: CardProps) {
 	const variantStyle = VARIANT_STYLES[variant];
 
@@ -54,7 +56,8 @@ export function Card({
 				...variantStyle,
 				padding: PADDING_MAP[padding],
 				borderRadius: '10px',
-				transition: 'background 0.2s, border-color 0.2s'
+				transition: 'background 0.2s, border-color 0.2s',
+				...style
 			}}
 		>
 			{(title || subtitle) && (

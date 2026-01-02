@@ -5,6 +5,8 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { encode, decode, parseURL } from './core';
+import { useToolState } from '../../kernel';
+
 
 const styles: Record<string, React.CSSProperties> = {
 	wrapper: { display: 'flex', flexDirection: 'column', gap: '12px' },
@@ -55,8 +57,9 @@ interface URLResults {
 
 export const URLPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [input, setInput] = useState('');
+	const [input, setInput] = useToolState<string>('url', '');
 	const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
 
 	// Calculate all results simultaneously
 	const results = useMemo((): URLResults => {

@@ -6,9 +6,11 @@ import { Card } from '@nexus/ui-kit';
 import { createLogger } from '@nexus/kernel';
 import { useTranslation } from '../../i18n';
 import type { RulerMeasurement } from './types';
-import { copyToClipboard, saveSettings, loadSettings } from './core';
+import { copyToClipboard } from './core';
 import { styles } from './panel.styles';
 import { MeasurementCard } from './MeasurementCard';
+import { useToolState } from '../../kernel';
+
 
 const logger = createLogger('Ruler', 'HALO');
 
@@ -16,17 +18,13 @@ export const RulerPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [isActive, setIsActive] = useState(false);
 	const [measurement, setMeasurement] = useState<RulerMeasurement | null>(null);
-	const [unit, setUnit] = useState<'px' | 'rem'>('px');
-	const [remBase, setRemBase] = useState(16);
+	const [unit, setUnit] = useToolState<'px' | 'rem'>('ruler-unit' as any, 'px');
+	const [remBase, setRemBase] = useToolState<number>('ruler-rem-base' as any, 16);
 	const [toast, setToast] = useState<string | null>(null);
 
 	useEffect(() => {
-		loadSettings().then(({ unit: u, remBase: r }) => {
-			setUnit(u);
-			setRemBase(r);
-		});
-
 		// Listen for measurement results from content script
+
 		const listener = (message: { type: string; data?: RulerMeasurement }): boolean | undefined => {
 			if (message.type === 'HALO_RULER_RESULT' && message.data) {
 				setMeasurement(message.data);
@@ -61,14 +59,14 @@ export const RulerPanel: React.FC = () => {
 	const handleUnitChange = useCallback(async (e: React.ChangeEvent<HTMLSelectElement>) => {
 		const newUnit = e.target.value as 'px' | 'rem';
 		setUnit(newUnit);
-		await saveSettings({ unit: newUnit, remBase });
 	}, [remBase]);
+
 
 	const handleRemBaseChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
 		const val = parseInt(e.target.value, 10) || 16;
 		setRemBase(val);
-		await saveSettings({ unit, remBase: val });
 	}, [unit]);
+
 
 	const handleCopyValue = useCallback(async (value: string) => {
 		const ok = await copyToClipboard(value);

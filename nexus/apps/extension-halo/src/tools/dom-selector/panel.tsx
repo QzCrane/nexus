@@ -4,12 +4,15 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import { startSelection, stopSelection } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const DomSelectorPanel: React.FC = () => {
     const { t } = useTranslation();
     const [selecting, setSelecting] = useState(false);
-    const [css, setCss] = useState('');
-    const [xpath, setXpath] = useState('');
+    const [css, setCss] = useToolState<string>('dom-selector-css' as any, '');
+    const [xpath, setXpath] = useToolState<string>('dom-selector-xpath' as any, '');
+
 
     const toggleSelection = useCallback(async () => {
         if (selecting) {
@@ -43,17 +46,20 @@ export const DomSelectorPanel: React.FC = () => {
     return (
         <div style={styles.wrapper}>
             <button style={selecting ? styles.btnActive : styles.btn} onClick={toggleSelection}>
-                {selecting ? t('domSelector.stop', 'Stop Selection') : t('domSelector.start', 'Start Selection')}
+                {selecting ? t('domSelector.stop', { defaultValue: 'Stop Selection' }) : t('domSelector.start', { defaultValue: 'Start Selection' })}
             </button>
 
-            {selecting && <div style={{textAlign: 'center', fontSize: '12px', color: 'var(--halo-text-muted)'}}>{t('domSelector.hover', 'Hover and click any element on the page...')}</div>}
+
+            {selecting && <div style={{textAlign: 'center', fontSize: '12px', color: 'var(--halo-text-muted)'}}>{t('domSelector.hover', { defaultValue: 'Hover and click any element on the page...' })}</div>}
+
 
             {css && (
                 <div>
                     <div style={styles.header}>
                         <div style={styles.label}>CSS Selector</div>
-                        <button style={styles.copyBtn} onClick={() => navigator.clipboard.writeText(css)}>{t('common.copy', 'Copy')}</button>
+                        <button style={styles.copyBtn} onClick={() => navigator.clipboard.writeText(css)}>{t('common.copy', { defaultValue: 'Copy' })}</button>
                     </div>
+
                     <textarea style={styles.textarea} value={css} readOnly />
                 </div>
             )}
@@ -62,8 +68,9 @@ export const DomSelectorPanel: React.FC = () => {
                 <div>
                     <div style={styles.header}>
                         <div style={styles.label}>XPath</div>
-                        <button style={styles.copyBtn} onClick={() => navigator.clipboard.writeText(xpath)}>{t('common.copy', 'Copy')}</button>
+                        <button style={styles.copyBtn} onClick={() => navigator.clipboard.writeText(xpath)}>{t('common.copy', { defaultValue: 'Copy' })}</button>
                     </div>
+
                     <textarea style={styles.textarea} value={xpath} readOnly />
                 </div>
             )}

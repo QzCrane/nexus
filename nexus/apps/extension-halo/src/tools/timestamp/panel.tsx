@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { autoParse, formatWithTZ, getRelativeTime, TIMEZONES } from './core';
+import { useToolState } from '../../kernel';
+
 
 const styles: Record<string, React.CSSProperties> = {
 	wrapper: { display: 'flex', flexDirection: 'column', gap: '10px' },
@@ -18,7 +20,8 @@ const styles: Record<string, React.CSSProperties> = {
 export const TimestampPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [now, setNow] = useState(Date.now());
-	const [input, setInput] = useState('');
+	const [input, setInput] = useToolState<string>('timestamp', '');
+
 	const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
 	useEffect(() => {

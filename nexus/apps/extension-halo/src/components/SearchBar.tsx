@@ -1,7 +1,9 @@
 // goal: Global search bar component
 // eff: Fuzzy search with keyboard shortcuts. Logic extracted to search-utils.ts and styles to SearchBar.styles.ts
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useClipboardIntent } from '../kernel/hooks/use-clipboard-intent';
+
 import type { ToolMeta } from '../kernel';
 import { TOOL_REGISTRY } from '../kernel';
 import { useTranslation } from '../i18n';
@@ -21,6 +23,13 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, visibleTools, pl
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const [results, setResults] = useState<ToolMeta[]>([]);
+  const intent = useClipboardIntent();
+
+  const suggestedTool = useMemo(() => {
+    if (!intent || query.trim()) return null;
+    return visibleTools.find((t) => t.id === intent);
+  }, [intent, query, visibleTools]);
+
 
   // Filter results
   useEffect(() => {
@@ -96,9 +105,22 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, visibleTools, pl
           onFocus={() => setFocused(true)}
           onBlur={() => setTimeout(() => setFocused(false), 150)}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder || t('common.search')}
+          placeholder={placeholder || (suggestedTool ? `${t('common.suggested')}: ${t(`tools.${suggestedTool.id}.name`)}` : t('common.search'))}
         />
-        {!focused && <span style={styles.shortcut}>⌘K</span>}
+        {!focused && !suggestedTool && <span style={styles.shortcut}>⌘K</span>}
+        {suggestedTool && !focused && !query && (
+          <div 
+            onClick={() => onSelect(suggestedTool.id)}
+            style={{ 
+              position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
+              padding: '2px 8px', borderRadius: '4px', background: 'var(--halo-primary-alpha, rgba(16, 185, 129, 0.15))',
+              color: 'var(--halo-primary, #10b981)', fontSize: '10px', fontWeight: 600, cursor: 'pointer',
+              border: '1px solid var(--halo-primary-alpha)'
+            }}
+          >
+            {suggestedTool.icon} {t('common.open')}
+          </div>
+        )}
       </div>
 
       {showDropdown && (

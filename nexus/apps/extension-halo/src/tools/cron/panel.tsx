@@ -5,10 +5,13 @@ import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { parseCron, describeCron, getNextRuns, CRON_PRESETS } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const CronPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [cron, setCron] = useState('0 9 * * 1-5');
+	const [cron, setCron] = useToolState<string>('cron', '0 9 * * 1-5');
+
 
 	// Parse cron
 	const parts = useMemo(() => parseCron(cron), [cron]);

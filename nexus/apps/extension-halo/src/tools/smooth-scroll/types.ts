@@ -36,7 +36,7 @@ export const DEFAULT_SETTINGS: ScrollSettings = {
 	easing: 'spring',
 };
 
-export const STORAGE_KEY = 'HALO_SMOOTH_SCROLL_SETTINGS';
+export const STORAGE_KEY = 'halo_tool_state_smooth-scroll';
 
 export const EASING_OPTIONS = [
 	{ value: 'linear', label: 'Linear' },

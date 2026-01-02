@@ -14,13 +14,16 @@ import {
 } from './core';
 import { injectScriptToCurrentTab } from './engine';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const UserScriptsPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [scripts, setScripts] = useState<UserScript[]>([]);
+	const [scripts, setScripts] = useState<UserScript[]>([]); // Synced via loadScripts
 	const [globalEnabled, setGlobalEnabled] = useState(true);
-	const [showEditor, setShowEditor] = useState(false);
-	const [editForm, setEditForm] = useState({ name: '', description: '', code: '', matches: '*://*/*', runAt: 'document_end' as UserScriptRunAt });
+	const [showEditor, setShowEditor] = useToolState<boolean>('userscripts-show-editor' as any, false);
+	const [editForm, setEditForm] = useToolState('userscripts-edit-form' as any, { name: '', description: '', code: '', matches: '*://*/*', runAt: 'document_end' as UserScriptRunAt });
+
 
 	// Load scripts on mount
 	useEffect(() => {
@@ -95,11 +98,12 @@ export const UserScriptsPanel: React.FC = () => {
 				}}>
 					<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
 						<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-							<span style={{ fontSize: '15px', fontWeight: 600 }}>⚡ {t('userscripts.title')}</span>
+							<span style={{ fontSize: '15px', fontWeight: 600 }}>⚡ {t('userscripts.title', { defaultValue: 'User Scripts' })}</span>
 							{globalEnabled && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4CAF50', boxShadow: '0 0 6px #4CAF50' }}></span>}
 						</div>
-						<span style={{ fontSize: '12px', color: 'var(--halo-text-muted)' }}>{t('userscripts.enableDesc') || 'Enable all user scripts'}</span>
+						<span style={{ fontSize: '12px', color: 'var(--halo-text-muted)' }}>{t('userscripts.enableDesc', { defaultValue: 'Enable all user scripts' })}</span>
 					</div>
+
 					<div
 						style={{ ...styles.toggle, background: globalEnabled ? 'var(--halo-accent)' : 'var(--halo-border)' }}
 						onClick={handleGlobalToggle}

@@ -4,8 +4,8 @@ import { useModuleManager } from '../../kernel';
 import { useRemoteRegistry } from '../../kernel';
 import { ALL_MODULES, formatModuleSize } from '../../kernel';
 import { ModuleItem } from './module-item';
+import { filterBySearch, MODULE_SEARCH_OPTIONS } from '../../kernel/utils/unified-search';
 import { styles as searchStyles } from '../../components/SearchBar.styles';
-import { normalizeSearch } from '../../components/search-utils';
 import { styles } from './panel.styles';
 
 type ViewMode = 'installed' | 'available' | 'all' | 'updates';
@@ -40,18 +40,11 @@ export const ModuleStorePanel: React.FC = () => {
 	const filteredAvailable = availableModules.filter(m => !isIgnored(m.id));
 	const filteredAll = ALL_MODULES.filter(m => !isIgnored(m.id));
 
-	const filterBySearch = (modules: typeof ALL_MODULES) => {
-		if (!searchQuery.trim()) return modules;
-		const q = normalizeSearch(searchQuery);
-		return modules.filter(m => {
-			if (normalizeSearch(m.id).includes(q)) return true;
-			if (normalizeSearch(t(`tools.${m.id}.name`)).includes(q)) return true;
-			if (normalizeSearch(t(`tools.${m.id}.desc`)).includes(q)) return true;
-			return false;
-		});
-	};
+	// Use unified search engine (supports Pinyin + all locales)
+	const searchModules = (modules: typeof ALL_MODULES) => 
+		filterBySearch(modules, searchQuery, MODULE_SEARCH_OPTIONS);
 
-	const displayModules = filterBySearch(
+	const displayModules = searchModules(
 		view === 'installed' ? filteredInstalled
 		: view === 'available' ? filteredAvailable
 		: filteredAll

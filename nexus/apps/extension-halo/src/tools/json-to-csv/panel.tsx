@@ -4,11 +4,14 @@ import React, { useState, useCallback, useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { jsonToCsv, parseJson } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const JsonToCsvPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [input, setInput] = useState('');
-	const [delimiter, setDelimiter] = useState(',');
+	const [input, setInput] = useToolState<string>('json-to-csv-input' as any, '');
+	const [delimiter, setDelimiter] = useToolState<string>('json-to-csv-delim' as any, ',');
+
 
 	const { output, error } = useMemo(() => {
 		if (!input.trim()) return { output: '', error: null };

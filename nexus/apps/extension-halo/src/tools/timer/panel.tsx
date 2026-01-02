@@ -5,14 +5,17 @@ import { useTranslation } from '../../i18n';
 import type { TimerMode, TimerState } from './types';
 import { formatTime, PRESETS } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 const initialState: TimerState = { mode: 'stopwatch', elapsed: 0, target: 300000, isRunning: false, laps: [] };
 
 export const TimerPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [state, setState] = useState<TimerState>(initialState);
-	const [inputMins, setInputMins] = useState(5);
-	const [inputSecs, setInputSecs] = useState(0);
+	const [state, setState] = useToolState<TimerState>('timer' as any, initialState);
+	const [inputMins, setInputMins] = useToolState<number>('timer-mins' as any, 5);
+	const [inputSecs, setInputSecs] = useToolState<number>('timer-secs' as any, 0);
+
 	const intervalRef = useRef<number | null>(null);
 	const startTimeRef = useRef(0);
 

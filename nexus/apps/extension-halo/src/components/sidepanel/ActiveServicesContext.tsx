@@ -25,12 +25,13 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 				});
 
 				const syncData = await chrome.storage.sync.get({
-					HALO_SMOOTH_SCROLL_SETTINGS: { enabled: true }
+					'halo_tool_state_smooth-scroll': { enabled: true }
 				});
 
 				if (localData.halo_tool_clipboard_settings.enabled) active.add('clipboard');
 				if (localData.halo_userscripts.globalEnabled) active.add('userscripts');
-				if (syncData.HALO_SMOOTH_SCROLL_SETTINGS.enabled) active.add('smooth-scroll');
+				if (syncData['halo_tool_state_smooth-scroll'].enabled) active.add('smooth-scroll');
+
 
 				setActiveServices(prev => {
 					if (prev.size === active.size && [...prev].every(x => active.has(x))) return prev;
@@ -46,8 +47,9 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 		const listener = (changes: any, area: string) => {
 			let changed = false;
 			if (area === 'local' && (changes.halo_tool_clipboard_settings || changes.halo_userscripts)) changed = true;
-			if (area === 'sync' && changes.HALO_SMOOTH_SCROLL_SETTINGS) changed = true;
+			if (area === 'sync' && changes['halo_tool_state_smooth-scroll']) changed = true;
 			if (changed) checkState();
+
 		};
 		chrome.storage.onChanged.addListener(listener);
 		const interval = setInterval(checkState, 2000);

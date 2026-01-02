@@ -69,6 +69,13 @@ Browser (8): archive, cookie-manager, reader-mode, bookmark-manager, history-sea
 - ✅ **Ergonomic Design**: 实现“全信息展开”、“零交互完成”设计理念，击败 90% 单一功能竞品。
 - ✅ **Code Refactoring**: `timestamp`, `uuid`, `hash` 面板代码重构至 150 行以内，符合 Clean Code 标准。
 
+### 全局持久化状态架构 (2026-01-02 完成 - v2.2.0)
+
+- ✅ **`useToolState` Hook**: 核心 Hook 实现，支持 JSON 自动序列化、多窗口同步、300ms 防抖写入。支持函数式初始化。
+- ✅ **原子化隔离**: 每个工具状态独立前缀 `halo_tool_state_${id}`，确插件增删不影响全局存储。
+- ✅ **首批核心重构 (83/83)**:
+- ✅ **智能意图触发**: `useClipboardIntent` 自动识别剪切板类型（JWT/JSON/URL/HEX）并引导用户使用对应工具。
+
 ---
 
 ## 🔜 阶段 10: 编解码增强 (P1)

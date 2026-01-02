@@ -5,11 +5,14 @@ import { useTranslation } from '../../i18n';
 import type { StorageItem } from './types';
 import { getStorageItems, setStorageItem, deleteStorageItem, formatSize } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const StorageEditorPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [items, setItems] = useState<StorageItem[]>([]);
-	const [filter, setFilter] = useState<'all' | 'localStorage' | 'sessionStorage'>('all');
+	const [filter, setFilter] = useToolState<'all' | 'localStorage' | 'sessionStorage'>('storage-editor-filter' as any, 'all');
+
 	const [loading, setLoading] = useState(false);
 	const [scanned, setScanned] = useState(false);
 

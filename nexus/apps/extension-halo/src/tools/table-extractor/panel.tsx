@@ -5,12 +5,15 @@ import { useTranslation } from '../../i18n';
 import type { TableData } from './types';
 import { extractTables, tableToCsv, tableToJson } from './core';
 import { styles } from './panel.styles';
+import { useToolState } from '../../kernel';
+
 
 export const TableExtractorPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [tables, setTables] = useState<TableData[]>([]);
+	const [tables, setTables] = useToolState<TableData[]>('table-extractor-data' as any, []);
 	const [loading, setLoading] = useState(false);
-	const [scanned, setScanned] = useState(false);
+	const [scanned, setScanned] = useToolState<boolean>('table-extractor-scanned' as any, false);
+
 
 	// Extract tables
 	const handleExtract = useCallback(async () => {
