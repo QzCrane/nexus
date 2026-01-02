@@ -2,6 +2,26 @@
 
 import type { YamlConvertResult } from './types';
 
+// Detect if input is JSON or YAML
+export function detectInputType(input: string): 'json' | 'yaml' | 'unknown' {
+	const trimmed = input.trim();
+	// JSON starts with { or [ 
+	if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+		(trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+		try {
+			JSON.parse(trimmed);
+			return 'json';
+		} catch {
+			// Might be YAML object/array syntax
+		}
+	}
+	// YAML indicators: starts with key: or - or has no braces
+	if (/^[a-zA-Z_][a-zA-Z0-9_]*\s*:/m.test(trimmed) || trimmed.startsWith('-')) {
+		return 'yaml';
+	}
+	return 'unknown';
+}
+
 // Simple YAML parser (handles basic cases: primitives, arrays, objects)
 export function parseYaml(yaml: string): YamlConvertResult {
 	try {
