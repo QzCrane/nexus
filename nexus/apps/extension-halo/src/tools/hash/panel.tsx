@@ -154,7 +154,7 @@ export const HashPanel: React.FC = () => {
 					onChange={handleFileSelect}
 				/>
 				<label htmlFor="hash-file-input" style={{ cursor: 'pointer' }}>
-					📁 {t('base64.dropFile')}
+					📁 {t('hash.dropFile')}
 				</label>
 			</div>
 		</div>

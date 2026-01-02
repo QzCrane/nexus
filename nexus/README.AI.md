@@ -20,15 +20,15 @@
 
 ## 开源 (双仓库同步)
 
-**每次开发完成后必须同步双仓库**:
+**每次开发完成后必须同步对应公共仓库**:
 
 1. `git add + commit + push` (nexus)
-2. `pnpm sync-public`
-3. `cd ../nexus-public ; git push -f origin main`
+2. `pnpm sync-spectra` 或 `pnpm sync-halo`
+3. `cd ../spectra-public ; git push -f origin main`
 
-nexus(私有) → nexus-public/ → github.com/QzCrane/spectra
+nexus(私有) → {spectra, halo}-public/ → github.com/QzCrane/{spectra, halo}
 
-排除: scripts/ docs/ .agent/ store-listings/ test/ assets/ \*.ai-context.md + 空包
+排除: scripts/ docs/ .agent/ store-listings/ test/ assets/ \*.ai-context.md + 无关项目
 
 ---
 
@@ -40,7 +40,7 @@ nexus(私有) → nexus-public/ → github.com/QzCrane/spectra
 
 ## 工作流
 
-/feature-finish | /sync-nexus | /release-halo | /add-dependency | /new-module
+/feature-finish | /sync-nexus | /release-halo | /add-dependency | /new-module | /sync-spectra-public | /update-context
 
 ---
 
@@ -50,9 +50,9 @@ nexus(私有) → nexus-public/ → github.com/QzCrane/spectra
 @nexus/contracts: 类型定义源
 @nexus/kernel: RPC+Storage+Log
 @nexus/ui-kit: 共享 UI 组件
-@nexus/audio-engine: WebAudio 链
+@nexus/audio-engine: WebAudio 链 (Zero-Copy 传输)
 @nexus/spectra: 媒体扩展 (Popup)
-@nexus/halo: 万能工具箱 (SidePanel)
+@nexus/halo: 万能工具箱 (SidePanel - Centralized Status)
 
 ---
 
@@ -80,13 +80,23 @@ nexus(私有) → nexus-public/ → github.com/QzCrane/spectra
 
 ## 红线
 
-Contracts 禁逻辑 | 改同步读 cors-data-flow | 非调节/非引擎禁 Badge | 源码 ≤200 行 | 禁绕 kernel 存储 | toggleMute/volumeDelta 禁持久化 | 新代码英文注释 | 禁触发 Layout Shift 的动态 Padding
+Contracts 禁逻辑 | 源码 ≤200 行 | 禁绕 kernel 存储 | 禁触发 Layout Shift 的动态 Padding | 禁在工具内添加独立 Storage Listener | 频谱数据传输禁 Array.from | 必须执行资源 detach 销毁
 
 ---
 
 ## 验证 v5
 
 `pnpm verify`: .ai-context | contracts 纯净 | 行数 150/200 | 硬编码 Action | HTML 引用 | 中文注释 | 依赖方向
+
+---
+
+## 测试
+
+**UI 自动化**: Playwright + 持久化上下文 (chrome.storage/IndexedDB 超时降级内存模式)
+
+命令: `pnpm test:playwright` (apps/extension-halo)
+
+标准: safe-storage.ts (2s 超时) | i18n 超时 (2s) | ModuleManager 内存降级 (3s)
 
 ---
 

@@ -72,7 +72,7 @@ export const RulerPanel: React.FC = () => {
 
 	const handleCopyValue = useCallback(async (value: string) => {
 		const ok = await copyToClipboard(value);
-		showToast(ok ? t('colorPanel.copied') : t('rulerPanel.copyFailed'));
+		showToast(ok ? t('rulerPanel.copied') : t('rulerPanel.copyFailed'));
 	}, [showToast, t]);
 
 	return (

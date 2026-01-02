@@ -41,6 +41,12 @@ export const panelsCore = {
 		height: 'Height',
 		diagonal: 'Diagonal',
 		ready: 'Ready to measure',
+		copied: 'Copied!',
+		copyFailed: 'Copy failed',
+		unit: 'Unit',
+		pixels: 'Pixels',
+		rem: 'REM',
+		base: 'Base',
 	},
 	jsonPanel: {
 		placeholder: 'Paste JSON here...',

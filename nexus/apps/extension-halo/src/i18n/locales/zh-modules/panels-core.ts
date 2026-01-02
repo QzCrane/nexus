@@ -41,6 +41,12 @@ export const panelsCore = {
 		height: '高度',
 		diagonal: '对角线',
 		ready: '准备就绪',
+		copied: '已复制！',
+		copyFailed: '复制失败',
+		unit: '单位',
+		pixels: '像素',
+		rem: 'REM',
+		base: '基准',
 	},
 	jsonPanel: {
 		placeholder: '在此粘贴 JSON...',

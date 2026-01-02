@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import type { ToolId, HaloSettings } from '../../kernel';
 import { STORAGE_PREFIX, loadSettings, getThemeColors, applyTheme, TOOL_REGISTRY, saveSettings } from '../../kernel';
 import { useModuleManager } from '../../kernel';
+import { safeStorageGet, safeStorageSet, safeStorageRemove } from '../../kernel/core/safe-storage';
 
 const OPEN_TOOLS_KEY = `${STORAGE_PREFIX.CORE}open_tools`;
 const ACTIVE_TOOL_KEY = `${STORAGE_PREFIX.CORE}active_tool`;
@@ -30,7 +31,7 @@ export const useSidePanelState = () => {
 			setSettings(s);
 			applyTheme(getThemeColors(s.theme, s.accentColor));
 
-			const storage = await chrome.storage.sync.get([ACTIVE_TOOL_KEY, OPEN_TOOLS_KEY]);
+			const storage = await safeStorageGet<Record<string, unknown>>([ACTIVE_TOOL_KEY, OPEN_TOOLS_KEY], {});
 			const savedOpen = (storage[OPEN_TOOLS_KEY] as ToolId[] || []).filter(id => isInstalled(id));
 
 			if (savedOpen.length > 0) {
@@ -65,11 +66,11 @@ export const useSidePanelState = () => {
 			setOpenTools(prev => {
 				if (prev.includes(toolId)) return prev;
 				const newOpen = prev.length >= MAX_OPEN_TOOLS ? [...prev.slice(1), toolId] : [...prev, toolId];
-				chrome.storage.sync.set({ [OPEN_TOOLS_KEY]: newOpen });
+				safeStorageSet({ [OPEN_TOOLS_KEY]: newOpen });
 				return newOpen;
 			});
 		}
-		await chrome.storage.sync.set({ [ACTIVE_TOOL_KEY]: toolId });
+		await safeStorageSet({ [ACTIVE_TOOL_KEY]: toolId });
 	}, []);
 
 	const handleCloseTool = useCallback((toolId: ToolId) => {
@@ -78,17 +79,17 @@ export const useSidePanelState = () => {
 			if (activeTool === toolId) {
 				const next = newOpen.length > 0 ? newOpen[newOpen.length - 1] : null;
 				setActiveTool(next);
-				if (next) chrome.storage.sync.set({ [ACTIVE_TOOL_KEY]: next });
-				else chrome.storage.sync.remove([ACTIVE_TOOL_KEY]);
+				if (next) safeStorageSet({ [ACTIVE_TOOL_KEY]: next });
+				else safeStorageRemove([ACTIVE_TOOL_KEY]);
 			}
-			chrome.storage.sync.set({ [OPEN_TOOLS_KEY]: newOpen });
+			safeStorageSet({ [OPEN_TOOLS_KEY]: newOpen });
 			return newOpen;
 		});
 	}, [activeTool]);
 
 	const handleBack = useCallback(async () => {
 		setActiveTool(null);
-		await chrome.storage.sync.remove([ACTIVE_TOOL_KEY]);
+		await safeStorageRemove([ACTIVE_TOOL_KEY]);
 	}, []);
 
 	const handleSettingsChange = useCallback(async (updated: HaloSettings) => {

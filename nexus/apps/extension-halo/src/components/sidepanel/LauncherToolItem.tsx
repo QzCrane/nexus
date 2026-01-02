@@ -55,6 +55,7 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 			}}
 		>
 			<button
+				data-tool-id={tool.id}
 				onClick={() => isReady && onSelect(tool.id as ToolId)}
 				onContextMenu={(e) => { e.preventDefault(); onTogglePin(tool.id); }}
 				disabled={!isReady}

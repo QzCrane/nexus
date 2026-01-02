@@ -1,138 +1,33 @@
-# HALO 架构规范 v1.4.0
+# HALO 架构 (v1.5.0)
 
-> 目录结构/集成策略/代码规范
+> DNA: SidePanel-only | 零上传 | 原子化模块 (tools/)
 
-## §1 目录结构
+## 📂 结构
 
-```text
-src/
-├── entry/                      # Chrome 扩展入口
-│   ├── background.ts           # Service Worker (RPC 路由)
-│   ├── content.ts              # Content Script (DOM 操作)
-│   ├── sidepanel.tsx           # SidePanel 主入口 (React)
-│   └── sidepanel-init.ts       # 初始化 (CSP/主题预加载)
-│
-├── components/                 # 公共 UI 组件
-│   ├── sidepanel/              # 布局系统 (Classic/Launcher)
-│   ├── lazy-tool-loader.tsx    # 懒加载渲染器
-│   └── _generated-tool-loader.ts # [自动生成] Panel 映射
-│
-├── kernel/                     # 核心基础设施
-│   ├── core/                   # types, storage, theme, settings
-│   ├── registry/               # 工具注册表
-│   │   ├── _generated.ts       # [自动生成] 工具元数据
-│   │   ├── module-registry.ts  # 模块管理 (消费生成数据)
-│   │   └── tool-registry.ts    # 工具查询 API
-│   ├── managers/               # 模块管理器
-│   └── hooks/                  # React Hooks
-│
-├── tools/                      # 工具模块 (原子化)
-│   └── [tool-name]/
-│       ├── manifest.json       # [必须] 工具元数据 (icon/category/size)
-│       ├── panel.tsx           # [必须] React UI 组件
-│       ├── core.ts             # 纯业务逻辑 (无 UI)
-│       └── .ai-context.md      # 模块 AI 上下文
-│
-└── i18n/                       # 国际化 (en.ts, zh.ts)
-```
+- entry/: background(RPC), content(DOM), sidepanel.tsx(Entry)
+- components/: UI + \_generated-tool-loader.ts(Mapping)
+- kernel/: core/, registry/(\_generated.ts), managers/, hooks/
+- tools/: [tool-name]/{manifest.json, panel.tsx, core.ts, .ai-context.md}
+- i18n/: locales/ (zh.ts, en.ts)
 
----
+## ⚙️ 自动化注册
 
-## §2 工具注册系统
+tools/\*/manifest.json (82+) → pnpm generate-registry → \_generated.ts & loader.ts
+新增: 创建 manifest + panel → pnpm build 自动注册
 
-### 自动生成流程
+## 📏 规范
 
-```text
-tools/*/manifest.json (82个)
-        ↓
-pnpm generate-registry (或 pnpm build 自动执行)
-        ↓
-kernel/registry/_generated.ts  → 工具元数据
-components/_generated-tool-loader.ts → lazy import 映射
-```
+- 行数: 推荐 ≤150 | 警告 >150 | 红线 >200 (必须拆分)
+- 模块: core.ts(逻辑) / panel.tsx(UI) / index.ts(出口 ≤50)
+- UI: @nexus/ui-kit + CSS Vars | 4px 网格 | 禁用引起 Layout Shift 的动态 Padding
 
-### 新增工具步骤
+## 🚀 核心服务
 
-1. 创建 `tools/[name]/manifest.json`:
+- 搜索: ID/Name/Desc/Keywords/Pinyin 聚合检索
+- i18n: Global Signal + Listener 同步，无需刷新重渲染
+- 性能: EngineStatusProvider(Storage 广播) | Zero-Copy Data | detachNode(资源销毁)
 
-```json
-{
-  "id": "tool-name",
-  "icon": "🔧",
-  "category": "dev",
-  "size": 15000,
-  "builtIn": false,
-  "keywords": []
-}
-```
+## 🔌 通信
 
-1. 创建 `tools/[name]/panel.tsx`:
-
-```tsx
-export const ToolNamePanel: React.FC = () => { ... }
-```
-
-1. 运行 `pnpm build` (自动执行 generate-registry)
-
-### manifest.json 字段
-
-id: string (必需) - 唯一 ID (kebab-case)
-icon: string (必需) - 显示图标 (emoji)
-category: string (必需) - general/dev/efficiency/security/media/browser/visual
-size: number (必需) - 估算体积 (bytes)
-builtIn: boolean - 核心模块 (不可卸载)
-system: boolean - 系统功能 (不计入工具统计，固定集成至页眉或设置)
-keywords: string[] - 搜索关键词
-
----
-
-## §3 代码规范
-
-### 行数限制
-
-≤150 行: ✅ 正常
-150-200 行: ⚠️ 警告，建议拆分
-
-> 200 行: ❌ 错误，必须拆分
-
-### 豁免文件
-
-- `_generated.ts` / `_generated-tool-loader.ts` (自动生成)
-- `i18n/locales/**/modules.ts` (数据文件)
-
-### 模块化原则
-
-- `core.ts`: 纯逻辑，无 UI，便于测试
-- `panel.tsx`: 只负责渲染和交互
-- `index.ts`: 模块唯一出口 (≤50 行)
-
----
-
-## §4 UI 设计
-
-遵循 `@nexus/ui-kit` + CSS Variables
-
-- 颜色: `--halo-bg`, `--halo-accent`, `--halo-text`
-- 间距: 4px 网格 (4/8/12/16/24)
-- 字体: 系统字体栈，代码用 monospace
-
----
-
-## §6 全局服务
-
-### 🔍 搜索服务 (Search Service)
-
-- **索引范围**: `ID` + `Name(EN/ZH)` + `Desc(EN/ZH)` + `Keywords` + `Pinyin(全拼/简拼)`
-- **逻辑**: 通过 `search-utils.ts` 实现，支持多语境聚合检索，优先级：ID > Keywords > Text
-
-### 🌐 全局 i18n 同步
-
-- **核心机制**: `Global Signal` + `Listener Set`
-- **行为**: `useTranslation` 钩子共享全局 `globalLocale` 状态。当设置更改时，利用 `notify()` 瞬间触发所有挂载组件的增量重渲染，无需手动刷新页面或重启侧边栏。
-
-## §7 通信协议
-
-RPC 模式: `chrome.runtime.sendMessage`
-
-- Action 命名: `HALO_ACTION_NAME` (全大写下划线)
-- 消息格式: `{ source: 'HALO', action: '...', data: ... }`
+RPC: `chrome.runtime.sendMessage` | Action: `HALO_ACTION_NAME`
+Format: `{ source: 'HALO', action: '...', data: ... }`

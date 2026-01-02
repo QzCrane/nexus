@@ -31,6 +31,7 @@ const styles: Record<string, React.CSSProperties> = {
 		cursor: 'pointer', background: 'var(--halo-accent)', color: '#fff', border: 'none',
 	},
 	checkbox: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer' },
+	toast: { position: 'fixed', bottom: '60px', left: '50%', transform: 'translateX(-50%)', padding: '10px 20px', background: 'var(--halo-accent)', borderRadius: '24px', fontSize: '12px', fontWeight: 500, color: '#fff', zIndex: 1000 },
 };
 
 export const UUIDPanel: React.FC = () => {
@@ -40,6 +41,9 @@ export const UUIDPanel: React.FC = () => {
 	const [uppercase, setUppercase] = useState(false);
 	const [hyphens, setHyphens] = useState(true);
 	const [result, setResult] = useState('');
+	const [toast, setToast] = useState<string | null>(null);
+
+	const showToast = useCallback((msg: string) => { setToast(msg); setTimeout(() => setToast(null), 1500); }, []);
 
 	const handleGenerate = useCallback(() => {
 		const generated: string[] = [];
@@ -114,7 +118,8 @@ export const UUIDPanel: React.FC = () => {
 						<span style={styles.label}>{t('common.result') || 'Result'}</span>
 						<button
 							style={{ ...styles.optionBtn, marginLeft: 'auto' }}
-							onClick={() => navigator.clipboard.writeText(result)}
+							onClick={() => { if (result) { navigator.clipboard.writeText(result); showToast(t('common.copied') || 'Copied!'); } }}
+							disabled={!result}
 						>
 							📋 {t('common.copy')}
 						</button>
@@ -127,6 +132,7 @@ export const UUIDPanel: React.FC = () => {
 					/>
 				</div>
 			</Card>
+			{toast && <div style={styles.toast}>{toast}</div>}
 		</div>
 	);
 };

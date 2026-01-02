@@ -6,26 +6,55 @@ import { CORE_MODULES, OPTIONAL_MODULES, ALL_MODULES, type ModuleState, type Mod
 const DB_NAME = 'halo-modules';
 const DB_VERSION = 1;
 const STORE_NAME = 'module-state';
-const STORAGE_KEY = 'halo_module_manager';
+const DB_OPEN_TIMEOUT = 3000; // 3 seconds timeout for IndexedDB
 
-// Open IndexedDB
-const openDB = (): Promise<IDBDatabase> => {
-	return new Promise((resolve, reject) => {
-		const request = indexedDB.open(DB_NAME, DB_VERSION);
-		request.onerror = () => reject(request.error);
-		request.onsuccess = () => resolve(request.result);
-		request.onupgradeneeded = (event) => {
-			const db = (event.target as IDBOpenDBRequest).result;
-			if (!db.objectStoreNames.contains(STORE_NAME)) {
-				db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-			}
-		};
+// Flag to track if IndexedDB is available
+let useMemoryMode = false;
+
+// Promise with timeout helper
+const withTimeout = <T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> => {
+	return Promise.race([
+		promise,
+		new Promise<T>((resolve) => setTimeout(() => {
+			console.warn('[ModuleManager] IndexedDB timeout, switching to memory mode');
+			useMemoryMode = true;
+			resolve(fallback);
+		}, ms))
+	]);
+};
+
+// Open IndexedDB with timeout
+const openDB = (): Promise<IDBDatabase | null> => {
+	if (useMemoryMode) return Promise.resolve(null);
+
+	const dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+		try {
+			const request = indexedDB.open(DB_NAME, DB_VERSION);
+			request.onerror = () => reject(request.error);
+			request.onsuccess = () => resolve(request.result);
+			request.onupgradeneeded = (event) => {
+				const db = (event.target as IDBOpenDBRequest).result;
+				if (!db.objectStoreNames.contains(STORE_NAME)) {
+					db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+				}
+			};
+		} catch (e) {
+			reject(e);
+		}
 	});
+
+	return withTimeout(dbPromise, DB_OPEN_TIMEOUT, null as unknown as IDBDatabase)
+		.catch(() => {
+			useMemoryMode = true;
+			return null;
+		});
 };
 
 // Get all module states from IndexedDB
 const getAllStates = async (): Promise<ModuleState[]> => {
+	if (useMemoryMode) return [];
 	const db = await openDB();
+	if (!db) return [];
 	return new Promise((resolve, reject) => {
 		const tx = db.transaction(STORE_NAME, 'readonly');
 		const store = tx.objectStore(STORE_NAME);
@@ -37,7 +66,9 @@ const getAllStates = async (): Promise<ModuleState[]> => {
 
 // Save module state to IndexedDB
 const saveState = async (state: ModuleState): Promise<void> => {
+	if (useMemoryMode) return;
 	const db = await openDB();
+	if (!db) return;
 	return new Promise((resolve, reject) => {
 		const tx = db.transaction(STORE_NAME, 'readwrite');
 		const store = tx.objectStore(STORE_NAME);
@@ -49,7 +80,9 @@ const saveState = async (state: ModuleState): Promise<void> => {
 
 // Delete module state from IndexedDB
 const deleteState = async (id: string): Promise<void> => {
+	if (useMemoryMode) return;
 	const db = await openDB();
+	if (!db) return;
 	return new Promise((resolve, reject) => {
 		const tx = db.transaction(STORE_NAME, 'readwrite');
 		const store = tx.objectStore(STORE_NAME);
@@ -65,17 +98,24 @@ export class ModuleManager {
 	private listeners: Set<() => void> = new Set();
 
 	async initialize(): Promise<void> {
+		console.log('[ModuleManager] Initializing...');
 		const stored = await getAllStates();
+		console.log(`[ModuleManager] Got ${stored.length} stored states, memoryMode=${useMemoryMode}`);
 		stored.forEach((s) => this.states.set(s.id, s));
 
 		// Ensure all modules are installed by default (as per user request: "all modules must be loaded")
+		// In memory mode, just set all modules as installed without persistence
 		for (const mod of ALL_MODULES) {
 			if (!this.states.has(mod.id)) {
 				const state: ModuleState = { id: mod.id, status: 'installed', installedVersion: mod.version, installedAt: Date.now() };
 				this.states.set(mod.id, state);
-				await saveState(state);
+				// Only persist if not in memory mode (saveState will early-return if useMemoryMode is true)
+				if (!useMemoryMode) {
+					await saveState(state);
+				}
 			}
 		}
+		console.log(`[ModuleManager] Initialized with ${this.states.size} modules`);
 	}
 
 	subscribe(listener: () => void): () => void {

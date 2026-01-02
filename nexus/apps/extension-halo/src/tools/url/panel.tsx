@@ -76,7 +76,7 @@ export const URLPanel: React.FC = () => {
 			{/* Input */}
 			<Card variant="default" padding="sm">
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-					<span style={styles.label}>{t('hash.input')}</span>
+					<span style={styles.label}>{t('url.input')}</span>
 					<textarea
 						style={styles.textarea}
 						value={input}
@@ -94,7 +94,7 @@ export const URLPanel: React.FC = () => {
 				<Card variant="default" padding="sm">
 					<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
 						<div style={styles.row}>
-							<span style={styles.label}>{t('hash.output')}</span>
+							<span style={styles.label}>{t('url.output')}</span>
 							<button
 								style={{ marginLeft: 'auto', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '12px' }}
 								onClick={() => {

@@ -27,22 +27,34 @@ Browser (8): archive, cookie-manager, reader-mode, bookmark-manager, history-sea
 - ✅ 重写 `lazy-tool-loader.tsx` (173 行 → 80 行, -54%)
 - ✅ 删除冗余 `tools-data-*.ts` 文件 (5 个)
 
-### 核心体验优化 (2026-01-01 完成)
+### 核心体验与性能优化 (2026-01-01 完成)
 
 - ✅ **多语境搜索**: 支持中英双语、ID、拼音(全拼/简拼) 检索
 - ✅ **响应式 i18n**: 切换语言全局实时生效，包含 **Permissions Panel** 深度国际化
 - ✅ **权限管理收口**: `permissions` 提级为系统工具，集成至页眉
 - ✅ **平滑滚动增强**: 增加主开关与预设配置，对标 SmoothScroll Pro
-- ✅ **界面溢出修复**: 系统页面 (设置/权限/商店) 增加滚动支持
 - ✅ **Dock & UX Polishing**:
   - **macOS Interaction**: 线性缩放感应区域，脱离原始高度立即缩小。
   - **Zero-Block Hit Area**: 采用 Layered `pointer-events` 模式，Dock 不再遮挡顶部栏点击。
   - **True Centering**: 移除冲突的动态 Padding，改用 CSS `margin: auto` 实现完美居中。
   - **Dynamic Engine Badge**: 实时追踪 SmoothScroll, UserScripts, Clipboard 运行状态。
+- ✅ **Performance Overhaul**:
+  - **Centralized Engine Status**: 实现 `EngineStatusProvider` 广播机制，减少 80+ 个冗余监听器。
+  - **Zero-Copy Visualizer**: 频谱数据传输移除 `Array.from`，采用 TypedArray 直接映射。
+  - **Lifecycle Safety**: 引入 `detachNode` 机制，在 DOM 移除时自动销毁节点，确保零内存泄漏。
+  - **Independent Public Sync**: 重构同步脚本，支持 `spectra-public`与 `halo-public` 独立分发。
+  - **World-Class Refactoring**: `LauncherToolItem` 与 `WebAudioController` 函数行数降至 150 左右。
 
 **新增工具流程**: 创建 `manifest.json` + `panel.tsx` → `pnpm build` 自动注册
 
-**新增工具流程**: 创建 `manifest.json` + `panel.tsx` → `pnpm build` 自动注册
+### UI 自动化测试框架 (2026-01-02 完成)
+
+- ✅ **Playwright 测试脚本**: `test/ui-playwright.spec.ts` - 持久化上下文 + 截图
+- ✅ **安全 Storage 包装器**: `kernel/core/safe-storage.ts` - 超时机制防止挂起
+- ✅ **i18n 初始化超时**: 2 秒超时，确保测试环境不阻塞
+- ✅ **ModuleManager 内存模式**: IndexedDB 超时后自动降级到内存模式
+
+**运行测试**: `pnpm test:playwright` → 截图输出到 `test/screenshots/`
 
 ---
 
@@ -114,6 +126,7 @@ Browser (8): archive, cookie-manager, reader-mode, bookmark-manager, history-sea
 3. **Atomic Module**: 每个工具 ≤200 行, 可独立安装/卸载
 4. **Zero Dependencies**: 尽量用 Web API 原生实现
 5. **Smart Detection**: 剪贴板智能识别 (类似 DevToys)
+6. **Efficiency First**: 中心化监听，零拷贝传输，自动资源回收
 
 ---
 

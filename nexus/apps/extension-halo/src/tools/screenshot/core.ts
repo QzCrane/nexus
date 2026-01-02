@@ -12,6 +12,12 @@ export async function captureVisible(): Promise<string> {
 	});
 }
 
+// Capture with delay (for positioning)
+export async function captureWithDelay(delayMs: number): Promise<string> {
+	await new Promise(resolve => setTimeout(resolve, delayMs));
+	return captureVisible();
+}
+
 // Download the data URL as a file
 export function downloadScreenshot(dataUrl: string, filename: string = 'screenshot.png') {
 	const link = document.createElement('a');

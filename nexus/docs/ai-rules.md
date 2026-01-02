@@ -85,9 +85,9 @@ pnpm workspace | `pnpm install/build/--filter [name] build` | 内部包: `"@nexu
 
 ## §5 开源
 
-双仓库: nexus(私有) → spectra(公开) | `pnpm sync-public`
-
-排除: scripts/ docs/ .agent/ store-listings/ test/ \*.ai-context.md plan.md
+双仓库: nexus(私有) → {spectra, halo}-public | `pnpm sync-spectra` / `pnpm sync-halo`
+排除: scripts/ docs/ .agent/ store-listings/ test/ assets/ \*.ai-context.md plan.md
+规则: 公开库禁包含 AI context / 脚本 / 内部文档 / 历史 commit
 
 ---
 
@@ -102,5 +102,18 @@ pnpm workspace | `pnpm install/build/--filter [name] build` | 内部包: `"@nexu
 稳定性: 禁引起 Layout Shift 的动态 Padding | 优先用 CSS `margin: auto` 居中
 交互性: 穿透层用 `pointer-events: none` | 事件捕获层用透明 `Hit Area`
 绿标 (Env Badge): 仅限具有 Background Engine 且有 Master Toggle 的工具 (如 Scroll/UserScript/Clipboard)
+中心化状态: 强禁在工具组件内添加 Storage 监听 | 必须消费 `EngineStatusProvider` 广播
+音频零拷贝: 可视化数据传递强禁 `Array.from` | 必须直接传递或使用 `TypedArray` 映射
 裁剪消除: 缩放元素必须预留 `MAGNIFY_HEADROOM` (30px+) | 禁用 `overflow: hidden` 在感应父级
+资源清理: 必须在 DOM 移除时执行 `detachNode` | 强禁 WebAudio 节点在 SPA 中累积
 i18n: 禁硬编码字符串 | 必须登记在 `locales/*` | 系统页面必须支持全局实时同步
+
+---
+
+## §8 测试
+
+策略: Playwright + 持久化上下文 | chrome.storage/IndexedDB 不可靠时超时降级内存
+模式: `safe-storage.ts` 包装 chrome.storage (2s 超时返回默认值)
+扩展: ModuleManager 3s 超时切换内存模式 | i18n 2s 超时使用浏览器 locale
+命令: `pnpm test:playwright` → 截图到 `test/screenshots/`
+红线: 禁直接调用 chrome.storage (必须用 safeStorageGet/Set) | 初始化 Promise 必须有超时

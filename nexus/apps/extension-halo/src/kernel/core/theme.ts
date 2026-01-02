@@ -2,6 +2,7 @@
 
 import type { ThemeMode, HaloSettings } from './settings';
 import { DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY } from './settings';
+import { safeStorageGet, safeStorageSet } from './safe-storage';
 
 export interface ThemeColors {
 	bg: string;
@@ -95,10 +96,13 @@ export function applyTheme(colors: ThemeColors): void {
 }
 
 /**
- * Load settings from storage
+ * Load settings from storage (with timeout for test environments)
  */
 export async function loadSettings(): Promise<HaloSettings> {
-	const result = await chrome.storage.sync.get([SETTINGS_STORAGE_KEY]);
+	const result = await safeStorageGet<{ [SETTINGS_STORAGE_KEY]?: Partial<HaloSettings> }>(
+		[SETTINGS_STORAGE_KEY],
+		{}
+	);
 	return { ...DEFAULT_SETTINGS, ...result[SETTINGS_STORAGE_KEY] };
 }
 
@@ -108,6 +112,6 @@ export async function loadSettings(): Promise<HaloSettings> {
 export async function saveSettings(settings: Partial<HaloSettings>): Promise<HaloSettings> {
 	const current = await loadSettings();
 	const updated = { ...current, ...settings };
-	await chrome.storage.sync.set({ [SETTINGS_STORAGE_KEY]: updated });
+	await safeStorageSet({ [SETTINGS_STORAGE_KEY]: updated });
 	return updated;
 }
