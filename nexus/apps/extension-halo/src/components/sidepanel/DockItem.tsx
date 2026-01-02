@@ -3,6 +3,7 @@
 
 import React from 'react';
 import type { ToolMeta } from '../../kernel';
+import { StatusIndicators } from './LauncherToolItemParts';
 
 interface DockItemProps {
 	tool: ToolMeta;
@@ -14,6 +15,7 @@ interface DockItemProps {
 	onMouseLeave: () => void;
 	onClick: () => void;
 	onClose: () => void;
+	serviceState?: 'active' | 'inactive';
 }
 
 // Styles extracted to reduce component line count
@@ -51,7 +53,7 @@ const closeButtonStyle: React.CSSProperties = {
 
 export const DockItem: React.FC<DockItemProps> = ({
 	tool, isActive, isHovered, scale, baseSize,
-	onMouseEnter, onMouseLeave, onClick, onClose,
+	onMouseEnter, onMouseLeave, onClick, onClose, serviceState
 }) => (
 	<div
 		data-dock-item
@@ -78,7 +80,11 @@ export const DockItem: React.FC<DockItemProps> = ({
 			transform: `scale(${scale})`,
 			transformOrigin: 'center bottom',
 		}}>
-			<div style={getIconStyle(isActive)}>{tool.icon}</div>
+			<div style={getIconStyle(isActive)}>
+				{tool.icon}
+				{/* Indicators overlay - positioned relative to icon */}
+				<StatusIndicators isRunning={false} engineEnabled={false} serviceState={serviceState} />
+			</div>
 			{isHovered && (
 				<button onClick={(e) => { e.stopPropagation(); onClose(); }} style={closeButtonStyle}>×</button>
 			)}

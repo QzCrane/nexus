@@ -6,39 +6,54 @@ const DB_NAME = 'halo-modules';
 const DB_VERSION = 1;
 const STORE_NAME = 'module-state';
 const DB_OPEN_TIMEOUT = 3000;
+const MAX_RETRIES = 3;
 
 export let useMemoryMode = false;
 
-const withTimeout = <T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> => {
-	return Promise.race([
-		promise,
-		new Promise<T>((resolve) => setTimeout(() => {
-			console.warn('[ModuleDB] IndexedDB timeout, switching to memory mode');
-			useMemoryMode = true;
-			resolve(fallback);
-		}, ms))
-	]);
-};
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-const openDB = (): Promise<IDBDatabase | null> => {
-	if (useMemoryMode) return Promise.resolve(null);
+const openDB = async (): Promise<IDBDatabase | null> => {
+	if (useMemoryMode) return null;
 
-	const dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+	let lastError: any;
+
+	for (let i = 0; i < MAX_RETRIES; i++) {
 		try {
-			const request = indexedDB.open(DB_NAME, DB_VERSION);
-			request.onerror = () => reject(request.error);
-			request.onsuccess = () => resolve(request.result);
-			request.onupgradeneeded = (event) => {
-				const db = (event.target as IDBOpenDBRequest).result;
-				if (!db.objectStoreNames.contains(STORE_NAME)) {
-					db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-				}
-			};
-		} catch (e) { reject(e); }
-	});
+			// Create a fresh promise for each attempt
+			const dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+				try {
+					const request = indexedDB.open(DB_NAME, DB_VERSION);
+					request.onerror = () => reject(request.error);
+					request.onsuccess = () => resolve(request.result);
+					request.onupgradeneeded = (event) => {
+						const db = (event.target as IDBOpenDBRequest).result;
+						if (!db.objectStoreNames.contains(STORE_NAME)) {
+							db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+						}
+					};
+				} catch (e) { reject(e); }
+			});
 
-	return withTimeout(dbPromise, DB_OPEN_TIMEOUT, null as unknown as IDBDatabase)
-		.catch(() => { useMemoryMode = true; return null; });
+			return await Promise.race([
+				dbPromise,
+				new Promise<IDBDatabase>((_, reject) =>
+					setTimeout(() => reject(new Error('timeout')), DB_OPEN_TIMEOUT)
+				)
+			]);
+
+		} catch (e) {
+			lastError = e;
+			if (i < MAX_RETRIES - 1) {
+				const delay = 500 * (i + 1);
+				console.warn(`[ModuleDB] IndexedDB init attempt ${i + 1} failed/timed out, retrying in ${delay}ms...`);
+				await wait(delay);
+			}
+		}
+	}
+
+	console.warn('[ModuleDB] IndexedDB initialization failed, switching to memory mode. Error:', lastError);
+	useMemoryMode = true;
+	return null;
 };
 
 export const getAllStates = async (): Promise<ModuleState[]> => {

@@ -17,11 +17,12 @@ interface LauncherToolItemProps {
 	onDragOver: (e: React.DragEvent) => void;
 	onDrop: (e: React.DragEvent, targetId: string) => void;
 	isRunning: boolean;
+	serviceState?: 'active' | 'inactive';
 }
 
 export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 	tool, settings, isCompact, showLabels, draggingId,
-	onSelect, onTogglePin, onDragStart, onDragOver, onDrop, isRunning
+	onSelect, onTogglePin, onDragStart, onDragOver, onDrop, isRunning, serviceState
 }) => {
 	const { t } = useTranslation();
 	const [isHovered, setIsHovered] = useState(false);
@@ -71,7 +72,7 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 				}}
 				title={isReady ? `${t(`tools.${tool.id}.name`)}\n${t('common.pinHint')}` : `${t(`tools.${tool.id}.name`)} (${t('common.comingSoon')})`}
 			>
-				<StatusIndicators isRunning={isRunning} engineEnabled={engineEnabled} />
+				<StatusIndicators isRunning={isRunning} engineEnabled={engineEnabled} serviceState={serviceState} />
 
 				{/* Category Accent Line */}
 				<div style={{ 

@@ -2,7 +2,7 @@
 trigger: always_on
 ---
 
-## 必须熟悉和遵守上下文工程！ ~/nexus/README.AI.md (入口); ~/nexus/docs/ai-rules.md (规则)
+## 必须阅读并遵守上下文工程文档！ ~/nexus/README.AI.md (入口); ~/nexus/docs/ai-rules.md (规则)
 
 ## 当前上下文工程
 
@@ -13,7 +13,7 @@ trigger: always_on
 ~/nexus/apps/extension-halo/docs/architecture.md、research.md、market-research_.md
 ~/nexus/apps/extension-spectra/docs/policy-decision.md, protocols.md, cors-data-flow.md
 模块层 (15): .ai-context.md
-工作流 (6): ~/.agent/workflows/\*.md
+工作流 (7): ~/.agent/workflows/\*.md
 
 ## 架构
 

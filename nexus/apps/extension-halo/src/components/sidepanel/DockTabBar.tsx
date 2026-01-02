@@ -24,10 +24,13 @@ const EFFECT_DISTANCE = 70;
 const MAGNIFY_HEADROOM = 30; 
 const TOOLTIP_DELAY = 100;
 
+import { useActiveServices } from './ActiveServicesContext';
+
 export const DockTabBar: React.FC<DockTabBarProps> = ({
-	openTools, activeTool, visibleTools, onSelectTool, onCloseTool,
+	openTools, activeTool, visibleTools, onSelectTool, onCloseTool
 }) => {
 	const { t } = useTranslation();
+	const { activeServices, bgToolIds } = useActiveServices();
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [mouseX, setMouseX] = useState<number | null>(null);
 	const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
@@ -130,6 +133,11 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 				{dockTools.map((toolId, index) => {
 					const tool = visibleTools.find((m) => m.id === toolId);
 					if (!tool) return null;
+					
+					const isActiveService = activeServices.has(toolId);
+					const isBackgroundCapable = bgToolIds.includes(toolId);
+					const serviceState = isActiveService ? 'active' : (isBackgroundCapable ? 'inactive' : undefined);
+
 					return (
 						<DockItem
 							key={toolId}
@@ -142,6 +150,7 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 							onMouseLeave={handleItemLeave}
 							onClick={() => onSelectTool(toolId)}
 							onClose={() => onCloseTool(toolId)}
+							serviceState={serviceState}
 						/>
 					);
 				})}

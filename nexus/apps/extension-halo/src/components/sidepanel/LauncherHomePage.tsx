@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import type { ToolId, ToolMeta, HaloSettings } from '../../kernel';
 import type { ToolCategory } from '../../i18n/types';
@@ -6,8 +6,8 @@ import { useSmoothWheel } from '../../kernel/hooks/use-smooth-wheel';
 import { SearchBar } from '../SearchBar';
 import { LauncherToolItem } from './LauncherToolItem';
 import { commonStyles } from './layouts.styles';
-
-const PRO_TOOL_IDS = ['qrcode', 'color-picker', 'hash', 'json-formatter', 'password-gen', 'uuid', 'timestamp', 'base64'];
+import { useEngineStatus } from './EngineStatusProvider';
+import { useActiveServices } from './ActiveServicesContext';
 
 interface LauncherHomePageProps {
 	visibleTools: ToolMeta[];
@@ -26,24 +26,37 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 	onTogglePin, onReorderTools, onReorderCategories, openTools
 }) => {
 	const { t } = useTranslation();
+	const engineStatus = useEngineStatus();
+	const { activeServices, bgToolIds: BACKGROUND_TOOL_IDS } = useActiveServices();
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [draggingId, setDraggingId] = useState<string | null>(null);
 	const [draggingCat, setDraggingCat] = useState<string | null>(null);
 	const [tempCats, setTempCats] = useState<Record<string, ToolMeta[]> | null>(null);
 	const [tempCatOrder, setTempCatOrder] = useState<string[] | null>(null);
+	
+	// activeServices logic moved to hook
 
 	useSmoothWheel(scrollRef, 'y');
 	const isCompact = settings?.compactMode ?? false;
 
 	const categorizedTools = useMemo(() => {
 		if (tempCats) return tempCats;
-		const cats: Record<string, ToolMeta[]> = { pro: [], general: [], dev: [], efficiency: [], visual: [], ai: [], security: [], media: [], browser: [] };
+		const cats: Record<string, ToolMeta[]> = { active: [], general: [], dev: [], efficiency: [], visual: [], ai: [], security: [], media: [], browser: [] };
+		
 		visibleTools.forEach(tool => {
 			if (tool.system || tool.id === 'permissions') return;
-			if (PRO_TOOL_IDS.includes(tool.id)) cats.pro.push(tool);
+			
+			// Include in "Active Services" if it is background capable (even if disabled)
+			// This allows showing "inactive" state (grey dot) instead of hiding
+			if (BACKGROUND_TOOL_IDS.includes(tool.id)) {
+				cats.active.push(tool);
+			}
+			
 			if (cats[tool.category]) cats[tool.category].push(tool);
 			else cats.general.push(tool);
 		});
+// ... rest of the memo
+
 		Object.keys(cats).forEach(cat => {
 			const pinned = settings?.pinnedTools || [], order = settings?.toolOrder?.[cat] || [];
 			cats[cat].sort((a, b) => {
@@ -55,13 +68,20 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 			});
 		});
 		return cats;
-	}, [visibleTools, settings, t, tempCats]);
+	}, [visibleTools, settings, t, tempCats, activeServices]);
 
 	const catOrder = useMemo(() => {
 		if (tempCatOrder) return tempCatOrder;
-		const defaultOrder = ['pro', 'general', 'dev', 'efficiency', 'visual', 'ai', 'security', 'media', 'browser'];
-		const saved = settings?.categoryOrder || [];
-		return saved.length > 0 ? saved : defaultOrder;
+		const defaultOrder = ['active', 'general', 'dev', 'efficiency', 'visual', 'ai', 'security', 'media', 'browser'];
+		let order = settings?.categoryOrder || [];
+		if (order.length === 0) order = defaultOrder;
+		
+		// Ensure active is always present if it has tools
+		if (!order.includes('active')) {
+			order = ['active', ...order];
+		}
+		
+		return order;
 	}, [settings, tempCatOrder]);
 
 	const onDragStart = (e: React.DragEvent, id: string) => { setDraggingId(id); e.dataTransfer.setData('toolId', id); };
@@ -107,25 +127,48 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 				{catOrder.map(cat => {
 					const tools = categorizedTools[cat];
 					if (!tools || tools.length === 0) return null;
-					const isPro = cat === 'pro';
+					const isActiveCat = cat === 'active';
 					return (
 						<div key={cat} style={{ ...commonStyles.categorySection as any, gap: isCompact ? '4px' : '8px' }}>
-							<div 
-								draggable onDragStart={(e) => onCatDragStart(e, cat)} onDragEnter={() => onCatDragEnter(cat)} onDragOver={(e) => e.preventDefault()} onDrop={onCatDrop}
-								style={{ ...commonStyles.categoryTitle as any, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: isCompact ? '2px 4px' : '4px', borderLeft: isPro ? '3px solid #22c55e' : 'none', background: isPro ? 'rgba(34, 197, 94, 0.05)' : 'transparent' }}
-								onClick={() => toggleCategory(cat)}
-							>
+						<div 
+							draggable onDragStart={(e) => onCatDragStart(e, cat)} onDragEnter={() => onCatDragEnter(cat)} onDragOver={(e) => e.preventDefault()} onDrop={onCatDrop}
+							style={{ ...commonStyles.categoryTitle as any, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: isCompact ? '2px 4px' : '4px', borderLeft: isActiveCat ? '3px solid #10b981' : 'none', background: isActiveCat ? 'rgba(76, 175, 80, 0.08)' : 'transparent' }}
+							onClick={() => toggleCategory(cat)}
+						>
+							<div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+								<span style={{ transform: collapsedCategories[cat] ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.2s', fontSize: '10px', opacity: 0.6 }}>▼</span>
 								<div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-									<span style={{ transform: collapsedCategories[cat] ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.2s', fontSize: '10px', opacity: 0.6 }}>▼</span>
-									<span style={{ color: isPro ? '#22c55e' : 'inherit', fontWeight: isPro ? 700 : 600 }}>{t(`categories.${cat}`)} {isPro && '🔥'}</span>
+									{isActiveCat && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4CAF50', boxShadow: '0 0 6px #4CAF50' }}></span>}
+									<span style={{ color: isActiveCat ? '#10b981' : 'inherit', fontWeight: isActiveCat ? 700 : 600 }}>{t(`categories.${cat}`)}</span>
 								</div>
-								<span style={{ fontSize: '10px', opacity: 0.6 }}>{tools.length}</span>
 							</div>
+							<span style={{ fontSize: '10px', opacity: 0.6 }}>{tools.length}</span>
+						</div>
 							{!collapsedCategories[cat] && (
 								<div onDragOver={(e) => e.preventDefault()} onDrop={(e) => onDrop(e, cat)} style={{ ...commonStyles.toolGrid as any, gap: isCompact ? '4px' : '8px', gridTemplateColumns: isCompact ? 'repeat(auto-fill, minmax(64px, 1fr))' : 'repeat(auto-fill, minmax(72px, 1fr))' }}>
-									{tools.map(tool => (
-										<LauncherToolItem key={tool.id} tool={tool} settings={settings} isCompact={isCompact} showLabels={settings?.showToolLabels ?? true} draggingId={draggingId} onSelect={onSelectTool} onTogglePin={onTogglePin} onDragStart={onDragStart} onDragOver={(e) => { e.preventDefault(); onDragEnter(cat, tool.id); }} onDrop={(e) => e.preventDefault()} isRunning={openTools.includes(tool.id as ToolId)} />
-									))}
+									{tools.map(tool => {
+										const isActiveService = activeServices.has(tool.id);
+										const isBackgroundCapable = BACKGROUND_TOOL_IDS.includes(tool.id);
+										const serviceState = isActiveService ? 'active' : (isBackgroundCapable ? 'inactive' : undefined);
+										
+										return (
+											<LauncherToolItem 
+												key={tool.id} 
+												tool={tool} 
+												settings={settings} 
+												isCompact={isCompact} 
+												showLabels={settings?.showToolLabels ?? true} 
+												draggingId={draggingId} 
+												onSelect={onSelectTool} 
+												onTogglePin={onTogglePin} 
+												onDragStart={onDragStart} 
+												onDragOver={(e) => { e.preventDefault(); onDragEnter(cat, tool.id); }} 
+												onDrop={(e) => e.preventDefault()} 
+												isRunning={openTools.includes(tool.id as ToolId)} 
+												serviceState={serviceState}
+											/>
+										);
+									})}
 								</div>
 							)}
 						</div>

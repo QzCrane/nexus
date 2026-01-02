@@ -49,21 +49,17 @@ function detectLocale(): Locale {
 	return 'en';
 }
 
-// Initial sync load attempt with timeout
-const I18N_INIT_TIMEOUT = 2000;
+import { safeStorageGet } from '../kernel/core/safe-storage';
+
+// ... (existing imports)
+
+// ...
 
 const initI18n = async () => {
 	if (typeof chrome !== 'undefined' && chrome.storage) {
 		try {
-			const result = await Promise.race([
-				chrome.storage.sync.get(STORAGE_KEY),
-				new Promise<Record<string, unknown>>((resolve) =>
-					setTimeout(() => {
-						console.warn('[i18n] chrome.storage timeout, using browser locale');
-						resolve({});
-					}, I18N_INIT_TIMEOUT)
-				)
-			]);
+			// retry logic encapsulated in safeItems
+			const result = await safeStorageGet([STORAGE_KEY], { [STORAGE_KEY]: undefined } as Partial<Record<string, unknown>>);
 			const saved = result[STORAGE_KEY] as Locale | undefined;
 			if (saved && saved in REGISTRY) {
 				globalLocale = saved;

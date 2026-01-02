@@ -68,12 +68,22 @@ export const SmoothScrollPanel: React.FC = () => {
 	return (
 		<div style={styles.wrapper}>
 			{/* Master Toggle */}
-			<Card variant="default" padding="md">
-				<div style={{ ...styles.row, marginBottom: 0 }}>
+			<Card variant="default" padding="none">
+				<div style={{
+					display: 'flex',
+					justifyContent: 'space-between',
+					alignItems: 'center',
+					padding: '12px',
+					background: settings.enabled ? 'rgba(76, 175, 80, 0.08)' : undefined,
+					transition: 'background 0.3s ease'
+				}}>
 					<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-						<span style={{ fontSize: '15px', fontWeight: 600, color: 'var(--halo-text)' }}>
-							🚀 {t('smoothScroll.enable')}
-						</span>
+						<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+							<span style={{ fontSize: '15px', fontWeight: 600, color: 'var(--halo-text)' }}>
+								🚀 {t('smoothScroll.enable')}
+							</span>
+							{settings.enabled && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4CAF50', boxShadow: '0 0 6px #4CAF50' }}></span>}
+						</div>
 						<span style={{ fontSize: '12px', color: 'var(--halo-text-secondary)', opacity: 0.8 }}>
 							{t('smoothScroll.enableDesc')}
 						</span>

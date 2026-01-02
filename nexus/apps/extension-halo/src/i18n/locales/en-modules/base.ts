@@ -36,7 +36,7 @@ export const base = {
 		security: 'Security',
 		media: 'Media',
 		browser: 'Browser',
-		pro: 'Professional Enhanced',
+		active: 'Active Services',
 	},
 	footer: {
 		zeroTracking: 'Zero tracking',

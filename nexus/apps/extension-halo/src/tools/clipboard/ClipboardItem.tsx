@@ -9,6 +9,7 @@ import { formatTime } from './utils';
 
 interface ClipboardItemProps {
 	item: ClipboardItemType;
+	isNew?: boolean;
 	onPin: (id: string) => void;
 	onDelete: (id: string) => void;
 	onCopy: (text: string) => void;
@@ -16,6 +17,7 @@ interface ClipboardItemProps {
 
 export const ClipboardItem: React.FC<ClipboardItemProps> = ({
 	item,
+	isNew,
 	onPin,
 	onDelete,
 	onCopy,
@@ -26,7 +28,12 @@ export const ClipboardItem: React.FC<ClipboardItemProps> = ({
 		<div 
 			style={{
 				...styles.item,
-				...(item.pinned ? styles.pinnedItem : {})
+				...(item.pinned ? styles.pinnedItem : {}),
+				...(isNew ? { 
+					animation: 'flash-green 2s ease-out',
+					borderLeft: '3px solid #4CAF50',
+					background: 'rgba(76, 175, 80, 0.08)'
+				} : {})
 			}}
 		>
 			<div style={styles.itemHeader}>

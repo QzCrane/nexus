@@ -1,4 +1,4 @@
-	// goal: Clipboard tool panel UI with i18n support
+// goal: Clipboard tool panel UI with i18n support
 // eff: Components extracted to reduce file size
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -17,32 +17,84 @@ import type { ClipboardItem as ClipboardItemType } from './types';
 import { styles } from './panel.styles';
 import { ClipboardItem } from './ClipboardItem';
 import { Toggle } from '@nexus/ui-kit';
+import { useActiveServices } from '../../components/sidepanel/ActiveServicesContext';
+
+import { ClipboardHeader } from './ClipboardHeader';
 
 export const ClipboardPanel: React.FC = () => {
 	const { t } = useTranslation();
+	const { setServiceState } = useActiveServices();
 	const [history, setHistory] = useState<ClipboardItemType[]>([]);
 	const [search, setSearch] = useState('');
 	const [enabled, setEnabled] = useState(true);
 	const [toast, setToast] = useState<string | null>(null);
+	
+	// Track new items for highlighting
+	const [newIds, setNewIds] = useState<Set<string>>(new Set());
+	const prevHistoryRef = React.useRef<ClipboardItemType[]>([]);
+
+	// Initial load should not highlight anything
+	const firstLoadRef = React.useRef(true);
 
 	useEffect(() => {
 		loadHistory();
-		getClipboardSettings().then(s => setEnabled(s.enabled));
+		getClipboardSettings().then(s => {
+			setEnabled(s.enabled);
+			setServiceState('clipboard', s.enabled);
+		});
 		
-		// Listen for background updates
 		const listener = (changes: any, area: string) => {
 			if (area === 'local') {
 				if (changes['halo_tool_clipboard_history']) {
 					setHistory(changes['halo_tool_clipboard_history'].newValue || []);
 				}
 				if (changes['halo_tool_clipboard_settings']) {
-					setEnabled(changes['halo_tool_clipboard_settings'].newValue?.enabled ?? true);
+					const newState = changes['halo_tool_clipboard_settings'].newValue?.enabled ?? true;
+					setEnabled(newState);
+					setServiceState('clipboard', newState);
 				}
 			}
 		};
 		chrome.storage.onChanged.addListener(listener);
 		return () => chrome.storage.onChanged.removeListener(listener);
 	}, []);
+
+	// Unify history change handling for highlighting
+	useEffect(() => {
+		if (firstLoadRef.current) {
+			firstLoadRef.current = false;
+			prevHistoryRef.current = history;
+			return;
+		}
+
+		if (history.length > 0) {
+			const currentIds = new Set(history.map(h => h.id));
+			const prevIds = new Set(prevHistoryRef.current.map(h => h.id));
+			
+			const addedIds = history
+				.filter(h => !prevIds.has(h.id))
+				.map(h => h.id);
+
+			if (addedIds.length > 0) {
+				setNewIds(prev => {
+					const next = new Set(prev);
+					addedIds.forEach(id => next.add(id));
+					return next;
+				});
+
+				// Auto-remove highlight after animation
+				setTimeout(() => {
+					setNewIds(prev => {
+						const next = new Set(prev);
+						addedIds.forEach(id => next.delete(id));
+						return next;
+					});
+				}, 2000);
+			}
+		}
+		
+		prevHistoryRef.current = history;
+	}, [history]);
 
 	const loadHistory = async () => {
 		const h = await getClipboardHistory();
@@ -52,6 +104,7 @@ export const ClipboardPanel: React.FC = () => {
 	const handleToggle = async (checked: boolean) => {
 		await updateClipboardSettings(checked);
 		setEnabled(checked);
+		setServiceState('clipboard', checked);
 	};
 
 	const showToast = (msg: string) => {
@@ -92,30 +145,13 @@ export const ClipboardPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
-			<Card variant="default" padding="sm">
-				<div style={{ ...styles.row, padding: '4px 8px', borderBottom: '1px solid var(--halo-border)', marginBottom: '8px' }}>
-					<div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-						<span style={{ fontSize: '13px', fontWeight: 600 }}>🚀 {t('clipboardPanel.enable')}</span>
-						<span style={{ fontSize: '11px', color: 'var(--halo-text-muted)' }}>{t('clipboardPanel.enableDesc')}</span>
-					</div>
-					<Toggle checked={enabled} onChange={handleToggle} />
-				</div>
-				<div style={styles.searchBar}>
-					<input 
-						style={styles.input}
-						placeholder={t('clipboardPanel.searchPlaceholder')}
-						value={search}
-						onChange={(e) => setSearch(e.target.value)}
-					/>
-					<button 
-						style={styles.clearBtn}
-						onClick={handleClear}
-						title={t('clipboardPanel.clearUnpinned')}
-					>
-						🗑️
-					</button>
-				</div>
-			</Card>
+			<ClipboardHeader 
+				enabled={enabled}
+				onToggle={handleToggle}
+				search={search}
+				onSearchChange={setSearch}
+				onClear={handleClear}
+			/>
 
 			<div style={styles.list}>
 				{filteredHistory.length > 0 ? (
@@ -123,6 +159,7 @@ export const ClipboardPanel: React.FC = () => {
 						<ClipboardItem 
 							key={item.id}
 							item={item}
+							isNew={newIds.has(item.id)}
 							onPin={handlePin}
 							onDelete={handleDelete}
 							onCopy={handleCopy}
