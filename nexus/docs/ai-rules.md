@@ -108,6 +108,23 @@ pnpm workspace | `pnpm install/build/--filter [name] build` | 内部包: `"@nexu
 资源清理: 必须在 DOM 移除时执行 `detachNode` | 强禁 WebAudio 节点在 SPA 中累积
 i18n: 禁硬编码字符串 | 必须登记在 `locales/*` | 系统页面必须支持全局实时同步
 
+### 工具面板设计原则 (Halo ToolPanel)
+
+核心: 高可用 | 直观易用 | 美观优雅 | 信息铺开 | 减少交互次数
+
+铺开原则:
+
+- 多结果工具 (Hash/编解码) 必须同时展示所有结果，禁用 Tab/下拉切换
+- 格式转换工具 (Timestamp/Color) 必须一次性展示所有格式
+- 编解码工具 (Base64/URL) 自动检测方向，同时显示 encode/decode
+- 实时响应: 输入即计算，禁"提交"按钮 (除非有副作用)
+
+交互简化:
+
+- 首屏必须展示核心功能，无需滚动
+- 复制按钮紧贴结果，单击即复制 (带 toast 反馈)
+- 历史记录可选显示，默认折叠
+
 ---
 
 ## §8 测试
