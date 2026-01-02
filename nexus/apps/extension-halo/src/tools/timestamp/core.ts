@@ -1,49 +1,58 @@
-// goal: Timestamp conversion core logic
-
-// goal: Timestamp conversion core logic
-
-// Using Intl.DateTimeFormat for zero dependency.
+// goal: Timestamp conversion core logic with timezone support
 
 /**
- * Format timestamp to readable string
+ * Format timestamp to string in specific timezone
  */
-export function formatTimestamp(ts: number, unit: 's' | 'ms' | 'us' | 'ns'): string {
-	let ms = ts;
-	if (unit === 's') ms = ts * 1000;
-	if (unit === 'us') ms = ts / 1000;
-	if (unit === 'ns') ms = ts / 1000000;
-
+export function formatWithTZ(date: Date, tz: string): string {
 	try {
-		const date = new Date(ms);
-		if (isNaN(date.getTime())) return 'Invalid Date';
-
-		// ISO String
-		const iso = date.toISOString();
-		// Local String
-		const local = date.toLocaleString();
-
-		return `${iso}\n${local}`;
+		return new Intl.DateTimeFormat('en-US', {
+			dateStyle: 'medium',
+			timeStyle: 'medium',
+			timeZone: tz,
+			hour12: false
+		}).format(date);
 	} catch {
-		return 'Invalid Date';
+		return 'TZ Error';
 	}
 }
 
 /**
- * Parse date string to timestamp
- * Supports IS0 8601, etc.
+ * Get relative time string
  */
-export function parseDateToTs(dateStr: string, unit: 's' | 'ms'): number {
-	const d = new Date(dateStr);
-	if (isNaN(d.getTime())) return NaN;
+export function getRelativeTime(date: Date, now: number): string {
+	const diff = now - date.getTime();
+	const absDiff = Math.abs(diff);
+	const isPast = diff > 0;
 
-	const ms = d.getTime();
-	return unit === 's' ? Math.floor(ms / 1000) : ms;
+	const seconds = Math.floor(absDiff / 1000);
+	const minutes = Math.floor(seconds / 60);
+	const hours = Math.floor(minutes / 60);
+	const days = Math.floor(hours / 24);
+
+	if (days > 0) return isPast ? `${days}d ago` : `in ${days}d`;
+	if (hours > 0) return isPast ? `${hours}h ago` : `in ${hours}h`;
+	if (minutes > 0) return isPast ? `${minutes}m ago` : `in ${minutes}m`;
+	return isPast ? `${seconds}s ago` : `in ${seconds}s`;
 }
 
 /**
- * Get current timestamp
+ * Parse input to date (auto-detect)
  */
-export function getCurrentTimestamp(unit: 's' | 'ms'): number {
-	const ms = Date.now();
-	return unit === 's' ? Math.floor(ms / 1000) : ms;
+export function autoParse(input: string): Date | null {
+	const trimmed = input.trim();
+	if (!trimmed) return new Date();
+
+	if (/^\d{10}$/.test(trimmed)) return new Date(parseInt(trimmed, 10) * 1000);
+	if (/^\d{13}$/.test(trimmed)) return new Date(parseInt(trimmed, 10));
+
+	const parsed = new Date(trimmed);
+	return isNaN(parsed.getTime()) ? null : parsed;
 }
+
+export const TIMEZONES = [
+	{ label: 'UTC', value: 'UTC' },
+	{ label: 'New York', value: 'America/New_York' },
+	{ label: 'London', value: 'Europe/London' },
+	{ label: 'Beijing', value: 'Asia/Shanghai' },
+	{ label: 'Tokyo', value: 'Asia/Tokyo' },
+];

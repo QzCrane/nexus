@@ -12,6 +12,8 @@ import {
 	copyToClipboard,
 	saveToHistory,
 	loadHistory,
+	getContrast,
+	hexToRgb,
 } from './core';
 import { styles } from './panel.styles';
 import { getContrastColor } from './utils';
@@ -71,6 +73,12 @@ export const ColorPickerPanel: React.FC = () => {
 
 	const rgbStr = `rgb(${color.rgb.r}, ${color.rgb.g}, ${color.rgb.b})`;
 	const hslStr = `hsl(${color.hsl.h}, ${color.hsl.s}%, ${color.hsl.l}%)`;
+	const cmykStr = `cmyk(${color.cmyk.c}%, ${color.cmyk.m}%, ${color.cmyk.y}%, ${color.cmyk.k}%)`;
+
+	const white = { r: 255, g: 255, b: 255 };
+	const black = { r: 0, g: 0, b: 0 };
+	const contrastWhite = getContrast(color.rgb, white);
+	const contrastBlack = getContrast(color.rgb, black);
 
 	return (
 		<div style={styles.wrapper}>
@@ -111,7 +119,7 @@ export const ColorPickerPanel: React.FC = () => {
 					title={t('colorPanel.clickToCopy')}
 				>
 					<div style={styles.valueLabel}>{t('colorPanel.hex')}</div>
-					<div style={styles.valueText}>{color.hex}</div>
+					<div style={styles.valueText}>{color.hex.toUpperCase()}</div>
 				</div>
 				<div
 					style={styles.valueBox}
@@ -127,9 +135,43 @@ export const ColorPickerPanel: React.FC = () => {
 					title={t('colorPanel.clickToCopy')}
 				>
 					<div style={styles.valueLabel}>{t('colorPanel.hsl')}</div>
-					<div style={styles.valueText}>{color.hsl.h}°, {color.hsl.s}%, {color.hsl.l}%</div>
+					<div style={styles.valueText}>{color.hsl.h}, {color.hsl.s}%, {color.hsl.l}%</div>
+				</div>
+				<div
+					style={styles.valueBox}
+					onClick={() => handleCopyValue(cmykStr, 'CMYK')}
+					title={t('colorPanel.clickToCopy')}
+				>
+					<div style={styles.valueLabel}>CMYK</div>
+					<div style={styles.valueText}>{color.cmyk.c}, {color.cmyk.m}, {color.cmyk.y}, {color.cmyk.k}</div>
 				</div>
 			</div>
+
+			{/* WCAG Contrast Section */}
+			<div style={styles.contrastSection}>
+				<div style={styles.contrastHeader}>
+					<div style={styles.contrastTitle}>WCAG 2.1 Accessibility</div>
+				</div>
+				<div style={styles.contrastGrid}>
+					<div style={styles.contrastBox}>
+						<div style={styles.contrastLabel}>vs White (#FFF)</div>
+						<div style={styles.contrastRatio}>{contrastWhite.ratio}:1</div>
+						<div style={styles.contrastValue}>
+							Large: <span style={contrastWhite.ratingAA === 'pass' ? styles.pass : styles.fail}>{contrastWhite.ratingAA.toUpperCase()}</span> | 
+							Small: <span style={contrastWhite.ratingAAA === 'pass' ? styles.pass : styles.fail}>{contrastWhite.ratingAAA.toUpperCase()}</span>
+						</div>
+					</div>
+					<div style={styles.contrastBox}>
+						<div style={styles.contrastLabel}>vs Black (#000)</div>
+						<div style={styles.contrastRatio}>{contrastBlack.ratio}:1</div>
+						<div style={styles.contrastValue}>
+							Large: <span style={contrastBlack.ratingAA === 'pass' ? styles.pass : styles.fail}>{contrastBlack.ratingAA.toUpperCase()}</span> | 
+							Small: <span style={contrastBlack.ratingAAA === 'pass' ? styles.pass : styles.fail}>{contrastBlack.ratingAAA.toUpperCase()}</span>
+						</div>
+					</div>
+				</div>
+			</div>
+
 
 			<div style={styles.historySection}>
 				<div style={styles.historyTitle}>{t('colorPanel.history')}</div>

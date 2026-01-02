@@ -1,6 +1,16 @@
 // goal: Hash tool type definitions
 
-export type HashAlgorithm = 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512';
+// Standard hash algorithms (Web Crypto API native)
+export type HashAlgorithm = 'MD5' | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512';
+
+// All supported algorithms for display
+export const ALGORITHMS: HashAlgorithm[] = ['MD5', 'SHA-1', 'SHA-256', 'SHA-384', 'SHA-512'];
+
+// HMAC key input
+export interface HMACConfig {
+	enabled: boolean;
+	key: string;
+}
 
 export interface HashState {
 	input: string;
@@ -8,6 +18,11 @@ export interface HashState {
 	hash: string;
 	uppercase: boolean;
 	loading: boolean;
+	hmac?: HMACConfig;
 }
 
-export const ALGORITHMS: HashAlgorithm[] = ['SHA-1', 'SHA-256', 'SHA-384', 'SHA-512'];
+// Hash verification
+export interface VerifyResult {
+	match: boolean;
+	algorithm?: HashAlgorithm;
+}

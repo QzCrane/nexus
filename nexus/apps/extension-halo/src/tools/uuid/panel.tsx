@@ -3,7 +3,7 @@
 import React, { useState, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
-import { generateV4, generateV7, generateULID, formatUUID } from './core';
+import { generateV1, generateV4, generateV7, generateULID, formatUUID } from './core';
 import { UUID_VERSIONS, type UUIDVersion } from './types';
 
 const styles: Record<string, React.CSSProperties> = {
@@ -50,6 +50,7 @@ export const UUIDPanel: React.FC = () => {
 		for (let i = 0; i < count; i++) {
 			let raw = '';
 			switch (version) {
+				case 'v1': raw = generateV1(); break;
 				case 'v4': raw = generateV4(); break;
 				case 'v7': raw = generateV7(); break;
 				case 'ULID': raw = generateULID(); break;

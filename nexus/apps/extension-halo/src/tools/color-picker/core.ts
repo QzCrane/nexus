@@ -1,6 +1,6 @@
-// goal: Color conversion and manipulation utilities
+// goal: Color conversion and manipulation utilities with CMYK and WCAG support
 
-import type { RGBColor, HSLColor, ColorInfo } from './types';
+import type { RGBColor, HSLColor, CMYKColor, ColorInfo, ContrastResult } from './types';
 import { STORAGE_KEY, MAX_HISTORY } from './types';
 
 /**
@@ -61,6 +61,59 @@ export function rgbToHsl(rgb: RGBColor): HSLColor {
 }
 
 /**
+ * RGB to CMYK
+ */
+export function rgbToCmyk(rgb: RGBColor): CMYKColor {
+	const r = rgb.r / 255;
+	const g = rgb.g / 255;
+	const b = rgb.b / 255;
+
+	const k = 1 - Math.max(r, g, b);
+	if (k === 1) {
+		return { c: 0, m: 0, y: 0, k: 100 };
+	}
+
+	const c = (1 - r - k) / (1 - k);
+	const m = (1 - g - k) / (1 - k);
+	const y = (1 - b - k) / (1 - k);
+
+	return {
+		c: Math.round(c * 100),
+		m: Math.round(m * 100),
+		y: Math.round(y * 100),
+		k: Math.round(k * 100),
+	};
+}
+
+/**
+ * Calculate relative luminance (WCAG)
+ */
+export function getLuminance(rgb: RGBColor): number {
+	const [r, g, b] = [rgb.r, rgb.g, rgb.b].map(v => {
+		const s = v / 255;
+		return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+	});
+	return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/**
+ * Calculate contrast ratio between two colors
+ */
+export function getContrast(color1: RGBColor, color2: RGBColor): ContrastResult {
+	const l1 = getLuminance(color1);
+	const l2 = getLuminance(color2);
+	const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+
+	return {
+		ratio: Number(ratio.toFixed(2)),
+		ratingAA: ratio >= 4.5 ? 'pass' : 'fail',
+		ratingAAA: ratio >= 7 ? 'pass' : 'fail',
+		ratingAALarge: ratio >= 3 ? 'pass' : 'fail',
+		ratingAAALarge: ratio >= 4.5 ? 'pass' : 'fail',
+	};
+}
+
+/**
  * Parse any color string to ColorInfo
  */
 export function parseColor(input: string): ColorInfo | null {
@@ -70,14 +123,14 @@ export function parseColor(input: string): ColorInfo | null {
 	if (/^#?[0-9a-f]{3}$|^#?[0-9a-f]{6}$/.test(trimmed)) {
 		const hex = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
 		const rgb = hexToRgb(hex);
-		return { hex: hex.toLowerCase(), rgb, hsl: rgbToHsl(rgb) };
+		return { hex: hex.toLowerCase(), rgb, hsl: rgbToHsl(rgb), cmyk: rgbToCmyk(rgb) };
 	}
 
 	// RGB format: rgb(r, g, b)
 	const rgbMatch = trimmed.match(/rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/);
 	if (rgbMatch) {
 		const rgb = { r: +rgbMatch[1], g: +rgbMatch[2], b: +rgbMatch[3] };
-		return { hex: rgbToHex(rgb), rgb, hsl: rgbToHsl(rgb) };
+		return { hex: rgbToHex(rgb), rgb, hsl: rgbToHsl(rgb), cmyk: rgbToCmyk(rgb) };
 	}
 
 	return null;
@@ -88,7 +141,7 @@ export function parseColor(input: string): ColorInfo | null {
  */
 export function getColorInfo(hex: string): ColorInfo {
 	const rgb = hexToRgb(hex);
-	return { hex: hex.toLowerCase(), rgb, hsl: rgbToHsl(rgb) };
+	return { hex: hex.toLowerCase(), rgb, hsl: rgbToHsl(rgb), cmyk: rgbToCmyk(rgb) };
 }
 
 /**

@@ -1,4 +1,4 @@
-// goal: Color Picker tool type definitions
+// goal: Color Picker tool type definitions with CMYK and WCAG support
 
 export interface RGBColor {
 	r: number;
@@ -12,14 +12,32 @@ export interface HSLColor {
 	l: number;
 }
 
+export interface CMYKColor {
+	c: number;
+	m: number;
+	y: number;
+	k: number;
+}
+
 export interface ColorInfo {
 	hex: string;
 	rgb: RGBColor;
 	hsl: HSLColor;
+	cmyk: CMYKColor;
+}
+
+// WCAG contrast result
+export interface ContrastResult {
+	ratio: number;
+	ratingAA: 'pass' | 'fail';
+	ratingAAA: 'pass' | 'fail';
+	ratingAALarge: 'pass' | 'fail';
+	ratingAAALarge: 'pass' | 'fail';
 }
 
 export interface ColorState {
 	current: ColorInfo | null;
+	compare: ColorInfo | null; // For contrast checking
 	history: string[]; // hex values
 }
 

@@ -52,7 +52,7 @@ export const styles: Record<string, React.CSSProperties> = {
 	},
 	valuesGrid: {
 		display: 'grid',
-		gridTemplateColumns: '1fr 1fr 1fr',
+		gridTemplateColumns: '1fr 1fr',
 		gap: '10px',
 	},
 	valueBox: {
@@ -76,6 +76,60 @@ export const styles: Record<string, React.CSSProperties> = {
 		fontSize: '12px',
 		color: 'var(--halo-text-secondary, #ddd)',
 		fontFamily: 'monospace',
+	},
+	contrastSection: {
+		marginTop: '4px',
+		padding: '12px',
+		background: 'var(--halo-bg-secondary, #252525)',
+		borderRadius: '12px',
+		display: 'flex',
+		flexDirection: 'column',
+		gap: '8px',
+	},
+	contrastHeader: {
+		display: 'flex',
+		justifyContent: 'space-between',
+		alignItems: 'center',
+	},
+	contrastTitle: {
+		fontSize: '11px',
+		color: 'var(--halo-text-muted, #888)',
+		fontWeight: 600,
+		textTransform: 'uppercase',
+	},
+	contrastRatio: {
+		fontSize: '14px',
+		fontWeight: 700,
+		color: 'var(--halo-accent)',
+		fontFamily: 'monospace',
+	},
+	contrastGrid: {
+		display: 'grid',
+		gridTemplateColumns: '1fr 1fr',
+		gap: '8px',
+	},
+	contrastBox: {
+		padding: '8px',
+		borderRadius: '8px',
+		background: 'var(--halo-bg-tertiary, #1a1a1a)',
+		display: 'flex',
+		flexDirection: 'column',
+		gap: '4px',
+	},
+	contrastLabel: {
+		fontSize: '9px',
+		color: 'var(--halo-text-muted, #666)',
+		textTransform: 'uppercase',
+	},
+	contrastValue: {
+		fontSize: '11px',
+		fontWeight: 600,
+	},
+	pass: {
+		color: '#22c55e',
+	},
+	fail: {
+		color: '#ef4444',
 	},
 	historySection: {
 		marginTop: '4px',
@@ -121,3 +175,4 @@ export const styles: Record<string, React.CSSProperties> = {
 		animation: 'fadeInUp 0.3s ease-out',
 	},
 };
+

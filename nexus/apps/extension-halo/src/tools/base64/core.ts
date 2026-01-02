@@ -1,4 +1,4 @@
-// goal: Base64 encode/decode core logic
+// goal: Base64 encode/decode core logic with blob support
 
 /**
  * Encode string to Base64
@@ -6,7 +6,6 @@
 export function encode(input: string, urlSafe: boolean = false): string {
 	if (!input) return '';
 	try {
-		// Handle UTF-8 characters
 		const utf8 = new TextEncoder().encode(input);
 		const binary = String.fromCharCode(...utf8);
 		let base64 = btoa(binary);
@@ -14,7 +13,6 @@ export function encode(input: string, urlSafe: boolean = false): string {
 		if (urlSafe) {
 			base64 = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 		}
-
 		return base64;
 	} catch {
 		throw new Error('Encoding failed');
@@ -22,40 +20,35 @@ export function encode(input: string, urlSafe: boolean = false): string {
 }
 
 /**
- * Decode Base64 to string
+ * Decode Base64 to string (UTF-8)
  */
 export function decode(input: string, urlSafe: boolean = false): string {
 	if (!input) return '';
 	try {
 		let base64 = input.trim();
-
 		if (urlSafe) {
 			base64 = base64.replace(/-/g, '+').replace(/_/g, '/');
-			// Add padding if needed
 			while (base64.length % 4) base64 += '=';
 		}
-
 		const binary = atob(base64);
 		const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
 		return new TextDecoder().decode(bytes);
-	} catch {
+	} catch (e) {
 		throw new Error('Invalid Base64 string');
 	}
 }
 
 /**
- * Check if string is valid Base64
+ * Decode Base64 to Uint8Array for binary data
  */
-export function isValidBase64(input: string): boolean {
-	if (!input) return true;
-	try {
-		// Try standard or URL-safe
-		const standard = /^[A-Za-z0-9+/]*={0,2}$/;
-		const urlSafe = /^[A-Za-z0-9\-_]*$/;
-		return standard.test(input) || urlSafe.test(input);
-	} catch {
-		return false;
+export function decodeToBinary(input: string, urlSafe: boolean = false): Uint8Array {
+	let base64 = input.trim().replace(/^data:.*?;base64,/, '');
+	if (urlSafe) {
+		base64 = base64.replace(/-/g, '+').replace(/_/g, '/');
+		while (base64.length % 4) base64 += '=';
 	}
+	const binary = atob(base64);
+	return Uint8Array.from(binary, (c) => c.charCodeAt(0));
 }
 
 /**
@@ -74,7 +67,20 @@ export async function fileToDataURL(file: File): Promise<string> {
  * Get file size from Base64 string
  */
 export function getBase64Size(base64: string): number {
-	// Base64 size = (length * 3/4) - padding
-	const padding = (base64.match(/=+$/) || [''])[0].length;
-	return Math.floor((base64.length * 3) / 4) - padding;
+	const cleaned = base64.replace(/^data:.*?;base64,/, '');
+	const padding = (cleaned.match(/=+$/) || [''])[0].length;
+	return Math.floor((cleaned.length * 3) / 4) - padding;
+}
+
+/**
+ * Download content as file
+ */
+export function downloadContent(data: Uint8Array | string, filename: string, type: string) {
+	const blob = new Blob([data as any], { type });
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement('a');
+	a.href = url;
+	a.download = filename;
+	a.click();
+	URL.revokeObjectURL(url);
 }

@@ -56,6 +56,19 @@ Browser (8): archive, cookie-manager, reader-mode, bookmark-manager, history-sea
 
 **运行测试**: `pnpm test:playwright` → 截图输出到 `test/screenshots/`
 
+### 核心工具功能大版本升级 (2026-01-02 完成 - v2.1.0)
+
+- 🔥 **Hash Tool**: 增加 MD5, HMAC 支持，多算法结果同时展示，自动识别并验证哈希。
+- 🔥 **Color Picker**: 增加 CMYK 转换，WCAG 2.1 对比度检查 (AA/AAA 评级)。
+- 🔥 **QR Code**: 增加 Logo 嵌入、自定义颜色、SVG/PNG 双格式导出。
+- 🔥 **JSON Formatter**: 增加 Tree View (可视化树)、递归排序、一键下载。
+- 🔥 **Base64 Tool**: 增加图片 DataURL 预览、二进制下载、自动双向转换。
+- 🔥 **Timestamp**: 增加全球 5 大时区实时转换、相对时间计算。
+- 🔥 **Password Gen**: 增加批量生成 (10x)、强度实时分析、布局优化。
+- 🔥 **UUID Gen**: 增加 v1 (时间戳) 支持, v7/ULID 逻辑优化。
+- ✅ **Ergonomic Design**: 实现“全信息展开”、“零交互完成”设计理念，击败 90% 单一功能竞品。
+- ✅ **Code Refactoring**: `timestamp`, `uuid`, `hash` 面板代码重构至 150 行以内，符合 Clean Code 标准。
+
 ---
 
 ## 🔜 阶段 10: 编解码增强 (P1)

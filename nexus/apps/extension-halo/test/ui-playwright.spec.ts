@@ -18,17 +18,21 @@ const USER_DATA_DIR = path.resolve(__dirname, '.playwright-user-data');
 // Screenshot output directory
 const SCREENSHOT_DIR = path.resolve(__dirname, 'screenshots');
 
-// Tools to test
+// Tools to test - Batch 7 (final batch)
 const TOOLS_TO_REVIEW = [
-	'qrcode',
-	'color-picker',
-	'json-formatter',
-	'base64',
-	'hash',
-	'uuid',
-	'timestamp',
-	'url',
-	'regex',
+	// Batch 1-6 done (60 tools)
+
+	// Batch 7: Final remaining tools
+	'gzip',
+	'archive',
+	'checksum',
+	'json-to-csv',
+	'csv-to-json',
+	'bookmark-manager',
+	'code-snippets',
+	'page-annotate',
+	'media-sniffer',
+	'userscripts',
 ];
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
