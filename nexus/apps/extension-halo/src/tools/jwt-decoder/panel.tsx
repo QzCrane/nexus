@@ -21,12 +21,12 @@ export const JwtDecoderPanel: React.FC = () => {
 				style={styles.textarea}
 				value={token}
 				onChange={(e) => setToken(e.target.value)}
-				placeholder={t('jwt.placeholder')}
+				placeholder={t('jwt.placeholder', { defaultValue: 'Paste JWT token here...' })}
 			/>
 
 			{/* Result */}
 			{token && !decoded && (
-				<div style={styles.error}>❌ {t('jwt.invalid')}</div>
+				<div style={styles.error}>❌ {t('jwt.invalid', { defaultValue: 'Invalid JWT token' })}</div>
 			)}
 
 			{decoded && (
@@ -34,7 +34,7 @@ export const JwtDecoderPanel: React.FC = () => {
 					{/* Header */}
 					<div style={styles.section}>
 						<div style={styles.sectionHeader}>
-							<span style={styles.sectionTitle}>🔑 Header</span>
+							<span style={styles.sectionTitle}>🔑 {t('jwt.header', { defaultValue: 'Header' })}</span>
 							<span style={{ ...styles.badge, background: '#3b82f6' }}>{decoded.header.alg as string}</span>
 						</div>
 						<div style={styles.code}>{JSON.stringify(decoded.header, null, 2)}</div>
@@ -43,10 +43,10 @@ export const JwtDecoderPanel: React.FC = () => {
 					{/* Payload */}
 					<div style={styles.section}>
 						<div style={styles.sectionHeader}>
-							<span style={styles.sectionTitle}>📦 Payload</span>
+							<span style={styles.sectionTitle}>📦 {t('jwt.payload', { defaultValue: 'Payload' })}</span>
 							{decoded.expiresAt && (
 								<span style={{ ...styles.badge, ...(decoded.isExpired ? styles.expired : styles.valid) }}>
-									{decoded.isExpired ? '⏰ Expired' : '✅ Valid'}
+									{decoded.isExpired ? `⏰ ${t('jwt.expired', { defaultValue: 'Expired' })}` : `✅ ${t('jwt.valid', { defaultValue: 'Valid' })}`}
 								</span>
 							)}
 						</div>
@@ -60,7 +60,7 @@ export const JwtDecoderPanel: React.FC = () => {
 
 					{/* Signature */}
 					<div style={styles.section}>
-						<div style={styles.sectionTitle}>🔒 Signature</div>
+						<div style={styles.sectionTitle}>🔒 {t('jwt.signature', { defaultValue: 'Signature' })}</div>
 						<div style={{ ...styles.code, color: 'var(--halo-text-muted)', fontSize: '10px' }}>{decoded.signature}</div>
 					</div>
 				</>

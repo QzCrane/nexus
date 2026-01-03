@@ -38,12 +38,12 @@ export const TimestampPanel: React.FC = () => {
 	}, []);
 
 	const results = useMemo(() => [
-		{ k: 'unix_s', l: 'Unix (s)', v: Math.floor(parsedDate.getTime() / 1000).toString() },
-		{ k: 'unix_ms', l: 'Unix (ms)', v: parsedDate.getTime().toString() },
-		{ k: 'iso', l: 'ISO 8601', v: parsedDate.toISOString() },
-		{ k: 'relative', l: 'Relative', v: getRelativeTime(parsedDate, now) },
+		{ k: 'unix_s', l: t('timestamp.unixS', { defaultValue: 'Unix (s)' }), v: Math.floor(parsedDate.getTime() / 1000).toString() },
+		{ k: 'unix_ms', l: t('timestamp.unixMs', { defaultValue: 'Unix (ms)' }), v: parsedDate.getTime().toString() },
+		{ k: 'iso', l: t('timestamp.iso8601', { defaultValue: 'ISO 8601' }), v: parsedDate.toISOString() },
+		{ k: 'relative', l: t('timestamp.relative', { defaultValue: 'Relative' }), v: getRelativeTime(parsedDate, now) },
 		...TIMEZONES.map(tz => ({ k: tz.value, l: tz.label, v: formatWithTZ(parsedDate, tz.value) }))
-	], [parsedDate, now]);
+	], [parsedDate, now, t]);
 
 	return (
 		<div style={styles.wrapper}>
@@ -57,10 +57,10 @@ export const TimestampPanel: React.FC = () => {
 			<Card variant="default" padding="sm">
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
 					<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-						<span style={{ fontSize: '11px', fontWeight: 600 }}>INPUT</span>
-						<button style={styles.btn} onClick={() => setInput('')}>Clear</button>
+						<span style={{ fontSize: '11px', fontWeight: 600 }}>{t('timestamp.inputLabel', { defaultValue: 'INPUT' })}</span>
+						<button style={styles.btn} onClick={() => setInput('')}>{t('timestamp.clear', { defaultValue: 'Clear' })}</button>
 					</div>
-					<input style={styles.input} value={input} onChange={(e) => setInput(e.target.value)} placeholder="Unix timestamp or ISO string..." />
+					<input style={styles.input} value={input} onChange={(e) => setInput(e.target.value)} placeholder={t('timestamp.placeholder', { defaultValue: 'Unix timestamp or ISO string...' })} />
 				</div>
 			</Card>
 
@@ -70,7 +70,7 @@ export const TimestampPanel: React.FC = () => {
 						<span style={styles.label}>{r.l}</span>
 						<span style={styles.val}>{r.v}</span>
 						<button style={{ ...styles.btn, ...(copiedKey === r.k ? { background: 'var(--halo-accent)', color: '#fff' } : {}) }} onClick={() => copyValue(r.k, r.v)}>
-							{copiedKey === r.k ? '✓' : 'Copy'}
+							{copiedKey === r.k ? '✓' : t('timestamp.copy', { defaultValue: 'Copy' })}
 						</button>
 					</div>
 				))}

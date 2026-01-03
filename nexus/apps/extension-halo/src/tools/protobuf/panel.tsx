@@ -7,18 +7,21 @@ import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
 
 
-const FieldNode: React.FC<{ field: ProtoField }> = ({ field }) => (
-    <div style={styles.node}>
-        <span style={styles.field}>Field {field.fieldNumber}</span>
-        <span style={styles.type}>(Wire {field.wireType})</span>
-        {!field.subMessage && <span style={styles.value}>: {String(field.value)}</span>}
-        {field.subMessage && (
-            <div>
-                {field.subMessage.map((sub, i) => <FieldNode key={i} field={sub} />)}
-            </div>
-        )}
-    </div>
-);
+const FieldNode: React.FC<{ field: ProtoField }> = ({ field }) => {
+    const { t } = useTranslation();
+    return (
+        <div style={styles.node}>
+            <span style={styles.field}>{t('protobuf.field', { defaultValue: 'Field' })} {field.fieldNumber}</span>
+            <span style={styles.type}>({t('protobuf.wire', { defaultValue: 'Wire' })} {field.wireType})</span>
+            {!field.subMessage && <span style={styles.value}>: {String(field.value)}</span>}
+            {field.subMessage && (
+                <div>
+                    {field.subMessage.map((sub, i) => <FieldNode key={i} field={sub} />)}
+                </div>
+            )}
+        </div>
+    );
+};
 
 export const ProtobufPanel: React.FC = () => {
     const { t } = useTranslation();
@@ -38,7 +41,7 @@ export const ProtobufPanel: React.FC = () => {
                 style={styles.textarea} 
                 value={input} 
                 onChange={(e) => setInput(e.target.value)} 
-                placeholder="Paste Base64 or Hex protobuf data..." 
+                placeholder={t('protobuf.placeholder', { defaultValue: 'Paste Base64 or Hex protobuf data...' })}
             />
 
             <div style={styles.viewer}>
@@ -46,10 +49,10 @@ export const ProtobufPanel: React.FC = () => {
                     decoded.length > 0 ? (
                         decoded.map((f, i) => <FieldNode key={i} field={f} />)
                     ) : (
-                        <div style={{color: 'var(--halo-text-muted)'}}>No fields found or invalid format</div>
+                        <div style={{color: 'var(--halo-text-muted)'}}>{t('protobuf.noFields', { defaultValue: 'No fields found or invalid format' })}</div>
                     )
                 ) : (
-                    <div style={{color: 'var(--halo-text-muted)'}}>Waiting for input...</div>
+                    <div style={{color: 'var(--halo-text-muted)'}}>{t('protobuf.waiting', { defaultValue: 'Waiting for input...' })}</div>
                 )}
             </div>
         </div>

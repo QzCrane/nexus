@@ -31,13 +31,13 @@ export const JsonPathPanel: React.FC = () => {
 		<div style={styles.wrapper}>
 			{/* JSON input */}
 			<div>
-				<div style={styles.label}>JSON</div>
+				<div style={styles.label}>{t('jsonPath.input', { defaultValue: 'JSON' })}</div>
 				<textarea style={styles.textarea} value={json} onChange={(e) => setJson(e.target.value)} placeholder='{"users":[{"name":"John"}]}' />
 			</div>
 
 			{/* Path input */}
 			<div>
-				<div style={styles.label}>JSONPath</div>
+				<div style={styles.label}>{t('jsonPath.query', { defaultValue: 'JSONPath' })}</div>
 				<input style={styles.input} value={path} onChange={(e) => setPath(e.target.value)} placeholder="$.users[*].name" />
 			</div>
 

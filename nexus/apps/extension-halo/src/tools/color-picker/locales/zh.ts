@@ -9,6 +9,11 @@ export const zh = {
 		hex: 'HEX',
 		rgb: 'RGB',
 		hsl: 'HSL',
-		inputPlaceholder: '#hex 或 rgb(...)'
+		inputPlaceholder: '#hex 或 rgb(...)',
+		wcagTitle: 'WCAG 2.1 无障碍',
+		vsWhite: 'vs 白色 (#FFF)',
+		vsBlack: 'vs 黑色 (#000)',
+		largeText: '大字',
+		smallText: '小字'
 	}
 };

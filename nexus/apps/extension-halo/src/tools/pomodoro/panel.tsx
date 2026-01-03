@@ -5,7 +5,7 @@ import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { PomodoroConfig, PomodoroState } from './types';
 import { DEFAULT_CONFIG } from './types';
-import { formatTime, getPhaseDuration, getNextPhase, createInitialState, PHASE_LABELS, PHASE_COLORS } from './core';
+import { formatTime, getPhaseDuration, getNextPhase, createInitialState, PHASE_COLORS } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
 
@@ -82,7 +82,7 @@ export const PomodoroPanel: React.FC = () => {
 			</div>
 
 			{/* Phase & Sessions */}
-			<div style={{ ...styles.phase, color }}>{PHASE_LABELS[state.phase]}</div>
+			<div style={{ ...styles.phase, color }}>{t(`pomodoro.phases.${state.phase}`, { defaultValue: state.phase })}</div>
 			<div style={styles.sessions}>{t('pomodoro.sessions')}: {state.sessionsCompleted}</div>
 
 			{/* Controls */}

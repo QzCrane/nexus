@@ -1,6 +1,10 @@
 export const zh = {
 	jsonPath: {
 		matches: '个匹配项',
-		copy: '复制结果'
+		copy: '复制结果',
+		input: 'JSON',
+		query: 'JSONPath',
+		error: '无效的 JSON',
+		copied: '已复制！'
 	}
 };

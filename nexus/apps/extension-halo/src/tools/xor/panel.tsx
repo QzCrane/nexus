@@ -22,42 +22,42 @@ export const XorPanel: React.FC = () => {
             const processed = xor(data, key);
             return isHexOutput ? toHex(processed) : processed;
         } catch {
-            return 'Error';
+            return t('xor.error', { defaultValue: 'Error' });
         }
     }, [input, key, isHexInput, isHexOutput]);
 
 	return (
 		<div style={styles.wrapper}>
 			<div style={styles.row}>
-				<div style={styles.label}>Input</div>
+				<div style={styles.label}>{t('xor.input', { defaultValue: 'Input' })}</div>
 				<textarea 
                     style={styles.textarea} 
                     value={input} 
                     onChange={(e) => setInput(e.target.value)} 
-                    placeholder="Data to XOR..." 
+                    placeholder={t('xor.inputPlaceholder', { defaultValue: 'Data to XOR...' })} 
                 />
                 <label style={styles.checkbox}>
                     <input type="checkbox" checked={isHexInput} onChange={(e) => setIsHexInput(e.target.checked)} />
-                    Input is Hex
+                    {t('xor.isHexInput', { defaultValue: 'Input is Hex' })}
                 </label>
 			</div>
 
             <div style={styles.row}>
-                <div style={styles.label}>Key</div>
+                <div style={styles.label}>{t('xor.key', { defaultValue: 'Key' })}</div>
                 <input 
                     style={styles.input} 
                     value={key} 
                     onChange={(e) => setKey(e.target.value)} 
-                    placeholder="Secret Key" 
+                    placeholder={t('xor.keyPlaceholder', { defaultValue: 'Secret Key' })} 
                 />
             </div>
 
 			<div style={styles.row}>
-				<div style={styles.label}>Result</div>
+				<div style={styles.label}>{t('xor.result', { defaultValue: 'Result' })}</div>
 				<textarea style={styles.textarea} value={result} readOnly />
                 <label style={styles.checkbox}>
                     <input type="checkbox" checked={isHexOutput} onChange={(e) => setIsHexOutput(e.target.checked)} />
-                    Output as Hex
+                    {t('xor.isHexOutput', { defaultValue: 'Output as Hex' })}
                 </label>
 			</div>
 		</div>

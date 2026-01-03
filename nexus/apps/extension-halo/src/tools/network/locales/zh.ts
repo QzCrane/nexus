@@ -11,7 +11,13 @@ export const zh = {
 		},
 		curl: {
 			input: 'Curl 命令',
-			convert: '转换'
+			convert: '转换',
+			langJs: 'JavaScript',
+			langPy: 'Python'
+		},
+		modes: {
+			ua: 'UA 解析器',
+			curl: 'Curl → 代码'
 		}
 	}
 };

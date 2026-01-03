@@ -10,7 +10,8 @@ import { useToolState } from '../../kernel';
 
 
 const MODES: { id: NetworkMode; label: string }[] = [
-	{ id: 'ua-parser', label: 'UA Parser' },
+	{ id: 'ua-parser', label: 'UA Parser' }, // Should use t() but inside component is better or assume these match locale keys if possible. But here dynamic is hard. Let's leave these or move to component body.
+    // Actually, let's keep them as IDs and translate inside the component map loop
 	{ id: 'curl-converter', label: 'Curl → Code' },
 ];
 
@@ -67,8 +68,8 @@ const CurlConverterPanel: React.FC = () => {
 			{parsed && (
 				<Card variant="default" padding="sm">
 					<div style={styles.row}>
-						<button style={{ ...styles.btnSecondary, ...(lang === 'js' ? styles.active : {}) }} onClick={() => setLang('js')}>JavaScript</button>
-						<button style={{ ...styles.btnSecondary, ...(lang === 'python' ? styles.active : {}) }} onClick={() => setLang('python')}>Python</button>
+						<button style={{ ...styles.btnSecondary, ...(lang === 'js' ? styles.active : {}) }} onClick={() => setLang('js')}>{t('network.langJs', {defaultValue: 'JavaScript'})}</button>
+						<button style={{ ...styles.btnSecondary, ...(lang === 'python' ? styles.active : {}) }} onClick={() => setLang('python')}>{t('network.langPy', {defaultValue: 'Python'})}</button>
 						<button style={{ ...styles.btnSecondary, marginLeft: 'auto' }} onClick={copyCode}>📋 {t('common.copy')}</button>
 					</div>
 					<pre style={styles.resultBox}>{lang === 'js' ? generateJS(parsed) : generatePython(parsed)}</pre>
@@ -80,6 +81,7 @@ const CurlConverterPanel: React.FC = () => {
 
 // Main Network Panel
 export const NetworkPanel: React.FC = () => {
+    const { t } = useTranslation();
 	const [mode, setMode] = useToolState<NetworkMode>('network-mode' as any, 'ua-parser');
 
 
@@ -89,7 +91,7 @@ export const NetworkPanel: React.FC = () => {
 				<div style={styles.tabs}>
 					{MODES.map((m) => (
 						<button key={m.id} style={{ ...styles.tab, ...(mode === m.id ? styles.active : styles.inactive) }} onClick={() => setMode(m.id)}>
-							{m.label}
+							{m.id === 'ua-parser' ? t('network.modes.ua', {defaultValue: 'UA Parser'}) : t('network.modes.curl', {defaultValue: 'Curl → Code'})}
 						</button>
 					))}
 				</div>

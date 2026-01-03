@@ -3,6 +3,8 @@ export const zh = {
 		type: '类型',
 		length: '长度',
 		count: '数量',
-		generate: '生成'
+		generate: '生成',
+		result: '结果',
+		copy: '复制'
 	}
 };

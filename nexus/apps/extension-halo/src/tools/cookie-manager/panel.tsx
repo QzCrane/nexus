@@ -70,7 +70,7 @@ export const CookieManagerPanel: React.FC = () => {
 					placeholder={t('cookieManager.search')}
 				/>
 				<button style={styles.btn} onClick={loadCookies}>🔄</button>
-				<button style={styles.btn} onClick={handleExport}>📋 JSON</button>
+				<button style={styles.btn} onClick={handleExport}>📋 {t('cookieManager.export', { defaultValue: 'Export JSON' })}</button>
 			</div>
 
 			{/* Cookie List */}
@@ -91,8 +91,8 @@ export const CookieManagerPanel: React.FC = () => {
 								<div style={styles.value}>{cookie.value.slice(0, 100)}{cookie.value.length > 100 ? '...' : ''}</div>
 								<div style={styles.meta}>
 									<span style={styles.badge}>{cookie.domain}</span>
-									{cookie.secure && <span style={styles.badge}>🔒 Secure</span>}
-									{cookie.httpOnly && <span style={styles.badge}>HTTP Only</span>}
+									{cookie.secure && <span style={styles.badge}>🔒 {t('cookieManager.secure', { defaultValue: 'Secure' })}</span>}
+									{cookie.httpOnly && <span style={styles.badge}>{t('cookieManager.httpOnly', { defaultValue: 'HTTP Only' })}</span>}
 									<span>{formatExpiry(cookie.expires)}</span>
 								</div>
 							</div>

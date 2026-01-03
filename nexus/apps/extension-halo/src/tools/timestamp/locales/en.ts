@@ -10,6 +10,14 @@ export const en = {
 		input: 'Input',
 		output: 'Result',
 		current: 'Current Time',
-		result: 'Result'
+		result: 'Result',
+		unixS: 'Unix (s)',
+		unixMs: 'Unix (ms)',
+		iso8601: 'ISO 8601',
+		relative: 'Relative',
+		inputLabel: 'INPUT',
+		clear: 'Clear',
+		placeholder: 'Unix timestamp or ISO string...',
+		copy: 'Copy'
 	}
 };

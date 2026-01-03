@@ -37,7 +37,7 @@ export const PasswordGenPanel: React.FC = () => {
 
 	const handleCopy = useCallback((pwd: string) => {
 		navigator.clipboard.writeText(pwd);
-		showToast(t('common.copied'));
+		showToast(t('passwordGen.copied', { defaultValue: 'Copied!' }));
 	}, [showToast, t]);
 
 	const updateConfig = useCallback((key: keyof PasswordConfig, value: unknown) => {
@@ -57,13 +57,13 @@ export const PasswordGenPanel: React.FC = () => {
 					style={{ ...styles.btn, flex: 1, ...(showBulk ? styles.btnSecondary : {}) }}
 					onClick={() => setShowBulk(false)}
 				>
-					Single
+					{t('passwordGen.single', { defaultValue: 'Single' })}
 				</button>
 				<button 
 					style={{ ...styles.btn, flex: 1, ...(!showBulk ? styles.btnSecondary : {}) }}
 					onClick={() => setShowBulk(true)}
 				>
-					Bulk (10)
+					{t('passwordGen.bulk', { defaultValue: 'Bulk (10)' })}
 				</button>
 			</div>
 
@@ -74,8 +74,8 @@ export const PasswordGenPanel: React.FC = () => {
 						🔐 {strength.label} — {strength.feedback[0]}
 					</div>
 					<div style={styles.row}>
-						<button style={{ ...styles.btn, flex: 2 }} onClick={handleGenerate}>🎲 Regenerate</button>
-						<button style={{ ...styles.btnSecondary, flex: 1 }} onClick={() => handleCopy(password)}>📋 Copy</button>
+						<button style={{ ...styles.btn, flex: 2 }} onClick={handleGenerate}>🎲 {t('passwordGen.regenerate', { defaultValue: 'Regenerate' })}</button>
+						<button style={{ ...styles.btnSecondary, flex: 1 }} onClick={() => handleCopy(password)}>📋 {t('passwordGen.copy', { defaultValue: 'Copy' })}</button>
 					</div>
 				</>
 			) : (
@@ -88,7 +88,7 @@ export const PasswordGenPanel: React.FC = () => {
 							</div>
 						))}
 					</div>
-					<button style={{ ...styles.btn, width: '100%', marginTop: '8px' }} onClick={handleGenerate}>🔄 Refresh All</button>
+					<button style={{ ...styles.btn, width: '100%', marginTop: '8px' }} onClick={handleGenerate}>🔄 {t('passwordGen.refreshAll', { defaultValue: 'Refresh All' })}</button>
 				</Card>
 			)}
 
@@ -117,7 +117,7 @@ export const PasswordGenPanel: React.FC = () => {
 					</label>
 					<label style={styles.checkbox}>
 						<input type="checkbox" checked={config.excludeAmbiguous} onChange={(e) => updateConfig('excludeAmbiguous', e.target.checked)} />
-						No (0O1lI)
+						{t('passwordGen.excludeAmbiguous', { defaultValue: 'No (0O1lI)' })}
 					</label>
 				</div>
 			</Card>

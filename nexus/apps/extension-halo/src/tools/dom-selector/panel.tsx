@@ -56,7 +56,7 @@ export const DomSelectorPanel: React.FC = () => {
             {css && (
                 <div>
                     <div style={styles.header}>
-                        <div style={styles.label}>CSS Selector</div>
+                        <div style={styles.label}>{t('domSelector.css', { defaultValue: 'CSS Selector' })}</div>
                         <button style={styles.copyBtn} onClick={() => navigator.clipboard.writeText(css)}>{t('common.copy', { defaultValue: 'Copy' })}</button>
                     </div>
 
@@ -67,7 +67,7 @@ export const DomSelectorPanel: React.FC = () => {
             {xpath && (
                 <div>
                     <div style={styles.header}>
-                        <div style={styles.label}>XPath</div>
+                        <div style={styles.label}>{t('domSelector.xpath', { defaultValue: 'XPath' })}</div>
                         <button style={styles.copyBtn} onClick={() => navigator.clipboard.writeText(xpath)}>{t('common.copy', { defaultValue: 'Copy' })}</button>
                     </div>
 

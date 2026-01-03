@@ -4,6 +4,8 @@ export const en = {
 		output: 'CSV Output',
 		delimiter: 'Delimiter',
 		copy: 'Copy CSV',
-		download: 'Download CSV'
+		download: 'Download CSV',
+		copyError: 'Copy failed',
+		copied: 'Copied!'
 	}
 };

@@ -20,12 +20,12 @@ export const SslCertPanel: React.FC = () => {
     return (
         <div style={styles.wrapper}>
             <div>
-                <div style={styles.label}>PEM Certificate</div>
+                <div style={styles.label}>{t('sslCert.input', { defaultValue: 'PEM Certificate' })}</div>
                 <textarea 
                     style={styles.textarea} 
                     value={input} 
                     onChange={(e) => setInput(e.target.value)} 
-                    placeholder="-----BEGIN CERTIFICATE-----..." 
+                    placeholder={t('sslCert.placeholder', { defaultValue: '-----BEGIN CERTIFICATE-----...' })} 
                 />
             </div>
 
@@ -36,11 +36,11 @@ export const SslCertPanel: React.FC = () => {
                         <span style={styles.value}>{info.validFrom}</span>
                     </div>
                     <div style={styles.row}>
-                        <span style={styles.label}>Valid To</span>
+                        <span style={styles.label}>{t('sslCert.validTo', { defaultValue: 'Valid To' })}</span>
                         <span style={styles.value}>{info.validTo}</span>
                     </div>
                     <div style={{fontSize: '11px', color: 'var(--halo-text-muted)', marginTop: '8px'}}>
-                        * Basic parsing only. For full details, use openssl.
+                        {t('sslCert.note', { defaultValue: '* Basic parsing only. For full details, use openssl.' })}
                     </div>
                 </div>
             )}

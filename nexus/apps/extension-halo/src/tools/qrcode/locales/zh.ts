@@ -17,6 +17,14 @@ export const zh = {
 		scanFailed: '未识别到二维码',
 		detectedContent: '识别内容',
 		openLink: '打开链接',
-		copyText: '复制文本'
+		copyText: '复制文本',
+		labelDark: '暗色',
+		labelLight: '亮色',
+		labelLogo: 'Logo',
+		labelAction: '操作',
+		upload: '上传',
+		remove: '移除',
+		btnImage: '图片',
+		btnClipboard: '剪贴板'
 	}
 };

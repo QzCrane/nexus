@@ -33,25 +33,25 @@ export const PunycodePanel: React.FC = () => {
 	return (
 		<div style={styles.wrapper}>
 			<div>
-				<div style={styles.label}>Unicode / Punycode</div>
+				<div style={styles.label}>{t('punycode.input', { defaultValue: 'Domain (Unicode / Punycode)' })}</div>
 				<textarea 
                     style={styles.textarea} 
                     value={input} 
                     onChange={(e) => setInput(e.target.value)} 
-                    placeholder="example: 例子.com or xn--fsq.com" 
+                    placeholder={t('punycode.placeholder', { defaultValue: 'example: 例子.com or xn--fsq.com' })} 
                 />
 			</div>
 
 			<div style={styles.row}>
-				<button style={styles.btn} onClick={handleEncode}>👇 Encode (to ASCII)</button>
-				<button style={styles.btn} onClick={handleDecode}>👆 Decode (to Unicode)</button>
+				<button style={styles.btn} onClick={handleEncode}>👇 {t('punycode.encode', { defaultValue: 'Encode (to ASCII)' })}</button>
+				<button style={styles.btn} onClick={handleDecode}>👆 {t('punycode.decode', { defaultValue: 'Decode (to Unicode)' })}</button>
 			</div>
 
 			{output && (
 				<div>
-					<div style={styles.label}>Result</div>
+					<div style={styles.label}>{t('punycode.result', { defaultValue: 'Result' })}</div>
 					<textarea style={styles.textarea} value={output} readOnly />
-                    <button style={{...styles.btn, marginTop: '8px'}} onClick={handleCopy}>📋 Copy</button>
+                    <button style={{...styles.btn, marginTop: '8px'}} onClick={handleCopy}>📋 {t('punycode.copy', { defaultValue: 'Copy' })}</button>
 				</div>
 			)}
 		</div>

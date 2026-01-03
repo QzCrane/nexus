@@ -55,27 +55,27 @@ export const SriPanel: React.FC = () => {
 	return (
 		<div style={styles.wrapper}>
             <div>
-                <div style={styles.label}>Resource URL (Optional)</div>
+                <div style={styles.label}>{t('subresource.url', { defaultValue: 'Resource URL' })} ({t('subresource.optional', { defaultValue: 'Optional' })})</div>
                 <div style={{display: 'flex', gap: '8px'}}>
-                    <input style={styles.input} value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://cdn.example.com/lib.js" />
+                    <input style={styles.input} value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t('subresource.placeholderUrl', { defaultValue: 'https://cdn.example.com/lib.js' })} />
                     <button style={styles.btn} onClick={handleFetch} disabled={!url || loading}>
-                        {loading ? '⏳' : '📥 Fetch'}
+                        {loading ? '⏳' : `📥 ${t('subresource.fetch', { defaultValue: 'Fetch' })}`}
                     </button>
                 </div>
             </div>
 
             <div>
-                <div style={styles.label}>Content (Paste code here)</div>
+                <div style={styles.label}>{t('subresource.pasteCode', { defaultValue: 'Content (Paste code here)' })}</div>
                 <textarea 
                     style={styles.textarea} 
                     value={content} 
                     onChange={(e) => setContent(e.target.value)} 
-                    placeholder="function() { ... }" 
+                    placeholder={t('subresource.placeholderContent', { defaultValue: 'function() { ... }' })} 
                 />
             </div>
 
             <div style={styles.row}>
-                <span style={styles.label}>Algorithm:</span>
+                <span style={styles.label}>{t('subresource.algorithm', { defaultValue: 'Algorithm' })}:</span>
                 <div style={{ display: 'inline-flex', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--halo-border)', background: 'var(--halo-bg-tertiary)' }}>
                     {(['sha256', 'sha384', 'sha512'] as const).map((a) => (
                         <button
@@ -97,7 +97,7 @@ export const SriPanel: React.FC = () => {
 
             {hashOnly && (
                 <div>
-                    <div style={styles.label}>Integrity Hash</div>
+                    <div style={styles.label}>{t('subresource.hash', { defaultValue: 'Integrity Hash' })}</div>
                     <div style={styles.resultBox} onClick={() => navigator.clipboard.writeText(hashOnly)}>
                         {hashOnly}
                     </div>
@@ -106,7 +106,7 @@ export const SriPanel: React.FC = () => {
 
             {tag && (
                 <div>
-                    <div style={styles.label}>HTML Tag</div>
+                    <div style={styles.label}>{t('subresource.tag', { defaultValue: 'HTML Tag' })}</div>
                     <div style={styles.resultBox} onClick={() => navigator.clipboard.writeText(tag)}>
                         {tag}
                     </div>

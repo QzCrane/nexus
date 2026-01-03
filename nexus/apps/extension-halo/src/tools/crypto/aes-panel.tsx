@@ -27,9 +27,9 @@ export const AESPanel: React.FC = () => {
 			const encrypted = await encryptAES(plaintext, key);
 			setCiphertext(encrypted);
 		} catch (e) {
-			setError(e instanceof Error ? e.message : 'Encrypt failed');
+			setError(e instanceof Error ? e.message : t('crypto.aes.encryptFailed', { defaultValue: 'Encrypt failed' }));
 		}
-	}, [plaintext, keyBase64]);
+	}, [plaintext, keyBase64, t]);
 
 	const handleDecrypt = useCallback(async () => {
 		try {
@@ -38,9 +38,9 @@ export const AESPanel: React.FC = () => {
 			const decrypted = await decryptAES(ciphertext, key);
 			setPlaintext(decrypted);
 		} catch (e) {
-			setError(e instanceof Error ? e.message : 'Decrypt failed');
+			setError(e instanceof Error ? e.message : t('crypto.aes.decryptFailed', { defaultValue: 'Decrypt failed' }));
 		}
-	}, [ciphertext, keyBase64]);
+	}, [ciphertext, keyBase64, t]);
 
 	return (
 		<div style={styles.wrapper}>

@@ -11,7 +11,13 @@ export const en = {
 		},
 		curl: {
 			input: 'Curl Command',
-			convert: 'Convert'
+			convert: 'Convert',
+			langJs: 'JavaScript',
+			langPy: 'Python'
+		},
+		modes: {
+			ua: 'UA Parser',
+			curl: 'Curl → Code'
 		}
 	}
 };

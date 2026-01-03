@@ -146,23 +146,23 @@ export const ColorPickerPanel: React.FC = () => {
 			{/* WCAG Contrast Section */}
 			<div style={styles.contrastSection}>
 				<div style={styles.contrastHeader}>
-					<div style={styles.contrastTitle}>WCAG 2.1 Accessibility</div>
+					<div style={styles.contrastTitle}>{t('colorPanel.wcagTitle', { defaultValue: 'WCAG 2.1 Accessibility' })}</div>
 				</div>
 				<div style={styles.contrastGrid}>
 					<div style={styles.contrastBox}>
-						<div style={styles.contrastLabel}>vs White (#FFF)</div>
+						<div style={styles.contrastLabel}>{t('colorPanel.vsWhite', { defaultValue: 'vs White (#FFF)' })}</div>
 						<div style={styles.contrastRatio}>{contrastWhite.ratio}:1</div>
 						<div style={styles.contrastValue}>
-							Large: <span style={contrastWhite.ratingAA === 'pass' ? styles.pass : styles.fail}>{contrastWhite.ratingAA.toUpperCase()}</span> | 
-							Small: <span style={contrastWhite.ratingAAA === 'pass' ? styles.pass : styles.fail}>{contrastWhite.ratingAAA.toUpperCase()}</span>
+							{t('colorPanel.largeText', { defaultValue: 'Large' })}: <span style={contrastWhite.ratingAA === 'pass' ? styles.pass : styles.fail}>{contrastWhite.ratingAA.toUpperCase()}</span> | 
+							{t('colorPanel.smallText', { defaultValue: 'Small' })}: <span style={contrastWhite.ratingAAA === 'pass' ? styles.pass : styles.fail}>{contrastWhite.ratingAAA.toUpperCase()}</span>
 						</div>
 					</div>
 					<div style={styles.contrastBox}>
-						<div style={styles.contrastLabel}>vs Black (#000)</div>
+						<div style={styles.contrastLabel}>{t('colorPanel.vsBlack', { defaultValue: 'vs Black (#000)' })}</div>
 						<div style={styles.contrastRatio}>{contrastBlack.ratio}:1</div>
 						<div style={styles.contrastValue}>
-							Large: <span style={contrastBlack.ratingAA === 'pass' ? styles.pass : styles.fail}>{contrastBlack.ratingAA.toUpperCase()}</span> | 
-							Small: <span style={contrastBlack.ratingAAA === 'pass' ? styles.pass : styles.fail}>{contrastBlack.ratingAAA.toUpperCase()}</span>
+							{t('colorPanel.largeText', { defaultValue: 'Large' })}: <span style={contrastBlack.ratingAA === 'pass' ? styles.pass : styles.fail}>{contrastBlack.ratingAA.toUpperCase()}</span> | 
+							{t('colorPanel.smallText', { defaultValue: 'Small' })}: <span style={contrastBlack.ratingAAA === 'pass' ? styles.pass : styles.fail}>{contrastBlack.ratingAAA.toUpperCase()}</span>
 						</div>
 					</div>
 				</div>

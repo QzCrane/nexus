@@ -3,6 +3,9 @@ export const en = {
 		input: 'Input',
 		output: 'Output',
 		mode: 'Mode',
-		shift: 'Shift'
+		shift: 'Shift',
+		inputPlaceholder: 'Hello World',
+		copy: 'Copy Result',
+		custom: 'Custom'
 	}
 };

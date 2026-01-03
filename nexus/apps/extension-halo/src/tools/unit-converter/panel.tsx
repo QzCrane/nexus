@@ -4,7 +4,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { UnitCategory } from './types';
-import { UNITS, convertUnit, formatResult, CATEGORY_LABELS } from './core';
+import { UNITS, convertUnit, formatResult } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
 
@@ -56,7 +56,7 @@ export const UnitConverterPanel: React.FC = () => {
 						style={{ ...styles.tab, ...(category === cat ? styles.active : styles.inactive) }}
 						onClick={() => handleCategoryChange(cat)}
 					>
-						{CATEGORY_LABELS[cat]}
+						{t(`unitConverter.categories.${cat}`, { defaultValue: cat })}
 					</button>
 				))}
 			</div>
@@ -75,7 +75,7 @@ export const UnitConverterPanel: React.FC = () => {
 						/>
 						<select style={styles.select} value={fromUnit} onChange={(e) => setFromUnit(e.target.value)}>
 							{units.map((u) => (
-								<option key={u.id} value={u.id}>{u.name} ({u.symbol})</option>
+								<option key={u.id} value={u.id}>{t(`unitConverter.units.${u.id}`, { defaultValue: u.name })} ({u.symbol})</option>
 							))}
 						</select>
 					</div>
@@ -87,7 +87,7 @@ export const UnitConverterPanel: React.FC = () => {
 						</div>
 						<select style={styles.select} value={toUnit} onChange={(e) => setToUnit(e.target.value)}>
 							{units.map((u) => (
-								<option key={u.id} value={u.id}>{u.name} ({u.symbol})</option>
+								<option key={u.id} value={u.id}>{t(`unitConverter.units.${u.id}`, { defaultValue: u.name })} ({u.symbol})</option>
 							))}
 						</select>
 					</div>
@@ -98,7 +98,7 @@ export const UnitConverterPanel: React.FC = () => {
 			{result && (
 				<div style={styles.result}>
 					<div style={styles.resultValue}>{inputValue} {fromUnitObj.symbol} = {result} {toUnitObj.symbol}</div>
-					<div style={styles.resultUnit}>{fromUnitObj.name} → {toUnitObj.name}</div>
+					<div style={styles.resultUnit}>{t(`unitConverter.units.${fromUnitObj.id}`, { defaultValue: fromUnitObj.name })} → {t(`unitConverter.units.${toUnitObj.id}`, { defaultValue: toUnitObj.name })}</div>
 				</div>
 			)}
 		</div>

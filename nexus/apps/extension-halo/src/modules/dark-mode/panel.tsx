@@ -2,6 +2,7 @@
 // inv: all darkreader config options must be visible and adjustable
 
 import React, { useState, useCallback } from 'react';
+import { useTranslation } from '../../i18n';
 import { Card } from '@nexus/ui-kit';
 import type { DarkModeConfig, DarkModeFixes } from './core';
 import { DEFAULT_CONFIG, DEFAULT_FIXES, DARK_MODE_PRESETS, type DarkModePreset } from './core';
@@ -14,12 +15,8 @@ interface Props {
 	onPresetSelect: (preset: DarkModePreset) => void;
 }
 
-const PRESET_LABELS: Record<DarkModePreset, string> = {
-	default: 'Default',
-	highContrast: 'High Contrast',
-	warm: 'Warm',
-	dim: 'Dim',
-};
+// inv: all darkreader config options must be visible and adjustable
+// Refactored to use t() inside component
 
 // inv: slider component for numeric values
 const Slider = ({ label, value, min, max, onChange }: {
@@ -56,6 +53,7 @@ const ColorInput = ({ label, value, onChange }: {
 export const DarkModePanel: React.FC<Props> = ({
 	config, fixes, onConfigChange, onFixesChange, onPresetSelect
 }) => {
+	const { t } = useTranslation();
 	const [showAdvanced, setShowAdvanced] = useState(false);
 	const mergedConfig = { ...DEFAULT_CONFIG, ...config };
 	const mergedFixes = { ...DEFAULT_FIXES, ...fixes };
@@ -68,7 +66,14 @@ export const DarkModePanel: React.FC<Props> = ({
 		<Card variant="outlined" padding="sm">
 			{/* Preset Buttons */}
 			<div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', marginBottom: '12px' }}>
-				{(Object.keys(DARK_MODE_PRESETS) as DarkModePreset[]).map((key) => (
+				{(Object.keys(DARK_MODE_PRESETS) as DarkModePreset[]).map((key) => {
+					const labels: Record<string, string> = {
+						default: t('darkMode.presetDefault', { defaultValue: 'Default' }),
+						highContrast: t('darkMode.presetHighContrast', { defaultValue: 'High Contrast' }),
+						warm: t('darkMode.presetWarm', { defaultValue: 'Warm' }),
+						dim: t('darkMode.presetDim', { defaultValue: 'Dim' }),
+					};
+					return (
 					<button
 						key={key}
 						onClick={() => onPresetSelect(key)}
@@ -78,19 +83,20 @@ export const DarkModePanel: React.FC<Props> = ({
 							background: '#2a2a2a', color: '#ccc', cursor: 'pointer',
 						}}
 					>
-						{PRESET_LABELS[key]}
+						{labels[key]}
 					</button>
-				))}
+					);
+				})}
 			</div>
 
 			{/* Core Sliders */}
-			<Slider label="Brightness" value={mergedConfig.brightness} min={50} max={150}
+			<Slider label={t('darkMode.brightness', { defaultValue: 'Brightness' })} value={mergedConfig.brightness} min={50} max={150}
 				onChange={(v) => updateConfig('brightness', v)} />
-			<Slider label="Contrast" value={mergedConfig.contrast} min={50} max={150}
+			<Slider label={t('darkMode.contrast', { defaultValue: 'Contrast' })} value={mergedConfig.contrast} min={50} max={150}
 				onChange={(v) => updateConfig('contrast', v)} />
-			<Slider label="Sepia" value={mergedConfig.sepia} min={0} max={100}
+			<Slider label={t('darkMode.sepia', { defaultValue: 'Sepia' })} value={mergedConfig.sepia} min={0} max={100}
 				onChange={(v) => updateConfig('sepia', v)} />
-			<Slider label="Grayscale" value={mergedConfig.grayscale} min={0} max={100}
+			<Slider label={t('darkMode.grayscale', { defaultValue: 'Grayscale' })} value={mergedConfig.grayscale} min={0} max={100}
 				onChange={(v) => updateConfig('grayscale', v)} />
 
 			{/* Advanced Toggle */}
@@ -102,29 +108,29 @@ export const DarkModePanel: React.FC<Props> = ({
 					border: '1px dashed #444', borderRadius: '4px', cursor: 'pointer',
 				}}
 			>
-				{showAdvanced ? '▲ Hide Advanced' : '▼ Show Advanced'}
+				{showAdvanced ? `▲ ${t('darkMode.hideAdvanced', { defaultValue: 'Hide Advanced' })}` : `▼ ${t('darkMode.showAdvanced', { defaultValue: 'Show Advanced' })}`}
 			</button>
 
 			{/* Advanced Options */}
 			{showAdvanced && (
 				<div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #333' }}>
 					<div style={{ fontSize: '11px', fontWeight: '500', color: '#888', marginBottom: '10px' }}>
-						Theme Colors
+						{t('darkMode.themeColors', { defaultValue: 'Theme Colors' })}
 					</div>
-					<ColorInput label="Background" value={mergedConfig.darkSchemeBackgroundColor}
+					<ColorInput label={t('darkMode.bgColor', { defaultValue: 'Background' })} value={mergedConfig.darkSchemeBackgroundColor}
 						onChange={(v) => updateConfig('darkSchemeBackgroundColor', v)} />
-					<ColorInput label="Text" value={mergedConfig.darkSchemeTextColor}
+					<ColorInput label={t('darkMode.textColor', { defaultValue: 'Text' })} value={mergedConfig.darkSchemeTextColor}
 						onChange={(v) => updateConfig('darkSchemeTextColor', v)} />
-					<ColorInput label="Scrollbar" value={mergedConfig.scrollbarColor}
+					<ColorInput label={t('darkMode.scrollbarColor', { defaultValue: 'Scrollbar' })} value={mergedConfig.scrollbarColor}
 						onChange={(v) => updateConfig('scrollbarColor', v)} />
-					<ColorInput label="Selection" value={mergedConfig.selectionColor}
+					<ColorInput label={t('darkMode.selectionColor', { defaultValue: 'Selection' })} value={mergedConfig.selectionColor}
 						onChange={(v) => updateConfig('selectionColor', v)} />
 
 					<div style={{ fontSize: '11px', fontWeight: '500', color: '#888', margin: '12px 0 8px' }}>
-						Fixes (Site-Specific)
+						{t('darkMode.fixes', { defaultValue: 'Fixes (Site-Specific)' })}
 					</div>
 					<textarea
-						placeholder="Custom CSS (e.g., body { color: white !important; })"
+						placeholder={t('darkMode.cssPlaceholder', { defaultValue: 'Custom CSS (e.g., body { color: white !important; })' })}
 						value={mergedFixes.css}
 						onChange={(e) => onFixesChange({ ...fixes, css: e.target.value })}
 						style={{

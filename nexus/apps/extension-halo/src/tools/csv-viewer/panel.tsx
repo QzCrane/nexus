@@ -52,18 +52,18 @@ export const CsvViewerPanel: React.FC = () => {
 			{/* Controls */}
 			<div style={styles.row}>
 				<select style={styles.select} value={delimiter} onChange={(e) => setDelimiter(e.target.value)}>
-					<option value=",">, (Comma)</option>
-					<option value=";">; (Semicolon)</option>
-					<option value="	">Tab</option>
-					<option value="|">| (Pipe)</option>
+					<option value=",">, ({t('csvViewer.comma', { defaultValue: 'Comma' })})</option>
+					<option value=";">; ({t('csvViewer.semicolon', { defaultValue: 'Semicolon' })})</option>
+					<option value="	">{t('csvViewer.tab', { defaultValue: 'Tab' })}</option>
+					<option value="|">| ({t('csvViewer.pipe', { defaultValue: 'Pipe' })})</option>
 				</select>
 				<button style={{ ...styles.btn, background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text)' }} onClick={handleAutoDetect}>
-					🔍 Auto
+					🔍 {t('csvViewer.auto', { defaultValue: 'Auto' })}
 				</button>
 				{parsed && (
 					<>
-						<button style={styles.btn} onClick={handleCopyJson}>📋 JSON</button>
-						<span style={styles.stats}>{parsed.rowCount} rows × {parsed.colCount} cols</span>
+						<button style={styles.btn} onClick={handleCopyJson}>📋 {t('csvViewer.copyJson', { defaultValue: 'Copy JSON' })}</button>
+						<span style={styles.stats}>{parsed.rowCount} {t('csvViewer.rowsCols', { defaultValue: 'rows × cols' }).split('×')[0]} × {parsed.colCount} {t('csvViewer.rowsCols', { defaultValue: 'rows × cols' }).split('×')[1]}</span>
 					</>
 				)}
 			</div>

@@ -68,7 +68,7 @@ export const ScriptItem: React.FC<ScriptItemProps> = ({
 							}} />
 							{isActive ? t('userscripts.activeOnSite', { defaultValue: 'Active' }) : t('userscripts.inactiveOnSite', { defaultValue: 'Inactive' })}
 						</span>
-						<span>📍 {script.matches.length} {t('userscripts.matches', { defaultValue: 'match' })}{script.matches.length !== 1 ? 'es' : ''}</span>
+						<span>📍 {script.matches.length} {script.matches.length === 1 ? t('userscripts.match', { defaultValue: 'match' }) : t('userscripts.matches', { defaultValue: 'matches' })}</span>
 						<span>▶️ {script.runCount}x</span>
 						{script.lastRun && <span>📅 {formatDate(script.lastRun)}</span>}
 					</div>
@@ -79,13 +79,13 @@ export const ScriptItem: React.FC<ScriptItemProps> = ({
 						style={{ ...styles.iconBtn, opacity: isFirst ? 0.3 : 1 }}
 						onClick={(e) => { e.stopPropagation(); onMove('up'); }}
 						disabled={isFirst}
-						title="Move up"
+						title={t('userscripts.moveUp', { defaultValue: 'Move up' })}
 					>↑</button>
 					<button
 						style={{ ...styles.iconBtn, opacity: isLast ? 0.3 : 1 }}
 						onClick={(e) => { e.stopPropagation(); onMove('down'); }}
 						disabled={isLast}
-						title="Move down"
+						title={t('userscripts.moveDown', { defaultValue: 'Move down' })}
 					>↓</button>
 					
 					{/* Toggle */}
@@ -105,7 +105,7 @@ export const ScriptItem: React.FC<ScriptItemProps> = ({
 				<button
 					style={{ ...styles.iconBtn, ...styles.iconBtnDanger }}
 					onClick={onDelete}
-					title="Delete"
+					title={t('userscripts.delete', { defaultValue: 'Delete' })}
 				>🗑️</button>
 			</div>
 		</div>

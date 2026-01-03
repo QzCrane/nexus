@@ -104,15 +104,15 @@ export const QRCodePanel: React.FC = () => {
 					<Card variant="default" padding="md">
 						<textarea style={styles.textarea} placeholder={t('qrcodePanel.placeholder')} value={text} onChange={(e) => setText(e.target.value)} />
 						<div style={styles.optionsRow}>
-							<div style={styles.option}><label style={styles.label}>Dark</label><input type="color" style={styles.colorInput} value={options.darkColor} onChange={(e) => setOptions(p => ({ ...p, darkColor: e.target.value }))} /></div>
-							<div style={styles.option}><label style={styles.label}>Light</label><input type="color" style={styles.colorInput} value={options.lightColor} onChange={(e) => setOptions(p => ({ ...p, lightColor: e.target.value }))} /></div>
-							<div style={styles.option}><label style={styles.label}>Logo</label><div style={styles.logoBtn} onClick={() => logoInputRef.current?.click()}>{options.logo ? '✅' : '📁 Upload'}</div><input ref={logoInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleLogoUpload} /></div>
-							{options.logo && <div style={styles.option}><label style={styles.label}>Action</label><div style={{ ...styles.logoBtn, color: '#ef4444' }} onClick={() => setOptions(p => ({ ...p, logo: undefined }))}>✕ Remove</div></div>}
+							<div style={styles.option}><label style={styles.label}>{t('qrcodePanel.labelDark', { defaultValue: 'Dark' })}</label><input type="color" style={styles.colorInput} value={options.darkColor} onChange={(e) => setOptions(p => ({ ...p, darkColor: e.target.value }))} /></div>
+							<div style={styles.option}><label style={styles.label}>{t('qrcodePanel.labelLight', { defaultValue: 'Light' })}</label><input type="color" style={styles.colorInput} value={options.lightColor} onChange={(e) => setOptions(p => ({ ...p, lightColor: e.target.value }))} /></div>
+							<div style={styles.option}><label style={styles.label}>{t('qrcodePanel.labelLogo', { defaultValue: 'Logo' })}</label><div style={styles.logoBtn} onClick={() => logoInputRef.current?.click()}>{options.logo ? '✅' : `📁 ${t('qrcodePanel.upload', { defaultValue: 'Upload' })}`}</div><input ref={logoInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleLogoUpload} /></div>
+							{options.logo && <div style={styles.option}><label style={styles.label}>{t('qrcodePanel.labelAction', { defaultValue: 'Action' })}</label><div style={{ ...styles.logoBtn, color: '#ef4444' }} onClick={() => setOptions(p => ({ ...p, logo: undefined }))}>✕ {t('qrcodePanel.remove', { defaultValue: 'Remove' })}</div></div>}
 						</div>
 						<button style={{ ...styles.btn, marginTop: '12px', width: '100%', opacity: loading || !text.trim() ? 0.6 : 1 }} onClick={handleGenerate} disabled={loading || !text.trim()}>{loading ? t('qrcodePanel.generating') : t('qrcodePanel.generate')}</button>
 					</Card>
 					{qrDataUrl && <div style={styles.qrContainer}><div style={styles.qrImage}><img src={qrDataUrl} alt="QR" width={180} height={180} /></div>
-						<div style={styles.actionRow}><button style={styles.actionBtn} onClick={handleCopy}>📋 Copy</button><button style={styles.actionBtn} onClick={handleDownloadPNG}>🖼️ PNG</button><button style={styles.actionBtn} onClick={handleDownloadSVG}>📐 SVG</button></div></div>}
+						<div style={styles.actionRow}><button style={styles.actionBtn} onClick={handleCopy}>📋 {t('qrcodePanel.copy', { defaultValue: 'Copy' })}</button><button style={styles.actionBtn} onClick={handleDownloadPNG}>🖼️ PNG</button><button style={styles.actionBtn} onClick={handleDownloadSVG}>📐 SVG</button></div></div>}
 					{history.length > 0 && <div style={styles.historySection}><div style={styles.historyTitle}><span>{t('qrcodePanel.recent')}</span><span>{history.length}</span></div>
 						<div style={styles.historyList}>{history.map((item, i) => <div key={i} style={styles.historyItem} onClick={() => setText(item)} title={item}>{item}</div>)}</div></div>}
 				</>
@@ -120,9 +120,9 @@ export const QRCodePanel: React.FC = () => {
 				<>
 					<div style={styles.scanZone} onClick={() => fileInputRef.current?.click()}><span style={styles.scanIcon}>📷</span><p style={{ color: 'var(--halo-text-secondary)', fontSize: '13px' }}>{t('qrcodePanel.scanFromImage')}</p></div>
 					<input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleScanFile} />
-					<div style={styles.scanBtns}><button style={{ ...styles.btn, ...styles.btnSecondary, flex: 1 }} onClick={() => fileInputRef.current?.click()}>📁 Image</button><button style={{ ...styles.btn, ...styles.btnSecondary, flex: 1 }} onClick={handleScanClipboard}>📋 Clipboard</button></div>
+					<div style={styles.scanBtns}><button style={{ ...styles.btn, ...styles.btnSecondary, flex: 1 }} onClick={() => fileInputRef.current?.click()}>📁 {t('qrcodePanel.btnImage', { defaultValue: 'Image' })}</button><button style={{ ...styles.btn, ...styles.btnSecondary, flex: 1 }} onClick={handleScanClipboard}>📋 {t('qrcodePanel.btnClipboard', { defaultValue: 'Clipboard' })}</button></div>
 					{scanResult && <div style={styles.resultCard}><div style={styles.resultLabel}>{t('qrcodePanel.detectedContent')}</div><div style={styles.resultText}>{scanResult.data}</div>
-						<div style={{ ...styles.actionRow, marginTop: '12px' }}><button style={styles.actionBtn} onClick={() => { navigator.clipboard.writeText(scanResult.data); showToast(t('qrcodePanel.copied')); }}>📋 Copy</button>
+						<div style={{ ...styles.actionRow, marginTop: '12px' }}><button style={styles.actionBtn} onClick={() => { navigator.clipboard.writeText(scanResult.data); showToast(t('qrcodePanel.copied')); }}>📋 {t('qrcodePanel.copy', { defaultValue: 'Copy' })}</button>
 							{/^https?:\/\//i.test(scanResult.data) && <button style={{ ...styles.actionBtn, background: 'var(--halo-accent)', color: '#fff', border: 'none' }} onClick={() => window.open(scanResult.data)}>🔗 Open</button>}</div></div>}
 				</>
 			)}

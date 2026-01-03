@@ -5,6 +5,11 @@ export const en = {
 		pause: 'Pause',
 		work: 'Work',
 		shortBreak: 'Short',
-		longBreak: 'Long'
+		longBreak: 'Long',
+		phases: {
+			work: '🍅 Focus',
+			shortBreak: '☕ Short Break',
+			longBreak: '🌴 Long Break'
+		}
 	}
 };

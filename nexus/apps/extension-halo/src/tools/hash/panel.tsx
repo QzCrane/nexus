@@ -56,11 +56,11 @@ export const HashPanel: React.FC = () => {
 	return (
 		<div style={styles.wrapper}>
 			<Card variant="default" padding="sm">
-				<textarea style={styles.textarea} value={input} onChange={(e) => setInput(e.target.value)} placeholder="Enter text..." />
+				<textarea style={styles.textarea} value={input} onChange={(e) => setInput(e.target.value)} placeholder={t('hash.placeholder', { defaultValue: 'Enter text...' })} />
 				<div style={{ ...styles.optionsRow, marginTop: '8px' }}>
-					<input style={{ ...styles.verifyInput, flex: 1 }} value={hmacKey} onChange={(e) => setHmacKey(e.target.value)} placeholder="HMAC Key (Optional)" />
+					<input style={{ ...styles.verifyInput, flex: 1 }} value={hmacKey} onChange={(e) => setHmacKey(e.target.value)} placeholder={t('hash.hmacPlaceholder', { defaultValue: 'HMAC Key (Optional)' })} />
 					<label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', marginLeft: '8px' }}>
-						<input type="checkbox" checked={uppercase} onChange={(e) => setUppercase(e.target.checked)} /> Upper
+						<input type="checkbox" checked={uppercase} onChange={(e) => setUppercase(e.target.checked)} /> {t('hash.upper', { defaultValue: 'Upper' })}
 					</label>
 				</div>
 			</Card>
@@ -71,19 +71,19 @@ export const HashPanel: React.FC = () => {
 						<span style={styles.algoLabel}>{algo}</span>
 						<span style={styles.hashValue}>{uppercase ? hashes[algo]?.toUpperCase() : hashes[algo]}</span>
 						<button style={{ ...styles.btn, ...(copiedAlgo === algo ? { background: 'var(--halo-accent)', color: '#fff' } : {}) }} onClick={() => copyHash(algo, hashes[algo] || '')}>
-							{copiedAlgo === algo ? '✓' : 'Copy'}
+							{copiedAlgo === algo ? '✓' : t('hash.copy', { defaultValue: 'Copy' })}
 						</button>
 					</div>
 				))}
 			</div>
 
 			<Card variant="default" padding="sm">
-				<span style={styles.label}>Verify Hash</span>
+				<span style={styles.label}>{t('hash.verifyTitle', { defaultValue: 'Verify Hash' })}</span>
 				<div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
-					<input style={styles.verifyInput} value={expectedHash} onChange={(e) => setExpectedHash(e.target.value)} placeholder="Expected hash value..." />
+					<input style={styles.verifyInput} value={expectedHash} onChange={(e) => setExpectedHash(e.target.value)} placeholder={t('hash.verifyPlaceholder', { defaultValue: 'Expected hash value...' })} />
 					{verifyResult && (
 						<div style={{ ...styles.verifyBadge, ...(verifyResult.match ? styles.pass : styles.fail) }}>
-							{verifyResult.match ? `MATCH (${verifyResult.algorithm})` : 'NO MATCH'}
+							{verifyResult.match ? `${t('hash.match', { defaultValue: 'MATCH' })} (${verifyResult.algorithm})` : t('hash.noMatch', { defaultValue: 'NO MATCH' })}
 						</div>
 					)}
 				</div>

@@ -4,6 +4,9 @@ export const en = {
 		cookies: 'cookies',
 		search: 'Search cookies...',
 		loading: 'Loading...',
-		noCookies: 'No cookies found'
+		noCookies: 'No cookies found',
+		export: 'Export JSON',
+		secure: 'Secure',
+		httpOnly: 'HTTP Only'
 	}
 };

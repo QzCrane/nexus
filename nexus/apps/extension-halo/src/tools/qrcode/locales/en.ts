@@ -17,6 +17,14 @@ export const en = {
 		scanFailed: 'No QR code found',
 		detectedContent: 'Detected Content',
 		openLink: 'Open Link',
-		copyText: 'Copy Text'
+		copyText: 'Copy Text',
+		labelDark: 'Dark',
+		labelLight: 'Light',
+		labelLogo: 'Logo',
+		labelAction: 'Action',
+		upload: 'Upload',
+		remove: 'Remove',
+		btnImage: 'Image',
+		btnClipboard: 'Clipboard'
 	}
 };

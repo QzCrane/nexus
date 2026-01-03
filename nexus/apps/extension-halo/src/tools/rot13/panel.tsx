@@ -39,14 +39,14 @@ export const Rot13Panel: React.FC = () => {
                         style={mode === m ? styles.activeBtn : styles.btn} 
                         onClick={() => setMode(m)}
                     >
-                        {m}
+                        {m === 'Custom' ? t('rot13.custom', { defaultValue: 'Custom' }) : m}
                     </button>
                 ))}
             </div>
 
             {mode === 'Custom' && (
                 <div style={styles.sliderContainer}>
-                    <span style={styles.label}>Shift: {shift}</span>
+                    <span style={styles.label}>{t('rot13.shift', { defaultValue: 'Shift' })}: {shift}</span>
                     <input 
                         type="range" 
                         min="1" max="25" 
@@ -58,23 +58,23 @@ export const Rot13Panel: React.FC = () => {
             )}
 
 			<div>
-				<div style={styles.label}>Input</div>
+				<div style={styles.label}>{t('rot13.input', { defaultValue: 'Input' })}</div>
 				<textarea 
                     style={styles.textarea} 
                     value={input} 
                     onChange={(e) => setInput(e.target.value)} 
-                    placeholder="Hello World" 
+                    placeholder={t('rot13.inputPlaceholder', { defaultValue: 'Hello World' })} 
                 />
 			</div>
 
             <div style={{textAlign: 'center', fontSize: '20px', color: 'var(--halo-text-muted)'}}>⬇️</div>
 
 			<div>
-				<div style={styles.label}>Output</div>
+				<div style={styles.label}>{t('rot13.output', { defaultValue: 'Output' })}</div>
 				<textarea style={styles.textarea} value={output} readOnly />
 			</div>
 
-            <button style={styles.btn} onClick={handleCopy}>📋 Copy Result</button>
+            <button style={styles.btn} onClick={handleCopy}>📋 {t('rot13.copy', { defaultValue: 'Copy Result' })}</button>
 		</div>
 	);
 };

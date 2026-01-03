@@ -30,7 +30,7 @@ export const ApiTesterPanel: React.FC = () => {
 			const res = await executeRequest({ ...config, url });
 			setResponse(res);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : 'Request failed');
+			setError(err instanceof Error ? err.message : t('apiTester.error', { defaultValue: 'Request failed' }));
 		} finally {
 			setLoading(false);
 		}
@@ -61,23 +61,23 @@ export const ApiTesterPanel: React.FC = () => {
 				</select>
 				<input
 					style={styles.urlInput}
-					placeholder="https://api.example.com/endpoint"
+					placeholder={t('apiTester.urlPlaceholder', { defaultValue: 'https://api.example.com/endpoint' })}
 					value={config.url}
 					onChange={(e) => setConfig((c) => ({ ...c, url: e.target.value }))}
 					onKeyDown={(e) => e.key === 'Enter' && handleSend()}
 				/>
 				<button style={styles.btn} onClick={handleSend} disabled={loading}>
-					{loading ? '⏳' : '🚀'} {t('apiTester.send')}
+					{loading ? '⏳' : '🚀'} {t('apiTester.send', { defaultValue: 'Send' })}
 				</button>
 			</div>
 
 			{/* Tabs */}
 			<div style={styles.tabs}>
 				<button style={{ ...styles.tab, ...(activeTab === 'headers' ? styles.tabActive : {}) }} onClick={() => setActiveTab('headers')}>
-					Headers
+					{t('apiTester.headers', { defaultValue: 'Headers' })}
 				</button>
 				<button style={{ ...styles.tab, ...(activeTab === 'body' ? styles.tabActive : {}) }} onClick={() => setActiveTab('body')}>
-					Body
+					{t('apiTester.body', { defaultValue: 'Body' })}
 				</button>
 			</div>
 
@@ -87,8 +87,8 @@ export const ApiTesterPanel: React.FC = () => {
 					{config.headers.map((h, idx) => (
 						<div key={idx} style={{ ...styles.headerRow, marginBottom: '6px' }}>
 							<input type="checkbox" checked={h.enabled} onChange={(e) => updateHeader(idx, 'enabled', e.target.checked)} />
-							<input style={styles.headerInput} placeholder="Key" value={h.key} onChange={(e) => updateHeader(idx, 'key', e.target.value)} />
-							<input style={styles.headerInput} placeholder="Value" value={h.value} onChange={(e) => updateHeader(idx, 'value', e.target.value)} />
+							<input style={styles.headerInput} placeholder={t('apiTester.key', { defaultValue: 'Key' })} value={h.key} onChange={(e) => updateHeader(idx, 'key', e.target.value)} />
+							<input style={styles.headerInput} placeholder={t('apiTester.value', { defaultValue: 'Value' })} value={h.value} onChange={(e) => updateHeader(idx, 'value', e.target.value)} />
 							{config.headers.length > 1 && <button style={styles.btnSecondary} onClick={() => removeHeader(idx)}>×</button>}
 						</div>
 					))}
@@ -100,16 +100,16 @@ export const ApiTesterPanel: React.FC = () => {
 				<div style={styles.section}>
 					<div style={{ marginBottom: '8px' }}>
 						<select style={styles.methodSelect} value={config.bodyType} onChange={(e) => setConfig((c) => ({ ...c, bodyType: e.target.value as RequestConfig['bodyType'] }))}>
-							<option value="none">None</option>
-							<option value="json">JSON</option>
-							<option value="form">Form</option>
-							<option value="text">Text</option>
+							<option value="none">{t('apiTester.none', { defaultValue: 'None' })}</option>
+							<option value="json">{t('apiTester.json', { defaultValue: 'JSON' })}</option>
+							<option value="form">{t('apiTester.form', { defaultValue: 'Form' })}</option>
+							<option value="text">{t('apiTester.text', { defaultValue: 'Text' })}</option>
 						</select>
 					</div>
 					{config.bodyType !== 'none' && (
 						<textarea
 							style={styles.bodyArea}
-							placeholder={config.bodyType === 'json' ? '{"key": "value"}' : 'Request body...'}
+							placeholder={config.bodyType === 'json' ? t('apiTester.bodyJsonPlaceholder', { defaultValue:'{"key": "value"}' }) : t('apiTester.bodyPlaceholder', { defaultValue: 'Request body...' })}
 							value={config.body}
 							onChange={(e) => setConfig((c) => ({ ...c, body: e.target.value }))}
 						/>
@@ -128,8 +128,8 @@ export const ApiTesterPanel: React.FC = () => {
 							{response.status} {response.statusText}
 						</span>
 						<div style={styles.meta}>
-							<span>⏱️ {response.time}ms</span>
-							<span>📦 {formatSize(response.size)}</span>
+							<span>⏱️ {t('apiTester.time', { defaultValue: 'Time' })}: {response.time}ms</span>
+							<span>📦 {t('apiTester.size', { defaultValue: 'Size' })}: {formatSize(response.size)}</span>
 						</div>
 					</div>
 					<pre style={styles.responseBody}>{formatBody(response.body)}</pre>

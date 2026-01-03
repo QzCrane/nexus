@@ -3,6 +3,8 @@ export const en = {
 		type: 'Type',
 		length: 'Length',
 		count: 'Count',
-		generate: 'Generate'
+		generate: 'Generate',
+		result: 'Result',
+		copy: 'Copy'
 	}
 };

@@ -39,7 +39,7 @@ export const RandomGenPanel: React.FC = () => {
 		<div style={styles.wrapper}>
             <div style={styles.toolbar}>
                  <div>
-                    <span style={styles.label}>Type</span>
+                    <span style={styles.label}>{t('randomGen.type', { defaultValue: 'Type' })}</span>
                     <div style={{ display: 'inline-flex', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--halo-border)', background: 'var(--halo-bg-tertiary)', marginTop: '4px' }}>
                         {([
                             { value: 'UUID' as Type, label: 'UUID' },
@@ -66,23 +66,23 @@ export const RandomGenPanel: React.FC = () => {
                  
                  {(type === 'Hex' || type === 'Base64') && (
                      <div>
-                        <span style={styles.label}>Length</span>
+                        <span style={styles.label}>{t('randomGen.length', { defaultValue: 'Length' })}</span>
                         <input type="number" style={styles.input} value={length} onChange={(e) => setLength(Number(e.target.value))} />
                      </div>
                  )}
 
                  <div>
-                    <span style={styles.label}>Count</span>
+                    <span style={styles.label}>{t('randomGen.count', { defaultValue: 'Count' })}</span>
                     <input type="number" style={styles.input} value={count} min="1" max="1000" onChange={(e) => setCount(Number(e.target.value))} />
                  </div>
 
-                 <button style={{...styles.btn, marginTop: 'auto'}} onClick={handleGenerate}>⚡ Generate</button>
+                 <button style={{...styles.btn, marginTop: 'auto'}} onClick={handleGenerate}>⚡ {t('randomGen.generate', { defaultValue: 'Generate' })}</button>
             </div>
 
 			<div>
-				<div style={styles.label}>Result</div>
+				<div style={styles.label}>{t('randomGen.result', { defaultValue: 'Result' })}</div>
 				<textarea style={styles.textarea} value={output} readOnly />
-                <button style={{...styles.btn, marginTop: '8px', width: '100%'}} onClick={handleCopy}>📋 Copy</button>
+                <button style={{...styles.btn, marginTop: '8px', width: '100%'}} onClick={handleCopy}>📋 {t('randomGen.copy', { defaultValue: 'Copy' })}</button>
 			</div>
 		</div>
 	);

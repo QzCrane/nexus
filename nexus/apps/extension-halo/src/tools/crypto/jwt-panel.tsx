@@ -54,7 +54,7 @@ export const JWTPanel: React.FC = () => {
 				<>
 					<div>
 						<span style={styles.label}>{t('crypto.jwt.payload')}</span>
-						<textarea style={styles.textarea} value={payloadInput} onChange={(e) => setPayloadInput(e.target.value)} placeholder='{"key": "value"}' />
+						<textarea style={styles.textarea} value={payloadInput} onChange={(e) => setPayloadInput(e.target.value)} placeholder={t('crypto.jwt.placeholderPayload', { defaultValue: '{"key": "value"}' })} />
 					</div>
 					<div>
 						<span style={styles.label}>{t('crypto.jwt.secret')}</span>
@@ -66,7 +66,7 @@ export const JWTPanel: React.FC = () => {
 				<>
 					<div>
 						<span style={styles.label}>{t('crypto.jwt.token')}</span>
-						<textarea style={styles.textarea} value={token} onChange={(e) => setToken(e.target.value)} placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." />
+						<textarea style={styles.textarea} value={token} onChange={(e) => setToken(e.target.value)} placeholder={t('crypto.jwt.placeholderToken', { defaultValue: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' })} />
 					</div>
 					<div style={styles.row}>
 						<button style={styles.btn} onClick={handleDecode}>{t('crypto.jwt.decode')}</button>

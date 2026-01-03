@@ -10,7 +10,9 @@ export const en = {
 			payload: 'Payload',
 			generate: 'Generate JWT',
 			valid: 'Signature Valid',
-			invalid: 'Signature Invalid'
+			invalid: 'Signature Invalid',
+			placeholderToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+			placeholderPayload: '{"key": "value"}'
 		},
 		aes: {
 			key: 'AES Key (Base64)',
@@ -19,12 +21,19 @@ export const en = {
 			plaintext: 'Plaintext',
 			ciphertext: 'Ciphertext',
 			encrypt: 'Encrypt',
-			decrypt: 'Decrypt'
+			decrypt: 'Decrypt',
+			encryptFailed: 'Encrypt failed',
+			decryptFailed: 'Decrypt failed'
 		},
 		rsa: {
 			generate: 'Generate RSA Key Pair',
 			publicKey: 'Public Key',
 			privateKey: 'Private Key'
+		},
+		modes: {
+			jwt: 'JWT',
+			aes: 'AES',
+			rsa: 'RSA'
 		}
 	}
 };

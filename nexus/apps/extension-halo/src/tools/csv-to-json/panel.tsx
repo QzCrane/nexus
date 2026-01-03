@@ -41,20 +41,20 @@ export const CsvToJsonPanel: React.FC = () => {
 	return (
 		<div style={styles.wrapper}>
 			<div>
-                <div style={styles.label}>CSV Input</div>
+                <div style={styles.label}>{t('csvToJson.input', { defaultValue: 'CSV Input' })}</div>
 			    <textarea style={styles.textarea} value={input} onChange={(e) => setInput(e.target.value)} placeholder="name,age\nJohn,30" />
             </div>
 
             <div style={styles.row}>
-				<span style={styles.label}>Delimiter:</span>
+				<span style={styles.label}>{t('csvToJson.separator', { defaultValue: 'Separator' })}:</span>
 				<select style={styles.select} value={delimiter} onChange={(e) => setDelimiter(e.target.value)}>
 					<option value=",">,</option>
 					<option value=";">;</option>
-					<option value="\t">Tab</option>
+					<option value="\t">{t('csvToJson.tab', { defaultValue: 'Tab' })}</option>
 				</select>
                 <label style={styles.checkbox}>
                     <input type="checkbox" checked={hasHeader} onChange={(e) => setHasHeader(e.target.checked)} />
-                    Has Header
+                    {t('csvToJson.header', { defaultValue: 'Has Header' })}
                 </label>
 			</div>
 
@@ -62,11 +62,11 @@ export const CsvToJsonPanel: React.FC = () => {
 
 			{output && (
 				<div>
-					<div style={styles.label}>JSON Output</div>
+					<div style={styles.label}>{t('csvToJson.output', { defaultValue: 'JSON Output' })}</div>
 					<textarea style={styles.textarea} value={output} readOnly />
                     <div style={{...styles.row, marginTop: '8px'}}>
-                        <button style={styles.btn} onClick={handleCopy}>📋 Copy JSON</button>
-                        <button style={styles.btn} onClick={handleDownload}>⬇️ Download</button>
+                        <button style={styles.btn} onClick={handleCopy}>📋 {t('csvToJson.copy', { defaultValue: 'Copy JSON' })}</button>
+                        <button style={styles.btn} onClick={handleDownload}>⬇️ {t('csvToJson.download', { defaultValue: 'Download' })}</button>
                     </div>
 				</div>
 			)}

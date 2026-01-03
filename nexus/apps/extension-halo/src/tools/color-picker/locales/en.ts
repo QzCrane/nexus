@@ -9,6 +9,11 @@ export const en = {
 		hex: 'HEX',
 		rgb: 'RGB',
 		hsl: 'HSL',
-		inputPlaceholder: '#hex or rgb(...)'
+		inputPlaceholder: '#hex or rgb(...)',
+		wcagTitle: 'WCAG 2.1 Accessibility',
+		vsWhite: 'vs White (#FFF)',
+		vsBlack: 'vs Black (#000)',
+		largeText: 'Large',
+		smallText: 'Small'
 	}
 };
