@@ -37,7 +37,7 @@ export function useOpenTools(): UseOpenToolsResult {
 			const savedActive = storage[ACTIVE_TOOL_KEY] as ToolId | null;
 			// System tools can be active without being in openTools
 			const isSystemTool = (id: string) =>
-				id === 'settings' || id === 'module-store' || id === 'permissions';
+				id === 'settings' || id === 'module-store' || id === 'permissions' || id === 'extension-manager';
 			if (savedActive && (savedOpen.includes(savedActive) || isSystemTool(savedActive))) {
 				setActiveToolState(savedActive);
 			} else {
@@ -50,7 +50,7 @@ export function useOpenTools(): UseOpenToolsResult {
 		setActiveToolState(toolId);
 
 		// System tools don't get added to dock
-		const isSystemTool = toolId === 'module-store' || toolId === 'settings' || toolId === 'permissions';
+		const isSystemTool = toolId === 'module-store' || toolId === 'settings' || toolId === 'permissions' || toolId === 'extension-manager';
 		if (!isSystemTool) {
 			setOpenTools(prev => {
 				if (prev.includes(toolId)) return prev;

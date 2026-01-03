@@ -26,7 +26,7 @@ export const DEFAULT_SETTINGS: HaloSettings = {
 	pinnedTools: [],
 	toolOrder: {},
 	categoryOrder: ['active', 'general', 'dev', 'efficiency', 'visual', 'ai', 'security', 'media', 'browser'],
-	enableExtensionManager: false,
+	enableExtensionManager: true,
 };
 
 export const ACCENT_COLORS = [
