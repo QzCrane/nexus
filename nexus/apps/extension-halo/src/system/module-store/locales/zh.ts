@@ -1,17 +1,17 @@
 
 export const zh = {
 	'tools.module-store.name': '模块商店',
-	'tools.module-store.desc': '安装或卸载工具模块',
+	'tools.module-store.desc': '安装或移除工具模块',
 	moduleStorePanel: {
 		title: '模块商店',
 		installed: '已安装',
-		available: '可用',
-		updates: '更新',
+		available: '未安装',
+		updates: '可更新',
 		all: '全部',
 		checkUpdates: '检查更新',
 		update: '更新',
 		noModules: '未找到模块',
-		allInstalled: '已安装所有模块！',
+		allInstalled: '所有模块已安装！',
 		core: '核心',
 		new: '新',
 		builtIn: '内置',
@@ -22,5 +22,11 @@ export const zh = {
 		loading: '加载模块中...',
 		statsModules: '个模块',
 		searchPlaceholder: '搜索模块...',
+		filters: {
+			all: '全部类型',
+			app: '应用',
+			script: '脚本 工具',
+			system: '系统',
+		}
 	},
 };

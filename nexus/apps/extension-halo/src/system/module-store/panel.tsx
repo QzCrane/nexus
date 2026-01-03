@@ -1,21 +1,23 @@
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useTranslation } from '../../i18n';
 import { useModuleManager } from '../../kernel';
 import { useRemoteRegistry } from '../../kernel';
 import { ALL_MODULES, formatModuleSize } from '../../kernel';
 import { ModuleItem } from './module-item';
+import { TypeFilter, FilterType } from './type-filter';
 import { filterBySearch, MODULE_SEARCH_OPTIONS } from '../../kernel/utils/unified-search';
 import { styles as searchStyles } from '../../components/SearchBar.styles';
 import { styles } from './panel.styles';
 
 type ViewMode = 'installed' | 'available' | 'all' | 'updates';
 
-
 export const ModuleStorePanel: React.FC = () => {
 	const { t } = useTranslation();
 	const { loading, installedModules, availableModules, getStatus, install, uninstall, isCore } = useModuleManager();
 	const { loading: remoteLoading, hasUpdates, updates, refresh } = useRemoteRegistry();
 	const [view, setView] = useState<ViewMode>('all');
+	const [filterType, setFilterType] = useState<FilterType>('all');
 	const [installing, setInstalling] = useState<string | null>(null);
 	const [searchQuery, setSearchQuery] = useState('');
 	const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -46,23 +48,33 @@ export const ModuleStorePanel: React.FC = () => {
 		await refresh();
 	}, [refresh]);
 
-	// System modules should not appear in the store
-	const filteredInstalled = installedModules.filter(m => !m.system);
-	const filteredAvailable = availableModules.filter(m => !m.system);
-	const filteredAll = ALL_MODULES.filter(m => !m.system);
-
 	// Use unified search engine (supports Pinyin + all locales)
 	const searchModules = (modules: typeof ALL_MODULES) => 
 		filterBySearch(modules, searchQuery, MODULE_SEARCH_OPTIONS);
 
-	const displayModules = searchModules(
-		view === 'installed' ? filteredInstalled
-		: view === 'available' ? filteredAvailable
-		: filteredAll
-	);
+	const getFilteredModules = () => {
+		// 1. Filter by Status (View)
+		let source = view === 'installed' ? installedModules
+			: view === 'available' ? availableModules
+			: ALL_MODULES;
+		
+		// 2. Filter by Type
+		source = source.filter(m => {
+			if (filterType === 'system') return m.system;
+			if (filterType === 'script') return !m.system && m.toolType === 'script';
+			if (filterType === 'app') return !m.system && (!m.toolType || m.toolType === 'panel');
+			// 'all': Apps + Scripts (Hide System by default unless searched explicitly? No, hide system)
+			return !m.system;
+		});
 
-	const totalInstalled = filteredInstalled.length;
-	const totalSize = filteredInstalled.reduce((sum, m) => sum + (m.size || 0), 0);
+		// 3. Filter by Search
+		return searchModules(source);
+	};
+
+	const displayModules = getFilteredModules();
+
+	const totalInstalled = installedModules.filter(m => !m.system).length; // Only count user tools
+	const totalSize = installedModules.reduce((sum, m) => sum + (m.size || 0), 0);
 
 	if (loading) {
 		return (
@@ -78,13 +90,14 @@ export const ModuleStorePanel: React.FC = () => {
 	return (
 		<div style={styles.wrapper}>
 			<div style={styles.header}>
-				<div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%' }}>
+				{/* Top Row: Search + Refresh */}
+				<div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%', marginBottom: '8px' }}>
 					<div style={{
 						...searchStyles.inputWrapper,
 						...(isSearchFocused ? searchStyles.inputWrapperFocus : {}),
 						flex: 1,
 						padding: '4px 12px',
-						height: '40px',
+						height: '36px',
 						background: 'var(--halo-bg-secondary)',
 						display: 'flex',
 						alignItems: 'center',
@@ -105,10 +118,15 @@ export const ModuleStorePanel: React.FC = () => {
 						/>
 						{!isSearchFocused && !searchQuery && <span style={searchStyles.shortcut as React.CSSProperties}>⌘K</span>}
 					</div>
-					<button style={{ ...styles.btnRefresh, height: '40px', width: '40px' }} onClick={handleRefresh} disabled={remoteLoading} title={t('moduleStorePanel.checkUpdates')}>
+					<button style={{ ...styles.btnRefresh, height: '36px', width: '36px' }} onClick={handleRefresh} disabled={remoteLoading} title={t('moduleStorePanel.checkUpdates')}>
 						{remoteLoading ? '⏳' : '🔄'}
 					</button>
 				</div>
+
+				{/* Middle Row: Type Filters */}
+				<TypeFilter value={filterType} onChange={setFilterType} />
+
+				{/* Bottom Row: Tabs */}
 				<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
 					<div style={styles.tabs}>
 						{(['all', 'installed', 'available'] as ViewMode[]).map((v) => (

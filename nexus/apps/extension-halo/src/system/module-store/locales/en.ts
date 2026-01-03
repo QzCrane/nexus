@@ -22,5 +22,11 @@ export const en = {
 		loading: 'Loading modules...',
 		statsModules: 'modules',
 		searchPlaceholder: 'Search modules...',
+		filters: {
+			all: 'All Types',
+			app: 'Apps',
+			script: 'Scripts',
+			system: 'System',
+		}
 	},
 };
