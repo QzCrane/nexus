@@ -15,68 +15,38 @@ interface UseCategorizedToolsProps {
 }
 
 export function useCategorizedTools({
-	visibleTools,
-	settings,
-	t,
-	activeServices,
-	backgroundToolIds,
-	scripts,
-	tempCats,
-	tempCatOrder
+	visibleTools, settings, t, activeServices, backgroundToolIds, scripts, tempCats, tempCatOrder
 }: UseCategorizedToolsProps) {
 	const categorizedTools = useMemo(() => {
 		if (tempCats) return tempCats;
-		const cats: Record<string, ToolMeta[]> = { active: [], scripts: [], system: [], general: [], dev: [], efficiency: [], visual: [], ai: [], security: [], media: [], browser: [] };
+		const cats: Record<string, ToolMeta[]> = {
+			active: [], scripts: [], system: [], general: [], dev: [],
+			efficiency: [], visual: [], ai: [], security: [], media: [], browser: []
+		};
 
-		// 1. Process builtin/registry tools
+		// 1. Process builtin/registry tools (skip SaaT scripts - they go to scripts via user scripts)
 		visibleTools.forEach(tool => {
 			if (tool.system) {
-				if (settings?.showSystemTools) {
-					cats.system.push(tool);
-				}
-				// Also add system tools to 'active' if they are background capable
-				if (backgroundToolIds.includes(tool.id)) {
-					cats.active.push(tool);
-				}
+				if (settings?.showSystemTools) cats.system.push(tool);
+				if (backgroundToolIds.includes(tool.id)) cats.active.push(tool);
 				return;
 			}
+			// Skip SaaT script tools - scripts category only shows user-created scripts
+			if (tool.toolType === 'script') return;
 
-			// SaaT script tools go to scripts category
-			if (tool.toolType === 'script') {
-				cats.scripts.push(tool);
-				return;
-			}
-
-			// Include in "Active Services" if it is background capable (even if disabled)
-			// This allows showing "inactive" state (grey dot) instead of hiding
-			if (backgroundToolIds.includes(tool.id)) {
-				cats.active.push(tool);
-			}
-
+			if (backgroundToolIds.includes(tool.id)) cats.active.push(tool);
 			if (cats[tool.category]) cats[tool.category].push(tool);
 			else cats.general.push(tool);
 		});
 
-		// 2. Merge User Scripts from storage
-		// Collect registered SaaT IDs from tools registry (these have id matching tool.id)
-		const registeredSaaTIds = new Set(cats.scripts.map(t => t.id));
-
+		// 2. Merge User Scripts from storage (only pure user scripts, skip SaaT)
 		scripts.forEach(script => {
-			// Skip SaaT scripts (those with id starting with 'saat-') that already have a tool in registry
-			// SaaT IDs format: 'saat-{toolId}-{timestamp}', e.g. 'saat-bilibili-plus-1767413981425'
-			if (script.id.startsWith('saat-')) {
-				// Extract tool ID by removing prefix and timestamp suffix
-				const match = script.id.match(/^saat-(.+)-\d+$/);
-				const toolId = match?.[1];
-				if (toolId && registeredSaaTIds.has(toolId)) return;
-			}
-			// Skip if this user script id is already in the scripts category
-			if (registeredSaaTIds.has(script.id)) return;
+			// Skip SaaT scripts (id format: 'saat-{toolId}-{timestamp}')
+			if (script.id.startsWith('saat-')) return;
 
-			// Create pseudo ToolMeta for user script
 			const scriptTool: ToolMeta = {
 				id: script.id,
-				name: script.name, // Use raw name (no i18n for user scripts)
+				name: script.name,
 				description: script.description,
 				icon: script.type === 'css' ? '🎨' : '⚡',
 				category: 'scripts',
@@ -85,13 +55,12 @@ export function useCategorizedTools({
 				builtIn: false,
 				status: 'ready',
 				keywords: ['script', 'user'],
-				// Mark as user script for rendering special actions
 				isUserScript: true
 			} as ToolMeta & { isUserScript?: boolean };
-
 			cats.scripts.push(scriptTool);
 		});
 
+		// 3. Sort each category
 		Object.keys(cats).forEach(cat => {
 			const pinned = settings?.pinnedTools || [], order = settings?.toolOrder?.[cat] || [];
 			cats[cat].sort((a, b) => {
@@ -99,7 +68,6 @@ export function useCategorizedTools({
 				if (ap !== bp) return ap ? -1 : 1;
 				const ai = order.indexOf(a.id), bi = order.indexOf(b.id);
 				if (ai !== -1 && bi !== -1) return ai - bi;
-				// Use raw name for sorting if i18n key not found/is raw
 				const nameA = (t(`tools.${a.id}.name`) === `tools.${a.id}.name` ? (a.name || a.id) : t(`tools.${a.id}.name`)) || a.id;
 				const nameB = (t(`tools.${b.id}.name`) === `tools.${b.id}.name` ? (b.name || b.id) : t(`tools.${b.id}.name`)) || b.id;
 				return ai !== -1 ? -1 : bi !== -1 ? 1 : nameA.localeCompare(nameB);
@@ -114,26 +82,13 @@ export function useCategorizedTools({
 		let order = settings?.categoryOrder || [];
 		if (order.length === 0) order = defaultOrder;
 
-		// Ensure active, scripts, system are always present if they have tools (or if default requires them)
-		// We re-inject them to ensure they appear even if user config is old
-		// Specifically system if enabled
 		if (!order.includes('system') && settings?.showSystemTools) {
-			// Insert system after scripts or at beginning
 			const scriptIdx = order.indexOf('scripts');
 			if (scriptIdx !== -1) order.splice(scriptIdx + 1, 0, 'system');
 			else order.unshift('system');
 		}
-
-		// Ensure active is always present
-		if (!order.includes('active')) {
-			order = ['active', ...order];
-		}
-
-		// Ensure scripts is always present
-		if (!order.includes('scripts')) {
-			order = ['active', 'scripts', ...order.filter((o: string) => o !== 'active')];
-		}
-
+		if (!order.includes('active')) order = ['active', ...order];
+		if (!order.includes('scripts')) order = ['active', 'scripts', ...order.filter((o: string) => o !== 'active')];
 		return order;
 	}, [settings, tempCatOrder]);
 
