@@ -25,7 +25,13 @@
 - **registry.ts**: 动态注册/注销脚本，storage 变化自动同步.
 - **Block Space Scroll**: 两全其美方案 - 阻止滚动 + 手动控制视频播放/暂停.
 - **Smooth Scroll Fix**: 解决视频/下拉框按键冲突 (Smart Input Detection).
-- **i18n Architecture Refactor**: 去中心化翻译资源 (Tools/System Self-contained) + 自动聚合.
+- **Smooth Scroll Fix**: 解决视频/下拉框按键冲突 (Smart Input Detection).
+- **i18n Architecture Refactor**: ✅ 去中心化翻译资源 (Tools/System Self-contained) + 自动聚合.
+
+### v2.3.1 i18n Completion (2026-01-03)
+
+- **Full Internationalization**: Refactored 10+ core/dev tools (Protobuf, Network, Crypto, Pomodoro...) to use i18n keys.
+- **Locale SSOT**: All tool locales now reside in `src/tools/<name>/locales/{en,zh}.ts`.
 
 ## 🚧 核心任务 (SIP - v2.3.0)
 
@@ -36,8 +42,14 @@
 - 🔥 **System Isolation (系统隔离)**:
 
   - 规则: `settings`, `module-store`, `permissions` 必须标记为 `system: true`。
-  - 实现: 构建时将它们从 `TOOL_REGISTRY` 分离到 `SYSTEM_REGISTRY`，确保其严禁出现在常规工具列表或搜索结果中（除非明确搜系统设置）。
   - UI: 仅通过 Header / Global Actions 进入。
+
+- 🔥 **Script-as-a-Tool (SaaT) 伪工具架构**:
+
+  - 目标: 让脚本在 UI 上表现得像独立工具 (Script Tool)，拥有独立图标、搜索入口和启停开关。
+  - 实现: Registry 支持 `type: 'script'`。
+  - 交互: 主页点击直接 Toggle 启/停，或打开通用配置页，底层调用 `userscripts` 引擎。
+  - 首批: `bilibili-plus` (脚本), `chatgpt-wide` (脚本).
 
 - 🔥 **Taxonomy SSOT (分类定义的单一来源)**:
 
@@ -51,6 +63,7 @@
 ### 功能交付 (Feature Delivery)
 
 - **UserScripts Pro**: 依照 v2.3.0 架构标准完成收尾 (i18n SSOT, Layout Fix).
+- **Official Script Recipes**: 在 UserScripts 中内置"B 站增强"、"ChatGPT 宽屏"等高频脚本的一键安装，避免将它们异化为独立工具。
 
 ---
 
@@ -58,8 +71,9 @@
 
 ### Phase 10-12: 浏览器/安全/编解码 (P1)
 
+- **Scripts**: `bilibili-plus`, `chatgpt-wide` (作为 SaaT 验证).
 - **Security**: `checksum`, `ssl-check`, `csp-analyzer`, `random-gen`.
-- **Browser**: `translate` (API), `page-annotate`, `download-manager`, `tab-group`.
+- **Browser**: `translate` (API), `page-annotate`, `download-manager`, `tab-group`, `hover-zoom` (浮图秀 - Native), `extension-manager` (插件管理 - 场景切换/权限透视).
 
 ### Phase 13-15: 专业领域与 AI (P2)
 

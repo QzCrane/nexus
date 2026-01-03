@@ -56,7 +56,7 @@ nexus(私有) → {spectra, halo}-public/ → github.com/QzCrane/{spectra, halo}
 @nexus/ui-kit: 共享 UI 组件
 @nexus/audio-engine: WebAudio 链 (Zero-Copy 传输)
 @nexus/spectra: 媒体扩展 (Popup)
-@nexus/halo: 万能工具箱 (SidePanel - Centralized Status + Decentralized I18n)
+@nexus/halo: 万能工具箱 (SidePanel - Centralized Status + Decentralized I18n ✅)
 
 ---
 
@@ -72,6 +72,7 @@ nexus(私有) → {spectra, halo}-public/ → github.com/QzCrane/{spectra, halo}
 - 核心服务: `useToolState`, `PermissionManager`(Kernel), `EngineStatusProvider`
 - 搜索引擎: unified-search.ts (全语言+Pinyin 全拼/简拼+registerSearchLocale 扩展)
 - 性能优化: `useIdlePreload` (空闲预加载), `waitForI18n` (Suspense-ready)
+- 国际化: 100% Tools i18n Coverage (SSOT)
 - Core(13): QR/Screenshot/Color/Ruler/JSON/Base64/Hash/UUID/Timestamp/URL/ModuleStore/Settings/Permissions
 - Dev(34): **UserScripts(Pro:chrome.userScripts API,MAIN world,Templates)**/Regex/Crypto/Network/YAML/Markdown/JSONPath/SQL/Protobuf/...
 - Efficiency(13): PDF/Clipboard(Monitoring)/Tabs/Timer/SmoothScroll(Pro)/...
