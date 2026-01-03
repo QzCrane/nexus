@@ -1,0 +1,26 @@
+{
+	"id": "chatgpt-wide",
+	"icon": "🤖",
+	"category": "efficiency",
+	"size": 1536,
+	"builtIn": true,
+	"keywords": [
+		"chatgpt",
+		"openai",
+		"deepseek",
+		"宽屏",
+		"wide",
+		"ai"
+	],
+	"toolType": "script",
+	"scriptType": "css",
+	"scriptRunAt": "document_start",
+	"scriptMatches": [
+		"*://chatgpt.com/*",
+		"*://chat.openai.com/*",
+		"*://chat.deepseek.com/*"
+	],
+	"permissions": [
+		"userScripts"
+	]
+}

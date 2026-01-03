@@ -9,12 +9,19 @@ export type ToolStatus = 'ready' | 'beta' | 'coming' | 'disabled' | 'available';
  * Unified tool/module metadata
  * Used by both TOOL_REGISTRY and ALL_MODULES
  */
+/**
+ * Tool type: 'panel' (default) = React UI, 'script' = SaaT pseudo-tool (uses userScripts engine)
+ */
+export type ToolType = 'panel' | 'script';
+
 export interface ToolMeta {
 	id: string;
 	icon: string;
 	category: ToolCategory;
 	status: ToolStatus;
 	keywords: string[];
+	/** Tool type: 'panel' for React UI, 'script' for SaaT pseudo-tools */
+	toolType?: ToolType;
 	features?: {
 		contextMenu?: boolean;
 		contentScript?: boolean;
@@ -22,6 +29,14 @@ export interface ToolMeta {
 	};
 	system?: boolean;
 	permissions?: string[];
+	/** Script tool: URL match patterns (required if toolType='script') */
+	scriptMatches?: string[];
+	/** Script tool: Exclude URL patterns */
+	scriptExcludeMatches?: string[];
+	/** Script tool: Injection timing */
+	scriptRunAt?: 'document_start' | 'document_end' | 'document_idle';
+	/** Script tool: Code type */
+	scriptType?: 'javascript' | 'css';
 	// Module-specific fields (optional, used by ModuleStore)
 	size?: number;
 	builtIn?: boolean;

@@ -35,6 +35,12 @@ function buildToolMeta(tool: GeneratedToolMeta): ToolMeta {
 		features: tool.features,
 		system: tool.system,
 		permissions: tool.permissions,
+		// SaaT fields
+		toolType: tool.toolType,
+		scriptMatches: tool.scriptMatches,
+		scriptExcludeMatches: tool.scriptExcludeMatches,
+		scriptRunAt: tool.scriptRunAt,
+		scriptType: tool.scriptType,
 		// Module-specific fields
 		size: tool.size,
 		builtIn: tool.builtIn,

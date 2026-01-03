@@ -93,3 +93,6 @@ export const generatedToolPanels = {
 } as const;
 
 export type LoadableToolId = keyof typeof generatedToolPanels;
+
+// Script tool IDs (SaaT - no React panel, uses userScripts engine)
+export const SCRIPT_TOOL_IDS: readonly string[] = ['bilibili-plus', 'chatgpt-wide'];

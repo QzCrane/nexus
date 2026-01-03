@@ -5,7 +5,9 @@
 import { zh as api_tester } from '../../tools/api-tester/locales/zh';
 import { zh as archive } from '../../tools/archive/locales/zh';
 import { zh as base64 } from '../../tools/base64/locales/zh';
+import { zh as bilibili_plus } from '../../tools/bilibili-plus/locales/zh';
 import { zh as bookmark_manager } from '../../tools/bookmark-manager/locales/zh';
+import { zh as chatgpt_wide } from '../../tools/chatgpt-wide/locales/zh';
 import { zh as checksum } from '../../tools/checksum/locales/zh';
 import { zh as clipboard } from '../../tools/clipboard/locales/zh';
 import { zh as code_formatter } from '../../tools/code-formatter/locales/zh';
@@ -89,7 +91,9 @@ export const TOOLS_ZH = {
 	...api_tester,
 	...archive,
 	...base64,
+	...bilibili_plus,
 	...bookmark_manager,
+	...chatgpt_wide,
 	...checksum,
 	...clipboard,
 	...code_formatter,

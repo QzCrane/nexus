@@ -1,0 +1,24 @@
+{
+	"id": "bilibili-plus",
+	"icon": "📺",
+	"category": "browser",
+	"size": 2048,
+	"builtIn": true,
+	"keywords": [
+		"bilibili",
+		"b站",
+		"哔哩哔哩",
+		"视频",
+		"广告",
+		"弹幕"
+	],
+	"toolType": "script",
+	"scriptType": "javascript",
+	"scriptRunAt": "document_start",
+	"scriptMatches": [
+		"*://*.bilibili.com/*"
+	],
+	"permissions": [
+		"userScripts"
+	]
+}

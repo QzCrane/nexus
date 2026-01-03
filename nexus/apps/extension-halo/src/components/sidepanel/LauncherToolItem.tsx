@@ -1,5 +1,6 @@
-import React, { useState, memo } from 'react';
+import React, { useState, memo, useCallback } from 'react';
 import type { ToolId, ToolMeta, HaloSettings } from '../../kernel';
+import { toggleScriptTool } from '../../kernel';
 import { useTranslation } from '../../i18n';
 import { commonStyles } from './layouts.styles';
 import { useToolEngineStatus } from './hooks/use-tool-engine-status';
@@ -18,11 +19,14 @@ interface LauncherToolItemProps {
 	onDrop: (e: React.DragEvent, targetId: string) => void;
 	isRunning: boolean;
 	serviceState?: 'active' | 'inactive';
+	/** SaaT: callback for script tools toggle (instead of onSelect) */
+	onToggleScript?: (tool: ToolMeta) => void;
 }
 
 export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 	tool, settings, isCompact, showLabels, draggingId,
-	onSelect, onTogglePin, onDragStart, onDragOver, onDrop, isRunning, serviceState
+	onSelect, onTogglePin, onDragStart, onDragOver, onDrop, isRunning, serviceState,
+	onToggleScript
 }) => {
 	const { t } = useTranslation();
 	const [isHovered, setIsHovered] = useState(false);
@@ -31,6 +35,7 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 	const isReady = tool.status === 'ready' || tool.status === 'beta';
 	const isPinned = settings?.pinnedTools?.includes(tool.id);
 	const isDragging = draggingId === tool.id;
+	const isScriptTool = tool.toolType === 'script';
 	// isRunning is now passed as a prop
 	const engineEnabled = useToolEngineStatus(tool.id);
 	const mainThemeColor = getCategoryColor(tool.category);
@@ -39,6 +44,16 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 		e.stopPropagation();
 		onTogglePin(tool.id);
 	};
+
+	// SaaT: Default script toggle handler
+	const handleScriptToggle = useCallback(async () => {
+		if (!isScriptTool) return;
+		if (onToggleScript) {
+			onToggleScript(tool);
+		} else {
+			await toggleScriptTool(tool);
+		}
+	}, [isScriptTool, onToggleScript, tool]);
 
 	return (
 		<div
@@ -57,7 +72,15 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 		>
 			<button
 				data-tool-id={tool.id}
-				onClick={() => isReady && onSelect(tool.id as ToolId)}
+				data-tool-type={isScriptTool ? 'script' : 'panel'}
+				onClick={() => {
+					if (!isReady) return;
+					if (isScriptTool) {
+						handleScriptToggle();
+					} else {
+						onSelect(tool.id as ToolId);
+					}
+				}}
 				onContextMenu={(e) => { e.preventDefault(); onTogglePin(tool.id); }}
 				disabled={!isReady}
 				style={{
