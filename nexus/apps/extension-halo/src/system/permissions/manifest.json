@@ -1,6 +1,6 @@
 {
 	"id": "permissions",
-	"icon": "🔐",
+	"icon": "🛡️",
 	"category": "security",
 	"size": 0,
 	"system": true,

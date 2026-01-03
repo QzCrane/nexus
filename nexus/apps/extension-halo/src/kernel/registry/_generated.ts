@@ -1509,7 +1509,7 @@ export const SYSTEM_PLUGIN_REGISTRY: GeneratedToolMeta[] = [
 	},
 	{
 		id: 'permissions',
-		icon: '🔐',
+		icon: '🛡️',
 		category: 'security',
 		size: 0,
 		builtIn: true,
