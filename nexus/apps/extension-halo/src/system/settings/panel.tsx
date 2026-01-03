@@ -9,6 +9,7 @@ import type { HaloSettings } from '../../kernel';
 import { DEFAULT_SETTINGS } from '../../kernel';
 import { loadSettings, saveSettings, getThemeColors, applyTheme } from '../../kernel';
 import { styles } from './panel.styles';
+import { useOverlay } from '../../components/ui/overlay';
 import { AppearanceSettings } from './AppearanceSettings';
 import { InterfaceSettings } from './InterfaceSettings';
 
@@ -20,16 +21,11 @@ interface SettingsPanelProps {
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsChange }) => {
 	const { t, setting, setLocale } = useTranslation();
+	const { showToast } = useOverlay();
 	const [settings, setSettings] = useState<HaloSettings>(DEFAULT_SETTINGS);
-	const [toast, setToast] = useState<string | null>(null);
 
 	useEffect(() => {
 		loadSettings().then(setSettings);
-	}, []);
-
-	const showToast = useCallback((msg: string) => {
-		setToast(msg);
-		setTimeout(() => setToast(null), 1500);
 	}, []);
 
 	const updateSetting = useCallback(async <K extends keyof HaloSettings>(
@@ -61,7 +57,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsChange }
 		const colors = getThemeColors(updated.theme, updated.accentColor);
 		applyTheme(colors);
 		onSettingsChange?.(updated);
-		showToast(t('settings.resetAll') + ' ✓');
+		showToast({ message: t('settings.resetAll') + ' ✓', type: 'success' });
 	}, [onSettingsChange, showToast, t]);
 
 	return (
@@ -113,7 +109,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsChange }
 				HALO v0.2.0 • {t('settings.version')}
 			</div>
 
-			{toast && <div style={styles.toast}>{toast}</div>}
 		</div>
 	);
 };

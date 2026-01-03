@@ -45,6 +45,16 @@ export const ModuleStorePanel: React.FC = () => {
 	}, [install]);
 
 	const handleUninstall = useCallback(async (m: typeof ALL_MODULES[0]) => {
+		// System components cannot be uninstalled
+		if (m.system) {
+			showModal({
+				title: t('common.readOnly') || '只读',
+				message: t('moduleStorePanel.systemUninstallWarning'),
+				confirmText: t('moduleStorePanel.close') || '关闭',
+			});
+			return;
+		}
+
 		// User Scripts (custom) are managed in UserScripts panel
 		if ((m as any).isUserScript) {
 			showModal({

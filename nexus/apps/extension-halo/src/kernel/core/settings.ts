@@ -23,7 +23,7 @@ export const DEFAULT_SETTINGS: HaloSettings = {
 	accentColor: '#7c3aed',
 	spacing: 12,
 	showToolLabels: true,
-	showSystemTools: false,
+	showSystemTools: true,
 	iconSize: 24,
 	defaultTool: null,
 	pinnedTools: [],

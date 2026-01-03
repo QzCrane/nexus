@@ -110,7 +110,7 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 					boxShadow: isPinned ? `0 4px 12px ${mainThemeColor}25` : isHovered && isReady ? '0 6px 20px rgba(0,0,0,0.35)' : 'none',
 					borderRadius: '12px', overflow: 'visible', transition: 'all 0.2s ease', position: 'relative'
 				}}
-				title={isReady ? `${t(`tools.${tool.id}.name`)}\n${t('common.pinHint')}` : `${t(`tools.${tool.id}.name`)} (${t('common.comingSoon')})`}
+				title={isReady ? `${t(`tools.${tool.id}.name`, { defaultValue: tool.name })}\n${t('common.pinHint')}` : `${t(`tools.${tool.id}.name`, { defaultValue: tool.name })} (${t('common.comingSoon')})`}
 			>
 				<StatusIndicators isRunning={isRunning} engineEnabled={engineEnabled} serviceState={serviceState} />
 
@@ -134,7 +134,7 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 					...commonStyles.toolLabel as React.CSSProperties, 
 					fontSize: iconSize < 24 ? '10px' : '11px', color: isPinned ? 'var(--halo-text)' : 'var(--halo-text-muted)',
 					fontWeight: isPinned ? 600 : 400
-				}}>{t(`tools.${tool.id}.name`)}</span>}
+				}}>{t(`tools.${tool.id}.name`, { defaultValue: tool.name })}</span>}
 				
 				{(isPinned || (isHovered && isReady)) && (
 					<PinOverlay 
