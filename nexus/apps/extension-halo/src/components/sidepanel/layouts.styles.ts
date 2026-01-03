@@ -123,6 +123,8 @@ export const commonStyles: Record<string, CSSProperties> = {
 		overflow: 'hidden',
 		cursor: 'pointer',
 		background: 'var(--halo-bg-tertiary, #2a2a2a)',
+		outline: 'none',
+		userSelect: 'none',
 	},
 	toolIcon: {
 		fontSize: '24px',
