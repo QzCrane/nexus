@@ -1,19 +1,18 @@
-// goal: Resource Monitor analysis engine - ultra-precise CPU consumption detection
-// inv: Every background consumer must be identified by exact mechanism
+// goal: Resource Monitor analysis engine - precise CPU consumption detection
+// inv: Only record REAL mechanisms and frequencies, no CPU ms estimates
 
 import { ToolMeta } from '../../kernel';
 import type { ResourceImpact, ConsumptionMechanism, ImpactLevel } from './types';
 
-// Known tool-specific impact profiles (hardcoded SSOT)
-const TOOL_IMPACT_PROFILES: Record<string, Partial<ResourceImpact>> = {
+// Known tool-specific impact profiles (SSOT - Real data only)
+const TOOL_IMPACT_PROFILES: Record<string, ResourceImpact> = {
 	'smooth-scroll': {
 		level: 'medium',
 		mechanism: 'raf_active',
 		types: ['cpu', 'render'],
 		descriptionKey: 'impact.raf_scroll',
 		frequency: '16ms',
-		activeOnly: true,
-		estimatedCpuMs: 8
+		activeOnly: true
 	},
 	'clipboard': {
 		level: 'idle',
@@ -21,8 +20,7 @@ const TOOL_IMPACT_PROFILES: Record<string, Partial<ResourceImpact>> = {
 		types: ['memory'],
 		descriptionKey: 'impact.copy_listener',
 		frequency: 'on-copy',
-		activeOnly: false,
-		estimatedCpuMs: 0
+		activeOnly: false
 	},
 	'userscripts': {
 		level: 'low',
@@ -30,8 +28,7 @@ const TOOL_IMPACT_PROFILES: Record<string, Partial<ResourceImpact>> = {
 		types: ['cpu', 'injection'],
 		descriptionKey: 'impact.userscripts_registry',
 		frequency: 'on-change',
-		activeOnly: false,
-		estimatedCpuMs: 1
+		activeOnly: false
 	},
 	'totp': {
 		level: 'medium',
@@ -39,8 +36,7 @@ const TOOL_IMPACT_PROFILES: Record<string, Partial<ResourceImpact>> = {
 		types: ['cpu'],
 		descriptionKey: 'impact.interval_1s',
 		frequency: '1s',
-		activeOnly: true,
-		estimatedCpuMs: 5
+		activeOnly: true
 	},
 	'timestamp': {
 		level: 'low',
@@ -48,60 +44,52 @@ const TOOL_IMPACT_PROFILES: Record<string, Partial<ResourceImpact>> = {
 		types: ['cpu'],
 		descriptionKey: 'impact.interval_1s',
 		frequency: '1s',
-		activeOnly: true,
-		estimatedCpuMs: 1
+		activeOnly: true
 	},
 	'timer': {
 		level: 'low',
 		mechanism: 'interval_slow',
 		types: ['cpu'],
 		descriptionKey: 'impact.timer_running',
-		frequency: 'dynamic',
-		activeOnly: true,
-		estimatedCpuMs: 1
+		frequency: '1s',
+		activeOnly: true
 	},
 	'pomodoro': {
 		level: 'low',
 		mechanism: 'interval_slow',
 		types: ['cpu'],
 		descriptionKey: 'impact.timer_running',
-		frequency: 'dynamic',
-		activeOnly: true,
-		estimatedCpuMs: 1
+		frequency: '1s',
+		activeOnly: true
 	},
 	'text-to-speech': {
 		level: 'low',
 		mechanism: 'interval_slow',
 		types: ['cpu'],
 		descriptionKey: 'impact.progress_update',
-		frequency: 'during-playback',
-		activeOnly: true,
-		estimatedCpuMs: 2
+		frequency: 'playback',
+		activeOnly: true
 	},
 	'tab-group': {
-		// Now event-driven after optimization!
 		level: 'idle',
 		mechanism: 'event_listener',
 		types: ['memory'],
 		descriptionKey: 'impact.tab_events',
-		frequency: 'on-change',
-		activeOnly: true,
-		estimatedCpuMs: 0
+		frequency: 'on-event',
+		activeOnly: true
 	},
 	'resource-monitor': {
 		level: 'idle',
 		mechanism: 'storage_listener',
 		types: ['cpu'],
 		descriptionKey: 'impact.self_monitoring',
-		frequency: 'on-demand',
-		activeOnly: true,
-		estimatedCpuMs: 0
+		frequency: 'on-view',
+		activeOnly: true
 	}
 };
 
 // Permission-based impact analysis
-function analyzeByPermissions(meta: ToolMeta): Partial<ResourceImpact> {
-	// Network interceptors (high cost)
+function analyzeByPermissions(meta: ToolMeta): Partial<ResourceImpact> | null {
 	if (meta.permissions?.includes('webRequest') ||
 		meta.permissions?.includes('declarativeNetRequest')) {
 		return {
@@ -109,52 +97,34 @@ function analyzeByPermissions(meta: ToolMeta): Partial<ResourceImpact> {
 			mechanism: 'event_listener',
 			types: ['network', 'cpu'],
 			descriptionKey: 'impact.network_interceptor',
-			estimatedCpuMs: 10
+			frequency: 'per-request'
 		};
 	}
-
-	// WebNavigation (medium cost)
 	if (meta.permissions?.includes('webNavigation')) {
 		return {
 			level: 'medium',
 			mechanism: 'event_listener',
 			types: ['cpu'],
 			descriptionKey: 'impact.navigation_listener',
-			estimatedCpuMs: 3
+			frequency: 'on-navigate'
 		};
 	}
-
-	return {};
+	return null;
 }
 
 // Script type analysis
 function analyzeScriptType(meta: ToolMeta): ResourceImpact {
 	if (meta.toolType === 'script') {
 		const runAt = meta.scriptRunAt || 'document_idle';
-
-		if (runAt === 'document_start') {
-			return {
-				level: 'medium',
-				mechanism: 'content_script',
-				types: ['cpu', 'injection'],
-				descriptionKey: 'impact.injection_start',
-				frequency: 'page-load',
-				activeOnly: false,
-				estimatedCpuMs: 5
-			};
-		}
-
 		return {
-			level: 'low',
+			level: runAt === 'document_start' ? 'medium' : 'low',
 			mechanism: 'content_script',
-			types: ['injection'],
-			descriptionKey: 'impact.injection_idle',
+			types: ['cpu', 'injection'],
+			descriptionKey: runAt === 'document_start' ? 'impact.injection_start' : 'impact.injection_idle',
 			frequency: 'page-load',
-			activeOnly: false,
-			estimatedCpuMs: 2
+			activeOnly: false
 		};
 	}
-
 	// Default background service
 	return {
 		level: 'low',
@@ -162,52 +132,32 @@ function analyzeScriptType(meta: ToolMeta): ResourceImpact {
 		types: ['memory'],
 		descriptionKey: 'impact.background_idle',
 		frequency: 'on-demand',
-		activeOnly: false,
-		estimatedCpuMs: 0
+		activeOnly: false
 	};
 }
 
-// Main analysis function - produces precise impact profile
+// Main analysis function
 export function analyzeImpact(meta: ToolMeta): ResourceImpact {
-	// 1. Check for known tool-specific profile (highest priority)
-	const knownProfile = TOOL_IMPACT_PROFILES[meta.id];
-	if (knownProfile && knownProfile.level && knownProfile.mechanism) {
-		return {
-			level: knownProfile.level as ImpactLevel,
-			mechanism: knownProfile.mechanism as ConsumptionMechanism,
-			types: knownProfile.types || ['cpu'],
-			descriptionKey: knownProfile.descriptionKey || 'impact.unknown',
-			frequency: knownProfile.frequency,
-			activeOnly: knownProfile.activeOnly,
-			estimatedCpuMs: knownProfile.estimatedCpuMs,
-			canDisable: true
-		};
-	}
+	// 1. Known tool profile (highest priority)
+	const known = TOOL_IMPACT_PROFILES[meta.id];
+	if (known) return { ...known, canDisable: true };
 
 	// 2. Permission-based analysis
 	const permImpact = analyzeByPermissions(meta);
-	if (permImpact.level) {
-		return {
-			...analyzeScriptType(meta),
-			...permImpact,
-			canDisable: true
-		};
+	if (permImpact) {
+		return { ...analyzeScriptType(meta), ...permImpact, canDisable: true };
 	}
 
 	// 3. Script type fallback
-	return {
-		...analyzeScriptType(meta),
-		canDisable: true
-	};
+	return { ...analyzeScriptType(meta), canDisable: true };
 }
 
-// Analyze userscript specifically
+// Analyze userscript code patterns
 export function analyzeUserScript(script: {
 	type: 'javascript' | 'css';
 	runAt: string;
 	code: string;
 }): ResourceImpact {
-	// CSS injection is very low impact
 	if (script.type === 'css') {
 		return {
 			level: 'low',
@@ -216,28 +166,14 @@ export function analyzeUserScript(script: {
 			descriptionKey: 'impact.css_injection',
 			frequency: 'page-load',
 			activeOnly: false,
-			estimatedCpuMs: 0,
 			canDisable: true
 		};
 	}
 
-	// Detect interval patterns in code
+	// Detect patterns in code
 	const hasInterval = /setInterval\s*\(/.test(script.code);
 	const hasRAF = /requestAnimationFrame\s*\(/.test(script.code);
 	const hasMutation = /MutationObserver/.test(script.code);
-
-	if (hasInterval) {
-		return {
-			level: 'medium',
-			mechanism: 'interval_slow',
-			types: ['cpu', 'injection'],
-			descriptionKey: 'impact.userscript_interval',
-			frequency: 'periodic',
-			activeOnly: false,
-			estimatedCpuMs: 5,
-			canDisable: true
-		};
-	}
 
 	if (hasRAF) {
 		return {
@@ -246,12 +182,21 @@ export function analyzeUserScript(script: {
 			types: ['cpu', 'render'],
 			descriptionKey: 'impact.userscript_raf',
 			frequency: '16ms',
-			activeOnly: true,
-			estimatedCpuMs: 10,
+			activeOnly: false,
 			canDisable: true
 		};
 	}
-
+	if (hasInterval) {
+		return {
+			level: 'medium',
+			mechanism: 'interval_slow',
+			types: ['cpu'],
+			descriptionKey: 'impact.userscript_interval',
+			frequency: 'periodic',
+			activeOnly: false,
+			canDisable: true
+		};
+	}
 	if (hasMutation) {
 		return {
 			level: 'medium',
@@ -260,12 +205,11 @@ export function analyzeUserScript(script: {
 			descriptionKey: 'impact.userscript_observer',
 			frequency: 'dom-change',
 			activeOnly: false,
-			estimatedCpuMs: 3,
 			canDisable: true
 		};
 	}
 
-	// Default: one-time execution
+	// One-time execution
 	return {
 		level: 'low',
 		mechanism: 'userscript',
@@ -273,7 +217,6 @@ export function analyzeUserScript(script: {
 		descriptionKey: 'impact.userscript_onetime',
 		frequency: 'page-load',
 		activeOnly: false,
-		estimatedCpuMs: 1,
 		canDisable: true
 	};
 }

@@ -1,41 +1,32 @@
-// goal: Resource Monitor type definitions - ultra-precise CPU consumption taxonomy
-// inv: Every resource consumer must be categorized by mechanism, frequency, and impact
+// goal: Resource Monitor types - precise CPU consumption taxonomy
+// inv: Only record REAL consumption mechanisms and frequencies, no estimates
 
-export type ImpactLevel = 'critical' | 'high' | 'medium' | 'low' | 'idle';
+export type ImpactLevel = 'high' | 'medium' | 'low' | 'idle';
 
-// Precise CPU consumption mechanism taxonomy
+// Precise CPU consumption mechanism taxonomy (11 types)
 export type ConsumptionMechanism =
-	| 'interval_fast'     // setInterval < 1s (high CPU)
-	| 'interval_slow'     // setInterval >= 1s (medium CPU)
-	| 'raf_active'        // requestAnimationFrame in loop (high CPU when active)
+	| 'interval_fast'     // setInterval < 1s
+	| 'interval_slow'     // setInterval >= 1s
+	| 'raf_active'        // requestAnimationFrame in loop
 	| 'raf_idle'          // requestAnimationFrame at rest
-	| 'event_listener'    // DOM/Chrome event listeners (idle until triggered)
-	| 'storage_listener'  // chrome.storage.onChanged (idle until triggered)
-	| 'message_listener'  // chrome.runtime.onMessage (idle until triggered)
-	| 'mutation_observer' // MutationObserver (depends on DOM changes)
-	| 'service_worker'    // Background service worker (event-driven)
+	| 'event_listener'    // DOM/Chrome event listeners
+	| 'storage_listener'  // chrome.storage.onChanged
+	| 'message_listener'  // chrome.runtime.onMessage
+	| 'mutation_observer' // MutationObserver
+	| 'service_worker'    // Background service worker
 	| 'content_script'    // Injected content script
 	| 'userscript';       // User-defined script
 
-export type ResourceType =
-	| 'cpu'       // CPU cycles
-	| 'memory'    // Memory allocation
-	| 'network'   // Network requests
-	| 'battery'   // Battery drain
-	| 'injection' // DOM injection
-	| 'render';   // Paint/Layout
+export type ResourceType = 'cpu' | 'memory' | 'network' | 'injection' | 'render';
 
 export interface ResourceImpact {
 	level: ImpactLevel;
-	types: ResourceType[];
 	mechanism: ConsumptionMechanism;
+	types: ResourceType[];
 	descriptionKey: string;
-
-	// Precise metrics
-	frequency?: string;        // e.g., "1s", "16ms", "on-demand"
-	activeOnly?: boolean;      // true if only consumes when active
-	canDisable?: boolean;      // true if user can disable
-	estimatedCpuMs?: number;   // estimated CPU ms per second when active
+	frequency: string;        // Real trigger frequency: "16ms", "1s", "on-copy", "page-load"
+	activeOnly: boolean;      // True if only consumes when panel is open
+	canDisable?: boolean;
 }
 
 export interface MonitoredService {
@@ -48,31 +39,25 @@ export interface MonitoredService {
 	source: 'builtin' | 'user';
 }
 
-// CPU impact score (0-100) for sorting
-export function calculateImpactScore(impact: ResourceImpact, isActive: boolean): number {
-	if (!isActive && impact.activeOnly) return 0;
+// Impact level to display properties
+export const LEVEL_CONFIG: Record<ImpactLevel, { color: string; bg: string; label: string }> = {
+	high: { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.12)', label: 'HIGH' },
+	medium: { color: '#eab308', bg: 'rgba(234, 179, 8, 0.12)', label: 'MED' },
+	low: { color: '#22c55e', bg: 'rgba(34, 197, 94, 0.1)', label: 'LOW' },
+	idle: { color: 'var(--halo-text-muted)', bg: 'var(--halo-bg-tertiary)', label: 'IDLE' }
+};
 
-	const levelScore: Record<ImpactLevel, number> = {
-		critical: 100,
-		high: 75,
-		medium: 50,
-		low: 25,
-		idle: 5
-	};
-
-	const mechanismMultiplier: Record<ConsumptionMechanism, number> = {
-		interval_fast: 1.5,
-		raf_active: 1.4,
-		interval_slow: 1.0,
-		mutation_observer: 0.9,
-		raf_idle: 0.3,
-		event_listener: 0.2,
-		storage_listener: 0.15,
-		message_listener: 0.1,
-		content_script: 0.5,
-		userscript: 0.6,
-		service_worker: 0.1
-	};
-
-	return Math.round(levelScore[impact.level] * mechanismMultiplier[impact.mechanism]);
-}
+// Mechanism icons for UI
+export const MECHANISM_ICONS: Record<ConsumptionMechanism, string> = {
+	interval_fast: '⏱️',
+	interval_slow: '🕐',
+	raf_active: '🎬',
+	raf_idle: '💤',
+	event_listener: '👂',
+	storage_listener: '💾',
+	message_listener: '📨',
+	mutation_observer: '👁️',
+	service_worker: '⚙️',
+	content_script: '📜',
+	userscript: '🔧'
+};
