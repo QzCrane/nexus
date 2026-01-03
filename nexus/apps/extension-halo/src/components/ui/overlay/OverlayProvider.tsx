@@ -135,22 +135,24 @@ export const OverlayProvider: React.FC<{ children: React.ReactNode }> = ({ child
 						{/* If custom content provided, render it */}
 						{modal.content}
 						
-						<div style={styles.actions}>
-							<button 
-								style={{...styles.btn, ...styles.btnCancel}}
-								onClick={handleCancel}
-							>
-								{modal.cancelText || t('common.cancel')}
-							</button>
-							{modal.type === 'confirm' && (
+						{!modal.hideFooter && (
+							<div style={styles.actions}>
 								<button 
-									style={{...styles.btn, ...styles.btnConfirm}}
-									onClick={handleConfirm}
+									style={{...styles.btn, ...styles.btnCancel}}
+									onClick={handleCancel}
 								>
-									{modal.confirmText || t('common.confirm')}
+									{modal.cancelText || t('common.cancel')}
 								</button>
-							)}
-						</div>
+								{modal.type === 'confirm' && (
+									<button 
+										style={{...styles.btn, ...styles.btnConfirm}}
+										onClick={handleConfirm}
+									>
+										{modal.confirmText || t('common.confirm')}
+									</button>
+								)}
+							</div>
+						)}
 					</div>
 				</div>
 			)}

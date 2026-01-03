@@ -1,7 +1,8 @@
 // goal: UserScripts panel - full Tampermonkey feature parity
 // eff: Master toggle, script list, editor page, import/export, templates
 
-import React from 'react';
+import React, { useEffect } from 'react';
+import { useOverlay } from '../../components/ui/overlay';
 import { useTranslation } from '../../i18n';
 import { styles } from './styles';
 import { ScriptItem } from './components/ScriptItem';
@@ -33,7 +34,31 @@ export const UserScriptsPanel: React.FC = () => {
         modalMode, setModalMode, exportData, handleExport, handleImport 
     } = useImportExport(loadScripts);
 
-    const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
+    const overlay = useOverlay();
+    // Removed isSettingsOpen local state
+
+	// Sync modalMode with Overlay
+	useEffect(() => {
+		if (modalMode) {
+			overlay.showModal({
+				title: modalMode === 'export' 
+					? `📤 ${t('userscripts.exportTitle', { defaultValue: 'Export Scripts' })}`
+					: `📥 ${t('userscripts.importTitle', { defaultValue: 'Import Scripts' })}`,
+				message: '',
+				hideFooter: true,
+				content: (
+					<ImportExportModal 
+						mode={modalMode} 
+						exportData={exportData} 
+						onImport={(json) => { handleImport(json); overlay.closeModal(); setModalMode(null); }}
+						onClose={() => { overlay.closeModal(); setModalMode(null); }} 
+						t={t}
+					/>
+				),
+				onCancel: () => setModalMode(null)
+			});
+		}
+	}, [modalMode, exportData]);
 
 	// Check if we were redirected here to edit a specific script
 	React.useEffect(() => {
@@ -86,7 +111,21 @@ export const UserScriptsPanel: React.FC = () => {
 				{/* Settings Icon (Fixed Right) */}
 				<button 
 					style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px', padding: '4px', opacity: 0.7 }}
-					onClick={() => setIsSettingsOpen(true)}
+					onClick={() => {
+						overlay.showModal({
+							title: t('userscripts.settings') || 'Settings',
+							message: '',
+							hideFooter: true,
+							content: (
+								<SettingsModal
+									config={toolbarConfig || { order: ['add', 'export', 'import'], hideOnOverflow: false }}
+									onSave={handleToolbarConfig}
+									onClose={overlay.closeModal}
+									t={t}
+								/>
+							)
+						});
+					}}
 					title={t('userscripts.settings', { defaultValue: 'Settings' })}
 				>
 					⚙️
@@ -157,20 +196,7 @@ export const UserScriptsPanel: React.FC = () => {
 				</div>
 			)}
 
-			{/* Import/Export Modal - inline rendering */}
-			{modalMode && (
-				<ImportExportModal mode={modalMode} exportData={exportData} onImport={handleImport} onClose={() => setModalMode(null)} t={t} />
-			)}
-
-			{/* Settings Modal */}
-			{isSettingsOpen && (
-				<SettingsModal
-					config={toolbarConfig || { order: ['add', 'export', 'import'], hideOnOverflow: false }}
-					onSave={handleToolbarConfig}
-					onClose={() => setIsSettingsOpen(false)}
-					t={t}
-				/>
-			)}
+			{/* Modals are handled via OverlayProvider now */}
 		</div>
 	);
 };

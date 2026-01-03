@@ -33,47 +33,46 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
 		if (importText.trim()) onImport(importText);
 	};
 
-	// Inline card rendering (no overlay)
 	return (
-		<div style={styles.modal}>
-			<div style={styles.modalContent}>
-				<div style={styles.modalTitle}>
-					{mode === 'export'
-						? `📤 ${t('userscripts.exportTitle', { defaultValue: 'Export Scripts' })}`
-						: `📥 ${t('userscripts.importTitle', { defaultValue: 'Import Scripts' })}`}
-				</div>
-				
-				{mode === 'export' ? (
-					<>
-						<textarea
-							style={{ ...styles.textarea, minHeight: '120px' }}
-							value={exportData || ''}
-							readOnly
-						/>
-						<button style={styles.btn} onClick={handleCopy}>
-							{copied
-								? `✅ ${t('common.copied', { defaultValue: 'Copied!' })}`
-								: `📋 ${t('common.copy', { defaultValue: 'Copy to Clipboard' })}`}
-						</button>
-					</>
-				) : (
-					<>
-						<textarea
-							style={{ ...styles.textarea, minHeight: '120px' }}
-							value={importText}
-							onChange={(e) => setImportText(e.target.value)}
-							placeholder={t('userscripts.importPlaceholder', { defaultValue: 'Paste exported JSON here...' })}
-						/>
+		<div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+			{/* Content */}
+			{mode === 'export' ? (
+				<>
+					<textarea
+						style={{ ...styles.textarea, minHeight: '120px' }}
+						value={exportData || ''}
+						readOnly
+					/>
+					<button style={styles.btn} onClick={handleCopy}>
+						{copied
+							? `✅ ${t('common.copied', { defaultValue: 'Copied!' })}`
+							: `📋 ${t('common.copy', { defaultValue: 'Copy to Clipboard' })}`}
+					</button>
+				</>
+			) : (
+				<>
+					<textarea
+						style={{ ...styles.textarea, minHeight: '120px' }}
+						value={importText}
+						onChange={(e) => setImportText(e.target.value)}
+						placeholder={t('userscripts.importPlaceholder', { defaultValue: 'Paste exported JSON here...' })}
+					/>
+					<div style={styles.btnGroup}>
 						<button style={styles.btn} onClick={handleImport}>
 							📥 {t('userscripts.import', { defaultValue: 'Import' })}
 						</button>
-					</>
-				)}
-				
+						<button style={styles.btnSecondary} onClick={onClose}>
+							{t('common.close', { defaultValue: 'Close' })}
+						</button>
+					</div>
+				</>
+			)}
+			
+			{mode === 'export' && (
 				<button style={styles.btnSecondary} onClick={onClose}>
 					{t('common.close', { defaultValue: 'Close' })}
 				</button>
-			</div>
+			)}
 		</div>
 	);
 };

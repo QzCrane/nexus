@@ -29,64 +29,48 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ config, onSave, on
 	};
 
 	const handleSave = () => {
-		// Only save valid keys (in case of legacy)
-		// Ensure all keys are present? Or allow user to disable?
-		// Requirement says "swap positions", implies reordering.
-		if (!order.includes('add')) order.push('add'); // safety
+		if (!order.includes('add')) order.push('add');
 		onSave({ order, hideOnOverflow });
 		onClose();
 	};
 
 	return (
-		<div style={{
-			position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-			background: 'rgba(0,0,0,0.5)', zIndex: 1000,
-			display: 'flex', alignItems: 'center', justifyContent: 'center'
-		}}>
-			<div style={{
-				background: 'var(--halo-bg-primary, #fff)',
-				padding: '20px', borderRadius: '12px',
-				width: '90%', maxWidth: '300px', boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-				display: 'flex', flexDirection: 'column', gap: '16px'
-			}}>
-				<h3 style={{ margin: 0, fontSize: '16px' }}>{t('userscripts.settings') || 'Settings'}</h3>
-				
-				<div>
-					<label style={{ fontSize: '13px', fontWeight: 600, display: 'block', marginBottom: '8px' }}>
-						{t('userscripts.toolbarOrder') || 'Toolbar Order'}
-					</label>
-					<div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-						{order.map((item, i) => (
-							<div key={item} style={{
-								display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-								padding: '8px', background: 'var(--halo-bg-secondary, #f5f5f5)', borderRadius: '6px'
-							}}>
-								<span style={{ fontSize: '13px' }}>{ITEMS_MAP[item]}</span>
-								<div style={{ display: 'flex', gap: '4px' }}>
-									<button onClick={() => move(i, -1)} disabled={i === 0} style={{ cursor: 'pointer', opacity: i === 0 ? 0.3 : 1 }}>⬆️</button>
-									<button onClick={() => move(i, 1)} disabled={i === order.length - 1} style={{ cursor: 'pointer', opacity: i === order.length - 1 ? 0.3 : 1 }}>⬇️</button>
-								</div>
+		<div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+			<div>
+				<label style={{ fontSize: '13px', fontWeight: 600, display: 'block', marginBottom: '8px' }}>
+					{t('userscripts.toolbarOrder') || 'Toolbar Order'}
+				</label>
+				<div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+					{order.map((item, i) => (
+						<div key={item} style={{
+							display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+							padding: '8px', background: 'var(--halo-bg-secondary, #f5f5f5)', borderRadius: '6px'
+						}}>
+							<span style={{ fontSize: '13px' }}>{/* TRANSLATE ME LATER IF NEEDED */ ITEMS_MAP[item]}</span>
+							<div style={{ display: 'flex', gap: '4px' }}>
+								<button onClick={() => move(i, -1)} disabled={i === 0} style={{ cursor: 'pointer', opacity: i === 0 ? 0.3 : 1, border: 'none', background: 'transparent' }}>⬆️</button>
+								<button onClick={() => move(i, 1)} disabled={i === order.length - 1} style={{ cursor: 'pointer', opacity: i === order.length - 1 ? 0.3 : 1, border: 'none', background: 'transparent' }}>⬇️</button>
 							</div>
-						))}
-					</div>
+						</div>
+					))}
 				</div>
+			</div>
 
-				<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-					<input
-						type="checkbox"
-						id="hideOverflow"
-						checked={hideOnOverflow}
-						onChange={(e) => setHideOnOverflow(e.target.checked)}
-					/>
-					<label htmlFor="hideOverflow" style={{ fontSize: '13px' }}>
-						{t('userscripts.hideOnOverflow') || 'Hide text if no space'}
-					</label>
-				</div>
+			<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+				<input
+					type="checkbox"
+					id="hideOverflow"
+					checked={hideOnOverflow}
+					onChange={(e) => setHideOnOverflow(e.target.checked)}
+				/>
+				<label htmlFor="hideOverflow" style={{ fontSize: '13px' }}>
+					{t('userscripts.hideOnOverflow') || 'Hide text if no space'}
+				</label>
+			</div>
 
-				<div style={styles.btnGroup}>
-					<button style={styles.btn} onClick={handleSave}>{t('common.save') || 'Save'}</button>
-					<button style={styles.btnSecondary} onClick={onClose}>{t('common.cancel') || 'Cancel'}</button>
-				</div>
+			<div style={styles.btnGroup}>
+				<button style={styles.btn} onClick={handleSave}>{t('common.save') || 'Save'}</button>
+				<button style={styles.btnSecondary} onClick={onClose}>{t('common.cancel') || 'Cancel'}</button>
 			</div>
 		</div>
 	);

@@ -84,3 +84,10 @@ export async function incrementRunCount(id: string): Promise<void> {
 		await saveState(state);
 	}
 }
+
+// Save toolbar configuration
+export async function saveToolbarConfig(config: UserScriptState['toolbarConfig']): Promise<void> {
+	const state = await getUserScriptsState();
+	state.toolbarConfig = config;
+	await saveState(state);
+}

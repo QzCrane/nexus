@@ -8,6 +8,7 @@ export interface ModalConfig {
 	onCancel?: () => void;
 	// Component override for complex content
 	content?: React.ReactNode;
+	hideFooter?: boolean;
 }
 
 export interface ToastConfig {
