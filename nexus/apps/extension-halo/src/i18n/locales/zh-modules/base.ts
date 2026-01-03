@@ -30,6 +30,9 @@ export const base = {
 		system: '跟随系统 (自动)',
 		suggested: '推荐',
 		open: '打开',
+		builtInScripts: '附带脚本',
+		userScripts: '自定义脚本',
+		readOnly: '只读',
 	},
 	categories: {
 		general: '通用工具',

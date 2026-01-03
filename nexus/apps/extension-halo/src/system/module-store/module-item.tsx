@@ -70,11 +70,12 @@ interface ModuleItemProps {
 	status: 'installed' | 'available' | 'downloading' | 'updating' | 'error';
 	isCore: boolean;
 	showTypeLabel?: boolean;
+	isUserScript?: boolean;
 	onInstall: () => void;
 	onUninstall: () => void;
 }
 
-export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, isCore, showTypeLabel = true, onInstall, onUninstall }) => {
+export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, isCore, showTypeLabel = true, isUserScript = false, onInstall, onUninstall }) => {
 	const { t } = useTranslation();
 	const isInstalled = status === 'installed';
 	const isDownloading = status === 'downloading' || status === 'updating';
@@ -158,7 +159,11 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, i
 			</div>
 
 			<div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
-				{isCore ? (
+				{isUserScript ? (
+					<span style={{ ...styles.btnCore, background: 'rgba(107, 114, 128, 0.15)', color: '#6b7280' }}>
+						🔒 {t('common.readOnly')}
+					</span>
+				) : isCore ? (
 					<span style={styles.btnCore}>{t('moduleStorePanel.builtIn')}</span>
 				) : isDownloading ? (
 					<button style={{ ...styles.btn, ...styles.btnDownloading }} disabled>
