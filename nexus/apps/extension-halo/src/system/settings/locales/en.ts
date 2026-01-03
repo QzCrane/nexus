@@ -22,6 +22,8 @@ export const en = {
 		large: 'Large',
 		animations: 'Animations',
 		animationsDesc: 'Enable smooth transitions',
+		enableExtensionManager: 'Extension Manager',
+		enableExtensionManagerDesc: 'Show native browser extension manager in launcher',
 		toolManagement: 'Tool Management',
 		manageTools: 'Manage Tools',
 		manageToolsDesc: 'Enable, disable, pin & reorder tools',

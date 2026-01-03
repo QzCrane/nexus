@@ -3,6 +3,7 @@
 	"icon": "🔍",
 	"category": "media",
 	"size": 6144,
+	"status": "beta",
 	"builtIn": true,
 	"keywords": [
 		"hover",

@@ -3,7 +3,9 @@
 	"icon": "🧩",
 	"category": "browser",
 	"size": 8192,
+	"status": "beta",
 	"builtIn": true,
+	"system": true,
 	"keywords": [
 		"extension",
 		"plugin",

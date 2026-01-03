@@ -40,6 +40,7 @@ export interface ToolMeta {
 	// Module-specific fields (optional, used by ModuleStore)
 	size?: number;
 	builtIn?: boolean;
+	name?: string; // Optional raw name (e.g. for user scripts)
 	dependencies?: string[];
 	bundleUrl?: string;
 	version?: string;

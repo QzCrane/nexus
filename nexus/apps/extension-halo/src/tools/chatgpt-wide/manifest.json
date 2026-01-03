@@ -3,6 +3,7 @@
 	"icon": "🤖",
 	"category": "scripts",
 	"size": 1536,
+	"status": "beta",
 	"builtIn": true,
 	"keywords": [
 		"chatgpt",

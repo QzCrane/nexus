@@ -128,3 +128,64 @@ export async function getAllScriptToolStates(): Promise<Map<string, boolean>> {
 	}
 	return states;
 }
+
+/**
+ * Sync SaaT tools to UserScripts engine
+ */
+export async function syncSaaTTools(tools: ToolMeta[]): Promise<void> {
+	const saatTools = tools.filter(t => t.toolType === 'script');
+	if (saatTools.length === 0) return;
+
+	try {
+		const result = await chrome.storage.local.get(USERSCRIPTS_STORAGE_KEY);
+		const state = result[USERSCRIPTS_STORAGE_KEY] || { scripts: [], globalEnabled: true };
+		let changed = false;
+
+		for (const tool of saatTools) {
+			const existingIdx = state.scripts.findIndex((s: SaaTScriptState) => s.saatToolId === tool.id);
+
+			// Always try to load script code
+			const scriptCode = await loadScriptCode(tool.id, tool.scriptType || 'javascript');
+			if (!scriptCode) {
+				console.warn(LOG_TAG, `Skipping sync for ${tool.id}: Code not found`);
+				continue;
+			}
+
+			if (existingIdx >= 0) {
+				// Update code if changed
+				if (state.scripts[existingIdx].code !== scriptCode) {
+					state.scripts[existingIdx].code = scriptCode;
+					state.scripts[existingIdx].updatedAt = Date.now();
+					changed = true;
+				}
+			} else {
+				// Register new SaaT tool
+				const newScript: SaaTScriptState = {
+					id: `saat-${tool.id}-${Date.now()}`,
+					name: tool.id,
+					description: `SaaT: ${tool.id}`,
+					code: scriptCode,
+					enabled: false, // Default to disabled, let user enable it
+					type: tool.scriptType || 'javascript',
+					matches: tool.scriptMatches || ['*://*/*'],
+					excludeMatches: tool.scriptExcludeMatches || [],
+					runAt: tool.scriptRunAt || 'document_idle',
+					order: 0,
+					runCount: 0,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+					saatToolId: tool.id,
+				};
+				state.scripts.push(newScript);
+				changed = true;
+				console.log(LOG_TAG, `Registered new SaaT tool: ${tool.id}`);
+			}
+		}
+
+		if (changed) {
+			await chrome.storage.local.set({ [USERSCRIPTS_STORAGE_KEY]: state });
+		}
+	} catch (e) {
+		console.error(LOG_TAG, 'Failed to sync SaaT tools', e);
+	}
+}

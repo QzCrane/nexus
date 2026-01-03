@@ -3,6 +3,7 @@
 	"icon": "📺",
 	"category": "scripts",
 	"size": 2048,
+	"status": "beta",
 	"builtIn": true,
 	"keywords": [
 		"bilibili",

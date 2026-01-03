@@ -129,3 +129,9 @@ function initScroll(): void {
 // Execute
 initTheme();
 initScroll();
+
+// Sync SaaT tools
+import { syncSaaTTools } from '../kernel/services/saat-service';
+import { TOOL_REGISTRY } from '../kernel/registry/tool-registry';
+
+syncSaaTTools(TOOL_REGISTRY).catch(e => console.error('SaaT Sync Failed:', e));

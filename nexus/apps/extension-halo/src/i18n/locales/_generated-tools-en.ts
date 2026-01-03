@@ -23,7 +23,6 @@ import { en as csv_viewer } from '../../tools/csv-viewer/locales/en';
 import { en as diff } from '../../tools/diff/locales/en';
 import { en as dom_selector } from '../../tools/dom-selector/locales/en';
 import { en as exif_reader } from '../../tools/exif-reader/locales/en';
-import { en as extension_manager } from '../../tools/extension-manager/locales/en';
 import { en as font_inspector } from '../../tools/font-inspector/locales/en';
 import { en as gzip } from '../../tools/gzip/locales/en';
 import { en as hash } from '../../tools/hash/locales/en';
@@ -85,6 +84,7 @@ import { en as uuid } from '../../tools/uuid/locales/en';
 import { en as xml_formatter } from '../../tools/xml-formatter/locales/en';
 import { en as xor } from '../../tools/xor/locales/en';
 import { en as yaml } from '../../tools/yaml/locales/en';
+import { en as extension_manager } from '../../system/extension-manager/locales/en';
 import { en as module_store } from '../../system/module-store/locales/en';
 import { en as permissions } from '../../system/permissions/locales/en';
 import { en as settings } from '../../system/settings/locales/en';
@@ -111,7 +111,6 @@ export const TOOLS_EN = {
 	...diff,
 	...dom_selector,
 	...exif_reader,
-	...extension_manager,
 	...font_inspector,
 	...gzip,
 	...hash,
@@ -173,6 +172,7 @@ export const TOOLS_EN = {
 	...xml_formatter,
 	...xor,
 	...yaml,
+	...extension_manager,
 	...module_store,
 	...permissions,
 	...settings,

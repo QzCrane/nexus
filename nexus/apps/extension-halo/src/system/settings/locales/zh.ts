@@ -22,6 +22,8 @@ export const zh = {
 		large: '大',
 		animations: '动画效果',
 		animationsDesc: '启用平滑过渡动画',
+		enableExtensionManager: '浏览器插件管理',
+		enableExtensionManagerDesc: '在启动器中显示原生浏览器扩展管理器',
 		toolManagement: '工具管理',
 		manageTools: '管理工具',
 		manageToolsDesc: '启用、禁用、置顶和排序工具',

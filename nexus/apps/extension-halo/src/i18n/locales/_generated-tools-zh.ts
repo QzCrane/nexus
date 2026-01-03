@@ -23,7 +23,6 @@ import { zh as csv_viewer } from '../../tools/csv-viewer/locales/zh';
 import { zh as diff } from '../../tools/diff/locales/zh';
 import { zh as dom_selector } from '../../tools/dom-selector/locales/zh';
 import { zh as exif_reader } from '../../tools/exif-reader/locales/zh';
-import { zh as extension_manager } from '../../tools/extension-manager/locales/zh';
 import { zh as font_inspector } from '../../tools/font-inspector/locales/zh';
 import { zh as gzip } from '../../tools/gzip/locales/zh';
 import { zh as hash } from '../../tools/hash/locales/zh';
@@ -85,6 +84,7 @@ import { zh as uuid } from '../../tools/uuid/locales/zh';
 import { zh as xml_formatter } from '../../tools/xml-formatter/locales/zh';
 import { zh as xor } from '../../tools/xor/locales/zh';
 import { zh as yaml } from '../../tools/yaml/locales/zh';
+import { zh as extension_manager } from '../../system/extension-manager/locales/zh';
 import { zh as module_store } from '../../system/module-store/locales/zh';
 import { zh as permissions } from '../../system/permissions/locales/zh';
 import { zh as settings } from '../../system/settings/locales/zh';
@@ -111,7 +111,6 @@ export const TOOLS_ZH = {
 	...diff,
 	...dom_selector,
 	...exif_reader,
-	...extension_manager,
 	...font_inspector,
 	...gzip,
 	...hash,
@@ -173,6 +172,7 @@ export const TOOLS_ZH = {
 	...xml_formatter,
 	...xor,
 	...yaml,
+	...extension_manager,
 	...module_store,
 	...permissions,
 	...settings,

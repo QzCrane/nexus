@@ -8,6 +8,7 @@ import { LauncherToolItem } from './LauncherToolItem';
 import { commonStyles } from './layouts.styles';
 import { useEngineStatus } from './EngineStatusProvider';
 import { useActiveServices } from './ActiveServicesContext';
+import { useUserScripts } from '../../kernel/hooks/use-user-scripts';
 
 interface LauncherHomePageProps {
 	visibleTools: ToolMeta[];
@@ -29,6 +30,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 	const { t } = useTranslation();
 	const engineStatus = useEngineStatus();
 	const { activeServices, bgToolIds: BACKGROUND_TOOL_IDS } = useActiveServices();
+	const { scripts } = useUserScripts();
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [draggingId, setDraggingId] = useState<string | null>(null);
 	const [draggingCat, setDraggingCat] = useState<string | null>(null);
@@ -44,7 +46,17 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 		if (tempCats) return tempCats;
 		const cats: Record<string, ToolMeta[]> = { active: [], scripts: [], general: [], dev: [], efficiency: [], visual: [], ai: [], security: [], media: [], browser: [] };
 		
+		// 1. Process builtin/registry tools
 		visibleTools.forEach(tool => {
+			// Special handling for extension-manager (System tool but opt-in)
+			if (tool.id === 'extension-manager') {
+				if (settings?.enableExtensionManager) {
+					// Route to browser category
+					cats.browser.push(tool);
+				}
+				return;
+			}
+
 			if (tool.system || tool.id === 'permissions') return;
 			
 			// SaaT script tools go to scripts category
@@ -62,7 +74,32 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 			if (cats[tool.category]) cats[tool.category].push(tool);
 			else cats.general.push(tool);
 		});
-// ... rest of the memo
+
+		// 2. Merge User Scripts from storage
+		const registeredSaaTIds = new Set(cats.scripts.map(t => t.id));
+		
+		scripts.forEach(script => {
+			// Skip if it's a known SaaT tool that's already registered
+			if (script.saatToolId && registeredSaaTIds.has(script.saatToolId)) return;
+			
+			// Create pseudo ToolMeta for user script
+			const scriptTool: ToolMeta = {
+				id: script.id,
+				name: script.name, // Use raw name (no i18n for user scripts)
+				description: script.description,
+				icon: '📜', 
+				category: 'scripts',
+				toolType: 'script',
+				size: script.code.length,
+				builtIn: false, 
+				status: 'ready',
+				keywords: ['script', 'user'],
+				// Mark as user script for rendering special actions
+				isUserScript: true
+			} as ToolMeta & { isUserScript?: boolean };
+			
+			cats.scripts.push(scriptTool);
+		});
 
 		Object.keys(cats).forEach(cat => {
 			const pinned = settings?.pinnedTools || [], order = settings?.toolOrder?.[cat] || [];
@@ -71,11 +108,14 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 				if (ap !== bp) return ap ? -1 : 1;
 				const ai = order.indexOf(a.id), bi = order.indexOf(b.id);
 				if (ai !== -1 && bi !== -1) return ai - bi;
-				return ai !== -1 ? -1 : bi !== -1 ? 1 : t(`tools.${a.id}.name`).localeCompare(t(`tools.${b.id}.name`));
+				// Use raw name for sorting if i18n key not found/is raw
+				const nameA = (t(`tools.${a.id}.name`) === `tools.${a.id}.name` ? (a.name || a.id) : t(`tools.${a.id}.name`)) || a.id;
+				const nameB = (t(`tools.${b.id}.name`) === `tools.${b.id}.name` ? (b.name || b.id) : t(`tools.${b.id}.name`)) || b.id;
+				return ai !== -1 ? -1 : bi !== -1 ? 1 : nameA.localeCompare(nameB);
 			});
 		});
 		return cats;
-	}, [visibleTools, settings, t, tempCats, activeServices]);
+	}, [visibleTools, settings, t, tempCats, activeServices, scripts]);
 
 	const catOrder = useMemo(() => {
 		if (tempCatOrder) return tempCatOrder;

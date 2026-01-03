@@ -25,7 +25,6 @@ export const generatedToolPanels = {
 	'dom-selector': lazy(() => import('../tools/dom-selector/panel').then(m => ({ default: m.DomSelectorPanel }))),
 	'emoji-picker': lazy(() => import('../tools/emoji-picker/panel').then(m => ({ default: m.EmojiPickerPanel }))),
 	'exif-reader': lazy(() => import('../tools/exif-reader/panel').then(m => ({ default: m.ExifReaderPanel }))),
-	'extension-manager': lazy(() => import('../tools/extension-manager/panel').then(m => ({ default: m.ExtensionManagerPanel }))),
 	'font-inspector': lazy(() => import('../tools/font-inspector/panel').then(m => ({ default: m.FontInspectorPanel }))),
 	'gzip': lazy(() => import('../tools/gzip/panel').then(m => ({ default: m.GzipPanel }))),
 	'hash': lazy(() => import('../tools/hash/panel').then(m => ({ default: m.HashPanel }))),
@@ -89,6 +88,7 @@ export const generatedToolPanels = {
 	'xml-formatter': lazy(() => import('../tools/xml-formatter/panel').then(m => ({ default: m.XmlFormatterPanel }))),
 	'xor': lazy(() => import('../tools/xor/panel').then(m => ({ default: m.XorPanel }))),
 	'yaml': lazy(() => import('../tools/yaml/panel').then(m => ({ default: m.YamlPanel }))),
+	'extension-manager': lazy(() => import('../system/extension-manager/panel').then(m => ({ default: m.ExtensionManagerPanel }))),
 	'module-store': lazy(() => import('../system/module-store/panel').then(m => ({ default: m.ModuleStorePanel }))),
 	'permissions': lazy(() => import('../system/permissions/panel').then(m => ({ default: m.PermissionsPanel }))),
 	'settings': lazy(() => import('../system/settings/panel').then(m => ({ default: m.SettingsPanel })))

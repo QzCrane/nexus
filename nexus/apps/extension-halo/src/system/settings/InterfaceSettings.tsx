@@ -60,6 +60,18 @@ export const InterfaceSettings: React.FC<InterfaceSettingsProps> = ({ settings, 
 						onChange={(checked) => onUpdate('compactMode', checked)}
 					/>
 				</div>
+				
+				{/* Extension Manager */}
+				<div style={styles.row}>
+					<div>
+						<div style={styles.label}>{t('settings.enableExtensionManager')}</div>
+						<div style={styles.sublabel}>{t('settings.enableExtensionManagerDesc')}</div>
+					</div>
+					<Toggle
+						checked={settings.enableExtensionManager}
+						onChange={(checked) => onUpdate('enableExtensionManager', checked)}
+					/>
+				</div>
 
 			</div>
 		</Card>
