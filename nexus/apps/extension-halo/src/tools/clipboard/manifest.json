@@ -10,10 +10,13 @@
 		"clipboardWrite"
 	],
 	"background": {
-		"mechanism": "event_listener",
+		"mechanism": "copy_listener",
 		"frequency": "on-copy",
 		"activeOnly": false,
 		"level": "idle",
-		"descriptionKey": "impact.copy_listener"
+		"descriptionKey": "impact.copy_listener",
+		"sourceFile": "entry/content.ts",
+		"sourceLine": 39,
+		"sourceDetail": "document.addEventListener('copy', onCopy)"
 	}
 }

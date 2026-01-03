@@ -7,9 +7,12 @@
 	"keywords": [],
 	"background": {
 		"mechanism": "interval_slow",
-		"frequency": "1s",
+		"frequency": "1000ms",
 		"activeOnly": true,
 		"level": "low",
-		"descriptionKey": "impact.timer_running"
+		"descriptionKey": "impact.interval_1s",
+		"sourceFile": "tools/pomodoro/panel.tsx",
+		"sourceLine": 23,
+		"sourceDetail": "window.setInterval(() => {...}, 1000)"
 	}
 }

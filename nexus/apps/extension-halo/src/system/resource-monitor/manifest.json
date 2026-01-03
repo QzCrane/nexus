@@ -19,6 +19,9 @@
 		"frequency": "on-view",
 		"activeOnly": true,
 		"level": "idle",
-		"descriptionKey": "impact.self_monitoring"
+		"descriptionKey": "impact.self_monitoring",
+		"sourceFile": "system/resource-monitor/panel.tsx",
+		"sourceLine": 0,
+		"sourceDetail": "Consumes ActiveServicesContext"
 	}
 }

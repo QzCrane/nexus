@@ -1,41 +1,33 @@
 export const en = {
 	"tools.resource-monitor.name": "Resource Monitor",
-	"tools.resource-monitor.desc": "Monitor active background services, scripts, and resource consumption",
-	"tools.resource-monitor.sections.active": "Active Services",
+	"tools.resource-monitor.desc": "Full monitoring of all background services and system consumers",
+	"tools.resource-monitor.sections.active": "Active",
 	"tools.resource-monitor.sections.inactive": "Inactive",
+	"tools.resource-monitor.sections.system": "System Core",
 	"tools.resource-monitor.noActive": "No active background services",
-	"tools.resource-monitor.noModules": "No background services configured",
+	"tools.resource-monitor.noModules": "No background services",
 
-	// Mechanism descriptions (precise CPU taxonomy)
-	"impact.interval_fast": "Fast Timer (<1s)",
-	"impact.interval_slow": "Slow Timer (≥1s)",
-	"impact.raf_active": "Animation Loop (RAF)",
-	"impact.raf_idle": "Animation Idle",
-	"impact.event_listener": "Event Listener",
-	"impact.storage_listener": "Storage Listener",
-	"impact.message_listener": "Message Listener",
-	"impact.mutation_observer": "DOM Observer",
-	"impact.service_worker": "Service Worker",
-	"impact.content_script": "Content Script",
-	"impact.userscript": "User Script",
+	// Impact level labels
+	"impact.level.high": "HIGH",
+	"impact.level.medium": "MED",
+	"impact.level.low": "LOW",
+	"impact.level.idle": "IDLE",
 
-	// Specific impact descriptions
+	// Mechanism descriptions
+	"impact.interval_10ms": "Timer (10ms)",
+	"impact.interval_200ms": "Timer (200ms)",
+	"impact.interval_1s": "Timer (1s)",
 	"impact.raf_scroll": "RAF Smooth Scroll",
 	"impact.copy_listener": "Copy Event Listener",
+	"impact.wheel_listener": "Wheel Event Listener",
 	"impact.userscripts_registry": "Script Registry",
-	"impact.interval_1s": "1s Update Timer",
-	"impact.timer_running": "Timer Running",
-	"impact.progress_update": "Progress Update",
-	"impact.tab_events": "Tab Events",
-	"impact.self_monitoring": "Self Monitor",
-	"impact.network_interceptor": "Network Interceptor",
-	"impact.navigation_listener": "Navigation Listener",
-	"impact.injection_start": "Early Injection",
-	"impact.injection_idle": "Deferred Injection",
-	"impact.background_idle": "Background Idle",
-	"impact.css_injection": "CSS Injection",
-	"impact.userscript_interval": "Script Timer",
-	"impact.userscript_raf": "Script Animation",
-	"impact.userscript_observer": "Script Observer",
-	"impact.userscript_onetime": "One-time Script"
+	"impact.tab_events": "Tab Events Listener",
+	"impact.self_monitoring": "Self Monitoring",
+	"impact.message_handler": "Message Handler",
+	"impact.storage_sync": "Storage Sync",
+
+	// System names
+	"system.background": "Background Worker",
+	"system.content": "Content Script",
+	"system.sidepanel": "Side Panel"
 };

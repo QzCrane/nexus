@@ -10,6 +10,9 @@
 		"frequency": "16ms",
 		"activeOnly": true,
 		"level": "medium",
-		"descriptionKey": "impact.raf_scroll"
+		"descriptionKey": "impact.raf_scroll",
+		"sourceFile": "tools/smooth-scroll/engine.ts",
+		"sourceLine": 119,
+		"sourceDetail": "requestAnimationFrame(scrollStep)"
 	}
 }

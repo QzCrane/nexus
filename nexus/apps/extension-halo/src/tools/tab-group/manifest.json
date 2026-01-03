@@ -10,6 +10,9 @@
 		"frequency": "on-event",
 		"activeOnly": true,
 		"level": "idle",
-		"descriptionKey": "impact.tab_events"
+		"descriptionKey": "impact.tab_events",
+		"sourceFile": "tools/tab-group/panel.tsx",
+		"sourceLine": 33,
+		"sourceDetail": "chrome.tabGroups.onCreated/onRemoved/onUpdated"
 	}
 }

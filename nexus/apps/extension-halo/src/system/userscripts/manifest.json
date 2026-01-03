@@ -15,6 +15,9 @@
 		"frequency": "on-change",
 		"activeOnly": false,
 		"level": "low",
-		"descriptionKey": "impact.userscripts_registry"
+		"descriptionKey": "impact.userscripts_registry",
+		"sourceFile": "system/userscripts/registry.ts",
+		"sourceLine": 45,
+		"sourceDetail": "chrome.storage.onChanged.addListener"
 	}
 }

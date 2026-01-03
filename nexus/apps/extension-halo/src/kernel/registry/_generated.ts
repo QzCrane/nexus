@@ -4,13 +4,16 @@
 
 import type { ToolCategory } from '../../i18n/types';
 
-// Background consumption profile (declared in manifest.json)
+// Background consumption profile (declared in manifest.json with source annotations)
 export interface BackgroundProfile {
-	mechanism: 'interval_fast' | 'interval_slow' | 'raf_active' | 'raf_idle' | 'event_listener' | 'storage_listener' | 'message_listener' | 'mutation_observer' | 'service_worker' | 'content_script' | 'userscript';
+	mechanism: 'interval_fast' | 'interval_slow' | 'raf_active' | 'raf_idle' | 'event_listener' | 'storage_listener' | 'message_listener' | 'wheel_listener' | 'copy_listener' | 'mutation_observer' | 'service_worker' | 'content_script' | 'userscript';
 	frequency: string;
 	activeOnly: boolean;
 	level: 'high' | 'medium' | 'low' | 'idle';
 	descriptionKey: string;
+	sourceFile: string;
+	sourceLine: number;
+	sourceDetail?: string;
 }
 
 // Generated tool manifest interface
@@ -129,14 +132,14 @@ export const USER_TOOL_REGISTRY: GeneratedToolMeta[] = [
 		id: 'clipboard',
 		icon: '📎',
 		category: 'efficiency',
-		size: 18655,
+		size: 18773,
 		builtIn: false,
 		system: false,
 		keywords: [],
 		features: undefined,
 		dependencies: undefined,
 		permissions: ["clipboardRead","clipboardWrite"],
-		background: {"mechanism":"event_listener","frequency":"on-copy","activeOnly":false,"level":"idle","descriptionKey":"impact.copy_listener"},
+		background: {"mechanism":"copy_listener","frequency":"on-copy","activeOnly":false,"level":"idle","descriptionKey":"impact.copy_listener","sourceFile":"entry/content.ts","sourceLine":39,"sourceDetail":"document.addEventListener('copy', onCopy)"},
 		toolType: undefined,
 		scriptMatches: undefined,
 		scriptExcludeMatches: undefined,
@@ -867,14 +870,14 @@ export const USER_TOOL_REGISTRY: GeneratedToolMeta[] = [
 		id: 'pomodoro',
 		icon: '🍅',
 		category: 'efficiency',
-		size: 9681,
+		size: 9806,
 		builtIn: false,
 		system: false,
 		keywords: [],
 		features: undefined,
 		dependencies: undefined,
 		permissions: [],
-		background: {"mechanism":"interval_slow","frequency":"1s","activeOnly":true,"level":"low","descriptionKey":"impact.timer_running"},
+		background: {"mechanism":"interval_slow","frequency":"1000ms","activeOnly":true,"level":"low","descriptionKey":"impact.interval_1s","sourceFile":"tools/pomodoro/panel.tsx","sourceLine":23,"sourceDetail":"window.setInterval(() => {...}, 1000)"},
 		toolType: undefined,
 		scriptMatches: undefined,
 		scriptExcludeMatches: undefined,
@@ -1083,14 +1086,14 @@ export const USER_TOOL_REGISTRY: GeneratedToolMeta[] = [
 		id: 'smooth-scroll',
 		icon: '↕️',
 		category: 'efficiency',
-		size: 31689,
+		size: 31814,
 		builtIn: false,
 		system: false,
 		keywords: [],
 		features: undefined,
 		dependencies: undefined,
 		permissions: [],
-		background: {"mechanism":"raf_active","frequency":"16ms","activeOnly":true,"level":"medium","descriptionKey":"impact.raf_scroll"},
+		background: {"mechanism":"raf_active","frequency":"16ms","activeOnly":true,"level":"medium","descriptionKey":"impact.raf_scroll","sourceFile":"tools/smooth-scroll/engine.ts","sourceLine":119,"sourceDetail":"requestAnimationFrame(scrollStep)"},
 		toolType: undefined,
 		scriptMatches: undefined,
 		scriptExcludeMatches: undefined,
@@ -1191,14 +1194,14 @@ export const USER_TOOL_REGISTRY: GeneratedToolMeta[] = [
 		id: 'tab-group',
 		icon: '📑',
 		category: 'browser',
-		size: 11256,
+		size: 11389,
 		builtIn: false,
 		system: false,
 		keywords: [],
 		features: undefined,
 		dependencies: undefined,
 		permissions: [],
-		background: {"mechanism":"event_listener","frequency":"on-event","activeOnly":true,"level":"idle","descriptionKey":"impact.tab_events"},
+		background: {"mechanism":"event_listener","frequency":"on-event","activeOnly":true,"level":"idle","descriptionKey":"impact.tab_events","sourceFile":"tools/tab-group/panel.tsx","sourceLine":33,"sourceDetail":"chrome.tabGroups.onCreated/onRemoved/onUpdated"},
 		toolType: undefined,
 		scriptMatches: undefined,
 		scriptExcludeMatches: undefined,
@@ -1263,14 +1266,14 @@ export const USER_TOOL_REGISTRY: GeneratedToolMeta[] = [
 		id: 'text-to-speech',
 		icon: '🔊',
 		category: 'efficiency',
-		size: 8302,
+		size: 8422,
 		builtIn: false,
 		system: false,
 		keywords: [],
 		features: undefined,
 		dependencies: undefined,
 		permissions: [],
-		background: {"mechanism":"interval_slow","frequency":"playback","activeOnly":true,"level":"low","descriptionKey":"impact.progress_update"},
+		background: {"mechanism":"interval_fast","frequency":"200ms","activeOnly":true,"level":"medium","descriptionKey":"impact.interval_200ms","sourceFile":"tools/text-to-speech/panel.tsx","sourceLine":68,"sourceDetail":"setInterval(() => {...}, 200)"},
 		toolType: undefined,
 		scriptMatches: undefined,
 		scriptExcludeMatches: undefined,
@@ -1299,14 +1302,14 @@ export const USER_TOOL_REGISTRY: GeneratedToolMeta[] = [
 		id: 'timer',
 		icon: '⏱️',
 		category: 'efficiency',
-		size: 9130,
+		size: 9251,
 		builtIn: false,
 		system: false,
 		keywords: [],
 		features: undefined,
 		dependencies: undefined,
 		permissions: [],
-		background: {"mechanism":"interval_slow","frequency":"1s","activeOnly":true,"level":"low","descriptionKey":"impact.timer_running"},
+		background: {"mechanism":"interval_fast","frequency":"10ms","activeOnly":true,"level":"high","descriptionKey":"impact.interval_10ms","sourceFile":"tools/timer/panel.tsx","sourceLine":26,"sourceDetail":"window.setInterval(() => {...}, 10)"},
 		toolType: undefined,
 		scriptMatches: undefined,
 		scriptExcludeMatches: undefined,
@@ -1317,14 +1320,14 @@ export const USER_TOOL_REGISTRY: GeneratedToolMeta[] = [
 		id: 'timestamp',
 		icon: '⏱️',
 		category: 'dev',
-		size: 9089,
+		size: 9223,
 		builtIn: true,
 		system: false,
 		keywords: [],
 		features: undefined,
 		dependencies: undefined,
 		permissions: [],
-		background: {"mechanism":"interval_slow","frequency":"1s","activeOnly":true,"level":"low","descriptionKey":"impact.interval_1s"},
+		background: {"mechanism":"interval_slow","frequency":"1000ms","activeOnly":true,"level":"low","descriptionKey":"impact.interval_1s","sourceFile":"tools/timestamp/panel.tsx","sourceLine":31,"sourceDetail":"setInterval(() => setNow(Date.now()), 1000)"},
 		toolType: undefined,
 		scriptMatches: undefined,
 		scriptExcludeMatches: undefined,
@@ -1353,14 +1356,14 @@ export const USER_TOOL_REGISTRY: GeneratedToolMeta[] = [
 		id: 'totp',
 		icon: '🔐',
 		category: 'security',
-		size: 11057,
+		size: 11173,
 		builtIn: false,
 		system: false,
 		keywords: [],
 		features: undefined,
 		dependencies: undefined,
 		permissions: [],
-		background: {"mechanism":"interval_slow","frequency":"1s","activeOnly":true,"level":"medium","descriptionKey":"impact.interval_1s"},
+		background: {"mechanism":"interval_slow","frequency":"1000ms","activeOnly":true,"level":"medium","descriptionKey":"impact.interval_1s","sourceFile":"tools/totp/panel.tsx","sourceLine":42,"sourceDetail":"setInterval(updateCodes, 1000)"},
 		toolType: undefined,
 		scriptMatches: undefined,
 		scriptExcludeMatches: undefined,
@@ -1608,14 +1611,14 @@ export const SYSTEM_PLUGIN_REGISTRY: GeneratedToolMeta[] = [
 		id: 'resource-monitor',
 		icon: '⚡',
 		category: 'system',
-		size: 10853,
+		size: 16077,
 		builtIn: true,
 		system: true,
 		keywords: ["task","manager","cpu","background","service"],
 		features: undefined,
 		dependencies: undefined,
 		permissions: [],
-		background: {"mechanism":"storage_listener","frequency":"on-view","activeOnly":true,"level":"idle","descriptionKey":"impact.self_monitoring"},
+		background: {"mechanism":"storage_listener","frequency":"on-view","activeOnly":true,"level":"idle","descriptionKey":"impact.self_monitoring","sourceFile":"system/resource-monitor/panel.tsx","sourceLine":0,"sourceDetail":"Consumes ActiveServicesContext"},
 		toolType: 'panel',
 		scriptMatches: undefined,
 		scriptExcludeMatches: undefined,
@@ -1644,14 +1647,14 @@ export const SYSTEM_PLUGIN_REGISTRY: GeneratedToolMeta[] = [
 		id: 'userscripts',
 		icon: '📜',
 		category: 'dev',
-		size: 86916,
+		size: 87044,
 		builtIn: false,
 		system: true,
 		keywords: [],
 		features: undefined,
 		dependencies: undefined,
 		permissions: ["webNavigation","*://*/*"],
-		background: {"mechanism":"storage_listener","frequency":"on-change","activeOnly":false,"level":"low","descriptionKey":"impact.userscripts_registry"},
+		background: {"mechanism":"storage_listener","frequency":"on-change","activeOnly":false,"level":"low","descriptionKey":"impact.userscripts_registry","sourceFile":"system/userscripts/registry.ts","sourceLine":45,"sourceDetail":"chrome.storage.onChanged.addListener"},
 		toolType: undefined,
 		scriptMatches: undefined,
 		scriptExcludeMatches: undefined,
@@ -1702,74 +1705,104 @@ export const PERMISSION_USAGE_MAP: Record<string, string[]> = {
 // Background consumption profiles (SSOT from manifest.json)
 export const BACKGROUND_PROFILES_MAP: Record<string, BackgroundProfile> = {
     "clipboard": {
-        "mechanism": "event_listener",
+        "mechanism": "copy_listener",
         "frequency": "on-copy",
         "activeOnly": false,
         "level": "idle",
-        "descriptionKey": "impact.copy_listener"
+        "descriptionKey": "impact.copy_listener",
+        "sourceFile": "entry/content.ts",
+        "sourceLine": 39,
+        "sourceDetail": "document.addEventListener('copy', onCopy)"
     },
     "pomodoro": {
         "mechanism": "interval_slow",
-        "frequency": "1s",
+        "frequency": "1000ms",
         "activeOnly": true,
         "level": "low",
-        "descriptionKey": "impact.timer_running"
+        "descriptionKey": "impact.interval_1s",
+        "sourceFile": "tools/pomodoro/panel.tsx",
+        "sourceLine": 23,
+        "sourceDetail": "window.setInterval(() => {...}, 1000)"
     },
     "smooth-scroll": {
         "mechanism": "raf_active",
         "frequency": "16ms",
         "activeOnly": true,
         "level": "medium",
-        "descriptionKey": "impact.raf_scroll"
+        "descriptionKey": "impact.raf_scroll",
+        "sourceFile": "tools/smooth-scroll/engine.ts",
+        "sourceLine": 119,
+        "sourceDetail": "requestAnimationFrame(scrollStep)"
     },
     "tab-group": {
         "mechanism": "event_listener",
         "frequency": "on-event",
         "activeOnly": true,
         "level": "idle",
-        "descriptionKey": "impact.tab_events"
+        "descriptionKey": "impact.tab_events",
+        "sourceFile": "tools/tab-group/panel.tsx",
+        "sourceLine": 33,
+        "sourceDetail": "chrome.tabGroups.onCreated/onRemoved/onUpdated"
     },
     "text-to-speech": {
-        "mechanism": "interval_slow",
-        "frequency": "playback",
+        "mechanism": "interval_fast",
+        "frequency": "200ms",
         "activeOnly": true,
-        "level": "low",
-        "descriptionKey": "impact.progress_update"
+        "level": "medium",
+        "descriptionKey": "impact.interval_200ms",
+        "sourceFile": "tools/text-to-speech/panel.tsx",
+        "sourceLine": 68,
+        "sourceDetail": "setInterval(() => {...}, 200)"
     },
     "timer": {
-        "mechanism": "interval_slow",
-        "frequency": "1s",
+        "mechanism": "interval_fast",
+        "frequency": "10ms",
         "activeOnly": true,
-        "level": "low",
-        "descriptionKey": "impact.timer_running"
+        "level": "high",
+        "descriptionKey": "impact.interval_10ms",
+        "sourceFile": "tools/timer/panel.tsx",
+        "sourceLine": 26,
+        "sourceDetail": "window.setInterval(() => {...}, 10)"
     },
     "timestamp": {
         "mechanism": "interval_slow",
-        "frequency": "1s",
+        "frequency": "1000ms",
         "activeOnly": true,
         "level": "low",
-        "descriptionKey": "impact.interval_1s"
+        "descriptionKey": "impact.interval_1s",
+        "sourceFile": "tools/timestamp/panel.tsx",
+        "sourceLine": 31,
+        "sourceDetail": "setInterval(() => setNow(Date.now()), 1000)"
     },
     "totp": {
         "mechanism": "interval_slow",
-        "frequency": "1s",
+        "frequency": "1000ms",
         "activeOnly": true,
         "level": "medium",
-        "descriptionKey": "impact.interval_1s"
+        "descriptionKey": "impact.interval_1s",
+        "sourceFile": "tools/totp/panel.tsx",
+        "sourceLine": 42,
+        "sourceDetail": "setInterval(updateCodes, 1000)"
     },
     "resource-monitor": {
         "mechanism": "storage_listener",
         "frequency": "on-view",
         "activeOnly": true,
         "level": "idle",
-        "descriptionKey": "impact.self_monitoring"
+        "descriptionKey": "impact.self_monitoring",
+        "sourceFile": "system/resource-monitor/panel.tsx",
+        "sourceLine": 0,
+        "sourceDetail": "Consumes ActiveServicesContext"
     },
     "userscripts": {
         "mechanism": "storage_listener",
         "frequency": "on-change",
         "activeOnly": false,
         "level": "low",
-        "descriptionKey": "impact.userscripts_registry"
+        "descriptionKey": "impact.userscripts_registry",
+        "sourceFile": "system/userscripts/registry.ts",
+        "sourceLine": 45,
+        "sourceDetail": "chrome.storage.onChanged.addListener"
     }
 };
 

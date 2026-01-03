@@ -7,9 +7,12 @@
 	"keywords": [],
 	"background": {
 		"mechanism": "interval_slow",
-		"frequency": "1s",
+		"frequency": "1000ms",
 		"activeOnly": true,
 		"level": "medium",
-		"descriptionKey": "impact.interval_1s"
+		"descriptionKey": "impact.interval_1s",
+		"sourceFile": "tools/totp/panel.tsx",
+		"sourceLine": 42,
+		"sourceDetail": "setInterval(updateCodes, 1000)"
 	}
 }

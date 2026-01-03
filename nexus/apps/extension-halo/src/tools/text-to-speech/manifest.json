@@ -6,10 +6,13 @@
 	"builtIn": false,
 	"keywords": [],
 	"background": {
-		"mechanism": "interval_slow",
-		"frequency": "playback",
+		"mechanism": "interval_fast",
+		"frequency": "200ms",
 		"activeOnly": true,
-		"level": "low",
-		"descriptionKey": "impact.progress_update"
+		"level": "medium",
+		"descriptionKey": "impact.interval_200ms",
+		"sourceFile": "tools/text-to-speech/panel.tsx",
+		"sourceLine": 68,
+		"sourceDetail": "setInterval(() => {...}, 200)"
 	}
 }

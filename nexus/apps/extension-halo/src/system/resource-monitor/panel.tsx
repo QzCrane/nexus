@@ -1,101 +1,160 @@
-// goal: Resource Monitor panel UI - consume BACKGROUND_PROFILES_MAP from registry
-// inv: All data comes from manifest.json -> _generated.ts SSOT
+// goal: Resource Monitor panel UI - FULL monitoring with source annotations
+// inv: Display tools, scripts, AND system core consumers with source file:line
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useTranslation } from '../../i18n';
 import { useActiveServices } from '../../components/sidepanel/ActiveServicesContext';
 import { BACKGROUND_PROFILES_MAP, BACKGROUND_TOOL_IDS, ALL_APPS } from '../../kernel/registry/_generated';
-import { LEVEL_CONFIG, MECHANISM_ICONS } from './types';
-import type { MonitoredService, ImpactLevel, ConsumptionMechanism } from './types';
+import { LEVEL_CONFIG, MECHANISM_ICONS, SYSTEM_CORE_CONSUMERS } from './types';
+import type { MonitoredService, BackgroundProfile, ImpactLevel, ConsumptionMechanism } from './types';
 
 const styles = {
-	container: { padding: '16px', display: 'flex', flexDirection: 'column' as const, gap: '20px', height: '100%', overflowY: 'auto' as const },
-	section: { display: 'flex', flexDirection: 'column' as const, gap: '10px' },
-	header: { fontSize: '13px', fontWeight: 600, color: 'var(--halo-text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', borderBottom: '1px solid var(--halo-border)', paddingBottom: '6px' },
-	card: { background: 'var(--halo-bg-secondary)', borderRadius: '10px', padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid var(--halo-border)', gap: '12px' },
-	toolInfo: { display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 },
-	icon: { fontSize: '20px', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--halo-bg-tertiary)', borderRadius: '8px', flexShrink: 0 },
-	meta: { display: 'flex', flexDirection: 'column' as const, gap: '2px', minWidth: 0 },
+	container: { padding: '16px', display: 'flex', flexDirection: 'column' as const, gap: '16px', height: '100%', overflowY: 'auto' as const },
+	section: { display: 'flex', flexDirection: 'column' as const, gap: '8px' },
+	header: { fontSize: '12px', fontWeight: 600, color: 'var(--halo-text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', borderBottom: '1px solid var(--halo-border)', paddingBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+	card: { background: 'var(--halo-bg-secondary)', borderRadius: '10px', padding: '10px 12px', border: '1px solid var(--halo-border)', cursor: 'pointer', transition: 'all 0.15s' },
+	cardExpanded: { background: 'var(--halo-bg-tertiary)' },
+	toolRow: { display: 'flex', alignItems: 'center', gap: '10px' },
+	icon: { fontSize: '18px', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--halo-bg-tertiary)', borderRadius: '6px', flexShrink: 0 },
+	meta: { display: 'flex', flexDirection: 'column' as const, gap: '1px', flex: 1, minWidth: 0 },
 	name: { fontWeight: 600, fontSize: '13px', color: 'var(--halo-text)', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
-	desc: { fontSize: '11px', color: 'var(--halo-text-muted)', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' as const },
-	badge: { fontSize: '10px', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 },
-	empty: { padding: '20px', color: 'var(--halo-text-muted)', fontSize: '13px', textAlign: 'center' as const }
+	mechanisms: { fontSize: '10px', color: 'var(--halo-text-muted)', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' as const },
+	badge: { fontSize: '9px', padding: '2px 5px', borderRadius: '3px', fontWeight: 600 },
+	detail: { marginTop: '8px', padding: '8px', background: 'var(--halo-bg)', borderRadius: '6px', fontSize: '10px', fontFamily: 'monospace', color: 'var(--halo-text-secondary)' },
+	detailRow: { display: 'flex', justifyContent: 'space-between', padding: '2px 0', borderBottom: '1px solid var(--halo-border)' },
+	empty: { padding: '16px', color: 'var(--halo-text-muted)', fontSize: '12px', textAlign: 'center' as const },
+	count: { fontSize: '11px', color: 'var(--halo-accent)' }
 };
 
 export const ResourceMonitorPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const { activeServices } = useActiveServices();
+	const [expanded, setExpanded] = useState<string | null>(null);
 
-	// Build service list from SSOT (BACKGROUND_PROFILES_MAP from registry)
-	const services = useMemo<MonitoredService[]>(() => {
+	// Build tool service list from BACKGROUND_PROFILES_MAP
+	const toolServices = useMemo<MonitoredService[]>(() => {
 		return BACKGROUND_TOOL_IDS.map(id => {
-			const profile = BACKGROUND_PROFILES_MAP[id];
+			const profile = BACKGROUND_PROFILES_MAP[id] as BackgroundProfile;
 			const meta = ALL_APPS.find(app => app.id === id);
 			if (!profile || !meta) return null;
 			
 			return {
 				id,
-				name: t(`tools.${id}.name`, { defaultValue: meta.id }),
+				name: t(`tools.${id}.name`, { defaultValue: id }),
 				icon: meta.icon || '🔧',
 				active: activeServices.has(id),
-				mechanism: profile.mechanism as ConsumptionMechanism,
-				frequency: profile.frequency,
-				level: profile.level as ImpactLevel,
-				descriptionKey: profile.descriptionKey,
-				activeOnly: profile.activeOnly
+				category: meta.system ? 'system' : 'tool',
+				profiles: [profile]
 			};
 		}).filter(Boolean) as MonitoredService[];
 	}, [activeServices, t]);
 
-	// Group by active/inactive
-	const activeList = useMemo(() => services.filter(s => s.active), [services]);
-	const inactiveList = useMemo(() => services.filter(s => !s.active), [services]);
+	// System core consumers (always active)
+	const systemServices = useMemo<MonitoredService[]>(() => {
+		return SYSTEM_CORE_CONSUMERS.map(s => ({
+			id: s.id,
+			name: t(s.name, { defaultValue: s.name }),
+			icon: s.icon,
+			active: true,
+			category: 'core' as const,
+			profiles: s.profiles
+		}));
+	}, [t]);
+
+	// Group tools by active/inactive
+	const activeTools = useMemo(() => toolServices.filter(s => s.active), [toolServices]);
+	const inactiveTools = useMemo(() => toolServices.filter(s => !s.active), [toolServices]);
+
+	const renderProfile = (p: BackgroundProfile, i: number) => {
+		const levelStyle = LEVEL_CONFIG[p.level as ImpactLevel];
+		const mechIcon = MECHANISM_ICONS[p.mechanism as ConsumptionMechanism] || '❓';
+		
+		return (
+			<div key={i} style={styles.detailRow}>
+				<span>{mechIcon} {t(p.descriptionKey, { defaultValue: p.mechanism })}</span>
+				<span>{p.frequency}</span>
+			</div>
+		);
+	};
 
 	const renderItem = (item: MonitoredService) => {
-		const levelStyle = LEVEL_CONFIG[item.level];
-		const mechIcon = MECHANISM_ICONS[item.mechanism] || '❓';
+		const isExpanded = expanded === item.id;
+		const mainProfile = item.profiles[0];
+		const levelStyle = LEVEL_CONFIG[mainProfile?.level as ImpactLevel || 'idle'];
 
 		return (
-			<div key={item.id} style={styles.card}>
-				<div style={styles.toolInfo}>
+			<div 
+				key={item.id} 
+				style={{ ...styles.card, ...(isExpanded ? styles.cardExpanded : {}) }}
+				onClick={() => setExpanded(isExpanded ? null : item.id)}
+			>
+				<div style={styles.toolRow}>
 					<div style={styles.icon}>{item.icon}</div>
 					<div style={styles.meta}>
 						<div style={styles.name}>{item.name}</div>
-						<div style={styles.desc}>
-							<span>{mechIcon}</span>
-							<span>{t(item.descriptionKey, { defaultValue: item.mechanism })}</span>
-							<span style={{ opacity: 0.6 }}>•</span>
-							<span style={{ fontFamily: 'monospace', fontSize: '10px' }}>{item.frequency}</span>
-							{item.activeOnly && <span style={{ opacity: 0.5 }}>(panel)</span>}
+						<div style={styles.mechanisms}>
+							{item.profiles.map((p, i) => (
+								<span key={i}>
+									{MECHANISM_ICONS[p.mechanism as ConsumptionMechanism] || '❓'}
+									<span style={{ marginLeft: 2, fontFamily: 'monospace' }}>{p.frequency}</span>
+									{i < item.profiles.length - 1 && <span style={{ opacity: 0.4 }}> | </span>}
+								</span>
+							))}
 						</div>
 					</div>
+					<div style={{ ...styles.badge, background: levelStyle.bg, color: levelStyle.color }}>
+						{t(levelStyle.labelKey, { defaultValue: mainProfile?.level?.toUpperCase() })}
+					</div>
 				</div>
-				<div style={{ ...styles.badge, background: levelStyle.bg, color: levelStyle.color }}>
-					{levelStyle.label}
-				</div>
+
+				{/* Expanded detail with source annotation */}
+				{isExpanded && (
+					<div style={styles.detail}>
+						{item.profiles.map((p, i) => (
+							<div key={i} style={{ marginBottom: i < item.profiles.length - 1 ? 8 : 0 }}>
+								{renderProfile(p, i)}
+								<div style={{ opacity: 0.6, marginTop: 2 }}>
+									📄 {p.sourceFile}:{p.sourceLine}
+									{p.sourceDetail && <><br/>💡 {p.sourceDetail}</>}
+								</div>
+							</div>
+						))}
+					</div>
+				)}
 			</div>
 		);
 	};
 
 	return (
 		<div style={styles.container}>
-			{/* Active */}
+			{/* System Core (always running) */}
 			<div style={styles.section}>
 				<div style={styles.header}>
-					{t('tools.resource-monitor.sections.active', { defaultValue: 'Active' })} ({activeList.length})
+					<span>{t('tools.resource-monitor.sections.system', { defaultValue: 'System Core' })}</span>
+					<span style={styles.count}>{systemServices.length}</span>
 				</div>
-				{activeList.length > 0 ? activeList.map(renderItem) : (
-					<div style={styles.empty}>{t('tools.resource-monitor.noActive', { defaultValue: 'No active services' })}</div>
+				{systemServices.map(renderItem)}
+			</div>
+
+			{/* Active Tools */}
+			<div style={styles.section}>
+				<div style={styles.header}>
+					<span>{t('tools.resource-monitor.sections.active', { defaultValue: 'Active' })}</span>
+					<span style={styles.count}>{activeTools.length}</span>
+				</div>
+				{activeTools.length > 0 ? activeTools.map(renderItem) : (
+					<div style={styles.empty}>{t('tools.resource-monitor.noActive')}</div>
 				)}
 			</div>
 
-			{/* Inactive */}
+			{/* Inactive Tools */}
 			<div style={styles.section}>
 				<div style={styles.header}>
-					{t('tools.resource-monitor.sections.inactive', { defaultValue: 'Inactive' })} ({inactiveList.length})
+					<span>{t('tools.resource-monitor.sections.inactive', { defaultValue: 'Inactive' })}</span>
+					<span style={styles.count}>{inactiveTools.length}</span>
 				</div>
-				{inactiveList.length > 0 ? inactiveList.map(renderItem) : (
-					<div style={styles.empty}>{t('tools.resource-monitor.noModules', { defaultValue: 'No background services' })}</div>
+				{inactiveTools.length > 0 ? inactiveTools.map(renderItem) : (
+					<div style={styles.empty}>{t('tools.resource-monitor.noModules')}</div>
 				)}
 			</div>
 		</div>

@@ -122,13 +122,16 @@ function generateRegistry(userModules, systemModules, manifestsMap) {
 
 import type { ToolCategory } from '../../i18n/types';
 
-// Background consumption profile (declared in manifest.json)
+// Background consumption profile (declared in manifest.json with source annotations)
 export interface BackgroundProfile {
-	mechanism: 'interval_fast' | 'interval_slow' | 'raf_active' | 'raf_idle' | 'event_listener' | 'storage_listener' | 'message_listener' | 'mutation_observer' | 'service_worker' | 'content_script' | 'userscript';
+	mechanism: 'interval_fast' | 'interval_slow' | 'raf_active' | 'raf_idle' | 'event_listener' | 'storage_listener' | 'message_listener' | 'wheel_listener' | 'copy_listener' | 'mutation_observer' | 'service_worker' | 'content_script' | 'userscript';
 	frequency: string;
 	activeOnly: boolean;
 	level: 'high' | 'medium' | 'low' | 'idle';
 	descriptionKey: string;
+	sourceFile: string;
+	sourceLine: number;
+	sourceDetail?: string;
 }
 
 // Generated tool manifest interface

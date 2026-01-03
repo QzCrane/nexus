@@ -7,9 +7,12 @@
 	"keywords": [],
 	"background": {
 		"mechanism": "interval_slow",
-		"frequency": "1s",
+		"frequency": "1000ms",
 		"activeOnly": true,
 		"level": "low",
-		"descriptionKey": "impact.interval_1s"
+		"descriptionKey": "impact.interval_1s",
+		"sourceFile": "tools/timestamp/panel.tsx",
+		"sourceLine": 31,
+		"sourceDetail": "setInterval(() => setNow(Date.now()), 1000)"
 	}
 }
