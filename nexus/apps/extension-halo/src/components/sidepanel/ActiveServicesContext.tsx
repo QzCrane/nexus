@@ -12,16 +12,20 @@ const ActiveServicesContext = createContext<ActiveServicesContextType | undefine
 
 export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 	const [activeServices, setActiveServices] = useState<Set<string>>(new Set());
+	// Dynamic scripts list to include in background tool IDs
+	const [scriptIds, setScriptIds] = useState<string[]>([]);
 
 	// Initial Check & Storage Sync
 	useEffect(() => {
 		const checkState = async () => {
 			const active = new Set<string>();
+			const currentScriptIds: string[] = [];
+
 			try {
 				// Use storage defaults: default to TRUE if key missing
 				const localData = await chrome.storage.local.get({
 					halo_tool_clipboard_settings: { enabled: true },
-					halo_userscripts: { globalEnabled: true }
+					halo_userscripts: { globalEnabled: true, scripts: [] } // Default scripts to empty array
 				});
 
 				const syncData = await chrome.storage.sync.get({
@@ -32,6 +36,21 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 				if (localData.halo_userscripts.globalEnabled) active.add('userscripts');
 				if (syncData.HALO_SMOOTH_SCROLL_SETTINGS.enabled) active.add('smooth-scroll');
 
+				// Process User Scripts
+				const scripts = localData.halo_userscripts.scripts || [];
+				if (localData.halo_userscripts.globalEnabled) {
+					scripts.forEach((script: any) => {
+						currentScriptIds.push(script.id);
+						if (script.enabled) {
+							active.add(script.id);
+						}
+					});
+				} else {
+					// Even if global disabled, we track IDs, but none are active
+					scripts.forEach((script: any) => currentScriptIds.push(script.id));
+				}
+
+				setScriptIds(prev => JSON.stringify(prev) !== JSON.stringify(currentScriptIds) ? currentScriptIds : prev);
 
 				setActiveServices(prev => {
 					if (prev.size === active.size && [...prev].every(x => active.has(x))) return prev;
@@ -70,8 +89,11 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 		});
 	}, []);
 
+	// Combine hardcoded background tools with dynamic script IDs
+	const allBgToolIds = [...BACKGROUND_TOOL_IDS, ...scriptIds];
+
 	return (
-		<ActiveServicesContext.Provider value={{ activeServices, bgToolIds: BACKGROUND_TOOL_IDS, setServiceState }}>
+		<ActiveServicesContext.Provider value={{ activeServices, bgToolIds: allBgToolIds, setServiceState }}>
 			{children}
 		</ActiveServicesContext.Provider>
 	);
