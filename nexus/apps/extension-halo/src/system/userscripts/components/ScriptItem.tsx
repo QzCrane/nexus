@@ -1,6 +1,9 @@
+// goal: Script item component with enhanced visual design
+// eff: Rich colors, gradients, and visual hierarchy
+
 import React from 'react';
 import type { UserScript } from '../types';
-import { styles } from '../styles';
+import { itemStyles } from '../styles/script-item';
 
 type TFunc = (key: string, opts?: { defaultValue?: string } & Record<string, any>) => string;
 
@@ -18,95 +21,61 @@ interface ScriptItemProps {
 }
 
 export const ScriptItem: React.FC<ScriptItemProps> = ({
-	script,
-	isFirst,
-	isLast,
-	onToggle,
-	onEdit,
-	onDelete,
-	onTest,
-	onMove,
-	isActive,
-	t,
+	script, isFirst, isLast, onToggle, onEdit, onDelete, onTest, onMove, isActive, t,
 }) => {
 	const formatDate = (ts?: number) => {
 		if (!ts) return t('userscripts.never', { defaultValue: 'Never' });
 		return new Date(ts).toLocaleDateString();
 	};
 
+	const isJS = script.type === 'javascript';
+	const accentColor = isJS ? '#FFD700' : '#2196F3';
+
 	return (
 		<div
 			style={{
-				...styles.scriptCard,
-				...(script.enabled ? {} : styles.scriptCardDisabled),
+				...itemStyles.card,
+				...(script.enabled && isActive ? itemStyles.cardActive : {}),
+				...(!script.enabled ? itemStyles.cardDisabled : {}),
 			}}
+			onClick={onEdit}
 		>
-			<div style={styles.scriptHeader}>
-				<div style={styles.scriptInfo}>
-					<div style={styles.scriptTitle}>{script.name}</div>
-					<div style={styles.scriptMeta}>
-						<span style={{
-							...styles.scriptBadge,
-							...(script.type === 'css' ? styles.scriptBadgeCSS : {}),
-						}}>
-							{script.type.toUpperCase()}
+			{/* Top accent bar */}
+			<div style={{ ...itemStyles.accentBar, background: `linear-gradient(90deg, ${accentColor}, transparent)`, opacity: script.enabled ? 0.8 : 0.3 } as React.CSSProperties} />
+
+			{/* Header */}
+			<div style={itemStyles.header}>
+				<div style={{ ...itemStyles.icon, ...(isJS ? itemStyles.iconJS : itemStyles.iconCSS) }}>{isJS ? '⚡' : '🎨'}</div>
+				<div style={itemStyles.info as React.CSSProperties}>
+					<div style={itemStyles.name}>{script.name}</div>
+					<div style={itemStyles.meta as React.CSSProperties}>
+						<span style={{ ...itemStyles.badge, ...(isJS ? itemStyles.badgeJS : itemStyles.badgeCSS) }}>{script.type.toUpperCase()}</span>
+						<span style={itemStyles.statusLabel}>
+							<span style={{ ...itemStyles.statusDot, ...(isActive && script.enabled ? itemStyles.statusActive : itemStyles.statusInactive) }} />
+							{isActive && script.enabled ? t('userscripts.activeOnSite', { defaultValue: 'Active' }) : t('userscripts.inactiveOnSite', { defaultValue: 'Inactive' })}
 						</span>
-						{/* Active Status */}
-						<span style={{ 
-							display: 'flex', 
-							alignItems: 'center', 
-							gap: '4px',
-							color: isActive ? '#4CAF50' : 'var(--halo-text-secondary)',
-							fontWeight: isActive ? 600 : 400 
-						}}>
-							<span style={{ 
-								width: '6px', 
-								height: '6px', 
-								borderRadius: '50%', 
-								background: isActive ? '#4CAF50' : '#ccc',
-								boxShadow: isActive ? '0 0 4px #4CAF50' : 'none'
-							}} />
-							{isActive ? t('userscripts.activeOnSite', { defaultValue: 'Active' }) : t('userscripts.inactiveOnSite', { defaultValue: 'Inactive' })}
-						</span>
-						<span>📍 {script.matches.length} {script.matches.length === 1 ? t('userscripts.match', { defaultValue: 'match' }) : t('userscripts.matches', { defaultValue: 'matches' })}</span>
+						<span>📍 {script.matches.length}</span>
 						<span>▶️ {script.runCount}x</span>
 						{script.lastRun && <span>📅 {formatDate(script.lastRun)}</span>}
 					</div>
 				</div>
-				<div style={styles.scriptActions}>
-					{/* Reorder buttons */}
-					<button
-						style={{ ...styles.iconBtn, opacity: isFirst ? 0.3 : 1 }}
-						onClick={(e) => { e.stopPropagation(); onMove('up'); }}
-						disabled={isFirst}
-						title={t('userscripts.moveUp', { defaultValue: 'Move up' })}
-					>↑</button>
-					<button
-						style={{ ...styles.iconBtn, opacity: isLast ? 0.3 : 1 }}
-						onClick={(e) => { e.stopPropagation(); onMove('down'); }}
-						disabled={isLast}
-						title={t('userscripts.moveDown', { defaultValue: 'Move down' })}
-					>↓</button>
-					
-					{/* Toggle */}
-					<div
-						style={{ ...styles.toggle, ...(script.enabled ? styles.toggleActive : {}) }}
-						onClick={(e) => { e.stopPropagation(); onToggle(); }}
-					>
-						<div style={{ ...styles.toggleKnob, left: script.enabled ? '18px' : '2px' }} />
+				{/* Controls */}
+				<div style={itemStyles.controls as React.CSSProperties}>
+					<button style={{ ...itemStyles.reorderBtn, opacity: isFirst ? 0.3 : 1, cursor: isFirst ? 'not-allowed' : 'pointer' }}
+						onClick={(e) => { e.stopPropagation(); if (!isFirst) onMove('up'); }} disabled={isFirst} title={t('userscripts.moveUp', { defaultValue: 'Move up' })}>↑</button>
+					<button style={{ ...itemStyles.reorderBtn, opacity: isLast ? 0.3 : 1, cursor: isLast ? 'not-allowed' : 'pointer' }}
+						onClick={(e) => { e.stopPropagation(); if (!isLast) onMove('down'); }} disabled={isLast} title={t('userscripts.moveDown', { defaultValue: 'Move down' })}>↓</button>
+					<div style={{ ...itemStyles.toggle, ...(script.enabled ? itemStyles.toggleActive : {}) }} onClick={(e) => { e.stopPropagation(); onToggle(); }}>
+						<div style={{ ...itemStyles.toggleKnob, left: script.enabled ? '19px' : '3px' } as React.CSSProperties} />
 					</div>
 				</div>
 			</div>
-			
-			{/* Action row */}
-			<div style={{ ...styles.btnGroup, marginTop: '10px' }}>
-				<button style={styles.btnSecondary} onClick={onEdit}>✏️ {t('userscripts.edit', { defaultValue: 'Edit' })}</button>
-				<button style={styles.btnSecondary} onClick={onTest}>▶️ {t('userscripts.test', { defaultValue: 'Test' })}</button>
-				<button
-					style={{ ...styles.iconBtn, ...styles.iconBtnDanger }}
-					onClick={onDelete}
-					title={t('userscripts.delete', { defaultValue: 'Delete' })}
-				>🗑️</button>
+
+			{/* Actions */}
+			<div style={itemStyles.actions as React.CSSProperties}>
+				<button style={itemStyles.btn} onClick={(e) => { e.stopPropagation(); onEdit(); }}>✏️ {t('userscripts.edit', { defaultValue: 'Edit' })}</button>
+				<button style={{ ...itemStyles.btn, ...itemStyles.btnPrimary }} onClick={(e) => { e.stopPropagation(); onTest(); }}>▶️ {t('userscripts.test', { defaultValue: 'Test' })}</button>
+				<button style={{ ...itemStyles.iconBtn, ...itemStyles.deleteBtn }} onClick={(e) => { e.stopPropagation(); onDelete(); }} title={t('userscripts.delete', { defaultValue: 'Delete' })}>🗑️</button>
 			</div>
 		</div>
 	);

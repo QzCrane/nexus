@@ -109,14 +109,15 @@ export const ModuleStorePanel: React.FC = () => {
 		id: s.id,
 		name: s.name,
 		description: s.description,
-		icon: '📜',
-		category: 'scripts',
-		toolType: 'script',
+		icon: s.type === 'css' ? '🎨' : '⚡',
+		category: 'scripts' as const,
+		toolType: 'script' as const,
+		scriptType: s.type, // 'javascript' | 'css' for proper styling
 		builtIn: false,
 		size: s.code.length,
 		system: false,
-		status: 'ready',
-		keywords: ['script', 'user']
+		status: 'ready' as const,
+		keywords: ['script', 'user', s.type]
 	})) as typeof ALL_MODULES, [scripts]);
 
 	// Combined installed list for status checks
@@ -131,7 +132,8 @@ export const ModuleStorePanel: React.FC = () => {
 		} else if (view === 'available') {
 			source = availableModules; // User scripts aren't "available" in store
 		} else { // all
-			source = [...ALL_MODULES];
+			// Include both built-in modules AND user scripts
+			source = [...ALL_MODULES, ...scriptModules];
 		}
 
 		// 2. Filter by Type

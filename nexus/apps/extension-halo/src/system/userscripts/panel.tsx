@@ -1,11 +1,11 @@
 // goal: UserScripts panel - full Tampermonkey feature parity
-// eff: Master toggle, script list, editor, import/export, templates
+// eff: Master toggle, script list, editor page, import/export, templates
 
 import React from 'react';
 import { useTranslation } from '../../i18n';
 import { styles } from './styles';
 import { ScriptItem } from './components/ScriptItem';
-import { ScriptEditor } from './components/ScriptEditor';
+import { ScriptEditorPage } from './components/ScriptEditorPage';
 import { ImportExportModal } from './components/ImportExportModal';
 import { SettingsModal } from './components/SettingsModal';
 import { EmptyState } from './components/EmptyState';
@@ -35,7 +35,19 @@ export const UserScriptsPanel: React.FC = () => {
 
     const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
 
-
+	// Render editor page as full sub-page
+	if (showEditor) {
+		return (
+			<ScriptEditorPage
+				form={editForm}
+				onChange={setEditForm}
+				onSave={handleSave}
+				onCancel={handleCancel}
+				isEdit={!!editingId}
+				t={t}
+			/>
+		);
+	}
 
 	return (
 		<div style={styles.wrapper}>
@@ -103,14 +115,7 @@ export const UserScriptsPanel: React.FC = () => {
 			)}
 
 			{/* Templates */}
-			{!showEditor && (
-				<UserscriptsTemplates onLoad={loadTemplate} />
-			)}
-
-			{/* Editor */}
-			{showEditor && (
-				<ScriptEditor form={editForm} onChange={setEditForm} onSave={handleSave} onCancel={handleCancel} isEdit={!!editingId} t={t} />
-			)}
+			<UserscriptsTemplates onLoad={loadTemplate} />
 
 			{/* Script List */}
 			<div style={styles.sectionHeader}>

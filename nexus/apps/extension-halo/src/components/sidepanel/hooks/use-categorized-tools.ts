@@ -1,7 +1,7 @@
 
 import { useMemo } from 'react';
 import type { ToolMeta, HaloSettings } from '../../kernel';
-import type { UserScript } from '../../../tools/userscripts/types';
+import type { UserScript } from '../../../system/userscripts/types';
 
 interface UseCategorizedToolsProps {
 	visibleTools: ToolMeta[];

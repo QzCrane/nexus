@@ -41,6 +41,7 @@ export interface ToolMeta {
 	size?: number;
 	builtIn?: boolean;
 	name?: string; // Optional raw name (e.g. for user scripts)
+	description?: string; // Optional description (e.g. for user scripts)
 	dependencies?: string[];
 	bundleUrl?: string;
 	version?: string;
