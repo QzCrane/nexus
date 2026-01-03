@@ -8,6 +8,14 @@ import { BACKGROUND_PROFILES_MAP, BACKGROUND_TOOL_IDS, ALL_APPS } from '../../ke
 import { LEVEL_CONFIG, MECHANISM_ICONS, SYSTEM_CORE_CONSUMERS } from './types';
 import type { MonitoredService, BackgroundProfile, ImpactLevel, ConsumptionMechanism } from './types';
 
+// Category badge styles
+const CATEGORY_STYLES: Record<string, { bg: string; color: string; label: string }> = {
+	tool: { bg: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', label: 'TOOL' },
+	system: { bg: 'rgba(168, 85, 247, 0.15)', color: '#a855f7', label: 'SYS' },
+	script: { bg: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', label: 'SCRIPT' },
+	core: { bg: 'rgba(100, 100, 100, 0.15)', color: '#888', label: 'CORE' }
+};
+
 const styles = {
 	container: { padding: '16px', display: 'flex', flexDirection: 'column' as const, gap: '16px', height: '100%', overflowY: 'auto' as const },
 	section: { display: 'flex', flexDirection: 'column' as const, gap: '8px' },
@@ -38,12 +46,17 @@ export const ResourceMonitorPanel: React.FC = () => {
 			const meta = ALL_APPS.find(app => app.id === id);
 			if (!profile || !meta) return null;
 			
+			// Determine category: system > script > tool
+			let category: 'tool' | 'system' | 'script' = 'tool';
+			if (meta.system) category = 'system';
+			else if (meta.toolType === 'script') category = 'script';
+			
 			return {
 				id,
 				name: t(`tools.${id}.name`, { defaultValue: id }),
 				icon: meta.icon || '🔧',
 				active: activeServices.has(id),
-				category: meta.system ? 'system' : 'tool',
+				category,
 				profiles: [profile]
 			};
 		}).filter(Boolean) as MonitoredService[];
@@ -81,6 +94,7 @@ export const ResourceMonitorPanel: React.FC = () => {
 		const isExpanded = expanded === item.id;
 		const mainProfile = item.profiles[0];
 		const levelStyle = LEVEL_CONFIG[mainProfile?.level as ImpactLevel || 'idle'];
+		const catStyle = CATEGORY_STYLES[item.category] || CATEGORY_STYLES.tool;
 
 		return (
 			<div 
@@ -102,7 +116,13 @@ export const ResourceMonitorPanel: React.FC = () => {
 							))}
 						</div>
 					</div>
-					<div style={{ ...styles.badge, background: levelStyle.bg, color: levelStyle.color }}>
+					{/* Category badge (hidden for core since it has its own section) */}
+					{item.category !== 'core' && (
+						<div style={{ ...styles.badge, background: catStyle.bg, color: catStyle.color, marginRight: 4 }}>
+							{catStyle.label}
+						</div>
+					)}
+				<div style={{ ...styles.badge, background: levelStyle.bg, color: levelStyle.color }}>
 						{t(levelStyle.labelKey, { defaultValue: mainProfile?.level?.toUpperCase() })}
 					</div>
 				</div>
