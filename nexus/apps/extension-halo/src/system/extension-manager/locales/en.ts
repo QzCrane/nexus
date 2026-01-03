@@ -22,6 +22,6 @@ export const en = {
 	'extMgr.assignGroup': 'Assign to Group',
 	'extMgr.hostPermissions': 'Host Permissions',
 	'extMgr.permissionRequired': 'Permission Required',
-	'extMgr.permissionDesc': 'HALO needs "management" permission to list and control your extensions. This permission is optional and only used for this feature.',
+	'extMgr.permissionDesc': 'HALO needs "Extension Management" permission to list and control your extensions. This permission is optional and only used for this feature.',
 	'extMgr.grantPermission': 'Grant Permission',
 };

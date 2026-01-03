@@ -72,9 +72,30 @@ export const OPTIONAL_PERMISSIONS: PermissionDef[] = [
 	{
 		id: 'notifications',
 		name: 'Notifications',
-		description: 'Show desktop notifications',
+		description: 'Show system desktop notifications',
 		icon: '🔔',
 		category: 'basic',
+	},
+	{
+		id: 'tabGroups',
+		name: 'Tab Groups',
+		description: 'Access and modify tab groups',
+		icon: '📑',
+		category: 'basic',
+	},
+	{
+		id: 'userScripts',
+		name: 'User Scripts',
+		description: 'Execute custom scripts (chrome.userScripts)',
+		icon: '📜',
+		category: 'advanced',
+	},
+	{
+		id: 'management',
+		name: 'Extension Management',
+		description: 'Manage installed extensions',
+		icon: '🔌',
+		category: 'advanced',
 	},
 ];
 
