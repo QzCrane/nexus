@@ -2,7 +2,7 @@
 import React from 'react';
 import { useTranslation } from '../../i18n';
 
-export type FilterType = 'all' | 'app' | 'script' | 'system';
+export type FilterType = 'all' | 'app' | 'official' | 'userscript' | 'system';
 
 interface TypeFilterProps {
 	value: FilterType;
@@ -15,7 +15,8 @@ export const TypeFilter: React.FC<TypeFilterProps> = ({ value, onChange }) => {
 	const typeFilters: { key: FilterType; label: string }[] = [
 		{ key: 'all', label: t('moduleStorePanel.filters.all') },
 		{ key: 'app', label: t('moduleStorePanel.filters.app') },
-		{ key: 'script', label: t('moduleStorePanel.filters.script') },
+		{ key: 'official', label: t('common.builtInScripts') },
+		{ key: 'userscript', label: t('common.userScripts') },
 		{ key: 'system', label: t('moduleStorePanel.filters.system') },
 	];
 

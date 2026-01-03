@@ -33,27 +33,45 @@ fs.copySync('public', 'dist');
 console.log('✓ Copied public files');
 
 // Copy SaaT script files (script.js, script.css) for Script-as-a-Tool
+// Scan both src/tools and src/scripts
 const toolsDir = path.join(__dirname, 'src/tools');
+const scriptsDir = path.join(__dirname, 'src/scripts');
 const distToolsDir = path.join(__dirname, 'dist/tools');
+const distScriptsDir = path.join(__dirname, 'dist/scripts');
+
 fs.ensureDirSync(distToolsDir);
-const toolDirs = fs.readdirSync(toolsDir, { withFileTypes: true }).filter(d => d.isDirectory());
-let saatCount = 0;
-for (const dir of toolDirs) {
-	const scriptJs = path.join(toolsDir, dir.name, 'script.js');
-	const scriptCss = path.join(toolsDir, dir.name, 'script.css');
-	const destDir = path.join(distToolsDir, dir.name);
-	if (fs.existsSync(scriptJs)) {
-		fs.ensureDirSync(destDir);
-		fs.copyFileSync(scriptJs, path.join(destDir, 'script.js'));
-		saatCount++;
+fs.ensureDirSync(distScriptsDir);
+
+function copyScriptFiles(sourceDir, destBaseDir) {
+	if (!fs.existsSync(sourceDir)) return 0;
+	const dirs = fs.readdirSync(sourceDir, { withFileTypes: true }).filter(d => d.isDirectory());
+	let count = 0;
+	for (const dir of dirs) {
+		const scriptJs = path.join(sourceDir, dir.name, 'script.js');
+		const scriptCss = path.join(sourceDir, dir.name, 'script.css');
+		const destDir = path.join(destBaseDir, dir.name);
+		let copied = false;
+		if (fs.existsSync(scriptJs)) {
+			fs.ensureDirSync(destDir);
+			fs.copyFileSync(scriptJs, path.join(destDir, 'script.js'));
+			copied = true;
+		}
+		if (fs.existsSync(scriptCss)) {
+			fs.ensureDirSync(destDir);
+			fs.copyFileSync(scriptCss, path.join(destDir, 'script.css'));
+			copied = true;
+		}
+		if (copied) count++;
 	}
-	if (fs.existsSync(scriptCss)) {
-		fs.ensureDirSync(destDir);
-		fs.copyFileSync(scriptCss, path.join(destDir, 'script.css'));
-		saatCount++;
-	}
+	return count;
 }
-if (saatCount > 0) console.log(`✓ Copied ${saatCount} SaaT script files`);
+
+const toolScriptsCount = copyScriptFiles(toolsDir, distToolsDir);
+const officialScriptsCount = copyScriptFiles(scriptsDir, distScriptsDir);
+
+if (toolScriptsCount + officialScriptsCount > 0) {
+	console.log(`✓ Copied ${toolScriptsCount + officialScriptsCount} SaaT script files (Tools: ${toolScriptsCount}, Scripts: ${officialScriptsCount})`);
+}
 
 // Config
 const isWatch = process.argv.includes('--watch');

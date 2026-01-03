@@ -53,9 +53,10 @@ export const ModuleStorePanel: React.FC = () => {
 	const searchModules = (modules: typeof ALL_MODULES) => 
 		filterBySearch(modules, searchQuery, MODULE_SEARCH_OPTIONS);
 
-	const filterByType = (m: typeof ALL_MODULES[0]) => {
+	const filterByType = (m: typeof ALL_MODULES[0] & { isUserScript?: boolean }) => {
 		if (filterType === 'system') return m.system;
-		if (filterType === 'script') return !m.system && m.toolType === 'script';
+		if (filterType === 'official') return !m.system && m.toolType === 'script' && !m.isUserScript;
+		if (filterType === 'userscript') return m.isUserScript;
 		if (filterType === 'app') return !m.system && (!m.toolType || m.toolType === 'panel');
 		return true;
 	};
