@@ -7,6 +7,7 @@ import { styles } from './styles';
 import { ScriptItem } from './components/ScriptItem';
 import { ScriptEditor } from './components/ScriptEditor';
 import { ImportExportModal } from './components/ImportExportModal';
+import { SettingsModal } from './components/SettingsModal';
 import { EmptyState } from './components/EmptyState';
 import { useUserScripts, useScriptEditor, useImportExport } from './hooks';
 import { SCRIPT_TEMPLATES } from './templates';
@@ -18,7 +19,8 @@ export const UserScriptsPanel: React.FC = () => {
     const { 
         scripts, globalEnabled, currentUrl, hasPermission, 
         loadScripts, handleRequestPermission, handleGlobalToggle, 
-        handleToggle, handleDelete, handleTest, handleMove 
+        handleToggle, handleDelete, handleTest, handleMove,
+        toolbarConfig, handleToolbarConfig
     } = useUserScripts();
 
     const { 
@@ -30,30 +32,77 @@ export const UserScriptsPanel: React.FC = () => {
         modalMode, setModalMode, exportData, handleExport, handleImport 
     } = useImportExport(loadScripts);
 
+    const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
+
+    const renderToolbarItems = () => {
+        const order = toolbarConfig?.order || ['add', 'export', 'import'];
+        const hideOnOverflow = toolbarConfig?.hideOnOverflow || false;
+
+        const items: Record<string, React.ReactNode> = {
+            'add': (
+                <button key="add" style={styles.btn} onClick={() => { setEditingId(null); setShowEditor(true); }}>
+                    ➕ {t('userscripts.addNew', { defaultValue: 'Add Script' })}
+                </button>
+            ),
+            'export': (
+                <button key="export" style={styles.btnSecondary} onClick={() => handleExport(scripts)}>
+                    📤 {t('userscripts.export', { defaultValue: 'Export' })}
+                </button>
+            ),
+            'import': (
+                <button key="import" style={styles.btnSecondary} onClick={() => setModalMode('import')}>
+                    📥 {t('userscripts.import', { defaultValue: 'Import' })}
+                </button>
+            )
+        };
+
+        return (
+            <div style={{
+                ...styles.btnGroup,
+                flexWrap: hideOnOverflow ? 'nowrap' : 'wrap',
+                overflowX: hideOnOverflow ? 'hidden' : 'visible', // Use hidden or auto? Requirement: "Hide if no position"
+                // If we want items to truly hide (disappear) when they don't fit without scrolling, 
+                // we'd need ResizeObserver. But 'hidden' overflow with nowrap clips them.
+                // Assuming clipping is acceptable for "hide".
+            }}>
+                {order.map(key => items[key])}
+            </div>
+        );
+    };
+
 	return (
 		<div style={styles.wrapper}>
-			{/* Master Toggle */}
-			<div style={{ ...styles.masterCard, ...(globalEnabled ? styles.masterCardActive : {}) }}>
-				<div>
-					<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-						<span style={{ fontSize: '15px', fontWeight: 600 }}>⚡ {t('userscripts.title', { defaultValue: 'User Scripts' })}</span>
-						{globalEnabled && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4CAF50', boxShadow: '0 0 6px #4CAF50' }} />}
-					</div>
-					<div style={{ fontSize: '12px', color: 'var(--halo-text-secondary)', marginTop: '2px' }}>
-						{scripts.length} {t('userscripts.scripts', { defaultValue: 'scripts' })} • {scripts.filter(s => s.enabled).length} {t('userscripts.active', { defaultValue: 'active' })}
+			{/* Master Toggle & Settings */}
+			<div style={{ ...styles.masterCard, ...(globalEnabled ? styles.masterCardActive : {}), flexDirection: 'row', justifyContent: 'space-between', paddingRight: '12px' }}>
+				<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+					<div onClick={handleGlobalToggle} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+						<div style={{ ...styles.toggle, ...(globalEnabled ? styles.toggleActive : {}) }}>
+							<div style={{ ...styles.toggleKnob, left: globalEnabled ? '18px' : '2px' }} />
+						</div>
+						<div>
+							<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+								<span style={{ fontSize: '15px', fontWeight: 600 }}>⚡ {t('userscripts.title', { defaultValue: 'User Scripts' })}</span>
+								{globalEnabled && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4CAF50', boxShadow: '0 0 6px #4CAF50' }} />}
+							</div>
+							<div style={{ fontSize: '12px', color: 'var(--halo-text-secondary)', marginTop: '2px' }}>
+								{scripts.length} {t('userscripts.scripts', { defaultValue: 'scripts' })} • {scripts.filter(s => s.enabled).length} {t('userscripts.active', { defaultValue: 'active' })}
+							</div>
+						</div>
 					</div>
 				</div>
-				<div style={{ ...styles.toggle, ...(globalEnabled ? styles.toggleActive : {}) }} onClick={handleGlobalToggle}>
-					<div style={{ ...styles.toggleKnob, left: globalEnabled ? '18px' : '2px' }} />
-				</div>
+				
+				{/* Settings Icon (Fixed Right) */}
+				<button 
+					style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px', padding: '4px', opacity: 0.7 }}
+					onClick={() => setIsSettingsOpen(true)}
+					title={t('userscripts.settings', { defaultValue: 'Settings' })}
+				>
+					⚙️
+				</button>
 			</div>
 
-			{/* Action buttons */}
-			<div style={styles.btnGroup}>
-				<button style={styles.btn} onClick={() => { setEditingId(null); setShowEditor(true); }}>➕ {t('userscripts.addNew', { defaultValue: 'Add Script' })}</button>
-				<button style={styles.btnSecondary} onClick={() => handleExport(scripts)}>📤 {t('userscripts.export', { defaultValue: 'Export' })}</button>
-				<button style={styles.btnSecondary} onClick={() => setModalMode('import')}>📥 {t('userscripts.import', { defaultValue: 'Import' })}</button>
-			</div>
+			{/* Configurable Toolbar */}
+			{renderToolbarItems()}
 
 			{/* Permission Warning */}
 			{!hasPermission && (
@@ -140,6 +189,16 @@ export const UserScriptsPanel: React.FC = () => {
 			{/* Import/Export Modal - inline rendering */}
 			{modalMode && (
 				<ImportExportModal mode={modalMode} exportData={exportData} onImport={handleImport} onClose={() => setModalMode(null)} t={t} />
+			)}
+
+			{/* Settings Modal */}
+			{isSettingsOpen && (
+				<SettingsModal
+					config={toolbarConfig || { order: ['add', 'export', 'import'], hideOnOverflow: false }}
+					onSave={handleToolbarConfig}
+					onClose={() => setIsSettingsOpen(false)}
+					t={t}
+				/>
 			)}
 		</div>
 	);

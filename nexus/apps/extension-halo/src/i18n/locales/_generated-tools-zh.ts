@@ -82,7 +82,6 @@ import { zh as translate } from '../../tools/translate/locales/zh';
 import { zh as unit_converter } from '../../tools/unit-converter/locales/zh';
 import { zh as url } from '../../tools/url/locales/zh';
 import { zh as user_agent } from '../../tools/user-agent/locales/zh';
-import { zh as userscripts } from '../../tools/userscripts/locales/zh';
 import { zh as uuid } from '../../tools/uuid/locales/zh';
 import { zh as xml_formatter } from '../../tools/xml-formatter/locales/zh';
 import { zh as xor } from '../../tools/xor/locales/zh';
@@ -91,6 +90,7 @@ import { zh as extension_manager } from '../../system/extension-manager/locales/
 import { zh as module_store } from '../../system/module-store/locales/zh';
 import { zh as permissions } from '../../system/permissions/locales/zh';
 import { zh as settings } from '../../system/settings/locales/zh';
+import { zh as userscripts } from '../../system/userscripts/locales/zh';
 
 export const TOOLS_ZH = {
 	...api_tester,
@@ -173,7 +173,6 @@ export const TOOLS_ZH = {
 	...unit_converter,
 	...url,
 	...user_agent,
-	...userscripts,
 	...uuid,
 	...xml_formatter,
 	...xor,
@@ -182,4 +181,5 @@ export const TOOLS_ZH = {
 	...module_store,
 	...permissions,
 	...settings,
+	...userscripts,
 };

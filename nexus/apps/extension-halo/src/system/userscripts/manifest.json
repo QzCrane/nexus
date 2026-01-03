@@ -2,6 +2,7 @@
 	"id": "userscripts",
 	"icon": "📜",
 	"category": "dev",
+	"system": true,
 	"size": 45000,
 	"builtIn": false,
 	"keywords": [],

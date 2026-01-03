@@ -83,7 +83,6 @@ export const generatedToolPanels = {
 	'unit-converter': lazy(() => import('../tools/unit-converter/panel').then(m => ({ default: m.UnitConverterPanel }))),
 	'url': lazy(() => import('../tools/url/panel').then(m => ({ default: m.URLPanel }))),
 	'user-agent': lazy(() => import('../tools/user-agent/panel').then(m => ({ default: m.UserAgentPanel }))),
-	'userscripts': lazy(() => import('../tools/userscripts/panel').then(m => ({ default: m.UserScriptsPanel }))),
 	'uuid': lazy(() => import('../tools/uuid/panel').then(m => ({ default: m.UUIDPanel }))),
 	'xml-formatter': lazy(() => import('../tools/xml-formatter/panel').then(m => ({ default: m.XmlFormatterPanel }))),
 	'xor': lazy(() => import('../tools/xor/panel').then(m => ({ default: m.XorPanel }))),
@@ -91,7 +90,8 @@ export const generatedToolPanels = {
 	'extension-manager': lazy(() => import('../system/extension-manager/panel').then(m => ({ default: m.ExtensionManagerPanel }))),
 	'module-store': lazy(() => import('../system/module-store/panel').then(m => ({ default: m.ModuleStorePanel }))),
 	'permissions': lazy(() => import('../system/permissions/panel').then(m => ({ default: m.PermissionsPanel }))),
-	'settings': lazy(() => import('../system/settings/panel').then(m => ({ default: m.SettingsPanel })))
+	'settings': lazy(() => import('../system/settings/panel').then(m => ({ default: m.SettingsPanel }))),
+	'userscripts': lazy(() => import('../system/userscripts/panel').then(m => ({ default: m.UserScriptsPanel })))
 } as const;
 
 export type LoadableToolId = keyof typeof generatedToolPanels;

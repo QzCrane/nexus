@@ -78,11 +78,30 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
 			{/* Name, Type & RunAt row */}
 			<div style={styles.editorRow}>
 				<input
-					style={styles.input}
+					style={{ ...styles.input, flex: 2 }}
 					value={form.name}
 					onChange={(e) => update('name', e.target.value)}
 					placeholder={t('userscripts.name', { defaultValue: 'Script name' })}
 				/>
+				{/* Category Select */}
+				<select
+					style={{
+						...styles.input,
+						flex: 1,
+						width: 'auto',
+						cursor: 'pointer',
+						appearance: 'none',
+						paddingRight: '20px' // for arrow
+					}}
+					value={form.category || 'dev'}
+					onChange={(e) => update('category', e.target.value)}
+					title="Script Category"
+				>
+					{['general', 'dev', 'efficiency', 'visual', 'ai', 'security', 'media', 'browser'].map(c => (
+						<option key={c} value={c}>{t(`categories.${c}`, { defaultValue: c.charAt(0).toUpperCase() + c.slice(1) })}</option>
+					))}
+				</select>
+
 				{/* Type: button group */}
 				<div style={segmentedStyles.wrapper}>
 					{[

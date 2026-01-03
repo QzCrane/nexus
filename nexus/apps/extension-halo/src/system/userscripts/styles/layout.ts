@@ -5,10 +5,10 @@ export const layoutStyles: Record<string, CSSProperties> = {
 	wrapper: {
 		display: 'flex',
 		flexDirection: 'column',
-		gap: '14px',
+		gap: '16px',
 		scrollBehavior: 'smooth',
 		position: 'relative',
-		minHeight: '100vh',
+		minHeight: '100%',
 	},
 	sectionHeader: {
 		display: 'flex',

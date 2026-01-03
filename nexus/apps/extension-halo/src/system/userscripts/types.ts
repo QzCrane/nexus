@@ -20,6 +20,8 @@ export interface UserScript {
 	author?: string;
 	homepage?: string;
 	updateUrl?: string;
+	// Category matching Module Store
+	category?: string;
 	// Statistics
 	runCount: number;
 	lastRun?: number;
@@ -31,12 +33,17 @@ export interface UserScript {
 export interface UserScriptState {
 	scripts: UserScript[];
 	globalEnabled: boolean;
+	toolbarConfig?: {
+		order: string[];
+		hideOnOverflow: boolean;
+	};
 }
 
 // Parsed Userscript header (// ==UserScript== format)
 export interface ParsedHeader {
 	name?: string;
 	description?: string;
+	category?: string;
 	version?: string;
 	author?: string;
 	match?: string[];
@@ -57,6 +64,7 @@ export interface ScriptExport {
 export interface EditForm {
 	name: string;
 	description: string;
+	category: string;
 	code: string;
 	matches: string;
 	excludeMatches: string;

@@ -23,6 +23,7 @@ export const zh = {
 		medium: '中',
 		large: '大',
 		headerShortcuts: '顶部栏图标',
+		dragToReorder: '(拖拽可排序)',
 		languageSetting: '语言',
 		languageSettingDesc: '选择界面语言',
 		actions: '操作',

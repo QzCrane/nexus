@@ -82,7 +82,6 @@ import { en as translate } from '../../tools/translate/locales/en';
 import { en as unit_converter } from '../../tools/unit-converter/locales/en';
 import { en as url } from '../../tools/url/locales/en';
 import { en as user_agent } from '../../tools/user-agent/locales/en';
-import { en as userscripts } from '../../tools/userscripts/locales/en';
 import { en as uuid } from '../../tools/uuid/locales/en';
 import { en as xml_formatter } from '../../tools/xml-formatter/locales/en';
 import { en as xor } from '../../tools/xor/locales/en';
@@ -91,6 +90,7 @@ import { en as extension_manager } from '../../system/extension-manager/locales/
 import { en as module_store } from '../../system/module-store/locales/en';
 import { en as permissions } from '../../system/permissions/locales/en';
 import { en as settings } from '../../system/settings/locales/en';
+import { en as userscripts } from '../../system/userscripts/locales/en';
 
 export const TOOLS_EN = {
 	...api_tester,
@@ -173,7 +173,6 @@ export const TOOLS_EN = {
 	...unit_converter,
 	...url,
 	...user_agent,
-	...userscripts,
 	...uuid,
 	...xml_formatter,
 	...xor,
@@ -182,4 +181,5 @@ export const TOOLS_EN = {
 	...module_store,
 	...permissions,
 	...settings,
+	...userscripts,
 };

@@ -23,6 +23,7 @@ export const en = {
 		medium: 'Medium',
 		large: 'Large',
 		headerShortcuts: 'Top Bar Icons',
+		dragToReorder: '(Drag to reorder)',
 		languageSetting: 'Language',
 		languageSettingDesc: 'Choose interface language',
 		actions: 'Actions',

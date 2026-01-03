@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useTranslation } from '../../../i18n';
-import type { UserScript } from '../types';
+import type { UserScript, UserScriptState } from '../types';
 import {
 	getUserScriptsState,
 	deleteUserScript,
@@ -19,10 +19,17 @@ export function useUserScripts() {
 	const [currentUrl, setCurrentUrl] = useState('');
 	const [hasPermission, setHasPermission] = useState(false);
 
+	// Toolbar config
+	const [toolbarConfig, setToolbarConfig] = useState<UserScriptState['toolbarConfig']>();
+
 	const loadScripts = useCallback(async () => {
 		const state = await getUserScriptsState();
 		setScripts(state.scripts);
 		setGlobalEnabled(state.globalEnabled);
+		setToolbarConfig(state.toolbarConfig || {
+			order: ['add', 'export', 'import'],
+			hideOnOverflow: false
+		});
 	}, []);
 
 	useEffect(() => { loadScripts(); }, [loadScripts]);
@@ -102,17 +109,24 @@ export function useUserScripts() {
 		await loadScripts();
 	};
 
+	const handleToolbarConfig = async (config: UserScriptState['toolbarConfig']) => {
+		await import('../operations').then(ops => ops.saveToolbarConfig(config));
+		await loadScripts();
+	};
+
 	return {
 		scripts,
 		globalEnabled,
 		currentUrl,
 		hasPermission,
+		toolbarConfig,
 		loadScripts,
 		handleRequestPermission,
 		handleGlobalToggle,
 		handleToggle,
 		handleDelete,
 		handleTest,
-		handleMove
+		handleMove,
+		handleToolbarConfig
 	};
 }
