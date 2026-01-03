@@ -123,7 +123,7 @@ export const PermissionsPanel: React.FC = () => {
 			{/* Header */}
 			<Card variant="default" padding="sm">
 				<div style={styles.header}>
-					<span style={{ fontSize: '24px' }}>🛡️</span>
+					<span style={{ fontSize: '24px' }}>🔐</span>
 					<div>
 						<div style={styles.title}>{t('permissions.title')}</div>
 						<div style={styles.subtitle}>{t('permissions.subtitle')}</div>
