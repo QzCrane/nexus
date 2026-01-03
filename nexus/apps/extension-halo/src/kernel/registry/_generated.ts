@@ -1545,7 +1545,7 @@ export const SYSTEM_PLUGIN_REGISTRY: GeneratedToolMeta[] = [
 		id: 'userscripts',
 		icon: '📜',
 		category: 'dev',
-		size: 86402,
+		size: 86419,
 		builtIn: false,
 		system: true,
 		keywords: [],

@@ -46,7 +46,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ config, onSave, on
 			<div style={{
 				background: 'var(--halo-bg-primary, #fff)',
 				padding: '20px', borderRadius: '12px',
-				width: '300px', boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+				width: '90%', maxWidth: '300px', boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
 				display: 'flex', flexDirection: 'column', gap: '16px'
 			}}>
 				<h3 style={{ margin: 0, fontSize: '16px' }}>{t('userscripts.settings') || 'Settings'}</h3>
