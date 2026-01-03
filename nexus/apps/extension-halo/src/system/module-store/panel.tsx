@@ -43,10 +43,19 @@ export const ModuleStorePanel: React.FC = () => {
 	}, [install]);
 
 	const handleUninstall = useCallback(async (m: typeof ALL_MODULES[0]) => {
-		if (m.toolType === 'script') {
+		// User Scripts (custom) are managed in UserScripts panel
+		if ((m as any).isUserScript) {
 			window.alert(t('moduleStorePanel.scriptUninstallWarning'));
 			return;
 		}
+
+		// Official Scripts require confirmation
+		if (m.toolType === 'script') {
+			if (!window.confirm(t('moduleStorePanel.scriptUninstallConfirm'))) {
+				return;
+			}
+		}
+
 		await uninstall(m.id);
 	}, [uninstall, t]);
 

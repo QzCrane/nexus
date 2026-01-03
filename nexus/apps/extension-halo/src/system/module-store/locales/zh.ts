@@ -13,6 +13,7 @@ export const zh = {
 		noModules: '未找到模块',
 		allInstalled: '所有模块已安装！',
 		scriptUninstallWarning: '请前往“用户脚本”插件中管理或卸载脚本。',
+		scriptUninstallConfirm: '确定要移除此官方脚本吗？您可以随时在“未安装”中重新添加。',
 		core: '核心',
 		new: '新',
 		builtIn: '内置',

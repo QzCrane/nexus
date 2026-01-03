@@ -13,6 +13,7 @@ export const en = {
 		noModules: 'No modules found',
 		allInstalled: 'All modules are installed!',
 		scriptUninstallWarning: 'Please manage/uninstall scripts in the User Scripts tool.',
+		scriptUninstallConfirm: 'Are you sure you want to remove this official script? You can re-enable it later.',
 		core: 'Core',
 		new: 'New',
 		builtIn: 'Built-in',
