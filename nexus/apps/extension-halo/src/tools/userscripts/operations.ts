@@ -3,13 +3,14 @@ import { getUserScriptsState, saveState } from './storage';
 
 // Add new script
 export async function addUserScript(
-	script: Omit<UserScript, 'id' | 'createdAt' | 'updatedAt' | 'order' | 'runCount'>
+	script: Omit<UserScript, 'id' | 'createdAt' | 'updatedAt' | 'order' | 'runCount'>,
+	explicitId?: string
 ): Promise<UserScript> {
 	const state = await getUserScriptsState();
 	const maxOrder = state.scripts.reduce((max, s) => Math.max(max, s.order), 0);
 	const newScript: UserScript = {
 		...script,
-		id: crypto.randomUUID(),
+		id: explicitId || crypto.randomUUID(),
 		order: maxOrder + 1,
 		runCount: 0,
 		createdAt: Date.now(),

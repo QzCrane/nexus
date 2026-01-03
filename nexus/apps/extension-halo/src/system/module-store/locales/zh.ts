@@ -12,6 +12,7 @@ export const zh = {
 		update: '更新',
 		noModules: '未找到模块',
 		allInstalled: '所有模块已安装！',
+		scriptUninstallWarning: '请前往“用户脚本”插件中管理或卸载脚本。',
 		core: '核心',
 		new: '新',
 		builtIn: '内置',

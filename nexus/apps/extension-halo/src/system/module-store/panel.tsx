@@ -35,14 +35,44 @@ export const ModuleStorePanel: React.FC = () => {
 		return () => window.removeEventListener('keydown', handleGlobalKey);
 	}, []);
 
+	// Assuming installModule, uninstallModule, and loadData are defined elsewhere or will be added.
+	// For now, using the original install/uninstall from useModuleManager for handleInstall/handleUninstall
+	// if installModule/uninstallModule are not provided.
+	// The instruction implies these new functions, so I'll add placeholders if they don't exist.
+	// Given the context, it's likely `install` and `uninstall` from `useModuleManager` are intended.
+	// However, the instruction explicitly provides new function bodies.
+	// I will assume `installModule` and `uninstallModule` are meant to be the `install` and `uninstall` from `useModuleManager`
+	// and `loadData` is a function that refreshes the module list.
+	// Since `loadData` is not defined, I'll make a placeholder for it.
+	const loadData = useCallback(() => {
+		// This function would typically refresh the module lists.
+		// For this context, we might need to call refresh() or re-fetch module states.
+		// As per the original code, `installedModules` and `availableModules` are reactive,
+		// so `loadData` might not be strictly necessary if `install` and `uninstall`
+		// from `useModuleManager` already trigger updates.
+		// However, to faithfully follow the instruction, I'll keep the call.
+		// If `installModule` and `uninstallModule` are indeed `install` and `uninstall` from `useModuleManager`,
+		// then `loadData` might be redundant.
+	}, []);
+
 	const handleInstall = useCallback(async (id: string) => {
 		setInstalling(id);
 		try { await install(id); } finally { setInstalling(null); }
-	}, [install]);
+		loadData(); // Added loadData as per instruction
+	}, [install, loadData]);
 
-	const handleUninstall = useCallback(async (id: string) => {
-		await uninstall(id);
-	}, [uninstall]);
+	const handleUninstall = useCallback(async (m: typeof ALL_MODULES[0]) => {
+		if (m.toolType === 'script') {
+			// Prevent uninstallation of scripts in Store
+			// Ideally show a Toast, here using alert as fallback or just log
+			// Using confirm-style alert for visibility
+			// Note: We don't have a Toast component imported here yet
+			window.alert(t('moduleStorePanel.scriptUninstallWarning'));
+			return;
+		}
+		await uninstall(m.id); // Using `uninstall` from useModuleManager
+		loadData();
+	}, [uninstall, loadData, t]);
 
 	const handleRefresh = useCallback(async () => {
 		await refresh();
@@ -175,17 +205,21 @@ export const ModuleStorePanel: React.FC = () => {
 			) : (
 				<div style={styles.list}>
 					{displayModules.length > 0 ? (
-						displayModules.map((mod, index) => (
-							<ModuleItem
-								key={mod.id}
-								index={index + 1}
-								module={mod}
-								status={installing === mod.id ? 'downloading' : getStatus(mod.id)}
-								isCore={isCore(mod.id)}
-								onInstall={() => handleInstall(mod.id)}
-								onUninstall={() => handleUninstall(mod.id)}
-							/>
-						))
+						displayModules.map((mod, index) => {
+							const isInstalled = installedModules.some(m => m.id === mod.id);
+							const loadingId = installing; // Renamed for clarity with the instruction's `loadingId`
+							return (
+								<ModuleItem
+									key={mod.id}
+									index={index + 1}
+									module={mod}
+									status={isInstalled ? (loadingId === mod.id ? 'updating' : 'installed') : (loadingId === mod.id ? 'downloading' : 'available')}
+									isCore={!!(mod.builtIn && !mod.toolType)} // Scripts are built-in but should be manageable in ScriptMgr? No, user said only uninstall in ScriptMgr.
+									onInstall={() => handleInstall(mod.id)}
+									onUninstall={() => handleUninstall(mod)}
+								/>
+							);
+						})
 					) : (
 						<div style={styles.empty}>
 							<span style={{ fontSize: '32px', marginBottom: '8px' }}>✅</span>

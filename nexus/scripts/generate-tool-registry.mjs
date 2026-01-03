@@ -95,6 +95,22 @@ function toPascalCase(str) {
 	return str.split('-').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join('');
 }
 
+// Calculate total size of files in a directory recursively
+function calculateFolderSize(dir) {
+	let size = 0;
+	if (!fs.existsSync(dir)) return 0;
+	const files = fs.readdirSync(dir, { withFileTypes: true });
+	for (const file of files) {
+		const filePath = path.join(dir, file.name);
+		if (file.isDirectory()) {
+			size += calculateFolderSize(filePath);
+		} else {
+			size += fs.statSync(filePath).size;
+		}
+	}
+	return size;
+}
+
 // Generate registry file
 function generateRegistry(userModules, systemModules, manifestsMap) {
 	const allModules = [...userModules, ...systemModules];
@@ -140,11 +156,16 @@ export interface GeneratedToolMeta {
 		const scriptRunAt = manifest.scriptRunAt ? `'${manifest.scriptRunAt}'` : 'undefined';
 		const scriptType = manifest.scriptType ? `'${manifest.scriptType}'` : 'undefined';
 
+		// Calculate actual source size
+		const moduleDir = path.dirname(m.manifestPath);
+		const sourceSize = calculateFolderSize(moduleDir);
+		const size = sourceSize > 0 ? sourceSize : (manifest.size || 0);
+
 		return `\t{
 		id: '${manifest.id}',
 		icon: '${manifest.icon}',
 		category: '${manifest.category}',
-		size: ${manifest.size},
+		size: ${size},
 		builtIn: ${manifest.builtIn ?? false},
 		system: ${manifest.system ?? false},
 		keywords: ${keywords},
