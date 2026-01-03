@@ -1,0 +1,16 @@
+{
+	"name": "Resource Monitor",
+	"description": "Monitor and manage active background services and scripts",
+	"icon": "⚡",
+	"category": "system",
+	"toolType": "panel",
+	"system": true,
+	"builtIn": true,
+	"keywords": [
+		"task",
+		"manager",
+		"cpu",
+		"background",
+		"service"
+	]
+}

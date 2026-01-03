@@ -90,6 +90,7 @@ export const generatedToolPanels = {
 	'extension-manager': lazy(() => import('../system/extension-manager/panel').then(m => ({ default: m.ExtensionManagerPanel }))),
 	'module-store': lazy(() => import('../system/module-store/panel').then(m => ({ default: m.ModuleStorePanel }))),
 	'permissions': lazy(() => import('../system/permissions/panel').then(m => ({ default: m.PermissionsPanel }))),
+	'resource-monitor': lazy(() => import('../system/resource-monitor/panel').then(m => ({ default: m.ResourceMonitorPanel }))),
 	'settings': lazy(() => import('../system/settings/panel').then(m => ({ default: m.SettingsPanel }))),
 	'userscripts': lazy(() => import('../system/userscripts/panel').then(m => ({ default: m.UserScriptsPanel })))
 } as const;

@@ -89,6 +89,7 @@ import { en as chatgpt_wide } from '../../scripts/chatgpt-wide/locales/en';
 import { en as extension_manager } from '../../system/extension-manager/locales/en';
 import { en as module_store } from '../../system/module-store/locales/en';
 import { en as permissions } from '../../system/permissions/locales/en';
+import { en as resource_monitor } from '../../system/resource-monitor/locales/en';
 import { en as settings } from '../../system/settings/locales/en';
 import { en as userscripts } from '../../system/userscripts/locales/en';
 
@@ -180,6 +181,7 @@ export const TOOLS_EN = {
 	...extension_manager,
 	...module_store,
 	...permissions,
+	...resource_monitor,
 	...settings,
 	...userscripts,
 };

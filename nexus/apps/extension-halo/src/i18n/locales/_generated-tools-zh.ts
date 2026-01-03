@@ -89,6 +89,7 @@ import { zh as chatgpt_wide } from '../../scripts/chatgpt-wide/locales/zh';
 import { zh as extension_manager } from '../../system/extension-manager/locales/zh';
 import { zh as module_store } from '../../system/module-store/locales/zh';
 import { zh as permissions } from '../../system/permissions/locales/zh';
+import { zh as resource_monitor } from '../../system/resource-monitor/locales/zh';
 import { zh as settings } from '../../system/settings/locales/zh';
 import { zh as userscripts } from '../../system/userscripts/locales/zh';
 
@@ -180,6 +181,7 @@ export const TOOLS_ZH = {
 	...extension_manager,
 	...module_store,
 	...permissions,
+	...resource_monitor,
 	...settings,
 	...userscripts,
 };

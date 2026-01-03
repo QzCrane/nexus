@@ -1508,6 +1508,23 @@ export const SYSTEM_PLUGIN_REGISTRY: GeneratedToolMeta[] = [
 		scriptType: undefined,
 	},
 	{
+		id: 'undefined',
+		icon: '⚡',
+		category: 'system',
+		size: 5902,
+		builtIn: true,
+		system: true,
+		keywords: ["task","manager","cpu","background","service"],
+		features: undefined,
+		dependencies: undefined,
+		permissions: [],
+		toolType: 'panel',
+		scriptMatches: undefined,
+		scriptExcludeMatches: undefined,
+		scriptRunAt: undefined,
+		scriptType: undefined,
+	},
+	{
 		id: 'settings',
 		icon: '⚙️',
 		category: 'general',
@@ -1545,7 +1562,7 @@ export const SYSTEM_PLUGIN_REGISTRY: GeneratedToolMeta[] = [
 
 export const ALL_APPS = [...USER_TOOL_REGISTRY, ...SYSTEM_PLUGIN_REGISTRY];
 
-export const TOOL_IDS = ['api-tester', 'archive', 'base64', 'bookmark-manager', 'checksum', 'clipboard', 'code-formatter', 'code-snippets', 'color-palette', 'color-picker', 'cookie-manager', 'cron', 'crypto', 'csp-analyzer', 'csv-to-json', 'csv-viewer', 'diff', 'dom-selector', 'emoji-picker', 'exif-reader', 'font-inspector', 'gzip', 'hash', 'headers-viewer', 'hex-dump', 'history-search', 'hover-zoom', 'html-entity', 'http-status', 'image-tools', 'ip-lookup', 'json-formatter', 'json-path', 'json-to-csv', 'jwt-decoder', 'lorem-ipsum', 'markdown', 'media-sniffer', 'mock-data', 'morse', 'network', 'number-base', 'outline', 'page-annotate', 'password-gen', 'pdf', 'pomodoro', 'protobuf', 'punycode', 'qrcode', 'random-gen', 'reader-mode', 'regex', 'rot13', 'ruler', 'screenshot', 'session-manager', 'shortcuts', 'smooth-scroll', 'sql-formatter', 'ssl-cert', 'sticky-notes', 'storage-editor', 'subresource', 'tab-group', 'table-extractor', 'tabs', 'tech-stack', 'text-to-speech', 'text-tools', 'timer', 'timestamp', 'todo-list', 'totp', 'translate', 'unit-converter', 'url', 'user-agent', 'uuid', 'xml-formatter', 'xor', 'yaml', 'bilibili-plus', 'chatgpt-wide', 'extension-manager', 'module-store', 'permissions', 'settings', 'userscripts'] as const;
+export const TOOL_IDS = ['api-tester', 'archive', 'base64', 'bookmark-manager', 'checksum', 'clipboard', 'code-formatter', 'code-snippets', 'color-palette', 'color-picker', 'cookie-manager', 'cron', 'crypto', 'csp-analyzer', 'csv-to-json', 'csv-viewer', 'diff', 'dom-selector', 'emoji-picker', 'exif-reader', 'font-inspector', 'gzip', 'hash', 'headers-viewer', 'hex-dump', 'history-search', 'hover-zoom', 'html-entity', 'http-status', 'image-tools', 'ip-lookup', 'json-formatter', 'json-path', 'json-to-csv', 'jwt-decoder', 'lorem-ipsum', 'markdown', 'media-sniffer', 'mock-data', 'morse', 'network', 'number-base', 'outline', 'page-annotate', 'password-gen', 'pdf', 'pomodoro', 'protobuf', 'punycode', 'qrcode', 'random-gen', 'reader-mode', 'regex', 'rot13', 'ruler', 'screenshot', 'session-manager', 'shortcuts', 'smooth-scroll', 'sql-formatter', 'ssl-cert', 'sticky-notes', 'storage-editor', 'subresource', 'tab-group', 'table-extractor', 'tabs', 'tech-stack', 'text-to-speech', 'text-tools', 'timer', 'timestamp', 'todo-list', 'totp', 'translate', 'unit-converter', 'url', 'user-agent', 'uuid', 'xml-formatter', 'xor', 'yaml', 'bilibili-plus', 'chatgpt-wide', 'extension-manager', 'module-store', 'permissions', 'resource-monitor', 'settings', 'userscripts'] as const;
 export type GeneratedToolId = (typeof TOOL_IDS)[number];
 
 export const PERMISSION_USAGE_MAP: Record<string, string[]> = {

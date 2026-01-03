@@ -24,7 +24,7 @@ export const LauncherHeader: React.FC<LauncherHeaderProps> = ({
 	const activeToolMeta = visibleTools.find(tool => tool.id === activeTool);
 
 	// Dynamic Header Icons
-	const headerLayout = settings.headerLayout || ['module-store', 'extension-manager', 'permissions', 'settings'];
+	const headerLayout = settings.headerLayout || ['module-store', 'extension-manager', 'resource-monitor', 'settings'];
 
 	const getIcon = (id: string) => {
 		const meta = getToolMeta(id);
