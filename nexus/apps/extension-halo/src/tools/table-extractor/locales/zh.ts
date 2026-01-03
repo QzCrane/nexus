@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.table-extractor.name': '表格提取',
+	'tools.table-extractor.desc': '提取网页表格为 CSV',
 	tableExtractor: {
 		extract: '提取表格',
 		noTables: '页面中没有表格',

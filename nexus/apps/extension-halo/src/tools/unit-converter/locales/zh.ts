@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.unit-converter.name': '单位转换',
+	'tools.unit-converter.desc': '长度、重量、温度、数据单位转换',
 	unitConverter: {
 		from: '从',
 		to: '到',

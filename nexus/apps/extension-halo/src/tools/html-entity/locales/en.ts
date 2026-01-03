@@ -1,4 +1,6 @@
 export const en = {
+	'tools.html-entity.name': 'HTML Entity',
+	'tools.html-entity.desc': 'Encode/Decode HTML entities',
 	htmlEntity: {
 		encode: 'Encode',
 		decode: 'Decode',

@@ -1,4 +1,6 @@
 export const en = {
+	'tools.crypto.name': 'Crypto Tools',
+	'tools.crypto.desc': 'JWT, RSA, AES encryption',
 	crypto: {
 		jwt: {
 			decode: 'Decode',

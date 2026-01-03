@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.regex.name': '正则测试',
+	'tools.regex.desc': '正则表达式实时测试',
 	regex: {
 		patternPlaceholder: '输入正则表达式...',
 		testString: '测试文本',

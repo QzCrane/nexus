@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.pdf.name': 'PDF 工具',
+	'tools.pdf.desc': '本地合并、拆分、压缩 PDF',
 	pdfPanel: {
 		dropHint: '拖入 PDF 或图片文件',
 		clickToSelect: '或点击选择文件',

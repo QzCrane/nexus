@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.api-tester.name': 'API 测试',
+	'tools.api-tester.desc': '发送 HTTP 请求并查看响应',
 	apiTester: {
 		send: '发送',
 		headers: '请求头',

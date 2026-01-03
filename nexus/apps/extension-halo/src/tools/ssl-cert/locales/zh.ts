@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.ssl-cert.name': 'SSL 证书',
+	'tools.ssl-cert.desc': '解析 SSL 证书信息',
 	sslCert: {
 		input: 'PEM 证书',
 		validFrom: '有效期始',

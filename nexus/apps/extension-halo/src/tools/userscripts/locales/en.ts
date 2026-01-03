@@ -1,4 +1,6 @@
 export const en = {
+	'tools.userscripts.name': 'UserScripts',
+	'tools.userscripts.desc': 'Inject custom JavaScript',
 	userscripts: {
 		title: 'User Scripts',
 		addNew: 'Add Script',

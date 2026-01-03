@@ -1,5 +1,7 @@
 
 export const en = {
+	'tools.settings.name': 'Settings',
+	'tools.settings.desc': 'Customize HALO appearance & behavior',
 	settings: {
 		title: 'Settings',
 		appearance: 'Appearance',

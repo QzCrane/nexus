@@ -1,4 +1,6 @@
 export const en = {
+	'tools.ssl-cert.name': 'SSL Certificate',
+	'tools.ssl-cert.desc': 'Parse SSL certificate info',
 	sslCert: {
 		input: 'PEM Certificate',
 		validFrom: 'Valid From',

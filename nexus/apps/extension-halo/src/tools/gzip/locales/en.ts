@@ -1,4 +1,6 @@
 export const en = {
+	'tools.gzip.name': 'Gzip',
+	'tools.gzip.desc': 'Gzip compression tool',
 	gzip: {
 		compress: 'Compress',
 		decompress: 'Decompress',

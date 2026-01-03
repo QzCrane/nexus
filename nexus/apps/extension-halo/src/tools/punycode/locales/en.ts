@@ -1,4 +1,6 @@
 export const en = {
+	'tools.punycode.name': 'Punycode',
+	'tools.punycode.desc': 'IDN domain converter',
 	punycode: {
 		input: 'Domain (Unicode / Punycode)',
 		encode: 'Encode (to ASCII)',

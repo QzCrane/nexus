@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.text-tools.name': '文本工具',
+	'tools.text-tools.desc': '大小写、排序、去重、统计',
 	textTools: {
 		modes: {
 			case: '大小写',

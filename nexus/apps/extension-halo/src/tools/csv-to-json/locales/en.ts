@@ -1,4 +1,6 @@
 export const en = {
+	'tools.csv-to-json.name': 'CSV to JSON',
+	'tools.csv-to-json.desc': 'Convert CSV data to JSON',
 	csvToJson: {
 		input: 'CSV Input',
 		output: 'JSON Output',

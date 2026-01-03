@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.base64.name': 'Base64',
+	'tools.base64.desc': '编码/解码 Base64 字符串',
 	base64: {
 		encode: '编码',
 		decode: '解码',

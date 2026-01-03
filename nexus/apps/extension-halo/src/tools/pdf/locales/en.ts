@@ -1,4 +1,6 @@
 export const en = {
+	'tools.pdf.name': 'PDF Tools',
+	'tools.pdf.desc': 'Merge, split & compress PDFs locally',
 	pdfPanel: {
 		dropHint: 'Drop PDFs or images here',
 		clickToSelect: 'or click to select files',

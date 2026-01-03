@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.clipboard.name': '剪贴板',
+	'tools.clipboard.desc': '智能剪贴板，支持跨页面引用',
 	clipboardPanel: {
 		searchPlaceholder: '搜索历史记录...',
 		clearUnpinned: '清除未置顶',

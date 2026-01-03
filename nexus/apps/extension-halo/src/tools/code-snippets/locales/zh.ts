@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.code-snippets.name': '代码片段',
+	'tools.code-snippets.desc': '保存和管理代码片段',
 	codeSnippets: {
 		search: '搜索片段...',
 		new: '新建',

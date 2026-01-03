@@ -1,4 +1,6 @@
 export const en = {
+	'tools.timestamp.name': 'Timestamp',
+	'tools.timestamp.desc': 'Convert & format timestamps/dates',
 	timestamp: {
 		seconds: 'Seconds',
 		milliseconds: 'Milliseconds',

@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.totp.name': 'TOTP 验证器',
+	'tools.totp.desc': '两步验证码生成器',
 	totp: {
 		addAccount: '添加账户',
 		cancel: '取消',

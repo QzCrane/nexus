@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.image-tools.name': '图片工具',
+	'tools.image-tools.desc': '压缩与格式转换',
 	imageTools: {
 		dropHint: '拖放图片或点击选择',
 		format: '格式',

@@ -1,4 +1,6 @@
 export const en = {
+	'tools.text-tools.name': 'Text Tools',
+	'tools.text-tools.desc': 'Case, Sort, Dedupe text',
 	textTools: {
 		modes: {
 			case: 'Case',

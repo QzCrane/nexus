@@ -1,4 +1,6 @@
 export const en = {
+	'tools.qrcode.name': 'QR Code',
+	'tools.qrcode.desc': 'Generate QR codes with history & right-click integration',
 	qrcodePanel: {
 		placeholder: 'Enter text or URL... (Ctrl+Enter to generate)',
 		generate: 'Generate QR Code',

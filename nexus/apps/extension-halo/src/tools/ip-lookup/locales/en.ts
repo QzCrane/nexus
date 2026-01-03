@@ -1,4 +1,6 @@
 export const en = {
+	'tools.ip-lookup.name': 'IP Lookup',
+	'tools.ip-lookup.desc': 'Query IP address info',
 	ipLookup: {
 		placeholder: 'Enter IP address or leave empty for your IP',
 		loading: 'Loading...',

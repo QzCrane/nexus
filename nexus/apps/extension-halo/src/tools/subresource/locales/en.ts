@@ -1,4 +1,6 @@
 export const en = {
+	'tools.subresource.name': 'SRI Gen',
+	'tools.subresource.desc': 'Generate Subresource Integrity',
 	subresource: {
 		url: 'Resource URL',
 		fetch: 'Fetch',

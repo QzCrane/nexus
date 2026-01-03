@@ -1,4 +1,6 @@
 export const en = {
+	'tools.hash.name': 'Hash Generator',
+	'tools.hash.desc': 'Calculate MD5, SHA-1, SHA-256 & SHA-512',
 	hash: {
 		input: 'Input',
 		placeholder: 'Enter text to hash...',

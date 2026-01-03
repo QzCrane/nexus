@@ -1,4 +1,6 @@
 export const en = {
+	'tools.markdown.name': 'Markdown',
+	'tools.markdown.desc': 'Markdown editor & preview',
 	markdown: {
 		edit: 'Edit',
 		split: 'Split',

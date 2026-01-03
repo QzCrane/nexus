@@ -1,4 +1,6 @@
 export const en = {
+	'tools.protobuf.name': 'Protobuf',
+	'tools.protobuf.desc': 'Decode raw protobuf',
 	protobuf: {
 		input: 'Input (Base64/Hex)',
 		field: 'Field',

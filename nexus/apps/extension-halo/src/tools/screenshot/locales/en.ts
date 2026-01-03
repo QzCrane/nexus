@@ -1,4 +1,6 @@
 export const en = {
+	'tools.screenshot.name': 'Screenshot',
+	'tools.screenshot.desc': 'Capture & annotate screenshots',
 	screenshotPanel: {
 		captureVisible: 'Capture Visible Area',
 		capturing: 'Capturing...',

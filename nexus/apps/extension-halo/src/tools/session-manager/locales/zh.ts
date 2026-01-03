@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.session-manager.name': '会话管理',
+	'tools.session-manager.desc': '保存与恢复标签页会话',
 	sessionManager: {
 		placeholder: '会话名称 (可选)...',
 		save: '保存',

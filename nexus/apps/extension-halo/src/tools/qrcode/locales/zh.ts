@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.qrcode.name': '二维码',
+	'tools.qrcode.desc': '生成二维码，支持历史记录与右键菜单',
 	qrcodePanel: {
 		placeholder: '输入文本或网址... (Ctrl+Enter 生成)',
 		generate: '生成二维码',

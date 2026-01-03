@@ -22,6 +22,7 @@ import { zh as csv_to_json } from '../../tools/csv-to-json/locales/zh';
 import { zh as csv_viewer } from '../../tools/csv-viewer/locales/zh';
 import { zh as diff } from '../../tools/diff/locales/zh';
 import { zh as dom_selector } from '../../tools/dom-selector/locales/zh';
+import { zh as emoji_picker } from '../../tools/emoji-picker/locales/zh';
 import { zh as exif_reader } from '../../tools/exif-reader/locales/zh';
 import { zh as font_inspector } from '../../tools/font-inspector/locales/zh';
 import { zh as gzip } from '../../tools/gzip/locales/zh';
@@ -62,6 +63,7 @@ import { zh as screenshot } from '../../tools/screenshot/locales/zh';
 import { zh as session_manager } from '../../tools/session-manager/locales/zh';
 import { zh as shortcuts } from '../../tools/shortcuts/locales/zh';
 import { zh as smooth_scroll } from '../../tools/smooth-scroll/locales/zh';
+import { zh as sql_formatter } from '../../tools/sql-formatter/locales/zh';
 import { zh as ssl_cert } from '../../tools/ssl-cert/locales/zh';
 import { zh as sticky_notes } from '../../tools/sticky-notes/locales/zh';
 import { zh as storage_editor } from '../../tools/storage-editor/locales/zh';
@@ -70,6 +72,7 @@ import { zh as tab_group } from '../../tools/tab-group/locales/zh';
 import { zh as table_extractor } from '../../tools/table-extractor/locales/zh';
 import { zh as tabs } from '../../tools/tabs/locales/zh';
 import { zh as tech_stack } from '../../tools/tech-stack/locales/zh';
+import { zh as text_to_speech } from '../../tools/text-to-speech/locales/zh';
 import { zh as text_tools } from '../../tools/text-tools/locales/zh';
 import { zh as timer } from '../../tools/timer/locales/zh';
 import { zh as timestamp } from '../../tools/timestamp/locales/zh';
@@ -110,6 +113,7 @@ export const TOOLS_ZH = {
 	...csv_viewer,
 	...diff,
 	...dom_selector,
+	...emoji_picker,
 	...exif_reader,
 	...font_inspector,
 	...gzip,
@@ -150,6 +154,7 @@ export const TOOLS_ZH = {
 	...session_manager,
 	...shortcuts,
 	...smooth_scroll,
+	...sql_formatter,
 	...ssl_cert,
 	...sticky_notes,
 	...storage_editor,
@@ -158,6 +163,7 @@ export const TOOLS_ZH = {
 	...table_extractor,
 	...tabs,
 	...tech_stack,
+	...text_to_speech,
 	...text_tools,
 	...timer,
 	...timestamp,

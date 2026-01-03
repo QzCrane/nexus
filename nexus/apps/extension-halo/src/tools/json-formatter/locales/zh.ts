@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.json-formatter.name': 'JSON',
+	'tools.json-formatter.desc': '格式化、压缩、排序 JSON 键',
 	jsonPanel: {
 		placeholder: '在此粘贴 JSON...',
 		format: '格式化',

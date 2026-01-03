@@ -1,4 +1,6 @@
 export const en = {
+	'tools.base64.name': 'Base64',
+	'tools.base64.desc': 'Encode & decode Base64 strings',
 	base64: {
 		encode: 'Encode',
 		decode: 'Decode',

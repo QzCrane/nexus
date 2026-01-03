@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.punycode.name': 'Punycode',
+	'tools.punycode.desc': 'IDN 域名转换',
 	punycode: {
 		input: '域名 (Unicode / Punycode)',
 		encode: '编码 (转 ASCII)',

@@ -1,4 +1,6 @@
 export const en = {
+	'tools.cookie-manager.name': 'Cookie Manager',
+	'tools.cookie-manager.desc': 'View and edit site cookies',
 	cookieManager: {
 		title: 'Cookies',
 		cookies: 'cookies',

@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.hash.name': '哈希计算',
+	'tools.hash.desc': '计算 MD5, SHA-1, SHA-256, SHA-512',
 	hash: {
 		input: '输入',
 		placeholder: '要计算哈希的文本...',

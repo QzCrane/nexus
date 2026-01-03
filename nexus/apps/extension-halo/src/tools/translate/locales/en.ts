@@ -1,4 +1,6 @@
 export const en = {
+	'tools.translate.name': 'Translate',
+	'tools.translate.desc': 'Quick page translation',
 	translate: {
 		pageTitle: 'Translate Current Page',
 		useGoogle: 'Using Google',

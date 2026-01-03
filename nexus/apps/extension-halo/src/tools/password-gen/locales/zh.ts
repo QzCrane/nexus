@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.password-gen.name': '密码生成',
+	'tools.password-gen.desc': '生成安全随机密码',
 	passwordGen: {
 		generate: '生成',
 		length: '长度',

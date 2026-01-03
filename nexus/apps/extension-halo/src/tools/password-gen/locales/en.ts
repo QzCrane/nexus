@@ -1,4 +1,6 @@
 export const en = {
+	'tools.password-gen.name': 'Password Gen',
+	'tools.password-gen.desc': 'Generate secure random passwords',
 	passwordGen: {
 		generate: 'Generate',
 		length: 'Length',

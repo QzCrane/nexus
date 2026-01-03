@@ -22,6 +22,7 @@ import { en as csv_to_json } from '../../tools/csv-to-json/locales/en';
 import { en as csv_viewer } from '../../tools/csv-viewer/locales/en';
 import { en as diff } from '../../tools/diff/locales/en';
 import { en as dom_selector } from '../../tools/dom-selector/locales/en';
+import { en as emoji_picker } from '../../tools/emoji-picker/locales/en';
 import { en as exif_reader } from '../../tools/exif-reader/locales/en';
 import { en as font_inspector } from '../../tools/font-inspector/locales/en';
 import { en as gzip } from '../../tools/gzip/locales/en';
@@ -62,6 +63,7 @@ import { en as screenshot } from '../../tools/screenshot/locales/en';
 import { en as session_manager } from '../../tools/session-manager/locales/en';
 import { en as shortcuts } from '../../tools/shortcuts/locales/en';
 import { en as smooth_scroll } from '../../tools/smooth-scroll/locales/en';
+import { en as sql_formatter } from '../../tools/sql-formatter/locales/en';
 import { en as ssl_cert } from '../../tools/ssl-cert/locales/en';
 import { en as sticky_notes } from '../../tools/sticky-notes/locales/en';
 import { en as storage_editor } from '../../tools/storage-editor/locales/en';
@@ -70,6 +72,7 @@ import { en as tab_group } from '../../tools/tab-group/locales/en';
 import { en as table_extractor } from '../../tools/table-extractor/locales/en';
 import { en as tabs } from '../../tools/tabs/locales/en';
 import { en as tech_stack } from '../../tools/tech-stack/locales/en';
+import { en as text_to_speech } from '../../tools/text-to-speech/locales/en';
 import { en as text_tools } from '../../tools/text-tools/locales/en';
 import { en as timer } from '../../tools/timer/locales/en';
 import { en as timestamp } from '../../tools/timestamp/locales/en';
@@ -110,6 +113,7 @@ export const TOOLS_EN = {
 	...csv_viewer,
 	...diff,
 	...dom_selector,
+	...emoji_picker,
 	...exif_reader,
 	...font_inspector,
 	...gzip,
@@ -150,6 +154,7 @@ export const TOOLS_EN = {
 	...session_manager,
 	...shortcuts,
 	...smooth_scroll,
+	...sql_formatter,
 	...ssl_cert,
 	...sticky_notes,
 	...storage_editor,
@@ -158,6 +163,7 @@ export const TOOLS_EN = {
 	...table_extractor,
 	...tabs,
 	...tech_stack,
+	...text_to_speech,
 	...text_tools,
 	...timer,
 	...timestamp,

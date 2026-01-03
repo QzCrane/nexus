@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.url.name': 'URL 工具',
+	'tools.url.desc': 'URL 编码/解码与参数解析',
 	url: {
 		encode: '编码',
 		decode: '解码',

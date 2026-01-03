@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.xor.name': 'XOR 计算',
+	'tools.xor.desc': '异或运算工具',
 	xor: {
 		input: '输入',
 		key: '密钥',

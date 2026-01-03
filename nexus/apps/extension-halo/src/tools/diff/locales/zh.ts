@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.diff.name': '文本对比',
+	'tools.diff.desc': '比对文本差异 (Diff)',
 	diff: {
 		original: '原始文本',
 		modified: '修改文本',

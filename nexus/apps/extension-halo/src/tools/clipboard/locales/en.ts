@@ -1,4 +1,6 @@
 export const en = {
+	'tools.clipboard.name': 'Clipboard',
+	'tools.clipboard.desc': 'Smart clipboard with cross-page references',
 	clipboardPanel: {
 		searchPlaceholder: 'Search history...',
 		clearUnpinned: 'Clear unpinned',

@@ -1,5 +1,7 @@
 
 export const zh = {
+	'tools.settings.name': '设置',
+	'tools.settings.desc': '自定义 HALO 外观与行为',
 	settings: {
 		title: '设置',
 		appearance: '外观',

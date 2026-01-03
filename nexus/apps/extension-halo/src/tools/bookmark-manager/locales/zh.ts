@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.bookmark-manager.name': '书签管理',
+	'tools.bookmark-manager.desc': '搜索与整理书签',
 	bookmarkManager: {
 		recent: '最近',
 		search: '搜索',

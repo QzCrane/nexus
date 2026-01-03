@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.smooth-scroll.name': '平滑滚动',
+	'tools.smooth-scroll.desc': '丝滑顺畅的页面滚动体验',
 	smoothScroll: {
 		enable: '启用平滑滚动',
 		enableDesc: '丝滑顺畅的页面滚动体验',

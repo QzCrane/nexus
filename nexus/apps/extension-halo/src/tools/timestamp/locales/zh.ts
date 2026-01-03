@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.timestamp.name': '时间戳',
+	'tools.timestamp.desc': '时间戳与日期格式转换',
 	timestamp: {
 		seconds: '秒',
 		milliseconds: '毫秒',

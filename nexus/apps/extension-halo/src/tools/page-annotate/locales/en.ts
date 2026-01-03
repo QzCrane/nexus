@@ -1,4 +1,6 @@
 export const en = {
+	'tools.page-annotate.name': 'Page Annotate',
+	'tools.page-annotate.desc': 'Draw keynotes on webpage',
 	pageAnnotate: {
 		start: 'Start Annotation',
 		stop: 'Stop Annotation',

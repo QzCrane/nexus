@@ -1,4 +1,6 @@
 export const en = {
+	'tools.json-formatter.name': 'JSON',
+	'tools.json-formatter.desc': 'Format, compress & sort JSON keys',
 	jsonPanel: {
 		placeholder: 'Paste JSON here...',
 		format: 'Format',

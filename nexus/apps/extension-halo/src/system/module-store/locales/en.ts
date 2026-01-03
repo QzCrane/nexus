@@ -1,5 +1,7 @@
 
 export const en = {
+	'tools.module-store.name': 'Module Store',
+	'tools.module-store.desc': 'Install or remove tool modules',
 	moduleStorePanel: {
 		title: 'Module Store',
 		installed: 'Installed',

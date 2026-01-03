@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.todo-list.name': '待办清单',
+	'tools.todo-list.desc': '任务管理列表',
 	todoList: {
 		placeholder: '添加新任务...',
 		empty: '暂无任务',

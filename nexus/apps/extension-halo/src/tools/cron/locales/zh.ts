@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.cron.name': 'Cron 解析',
+	'tools.cron.desc': '解析 Cron 表达式',
 	cron: {
 		minute: '分钟',
 		hour: '小时',

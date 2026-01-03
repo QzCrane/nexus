@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.csv-viewer.name': 'CSV 查看器',
+	'tools.csv-viewer.desc': '解析与预览 CSV 数据',
 	csvViewer: {
 		placeholder: '粘贴 CSV 数据...',
 		empty: '粘贴 CSV 以表格形式查看',

@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.ruler.name': '尺子',
+	'tools.ruler.desc': '测量页面元素尺寸 (px/rem)',
 	rulerPanel: {
 		clickToCopy: '点击复制',
 		start: '开始测量',

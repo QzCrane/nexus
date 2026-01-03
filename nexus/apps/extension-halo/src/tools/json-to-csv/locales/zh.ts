@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.json-to-csv.name': 'JSON 转 CSV',
+	'tools.json-to-csv.desc': 'JSON 数据转换为 CSV',
 	jsonToCsv: {
 		input: 'JSON 输入',
 		output: 'CSV 输出',

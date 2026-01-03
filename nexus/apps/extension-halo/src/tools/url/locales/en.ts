@@ -1,4 +1,6 @@
 export const en = {
+	'tools.url.name': 'URL Encoder',
+	'tools.url.desc': 'Encode, decode & parse URLs',
 	url: {
 		encode: 'Encode',
 		decode: 'Decode',

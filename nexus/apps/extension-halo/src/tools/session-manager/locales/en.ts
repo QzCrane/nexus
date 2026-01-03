@@ -1,4 +1,6 @@
 export const en = {
+	'tools.session-manager.name': 'Session Manager',
+	'tools.session-manager.desc': 'Save and restore tabs',
 	sessionManager: {
 		placeholder: 'Session Name (Optional)...',
 		save: 'Save',

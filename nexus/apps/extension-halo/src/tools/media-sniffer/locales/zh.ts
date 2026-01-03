@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.media-sniffer.name': '媒体嗅探',
+	'tools.media-sniffer.desc': '检测并下载页面媒体资源',
 	mediaSniffer: {
 		scan: '扫描页面',
 		found: '个媒体资源',

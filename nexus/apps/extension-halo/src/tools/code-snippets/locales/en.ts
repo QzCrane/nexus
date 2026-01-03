@@ -1,4 +1,6 @@
 export const en = {
+	'tools.code-snippets.name': 'Code Snippets',
+	'tools.code-snippets.desc': 'Save and manage code snippets',
 	codeSnippets: {
 		search: 'Search snippets...',
 		new: 'New',

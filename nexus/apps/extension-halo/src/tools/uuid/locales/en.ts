@@ -1,4 +1,6 @@
 export const en = {
+	'tools.uuid.name': 'UUID Generator',
+	'tools.uuid.desc': 'Generate UUID v4 identifiers',
 	uuid: {
 		type: 'Type',
 		count: 'Count',

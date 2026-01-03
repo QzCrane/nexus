@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.translate.name': '翻译',
+	'tools.translate.desc': '快速翻译页面或文本',
 	translate: {
 		pageTitle: '翻译当前页面',
 		useGoogle: 'Google 翻译',

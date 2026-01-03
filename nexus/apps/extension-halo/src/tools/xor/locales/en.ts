@@ -1,4 +1,6 @@
 export const en = {
+	'tools.xor.name': 'XOR',
+	'tools.xor.desc': 'XOR string calculator',
 	xor: {
 		input: 'Input',
 		key: 'Key',

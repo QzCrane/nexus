@@ -1,5 +1,7 @@
 
 export const zh = {
+	'tools.module-store.name': '模块商店',
+	'tools.module-store.desc': '安装或卸载工具模块',
 	moduleStorePanel: {
 		title: '模块商店',
 		installed: '已安装',

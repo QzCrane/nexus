@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.protobuf.name': 'Protobuf',
+	'tools.protobuf.desc': '解析 Protobuf 数据',
 	protobuf: {
 		input: '输入 (Base64/Hex)',
 		field: '字段',

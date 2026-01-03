@@ -1,4 +1,6 @@
 export const en = {
+	'tools.network.name': 'Network Utils',
+	'tools.network.desc': 'UA Parser, Curl converter',
 	network: {
 		ua: {
 			input: 'User-Agent String',

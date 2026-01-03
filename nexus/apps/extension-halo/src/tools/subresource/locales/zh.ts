@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.subresource.name': 'SRI 生成',
+	'tools.subresource.desc': '生成子资源完整性哈希',
 	subresource: {
 		url: '资源链接',
 		fetch: '获取',

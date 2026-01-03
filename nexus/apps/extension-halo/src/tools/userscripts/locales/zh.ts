@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.userscripts.name': '用户脚本',
+	'tools.userscripts.desc': '注入自定义 JavaScript',
 	userscripts: {
 		title: '用户脚本',
 		addNew: '添加脚本',

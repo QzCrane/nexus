@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.uuid.name': 'UUID 生成',
+	'tools.uuid.desc': '批量生成 UUID v4',
 	uuid: {
 		type: '类型',
 		count: '数量',

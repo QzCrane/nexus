@@ -1,4 +1,6 @@
 export const en = {
+	'tools.totp.name': 'TOTP Auth',
+	'tools.totp.desc': '2FA code generator',
 	totp: {
 		addAccount: 'Add Account',
 		cancel: 'Cancel',

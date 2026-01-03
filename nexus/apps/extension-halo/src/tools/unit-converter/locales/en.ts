@@ -1,4 +1,6 @@
 export const en = {
+	'tools.unit-converter.name': 'Unit Converter',
+	'tools.unit-converter.desc': 'Convert length, weight, temp, data',
 	unitConverter: {
 		from: 'From',
 		to: 'To',

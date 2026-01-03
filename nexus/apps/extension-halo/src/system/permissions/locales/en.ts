@@ -1,5 +1,7 @@
 
 export const en = {
+	'tools.permissions.name': 'Permissions',
+	'tools.permissions.desc': 'Manage extension permissions',
 	permissions: {
 		title: 'Permission Manager',
 		subtitle: 'Control which features HALO can access',

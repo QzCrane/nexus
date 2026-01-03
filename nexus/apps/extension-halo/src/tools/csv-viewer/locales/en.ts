@@ -1,4 +1,6 @@
 export const en = {
+	'tools.csv-viewer.name': 'CSV Viewer',
+	'tools.csv-viewer.desc': 'Parse and view CSV data',
 	csvViewer: {
 		placeholder: 'Paste CSV data here...',
 		empty: 'Paste CSV to view as table',

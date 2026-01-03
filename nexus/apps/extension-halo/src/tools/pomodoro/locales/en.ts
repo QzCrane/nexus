@@ -1,4 +1,6 @@
 export const en = {
+	'tools.pomodoro.name': 'Pomodoro',
+	'tools.pomodoro.desc': 'Focus timer with breaks',
 	pomodoro: {
 		sessions: 'Sessions',
 		start: 'Start',

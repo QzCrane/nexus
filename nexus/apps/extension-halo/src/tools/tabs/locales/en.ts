@@ -1,4 +1,6 @@
 export const en = {
+	'tools.tabs.name': 'Tabs',
+	'tools.tabs.desc': 'Vertical vertical tab manager',
 	tabsPanel: {
 		searchPlaceholder: 'Search tabs...',
 		close: 'Close',

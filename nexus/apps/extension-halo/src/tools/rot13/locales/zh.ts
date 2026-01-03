@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.rot13.name': 'ROT13',
+	'tools.rot13.desc': 'ROT13/ROT47 加密',
 	rot13: {
 		input: '输入',
 		output: '输出',

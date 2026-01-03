@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.crypto.name': '加密工具',
+	'tools.crypto.desc': 'JWT, RSA, AES 加密解密',
 	crypto: {
 		jwt: {
 			decode: '解码',

@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.gzip.name': 'Gzip',
+	'tools.gzip.desc': 'Gzip 压缩与解压',
 	gzip: {
 		compress: '压缩',
 		decompress: '解压',

@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.tabs.name': '标签页',
+	'tools.tabs.desc': '垂直标签管理与搜索',
 	tabsPanel: {
 		searchPlaceholder: '搜索标签页...',
 		close: '关闭',

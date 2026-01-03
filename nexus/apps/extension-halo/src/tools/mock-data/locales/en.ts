@@ -1,4 +1,6 @@
 export const en = {
+	'tools.mock-data.name': 'Mock Data',
+	'tools.mock-data.desc': 'Generate test data',
 	mockData: {
 		fields: 'Fields',
 		addField: 'Add Field',

@@ -1,5 +1,7 @@
 
 export const zh = {
+	'tools.permissions.name': '权限管理',
+	'tools.permissions.desc': '管理扩展的可选权限',
 	permissions: {
 		title: '权限管理器',
 		subtitle: '控制 HALO 可以访问的功能',

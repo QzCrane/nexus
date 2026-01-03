@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.tab-group.name': '标签组',
+	'tools.tab-group.desc': '管理浏览器标签组',
 	tabGroup: {
 		permTitle: '标签组需要权限',
 		permBtn: '启用标签组',

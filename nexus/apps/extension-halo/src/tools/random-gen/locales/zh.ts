@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.random-gen.name': '随机生成',
+	'tools.random-gen.desc': '生成 UUID 与密钥',
 	randomGen: {
 		type: '类型',
 		length: '长度',

@@ -1,4 +1,6 @@
 export const en = {
+	'tools.diff.name': 'Diff',
+	'tools.diff.desc': 'Compare text differences',
 	diff: {
 		original: 'Original',
 		modified: 'Modified',

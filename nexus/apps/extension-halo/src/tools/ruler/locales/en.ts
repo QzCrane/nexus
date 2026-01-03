@@ -1,4 +1,6 @@
 export const en = {
+	'tools.ruler.name': 'Ruler',
+	'tools.ruler.desc': 'Measure page elements in px/rem',
 	rulerPanel: {
 		clickToCopy: 'Click to copy',
 		start: 'Start Measuring',

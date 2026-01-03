@@ -1,4 +1,6 @@
 export const en = {
+	'tools.smooth-scroll.name': 'Smooth Scroll',
+	'tools.smooth-scroll.desc': 'Silky smooth scrolling for all pages',
 	smoothScroll: {
 		enable: 'Enable Smooth Scroll',
 		enableDesc: 'Silky smooth scrolling for all pages',

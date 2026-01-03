@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.html-entity.name': 'HTML 实体',
+	'tools.html-entity.desc': '编码/解码 HTML 实体',
 	htmlEntity: {
 		encode: '编码',
 		decode: '解码',

@@ -1,4 +1,6 @@
 export const en = {
+	'tools.cron.name': 'Cron Parser',
+	'tools.cron.desc': 'Parse and explain Cron expressions',
 	cron: {
 		minute: 'Minute',
 		hour: 'Hour',

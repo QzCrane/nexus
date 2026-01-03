@@ -1,4 +1,6 @@
 export const en = {
+	'tools.api-tester.name': 'API Tester',
+	'tools.api-tester.desc': 'Send HTTP requests and view responses',
 	apiTester: {
 		send: 'Send',
 		headers: 'Headers',

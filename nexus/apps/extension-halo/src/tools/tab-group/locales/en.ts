@@ -1,4 +1,6 @@
 export const en = {
+	'tools.tab-group.name': 'Tab Group',
+	'tools.tab-group.desc': 'Manage browser tab groups',
 	tabGroup: {
 		permTitle: 'Tab Groups requires permission',
 		permBtn: 'Enable Tab Groups',

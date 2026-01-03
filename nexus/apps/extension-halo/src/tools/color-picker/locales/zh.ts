@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.color-picker.name': '取色器',
+	'tools.color-picker.desc': '支持 HEX/RGB/HSL 格式与历史记录',
 	colorPanel: {
 		pickFromPage: '从页面取色',
 		history: '历史记录',

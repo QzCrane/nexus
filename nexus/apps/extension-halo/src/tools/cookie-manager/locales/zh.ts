@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.cookie-manager.name': 'Cookie 管理',
+	'tools.cookie-manager.desc': '查看与编辑网站 Cookie',
 	cookieManager: {
 		title: 'Cookie',
 		cookies: '个 Cookie',

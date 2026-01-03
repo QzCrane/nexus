@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.archive.name': '网页存档',
+	'tools.archive.desc': '完整保存网页离线浏览',
 	archive: {
 		capture: '保存此页面',
 		capturing: '捕获中...',

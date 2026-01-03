@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.markdown.name': 'Markdown',
+	'tools.markdown.desc': '实时预览与编辑器',
 	markdown: {
 		edit: '编辑',
 		split: '分屏',

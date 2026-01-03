@@ -1,4 +1,6 @@
 export const en = {
+	'tools.color-picker.name': 'Color Picker',
+	'tools.color-picker.desc': 'Pick colors in HEX/RGB/HSL with history',
 	colorPanel: {
 		pickFromPage: 'Pick from page',
 		history: 'History',

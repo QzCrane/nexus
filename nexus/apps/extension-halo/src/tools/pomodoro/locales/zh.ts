@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.pomodoro.name': '番茄钟',
+	'tools.pomodoro.desc': '专注工作与休息计时',
 	pomodoro: {
 		sessions: '完成次数',
 		start: '开始',

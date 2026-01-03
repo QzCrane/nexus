@@ -1,4 +1,6 @@
 export const zh = {
+	'tools.network.name': '网络工具',
+	'tools.network.desc': 'UA 解析, Curl 转换',
 	network: {
 		ua: {
 			input: 'User-Agent 字符串',

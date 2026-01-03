@@ -1,4 +1,6 @@
 export const en = {
+	'tools.media-sniffer.name': 'Media Sniffer',
+	'tools.media-sniffer.desc': 'Detect and download page media',
 	mediaSniffer: {
 		scan: 'Scan Page',
 		found: 'media found',
