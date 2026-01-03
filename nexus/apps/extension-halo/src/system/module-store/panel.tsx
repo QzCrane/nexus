@@ -47,7 +47,7 @@ export const ModuleStorePanel: React.FC = () => {
 	}, [refresh]);
 
 	// System modules should not appear in the store
-	const isIgnored = (id: string) => id === 'settings' || id === 'module-store' || id === 'permissions';
+	const isIgnored = (id: string) => id === 'settings' || id === 'module-store' || id === 'permissions' || id === 'extension-manager';
 
 	const filteredInstalled = installedModules.filter(m => !isIgnored(m.id));
 	const filteredAvailable = availableModules.filter(m => !isIgnored(m.id));

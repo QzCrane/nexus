@@ -66,7 +66,7 @@ nexus(私有) → {spectra, halo}-public/ → github.com/QzCrane/{spectra, halo}
 
 **HALO** (SidePanel 85 tools):
 
-- 自动注册系统: `{tools,system}/*/manifest.json` + `locales/*` → `pnpm generate-registry` → 自动生成 `ToolId`, Source Map & I18n Aggregation
+- 自动注册系统: `{tools,system}/*/manifest.json` + `locales/*` → `pnpm generate-registry` → 自动生成 `ToolId`, Source Map & I18n Aggregation (Hydrated)
 - 故障隔离: `ToolErrorBoundary` 确保单模块崩溃不影响全局
 - 智能意图: `useClipboardIntent` 智能识别剪贴板内容并推荐工具 (Smart Paste)
 - 核心服务: `useToolState`, `PermissionManager`(Kernel), `EngineStatusProvider`
@@ -112,7 +112,7 @@ Contracts 禁逻辑 | 源码 ≤200 行 | 禁绕 kernel 存储 | 禁触发 Layou
 
 规则: docs/ai-rules.md
 规划: plan.md, apps/extension-halo/plan.md, apps/extension-spectra/plan.md
-架构: docs/cors-data-flow.md, apps/extension-halo/docs/architecture.md, apps/extension-spectra/docs/policy-decision.md
+架构: docs/cors-data-flow.md, apps/extension-halo/docs/architecture.md, apps/extension-halo/docs/architecture-i18n.md, apps/extension-spectra/docs/policy-decision.md
 调研: apps/extension-halo/docs/research.md
 模块: packages/{contracts,nexus-kernel,ui-kit}/.ai-context.md + packages/features/audio-engine/.ai-context.md + apps/{extension-spectra,extension-halo}/.ai-context.md
 

@@ -109,7 +109,7 @@ export const LauncherHeader: React.FC<LauncherHeaderProps> = ({
 					}}
 					onClick={() => onSelectTool('module-store' as ToolId)}
 					title={t('tools.module-store.name')}
-				>🧩</button>
+				>📦</button>
 				<button
 					style={{
 						background: activeTool === 'extension-manager' ? 'var(--halo-bg-tertiary)' : 'transparent',
