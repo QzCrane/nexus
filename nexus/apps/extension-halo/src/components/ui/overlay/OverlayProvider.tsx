@@ -18,24 +18,24 @@ const styles = {
 		// Reset any potential transforms from parents if rendered in portal (but here we wrapping root)
 	},
 	modalContent: {
-		background: 'var(--halo-bg-primary)',
+		background: 'var(--halo-bg-panel, #ffffff)', // Fallback to white -> ensure visibility
 		borderRadius: '16px',
 		padding: '24px',
 		width: '100%',
 		maxWidth: '320px',
 		boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-		border: '1px solid var(--halo-border)',
+		border: '1px solid var(--halo-border, rgba(0,0,0,0.1))',
 		animation: 'halo-pop-in 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
 	},
 	title: {
 		fontSize: '16px',
 		fontWeight: 600,
 		marginBottom: '8px',
-		color: 'var(--halo-text)',
+		color: 'var(--halo-text, #202020)',
 	},
 	message: {
 		fontSize: '14px',
-		color: 'var(--halo-text-muted)',
+		color: 'var(--halo-text, #404040)', // Changed from muted to normal text
 		marginBottom: '20px',
 		lineHeight: 1.5,
 		whiteSpace: 'pre-wrap' as const,
@@ -55,11 +55,11 @@ const styles = {
 		transition: 'all 0.2s',
 	},
 	btnCancel: {
-		background: 'var(--halo-bg-secondary)',
-		color: 'var(--halo-text)',
+		background: 'var(--halo-bg-secondary, #f0f0f0)',
+		color: 'var(--halo-text, #333)',
 	},
 	btnConfirm: {
-		background: 'var(--halo-primary)',
+		background: 'var(--halo-primary, #6366f1)',
 		color: 'white',
 	},
 	toastContainer: {
