@@ -5,6 +5,7 @@ import React from 'react';
 import { Card, Toggle } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { HaloSettings, IconSize } from '../../kernel';
+import { getToolMeta } from '../../kernel';
 import { styles } from './panel.styles';
 
 interface InterfaceSettingsProps {
@@ -61,17 +62,38 @@ export const InterfaceSettings: React.FC<InterfaceSettingsProps> = ({ settings, 
 					/>
 				</div>
 				
-				{/* Extension Manager */}
-				<div style={styles.row}>
-					<div>
-						<div style={styles.label}>{t('settings.enableExtensionManager')}</div>
-						<div style={styles.sublabel}>{t('settings.enableExtensionManagerDesc')}</div>
-					</div>
-					<Toggle
-						checked={settings.enableExtensionManager}
-						onChange={(checked) => onUpdate('enableExtensionManager', checked)}
-					/>
-				</div>
+				{/* Header Shortcuts */}
+				<div style={{...styles.sectionTitle, marginTop: 16}}>📌 {t('settings.headerShortcuts')}</div>
+				{['module-store', 'extension-manager', 'permissions', 'settings', 'userscripts'].map(id => {
+					const current = settings.headerLayout || ['module-store', 'extension-manager', 'settings', 'userscripts'];
+					const isVisible = current.includes(id);
+					const meta = getToolMeta(id);
+					const icon = meta?.icon || (id === 'userscripts' ? '📜' : '🧩'); // Fallback icon
+
+					return (
+						<div style={styles.row} key={id}>
+							<div>
+								<div style={styles.label}>
+									<span style={{marginRight: 8, fontSize: '16px'}}>{icon}</span>
+									{meta ? t(`tools.${id}.name`) : id}
+								</div>
+							</div>
+							<Toggle
+								checked={isVisible}
+								onChange={(checked) => {
+									let next;
+									if (checked) {
+										if (!current.includes(id)) next = [...current, id];
+										else next = current;
+									} else {
+										next = current.filter(x => x !== id);
+									}
+									onUpdate('headerLayout', next);
+								}}
+							/>
+						</div>
+					);
+				})}
 
 			</div>
 		</Card>

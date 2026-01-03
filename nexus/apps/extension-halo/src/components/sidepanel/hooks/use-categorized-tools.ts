@@ -1,0 +1,108 @@
+
+import { useMemo } from 'react';
+import type { ToolMeta, HaloSettings } from '../../kernel';
+import type { UserScript } from '../../../tools/userscripts/types';
+
+interface UseCategorizedToolsProps {
+	visibleTools: ToolMeta[];
+	settings: HaloSettings | null;
+	t: (key: string) => string;
+	activeServices: Set<string>;
+	backgroundToolIds: string[];
+	scripts: UserScript[];
+	tempCats: Record<string, ToolMeta[]> | null;
+	tempCatOrder: string[] | null;
+}
+
+export function useCategorizedTools({
+	visibleTools,
+	settings,
+	t,
+	activeServices,
+	backgroundToolIds,
+	scripts,
+	tempCats,
+	tempCatOrder
+}: UseCategorizedToolsProps) {
+	const categorizedTools = useMemo(() => {
+		if (tempCats) return tempCats;
+		const cats: Record<string, ToolMeta[]> = { active: [], scripts: [], general: [], dev: [], efficiency: [], visual: [], ai: [], security: [], media: [], browser: [] };
+
+		// 1. Process builtin/registry tools
+		visibleTools.forEach(tool => {
+			if (tool.system) return;
+
+			// SaaT script tools go to scripts category
+			if (tool.toolType === 'script') {
+				cats.scripts.push(tool);
+				return;
+			}
+
+			// Include in "Active Services" if it is background capable (even if disabled)
+			// This allows showing "inactive" state (grey dot) instead of hiding
+			if (backgroundToolIds.includes(tool.id)) {
+				cats.active.push(tool);
+			}
+
+			if (cats[tool.category]) cats[tool.category].push(tool);
+			else cats.general.push(tool);
+		});
+
+		// 2. Merge User Scripts from storage
+		const registeredSaaTIds = new Set(cats.scripts.map(t => t.id));
+
+		scripts.forEach(script => {
+			// Skip if it's a known SaaT tool that's already registered
+			if (script.saatToolId && registeredSaaTIds.has(script.saatToolId)) return;
+
+			// Create pseudo ToolMeta for user script
+			const scriptTool: ToolMeta = {
+				id: script.id,
+				name: script.name, // Use raw name (no i18n for user scripts)
+				description: script.description,
+				icon: '📜',
+				category: 'scripts',
+				toolType: 'script',
+				size: script.code.length,
+				builtIn: false,
+				status: 'ready',
+				keywords: ['script', 'user'],
+				// Mark as user script for rendering special actions
+				isUserScript: true
+			} as ToolMeta & { isUserScript?: boolean };
+
+			cats.scripts.push(scriptTool);
+		});
+
+		Object.keys(cats).forEach(cat => {
+			const pinned = settings?.pinnedTools || [], order = settings?.toolOrder?.[cat] || [];
+			cats[cat].sort((a, b) => {
+				const ap = pinned.includes(a.id), bp = pinned.includes(b.id);
+				if (ap !== bp) return ap ? -1 : 1;
+				const ai = order.indexOf(a.id), bi = order.indexOf(b.id);
+				if (ai !== -1 && bi !== -1) return ai - bi;
+				// Use raw name for sorting if i18n key not found/is raw
+				const nameA = (t(`tools.${a.id}.name`) === `tools.${a.id}.name` ? (a.name || a.id) : t(`tools.${a.id}.name`)) || a.id;
+				const nameB = (t(`tools.${b.id}.name`) === `tools.${b.id}.name` ? (b.name || b.id) : t(`tools.${b.id}.name`)) || b.id;
+				return ai !== -1 ? -1 : bi !== -1 ? 1 : nameA.localeCompare(nameB);
+			});
+		});
+		return cats;
+	}, [visibleTools, settings, t, tempCats, activeServices, backgroundToolIds, scripts]);
+
+	const catOrder = useMemo(() => {
+		if (tempCatOrder) return tempCatOrder;
+		const defaultOrder = ['active', 'scripts', 'general', 'dev', 'efficiency', 'visual', 'ai', 'security', 'media', 'browser'];
+		let order = settings?.categoryOrder || [];
+		if (order.length === 0) order = defaultOrder;
+
+		// Ensure active is always present if it has tools
+		if (!order.includes('active')) {
+			order = ['active', ...order];
+		}
+
+		return order;
+	}, [settings, tempCatOrder]);
+
+	return { categorizedTools, catOrder };
+}

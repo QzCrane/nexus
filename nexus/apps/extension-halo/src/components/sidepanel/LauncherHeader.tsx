@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTranslation } from '../../i18n';
 import type { ToolId, ToolMeta } from '../../kernel';
-import { popOutWindow, getToolMeta } from '../../kernel';
+import { popOutWindow, getToolMeta, useSettings } from '../../kernel';
 
 interface LauncherHeaderProps {
 	activeTool: ToolId | null;
@@ -18,15 +18,18 @@ export const LauncherHeader: React.FC<LauncherHeaderProps> = ({
 	onSelectTool,
 	hideBorder,
 }) => {
+	const { settings } = useSettings();
 	const { t } = useTranslation();
 	
 	const activeToolMeta = visibleTools.find(tool => tool.id === activeTool);
 
-	// Icons from registry (SSOT)
-	const iconModuleStore = getToolMeta('module-store')?.icon || '📦';
-	const iconExtensionManager = getToolMeta('extension-manager')?.icon || '🔌';
-	const iconPermissions = getToolMeta('permissions')?.icon || '🔐';
-	const iconSettings = getToolMeta('settings')?.icon || '⚙️';
+	// Dynamic Header Icons
+	const headerLayout = settings.headerLayout || ['module-store', 'extension-manager', 'permissions', 'settings'];
+
+	const getIcon = (id: string) => {
+		const meta = getToolMeta(id);
+		return meta?.icon || '🧩';
+	};
 
 	return (
 		<header style={{ 
@@ -106,46 +109,26 @@ export const LauncherHeader: React.FC<LauncherHeaderProps> = ({
 					onClick={popOutWindow}
 					title={t('layout.popOut')}
 				>📤</button>
-				<button
-					style={{
-						background: activeTool === 'module-store' ? 'var(--halo-bg-tertiary)' : 'transparent',
-						border: 'none', borderRadius: '8px', cursor: 'pointer', padding: '4px', fontSize: '18px',
-						width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-						boxShadow: activeTool === 'module-store' ? '0 0 0 1px var(--halo-border)' : 'none'
-					}}
-					onClick={() => onSelectTool('module-store' as ToolId)}
-					title={t('tools.module-store.name')}
-				>{iconModuleStore}</button>
-				<button
-					style={{
-						background: activeTool === 'extension-manager' ? 'var(--halo-bg-tertiary)' : 'transparent',
-						border: 'none', borderRadius: '8px', cursor: 'pointer', padding: '4px', fontSize: '18px',
-						width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-						boxShadow: activeTool === 'extension-manager' ? '0 0 0 1px var(--halo-border)' : 'none'
-					}}
-					onClick={() => onSelectTool('extension-manager' as ToolId)}
-					title={t('tools.extension-manager.name')}
-				>{iconExtensionManager}</button>
-				<button
-					style={{
-						background: activeTool === 'permissions' ? 'var(--halo-bg-tertiary)' : 'transparent',
-						border: 'none', borderRadius: '8px', cursor: 'pointer', padding: '4px', fontSize: '18px',
-						width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-						boxShadow: activeTool === 'permissions' ? '0 0 0 1px var(--halo-border)' : 'none'
-					}}
-					onClick={() => onSelectTool('permissions' as ToolId)}
-					title={t('tools.permissions.name')}
-				>{iconPermissions}</button>
-				<button 
-					style={{
-						background: activeTool === 'settings' ? 'var(--halo-bg-tertiary)' : 'transparent',
-						border: 'none', borderRadius: '8px', cursor: 'pointer', padding: '4px', fontSize: '18px',
-						width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-						boxShadow: activeTool === 'settings' ? '0 0 0 1px var(--halo-border)' : 'none'
-					}}
-					onClick={() => onSelectTool('settings' as ToolId)}
-					title={t('common.settings')}
-				>{iconSettings}</button>
+				
+				{headerLayout.map((id) => {
+					const isActive = activeTool === id;
+					const icon = getIcon(id);
+					// For tooltips, try to get name from meta or use key fallbacks if standard
+					// Usually t(`tools.${id}.name`) works if keys exist
+					return (
+						<button
+							key={id}
+							style={{
+								background: isActive ? 'var(--halo-bg-tertiary)' : 'transparent',
+								border: 'none', borderRadius: '8px', cursor: 'pointer', padding: '4px', fontSize: '18px',
+								width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+								boxShadow: isActive ? '0 0 0 1px var(--halo-border)' : 'none'
+							}}
+							onClick={() => onSelectTool(id as ToolId)}
+							title={t(`tools.${id}.name`)}
+						>{icon}</button>
+					);
+				})}
 			</div>
 		</header>
 	);

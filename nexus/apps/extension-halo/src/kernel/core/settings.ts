@@ -13,7 +13,7 @@ export interface HaloSettings {
 	pinnedTools: string[];
 	toolOrder: Record<string, string[]>;
 	categoryOrder: string[];
-	enableExtensionManager: boolean;
+	headerLayout: string[]; // IDs of tools to show in header
 }
 
 export const DEFAULT_SETTINGS: HaloSettings = {
@@ -26,7 +26,7 @@ export const DEFAULT_SETTINGS: HaloSettings = {
 	pinnedTools: [],
 	toolOrder: {},
 	categoryOrder: ['active', 'general', 'dev', 'efficiency', 'visual', 'ai', 'security', 'media', 'browser'],
-	enableExtensionManager: true,
+	headerLayout: ['module-store', 'extension-manager', 'settings', 'userscripts'], // Default layout
 };
 
 export const ACCENT_COLORS = [

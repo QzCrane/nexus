@@ -18,6 +18,7 @@ export * from './hooks/use-remote-registry';
 export * from './hooks/use-permission';
 export * from './hooks/use-tool-state';
 export * from './hooks/use-user-scripts';
+export * from './hooks/use-settings';
 
 export * from './services/saat-service';
 
