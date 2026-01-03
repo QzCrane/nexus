@@ -1,7 +1,7 @@
 # HALO 功能规划 (v2.3.0)
 
 > **定位**: 离线优先的开发者与效率工具箱 | **对标**: DevToys, IT-Tools, He3
-> **核心状态**: 83 User Tools + 3 System Tools | SidePanel Architecture | Local First
+> **核心状态**: 84 User Tools + 3 System Tools | SidePanel Architecture | Local First
 
 ## 📊 现有工具库
 
@@ -9,7 +9,7 @@
 - **Core (10)**: qrcode, color-picker, json-formatter, hash, uuid, timestamp, url...
 - **Dev (37)**: userscripts, regex, network, jwt, diff, sql, protobuf, dom, api-tester...
 - **Efficiency (13)**: smooth-scroll, tabs, clipboard, pomodoro, session-manager...
-- **Sec/Media/Browser (17)**: password-gen, image-tools, reader-mode, translate...
+- **Sec/Media/Browser (19)**: password-gen, image-tools, reader-mode, translate, bilibili-plus, chatgpt-wide...
 
 ## 📜 变更历史 (Archives)
 
@@ -25,13 +25,20 @@
 - **registry.ts**: 动态注册/注销脚本，storage 变化自动同步.
 - **Block Space Scroll**: 两全其美方案 - 阻止滚动 + 手动控制视频播放/暂停.
 - **Smooth Scroll Fix**: 解决视频/下拉框按键冲突 (Smart Input Detection).
-- **Smooth Scroll Fix**: 解决视频/下拉框按键冲突 (Smart Input Detection).
 - **i18n Architecture Refactor**: ✅ 去中心化翻译资源 (Tools/System Self-contained) + 自动聚合.
 
 ### v2.3.1 i18n Completion (2026-01-03)
 
 - **Full Internationalization**: Refactored 10+ core/dev tools (Protobuf, Network, Crypto, Pomodoro...) to use i18n keys.
 - **Locale SSOT**: All tool locales now reside in `src/tools/<name>/locales/{en,zh}.ts`.
+
+### v2.4.0 SaaT Architecture (2026-01-03)
+
+- **Script-as-a-Tool (SaaT)**: Registry 支持 `toolType: 'script'` 伪工具，无需 React Panel。
+- **Dual Discovery**: `generate-tool-registry.mjs` 支持 Panel (panel.tsx) 和 Script (script.js/css) 两种发现模式。
+- **SaaT Service**: `saat-service.ts` 管理脚本工具启停，复用 userScripts 引擎。
+- **First SaaT Tools**: `bilibili-plus` (JS, B 站增强), `chatgpt-wide` (CSS, AI 宽屏)。
+- **UI Adaptation**: 脚本工具点击触发 Toggle 而非面板导航。
 
 ## 🚧 核心任务 (SIP - v2.3.0)
 
@@ -44,12 +51,12 @@
   - 规则: `settings`, `module-store`, `permissions` 必须标记为 `system: true`。
   - UI: 仅通过 Header / Global Actions 进入。
 
-- 🔥 **Script-as-a-Tool (SaaT) 伪工具架构**:
+- ✅ **Script-as-a-Tool (SaaT) 伪工具架构**: (v2.4.0)
 
   - 目标: 让脚本在 UI 上表现得像独立工具 (Script Tool)，拥有独立图标、搜索入口和启停开关。
-  - 实现: Registry 支持 `type: 'script'`。
-  - 交互: 主页点击直接 Toggle 启/停，或打开通用配置页，底层调用 `userscripts` 引擎。
-  - 首批: `bilibili-plus` (脚本), `chatgpt-wide` (脚本).
+  - 实现: Registry 支持 `toolType: 'script'`，生成脚本自动发现 script.js/css。
+  - 交互: 主页点击直接 Toggle 启/停，底层调用 `userscripts` 引擎。
+  - 首批: ✅ `bilibili-plus` (JS), ✅ `chatgpt-wide` (CSS).
 
 - 🔥 **Taxonomy SSOT (分类定义的单一来源)**:
 
