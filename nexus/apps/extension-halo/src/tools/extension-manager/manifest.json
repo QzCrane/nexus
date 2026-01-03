@@ -1,0 +1,20 @@
+{
+	"id": "extension-manager",
+	"icon": "🧩",
+	"category": "browser",
+	"size": 8192,
+	"builtIn": true,
+	"keywords": [
+		"extension",
+		"plugin",
+		"manage",
+		"插件",
+		"扩展",
+		"管理",
+		"启用",
+		"禁用"
+	],
+	"permissions": [
+		"management"
+	]
+}

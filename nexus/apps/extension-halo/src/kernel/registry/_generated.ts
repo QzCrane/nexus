@@ -400,6 +400,23 @@ export const USER_TOOL_REGISTRY: GeneratedToolMeta[] = [
 		scriptType: undefined,
 	},
 	{
+		id: 'extension-manager',
+		icon: '🧩',
+		category: 'browser',
+		size: 8192,
+		builtIn: true,
+		system: false,
+		keywords: ["extension","plugin","manage","插件","扩展","管理","启用","禁用"],
+		features: undefined,
+		dependencies: undefined,
+		permissions: ["management"],
+		toolType: undefined,
+		scriptMatches: undefined,
+		scriptExcludeMatches: undefined,
+		scriptRunAt: undefined,
+		scriptType: undefined,
+	},
+	{
 		id: 'font-inspector',
 		icon: '🔤',
 		category: 'dev',
@@ -495,6 +512,23 @@ export const USER_TOOL_REGISTRY: GeneratedToolMeta[] = [
 		features: undefined,
 		dependencies: undefined,
 		permissions: [],
+		toolType: undefined,
+		scriptMatches: undefined,
+		scriptExcludeMatches: undefined,
+		scriptRunAt: undefined,
+		scriptType: undefined,
+	},
+	{
+		id: 'hover-zoom',
+		icon: '🔍',
+		category: 'media',
+		size: 6144,
+		builtIn: true,
+		system: false,
+		keywords: ["hover","zoom","image","preview","浮图","悬浮","图片","预览","放大"],
+		features: undefined,
+		dependencies: undefined,
+		permissions: ["declarativeNetRequest"],
 		toolType: undefined,
 		scriptMatches: undefined,
 		scriptExcludeMatches: undefined,
@@ -1511,7 +1545,7 @@ export const SYSTEM_PLUGIN_REGISTRY: GeneratedToolMeta[] = [
 
 export const ALL_APPS = [...USER_TOOL_REGISTRY, ...SYSTEM_PLUGIN_REGISTRY];
 
-export const TOOL_IDS = ['api-tester', 'archive', 'base64', 'bilibili-plus', 'bookmark-manager', 'chatgpt-wide', 'checksum', 'clipboard', 'code-formatter', 'code-snippets', 'color-palette', 'color-picker', 'cookie-manager', 'cron', 'crypto', 'csp-analyzer', 'csv-to-json', 'csv-viewer', 'diff', 'dom-selector', 'emoji-picker', 'exif-reader', 'font-inspector', 'gzip', 'hash', 'headers-viewer', 'hex-dump', 'history-search', 'html-entity', 'http-status', 'image-tools', 'ip-lookup', 'json-formatter', 'json-path', 'json-to-csv', 'jwt-decoder', 'lorem-ipsum', 'markdown', 'media-sniffer', 'mock-data', 'morse', 'network', 'number-base', 'outline', 'page-annotate', 'password-gen', 'pdf', 'pomodoro', 'protobuf', 'punycode', 'qrcode', 'random-gen', 'reader-mode', 'regex', 'rot13', 'ruler', 'screenshot', 'session-manager', 'shortcuts', 'smooth-scroll', 'sql-formatter', 'ssl-cert', 'sticky-notes', 'storage-editor', 'subresource', 'tab-group', 'table-extractor', 'tabs', 'tech-stack', 'text-to-speech', 'text-tools', 'timer', 'timestamp', 'todo-list', 'totp', 'translate', 'unit-converter', 'url', 'user-agent', 'userscripts', 'uuid', 'xml-formatter', 'xor', 'yaml', 'module-store', 'permissions', 'settings'] as const;
+export const TOOL_IDS = ['api-tester', 'archive', 'base64', 'bilibili-plus', 'bookmark-manager', 'chatgpt-wide', 'checksum', 'clipboard', 'code-formatter', 'code-snippets', 'color-palette', 'color-picker', 'cookie-manager', 'cron', 'crypto', 'csp-analyzer', 'csv-to-json', 'csv-viewer', 'diff', 'dom-selector', 'emoji-picker', 'exif-reader', 'extension-manager', 'font-inspector', 'gzip', 'hash', 'headers-viewer', 'hex-dump', 'history-search', 'hover-zoom', 'html-entity', 'http-status', 'image-tools', 'ip-lookup', 'json-formatter', 'json-path', 'json-to-csv', 'jwt-decoder', 'lorem-ipsum', 'markdown', 'media-sniffer', 'mock-data', 'morse', 'network', 'number-base', 'outline', 'page-annotate', 'password-gen', 'pdf', 'pomodoro', 'protobuf', 'punycode', 'qrcode', 'random-gen', 'reader-mode', 'regex', 'rot13', 'ruler', 'screenshot', 'session-manager', 'shortcuts', 'smooth-scroll', 'sql-formatter', 'ssl-cert', 'sticky-notes', 'storage-editor', 'subresource', 'tab-group', 'table-extractor', 'tabs', 'tech-stack', 'text-to-speech', 'text-tools', 'timer', 'timestamp', 'todo-list', 'totp', 'translate', 'unit-converter', 'url', 'user-agent', 'userscripts', 'uuid', 'xml-formatter', 'xor', 'yaml', 'module-store', 'permissions', 'settings'] as const;
 export type GeneratedToolId = (typeof TOOL_IDS)[number];
 
 export const PERMISSION_USAGE_MAP: Record<string, string[]> = {
@@ -1533,6 +1567,12 @@ export const PERMISSION_USAGE_MAP: Record<string, string[]> = {
         "clipboard",
         "color-picker",
         "qrcode"
+    ],
+    "management": [
+        "extension-manager"
+    ],
+    "declarativeNetRequest": [
+        "hover-zoom"
     ],
     "webNavigation": [
         "userscripts"

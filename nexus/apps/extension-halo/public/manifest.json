@@ -22,7 +22,9 @@
 		"topSites",
 		"notifications",
 		"tabGroups",
-		"userScripts"
+		"userScripts",
+		"management",
+		"declarativeNetRequest"
 	],
 	"optional_host_permissions": [
 		"*://*/*"

@@ -23,12 +23,14 @@ import { zh as csv_viewer } from '../../tools/csv-viewer/locales/zh';
 import { zh as diff } from '../../tools/diff/locales/zh';
 import { zh as dom_selector } from '../../tools/dom-selector/locales/zh';
 import { zh as exif_reader } from '../../tools/exif-reader/locales/zh';
+import { zh as extension_manager } from '../../tools/extension-manager/locales/zh';
 import { zh as font_inspector } from '../../tools/font-inspector/locales/zh';
 import { zh as gzip } from '../../tools/gzip/locales/zh';
 import { zh as hash } from '../../tools/hash/locales/zh';
 import { zh as headers_viewer } from '../../tools/headers-viewer/locales/zh';
 import { zh as hex_dump } from '../../tools/hex-dump/locales/zh';
 import { zh as history_search } from '../../tools/history-search/locales/zh';
+import { zh as hover_zoom } from '../../tools/hover-zoom/locales/zh';
 import { zh as html_entity } from '../../tools/html-entity/locales/zh';
 import { zh as http_status } from '../../tools/http-status/locales/zh';
 import { zh as image_tools } from '../../tools/image-tools/locales/zh';
@@ -109,12 +111,14 @@ export const TOOLS_ZH = {
 	...diff,
 	...dom_selector,
 	...exif_reader,
+	...extension_manager,
 	...font_inspector,
 	...gzip,
 	...hash,
 	...headers_viewer,
 	...hex_dump,
 	...history_search,
+	...hover_zoom,
 	...html_entity,
 	...http_status,
 	...image_tools,

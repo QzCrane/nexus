@@ -1,0 +1,21 @@
+{
+	"id": "hover-zoom",
+	"icon": "🔍",
+	"category": "media",
+	"size": 6144,
+	"builtIn": true,
+	"keywords": [
+		"hover",
+		"zoom",
+		"image",
+		"preview",
+		"浮图",
+		"悬浮",
+		"图片",
+		"预览",
+		"放大"
+	],
+	"permissions": [
+		"declarativeNetRequest"
+	]
+}
