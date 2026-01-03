@@ -80,5 +80,5 @@ export interface SettingsTranslations {
 }
 
 export interface ModuleTranslations {
-	tools: Record<string, { name: string; desc: string }>;
+	tools?: Record<string, { name: string; desc: string }>;
 }
