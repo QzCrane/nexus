@@ -11,6 +11,7 @@ import { useToast } from '../../../components/ToastProvider';
 const DEFAULT_FORM: EditForm = {
 	name: '',
 	description: '',
+	category: 'general',
 	code: '',
 	matches: '*://*/*',
 	excludeMatches: '',
@@ -30,6 +31,7 @@ export function useScriptEditor(loadScripts: () => Promise<void>) {
 		setEditForm({
 			name: script.name,
 			description: script.description,
+			category: script.category || 'general',
 			code: script.code,
 			matches: script.matches.join('\n'),
 			excludeMatches: script.excludeMatches?.join('\n') || '',
@@ -47,6 +49,7 @@ export function useScriptEditor(loadScripts: () => Promise<void>) {
 		const scriptData = {
 			name: editForm.name.trim(),
 			description: editForm.description.trim(),
+			category: editForm.category,
 			code: editForm.code,
 			matches: editForm.matches.split(/[,\n]+/).map(m => m.trim()).filter(Boolean),
 			excludeMatches: editForm.excludeMatches ? editForm.excludeMatches.split(/[,\n]+/).map(m => m.trim()).filter(Boolean) : undefined,
@@ -55,12 +58,19 @@ export function useScriptEditor(loadScripts: () => Promise<void>) {
 			enabled: true,
 		};
 
-		if (editingId) {
+		if (editingId && !editingId.startsWith('saat-')) {
+			// Normal update for user scripts
 			await updateUserScript(editingId, scriptData);
 			showToast(`💾 ${t('userscripts.scriptUpdated')}`);
 		} else {
+			// Create new script (or Fork from SaaT)
+			// If it was a SaaT script (editingId starts with 'saat-'), we are effectively forking it
 			await addUserScript(scriptData);
-			showToast(`✅ ${t('userscripts.scriptAdded')}`);
+			if (editingId && editingId.startsWith('saat-')) {
+				showToast(`📋 ${t('userscripts.scriptForked', { defaultValue: 'Script forked as new' })}`);
+			} else {
+				showToast(`✅ ${t('userscripts.scriptAdded')}`);
+			}
 		}
 
 		setEditForm(DEFAULT_FORM);
@@ -81,6 +91,7 @@ export function useScriptEditor(loadScripts: () => Promise<void>) {
 		setEditForm({
 			name: tpl.name,
 			description: tpl.description,
+			category: 'general',
 			code: tpl.code,
 			matches: tpl.matches.join('\n'),
 			excludeMatches: '',
