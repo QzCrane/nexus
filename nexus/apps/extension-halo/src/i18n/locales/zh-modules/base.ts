@@ -38,6 +38,7 @@ export const base = {
 		media: '媒体工具',
 		browser: '浏览器工具',
 		active: '后台助手',
+		scripts: '增强脚本',
 	},
 
 	footer: {

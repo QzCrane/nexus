@@ -38,6 +38,7 @@ export const base = {
 		media: 'Media',
 		browser: 'Browser',
 		active: 'Active Services',
+		scripts: 'Scripts',
 	},
 	footer: {
 		zeroTracking: 'Zero tracking',

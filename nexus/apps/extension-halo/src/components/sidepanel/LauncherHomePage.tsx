@@ -42,10 +42,16 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 
 	const categorizedTools = useMemo(() => {
 		if (tempCats) return tempCats;
-		const cats: Record<string, ToolMeta[]> = { active: [], general: [], dev: [], efficiency: [], visual: [], ai: [], security: [], media: [], browser: [] };
+		const cats: Record<string, ToolMeta[]> = { active: [], scripts: [], general: [], dev: [], efficiency: [], visual: [], ai: [], security: [], media: [], browser: [] };
 		
 		visibleTools.forEach(tool => {
 			if (tool.system || tool.id === 'permissions') return;
+			
+			// SaaT script tools go to scripts category
+			if (tool.toolType === 'script') {
+				cats.scripts.push(tool);
+				return;
+			}
 			
 			// Include in "Active Services" if it is background capable (even if disabled)
 			// This allows showing "inactive" state (grey dot) instead of hiding
@@ -73,7 +79,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 
 	const catOrder = useMemo(() => {
 		if (tempCatOrder) return tempCatOrder;
-		const defaultOrder = ['active', 'general', 'dev', 'efficiency', 'visual', 'ai', 'security', 'media', 'browser'];
+		const defaultOrder = ['active', 'scripts', 'general', 'dev', 'efficiency', 'visual', 'ai', 'security', 'media', 'browser'];
 		let order = settings?.categoryOrder || [];
 		if (order.length === 0) order = defaultOrder;
 		

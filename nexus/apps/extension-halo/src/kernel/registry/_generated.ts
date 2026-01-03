@@ -79,7 +79,7 @@ export const USER_TOOL_REGISTRY: GeneratedToolMeta[] = [
 	{
 		id: 'bilibili-plus',
 		icon: '📺',
-		category: 'browser',
+		category: 'scripts',
 		size: 2048,
 		builtIn: true,
 		system: false,
@@ -113,7 +113,7 @@ export const USER_TOOL_REGISTRY: GeneratedToolMeta[] = [
 	{
 		id: 'chatgpt-wide',
 		icon: '🤖',
-		category: 'efficiency',
+		category: 'scripts',
 		size: 1536,
 		builtIn: true,
 		system: false,

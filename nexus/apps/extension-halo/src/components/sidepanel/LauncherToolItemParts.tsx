@@ -10,6 +10,7 @@ export const CATEGORY_COLORS: Record<string, string> = {
 	ai: '#10b981',
 	media: '#06b6d4',
 	general: '#6366f1',
+	scripts: '#f97316', // Orange for scripts
 };
 
 export const getCategoryColor = (category: string) => CATEGORY_COLORS[category] || 'var(--halo-accent)';

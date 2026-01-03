@@ -4,7 +4,7 @@
 import { BaseTranslations, SettingsTranslations, ModuleTranslations } from './types-defs-1';
 
 export type Locale = 'en' | 'zh';
-export type ToolCategory = 'general' | 'dev' | 'efficiency' | 'visual' | 'ai' | 'security' | 'media' | 'browser' | 'active';
+export type ToolCategory = 'general' | 'dev' | 'efficiency' | 'visual' | 'ai' | 'security' | 'media' | 'browser' | 'active' | 'scripts';
 
 // Translation keys structure
 export interface TranslationKeys extends

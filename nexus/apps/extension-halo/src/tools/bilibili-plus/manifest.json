@@ -1,7 +1,7 @@
 {
 	"id": "bilibili-plus",
 	"icon": "📺",
-	"category": "browser",
+	"category": "scripts",
 	"size": 2048,
 	"builtIn": true,
 	"keywords": [
