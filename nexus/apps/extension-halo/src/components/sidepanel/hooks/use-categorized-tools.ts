@@ -63,7 +63,13 @@ export function useCategorizedTools({
 
 		scripts.forEach(script => {
 			// Skip SaaT scripts (those with id starting with 'saat-') that already have a tool in registry
-			if (script.id.startsWith('saat-') && registeredSaaTIds.has(script.id.replace(/^saat-([^-]+)-.+$/, '$1'))) return;
+			// SaaT IDs format: 'saat-{toolId}-{timestamp}', e.g. 'saat-bilibili-plus-1767413981425'
+			if (script.id.startsWith('saat-')) {
+				// Extract tool ID by removing prefix and timestamp suffix
+				const match = script.id.match(/^saat-(.+)-\d+$/);
+				const toolId = match?.[1];
+				if (toolId && registeredSaaTIds.has(toolId)) return;
+			}
 			// Skip if this user script id is already in the scripts category
 			if (registeredSaaTIds.has(script.id)) return;
 
@@ -72,7 +78,7 @@ export function useCategorizedTools({
 				id: script.id,
 				name: script.name, // Use raw name (no i18n for user scripts)
 				description: script.description,
-				icon: '📜',
+				icon: script.type === 'css' ? '🎨' : '⚡',
 				category: 'scripts',
 				toolType: 'script',
 				size: script.code.length,

@@ -28,6 +28,8 @@ export const base = {
 		available: '可用',
 		close: '关闭',
 		system: '跟随系统 (自动)',
+		suggested: '推荐',
+		open: '打开',
 	},
 	categories: {
 		general: '通用工具',

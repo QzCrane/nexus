@@ -28,6 +28,8 @@ export const base = {
 		available: 'available',
 		close: 'Close',
 		system: 'System (Auto)',
+		suggested: 'Suggested',
+		open: 'Open',
 	},
 	categories: {
 		general: 'General',
