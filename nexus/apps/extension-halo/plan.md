@@ -40,6 +40,13 @@
 - **First SaaT Tools**: `bilibili-plus` (JS, B 站增强), `chatgpt-wide` (CSS, AI 宽屏)。
 - **UI Adaptation**: 脚本工具点击触发 Toggle 而非面板导航。
 
+### v2.4.1 i18n & UI Unified Architecture (2026-01-03)
+
+- **i18n Architecture**: "Flat Source, Nested Runtime" 统一架构。所有工具使用扁平 Key (`tools.id.name`) 开发，运行时自动 Hydrate 为嵌套对象，完美兼容 i18next。
+- **UI Architecture**: Icon SSOT (from Manifest)。所有图标（包括 Header、Store、Launcher）统一从 Registry 读取，杜绝硬编码。
+- **System Isolation**: 插件管家等系统工具彻底从 Launcher Grid 和搜索中隐藏，仅保留 Header 入口。
+- **Feature**: 插件管家 (Extension Manager) 完成，支持分组、批量操作和权限检查逻辑。
+
 ## 🚧 核心任务 (SIP - v2.3.0)
 
 ### 架构统一与系统隔离 (Unified SSOT & System Isolation)

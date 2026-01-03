@@ -14,36 +14,55 @@ type FilterType = 'all' | 'enabled' | 'disabled' | ExtensionGroup;
 
 export const ExtensionManagerPanel: React.FC = () => {
 	const { t } = useTranslation();
+	const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 	const [extensions, setExtensions] = useState<ExtensionInfo[]>([]);
 	const [groups, setGroups] = useState<Record<ExtensionGroup, string[]>>({ dev: [], work: [], entertainment: [], other: [] });
 	const [filter, setFilter] = useState<FilterType>('all');
 	const [search, setSearch] = useState('');
 	const [loading, setLoading] = useState(true);
 
+	useEffect(() => {
+		chrome.permissions.contains({ permissions: ['management'] }, (granted) => {
+			setHasPermission(granted);
+			if (granted) setLoading(true);
+			else setLoading(false);
+		});
+	}, []);
+
 	const loadData = useCallback(async () => {
+		if (!hasPermission) return;
 		setLoading(true);
 		const [exts, grps] = await Promise.all([getAllExtensions(), loadGroups()]);
 		setExtensions(exts);
 		setGroups(grps);
 		setLoading(false);
-	}, []);
+	}, [hasPermission]);
 
-	useEffect(() => { loadData(); }, [loadData]);
+	useEffect(() => { 
+		if (hasPermission) loadData(); 
+	}, [loadData, hasPermission]);
 
 	// Listen for extension state changes
 	useEffect(() => {
+		if (!hasPermission) return;
 		const listener = () => loadData();
-		chrome.management.onEnabled?.addListener(listener);
-		chrome.management.onDisabled?.addListener(listener);
-		chrome.management.onInstalled?.addListener(listener);
-		chrome.management.onUninstalled?.addListener(listener);
+		chrome.management?.onEnabled?.addListener(listener);
+		chrome.management?.onDisabled?.addListener(listener);
+		chrome.management?.onInstalled?.addListener(listener);
+		chrome.management?.onUninstalled?.addListener(listener);
 		return () => {
-			chrome.management.onEnabled?.removeListener(listener);
-			chrome.management.onDisabled?.removeListener(listener);
-			chrome.management.onInstalled?.removeListener(listener);
-			chrome.management.onUninstalled?.removeListener(listener);
+			chrome.management?.onEnabled?.removeListener(listener);
+			chrome.management?.onDisabled?.removeListener(listener);
+			chrome.management?.onInstalled?.removeListener(listener);
+			chrome.management?.onUninstalled?.removeListener(listener);
 		};
-	}, [loadData]);
+	}, [loadData, hasPermission]);
+
+	const requestAccess = async () => {
+		const granted = await chrome.permissions.request({ permissions: ['management'] });
+		setHasPermission(granted);
+		if (granted) loadData();
+	};
 
 	const getExtGroup = useCallback((id: string): ExtensionGroup | undefined => {
 		for (const [g, ids] of Object.entries(groups)) {
@@ -93,6 +112,24 @@ export const ExtensionManagerPanel: React.FC = () => {
 		{ key: 'disabled', label: t('extMgr.disabled') },
 		...Object.entries(DEFAULT_GROUPS).map(([k, v]) => ({ key: k as FilterType, label: `${v.icon} ${t(v.label)}` })),
 	];
+
+	if (hasPermission === false) {
+		return (
+			<Card variant="default" padding="lg" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: '16px' }}>
+				<div style={{ fontSize: '48px' }}>🔌</div>
+				<h2 style={{ margin: 0 }}>{t('extMgr.permissionRequired') || 'Permission Required'}</h2>
+				<p style={{ margin: 0, opacity: 0.8, maxWidth: '300px' }}>
+					{t('extMgr.permissionDesc') || 'HALO needs permission to manage your extensions.'}
+				</p>
+				<button 
+					onClick={requestAccess}
+					style={{ ...styles.batchBtn, background: 'var(--halo-accent)', color: '#fff', fontSize: '14px', padding: '8px 16px' }}
+				>
+					{t('extMgr.grantPermission') || 'Grant Permission'}
+				</button>
+			</Card>
+		);
+	}
 
 	if (loading) return <div style={styles.emptyState}>⏳ {t('common.loading')}</div>;
 

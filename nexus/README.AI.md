@@ -72,7 +72,7 @@ nexus(私有) → {spectra, halo}-public/ → github.com/QzCrane/{spectra, halo}
 - 核心服务: `useToolState`, `PermissionManager`(Kernel), `EngineStatusProvider`
 - 搜索引擎: unified-search.ts (全语言+Pinyin 全拼/简拼+registerSearchLocale 扩展)
 - 性能优化: `useIdlePreload` (空闲预加载), `waitForI18n` (Suspense-ready)
-- 国际化: 100% Tools i18n Coverage (SSOT)
+- 架构统一: 100% i18n Coverage (SSOT) + Icon Architecture (Manifest SSOT)
 - Core(13): QR/Screenshot/Color/Ruler/JSON/Base64/Hash/UUID/Timestamp/URL/ModuleStore/Settings/Permissions
 - Dev(34): **UserScripts(Pro:chrome.userScripts API,MAIN world,Templates)**/Regex/Crypto/Network/YAML/Markdown/JSONPath/SQL/Protobuf/...
 - Efficiency(13): PDF/Clipboard(Monitoring)/Tabs/Timer/SmoothScroll(Pro)/...
