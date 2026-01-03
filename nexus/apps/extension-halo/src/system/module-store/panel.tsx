@@ -47,11 +47,9 @@ export const ModuleStorePanel: React.FC = () => {
 	}, [refresh]);
 
 	// System modules should not appear in the store
-	const isIgnored = (id: string) => id === 'settings' || id === 'module-store' || id === 'permissions' || id === 'extension-manager';
-
-	const filteredInstalled = installedModules.filter(m => !isIgnored(m.id));
-	const filteredAvailable = availableModules.filter(m => !isIgnored(m.id));
-	const filteredAll = ALL_MODULES.filter(m => !isIgnored(m.id));
+	const filteredInstalled = installedModules.filter(m => !m.system);
+	const filteredAvailable = availableModules.filter(m => !m.system);
+	const filteredAll = ALL_MODULES.filter(m => !m.system);
 
 	// Use unified search engine (supports Pinyin + all locales)
 	const searchModules = (modules: typeof ALL_MODULES) => 
