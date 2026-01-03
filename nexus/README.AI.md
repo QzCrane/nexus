@@ -71,7 +71,8 @@ nexus(私有) → {spectra, halo}-public/ → github.com/QzCrane/{spectra, halo}
 - 智能意图: `useClipboardIntent` 智能识别剪贴板内容并推荐工具 (Smart Paste)
 - 核心服务: `useToolState`, `PermissionManager`(Kernel), `EngineStatusProvider`
 - 搜索引擎: unified-search.ts (全语言+Pinyin 全拼/简拼+registerSearchLocale 扩展)
-- 性能优化: `useIdlePreload` (空闲预加载), `waitForI18n` (Suspense-ready)
+- 性能优化: `useIdlePreload` (空闲预加载), `waitForI18n` (Suspense-ready), **Visibility Pause** (定时器自动暂停), **Event-driven** (消除轮询)
+- 资源监控: `ResourceMonitor` (11 种 CPU 机制分类 + 影响评分)
 - 架构统一: 100% i18n Coverage (SSOT) + Icon Architecture (Manifest SSOT)
 - Core(13): QR/Screenshot/Color/Ruler/JSON/Base64/Hash/UUID/Timestamp/URL/ModuleStore/Settings/Permissions
 - Dev(34): **UserScripts(Pro:chrome.userScripts API,MAIN world,Templates)**/Regex/Crypto/Network/YAML/Markdown/JSONPath/SQL/Protobuf/...
@@ -88,7 +89,7 @@ nexus(私有) → {spectra, halo}-public/ → github.com/QzCrane/{spectra, halo}
 
 ## 红线
 
-Contracts 禁逻辑 | 源码 ≤200 行 | 禁绕 kernel 存储 | 禁触发 Layout Shift 的动态 Padding | 禁在工具内添加独立 Storage Listener | 频谱数据传输禁 Array.from | 必须执行资源 detach 销毁
+Contracts 禁逻辑 | 源码 ≤200 行 | 禁绕 kernel 存储 | 禁触发 Layout Shift 的动态 Padding | 禁在工具内添加独立 Storage Listener | 频谱数据传输禁 Array.from | 必须执行资源 detach 销毁 | **禁 setInterval 轮询 (必须事件驱动)** | **定时器必须实现 visibility 暂停**
 
 ---
 

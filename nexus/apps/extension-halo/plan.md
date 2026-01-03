@@ -61,6 +61,19 @@
 - **Integration**: 深度集成 `ActiveServicesContext` 与脚本引擎状态。
 - **Entry**: 通过 SidePanel Header ⚡ 图标快速进入。
 
+### v2.6.1 Performance Optimization (2026-01-03)
+
+- **Polling Elimination**: ✅ 消除所有 setInterval 轮询，改为纯事件驱动。
+  - `ActiveServicesContext`: 移除 2s 轮询 → storage.onChanged + visibilitychange
+  - `tab-group/panel`: 移除 2s 轮询 → chrome.tabGroups 事件
+- **Visibility Pause**: ✅ 定时器在面板不可见时自动暂停。
+  - `totp/panel`: 1s 更新定时器 → visibility 暂停
+  - `timestamp/panel`: 1s 时钟定时器 → visibility 暂停
+- **Resource Monitor Refactor**: ✅ 11 种精确 CPU 机制分类。
+  - 类型: interval_fast/slow, raf_active/idle, event/storage/message_listener, mutation_observer, service_worker, content_script, userscript
+  - 评分: `calculateImpactScore(0-100)` 算法
+  - 检测: 用户脚本代码模式分析 (interval/RAF/MutationObserver)
+
 ## 🚧 核心任务 (SIP - v2.3.0)
 
 ### 架构统一与系统隔离 (Unified SSOT & System Isolation)
