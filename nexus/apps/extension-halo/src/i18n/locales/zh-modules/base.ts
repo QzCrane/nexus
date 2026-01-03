@@ -44,8 +44,10 @@ export const base = {
 		media: '媒体工具',
 		browser: '浏览器工具',
 		active: '后台助手',
-		scripts: '增强脚本',
+		scripts: '用户脚本',
 		system: '系统插件',
+		official: '官方',
+		my: '我的',
 	},
 	settings: {
 		showLabels: '显示名称',

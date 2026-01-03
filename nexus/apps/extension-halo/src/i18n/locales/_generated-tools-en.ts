@@ -5,9 +5,7 @@
 import { en as api_tester } from '../../tools/api-tester/locales/en';
 import { en as archive } from '../../tools/archive/locales/en';
 import { en as base64 } from '../../tools/base64/locales/en';
-import { en as bilibili_plus } from '../../tools/bilibili-plus/locales/en';
 import { en as bookmark_manager } from '../../tools/bookmark-manager/locales/en';
-import { en as chatgpt_wide } from '../../tools/chatgpt-wide/locales/en';
 import { en as checksum } from '../../tools/checksum/locales/en';
 import { en as clipboard } from '../../tools/clipboard/locales/en';
 import { en as code_formatter } from '../../tools/code-formatter/locales/en';
@@ -86,6 +84,8 @@ import { en as uuid } from '../../tools/uuid/locales/en';
 import { en as xml_formatter } from '../../tools/xml-formatter/locales/en';
 import { en as xor } from '../../tools/xor/locales/en';
 import { en as yaml } from '../../tools/yaml/locales/en';
+import { en as bilibili_plus } from '../../scripts/bilibili-plus/locales/en';
+import { en as chatgpt_wide } from '../../scripts/chatgpt-wide/locales/en';
 import { en as extension_manager } from '../../system/extension-manager/locales/en';
 import { en as module_store } from '../../system/module-store/locales/en';
 import { en as permissions } from '../../system/permissions/locales/en';
@@ -96,9 +96,7 @@ export const TOOLS_EN = {
 	...api_tester,
 	...archive,
 	...base64,
-	...bilibili_plus,
 	...bookmark_manager,
-	...chatgpt_wide,
 	...checksum,
 	...clipboard,
 	...code_formatter,
@@ -177,6 +175,8 @@ export const TOOLS_EN = {
 	...xml_formatter,
 	...xor,
 	...yaml,
+	...bilibili_plus,
+	...chatgpt_wide,
 	...extension_manager,
 	...module_store,
 	...permissions,

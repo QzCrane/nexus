@@ -77,23 +77,6 @@ export const USER_TOOL_REGISTRY: GeneratedToolMeta[] = [
 		scriptType: undefined,
 	},
 	{
-		id: 'bilibili-plus',
-		icon: '📺',
-		category: 'scripts',
-		size: 3241,
-		builtIn: true,
-		system: false,
-		keywords: ["bilibili","b站","哔哩哔哩","视频","广告","弹幕"],
-		features: undefined,
-		dependencies: undefined,
-		permissions: ["userScripts"],
-		toolType: 'script',
-		scriptMatches: ["*://*.bilibili.com/*"],
-		scriptExcludeMatches: undefined,
-		scriptRunAt: 'document_start',
-		scriptType: 'javascript',
-	},
-	{
 		id: 'bookmark-manager',
 		icon: '📚',
 		category: 'browser',
@@ -109,23 +92,6 @@ export const USER_TOOL_REGISTRY: GeneratedToolMeta[] = [
 		scriptExcludeMatches: undefined,
 		scriptRunAt: undefined,
 		scriptType: undefined,
-	},
-	{
-		id: 'chatgpt-wide',
-		icon: '🤖',
-		category: 'scripts',
-		size: 1803,
-		builtIn: true,
-		system: false,
-		keywords: ["chatgpt","openai","deepseek","宽屏","wide","ai"],
-		features: undefined,
-		dependencies: undefined,
-		permissions: ["userScripts"],
-		toolType: 'script',
-		scriptMatches: ["*://chatgpt.com/*","*://chat.openai.com/*","*://chat.deepseek.com/*"],
-		scriptExcludeMatches: undefined,
-		scriptRunAt: 'document_start',
-		scriptType: 'css',
 	},
 	{
 		id: 'checksum',
@@ -1452,6 +1418,40 @@ export const USER_TOOL_REGISTRY: GeneratedToolMeta[] = [
 		scriptExcludeMatches: undefined,
 		scriptRunAt: undefined,
 		scriptType: undefined,
+	},
+	{
+		id: 'bilibili-plus',
+		icon: '📺',
+		category: 'scripts',
+		size: 3241,
+		builtIn: true,
+		system: false,
+		keywords: ["bilibili","b站","哔哩哔哩","视频","广告","弹幕"],
+		features: undefined,
+		dependencies: undefined,
+		permissions: ["userScripts"],
+		toolType: 'script',
+		scriptMatches: ["*://*.bilibili.com/*"],
+		scriptExcludeMatches: undefined,
+		scriptRunAt: 'document_start',
+		scriptType: 'javascript',
+	},
+	{
+		id: 'chatgpt-wide',
+		icon: '🤖',
+		category: 'scripts',
+		size: 1803,
+		builtIn: true,
+		system: false,
+		keywords: ["chatgpt","openai","deepseek","宽屏","wide","ai"],
+		features: undefined,
+		dependencies: undefined,
+		permissions: ["userScripts"],
+		toolType: 'script',
+		scriptMatches: ["*://chatgpt.com/*","*://chat.openai.com/*","*://chat.deepseek.com/*"],
+		scriptExcludeMatches: undefined,
+		scriptRunAt: 'document_start',
+		scriptType: 'css',
 	}
 ];
 
@@ -1545,7 +1545,7 @@ export const SYSTEM_PLUGIN_REGISTRY: GeneratedToolMeta[] = [
 
 export const ALL_APPS = [...USER_TOOL_REGISTRY, ...SYSTEM_PLUGIN_REGISTRY];
 
-export const TOOL_IDS = ['api-tester', 'archive', 'base64', 'bilibili-plus', 'bookmark-manager', 'chatgpt-wide', 'checksum', 'clipboard', 'code-formatter', 'code-snippets', 'color-palette', 'color-picker', 'cookie-manager', 'cron', 'crypto', 'csp-analyzer', 'csv-to-json', 'csv-viewer', 'diff', 'dom-selector', 'emoji-picker', 'exif-reader', 'font-inspector', 'gzip', 'hash', 'headers-viewer', 'hex-dump', 'history-search', 'hover-zoom', 'html-entity', 'http-status', 'image-tools', 'ip-lookup', 'json-formatter', 'json-path', 'json-to-csv', 'jwt-decoder', 'lorem-ipsum', 'markdown', 'media-sniffer', 'mock-data', 'morse', 'network', 'number-base', 'outline', 'page-annotate', 'password-gen', 'pdf', 'pomodoro', 'protobuf', 'punycode', 'qrcode', 'random-gen', 'reader-mode', 'regex', 'rot13', 'ruler', 'screenshot', 'session-manager', 'shortcuts', 'smooth-scroll', 'sql-formatter', 'ssl-cert', 'sticky-notes', 'storage-editor', 'subresource', 'tab-group', 'table-extractor', 'tabs', 'tech-stack', 'text-to-speech', 'text-tools', 'timer', 'timestamp', 'todo-list', 'totp', 'translate', 'unit-converter', 'url', 'user-agent', 'uuid', 'xml-formatter', 'xor', 'yaml', 'extension-manager', 'module-store', 'permissions', 'settings', 'userscripts'] as const;
+export const TOOL_IDS = ['api-tester', 'archive', 'base64', 'bookmark-manager', 'checksum', 'clipboard', 'code-formatter', 'code-snippets', 'color-palette', 'color-picker', 'cookie-manager', 'cron', 'crypto', 'csp-analyzer', 'csv-to-json', 'csv-viewer', 'diff', 'dom-selector', 'emoji-picker', 'exif-reader', 'font-inspector', 'gzip', 'hash', 'headers-viewer', 'hex-dump', 'history-search', 'hover-zoom', 'html-entity', 'http-status', 'image-tools', 'ip-lookup', 'json-formatter', 'json-path', 'json-to-csv', 'jwt-decoder', 'lorem-ipsum', 'markdown', 'media-sniffer', 'mock-data', 'morse', 'network', 'number-base', 'outline', 'page-annotate', 'password-gen', 'pdf', 'pomodoro', 'protobuf', 'punycode', 'qrcode', 'random-gen', 'reader-mode', 'regex', 'rot13', 'ruler', 'screenshot', 'session-manager', 'shortcuts', 'smooth-scroll', 'sql-formatter', 'ssl-cert', 'sticky-notes', 'storage-editor', 'subresource', 'tab-group', 'table-extractor', 'tabs', 'tech-stack', 'text-to-speech', 'text-tools', 'timer', 'timestamp', 'todo-list', 'totp', 'translate', 'unit-converter', 'url', 'user-agent', 'uuid', 'xml-formatter', 'xor', 'yaml', 'bilibili-plus', 'chatgpt-wide', 'extension-manager', 'module-store', 'permissions', 'settings', 'userscripts'] as const;
 export type GeneratedToolId = (typeof TOOL_IDS)[number];
 
 export const PERMISSION_USAGE_MAP: Record<string, string[]> = {
@@ -1555,10 +1555,6 @@ export const PERMISSION_USAGE_MAP: Record<string, string[]> = {
     "downloads": [
         "archive",
         "pdf"
-    ],
-    "userScripts": [
-        "bilibili-plus",
-        "chatgpt-wide"
     ],
     "clipboardRead": [
         "clipboard"
@@ -1570,6 +1566,10 @@ export const PERMISSION_USAGE_MAP: Record<string, string[]> = {
     ],
     "declarativeNetRequest": [
         "hover-zoom"
+    ],
+    "userScripts": [
+        "bilibili-plus",
+        "chatgpt-wide"
     ],
     "management": [
         "extension-manager"

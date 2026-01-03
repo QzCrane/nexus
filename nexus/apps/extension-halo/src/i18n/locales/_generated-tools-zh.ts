@@ -5,9 +5,7 @@
 import { zh as api_tester } from '../../tools/api-tester/locales/zh';
 import { zh as archive } from '../../tools/archive/locales/zh';
 import { zh as base64 } from '../../tools/base64/locales/zh';
-import { zh as bilibili_plus } from '../../tools/bilibili-plus/locales/zh';
 import { zh as bookmark_manager } from '../../tools/bookmark-manager/locales/zh';
-import { zh as chatgpt_wide } from '../../tools/chatgpt-wide/locales/zh';
 import { zh as checksum } from '../../tools/checksum/locales/zh';
 import { zh as clipboard } from '../../tools/clipboard/locales/zh';
 import { zh as code_formatter } from '../../tools/code-formatter/locales/zh';
@@ -86,6 +84,8 @@ import { zh as uuid } from '../../tools/uuid/locales/zh';
 import { zh as xml_formatter } from '../../tools/xml-formatter/locales/zh';
 import { zh as xor } from '../../tools/xor/locales/zh';
 import { zh as yaml } from '../../tools/yaml/locales/zh';
+import { zh as bilibili_plus } from '../../scripts/bilibili-plus/locales/zh';
+import { zh as chatgpt_wide } from '../../scripts/chatgpt-wide/locales/zh';
 import { zh as extension_manager } from '../../system/extension-manager/locales/zh';
 import { zh as module_store } from '../../system/module-store/locales/zh';
 import { zh as permissions } from '../../system/permissions/locales/zh';
@@ -96,9 +96,7 @@ export const TOOLS_ZH = {
 	...api_tester,
 	...archive,
 	...base64,
-	...bilibili_plus,
 	...bookmark_manager,
-	...chatgpt_wide,
 	...checksum,
 	...clipboard,
 	...code_formatter,
@@ -177,6 +175,8 @@ export const TOOLS_ZH = {
 	...xml_formatter,
 	...xor,
 	...yaml,
+	...bilibili_plus,
+	...chatgpt_wide,
 	...extension_manager,
 	...module_store,
 	...permissions,

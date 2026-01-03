@@ -11,6 +11,7 @@ const __dirname = path.dirname(__filename);
 
 const HALO_ROOT = path.resolve(__dirname, '../apps/extension-halo/src');
 const TOOLS_DIR = path.join(HALO_ROOT, 'tools');
+const SCRIPTS_DIR = path.join(HALO_ROOT, 'scripts'); // Official scripts (bilibili-plus, chatgpt-wide)
 const SYSTEM_DIR = path.join(HALO_ROOT, 'system');
 
 const OUTPUT_REGISTRY = path.join(HALO_ROOT, 'kernel/registry/_generated.ts');
@@ -236,7 +237,8 @@ import { lazy } from 'react';
 
 	const entries = panelModules.map(m => {
 		const exportName = toolExports.get(m.id) || toPascalCase(m.id) + 'Panel';
-		const folder = m.type === 'system' ? 'system' : 'tools';
+		// Map type to folder: 'system' -> 'system', 'scripts' -> 'scripts', else 'tools'
+		const folder = m.type === 'system' ? 'system' : (m.type === 'scripts' ? 'scripts' : 'tools');
 		return `\t'${m.id}': lazy(() => import('../${folder}/${m.id}/panel').then(m => ({ default: m.${exportName} })))`;
 	});
 
@@ -266,7 +268,8 @@ function generateI18n(allModules) {
 		
 		const imports = validModules.map(m => {
 			const variable = m.id.replace(/-/g, '_');
-			const folder = m.type === 'system' ? 'system' : 'tools';
+			// Map type to folder: 'system' -> 'system', 'scripts' -> 'scripts', else 'tools'
+			const folder = m.type === 'system' ? 'system' : (m.type === 'scripts' ? 'scripts' : 'tools');
 			return `import { ${lang} as ${variable} } from '../../${folder}/${m.id}/locales/${lang}';`;
 		});
 
@@ -294,8 +297,9 @@ ${spread.join('\n')}
 function main() {
 	console.log('🔍 Scanning modules...');
 	const userModules = discoverTools(TOOLS_DIR, 'tools');
+	const scriptModules = discoverTools(SCRIPTS_DIR, 'scripts'); // Official scripts
 	const systemModules = discoverTools(SYSTEM_DIR, 'system');
-	const allModules = [...userModules, ...systemModules];
+	const allModules = [...userModules, ...scriptModules, ...systemModules];
 	
 	if (allModules.length === 0) {
 		console.log('ℹ️ No modules found.');
@@ -310,6 +314,7 @@ function main() {
 	
 	// Filter out invalid ones
 	const validUserModules = userModules.filter(m => dummyMap.has(m.id));
+	const validScriptModules = scriptModules.filter(m => dummyMap.has(m.id));
 	const validSystemModules = systemModules.filter(m => dummyMap.has(m.id));
 	
 	// Check strict isolation rules
@@ -321,6 +326,14 @@ function main() {
 		}
 	});
 
+	// Script modules should have toolType: 'script'
+	validScriptModules.forEach(m => {
+		const man = dummyMap.get(m.id);
+		if (man.toolType !== 'script') {
+			console.warn(`⚠️ Script '${m.id}' in src/scripts missing toolType:'script'`);
+		}
+	});
+
 	validSystemModules.forEach(m => {
 		const man = dummyMap.get(m.id);
 		if (man.system !== true) {
@@ -329,11 +342,13 @@ function main() {
 		}
 	});
 
-	console.log(`📦 Registry: ${validUserModules.length} Tools + ${validSystemModules.length} System Plugins`);
+	console.log(`📦 Registry: ${validUserModules.length} Tools + ${validScriptModules.length} Scripts + ${validSystemModules.length} System Plugins`);
 
-	generateRegistry(validUserModules, validSystemModules, dummyMap);
-	generateLoader([...validUserModules, ...validSystemModules], dummyMap);
-	generateI18n([...validUserModules, ...validSystemModules]);
+	// Include scripts in user modules for registry (they're user-facing tools)
+	const allUserFacing = [...validUserModules, ...validScriptModules];
+	generateRegistry(allUserFacing, validSystemModules, dummyMap);
+	generateLoader([...allUserFacing, ...validSystemModules], dummyMap);
+	generateI18n([...allUserFacing, ...validSystemModules]);
 
 	console.log('\n✨ Registry generation complete!');
 }

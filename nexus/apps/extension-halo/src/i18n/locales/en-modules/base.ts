@@ -44,8 +44,10 @@ export const base = {
 		media: 'Media',
 		browser: 'Browser',
 		active: 'Active Services',
-		scripts: 'Scripts',
+		scripts: 'User Scripts',
 		system: 'System Plugins',
+		official: 'Official',
+		my: 'My',
 	},
 	settings: {
 		showLabels: 'Show Names',
