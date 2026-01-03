@@ -1,6 +1,6 @@
-
 import { useMemo } from 'react';
-import type { ToolMeta, HaloSettings } from '../../kernel';
+import type { ToolMeta } from '../../../kernel/core/tool-registry-types';
+import type { HaloSettings } from '../../../kernel/core/settings';
 import type { UserScript } from '../../../system/userscripts/types';
 
 interface UseCategorizedToolsProps {
@@ -58,11 +58,14 @@ export function useCategorizedTools({
 		});
 
 		// 2. Merge User Scripts from storage
+		// Collect registered SaaT IDs from tools registry (these have id matching tool.id)
 		const registeredSaaTIds = new Set(cats.scripts.map(t => t.id));
 
 		scripts.forEach(script => {
-			// Skip if it's a known SaaT tool that's already registered
-			if (script.saatToolId && registeredSaaTIds.has(script.saatToolId)) return;
+			// Skip SaaT scripts (those with id starting with 'saat-') that already have a tool in registry
+			if (script.id.startsWith('saat-') && registeredSaaTIds.has(script.id.replace(/^saat-([^-]+)-.+$/, '$1'))) return;
+			// Skip if this user script id is already in the scripts category
+			if (registeredSaaTIds.has(script.id)) return;
 
 			// Create pseudo ToolMeta for user script
 			const scriptTool: ToolMeta = {
@@ -122,7 +125,7 @@ export function useCategorizedTools({
 
 		// Ensure scripts is always present
 		if (!order.includes('scripts')) {
-			order = ['active', 'scripts', ...order.filter(o => o !== 'active')];
+			order = ['active', 'scripts', ...order.filter((o: string) => o !== 'active')];
 		}
 
 		return order;
