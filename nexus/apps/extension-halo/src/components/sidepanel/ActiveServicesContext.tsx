@@ -68,21 +68,26 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 		};
 
 		checkState();
-		
-		const listener = (changes: any, area: string) => {
-			let changed = false;
-			if (area === 'local' && (changes.halo_tool_clipboard_settings || changes.halo_userscripts)) changed = true;
-			if (area === 'sync' && changes.HALO_SMOOTH_SCROLL_SETTINGS) changed = true;
-			if (changed) checkState();
+	
+	// Event-driven only - no polling needed, storage.onChanged is sufficient
+	const listener = (changes: any, area: string) => {
+		let changed = false;
+		if (area === 'local' && (changes.halo_tool_clipboard_settings || changes.halo_userscripts)) changed = true;
+		if (area === 'sync' && changes.HALO_SMOOTH_SCROLL_SETTINGS) changed = true;
+		if (changed) checkState();
+	};
+	chrome.storage.onChanged.addListener(listener);
 
-		};
-		chrome.storage.onChanged.addListener(listener);
-		const interval = setInterval(checkState, 2000);
+	// Visibility-based re-check when panel becomes visible again
+	const onVisibilityChange = () => {
+		if (document.visibilityState === 'visible') checkState();
+	};
+	document.addEventListener('visibilitychange', onVisibilityChange);
 
-		return () => {
-			chrome.storage.onChanged.removeListener(listener);
-			clearInterval(interval);
-		};
+	return () => {
+		chrome.storage.onChanged.removeListener(listener);
+		document.removeEventListener('visibilitychange', onVisibilityChange);
+	};
 	}, []);
 
 	// Fast update function for UI switches

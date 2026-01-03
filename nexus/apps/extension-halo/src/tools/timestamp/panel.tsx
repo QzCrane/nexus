@@ -25,8 +25,20 @@ export const TimestampPanel: React.FC = () => {
 	const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
 	useEffect(() => {
-		const timer = setInterval(() => setNow(Date.now()), 1000);
-		return () => clearInterval(timer);
+		let timer: ReturnType<typeof setInterval> | null = null;
+		
+		const start = () => {
+			if (!timer) timer = setInterval(() => setNow(Date.now()), 1000);
+		};
+		const stop = () => {
+			if (timer) { clearInterval(timer); timer = null; }
+		};
+		
+		const onVis = () => document.visibilityState === 'visible' ? start() : stop();
+		document.addEventListener('visibilitychange', onVis);
+		if (document.visibilityState === 'visible') start();
+		
+		return () => { stop(); document.removeEventListener('visibilitychange', onVis); };
 	}, []);
 
 	const parsedDate = useMemo(() => autoParse(input) || new Date(now), [input, now]);

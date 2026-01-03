@@ -22,8 +22,10 @@ export const TotpPanel: React.FC = () => {
 
 
 
-	// Update codes every second
+	// Update codes every second (with visibility pause optimization)
 	useEffect(() => {
+		let interval: ReturnType<typeof setInterval> | null = null;
+		
 		const updateCodes = async () => {
 			const newCodes: Record<string, TotpCode> = {};
 			for (const entry of entries) {
@@ -33,9 +35,34 @@ export const TotpPanel: React.FC = () => {
 			}
 			setCodes(newCodes);
 		};
-		updateCodes();
-		const interval = setInterval(updateCodes, 1000);
-		return () => clearInterval(interval);
+		
+		const startTimer = () => {
+			if (!interval) {
+				updateCodes();
+				interval = setInterval(updateCodes, 1000);
+			}
+		};
+		
+		const stopTimer = () => {
+			if (interval) {
+				clearInterval(interval);
+				interval = null;
+			}
+		};
+		
+		// Visibility-based optimization: pause when tab not visible
+		const onVisibility = () => {
+			if (document.visibilityState === 'visible') startTimer();
+			else stopTimer();
+		};
+		
+		document.addEventListener('visibilitychange', onVisibility);
+		if (document.visibilityState === 'visible') startTimer();
+		
+		return () => {
+			stopTimer();
+			document.removeEventListener('visibilitychange', onVisibility);
+		};
 	}, [entries]);
 
 	// Add entry

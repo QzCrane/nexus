@@ -30,12 +30,27 @@ export const TabGroupPanel: React.FC = () => {
 
     useEffect(() => { load(); }, [load]);
 
-    // Listen to changes? For simplicity, just manual refresh or interval.
-    // Realtime would need chrome.tabGroups.onUpdated listeners.
+    // Event-driven updates using Chrome API listeners (no polling!)
     useEffect(() => {
         if (!hasPerm) return;
-        const interval = setInterval(load, 2000); // Polling for updates
-        return () => clearInterval(interval);
+		
+        // Chrome tabGroups event listeners
+        const onCreated = () => load();
+        const onRemoved = () => load();
+        const onUpdated = () => load();
+        const onTabUpdated = () => load();
+		
+        chrome.tabGroups?.onCreated?.addListener(onCreated);
+        chrome.tabGroups?.onRemoved?.addListener(onRemoved);
+        chrome.tabGroups?.onUpdated?.addListener(onUpdated);
+        chrome.tabs?.onUpdated?.addListener(onTabUpdated);
+		
+        return () => {
+            chrome.tabGroups?.onCreated?.removeListener(onCreated);
+            chrome.tabGroups?.onRemoved?.removeListener(onRemoved);
+            chrome.tabGroups?.onUpdated?.removeListener(onUpdated);
+            chrome.tabs?.onUpdated?.removeListener(onTabUpdated);
+        };
     }, [hasPerm, load]);
 
     const handleRequestPerm = async () => {
