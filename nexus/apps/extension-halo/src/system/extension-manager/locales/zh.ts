@@ -21,4 +21,7 @@ export const zh = {
 	'extMgr.details': '详情',
 	'extMgr.assignGroup': '分配分组',
 	'extMgr.hostPermissions': '主机权限',
+	'extMgr.permissionRequired': '需要授权',
+	'extMgr.permissionDesc': 'HALO 需要 "management" 权限来管理您的扩展。此权限是可选的，仅用于此功能，我们不会收集任何隐私。',
+	'extMgr.grantPermission': '授予权限',
 };
