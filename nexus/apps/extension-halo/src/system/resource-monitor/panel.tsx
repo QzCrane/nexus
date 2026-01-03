@@ -2,6 +2,7 @@ import React from 'react';
 import { useTranslation } from '../../i18n';
 import { useActiveServices } from '../../components/sidepanel/ActiveServicesContext';
 import { getToolMeta } from '../../kernel';
+import { analyzeImpact } from './monitor';
 
 const styles = {
 	container: {
@@ -101,7 +102,8 @@ export const ResourceMonitorPanel: React.FC = () => {
 			id,
 			meta,
 			active: activeServices.has(id),
-			type: meta.toolType === 'script' ? 'script' : 'service'
+			type: meta.toolType === 'script' ? 'script' : 'service',
+			impact: analyzeImpact(meta)
 		};
 	}).filter(Boolean);
 
@@ -123,7 +125,21 @@ export const ResourceMonitorPanel: React.FC = () => {
 					<div style={styles.icon}>{item.meta.icon}</div>
 					<div style={styles.meta}>
 						<div style={styles.name}>{name}</div>
-						<div style={styles.desc}>{typeLabel} • v{item.meta.version || '1.0.0'}</div>
+						<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+							<div style={styles.desc}>{typeLabel} • v{item.meta.version || '1.0.0'}</div>
+							{item.active && (
+								<div style={{
+									fontSize: '10px',
+									padding: '1px 6px',
+									borderRadius: '4px',
+									background: item.impact.level === 'high' ? 'rgba(239, 68, 68, 0.1)' : item.impact.level === 'medium' ? 'rgba(234, 179, 8, 0.1)' : 'var(--halo-bg-tertiary)',
+									color: item.impact.level === 'high' ? '#ef4444' : item.impact.level === 'medium' ? '#eab308' : 'var(--halo-text-muted)',
+									border: `1px solid ${item.impact.level === 'high' ? 'rgba(239, 68, 68, 0.2)' : item.impact.level === 'medium' ? 'rgba(234, 179, 8, 0.2)' : 'transparent'}`
+								}}>
+									{t(item.impact.descriptionKey)}
+								</div>
+							)}
+						</div>
 					</div>
 				</div>
 				<div style={{

@@ -13,5 +13,21 @@ export const en = {
 	"tools.resource-monitor.columns.action": "Action",
 	"tools.resource-monitor.types.script": "Script",
 	"tools.resource-monitor.types.service": "Service",
-	"tools.resource-monitor.types.listener": "Listener"
+	"tools.resource-monitor.types.listener": "Listener",
+
+	// Impact Analysis
+	"impact.level.high": "High Impact",
+	"impact.level.medium": "Medium Impact",
+	"impact.level.low": "Low Impact",
+	"impact.type.cpu": "CPU",
+	"impact.type.memory": "Memory",
+	"impact.type.network": "Network",
+	"impact.type.injection": "Injection",
+	"impact.injection_start": "Page Injection (Start)",
+	"impact.injection_idle": "Page Injection (Idle)",
+	"impact.network_listener": "Network Listener",
+	"impact.tab_listener": "Tab Monitor",
+	"impact.render_intensive": "Render Intensive",
+	"impact.background_idle": "Background Idle",
+	"impact.self_monitoring": "Self Monitoring"
 };

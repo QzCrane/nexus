@@ -1511,7 +1511,7 @@ export const SYSTEM_PLUGIN_REGISTRY: GeneratedToolMeta[] = [
 		id: 'resource-monitor',
 		icon: '⚡',
 		category: 'system',
-		size: 6526,
+		size: 10731,
 		builtIn: true,
 		system: true,
 		keywords: ["task","manager","cpu","background","service"],

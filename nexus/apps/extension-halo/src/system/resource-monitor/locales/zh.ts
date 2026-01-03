@@ -13,5 +13,21 @@ export const zh = {
 	"tools.resource-monitor.columns.action": "操作",
 	"tools.resource-monitor.types.script": "脚本",
 	"tools.resource-monitor.types.service": "服务",
-	"tools.resource-monitor.types.listener": "监听器"
+	"tools.resource-monitor.types.listener": "监听器",
+
+	// Impact Analysis
+	"impact.level.high": "高耗能",
+	"impact.level.medium": "中耗能",
+	"impact.level.low": "低耗能",
+	"impact.type.cpu": "CPU",
+	"impact.type.memory": "内存",
+	"impact.type.network": "网络",
+	"impact.type.injection": "注入",
+	"impact.injection_start": "页面前置注入",
+	"impact.injection_idle": "页面延迟注入",
+	"impact.network_listener": "全网监控",
+	"impact.tab_listener": "标签页监听",
+	"impact.render_intensive": "渲染密集",
+	"impact.background_idle": "后台待机",
+	"impact.self_monitoring": "自身监控"
 };
