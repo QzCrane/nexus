@@ -40,8 +40,22 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 	
 	// activeServices logic moved to hook
 	useSmoothWheel(scrollRef, 'y');
-	const isCompact = settings?.compactMode ?? false;
-	const userTools = useMemo(() => visibleTools.filter(t => !t.system), [visibleTools]);
+	
+	// Legacy handling: verify types in case local storage has old data
+	const SAFE_DEFAULTS = { spacing: 12, iconSize: 24 };
+	const rawSpacing = settings?.spacing;
+	const spacing = typeof rawSpacing === 'number' ? rawSpacing : (settings as any)?.compactMode ? 4 : SAFE_DEFAULTS.spacing;
+	
+	const rawIconSize = settings?.iconSize;
+	let iconSize = typeof rawIconSize === 'number' ? rawIconSize : SAFE_DEFAULTS.iconSize;
+	// Handle legacy strings
+	if (typeof rawIconSize === 'string') {
+		if (rawIconSize === 'small') iconSize = 18;
+		else if (rawIconSize === 'large') iconSize = 32;
+		else iconSize = 24;
+	}
+
+	const userTools = useMemo(() => visibleTools, [visibleTools]);
 
 	const { categorizedTools, catOrder } = useCategorizedTools({
 		visibleTools, settings, t,
@@ -82,22 +96,24 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 		if (tempCatOrder) onReorderCategories(tempCatOrder);
 		setDraggingCat(null); setTempCatOrder(null);
 	};
+	
+	const minColWidth = Math.max(64, iconSize + 48);
 
 	return (
 		<div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-			<div style={{ margin: isCompact ? '8px 0' : '12px 0', padding: '0 12px', flexShrink: 0 }}>
-				<SearchBar onSelect={(id) => onSelectTool(id as ToolId)} visibleTools={userTools} />
+			<div style={{ margin: `${spacing}px 0`, padding: '0 12px', flexShrink: 0 }}>
+				<SearchBar onSelect={(id) => onSelectTool(id as ToolId)} visibleTools={userTools.filter(t => !t.system)} />
 			</div>
-			<div ref={scrollRef} className="halo-scrollbar" style={{ ...commonStyles.toolbar as any, flex: 1, overflowY: 'auto', gap: isCompact ? '4px' : '12px', padding: isCompact ? '0 8px 8px 8px' : '0 12px 12px 12px', minHeight: 0 }}>
+			<div ref={scrollRef} className="halo-scrollbar" style={{ ...commonStyles.toolbar as any, flex: 1, overflowY: 'auto', gap: `${spacing}px`, padding: `0 ${Math.max(8, spacing)}px ${Math.max(8, spacing)}px`, minHeight: 0 }}>
 				{catOrder.map(cat => {
 					const tools = categorizedTools[cat];
 					if (!tools || tools.length === 0) return null;
 					const isActiveCat = cat === 'active';
 					return (
-						<div key={cat} style={{ ...commonStyles.categorySection as any, gap: isCompact ? '4px' : '8px' }}>
+						<div key={cat} style={{ ...commonStyles.categorySection as any, gap: `${Math.max(4, spacing / 2)}px` }}>
 						<div 
 							draggable onDragStart={(e) => onCatDragStart(e, cat)} onDragEnter={() => onCatDragEnter(cat)} onDragOver={(e) => e.preventDefault()} onDrop={onCatDrop}
-							style={{ ...commonStyles.categoryTitle as any, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: isCompact ? '2px 4px' : '4px', borderLeft: isActiveCat ? '3px solid #10b981' : 'none', background: isActiveCat ? 'rgba(76, 175, 80, 0.08)' : 'transparent' }}
+							style={{ ...commonStyles.categoryTitle as any, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '4px', borderLeft: isActiveCat ? '3px solid #10b981' : 'none', background: isActiveCat ? 'rgba(76, 175, 80, 0.08)' : 'transparent' }}
 							onClick={() => toggleCategory(cat)}
 						>
 							<div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -110,7 +126,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 							<span style={{ fontSize: '10px', opacity: 0.6 }}>{tools.length}</span>
 						</div>
 							{!collapsedCategories[cat] && (
-								<div onDragOver={(e) => e.preventDefault()} onDrop={(e) => onDrop(e, cat)} style={{ ...commonStyles.toolGrid as any, gap: isCompact ? '4px' : '8px', gridTemplateColumns: isCompact ? 'repeat(auto-fill, minmax(64px, 1fr))' : 'repeat(auto-fill, minmax(72px, 1fr))' }}>
+								<div onDragOver={(e) => e.preventDefault()} onDrop={(e) => onDrop(e, cat)} style={{ ...commonStyles.toolGrid as any, gap: `${spacing}px`, gridTemplateColumns: `repeat(auto-fill, minmax(${minColWidth}px, 1fr))` }}>
 									{tools.map(tool => {
 										const isActiveService = activeServices.has(tool.id);
 										const isBackgroundCapable = BACKGROUND_TOOL_IDS.includes(tool.id);
@@ -121,7 +137,8 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 												key={tool.id} 
 												tool={tool} 
 												settings={settings} 
-												isCompact={isCompact} 
+												iconSize={iconSize}
+												spacing={spacing}
 												showLabels={settings?.showToolLabels ?? true} 
 												draggingId={draggingId} 
 												onSelect={onSelectTool} 
@@ -140,7 +157,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 						</div>
 					);
 				})}
-				{!isCompact && <div style={{ ...commonStyles.footer as any, marginTop: '20px' }}><span>🔒 {t('footer.zeroTracking')}</span><span>•</span><span>💾 {t('footer.localOnly')}</span><span>•</span><span>🛠️ {visibleTools.filter(t => !t.system).length} {t('common.tools')}</span></div>}
+				<div style={{ ...commonStyles.footer as any, marginTop: '20px' }}><span>🔒 {t('footer.zeroTracking')}</span><span>•</span><span>💾 {t('footer.localOnly')}</span><span>•</span><span>🛠️ {visibleTools.filter(t => !t.system).length} {t('common.tools')}</span></div>
 			</div>
 		</div>
 	);

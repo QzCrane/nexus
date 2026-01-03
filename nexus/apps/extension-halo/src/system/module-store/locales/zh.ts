@@ -27,7 +27,7 @@ export const zh = {
 		filters: {
 			all: '全部类型',
 			app: '应用',
-			script: '脚本 工具',
+			script: '脚本',
 			system: '系统',
 		}
 	},

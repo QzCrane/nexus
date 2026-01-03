@@ -20,6 +20,19 @@ export interface BaseTranslations {
 		cancel: string;
 		reset: string;
 		language: string;
+		pinHint: string;
+		result: string;
+		copy: string;
+		copied: string;
+		clickToCopy: string;
+		clear: string;
+		back: string;
+		permissionRequired: string;
+		grantPermission: string;
+		permissionDesc: string;
+		available: string;
+		close: string;
+		system: string;
 	};
 	categories: Record<ToolCategory, string>;
 	footer: {

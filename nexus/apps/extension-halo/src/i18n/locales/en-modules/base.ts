@@ -27,6 +27,7 @@ export const base = {
 		permissionDesc: 'This tool requires permission to work.',
 		available: 'available',
 		close: 'Close',
+		system: 'System (Auto)',
 	},
 	categories: {
 		general: 'General',
@@ -39,6 +40,18 @@ export const base = {
 		browser: 'Browser',
 		active: 'Active Services',
 		scripts: 'Scripts',
+		system: 'System Plugins',
+	},
+	settings: {
+		showLabels: 'Show Names',
+		showLabelsDesc: 'Show tool names under icons in grid view',
+		showSystemTools: 'Show System Tools',
+		showSystemToolsDesc: 'Show "System Plugins" category in launcher',
+		iconSize: 'Icon Size',
+		iconSizeDesc: 'Adjust the size of tool icons',
+		dark: 'Dark',
+		light: 'Light',
+		system: 'System',
 	},
 	footer: {
 		zeroTracking: 'Zero tracking',

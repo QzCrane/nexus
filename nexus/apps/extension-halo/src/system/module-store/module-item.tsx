@@ -39,11 +39,12 @@ interface ModuleItemProps {
 	index: number;
 	status: 'installed' | 'available' | 'downloading' | 'updating' | 'error';
 	isCore: boolean;
+	showTypeLabel?: boolean;
 	onInstall: () => void;
 	onUninstall: () => void;
 }
 
-export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, isCore, onInstall, onUninstall }) => {
+export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, isCore, showTypeLabel = true, onInstall, onUninstall }) => {
 	const { t } = useTranslation();
 	const isInstalled = status === 'installed';
 	const isDownloading = status === 'downloading' || status === 'updating';
@@ -53,7 +54,7 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, i
 	const nameTranslation = t(nameKey);
 	const descTranslation = t(descKey);
 	
-	const displayName = String(nameTranslation) === nameKey ? module.id : String(nameTranslation);
+	const displayName = String(nameTranslation) === nameKey ? (module.name || module.id) : String(nameTranslation);
 	const displayDesc = String(descTranslation) === descKey ? '' : String(descTranslation);
 
 	const typeLabel = module.system ? t('moduleStorePanel.filters.system') 
@@ -67,7 +68,7 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, i
 			<div style={styles.info as React.CSSProperties}>
 				<div style={styles.name}>
 					{displayName}
-					<span style={styles.badgeType}>{typeLabel}</span>
+					{showTypeLabel && <span style={styles.badgeType}>{typeLabel}</span>}
 					{!isCore && !isInstalled && <span style={{ ...styles.badge, ...styles.badgeNew }}>{t('moduleStorePanel.new')}</span>}
 				</div>
 				<div style={styles.desc} title={displayDesc}>{displayDesc}</div>

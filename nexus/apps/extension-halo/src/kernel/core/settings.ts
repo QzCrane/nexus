@@ -1,14 +1,16 @@
 // goal: Global settings type definitions
 
 export type ThemeMode = 'dark' | 'light' | 'system';
-export type IconSize = 'small' | 'medium' | 'large';
+// IconSize is now a number (px)
+export type IconSize = number;
 
 export interface HaloSettings {
 	theme: ThemeMode;
 	accentColor: string;
-	compactMode: boolean; // Keeping for backward compatibility or other uses
+	spacing: number; // Replaces compactMode (px)
 	showToolLabels: boolean;
-	iconSize: IconSize;
+	showSystemTools: boolean; // Toggle for system plugins category
+	iconSize: number; // px
 	defaultTool: string | null;
 	pinnedTools: string[];
 	toolOrder: Record<string, string[]>;
@@ -17,16 +19,17 @@ export interface HaloSettings {
 }
 
 export const DEFAULT_SETTINGS: HaloSettings = {
-	theme: 'dark',
+	theme: 'system',
 	accentColor: '#7c3aed',
-	compactMode: false,
+	spacing: 12,
 	showToolLabels: true,
-	iconSize: 'medium',
+	showSystemTools: false,
+	iconSize: 24,
 	defaultTool: null,
 	pinnedTools: [],
 	toolOrder: {},
 	categoryOrder: ['active', 'general', 'dev', 'efficiency', 'visual', 'ai', 'security', 'media', 'browser'],
-	headerLayout: ['module-store', 'extension-manager', 'userscripts', 'settings'], // Default layout
+	headerLayout: ['module-store', 'extension-manager', 'permissions', 'userscripts', 'settings'], // IDs of tools to show in header
 };
 
 export const ACCENT_COLORS = [

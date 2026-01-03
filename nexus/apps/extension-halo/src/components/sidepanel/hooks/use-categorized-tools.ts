@@ -26,11 +26,20 @@ export function useCategorizedTools({
 }: UseCategorizedToolsProps) {
 	const categorizedTools = useMemo(() => {
 		if (tempCats) return tempCats;
-		const cats: Record<string, ToolMeta[]> = { active: [], scripts: [], general: [], dev: [], efficiency: [], visual: [], ai: [], security: [], media: [], browser: [] };
+		const cats: Record<string, ToolMeta[]> = { active: [], scripts: [], system: [], general: [], dev: [], efficiency: [], visual: [], ai: [], security: [], media: [], browser: [] };
 
 		// 1. Process builtin/registry tools
 		visibleTools.forEach(tool => {
-			if (tool.system) return;
+			if (tool.system) {
+				if (settings?.showSystemTools) {
+					cats.system.push(tool);
+				}
+				// Also add system tools to 'active' if they are background capable
+				if (backgroundToolIds.includes(tool.id)) {
+					cats.active.push(tool);
+				}
+				return;
+			}
 
 			// SaaT script tools go to scripts category
 			if (tool.toolType === 'script') {
@@ -92,13 +101,28 @@ export function useCategorizedTools({
 
 	const catOrder = useMemo(() => {
 		if (tempCatOrder) return tempCatOrder;
-		const defaultOrder = ['active', 'scripts', 'general', 'dev', 'efficiency', 'visual', 'ai', 'security', 'media', 'browser'];
+		const defaultOrder = ['active', 'scripts', 'system', 'general', 'dev', 'efficiency', 'visual', 'ai', 'security', 'media', 'browser'];
 		let order = settings?.categoryOrder || [];
 		if (order.length === 0) order = defaultOrder;
 
-		// Ensure active is always present if it has tools
+		// Ensure active, scripts, system are always present if they have tools (or if default requires them)
+		// We re-inject them to ensure they appear even if user config is old
+		// Specifically system if enabled
+		if (!order.includes('system') && settings?.showSystemTools) {
+			// Insert system after scripts or at beginning
+			const scriptIdx = order.indexOf('scripts');
+			if (scriptIdx !== -1) order.splice(scriptIdx + 1, 0, 'system');
+			else order.unshift('system');
+		}
+
+		// Ensure active is always present
 		if (!order.includes('active')) {
 			order = ['active', ...order];
+		}
+
+		// Ensure scripts is always present
+		if (!order.includes('scripts')) {
+			order = ['active', 'scripts', ...order.filter(o => o !== 'active')];
 		}
 
 		return order;

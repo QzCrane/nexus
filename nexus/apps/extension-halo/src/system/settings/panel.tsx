@@ -4,7 +4,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { createLogger } from '@nexus/kernel';
-import { useTranslation, type Locale } from '../../i18n';
+import { useTranslation, type Locale, detectLocale, LOCALES } from '../../i18n';
 import type { HaloSettings } from '../../kernel';
 import { DEFAULT_SETTINGS } from '../../kernel';
 import { loadSettings, saveSettings, getThemeColors, applyTheme } from '../../kernel';
@@ -19,7 +19,7 @@ interface SettingsPanelProps {
 }
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsChange }) => {
-	const { t, locale, setLocale } = useTranslation();
+	const { t, setting, setLocale } = useTranslation();
 	const [settings, setSettings] = useState<HaloSettings>(DEFAULT_SETTINGS);
 	const [toast, setToast] = useState<string | null>(null);
 
@@ -50,9 +50,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsChange }
 	}, [onSettingsChange]);
 
 	const handleLanguageChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
-		const newLocale = e.target.value as Locale;
-		setLocale(newLocale);
-		logger.info('Language changed to:', newLocale);
+		const newSetting = e.target.value as Locale | 'system';
+		setLocale(newSetting);
+		logger.info('Language changed to:', newSetting);
 	}, [setLocale]);
 
 	const handleReset = useCallback(async () => {
@@ -84,9 +84,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsChange }
 						</div>
 						<select 
 							style={styles.select} 
-							value={locale} 
+							value={setting} 
 							onChange={handleLanguageChange}
 						>
+							<option value="system">
+								{LOCALES[detectLocale()].common.system || t('common.system')}
+							</option>
 							<option value="en">English</option>
 							<option value="zh">简体中文</option>
 						</select>

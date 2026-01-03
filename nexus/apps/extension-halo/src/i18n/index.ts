@@ -2,12 +2,13 @@
 // eff: Delegates core logic to i18n-core.ts
 
 import { useState, useEffect, useCallback, createContext, useContext } from 'react';
-import type { Locale, TranslationKeys } from './types';
+import type { Locale, TranslationKeys, LocaleSetting } from './types';
 import {
 	STORAGE_KEY,
 	REGISTRY,
 	listeners,
-	globalLocale,
+	currentSetting,
+	resolvedLocale,
 	i18nReady,
 	setGlobalLocale,
 	setI18nReady,
@@ -15,15 +16,17 @@ import {
 	getByPath,
 	registerTranslations,
 	waitForI18n,
+	detectLocale,
 } from './i18n-core';
 
 // Re-export core functions
-export { registerTranslations, waitForI18n };
+export { registerTranslations, waitForI18n, detectLocale };
 
 // i18n context
 interface I18nContextValue {
 	locale: Locale;
-	setLocale: (locale: Locale) => void;
+	setting: LocaleSetting;
+	setLocale: (setting: LocaleSetting) => void;
 	t: (path: string, options?: { defaultValue?: string } & Record<string, any>) => string;
 	translations: TranslationKeys;
 }
@@ -38,13 +41,15 @@ export const useI18n = (): I18nContextValue => {
 
 // Optimized hook that syncs globally across all components
 export function useTranslation() {
-	const [locale, setLocaleState] = useState<Locale>(globalLocale);
+	const [locale, setLocale] = useState<Locale>(resolvedLocale);
+	const [setting, setSetting] = useState<LocaleSetting>(currentSetting);
 	const [ready, setReady] = useState(i18nReady);
 	const [tick, setTick] = useState(0);
 
 	useEffect(() => {
 		const onUpdate = () => {
-			setLocaleState(globalLocale);
+			setLocale(resolvedLocale);
+			setSetting(currentSetting);
 			setReady(i18nReady);
 			setTick((t) => t + 1);
 		};
@@ -54,26 +59,24 @@ export function useTranslation() {
 		};
 	}, []);
 
-	const setLocale = useCallback(async (newLocale: Locale) => {
-		if (newLocale === globalLocale) return;
+	const updateLocale = useCallback(async (newSetting: LocaleSetting) => {
+		if (newSetting === currentSetting) return;
 
-		setGlobalLocale(newLocale);
+		setGlobalLocale(newSetting);
 		setI18nReady(true);
 
 		if (typeof chrome !== 'undefined' && chrome.storage) {
-			await chrome.storage.sync.set({ [STORAGE_KEY]: newLocale });
+			await chrome.storage.sync.set({ [STORAGE_KEY]: newSetting });
 		}
 		notify();
 	}, []);
 
 	const t = useCallback((path: string, options?: { defaultValue?: string } & Record<string, any>): string => {
 		const { defaultValue, ...params } = options || {};
-		const val = getByPath(REGISTRY[globalLocale], path, params);
+		const val = getByPath(REGISTRY[resolvedLocale], path, params);
 
 		if (val === path && defaultValue) {
 			// If key not found (val === path), return defaultValue
-			// We should also attempt interpolation on defaultValue if needed, but for now simple return is standard
-			// Or we could interpolate defaultValue too:
 			let result = defaultValue;
 			Object.entries(params).forEach(([key, value]) => {
 				result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), String(value));
@@ -83,13 +86,13 @@ export function useTranslation() {
 		return val;
 	}, [tick]);
 
-	const translations = REGISTRY[globalLocale];
+	const translations = REGISTRY[resolvedLocale];
 
-	return { locale, setLocale, t, translations, ready };
+	return { locale, setting, setLocale: updateLocale, t, translations, ready };
 }
 
 // Provider exports
 export { I18nContext };
-export type { Locale, TranslationKeys };
+export type { Locale, LocaleSetting, TranslationKeys };
 export { REGISTRY as LOCALES };
 

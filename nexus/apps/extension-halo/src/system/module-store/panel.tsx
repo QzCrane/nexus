@@ -5,17 +5,31 @@ import { useModuleManager } from '../../kernel';
 import { useRemoteRegistry } from '../../kernel';
 import { ALL_MODULES, formatModuleSize } from '../../kernel';
 import { ModuleList } from './module-list';
-import { TypeFilter, FilterType } from './type-filter';
-import { filterBySearch, MODULE_SEARCH_OPTIONS } from '../../kernel/utils/unified-search';
-import { styles as searchStyles } from '../../components/SearchBar.styles';
+import { StoreHeader } from './store-header';
+import { useUserScripts } from '../../system/userscripts/hooks';
 import { styles } from './panel.styles';
+import { FilterType } from './type-filter';
+import { filterBySearch, MODULE_SEARCH_OPTIONS } from '../../kernel/utils/unified-search';
+import { UserScript } from '../../system/userscripts/types';
 
 type ViewMode = 'installed' | 'available' | 'all' | 'updates';
+
+interface ModuleListProps {
+	updates: string[];
+	displayModules: typeof ALL_MODULES;
+	installedModules: typeof ALL_MODULES;
+	installingId: string | null;
+	view: ViewMode;
+	handleInstall: (id: string) => void;
+	handleUninstall: (m: typeof ALL_MODULES[0]) => void;
+	userScripts: UserScript[]; // Injected user scripts
+}
 
 export const ModuleStorePanel: React.FC = () => {
 	const { t } = useTranslation();
 	const { loading, installedModules, availableModules, getStatus, install, uninstall, isCore } = useModuleManager();
 	const { loading: remoteLoading, hasUpdates, updates, refresh } = useRemoteRegistry();
+	const { scripts } = useUserScripts();
 	const [view, setView] = useState<ViewMode>('all');
 	const [filterType, setFilterType] = useState<FilterType>('all');
 	const [installing, setInstalling] = useState<string | null>(null);
@@ -90,12 +104,36 @@ export const ModuleStorePanel: React.FC = () => {
 		return true;
 	};
 
+	// Convert scripts to modules (Memoized)
+	const scriptModules = React.useMemo(() => scripts.map(s => ({
+		id: s.id,
+		name: s.name,
+		description: s.description,
+		icon: '📜',
+		category: 'scripts',
+		toolType: 'script',
+		builtIn: false,
+		size: s.code.length,
+		system: false,
+		status: 'ready',
+		keywords: ['script', 'user']
+	})) as typeof ALL_MODULES, [scripts]);
+
+	// Combined installed list for status checks
+	const allInstalledModules = React.useMemo(() => [...installedModules, ...scriptModules], [installedModules, scriptModules]);
+
 	const getFilteredModules = () => {
 		// 1. Filter by Status (View)
-		let source = view === 'installed' ? installedModules
-			: view === 'available' ? availableModules
-			: ALL_MODULES;
-		
+		let source: typeof ALL_MODULES = [];
+
+		if (view === 'installed') {
+			source = allInstalledModules;
+		} else if (view === 'available') {
+			source = availableModules; // User scripts aren't "available" in store
+		} else { // all
+			source = [...ALL_MODULES];
+		}
+
 		// 2. Filter by Type
 		source = source.filter(filterByType);
 
@@ -105,7 +143,7 @@ export const ModuleStorePanel: React.FC = () => {
 
 	const displayModules = getFilteredModules();
 
-	const statsModules = installedModules.filter(filterByType);
+	const statsModules = allInstalledModules.filter(filterByType);
 	const totalInstalled = statsModules.length;
 	const totalSize = statsModules.reduce((sum, m) => sum + (m.size || 0), 0);
 
@@ -123,74 +161,31 @@ export const ModuleStorePanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
-			<div style={styles.header}>
-				{/* Top Row: Search + Refresh */}
-				<div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%', marginBottom: '8px' }}>
-					<div style={{
-						...searchStyles.inputWrapper,
-						...(isSearchFocused ? searchStyles.inputWrapperFocus : {}),
-						flex: 1,
-						padding: '4px 12px',
-						height: '36px',
-						background: 'var(--halo-bg-secondary)',
-						display: 'flex',
-						alignItems: 'center',
-						cursor: 'text'
-					}}
-					onClick={() => searchInputRef.current?.focus()}
-					>
-					<span style={{ fontSize: '14px', opacity: 0.5, marginRight: '8px' }}>🔍</span>
-						<input
-							ref={searchInputRef}
-							style={{ ...searchStyles.input as React.CSSProperties, fontSize: '14px', width: '100%' }}
-							type="text"
-							value={searchQuery}
-							onChange={(e) => setSearchQuery(e.target.value)}
-							onFocus={() => setIsSearchFocused(true)}
-							onBlur={() => setIsSearchFocused(false)}
-							placeholder={t('moduleStorePanel.searchPlaceholder') || t('common.search')}
-						/>
-						{!isSearchFocused && !searchQuery && <span style={searchStyles.shortcut as React.CSSProperties}>⌘K</span>}
-					</div>
-					<button style={{ ...styles.btnRefresh, height: '36px', width: '36px' }} onClick={handleRefresh} disabled={remoteLoading} title={t('moduleStorePanel.checkUpdates')}>
-						{remoteLoading ? '⏳' : '🔄'}
-					</button>
-				</div>
-
-				{/* Middle Row: Type Filters */}
-				<TypeFilter value={filterType} onChange={setFilterType} />
-
-				{/* Bottom Row: Tabs */}
-				<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-					<div style={styles.tabs}>
-						{(['all', 'installed', 'available'] as ViewMode[]).map((v) => (
-							<button
-								key={v}
-								style={{ ...styles.tab, ...(view === v ? styles.tabActive : {}) }}
-								onClick={() => setView(v)}
-							>
-								{v === 'all' ? t('moduleStorePanel.all') : v === 'installed' ? t('moduleStorePanel.installed') : t('moduleStorePanel.available')}
-							</button>
-						))}
-						{hasUpdates && (
-							<button
-								style={{ ...styles.tab, ...(view === 'updates' ? styles.tabActive : styles.tabUpdate) }}
-								onClick={() => setView('updates')}
-							>
-								{t('moduleStorePanel.updates')} ({updates.length})
-							</button>
-						)}
-					</div>
-					<span style={styles.stats}>{t('moduleStorePanel.statsResult', { count: totalInstalled, size: formatModuleSize(totalSize) })}</span>
-				</div>
-			</div>
+			<StoreHeader
+				searchQuery={searchQuery}
+				setSearchQuery={setSearchQuery}
+				isSearchFocused={isSearchFocused}
+				setIsSearchFocused={setIsSearchFocused}
+				searchInputRef={searchInputRef}
+				handleRefresh={handleRefresh}
+				remoteLoading={remoteLoading}
+				filterType={filterType}
+				setFilterType={setFilterType}
+				view={view}
+				setView={setView}
+				hasUpdates={hasUpdates}
+				updatesCount={updates.length}
+				totalInstalled={totalInstalled}
+				totalSize={totalSize}
+			/>
 
 			<ModuleList
 				updates={updates}
 				displayModules={displayModules}
-				installedModules={installedModules}
+				installedModules={allInstalledModules}
 				installingId={installing}
 				view={view}
+				filterType={filterType}
 				handleInstall={handleInstall}
 				handleUninstall={handleUninstall}
 			/>

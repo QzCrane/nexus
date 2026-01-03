@@ -10,7 +10,8 @@ import { ImportExportModal } from './components/ImportExportModal';
 import { SettingsModal } from './components/SettingsModal';
 import { EmptyState } from './components/EmptyState';
 import { useUserScripts, useScriptEditor, useImportExport } from './hooks';
-import { SCRIPT_TEMPLATES } from './templates';
+import { UserscriptsToolbar } from './components/toolbar';
+import { UserscriptsTemplates } from './components/templates';
 import { matchesUrl } from './utils';
 
 export const UserScriptsPanel: React.FC = () => {
@@ -34,41 +35,7 @@ export const UserScriptsPanel: React.FC = () => {
 
     const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
 
-    const renderToolbarItems = () => {
-        const order = toolbarConfig?.order || ['add', 'export', 'import'];
-        const hideOnOverflow = toolbarConfig?.hideOnOverflow || false;
 
-        const items: Record<string, React.ReactNode> = {
-            'add': (
-                <button key="add" style={styles.btn} onClick={() => { setEditingId(null); setShowEditor(true); }}>
-                    ➕ {t('userscripts.addNew', { defaultValue: 'Add Script' })}
-                </button>
-            ),
-            'export': (
-                <button key="export" style={styles.btnSecondary} onClick={() => handleExport(scripts)}>
-                    📤 {t('userscripts.export', { defaultValue: 'Export' })}
-                </button>
-            ),
-            'import': (
-                <button key="import" style={styles.btnSecondary} onClick={() => setModalMode('import')}>
-                    📥 {t('userscripts.import', { defaultValue: 'Import' })}
-                </button>
-            )
-        };
-
-        return (
-            <div style={{
-                ...styles.btnGroup,
-                flexWrap: hideOnOverflow ? 'nowrap' : 'wrap',
-                overflowX: hideOnOverflow ? 'hidden' : 'visible', // Use hidden or auto? Requirement: "Hide if no position"
-                // If we want items to truly hide (disappear) when they don't fit without scrolling, 
-                // we'd need ResizeObserver. But 'hidden' overflow with nowrap clips them.
-                // Assuming clipping is acceptable for "hide".
-            }}>
-                {order.map(key => items[key])}
-            </div>
-        );
-    };
 
 	return (
 		<div style={styles.wrapper}>
@@ -102,7 +69,12 @@ export const UserScriptsPanel: React.FC = () => {
 			</div>
 
 			{/* Configurable Toolbar */}
-			{renderToolbarItems()}
+			<UserscriptsToolbar 
+				config={toolbarConfig} 
+				onAdd={() => { setEditingId(null); setShowEditor(true); }}
+				onExport={() => handleExport(scripts)}
+				onImport={() => setModalMode('import')}
+			/>
 
 			{/* Permission Warning */}
 			{!hasPermission && (
@@ -132,26 +104,7 @@ export const UserScriptsPanel: React.FC = () => {
 
 			{/* Templates */}
 			{!showEditor && (
-				<div>
-					<div style={styles.sectionTitle}>📋 {t('userscripts.templates', { defaultValue: 'Templates' })}</div>
-					<div style={styles.templatesGrid}>
-						{Object.entries(SCRIPT_TEMPLATES).map(([key, tpl]) => {
-							// Map template key to i18n key
-							const tplNameKey = key === 'adblock' ? 'tplAdblock'
-								: key === 'darkForce' ? 'tplDarkForce'
-								: key === 'removeOverlay' ? 'tplRemoveOverlay'
-								: key === 'customCSS' ? 'tplCustomCSS'
-								: 'tplBlockSpace';
-							const tplIcon = key === 'adblock' ? '🚫' : key === 'darkForce' ? '🌙' : key === 'removeOverlay' ? '🪟' : key === 'customCSS' ? '🎨' : '⌨️';
-							return (
-								<button key={key} style={styles.templateBtn} onClick={() => loadTemplate(key as keyof typeof SCRIPT_TEMPLATES)}>
-									<span style={styles.templateIcon}>{tplIcon}</span>
-									<span style={{ fontSize: '11px' }}>{t(`userscripts.${tplNameKey}`, { defaultValue: tpl.name.split(' ')[0] })}</span>
-								</button>
-							);
-						})}
-					</div>
-				</div>
+				<UserscriptsTemplates onLoad={loadTemplate} />
 			)}
 
 			{/* Editor */}

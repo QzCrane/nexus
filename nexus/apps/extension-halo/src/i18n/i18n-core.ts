@@ -1,7 +1,7 @@
 // goal: i18n core logic (initialization + locale management)
 // eff: Separated from hook for better modularity
 
-import type { Locale, TranslationKeys } from './types';
+import type { Locale, LocaleSetting, TranslationKeys } from './types';
 import { en } from './locales/en';
 import { zh } from './locales/zh';
 import { safeStorageGet } from '../kernel/core/safe-storage';
@@ -13,11 +13,26 @@ export const REGISTRY: Record<Locale, TranslationKeys> = { en, zh };
 export const listeners = new Set<() => void>();
 
 // Internal global state
-export let globalLocale: Locale = 'en';
+export let currentSetting: LocaleSetting = 'system';
+export let resolvedLocale: Locale = 'en';
 export let i18nReady = false;
 
-export function setGlobalLocale(locale: Locale) {
-	globalLocale = locale;
+// Detect browser language
+export function detectLocale(): Locale {
+	const lang = navigator.language.toLowerCase();
+	if (lang.startsWith('zh')) return 'zh';
+	return 'en';
+}
+
+function resolve(setting: LocaleSetting): Locale {
+	if (setting === 'system') return detectLocale();
+	return setting;
+}
+
+export function setGlobalLocale(setting: LocaleSetting) {
+	currentSetting = setting;
+	resolvedLocale = resolve(setting);
+	notify();
 }
 
 export function setI18nReady(ready: boolean) {
@@ -64,13 +79,6 @@ export function getByPath(obj: unknown, path: string, params?: Record<string, an
 	return result;
 }
 
-// Detect browser language
-export function detectLocale(): Locale {
-	const lang = navigator.language.toLowerCase();
-	if (lang.startsWith('zh')) return 'zh';
-	return 'en';
-}
-
 // Promise for async initialization (Suspense-compatible)
 let resolveInit: (() => void) | null = null;
 export const i18nPromise = new Promise<void>((resolve) => {
@@ -81,19 +89,23 @@ export const i18nPromise = new Promise<void>((resolve) => {
 export const initI18n = async () => {
 	if (typeof chrome !== 'undefined' && chrome.storage) {
 		try {
-			const result = await safeStorageGet([STORAGE_KEY], { [STORAGE_KEY]: undefined } as Partial<Record<string, unknown>>);
-			const saved = result[STORAGE_KEY] as Locale | undefined;
-			if (saved && saved in REGISTRY) {
-				globalLocale = saved;
+			const result = await safeStorageGet([STORAGE_KEY], { [STORAGE_KEY]: 'system' } as Partial<Record<string, unknown>>);
+			const saved = result[STORAGE_KEY] as LocaleSetting | undefined;
+
+			if (saved) {
+				currentSetting = saved;
 			} else {
-				globalLocale = detectLocale();
+				currentSetting = 'system';
 			}
 		} catch {
-			globalLocale = detectLocale();
+			currentSetting = 'system';
 		}
 	} else {
-		globalLocale = detectLocale();
+		currentSetting = 'system';
 	}
+
+	resolvedLocale = resolve(currentSetting);
+
 	i18nReady = true;
 	resolveInit?.();
 	notify();
@@ -112,7 +124,9 @@ initI18n();
 if (typeof chrome !== 'undefined' && chrome.storage) {
 	chrome.storage.onChanged.addListener((changes, area) => {
 		if (area === 'sync' && changes[STORAGE_KEY]) {
-			globalLocale = changes[STORAGE_KEY].newValue;
+			const newSetting = changes[STORAGE_KEY].newValue as LocaleSetting;
+			currentSetting = newSetting;
+			resolvedLocale = resolve(newSetting);
 			i18nReady = true;
 			notify();
 		}

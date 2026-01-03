@@ -9,7 +9,8 @@ import { getCategoryColor, StatusIndicators, PinOverlay, ToolAnimations } from '
 interface LauncherToolItemProps {
 	tool: ToolMeta;
 	settings: HaloSettings | null;
-	isCompact: boolean;
+	iconSize: number;
+	spacing: number;
 	showLabels: boolean;
 	draggingId: string | null;
 	onSelect: (id: ToolId) => void;
@@ -24,7 +25,7 @@ interface LauncherToolItemProps {
 }
 
 export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
-	tool, settings, isCompact, showLabels, draggingId,
+	tool, settings, iconSize, spacing, showLabels, draggingId,
 	onSelect, onTogglePin, onDragStart, onDragOver, onDrop, isRunning, serviceState,
 	onToggleScript
 }) => {
@@ -54,6 +55,15 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 			await toggleScriptTool(tool);
 		}
 	}, [isScriptTool, onToggleScript, tool]);
+
+	const fontSize = `${iconSize}px`;
+	const padding = Math.max(4, spacing / 2) + 'px';
+	
+	// Dynamic pin overlay logic needed since isCompact prop is gone
+	// We can infer compactness if padding/spacing is small, but PinOverlay mainly just needs size info?
+	// Actually PinOverlay uses isCompact to select size.
+	// Let's pass `isCompact` as (iconSize < 24) or (spacing < 8) to PinOverlay for now as fallback
+	const _inferredCompact = iconSize < 24;
 
 	return (
 		<div
@@ -87,7 +97,7 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 					...commonStyles.toolBtn as React.CSSProperties,
 					aspectRatio: '1/1', height: 'auto', width: '100%',
 					opacity: isReady ? 1 : 0.3, cursor: isReady ? 'grab' : 'not-allowed',
-					padding: isCompact ? '4px 2px' : '8px 4px',
+					padding: padding,
 					border: isPinned ? `1.5px solid ${mainThemeColor}` : isHovered && isReady ? `1.5px solid ${mainThemeColor}44` : '1px solid var(--halo-border)',
 					background: isPinned ? `linear-gradient(135deg, var(--halo-bg-secondary), ${mainThemeColor}08)` : 'var(--halo-bg-tertiary)',
 					boxShadow: isPinned ? `0 4px 12px ${mainThemeColor}25` : isHovered && isReady ? '0 6px 20px rgba(0,0,0,0.35)' : 'none',
@@ -107,23 +117,21 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 
 				<span style={{ 
 					...commonStyles.toolIcon as React.CSSProperties, 
-					fontSize: settings?.iconSize === 'large' ? (isCompact ? '28px' : '32px') : 
-							  settings?.iconSize === 'small' ? (isCompact ? '16px' : '18px') : 
-							  (isCompact ? '20px' : '24px'),
-					marginBottom: isCompact ? '2px' : '4px',
+					fontSize: fontSize,
+					marginBottom: '4px',
 					transition: 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
 					transform: isHovered ? 'scale(1.15)' : 'scale(1)'
 				}}>{tool.icon}</span>
 
 				{showLabels && <span style={{ 
 					...commonStyles.toolLabel as React.CSSProperties, 
-					fontSize: isCompact ? '10px' : '11px', color: isPinned ? 'var(--halo-text)' : 'var(--halo-text-muted)',
+					fontSize: iconSize < 24 ? '10px' : '11px', color: isPinned ? 'var(--halo-text)' : 'var(--halo-text-muted)',
 					fontWeight: isPinned ? 600 : 400
 				}}>{t(`tools.${tool.id}.name`)}</span>}
 				
 				{(isPinned || (isHovered && isReady)) && (
 					<PinOverlay 
-						isPinned={!!isPinned} isPinHovered={isPinHovered} isCompact={isCompact} 
+						isPinned={!!isPinned} isPinHovered={isPinHovered} isCompact={_inferredCompact} 
 						onToggle={handleTogglePin} onMouseEnter={() => setIsPinHovered(true)} onMouseLeave={() => setIsPinHovered(false)} 
 					/>
 				)}
