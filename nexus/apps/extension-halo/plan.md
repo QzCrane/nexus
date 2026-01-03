@@ -47,6 +47,14 @@
 - **System Isolation**: 插件管家等系统工具彻底从 Launcher Grid 和搜索中隐藏，仅保留 Header 入口。
 - **Feature**: 插件管家 (Extension Manager) 完成，支持分组、批量操作和权限检查逻辑。
 
+### v2.5.0 Script Store & Fork Mode (2026-01-03)
+
+- **Script Store Refactor**: ✅ 独立 `src/scripts/` 目录管理 SaaT (Script-as-a-Tool)。Registry 自动扫描 Tools + Scripts + System 三目录。
+- **UI Logic**: Module Store 提供 "Built-in Scripts" (Official) 和 "User Scripts" (Read-only) 分组视图。
+- **Fork Mode**: 编辑官方 SaaT 脚本时自动触发 "Fork"，创建新的自定义脚本副本，原版保持纯净。
+- **Active Service Integration**: 脚本启用后自动显示在 "后台助手" 分类并带有绿标指示。
+- **UI Taxonomy**: "增强脚本" 改名为 "用户脚本" (User Scripts)，细分为 "官方" 和 "我的"。
+
 ## 🚧 核心任务 (SIP - v2.3.0)
 
 ### 架构统一与系统隔离 (Unified SSOT & System Isolation)
