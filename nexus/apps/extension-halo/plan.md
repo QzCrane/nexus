@@ -55,6 +55,12 @@
 - **Active Service Integration**: 脚本启用后自动显示在 "后台助手" 分类并带有绿标指示。
 - **UI Taxonomy**: "增强脚本" 改名为 "用户脚本" (User Scripts)，细分为 "官方" 和 "我的"。
 
+### v2.6.0 Resource Monitor (2026-01-03)
+
+- **System Module**: ✅ `resource-monitor` 系统级面板，集中即时展示所有 Active Services (后台服务 + 活跃脚本)。
+- **Integration**: 深度集成 `ActiveServicesContext` 与脚本引擎状态。
+- **Entry**: 通过 SidePanel Header ⚡ 图标快速进入。
+
 ## 🚧 核心任务 (SIP - v2.3.0)
 
 ### 架构统一与系统隔离 (Unified SSOT & System Isolation)
