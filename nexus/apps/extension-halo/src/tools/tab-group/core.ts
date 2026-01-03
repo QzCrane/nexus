@@ -38,19 +38,19 @@ export async function getGroups(): Promise<TabGroupInfo[]> {
 	return result;
 }
 
-export async function createGroup(title: string, color: chrome.tabGroups.ColorEnum): Promise<void> {
+export async function createGroup(title: string, color: chrome.tabGroups.Color): Promise<void> {
 	const tabs = await chrome.tabs.query({ highlighted: true, currentWindow: true });
 	if (tabs.length === 0) return;
 
-	const groupId = await chrome.tabs.group({ tabIds: tabs.map(t => t.id!) });
+	const groupId = await (chrome.tabs.group({ tabIds: tabs.map(t => t.id!) as [number, ...number[]] }) as unknown as Promise<number>);
 	await chrome.tabGroups.update(groupId, { title, color });
 }
 
 export async function ungroup(groupId: number): Promise<void> {
 	const tabs = await chrome.tabs.query({ groupId });
-	await chrome.tabs.ungroup(tabs.map(t => t.id!));
+	await (chrome.tabs.ungroup(tabs.map(t => t.id!) as [number, ...number[]]));
 }
 
-export async function updateGroup(groupId: number, update: chrome.tabGroups.UpdateProperties): Promise<void> {
+export async function updateGroup(groupId: number, update: { collapsed?: boolean; color?: chrome.tabGroups.Color; title?: string }): Promise<void> {
 	await chrome.tabGroups.update(groupId, update);
 }

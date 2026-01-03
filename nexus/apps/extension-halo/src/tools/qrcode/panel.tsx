@@ -13,11 +13,15 @@ import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
 
 
+import { useToast } from '../../components/ToastProvider';
+
+
 const logger = createLogger('QRCode', 'HALO');
 type TabMode = 'generate' | 'scan';
 
 export const QRCodePanel: React.FC = () => {
 	const { t } = useTranslation();
+    const { showToast } = useToast();
 	const [mode, setMode] = useToolState<TabMode>('qrcode-mode' as any, 'generate');
 	const [text, setText] = useToolState<string>('qrcode', '');
 	const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
@@ -26,13 +30,13 @@ export const QRCodePanel: React.FC = () => {
 
 	const [history, setHistory] = useState<string[]>([]);
 	const [scanResult, setScanResult] = useState<ScanResult | null>(null);
-	const [toast, setToast] = useState<string | null>(null);
+	// const [toast, setToast] = useState<string | null>(null); // Removed locally
 	
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const logoInputRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => { loadHistory().then(setHistory); }, []);
-	const showToast = useCallback((msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2000); }, []);
+	// const showToast = ... // Removed local implementation
 
 	const handleGenerate = useCallback(async () => {
 		if (!text.trim()) return;
@@ -122,7 +126,7 @@ export const QRCodePanel: React.FC = () => {
 							{/^https?:\/\//i.test(scanResult.data) && <button style={{ ...styles.actionBtn, background: 'var(--halo-accent)', color: '#fff', border: 'none' }} onClick={() => window.open(scanResult.data)}>🔗 Open</button>}</div></div>}
 				</>
 			)}
-			{toast && <div style={styles.toast}>{toast}</div>}
+{/* Toast removed */}
 		</div>
 	);
 };

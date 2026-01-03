@@ -9,21 +9,22 @@ import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
 
 
+import { useToast } from '../../components/ToastProvider';
+
+
 export const PasswordGenPanel: React.FC = () => {
 	const { t } = useTranslation();
+    const { showToast } = useToast();
 	const [config, setConfig] = useToolState<PasswordConfig>('password-gen-opts' as any, DEFAULT_CONFIG);
 
 	const [password, setPassword] = useState(() => generatePassword(DEFAULT_CONFIG));
 	const [bulkPasswords, setBulkPasswords] = useState<string[]>([]);
 	const [showBulk, setShowBulk] = useState(false);
-	const [toast, setToast] = useState<string | null>(null);
+	// const [toast, setToast] = useState<string | null>(null); // Removed
 
 	const strength = useMemo(() => evaluateStrength(password), [password]);
 
-	const showToast = useCallback((msg: string) => {
-		setToast(msg);
-		setTimeout(() => setToast(null), 1500);
-	}, []);
+	// const showToast = ... // Removed local implementation
 
 	const handleGenerate = useCallback(() => {
 		if (showBulk) {
@@ -121,14 +122,7 @@ export const PasswordGenPanel: React.FC = () => {
 				</div>
 			</Card>
 
-			{toast && (
-				<div style={{ 
-					position: 'fixed', bottom: '60px', left: '50%', transform: 'translateX(-50%)',
-					background: 'var(--halo-accent)', color: '#fff', padding: '8px 16px', borderRadius: '20px', fontSize: '12px'
-				}}>
-					{toast}
-				</div>
-			)}
+{/* Toast removed */}
 		</div>
 	);
 };

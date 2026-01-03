@@ -24,8 +24,8 @@ function base32ToBytes(base32: string): Uint8Array {
 
 // HMAC-SHA1 implementation using Web Crypto API
 async function hmacSha1(key: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
-	const cryptoKey = await crypto.subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
-	const sig = await crypto.subtle.sign('HMAC', cryptoKey, data);
+	const cryptoKey = await crypto.subtle.importKey('raw', key as any, { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+	const sig = await crypto.subtle.sign('HMAC', cryptoKey, data as any);
 	return new Uint8Array(sig);
 }
 

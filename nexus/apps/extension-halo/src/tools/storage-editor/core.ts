@@ -49,10 +49,10 @@ export async function setStorageItem(key: string, value: string, type: 'localSto
 
 		await chrome.scripting.executeScript({
 			target: { tabId: tab.id },
-			func: (k: string, v: string, t: string) => {
+			func: ((k: string, v: string, t: string) => {
 				if (t === 'localStorage') localStorage.setItem(k, v);
 				else sessionStorage.setItem(k, v);
-			},
+			}) as any,
 			args: [key, value, type],
 		});
 
@@ -70,10 +70,10 @@ export async function deleteStorageItem(key: string, type: 'localStorage' | 'ses
 
 		await chrome.scripting.executeScript({
 			target: { tabId: tab.id },
-			func: (k: string, t: string) => {
+			func: ((k: string, t: string) => {
 				if (t === 'localStorage') localStorage.removeItem(k);
 				else sessionStorage.removeItem(k);
-			},
+			}) as any,
 			args: [key, type],
 		});
 

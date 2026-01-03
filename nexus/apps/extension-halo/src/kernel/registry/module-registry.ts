@@ -68,6 +68,5 @@ export const formatModuleSize = (bytes: number): string => {
 };
 
 // Re-export for backward compatibility
-export { type ToolMeta as ModuleMeta } from '../core/tool-registry-types';
 export { ALL_APPS as GENERATED_TOOLS, type GeneratedToolMeta } from './_generated';
 

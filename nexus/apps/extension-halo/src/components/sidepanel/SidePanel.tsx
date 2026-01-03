@@ -10,6 +10,7 @@ import { useSidePanelState } from './use-sidepanel-state';
 import { EngineStatusProvider } from './EngineStatusProvider';
 import { ActiveServicesProvider } from './ActiveServicesContext';
 import { SidePanelProvider, type SidePanelContextValue } from './SidePanelContext';
+import { ToastProvider } from '../ToastProvider';
 
 export const SidePanel: React.FC = () => {
 	const { t, ready: i18nReady } = useTranslation();
@@ -52,13 +53,14 @@ export const SidePanel: React.FC = () => {
 
 	return (
 		<SidePanelProvider value={contextValue}>
-			<ActiveServicesProvider>
-				<EngineStatusProvider>
-					<div style={{ 
-						position: 'relative', width: '100%', height: '100%', 
-						overflow: 'hidden', background: 'var(--halo-bg, #1a1a1a)', 
-						color: 'var(--halo-text)', display: 'flex', flexDirection: 'column'
-					}}>
+			<ToastProvider>
+				<ActiveServicesProvider>
+					<EngineStatusProvider>
+						<div style={{ 
+							position: 'relative', width: '100%', height: '100%', 
+							overflow: 'hidden', background: 'var(--halo-bg, #1a1a1a)', 
+							color: 'var(--halo-text)', display: 'flex', flexDirection: 'column'
+						}}>
 						{/* GLOBAL PERSISTENT HEADER: NEVER ANIMATES, FIXED AT TOP */}
 						<LauncherHeader
 							activeTool={state.activeTool}
@@ -96,7 +98,8 @@ export const SidePanel: React.FC = () => {
 					</div>
 				</EngineStatusProvider>
 			</ActiveServicesProvider>
-		</SidePanelProvider>
+		</ToastProvider>
+	</SidePanelProvider>
 	);
 };
 

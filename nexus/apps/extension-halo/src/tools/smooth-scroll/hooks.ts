@@ -7,19 +7,20 @@ import { useToolState } from '../../kernel';
 import { useTranslation } from '../../i18n';
 import type { ScrollSettings } from './types';
 import { DEFAULT_SETTINGS, PROFILES, CUSTOM_PROFILE_KEY, STORAGE_KEY } from './types';
-// import { loadSettings, saveSettings, broadcastSettings } from './core'; // Removed
+import { useToast } from '../../components/ToastProvider';
 
 const logger = createLogger('SmoothScroll', 'HALO');
 
 export function useSmoothScrollSettings() {
 	const { t } = useTranslation();
+	const { showToast } = useToast();
 	// Use sync storage with custom key for backward compatibility
 	const [settings, setSettings] = useToolState<ScrollSettings>(
 		'smooth-scroll',
 		DEFAULT_SETTINGS,
 		{ area: 'sync', storageKey: STORAGE_KEY }
 	);
-	const [toast, setToast] = useState<string | null>(null);
+	// const [toast, setToast] = useState<string | null>(null); // Removed locally
 	const [hasCustomProfile, setHasCustomProfile] = useState(false);
 
 	// useEffect(() => { loadSettings().then(setSettings); }, []); // useToolState handles parsing
@@ -30,7 +31,7 @@ export function useSmoothScrollSettings() {
 		});
 	}, []);
 
-	const showToast = useCallback((msg: string) => { setToast(msg); setTimeout(() => setToast(null), 1200); }, []);
+	// const showToast = ... // Removed local implementation
 
 	const updateSetting = useCallback(<K extends keyof ScrollSettings>(key: K, value: ScrollSettings[K]) => {
 		setSettings(prev => ({ ...prev, [key]: value }));
@@ -71,7 +72,6 @@ export function useSmoothScrollSettings() {
 	return {
 		settings,
 		setSettings,
-		toast,
 		showToast,
 		hasCustomProfile,
 		updateSetting,

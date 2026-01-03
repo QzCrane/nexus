@@ -23,14 +23,17 @@ import { useActiveServices } from '../../components/sidepanel/ActiveServicesCont
 
 import { ClipboardHeader } from './ClipboardHeader';
 
+import { useToast } from '../../components/ToastProvider';
+
 export const ClipboardPanel: React.FC = () => {
 	const { t } = useTranslation();
+	const { showToast } = useToast();
 	const { setServiceState } = useActiveServices();
 	const [history, setHistory] = useState<ClipboardItemType[]>([]);
 	const [search, setSearch] = useToolState<string>('clipboard-search' as any, '');
 	const [enabled, setEnabled] = useState(true);
 
-	const [toast, setToast] = useState<string | null>(null);
+	// const [toast, setToast] = useState<string | null>(null); // Removed
 	
 	// Track new items for highlighting
 	const [newIds, setNewIds] = useState<Set<string>>(new Set());
@@ -110,11 +113,6 @@ export const ClipboardPanel: React.FC = () => {
 		setServiceState('clipboard', checked);
 	};
 
-	const showToast = (msg: string) => {
-		setToast(msg);
-		setTimeout(() => setToast(null), 2000);
-	};
-
 	const handleCopy = async (text: string) => {
 		const ok = await copyToClipboard(text);
 		if (ok) showToast(t('clipboardPanel.copied'));
@@ -178,7 +176,7 @@ export const ClipboardPanel: React.FC = () => {
 				)}
 			</div>
 
-			{toast && <div style={styles.toast}>{toast}</div>}
+{/* Toast removed - global ToastProvider used */}
 		</div>
 	);
 };

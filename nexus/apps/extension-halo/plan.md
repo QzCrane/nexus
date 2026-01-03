@@ -24,7 +24,7 @@
 - **chrome.userScripts API**: 真正的 `document_start` MAIN world 注入 (Chrome 120+).
 - **registry.ts**: 动态注册/注销脚本，storage 变化自动同步.
 - **Block Space Scroll**: 两全其美方案 - 阻止滚动 + 手动控制视频播放/暂停.
-
+- **Smooth Scroll Fix**: 解决视频/下拉框按键冲突 (Smart Input Detection).
 - **i18n Architecture Refactor**: 去中心化翻译资源 (Tools/System Self-contained) + 自动聚合.
 
 ## 🚧 核心任务 (SIP - v2.3.0)

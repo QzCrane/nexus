@@ -17,7 +17,6 @@ export const SmoothScrollPanel: React.FC = () => {
 	const {
 		settings,
 		setSettings,
-		toast,
 		showToast,
 		hasCustomProfile,
 		updateSetting,
@@ -149,7 +148,8 @@ export const SmoothScrollPanel: React.FC = () => {
 				</div>
 			</Card>
 
-			{toast && <div style={styles.toast}>{toast}</div>}
+
+			{/* Toast removed - global ToastProvider used */}
 		</div>
 	);
 };

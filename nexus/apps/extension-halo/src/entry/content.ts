@@ -16,23 +16,48 @@ console.log(LOG_TAG, 'Content script loaded at', t0.toFixed(2), 'ms');
 const activeTools = new Set<string>();
 
 // ===== CLIPBOARD TRACKING =====
-document.addEventListener('copy', () => {
-	chrome.storage.local.get(['halo_tool_clipboard_settings'], (result) => {
-		const settings = result['halo_tool_clipboard_settings'] || { enabled: true };
-		if (!settings.enabled) return;
+// eff: True 0-CPU style - listener is only attached when enabled
 
-		setTimeout(() => {
-			const selection = document.getSelection()?.toString();
-			if (selection && selection.trim()) {
-				chrome.runtime.sendMessage({
-					type: 'HALO_CLIPBOARD_ADD',
-					text: selection,
-					sourceUrl: window.location.href,
-					sourceTitle: document.title,
-				});
-			}
-		}, 50);
-	});
+const onCopy = () => {
+	setTimeout(() => {
+		const selection = document.getSelection()?.toString();
+		if (selection && selection.trim()) {
+			chrome.runtime.sendMessage({
+				type: 'HALO_CLIPBOARD_ADD',
+				text: selection,
+				sourceUrl: window.location.href,
+				sourceTitle: document.title,
+			});
+		}
+	}, 50);
+};
+
+let isClipboardListenerAttached = false;
+
+function updateClipboardState(enabled: boolean) {
+	if (enabled && !isClipboardListenerAttached) {
+		document.addEventListener('copy', onCopy);
+		isClipboardListenerAttached = true;
+		console.log(LOG_TAG, 'Clipboard tracking: ON');
+	} else if (!enabled && isClipboardListenerAttached) {
+		document.removeEventListener('copy', onCopy);
+		isClipboardListenerAttached = false;
+		console.log(LOG_TAG, 'Clipboard tracking: OFF');
+	}
+}
+
+// Initial check
+chrome.storage.local.get(['halo_tool_clipboard_settings'], (result) => {
+	const settings = result['halo_tool_clipboard_settings'] || { enabled: true };
+	updateClipboardState(settings.enabled);
+});
+
+// Dynamic toggle
+chrome.storage.onChanged.addListener((changes, area) => {
+	if (area === 'local' && changes['halo_tool_clipboard_settings']) {
+		const newState = changes['halo_tool_clipboard_settings'].newValue || { enabled: true };
+		updateClipboardState(newState.enabled);
+	}
 });
 
 // ===== MESSAGE HANDLER =====

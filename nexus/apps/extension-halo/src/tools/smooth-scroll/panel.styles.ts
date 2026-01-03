@@ -15,7 +15,7 @@ export const styles: Record<string, React.CSSProperties> = {
 	statusBadge: { padding: '3px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 600 },
 	profileRow: { display: 'flex', gap: '6px', flexWrap: 'wrap' },
 	profileBtn: { padding: '6px 12px', background: 'var(--halo-bg-secondary)', border: '1px solid var(--halo-border)', borderRadius: '6px', color: 'var(--halo-text-secondary)', fontSize: '10px', cursor: 'pointer', transition: 'all 0.15s' },
-	toast: { position: 'fixed', bottom: '60px', left: '50%', transform: 'translateX(-50%)', padding: '8px 16px', background: 'var(--halo-accent)', borderRadius: '20px', fontSize: '11px', fontWeight: 500, color: '#fff', zIndex: 1000 },
+
 	mgmtRow: { display: 'flex', gap: '8px', marginTop: '4px' },
 	mgmtBtn: { flex: 1, padding: '8px', background: 'var(--halo-bg-tertiary)', border: '1px solid var(--halo-border)', borderRadius: '6px', color: 'var(--halo-text-secondary)', fontSize: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', transition: 'all 0.15s' },
 	mgmtBtnDanger: { flex: 1, padding: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', color: '#ef4444', fontSize: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', transition: 'all 0.15s' },

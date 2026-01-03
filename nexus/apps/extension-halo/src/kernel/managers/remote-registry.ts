@@ -1,7 +1,7 @@
 // goal: Remote module registry client
 // eff: Fetch module list from remote server + version check
 
-import { type ModuleMeta, ALL_MODULES } from '../registry/module-registry';
+import { type ModuleMeta, ALL_MODULES } from '../../kernel';
 
 // Remote registry config
 const REGISTRY_CONFIG = {
@@ -125,11 +125,14 @@ export const checkForUpdates = async (): Promise<ModuleUpdate[]> => {
 
 	for (const remoteMod of remote.modules) {
 		const localMod = ALL_MODULES.find((m) => m.id === remoteMod.id);
-		if (localMod && compareVersions(remoteMod.version, localMod.version) > 0) {
+		const rv = remoteMod.version || '0.0.0';
+		const lv = localMod?.version || '0.0.0';
+
+		if (localMod && compareVersions(rv, lv) > 0) {
 			updates.push({
 				id: remoteMod.id,
-				currentVersion: localMod.version,
-				newVersion: remoteMod.version,
+				currentVersion: lv,
+				newVersion: rv,
 				changelog: remoteMod.changelog,
 			});
 		}

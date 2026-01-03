@@ -4,7 +4,7 @@
 import React from 'react';
 import { Toggle } from '@nexus/ui-kit';
 import { useTranslation } from '../i18n';
-import type { ToolMeta, ToolPrefs } from '../kernel/tool-registry';
+import type { ToolMeta, ToolPrefs } from '../kernel';
 import { styles } from './ToolManager.styles';
 
 interface ToolManagerItemProps {

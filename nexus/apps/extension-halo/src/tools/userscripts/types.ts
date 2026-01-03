@@ -53,3 +53,13 @@ export interface ScriptExport {
 	exportedAt: number;
 	scripts: UserScript[];
 }
+
+export interface EditForm {
+	name: string;
+	description: string;
+	code: string;
+	matches: string;
+	excludeMatches: string;
+	type: ScriptType;
+	runAt: UserScriptRunAt;
+}

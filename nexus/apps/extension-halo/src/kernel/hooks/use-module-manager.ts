@@ -3,7 +3,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { ModuleManager, getModuleManager } from '../managers/module-manager';
-import { ALL_MODULES, OPTIONAL_MODULES, type ModuleMeta, type ModuleState, type ModuleStatus } from '../registry/module-registry';
+import { ALL_MODULES, OPTIONAL_MODULES, type ModuleState, type ModuleStatus } from '../registry/module-registry';
+import type { ModuleMeta } from '../core/tool-registry-types';
 
 interface UseModuleManagerResult {
 	loading: boolean;

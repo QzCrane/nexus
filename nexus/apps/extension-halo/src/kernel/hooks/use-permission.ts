@@ -3,18 +3,14 @@ import { useState, useEffect, useCallback } from 'react';
 export function usePermission(permission: string) {
 	const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 
-	const check = useCallback(() => {
-		// Permissions check can be async
-		chrome.permissions.contains({ permissions: [permission] }, (result) => {
-			// Check for runtime error (if context invalid)
-			if (chrome.runtime.lastError) {
-				console.warn('Permission check failed:', chrome.runtime.lastError);
-				// Fallback to false if check fails, safe default
-				setHasPermission(false);
-			} else {
-				setHasPermission(result);
-			}
-		});
+	const check = useCallback(async () => {
+		try {
+			const result = await chrome.permissions.contains({ permissions: [permission] });
+			setHasPermission(result);
+		} catch (err) {
+			console.warn('Permission check failed:', err);
+			setHasPermission(false);
+		}
 	}, [permission]);
 
 	useEffect(() => {

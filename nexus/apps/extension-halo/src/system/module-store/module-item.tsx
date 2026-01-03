@@ -52,8 +52,8 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, i
 	const nameTranslation = t(nameKey);
 	const descTranslation = t(descKey);
 	
-	const displayName = nameTranslation === nameKey ? module.name : nameTranslation;
-	const displayDesc = descTranslation === descKey ? module.description : descTranslation;
+	const displayName = String(nameTranslation) === nameKey ? module.id : String(nameTranslation);
+	const displayDesc = String(descTranslation) === descKey ? '' : String(descTranslation);
 
 	return (
 		<div style={styles.item}>
@@ -84,9 +84,9 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, i
 					</button>
 				)}
 				<div style={styles.meta}>
-					<span>v{module.version}</span>
+					<span>v{module.version || '0.0.0'}</span>
 					<span>•</span>
-					<span>{formatModuleSize(module.size)}</span>
+					<span>{formatModuleSize(module.size || 0)}</span>
 				</div>
 			</div>
 		</div>

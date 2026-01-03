@@ -1,7 +1,8 @@
 // goal: Module manager core logic
 // eff: Install/uninstall/update modules with persistence
 
-import { ALL_MODULES, OPTIONAL_MODULES, type ModuleState, type ModuleMeta } from '../registry/module-registry';
+import { ALL_MODULES, OPTIONAL_MODULES, type ModuleState } from '../registry/module-registry';
+import type { ModuleMeta } from '../core/tool-registry-types';
 import { getAllStates, saveState, deleteState, useMemoryMode } from './module-db';
 
 export class ModuleManager {
