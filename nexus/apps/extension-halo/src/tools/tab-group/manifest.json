@@ -4,5 +4,12 @@
 	"category": "browser",
 	"size": 20000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"background": {
+		"mechanism": "event_listener",
+		"frequency": "on-event",
+		"activeOnly": true,
+		"level": "idle",
+		"descriptionKey": "impact.tab_events"
+	}
 }

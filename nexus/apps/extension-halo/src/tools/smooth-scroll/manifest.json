@@ -4,5 +4,12 @@
 	"category": "efficiency",
 	"size": 25000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"background": {
+		"mechanism": "raf_active",
+		"frequency": "16ms",
+		"activeOnly": true,
+		"level": "medium",
+		"descriptionKey": "impact.raf_scroll"
+	}
 }

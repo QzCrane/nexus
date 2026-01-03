@@ -4,5 +4,12 @@
 	"category": "dev",
 	"size": 10000,
 	"builtIn": true,
-	"keywords": []
+	"keywords": [],
+	"background": {
+		"mechanism": "interval_slow",
+		"frequency": "1s",
+		"activeOnly": true,
+		"level": "low",
+		"descriptionKey": "impact.interval_1s"
+	}
 }

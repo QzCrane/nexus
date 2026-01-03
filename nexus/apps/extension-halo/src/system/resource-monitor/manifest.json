@@ -13,5 +13,12 @@
 		"cpu",
 		"background",
 		"service"
-	]
+	],
+	"background": {
+		"mechanism": "storage_listener",
+		"frequency": "on-view",
+		"activeOnly": true,
+		"level": "idle",
+		"descriptionKey": "impact.self_monitoring"
+	}
 }

@@ -9,5 +9,12 @@
 	"permissions": [
 		"webNavigation",
 		"*://*/*"
-	]
+	],
+	"background": {
+		"mechanism": "storage_listener",
+		"frequency": "on-change",
+		"activeOnly": false,
+		"level": "low",
+		"descriptionKey": "impact.userscripts_registry"
+	}
 }

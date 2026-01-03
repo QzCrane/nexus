@@ -1,13 +1,12 @@
-// goal: Resource Monitor panel UI - display real CPU consumption mechanisms
-// inv: Show mechanism, frequency, and impact level - no CPU ms estimates
+// goal: Resource Monitor panel UI - consume BACKGROUND_PROFILES_MAP from registry
+// inv: All data comes from manifest.json -> _generated.ts SSOT
 
 import React, { useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { useActiveServices } from '../../components/sidepanel/ActiveServicesContext';
-import { getToolMeta } from '../../kernel';
-import { analyzeImpact } from './monitor';
+import { BACKGROUND_PROFILES_MAP, BACKGROUND_TOOL_IDS, ALL_APPS } from '../../kernel/registry/_generated';
 import { LEVEL_CONFIG, MECHANISM_ICONS } from './types';
-import type { MonitoredService } from './types';
+import type { MonitoredService, ImpactLevel, ConsumptionMechanism } from './types';
 
 const styles = {
 	container: { padding: '16px', display: 'flex', flexDirection: 'column' as const, gap: '20px', height: '100%', overflowY: 'auto' as const },
@@ -25,33 +24,36 @@ const styles = {
 
 export const ResourceMonitorPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const { activeServices, bgToolIds } = useActiveServices();
+	const { activeServices } = useActiveServices();
 
-	// Build service list
+	// Build service list from SSOT (BACKGROUND_PROFILES_MAP from registry)
 	const services = useMemo<MonitoredService[]>(() => {
-		return bgToolIds.map(id => {
-			const meta = getToolMeta(id);
-			if (!meta) return null;
+		return BACKGROUND_TOOL_IDS.map(id => {
+			const profile = BACKGROUND_PROFILES_MAP[id];
+			const meta = ALL_APPS.find(app => app.id === id);
+			if (!profile || !meta) return null;
 			
 			return {
 				id,
-				name: t(`tools.${id}.name`, { defaultValue: meta.name || id }),
+				name: t(`tools.${id}.name`, { defaultValue: meta.id }),
 				icon: meta.icon || '🔧',
 				active: activeServices.has(id),
-				toolType: meta.toolType === 'script' ? 'script' : 'service',
-				impact: analyzeImpact(meta),
-				source: 'builtin'
+				mechanism: profile.mechanism as ConsumptionMechanism,
+				frequency: profile.frequency,
+				level: profile.level as ImpactLevel,
+				descriptionKey: profile.descriptionKey,
+				activeOnly: profile.activeOnly
 			};
 		}).filter(Boolean) as MonitoredService[];
-	}, [bgToolIds, activeServices, t]);
+	}, [activeServices, t]);
 
 	// Group by active/inactive
 	const activeList = useMemo(() => services.filter(s => s.active), [services]);
 	const inactiveList = useMemo(() => services.filter(s => !s.active), [services]);
 
 	const renderItem = (item: MonitoredService) => {
-		const levelStyle = LEVEL_CONFIG[item.impact.level];
-		const mechIcon = MECHANISM_ICONS[item.impact.mechanism] || '❓';
+		const levelStyle = LEVEL_CONFIG[item.level];
+		const mechIcon = MECHANISM_ICONS[item.mechanism] || '❓';
 
 		return (
 			<div key={item.id} style={styles.card}>
@@ -61,9 +63,10 @@ export const ResourceMonitorPanel: React.FC = () => {
 						<div style={styles.name}>{item.name}</div>
 						<div style={styles.desc}>
 							<span>{mechIcon}</span>
-							<span>{t(item.impact.descriptionKey, { defaultValue: item.impact.mechanism })}</span>
+							<span>{t(item.descriptionKey, { defaultValue: item.mechanism })}</span>
 							<span style={{ opacity: 0.6 }}>•</span>
-							<span style={{ fontFamily: 'monospace', fontSize: '10px' }}>{item.impact.frequency}</span>
+							<span style={{ fontFamily: 'monospace', fontSize: '10px' }}>{item.frequency}</span>
+							{item.activeOnly && <span style={{ opacity: 0.5 }}>(panel)</span>}
 						</div>
 					</div>
 				</div>
@@ -76,17 +79,17 @@ export const ResourceMonitorPanel: React.FC = () => {
 
 	return (
 		<div style={styles.container}>
-			{/* Active Services */}
+			{/* Active */}
 			<div style={styles.section}>
 				<div style={styles.header}>
-					{t('tools.resource-monitor.sections.active', { defaultValue: 'Active Services' })} ({activeList.length})
+					{t('tools.resource-monitor.sections.active', { defaultValue: 'Active' })} ({activeList.length})
 				</div>
 				{activeList.length > 0 ? activeList.map(renderItem) : (
 					<div style={styles.empty}>{t('tools.resource-monitor.noActive', { defaultValue: 'No active services' })}</div>
 				)}
 			</div>
 
-			{/* Inactive Services */}
+			{/* Inactive */}
 			<div style={styles.section}>
 				<div style={styles.header}>
 					{t('tools.resource-monitor.sections.inactive', { defaultValue: 'Inactive' })} ({inactiveList.length})

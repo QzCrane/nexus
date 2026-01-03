@@ -4,5 +4,12 @@
 	"category": "efficiency",
 	"size": 25000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"background": {
+		"mechanism": "interval_slow",
+		"frequency": "1s",
+		"activeOnly": true,
+		"level": "low",
+		"descriptionKey": "impact.timer_running"
+	}
 }

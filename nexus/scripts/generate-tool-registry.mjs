@@ -122,6 +122,15 @@ function generateRegistry(userModules, systemModules, manifestsMap) {
 
 import type { ToolCategory } from '../../i18n/types';
 
+// Background consumption profile (declared in manifest.json)
+export interface BackgroundProfile {
+	mechanism: 'interval_fast' | 'interval_slow' | 'raf_active' | 'raf_idle' | 'event_listener' | 'storage_listener' | 'message_listener' | 'mutation_observer' | 'service_worker' | 'content_script' | 'userscript';
+	frequency: string;
+	activeOnly: boolean;
+	level: 'high' | 'medium' | 'low' | 'idle';
+	descriptionKey: string;
+}
+
 // Generated tool manifest interface
 export interface GeneratedToolMeta {
 	id: string;
@@ -134,6 +143,7 @@ export interface GeneratedToolMeta {
 	features?: { contextMenu?: boolean; contentScript?: boolean; offscreen?: boolean };
 	dependencies?: string[];
 	permissions?: string[];
+	background?: BackgroundProfile; // Background consumption profile
 	// SaaT (Script-as-a-Tool) fields
 	toolType?: 'panel' | 'script';
 	scriptMatches?: string[];
@@ -149,6 +159,9 @@ export interface GeneratedToolMeta {
 		const keywords = manifest.keywords ? JSON.stringify(manifest.keywords) : '[]';
 		const deps = manifest.dependencies ? JSON.stringify(manifest.dependencies) : 'undefined';
 		const permissions = manifest.permissions ? JSON.stringify(manifest.permissions) : '[]';
+		
+		// Background profile (from manifest.json)
+		const background = manifest.background ? JSON.stringify(manifest.background) : 'undefined';
 		
 		// SaaT fields
 		const toolType = manifest.toolType ? `'${manifest.toolType}'` : 'undefined';
@@ -173,6 +186,7 @@ export interface GeneratedToolMeta {
 		features: ${features},
 		dependencies: ${deps},
 		permissions: ${permissions},
+		background: ${background},
 		toolType: ${toolType},
 		scriptMatches: ${scriptMatches},
 		scriptExcludeMatches: ${scriptExcludeMatches},
@@ -193,6 +207,15 @@ export interface GeneratedToolMeta {
 		}
 	}
 
+	// Background Profiles Map (tools with background field)
+	const backgroundMap = {};
+	for (const m of allModules) {
+		const manifest = manifestsMap.get(m.id);
+		if (manifest.background) {
+			backgroundMap[m.id] = manifest.background;
+		}
+	}
+
 	const content = `${header}
 export const USER_TOOL_REGISTRY: GeneratedToolMeta[] = [
 ${userModules.map(generateEntry).join(',\n')}
@@ -208,6 +231,12 @@ export const TOOL_IDS = [${allModules.map(m => `'${m.id}'`).join(', ')}] as cons
 export type GeneratedToolId = (typeof TOOL_IDS)[number];
 
 export const PERMISSION_USAGE_MAP: Record<string, string[]> = ${JSON.stringify(permissionMap, null, 4)};
+
+// Background consumption profiles (SSOT from manifest.json)
+export const BACKGROUND_PROFILES_MAP: Record<string, BackgroundProfile> = ${JSON.stringify(backgroundMap, null, 4)};
+
+// Get all tool IDs that have background consumption
+export const BACKGROUND_TOOL_IDS = Object.keys(BACKGROUND_PROFILES_MAP);
 `;
 
 	fs.writeFileSync(OUTPUT_REGISTRY, content, 'utf-8');
