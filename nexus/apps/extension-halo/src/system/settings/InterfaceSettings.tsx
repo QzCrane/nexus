@@ -14,7 +14,7 @@ interface InterfaceSettingsProps {
 	onUpdate: <K extends keyof HaloSettings>(key: K, value: HaloSettings[K]) => void;
 }
 
-const ALL_HEADER_TOOLS = ['module-store', 'extension-manager', 'permissions', 'settings', 'userscripts'];
+const ALL_HEADER_TOOLS = ['module-store', 'extension-manager', 'resource-monitor', 'permissions', 'settings', 'userscripts'];
 
 export const InterfaceSettings: React.FC<InterfaceSettingsProps> = ({ settings, onUpdate }) => {
 	const { t } = useTranslation();

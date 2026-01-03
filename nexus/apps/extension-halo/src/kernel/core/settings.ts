@@ -29,7 +29,7 @@ export const DEFAULT_SETTINGS: HaloSettings = {
 	pinnedTools: [],
 	toolOrder: {},
 	categoryOrder: ['active', 'general', 'dev', 'efficiency', 'visual', 'ai', 'security', 'media', 'browser'],
-	headerLayout: ['module-store', 'extension-manager', 'permissions', 'userscripts', 'settings'], // IDs of tools to show in header
+	headerLayout: ['module-store', 'extension-manager', 'resource-monitor', 'permissions', 'userscripts', 'settings'], // IDs of tools to show in header
 };
 
 export const ACCENT_COLORS = [

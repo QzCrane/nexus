@@ -19,6 +19,8 @@ export const zh = {
 		loose: '宽松',
 		showLabels: '显示工具标签',
 		showLabelsDesc: '在图标下方显示文字',
+		showSystemTools: '显示系统工具',
+		showSystemToolsDesc: '在启动器中显示“系统组件”分类',
 		iconSize: '图标大小',
 		iconSizeDesc: '调整工具图标尺寸',
 		small: '小',

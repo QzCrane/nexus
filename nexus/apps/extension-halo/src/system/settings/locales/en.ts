@@ -19,6 +19,8 @@ export const en = {
 		loose: 'Loose',
 		showLabels: 'Show Tool Labels',
 		showLabelsDesc: 'Display text under tool icons',
+		showSystemTools: 'Show System Tools',
+		showSystemToolsDesc: 'Show "System Components" category in launcher',
 		iconSize: 'Icon Size',
 		iconSizeDesc: 'Adjust the size of tool icons',
 		small: 'Small',

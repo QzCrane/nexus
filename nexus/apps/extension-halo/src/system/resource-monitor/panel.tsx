@@ -114,7 +114,7 @@ export const ResourceMonitorPanel: React.FC = () => {
 	
 	const renderItem = (item: NonNullable<typeof services[0]>) => {
 		const nameKey = `tools.${item.meta.id}.name`;
-		const name = t(nameKey) === nameKey ? (item.meta.name || item.id) : t(nameKey);
+		const name = t(nameKey, { defaultValue: item.meta.name || item.id });
 		const typeLabel = item.type === 'script' ? t('tools.resource-monitor.types.script') : t('tools.resource-monitor.types.service');
 		
 		return (
