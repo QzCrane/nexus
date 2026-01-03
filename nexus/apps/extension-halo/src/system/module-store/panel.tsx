@@ -17,7 +17,8 @@ export const ModuleStorePanel: React.FC = () => {
 	const { loading: remoteLoading, hasUpdates, updates, refresh } = useRemoteRegistry();
 	const { scripts } = useUserScripts();
 	const [view, setView] = useState<ViewMode>('all');
-	const [scriptView, setScriptView] = useState<'all' | 'installed' | 'available' | 'official' | 'user'>('all');
+	const [scriptStatus, setScriptStatus] = useState<'all' | 'installed' | 'available'>('all');
+	const [scriptSource, setScriptSource] = useState<'all' | 'official' | 'user'>('all');
 	const [filterType, setFilterType] = useState<FilterType>('all');
 	const [installing, setInstalling] = useState<string | null>(null);
 	const [searchQuery, setSearchQuery] = useState('');
@@ -64,10 +65,14 @@ export const ModuleStorePanel: React.FC = () => {
 			// Check if installed (User scripts are always installed, Official checks installedModules)
 			const isInstalled = isUser || installedModules.some(im => im.id === m.id);
 
-			if (scriptView === 'official') return !isUser;
-			if (scriptView === 'user') return isUser;
-			if (scriptView === 'installed') return isInstalled;
-			if (scriptView === 'available') return !isInstalled;
+			// Filter by Status
+			if (scriptStatus === 'installed' && !isInstalled) return false;
+			if (scriptStatus === 'available' && isInstalled) return false;
+
+			// Filter by Source
+			if (scriptSource === 'official' && isUser) return false;
+			if (scriptSource === 'user' && !isUser) return false;
+
 			return true;
 		}
 		if (filterType === 'app') return !m.system && (!m.toolType || m.toolType === 'panel');
@@ -110,7 +115,8 @@ export const ModuleStorePanel: React.FC = () => {
 				searchInputRef={searchInputRef} handleRefresh={handleRefresh}
 				remoteLoading={remoteLoading} filterType={filterType} setFilterType={setFilterType}
 				view={view} setView={setView} hasUpdates={hasUpdates}
-				scriptView={scriptView} setScriptView={setScriptView}
+				scriptStatus={scriptStatus} setScriptStatus={setScriptStatus}
+				scriptSource={scriptSource} setScriptSource={setScriptSource}
 				updatesCount={updates.length} totalInstalled={totalInstalled} totalSize={totalSize}
 			/>
 			<ModuleList

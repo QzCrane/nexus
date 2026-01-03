@@ -20,8 +20,10 @@ interface StoreHeaderProps {
 	setFilterType: (f: FilterType) => void;
 	view: ViewMode;
 	setView: (v: ViewMode) => void;
-	scriptView: 'all' | 'installed' | 'available' | 'official' | 'user';
-	setScriptView: (v: 'all' | 'installed' | 'available' | 'official' | 'user') => void;
+	scriptStatus: 'all' | 'installed' | 'available';
+	setScriptStatus: (v: 'all' | 'installed' | 'available') => void;
+	scriptSource: 'all' | 'official' | 'user';
+	setScriptSource: (v: 'all' | 'official' | 'user') => void;
 	hasUpdates: boolean;
 	updatesCount: number;
 	totalInstalled: number;
@@ -31,7 +33,7 @@ interface StoreHeaderProps {
 export const StoreHeader: React.FC<StoreHeaderProps> = ({
 	searchQuery, setSearchQuery, isSearchFocused, setIsSearchFocused, searchInputRef,
 	handleRefresh, remoteLoading, filterType, setFilterType, view, setView,
-	scriptView, setScriptView,
+	scriptStatus, setScriptStatus, scriptSource, setScriptSource,
 	hasUpdates, updatesCount, totalInstalled, totalSize
 }) => {
 	const { t } = useTranslation();
@@ -77,45 +79,54 @@ export const StoreHeader: React.FC<StoreHeaderProps> = ({
 
 			{/* Bottom Row: Tabs */}
 			<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-				<div style={styles.tabs}>
-					{showScriptTabs ? (
-						(['all', 'installed', 'available', 'official', 'user'] as const).map((v) => (
-							<button
-								key={v}
-								style={{ ...styles.tab, ...(scriptView === v ? styles.tabActive : {}) }}
-								onClick={() => setScriptView(v)}
-							>
-								{
-									v === 'all' ? t('moduleStorePanel.all') :
-									v === 'installed' ? t('moduleStorePanel.installed') :
-									v === 'available' ? t('moduleStorePanel.available') :
-									v === 'official' ? t('common.builtInScripts') :
-									t('common.userScripts')
-								}
-							</button>
-						))
-					) : (
-						<>
-							{(['all', 'installed', 'available'] as ViewMode[]).map((v) => (
+				{showScriptTabs ? (
+					<div style={{ display: 'flex', gap: '16px' }}>
+						{/* Status Group */}
+						<div style={styles.tabs}>
+							{(['all', 'installed', 'available'] as const).map((v) => (
 								<button
 									key={v}
-									style={{ ...styles.tab, ...(view === v ? styles.tabActive : {}) }}
-									onClick={() => setView(v)}
+									style={{ ...styles.tab, ...(scriptStatus === v ? styles.tabActive : {}) }}
+									onClick={() => setScriptStatus(v)}
 								>
 									{v === 'all' ? t('moduleStorePanel.all') : v === 'installed' ? t('moduleStorePanel.installed') : t('moduleStorePanel.available')}
 								</button>
 							))}
-							{hasUpdates && (
+						</div>
+						{/* Source Group */}
+						<div style={styles.tabs}>
+							{(['all', 'official', 'user'] as const).map((v) => (
 								<button
-									style={{ ...styles.tab, ...(view === 'updates' ? styles.tabActive : styles.tabUpdate) }}
-									onClick={() => setView('updates')}
+									key={v}
+									style={{ ...styles.tab, ...(scriptSource === v ? styles.tabActive : {}) }}
+									onClick={() => setScriptSource(v)}
 								>
-									{t('moduleStorePanel.updates')} ({updatesCount})
+									{v === 'all' ? t('moduleStorePanel.all') : v === 'official' ? t('common.builtInScripts') : t('common.userScripts')}
 								</button>
-							)}
-						</>
-					)}
-				</div>
+							))}
+						</div>
+					</div>
+				) : (
+					<div style={styles.tabs}>
+						{(['all', 'installed', 'available'] as ViewMode[]).map((v) => (
+							<button
+								key={v}
+								style={{ ...styles.tab, ...(view === v ? styles.tabActive : {}) }}
+								onClick={() => setView(v)}
+							>
+								{v === 'all' ? t('moduleStorePanel.all') : v === 'installed' ? t('moduleStorePanel.installed') : t('moduleStorePanel.available')}
+							</button>
+						))}
+						{hasUpdates && (
+							<button
+								style={{ ...styles.tab, ...(view === 'updates' ? styles.tabActive : styles.tabUpdate) }}
+								onClick={() => setView('updates')}
+							>
+								{t('moduleStorePanel.updates')} ({updatesCount})
+							</button>
+						)}
+					</div>
+				)}
 				<span style={styles.stats}>{t('moduleStorePanel.statsResult', { count: totalInstalled, size: formatModuleSize(totalSize) })}</span>
 			</div>
 		</div>

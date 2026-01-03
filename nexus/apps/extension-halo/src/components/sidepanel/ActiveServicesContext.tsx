@@ -41,13 +41,19 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 				if (localData.halo_userscripts.globalEnabled) {
 					scripts.forEach((script: any) => {
 						currentScriptIds.push(script.id);
+						if (script.saatToolId) currentScriptIds.push(script.saatToolId);
+						
 						if (script.enabled) {
 							active.add(script.id);
+							if (script.saatToolId) active.add(script.saatToolId);
 						}
 					});
 				} else {
 					// Even if global disabled, we track IDs, but none are active
-					scripts.forEach((script: any) => currentScriptIds.push(script.id));
+					scripts.forEach((script: any) => {
+						currentScriptIds.push(script.id);
+						if (script.saatToolId) currentScriptIds.push(script.saatToolId);
+					});
 				}
 
 				setScriptIds(prev => JSON.stringify(prev) !== JSON.stringify(currentScriptIds) ? currentScriptIds : prev);

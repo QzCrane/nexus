@@ -1477,7 +1477,7 @@ export const SYSTEM_PLUGIN_REGISTRY: GeneratedToolMeta[] = [
 		id: 'module-store',
 		icon: '📦',
 		category: 'general',
-		size: 26716,
+		size: 27469,
 		builtIn: true,
 		system: true,
 		keywords: ["store","download"],
