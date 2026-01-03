@@ -1,6 +1,6 @@
 {
 	"id": "extension-manager",
-	"icon": "🧩",
+	"icon": "🔌",
 	"category": "browser",
 	"size": 8192,
 	"status": "ready",

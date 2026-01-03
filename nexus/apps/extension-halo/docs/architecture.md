@@ -50,6 +50,7 @@ RPC: `chrome.runtime.sendMessage` | Type-Safe `ToolId` (Registry Derived)
 
 - 组件: 必须优先使用 `@nexus/ui-kit`
 - 布局: 4px 网格 | 禁用 Layout Shift | 强制响应式
+- 图标: Manifest 为唯一数据源 (SSOT) | 禁硬编码
 
 ## 🧩 系统演进
 
@@ -75,3 +76,4 @@ RPC: `chrome.runtime.sendMessage` | Type-Safe `ToolId` (Registry Derived)
   - Taxonomy (`taxonomy.ts`)
   - Permissions (Manifest -> Registry Map)
   - Registry (Dual Scan)
+  - Icons (Manifest -> Registry -> UI Components)

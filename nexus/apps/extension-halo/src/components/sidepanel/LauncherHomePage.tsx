@@ -41,6 +41,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 
 	useSmoothWheel(scrollRef, 'y');
 	const isCompact = settings?.compactMode ?? false;
+	const userTools = useMemo(() => visibleTools.filter(t => !t.system), [visibleTools]);
 
 	const categorizedTools = useMemo(() => {
 		if (tempCats) return tempCats;
@@ -48,16 +49,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 		
 		// 1. Process builtin/registry tools
 		visibleTools.forEach(tool => {
-			// Special handling for extension-manager (System tool but opt-in)
-			if (tool.id === 'extension-manager') {
-				if (settings?.enableExtensionManager) {
-					// Route to browser category
-					cats.browser.push(tool);
-				}
-				return;
-			}
-
-			if (tool.system || tool.id === 'permissions') return;
+			if (tool.system) return;
 			
 			// SaaT script tools go to scripts category
 			if (tool.toolType === 'script') {
@@ -168,7 +160,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 	return (
 		<div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 			<div style={{ margin: isCompact ? '8px 0' : '12px 0', padding: '0 12px', flexShrink: 0 }}>
-				<SearchBar onSelect={(id) => onSelectTool(id as ToolId)} visibleTools={visibleTools} />
+				<SearchBar onSelect={(id) => onSelectTool(id as ToolId)} visibleTools={userTools} />
 			</div>
 			<div ref={scrollRef} className="halo-scrollbar" style={{ ...commonStyles.toolbar as any, flex: 1, overflowY: 'auto', gap: isCompact ? '4px' : '12px', padding: isCompact ? '0 8px 8px 8px' : '0 12px 12px 12px', minHeight: 0 }}>
 				{catOrder.map(cat => {
@@ -222,7 +214,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 						</div>
 					);
 				})}
-				{!isCompact && <div style={{ ...commonStyles.footer as any, marginTop: '20px' }}><span>🔒 {t('footer.zeroTracking')}</span><span>•</span><span>💾 {t('footer.localOnly')}</span><span>•</span><span>🛠️ {visibleTools.filter(t => !t.system && t.id !== 'permissions').length} {t('common.tools')}</span></div>}
+				{!isCompact && <div style={{ ...commonStyles.footer as any, marginTop: '20px' }}><span>🔒 {t('footer.zeroTracking')}</span><span>•</span><span>💾 {t('footer.localOnly')}</span><span>•</span><span>🛠️ {visibleTools.filter(t => !t.system).length} {t('common.tools')}</span></div>}
 			</div>
 		</div>
 	);

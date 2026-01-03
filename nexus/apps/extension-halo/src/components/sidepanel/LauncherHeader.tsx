@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTranslation } from '../../i18n';
 import type { ToolId, ToolMeta } from '../../kernel';
-import { popOutWindow } from '../../kernel';
+import { popOutWindow, getToolMeta } from '../../kernel';
 
 interface LauncherHeaderProps {
 	activeTool: ToolId | null;
@@ -21,6 +21,12 @@ export const LauncherHeader: React.FC<LauncherHeaderProps> = ({
 	const { t } = useTranslation();
 	
 	const activeToolMeta = visibleTools.find(tool => tool.id === activeTool);
+
+	// Icons from registry (SSOT)
+	const iconModuleStore = getToolMeta('module-store')?.icon || '📦';
+	const iconExtensionManager = getToolMeta('extension-manager')?.icon || '🔌';
+	const iconPermissions = getToolMeta('permissions')?.icon || '🔐';
+	const iconSettings = getToolMeta('settings')?.icon || '⚙️';
 
 	return (
 		<header style={{ 
@@ -109,7 +115,7 @@ export const LauncherHeader: React.FC<LauncherHeaderProps> = ({
 					}}
 					onClick={() => onSelectTool('module-store' as ToolId)}
 					title={t('tools.module-store.name')}
-				>📦</button>
+				>{iconModuleStore}</button>
 				<button
 					style={{
 						background: activeTool === 'extension-manager' ? 'var(--halo-bg-tertiary)' : 'transparent',
@@ -119,7 +125,7 @@ export const LauncherHeader: React.FC<LauncherHeaderProps> = ({
 					}}
 					onClick={() => onSelectTool('extension-manager' as ToolId)}
 					title={t('tools.extension-manager.name')}
-				>🔌</button>
+				>{iconExtensionManager}</button>
 				<button
 					style={{
 						background: activeTool === 'permissions' ? 'var(--halo-bg-tertiary)' : 'transparent',
@@ -129,7 +135,7 @@ export const LauncherHeader: React.FC<LauncherHeaderProps> = ({
 					}}
 					onClick={() => onSelectTool('permissions' as ToolId)}
 					title={t('tools.permissions.name')}
-				>🔐</button>
+				>{iconPermissions}</button>
 				<button 
 					style={{
 						background: activeTool === 'settings' ? 'var(--halo-bg-tertiary)' : 'transparent',
@@ -139,7 +145,7 @@ export const LauncherHeader: React.FC<LauncherHeaderProps> = ({
 					}}
 					onClick={() => onSelectTool('settings' as ToolId)}
 					title={t('common.settings')}
-				>⚙️</button>
+				>{iconSettings}</button>
 			</div>
 		</header>
 	);

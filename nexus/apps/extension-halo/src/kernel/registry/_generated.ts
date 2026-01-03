@@ -1475,7 +1475,7 @@ export const USER_TOOL_REGISTRY: GeneratedToolMeta[] = [
 export const SYSTEM_PLUGIN_REGISTRY: GeneratedToolMeta[] = [
 	{
 		id: 'extension-manager',
-		icon: '🧩',
+		icon: '🔌',
 		category: 'browser',
 		size: 8192,
 		builtIn: true,
@@ -1509,7 +1509,7 @@ export const SYSTEM_PLUGIN_REGISTRY: GeneratedToolMeta[] = [
 	},
 	{
 		id: 'permissions',
-		icon: '🛡️',
+		icon: '🔐',
 		category: 'security',
 		size: 0,
 		builtIn: true,
