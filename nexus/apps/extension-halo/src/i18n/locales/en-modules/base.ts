@@ -30,8 +30,8 @@ export const base = {
 		system: 'System (Auto)',
 		suggested: 'Suggested',
 		open: 'Open',
-		builtInScripts: 'Built-in Scripts',
-		userScripts: 'User Scripts',
+		builtInScripts: 'Built-in',
+		userScripts: 'User',
 		readOnly: 'Read-only',
 	},
 	categories: {

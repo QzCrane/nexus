@@ -32,6 +32,7 @@ export function convertScriptsToModules(scripts: UserScript[]): ToolMeta[] {
 			size: s.code.length,
 			system: false,
 			status: 'ready' as const,
-			keywords: ['script', 'user', s.type]
-		})) as ToolMeta[];
+			keywords: ['script', 'user', s.type],
+			isUserScript: true
+		})) as any[] as ToolMeta[];
 }

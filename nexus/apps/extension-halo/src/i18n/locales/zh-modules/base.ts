@@ -30,8 +30,8 @@ export const base = {
 		system: '跟随系统 (自动)',
 		suggested: '推荐',
 		open: '打开',
-		builtInScripts: '官方脚本',
-		userScripts: '自定义脚本',
+		builtInScripts: '官方',
+		userScripts: '自定义',
 		readOnly: '只读',
 	},
 	categories: {
