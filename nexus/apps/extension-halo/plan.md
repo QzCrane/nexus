@@ -78,9 +78,10 @@
 
 ### Phase 10-12: 浏览器/安全/编解码 (P1)
 
-- **Scripts**: `bilibili-plus`, `chatgpt-wide` (作为 SaaT 验证).
+- **SaaT Scripts**: ✅ `bilibili-plus`, ✅ `chatgpt-wide` (作为 SaaT 验证).
+- **Browser Native**: ✅ `hover-zoom` (浮图秀 - declarativeNetRequest 防盗链), ✅ `extension-manager` (插件管家 - 分组/权限透视).
 - **Security**: `checksum`, `ssl-check`, `csp-analyzer`, `random-gen`.
-- **Browser**: `translate` (API), `page-annotate`, `download-manager`, `tab-group`, `hover-zoom` (浮图秀 - Native), `extension-manager` (插件管理 - 场景切换/权限透视).
+- **Browser**: `translate` (API), `page-annotate`, `download-manager`, `tab-group`.
 
 ### Phase 13-15: 专业领域与 AI (P2)
 
