@@ -3,6 +3,7 @@ import { useTranslation } from '../../i18n';
 import { useModuleManager, useRemoteRegistry, ALL_MODULES } from '../../kernel';
 import { ModuleList } from './module-list';
 import { StoreHeader } from './store-header';
+import { ModuleStoreModal } from './modal';
 import { useUserScripts } from '../../system/userscripts/hooks';
 import { styles } from './panel.styles';
 import { FilterType } from './type-filter';
@@ -25,6 +26,15 @@ export const ModuleStorePanel: React.FC = () => {
 	const [isSearchFocused, setIsSearchFocused] = useState(false);
 	const searchInputRef = useRef<HTMLInputElement>(null);
 
+	// Modal state
+	const [modalConfig, setModalConfig] = useState<{
+		isOpen: boolean;
+		type: 'confirm' | 'alert';
+		title?: string;
+		message: string;
+		onConfirm?: () => void;
+	}>({ isOpen: false, type: 'alert', message: '' });
+
 	// Ctrl+K keyboard shortcut
 	useEffect(() => {
 		const handleGlobalKey = (e: KeyboardEvent) => {
@@ -45,15 +55,25 @@ export const ModuleStorePanel: React.FC = () => {
 	const handleUninstall = useCallback(async (m: typeof ALL_MODULES[0]) => {
 		// User Scripts (custom) are managed in UserScripts panel
 		if ((m as any).isUserScript) {
-			window.alert(t('moduleStorePanel.scriptUninstallWarning'));
+			setModalConfig({
+				isOpen: true,
+				type: 'alert',
+				title: t('common.readOnly') || '只读',
+				message: t('moduleStorePanel.scriptUninstallWarning'),
+			});
 			return;
 		}
 
 		// Official Scripts require confirmation
 		if (m.toolType === 'script') {
-			if (!window.confirm(t('moduleStorePanel.scriptUninstallConfirm'))) {
-				return;
-			}
+			setModalConfig({
+				isOpen: true,
+				type: 'confirm',
+				title: t('moduleStorePanel.uninstall'),
+				message: t('moduleStorePanel.scriptUninstallConfirm'),
+				onConfirm: () => uninstall(m.id).then(() => setModalConfig(prev => ({ ...prev, isOpen: false })))
+			});
+			return;
 		}
 
 		await uninstall(m.id);
@@ -105,6 +125,8 @@ export const ModuleStorePanel: React.FC = () => {
 	const totalInstalled = statsModules.length;
 	const totalSize = statsModules.reduce((sum, m) => sum + (m.size || 0), 0);
 
+	// Modal Component Styles - Moved to modal.tsx
+
 	if (loading) {
 		return (
 			<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
@@ -133,6 +155,17 @@ export const ModuleStorePanel: React.FC = () => {
 				installedModules={allInstalledModules} installingId={installing}
 				view={view} filterType={filterType}
 				handleInstall={handleInstall} handleUninstall={handleUninstall}
+			/>
+			
+			<ModuleStoreModal
+				isOpen={modalConfig.isOpen}
+				type={modalConfig.type}
+				title={modalConfig.title}
+				message={modalConfig.message}
+				onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
+				onConfirm={() => {
+					modalConfig.onConfirm?.();
+				}}
 			/>
 		</div>
 	);
