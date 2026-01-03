@@ -2,7 +2,7 @@
 	"id": "permissions",
 	"icon": "🛡️",
 	"category": "security",
-	"size": 0,
+	"size": 10240,
 	"system": true,
 	"builtIn": true,
 	"keywords": [

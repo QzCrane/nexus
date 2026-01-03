@@ -57,7 +57,7 @@ export const ModuleStorePanel: React.FC = () => {
 		if (filterType === 'system') return m.system;
 		if (filterType === 'script') return !m.system && m.toolType === 'script';
 		if (filterType === 'app') return !m.system && (!m.toolType || m.toolType === 'panel');
-		return !m.system;
+		return true;
 	};
 
 	const getFilteredModules = () => {

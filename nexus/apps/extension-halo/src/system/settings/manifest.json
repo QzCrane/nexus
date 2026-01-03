@@ -2,7 +2,7 @@
 	"id": "settings",
 	"icon": "⚙️",
 	"category": "general",
-	"size": 0,
+	"size": 20480,
 	"system": true,
 	"builtIn": true,
 	"keywords": [

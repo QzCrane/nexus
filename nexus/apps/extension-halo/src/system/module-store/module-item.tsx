@@ -31,6 +31,7 @@ const styles = {
 	badge: { fontSize: '10px', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 },
 	badgeCore: { background: 'var(--halo-accent-alpha)', color: 'var(--halo-accent)' },
 	badgeNew: { background: 'rgba(34, 197, 94, 0.2)', color: '#22c55e' },
+	badgeType: { marginLeft: '8px', fontSize: '10px', padding: '1px 6px', borderRadius: '10px', background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text-secondary)', fontWeight: 500, border: '1px solid var(--halo-border)' },
 };
 
 interface ModuleItemProps {
@@ -55,6 +56,10 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, i
 	const displayName = String(nameTranslation) === nameKey ? module.id : String(nameTranslation);
 	const displayDesc = String(descTranslation) === descKey ? '' : String(descTranslation);
 
+	const typeLabel = module.system ? t('moduleStorePanel.filters.system') 
+		: module.toolType === 'script' ? t('moduleStorePanel.filters.script')
+		: t('moduleStorePanel.filters.app');
+
 	return (
 		<div style={styles.item}>
 			<span style={styles.index}>{index}</span>
@@ -62,6 +67,7 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, i
 			<div style={styles.info as React.CSSProperties}>
 				<div style={styles.name}>
 					{displayName}
+					<span style={styles.badgeType}>{typeLabel}</span>
 					{!isCore && !isInstalled && <span style={{ ...styles.badge, ...styles.badgeNew }}>{t('moduleStorePanel.new')}</span>}
 				</div>
 				<div style={styles.desc} title={displayDesc}>{displayDesc}</div>
