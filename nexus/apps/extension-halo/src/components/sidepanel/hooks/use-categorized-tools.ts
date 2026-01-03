@@ -52,6 +52,46 @@ export function useCategorizedTools({
 			else cats.general.push(tool);
 		});
 
+		// 2. Process user scripts
+		scripts.forEach(script => {
+			// Skip SaaT scripts that are already processed above via visibleTools (they are in registry)
+			// SaaT scripts in 'scripts' array have 'saatToolId'.
+			// We only want PURE user scripts here?
+			// Wait, visibleTools are REGISTRY tools. Scripts in storage (UserScript[]) include BOTH pure user scripts and SaaT wrappers.
+			// Currently, SaaT wrappers in storage have `saatToolId` pointing to registry ID.
+			// Pure user scripts (created manually) do NOT have `saatToolId`.
+
+			if ((script as any).saatToolId) return; // Skip shadows of official scripts
+
+			const meta: ToolMeta = {
+				id: script.id,
+				name: script.name,
+				description: script.description || 'User Script',
+				category: 'scripts',
+				toolType: 'script',
+				icon: '📜',
+				version: '0.0.0',
+				size: script.code.length,
+				builtIn: false,
+				system: false,
+				status: 'ready',
+				keywords: ['script', 'user', script.type],
+				scriptType: script.type,
+				scriptMatches: script.matches,
+				// Add flag for UI to know it's a user script
+				// isUserScript: true // ToolMeta type doesn't have this, but runtime works
+			};
+			(meta as any).isUserScript = true;
+
+			cats.scripts.push(meta);
+
+			// Check active state
+			// For user scripts, 'enabled' property is truth. Also checked against activeServices set for consistency.
+			if (script.enabled || activeServices.has(script.id)) {
+				cats.active.push(meta);
+			}
+		});
+
 		// 2. Sort each category
 		Object.keys(cats).forEach(cat => {
 			const pinned = settings?.pinnedTools || [], order = settings?.toolOrder?.[cat] || [];

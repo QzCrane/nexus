@@ -17,7 +17,7 @@ export const ModuleStorePanel: React.FC = () => {
 	const { loading: remoteLoading, hasUpdates, updates, refresh } = useRemoteRegistry();
 	const { scripts } = useUserScripts();
 	const [view, setView] = useState<ViewMode>('all');
-	const [scriptView, setScriptView] = useState<'all' | 'official' | 'user'>('all');
+	const [scriptView, setScriptView] = useState<'all' | 'installed' | 'available' | 'official' | 'user'>('all');
 	const [filterType, setFilterType] = useState<FilterType>('all');
 	const [installing, setInstalling] = useState<string | null>(null);
 	const [searchQuery, setSearchQuery] = useState('');
@@ -59,8 +59,15 @@ export const ModuleStorePanel: React.FC = () => {
 		if (filterType === 'script') {
 			const isScript = !m.system && (m.toolType === 'script' || m.isUserScript);
 			if (!isScript) return false;
-			if (scriptView === 'official') return !m.isUserScript;
-			if (scriptView === 'user') return m.isUserScript;
+			
+			const isUser = !!m.isUserScript;
+			// Check if installed (User scripts are always installed, Official checks installedModules)
+			const isInstalled = isUser || installedModules.some(im => im.id === m.id);
+
+			if (scriptView === 'official') return !isUser;
+			if (scriptView === 'user') return isUser;
+			if (scriptView === 'installed') return isInstalled;
+			if (scriptView === 'available') return !isInstalled;
 			return true;
 		}
 		if (filterType === 'app') return !m.system && (!m.toolType || m.toolType === 'panel');

@@ -20,8 +20,8 @@ interface StoreHeaderProps {
 	setFilterType: (f: FilterType) => void;
 	view: ViewMode;
 	setView: (v: ViewMode) => void;
-	scriptView: 'all' | 'official' | 'user';
-	setScriptView: (v: 'all' | 'official' | 'user') => void;
+	scriptView: 'all' | 'installed' | 'available' | 'official' | 'user';
+	setScriptView: (v: 'all' | 'installed' | 'available' | 'official' | 'user') => void;
 	hasUpdates: boolean;
 	updatesCount: number;
 	totalInstalled: number;
@@ -79,13 +79,19 @@ export const StoreHeader: React.FC<StoreHeaderProps> = ({
 			<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
 				<div style={styles.tabs}>
 					{showScriptTabs ? (
-						(['all', 'official', 'user'] as const).map((v) => (
+						(['all', 'installed', 'available', 'official', 'user'] as const).map((v) => (
 							<button
 								key={v}
 								style={{ ...styles.tab, ...(scriptView === v ? styles.tabActive : {}) }}
 								onClick={() => setScriptView(v)}
 							>
-								{v === 'all' ? t('moduleStorePanel.all') : v === 'official' ? t('common.builtInScripts') : t('common.userScripts')}
+								{
+									v === 'all' ? t('moduleStorePanel.all') :
+									v === 'installed' ? t('moduleStorePanel.installed') :
+									v === 'available' ? t('moduleStorePanel.available') :
+									v === 'official' ? t('common.builtInScripts') :
+									t('common.userScripts')
+								}
 							</button>
 						))
 					) : (
