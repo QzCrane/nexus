@@ -89,7 +89,7 @@ nexus(私有) → {spectra, halo}-public/ → github.com/QzCrane/{spectra, halo}
 
 ## 红线
 
-Contracts 禁逻辑 | 源码 ≤200 行 | 禁绕 kernel 存储 | 禁触发 Layout Shift 的动态 Padding | 禁在工具内添加独立 Storage Listener | 频谱数据传输禁 Array.from | 必须执行资源 detach 销毁 | **禁 setInterval 轮询 (必须事件驱动)** | **定时器必须实现 visibility 暂停**
+Contracts 禁逻辑 | 源码 ≤200 行 | 禁绕 kernel 存储 | 禁触发 Layout Shift 的动态 Padding | 禁在工具内添加独立 Storage Listener | 频谱数据传输禁 Array.from | 必须执行资源 detach 销毁 | **禁 setInterval 轮询 (必须事件驱动)** | **定时器必须实现 visibility 暂停** | **任何后台 CPU 消耗必须在 manifest.json 的 `background` 字段注册**
 
 ---
 

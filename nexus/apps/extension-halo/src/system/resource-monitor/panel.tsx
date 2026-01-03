@@ -81,11 +81,13 @@ export const ResourceMonitorPanel: React.FC = () => {
 	const renderProfile = (p: BackgroundProfile, i: number) => {
 		const levelStyle = LEVEL_CONFIG[p.level as ImpactLevel];
 		const mechIcon = MECHANISM_ICONS[p.mechanism as ConsumptionMechanism] || '❓';
+		// Use generic mechanism i18n key, frequency comes from manifest
+		const mechKey = `impact.mechanism.${p.mechanism}`;
 		
 		return (
 			<div key={i} style={styles.detailRow}>
-				<span>{mechIcon} {t(p.descriptionKey, { defaultValue: p.mechanism })}</span>
-				<span>{p.frequency}</span>
+				<span>{mechIcon} {t(mechKey, { defaultValue: p.mechanism })}</span>
+				<span style={{ fontFamily: 'monospace' }}>{p.frequency}</span>
 			</div>
 		);
 	};

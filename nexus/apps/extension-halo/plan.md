@@ -69,10 +69,18 @@
 - **Visibility Pause**: ✅ 定时器在面板不可见时自动暂停。
   - `totp/panel`: 1s 更新定时器 → visibility 暂停
   - `timestamp/panel`: 1s 时钟定时器 → visibility 暂停
-- **Resource Monitor Refactor**: ✅ 11 种精确 CPU 机制分类。
-  - 类型: interval_fast/slow, raf_active/idle, event/storage/message_listener, mutation_observer, service_worker, content_script, userscript
-  - 评分: `calculateImpactScore(0-100)` 算法
-  - 检测: 用户脚本代码模式分析 (interval/RAF/MutationObserver)
+
+### v2.6.2 Resource Monitor SSOT (2026-01-04)
+
+- **Manifest-Driven Architecture**: ✅ 后台消耗在各自 manifest.json 声明，不再硬编码。
+  - manifest.json `background` 字段 → BACKGROUND_PROFILES_MAP → panel.tsx 消费
+  - 移除 monitor.ts 硬编码画像
+- **Source Annotation**: ✅ 每条记录包含 sourceFile, sourceLine, sourceDetail。
+- **System Core Monitoring**: ✅ 监控入口文件 (background.ts, content.ts, sidepanel-init.ts)。
+- **Full Audit**: timer(10ms), text-to-speech(200ms), bilibili-plus(MutationObserver) 已注册。
+- **Category Badges**: ✅ UI 显示 TOOL/SYS/SCRIPT 分类标签。
+- **Generic i18n**: ✅ 机制描述使用通用 key (impact.mechanism.\*) + frequency 显示。
+- **Red Line Added**: ✅ 任何后台 CPU 消耗必须在 manifest.json 注册。
 
 ## 🚧 核心任务 (SIP - v2.3.0)
 

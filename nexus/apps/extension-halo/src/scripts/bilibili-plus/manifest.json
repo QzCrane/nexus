@@ -21,5 +21,15 @@
 	],
 	"permissions": [
 		"userScripts"
-	]
+	],
+	"background": {
+		"mechanism": "mutation_observer",
+		"frequency": "on-mutation",
+		"activeOnly": false,
+		"level": "low",
+		"descriptionKey": "impact.mechanism.mutation_observer",
+		"sourceFile": "scripts/bilibili-plus/script.js",
+		"sourceLine": 34,
+		"sourceDetail": "new MutationObserver(() => {...})"
+	}
 }
