@@ -21,6 +21,7 @@ export const en = {
 		uninstall: 'Uninstall',
 		loading: 'Loading modules...',
 		statsModules: 'modules',
+		statsResult: '{{count}} installed • {{size}}',
 		searchPlaceholder: 'Search modules...',
 		filters: {
 			all: 'All Types',

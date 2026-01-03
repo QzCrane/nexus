@@ -21,6 +21,7 @@ export const zh = {
 		uninstall: '卸载',
 		loading: '加载模块中...',
 		statsModules: '个模块',
+		statsResult: '{{count}} 已安装 • {{size}}',
 		searchPlaceholder: '搜索模块...',
 		filters: {
 			all: '全部类型',

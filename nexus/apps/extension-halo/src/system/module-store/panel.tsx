@@ -52,6 +52,14 @@ export const ModuleStorePanel: React.FC = () => {
 	const searchModules = (modules: typeof ALL_MODULES) => 
 		filterBySearch(modules, searchQuery, MODULE_SEARCH_OPTIONS);
 
+	// Helper to filter by type
+	const filterByType = (m: typeof ALL_MODULES[0]) => {
+		if (filterType === 'system') return m.system;
+		if (filterType === 'script') return !m.system && m.toolType === 'script';
+		if (filterType === 'app') return !m.system && (!m.toolType || m.toolType === 'panel');
+		return !m.system;
+	};
+
 	const getFilteredModules = () => {
 		// 1. Filter by Status (View)
 		let source = view === 'installed' ? installedModules
@@ -59,13 +67,7 @@ export const ModuleStorePanel: React.FC = () => {
 			: ALL_MODULES;
 		
 		// 2. Filter by Type
-		source = source.filter(m => {
-			if (filterType === 'system') return m.system;
-			if (filterType === 'script') return !m.system && m.toolType === 'script';
-			if (filterType === 'app') return !m.system && (!m.toolType || m.toolType === 'panel');
-			// 'all': Apps + Scripts (Hide System by default unless searched explicitly? No, hide system)
-			return !m.system;
-		});
+		source = source.filter(filterByType);
 
 		// 3. Filter by Search
 		return searchModules(source);
@@ -73,8 +75,10 @@ export const ModuleStorePanel: React.FC = () => {
 
 	const displayModules = getFilteredModules();
 
-	const totalInstalled = installedModules.filter(m => !m.system).length; // Only count user tools
-	const totalSize = installedModules.reduce((sum, m) => sum + (m.size || 0), 0);
+	const statsModules = installedModules.filter(filterByType);
+	const totalInstalled = statsModules.length;
+	const totalSize = statsModules.reduce((sum, m) => sum + (m.size || 0), 0);
+
 
 	if (loading) {
 		return (
@@ -147,7 +151,7 @@ export const ModuleStorePanel: React.FC = () => {
 							</button>
 						)}
 					</div>
-					<span style={styles.stats}>{totalInstalled} installed • {formatModuleSize(totalSize)}</span>
+					<span style={styles.stats}>{t('moduleStorePanel.statsResult', { count: totalInstalled, size: formatModuleSize(totalSize) })}</span>
 				</div>
 			</div>
 
