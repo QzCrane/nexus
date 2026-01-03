@@ -24,43 +24,35 @@ export function useCategorizedTools({
 			efficiency: [], visual: [], ai: [], security: [], media: [], browser: []
 		};
 
-		// 1. Process builtin/registry tools (skip SaaT scripts - they go to scripts via user scripts)
+		// 1. Process builtin/registry tools
 		visibleTools.forEach(tool => {
 			if (tool.system) {
+				// System plugins - show if enabled
 				if (settings?.showSystemTools) cats.system.push(tool);
-				if (backgroundToolIds.includes(tool.id)) cats.active.push(tool);
+				// Add to active ONLY if background capable AND not 'userscripts'
+				// (userscripts as a panel shouldn't appear in active services)
+				if (backgroundToolIds.includes(tool.id) && tool.id !== 'userscripts') {
+					cats.active.push(tool);
+				}
 				return;
 			}
-			// Skip SaaT script tools - scripts category only shows user-created scripts
-			if (tool.toolType === 'script') return;
 
+			// SaaT script tools (bilibili-plus, chatgpt-wide etc.) go to scripts category
+			if (tool.toolType === 'script') {
+				cats.scripts.push(tool);
+				return;
+			}
+
+			// Regular tools to active services if background capable
 			if (backgroundToolIds.includes(tool.id)) cats.active.push(tool);
 			if (cats[tool.category]) cats[tool.category].push(tool);
 			else cats.general.push(tool);
 		});
 
-		// 2. Merge User Scripts from storage (only pure user scripts, skip SaaT)
-		scripts.forEach(script => {
-			// Skip SaaT scripts (id format: 'saat-{toolId}-{timestamp}')
-			if (script.id.startsWith('saat-')) return;
+		// Note: User scripts from storage are NOT shown on main homepage
+		// They are only managed via the userscripts panel
 
-			const scriptTool: ToolMeta = {
-				id: script.id,
-				name: script.name,
-				description: script.description,
-				icon: script.type === 'css' ? '🎨' : '⚡',
-				category: 'scripts',
-				toolType: 'script',
-				size: script.code.length,
-				builtIn: false,
-				status: 'ready',
-				keywords: ['script', 'user'],
-				isUserScript: true
-			} as ToolMeta & { isUserScript?: boolean };
-			cats.scripts.push(scriptTool);
-		});
-
-		// 3. Sort each category
+		// 2. Sort each category
 		Object.keys(cats).forEach(cat => {
 			const pinned = settings?.pinnedTools || [], order = settings?.toolOrder?.[cat] || [];
 			cats[cat].sort((a, b) => {

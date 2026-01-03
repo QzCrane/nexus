@@ -86,7 +86,9 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 				onClick={() => {
 					if (!isReady) return;
 					if (isScriptTool) {
-						handleScriptToggle();
+						// Script tools: open userscripts panel to edit/manage
+						// Pass tool.id via onSelect - parent will handle opening userscripts with this script
+						onSelect('userscripts' as ToolId);
 					} else {
 						onSelect(tool.id as ToolId);
 					}

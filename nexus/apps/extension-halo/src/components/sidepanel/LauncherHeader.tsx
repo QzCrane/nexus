@@ -68,8 +68,7 @@ export const LauncherHeader: React.FC<LauncherHeaderProps> = ({
 						</div>
 					</>
 				) : (
-					<div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
-						<div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+					<div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
 							<span style={{ fontSize: '22px', lineHeight: 1 }}>🌟</span>
 							<h1 style={{ 
 								margin: 0, fontSize: '18px', fontWeight: 800, 
@@ -79,27 +78,6 @@ export const LauncherHeader: React.FC<LauncherHeaderProps> = ({
 								HALO
 							</h1>
 						</div>
-						{/* Tool count badge */}
-						<div style={{
-							display: 'flex',
-							alignItems: 'center',
-							gap: '4px',
-							padding: '3px 8px',
-							borderRadius: '12px',
-							background: 'rgba(124, 58, 237, 0.15)',
-							border: '1px solid rgba(124, 58, 237, 0.3)',
-						}}>
-							<span style={{ fontSize: '11px' }}>🧰</span>
-							<span style={{ 
-								fontSize: '11px', 
-								fontWeight: 600,
-								color: 'var(--halo-accent)',
-								fontVariantNumeric: 'tabular-nums'
-							}}>
-								{visibleTools.filter(tool => !tool.system && tool.id !== 'permissions').length}
-							</span>
-						</div>
-					</div>
 				)}
 			</div>
 
