@@ -49,17 +49,7 @@ export const base = {
 		official: 'Official',
 		my: 'My',
 	},
-	settings: {
-		showLabels: 'Show Names',
-		showLabelsDesc: 'Show tool names under icons in grid view',
-		showSystemTools: 'Show System Tools',
-		showSystemToolsDesc: 'Show "System Components" category in launcher',
-		iconSize: 'Icon Size',
-		iconSizeDesc: 'Adjust the size of tool icons',
-		dark: 'Dark',
-		light: 'Light',
-		system: 'System',
-	},
+
 	footer: {
 		zeroTracking: 'Zero tracking',
 		localOnly: 'Local only',

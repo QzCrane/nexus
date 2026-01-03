@@ -1508,10 +1508,10 @@ export const SYSTEM_PLUGIN_REGISTRY: GeneratedToolMeta[] = [
 		scriptType: undefined,
 	},
 	{
-		id: 'undefined',
+		id: 'resource-monitor',
 		icon: '⚡',
 		category: 'system',
-		size: 6498,
+		size: 6526,
 		builtIn: true,
 		system: true,
 		keywords: ["task","manager","cpu","background","service"],

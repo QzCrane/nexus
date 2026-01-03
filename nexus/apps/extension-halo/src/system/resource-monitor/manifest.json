@@ -1,4 +1,5 @@
 {
+	"id": "resource-monitor",
 	"name": "Resource Monitor",
 	"description": "Monitor and manage active background services and scripts",
 	"icon": "⚡",

@@ -49,17 +49,7 @@ export const base = {
 		official: '官方',
 		my: '我的',
 	},
-	settings: {
-		showLabels: '显示名称',
-		showLabelsDesc: '在网格视图中显示图标下方的名称',
-		showSystemTools: '显示系统工具',
-		showSystemToolsDesc: '在启动器中显示“系统组件”分类',
-		iconSize: '图标大小',
-		iconSizeDesc: '调整工具图标的显示尺寸',
-		dark: '深色',
-		light: '浅色',
-		system: '跟随系统',
-	},
+
 
 	footer: {
 		zeroTracking: '零追踪',
