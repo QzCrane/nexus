@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
-import { useToolState } from '../../kernel';
+import { useToolState, getToolMeta } from '../../kernel';
 import {
 	OPTIONAL_PERMISSIONS,
 	HOST_PERMISSIONS,
@@ -27,6 +27,7 @@ export const PermissionsPanel: React.FC = () => {
 	const [states, setStates] = useToolState<Record<string, boolean>>('permissions-states' as any, {});
 	const [loading, setLoading] = useState<string | null>(null);
 	const pm = getPermissionManager();
+	const meta = getToolMeta('permissions');
 
 	// Load permission states
 	useEffect(() => {
@@ -123,7 +124,7 @@ export const PermissionsPanel: React.FC = () => {
 			{/* Header */}
 			<Card variant="default" padding="sm">
 				<div style={styles.header}>
-					<span style={{ fontSize: '24px' }}>�️</span>
+					<span style={{ fontSize: '24px' }}>{meta?.icon || '🛡️'}</span>
 					<div>
 						<div style={styles.title}>{t('permissions.title')}</div>
 						<div style={styles.subtitle}>{t('permissions.subtitle')}</div>

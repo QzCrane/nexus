@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
+import { getToolMeta } from '../../kernel';
 import type { ExtensionInfo, ExtensionGroup } from './types';
 import { DEFAULT_GROUPS } from './types';
 import { getAllExtensions, loadGroups, assignToGroup, enableExtension, disableExtension } from './core';
@@ -14,6 +15,7 @@ type FilterType = 'all' | 'enabled' | 'disabled' | ExtensionGroup;
 
 export const ExtensionManagerPanel: React.FC = () => {
 	const { t } = useTranslation();
+	const meta = getToolMeta('extension-manager');
 	const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 	const [extensions, setExtensions] = useState<ExtensionInfo[]>([]);
 	const [groups, setGroups] = useState<Record<ExtensionGroup, string[]>>({ dev: [], work: [], entertainment: [], other: [] });
@@ -116,7 +118,7 @@ export const ExtensionManagerPanel: React.FC = () => {
 	if (hasPermission === false) {
 		return (
 			<Card variant="default" padding="lg" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: '16px' }}>
-				<div style={{ fontSize: '48px' }}>🔌</div>
+				<div style={{ fontSize: '48px' }}>{meta?.icon || '🔌'}</div>
 				<h2 style={{ margin: 0 }}>{t('extMgr.permissionRequired') || 'Permission Required'}</h2>
 				<p style={{ margin: 0, opacity: 0.8, maxWidth: '300px' }}>
 					{t('extMgr.permissionDesc') || 'HALO needs permission to manage your extensions.'}
