@@ -10,7 +10,7 @@ import { useSidePanelState } from './use-sidepanel-state';
 import { EngineStatusProvider } from './EngineStatusProvider';
 import { ActiveServicesProvider } from './ActiveServicesContext';
 import { SidePanelProvider, type SidePanelContextValue } from './SidePanelContext';
-import { ToastProvider } from '../ToastProvider';
+import { OverlayProvider } from '../ui/overlay';
 
 export const SidePanel: React.FC = () => {
 	const { t, ready: i18nReady } = useTranslation();
@@ -53,7 +53,7 @@ export const SidePanel: React.FC = () => {
 
 	return (
 		<SidePanelProvider value={contextValue}>
-			<ToastProvider>
+			<OverlayProvider>
 				<ActiveServicesProvider>
 					<EngineStatusProvider>
 						<div style={{ 
@@ -98,7 +98,7 @@ export const SidePanel: React.FC = () => {
 					</div>
 				</EngineStatusProvider>
 			</ActiveServicesProvider>
-		</ToastProvider>
+			</OverlayProvider>
 	</SidePanelProvider>
 	);
 };

@@ -3,7 +3,7 @@ import { useTranslation } from '../../i18n';
 import { useModuleManager, useRemoteRegistry, ALL_MODULES } from '../../kernel';
 import { ModuleList } from './module-list';
 import { StoreHeader } from './store-header';
-import { ModuleStoreModal } from './modal';
+import { useOverlay } from '../../components/ui/overlay';
 import { useUserScripts } from '../../system/userscripts/hooks';
 import { styles } from './panel.styles';
 import { FilterType } from './type-filter';
@@ -14,6 +14,7 @@ type ViewMode = 'installed' | 'available' | 'all' | 'updates';
 
 export const ModuleStorePanel: React.FC = () => {
 	const { t } = useTranslation();
+	const { showModal } = useOverlay();
 	const { loading, installedModules, availableModules, install, uninstall } = useModuleManager();
 	const { loading: remoteLoading, hasUpdates, updates, refresh } = useRemoteRegistry();
 	const { scripts } = useUserScripts();
@@ -25,15 +26,6 @@ export const ModuleStorePanel: React.FC = () => {
 	const [searchQuery, setSearchQuery] = useState('');
 	const [isSearchFocused, setIsSearchFocused] = useState(false);
 	const searchInputRef = useRef<HTMLInputElement>(null);
-
-	// Modal state
-	const [modalConfig, setModalConfig] = useState<{
-		isOpen: boolean;
-		type: 'confirm' | 'alert';
-		title?: string;
-		message: string;
-		onConfirm?: () => void;
-	}>({ isOpen: false, type: 'alert', message: '' });
 
 	// Ctrl+K keyboard shortcut
 	useEffect(() => {
@@ -55,29 +47,28 @@ export const ModuleStorePanel: React.FC = () => {
 	const handleUninstall = useCallback(async (m: typeof ALL_MODULES[0]) => {
 		// User Scripts (custom) are managed in UserScripts panel
 		if ((m as any).isUserScript) {
-			setModalConfig({
-				isOpen: true,
-				type: 'alert',
+			showModal({
 				title: t('common.readOnly') || '只读',
 				message: t('moduleStorePanel.scriptUninstallWarning'),
+				confirmText: t('moduleStorePanel.close') || '关闭',
 			});
 			return;
 		}
 
 		// Official Scripts require confirmation
 		if (m.toolType === 'script') {
-			setModalConfig({
-				isOpen: true,
+			showModal({
 				type: 'confirm',
 				title: t('moduleStorePanel.uninstall'),
 				message: t('moduleStorePanel.scriptUninstallConfirm'),
-				onConfirm: () => uninstall(m.id).then(() => setModalConfig(prev => ({ ...prev, isOpen: false })))
+				confirmText: t('moduleStorePanel.uninstall'),
+				onConfirm: () => uninstall(m.id)
 			});
 			return;
 		}
 
 		await uninstall(m.id);
-	}, [uninstall, t]);
+	}, [uninstall, t, showModal]);
 
 	const handleRefresh = useCallback(async () => { await refresh(); }, [refresh]);
 
@@ -157,16 +148,6 @@ export const ModuleStorePanel: React.FC = () => {
 				handleInstall={handleInstall} handleUninstall={handleUninstall}
 			/>
 			
-			<ModuleStoreModal
-				isOpen={modalConfig.isOpen}
-				type={modalConfig.type}
-				title={modalConfig.title}
-				message={modalConfig.message}
-				onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
-				onConfirm={() => {
-					modalConfig.onConfirm?.();
-				}}
-			/>
 		</div>
 	);
 };
