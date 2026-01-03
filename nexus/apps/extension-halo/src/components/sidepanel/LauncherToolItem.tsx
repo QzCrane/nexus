@@ -22,12 +22,14 @@ interface LauncherToolItemProps {
 	serviceState?: 'active' | 'inactive';
 	/** SaaT: callback for script tools toggle (instead of onSelect) */
 	onToggleScript?: (tool: ToolMeta) => void;
+	/** Callback when clicking a script tool to edit it */
+	onEditScript?: (scriptId: string) => void;
 }
 
 export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 	tool, settings, iconSize, spacing, showLabels, draggingId,
 	onSelect, onTogglePin, onDragStart, onDragOver, onDrop, isRunning, serviceState,
-	onToggleScript
+	onToggleScript, onEditScript
 }) => {
 	const { t } = useTranslation();
 	const [isHovered, setIsHovered] = useState(false);
@@ -86,9 +88,12 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 				onClick={() => {
 					if (!isReady) return;
 					if (isScriptTool) {
-						// Script tools: open userscripts panel to edit/manage
-						// Pass tool.id via onSelect - parent will handle opening userscripts with this script
-						onSelect('userscripts' as ToolId);
+						// Script tools: call onEditScript if provided, else open userscripts panel
+						if (onEditScript) {
+							onEditScript(tool.id);
+						} else {
+							onSelect('userscripts' as ToolId);
+						}
 					} else {
 						onSelect(tool.id as ToolId);
 					}

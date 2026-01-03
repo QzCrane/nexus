@@ -22,11 +22,12 @@ interface LauncherHomePageProps {
 	onReorderCategories: (ids: string[]) => void;
 	openTools: ToolId[];
 	onToggleScript?: (tool: ToolMeta) => void;
+	onEditScript?: (scriptId: string) => void;
 }
 
 export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 	visibleTools, settings, onSelectTool, collapsedCategories, toggleCategory,
-	onTogglePin, onReorderTools, onReorderCategories, openTools, onToggleScript
+	onTogglePin, onReorderTools, onReorderCategories, openTools, onToggleScript, onEditScript
 }) => {
 	const { t } = useTranslation();
 	const engineStatus = useEngineStatus();
@@ -168,7 +169,8 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 												onDrop={(e) => e.preventDefault()} 
 												isRunning={openTools.includes(tool.id as ToolId)} 
 												serviceState={serviceState}
-									onToggleScript={onToggleScript}
+												onToggleScript={onToggleScript}
+												onEditScript={onEditScript}
 											/>
 										);
 									})}

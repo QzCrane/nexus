@@ -27,30 +27,30 @@ export function useCategorizedTools({
 		// 1. Process builtin/registry tools
 		visibleTools.forEach(tool => {
 			if (tool.system) {
-				// System plugins - show if enabled
 				if (settings?.showSystemTools) cats.system.push(tool);
-				// Add to active ONLY if background capable AND not 'userscripts'
-				// (userscripts as a panel shouldn't appear in active services)
+				// System tools in active only if background capable (except userscripts panel)
 				if (backgroundToolIds.includes(tool.id) && tool.id !== 'userscripts') {
 					cats.active.push(tool);
 				}
 				return;
 			}
 
-			// SaaT script tools (bilibili-plus, chatgpt-wide etc.) go to scripts category
+			// Script tools (from scripts/ directory)
 			if (tool.toolType === 'script') {
+				// Always show in scripts category
 				cats.scripts.push(tool);
+				// Also show in Active Services if the script is enabled
+				if (activeServices.has(tool.id)) {
+					cats.active.push(tool);
+				}
 				return;
 			}
 
-			// Regular tools to active services if background capable
+			// Regular tools
 			if (backgroundToolIds.includes(tool.id)) cats.active.push(tool);
 			if (cats[tool.category]) cats[tool.category].push(tool);
 			else cats.general.push(tool);
 		});
-
-		// Note: User scripts from storage are NOT shown on main homepage
-		// They are only managed via the userscripts panel
 
 		// 2. Sort each category
 		Object.keys(cats).forEach(cat => {

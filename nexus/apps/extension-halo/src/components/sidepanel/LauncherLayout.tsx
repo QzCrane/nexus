@@ -23,6 +23,13 @@ export const LauncherLayout: React.FC<LayoutProps> = ({
 		setCollapsedCategories(prev => ({ ...prev, [category]: !prev[category] }));
 	};
 
+	// Handle clicking on a script tool to edit it
+	const handleEditScript = (scriptId: string) => {
+		// Store script ID in sessionStorage for userscripts panel to pick up
+		sessionStorage.setItem('halo_edit_script', scriptId);
+		onSelectTool('userscripts');
+	};
+
 	const showPage2 = !!activeTool;
 
 	return (
@@ -48,6 +55,7 @@ export const LauncherLayout: React.FC<LayoutProps> = ({
 						onReorderTools={onReorderTools}
 						onReorderCategories={onReorderCategories}
 						openTools={openTools}
+						onEditScript={handleEditScript}
 					/>
 				</div>
 

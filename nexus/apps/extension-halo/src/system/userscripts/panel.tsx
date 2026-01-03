@@ -35,6 +35,19 @@ export const UserScriptsPanel: React.FC = () => {
 
     const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
 
+	// Check if we were redirected here to edit a specific script
+	React.useEffect(() => {
+		const scriptId = sessionStorage.getItem('halo_edit_script');
+		if (scriptId) {
+			sessionStorage.removeItem('halo_edit_script');
+			// Find the script and open editor
+			const script = scripts.find(s => s.id === scriptId || s.name === scriptId);
+			if (script) {
+				handleEdit(script);
+			}
+		}
+	}, [scripts, handleEdit]);
+
 	// Render editor page as full sub-page
 	if (showEditor) {
 		return (
