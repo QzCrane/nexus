@@ -38,6 +38,18 @@
 	"background": {
 		"service_worker": "background.js"
 	},
+	"web_accessible_resources": [
+		{
+			"resources": [
+				"tools/*",
+				"scripts/*",
+				"assets/*"
+			],
+			"matches": [
+				"<all_urls>"
+			]
+		}
+	],
 	"content_scripts": [
 		{
 			"matches": [
