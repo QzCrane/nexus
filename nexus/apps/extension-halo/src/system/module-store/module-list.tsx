@@ -10,7 +10,7 @@ interface ModuleListProps {
 	installedModules: typeof ALL_MODULES;
 	installingId: string | null;
 	view: 'installed' | 'available' | 'all' | 'updates';
-	filterType?: 'all' | 'app' | 'official' | 'userscript' | 'system';
+	filterType?: 'all' | 'app' | 'script' | 'system';
 	handleInstall: (id: string) => void;
 	handleUninstall: (m: typeof ALL_MODULES[0]) => void;
 }
@@ -24,7 +24,7 @@ export const ModuleList: React.FC<ModuleListProps> = ({
 		const isInstalled = installedModules.some(m => m.id === mod.id);
 		const loadingId = installingId;
 		// Determine if this is a user script (read-only)
-		const isUserScript = (mod as any).isUserScript === true || filterType === 'userscript';
+		const isUserScript = (mod as any).isUserScript === true;
 
 		return (
 			<ModuleItem

@@ -17,6 +17,7 @@ export const ModuleStorePanel: React.FC = () => {
 	const { loading: remoteLoading, hasUpdates, updates, refresh } = useRemoteRegistry();
 	const { scripts } = useUserScripts();
 	const [view, setView] = useState<ViewMode>('all');
+	const [scriptView, setScriptView] = useState<'all' | 'official' | 'user'>('all');
 	const [filterType, setFilterType] = useState<FilterType>('all');
 	const [installing, setInstalling] = useState<string | null>(null);
 	const [searchQuery, setSearchQuery] = useState('');
@@ -55,8 +56,13 @@ export const ModuleStorePanel: React.FC = () => {
 
 	const filterByType = (m: typeof ALL_MODULES[0] & { isUserScript?: boolean }) => {
 		if (filterType === 'system') return m.system;
-		if (filterType === 'official') return !m.system && m.toolType === 'script' && !m.isUserScript;
-		if (filterType === 'userscript') return m.isUserScript;
+		if (filterType === 'script') {
+			const isScript = !m.system && (m.toolType === 'script' || m.isUserScript);
+			if (!isScript) return false;
+			if (scriptView === 'official') return !m.isUserScript;
+			if (scriptView === 'user') return m.isUserScript;
+			return true;
+		}
 		if (filterType === 'app') return !m.system && (!m.toolType || m.toolType === 'panel');
 		return true;
 	};
@@ -97,6 +103,7 @@ export const ModuleStorePanel: React.FC = () => {
 				searchInputRef={searchInputRef} handleRefresh={handleRefresh}
 				remoteLoading={remoteLoading} filterType={filterType} setFilterType={setFilterType}
 				view={view} setView={setView} hasUpdates={hasUpdates}
+				scriptView={scriptView} setScriptView={setScriptView}
 				updatesCount={updates.length} totalInstalled={totalInstalled} totalSize={totalSize}
 			/>
 			<ModuleList
