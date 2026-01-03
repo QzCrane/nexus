@@ -48,7 +48,7 @@ export const SidePanel: React.FC = () => {
 
 	const hasDock = state.openTools.some(id => {
 		const tool = state.visibleTools.find(m => m.id === id);
-		return tool && !tool.system && id !== 'settings' && id !== 'module-store' && id !== 'permissions';
+		return tool && !tool.system && id !== 'settings' && id !== 'module-store' && id !== 'permissions' && id !== 'extension-manager';
 	});
 
 	return (

@@ -9,7 +9,8 @@
 		"scripting",
 		"sidePanel",
 		"contextMenus",
-		"tabs"
+		"tabs",
+		"declarativeNetRequest"
 	],
 	"optional_permissions": [
 		"pageCapture",
@@ -23,8 +24,7 @@
 		"notifications",
 		"tabGroups",
 		"userScripts",
-		"management",
-		"declarativeNetRequest"
+		"management"
 	],
 	"optional_host_permissions": [
 		"*://*/*"

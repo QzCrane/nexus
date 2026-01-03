@@ -112,6 +112,16 @@ export const LauncherHeader: React.FC<LauncherHeaderProps> = ({
 				>🧩</button>
 				<button
 					style={{
+						background: activeTool === 'extension-manager' ? 'var(--halo-bg-tertiary)' : 'transparent',
+						border: 'none', borderRadius: '8px', cursor: 'pointer', padding: '4px', fontSize: '18px',
+						width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+						boxShadow: activeTool === 'extension-manager' ? '0 0 0 1px var(--halo-border)' : 'none'
+					}}
+					onClick={() => onSelectTool('extension-manager' as ToolId)}
+					title={t('tools.extension-manager.name')}
+				>🔌</button>
+				<button
+					style={{
 						background: activeTool === 'permissions' ? 'var(--halo-bg-tertiary)' : 'transparent',
 						border: 'none', borderRadius: '8px', cursor: 'pointer', padding: '4px', fontSize: '18px',
 						width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',

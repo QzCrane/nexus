@@ -3,7 +3,7 @@
 	"icon": "🧩",
 	"category": "browser",
 	"size": 8192,
-	"status": "beta",
+	"status": "ready",
 	"builtIn": true,
 	"system": true,
 	"keywords": [

@@ -85,9 +85,15 @@ export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({
 				</SmoothScrollContainer>
 			)}
 
+			{activeTool === 'extension-manager' && (
+				<SmoothScrollContainer>
+					<LazyToolRenderer toolId="extension-manager" />
+				</SmoothScrollContainer>
+			)}
+
 			{/* Standard Tools (Keep Alive) */}
 			{openTools
-				.filter(id => id !== 'settings' && id !== 'module-store' && id !== 'permissions')
+				.filter(id => id !== 'settings' && id !== 'module-store' && id !== 'permissions' && id !== 'extension-manager')
 				.map(toolId => {
 					const isActive = activeTool === toolId;
 					
