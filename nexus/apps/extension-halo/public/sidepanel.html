@@ -17,7 +17,9 @@
         --halo-input-bg: #2a2a2a;
         --halo-card-bg: #242424;
       }
-      html, body, #root {
+      html,
+      body,
+      #root {
         height: 100%;
         width: 100%;
         overflow: hidden;
@@ -26,6 +28,16 @@
       }
       * {
         box-sizing: border-box;
+      }
+      /* Reset button default styles to prevent black box flash */
+      button {
+        -webkit-tap-highlight-color: transparent;
+        -webkit-appearance: none;
+        appearance: none;
+      }
+      button:focus,
+      button:active {
+        outline: none;
       }
       body {
         background: var(--halo-bg);
@@ -71,7 +83,9 @@
         border-radius: 3px;
       }
       /* Universal smooth scroll for sidepanel - always enabled */
-      *, *::before, *::after {
+      *,
+      *::before,
+      *::after {
         scroll-behavior: smooth;
       }
     </style>

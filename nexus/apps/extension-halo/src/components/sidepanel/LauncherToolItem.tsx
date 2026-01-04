@@ -79,7 +79,8 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 				position: 'relative', opacity: isDragging ? 0.4 : 1, width: '100%',
 				transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
 				zIndex: isHovered ? 10 : 1,
-				transform: isHovered && isReady ? 'translateY(-2px)' : 'none'
+				transform: isHovered && isReady ? 'translateY(-2px)' : 'translateY(0)',
+				willChange: 'transform', // Keep on GPU layer
 			}}
 		>
 			<button
@@ -108,7 +109,9 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 					border: isPinned ? `1.5px solid ${mainThemeColor}` : isHovered && isReady ? `1.5px solid ${mainThemeColor}44` : '1px solid var(--halo-border)',
 					background: isPinned ? `linear-gradient(135deg, var(--halo-bg-secondary), ${mainThemeColor}08)` : 'var(--halo-bg-tertiary)',
 					boxShadow: isPinned ? `0 4px 12px ${mainThemeColor}25` : isHovered && isReady ? '0 6px 20px rgba(0,0,0,0.35)' : 'none',
-					borderRadius: '12px', overflow: 'visible', transition: 'all 0.2s ease', position: 'relative'
+					borderRadius: '12px', overflow: 'visible', transition: 'all 0.2s ease', position: 'relative',
+					outline: 'none',
+					backfaceVisibility: 'hidden', // Fix rendering artifacts during transition
 				}}
 				title={isReady ? `${t(`tools.${tool.id}.name`, { defaultValue: tool.name })}\n${t('common.pinHint')}` : `${t(`tools.${tool.id}.name`, { defaultValue: tool.name })} (${t('common.comingSoon')})`}
 			>
@@ -127,7 +130,8 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 					fontSize: fontSize,
 					marginBottom: '4px',
 					transition: 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-					transform: isHovered ? 'scale(1.15)' : 'scale(1)'
+					transform: isHovered ? 'scale(1.15)' : 'scale(1)',
+					backfaceVisibility: 'hidden'
 				}}>{tool.icon}</span>
 
 				{showLabels && <span style={{ 

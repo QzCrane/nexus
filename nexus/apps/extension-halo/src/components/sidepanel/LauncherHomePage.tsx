@@ -119,8 +119,8 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 					// Color themes for special categories
 					const catColors = {
 						active: { border: '#10b981', bg: 'rgba(76, 175, 80, 0.08)', text: '#10b981', dot: '#4CAF50' },
-						scripts: { border: '#f59e0b', bg: 'rgba(245, 158, 11, 0.08)', text: '#f59e0b', dot: '#FFD700' },
-						system: { border: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.08)', text: '#8b5cf6', dot: '#9C27B0' },
+						scripts: { border: '#f59e0b', bg: 'rgba(245, 158, 11, 0.08)', text: '#f59e0b' },
+						system: { border: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.08)', text: '#8b5cf6' },
 					};
 					const colors = catColors[cat as keyof typeof catColors];
 					
@@ -140,7 +140,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 							<div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
 								<span style={{ transform: collapsedCategories[cat] ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.2s', fontSize: '10px', opacity: 0.6 }}>▼</span>
 								<div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-									{isSpecialCat && colors && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: colors.dot, boxShadow: `0 0 6px ${colors.dot}` }}></span>}
+									{isSpecialCat && (colors as any).dot && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: (colors as any).dot, boxShadow: `0 0 6px ${(colors as any).dot}` }}></span>}
 									<span style={{ color: isSpecialCat && colors ? colors.text : 'inherit', fontWeight: isSpecialCat ? 700 : 600 }}>{t(`categories.${cat}`)}</span>
 								</div>
 							</div>
@@ -167,7 +167,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 												onDragStart={onDragStart} 
 												onDragOver={(e) => { e.preventDefault(); onDragEnter(cat, tool.id); }} 
 												onDrop={(e) => e.preventDefault()} 
-												isRunning={openTools.includes(tool.id as ToolId)} 
+												isRunning={!tool.system && openTools.includes(tool.id as ToolId)} 
 												serviceState={serviceState}
 												onToggleScript={onToggleScript}
 												onEditScript={onEditScript}

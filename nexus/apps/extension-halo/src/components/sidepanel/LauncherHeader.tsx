@@ -100,7 +100,11 @@ export const LauncherHeader: React.FC<LauncherHeaderProps> = ({
 								background: isActive ? 'var(--halo-bg-tertiary)' : 'transparent',
 								border: 'none', borderRadius: '8px', cursor: 'pointer', padding: '4px', fontSize: '18px',
 								width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-								boxShadow: isActive ? '0 0 0 1px var(--halo-border)' : 'none'
+								boxShadow: isActive ? '0 0 0 1px var(--halo-border)' : 'none',
+								outline: 'none',
+								// Prevent black box flash on all icons
+								userSelect: 'none',
+								WebkitTapHighlightColor: 'transparent',
 							}}
 							onClick={() => onSelectTool(id as ToolId)}
 							title={t(`tools.${id}.name`)}
