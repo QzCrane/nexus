@@ -1,9 +1,8 @@
 {
 	"id": "bilibili-plus",
 	"icon": "📺",
-	"category": "scripts",
-	"size": 2048,
-	"status": "ready",
+	"pluginType": "script",
+	"category": "media",
 	"builtIn": true,
 	"keywords": [
 		"bilibili",
@@ -13,15 +12,16 @@
 		"广告",
 		"弹幕"
 	],
-	"toolType": "script",
-	"scriptType": "javascript",
-	"scriptRunAt": "document_start",
-	"scriptMatches": [
-		"*://*.bilibili.com/*"
-	],
 	"permissions": [
 		"userScripts"
 	],
+	"script": {
+		"type": "javascript",
+		"runAt": "document_start",
+		"matches": [
+			"*://*.bilibili.com/*"
+		]
+	},
 	"background": {
 		"mechanism": "mutation_observer",
 		"frequency": "on-mutation",

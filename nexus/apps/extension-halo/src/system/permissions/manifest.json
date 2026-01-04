@@ -1,13 +1,13 @@
 {
 	"id": "permissions",
 	"icon": "🛡️",
+	"pluginType": "system",
 	"category": "security",
-	"size": 10240,
-	"system": true,
 	"builtIn": true,
 	"keywords": [
 		"security",
-		"access"
-	],
-	"permissions": []
+		"access",
+		"权限",
+		"安全"
+	]
 }

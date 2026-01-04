@@ -1,18 +1,17 @@
 {
 	"id": "resource-monitor",
-	"name": "Resource Monitor",
-	"description": "Monitor and manage active background services and scripts",
 	"icon": "⚡",
-	"category": "system",
-	"toolType": "panel",
-	"system": true,
+	"pluginType": "system",
+	"category": "dev",
 	"builtIn": true,
 	"keywords": [
 		"task",
 		"manager",
 		"cpu",
 		"background",
-		"service"
+		"service",
+		"后台",
+		"资源"
 	],
 	"background": {
 		"mechanism": "storage_listener",

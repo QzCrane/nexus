@@ -4,28 +4,18 @@
 
 import fs from 'fs';
 import path from 'path';
-import { error, ok, warn, scanDir } from './utils.js';
+import { error, ok, warn, summary, scanDir } from './utils.js';
 
 const MAX_LINES = 200;
 const WARN_LINES = 150;
 
 // 历史技术债豁免列表
 const LEGACY_FILES = [
-	'packages/contracts/src/messages.contracts.ts',
-	'packages/nexus-kernel/src/storage/repository.ts',
-	'packages/features/audio-engine/src/constants.ts',
-	'packages/features/audio-engine/src/PolicyEngine.ts',
-	'packages/features/audio-engine/src/WebAudioController.ts',
-	// Auto-generated files (by pnpm generate-registry)
-	'apps/extension-halo/src/kernel/registry/_generated.ts',
-	'apps/extension-halo/src/components/_generated-tool-loader.ts',
-	// i18n module translations (data files, not logic)
-	'apps/extension-halo/src/i18n/locales/en-modules/modules.ts',
-	'apps/extension-halo/src/i18n/locales/zh-modules/modules.ts',
+
 ];
 
 export function checkSourceFileLength(ROOT) {
-	console.log('\n📋 检查源码文件行数 (推荐≤150, 上限200)...\n');
+	console.log('\n📋 检查文件行数...');
 
 	const srcDirs = [
 		'packages/contracts/src',
@@ -65,17 +55,21 @@ export function checkSourceFileLength(ROOT) {
 		error(`${file.path} 超过 ${MAX_LINES} 行 (当前 ${file.lines} 行)！`);
 	}
 
-	// 150-200 行 → 警告
+	// 统计警告（不打印详情）
 	for (const file of warnFiles) {
-		warn(`${file.path} 超过 ${WARN_LINES} 行 (当前 ${file.lines} 行)，建议拆分`);
+		warn(`${file.path} (${file.lines} 行)`, true); // silent
 	}
-
-	// 历史债务 → 警告
 	for (const file of legacyFiles) {
-		warn(`[历史债务] ${file.path} (${file.lines} 行)`);
+		warn(`[legacy] ${file.path} (${file.lines} 行)`, true); // silent
 	}
 
+	// 汇总输出
 	if (oversizeFiles.length === 0) {
-		ok('无新增超标文件');
+		const totalWarn = warnFiles.length + legacyFiles.length;
+		if (totalWarn > 0) {
+			console.log(`   ⚠️  ${warnFiles.length} 文件超 150 行, ${legacyFiles.length} 历史债务 (用 --verbose 查看)`);
+		} else {
+			ok('文件行数检查通过');
+		}
 	}
 }

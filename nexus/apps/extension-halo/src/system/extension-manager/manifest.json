@@ -1,11 +1,9 @@
 {
 	"id": "extension-manager",
 	"icon": "🔌",
+	"pluginType": "system",
 	"category": "browser",
-	"size": 8192,
-	"status": "ready",
 	"builtIn": true,
-	"system": true,
 	"keywords": [
 		"extension",
 		"plugin",

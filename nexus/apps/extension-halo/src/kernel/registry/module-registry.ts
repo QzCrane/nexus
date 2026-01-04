@@ -1,8 +1,8 @@
 // goal: Module metadata and registry - consumes generated data
-// eff: Uses unified ToolMeta type from tool-registry-types
+// eff: Direct re-export of PLUGIN_REGISTRY with status enrichment
 
-import type { ToolMeta } from '../core/tool-registry-types';
-import { ALL_APPS as GENERATED_TOOLS, type GeneratedToolMeta } from './_generated';
+import type { PluginMeta } from '../core/tool-registry-types';
+import { PLUGIN_REGISTRY, type PluginMeta as GeneratedPluginMeta } from './_generated';
 
 // Module installation status
 export type ModuleStatus = 'available' | 'installed' | 'downloading' | 'updating' | 'error';
@@ -24,46 +24,26 @@ export interface ModuleManagerState {
 	lastSync: number;
 }
 
-// Build ToolMeta from GeneratedToolMeta
-function buildToolMeta(tool: GeneratedToolMeta): ToolMeta {
+// Enrich with runtime status
+function enrichWithStatus(plugin: GeneratedPluginMeta): PluginMeta {
 	return {
-		id: tool.id,
-		icon: tool.icon,
-		category: tool.category,
-		status: tool.builtIn ? 'ready' : 'available',
-		keywords: tool.keywords || [],
-		features: tool.features,
-		system: tool.system,
-		permissions: tool.permissions,
-		// SaaT fields
-		toolType: tool.toolType,
-		scriptMatches: tool.scriptMatches,
-		scriptExcludeMatches: tool.scriptExcludeMatches,
-		scriptRunAt: tool.scriptRunAt,
-		scriptType: tool.scriptType,
-		// Module-specific fields
-		size: tool.size,
-		builtIn: tool.builtIn,
-		dependencies: tool.dependencies,
+		...plugin,
+		status: plugin.builtIn ? 'ready' : 'available',
 		version: '1.0.0',
 	};
 }
 
+// All modules with status
+export const ALL_MODULES: PluginMeta[] = PLUGIN_REGISTRY.map(enrichWithStatus);
+
 // Core modules (builtIn: true)
-export const CORE_MODULES: ToolMeta[] = GENERATED_TOOLS
-	.filter(t => t.builtIn)
-	.map(buildToolMeta);
+export const CORE_MODULES: PluginMeta[] = ALL_MODULES.filter(m => m.builtIn);
 
 // Optional modules (builtIn: false)
-export const OPTIONAL_MODULES: ToolMeta[] = GENERATED_TOOLS
-	.filter(t => !t.builtIn)
-	.map(buildToolMeta);
-
-// All modules combined
-export const ALL_MODULES: ToolMeta[] = GENERATED_TOOLS.map(buildToolMeta);
+export const OPTIONAL_MODULES: PluginMeta[] = ALL_MODULES.filter(m => !m.builtIn);
 
 // Get module by ID
-export const getModuleMeta = (id: string): ToolMeta | undefined =>
+export const getModuleMeta = (id: string): PluginMeta | undefined =>
 	ALL_MODULES.find(m => m.id === id);
 
 // Format size for display
@@ -73,6 +53,12 @@ export const formatModuleSize = (bytes: number): string => {
 	return `${(bytes / 1048576).toFixed(1)} MB`;
 };
 
-// Re-export for backward compatibility
-export { ALL_APPS as GENERATED_TOOLS, type GeneratedToolMeta } from './_generated';
+// Re-exports for backward compatibility
+export { PLUGIN_REGISTRY, type PluginMeta as GeneratedPluginMeta } from './_generated';
+/** @deprecated Use PLUGIN_REGISTRY directly */
+export { PLUGIN_REGISTRY as GENERATED_TOOLS } from './_generated';
+/** @deprecated Use PluginMeta */
+export type GeneratedToolMeta = GeneratedPluginMeta;
 
+// Legacy alias
+export type ToolMeta = PluginMeta;

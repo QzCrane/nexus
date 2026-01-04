@@ -5,7 +5,8 @@ import { BaseTranslations, SettingsTranslations, ModuleTranslations } from './ty
 
 export type Locale = 'en' | 'zh';
 export type LocaleSetting = Locale | 'system';
-export type ToolCategory = 'general' | 'dev' | 'efficiency' | 'visual' | 'ai' | 'security' | 'media' | 'browser' | 'active' | 'scripts' | 'system';
+// 'active' is a virtual runtime category, 'system' is for internal filtering only
+export type ToolCategory = 'general' | 'dev' | 'efficiency' | 'visual' | 'ai' | 'security' | 'media' | 'browser' | 'active' | 'system';
 
 // Translation keys structure
 export interface TranslationKeys extends

@@ -1,13 +1,13 @@
 {
 	"id": "module-store",
 	"icon": "📦",
+	"pluginType": "system",
 	"category": "general",
-	"size": 15360,
-	"system": true,
 	"builtIn": true,
 	"keywords": [
 		"store",
-		"download"
-	],
-	"permissions": []
+		"download",
+		"模块",
+		"商店"
+	]
 }

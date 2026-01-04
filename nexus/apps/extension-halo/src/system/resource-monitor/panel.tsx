@@ -4,7 +4,7 @@
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from '../../i18n';
 import { useActiveServices } from '../../components/sidepanel/ActiveServicesContext';
-import { BACKGROUND_PROFILES_MAP, BACKGROUND_TOOL_IDS, ALL_APPS } from '../../kernel/registry/_generated';
+import { BACKGROUND_PROFILES_MAP, BACKGROUND_PLUGIN_IDS, PLUGIN_REGISTRY } from '../../kernel/registry/_generated';
 import { LEVEL_CONFIG, MECHANISM_ICONS, SYSTEM_CORE_CONSUMERS } from './types';
 import type { MonitoredService, BackgroundProfile, ImpactLevel, ConsumptionMechanism } from './types';
 
@@ -41,15 +41,14 @@ export const ResourceMonitorPanel: React.FC = () => {
 
 	// Build tool service list from BACKGROUND_PROFILES_MAP
 	const toolServices = useMemo<MonitoredService[]>(() => {
-		return BACKGROUND_TOOL_IDS.map(id => {
+		return BACKGROUND_PLUGIN_IDS.map(id => {
 			const profile = BACKGROUND_PROFILES_MAP[id] as BackgroundProfile;
-			const meta = ALL_APPS.find(app => app.id === id);
+			const meta = PLUGIN_REGISTRY.find(app => app.id === id);
 			if (!profile || !meta) return null;
 			
 			// Determine category: system > script > tool
-			let category: 'tool' | 'system' | 'script' = 'tool';
-			if (meta.system) category = 'system';
-			else if (meta.toolType === 'script') category = 'script';
+			// Category from pluginType (new unified schema)
+			const category = meta.pluginType as 'tool' | 'system' | 'script';
 			
 			return {
 				id,

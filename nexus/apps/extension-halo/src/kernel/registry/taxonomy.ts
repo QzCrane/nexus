@@ -10,8 +10,13 @@ export interface CategoryDef {
 	i18nKey: string;
 }
 
+// Plugin types (physical directory -> pluginType)
+export type PluginType = 'tool' | 'script' | 'system';
+
 export const TAXONOMY: CategoryDef[] = [
+	// Virtual category (runtime only, not in manifest)
 	{ id: 'active', icon: '⚡', sortOrder: 0, i18nKey: 'categories.active' },
+	// Functional categories (used by all plugin types)
 	{ id: 'general', icon: '🏠', sortOrder: 10, i18nKey: 'categories.general' },
 	{ id: 'dev', icon: '👨‍💻', sortOrder: 20, i18nKey: 'categories.dev' },
 	{ id: 'efficiency', icon: '🚀', sortOrder: 30, i18nKey: 'categories.efficiency' },

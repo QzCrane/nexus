@@ -1,11 +1,15 @@
 {
 	"id": "userscripts",
 	"icon": "📜",
+	"pluginType": "system",
 	"category": "dev",
-	"system": true,
-	"size": 45000,
 	"builtIn": false,
-	"keywords": [],
+	"keywords": [
+		"script",
+		"inject",
+		"脚本",
+		"注入"
+	],
 	"permissions": [
 		"webNavigation",
 		"*://*/*"

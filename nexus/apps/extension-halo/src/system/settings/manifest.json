@@ -1,12 +1,12 @@
 {
 	"id": "settings",
 	"icon": "⚙️",
+	"pluginType": "system",
 	"category": "general",
-	"size": 20480,
-	"system": true,
 	"builtIn": true,
 	"keywords": [
-		"config"
-	],
-	"permissions": []
+		"config",
+		"设置",
+		"配置"
+	]
 }
