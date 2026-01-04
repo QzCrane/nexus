@@ -33,7 +33,6 @@ const styles: Record<string, React.CSSProperties> = {
 		cursor: 'pointer', background: 'var(--halo-accent)', color: '#fff', border: 'none',
 	},
 	checkbox: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer' },
-	toast: { position: 'fixed', bottom: '60px', left: '50%', transform: 'translateX(-50%)', padding: '10px 20px', background: 'var(--halo-accent)', borderRadius: '24px', fontSize: '12px', fontWeight: 500, color: '#fff', zIndex: 1000 },
 };
 
 export const UUIDPanel: React.FC = () => {

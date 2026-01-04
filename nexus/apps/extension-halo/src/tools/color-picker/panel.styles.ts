@@ -159,20 +159,4 @@ export const styles: Record<string, React.CSSProperties> = {
 		color: 'var(--halo-text-muted, #666)',
 		fontSize: '12px',
 	},
-	toast: {
-		position: 'fixed',
-		bottom: '60px',
-		left: '50%',
-		transform: 'translateX(-50%)',
-		padding: '10px 20px',
-		background: 'var(--halo-accent, #7c3aed)',
-		borderRadius: '24px',
-		fontSize: '12px',
-		fontWeight: 500,
-		color: '#fff',
-		zIndex: 1000,
-		boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
-		animation: 'fadeInUp 0.3s ease-out',
-	},
 };
-

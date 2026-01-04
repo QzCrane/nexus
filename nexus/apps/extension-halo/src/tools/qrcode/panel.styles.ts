@@ -30,5 +30,4 @@ export const styles: Record<string, React.CSSProperties> = {
 	resultCard: { padding: '16px', background: 'var(--halo-bg-secondary)', borderRadius: '12px', border: '1px solid var(--halo-accent)' },
 	resultLabel: { fontSize: '10px', color: 'var(--halo-text-muted)', marginBottom: '8px', textTransform: 'uppercase' },
 	resultText: { fontSize: '13px', color: 'var(--halo-text)', wordBreak: 'break-all', lineHeight: 1.5 },
-	toast: { position: 'fixed', bottom: '60px', left: '50%', transform: 'translateX(-50%)', padding: '10px 20px', background: 'var(--halo-accent)', borderRadius: '24px', fontSize: '12px', fontWeight: 500, color: '#fff', zIndex: 1000 },
 };

@@ -1,4 +1,5 @@
 // goal: Styles for code-snippets panel
+// note: Modals should use unified OverlayProvider, not inline styles
 
 import type { CSSProperties } from 'react';
 
@@ -16,15 +17,7 @@ export const styles: Record<string, CSSProperties> = {
 		alignItems: 'center',
 		gap: '8px',
 	},
-	searchInput: {
-		flex: 1,
-		padding: '8px 12px',
-		borderRadius: '6px',
-		border: '1px solid var(--halo-border)',
-		background: 'var(--halo-input-bg)',
-		color: 'var(--halo-text)',
-		fontSize: '13px',
-	},
+	// Note: Use unified SearchInput from components/ui for search boxes
 	btn: {
 		padding: '8px 14px',
 		borderRadius: '6px',
@@ -112,27 +105,6 @@ export const styles: Record<string, CSSProperties> = {
 		display: 'flex',
 		gap: '6px',
 		marginTop: '8px',
-	},
-	// Editor modal
-	modal: {
-		position: 'fixed',
-		inset: 0,
-		background: 'rgba(0,0,0,0.6)',
-		display: 'flex',
-		alignItems: 'center',
-		justifyContent: 'center',
-		zIndex: 1000,
-	},
-	modalContent: {
-		background: 'var(--halo-bg)',
-		borderRadius: '12px',
-		padding: '20px',
-		width: '90%',
-		maxWidth: '500px',
-		maxHeight: '80vh',
-		display: 'flex',
-		flexDirection: 'column',
-		gap: '12px',
 	},
 	input: {
 		padding: '10px 12px',

@@ -14,6 +14,7 @@ export const base = {
 		loading: '加载中...',
 		save: '保存',
 		cancel: '取消',
+		confirm: '确认',
 		reset: '重置',
 		language: '语言',
 		result: '结果',

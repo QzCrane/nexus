@@ -1,5 +1,5 @@
 // goal: Extension manager panel
-// eff: Main UI with filtering, grouping, and batch actions
+// eff: Main UI with filtering, grouping, and batch actions (uses unified OverlayProvider)
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
@@ -10,11 +10,13 @@ import { DEFAULT_GROUPS } from './types';
 import { getAllExtensions, loadGroups, assignToGroup, enableExtension, disableExtension } from './core';
 import { ExtCard } from './ExtCard';
 import { styles } from './panel.styles';
+import { useOverlay, SearchInput } from '../../components/ui';
 
 type FilterType = 'all' | 'enabled' | 'disabled' | ExtensionGroup;
 
 export const ExtensionManagerPanel: React.FC = () => {
 	const { t } = useTranslation();
+	const { showModal } = useOverlay();
 	const meta = getToolMeta('extension-manager');
 	const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 	const [extensions, setExtensions] = useState<ExtensionInfo[]>([]);
@@ -89,23 +91,45 @@ export const ExtensionManagerPanel: React.FC = () => {
 		return result.sort((a, b) => a.name.localeCompare(b.name));
 	}, [extensions, search, filter, groups]);
 
-	const handleAssignGroup = useCallback(async (extId: string, group: ExtensionGroup) => {
+	const handleAssignGroup = useCallback(async (extId: string, group: ExtensionGroup | '') => {
 		const newGroups = await assignToGroup(extId, group, groups);
 		setGroups(newGroups);
 	}, [groups]);
 
-	const handleBatchEnable = async () => {
-		for (const ext of filtered.filter(e => !e.enabled && e.mayDisable)) {
-			await enableExtension(ext.id);
-		}
-		loadData();
+	const disabledCount = filtered.filter(e => !e.enabled && e.mayDisable).length;
+	const enabledCount = filtered.filter(e => e.enabled && e.mayDisable).length;
+
+	// Unified modal for batch actions
+	const handleBatchEnableClick = () => {
+		if (disabledCount === 0) return;
+		showModal({
+			title: t('extMgr.confirmEnableTitle'),
+			message: t('extMgr.confirmEnableDesc', { count: disabledCount }),
+			type: 'confirm',
+			onConfirm: async () => {
+				const toEnable = filtered.filter(e => !e.enabled && e.mayDisable);
+				for (const ext of toEnable) {
+					await enableExtension(ext.id);
+				}
+				loadData();
+			},
+		});
 	};
 
-	const handleBatchDisable = async () => {
-		for (const ext of filtered.filter(e => e.enabled && e.mayDisable)) {
-			await disableExtension(ext.id);
-		}
-		loadData();
+	const handleBatchDisableClick = () => {
+		if (enabledCount === 0) return;
+		showModal({
+			title: t('extMgr.confirmDisableTitle'),
+			message: t('extMgr.confirmDisableDesc', { count: enabledCount }),
+			type: 'confirm',
+			onConfirm: async () => {
+				const toDisable = filtered.filter(e => e.enabled && e.mayDisable);
+				for (const ext of toDisable) {
+					await disableExtension(ext.id);
+				}
+				loadData();
+			},
+		});
 	};
 
 	const filters: { key: FilterType; label: string }[] = [
@@ -140,12 +164,11 @@ export const ExtensionManagerPanel: React.FC = () => {
 			<div style={styles.container}>
 				{/* Header */}
 				<div style={styles.header}>
-					<input
-						style={styles.searchInput}
-						type="text"
-						placeholder={t('extMgr.search')}
+					<SearchInput
 						value={search}
-						onChange={(e) => setSearch(e.target.value)}
+						onChange={setSearch}
+						placeholder={t('extMgr.search')}
+						enableShortcut
 					/>
 				</div>
 
@@ -179,8 +202,20 @@ export const ExtensionManagerPanel: React.FC = () => {
 				{/* Batch Actions */}
 				{filtered.length > 0 && (
 					<div style={styles.batchActions}>
-						<button style={styles.batchBtn} onClick={handleBatchEnable}>{t('extMgr.enableAll')}</button>
-						<button style={{ ...styles.batchBtn, background: '#ef4444' }} onClick={handleBatchDisable}>{t('extMgr.disableAll')}</button>
+						<button 
+							style={{ ...styles.batchBtn, opacity: disabledCount === 0 ? 0.5 : 1 }} 
+							onClick={handleBatchEnableClick}
+							disabled={disabledCount === 0}
+						>
+							{t('extMgr.enableAll')} ({disabledCount})
+						</button>
+						<button 
+							style={{ ...styles.batchBtn, background: '#ef4444', opacity: enabledCount === 0 ? 0.5 : 1 }} 
+							onClick={handleBatchDisableClick}
+							disabled={enabledCount === 0}
+						>
+							{t('extMgr.disableAll')} ({enabledCount})
+						</button>
 						<span style={{ flex: 1 }} />
 						<span style={{ fontSize: '12px', color: 'var(--halo-text-muted)' }}>{filtered.length} {t('common.tools')}</span>
 					</div>

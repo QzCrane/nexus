@@ -7,6 +7,7 @@ import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { captureVisible, captureWithDelay, downloadScreenshot, copyToClipboard } from './core';
 import { useToolState } from '../../kernel';
+import { useOverlay } from '../../components/ui/overlay';
 
 
 
@@ -43,11 +44,6 @@ const styles: Record<string, React.CSSProperties> = {
         background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text-secondary)',
         cursor: 'pointer', fontSize: '12px',
     },
-    toast: {
-        position: 'fixed', bottom: '60px', left: '50%', transform: 'translateX(-50%)',
-        padding: '8px 16px', background: 'var(--halo-accent)', borderRadius: '20px',
-        color: '#fff', fontSize: '12px', zIndex: 100,
-    },
     countdown: {
         fontSize: '48px', fontWeight: 700, color: 'var(--halo-accent)',
         textAlign: 'center', padding: '40px',
@@ -56,17 +52,11 @@ const styles: Record<string, React.CSSProperties> = {
 
 export const ScreenshotPanel: React.FC = () => {
     const { t } = useTranslation();
+    const { showToast } = useOverlay();
     const [image, setImage] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
-    const [toast, setToast] = useState<string | null>(null);
     const [delay, setDelay] = useToolState<number>('screenshot-delay' as any, 0);
     const [countdown, setCountdown] = useState<number | null>(null);
-
-
-    const showToast = useCallback((msg: string) => {
-        setToast(msg);
-        setTimeout(() => setToast(null), 2000);
-    }, []);
 
     const handleCapture = useCallback(async () => {
         if (loading) return;
@@ -86,10 +76,10 @@ export const ScreenshotPanel: React.FC = () => {
             await new Promise(r => setTimeout(r, 100));
             const dataUrl = await captureVisible();
             setImage(dataUrl);
-            showToast(t('screenshotPanel.captured') || 'Captured!');
+            showToast({ message: t('screenshotPanel.captured') || 'Captured!', type: 'success' });
         } catch (err) {
             console.error('Capture failed', err);
-            showToast(t('screenshotPanel.captureFailed'));
+            showToast({ message: t('screenshotPanel.captureFailed'), type: 'error' });
         } finally {
             setLoading(false);
             setCountdown(null);
@@ -99,13 +89,13 @@ export const ScreenshotPanel: React.FC = () => {
     const handleDownload = useCallback(() => {
         if (!image) return;
         downloadScreenshot(image, `halo-snap-${Date.now()}.png`);
-        showToast(t('screenshotPanel.downloaded'));
+        showToast({ message: t('screenshotPanel.downloaded'), type: 'success' });
     }, [image, showToast, t]);
 
     const handleCopy = useCallback(async () => {
         if (!image) return;
         const ok = await copyToClipboard(image);
-        showToast(ok ? t('screenshotPanel.copied') : t('screenshotPanel.copyFailed'));
+        showToast({ message: ok ? t('screenshotPanel.copied') : t('screenshotPanel.copyFailed'), type: ok ? 'success' : 'error' });
     }, [image, showToast, t]);
 
     return (
@@ -160,8 +150,6 @@ export const ScreenshotPanel: React.FC = () => {
                     </div>
                 </Card>
             )}
-
-            {toast && <div style={styles.toast}>{toast}</div>}
         </div>
     );
 };

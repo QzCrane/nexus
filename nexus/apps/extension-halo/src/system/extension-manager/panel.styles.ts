@@ -18,16 +18,7 @@ export const styles: Record<string, CSSProperties> = {
 		flexWrap: 'wrap',
 		alignItems: 'center',
 	},
-	searchInput: {
-		flex: 1,
-		minWidth: '120px',
-		padding: '8px 12px',
-		borderRadius: '8px',
-		border: '1px solid var(--halo-border)',
-		background: 'var(--halo-bg-secondary)',
-		color: 'var(--halo-text)',
-		fontSize: '13px',
-	},
+	// Note: Using unified SearchInput from components/ui
 	filterBtn: {
 		padding: '6px 12px',
 		borderRadius: '6px',

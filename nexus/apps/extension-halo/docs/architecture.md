@@ -1,79 +1,80 @@
-# HALO 架构 (v2.3.0)
+# HALO 架构 (v2.6.2)
 
-> DNA: SidePanel-only | 零上传 | 原子化模块 (tools/) | 本地优先 | 极致性能
+> DNA: SidePanel-only | 零上传 | 原子化模块 | 本地优先 | 极致性能
 
-## 📂 结构 (v2.3.0 Update)
+## 📂 结构
 
-- entry/: background(RPC), content(DOM), sidepanel.tsx(Entry)
-- components/: UI + \_generated-tool-loader.ts(Unified Loader) + sidepanel/(Context)
-- kernel/:
-  - registry/(\_generated.ts, taxonomy.ts)
-  - managers/(Permission/Module)
-  - core/
-- tools/: [tool-name]/{manifest.json, panel.tsx, core.ts, locales/} 👈 **User Tools**
-- system/: [component]/{manifest.json, panel.tsx, locales/} 👈 **System Components**
-- i18n/: locales/ (zh.ts, en.ts) + i18n-core.ts(初始化/Loader)
+```text
+entry/: background(RPC), content(DOM), sidepanel.tsx(Entry)
+components/: UI + _generated-tool-loader.ts + sidepanel/Context
+kernel/: registry/(taxonomy,_generated), managers/(Perm/Module), core/
+tools/: [id]/{manifest.json, panel.tsx, core.ts, locales/} → User Tools
+system/: [id]/{manifest.json, panel.tsx, locales/} → System Components (settings/store/perms/monitor)
+i18n/: locales/{zh,en}.ts + i18n-core.ts
+```
 
-## ⚙️ 双路注册体系 (Dual Registry System)
+## ⚙️ 双路注册体系
 
-我们采用物理文件隔离架构，构建脚本 `generate-tool-registry.mjs` 执行双路扫描：
+`generate-tool-registry.mjs` 双路扫描 → `_generated.ts`:
 
-1.  **User Tools (`src/tools/*`)** -> `USER_TOOL_REGISTRY`
-    - 纯净业务工具，严格禁止 System 权限
-2.  **System Plugins (`src/system/*`)** -> `SYSTEM_PLUGIN_REGISTRY`
-    - 系统级页面 (Settings, Store, Permissions)，标记 `system: true`
+- `src/tools/*` → `USER_TOOL_REGISTRY`
+- `src/system/*` → `SYSTEM_PLUGIN_REGISTRY`
+- 产出: `ALL_APPS` (路由) + `PERMISSION_USAGE_MAP` (权限反查)
 
-产出物 `_generated.ts` 包含 SSOT (Single Source of Truth) 数据：
+## 🌐 i18n 架构 (Flat Source, Nested Runtime)
 
-- `ALL_APPS`: 路由组件使用的全集
-- `PERMISSION_USAGE_MAP`: 权限反向依赖图
+**原则**: 工具自治 | SSOT | 扁平开发 | 嵌套运行
+
+### 目录规范
+
+```text
+tools/<id>/locales/{en,zh}.ts  →  构建聚合  →  _generated-tools-*.ts  →  运行时 hydrate
+```
+
+### Key 格式 (必须扁平)
+
+```typescript
+// tools/qrcode/locales/en.ts
+export const en = {
+  "tools.qrcode.name": "QR Code",
+  "tools.qrcode.desc": "Generate and scan",
+  "qrcode.action.scan": "Scan Image", // 工具内部 key
+};
+```
+
+### 运行时 Hydration
+
+`hydrateTranslations()` 自动将 `'a.b.c': 'val'` → `{a:{b:{c:'val'}}}` 供 i18next 消费。
 
 ## 📏 规范
 
-- 行数: 推荐 ≤150 | 警告 >150 | 红线 >200 (必须拆分)
-- 模块: core.ts(逻辑) / panel.tsx(UI) / index.ts(出口 ≤50)
-- UI: @nexus/ui-kit + CSS Vars | 4px 网格 | 禁用引起 Layout Shift 的动态 Padding
+| 项目 | 标准                                                   |
+| ---- | ------------------------------------------------------ |
+| 行数 | 推荐 ≤150 \| 警告 >150 \| 红线 >200 (必须拆分)         |
+| 模块 | core.ts(逻辑) / panel.tsx(UI) / index.ts(出口 ≤50)     |
+| UI   | @nexus/ui-kit + CSS Vars \| 4px 网格 \| 禁动态 Padding |
+| 图标 | Manifest 唯一数据源 (SSOT)，禁硬编码                   |
 
-## 🚀 核心服务 (Core Services)
+## 🚀 核心服务
 
-- **搜索 (Search)**: `unified-search.ts` - 全语言/拼音/多字段/自动扩展
-- **国际化 (i18n)**: 去中心化 (tools/_/locales) + System (system/_/locales) + 自动化聚合
-- **状态 (State)**: `useToolState` - 自动序列化/防抖/原子化隔离 (`halo_tool_state_${id}`)
-- **权限 (Permissions)**: `PermissionManager` - 基于 Manifest 的声明式权限管理 (SSOT)
-- **性能 (Perf)**: EngineStatusProvider | Zero-Copy Data | detachNode
+- **Search**: `unified-search.ts` - 全语言/拼音/多字段/自动扩展
+- **State**: `useToolState` - 原子化/跨窗口同步/防抖 (`halo_tool_state_${id}`)
+- **Permissions**: `PermissionManager` - Manifest 声明式管理
+- **SaaT**: `saat-service.ts` - Script-as-a-Tool 引擎
+- **Perf**: EngineStatusProvider | Zero-Copy | detachNode | Visibility Pause
+- **ResourceMonitor**: manifest.json → BACKGROUND_PROFILES_MAP → 全局监控
 
 ## 🔌 通信
 
-RPC: `chrome.runtime.sendMessage` | Type-Safe `ToolId` (Registry Derived)
+RPC: `chrome.runtime.sendMessage` | Type-Safe ToolId (Registry Derived)
 
-## 🎨 UI 规范
+## 🧩 版本演进
 
-- 组件: 必须优先使用 `@nexus/ui-kit`
-- 布局: 4px 网格 | 禁用 Layout Shift | 强制响应式
-- 图标: Manifest 为唯一数据源 (SSOT) | 禁硬编码
-
-## 🧩 系统演进
-
-### v1.8.0 系统服务化
-
-- **Permissions Service**: `PermissionManager`
-- **Decentralized i18n**: 工具自包含翻译文件
-
-### v2.0.0 质量工程
-
-- **UI Automation**: Playwright + 截图
-- **Safe Storage**:防止慢速 I/O 挂起
-
-### v2.2.0 全局持久化
-
-- **Atomic State**: 基于 ToolId 的原子化存储隔离
-- **Smart Intent**: 智能剪贴板意图
-
-### v2.3.0 架构统一与隔离 (current)
-
-- **Physical Isolation**: `src/tools` 与 `src/system` 物理分离
-- **SSOT**:
-  - Taxonomy (`taxonomy.ts`)
-  - Permissions (Manifest -> Registry Map)
-  - Registry (Dual Scan)
-  - Icons (Manifest -> Registry -> UI Components)
+| 版本 | 里程碑                                                 |
+| ---- | ------------------------------------------------------ |
+| v1.8 | PermissionManager + 去中心化 i18n                      |
+| v2.0 | Playwright UI Test + Safe Storage                      |
+| v2.2 | useToolState 原子化存储                                |
+| v2.3 | Physical Isolation (tools/system) + SSOT Dual Registry |
+| v2.4 | SaaT 架构 + i18n Flat Source                           |
+| v2.6 | ResourceMonitor SSOT + 性能优化 (Polling → Event)      |

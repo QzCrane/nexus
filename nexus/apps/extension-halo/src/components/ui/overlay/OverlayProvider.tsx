@@ -1,24 +1,37 @@
+/**
+ * Unified Overlay Provider
+ * 
+ * ALL overlays in HALO must use this system.
+ * Usage: const { showModal, showToast, showLoading, showSheet } = useOverlay();
+ * 
+ * @rule No inline `position: fixed` overlays allowed outside this system.
+ */
+
 import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
-import { ModalConfig, ToastConfig, OverlayContextType } from './types';
+import type { ModalConfig, ToastConfig, LoadingConfig, SheetConfig, OverlayContextType } from './types';
 import { useTranslation } from '../../../i18n';
 
 const OverlayContext = createContext<OverlayContextType | undefined>(undefined);
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
 const styles = {
+	// Full-screen overlay backdrop
 	overlay: {
 		position: 'fixed' as const,
 		top: 0, left: 0, right: 0, bottom: 0,
 		background: 'rgba(0, 0, 0, 0.4)',
 		backdropFilter: 'blur(4px)',
-		zIndex: 9999, // Ensure it's on top of everything
+		zIndex: 9999,
 		display: 'flex',
 		alignItems: 'center',
 		justifyContent: 'center',
 		padding: '24px',
-		// Reset any potential transforms from parents if rendered in portal (but here we wrapping root)
 	},
+	// Modal card
 	modalContent: {
-		background: 'var(--halo-bg-panel, #ffffff)', // Fallback to white -> ensure visibility
+		background: 'var(--halo-bg-panel, #ffffff)',
 		borderRadius: '16px',
 		padding: '24px',
 		width: '100%',
@@ -35,7 +48,7 @@ const styles = {
 	},
 	message: {
 		fontSize: '14px',
-		color: 'var(--halo-text, #404040)', // Changed from muted to normal text
+		color: 'var(--halo-text, #404040)',
 		marginBottom: '20px',
 		lineHeight: 1.5,
 		whiteSpace: 'pre-wrap' as const,
@@ -62,6 +75,11 @@ const styles = {
 		background: 'var(--halo-primary, #6366f1)',
 		color: 'white',
 	},
+	btnDanger: {
+		background: '#ef4444',
+		color: 'white',
+	},
+	// Toast container
 	toastContainer: {
 		position: 'fixed' as const,
 		bottom: '24px',
@@ -74,7 +92,7 @@ const styles = {
 		pointerEvents: 'none' as const,
 	},
 	toast: {
-		background: 'rgba(0, 0, 0, 0.8)',
+		background: 'rgba(0, 0, 0, 0.85)',
 		color: 'white',
 		padding: '10px 20px',
 		borderRadius: '20px',
@@ -85,29 +103,79 @@ const styles = {
 		display: 'flex',
 		alignItems: 'center',
 		gap: '8px',
-	}
+		pointerEvents: 'auto' as const,
+	},
+	// Loading overlay
+	loadingOverlay: {
+		position: 'fixed' as const,
+		top: 0, left: 0, right: 0, bottom: 0,
+		background: 'rgba(0, 0, 0, 0.3)',
+		backdropFilter: 'blur(2px)',
+		zIndex: 10001,
+		display: 'flex',
+		flexDirection: 'column' as const,
+		alignItems: 'center',
+		justifyContent: 'center',
+		gap: '12px',
+	},
+	spinner: {
+		width: '32px',
+		height: '32px',
+		border: '3px solid rgba(255,255,255,0.3)',
+		borderTopColor: 'white',
+		borderRadius: '50%',
+		animation: 'halo-spin 0.8s linear infinite',
+	},
+	// Bottom sheet
+	sheetOverlay: {
+		position: 'fixed' as const,
+		top: 0, left: 0, right: 0, bottom: 0,
+		background: 'rgba(0, 0, 0, 0.4)',
+		zIndex: 9998,
+	},
+	sheetContent: {
+		position: 'fixed' as const,
+		left: 0, right: 0, bottom: 0,
+		background: 'var(--halo-bg-panel, #ffffff)',
+		borderRadius: '16px 16px 0 0',
+		padding: '16px',
+		zIndex: 9999,
+		animation: 'halo-slide-up 0.3s ease-out',
+		maxHeight: '80vh',
+		overflowY: 'auto' as const,
+	},
+	sheetHandle: {
+		width: '40px',
+		height: '4px',
+		background: 'var(--halo-border)',
+		borderRadius: '2px',
+		margin: '0 auto 12px',
+	},
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Provider Component
+// ─────────────────────────────────────────────────────────────────────────────
 export const OverlayProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 	const { t } = useTranslation();
+	
+	// State for each overlay type
 	const [modal, setModal] = useState<ModalConfig | null>(null);
 	const [toasts, setToasts] = useState<(ToastConfig & { id: number })[]>([]);
+	const [loading, setLoading] = useState<LoadingConfig | null>(null);
+	const [sheet, setSheet] = useState<SheetConfig | null>(null);
+	
 	const toastIdRef = useRef(0);
 
+	// ─────────────────────────────────────────────────────────────────────────
+	// Modal API
+	// ─────────────────────────────────────────────────────────────────────────
 	const showModal = useCallback((config: ModalConfig) => {
 		setModal(config);
 	}, []);
 
 	const closeModal = useCallback(() => {
 		setModal(null);
-	}, []);
-
-	const showToast = useCallback((config: ToastConfig) => {
-		const id = ++toastIdRef.current;
-		setToasts(prev => [...prev, { ...config, id }]);
-		setTimeout(() => {
-			setToasts(prev => prev.filter(t => t.id !== id));
-		}, config.duration || 3000);
 	}, []);
 
 	const handleConfirm = async () => {
@@ -122,17 +190,54 @@ export const OverlayProvider: React.FC<{ children: React.ReactNode }> = ({ child
 		closeModal();
 	};
 
+	// ─────────────────────────────────────────────────────────────────────────
+	// Toast API
+	// ─────────────────────────────────────────────────────────────────────────
+	const showToast = useCallback((config: ToastConfig) => {
+		const id = ++toastIdRef.current;
+		setToasts(prev => [...prev, { ...config, id }]);
+		setTimeout(() => {
+			setToasts(prev => prev.filter(t => t.id !== id));
+		}, config.duration || 3000);
+	}, []);
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// Loading API
+	// ─────────────────────────────────────────────────────────────────────────
+	const showLoading = useCallback((config?: LoadingConfig) => {
+		setLoading(config || {});
+	}, []);
+
+	const hideLoading = useCallback(() => {
+		setLoading(null);
+	}, []);
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// Sheet API
+	// ─────────────────────────────────────────────────────────────────────────
+	const showSheet = useCallback((config: SheetConfig) => {
+		setSheet(config);
+	}, []);
+
+	const closeSheet = useCallback(() => {
+		sheet?.onClose?.();
+		setSheet(null);
+	}, [sheet]);
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// Render
+	// ─────────────────────────────────────────────────────────────────────────
 	return (
-		<OverlayContext.Provider value={{ showModal, closeModal, showToast }}>
+		<OverlayContext.Provider value={{ showModal, closeModal, showToast, showLoading, hideLoading, showSheet, closeSheet }}>
 			{children}
 			
 			{/* Global Modal Overlay */}
 			{modal && (
 				<div style={styles.overlay} onClick={handleCancel}>
 					<div style={styles.modalContent} onClick={e => e.stopPropagation()}>
+						{modal.icon && <div style={{ fontSize: '32px', textAlign: 'center', marginBottom: '12px' }}>{modal.icon}</div>}
 						{modal.title && <div style={styles.title}>{modal.title}</div>}
 						<div style={styles.message}>{modal.message}</div>
-						{/* If custom content provided, render it */}
 						{modal.content}
 						
 						{!modal.hideFooter && (
@@ -143,9 +248,9 @@ export const OverlayProvider: React.FC<{ children: React.ReactNode }> = ({ child
 								>
 									{modal.cancelText || t('common.cancel')}
 								</button>
-								{modal.type === 'confirm' && (
+								{(modal.type === 'confirm' || modal.type === 'danger') && (
 									<button 
-										style={{...styles.btn, ...styles.btnConfirm}}
+										style={{...styles.btn, ...(modal.type === 'danger' ? styles.btnDanger : styles.btnConfirm)}}
 										onClick={handleConfirm}
 									>
 										{modal.confirmText || t('common.confirm')}
@@ -164,14 +269,61 @@ export const OverlayProvider: React.FC<{ children: React.ReactNode }> = ({ child
 						{toast.type === 'success' && '✅'}
 						{toast.type === 'error' && '❌'}
 						{toast.type === 'warning' && '⚠️'}
+						{toast.type === 'info' && 'ℹ️'}
 						{toast.message}
+						{toast.action && (
+							<button 
+								style={{ marginLeft: '8px', background: 'transparent', border: 'none', color: 'var(--halo-accent)', cursor: 'pointer', fontSize: '12px' }}
+								onClick={toast.action.onClick}
+							>
+								{toast.action.label}
+							</button>
+						)}
 					</div>
 				))}
 			</div>
+
+			{/* Global Loading */}
+			{loading && (
+				<div style={styles.loadingOverlay}>
+					{loading.spinner !== false && <div style={styles.spinner} />}
+					{loading.message && <div style={{ color: 'white', fontSize: '14px' }}>{loading.message}</div>}
+				</div>
+			)}
+
+			{/* Global Bottom Sheet */}
+			{sheet && (
+				<>
+					<div style={styles.sheetOverlay} onClick={closeSheet} />
+					<div style={{ ...styles.sheetContent, maxHeight: sheet.height === 'full' ? '90vh' : sheet.height === 'half' ? '50vh' : 'auto' }}>
+						<div style={styles.sheetHandle} onClick={closeSheet} />
+						{sheet.title && <div style={{ ...styles.title, marginBottom: '16px' }}>{sheet.title}</div>}
+						{sheet.content}
+					</div>
+				</>
+			)}
+
+			{/* Global Animations */}
+			<style dangerouslySetInnerHTML={{ __html: `
+				@keyframes halo-pop-in {
+					from { opacity: 0; transform: scale(0.95); }
+					to { opacity: 1; transform: scale(1); }
+				}
+				@keyframes halo-slide-up {
+					from { opacity: 0; transform: translateY(20px); }
+					to { opacity: 1; transform: translateY(0); }
+				}
+				@keyframes halo-spin {
+					to { transform: rotate(360deg); }
+				}
+			`}} />
 		</OverlayContext.Provider>
 	);
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Hook
+// ─────────────────────────────────────────────────────────────────────────────
 export const useOverlay = () => {
 	const context = useContext(OverlayContext);
 	if (!context) throw new Error('useOverlay must be used within OverlayProvider');

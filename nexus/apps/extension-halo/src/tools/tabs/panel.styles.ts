@@ -33,16 +33,7 @@ export const styles: Record<string, React.CSSProperties> = {
 		borderColor: 'var(--halo-accent, #7c3aed)',
 		color: '#fff',
 	},
-	searchInput: {
-		width: '100%',
-		padding: '8px 12px',
-		borderRadius: '8px',
-		border: '1px solid var(--halo-border, #444)',
-		background: 'var(--halo-bg-secondary, #252525)',
-		color: 'var(--halo-text, #fff)',
-		fontSize: '13px',
-		outline: 'none',
-	},
+	// Note: Use unified SearchInput from components/ui for search boxes
 	list: {
 		display: 'flex',
 		flexDirection: 'column',

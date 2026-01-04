@@ -20,37 +20,32 @@ export const StatusIndicators: React.FC<{ isRunning: boolean; engineEnabled: boo
 	isRunning, 
 	engineEnabled,
 	serviceState
-}) => (
-	<div style={{ position: 'absolute', top: '5px', left: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-		{/* Open in Panel Indicator */}
-		{isRunning && (
-			<div style={{ 
-				width: '6px', height: '6px', borderRadius: '50%', 
-				background: 'var(--halo-accent)', boxShadow: '0 0 5px var(--halo-accent)',
-			}} />
-		)}
-		
-		{/* Engine Status Indicator (Only if explicit serviceState is missing) */}
-		{engineEnabled && !serviceState && (
-			<div style={{ 
-				width: '6px', height: '6px', borderRadius: '50%', 
-				background: '#10b981', boxShadow: '0 0 5px #10b981'
-			}} />
-		)}
-
-		{/* Background Service Indicator (Green/Grey) */}
-		{serviceState && (
-			<div style={{ 
-				width: '6px', height: '6px', borderRadius: '50%', 
-				background: serviceState === 'active' ? '#4CAF50' : 'var(--halo-text-muted)',
-				boxShadow: serviceState === 'active' ? '0 0 5px #4CAF50' : 'none',
-				opacity: serviceState === 'active' ? 1 : 0.5,
-				animation: serviceState === 'active' ? 'halo-pulse 2s infinite' : 'none',
-				transition: 'all 0.3s ease'
-			}} />
-		)}
-	</div>
-);
+}) => {
+	// Only show ONE indicator: prioritize serviceState > isRunning
+	// Blue = panel open, Green = background service active
+	const showBlue = isRunning && !serviceState;
+	const showGreen = serviceState === 'active' || (engineEnabled && !serviceState && !isRunning);
+	
+	if (!showBlue && !showGreen) return null;
+	
+	return (
+		<div style={{ position: 'absolute', top: '5px', left: '6px' }}>
+			{showBlue && (
+				<div style={{ 
+					width: '6px', height: '6px', borderRadius: '50%', 
+					background: 'var(--halo-accent)', boxShadow: '0 0 5px var(--halo-accent)',
+				}} />
+			)}
+			{showGreen && !showBlue && (
+				<div style={{ 
+					width: '6px', height: '6px', borderRadius: '50%', 
+					background: '#4CAF50', boxShadow: '0 0 5px #4CAF50',
+					animation: 'halo-pulse 2s infinite',
+				}} />
+			)}
+		</div>
+	);
+};
 
 /** The "Pinned" pin overlay */
 export const PinOverlay: React.FC<{ 

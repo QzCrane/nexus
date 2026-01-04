@@ -14,6 +14,7 @@ export const base = {
 		loading: 'Loading...',
 		save: 'Save',
 		cancel: 'Cancel',
+		confirm: 'Confirm',
 		reset: 'Reset',
 		language: 'Language',
 		result: 'Result',

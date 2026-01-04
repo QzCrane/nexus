@@ -90,6 +90,20 @@ export function openDetailsPage(id: string): void {
 }
 
 /**
+ * Launch extension popup (if available)
+ * Note: chrome.management doesn't provide direct popup launching.
+ * Falls back to opening options page or details page.
+ */
+export async function launchExtension(ext: ExtensionInfo): Promise<void> {
+	// Priority: popup (not available via API) > options > details
+	if (ext.optionsUrl) {
+		chrome.tabs.create({ url: ext.optionsUrl });
+	} else {
+		openDetailsPage(ext.id);
+	}
+}
+
+/**
  * Uninstall an extension (prompts user)
  */
 export async function uninstallExtension(id: string): Promise<boolean> {
@@ -121,11 +135,11 @@ export async function saveGroups(groups: Record<ExtensionGroup, string[]>): Prom
 }
 
 /**
- * Assign extension to a group
+ * Assign extension to a group (pass empty string to remove from all groups)
  */
 export async function assignToGroup(
 	extId: string,
-	group: ExtensionGroup,
+	group: ExtensionGroup | '',
 	currentGroups: Record<ExtensionGroup, string[]>
 ): Promise<Record<ExtensionGroup, string[]>> {
 	const newGroups = { ...currentGroups };
@@ -133,8 +147,10 @@ export async function assignToGroup(
 	for (const g of Object.keys(newGroups) as ExtensionGroup[]) {
 		newGroups[g] = newGroups[g].filter(id => id !== extId);
 	}
-	// Add to new group
-	newGroups[group] = [...newGroups[group], extId];
+	// Add to new group (only if group is specified)
+	if (group && group in newGroups) {
+		newGroups[group] = [...newGroups[group], extId];
+	}
 	await saveGroups(newGroups);
 	return newGroups;
 }
