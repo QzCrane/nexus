@@ -3,8 +3,14 @@
 
 import { useState, useCallback } from 'react';
 import type { ToolId } from '../../../kernel';
-import { STORAGE_PREFIX } from '../../../kernel';
+import { STORAGE_PREFIX, TOOL_REGISTRY } from '../../../kernel';
 import { safeStorageGet, safeStorageSet, safeStorageRemove } from '../../../kernel/core/safe-storage';
+
+// Dynamic system tool checker from registry (SSOT)
+const isSystemTool = (id: string): boolean => {
+	const tool = TOOL_REGISTRY.find(t => t.id === id);
+	return tool?.system === true;
+};
 
 const OPEN_TOOLS_KEY = `${STORAGE_PREFIX.CORE}open_tools`;
 const ACTIVE_TOOL_KEY = `${STORAGE_PREFIX.CORE}active_tool`;
@@ -35,31 +41,35 @@ export function useOpenTools(): UseOpenToolsResult {
 		if (savedOpen.length > 0) {
 			setOpenTools(savedOpen);
 			const savedActive = storage[ACTIVE_TOOL_KEY] as ToolId | null;
-			// System tools can be active without being in openTools
-			const isSystemTool = (id: string) =>
-				id === 'settings' || id === 'module-store' || id === 'permissions' || id === 'extension-manager';
-			if (savedActive && (savedOpen.includes(savedActive) || isSystemTool(savedActive))) {
+			// System tools are ephemeral - don't restore them on load
+			if (savedActive && savedOpen.includes(savedActive) && !isSystemTool(savedActive)) {
 				setActiveToolState(savedActive);
 			} else {
-				setActiveToolState(savedOpen[savedOpen.length - 1]);
+				// Fall back to last non-system tool or null (home page)
+				const lastUserTool = savedOpen.filter(id => !isSystemTool(id)).pop();
+				setActiveToolState(lastUserTool || null);
 			}
 		}
+		// Clear any stale system tool from storage on load
+		await safeStorageRemove([ACTIVE_TOOL_KEY]);
 	}, []);
 
 	const handleToolSelect = useCallback(async (toolId: ToolId) => {
 		setActiveToolState(toolId);
 
-		// System tools don't get added to dock
-		const isSystemTool = toolId === 'module-store' || toolId === 'settings' || toolId === 'permissions' || toolId === 'extension-manager';
-		if (!isSystemTool) {
+		// System tools: ephemeral, don't add to dock or persist activeTool
+		const isSys = isSystemTool(toolId);
+		if (!isSys) {
 			setOpenTools(prev => {
 				if (prev.includes(toolId)) return prev;
 				const newOpen = prev.length >= MAX_OPEN_TOOLS ? [...prev.slice(1), toolId] : [...prev, toolId];
 				safeStorageSet({ [OPEN_TOOLS_KEY]: newOpen });
 				return newOpen;
 			});
+			// Only persist activeTool for user tools
+			await safeStorageSet({ [ACTIVE_TOOL_KEY]: toolId });
 		}
-		await safeStorageSet({ [ACTIVE_TOOL_KEY]: toolId });
+		// System tools don't persist - will return to home on next open
 	}, []);
 
 	const handleCloseTool = useCallback((toolId: ToolId) => {
