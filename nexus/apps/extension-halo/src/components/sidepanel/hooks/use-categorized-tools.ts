@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import type { ToolMeta } from '../../../kernel/core/tool-registry-types';
 import type { HaloSettings } from '../../../kernel/core/settings';
 import type { UserScript } from '../../../system/userscripts/types';
+import { BACKGROUND_PROFILES_MAP } from "../../../kernel/registry/_generated";
 
 interface UseCategorizedToolsProps {
 	visibleTools: ToolMeta[];
@@ -28,9 +29,15 @@ export function useCategorizedTools({
 		visibleTools.forEach(tool => {
 			if (tool.system) {
 				if (settings?.showSystemTools) cats.system.push(tool);
-				// System tools in active only if background capable (except userscripts panel)
-				if (backgroundToolIds.includes(tool.id) && tool.id !== 'userscripts') {
-					cats.active.push(tool);
+
+				// System tools in active if they are global background services
+				// Check if it's a known background tool AND it's NOT active-only (meaning it runs globally)
+				if (backgroundToolIds.includes(tool.id)) {
+					const profile = BACKGROUND_PROFILES_MAP[tool.id];
+					// If profile exists and activeOnly is false, it's a global service -> show in active
+					if (profile && !profile.activeOnly) {
+						cats.active.push(tool);
+					}
 				}
 				return;
 			}

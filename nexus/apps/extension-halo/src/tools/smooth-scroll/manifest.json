@@ -8,7 +8,7 @@
 	"background": {
 		"mechanism": "raf_active",
 		"frequency": "16ms",
-		"activeOnly": true,
+		"activeOnly": false,
 		"level": "medium",
 		"descriptionKey": "impact.raf_scroll",
 		"sourceFile": "tools/smooth-scroll/engine.ts",
