@@ -55,10 +55,10 @@ export const LEVEL_CONFIG: Record<ImpactLevel, { color: string; bg: string; labe
 	idle: { color: 'var(--halo-text-muted)', bg: 'var(--halo-bg-tertiary)', labelKey: 'impact.level.idle' }
 };
 
-// Mechanism icons
+// Mechanism icons (fast/slow use same icon since distinction is in frequency)
 export const MECHANISM_ICONS: Record<ConsumptionMechanism, string> = {
-	interval_fast: '⏱️', interval_slow: '🕐',
-	raf_active: '🎬', raf_idle: '💤',
+	interval_fast: '⏱️', interval_slow: '⏱️',  // unified timer icon
+	raf_active: '🎬', raf_idle: '🎬',           // unified animation icon
 	event_listener: '👂', storage_listener: '💾', message_listener: '📨',
 	wheel_listener: '🖱️', copy_listener: '📋',
 	mutation_observer: '👁️', service_worker: '⚙️', content_script: '📜', userscript: '🔧'

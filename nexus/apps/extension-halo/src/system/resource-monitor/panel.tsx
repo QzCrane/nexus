@@ -78,15 +78,31 @@ export const ResourceMonitorPanel: React.FC = () => {
 	const activeTools = useMemo(() => toolServices.filter(s => s.active), [toolServices]);
 	const inactiveTools = useMemo(() => toolServices.filter(s => !s.active), [toolServices]);
 
+	// Map mechanism to simplified i18n key (no fast/slow distinction)
+	const getMechKey = (mech: string): string => {
+		if (mech.startsWith('interval')) return 'impact.interval';
+		if (mech.startsWith('raf')) return 'impact.raf';
+		if (mech === 'event_listener') return 'impact.event';
+		if (mech === 'storage_listener') return 'impact.storage';
+		if (mech === 'message_listener') return 'impact.message';
+		if (mech === 'wheel_listener') return 'impact.wheel';
+		if (mech === 'copy_listener') return 'impact.copy';
+		if (mech === 'mutation_observer') return 'impact.mutation';
+		if (mech === 'service_worker') return 'impact.worker';
+		if (mech === 'content_script') return 'impact.content';
+		if (mech === 'userscript') return 'impact.userscript';
+		return `impact.${mech}`;
+	};
+
 	const renderProfile = (p: BackgroundProfile, i: number) => {
-		const levelStyle = LEVEL_CONFIG[p.level as ImpactLevel];
 		const mechIcon = MECHANISM_ICONS[p.mechanism as ConsumptionMechanism] || '❓';
-		// Use generic mechanism i18n key, frequency comes from manifest
-		const mechKey = `impact.mechanism.${p.mechanism}`;
+		const mechKey = getMechKey(p.mechanism);
+		// Combine translated mechanism name with frequency from manifest
+		const mechName = t(mechKey, { defaultValue: p.mechanism });
 		
 		return (
 			<div key={i} style={styles.detailRow}>
-				<span>{mechIcon} {t(mechKey, { defaultValue: p.mechanism })}</span>
+				<span>{mechIcon} {mechName}</span>
 				<span style={{ fontFamily: 'monospace' }}>{p.frequency}</span>
 			</div>
 		);
