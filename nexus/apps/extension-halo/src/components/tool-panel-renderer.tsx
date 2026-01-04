@@ -2,9 +2,16 @@ import React from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../i18n';
 import type { ToolId, HaloSettings } from '../kernel';
+import { TOOL_REGISTRY } from '../kernel';
 import { useSmoothWheel } from '../kernel/hooks/use-smooth-wheel';
 import { LazyToolRenderer } from './lazy-tool-loader';
 
+// SSOT: Get system tool IDs from registry
+const SYSTEM_TOOL_IDS = new Set(
+	TOOL_REGISTRY.filter(t => t.system).map(t => t.id)
+);
+
+const isSystemTool = (id: string): boolean => SYSTEM_TOOL_IDS.has(id);
 
 const styles = {
 	placeholder: {
@@ -60,40 +67,28 @@ export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({
 		</div>
 	);
 
-	if (openTools.length === 0 && !activeTool) {
+	// No tool active and no tools open -> show fallback
+	if (!activeTool && openTools.length === 0) {
 		return fallbackUI;
 	}
 
+	// System tool active: render it ephemerally (only when active)
+	if (activeTool && isSystemTool(activeTool)) {
+		return (
+			<SmoothScrollContainer>
+				<LazyToolRenderer 
+					toolId={activeTool} 
+					onSettingsChange={activeTool === 'settings' ? onSettingsChange : undefined} 
+				/>
+			</SmoothScrollContainer>
+		);
+	}
+
+	// User tools: render with keep-alive pattern
 	return (
 		<>
-			{/* System Pages (Rendered only when active) */}
-			{activeTool === 'module-store' && (
-				<SmoothScrollContainer>
-					<LazyToolRenderer toolId="module-store" />
-				</SmoothScrollContainer>
-			)}
-			
-			{activeTool === 'settings' && (
-				<SmoothScrollContainer>
-					<LazyToolRenderer toolId="settings" onSettingsChange={onSettingsChange} />
-				</SmoothScrollContainer>
-			)}
-			
-			{activeTool === 'permissions' && (
-				<SmoothScrollContainer>
-					<LazyToolRenderer toolId="permissions" />
-				</SmoothScrollContainer>
-			)}
-
-			{activeTool === 'extension-manager' && (
-				<SmoothScrollContainer>
-					<LazyToolRenderer toolId="extension-manager" />
-				</SmoothScrollContainer>
-			)}
-
-			{/* Standard Tools (Keep Alive) */}
 			{openTools
-				.filter(id => id !== 'settings' && id !== 'module-store' && id !== 'permissions' && id !== 'extension-manager')
+				.filter(id => !isSystemTool(id))
 				.map(toolId => {
 					const isActive = activeTool === toolId;
 					
@@ -103,7 +98,7 @@ export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({
 							style={{ 
 								...styles.contentWrapper,
 								display: isActive ? 'flex' : 'none',
-								padding: 0, // Container below SmoothScrollContainer handles padding
+								padding: 0,
 							}}
 						>
 							<div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
@@ -115,6 +110,7 @@ export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({
 					);
 				})}
 				
+			{/* No active tool but have open tools -> show fallback */}
 			{!activeTool && openTools.length > 0 && fallbackUI}
 		</>
 	);
