@@ -7,7 +7,7 @@ export type ToolStatus = 'ready' | 'beta' | 'coming' | 'disabled' | 'available';
 
 /**
  * Unified tool/module metadata
- * Used by both TOOL_REGISTRY and ALL_MODULES
+ * Used by both TOOL_REGISTRY and ALL_TOOLS
  */
 /**
  * Tool type: 'panel' (default) = React UI, 'script' = SaaT pseudo-tool (uses userScripts engine)

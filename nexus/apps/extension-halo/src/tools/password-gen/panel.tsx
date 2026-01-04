@@ -9,12 +9,12 @@ import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
 
 
-import { useToast } from '../../components/ToastProvider';
+import { useOverlay } from '../../components/ui';
 
 
 export const PasswordGenPanel: React.FC = () => {
 	const { t } = useTranslation();
-    const { showToast } = useToast();
+    const { showToast } = useOverlay();
 	const [config, setConfig] = useToolState<PasswordConfig>('password-gen-opts' as any, DEFAULT_CONFIG);
 
 	const [password, setPassword] = useState(() => generatePassword(DEFAULT_CONFIG));
@@ -37,7 +37,7 @@ export const PasswordGenPanel: React.FC = () => {
 
 	const handleCopy = useCallback((pwd: string) => {
 		navigator.clipboard.writeText(pwd);
-		showToast(t('passwordGen.copied', { defaultValue: 'Copied!' }));
+		showToast({ message: t('passwordGen.copied', { defaultValue: 'Copied!' }) });
 	}, [showToast, t]);
 
 	const updateConfig = useCallback((key: keyof PasswordConfig, value: unknown) => {

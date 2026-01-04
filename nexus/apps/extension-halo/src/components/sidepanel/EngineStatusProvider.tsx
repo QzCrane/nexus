@@ -12,6 +12,8 @@ const EngineStatusContext = createContext<EngineStatus>({
 	clipboard: false
 });
 
+import { safeStorageGet } from '../../kernel/core/safe-storage';
+
 /**
  * World-Class Performance Optimization: 
  * Centralized storage listener to avoid 80+ redundant components listeners.
@@ -27,8 +29,11 @@ export const EngineStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
 	useEffect(() => {
 		const checkAll = async () => {
 			const [sync, local] = await Promise.all([
-				chrome.storage.sync.get('HALO_SMOOTH_SCROLL_SETTINGS'),
-				chrome.storage.local.get(['halo_userscripts', 'halo_tool_clipboard_settings'])
+				safeStorageGet(['HALO_SMOOTH_SCROLL_SETTINGS'], { 'HALO_SMOOTH_SCROLL_SETTINGS': { enabled: false } }, 'sync'),
+				safeStorageGet(['halo_userscripts', 'halo_tool_clipboard_settings'], { 
+					'halo_userscripts': { globalEnabled: false },
+					'halo_tool_clipboard_settings': { enabled: true }
+				}, 'local')
 			]);
 
 			setStatus({

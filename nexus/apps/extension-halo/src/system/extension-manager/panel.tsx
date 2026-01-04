@@ -1,106 +1,29 @@
-// goal: Extension manager panel
-// eff: Main UI with filtering, grouping, and batch actions (uses unified OverlayProvider)
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { getToolMeta } from '../../kernel';
 import type { ExtensionInfo, ExtensionGroup } from './types';
-import { DEFAULT_GROUPS } from './types';
 import { getAllExtensions, loadGroups, assignToGroup, enableExtension, disableExtension } from './core';
 import { ExtCard } from './ExtCard';
 import { styles } from './panel.styles';
 import { useOverlay, SearchInput } from '../../components/ui';
+import { ExtensionFilter, FilterType } from './components/ExtensionFilter';
+import { BatchActionToolbar } from './components/BatchActionToolbar';
 
-type FilterType = 'all' | 'enabled' | 'disabled' | ExtensionGroup;
+import { useExtensionManager } from './hooks/use-extension-manager';
 
 export const ExtensionManagerPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const { showModal } = useOverlay();
 	const meta = getToolMeta('extension-manager');
-	const [hasPermission, setHasPermission] = useState<boolean | null>(null);
-	const [extensions, setExtensions] = useState<ExtensionInfo[]>([]);
-	const [groups, setGroups] = useState<Record<ExtensionGroup, string[]>>({ dev: [], work: [], entertainment: [], other: [] });
-	const [filter, setFilter] = useState<FilterType>('all');
-	const [search, setSearch] = useState('');
-	const [loading, setLoading] = useState(true);
+	
+	const {
+		hasPermission, loading, search, setSearch, filter, setFilter,
+		filtered, disabledCount, enabledCount,
+		loadData, requestAccess, getExtGroup, handleAssignGroup
+	} = useExtensionManager();
 
-	useEffect(() => {
-		chrome.permissions.contains({ permissions: ['management'] }, (granted) => {
-			setHasPermission(granted);
-			if (granted) setLoading(true);
-			else setLoading(false);
-		});
-	}, []);
-
-	const loadData = useCallback(async () => {
-		if (!hasPermission) return;
-		setLoading(true);
-		const [exts, grps] = await Promise.all([getAllExtensions(), loadGroups()]);
-		setExtensions(exts);
-		setGroups(grps);
-		setLoading(false);
-	}, [hasPermission]);
-
-	useEffect(() => { 
-		if (hasPermission) loadData(); 
-	}, [loadData, hasPermission]);
-
-	// Listen for extension state changes
-	useEffect(() => {
-		if (!hasPermission) return;
-		const listener = () => loadData();
-		chrome.management?.onEnabled?.addListener(listener);
-		chrome.management?.onDisabled?.addListener(listener);
-		chrome.management?.onInstalled?.addListener(listener);
-		chrome.management?.onUninstalled?.addListener(listener);
-		return () => {
-			chrome.management?.onEnabled?.removeListener(listener);
-			chrome.management?.onDisabled?.removeListener(listener);
-			chrome.management?.onInstalled?.removeListener(listener);
-			chrome.management?.onUninstalled?.removeListener(listener);
-		};
-	}, [loadData, hasPermission]);
-
-	const requestAccess = async () => {
-		const granted = await chrome.permissions.request({ permissions: ['management'] });
-		setHasPermission(granted);
-		if (granted) loadData();
-	};
-
-	const getExtGroup = useCallback((id: string): ExtensionGroup | undefined => {
-		for (const [g, ids] of Object.entries(groups)) {
-			if (ids.includes(id)) return g as ExtensionGroup;
-		}
-		return undefined;
-	}, [groups]);
-
-	const filtered = useMemo(() => {
-		let result = extensions;
-		// Search filter
-		if (search) {
-			const q = search.toLowerCase();
-			result = result.filter(e => e.name.toLowerCase().includes(q) || e.description.toLowerCase().includes(q));
-		}
-		// Type filter
-		if (filter === 'enabled') result = result.filter(e => e.enabled);
-		else if (filter === 'disabled') result = result.filter(e => !e.enabled);
-		else if (['dev', 'work', 'entertainment', 'other'].includes(filter)) {
-			result = result.filter(e => groups[filter as ExtensionGroup].includes(e.id));
-		}
-		return result.sort((a, b) => a.name.localeCompare(b.name));
-	}, [extensions, search, filter, groups]);
-
-	const handleAssignGroup = useCallback(async (extId: string, group: ExtensionGroup | '') => {
-		const newGroups = await assignToGroup(extId, group, groups);
-		setGroups(newGroups);
-	}, [groups]);
-
-	const disabledCount = filtered.filter(e => !e.enabled && e.mayDisable).length;
-	const enabledCount = filtered.filter(e => e.enabled && e.mayDisable).length;
-
-	// Unified modal for batch actions
-	const handleBatchEnableClick = () => {
+	const handleBatchEnable = () => {
 		if (disabledCount === 0) return;
 		showModal({
 			title: t('extMgr.confirmEnableTitle'),
@@ -108,15 +31,13 @@ export const ExtensionManagerPanel: React.FC = () => {
 			type: 'confirm',
 			onConfirm: async () => {
 				const toEnable = filtered.filter(e => !e.enabled && e.mayDisable);
-				for (const ext of toEnable) {
-					await enableExtension(ext.id);
-				}
+				for (const ext of toEnable) await enableExtension(ext.id);
 				loadData();
 			},
 		});
 	};
 
-	const handleBatchDisableClick = () => {
+	const handleBatchDisable = () => {
 		if (enabledCount === 0) return;
 		showModal({
 			title: t('extMgr.confirmDisableTitle'),
@@ -124,20 +45,11 @@ export const ExtensionManagerPanel: React.FC = () => {
 			type: 'confirm',
 			onConfirm: async () => {
 				const toDisable = filtered.filter(e => e.enabled && e.mayDisable);
-				for (const ext of toDisable) {
-					await disableExtension(ext.id);
-				}
+				for (const ext of toDisable) await disableExtension(ext.id);
 				loadData();
 			},
 		});
 	};
-
-	const filters: { key: FilterType; label: string }[] = [
-		{ key: 'all', label: t('extMgr.all') },
-		{ key: 'enabled', label: t('extMgr.enabled') },
-		{ key: 'disabled', label: t('extMgr.disabled') },
-		...Object.entries(DEFAULT_GROUPS).map(([k, v]) => ({ key: k as FilterType, label: `${v.icon} ${t(v.label)}` })),
-	];
 
 	if (hasPermission === false) {
 		return (
@@ -147,10 +59,7 @@ export const ExtensionManagerPanel: React.FC = () => {
 				<p style={{ margin: 0, opacity: 0.8, maxWidth: '300px' }}>
 					{t('extMgr.permissionDesc') || 'HALO needs permission to manage your extensions.'}
 				</p>
-				<button 
-					onClick={requestAccess}
-					style={{ ...styles.batchBtn, background: 'var(--halo-accent)', color: '#fff', fontSize: '14px', padding: '8px 16px' }}
-				>
+				<button onClick={requestAccess} style={{ ...styles.batchBtn, background: 'var(--halo-accent)', color: '#fff', fontSize: '14px', padding: '8px 16px' }}>
 					{t('extMgr.grantPermission') || 'Grant Permission'}
 				</button>
 			</Card>
@@ -162,7 +71,6 @@ export const ExtensionManagerPanel: React.FC = () => {
 	return (
 		<Card variant="default" padding="none" style={{ height: '100%' }}>
 			<div style={styles.container}>
-				{/* Header */}
 				<div style={styles.header}>
 					<SearchInput
 						value={search}
@@ -172,20 +80,8 @@ export const ExtensionManagerPanel: React.FC = () => {
 					/>
 				</div>
 
-				{/* Filters */}
-				<div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-					{filters.map(f => (
-						<button
-							key={f.key}
-							style={{ ...styles.filterBtn, ...(filter === f.key ? styles.filterBtnActive : {}) }}
-							onClick={() => setFilter(f.key)}
-						>
-							{f.label}
-						</button>
-					))}
-				</div>
+				<ExtensionFilter currentFilter={filter} onFilterChange={setFilter} />
 
-				{/* List */}
 				<div style={styles.list} className="halo-scrollbar">
 					{filtered.length > 0 ? (
 						filtered.map(ext => (
@@ -199,26 +95,14 @@ export const ExtensionManagerPanel: React.FC = () => {
 					)}
 				</div>
 
-				{/* Batch Actions */}
 				{filtered.length > 0 && (
-					<div style={styles.batchActions}>
-						<button 
-							style={{ ...styles.batchBtn, opacity: disabledCount === 0 ? 0.5 : 1 }} 
-							onClick={handleBatchEnableClick}
-							disabled={disabledCount === 0}
-						>
-							{t('extMgr.enableAll')} ({disabledCount})
-						</button>
-						<button 
-							style={{ ...styles.batchBtn, background: '#ef4444', opacity: enabledCount === 0 ? 0.5 : 1 }} 
-							onClick={handleBatchDisableClick}
-							disabled={enabledCount === 0}
-						>
-							{t('extMgr.disableAll')} ({enabledCount})
-						</button>
-						<span style={{ flex: 1 }} />
-						<span style={{ fontSize: '12px', color: 'var(--halo-text-muted)' }}>{filtered.length} {t('common.tools')}</span>
-					</div>
+					<BatchActionToolbar
+						disabledCount={disabledCount}
+						enabledCount={enabledCount}
+						totalCount={filtered.length}
+						onBatchEnable={handleBatchEnable}
+						onBatchDisable={handleBatchDisable}
+					/>
 				)}
 			</div>
 		</Card>

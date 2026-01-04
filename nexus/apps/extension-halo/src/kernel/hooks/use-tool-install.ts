@@ -1,30 +1,30 @@
-// goal: React hook for module manager
-// eff: Reactive module state access in components
+// goal: React hook for tool installation manager
+// eff: Reactive tool install state access in components
 
 import { useState, useEffect, useCallback } from 'react';
-import { ModuleManager, getModuleManager } from '../managers/module-manager';
-import { ALL_MODULES, OPTIONAL_MODULES, type ModuleState, type ModuleStatus } from '../registry/module-registry';
-import type { ModuleMeta } from '../core/tool-registry-types';
+import { ToolInstallManager, getToolInstallManager } from '../managers/tool-install-manager';
+import { ALL_TOOLS, type ToolInstallStatus } from '../registry/tool-registry';
+import type { ToolMeta } from '../core/tool-registry-types';
 
-interface UseModuleManagerResult {
+interface UseToolInstallResult {
 	loading: boolean;
-	installedModules: ModuleMeta[];
-	availableModules: ModuleMeta[];
-	getStatus: (id: string) => ModuleStatus;
+	installedTools: ToolMeta[];
+	availableTools: ToolMeta[];
+	getStatus: (id: string) => ToolInstallStatus;
 	install: (id: string) => Promise<void>;
 	uninstall: (id: string) => Promise<void>;
 	isInstalled: (id: string) => boolean;
 	isCore: (id: string) => boolean;
 }
 
-export const useModuleManager = (): UseModuleManagerResult => {
-	const [manager, setManager] = useState<ModuleManager | null>(null);
+export const useToolInstall = (): UseToolInstallResult => {
+	const [manager, setManager] = useState<ToolInstallManager | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [, forceUpdate] = useState(0);
 
 	useEffect(() => {
 		let cancelled = false;
-		getModuleManager().then((m) => {
+		getToolInstallManager().then((m) => {
 			if (cancelled) return;
 			setManager(m);
 			setLoading(false);
@@ -37,7 +37,7 @@ export const useModuleManager = (): UseModuleManagerResult => {
 		return () => { cancelled = true; };
 	}, []);
 
-	const getStatus = useCallback((id: string): ModuleStatus => {
+	const getStatus = useCallback((id: string): ToolInstallStatus => {
 		if (!manager) return 'available';
 		const state = manager.getState(id);
 		return state?.status || 'available';
@@ -59,12 +59,12 @@ export const useModuleManager = (): UseModuleManagerResult => {
 	}, [manager]);
 
 	const isCore = useCallback((id: string): boolean => {
-		const meta = ALL_MODULES.find((m) => m.id === id);
+		const meta = ALL_TOOLS.find((m) => m.id === id);
 		return meta?.builtIn === true;
 	}, []);
 
-	const installedModules = manager?.getInstalledModules() || [];
-	const availableModules = manager?.getAvailableModules() || [];
+	const installedTools = manager?.getInstalledTools() || [];
+	const availableTools = manager?.getAvailableTools() || [];
 
-	return { loading, installedModules, availableModules, getStatus, install, uninstall, isInstalled, isCore };
+	return { loading, installedTools, availableTools, getStatus, install, uninstall, isInstalled, isCore };
 };

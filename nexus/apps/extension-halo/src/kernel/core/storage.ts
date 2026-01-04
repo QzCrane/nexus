@@ -2,6 +2,7 @@
 // Provides typed wrappers for common storage operations
 
 import { STORAGE_PREFIX, type ToolId, type ToolState } from './types';
+import { safeStorageGet, safeStorageSet } from './safe-storage';
 
 // Key builders
 export const KEYS = {
@@ -12,12 +13,12 @@ export const KEYS = {
 
 // Generic storage operations
 export async function getStorage<T>(key: string, fallback: T): Promise<T> {
-	const result = await chrome.storage.sync.get([key]);
+	const result = await safeStorageGet([key], { [key]: fallback });
 	return (result[key] as T) ?? fallback;
 }
 
 export async function setStorage<T>(key: string, value: T): Promise<void> {
-	await chrome.storage.sync.set({ [key]: value });
+	await safeStorageSet({ [key]: value });
 }
 
 // Tool-specific helpers

@@ -23,11 +23,11 @@ import { useActiveServices } from '../../components/sidepanel/ActiveServicesCont
 
 import { ClipboardHeader } from './ClipboardHeader';
 
-import { useToast } from '../../components/ToastProvider';
+import { useOverlay } from '../../components/ui';
 
 export const ClipboardPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const { showToast } = useToast();
+    const { showToast } = useOverlay();
 	const { setServiceState } = useActiveServices();
 	const [history, setHistory] = useState<ClipboardItemType[]>([]);
 	const [search, setSearch] = useToolState<string>('clipboard-search' as any, '');
@@ -115,7 +115,7 @@ export const ClipboardPanel: React.FC = () => {
 
 	const handleCopy = async (text: string) => {
 		const ok = await copyToClipboard(text);
-		if (ok) showToast(t('clipboardPanel.copied'));
+		if (ok) showToast({ message: t('clipboardPanel.copied') });
 	};
 
 	const handlePin = async (id: string) => {

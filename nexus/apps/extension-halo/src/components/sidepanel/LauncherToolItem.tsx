@@ -1,6 +1,6 @@
 import React, { useState, memo, useCallback } from 'react';
 import type { ToolId, ToolMeta, HaloSettings } from '../../kernel';
-import { toggleScriptTool } from '../../kernel';
+import { saatDispatcher } from '../../kernel';
 import { useTranslation } from '../../i18n';
 import { commonStyles } from './layouts.styles';
 import { useToolEngineStatus } from './hooks/use-tool-engine-status';
@@ -54,7 +54,7 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 		if (onToggleScript) {
 			onToggleScript(tool);
 		} else {
-			await toggleScriptTool(tool);
+			await saatDispatcher.toggle(tool.id);
 		}
 	}, [isScriptTool, onToggleScript, tool]);
 

@@ -2,7 +2,7 @@
 // eff: Provides real-time list of scripts for Launcher integration
 
 import { useState, useEffect } from 'react';
-import type { SaaTScriptState } from '../services/saat-service';
+import type { SaaTScriptState } from '../services/saat-types';
 
 const USERSCRIPTS_STORAGE_KEY = 'halo_userscripts';
 

@@ -1,9 +1,9 @@
-// goal: Module item component for store list with enhanced script visuals
-// eff: Render individual module status and actions with rich color coding
+// goal: Tool item component for store list with enhanced script visuals
+// eff: Render individual tool status and actions with rich color coding
 
 import React from 'react';
 import { useTranslation } from '../../i18n';
-import { formatModuleSize, type ModuleMeta } from '../../kernel';
+import { formatToolSize, type ToolMeta } from '../../kernel';
 
 // Enhanced styles with script-specific colors
 const styles = {
@@ -64,8 +64,8 @@ const styles = {
 	badgeType: { marginLeft: '8px', fontSize: '10px', padding: '2px 8px', borderRadius: '10px', background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text-secondary)', fontWeight: 500, border: '1px solid var(--halo-border)' },
 };
 
-interface ModuleItemProps {
-	module: ModuleMeta;
+interface ToolItemProps {
+	tool: ToolMeta;
 	index: number;
 	status: 'installed' | 'available' | 'downloading' | 'updating' | 'error';
 	isCore: boolean;
@@ -75,23 +75,23 @@ interface ModuleItemProps {
 	onUninstall: () => void;
 }
 
-export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, isCore, showTypeLabel = true, isUserScript = false, onInstall, onUninstall }) => {
+export const ToolItem: React.FC<ToolItemProps> = ({ tool, index, status, isCore, showTypeLabel = true, isUserScript = false, onInstall, onUninstall }) => {
 	const { t } = useTranslation();
 	const isInstalled = status === 'installed';
 	const isDownloading = status === 'downloading' || status === 'updating';
 
-	const nameKey = `tools.${module.id}.name`;
-	const descKey = `tools.${module.id}.desc`;
+	const nameKey = `tools.${tool.id}.name`;
+	const descKey = `tools.${tool.id}.desc`;
 	const nameTranslation = t(nameKey);
 	const descTranslation = t(descKey);
 	
-	const displayName = String(nameTranslation) === nameKey ? (module.name || module.id) : String(nameTranslation);
-	const displayDesc = String(descTranslation) === descKey ? (module.description || '') : String(descTranslation);
+	const displayName = String(nameTranslation) === nameKey ? (tool.name || tool.id) : String(nameTranslation);
+	const displayDesc = String(descTranslation) === descKey ? (tool.description || '') : String(descTranslation);
 
-	// Determine module type and colors
-	const isScript = module.toolType === 'script';
-	const isCSS = isScript && module.scriptType === 'css';
-	const isSystem = module.system;
+	// Determine tool type and colors
+	const isScript = tool.toolType === 'script';
+	const isCSS = isScript && tool.scriptType === 'css';
+	const isSystem = tool.system;
 
 	// Get accent color based on type
 	const getAccentColor = () => {
@@ -117,8 +117,8 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, i
 		return {};
 	};
 
-	const typeLabel = module.system ? t('moduleStorePanel.filters.system') 
-		: module.toolType === 'script' ? (isCSS ? 'CSS' : 'JS')
+	const typeLabel = tool.system ? t('moduleStorePanel.filters.system') 
+		: tool.toolType === 'script' ? (isCSS ? 'CSS' : 'JS')
 		: t('moduleStorePanel.filters.app');
 
 	return (
@@ -139,7 +139,7 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, i
 				...styles.icon,
 				...getIconStyle(),
 			}}>
-				{module.icon}
+				{tool.icon}
 			</span>
 
 			<div style={styles.info}>
@@ -174,14 +174,14 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, i
 						{t('moduleStorePanel.uninstall')}
 					</button>
 				) : (
-					<button style={{ ...styles.btn, ...styles.btnInstall }} onClick={onInstall}>
+					<button style={{ ...styles.btn, ...styles.btnInstall }} onClick={() => onInstall()}>
 						{t('moduleStorePanel.install')}
 					</button>
 				)}
 				<div style={styles.meta}>
-					<span>v{module.version || '0.0.0'}</span>
+					<span>v{tool.version || '0.0.0'}</span>
 					<span>•</span>
-					<span>{formatModuleSize(module.size || 0)}</span>
+					<span>{formatToolSize(tool.size || 0)}</span>
 				</div>
 			</div>
 		</div>

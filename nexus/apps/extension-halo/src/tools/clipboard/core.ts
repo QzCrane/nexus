@@ -2,19 +2,21 @@
 
 import { ClipboardItem, STORAGE_KEY, SETTINGS_STORAGE_KEY, MAX_HISTORY } from './types';
 
+import { safeStorageGet, safeStorageSet } from '../../kernel/core/safe-storage';
+
 /**
  * Get clipboard settings
  */
 export async function getClipboardSettings(): Promise<{ enabled: boolean }> {
-	const result = await chrome.storage.local.get([SETTINGS_STORAGE_KEY]);
-	return result[SETTINGS_STORAGE_KEY] || { enabled: true };
+	const result = await safeStorageGet([SETTINGS_STORAGE_KEY], { [SETTINGS_STORAGE_KEY]: { enabled: true } }, 'local');
+	return result[SETTINGS_STORAGE_KEY];
 }
 
 /**
  * Update clipboard settings
  */
 export async function updateClipboardSettings(enabled: boolean): Promise<void> {
-	await chrome.storage.local.set({ [SETTINGS_STORAGE_KEY]: { enabled } });
+	await safeStorageSet({ [SETTINGS_STORAGE_KEY]: { enabled } }, 'local');
 }
 
 /**
@@ -27,8 +29,8 @@ export async function saveToClipboardHistory(
 ): Promise<ClipboardItem[]> {
 	if (!text || !text.trim()) return await getClipboardHistory();
 
-	const result = await chrome.storage.local.get([STORAGE_KEY]);
-	const history: ClipboardItem[] = result[STORAGE_KEY] || [];
+	const result = await safeStorageGet([STORAGE_KEY], { [STORAGE_KEY]: [] }, 'local');
+	const history: ClipboardItem[] = result[STORAGE_KEY];
 
 	// Deduplicate: if the top item is exactly the same, skip
 	if (history.length > 0 && history[0].text === text) {
@@ -58,8 +60,8 @@ export async function saveToClipboardHistory(
  * Get history
  */
 export async function getClipboardHistory(): Promise<ClipboardItem[]> {
-	const result = await chrome.storage.local.get([STORAGE_KEY]);
-	return result[STORAGE_KEY] || [];
+	const result = await safeStorageGet([STORAGE_KEY], { [STORAGE_KEY]: [] }, 'local');
+	return result[STORAGE_KEY];
 }
 
 /**
@@ -77,7 +79,7 @@ export async function togglePin(id: string): Promise<ClipboardItem[]> {
 		return b.timestamp - a.timestamp;
 	});
 
-	await chrome.storage.local.set({ [STORAGE_KEY]: updated });
+	await safeStorageSet({ [STORAGE_KEY]: updated }, 'local');
 	return updated;
 }
 
@@ -87,7 +89,7 @@ export async function togglePin(id: string): Promise<ClipboardItem[]> {
 export async function deleteItem(id: string): Promise<ClipboardItem[]> {
 	const history = await getClipboardHistory();
 	const updated = history.filter(item => item.id !== id);
-	await chrome.storage.local.set({ [STORAGE_KEY]: updated });
+	await safeStorageSet({ [STORAGE_KEY]: updated }, 'local');
 	return updated;
 }
 
@@ -97,7 +99,7 @@ export async function deleteItem(id: string): Promise<ClipboardItem[]> {
 export async function clearUnpinned(): Promise<ClipboardItem[]> {
 	const history = await getClipboardHistory();
 	const updated = history.filter(item => item.pinned);
-	await chrome.storage.local.set({ [STORAGE_KEY]: updated });
+	await safeStorageSet({ [STORAGE_KEY]: updated }, 'local');
 	return updated;
 }
 

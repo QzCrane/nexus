@@ -2,17 +2,19 @@
 
 import type { TodoItem } from './types';
 
+import { safeStorageGet, safeStorageSet } from '../../kernel/core/safe-storage';
+
 const STORAGE_KEY = 'halo_todo_list';
 
 // Get all todos
 export async function getTodos(): Promise<TodoItem[]> {
-	const result = await chrome.storage.local.get(STORAGE_KEY);
-	return result[STORAGE_KEY] || [];
+	const result = await safeStorageGet([STORAGE_KEY], { [STORAGE_KEY]: [] }, 'local');
+	return result[STORAGE_KEY];
 }
 
 // Save todos
 async function saveTodos(todos: TodoItem[]): Promise<void> {
-	await chrome.storage.local.set({ [STORAGE_KEY]: todos });
+	await safeStorageSet({ [STORAGE_KEY]: todos }, 'local');
 }
 
 // Add todo

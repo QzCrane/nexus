@@ -46,9 +46,11 @@ function updateClipboardState(enabled: boolean) {
 	}
 }
 
+import { safeStorageGet } from '../kernel/core/safe-storage';
+
 // Initial check
-chrome.storage.local.get(['halo_tool_clipboard_settings'], (result) => {
-	const settings = result['halo_tool_clipboard_settings'] || { enabled: true };
+safeStorageGet(['halo_tool_clipboard_settings'], { 'halo_tool_clipboard_settings': { enabled: true } }, 'local').then((result) => {
+	const settings = result['halo_tool_clipboard_settings'];
 	updateClipboardState(settings.enabled);
 });
 

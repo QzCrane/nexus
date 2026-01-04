@@ -13,7 +13,7 @@ import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
 
 
-import { useToast } from '../../components/ToastProvider';
+import { useOverlay } from '../../components/ui';
 
 
 const logger = createLogger('QRCode', 'HALO');
@@ -21,7 +21,7 @@ type TabMode = 'generate' | 'scan';
 
 export const QRCodePanel: React.FC = () => {
 	const { t } = useTranslation();
-    const { showToast } = useToast();
+    const { showToast } = useOverlay();
 	const [mode, setMode] = useToolState<TabMode>('qrcode-mode' as any, 'generate');
 	const [text, setText] = useToolState<string>('qrcode', '');
 	const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
@@ -45,24 +45,24 @@ export const QRCodePanel: React.FC = () => {
 			const dataUrl = await generateQRCode(text.trim(), options);
 			setQrDataUrl(dataUrl);
 			setHistory(await saveToHistory(text.trim()));
-		} catch (e) { logger.error('QR Generate failed', e); showToast(t('qrcodePanel.failed')); }
+		} catch (e) { logger.error('QR Generate failed', e); showToast({ message: t('qrcodePanel.failed') }); }
 		finally { setLoading(false); }
 	}, [text, options, showToast, t]);
 
-	const handleCopy = useCallback(async () => { if (qrDataUrl && await copyImageToClipboard(qrDataUrl)) showToast(t('qrcodePanel.copied')); }, [qrDataUrl, showToast, t]);
+	const handleCopy = useCallback(async () => { if (qrDataUrl && await copyImageToClipboard(qrDataUrl)) showToast({ message: t('qrcodePanel.copied') }); }, [qrDataUrl, showToast, t]);
 
 	const handleDownloadPNG = useCallback(async () => {
 		if (!qrDataUrl) return;
 		const res = await fetch(qrDataUrl);
 		downloadQRCode(await res.blob(), `qr-${Date.now()}.png`);
-		showToast(t('qrcodePanel.downloaded'));
+		showToast({ message: t('qrcodePanel.downloaded') });
 	}, [qrDataUrl, showToast, t]);
 
 	const handleDownloadSVG = useCallback(async () => {
 		if (!text.trim()) return;
 		const svg = await generateSVG(text.trim(), options);
 		downloadQRCode(new Blob([svg], { type: 'image/svg+xml' }), `qr-${Date.now()}.svg`);
-		showToast(t('qrcodePanel.downloaded'));
+		showToast({ message: t('qrcodePanel.downloaded') });
 	}, [text, options, showToast, t]);
 
 	const handleLogoUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -80,7 +80,7 @@ export const QRCodePanel: React.FC = () => {
 		setLoading(true);
 		const result = await scanQRCodeFromFile(file);
 		setScanResult(result);
-		showToast(result ? t('qrcodePanel.scanSuccess') : t('qrcodePanel.scanFailed'));
+		showToast({ message: result ? t('qrcodePanel.scanSuccess') : t('qrcodePanel.scanFailed') });
 		setLoading(false); e.target.value = '';
 	}, [showToast, t]);
 
@@ -88,7 +88,7 @@ export const QRCodePanel: React.FC = () => {
 		setLoading(true);
 		const result = await scanQRCodeFromClipboard();
 		setScanResult(result);
-		showToast(result ? t('qrcodePanel.scanSuccess') : t('qrcodePanel.scanFailed'));
+		showToast({ message: result ? t('qrcodePanel.scanSuccess') : t('qrcodePanel.scanFailed') });
 		setLoading(false);
 	}, [showToast, t]);
 
@@ -122,7 +122,7 @@ export const QRCodePanel: React.FC = () => {
 					<input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleScanFile} />
 					<div style={styles.scanBtns}><button style={{ ...styles.btn, ...styles.btnSecondary, flex: 1 }} onClick={() => fileInputRef.current?.click()}>📁 {t('qrcodePanel.btnImage', { defaultValue: 'Image' })}</button><button style={{ ...styles.btn, ...styles.btnSecondary, flex: 1 }} onClick={handleScanClipboard}>📋 {t('qrcodePanel.btnClipboard', { defaultValue: 'Clipboard' })}</button></div>
 					{scanResult && <div style={styles.resultCard}><div style={styles.resultLabel}>{t('qrcodePanel.detectedContent')}</div><div style={styles.resultText}>{scanResult.data}</div>
-						<div style={{ ...styles.actionRow, marginTop: '12px' }}><button style={styles.actionBtn} onClick={() => { navigator.clipboard.writeText(scanResult.data); showToast(t('qrcodePanel.copied')); }}>📋 {t('qrcodePanel.copy', { defaultValue: 'Copy' })}</button>
+						<div style={{ ...styles.actionRow, marginTop: '12px' }}><button style={styles.actionBtn} onClick={() => { navigator.clipboard.writeText(scanResult.data); showToast({ message: t('qrcodePanel.copied') }); }}>📋 {t('qrcodePanel.copy', { defaultValue: 'Copy' })}</button>
 							{/^https?:\/\//i.test(scanResult.data) && <button style={{ ...styles.actionBtn, background: 'var(--halo-accent)', color: '#fff', border: 'none' }} onClick={() => window.open(scanResult.data)}>🔗 Open</button>}</div></div>}
 				</>
 			)}

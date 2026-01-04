@@ -1,21 +1,21 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useTranslation } from '../../i18n';
-import { useModuleManager, useRemoteRegistry, ALL_MODULES } from '../../kernel';
-import { ModuleList } from './module-list';
+import { useToolInstall, useRemoteRegistry, ALL_TOOLS } from '../../kernel';
+import { ToolList } from './tool-list';
 import { StoreHeader } from './store-header';
 import { useOverlay } from '../../components/ui/overlay';
 import { useUserScripts } from '../../system/userscripts/hooks';
 import { styles } from './panel.styles';
 import { FilterType } from './type-filter';
 import { filterBySearch, MODULE_SEARCH_OPTIONS } from '../../kernel/utils/unified-search';
-import { convertScriptsToModules } from './utils';
+import { convertScriptsToTools } from './utils';
 
 type ViewMode = 'installed' | 'available' | 'all' | 'updates';
 
 export const ModuleStorePanel: React.FC = () => {
 	const { t } = useTranslation();
 	const { showModal } = useOverlay();
-	const { loading, installedModules, availableModules, install, uninstall } = useModuleManager();
+	const { loading, installedTools, availableTools, install, uninstall } = useToolInstall();
 	const { loading: remoteLoading, hasUpdates, updates, refresh } = useRemoteRegistry();
 	const { scripts } = useUserScripts();
 	const [view, setView] = useState<ViewMode>('all');
@@ -24,27 +24,13 @@ export const ModuleStorePanel: React.FC = () => {
 	const [filterType, setFilterType] = useState<FilterType>('all');
 	const [installing, setInstalling] = useState<string | null>(null);
 	const [searchQuery, setSearchQuery] = useState('');
-	const [isSearchFocused, setIsSearchFocused] = useState(false);
-	const searchInputRef = useRef<HTMLInputElement>(null);
-
-	// Ctrl+K keyboard shortcut
-	useEffect(() => {
-		const handleGlobalKey = (e: KeyboardEvent) => {
-			if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-				e.preventDefault();
-				searchInputRef.current?.focus();
-			}
-		};
-		window.addEventListener('keydown', handleGlobalKey);
-		return () => window.removeEventListener('keydown', handleGlobalKey);
-	}, []);
 
 	const handleInstall = useCallback(async (id: string) => {
 		setInstalling(id);
 		try { await install(id); } finally { setInstalling(null); }
 	}, [install]);
 
-	const handleUninstall = useCallback(async (m: typeof ALL_MODULES[0]) => {
+	const handleUninstall = useCallback(async (m: typeof ALL_TOOLS[0]) => {
 		// System components cannot be uninstalled
 		if (m.system) {
 			showModal({
@@ -82,18 +68,18 @@ export const ModuleStorePanel: React.FC = () => {
 
 	const handleRefresh = useCallback(async () => { await refresh(); }, [refresh]);
 
-	const searchModules = (modules: typeof ALL_MODULES) => 
-		filterBySearch(modules, searchQuery, MODULE_SEARCH_OPTIONS);
+	const searchTools = (tools: typeof ALL_TOOLS) => 
+		filterBySearch(tools, searchQuery, MODULE_SEARCH_OPTIONS);
 
-	const filterByType = (m: typeof ALL_MODULES[0] & { isUserScript?: boolean }) => {
+	const filterByType = (m: typeof ALL_TOOLS[0] & { isUserScript?: boolean }) => {
 		if (filterType === 'system') return m.system;
 		if (filterType === 'script') {
 			const isScript = !m.system && (m.toolType === 'script' || m.isUserScript);
 			if (!isScript) return false;
 			
 			const isUser = !!m.isUserScript;
-			// Check if installed (User scripts are always installed, Official checks installedModules)
-			const isInstalled = isUser || installedModules.some(im => im.id === m.id);
+			// Check if installed (User scripts are always installed, Official checks installedTools)
+			const isInstalled = isUser || installedTools.some(im => im.id === m.id);
 
 			// Filter by Status
 			if (scriptStatus === 'installed' && !isInstalled) return false;
@@ -109,22 +95,22 @@ export const ModuleStorePanel: React.FC = () => {
 		return true;
 	};
 
-	// Convert user scripts to modules (exclude SaaT scripts already in ALL_MODULES)
-	const scriptModules = React.useMemo(() => convertScriptsToModules(scripts), [scripts]);
-	const allInstalledModules = React.useMemo(() => [...installedModules, ...scriptModules], [installedModules, scriptModules]);
+	// Convert user scripts to tools (exclude SaaT scripts already in ALL_TOOLS)
+	const scriptTools = React.useMemo(() => convertScriptsToTools(scripts), [scripts]);
+	const allInstalledTools = React.useMemo(() => [...installedTools, ...scriptTools], [installedTools, scriptTools]);
 
-	const getFilteredModules = () => {
-		let source: typeof ALL_MODULES = [];
-		if (view === 'installed') source = allInstalledModules;
-		else if (view === 'available') source = availableModules;
-		else source = [...ALL_MODULES, ...scriptModules];
-		return searchModules(source.filter(filterByType));
+	const getFilteredTools = () => {
+		let source: typeof ALL_TOOLS = [];
+		if (view === 'installed') source = allInstalledTools;
+		else if (view === 'available') source = availableTools;
+		else source = [...ALL_TOOLS, ...scriptTools];
+		return searchTools(source.filter(filterByType));
 	};
 
-	const displayModules = getFilteredModules();
-	const statsModules = allInstalledModules.filter(filterByType);
-	const totalInstalled = statsModules.length;
-	const totalSize = statsModules.reduce((sum, m) => sum + (m.size || 0), 0);
+	const displayTools = getFilteredTools();
+	const statsTools = allInstalledTools.filter(filterByType);
+	const totalInstalled = statsTools.length;
+	const totalSize = statsTools.reduce((sum, m) => sum + (m.size || 0), 0);
 
 	// Modal Component Styles - Moved to modal.tsx
 
@@ -143,17 +129,16 @@ export const ModuleStorePanel: React.FC = () => {
 		<div style={styles.wrapper}>
 			<StoreHeader
 				searchQuery={searchQuery} setSearchQuery={setSearchQuery}
-				isSearchFocused={isSearchFocused} setIsSearchFocused={setIsSearchFocused}
-				searchInputRef={searchInputRef} handleRefresh={handleRefresh}
+				handleRefresh={handleRefresh}
 				remoteLoading={remoteLoading} filterType={filterType} setFilterType={setFilterType}
 				view={view} setView={setView} hasUpdates={hasUpdates}
 				scriptStatus={scriptStatus} setScriptStatus={setScriptStatus}
 				scriptSource={scriptSource} setScriptSource={setScriptSource}
 				updatesCount={updates.length} totalInstalled={totalInstalled} totalSize={totalSize}
 			/>
-			<ModuleList
-				updates={updates} displayModules={displayModules}
-				installedModules={allInstalledModules} installingId={installing}
+			<ToolList
+				updates={updates} displayTools={displayTools}
+				installedTools={allInstalledTools} installingId={installing}
 				view={view} filterType={filterType}
 				handleInstall={handleInstall} handleUninstall={handleUninstall}
 			/>

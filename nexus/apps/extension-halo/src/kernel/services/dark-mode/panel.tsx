@@ -2,7 +2,7 @@
 // inv: all darkreader config options must be visible and adjustable
 
 import React, { useState, useCallback } from 'react';
-import { useTranslation } from '../../i18n';
+import { useTranslation } from '../../../i18n';
 import { Card } from '@nexus/ui-kit';
 import type { DarkModeConfig, DarkModeFixes } from './core';
 import { DEFAULT_CONFIG, DEFAULT_FIXES, DARK_MODE_PRESETS, type DarkModePreset } from './core';

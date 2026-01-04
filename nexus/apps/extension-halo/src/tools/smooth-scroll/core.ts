@@ -3,12 +3,14 @@
 import type { ScrollSettings } from './types';
 import { DEFAULT_SETTINGS, STORAGE_KEY } from './types';
 
+import { safeStorageGet, safeStorageSet } from '../../kernel/core/safe-storage';
+
 /**
  * Load settings from storage
  */
 export async function loadSettings(): Promise<ScrollSettings> {
-	const result = await chrome.storage.sync.get([STORAGE_KEY]);
-	return { ...DEFAULT_SETTINGS, ...result[STORAGE_KEY] };
+	const result = await safeStorageGet([STORAGE_KEY], { [STORAGE_KEY]: DEFAULT_SETTINGS }, 'sync');
+	return result[STORAGE_KEY];
 }
 
 /**
@@ -19,7 +21,7 @@ export async function saveSettings(
 ): Promise<ScrollSettings> {
 	const current = await loadSettings();
 	const updated = { ...current, ...partial };
-	await chrome.storage.sync.set({ [STORAGE_KEY]: updated });
+	await safeStorageSet({ [STORAGE_KEY]: updated }, 'sync');
 	return updated;
 }
 

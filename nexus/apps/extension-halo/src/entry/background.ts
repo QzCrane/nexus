@@ -22,30 +22,28 @@ const MENU_QR_SELECTION = 'halo-qr-selection';
 const MENU_COLOR_PICK = 'halo-color-pick';
 const MENU_PDF_LINK = 'halo-pdf-link';
 
+import { safeStorageGet, safeStorageSet } from '../kernel/core/safe-storage';
+
 // Initialize on install
 chrome.runtime.onInstalled.addListener(async (details) => {
 	console.log(LOG_TAG, 'Extension installed/updated:', details.reason);
 
+	const activeToolKey = `${STORAGE_PREFIX.CORE}active_tool`;
+
 	// Set defaults if not already set
-	const storage = await chrome.storage.sync.get([
-		`${STORAGE_PREFIX.CORE}active_tool`,
-		SETTINGS_STORAGE_KEY,
-	]);
+	const storage = await safeStorageGet([activeToolKey, SETTINGS_STORAGE_KEY], {
+		[activeToolKey]: null,
+		[SETTINGS_STORAGE_KEY]: DEFAULT_SETTINGS
+	}, 'sync');
 
-	const defaults: Record<string, unknown> = {};
+	// Note: safeStorageGet already merges with defaults, but we can verify/re-save if needed
+	// For onInstalled, we just ensure storage is healthy
+	await safeStorageSet({
+		[activeToolKey]: storage[activeToolKey],
+		[SETTINGS_STORAGE_KEY]: storage[SETTINGS_STORAGE_KEY]
+	}, 'sync');
 
-	if (storage[`${STORAGE_PREFIX.CORE}active_tool`] === undefined) {
-		defaults[`${STORAGE_PREFIX.CORE}active_tool`] = null;
-	}
-
-	if (!storage[SETTINGS_STORAGE_KEY]) {
-		defaults[SETTINGS_STORAGE_KEY] = DEFAULT_SETTINGS;
-	}
-
-	if (Object.keys(defaults).length > 0) {
-		await chrome.storage.sync.set(defaults);
-		console.log(LOG_TAG, 'Default settings initialized');
-	}
+	console.log(LOG_TAG, 'Default settings verified and storage synced');
 
 	// Create context menus
 	chrome.contextMenus.removeAll(() => {

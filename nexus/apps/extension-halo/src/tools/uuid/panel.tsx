@@ -6,7 +6,7 @@ import { useTranslation } from '../../i18n';
 import { generateV1, generateV4, generateV7, generateULID, formatUUID } from './core';
 import { UUID_VERSIONS, type UUIDVersion } from './types';
 import { useToolState } from '../../kernel';
-import { useToast } from '../../components/ToastProvider';
+import { useOverlay } from '../../components/ui';
 
 const styles: Record<string, React.CSSProperties> = {
 	wrapper: { display: 'flex', flexDirection: 'column', gap: '12px' },
@@ -37,7 +37,7 @@ const styles: Record<string, React.CSSProperties> = {
 
 export const UUIDPanel: React.FC = () => {
     const { t } = useTranslation();
-    const { showToast } = useToast();
+    const { showToast } = useOverlay();
 	const [version, setVersion] = useToolState<UUIDVersion>('uuid-version' as any, 'v4');
 	const [count, setCount] = useToolState<number>('uuid-count' as any, 1);
 	const [uppercase, setUppercase] = useToolState<boolean>('uuid-upper' as any, false);
@@ -122,7 +122,7 @@ export const UUIDPanel: React.FC = () => {
 						<span style={styles.label}>{t('common.result') || 'Result'}</span>
 						<button
 							style={{ ...styles.optionBtn, marginLeft: 'auto' }}
-							onClick={() => { if (result) { navigator.clipboard.writeText(result); showToast(t('common.copied') || 'Copied!'); } }}
+							onClick={() => { if (result) { navigator.clipboard.writeText(result); showToast({ message: t('common.copied') || 'Copied!', type: 'success' }); } }}
 							disabled={!result}
 						>
 							📋 {t('common.copy')}

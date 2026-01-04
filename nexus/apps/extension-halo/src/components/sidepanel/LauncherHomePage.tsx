@@ -1,15 +1,15 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import type { ToolId, ToolMeta, HaloSettings } from '../../kernel';
-import type { ToolCategory } from '../../i18n/types';
 import { useSmoothWheel } from '../../kernel/hooks/use-smooth-wheel';
 import { SearchBar } from '../SearchBar';
 import { LauncherToolItem } from './LauncherToolItem';
 import { commonStyles } from './layouts.styles';
-import { useEngineStatus } from './EngineStatusProvider';
 import { useActiveServices } from './ActiveServicesContext';
 import { useUserScripts } from '../../kernel/hooks/use-user-scripts';
 import { useCategorizedTools } from './hooks/use-categorized-tools';
+import { useLauncherDnD } from './hooks/use-launcher-dnd';
+import { CategoryHeader } from './CategoryHeader';
 
 interface LauncherHomePageProps {
 	visibleTools: ToolMeta[];
@@ -30,26 +30,18 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 	onTogglePin, onReorderTools, onReorderCategories, openTools, onToggleScript, onEditScript
 }) => {
 	const { t } = useTranslation();
-	const engineStatus = useEngineStatus();
 	const { activeServices, bgToolIds: BACKGROUND_TOOL_IDS } = useActiveServices();
 	const { scripts } = useUserScripts();
 	const scrollRef = useRef<HTMLDivElement>(null);
-	const [draggingId, setDraggingId] = useState<string | null>(null);
-	const [draggingCat, setDraggingCat] = useState<string | null>(null);
-	const [tempCats, setTempCats] = useState<Record<string, ToolMeta[]> | null>(null);
-	const [tempCatOrder, setTempCatOrder] = useState<string[] | null>(null);
 	
-	// activeServices logic moved to hook
 	useSmoothWheel(scrollRef, 'y');
 	
-	// Legacy handling: verify types in case local storage has old data
 	const SAFE_DEFAULTS = { spacing: 12, iconSize: 24 };
 	const rawSpacing = settings?.spacing;
 	const spacing = typeof rawSpacing === 'number' ? rawSpacing : (settings as any)?.compactMode ? 4 : SAFE_DEFAULTS.spacing;
 	
 	const rawIconSize = settings?.iconSize;
 	let iconSize = typeof rawIconSize === 'number' ? rawIconSize : SAFE_DEFAULTS.iconSize;
-	// Handle legacy strings
 	if (typeof rawIconSize === 'string') {
 		if (rawIconSize === 'small') iconSize = 18;
 		else if (rawIconSize === 'large') iconSize = 32;
@@ -61,42 +53,14 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 	const { categorizedTools, catOrder } = useCategorizedTools({
 		visibleTools, settings, t,
 		activeServices, backgroundToolIds: BACKGROUND_TOOL_IDS,
-		scripts, tempCats, tempCatOrder
+		scripts, tempCats: null, tempCatOrder: null
 	});
 
-	const onDragStart = (e: React.DragEvent, id: string) => { setDraggingId(id); e.dataTransfer.setData('toolId', id); };
-	const onCatDragStart = (e: React.DragEvent, cat: string) => { setDraggingCat(cat); e.dataTransfer.setData('catId', cat); };
-
-	const onDragEnter = (cat: string, targetId: string) => {
-		if (!draggingId || draggingId === targetId) return;
-		const current = categorizedTools[cat];
-		const oldIdx = current.findIndex(t => t.id === draggingId), newIdx = current.findIndex(t => t.id === targetId);
-		if (oldIdx !== -1 && newIdx !== -1) {
-			const newList = [...current]; const [item] = newList.splice(oldIdx, 1); newList.splice(newIdx, 0, item);
-			setTempCats({ ...categorizedTools, [cat]: newList });
-		}
-	};
-
-	const onCatDragEnter = (targetCat: string) => {
-		if (!draggingCat || draggingCat === targetCat) return;
-		const oldIdx = catOrder.indexOf(draggingCat), newIdx = catOrder.indexOf(targetCat);
-		if (oldIdx !== -1 && newIdx !== -1) {
-			const newOrder = [...catOrder]; const [item] = newOrder.splice(oldIdx, 1); newOrder.splice(newIdx, 0, item);
-			setTempCatOrder(newOrder);
-		}
-	};
-
-	const onDrop = (e: React.DragEvent, cat: string) => {
-		e.preventDefault();
-		if (tempCats) onReorderTools(cat, tempCats[cat].map(t => t.id));
-		setDraggingId(null); setTempCats(null);
-	};
-
-	const onCatDrop = (e: React.DragEvent) => {
-		e.preventDefault();
-		if (tempCatOrder) onReorderCategories(tempCatOrder);
-		setDraggingCat(null); setTempCatOrder(null);
-	};
+	const {
+		draggingId, onDragStart, onCatDragStart, onDragEnter, onCatDragEnter, onDrop, onCatDrop
+	} = useLauncherDnD({
+		categorizedTools, catOrder, onReorderTools, onReorderCategories
+	});
 	
 	const minColWidth = Math.max(64, iconSize + 48);
 
@@ -110,42 +74,18 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 					const tools = categorizedTools[cat];
 					if (!tools || tools.length === 0) return null;
 					
-					// Special category styling
-					const isActiveCat = cat === 'active';
-					const isScriptsCat = cat === 'scripts';
-					const isSystemCat = cat === 'system';
-					const isSpecialCat = isActiveCat || isScriptsCat || isSystemCat;
-					
-					// Color themes for special categories
-					const catColors = {
-						active: { border: '#10b981', bg: 'rgba(76, 175, 80, 0.08)', text: '#10b981', dot: '#4CAF50' },
-						scripts: { border: '#f59e0b', bg: 'rgba(245, 158, 11, 0.08)', text: '#f59e0b', dot: '#FFD700' },
-						system: { border: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.08)', text: '#8b5cf6', dot: '#9C27B0' },
-					};
-					const colors = catColors[cat as keyof typeof catColors];
-					
 					return (
 						<div key={cat} style={{ ...commonStyles.categorySection as any, gap: `${Math.max(4, spacing / 2)}px` }}>
-						<div 
-							draggable onDragStart={(e) => onCatDragStart(e, cat)} onDragEnter={() => onCatDragEnter(cat)} onDragOver={(e) => e.preventDefault()} onDrop={onCatDrop}
-							style={{ 
-								...commonStyles.categoryTitle as any, 
-								display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-								cursor: 'pointer', padding: '4px', 
-								borderLeft: isSpecialCat && colors ? `3px solid ${colors.border}` : 'none', 
-								background: isSpecialCat && colors ? colors.bg : 'transparent' 
-							}}
-							onClick={() => toggleCategory(cat)}
-						>
-							<div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-								<span style={{ transform: collapsedCategories[cat] ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.2s', fontSize: '10px', opacity: 0.6 }}>▼</span>
-								<div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-									{isSpecialCat && colors && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: colors.dot, boxShadow: `0 0 6px ${colors.dot}` }}></span>}
-									<span style={{ color: isSpecialCat && colors ? colors.text : 'inherit', fontWeight: isSpecialCat ? 700 : 600 }}>{t(`categories.${cat}`)}</span>
-								</div>
-							</div>
-							<span style={{ fontSize: '10px', opacity: 0.6 }}>{tools.length}</span>
-						</div>
+							<CategoryHeader
+								cat={cat}
+								title={t(`categories.${cat}`)}
+								count={tools.length}
+								isCollapsed={collapsedCategories[cat]}
+								onToggle={() => toggleCategory(cat)}
+								onDragStart={(e) => onCatDragStart(e, cat)}
+								onDragEnter={() => onCatDragEnter(cat)}
+								onDrop={onCatDrop}
+							/>
 							{!collapsedCategories[cat] && (
 								<div onDragOver={(e) => e.preventDefault()} onDrop={(e) => onDrop(e, cat)} style={{ ...commonStyles.toolGrid as any, gap: `${spacing}px`, gridTemplateColumns: `repeat(auto-fill, minmax(${minColWidth}px, 1fr))` }}>
 									{tools.map(tool => {

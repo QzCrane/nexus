@@ -131,7 +131,6 @@ initTheme();
 initScroll();
 
 // Sync SaaT tools
-import { syncSaaTTools } from '../kernel/services/saat-service';
-import { TOOL_REGISTRY } from '../kernel/registry/tool-registry';
+import { saatDispatcher } from '../kernel/services/saat-dispatcher';
 
-syncSaaTTools(TOOL_REGISTRY).catch(e => console.error('SaaT Sync Failed:', e));
+saatDispatcher.initialize().catch(e => console.error('SaaT Init Failed:', e));

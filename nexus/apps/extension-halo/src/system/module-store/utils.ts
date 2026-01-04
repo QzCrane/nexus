@@ -3,18 +3,18 @@
 
 import type { ToolMeta } from '../../kernel/core/tool-registry-types';
 import type { UserScript } from '../userscripts/types';
-import { ALL_MODULES } from '../../kernel';
+import { ALL_TOOLS } from '../../kernel';
 
 /**
- * Convert user scripts to module format for display in module store
- * Filters out SaaT scripts that are already registered in ALL_MODULES
+ * Convert user scripts to Tool format for display in module store
+ * Filters out SaaT scripts that are already registered in ALL_TOOLS
  */
-export function convertScriptsToModules(scripts: UserScript[]): ToolMeta[] {
-	const builtInScriptIds = ALL_MODULES.filter(m => m.toolType === 'script').map(m => m.id);
+export function convertScriptsToTools(scripts: UserScript[]): ToolMeta[] {
+	const builtInScriptIds = ALL_TOOLS.filter(m => m.toolType === 'script').map(m => m.id);
 
 	return scripts
 		.filter(s => {
-			// Exclude SaaT scripts (they have their tool registered in ALL_MODULES)
+			// Exclude SaaT scripts (they have their tool registered in ALL_TOOLS)
 			if (s.id.startsWith('saat-')) return false;
 			// Exclude if the name matches a built-in script tool
 			if (builtInScriptIds.includes(s.name)) return false;

@@ -1,14 +1,11 @@
-// goal: SidePanel state management
-// eff: Delegates open tools logic to useOpenTools hook
-
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import type { ToolId, HaloSettings } from '../../kernel';
 import { loadSettings, getThemeColors, applyTheme, TOOL_REGISTRY, saveSettings } from '../../kernel';
-import { useModuleManager } from '../../kernel';
+import { useToolInstall } from '../../kernel';
 import { useOpenTools } from './hooks/use-open-tools';
 
 export const useSidePanelState = () => {
-	const { isInstalled, loading: modulesLoading } = useModuleManager();
+	const { isInstalled, loading: toolInstallLoading } = useToolInstall();
 	const [settings, setSettings] = useState<HaloSettings | null>(null);
 	const [loading, setLoading] = useState(true);
 
@@ -22,14 +19,14 @@ export const useSidePanelState = () => {
 	} = useOpenTools();
 
 	const visibleTools = useMemo(() => {
-		if (modulesLoading) return TOOL_REGISTRY;
+		if (toolInstallLoading) return TOOL_REGISTRY;
 		return TOOL_REGISTRY
 			.filter((tool) => isInstalled(tool.id))
 			.map(tool => ({
 				...tool,
 				status: tool.status === 'available' ? 'ready' : (tool.status as any)
 			}));
-	}, [modulesLoading, isInstalled]);
+	}, [toolInstallLoading, isInstalled]);
 
 	useEffect(() => {
 		const init = async () => {
@@ -88,7 +85,7 @@ export const useSidePanelState = () => {
 
 	return {
 		loading,
-		modulesLoading,
+		toolInstallLoading,
 		activeTool,
 		openTools,
 		settings,

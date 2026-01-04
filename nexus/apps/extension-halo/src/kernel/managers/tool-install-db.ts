@@ -1,10 +1,10 @@
 // goal: IndexedDB persistence for Module Manager
 
-import type { ModuleState } from '../registry/module-registry';
+import type { ToolInstallState } from '../registry/tool-registry';
 
-const DB_NAME = 'halo-modules';
+const DB_NAME = 'halo-tools';
 const DB_VERSION = 1;
-const STORE_NAME = 'module-state';
+const STORE_NAME = 'tool-install-state';
 const DB_OPEN_TIMEOUT = 3000;
 const MAX_RETRIES = 3;
 
@@ -56,7 +56,7 @@ const openDB = async (): Promise<IDBDatabase | null> => {
 	return null;
 };
 
-export const getAllStates = async (): Promise<ModuleState[]> => {
+export const getAllStates = async (): Promise<ToolInstallState[]> => {
 	if (useMemoryMode) return [];
 	const db = await openDB();
 	if (!db) return [];
@@ -69,7 +69,7 @@ export const getAllStates = async (): Promise<ModuleState[]> => {
 	});
 };
 
-export const saveState = async (state: ModuleState): Promise<void> => {
+export const saveState = async (state: ToolInstallState): Promise<void> => {
 	if (useMemoryMode) return;
 	const db = await openDB();
 	if (!db) return;

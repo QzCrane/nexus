@@ -38,7 +38,7 @@ export const SmoothScrollPanel: React.FC = () => {
 		a.download = 'halo-scroll-config.json';
 		a.click();
 		URL.revokeObjectURL(url);
-		showToast(t('smoothScroll.toasts.exported'));
+		showToast({ message: t('smoothScroll.toasts.exported') });
 	}, [settings, showToast, t]);
 
 	const handleImport = useCallback(() => {
@@ -55,10 +55,10 @@ export const SmoothScrollPanel: React.FC = () => {
 			await chrome.storage.sync.set({ [STORAGE_KEY]: validated });
 			setSettings(validated);
 			await broadcastSettings(validated);
-			showToast(t('smoothScroll.toasts.imported'));
+			showToast({ message: t('smoothScroll.toasts.imported') });
 			logger.info('Config imported from file');
 		} catch (err) {
-			showToast(t('smoothScroll.toasts.importFailed'));
+			showToast({ message: t('smoothScroll.toasts.importFailed'), type: 'error' });
 			logger.error('Import error:', err);
 		}
 		e.target.value = '';

@@ -6,7 +6,7 @@ import {
 	updateUserScript,
 	SCRIPT_TEMPLATES,
 } from '../core';
-import { useToast } from '../../../components/ToastProvider';
+import { useOverlay } from '../../../components/ui';
 
 const DEFAULT_FORM: EditForm = {
 	name: '',
@@ -21,7 +21,7 @@ const DEFAULT_FORM: EditForm = {
 
 export function useScriptEditor(loadScripts: () => Promise<void>) {
 	const { t } = useTranslation();
-	const { showToast } = useToast();
+	const { showToast } = useOverlay();
 	const [showEditor, setShowEditor] = useState(false);
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [editForm, setEditForm] = useState<EditForm>(DEFAULT_FORM);
@@ -43,7 +43,7 @@ export function useScriptEditor(loadScripts: () => Promise<void>) {
 
 	const handleSave = async () => {
 		if (!editForm.name.trim() || !editForm.code.trim()) {
-			showToast('❌ Name and code required');
+			showToast({ message: '❌ Name and code required' });
 			return;
 		}
 		const scriptData = {
@@ -61,15 +61,15 @@ export function useScriptEditor(loadScripts: () => Promise<void>) {
 		if (editingId && !editingId.startsWith('saat-')) {
 			// Normal update for user scripts
 			await updateUserScript(editingId, scriptData);
-			showToast(`💾 ${t('userscripts.scriptUpdated')}`);
+			showToast({ message: `💾 ${t('userscripts.scriptUpdated')}` });
 		} else {
 			// Create new script (or Fork from SaaT)
 			// If it was a SaaT script (editingId starts with 'saat-'), we are effectively forking it
 			await addUserScript(scriptData);
 			if (editingId && editingId.startsWith('saat-')) {
-				showToast(`📋 ${t('userscripts.scriptForked', { defaultValue: 'Script forked as new' })}`);
+				showToast({ message: `📋 ${t('userscripts.scriptForked', { defaultValue: 'Script forked as new' })}` });
 			} else {
-				showToast(`✅ ${t('userscripts.scriptAdded')}`);
+				showToast({ message: `✅ ${t('userscripts.scriptAdded')}` });
 			}
 		}
 

@@ -1,8 +1,8 @@
 
 import React from 'react';
 import { styles } from './panel.styles';
-import { styles as searchStyles } from '../../components/SearchBar.styles';
-import { formatModuleSize, ALL_MODULES } from '../../kernel';
+import { SearchInput } from '../../components/ui';
+import { formatToolSize } from '../../kernel';
 import { TypeFilter, FilterType } from './type-filter';
 import { useTranslation } from '../../i18n';
 
@@ -11,9 +11,6 @@ type ViewMode = 'installed' | 'available' | 'all' | 'updates';
 interface StoreHeaderProps {
 	searchQuery: string;
 	setSearchQuery: (q: string) => void;
-	isSearchFocused: boolean;
-	setIsSearchFocused: (f: boolean) => void;
-	searchInputRef: React.RefObject<HTMLInputElement>;
 	handleRefresh: () => void;
 	remoteLoading: boolean;
 	filterType: FilterType;
@@ -31,9 +28,8 @@ interface StoreHeaderProps {
 }
 
 export const StoreHeader: React.FC<StoreHeaderProps> = ({
-	searchQuery, setSearchQuery, isSearchFocused, setIsSearchFocused, searchInputRef,
-	handleRefresh, remoteLoading, filterType, setFilterType, view, setView,
-	scriptStatus, setScriptStatus, scriptSource, setScriptSource,
+	searchQuery, setSearchQuery, handleRefresh, remoteLoading, filterType, setFilterType, 
+	view, setView, scriptStatus, setScriptStatus, scriptSource, setScriptSource,
 	hasUpdates, updatesCount, totalInstalled, totalSize
 }) => {
 	const { t } = useTranslation();
@@ -43,31 +39,13 @@ export const StoreHeader: React.FC<StoreHeaderProps> = ({
 		<div style={styles.header}>
 			{/* Top Row: Search + Refresh */}
 			<div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%', marginBottom: '8px' }}>
-				<div style={{
-					...searchStyles.inputWrapper,
-					...(isSearchFocused ? searchStyles.inputWrapperFocus : {}),
-					flex: 1,
-					padding: '4px 12px',
-					height: '36px',
-					background: 'var(--halo-bg-secondary)',
-					display: 'flex',
-					alignItems: 'center',
-					cursor: 'text'
-				}}
-				onClick={() => searchInputRef.current?.focus()}
-				>
-				<span style={{ fontSize: '14px', opacity: 0.5, marginRight: '8px' }}>🔍</span>
-					<input
-						ref={searchInputRef}
-						style={{ ...searchStyles.input as React.CSSProperties, fontSize: '14px', width: '100%' }}
-						type="text"
+				<div style={{ flex: 1 }}>
+					<SearchInput
 						value={searchQuery}
-						onChange={(e) => setSearchQuery(e.target.value)}
-						onFocus={() => setIsSearchFocused(true)}
-						onBlur={() => setIsSearchFocused(false)}
+						onChange={setSearchQuery}
 						placeholder={t('moduleStorePanel.searchPlaceholder') || t('common.search')}
+						enableShortcut
 					/>
-					{!isSearchFocused && !searchQuery && <span style={searchStyles.shortcut as React.CSSProperties}>⌘K</span>}
 				</div>
 				<button style={{ ...styles.btnRefresh, height: '36px', width: '36px' }} onClick={handleRefresh} disabled={remoteLoading} title={t('moduleStorePanel.checkUpdates')}>
 					{remoteLoading ? '⏳' : '🔄'}
@@ -127,7 +105,7 @@ export const StoreHeader: React.FC<StoreHeaderProps> = ({
 						)}
 					</div>
 				)}
-				<span style={styles.stats}>{t('moduleStorePanel.statsResult', { count: totalInstalled, size: formatModuleSize(totalSize) })}</span>
+				<span style={styles.stats}>{t('moduleStorePanel.statsResult', { count: totalInstalled, size: formatToolSize(totalSize) })}</span>
 			</div>
 		</div>
 	);

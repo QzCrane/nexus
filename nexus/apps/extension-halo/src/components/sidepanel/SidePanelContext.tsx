@@ -11,7 +11,7 @@ export interface SidePanelContextValue {
 	settings: HaloSettings | null;
 	visibleTools: ToolMeta[];
 	loading: boolean;
-	modulesLoading: boolean;
+	toolInstallLoading: boolean;
 	
 	// Actions
 	handleToolSelect: (toolId: ToolId) => Promise<void>;

@@ -1,17 +1,16 @@
-// goal: SidePanel container and state manager
-// eff: Handles global state via SidePanelContext (Launcher Mode Only)
-
 import React, { useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { LauncherHeader } from './LauncherHeader';
 import { DockTabBar } from './DockTabBar';
 import { LauncherLayout } from './LauncherLayout';
 import { useSidePanelState } from './use-sidepanel-state';
-import { EngineStatusProvider } from './EngineStatusProvider';
-import { ActiveServicesProvider } from './ActiveServicesContext';
-import { SidePanelProvider, type SidePanelContextValue } from './SidePanelContext';
-import { OverlayProvider } from '../ui/overlay';
+import { AppProviders } from './AppProviders';
+import { type SidePanelContextValue } from './SidePanelContext';
 
+/**
+ * SidePanel container and state manager
+ * eff: Orchestrates the main layout and slide transitions
+ */
 export const SidePanel: React.FC = () => {
 	const { t, ready: i18nReady } = useTranslation();
 	const state = useSidePanelState();
@@ -23,7 +22,7 @@ export const SidePanel: React.FC = () => {
 		settings: state.settings,
 		visibleTools: state.visibleTools,
 		loading: state.loading,
-		modulesLoading: state.modulesLoading,
+		toolInstallLoading: state.toolInstallLoading,
 		handleToolSelect: state.handleToolSelect,
 		handleCloseTool: state.handleCloseTool,
 		handleBack: state.handleBack,
@@ -33,7 +32,7 @@ export const SidePanel: React.FC = () => {
 		handleReorderCategories: state.handleReorderCategories,
 	}), [state]);
 
-	if (state.loading || !i18nReady || state.modulesLoading) {
+	if (state.loading || !i18nReady || state.toolInstallLoading) {
 		return (
 			<div style={{
 				display: 'flex', flexDirection: 'column', alignItems: 'center', 
@@ -52,54 +51,48 @@ export const SidePanel: React.FC = () => {
 	});
 
 	return (
-		<SidePanelProvider value={contextValue}>
-			<OverlayProvider>
-				<ActiveServicesProvider>
-					<EngineStatusProvider>
-						<div style={{ 
-							position: 'relative', width: '100%', height: '100%', 
-							overflow: 'hidden', background: 'var(--halo-bg, #1a1a1a)', 
-							color: 'var(--halo-text)', display: 'flex', flexDirection: 'column'
-						}}>
-						{/* GLOBAL PERSISTENT HEADER: NEVER ANIMATES, FIXED AT TOP */}
-						<LauncherHeader
-							activeTool={state.activeTool}
-							visibleTools={state.visibleTools}
-							onBack={state.handleBack}
-							onSelectTool={state.handleToolSelect}
-							hideBorder={hasDock}
-						/>
+		<AppProviders sidePanelValue={contextValue}>
+			<div style={{ 
+				position: 'relative', width: '100%', height: '100%', 
+				overflow: 'hidden', background: 'var(--halo-bg, #1a1a1a)', 
+				color: 'var(--halo-text)', display: 'flex', flexDirection: 'column'
+			}}>
+				{/* GLOBAL PERSISTENT HEADER: NEVER ANIMATES, FIXED AT TOP */}
+				<LauncherHeader
+					activeTool={state.activeTool}
+					visibleTools={state.visibleTools}
+					onBack={state.handleBack}
+					onSelectTool={state.handleToolSelect}
+					hideBorder={hasDock}
+				/>
 
-						{/* DOCK TAB BAR: macOS-style tab switcher below header */}
-						<DockTabBar
-							openTools={state.openTools}
-							activeTool={state.activeTool}
-							visibleTools={state.visibleTools}
-							onSelectTool={state.handleToolSelect}
-							onCloseTool={state.handleCloseTool}
-						/>
+				{/* DOCK TAB BAR: macOS-style tab switcher below header */}
+				<DockTabBar
+					openTools={state.openTools}
+					activeTool={state.activeTool}
+					visibleTools={state.visibleTools}
+					onSelectTool={state.handleToolSelect}
+					onCloseTool={state.handleCloseTool}
+				/>
 
-						{/* Main Content Area (Layout with slide transitions) */}
-						<main style={{ flex: 1, overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column' }}>
-							<LauncherLayout
-								activeTool={state.activeTool}
-								openTools={state.openTools || []}
-								onCloseTool={state.handleCloseTool}
-								onSelectTool={state.handleToolSelect}
-								onBack={state.handleBack}
-								settings={state.settings}
-								onSettingsChange={state.handleSettingsChange}
-								visibleTools={state.visibleTools}
-								onTogglePin={state.handleTogglePin}
-								onReorderTools={state.handleReorderTools}
-								onReorderCategories={state.handleReorderCategories}
-							/>
-						</main>
-					</div>
-				</EngineStatusProvider>
-			</ActiveServicesProvider>
-			</OverlayProvider>
-	</SidePanelProvider>
+				{/* Main Content Area (Layout with slide transitions) */}
+				<main style={{ flex: 1, overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column' }}>
+					<LauncherLayout
+						activeTool={state.activeTool}
+						openTools={state.openTools || []}
+						onCloseTool={state.handleCloseTool}
+						onSelectTool={state.handleToolSelect}
+						onBack={state.handleBack}
+						settings={state.settings}
+						onSettingsChange={state.handleSettingsChange}
+						visibleTools={state.visibleTools}
+						onTogglePin={state.handleTogglePin}
+						onReorderTools={state.handleReorderTools}
+						onReorderCategories={state.handleReorderCategories}
+					/>
+				</main>
+			</div>
+		</AppProviders>
 	);
 };
 

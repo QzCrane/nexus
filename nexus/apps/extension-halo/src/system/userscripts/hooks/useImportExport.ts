@@ -5,11 +5,11 @@ import {
 	exportScripts,
 	importScripts
 } from '../core';
-import { useToast } from '../../../components/ToastProvider';
+import { useOverlay } from '../../../components/ui';
 
 export function useImportExport(loadScripts: () => Promise<void>) {
 	const { t } = useTranslation();
-	const { showToast } = useToast();
+	const { showToast } = useOverlay();
 	const [modalMode, setModalMode] = useState<'import' | 'export' | null>(null);
 	const [exportData, setExportData] = useState('');
 
@@ -21,11 +21,11 @@ export function useImportExport(loadScripts: () => Promise<void>) {
 	const handleImport = async (json: string) => {
 		try {
 			const result = await importScripts(json);
-			showToast(`✅ ${t('userscripts.importSuccess', { defaultValue: `Imported ${result.imported} scripts` })}`);
+			showToast({ message: `✅ ${t('userscripts.importSuccess', { defaultValue: `Imported ${result.imported} scripts` })}` });
 			await loadScripts();
 			setModalMode(null);
 		} catch (e) {
-			showToast(`❌ ${t('userscripts.importFailed')}`);
+			showToast({ message: `❌ ${t('userscripts.importFailed')}` });
 		}
 	};
 

@@ -9,11 +9,11 @@ import {
 	reorderScript,
 } from '../core';
 import { injectScriptToCurrentTab } from '../engine';
-import { useToast } from '../../../components/ToastProvider';
+import { useOverlay } from '../../../components/ui';
 
 export function useUserScripts() {
 	const { t } = useTranslation();
-	const { showToast } = useToast();
+	const { showToast } = useOverlay();
 	const [scripts, setScripts] = useState<UserScript[]>([]);
 	const [globalEnabled, setGlobalEnabled] = useState(true);
 	const [currentUrl, setCurrentUrl] = useState('');
@@ -72,7 +72,7 @@ export function useUserScripts() {
 
 		if (granted) {
 			setHasPermission(true);
-			showToast(`✅ ${t('userscripts.permsGranted', { defaultValue: 'Permissions granted' })}`);
+			showToast({ message: `✅ ${t('userscripts.permsGranted', { defaultValue: 'Permissions granted' })}` });
 			chrome.runtime.sendMessage({ type: 'HALO_USERSCRIPTS_SYNC' }).catch(() => { });
 		}
 	};
@@ -80,9 +80,11 @@ export function useUserScripts() {
 	const handleGlobalToggle = async () => {
 		const newState = await toggleGlobalEnabled();
 		setGlobalEnabled(newState);
-		showToast(newState
-			? `✅ ${t('userscripts.scriptsEnabled')}`
-			: `⏸️ ${t('userscripts.scriptsDisabled')}`);
+		showToast({
+			message: newState
+				? `✅ ${t('userscripts.scriptsEnabled')}`
+				: `⏸️ ${t('userscripts.scriptsDisabled')}`
+		});
 	};
 
 	const handleToggle = async (id: string) => {
@@ -94,14 +96,16 @@ export function useUserScripts() {
 		if (!confirm(t('userscripts.deleteConfirm'))) return;
 		await deleteUserScript(id);
 		await loadScripts();
-		showToast(`🗑️ ${t('userscripts.scriptDeleted')}`);
+		showToast({ message: `🗑️ ${t('userscripts.scriptDeleted')}` });
 	};
 
 	const handleTest = async (script: UserScript) => {
 		const success = await injectScriptToCurrentTab(script);
-		showToast(success
-			? `✅ ${t('userscripts.executed', { name: script.name })}`
-			: `❌ ${t('userscripts.injectionFailed')}`);
+		showToast({
+			message: success
+				? `✅ ${t('userscripts.executed', { name: script.name })}`
+				: `❌ ${t('userscripts.injectionFailed')}`
+		});
 	};
 
 	const handleMove = async (id: string, dir: 'up' | 'down') => {

@@ -2,12 +2,13 @@
 // eff: Check updates + manage remote module sources
 
 import { useState, useEffect, useCallback } from 'react';
-import { fetchRemoteRegistry, checkForUpdates, type RemoteRegistry, type ModuleUpdate } from '../managers/remote-registry';
+import { fetchRemoteRegistry, checkForUpdates, type RemoteRegistry, type ToolUpdate } from '../managers/remote-registry';
+import type { SaaTScriptState } from '../services/saat-types';
 
 interface UseRemoteRegistryResult {
 	loading: boolean;
 	registry: RemoteRegistry | null;
-	updates: ModuleUpdate[];
+	updates: ToolUpdate[];
 	hasUpdates: boolean;
 	refresh: () => Promise<void>;
 	lastChecked: number | null;
@@ -16,7 +17,7 @@ interface UseRemoteRegistryResult {
 export const useRemoteRegistry = (): UseRemoteRegistryResult => {
 	const [loading, setLoading] = useState(false);
 	const [registry, setRegistry] = useState<RemoteRegistry | null>(null);
-	const [updates, setUpdates] = useState<ModuleUpdate[]>([]);
+	const [updates, setUpdates] = useState<ToolUpdate[]>([]);
 	const [lastChecked, setLastChecked] = useState<number | null>(null);
 
 	const refresh = useCallback(async () => {

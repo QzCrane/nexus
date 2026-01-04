@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { HaloSettings, DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY } from '../core/settings';
+import { safeStorageGet } from '../core/safe-storage';
 
 export function useSettings() {
 	const [settings, setSettings] = useState<HaloSettings>(DEFAULT_SETTINGS);
@@ -7,10 +8,8 @@ export function useSettings() {
 
 	useEffect(() => {
 		// Initial load
-		chrome.storage.sync.get([SETTINGS_STORAGE_KEY]).then((result) => {
-			if (result[SETTINGS_STORAGE_KEY]) {
-				setSettings({ ...DEFAULT_SETTINGS, ...result[SETTINGS_STORAGE_KEY] });
-			}
+		safeStorageGet([SETTINGS_STORAGE_KEY], { [SETTINGS_STORAGE_KEY]: DEFAULT_SETTINGS }, 'sync').then((result) => {
+			setSettings(result[SETTINGS_STORAGE_KEY]);
 			setLoading(false);
 		});
 

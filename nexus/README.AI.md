@@ -71,9 +71,9 @@ nexus(私有) → {spectra, halo}-public/ → github.com/QzCrane/{spectra, halo}
 - 智能意图: `useClipboardIntent` 智能识别剪贴板内容并推荐工具 (Smart Paste)
 - 核心服务: `useToolState`, `PermissionManager`(Kernel), `EngineStatusProvider`
 - 搜索引擎: unified-search.ts (全语言+Pinyin 全拼/简拼+registerSearchLocale 扩展)
-- 性能优化: `useIdlePreload` (空闲预加载), `waitForI18n` (Suspense-ready), **Visibility Pause** (定时器自动暂停), **Event-driven** (消除轮询)
+- 性能优化: `useIdlePreload` (空闲预加载), `waitForI18n` (Suspense-ready), **Visibility Pause** (定时器自动暂停), **Event-driven** (消除轮询), **100% SafeStorage Migration** (存储超时保护)
 - 资源监控: `ResourceMonitor` (11 种 CPU 机制分类 + 影响评分)
-- 架构统一: 100% i18n Coverage (SSOT) + Icon Architecture (Manifest SSOT)
+- 架构统一: 100% i18n Coverage (SSOT) + Icon Architecture (Manifest SSOT) + **Unified Tool Naming** (Kernel/DB/UI)
 - Core(13): QR/Screenshot/Color/Ruler/JSON/Base64/Hash/UUID/Timestamp/URL/ModuleStore/Settings/Permissions
 - Dev(34): **UserScripts(Pro:chrome.userScripts API,MAIN world,Templates)**/Regex/Crypto/Network/YAML/Markdown/JSONPath/SQL/Protobuf/...
 - Efficiency(13): PDF/Clipboard(Monitoring)/Tabs/Timer/SmoothScroll(Pro)/...

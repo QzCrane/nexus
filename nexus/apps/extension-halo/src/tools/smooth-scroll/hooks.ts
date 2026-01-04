@@ -7,13 +7,13 @@ import { useToolState } from '../../kernel';
 import { useTranslation } from '../../i18n';
 import type { ScrollSettings } from './types';
 import { DEFAULT_SETTINGS, PROFILES, CUSTOM_PROFILE_KEY, STORAGE_KEY } from './types';
-import { useToast } from '../../components/ToastProvider';
+import { useOverlay } from '../../components/ui';
 
 const logger = createLogger('SmoothScroll', 'HALO');
 
 export function useSmoothScrollSettings() {
 	const { t } = useTranslation();
-	const { showToast } = useToast();
+	const { showToast } = useOverlay();
 	// Use sync storage with custom key for backward compatibility
 	const [settings, setSettings] = useToolState<ScrollSettings>(
 		'smooth-scroll',
@@ -42,7 +42,7 @@ export function useSmoothScrollSettings() {
 	const loadProfile = useCallback(async (profileName: keyof typeof PROFILES) => {
 		const profile = PROFILES[profileName];
 		setSettings(prev => ({ ...prev, ...profile }));
-		showToast(`${t(`smoothScroll.profilesList.${profileName}`, { defaultValue: profileName })} ${t('smoothScroll.toasts.loaded')}`);
+		showToast({ message: `${t(`smoothScroll.profilesList.${profileName}`, { defaultValue: profileName })} ${t('smoothScroll.toasts.loaded')}` });
 	}, [showToast, t, setSettings]);
 
 
@@ -50,7 +50,7 @@ export function useSmoothScrollSettings() {
 		const r = await chrome.storage.sync.get([CUSTOM_PROFILE_KEY]);
 		if (r[CUSTOM_PROFILE_KEY]) {
 			setSettings(prev => ({ ...prev, ...r[CUSTOM_PROFILE_KEY] }));
-			showToast(`${t('smoothScroll.profilesList.custom')} ${t('smoothScroll.toasts.loaded')}`);
+			showToast({ message: `${t('smoothScroll.profilesList.custom')} ${t('smoothScroll.toasts.loaded')}` });
 		}
 	}, [showToast, t, setSettings]);
 
@@ -58,13 +58,13 @@ export function useSmoothScrollSettings() {
 	const saveAsCustom = useCallback(async () => {
 		await chrome.storage.sync.set({ [CUSTOM_PROFILE_KEY]: settings });
 		setHasCustomProfile(true);
-		showToast(t('smoothScroll.toasts.savedCustom'));
+		showToast({ message: t('smoothScroll.toasts.savedCustom') });
 		logger.info('Custom profile saved');
 	}, [settings, showToast, t]);
 
 	const resetSettings = useCallback(() => {
 		setSettings(DEFAULT_SETTINGS);
-		showToast(t('smoothScroll.toasts.reset'));
+		showToast({ message: t('smoothScroll.toasts.reset') });
 		logger.info('Settings reset to defaults');
 	}, [showToast, t, setSettings]);
 

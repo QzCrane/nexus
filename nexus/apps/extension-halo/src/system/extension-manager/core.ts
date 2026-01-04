@@ -115,23 +115,21 @@ export async function uninstallExtension(id: string): Promise<boolean> {
 	}
 }
 
+import { safeStorageGet, safeStorageSet } from '../../kernel/core/safe-storage';
+
 /**
  * Load saved groups from storage
  */
 export async function loadGroups(): Promise<Record<ExtensionGroup, string[]>> {
-	try {
-		const result = await chrome.storage.local.get(STORAGE_KEY);
-		return result[STORAGE_KEY] || { dev: [], work: [], entertainment: [], other: [] };
-	} catch {
-		return { dev: [], work: [], entertainment: [], other: [] };
-	}
+	const result = await safeStorageGet([STORAGE_KEY], { [STORAGE_KEY]: { dev: [], work: [], entertainment: [], other: [] } }, 'local');
+	return result[STORAGE_KEY];
 }
 
 /**
  * Save groups to storage
  */
 export async function saveGroups(groups: Record<ExtensionGroup, string[]>): Promise<void> {
-	await chrome.storage.local.set({ [STORAGE_KEY]: groups });
+	await safeStorageSet({ [STORAGE_KEY]: groups }, 'local');
 }
 
 /**

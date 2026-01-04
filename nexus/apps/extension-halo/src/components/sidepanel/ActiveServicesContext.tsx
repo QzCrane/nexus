@@ -10,6 +10,8 @@ interface ActiveServicesContextType {
 
 const ActiveServicesContext = createContext<ActiveServicesContextType | undefined>(undefined);
 
+import { safeStorageGet } from '../../kernel/core/safe-storage';
+
 export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 	const [activeServices, setActiveServices] = useState<Set<string>>(new Set());
 	// Dynamic scripts list to include in background tool IDs
@@ -23,14 +25,14 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 
 			try {
 				// Use storage defaults: default to TRUE if key missing
-				const localData = await chrome.storage.local.get({
+				const localData = await safeStorageGet(['halo_tool_clipboard_settings', 'halo_userscripts'], {
 					halo_tool_clipboard_settings: { enabled: true },
-					halo_userscripts: { globalEnabled: true, scripts: [] } // Default scripts to empty array
-				});
+					halo_userscripts: { globalEnabled: true, scripts: [] }
+				}, 'local');
 
-				const syncData = await chrome.storage.sync.get({
+				const syncData = await safeStorageGet(['HALO_SMOOTH_SCROLL_SETTINGS'], {
 					HALO_SMOOTH_SCROLL_SETTINGS: { enabled: true }
-				});
+				}, 'sync');
 
 				if (localData.halo_tool_clipboard_settings.enabled) active.add('clipboard');
 				if (localData.halo_userscripts.globalEnabled) active.add('userscripts');

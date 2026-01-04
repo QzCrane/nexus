@@ -2,6 +2,7 @@
 
 import type { Note } from './types';
 import { NOTE_COLORS } from './types';
+import { safeStorageGet, safeStorageSet } from '../../kernel/core/safe-storage';
 
 const STORAGE_KEY = 'halo-sticky-notes';
 
@@ -12,16 +13,13 @@ export function generateId(): string {
 
 // Get all notes
 export async function getNotes(): Promise<Note[]> {
-	return new Promise((resolve) => {
-		chrome.storage.local.get(STORAGE_KEY, (result) => {
-			resolve(result[STORAGE_KEY] || []);
-		});
-	});
+	const result = await safeStorageGet([STORAGE_KEY], { [STORAGE_KEY]: [] }, 'local');
+	return result[STORAGE_KEY];
 }
 
 // Save all notes
 export async function saveNotes(notes: Note[]): Promise<void> {
-	return chrome.storage.local.set({ [STORAGE_KEY]: notes });
+	await safeStorageSet({ [STORAGE_KEY]: notes }, 'local');
 }
 
 // Create new note

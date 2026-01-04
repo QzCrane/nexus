@@ -1,26 +1,22 @@
-// goal: Remote module registry client
-// eff: Fetch module list from remote server + version check
-
-import { type ModuleMeta, ALL_MODULES } from '../../kernel';
+import { type ToolMeta, ALL_TOOLS } from '../../kernel';
+import { safeStorageGet, safeStorageSet } from '../../kernel/core/safe-storage';
 
 // Remote registry config
 const REGISTRY_CONFIG = {
-	// GitHub raw file or CDN URL (placeholder - replace with actual URL when ready)
-	baseUrl: 'https://raw.githubusercontent.com/user/halo-modules/main',
+	baseUrl: 'https://raw.githubusercontent.com/user/halo-tools/main',
 	registryPath: '/registry.json',
 	timeout: 10000, // 10s
 	cacheKey: 'halo_remote_registry',
 	cacheTTL: 3600000, // 1 hour
 };
 
-// Remote registry response structure
 export interface RemoteRegistry {
 	version: string;
 	lastUpdated: string;
-	modules: RemoteModuleMeta[];
+	tools: RemoteToolMeta[];
 }
 
-export interface RemoteModuleMeta extends ModuleMeta {
+export interface RemoteToolMeta extends ToolMeta {
 	downloadUrl?: string;
 	changelog?: string;
 	minHaloVersion?: string;
@@ -36,11 +32,11 @@ interface CachedRegistry {
 export const fetchRemoteRegistry = async (forceRefresh = false): Promise<RemoteRegistry | null> => {
 	try {
 		// Dev mode: If using placeholder URL, return local registry immediately to avoid 404s
-		if (REGISTRY_CONFIG.baseUrl.includes('user/halo-modules')) {
+		if (REGISTRY_CONFIG.baseUrl.includes('user/halo-tools')) {
 			return {
 				version: '1.0.0',
 				lastUpdated: new Date().toISOString(),
-				modules: ALL_MODULES as RemoteModuleMeta[], // Cast is safe as local modules match structure
+				tools: ALL_TOOLS as RemoteToolMeta[], // Cast is safe as local tools match structure
 			};
 		}
 
@@ -79,21 +75,13 @@ export const fetchRemoteRegistry = async (forceRefresh = false): Promise<RemoteR
 
 // Get cached registry from storage
 const getCachedRegistry = async (): Promise<CachedRegistry | null> => {
-	try {
-		const result = await chrome.storage.local.get(REGISTRY_CONFIG.cacheKey);
-		return result[REGISTRY_CONFIG.cacheKey] || null;
-	} catch {
-		return null;
-	}
+	const result = await safeStorageGet([REGISTRY_CONFIG.cacheKey], { [REGISTRY_CONFIG.cacheKey]: null }, 'local');
+	return result[REGISTRY_CONFIG.cacheKey];
 };
 
 // Set cached registry to storage
 const setCachedRegistry = async (cached: CachedRegistry): Promise<void> => {
-	try {
-		await chrome.storage.local.set({ [REGISTRY_CONFIG.cacheKey]: cached });
-	} catch (err) {
-		console.warn('[RemoteRegistry] Cache error:', err);
-	}
+	await safeStorageSet({ [REGISTRY_CONFIG.cacheKey]: cached }, 'local');
 };
 
 // Compare versions (simple semver)
@@ -109,31 +97,31 @@ export const compareVersions = (v1: string, v2: string): number => {
 	return 0;
 };
 
-// Check for module updates
-export interface ModuleUpdate {
+// Check for tool updates
+export interface ToolUpdate {
 	id: string;
 	currentVersion: string;
 	newVersion: string;
 	changelog?: string;
 }
 
-export const checkForUpdates = async (): Promise<ModuleUpdate[]> => {
+export const checkForUpdates = async (): Promise<ToolUpdate[]> => {
 	const remote = await fetchRemoteRegistry();
 	if (!remote) return [];
 
-	const updates: ModuleUpdate[] = [];
+	const updates: ToolUpdate[] = [];
 
-	for (const remoteMod of remote.modules) {
-		const localMod = ALL_MODULES.find((m) => m.id === remoteMod.id);
-		const rv = remoteMod.version || '0.0.0';
-		const lv = localMod?.version || '0.0.0';
+	for (const remoteTool of remote.tools) {
+		const localTool = ALL_TOOLS.find((t) => t.id === remoteTool.id);
+		const rv = remoteTool.version || '0.0.0';
+		const lv = localTool?.version || '0.0.0';
 
-		if (localMod && compareVersions(rv, lv) > 0) {
+		if (localTool && compareVersions(rv, lv) > 0) {
 			updates.push({
-				id: remoteMod.id,
+				id: remoteTool.id,
 				currentVersion: lv,
 				newVersion: rv,
-				changelog: remoteMod.changelog,
+				changelog: remoteTool.changelog,
 			});
 		}
 	}
@@ -141,17 +129,17 @@ export const checkForUpdates = async (): Promise<ModuleUpdate[]> => {
 	return updates;
 };
 
-// Get merged modules (local + remote)
-export const getMergedModules = async (): Promise<ModuleMeta[]> => {
+// Get merged tools (local + remote)
+export const getMergedTools = async (): Promise<ToolMeta[]> => {
 	const remote = await fetchRemoteRegistry();
-	if (!remote) return ALL_MODULES;
+	if (!remote) return ALL_TOOLS;
 
-	const merged = [...ALL_MODULES];
+	const merged = [...ALL_TOOLS];
 
-	// Add new modules from remote that don't exist locally
-	for (const remoteMod of remote.modules) {
-		if (!merged.find((m) => m.id === remoteMod.id)) {
-			merged.push(remoteMod);
+	// Add new tools from remote that don't exist locally
+	for (const remoteTool of remote.tools) {
+		if (!merged.find((t) => t.id === remoteTool.id)) {
+			merged.push(remoteTool);
 		}
 	}
 
@@ -162,5 +150,5 @@ export const getMergedModules = async (): Promise<ModuleMeta[]> => {
 export const getLocalRegistry = (): RemoteRegistry => ({
 	version: '1.0.0',
 	lastUpdated: new Date().toISOString(),
-	modules: ALL_MODULES as RemoteModuleMeta[],
+	tools: ALL_TOOLS as RemoteToolMeta[],
 });
