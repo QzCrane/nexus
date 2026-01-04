@@ -87,8 +87,7 @@ const commonConfig = {
 	alias: {
 		'@nexus/contracts': path.resolve(__dirname, '../../packages/contracts/dist/index.js'),
 		'@nexus/kernel': path.resolve(__dirname, '../../packages/nexus-kernel/dist/index.js'),
-		'@nexus/ui-kit': path.resolve(__dirname, '../../packages/ui-kit/dist/index.js'),
-		'@nexus/zen-engine': path.resolve(__dirname, '../../packages/features/zen-engine/dist/index.js')
+		'@nexus/ui-kit': path.resolve(__dirname, '../../packages/ui-kit/dist/index.js')
 	}
 };
 
