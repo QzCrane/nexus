@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useTranslation } from '../../../i18n';
 import type { UserScript, EditForm } from '../types';
 import {
@@ -26,7 +26,7 @@ export function useScriptEditor(loadScripts: () => Promise<void>) {
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [editForm, setEditForm] = useState<EditForm>(DEFAULT_FORM);
 
-	const handleEdit = (script: UserScript) => {
+	const handleEdit = useCallback((script: UserScript) => {
 		setEditingId(script.id);
 		setEditForm({
 			name: script.name,
@@ -39,9 +39,9 @@ export function useScriptEditor(loadScripts: () => Promise<void>) {
 			runAt: script.runAt,
 		});
 		setShowEditor(true);
-	};
+	}, []);
 
-	const handleSave = async () => {
+	const handleSave = useCallback(async () => {
 		if (!editForm.name.trim() || !editForm.code.trim()) {
 			showToast('❌ Name and code required');
 			return;
@@ -59,12 +59,9 @@ export function useScriptEditor(loadScripts: () => Promise<void>) {
 		};
 
 		if (editingId && !editingId.startsWith('saat-')) {
-			// Normal update for user scripts
 			await updateUserScript(editingId, scriptData);
 			showToast(`💾 ${t('userscripts.scriptUpdated')}`);
 		} else {
-			// Create new script (or Fork from SaaT)
-			// If it was a SaaT script (editingId starts with 'saat-'), we are effectively forking it
 			await addUserScript(scriptData);
 			if (editingId && editingId.startsWith('saat-')) {
 				showToast(`📋 ${t('userscripts.scriptForked', { defaultValue: 'Script forked as new' })}`);
@@ -77,15 +74,15 @@ export function useScriptEditor(loadScripts: () => Promise<void>) {
 		setEditingId(null);
 		setShowEditor(false);
 		await loadScripts();
-	};
+	}, [editForm, editingId, loadScripts, showToast, t]);
 
-	const handleCancel = () => {
+	const handleCancel = useCallback(() => {
 		setEditForm(DEFAULT_FORM);
 		setEditingId(null);
 		setShowEditor(false);
-	};
+	}, []);
 
-	const loadTemplate = (key: keyof typeof SCRIPT_TEMPLATES) => {
+	const loadTemplate = useCallback((key: keyof typeof SCRIPT_TEMPLATES) => {
 		const tpl = SCRIPT_TEMPLATES[key];
 		setEditingId(null);
 		setEditForm({
@@ -99,7 +96,7 @@ export function useScriptEditor(loadScripts: () => Promise<void>) {
 			runAt: tpl.runAt,
 		});
 		setShowEditor(true);
-	};
+	}, []);
 
 	return {
 		showEditor,
