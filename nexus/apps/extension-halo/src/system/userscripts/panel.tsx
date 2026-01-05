@@ -63,21 +63,22 @@ export const UserScriptsPanel: React.FC = () => {
 	// Check if we were redirected here to edit a specific script
 	React.useEffect(() => {
 		const scriptId = sessionStorage.getItem('halo_edit_script');
-		if (scriptId) {
-			sessionStorage.removeItem('halo_edit_script');
-			
-			// Try to find by: 1) exact id, 2) name, 3) saatToolId (for official SaaT scripts)
-			const targetScript = scripts.find(s => 
-				s.id === scriptId || 
-				s.name === scriptId || 
-				(s as any).saatToolId === scriptId
-			);
-			
-			if (targetScript) {
-				handleEdit(targetScript);
-			}
-			// If not found, don't open editor - the script may not be installed yet
+		if (!scriptId || scripts.length === 0) return; // Wait until scripts are loaded
+		
+		// Always clear after scripts are loaded (prevents stale ID from previous sessions)
+		sessionStorage.removeItem('halo_edit_script');
+		
+		// Try to find by: 1) exact id, 2) name, 3) saatToolId (for official SaaT scripts)
+		const targetScript = scripts.find(s => 
+			s.id === scriptId || 
+			s.name === scriptId || 
+			(s as any).saatToolId === scriptId
+		);
+		
+		if (targetScript) {
+			handleEdit(targetScript);
 		}
+		// If not found, the ID is invalid or script was deleted - silently ignored
 	}, [scripts, handleEdit]);
 
 	// Render editor page as full sub-page
