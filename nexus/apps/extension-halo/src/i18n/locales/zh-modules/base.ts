@@ -36,18 +36,25 @@ export const base = {
 	},
 	categories: {
 		general: '通用工具',
+		// 开发工具 (细分)
+		encode: '编解码',
+		format: '格式转换',
+		network: '网络 / API',
+		data: '数据生成',
 		dev: '开发工具',
+		// 效率
 		efficiency: '效率工具',
+		browser: '浏览器',
+		// 创意
 		visual: '视觉工具',
-		ai: 'AI 智能',
-		security: '安全工具',
 		media: '媒体工具',
-		browser: '浏览器工具',
+		// 安全与 AI
+		security: '安全工具',
+		ai: 'AI 智能',
+		// 虚拟/系统
 		active: '后台助手',
 		scripts: '用户脚本',
-		system: '系统组件',
-		official: '官方',
-		my: '我的',
+		system: '系统',
 	},
 
 

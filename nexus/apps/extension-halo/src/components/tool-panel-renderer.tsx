@@ -8,7 +8,7 @@ import { LazyToolRenderer } from './lazy-tool-loader';
 
 // SSOT: Get system tool IDs from registry
 const SYSTEM_TOOL_IDS = new Set(
-	TOOL_REGISTRY.filter(t => t.system).map(t => t.id)
+	TOOL_REGISTRY.filter(t => t.pluginType === 'system').map(t => t.id)
 );
 
 const isSystemTool = (id: string): boolean => SYSTEM_TOOL_IDS.has(id);

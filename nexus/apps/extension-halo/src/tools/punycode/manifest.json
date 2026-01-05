@@ -1,8 +1,9 @@
 {
 	"id": "punycode",
 	"icon": "🌐",
-	"category": "dev",
+	"category": "encode",
 	"size": 12000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"pluginType": "tool"
 }

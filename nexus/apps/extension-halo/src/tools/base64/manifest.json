@@ -1,8 +1,9 @@
 {
 	"id": "base64",
 	"icon": "64",
-	"category": "dev",
+	"category": "encode",
 	"size": 15000,
 	"builtIn": true,
-	"keywords": []
+	"keywords": [],
+	"pluginType": "tool"
 }

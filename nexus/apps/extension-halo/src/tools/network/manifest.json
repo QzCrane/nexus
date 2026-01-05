@@ -1,8 +1,9 @@
 {
 	"id": "network",
 	"icon": "🌐",
-	"category": "dev",
+	"category": "network",
 	"size": 45000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"pluginType": "tool"
 }

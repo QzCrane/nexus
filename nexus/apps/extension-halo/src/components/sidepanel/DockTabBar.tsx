@@ -42,7 +42,7 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 
 	const dockTools = openTools.filter((id) => {
 		const tool = visibleTools.find((m) => m.id === id);
-		return tool && !tool.system && id !== 'settings' && id !== 'module-store' && id !== 'permissions';
+		return tool && tool.pluginType !== 'system';
 	});
 
 	const getScale = useCallback((index: number) => {

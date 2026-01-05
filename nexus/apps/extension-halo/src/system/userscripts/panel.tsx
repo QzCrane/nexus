@@ -18,14 +18,14 @@ import { matchesUrl } from './utils';
 export const UserScriptsPanel: React.FC = () => {
     const { t } = useTranslation();
     
-    const { 
+    const {
         scripts, globalEnabled, currentUrl, hasPermission, 
         loadScripts, handleRequestPermission, handleGlobalToggle, 
         handleToggle, handleDelete, handleTest, handleMove,
         toolbarConfig, handleToolbarConfig
     } = useUserScripts();
 
-    const { 
+    const {
         showEditor, editingId, editForm, setEditForm, setShowEditor, setEditingId,
         handleEdit, handleSave, handleCancel, loadTemplate 
     } = useScriptEditor(loadScripts);
@@ -65,11 +65,18 @@ export const UserScriptsPanel: React.FC = () => {
 		const scriptId = sessionStorage.getItem('halo_edit_script');
 		if (scriptId) {
 			sessionStorage.removeItem('halo_edit_script');
-			// Find the script and open editor
-			const script = scripts.find(s => s.id === scriptId || s.name === scriptId);
-			if (script) {
-				handleEdit(script);
+			
+			// Try to find by: 1) exact id, 2) name, 3) saatToolId (for official SaaT scripts)
+			const targetScript = scripts.find(s => 
+				s.id === scriptId || 
+				s.name === scriptId || 
+				(s as any).saatToolId === scriptId
+			);
+			
+			if (targetScript) {
+				handleEdit(targetScript);
 			}
+			// If not found, don't open editor - the script may not be installed yet
 		}
 	}, [scripts, handleEdit]);
 

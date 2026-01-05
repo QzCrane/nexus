@@ -1,105 +1,106 @@
 import { useMemo } from 'react';
-import type { ToolMeta } from '../../../kernel/core/tool-registry-types';
+import type { PluginMeta } from '../../../kernel/core/tool-registry-types';
 import type { HaloSettings } from '../../../kernel/core/settings';
 import type { UserScript } from '../../../system/userscripts/types';
 import { BACKGROUND_PROFILES_MAP } from "../../../kernel/registry/_generated";
+import { TAXONOMY } from "../../../kernel/registry/taxonomy";
 
 interface UseCategorizedToolsProps {
-	visibleTools: ToolMeta[];
+	visibleTools: PluginMeta[];
 	settings: HaloSettings | null;
 	t: (key: string) => string;
 	activeServices: Set<string>;
 	backgroundToolIds: string[];
 	scripts: UserScript[];
-	tempCats: Record<string, ToolMeta[]> | null;
+	tempCats: Record<string, PluginMeta[]> | null;
 	tempCatOrder: string[] | null;
 }
+
+// Build dynamic category keys from TAXONOMY (SSOT)
+const CATEGORY_IDS = TAXONOMY.map(c => c.id);
 
 export function useCategorizedTools({
 	visibleTools, settings, t, activeServices, backgroundToolIds, scripts, tempCats, tempCatOrder
 }: UseCategorizedToolsProps) {
 	const categorizedTools = useMemo(() => {
 		if (tempCats) return tempCats;
-		const cats: Record<string, ToolMeta[]> = {
-			active: [], scripts: [], system: [], general: [], dev: [],
-			efficiency: [], visual: [], ai: [], security: [], media: [], browser: []
-		};
+
+		// Initialize all categories dynamically from TAXONOMY
+		const cats: Record<string, PluginMeta[]> = {};
+		CATEGORY_IDS.forEach(id => { cats[id] = []; });
 
 		// 1. Process builtin/registry tools
 		visibleTools.forEach(tool => {
-			if (tool.system) {
-				if (settings?.showSystemTools) cats.system.push(tool);
+			// System plugins: only show if enabled in settings
+			if (tool.pluginType === 'system') {
+				if (settings?.showSystemTools) cats.system?.push(tool);
 
-				// System tools in active if they are global background services
-				// Check if it's a known background tool AND it's NOT active-only (meaning it runs globally)
+				// System tools that are global background services -> also in 'active'
 				if (backgroundToolIds.includes(tool.id)) {
 					const profile = BACKGROUND_PROFILES_MAP[tool.id];
-					// If profile exists and activeOnly is false, it's a global service -> show in active
 					if (profile && !profile.activeOnly) {
-						cats.active.push(tool);
+						cats.active?.push(tool);
 					}
 				}
 				return;
 			}
 
-			// Script tools (from scripts/ directory)
-			if (tool.toolType === 'script') {
-				// Always show in scripts category
-				cats.scripts.push(tool);
-				// Also show in Active Services if the script is enabled
+			// Script plugins: show in their functional category AND scripts aggregation
+			if (tool.pluginType === 'script') {
+				// Add to functional category
+				if (cats[tool.category]) {
+					cats[tool.category].push(tool);
+				}
+				// Also add to scripts aggregation category
+				cats.scripts?.push(tool);
+				// Also show in Active Services if enabled
 				if (activeServices.has(tool.id)) {
-					cats.active.push(tool);
+					cats.active?.push(tool);
 				}
 				return;
 			}
 
-			// Regular tools
-			if (backgroundToolIds.includes(tool.id)) cats.active.push(tool);
+			// Regular tool plugins
+			if (backgroundToolIds.includes(tool.id)) cats.active?.push(tool);
 			if (cats[tool.category]) cats[tool.category].push(tool);
-			else cats.general.push(tool);
+			else cats.general?.push(tool);
 		});
 
-		// 2. Process user scripts
+		// 2. Process user scripts (non-SaaT)
 		scripts.forEach(script => {
-			// Skip SaaT scripts that are already processed above via visibleTools (they are in registry)
-			// SaaT scripts in 'scripts' array have 'saatToolId'.
-			// We only want PURE user scripts here?
-			// Wait, visibleTools are REGISTRY tools. Scripts in storage (UserScript[]) include BOTH pure user scripts and SaaT wrappers.
-			// Currently, SaaT wrappers in storage have `saatToolId` pointing to registry ID.
-			// Pure user scripts (created manually) do NOT have `saatToolId`.
+			// Skip SaaT wrappers (already in registry)
+			if ((script as any).saatToolId) return;
 
-			if ((script as any).saatToolId) return; // Skip shadows of official scripts
-
-			const meta: ToolMeta = {
+			const meta: PluginMeta = {
 				id: script.id,
 				name: script.name,
 				description: script.description || 'User Script',
-				category: 'scripts',
-				toolType: 'script',
+				category: 'dev', // User scripts go to dev category
+				pluginType: 'script',
 				icon: '📜',
-				version: '0.0.0',
-				size: script.code.length,
 				builtIn: false,
-				system: false,
 				status: 'ready',
 				keywords: ['script', 'user', script.type],
-				scriptType: script.type,
-				scriptMatches: script.matches,
-				// Add flag for UI to know it's a user script
-				// isUserScript: true // ToolMeta type doesn't have this, but runtime works
+				script: {
+					type: script.type,
+					matches: script.matches,
+					runAt: script.runAt || 'document_idle',
+				},
 			};
 			(meta as any).isUserScript = true;
 
-			cats.scripts.push(meta);
+			// Add to functional category (dev)
+			cats.dev?.push(meta);
+			// Also add to scripts aggregation
+			cats.scripts?.push(meta);
 
 			// Check active state
-			// For user scripts, 'enabled' property is truth. Also checked against activeServices set for consistency.
 			if (script.enabled || activeServices.has(script.id)) {
-				cats.active.push(meta);
+				cats.active?.push(meta);
 			}
 		});
 
-		// 2. Sort each category
+		// 3. Sort each category
 		Object.keys(cats).forEach(cat => {
 			const pinned = settings?.pinnedTools || [], order = settings?.toolOrder?.[cat] || [];
 			cats[cat].sort((a, b) => {
@@ -117,17 +118,33 @@ export function useCategorizedTools({
 
 	const catOrder = useMemo(() => {
 		if (tempCatOrder) return tempCatOrder;
-		const defaultOrder = ['active', 'scripts', 'system', 'general', 'dev', 'efficiency', 'visual', 'ai', 'security', 'media', 'browser'];
-		let order = settings?.categoryOrder || [];
-		if (order.length === 0) order = defaultOrder;
 
-		if (!order.includes('system') && settings?.showSystemTools) {
-			const scriptIdx = order.indexOf('scripts');
-			if (scriptIdx !== -1) order.splice(scriptIdx + 1, 0, 'system');
-			else order.unshift('system');
+		// Functional categories from TAXONOMY (exclude virtual/special categories)
+		const functionalCats = TAXONOMY
+			.filter(c => !['active', 'scripts', 'system'].includes(c.id))
+			.sort((a, b) => a.sortOrder - b.sortOrder)
+			.map(c => c.id);
+
+		let order = settings?.categoryOrder || [];
+
+		if (order.length === 0) {
+			// Default order: active, scripts, system first, then functional
+			order = ['active', 'scripts'];
+			if (settings?.showSystemTools) order.push('system');
+			order = [...order, ...functionalCats];
+		} else {
+			// Ensure special categories are included
+			if (!order.includes('active')) order = ['active', ...order];
+			if (!order.includes('scripts')) {
+				const activeIdx = order.indexOf('active');
+				order.splice(activeIdx + 1, 0, 'scripts');
+			}
+			if (!order.includes('system') && settings?.showSystemTools) {
+				const scriptsIdx = order.indexOf('scripts');
+				order.splice(scriptsIdx + 1, 0, 'system');
+			}
 		}
-		if (!order.includes('active')) order = ['active', ...order];
-		if (!order.includes('scripts')) order = ['active', 'scripts', ...order.filter((o: string) => o !== 'active')];
+
 		return order;
 	}, [settings, tempCatOrder]);
 

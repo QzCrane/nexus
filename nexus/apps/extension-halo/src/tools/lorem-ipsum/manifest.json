@@ -1,8 +1,9 @@
 {
 	"id": "lorem-ipsum",
 	"icon": "📄",
-	"category": "dev",
+	"category": "data",
 	"size": 15000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"pluginType": "tool"
 }

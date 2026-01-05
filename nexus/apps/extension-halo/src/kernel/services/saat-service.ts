@@ -1,7 +1,7 @@
 // goal: SaaT (Script-as-a-Tool) service - manages script tools via userScripts API
 // eff: Enables/disables script tools by syncing to userscripts storage
 
-import type { ToolMeta } from '../core/tool-registry-types';
+import type { PluginMeta } from '../core/tool-registry-types';
 
 const LOG_TAG = '[HALO:SaaT]';
 const USERSCRIPTS_STORAGE_KEY = 'halo_userscripts';
@@ -24,6 +24,17 @@ export interface SaaTScriptState {
 	saatToolId: string;
 }
 
+// Helper: check if plugin is script type
+const isScriptPlugin = (p: PluginMeta): boolean => p.pluginType === 'script';
+
+// Helper: get script config with defaults
+const getScriptConfig = (p: PluginMeta) => ({
+	type: p.script?.type || 'javascript',
+	matches: p.script?.matches || ['*://*/*'],
+	excludeMatches: p.script?.excludeMatches || [],
+	runAt: p.script?.runAt || 'document_idle',
+});
+
 /**
  * Check if a script tool is currently enabled
  */
@@ -42,11 +53,13 @@ export async function isScriptToolEnabled(toolId: string): Promise<boolean> {
 /**
  * Toggle a script tool on/off
  */
-export async function toggleScriptTool(tool: ToolMeta): Promise<boolean> {
-	if (tool.toolType !== 'script') {
+export async function toggleScriptTool(tool: PluginMeta): Promise<boolean> {
+	if (!isScriptPlugin(tool)) {
 		console.warn(LOG_TAG, 'Not a script tool:', tool.id);
 		return false;
 	}
+
+	const config = getScriptConfig(tool);
 
 	try {
 		const result = await chrome.storage.local.get(USERSCRIPTS_STORAGE_KEY);
@@ -60,7 +73,7 @@ export async function toggleScriptTool(tool: ToolMeta): Promise<boolean> {
 			console.log(LOG_TAG, `Toggled ${tool.id}:`, state.scripts[existingIdx].enabled);
 		} else {
 			// First time - load and register the script
-			const scriptCode = await loadScriptCode(tool.id, tool.scriptType || 'javascript');
+			const scriptCode = await loadScriptCode(tool.id, config.type);
 			if (!scriptCode) {
 				console.error(LOG_TAG, 'Failed to load script code for:', tool.id);
 				return false;
@@ -72,10 +85,10 @@ export async function toggleScriptTool(tool: ToolMeta): Promise<boolean> {
 				description: `SaaT: ${tool.id}`,
 				code: scriptCode,
 				enabled: true,
-				type: tool.scriptType || 'javascript',
-				matches: tool.scriptMatches || ['*://*/*'],
-				excludeMatches: tool.scriptExcludeMatches || [],
-				runAt: tool.scriptRunAt || 'document_idle',
+				type: config.type,
+				matches: config.matches,
+				excludeMatches: config.excludeMatches,
+				runAt: config.runAt,
 				order: 0,
 				runCount: 0,
 				createdAt: Date.now(),
@@ -140,8 +153,8 @@ export async function getAllScriptToolStates(): Promise<Map<string, boolean>> {
 /**
  * Sync SaaT tools to UserScripts engine
  */
-export async function syncSaaTTools(tools: ToolMeta[]): Promise<void> {
-	const saatTools = tools.filter(t => t.toolType === 'script');
+export async function syncSaaTTools(tools: PluginMeta[]): Promise<void> {
+	const saatTools = tools.filter(isScriptPlugin);
 	if (saatTools.length === 0) return;
 
 	try {
@@ -150,10 +163,11 @@ export async function syncSaaTTools(tools: ToolMeta[]): Promise<void> {
 		let changed = false;
 
 		for (const tool of saatTools) {
+			const config = getScriptConfig(tool);
 			const existingIdx = state.scripts.findIndex((s: SaaTScriptState) => s.saatToolId === tool.id);
 
 			// Always try to load script code
-			const scriptCode = await loadScriptCode(tool.id, tool.scriptType || 'javascript');
+			const scriptCode = await loadScriptCode(tool.id, config.type);
 			if (!scriptCode) {
 				console.warn(LOG_TAG, `Skipping sync for ${tool.id}: Code not found`);
 				continue;
@@ -174,10 +188,10 @@ export async function syncSaaTTools(tools: ToolMeta[]): Promise<void> {
 					description: `SaaT: ${tool.id}`,
 					code: scriptCode,
 					enabled: false, // Default to disabled, let user enable it
-					type: tool.scriptType || 'javascript',
-					matches: tool.scriptMatches || ['*://*/*'],
-					excludeMatches: tool.scriptExcludeMatches || [],
-					runAt: tool.scriptRunAt || 'document_idle',
+					type: config.type,
+					matches: config.matches,
+					excludeMatches: config.excludeMatches,
+					runAt: config.runAt,
 					order: 0,
 					runCount: 0,
 					createdAt: Date.now(),

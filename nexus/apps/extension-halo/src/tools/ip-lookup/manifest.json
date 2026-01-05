@@ -1,8 +1,9 @@
 {
 	"id": "ip-lookup",
 	"icon": "🌍",
-	"category": "dev",
+	"category": "network",
 	"size": 20000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"pluginType": "tool"
 }

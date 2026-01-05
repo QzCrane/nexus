@@ -1,8 +1,9 @@
 {
 	"id": "yaml",
 	"icon": "📋",
-	"category": "dev",
+	"category": "format",
 	"size": 25000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"pluginType": "tool"
 }

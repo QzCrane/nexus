@@ -36,18 +36,25 @@ export const base = {
 	},
 	categories: {
 		general: 'General',
-		dev: 'Developer',
+		// Developer tools (refined)
+		encode: 'Encode / Decode',
+		format: 'Format / Convert',
+		network: 'Network / API',
+		data: 'Data Generate',
+		dev: 'Dev Tools',
+		// Productivity
 		efficiency: 'Efficiency',
-		visual: 'Visual',
-		ai: 'AI & Smart',
-		security: 'Security',
-		media: 'Media',
 		browser: 'Browser',
+		// Creative
+		visual: 'Visual',
+		media: 'Media',
+		// Security & AI
+		security: 'Security',
+		ai: 'AI & Smart',
+		// Virtual/System
 		active: 'Active Services',
-		scripts: 'User Scripts',
-		system: 'System Components',
-		official: 'Official',
-		my: 'My',
+		scripts: 'Scripts',
+		system: 'System',
 	},
 
 	footer: {

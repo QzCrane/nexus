@@ -1,8 +1,9 @@
 {
 	"id": "uuid",
 	"icon": "🆔",
-	"category": "dev",
+	"category": "data",
 	"size": 8000,
 	"builtIn": true,
-	"keywords": []
+	"keywords": [],
+	"pluginType": "tool"
 }

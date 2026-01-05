@@ -38,7 +38,7 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 	const isReady = tool.status === 'ready' || tool.status === 'beta';
 	const isPinned = settings?.pinnedTools?.includes(tool.id);
 	const isDragging = draggingId === tool.id;
-	const isScriptTool = tool.toolType === 'script';
+	const isScriptTool = tool.pluginType === 'script';
 	// isRunning is now passed as a prop
 	const engineEnabled = useToolEngineStatus(tool.id);
 	const mainThemeColor = getCategoryColor(tool.category);

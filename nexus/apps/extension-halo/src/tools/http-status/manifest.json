@@ -1,8 +1,9 @@
 {
 	"id": "http-status",
 	"icon": "🌐",
-	"category": "dev",
+	"category": "network",
 	"size": 25000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"pluginType": "tool"
 }

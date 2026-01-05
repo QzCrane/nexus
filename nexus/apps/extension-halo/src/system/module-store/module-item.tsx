@@ -89,9 +89,9 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, i
 	const displayDesc = String(descTranslation) === descKey ? (module.description || '') : String(descTranslation);
 
 	// Determine module type and colors
-	const isScript = module.toolType === 'script';
-	const isCSS = isScript && module.scriptType === 'css';
-	const isSystem = module.system;
+	const isScript = module.pluginType === 'script';
+	const isCSS = isScript && module.script?.type === 'css';
+	const isSystem = module.pluginType === 'system';
 
 	// Get accent color based on type
 	const getAccentColor = () => {
@@ -117,8 +117,8 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, i
 		return {};
 	};
 
-	const typeLabel = module.system ? t('moduleStorePanel.filters.system') 
-		: module.toolType === 'script' ? (isCSS ? 'CSS' : 'JS')
+	const typeLabel = isSystem ? t('moduleStorePanel.filters.system') 
+		: isScript ? (isCSS ? 'CSS' : 'JS')
 		: t('moduleStorePanel.filters.app');
 
 	return (

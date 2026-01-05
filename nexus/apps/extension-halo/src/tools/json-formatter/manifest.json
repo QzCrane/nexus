@@ -1,8 +1,9 @@
 {
 	"id": "json-formatter",
 	"icon": "{}",
-	"category": "dev",
+	"category": "format",
 	"size": 28000,
 	"builtIn": true,
-	"keywords": []
+	"keywords": [],
+	"pluginType": "tool"
 }

@@ -1,7 +1,7 @@
 {
 	"id": "api-tester",
 	"icon": "🚀",
-	"category": "dev",
+	"category": "network",
 	"size": 30000,
 	"builtIn": false,
 	"keywords": [
@@ -11,5 +11,6 @@
 		"postman",
 		"request",
 		"fetch"
-	]
+	],
+	"pluginType": "tool"
 }

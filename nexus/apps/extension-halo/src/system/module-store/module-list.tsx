@@ -32,7 +32,7 @@ export const ModuleList: React.FC<ModuleListProps> = ({
 				index={index + 1}
 				module={mod}
 				status={isInstalled ? (loadingId === mod.id ? 'updating' : 'installed') : (loadingId === mod.id ? 'downloading' : 'available')}
-				isCore={!!(mod.builtIn && !mod.toolType)}
+				isCore={!!(mod.builtIn && mod.pluginType === 'tool')}
 				showTypeLabel={filterType === 'all'}
 				isUserScript={isUserScript}
 				onInstall={() => handleInstall(mod.id)}

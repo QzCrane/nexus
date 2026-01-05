@@ -1,8 +1,9 @@
 {
 	"id": "sql-formatter",
 	"icon": "🗄️",
-	"category": "dev",
+	"category": "format",
 	"size": 20000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"pluginType": "tool"
 }

@@ -1,8 +1,9 @@
 {
 	"id": "morse",
 	"icon": "📡",
-	"category": "dev",
+	"category": "encode",
 	"size": 15000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"pluginType": "tool"
 }

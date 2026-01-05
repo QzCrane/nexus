@@ -1,7 +1,7 @@
 // goal: Utility functions for module-store panel
 // eff: Script module conversion and filtering logic
 
-import type { ToolMeta } from '../../kernel/core/tool-registry-types';
+import type { PluginMeta } from '../../kernel/core/tool-registry-types';
 import type { UserScript } from '../userscripts/types';
 import { ALL_MODULES } from '../../kernel';
 
@@ -9,8 +9,11 @@ import { ALL_MODULES } from '../../kernel';
  * Convert user scripts to module format for display in module store
  * Filters out SaaT scripts that are already registered in ALL_MODULES
  */
-export function convertScriptsToModules(scripts: UserScript[]): ToolMeta[] {
-	const builtInScriptIds = ALL_MODULES.filter(m => m.toolType === 'script').map(m => m.id);
+export function convertScriptsToModules(scripts: UserScript[]): PluginMeta[] {
+	// Get IDs of built-in script plugins
+	const builtInScriptIds = ALL_MODULES
+		.filter(m => m.pluginType === 'script')
+		.map(m => m.id);
 
 	return scripts
 		.filter(s => {
@@ -25,14 +28,17 @@ export function convertScriptsToModules(scripts: UserScript[]): ToolMeta[] {
 			name: s.name,
 			description: s.description,
 			icon: s.type === 'css' ? '🎨' : '⚡',
-			category: 'scripts' as const,
-			toolType: 'script' as const,
-			scriptType: s.type,
+			category: 'dev' as const, // User scripts go to dev category
+			pluginType: 'script' as const,
 			builtIn: false,
 			size: s.code.length,
-			system: false,
 			status: 'ready' as const,
 			keywords: ['script', 'user', s.type],
+			script: {
+				type: s.type,
+				matches: s.matches,
+				runAt: s.runAt || 'document_idle',
+			},
 			isUserScript: true
-		})) as any[] as ToolMeta[];
+		})) as any[] as PluginMeta[];
 }

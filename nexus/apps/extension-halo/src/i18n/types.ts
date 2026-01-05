@@ -6,7 +6,12 @@ import { BaseTranslations, SettingsTranslations, ModuleTranslations } from './ty
 export type Locale = 'en' | 'zh';
 export type LocaleSetting = Locale | 'system';
 // 'active' is a virtual runtime category, 'system' is for internal filtering only
-export type ToolCategory = 'general' | 'dev' | 'efficiency' | 'visual' | 'ai' | 'security' | 'media' | 'browser' | 'active' | 'system';
+// Refined developer categories: encode, format, network, data, dev
+// 'scripts' is aggregation view for all script plugins
+export type ToolCategory =
+	| 'general' | 'encode' | 'format' | 'network' | 'data' | 'dev'
+	| 'efficiency' | 'browser' | 'visual' | 'media' | 'security' | 'ai'
+	| 'active' | 'scripts' | 'system';
 
 // Translation keys structure
 export interface TranslationKeys extends

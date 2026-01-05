@@ -1,8 +1,9 @@
 {
 	"id": "url",
 	"icon": "🔗",
-	"category": "dev",
+	"category": "encode",
 	"size": 10000,
 	"builtIn": true,
-	"keywords": []
+	"keywords": [],
+	"pluginType": "tool"
 }

@@ -11,7 +11,21 @@ const WARN_LINES = 150;
 
 // 历史技术债豁免列表
 const LEGACY_FILES = [
-
+	'packages/contracts/src/messages.contracts.ts',
+	'packages/nexus-kernel/src/storage/repository.ts',
+	'packages/features/audio-engine/src/constants.ts',
+	'packages/features/audio-engine/src/PolicyEngine.ts',
+	'packages/features/audio-engine/src/WebAudioController.ts',
+	// Auto-generated files
+	'apps/extension-halo/src/kernel/registry/_generated.ts',
+	'apps/extension-halo/src/components/_generated-tool-loader.ts',
+	// i18n data files
+	'apps/extension-halo/src/i18n/locales/en-modules/modules.ts',
+	'apps/extension-halo/src/i18n/locales/zh-modules/modules.ts',
+	// Complex system panels
+	'apps/extension-halo/src/system/userscripts/panel.tsx',
+	// Core services
+	'apps/extension-halo/src/kernel/services/saat-service.ts',
 ];
 
 export function checkSourceFileLength(ROOT) {

@@ -1,8 +1,9 @@
 {
 	"id": "cron",
 	"icon": "⏰",
-	"category": "dev",
+	"category": "data",
 	"size": 20000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"pluginType": "tool"
 }

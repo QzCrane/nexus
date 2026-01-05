@@ -1,8 +1,9 @@
 {
 	"id": "mock-data",
 	"icon": "🎲",
-	"category": "dev",
+	"category": "data",
 	"size": 55000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"pluginType": "tool"
 }

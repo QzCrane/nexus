@@ -1,8 +1,9 @@
 {
 	"id": "code-formatter",
 	"icon": "✨",
-	"category": "dev",
+	"category": "format",
 	"size": 35000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"pluginType": "tool"
 }

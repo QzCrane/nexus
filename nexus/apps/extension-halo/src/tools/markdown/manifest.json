@@ -1,8 +1,9 @@
 {
 	"id": "markdown",
 	"icon": "📝",
-	"category": "dev",
+	"category": "format",
 	"size": 30000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"pluginType": "tool"
 }

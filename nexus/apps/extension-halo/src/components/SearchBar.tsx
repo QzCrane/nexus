@@ -67,7 +67,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, visibleTools, pl
     } else if (e.key === 'Enter') {
       e.preventDefault();
       const selected = results[activeIndex];
-      const isSystem = selected?.system || selected?.id === 'permissions';
+      const isSystem = selected?.pluginType === 'system';
       if (selected && (selected.status === 'ready' || selected.status === 'beta' || isSystem)) {
         onSelect(selected.id);
         setQuery('');
@@ -80,7 +80,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, visibleTools, pl
   }, [results, activeIndex, onSelect]);
 
   const handleSelect = useCallback((tool: ToolMeta) => {
-    const isSystem = tool.system || tool.id === 'permissions';
+    const isSystem = tool.pluginType === 'system';
     if (tool.status === 'ready' || tool.status === 'beta' || isSystem) {
       onSelect(tool.id);
       setQuery('');

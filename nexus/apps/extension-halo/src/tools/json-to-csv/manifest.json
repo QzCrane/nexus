@@ -1,8 +1,9 @@
 {
 	"id": "json-to-csv",
 	"icon": "📊",
-	"category": "dev",
+	"category": "format",
 	"size": 15000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"pluginType": "tool"
 }

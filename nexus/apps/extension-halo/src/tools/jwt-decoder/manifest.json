@@ -1,8 +1,9 @@
 {
 	"id": "jwt-decoder",
 	"icon": "🔑",
-	"category": "dev",
+	"category": "network",
 	"size": 15000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"pluginType": "tool"
 }

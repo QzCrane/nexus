@@ -1,8 +1,9 @@
 {
 	"id": "xml-formatter",
 	"icon": "📄",
-	"category": "dev",
+	"category": "format",
 	"size": 25000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"pluginType": "tool"
 }

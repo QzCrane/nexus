@@ -46,7 +46,7 @@ export const ModuleStorePanel: React.FC = () => {
 
 	const handleUninstall = useCallback(async (m: typeof ALL_MODULES[0]) => {
 		// System components cannot be uninstalled
-		if (m.system) {
+		if (m.pluginType === 'system') {
 			showModal({
 				title: t('common.readOnly') || '只读',
 				message: t('moduleStorePanel.systemUninstallWarning'),
@@ -66,7 +66,7 @@ export const ModuleStorePanel: React.FC = () => {
 		}
 
 		// Official Scripts require confirmation
-		if (m.toolType === 'script') {
+		if (m.pluginType === 'script') {
 			showModal({
 				type: 'confirm',
 				title: t('moduleStorePanel.uninstall'),
@@ -86,9 +86,9 @@ export const ModuleStorePanel: React.FC = () => {
 		filterBySearch(modules, searchQuery, MODULE_SEARCH_OPTIONS);
 
 	const filterByType = (m: typeof ALL_MODULES[0] & { isUserScript?: boolean }) => {
-		if (filterType === 'system') return m.system;
+		if (filterType === 'system') return m.pluginType === 'system';
 		if (filterType === 'script') {
-			const isScript = !m.system && (m.toolType === 'script' || m.isUserScript);
+			const isScript = m.pluginType === 'script' || m.isUserScript;
 			if (!isScript) return false;
 			
 			const isUser = !!m.isUserScript;
@@ -105,7 +105,7 @@ export const ModuleStorePanel: React.FC = () => {
 
 			return true;
 		}
-		if (filterType === 'app') return !m.system && (!m.toolType || m.toolType === 'panel');
+		if (filterType === 'app') return m.pluginType === 'tool';
 		return true;
 	};
 

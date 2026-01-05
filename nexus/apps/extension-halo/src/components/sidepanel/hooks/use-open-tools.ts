@@ -11,7 +11,7 @@ import type { ToolId } from '../../../kernel';
 import { STORAGE_PREFIX, TOOL_REGISTRY } from '../../../kernel';
 
 // System tools list (SSOT from registry)
-const SYSTEM_TOOL_IDS = TOOL_REGISTRY.filter(t => t.system).map(t => t.id);
+const SYSTEM_TOOL_IDS = TOOL_REGISTRY.filter(t => t.pluginType === 'system').map(t => t.id);
 
 const isSystemTool = (id: string): boolean => SYSTEM_TOOL_IDS.includes(id);
 

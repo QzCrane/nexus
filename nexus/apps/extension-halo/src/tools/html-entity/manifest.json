@@ -1,8 +1,9 @@
 {
 	"id": "html-entity",
 	"icon": "🔤",
-	"category": "dev",
+	"category": "encode",
 	"size": 20000,
 	"builtIn": false,
-	"keywords": []
+	"keywords": [],
+	"pluginType": "tool"
 }

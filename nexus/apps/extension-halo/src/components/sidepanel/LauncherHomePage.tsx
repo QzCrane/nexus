@@ -103,7 +103,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 	return (
 		<div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 			<div style={{ margin: `${spacing}px 0`, padding: '0 12px', flexShrink: 0 }}>
-				<SearchBar onSelect={(id) => onSelectTool(id as ToolId)} visibleTools={userTools.filter(t => !t.system)} />
+				<SearchBar onSelect={(id) => onSelectTool(id as ToolId)} visibleTools={userTools.filter(t => t.pluginType !== 'system')} />
 			</div>
 			<div ref={scrollRef} className="halo-scrollbar" style={{ ...commonStyles.toolbar as any, flex: 1, overflowY: 'auto', gap: `${spacing}px`, padding: `0 ${Math.max(8, spacing)}px ${Math.max(8, spacing)}px`, minHeight: 0 }}>
 				{catOrder.map(cat => {
@@ -167,7 +167,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 												onDragStart={onDragStart} 
 												onDragOver={(e) => { e.preventDefault(); onDragEnter(cat, tool.id); }} 
 												onDrop={(e) => e.preventDefault()} 
-												isRunning={!tool.system && openTools.includes(tool.id as ToolId)} 
+												isRunning={tool.pluginType !== 'system' && openTools.includes(tool.id as ToolId)} 
 												serviceState={serviceState}
 												onToggleScript={onToggleScript}
 												onEditScript={onEditScript}
@@ -179,7 +179,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 						</div>
 					);
 				})}
-				<div style={{ ...commonStyles.footer as any, marginTop: '20px' }}><span>🔒 {t('footer.zeroTracking')}</span><span>•</span><span>💾 {t('footer.localOnly')}</span><span>•</span><span>🛠️ {visibleTools.filter(t => !t.system).length} {t('common.tools')}</span></div>
+				<div style={{ ...commonStyles.footer as any, marginTop: '20px' }}><span>🔒 {t('footer.zeroTracking')}</span><span>•</span><span>💾 {t('footer.localOnly')}</span><span>•</span><span>🛠️ {visibleTools.filter(t => t.pluginType !== 'system').length} {t('common.tools')}</span></div>
 			</div>
 		</div>
 	);
