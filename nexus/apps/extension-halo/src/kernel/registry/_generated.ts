@@ -1101,7 +1101,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '⚙️',
 		pluginType: 'system',
 		category: 'general',
-		size: 23520,
+		size: 21910,
 		builtIn: true,
 		keywords: ["config","设置","配置"],
 		permissions: undefined,

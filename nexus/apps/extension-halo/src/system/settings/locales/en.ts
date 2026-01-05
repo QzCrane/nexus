@@ -36,13 +36,6 @@ export const en = {
 		// Animation settings
 		enableAnimations: 'Page Animations',
 		enableAnimationsDesc: 'Smooth transitions between pages',
-		animationSpeed: 'Animation Speed',
-		animationSpeedDesc: 'Speed of page transitions',
-		speed: {
-			fast: 'Fast',
-			normal: 'Normal',
-			slow: 'Slow',
-		},
 	},
 	toolManager: {
 		title: 'Tool Manager',

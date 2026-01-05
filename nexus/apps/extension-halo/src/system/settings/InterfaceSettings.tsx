@@ -124,40 +124,6 @@ export const InterfaceSettings: React.FC<InterfaceSettingsProps> = ({ settings, 
 					/>
 				</div>
 
-				{/* Animation Speed - only show when animations are enabled */}
-				{(settings.enableAnimations ?? true) && (
-					<div style={styles.row}>
-						<div>
-							<div style={styles.label}>{t('settings.animationSpeed', { defaultValue: 'Animation Speed' })}</div>
-							<div style={styles.sublabel}>{t('settings.animationSpeedDesc', { defaultValue: 'Speed of page transitions' })}</div>
-						</div>
-						<div style={{ display: 'flex', gap: '4px' }}>
-							{(['fast', 'normal', 'slow'] as const).map(speed => (
-								<button
-									key={speed}
-									onClick={() => onUpdate('animationSpeed', speed)}
-									style={{
-										padding: '4px 10px',
-										fontSize: '12px',
-										border: 'none',
-										borderRadius: '4px',
-										cursor: 'pointer',
-										background: settings.animationSpeed === speed 
-											? 'var(--halo-accent)' 
-											: 'var(--halo-surface-elevated)',
-										color: settings.animationSpeed === speed 
-											? 'white' 
-											: 'var(--halo-text-secondary)',
-										transition: 'all 0.15s ease',
-									}}
-								>
-									{t(`settings.speed.${speed}`, { defaultValue: speed.charAt(0).toUpperCase() + speed.slice(1) })}
-								</button>
-							))}
-						</div>
-					</div>
-				)}
-
 				{/* Header Shortcuts */}
 				<HeaderLayoutConfig 
 					activeTools={activeTools}
