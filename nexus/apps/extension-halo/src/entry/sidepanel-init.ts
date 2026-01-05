@@ -81,10 +81,42 @@ function findScrollable(el: HTMLElement | null): HTMLElement {
 // inv: Sidepanel smooth scroll is ALWAYS active, ignores the 'enabled' setting
 // The 'enabled' setting only controls web page scroll (via content.ts)
 function onWheel(e: WheelEvent): void {
+	let target = findScrollable(e.target as HTMLElement);
+	const isScrollingDown = e.deltaY > 0;
+	const isScrollingUp = e.deltaY < 0;
 
-	const target = findScrollable(e.target as HTMLElement);
+	// Check if at boundary and need to bubble up to parent scrollable
+	while (target && target !== document.documentElement) {
+		const max = target.scrollHeight - target.clientHeight;
+		if (max <= 0) {
+			// Not scrollable, try parent
+			target = findScrollable(target.parentElement);
+			continue;
+		}
+
+		const atTop = target.scrollTop <= 0;
+		const atBottom = target.scrollTop >= max - 1; // tolerance for rounding
+
+		// At boundary scrolling in boundary direction: try parent
+		if ((atTop && isScrollingUp) || (atBottom && isScrollingDown)) {
+			target = findScrollable(target.parentElement);
+			continue;
+		}
+
+		// Found a scrollable target not at boundary
+		break;
+	}
+
+	// Final check: if we bubbled up to documentElement or no scrollable found
 	const max = target.scrollHeight - target.clientHeight;
 	if (max <= 0) return;
+
+	// Check boundary for final target
+	const atTop = target.scrollTop <= 0;
+	const atBottom = target.scrollTop >= max - 1;
+	if ((atTop && isScrollingUp) || (atBottom && isScrollingDown)) {
+		return; // Let browser handle (no more parents to scroll)
+	}
 
 	e.preventDefault();
 

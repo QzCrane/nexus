@@ -114,12 +114,12 @@ export const pageStyles: Record<string, CSSProperties> = {
 		textTransform: 'uppercase',
 	},
 	langBadgeJS: {
-		background: 'rgba(255, 215, 0, 0.15)',
-		color: '#FFD700',
+		background: '#F7DF1E', // JavaScript official yellow
+		color: '#1a1a1a', // Dark text for high contrast
 	},
 	langBadgeCSS: {
-		background: 'rgba(33, 150, 243, 0.15)',
-		color: '#64B5F6',
+		background: '#264de4', // CSS official blue
+		color: '#ffffff', // White text for high contrast
 	},
 	codeContainer: {
 		flex: 1,

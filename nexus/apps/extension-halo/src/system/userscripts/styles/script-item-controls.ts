@@ -5,8 +5,8 @@ import type { CSSProperties } from 'react';
 
 export const controlStyles: Record<string, CSSProperties> = {
 	badge: { padding: '2px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 600 },
-	badgeJS: { background: 'rgba(255, 215, 0, 0.15)', color: '#FFD700' },
-	badgeCSS: { background: 'rgba(33, 150, 243, 0.15)', color: '#64B5F6' },
+	badgeJS: { background: '#F7DF1E', color: '#1a1a1a' }, // JS yellow + dark text
+	badgeCSS: { background: '#264de4', color: '#ffffff' }, // CSS blue + white text
 	statusDot: { width: '6px', height: '6px', borderRadius: '50%' },
 	statusActive: { background: '#4CAF50', boxShadow: '0 0 6px #4CAF50' },
 	statusInactive: { background: 'var(--halo-text-muted)' },

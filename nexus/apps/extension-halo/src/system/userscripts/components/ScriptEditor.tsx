@@ -37,11 +37,6 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
 		}
 	};
 
-	// Prevent parent scroll
-	const handleWheel = (e: React.WheelEvent) => {
-		e.stopPropagation();
-	};
-
 	// Count lines
 	const lineCount = React.useMemo(() => form.code.split('\n').length, [form.code]);
 
@@ -55,7 +50,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
 			<ScriptMetaEditor form={form} onUpdate={update} t={t} />
 			
 			{/* Code editor with line numbers */}
-			<div style={styles.editorContainer} onWheel={handleWheel}>
+			<div style={styles.editorContainer}>
 				<div style={styles.lineNumbers} ref={lineNumbersRef}>
 					{Array.from({ length: lineCount }, (_, i) => (
 						<div key={i} style={{ height: '18px' }}>{i + 1}</div>

@@ -77,6 +77,20 @@
           transform: translateX(0);
         }
       }
+      /* Code editor text selection - high contrast for readability */
+      textarea::selection,
+      pre::selection,
+      code::selection {
+        background: var(--halo-accent, #7c3aed);
+        color: #ffffff;
+      }
+      /* Webkit prefix for older browsers */
+      textarea::-moz-selection,
+      pre::-moz-selection,
+      code::-moz-selection {
+        background: var(--halo-accent, #7c3aed);
+        color: #ffffff;
+      }
       /* Custom Scrollbar - uses CSS vars */
       ::-webkit-scrollbar {
         width: 6px;
