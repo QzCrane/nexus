@@ -1,6 +1,5 @@
-// goal: Components module exports
-export { CommandPalette } from './command-palette';
-export { EnhancedToolbar } from './enhanced-toolbar';
-export { LazyToolRenderer, useToolPreload, getLoadableToolIds } from './lazy-tool-loader';
-export { ToolManagerPanel } from './ToolManager';
-export { SearchBar } from './SearchBar';
+export { CommandPalette } from './legacy/command-palette';
+export { EnhancedToolbar } from './legacy/enhanced-toolbar';
+export { LazyToolRenderer, useToolPreload, getLoadableToolIds } from './core/lazy-tool-loader';
+export { ToolManagerPanel } from './manager/ToolManager';
+export { SearchBar } from './search/SearchBar';

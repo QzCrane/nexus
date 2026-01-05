@@ -1,10 +1,10 @@
 import React, { useCallback, useMemo } from 'react';
 import { Card } from '@nexus/ui-kit';
-import { useTranslation } from '../i18n';
-import type { ToolCategory } from '../i18n/types';
-import type { ToolMeta, ToolPrefs } from '../kernel';
-import type { SortMode } from '../kernel';
-import { TAXONOMY } from '../kernel/registry/taxonomy';
+import { useTranslation } from '../../i18n';
+import type { ToolCategory } from '../../i18n/types';
+import type { ToolMeta, ToolPrefs } from '../../kernel';
+import type { SortMode } from '../../kernel';
+import { TAXONOMY } from '../../kernel/registry/taxonomy';
 import { styles } from './ToolManager.styles';
 import { ToolManagerItem } from './ToolManagerItem';
 

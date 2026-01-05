@@ -4,7 +4,7 @@
 import React from 'react';
 import { useTranslation } from '../../i18n';
 import type { ToolId, HaloSettings } from '../../kernel';
-import { ToolPanelRenderer } from '../tool-panel-renderer';
+import { ToolPanelRenderer } from '../core/tool-panel-renderer';
 
 interface LauncherToolPageProps {
 	activeTool: ToolId | null;

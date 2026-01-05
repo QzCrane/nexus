@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { styles } from './panel.styles';
-import { styles as searchStyles } from '../../components/SearchBar.styles';
+import { styles as searchStyles } from '../../components/search/SearchBar.styles';
 import { formatModuleSize, ALL_MODULES } from '../../kernel';
 import { TypeFilter, FilterType } from './type-filter';
 import { useTranslation } from '../../i18n';

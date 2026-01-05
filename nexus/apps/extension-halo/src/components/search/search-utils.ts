@@ -1,8 +1,8 @@
 // goal: Search utilities - delegates to unified search engine
 // eff: Backward-compatible re-export layer
 
-import type { ToolMeta } from '../kernel';
-import { matchItem, normalizeSearch, TOOL_SEARCH_OPTIONS } from '../kernel/utils/unified-search';
+import type { ToolMeta } from '../../kernel';
+import { matchItem, normalizeSearch, TOOL_SEARCH_OPTIONS } from '../../kernel/utils/unified-search';
 
 // Re-export for backward compatibility
 export { normalizeSearch };

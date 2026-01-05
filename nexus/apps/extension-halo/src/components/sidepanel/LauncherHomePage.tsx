@@ -3,7 +3,7 @@ import { useTranslation } from '../../i18n';
 import type { ToolId, ToolMeta, HaloSettings } from '../../kernel';
 import type { ToolCategory } from '../../i18n/types';
 import { useSmoothWheel } from '../../kernel/hooks/use-smooth-wheel';
-import { SearchBar } from '../SearchBar';
+import { SearchBar } from '../search/SearchBar';
 import { LauncherToolItem } from './LauncherToolItem';
 import { commonStyles } from './layouts.styles';
 import { useEngineStatus } from './EngineStatusProvider';

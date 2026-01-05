@@ -4,8 +4,8 @@
 
 import React, { Suspense, useCallback, useEffect, useRef } from 'react';
 import { Card } from '@nexus/ui-kit';
-import type { ToolId } from '../kernel';
-import { generatedToolPanels, type LoadableToolId } from './_generated-tool-loader';
+import type { ToolId } from '../../kernel';
+import { generatedToolPanels, type LoadableToolId } from '../_generated-tool-loader';
 
 const PRELOAD_DELAY = 150; // ms before preload on hover
 

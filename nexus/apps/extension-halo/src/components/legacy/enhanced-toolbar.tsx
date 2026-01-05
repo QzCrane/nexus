@@ -2,8 +2,8 @@
 // eff: Animated tool buttons + keyboard shortcuts + preload on hover
 
 import React, { useCallback, memo } from 'react';
-import type { ToolId } from '../kernel';
-import { useToolPreload } from './lazy-tool-loader';
+import type { ToolId } from '../../kernel';
+import { useToolPreload } from '../core/lazy-tool-loader';
 
 interface ToolButtonProps {
 	id: ToolId;

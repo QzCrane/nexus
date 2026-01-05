@@ -16,6 +16,10 @@ export interface ThemeColors {
 	accentHover: string;
 	success: string;
 	error: string;
+	// Premium UI Tokens
+	cardBg: string; // For glassmorphism/cards
+	glassBorder: string; // Subtle border for glass
+	shadow: string; // Standard elevation
 }
 
 const DARK_THEME: ThemeColors = {
@@ -25,11 +29,14 @@ const DARK_THEME: ThemeColors = {
 	text: '#f0f0f0',
 	textSecondary: '#b0b0b0',
 	textMuted: '#666666',
-	border: '#444444',
+	border: '#333333',
 	accent: '#7c3aed',
 	accentHover: '#8b5cf6',
 	success: '#22c55e',
 	error: '#ef4444',
+	cardBg: 'rgba(255, 255, 255, 0.03)',
+	glassBorder: 'rgba(255, 255, 255, 0.08)',
+	shadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
 };
 
 const LIGHT_THEME: ThemeColors = {
@@ -39,11 +46,14 @@ const LIGHT_THEME: ThemeColors = {
 	text: '#1a1a1a',
 	textSecondary: '#555555',
 	textMuted: '#888888',
-	border: '#dddddd',
+	border: '#e5e5e5',
 	accent: '#7c3aed',
 	accentHover: '#6d28d9',
 	success: '#16a34a',
 	error: '#dc2626',
+	cardBg: '#ffffff',
+	glassBorder: 'rgba(0, 0, 0, 0.06)',
+	shadow: '0 4px 12px rgba(0, 0, 0, 0.05)',
 };
 
 /**
@@ -89,6 +99,10 @@ export function applyTheme(colors: ThemeColors): void {
 	root.style.setProperty('--halo-accent-hover', colors.accentHover);
 	root.style.setProperty('--halo-success', colors.success);
 	root.style.setProperty('--halo-error', colors.error);
+	// Premium UI Tokens
+	root.style.setProperty('--halo-card-bg', colors.cardBg);
+	root.style.setProperty('--halo-glass-border', colors.glassBorder);
+	root.style.setProperty('--halo-shadow', colors.shadow);
 
 	// Body background
 	document.body.style.backgroundColor = colors.bg;

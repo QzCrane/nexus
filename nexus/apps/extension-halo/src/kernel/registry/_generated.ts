@@ -1065,7 +1065,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '📦',
 		pluginType: 'system',
 		category: 'general',
-		size: 29026,
+		size: 29767,
 		builtIn: true,
 		keywords: ["store","download","模块","商店"],
 		permissions: undefined,

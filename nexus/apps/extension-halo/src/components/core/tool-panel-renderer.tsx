@@ -3,10 +3,10 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import { Card } from '@nexus/ui-kit';
-import type { ToolId, HaloSettings } from '../kernel';
-import { useSmoothWheel } from '../kernel/hooks/use-smooth-wheel';
+import type { ToolId, HaloSettings } from '../../kernel';
+import { useSmoothWheel } from '../../kernel/hooks/use-smooth-wheel';
 import { LazyToolRenderer } from './lazy-tool-loader';
-import { ANIMATION_CONSTANTS } from '../kernel/core/animations';
+import { ANIMATION_CONSTANTS } from '../../kernel/core/animations';
 
 const styles = {
 	placeholder: {

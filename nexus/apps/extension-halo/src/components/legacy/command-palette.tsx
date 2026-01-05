@@ -2,8 +2,8 @@
 // eff: Elegant fuzzy search with keyboard navigation
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { useTranslation } from '../i18n';
-import type { ToolId } from '../kernel';
+import { useTranslation } from '../../i18n';
+import type { ToolId } from '../../kernel';
 
 interface CommandPaletteProps {
 	isOpen: boolean;
