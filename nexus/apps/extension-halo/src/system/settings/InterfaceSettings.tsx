@@ -112,19 +112,7 @@ export const InterfaceSettings: React.FC<InterfaceSettingsProps> = ({ settings, 
 					</div>
 				</div>
 
-				{/* Animation Settings */}
-				<div style={styles.row}>
-					<div>
-						<div style={styles.label}>{t('settings.enableAnimations', { defaultValue: 'Page Animations' })}</div>
-						<div style={styles.sublabel}>{t('settings.enableAnimationsDesc', { defaultValue: 'Smooth transitions between pages' })}</div>
-					</div>
-					<Toggle
-						checked={settings.enableAnimations ?? true}
-						onChange={(checked) => onUpdate('enableAnimations', checked)}
-					/>
-				</div>
-
-				{/* Header Shortcuts */}
+					{/* Header Shortcuts */}
 				<HeaderLayoutConfig 
 					activeTools={activeTools}
 					inactiveTools={inactiveTools}

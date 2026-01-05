@@ -33,9 +33,6 @@ export const en = {
 		actions: 'Actions',
 		resetAll: 'Reset All Settings',
 		version: 'Made with 💜',
-		// Animation settings
-		enableAnimations: 'Page Animations',
-		enableAnimationsDesc: 'Smooth transitions between pages',
 	},
 	toolManager: {
 		title: 'Tool Manager',

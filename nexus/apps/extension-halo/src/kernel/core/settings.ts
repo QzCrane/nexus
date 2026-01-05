@@ -16,8 +16,6 @@ export interface HaloSettings {
 	toolOrder: Record<string, string[]>;
 	categoryOrder: string[];
 	headerLayout: string[]; // IDs of tools to show in header
-	// Animation settings
-	enableAnimations: boolean; // Master toggle for page transitions
 }
 
 export const DEFAULT_SETTINGS: HaloSettings = {
@@ -32,8 +30,6 @@ export const DEFAULT_SETTINGS: HaloSettings = {
 	toolOrder: {},
 	categoryOrder: ['active', 'general', 'dev', 'efficiency', 'visual', 'ai', 'security', 'media', 'browser'],
 	headerLayout: ['module-store', 'extension-manager', 'resource-monitor', 'permissions', 'userscripts', 'settings'],
-	// Animation defaults
-	enableAnimations: true,
 };
 
 export const ACCENT_COLORS = [

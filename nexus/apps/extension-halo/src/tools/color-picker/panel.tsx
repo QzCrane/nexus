@@ -19,22 +19,17 @@ import {
 import { styles } from './panel.styles';
 import { getContrastColor } from './utils';
 import { useToolState } from '../../kernel';
+import { useToast } from '../../components/ToastProvider';
 
 
 const logger = createLogger('ColorPicker', 'HALO');
 
 export const ColorPickerPanel: React.FC = () => {
 	const { t } = useTranslation();
+	const { showToast } = useToast();
 	const [inputValue, setInputValue] = useToolState<string>('color-picker', '#7c3aed');
 	const color = useMemo(() => getColorInfo(inputValue), [inputValue]);
 	const [history, setHistory] = useToolState<string[]>('color-history' as any, []);
-	const [toast, setToast] = useState<string | null>(null);
-
-
-	const showToast = useCallback((msg: string) => {
-		setToast(msg);
-		setTimeout(() => setToast(null), 1500);
-	}, []);
 
 	const handleColorChange = useCallback(async (hex: string) => {
 		setInputValue(hex);
@@ -186,8 +181,6 @@ export const ColorPickerPanel: React.FC = () => {
 					<div style={styles.empty}>{t('colorPanel.noHistory')}</div>
 				)}
 			</div>
-
-			{toast && <div style={styles.toast}>{toast}</div>}
 		</div>
 	);
 };

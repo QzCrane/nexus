@@ -16,23 +16,18 @@ import {
 import { styles } from './panel.styles';
 import { HeadingItem } from './HeadingItem';
 import { useToolState } from '../../kernel';
+import { useToast } from '../../components/ToastProvider';
 
 
 const logger = createLogger('Outline', 'HALO');
 
 export const OutlinePanel: React.FC = () => {
 	const { t } = useTranslation();
+	const { showToast } = useToast();
 	const [headings, setHeadings] = useState<HeadingItemType[]>([]);
 	const [storedSettings, setSettings] = useToolState<OutlineSettings>('outline-settings' as any, DEFAULT_SETTINGS);
 	const settings = storedSettings || DEFAULT_SETTINGS;
 	const [loading, setLoading] = useState(false);
-	const [toast, setToast] = useState<string | null>(null);
-
-
-	const showToast = useCallback((msg: string) => {
-		setToast(msg);
-		setTimeout(() => setToast(null), 1500);
-	}, []);
 
 	const handleExtract = useCallback(async () => {
 		setLoading(true);
@@ -148,8 +143,6 @@ export const OutlinePanel: React.FC = () => {
 					<p>{t('outlinePanel.noHeadings')}</p>
 				</div>
 			)}
-
-			{toast && <div style={styles.toast}>{toast}</div>}
 		</div>
 	);
 };

@@ -13,6 +13,7 @@ import {
 	copyToClipboard,
 } from './core';
 import { useToolState } from '../../kernel';
+import { useToast } from '../../components/ToastProvider';
 
 import { styles } from './panel.styles';
 
@@ -63,16 +64,10 @@ const JsonTree: React.FC<{ data: any; label?: string; depth?: number }> = ({ dat
 
 export const JSONFormatterPanel: React.FC = () => {
 	const { t } = useTranslation();
+	const { showToast } = useToast();
 	const [input, setInput] = useToolState<string>('json-formatter', '');
 	const [error, setError] = useState<string | null>(null);
 	const [options, setOptions] = useToolState<FormatOptions>('json-formatter-opts' as any, DEFAULT_OPTIONS);
-	const [toast, setToast] = useState<string | null>(null);
-
-
-	const showToast = useCallback((msg: string) => {
-		setToast(msg);
-		setTimeout(() => setToast(null), 1500);
-	}, []);
 
 	const handleFormat = useCallback(() => {
 		const result = formatJSON(input, options);
@@ -159,7 +154,6 @@ export const JSONFormatterPanel: React.FC = () => {
 				<span>{input.length} chars · {input ? input.split('\n').length : 0} lines</span>
 				<span style={{ color: error ? '#ef4444' : '#22c55e' }}>{error ? 'Invalid JSON' : 'Valid'}</span>
 			</div>
-			{toast && <div style={styles.toast}>{toast}</div>}
 		</div>
 	);
 };

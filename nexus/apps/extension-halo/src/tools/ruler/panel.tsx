@@ -10,17 +10,18 @@ import { copyToClipboard } from './core';
 import { styles } from './panel.styles';
 import { MeasurementCard } from './MeasurementCard';
 import { useToolState } from '../../kernel';
+import { useToast } from '../../components/ToastProvider';
 
 
 const logger = createLogger('Ruler', 'HALO');
 
 export const RulerPanel: React.FC = () => {
 	const { t } = useTranslation();
+	const { showToast } = useToast();
 	const [isActive, setIsActive] = useState(false);
 	const [measurement, setMeasurement] = useState<RulerMeasurement | null>(null);
 	const [unit, setUnit] = useToolState<'px' | 'rem'>('ruler-unit' as any, 'px');
 	const [remBase, setRemBase] = useToolState<number>('ruler-rem-base' as any, 16);
-	const [toast, setToast] = useState<string | null>(null);
 
 	useEffect(() => {
 		// Listen for measurement results from content script
@@ -35,11 +36,6 @@ export const RulerPanel: React.FC = () => {
 		};
 		chrome.runtime.onMessage.addListener(listener);
 		return () => chrome.runtime.onMessage.removeListener(listener);
-	}, []);
-
-	const showToast = useCallback((msg: string) => {
-		setToast(msg);
-		setTimeout(() => setToast(null), 1500);
 	}, []);
 
 	const handleToggle = useCallback(async () => {
@@ -140,8 +136,6 @@ export const RulerPanel: React.FC = () => {
 					<span>{t('rulerPanel.ready')}</span>
 				</div>
 			)}
-
-			{toast && <div style={styles.toast}>{toast}</div>}
 		</div>
 	);
 };
