@@ -17,9 +17,11 @@ const DEFAULT_FILTER: FilterConfig = {
 	minSize: 0,
 	includeDataUrls: false,
 };
+import { useOverlay } from '../../components/ui/overlay';
 
 export const MediaSnifferPanel: React.FC = () => {
 	const { t } = useTranslation();
+	const { showToast } = useOverlay();
 	const [result, setResult] = useToolState<ScanResult | null>('media-sniffer-result' as any, null);
 	const [filter, setFilter] = useToolState<FilterConfig>('media-sniffer-filter' as any, DEFAULT_FILTER);
 	const [scanning, setScanning] = useState(false);
@@ -32,6 +34,12 @@ export const MediaSnifferPanel: React.FC = () => {
 			const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 			if (!tab?.id) return;
 			
+			// Prevent scanning restricted pages
+			if (tab.url && (tab.url.startsWith('chrome:') || tab.url.startsWith('edge:') || tab.url.startsWith('about:') || tab.url.startsWith('devtools:') || tab.url.startsWith('view-source:'))) {
+				showToast({ message: t('mediaSniffer.errorRestricted'), type: 'error' });
+				return;
+			}
+
 			const results = await chrome.scripting.executeScript({
 				target: { tabId: tab.id },
 				func: scanMediaInPage,
@@ -40,12 +48,13 @@ export const MediaSnifferPanel: React.FC = () => {
 			if (results?.[0]?.result) {
 				setResult(JSON.parse(results[0].result));
 			}
-		} catch (err) {
+		} catch (err: any) {
 			console.error('[MediaSniffer] scan failed:', err);
+			showToast({ message: err.message || 'Scan failed', type: 'error' });
 		} finally {
 			setScanning(false);
 		}
-	}, []);
+	}, [t, showToast, setResult]);
 
 	// Auto-scan on mount
 	useEffect(() => { handleScan(); }, [handleScan]);

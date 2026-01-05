@@ -10,6 +10,7 @@ export const en = {
 			video: 'Video',
 			audio: 'Audio',
 			image: 'Image'
-		}
+		},
+		errorRestricted: 'Cannot scan this page (protected/system)',
 	}
 };

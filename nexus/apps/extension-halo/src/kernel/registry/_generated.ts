@@ -489,7 +489,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '🎬',
 		pluginType: 'tool',
 		category: 'media',
-		size: 16591,
+		size: 17257,
 		builtIn: false,
 		keywords: ["video","image","audio","download","extract","sniff"],
 		permissions: undefined,

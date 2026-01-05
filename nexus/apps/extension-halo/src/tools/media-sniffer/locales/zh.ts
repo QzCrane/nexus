@@ -10,6 +10,7 @@ export const zh = {
 			video: '视频',
 			audio: '音频',
 			image: '图片'
-		}
+		},
+		errorRestricted: '无法扫描此页面（受保护/系统页面）',
 	}
 };

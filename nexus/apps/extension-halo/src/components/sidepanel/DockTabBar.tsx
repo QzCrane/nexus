@@ -71,6 +71,15 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 		setTooltip(null);
 	}, []);
 
+	// Fix: Reset state when dock becomes empty (component returns null but preserves state)
+	useEffect(() => {
+		if (dockTools.length === 0) {
+			setHoveredId(null);
+			setTooltip(null);
+			setMouseX(null);
+		}
+	}, [dockTools.length]);
+
 	if (dockTools.length === 0) return null;
 
 	return (
