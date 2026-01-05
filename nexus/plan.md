@@ -1,6 +1,6 @@
 # NEXUS 规划
 
-> DNA: Contracts ← Kernel ← {Audio, Zen, UI-Kit} ← {Spectra, Halo}
+> DNA: Contracts ← Kernel ← {Audio, UI-Kit} ← {Spectra, Halo}
 
 ## 子项目
 
