@@ -121,11 +121,11 @@ export async function saveGroups(groups: Record<ExtensionGroup, string[]>): Prom
 }
 
 /**
- * Assign extension to a group
+ * Assign extension to a group, or remove from all groups if group is empty/undefined
  */
 export async function assignToGroup(
 	extId: string,
-	group: ExtensionGroup,
+	group: ExtensionGroup | '' | undefined,
 	currentGroups: Record<ExtensionGroup, string[]>
 ): Promise<Record<ExtensionGroup, string[]>> {
 	const newGroups = { ...currentGroups };
@@ -133,8 +133,10 @@ export async function assignToGroup(
 	for (const g of Object.keys(newGroups) as ExtensionGroup[]) {
 		newGroups[g] = newGroups[g].filter(id => id !== extId);
 	}
-	// Add to new group
-	newGroups[group] = [...newGroups[group], extId];
+	// Only add to new group if a valid group is specified
+	if (group && group in newGroups) {
+		newGroups[group] = [...newGroups[group], extId];
+	}
 	await saveGroups(newGroups);
 	return newGroups;
 }

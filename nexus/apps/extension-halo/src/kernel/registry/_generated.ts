@@ -1053,7 +1053,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '🔌',
 		pluginType: 'system',
 		category: 'browser',
-		size: 21587,
+		size: 24917,
 		builtIn: true,
 		keywords: ["extension","plugin","manage","插件","扩展","管理","启用","禁用"],
 		permissions: ["management"],

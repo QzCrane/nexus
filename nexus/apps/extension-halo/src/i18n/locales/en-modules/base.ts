@@ -15,6 +15,7 @@ export const base = {
 		save: 'Save',
 		cancel: 'Cancel',
 		reset: 'Reset',
+		confirm: 'Confirm',
 		language: 'Language',
 		result: 'Result',
 		copy: 'Copy',

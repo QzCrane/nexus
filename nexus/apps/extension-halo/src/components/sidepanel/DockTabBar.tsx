@@ -157,7 +157,8 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 			</div>
 
 			{/* Tooltip: Portal to body for absolute escape */}
-			{tooltip && createPortal(
+			{/* Only render when actually hovering - prevents stale tooltip from appearing */}
+			{tooltip && hoveredId !== null && createPortal(
 				<div style={{
 					position: 'fixed',
 					left: tooltip.x,

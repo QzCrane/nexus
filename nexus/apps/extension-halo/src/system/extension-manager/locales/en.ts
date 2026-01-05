@@ -24,4 +24,11 @@ export const en = {
 	'extMgr.permissionRequired': 'Permission Required',
 	'extMgr.permissionDesc': 'HALO needs "Extension Management" permission to list and control your extensions. This permission is optional and only used for this feature.',
 	'extMgr.grantPermission': 'Grant Permission',
+	// Confirmation dialogs
+	'extMgr.confirmEnable': 'Are you sure you want to enable "{{name}}"?',
+	'extMgr.confirmDisable': 'Are you sure you want to disable "{{name}}"?',
+	'extMgr.confirmEnableAll': 'Are you sure you want to enable {{count}} extensions in the current list?',
+	'extMgr.confirmDisableAll': 'Are you sure you want to disable {{count}} extensions in the current list?',
+	'extMgr.confirmEnableTitle': 'Confirm Enable',
+	'extMgr.confirmDisableTitle': 'Confirm Disable',
 };

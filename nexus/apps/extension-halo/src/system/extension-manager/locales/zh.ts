@@ -24,4 +24,11 @@ export const zh = {
 	'extMgr.permissionRequired': '需要授权',
 	'extMgr.permissionDesc': 'HALO 需要 "扩展管理" 权限来管理您的扩展。此权限是可选的，仅用于此功能，我们不会收集任何隐私。',
 	'extMgr.grantPermission': '授予权限',
+	// Confirmation dialogs
+	'extMgr.confirmEnable': '确定要启用 "{{name}}" 吗？',
+	'extMgr.confirmDisable': '确定要禁用 "{{name}}" 吗？',
+	'extMgr.confirmEnableAll': '确定要启用当前列表中的 {{count}} 个扩展吗？',
+	'extMgr.confirmDisableAll': '确定要禁用当前列表中的 {{count}} 个扩展吗？',
+	'extMgr.confirmEnableTitle': '确认启用',
+	'extMgr.confirmDisableTitle': '确认禁用',
 };

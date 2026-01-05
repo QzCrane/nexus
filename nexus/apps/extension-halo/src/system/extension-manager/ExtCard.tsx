@@ -8,12 +8,13 @@ import type { ExtensionInfo, ExtensionGroup } from './types';
 import { DEFAULT_GROUPS } from './types';
 import { toggleExtension, openOptionsPage, openDetailsPage, getExtensionIcon } from './core';
 import { styles } from './panel.styles';
+import { useOverlay } from '../../components/ui/overlay';
 
 interface ExtCardProps {
 	ext: ExtensionInfo;
 	group?: ExtensionGroup;
 	onToggle: () => void;
-	onAssignGroup: (extId: string, group: ExtensionGroup) => void;
+	onAssignGroup: (extId: string, group: ExtensionGroup | '') => void;
 }
 
 const GROUP_COLORS: Record<ExtensionGroup, string> = {
@@ -25,13 +26,23 @@ const GROUP_COLORS: Record<ExtensionGroup, string> = {
 
 export const ExtCard: React.FC<ExtCardProps> = ({ ext, group, onToggle, onAssignGroup }) => {
 	const { t } = useTranslation();
+	const { showModal } = useOverlay();
 	const iconUrl = getExtensionIcon(ext, 32);
 	const hasOptions = !!ext.optionsUrl;
 	const permCount = ext.permissions.length + ext.hostPermissions.length;
 
-	const handleToggle = async () => {
-		await toggleExtension(ext);
-		onToggle();
+	const handleToggle = () => {
+		const messageKey = ext.enabled ? 'extMgr.confirmDisable' : 'extMgr.confirmEnable';
+		const titleKey = ext.enabled ? 'extMgr.confirmDisableTitle' : 'extMgr.confirmEnableTitle';
+		showModal({
+			type: 'confirm',
+			title: t(titleKey),
+			message: t(messageKey, { name: ext.name }),
+			onConfirm: async () => {
+				await toggleExtension(ext);
+				onToggle();
+			}
+		});
 	};
 
 	return (

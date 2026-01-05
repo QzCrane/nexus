@@ -102,7 +102,10 @@ export function useOpenTools(): UseOpenToolsResult {
 			const newOpen = prev.filter(id => id !== toolId);
 			setActiveToolState(current => {
 				if (current === toolId) {
-					return newOpen.length > 0 ? newOpen[newOpen.length - 1] : null;
+					// When closing active tool, find next non-system tool to activate
+					// If no non-system tools remain, go back to home (null)
+					const nextUserTool = [...newOpen].reverse().find(id => !isSystemTool(id));
+					return nextUserTool ?? null;
 				}
 				return current;
 			});

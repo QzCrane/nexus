@@ -15,6 +15,7 @@ export const base = {
 		save: '保存',
 		cancel: '取消',
 		reset: '重置',
+		confirm: '确认',
 		language: '语言',
 		result: '结果',
 		copy: '复制',
