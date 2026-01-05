@@ -1,89 +1,20 @@
-// goal: Hover zoom panel styles
-// eff: Settings panel layout
+// goal: Styles for HoverZoomPanel
+// eff: Aligned with smooth-scroll panel style
 
-import type { CSSProperties } from 'react';
+import React from 'react';
 
-export const styles: Record<string, CSSProperties> = {
-	container: {
-		display: 'flex',
-		flexDirection: 'column',
-		gap: '16px',
-		padding: '16px',
-		height: '100%',
-		overflow: 'auto',
-	},
-	section: {
-		display: 'flex',
-		flexDirection: 'column',
-		gap: '12px',
-		padding: '12px',
-		borderRadius: '10px',
-		background: 'var(--halo-bg-secondary)',
-		border: '1px solid var(--halo-border)',
-	},
-	sectionTitle: {
-		fontSize: '13px',
-		fontWeight: 600,
-		color: 'var(--halo-text)',
-		marginBottom: '4px',
-	},
-	row: {
-		display: 'flex',
-		alignItems: 'center',
-		justifyContent: 'space-between',
-		gap: '12px',
-	},
-	label: {
-		fontSize: '13px',
-		color: 'var(--halo-text)',
-	},
-	description: {
-		fontSize: '11px',
-		color: 'var(--halo-text-muted)',
-		marginTop: '-4px',
-	},
-	segmented: {
-		display: 'flex',
-		gap: '4px',
-		background: 'var(--halo-bg-tertiary)',
-		padding: '3px',
-		borderRadius: '6px',
-	},
-	segmentBtn: {
-		padding: '4px 10px',
-		borderRadius: '4px',
-		border: 'none',
-		background: 'transparent',
-		color: 'var(--halo-text-muted)',
-		fontSize: '12px',
-		cursor: 'pointer',
-		transition: 'all 0.15s',
-	},
-	segmentBtnActive: {
-		background: 'var(--halo-accent)',
-		color: '#fff',
-	},
-	slider: {
-		flex: 1,
-		accentColor: 'var(--halo-accent)',
-	},
-	value: {
-		fontSize: '12px',
-		color: 'var(--halo-text-muted)',
-		minWidth: '50px',
-		textAlign: 'right',
-	},
-	domainList: {
-		display: 'flex',
-		flexWrap: 'wrap',
-		gap: '4px',
-		marginTop: '8px',
-	},
-	domainTag: {
-		padding: '2px 8px',
-		borderRadius: '4px',
-		background: 'var(--halo-bg-tertiary)',
-		fontSize: '11px',
-		color: 'var(--halo-text-muted)',
-	},
+export const styles: Record<string, React.CSSProperties> = {
+	wrapper: { display: 'flex', flexDirection: 'column', gap: '14px', scrollBehavior: 'smooth' },
+	row: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0' },
+	label: { fontSize: '12px', color: 'var(--halo-text)' },
+	section: { display: 'flex', flexDirection: 'column', gap: '8px' },
+	sectionTitle: { fontSize: '10px', fontWeight: 600, color: 'var(--halo-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px' },
+	value: { fontSize: '11px', color: 'var(--halo-text-secondary)', fontFamily: 'monospace' },
+	segmented: { display: 'flex', gap: '4px', background: 'var(--halo-bg-tertiary)', padding: '3px', borderRadius: '8px' },
+	segmentBtn: { padding: '5px 10px', border: 'none', background: 'transparent', color: 'var(--halo-text-secondary)', fontSize: '11px', cursor: 'pointer', borderRadius: '6px', transition: 'all 0.15s' },
+	segmentBtnActive: { padding: '5px 10px', border: 'none', background: 'var(--halo-accent)', color: '#fff', fontSize: '11px', cursor: 'pointer', borderRadius: '6px', fontWeight: 500 },
+	select: { padding: '6px 10px', background: 'var(--halo-bg-tertiary)', border: '1px solid var(--halo-border)', borderRadius: '6px', color: 'var(--halo-text)', fontSize: '11px', outline: 'none', cursor: 'pointer' },
+	hotkeyList: { fontSize: '11px', color: 'var(--halo-text-secondary)', lineHeight: 1.8, display: 'flex', flexDirection: 'column', gap: '2px' },
+	hotkeyItem: { display: 'flex', gap: '8px', alignItems: 'center' },
+	hotkeyKey: { background: 'var(--halo-bg-tertiary)', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontFamily: 'monospace', fontWeight: 500 },
 };

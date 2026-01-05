@@ -2,7 +2,7 @@
 	"id": "hover-zoom",
 	"icon": "🔍",
 	"category": "media",
-	"size": 6144,
+	"size": 35000,
 	"status": "ready",
 	"builtIn": true,
 	"keywords": [
@@ -10,13 +10,35 @@
 		"zoom",
 		"image",
 		"preview",
+		"photoshow",
+		"浮图秀",
 		"浮图",
 		"悬浮",
 		"图片",
 		"预览",
-		"放大"
+		"放大",
+		"高清"
 	],
 	"permissions": [
-		"declarativeNetRequest"
-	]
+		"declarativeNetRequest",
+		"downloads",
+		"clipboardWrite"
+	],
+	"background": {
+		"mechanism": "event_listener",
+		"frequency": "on-event",
+		"activeOnly": false,
+		"level": "idle",
+		"descriptionKey": "impact.hover_zoom",
+		"sourceFile": "tools/hover-zoom/content/index.ts",
+		"sourceLine": 1,
+		"sourceDetail": "mouseover/mousemove event listeners"
+	},
+	"script": {
+		"type": "javascript",
+		"runAt": "document_end",
+		"matches": [
+			"*://*/*"
+		]
+	}
 }

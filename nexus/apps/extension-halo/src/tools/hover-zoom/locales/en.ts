@@ -1,21 +1,45 @@
 export const en = {
-	'tools.hover-zoom.name': 'Hover Zoom',
-	'tools.hover-zoom.desc': 'Preview full-size images on hover with anti-hotlink protection',
-	'hoverZoom.enabled': 'Enabled',
-	'hoverZoom.trigger': 'Trigger',
-	'hoverZoom.triggerHover': 'Hover',
-	'hoverZoom.triggerAlt': 'Alt + Hover',
-	'hoverZoom.triggerCtrl': 'Ctrl + Hover',
-	'hoverZoom.delay': 'Delay (ms)',
-	'hoverZoom.maxSize': 'Max Size',
-	'hoverZoom.antiHotlink': 'Anti-Hotlink Mode',
-	'hoverZoom.antiHotlinkDesc': 'Remove Referer header for images (fixes 403 errors on Bilibili, Weibo)',
-	'hoverZoom.position': 'Position',
-	'hoverZoom.positionAuto': 'Auto',
-	'hoverZoom.positionLeft': 'Left',
-	'hoverZoom.positionRight': 'Right',
-	'hoverZoom.background': 'Background',
-	'hoverZoom.bgDark': 'Dark',
-	'hoverZoom.bgLight': 'Light',
-	'hoverZoom.bgBlur': 'Blur',
+	// Registry i18n (required format)
+	"tools.hover-zoom.name": "Hover Zoom",
+	"tools.hover-zoom.desc": "View high-resolution images by hovering over thumbnails",
+
+	// Panel i18n
+	hoverZoom: {
+		enable: "Enable Hover Zoom",
+		enableDesc: "PhotoShow compatible, works on all websites",
+
+		trigger: {
+			title: "Trigger Settings",
+			key: "Modifier Key",
+			delay: "Display Delay"
+		},
+
+		view: {
+			title: "Appearance",
+			mode: "View Mode",
+			position: "Position",
+			antiHotlink: "Anti-Hotlink (Privacy)"
+		},
+
+		mode: {
+			auto: "Auto",
+			fit: "Fit Screen",
+			panoramic: "Panoramic"
+		},
+
+		exemptions: {
+			title: "Trigger Exemptions",
+			smallInteractive: "Ignore small interactive elements",
+			playingVideo: "Ignore playing videos"
+		},
+
+		hotkeys: {
+			title: "Keyboard Shortcuts",
+			download: "S - Save image",
+			copy: "C - Copy URL",
+			newtab: "T - Open in new tab",
+			rotate: "R - Rotate 90°",
+			close: "Esc - Close"
+		}
+	}
 };

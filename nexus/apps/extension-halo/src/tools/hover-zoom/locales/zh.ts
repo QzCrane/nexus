@@ -1,21 +1,45 @@
 export const zh = {
-	'tools.hover-zoom.name': '浮图秀',
-	'tools.hover-zoom.desc': '鼠标悬停预览大图，支持防盗链绕过',
-	'hoverZoom.enabled': '启用',
-	'hoverZoom.trigger': '触发方式',
-	'hoverZoom.triggerHover': '悬停',
-	'hoverZoom.triggerAlt': 'Alt + 悬停',
-	'hoverZoom.triggerCtrl': 'Ctrl + 悬停',
-	'hoverZoom.delay': '延迟 (毫秒)',
-	'hoverZoom.maxSize': '最大尺寸',
-	'hoverZoom.antiHotlink': '防盗链模式',
-	'hoverZoom.antiHotlinkDesc': '移除图片请求的 Referer 头 (修复 B站/微博 403)',
-	'hoverZoom.position': '显示位置',
-	'hoverZoom.positionAuto': '自动',
-	'hoverZoom.positionLeft': '左侧',
-	'hoverZoom.positionRight': '右侧',
-	'hoverZoom.background': '背景',
-	'hoverZoom.bgDark': '深色',
-	'hoverZoom.bgLight': '浅色',
-	'hoverZoom.bgBlur': '模糊',
+	// Registry i18n (required format)
+	"tools.hover-zoom.name": "浮图秀",
+	"tools.hover-zoom.desc": "鼠标悬停显示高清大图",
+
+	// Panel i18n
+	hoverZoom: {
+		enable: "启用浮图秀",
+		enableDesc: "兼容 PhotoShow，全站生效",
+
+		trigger: {
+			title: "触发设置",
+			key: "触发键",
+			delay: "显示延迟"
+		},
+
+		view: {
+			title: "外观设置",
+			mode: "视图模式",
+			position: "浮窗位置",
+			antiHotlink: "反防盗链 (隐私模式)"
+		},
+
+		mode: {
+			auto: "自动",
+			fit: "适应屏幕",
+			panoramic: "全景"
+		},
+
+		exemptions: {
+			title: "触发豁免",
+			smallInteractive: "忽略小型交互元素",
+			playingVideo: "忽略播放中的视频"
+		},
+
+		hotkeys: {
+			title: "快捷键",
+			download: "S - 保存图片",
+			copy: "C - 复制链接",
+			newtab: "T - 新标签页打开",
+			rotate: "R - 旋转90°",
+			close: "Esc - 关闭"
+		}
+	}
 };

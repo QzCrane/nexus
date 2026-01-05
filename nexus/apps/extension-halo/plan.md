@@ -48,6 +48,14 @@ Atomic: 单工具 ≤200 行，独立生命周期
 Isolation: 系统/用户插件物理逻辑隔离
 Local First: 零上传，数据本地处理
 
+## 待解决问题
+
+**#1 面板工具后台运行**: 计时器/番茄钟等工具切换标签页时停止运行 → 需 Background Timer + Storage 状态同步方案
+
+**#2 Content Script SSOT**: 目前需手动在 `entry/content.ts` 导入新工具，非真正唯一源 → 需构建系统根据 manifest.script 自动生成入口
+
+**#3 ActiveServices 状态追踪**: 需手动在 `ActiveServicesContext` 添加 storage key → 需动态化读取 manifest 配置
+
 ## 关联
 
 [开发规则](../../docs/ai-rules.md)

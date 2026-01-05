@@ -6,6 +6,7 @@ import * as Ruler from '../content/ruler';
 import * as SmoothScroll from '../content/smooth-scroll';
 import * as DomSelector from '../content/dom-selector';
 import * as PageAnnotate from '../content/page-annotate';
+import * as HoverZoom from '../content/hover-zoom';
 
 const LOG_TAG = '[HALO]';
 const t0 = performance.now();
@@ -154,6 +155,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 // ===== INITIALIZE MODULES =====
 SmoothScroll.init();
+HoverZoom.init();
 
 console.log(LOG_TAG, 'Content script ready in', (performance.now() - t0).toFixed(2), 'ms');
 

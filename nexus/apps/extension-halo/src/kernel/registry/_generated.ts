@@ -357,12 +357,12 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '🔍',
 		pluginType: 'tool',
 		category: 'media',
-		size: 12494,
+		size: 38701,
 		builtIn: true,
-		keywords: ["hover","zoom","image","preview","浮图","悬浮","图片","预览","放大"],
-		permissions: ["declarativeNetRequest"],
-		background: undefined,
-		script: undefined,
+		keywords: ["hover","zoom","image","preview","photoshow","浮图秀","浮图","悬浮","图片","预览","放大","高清"],
+		permissions: ["declarativeNetRequest","downloads","clipboardWrite"],
+		background: {"mechanism":"event_listener","frequency":"on-event","activeOnly":false,"level":"idle","descriptionKey":"impact.hover_zoom","sourceFile":"tools/hover-zoom/content/index.ts","sourceLine":1,"sourceDetail":"mouseover/mousemove event listeners"},
+		script: {"type":"javascript","runAt":"document_end","matches":["*://*/*"]},
 	},
 	{
 		id: 'html-entity',
@@ -1137,6 +1137,7 @@ export const PERMISSION_USAGE_MAP: Record<string, string[]> = {
     ],
     "downloads": [
         "archive",
+        "hover-zoom",
         "pdf"
     ],
     "clipboardRead": [
@@ -1145,6 +1146,7 @@ export const PERMISSION_USAGE_MAP: Record<string, string[]> = {
     "clipboardWrite": [
         "clipboard",
         "color-picker",
+        "hover-zoom",
         "qrcode"
     ],
     "declarativeNetRequest": [
@@ -1175,6 +1177,16 @@ export const BACKGROUND_PROFILES_MAP: Record<string, BackgroundProfile> = {
         "sourceFile": "entry/content.ts",
         "sourceLine": 39,
         "sourceDetail": "document.addEventListener('copy', onCopy)"
+    },
+    "hover-zoom": {
+        "mechanism": "event_listener",
+        "frequency": "on-event",
+        "activeOnly": false,
+        "level": "idle",
+        "descriptionKey": "impact.hover_zoom",
+        "sourceFile": "tools/hover-zoom/content/index.ts",
+        "sourceLine": 1,
+        "sourceDetail": "mouseover/mousemove event listeners"
     },
     "pomodoro": {
         "mechanism": "interval_slow",

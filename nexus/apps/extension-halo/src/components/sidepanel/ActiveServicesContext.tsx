@@ -1,6 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { BACKGROUND_PLUGIN_IDS, BACKGROUND_PROFILES_MAP } from '../../kernel/registry/_generated';
 
-const BACKGROUND_TOOL_IDS = ['smooth-scroll', 'userscripts', 'clipboard'];
+// Tools with storage keys for state tracking (hardcoded ones that need special handling)
+const TRACKED_STORAGE_KEYS: Record<string, { storageArea: 'local' | 'sync'; key: string; enabledPath: string }> = {
+	'smooth-scroll': { storageArea: 'sync', key: 'HALO_SMOOTH_SCROLL_SETTINGS', enabledPath: 'enabled' },
+	'clipboard': { storageArea: 'local', key: 'halo_tool_clipboard_settings', enabledPath: 'enabled' },
+	'hover-zoom': { storageArea: 'local', key: 'halo_hover_zoom_settings', enabledPath: 'enabled' },
+};
 
 interface ActiveServicesContextType {
 	activeServices: Set<string>;
@@ -25,7 +31,8 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 				// Use storage defaults: default to TRUE if key missing
 				const localData = await chrome.storage.local.get({
 					halo_tool_clipboard_settings: { enabled: true },
-					halo_userscripts: { globalEnabled: true, scripts: [] } // Default scripts to empty array
+					halo_hover_zoom_settings: { enabled: true },
+					halo_userscripts: { globalEnabled: true, scripts: [] }
 				});
 
 				const syncData = await chrome.storage.sync.get({
@@ -33,6 +40,7 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 				});
 
 				if (localData.halo_tool_clipboard_settings.enabled) active.add('clipboard');
+				if (localData.halo_hover_zoom_settings.enabled) active.add('hover-zoom');
 				if (localData.halo_userscripts.globalEnabled) active.add('userscripts');
 				if (syncData.HALO_SMOOTH_SCROLL_SETTINGS.enabled) active.add('smooth-scroll');
 
@@ -72,7 +80,7 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 	// Event-driven only - no polling needed, storage.onChanged is sufficient
 	const listener = (changes: any, area: string) => {
 		let changed = false;
-		if (area === 'local' && (changes.halo_tool_clipboard_settings || changes.halo_userscripts)) changed = true;
+		if (area === 'local' && (changes.halo_tool_clipboard_settings || changes.halo_hover_zoom_settings || changes.halo_userscripts)) changed = true;
 		if (area === 'sync' && changes.HALO_SMOOTH_SCROLL_SETTINGS) changed = true;
 		if (changed) checkState();
 	};
@@ -100,8 +108,12 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 		});
 	}, []);
 
-	// Combine hardcoded background tools with dynamic script IDs
-	const allBgToolIds = [...BACKGROUND_TOOL_IDS, ...scriptIds];
+	// Combine registry background plugins (only true background: activeOnly=false) with dynamic script IDs
+	const trueBackgroundIds = BACKGROUND_PLUGIN_IDS.filter(id => {
+		const profile = (BACKGROUND_PROFILES_MAP as any)[id];
+		return profile && profile.activeOnly === false;
+	});
+	const allBgToolIds = [...trueBackgroundIds, ...scriptIds];
 
 	return (
 		<ActiveServicesContext.Provider value={{ activeServices, bgToolIds: allBgToolIds, setServiceState }}>
