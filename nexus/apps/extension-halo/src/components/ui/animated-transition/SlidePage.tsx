@@ -1,7 +1,7 @@
 // goal: Single sliding page wrapper with CSS transition animations
 // eff: Standalone component for horizontal slide enter/exit transitions
 
-import React, { useRef, useEffect, useState, useLayoutEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 
 // Animation constants
 const DEFAULT_DURATION = 280;
@@ -40,34 +40,26 @@ export const SlidePage: React.FC<SlidePageProps> = ({
 	children,
 }) => {
 	const [shouldRender, setShouldRender] = useState(show || keepMounted);
-	// Track previous show value to detect transitions
-	const prevShowRef = useRef(show);
-	// Initial state: if show=true on mount, start as 'entered' (no animation)
-	// if show=false on mount, start as 'exited'
-	const [animState, setAnimState] = useState<'entering' | 'entered' | 'exiting' | 'exited'>(
-		show ? 'entered' : 'exited'
-	);
+	
+	// Always start as 'exited' so we can animate in, even on first mount
+	const [animState, setAnimState] = useState<'entering' | 'entered' | 'exiting' | 'exited'>('exited');
 	const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	
 	useEffect(() => {
-		const prevShow = prevShowRef.current;
-		prevShowRef.current = show;
-		
-		// Skip if no change
-		if (prevShow === show) return;
-		
 		if (timeoutRef.current) clearTimeout(timeoutRef.current);
 		
 		if (show) {
-			// show changed from false to true: animate in
+			// Always trigger enter animation
 			setShouldRender(true);
-			setAnimState('entering');
-			// Ensure DOM update before transition starts
+			
+			// Use double RAF to ensure browser registers the starting state before transition
 			requestAnimationFrame(() => {
-				requestAnimationFrame(() => setAnimState('entered'));
+				setAnimState('entering');
+				requestAnimationFrame(() => {
+					setAnimState('entered');
+				});
 			});
 		} else {
-			// show changed from true to false: animate out
 			setAnimState('exiting');
 			timeoutRef.current = setTimeout(() => {
 				setAnimState('exited');

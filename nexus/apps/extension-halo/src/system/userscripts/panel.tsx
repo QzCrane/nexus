@@ -93,8 +93,8 @@ export const UserScriptsPanel: React.FC = () => {
 		}}>
 			{/* List Page - base layer */}
 			<SlidePage
-				show={!showEditor}
-				direction="left"
+				show={true}
+				direction="right"
 				keepMounted={true}
 				style={{
 					display: 'flex',
