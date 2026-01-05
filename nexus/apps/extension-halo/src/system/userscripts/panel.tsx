@@ -81,17 +81,24 @@ export const UserScriptsPanel: React.FC = () => {
 		// If not found, the ID is invalid or script was deleted - silently ignored
 	}, [scripts, handleEdit]);
 
-	// Render editor page as full sub-page
+	// Render editor page as full sub-page (break out of parent padding for full-bleed layout)
 	if (showEditor) {
 		return (
-			<ScriptEditorPage
-				form={editForm}
-				onChange={setEditForm}
-				onSave={handleSave}
-				onCancel={handleCancel}
-				isEdit={!!editingId}
-				t={t}
-			/>
+			<div style={{ 
+				margin: '-12px -12px 0 -12px', // Compensate for ToolPanelRenderer padding
+				height: 'calc(100% + 12px)',   // Restore height lost by negative margin
+				display: 'flex',
+				flexDirection: 'column',
+			}}>
+				<ScriptEditorPage
+					form={editForm}
+					onChange={setEditForm}
+					onSave={handleSave}
+					onCancel={handleCancel}
+					isEdit={!!editingId}
+					t={t}
+				/>
+			</div>
 		);
 	}
 
