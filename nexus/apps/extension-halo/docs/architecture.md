@@ -1,4 +1,4 @@
-# HALO 架构 (v2.4.0)
+# HALO 架构 (v2.5.0)
 
 > DNA: SidePanel-only | 零上传 | 原子化 | 本地优先 | 极致性能
 
@@ -7,7 +7,13 @@
 ```
 src/
 ├─ entry/: background, content, sidepanel.tsx
-├─ components/: UI + _generated-tool-loader.ts + sidepanel/
+├─ components/
+│  ├─ manager/: ToolManager, ToolManagerItem
+│  ├─ search/: SearchBar, search-utils
+│  ├─ core/: ToolErrorBoundary, lazy-tool-loader, ToolPanelRenderer
+│  ├─ legacy/: (deprecated components)
+│  ├─ settings/internal/dark-mode/: Internal feature (not a plugin)
+│  └─ sidepanel/: Launcher components
 ├─ kernel/{registry(_generated,taxonomy,module), managers(Perm/Module), services(saat)}
 ├─ tools/[id]/{manifest.json, panel.tsx} → pluginType:'tool'
 ├─ scripts/[id]/{manifest.json, script.js} → pluginType:'script'
@@ -17,13 +23,22 @@ src/
 
 ## 插件架构
 
-pluginType: `tool`(面板) | `script`(SaaT,嵌套`script:{type,matches,runAt}`) | `system`(设置/商店/权限)
+pluginType: `tool`(面板) | `script`(SaaT,嵌套) | `system`(设置/商店/权限)
+
+**内部特性 (Features)**: 如 Dark Mode，不作为插件注册，而是作为 `Settings` 的内部组件 (`src/components/settings/internal/`) 存在。这避免了系统组件列表的污染，保持注册表纯净。
 
 分类(SSOT): 虚拟(active,scripts,system) → 功能(general,encode,format,network,data,dev,efficiency,browser,visual,media,security,ai)
 
 排序: active → scripts → system → 功能分类
 
 Registry 产出: `PLUGIN_REGISTRY` | `BACKGROUND_PLUGIN_IDS` | `get{Tool,Script,System}Plugins()`
+
+## UI 系统 (Premium)
+
+主题: `theme.ts` 扩展了 Premium UI Tokens: `cardBg`, `glassBorder`, `shadow`。
+风格: 全面采用 Glassmorphism (毛玻璃) 设计，结合 CSS Variables 实现动态暗黑模式。
+组件: `Dark Mode` 控制面板位于 `Settings` 内部，提供亮度、对比度、滤镜及自定义 CSS 修复。
+安全: `MediaSniffer` 等工具增加了对敏感页面 (`chrome://`) 的检测与 Toast 提示。
 
 ## 规范
 
