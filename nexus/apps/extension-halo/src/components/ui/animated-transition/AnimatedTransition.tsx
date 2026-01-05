@@ -1,7 +1,7 @@
 // goal: Core AnimatedTransition component for unified page transitions
 // eff: GPU-accelerated, respects user settings, supports keep-alive
 
-import React, { useState, useEffect, useRef, useCallback, CSSProperties } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, CSSProperties } from 'react';
 import type { AnimatedTransitionProps, TransitionPhase } from './types';
 import { ANIMATION_PRESETS, getReversedSlidePreset } from './presets';
 import { useAnimationSettings } from './useAnimationSettings';
@@ -39,18 +39,26 @@ export const AnimatedTransition: React.FC<AnimatedTransitionProps> = ({
 	onExited,
 	children,
 }) => {
-	// Use default animation settings (hook now takes optional override)
+	// Use default animation settings
 	const { getDuration, isDisabled } = useAnimationSettings();
 	const [phase, setPhase] = useState<TransitionPhase>(show ? 'active' : 'hidden');
 	const [shouldRender, setShouldRender] = useState(show || keepMounted);
 	const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const nodeRef = useRef<HTMLDivElement>(null);
+	
+	// Store callbacks in refs to avoid dependency issues
+	const onEnteredRef = useRef(onEntered);
+	const onExitedRef = useRef(onExited);
+	onEnteredRef.current = onEntered;
+	onExitedRef.current = onExited;
 
-	// Get animation preset
-	const basePreset = ANIMATION_PRESETS[isDisabled ? 'none' : type];
-	const preset = type === 'slide' && direction === 'left' 
-		? getReversedSlidePreset(basePreset) 
-		: basePreset;
+	// Memoize preset to avoid recalculating on every render
+	const preset = useMemo(() => {
+		const basePreset = ANIMATION_PRESETS[isDisabled ? 'none' : type];
+		return type === 'slide' && direction === 'left' 
+			? getReversedSlidePreset(basePreset) 
+			: basePreset;
+	}, [type, direction, isDisabled]);
 
 	// Calculate actual duration
 	const actualDuration = customDuration ?? getDuration(preset.duration);
@@ -75,7 +83,7 @@ export const AnimatedTransition: React.FC<AnimatedTransitionProps> = ({
 			
 			if (isDisabled || actualDuration === 0) {
 				setPhase('active');
-				onEntered?.();
+				onEnteredRef.current?.();
 			} else {
 				// Start from enter state
 				setPhase('enter');
@@ -85,7 +93,7 @@ export const AnimatedTransition: React.FC<AnimatedTransitionProps> = ({
 					requestAnimationFrame(() => {
 						setPhase('active');
 						timeoutRef.current = setTimeout(() => {
-							onEntered?.();
+							onEnteredRef.current?.();
 						}, actualDuration);
 					});
 				});
@@ -95,23 +103,23 @@ export const AnimatedTransition: React.FC<AnimatedTransitionProps> = ({
 			if (isDisabled || actualDuration === 0) {
 				setPhase('hidden');
 				if (!keepMounted) setShouldRender(false);
-				onExited?.();
+				onExitedRef.current?.();
 			} else {
 				setPhase('exit');
 				timeoutRef.current = setTimeout(() => {
 					setPhase('hidden');
 					if (!keepMounted) setShouldRender(false);
-					onExited?.();
+					onExitedRef.current?.();
 				}, actualDuration);
 			}
 		}
-	}, [show, isDisabled, actualDuration, keepMounted, onEntered, onExited]);
+	}, [show, isDisabled, actualDuration, keepMounted]);
 
 	// Don't render if not needed
 	if (!shouldRender) return null;
 
 	// Build styles based on current phase
-	const getPhaseStyles = useCallback((): CSSProperties => {
+	const phaseStyles = useMemo((): CSSProperties => {
 		const keyframe = phase === 'enter' ? preset.enter
 			: phase === 'exit' ? preset.exit
 			: phase === 'active' ? preset.active
@@ -127,7 +135,7 @@ export const AnimatedTransition: React.FC<AnimatedTransitionProps> = ({
 	}, [phase, preset, actualDuration]);
 
 	const containerStyles: CSSProperties = {
-		...getPhaseStyles(),
+		...phaseStyles,
 		willChange: actualDuration > 0 ? 'transform, opacity' : 'auto',
 		// Hidden state should not block interactions
 		pointerEvents: phase === 'hidden' ? 'none' : 'auto',
