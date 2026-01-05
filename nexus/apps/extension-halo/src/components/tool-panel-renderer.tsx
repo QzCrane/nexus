@@ -1,6 +1,3 @@
-// goal: Render tool panels with animated tab switching
-// eff: Keep-alive pattern with fade transitions between tabs
-
 import React from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../i18n';
@@ -8,7 +5,6 @@ import type { ToolId, HaloSettings } from '../kernel';
 import { TOOL_REGISTRY } from '../kernel';
 import { useSmoothWheel } from '../kernel/hooks/use-smooth-wheel';
 import { LazyToolRenderer } from './lazy-tool-loader';
-import { AnimatedTransition } from './ui/animated-transition';
 
 // SSOT: Get system tool IDs from registry
 const SYSTEM_TOOL_IDS = new Set(
@@ -76,58 +72,46 @@ export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({
 		return fallbackUI;
 	}
 
-	// System tool active: render with fade animation
+	// System tool active: render it ephemerally (only when active)
 	if (activeTool && isSystemTool(activeTool)) {
 		return (
-			<AnimatedTransition show={true} type="fade" duration={150}>
-				<SmoothScrollContainer>
-					<LazyToolRenderer 
-						toolId={activeTool} 
-						onSettingsChange={activeTool === 'settings' ? onSettingsChange : undefined} 
-					/>
-				</SmoothScrollContainer>
-			</AnimatedTransition>
+			<SmoothScrollContainer>
+				<LazyToolRenderer 
+					toolId={activeTool} 
+					onSettingsChange={activeTool === 'settings' ? onSettingsChange : undefined} 
+				/>
+			</SmoothScrollContainer>
 		);
 	}
 
-	// User tools: render with keep-alive pattern and fade transitions
+	// User tools: render with keep-alive pattern (NO animation for now)
 	return (
-		<div style={{ position: 'relative', width: '100%', height: '100%' }}>
+		<>
 			{openTools
 				.filter(id => !isSystemTool(id))
 				.map(toolId => {
 					const isActive = activeTool === toolId;
 					
 					return (
-						<AnimatedTransition
-							key={toolId}
-							show={isActive}
-							type="fade"
-							duration={180}
-							keepMounted // Keep tool state alive when switching tabs
-							style={{
-								position: 'absolute',
-								top: 0,
-								left: 0,
-								right: 0,
-								bottom: 0,
+						<div 
+							key={toolId} 
+							style={{ 
+								...styles.contentWrapper,
+								display: isActive ? 'flex' : 'none',
+								padding: 0,
 							}}
 						>
-							<div style={{ ...styles.contentWrapper, padding: 0, height: '100%' }}>
-								<div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
-									<SmoothScrollContainer style={{ padding: '12px 12px 0 12px' }}>
-										<LazyToolRenderer toolId={toolId} onSettingsChange={onSettingsChange} />
-									</SmoothScrollContainer>
-								</div>
+							<div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+								<SmoothScrollContainer style={{ padding: '12px 12px 0 12px' }}>
+									<LazyToolRenderer toolId={toolId} onSettingsChange={onSettingsChange} />
+								</SmoothScrollContainer>
 							</div>
-						</AnimatedTransition>
+						</div>
 					);
 				})}
 				
-			{/* No active tool but have open tools -> show fallback with fade */}
-			<AnimatedTransition show={!activeTool && openTools.length > 0} type="fade">
-				{fallbackUI}
-			</AnimatedTransition>
-		</div>
+			{/* No active tool but have open tools -> show fallback */}
+			{!activeTool && openTools.length > 0 && fallbackUI}
+		</>
 	);
 };

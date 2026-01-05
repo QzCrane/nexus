@@ -2,6 +2,7 @@
 // eff: Clean public API
 
 export { AnimatedTransition } from './AnimatedTransition';
+export { SimpleTransition } from './SimpleTransition';
 export { PageTransition } from './PageTransition';
 export { useAnimationSettings } from './useAnimationSettings';
 export { ANIMATION_PRESETS, getReversedSlidePreset } from './presets';

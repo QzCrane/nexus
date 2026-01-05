@@ -10,6 +10,8 @@ export const pageStyles: Record<string, CSSProperties> = {
 		height: '100%',
 		background: 'var(--halo-bg)',
 		overflow: 'hidden',
+		// Slide-in animation from right
+		animation: 'slideInFromRight 0.28s cubic-bezier(0.4, 0, 0.2, 1)',
 	},
 	header: {
 		display: 'flex',

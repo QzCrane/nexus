@@ -1113,7 +1113,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '📜',
 		pluginType: 'system',
 		category: 'dev',
-		size: 87985,
+		size: 87677,
 		builtIn: false,
 		keywords: ["script","inject","脚本","注入"],
 		permissions: ["webNavigation","*://*/*"],

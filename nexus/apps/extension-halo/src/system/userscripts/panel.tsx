@@ -1,9 +1,9 @@
 // goal: UserScripts panel - full Tampermonkey feature parity
-// eff: Master toggle, script list, editor page, import/export, templates, animated transitions
+// eff: Master toggle, script list, editor page, import/export, templates, horizontal slide animations
 
 import React, { useEffect } from 'react';
 import { useOverlay } from '../../components/ui/overlay';
-import { AnimatedTransition } from '../../components/ui/animated-transition';
+import { SimpleTransition } from '../../components/ui/animated-transition';
 import { useTranslation } from '../../i18n';
 import { styles } from './styles';
 import { ScriptItem } from './components/ScriptItem';
@@ -61,7 +61,7 @@ export const UserScriptsPanel: React.FC = () => {
 	}, [modalMode, exportData]);
 
 	// Check if we were redirected here to edit a specific script
-	React.useEffect(() => {
+	useEffect(() => {
 		const scriptId = sessionStorage.getItem('halo_edit_script');
 		if (!scriptId || scripts.length === 0) return;
 		
@@ -78,23 +78,32 @@ export const UserScriptsPanel: React.FC = () => {
 		}
 	}, [scripts, handleEdit]);
 
-	// Styles for full-bleed editor layout
-	const editorContainerStyle: React.CSSProperties = {
-		position: 'absolute',
-		top: 0,
-		left: 0,
-		right: 0,
-		bottom: 0,
-		margin: '-12px -12px 0 -12px',
-		height: 'calc(100% + 12px)',
-		display: 'flex',
-		flexDirection: 'column',
-		background: 'var(--halo-bg)',
-		zIndex: 10,
-	};
+	// Render editor full-bleed when active (break out of parent padding)
+	if (showEditor) {
+		return (
+			<div style={{ 
+				// Break out of ToolPanelRenderer's 12px padding
+				margin: '-12px -12px 0 -12px',
+				width: 'calc(100% + 24px)',
+				height: 'calc(100% + 12px)',
+				display: 'flex',
+				flexDirection: 'column',
+				background: 'var(--halo-bg)',
+				overflow: 'hidden',
+			}}>
+				<ScriptEditorPage
+					form={editForm}
+					onChange={setEditForm}
+					onSave={handleSave}
+					onCancel={handleCancel}
+					isEdit={!!editingId}
+					t={t}
+				/>
+			</div>
+		);
+	}
 
-	// List page content
-	const listContent = (
+	return (
 		<div style={styles.wrapper}>
 			{/* Master Toggle & Settings */}
 			<div style={{ ...styles.masterCard, ...(globalEnabled ? styles.masterCardActive : {}), flexDirection: 'row', justifyContent: 'space-between', paddingRight: '12px' }}>
@@ -202,35 +211,6 @@ export const UserScriptsPanel: React.FC = () => {
 					))}
 				</div>
 			)}
-		</div>
-	);
-
-	return (
-		<div style={{ position: 'relative', width: '100%', height: '100%' }}>
-			{/* List Page - always mounted */}
-			<AnimatedTransition 
-				show={!showEditor} 
-				type="fade"
-				keepMounted
-			>
-				{listContent}
-			</AnimatedTransition>
-
-			{/* Editor Page - slides up from bottom */}
-			<AnimatedTransition 
-				show={showEditor} 
-				type="slideUp"
-				style={editorContainerStyle}
-			>
-				<ScriptEditorPage
-					form={editForm}
-					onChange={setEditForm}
-					onSave={handleSave}
-					onCancel={handleCancel}
-					isEdit={!!editingId}
-					t={t}
-				/>
-			</AnimatedTransition>
 		</div>
 	);
 };
