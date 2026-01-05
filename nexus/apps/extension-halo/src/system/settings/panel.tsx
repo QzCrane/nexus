@@ -12,6 +12,8 @@ import { styles } from './panel.styles';
 import { useOverlay } from '../../components/ui/overlay';
 import { AppearanceSettings } from './AppearanceSettings';
 import { InterfaceSettings } from './InterfaceSettings';
+import { DarkModePanel } from '../../components/settings/internal/dark-mode/panel';
+import { toggleDarkMode, enableDarkMode, disableDarkMode } from '../../components/settings/internal/dark-mode/core';
 
 const logger = createLogger('Settings', 'HALO');
 

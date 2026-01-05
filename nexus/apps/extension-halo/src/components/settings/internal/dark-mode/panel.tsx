@@ -2,7 +2,7 @@
 // inv: all darkreader config options must be visible and adjustable
 
 import React, { useState, useCallback } from 'react';
-import { useTranslation } from '../../i18n';
+import { useTranslation } from '../../../../i18n';
 import { Card } from '@nexus/ui-kit';
 import type { DarkModeConfig, DarkModeFixes } from './core';
 import { DEFAULT_CONFIG, DEFAULT_FIXES, DARK_MODE_PRESETS, type DarkModePreset } from './core';
@@ -23,16 +23,33 @@ const Slider = ({ label, value, min, max, onChange }: {
 	label: string; value: number; min: number; max: number;
 	onChange: (v: number) => void;
 }) => (
-	<div style={{ marginBottom: '10px' }}>
-		<div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '4px' }}>
-			<span style={{ color: '#aaa' }}>{label}</span>
-			<span style={{ color: '#fff', fontWeight: '500' }}>{value}</span>
+	<div style={{ marginBottom: '16px' }}>
+		<div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '8px' }}>
+			<span style={{ color: 'var(--halo-text-secondary)', fontWeight: 500 }}>{label}</span>
+			<span style={{ color: 'var(--halo-text)', fontWeight: 600, fontFamily: 'monospace' }}>{value}</span>
 		</div>
-		<input
-			type="range" min={min} max={max} value={value}
-			onChange={(e) => onChange(Number(e.target.value))}
-			style={{ width: '100%', height: '4px', cursor: 'pointer' }}
-		/>
+		<div style={{ position: 'relative', height: '6px', width: '100%', display: 'flex', alignItems: 'center' }}>
+			<input
+				type="range" min={min} max={max} value={value}
+				onChange={(e) => onChange(Number(e.target.value))}
+				style={{
+					width: '100%', height: '4px', cursor: 'pointer', appearance: 'none',
+					background: 'var(--halo-bg-tertiary)', borderRadius: '2px', outline: 'none',
+				}}
+				className="halo-range"
+			/>
+			<style>{`
+				.halo-range::-webkit-slider-thumb {
+					-webkit-appearance: none; appearance: none;
+					width: 14px; height: 14px; border-radius: 50%;
+					background: var(--halo-accent);
+					box-shadow: 0 0 0 2px var(--halo-bg), 0 2px 4px rgba(0,0,0,0.1);
+					cursor: pointer; transition: transform 0.1s;
+				}
+				.halo-range::-webkit-slider-thumb:hover { transform: scale(1.1); }
+				.halo-range::-webkit-slider-thumb:active { transform: scale(0.95); }
+			`}</style>
+		</div>
 	</div>
 );
 
@@ -40,13 +57,25 @@ const Slider = ({ label, value, min, max, onChange }: {
 const ColorInput = ({ label, value, onChange }: {
 	label: string; value: string; onChange: (v: string) => void;
 }) => (
-	<div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-		<input
-			type="color" value={value}
-			onChange={(e) => onChange(e.target.value)}
-			style={{ width: '28px', height: '28px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-		/>
-		<span style={{ fontSize: '11px', color: '#aaa' }}>{label}</span>
+	<div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', padding: '4px 0' }}>
+		<div style={{ 
+			width: '32px', height: '32px', borderRadius: '8px', overflow: 'hidden', 
+			border: '1px solid var(--halo-border)', position: 'relative',
+			boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+		}}>
+			<input
+				type="color" value={value}
+				onChange={(e) => onChange(e.target.value)}
+				style={{ 
+					width: '150%', height: '150%', border: 'none', padding: 0, margin: '-25%', 
+					cursor: 'pointer', background: 'none' 
+				}}
+			/>
+		</div>
+		<span style={{ fontSize: '12px', color: 'var(--halo-text-secondary)', fontWeight: 500 }}>{label}</span>
+		<span style={{ marginLeft: 'auto', fontSize: '10px', fontFamily: 'monospace', color: 'var(--halo-text-muted)' }}>
+			{value.toUpperCase()}
+		</span>
 	</div>
 );
 
@@ -65,7 +94,7 @@ export const DarkModePanel: React.FC<Props> = ({
 	return (
 		<Card variant="outlined" padding="sm">
 			{/* Preset Buttons */}
-			<div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', marginBottom: '12px' }}>
+			<div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '20px' }}>
 				{(Object.keys(DARK_MODE_PRESETS) as DarkModePreset[]).map((key) => {
 					const labels: Record<string, string> = {
 						default: t('darkMode.presetDefault', { defaultValue: 'Default' }),
@@ -73,14 +102,23 @@ export const DarkModePanel: React.FC<Props> = ({
 						warm: t('darkMode.presetWarm', { defaultValue: 'Warm' }),
 						dim: t('darkMode.presetDim', { defaultValue: 'Dim' }),
 					};
+					// Simple heuristic to check if current config roughly matches preset
+					const isSelected = mergedConfig.brightness === DARK_MODE_PRESETS[key].brightness && 
+									   mergedConfig.contrast === DARK_MODE_PRESETS[key].contrast &&
+									   mergedConfig.sepia === DARK_MODE_PRESETS[key].sepia;
+
 					return (
 					<button
 						key={key}
 						onClick={() => onPresetSelect(key)}
 						style={{
-							padding: '6px 4px', fontSize: '10px', fontWeight: '500',
-							border: '1px solid #444', borderRadius: '4px',
-							background: '#2a2a2a', color: '#ccc', cursor: 'pointer',
+							padding: '6px 12px', fontSize: '11px', fontWeight: 600,
+							border: isSelected ? '1px solid var(--halo-accent)' : '1px solid var(--halo-border)', 
+							borderRadius: '20px',
+							background: isSelected ? 'var(--halo-accent-alpha, rgba(99, 102, 241, 0.15))' : 'transparent', 
+							color: isSelected ? 'var(--halo-accent)' : 'var(--halo-text-secondary)', 
+							cursor: 'pointer',
+							transition: 'all 0.2s ease',
 						}}
 					>
 						{labels[key]}
@@ -103,18 +141,22 @@ export const DarkModePanel: React.FC<Props> = ({
 			<button
 				onClick={() => setShowAdvanced(!showAdvanced)}
 				style={{
-					width: '100%', padding: '8px', marginTop: '8px',
-					fontSize: '11px', color: '#888', background: 'transparent',
-					border: '1px dashed #444', borderRadius: '4px', cursor: 'pointer',
+					width: '100%', padding: '10px', marginTop: '12px',
+					fontSize: '11px', fontWeight: 500, color: 'var(--halo-text-muted)', 
+					background: 'transparent', border: '1px dashed var(--halo-border)', 
+					borderRadius: '8px', cursor: 'pointer',
+					display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+					transition: 'all 0.2s',
 				}}
 			>
-				{showAdvanced ? `▲ ${t('darkMode.hideAdvanced', { defaultValue: 'Hide Advanced' })}` : `▼ ${t('darkMode.showAdvanced', { defaultValue: 'Show Advanced' })}`}
+				<span>{showAdvanced ? '▲' : '▼'}</span>
+				{showAdvanced ? t('darkMode.hideAdvanced', { defaultValue: 'Hide Advanced' }) : t('darkMode.showAdvanced', { defaultValue: 'Show Advanced' })}
 			</button>
 
 			{/* Advanced Options */}
 			{showAdvanced && (
-				<div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #333' }}>
-					<div style={{ fontSize: '11px', fontWeight: '500', color: '#888', marginBottom: '10px' }}>
+				<div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--halo-border)' }}>
+					<div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--halo-text-secondary)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
 						{t('darkMode.themeColors', { defaultValue: 'Theme Colors' })}
 					</div>
 					<ColorInput label={t('darkMode.bgColor', { defaultValue: 'Background' })} value={mergedConfig.darkSchemeBackgroundColor}
@@ -126,7 +168,7 @@ export const DarkModePanel: React.FC<Props> = ({
 					<ColorInput label={t('darkMode.selectionColor', { defaultValue: 'Selection' })} value={mergedConfig.selectionColor}
 						onChange={(v) => updateConfig('selectionColor', v)} />
 
-					<div style={{ fontSize: '11px', fontWeight: '500', color: '#888', margin: '12px 0 8px' }}>
+					<div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--halo-text-secondary)', margin: '20px 0 10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
 						{t('darkMode.fixes', { defaultValue: 'Fixes (Site-Specific)' })}
 					</div>
 					<textarea
@@ -134,9 +176,10 @@ export const DarkModePanel: React.FC<Props> = ({
 						value={mergedFixes.css}
 						onChange={(e) => onFixesChange({ ...fixes, css: e.target.value })}
 						style={{
-							width: '100%', height: '60px', fontSize: '10px',
-							background: '#1a1a1a', color: '#ccc', border: '1px solid #444',
-							borderRadius: '4px', padding: '8px', resize: 'vertical',
+							width: '100%', height: '80px', fontSize: '11px', fontFamily: 'monospace',
+							background: 'var(--halo-bg-secondary)', color: 'var(--halo-text)', 
+							border: '1px solid var(--halo-border)', borderRadius: '8px', 
+							padding: '10px', resize: 'vertical', outline: 'none',
 						}}
 					/>
 				</div>
