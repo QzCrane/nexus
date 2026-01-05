@@ -2,7 +2,8 @@
 trigger: always_on
 ---
 
-## 必须阅读并遵守上下文工程文档！ ~/nexus/README.AI.md (入口); ~/nexus/docs/ai-rules.md (规则)
+## 必须阅读并遵守上下文工程文档！上下文工程唯一目的是让AI在一切情况下完美完成任务同时最小化上下文和token消耗
+~/nexus/README.AI.md (入口); ~/nexus/docs/ai-rules.md (规则)
 
 ## 当前上下文工程
 
