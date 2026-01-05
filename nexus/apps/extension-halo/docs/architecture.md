@@ -51,14 +51,16 @@ Registry 产出: `PLUGIN_REGISTRY` | `BACKGROUND_PLUGIN_IDS` | `get{Tool,Script,
 
 ## 动画系统 (v2.5.0)
 
-位置: `src/components/ui/animated-transition/`
+位置: `src/components/ui/animated-transition/` | `public/sidepanel.html`(keyframes)
 
-组件: `AnimatedTransition`(核心) | `PageTransition`(多页管理)
+组件: `SimpleTransition`(CSS 过渡) | `AnimatedTransition`(状态驱动,复杂场景)
 
-类型: `slide`(水平) | `slideUp/Down`(垂直) | `fade`(淡入淡出) | `scale`(缩放) | `none`(禁用)
+全局 Keyframes: `slideInFromRight` | `slideInFromLeft` | `fadeInUp`
 
 配置: `HaloSettings.enableAnimations`(开关) | `animationSpeed`(fast/normal/slow)
 
-特性: GPU 加速(transform/opacity) | keep-alive 支持 | 尊重 reduced-motion | 用户可配置
+实际使用:
 
-使用场景: Tab 切换(fade) | 子页面(slideUp) | Home↔Tool(现有 translateX 保留)
+- **Home↔Tool**: `LauncherLayout` 使用 `translateX` + CSS transition (0.3s)
+- **子页面**: `ScriptEditorPage` 使用 CSS animation `slideInFromRight` (0.28s)
+- **Tab 切换**: 暂无动画 (保持稳定性优先)
