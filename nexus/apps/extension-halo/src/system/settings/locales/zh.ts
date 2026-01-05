@@ -33,6 +33,16 @@ export const zh = {
 		actions: '操作',
 		resetAll: '重置所有设置',
 		version: '用 💜 打造',
+		// Animation settings
+		enableAnimations: '页面动画',
+		enableAnimationsDesc: '页面间平滑过渡效果',
+		animationSpeed: '动画速度',
+		animationSpeedDesc: '页面切换速度',
+		speed: {
+			fast: '快',
+			normal: '正常',
+			slow: '慢',
+		},
 	},
 	toolManager: {
 		title: '工具管理',

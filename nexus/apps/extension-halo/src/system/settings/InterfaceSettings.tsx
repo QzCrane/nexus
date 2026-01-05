@@ -102,7 +102,7 @@ export const InterfaceSettings: React.FC<InterfaceSettingsProps> = ({ settings, 
 								e.preventDefault();
 								e.stopPropagation();
 								const current = settings.spacing ?? 12;
-								const delta = e.deltaY > 0 ? -2 : 2; // Scroll DOWN (pos delta) -> Decrease value
+								const delta = e.deltaY > 0 ? -2 : 2;
 								const newVal = Math.min(Math.max(current + delta, 4), 24);
 								if (newVal !== current) onUpdate('spacing', newVal);
 							}}
@@ -111,6 +111,52 @@ export const InterfaceSettings: React.FC<InterfaceSettingsProps> = ({ settings, 
 						<span style={{ fontSize: '11px', color: 'var(--halo-text-muted)' }}>{t('settings.loose', { defaultValue: 'Loose' })}</span>
 					</div>
 				</div>
+
+				{/* Animation Settings */}
+				<div style={styles.row}>
+					<div>
+						<div style={styles.label}>{t('settings.enableAnimations', { defaultValue: 'Page Animations' })}</div>
+						<div style={styles.sublabel}>{t('settings.enableAnimationsDesc', { defaultValue: 'Smooth transitions between pages' })}</div>
+					</div>
+					<Toggle
+						checked={settings.enableAnimations ?? true}
+						onChange={(checked) => onUpdate('enableAnimations', checked)}
+					/>
+				</div>
+
+				{/* Animation Speed - only show when animations are enabled */}
+				{(settings.enableAnimations ?? true) && (
+					<div style={styles.row}>
+						<div>
+							<div style={styles.label}>{t('settings.animationSpeed', { defaultValue: 'Animation Speed' })}</div>
+							<div style={styles.sublabel}>{t('settings.animationSpeedDesc', { defaultValue: 'Speed of page transitions' })}</div>
+						</div>
+						<div style={{ display: 'flex', gap: '4px' }}>
+							{(['fast', 'normal', 'slow'] as const).map(speed => (
+								<button
+									key={speed}
+									onClick={() => onUpdate('animationSpeed', speed)}
+									style={{
+										padding: '4px 10px',
+										fontSize: '12px',
+										border: 'none',
+										borderRadius: '4px',
+										cursor: 'pointer',
+										background: settings.animationSpeed === speed 
+											? 'var(--halo-accent)' 
+											: 'var(--halo-surface-elevated)',
+										color: settings.animationSpeed === speed 
+											? 'white' 
+											: 'var(--halo-text-secondary)',
+										transition: 'all 0.15s ease',
+									}}
+								>
+									{t(`settings.speed.${speed}`, { defaultValue: speed.charAt(0).toUpperCase() + speed.slice(1) })}
+								</button>
+							))}
+						</div>
+					</div>
+				)}
 
 				{/* Header Shortcuts */}
 				<HeaderLayoutConfig 

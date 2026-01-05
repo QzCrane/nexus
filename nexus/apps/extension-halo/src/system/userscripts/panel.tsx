@@ -1,8 +1,9 @@
 // goal: UserScripts panel - full Tampermonkey feature parity
-// eff: Master toggle, script list, editor page, import/export, templates
+// eff: Master toggle, script list, editor page, import/export, templates, animated transitions
 
 import React, { useEffect } from 'react';
 import { useOverlay } from '../../components/ui/overlay';
+import { AnimatedTransition } from '../../components/ui/animated-transition';
 import { useTranslation } from '../../i18n';
 import { styles } from './styles';
 import { ScriptItem } from './components/ScriptItem';
@@ -16,26 +17,25 @@ import { UserscriptsTemplates } from './components/templates';
 import { matchesUrl } from './utils';
 
 export const UserScriptsPanel: React.FC = () => {
-    const { t } = useTranslation();
-    
-    const {
-        scripts, globalEnabled, currentUrl, hasPermission, 
-        loadScripts, handleRequestPermission, handleGlobalToggle, 
-        handleToggle, handleDelete, handleTest, handleMove,
-        toolbarConfig, handleToolbarConfig
-    } = useUserScripts();
+	const { t } = useTranslation();
+	
+	const {
+		scripts, globalEnabled, currentUrl, hasPermission, 
+		loadScripts, handleRequestPermission, handleGlobalToggle, 
+		handleToggle, handleDelete, handleTest, handleMove,
+		toolbarConfig, handleToolbarConfig
+	} = useUserScripts();
 
-    const {
-        showEditor, editingId, editForm, setEditForm, setShowEditor, setEditingId,
-        handleEdit, handleSave, handleCancel, loadTemplate 
-    } = useScriptEditor(loadScripts);
+	const {
+		showEditor, editingId, editForm, setEditForm, setShowEditor, setEditingId,
+		handleEdit, handleSave, handleCancel, loadTemplate 
+	} = useScriptEditor(loadScripts);
 
-    const { 
-        modalMode, setModalMode, exportData, handleExport, handleImport 
-    } = useImportExport(loadScripts);
+	const { 
+		modalMode, setModalMode, exportData, handleExport, handleImport 
+	} = useImportExport(loadScripts);
 
-    const overlay = useOverlay();
-    // Removed isSettingsOpen local state
+	const overlay = useOverlay();
 
 	// Sync modalMode with Overlay
 	useEffect(() => {
@@ -63,12 +63,10 @@ export const UserScriptsPanel: React.FC = () => {
 	// Check if we were redirected here to edit a specific script
 	React.useEffect(() => {
 		const scriptId = sessionStorage.getItem('halo_edit_script');
-		if (!scriptId || scripts.length === 0) return; // Wait until scripts are loaded
+		if (!scriptId || scripts.length === 0) return;
 		
-		// Always clear after scripts are loaded (prevents stale ID from previous sessions)
 		sessionStorage.removeItem('halo_edit_script');
 		
-		// Try to find by: 1) exact id, 2) name, 3) saatToolId (for official SaaT scripts)
 		const targetScript = scripts.find(s => 
 			s.id === scriptId || 
 			s.name === scriptId || 
@@ -78,31 +76,25 @@ export const UserScriptsPanel: React.FC = () => {
 		if (targetScript) {
 			handleEdit(targetScript);
 		}
-		// If not found, the ID is invalid or script was deleted - silently ignored
 	}, [scripts, handleEdit]);
 
-	// Render editor page as full sub-page (break out of parent padding for full-bleed layout)
-	if (showEditor) {
-		return (
-			<div style={{ 
-				margin: '-12px -12px 0 -12px', // Compensate for ToolPanelRenderer padding
-				height: 'calc(100% + 12px)',   // Restore height lost by negative margin
-				display: 'flex',
-				flexDirection: 'column',
-			}}>
-				<ScriptEditorPage
-					form={editForm}
-					onChange={setEditForm}
-					onSave={handleSave}
-					onCancel={handleCancel}
-					isEdit={!!editingId}
-					t={t}
-				/>
-			</div>
-		);
-	}
+	// Styles for full-bleed editor layout
+	const editorContainerStyle: React.CSSProperties = {
+		position: 'absolute',
+		top: 0,
+		left: 0,
+		right: 0,
+		bottom: 0,
+		margin: '-12px -12px 0 -12px',
+		height: 'calc(100% + 12px)',
+		display: 'flex',
+		flexDirection: 'column',
+		background: 'var(--halo-bg)',
+		zIndex: 10,
+	};
 
-	return (
+	// List page content
+	const listContent = (
 		<div style={styles.wrapper}>
 			{/* Master Toggle & Settings */}
 			<div style={{ ...styles.masterCard, ...(globalEnabled ? styles.masterCardActive : {}), flexDirection: 'row', justifyContent: 'space-between', paddingRight: '12px' }}>
@@ -123,7 +115,7 @@ export const UserScriptsPanel: React.FC = () => {
 					</div>
 				</div>
 				
-				{/* Settings Icon (Fixed Right) */}
+				{/* Settings Icon */}
 				<button 
 					style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px', padding: '4px', opacity: 0.7 }}
 					onClick={() => {
@@ -147,7 +139,7 @@ export const UserScriptsPanel: React.FC = () => {
 				</button>
 			</div>
 
-			{/* Configurable Toolbar */}
+			{/* Toolbar */}
 			<UserscriptsToolbar 
 				config={toolbarConfig} 
 				onAdd={() => { setEditingId(null); setShowEditor(true); }}
@@ -210,8 +202,35 @@ export const UserScriptsPanel: React.FC = () => {
 					))}
 				</div>
 			)}
+		</div>
+	);
 
-			{/* Modals are handled via OverlayProvider now */}
+	return (
+		<div style={{ position: 'relative', width: '100%', height: '100%' }}>
+			{/* List Page - always mounted */}
+			<AnimatedTransition 
+				show={!showEditor} 
+				type="fade"
+				keepMounted
+			>
+				{listContent}
+			</AnimatedTransition>
+
+			{/* Editor Page - slides up from bottom */}
+			<AnimatedTransition 
+				show={showEditor} 
+				type="slideUp"
+				style={editorContainerStyle}
+			>
+				<ScriptEditorPage
+					form={editForm}
+					onChange={setEditForm}
+					onSave={handleSave}
+					onCancel={handleCancel}
+					isEdit={!!editingId}
+					t={t}
+				/>
+			</AnimatedTransition>
 		</div>
 	);
 };

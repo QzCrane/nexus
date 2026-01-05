@@ -48,3 +48,17 @@ Registry 产出: `PLUGIN_REGISTRY` | `BACKGROUND_PLUGIN_IDS` | `get{Tool,Script,
 使用: `t('tools.${toolId}.name')` | `t('myTool.action.save')`
 
 优势: 解决合并冲突 | 兼容 i18next 标准查找
+
+## 动画系统 (v2.5.0)
+
+位置: `src/components/ui/animated-transition/`
+
+组件: `AnimatedTransition`(核心) | `PageTransition`(多页管理)
+
+类型: `slide`(水平) | `slideUp/Down`(垂直) | `fade`(淡入淡出) | `scale`(缩放) | `none`(禁用)
+
+配置: `HaloSettings.enableAnimations`(开关) | `animationSpeed`(fast/normal/slow)
+
+特性: GPU 加速(transform/opacity) | keep-alive 支持 | 尊重 reduced-motion | 用户可配置
+
+使用场景: Tab 切换(fade) | 子页面(slideUp) | Home↔Tool(现有 translateX 保留)

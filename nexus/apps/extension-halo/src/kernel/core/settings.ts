@@ -4,6 +4,9 @@ export type ThemeMode = 'dark' | 'light' | 'system';
 // IconSize is now a number (px)
 export type IconSize = number;
 
+/** Animation speed presets */
+export type AnimationSpeed = 'fast' | 'normal' | 'slow';
+
 export interface HaloSettings {
 	theme: ThemeMode;
 	accentColor: string;
@@ -16,6 +19,9 @@ export interface HaloSettings {
 	toolOrder: Record<string, string[]>;
 	categoryOrder: string[];
 	headerLayout: string[]; // IDs of tools to show in header
+	// Animation settings
+	enableAnimations: boolean; // Master toggle for page transitions
+	animationSpeed: AnimationSpeed; // Animation speed preset
 }
 
 export const DEFAULT_SETTINGS: HaloSettings = {
@@ -29,7 +35,10 @@ export const DEFAULT_SETTINGS: HaloSettings = {
 	pinnedTools: [],
 	toolOrder: {},
 	categoryOrder: ['active', 'general', 'dev', 'efficiency', 'visual', 'ai', 'security', 'media', 'browser'],
-	headerLayout: ['module-store', 'extension-manager', 'resource-monitor', 'permissions', 'userscripts', 'settings'], // IDs of tools to show in header
+	headerLayout: ['module-store', 'extension-manager', 'resource-monitor', 'permissions', 'userscripts', 'settings'],
+	// Animation defaults
+	enableAnimations: true,
+	animationSpeed: 'normal',
 };
 
 export const ACCENT_COLORS = [
