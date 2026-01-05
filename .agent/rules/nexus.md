@@ -2,19 +2,36 @@
 trigger: always_on
 ---
 
-## 必须阅读并遵守上下文工程文档！上下文工程唯一目的是让AI在一切情况下完美完成任务同时最小化上下文和token消耗
-~/nexus/README.AI.md (入口); ~/nexus/docs/ai-rules.md (规则)
+## 必须阅读并遵守上下文工程文档！上下文工程唯一目的是让 AI 在一切情况下完美完成任务同时最小化上下文和 token 消耗
 
 ## 当前上下文工程
 
-入口层 (2): ~/.agent/rules/nexus.md, ~/nexus/README.AI.md
-规划层 (3): ~/nexus/plan.md, ~/nexus/apps/_/plan.md
-规则层 (2): ~/nexus/docs/ai-rules.md, ~/nexus/docs/business-model.md
-架构层 (9):
-~/nexus/apps/extension-halo/docs/architecture.md、research.md、market-research_.md
-~/nexus/apps/extension-spectra/docs/policy-decision.md, protocols.md, cors-data-flow.md
-模块层 (16): .ai-context.md
-工作流 (7): ~/.agent/workflows/\*.md
+Project_Root/
+│
+├── .agent/ # [智能体配置层]
+│ ├── nexus.md # 本 md
+│ └── workflows/ # 7 个 SOP 文件
+│
+└── nexus/ # [工程数据与知识层]
+├── README.AI.md # 入口门户
+├── plan.md # 总规划
+├── docs/
+│ ├── ai-rules.md # 总规则
+│ └── business-model.md
+└── apps/
+├── extension-halo/
+│ ├── plan.md
+│ └── docs/
+│ ├── architecture.md
+│ ├── research.md
+│ └── feature-gap-analysis.md
+└── extension-spectra/
+├── plan.md
+└── docs/
+├── policy-decision.md
+├── protocols.md
+└── cors-data-flow.md
+模块层 (34): .ai-context.md
 
 ## 架构
 
