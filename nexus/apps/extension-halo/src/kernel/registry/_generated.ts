@@ -741,7 +741,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '↕️',
 		pluginType: 'tool',
 		category: 'efficiency',
-		size: 31832,
+		size: 31841,
 		builtIn: false,
 		keywords: [],
 		permissions: undefined,

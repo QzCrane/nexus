@@ -58,8 +58,20 @@ export async function init(): Promise<void> {
 
 	configure(settings.animationTime, settings.easing);
 
-	if (settings.enabled) {
-		attachListeners();
+	// Delay attaching listeners to ensure site's event handlers are registered first
+	// This allows defaultPrevented check to work correctly (e.g., video site space key)
+	const delayedAttach = () => {
+		if (settings.enabled) {
+			attachListeners();
+		}
+		console.log(LOG_TAG, 'Init');
+	};
+
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', delayedAttach, { once: true });
+	} else {
+		// Page already loaded, use small delay to ensure site scripts have run
+		setTimeout(delayedAttach, 100);
 	}
 
 	chrome.storage.onChanged.addListener((changes, area) => {
@@ -67,7 +79,4 @@ export async function init(): Promise<void> {
 			updateSettings(changes[STORAGE_KEY].newValue);
 		}
 	});
-
-
-	console.log(LOG_TAG, 'Init');
 }

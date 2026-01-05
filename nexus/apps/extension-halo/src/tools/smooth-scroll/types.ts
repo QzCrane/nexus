@@ -39,10 +39,10 @@ export const DEFAULT_SETTINGS: ScrollSettings = {
 export const STORAGE_KEY = 'HALO_SMOOTH_SCROLL_SETTINGS';
 
 export const EASING_OPTIONS = [
-	{ value: 'linear', label: 'Linear' },
-	{ value: 'ease', label: 'Ease' },
-	{ value: 'ease-out', label: 'Ease Out' },
-	{ value: 'spring', label: 'Spring' },
+	{ value: 'linear', i18nKey: 'linear' },
+	{ value: 'ease', i18nKey: 'ease' },
+	{ value: 'ease-out', i18nKey: 'easeOut' },
+	{ value: 'spring', i18nKey: 'spring' },
 ] as const;
 
 // Preset profiles

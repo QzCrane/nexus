@@ -67,8 +67,13 @@ export function onKeydown(e: KeyboardEvent): void {
 	switch (e.key) {
 		case 'ArrowDown': deltaY = settings.arrowKeyStep; break;
 		case 'ArrowUp': deltaY = -settings.arrowKeyStep; break;
-		case 'PageDown': case ' ': deltaY = pageHeight; break;
+		case 'PageDown': deltaY = pageHeight; break;
 		case 'PageUp': deltaY = -pageHeight; break;
+		case ' ':
+			// Space key: skip if page has video elements (let site control video)
+			if (document.querySelector('video')) return;
+			deltaY = pageHeight;
+			break;
 		default: return;
 	}
 

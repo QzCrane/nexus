@@ -68,7 +68,7 @@ export const ScrollParameters: React.FC<ScrollParametersProps> = ({ settings, up
 								}}
 								onClick={() => settings.enabled && updateSetting('easing', opt.value)}
 							>
-								{t(`smoothScroll.easingOptions.${opt.value}` as any)}
+								{t(`smoothScroll.easingOptions.${opt.i18nKey}` as any)}
 							</button>
 						))}
 					</div>
