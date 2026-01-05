@@ -1,12 +1,10 @@
-// goal: Tool manager panel UI
-// eff: Enable/disable, pin/unpin, category filter, search. Logic split into ToolManagerItem.tsx and ToolManager.styles.ts
-
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../i18n';
 import type { ToolCategory } from '../i18n/types';
 import type { ToolMeta, ToolPrefs } from '../kernel';
 import type { SortMode } from '../kernel';
+import { TAXONOMY } from '../kernel/registry/taxonomy';
 import { styles } from './ToolManager.styles';
 import { ToolManagerItem } from './ToolManagerItem';
 
@@ -26,10 +24,6 @@ interface ToolManagerProps {
   onDisableAll: () => void;
 }
 
-const CATEGORY_OPTIONS: (ToolCategory | 'all' | 'pinned')[] = [
-  'all', 'pinned', 'general', 'dev', 'efficiency', 'visual',
-];
-
 export const ToolManagerPanel: React.FC<ToolManagerProps> = ({
   prefs,
   filteredTools,
@@ -44,6 +38,16 @@ export const ToolManagerPanel: React.FC<ToolManagerProps> = ({
 }) => {
   const { t } = useTranslation();
 
+  // SSOT: Derive categories from Kernel Taxonomy
+  const categories: (ToolCategory | 'all' | 'pinned')[] = useMemo(() => {
+    const coreCats = TAXONOMY
+      .filter(c => c.id !== 'active') // 'active' is a runtime state, not a persistent filter usually
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map(c => c.id);
+    
+    return ['all', 'pinned', ...coreCats];
+  }, []);
+
   const getPrefs = useCallback((id: string): ToolPrefs => {
     return prefs[id] || { enabled: true, pinned: false, usageCount: 0 };
   }, [prefs]);
@@ -51,7 +55,11 @@ export const ToolManagerPanel: React.FC<ToolManagerProps> = ({
   const getCategoryLabel = (cat: ToolCategory | 'all' | 'pinned'): string => {
     if (cat === 'all') return t('common.all');
     if (cat === 'pinned') return t('common.favorites');
-    return t(`categories.${cat}`);
+    
+    const tax = TAXONOMY.find(c => c.id === cat);
+    if (tax) return t(tax.i18nKey);
+    
+    return t(`categories.${cat}`); // Fallback
   };
 
   return (
@@ -70,17 +78,20 @@ export const ToolManagerPanel: React.FC<ToolManagerProps> = ({
       </div>
 
       {/* Search */}
-      <input
-        style={styles.searchInput}
-        type="text"
-        value={searchQuery}
-        onChange={(e) => onSearchChange(e.target.value)}
-        placeholder={t('toolManager.searchPlaceholder')}
-      />
+      <div style={styles.searchWrapper}>
+        <span style={styles.searchIcon}>🔍</span>
+        <input
+          style={styles.searchInput}
+          type="text"
+          value={searchQuery}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder={t('toolManager.searchPlaceholder')}
+        />
+      </div>
 
       {/* Category Filters */}
       <div style={styles.filters}>
-        {CATEGORY_OPTIONS.map((cat) => (
+        {categories.map((cat) => (
           <button
             key={cat}
             style={{
@@ -89,13 +100,16 @@ export const ToolManagerPanel: React.FC<ToolManagerProps> = ({
             }}
             onClick={() => onCategoryChange(cat)}
           >
-            {getCategoryLabel(cat)}
+           {/* Add icons if available in Taxonomy */}
+           {cat === 'all' && '🖇️ '}
+           {cat === 'pinned' && '⭐ '}
+           {TAXONOMY.find(c => c.id === cat)?.icon} {getCategoryLabel(cat)}
           </button>
         ))}
       </div>
 
       {/* Tool List */}
-      <Card variant="default" padding="sm">
+      <Card variant="default" padding="none" style={styles.cardOverride}>
         <div style={styles.list}>
           {filteredTools.length > 0 ? (
             filteredTools.map((tool) => (

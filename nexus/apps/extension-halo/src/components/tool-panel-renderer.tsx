@@ -6,10 +6,7 @@ import { Card } from '@nexus/ui-kit';
 import type { ToolId, HaloSettings } from '../kernel';
 import { useSmoothWheel } from '../kernel/hooks/use-smooth-wheel';
 import { LazyToolRenderer } from './lazy-tool-loader';
-
-// Animation config
-const DURATION = 250;
-const EASING = 'cubic-bezier(0.4, 0.0, 0.2, 1)';
+import { ANIMATION_CONSTANTS } from '../kernel/core/animations';
 
 const styles = {
 	placeholder: {
@@ -58,7 +55,7 @@ export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({
 			setAnimState('enter');
 			setRenderedTool(activeTool);
 			
-			const timer = setTimeout(() => setAnimState('idle'), DURATION);
+			const timer = setTimeout(() => setAnimState('idle'), ANIMATION_CONSTANTS.DURATION.DEFAULT);
 			return () => clearTimeout(timer);
 		} else {
 			// Direct switch without animation (initial mount)
@@ -86,7 +83,9 @@ export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({
 	// Build animation styles - applies to ALL tools now
 	const slideStyle: React.CSSProperties = {
 		position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-		animation: animState === 'enter' ? `haloSlideIn ${DURATION}ms ${EASING} forwards` : 'none',
+		animation: animState === 'enter' 
+      ? `haloSlideIn ${ANIMATION_CONSTANTS.DURATION.DEFAULT}ms ${ANIMATION_CONSTANTS.EASING.DEFAULT} forwards` 
+      : 'none',
 		background: 'var(--halo-bg)',
 	};
 

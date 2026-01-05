@@ -2,10 +2,7 @@
 // eff: Standalone component for horizontal slide enter/exit transitions
 
 import React, { useRef, useEffect, useState } from 'react';
-
-// Animation constants
-const DEFAULT_DURATION = 280;
-const EASING = 'cubic-bezier(0.4, 0.0, 0.2, 1)';
+import { ANIMATION_CONSTANTS } from '../../../kernel/core/animations';
 
 interface SlidePageProps {
 	/** Whether this page is currently active */
@@ -34,7 +31,7 @@ interface SlidePageProps {
 export const SlidePage: React.FC<SlidePageProps> = ({
 	show,
 	direction = 'right',
-	duration = DEFAULT_DURATION,
+	duration = ANIMATION_CONSTANTS.DURATION.DEFAULT,
 	keepMounted = false,
 	style,
 	children,
@@ -84,7 +81,7 @@ export const SlidePage: React.FC<SlidePageProps> = ({
 				top: 0, left: 0, width: '100%', height: '100%',
 				transform,
 				opacity: isActive ? 1 : 0,
-				transition: `transform ${duration}ms ${EASING}, opacity ${duration}ms ${EASING}`,
+				transition: `transform ${duration}ms ${ANIMATION_CONSTANTS.EASING.DEFAULT}, opacity ${duration}ms ${ANIMATION_CONSTANTS.EASING.DEFAULT}`,
 				pointerEvents: show ? 'auto' : 'none',
 				// Fix text blurriness: avoid willChange, use backfaceVisibility
 				backfaceVisibility: 'hidden',

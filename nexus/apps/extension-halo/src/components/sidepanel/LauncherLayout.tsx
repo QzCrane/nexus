@@ -1,10 +1,8 @@
-// goal: Modern Mobile-style Launcher layout with slide transitions
-// eff: Pure content-area manager, Header is handled by SidePanel.tsx
-
 import React, { useState } from 'react';
 import type { LayoutProps } from './types';
 import { LauncherHomePage } from './LauncherHomePage';
 import { LauncherToolPage } from './LauncherToolPage';
+import { ANIMATION_CONSTANTS } from '../../kernel/core/animations';
 
 export const LauncherLayout: React.FC<LayoutProps> = ({
 	activeTool,
@@ -40,7 +38,7 @@ export const LauncherLayout: React.FC<LayoutProps> = ({
 				width: '200%',
 				height: '100%',
 				transform: showPage2 ? 'translateX(-50%)' : 'translateX(0)',
-				transition: 'transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)',
+				transition: `transform ${ANIMATION_CONSTANTS.DURATION.DEFAULT}ms ${ANIMATION_CONSTANTS.EASING.DEFAULT}`,
 				minHeight: 0,
 			}}>
 				{/* PAGE 1: HOME */}

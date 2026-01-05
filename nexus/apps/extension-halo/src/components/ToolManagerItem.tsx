@@ -31,17 +31,14 @@ export const ToolManagerItem: React.FC<ToolManagerItemProps> = ({
         <div style={styles.itemName}>
           {t(`tools.${tool.id}.name`)}
           {prefs.pinned && (
-            <span style={{
-              ...styles.badge,
-              background: 'var(--halo-accent-alpha)',
-              color: 'var(--halo-accent)',
-            }}>⭐</span>
+             <span style={{ fontSize: '10px', marginLeft: '4px' }}>⭐</span>
           )}
           {!isReady && (
             <span style={{
               ...styles.badge,
               background: 'var(--halo-warning-alpha, rgba(245, 158, 11, 0.2))',
               color: 'var(--halo-warning, #f59e0b)',
+              marginLeft: '6px'
             }}>{t('common.comingSoon')}</span>
           )}
         </div>
@@ -50,11 +47,15 @@ export const ToolManagerItem: React.FC<ToolManagerItemProps> = ({
 
       {/* Pin button */}
       <button
-        style={styles.pinBtn}
+        style={{
+          ...styles.pinBtn,
+          color: prefs.pinned ? 'var(--halo-accent)' : 'var(--halo-text-muted)',
+          opacity: prefs.pinned ? 1 : 0.6,
+        }}
         onClick={() => onTogglePinned(tool.id)}
         title={prefs.pinned ? t('toolManager.unpin') : t('toolManager.pin')}
       >
-        {prefs.pinned ? '⭐' : '☆'}
+        {prefs.pinned ? '★' : '☆'}
       </button>
 
       {/* Enable toggle */}
