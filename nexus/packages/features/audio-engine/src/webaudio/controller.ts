@@ -53,6 +53,10 @@ export class WebAudioController {
 		this.onCorsSuccess = onSuccess;
 	}
 
+	setSkipCorsCheck(skip: boolean): void {
+		this.skipCorsCheck = skip;
+	}
+
 	scanAndAttach(): number {
 		if (!this.ctx) return 0;
 		let attached = 0;
