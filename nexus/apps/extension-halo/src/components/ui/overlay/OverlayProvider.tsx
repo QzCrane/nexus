@@ -1,92 +1,9 @@
 import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
 import { ModalConfig, ToastConfig, OverlayContextType } from './types';
 import { useTranslation } from '../../../i18n';
+import { styles } from './OverlayProvider.styles';
 
 const OverlayContext = createContext<OverlayContextType | undefined>(undefined);
-
-const styles = {
-	overlay: {
-		position: 'fixed' as const,
-		top: 0, left: 0, right: 0, bottom: 0,
-		background: 'rgba(0, 0, 0, 0.4)',
-		backdropFilter: 'blur(4px)',
-		zIndex: 9999, // Ensure it's on top of everything
-		display: 'flex',
-		alignItems: 'center',
-		justifyContent: 'center',
-		padding: '24px',
-		// Reset any potential transforms from parents if rendered in portal (but here we wrapping root)
-	},
-	modalContent: {
-		background: 'var(--halo-bg-panel, #ffffff)', // Fallback to white -> ensure visibility
-		borderRadius: '16px',
-		padding: '24px',
-		width: '100%',
-		maxWidth: '320px',
-		boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-		border: '1px solid var(--halo-border, rgba(0,0,0,0.1))',
-		animation: 'halo-pop-in 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
-	},
-	title: {
-		fontSize: '16px',
-		fontWeight: 600,
-		marginBottom: '8px',
-		color: 'var(--halo-text, #202020)',
-	},
-	message: {
-		fontSize: '14px',
-		color: 'var(--halo-text, #404040)', // Changed from muted to normal text
-		marginBottom: '20px',
-		lineHeight: 1.5,
-		whiteSpace: 'pre-wrap' as const,
-	},
-	actions: {
-		display: 'flex',
-		gap: '12px',
-		justifyContent: 'flex-end',
-	},
-	btn: {
-		padding: '8px 16px',
-		borderRadius: '8px',
-		fontSize: '13px',
-		fontWeight: 500,
-		cursor: 'pointer',
-		border: 'none',
-		transition: 'all 0.2s',
-	},
-	btnCancel: {
-		background: 'var(--halo-bg-secondary, #f0f0f0)',
-		color: 'var(--halo-text, #333)',
-	},
-	btnConfirm: {
-		background: 'var(--halo-primary, #6366f1)',
-		color: 'white',
-	},
-	toastContainer: {
-		position: 'fixed' as const,
-		bottom: '24px',
-		left: '50%',
-		transform: 'translateX(-50%)',
-		zIndex: 10000,
-		display: 'flex',
-		flexDirection: 'column' as const,
-		gap: '8px',
-		pointerEvents: 'none' as const,
-	},
-	toast: {
-		background: 'rgba(0, 0, 0, 0.8)',
-		color: 'white',
-		padding: '10px 20px',
-		borderRadius: '20px',
-		fontSize: '13px',
-		boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-		backdropFilter: 'blur(8px)',
-		animation: 'halo-slide-up 0.3s ease-out',
-		display: 'flex',
-		alignItems: 'center',
-		gap: '8px',
-	}
-};
 
 export const OverlayProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 	const { t } = useTranslation();
@@ -124,6 +41,19 @@ export const OverlayProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
 	return (
 		<OverlayContext.Provider value={{ showModal, closeModal, showToast }}>
+			{/* Global Animation Definitions */}
+			<style>{`
+				@keyframes haloFadeIn { from { opacity: 0; } to { opacity: 1; } }
+				@keyframes haloPopIn { 
+					from { opacity: 0; transform: scale(0.95) translateY(10px); } 
+					to { opacity: 1; transform: scale(1) translateY(0); } 
+				}
+				@keyframes haloSlideUp { 
+					from { opacity: 0; transform: translateY(20px) scale(0.95); } 
+					to { opacity: 1; transform: translateY(0) scale(1); } 
+				}
+			`}</style>
+
 			{children}
 			
 			{/* Global Modal Overlay */}
