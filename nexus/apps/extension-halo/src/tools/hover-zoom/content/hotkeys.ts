@@ -39,7 +39,7 @@ export class HotkeyManager {
 				break;
 
 			case 's':
-				this.viewer.downloadImage();
+				this.viewer.downloadMedia();
 				e.preventDefault();
 				break;
 

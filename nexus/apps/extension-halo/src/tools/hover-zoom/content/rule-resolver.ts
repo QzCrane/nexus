@@ -49,8 +49,11 @@ export async function resolveEnhanced(
 				const result = await rule.resolve(ctx);
 				if (result) {
 					console.log(LOG_TAG, `Rule "${rule.id}" matched`, result);
+					// Map gallery type to video for compatibility
+					const mappedType: 'image' | 'video' | 'svg' =
+						result.type === 'gallery' ? 'image' : result.type;
 					return {
-						type: result.type,
+						type: mappedType,
 						url: result.sources[0],
 						audioUrl: result.audioUrl,
 						headers: result.headers,

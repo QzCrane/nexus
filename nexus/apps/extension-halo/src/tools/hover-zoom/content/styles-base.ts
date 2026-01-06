@@ -28,7 +28,8 @@ export const BASE_STYLES = `
     transform: scale(1) translateY(0);
 }
 
-.halo-hz-image {
+.halo-hz-image,
+.halo-hz-video {
     display: block;
     max-width: none; max-height: none;
     object-fit: contain;
@@ -39,7 +40,8 @@ export const BASE_STYLES = `
     -webkit-user-drag: none;
 }
 
-.halo-hz-viewer.dragging .halo-hz-image { cursor: grabbing; }
+.halo-hz-viewer.dragging .halo-hz-image,
+.halo-hz-viewer.dragging .halo-hz-video { cursor: grabbing; }
 
 .halo-hz-spinner {
     width: 36px; height: 36px;

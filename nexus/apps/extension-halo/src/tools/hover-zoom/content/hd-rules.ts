@@ -7,7 +7,7 @@ export interface HdRule {
 }
 
 export const HD_RULES: HdRule[] = [
-	// Bilibili
+	// Bilibili - remove size suffix
 	{ pattern: /@\d+w_\d+h[^.]*\.([a-z]+)$/i, replacement: '.$1' },
 	// Weibo
 	{ pattern: /\/thumb\d+\//, replacement: '/large/' },
@@ -25,8 +25,8 @@ export const HD_RULES: HdRule[] = [
 	{ pattern: /\/s\d+x\d+\//, replacement: '/' },
 	// Reddit
 	{ pattern: /preview\.redd\.it/, replacement: 'i.redd.it' },
-	// Imgur
-	{ pattern: /([a-zA-Z0-9]+)[a-z]?\.(jpg|png|gif)$/i, replacement: '$1.$2' },
+	// Imgur - only match i.imgur.com URLs
+	{ pattern: /i\.imgur\.com\/([a-zA-Z0-9]+)[a-z]\.(jpg|png|gif)$/i, replacement: 'i.imgur.com/$1.$2' },
 	// Pinterest
 	{ pattern: /\/\d+x\//, replacement: '/originals/' },
 	// Pixiv
@@ -34,10 +34,9 @@ export const HD_RULES: HdRule[] = [
 	{ pattern: /_master\d+/, replacement: '' },
 	// ArtStation
 	{ pattern: /\/small_square\//, replacement: '/large/' },
-	// Generic
+	// Generic thumbnail patterns
 	{ pattern: /-\d+x\d+\.(jpg|png|webp)$/i, replacement: '.$1' },
 	{ pattern: /_thumb\.(jpg|png|webp)$/i, replacement: '.$1' },
-	{ pattern: /\?.*$/, replacement: '' }, // Remove query params (last resort)
 ];
 
 /**
