@@ -158,6 +158,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		});
 		return true; // async
 	}
+
+	// Hover Zoom CORS proxy - bypass CORB for cross-origin API calls
+	if (message.type === 'HALO_HZ_PROXY_AJAX') {
+		const { url, method = 'GET', headers = {}, body } = message;
+		console.log(LOG_TAG, 'HoverZoom proxy request:', url);
+
+		fetch(url, {
+			method,
+			headers: { ...headers },
+			body: method === 'POST' ? body : undefined,
+			credentials: 'omit'
+		})
+			.then(res => res.text())
+			.then(data => sendResponse({ success: true, data }))
+			.catch(err => sendResponse({ success: false, error: err.message }));
+
+		return true; // async
+	}
+
 	return false;
 });
 
