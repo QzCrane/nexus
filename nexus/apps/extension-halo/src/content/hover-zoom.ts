@@ -2,15 +2,18 @@
 // eff: Imports and initializes core logic from tools/hover-zoom/
 
 import { DEFAULT_SETTINGS, STORAGE_KEY, HoverZoomSettings } from '../tools/hover-zoom/types';
-import { TriggerDetector } from '../tools/hover-zoom/content/trigger-detector';
 import { HoverZoomViewer } from '../tools/hover-zoom/content/viewer';
 import { HotkeyManager } from '../tools/hover-zoom/content/hotkeys';
-import { initRulesForHost, resolveEnhanced, detectQuick, EnhancedResult } from '../tools/hover-zoom/content/rule-resolver';
+import {
+	initRulesForHost,
+	resolveEnhanced,
+	detectQuick,
+	checkModifiers
+} from '../tools/hover-zoom/content/rule-resolver';
 
 const LOG_TAG = '[HALO:HoverZoom]';
 let initialized = false;
 let viewer: HoverZoomViewer | null = null;
-let detector: TriggerDetector | null = null;
 let hotkeys: HotkeyManager | null = null;
 let settings: HoverZoomSettings = DEFAULT_SETTINGS;
 let currentTarget: HTMLElement | null = null;
@@ -27,15 +30,13 @@ const ensureViewer = () => {
 };
 
 const onOver = (e: MouseEvent) => {
-	if (!settings.enabled || !detector) return;
+	if (!settings.enabled) return;
 	const t = e.target as HTMLElement;
 	if (t === currentTarget || t === resolvingTarget) return;
 
-	const modifiersOk = detector.checkModifiers(e);
-	if (!modifiersOk) return;
+	if (!checkModifiers(e, settings)) return;
 
-	// Quick sync detection first
-	const quickSrc = detectQuick(t);
+	const quickSrc = detectQuick(t, settings);
 	if (quickSrc) {
 		console.log(LOG_TAG, 'Quick detect:', quickSrc.url.slice(0, 60));
 		currentTarget = t;
@@ -54,18 +55,14 @@ const onOut = (e: MouseEvent) => {
 
 const onMove = (e: MouseEvent) => { lastX = e.clientX; lastY = e.clientY; };
 
-/**
- * Start hover timer with async rule resolution
- */
 const startTimer = (target: HTMLElement) => {
 	clearTimer();
 	resolvingTarget = target;
 
 	hoverTimer = window.setTimeout(async () => {
-		if (resolvingTarget !== target) return; // Target changed
+		if (resolvingTarget !== target) return;
 
 		try {
-			// Enhanced async resolution (includes site rules)
 			const result = await resolveEnhanced(target);
 			if (!result || resolvingTarget !== target) return;
 
@@ -91,7 +88,6 @@ const cancel = () => {
 };
 
 export async function init(): Promise<void> {
-	// Skip extension pages and iframes
 	if (window.location.protocol === 'chrome-extension:') return;
 	if (window !== window.top) return;
 	if (initialized) return;
@@ -106,12 +102,9 @@ export async function init(): Promise<void> {
 		console.warn(LOG_TAG, 'Storage error, using defaults:', e);
 	}
 
-	// Initialize site-specific rules for current host
 	await initRulesForHost();
 
 	console.log(LOG_TAG, 'Settings:', { enabled: settings.enabled, triggerKey: settings.triggerKey, delay: settings.triggerDelay });
-
-	detector = new TriggerDetector(settings);
 
 	document.addEventListener('mouseover', onOver, true);
 	document.addEventListener('mouseout', onOut, true);
@@ -120,7 +113,6 @@ export async function init(): Promise<void> {
 	chrome.storage.onChanged.addListener((c, a) => {
 		if (a === 'local' && c[STORAGE_KEY]) {
 			settings = { ...DEFAULT_SETTINGS, ...c[STORAGE_KEY].newValue };
-			detector?.updateSettings(settings);
 			viewer?.updateSettings(settings);
 			hotkeys?.updateSettings(settings);
 		}

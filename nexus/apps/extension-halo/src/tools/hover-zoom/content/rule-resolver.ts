@@ -6,6 +6,7 @@ import type { ZoomResult } from '../rules/types';
 import { createResolveContext } from './proxy-utils';
 import { resolveImageSource, ImageSource } from './image-resolver';
 import { applyHdRules } from './hd-rules';
+import type { HoverZoomSettings } from '../types';
 
 const LOG_TAG = '[HoverZoom:RuleResolver]';
 
@@ -30,6 +31,42 @@ export async function initRulesForHost(): Promise<void> {
 }
 
 /**
+ * Check if keyboard modifiers match trigger settings
+ */
+export function checkModifiers(e: MouseEvent, settings: HoverZoomSettings): boolean {
+	const { triggerKey } = settings;
+	if (triggerKey === 'none') return true;
+	if (triggerKey === 'shift') return e.shiftKey;
+	if (triggerKey === 'ctrl') return e.ctrlKey;
+	if (triggerKey === 'alt') return e.altKey;
+	return true;
+}
+
+/**
+ * Check exemptions - elements that should not trigger hover zoom
+ */
+function checkExemptions(target: HTMLElement, settings: HoverZoomSettings): boolean {
+	// Interactive elements
+	if (settings.exemptions.smallInteractive) {
+		if (['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName) ||
+			target.getAttribute('role') === 'button' ||
+			target.isContentEditable) {
+			return false;
+		}
+	}
+
+	// Viewport coverage
+	const rect = target.getBoundingClientRect();
+	const viewportArea = window.innerWidth * window.innerHeight;
+	const targetArea = rect.width * rect.height;
+
+	if (targetArea / viewportArea > settings.exemptions.maxViewportCoverage) return false;
+	if (rect.width / window.innerWidth > settings.exemptions.maxWidthCoverage) return false;
+
+	return true;
+}
+
+/**
  * Enhanced image/video source resolution
  * Priority: Site Rules > Generic Resolver > HD Rules
  */
@@ -39,7 +76,6 @@ export async function resolveEnhanced(
 	// First: Try site-specific rules (async)
 	if (cachedRules.length > 0) {
 		for (const rule of cachedRules) {
-			// Quick probe check
 			if (rule.probe && !target.matches(rule.probe) && !target.closest(rule.probe)) {
 				continue;
 			}
@@ -49,7 +85,6 @@ export async function resolveEnhanced(
 				const result = await rule.resolve(ctx);
 				if (result) {
 					console.log(LOG_TAG, `Rule "${rule.id}" matched`, result);
-					// Map gallery type to video for compatibility
 					const mappedType: 'image' | 'video' | 'svg' =
 						result.type === 'gallery' ? 'image' : result.type;
 					return {
@@ -72,7 +107,6 @@ export async function resolveEnhanced(
 	const source = resolveImageSource(target);
 	if (!source) return null;
 
-	// Apply HD URL upgrades
 	const hdUrl = applyHdRules(source.url);
 
 	return {
@@ -87,28 +121,24 @@ export async function resolveEnhanced(
 
 /**
  * Sync version for quick detection (no API calls)
- * Used for initial hover detection before async resolution
+ * Includes exemption checks
  */
-export function detectQuick(target: HTMLElement): ImageSource | null {
+export function detectQuick(target: HTMLElement, settings: HoverZoomSettings): ImageSource | null {
+	// Check exemptions first
+	if (!checkExemptions(target, settings)) return null;
+
 	// Check if any rule probe matches
 	if (cachedRules.length > 0) {
 		for (const rule of cachedRules) {
 			if (rule.probe && (target.matches(rule.probe) || target.closest(rule.probe))) {
-				// Return minimal source to indicate potential match
 				const link = target.closest('a');
 				if (link?.href) {
-					return {
-						url: link.href,
-						type: 'video',
-						element: target,
-						caption: ''
-					};
+					return { url: link.href, type: 'video', element: target, caption: '' };
 				}
 			}
 		}
 	}
 
-	// Fallback to standard resolver
 	return resolveImageSource(target);
 }
 
@@ -125,3 +155,4 @@ export interface EnhancedResult {
 	originalUrl?: string;
 	fromRule: string | null;
 }
+
