@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Toggle } from '@nexus/ui-kit';
 import { useTranslation } from '../../../../i18n';
-import { HoverZoomSettings, DEFAULT_SETTINGS, STORAGE_KEY, ViewMode, PopupPosition, KeyCombo } from '../../types';
+import { HoverZoomSettings, DEFAULT_SETTINGS, STORAGE_KEY, KeyCombo } from '../../types';
 import { enableAntiHotlink, disableAntiHotlink, isAntiHotlinkEnabled } from '../../logic/engine';
 import { comboToString } from '../../content/utils/resource-key-helper';
 import { styles } from './panel.styles';
@@ -128,22 +128,6 @@ export const HoverZoomPanel: React.FC = () => {
                 <div style={styles.section}>
                     <span style={styles.sectionTitle}>🎨 {t('hoverZoom.view.title')}</span>
                     <div style={styles.row}>
-                        <span style={styles.label}>{t('hoverZoom.view.mode')}</span>
-                        <div style={styles.segmented}>
-                            {(['auto', 'fit', 'panoramic'] as ViewMode[]).map(m => (
-                                <button key={m} style={settings.viewMode === m ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ viewMode: m })}>
-                                    {t(`hoverZoom.mode.${m}`)}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                    <div style={styles.row}>
-                        <span style={styles.label}>{t('hoverZoom.view.position')}</span>
-                        <select value={settings.position} onChange={(e) => update({ position: e.target.value as PopupPosition })} style={styles.select}>
-                            <option value="auto">Auto</option><option value="left">Left</option><option value="right">Right</option><option value="center">Center</option>
-                        </select>
-                    </div>
-                    <div style={styles.row}>
                         <span style={styles.label}>{t('hoverZoom.view.loadingIndicator') || 'Loading indicator'}</span>
                         <Toggle checked={settings.showLoadingIndicator} onChange={(v) => update({ showLoadingIndicator: v })} />
                     </div>
@@ -159,7 +143,6 @@ export const HoverZoomPanel: React.FC = () => {
                 <div style={styles.section}>
                     <span style={styles.sectionTitle}>🚫 {t('hoverZoom.exemptions.title')}</span>
                     <div style={styles.row}><span style={styles.label}>{t('hoverZoom.exemptions.smallInteractive')}</span><Toggle checked={settings.exemptions.smallInteractive} onChange={(v) => updateExemptions({ smallInteractive: v })} /></div>
-                    <div style={styles.row}><span style={styles.label}>{t('hoverZoom.exemptions.playingVideo')}</span><Toggle checked={settings.exemptions.playingVideo} onChange={(v) => updateExemptions({ playingVideo: v })} /></div>
                 </div>
             </Card>
 
