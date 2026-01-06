@@ -8,6 +8,7 @@ export type PopupPosition = 'auto' | 'top' | 'bottom' | 'left' | 'right' | 'cent
 export type BackgroundMode = 'dark' | 'light' | 'blur' | 'page' | 'system';
 export type InfoDisplay = 'none' | 'top' | 'bottom';
 export type AnimationSpeed = 'none' | 'fast' | 'normal' | 'slow';
+export type HighlightMode = 'always' | 'hotkey' | 'off'; // Trigger highlight border mode
 
 /**
  * Key combination for triggering resource preview.
@@ -77,6 +78,7 @@ export interface HoverZoomSettings {
 	background: BackgroundMode;
 	showImageInfo: InfoDisplay;
 	showLoadingIndicator: boolean;  // Show loading spinner on trigger element
+	highlightMode: HighlightMode;   // Highlight border around trigger element
 	imageInfoItems: {
 		caption: boolean;
 		dimensions: boolean;
@@ -114,6 +116,7 @@ export const DEFAULT_SETTINGS: HoverZoomSettings = {
 	background: 'dark',
 	showImageInfo: 'bottom',
 	showLoadingIndicator: true,
+	highlightMode: 'hotkey', // Default: only show highlight when hotkey pressed
 	imageInfoItems: {
 		caption: true,
 		dimensions: true,

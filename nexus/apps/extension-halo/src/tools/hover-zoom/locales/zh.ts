@@ -26,22 +26,20 @@ export const zh = {
 
 		view: {
 			title: "外观设置",
-			mode: "视图模式",
-			position: "浮窗位置",
+			highlight: "触发高亮框",
 			loadingIndicator: "加载指示器",
 			antiHotlink: "反防盗链 (隐私模式)"
 		},
 
-		mode: {
-			auto: "自动",
-			fit: "适应屏幕",
-			panoramic: "全景"
+		highlight: {
+			always: "常开",
+			hotkey: "快捷键",
+			off: "关闭"
 		},
 
 		exemptions: {
 			title: "触发豁免",
-			smallInteractive: "忽略小型交互元素",
-			playingVideo: "忽略播放中的视频"
+			smallInteractive: "忽略小型交互元素"
 		},
 
 		hotkeys: {

@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Toggle } from '@nexus/ui-kit';
 import { useTranslation } from '../../../../i18n';
-import { HoverZoomSettings, DEFAULT_SETTINGS, STORAGE_KEY, KeyCombo } from '../../types';
+import { HoverZoomSettings, DEFAULT_SETTINGS, STORAGE_KEY, KeyCombo, HighlightMode } from '../../types';
 import { enableAntiHotlink, disableAntiHotlink, isAntiHotlinkEnabled } from '../../logic/engine';
 import { comboToString } from '../../content/utils/resource-key-helper';
 import { styles } from './panel.styles';
@@ -127,6 +127,16 @@ export const HoverZoomPanel: React.FC = () => {
             <Card variant="default" padding="sm">
                 <div style={styles.section}>
                     <span style={styles.sectionTitle}>🎨 {t('hoverZoom.view.title')}</span>
+                    <div style={styles.row}>
+                        <span style={styles.label}>{t('hoverZoom.view.highlight') || 'Trigger highlight'}</span>
+                        <div style={styles.segmented}>
+                            {(['always', 'hotkey', 'off'] as HighlightMode[]).map(m => (
+                                <button key={m} style={settings.highlightMode === m ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ highlightMode: m })}>
+                                    {m === 'always' ? (t('hoverZoom.highlight.always') || 'Always') : m === 'hotkey' ? (t('hoverZoom.highlight.hotkey') || 'Hotkey') : (t('hoverZoom.highlight.off') || 'Off')}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                     <div style={styles.row}>
                         <span style={styles.label}>{t('hoverZoom.view.loadingIndicator') || 'Loading indicator'}</span>
                         <Toggle checked={settings.showLoadingIndicator} onChange={(v) => update({ showLoadingIndicator: v })} />

@@ -8,7 +8,10 @@ import { cancel, getElementAtMouse, tryTrigger } from './hover-zoom-events';
 /**
  * Handle keydown - enable detection at current position.
  * Uses resourceKeys system to detect modifier combos (Alt, Alt+Ctrl, etc.)
- * Supports both 'hold' and 'toggle' modes.
+ * 
+ * Special keys:
+ * - Space: Lock/unlock viewer (allows mouse to move away)
+ * - Escape: Close viewer and unlock
  */
 export function createOnKeyDown(state: HoverZoomState, preload: PreloadState) {
 	return (e: KeyboardEvent) => {
@@ -16,6 +19,22 @@ export function createOnKeyDown(state: HoverZoomState, preload: PreloadState) {
 
 		// Prevent repeat events (key held down)
 		if (e.repeat) return;
+
+		// ESCAPE: Always close and unlock
+		if (e.key === 'Escape') {
+			if (state.viewer?.getIsVisible()) {
+				cancel(state);
+			}
+			return;
+		}
+
+		// SPACE: Toggle lock state (only when viewer visible)
+		if (e.key === ' ' && state.viewer?.getIsVisible()) {
+			e.preventDefault(); // Prevent page scroll
+			state.toggleLocked = !state.toggleLocked;
+			console.log('[HALO:HoverZoom]', state.toggleLocked ? 'Locked (press Space again to unlock)' : 'Unlocked');
+			return;
+		}
 
 		// Detect resource preference based on current modifier state
 		const resourcePref = detectResourcePreference(state.settings.resourceKeys, e);
@@ -27,13 +46,6 @@ export function createOnKeyDown(state: HoverZoomState, preload: PreloadState) {
 		state.modifiersActive = true;
 		state.currentResourcePref = resourcePref;
 
-		// Toggle mode: if viewer visible and locked, close it
-		if (state.settings.triggerAction === 'toggle' && state.toggleLocked && state.viewer?.getIsVisible()) {
-			state.toggleLocked = false;
-			cancel(state);
-			return;
-		}
-
 		// Try to detect at mouse position
 		if (!state.mouseHasMoved) {
 			// Mouse hasn't moved yet - cannot determine position
@@ -44,24 +56,21 @@ export function createOnKeyDown(state: HoverZoomState, preload: PreloadState) {
 			const el = getElementAtMouse(state);
 			if (el) {
 				tryTrigger(state, preload, el);
-				// For toggle mode, lock the viewer open
-				if (state.settings.triggerAction === 'toggle') {
-					state.toggleLocked = true;
-				}
 			}
 		}
 	};
 }
 
 /**
- * Handle keyup - hide viewer when modifier released (hold mode only).
+ * Handle keyup - hide viewer when modifier released (unless locked).
  * Detects when all required modifiers are released.
  */
 export function createOnKeyUp(state: HoverZoomState) {
 	return (e: KeyboardEvent) => {
 		if (!state.settings.enabled) return;
-		// In toggle mode, don't hide on key release
-		if (state.settings.triggerAction === 'toggle') {
+
+		// If LOCKED, don't close on modifier release
+		if (state.toggleLocked) {
 			return;
 		}
 
@@ -82,3 +91,4 @@ export function createOnKeyUp(state: HoverZoomState) {
 		}
 	};
 }
+

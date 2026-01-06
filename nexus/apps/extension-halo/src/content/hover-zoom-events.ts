@@ -124,8 +124,13 @@ export async function tryTrigger(
 ) {
 	if (!isValidTrigger(target)) return;
 
-	// Show highlight on valid trigger element
-	showHighlight(target);
+	// Show highlight based on mode setting
+	// 'always': show on any valid trigger (even without hotkey - handled in mouseover)
+	// 'hotkey': only show when hotkey pressed (default, handled here in tryTrigger)
+	// 'off': never show
+	if (state.settings.highlightMode === 'hotkey') {
+		showHighlight(target);
+	}
 
 	const currentPref = state.currentResourcePref;
 
@@ -148,7 +153,7 @@ export async function tryTrigger(
 
 /**
  * Handle mouseover event
- * Uses direct element comparison, no container detection to avoid false triggers
+ * Handles highlight in 'always' mode and triggers with hotkey
  */
 export function createOnOver(state: HoverZoomState, preload: PreloadState) {
 	return (e: MouseEvent) => {
@@ -160,6 +165,14 @@ export function createOnOver(state: HoverZoomState, preload: PreloadState) {
 
 		// Ignore events on the viewer itself
 		if (t.closest('#halo-hover-zoom-container')) return;
+
+		// 'always' mode: show highlight on any valid trigger (no hotkey needed)
+		if (state.settings.highlightMode === 'always' && isValidTrigger(t)) {
+			showHighlight(t);
+		} else if (state.settings.highlightMode !== 'hotkey') {
+			// 'off' mode or not valid trigger in 'always' mode: hide highlight
+			hideHighlight();
+		}
 
 		// Detect resource preference based on modifier keys
 		const resourcePref = detectResourcePreference(state.settings.resourceKeys, e);
@@ -180,7 +193,7 @@ export function createOnOver(state: HoverZoomState, preload: PreloadState) {
 			cancel(state);
 		}
 
-		// Try to trigger on new target
+		// Try to trigger on new target (also shows highlight in 'hotkey' mode)
 		tryTrigger(state, preload, t);
 	};
 }
@@ -216,7 +229,10 @@ export function createOnOut(state: HoverZoomState) {
 
 /**
  * Handle mousemove event
- * Also checks modifier state changes to close viewer when keys released
+ * STRICT MODE: Viewer closes unless ALL conditions met:
+ * 1. Modifier keys pressed (exact match)
+ * 2. Mouse INSIDE trigger element (or viewer if locked)
+ * When locked: mouse can move to viewer without closing
  */
 export function createOnMove(state: HoverZoomState, preload: PreloadState) {
 	return (e: MouseEvent) => {
@@ -226,42 +242,46 @@ export function createOnMove(state: HoverZoomState, preload: PreloadState) {
 
 		// Skip all processing if disabled
 		if (!state.settings.enabled) {
-			// Still close any visible viewer when disabled
 			if (state.viewer?.getIsVisible()) cancel(state);
 			return;
 		}
 
-		// Always check modifier state on move
+		// Check modifier state
 		const resourcePref = detectResourcePreference(state.settings.resourceKeys, e);
 
-		// If viewer visible, check if we should hide or switch
+		// If viewer visible, enforce strict conditions
 		if (state.viewer?.getIsVisible()) {
-			// No valid combo pressed - close immediately
+			// LOCKED mode: only close on Esc or explicit unlock
+			if (state.toggleLocked) {
+				// In locked mode, still close if modifiers released
+				// (optional: can remove this check for "full lock")
+				return;
+			}
+
+			// STRICT mode: must have modifiers pressed
 			if (resourcePref === null) {
 				cancel(state);
 				return;
 			}
 
-			// Preference changed - need to re-resolve and switch
+			// STRICT mode: must be over trigger element
+			if (state.currentTarget) {
+				const rect = state.currentTarget.getBoundingClientRect();
+				const overTarget = e.clientX >= rect.left && e.clientX <= rect.right &&
+					e.clientY >= rect.top && e.clientY <= rect.bottom;
+				if (!overTarget) {
+					// NOT over viewer - close immediately
+					cancel(state);
+					return;
+				}
+			}
+
+			// Preference changed - need to re-resolve
 			if (resourcePref !== state.currentResourcePref) {
 				state.currentResourcePref = resourcePref;
-				// Re-trigger on same target with new pref
 				if (state.currentTarget) {
 					cancel(state);
 					tryTrigger(state, preload, state.currentTarget);
-				}
-				return;
-			}
-
-			// Same preference - check if still over target/viewer
-			if (isOverViewer(state)) return;
-
-			if (state.currentTarget) {
-				const rect = state.currentTarget.getBoundingClientRect();
-				const overTarget = state.lastX >= rect.left && state.lastX <= rect.right &&
-					state.lastY >= rect.top && state.lastY <= rect.bottom;
-				if (!overTarget) {
-					cancel(state);
 				}
 			}
 		}

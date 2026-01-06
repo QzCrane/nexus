@@ -26,22 +26,20 @@ export const en = {
 
 		view: {
 			title: "Appearance",
-			mode: "View Mode",
-			position: "Position",
+			highlight: "Trigger Highlight",
 			loadingIndicator: "Loading Indicator",
 			antiHotlink: "Anti-Hotlink (Privacy)"
 		},
 
-		mode: {
-			auto: "Auto",
-			fit: "Fit Screen",
-			panoramic: "Panoramic"
+		highlight: {
+			always: "Always",
+			hotkey: "Hotkey",
+			off: "Off"
 		},
 
 		exemptions: {
 			title: "Trigger Exemptions",
-			smallInteractive: "Ignore small interactive elements",
-			playingVideo: "Ignore playing videos"
+			smallInteractive: "Ignore small interactive elements"
 		},
 
 		hotkeys: {
