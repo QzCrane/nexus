@@ -6,7 +6,7 @@ import * as Ruler from '../content/ruler';
 import * as SmoothScroll from '../content/smooth-scroll';
 import * as DomSelector from '../content/dom-selector';
 import * as PageAnnotate from '../content/page-annotate';
-import * as HoverZoom from '../content/hover-zoom';
+// HoverZoom is loaded dynamically only in top frame to avoid loading in iframes
 
 const LOG_TAG = '[HALO]';
 const t0 = performance.now();
@@ -155,7 +155,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 // ===== INITIALIZE MODULES =====
 SmoothScroll.init();
-HoverZoom.init();
+
+// HoverZoom: Dynamic import only in top frame (avoid loading ~50KB in each iframe)
+if (window === window.top) {
+	import('../content/hover-zoom').then(m => m.init()).catch(e => {
+		console.warn(LOG_TAG, 'HoverZoom init failed:', e);
+	});
+}
 
 console.log(LOG_TAG, 'Content script ready in', (performance.now() - t0).toFixed(2), 'ms');
-

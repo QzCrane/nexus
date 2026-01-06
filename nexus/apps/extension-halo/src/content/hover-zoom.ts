@@ -46,10 +46,10 @@ function mergeSettings(saved: Partial<HoverZoomSettings>): HoverZoomSettings {
 
 /**
  * Initialize hover zoom
+ * NOTE: This module is only dynamically imported in top frame (see content.ts)
  */
 export async function init(): Promise<void> {
 	if (window.location.protocol === 'chrome-extension:') return;
-	if (window !== window.top) return;
 	if (state.initialized) return;
 	state.initialized = true;
 

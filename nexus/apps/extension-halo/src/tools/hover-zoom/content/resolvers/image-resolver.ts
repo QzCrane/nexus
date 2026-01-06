@@ -83,7 +83,7 @@ function getDataHdUrl(el: HTMLElement): string | null {
 
 /**
  * Check if element is a valid image/video trigger
- * Excludes text-only elements, buttons, etc.
+ * Checks: img, video, canvas, svg, background-image, or direct parent of these
  */
 export function isValidTrigger(target: HTMLElement): boolean {
 	if (!target) return false;
@@ -110,10 +110,10 @@ export function isValidTrigger(target: HTMLElement): boolean {
 			const rect = target.getBoundingClientRect();
 			valid = rect.width >= MIN_SIZE && rect.height >= MIN_SIZE;
 		} else {
-			// Check for child img (like link wrapping img)
-			const childImg = target.querySelector('img');
-			if (childImg) {
-				const rect = childImg.getBoundingClientRect();
+			// Check for direct child img or video (like <a><img>...</a>)
+			const childMedia = target.querySelector(':scope > img, :scope > video, :scope > picture > img');
+			if (childMedia) {
+				const rect = childMedia.getBoundingClientRect();
 				valid = rect.width >= MIN_SIZE && rect.height >= MIN_SIZE;
 			}
 		}

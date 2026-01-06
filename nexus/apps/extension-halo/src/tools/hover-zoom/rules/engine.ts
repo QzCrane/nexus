@@ -18,8 +18,13 @@ const ALL_RULES = [
 	...imgurRules
 ];
 
-// Register all built-in rules
+// Flag to ensure rules are registered only once
+let rulesRegistered = false;
+
+// Register all built-in rules (only once)
 function registerAllRules() {
+	if (rulesRegistered) return;
+	rulesRegistered = true;
 	ALL_RULES.forEach(rule => ruleEngine.register(rule));
 	console.log(`[HoverZoom:Engine] Registered ${ALL_RULES.length} rules from 4 sites`);
 }

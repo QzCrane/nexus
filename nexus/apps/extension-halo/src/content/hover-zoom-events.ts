@@ -6,6 +6,7 @@ import type { HoverZoomState, PreloadState } from './hover-zoom-state';
 import { isValidTrigger } from '../tools/hover-zoom/content/resolvers/image-resolver';
 import { resolveEnhanced, detectQuick } from '../tools/hover-zoom/content/resolvers/rule-resolver';
 import { detectResourcePreference } from '../tools/hover-zoom/content/utils/resource-key-helper';
+import { showHighlight, hideHighlight } from '../tools/hover-zoom/content/utils/highlight';
 import { HoverZoomViewer } from '../tools/hover-zoom/content/viewer/index';
 import { HotkeyManager } from '../tools/hover-zoom/content/utils/hotkeys';
 
@@ -67,6 +68,7 @@ export function cancel(state: HoverZoomState) {
 	state.viewer?.hide();
 	state.currentTarget = null;
 	state.toggleLocked = false;
+	hideHighlight();
 }
 
 /**
@@ -122,6 +124,9 @@ export async function tryTrigger(
 ) {
 	if (!isValidTrigger(target)) return;
 
+	// Show highlight on valid trigger element
+	showHighlight(target);
+
 	const currentPref = state.currentResourcePref;
 
 	// Check cache (must match current pref)
@@ -143,6 +148,7 @@ export async function tryTrigger(
 
 /**
  * Handle mouseover event
+ * Uses direct element comparison, no container detection to avoid false triggers
  */
 export function createOnOver(state: HoverZoomState, preload: PreloadState) {
 	return (e: MouseEvent) => {
@@ -160,68 +166,49 @@ export function createOnOver(state: HoverZoomState, preload: PreloadState) {
 		if (resourcePref === null) {
 			// No valid key combo pressed - reset state and do not trigger
 			state.modifiersActive = false;
-			state.currentResourcePref = 'auto'; // Reset to default
+			state.currentResourcePref = 'auto';
 			return;
 		}
 		state.modifiersActive = true;
 		state.currentResourcePref = resourcePref;
 
+		// Same target - no action needed
 		if (t === state.currentTarget) return;
 
-		// Check if moving within same container
+		// If we have a current target, cancel it before switching
 		if (state.currentTarget) {
-			const currentContainer = state.currentTarget.closest('a, [data-target-url], .bili-video-card');
-			const newContainer = t.closest('a, [data-target-url], .bili-video-card');
-			if (currentContainer && currentContainer === newContainer) {
-				return;
-			}
 			cancel(state);
 		}
 
+		// Try to trigger on new target
 		tryTrigger(state, preload, t);
-
-		// Preload next likely target (only when modifiers are active)
-		if (state.modifiersActive && preload.pending !== t && isValidTrigger(t)) {
-			preload.pending = t;
-			// Capture current pref to avoid stale state in async callback
-			const capturedPref = state.currentResourcePref;
-			queueMicrotask(async () => {
-				if (preload.pending !== t) return;
-				const result = await resolveEnhanced(t, capturedPref);
-				if (result && preload.pending === t) {
-					preload.cache.set(t, { result, url: result.url, pref: capturedPref });
-					preloadUrl(preload, result.url);
-				}
-			});
-		}
 	};
 }
 
 /**
  * Handle mouseout event
+ * Simplified: only cancel when truly leaving the trigger element
  */
 export function createOnOut(state: HoverZoomState) {
 	return (e: MouseEvent) => {
 		if (!state.settings.enabled) return;
-		const relatedTarget = e.relatedTarget as HTMLElement;
+
+		const relatedTarget = e.relatedTarget as HTMLElement | null;
 
 		// If moving to viewer, keep visible
 		if (relatedTarget?.closest('#halo-hover-zoom-container')) return;
 
-		// If moving within the same trigger container, ignore
-		if (state.currentTarget && relatedTarget) {
-			if (state.currentTarget.contains(relatedTarget) || relatedTarget.contains(state.currentTarget)) {
+		// Only cancel if leaving the current target element
+		if (state.currentTarget) {
+			// Check if still inside current target (moved to child element)
+			if (relatedTarget && state.currentTarget.contains(relatedTarget)) {
 				return;
 			}
-			const currentContainer = state.currentTarget.closest('a, [data-target-url], .bili-video-card');
-			const relatedContainer = relatedTarget.closest('a, [data-target-url], .bili-video-card');
-			if (currentContainer && currentContainer === relatedContainer) {
+			// Check if relatedTarget contains currentTarget (moved to parent)
+			if (relatedTarget && relatedTarget.contains(state.currentTarget)) {
 				return;
 			}
-		}
-
-		// If leaving current target, hide
-		if (e.target === state.currentTarget || state.currentTarget?.contains(e.target as Node)) {
+			// Truly leaving - cancel
 			cancel(state);
 		}
 	};
