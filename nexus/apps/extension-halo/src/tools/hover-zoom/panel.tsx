@@ -63,6 +63,19 @@ export const HoverZoomPanel: React.FC = () => {
                             ))}
                         </div>
                     </div>
+                    {settings.triggerKey !== 'none' && (
+                        <div style={styles.row}>
+                            <span style={styles.label}>{t('hoverZoom.trigger.action')}</span>
+                            <div style={styles.segmented}>
+                                <button style={settings.triggerAction === 'hold' ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ triggerAction: 'hold' })}>
+                                    {t('hoverZoom.trigger.hold')}
+                                </button>
+                                <button style={settings.triggerAction === 'toggle' ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ triggerAction: 'toggle' })}>
+                                    {t('hoverZoom.trigger.toggle')}
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     <div style={styles.row}>
                         <span style={styles.label}>{t('hoverZoom.trigger.delay')}</span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

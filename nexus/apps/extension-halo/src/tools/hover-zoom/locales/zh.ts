@@ -11,6 +11,9 @@ export const zh = {
 		trigger: {
 			title: "触发设置",
 			key: "触发键",
+			action: "触发模式",
+			hold: "按住",
+			toggle: "点按",
 			delay: "显示延迟"
 		},
 

@@ -11,6 +11,9 @@ export const en = {
 		trigger: {
 			title: "Trigger Settings",
 			key: "Modifier Key",
+			action: "Trigger Mode",
+			hold: "Hold",
+			toggle: "Toggle",
 			delay: "Display Delay"
 		},
 
