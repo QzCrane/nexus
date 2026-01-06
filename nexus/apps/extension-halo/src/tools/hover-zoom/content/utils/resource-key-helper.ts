@@ -1,7 +1,7 @@
 // goal: Resource type key detection helper
 // eff: Determines whether to show image or video based on pressed modifiers
 
-import type { ResourceKeys, KeyCombo } from '../types';
+import type { ResourceKeys, KeyCombo } from '../../types';
 
 /**
  * Detected resource preference based on current key state
@@ -50,17 +50,16 @@ function isComboNone(combo: KeyCombo): boolean {
 /**
  * Determine which resource type to show based on current modifiers.
  * 
+ * EXACT MATCH ONLY - no subset matching!
+ * 
  * Key matching logic:
- * 1. Exact match wins (e.g., Alt+Ctrl pressed matches { alt: true, ctrl: true })
- * 2. If no exact match, more specific combo (more modifiers) wins
- * 3. If neither matches exactly, check if current state is superset of combo
+ * - imageKey: { alt: true, ctrl: false }  -> Alt only (Ctrl must NOT be pressed)
+ * - videoKey: { alt: true, ctrl: true }   -> Alt+Ctrl (both must be pressed)
  * 
- * Seamless switching example:
- * - imageKey: { alt: true, ctrl: false }  -> Alt only
- * - videoKey: { alt: true, ctrl: true }   -> Alt+Ctrl
- * 
- * When user presses Alt -> shows image
- * When user adds Ctrl (now Alt+Ctrl) -> switches to video
+ * When user presses Alt only -> shows image
+ * When user presses Alt+Ctrl -> shows video (replaces image)
+ * When user presses Ctrl only -> nothing (no match)
+ * When user releases Alt (Ctrl still held) -> nothing (no match, close viewer)
  */
 export function detectResourcePreference(
 	resourceKeys: ResourceKeys,
@@ -68,41 +67,15 @@ export function detectResourcePreference(
 ): ResourcePreference | null {
 	const { imageKey, videoKey } = resourceKeys;
 
-	// Check exact matches first
+	// EXACT match only - all modifiers must match exactly
 	const imageExact = comboMatches(imageKey, e);
 	const videoExact = comboMatches(videoKey, e);
 
-	if (imageExact && !videoExact) return 'image';
-	if (videoExact && !imageExact) return 'video';
-	if (imageExact && videoExact) {
-		// Both exact match (same config) - return auto
-		return 'auto';
-	}
+	// Priority: video > image (when both exactly match, e.g. same config)
+	if (videoExact) return 'video';
+	if (imageExact) return 'image';
 
-	// No exact match - check if current state is superset of either
-	const imageSubset = comboIsSubset(imageKey, e);
-	const videoSubset = comboIsSubset(videoKey, e);
-
-	if (!imageSubset && !videoSubset) {
-		// Neither matches - don't trigger
-		return null;
-	}
-
-	// One or both match as subset - prefer the more specific one
-	const imageCount = comboModifierCount(imageKey);
-	const videoCount = comboModifierCount(videoKey);
-
-	if (imageSubset && videoSubset) {
-		// Both match - prefer more specific (more keys)
-		if (videoCount > imageCount) return 'video';
-		if (imageCount > videoCount) return 'image';
-		// Same count - prefer video (more specific action)
-		return 'video';
-	}
-
-	if (videoSubset) return 'video';
-	if (imageSubset) return 'image';
-
+	// No exact match - don't trigger
 	return null;
 }
 

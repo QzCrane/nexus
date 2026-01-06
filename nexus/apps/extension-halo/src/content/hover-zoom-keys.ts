@@ -1,28 +1,31 @@
 // goal: Hover Zoom keyboard event handlers
-// eff: Keydown/keyup logic for trigger modes
+// eff: Keydown/keyup logic for trigger modes using resourceKeys system
 
 import type { HoverZoomState, PreloadState } from './hover-zoom-state';
-import { cancel, ensureViewer, getElementAtMouse, tryTrigger } from './hover-zoom-events';
+import { detectResourcePreference } from '../tools/hover-zoom/content/utils/resource-key-helper';
+import { cancel, getElementAtMouse, tryTrigger } from './hover-zoom-events';
 
 /**
- * Handle keydown - enable detection at current position
- * Supports both 'hold' and 'toggle' modes
+ * Handle keydown - enable detection at current position.
+ * Uses resourceKeys system to detect modifier combos (Alt, Alt+Ctrl, etc.)
+ * Supports both 'hold' and 'toggle' modes.
  */
 export function createOnKeyDown(state: HoverZoomState, preload: PreloadState) {
 	return (e: KeyboardEvent) => {
 		if (!state.settings.enabled) return;
 
-		// Check if this is our trigger key
-		const key = state.settings.triggerKey;
-		if (key === 'none') return;
-		if (key === 'shift' && !e.shiftKey) return;
-		if (key === 'ctrl' && !e.ctrlKey) return;
-		if (key === 'alt' && !e.altKey) return;
-
 		// Prevent repeat events (key held down)
 		if (e.repeat) return;
 
+		// Detect resource preference based on current modifier state
+		const resourcePref = detectResourcePreference(state.settings.resourceKeys, e);
+		if (resourcePref === null) {
+			// No valid key combo pressed - don't trigger
+			return;
+		}
+
 		state.modifiersActive = true;
+		state.currentResourcePref = resourcePref;
 
 		// Toggle mode: if viewer visible and locked, close it
 		if (state.settings.triggerAction === 'toggle' && state.toggleLocked && state.viewer?.getIsVisible()) {
@@ -51,26 +54,31 @@ export function createOnKeyDown(state: HoverZoomState, preload: PreloadState) {
 }
 
 /**
- * Handle keyup - hide viewer when modifier released (hold mode only)
+ * Handle keyup - hide viewer when modifier released (hold mode only).
+ * Detects when all required modifiers are released.
  */
 export function createOnKeyUp(state: HoverZoomState) {
 	return (e: KeyboardEvent) => {
-		const key = state.settings.triggerKey;
-		if (key === 'none') return;
-
+		if (!state.settings.enabled) return;
 		// In toggle mode, don't hide on key release
 		if (state.settings.triggerAction === 'toggle') {
 			return;
 		}
 
-		const shouldHide =
-			(key === 'shift' && e.key === 'Shift') ||
-			(key === 'ctrl' && (e.key === 'Control' || e.key === 'Meta')) ||
-			(key === 'alt' && e.key === 'Alt');
+		// Check if the released key was a modifier
+		const isModifierRelease = ['Shift', 'Control', 'Meta', 'Alt'].includes(e.key);
+		if (!isModifierRelease) return;
 
-		if (shouldHide) {
+		// Check if any valid combo still matches after key release
+		const resourcePref = detectResourcePreference(state.settings.resourceKeys, e);
+		if (resourcePref === null) {
+			// No valid combo matches anymore - hide viewer
 			state.modifiersActive = false;
+			state.currentResourcePref = 'auto';
 			cancel(state);
+		} else {
+			// Still have a valid combo - update preference (seamless switching)
+			state.currentResourcePref = resourcePref;
 		}
 	};
 }

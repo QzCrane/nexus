@@ -28,6 +28,7 @@ import { zh as hash } from '../../tools/hash/locales/zh';
 import { zh as headers_viewer } from '../../tools/headers-viewer/locales/zh';
 import { zh as hex_dump } from '../../tools/hex-dump/locales/zh';
 import { zh as history_search } from '../../tools/history-search/locales/zh';
+import { zh as hover_zoom } from '../../tools/hover-zoom/locales/zh';
 import { zh as html_entity } from '../../tools/html-entity/locales/zh';
 import { zh as http_status } from '../../tools/http-status/locales/zh';
 import { zh as image_tools } from '../../tools/image-tools/locales/zh';
@@ -119,6 +120,7 @@ export const TOOLS_ZH = {
 	...headers_viewer,
 	...hex_dump,
 	...history_search,
+	...hover_zoom,
 	...html_entity,
 	...http_status,
 	...image_tools,

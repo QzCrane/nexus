@@ -90,13 +90,13 @@ export async function resolveEnhanced(
 
 				console.log(LOG_TAG, `Engine matched rule`, resultObj);
 
-				// Preference check logic (Ported from existing)
+				// Preference check: user wants image but got video -> try thumbnail
 				if (resourcePref === 'image' && mappedType === 'video') {
 					const thumbImg = target.querySelector('img') || target.closest('a')?.querySelector('img');
 					if (thumbImg?.src) {
 						return {
 							type: 'image',
-							url: thumbImg.src, // Legacy HD rules removed
+							url: thumbImg.src,
 							caption: '',
 							element: target,
 							fromRule: 'engine:thumbnail'
@@ -104,22 +104,16 @@ export async function resolveEnhanced(
 					}
 				}
 
-				if (resourcePref === 'video' && mappedType === 'image') {
-					// Skip if user explicitly wants video but we got image
-					// But maybe we should fall through? Original logic fell through or continued loop
-					// Here we only have one engine result. 
-					// Use fallback if available?
-				} else {
-					return {
-						type: mappedType,
-						url: resultObj.url,
-						audioUrl: resultObj.audioUrl,
-						headers: resultObj.headers,
-						caption: '', // Engine doesn't support caption yet?
-						element: target,
-						fromRule: 'engine'
-					};
-				}
+				// Return engine result (for auto, video pref with video, image pref with image)
+				return {
+					type: mappedType,
+					url: resultObj.url,
+					audioUrl: resultObj.audioUrl,
+					headers: resultObj.headers,
+					caption: '',
+					element: target,
+					fromRule: 'engine'
+				};
 			}
 		}
 	} catch (e) {
@@ -130,13 +124,10 @@ export async function resolveEnhanced(
 	const source = resolveImageSource(target);
 	if (!source) return null;
 
-	// If user wants video but we only found image, return null
-	if (resourcePref === 'video' && source.type === 'image') {
-		console.log(LOG_TAG, `User prefers video, but only image found`);
-		return null;
-	}
+	// NOTE: When user wants video but only image found, we still show the image.
+	// This provides better UX than showing nothing.
+	// The UI can indicate this is an image fallback if needed.
 
-	// Legacy HD rules removed. In the future, generic HD resolving will be handled by RuleEngine.
 	const hdUrl = source.url;
 
 	return {

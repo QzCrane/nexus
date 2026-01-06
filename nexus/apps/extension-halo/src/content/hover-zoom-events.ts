@@ -79,26 +79,30 @@ export function startTimer(
 ) {
 	clearTimer(state);
 
-	// Reduced delay for cached results
-	const delay = preload.cache.has(target) ? 0 : state.settings.triggerDelay;
+	// Capture current pref to use in async callback
+	const capturedPref = state.currentResourcePref;
+
+	// Reduced delay for cached results (only if pref matches)
+	const cached = preload.cache.get(target);
+	const cacheValid = cached && cached.pref === capturedPref;
+	const delay = cacheValid ? 0 : state.settings.triggerDelay;
 
 	state.hoverTimer = window.setTimeout(async () => {
 		if (state.currentTarget !== target) return;
 
 		try {
-			// Check cache first
-			const cached = preload.cache.get(target);
-			if (cached) {
+			// Check cache first (must match current pref)
+			if (cacheValid && cached) {
 				const v = ensureViewer(state);
 				v.show(cached.result, state.lastX, state.lastY);
 				return;
 			}
 
-			const result = await resolveEnhanced(target, state.currentResourcePref);
+			const result = await resolveEnhanced(target, capturedPref);
 			if (!result || state.currentTarget !== target) return;
 
-			// Cache for future use
-			preload.cache.set(target, { result, url: result.url });
+			// Cache for future use with pref
+			preload.cache.set(target, { result, url: result.url, pref: capturedPref });
 
 			const v = ensureViewer(state);
 			v.show(result, state.lastX, state.lastY);
@@ -118,8 +122,11 @@ export async function tryTrigger(
 ) {
 	if (!isValidTrigger(target)) return;
 
+	const currentPref = state.currentResourcePref;
+
+	// Check cache (must match current pref)
 	const cached = preload.cache.get(target);
-	if (cached) {
+	if (cached && cached.pref === currentPref) {
 		state.currentTarget = target;
 		const v = ensureViewer(state);
 		v.show(cached.result, state.lastX, state.lastY);
@@ -151,7 +158,9 @@ export function createOnOver(state: HoverZoomState, preload: PreloadState) {
 		// Detect resource preference based on modifier keys
 		const resourcePref = detectResourcePreference(state.settings.resourceKeys, e);
 		if (resourcePref === null) {
+			// No valid key combo pressed - reset state and do not trigger
 			state.modifiersActive = false;
+			state.currentResourcePref = 'auto'; // Reset to default
 			return;
 		}
 		state.modifiersActive = true;
@@ -171,14 +180,16 @@ export function createOnOver(state: HoverZoomState, preload: PreloadState) {
 
 		tryTrigger(state, preload, t);
 
-		// Preload next likely target
-		if (preload.pending !== t && isValidTrigger(t)) {
+		// Preload next likely target (only when modifiers are active)
+		if (state.modifiersActive && preload.pending !== t && isValidTrigger(t)) {
 			preload.pending = t;
+			// Capture current pref to avoid stale state in async callback
+			const capturedPref = state.currentResourcePref;
 			queueMicrotask(async () => {
 				if (preload.pending !== t) return;
-				const result = await resolveEnhanced(t, state.currentResourcePref);
+				const result = await resolveEnhanced(t, capturedPref);
 				if (result && preload.pending === t) {
-					preload.cache.set(t, { result, url: result.url });
+					preload.cache.set(t, { result, url: result.url, pref: capturedPref });
 					preloadUrl(preload, result.url);
 				}
 			});
@@ -191,6 +202,7 @@ export function createOnOver(state: HoverZoomState, preload: PreloadState) {
  */
 export function createOnOut(state: HoverZoomState) {
 	return (e: MouseEvent) => {
+		if (!state.settings.enabled) return;
 		const relatedTarget = e.relatedTarget as HTMLElement;
 
 		// If moving to viewer, keep visible
@@ -217,15 +229,44 @@ export function createOnOut(state: HoverZoomState) {
 
 /**
  * Handle mousemove event
+ * Also checks modifier state changes to close viewer when keys released
  */
-export function createOnMove(state: HoverZoomState) {
+export function createOnMove(state: HoverZoomState, preload: PreloadState) {
 	return (e: MouseEvent) => {
 		state.lastX = e.clientX;
 		state.lastY = e.clientY;
 		state.mouseHasMoved = true;
 
-		// If viewer visible, check if we should hide
+		// Skip all processing if disabled
+		if (!state.settings.enabled) {
+			// Still close any visible viewer when disabled
+			if (state.viewer?.getIsVisible()) cancel(state);
+			return;
+		}
+
+		// Always check modifier state on move
+		const resourcePref = detectResourcePreference(state.settings.resourceKeys, e);
+
+		// If viewer visible, check if we should hide or switch
 		if (state.viewer?.getIsVisible()) {
+			// No valid combo pressed - close immediately
+			if (resourcePref === null) {
+				cancel(state);
+				return;
+			}
+
+			// Preference changed - need to re-resolve and switch
+			if (resourcePref !== state.currentResourcePref) {
+				state.currentResourcePref = resourcePref;
+				// Re-trigger on same target with new pref
+				if (state.currentTarget) {
+					cancel(state);
+					tryTrigger(state, preload, state.currentTarget);
+				}
+				return;
+			}
+
+			// Same preference - check if still over target/viewer
 			if (isOverViewer(state)) return;
 
 			if (state.currentTarget) {
@@ -245,6 +286,7 @@ export function createOnMove(state: HoverZoomState) {
  */
 export function createOnClick(state: HoverZoomState) {
 	return () => {
+		if (!state.settings.enabled) return;
 		if (state.viewer?.getIsVisible()) {
 			cancel(state);
 		}

@@ -28,6 +28,7 @@ import { en as hash } from '../../tools/hash/locales/en';
 import { en as headers_viewer } from '../../tools/headers-viewer/locales/en';
 import { en as hex_dump } from '../../tools/hex-dump/locales/en';
 import { en as history_search } from '../../tools/history-search/locales/en';
+import { en as hover_zoom } from '../../tools/hover-zoom/locales/en';
 import { en as html_entity } from '../../tools/html-entity/locales/en';
 import { en as http_status } from '../../tools/http-status/locales/en';
 import { en as image_tools } from '../../tools/image-tools/locales/en';
@@ -119,6 +120,7 @@ export const TOOLS_EN = {
 	...headers_viewer,
 	...hex_dump,
 	...history_search,
+	...hover_zoom,
 	...html_entity,
 	...http_status,
 	...image_tools,

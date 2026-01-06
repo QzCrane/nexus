@@ -28,7 +28,7 @@ export interface HoverZoomState {
  * Preload cache state
  */
 export interface PreloadState {
-	cache: WeakMap<HTMLElement, { result: any; url: string }>;
+	cache: WeakMap<HTMLElement, { result: any; url: string; pref: ResourcePreference }>;
 	pending: HTMLElement | null;
 	preloadImage: HTMLImageElement | null;
 }

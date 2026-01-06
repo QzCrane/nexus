@@ -26,9 +26,17 @@ import { lazy } from 'react';
 	// Build tool-to-export map
 	const entries = panelModules.map(m => {
 		const exportName = detectPanelExport(m.panelPath) || toPascalCase(m.id) + 'Panel';
-		// Map dirType to folder
+		// Handle nested panel paths (e.g., tools/hover-zoom/components/ui/panel.tsx)
+		// Extract relative path from panelPath for import statement
 		const folder = m.dirType === 'system' ? 'system' : (m.dirType === 'scripts' ? 'scripts' : 'tools');
-		return `\t'${m.id}': lazy(() => import('../${folder}/${m.id}/panel').then(m => ({ default: m.${exportName} })))`;
+		// Normalize to forward slashes for cross-platform compatibility
+		const normalizedPanelDir = path.dirname(m.panelPath).replace(/\\/g, '/');
+		const searchPattern = `src/${folder}/${m.id}`;
+		const baseIndex = normalizedPanelDir.indexOf(searchPattern);
+		const relativePart = baseIndex >= 0 
+			? normalizedPanelDir.substring(baseIndex + `src/${folder}/`.length) + '/panel'
+			: `${m.id}/panel`;
+		return `\t'${m.id}': lazy(() => import('../${folder}/${relativePart}').then(m => ({ default: m.${exportName} })))`;
 	});
 
 	const content = `${header}export const generatedToolPanels = {
