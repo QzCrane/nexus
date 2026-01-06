@@ -20,7 +20,9 @@ let settings: HoverZoomSettings = DEFAULT_SETTINGS;
 let currentTarget: HTMLElement | null = null;
 let hoverTimer: number | null = null;
 let lastX = 0, lastY = 0;
+let mouseHasMoved = false; // Track if mouse has moved at least once
 let modifiersActive = false;
+let toggleLocked = false; // For toggle mode: viewer stays until key pressed again
 
 const ensureViewer = () => {
 	if (!viewer) {
@@ -98,6 +100,7 @@ const onOut = (e: MouseEvent) => {
 const onMove = (e: MouseEvent) => {
 	lastX = e.clientX;
 	lastY = e.clientY;
+	mouseHasMoved = true;
 
 	// If viewer visible, check if we should hide
 	if (viewer?.getIsVisible()) {
@@ -118,6 +121,7 @@ const onMove = (e: MouseEvent) => {
 
 /**
  * Handle keydown - enable detection at current position
+ * Supports both 'hold' and 'toggle' modes
  */
 const onKeyDown = (e: KeyboardEvent) => {
 	if (!settings.enabled) return;
@@ -129,21 +133,47 @@ const onKeyDown = (e: KeyboardEvent) => {
 	if (key === 'ctrl' && !e.ctrlKey) return;
 	if (key === 'alt' && !e.altKey) return;
 
+	// Prevent repeat events (key held down)
+	if (e.repeat) return;
+
 	modifiersActive = true;
 
-	// If no current target, try to detect at mouse position
+	// Toggle mode: if viewer visible and locked, close it
+	if (settings.triggerAction === 'toggle' && toggleLocked && viewer?.getIsVisible()) {
+		toggleLocked = false;
+		cancel();
+		return;
+	}
+
+	// Try to detect at mouse position
+	if (!mouseHasMoved) {
+		// Mouse hasn't moved yet - cannot determine position
+		return;
+	}
+
 	if (!currentTarget && !viewer?.getIsVisible()) {
 		const el = getElementAtMouse();
-		if (el) tryTrigger(el);
+		if (el) {
+			tryTrigger(el);
+			// For toggle mode, lock the viewer open
+			if (settings.triggerAction === 'toggle') {
+				toggleLocked = true;
+			}
+		}
 	}
 };
 
 /**
- * Handle keyup - hide viewer when modifier released
+ * Handle keyup - hide viewer when modifier released (hold mode only)
  */
 const onKeyUp = (e: KeyboardEvent) => {
 	const key = settings.triggerKey;
 	if (key === 'none') return;
+
+	// In toggle mode, don't hide on key release
+	if (settings.triggerAction === 'toggle') {
+		return;
+	}
 
 	const shouldHide =
 		(key === 'shift' && e.key === 'Shift') ||
@@ -192,6 +222,7 @@ const cancel = () => {
 	clearTimer();
 	viewer?.hide();
 	currentTarget = null;
+	toggleLocked = false;
 };
 
 export async function init(): Promise<void> {

@@ -127,10 +127,15 @@ export class HoverZoomViewer {
 	private showImage(source: EnhancedResult, mouseX: number, mouseY: number) {
 		if (!this.dom) return;
 
+		// Use trigger element size as initial estimate
+		const triggerRect = source.element?.getBoundingClientRect();
+		const estW = Math.max(triggerRect?.width || 200, 200);
+		const estH = Math.max(triggerRect?.height || 150, 150);
+
 		this.dom.img.style.display = 'block';
 		this.dom.img.src = source.url;
 		this.dom.img.onload = () => {
-			console.log(LOG_TAG, 'Image loaded');
+			console.log(LOG_TAG, 'Image loaded', this.dom?.img.naturalWidth, this.dom?.img.naturalHeight);
 			if (!this.isVisible || !this.dom) return;
 			this.dom.spinner.style.display = 'none';
 			this.dom.img.style.opacity = '1';
@@ -141,13 +146,17 @@ export class HoverZoomViewer {
 			console.error(LOG_TAG, 'Image load error');
 			if (this.dom) this.dom.spinner.style.display = 'none';
 		};
-		this.updateLayout(mouseX, mouseY, 400, 300); // Placeholder size
+		this.updateLayout(mouseX, mouseY, estW, estH);
 	}
 
 	private showVideo(source: EnhancedResult, mouseX: number, mouseY: number) {
 		if (!this.dom) return;
 
-		// Note: DASH video+audio merge requires MSE, simplified to video-only for now
+		// Use trigger element size as initial estimate (16:9 ratio)
+		const triggerRect = source.element?.getBoundingClientRect();
+		const estW = Math.max(triggerRect?.width || 320, 320);
+		const estH = Math.max(triggerRect?.height || 180, 180);
+
 		console.log(LOG_TAG, 'Showing video:', source.url.slice(0, 80));
 
 		this.dom.video.style.display = 'block';
@@ -155,7 +164,7 @@ export class HoverZoomViewer {
 		this.dom.video.muted = true;
 
 		this.dom.video.onloadedmetadata = () => {
-			console.log(LOG_TAG, 'Video metadata loaded', this.dom?.video.videoWidth, this.dom?.video.videoHeight);
+			console.log(LOG_TAG, 'Video loaded', this.dom?.video.videoWidth, this.dom?.video.videoHeight);
 			if (!this.isVisible || !this.dom) return;
 			this.dom.spinner.style.display = 'none';
 			this.updateLayout(mouseX, mouseY, this.dom.video.videoWidth, this.dom.video.videoHeight);
@@ -168,7 +177,7 @@ export class HoverZoomViewer {
 		};
 
 		this.dom.video.play().catch(() => { });
-		this.updateLayout(mouseX, mouseY, 640, 360);
+		this.updateLayout(mouseX, mouseY, estW, estH);
 	}
 
 	hide() {
@@ -206,68 +215,183 @@ export class HoverZoomViewer {
 		`;
 	}
 
+	/**
+	 * Calculate optimal layout position and size
+	 * Algorithm:
+	 * 1. Evaluate all 4 directions (Right/Left/Bottom/Top)
+	 * 2. For each direction, calculate max displayable size with edge-alignment constraint
+	 *    - Edge constraint: trigger's edge range must be within viewer's parallel edge range
+	 * 3. Choose the direction with largest display area
+	 * 4. Scale down only if no direction can fit the original size
+	 */
 	private updateLayout(mouseX: number, mouseY: number, contentW: number, contentH: number) {
 		if (!this.dom || !contentW || !contentH) return;
 
 		const vpW = window.innerWidth, vpH = window.innerHeight;
 		const margin = 15;
 		const gap = 10;
-
-		// Scale to fit viewport
-		const maxW = vpW - margin * 2;
-		const maxH = vpH - margin * 2;
-		const ratio = Math.min(maxW / contentW, maxH / contentH, 1);
-		const renderW = contentW * ratio;
-		const renderH = contentH * ratio;
+		const aspectRatio = contentW / contentH;
 
 		const trigger = this.currentSource?.element;
 		const tr = trigger?.getBoundingClientRect();
 
-		let left: number, top: number;
+		let finalLeft: number, finalTop: number, finalW: number, finalH: number;
 
 		if (tr) {
-			// Priority: Right > Left > Bottom > Top (never overlap trigger)
-			const spaceRight = vpW - tr.right - margin;
-			const spaceLeft = tr.left - margin;
-			const spaceBottom = vpH - tr.bottom - margin;
-			const spaceTop = tr.top - margin;
+			// Calculate available space in each direction
+			const spaceRight = vpW - tr.right - margin - gap;
+			const spaceLeft = tr.left - margin - gap;
+			const spaceBottom = vpH - tr.bottom - margin - gap;
+			const spaceTop = tr.top - margin - gap;
 
-			if (spaceRight >= renderW + gap) {
-				// Position to the right
-				left = tr.right + gap;
-				top = Math.max(margin, Math.min(tr.top + (tr.height - renderH) / 2, vpH - renderH - margin));
-			} else if (spaceLeft >= renderW + gap) {
-				// Position to the left
-				left = tr.left - gap - renderW;
-				top = Math.max(margin, Math.min(tr.top + (tr.height - renderH) / 2, vpH - renderH - margin));
-			} else if (spaceBottom >= renderH + gap) {
-				// Position below
-				top = tr.bottom + gap;
-				left = Math.max(margin, Math.min(tr.left + (tr.width - renderW) / 2, vpW - renderW - margin));
-			} else if (spaceTop >= renderH + gap) {
-				// Position above
-				top = tr.top - gap - renderH;
-				left = Math.max(margin, Math.min(tr.left + (tr.width - renderW) / 2, vpW - renderW - margin));
+			// For horizontal placement (Right/Left): available height is full viewport minus margins
+			// For vertical placement (Bottom/Top): available width is full viewport minus margins
+			const availH_horizontal = vpH - margin * 2;
+			const availW_vertical = vpW - margin * 2;
+
+			interface Candidate {
+				dir: 'right' | 'left' | 'bottom' | 'top';
+				w: number;
+				h: number;
+				area: number;
+				left: number;
+				top: number;
+			}
+
+			const candidates: Candidate[] = [];
+
+			// Helper: calculate best size for given max width and max height, respecting aspect ratio
+			const calcSize = (maxW: number, maxH: number): { w: number; h: number } => {
+				if (maxW <= 0 || maxH <= 0) return { w: 0, h: 0 };
+				// Don't scale up beyond original size
+				const scale = Math.min(maxW / contentW, maxH / contentH, 1);
+				return { w: contentW * scale, h: contentH * scale };
+			};
+
+			// Helper: calculate vertical position ensuring trigger's vertical range is within viewer's range
+			// triggerTop/triggerBottom must be within [viewerTop, viewerTop + viewerH]
+			const calcVerticalPos = (viewerH: number): number => {
+				// Viewer must cover trigger's vertical span
+				// viewerTop <= tr.top && viewerTop + viewerH >= tr.bottom
+				const minTop = Math.max(margin, tr.bottom - viewerH);
+				const maxTop = Math.min(vpH - viewerH - margin, tr.top);
+				if (minTop > maxTop) {
+					// Can't satisfy constraint, center on trigger
+					return Math.max(margin, Math.min(tr.top + (tr.height - viewerH) / 2, vpH - viewerH - margin));
+				}
+				// Prefer centering on trigger within valid range
+				const centered = tr.top + (tr.height - viewerH) / 2;
+				return Math.max(minTop, Math.min(centered, maxTop));
+			};
+
+			// Helper: calculate horizontal position ensuring trigger's horizontal range is within viewer's range
+			const calcHorizontalPos = (viewerW: number): number => {
+				const minLeft = Math.max(margin, tr.right - viewerW);
+				const maxLeft = Math.min(vpW - viewerW - margin, tr.left);
+				if (minLeft > maxLeft) {
+					return Math.max(margin, Math.min(tr.left + (tr.width - viewerW) / 2, vpW - viewerW - margin));
+				}
+				const centered = tr.left + (tr.width - viewerW) / 2;
+				return Math.max(minLeft, Math.min(centered, maxLeft));
+			};
+
+			// RIGHT: viewer placed to the right of trigger
+			if (spaceRight > 0) {
+				const size = calcSize(spaceRight, availH_horizontal);
+				if (size.w > 0 && size.h > 0) {
+					candidates.push({
+						dir: 'right',
+						w: size.w,
+						h: size.h,
+						area: size.w * size.h,
+						left: tr.right + gap,
+						top: calcVerticalPos(size.h)
+					});
+				}
+			}
+
+			// LEFT: viewer placed to the left of trigger
+			if (spaceLeft > 0) {
+				const size = calcSize(spaceLeft, availH_horizontal);
+				if (size.w > 0 && size.h > 0) {
+					candidates.push({
+						dir: 'left',
+						w: size.w,
+						h: size.h,
+						area: size.w * size.h,
+						left: tr.left - gap - size.w,
+						top: calcVerticalPos(size.h)
+					});
+				}
+			}
+
+			// BOTTOM: viewer placed below trigger
+			if (spaceBottom > 0) {
+				const size = calcSize(availW_vertical, spaceBottom);
+				if (size.w > 0 && size.h > 0) {
+					candidates.push({
+						dir: 'bottom',
+						w: size.w,
+						h: size.h,
+						area: size.w * size.h,
+						left: calcHorizontalPos(size.w),
+						top: tr.bottom + gap
+					});
+				}
+			}
+
+			// TOP: viewer placed above trigger
+			if (spaceTop > 0) {
+				const size = calcSize(availW_vertical, spaceTop);
+				if (size.w > 0 && size.h > 0) {
+					candidates.push({
+						dir: 'top',
+						w: size.w,
+						h: size.h,
+						area: size.w * size.h,
+						left: calcHorizontalPos(size.w),
+						top: tr.top - gap - size.h
+					});
+				}
+			}
+
+			// Select the candidate with largest area
+			if (candidates.length > 0) {
+				candidates.sort((a, b) => b.area - a.area);
+				const best = candidates[0];
+				finalLeft = best.left;
+				finalTop = best.top;
+				finalW = best.w;
+				finalH = best.h;
 			} else {
-				// No space available - use opposite corner from trigger center
-				const tCenterX = tr.left + tr.width / 2;
-				const tCenterY = tr.top + tr.height / 2;
-				left = tCenterX < vpW / 2 ? vpW - renderW - margin : margin;
-				top = tCenterY < vpH / 2 ? vpH - renderH - margin : margin;
+				// Fallback: no valid direction, use largest available space
+				const maxW = vpW - margin * 2;
+				const maxH = vpH - margin * 2;
+				const scale = Math.min(maxW / contentW, maxH / contentH, 1);
+				finalW = contentW * scale;
+				finalH = contentH * scale;
+				finalLeft = (vpW - finalW) / 2;
+				finalTop = (vpH - finalH) / 2;
 			}
 		} else {
-			// No trigger - position near mouse
-			left = mouseX + gap;
-			if (left + renderW > vpW - margin) left = mouseX - renderW - gap;
-			if (left < margin) left = margin;
-			top = Math.max(margin, Math.min(mouseY - renderH / 2, vpH - renderH - margin));
+			// No trigger element - position near mouse
+			const maxW = vpW - margin * 2;
+			const maxH = vpH - margin * 2;
+			const scale = Math.min(maxW / contentW, maxH / contentH, 1);
+			finalW = contentW * scale;
+			finalH = contentH * scale;
+
+			finalLeft = mouseX + gap;
+			if (finalLeft + finalW > vpW - margin) finalLeft = mouseX - finalW - gap;
+			if (finalLeft < margin) finalLeft = margin;
+			finalTop = Math.max(margin, Math.min(mouseY - finalH / 2, vpH - finalH - margin));
 		}
 
 		Object.assign(this.dom.viewer.style, {
-			width: `${renderW}px`,
-			height: `${renderH}px`,
-			top: `${top}px`,
-			left: `${left}px`
+			width: `${finalW}px`,
+			height: `${finalH}px`,
+			top: `${finalTop}px`,
+			left: `${finalLeft}px`
 		});
 
 		const media = this.currentType === 'video' ? this.dom.video : this.dom.img;
