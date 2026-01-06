@@ -1,5 +1,5 @@
 // goal: Resolve high-quality image URL from DOM elements
-// eff: Supports img, picture, srcset, background-image, video poster
+// eff: Strict matching - only img, video, background-image elements
 
 export interface ImageSource {
 	url: string;
@@ -9,24 +9,23 @@ export interface ImageSource {
 	originalUrl?: string;
 }
 
-const REGEX_URL_CLEAN = /['"']?([^'"]+)['"']?/;
-const IMG_EXTENSIONS = /\.(jpeg|jpg|gif|png|webp|bmp|avif)(\?.*)?$/i;
+const REGEX_URL_CLEAN = /['"]?([^'"]+)['"]?/;
+const IMG_EXTENSIONS = /\.(jpeg|jpg|gif|png|webp|bmp|avif|svg)(\?.*)?$/i;
+
+// Minimum size to be considered a valid image trigger
+const MIN_SIZE = 20;
 
 /**
  * Clean and resolve image URL
- * - Handles protocol-relative and relative URLs
- * - Removes Bilibili @xxx.avif/webp size suffixes
  */
 function resolveUrl(url: string): string {
 	if (!url) return '';
 	let resolved = url;
 
-	// Handle protocol-relative and relative URLs
 	if (resolved.startsWith('//')) resolved = 'https:' + resolved;
 	else if (resolved.startsWith('/')) resolved = window.location.origin + resolved;
 
-	// Bilibili: Remove @size.format suffix (e.g., @320w_200h.webp, @.avif)
-	// Pattern: xxx.jpg@anything -> xxx.jpg
+	// Bilibili: Remove @size.format suffix
 	resolved = resolved.replace(/@[^/]*$/, '');
 
 	return resolved;
@@ -38,7 +37,10 @@ function getBackgroundImage(el: HTMLElement): string | null {
 		const match = bg.match(/url\((.*)\)/);
 		if (match?.[1]) {
 			const clean = match[1].match(REGEX_URL_CLEAN);
-			return clean ? clean[1] : match[1];
+			const url = clean ? clean[1] : match[1];
+			// Filter out gradient/data URLs
+			if (url.startsWith('data:') || url.includes('gradient')) return null;
+			return url;
 		}
 	}
 	return null;
@@ -67,8 +69,51 @@ function getDataHdUrl(el: HTMLElement): string | null {
 	return null;
 }
 
+/**
+ * Check if element is a valid image/video trigger
+ * Excludes text-only elements, buttons, etc.
+ */
+export function isValidTrigger(target: HTMLElement): boolean {
+	if (!target) return false;
+
+	// Must be one of: img, video, canvas, svg, or have background-image
+	const isImg = target instanceof HTMLImageElement;
+	const isVideo = target instanceof HTMLVideoElement;
+	const isCanvas = target instanceof HTMLCanvasElement;
+	const isSvg = target instanceof SVGElement || target.tagName === 'svg';
+
+	if (isImg || isVideo || isCanvas || isSvg) {
+		// Check minimum size
+		const rect = target.getBoundingClientRect();
+		return rect.width >= MIN_SIZE && rect.height >= MIN_SIZE;
+	}
+
+	// Check for background-image
+	const bg = window.getComputedStyle(target).backgroundImage;
+	if (bg && bg !== 'none' && bg.startsWith('url(') && !bg.includes('gradient')) {
+		const rect = target.getBoundingClientRect();
+		return rect.width >= MIN_SIZE && rect.height >= MIN_SIZE;
+	}
+
+	// Check for child img (like link wrapping img)
+	const childImg = target.querySelector('img');
+	if (childImg) {
+		const rect = childImg.getBoundingClientRect();
+		return rect.width >= MIN_SIZE && rect.height >= MIN_SIZE;
+	}
+
+	return false;
+}
+
+/**
+ * Resolve image source from element
+ * Returns null if not a valid image trigger
+ */
 export function resolveImageSource(target: HTMLElement): ImageSource | null {
 	if (!target) return null;
+
+	// Quick check: is this a valid trigger at all?
+	if (!isValidTrigger(target)) return null;
 
 	let url = '';
 	let type: 'image' | 'video' | 'svg' = 'image';
@@ -79,12 +124,11 @@ export function resolveImageSource(target: HTMLElement): ImageSource | null {
 
 	// Priority 2: IMG element
 	if (!url && target instanceof HTMLImageElement) {
-		// Get src first, then check srcset for larger version
 		url = target.currentSrc || target.src;
 		const srcsetUrl = getLargestSrcset(target.srcset);
 		if (srcsetUrl) url = srcsetUrl;
 
-		// Check parent <picture> for even larger sources
+		// Check parent <picture>
 		const picture = target.closest('picture');
 		if (picture) {
 			for (const src of picture.querySelectorAll('source')) {
@@ -93,7 +137,7 @@ export function resolveImageSource(target: HTMLElement): ImageSource | null {
 			}
 		}
 	}
-	// Priority 3: SVG - skip
+	// Priority 3: SVG - skip for now
 	else if (!url && (target instanceof SVGElement || target.tagName === 'svg')) {
 		return null;
 	}
@@ -107,7 +151,7 @@ export function resolveImageSource(target: HTMLElement): ImageSource | null {
 		url = getBackgroundImage(target) || '';
 	}
 
-	// Priority 6: Link to image
+	// Priority 6: Link directly to image file
 	if (!url) {
 		const link = target instanceof HTMLAnchorElement ? target : target.closest('a');
 		if (link?.href.match(IMG_EXTENSIONS)) url = link.href;

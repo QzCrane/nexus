@@ -208,16 +208,56 @@ export class HoverZoomViewer {
 
 	private updateLayout(mouseX: number, mouseY: number, contentW: number, contentH: number) {
 		if (!this.dom || !contentW || !contentH) return;
+
 		const vpW = window.innerWidth, vpH = window.innerHeight;
-		const ratio = Math.min((vpW * 0.7) / contentW, (vpH * 0.8) / contentH, 1);
-		const renderW = contentW * ratio, renderH = contentH * ratio;
-		const gap = 25;
+		const margin = 20;
+		const gap = 15;
 
-		let left = mouseX + gap, top = Math.max(20, Math.min(mouseY - renderH / 2, vpH - renderH - 20));
-		if (left + renderW > vpW - 20) left = mouseX - renderW - gap;
-		if (left < 20) { left = (vpW - renderW) / 2; top = (vpH - renderH) / 2; }
+		// Scale to fit viewport with padding
+		const maxW = vpW - margin * 2;
+		const maxH = vpH - margin * 2;
+		const ratio = Math.min(maxW / contentW, maxH / contentH, 1);
+		const renderW = contentW * ratio;
+		const renderH = contentH * ratio;
 
-		Object.assign(this.dom.viewer.style, { width: `${renderW}px`, height: `${renderH}px`, top: `${top}px`, left: `${left}px` });
+		// Get trigger element bounds
+		const trigger = this.currentSource?.element;
+		const triggerRect = trigger?.getBoundingClientRect();
+
+		let left: number, top: number;
+
+		if (triggerRect) {
+			// Try to position to the right of trigger
+			if (triggerRect.right + gap + renderW <= vpW - margin) {
+				left = triggerRect.right + gap;
+			}
+			// Try left of trigger
+			else if (triggerRect.left - gap - renderW >= margin) {
+				left = triggerRect.left - gap - renderW;
+			}
+			// Center horizontally
+			else {
+				left = (vpW - renderW) / 2;
+			}
+
+			// Vertical: center on trigger, clamped to viewport
+			top = triggerRect.top + (triggerRect.height - renderH) / 2;
+			top = Math.max(margin, Math.min(top, vpH - renderH - margin));
+		} else {
+			// Fallback: position near mouse
+			left = mouseX + gap;
+			if (left + renderW > vpW - margin) left = mouseX - renderW - gap;
+			if (left < margin) left = (vpW - renderW) / 2;
+
+			top = Math.max(margin, Math.min(mouseY - renderH / 2, vpH - renderH - margin));
+		}
+
+		Object.assign(this.dom.viewer.style, {
+			width: `${renderW}px`,
+			height: `${renderH}px`,
+			top: `${top}px`,
+			left: `${left}px`
+		});
 
 		const media = this.currentType === 'video' ? this.dom.video : this.dom.img;
 		media.style.width = media.style.height = '100%';

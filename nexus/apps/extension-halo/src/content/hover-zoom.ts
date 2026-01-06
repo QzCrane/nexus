@@ -1,9 +1,10 @@
-// goal: Hover Zoom content module entry (thin wrapper)
-// eff: Imports and initializes core logic from tools/hover-zoom/
+// goal: Hover Zoom content module entry
+// eff: Responsive trigger detection with immediate hide on mouse leave
 
 import { DEFAULT_SETTINGS, STORAGE_KEY, HoverZoomSettings } from '../tools/hover-zoom/types';
 import { HoverZoomViewer } from '../tools/hover-zoom/content/viewer';
 import { HotkeyManager } from '../tools/hover-zoom/content/hotkeys';
+import { isValidTrigger } from '../tools/hover-zoom/content/image-resolver';
 import {
 	initRulesForHost,
 	resolveEnhanced,
@@ -18,7 +19,6 @@ let hotkeys: HotkeyManager | null = null;
 let settings: HoverZoomSettings = DEFAULT_SETTINGS;
 let currentTarget: HTMLElement | null = null;
 let hoverTimer: number | null = null;
-let resolvingTarget: HTMLElement | null = null;
 let lastX = 0, lastY = 0;
 
 const ensureViewer = () => {
@@ -29,16 +29,30 @@ const ensureViewer = () => {
 	return viewer;
 };
 
+/**
+ * Check if mouse is still over target element
+ */
+const isMouseOverTarget = (target: HTMLElement, x: number, y: number): boolean => {
+	const rect = target.getBoundingClientRect();
+	return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+};
+
 const onOver = (e: MouseEvent) => {
 	if (!settings.enabled) return;
 	const t = e.target as HTMLElement;
-	if (t === currentTarget || t === resolvingTarget) return;
 
+	// Skip if already on this target
+	if (t === currentTarget) return;
+
+	// Check modifiers
 	if (!checkModifiers(e, settings)) return;
 
+	// Strict validation: only image/video/background elements
+	if (!isValidTrigger(t)) return;
+
+	// Quick detect
 	const quickSrc = detectQuick(t, settings);
 	if (quickSrc) {
-		console.log(LOG_TAG, 'Quick detect:', quickSrc.url.slice(0, 60));
 		currentTarget = t;
 		lastX = e.clientX;
 		lastY = e.clientY;
@@ -47,26 +61,54 @@ const onOver = (e: MouseEvent) => {
 };
 
 const onOut = (e: MouseEvent) => {
-	if (e.target === currentTarget || e.target === resolvingTarget) {
-		if ((e.relatedTarget as HTMLElement)?.closest('#halo-hover-zoom-container')) return;
+	const relatedTarget = e.relatedTarget as HTMLElement;
+
+	// Don't hide if moving to viewer container
+	if (relatedTarget?.closest('#halo-hover-zoom-container')) return;
+
+	// Cancel if leaving current target
+	if (e.target === currentTarget) {
 		cancel();
 	}
 };
 
-const onMove = (e: MouseEvent) => { lastX = e.clientX; lastY = e.clientY; };
+const onMove = (e: MouseEvent) => {
+	lastX = e.clientX;
+	lastY = e.clientY;
+
+	// If viewer is visible but mouse left the trigger area, hide immediately
+	if (viewer?.getIsVisible() && currentTarget) {
+		if (!isMouseOverTarget(currentTarget, lastX, lastY)) {
+			// Also check if mouse is over viewer
+			const viewerEl = document.getElementById('halo-hover-zoom-container');
+			if (!viewerEl || !isMouseOverElement(viewerEl, lastX, lastY)) {
+				cancel();
+			}
+		}
+	}
+};
+
+const isMouseOverElement = (el: HTMLElement, x: number, y: number): boolean => {
+	const rect = el.getBoundingClientRect();
+	return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+};
 
 const startTimer = (target: HTMLElement) => {
 	clearTimer();
-	resolvingTarget = target;
 
 	hoverTimer = window.setTimeout(async () => {
-		if (resolvingTarget !== target) return;
+		// Verify mouse is still over target
+		if (!isMouseOverTarget(target, lastX, lastY)) {
+			cancel();
+			return;
+		}
 
 		try {
 			const result = await resolveEnhanced(target);
-			if (!result || resolvingTarget !== target) return;
+			if (!result) return;
 
-			console.log(LOG_TAG, 'Resolved:', result.fromRule || 'generic', result.url.slice(0, 80));
+			// Double check before showing
+			if (currentTarget !== target) return;
 
 			const v = ensureViewer();
 			v.show(result, lastX, lastY);
@@ -84,7 +126,6 @@ const cancel = () => {
 	clearTimer();
 	viewer?.hide();
 	currentTarget = null;
-	resolvingTarget = null;
 };
 
 export async function init(): Promise<void> {
@@ -104,7 +145,7 @@ export async function init(): Promise<void> {
 
 	await initRulesForHost();
 
-	console.log(LOG_TAG, 'Settings:', { enabled: settings.enabled, triggerKey: settings.triggerKey, delay: settings.triggerDelay });
+	console.log(LOG_TAG, 'Settings:', { enabled: settings.enabled, delay: settings.triggerDelay });
 
 	document.addEventListener('mouseover', onOver, true);
 	document.addEventListener('mouseout', onOut, true);
@@ -118,5 +159,5 @@ export async function init(): Promise<void> {
 		}
 	});
 
-	console.log(LOG_TAG, 'Ready, enabled:', settings.enabled);
+	console.log(LOG_TAG, 'Ready');
 }
