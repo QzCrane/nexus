@@ -2,7 +2,7 @@
 // eff: Robust trigger with keydown support, proper hide on any move away
 
 import { DEFAULT_SETTINGS, STORAGE_KEY, HoverZoomSettings } from '../tools/hover-zoom/types';
-import { HoverZoomViewer } from '../tools/hover-zoom/content/viewer';
+import { HoverZoomViewer } from '../tools/hover-zoom/content/viewer/index';
 import { HotkeyManager } from '../tools/hover-zoom/content/hotkeys';
 import { isValidTrigger } from '../tools/hover-zoom/content/image-resolver';
 import {
@@ -11,6 +11,11 @@ import {
 	detectQuick,
 	checkModifiers
 } from '../tools/hover-zoom/content/rule-resolver';
+import {
+	detectResourcePreference,
+	shouldTriggerActivate,
+	type ResourcePreference
+} from '../tools/hover-zoom/content/resource-key-helper';
 
 const LOG_TAG = '[HALO:HoverZoom]';
 let initialized = false;
@@ -23,6 +28,12 @@ let lastX = 0, lastY = 0;
 let mouseHasMoved = false; // Track if mouse has moved at least once
 let modifiersActive = false;
 let toggleLocked = false; // For toggle mode: viewer stays until key pressed again
+let currentResourcePref: ResourcePreference = 'auto'; // Current resource preference based on keys
+
+// Performance: Preload cache and pending resolution
+let preloadCache = new WeakMap<HTMLElement, { result: any; url: string }>();
+let pendingPreload: HTMLElement | null = null;
+let preloadImage: HTMLImageElement | null = null;
 
 const ensureViewer = () => {
 	if (!viewer) {
@@ -52,14 +63,35 @@ const isOverViewer = (): boolean => {
 };
 
 /**
- * Try to trigger on element at current position
+ * Preload image URL to warm up browser cache
  */
-const tryTrigger = (target: HTMLElement) => {
+const preloadUrl = (url: string) => {
+	if (!url || url.startsWith('data:')) return;
+	if (!preloadImage) preloadImage = new Image();
+	preloadImage.src = url;
+};
+
+/**
+ * Try to trigger on element at current position
+ * Uses preloaded result if available for instant display
+ */
+const tryTrigger = async (target: HTMLElement) => {
 	if (!isValidTrigger(target)) return;
+
+	const cached = preloadCache.get(target);
+	if (cached) {
+		// Instant path: use preloaded result
+		currentTarget = target;
+		const v = ensureViewer();
+		v.show(cached.result, lastX, lastY);
+		return;
+	}
 
 	const quickSrc = detectQuick(target, settings);
 	if (quickSrc) {
 		currentTarget = target;
+		// Start preloading immediately (before delay)
+		preloadUrl(quickSrc.url);
 		startTimer(target);
 	}
 };
@@ -69,20 +101,49 @@ const onOver = (e: MouseEvent) => {
 	lastX = e.clientX;
 	lastY = e.clientY;
 
-	// Check modifiers for trigger mode
-	if (settings.triggerKey !== 'none' && !checkModifiers(e, settings)) {
+	const t = e.target as HTMLElement;
+
+	// Ignore events on the viewer itself (prevent flicker when mouse moves to viewer)
+	if (t.closest('#halo-hover-zoom-container')) return;
+
+	// Detect resource preference based on modifier keys
+	const resourcePref = detectResourcePreference(settings.resourceKeys, e);
+	if (resourcePref === null) {
+		// No valid key combination, don't trigger
 		modifiersActive = false;
 		return;
 	}
 	modifiersActive = true;
+	currentResourcePref = resourcePref;
 
-	const t = e.target as HTMLElement;
 	if (t === currentTarget) return;
 
-	// Cancel current if switching to new target
-	if (currentTarget) cancel();
+	// Check if moving within same container (avoid flicker from DOM changes)
+	if (currentTarget) {
+		const currentContainer = currentTarget.closest('a, [data-target-url], .bili-video-card');
+		const newContainer = t.closest('a, [data-target-url], .bili-video-card');
+		if (currentContainer && currentContainer === newContainer) {
+			// Still in same container, don't restart
+			return;
+		}
+		cancel();
+	}
 
 	tryTrigger(t);
+
+	// Preload next likely target (sibling images) for even faster response
+	if (pendingPreload !== t && isValidTrigger(t)) {
+		pendingPreload = t;
+		// Schedule preload resolution
+		queueMicrotask(async () => {
+			if (pendingPreload !== t) return;
+			const result = await resolveEnhanced(t, currentResourcePref);
+			if (result && pendingPreload === t) {
+				preloadCache.set(t, { result, url: result.url });
+				preloadUrl(result.url);
+			}
+		});
+	}
 };
 
 const onOut = (e: MouseEvent) => {
@@ -91,8 +152,22 @@ const onOut = (e: MouseEvent) => {
 	// If moving to viewer, keep visible
 	if (relatedTarget?.closest('#halo-hover-zoom-container')) return;
 
+	// If moving within the same trigger container, ignore
+	if (currentTarget && relatedTarget) {
+		// Check if relatedTarget is inside currentTarget (DOM changed but still in same area)
+		if (currentTarget.contains(relatedTarget) || relatedTarget.contains(currentTarget)) {
+			return;
+		}
+		// Check if both are in same link/image container
+		const currentContainer = currentTarget.closest('a, [data-target-url], .bili-video-card');
+		const relatedContainer = relatedTarget.closest('a, [data-target-url], .bili-video-card');
+		if (currentContainer && currentContainer === relatedContainer) {
+			return;
+		}
+	}
+
 	// If leaving current target, hide
-	if (e.target === currentTarget) {
+	if (e.target === currentTarget || currentTarget?.contains(e.target as Node)) {
 		cancel();
 	}
 };
@@ -198,20 +273,34 @@ const onClick = () => {
 const startTimer = (target: HTMLElement) => {
 	clearTimer();
 
+	// Reduced delay for cached results
+	const delay = preloadCache.has(target) ? 0 : settings.triggerDelay;
+
 	hoverTimer = window.setTimeout(async () => {
 		// Verify still valid
 		if (currentTarget !== target) return;
 
 		try {
-			const result = await resolveEnhanced(target);
+			// Check cache first
+			const cached = preloadCache.get(target);
+			if (cached) {
+				const v = ensureViewer();
+				v.show(cached.result, lastX, lastY);
+				return;
+			}
+
+			const result = await resolveEnhanced(target, currentResourcePref);
 			if (!result || currentTarget !== target) return;
+
+			// Cache for future use
+			preloadCache.set(target, { result, url: result.url });
 
 			const v = ensureViewer();
 			v.show(result, lastX, lastY);
 		} catch (e) {
 			console.warn(LOG_TAG, 'Resolution error:', e);
 		}
-	}, settings.triggerDelay);
+	}, delay);
 };
 
 const clearTimer = () => {

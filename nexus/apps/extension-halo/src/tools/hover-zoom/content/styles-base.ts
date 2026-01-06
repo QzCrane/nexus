@@ -12,32 +12,27 @@ export const BASE_STYLES = `
 
 .halo-hz-viewer {
     position: fixed;
-    border-radius: 12px;
-    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.1);
-    overflow: hidden;
+    border-radius: 0;
+    /* Pure white border like PhotoShow */
+    border: 2px solid #fff;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    /* Allow info bar to extend outside container */
+    overflow: visible;
     opacity: 0;
-    transform: scale(0.92) translateY(8px);
-    transition: opacity 0.2s ease, transform 0.2s ease;
-    background: linear-gradient(135deg, rgba(30,30,35,0.95), rgba(20,20,25,0.98));
-    backdrop-filter: blur(20px) saturate(180%);
+    /* Smooth expand animation from source - transition set dynamically in JS */
+    background: transparent;
     pointer-events: none;
-    display: none;
 }
 
 .halo-hz-viewer.visible {
     opacity: 1;
-    transform: scale(1) translateY(0);
     pointer-events: auto;
-    display: block;
 }
 
 .halo-hz-image,
 .halo-hz-video {
     display: block;
-    max-width: none; max-height: none;
-    object-fit: contain;
-    transform-origin: center;
-    transition: transform 0.2s ease, opacity 0.3s ease;
+    /* Exact dimensions set via JS */
     cursor: default;
     user-select: none;
     -webkit-user-drag: none;
@@ -47,14 +42,27 @@ export const BASE_STYLES = `
 .halo-hz-viewer.dragging .halo-hz-video { cursor: grabbing; }
 
 .halo-hz-spinner {
-    width: 36px; height: 36px;
-    border: 3px solid rgba(255,255,255,0.15);
+    display: none;
+}
+
+/* Loading indicator overlay - uses fixed positioning to avoid parent overflow issues */
+.halo-hz-loading-overlay {
+    position: fixed;
+    z-index: 2147483646;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 4px;
+}
+
+.halo-hz-loading-spinner {
+    width: 32px; height: 32px;
+    border: 3px solid rgba(255,255,255,0.25);
     border-radius: 50%;
-    border-top-color: rgba(255,255,255,0.9);
-    animation: halo-hz-spin 0.8s linear infinite;
-    position: absolute;
-    top: 50%; left: 50%;
-    margin: -18px 0 0 -18px;
+    border-top-color: rgba(100,150,255,0.95);
+    animation: halo-hz-spin 0.7s linear infinite;
 }
 
 @keyframes halo-hz-spin { to { transform: rotate(360deg); } }

@@ -8,6 +8,13 @@ export const zh = {
 		enable: "启用浮图秀",
 		enableDesc: "兼容 PhotoShow，全站生效",
 
+		resourceKeys: {
+			title: "资源快捷键",
+			desc: "配置图片和视频预览的触发键，更具体的组合键优先",
+			image: "图片",
+			video: "视频"
+		},
+
 		trigger: {
 			title: "触发设置",
 			key: "触发键",
@@ -21,6 +28,7 @@ export const zh = {
 			title: "外观设置",
 			mode: "视图模式",
 			position: "浮窗位置",
+			loadingIndicator: "加载指示器",
 			antiHotlink: "反防盗链 (隐私模式)"
 		},
 

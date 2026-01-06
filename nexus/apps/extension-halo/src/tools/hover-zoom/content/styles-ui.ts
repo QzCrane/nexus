@@ -2,44 +2,41 @@
 // eff: Info bar, actions, zoom indicator
 
 export const UI_STYLES = `
+/* Info bar - positioned outside container at bottom, centered text */
 .halo-hz-info {
     position: absolute;
-    left: 0; right: 0;
-    padding: 10px 14px;
-    background: linear-gradient(to top, rgba(0,0,0,0.75), transparent);
-    color: white;
-    font-size: 12px;
-    line-height: 1.5;
+    left: -2px; right: -2px; 
+    bottom: -26px;
+    height: 24px;
+    background: #fff;
+    border: 2px solid #fff;
+    border-top: none;
+    color: #333;
+    font-size: 11px;
     pointer-events: none;
+    /* Flexbox for perfect centering */
     display: flex;
-    justify-content: space-between;
+    justify-content: center;
     align-items: center;
-    gap: 12px;
-    opacity: 0;
-    transition: opacity 0.2s ease;
 }
 
-.halo-hz-viewer:hover .halo-hz-info { opacity: 1; }
-.halo-hz-info.top { top: 0; background: linear-gradient(to bottom, rgba(0,0,0,0.75), transparent); }
-.halo-hz-info.bottom { bottom: 0; }
+/* Position classes (kept for compatibility) */
+.halo-hz-info.top, .halo-hz-info.bottom { }
+.halo-hz-info.none { display: none; }
 
 .halo-hz-caption {
     font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    flex: 1;
-    min-width: 0;
+    max-width: 300px;
 }
 
 .halo-hz-meta {
     font-family: 'SF Mono', Monaco, Consolas, monospace;
-    font-size: 11px;
-    opacity: 0.75;
+    font-size: 13px;
+    color: #555;
     white-space: nowrap;
-    background: rgba(255,255,255,0.1);
-    padding: 2px 8px;
-    border-radius: 4px;
 }
 
 .halo-hz-actions {

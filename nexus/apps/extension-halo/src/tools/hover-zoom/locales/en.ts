@@ -8,6 +8,13 @@ export const en = {
 		enable: "Enable Hover Zoom",
 		enableDesc: "PhotoShow compatible, works on all websites",
 
+		resourceKeys: {
+			title: "Resource Keys",
+			desc: "Configure hotkeys for image and video preview. More specific combos win.",
+			image: "Image",
+			video: "Video"
+		},
+
 		trigger: {
 			title: "Trigger Settings",
 			key: "Modifier Key",
@@ -21,6 +28,7 @@ export const en = {
 			title: "Appearance",
 			mode: "View Mode",
 			position: "Position",
+			loadingIndicator: "Loading Indicator",
 			antiHotlink: "Anti-Hotlink (Privacy)"
 		},
 

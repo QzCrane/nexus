@@ -7,6 +7,7 @@ import { createResolveContext } from './proxy-utils';
 import { resolveImageSource, ImageSource } from './image-resolver';
 import { applyHdRules } from './hd-rules';
 import type { HoverZoomSettings } from '../types';
+import type { ResourcePreference } from './resource-key-helper';
 
 const LOG_TAG = '[HoverZoom:RuleResolver]';
 
@@ -69,9 +70,12 @@ function checkExemptions(target: HTMLElement, settings: HoverZoomSettings): bool
 /**
  * Enhanced image/video source resolution
  * Priority: Site Rules > Generic Resolver > HD Rules
+ * @param target - Target element to resolve
+ * @param resourcePref - User's resource preference (image/video/auto)
  */
 export async function resolveEnhanced(
-	target: HTMLElement
+	target: HTMLElement,
+	resourcePref: ResourcePreference = 'auto'
 ): Promise<EnhancedResult | null> {
 	// First: Try site-specific rules (async)
 	if (cachedRules.length > 0) {
@@ -84,9 +88,33 @@ export async function resolveEnhanced(
 				const ctx = createResolveContext(target, target.getAttribute('href') || '');
 				const result = await rule.resolve(ctx);
 				if (result) {
-					console.log(LOG_TAG, `Rule "${rule.id}" matched`, result);
 					const mappedType: 'image' | 'video' | 'svg' =
 						result.type === 'gallery' ? 'image' : result.type;
+
+					// Check resource preference
+					// If user wants image but rule returns video, try to get thumbnail instead
+					if (resourcePref === 'image' && mappedType === 'video') {
+						// Try to find thumbnail image
+						const thumbImg = target.querySelector('img') || target.closest('a')?.querySelector('img');
+						if (thumbImg?.src) {
+							console.log(LOG_TAG, `User prefers image, using thumbnail instead of video`);
+							return {
+								type: 'image',
+								url: applyHdRules(thumbImg.src),
+								caption: '',
+								element: target,
+								fromRule: rule.id + ':thumbnail'
+							};
+						}
+					}
+
+					// If user wants video but rule returns image, skip this rule
+					if (resourcePref === 'video' && mappedType === 'image') {
+						console.log(LOG_TAG, `User prefers video, skipping image result from rule "${rule.id}"`);
+						continue;
+					}
+
+					console.log(LOG_TAG, `Rule "${rule.id}" matched`, result);
 					return {
 						type: mappedType,
 						url: result.sources[0],
@@ -106,6 +134,12 @@ export async function resolveEnhanced(
 	// Fallback: Generic image resolver
 	const source = resolveImageSource(target);
 	if (!source) return null;
+
+	// If user wants video but we only found image, return null
+	if (resourcePref === 'video' && source.type === 'image') {
+		console.log(LOG_TAG, `User prefers video, but only image found`);
+		return null;
+	}
 
 	const hdUrl = applyHdRules(source.url);
 
@@ -127,14 +161,19 @@ export function detectQuick(target: HTMLElement, settings: HoverZoomSettings): I
 	// Check exemptions first
 	if (!checkExemptions(target, settings)) return null;
 
-	// Check if any rule probe matches
+	// Check if any rule probe matches - but DON'T return page URLs!
+	// B站视频链接需要 API 解析，不能直接返回页面 URL
 	if (cachedRules.length > 0) {
 		for (const rule of cachedRules) {
 			if (rule.probe && (target.matches(rule.probe) || target.closest(rule.probe))) {
-				const link = target.closest('a');
-				if (link?.href) {
-					return { url: link.href, type: 'video', element: target, caption: '' };
+				// Found a rule match - let resolveEnhanced handle it via API
+				// For now, try to get thumbnail from nearby img element
+				const nearbyImg = target.querySelector('img') || target.closest('a')?.querySelector('img');
+				if (nearbyImg?.src && nearbyImg.src.includes('hdslb.com')) {
+					return { url: nearbyImg.src, type: 'image', element: target, caption: '' };
 				}
+				// Don't return page URL - return null and let resolveEnhanced handle it
+				return null;
 			}
 		}
 	}
@@ -154,5 +193,6 @@ export interface EnhancedResult {
 	element: HTMLElement;
 	originalUrl?: string;
 	fromRule: string | null;
+	fileSize?: number;  // File size in bytes (if available)
 }
 

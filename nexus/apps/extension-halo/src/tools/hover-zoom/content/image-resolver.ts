@@ -15,6 +15,10 @@ const IMG_EXTENSIONS = /\.(jpeg|jpg|gif|png|webp|bmp|avif|svg)(\?.*)?$/i;
 // Minimum size to be considered a valid image trigger
 const MIN_SIZE = 20;
 
+// Performance: Cache isValidTrigger results (cleared on scroll/resize)
+const validTriggerCache = new WeakMap<HTMLElement, boolean>();
+const bgImageCache = new WeakMap<HTMLElement, string | null>();
+
 /**
  * Clean and resolve image URL
  */
@@ -32,18 +36,26 @@ function resolveUrl(url: string): string {
 }
 
 function getBackgroundImage(el: HTMLElement): string | null {
+	// Check cache first (getComputedStyle is expensive)
+	if (bgImageCache.has(el)) return bgImageCache.get(el) ?? null;
+
 	const bg = window.getComputedStyle(el).backgroundImage;
+	let result: string | null = null;
+
 	if (bg && bg !== 'none' && bg.startsWith('url(')) {
 		const match = bg.match(/url\((.*)\)/);
 		if (match?.[1]) {
 			const clean = match[1].match(REGEX_URL_CLEAN);
 			const url = clean ? clean[1] : match[1];
 			// Filter out gradient/data URLs
-			if (url.startsWith('data:') || url.includes('gradient')) return null;
-			return url;
+			if (!url.startsWith('data:') && !url.includes('gradient')) {
+				result = url;
+			}
 		}
 	}
-	return null;
+
+	bgImageCache.set(el, result);
+	return result;
 }
 
 function getLargestSrcset(srcset: string): string | null {
@@ -76,6 +88,11 @@ function getDataHdUrl(el: HTMLElement): string | null {
 export function isValidTrigger(target: HTMLElement): boolean {
 	if (!target) return false;
 
+	// Check cache first (significant performance boost)
+	if (validTriggerCache.has(target)) return validTriggerCache.get(target)!;
+
+	let valid = false;
+
 	// Must be one of: img, video, canvas, svg, or have background-image
 	const isImg = target instanceof HTMLImageElement;
 	const isVideo = target instanceof HTMLVideoElement;
@@ -85,24 +102,25 @@ export function isValidTrigger(target: HTMLElement): boolean {
 	if (isImg || isVideo || isCanvas || isSvg) {
 		// Check minimum size
 		const rect = target.getBoundingClientRect();
-		return rect.width >= MIN_SIZE && rect.height >= MIN_SIZE;
+		valid = rect.width >= MIN_SIZE && rect.height >= MIN_SIZE;
+	} else {
+		// Check for background-image (using cached result)
+		const bg = getBackgroundImage(target);
+		if (bg) {
+			const rect = target.getBoundingClientRect();
+			valid = rect.width >= MIN_SIZE && rect.height >= MIN_SIZE;
+		} else {
+			// Check for child img (like link wrapping img)
+			const childImg = target.querySelector('img');
+			if (childImg) {
+				const rect = childImg.getBoundingClientRect();
+				valid = rect.width >= MIN_SIZE && rect.height >= MIN_SIZE;
+			}
+		}
 	}
 
-	// Check for background-image
-	const bg = window.getComputedStyle(target).backgroundImage;
-	if (bg && bg !== 'none' && bg.startsWith('url(') && !bg.includes('gradient')) {
-		const rect = target.getBoundingClientRect();
-		return rect.width >= MIN_SIZE && rect.height >= MIN_SIZE;
-	}
-
-	// Check for child img (like link wrapping img)
-	const childImg = target.querySelector('img');
-	if (childImg) {
-		const rect = childImg.getBoundingClientRect();
-		return rect.width >= MIN_SIZE && rect.height >= MIN_SIZE;
-	}
-
-	return false;
+	validTriggerCache.set(target, valid);
+	return valid;
 }
 
 /**

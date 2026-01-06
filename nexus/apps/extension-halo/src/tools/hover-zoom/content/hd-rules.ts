@@ -7,8 +7,15 @@ export interface HdRule {
 }
 
 export const HD_RULES: HdRule[] = [
-	// Bilibili - remove size suffix
-	{ pattern: /@\d+w_\d+h[^.]*\.([a-z]+)$/i, replacement: '.$1' },
+	// Bilibili hdslb.com - multiple patterns for comprehensive coverage
+	// Pattern 1: URL with file extension followed by @ suffix
+	// Sample: https://i2.hdslb.com/bfs/face/xxx.jpg@52w_52h.webp -> xxx.jpg
+	{ pattern: /(.+?\.(?:jpg|jpeg|png|gif|webp))@.+$/i, replacement: '$1' },
+	// Pattern 2: URL without extension but with @ suffix (Bilibili archive covers)
+	// Sample: https://i0.hdslb.com/bfs/archive/xxx@320w_200h -> xxx
+	{ pattern: /(hdslb\.com\/bfs\/[^@]+)@.+$/i, replacement: '$1' },
+	// Pattern 3: bstarstatic.com (same as hdslb)
+	{ pattern: /(bstarstatic\.com\/[^@]+)@.+$/i, replacement: '$1' },
 	// Weibo
 	{ pattern: /\/thumb\d+\//, replacement: '/large/' },
 	{ pattern: /\.sinaimg\.cn\/[a-z]+\//, replacement: '.sinaimg.cn/large/' },

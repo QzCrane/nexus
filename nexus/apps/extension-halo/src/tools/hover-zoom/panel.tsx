@@ -4,9 +4,43 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Toggle } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
-import { HoverZoomSettings, DEFAULT_SETTINGS, STORAGE_KEY, TriggerKey, ViewMode, PopupPosition } from './types';
+import { HoverZoomSettings, DEFAULT_SETTINGS, STORAGE_KEY, ViewMode, PopupPosition, KeyCombo } from './types';
 import { enableAntiHotlink, disableAntiHotlink, isAntiHotlinkEnabled } from './engine';
+import { comboToString } from './content/resource-key-helper';
 import { styles } from './panel.styles';
+
+// Convert KeyCombo to display string
+const keyComboDisplay = (combo: KeyCombo): string => {
+    return comboToString(combo);
+};
+
+// Key combo editor component
+const KeyComboEditor: React.FC<{
+    value: KeyCombo;
+    onChange: (combo: KeyCombo) => void;
+    label: string;
+}> = ({ value, onChange, label }) => {
+    return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '12px', color: 'var(--halo-text-secondary)', minWidth: '40px' }}>{label}</span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}>
+                <input type="checkbox" checked={value.alt} onChange={(e) => onChange({ ...value, alt: e.target.checked })} />
+                Alt
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}>
+                <input type="checkbox" checked={value.ctrl} onChange={(e) => onChange({ ...value, ctrl: e.target.checked })} />
+                Ctrl
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}>
+                <input type="checkbox" checked={value.shift} onChange={(e) => onChange({ ...value, shift: e.target.checked })} />
+                Shift
+            </label>
+            <span style={{ fontSize: '11px', color: 'var(--halo-text-secondary)', marginLeft: '8px' }}>
+                = {keyComboDisplay(value)}
+            </span>
+        </div>
+    );
+};
 
 export const HoverZoomPanel: React.FC = () => {
     const { t } = useTranslation();
@@ -31,6 +65,10 @@ export const HoverZoomPanel: React.FC = () => {
         }
     }, [settings]);
 
+    const updateResourceKeys = (key: 'imageKey' | 'videoKey', combo: KeyCombo) => {
+        update({ resourceKeys: { ...settings.resourceKeys, [key]: combo } });
+    };
+
     const updateExemptions = (p: Partial<HoverZoomSettings['exemptions']>) => update({ exemptions: { ...settings.exemptions, ...p } });
 
     return (
@@ -49,33 +87,32 @@ export const HoverZoomPanel: React.FC = () => {
                 </div>
             </Card>
 
-            {/* Trigger */}
+            {/* Resource Keys - Seamless Image/Video Switching */}
             <Card variant="default" padding="sm">
                 <div style={styles.section}>
-                    <span style={styles.sectionTitle}>⌨️ {t('hoverZoom.trigger.title')}</span>
-                    <div style={styles.row}>
-                        <span style={styles.label}>{t('hoverZoom.trigger.key')}</span>
-                        <div style={styles.segmented}>
-                            {(['none', 'shift', 'ctrl', 'alt'] as TriggerKey[]).map(k => (
-                                <button key={k} style={settings.triggerKey === k ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ triggerKey: k })}>
-                                    {k === 'none' ? '无' : k.toUpperCase()}
-                                </button>
-                            ))}
-                        </div>
+                    <span style={styles.sectionTitle}>🖼️ {t('hoverZoom.resourceKeys.title') || 'Resource Keys'}</span>
+                    <p style={{ fontSize: '11px', color: 'var(--halo-text-secondary)', margin: '0 0 8px' }}>
+                        {t('hoverZoom.resourceKeys.desc') || 'Configure hotkeys for image and video preview. More specific combos win.'}
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <KeyComboEditor
+                            label={t('hoverZoom.resourceKeys.image') || 'Image'}
+                            value={settings.resourceKeys.imageKey}
+                            onChange={(combo) => updateResourceKeys('imageKey', combo)}
+                        />
+                        <KeyComboEditor
+                            label={t('hoverZoom.resourceKeys.video') || 'Video'}
+                            value={settings.resourceKeys.videoKey}
+                            onChange={(combo) => updateResourceKeys('videoKey', combo)}
+                        />
                     </div>
-                    {settings.triggerKey !== 'none' && (
-                        <div style={styles.row}>
-                            <span style={styles.label}>{t('hoverZoom.trigger.action')}</span>
-                            <div style={styles.segmented}>
-                                <button style={settings.triggerAction === 'hold' ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ triggerAction: 'hold' })}>
-                                    {t('hoverZoom.trigger.hold')}
-                                </button>
-                                <button style={settings.triggerAction === 'toggle' ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ triggerAction: 'toggle' })}>
-                                    {t('hoverZoom.trigger.toggle')}
-                                </button>
-                            </div>
-                        </div>
-                    )}
+                </div>
+            </Card>
+
+            {/* Trigger Delay */}
+            <Card variant="default" padding="sm">
+                <div style={styles.section}>
+                    <span style={styles.sectionTitle}>⏱️ {t('hoverZoom.trigger.title')}</span>
                     <div style={styles.row}>
                         <span style={styles.label}>{t('hoverZoom.trigger.delay')}</span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -105,6 +142,10 @@ export const HoverZoomPanel: React.FC = () => {
                         <select value={settings.position} onChange={(e) => update({ position: e.target.value as PopupPosition })} style={styles.select}>
                             <option value="auto">Auto</option><option value="left">Left</option><option value="right">Right</option><option value="center">Center</option>
                         </select>
+                    </div>
+                    <div style={styles.row}>
+                        <span style={styles.label}>{t('hoverZoom.view.loadingIndicator') || 'Loading indicator'}</span>
+                        <Toggle checked={settings.showLoadingIndicator} onChange={(v) => update({ showLoadingIndicator: v })} />
                     </div>
                     <div style={styles.row}>
                         <span style={styles.label}>{t('hoverZoom.view.antiHotlink')}{antiHotlinkActive && <span style={{ marginLeft: '6px', color: '#4CAF50' }}>●</span>}</span>

@@ -2,7 +2,7 @@
 // eff: S=Save, C=Copy, T=Tab, R=Rotate, Esc=Close, Arrow=Pan
 
 import { HoverZoomSettings } from '../types';
-import { HoverZoomViewer } from './viewer';
+import { HoverZoomViewer } from './viewer/index';
 
 export class HotkeyManager {
 	private settings: HoverZoomSettings;
