@@ -1,7 +1,7 @@
 // goal: DOM creation utilities for Hover Zoom viewer
 // eff: Creates and manages viewer DOM structure
 
-import { VIEWER_STYLES } from './styles';
+import { VIEWER_STYLES } from './styles/styles';
 
 export interface ViewerDOM {
 	container: HTMLElement;

@@ -1,2 +1,2 @@
-export * from './panel';
+export * from './components/ui/panel';
 export * from './types';

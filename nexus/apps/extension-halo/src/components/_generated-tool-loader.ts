@@ -31,7 +31,6 @@ export const generatedToolPanels = {
 	'headers-viewer': lazy(() => import('../tools/headers-viewer/panel').then(m => ({ default: m.HeadersViewerPanel }))),
 	'hex-dump': lazy(() => import('../tools/hex-dump/panel').then(m => ({ default: m.HexDumpPanel }))),
 	'history-search': lazy(() => import('../tools/history-search/panel').then(m => ({ default: m.HistorySearchPanel }))),
-	'hover-zoom': lazy(() => import('../tools/hover-zoom/panel').then(m => ({ default: m.HoverZoomPanel }))),
 	'html-entity': lazy(() => import('../tools/html-entity/panel').then(m => ({ default: m.HtmlEntityPanel }))),
 	'http-status': lazy(() => import('../tools/http-status/panel').then(m => ({ default: m.HttpStatusPanel }))),
 	'image-tools': lazy(() => import('../tools/image-tools/panel').then(m => ({ default: m.ImageToolsPanel }))),

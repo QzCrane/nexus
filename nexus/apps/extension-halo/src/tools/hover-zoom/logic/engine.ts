@@ -1,7 +1,7 @@
 // goal: Hover zoom anti-hotlink engine
 // eff: Uses declarativeNetRequest to remove Referer header
 
-import { HOTLINK_DOMAINS } from './types';
+import { HOTLINK_DOMAINS } from '../types';
 
 const LOG_TAG = '[HALO:HoverZoom]';
 const RULE_ID_START = 10000;

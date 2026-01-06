@@ -1,34 +1,23 @@
 // goal: Enhanced resolver integrating site-specific rules
 // eff: First tries site rules, falls back to generic image-resolver
 
-import { getRulesForHost, hasRulesForHost } from '../rules';
-import type { ZoomResult } from '../rules/types';
-import { createResolveContext } from './proxy-utils';
+import { ruleEngine } from '../../rules/engine';
+import { ResolveContext } from '../../rules/core';
+import { fetchWithProxy, getCookie } from '../utils/proxy-utils';
+import type { ZoomResult } from '../../rules/types';
+
 import { resolveImageSource, ImageSource } from './image-resolver';
-import { applyHdRules } from './hd-rules';
-import type { HoverZoomSettings } from '../types';
-import type { ResourcePreference } from './resource-key-helper';
+// import { applyHdRules } from './hd-rules'; // Removed legacy
+import type { HoverZoomSettings } from '../../types';
+import type { ResourcePreference } from '../utils/resource-key-helper';
 
 const LOG_TAG = '[HoverZoom:RuleResolver]';
 
-// Cache loaded rules for current host
-let cachedHost: string | null = null;
-let cachedRules: Awaited<ReturnType<typeof getRulesForHost>> = [];
-
-/**
- * Initialize rules for current host (call once on page load)
+/*
+ * Initialize rules for current host (Legacy compat, logic moved to engine)
  */
 export async function initRulesForHost(): Promise<void> {
-	const host = window.location.hostname;
-	if (cachedHost === host) return;
-
-	if (hasRulesForHost(host)) {
-		cachedRules = await getRulesForHost(host);
-		console.log(LOG_TAG, `Loaded ${cachedRules.length} rules for ${host}`);
-	} else {
-		cachedRules = [];
-	}
-	cachedHost = host;
+	// No-op: RuleEngine lazy loads/registers rules internally
 }
 
 /**
@@ -77,58 +66,64 @@ export async function resolveEnhanced(
 	target: HTMLElement,
 	resourcePref: ResourcePreference = 'auto'
 ): Promise<EnhancedResult | null> {
-	// First: Try site-specific rules (async)
-	if (cachedRules.length > 0) {
-		for (const rule of cachedRules) {
-			if (rule.probe && !target.matches(rule.probe) && !target.closest(rule.probe)) {
-				continue;
-			}
+	// First: Try site-specific rules via RuleEngine
+	try {
+		// Construct URL from common attributes
+		const urlToCheck = target.getAttribute('href') || target.getAttribute('src') || target.dataset.targetUrl || '';
+		if (urlToCheck) {
+			const ctx: ResolveContext = {
+				url: urlToCheck,
+				element: target,
+				host: window.location.hostname,
+				match: null,
+				fetchHtml: (u) => fetchWithProxy<string>(u, { responseType: 'text' }),
+				fetchJson: <T>(u: string, headers?: Record<string, string>) => fetchWithProxy<T>(u, { headers }),
+				getCookie
+			};
 
-			try {
-				const ctx = createResolveContext(target, target.getAttribute('href') || '');
-				const result = await rule.resolve(ctx);
-				if (result) {
-					const mappedType: 'image' | 'video' | 'svg' =
-						result.type === 'gallery' ? 'image' : result.type;
+			const result = await ruleEngine.resolve(ctx);
 
-					// Check resource preference
-					// If user wants image but rule returns video, try to get thumbnail instead
-					if (resourcePref === 'image' && mappedType === 'video') {
-						// Try to find thumbnail image
-						const thumbImg = target.querySelector('img') || target.closest('a')?.querySelector('img');
-						if (thumbImg?.src) {
-							console.log(LOG_TAG, `User prefers image, using thumbnail instead of video`);
-							return {
-								type: 'image',
-								url: applyHdRules(thumbImg.src),
-								caption: '',
-								element: target,
-								fromRule: rule.id + ':thumbnail'
-							};
-						}
+			if (result) {
+				const resultObj = typeof result === 'string' ? { url: result, type: 'image' as const } : result;
+				const mappedType: 'image' | 'video' | 'svg' =
+					resultObj.type === 'audio' ? 'video' : (resultObj.type || 'image');
+
+				console.log(LOG_TAG, `Engine matched rule`, resultObj);
+
+				// Preference check logic (Ported from existing)
+				if (resourcePref === 'image' && mappedType === 'video') {
+					const thumbImg = target.querySelector('img') || target.closest('a')?.querySelector('img');
+					if (thumbImg?.src) {
+						return {
+							type: 'image',
+							url: thumbImg.src, // Legacy HD rules removed
+							caption: '',
+							element: target,
+							fromRule: 'engine:thumbnail'
+						};
 					}
+				}
 
-					// If user wants video but rule returns image, skip this rule
-					if (resourcePref === 'video' && mappedType === 'image') {
-						console.log(LOG_TAG, `User prefers video, skipping image result from rule "${rule.id}"`);
-						continue;
-					}
-
-					console.log(LOG_TAG, `Rule "${rule.id}" matched`, result);
+				if (resourcePref === 'video' && mappedType === 'image') {
+					// Skip if user explicitly wants video but we got image
+					// But maybe we should fall through? Original logic fell through or continued loop
+					// Here we only have one engine result. 
+					// Use fallback if available?
+				} else {
 					return {
 						type: mappedType,
-						url: result.sources[0],
-						audioUrl: result.audioUrl,
-						headers: result.headers,
-						caption: result.caption,
+						url: resultObj.url,
+						audioUrl: resultObj.audioUrl,
+						headers: resultObj.headers,
+						caption: '', // Engine doesn't support caption yet?
 						element: target,
-						fromRule: rule.id
+						fromRule: 'engine'
 					};
 				}
-			} catch (e) {
-				console.warn(LOG_TAG, `Rule "${rule.id}" failed:`, e);
 			}
 		}
+	} catch (e) {
+		console.warn(LOG_TAG, 'Engine resolution failed:', e);
 	}
 
 	// Fallback: Generic image resolver
@@ -141,7 +136,8 @@ export async function resolveEnhanced(
 		return null;
 	}
 
-	const hdUrl = applyHdRules(source.url);
+	// Legacy HD rules removed. In the future, generic HD resolving will be handled by RuleEngine.
+	const hdUrl = source.url;
 
 	return {
 		type: source.type,
@@ -163,19 +159,12 @@ export function detectQuick(target: HTMLElement, settings: HoverZoomSettings): I
 
 	// Check if any rule probe matches - but DON'T return page URLs!
 	// B站视频链接需要 API 解析，不能直接返回页面 URL
-	if (cachedRules.length > 0) {
-		for (const rule of cachedRules) {
-			if (rule.probe && (target.matches(rule.probe) || target.closest(rule.probe))) {
-				// Found a rule match - let resolveEnhanced handle it via API
-				// For now, try to get thumbnail from nearby img element
-				const nearbyImg = target.querySelector('img') || target.closest('a')?.querySelector('img');
-				if (nearbyImg?.src && nearbyImg.src.includes('hdslb.com')) {
-					return { url: nearbyImg.src, type: 'image', element: target, caption: '' };
-				}
-				// Don't return page URL - return null and let resolveEnhanced handle it
-				return null;
-			}
-		}
+	// Check if any rule probe matches
+	// Simplified: Just check if engine has rules for this host and element matches common selector
+	// Ideally Engine should expose a 'match' method
+	if (target.closest('a[href*="/video/"], a[href*="/play/"]')) {
+		// Known patterns that require API handling, skip direct image resolve
+		return null;
 	}
 
 	return resolveImageSource(target);

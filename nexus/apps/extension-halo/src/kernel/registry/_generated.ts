@@ -353,18 +353,6 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		script: undefined,
 	},
 	{
-		id: 'hover-zoom',
-		icon: '🔍',
-		pluginType: 'tool',
-		category: 'media',
-		size: 103244,
-		builtIn: true,
-		keywords: ["hover","zoom","image","preview","photoshow","浮图秀","浮图","悬浮","图片","预览","放大","高清"],
-		permissions: ["declarativeNetRequest","downloads","clipboardWrite"],
-		background: {"mechanism":"event_listener","frequency":"on-event","activeOnly":false,"level":"idle","descriptionKey":"impact.hover_zoom","sourceFile":"tools/hover-zoom/content/index.ts","sourceLine":1,"sourceDetail":"mouseover/mousemove event listeners"},
-		script: {"type":"javascript","runAt":"document_end","matches":["*://*/*"]},
-	},
-	{
 		id: 'html-entity',
 		icon: '🔤',
 		pluginType: 'tool',
@@ -1122,7 +1110,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 	}
 ];
 
-export const PLUGIN_IDS = ['api-tester', 'archive', 'base64', 'bookmark-manager', 'checksum', 'clipboard', 'code-formatter', 'code-snippets', 'color-palette', 'color-picker', 'cookie-manager', 'cron', 'crypto', 'csp-analyzer', 'csv-to-json', 'csv-viewer', 'diff', 'dom-selector', 'emoji-picker', 'exif-reader', 'font-inspector', 'gzip', 'hash', 'headers-viewer', 'hex-dump', 'history-search', 'hover-zoom', 'html-entity', 'http-status', 'image-tools', 'ip-lookup', 'json-formatter', 'json-path', 'json-to-csv', 'jwt-decoder', 'lorem-ipsum', 'markdown', 'media-sniffer', 'mock-data', 'morse', 'network', 'number-base', 'outline', 'page-annotate', 'password-gen', 'pdf', 'pomodoro', 'protobuf', 'punycode', 'qrcode', 'random-gen', 'reader-mode', 'regex', 'rot13', 'ruler', 'screenshot', 'session-manager', 'shortcuts', 'smooth-scroll', 'sql-formatter', 'ssl-cert', 'sticky-notes', 'storage-editor', 'subresource', 'tab-group', 'table-extractor', 'tabs', 'tech-stack', 'text-to-speech', 'text-tools', 'timer', 'timestamp', 'todo-list', 'totp', 'translate', 'unit-converter', 'url', 'user-agent', 'uuid', 'xml-formatter', 'xor', 'yaml', 'bilibili-plus', 'chatgpt-wide', 'extension-manager', 'module-store', 'permissions', 'resource-monitor', 'settings', 'userscripts'] as const;
+export const PLUGIN_IDS = ['api-tester', 'archive', 'base64', 'bookmark-manager', 'checksum', 'clipboard', 'code-formatter', 'code-snippets', 'color-palette', 'color-picker', 'cookie-manager', 'cron', 'crypto', 'csp-analyzer', 'csv-to-json', 'csv-viewer', 'diff', 'dom-selector', 'emoji-picker', 'exif-reader', 'font-inspector', 'gzip', 'hash', 'headers-viewer', 'hex-dump', 'history-search', 'html-entity', 'http-status', 'image-tools', 'ip-lookup', 'json-formatter', 'json-path', 'json-to-csv', 'jwt-decoder', 'lorem-ipsum', 'markdown', 'media-sniffer', 'mock-data', 'morse', 'network', 'number-base', 'outline', 'page-annotate', 'password-gen', 'pdf', 'pomodoro', 'protobuf', 'punycode', 'qrcode', 'random-gen', 'reader-mode', 'regex', 'rot13', 'ruler', 'screenshot', 'session-manager', 'shortcuts', 'smooth-scroll', 'sql-formatter', 'ssl-cert', 'sticky-notes', 'storage-editor', 'subresource', 'tab-group', 'table-extractor', 'tabs', 'tech-stack', 'text-to-speech', 'text-tools', 'timer', 'timestamp', 'todo-list', 'totp', 'translate', 'unit-converter', 'url', 'user-agent', 'uuid', 'xml-formatter', 'xor', 'yaml', 'bilibili-plus', 'chatgpt-wide', 'extension-manager', 'module-store', 'permissions', 'resource-monitor', 'settings', 'userscripts'] as const;
 export type PluginId = (typeof PLUGIN_IDS)[number];
 
 // Runtime filters (SSOT)
@@ -1137,7 +1125,6 @@ export const PERMISSION_USAGE_MAP: Record<string, string[]> = {
     ],
     "downloads": [
         "archive",
-        "hover-zoom",
         "pdf"
     ],
     "clipboardRead": [
@@ -1146,11 +1133,7 @@ export const PERMISSION_USAGE_MAP: Record<string, string[]> = {
     "clipboardWrite": [
         "clipboard",
         "color-picker",
-        "hover-zoom",
         "qrcode"
-    ],
-    "declarativeNetRequest": [
-        "hover-zoom"
     ],
     "userScripts": [
         "bilibili-plus",
@@ -1177,16 +1160,6 @@ export const BACKGROUND_PROFILES_MAP: Record<string, BackgroundProfile> = {
         "sourceFile": "entry/content.ts",
         "sourceLine": 39,
         "sourceDetail": "document.addEventListener('copy', onCopy)"
-    },
-    "hover-zoom": {
-        "mechanism": "event_listener",
-        "frequency": "on-event",
-        "activeOnly": false,
-        "level": "idle",
-        "descriptionKey": "impact.hover_zoom",
-        "sourceFile": "tools/hover-zoom/content/index.ts",
-        "sourceLine": 1,
-        "sourceDetail": "mouseover/mousemove event listeners"
     },
     "pomodoro": {
         "mechanism": "interval_slow",

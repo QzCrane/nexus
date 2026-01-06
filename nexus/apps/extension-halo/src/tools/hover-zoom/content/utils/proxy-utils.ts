@@ -1,7 +1,7 @@
 // goal: CORS proxy utilities for Hover Zoom rules
 // eff: Wraps chrome.runtime.sendMessage for Background AJAX proxy
 
-import type { ProxyFetchOptions, ProxyAjaxResponse } from '../rules/types';
+import type { ProxyFetchOptions, ProxyAjaxResponse } from '../../rules/types';
 
 /**
  * Fetch URL through Background proxy to bypass CORB
@@ -51,20 +51,4 @@ export function getCookie(name: string): string {
 		}
 	}
 	return '';
-}
-
-/**
- * Create a ResolveContext for rule resolution
- */
-export function createResolveContext(
-	element: Element,
-	url: string
-): import('../rules/types').ResolveContext {
-	return {
-		url,
-		element,
-		pageUrl: window.location.href,
-		fetchWithProxy,
-		getCookie
-	};
 }

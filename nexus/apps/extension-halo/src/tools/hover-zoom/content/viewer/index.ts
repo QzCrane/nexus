@@ -3,11 +3,11 @@
 
 import { HoverZoomSettings } from '../../types';
 import { injectStyles, createViewerDOM, ViewerDOM } from '../viewer-dom';
-import type { EnhancedResult } from '../rule-resolver';
-import { applyHdRules } from '../hd-rules';
+import type { EnhancedResult } from '../resolvers/rule-resolver';
 import { calculateLayout } from './layout';
 import { TransformController } from './transform';
 import { updateInfoBar } from './info';
+import { isDashSegment, isPlayableVideoUrl, findThumbnailUrl } from './media-loader';
 
 const LOG_TAG = '[HALO:HoverZoom:Viewer]';
 
@@ -23,8 +23,8 @@ export class HoverZoomViewer {
 	private currentSource: EnhancedResult | null = null;
 	private currentType: 'image' | 'video' = 'image';
 	private transform = new TransformController();
-	private loadingOverlay: HTMLElement | null = null;  // Fixed overlay element
-	private triggerRect: DOMRect | null = null;  // Cache trigger rect for layout
+	private loadingOverlay: HTMLElement | null = null;
+	private triggerRect: DOMRect | null = null;
 
 	constructor(settings: HoverZoomSettings) {
 		this.settings = settings;
@@ -48,21 +48,14 @@ export class HoverZoomViewer {
 	}
 
 	// --- Public API ---
-
 	updateSettings(s: HoverZoomSettings) { this.settings = s; }
 	getIsVisible() { return this.isVisible; }
 	getCurrentUrl() { return this.currentSource?.url || ''; }
 
-	/**
-	 * Rotate the current media by specified angle.
-	 */
 	rotate(angle: number) {
 		this.transform.rotate(angle);
 	}
 
-	/**
-	 * Show image or video in the viewer.
-	 */
 	show(source: EnhancedResult, mouseX: number, mouseY: number) {
 		console.log(LOG_TAG, 'show() called', source.type, source.url.slice(0, 60));
 
@@ -76,17 +69,15 @@ export class HoverZoomViewer {
 		this.currentType = source.type === 'video' ? 'video' : 'image';
 		this.isVisible = true;
 		this.transform.reset();
-
-		// Cache trigger rect for layout
 		this.triggerRect = source.element?.getBoundingClientRect() || null;
 
-		// Show loading indicator on trigger element (fixed overlay)
+		// Show loading indicator on trigger element
 		this.clearLoadingIndicator();
 		if (source.element && this.settings.showLoadingIndicator && this.triggerRect) {
 			this.showLoadingIndicator(this.triggerRect);
 		}
 
-		// Reset media elements but keep viewer hidden until loaded
+		// Reset media elements
 		this.dom.img.src = '';
 		this.dom.img.style.opacity = '0';
 		this.dom.img.style.display = 'none';
@@ -101,9 +92,18 @@ export class HoverZoomViewer {
 		}
 	}
 
-	/**
-	 * Show loading indicator overlay at specified position.
-	 */
+	hide() {
+		this.isVisible = false;
+		this.currentSource = null;
+		this.clearLoadingIndicator();
+		if (this.dom) {
+			this.dom.viewer.classList.remove('visible');
+			this.dom.video.pause();
+			this.dom.video.src = '';
+		}
+	}
+
+	// --- Loading Indicator ---
 	private showLoadingIndicator(rect: DOMRect) {
 		const overlay = document.createElement('div');
 		overlay.className = 'halo-hz-loading-overlay';
@@ -127,28 +127,12 @@ export class HoverZoomViewer {
 		}
 	}
 
-	/**
-	 * Hide the viewer.
-	 */
-	hide() {
-		this.isVisible = false;
-		this.currentSource = null;
-		this.clearLoadingIndicator();
-		if (this.dom) {
-			this.dom.viewer.classList.remove('visible');
-			this.dom.video.pause();
-			this.dom.video.src = '';
-		}
-	}
-
-	// --- Private Methods ---
-
+	// --- Media Display ---
 	private showImage(source: EnhancedResult, mouseX: number, mouseY: number) {
 		if (!this.dom) return;
 
 		console.log(LOG_TAG, 'Loading image:', source.url.slice(0, 100));
 
-		// Use a new Image object for preloading (like PhotoShow does)
 		const preloadImg = new Image();
 		preloadImg.referrerPolicy = 'no-referrer';
 
@@ -156,10 +140,7 @@ export class HoverZoomViewer {
 			console.log(LOG_TAG, 'Image loaded', preloadImg.naturalWidth, preloadImg.naturalHeight);
 			if (!this.isVisible || !this.dom) return;
 
-			// Remove loading indicator from source
 			this.clearLoadingIndicator();
-
-			// Now set the DOM element
 			this.dom.img.style.display = 'block';
 			this.dom.img.src = source.url;
 			this.dom.img.style.opacity = '1';
@@ -182,16 +163,15 @@ export class HoverZoomViewer {
 
 		console.log(LOG_TAG, 'Loading video:', source.url.slice(0, 100));
 
-		// Check if URL is DASH segment (m4s) - cannot play directly without MSE
-		// B站 returns DASH separated streams that require MediaSource Extensions to merge
-		if (this.isDashSegment(source.url)) {
+		// Check if URL is DASH segment - cannot play directly
+		if (isDashSegment(source.url)) {
 			console.warn(LOG_TAG, 'DASH m4s stream detected, falling back to thumbnail');
 			this.fallbackToThumbnail(source, mouseX, mouseY);
 			return;
 		}
 
 		// Check if URL looks like a playable video format
-		if (!this.isPlayableVideoUrl(source.url)) {
+		if (!isPlayableVideoUrl(source.url)) {
 			console.warn(LOG_TAG, 'Unrecognized video URL format, falling back to thumbnail');
 			this.fallbackToThumbnail(source, mouseX, mouseY);
 			return;
@@ -214,111 +194,38 @@ export class HoverZoomViewer {
 		this.dom.video.onerror = (e) => {
 			console.error(LOG_TAG, 'Video load error:', source.url.slice(0, 100), e);
 			this.clearLoadingIndicator();
-			// Try fallback to thumbnail on error
 			this.fallbackToThumbnail(source, mouseX, mouseY);
 		};
 
 		this.dom.video.play().catch(() => { });
 	}
 
-	/**
-	 * Check if URL is a DASH segment (.m4s) that cannot be played directly.
-	 */
-	private isDashSegment(url: string): boolean {
-		return /\.m4s(\?|$)/i.test(url) || /\.m4a(\?|$)/i.test(url);
-	}
-
-	/**
-	 * Check if URL looks like a playable video format.
-	 */
-	private isPlayableVideoUrl(url: string): boolean {
-		// Allow common video formats and blob URLs
-		if (url.startsWith('blob:')) return true;
-		// Check for common video extensions
-		return /\.(mp4|webm|ogg|mov|m3u8)(\?|$)/i.test(url) ||
-			// Some CDNs use query params for format
-			/format=(mp4|webm)/i.test(url) ||
-			// Short video URLs from social platforms often work
-			url.includes('/video/') ||
-			url.includes('.mp4') ||
-			url.includes('.webm');
-	}
-
-	/**
-	 * Fallback to displaying thumbnail image when video cannot be played.
-	 */
 	private fallbackToThumbnail(source: EnhancedResult, mouseX: number, mouseY: number) {
-		// Reset video element state first (it may have been set to display:block before fallback)
 		if (this.dom) {
 			this.dom.video.style.display = 'none';
 			this.dom.video.src = '';
 		}
 
-		// Try to find thumbnail from source element (comprehensive search)
-		const el = source.element;
-		let thumbUrl: string | null = null;
-
-		console.log(LOG_TAG, 'fallbackToThumbnail: searching for thumbnail in', el?.tagName, el?.className);
-
-		// Strategy 1: Direct img child
-		const directImg = el?.querySelector('img') as HTMLImageElement | null;
-		if (directImg?.src) {
-			thumbUrl = directImg.src;
-			console.log(LOG_TAG, 'Found via Strategy 1 (direct img):', thumbUrl.slice(0, 60));
-		}
-		// Strategy 2: Parent link's img
-		if (!thumbUrl) {
-			const parentLink = el?.closest('a');
-			const linkImg = parentLink?.querySelector('img') as HTMLImageElement | null;
-			if (linkImg?.src) {
-				thumbUrl = linkImg.src;
-				console.log(LOG_TAG, 'Found via Strategy 2 (parent link):', thumbUrl.slice(0, 60));
-			}
-		}
-		// Strategy 3: Bilibili card structure
-		if (!thumbUrl) {
-			const card = el?.closest('.bili-video-card, .video-card, [class*="card"]');
-			const cardImg = card?.querySelector('img') as HTMLImageElement | null;
-			if (cardImg?.src) {
-				thumbUrl = cardImg.src;
-				console.log(LOG_TAG, 'Found via Strategy 3 (card structure):', thumbUrl.slice(0, 60));
-			}
-		}
-		// Strategy 4: Background image
-		if (!thumbUrl && el) {
-			const bgEl = el.querySelector('[style*="background"]') || el;
-			const style = getComputedStyle(bgEl);
-			const bgMatch = style.backgroundImage?.match(/url\(["']?([^"')]+)["']?\)/);
-			if (bgMatch?.[1]) {
-				thumbUrl = bgMatch[1];
-				console.log(LOG_TAG, 'Found via Strategy 4 (background image):', thumbUrl.slice(0, 60));
-			}
-		}
-
+		const thumbUrl = findThumbnailUrl(source.element);
 		if (thumbUrl) {
-			// Apply HD rules to get full resolution
-			const hdUrl = applyHdRules(thumbUrl);
-			console.log(LOG_TAG, 'Using thumbnail fallback (HD applied):', hdUrl.slice(0, 80));
-			// Switch to image mode with thumbnail
+			console.log(LOG_TAG, 'Using thumbnail fallback:', thumbUrl.slice(0, 80));
 			this.currentType = 'image';
-			this.showImage({ ...source, type: 'image', url: hdUrl }, mouseX, mouseY);
+			this.showImage({ ...source, type: 'image', url: thumbUrl }, mouseX, mouseY);
 		} else {
-			// No thumbnail available, just clear loading indicator
-			console.warn(LOG_TAG, 'No thumbnail fallback available for element:', el?.outerHTML?.slice(0, 200));
+			console.warn(LOG_TAG, 'No thumbnail fallback available');
 			this.clearLoadingIndicator();
 		}
 	}
 
+	// --- Layout ---
 	private applyLayout(mouseX: number, mouseY: number, contentW: number, contentH: number) {
 		if (!this.dom || !contentW || !contentH) return;
 
-		// Use cached triggerRect for consistent animation
 		const triggerRect = this.triggerRect;
 		const layout = calculateLayout(contentW, contentH, triggerRect, mouseX, mouseY);
 
-		// Start from source position (for expand animation)
+		// Expand animation from source
 		if (triggerRect && !this.dom.viewer.classList.contains('visible')) {
-			// Initial position: at source element
 			this.dom.viewer.style.transition = 'none';
 			Object.assign(this.dom.viewer.style, {
 				width: `${triggerRect.width}px`,
@@ -327,29 +234,26 @@ export class HoverZoomViewer {
 				left: `${triggerRect.left}px`,
 				opacity: '0'
 			});
-			// Force reflow
-			this.dom.viewer.offsetHeight;
-			// Enable transition and animate to target
+			this.dom.viewer.offsetHeight; // Force reflow
 			this.dom.viewer.style.transition = 'all 0.15s cubic-bezier(0.2, 0, 0, 1)';
 		}
 
-		// Target position - must include opacity:1 to override the initial inline opacity:0
+		// Target position
 		Object.assign(this.dom.viewer.style, {
 			width: `${layout.width}px`,
 			height: `${layout.height}px`,
 			top: `${layout.top}px`,
 			left: `${layout.left}px`,
-			opacity: '1'  // Critical: override initial opacity:0, CSS class cannot override inline style
+			opacity: '1'
 		});
 
-		// Media fills container exactly
+		// Media fills container
 		const media = this.currentType === 'video' ? this.dom.video : this.dom.img;
 		media.style.width = `${layout.width}px`;
 		media.style.height = `${layout.height}px`;
 	}
 
-	// --- Actions (public for hotkey access) ---
-
+	// --- Actions ---
 	downloadMedia() {
 		if (this.currentSource) {
 			chrome.runtime.sendMessage({ type: 'HALO_DOWNLOAD', url: this.currentSource.url });

@@ -29,8 +29,8 @@ function resolveUrl(url: string): string {
 	if (resolved.startsWith('//')) resolved = 'https:' + resolved;
 	else if (resolved.startsWith('/')) resolved = window.location.origin + resolved;
 
-	// Bilibili: Remove @size.format suffix
-	resolved = resolved.replace(/@[^/]*$/, '');
+	// Bilibili logic moved to RuleEngine
+	// resolved = resolved.replace(/@[^/]*$/, '');
 
 	return resolved;
 }

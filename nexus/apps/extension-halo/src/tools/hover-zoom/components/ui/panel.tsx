@@ -3,10 +3,10 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Toggle } from '@nexus/ui-kit';
-import { useTranslation } from '../../i18n';
-import { HoverZoomSettings, DEFAULT_SETTINGS, STORAGE_KEY, ViewMode, PopupPosition, KeyCombo } from './types';
-import { enableAntiHotlink, disableAntiHotlink, isAntiHotlinkEnabled } from './engine';
-import { comboToString } from './content/resource-key-helper';
+import { useTranslation } from '../../../../i18n';
+import { HoverZoomSettings, DEFAULT_SETTINGS, STORAGE_KEY, ViewMode, PopupPosition, KeyCombo } from '../../types';
+import { enableAntiHotlink, disableAntiHotlink, isAntiHotlinkEnabled } from '../../logic/engine';
+import { comboToString } from '../../content/utils/resource-key-helper';
 import { styles } from './panel.styles';
 
 // Convert KeyCombo to display string
