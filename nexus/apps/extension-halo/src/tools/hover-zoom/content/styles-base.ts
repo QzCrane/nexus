@@ -17,15 +17,18 @@ export const BASE_STYLES = `
     overflow: hidden;
     opacity: 0;
     transform: scale(0.92) translateY(8px);
-    transition: opacity 0.25s ease, transform 0.25s ease;
+    transition: opacity 0.2s ease, transform 0.2s ease;
     background: linear-gradient(135deg, rgba(30,30,35,0.95), rgba(20,20,25,0.98));
     backdrop-filter: blur(20px) saturate(180%);
-    pointer-events: auto;
+    pointer-events: none;
+    display: none;
 }
 
 .halo-hz-viewer.visible {
     opacity: 1;
     transform: scale(1) translateY(0);
+    pointer-events: auto;
+    display: block;
 }
 
 .halo-hz-image,

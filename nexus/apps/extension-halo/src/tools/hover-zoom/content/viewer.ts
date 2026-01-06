@@ -210,45 +210,56 @@ export class HoverZoomViewer {
 		if (!this.dom || !contentW || !contentH) return;
 
 		const vpW = window.innerWidth, vpH = window.innerHeight;
-		const margin = 20;
-		const gap = 15;
+		const margin = 15;
+		const gap = 10;
 
-		// Scale to fit viewport with padding
+		// Scale to fit viewport
 		const maxW = vpW - margin * 2;
 		const maxH = vpH - margin * 2;
 		const ratio = Math.min(maxW / contentW, maxH / contentH, 1);
 		const renderW = contentW * ratio;
 		const renderH = contentH * ratio;
 
-		// Get trigger element bounds
 		const trigger = this.currentSource?.element;
-		const triggerRect = trigger?.getBoundingClientRect();
+		const tr = trigger?.getBoundingClientRect();
 
 		let left: number, top: number;
 
-		if (triggerRect) {
-			// Try to position to the right of trigger
-			if (triggerRect.right + gap + renderW <= vpW - margin) {
-				left = triggerRect.right + gap;
-			}
-			// Try left of trigger
-			else if (triggerRect.left - gap - renderW >= margin) {
-				left = triggerRect.left - gap - renderW;
-			}
-			// Center horizontally
-			else {
-				left = (vpW - renderW) / 2;
-			}
+		if (tr) {
+			// Priority: Right > Left > Bottom > Top (never overlap trigger)
+			const spaceRight = vpW - tr.right - margin;
+			const spaceLeft = tr.left - margin;
+			const spaceBottom = vpH - tr.bottom - margin;
+			const spaceTop = tr.top - margin;
 
-			// Vertical: center on trigger, clamped to viewport
-			top = triggerRect.top + (triggerRect.height - renderH) / 2;
-			top = Math.max(margin, Math.min(top, vpH - renderH - margin));
+			if (spaceRight >= renderW + gap) {
+				// Position to the right
+				left = tr.right + gap;
+				top = Math.max(margin, Math.min(tr.top + (tr.height - renderH) / 2, vpH - renderH - margin));
+			} else if (spaceLeft >= renderW + gap) {
+				// Position to the left
+				left = tr.left - gap - renderW;
+				top = Math.max(margin, Math.min(tr.top + (tr.height - renderH) / 2, vpH - renderH - margin));
+			} else if (spaceBottom >= renderH + gap) {
+				// Position below
+				top = tr.bottom + gap;
+				left = Math.max(margin, Math.min(tr.left + (tr.width - renderW) / 2, vpW - renderW - margin));
+			} else if (spaceTop >= renderH + gap) {
+				// Position above
+				top = tr.top - gap - renderH;
+				left = Math.max(margin, Math.min(tr.left + (tr.width - renderW) / 2, vpW - renderW - margin));
+			} else {
+				// No space available - use opposite corner from trigger center
+				const tCenterX = tr.left + tr.width / 2;
+				const tCenterY = tr.top + tr.height / 2;
+				left = tCenterX < vpW / 2 ? vpW - renderW - margin : margin;
+				top = tCenterY < vpH / 2 ? vpH - renderH - margin : margin;
+			}
 		} else {
-			// Fallback: position near mouse
+			// No trigger - position near mouse
 			left = mouseX + gap;
 			if (left + renderW > vpW - margin) left = mouseX - renderW - gap;
-			if (left < margin) left = (vpW - renderW) / 2;
-
+			if (left < margin) left = margin;
 			top = Math.max(margin, Math.min(mouseY - renderH / 2, vpH - renderH - margin));
 		}
 
