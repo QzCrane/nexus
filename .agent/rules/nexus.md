@@ -13,10 +13,10 @@ Project_Root/
 │   └── workflows/               # 7个SOP文件
 │
 └── nexus/                       # [工程数据与知识层]
-    ├── README.AI.md             # 入口门户
+    ├── README.AI.md             # 必读入口
     ├── plan.md                  # 总规划
     ├── docs/
-    │   ├── ai-rules.md          # 总规则
+    │   ├── ai-rules.md          # 必读规则
     │   └── business-model.md
     └── apps/
         ├── extension-halo/
