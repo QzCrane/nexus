@@ -1,108 +1,11 @@
-
-import { SiteRule, ResolveContext, RuleResult } from '../core';
-
-// Sort by bandwidth descending
-const sortByBandwidth = <T extends { bandwidth: number }>(arr: T[]): T[] =>
-	[...arr].sort((a, b) => b.bandwidth - a.bandwidth);
-
-interface DashItem {
-	bandwidth: number;
-	baseUrl?: string;
-	base_url?: string;
-}
-
-interface PlayurlDash {
-	video?: DashItem[];
-	audio?: DashItem[];
-}
-
-interface PlayinfoResponse {
-	data?: { dash?: PlayurlDash };
-	result?: PlayurlDash;
-}
-
-interface BilitvPlayurl {
-	video?: Array<{ video_resource: { url: string; bandwidth: number } }>;
-	audio_resource?: Array<{ url: string; bandwidth: number }>;
-}
-
-/**
- * Extract video+audio URLs from DASH response
- */
-function extractDashSources(dash: PlayurlDash): RuleResult | null {
-	const videos = (dash.video || []).filter(v => v.baseUrl || v.base_url);
-	const audios = (dash.audio || []).filter(a => a.baseUrl || a.base_url);
-
-	if (videos.length === 0) return null;
-
-	sortByBandwidth(videos);
-	const videoUrl = videos[0].baseUrl || videos[0].base_url!;
-
-	let audioUrl: string | undefined;
-	if (audios.length > 0) {
-		sortByBandwidth(audios);
-		audioUrl = audios[0].baseUrl || audios[0].base_url;
-	}
-
-	return {
-		url: videoUrl,
-		audioUrl: audioUrl,
-		type: 'video',
-		headers: { Referer: 'https://www.bilibili.com/' }
-	};
-}
-
-/**
- * Extract bilibili.tv video+audio URLs
- */
-function extractBilitvSources(playurl: BilitvPlayurl): RuleResult | null {
-	const videos = (playurl.video || [])
-		.map(v => v.video_resource)
-		.filter(r => r?.url);
-	const audios = (playurl.audio_resource || []).filter(a => a?.url);
-
-	if (videos.length === 0) return null;
-
-	sortByBandwidth(videos);
-	const videoUrl = videos[0].url;
-
-	let audioUrl: string | undefined;
-	if (audios.length > 0) {
-		sortByBandwidth(audios);
-		audioUrl = audios[0].url;
-	}
-
-	return {
-		url: videoUrl,
-		audioUrl: audioUrl,
-		type: 'video',
-		headers: { Referer: 'https://www.bilibili.tv/' }
-	};
-}
-
-/**
- * Parse embedded script data from HTML
- */
-function parseEmbeddedData<T>(html: string, token: string): T | null {
-	const idx = html.indexOf(token);
-	if (idx === -1) return null;
-
-	const start = idx + token.length - 1;
-	let depth = 0;
-	let end = start;
-
-	for (let i = start; i < html.length; i++) {
-		if (html[i] === '{' || html[i] === '[') depth++;
-		else if (html[i] === '}' || html[i] === ']') {
-			depth--;
-			if (depth === 0) { end = i + 1; break; }
-		}
-	}
-
-	try {
-		return JSON.parse(html.substring(start, end)) as T;
-	} catch { return null; }
-}
+import { SiteRule, ResolveContext } from '../core';
+import {
+	PlayinfoResponse,
+	BilitvPlayurl,
+	extractDashSources,
+	extractBilitvSources,
+	parseEmbeddedData
+} from './bilibili-utils';
 
 export const bilibiliRules: SiteRule[] = [
 	// 1. [声明式] 图片去水印

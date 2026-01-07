@@ -4,10 +4,10 @@
 import { HoverZoomSettings } from '../../types';
 import { injectStyles, createViewerDOM, ViewerDOM } from '../viewer-dom';
 import type { EnhancedResult } from '../resolvers/rule-resolver';
-import { calculateLayout } from './layout';
 import { TransformController } from './transform';
-import { updateInfoBar } from './info';
-import { isDashSegment, isPlayableVideoUrl, findThumbnailUrl } from './media-loader';
+import { LoadingOverlay } from './loading-overlay';
+import { downloadMedia, copyUrl, openInNewTab } from './viewer-actions';
+import { showImage, showVideo, fallbackToThumbnail } from './media-display';
 
 const LOG_TAG = '[HALO:HoverZoom:Viewer]';
 
@@ -23,7 +23,7 @@ export class HoverZoomViewer {
 	private currentSource: EnhancedResult | null = null;
 	private currentType: 'image' | 'video' = 'image';
 	private transform = new TransformController();
-	private loadingOverlay: HTMLElement | null = null;
+	private loadingOverlay = new LoadingOverlay();
 	private triggerRect: DOMRect | null = null;
 
 	constructor(settings: HoverZoomSettings) {
@@ -42,9 +42,9 @@ export class HoverZoomViewer {
 	}
 
 	private setupActionCallbacks() {
-		this.transform.onDownload = () => this.downloadMedia();
-		this.transform.onCopyUrl = () => this.copyUrl();
-		this.transform.onOpenNewTab = () => this.openInNewTab();
+		this.transform.onDownload = () => downloadMedia(this.currentSource);
+		this.transform.onCopyUrl = () => copyUrl(this.currentSource);
+		this.transform.onOpenNewTab = () => openInNewTab(this.currentSource);
 	}
 
 	// --- Public API ---
@@ -72,9 +72,9 @@ export class HoverZoomViewer {
 		this.triggerRect = source.element?.getBoundingClientRect() || null;
 
 		// Show loading indicator on trigger element
-		this.clearLoadingIndicator();
+		this.loadingOverlay.clear();
 		if (source.element && this.settings.showLoadingIndicator && this.triggerRect) {
-			this.showLoadingIndicator(this.triggerRect);
+			this.loadingOverlay.show(this.triggerRect);
 		}
 
 		// Reset media elements
@@ -85,17 +85,43 @@ export class HoverZoomViewer {
 		this.dom.video.style.display = 'none';
 		this.dom.viewer.classList.remove('visible');
 
+		const onLoaded = () => this.loadingOverlay.clear();
+		const onError = () => this.loadingOverlay.clear();
+
 		if (this.currentType === 'video') {
-			this.showVideo(source, mouseX, mouseY);
+			showVideo(
+				this.dom,
+				this.settings,
+				source,
+				mouseX,
+				mouseY,
+				this.triggerRect,
+				this.currentType,
+				() => this.isVisible,
+				onLoaded,
+				onError,
+				(s, x, y) => this.fallbackToThumbnail(s, x, y)
+			);
 		} else {
-			this.showImage(source, mouseX, mouseY);
+			showImage(
+				this.dom,
+				this.settings,
+				source,
+				mouseX,
+				mouseY,
+				this.triggerRect,
+				this.currentType,
+				() => this.isVisible,
+				onLoaded,
+				onError
+			);
 		}
 	}
 
 	hide() {
 		this.isVisible = false;
 		this.currentSource = null;
-		this.clearLoadingIndicator();
+		this.loadingOverlay.clear();
 		if (this.dom) {
 			this.dom.viewer.classList.remove('visible');
 			this.dom.video.pause();
@@ -103,172 +129,18 @@ export class HoverZoomViewer {
 		}
 	}
 
-	// --- Loading Indicator ---
-	private showLoadingIndicator(rect: DOMRect) {
-		const overlay = document.createElement('div');
-		overlay.className = 'halo-hz-loading-overlay';
-		overlay.style.cssText = `
-			top: ${rect.top}px;
-			left: ${rect.left}px;
-			width: ${rect.width}px;
-			height: ${rect.height}px;
-		`;
-		const spinner = document.createElement('div');
-		spinner.className = 'halo-hz-loading-spinner';
-		overlay.appendChild(spinner);
-		document.body.appendChild(overlay);
-		this.loadingOverlay = overlay;
-	}
-
-	private clearLoadingIndicator() {
-		if (this.loadingOverlay) {
-			this.loadingOverlay.remove();
-			this.loadingOverlay = null;
-		}
-	}
-
-	// --- Media Display ---
-	private showImage(source: EnhancedResult, mouseX: number, mouseY: number) {
-		if (!this.dom) return;
-
-		console.log(LOG_TAG, 'Loading image:', source.url.slice(0, 100));
-
-		const preloadImg = new Image();
-		preloadImg.referrerPolicy = 'no-referrer';
-
-		preloadImg.onload = () => {
-			console.log(LOG_TAG, 'Image loaded', preloadImg.naturalWidth, preloadImg.naturalHeight);
-			if (!this.isVisible || !this.dom) return;
-
-			this.clearLoadingIndicator();
-			this.dom.img.style.display = 'block';
-			this.dom.img.src = source.url;
-			this.dom.img.style.opacity = '1';
-
-			this.applyLayout(mouseX, mouseY, preloadImg.naturalWidth, preloadImg.naturalHeight);
-			this.dom.viewer.classList.add('visible');
-			updateInfoBar(this.dom, this.settings, source, 'image', this.dom.img);
-		};
-
-		preloadImg.onerror = (e) => {
-			console.error(LOG_TAG, 'Image load error:', source.url.slice(0, 100), e);
-			this.clearLoadingIndicator();
-		};
-
-		preloadImg.src = source.url;
-	}
-
-	private showVideo(source: EnhancedResult, mouseX: number, mouseY: number) {
-		if (!this.dom) return;
-
-		console.log(LOG_TAG, 'Loading video:', source.url.slice(0, 100));
-
-		// Check if URL is DASH segment - cannot play directly
-		if (isDashSegment(source.url)) {
-			console.warn(LOG_TAG, 'DASH m4s stream detected, falling back to thumbnail');
-			this.fallbackToThumbnail(source, mouseX, mouseY);
-			return;
-		}
-
-		// Check if URL looks like a playable video format
-		if (!isPlayableVideoUrl(source.url)) {
-			console.warn(LOG_TAG, 'Unrecognized video URL format, falling back to thumbnail');
-			this.fallbackToThumbnail(source, mouseX, mouseY);
-			return;
-		}
-
-		this.dom.video.style.display = 'block';
-		this.dom.video.src = source.url;
-		this.dom.video.muted = true;
-
-		this.dom.video.onloadedmetadata = () => {
-			console.log(LOG_TAG, 'Video loaded', this.dom?.video.videoWidth, this.dom?.video.videoHeight);
-			if (!this.isVisible || !this.dom) return;
-
-			this.clearLoadingIndicator();
-			this.applyLayout(mouseX, mouseY, this.dom.video.videoWidth, this.dom.video.videoHeight);
-			this.dom.viewer.classList.add('visible');
-			updateInfoBar(this.dom, this.settings, source, 'video', this.dom.video);
-		};
-
-		this.dom.video.onerror = (e) => {
-			console.error(LOG_TAG, 'Video load error:', source.url.slice(0, 100), e);
-			this.clearLoadingIndicator();
-			this.fallbackToThumbnail(source, mouseX, mouseY);
-		};
-
-		this.dom.video.play().catch(() => { });
-	}
-
 	private fallbackToThumbnail(source: EnhancedResult, mouseX: number, mouseY: number) {
-		if (this.dom) {
-			this.dom.video.style.display = 'none';
-			this.dom.video.src = '';
-		}
-
-		const thumbUrl = findThumbnailUrl(source.element);
-		if (thumbUrl) {
-			console.log(LOG_TAG, 'Using thumbnail fallback:', thumbUrl.slice(0, 80));
-			this.currentType = 'image';
-			this.showImage({ ...source, type: 'image', url: thumbUrl }, mouseX, mouseY);
-		} else {
-			console.warn(LOG_TAG, 'No thumbnail fallback available');
-			this.clearLoadingIndicator();
-		}
-	}
-
-	// --- Layout ---
-	private applyLayout(mouseX: number, mouseY: number, contentW: number, contentH: number) {
-		if (!this.dom || !contentW || !contentH) return;
-
-		const triggerRect = this.triggerRect;
-		const layout = calculateLayout(contentW, contentH, triggerRect, mouseX, mouseY);
-
-		// Expand animation from source
-		if (triggerRect && !this.dom.viewer.classList.contains('visible')) {
-			this.dom.viewer.style.transition = 'none';
-			Object.assign(this.dom.viewer.style, {
-				width: `${triggerRect.width}px`,
-				height: `${triggerRect.height}px`,
-				top: `${triggerRect.top}px`,
-				left: `${triggerRect.left}px`,
-				opacity: '0'
-			});
-			this.dom.viewer.offsetHeight; // Force reflow
-			this.dom.viewer.style.transition = 'all 0.15s cubic-bezier(0.2, 0, 0, 1)';
-		}
-
-		// Target position
-		Object.assign(this.dom.viewer.style, {
-			width: `${layout.width}px`,
-			height: `${layout.height}px`,
-			top: `${layout.top}px`,
-			left: `${layout.left}px`,
-			opacity: '1'
-		});
-
-		// Media fills container
-		const media = this.currentType === 'video' ? this.dom.video : this.dom.img;
-		media.style.width = `${layout.width}px`;
-		media.style.height = `${layout.height}px`;
-	}
-
-	// --- Actions ---
-	downloadMedia() {
-		if (this.currentSource) {
-			chrome.runtime.sendMessage({ type: 'HALO_DOWNLOAD', url: this.currentSource.url });
-		}
-	}
-
-	copyUrl() {
-		if (this.currentSource) {
-			navigator.clipboard.writeText(this.currentSource.url);
-		}
-	}
-
-	openInNewTab() {
-		if (this.currentSource) {
-			window.open(this.currentSource.url, '_blank');
-		}
+		if (!this.dom) return;
+		fallbackToThumbnail(
+			this.dom,
+			source,
+			mouseX,
+			mouseY,
+			this.triggerRect,
+			() => this.isVisible,
+			() => this.loadingOverlay.clear(),
+			() => this.loadingOverlay.clear(),
+			(type) => { this.currentType = type; }
+		);
 	}
 }
