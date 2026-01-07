@@ -63,6 +63,35 @@ export class WebAudioController {
 		}
 	}
 
+	// eff: completely destroys AudioContext to fix Chrome fullscreen bug
+	// note: this is the nuclear option - MediaElementSourceNode bindings persist even after suspend
+	// post: all attached media elements will be detached and ctx closed
+	async destroyContext(): Promise<void> {
+		if (!this.ctx) return;
+
+		// step 1: detach all currently attached elements
+		document.querySelectorAll('video, audio').forEach(el => {
+			const m = el as HTMLMediaElement & { _vm?: unknown; dataset: DOMStringMap };
+			if (m._vm) {
+				try {
+					// disconnect source from the chain to release the binding
+					(m._vm as { source: MediaElementAudioSourceNode }).source.disconnect();
+				} catch { /* ignore */ }
+				delete m._vm;
+				delete m.dataset.vmAttached;
+				delete m.dataset.vmProbed;
+			}
+			this.attachedNodes.delete(el as HTMLMediaElement);
+		});
+
+		// step 2: close the AudioContext completely
+		try {
+			await this.ctx.close();
+		} catch { /* ignore */ }
+
+		this.ctx = null;
+	}
+
 	setCallbacks(onDetected: CorsDetectedCallback, onSuccess: CorsSuccessCallback): void {
 		this.onCorsDetected = onDetected;
 		this.onCorsSuccess = onSuccess;

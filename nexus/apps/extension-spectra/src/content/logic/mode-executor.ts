@@ -75,7 +75,7 @@ export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState
 			// note: capture mode targets the offscreen document; domestic volume locks are released
 			releaseVolumeLock();
 			captureManager.syncConfig(config);
-			notifyInjector(true);
+			notifyInjector(true, 'hijackOnly');
 		} else if (hasUserGesture(state)) {
 			// log: requesting capture upgrade due to user interaction in capture-eligible mode
 			log.capture('Strategy suggests CAPTURE and gesture detected, requesting...');
@@ -141,8 +141,10 @@ function applyWebAudioState(config: AudioConfig, deps: PolicyExecutorDeps): void
 	window.postMessage({ type: 'SPECTRA_VOLUME_UPDATE', volume: config.volume / 100 }, '*');
 }
 
-function notifyInjector(active: boolean): void {
-	window.postMessage({ type: 'SPECTRA_ENHANCED_STATE', active }, '*');
+// eff: notifies injector about current audio mode for fullscreen handling
+// rule: 'hijackOnly' means site uses its own AudioContext, no createMediaElementSource conflict
+function notifyInjector(active: boolean, mode: 'webaudio' | 'hijackOnly' = 'webaudio'): void {
+	window.postMessage({ type: 'SPECTRA_ENHANCED_STATE', active, mode }, '*');
 }
 
 

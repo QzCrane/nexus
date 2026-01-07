@@ -67,8 +67,10 @@
 	// @ts-ignore
 	const originalWebkitRequestFullscreen = Element.prototype.webkitRequestFullscreen;
 
-	// inv: tracks whether content script is in enhanced mode (CAPTURE or WEBAUDIO) - both need fullscreen pause (Chrome bug)
+	// inv: tracks whether content script is in enhanced mode with createMediaElementSource (needs fullscreen pause)
+	// note: hijackOnly mode (CAPTURE or site's own AudioContext) doesn't have fullscreen conflict
 	let isEnhancedMode = false;
+	let enhancedModeType: 'webaudio' | 'hijackOnly' | null = null;
 
 	function setAllMediaVolume(vol: number) {
 		document.querySelectorAll('video, audio').forEach((el) => {
@@ -96,27 +98,24 @@
 		window.addEventListener('message', handler);
 	});
 
-	async function interceptedRequestFullscreen(this: Element, options?: FullscreenOptions) {
-		// rule: both CAPTURE and WEBAUDIO need pause during fullscreen (Chrome bug with createMediaElementSource)
-		if (isEnhancedMode) {
+	// eff: pauses WebAudio before fullscreen to avoid createMediaElementSource conflict
+	async function prepareFullscreen(): Promise<void> {
+		if (isEnhancedMode && enhancedModeType === 'webaudio') {
 			window.postMessage({ type: 'SPECTRA_PAUSE_FOR_FULLSCREEN' }, '*');
 			setAllMediaVolume(1);
 			await waitForPauseConfirm();
 		}
-
-		return originalRequestFullscreen.call(this, options);
 	}
 
-	Element.prototype.requestFullscreen = interceptedRequestFullscreen;
+	Element.prototype.requestFullscreen = async function (options?: FullscreenOptions) {
+		await prepareFullscreen();
+		return originalRequestFullscreen.call(this, options);
+	};
 
 	if (originalWebkitRequestFullscreen) {
 		// @ts-ignore
 		Element.prototype.webkitRequestFullscreen = async function (options) {
-			if (isEnhancedMode) {
-				window.postMessage({ type: 'SPECTRA_PAUSE_FOR_FULLSCREEN' }, '*');
-				setAllMediaVolume(1);
-				await waitForPauseConfirm();
-			}
+			await prepareFullscreen();
 			return originalWebkitRequestFullscreen.call(this, options);
 		};
 	}
@@ -191,6 +190,7 @@
 		// eff: sync enhanced mode state from content script to control fullscreen behavior
 		if (event.data.type === 'SPECTRA_ENHANCED_STATE') {
 			isEnhancedMode = !!event.data.active;
+			enhancedModeType = event.data.mode || 'webaudio';
 		}
 	});
 

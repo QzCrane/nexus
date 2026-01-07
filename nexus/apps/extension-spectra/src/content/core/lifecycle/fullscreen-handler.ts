@@ -63,11 +63,13 @@ export function setupFullscreenHandler(
 			log.info(`[FS] Fullscreen request, saving volume ${savedVolume}%, pausing ${pausedMode}`);
 
 			if (isCapture) {
+				// rule: pause CAPTURE during fullscreen (Chrome tabCapture + fullscreen conflict)
 				captureManager.request(false, state.config);
 			} else if (isWebAudio) {
-				// rule: suspend AudioContext (not detach nodes) to fix Chrome fullscreen bug
-				// note: MediaElementSourceNode cannot be truly detached; suspend() halts processing
-				await audioController.suspendContext();
+				// rule: cleanup WebAudio (reset to unity gain) but keep AudioContext alive
+				// note: destroyContext doesn't work because createMediaElementSource binding is permanent
+				// strategy: WebAudio paused (cleanup), fullscreen uses native DOM audio, restore after
+				audioController.cleanup();
 			}
 		}
 
@@ -117,14 +119,12 @@ export function setupFullscreenHandler(
 
 		if (modeToRestore === AudioMode.CAPTURE) {
 			captureManager.request(true, { ...state.config, volume: vol });
-		} else if (modeToRestore === AudioMode.NATIVE_WEBAUDIO) {
-			// eff: resume suspended AudioContext to restore WebAudio processing
-			audioController.resumeContext();
 		}
+		// note: for WEBAUDIO, ctx was destroyed; applyState will reinitialize and reattach
 
 		savedVolume = null;
 
-		// eff: re-apply state to restore audio processing
+		// eff: re-apply state to restore audio processing (will rebuild AudioContext for WEBAUDIO)
 		setTimeout(() => policyExecutor.applyState(), 100);
 	}
 
