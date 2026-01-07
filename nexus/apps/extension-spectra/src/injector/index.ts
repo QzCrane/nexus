@@ -24,6 +24,7 @@
 		return element;
 	};
 
+	// @ts-expect-error: Override with simplified signature, TS overload matching is overly strict
 	document.createElementNS = function (ns: string | null, tagName: string, options?: ElementCreationOptions) {
 		const element = originalCreateElementNS.call(this, ns, tagName, options);
 		enforceCrossOrigin(element as HTMLElement, tagName);

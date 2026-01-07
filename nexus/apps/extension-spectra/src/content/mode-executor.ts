@@ -29,15 +29,16 @@ export function initModeExecutorCallbacks(
 	setNativeVolumeCallback((volume, muted) => {
 		if (!currentState || !currentDeps) return;
 
-		// note: volume < 0 signals a mute toggle without altering the numeric volume percentage
+		// note: volume < 0 signals a mute-only toggle without altering the numeric volume percentage
 		if (volume < 0) {
 			currentState.config.muted = muted;
 			log.debug(`[SPECTRA] Native mute toggle: ${muted}`);
 		} else {
-			// rule: during NATIVE_LITE sync, only the numeric volume is updated; the 'muted' state remains under user control
+			// rule: sync both volume and muted state for complete native UI compatibility
 			const configVolume = Math.round(volume * 100);
 			currentState.config.volume = configVolume;
-			log.debug(`[SPECTRA] Native volume sync: ${configVolume}%`);
+			currentState.config.muted = muted;
+			log.debug(`[SPECTRA] Native volume sync: ${configVolume}% (muted: ${muted})`);
 		}
 
 		currentUpdateBadge?.();

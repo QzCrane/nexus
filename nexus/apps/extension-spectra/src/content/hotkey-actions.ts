@@ -17,7 +17,7 @@ import {
 	sendTabAction,
 } from './hotkey-helpers';
 
-export { setCachedConfig } from './hotkey-helpers';
+export { setConfigGetter, setConfigUpdater } from './hotkey-helpers';
 
 const log = createLogger('HotkeyActions');
 

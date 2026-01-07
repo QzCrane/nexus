@@ -4,7 +4,7 @@
 import type { HotkeySettings, HotkeyBinding, KeyCombo, SiteHotkeyConfig } from '@nexus/contracts';
 import { DEFAULT_HOTKEY_SETTINGS } from '@nexus/contracts';
 import { createLogger } from '../shared/logger';
-import { executeHotkeyAction, setCachedConfig } from './hotkey-actions';
+import { executeHotkeyAction } from './hotkey-actions';
 import { showToast } from './toast';
 
 const logger = createLogger('Hotkeys');
@@ -117,4 +117,4 @@ function matchCombo(a: KeyCombo, b: KeyCombo): boolean {
 		&& a.modifiers.meta === b.modifiers.meta;
 }
 
-export { setCachedConfig };
+export { setConfigGetter, setConfigUpdater } from './hotkey-actions';

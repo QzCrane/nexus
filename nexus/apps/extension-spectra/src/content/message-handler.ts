@@ -2,6 +2,7 @@
  * SPECTRA Content Script - Message Handler
  * 
  * Handles messages from Popup/Background
+ * RULE: All config changes go through policyExecutor.updateConfig to ensure single source of truth
  */
 
 import type { AudioConfig } from '@nexus/kernel';
@@ -13,6 +14,7 @@ import { SettingsManager } from './settings-manager';
 import { hasMediaElements, isAnyMediaPlaying, getPausedAt } from './dom-volume';
 import { safeSend } from './context-guard';
 import { handleMediaMessage } from './media-message-handler';
+import { executeHotkeyAction } from './hotkey-actions';
 
 export interface MessageHandlerDeps {
 	state: PolicyExecutorState;
@@ -24,13 +26,15 @@ export interface MessageHandlerDeps {
 
 /**
  * Create Message Handler
+ * CRITICAL: Use deps.state directly (not destructured copy) to ensure real-time config access
  */
 export function createMessageHandler(deps: MessageHandlerDeps): (
 	message: unknown,
 	sender: chrome.runtime.MessageSender,
 	sendResponse: (response?: unknown) => void
 ) => boolean | undefined {
-	const { state, policyExecutor, captureManager, settingsManager, getVisualizerData } = deps;
+	// CRITICAL: Keep reference to deps, not destructured state, to ensure real-time access
+	const { policyExecutor, captureManager, settingsManager, getVisualizerData } = deps;
 
 	return (message, _sender, sendResponse) => {
 		const msg = message as { action?: string; payload?: unknown; config?: AudioConfig; command?: string; settings?: unknown };
@@ -41,16 +45,17 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 				const payload = msg.payload as { config: Partial<AudioConfig> & { volumeDelta?: number; toggleMute?: boolean } };
 				const configChanges = { ...payload.config };
 
-				// Handle volume delta (Remote)
+				// Handle volume delta (Remote/Global Hotkeys)
+				// CRITICAL: Read from deps.state.config to get real-time value
 				if (payload.config.volumeDelta !== undefined) {
-					const currentVol = state.config.volume;
+					const currentVol = deps.state.config.volume;
 					configChanges.volume = Math.max(0, Math.min(800, currentVol + payload.config.volumeDelta));
 					delete (configChanges as any).volumeDelta;
 				}
 
-				// Handle mute toggle (Remote)
+				// Handle mute toggle (Remote/Global Hotkeys)
 				if (payload.config.toggleMute) {
-					configChanges.muted = !state.config.muted;
+					configChanges.muted = !deps.state.config.muted;
 					delete (configChanges as any).toggleMute;
 				}
 
@@ -58,11 +63,11 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 				sendResponse({
 					success: true,
 					state: {
-						config: state.config,
+						config: deps.state.config,
 						hasAudio: hasMediaElements(),
 						isPlaying: isAnyMediaPlaying(),
-						mode: state.activeMode,
-						userInteracted: state.userHasInteracted,
+						mode: deps.state.activeMode,
+						userInteracted: deps.state.userHasInteracted,
 					}
 				});
 				break;
@@ -76,11 +81,11 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 				const isPlaying = isAnyMediaPlaying();
 
 				sendResponse({
-					config: state.config,
+					config: deps.state.config,
 					hasAudio: hasMediaElements(),
 					isPlaying,
-					mode: state.activeMode,
-					userInteracted: state.userHasInteracted,
+					mode: deps.state.activeMode,
+					userInteracted: deps.state.userHasInteracted,
 					pausedAt: getPausedAt(),
 				});
 				break;
@@ -91,55 +96,53 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 				break;
 			}
 
-			case Actions.SHORTCUT_TRIGGER: {
-				const payload = msg.payload as { command?: string; config?: AudioConfig } | undefined;
-				if (payload?.config) {
-					// Only force unmute on volume change, not on toggle mute
-					const shouldUnmute = payload.command !== 'toggle_mute';
-					policyExecutor.updateConfig(payload.config, { showOSD: true, unMute: shouldUnmute });
+			case Actions.CAPTURE_STATE_CHANGE: {
+				const payload = msg.payload as { enabled?: boolean; fromTab?: number };
+				if (payload.enabled !== undefined) {
+					captureManager.setActive(payload.enabled);
+					if (!payload.enabled && deps.state.activeMode === 'CAPTURE') {
+						policyExecutor.applyState();
+					}
 				}
 				sendResponse({ success: true });
 				break;
 			}
 
-			case Actions.CAPTURE_STATE_CHANGE: {
-				captureManager.handleMessage(msg as { action?: string; payload?: { enabled?: boolean }; enabled?: boolean });
-				policyExecutor.applyState();
-				policyExecutor.updateBadge();
-
-				// Notify Popup (if from background auto-update)
-				safeSend(() => new Promise<void>((resolve, reject) => {
-					chrome.runtime.sendMessage({
-						action: Actions.CAPTURE_STATE_CHANGE,
-						payload: { enabled: captureManager.isActive() }
-					}, {}, (response: any) => {
-						if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
-						else resolve(response);
-					});
-				})).catch(() => { });
-
+			case Actions.SETTINGS_UPDATE: {
+				const newSettings = msg.settings ?? msg.payload;
+				if (newSettings && typeof newSettings === 'object') {
+					settingsManager.update(newSettings as Record<string, unknown>);
+					policyExecutor.applyState();
+				}
 				sendResponse({ success: true });
 				break;
 			}
 
-			case Actions.GLOBAL_SETTINGS_UPDATE: {
-				settingsManager.handleMessage(msg as { action?: string; settings?: { osdEnabled?: boolean; visualizerEnabled?: boolean; lang?: string } });
-				// Critical: Setting change counts as user interaction
-				state.userHasInteracted = true;
-				// Re-apply state and sync badge
-				policyExecutor.applyState();
-				policyExecutor.updateBadge();
+			case Actions.SETTINGS_GET: {
+				sendResponse({ settings: settingsManager.get() });
+				break;
+			}
+
+			case Actions.SHORTCUT_TRIGGER: {
+				// goal: handle global chrome keyboard shortcuts sent from background script
+				// rule: all actions (including volume) use executeHotkeyAction which calls updateConfig with showOSD
+				const payload = msg.payload as { command: string };
+				executeHotkeyAction(payload.command as import('@nexus/contracts').HotkeyAction);
 				sendResponse({ success: true });
 				break;
 			}
 
-			// ========== Media/Video Control (Delegated) ==========
-			default:
-				if (handleMediaMessage(msg.action, msg.payload, sendResponse)) {
+
+
+
+			default: {
+				// delegate playback messages to the specialized handler
+				if (handleMediaMessage(msg.action!, msg.payload, sendResponse)) {
 					return true;
 				}
+				return false;
+			}
 		}
-
-		return true; // Async response
+		return true;
 	};
 }

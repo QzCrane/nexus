@@ -64,4 +64,3 @@ export function updateConfig(
 	// eff: sync the updated domain configuration to the background worker for persistence
 	safeSend(() => messenger.send('AUDIO_SET_CONFIG', { config: state.config })).catch(() => { });
 }
-

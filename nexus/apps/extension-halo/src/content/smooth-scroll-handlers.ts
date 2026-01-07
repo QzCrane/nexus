@@ -22,7 +22,8 @@ export function onWheel(e: WheelEvent): void {
 	if (!settings.enabled || !settings.mouseWheel) return;
 	if (e.defaultPrevented || e.ctrlKey) return;
 
-	if (isTouchpad(e.deltaY) && !settings.touchpad) return;
+	const touchpad = isTouchpad(e.deltaY);
+	if (touchpad && !settings.touchpad) return;
 
 	const target = findScrollTarget(e.target as Element);
 	if (!canScroll(target)) return;
@@ -30,6 +31,20 @@ export function onWheel(e: WheelEvent): void {
 	e.preventDefault();
 	scheduleClearCache();
 
+	let deltaY = e.deltaY;
+	if (e.deltaMode === 1) deltaY *= 40;
+
+	// rule: touchpad uses direct scroll for responsive "native" feel
+	if (touchpad) {
+		if (target instanceof Window) {
+			window.scrollBy(0, deltaY);
+		} else {
+			target.scrollTop += deltaY;
+		}
+		return;
+	}
+
+	// Mouse wheel: use animation queue with acceleration
 	const now = Date.now();
 	let newAcc = acceleration;
 	if (now - lastScrollTime < settings.accelerationDelta) {
@@ -39,8 +54,6 @@ export function onWheel(e: WheelEvent): void {
 	}
 	updateAcceleration(newAcc, now);
 
-	let deltaY = e.deltaY;
-	if (e.deltaMode === 1) deltaY *= 40;
 	if (Math.abs(deltaY) > 1.2) {
 		deltaY = (deltaY > 0 ? 1 : -1) * settings.stepSize * newAcc;
 	}

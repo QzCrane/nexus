@@ -22,7 +22,7 @@ import {
   createNavigationObserver,
   cleanupIntervals,
 } from './lifecycle';
-import { initHotkeyListener, setCachedConfig } from './hotkey-listener';
+import { initHotkeyListener, setConfigGetter, setConfigUpdater } from './hotkey-listener';
 
 const log = logger.content;
 
@@ -114,11 +114,13 @@ async function initSpectra(): Promise<void> {
     onNavigate: () => policyExecutor.applyState(),
   });
 
+  // CRITICAL: set config callbacks BEFORE hotkey listener to ensure they're available when hotkeys fire
+  setConfigGetter(() => state.config);
+  setConfigUpdater((changes, options) => policyExecutor.updateConfig(changes, options));
+
   initHotkeyListener().then(cleanup => { cleanupHotkeys = cleanup; });
 
   loadConfigAndApply(messenger, state, settingsManager, policyExecutor);
-
-  setCachedConfig(state.config);
 
   log.info('Content Script initialized.');
 }

@@ -1,53 +1,75 @@
 // goal: helper utilities for translating content-script hotkey interactions into background-layer commands
+// rule: updateConfigFn callback ensures changes go through Content Script's single source of truth
 
 import type { HotkeyAction, HotkeyParams, AudioConfig } from '@nexus/contracts';
 import { Actions } from '@nexus/contracts';
 import { listMarkers } from './time-marker';
 import { showToast } from './toast';
 
-// cachedConfig: volatile memory cache for rapidly changing audio parameters (e.g., volume scrolling)
-let cachedConfig: Partial<AudioConfig> = { volume: 100, muted: false };
+// getConfigFn: callback to retrieve real-time config from Content Script main state
+let getConfigFn: (() => AudioConfig) | null = null;
 
-export function setCachedConfig(config: Partial<AudioConfig>): void {
-	cachedConfig = { ...cachedConfig, ...config };
+// updateConfigFn: callback to update config through Content Script's policyExecutor
+let updateConfigFn: ((changes: Partial<AudioConfig>, options?: { showOSD?: boolean; unMute?: boolean }) => void) | null = null;
+
+// eff: initializes the config getter callback - MUST be called during content script init
+export function setConfigGetter(getter: () => AudioConfig): void {
+	getConfigFn = getter;
 }
 
-// eff: calculates new volume/mute states and dispatches AUDIO_SET_CONFIG to the background service worker
+// eff: initializes the config updater callback - ensures all changes go through single source of truth
+export function setConfigUpdater(updater: (changes: Partial<AudioConfig>, options?: { showOSD?: boolean; unMute?: boolean }) => void): void {
+	updateConfigFn = updater;
+}
+
+function getConfig(): AudioConfig {
+	if (!getConfigFn) {
+		// fallback: should never happen if properly initialized
+		return { volume: 100, muted: false } as AudioConfig;
+	}
+	return getConfigFn();
+}
+
+// eff: calculates new volume/mute states and updates through Content Script's unified state
 export function sendVolumeAction(action: HotkeyAction, params?: HotkeyParams): void {
 	const step = params?.step ?? 10;
-	let newConfig: Partial<AudioConfig> = {};
+	const config = getConfig();
+	let changes: Partial<AudioConfig> = {};
 
 	switch (action) {
 		case 'volume_up':
 			// inv: cap volume at 800% to prevent extreme digital clipping
-			newConfig = { volume: Math.min(800, (cachedConfig.volume ?? 100) + step) };
+			changes = { volume: Math.min(800, (config.volume ?? 100) + step) };
 			break;
 		case 'volume_down':
-			newConfig = { volume: Math.max(0, (cachedConfig.volume ?? 100) - step) };
+			changes = { volume: Math.max(0, (config.volume ?? 100) - step) };
 			break;
 		case 'volume_mute':
-			newConfig = { muted: !cachedConfig.muted };
+			changes = { muted: !config.muted };
 			break;
 		case 'volume_set':
-			if (params?.volume !== undefined) newConfig = { volume: params.volume };
+			if (params?.volume !== undefined) changes = { volume: params.volume };
 			break;
 	}
 
-	chrome.runtime.sendMessage({
-		action: Actions.AUDIO_SET_CONFIG,
-		payload: newConfig
-	});
+	// rule: use unified update path through Content Script, not direct to Background
+	if (updateConfigFn) {
+		updateConfigFn(changes, { showOSD: true });
+	}
 }
 
 // eff: resets all domain-specific audio processing (EQ, gain, compression) to baseline values
 export function sendAudioReset(): void {
-	chrome.runtime.sendMessage({
-		action: Actions.AUDIO_SET_CONFIG,
-		payload: { volume: 100, muted: false, eq: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: 0, compressor: 0 }
-	});
+	if (updateConfigFn) {
+		updateConfigFn(
+			{ volume: 100, muted: false, eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: false, compressor: false },
+			{ showOSD: true }
+		);
+	}
 }
 
 export function sendCaptureToggle(): void {
+	// note: capture toggle still needs Background coordination
 	chrome.runtime.sendMessage({ action: Actions.CAPTURE_TOGGLE });
 }
 

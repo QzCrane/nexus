@@ -49,19 +49,36 @@ export function setDomVolume(volume: number, muted: boolean): void {
  * // goal: Detect native volume changes
  */
 function setupVolumeMonitor(media: HTMLMediaElement): void {
+	let lastKnownVolume = media.volume;
+	let lastKnownMuted = media.muted;
+
 	media.addEventListener('volumechange', () => {
 		if (settingByPlugin) return;
 		const newVol = media.volume, newMuted = media.muted;
 		const volDiff = Math.abs(newVol - targetVolume), muteDiff = newMuted !== targetMuted;
 
-		// rule: Advanced Mode only syncs mute toggle
+		// rule: Advanced Mode (WebAudio boost) still needs to sync native 0-100% changes
 		if (!syncEnabled) {
-			if (muteDiff) {
+			// Detect implicit unmute: user dragged volume from 0 to non-zero
+			const implicitUnmute = lastKnownMuted && !newMuted && newVol > 0;
+			const volumeFromZero = lastKnownVolume < 0.01 && newVol > 0.01;
+
+			if (muteDiff || implicitUnmute) {
 				targetMuted = newMuted;
-				log.debug(`[DOM] Advanced Mode Mute Toggle: ${newMuted}`);
-				// Always send -1 to indicate no volume change, preventing accidental set to 0
+				log.debug(`[DOM] Advanced Mode Mute: ${newMuted} (implicit=${implicitUnmute})`);
 				onNativeVolumeChange?.(-1, newMuted);
 			}
+
+			// rule: sync volume changes within 0-100% range even in Advanced Mode
+			if (volDiff > 0.01 || volumeFromZero) {
+				targetVolume = newVol;
+				// note: map native 0-100% to plugin 0-100% (boost is handled by WebAudio separately)
+				log.debug(`[DOM] Advanced Mode Volume: ${(newVol * 100).toFixed(0)}%`);
+				onNativeVolumeChange?.(newVol, targetMuted);
+			}
+
+			lastKnownVolume = newVol;
+			lastKnownMuted = newMuted;
 			return;
 		}
 
@@ -72,6 +89,9 @@ function setupVolumeMonitor(media: HTMLMediaElement): void {
 			log.debug(`[DOM] Native Volume: ${(newVol * 100).toFixed(0)}% (Muted: ${newMuted})`);
 			onNativeVolumeChange?.(newVol, newMuted);
 		}
+
+		lastKnownVolume = newVol;
+		lastKnownMuted = newMuted;
 	});
 }
 
