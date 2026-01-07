@@ -41,12 +41,13 @@ export function setupVolumeMonitor(media: HTMLMediaElement, ctx: MonitorContext)
 		elementStates.set(media, { volume: media.volume, muted: media.muted, settingByPlugin: false });
 	}
 
-	media.addEventListener('volumechange', () => {
+	media.addEventListener('volumechange', (event) => {
 		const state = elementStates.get(media);
 		if (state?.settingByPlugin) return;
 
 		// rule: if user hasn't interacted with plugin, ignore native volume changes entirely
-		if (!ctx.getUserInteracted()) return;
+		// EXCEPTION: if the event is a trusted user interaction (e.g. manual slider drag), allow it
+		if (!ctx.getUserInteracted() && !event.isTrusted) return;
 
 		const lastState = state || { volume: media.volume, muted: media.muted };
 		const newVol = media.volume, newMuted = media.muted;

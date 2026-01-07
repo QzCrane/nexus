@@ -26,9 +26,32 @@ export function setNativeVolumeCallback(cb: (volume: number, muted: boolean) => 
 }
 
 /**
+ * // goal: ensure all media elements are monitored regardless of plugin state
+ */
+function ensureMonitoring(): void {
+	const els = document.querySelectorAll('video, audio');
+	els.forEach((el) => {
+		const m = el as HTMLMediaElement;
+		if (!isMonitored(m)) {
+			setupVolumeMonitor(m, {
+				getUserInteracted: () => userInteracted,
+				isSyncEnabled: () => syncEnabled,
+				getTargetVolume: () => targetVolume,
+				getTargetMuted: () => targetMuted,
+				onNativeVolumeChange: (v, m) => onNativeVolumeChange?.(v, m),
+			});
+			markMonitored(m);
+		}
+	});
+}
+
+/**
  * // eff: Apply volume to all media elements
  */
 export function setDomVolume(volume: number, muted: boolean): void {
+	// rule: always ensure monitoring is active before potential early returns
+	ensureMonitoring();
+
 	// rule: idempotent check - skip if no change
 	if (Math.abs(targetVolume - volume) < 0.005 && targetMuted === muted) {
 		return;
@@ -56,17 +79,6 @@ export function setDomVolume(volume: number, muted: boolean): void {
 				setElementState(m, { settingByPlugin: false });
 			}, 100);
 		}
-
-		if (!isMonitored(m)) {
-			setupVolumeMonitor(m, {
-				getUserInteracted: () => userInteracted,
-				isSyncEnabled: () => syncEnabled,
-				getTargetVolume: () => targetVolume,
-				getTargetMuted: () => targetMuted,
-				onNativeVolumeChange: (v, m) => onNativeVolumeChange?.(v, m),
-			});
-			markMonitored(m);
-		}
 	});
 
 	if (applied > 0) log.debug(`[DOM] Volume Applied: ${(volume * 100).toFixed(0)}% -> ${applied}/${els.length}`);
@@ -79,6 +91,9 @@ export function releaseVolumeLock(): void {
 	syncEnabled = false;
 	targetVolume = 1;
 	targetMuted = false;
+
+	ensureMonitoring();
+
 	document.querySelectorAll('video, audio').forEach((el) => {
 		const m = el as HTMLMediaElement;
 		setElementState(m, { settingByPlugin: true });
