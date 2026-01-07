@@ -24,11 +24,17 @@
 
 ## 全屏策略
 
-**仅 CAPTURE 暂停**: 只有 CAPTURE 模式在全屏时暂停（Chrome 限制 tabCapture + fullscreen 冲突），WebAudio 模式**不需暂停**，全屏期间保持增强音量。
+**双模式暂停**: CAPTURE 和 WEBAUDIO 模式均需在全屏时暂停
+
+- **根因**: Chrome 已知 Bug - `createMediaElementSource()` 创建的 `MediaElementSourceNode` 与全屏渲染管线冲突
+- **机制**: Injector 拦截 `requestFullscreen()` → 发送 `SPECTRA_PAUSE_FOR_FULLSCREEN` → 等待 `SPECTRA_PAUSE_CONFIRMED` (200ms 超时)
+- **CAPTURE**: 调用 `captureManager.request(false)` 停止抓取
+- **WEBAUDIO**: 调用 `audioController.suspendContext()` 暂停 AudioContext (disconnect 无效，因为 MediaElementSourceNode 永久绑定)
+- **恢复**: 全屏完成后 500ms 调用 `resumeContext()` + `applyState()` 重新激活
 
 ## 音量同步规则
 
-**双向同步**: 全网站 0-100% 范围，插件音量 ↔ 网站原生滑块必须双向同步，（某些网站不读 DOM volume无效）
+**双向同步**: 全网站 0-100% 范围，插件音量 ↔ 网站原生滑块必须双向同步，（某些网站不读 DOM volume 无效）
 **>100% 直取**: 插件 >100% 时，用户拖动网站滑条到 X%，插件直接变为 X%
 **幂等更新**: `setDomVolume` 仅在值变化时执行，避免周期性 applyState 覆盖用户操作
 **Popup 同步**: 打开 UI 时读取当前 DOM 音量并同步到插件状态 (未交互时)

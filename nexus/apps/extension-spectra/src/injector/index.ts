@@ -85,12 +85,23 @@
 		}
 	});
 
+	// eff: waits for content script to confirm suspend, or timeout after 200ms
+	const waitForPauseConfirm = () => new Promise<void>(resolve => {
+		const timer = setTimeout(resolve, 200);
+		const handler = (e: MessageEvent) => {
+			if (e.data?.type === 'SPECTRA_PAUSE_CONFIRMED') {
+				clearTimeout(timer); window.removeEventListener('message', handler); resolve();
+			}
+		};
+		window.addEventListener('message', handler);
+	});
+
 	async function interceptedRequestFullscreen(this: Element, options?: FullscreenOptions) {
 		// rule: both CAPTURE and WEBAUDIO need pause during fullscreen (Chrome bug with createMediaElementSource)
 		if (isEnhancedMode) {
 			window.postMessage({ type: 'SPECTRA_PAUSE_FOR_FULLSCREEN' }, '*');
 			setAllMediaVolume(1);
-			await new Promise(r => setTimeout(r, 80));
+			await waitForPauseConfirm();
 		}
 
 		return originalRequestFullscreen.call(this, options);
@@ -104,7 +115,7 @@
 			if (isEnhancedMode) {
 				window.postMessage({ type: 'SPECTRA_PAUSE_FOR_FULLSCREEN' }, '*');
 				setAllMediaVolume(1);
-				await new Promise(r => setTimeout(r, 80));
+				await waitForPauseConfirm();
 			}
 			return originalWebkitRequestFullscreen.call(this, options);
 		};

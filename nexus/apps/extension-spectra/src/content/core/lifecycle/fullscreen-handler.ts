@@ -40,12 +40,16 @@ export function setupFullscreenHandler(
 	let pausedMode: string | null = null;
 
 	// eff: temporarily suspends audio processing to allow clean fullscreen transition
-	function handlePause(): void {
+	async function handlePause(): Promise<void> {
 		const isCapture = captureManager.isActive() || state.activeMode === AudioMode.CAPTURE;
 		const isWebAudio = state.activeMode === AudioMode.NATIVE_WEBAUDIO;
 
 		// rule: both CAPTURE and WEBAUDIO need pause during fullscreen (Chrome bug)
-		if (!isCapture && !isWebAudio) return;
+		if (!isCapture && !isWebAudio) {
+			// no-op but still confirm to avoid timeout
+			window.postMessage({ type: 'SPECTRA_PAUSE_CONFIRMED' }, '*');
+			return;
+		}
 
 		pauseCount++;
 		const currentPause = pauseCount;
@@ -61,13 +65,14 @@ export function setupFullscreenHandler(
 			if (isCapture) {
 				captureManager.request(false, state.config);
 			} else if (isWebAudio) {
-				// rule: DETACH (not just cleanup) WebAudio nodes to fix Chrome fullscreen bug
-				// note: cleanup() only resets parameters; detachNode() truly disconnects MediaElementSourceNode
-				document.querySelectorAll('video, audio').forEach(el => {
-					audioController.detachNode(el as HTMLMediaElement);
-				});
+				// rule: suspend AudioContext (not detach nodes) to fix Chrome fullscreen bug
+				// note: MediaElementSourceNode cannot be truly detached; suspend() halts processing
+				await audioController.suspendContext();
 			}
 		}
+
+		// eff: notify Injector that pause is complete so fullscreen can proceed safely
+		window.postMessage({ type: 'SPECTRA_PAUSE_CONFIRMED' }, '*');
 
 		// rule: auto-restore after 3s timeout to prevent permanent audio loss
 		restoreTimer = setTimeout(() => {
@@ -112,8 +117,10 @@ export function setupFullscreenHandler(
 
 		if (modeToRestore === AudioMode.CAPTURE) {
 			captureManager.request(true, { ...state.config, volume: vol });
+		} else if (modeToRestore === AudioMode.NATIVE_WEBAUDIO) {
+			// eff: resume suspended AudioContext to restore WebAudio processing
+			audioController.resumeContext();
 		}
-		// note: for WebAudio, applyState will re-attach nodes via scanAndAttach
 
 		savedVolume = null;
 

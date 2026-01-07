@@ -48,6 +48,21 @@ export class WebAudioController {
 
 	isReady(): boolean { return this.ctx !== null && this.ctx.state !== 'closed'; }
 
+	// eff: suspends AudioContext to prevent Chrome's fullscreen/WebAudio pipeline conflict
+	// note: MediaElementSourceNode cannot be detached; suspending ctx is the only reliable fix
+	async suspendContext(): Promise<void> {
+		if (this.ctx && this.ctx.state === 'running') {
+			try { await this.ctx.suspend(); } catch { /* ignore */ }
+		}
+	}
+
+	// eff: resumes AudioContext after fullscreen transition completes
+	async resumeContext(): Promise<void> {
+		if (this.ctx && this.ctx.state === 'suspended') {
+			try { await this.ctx.resume(); } catch { /* ignore */ }
+		}
+	}
+
 	setCallbacks(onDetected: CorsDetectedCallback, onSuccess: CorsSuccessCallback): void {
 		this.onCorsDetected = onDetected;
 		this.onCorsSuccess = onSuccess;
