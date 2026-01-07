@@ -4,13 +4,22 @@
  */
 
 import { logger } from '../../shared/logger';
+import { getElementState, setElementState, isMonitored, markMonitored, setupVolumeMonitor } from './volume-observer';
 
 const log = logger.content;
-const monitoredElements = new WeakSet<HTMLMediaElement>();
 let targetVolume = 1, targetMuted = false;
-let syncEnabled = true, settingByPlugin = false;
+let syncEnabled = true;
 let onNativeVolumeChange: ((volume: number, muted: boolean) => void) | null = null;
+// inv: tracks if user has interacted with plugin. If false, native volume changes are ignored.
+let userInteracted = false;
 
+export function markUserInteracted(): void {
+	userInteracted = true;
+}
+
+export function hasUserInteracted(): boolean {
+	return userInteracted;
+}
 
 export function setNativeVolumeCallback(cb: (volume: number, muted: boolean) => void): void {
 	onNativeVolumeChange = cb;
@@ -20,7 +29,7 @@ export function setNativeVolumeCallback(cb: (volume: number, muted: boolean) => 
  * // eff: Apply volume to all media elements
  */
 export function setDomVolume(volume: number, muted: boolean): void {
-	// rule: idempotent check - skip if no change, prevents applyState() from overwriting user's native slider ops
+	// rule: idempotent check - skip if no change
 	if (Math.abs(targetVolume - volume) < 0.005 && targetMuted === muted) {
 		return;
 	}
@@ -29,103 +38,38 @@ export function setDomVolume(volume: number, muted: boolean): void {
 	targetMuted = muted;
 	const els = document.querySelectorAll('video, audio');
 	let applied = 0;
-	settingByPlugin = true;
 
 	els.forEach((el) => {
 		const m = el as HTMLMediaElement;
-		if (Math.abs(m.volume - volume) > 0.01) {
-			try { m.volume = volume; applied++; } catch { /* ignore */ }
+		const diff = Math.abs(m.volume - volume) > 0.005 || m.muted !== muted;
+
+		if (diff) {
+			const state = getElementState(m);
+			state.volume = volume;
+			state.muted = muted;
+			state.settingByPlugin = true;
+			setElementState(m, state);
+
+			try { m.volume = volume; m.muted = muted; applied++; } catch { /* ignore */ }
+
+			setTimeout(() => {
+				setElementState(m, { settingByPlugin: false });
+			}, 100);
 		}
-		if (m.muted !== muted) {
-			try { m.muted = muted; } catch { /* ignore */ }
-		}
-		if (!monitoredElements.has(m)) {
-			setupVolumeMonitor(m);
-			monitoredElements.add(m);
+
+		if (!isMonitored(m)) {
+			setupVolumeMonitor(m, {
+				getUserInteracted: () => userInteracted,
+				isSyncEnabled: () => syncEnabled,
+				getTargetVolume: () => targetVolume,
+				getTargetMuted: () => targetMuted,
+				onNativeVolumeChange: (v, m) => onNativeVolumeChange?.(v, m),
+			});
+			markMonitored(m);
 		}
 	});
 
-	// why: debounce requires simple timeout here
-	setTimeout(() => { settingByPlugin = false; }, 100);
 	if (applied > 0) log.debug(`[DOM] Volume Applied: ${(volume * 100).toFixed(0)}% -> ${applied}/${els.length}`);
-}
-
-/**
- * // goal: Detect native volume changes
- */
-function setupVolumeMonitor(media: HTMLMediaElement): void {
-	let lastKnownVolume = media.volume;
-	let lastKnownMuted = media.muted;
-
-	media.addEventListener('volumechange', () => {
-		if (settingByPlugin) return;
-		const newVol = media.volume, newMuted = media.muted;
-		const volDiff = Math.abs(newVol - targetVolume), muteDiff = newMuted !== targetMuted;
-
-		// rule: Advanced Mode (WebAudio/Capture boost) still needs to sync native 0-100% changes
-		// note: in this mode, we compare against lastKnownVolume (element's own state), not targetVolume
-		if (!syncEnabled) {
-			// Detect implicit unmute: user dragged volume from 0 to non-zero
-			const implicitUnmute = lastKnownMuted && !newMuted && newVol > 0;
-
-			if (newMuted !== lastKnownMuted || implicitUnmute) {
-				log.debug(`[DOM] Advanced Mode Mute: ${newMuted} (implicit=${implicitUnmute})`);
-				onNativeVolumeChange?.(-1, newMuted);
-			}
-
-			// rule: sync volume changes within 0-100% range even in Advanced Mode
-			// key fix: compare against lastKnownVolume, not targetVolume (which is 1 after releaseVolumeLock)
-			const volChanged = Math.abs(newVol - lastKnownVolume) > 0.01;
-			if (volChanged) {
-				// note: map native 0-100% to plugin 0-100% (boost is handled by WebAudio separately)
-				log.debug(`[DOM] Advanced Mode Volume: ${(newVol * 100).toFixed(0)}%`);
-				onNativeVolumeChange?.(newVol, newMuted);
-			}
-
-			lastKnownVolume = newVol;
-			lastKnownMuted = newMuted;
-			return;
-		}
-
-		// rule: NATIVE_LITE full sync
-		if (volDiff > 0.01 || muteDiff) {
-			targetVolume = newVol;
-			targetMuted = newMuted;
-			log.debug(`[DOM] Native Volume: ${(newVol * 100).toFixed(0)}% (Muted: ${newMuted})`);
-			onNativeVolumeChange?.(newVol, newMuted);
-		}
-
-		lastKnownVolume = newVol;
-		lastKnownMuted = newMuted;
-	});
-}
-
-export function hasMediaElements(): boolean {
-	return document.querySelectorAll('video, audio').length > 0;
-}
-
-
-export { getPausedAt } from '../utils/pause-tracker';
-import { updatePausedAt, needsTracking, setupPauseTracking } from '../utils/pause-tracker';
-
-
-export function isAnyMediaPlaying(): boolean {
-	const els = document.querySelectorAll('video, audio');
-	let hasPlaying = false;
-	for (const el of els) {
-		const m = el as HTMLMediaElement;
-		if (!m.paused) hasPlaying = true;
-		if (needsTracking(m)) setupPauseTracking(m, isAnyMediaPlayingRaw);
-	}
-	updatePausedAt(hasPlaying, els.length > 0);
-	return hasPlaying;
-}
-
-function isAnyMediaPlayingRaw(): boolean {
-	for (const el of document.querySelectorAll('video, audio')) {
-		if (!(el as HTMLMediaElement).paused) return true;
-	}
-	return false;
 }
 
 /**
@@ -133,13 +77,14 @@ function isAnyMediaPlayingRaw(): boolean {
  */
 export function releaseVolumeLock(): void {
 	syncEnabled = false;
-	settingByPlugin = true;  // eff: Block volumechange callback
 	targetVolume = 1;
 	targetMuted = false;
 	document.querySelectorAll('video, audio').forEach((el) => {
-		try { (el as HTMLMediaElement).volume = 1; (el as HTMLMediaElement).muted = false; } catch { }
+		const m = el as HTMLMediaElement;
+		setElementState(m, { settingByPlugin: true });
+		try { m.volume = 1; m.muted = false; } catch { }
+		setTimeout(() => setElementState(m, { settingByPlugin: false }), 100);
 	});
-	setTimeout(() => { settingByPlugin = false; }, 100);
 }
 
 /**
@@ -149,3 +94,10 @@ export function enableVolumeLock(volume: number, muted: boolean): void {
 	syncEnabled = true;
 	setDomVolume(volume, muted);
 }
+
+export function enableDirectTake(): void {
+	syncEnabled = false;
+}
+
+export { isAnyMediaPlaying, hasMediaElements } from './media-detection';
+export { getPausedAt } from '../utils/pause-tracker';

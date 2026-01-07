@@ -3,7 +3,7 @@
 import { AudioMode } from '@nexus/audio-engine';
 import type { AudioConfig } from '@nexus/kernel';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../types';
-import { setDomVolume, isAnyMediaPlaying, releaseVolumeLock, enableVolumeLock, setNativeVolumeCallback } from '../audio/dom-volume';
+import { setDomVolume, isAnyMediaPlaying, releaseVolumeLock, enableVolumeLock, setNativeVolumeCallback, markUserInteracted as markDomUserInteracted, enableDirectTake, hasUserInteracted as hasDomUserInteracted } from '../audio/dom-volume';
 import { logger } from '../../shared/logger';
 
 const log = logger.content;
@@ -12,6 +12,7 @@ let currentState: PolicyExecutorState | null = null;
 let currentDeps: PolicyExecutorDeps | null = null;
 let currentUpdateBadge: (() => void) | null = null;
 let currentBroadcastUI: (() => void) | null = null;
+let currentUpdateConfig: ((changes: Partial<AudioConfig>, options?: { isNativeSync?: boolean }) => void) | null = null;
 let lastWebAudioActive = false;
 
 // eff: broadcasts WEBAUDIO mode state to injector for fullscreen handling
@@ -27,42 +28,41 @@ export function initModeExecutorCallbacks(
 	deps: PolicyExecutorDeps,
 	state: PolicyExecutorState,
 	updateBadge: () => void,
-	broadcastUI: () => void
+	broadcastUI: () => void,
+	applyState: () => void,
+	updateConfig: (changes: Partial<AudioConfig>, options?: { isNativeSync?: boolean }) => void
 ): void {
 	currentState = state;
 	currentDeps = deps;
 	currentUpdateBadge = updateBadge;
 	currentBroadcastUI = broadcastUI;
+	currentUpdateConfig = updateConfig;
 
 	// eff: registers a callback to handle native volume changes initiated by the website UI
 	setNativeVolumeCallback((volume, muted) => {
-		if (!currentState || !currentDeps) return;
+		if (!currentState || !currentDeps || !currentUpdateConfig) return;
+
+		const changes: Partial<AudioConfig> = {};
 
 		// note: volume < 0 signals a mute-only toggle without altering the numeric volume percentage
 		if (volume < 0) {
-			currentState.config.muted = muted;
+			changes.muted = muted;
 			log.debug(`[SPECTRA] Native mute toggle: ${muted}`);
 		} else {
 			// rule: sync both volume and muted state for complete native UI compatibility
-			const configVolume = Math.round(volume * 100);
-			currentState.config.volume = configVolume;
-			currentState.config.muted = muted;
-			log.debug(`[SPECTRA] Native volume sync: ${configVolume}% (muted: ${muted})`);
+			changes.volume = Math.round(volume * 100);
+			changes.muted = muted;
+			log.debug(`[SPECTRA] Native volume sync: ${changes.volume}% (muted: ${muted})`);
 		}
 
-		currentUpdateBadge?.();
-		currentBroadcastUI?.();
-
-		// eff: persists the synchronized native state to storage to ensure UI consistency upon reopening
-		currentDeps.messenger.send('AUDIO_SET_CONFIG', {
-			config: currentState.config,
-		}).catch(() => { });
+		// eff: update config through unified updater to ensure immutable patterns and side-effects
+		currentUpdateConfig(changes, { isNativeSync: true });
 	});
 }
 
 // post: returns true if the user has engaged with the page, making it safe to initialize AudioContext
 export function hasUserGesture(state: PolicyExecutorState): boolean {
-	if (state.userHasInteracted) return true;
+	if (state.userHasInteracted || state.hasGesture) return true;
 
 	// rule: active media playback or navigator.userActivation signals implied user intent
 	if (isAnyMediaPlaying()) return true;
@@ -148,6 +148,11 @@ function applyWebAudioState(config: AudioConfig, deps: PolicyExecutorDeps): void
 	setDomVolume(domVol, config.muted);
 	audioController.scanAndAttach();
 	audioController.updateParams(effectiveConfig);
+
+	// eff: if user has interacted, enable direct-take so native slider changes go straight to plugin
+	if (hasDomUserInteracted()) {
+		enableDirectTake();
+	}
 
 	// eff: notify injector for WebAudio API hijacking (for sites creating their own contexts)
 	// note: we broadcast the REAL requested volume, not the effective one, so hijacked contexts know the target

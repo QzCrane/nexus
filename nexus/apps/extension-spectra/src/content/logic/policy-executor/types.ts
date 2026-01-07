@@ -9,7 +9,7 @@ export interface PolicyExecutor {
 	applyState(): void;
 	updateBadge(): void;
 	// note: main entry point for configuration changes originating from hotkeys or background messages
-	updateConfig(changes: Partial<AudioConfig>, options?: { showOSD?: boolean; unMute?: boolean }): void;
+	updateConfig(changes: Partial<AudioConfig>, options?: { showOSD?: boolean; unMute?: boolean; isNativeSync?: boolean }): void;
 	hasUserGesture(): boolean;
 	markUserInteracted(): void;
 	getActiveMode(): string | null;

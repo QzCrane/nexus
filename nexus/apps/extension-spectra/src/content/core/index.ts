@@ -61,6 +61,7 @@ async function initSpectra(): Promise<void> {
   const state: PolicyExecutorState = {
     config: { ...DEFAULT_AUDIO_CONFIG },
     activeMode: null,
+    hasGesture: false,
     userHasInteracted: false,
     isPopupOpen: false,
   };

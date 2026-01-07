@@ -17,8 +17,8 @@ export function setupUserGestureListeners(
 	let corsProbed = false;
 
 	const handleUserGestureUnlock = () => {
-		// eff: mark user interaction for subsequent policy calculations
-		state.userHasInteracted = true;
+		// eff: unlock AudioContext and CORS probing for subsequent policy calculations
+		state.hasGesture = true;
 
 		// rule: trigger CORS detection once on first user interaction
 		if (!corsProbed) {

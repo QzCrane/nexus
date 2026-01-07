@@ -42,8 +42,9 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 
 		switch (msg.action) {
 			case Actions.AUDIO_SET_CONFIG: {
-				const payload = msg.payload as { config: Partial<AudioConfig> & { volumeDelta?: number; toggleMute?: boolean } };
+				const payload = msg.payload as { config: Partial<AudioConfig> & { volumeDelta?: number; toggleMute?: boolean; isNativeSync?: boolean } };
 				const configChanges = { ...payload.config };
+				const isNativeSync = payload.config.isNativeSync;
 
 				// Handle volume delta (Remote/Global Hotkeys)
 				// CRITICAL: Read from deps.state.config to get real-time value
@@ -59,7 +60,9 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 					delete (configChanges as any).toggleMute;
 				}
 
-				policyExecutor.updateConfig(configChanges);
+				delete (configChanges as any).isNativeSync;
+
+				policyExecutor.updateConfig(configChanges, { isNativeSync });
 				sendResponse({
 					success: true,
 					state: {

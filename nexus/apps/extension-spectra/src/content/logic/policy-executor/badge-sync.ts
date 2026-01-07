@@ -66,18 +66,11 @@ export function broadcastUI(
 	if (syncHash === internalState.lastSyncHash) return;
 	internalState.lastSyncHash = syncHash;
 
-	safeSend(() => new Promise<void>((resolve, reject) => {
-		chrome.runtime.sendMessage({
-			action: Actions.UI_SYNC,
-			payload: {
-				config: state.config,
-				mode: state.activeMode as any,
-				isCaptureActive: isPredictedCapture,
-				isRestricted,
-			}
-		}, {}, (response: any) => {
-			if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
-			else resolve(response);
-		});
-	})).catch(() => { });
+	// eff: notify background to forward this sync state to all open popups/extension pages
+	safeSend(() => deps.messenger.send(Actions.UI_SYNC, {
+		config: state.config,
+		mode: state.activeMode as any,
+		isCaptureActive: isPredictedCapture,
+		isRestricted,
+	} as any)).catch(() => { });
 }

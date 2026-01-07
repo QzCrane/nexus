@@ -8,6 +8,7 @@ import { safeSend } from '../../core/context-guard';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../../types';
 import type { InternalState } from './types';
 import { updateBadge } from './badge-sync';
+import { markUserInteracted } from '../../audio/dom-volume';
 
 // eff: updates internal state, triggers badge/OSD refreshes, and persists changes to storage
 export function updateConfig(
@@ -15,21 +16,17 @@ export function updateConfig(
 	state: PolicyExecutorState,
 	internalState: InternalState,
 	changes: Partial<AudioConfig>,
-	options: { showOSD?: boolean; unMute?: boolean } = {},
+	options: { showOSD?: boolean; unMute?: boolean; isNativeSync?: boolean } = {},
 	applyStateFn: () => void
 ): void {
 	const { messenger, settingsManager } = deps;
 
-	// rule: exclude 'enabled' and 'muted' from interaction tracking; only functional volume/EQ changes activate the sticky badge
-	// note: check if value actually differs from current config to avoid passive updates triggering badge
-	const isOperation = Object.entries(changes).some(([k, v]) => {
-		if (k === 'enabled' || k === 'muted') return false;
-		// note: only count as operation if value actually changed
-		return v !== (state.config as unknown as Record<string, unknown>)[k];
-	});
-
-	if (isOperation) {
+	// rule: any configuration update NOT from native sync is considered a user engagement
+	// this activates the "Special Features" like sticky badge and bi-directional sync
+	if (!options.isNativeSync) {
 		state.userHasInteracted = true;
+		// eff: sync to dom-volume module to enable native->plugin message routing
+		markUserInteracted();
 	}
 
 	const newConfig = { ...state.config, ...changes };

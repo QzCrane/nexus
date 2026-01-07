@@ -121,7 +121,9 @@ export async function createPolicyExecutor(deps: PolicyExecutorDeps, state: Poli
 		deps,
 		state,
 		() => updateBadge(deps, state, internalState),
-		() => broadcastUI(deps, state, internalState)
+		() => broadcastUI(deps, state, internalState),
+		applyState,
+		(changes, options) => updateConfig(deps, state, internalState, changes, options, applyState)
 	);
 
 	probeCorsOnMediaDetected(deps.messenger, internalState, applyState);
