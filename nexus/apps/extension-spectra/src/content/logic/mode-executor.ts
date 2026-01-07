@@ -75,6 +75,7 @@ export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState
 			// note: capture mode targets the offscreen document; domestic volume locks are released
 			releaseVolumeLock();
 			captureManager.syncConfig(config);
+			notifyInjector(true);
 		} else if (hasUserGesture(state)) {
 			// log: requesting capture upgrade due to user interaction in capture-eligible mode
 			log.capture('Strategy suggests CAPTURE and gesture detected, requesting...');
@@ -88,6 +89,7 @@ export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState
 		// mode: strictly uses DOM volume overrides and setter-redirection via 'enableVolumeLock'
 		const domVol = config.muted ? 0 : Math.min(1, config.volume / 100);
 		enableVolumeLock(domVol, config.muted);
+		notifyInjector(false);
 
 	} else if (mode === AudioMode.NATIVE_WEBAUDIO) {
 		if (hasUserGesture(state)) {
@@ -95,28 +97,55 @@ export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState
 				// note: direct user gesture is required to successfully resume an AudioContext
 				audioController.initialize(true).then((success) => {
 					if (success) {
-						releaseVolumeLock();
-						audioController.scanAndAttach();
-						audioController.updateParams(config);
-						// New: Broadcast to injector for WebAudio API hijacking
-						window.postMessage({ type: 'SPECTRA_VOLUME_UPDATE', volume: config.volume }, '*');
+						applyWebAudioState(config, deps);
 					} else {
 						log.debug('WebAudio init failed -> fallback to DOM');
 						fallbackToDom(config);
+						notifyInjector(false);
 					}
 				});
 			} else {
-				releaseVolumeLock();
-				audioController.scanAndAttach();
-				audioController.updateParams(config);
-				// New: Broadcast to injector for WebAudio API hijacking
-				window.postMessage({ type: 'SPECTRA_VOLUME_UPDATE', volume: config.volume }, '*');
+				applyWebAudioState(config, deps);
 			}
 		} else {
 			fallbackToDom(config);
+			notifyInjector(false);
 		}
 	}
 }
+
+// eff: applies WebAudio processing while maintaining visual sync with native volume slider
+// theory: for <= 100%, we let DOM handle attenuation (visual sync). For > 100%, we lock DOM to 100% and apply boost via WebAudio.
+function applyWebAudioState(config: AudioConfig, deps: PolicyExecutorDeps): void {
+	const { audioController } = deps;
+	const domVol = config.muted ? 0 : Math.min(1, config.volume / 100);
+
+	// rule: calculate effective gain for WebAudio to compensate for DOM attenuation
+	// ex: Vol 50% -> Dom 0.5 -> Effective 100% (Unity Gain). Output = 0.5 * 1.0 = 0.5
+	// ex: Vol 200% -> Dom 1.0 -> Effective 200% (2.0 Gain). Output = 1.0 * 2.0 = 2.0
+	const effectiveConfig = { ...config };
+	if (!config.muted && domVol > 0.001) {
+		effectiveConfig.volume = (config.volume / 100) / domVol * 100;
+	} else {
+		// if muted or near zero, gain doesn't matter as source is silent, but keep it safe
+		effectiveConfig.volume = config.volume;
+	}
+
+	setDomVolume(domVol, config.muted);
+	audioController.scanAndAttach();
+	audioController.updateParams(effectiveConfig);
+
+	notifyInjector(true);
+
+	// eff: notify injector for WebAudio API hijacking (for sites creating their own contexts)
+	// note: we broadcast the REAL requested volume, not the effective one, so hijacked contexts know the target
+	window.postMessage({ type: 'SPECTRA_VOLUME_UPDATE', volume: config.volume / 100 }, '*');
+}
+
+function notifyInjector(active: boolean): void {
+	window.postMessage({ type: 'SPECTRA_ENHANCED_STATE', active }, '*');
+}
+
 
 // eff: basic DOM-based volume control used as a baseline or fallback
 // rule: numeric gain is capped at 100% as native HTMLMediaElement doesn't support boost

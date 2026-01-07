@@ -67,8 +67,8 @@
 	// @ts-ignore
 	const originalWebkitRequestFullscreen = Element.prototype.webkitRequestFullscreen;
 
-	// inv: tracks whether content script is actively capturing tab audio
-	let isCaptureActive = false;
+	// inv: tracks whether content script is actively handling audio (Capture OR WebAudio)
+	let isEnhancedMode = false;
 
 	function setAllMediaVolume(vol: number) {
 		document.querySelectorAll('video, audio').forEach((el) => {
@@ -86,9 +86,10 @@
 	});
 
 	async function interceptedRequestFullscreen(this: Element, options?: FullscreenOptions) {
-		// rule: only pause capture and reset volume when actually in CAPTURE mode
-		if (isCaptureActive) {
+		// rule: pause enhancement (Capture/WebAudio) to allow clean fullscreen transition
+		if (isEnhancedMode) {
 			window.postMessage({ type: 'SPECTRA_PAUSE_FOR_FULLSCREEN' }, '*');
+			// note: purely visual helper, actual restoration handled by content script
 			setAllMediaVolume(1);
 			await new Promise(r => setTimeout(r, 80));
 		}
@@ -101,7 +102,7 @@
 	if (originalWebkitRequestFullscreen) {
 		// @ts-ignore
 		Element.prototype.webkitRequestFullscreen = async function (options) {
-			if (isCaptureActive) {
+			if (isEnhancedMode) {
 				window.postMessage({ type: 'SPECTRA_PAUSE_FOR_FULLSCREEN' }, '*');
 				setAllMediaVolume(1);
 				await new Promise(r => setTimeout(r, 80));
@@ -177,9 +178,9 @@
 			});
 		}
 
-		// eff: sync capture state from content script to control fullscreen behavior
-		if (event.data.type === 'SPECTRA_CAPTURE_STATE') {
-			isCaptureActive = !!event.data.active;
+		// eff: sync enhanced state from content script to control fullscreen behavior
+		if (event.data.type === 'SPECTRA_ENHANCED_STATE') {
+			isEnhancedMode = !!event.data.active;
 		}
 	});
 
