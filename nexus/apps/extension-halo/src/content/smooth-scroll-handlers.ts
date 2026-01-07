@@ -77,14 +77,19 @@ export function onKeydown(e: KeyboardEvent): void {
 	const pageHeight = window.innerHeight * 0.9;
 	let deltaY = 0;
 
+	// inv: Skip scroll keys on video pages (arrows = volume/seek, space = play/pause)
+	const hasVideo = document.querySelector('video');
+
 	switch (e.key) {
-		case 'ArrowDown': deltaY = settings.arrowKeyStep; break;
-		case 'ArrowUp': deltaY = -settings.arrowKeyStep; break;
+		case 'ArrowDown':
+		case 'ArrowUp':
+			if (hasVideo) return;
+			deltaY = e.key === 'ArrowDown' ? settings.arrowKeyStep : -settings.arrowKeyStep;
+			break;
 		case 'PageDown': deltaY = pageHeight; break;
 		case 'PageUp': deltaY = -pageHeight; break;
 		case ' ':
-			// Space key: skip if page has video elements (let site control video)
-			if (document.querySelector('video')) return;
+			if (hasVideo) return;
 			deltaY = pageHeight;
 			break;
 		default: return;
