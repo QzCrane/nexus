@@ -109,8 +109,8 @@ async function initSpectra(): Promise<void> {
 
   setupUserGestureListeners(state, audioController, policyExecutor);
 
-  // note: fullscreen transitions require pause for both CAPTURE and WEBAUDIO (Chrome bug)
-  cleanupFullscreen = setupFullscreenHandler(state, policyExecutor, captureManager, audioController);
+  // note: fullscreen transitions require pause ONLY for CAPTURE mode (Chrome tabCapture + fullscreen conflict)
+  cleanupFullscreen = setupFullscreenHandler(state, policyExecutor, captureManager);
 
   // rule: re-evaluate CORS policy on SPA navigation (URL path changes) to handle cross-origin routing
   cleanupNavigation = createNavigationObserver({

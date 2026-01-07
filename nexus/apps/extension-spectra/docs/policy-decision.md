@@ -24,13 +24,11 @@
 
 ## 全屏策略
 
-**双模式暂停**: CAPTURE 和 WEBAUDIO 模式均需在全屏时暂停
+**仅 CAPTURE 暂停**: 只有 CAPTURE 模式在全屏时暂停（Chrome 的 tabCapture + fullscreen 冲突）
 
-- **根因**: Chrome 已知 Bug - `createMediaElementSource()` 创建的 `MediaElementSourceNode` 与全屏渲染管线冲突
-- **机制**: Injector 拦截 `requestFullscreen()` → 发送 `SPECTRA_PAUSE_FOR_FULLSCREEN` → 等待 `SPECTRA_PAUSE_CONFIRMED` (200ms 超时)
-- **CAPTURE**: 调用 `captureManager.request(false)` 停止抓取
-- **WEBAUDIO**: 调用 `audioController.suspendContext()` 暂停 AudioContext (disconnect 无效，因为 MediaElementSourceNode 永久绑定)
-- **恢复**: 全屏完成后 500ms 调用 `resumeContext()` + `applyState()` 重新激活
+- **机制**: Injector 拦截 `requestFullscreen()` → 检查 `isCaptureActive` → 仅对 CAPTURE 发送暂停消息
+- **WEBAUDIO 模式**: 无需暂停，全屏期间保持增强音量正常工作
+- **重要**: 之前误认为 `createMediaElementSource` 与全屏冲突，实际测试证明该假设错误
 
 ## 音量同步规则
 

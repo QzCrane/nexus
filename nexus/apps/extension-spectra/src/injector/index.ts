@@ -67,10 +67,9 @@
 	// @ts-ignore
 	const originalWebkitRequestFullscreen = Element.prototype.webkitRequestFullscreen;
 
-	// inv: tracks whether content script is in enhanced mode with createMediaElementSource (needs fullscreen pause)
-	// note: hijackOnly mode (CAPTURE or site's own AudioContext) doesn't have fullscreen conflict
-	let isEnhancedMode = false;
-	let enhancedModeType: 'webaudio' | 'hijackOnly' | null = null;
+	// inv: tracks whether content script is actively capturing tab audio (ONLY CAPTURE mode needs fullscreen pause)
+	// note: WEBAUDIO mode does NOT have fullscreen conflict - previous fix was a mistake
+	let isCaptureActive = false;
 
 	function setAllMediaVolume(vol: number) {
 		document.querySelectorAll('video, audio').forEach((el) => {
@@ -98,9 +97,10 @@
 		window.addEventListener('message', handler);
 	});
 
-	// eff: pauses WebAudio before fullscreen to avoid createMediaElementSource conflict
+	// eff: pauses capture before fullscreen (Chrome tabCapture + fullscreen conflict)
+	// note: WEBAUDIO mode does NOT need pause - no conflict with fullscreen
 	async function prepareFullscreen(): Promise<void> {
-		if (isEnhancedMode && enhancedModeType === 'webaudio') {
+		if (isCaptureActive) {
 			window.postMessage({ type: 'SPECTRA_PAUSE_FOR_FULLSCREEN' }, '*');
 			setAllMediaVolume(1);
 			await waitForPauseConfirm();
@@ -187,10 +187,9 @@
 			});
 		}
 
-		// eff: sync enhanced mode state from content script to control fullscreen behavior
-		if (event.data.type === 'SPECTRA_ENHANCED_STATE') {
-			isEnhancedMode = !!event.data.active;
-			enhancedModeType = event.data.mode || 'webaudio';
+		// eff: sync capture state from content script to control fullscreen behavior
+		if (event.data.type === 'SPECTRA_CAPTURE_STATE') {
+			isCaptureActive = !!event.data.active;
 		}
 	});
 

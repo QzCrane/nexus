@@ -75,7 +75,7 @@ export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState
 			// note: capture mode targets the offscreen document; domestic volume locks are released
 			releaseVolumeLock();
 			captureManager.syncConfig(config);
-			notifyInjector(true, 'hijackOnly');
+			// note: capture-manager will notify injector via SPECTRA_CAPTURE_STATE
 		} else if (hasUserGesture(state)) {
 			// log: requesting capture upgrade due to user interaction in capture-eligible mode
 			log.capture('Strategy suggests CAPTURE and gesture detected, requesting...');
@@ -89,7 +89,7 @@ export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState
 		// mode: strictly uses DOM volume overrides and setter-redirection via 'enableVolumeLock'
 		const domVol = config.muted ? 0 : Math.min(1, config.volume / 100);
 		enableVolumeLock(domVol, config.muted);
-		notifyInjector(false);
+		// note: LITE mode doesn't need to notify injector (no fullscreen conflict)
 
 	} else if (mode === AudioMode.NATIVE_WEBAUDIO) {
 
@@ -134,17 +134,9 @@ function applyWebAudioState(config: AudioConfig, deps: PolicyExecutorDeps): void
 	audioController.scanAndAttach();
 	audioController.updateParams(effectiveConfig);
 
-	notifyInjector(true);
-
 	// eff: notify injector for WebAudio API hijacking (for sites creating their own contexts)
 	// note: we broadcast the REAL requested volume, not the effective one, so hijacked contexts know the target
 	window.postMessage({ type: 'SPECTRA_VOLUME_UPDATE', volume: config.volume / 100 }, '*');
-}
-
-// eff: notifies injector about current audio mode for fullscreen handling
-// rule: 'hijackOnly' means site uses its own AudioContext, no createMediaElementSource conflict
-function notifyInjector(active: boolean, mode: 'webaudio' | 'hijackOnly' = 'webaudio'): void {
-	window.postMessage({ type: 'SPECTRA_ENHANCED_STATE', active, mode }, '*');
 }
 
 
