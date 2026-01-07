@@ -92,6 +92,7 @@ export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState
 		notifyInjector(false);
 
 	} else if (mode === AudioMode.NATIVE_WEBAUDIO) {
+
 		if (hasUserGesture(state)) {
 			if (!audioController.isReady()) {
 				// note: direct user gesture is required to successfully resume an AudioContext
@@ -101,7 +102,6 @@ export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState
 					} else {
 						log.debug('WebAudio init failed -> fallback to DOM');
 						fallbackToDom(config);
-						notifyInjector(false);
 					}
 				});
 			} else {
@@ -109,7 +109,6 @@ export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState
 			}
 		} else {
 			fallbackToDom(config);
-			notifyInjector(false);
 		}
 	}
 }

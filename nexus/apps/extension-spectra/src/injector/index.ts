@@ -67,7 +67,7 @@
 	// @ts-ignore
 	const originalWebkitRequestFullscreen = Element.prototype.webkitRequestFullscreen;
 
-	// inv: tracks whether content script is actively handling audio (Capture OR WebAudio)
+	// inv: tracks whether content script is in enhanced mode (CAPTURE or WEBAUDIO) - both need fullscreen pause (Chrome bug)
 	let isEnhancedMode = false;
 
 	function setAllMediaVolume(vol: number) {
@@ -86,10 +86,9 @@
 	});
 
 	async function interceptedRequestFullscreen(this: Element, options?: FullscreenOptions) {
-		// rule: pause enhancement (Capture/WebAudio) to allow clean fullscreen transition
+		// rule: both CAPTURE and WEBAUDIO need pause during fullscreen (Chrome bug with createMediaElementSource)
 		if (isEnhancedMode) {
 			window.postMessage({ type: 'SPECTRA_PAUSE_FOR_FULLSCREEN' }, '*');
-			// note: purely visual helper, actual restoration handled by content script
 			setAllMediaVolume(1);
 			await new Promise(r => setTimeout(r, 80));
 		}
@@ -178,7 +177,7 @@
 			});
 		}
 
-		// eff: sync enhanced state from content script to control fullscreen behavior
+		// eff: sync enhanced mode state from content script to control fullscreen behavior
 		if (event.data.type === 'SPECTRA_ENHANCED_STATE') {
 			isEnhancedMode = !!event.data.active;
 		}

@@ -1,8 +1,8 @@
-// goal: orchestrates capture state transitions during fullscreen requests to bypass browser-imposed restriction on capturing elements while entering fullscreen
-// note: Chrome prohibits requestFullscreen() if tab is being "captured" via tabCapture API; we briefly detach to allow the transition
-// note: WebAudio mode does NOT need pause/resume - it works fine during fullscreen transitions
+// goal: orchestrates audio state transitions during fullscreen requests
+// note: Chrome has known bug - createMediaElementSource conflicts with fullscreen transition
+// note: Both CAPTURE and WEBAUDIO modes need pause/resume during fullscreen
 
-import { AudioMode } from '@nexus/audio-engine';
+import { AudioMode, WebAudioController } from '@nexus/audio-engine';
 import { logger } from '../../../shared/logger';
 import type { PolicyExecutorState } from '../../types';
 import type { CaptureManager } from '../../audio/capture-manager';
@@ -20,12 +20,14 @@ const DEFAULT_CONFIG: FullscreenHandlerConfig = {
 	enabled: true,
 };
 
-// eff: sets up inter-process message listeners to coordinate capture suspension and restoration
+// eff: sets up fullscreen transition handlers for both CAPTURE and WEBAUDIO modes
 // post: returns a cleanup function to remove event listeners and clear pending timers
+// note: fullscreen transitions require pause for both CAPTURE and WEBAUDIO (Chrome bug)
 export function setupFullscreenHandler(
 	state: PolicyExecutorState,
 	policyExecutor: PolicyExecutor,
 	captureManager: CaptureManager,
+	audioController: WebAudioController,
 	config: Partial<FullscreenHandlerConfig> = {}
 ): () => void {
 	const cfg = { ...DEFAULT_CONFIG, ...config };
@@ -34,15 +36,16 @@ export function setupFullscreenHandler(
 	let savedVolume: number | null = null;
 	let restoreTimer: ReturnType<typeof setTimeout> | null = null;
 	let pausedForFullscreen = false;
-	let pauseCount = 0;  // inv: strictly increments to avoid race conditions with multiple rapid FS requests
+	let pauseCount = 0;
+	let pausedMode: string | null = null;
 
-	// eff: temporarily kills tab capture to satisfy browser "user interaction" requirements for FS
-	// note: WebAudio mode does NOT need pause - it doesn't conflict with fullscreen transitions
+	// eff: temporarily suspends audio processing to allow clean fullscreen transition
 	function handlePause(): void {
 		const isCapture = captureManager.isActive() || state.activeMode === AudioMode.CAPTURE;
+		const isWebAudio = state.activeMode === AudioMode.NATIVE_WEBAUDIO;
 
-		// rule: only CAPTURE mode needs pause/resume; WebAudio works fine during fullscreen
-		if (!isCapture) return;
+		// rule: both CAPTURE and WEBAUDIO need pause during fullscreen (Chrome bug)
+		if (!isCapture && !isWebAudio) return;
 
 		pauseCount++;
 		const currentPause = pauseCount;
@@ -52,23 +55,32 @@ export function setupFullscreenHandler(
 		if (!pausedForFullscreen) {
 			savedVolume = state.config.volume;
 			pausedForFullscreen = true;
-			log.info(`[FS] Fullscreen request, saving volume ${savedVolume}%, pausing CAPTURE`);
+			pausedMode = state.activeMode;
+			log.info(`[FS] Fullscreen request, saving volume ${savedVolume}%, pausing ${pausedMode}`);
 
-			captureManager.request(false, state.config);
+			if (isCapture) {
+				captureManager.request(false, state.config);
+			} else if (isWebAudio) {
+				// rule: DETACH (not just cleanup) WebAudio nodes to fix Chrome fullscreen bug
+				// note: cleanup() only resets parameters; detachNode() truly disconnects MediaElementSourceNode
+				document.querySelectorAll('video, audio').forEach(el => {
+					audioController.detachNode(el as HTMLMediaElement);
+				});
+			}
 		}
 
-		// rule: if the transition isn't completed within 3s, automatically restore capture to ensure audio isn't permanently lost
+		// rule: auto-restore after 3s timeout to prevent permanent audio loss
 		restoreTimer = setTimeout(() => {
 			if (pauseCount !== currentPause) return;
 			restoreTimer = null;
 			if (pausedForFullscreen) {
 				log.info('[FS] Fullscreen timeout, reviving enhancement');
-				restoreCapture();
+				restoreAudio();
 			}
 		}, 3000);
 	}
 
-	// eff: restores capture after a short delay to ensure the native fullscreen transition has visually stabilized
+	// eff: restores audio after fullscreen transition completes
 	function handleEntered(): void {
 		if (!pausedForFullscreen) return;
 
@@ -78,14 +90,16 @@ export function setupFullscreenHandler(
 
 		restoreTimer = setTimeout(() => {
 			restoreTimer = null;
-			restoreCapture();
+			restoreAudio();
 		}, cfg.restoreDelayMs);
 	}
 
-	// eff: re-activates the tab capture session with the previously saved volume setting
-	function restoreCapture(): void {
+	// eff: re-activates audio processing with previously saved settings
+	function restoreAudio(): void {
 		if (!pausedForFullscreen) return;
+		const modeToRestore = pausedMode;
 		pausedForFullscreen = false;
+		pausedMode = null;
 
 		if (!state.config.enabled) {
 			savedVolume = null;
@@ -93,18 +107,17 @@ export function setupFullscreenHandler(
 		}
 
 		const vol = savedVolume ?? state.config.volume;
-		log.info(`[FS] Restoring enhancement, volume ${vol}%`);
+		log.info(`[FS] Restoring ${modeToRestore}, volume ${vol}%`);
 		state.userHasInteracted = true;
 
-		// Note: for CAPTURE, we must explicitly request it. For WebAudio, applyState() handles it via executeMode.
-		// However, captureManager.request() is async.
-		if (state.activeMode === AudioMode.CAPTURE || captureManager.isActive()) {
+		if (modeToRestore === AudioMode.CAPTURE) {
 			captureManager.request(true, { ...state.config, volume: vol });
 		}
+		// note: for WebAudio, applyState will re-attach nodes via scanAndAttach
 
 		savedVolume = null;
 
-		// eff: re-apply volume config to DOM elements to override injector's temporary 100% setting
+		// eff: re-apply state to restore audio processing
 		setTimeout(() => policyExecutor.applyState(), 100);
 	}
 

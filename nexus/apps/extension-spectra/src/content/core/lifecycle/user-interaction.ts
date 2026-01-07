@@ -42,13 +42,40 @@ export function setupUserGestureListeners(
 }
 
 // eff: monitors the presence of the extension popup to optimize visualizer calculations and background reporting frequency
-export function setupPopupConnectionListener(state: PolicyExecutorState): void {
+// note: when popup opens, sync current DOM volume to state for immediate UI consistency
+export function setupPopupConnectionListener(
+	state: PolicyExecutorState,
+	onPopupOpen?: () => void
+): void {
 	chrome.runtime.onConnect.addListener((port) => {
 		if (port.name === 'popup-connection') {
 			state.isPopupOpen = true;
+
+			// eff: sync current DOM volume to state when popup opens (for immediate UI display)
+			syncDomVolumeToState(state);
+
+			// note: trigger any additional popup-open logic (e.g., applyState for visual sync)
+			onPopupOpen?.();
+
 			port.onDisconnect.addListener(() => {
 				state.isPopupOpen = false;
 			});
 		}
 	});
+}
+
+// eff: reads current DOM volume and syncs to state if not already interacted
+function syncDomVolumeToState(state: PolicyExecutorState): void {
+	const media = document.querySelector('video, audio') as HTMLMediaElement | null;
+	if (!media) return;
+
+	// rule: only sync if user hasn't explicitly set volume via plugin
+	if (!state.userHasInteracted) {
+		const currentVol = Math.round(media.volume * 100);
+		const currentMuted = media.muted;
+
+		// note: update state to reflect current DOM volume for UI display
+		state.config.volume = currentVol;
+		state.config.muted = currentMuted;
+	}
 }

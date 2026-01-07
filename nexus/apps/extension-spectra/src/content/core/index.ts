@@ -65,13 +65,17 @@ async function initSpectra(): Promise<void> {
     isPopupOpen: false,
   };
 
-  setupPopupConnectionListener(state);
-
   // post: policyExecutor is fully initialized with the domain's CORS status pre-fetched
   const policyExecutor = await createPolicyExecutor(
     { messenger, policyEngine, audioController, captureManager, settingsManager },
     state
   );
+
+  // note: popup connection listener is set up after policyExecutor to enable immediate UI sync on popup open
+  setupPopupConnectionListener(state, () => {
+    // eff: when popup opens, trigger UI sync to display current volume state
+    policyExecutor.updateBadge();
+  });
 
   const messageHandler = createMessageHandler({
     state,
@@ -105,8 +109,8 @@ async function initSpectra(): Promise<void> {
 
   setupUserGestureListeners(state, audioController, policyExecutor);
 
-  // note: fullscreen transitions require CAPTURE pause/resume; WebAudio continues normally
-  cleanupFullscreen = setupFullscreenHandler(state, policyExecutor, captureManager);
+  // note: fullscreen transitions require pause for both CAPTURE and WEBAUDIO (Chrome bug)
+  cleanupFullscreen = setupFullscreenHandler(state, policyExecutor, captureManager, audioController);
 
   // rule: re-evaluate CORS policy on SPA navigation (URL path changes) to handle cross-origin routing
   cleanupNavigation = createNavigationObserver({
