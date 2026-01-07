@@ -4,12 +4,11 @@
 
 ## 决策矩阵
 
-| 交互 | 需求 | 受限 | 模式     | 色  |
-| :--: | :--: | :--: | :------- | :-: |
-|  ❌  | 任意 | 任意 | LITE     | 🔵  |
-|  ✅  |  ❌  | 任意 | LITE     | 🔵  |
-|  ✅  |  ✅  |  ❌  | WEBAUDIO | 🔵  |
-|  ✅  |  ✅  |  ✅  | CAPTURE  | 🟣  |
+交互 : 需求 : 受限 : 模式 : 色
+❌ : 任意 : 任意 : LITE : 🔵
+✅ : ❌ : 任意 : LITE : 🔵
+✅ : ✅ : ❌ : WEBAUDIO : 🔵
+✅ : ✅ : ✅ : CAPTURE : 🟣
 
 ## 触发定义
 
@@ -20,8 +19,18 @@
 ## 模式说明
 
 - LITE: DOM 原始控制 (0-100%)
-- WEBAUDIO: 页面内 WebAudio 链路
+- WEBAUDIO: 页面内 WebAudio 链路 (Hybrid Sync: 0-100% DOM Attenuation, >100% Boost)
 - CAPTURE: Tab Capture 劫持 (高 CPU)
+
+## 全屏策略
+
+**仅 CAPTURE 暂停**: 只有 CAPTURE 模式在全屏时暂停（Chrome 限制 tabCapture + fullscreen 冲突），WebAudio 模式**不需暂停**，全屏期间保持增强音量。
+
+## 音量同步规则
+
+**双向同步**: 全网站 0-100% 范围内，插件音量 ↔ 网站原生滑块必须双向同步
+**>100% 直取**: 插件 >100% 时，用户拖动网站滑条到 X%，插件直接变为 X% (非比例缩放)
+**幂等更新**: `setDomVolume` 仅在值变化时执行，避免周期性 applyState 覆盖用户操作
 
 ## 资源回收 (Offscreen)
 

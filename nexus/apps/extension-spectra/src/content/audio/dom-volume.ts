@@ -20,6 +20,11 @@ export function setNativeVolumeCallback(cb: (volume: number, muted: boolean) => 
  * // eff: Apply volume to all media elements
  */
 export function setDomVolume(volume: number, muted: boolean): void {
+	// rule: idempotent check - skip if no change, prevents applyState() from overwriting user's native slider ops
+	if (Math.abs(targetVolume - volume) < 0.005 && targetMuted === muted) {
+		return;
+	}
+
 	targetVolume = volume;
 	targetMuted = muted;
 	const els = document.querySelectorAll('video, audio');
