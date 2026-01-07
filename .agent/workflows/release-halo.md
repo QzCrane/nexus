@@ -46,3 +46,14 @@ cd apps/extension-halo
 
 - [ ] 提交代码: `feat(halo): release vX.Y.Z`
 - [ ] 上传 ZIP 到 Chrome Web Store
+
+## 6. 开源同步
+
+发布后自动同步到公共仓库。
+
+// turbo
+
+```bash
+pnpm sync-halo
+cd ../halo-public ; git push origin main
+```

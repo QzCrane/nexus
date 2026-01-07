@@ -33,7 +33,6 @@ const CONFIG = {
       readmeSrc: 'apps/extension-spectra/README.md',
       privacySrc: 'apps/extension-spectra/PRIVACY.md',
       artifactDirs: [
-        'node_modules',
         'packages/contracts/dist',
         'packages/contracts/.turbo',
         'packages/nexus-kernel/dist',
@@ -50,7 +49,6 @@ const CONFIG = {
       readmeSrc: 'apps/extension-halo/README.md',
       privacySrc: 'apps/extension-halo/PRIVACY.md', // Add if exists
       artifactDirs: [
-        'node_modules',
         'packages/contracts/dist',
         'packages/contracts/.turbo',
         'packages/nexus-kernel/dist',
@@ -112,7 +110,7 @@ function cleanDest(dest) {
 
   const entries = fs.readdirSync(dest, { withFileTypes: true });
   for (const entry of entries) {
-    if (entry.name === '.git') continue;
+    if (entry.name === '.git' || entry.name === 'node_modules') continue;
     const fullPath = path.join(dest, entry.name);
     
     // Windows retry logic
@@ -204,6 +202,8 @@ function main() {
     // Cleanup build artifacts
     console.log('Cleaning build artifacts...');
     APP_CONFIG.artifactDirs.forEach(dir => {
+      // Protect critical files
+      if (dir === 'package.json' || dir === 'pnpm-lock.yaml') return;
       const fullPath = path.join(CONFIG.destDir, dir);
       if (fs.existsSync(fullPath)) fs.rmSync(fullPath, { recursive: true, force: true });
     });

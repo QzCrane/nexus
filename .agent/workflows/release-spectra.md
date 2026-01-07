@@ -46,3 +46,14 @@ Compress-Archive -Path .\dist\* -DestinationPath .\spectra-v<VER>.zip -Force
 - 提交信息简述 Changelog
 - 上传至 Chrome Developer Dashboard
 - 填写商店信息 (从 store-listings 复制)
+
+## 6. 开源同步
+
+发布后自动同步到公共仓库。
+
+// turbo
+
+```bash
+pnpm sync-spectra
+cd ../spectra-public ; git push origin main
+```
