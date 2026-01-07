@@ -31,6 +31,8 @@ v2.6.2 SSOT: manifest.json`background`字段声明 CPU 消耗 | sourceFile/Line/
 
 v2.7.0 Hover Zoom Refactor: Single Resolver Type 架构 | 移除硬编码 HD 规则 | 按功能拆分文件夹 | ViewMode/DNR 架构同步
 
+v2.7.1 Smooth Scroll+: 捕获阶段拦截(虚拟滚动兼容) | 视频页跳过方向键 | SidePanel 键盘滚动 | overlay/hidden 容器支持 @2026-01-07
+
 ## 核心任务
 
 **System Isolation**: settings/module-store/permissions 标记`system:true` → 仅 Header 入口

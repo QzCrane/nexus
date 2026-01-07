@@ -16,14 +16,22 @@ export function scheduleClearCache(): void {
 
 /**
  * Check if element has scrollable overflow
+ * rule: 'overlay' is Chromium-specific, 'hidden' elements may be JS-scrollable
  */
 function isScrollable(el: Element): boolean {
 	const style = getComputedStyle(el);
 	const overflowY = style.overflowY;
-	return (
-		(overflowY === 'auto' || overflowY === 'scroll') &&
-		el.scrollHeight > el.clientHeight + 10
-	);
+	const hasScrollableOverflow = overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
+	const hasScrollableContent = el.scrollHeight > el.clientHeight + 10;
+
+	// rule: also check hidden elements that are actually scrollable (JS-controlled scroll)
+	if (overflowY === 'hidden' && hasScrollableContent && el.scrollTop !== undefined) {
+		// Detect if element responds to scroll (has non-zero scrollTop capability)
+		const max = el.scrollHeight - el.clientHeight;
+		if (max > 0) return true;
+	}
+
+	return hasScrollableOverflow && hasScrollableContent;
 }
 
 /**

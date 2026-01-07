@@ -20,7 +20,8 @@ function isTouchpad(deltaY: number): boolean {
 
 export function onWheel(e: WheelEvent): void {
 	if (!settings.enabled || !settings.mouseWheel) return;
-	if (e.defaultPrevented || e.ctrlKey) return;
+	// note: removed defaultPrevented check - we take over scrolling even if site handled it
+	if (e.ctrlKey) return;
 
 	const touchpad = isTouchpad(e.deltaY);
 	if (touchpad && !settings.touchpad) return;

@@ -26,7 +26,8 @@ export function updateSettings(newSettings: ScrollSettings): void {
 }
 
 export function attachListeners(): void {
-	window.addEventListener('wheel', onWheel, { passive: false });
+	// rule: Use capture phase for wheel to intercept before site handlers (e.g. Douyin virtual scroll)
+	window.addEventListener('wheel', onWheel, { passive: false, capture: true });
 	window.addEventListener('keydown', onKeydown);
 	window.addEventListener('mousedown', onMouseDown);
 	window.addEventListener('mousemove', onMouseMove);
@@ -34,7 +35,7 @@ export function attachListeners(): void {
 }
 
 export function detachListeners(): void {
-	window.removeEventListener('wheel', onWheel);
+	window.removeEventListener('wheel', onWheel, { capture: true });
 	window.removeEventListener('keydown', onKeydown);
 	window.removeEventListener('mousedown', onMouseDown);
 	window.removeEventListener('mousemove', onMouseMove);
