@@ -9,7 +9,7 @@ VideoControl: 变速 0.1x-16x | 旋转/镜像/缩放 | 亮度/对比度/饱和�
 
 ## 阶段 2: 体验升级 (v1.1) 🚧
 
-交互: ✅ 右键菜单预设 | 键盘快捷键自定义 | 媒体嗅探列表
+交互: ✅ 右键菜单预设 | ✅ 键盘快捷键 (Global/OSD) | ✅ 平滑滚动 (Boundary bubbled) | 媒体嗅探列表
 集成: SponsorBlock(跳过推广) | Lyrics Sync(字幕同步)
 
 ## 阶段 3: 本地 AI (Moat) 🔜
