@@ -62,24 +62,24 @@ function setupVolumeMonitor(media: HTMLMediaElement): void {
 		const newVol = media.volume, newMuted = media.muted;
 		const volDiff = Math.abs(newVol - targetVolume), muteDiff = newMuted !== targetMuted;
 
-		// rule: Advanced Mode (WebAudio boost) still needs to sync native 0-100% changes
+		// rule: Advanced Mode (WebAudio/Capture boost) still needs to sync native 0-100% changes
+		// note: in this mode, we compare against lastKnownVolume (element's own state), not targetVolume
 		if (!syncEnabled) {
 			// Detect implicit unmute: user dragged volume from 0 to non-zero
 			const implicitUnmute = lastKnownMuted && !newMuted && newVol > 0;
-			const volumeFromZero = lastKnownVolume < 0.01 && newVol > 0.01;
 
-			if (muteDiff || implicitUnmute) {
-				targetMuted = newMuted;
+			if (newMuted !== lastKnownMuted || implicitUnmute) {
 				log.debug(`[DOM] Advanced Mode Mute: ${newMuted} (implicit=${implicitUnmute})`);
 				onNativeVolumeChange?.(-1, newMuted);
 			}
 
 			// rule: sync volume changes within 0-100% range even in Advanced Mode
-			if (volDiff > 0.01 || volumeFromZero) {
-				targetVolume = newVol;
+			// key fix: compare against lastKnownVolume, not targetVolume (which is 1 after releaseVolumeLock)
+			const volChanged = Math.abs(newVol - lastKnownVolume) > 0.01;
+			if (volChanged) {
 				// note: map native 0-100% to plugin 0-100% (boost is handled by WebAudio separately)
 				log.debug(`[DOM] Advanced Mode Volume: ${(newVol * 100).toFixed(0)}%`);
-				onNativeVolumeChange?.(newVol, targetMuted);
+				onNativeVolumeChange?.(newVol, newMuted);
 			}
 
 			lastKnownVolume = newVol;

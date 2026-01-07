@@ -1,12 +1,8 @@
-
-// SPECTRA INJECTOR
-// Purpose: Intercepts native media APIs to enforce CORS and enable advanced audio processing (WebAudio hijacking).
-// This script runs in the "MAIN" world, sharing the same execution environment as the page's JavaScript.
-
+// SPECTRA INJECTOR: Intercepts native media APIs to enforce CORS and enable WebAudio hijacking.
+// Runs in "MAIN" world, sharing execution environment with page's JavaScript.
 (function () {
-	// ==============================================================
-	// 1. CORS Enforcement (createElement / createElementNS / Audio)
-	// ==============================================================
+	// === 1. CORS Enforcement ===
+
 	const originalCreateElement = document.createElement;
 	const originalCreateElementNS = document.createElementNS;
 	const OriginalAudio = window.Audio;
@@ -67,9 +63,10 @@
 	// @ts-ignore
 	const originalWebkitRequestFullscreen = Element.prototype.webkitRequestFullscreen;
 
-	// inv: tracks whether content script is actively capturing tab audio (ONLY CAPTURE mode needs fullscreen pause)
-	// note: WEBAUDIO mode does NOT have fullscreen conflict - previous fix was a mistake
+	// inv: tracks whether content script is actively capturing tab audio
 	let isCaptureActive = false;
+	// inv: tracks whether NATIVE_WEBAUDIO mode is active (createMediaElementSource also conflicts with fullscreen)
+	let isWebAudioActive = false;
 
 	function setAllMediaVolume(vol: number) {
 		document.querySelectorAll('video, audio').forEach((el) => {
@@ -97,10 +94,10 @@
 		window.addEventListener('message', handler);
 	});
 
-	// eff: pauses capture before fullscreen (Chrome tabCapture + fullscreen conflict)
-	// note: WEBAUDIO mode does NOT need pause - no conflict with fullscreen
+	// eff: pauses enhanced audio before fullscreen (both CAPTURE and WEBAUDIO have fullscreen conflicts)
+	// note: createMediaElementSource() permanently binds to HTMLMediaElement, causing Chrome pipeline deadlock during fullscreen
 	async function prepareFullscreen(): Promise<void> {
-		if (isCaptureActive) {
+		if (isCaptureActive || isWebAudioActive) {
 			window.postMessage({ type: 'SPECTRA_PAUSE_FOR_FULLSCREEN' }, '*');
 			setAllMediaVolume(1);
 			await waitForPauseConfirm();
@@ -190,6 +187,11 @@
 		// eff: sync capture state from content script to control fullscreen behavior
 		if (event.data.type === 'SPECTRA_CAPTURE_STATE') {
 			isCaptureActive = !!event.data.active;
+		}
+
+		// eff: sync webaudio state from content script to control fullscreen behavior
+		if (event.data.type === 'SPECTRA_WEBAUDIO_STATE') {
+			isWebAudioActive = !!event.data.active;
 		}
 	});
 

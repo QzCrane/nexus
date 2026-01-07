@@ -30,10 +30,9 @@ export function updateBadge(
 		visualizerEnabled: settingsManager.get().visualizerEnabled,
 	});
 
-	// rule: force sticky badge if volume > 100% or capture mode is engaged
-	if (isPredictedCapture || state.config.volume > 100) {
-		state.userHasInteracted = true;
-	}
+	// rule: sticky badge only if user explicitly boosted volume > 100%
+	// note: isPredictedCapture alone does NOT trigger badge - user must actively adjust parameters
+	// note: volume > 100% implies the user intentionally used the plugin's boost feature
 
 	const hash = `${state.config.volume}_${state.config.muted || false}_${isPredictedCapture}_${state.userHasInteracted}`;
 	if (hash === internalState.lastBadgeHash) return;

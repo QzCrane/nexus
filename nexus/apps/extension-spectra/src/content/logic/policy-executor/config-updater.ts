@@ -20,10 +20,12 @@ export function updateConfig(
 ): void {
 	const { messenger, settingsManager } = deps;
 
-	// rule: exclude 'enabled' from interaction tracking; only functional changes activate the sticky badge
+	// rule: exclude 'enabled' and 'muted' from interaction tracking; only functional volume/EQ changes activate the sticky badge
+	// note: check if value actually differs from current config to avoid passive updates triggering badge
 	const isOperation = Object.entries(changes).some(([k, v]) => {
-		if (k === 'enabled') return false;
-		return true;
+		if (k === 'enabled' || k === 'muted') return false;
+		// note: only count as operation if value actually changed
+		return v !== (state.config as unknown as Record<string, unknown>)[k];
 	});
 
 	if (isOperation) {

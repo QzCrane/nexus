@@ -24,11 +24,12 @@
 
 ## 全屏策略
 
-**仅 CAPTURE 暂停**: 只有 CAPTURE 模式在全屏时暂停（Chrome 的 tabCapture + fullscreen 冲突）
+**双模式暂停**: CAPTURE 和 WEBAUDIO 模式均需在全屏时暂停
 
-- **机制**: Injector 拦截 `requestFullscreen()` → 检查 `isCaptureActive` → 仅对 CAPTURE 发送暂停消息
-- **WEBAUDIO 模式**: 无需暂停，全屏期间保持增强音量正常工作
-- **重要**: 之前误认为 `createMediaElementSource` 与全屏冲突，实际测试证明该假设错误
+- **机制**: Injector 拦截 `requestFullscreen()` → 检查 `isCaptureActive || isWebAudioActive` → 发送暂停消息
+- **CAPTURE 冲突**: Chrome 的 tabCapture + fullscreen 冲突
+- **WEBAUDIO 冲突**: `createMediaElementSource()` 将 HTMLMediaElement 永久绑定到 AudioContext，导致全屏时 Chrome 渲染管道死锁
+- **重要**: 之前误认为 WEBAUDIO 无冲突，实测证明 YouTube 等站点全屏会卡顿
 
 ## 音量同步规则
 

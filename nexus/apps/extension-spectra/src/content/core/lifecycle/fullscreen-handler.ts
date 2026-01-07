@@ -1,6 +1,6 @@
-// goal: orchestrates capture state transitions during fullscreen requests
-// note: ONLY CAPTURE mode needs pause/resume during fullscreen (Chrome tabCapture + fullscreen conflict)
-// note: WEBAUDIO mode does NOT have fullscreen conflict - previous fix was a mistake
+// goal: orchestrates audio state transitions during fullscreen requests
+// note: Both CAPTURE and WEBAUDIO modes need pause/resume during fullscreen
+// reason: createMediaElementSource() permanently binds to HTMLMediaElement, causing Chrome pipeline deadlock
 
 import { AudioMode } from '@nexus/audio-engine';
 import { logger } from '../../../shared/logger';
@@ -36,12 +36,13 @@ export function setupFullscreenHandler(
 	let pausedForFullscreen = false;
 	let pauseCount = 0;
 
-	// eff: temporarily pauses CAPTURE mode to allow clean fullscreen transition
+	// eff: temporarily pauses enhanced audio modes to allow clean fullscreen transition
 	function handlePause(): void {
 		const isCapture = captureManager.isActive() || state.activeMode === AudioMode.CAPTURE;
+		const isWebAudio = state.activeMode === AudioMode.NATIVE_WEBAUDIO;
 
-		// rule: ONLY CAPTURE mode needs pause during fullscreen
-		if (!isCapture) {
+		// rule: Both CAPTURE and WEBAUDIO modes need pause during fullscreen
+		if (!isCapture && !isWebAudio) {
 			window.postMessage({ type: 'SPECTRA_PAUSE_CONFIRMED' }, '*');
 			return;
 		}
@@ -54,8 +55,14 @@ export function setupFullscreenHandler(
 		if (!pausedForFullscreen) {
 			savedVolume = state.config.volume;
 			pausedForFullscreen = true;
-			log.info(`[FS] Fullscreen request, saving volume ${savedVolume}%, pausing CAPTURE`);
-			captureManager.request(false, state.config);
+
+			if (isCapture) {
+				log.info(`[FS] Fullscreen request, saving volume ${savedVolume}%, pausing CAPTURE`);
+				captureManager.request(false, state.config);
+			} else if (isWebAudio) {
+				log.info(`[FS] Fullscreen request, saving volume ${savedVolume}%, pausing WEBAUDIO`);
+				// note: WEBAUDIO will auto-restore via applyState after fullscreen
+			}
 		}
 
 		window.postMessage({ type: 'SPECTRA_PAUSE_CONFIRMED' }, '*');

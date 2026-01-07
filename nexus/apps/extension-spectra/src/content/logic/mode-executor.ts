@@ -12,6 +12,15 @@ let currentState: PolicyExecutorState | null = null;
 let currentDeps: PolicyExecutorDeps | null = null;
 let currentUpdateBadge: (() => void) | null = null;
 let currentBroadcastUI: (() => void) | null = null;
+let lastWebAudioActive = false;
+
+// eff: broadcasts WEBAUDIO mode state to injector for fullscreen handling
+function notifyWebAudioState(active: boolean): void {
+	if (lastWebAudioActive !== active) {
+		lastWebAudioActive = active;
+		window.postMessage({ type: 'SPECTRA_WEBAUDIO_STATE', active }, '*');
+	}
+}
 
 // eff: binds shared state and cross-module callbacks to the mode executor
 export function initModeExecutorCallbacks(
@@ -71,6 +80,7 @@ export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState
 	const config = state.config;
 
 	if (mode === AudioMode.CAPTURE) {
+		notifyWebAudioState(false); // exiting WEBAUDIO mode
 		if (captureManager.isActive()) {
 			// note: capture mode targets the offscreen document; domestic volume locks are released
 			releaseVolumeLock();
@@ -86,6 +96,7 @@ export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState
 		}
 
 	} else if (mode === AudioMode.NATIVE_LITE) {
+		notifyWebAudioState(false); // exiting WEBAUDIO mode
 		// mode: strictly uses DOM volume overrides and setter-redirection via 'enableVolumeLock'
 		const domVol = config.muted ? 0 : Math.min(1, config.volume / 100);
 		enableVolumeLock(domVol, config.muted);
@@ -98,16 +109,20 @@ export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState
 				// note: direct user gesture is required to successfully resume an AudioContext
 				audioController.initialize(true).then((success) => {
 					if (success) {
+						notifyWebAudioState(true); // entering WEBAUDIO mode
 						applyWebAudioState(config, deps);
 					} else {
+						notifyWebAudioState(false);
 						log.debug('WebAudio init failed -> fallback to DOM');
 						fallbackToDom(config);
 					}
 				});
 			} else {
+				notifyWebAudioState(true); // WEBAUDIO mode active
 				applyWebAudioState(config, deps);
 			}
 		} else {
+			notifyWebAudioState(false);
 			fallbackToDom(config);
 		}
 	}
