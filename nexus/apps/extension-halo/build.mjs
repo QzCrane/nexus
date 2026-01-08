@@ -16,20 +16,27 @@ const __dirname = path.dirname(__filename);
 const isWatch = process.argv.includes('--watch');
 const isDev = process.argv.includes('--dev') || isWatch;
 
-// Run generate-registry (skip in watch mode for speed)
+// Run generate-registry (skip in watch mode for speed, skip if not exists for public repo)
+const registryPath = path.resolve(__dirname, '../../scripts/generate-tool-registry.mjs');
+const verifyPath = path.resolve(__dirname, '../../scripts/verify-architecture.js');
+
 if (!isWatch) {
-	try {
-		console.log('📦 Generating tool registry...');
-		execSync('node ../../scripts/generate-tool-registry.mjs', { stdio: 'inherit', cwd: __dirname });
-	} catch {
-		console.error('⚠️ generate-registry failed, continuing build...');
+	if (fs.existsSync(registryPath)) {
+		try {
+			console.log('📦 Generating tool registry...');
+			execSync('node ../../scripts/generate-tool-registry.mjs', { stdio: 'inherit', cwd: __dirname });
+		} catch {
+			console.error('⚠️ generate-registry failed, continuing build...');
+		}
 	}
 
-	try {
-		console.log('🔍 Running verify-architecture...');
-		execSync('node ../../scripts/verify-architecture.js', { stdio: 'inherit', cwd: __dirname });
-	} catch {
-		console.error('⚠️ verify-architecture failed, continuing build...');
+	if (fs.existsSync(verifyPath)) {
+		try {
+			console.log('🔍 Running verify-architecture...');
+			execSync('node ../../scripts/verify-architecture.js', { stdio: 'inherit', cwd: __dirname });
+		} catch {
+			console.error('⚠️ verify-architecture failed, continuing build...');
+		}
 	}
 }
 
