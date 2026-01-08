@@ -63,3 +63,19 @@ Local First: 零上传，数据本地处理
 ## 关联
 
 [开发规则](../../docs/ai-rules.md)
+
+---
+
+## Spectra vs Halo 对比
+
+### 设计差异（保留）
+
+| 维度     | Spectra      | Halo              |
+| -------- | ------------ | ----------------- |
+| UI 架构  | Popup        | SidePanel (React) |
+| 核心依赖 | audio-engine | ui-kit            |
+| 功能定位 | 媒体增强     | 开发者工具箱      |
+
+### 🔴 Halo 发布前需补充
+
+`_locales/` | `store-listings/` | `PRIVACY.md` | `README.md` | `assets/`

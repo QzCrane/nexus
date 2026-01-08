@@ -16,11 +16,11 @@
 
 ## §1 架构
 
-依赖链: Contracts ← Kernel ← {Audio-Engine, Zen-Engine, UI-Kit} ← {Spectra, Halo}
+依赖链: Contracts ← Kernel ← {Audio-Engine, UI-Kit} ← {Spectra, Halo}
 
 导入: 允许包入口+上引下 | 禁止深层/循环/下引上
 
-职责: Contracts(纯类型) | Kernel(RPC+存储+日志) | UI-Kit(共享组件) | Audio-Engine(WebAudio) | Zen-Engine(效能/美学) | Spectra(媒体 UI+Chrome) | Halo(效能 UI+Chrome)
+职责: Contracts(纯类型) | Kernel(RPC+存储+日志) | UI-Kit(共享组件) | Audio-Engine(WebAudio) | Spectra(媒体 UI+Chrome) | Halo(效能 UI+Chrome)
 
 策略: 禁硬编码 URL/规则表 | 仅 WebAudio 行为判断
 
