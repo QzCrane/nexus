@@ -9,6 +9,7 @@ import {
  * STEP 1: Evaluate available space in all four directions
  * Returns array of available spaces with their dimensions
  * Note: maxHeight accounts for info bar height at bottom
+ * Note: Widths/heights account for viewer border width
  */
 export function evaluateSpaces(
 	tr: DOMRect,
@@ -18,15 +19,16 @@ export function evaluateSpaces(
 	gap: number
 ): AvailableSpace[] {
 	const spaces: AvailableSpace[] = [];
-	const { infoBarHeight, marginBottom } = LAYOUT_CONFIG;
+	const { infoBarHeight, marginBottom, borderWidth } = LAYOUT_CONFIG;
+	const border2 = borderWidth * 2;  // Both sides
 
-	// For horizontal placement: height is viewport minus top margin, bottom margin, and info bar
-	const availH_horizontal = vpH - margin - marginBottom - infoBarHeight;
-	// For vertical placement: width is full viewport minus left/right margins
-	const availW_vertical = vpW - margin * 2;
+	// For horizontal placement: height is viewport minus margins, info bar, and borders
+	const availH_horizontal = vpH - margin - marginBottom - infoBarHeight - border2;
+	// For vertical placement: width is full viewport minus left/right margins and borders
+	const availW_vertical = vpW - margin * 2 - border2;
 
-	// RIGHT: space to the right of trigger
-	const spaceRight = vpW - tr.right - margin - gap;
+	// RIGHT: space to the right of trigger (minus border)
+	const spaceRight = vpW - tr.right - margin - gap - border2;
 	if (spaceRight > 0) {
 		spaces.push({
 			dir: 'right',
@@ -36,8 +38,8 @@ export function evaluateSpaces(
 		});
 	}
 
-	// LEFT: space to the left of trigger
-	const spaceLeft = tr.left - margin - gap;
+	// LEFT: space to the left of trigger (minus border)
+	const spaceLeft = tr.left - margin - gap - border2;
 	if (spaceLeft > 0) {
 		spaces.push({
 			dir: 'left',
@@ -47,8 +49,8 @@ export function evaluateSpaces(
 		});
 	}
 
-	// BOTTOM: space below trigger
-	const spaceBottom = vpH - tr.bottom - margin - gap;
+	// BOTTOM: space below trigger (minus border)
+	const spaceBottom = vpH - tr.bottom - margin - gap - border2;
 	if (spaceBottom > 0) {
 		spaces.push({
 			dir: 'bottom',
@@ -58,8 +60,8 @@ export function evaluateSpaces(
 		});
 	}
 
-	// TOP: space above trigger
-	const spaceTop = tr.top - margin - gap;
+	// TOP: space above trigger (minus border)
+	const spaceTop = tr.top - margin - gap - border2;
 	if (spaceTop > 0) {
 		spaces.push({
 			dir: 'top',

@@ -5,12 +5,10 @@ export const UI_STYLES = `
 /* Info bar - positioned outside container at bottom, centered text */
 .halo-hz-info {
     position: absolute;
-    left: -2px; right: -2px; 
-    bottom: -26px;
+    left: 0; right: 0; 
+    top: 100%;  /* Position right below the viewer content */
     height: 24px;
     background: #fff;
-    border: 2px solid #fff;
-    border-top: none;
     color: #333;
     font-size: 11px;
     pointer-events: none;

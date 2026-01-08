@@ -2,7 +2,8 @@
 // eff: Re-exports types and provides main calculateLayout function
 
 export type { LayoutCandidate, LayoutResult } from './layout-types';
-import { LayoutResult, LAYOUT_CONFIG } from './layout-types';
+export { LAYOUT_CONFIG } from './layout-types';
+import { LayoutResult, LAYOUT_CONFIG as CONFIG } from './layout-types';
 import {
 	calcSize,
 	evaluateSpaces,
@@ -34,7 +35,7 @@ export function calculateLayout(
 ): LayoutResult {
 	const vpW = window.innerWidth;
 	const vpH = window.innerHeight;
-	const { margin, gap } = LAYOUT_CONFIG;
+	const { margin, gap } = CONFIG;
 
 	// Fallback when no content dimensions
 	if (!contentW || !contentH) {
@@ -69,7 +70,7 @@ function calculateLayoutWithTrigger(
 
 	// STEP 3: Select best position
 	const best = selectBestPosition(contentW, contentH, evaluation, tr, vpW, vpH, gap);
-	const { infoBarHeight, marginBottom } = LAYOUT_CONFIG;
+	const { infoBarHeight, marginBottom } = CONFIG;
 
 	// STEP 4: Apply layout - height is just the content, info bar is outside
 	if (best) {
@@ -103,7 +104,7 @@ function calculateLayoutNearMouse(
 	margin: number,
 	gap: number
 ): LayoutResult {
-	const { infoBarHeight, marginBottom } = LAYOUT_CONFIG;
+	const { infoBarHeight, marginBottom } = CONFIG;
 	const maxW = vpW - margin * 2;
 	const maxH = vpH - margin - marginBottom - infoBarHeight;
 	const size = calcSize(contentW, contentH, maxW, maxH);

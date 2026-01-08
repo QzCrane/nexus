@@ -1,16 +1,37 @@
 
 import { LAYOUT_CONFIG } from './layout-types';
+import type { ViewMode } from '../../types';
 
 /**
  * Calculate best size for given max dimensions, respecting aspect ratio.
  * IMPORTANT: Always maintains aspect ratio (equal scaling) - never distort!
- * Never scales up beyond original size.
+ * 
+ * Modes:
+ * - 'fit': Scale to fill available space (can scale up or down)
+ * - 'original': Keep original size, clamp to max if larger (default)
  */
-export function calcSize(contentW: number, contentH: number, maxW: number, maxH: number): { w: number; h: number } {
+export function calcSize(
+	contentW: number, contentH: number,
+	maxW: number, maxH: number,
+	mode: ViewMode = 'original'
+): { w: number; h: number } {
 	if (maxW <= 0 || maxH <= 0) return { w: 0, h: 0 };
-	// Use single scale factor for both dimensions → preserves aspect ratio
-	const scale = Math.min(maxW / contentW, maxH / contentH, 1);
-	return { w: contentW * scale, h: contentH * scale };
+
+	if (mode === 'fit') {
+		// Fit mode: scale to fill available space (can scale up or down)
+		const scale = Math.min(maxW / contentW, maxH / contentH);
+		return { w: contentW * scale, h: contentH * scale };
+	}
+
+	// Original mode (default): keep original size, clamp to fit if larger
+	const w = Math.min(contentW, maxW);
+	const h = Math.min(contentH, maxH);
+	// If either dimension was clamped, scale both to maintain aspect ratio
+	if (w < contentW || h < contentH) {
+		const scale = Math.min(w / contentW, h / contentH);
+		return { w: contentW * scale, h: contentH * scale };
+	}
+	return { w: contentW, h: contentH };
 }
 
 /**

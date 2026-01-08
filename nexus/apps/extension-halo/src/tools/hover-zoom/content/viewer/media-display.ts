@@ -2,7 +2,7 @@
 import { ViewerDOM } from '../viewer-dom';
 import { HoverZoomSettings } from '../../types';
 import type { EnhancedResult } from '../resolvers/rule-resolver';
-import { calculateLayout } from './layout';
+import { calculateLayout, LAYOUT_CONFIG } from './layout';
 import { updateInfoBar } from './info';
 import { isDashSegment, isPlayableVideoUrl, findThumbnailUrl } from './media-loader';
 
@@ -139,6 +139,10 @@ function applyLayout(dom: ViewerDOM, triggerRect: DOMRect | null, currentType: s
 	// Show container now that media is loaded
 	dom.container.style.display = '';
 
+	// Border width for calculating total viewer size (border-box)
+	const { borderWidth } = LAYOUT_CONFIG;
+	const border2 = borderWidth * 2;
+
 	// Expand animation from source
 	if (triggerRect && !dom.viewer.classList.contains('visible')) {
 		dom.viewer.style.transition = 'none';
@@ -153,16 +157,16 @@ function applyLayout(dom: ViewerDOM, triggerRect: DOMRect | null, currentType: s
 		dom.viewer.style.transition = 'all 0.15s cubic-bezier(0.2, 0, 0, 1)';
 	}
 
-	// Target position
+	// Target position - viewer size includes border (border-box)
 	Object.assign(dom.viewer.style, {
-		width: `${layout.width}px`,
-		height: `${layout.height}px`,
+		width: `${layout.width + border2}px`,
+		height: `${layout.height + border2}px`,
 		top: `${layout.top}px`,
 		left: `${layout.left}px`,
 		opacity: '1'
 	});
 
-	// Media fills container
+	// Media fills content area (without border)
 	const media = currentType === 'video' ? dom.video : dom.img;
 	media.style.width = `${layout.width}px`;
 	media.style.height = `${layout.height}px`;

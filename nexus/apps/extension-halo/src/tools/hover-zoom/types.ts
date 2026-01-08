@@ -3,7 +3,8 @@
 
 export type TriggerKey = 'none' | 'shift' | 'ctrl' | 'alt';
 export type TriggerAction = 'hold' | 'toggle';
-export type ViewMode = 'auto' | 'fit' | 'lite' | 'mini' | 'panoramic';
+// View modes: fit = maximize to fill screen, original = keep original size
+export type ViewMode = 'fit' | 'original';
 export type PopupPosition = 'auto' | 'top' | 'bottom' | 'left' | 'right' | 'center';
 export type BackgroundMode = 'dark' | 'light' | 'blur' | 'page' | 'system';
 export type InfoDisplay = 'none' | 'top' | 'bottom';
@@ -111,7 +112,7 @@ export const DEFAULT_SETTINGS: HoverZoomSettings = {
 		imageKey: { shift: false, ctrl: false, alt: true },      // Alt = image
 		videoKey: { shift: false, ctrl: true, alt: true }        // Alt+Ctrl = video
 	},
-	viewMode: 'auto',
+	viewMode: 'original',
 	position: 'auto',
 	background: 'dark',
 	showImageInfo: 'bottom',

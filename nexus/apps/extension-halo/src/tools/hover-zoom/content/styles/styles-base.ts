@@ -12,6 +12,7 @@ export const BASE_STYLES = `
 
 .halo-hz-viewer {
     position: fixed;
+    box-sizing: border-box;  /* Width/height includes border */
     border-radius: 0;
     /* Pure white border like PhotoShow */
     border: 2px solid #fff;
