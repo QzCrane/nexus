@@ -41,26 +41,36 @@ export function createOnKeyDown(state: HoverZoomState, preload: PreloadState) {
 		const resourcePref = detectResourcePreference(state.settings.resourceKeys, e);
 		if (resourcePref === null) return;
 
+		console.log('[HALO:HoverZoom:Keys] keydown valid combo, pref:', resourcePref);
+
 		state.modifiersActive = true;
 		state.currentResourcePref = resourcePref;
 
 		// If mouse position unknown, can't trigger
-		if (!state.mouseHasMoved) return;
+		if (!state.mouseHasMoved) {
+			console.log('[HALO:HoverZoom:Keys] keydown: mouse not moved');
+			return;
+		}
 
-		// If already visible with same target, don't re-trigger
-		if (state.viewer?.getIsVisible() && state.currentTarget) return;
+		// If already visible, don't re-trigger
+		const isVisible = state.viewer?.getIsVisible() ?? false;
+		console.log('[HALO:HoverZoom:Keys] keydown: isVisible=', isVisible, 'currentTarget=', !!state.currentTarget);
+		if (isVisible) return;
 
 		// Proactively find element at mouse position
 		const el = getElementAtMouse(state);
+		console.log('[HALO:HoverZoom:Keys] keydown: element at mouse:', el?.tagName);
 		if (!el) return;
 
 		const trigger = findTriggerElement(el);
+		console.log('[HALO:HoverZoom:Keys] keydown: trigger:', trigger?.tagName);
 		if (!trigger) return;
 
 		// Show highlight and trigger
 		if (state.settings.highlightMode === 'hotkey') {
 			showHighlight(trigger);
 		}
+		console.log('[HALO:HoverZoom:Keys] keydown: calling tryTrigger');
 		tryTrigger(state, preload, trigger);
 	};
 }
@@ -75,6 +85,8 @@ export function createOnKeyUp(state: HoverZoomState) {
 		const modifierKeys = ['Shift', 'Control', 'Meta', 'Alt'];
 		if (!modifierKeys.includes(e.key)) return;
 
+		console.log('[HALO:HoverZoom:Keys] keyup:', e.key, 'isVisible=', state.viewer?.getIsVisible());
+
 		// Prevent browser menu ONLY if viewer was actually showing
 		const wasVisible = state.viewer?.getIsVisible() ?? false;
 		if (wasVisible && e.key === 'Alt') {
@@ -85,6 +97,7 @@ export function createOnKeyUp(state: HoverZoomState) {
 		const resourcePref = detectResourcePreference(state.settings.resourceKeys, e);
 
 		if (resourcePref === null) {
+			console.log('[HALO:HoverZoom:Keys] keyup: no valid combo, closing');
 			// No valid combo - clear timer and close immediately
 			clearTriggerTimer();
 			state.modifiersActive = false;

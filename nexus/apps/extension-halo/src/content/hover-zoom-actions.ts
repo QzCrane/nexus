@@ -125,10 +125,12 @@ export async function tryTrigger(
 ) {
 	if (!isValidTrigger(target)) return;
 
+	// Skip if already showing this target
+	if (state.viewer?.getIsVisible() && state.currentTarget === target) {
+		return;
+	}
+
 	// Show highlight based on mode setting
-	// 'always': show on any valid trigger (even without hotkey - handled in mouseover)
-	// 'hotkey': only show when hotkey pressed (default, handled here in tryTrigger)
-	// 'off': never show
 	if (state.settings.highlightMode === 'hotkey') {
 		showHighlight(target);
 	}
@@ -138,6 +140,7 @@ export async function tryTrigger(
 	// Check cache (must match current pref)
 	const cached = preload.cache.get(target);
 	if (cached && cached.pref === currentPref) {
+		clearTimer(state);  // Cancel any pending timer
 		state.currentTarget = target;
 		const v = ensureViewer(state);
 		v.show(cached.result, state.lastX, state.lastY);
@@ -150,8 +153,6 @@ export async function tryTrigger(
 		preloadUrl(preload, quickSrc.url);
 		startTimer(state, preload, target);
 	} else if (needsAsyncResolve(target)) {
-		// Element requires async API resolution (e.g., Bilibili video links)
-		// No quick image source available, but RuleEngine can resolve via API
 		state.currentTarget = target;
 		startTimer(state, preload, target);
 	}

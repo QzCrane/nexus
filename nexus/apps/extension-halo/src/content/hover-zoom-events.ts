@@ -38,6 +38,15 @@ function evaluateAndTrigger(
 	state: HoverZoomState, preload: PreloadState,
 	target: HTMLElement | null, hotkeysActive: boolean
 ) {
+	// Double check - if modifiers were released via keyup, don't show
+	// This handles edge case where debounce timer fires after keyup
+	if (!state.modifiersActive && !hotkeysActive) {
+		const isVisible = state.viewer?.getIsVisible() ?? false;
+		if (isVisible && !state.toggleLocked) cancel(state);
+		hideHighlight();
+		return;
+	}
+
 	const validTarget = target ? findTriggerElement(target) : null;
 	const shouldShow = hotkeysActive && validTarget !== null;
 	const isVisible = state.viewer?.getIsVisible() ?? false;
@@ -46,11 +55,16 @@ function evaluateAndTrigger(
 		state.modifiersActive = true;
 		if (state.settings.highlightMode === 'hotkey') showHighlight(validTarget);
 
-		// Only trigger if: not visible, or target changed
-		if (!isVisible || state.currentTarget !== validTarget) {
-			if (isVisible && state.currentTarget !== validTarget) cancel(state);
-			tryTrigger(state, preload, validTarget);
+		// Skip if already working on this target (loading or visible)
+		if (state.currentTarget === validTarget) {
+			return;
 		}
+
+		// Target changed - cancel previous and trigger new
+		if (isVisible) {
+			cancel(state);
+		}
+		tryTrigger(state, preload, validTarget);
 	} else {
 		if (isVisible && !state.toggleLocked) cancel(state);
 		state.modifiersActive = false;

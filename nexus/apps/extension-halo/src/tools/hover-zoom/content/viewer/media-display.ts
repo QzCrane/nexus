@@ -136,6 +136,9 @@ function applyLayout(dom: ViewerDOM, triggerRect: DOMRect | null, currentType: s
 
 	const layout = calculateLayout(contentW, contentH, triggerRect, mouseX, mouseY);
 
+	// Show container now that media is loaded
+	dom.container.style.display = '';
+
 	// Expand animation from source
 	if (triggerRect && !dom.viewer.classList.contains('visible')) {
 		dom.viewer.style.transition = 'none';

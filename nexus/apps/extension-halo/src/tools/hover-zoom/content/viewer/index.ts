@@ -77,14 +77,15 @@ export class HoverZoomViewer {
 			this.loadingOverlay.show(this.triggerRect);
 		}
 
-		// Reset media elements
-		this.dom.container.style.display = '';  // Reset display
+		// Reset media elements - keep container hidden until media loaded
+		this.dom.container.style.display = 'none';  // Hide until ready
+		this.dom.viewer.classList.remove('visible');
+		this.dom.viewer.style.cssText = '';  // Clear inline styles
 		this.dom.img.src = '';
 		this.dom.img.style.opacity = '0';
 		this.dom.img.style.display = 'none';
 		this.dom.video.src = '';
 		this.dom.video.style.display = 'none';
-		this.dom.viewer.classList.remove('visible');
 
 		const onLoaded = () => this.loadingOverlay.clear();
 		const onError = () => this.loadingOverlay.clear();
