@@ -1,0 +1,50 @@
+# Imagus-Reborn 规则索引 (sieve.json 5026L/864KB)
+# 格式: L行号 规则名 | 同站点规则整合 | ⭐=主流
+
+## 系统规则 (必须)
+L2 [Google_Images] | L11 [data:image] | L17 [HLS_Player] | L25 [Extension] | L4867 [Audio Formats]
+
+## 社交平台 ⭐
+L576 Bluesky|Bsky
+L537 BILIBILI
+L4212 FACEBOOK_fb-g L4216 FACEBOOK_vid-h-p L4224 FACEBOOK-h-p
+L4406 FLICKR_albums-g L4413 FLICKR-g L4403 FLIC.KR-g
+L2873 IMGUR.io_redirect-h L2887 IMGUR-h L2902 IMGUR-set-h
+L2932 INSTAGRAM_graphql_pub-p L2978 INSTAGRAM_graphql-p L2994 INSTAGRAM_html-p L3012 INSTAGRAM_priv_api-p L3038 INSTAGRAM_pub_api_a1_1-p L3055 INSTAGRAM_pub_api_a1_2-p L3102 INSTAGRAM_Stories-p
+L3930 PINTEREST-g | L3965 PIXIV-g-x-q-p
+L4016 REDDIT_gallery L4046 REDDIT_gifs L4066 REDDIT_media L4076 REDDIT_post L4092 REDDIT_thumbs L4098 REDDIT_video
+L4572 TIKTOK-p | L4627 TUMBLR_video-g-p
+L4667 TWITCH L4700 TWITCH_clips-q L4708 TWITCH_Video&Live
+L4755 VK_Play L4761 VK_video-h-q L4795 VK-h
+L4888 WEIBO-h
+L4912 X.COM_pic.x L4920 X.COM_proxy L4924 X.COM-h-p
+L4980 YOUTUBE_clip_redirect L4984 YOUTUBE_redirect L4988 YOUTUBE-h-q-p
+
+## 电商 ⭐
+L187 ALIEXPRESS-s | L196 ALIEXPRESS_TAOBAO-s
+L228 AMAZON-s
+L1554 Etsy-s-p
+L2996 JD-s
+L4425 NewEgg-s
+L4469 OZON.ru-s
+L4523 Shopee-s
+L4536 Steam L4540 SteamStore_sidebar-q-s L4547 SteamStore-s
+L4829 Walmart-s-p
+L4890 WILDBERRIES.ru-s
+
+## 视频平台
+L2048 Dailymotion | L3281 KICK L3285 KICK_Live L3297 KICK_VoD-q
+L3481 MAIL.RU_video-h | L3556 NicoVideo.jp-h-p
+L3732 OK.ru_album-h L3752 OK.ru_video-h
+L4165 Rumble-h-q-p | L4190 RUTUBE.ru-h
+L4554 Streamable-h-p | L4810 Vimeo-h
+
+## 图床 (按字母)
+L2802 Gyazo-h | L2884 ImageBam-h | L2910 imgBB|ibb.co-h-p
+L2959 Imgflip-h | L2984 Imgur.io_redirect-h
+L3982 Pixeldrain-h | L4002 Postimages|postimg-h-p
+L4512 shottr-h | L4543 slow.pics-h
+
+## 成人站点 (略,见 L* grep)
+
+# 快速查找: findstr /n "站点名" sieve.json
