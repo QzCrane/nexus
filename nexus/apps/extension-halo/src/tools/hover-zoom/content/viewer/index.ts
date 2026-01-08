@@ -78,6 +78,7 @@ export class HoverZoomViewer {
 		}
 
 		// Reset media elements
+		this.dom.container.style.display = '';  // Reset display
 		this.dom.img.src = '';
 		this.dom.img.style.opacity = '0';
 		this.dom.img.style.display = 'none';
@@ -124,6 +125,7 @@ export class HoverZoomViewer {
 		this.loadingOverlay.clear();
 		if (this.dom) {
 			this.dom.viewer.classList.remove('visible');
+			this.dom.container.style.display = 'none';
 			this.dom.video.pause();
 			this.dom.video.src = '';
 		}

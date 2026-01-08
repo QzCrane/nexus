@@ -1,94 +1,99 @@
 // goal: Hover Zoom keyboard event handlers
-// eff: Keydown/keyup logic for trigger modes using resourceKeys system
+// eff: keydown proactively checks, keyup closes immediately + clears debounce
 
 import type { HoverZoomState, PreloadState } from './hover-zoom-state';
 import { detectResourcePreference } from '../tools/hover-zoom/content/utils/resource-key-helper';
-import { cancel, getElementAtMouse, tryTrigger } from './hover-zoom-events';
+import { cancel, getElementAtMouse, tryTrigger, clearTriggerTimer } from './hover-zoom-events';
+import { isValidTrigger } from '../tools/hover-zoom/content/resolvers/image-resolver';
+import { showHighlight, hideHighlight } from '../tools/hover-zoom/content/utils/highlight';
 
-/**
- * Handle keydown - enable detection at current position.
- * Uses resourceKeys system to detect modifier combos (Alt, Alt+Ctrl, etc.)
- * 
- * Special keys:
- * - Space: Lock/unlock viewer (allows mouse to move away)
- * - Escape: Close viewer and unlock
- */
+/** Find valid trigger element at or above given element */
+function findTriggerElement(el: HTMLElement | null): HTMLElement | null {
+	while (el && !isValidTrigger(el)) {
+		el = el.parentElement;
+	}
+	return el && isValidTrigger(el) ? el : null;
+}
+
+/** Handle keydown - proactively check mouse position and trigger if valid */
 export function createOnKeyDown(state: HoverZoomState, preload: PreloadState) {
 	return (e: KeyboardEvent) => {
 		if (!state.settings.enabled) return;
-
-		// Prevent repeat events (key held down)
 		if (e.repeat) return;
 
-		// ESCAPE: Always close and unlock
+		// ESCAPE: Close and unlock
 		if (e.key === 'Escape') {
 			if (state.viewer?.getIsVisible()) {
+				clearTriggerTimer();
 				cancel(state);
 			}
 			return;
 		}
 
-		// SPACE: Toggle lock state (only when viewer visible)
+		// SPACE: Toggle lock
 		if (e.key === ' ' && state.viewer?.getIsVisible()) {
-			e.preventDefault(); // Prevent page scroll
+			e.preventDefault();
 			state.toggleLocked = !state.toggleLocked;
-			console.log('[HALO:HoverZoom]', state.toggleLocked ? 'Locked (press Space again to unlock)' : 'Unlocked');
 			return;
 		}
 
-		// Detect resource preference based on current modifier state
+		// Check if this keydown creates a valid hotkey combo
 		const resourcePref = detectResourcePreference(state.settings.resourceKeys, e);
-		if (resourcePref === null) {
-			// No valid key combo pressed - don't trigger
-			return;
-		}
+		if (resourcePref === null) return;
 
 		state.modifiersActive = true;
 		state.currentResourcePref = resourcePref;
 
-		// Try to detect at mouse position
-		if (!state.mouseHasMoved) {
-			// Mouse hasn't moved yet - cannot determine position
-			return;
-		}
+		// If mouse position unknown, can't trigger
+		if (!state.mouseHasMoved) return;
 
-		if (!state.currentTarget && !state.viewer?.getIsVisible()) {
-			const el = getElementAtMouse(state);
-			if (el) {
-				tryTrigger(state, preload, el);
-			}
+		// If already visible with same target, don't re-trigger
+		if (state.viewer?.getIsVisible() && state.currentTarget) return;
+
+		// Proactively find element at mouse position
+		const el = getElementAtMouse(state);
+		if (!el) return;
+
+		const trigger = findTriggerElement(el);
+		if (!trigger) return;
+
+		// Show highlight and trigger
+		if (state.settings.highlightMode === 'hotkey') {
+			showHighlight(trigger);
 		}
+		tryTrigger(state, preload, trigger);
 	};
 }
 
-/**
- * Handle keyup - hide viewer when modifier released (unless locked).
- * Detects when all required modifiers are released.
- */
+/** Handle keyup - close viewer immediately when modifiers released */
 export function createOnKeyUp(state: HoverZoomState) {
 	return (e: KeyboardEvent) => {
 		if (!state.settings.enabled) return;
+		if (state.toggleLocked) return;
 
-		// If LOCKED, don't close on modifier release
-		if (state.toggleLocked) {
-			return;
+		// Only care about modifier releases
+		const modifierKeys = ['Shift', 'Control', 'Meta', 'Alt'];
+		if (!modifierKeys.includes(e.key)) return;
+
+		// Prevent browser menu ONLY if viewer was actually showing
+		const wasVisible = state.viewer?.getIsVisible() ?? false;
+		if (wasVisible && e.key === 'Alt') {
+			e.preventDefault();
 		}
 
-		// Check if the released key was a modifier
-		const isModifierRelease = ['Shift', 'Control', 'Meta', 'Alt'].includes(e.key);
-		if (!isModifierRelease) return;
-
-		// Check if any valid combo still matches after key release
+		// Check if any valid combo still exists
 		const resourcePref = detectResourcePreference(state.settings.resourceKeys, e);
+
 		if (resourcePref === null) {
-			// No valid combo matches anymore - hide viewer
+			// No valid combo - clear timer and close immediately
+			clearTriggerTimer();
 			state.modifiersActive = false;
 			state.currentResourcePref = 'auto';
+			hideHighlight();
 			cancel(state);
 		} else {
-			// Still have a valid combo - update preference (seamless switching)
+			// Still valid combo - just update preference
 			state.currentResourcePref = resourcePref;
 		}
 	};
 }
-

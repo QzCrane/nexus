@@ -1,8 +1,7 @@
-
 import type { HoverZoomSettings } from '../tools/hover-zoom/types';
 import type { HoverZoomState, PreloadState } from './hover-zoom-state';
 import { isValidTrigger } from '../tools/hover-zoom/content/resolvers/image-resolver';
-import { resolveEnhanced, detectQuick } from '../tools/hover-zoom/content/resolvers/rule-resolver';
+import { resolveEnhanced, detectQuick, needsAsyncResolve } from '../tools/hover-zoom/content/resolvers/rule-resolver';
 import { showHighlight, hideHighlight } from '../tools/hover-zoom/content/utils/highlight';
 import { HoverZoomViewer } from '../tools/hover-zoom/content/viewer/index';
 import { HotkeyManager } from '../tools/hover-zoom/content/utils/hotkeys';
@@ -62,7 +61,9 @@ export function clearTimer(state: HoverZoomState) {
  */
 export function cancel(state: HoverZoomState) {
 	clearTimer(state);
-	state.viewer?.hide();
+	if (state.viewer) {
+		state.viewer.hide();
+	}
 	state.currentTarget = null;
 	state.toggleLocked = false;
 	hideHighlight();
@@ -87,7 +88,9 @@ export function startTimer(
 	const delay = cacheValid ? 0 : state.settings.triggerDelay;
 
 	state.hoverTimer = window.setTimeout(async () => {
-		if (state.currentTarget !== target) return;
+		// CRITICAL: Check if conditions still valid before showing
+		if (!state.modifiersActive) return;  // Hotkeys released
+		if (state.currentTarget !== target) return;  // Target changed
 
 		try {
 			// Check cache first (must match current pref)
@@ -98,7 +101,8 @@ export function startTimer(
 			}
 
 			const result = await resolveEnhanced(target, capturedPref);
-			if (!result || state.currentTarget !== target) return;
+			// Recheck after await
+			if (!result || !state.modifiersActive || state.currentTarget !== target) return;
 
 			// Cache for future use with pref
 			preload.cache.set(target, { result, url: result.url, pref: capturedPref });
@@ -144,6 +148,11 @@ export async function tryTrigger(
 	if (quickSrc) {
 		state.currentTarget = target;
 		preloadUrl(preload, quickSrc.url);
+		startTimer(state, preload, target);
+	} else if (needsAsyncResolve(target)) {
+		// Element requires async API resolution (e.g., Bilibili video links)
+		// No quick image source available, but RuleEngine can resolve via API
+		state.currentTarget = target;
 		startTimer(state, preload, target);
 	}
 }

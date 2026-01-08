@@ -36,24 +36,16 @@ function resolveUrl(url: string): string {
 }
 
 function getBackgroundImage(el: HTMLElement): string | null {
-	// Check cache first (getComputedStyle is expensive)
 	if (bgImageCache.has(el)) return bgImageCache.get(el) ?? null;
-
 	const bg = window.getComputedStyle(el).backgroundImage;
 	let result: string | null = null;
-
 	if (bg && bg !== 'none' && bg.startsWith('url(')) {
 		const match = bg.match(/url\((.*)\)/);
 		if (match?.[1]) {
-			const clean = match[1].match(REGEX_URL_CLEAN);
-			const url = clean ? clean[1] : match[1];
-			// Filter out gradient/data URLs
-			if (!url.startsWith('data:') && !url.includes('gradient')) {
-				result = url;
-			}
+			const url = match[1].match(REGEX_URL_CLEAN)?.[1] ?? match[1];
+			if (!url.startsWith('data:') && !url.includes('gradient')) result = url;
 		}
 	}
-
 	bgImageCache.set(el, result);
 	return result;
 }
@@ -61,15 +53,10 @@ function getBackgroundImage(el: HTMLElement): string | null {
 function getLargestSrcset(srcset: string): string | null {
 	if (!srcset) return null;
 	const sources = srcset.split(',').map(s => {
-		const parts = s.trim().split(/\s+/);
-		const url = parts[0];
-		const desc = parts[1];
-		let w = 0;
-		if (desc?.endsWith('w')) w = parseInt(desc);
-		else if (desc?.endsWith('x')) w = parseFloat(desc) * 1000;
+		const [url, desc] = s.trim().split(/\s+/);
+		const w = desc?.endsWith('w') ? parseInt(desc) : desc?.endsWith('x') ? parseFloat(desc) * 1000 : 0;
 		return { url, w };
-	});
-	sources.sort((a, b) => b.w - a.w);
+	}).sort((a, b) => b.w - a.w);
 	return sources[0]?.url || null;
 }
 
@@ -115,6 +102,20 @@ export function isValidTrigger(target: HTMLElement): boolean {
 			if (childMedia) {
 				const rect = childMedia.getBoundingClientRect();
 				valid = rect.width >= MIN_SIZE && rect.height >= MIN_SIZE;
+			} else {
+				// Check for nested img in anchor (B站等站点的视频卡片结构)
+				// Only for anchors with video/play patterns
+				if (target instanceof HTMLAnchorElement) {
+					const href = target.href || '';
+					const isVideoLink = /\/(video|play)\//.test(href);
+					if (isVideoLink) {
+						const nestedImg = target.querySelector('img');
+						if (nestedImg) {
+							const rect = nestedImg.getBoundingClientRect();
+							valid = rect.width >= MIN_SIZE && rect.height >= MIN_SIZE;
+						}
+					}
+				}
 			}
 		}
 	}

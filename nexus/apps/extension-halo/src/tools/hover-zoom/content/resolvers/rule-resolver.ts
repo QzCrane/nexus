@@ -140,6 +140,27 @@ export async function resolveEnhanced(
 	};
 }
 
+// Patterns that require async API resolution (video links, etc.)
+const ASYNC_RESOLVE_PATTERNS = [
+	// Bilibili video links
+	'a[href*="bilibili.com/video/"]',
+	'a[href*="bilibili.com"][href*="/play/ep"]',
+	'a[href*="bilibili.tv"][href*="/play/"]',
+	'a[href*="bilibili.tv"][href*="/video/"]',
+	// Add more patterns as needed for other sites
+] as const;
+
+/**
+ * Check if element requires async API resolution (e.g., video links)
+ * These elements won't have direct image sources, need RuleEngine
+ */
+export function needsAsyncResolve(target: HTMLElement): boolean {
+	for (const pattern of ASYNC_RESOLVE_PATTERNS) {
+		if (target.closest(pattern)) return true;
+	}
+	return false;
+}
+
 /**
  * Sync version for quick detection (no API calls)
  * Includes exemption checks
@@ -148,13 +169,9 @@ export function detectQuick(target: HTMLElement, settings: HoverZoomSettings): I
 	// Check exemptions first
 	if (!checkExemptions(target, settings)) return null;
 
-	// Check if any rule probe matches - but DON'T return page URLs!
-	// B站视频链接需要 API 解析，不能直接返回页面 URL
-	// Check if any rule probe matches
-	// Simplified: Just check if engine has rules for this host and element matches common selector
-	// Ideally Engine should expose a 'match' method
-	if (target.closest('a[href*="/video/"], a[href*="/play/"]')) {
-		// Known patterns that require API handling, skip direct image resolve
+	// Elements requiring async API resolution should skip direct image resolve
+	// RuleEngine will handle these via resolveEnhanced
+	if (needsAsyncResolve(target)) {
 		return null;
 	}
 
