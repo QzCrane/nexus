@@ -33,6 +33,8 @@ v2.7.0 Hover Zoom Refactor: Single Resolver Type 架构 | 移除硬编码 HD 规
 
 v2.7.1 Smooth Scroll+: 捕获阶段拦截(虚拟滚动兼容) | 视频页跳过方向键 | SidePanel 键盘滚动 | overlay/hidden 容器支持 @2026-01-07
 
+v2.7.2 Hover Zoom Fix: B 站图片原图解析(参考 PhotoShow) | RuleEngine 子域名匹配 | fetch blob 获取跨域文件大小 | 精度 2 位小数 @2026-01-08
+
 ## 核心任务
 
 **System Isolation**: settings/module-store/permissions 标记`system:true` → 仅 Header 入口

@@ -2,19 +2,18 @@
 // eff: Info bar, actions, zoom indicator
 
 export const UI_STYLES = `
-/* Info bar - spans full viewer width including border */
+/* Info bar - inside viewer's padding-bottom area, naturally aligned */
 .halo-hz-info {
     position: absolute;
-    left: -2px;
-    width: calc(100% + 4px);  /* Content width + 2px border on each side */
-    top: 100%;  /* Position right below content */
-    height: 24px;
+    left: 0;
+    right: 0;
+    bottom: 0;  /* Sit at bottom of padding area */
+    height: 20px;
     background: #fff;
     color: #333;
     font-size: 11px;
     pointer-events: none;
-    box-sizing: border-box;  /* Ensure width includes any padding */
-    /* Flexbox for perfect centering */
+    box-sizing: border-box;
     display: flex;
     justify-content: center;
     align-items: center;

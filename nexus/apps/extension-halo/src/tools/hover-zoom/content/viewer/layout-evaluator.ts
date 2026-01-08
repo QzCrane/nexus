@@ -49,24 +49,26 @@ export function evaluateSpaces(
 		});
 	}
 
-	// BOTTOM: space below trigger (minus border)
-	const spaceBottom = vpH - tr.bottom - margin - gap - border2;
+	// BOTTOM: space below trigger (content + info bar must fit)
+	// Total viewer height = content + infoBar, must not exceed available space
+	const spaceBottom = vpH - tr.bottom - marginBottom - gap - border2 - infoBarHeight;
 	if (spaceBottom > 0) {
 		spaces.push({
 			dir: 'bottom',
 			maxWidth: availW_vertical,
-			maxHeight: spaceBottom,
+			maxHeight: spaceBottom,  // This is max content height
 			spaceSize: spaceBottom
 		});
 	}
 
-	// TOP: space above trigger (minus border)
-	const spaceTop = tr.top - margin - gap - border2;
+	// TOP: space above trigger (content + info bar must fit)
+	// Info bar is below content, so total height = content + infoBar
+	const spaceTop = tr.top - margin - gap - border2 - infoBarHeight;
 	if (spaceTop > 0) {
 		spaces.push({
 			dir: 'top',
 			maxWidth: availW_vertical,
-			maxHeight: spaceTop,
+			maxHeight: spaceTop,  // This is max content height
 			spaceSize: spaceTop
 		});
 	}

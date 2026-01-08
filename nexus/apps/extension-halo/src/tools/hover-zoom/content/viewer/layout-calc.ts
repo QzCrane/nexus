@@ -1,5 +1,6 @@
 // goal: Layout calculation utilities for HoverZoom
 // eff: Pure functions for size/position calculations
+// inv: All calculations include full viewer footprint (content + border + infoBar)
 
 import {
 	LayoutCandidate,
@@ -20,6 +21,8 @@ import {
 	evaluateSpaces,
 	checkOriginalFit
 } from './layout-evaluator';
+
+const { infoBarHeight } = LAYOUT_CONFIG;
 
 export {
 	calcSize,
@@ -64,7 +67,8 @@ export function selectBestPosition(
 				break;
 			case 'top':
 				left = calcHorizontalPos(contentW, tr, vpW);
-				top = tr.top - gap - contentH;
+				// Viewer bottom (content + infoBar) must not touch trigger top
+				top = tr.top - gap - contentH - infoBarHeight;
 				break;
 		}
 
@@ -101,7 +105,8 @@ export function selectBestPosition(
 					break;
 				case 'top':
 					left = calcHorizontalPos(size.w, tr, vpW);
-					top = tr.top - gap - size.h;
+					// Viewer bottom (content + infoBar) must not touch trigger top
+					top = tr.top - gap - size.h - infoBarHeight;
 					break;
 			}
 

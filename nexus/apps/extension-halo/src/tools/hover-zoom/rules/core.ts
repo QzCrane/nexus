@@ -151,9 +151,22 @@ export class RuleEngine {
 
 	/**
 	 * 解析 URL
+	 * 支持子域名匹配：i0.hdslb.com 会匹配 hdslb.com 的规则
 	 */
 	async resolve(ctx: ResolveContext): Promise<string | RuleResult | null> {
-		const hostRules = this.rules.get(ctx.host);
+		// Find rules: try exact match first, then parent domains
+		let hostRules = this.rules.get(ctx.host);
+
+		// If no exact match, try parent domains (e.g., i0.hdslb.com -> hdslb.com)
+		if (!hostRules) {
+			const parts = ctx.host.split('.');
+			for (let i = 1; i < parts.length - 1; i++) {
+				const parentHost = parts.slice(i).join('.');
+				hostRules = this.rules.get(parentHost);
+				if (hostRules) break;
+			}
+		}
+
 		if (!hostRules) return null;
 
 		for (const rule of hostRules) {

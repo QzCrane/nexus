@@ -49,7 +49,7 @@ export const LAYOUT_CONFIG = {
 	margin: 15,           // Viewport margin (top, left, right)
 	marginBottom: 60,     // Bottom margin - avoid site bottom bars (e.g. Bilibili)
 	gap: 10,              // Gap between trigger and viewer
-	infoBarHeight: 26,    // Height reserved for info bar (24px + 2px border)
+	infoBarHeight: 20,    // Info bar inside padding-bottom area
 	borderWidth: 2,       // Viewer border width (for accurate boundary calc)
 	scaleUpSmall: false   // Future: allow scaling up small images to fill space
 } as const;

@@ -71,10 +71,16 @@ export async function resolveEnhanced(
 		// Construct URL from common attributes
 		const urlToCheck = target.getAttribute('href') || target.getAttribute('src') || target.dataset.targetUrl || '';
 		if (urlToCheck) {
+			// Extract hostname from URL for rule matching (e.g., bilibili images are on hdslb.com)
+			let urlHost = window.location.hostname;
+			try {
+				urlHost = new URL(urlToCheck, window.location.href).hostname;
+			} catch { /* keep page hostname */ }
+
 			const ctx: ResolveContext = {
 				url: urlToCheck,
 				element: target,
-				host: window.location.hostname,
+				host: urlHost,  // Use URL's hostname, not page hostname
 				match: null,
 				fetchHtml: (u) => fetchWithProxy<string>(u, { responseType: 'text' }),
 				fetchJson: <T>(u: string, headers?: Record<string, string>) => fetchWithProxy<T>(u, { headers }),
@@ -124,11 +130,37 @@ export async function resolveEnhanced(
 	const source = resolveImageSource(target);
 	if (!source) return null;
 
-	// NOTE: When user wants video but only image found, we still show the image.
-	// This provides better UX than showing nothing.
-	// The UI can indicate this is an image fallback if needed.
+	// CRITICAL: Apply rule engine to the resolved URL (e.g., remove bilibili @suffix)
+	// This ensures URLs from <img src> go through HD transformation
+	let hdUrl = source.url;
+	try {
+		let urlHost = window.location.hostname;
+		try {
+			urlHost = new URL(source.url, window.location.href).hostname;
+		} catch { /* keep page hostname */ }
 
-	const hdUrl = source.url;
+		console.log(LOG_TAG, 'Fallback HD transform:', { urlHost, url: source.url.slice(0, 80) });
+
+		const ctx: ResolveContext = {
+			url: source.url,
+			element: target,
+			host: urlHost,
+			match: null,
+			fetchHtml: (u) => fetchWithProxy<string>(u, { responseType: 'text' }),
+			fetchJson: <T>(u: string, headers?: Record<string, string>) => fetchWithProxy<T>(u, { headers }),
+			getCookie
+		};
+
+		const ruleResult = await ruleEngine.resolve(ctx);
+		if (ruleResult) {
+			hdUrl = typeof ruleResult === 'string' ? ruleResult : ruleResult.url;
+			console.log(LOG_TAG, '✅ HD rule applied:', source.url.slice(-60), '->', hdUrl.slice(-60));
+		} else {
+			console.log(LOG_TAG, '❌ No HD rule matched for host:', urlHost);
+		}
+	} catch (e) {
+		console.warn(LOG_TAG, 'HD rule application failed:', e);
+	}
 
 	return {
 		type: source.type,
@@ -136,7 +168,7 @@ export async function resolveEnhanced(
 		caption: source.caption,
 		element: target,
 		originalUrl: source.originalUrl,
-		fromRule: null
+		fromRule: hdUrl !== source.url ? 'engine:fallback' : null
 	};
 }
 

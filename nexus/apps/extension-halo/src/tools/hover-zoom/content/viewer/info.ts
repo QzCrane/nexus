@@ -2,7 +2,7 @@
 // eff: Display media type, dimensions, format, size, rule source, and caption
 
 import type { ViewerDOM } from '../viewer-dom';
-import type { EnhancedResult } from '../rule-resolver';
+import type { EnhancedResult } from '../resolvers/rule-resolver';
 import type { HoverZoomSettings } from '../../types';
 
 /**
@@ -10,9 +10,9 @@ import type { HoverZoomSettings } from '../../types';
  */
 function formatFileSize(bytes: number): string {
 	if (bytes <= 0) return '';
-	if (bytes < 1024) return `${bytes}B`;
-	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-	return `${(bytes / 1024 / 1024).toFixed(2)}MB`;
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+	return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 }
 
 /**
@@ -20,7 +20,7 @@ function formatFileSize(bytes: number): string {
  */
 function getFormat(url: string, mediaType: 'image' | 'video'): string {
 	const match = url.match(/\.([a-zA-Z0-9]+)(?:\?|$)/);
-	if (match) {
+	if (match?.[1]) {
 		const ext = match[1].toUpperCase();
 		if (['JPG', 'JPEG', 'PNG', 'GIF', 'WEBP', 'AVIF', 'SVG', 'BMP', 'ICO'].includes(ext)) return ext;
 		if (['MP4', 'WEBM', 'OGG', 'MOV', 'AVI', 'M4V'].includes(ext)) return ext;
@@ -40,13 +40,17 @@ function getFormat(url: string, mediaType: 'image' | 'video'): string {
  * @param source - Enhanced result with media info
  * @param mediaType - Current media type ('image' or 'video')
  * @param mediaElement - The loaded media element (img or video)
+ * @param originalW - Original/natural width of the media
+ * @param originalH - Original/natural height of the media
  */
 export function updateInfoBar(
 	dom: ViewerDOM,
 	settings: HoverZoomSettings,
 	source: EnhancedResult,
 	mediaType: 'image' | 'video',
-	mediaElement?: HTMLImageElement | HTMLVideoElement
+	mediaElement?: HTMLImageElement | HTMLVideoElement,
+	originalW?: number,
+	originalH?: number
 ): void {
 	if (settings.showImageInfo === 'none') {
 		dom.infoBar.style.display = 'none';
@@ -59,9 +63,11 @@ export function updateInfoBar(
 	// Type icon
 	const typeIcon = mediaType === 'video' ? '🎬' : '🖼️';
 
-	// Dimensions
+	// Dimensions - prefer passed original dimensions, fallback to element natural size
 	let dims = '';
-	if (mediaType === 'video' && mediaElement instanceof HTMLVideoElement) {
+	if (originalW && originalH) {
+		dims = `${originalW} × ${originalH}`;
+	} else if (mediaType === 'video' && mediaElement instanceof HTMLVideoElement) {
 		dims = `${mediaElement.videoWidth} × ${mediaElement.videoHeight}`;
 	} else if (mediaElement instanceof HTMLImageElement) {
 		dims = `${mediaElement.naturalWidth} × ${mediaElement.naturalHeight}`;
@@ -76,11 +82,8 @@ export function updateInfoBar(
 		sizeStr = formatFileSize(source.fileSize);
 	}
 
-	// Rule source (where the URL came from)
-	const ruleLabel = source.fromRule || '';
-
-	// Build meta info: "1920×1080 / JPG / 321.4 KB / [bilibili]"
-	const metaParts = [dims, format, sizeStr, ruleLabel].filter(Boolean);
+	// Build meta info: "1920×1080 / JPG / 321.4 KB"
+	const metaParts = [dims, format, sizeStr].filter(Boolean);
 	const metaText = metaParts.join(' / ');
 
 	dom.infoBar.innerHTML = `<span class="halo-hz-meta">${metaText}</span>`;

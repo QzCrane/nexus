@@ -8,14 +8,31 @@ import {
 } from './bilibili-utils';
 
 export const bilibiliRules: SiteRule[] = [
-	// 1. [声明式] 图片去水印
+	// 1. [函数式] B站图片去水印/获取原图
+	// 参考 PhotoShow 逻辑：移除 @ 后的缩略图参数，保留查询参数
+	// URL 格式: xxx.jpg@672w_378h.avif 或 xxx.jpg@1c.webp?token=xxx
+	// 目标: xxx.jpg 或 xxx.jpg?token=xxx
 	{
 		id: 'bilibili-image',
-		hosts: ['bilibili.com', 'hdslb.com', 'bstarstatic.com'],
-		// 匹配 URL 中含 @...webp/jpg/png 结尾的
-		match: /@\d+[wq].+/,
-		resolve: {
-			replace: [/@.+/, '']
+		hosts: ['hdslb.com', 'bstarstatic.com', 'bilivideo.com'],
+		// 匹配包含 @ 的 URL（缩略图参数标志）
+		match: /@/,
+		resolve: async (ctx: ResolveContext) => {
+			const url = ctx.url;
+			// 找到 @ 的位置
+			const atIndex = url.indexOf('@');
+			if (atIndex === -1) return null;
+
+			// 找到 @ 之后的 ? 位置（查询参数开始）
+			const queryIndex = url.indexOf('?', atIndex);
+
+			// 移除 @ 到 ? 之间的内容，保留查询参数
+			if (queryIndex !== -1) {
+				return url.substring(0, atIndex) + url.substring(queryIndex);
+			} else {
+				// 没有查询参数，直接截断
+				return url.substring(0, atIndex);
+			}
 		}
 	},
 

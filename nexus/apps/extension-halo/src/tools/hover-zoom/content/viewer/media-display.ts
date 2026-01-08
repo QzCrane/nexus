@@ -1,12 +1,26 @@
-
 import { ViewerDOM } from '../viewer-dom';
 import { HoverZoomSettings, ViewMode } from '../../types';
 import type { EnhancedResult } from '../resolvers/rule-resolver';
-import { calculateLayout, LAYOUT_CONFIG } from './layout';
+import { calculateLayout } from './layout';
 import { updateInfoBar } from './info';
 import { isDashSegment, isPlayableVideoUrl, findThumbnailUrl } from './media-loader';
 
 const LOG_TAG = '[HALO:HoverZoom:MediaDisplay]';
+
+/**
+ * Fetch file size via blob download (works for cross-origin images)
+ * Returns 0 if failed
+ */
+async function fetchFileSize(url: string): Promise<number> {
+	try {
+		const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
+		if (!res.ok) return 0;
+		const blob = await res.blob();
+		return blob.size;
+	} catch {
+		return 0;
+	}
+}
 
 export function showImage(
 	dom: ViewerDOM,
@@ -38,7 +52,17 @@ export function showImage(
 
 		applyLayout(dom, triggerRect, currentType, mouseX, mouseY, preloadImg.naturalWidth, preloadImg.naturalHeight, settings.viewMode);
 		dom.viewer.classList.add('visible');
-		updateInfoBar(dom, settings, source, 'image', dom.img);
+		updateInfoBar(dom, settings, source, 'image', dom.img, preloadImg.naturalWidth, preloadImg.naturalHeight);
+
+		// Async: Try to get file size via fetch blob (works for cross-origin)
+		if (!source.fileSize) {
+			fetchFileSize(source.url).then(size => {
+				if (size > 0 && isVisible() && dom) {
+					source.fileSize = size;
+					updateInfoBar(dom, settings, source, 'image', dom.img, preloadImg.naturalWidth, preloadImg.naturalHeight);
+				}
+			});
+		}
 	};
 
 	preloadImg.onerror = (e) => {
@@ -91,7 +115,7 @@ export function showVideo(
 		onLoaded();
 		applyLayout(dom, triggerRect, currentType, mouseX, mouseY, dom.video.videoWidth, dom.video.videoHeight, settings.viewMode);
 		dom.viewer.classList.add('visible');
-		updateInfoBar(dom, settings, source, 'video', dom.video);
+		updateInfoBar(dom, settings, source, 'video', dom.video, dom.video.videoWidth, dom.video.videoHeight);
 	};
 
 	dom.video.onerror = (e) => {
@@ -169,4 +193,5 @@ function applyLayout(dom: ViewerDOM, triggerRect: DOMRect | null, currentType: s
 	const media = currentType === 'video' ? dom.video : dom.img;
 	media.style.width = `${w}px`;
 	media.style.height = `${h}px`;
+	// Info bar width is now set by CSS: calc(100% + 4px)
 }

@@ -12,16 +12,14 @@ export const BASE_STYLES = `
 
 .halo-hz-viewer {
     position: fixed;
-    box-sizing: content-box;  /* Width/height is content, border is outside */
+    box-sizing: content-box;  /* Width/height is image content, padding/border outside */
     border-radius: 0;
-    /* Pure white border like PhotoShow */
     border: 2px solid #fff;
+    padding-bottom: 20px;  /* Space for info bar inside border */
     box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-    /* Allow info bar to extend outside container */
     overflow: visible;
     opacity: 0;
-    /* Smooth expand animation from source - transition set dynamically in JS */
-    background: transparent;
+    background: #fff;  /* White background in padding area for info bar */
     pointer-events: none;
 }
 
