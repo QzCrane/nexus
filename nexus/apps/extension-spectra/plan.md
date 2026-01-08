@@ -21,3 +21,15 @@ VideoControl: 变速 0.1x-16x | 旋转/镜像/缩放 | 亮度/对比度/饱和�
 ## 关联
 
 [决策记录](docs/policy-decision.md) | [协议](docs/protocols.md) | [CORS 数据流](docs/cors-data-flow.md)
+
+---
+
+## 变更记录
+
+### 2026-01-08: Fix YouTube Fullscreen Freeze
+
+**问题**: NATIVE_WEBAUDIO 模式下 YouTube 大音量全屏时视频/音频冻结
+
+**根因**: `media-observer.ts` 中 MutationObserver 的 `removedNodes` 回调在 YouTube 全屏 DOM 重组时误调用 `detachNode()`，导致 `createMediaElementSource()` 绑定断裂
+
+**修复**: 移除 removedNodes → detachNode 逻辑
