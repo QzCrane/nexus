@@ -8,6 +8,7 @@ import {
 	SpaceEvaluation,
 	LAYOUT_CONFIG
 } from './layout-types';
+import type { ViewMode } from '../../types';
 
 import {
 	calcSize,
@@ -40,14 +41,14 @@ export function selectBestPosition(
 	tr: DOMRect,
 	vpW: number,
 	vpH: number,
-	gap: number
+	gap: number,
+	viewMode: ViewMode = 'original'
 ): LayoutCandidate | null {
-	// Case 1: Original image fits without scaling
-	if (evaluation.canFitOriginal && evaluation.bestFitDirection) {
+	// Case 1: Original image fits without scaling (only in 'original' mode)
+	if (viewMode === 'original' && evaluation.canFitOriginal && evaluation.bestFitDirection) {
 		const space = evaluation.bestFitDirection;
 		let left = 0, top = 0;
 
-		// Calculate position based on direction
 		switch (space.dir) {
 			case 'right':
 				left = tr.right + gap;
@@ -77,11 +78,11 @@ export function selectBestPosition(
 		};
 	}
 
-	// Case 2: Need to scale down (or potentially up if scaleUpSmall enabled)
+	// Case 2: Scale to fit available space
 	const candidates: LayoutCandidate[] = [];
 
 	for (const space of evaluation.spaces) {
-		const size = calcSize(contentW, contentH, space.maxWidth, space.maxHeight);
+		const size = calcSize(contentW, contentH, space.maxWidth, space.maxHeight, viewMode);
 		if (size.w > 0 && size.h > 0) {
 			let left = 0, top = 0;
 

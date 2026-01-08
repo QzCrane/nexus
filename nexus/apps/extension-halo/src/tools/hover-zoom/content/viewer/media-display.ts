@@ -1,6 +1,6 @@
 
 import { ViewerDOM } from '../viewer-dom';
-import { HoverZoomSettings } from '../../types';
+import { HoverZoomSettings, ViewMode } from '../../types';
 import type { EnhancedResult } from '../resolvers/rule-resolver';
 import { calculateLayout, LAYOUT_CONFIG } from './layout';
 import { updateInfoBar } from './info';
@@ -36,7 +36,7 @@ export function showImage(
 		dom.img.src = source.url;
 		dom.img.style.opacity = '1';
 
-		applyLayout(dom, triggerRect, currentType, mouseX, mouseY, preloadImg.naturalWidth, preloadImg.naturalHeight);
+		applyLayout(dom, triggerRect, currentType, mouseX, mouseY, preloadImg.naturalWidth, preloadImg.naturalHeight, settings.viewMode);
 		dom.viewer.classList.add('visible');
 		updateInfoBar(dom, settings, source, 'image', dom.img);
 	};
@@ -89,7 +89,7 @@ export function showVideo(
 		if (!isVisible() || !dom) return;
 
 		onLoaded();
-		applyLayout(dom, triggerRect, currentType, mouseX, mouseY, dom.video.videoWidth, dom.video.videoHeight);
+		applyLayout(dom, triggerRect, currentType, mouseX, mouseY, dom.video.videoWidth, dom.video.videoHeight, settings.viewMode);
 		dom.viewer.classList.add('visible');
 		updateInfoBar(dom, settings, source, 'video', dom.video);
 	};
@@ -131,17 +131,13 @@ export function fallbackToThumbnail(
 }
 
 
-function applyLayout(dom: ViewerDOM, triggerRect: DOMRect | null, currentType: string, mouseX: number, mouseY: number, contentW: number, contentH: number) {
+function applyLayout(dom: ViewerDOM, triggerRect: DOMRect | null, currentType: string, mouseX: number, mouseY: number, contentW: number, contentH: number, viewMode: ViewMode = 'original') {
 	if (!dom || !contentW || !contentH) return;
 
-	const layout = calculateLayout(contentW, contentH, triggerRect, mouseX, mouseY);
+	const layout = calculateLayout(contentW, contentH, triggerRect, mouseX, mouseY, viewMode);
 
 	// Show container now that media is loaded
 	dom.container.style.display = '';
-
-	// Border width for calculating total viewer size (border-box)
-	const { borderWidth } = LAYOUT_CONFIG;
-	const border2 = borderWidth * 2;
 
 	// Expand animation from source
 	if (triggerRect && !dom.viewer.classList.contains('visible')) {
@@ -157,17 +153,20 @@ function applyLayout(dom: ViewerDOM, triggerRect: DOMRect | null, currentType: s
 		dom.viewer.style.transition = 'all 0.15s cubic-bezier(0.2, 0, 0, 1)';
 	}
 
-	// Target position - viewer size includes border (border-box)
+	// Target position - content-box: width/height is content only, border is outside
+	// Round to integers to avoid subpixel rendering issues
+	const w = Math.round(layout.width);
+	const h = Math.round(layout.height);
 	Object.assign(dom.viewer.style, {
-		width: `${layout.width + border2}px`,
-		height: `${layout.height + border2}px`,
-		top: `${layout.top}px`,
-		left: `${layout.left}px`,
+		width: `${w}px`,
+		height: `${h}px`,
+		top: `${Math.round(layout.top)}px`,
+		left: `${Math.round(layout.left)}px`,
 		opacity: '1'
 	});
 
-	// Media fills content area (without border)
+	// Set media to exact same size as viewer content
 	const media = currentType === 'video' ? dom.video : dom.img;
-	media.style.width = `${layout.width}px`;
-	media.style.height = `${layout.height}px`;
+	media.style.width = `${w}px`;
+	media.style.height = `${h}px`;
 }

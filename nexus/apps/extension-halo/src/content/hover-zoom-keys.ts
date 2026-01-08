@@ -41,36 +41,31 @@ export function createOnKeyDown(state: HoverZoomState, preload: PreloadState) {
 		const resourcePref = detectResourcePreference(state.settings.resourceKeys, e);
 		if (resourcePref === null) return;
 
-		console.log('[HALO:HoverZoom:Keys] keydown valid combo, pref:', resourcePref);
+		// Block mode: always prevent Alt from opening browser menu
+		if (e.key === 'Alt' && state.settings.altKeyMode === 'block') {
+			e.preventDefault();
+		}
 
 		state.modifiersActive = true;
 		state.currentResourcePref = resourcePref;
 
 		// If mouse position unknown, can't trigger
-		if (!state.mouseHasMoved) {
-			console.log('[HALO:HoverZoom:Keys] keydown: mouse not moved');
-			return;
-		}
+		if (!state.mouseHasMoved) return;
 
 		// If already visible, don't re-trigger
-		const isVisible = state.viewer?.getIsVisible() ?? false;
-		console.log('[HALO:HoverZoom:Keys] keydown: isVisible=', isVisible, 'currentTarget=', !!state.currentTarget);
-		if (isVisible) return;
+		if (state.viewer?.getIsVisible()) return;
 
 		// Proactively find element at mouse position
 		const el = getElementAtMouse(state);
-		console.log('[HALO:HoverZoom:Keys] keydown: element at mouse:', el?.tagName);
 		if (!el) return;
 
 		const trigger = findTriggerElement(el);
-		console.log('[HALO:HoverZoom:Keys] keydown: trigger:', trigger?.tagName);
 		if (!trigger) return;
 
 		// Show highlight and trigger
 		if (state.settings.highlightMode === 'hotkey') {
 			showHighlight(trigger);
 		}
-		console.log('[HALO:HoverZoom:Keys] keydown: calling tryTrigger');
 		tryTrigger(state, preload, trigger);
 	};
 }
@@ -85,19 +80,19 @@ export function createOnKeyUp(state: HoverZoomState) {
 		const modifierKeys = ['Shift', 'Control', 'Meta', 'Alt'];
 		if (!modifierKeys.includes(e.key)) return;
 
-		console.log('[HALO:HoverZoom:Keys] keyup:', e.key, 'isVisible=', state.viewer?.getIsVisible());
-
-		// Prevent browser menu ONLY if viewer was actually showing
-		const wasVisible = state.viewer?.getIsVisible() ?? false;
-		if (wasVisible && e.key === 'Alt') {
-			e.preventDefault();
+		// Prevent browser menu based on altKeyMode setting
+		if (e.key === 'Alt') {
+			const wasVisible = state.viewer?.getIsVisible() ?? false;
+			// block mode: always prevent, compat mode: only when viewer visible
+			if (state.settings.altKeyMode === 'block' || wasVisible) {
+				e.preventDefault();
+			}
 		}
 
 		// Check if any valid combo still exists
 		const resourcePref = detectResourcePreference(state.settings.resourceKeys, e);
 
 		if (resourcePref === null) {
-			console.log('[HALO:HoverZoom:Keys] keyup: no valid combo, closing');
 			// No valid combo - clear timer and close immediately
 			clearTriggerTimer();
 			state.modifiersActive = false;

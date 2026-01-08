@@ -10,6 +10,8 @@ export type BackgroundMode = 'dark' | 'light' | 'blur' | 'page' | 'system';
 export type InfoDisplay = 'none' | 'top' | 'bottom';
 export type AnimationSpeed = 'none' | 'fast' | 'normal' | 'slow';
 export type HighlightMode = 'always' | 'hotkey' | 'off'; // Trigger highlight border mode
+// Alt key handling: block = always preventDefault, compat = only when viewer visible
+export type AltKeyMode = 'block' | 'compat';
 
 /**
  * Key combination for triggering resource preview.
@@ -72,6 +74,7 @@ export interface HoverZoomSettings {
 
 	// Resource type switching (new)
 	resourceKeys: ResourceKeys;
+	altKeyMode: AltKeyMode;  // How to handle Alt key + browser menu
 
 	// View
 	viewMode: ViewMode;
@@ -112,6 +115,7 @@ export const DEFAULT_SETTINGS: HoverZoomSettings = {
 		imageKey: { shift: false, ctrl: false, alt: true },      // Alt = image
 		videoKey: { shift: false, ctrl: true, alt: true }        // Alt+Ctrl = video
 	},
+	altKeyMode: 'compat',  // Compatible mode: only prevent menu when viewer visible
 	viewMode: 'original',
 	position: 'auto',
 	background: 'dark',

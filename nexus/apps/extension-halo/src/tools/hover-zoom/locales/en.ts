@@ -27,14 +27,28 @@ export const en = {
 		view: {
 			title: "Appearance",
 			highlight: "Trigger Highlight",
+			viewMode: "Size Mode",
 			loadingIndicator: "Loading Indicator",
 			antiHotlink: "Anti-Hotlink (Privacy)"
+		},
+
+		viewMode: {
+			original: "Original",
+			fit: "Fit Screen"
 		},
 
 		highlight: {
 			always: "Always",
 			hotkey: "Hotkey",
 			off: "Off"
+		},
+
+		altKeyMode: {
+			label: "Alt key handling",
+			compat: "Compatible",
+			compatDesc: "Only block browser menu when viewer is visible",
+			block: "Block Menu",
+			blockDesc: "Always block browser menu when Alt is pressed"
 		},
 
 		exemptions: {

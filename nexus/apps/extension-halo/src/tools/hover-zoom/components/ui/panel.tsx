@@ -4,43 +4,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Toggle } from '@nexus/ui-kit';
 import { useTranslation } from '../../../../i18n';
-import { HoverZoomSettings, DEFAULT_SETTINGS, STORAGE_KEY, KeyCombo, HighlightMode } from '../../types';
+import { HoverZoomSettings, DEFAULT_SETTINGS, STORAGE_KEY, KeyCombo, HighlightMode, ViewMode, AltKeyMode } from '../../types';
 import { enableAntiHotlink, disableAntiHotlink, isAntiHotlinkEnabled } from '../../logic/engine';
-import { comboToString } from '../../content/utils/resource-key-helper';
 import { styles } from './panel.styles';
-
-// Convert KeyCombo to display string
-const keyComboDisplay = (combo: KeyCombo): string => {
-    return comboToString(combo);
-};
-
-// Key combo editor component
-const KeyComboEditor: React.FC<{
-    value: KeyCombo;
-    onChange: (combo: KeyCombo) => void;
-    label: string;
-}> = ({ value, onChange, label }) => {
-    return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '12px', color: 'var(--halo-text-secondary)', minWidth: '40px' }}>{label}</span>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}>
-                <input type="checkbox" checked={value.alt} onChange={(e) => onChange({ ...value, alt: e.target.checked })} />
-                Alt
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}>
-                <input type="checkbox" checked={value.ctrl} onChange={(e) => onChange({ ...value, ctrl: e.target.checked })} />
-                Ctrl
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}>
-                <input type="checkbox" checked={value.shift} onChange={(e) => onChange({ ...value, shift: e.target.checked })} />
-                Shift
-            </label>
-            <span style={{ fontSize: '11px', color: 'var(--halo-text-secondary)', marginLeft: '8px' }}>
-                = {keyComboDisplay(value)}
-            </span>
-        </div>
-    );
-};
+import { KeyComboEditor } from './KeyComboEditor';
 
 export const HoverZoomPanel: React.FC = () => {
     const { t } = useTranslation();
@@ -106,6 +73,26 @@ export const HoverZoomPanel: React.FC = () => {
                             onChange={(combo) => updateResourceKeys('videoKey', combo)}
                         />
                     </div>
+                    {/* Alt key mode - only show when Alt is used */}
+                    {(settings.resourceKeys.imageKey.alt || settings.resourceKeys.videoKey.alt) && (
+                        <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--halo-border)' }}>
+                            <div style={styles.row}>
+                                <span style={styles.label}>{t('hoverZoom.altKeyMode.label') || 'Alt key handling'}</span>
+                                <div style={styles.segmented}>
+                                    {(['compat', 'block'] as AltKeyMode[]).map(m => (
+                                        <button key={m} style={settings.altKeyMode === m ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ altKeyMode: m })}>
+                                            {m === 'compat' ? (t('hoverZoom.altKeyMode.compat') || 'Compatible') : (t('hoverZoom.altKeyMode.block') || 'Block Menu')}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <p style={{ fontSize: '10px', color: 'var(--halo-text-secondary)', margin: '6px 0 0', lineHeight: '1.4' }}>
+                                {settings.altKeyMode === 'compat' 
+                                    ? (t('hoverZoom.altKeyMode.compatDesc') || 'Only block browser menu when viewer is visible')
+                                    : (t('hoverZoom.altKeyMode.blockDesc') || 'Always block browser menu when Alt is pressed')}
+                            </p>
+                        </div>
+                    )}
                 </div>
             </Card>
 
@@ -133,6 +120,16 @@ export const HoverZoomPanel: React.FC = () => {
                             {(['always', 'hotkey', 'off'] as HighlightMode[]).map(m => (
                                 <button key={m} style={settings.highlightMode === m ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ highlightMode: m })}>
                                     {m === 'always' ? (t('hoverZoom.highlight.always') || 'Always') : m === 'hotkey' ? (t('hoverZoom.highlight.hotkey') || 'Hotkey') : (t('hoverZoom.highlight.off') || 'Off')}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    <div style={styles.row}>
+                        <span style={styles.label}>{t('hoverZoom.view.viewMode') || 'Size mode'}</span>
+                        <div style={styles.segmented}>
+                            {(['original', 'fit'] as ViewMode[]).map(m => (
+                                <button key={m} style={settings.viewMode === m ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ viewMode: m })}>
+                                    {m === 'original' ? (t('hoverZoom.viewMode.original') || 'Original') : (t('hoverZoom.viewMode.fit') || 'Fit')}
                                 </button>
                             ))}
                         </div>

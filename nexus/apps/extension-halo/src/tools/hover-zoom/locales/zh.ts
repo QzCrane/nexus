@@ -27,14 +27,28 @@ export const zh = {
 		view: {
 			title: "外观设置",
 			highlight: "触发高亮框",
+			viewMode: "显示尺寸",
 			loadingIndicator: "加载指示器",
 			antiHotlink: "反防盗链 (隐私模式)"
+		},
+
+		viewMode: {
+			original: "原始尺寸",
+			fit: "适应屏幕"
 		},
 
 		highlight: {
 			always: "常开",
 			hotkey: "快捷键",
 			off: "关闭"
+		},
+
+		altKeyMode: {
+			label: "Alt键处理",
+			compat: "兼容模式",
+			compatDesc: "仅当浮图可见时阻止浏览器菜单弹出",
+			block: "完全阻断",
+			blockDesc: "按下Alt时始终阻止浏览器菜单弹出"
 		},
 
 		exemptions: {

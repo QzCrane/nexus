@@ -12,7 +12,7 @@ export const BASE_STYLES = `
 
 .halo-hz-viewer {
     position: fixed;
-    box-sizing: border-box;  /* Width/height includes border */
+    box-sizing: content-box;  /* Width/height is content, border is outside */
     border-radius: 0;
     /* Pure white border like PhotoShow */
     border: 2px solid #fff;
@@ -33,7 +33,6 @@ export const BASE_STYLES = `
 .halo-hz-image,
 .halo-hz-video {
     display: block;
-    /* Exact dimensions set via JS */
     cursor: default;
     user-select: none;
     -webkit-user-drag: none;
