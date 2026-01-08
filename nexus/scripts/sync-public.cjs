@@ -29,7 +29,7 @@ const CONFIG = {
   
   appSpecific: {
     spectra: {
-      excludes: ['apps/extension-halo', 'apps/extension-cortex', 'packages/features/ai-engine', 'packages/features/zen-engine', 'packages/ui-kit'],
+      excludes: ['apps/extension-halo', 'apps/extension-cortex', 'packages/features/ai-engine', 'packages/ui-kit'],
       readmeSrc: 'apps/extension-spectra/README.md',
       privacySrc: 'apps/extension-spectra/PRIVACY.md',
       artifactDirs: [
@@ -45,7 +45,7 @@ const CONFIG = {
       ]
     },
     halo: {
-      excludes: ['apps/extension-spectra', 'apps/extension-cortex', 'packages/features/ai-engine', 'packages/features/zen-engine', 'packages/features/audio-engine'],
+      excludes: ['apps/extension-spectra', 'apps/extension-cortex', 'packages/features/ai-engine', 'packages/features/audio-engine'],
       readmeSrc: 'apps/extension-halo/README.md',
       privacySrc: 'apps/extension-halo/PRIVACY.md', // Add if exists
       artifactDirs: [
