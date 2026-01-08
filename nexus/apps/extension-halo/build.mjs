@@ -1,5 +1,9 @@
+/**
+ * HALO Build Script (esbuild)
+ * Unified with Spectra build system
+ */
+
 import esbuild from 'esbuild';
-const { build } = esbuild;
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -8,20 +12,25 @@ import { execSync } from 'child_process';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Run generate-registry to ensure tool panels are up-to-date
-try {
-	console.log('📦 Generating tool registry...');
-	execSync('node ../../scripts/generate-tool-registry.mjs', { stdio: 'inherit', cwd: __dirname });
-} catch {
-	console.error('⚠️ generate-registry failed, continuing build...');
-}
+// Parse args
+const isWatch = process.argv.includes('--watch');
+const isDev = process.argv.includes('--dev') || isWatch;
 
-// Run verify-architecture first
-try {
-	console.log('🔍 Running verify-architecture...');
-	execSync('node ../../scripts/verify-architecture.js', { stdio: 'inherit', cwd: __dirname });
-} catch {
-	console.error('⚠️ verify-architecture failed, continuing build...');
+// Run generate-registry (skip in watch mode for speed)
+if (!isWatch) {
+	try {
+		console.log('📦 Generating tool registry...');
+		execSync('node ../../scripts/generate-tool-registry.mjs', { stdio: 'inherit', cwd: __dirname });
+	} catch {
+		console.error('⚠️ generate-registry failed, continuing build...');
+	}
+
+	try {
+		console.log('🔍 Running verify-architecture...');
+		execSync('node ../../scripts/verify-architecture.js', { stdio: 'inherit', cwd: __dirname });
+	} catch {
+		console.error('⚠️ verify-architecture failed, continuing build...');
+	}
 }
 
 // Clean dist
@@ -32,8 +41,7 @@ fs.ensureDirSync('dist');
 fs.copySync('public', 'dist');
 console.log('✓ Copied public files');
 
-// Copy SaaT script files (script.js, script.css) for Script-as-a-Tool
-// Scan both src/tools and src/scripts
+// Copy SaaT script files
 const toolsDir = path.join(__dirname, 'src/tools');
 const scriptsDir = path.join(__dirname, 'src/scripts');
 const distToolsDir = path.join(__dirname, 'dist/tools');
@@ -70,18 +78,15 @@ const toolScriptsCount = copyScriptFiles(toolsDir, distToolsDir);
 const officialScriptsCount = copyScriptFiles(scriptsDir, distScriptsDir);
 
 if (toolScriptsCount + officialScriptsCount > 0) {
-	console.log(`✓ Copied ${toolScriptsCount + officialScriptsCount} SaaT script files (Tools: ${toolScriptsCount}, Scripts: ${officialScriptsCount})`);
+	console.log(`✓ Copied ${toolScriptsCount + officialScriptsCount} SaaT script files`);
 }
-
-// Config
-const isWatch = process.argv.includes('--watch');
 
 const commonConfig = {
 	bundle: true,
-	minify: !isWatch,
-	sourcemap: isWatch,
+	minify: !isDev,
+	sourcemap: isDev,
 	define: {
-		'process.env.NODE_ENV': isWatch ? '"development"' : '"production"'
+		'process.env.NODE_ENV': isDev ? '"development"' : '"production"'
 	},
 	loader: { '.ts': 'ts', '.tsx': 'tsx' },
 	alias: {
@@ -92,32 +97,60 @@ const commonConfig = {
 	}
 };
 
-// Build Content Script
-build({
-	...commonConfig,
-	entryPoints: ['src/entry/content.ts'],
-	outfile: 'dist/content.js',
-}).then(() => console.log('✓ Built content.js')).catch(e => { console.error(e); process.exit(1); });
+const entries = [
+	{ entry: 'src/entry/content.ts', out: 'content.js' },
+	{ entry: 'src/entry/background.ts', out: 'background.js' },
+	{ entry: 'src/entry/sidepanel.tsx', out: 'sidepanel.js' },
+	{ entry: 'src/entry/sidepanel-init.ts', out: 'sidepanel-init.js' }
+];
 
-// Build Background
-build({
-	...commonConfig,
-	entryPoints: ['src/entry/background.ts'],
-	outfile: 'dist/background.js',
-}).then(() => console.log('✓ Built background.js')).catch(e => { console.error(e); process.exit(1); });
-
-// Build SidePanel (React)
-build({
-	...commonConfig,
-	entryPoints: ['src/entry/sidepanel.tsx'],
-	outfile: 'dist/sidepanel.js',
-}).then(() => console.log('✓ Built sidepanel.js')).catch(e => { console.error(e); process.exit(1); });
-
-// Build SidePanel Init (early theme + smooth scroll)
-build({
-	...commonConfig,
-	entryPoints: ['src/entry/sidepanel-init.ts'],
-	outfile: 'dist/sidepanel-init.js',
-}).then(() => console.log('✓ Built sidepanel-init.js')).catch(e => { console.error(e); process.exit(1); });
-
-console.log('\n🎉 HALO build complete!');
+if (isWatch) {
+	// Watch mode - use esbuild context for incremental builds
+	console.log('👀 Watch mode enabled - waiting for changes...\n');
+	
+	const contexts = await Promise.all(entries.map(async ({ entry, out }) => {
+		const ctx = await esbuild.context({
+			...commonConfig,
+			entryPoints: [entry],
+			outfile: `dist/${out}`,
+			logLevel: 'info',
+			plugins: [{
+				name: 'rebuild-notify',
+				setup(build) {
+					build.onEnd(result => {
+						if (result.errors.length === 0) {
+							console.log(`✓ Rebuilt ${out}`);
+						}
+					});
+				}
+			}]
+		});
+		await ctx.watch();
+		return ctx;
+	}));
+	
+	process.on('SIGINT', async () => {
+		console.log('\n🛑 Stopping watch...');
+		await Promise.all(contexts.map(ctx => ctx.dispose()));
+		process.exit(0);
+	});
+	
+} else {
+	// Normal build
+	await Promise.all(entries.map(async ({ entry, out }) => {
+		try {
+			await esbuild.build({
+				...commonConfig,
+				entryPoints: [entry],
+				outfile: `dist/${out}`,
+				write: true
+			});
+			console.log(`✓ Built ${out}`);
+		} catch (e) {
+			console.error(`✗ Failed to build ${out}:`, e.message);
+			process.exit(1);
+		}
+	}));
+	
+	console.log('\n🎉 HALO build complete!');
+}
