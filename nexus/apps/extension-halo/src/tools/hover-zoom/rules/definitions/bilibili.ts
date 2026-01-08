@@ -36,18 +36,16 @@ export const bilibiliRules: SiteRule[] = [
 		}
 	},
 
-	// 2. [函数式] 常规视频 (BV号)
+	// 2. [函数式] 常规视频 (BV/av号)
 	{
 		id: 'bilibili-video',
 		hosts: ['bilibili.com'],
-		match: /bilibili\.com\/video\/(BV\w+)/,
+		// Fix: 兼容 BV 和 av 号
+		match: /bilibili\.com\/video\/([Bb][Vv]\w+|[Aa][Vv]\d+)/,
 		resolve: async (ctx: ResolveContext) => {
-			const videoId = ctx.url.match(/video\/(BV\w+)/)?.[1];
-			if (!videoId) return null;
-
-			const infoPageUrl = `https://www.bilibili.com/video/${videoId}`;
+			// Fix: 直接使用原始 URL 以保留 ?p= 参数（多P视频分集）
 			try {
-				const html = await ctx.fetchHtml(infoPageUrl);
+				const html = await ctx.fetchHtml(ctx.url);
 
 				// Strategy A: Embedded __playinfo__
 				const playinfo = parseEmbeddedData<PlayinfoResponse>(html, '<script>window.__playinfo__={');

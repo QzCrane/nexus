@@ -13,11 +13,11 @@ export const BASE_STYLES = `
 .halo-hz-viewer {
     position: fixed;
     box-sizing: content-box;  /* Width/height is image content, padding/border outside */
-    border-radius: 0;
+    border-radius: var(--hz-radius, 0px);
     border: 2px solid #fff;
     padding-bottom: 20px;  /* Space for info bar inside border */
     box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-    overflow: visible;
+    overflow: hidden;  /* Clip content for border-radius */
     opacity: 0;
     background: #fff;  /* White background in padding area for info bar */
     pointer-events: none;

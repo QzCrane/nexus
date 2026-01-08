@@ -50,7 +50,7 @@ export function showImage(
 		dom.img.src = source.url;
 		dom.img.style.opacity = '1';
 
-		applyLayout(dom, triggerRect, currentType, mouseX, mouseY, preloadImg.naturalWidth, preloadImg.naturalHeight, settings.viewMode);
+		applyLayout(dom, triggerRect, currentType, mouseX, mouseY, preloadImg.naturalWidth, preloadImg.naturalHeight, settings.viewMode, settings.borderRadius);
 		dom.viewer.classList.add('visible');
 		updateInfoBar(dom, settings, source, 'image', dom.img, preloadImg.naturalWidth, preloadImg.naturalHeight);
 
@@ -113,7 +113,7 @@ export function showVideo(
 		if (!isVisible() || !dom) return;
 
 		onLoaded();
-		applyLayout(dom, triggerRect, currentType, mouseX, mouseY, dom.video.videoWidth, dom.video.videoHeight, settings.viewMode);
+		applyLayout(dom, triggerRect, currentType, mouseX, mouseY, dom.video.videoWidth, dom.video.videoHeight, settings.viewMode, settings.borderRadius);
 		dom.viewer.classList.add('visible');
 		updateInfoBar(dom, settings, source, 'video', dom.video, dom.video.videoWidth, dom.video.videoHeight);
 	};
@@ -155,10 +155,13 @@ export function fallbackToThumbnail(
 }
 
 
-function applyLayout(dom: ViewerDOM, triggerRect: DOMRect | null, currentType: string, mouseX: number, mouseY: number, contentW: number, contentH: number, viewMode: ViewMode = 'original') {
+function applyLayout(dom: ViewerDOM, triggerRect: DOMRect | null, currentType: string, mouseX: number, mouseY: number, contentW: number, contentH: number, viewMode: ViewMode = 'original', borderRadius: number = 0) {
 	if (!dom || !contentW || !contentH) return;
 
 	const layout = calculateLayout(contentW, contentH, triggerRect, mouseX, mouseY, viewMode);
+
+	// Apply border-radius CSS variable
+	dom.viewer.style.setProperty('--hz-radius', `${borderRadius}px`);
 
 	// Show container now that media is loaded
 	dom.container.style.display = '';

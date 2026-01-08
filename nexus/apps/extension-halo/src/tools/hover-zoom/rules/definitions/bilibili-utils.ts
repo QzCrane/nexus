@@ -30,18 +30,19 @@ export const sortByBandwidth = <T extends { bandwidth: number }>(arr: T[]): T[] 
  * Extract video+audio URLs from DASH response
  */
 export function extractDashSources(dash: PlayurlDash): RuleResult | null {
-	const videos = (dash.video || []).filter(v => v.baseUrl || v.base_url);
-	const audios = (dash.audio || []).filter(a => a.baseUrl || a.base_url);
+	let videos = (dash.video || []).filter(v => v.baseUrl || v.base_url);
+	let audios = (dash.audio || []).filter(a => a.baseUrl || a.base_url);
 
 	if (videos.length === 0) return null;
 
-	sortByBandwidth(videos);
-	const videoUrl = videos[0].baseUrl || videos[0].base_url!;
+	videos = sortByBandwidth(videos);
+	const videoUrl = videos[0]?.baseUrl || videos[0]?.base_url;
+	if (!videoUrl) return null;
 
 	let audioUrl: string | undefined;
 	if (audios.length > 0) {
-		sortByBandwidth(audios);
-		audioUrl = audios[0].baseUrl || audios[0].base_url;
+		audios = sortByBandwidth(audios);
+		audioUrl = audios[0]?.baseUrl || audios[0]?.base_url;
 	}
 
 	return {
@@ -56,20 +57,21 @@ export function extractDashSources(dash: PlayurlDash): RuleResult | null {
  * Extract bilibili.tv video+audio URLs
  */
 export function extractBilitvSources(playurl: BilitvPlayurl): RuleResult | null {
-	const videos = (playurl.video || [])
+	let videos = (playurl.video || [])
 		.map(v => v.video_resource)
 		.filter(r => r?.url);
-	const audios = (playurl.audio_resource || []).filter(a => a?.url);
+	let audios = (playurl.audio_resource || []).filter(a => a?.url);
 
 	if (videos.length === 0) return null;
 
-	sortByBandwidth(videos);
-	const videoUrl = videos[0].url;
+	videos = sortByBandwidth(videos);
+	const videoUrl = videos[0]?.url;
+	if (!videoUrl) return null;
 
 	let audioUrl: string | undefined;
 	if (audios.length > 0) {
-		sortByBandwidth(audios);
-		audioUrl = audios[0].url;
+		audios = sortByBandwidth(audios);
+		audioUrl = audios[0]?.url;
 	}
 
 	return {

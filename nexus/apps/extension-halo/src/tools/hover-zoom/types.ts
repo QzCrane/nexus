@@ -83,6 +83,7 @@ export interface HoverZoomSettings {
 	showImageInfo: InfoDisplay;
 	showLoadingIndicator: boolean;  // Show loading spinner on trigger element
 	highlightMode: HighlightMode;   // Highlight border around trigger element
+	borderRadius: number;           // Corner radius in px (0 = sharp corners)
 	imageInfoItems: {
 		caption: boolean;
 		dimensions: boolean;
@@ -122,6 +123,7 @@ export const DEFAULT_SETTINGS: HoverZoomSettings = {
 	showImageInfo: 'bottom',
 	showLoadingIndicator: true,
 	highlightMode: 'hotkey', // Default: only show highlight when hotkey pressed
+	borderRadius: 0,         // Default: sharp corners
 	imageInfoItems: {
 		caption: true,
 		dimensions: true,
