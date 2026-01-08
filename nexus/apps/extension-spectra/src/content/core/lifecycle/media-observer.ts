@@ -16,20 +16,7 @@ export function createMediaObserver(
 ): () => void {
 	let observerTimeout: ReturnType<typeof setTimeout> | null = null;
 
-	const observer = new MutationObserver((mutations) => {
-		// eff: cleanup detached audio nodes to prevent memory leaks in SPAs
-		mutations.forEach((mutation) => {
-			mutation.removedNodes.forEach((node) => {
-				if (node.nodeName === 'AUDIO' || node.nodeName === 'VIDEO') {
-					audioController.detachNode(node as HTMLMediaElement);
-				} else if (node instanceof HTMLElement) {
-					node.querySelectorAll('audio, video').forEach((el) =>
-						audioController.detachNode(el as HTMLMediaElement)
-					);
-				}
-			});
-		});
-
+	const observer = new MutationObserver(() => {
 		// rule: execution is halted if the extension context becomes invalid
 		if (observerTimeout) clearTimeout(observerTimeout);
 		observerTimeout = setTimeout(() => {
@@ -39,6 +26,7 @@ export function createMediaObserver(
 			policyExecutor.applyState();
 		}, 500);
 	});
+
 
 	observer.observe(document.documentElement, {
 		childList: true,
