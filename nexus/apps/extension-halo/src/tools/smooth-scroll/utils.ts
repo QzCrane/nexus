@@ -25,10 +25,14 @@ function isScrollable(el: Element): boolean {
 	const hasScrollableContent = el.scrollHeight > el.clientHeight + 10;
 
 	// rule: also check hidden elements that are actually scrollable (JS-controlled scroll)
-	if (overflowY === 'hidden' && hasScrollableContent && el.scrollTop !== undefined) {
-		// Detect if element responds to scroll (has non-zero scrollTop capability)
-		const max = el.scrollHeight - el.clientHeight;
-		if (max > 0) return true;
+	// inv: must test actual scroll capability, not just content overflow
+	if (overflowY === 'hidden' && hasScrollableContent) {
+		// Test if element actually responds to scroll by trying to scroll it
+		const prevTop = el.scrollTop;
+		el.scrollTop = prevTop + 1;
+		const canActuallyScroll = el.scrollTop !== prevTop;
+		el.scrollTop = prevTop; // Restore original position
+		if (canActuallyScroll) return true;
 	}
 
 	return hasScrollableOverflow && hasScrollableContent;
