@@ -289,7 +289,7 @@ function main() {
       'apps/extension-spectra/dist',
       'apps/extension-spectra/.turbo',
       '.turbo',
-      'pnpm-lock.yaml',  // Keep in repo, but generated during install
+      // note: pnpm-lock.yaml should be committed for reproducible builds
     ];
     
     for (const dir of artifactDirs) {
