@@ -75,12 +75,14 @@ Template: `// field: <content>`
 
 pnpm workspace | `pnpm install/build/--filter [name] build` | 内部包: `"@nexus/x": "workspace:*"`
 
+构建: esbuild 统一 | `--dev` 不压缩 | `--watch` 实时监视 | verify-architecture 自动执行
+
 依赖规则: 同类禁重复 | 安装登记清单 | 删除同步更新
 
 ### 依赖清单
 
 运行时: qrcode^1.5(QR) peerjs^1.5(WebRTC) jose^6.x(JWT/Crypto) @2025-12-31
-开发时: @types/qrcode^1.5 @2025-12-26
+开发时: esbuild^0.21(构建) @types/qrcode^1.5 @2025-12-26
 
 ---
 
