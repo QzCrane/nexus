@@ -84,30 +84,28 @@
 
 ### Phase 5: 高级功能 (待实现)
 
-| 功能        | 说明                       | 优先级 |
-| ----------- | -------------------------- | ------ |
-| Ambilight   | 环境光背景 (canvas 提取色) | P2     |
-| Fallback 链 | 多源 URL 自动切换          | P1     |
-| 锁定模式    | 点击固定 viewer            | P2     |
-| 缩放平移    | 滚轮缩放 + 拖动            | P1     |
-| 旋转/翻转   | R 键旋转 F 键翻转          | P3     |
-| 下载命名    | 模板: `<host>/<filename>`  | P3     |
+功能:说明:优先级
+Ambilight:环境光背景 (canvas 提取色):P2
+Fallback 链:多源 URL 自动切换:P1
+锁定模式:点击固定 viewer:P2
+缩放平移:滚轮缩放 + 拖动:P1
+旋转/翻转:R 键旋转 F 键翻转:P3
+下载命名:模板: `<host>/<filename>`:P3
 
 ---
 
 ## 架构优势 (vs HZ+)
 
-| 维度     | HZ+              | Halo HoverZoom      |
-| -------- | ---------------- | ------------------- |
-| **语言** | JS               | TypeScript          |
-| **依赖** | jQuery 296KB     | 零依赖              |
-| **结构** | 单文件 4792 行   | 模块化 ≤200 行/文件 |
-| **规则** | 396 独立 plugins | RuleEngine 统一注册 |
-| **加载** | 全量同步         | 按需懒加载          |
-| **样式** | 内联 JS          | 独立 CSS + CSS 变量 |
-| **类型** | 无               | 完整 TS 类型        |
-| **测试** | 无               | Playwright 集成     |
-| **体积** | 1.3MB (hls.js)   | 6KB (MSE 原生)      |
+维度:HZ+: Halo HoverZoom
+语言:JS: TypeScript
+依赖:jQuery 296KB: 零依赖
+结构:单文件 4792 行: 模块化 ≤200 行/文件
+规则:396 独立 plugins: RuleEngine 统一注册
+加载:全量同步: 按需懒加载
+样式:内联 JS: 独立 CSS + CSS 变量
+类型:无: 完整 TS 类型
+测试:无: Playwright 集成
+体积:1.3MB (hls.js): 6KB (MSE 原生)
 
 ---
 
