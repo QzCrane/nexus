@@ -124,7 +124,7 @@ export function selectBestPosition(
 	// Select largest area
 	if (candidates.length > 0) {
 		candidates.sort((a, b) => b.area - a.area);
-		return candidates[0];
+		return candidates[0] ?? null;
 	}
 
 	return null;

@@ -40,9 +40,9 @@ export const ApiTesterPanel: React.FC = () => {
 	const updateHeader = (idx: number, field: keyof Header, value: string | boolean) => {
 		setConfig((c) => {
 			const headers = [...c.headers];
-			headers[idx] = { ...headers[idx], [field]: value };
+			headers[idx] = { ...headers[idx]!, [field]: value };
 			// Auto-add new row if last row filled
-			if (idx === headers.length - 1 && headers[idx].key) headers.push(createHeader());
+			if (idx === headers.length - 1 && headers[idx]!.key) headers.push(createHeader());
 			return { ...c, headers };
 		});
 	};

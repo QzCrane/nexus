@@ -3,8 +3,6 @@
 	"compilerOptions": {
 		"jsx": "react-jsx",
 		"noEmit": true,
-		// TODO: fix ~150 indexed access errors then remove this override
-		// "noUncheckedIndexedAccess": false
 	},
 	"include": [
 		"src"

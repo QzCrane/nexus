@@ -72,8 +72,8 @@ export function imageToBase64(blob: Blob): Promise<string> {
 // Base64 to Blob
 export function base64ToBlob(base64: string): Blob {
 	const [header, data] = base64.split(',');
-	const mime = header.match(/:(.*?);/)?.[1] || 'image/png';
-	const binary = atob(data);
+	const mime = header!.match(/:(.*?);/)?.[1] || 'image/png';
+	const binary = atob(data!);
 	const array = new Uint8Array(binary.length);
 	for (let i = 0; i < binary.length; i++) {
 		array[i] = binary.charCodeAt(i);

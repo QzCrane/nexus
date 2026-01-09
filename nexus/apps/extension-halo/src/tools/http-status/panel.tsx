@@ -19,7 +19,7 @@ export const HttpStatusPanel: React.FC = () => {
 		const groups: Record<string, typeof results> = {};
 		for (const status of results) {
 			if (!groups[status.category]) groups[status.category] = [];
-			groups[status.category].push(status);
+			groups[status.category]!.push(status);
 		}
 		return groups;
 	}, [results]);

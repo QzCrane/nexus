@@ -21,7 +21,7 @@ const WORDS = [
 
 // Get random word
 function randomWord(): string {
-	return WORDS[Math.floor(Math.random() * WORDS.length)];
+	return WORDS[Math.floor(Math.random() * WORDS.length)]!;
 }
 
 // Generate words

@@ -69,10 +69,10 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 
 	const onDragEnter = (cat: string, targetId: string) => {
 		if (!draggingId || draggingId === targetId) return;
-		const current = categorizedTools[cat];
+		const current = categorizedTools[cat] || [];
 		const oldIdx = current.findIndex(t => t.id === draggingId), newIdx = current.findIndex(t => t.id === targetId);
 		if (oldIdx !== -1 && newIdx !== -1) {
-			const newList = [...current]; const [item] = newList.splice(oldIdx, 1); newList.splice(newIdx, 0, item);
+			const newList = [...current]; const [item] = newList.splice(oldIdx, 1); newList.splice(newIdx, 0, item!);
 			setTempCats({ ...categorizedTools, [cat]: newList });
 		}
 	};
@@ -81,14 +81,14 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 		if (!draggingCat || draggingCat === targetCat) return;
 		const oldIdx = catOrder.indexOf(draggingCat), newIdx = catOrder.indexOf(targetCat);
 		if (oldIdx !== -1 && newIdx !== -1) {
-			const newOrder = [...catOrder]; const [item] = newOrder.splice(oldIdx, 1); newOrder.splice(newIdx, 0, item);
+			const newOrder = [...catOrder]; const [item] = newOrder.splice(oldIdx, 1); newOrder.splice(newIdx, 0, item!);
 			setTempCatOrder(newOrder);
 		}
 	};
 
 	const onDrop = (e: React.DragEvent, cat: string) => {
 		e.preventDefault();
-		if (tempCats) onReorderTools(cat, tempCats[cat].map(t => t.id));
+		if (tempCats) onReorderTools(cat, tempCats[cat]!.map(t => t.id));
 		setDraggingId(null); setTempCats(null);
 	};
 

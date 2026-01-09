@@ -20,9 +20,9 @@ export function extractColorsFromImage(img: HTMLImageElement, maxColors = 8): Co
 	// Count colors (quantized)
 	const colorMap = new Map<string, number>();
 	for (let i = 0; i < pixels.length; i += 4) {
-		const r = Math.round(pixels[i] / 32) * 32;
-		const g = Math.round(pixels[i + 1] / 32) * 32;
-		const b = Math.round(pixels[i + 2] / 32) * 32;
+		const r = Math.round(pixels[i]! / 32) * 32;
+		const g = Math.round(pixels[i + 1]! / 32) * 32;
+		const b = Math.round(pixels[i + 2]! / 32) * 32;
 		const key = `${r},${g},${b}`;
 		colorMap.set(key, (colorMap.get(key) || 0) + 1);
 	}
@@ -33,6 +33,7 @@ export function extractColorsFromImage(img: HTMLImageElement, maxColors = 8): Co
 
 	return sorted.map(([rgb, count]) => {
 		const [r, g, b] = rgb.split(',').map(Number);
+		if (r === undefined || g === undefined || b === undefined) return { hex: '#000000', rgb: 'rgb(0,0,0)', count, percentage: 0 };
 		return {
 			hex: `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`,
 			rgb: `rgb(${r}, ${g}, ${b})`,

@@ -67,8 +67,8 @@ export function parseUserAgent(ua: string): UAResult {
 	// Parse engine
 	const webkitMatch = ua.match(/AppleWebKit\/(\d+[\.\d]*)/);
 	const geckoMatch = ua.match(/Gecko\/(\d+)/);
-	if (webkitMatch) result.engine = { name: 'WebKit', version: webkitMatch[1] };
-	else if (geckoMatch) result.engine = { name: 'Gecko', version: geckoMatch[1] };
+	if (webkitMatch) result.engine = { name: 'WebKit', version: webkitMatch[1]! };
+	else if (geckoMatch) result.engine = { name: 'Gecko', version: geckoMatch[1]! };
 
 	return result;
 }
@@ -84,12 +84,12 @@ export function parseCurl(curlCommand: string): CurlParseResult {
 
 	// Extract method
 	const methodMatch = curlCommand.match(/-X\s+['"]?(\w+)['"]?/);
-	if (methodMatch) result.method = methodMatch[1].toUpperCase();
+	if (methodMatch) result.method = methodMatch[1]!.toUpperCase();
 
 	// Extract headers
 	const headerMatches = curlCommand.matchAll(/-H\s+['"]([^'"]+)['"]/g);
 	for (const match of headerMatches) {
-		const [key, ...valueParts] = match[1].split(':');
+		const [key, ...valueParts] = match[1]!.split(':');
 		if (key) result.headers[key.trim()] = valueParts.join(':').trim();
 	}
 

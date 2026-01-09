@@ -29,9 +29,9 @@ class BufferReader {
 		while (true) {
 			if (this.offset >= this.buffer.length) throw new Error("Index out of bounds");
 			const byte = this.buffer[this.offset++];
-			result |= (byte & 0x7f) << shift;
+			result |= (byte! & 0x7f) << shift;
 			shift += 7;
-			if ((byte & 0x80) === 0) break;
+			if ((byte! & 0x80) === 0) break;
 			if (shift > 35) throw new Error("Varint too large"); // JS bitwise limit
 		}
 		return result >>> 0; // Unsigned

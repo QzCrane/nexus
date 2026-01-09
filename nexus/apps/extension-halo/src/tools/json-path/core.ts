@@ -46,7 +46,7 @@ function traverse(data: unknown, tokens: string[], index: number, results: unkno
 		return;
 	}
 
-	const token = tokens[index];
+	const token = tokens[index]!;
 
 	if (token === '*') {
 		// Wildcard

@@ -53,7 +53,7 @@ export function scanPageMedia(): MediaItem[] {
 		const srcset = source.getAttribute('srcset');
 		if (srcset) {
 			// Parse srcset (take first URL)
-			const firstUrl = srcset.split(',')[0].trim().split(' ')[0];
+			const firstUrl = srcset.split(',')[0]!.trim().split(' ')[0]!;
 			if (firstUrl) {
 				const item = createMediaItem(firstUrl, 'picture');
 				if (item) items.push(item);

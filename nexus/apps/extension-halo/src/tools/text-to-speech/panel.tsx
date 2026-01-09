@@ -23,7 +23,7 @@ export const TextToSpeechPanel: React.FC = () => {
 			const v = getVoices();
 			setVoices(v);
 			if (v.length > 0 && !settings.voiceUri) {
-				setSettings((s) => ({ ...s, voiceUri: v[0].voiceURI }));
+				setSettings((s) => ({ ...s, voiceUri: v[0]!.voiceURI }));
 			}
 		};
 

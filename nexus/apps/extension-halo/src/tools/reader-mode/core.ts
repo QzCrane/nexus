@@ -24,10 +24,10 @@ export async function extractArticle(): Promise<ArticleContent | null> {
 
 				// Get title
 				const title = document.querySelector('h1')?.textContent?.trim() ||
-					document.title.split(/[|\-–]/)[0].trim();
+					document.title.split(/[|\-–]/)[0]!.trim();
 
 				// Get site name
-				const siteName = document.querySelector('meta[property="og:site_name"]')?.getAttribute('content') || 
+				const siteName = document.querySelector('meta[property="og:site_name"]')?.getAttribute('content') ||
 					window.location.hostname;
 
 				// Get byline

@@ -59,7 +59,7 @@ export function generateULID(): string {
 	str = str.padStart(timeLen, '0');
 	const randomValues = new Uint8Array(randomLen);
 	crypto.getRandomValues(randomValues);
-	for (let i = 0; i < randomLen; i++) str += ENCODING.charAt(randomValues[i] % 32);
+	for (let i = 0; i < randomLen; i++) str += ENCODING.charAt(randomValues[i]! % 32);
 	return str;
 }
 
@@ -76,8 +76,8 @@ export function generateV7(): string {
 	value[3] = (timestamp >> 16) & 0xff;
 	value[4] = (timestamp >> 8) & 0xff;
 	value[5] = timestamp & 0xff;
-	value[6] = (value[6] & 0x0f) | 0x70;
-	value[8] = (value[8] & 0x3f) | 0x80;
+	value[6] = (value[6]! & 0x0f) | 0x70;
+	value[8] = (value[8]! & 0x3f) | 0x80;
 	return [...value].map((b, i) => {
 		const hex = b.toString(16).padStart(2, '0');
 		return (i === 4 || i === 6 || i === 8 || i === 10) ? '-' + hex : hex;

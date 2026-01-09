@@ -88,8 +88,8 @@ export const ReaderModePanel: React.FC = () => {
 				<div
 					style={{
 						...styles.preview,
-						background: theme.bg,
-						color: theme.text,
+						background: theme!.bg,
+						color: theme!.text,
 						fontSize: `${config.fontSize}px`,
 						lineHeight: config.lineHeight,
 						fontFamily: config.fontFamily,

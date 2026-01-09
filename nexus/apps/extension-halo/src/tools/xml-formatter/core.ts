@@ -57,7 +57,7 @@ function formatNode(node: Element, level: number, indent: number): string {
 	result += '>';
 
 	// Check if only text content
-	const hasOnlyText = node.childNodes.length === 1 && node.childNodes[0].nodeType === Node.TEXT_NODE;
+	const hasOnlyText = node.childNodes.length === 1 && node.childNodes[0]!.nodeType === Node.TEXT_NODE;
 	if (hasOnlyText) {
 		const text = node.textContent?.trim() || '';
 		return result + text + `</${node.tagName}>`;

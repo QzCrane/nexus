@@ -32,7 +32,7 @@ export function parseCsv(input: string, delimiter = ','): ParsedCsv {
 		return result;
 	};
 
-	const headers = parseRow(lines[0]);
+	const headers = parseRow(lines[0]!);
 	const rows = lines.slice(1).map(parseRow);
 
 	return {
@@ -63,8 +63,8 @@ export function detectDelimiter(input: string): string {
 	const counts: Record<string, number> = { ',': 0, ';': 0, '\t': 0, '|': 0 };
 
 	for (const char of firstLine) {
-		if (char in counts) counts[char]++;
+		if (char in counts) counts[char]!++;
 	}
 
-	return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+	return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]![0];
 }

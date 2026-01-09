@@ -93,7 +93,7 @@ export function getLuminance(rgb: RGBColor): number {
 		const s = v / 255;
 		return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
 	});
-	return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+	return 0.2126 * (r || 0) + 0.7152 * (g || 0) + 0.0722 * (b || 0);
 }
 
 /**
@@ -129,7 +129,7 @@ export function parseColor(input: string): ColorInfo | null {
 	// RGB format: rgb(r, g, b)
 	const rgbMatch = trimmed.match(/rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/);
 	if (rgbMatch) {
-		const rgb = { r: +rgbMatch[1], g: +rgbMatch[2], b: +rgbMatch[3] };
+		const rgb = { r: +rgbMatch[1]!, g: +rgbMatch[2]!, b: +rgbMatch[3]! };
 		return { hex: rgbToHex(rgb), rgb, hsl: rgbToHsl(rgb), cmyk: rgbToCmyk(rgb) };
 	}
 

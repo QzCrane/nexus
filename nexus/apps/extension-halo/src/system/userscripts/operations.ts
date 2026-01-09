@@ -26,7 +26,7 @@ export async function updateUserScript(id: string, updates: Partial<UserScript>)
 	const state = await getUserScriptsState();
 	const index = state.scripts.findIndex((s) => s.id === id);
 	if (index !== -1) {
-		state.scripts[index] = { ...state.scripts[index], ...updates, updatedAt: Date.now() };
+		state.scripts[index] = { ...state.scripts[index]!, ...updates, updatedAt: Date.now() };
 		await saveState(state);
 	}
 }
@@ -67,7 +67,7 @@ export async function reorderScript(id: string, direction: 'up' | 'down'): Promi
 	if (newIndex < 0 || newIndex >= state.scripts.length) return;
 
 	// Swap positions
-	[state.scripts[index], state.scripts[newIndex]] = [state.scripts[newIndex], state.scripts[index]];
+	[state.scripts[index], state.scripts[newIndex]] = [state.scripts[newIndex]!, state.scripts[index]!];
 
 	// Update order values
 	state.scripts.forEach((s, i) => { s.order = i; });

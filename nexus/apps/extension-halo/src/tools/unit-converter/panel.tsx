@@ -22,8 +22,8 @@ export const UnitConverterPanel: React.FC = () => {
 	const units = useMemo(() => UNITS[category], [category]);
 
 	// Get unit objects
-	const fromUnitObj = useMemo(() => units.find((u) => u.id === fromUnit) || units[0], [units, fromUnit]);
-	const toUnitObj = useMemo(() => units.find((u) => u.id === toUnit) || units[1], [units, toUnit]);
+	const fromUnitObj = useMemo(() => units.find((u) => u.id === fromUnit) || units[0]!, [units, fromUnit]);
+	const toUnitObj = useMemo(() => units.find((u) => u.id === toUnit) || units[1]!, [units, toUnit]);
 
 	// Calculate result
 	const result = useMemo(() => {

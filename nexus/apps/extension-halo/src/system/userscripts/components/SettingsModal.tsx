@@ -23,7 +23,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ config, onSave, on
 		const newOrder = [...order];
 		const targetIndex = index + dir;
 		if (targetIndex >= 0 && targetIndex < newOrder.length) {
-			[newOrder[index], newOrder[targetIndex]] = [newOrder[targetIndex], newOrder[index]];
+			[newOrder[index], newOrder[targetIndex]] = [newOrder[targetIndex]!, newOrder[index]!];
 			setOrder(newOrder);
 		}
 	};

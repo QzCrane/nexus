@@ -40,7 +40,7 @@ export async function extractHeadings(
 				// inv: access minLevel/maxLevel from closure not possible, use all h1-h6
 				const elements = document.querySelectorAll('h1,h2,h3,h4,h5,h6');
 				return Array.from(elements).map((el, i) => ({
-					level: parseInt(el.tagName[1], 10),
+					level: parseInt(el.tagName[1]!, 10),
 					text: (el.textContent || '').trim().slice(0, 200),
 					index: i,
 				}));
@@ -87,7 +87,7 @@ export function outlineToMarkdown(headings: HeadingItem[], showNumbers: boolean)
 		let prefix = '-';
 
 		if (showNumbers) {
-			counters[h.level - 1]++;
+			counters[h.level - 1]!++;
 			// Reset lower level counters
 			for (let i = h.level; i < 6; i++) {
 				counters[i] = 0;

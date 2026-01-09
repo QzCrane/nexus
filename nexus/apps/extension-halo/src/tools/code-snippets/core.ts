@@ -35,9 +35,9 @@ export async function updateSnippet(id: string, data: Partial<Omit<Snippet, 'id'
 	const snippets = await getSnippets();
 	const idx = snippets.findIndex((s) => s.id === id);
 	if (idx === -1) return null;
-	snippets[idx] = { ...snippets[idx], ...data, updatedAt: Date.now() };
+	snippets[idx] = { ...snippets[idx]!, ...data, updatedAt: Date.now() };
 	await saveSnippets(snippets);
-	return snippets[idx];
+	return snippets[idx] ?? null;
 }
 
 /** Delete a snippet */

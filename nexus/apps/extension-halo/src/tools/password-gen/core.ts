@@ -75,8 +75,8 @@ export function evaluateStrength(password: string): PasswordStrength {
 
 	return {
 		score,
-		label: labels[score],
-		color: colors[score],
+		label: labels[score]!,
+		color: colors[score]!,
 		feedback: feedback.length ? feedback : ['Good password!'],
 	};
 }

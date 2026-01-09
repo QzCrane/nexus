@@ -14,9 +14,9 @@ function md5(message: string): string {
 	const words: number[] = [];
 
 	for (let i = 0; i < len; i++) {
-		words[i >> 2] |= str.charCodeAt(i) << ((i % 4) * 8);
+		words[i >> 2]! |= str.charCodeAt(i) << ((i % 4) * 8);
 	}
-	words[len >> 2] |= 0x80 << ((len % 4) * 8);
+	words[len >> 2]! |= 0x80 << ((len % 4) * 8);
 	const bitLen = len * 8;
 	const padLen = (((len + 8) >> 6) + 1) * 16;
 	words[padLen - 2] = bitLen;
@@ -38,7 +38,7 @@ function md5(message: string): string {
 			else { f = c ^ (b | ~d); g = (7 * j) % 16; }
 			const temp = d;
 			d = c; c = b;
-			b = b + rotateLeft((a + f + K[j] + (words[i + g] || 0)) >>> 0, S[(j >> 4) * 4 + (j % 4)]);
+			b = b + rotateLeft((a + f + K[j]! + (words[i + g] || 0)) >>> 0, S[(j >> 4) * 4 + (j % 4)]!);
 			a = temp;
 		}
 		a = (a + aa) >>> 0; b = (b + bb) >>> 0; c = (c + cc) >>> 0; d = (d + dd) >>> 0;

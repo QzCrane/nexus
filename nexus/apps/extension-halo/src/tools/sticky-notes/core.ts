@@ -25,7 +25,7 @@ export async function saveNotes(notes: Note[]): Promise<void> {
 }
 
 // Create new note
-export function createNote(content = '', color = NOTE_COLORS[0].id): Note {
+export function createNote(content = '', color = NOTE_COLORS[0]!.id): Note {
 	const now = Date.now();
 	return {
 		id: generateId(),
@@ -41,7 +41,7 @@ export async function updateNote(id: string, updates: Partial<Note>): Promise<No
 	const notes = await getNotes();
 	const index = notes.findIndex((n) => n.id === id);
 	if (index >= 0) {
-		notes[index] = { ...notes[index], ...updates, updatedAt: Date.now() };
+		notes[index] = { ...notes[index]!, ...updates, updatedAt: Date.now() };
 		await saveNotes(notes);
 	}
 	return notes;
@@ -57,5 +57,5 @@ export async function deleteNote(id: string): Promise<Note[]> {
 
 // Get color config
 export function getColorConfig(colorId: string) {
-	return NOTE_COLORS.find((c) => c.id === colorId) || NOTE_COLORS[0];
+	return NOTE_COLORS.find((c) => c.id === colorId) || NOTE_COLORS[0]!;
 }

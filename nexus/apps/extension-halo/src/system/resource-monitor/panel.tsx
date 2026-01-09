@@ -119,8 +119,8 @@ export const ResourceMonitorPanel: React.FC = () => {
 					</div>
 					{/* Category badge (hidden for core since it has its own section) */}
 					{item.category !== 'core' && (
-						<div style={{ ...styles.badge, background: catStyle.bg, color: catStyle.color, marginRight: 4 }}>
-							{catStyle.label}
+						<div style={{ ...styles.badge, background: catStyle!.bg, color: catStyle!.color, marginRight: 4 }}>
+							{catStyle!.label}
 						</div>
 					)}
 				<div style={{ ...styles.badge, background: levelStyle.bg, color: levelStyle.color }}>

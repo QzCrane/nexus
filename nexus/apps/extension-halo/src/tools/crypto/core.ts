@@ -12,10 +12,10 @@ export function decodeJWT(token: string): JWTDecodeResult {
 		const parts = token.split('.');
 		if (parts.length !== 3) throw new Error('Invalid JWT format');
 
-		const header = JSON.parse(atob(parts[0].replace(/-/g, '+').replace(/_/g, '/')));
-		const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+		const header = JSON.parse(atob(parts[0]!.replace(/-/g, '+').replace(/_/g, '/')));
+		const payload = JSON.parse(atob(parts[1]!.replace(/-/g, '+').replace(/_/g, '/')));
 
-		return { header, payload, signature: parts[2] };
+		return { header, payload, signature: parts[2]! };
 	} catch (error) {
 		return {
 			header: { alg: 'unknown' },
@@ -34,7 +34,7 @@ export async function verifyJWTHS(token: string, secret: string): Promise<JWTDec
 		return {
 			header: protectedHeader as JWTDecodeResult['header'],
 			payload: payload as JWTDecodeResult['payload'],
-			signature: token.split('.')[2],
+			signature: token.split('.')[2]!,
 			isValid: true,
 		};
 	} catch (error) {

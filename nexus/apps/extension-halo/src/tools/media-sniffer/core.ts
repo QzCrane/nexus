@@ -27,7 +27,7 @@ export function getExtFromUrl(url: string): string {
 	try {
 		const pathname = new URL(url).pathname;
 		const match = pathname.match(/\.([a-zA-Z0-9]+)(?:\?|$)/);
-		return match ? match[1].toLowerCase() : '';
+		return match ? match[1]!.toLowerCase() : '';
 	} catch {
 		return '';
 	}

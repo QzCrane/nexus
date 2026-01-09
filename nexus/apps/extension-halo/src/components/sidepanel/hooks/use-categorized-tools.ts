@@ -49,7 +49,7 @@ export function useCategorizedTools({
 			if (tool.pluginType === 'script') {
 				// Add to functional category
 				if (cats[tool.category]) {
-					cats[tool.category].push(tool);
+					cats[tool.category]!.push(tool);
 				}
 				// Also add to scripts aggregation category
 				cats.scripts?.push(tool);
@@ -62,7 +62,7 @@ export function useCategorizedTools({
 
 			// Regular tool plugins
 			if (backgroundToolIds.includes(tool.id)) cats.active?.push(tool);
-			if (cats[tool.category]) cats[tool.category].push(tool);
+			if (cats[tool.category]) cats[tool.category]!.push(tool);
 			else cats.general?.push(tool);
 		});
 
@@ -103,7 +103,7 @@ export function useCategorizedTools({
 		// 3. Sort each category
 		Object.keys(cats).forEach(cat => {
 			const pinned = settings?.pinnedTools || [], order = settings?.toolOrder?.[cat] || [];
-			cats[cat].sort((a, b) => {
+			cats[cat]!.sort((a, b) => {
 				const ap = pinned.includes(a.id), bp = pinned.includes(b.id);
 				if (ap !== bp) return ap ? -1 : 1;
 				const ai = order.indexOf(a.id), bi = order.indexOf(b.id);

@@ -87,18 +87,18 @@ export const PDFPanel: React.FC = () => {
 			} else if (selectedOperation === 'split') {
 				const ranges = parseRanges(config.splitRanges);
 				if (ranges.length === 0) throw new Error('Invalid page ranges');
-				const res = await splitPDF({ document: files[0].data, ranges });
-				if (res.success) { output = res.data[0]; outputName = 'split.pdf'; } else throw new Error(res.error);
+				const res = await splitPDF({ document: files[0]!.data, ranges });
+				if (res.success) { output = res.data![0]!; outputName = 'split.pdf'; } else throw new Error(res.error);
 			} else if (selectedOperation === 'extract') {
 				const pages = parsePages(config.extractPages);
 				if (pages.length === 0) throw new Error('Invalid page numbers');
-				const res = await extractPages({ document: files[0].data, pages });
+				const res = await extractPages({ document: files[0]!.data, pages });
 				if (res.success) { output = res.data; outputName = 'extracted.pdf'; } else throw new Error(res.error);
 			} else if (selectedOperation === 'rotate') {
-				const res = await rotatePages({ document: files[0].data, pages: [], degrees: config.rotateDegrees });
+				const res = await rotatePages({ document: files[0]!.data, pages: [], degrees: config.rotateDegrees });
 				if (res.success) { output = res.data; outputName = 'rotated.pdf'; } else throw new Error(res.error);
 			} else if (selectedOperation === 'watermark') {
-				const res = await addWatermark({ document: files[0].data, text: config.watermarkText, opacity: config.watermarkOpacity });
+				const res = await addWatermark({ document: files[0]!.data, text: config.watermarkText, opacity: config.watermarkOpacity });
 				if (res.success) { output = res.data; outputName = 'watermarked.pdf'; } else throw new Error(res.error);
 			} else if (selectedOperation === 'images-to-pdf') {
 				const res = await imagesToPDF({ images: files.map((f) => f.data), pageSize: config.pageSize });

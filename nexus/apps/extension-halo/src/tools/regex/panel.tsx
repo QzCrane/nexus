@@ -71,7 +71,7 @@ export const RegexPanel: React.FC = () => {
 								onClick={() => toggleFlag(key)}
 								title={key}
 							>
-								{key[0].toUpperCase()}
+								{key[0]!.toUpperCase()}
 							</button>
 						))}
 					</div>

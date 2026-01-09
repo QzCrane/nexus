@@ -50,9 +50,9 @@ export async function generateTotp(secret: string, digits = 6, period = 30): Pro
 	const hmac = await hmacSha1(secretBytes, counterBytes);
 
 	// Dynamic truncation
-	const offset = hmac[hmac.length - 1] & 0x0f;
-	const binary = ((hmac[offset] & 0x7f) << 24) | ((hmac[offset + 1] & 0xff) << 16) |
-		((hmac[offset + 2] & 0xff) << 8) | (hmac[offset + 3] & 0xff);
+	const offset = hmac[hmac.length - 1]! & 0x0f;
+	const binary = ((hmac[offset]! & 0x7f) << 24) | ((hmac[offset + 1]! & 0xff) << 16) |
+		((hmac[offset + 2]! & 0xff) << 8) | (hmac[offset + 3]! & 0xff);
 
 	// Generate code
 	const otp = binary % Math.pow(10, digits);
@@ -68,7 +68,9 @@ export function parseOtpAuthUri(uri: string): Partial<TotpEntry> | null {
 		if (url.protocol !== 'otpauth:') return null;
 
 		const label = decodeURIComponent(url.pathname.slice(2)); // Remove //totp/
-		const [issuer, name] = label.includes(':') ? label.split(':') : ['', label];
+		const parts = label.split(':');
+		const issuer = parts.length > 1 ? parts[0]! : '';
+		const name = parts.length > 1 ? parts[1]! : label;
 
 		return {
 			name: name.trim(),

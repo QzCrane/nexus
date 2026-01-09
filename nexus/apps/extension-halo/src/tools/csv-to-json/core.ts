@@ -14,18 +14,18 @@ export function csvToJson(csv: string, options: CsvOptions = { delimiter: ',', h
 	let startRow = 0;
 
 	if (options.hasHeader) {
-		headers = parseCsvLine(lines[0], options.delimiter);
+		headers = parseCsvLine(lines[0]!, options.delimiter);
 		startRow = 1;
 	} else {
 		// Generate headers: col1, col2, ...
-		const firstRow = parseCsvLine(lines[0], options.delimiter);
+		const firstRow = parseCsvLine(lines[0]!, options.delimiter);
 		headers = firstRow.map((_, i) => `col${i + 1}`);
 	}
 
 	const result: Record<string, unknown>[] = [];
 
 	for (let i = startRow; i < lines.length; i++) {
-		const line = lines[i].trim();
+		const line = lines[i]!.trim();
 		if (!line) continue;
 
 		const values = parseCsvLine(line, options.delimiter);
@@ -37,7 +37,7 @@ export function csvToJson(csv: string, options: CsvOptions = { delimiter: ',', h
 			if (val === 'true') val = true as any;
 			else if (val === 'false') val = false as any;
 			else if (val === 'null') val = null as any;
-			else if (!isNaN(Number(val)) && val.trim() !== '') val = Number(val) as any;
+			else if (val !== undefined && !isNaN(Number(val)) && val.trim() !== '') val = Number(val) as any;
 
 			obj[header] = val;
 		});

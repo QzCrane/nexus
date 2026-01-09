@@ -22,7 +22,7 @@ function getLineAndColumn(text: string, index: number): { line: number; column: 
 	const lines = text.substring(0, index).split('\n');
 	return {
 		line: lines.length,
-		column: lines[lines.length - 1].length + 1,
+		column: lines[lines.length - 1]!.length + 1,
 	};
 }
 

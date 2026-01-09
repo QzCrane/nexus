@@ -31,7 +31,7 @@ export async function saveToClipboardHistory(
 	const history: ClipboardItem[] = result[STORAGE_KEY] || [];
 
 	// Deduplicate: if the top item is exactly the same, skip
-	if (history.length > 0 && history[0].text === text) {
+	if (history.length > 0 && history[0]!.text === text) {
 		return history;
 	}
 

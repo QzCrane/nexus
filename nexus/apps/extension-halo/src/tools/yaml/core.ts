@@ -39,13 +39,13 @@ interface ParseResult {
 }
 
 function getIndent(line: string): number {
-	return line.match(/^(\s*)/)?.[1].length || 0;
+	return line.match(/^(\s*)/)?.[1]?.length || 0;
 }
 
 function parseLines(lines: string[], startIdx: number, baseIndent: number): ParseResult {
 	if (startIdx >= lines.length) return { value: null, consumed: 0 };
 
-	const firstLine = lines[startIdx];
+	const firstLine = lines[startIdx]!;
 	const indent = getIndent(firstLine);
 	if (indent < baseIndent) return { value: null, consumed: 0 };
 
@@ -63,7 +63,7 @@ function parseArray(lines: string[], startIdx: number, baseIndent: number): Pars
 	let i = startIdx;
 
 	while (i < lines.length) {
-		const line = lines[i];
+		const line = lines[i]!;
 		const indent = getIndent(line);
 		if (indent < baseIndent || !line.trim().startsWith('-')) break;
 
@@ -87,7 +87,7 @@ function parseObject(lines: string[], startIdx: number, baseIndent: number): Par
 	let i = startIdx;
 
 	while (i < lines.length) {
-		const line = lines[i];
+		const line = lines[i]!;
 		const indent = getIndent(line);
 		if (indent < baseIndent) break;
 		if (indent > baseIndent) { i++; continue; }

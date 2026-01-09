@@ -11,7 +11,7 @@ const STREETS = ['Main St', 'Oak Ave', 'Pine Rd', 'Maple Dr', 'Cedar Ln', 'Elm B
 const CITIES = ['New York', 'Los Angeles', 'Chicago', 'Houston', 'Phoenix', 'Philadelphia', 'San Antonio', 'San Diego'];
 
 // Random utilities
-const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)]!;
 const randInt = (min: number, max: number): number => Math.floor(Math.random() * (max - min + 1)) + min;
 
 // Generate single value by type
@@ -38,7 +38,7 @@ export function generateValue(type: MockDataType): string | number {
 		case 'date': {
 			const start = new Date(2020, 0, 1).getTime();
 			const end = Date.now();
-			return new Date(randInt(start, end)).toISOString().split('T')[0];
+			return new Date(randInt(start, end)).toISOString().split('T')[0]!;
 		}
 		default:
 			return '';
@@ -67,7 +67,7 @@ export function formatJSON(data: Record<string, string | number>[]): string {
 // Format as CSV
 export function formatCSV(data: Record<string, string | number>[]): string {
 	if (data.length === 0) return '';
-	const headers = Object.keys(data[0]);
+	const headers = Object.keys(data[0]!);
 	const rows = data.map((row) => headers.map((h) => `"${String(row[h]).replace(/"/g, '""')}"`).join(','));
 	return [headers.join(','), ...rows].join('\n');
 }
@@ -75,7 +75,7 @@ export function formatCSV(data: Record<string, string | number>[]): string {
 // Format as SQL INSERT
 export function formatSQL(data: Record<string, string | number>[], tableName = 'mock_data'): string {
 	if (data.length === 0) return '';
-	const headers = Object.keys(data[0]);
+	const headers = Object.keys(data[0]!);
 	const values = data.map((row) => {
 		const vals = headers.map((h) => {
 			const v = row[h];

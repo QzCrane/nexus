@@ -35,7 +35,7 @@ export async function updateTodo(id: string, updates: Partial<TodoItem>): Promis
 	const todos = await getTodos();
 	const index = todos.findIndex((t) => t.id === id);
 	if (index >= 0) {
-		todos[index] = { ...todos[index], ...updates };
+		todos[index] = { ...todos[index]!, ...updates };
 		await saveTodos(todos);
 	}
 }

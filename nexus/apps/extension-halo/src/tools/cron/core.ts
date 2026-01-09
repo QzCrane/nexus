@@ -7,11 +7,11 @@ export function parseCron(cron: string): CronParts | null {
 	const parts = cron.trim().split(/\s+/);
 	if (parts.length !== 5) return null;
 	return {
-		minute: parts[0],
-		hour: parts[1],
-		dayOfMonth: parts[2],
-		month: parts[3],
-		dayOfWeek: parts[4],
+		minute: parts[0]!,
+		hour: parts[1]!,
+		dayOfMonth: parts[2]!,
+		month: parts[3]!,
+		dayOfWeek: parts[4]!,
 	};
 }
 
@@ -126,12 +126,12 @@ function matchField(value: number, field: string): boolean {
 	if (field === '*') return true;
 	if (field.includes('/')) {
 		const [range, step] = field.split('/');
-		const stepNum = parseInt(step);
+		const stepNum = parseInt(step!);
 		if (range === '*') return value % stepNum === 0;
 	}
 	if (field.includes('-')) {
 		const [start, end] = field.split('-').map(Number);
-		return value >= start && value <= end;
+		return value >= start! && value <= end!;
 	}
 	if (field.includes(',')) {
 		return field.split(',').map(Number).includes(value);

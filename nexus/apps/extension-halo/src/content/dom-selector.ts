@@ -115,7 +115,7 @@ function getXPath(element: Element): string {
 	if (!siblings) return '';
 
 	for (let i = 0; i < siblings.length; i++) {
-		const sibling = siblings[i];
+		const sibling = siblings[i]!;
 		if (sibling === element) {
 			return getXPath(element.parentNode as Element) + '/' + element.tagName.toLowerCase() + '[' + (ix + 1) + ']';
 		}

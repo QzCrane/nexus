@@ -17,7 +17,7 @@ import { styles } from './panel.styles';
 const groupByCategory = (perms: PermissionDef[]): Record<string, PermissionDef[]> => {
 	const grouped: Record<string, PermissionDef[]> = { basic: [], advanced: [], privacy: [] };
 	for (const p of perms) {
-		grouped[p.category].push(p);
+		grouped[p.category]!.push(p);
 	}
 	return grouped;
 };
@@ -144,13 +144,13 @@ export const PermissionsPanel: React.FC = () => {
 
 			{/* Basic Permissions */}
 			<div style={styles.category}>{categoryLabels.basic}</div>
-			{grouped.basic.map((p) => renderPermCard(p))}
+			{grouped.basic!.map((p) => renderPermCard(p))}
 
 			{/* Privacy Permissions */}
-			{grouped.privacy.length > 0 && (
+				{grouped.privacy!.length > 0 && (
 				<>
 					<div style={styles.category}>{categoryLabels.privacy}</div>
-					{grouped.privacy.map((p) => renderPermCard(p))}
+					{grouped.privacy!.map((p) => renderPermCard(p))}
 				</>
 			)}
 		</div>

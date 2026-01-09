@@ -80,7 +80,7 @@ function scrollStep(): void {
 	let scrollY = 0;
 
 	for (let i = 0; i < state.que.length; i++) {
-		const item = state.que[i];
+		const item = state.que[i]!;
 		const elapsed = now - item.start;
 		const finished = elapsed >= state.animationTime;
 
