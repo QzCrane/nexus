@@ -81,41 +81,41 @@ L1060: `cnu.cc`
 L1075: `coupang.com`
 L1084: `countdown.co.nz`
 L1102: `ctrip.com`
-| L1113 | `dangdang.com` |
-| L1124 | `deviantart.com` |
-| L1235 | `dhgate.com` |
-| L1250 | `dianping / meituan.com` |
-| L1288 | `discogs.com` |
-| L1328 | `dizilah.com` |
-| L1358 | `douban.com` ⭐ |
-| L1399 | `douyin.com` ⭐ |
-| L1409 | `douyu.com` |
-| L1426 | `dribbble.com` |
-| L1443 | `duckduckgo.com` |
-| L1498 | `duitang.com` |
-| L1507 | `duokan.com` |
-| L1513 | `e-talenta.eu` |
-| L1519 | `e621.net` |
-| L1533 | `ebay.com` |
-| L1554 | `etsy.com` |
-| L1569 | `facebook.com` ⭐ |
-| L1733 | `fandango / flixster / rottentomatoes` |
-| L1758 | `flickr.com` ⭐ |
-| L1826 | `fox.com` |
-| L1836 | `fox.com.tr` |
-| L1846 | `xda-developers.com` |
-| L1865 | `gamer.com.tw` |
-| L1894 | `github.com` |
-| L1908 | `play.google.com` |
-| L1921 | `google.com (images)` |
-| L2015 | `huaban.com` |
-| L2037 | `huya.com` |
-| L2046 | `iherb.com` |
-| L2066 | `imdb.com` |
-| L2077 | `imgur.com` ⭐ |
-| L2087 | `interpals.net` |
-| L2093 | `istockphoto / pexels / unsplash` |
-| L2124 | `instacart.com` |
+L1113: `dangdang.com`
+L1124: `deviantart.com`
+L1235: `dhgate.com`
+L1250: `dianping / meituan.com`
+L1288: `discogs.com`
+L1328: `dizilah.com`
+L1358: `douban.com` ⭐
+L1399: `douyin.com` ⭐
+L1409: `douyu.com`
+L1426: `dribbble.com`
+L1443: `duckduckgo.com`
+L1498: `duitang.com`
+L1507: `duokan.com`
+L1513: `e-talenta.eu`
+L1519: `e621.net`
+L1533: `ebay.com`
+L1554: `etsy.com`
+L1569: `facebook.com` ⭐
+L1733: `fandango / flixster / rottentomatoes`
+L1758: `flickr.com` ⭐
+L1826: `fox.com`
+L1836: `fox.com.tr`
+L1846: `xda-developers.com`
+L1865: `gamer.com.tw`
+L1894: `github.com`
+L1908: `play.google.com`
+L1921: `google.com (images)`
+L2015: `huaban.com`
+L2037: `huya.com`
+L2046: `iherb.com`
+L2066: `imdb.com`
+L2077: `imgur.com` ⭐
+L2087: `interpals.net`
+L2093: `istockphoto / pexels / unsplash`
+L2124: `instacart.com`
 | L2130 | `instagram.com` ⭐ |
 | L2285 | `iqiyi.com` |
 | L2308 | `ixigua.com` |
