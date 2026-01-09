@@ -39,7 +39,7 @@ Contracts 禁逻辑 | 源码 ≤200 行 | 禁绕 kernel 存储 | 禁动态 Paddi
 
 规则: docs/ai-rules.md | 商业: docs/business-model.md
 规划: plan.md + apps/{extension-halo,extension-spectra}/plan.md
-架构: apps/extension-halo/docs/{architecture,research}.md | apps/extension-spectra/docs/{policy-decision,protocols,cors-data-flow}.md
+架构: apps/extension-halo/docs/{architecture,research,plan-hover-zoom-v2}.md | apps/extension-spectra/docs/{policy-decision,protocols,cors-data-flow}.md
 
 ## 路线 2026
 

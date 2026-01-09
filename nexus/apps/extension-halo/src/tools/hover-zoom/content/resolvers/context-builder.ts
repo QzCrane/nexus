@@ -5,8 +5,16 @@ import { fetchWithProxy, getCookie } from '../utils/proxy-utils';
 
 /**
  * Build a ResolveContext for the given URL and element
+ * @param targetWidth - Optional display width for adaptive quality
+ * @param targetHeight - Optional display height for adaptive quality
  */
-export function buildContext(url: string, element: Element, urlHost?: string): ResolveContext {
+export function buildContext(
+	url: string,
+	element: Element,
+	urlHost?: string,
+	targetWidth?: number,
+	targetHeight?: number
+): ResolveContext {
 	// Extract hostname from URL if not provided
 	let host = urlHost || window.location.hostname;
 	if (!urlHost) {
@@ -22,6 +30,8 @@ export function buildContext(url: string, element: Element, urlHost?: string): R
 		match: null,
 		fetchHtml: (u) => fetchWithProxy<string>(u, { responseType: 'text' }),
 		fetchJson: <T>(u: string, headers?: Record<string, string>) => fetchWithProxy<T>(u, { headers }),
-		getCookie
+		getCookie,
+		targetWidth,
+		targetHeight
 	};
 }

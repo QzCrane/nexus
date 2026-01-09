@@ -5,9 +5,17 @@ import { parseEmbeddedJson, extractJsonFromVar, sortByBandwidth } from '../utils
 // Bilibili API Types
 // ==========================================
 
+interface VideoStream {
+	bandwidth: number;
+	baseUrl?: string;
+	base_url?: string;
+	codecs?: string;
+	width?: number;
+	height?: number;
+}
 
 interface PlayurlDash {
-	video?: Array<{ bandwidth: number; baseUrl?: string; base_url?: string; codecs?: string }>;
+	video?: VideoStream[];
 	audio?: Array<{ bandwidth: number; baseUrl?: string; base_url?: string; codecs?: string }>;
 }
 
@@ -28,12 +36,34 @@ interface PlayinfoResponse {
 	result?: PlayurlDash;
 }
 
-function extractBilibiliDash(dash: PlayurlDash): RuleResult | null {
-	let videos = (dash.video || []).filter(v => v.baseUrl || v.base_url);
+/**
+ * Select best video stream based on target display height
+ * If targetHeight provided: pick smallest stream >= targetHeight (or largest if none match)
+ * If no targetHeight: pick highest bandwidth (original behavior)
+ */
+function selectVideoStream(videos: VideoStream[], targetHeight?: number): VideoStream | null {
 	if (videos.length === 0) return null;
 
-	videos = sortByBandwidth(videos);
-	const video = videos[0];
+	// Sort by height ascending for selection
+	const sorted = [...videos].sort((a, b) => (a.height || 0) - (b.height || 0));
+
+	if (targetHeight && targetHeight > 0) {
+		// Find smallest stream >= targetHeight
+		const match = sorted.find(v => (v.height || 0) >= targetHeight);
+		if (match) return match;
+		// Fallback to largest if none >= target
+		return sorted[sorted.length - 1] ?? null;
+	}
+
+	// No target: use highest bandwidth (original behavior)
+	return sortByBandwidth(videos)[0] ?? null;
+}
+
+function extractBilibiliDash(dash: PlayurlDash, targetHeight?: number): RuleResult | null {
+	const videos = (dash.video || []).filter(v => v.baseUrl || v.base_url);
+	if (videos.length === 0) return null;
+
+	const video = selectVideoStream(videos, targetHeight);
 	const videoUrl = video?.baseUrl || video?.base_url;
 	if (!videoUrl) return null;
 
@@ -48,15 +78,18 @@ function extractBilibiliDash(dash: PlayurlDash): RuleResult | null {
 		audioCodec = audio?.codecs;
 	}
 
+	console.log('[Bilibili] Selected quality:', video?.height, 'p, target:', targetHeight);
+
 	return {
 		url: videoUrl,
 		audioUrl,
 		type: 'video',
-		// Remove manual Referer to avoid "Refused to set unsafe header" in content script fetch.
-		// Browser automatically sets Referer: https://www.bilibili.com/ when hovering on the site.
+		headers: { Referer: 'https://www.bilibili.com/' },
 		metadata: {
-			videoCodec: video.codecs,
-			audioCodec
+			videoCodec: video?.codecs,
+			audioCodec,
+			width: video?.width,
+			height: video?.height
 		}
 	};
 }
@@ -135,7 +168,7 @@ export const bilibiliRules: SiteRule[] = [
 				// Use robust extraction matching "window.__playinfo__ = {" (ignoring spaces)
 				const playinfo = extractJsonFromVar<PlayinfoResponse>(html, 'window.__playinfo__');
 				if (playinfo?.data?.dash) {
-					return extractBilibiliDash(playinfo.data.dash);
+					return extractBilibiliDash(playinfo.data.dash, ctx.targetHeight);
 				}
 
 				// Strategy B: API Fallback
@@ -150,7 +183,7 @@ export const bilibiliRules: SiteRule[] = [
 
 					const apiRes = await ctx.fetchJson<PlayinfoResponse>(apiUrl);
 					if (apiRes?.data?.dash) {
-						return extractBilibiliDash(apiRes.data.dash);
+						return extractBilibiliDash(apiRes.data.dash, ctx.targetHeight);
 					}
 				}
 			} catch (e) {
@@ -177,7 +210,7 @@ export const bilibiliRules: SiteRule[] = [
 			try {
 				const res = await ctx.fetchJson<PlayinfoResponse>(apiUrl);
 				if (res?.result) {
-					return extractBilibiliDash(res.result);
+					return extractBilibiliDash(res.result, ctx.targetHeight);
 				}
 			} catch (e) {
 				console.warn('Episode resolve failed', e);

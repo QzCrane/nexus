@@ -169,12 +169,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			.then(async res => {
 				if (!res.ok) throw new Error(`HTTP ${res.status}`);
 				if (responseType === 'arraybuffer') {
-					// Encode binary as base64 for message passing
+					// Chunked base64 encoding for better performance
 					const buf = await res.arrayBuffer();
 					const bytes = new Uint8Array(buf);
-					let binary = '';
-					for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
-					return btoa(binary);
+					const CHUNK = 0x8000; // 32KB chunks
+					const chunks: string[] = [];
+					for (let i = 0; i < bytes.length; i += CHUNK) {
+						chunks.push(String.fromCharCode(...bytes.subarray(i, i + CHUNK)));
+					}
+					return btoa(chunks.join(''));
 				}
 				return res.text();
 			})

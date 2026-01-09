@@ -14,6 +14,9 @@ export interface ResolveContext {
 	fetchHtml: (url: string) => Promise<string>;
 	fetchJson: <T = any>(url: string, headers?: Record<string, string>) => Promise<T>;
 	getCookie: (name: string) => string;
+	// Target display resolution for adaptive quality selection
+	targetWidth?: number;
+	targetHeight?: number;
 }
 
 export interface RuleResult {

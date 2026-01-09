@@ -62,7 +62,12 @@ export async function resolveEnhanced(
 		const parentLink = target.closest('a[href]') as HTMLAnchorElement | null;
 		const urlToCheck = parentLink?.href || target.getAttribute('href') || target.getAttribute('src') || target.dataset.targetUrl || '';
 		if (urlToCheck) {
-			const ctx = buildContext(urlToCheck, target);
+			// Calculate target display size for adaptive quality
+			// Use 90% of viewport as max display area
+			const targetHeight = Math.round(window.innerHeight * 0.9);
+			const targetWidth = Math.round(window.innerWidth * 0.9);
+
+			const ctx = buildContext(urlToCheck, target, undefined, targetWidth, targetHeight);
 			const result = await ruleEngine.resolve(ctx);
 
 			if (result) {

@@ -111,8 +111,16 @@ Fallback 链:多源 URL 自动切换:P1
 
 ## 变更记录
 
-- **2026-01-09**: Phase 1-3 完成
+- **2026-01-09 AM**: Phase 1-3 完成
+
   - Info bar: 9 项可配置信息 (typeIcon/dims/ratio/scale/format/size/caption/source/hostname)
   - 详情增强: ratio (GCD 简化比例) + scale (显示缩放百分比)
   - 视频播放: MSE 播放器 (6KB) 替代 hls.js (1MB)，B 站 DASH 流支持
   - 视频保护: 跳过正在播放的视频，避免干扰原生预览
+
+- **2026-01-09 PM**: 视频性能极致优化
+  - 流式增量加载: 首批 2MB 快速显示 → 后台持续加载后续批次 → 无缝播放
+  - 动态分辨率: 根据 viewport (90%) 自动选择合适画质 (避免 4K 屏强制 1080P)
+  - Background Proxy: 支持 arraybuffer (base64 分块编码，32KB 块)
+  - 新增设置: videoFallbackToImage (默认 false，视频失败不降级)
+  - CORS 修复: Referer header 通过 background proxy 正确发送

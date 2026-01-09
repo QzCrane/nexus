@@ -1,45 +1,36 @@
-// goal: MSE (MediaSource Extensions) player for DASH streams
-// eff: Combines separate video + audio m4s streams into playable media
+// goal: MSE (MediaSource Extensions) player with streaming support
+// eff: Combines video+audio m4s streams, supports incremental loading
 
 import { fetchArrayBufferWithProxy } from '../utils/proxy-utils';
 
 const LOG_TAG = '[HALO:HoverZoom:MSEPlayer]';
-
-// MIME types for common DASH formats
 const VIDEO_MIME = 'video/mp4; codecs="avc1.640028"';
 const AUDIO_MIME = 'audio/mp4; codecs="mp4a.40.2"';
+const CHUNK_SIZE = 2 * 1024 * 1024;  // 2MB per chunk
+const BUFFER_THRESHOLD = 3;          // Load more when < 3s buffered
 
 interface MSESession {
 	mediaSource: MediaSource;
 	videoBuffer: SourceBuffer | null;
 	audioBuffer: SourceBuffer | null;
 	aborted: boolean;
+	videoOffset: number;
+	audioOffset: number;
+	videoEnded: boolean;
+	audioEnded: boolean;
 }
 
-/**
- * Check if MSE is supported for DASH playback
- */
 export function isMSESupported(): boolean {
 	return 'MediaSource' in window && MediaSource.isTypeSupported(VIDEO_MIME);
 }
 
-/**
- * Fetch media segment through background proxy to bypass CORS
- */
 async function fetchSegment(url: string, headers?: Record<string, string>): Promise<ArrayBuffer> {
 	return fetchArrayBufferWithProxy(url, headers);
 }
 
-/**
- * Append buffer with safety checks for aborted sessions
- */
-function appendBuffer(buffer: SourceBuffer, data: ArrayBuffer, session: MSESession): Promise<void> {
+async function appendBuffer(buffer: SourceBuffer, data: ArrayBuffer, session: MSESession): Promise<void> {
 	return new Promise((resolve, reject) => {
-		// Safety: check if session was aborted or buffer removed
-		if (session.aborted || session.mediaSource.readyState !== 'open') {
-			resolve(); // Silently skip if aborted
-			return;
-		}
+		if (session.aborted || session.mediaSource.readyState !== 'open') { resolve(); return; }
 		if (buffer.updating) {
 			buffer.addEventListener('updateend', () => appendBuffer(buffer, data, session).then(resolve).catch(reject), { once: true });
 			return;
@@ -48,20 +39,22 @@ function appendBuffer(buffer: SourceBuffer, data: ArrayBuffer, session: MSESessi
 			buffer.appendBuffer(data);
 			buffer.addEventListener('updateend', () => resolve(), { once: true });
 			buffer.addEventListener('error', (e) => reject(e), { once: true });
-		} catch (e) {
-			reject(e);
-		}
+		} catch (e) { reject(e); }
 	});
 }
 
-/**
- * Play DASH video + audio streams using MSE
- * @param videoEl - Target video element
- * @param videoUrl - Video stream URL (m4s)
- * @param audioUrl - Audio stream URL (m4s), optional
- * @param headers - Request headers (e.g., Referer)
- * @returns Cleanup function to abort loading
- */
+// Get buffered time ahead of playhead
+function getBufferedAhead(video: HTMLVideoElement): number {
+	const buf = video.buffered;
+	if (!buf.length) return 0;
+	for (let i = 0; i < buf.length; i++) {
+		if (video.currentTime >= buf.start(i) && video.currentTime <= buf.end(i)) {
+			return buf.end(i) - video.currentTime;
+		}
+	}
+	return 0;
+}
+
 export async function playDashStreams(
 	videoEl: HTMLVideoElement,
 	videoUrl: string,
@@ -69,117 +62,86 @@ export async function playDashStreams(
 	headers?: Record<string, string>,
 	metadata?: { videoCodec?: string; audioCodec?: string }
 ): Promise<() => void> {
-	if (!isMSESupported()) {
-		throw new Error('MSE not supported');
-	}
+	if (!isMSESupported()) throw new Error('MSE not supported');
 
-	console.log(LOG_TAG, 'Starting MSE playback', { videoUrl: videoUrl.slice(0, 80), hasAudio: !!audioUrl, metadata });
+	console.log(LOG_TAG, 'Starting MSE playback', { videoUrl: videoUrl.slice(0, 80), hasAudio: !!audioUrl });
 
 	const session: MSESession = {
 		mediaSource: new MediaSource(),
-		videoBuffer: null,
-		audioBuffer: null,
-		aborted: false
+		videoBuffer: null, audioBuffer: null,
+		aborted: false,
+		videoOffset: 0, audioOffset: 0,
+		videoEnded: false, audioEnded: false
 	};
 
 	const objectUrl = URL.createObjectURL(session.mediaSource);
 	videoEl.src = objectUrl;
 
-	// Wait for MediaSource to open
 	await new Promise<void>((resolve, reject) => {
 		session.mediaSource.addEventListener('sourceopen', () => resolve(), { once: true });
 		session.mediaSource.addEventListener('error', (e) => reject(e), { once: true });
-		// Timeout after 5s
 		setTimeout(() => reject(new Error('MediaSource open timeout')), 5000);
 	});
 
-	if (session.aborted) {
-		cleanup();
-		return () => { };
-	}
+	if (session.aborted) { cleanup(); return () => { }; }
 
 	// Add source buffers
-	try {
-		// Calculate MIME types with codecs
-		const videoMime = metadata?.videoCodec
-			? `video/mp4; codecs="${metadata.videoCodec}"`
-			: VIDEO_MIME;
+	const videoMime = metadata?.videoCodec ? `video/mp4; codecs="${metadata.videoCodec}"` : VIDEO_MIME;
+	const audioMime = metadata?.audioCodec ? `audio/mp4; codecs="${metadata.audioCodec}"` : AUDIO_MIME;
+	session.videoBuffer = session.mediaSource.addSourceBuffer(videoMime);
+	if (audioUrl) session.audioBuffer = session.mediaSource.addSourceBuffer(audioMime);
 
-		const audioMime = metadata?.audioCodec
-			? `audio/mp4; codecs="${metadata.audioCodec}"`
-			: AUDIO_MIME;
-
-		console.log(LOG_TAG, 'Using MIMEs:', { videoMime, audioMime });
-
-		session.videoBuffer = session.mediaSource.addSourceBuffer(videoMime);
-		if (audioUrl) {
-			session.audioBuffer = session.mediaSource.addSourceBuffer(audioMime);
-		}
-	} catch (e) {
-		console.error(LOG_TAG, 'Failed to add source buffer', e);
-		cleanup();
-		throw e;
-	}
-
-	// Fetch and append streams in parallel (reduced size for faster preview)
-	const loadPromises: Promise<void>[] = [];
-
-	// Load video (First 4MB for quick preview)
-	const videoHeaders = { ...headers, Range: 'bytes=0-4194304' };
-	loadPromises.push(
-		fetchSegment(videoUrl, videoHeaders).then(async (data) => {
-			if (session.aborted || !session.videoBuffer) return;
-			await appendBuffer(session.videoBuffer, data, session);
-			console.log(LOG_TAG, 'Video segment loaded', data.byteLength);
-		})
-	);
-
-	// Load audio if present (First 1MB for preview)
-	if (audioUrl && session.audioBuffer) {
-		const audioHeaders = { ...headers, Range: 'bytes=0-1048576' };
-		loadPromises.push(
-			fetchSegment(audioUrl, audioHeaders).then(async (data) => {
-				if (session.aborted || !session.audioBuffer) return;
-				await appendBuffer(session.audioBuffer, data, session);
-				console.log(LOG_TAG, 'Audio segment loaded', data.byteLength);
-			})
-		);
-	}
-
-	// Wait for both to complete
-	try {
-		await Promise.all(loadPromises);
-	} catch (e) {
-		console.error(LOG_TAG, 'Stream loading failed', e);
-		cleanup();
-		throw e;
-	}
-
-	// End stream when all data is loaded
-	if (!session.aborted && session.mediaSource.readyState === 'open') {
-		const waitForUpdate = async () => {
-			const buffers = [session.videoBuffer, session.audioBuffer].filter(Boolean) as SourceBuffer[];
-			while (buffers.some(b => b.updating)) {
-				await new Promise(r => setTimeout(r, 50));
-			}
-		};
-		await waitForUpdate();
+	// Load chunk helper
+	async function loadVideoChunk() {
+		if (session.aborted || session.videoEnded || !session.videoBuffer) return;
+		const rangeHeaders = { ...headers, Range: `bytes=${session.videoOffset}-${session.videoOffset + CHUNK_SIZE - 1}` };
 		try {
-			session.mediaSource.endOfStream();
-		} catch (e) {
-			// Ignore if already ended
-		}
+			const data = await fetchSegment(videoUrl, rangeHeaders);
+			if (session.aborted) return;
+			if (data.byteLength < CHUNK_SIZE) session.videoEnded = true;
+			session.videoOffset += data.byteLength;
+			await appendBuffer(session.videoBuffer, data, session);
+			console.log(LOG_TAG, 'Video chunk loaded', session.videoOffset);
+		} catch (e) { session.videoEnded = true; }
 	}
 
-	console.log(LOG_TAG, 'MSE playback ready');
+	async function loadAudioChunk() {
+		if (session.aborted || session.audioEnded || !session.audioBuffer || !audioUrl) return;
+		const rangeHeaders = { ...headers, Range: `bytes=${session.audioOffset}-${session.audioOffset + CHUNK_SIZE / 4 - 1}` };
+		try {
+			const data = await fetchSegment(audioUrl, rangeHeaders);
+			if (session.aborted) return;
+			if (data.byteLength < CHUNK_SIZE / 4) session.audioEnded = true;
+			session.audioOffset += data.byteLength;
+			await appendBuffer(session.audioBuffer, data, session);
+			console.log(LOG_TAG, 'Audio chunk loaded', session.audioOffset);
+		} catch (e) { session.audioEnded = true; }
+	}
 
-	// Cleanup function
+	// Initial load
+	await Promise.all([loadVideoChunk(), loadAudioChunk()]);
+	console.log(LOG_TAG, 'Initial load complete, starting background streaming');
+
+	// Greedy streaming: continuously load next chunks in background
+	const streamLoop = async () => {
+		while (!session.aborted && (!session.videoEnded || !session.audioEnded)) {
+			await Promise.all([loadVideoChunk(), loadAudioChunk()]);
+			// Small delay to avoid hammering network if loads are fast
+			await new Promise(r => setTimeout(r, 100));
+		}
+		// End stream when all loaded
+		if (!session.aborted && session.mediaSource.readyState === 'open') {
+			try { session.mediaSource.endOfStream(); } catch { }
+			console.log(LOG_TAG, 'Stream complete');
+		}
+	};
+	// Start streaming in background (don't await)
+	streamLoop();
+
 	function cleanup() {
 		session.aborted = true;
 		if (session.mediaSource.readyState === 'open') {
-			try {
-				session.mediaSource.endOfStream();
-			} catch { }
+			try { session.mediaSource.endOfStream(); } catch { }
 		}
 		URL.revokeObjectURL(objectUrl);
 	}
@@ -187,9 +149,6 @@ export async function playDashStreams(
 	return cleanup;
 }
 
-/**
- * Check if URL is a DASH segment (m4s) that needs MSE
- */
 export function needsMSE(url: string): boolean {
 	return url.includes('.m4s') || url.includes('bilivideo.com') || url.includes('bilivideo.cn');
 }

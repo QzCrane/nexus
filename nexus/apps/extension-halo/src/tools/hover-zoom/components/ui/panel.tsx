@@ -1,6 +1,4 @@
-// goal: Hover Zoom settings panel
-// eff: Aligned with smooth-scroll panel style
-
+// Hover Zoom settings panel - aligned with smooth-scroll style
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Toggle } from '@nexus/ui-kit';
 import { useTranslation } from '../../../../i18n';
@@ -8,7 +6,6 @@ import { HoverZoomSettings, DEFAULT_SETTINGS, STORAGE_KEY, KeyCombo, HighlightMo
 import { enableAntiHotlink, disableAntiHotlink, isAntiHotlinkEnabled } from '../../logic/engine';
 import { styles } from './panel.styles';
 import { KeyComboEditor } from './KeyComboEditor';
-
 export const HoverZoomPanel: React.FC = () => {
     const { t } = useTranslation();
     const [settings, setSettings] = useState<HoverZoomSettings>(DEFAULT_SETTINGS);
@@ -37,7 +34,6 @@ export const HoverZoomPanel: React.FC = () => {
     };
 
     const updateExemptions = (p: Partial<HoverZoomSettings['exemptions']>) => update({ exemptions: { ...settings.exemptions, ...p } });
-
     return (
         <div style={styles.wrapper}>
             {/* Master Toggle */}
