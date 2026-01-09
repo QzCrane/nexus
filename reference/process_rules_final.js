@@ -8,17 +8,22 @@ const files = {
     im: { name: 'imagus-rules-list.txt' }
 };
 
-const map = new Map(); // Key -> { hz: Set(val), ps: Set(val), im: Set(val) }
+const map = new Map(); // Key -> { hz: Count, ps: Set(ids), im: Set(ids) }
 
-function setVal(key, source, val) {
+function addRule(key, source, val) {
     if (!key) return;
     const normalizedKey = normalize(key);
     if (!normalizedKey) return;
     
     if (!map.has(normalizedKey)) {
-        map.set(normalizedKey, { hz: new Set(), ps: new Set(), im: new Set() });
+        map.set(normalizedKey, { hz: 0, ps: new Set(), im: new Set() });
     }
-    map.get(normalizedKey)[source].add(val);
+    
+    if (source === 'hz') {
+        map.get(normalizedKey).hz += 1;
+    } else {
+        map.get(normalizedKey)[source].add(val);
+    }
 }
 
 function normalize(str) {
@@ -26,7 +31,7 @@ function normalize(str) {
     let s = str.trim().toLowerCase();
     
     s = s.replace(/^https?:\/\//, '').replace(/^www\./, '');
-    s = s.replace(/^\[/, '').replace(/\]$/, '');
+    s = s.replace(/[\[\]]/g, '');
     
     const tlds = [
         'com', 'net', 'org', 'cn', 'ru', 'co\\.uk', 'jp', 'tv', 'io', 'cc', 'me', 
@@ -36,50 +41,38 @@ function normalize(str) {
         'co', 've', 'id', 'my', 'ph', 'sg', 'th', 'in', 'pk', 'bd', 'sa', 'ae', 
         'eg', 'za', 'ng', 'ke', 'su', 'hk', 'site', 'xyz', 'top', 'online'
     ];
-    // Use lookahead to safely remove TLDs
     const tldRegex = new RegExp(`\\.(${tlds.join('|')})(?=\\/|$|\\s|\\)|_|-|:|\\[|\\])`, 'g');
     s = s.replace(tldRegex, '');
     
-    // Remove suffixes
     s = s.replace(/_a$/, '');
     s = s.replace(/(?:-[sgxphqmbv]+)+$/, '');
     s = s.replace(/-cdn$/, '');
     s = s.replace(/_cdn$/, ''); 
-    
-    // Clean up
     s = s.replace(/[-_\.]+$/, '');
 
-    // Common normalization
     if (s === 'x') return 'x';
-    
-    // Specific fix examples based on previous output
-    if (s === 'google_images') return 'google'; // Merge google variations? 
-    // User requested "按域名的字典序", distinct keys are fine, but grouping is better.
-    // However, risk of over-merging. Let's stick to base normalization.
-    // Maybe remove specific sub-keys if they are just services.
-    // e.g. "google_drive" -> "google"? "ali_express" -> "aliexpress"?
-    // For now, keep as is unless suffixes like _video are standard.
-    
     return s.trim();
 }
 
-// 1. Process HZ - File based, so value is '√'
+// 1. Process HZ - Count rules per normalized key
 try {
     const content = fs.readFileSync(path.join(DIR, files.hz.name), 'utf8');
     content.split('\n').forEach(line => {
         if (!line.trim()) return;
-        // Format: "AMAZON: amazon(1.3K) | media-amazon_a(0.8K)"
-        // or "500px(9.9K)"
         
         let domains = [];
         const colonMatch = line.match(/^([^:]+):/);
+        
         if (colonMatch) {
-            domains.push(colonMatch[1]); // The group name itself
+            // IGNORE the group name for counting! Only count content files.
+            // domains.push(colonMatch[1]); <-- DELETE THIS
+            
             const inner = line.substring(colonMatch[0].length);
             const pipes = inner.split('|');
             pipes.forEach(p => {
                 const d = p.split('(')[0].trim();
-                if(d) domains.push(d);
+                // Ensure we only count real files (simple validation)
+                if (d) domains.push(d);
             });
         } else {
             const braceMatch = line.match(/^([^(]+)\(/);
@@ -90,17 +83,15 @@ try {
             }
         }
         
-        domains.forEach(d => setVal(d, 'hz', '√'));
+        domains.forEach(d => addRule(d, 'hz', 1));
     });
 } catch (e) { console.error('Error HZ', e); }
 
-// 2. Process PhotoShow - Line number is first token
+// 2. Process PhotoShow
 try {
     const content = fs.readFileSync(path.join(DIR, files.ps.name), 'utf8');
     content.split('\n').forEach(line => {
         if (!line.trim()) return;
-        // "336 115.com"
-        // "486 acfun.cn / kuaishou.com"
         const match = line.match(/^(\d+)\s+(.*)/);
         if (match) {
             const id = match[1];
@@ -108,28 +99,23 @@ try {
             const parts = rawContent.split('/');
             parts.forEach(p => {
                 let d = p.replace(/\(.*\)/g, '').trim(); 
-                if(d) setVal(d, 'ps', id);
+                if(d) addRule(d, 'ps', id);
             });
         }
     });
 } catch (e) { console.error('Error PS', e); }
 
-// 3. Process Imagus - Line number embedded
+// 3. Process Imagus
 try {
     const content = fs.readFileSync(path.join(DIR, files.im.name), 'utf8');
     content.split('\n').forEach(line => {
         if (!line.trim()) return;
-        // Regex to find "ID Key" pairs
-        // e.g. "187 ALIEXPRESS-s" or "2 [Google]"
-        // Beware of "3843 shottr-h"
-        
-        // We iterate over all matches in the line
         const regex = /(\d+)\s+([^\s|]+)/g;
         let match;
         while ((match = regex.exec(line)) !== null) {
             const id = match[1];
             const key = match[2];
-            setVal(key, 'im', id);
+            addRule(key, 'im', id);
         }
     });
 } catch (e) { console.error('Error Imagus', e); }
@@ -138,21 +124,29 @@ try {
 const sortedKeys = Array.from(map.keys()).sort();
 const output = [];
 
+// Header with descriptions as requested previously (optional, keeping clean mostly)
+output.push('## 1. Hover Zoom+ (Hz+): `reference/hoverzoom-plus/plugins/`');
+output.push('## 2. PhotoShow: `reference/photoshow/source/background.js`');
+output.push('## 3. Imagus-Reborn: `reference/imagus-reborn/src/data/sieve.json`');
+output.push('');
 output.push('Domain:HZ:PhotoShow:Imagus');
+
+let hzTotalCheck = 0;
 
 sortedKeys.forEach(key => {
     if (!key) return; 
     const data = map.get(key);
     
-    const hz = data.hz.size > 0 ? Array.from(data.hz).join(',') : '#';
+    // HZ: show count if > 0, else #
+    const hzStr = data.hz > 0 ? String(data.hz) : '#';
+    hzTotalCheck += data.hz;
+    
     const ps = data.ps.size > 0 ? Array.from(data.ps).sort((a,b)=>Number(a)-Number(b)).join(',') : '#';
     const im = data.im.size > 0 ? Array.from(data.im).sort((a,b)=>Number(a)-Number(b)).join(',') : '#';
     
-    // Special handling as per user req: "Domain:HZ:PhotoShow:Imagus"
-    // "500px:√:3:18" (example)
-    
-    output.push(`${key}:${hz}:${ps}:${im}`);
+    output.push(`${key}:${hzStr}:${ps}:${im}`);
 });
 
 fs.writeFileSync(path.join(DIR, 'unified-rules-index.txt'), output.join('\n'));
 console.log(`Generated unified index for ${sortedKeys.length} domains.`);
+console.log(`Total HZ Rules Counted: ${hzTotalCheck}`); // Should be 396

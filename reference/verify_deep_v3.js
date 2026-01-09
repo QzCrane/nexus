@@ -14,7 +14,7 @@ function normalize(str) {
     if (!str) return '';
     let s = str.trim().toLowerCase();
     s = s.replace(/^https?:\/\//, '').replace(/^www\./, '');
-    s = s.replace(/^\[/, '').replace(/\]$/, '');
+    s = s.replace(/[\[\]]/g, '');
     const tlds = [
         'com', 'net', 'org', 'cn', 'ru', 'co\\.uk', 'jp', 'tv', 'io', 'cc', 'me', 
         'de', 'pl', 'fr', 'kr', 'au', 'nz', 'tw', 'vn', 'us', 'ir', 'gr', 'info', 
@@ -38,7 +38,7 @@ function normalize(str) {
 // Stats Counters
 let stats = {
     totalUnique: 0,
-    totalHZ: 0,
+    totalHZ: 0, 
     totalPS: 0,
     totalIM: 0,
     overlapHZ_PS: 0,
@@ -49,57 +49,60 @@ let stats = {
 
 // --- 1. Load Index & Verify Stats ---
 console.log('--- Loading unified-rules-index.txt and Calculating Stats ---');
-const indexData = new Map(); // NormalizedKey -> { hz: bool, ps: Set(ids), im: Set(ids) }
+const indexData = new Map(); // NormalizedKey -> { hz: Count, ps: Set(ids), im: Set(ids) }
 
 try {
     const content = fs.readFileSync(path.join(DIR, FILES.index), 'utf8');
-    const lines = content.split('\n').slice(1); // Skip header
+    const lines = content.split('\n');
+    let dataStart = 0;
+    // Skip until header row is found
+    for(let i=0; i<lines.length; i++) {
+        if(lines[i].startsWith('Domain:HZ:')) {
+            dataStart = i + 1;
+            break;
+        }
+    }
+    const dataLines = lines.slice(dataStart);
     
-    lines.forEach(l => {
+    dataLines.forEach(l => {
         if (!l.trim()) return;
         const p = l.split(':');
-        // Handle "data:image" split issue (length > 4)
-        // If length > 4, we assume split error on key. 
-        // But for statistics, we just need to detect HZ/PS/IM presence.
-        // HZ is col 1, PS is col 2, IM is col 3.
-        // If split on ':', we might have extra cols.
-        // Re-assemble based on knowledge that last 3 are IM, PS, HZ... wait.
-        // Format: Key:HZ:PS:IM
-        // If Key has colon, e.g. "data:image", it becomes "data", "image", "HZ", "PS", "IM" -> Length 5
-        // So we take from the END.
         
         let hzStr, psStr, imStr;
-        
         if (p.length > 4) {
              imStr = p[p.length - 1];
              psStr = p[p.length - 2];
              hzStr = p[p.length - 3];
-             // Key is everything else joined back
-             // let key = p.slice(0, p.length - 3).join(':'); 
         } else {
              hzStr = p[1];
              psStr = p[2];
              imStr = p[3];
         }
-
-        const normKey = p.slice(0, p.length - 3).join(':') || p[0];
-        // Note: For verify logic below, simple split might fail for 'data:image' if we don't normalize similarly.
-        // But let's trust simple split for stats now.
         
-        const hasHZ = hzStr !== '#';
+        const normKey = p.slice(0, p.length - 3).join(':') || p[0];
+        
+        // Count HZ from the number in the cell (or '√' if old format, but current is number)
+        let hzVal = 0;
+        if (hzStr !== '#' && hzStr !== '') {
+            // It might be a number now
+            const n = parseInt(hzStr);
+            hzVal = isNaN(n) ? 1 : n; 
+        }
+        
+        const hasHZ = hzVal > 0;
         const hasPS = psStr !== '#';
         const hasIM = imStr !== '#';
         
         const psIds = hasPS ? psStr.split(',') : [];
         const imIds = hasIM ? imStr.split(',') : [];
 
-        indexData.set(normKey, { hz: hasHZ, ps: new Set(psIds), im: new Set(imIds) });
+        indexData.set(normKey, { hz: hzVal, ps: new Set(psIds), im: new Set(imIds) });
         
         // Update Stats
         stats.totalUnique++;
-        if (hasHZ) stats.totalHZ++;
-        if (hasPS) stats.totalPS++;
-        if (hasIM) stats.totalIM++;
+        stats.totalHZ += hzVal; 
+        stats.totalPS += psIds.length;
+        stats.totalIM += imIds.length;
         
         if (hasHZ && hasPS) stats.overlapHZ_PS++;
         if (hasHZ && hasIM) stats.overlapHZ_IM++;
@@ -111,21 +114,10 @@ try {
     console.log(`Loaded ${indexData.size} index rows.`);
 
     // Print Stats
-    console.log('\n--- Statistics (Calculated during Index Load) ---');
-    console.log(`Total Unique Domains: ${stats.totalUnique}`);
-    console.log(`HZ Rules: ${stats.totalHZ}`);
+    console.log('\n--- Checking Rule Counts ---');
+    console.log(`HZ Rules (Total Count): ${stats.totalHZ} (Expected ~396)`);
     console.log(`PhotoShow Rules: ${stats.totalPS}`);
     console.log(`Imagus Rules: ${stats.totalIM}`);
-    console.log(`HZ & PhotoShow: ${stats.overlapHZ_PS}`);
-    console.log(`HZ & Imagus: ${stats.overlapHZ_IM}`);
-    console.log(`PhotoShow & Imagus: ${stats.overlapPS_IM}`);
-    console.log(`All Three: ${stats.overlapAll}`);
-    
-    // Check Math
-    const union = stats.totalHZ + stats.totalPS + stats.totalIM 
-                  - (stats.overlapHZ_PS + stats.overlapHZ_IM + stats.overlapPS_IM) 
-                  + stats.overlapAll;
-    console.log(`Verification (Set Theory): ${union} (Should be ${stats.totalUnique}) -> ${union === stats.totalUnique ? 'MATCH' : 'FAIL'}`);
 
 } catch(e) { console.error('Error loading index', e); process.exit(1); }
 
@@ -143,7 +135,7 @@ try {
         let domains = [];
         const colonMatch = line.match(/^([^:]+):/);
         if (colonMatch) {
-            domains.push(colonMatch[1]);
+            // IGNORE Group headers for counting rules, only count content
             const inner = line.substring(colonMatch[0].length);
             const pipes = inner.split('|');
             pipes.forEach(p => {
@@ -162,15 +154,10 @@ try {
         domains.forEach(d => {
             hzSourceCount++;
             const norm = normalize(d);
-            // Verify if norm exists in index with HZ checked
             const entry = indexData.get(norm);
-            if (entry && entry.hz) {
+            if (entry && entry.hz > 0) {
                 hzMatchedRules++;
             } else {
-                 // Try to see if it exists at all
-                 if (indexData.has(norm)) {
-                     // logic error in generation?
-                 }
                 hzMissingRules.push({ raw: d, norm: norm });
             }
         });
@@ -179,6 +166,14 @@ try {
 
 console.log(`HZ matched: ${hzMatchedRules} / ${hzSourceCount}`);
 if (hzMissingRules.length > 0) console.log('HZ Missing:', hzMissingRules.slice(0,3));
+
+// Note: HZ matched might be > stats.totalHZ if multiple source rules map to same index row 
+// AND the index row count equals the sum of them. 
+// Actually, iterate source -> check if index exists. This verifies coverage.
+// To verify count exactness: Sum of indexData.hz should equal hzSourceCount.
+let indexTotalHZ = 0;
+indexData.forEach(v => indexTotalHZ += v.hz);
+console.log(`Sum of HZ counts in Index: ${indexTotalHZ} (Should match Source Count: ${hzSourceCount})`);
 
 
 // --- 3. Verify PhotoShow Source ---
@@ -206,15 +201,16 @@ try {
                  if (entry && entry.ps.has(id)) {
                      psMatched++;
                  } else {
-                     psMissing.push({id, raw:d, norm});
+                     psMissing.push({ id, raw: d, norm });
                  }
             });
         }
     });
 } catch(e) { console.error(e); }
-
 console.log(`PS matched: ${psMatched} / ${psSourceCount}`);
-if(psMissing.length > 0) console.log('PS Missing:', psMissing.slice(0,3));
+if (psMissing.length > 0) {
+    console.log('PS Missing:', JSON.stringify(psMissing, null, 2));
+}
 
 
 // --- 4. Verify Imagus Source ---
@@ -236,11 +232,6 @@ try {
             
             const norm = normalize(raw);
             const entry = indexData.get(norm);
-            // Handle special data:image case logic if needed
-            // The split logic in stats loading might have handled data:image correctly or incorrectly depending on if norm resolves.
-            // data:image normalized is "data:image"
-            // If Index Key was "data:image", we need to check if we loaded it correctly.
-            
             if (entry && entry.im.has(id)) {
                 imMatched++;
             } else {
@@ -249,31 +240,32 @@ try {
         }
     });
 } catch(e) { console.error(e); }
-
 console.log(`Imagus matched: ${imMatched} / ${imSourceCount}`);
-if(imMissing.length > 0) console.log('Imagus Missing:', imMissing.slice(0,3));
-
-
+if (imMissing.length > 0) {
+    console.log('Imagus Missing:', JSON.stringify(imMissing, null, 2));
+}
 
 // --- Loading unified-rules-index.txt and Calculating Stats ---
 // Loaded 1193 index rows.
 
-// --- Statistics (Calculated during Index Load) ---    
-// Total Unique Domains: 1193
-// HZ Rules: 383
+// --- Checking Rule Counts ---
+// HZ Rules (Total Count): 396 (Expected ~396)
 // PhotoShow Rules: 168
 // Imagus Rules: 822
-// HZ & PhotoShow: 42
-// HZ & Imagus: 126
-// PhotoShow & Imagus: 42
-// All Three: 30
-// Verification (Set Theory): 1193 (Should be 1193) -> MATCH
 
 // --- Verifying HZ Source coverage ---
-// HZ matched: 413 / 413
+// HZ matched: 396 / 396
+// Sum of HZ counts in Index: 396 (Should match Source Count: 396)
 
 // --- Verifying PhotoShow Source coverage ---
 // PS matched: 168 / 168
 
 // --- Verifying Imagus Source coverage ---
-// Imagus matched: 823 / 823
+// Imagus matched: 822 / 823
+// Imagus Missing: [
+//   {
+//     "id": "2",
+//     "raw": "[Google_Images]",
+//     "norm": "google"
+//   }
+// ]
