@@ -161,6 +161,15 @@ function main() {
     console.log('  [COPY] LICENSE');
   }
 
+  // Copy PRIVACY.md to root (required for Chrome Web Store)
+  if (APP_CONFIG.privacySrc) {
+    const privacySrc = path.join(CONFIG.srcDir, APP_CONFIG.privacySrc);
+    if (fs.existsSync(privacySrc)) {
+      fs.copyFileSync(privacySrc, path.join(CONFIG.destDir, 'PRIVACY.md'));
+      console.log(`  [COPY] ${APP_CONFIG.privacySrc} -> PRIVACY.md`);
+    }
+  }
+
   // Patch package.json
   console.log('  [POST] Patching package.json...');
   const pkgPath = path.join(CONFIG.destDir, 'package.json');
