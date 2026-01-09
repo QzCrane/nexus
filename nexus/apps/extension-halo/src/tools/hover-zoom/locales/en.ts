@@ -58,6 +58,17 @@ export const en = {
 			smallInteractive: "Ignore small interactive elements"
 		},
 
+		infoBar: {
+			title: "Info Bar",
+			typeIcon: "Type icon",
+			dimensions: "Dimensions",
+			format: "Format",
+			size: "File size",
+			caption: "Caption",
+			source: "Rule source",
+			hostname: "Image host"
+		},
+
 		hotkeys: {
 			title: "Keyboard Shortcuts",
 			download: "S - Save image",

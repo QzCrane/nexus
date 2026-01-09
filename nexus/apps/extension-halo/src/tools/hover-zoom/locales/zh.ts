@@ -58,6 +58,17 @@ export const zh = {
 			smallInteractive: "忽略小型交互元素"
 		},
 
+		infoBar: {
+			title: "信息栏",
+			typeIcon: "类型图标",
+			dimensions: "尺寸",
+			format: "格式",
+			size: "文件大小",
+			caption: "描述",
+			source: "规则来源",
+			hostname: "图片域名"
+		},
+
 		hotkeys: {
 			title: "快捷键",
 			download: "S - 保存图片",

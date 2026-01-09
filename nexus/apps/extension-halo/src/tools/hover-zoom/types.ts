@@ -85,10 +85,13 @@ export interface HoverZoomSettings {
 	highlightMode: HighlightMode;   // Highlight border around trigger element
 	borderRadius: number;           // Corner radius in px (0 = sharp corners)
 	imageInfoItems: {
-		caption: boolean;
-		dimensions: boolean;
-		format: boolean;
-		size: boolean;
+		typeIcon: boolean;     // Media type icon (🖼️/🎬)
+		dimensions: boolean;   // e.g., 1920 × 1080
+		format: boolean;       // e.g., JPG, PNG, WEBP
+		size: boolean;         // e.g., 321.4 KB
+		caption: boolean;      // alt/title text
+		source: boolean;       // Rule source (engine/fallback)
+		hostname: boolean;     // Image host domain
 	};
 
 	// Exemptions
@@ -125,10 +128,13 @@ export const DEFAULT_SETTINGS: HoverZoomSettings = {
 	highlightMode: 'hotkey', // Default: only show highlight when hotkey pressed
 	borderRadius: 0,         // Default: sharp corners
 	imageInfoItems: {
-		caption: true,
+		typeIcon: true,
 		dimensions: true,
 		format: true,
-		size: true
+		size: true,
+		caption: true,
+		source: false,    // Debug info, off by default
+		hostname: false   // Domain info, off by default
 	},
 	exemptions: {
 		maxViewportCoverage: 0.5,  // Allow up to 50% of viewport

@@ -155,6 +155,20 @@ export const HoverZoomPanel: React.FC = () => {
                 </div>
             </Card>
 
+            {/* Info Bar Items */}
+            <Card variant="default" padding="sm">
+                <div style={styles.section}>
+                    <span style={styles.sectionTitle}>ℹ️ {t('hoverZoom.infoBar.title') || 'Info Bar'}</span>
+                    <div style={styles.row}><span style={styles.label}>{t('hoverZoom.infoBar.typeIcon') || 'Type icon'}</span><Toggle checked={settings.imageInfoItems.typeIcon} onChange={(v) => update({ imageInfoItems: { ...settings.imageInfoItems, typeIcon: v } })} /></div>
+                    <div style={styles.row}><span style={styles.label}>{t('hoverZoom.infoBar.dimensions') || 'Dimensions'}</span><Toggle checked={settings.imageInfoItems.dimensions} onChange={(v) => update({ imageInfoItems: { ...settings.imageInfoItems, dimensions: v } })} /></div>
+                    <div style={styles.row}><span style={styles.label}>{t('hoverZoom.infoBar.format') || 'Format'}</span><Toggle checked={settings.imageInfoItems.format} onChange={(v) => update({ imageInfoItems: { ...settings.imageInfoItems, format: v } })} /></div>
+                    <div style={styles.row}><span style={styles.label}>{t('hoverZoom.infoBar.size') || 'File size'}</span><Toggle checked={settings.imageInfoItems.size} onChange={(v) => update({ imageInfoItems: { ...settings.imageInfoItems, size: v } })} /></div>
+                    <div style={styles.row}><span style={styles.label}>{t('hoverZoom.infoBar.caption') || 'Caption'}</span><Toggle checked={settings.imageInfoItems.caption} onChange={(v) => update({ imageInfoItems: { ...settings.imageInfoItems, caption: v } })} /></div>
+                    <div style={styles.row}><span style={styles.label}>{t('hoverZoom.infoBar.source') || 'Rule source'}</span><Toggle checked={settings.imageInfoItems.source} onChange={(v) => update({ imageInfoItems: { ...settings.imageInfoItems, source: v } })} /></div>
+                    <div style={styles.row}><span style={styles.label}>{t('hoverZoom.infoBar.hostname') || 'Image host'}</span><Toggle checked={settings.imageInfoItems.hostname} onChange={(v) => update({ imageInfoItems: { ...settings.imageInfoItems, hostname: v } })} /></div>
+                </div>
+            </Card>
+
             {/* Exemptions */}
             <Card variant="default" padding="sm">
                 <div style={styles.section}>
