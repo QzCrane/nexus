@@ -4,7 +4,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { error, ok, warn, summary, scanDir } from './utils.js';
+import { error, ok, warn, summary, scanDir, section, log } from './utils.js';
 
 const MAX_LINES = 200;
 const WARN_LINES = 150;
@@ -35,7 +35,7 @@ const EXEMPT_DIRS = [
 
 
 export function checkSourceFileLength(ROOT) {
-	console.log('\n📋 检查文件行数...');
+	section('检查文件行数...');
 
 	const srcDirs = [
 		'packages/contracts/src',
@@ -89,7 +89,7 @@ export function checkSourceFileLength(ROOT) {
 	if (oversizeFiles.length === 0) {
 		const totalWarn = warnFiles.length + legacyFiles.length;
 		if (totalWarn > 0) {
-			console.log(`   ⚠️  ${warnFiles.length} 文件超 150 行, ${legacyFiles.length} 历史债务 (用 --verbose 查看)`);
+			log(`   ⚠️  ${warnFiles.length} 文件超 150 行, ${legacyFiles.length} 历史债务`);
 		} else {
 			ok('文件行数检查通过');
 		}

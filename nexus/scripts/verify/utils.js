@@ -15,8 +15,11 @@ const RESET = '\x1b[0m';
 /** Error and warning counters */
 export const counters = { errors: 0, warnings: 0 };
 
-/** Verbose mode: set to false to suppress warning details */
+/** Verbose mode: show warning details */
 export let verbose = process.argv.includes('--verbose') || process.argv.includes('-v');
+
+/** Quiet mode: minimal output (errors only) */
+export let quiet = process.argv.includes('--quiet') || process.argv.includes('-q');
 
 export function error(msg) {
 	console.log(`${RED}❌ ERROR${RESET}: ${msg}`);
@@ -31,11 +34,21 @@ export function warn(msg, silent = false) {
 }
 
 export function ok(msg) {
-	console.log(`${GREEN}✅ OK${RESET}: ${msg}`);
+	if (!quiet) console.log(`${GREEN}✅ OK${RESET}: ${msg}`);
+}
+
+/** Section header - quiet mode skips */
+export function section(msg) {
+	if (!quiet) console.log(`\n📋 ${msg}`);
+}
+
+/** General log - quiet mode skips */
+export function log(msg) {
+	if (!quiet) console.log(msg);
 }
 
 export function summary(label, count, type = 'warn') {
-	if (count > 0) {
+	if (count > 0 && !quiet) {
 		const color = type === 'error' ? RED : YELLOW;
 		console.log(`${color}${type === 'error' ? '❌' : '⚠️ '} ${label}: ${count}${RESET}`);
 	}

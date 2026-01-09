@@ -4,10 +4,10 @@
 
 import fs from 'fs';
 import path from 'path';
-import { error, ok, warn } from './utils.js';
+import { error, ok, warn, section } from './utils.js';
 
 export function checkContractsPurity(ROOT) {
-	console.log('\n📋 检查 contracts 包纯净性...\n');
+	section('检查 contracts 包纯净性...');
 
 	const packageJson = path.join(ROOT, 'packages/contracts/package.json');
 	if (!fs.existsSync(packageJson)) {

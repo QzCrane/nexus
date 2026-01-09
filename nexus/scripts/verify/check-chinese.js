@@ -5,7 +5,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { error, ok, scanDir } from './utils.js';
+import { error, ok, scanDir, section, log } from './utils.js';
 
 // Skip directories
 const SKIP_DIRS = ['node_modules', 'dist', '.turbo', '.git', 'public'];
@@ -46,7 +46,7 @@ function extractComments(content) {
  * Check source files for Chinese characters in comments
  */
 export function checkChineseComments(root) {
-  console.log('\n📝 Checking for Chinese comments (blocks sync)...');
+  section('Checking for Chinese comments (blocks sync)...');
   
   const dirs = [
     path.join(root, 'apps'),
@@ -95,9 +95,9 @@ export function checkChineseComments(root) {
   
   if (filesWithChinese > 0) {
     error(`${filesWithChinese} files contain Chinese comments (${totalChineseComments} total)`);
-    affectedFiles.forEach(f => console.log(`   → ${f}`));
+    affectedFiles.forEach(f => log(`   → ${f}`));
     if (filesWithChinese > 5) {
-      console.log(`   → ... and ${filesWithChinese - 5} more files`);
+      log(`   → ... and ${filesWithChinese - 5} more files`);
     }
   } else {
     ok('No Chinese comments in public-facing code');

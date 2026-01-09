@@ -4,10 +4,10 @@
 
 import fs from 'fs';
 import path from 'path';
-import { error, ok, warn, scanDir } from './utils.js';
+import { error, ok, warn, scanDir, section } from './utils.js';
 
 export function checkHardcodedActions(ROOT) {
-	console.log('\n📋 检查硬编码 Action 字符串...\n');
+	section('检查硬编码 Action 字符串...');
 
 	const actionsFile = path.join(ROOT, 'packages/contracts/src/actions.ts');
 	if (!fs.existsSync(actionsFile)) {

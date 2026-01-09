@@ -4,10 +4,10 @@
 
 import fs from 'fs';
 import path from 'path';
-import { error, ok, warn } from './utils.js';
+import { error, ok, warn, section } from './utils.js';
 
 export function checkDependencyDirection(ROOT) {
-	console.log('\n📋 检查依赖方向...\n');
+	section('检查依赖方向...');
 
 	// contracts 不应依赖其他包
 	const contractsPkg = path.join(ROOT, 'packages/contracts/package.json');
@@ -36,7 +36,7 @@ export function checkDependencyDirection(ROOT) {
 }
 
 export function checkReadmeAI(ROOT) {
-	console.log('\n📋 检查 README.AI.md...\n');
+	section('检查 README.AI.md...');
 
 	const readmeAI = path.join(ROOT, 'README.AI.md');
 	if (!fs.existsSync(readmeAI)) {
@@ -63,7 +63,7 @@ export function checkReadmeAI(ROOT) {
 }
 
 export function checkHtmlResources(ROOT) {
-	console.log('\n📋 检查 HTML 资源引用...\n');
+	section('检查 HTML 资源引用...');
 
 	const apps = ['extension-spectra', 'extension-halo'];
 	let allIssues = [];

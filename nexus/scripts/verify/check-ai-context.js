@@ -5,14 +5,14 @@
 
 import fs from 'fs';
 import path from 'path';
-import { error, ok, warn } from './utils.js';
+import { error, ok, warn, section } from './utils.js';
 
 const SOFT_LIMIT = 40;  // 目标行数 (超过仅提示)
 const WARN_LINES = 50;  // 警告阈值
 const ERROR_LINES = 80; // 错误阈值 (信息过于冗长)
 
 export function checkAiContextFiles(ROOT) {
-	console.log('\n📋 检查 .ai-context.md 文件...\n');
+	section('检查 .ai-context.md 文件...');
 
 	const dirsToScan = [
 		{ base: 'packages', depth: 1 },

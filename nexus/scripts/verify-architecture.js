@@ -1,13 +1,14 @@
 /**
- * Architecture Integrity Verification Script v5
+ * Architecture Integrity Verification Script v6
  * 
- * Checks: .ai-context.md | contracts purity | file length | hardcoded actions | deps | HTML | Chinese
- * Usage: node scripts/verify-architecture.js
+ * Usage: node scripts/verify-architecture.js [-q|--quiet] [-v|--verbose]
+ * -q: minimal output (errors + summary only)
+ * -v: verbose output (show all warnings)
  */
 
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { counters } from './verify/utils.js';
+import { counters, quiet } from './verify/utils.js';
 import { checkAiContextFiles } from './verify/check-ai-context.js';
 import { checkContractsPurity } from './verify/check-contracts.js';
 import { checkSourceFileLength } from './verify/check-file-length.js';
@@ -26,9 +27,9 @@ const YELLOW = '\x1b[33m';
 const RESET = '\x1b[0m';
 
 function main() {
-	console.log('='.repeat(60));
-	console.log('🔍 Project NEXUS Architecture Verify v5');
-	console.log('='.repeat(60));
+	if (!quiet) {
+		console.log('🔍 verify-architecture v6');
+	}
 
 	checkAiContextFiles(ROOT);
 	checkContractsPurity(ROOT);
@@ -40,17 +41,14 @@ function main() {
 	checkPermissionUsage(ROOT);
 	checkChineseComments(ROOT);
 
-	console.log('\n' + '='.repeat(60));
 	if (counters.errors > 0) {
-		console.log(`${RED}❌ Found ${counters.errors} errors, ${counters.warnings} warnings${RESET}`);
-		console.log(`${RED}Please fix errors before committing${RESET}`);
+		console.log(`${RED}❌ verify: ${counters.errors} errors, ${counters.warnings} warnings${RESET}`);
 		process.exit(1);
 	} else if (counters.warnings > 0) {
-		console.log(`${YELLOW}⚠️  Found ${counters.warnings} warnings${RESET}`);
+		console.log(`${YELLOW}⚠️  verify: ${counters.warnings} warnings${RESET}`);
 	} else {
-		console.log(`${GREEN}✅ All checks passed!${RESET}`);
+		console.log(`${GREEN}✓ verify: OK${RESET}`);
 	}
-	console.log('='.repeat(60));
 }
 
 main();

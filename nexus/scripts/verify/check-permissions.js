@@ -7,7 +7,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { counters, error, ok } from './utils.js';
+import { counters, error, ok, section, log } from './utils.js';
 
 // Maps manifest permissions to their corresponding chrome API patterns
 const PERMISSION_API_MAP = {
@@ -37,7 +37,7 @@ const IMPLICIT_PERMISSIONS = [
 ];
 
 export function checkPermissionUsage(root) {
-  console.log('\n📋 检查 manifest 权限使用情况...\n');
+  section('检查 manifest 权限使用情况...');
 
   const apps = ['extension-spectra', 'extension-halo'];
   
@@ -72,7 +72,7 @@ export function checkPermissionUsage(root) {
     
     if (unusedPermissions.length > 0) {
       error(`${app}: 声明但未使用的权限: ${unusedPermissions.join(', ')}`);
-      console.log(`   Chrome Web Store 会拒绝未使用的权限，请从 manifest.json 中移除`);
+      log(`   Chrome Web Store 会拒绝未使用的权限，请从 manifest.json 中移除`);
     } else {
       ok(`${app}: 所有权限均有使用`);
     }
