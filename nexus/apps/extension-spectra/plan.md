@@ -33,3 +33,14 @@ VideoControl: 变速 0.1x-16x | 旋转/镜像/缩放 | 亮度/对比度/饱和�
 **根因**: `media-observer.ts` 中 MutationObserver 的 `removedNodes` 回调在 YouTube 全屏 DOM 重组时误调用 `detachNode()`，导致 `createMediaElementSource()` 绑定断裂
 
 **修复**: 移除 removedNodes → detachNode 逻辑
+
+### 2026-01-09: Fix Default-Muted Video Sites (Bilibili)
+
+**问题**: 打开 bilibili 主页时，插件会被自动静音，导航到视频后仍保持静音
+
+**根因**: bilibili 主页视频默认 `muted=true`，触发 `volumechange` 事件被 `volume-observer.ts` 同步到插件 config，错误持久化为用户意图
+
+**修复**:
+
+1. `volume-observer.ts` 引入 `hasReceivedUserEvent` 标志，区分"页面初始化"和"用户操作"
+2. `core/lifecycle/user-interaction.ts` 的 `syncDomVolumeToState()` 移除对 muted 状态的同步，只同步 volume 用于 UI 显示
