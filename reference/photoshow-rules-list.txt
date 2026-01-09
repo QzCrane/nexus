@@ -1,7 +1,3 @@
-# PhotoShow Rules List
-# Source: reference/photoshow/source/background.js
-# Total: 143 rules
-
 336: 115.com
 368: 123rf.com
 378: 500px.com
