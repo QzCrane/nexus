@@ -53,7 +53,7 @@ export function showVideo(
 		// Use MSE player for DASH streams
 		console.log(LOG_TAG, 'Using MSE for DASH playback');
 		dom.video.style.display = 'block';
-		dom.video.muted = true;
+		// Audio enabled - Chrome autoplay policy may require user interaction
 
 		playDashStreams(
 			dom.video,
@@ -112,7 +112,7 @@ export function showVideo(
 	// Standard video playback
 	dom.video.style.display = 'block';
 	dom.video.src = source.url;
-	dom.video.muted = true;
+	// Audio enabled - Chrome autoplay policy may require user interaction
 
 	dom.video.onloadedmetadata = () => {
 		console.log(LOG_TAG, 'Video loaded', dom?.video.videoWidth, dom?.video.videoHeight);

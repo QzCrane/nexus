@@ -31,6 +31,7 @@ export function isPlayableVideoUrl(url: string): boolean {
 /**
  * Find thumbnail URL from a source element using multiple strategies.
  * Returns null if no thumbnail found.
+ * Applies inline HD rule: removes @ suffix for Bilibili URLs.
  */
 export function findThumbnailUrl(el: HTMLElement | null): string | null {
 	if (!el) return null;
@@ -42,38 +43,52 @@ export function findThumbnailUrl(el: HTMLElement | null): string | null {
 	if (directImg?.src) {
 		thumbUrl = directImg.src;
 		console.log(LOG_TAG, 'Found via Strategy 1 (direct img):', thumbUrl.slice(0, 60));
-		return thumbUrl;
 	}
 
 	// Strategy 2: Parent link's img
-	const parentLink = el.closest('a');
-	const linkImg = parentLink?.querySelector('img') as HTMLImageElement | null;
-	if (linkImg?.src) {
-		thumbUrl = linkImg.src;
-		console.log(LOG_TAG, 'Found via Strategy 2 (parent link):', thumbUrl.slice(0, 60));
-		return thumbUrl;
+	if (!thumbUrl) {
+		const parentLink = el.closest('a');
+		const linkImg = parentLink?.querySelector('img') as HTMLImageElement | null;
+		if (linkImg?.src) {
+			thumbUrl = linkImg.src;
+			console.log(LOG_TAG, 'Found via Strategy 2 (parent link):', thumbUrl.slice(0, 60));
+		}
 	}
 
 	// Strategy 3: Bilibili card structure
-	const card = el.closest('.bili-video-card, .video-card, [class*="card"]');
-	const cardImg = card?.querySelector('img') as HTMLImageElement | null;
-	if (cardImg?.src) {
-		thumbUrl = cardImg.src;
-		console.log(LOG_TAG, 'Found via Strategy 3 (card structure):', thumbUrl.slice(0, 60));
-		return thumbUrl;
+	if (!thumbUrl) {
+		const card = el.closest('.bili-video-card, .video-card, [class*="card"]');
+		const cardImg = card?.querySelector('img') as HTMLImageElement | null;
+		if (cardImg?.src) {
+			thumbUrl = cardImg.src;
+			console.log(LOG_TAG, 'Found via Strategy 3 (card structure):', thumbUrl.slice(0, 60));
+		}
 	}
 
 	// Strategy 4: Background image
-	const bgEl = el.querySelector('[style*="background"]') || el;
-	const style = getComputedStyle(bgEl);
-	const bgMatch = style.backgroundImage?.match(/url\(["']?([^"')]+)["']?\)/);
-	if (bgMatch?.[1]) {
-		thumbUrl = bgMatch[1];
-		console.log(LOG_TAG, 'Found via Strategy 4 (background image):', thumbUrl.slice(0, 60));
-		return thumbUrl;
+	if (!thumbUrl) {
+		const bgEl = el.querySelector('[style*="background"]') || el;
+		const style = getComputedStyle(bgEl);
+		const bgMatch = style.backgroundImage?.match(/url\(["']?([^"')]+)["']?\)/);
+		if (bgMatch?.[1]) {
+			thumbUrl = bgMatch[1];
+			console.log(LOG_TAG, 'Found via Strategy 4 (background image):', thumbUrl.slice(0, 60));
+		}
 	}
 
-	return null;
+	if (!thumbUrl) return null;
+
+	// Inline HD: Remove @ suffix for Bilibili images (hdslb.com, bstarstatic.com, etc.)
+	if (/@/.test(thumbUrl) && /hdslb\.com|bstarstatic\.com|biliimg\.com/.test(thumbUrl)) {
+		const atIndex = thumbUrl.indexOf('@');
+		if (atIndex !== -1) {
+			const hdUrl = thumbUrl.substring(0, atIndex);
+			console.log(LOG_TAG, 'HD applied:', thumbUrl.slice(-40), '→', hdUrl.slice(-40));
+			return hdUrl;
+		}
+	}
+
+	return thumbUrl;
 }
 
 /**

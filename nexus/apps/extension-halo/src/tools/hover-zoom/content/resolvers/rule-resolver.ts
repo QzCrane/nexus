@@ -77,11 +77,15 @@ export async function resolveEnhanced(
 
 				console.log(LOG_TAG, `Engine matched rule`, resultObj);
 
-				// Preference check: user wants image but got video -> try thumbnail
+				// Preference check: user wants image but got video -> try thumbnail with HD
 				if (resourcePref === 'image' && mappedType === 'video') {
 					const thumbImg = target.querySelector('img') || target.closest('a')?.querySelector('img');
 					if (thumbImg?.src) {
-						return { type: 'image', url: thumbImg.src, caption: '', element: target, fromRule: 'engine:thumbnail' };
+						// Apply HD rules to thumbnail
+						const thumbCtx = buildContext(thumbImg.src, target);
+						const hdResult = await ruleEngine.resolve(thumbCtx);
+						const hdUrl = hdResult ? (typeof hdResult === 'string' ? hdResult : hdResult.url) : thumbImg.src;
+						return { type: 'image', url: hdUrl, caption: '', element: target, fromRule: 'engine:thumbnail' };
 					}
 				}
 

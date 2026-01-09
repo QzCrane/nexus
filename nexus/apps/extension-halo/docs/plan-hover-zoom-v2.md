@@ -82,7 +82,19 @@
 
 **数据结构**: `EnhancedResult.gallery?: string[]`
 
-### Phase 5: 高级功能 (待实现)
+### Phase 5: Bilibili 弹幕 (新增规划)
+
+**详细规划**: 见 `plan-danmaku.md`
+
+**核心架构**:
+
+- `danmaku/proto-decoder.ts`: Protobuf 手动解码 (无依赖)
+- `danmaku/canvas-renderer.ts`: Canvas 渲染 + 碰撞检测
+- `danmaku/controller.ts`: 时间轴同步 + 用户控制
+
+**工作量**: ~10h
+
+### Phase 6: 高级功能 (待实现)
 
 功能:说明:优先级
 Ambilight:环境光背景 (canvas 提取色):P2
@@ -119,8 +131,15 @@ Fallback 链:多源 URL 自动切换:P1
   - 视频保护: 跳过正在播放的视频，避免干扰原生预览
 
 - **2026-01-09 PM**: 视频性能极致优化
+
   - 流式增量加载: 首批 2MB 快速显示 → 后台持续加载后续批次 → 无缝播放
   - 动态分辨率: 根据 viewport (90%) 自动选择合适画质 (避免 4K 屏强制 1080P)
   - Background Proxy: 支持 arraybuffer (base64 分块编码，32KB 块)
   - 新增设置: videoFallbackToImage (默认 false，视频失败不降级)
   - CORS 修复: Referer header 通过 background proxy 正确发送
+
+- **2026-01-09 EVE**: B 站体验增强
+  - 视频音频: 移除静音限制，MSE 和标准视频均可播放声音
+  - 图片规则增强: 扩展 match 模式 (`/bfs/|@`)，支持更多缩略图类型
+  - 新增 host: biliimg.com
+  - **待实现**: 弹幕功能 (需 Phase 5+)
