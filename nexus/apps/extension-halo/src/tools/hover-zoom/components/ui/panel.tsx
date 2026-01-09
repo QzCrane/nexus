@@ -73,6 +73,9 @@ export const HoverZoomPanel: React.FC = () => {
                             onChange={(combo) => updateResourceKeys('videoKey', combo)}
                         />
                     </div>
+                    <p style={{ fontSize: '10px', color: 'var(--halo-text-secondary)', margin: '8px 0 0', lineHeight: '1.4', background: 'var(--halo-bg-tertiary)', padding: '6px 8px', borderRadius: '4px' }}>
+                        💡 {t('hoverZoom.resourceKeys.tip') || 'Seamless switch: while viewing, press the other combo to switch between image/video without closing.'}
+                    </p>
                     {/* Alt key mode - only show when Alt is used */}
                     {(settings.resourceKeys.imageKey.alt || settings.resourceKeys.videoKey.alt) && (
                         <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--halo-border)' }}>
@@ -132,6 +135,13 @@ export const HoverZoomPanel: React.FC = () => {
                                     {m === 'original' ? (t('hoverZoom.viewMode.original') || 'Original') : (t('hoverZoom.viewMode.fit') || 'Fit')}
                                 </button>
                             ))}
+                        </div>
+                    </div>
+                    <div style={styles.row}>
+                        <span style={styles.label}>{t('hoverZoom.view.borderRadius') || 'Border radius'}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <input type="range" min="0" max="32" step="2" value={settings.borderRadius} onChange={(e) => update({ borderRadius: +e.target.value })} style={{ width: '80px' }} />
+                            <span style={styles.value}>{settings.borderRadius}px</span>
                         </div>
                     </div>
                     <div style={styles.row}>

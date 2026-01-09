@@ -12,7 +12,8 @@ export const en = {
 			title: "Resource Keys",
 			desc: "Configure hotkeys for image and video preview. More specific combos win.",
 			image: "Image",
-			video: "Video"
+			video: "Video",
+			tip: "Seamless switch: while viewing, press the other combo to switch between image/video without closing."
 		},
 
 		trigger: {
@@ -28,6 +29,7 @@ export const en = {
 			title: "Appearance",
 			highlight: "Trigger Highlight",
 			viewMode: "Size Mode",
+			borderRadius: "Border Style",
 			loadingIndicator: "Loading Indicator",
 			antiHotlink: "Anti-Hotlink (Privacy)"
 		},

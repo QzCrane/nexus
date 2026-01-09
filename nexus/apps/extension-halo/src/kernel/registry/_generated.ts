@@ -357,7 +357,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '🔍',
 		pluginType: 'tool',
 		category: 'media',
-		size: 114636,
+		size: 115916,
 		builtIn: true,
 		keywords: ["hover","zoom","image","preview","photoshow","浮图秀","浮图","悬浮","图片","预览","放大","高清"],
 		permissions: ["declarativeNetRequest","downloads","clipboardWrite"],

@@ -12,7 +12,8 @@ export const zh = {
 			title: "资源快捷键",
 			desc: "配置图片和视频预览的触发键，更具体的组合键优先",
 			image: "图片",
-			video: "视频"
+			video: "视频",
+			tip: "无缝切换：浮图显示时，按另一组合键可直接切换图片/视频"
 		},
 
 		trigger: {
@@ -28,6 +29,7 @@ export const zh = {
 			title: "外观设置",
 			highlight: "触发高亮框",
 			viewMode: "显示尺寸",
+			borderRadius: "边框样式",
 			loadingIndicator: "加载指示器",
 			antiHotlink: "反防盗链 (隐私模式)"
 		},
