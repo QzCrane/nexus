@@ -1,11 +1,69 @@
-import { SiteRule, ResolveContext } from '../core';
-import {
-	PlayinfoResponse,
-	BilitvPlayurl,
-	extractDashSources,
-	extractBilitvSources,
-	parseEmbeddedData
-} from './bilibili-utils';
+import { SiteRule, ResolveContext, RuleResult } from '../core';
+import { parseEmbeddedJson, sortByBandwidth } from '../utils/parse';
+
+// ==========================================
+// Bilibili API Types
+// ==========================================
+
+interface PlayurlDash {
+	video?: Array<{ bandwidth: number; baseUrl?: string; base_url?: string }>;
+	audio?: Array<{ bandwidth: number; baseUrl?: string; base_url?: string }>;
+}
+
+interface PlayinfoResponse {
+	data?: { dash?: PlayurlDash };
+	result?: PlayurlDash;
+}
+
+interface BilitvPlayurl {
+	video?: Array<{ video_resource: { url: string; bandwidth: number } }>;
+	audio_resource?: Array<{ url: string; bandwidth: number }>;
+}
+
+// ==========================================
+// Bilibili DASH Extractors
+// ==========================================
+
+function extractBilibiliDash(dash: PlayurlDash): RuleResult | null {
+	let videos = (dash.video || []).filter(v => v.baseUrl || v.base_url);
+	if (videos.length === 0) return null;
+
+	videos = sortByBandwidth(videos);
+	const videoUrl = videos[0]?.baseUrl || videos[0]?.base_url;
+	if (!videoUrl) return null;
+
+	let audios = (dash.audio || []).filter(a => a.baseUrl || a.base_url);
+	let audioUrl: string | undefined;
+	if (audios.length > 0) {
+		audios = sortByBandwidth(audios);
+		audioUrl = audios[0]?.baseUrl || audios[0]?.base_url;
+	}
+
+	return { url: videoUrl, audioUrl, type: 'video', headers: { Referer: 'https://www.bilibili.com/' } };
+}
+
+function extractBilitvSources(playurl: BilitvPlayurl): RuleResult | null {
+	let videos = (playurl.video || []).map(v => v.video_resource).filter(r => r?.url);
+	if (videos.length === 0) return null;
+
+	videos = sortByBandwidth(videos);
+	const videoUrl = videos[0]?.url;
+	if (!videoUrl) return null;
+
+	let audios = (playurl.audio_resource || []).filter(a => a?.url);
+	let audioUrl: string | undefined;
+	if (audios.length > 0) {
+		audios = sortByBandwidth(audios);
+		audioUrl = audios[0]?.url;
+	}
+
+	return { url: videoUrl, audioUrl, type: 'video', headers: { Referer: 'https://www.bilibili.tv/' } };
+}
+
+// ==========================================
+// Bilibili Rules
+// ==========================================
+
 
 export const bilibiliRules: SiteRule[] = [
 	// 1. [函数式] B站图片去水印/获取原图
@@ -42,19 +100,26 @@ export const bilibiliRules: SiteRule[] = [
 		hosts: ['bilibili.com'],
 		// Fix: 兼容 BV 和 av 号
 		match: /bilibili\.com\/video\/([Bb][Vv]\w+|[Aa][Vv]\d+)/,
+		// 异步触发选择器
+		triggers: [
+			'a[href*="bilibili.com/video/"]',
+			'.bili-video-card__cover',
+			'.bili-dyn-card-video__cover',
+			'[data-target-url*="bilibili.com/video/"]'
+		],
 		resolve: async (ctx: ResolveContext) => {
 			// Fix: 直接使用原始 URL 以保留 ?p= 参数（多P视频分集）
 			try {
 				const html = await ctx.fetchHtml(ctx.url);
 
 				// Strategy A: Embedded __playinfo__
-				const playinfo = parseEmbeddedData<PlayinfoResponse>(html, '<script>window.__playinfo__={');
+				const playinfo = parseEmbeddedJson<PlayinfoResponse>(html, '<script>window.__playinfo__={');
 				if (playinfo?.data?.dash) {
-					return extractDashSources(playinfo.data.dash);
+					return extractBilibiliDash(playinfo.data.dash);
 				}
 
 				// Strategy B: API Fallback
-				const initState = parseEmbeddedData<{
+				const initState = parseEmbeddedJson<{
 					videoData?: { cid?: number; bvid?: string };
 				}>(html, 'window.__INITIAL_STATE__={');
 
@@ -65,7 +130,7 @@ export const bilibiliRules: SiteRule[] = [
 
 					const apiRes = await ctx.fetchJson<PlayinfoResponse>(apiUrl, { Referer: 'https://www.bilibili.com/' });
 					if (apiRes?.data?.dash) {
-						return extractDashSources(apiRes.data.dash);
+						return extractBilibiliDash(apiRes.data.dash);
 					}
 				}
 			} catch (e) {
@@ -80,6 +145,10 @@ export const bilibiliRules: SiteRule[] = [
 		id: 'bilibili-episode',
 		hosts: ['bilibili.com'],
 		match: /bilibili\.com\/.*\/play\/ep(\d+)/,
+		triggers: [
+			'a[href*="bilibili.com"][href*="/play/ep"]',
+			'.cardBangumibox .modal-box'
+		],
 		resolve: async (ctx: ResolveContext) => {
 			const epId = ctx.url.match(/ep(\d+)/)?.[1];
 			if (!epId) return null;
@@ -88,7 +157,7 @@ export const bilibiliRules: SiteRule[] = [
 			try {
 				const res = await ctx.fetchJson<PlayinfoResponse>(apiUrl, { Referer: 'https://www.bilibili.com/' });
 				if (res?.result) {
-					return extractDashSources(res.result);
+					return extractBilibiliDash(res.result);
 				}
 			} catch (e) {
 				console.warn('Episode resolve failed', e);
@@ -102,6 +171,10 @@ export const bilibiliRules: SiteRule[] = [
 		id: 'bilibili-tv',
 		hosts: ['bilibili.tv'],
 		match: /bilibili\.tv/, // 简单匹配，内部再细分
+		triggers: [
+			'a[href*="bilibili.tv"][href*="/play/"]',
+			'a[href*="bilibili.tv"][href*="/video/"]'
+		],
 		resolve: async (ctx: ResolveContext) => {
 			let paramName = 'ep_id';
 			let id = ctx.url.match(/play\/\d+\/(\d+)/)?.[1];
@@ -126,6 +199,30 @@ export const bilibiliRules: SiteRule[] = [
 				console.warn('Bilitv resolve failed', e);
 			}
 			return null;
+		}
+	},
+
+	// 5. 用户头像 (hdslb.com/bfs/face/)
+	// 参考 HoverZoom+ 逻辑：移除 @ 后的尺寸参数
+	{
+		id: 'bilibili-avatar',
+		hosts: ['hdslb.com'],
+		match: /\/bfs\/face\/.*@/,
+		resolve: async (ctx: ResolveContext) => {
+			// 移除 @ 及其后的尺寸参数 (e.g. @52w_52h.webp)
+			return ctx.url.replace(/@[^?]*/, '');
+		}
+	},
+
+	// 6. BiliGame Wiki 图片
+	// 参考 PhotoShow: patchwiki.biligame.com/images/.+?/thumb/
+	{
+		id: 'biligame-wiki',
+		hosts: ['biligame.com'],
+		match: /patchwiki\.biligame\.com\/images\/.+\/thumb\//,
+		resolve: async (ctx: ResolveContext) => {
+			// 移除 /thumb/ 段获取原图
+			return ctx.url.replace(/\/thumb\//, '/');
 		}
 	}
 ];

@@ -154,7 +154,6 @@ export function fallbackToThumbnail(
 	}
 }
 
-
 function applyLayout(dom: ViewerDOM, triggerRect: DOMRect | null, currentType: string, mouseX: number, mouseY: number, contentW: number, contentH: number, viewMode: ViewMode = 'original', borderRadius: number = 0) {
 	if (!dom || !contentW || !contentH) return;
 

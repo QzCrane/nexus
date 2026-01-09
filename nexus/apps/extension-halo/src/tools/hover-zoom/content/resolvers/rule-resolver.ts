@@ -2,27 +2,22 @@
 // eff: First tries site rules, falls back to generic image-resolver
 
 import { ruleEngine } from '../../rules/engine';
-import { ResolveContext } from '../../rules/core';
-import { fetchWithProxy, getCookie } from '../utils/proxy-utils';
-import type { ZoomResult } from '../../rules/types';
-
 import { resolveImageSource, ImageSource } from './image-resolver';
-// import { applyHdRules } from './hd-rules'; // Removed legacy
+import { buildContext } from './context-builder';
 import type { HoverZoomSettings } from '../../types';
 import type { ResourcePreference } from '../utils/resource-key-helper';
+import type { EnhancedResult } from './enhanced-result';
+
+export type { EnhancedResult } from './enhanced-result';
 
 const LOG_TAG = '[HoverZoom:RuleResolver]';
 
-/*
- * Initialize rules for current host (Legacy compat, logic moved to engine)
- */
+/** Initialize rules for current host (Legacy compat) */
 export async function initRulesForHost(): Promise<void> {
 	// No-op: RuleEngine lazy loads/registers rules internally
 }
 
-/**
- * Check if keyboard modifiers match trigger settings
- */
+/** Check if keyboard modifiers match trigger settings */
 export function checkModifiers(e: MouseEvent, settings: HoverZoomSettings): boolean {
 	const { triggerKey } = settings;
 	if (triggerKey === 'none') return true;
@@ -32,11 +27,8 @@ export function checkModifiers(e: MouseEvent, settings: HoverZoomSettings): bool
 	return true;
 }
 
-/**
- * Check exemptions - elements that should not trigger hover zoom
- */
+/** Check exemptions - elements that should not trigger hover zoom */
 function checkExemptions(target: HTMLElement, settings: HoverZoomSettings): boolean {
-	// Interactive elements
 	if (settings.exemptions.smallInteractive) {
 		if (['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName) ||
 			target.getAttribute('role') === 'button' ||
@@ -45,7 +37,6 @@ function checkExemptions(target: HTMLElement, settings: HoverZoomSettings): bool
 		}
 	}
 
-	// Viewport coverage
 	const rect = target.getBoundingClientRect();
 	const viewportArea = window.innerWidth * window.innerHeight;
 	const targetArea = rect.width * rect.height;
@@ -59,8 +50,6 @@ function checkExemptions(target: HTMLElement, settings: HoverZoomSettings): bool
 /**
  * Enhanced image/video source resolution
  * Priority: Site Rules > Generic Resolver > HD Rules
- * @param target - Target element to resolve
- * @param resourcePref - User's resource preference (image/video/auto)
  */
 export async function resolveEnhanced(
 	target: HTMLElement,
@@ -68,25 +57,9 @@ export async function resolveEnhanced(
 ): Promise<EnhancedResult | null> {
 	// First: Try site-specific rules via RuleEngine
 	try {
-		// Construct URL from common attributes
 		const urlToCheck = target.getAttribute('href') || target.getAttribute('src') || target.dataset.targetUrl || '';
 		if (urlToCheck) {
-			// Extract hostname from URL for rule matching (e.g., bilibili images are on hdslb.com)
-			let urlHost = window.location.hostname;
-			try {
-				urlHost = new URL(urlToCheck, window.location.href).hostname;
-			} catch { /* keep page hostname */ }
-
-			const ctx: ResolveContext = {
-				url: urlToCheck,
-				element: target,
-				host: urlHost,  // Use URL's hostname, not page hostname
-				match: null,
-				fetchHtml: (u) => fetchWithProxy<string>(u, { responseType: 'text' }),
-				fetchJson: <T>(u: string, headers?: Record<string, string>) => fetchWithProxy<T>(u, { headers }),
-				getCookie
-			};
-
+			const ctx = buildContext(urlToCheck, target);
 			const result = await ruleEngine.resolve(ctx);
 
 			if (result) {
@@ -100,25 +73,13 @@ export async function resolveEnhanced(
 				if (resourcePref === 'image' && mappedType === 'video') {
 					const thumbImg = target.querySelector('img') || target.closest('a')?.querySelector('img');
 					if (thumbImg?.src) {
-						return {
-							type: 'image',
-							url: thumbImg.src,
-							caption: '',
-							element: target,
-							fromRule: 'engine:thumbnail'
-						};
+						return { type: 'image', url: thumbImg.src, caption: '', element: target, fromRule: 'engine:thumbnail' };
 					}
 				}
 
-				// Return engine result (for auto, video pref with video, image pref with image)
 				return {
-					type: mappedType,
-					url: resultObj.url,
-					audioUrl: resultObj.audioUrl,
-					headers: resultObj.headers,
-					caption: '',
-					element: target,
-					fromRule: 'engine'
+					type: mappedType, url: resultObj.url, audioUrl: resultObj.audioUrl,
+					headers: resultObj.headers, caption: '', element: target, fromRule: 'engine'
 				};
 			}
 		}
@@ -130,98 +91,39 @@ export async function resolveEnhanced(
 	const source = resolveImageSource(target);
 	if (!source) return null;
 
-	// CRITICAL: Apply rule engine to the resolved URL (e.g., remove bilibili @suffix)
-	// This ensures URLs from <img src> go through HD transformation
+	// Apply HD transformation rules
 	let hdUrl = source.url;
 	try {
-		let urlHost = window.location.hostname;
-		try {
-			urlHost = new URL(source.url, window.location.href).hostname;
-		} catch { /* keep page hostname */ }
-
-		console.log(LOG_TAG, 'Fallback HD transform:', { urlHost, url: source.url.slice(0, 80) });
-
-		const ctx: ResolveContext = {
-			url: source.url,
-			element: target,
-			host: urlHost,
-			match: null,
-			fetchHtml: (u) => fetchWithProxy<string>(u, { responseType: 'text' }),
-			fetchJson: <T>(u: string, headers?: Record<string, string>) => fetchWithProxy<T>(u, { headers }),
-			getCookie
-		};
+		const ctx = buildContext(source.url, target);
+		console.log(LOG_TAG, 'Fallback HD transform:', { host: ctx.host, url: source.url.slice(0, 80) });
 
 		const ruleResult = await ruleEngine.resolve(ctx);
 		if (ruleResult) {
 			hdUrl = typeof ruleResult === 'string' ? ruleResult : ruleResult.url;
 			console.log(LOG_TAG, '✅ HD rule applied:', source.url.slice(-60), '->', hdUrl.slice(-60));
-		} else {
-			console.log(LOG_TAG, '❌ No HD rule matched for host:', urlHost);
 		}
 	} catch (e) {
 		console.warn(LOG_TAG, 'HD rule application failed:', e);
 	}
 
 	return {
-		type: source.type,
-		url: hdUrl,
-		caption: source.caption,
-		element: target,
-		originalUrl: source.originalUrl,
-		fromRule: hdUrl !== source.url ? 'engine:fallback' : null
+		type: source.type, url: hdUrl, caption: source.caption, element: target,
+		originalUrl: source.originalUrl, fromRule: hdUrl !== source.url ? 'engine:fallback' : null
 	};
 }
 
-// Patterns that require async API resolution (video links, etc.)
-const ASYNC_RESOLVE_PATTERNS = [
-	// Bilibili video links
-	'a[href*="bilibili.com/video/"]',
-	'a[href*="bilibili.com"][href*="/play/ep"]',
-	'a[href*="bilibili.tv"][href*="/play/"]',
-	'a[href*="bilibili.tv"][href*="/video/"]',
-	// Add more patterns as needed for other sites
-] as const;
-
-/**
- * Check if element requires async API resolution (e.g., video links)
- * These elements won't have direct image sources, need RuleEngine
- */
+/** Check if element requires async API resolution */
 export function needsAsyncResolve(target: HTMLElement): boolean {
-	for (const pattern of ASYNC_RESOLVE_PATTERNS) {
+	const triggers = ruleEngine.getAllTriggers();
+	for (const pattern of triggers) {
 		if (target.closest(pattern)) return true;
 	}
 	return false;
 }
 
-/**
- * Sync version for quick detection (no API calls)
- * Includes exemption checks
- */
+/** Sync version for quick detection (no API calls) */
 export function detectQuick(target: HTMLElement, settings: HoverZoomSettings): ImageSource | null {
-	// Check exemptions first
 	if (!checkExemptions(target, settings)) return null;
-
-	// Elements requiring async API resolution should skip direct image resolve
-	// RuleEngine will handle these via resolveEnhanced
-	if (needsAsyncResolve(target)) {
-		return null;
-	}
-
+	if (needsAsyncResolve(target)) return null;
 	return resolveImageSource(target);
 }
-
-/**
- * Enhanced resolution result
- */
-export interface EnhancedResult {
-	type: 'image' | 'video' | 'svg';
-	url: string;
-	audioUrl?: string;
-	headers?: Record<string, string>;
-	caption?: string;
-	element: HTMLElement;
-	originalUrl?: string;
-	fromRule: string | null;
-	fileSize?: number;  // File size in bytes (if available)
-}
-

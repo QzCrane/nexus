@@ -1,6 +1,50 @@
 
-// goal: Unified type definitions for Hover Zoom site-specific rules
-// eff: Preserves legacy types needed for proxy and backward compatibility
+// goal: Unified type definitions for Hover Zoom rule system
+// eff: Core types + proxy types for backward compatibility
+
+// ==========================================
+// Core Rule Types
+// ==========================================
+
+export interface ResolveContext {
+	url: string;
+	element: Element;
+	host: string;
+	match: RegExpMatchArray | null;
+	fetchHtml: (url: string) => Promise<string>;
+	fetchJson: <T = any>(url: string, headers?: Record<string, string>) => Promise<T>;
+	getCookie: (name: string) => string;
+}
+
+export interface RuleResult {
+	url: string;
+	audioUrl?: string;
+	headers?: Record<string, string>;
+	fallbackUrl?: string;
+	type?: 'image' | 'video' | 'audio';
+	caption?: string;
+}
+
+export type Resolver = (ctx: ResolveContext) => Promise<string | RuleResult | null>;
+
+export type RuleConfig =
+	| Resolver
+	| { replace: [RegExp | string, string] }
+	| { selector: string; attr?: string }
+	| { api: string; type?: 'json' | 'html'; parse?: string | ((data: any) => string) };
+
+export interface SiteRule {
+	id: string;
+	name?: string;
+	hosts: string[];
+	match?: RegExp | string;
+	triggers?: string[];  // Async trigger selectors
+	resolve: RuleConfig;
+}
+
+// ==========================================
+// Proxy Types (Legacy compat)
+// ==========================================
 
 export interface ProxyFetchOptions {
 	method?: 'GET' | 'POST';
@@ -31,3 +75,4 @@ export interface ProxyAjaxResponse {
 	data?: string;
 	error?: string;
 }
+

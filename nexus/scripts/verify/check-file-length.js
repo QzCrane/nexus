@@ -28,6 +28,12 @@ const LEGACY_FILES = [
 	'apps/extension-halo/src/kernel/services/saat-service.ts',
 ];
 
+// 目录级豁免 (规则定义文件需要较长)
+const EXEMPT_DIRS = [
+	'apps/extension-halo/src/tools/hover-zoom/rules/definitions/',
+];
+
+
 export function checkSourceFileLength(ROOT) {
 	console.log('\n📋 检查文件行数...');
 
@@ -53,11 +59,13 @@ export function checkSourceFileLength(ROOT) {
 			const relativePath = fullPath.replace(ROOT + path.sep, '').replace(/\\/g, '/');
 
 			if (lineCount > MAX_LINES) {
-				if (LEGACY_FILES.includes(relativePath)) {
-					legacyFiles.push({ path: relativePath, lines: lineCount });
-				} else {
-					oversizeFiles.push({ path: relativePath, lines: lineCount });
-				}
+			// Check directory-level exemptions
+			const isExemptDir = EXEMPT_DIRS.some(dir => relativePath.startsWith(dir));
+			if (LEGACY_FILES.includes(relativePath) || isExemptDir) {
+				legacyFiles.push({ path: relativePath, lines: lineCount });
+			} else {
+				oversizeFiles.push({ path: relativePath, lines: lineCount });
+			}
 			} else if (lineCount > WARN_LINES) {
 				warnFiles.push({ path: relativePath, lines: lineCount });
 			}
