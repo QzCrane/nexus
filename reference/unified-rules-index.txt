@@ -1,3 +1,7 @@
+## 1. Hover Zoom+ (Hz+): `reference/hoverzoom-plus/plugins/`
+## 2. PhotoShow: `reference/photoshow/source/background.js`
+## 3. Imagus-Reborn: `reference/imagus-reborn/src/data/sieve.json`
+
 Domain:HZ:PhotoShow:Imagus
 032c:#:#:32
 115:#:336:#
