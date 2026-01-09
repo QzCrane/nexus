@@ -4,7 +4,7 @@
 import type { HoverZoomState, PreloadState } from './hover-zoom-state';
 import { detectResourcePreference } from '../tools/hover-zoom/content/utils/resource-key-helper';
 import { cancel, getElementAtMouse, tryTrigger, clearTriggerTimer } from './hover-zoom-events';
-import { isValidTrigger } from '../tools/hover-zoom/content/resolvers/image-resolver';
+import { isValidTrigger } from '../tools/hover-zoom/content/resolvers/trigger-validator';
 import { showHighlight, hideHighlight } from '../tools/hover-zoom/content/utils/highlight';
 
 /** Find valid trigger element at or above given element */

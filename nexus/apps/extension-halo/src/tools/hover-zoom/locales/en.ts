@@ -31,7 +31,8 @@ export const en = {
 			viewMode: "Size Mode",
 			borderRadius: "Border Style",
 			loadingIndicator: "Loading Indicator",
-			antiHotlink: "Anti-Hotlink (Privacy)"
+			antiHotlink: "Anti-Hotlink (Privacy)",
+			videoFallback: "Video → Image fallback"
 		},
 
 		viewMode: {

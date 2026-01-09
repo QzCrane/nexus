@@ -52,3 +52,37 @@ export function getCookie(name: string): string {
 	}
 	return '';
 }
+
+/**
+ * Fetch binary ArrayBuffer through Background proxy for CORS bypass
+ * @param url - Target URL
+ * @param headers - Optional headers (e.g., Range)
+ * @returns ArrayBuffer
+ */
+export async function fetchArrayBufferWithProxy(
+	url: string,
+	headers?: Record<string, string>
+): Promise<ArrayBuffer> {
+	try {
+		const response = await chrome.runtime.sendMessage({
+			type: 'HALO_HZ_PROXY_AJAX',
+			url,
+			method: 'GET',
+			headers,
+			responseType: 'arraybuffer'
+		}) as ProxyAjaxResponse;
+
+		if (!response?.success || !response.data) {
+			throw new Error(response?.error || 'Proxy arraybuffer request failed');
+		}
+
+		// Decode base64 to ArrayBuffer
+		const binary = atob(response.data);
+		const bytes = new Uint8Array(binary.length);
+		for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+		return bytes.buffer;
+	} catch (e) {
+		throw new Error(`Proxy arraybuffer failed: ${e instanceof Error ? e.message : String(e)}`);
+	}
+}
+

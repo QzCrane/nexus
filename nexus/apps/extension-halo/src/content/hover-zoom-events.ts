@@ -1,7 +1,7 @@
 // goal: Hover Zoom event handlers
 // eff: Debounced trigger, no flicker, keydown proactive check
 
-import { isValidTrigger } from '../tools/hover-zoom/content/resolvers/image-resolver';
+import { isValidTrigger } from '../tools/hover-zoom/content/resolvers/trigger-validator';
 import { detectResourcePreference } from '../tools/hover-zoom/content/utils/resource-key-helper';
 import { showHighlight, hideHighlight } from '../tools/hover-zoom/content/utils/highlight';
 import type { HoverZoomState, PreloadState } from './hover-zoom-state';

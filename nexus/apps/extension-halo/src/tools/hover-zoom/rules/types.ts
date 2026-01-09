@@ -23,6 +23,7 @@ export interface RuleResult {
 	fallbackUrl?: string;
 	type?: 'image' | 'video' | 'audio';
 	caption?: string;
+	metadata?: Record<string, any>;
 }
 
 export type Resolver = (ctx: ResolveContext) => Promise<string | RuleResult | null>;

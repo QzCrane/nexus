@@ -57,7 +57,10 @@ export async function resolveEnhanced(
 ): Promise<EnhancedResult | null> {
 	// First: Try site-specific rules via RuleEngine
 	try {
-		const urlToCheck = target.getAttribute('href') || target.getAttribute('src') || target.dataset.targetUrl || '';
+		// Priority: parent link href > target href > src > data-target-url
+		// This ensures video card cover images resolve to video URL, not image URL
+		const parentLink = target.closest('a[href]') as HTMLAnchorElement | null;
+		const urlToCheck = parentLink?.href || target.getAttribute('href') || target.getAttribute('src') || target.dataset.targetUrl || '';
 		if (urlToCheck) {
 			const ctx = buildContext(urlToCheck, target);
 			const result = await ruleEngine.resolve(ctx);
@@ -79,7 +82,7 @@ export async function resolveEnhanced(
 
 				return {
 					type: mappedType, url: resultObj.url, audioUrl: resultObj.audioUrl,
-					headers: resultObj.headers, caption: '', element: target, fromRule: 'engine'
+					headers: resultObj.headers, caption: '', element: target, fromRule: 'engine', metadata: resultObj.metadata
 				};
 			}
 		}

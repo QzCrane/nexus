@@ -131,6 +131,7 @@ export class HoverZoomViewer {
 		cleanupMSE();  // Release MSE resources
 		if (this.dom) {
 			this.dom.viewer.classList.remove('visible');
+			this.dom.viewer.classList.remove('interactive');
 			this.dom.container.style.display = 'none';
 			this.dom.video.pause();
 			this.dom.video.src = '';
@@ -139,6 +140,12 @@ export class HoverZoomViewer {
 
 	private fallbackToThumbnail(source: EnhancedResult, mouseX: number, mouseY: number) {
 		if (!this.dom) return;
+		// Check if fallback is disabled
+		if (!this.settings.videoFallbackToImage) {
+			console.log(LOG_TAG, 'Video fallback disabled, hiding viewer');
+			this.hide();
+			return;
+		}
 		fallbackToThumbnail(
 			this.dom,
 			source,

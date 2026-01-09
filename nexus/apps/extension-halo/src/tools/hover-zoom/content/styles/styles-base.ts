@@ -25,6 +25,9 @@ export const BASE_STYLES = `
 
 .halo-hz-viewer.visible {
     opacity: 1;
+}
+
+.halo-hz-viewer.interactive {
     pointer-events: auto;
 }
 

@@ -109,6 +109,9 @@ export interface HoverZoomSettings {
 	siteBlacklist: string[];
 	siteWhitelist: string[];
 	whiteListMode: boolean;
+
+	// Video behavior
+	videoFallbackToImage: boolean; // Fallback to thumbnail when video fails
 }
 
 export const DEFAULT_SETTINGS: HoverZoomSettings = {
@@ -153,7 +156,8 @@ export const DEFAULT_SETTINGS: HoverZoomSettings = {
 	downloadTemplate: 'Halo-Hover/<H>/<o>',
 	siteBlacklist: [],
 	siteWhitelist: [],
-	whiteListMode: false
+	whiteListMode: false,
+	videoFallbackToImage: false  // Default: do not fallback, video is video
 };
 
 export const STORAGE_KEY = 'halo_hover_zoom_settings';

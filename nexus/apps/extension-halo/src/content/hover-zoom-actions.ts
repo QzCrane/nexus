@@ -1,6 +1,6 @@
 import type { HoverZoomSettings } from '../tools/hover-zoom/types';
 import type { HoverZoomState, PreloadState } from './hover-zoom-state';
-import { isValidTrigger } from '../tools/hover-zoom/content/resolvers/image-resolver';
+import { isValidTrigger } from '../tools/hover-zoom/content/resolvers/trigger-validator';
 import { resolveEnhanced, detectQuick, needsAsyncResolve } from '../tools/hover-zoom/content/resolvers/rule-resolver';
 import { showHighlight, hideHighlight } from '../tools/hover-zoom/content/utils/highlight';
 import { HoverZoomViewer } from '../tools/hover-zoom/content/viewer/index';
@@ -21,6 +21,18 @@ export function ensureViewer(state: HoverZoomState): HoverZoomViewer {
  * Get element at current mouse position
  */
 export function getElementAtMouse(state: HoverZoomState): HTMLElement | null {
+	// If viewer is visible and blocking (pointer-events: auto), use elementsFromPoint to look through it
+	if (state.viewer?.getIsVisible()) {
+		const elements = document.elementsFromPoint(state.lastX, state.lastY);
+		for (const pointEl of elements) {
+			const el = pointEl as HTMLElement;
+			// Skip the viewer container and its children
+			if (!el.closest('#halo-hover-zoom-container')) {
+				return el;
+			}
+		}
+	}
+
 	const el = document.elementFromPoint(state.lastX, state.lastY);
 	return el as HTMLElement | null;
 }

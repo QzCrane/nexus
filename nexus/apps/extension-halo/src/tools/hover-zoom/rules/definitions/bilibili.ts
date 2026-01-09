@@ -1,45 +1,64 @@
 import { SiteRule, ResolveContext, RuleResult } from '../core';
-import { parseEmbeddedJson, sortByBandwidth } from '../utils/parse';
+import { parseEmbeddedJson, extractJsonFromVar, sortByBandwidth } from '../utils/parse';
 
 // ==========================================
 // Bilibili API Types
 // ==========================================
 
+
 interface PlayurlDash {
-	video?: Array<{ bandwidth: number; baseUrl?: string; base_url?: string }>;
-	audio?: Array<{ bandwidth: number; baseUrl?: string; base_url?: string }>;
+	video?: Array<{ bandwidth: number; baseUrl?: string; base_url?: string; codecs?: string }>;
+	audio?: Array<{ bandwidth: number; baseUrl?: string; base_url?: string; codecs?: string }>;
 }
 
-interface PlayinfoResponse {
-	data?: { dash?: PlayurlDash };
-	result?: PlayurlDash;
+interface BilitvResource {
+	url: string;
+	bandwidth: number;
 }
 
 interface BilitvPlayurl {
-	video?: Array<{ video_resource: { url: string; bandwidth: number } }>;
-	audio_resource?: Array<{ url: string; bandwidth: number }>;
+	video?: { video_resource: BilitvResource }[];
+	audio_resource?: BilitvResource[];
 }
 
-// ==========================================
-// Bilibili DASH Extractors
-// ==========================================
+interface PlayinfoResponse {
+	code: number;
+	message: string;
+	data?: { dash?: PlayurlDash };
+	result?: PlayurlDash;
+}
 
 function extractBilibiliDash(dash: PlayurlDash): RuleResult | null {
 	let videos = (dash.video || []).filter(v => v.baseUrl || v.base_url);
 	if (videos.length === 0) return null;
 
 	videos = sortByBandwidth(videos);
-	const videoUrl = videos[0]?.baseUrl || videos[0]?.base_url;
+	const video = videos[0];
+	const videoUrl = video?.baseUrl || video?.base_url;
 	if (!videoUrl) return null;
 
 	let audios = (dash.audio || []).filter(a => a.baseUrl || a.base_url);
 	let audioUrl: string | undefined;
+	let audioCodec: string | undefined;
+
 	if (audios.length > 0) {
 		audios = sortByBandwidth(audios);
-		audioUrl = audios[0]?.baseUrl || audios[0]?.base_url;
+		const audio = audios[0];
+		audioUrl = audio?.baseUrl || audio?.base_url;
+		audioCodec = audio?.codecs;
 	}
 
-	return { url: videoUrl, audioUrl, type: 'video', headers: { Referer: 'https://www.bilibili.com/' } };
+	return {
+		url: videoUrl,
+		audioUrl,
+		type: 'video',
+		// Remove manual Referer to avoid "Refused to set unsafe header" in content script fetch.
+		// Browser automatically sets Referer: https://www.bilibili.com/ when hovering on the site.
+		metadata: {
+			videoCodec: video.codecs,
+			audioCodec
+		}
+	};
 }
 
 function extractBilitvSources(playurl: BilitvPlayurl): RuleResult | null {
@@ -57,7 +76,7 @@ function extractBilitvSources(playurl: BilitvPlayurl): RuleResult | null {
 		audioUrl = audios[0]?.url;
 	}
 
-	return { url: videoUrl, audioUrl, type: 'video', headers: { Referer: 'https://www.bilibili.tv/' } };
+	return { url: videoUrl, audioUrl, type: 'video' };
 }
 
 // ==========================================
@@ -113,22 +132,23 @@ export const bilibiliRules: SiteRule[] = [
 				const html = await ctx.fetchHtml(ctx.url);
 
 				// Strategy A: Embedded __playinfo__
-				const playinfo = parseEmbeddedJson<PlayinfoResponse>(html, '<script>window.__playinfo__={');
+				// Use robust extraction matching "window.__playinfo__ = {" (ignoring spaces)
+				const playinfo = extractJsonFromVar<PlayinfoResponse>(html, 'window.__playinfo__');
 				if (playinfo?.data?.dash) {
 					return extractBilibiliDash(playinfo.data.dash);
 				}
 
 				// Strategy B: API Fallback
-				const initState = parseEmbeddedJson<{
+				const initState = extractJsonFromVar<{
 					videoData?: { cid?: number; bvid?: string };
-				}>(html, 'window.__INITIAL_STATE__={');
+				}>(html, 'window.__INITIAL_STATE__');
 
 				if (initState?.videoData?.cid && initState?.videoData?.bvid) {
 					const { cid, bvid } = initState.videoData;
 					const fnval = ctx.getCookie('CURRENT_FNVAL') || '976';
 					const apiUrl = `https://api.bilibili.com/x/player/playurl?cid=${cid}&bvid=${bvid}&fnval=${fnval}`;
 
-					const apiRes = await ctx.fetchJson<PlayinfoResponse>(apiUrl, { Referer: 'https://www.bilibili.com/' });
+					const apiRes = await ctx.fetchJson<PlayinfoResponse>(apiUrl);
 					if (apiRes?.data?.dash) {
 						return extractBilibiliDash(apiRes.data.dash);
 					}
@@ -155,7 +175,7 @@ export const bilibiliRules: SiteRule[] = [
 
 			const apiUrl = `https://api.bilibili.com/pgc/player/web/playurl?fnval=4048&ep_id=${epId}`;
 			try {
-				const res = await ctx.fetchJson<PlayinfoResponse>(apiUrl, { Referer: 'https://www.bilibili.com/' });
+				const res = await ctx.fetchJson<PlayinfoResponse>(apiUrl);
 				if (res?.result) {
 					return extractBilibiliDash(res.result);
 				}

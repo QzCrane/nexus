@@ -1,30 +1,18 @@
 import { ViewerDOM } from '../viewer-dom';
-import { HoverZoomSettings, ViewMode } from '../../types';
+import { HoverZoomSettings } from '../../types';
 import type { EnhancedResult } from '../resolvers/rule-resolver';
-import { calculateLayout } from './layout';
 import { updateInfoBar } from './info';
 import { isDashSegment, isPlayableVideoUrl, findThumbnailUrl } from './media-loader';
 import { needsMSE, isMSESupported, playDashStreams } from './mse-player';
+import { applyLayout } from './display-layout';
+import { showImage } from './image-display';
+
+export { showImage };
 
 const LOG_TAG = '[HALO:HoverZoom:MediaDisplay]';
 
 // Track MSE cleanup function
 let mseCleanup: (() => void) | null = null;
-
-/**
- * Fetch file size via blob download (works for cross-origin images)
- * Returns 0 if failed
- */
-async function fetchFileSize(url: string): Promise<number> {
-	try {
-		const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
-		if (!res.ok) return 0;
-		const blob = await res.blob();
-		return blob.size;
-	} catch {
-		return 0;
-	}
-}
 
 /** Cleanup previous MSE session */
 export function cleanupMSE() {
@@ -32,57 +20,6 @@ export function cleanupMSE() {
 		mseCleanup();
 		mseCleanup = null;
 	}
-}
-
-export function showImage(
-	dom: ViewerDOM,
-	settings: HoverZoomSettings,
-	source: EnhancedResult,
-	mouseX: number,
-	mouseY: number,
-	triggerRect: DOMRect | null,
-	currentType: string,
-	isVisible: () => boolean,
-	onLoaded: () => void,
-	onError: () => void
-): void {
-	if (!dom) return;
-
-	console.log(LOG_TAG, 'Loading image:', source.url.slice(0, 100));
-
-	const preloadImg = new Image();
-	preloadImg.referrerPolicy = 'no-referrer';
-
-	preloadImg.onload = () => {
-		console.log(LOG_TAG, 'Image loaded', preloadImg.naturalWidth, preloadImg.naturalHeight);
-		if (!isVisible() || !dom) return;
-
-		onLoaded();
-		dom.img.style.display = 'block';
-		dom.img.src = source.url;
-		dom.img.style.opacity = '1';
-
-		applyLayout(dom, triggerRect, currentType, mouseX, mouseY, preloadImg.naturalWidth, preloadImg.naturalHeight, settings.viewMode, settings.borderRadius);
-		dom.viewer.classList.add('visible');
-		updateInfoBar(dom, settings, source, 'image', dom.img, preloadImg.naturalWidth, preloadImg.naturalHeight);
-
-		// Async: Try to get file size via fetch blob (works for cross-origin)
-		if (!source.fileSize) {
-			fetchFileSize(source.url).then(size => {
-				if (size > 0 && isVisible() && dom) {
-					source.fileSize = size;
-					updateInfoBar(dom, settings, source, 'image', dom.img, preloadImg.naturalWidth, preloadImg.naturalHeight);
-				}
-			});
-		}
-	};
-
-	preloadImg.onerror = (e) => {
-		console.error(LOG_TAG, 'Image load error:', source.url.slice(0, 100), e);
-		onError();
-	};
-
-	preloadImg.src = source.url;
 }
 
 export function showVideo(
@@ -122,7 +59,8 @@ export function showVideo(
 			dom.video,
 			source.url,
 			source.audioUrl,
-			source.headers
+			source.headers,
+			source.metadata as { videoCodec?: string; audioCodec?: string } | undefined
 		).then(cleanup => {
 			mseCleanup = cleanup;
 
@@ -134,6 +72,12 @@ export function showVideo(
 				onLoaded();
 				applyLayout(dom, triggerRect, currentType, mouseX, mouseY, dom.video.videoWidth, dom.video.videoHeight, settings.viewMode, settings.borderRadius);
 				dom.viewer.classList.add('visible');
+
+				// Delay interactivity to prevent underlying element from receiving mouseout during fade-in
+				setTimeout(() => {
+					if (isVisible() && dom) dom.viewer.classList.add('interactive');
+				}, 200);
+
 				updateInfoBar(dom, settings, source, 'video', dom.video, dom.video.videoWidth, dom.video.videoHeight);
 				dom.video.play().catch(() => { });
 			};
@@ -177,6 +121,12 @@ export function showVideo(
 		onLoaded();
 		applyLayout(dom, triggerRect, currentType, mouseX, mouseY, dom.video.videoWidth, dom.video.videoHeight, settings.viewMode, settings.borderRadius);
 		dom.viewer.classList.add('visible');
+
+		// Delay interactivity to prevent underlying element from receiving mouseout during fade-in
+		setTimeout(() => {
+			if (isVisible() && dom) dom.viewer.classList.add('interactive');
+		}, 200);
+
 		updateInfoBar(dom, settings, source, 'video', dom.video, dom.video.videoWidth, dom.video.videoHeight);
 	};
 
@@ -216,48 +166,4 @@ export function fallbackToThumbnail(
 		console.warn(LOG_TAG, 'No thumbnail fallback available');
 		onError();
 	}
-}
-
-function applyLayout(dom: ViewerDOM, triggerRect: DOMRect | null, currentType: string, mouseX: number, mouseY: number, contentW: number, contentH: number, viewMode: ViewMode = 'original', borderRadius: number = 0) {
-	if (!dom || !contentW || !contentH) return;
-
-	const layout = calculateLayout(contentW, contentH, triggerRect, mouseX, mouseY, viewMode);
-
-	// Apply border-radius CSS variable
-	dom.viewer.style.setProperty('--hz-radius', `${borderRadius}px`);
-
-	// Show container now that media is loaded
-	dom.container.style.display = '';
-
-	// Expand animation from source
-	if (triggerRect && !dom.viewer.classList.contains('visible')) {
-		dom.viewer.style.transition = 'none';
-		Object.assign(dom.viewer.style, {
-			width: `${triggerRect.width}px`,
-			height: `${triggerRect.height}px`,
-			top: `${triggerRect.top}px`,
-			left: `${triggerRect.left}px`,
-			opacity: '0'
-		});
-		dom.viewer.offsetHeight; // Force reflow
-		dom.viewer.style.transition = 'all 0.15s cubic-bezier(0.2, 0, 0, 1)';
-	}
-
-	// Target position - content-box: width/height is content only, border is outside
-	// Round to integers to avoid subpixel rendering issues
-	const w = Math.round(layout.width);
-	const h = Math.round(layout.height);
-	Object.assign(dom.viewer.style, {
-		width: `${w}px`,
-		height: `${h}px`,
-		top: `${Math.round(layout.top)}px`,
-		left: `${Math.round(layout.left)}px`,
-		opacity: '1'
-	});
-
-	// Set media to exact same size as viewer content
-	const media = currentType === 'video' ? dom.video : dom.img;
-	media.style.width = `${w}px`;
-	media.style.height = `${h}px`;
-	// Info bar width is now set by CSS: calc(100% + 4px)
 }

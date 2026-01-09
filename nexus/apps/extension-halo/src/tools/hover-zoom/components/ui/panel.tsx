@@ -152,6 +152,10 @@ export const HoverZoomPanel: React.FC = () => {
                         <span style={styles.label}>{t('hoverZoom.view.antiHotlink')}{antiHotlinkActive && <span style={{ marginLeft: '6px', color: '#4CAF50' }}>●</span>}</span>
                         <Toggle checked={settings.antiHotlink} onChange={(v) => update({ antiHotlink: v })} />
                     </div>
+                    <div style={styles.row}>
+                        <span style={styles.label}>{t('hoverZoom.view.videoFallback') || 'Video → Image fallback'}</span>
+                        <Toggle checked={settings.videoFallbackToImage} onChange={(v) => update({ videoFallbackToImage: v })} />
+                    </div>
                 </div>
             </Card>
 

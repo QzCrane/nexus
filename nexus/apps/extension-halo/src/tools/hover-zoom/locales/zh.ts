@@ -31,7 +31,8 @@ export const zh = {
 			viewMode: "显示尺寸",
 			borderRadius: "边框样式",
 			loadingIndicator: "加载指示器",
-			antiHotlink: "反防盗链 (隐私模式)"
+			antiHotlink: "反防盗链 (隐私模式)",
+			videoFallback: "视频失败降级为图片"
 		},
 
 		viewMode: {

@@ -10,4 +10,5 @@ export interface EnhancedResult {
 	originalUrl?: string;
 	fromRule: string | null;
 	fileSize?: number;  // File size in bytes (if available)
+	metadata?: Record<string, any>;
 }

@@ -8,8 +8,6 @@ import { initUserScriptsRegistry } from '../system/userscripts/registry';
 
 const LOG_TAG = '[HALO]';
 
-console.log(LOG_TAG, 'Background service worker initialized');
-
 // Initialize UserScripts injection engine (handles run count + manual injection)
 initUserScriptsEngine();
 
@@ -73,8 +71,6 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 			contexts: ['link'],
 			targetUrlPatterns: ['*://*/*.pdf', '*://*/*.pdf?*'],
 		});
-
-		console.log(LOG_TAG, 'Context menus created');
 	});
 });
 
@@ -161,8 +157,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 	// Hover Zoom CORS proxy - bypass CORB for cross-origin API calls
 	if (message.type === 'HALO_HZ_PROXY_AJAX') {
-		const { url, method = 'GET', headers = {}, body } = message;
-		console.log(LOG_TAG, 'HoverZoom proxy request:', url);
+		const { url, method = 'GET', headers = {}, body, responseType = 'text' } = message;
+		console.log(LOG_TAG, 'HoverZoom proxy request:', url.slice(0, 80), 'type:', responseType);
 
 		fetch(url, {
 			method,
@@ -170,7 +166,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			body: method === 'POST' ? body : undefined,
 			credentials: 'omit'
 		})
-			.then(res => res.text())
+			.then(async res => {
+				if (!res.ok) throw new Error(`HTTP ${res.status}`);
+				if (responseType === 'arraybuffer') {
+					// Encode binary as base64 for message passing
+					const buf = await res.arrayBuffer();
+					const bytes = new Uint8Array(buf);
+					let binary = '';
+					for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
+					return btoa(binary);
+				}
+				return res.text();
+			})
 			.then(data => sendResponse({ success: true, data }))
 			.catch(err => sendResponse({ success: false, error: err.message }));
 
@@ -180,13 +187,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	return false;
 });
 
-// Log storage changes for debugging
+// Storage change listener
 chrome.storage.onChanged.addListener((changes, area) => {
-	if (area === 'sync') {
-		for (const [key, { newValue }] of Object.entries(changes)) {
-			if (key.startsWith(STORAGE_PREFIX.CORE) || key === SETTINGS_STORAGE_KEY) {
-				console.log(LOG_TAG, `Storage changed: ${key}`, newValue);
-			}
-		}
-	}
+	if (area !== 'sync') return;
+	for (const [k, { newValue }] of Object.entries(changes))
+		if (k.startsWith(STORAGE_PREFIX.CORE) || k === SETTINGS_STORAGE_KEY)
+			console.log(LOG_TAG, `Storage: ${k}`, newValue);
 });
