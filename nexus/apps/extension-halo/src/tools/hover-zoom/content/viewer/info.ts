@@ -1,5 +1,5 @@
 // goal: Info bar updater for HoverZoom viewer
-// eff: Display configurable media info: type icon, dimensions, format, size, caption, source, hostname
+// eff: Display configurable media info: type icon, dimensions, ratio, scale, format, size, caption, source, hostname
 
 import type { ViewerDOM } from '../viewer-dom';
 import type { EnhancedResult } from '../resolvers/rule-resolver';
@@ -37,6 +37,26 @@ function getHostname(url: string): string {
 	}
 }
 
+/** Calculate aspect ratio in "W:H" format (simplified fraction) or decimal */
+function calcRatio(w: number, h: number): string {
+	if (!w || !h) return '';
+	// Simplify using GCD
+	const gcd = (a: number, b: number): number => b === 0 ? a : gcd(b, a % b);
+	const d = gcd(w, h);
+	const rw = w / d;
+	const rh = h / d;
+	// If simplified ratio is too large, show decimal instead
+	if (rw > 20 || rh > 20) return (w / h).toFixed(2);
+	return `${rw}:${rh}`;
+}
+
+/** Calculate display scale percentage */
+function calcScale(displayW: number, naturalW: number): string {
+	if (!displayW || !naturalW) return '';
+	const pct = Math.round((displayW / naturalW) * 100);
+	return `${pct}%`;
+}
+
 /**
  * Update the info bar with current media information.
  * Respects imageInfoItems settings for each field.
@@ -66,17 +86,35 @@ export function updateInfoBar(
 		parts.push(mediaType === 'video' ? '🎬' : '🖼️');
 	}
 
-	// Dimensions (e.g., 1920 × 1080)
-	if (items.dimensions) {
-		let dims = '';
-		if (originalW && originalH) {
-			dims = `${originalW} × ${originalH}`;
-		} else if (mediaType === 'video' && mediaElement instanceof HTMLVideoElement) {
-			dims = `${mediaElement.videoWidth} × ${mediaElement.videoHeight}`;
+	// Get natural dimensions
+	let natW = originalW ?? 0;
+	let natH = originalH ?? 0;
+	if (!natW || !natH) {
+		if (mediaType === 'video' && mediaElement instanceof HTMLVideoElement) {
+			natW = mediaElement.videoWidth;
+			natH = mediaElement.videoHeight;
 		} else if (mediaElement instanceof HTMLImageElement) {
-			dims = `${mediaElement.naturalWidth} × ${mediaElement.naturalHeight}`;
+			natW = mediaElement.naturalWidth;
+			natH = mediaElement.naturalHeight;
 		}
-		if (dims) parts.push(dims);
+	}
+
+	// Dimensions (e.g., 1920 × 1080)
+	if (items.dimensions && natW && natH) {
+		parts.push(`${natW} × ${natH}`);
+	}
+
+	// Ratio (e.g., 16:9 or 1.78)
+	if (items.ratio && natW && natH) {
+		const r = calcRatio(natW, natH);
+		if (r) parts.push(r);
+	}
+
+	// Scale (e.g., 50%)
+	if (items.scale && mediaElement && natW) {
+		const displayW = mediaElement.clientWidth || mediaElement.offsetWidth;
+		const s = calcScale(displayW, natW);
+		if (s) parts.push(s);
 	}
 
 	// Format (e.g., JPG, PNG)

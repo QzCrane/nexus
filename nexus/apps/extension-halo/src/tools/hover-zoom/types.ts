@@ -87,6 +87,8 @@ export interface HoverZoomSettings {
 	imageInfoItems: {
 		typeIcon: boolean;     // Media type icon (🖼️/🎬)
 		dimensions: boolean;   // e.g., 1920 × 1080
+		ratio: boolean;        // e.g., 16:9 or 1.78
+		scale: boolean;        // e.g., 50% (display vs natural)
 		format: boolean;       // e.g., JPG, PNG, WEBP
 		size: boolean;         // e.g., 321.4 KB
 		caption: boolean;      // alt/title text
@@ -130,6 +132,8 @@ export const DEFAULT_SETTINGS: HoverZoomSettings = {
 	imageInfoItems: {
 		typeIcon: true,
 		dimensions: true,
+		ratio: false,     // Advanced, off by default
+		scale: false,     // Advanced, off by default 
 		format: true,
 		size: true,
 		caption: true,

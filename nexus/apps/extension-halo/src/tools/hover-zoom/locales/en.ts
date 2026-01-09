@@ -62,6 +62,8 @@ export const en = {
 			title: "Info Bar",
 			typeIcon: "Type icon",
 			dimensions: "Dimensions",
+			ratio: "Ratio",
+			scale: "Scale",
 			format: "Format",
 			size: "File size",
 			caption: "Caption",

@@ -4,8 +4,12 @@ import type { EnhancedResult } from '../resolvers/rule-resolver';
 import { calculateLayout } from './layout';
 import { updateInfoBar } from './info';
 import { isDashSegment, isPlayableVideoUrl, findThumbnailUrl } from './media-loader';
+import { needsMSE, isMSESupported, playDashStreams } from './mse-player';
 
 const LOG_TAG = '[HALO:HoverZoom:MediaDisplay]';
+
+// Track MSE cleanup function
+let mseCleanup: (() => void) | null = null;
 
 /**
  * Fetch file size via blob download (works for cross-origin images)
@@ -19,6 +23,14 @@ async function fetchFileSize(url: string): Promise<number> {
 		return blob.size;
 	} catch {
 		return 0;
+	}
+}
+
+/** Cleanup previous MSE session */
+export function cleanupMSE() {
+	if (mseCleanup) {
+		mseCleanup();
+		mseCleanup = null;
 	}
 }
 
@@ -88,11 +100,60 @@ export function showVideo(
 ): void {
 	if (!dom) return;
 
-	console.log(LOG_TAG, 'Loading video:', source.url.slice(0, 100));
+	console.log(LOG_TAG, 'Loading video:', source.url.slice(0, 100), 'audioUrl:', source.audioUrl?.slice(0, 50));
 
-	// Check if URL is DASH segment - cannot play directly
+	// Cleanup previous MSE session
+	cleanupMSE();
+
+	// Check if this is a DASH stream needing MSE
+	if (needsMSE(source.url) || source.audioUrl) {
+		if (!isMSESupported()) {
+			console.warn(LOG_TAG, 'MSE not supported, falling back to thumbnail');
+			fallback(source, mouseX, mouseY);
+			return;
+		}
+
+		// Use MSE player for DASH streams
+		console.log(LOG_TAG, 'Using MSE for DASH playback');
+		dom.video.style.display = 'block';
+		dom.video.muted = true;
+
+		playDashStreams(
+			dom.video,
+			source.url,
+			source.audioUrl,
+			source.headers
+		).then(cleanup => {
+			mseCleanup = cleanup;
+
+			// Wait for metadata
+			const onMeta = () => {
+				console.log(LOG_TAG, 'MSE video loaded', dom?.video.videoWidth, dom?.video.videoHeight);
+				if (!isVisible() || !dom) return;
+
+				onLoaded();
+				applyLayout(dom, triggerRect, currentType, mouseX, mouseY, dom.video.videoWidth, dom.video.videoHeight, settings.viewMode, settings.borderRadius);
+				dom.viewer.classList.add('visible');
+				updateInfoBar(dom, settings, source, 'video', dom.video, dom.video.videoWidth, dom.video.videoHeight);
+				dom.video.play().catch(() => { });
+			};
+
+			if (dom.video.readyState >= 1) {
+				onMeta();
+			} else {
+				dom.video.onloadedmetadata = onMeta;
+			}
+		}).catch(e => {
+			console.error(LOG_TAG, 'MSE playback failed:', e);
+			fallback(source, mouseX, mouseY);
+		});
+
+		return;
+	}
+
+	// Check if URL is DASH segment without audioUrl (incomplete DASH, fallback)
 	if (isDashSegment(source.url)) {
-		console.warn(LOG_TAG, 'DASH m4s stream detected, falling back to thumbnail');
+		console.warn(LOG_TAG, 'DASH m4s stream without audio, falling back to thumbnail');
 		fallback(source, mouseX, mouseY);
 		return;
 	}
@@ -104,6 +165,7 @@ export function showVideo(
 		return;
 	}
 
+	// Standard video playback
 	dom.video.style.display = 'block';
 	dom.video.src = source.url;
 	dom.video.muted = true;
@@ -138,6 +200,8 @@ export function fallbackToThumbnail(
 	onError: () => void,
 	setCurrentType: (type: 'image' | 'video') => void
 ): void {
+	cleanupMSE();
+
 	if (dom) {
 		dom.video.style.display = 'none';
 		dom.video.src = '';

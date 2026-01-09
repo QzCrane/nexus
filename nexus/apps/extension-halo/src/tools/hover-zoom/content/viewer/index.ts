@@ -7,7 +7,7 @@ import type { EnhancedResult } from '../resolvers/rule-resolver';
 import { TransformController } from './transform';
 import { LoadingOverlay } from './loading-overlay';
 import { downloadMedia, copyUrl, openInNewTab } from './viewer-actions';
-import { showImage, showVideo, fallbackToThumbnail } from './media-display';
+import { showImage, showVideo, fallbackToThumbnail, cleanupMSE } from './media-display';
 
 const LOG_TAG = '[HALO:HoverZoom:Viewer]';
 
@@ -128,6 +128,7 @@ export class HoverZoomViewer {
 		this.isVisible = false;
 		this.currentSource = null;
 		this.loadingOverlay.clear();
+		cleanupMSE();  // Release MSE resources
 		if (this.dom) {
 			this.dom.viewer.classList.remove('visible');
 			this.dom.container.style.display = 'none';

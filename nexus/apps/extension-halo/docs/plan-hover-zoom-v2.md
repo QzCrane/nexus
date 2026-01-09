@@ -35,58 +35,44 @@
 
 ### Phase 1: 信息栏完善 ✅ (已完成)
 
-- [x] 7 项 info bar (typeIcon/dims/format/size/caption/source/hostname)
+- [x] 9 项 info bar (typeIcon/dims/ratio/scale/format/size/caption/source/hostname)
 - [x] 各项独立开关
 - [x] i18n 支持
 
-### Phase 2: 详情增强 (Q1 W2)
+### Phase 2: 详情增强 ✅ (已完成)
 
 **目标**: 超越 HZ+ 的 displayDetails()
 
 | 信息项        | HZ+ 有 | Halo 状态 | 优先级 |
 | ------------- | ------ | --------- | ------ |
 | dimensions    | ✅     | ✅        | -      |
-| ratio         | ✅     | ❌        | P1     |
-| scale         | ✅     | ❌        | P1     |
-| duration      | ✅     | ❌        | P2     |
-| filename      | ✅     | ❌        | P2     |
+| ratio         | ✅     | ✅        | P1 ✅  |
+| scale         | ✅     | ✅        | P1 ✅  |
+| duration      | ✅     | ❌        | P3     |
+| filename      | ✅     | ❌        | P3     |
 | contentLength | ✅     | ✅ (size) | -      |
 | lastModified  | ✅     | ❌        | P3     |
-| aspectRatio   | ❌     | 新增      | P2     |
 
-**实现**: 扩展 `EnhancedResult` + `info.ts` 渲染
+**实现**: `info.ts` - `calcRatio()` (GCD 简化) + `calcScale()` (显示/原始百分比)
 
-### Phase 3: 视频播放 (Q1 W3-4)
+### Phase 3: 视频播放 ✅ (已完成)
 
 **目标**: 真正播放视频 (非仅封面)
 
-**策略对比**:
-| 方案 | 复杂度 | 体积 | 兼容性 |
-|-----|-------|-----|-------|
-| A. 直链 mp4/webm | 低 | 0 | 仅常规格式 |
-| B. 站点 API | 中 | 0 | 需逐站适配 |
-| C. hls.js | 高 | +1MB | HLS 全兼容 |
-| D. shaka-player | 高 | +300KB | DASH+HLS |
+**实现方案**:
 
-**推荐**: B → A fallback → D (按需加载 shaka)
-
-**B 站实现** (参考 HZ+ bilibili_a.js):
-
-```
-1. 检测 /video/BV* 链接
-2. 获取 cid+bvid (页面 __INITIAL_STATE__ 或 API)
-3. 调用 https://api.bilibili.com/x/player/playurl
-4. 提取 dash.video[0].baseUrl + dash.audio[0].baseUrl
-5. MSE 合成 video+audio 流
-```
+- ✅ **B 站规则** (`rules/definitions/bilibili.ts`): 已实现 API 调用获取 DASH 流
+- ✅ **MSE 播放器** (`viewer/mse-player.ts`): 合成 video+audio m4s 流
+- ✅ **视频保护** (`image-resolver.ts`): 跳过正在播放的视频 (!paused)
+- ✅ **media-display.ts**: 集成 MSE 播放，DASH 流自动处理
 
 **架构**:
 
-- `video-loader.ts`: 站点适配器接口
-- `adapters/bilibili.ts`: B 站适配器
-- `mse-player.ts`: MediaSource 合成播放
+- `rules/definitions/bilibili.ts`: B 站 API 适配 (6 条规则)
+- `viewer/mse-player.ts`: MediaSource Extensions 播放器 (+6KB)
+- `viewer/media-display.ts`: 集成 MSE 或回退到缩略图
 
-### Phase 4: Gallery 模式 (Q1 W5)
+### Phase 4: Gallery 模式 (待实现)
 
 **功能**:
 
@@ -96,7 +82,7 @@
 
 **数据结构**: `EnhancedResult.gallery?: string[]`
 
-### Phase 5: 高级功能 (Q2)
+### Phase 5: 高级功能 (待实现)
 
 | 功能        | 说明                       | 优先级 |
 | ----------- | -------------------------- | ------ |
@@ -121,10 +107,14 @@
 | **样式** | 内联 JS          | 独立 CSS + CSS 变量 |
 | **类型** | 无               | 完整 TS 类型        |
 | **测试** | 无               | Playwright 集成     |
+| **体积** | 1.3MB (hls.js)   | 6KB (MSE 原生)      |
 
 ---
 
-## 下一步行动
+## 变更记录
 
-2. **Phase 2** 实现 ratio/scale/duration 详情
-3. **Phase 3** B 站视频播放适配器
+- **2026-01-09**: Phase 1-3 完成
+  - Info bar: 9 项可配置信息 (typeIcon/dims/ratio/scale/format/size/caption/source/hostname)
+  - 详情增强: ratio (GCD 简化比例) + scale (显示缩放百分比)
+  - 视频播放: MSE 播放器 (6KB) 替代 hls.js (1MB)，B 站 DASH 流支持
+  - 视频保护: 跳过正在播放的视频，避免干扰原生预览

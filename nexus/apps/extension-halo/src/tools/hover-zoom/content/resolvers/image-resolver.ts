@@ -87,6 +87,17 @@ export function isValidTrigger(target: HTMLElement): boolean {
 	const isSvg = target instanceof SVGElement || target.tagName === 'svg';
 
 	if (isImg || isVideo || isCanvas || isSvg) {
+		// Skip videos that are playing or in preview animation (like Bilibili hover previews)
+		// This prevents HoverZoom from interfering with native video preview behavior
+		if (isVideo) {
+			const video = target as HTMLVideoElement;
+			// Skip if: playing (!paused), has no controls (inline preview), or is a blob (stream)
+			if (!video.paused || video.src?.startsWith('blob:')) {
+				validTriggerCache.set(target, false);
+				return false;
+			}
+		}
+
 		// Check minimum size
 		const rect = target.getBoundingClientRect();
 		valid = rect.width >= MIN_SIZE && rect.height >= MIN_SIZE;

@@ -62,6 +62,8 @@ export const zh = {
 			title: "信息栏",
 			typeIcon: "类型图标",
 			dimensions: "尺寸",
+			ratio: "宽高比",
+			scale: "缩放比",
 			format: "格式",
 			size: "文件大小",
 			caption: "描述",
