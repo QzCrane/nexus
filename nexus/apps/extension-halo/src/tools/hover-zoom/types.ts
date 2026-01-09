@@ -26,6 +26,7 @@ export interface KeyCombo {
 	shift: boolean;
 	ctrl: boolean;
 	alt: boolean;
+	disabled?: boolean;
 }
 
 export interface ExemptionRules {

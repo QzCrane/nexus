@@ -12,6 +12,7 @@ export type ResourcePreference = 'image' | 'video' | 'auto';
  * Check if a KeyCombo matches the current event state
  */
 function comboMatches(combo: KeyCombo, e: MouseEvent | KeyboardEvent): boolean {
+	if (combo.disabled) return false;
 	return combo.shift === e.shiftKey &&
 		combo.ctrl === e.ctrlKey &&
 		combo.alt === e.altKey;
@@ -22,6 +23,7 @@ function comboMatches(combo: KeyCombo, e: MouseEvent | KeyboardEvent): boolean {
  * (all required keys are pressed, possibly more)
  */
 function comboIsSubset(combo: KeyCombo, e: MouseEvent | KeyboardEvent): boolean {
+	if (combo.disabled) return false;
 	// combo keys that are true must also be true in event
 	if (combo.shift && !e.shiftKey) return false;
 	if (combo.ctrl && !e.ctrlKey) return false;
@@ -33,6 +35,7 @@ function comboIsSubset(combo: KeyCombo, e: MouseEvent | KeyboardEvent): boolean 
  * Count how many modifiers are required by a combo
  */
 function comboModifierCount(combo: KeyCombo): number {
+	if (combo.disabled) return -1;
 	let count = 0;
 	if (combo.shift) count++;
 	if (combo.ctrl) count++;
@@ -44,7 +47,7 @@ function comboModifierCount(combo: KeyCombo): number {
  * Check if a combo is "none" (no modifiers required)
  */
 function isComboNone(combo: KeyCombo): boolean {
-	return !combo.shift && !combo.ctrl && !combo.alt;
+	return !combo.disabled && !combo.shift && !combo.ctrl && !combo.alt;
 }
 
 /**
@@ -67,11 +70,14 @@ export function detectResourcePreference(
 ): ResourcePreference | null {
 	const { imageKey, videoKey } = resourceKeys;
 
+	// Check for disabled keys first
+	if (imageKey.disabled && videoKey.disabled) return null;
+
 	// EXACT match only - all modifiers must match exactly
 	const imageExact = comboMatches(imageKey, e);
 	const videoExact = comboMatches(videoKey, e);
 
-	// Priority: video > image (when both exactly match, e.g. same config)
+	// Priority: video > image (when both exactly match, e.g. same config or both None)
 	if (videoExact) return 'video';
 	if (imageExact) return 'image';
 

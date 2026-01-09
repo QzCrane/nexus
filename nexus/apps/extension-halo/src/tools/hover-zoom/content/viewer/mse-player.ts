@@ -25,10 +25,14 @@ export function isMSESupported(): boolean {
  * Fetch media segment as ArrayBuffer
  */
 async function fetchSegment(url: string, headers?: Record<string, string>): Promise<ArrayBuffer> {
+	const mergedHeaders = {
+		Referer: 'https://www.bilibili.com/',
+		...headers
+	};
 	const res = await fetch(url, {
 		mode: 'cors',
 		credentials: 'include',
-		headers: headers || { Referer: 'https://www.bilibili.com/' }
+		headers: mergedHeaders
 	});
 	if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
 	return res.arrayBuffer();
@@ -111,19 +115,21 @@ export async function playDashStreams(
 	// Fetch and append streams in parallel
 	const loadPromises: Promise<void>[] = [];
 
-	// Load video
+	// Load video (First 10MB for preview)
+	const videoHeaders = { ...headers, Range: 'bytes=0-10485760' };
 	loadPromises.push(
-		fetchSegment(videoUrl, headers).then(async (data) => {
+		fetchSegment(videoUrl, videoHeaders).then(async (data) => {
 			if (session.aborted || !session.videoBuffer) return;
 			await appendBuffer(session.videoBuffer, data);
 			console.log(LOG_TAG, 'Video segment loaded', data.byteLength);
 		})
 	);
 
-	// Load audio if present
+	// Load audio if present (First 2MB for preview)
 	if (audioUrl && session.audioBuffer) {
+		const audioHeaders = { ...headers, Range: 'bytes=0-2097152' };
 		loadPromises.push(
-			fetchSegment(audioUrl, headers).then(async (data) => {
+			fetchSegment(audioUrl, audioHeaders).then(async (data) => {
 				if (session.aborted || !session.audioBuffer) return;
 				await appendBuffer(session.audioBuffer, data);
 				console.log(LOG_TAG, 'Audio segment loaded', data.byteLength);
