@@ -4,6 +4,16 @@ const path = require('path');
 const pluginsDir = 'hoverzoom-plus/plugins';
 const files = fs.readdirSync(pluginsDir).filter(f => f.endsWith('.js'));
 
+// 别名映射 (将变体名映射到主站点名)
+const aliases = {
+  'TWIMG': 'TWITTER',
+  'MEDIA-AMAZON': 'AMAZON',
+  'CLIPS.TWITCH': 'TWITCH', 
+  'CLIPPITUSER': 'TWITCH',
+  'RULE34VIDEO': 'RULE34',
+  'YOU': 'YOUTUBE'  // you.js → YOUTUBE
+};
+
 // 按站点名分组
 const siteMap = new Map();
 files.forEach(file => {
@@ -13,6 +23,8 @@ files.forEach(file => {
   
   // 提取站点名: 去掉 _a 后缀
   let siteName = name.replace(/_a$/, '').toUpperCase();
+  // 应用别名
+  if (aliases[siteName]) siteName = aliases[siteName];
   
   if (!siteMap.has(siteName)) siteMap.set(siteName, []);
   siteMap.get(siteName).push(`${name}(${sizeKB})`);
