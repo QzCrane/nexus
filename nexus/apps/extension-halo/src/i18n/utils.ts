@@ -10,7 +10,7 @@ export const hydrateTranslations = (source: Record<string, any>): Record<string,
 			let current = out;
 
 			for (let i = 0; i < parts.length; i++) {
-				const part = parts[i];
+				const part = parts[i]!;
 
 				if (i === parts.length - 1) {
 					// Leaf node

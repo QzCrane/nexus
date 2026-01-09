@@ -3,7 +3,7 @@
 import React from 'react';
 import type { ToolId, HaloSettings } from '../../kernel';
 import { commonStyles } from './layouts.styles';
-import { ToolPanelRenderer } from '../tool-panel-renderer';
+import { ToolPanelRenderer } from '../core/tool-panel-renderer';
 
 // Scrollbar CSS injection
 export const ScrollbarStyles: React.FC = () => (

@@ -40,11 +40,10 @@ if (!isWatch) {
 		run('verify', 'node ../../scripts/verify-architecture.js', { silent: true });
 	}
 	
-	// TODO: enable tsc check after fixing type errors (see git log for error list)
-	// if (!run('tsc', 'npx tsc --noEmit --skipLibCheck')) {
-	// 	process.exit(1);
-	// }
-	// console.log('✓ Pre-flight: tsc OK');
+	if (!run('tsc', 'npx tsc --noEmit --skipLibCheck')) {
+		process.exit(1);
+	}
+	console.log('✓ Pre-flight: tsc OK');
 }
 
 // Prepare dist

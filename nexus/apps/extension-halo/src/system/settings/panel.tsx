@@ -17,7 +17,7 @@ import { toggleDarkMode, enableDarkMode, disableDarkMode } from '../../component
 
 const logger = createLogger('Settings', 'HALO');
 
-interface SettingsPanelProps {
+export interface SettingsPanelProps {
 	onSettingsChange?: (settings: HaloSettings) => void;
 }
 

@@ -1,8 +1,8 @@
 // goal: Comprehensive hotkey handler for Hover Zoom
 // eff: S=Save, C=Copy, T=Tab, R=Rotate, Esc=Close, Arrow=Pan
 
-import { HoverZoomSettings } from '../types';
-import { HoverZoomViewer } from './viewer/index';
+import { HoverZoomSettings } from '../../types';
+import { HoverZoomViewer } from '../viewer';
 
 export class HotkeyManager {
 	private settings: HoverZoomSettings;

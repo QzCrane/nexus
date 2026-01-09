@@ -10,6 +10,8 @@
 		"lint": "turbo run lint",
 		"typecheck": "turbo run typecheck",
 		"verify": "node scripts/verify-architecture.js",
+		"verify:q": "node scripts/verify-architecture.js -q",
+		"verify:v": "node scripts/verify-architecture.js -v",
 		"prebuild": "node scripts/verify-architecture.js -q",
 		"sync-spectra": "node scripts/sync-public.cjs spectra",
 		"sync-halo": "node scripts/sync-public.cjs halo",

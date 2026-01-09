@@ -6,7 +6,8 @@ export * from './core/theme';
 export * from './core/resource-types';
 
 export * from './registry/module-registry';
-export * from './registry/tool-registry';
+// export * from './registry/tool-registry'; // ToolMeta collision with module-registry
+export { TOOL_REGISTRY, getToolMeta, type ToolMeta, type PluginMeta, type ModuleMeta, type ToolPrefs } from './registry/tool-registry';
 
 export * from './managers/resource-manager';
 export * from './managers/module-manager';

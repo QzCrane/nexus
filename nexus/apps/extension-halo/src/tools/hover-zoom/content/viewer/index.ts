@@ -56,6 +56,10 @@ export class HoverZoomViewer {
 		this.transform.rotate(angle);
 	}
 
+	downloadMedia() { downloadMedia(this.currentSource); }
+	copyUrl() { copyUrl(this.currentSource); }
+	openInNewTab() { openInNewTab(this.currentSource); }
+
 	show(source: EnhancedResult, mouseX: number, mouseY: number) {
 		console.log(LOG_TAG, 'show() called', source.type, source.url.slice(0, 60));
 
