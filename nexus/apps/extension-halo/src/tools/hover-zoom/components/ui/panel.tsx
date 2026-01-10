@@ -179,15 +179,33 @@ export const HoverZoomPanel: React.FC = () => {
                 </div>
             </Card>
 
-            {/* Hotkeys */}
             <Card variant="default" padding="sm">
                 <div style={styles.section}>
                     <span style={styles.sectionTitle}>⌨️ {t('hoverZoom.hotkeys.title')}</span>
+                    {/* Pin Mode Setting */}
+                    <div style={{ marginBottom: '12px', paddingBottom: '12px', borderBottom: '1px solid var(--halo-border)' }}>
+                        <div style={styles.row}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                <span style={styles.label}>📌 {t('hoverZoom.pinMode.key') || 'Pin Key'}</span>
+                                <span style={{ fontSize: '10px', color: 'var(--halo-text-secondary)' }}>
+                                    {t('hoverZoom.pinMode.keyDesc') || 'Press to pin viewer (drag/resize)'}
+                                </span>
+                            </div>
+                            <div style={styles.segmented}>
+                                <button style={settings.pinKey === ' ' ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ pinKey: ' ' })}>
+                                    {t('hoverZoom.pinMode.space') || 'Space'}
+                                </button>
+                                <button style={settings.pinKey === '' ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ pinKey: '' })}>
+                                    {t('hoverZoom.pinMode.none') || 'Disabled'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                     <div style={styles.hotkeyList}>
-                        {['download', 'copy', 'newtab', 'rotate', 'close'].map(k => (
+                        {['download', 'copy', 'newtab', 'rotate', 'close', 'pin'].map(k => (
                             <div key={k} style={styles.hotkeyItem}>
-                                <span style={styles.hotkeyKey}>{k === 'download' ? 'S' : k === 'copy' ? 'C' : k === 'newtab' ? 'T' : k === 'rotate' ? 'R' : 'Esc'}</span>
-                                <span>{t(`hoverZoom.hotkeys.${k}`).split(' - ')[1]}</span>
+                                <span style={styles.hotkeyKey}>{k === 'download' ? 'S' : k === 'copy' ? 'C' : k === 'newtab' ? 'T' : k === 'rotate' ? 'R' : k === 'pin' ? '␣' : 'Esc'}</span>
+                                <span>{t(`hoverZoom.hotkeys.${k}`).split(' - ')[1] || t(`hoverZoom.hotkeys.${k}`)}</span>
                             </div>
                         ))}
                     </div>

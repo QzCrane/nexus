@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const DIR = 'c:\\Users\\QzCrane\\Desktop\\VolumeBooster\\reference';
+const DIR = 'D:\\Project\\VolumeBooster\\reference';
 const files = {
     hz: { name: 'hz-rules-list.txt' },
     ps: { name: 'photoshow-rules-list.txt' },

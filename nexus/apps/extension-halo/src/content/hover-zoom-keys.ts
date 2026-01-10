@@ -30,10 +30,20 @@ export function createOnKeyDown(state: HoverZoomState, preload: PreloadState) {
 			return;
 		}
 
-		// SPACE: Toggle lock
-		if (e.key === ' ' && state.viewer?.getIsVisible()) {
+		// PIN KEY: Toggle pin mode (configurable, default Space)
+		const pinKey = state.settings.pinKey;
+		if (pinKey && e.key === pinKey && state.viewer?.getIsVisible()) {
+			// Full isolation: prevent key from reaching the page
 			e.preventDefault();
-			state.toggleLocked = !state.toggleLocked;
+			e.stopImmediatePropagation();
+
+			if (!state.viewer.isPinned()) {
+				state.viewer.pin();
+				state.toggleLocked = true;
+			} else {
+				state.viewer.unpin();
+				state.toggleLocked = false;
+			}
 			return;
 		}
 

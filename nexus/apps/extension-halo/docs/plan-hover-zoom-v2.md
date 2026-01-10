@@ -139,7 +139,22 @@ Fallback 链:多源 URL 自动切换:P1
   - CORS 修复: Referer header 通过 background proxy 正确发送
 
 - **2026-01-09 EVE**: B 站体验增强
+
   - 视频音频: 移除静音限制，MSE 和标准视频均可播放声音
   - 图片规则增强: 扩展 match 模式 (`/bfs/|@`)，支持更多缩略图类型
   - 新增 host: biliimg.com
   - **待实现**: 弹幕功能 (需 Phase 5+)
+
+- **2026-01-09 NIGHT**: 图片原图规则修复
+
+  - 移除错误的 `/archive/` 排除 → 视频封面也能获取原图
+  - `media-loader.ts` 添加内联 HD 转换 → 视频回退缩略图时自动获取原图
+  - `rule-resolver.ts` 优化 → 用户偏好图片时缩略图也应用 HD 规则
+  - 弹幕 Phase 5 规划完成 → `docs/plan-danmaku.md`
+
+- **2026-01-09 NIGHT+**: 固定悬浮模式 + 视频首帧优化
+  - **固定悬浮**: 按 pinKey (默认空格) 固定浮窗，支持拖动移动和四角缩放
+  - **按键隔离**: 固定时 stopImmediatePropagation 阻止按键冒泡到页面
+  - **关闭按钮**: 固定后显示 X 关闭按钮，Esc 也可关闭
+  - **视觉反馈**: 固定状态蓝色边框 + 📌 图标
+  - **视频首帧优化**: 初始加载 768KB (原 2MB) 快速显示首帧

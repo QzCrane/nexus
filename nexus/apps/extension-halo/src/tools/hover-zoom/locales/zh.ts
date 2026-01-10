@@ -78,7 +78,16 @@ export const zh = {
 			copy: "C - 复制链接",
 			newtab: "T - 新标签页打开",
 			rotate: "R - 旋转90°",
-			close: "Esc - 关闭"
+			close: "Esc - 关闭",
+			pin: "固定"
+		},
+
+		pinMode: {
+			title: "固定模式",
+			key: "固定键",
+			keyDesc: "浮图显示时按此键固定浮窗（可拖动、缩放）。留空 = 禁用",
+			space: "空格",
+			none: "禁用"
 		}
 	}
 };

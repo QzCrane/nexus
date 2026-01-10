@@ -112,6 +112,9 @@ export interface HoverZoomSettings {
 
 	// Video behavior
 	videoFallbackToImage: boolean; // Fallback to thumbnail when video fails
+
+	// Pin mode (fixed floating)
+	pinKey: string; // Key to pin viewer (default: ' ' for Space), empty = disabled
 }
 
 export const DEFAULT_SETTINGS: HoverZoomSettings = {
@@ -157,7 +160,8 @@ export const DEFAULT_SETTINGS: HoverZoomSettings = {
 	siteBlacklist: [],
 	siteWhitelist: [],
 	whiteListMode: false,
-	videoFallbackToImage: false  // Default: do not fallback, video is video
+	videoFallbackToImage: false,  // Default: do not fallback, video is video
+	pinKey: ' '  // Space key for pin toggle
 };
 
 export const STORAGE_KEY = 'halo_hover_zoom_settings';

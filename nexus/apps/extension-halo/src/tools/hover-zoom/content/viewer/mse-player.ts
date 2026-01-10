@@ -6,7 +6,8 @@ import { fetchArrayBufferWithProxy } from '../utils/proxy-utils';
 const LOG_TAG = '[HALO:HoverZoom:MSEPlayer]';
 const VIDEO_MIME = 'video/mp4; codecs="avc1.640028"';
 const AUDIO_MIME = 'audio/mp4; codecs="mp4a.40.2"';
-const CHUNK_SIZE = 2 * 1024 * 1024;  // 2MB per chunk
+const INITIAL_CHUNK = 768 * 1024;    // 768KB for fast first frame
+const CHUNK_SIZE = 2 * 1024 * 1024;  // 2MB for subsequent chunks
 const BUFFER_THRESHOLD = 3;          // Load more when < 3s buffered
 
 interface MSESession {
@@ -91,35 +92,37 @@ export async function playDashStreams(
 	session.videoBuffer = session.mediaSource.addSourceBuffer(videoMime);
 	if (audioUrl) session.audioBuffer = session.mediaSource.addSourceBuffer(audioMime);
 
-	// Load chunk helper
-	async function loadVideoChunk() {
+	// Load chunk helper - uses smaller size for initial load
+	async function loadVideoChunk(isInitial = false) {
 		if (session.aborted || session.videoEnded || !session.videoBuffer) return;
-		const rangeHeaders = { ...headers, Range: `bytes=${session.videoOffset}-${session.videoOffset + CHUNK_SIZE - 1}` };
+		const chunkSize = isInitial ? INITIAL_CHUNK : CHUNK_SIZE;
+		const rangeHeaders = { ...headers, Range: `bytes=${session.videoOffset}-${session.videoOffset + chunkSize - 1}` };
 		try {
 			const data = await fetchSegment(videoUrl, rangeHeaders);
 			if (session.aborted) return;
-			if (data.byteLength < CHUNK_SIZE) session.videoEnded = true;
+			if (data.byteLength < chunkSize) session.videoEnded = true;
 			session.videoOffset += data.byteLength;
 			await appendBuffer(session.videoBuffer, data, session);
 			console.log(LOG_TAG, 'Video chunk loaded', session.videoOffset);
 		} catch (e) { session.videoEnded = true; }
 	}
 
-	async function loadAudioChunk() {
+	async function loadAudioChunk(isInitial = false) {
 		if (session.aborted || session.audioEnded || !session.audioBuffer || !audioUrl) return;
-		const rangeHeaders = { ...headers, Range: `bytes=${session.audioOffset}-${session.audioOffset + CHUNK_SIZE / 4 - 1}` };
+		const chunkSize = isInitial ? INITIAL_CHUNK / 4 : CHUNK_SIZE / 4;
+		const rangeHeaders = { ...headers, Range: `bytes=${session.audioOffset}-${session.audioOffset + chunkSize - 1}` };
 		try {
 			const data = await fetchSegment(audioUrl, rangeHeaders);
 			if (session.aborted) return;
-			if (data.byteLength < CHUNK_SIZE / 4) session.audioEnded = true;
+			if (data.byteLength < chunkSize) session.audioEnded = true;
 			session.audioOffset += data.byteLength;
 			await appendBuffer(session.audioBuffer, data, session);
 			console.log(LOG_TAG, 'Audio chunk loaded', session.audioOffset);
 		} catch (e) { session.audioEnded = true; }
 	}
 
-	// Initial load
-	await Promise.all([loadVideoChunk(), loadAudioChunk()]);
+	// Initial load with smaller chunks for fast first frame
+	await Promise.all([loadVideoChunk(true), loadAudioChunk(true)]);
 	console.log(LOG_TAG, 'Initial load complete, starting background streaming');
 
 	// Greedy streaming: continuously load next chunks in background

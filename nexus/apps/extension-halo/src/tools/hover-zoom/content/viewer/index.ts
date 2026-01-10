@@ -6,6 +6,7 @@ import { injectStyles, createViewerDOM, ViewerDOM } from '../viewer-dom';
 import type { EnhancedResult } from '../resolvers/rule-resolver';
 import { TransformController } from './transform';
 import { LoadingOverlay } from './loading-overlay';
+import { PinController } from './pin-controller';
 import { downloadMedia, copyUrl, openInNewTab } from './viewer-actions';
 import { showImage, showVideo, fallbackToThumbnail, cleanupMSE } from './media-display';
 
@@ -24,6 +25,7 @@ export class HoverZoomViewer {
 	private currentType: 'image' | 'video' = 'image';
 	private transform = new TransformController();
 	private loadingOverlay = new LoadingOverlay();
+	private pinController = new PinController();
 	private triggerRect: DOMRect | null = null;
 
 	constructor(settings: HoverZoomSettings) {
@@ -36,6 +38,8 @@ export class HoverZoomViewer {
 		this.dom = createViewerDOM();
 		if (this.dom) {
 			this.transform.bindDOM(this.dom);
+			this.pinController.bindDOM(this.dom);
+			this.pinController.onClose = () => this.hide();
 			this.setupActionCallbacks();
 			this.ready = true;
 		}
@@ -51,6 +55,9 @@ export class HoverZoomViewer {
 	updateSettings(s: HoverZoomSettings) { this.settings = s; }
 	getIsVisible() { return this.isVisible; }
 	getCurrentUrl() { return this.currentSource?.url || ''; }
+	isPinned() { return this.pinController.isPinned(); }
+	pin() { this.pinController.pin(); }
+	unpin() { this.pinController.unpin(); }
 
 	rotate(angle: number) {
 		this.transform.rotate(angle);
@@ -73,6 +80,7 @@ export class HoverZoomViewer {
 		this.currentType = source.type === 'video' ? 'video' : 'image';
 		this.isVisible = true;
 		this.transform.reset();
+		this.pinController.reset();
 		this.triggerRect = source.element?.getBoundingClientRect() || null;
 
 		// Show loading indicator on trigger element
@@ -128,10 +136,10 @@ export class HoverZoomViewer {
 		this.isVisible = false;
 		this.currentSource = null;
 		this.loadingOverlay.clear();
+		this.pinController.reset();
 		cleanupMSE();  // Release MSE resources
 		if (this.dom) {
-			this.dom.viewer.classList.remove('visible');
-			this.dom.viewer.classList.remove('interactive');
+			this.dom.viewer.classList.remove('visible', 'interactive', 'pinned');
 			this.dom.container.style.display = 'none';
 			this.dom.video.pause();
 			this.dom.video.src = '';

@@ -84,4 +84,40 @@ export const UI_STYLES = `
 }
 
 .halo-hz-zoom-indicator.visible { opacity: 1; }
+
+/* Pin mode styles */
+.halo-hz-viewer.pinned {
+    border-color: #4a9eff;
+    box-shadow: 0 8px 40px rgba(74, 158, 255, 0.3);
+}
+
+.halo-hz-close-btn {
+    position: absolute;
+    top: 4px; right: 4px;
+    width: 24px; height: 24px;
+    border: none;
+    background: rgba(255, 80, 80, 0.9);
+    color: white;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 4px;
+    z-index: 10;
+    pointer-events: auto;
+    transition: background 0.15s, transform 0.15s;
+}
+.halo-hz-close-btn:hover { background: #ff4040; transform: scale(1.1); }
+
+.halo-hz-pin-indicator {
+    position: absolute;
+    top: 6px; left: 8px;
+    font-size: 14px;
+    opacity: 0.8;
+    pointer-events: none;
+}
+
+.halo-hz-viewer.pinned .halo-hz-actions { opacity: 1; }
+.halo-hz-viewer.resizing img, .halo-hz-viewer.resizing video {
+    transition: none;
+}
 `;

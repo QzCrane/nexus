@@ -1,6 +1,6 @@
 # Bilibili 规则整理
 
-> 2026-01-09 | 来源: HoverZoom+ / PhotoShow / Imagus
+> 2026-01-09 NIGHT | 来源: HoverZoom+ / PhotoShow / Imagus
 
 ---
 
@@ -12,8 +12,8 @@
 | 视频(BV/av)       | ✅  | ❌  | ✅  | ✅   |
 | 番剧(ep)          | ✅  | ❌  | ❌  | ✅   |
 | bilibili.tv       | ✅  | ❌  | ❌  | ✅   |
-| 动态图片          | ❌  | ✅  | ❌  | ⚠️   |
-| 用户头像          | ✅  | ✅  | ❌  | ⚠️   |
+| 动态图片          | ❌  | ✅  | ❌  | ✅   |
+| 用户头像          | ✅  | ✅  | ❌  | ✅   |
 
 ---
 

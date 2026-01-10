@@ -78,7 +78,16 @@ export const en = {
 			copy: "C - Copy URL",
 			newtab: "T - Open in new tab",
 			rotate: "R - Rotate 90°",
-			close: "Esc - Close"
+			close: "Esc - Close",
+			pin: "Pin"
+		},
+
+		pinMode: {
+			title: "Pin Mode",
+			key: "Pin Key",
+			keyDesc: "Press this key while viewing to pin the viewer (drag, resize). Empty = disabled.",
+			space: "Space",
+			none: "Disabled"
 		}
 	}
 };
