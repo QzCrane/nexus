@@ -2,10 +2,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Toggle } from '@nexus/ui-kit';
 import { useTranslation } from '../../../../i18n';
-import { HoverZoomSettings, DEFAULT_SETTINGS, STORAGE_KEY, KeyCombo, HighlightMode, ViewMode, AltKeyMode } from '../../types';
+import { HoverZoomSettings, DEFAULT_SETTINGS, STORAGE_KEY, KeyCombo, AltKeyMode } from '../../types';
 import { enableAntiHotlink, disableAntiHotlink, isAntiHotlinkEnabled } from '../../logic/engine';
 import { styles } from './panel.styles';
 import { KeyComboEditor } from './KeyComboEditor';
+import { ViewSettings } from './ViewSettings';
+import { InfoBarSettings } from './InfoBarSettings';
+
 export const HoverZoomPanel: React.FC = () => {
     const { t } = useTranslation();
     const [settings, setSettings] = useState<HoverZoomSettings>(DEFAULT_SETTINGS);
@@ -110,66 +113,10 @@ export const HoverZoomPanel: React.FC = () => {
             </Card>
 
             {/* View */}
-            <Card variant="default" padding="sm">
-                <div style={styles.section}>
-                    <span style={styles.sectionTitle}>🎨 {t('hoverZoom.view.title')}</span>
-                    <div style={styles.row}>
-                        <span style={styles.label}>{t('hoverZoom.view.highlight') || 'Trigger highlight'}</span>
-                        <div style={styles.segmented}>
-                            {(['always', 'hotkey', 'off'] as HighlightMode[]).map(m => (
-                                <button key={m} style={settings.highlightMode === m ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ highlightMode: m })}>
-                                    {m === 'always' ? (t('hoverZoom.highlight.always') || 'Always') : m === 'hotkey' ? (t('hoverZoom.highlight.hotkey') || 'Hotkey') : (t('hoverZoom.highlight.off') || 'Off')}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                    <div style={styles.row}>
-                        <span style={styles.label}>{t('hoverZoom.view.viewMode') || 'Size mode'}</span>
-                        <div style={styles.segmented}>
-                            {(['original', 'fit'] as ViewMode[]).map(m => (
-                                <button key={m} style={settings.viewMode === m ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ viewMode: m })}>
-                                    {m === 'original' ? (t('hoverZoom.viewMode.original') || 'Original') : (t('hoverZoom.viewMode.fit') || 'Fit')}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                    <div style={styles.row}>
-                        <span style={styles.label}>{t('hoverZoom.view.borderRadius') || 'Border radius'}</span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <input type="range" min="0" max="32" step="2" value={settings.borderRadius} onChange={(e) => update({ borderRadius: +e.target.value })} style={{ width: '80px' }} />
-                            <span style={styles.value}>{settings.borderRadius}px</span>
-                        </div>
-                    </div>
-                    <div style={styles.row}>
-                        <span style={styles.label}>{t('hoverZoom.view.loadingIndicator') || 'Loading indicator'}</span>
-                        <Toggle checked={settings.showLoadingIndicator} onChange={(v) => update({ showLoadingIndicator: v })} />
-                    </div>
-                    <div style={styles.row}>
-                        <span style={styles.label}>{t('hoverZoom.view.antiHotlink')}{antiHotlinkActive && <span style={{ marginLeft: '6px', color: '#4CAF50' }}>●</span>}</span>
-                        <Toggle checked={settings.antiHotlink} onChange={(v) => update({ antiHotlink: v })} />
-                    </div>
-                    <div style={styles.row}>
-                        <span style={styles.label}>{t('hoverZoom.view.videoFallback') || 'Video → Image fallback'}</span>
-                        <Toggle checked={settings.videoFallbackToImage} onChange={(v) => update({ videoFallbackToImage: v })} />
-                    </div>
-                </div>
-            </Card>
+            <ViewSettings settings={settings} update={update} t={t} antiHotlinkActive={antiHotlinkActive} />
 
             {/* Info Bar Items */}
-            <Card variant="default" padding="sm">
-                <div style={styles.section}>
-                    <span style={styles.sectionTitle}>ℹ️ {t('hoverZoom.infoBar.title') || 'Info Bar'}</span>
-                    <div style={styles.row}><span style={styles.label}>{t('hoverZoom.infoBar.typeIcon') || 'Type icon'}</span><Toggle checked={settings.imageInfoItems.typeIcon} onChange={(v) => update({ imageInfoItems: { ...settings.imageInfoItems, typeIcon: v } })} /></div>
-                    <div style={styles.row}><span style={styles.label}>{t('hoverZoom.infoBar.dimensions') || 'Dimensions'}</span><Toggle checked={settings.imageInfoItems.dimensions} onChange={(v) => update({ imageInfoItems: { ...settings.imageInfoItems, dimensions: v } })} /></div>
-                    <div style={styles.row}><span style={styles.label}>{t('hoverZoom.infoBar.ratio') || 'Ratio'}</span><Toggle checked={settings.imageInfoItems.ratio} onChange={(v) => update({ imageInfoItems: { ...settings.imageInfoItems, ratio: v } })} /></div>
-                    <div style={styles.row}><span style={styles.label}>{t('hoverZoom.infoBar.scale') || 'Scale'}</span><Toggle checked={settings.imageInfoItems.scale} onChange={(v) => update({ imageInfoItems: { ...settings.imageInfoItems, scale: v } })} /></div>
-                    <div style={styles.row}><span style={styles.label}>{t('hoverZoom.infoBar.format') || 'Format'}</span><Toggle checked={settings.imageInfoItems.format} onChange={(v) => update({ imageInfoItems: { ...settings.imageInfoItems, format: v } })} /></div>
-                    <div style={styles.row}><span style={styles.label}>{t('hoverZoom.infoBar.size') || 'File size'}</span><Toggle checked={settings.imageInfoItems.size} onChange={(v) => update({ imageInfoItems: { ...settings.imageInfoItems, size: v } })} /></div>
-                    <div style={styles.row}><span style={styles.label}>{t('hoverZoom.infoBar.caption') || 'Caption'}</span><Toggle checked={settings.imageInfoItems.caption} onChange={(v) => update({ imageInfoItems: { ...settings.imageInfoItems, caption: v } })} /></div>
-                    <div style={styles.row}><span style={styles.label}>{t('hoverZoom.infoBar.source') || 'Rule source'}</span><Toggle checked={settings.imageInfoItems.source} onChange={(v) => update({ imageInfoItems: { ...settings.imageInfoItems, source: v } })} /></div>
-                    <div style={styles.row}><span style={styles.label}>{t('hoverZoom.infoBar.hostname') || 'Image host'}</span><Toggle checked={settings.imageInfoItems.hostname} onChange={(v) => update({ imageInfoItems: { ...settings.imageInfoItems, hostname: v } })} /></div>
-                </div>
-            </Card>
+            <InfoBarSettings settings={settings} update={update} t={t} />
 
             {/* Exemptions */}
             <Card variant="default" padding="sm">
