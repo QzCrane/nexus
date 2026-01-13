@@ -8,7 +8,7 @@ description: 创建新模块/应用的标准流程 (自动化脚手架 + 文档�
 
 ## 1. 初始化
 
-- `mkdir [packages|apps]/<name>` -> `npm init -y`。
+- `mkdir [packages|apps]/<name>` -> `bun init -y` (或 `npm init -y`)。
 - `package.json`: `@nexus/<name>`, `type: "module"`。
 - `tsconfig.json`: 继承 `../../tsconfig.base.json`。
 
@@ -21,6 +21,6 @@ description: 创建新模块/应用的标准流程 (自动化脚手架 + 文档�
 
 // turbo
 
-- `pnpm install` 更新 Workspace 链接。
+- `bun install` 更新 Workspace 链接。
   // turbo
-- `pnpm build` 验证构建。
+- `bun run build` 验证构建。

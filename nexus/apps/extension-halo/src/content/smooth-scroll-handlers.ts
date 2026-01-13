@@ -1,7 +1,7 @@
 // goal: Event handlers for Smooth Scroll
 // eff: Loosely coupled handlers using shared state
 
-import { scheduleClearCache, findScrollTargetChained, canScrollBy, shouldIgnoreInput, findMainScrollTarget } from '../tools/smooth-scroll/utils';
+import { scheduleClearCache, findScrollTargetChained, canScrollBy } from '../tools/smooth-scroll/utils';
 import { scrollTo } from '../tools/smooth-scroll/engine';
 import { settings, state, lastScrollTime, acceleration, updateAcceleration } from './smooth-scroll-state';
 
@@ -23,8 +23,15 @@ function isTouchpad(deltaY: number): boolean {
 export function onWheel(e: WheelEvent): void {
 	if (!settings.enabled || !settings.mouseWheel) return;
 
-	// rule: Respect native configuration (if site prevents scroll, we stop)
-	if (e.defaultPrevented) return;
+	// rule: "Smart Capture" - We intercept early to override Douyin, BUT we must be careful.
+
+	// Guard: Pass-through for Maps/Canvas/Embeds (Respect Native)
+	// If the user interacts with these, they likely want the native behavior (Zoom, Pan, Interaction)
+	const t = e.target as HTMLElement;
+	if (t.tagName === 'CANVAS' || t.tagName === 'EMBED' || t.tagName === 'OBJECT' || t.tagName === 'MAP' ||
+		t.getAttribute('role') === 'img' || t.classList.contains('gm-style')) {
+		return;
+	}
 
 	if (e.ctrlKey) return;
 
@@ -84,60 +91,7 @@ export function onWheel(e: WheelEvent): void {
 	scrollTo(target, 0, deltaY);
 }
 
-export function onKeydown(e: KeyboardEvent): void {
-	if (!settings.enabled || !settings.keyboard) return;
-
-	// Conflict: If site already handled it (e.g. video control), do not scroll
-	if (e.defaultPrevented) return;
-
-	if (e.ctrlKey || e.altKey || e.metaKey) return;
-
-	if (shouldIgnoreInput(document.activeElement)) return;
-
-	// Keyboard always assumes vertical scroll roughly
-
-	// rule: If focus is generic (body/html), probe for the real main scroller (AI Chat fix)
-	const active = document.activeElement;
-	let target: Element | Window;
-
-	if (!active || active === document.body || active === document.documentElement) {
-		target = findMainScrollTarget(100);
-	} else {
-		target = findScrollTargetChained(active, 100);
-	}
-
-	if (!canScrollBy(target, 100)) return;
-
-	const pageHeight = window.innerHeight * 0.9;
-	let deltaY = 0;
-
-	// inv: Trust defaultPrevented to handle video player shortcuts.
-	// We no longer aggressively block scrolling just because a video exists.
-
-	switch (e.key) {
-		case 'ArrowDown':
-			deltaY = settings.arrowKeyStep;
-			break;
-		case 'ArrowUp':
-			deltaY = -settings.arrowKeyStep;
-			break;
-		case 'PageDown':
-			deltaY = pageHeight;
-			break;
-		case 'PageUp':
-			deltaY = -pageHeight;
-			break;
-		case ' ':
-			// Spacebar is tricky. Video sites usually preventDefault it.
-			// If not, it means scroll.
-			deltaY = e.shiftKey ? -pageHeight : pageHeight;
-			break;
-		default: return;
-	}
-
-	e.preventDefault();
-	scrollTo(target, 0, deltaY);
-}
+export { onKeydown } from './smooth-scroll-keyboard';
 
 export function onMouseDown(e: MouseEvent): void {
 	if (!settings.enabled || !settings.middleClickAutoScroll) return;

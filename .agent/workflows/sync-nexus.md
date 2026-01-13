@@ -17,7 +17,7 @@ description: 自动化同步 Nexus 私有库到 Public 开源库，并完成 Git
 // turbo
 
 ```bash
-pnpm sync-public
+bun run sync-spectra
 ```
 
 (在 nexus 目录执行)

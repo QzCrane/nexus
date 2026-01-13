@@ -25,10 +25,10 @@ Halo 依赖以下核心模块，确保它们是最新的：
 
 ```bash
 # 1. 清理旧构建
-rimraf apps/extension-halo/dist
+bun run rimraf apps/extension-halo/dist
 
 # 2. 生产环境构建 (压缩, 无 Sourcemap)
-pnpm build --filter @nexus/extension-halo
+bun turbo run build --filter=@nexus/extension-halo
 
 # 3. 打包 ZIP
 cd apps/extension-halo
@@ -54,6 +54,6 @@ cd apps/extension-halo
 // turbo
 
 ```bash
-pnpm sync-halo
+bun run sync-halo
 cd ../halo-public ; git push origin main
 ```

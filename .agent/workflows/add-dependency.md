@@ -13,10 +13,10 @@ description: 引入新依赖库的标准流程 (查重 + 记录)
 
 ## 2. 安装
 
-- Root: `pnpm add -w <pkg>`
-- Workspace: `pnpm add <pkg> --filter <ws>`
+- Root: `bun add <pkg>`
+- Workspace: `bun add <pkg> --cwd [packages|apps]/<ws>`
   // turbo
-- 验证: `pnpm install`
+- 验证: `bun install`
 
 ## 3. 记录 (强制)
 

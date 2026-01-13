@@ -20,8 +20,8 @@ description: Extension Spectra 发布标准流程 (测试 + 打包)
 
 ```bash
 # 确保使用生产模式构建 (去除 sourcemap, 最小化)
-cd nexus ; pnpm build:prod --filter @nexus/extension-spectra
-cd apps/extension-spectra ; pnpm test:e2e
+cd nexus ; bun turbo run build:prod --filter=@nexus/extension-spectra
+cd apps/extension-spectra ; bun run test:e2e
 ```
 
 ## 3. 构建打包
@@ -54,6 +54,6 @@ Compress-Archive -Path .\dist\* -DestinationPath .\spectra-v<VER>.zip -Force
 // turbo
 
 ```bash
-pnpm sync-spectra
+bun run sync-spectra
 cd ../spectra-public ; git push origin main
 ```

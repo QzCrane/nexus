@@ -24,15 +24,11 @@ function isScrollable(el: Element): boolean {
 	const hasScrollableOverflow = overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
 	const hasScrollableContent = el.scrollHeight > el.clientHeight + 10;
 
-	// rule: also check hidden elements that are actually scrollable (JS-controlled scroll)
-	// inv: must test actual scroll capability, not just content overflow
-	if (overflowY === 'hidden' && hasScrollableContent) {
-		// Test if element actually responds to scroll by trying to scroll it
-		const prevTop = el.scrollTop;
-		el.scrollTop = prevTop + 1;
-		const canActuallyScroll = el.scrollTop !== prevTop;
-		el.scrollTop = prevTop; // Restore original position
-		if (canActuallyScroll) return true;
+	// rule: Strict Mode for Mouse Wheel - Ignore overflow:hidden
+	// Mouse wheel should only trigger on explicit scroll containers.
+	// This prevents "Phantom Targets" (Issue 2) where small hidden layout divs hijack the scroll.
+	if (overflowY === 'hidden' || overflowY === 'visible') {
+		return false;
 	}
 
 	return hasScrollableOverflow && hasScrollableContent;
@@ -189,6 +185,13 @@ export function shouldIgnoreInput(activeElement: Element | null): boolean {
 
 	// ARIA roles that implies interaction
 	if (role === 'textbox' || role === 'listbox' || role === 'menu' || role === 'slider' || role === 'switch') {
+		return true;
+	}
+
+	// Smart Video Player Detection
+	// rule: Only ignore if the SPECIFIC container has a video (e.g. YouTube player div).
+	// Do NOT ignore if it is the Body/HTML (otherwise any site with a video ad stops scrolling).
+	if (current !== document.body && current !== document.documentElement && current.querySelector('video, audio')) {
 		return true;
 	}
 

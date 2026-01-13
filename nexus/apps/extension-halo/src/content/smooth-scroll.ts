@@ -26,9 +26,9 @@ export function updateSettings(newSettings: ScrollSettings): void {
 }
 
 export function attachListeners(): void {
-	// rule: Use bubble phase (capture: false) to respect site's stopPropagation/preventDefault
-	// inv: passive: false is required to prevent native scrolling
-	window.addEventListener('wheel', onWheel, { passive: false, capture: false });
+	// rule: Use capture phase to override aggressive site scrollers (Douyin)
+	// inv: passive: false required to prevent default
+	window.addEventListener('wheel', onWheel, { passive: false, capture: true });
 	window.addEventListener('keydown', onKeydown);
 	window.addEventListener('mousedown', onMouseDown);
 }

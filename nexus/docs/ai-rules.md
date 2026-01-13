@@ -73,7 +73,7 @@ Template: `// field: <content>`
 
 ## §4 环境
 
-pnpm workspace | `pnpm install/build/--filter [name] build` | 内部包: `"@nexus/x": "workspace:*"`
+bun workspace | `bun install/run build` (apps/packages) | 内部包: `"@nexus/x": "workspace:*"`
 
 构建: esbuild 统一 | `--dev` 不压缩 | `--watch` 实时监视 | verify-architecture 自动执行
 
@@ -88,14 +88,14 @@ pnpm workspace | `pnpm install/build/--filter [name] build` | 内部包: `"@nexu
 
 ## §5 开源
 
-双仓库: nexus(私有) → {spectra, halo}-public | `pnpm sync-spectra` / `pnpm sync-halo`
+双仓库: nexus(私有) → {spectra, halo}-public | `bun run sync-spectra` / `bun run sync-halo`
 排除: scripts/ docs/ .agent/ store-listings/ test/ assets/ \*.ai-context.md plan.md
 规则: 公开库禁包含 AI context / 脚本 / 内部文档 / 历史 commit
 
 **Git 排除规则**:
 
 1. `git add + commit + push` (nexus)
-2. `pnpm sync-spectra` 或 `pnpm sync-halo`
+2. `bun run sync-spectra` 或 `bun run sync-halo`
 3. `cd ../spectra-public ; git push -f origin main`
 
 **隔离策略**:
@@ -107,7 +107,7 @@ pnpm workspace | `pnpm install/build/--filter [name] build` | 内部包: `"@nexu
 
 ## §6 语言
 
-新代码强制英文 | commit 英文 | `pnpm verify`检测
+新代码强制英文 | commit 英文 | `bun run verify`检测
 
 ---
 
@@ -146,5 +146,5 @@ i18n: 禁硬编码字符串 | 必须下沉至工具目录 (SSOT) | 必须支持�
 策略: Playwright + 持久化上下文 | chrome.storage/IndexedDB 不可靠时超时降级内存
 模式: `safe-storage.ts` 包装 chrome.storage (2s 超时返回默认值)
 扩展: ModuleManager 3s 超时切换内存模式 | i18n 2s 超时使用浏览器 locale
-命令: `pnpm test:playwright` → 截图到 `test/screenshots/`
+命令: `bun run test:playwright` → 截图到 `test/screenshots/`
 红线: 禁直接调用 chrome.storage (必须用 safeStorageGet/Set) | 初始化 Promise 必须有超时

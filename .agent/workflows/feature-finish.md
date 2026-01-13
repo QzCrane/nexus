@@ -19,14 +19,14 @@ description: 任务交付门禁 (测试 + 文档同步 + 提交)
 // turbo
 
 ```bash
-pnpm build
+bun run build
 ```
 
 (在 nexus 目录执行)
 
 ## 3. 最终清单 (审计)
 
-- [ ] 符合verify-architecture各项规则
+- [ ] 符合 verify-architecture 各项规则
 - [ ] 警告数无增长
 - [ ] 文档信息熵极高 (无损压缩)
 

@@ -5,12 +5,12 @@
 	"description": "HALO - Lightweight Utilities & Dark Mode",
 	"type": "module",
 	"scripts": {
-		"dev": "node build.mjs --watch",
-		"build": "node build.mjs --dev",
-		"build:prod": "node build.mjs",
-		"typecheck": "tsc --noEmit",
-		"test:ui": "pnpm build ; tsx test/ui-review.spec.ts",
-		"test:playwright": "pnpm build ; tsx test/ui-playwright.spec.ts"
+		"dev": "bun build.mjs --watch",
+		"build": "bun build.mjs --dev",
+		"build:prod": "bun build.mjs",
+		"typecheck": "bun tsc --noEmit",
+		"test:ui": "bun build ; bun test/ui-review.spec.ts",
+		"test:playwright": "bun build ; bun test/ui-playwright.spec.ts"
 	},
 	"dependencies": {
 		"@nexus/contracts": "workspace:*",

@@ -6,6 +6,7 @@
 
 [HALO](apps/extension-halo/plan.md): 85 工具 ✅ | 自动注册 ✅ | 性能优化(Context Broadcast) ✅
 [SPECTRA](apps/extension-spectra/plan.md): 音视频控制 ✅ | AI 人声分离 🔜 | 零拷贝 ✅
+[INFRA]: 迁移至 Bun Runtime (v1.3.5) ✅
 
 ## 里程碑
 
