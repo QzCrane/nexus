@@ -26,20 +26,17 @@ export function updateSettings(newSettings: ScrollSettings): void {
 }
 
 export function attachListeners(): void {
-	// rule: Use capture phase for wheel to intercept before site handlers (e.g. Douyin virtual scroll)
-	window.addEventListener('wheel', onWheel, { passive: false, capture: true });
+	// rule: Use bubble phase (capture: false) to respect site's stopPropagation/preventDefault
+	// inv: passive: false is required to prevent native scrolling
+	window.addEventListener('wheel', onWheel, { passive: false, capture: false });
 	window.addEventListener('keydown', onKeydown);
 	window.addEventListener('mousedown', onMouseDown);
-	window.addEventListener('mousemove', onMouseMove);
-	window.addEventListener('mouseup', onMouseUp);
 }
 
 export function detachListeners(): void {
 	window.removeEventListener('wheel', onWheel, { capture: true });
 	window.removeEventListener('keydown', onKeydown);
 	window.removeEventListener('mousedown', onMouseDown);
-	window.removeEventListener('mousemove', onMouseMove);
-	window.removeEventListener('mouseup', onMouseUp);
 }
 
 export async function init(): Promise<void> {

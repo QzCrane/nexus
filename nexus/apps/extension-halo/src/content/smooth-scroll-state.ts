@@ -1,7 +1,7 @@
 // goal: Shared state for Smooth Scroll content script
 // eff: Central source of truth for settings and runtime state
 
-import type { EasingType } from '../tools/smooth-scroll/engine';
+import type { EasingType } from '../tools/smooth-scroll/types';
 
 export interface ScrollSettings {
 	enabled: boolean;

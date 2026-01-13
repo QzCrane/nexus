@@ -17,8 +17,10 @@ export interface ScrollSettings {
 	middleClickAutoScroll: boolean;
 	fixedBackground: boolean;
 	// Easing
-	easing: 'linear' | 'ease' | 'ease-out' | 'spring';
+	easing: EasingType;
 }
+
+export type EasingType = 'linear' | 'ease' | 'ease-out' | 'spring';
 
 export const DEFAULT_SETTINGS: ScrollSettings = {
 	enabled: true,

@@ -1,11 +1,13 @@
 // goal: Event handlers for Smooth Scroll
 // eff: Loosely coupled handlers using shared state
 
-import { scheduleClearCache, findScrollTarget, canScroll, shouldIgnoreInput } from '../tools/smooth-scroll/utils';
+import { scheduleClearCache, findScrollTargetChained, canScrollBy, shouldIgnoreInput, findMainScrollTarget } from '../tools/smooth-scroll/utils';
 import { scrollTo } from '../tools/smooth-scroll/engine';
 import { settings, state, lastScrollTime, acceleration, updateAcceleration } from './smooth-scroll-state';
 
-// Touchpad detection
+// Touchpad detection & Hot Cache
+let hotTarget: { el: Element | Window, ts: number, targetRef: EventTarget | null } | null = null;
+
 function isTouchpad(deltaY: number): boolean {
 	// ... existing logic ...
 	if (!deltaY) return false;
@@ -20,20 +22,40 @@ function isTouchpad(deltaY: number): boolean {
 
 export function onWheel(e: WheelEvent): void {
 	if (!settings.enabled || !settings.mouseWheel) return;
-	// note: removed defaultPrevented check - we take over scrolling even if site handled it
+
+	// rule: Respect native configuration (if site prevents scroll, we stop)
+	if (e.defaultPrevented) return;
+
 	if (e.ctrlKey) return;
 
 	const touchpad = isTouchpad(e.deltaY);
 	if (touchpad && !settings.touchpad) return;
 
-	const target = findScrollTarget(e.target as Element);
-	if (!canScroll(target)) return;
+	let deltaY = e.deltaY;
+	if (e.deltaMode === 1) deltaY *= 40;
+
+	// perf: Hot cache check
+	// If frequent events on same target, reuse the scroll container
+	let target: Element | Window;
+	const now = Date.now();
+
+	if (hotTarget &&
+		now - hotTarget.ts < 150 &&
+		hotTarget.targetRef === e.target) {
+		// Cache Hit!
+		target = hotTarget.el;
+		hotTarget.ts = now;
+	} else {
+		// Cache Miss - Traverse DOM
+		target = findScrollTargetChained(e.target as Element, deltaY);
+		hotTarget = { el: target, ts: now, targetRef: e.target };
+	}
+
+	// If target cannot scroll in this direction (and chaining didn't find a better one), bubble up
+	if (!canScrollBy(target, deltaY)) return;
 
 	e.preventDefault();
 	scheduleClearCache();
-
-	let deltaY = e.deltaY;
-	if (e.deltaMode === 1) deltaY *= 40;
 
 	// rule: touchpad uses direct scroll for responsive "native" feel
 	if (touchpad) {
@@ -46,14 +68,14 @@ export function onWheel(e: WheelEvent): void {
 	}
 
 	// Mouse wheel: use animation queue with acceleration
-	const now = Date.now();
+	const scrollNow = Date.now();
 	let newAcc = acceleration;
-	if (now - lastScrollTime < settings.accelerationDelta) {
+	if (scrollNow - lastScrollTime < settings.accelerationDelta) {
 		newAcc = Math.min(acceleration + 0.5, settings.accelerationMax);
 	} else {
 		newAcc = 1;
 	}
-	updateAcceleration(newAcc, now);
+	updateAcceleration(newAcc, scrollNow);
 
 	if (Math.abs(deltaY) > 1.2) {
 		deltaY = (deltaY > 0 ? 1 : -1) * settings.stepSize * newAcc;
@@ -72,26 +94,43 @@ export function onKeydown(e: KeyboardEvent): void {
 
 	if (shouldIgnoreInput(document.activeElement)) return;
 
-	const target = findScrollTarget(document.activeElement as Element);
-	if (!canScroll(target)) return;
+	// Keyboard always assumes vertical scroll roughly
+
+	// rule: If focus is generic (body/html), probe for the real main scroller (AI Chat fix)
+	const active = document.activeElement;
+	let target: Element | Window;
+
+	if (!active || active === document.body || active === document.documentElement) {
+		target = findMainScrollTarget(100);
+	} else {
+		target = findScrollTargetChained(active, 100);
+	}
+
+	if (!canScrollBy(target, 100)) return;
 
 	const pageHeight = window.innerHeight * 0.9;
 	let deltaY = 0;
 
-	// inv: Skip scroll keys on video pages (arrows = volume/seek, space = play/pause)
-	const hasVideo = document.querySelector('video');
+	// inv: Trust defaultPrevented to handle video player shortcuts.
+	// We no longer aggressively block scrolling just because a video exists.
 
 	switch (e.key) {
 		case 'ArrowDown':
-		case 'ArrowUp':
-			if (hasVideo) return;
-			deltaY = e.key === 'ArrowDown' ? settings.arrowKeyStep : -settings.arrowKeyStep;
+			deltaY = settings.arrowKeyStep;
 			break;
-		case 'PageDown': deltaY = pageHeight; break;
-		case 'PageUp': deltaY = -pageHeight; break;
-		case ' ':
-			if (hasVideo) return;
+		case 'ArrowUp':
+			deltaY = -settings.arrowKeyStep;
+			break;
+		case 'PageDown':
 			deltaY = pageHeight;
+			break;
+		case 'PageUp':
+			deltaY = -pageHeight;
+			break;
+		case ' ':
+			// Spacebar is tricky. Video sites usually preventDefault it.
+			// If not, it means scroll.
+			deltaY = e.shiftKey ? -pageHeight : pageHeight;
 			break;
 		default: return;
 	}
@@ -104,14 +143,18 @@ export function onMouseDown(e: MouseEvent): void {
 	if (!settings.enabled || !settings.middleClickAutoScroll) return;
 	if (e.button !== 1) return;
 
-	const target = findScrollTarget(e.target as Element);
-	if (!canScroll(target)) return;
+	// Middle click also needs chaining support logic (simplified for now to just check scrollability)
+	const target = findScrollTargetChained(e.target as Element, 1); // Assume positive direction check
+	if (!canScrollBy(target, 1)) return;
 
 	e.preventDefault();
 	state.isMiddleScrolling = true;
 	state.middleScrollStartY = e.clientY;
 	state.middleScrollTarget = target;
 	document.body.style.cursor = 'ns-resize';
+
+	window.addEventListener('mousemove', onMouseMove);
+	window.addEventListener('mouseup', onMouseUp);
 }
 
 export function onMouseMove(e: MouseEvent): void {
@@ -128,8 +171,14 @@ export function onMouseMove(e: MouseEvent): void {
 
 export function onMouseUp(e: MouseEvent): void {
 	if (e.button === 1 && state.isMiddleScrolling) {
-		state.isMiddleScrolling = false;
-		state.middleScrollTarget = null;
-		document.body.style.cursor = '';
+		stopMiddleScroll();
 	}
+}
+
+function stopMiddleScroll() {
+	state.isMiddleScrolling = false;
+	state.middleScrollTarget = null;
+	document.body.style.cursor = '';
+	window.removeEventListener('mousemove', onMouseMove);
+	window.removeEventListener('mouseup', onMouseUp);
 }

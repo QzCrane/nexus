@@ -65,6 +65,54 @@ export function findScrollTarget(el: Element | null): Element | Window {
 }
 
 /**
+ * Find scroll target with scroll chaining support
+ */
+export function findScrollTargetChained(startEl: Element | null, deltaY: number): Element | Window {
+	let current = startEl;
+	// Limit depth to avoid infinite loops, though DOM is finite
+	let depth = 0;
+
+	while (current && depth < 20) {
+		const target = findScrollTarget(current);
+		if (target instanceof Window) return target;
+
+		if (canScrollBy(target, deltaY)) {
+			return target;
+		}
+
+		// If this target can't scroll in this direction, try its parent
+		// We skip the cache lookup for the parent to ensure we traverse up
+		current = (target as HTMLElement).parentElement;
+		depth++;
+	}
+
+	return window;
+}
+
+/**
+ * Scan for the likely main scroller element when focus is generic (body/html)
+ * strategy: Probe the center of the screen to find the deepest scrollable element
+ */
+export function findMainScrollTarget(deltaY: number): Element | Window {
+	// Probe center of screen
+	const cx = window.innerWidth / 2;
+	const cy = window.innerHeight / 2;
+
+	const candidates = document.elementsFromPoint(cx, cy);
+
+	for (const el of candidates) {
+		const target = findScrollTargetChained(el, deltaY);
+		if (target !== window && canScrollBy(target, deltaY)) {
+			return target;
+		}
+	}
+
+	// Fallback to window
+	return window;
+}
+
+
+/**
  * Get scroll position
  */
 export function getScrollY(target: Element | Window): number {
@@ -86,6 +134,24 @@ export function getMaxScroll(target: Element | Window): number {
  */
 export function canScroll(target: Element | Window): boolean {
 	return getMaxScroll(target) > 0;
+}
+
+/**
+ * Check if target can scroll in specific direction
+ * rule: allow 1px slop for rounding errors
+ */
+export function canScrollBy(target: Element | Window, deltaY: number): boolean {
+	if (target instanceof Window) {
+		const max = document.documentElement.scrollHeight - window.innerHeight;
+		if (deltaY < 0) return window.scrollY > 0;
+		if (deltaY > 0) return window.scrollY < max;
+		return false;
+	}
+
+	const max = target.scrollHeight - target.clientHeight;
+	if (deltaY < 0) return target.scrollTop > 0;
+	if (deltaY > 0) return target.scrollTop < max - 1;
+	return false;
 }
 
 /**

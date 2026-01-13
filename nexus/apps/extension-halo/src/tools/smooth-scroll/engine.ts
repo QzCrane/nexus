@@ -1,7 +1,7 @@
 // goal: Scroll engine with queue system (based on gblazex/smoothscroll)
 // inv: Single animation loop processes queue, prevents jumping
 
-export type EasingType = 'linear' | 'ease' | 'ease-out' | 'spring';
+import type { EasingType } from './types';
 
 export interface ScrollCommand {
 	x: number;
@@ -28,7 +28,7 @@ const state: EngineState = {
 	direction: { x: 0, y: 0 },
 	lastScroll: 0,
 	animationTime: 400,
-	easing: 'ease-out',
+	easing: 'spring', // Default to spring
 };
 
 export function configure(animationTime: number, easing: EasingType): void {
@@ -36,21 +36,23 @@ export function configure(animationTime: number, easing: EasingType): void {
 	state.easing = easing;
 }
 
-// Easing functions (fast response, no slow start)
+// Easing functions (Premium/Luxury Curves)
 function getEasedPosition(t: number): number {
 	switch (state.easing) {
 		case 'linear':
 			return t;
 		case 'ease':
-			// Quad ease-in-out
-			return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+			// InOutCubic: Sharper acceleration/deceleration than Quad
+			return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 		case 'ease-out':
-			// Cubic ease-out (fast start, slow end)
-			return 1 - Math.pow(1 - t, 3);
+			// OutQuint: Initial fast step with extremely long, viscous tail (Silky)
+			return 1 - Math.pow(1 - t, 5);
 		case 'spring':
-			// Quartic ease-out (very fast start, gentle end)
-			return 1 - Math.pow(1 - t, 4);
+			// OutExpo: Mimics friction-based physics decay (Apple-style)
+			// Much smoother than Quartic, feels "alive"
+			return t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
 		default:
+			// Fallback to OutCubic
 			return 1 - Math.pow(1 - t, 3);
 	}
 }

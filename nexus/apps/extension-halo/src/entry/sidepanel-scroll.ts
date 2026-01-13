@@ -2,7 +2,7 @@
 // inv: Always active in sidepanel, ignores the 'enabled' setting (only for web pages)
 
 import { scrollTo, configure } from '../tools/smooth-scroll/engine';
-import type { EasingType } from '../tools/smooth-scroll/engine';
+import type { EasingType } from '../tools/smooth-scroll/types';
 
 interface ScrollCfg {
 	enabled: boolean;
