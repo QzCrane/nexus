@@ -35,10 +35,10 @@ function run(label, cmd, opts = {}) {
 if (!isWatch) {
 	const verifyPath = resolve(__dirname, '../../scripts/verify-architecture.js');
 	if (existsSync(verifyPath)) {
-		run('verify', 'node ../../scripts/verify-architecture.js', { silent: true });
+		run('verify', 'bun ../../scripts/verify-architecture.js', { silent: true });
 	}
 	
-	if (!run('tsc', 'npx tsc --noEmit --skipLibCheck')) {
+	if (!run('tsc', 'bun tsc --noEmit --skipLibCheck')) {
 		process.exit(1);
 	}
 	console.log('✓ Pre-flight: tsc OK');

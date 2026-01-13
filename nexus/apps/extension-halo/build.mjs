@@ -5,7 +5,7 @@
  */
 
 import esbuild from 'esbuild';
-import fs from 'fs-extra';
+import { rmSync, mkdirSync, cpSync, existsSync, readdirSync, copyFileSync, statSync } from 'node:fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
@@ -33,23 +33,23 @@ if (!isWatch) {
 	const registryPath = path.resolve(__dirname, '../../scripts/generate-tool-registry.mjs');
 	const verifyPath = path.resolve(__dirname, '../../scripts/verify-architecture.js');
 	
-	if (fs.existsSync(registryPath)) {
-		run('registry', 'node ../../scripts/generate-tool-registry.mjs', { silent: true });
+	if (existsSync(registryPath)) {
+		run('registry', 'bun ../../scripts/generate-tool-registry.mjs', { silent: true });
 	}
-	if (fs.existsSync(verifyPath)) {
-		run('verify', 'node ../../scripts/verify-architecture.js', { silent: true });
+	if (existsSync(verifyPath)) {
+		run('verify', 'bun ../../scripts/verify-architecture.js', { silent: true });
 	}
 	
-	if (!run('tsc', 'npx tsc --noEmit --skipLibCheck')) {
+	if (!run('tsc', 'bun tsc --noEmit --skipLibCheck')) {
 		process.exit(1);
 	}
 	console.log('✓ Pre-flight: tsc OK');
 }
 
 // Prepare dist
-fs.removeSync('dist');
-fs.ensureDirSync('dist');
-fs.copySync('public', 'dist');
+if (existsSync('dist')) rmSync('dist', { recursive: true, force: true });
+mkdirSync('dist', { recursive: true });
+cpSync('public', 'dist', { recursive: true });
 
 // Copy SaaT script files
 const toolsDir = path.join(__dirname, 'src/tools');
@@ -57,26 +57,26 @@ const scriptsDir = path.join(__dirname, 'src/scripts');
 const distToolsDir = path.join(__dirname, 'dist/tools');
 const distScriptsDir = path.join(__dirname, 'dist/scripts');
 
-fs.ensureDirSync(distToolsDir);
-fs.ensureDirSync(distScriptsDir);
+mkdirSync(distToolsDir, { recursive: true });
+mkdirSync(distScriptsDir, { recursive: true });
 
 function copyScriptFiles(sourceDir, destBaseDir) {
-	if (!fs.existsSync(sourceDir)) return 0;
-	const dirs = fs.readdirSync(sourceDir, { withFileTypes: true }).filter(d => d.isDirectory());
+	if (!existsSync(sourceDir)) return 0;
+	const dirs = readdirSync(sourceDir, { withFileTypes: true }).filter(d => d.isDirectory());
 	let count = 0;
 	for (const dir of dirs) {
 		const scriptJs = path.join(sourceDir, dir.name, 'script.js');
 		const scriptCss = path.join(sourceDir, dir.name, 'script.css');
 		const destDir = path.join(destBaseDir, dir.name);
 		let copied = false;
-		if (fs.existsSync(scriptJs)) {
-			fs.ensureDirSync(destDir);
-			fs.copyFileSync(scriptJs, path.join(destDir, 'script.js'));
+		if (existsSync(scriptJs)) {
+			mkdirSync(destDir, { recursive: true });
+			copyFileSync(scriptJs, path.join(destDir, 'script.js'));
 			copied = true;
 		}
-		if (fs.existsSync(scriptCss)) {
-			fs.ensureDirSync(destDir);
-			fs.copyFileSync(scriptCss, path.join(destDir, 'script.css'));
+		if (existsSync(scriptCss)) {
+			mkdirSync(destDir, { recursive: true });
+			copyFileSync(scriptCss, path.join(destDir, 'script.css'));
 			copied = true;
 		}
 		if (copied) count++;
@@ -136,7 +136,7 @@ if (isWatch) {
 	const results = await Promise.all(entries.map(async ({ entry, out }) => {
 		try {
 			await esbuild.build({ ...commonConfig, entryPoints: [entry], outfile: `dist/${out}`, write: true });
-			const kb = (fs.statSync(`dist/${out}`).size / 1024).toFixed(0);
+			const kb = (statSync(`dist/${out}`).size / 1024).toFixed(0);
 			return `${out.replace('.js', '')}:${kb}KB`;
 		} catch (e) {
 			console.error(`❌ ${out}: ${e.message}`);
