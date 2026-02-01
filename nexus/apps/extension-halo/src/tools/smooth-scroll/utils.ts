@@ -32,10 +32,25 @@ export function findScrollTarget(el: Element | null): Element | Window {
 	while (el && el !== document.body && el !== document.documentElement) {
 		const cached = cache.get(el);
 		if (cached) return cached;
-		if (isScrollable(el)) {
+
+		const style = getComputedStyle(el);
+		// rule: Fixed/Sticky elements act as scroll barriers (Roots). We found a target (even if it cannot scroll itself, it traps the context)
+		if (style.position === 'fixed' || style.position === 'sticky') {
 			if (startEl) cache.set(startEl, el);
 			return el;
 		}
+
+		// rule: Standard scrollable check
+		// inline isScrollable logic to reuse 'style'
+		const overflowY = style.overflowY;
+		if (overflowY !== 'hidden' && overflowY !== 'visible') {
+			const isScrollStyle = overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
+			if (isScrollStyle && el.scrollHeight > el.clientHeight + 10) {
+				if (startEl) cache.set(startEl, el);
+				return el;
+			}
+		}
+
 		el = el.parentElement;
 	}
 	const result = window;
@@ -66,16 +81,14 @@ export function findScrollTargetChained(startEl: Element | null, deltaY: number)
 
 		if (overscroll === 'contain' || overscroll === 'none') return target;
 
-		// rule: Trap logic - if a scrollable container is visually "modal" (Fixed/Absolute)
+		// rule: Trap logic - if a scrollable container is visually "modal" (Fixed/Sticky)
 		// we should strictly contain the scroll to prevent body bleeding, as this is the standard UX pattern.
-		// note: Bilibili favorite modal structure: wrapper(fixed) > list(static/relative) -> offsetParent check handles wrapper
-		const isFloating = style.position === 'fixed' || style.position === 'sticky' || style.position === 'absolute'
-			|| (target as HTMLElement).offsetParent === null // Fixed elements often have null offsetParent in some contexts
-			|| getComputedStyle((target as HTMLElement).offsetParent || document.body).position === 'fixed';
+		// note: Absolute is NOT a barrier, but Fixed/Sticky are roots.
+		const isBarrier = style.position === 'fixed' || style.position === 'sticky';
 
-		const isExplicitlyScrollable = style.overflowY === 'auto' || style.overflowY === 'scroll';
-
-		if (isFloating && isExplicitlyScrollable) return target;
+		// note: if it's a barrier (even if not scrollable), we trap it here. 
+		// Because findScrollTarget already returned it, meaning it's the "Ceiling" of our search.
+		if (isBarrier) return target;
 
 		current = (target as HTMLElement).parentElement;
 		depth++;

@@ -50,6 +50,7 @@ export function onWheel(e: WheelEvent): void {
 		if (target !== window) {
 			e.preventDefault();
 			e.stopPropagation();
+			e.stopImmediatePropagation();
 		}
 		return;
 	}
