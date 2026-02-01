@@ -68,8 +68,13 @@ export function findScrollTargetChained(startEl: Element | null, deltaY: number)
 
 		// rule: Trap logic - if a scrollable container is visually "modal" (Fixed/Absolute)
 		// we should strictly contain the scroll to prevent body bleeding, as this is the standard UX pattern.
-		const isFloating = style.position === 'fixed' || style.position === 'sticky' || style.position === 'absolute';
+		// note: Bilibili favorite modal structure: wrapper(fixed) > list(static/relative) -> offsetParent check handles wrapper
+		const isFloating = style.position === 'fixed' || style.position === 'sticky' || style.position === 'absolute'
+			|| (target as HTMLElement).offsetParent === null // Fixed elements often have null offsetParent in some contexts
+			|| getComputedStyle((target as HTMLElement).offsetParent || document.body).position === 'fixed';
+
 		const isExplicitlyScrollable = style.overflowY === 'auto' || style.overflowY === 'scroll';
+
 		if (isFloating && isExplicitlyScrollable) return target;
 
 		current = (target as HTMLElement).parentElement;
