@@ -11,6 +11,7 @@ VideoControl: 变速 0.1x-16x | 旋转/镜像/缩放 | 亮度/对比度/饱和�
 
 交互: ✅ 右键菜单预设 | ✅ 键盘快捷键 (Global/OSD) | ✅ 平滑滚动 (Boundary bubbled) | 媒体嗅探列表
 集成: SponsorBlock(跳过推广) | Lyrics Sync(字幕同步)
+性能: ✅ Zero-Allocation (Loop/Audio/Capture) | ✅ O(N) Frequency Scan
 
 ## 阶段 3: 本地 AI (Moat) 🔜
 

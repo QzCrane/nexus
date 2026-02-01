@@ -66,16 +66,29 @@ function onMouseDown(e: MouseEvent): void {
 	}
 }
 
+let rafId: number | null = null;
 function onMouseMove(e: MouseEvent): void {
 	if (!isDragging || !box) return;
-	const x = Math.min(startX, e.clientX);
-	const y = Math.min(startY, e.clientY);
-	const w = Math.abs(e.clientX - startX);
-	const h = Math.abs(e.clientY - startY);
-	box.style.left = `${x}px`;
-	box.style.top = `${y}px`;
-	box.style.width = `${w}px`;
-	box.style.height = `${h}px`;
+
+	// eff: decouple input rate from frame rate
+	if (rafId) return;
+
+	rafId = requestAnimationFrame(() => {
+		if (!isDragging || !box) { rafId = null; return; }
+		const x = Math.min(startX, e.clientX);
+		const y = Math.min(startY, e.clientY);
+		const w = Math.abs(e.clientX - startX);
+		const h = Math.abs(e.clientY - startY);
+
+		// eff: batch style updates
+		const s = box.style;
+		s.left = `${x}px`;
+		s.top = `${y}px`;
+		s.width = `${w}px`;
+		s.height = `${h}px`;
+
+		rafId = null;
+	});
 }
 
 function onMouseUp(e: MouseEvent): void {

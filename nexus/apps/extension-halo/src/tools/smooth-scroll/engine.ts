@@ -1,159 +1,105 @@
-// goal: Scroll engine with queue system (based on gblazex/smoothscroll)
-// inv: Single animation loop processes queue, prevents jumping
+// goal: Scroll engine with queue system
+// eff: Zero-alloc hot loop, bitwise truncations
 
 import type { EasingType } from './types';
 
 export interface ScrollCommand {
-	x: number;
-	y: number;
-	lastX: number;
-	lastY: number;
+	x: number; y: number;
+	lastX: number; lastY: number;
 	start: number;
 }
 
-interface EngineState {
-	que: ScrollCommand[];
-	pending: number | null;
-	target: Element | Window | null;
-	direction: { x: number; y: number };
-	lastScroll: number;
-	animationTime: number;
-	easing: EasingType;
-}
-
-const state: EngineState = {
-	que: [],
-	pending: null,
-	target: null,
-	direction: { x: 0, y: 0 },
-	lastScroll: 0,
-	animationTime: 400,
-	easing: 'spring', // Default to spring
+const state = {
+	que: [] as ScrollCommand[],
+	pending: 0, // Using 0 instead of null for number type stability
+	target: null as Element | Window | null,
+	dirX: 0, dirY: 0, // Flattened direction
+	time: 400,
+	easing: 'spring' as EasingType,
 };
 
-export function configure(animationTime: number, easing: EasingType): void {
-	state.animationTime = animationTime;
+export function configure(time: number, easing: EasingType): void {
+	state.time = time;
 	state.easing = easing;
 }
 
-// Easing functions (Premium/Luxury Curves)
-function getEasedPosition(t: number): number {
-	switch (state.easing) {
-		case 'linear':
-			return t;
-		case 'ease':
-			// InOutCubic: Sharper acceleration/deceleration than Quad
-			return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-		case 'ease-out':
-			// OutQuint: Initial fast step with extremely long, viscous tail (Silky)
-			return 1 - Math.pow(1 - t, 5);
-		case 'spring':
-			// OutExpo: Mimics friction-based physics decay (Apple-style)
-			// Much smoother than Quartic, feels "alive"
-			return t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
-		default:
-			// Fallback to OutCubic
-			return 1 - Math.pow(1 - t, 3);
-	}
+// eff: Branchless or direct math
+function getEased(t: number): number {
+	if (state.easing === 'spring') return t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
+	if (state.easing === 'ease-out') return 1 - Math.pow(1 - t, 5);
+	if (state.easing === 'ease') return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+	return t === 1 ? 1 : t; // linear fallback
 }
 
-function directionCheck(x: number, y: number): void {
-	const dirX = x > 0 ? 1 : -1;
-	const dirY = y > 0 ? 1 : -1;
-	if (state.direction.x !== dirX || state.direction.y !== dirY) {
-		state.direction.x = dirX;
-		state.direction.y = dirY;
-		// Direction changed: clear queue to prevent jumping
-		state.que = [];
-		state.lastScroll = 0;
-		if (state.pending) {
-			cancelAnimationFrame(state.pending);
-			state.pending = null;
-		}
+function processStep(): void {
+	const { target, que, time } = state;
+	if (!target || !que.length) {
+		state.pending = 0;
+		return;
 	}
-}
-
-function scrollStep(): void {
-	const target = state.target;
-	if (!target) return;
 
 	const now = Date.now();
-	let scrollX = 0;
-	let scrollY = 0;
+	let sx = 0, sy = 0;
 
-	for (let i = 0; i < state.que.length; i++) {
-		const item = state.que[i]!;
+	// eff: Reverse loop allows O(1) removal if order didn't matter, but it does.
+	// Using standard loop with index adjustment for stability.
+	// eff: compact array in-place to avoid splice allocation
+	let active = 0;
+	for (let i = 0; i < que.length; i++) {
+		const item = que[i]!;
 		const elapsed = now - item.start;
-		const finished = elapsed >= state.animationTime;
+		const finished = elapsed >= time;
 
-		// Progress: [0, 1]
-		const rawPosition = finished ? 1 : elapsed / state.animationTime;
-		const position = getEasedPosition(rawPosition);
+		// Progress [0, 1]
+		const pos = finished ? 1 : getEased(elapsed / time);
 
-		// Differential scroll (only the increment)
-		const x = ((item.x * position - item.lastX) | 0);
-		const y = ((item.y * position - item.lastY) | 0);
+		// Differential scroll (only increment)
+		const dx = (item.x * pos - item.lastX) | 0;
+		const dy = (item.y * pos - item.lastY) | 0;
 
-		scrollX += x;
-		scrollY += y;
+		sx += dx; sy += dy;
+		item.lastX += dx; item.lastY += dy;
 
-		// Update last values
-		item.lastX += x;
-		item.lastY += y;
-
-		// Remove finished items
-		if (finished) {
-			state.que.splice(i, 1);
-			i--;
+		if (!finished) {
+			if (i !== active) que[active] = item;
+			active++;
 		}
 	}
+	que.length = active;
 
-	// Apply scroll
 	if (target instanceof Window) {
-		if (scrollX || scrollY) window.scrollBy(scrollX, scrollY);
+		(sx || sy) && window.scrollBy(sx, sy);
 	} else {
-		if (scrollX) target.scrollLeft += scrollX;
-		if (scrollY) target.scrollTop += scrollY;
+		sx && (target.scrollLeft += sx);
+		sy && (target.scrollTop += sy);
 	}
 
-	// Continue or finish
-	if (state.que.length) {
-		state.pending = requestAnimationFrame(scrollStep);
-	} else {
-		state.pending = null;
-	}
+	state.pending = que.length ? requestAnimationFrame(processStep) : 0;
 }
 
-/**
- * Push scroll command to queue
- */
-export function scrollTo(target: Element | Window, deltaX: number, deltaY: number): void {
-	directionCheck(deltaX, deltaY);
+export function scrollTo(target: Element | Window, x: number, y: number): void {
+	// Direction Check Inline
+	const dx = Math.sign(x), dy = Math.sign(y);
+	if (state.dirX !== dx || state.dirY !== dy) {
+		state.dirX = dx; state.dirY = dy;
+		state.que.length = 0; // eff: Fast clear
+		if (state.pending) cancelAnimationFrame(state.pending);
+		state.pending = 0;
+	}
 
 	state.target = target;
-
-	// Push command to queue
 	state.que.push({
-		x: deltaX,
-		y: deltaY,
-		lastX: deltaX < 0 ? 0.99 : -0.99,
-		lastY: deltaY < 0 ? 0.99 : -0.99,
+		x, y,
+		lastX: x < 0 ? 0.99 : -0.99, // Sub-pixel compensation
+		lastY: y < 0 ? 0.99 : -0.99,
 		start: Date.now(),
 	});
 
-	// Start animation loop if not running
-	if (!state.pending) {
-		state.pending = requestAnimationFrame(scrollStep);
-	}
+	if (!state.pending) state.pending = requestAnimationFrame(processStep);
 }
 
-/**
- * Clear all pending scrolls
- */
 export function clearQueue(): void {
-	state.que = [];
-	if (state.pending) {
-		cancelAnimationFrame(state.pending);
-		state.pending = null;
-	}
+	state.que.length = 0;
+	if (state.pending) cancelAnimationFrame(state.pending);
+	state.pending = 0;
 }

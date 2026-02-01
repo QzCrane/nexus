@@ -2,95 +2,52 @@ import { shouldIgnoreInput, findScrollTargetChained, findMainScrollTarget, canSc
 import { scrollTo } from '../tools/smooth-scroll/engine';
 import { settings } from './smooth-scroll-state';
 
+// eff: Static factors for key direction
+const KEYS: Record<string, number> = {
+	'ArrowDown': 1, 'ArrowUp': -1,
+	'PageDown': 0, 'PageUp': 0, ' ': 0
+};
+
+function isBlockingVideo(): boolean {
+	const videos = document.getElementsByTagName('video');
+	for (let i = 0, len = videos.length; i < len; i++) {
+		const v = videos[i];
+		if (!v) continue; // Static check
+		const rect = v.getBoundingClientRect();
+		// Skip tiny/invisible
+		if (rect.width < 50 || rect.height < 50 || rect.bottom < 0 || rect.top > window.innerHeight) continue;
+		// Playing or Large (20% viewport)
+		if ((!v.paused && !v.ended && v.readyState > 2) || (rect.width * rect.height > window.innerWidth * window.innerHeight * 0.2)) return true;
+	}
+	return false;
+}
+
 export function onKeydown(e: KeyboardEvent): void {
-	if (!settings.enabled || !settings.keyboard) return;
-
-	// Conflict: If site already handled it (e.g. video control), do not scroll
-	if (e.defaultPrevented) return;
-
-	if (e.ctrlKey || e.altKey || e.metaKey) return;
-
+	if (!settings.enabled || !settings.keyboard || e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey) return;
 	if (shouldIgnoreInput(document.activeElement)) return;
 
-	// Keyboard always assumes vertical scroll roughly
+	const keyFactor = KEYS[e.key];
+	if (keyFactor === undefined) return;
 
-	// rule: If focus is generic (body/html), probe for the real main scroller ONLY if safer to do so.
-	// AI Chats need Deep Probe. Video sites need to respect standard flow (prevent double-scroll).
 	const active = document.activeElement;
 	const isGeneric = !active || active === document.body || active === document.documentElement;
-	// Guard: Video Page Detection
-	// rule: Only yield to native video controls if the video is "prominent" (playing or large)
-	let isVideoGeneric = false;
-	if (isGeneric) {
-		const videos = document.getElementsByTagName('video');
-		for (let i = 0; i < videos.length; i++) {
-			const video = videos[i];
-			if (!video) continue;
-			const rect = video.getBoundingClientRect();
 
-			// 1. Ignore tiny/hidden videos
-			if (rect.width < 50 || rect.height < 50) continue;
+	// rule: Yield to video players if generic focus
+	const hasVideo = isGeneric && isBlockingVideo();
+	if (hasVideo) return; // Yield to native or site's own video handler
 
-			// 2. Logic: If Playing -> Yield (Control). If Large & Visible -> Yield (Control).
-			const isPlaying = !video.paused && !video.ended && video.readyState > 2;
-			const isLarge = (rect.width * rect.height) > (window.innerWidth * window.innerHeight * 0.2); // 20%
-			const isVisible = rect.bottom > 0 && rect.top < window.innerHeight;
+	const step = settings.arrowKeyStep;
+	const page = window.innerHeight * 0.9;
+	let dy = 0;
 
-			if (isPlaying || (isLarge && isVisible)) {
-				isVideoGeneric = true;
-				break;
-			}
-		}
+	if (e.key === ' ') dy = e.shiftKey ? -page : page;
+	else if (e.key === 'PageDown') dy = page;
+	else if (e.key === 'PageUp') dy = -page;
+	else dy = keyFactor * step;
+
+	const target = isGeneric ? findMainScrollTarget(dy) : findScrollTargetChained(active, dy);
+	if (canScrollBy(target, dy)) {
+		e.preventDefault();
+		scrollTo(target, 0, dy);
 	}
-
-	let target: Element | Window;
-
-	if (isGeneric) {
-		// If video exists, use standard probe (avoid digging into player internals or hidden divs)
-		// If no video (standard site/AI Chat), use Deep Probe to find the chat/article
-		if (isVideoGeneric) {
-			target = findScrollTargetChained(active, 100);
-		} else {
-			target = findMainScrollTarget(100);
-		}
-	} else {
-		target = findScrollTargetChained(active, 100);
-	}
-
-	if (!canScrollBy(target, 100)) return;
-
-	const pageHeight = window.innerHeight * 0.9;
-	let deltaY = 0;
-
-	// inv: Trust defaultPrevented to handle video player shortcuts.
-	// shouldIgnoreInput now handles the player wrapper focus case.
-
-	switch (e.key) {
-		case 'ArrowDown':
-			if (isVideoGeneric) return; // Yield to Video Logic
-			deltaY = settings.arrowKeyStep;
-			break;
-		case 'ArrowUp':
-			if (isVideoGeneric) return; // Yield to Video Logic
-			deltaY = -settings.arrowKeyStep;
-			break;
-		case 'PageDown':
-			if (isVideoGeneric) return; // Yield to Video Logic
-			deltaY = pageHeight;
-			break;
-		case 'PageUp':
-			if (isVideoGeneric) return; // Yield to Video Logic
-			deltaY = -pageHeight;
-			break;
-		case ' ':
-			// Spacebar is tricky. Video sites usually preventDefault it.
-			if (isVideoGeneric) return; // Yield to Video Logic
-			// If not, it means scroll.
-			deltaY = e.shiftKey ? -pageHeight : pageHeight;
-			break;
-		default: return;
-	}
-
-	e.preventDefault();
-	scrollTo(target, 0, deltaY);
 }

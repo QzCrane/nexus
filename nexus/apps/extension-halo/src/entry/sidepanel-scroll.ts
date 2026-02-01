@@ -36,26 +36,55 @@ function findScrollable(el: HTMLElement | null): HTMLElement {
 	return document.documentElement;
 }
 
-function onWheel(e: WheelEvent): void {
-	let target = findScrollable(e.target as HTMLElement);
-	const isDown = e.deltaY > 0, isUp = e.deltaY < 0;
+const hotTarget: { el: HTMLElement, ts: number, ref: EventTarget | null } = {
+	el: document.documentElement, ts: 0, ref: null
+};
 
-	while (target && target !== document.documentElement) {
-		const max = target.scrollHeight - target.clientHeight;
-		if (max <= 0) { target = findScrollable(target.parentElement); continue; }
-		const atTop = target.scrollTop <= 0, atBot = target.scrollTop >= max - 1;
-		if ((atTop && isUp) || (atBot && isDown)) { target = findScrollable(target.parentElement); continue; }
-		break;
+function onWheel(e: WheelEvent): void {
+	const now = Date.now();
+	let target: HTMLElement;
+
+	// eff: Hot cache check (150ms TTL) to avoid expensive DOM traversal
+	if (now - hotTarget.ts < 150 && hotTarget.ref === e.target) {
+		target = hotTarget.el;
+		hotTarget.ts = now;
+	} else {
+		target = findScrollable(e.target as HTMLElement);
+		hotTarget.el = target;
+		hotTarget.ts = now;
+		hotTarget.ref = e.target;
 	}
 
 	const max = target.scrollHeight - target.clientHeight;
 	if (max <= 0) return;
+
+	const isDown = e.deltaY > 0, isUp = e.deltaY < 0;
 	const atTop = target.scrollTop <= 0, atBot = target.scrollTop >= max - 1;
-	if ((atTop && isUp) || (atBot && isDown)) return;
+
+	// Boundary bubbling check
+	if (target !== document.documentElement && ((atTop && isUp) || (atBot && isDown))) {
+		// If hit boundary, force re-scan parent next time or bubble now?
+		// Bubbling logic requires traversing up.
+		// For simplicity/perf in sidepanel, let's just let browser bubble or stop.
+		// But original logic bubbled. Let's start bubble search from current target's parent.
+		let bubble = target.parentElement;
+		while (bubble && bubble !== document.body) {
+			target = findScrollable(bubble);
+			const bMax = target.scrollHeight - target.clientHeight;
+			if (bMax > 0 && !((target.scrollTop <= 0 && isUp) || (target.scrollTop >= bMax - 1 && isDown))) {
+				break;
+			}
+			if (target === document.documentElement) break;
+			bubble = target.parentElement;
+		}
+		// Update cache with the bubbled target to stick to it
+		hotTarget.el = target;
+	}
+
+	if (target.scrollHeight - target.clientHeight <= 0) return;
 
 	e.preventDefault();
 
-	const now = Date.now();
 	accel = now - lastTime < cfg.accelerationDelta ? Math.min(accel + 0.5, cfg.accelerationMax) : 1;
 	lastTime = now;
 

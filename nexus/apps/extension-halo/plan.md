@@ -35,6 +35,8 @@ v2.7.1 Smooth Scroll+: 捕获阶段拦截(虚拟滚动兼容) | 视频页跳过�
 
 v2.7.2 Hover Zoom Fix: B 站图片原图解析(参考 PhotoShow) | RuleEngine 子域名匹配 | fetch blob 获取跨域文件大小 | 精度 2 位小数 @2026-01-08
 
+v2.8.0 Extreme Perf: Smooth Scroll (Hot Cache/Zero-Alloc) | Ruler (rAF Lock) | Hover Zoom (Zero-Alloc Debounce) | DomHelpers (Linear Scan) @2026-02-01
+
 ## 核心任务
 
 **System Isolation**: settings/module-store/permissions 标记`system:true` → 仅 Header 入口

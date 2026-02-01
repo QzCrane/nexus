@@ -117,7 +117,8 @@ bun workspace | `bun install` & `bun run build` (apps/packages) | 内部包: `"@
 交互性: 穿透层用 `pointer-events: none` | 事件捕获层用透明 `Hit Area`
 绿标 (Env Badge): 仅限具有 Background Engine 且有 Master Toggle 的工具 (如 Scroll/UserScript/Clipboard)
 中心化状态: 强禁在工具组件内添加 Storage 监听 | 必须消费 `EngineStatusProvider` 广播
-音频零拷贝: 可视化数据传递强禁 `Array.from` | 必须直接传递或使用 `TypedArray` 映射
+音频零拷贝: 可视化数据传递强禁 `Array.from` | 必须直接传递或使用 `TypedArray` 映射 | 预分配 Buffer
+极致性能: Hot Path 禁闭包分配 | 循环内禁 alloc | 高频事件必须 Debounce/Throttle/rAF | 算法优先 O(1)/O(N) 线性扫描
 裁剪消除: 缩放元素必须预留 `MAGNIFY_HEADROOM` (30px+) | 禁用 `overflow: hidden` 在感应父级
 资源清理: 必须在 DOM 移除时执行 `detachNode` | 强禁 WebAudio 节点在 SPA 中累积
 i18n: 禁硬编码字符串 | 必须下沉至工具目录 (SSOT) | 必须支持全局实时同步

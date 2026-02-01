@@ -107,7 +107,15 @@ export function createOnOut(state: HoverZoomState) {
 }
 
 /** Handle mousemove - debounced trigger check */
+// eff: cached callback to avoid closure allocation on every move
 export function createOnMove(state: HoverZoomState, preload: PreloadState) {
+	let _hotkeysActive = false;
+	const checkTrigger = () => {
+		triggerTimer = null;
+		const el = getElementAtMouse(state);
+		evaluateAndTrigger(state, preload, el, _hotkeysActive);
+	};
+
 	return (e: MouseEvent) => {
 		state.lastX = e.clientX;
 		state.lastY = e.clientY;
@@ -136,11 +144,8 @@ export function createOnMove(state: HoverZoomState, preload: PreloadState) {
 		}
 
 		// Debounced evaluation
-		triggerTimer = setTimeout(() => {
-			triggerTimer = null;
-			const el = getElementAtMouse(state);
-			evaluateAndTrigger(state, preload, el, hotkeysActive);
-		}, TRIGGER_DELAY);
+		_hotkeysActive = hotkeysActive;
+		triggerTimer = setTimeout(checkTrigger, TRIGGER_DELAY);
 	};
 }
 

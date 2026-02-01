@@ -24,6 +24,20 @@ function notifyWebAudioState(active: boolean): void {
 }
 
 // eff: binds shared state and cross-module callbacks to the mode executor
+// eff: register global handler for native changes
+function handleNativeVolume(volume: number, muted: boolean) {
+	if (!currentState || !currentDeps || !currentUpdateConfig) return;
+	const ch: Partial<AudioConfig> = {};
+	if (volume < 0) {
+		ch.muted = muted;
+		log.debug(`[Native] Mute: ${muted}`);
+	} else {
+		ch.volume = (volume * 100) | 0; ch.muted = muted;
+		log.debug(`[Native] Vol: ${ch.volume}%`);
+	}
+	currentUpdateConfig(ch, { isNativeSync: true });
+}
+
 export function initModeExecutorCallbacks(
 	deps: PolicyExecutorDeps,
 	state: PolicyExecutorState,
@@ -37,27 +51,7 @@ export function initModeExecutorCallbacks(
 	currentUpdateBadge = updateBadge;
 	currentBroadcastUI = broadcastUI;
 	currentUpdateConfig = updateConfig;
-
-	// eff: registers a callback to handle native volume changes initiated by the website UI
-	setNativeVolumeCallback((volume, muted) => {
-		if (!currentState || !currentDeps || !currentUpdateConfig) return;
-
-		const changes: Partial<AudioConfig> = {};
-
-		// note: volume < 0 signals a mute-only toggle without altering the numeric volume percentage
-		if (volume < 0) {
-			changes.muted = muted;
-			log.debug(`[SPECTRA] Native mute toggle: ${muted}`);
-		} else {
-			// rule: sync both volume and muted state for complete native UI compatibility
-			changes.volume = Math.round(volume * 100);
-			changes.muted = muted;
-			log.debug(`[SPECTRA] Native volume sync: ${changes.volume}% (muted: ${muted})`);
-		}
-
-		// eff: update config through unified updater to ensure immutable patterns and side-effects
-		currentUpdateConfig(changes, { isNativeSync: true });
-	});
+	setNativeVolumeCallback(handleNativeVolume);
 }
 
 // post: returns true if the user has engaged with the page, making it safe to initialize AudioContext

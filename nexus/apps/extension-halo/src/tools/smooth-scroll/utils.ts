@@ -109,6 +109,13 @@ export function canScrollBy(target: Element | Window, deltaY: number): boolean {
 /**
  * Check if input should be ignored (e.g. typing in text box)
  */
+const IGNORE_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT', 'OPTION', 'VIDEO', 'AUDIO', 'BUTTON', 'IFRAME']);
+const IGNORE_ROLES = new Set(['textbox', 'listbox', 'menu', 'slider', 'switch']);
+
+/**
+ * Check if input should be ignored (e.g. typing in text box)
+ * eff: Zero-alloc hot path
+ */
 export function shouldIgnoreInput(activeElement: Element | null): boolean {
 	if (!activeElement) return false;
 
@@ -117,14 +124,12 @@ export function shouldIgnoreInput(activeElement: Element | null): boolean {
 
 	const { tagName, isContentEditable } = current as HTMLElement;
 	if (isContentEditable) return true;
-
-	const ignoreTags = new Set(['INPUT', 'TEXTAREA', 'SELECT', 'OPTION', 'VIDEO', 'AUDIO', 'BUTTON', 'IFRAME']);
-	if (ignoreTags.has(tagName)) return true;
+	if (IGNORE_TAGS.has(tagName)) return true;
 
 	const role = current.getAttribute('role');
-	if (['textbox', 'listbox', 'menu', 'slider', 'switch'].includes(role || '')) return true;
+	if (role && IGNORE_ROLES.has(role)) return true;
 
-	// Smart Video Player Detection
+	// Smart Video Player Detection (Expensive DOM check, strictly last)
 	if (current !== document.body && current !== document.documentElement && current.querySelector('video, audio')) return true;
 
 	return false;

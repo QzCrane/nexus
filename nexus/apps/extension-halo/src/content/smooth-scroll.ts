@@ -1,80 +1,54 @@
-// goal: Smooth Scroll content script - uses queue-based engine
-// inv: No jumping, silky smooth scrolling. Logic split into handlers and state.
+// goal: Smooth Scroll content script
+// inv: Logic split into handlers and state
 
 import { configure, clearQueue } from '../tools/smooth-scroll/engine';
 import { STORAGE_KEY } from '../tools/smooth-scroll/types';
 import { settings, updateStateSettings } from './smooth-scroll-state';
 import type { ScrollSettings } from './smooth-scroll-state';
-import { onWheel, onKeydown, onMouseDown, onMouseMove, onMouseUp } from './smooth-scroll-handlers';
+import { onWheel, onKeydown, onMouseDown } from './smooth-scroll-handlers';
 
-const LOG_TAG = '[HALO:Scroll]';
-
-export function updateSettings(newSettings: ScrollSettings): void {
-	const wasEnabled = settings.enabled;
-	updateStateSettings(newSettings);
-
+export const updateSettings = (n: ScrollSettings): void => {
+	const was = settings.enabled;
+	updateStateSettings(n);
 	configure(settings.animationTime, settings.easing);
 
-	if (newSettings.enabled && !wasEnabled) {
-		attachListeners();
-	} else if (!newSettings.enabled && wasEnabled) {
-		detachListeners();
-		clearQueue();
-	}
+	if (n.enabled && !was) attachListeners();
+	else if (!n.enabled && was) { detachListeners(); clearQueue(); }
 
-	console.log(LOG_TAG, 'Updated:', newSettings.enabled ? 'ON' : 'OFF');
+	console.log('[HALO:Scroll] Updated:', n.enabled ? 'ON' : 'OFF');
 }
 
-export function attachListeners(): void {
-	// rule: Use capture phase to override aggressive site scrollers (Douyin)
-	// inv: passive: false required to prevent default
+export const attachListeners = () => {
 	window.addEventListener('wheel', onWheel, { passive: false, capture: true });
 	window.addEventListener('keydown', onKeydown);
 	window.addEventListener('mousedown', onMouseDown);
 }
 
-export function detachListeners(): void {
+export const detachListeners = () => {
 	window.removeEventListener('wheel', onWheel, { capture: true });
 	window.removeEventListener('keydown', onKeydown);
 	window.removeEventListener('mousedown', onMouseDown);
 }
 
 export async function init(): Promise<void> {
-	// Prevent running on extension pages (SidePanel, etc)
-	if (window.location.protocol === 'chrome-extension:') {
-		return;
-	}
+	if (location.protocol === 'chrome-extension:') return;
 
 	try {
-		const result = await chrome.storage.sync.get([STORAGE_KEY]);
-		if (result[STORAGE_KEY]) {
-			updateStateSettings(result[STORAGE_KEY]);
-		}
-	} catch {
-		console.log(LOG_TAG, 'Using defaults');
-	}
+		const res = await chrome.storage.sync.get([STORAGE_KEY]);
+		if (res[STORAGE_KEY]) updateStateSettings(res[STORAGE_KEY]);
+	} catch { console.log('[HALO:Scroll] Defaults'); }
 
 	configure(settings.animationTime, settings.easing);
 
-	// Delay attaching listeners to ensure site's event handlers are registered first
-	// This allows defaultPrevented check to work correctly (e.g., video site space key)
-	const delayedAttach = () => {
-		if (settings.enabled) {
-			attachListeners();
-		}
-		console.log(LOG_TAG, 'Init');
+	const boot = () => {
+		if (settings.enabled) attachListeners();
+		console.log('[HALO:Scroll] Init');
 	};
 
-	if (document.readyState === 'loading') {
-		document.addEventListener('DOMContentLoaded', delayedAttach, { once: true });
-	} else {
-		// Page already loaded, use small delay to ensure site scripts have run
-		setTimeout(delayedAttach, 100);
-	}
+	if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+	else setTimeout(boot, 100);
 
-	chrome.storage.onChanged.addListener((changes, area) => {
-		if (area === 'sync' && changes[STORAGE_KEY]) {
-			updateSettings(changes[STORAGE_KEY].newValue);
-		}
+	chrome.storage.onChanged.addListener((c, a) => {
+		if (a === 'sync' && c[STORAGE_KEY]) updateSettings(c[STORAGE_KEY].newValue);
 	});
 }
