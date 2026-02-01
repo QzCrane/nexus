@@ -19,9 +19,18 @@ export function scheduleClearCache(): void {
  */
 function isScrollable(el: Element): boolean {
 	const { overflowY } = getComputedStyle(el);
-	if (overflowY === 'hidden' || overflowY === 'visible') return false;
+	if (overflowY === 'visible') return false;
+
 	const isScrollStyle = overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
-	return isScrollStyle && el.scrollHeight > el.clientHeight + 10;
+
+	// rule: Standard scrollable container
+	if (isScrollStyle && el.scrollHeight > el.clientHeight + 10) return true;
+
+	// rule: Virtual Lists / Custom Scrollbars often use overflow: hidden
+	// Heuristic: If meaningful height (>150px) and significant overflow (>50px), treat as scrollable
+	if (overflowY === 'hidden' && el.clientHeight > 150 && el.scrollHeight > el.clientHeight + 50) return true;
+
+	return false;
 }
 
 /**
