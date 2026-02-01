@@ -4,6 +4,7 @@ import { AudioMode } from '@nexus/audio-engine';
 import type { AudioConfig } from '@nexus/kernel';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../types';
 import { setDomVolume, isAnyMediaPlaying, releaseVolumeLock, enableVolumeLock, setNativeVolumeCallback, markUserInteracted as markDomUserInteracted, enableDirectTake, hasUserInteracted as hasDomUserInteracted } from '../audio/dom-volume';
+import { setSpeed } from './media-control';
 import { logger } from '../../shared/logger';
 
 const log = logger.content;
@@ -72,6 +73,9 @@ export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState
 	const { audioController, captureManager } = deps;
 	const mode = state.activeMode;
 	const config = state.config;
+
+	// eff: sync playback speed from config to current page media
+	setSpeed(config.speed || 1.0);
 
 	if (mode === AudioMode.CAPTURE) {
 		notifyWebAudioState(false); // exiting WEBAUDIO mode
