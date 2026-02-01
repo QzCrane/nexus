@@ -108,7 +108,7 @@ export function canScrollBy(target: Element | Window, deltaY: number): boolean {
 	}
 	const max = target.scrollHeight - target.clientHeight;
 	if (deltaY < 0) return target.scrollTop > 0;
-	if (deltaY > 0) return target.scrollTop < max - 1;
+	if (deltaY > 0) return target.scrollTop < max - 0.5;
 	return false;
 }
 
@@ -124,14 +124,19 @@ export function shouldIgnoreInput(activeElement: Element | null): boolean {
 	if (IGNORE_TAGS.has(tagName)) return true;
 	const role = current.getAttribute('role');
 	if (role && IGNORE_ROLES.has(role)) return true;
-	if (current !== document.body && current !== document.documentElement && current.querySelector('video, audio')) return true;
+	// rule: Precise media check - only ignore if focused on specific player markers
+	if (current !== document.body && current !== document.documentElement) {
+		const cls = String(current.className).toLowerCase();
+		if (cls.includes('player') || cls.includes('video-js') || cls.includes('plyr')) return true;
+	}
 	return false;
 }
 
 export function isSuspiciousList(el: Element): boolean {
-	// Detect lists that might be Virtual or have Custom Logic
-	const cls = String(el.className);
-	if (cls.includes('list') || cls.includes('scroll') || cls.includes('wrap') || cls.includes('box')) return true;
-	if (el.childElementCount > 20) return true;
+	const cls = String(el.className).toLowerCase();
+	// rule: Only bypass if it looks like a specialized virtual list or custom scrollbar host
+	if (cls.includes('scrollbar') || cls.includes('virtual') || cls.includes('v-list') || cls.includes('ps-container') || cls.includes('os-host')) return true;
+	// ChatGPT and modern apps often have many children; only bypass if extremely large
+	if (el.childElementCount > 120) return true;
 	return false;
 }

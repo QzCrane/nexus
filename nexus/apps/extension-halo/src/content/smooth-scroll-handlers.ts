@@ -55,7 +55,6 @@ export function onWheel(e: WheelEvent): void {
 			el.style.setProperty('scroll-behavior', 'smooth', 'important');
 		}
 
-		e.preventDefault();
 		return;
 	}
 
