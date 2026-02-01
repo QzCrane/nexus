@@ -47,19 +47,10 @@ export function onWheel(e: WheelEvent): void {
 
 	// rule: Bypass "Suspicious Lists" (Virtual/Custom/Bilibili) to support custom scrollbars
 	// We preventDefault to stop Body chaining, but return to allow Site JS to handle the scroll
+	// rule: Bypass "Suspicious Lists" (Virtual/Custom/Bilibili)
+	// We MUST NOT touch these with our engine OR force smooth behavior
+	// because they often have complex JS-based virtualization logic.
 	if (target !== window && isSuspiciousList(target as Element)) {
-		const el = target as HTMLElement;
-		// try: Enforce native smooth scrolling if the site uses scrollTop
-		if (el.style && el.style.scrollBehavior !== 'smooth') {
-			el.style.setProperty('scroll-behavior', 'smooth', 'important');
-		}
-
-		// rule: For virtual/suspicious lists, we MUST stop event to prevent body bleeding
-		// BUT we let the list's own JS handle the scroll since we returned without e.preventDefault() 
-		// if and ONLY IF it's not a list that would break (Bilibili danmaku).
-		// Wait, if we return without e.preventDefault(), the browser will scroll it NATIVELY.
-		// If the site has its own wheel listener, it will also trigger.
-		// To fix Bilibili, we must NOT let our engine touch it.
 		return;
 	}
 

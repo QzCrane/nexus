@@ -1,4 +1,4 @@
-import { shouldIgnoreInput, findScrollTargetChained, findMainScrollTarget, canScrollBy } from '../tools/smooth-scroll/utils';
+import { shouldIgnoreInput, findScrollTargetChained, findMainScrollTarget, canScrollBy, isSuspiciousList } from '../tools/smooth-scroll/utils';
 import { scrollTo } from '../tools/smooth-scroll/engine';
 import { settings } from './smooth-scroll-state';
 
@@ -46,6 +46,8 @@ export function onKeydown(e: KeyboardEvent): void {
 	else dy = keyFactor * step;
 
 	const target = isGeneric ? findMainScrollTarget(dy) : findScrollTargetChained(active, dy);
+	if (target !== window && isSuspiciousList(target as Element)) return;
+
 	if (canScrollBy(target, dy)) {
 		e.preventDefault();
 		scrollTo(target, 0, dy);
