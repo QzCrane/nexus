@@ -135,25 +135,30 @@ export function shouldIgnoreInput(activeElement: Element | null): boolean {
 export function isSuspiciousList(el: Element): boolean {
 	const cls = String(el.className).toLowerCase();
 
+	// rule: Context check - Is this the primary scrolling area (Main Content)?
+	// Covering >= 50% of viewport OR having semantic 'main' markers.
+	const isMainArea = (el.clientWidth > window.innerWidth * 0.5 && el.clientHeight > window.innerHeight * 0.5) ||
+		el.tagName === 'MAIN' ||
+		el.getAttribute('role') === 'main' ||
+		el.closest('main') !== null;
+
 	// rule: Strong virtual list signatures (Generic)
 	const isVirtual = cls.includes('virtual') || cls.includes('v-list') ||
 		cls.includes('scrollbar') || cls.includes('ps-container') ||
-		cls.includes('os-host') || el.hasAttribute('data-virtuoso-scroller');
-
-	// rule: Context check - Is this the primary scrolling area of the viewport?
-	// Using clientWidth/Height is efficient. If it covers more than 60% of both axes, it's a "Main Area".
-	const isMainArea = el.clientWidth > window.innerWidth * 0.6 && el.clientHeight > window.innerHeight * 0.6;
+		cls.includes('os-host') || cls.includes('scroller') ||
+		el.hasAttribute('data-virtuoso-scroller') ||
+		el.hasAttribute('data-v-scroll');
 
 	// rule: If it has virtual markers and is NOT the main area, yield to site logic.
 	if (isVirtual && !isMainArea) return true;
 
-	// rule: Heuristic - many children in a non-main area usually indicates a specialized list (danmaku, comments, etc.)
-	// These lists often have their own optimized scroll handlers. Threshold 40 is a safe bet.
-	if (el.childElementCount > 40 && !isMainArea) return true;
+	// rule: Heuristic - many children in a non-main area usually indicates a specialized list (danmaku, feed, etc.)
+	// Threshold 30 is tight enough to catch sidebars but loose enough for most small containers.
+	if (el.childElementCount > 30 && !isMainArea) return true;
 
-	// rule: Detect hidden-overflow containers with significant content (likely virtual list container)
-	const { overflowY } = getComputedStyle(el);
-	if (overflowY === 'hidden' && el.childElementCount > 10 && !isMainArea) return true;
+	// rule: Detect hidden-overflow containers with overflow content (classic Virtual List wrapper)
+	const style = getComputedStyle(el);
+	if (style.overflowY === 'hidden' && el.scrollHeight > el.clientHeight + 10 && !isMainArea) return true;
 
 	return false;
 }
