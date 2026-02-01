@@ -27,21 +27,18 @@ function isScrollable(el: Element): boolean {
 /**
  * Find nearest scrollable ancestor (with caching)
  */
+// rule: Threshold to consider a fixed element as a "Modal Overlay" (vs a Header)
+// If a fixed element covers >50% of screen height, we treat it as a dedicated scroll context
+const MODAL_height_THRESHOLD = 0.5;
+
 export function findScrollTarget(el: Element | null): Element | Window {
 	const startEl = el;
 	while (el && el !== document.body && el !== document.documentElement) {
 		const cached = cache.get(el);
 		if (cached) return cached;
 
-		const style = getComputedStyle(el);
-		// rule: Fixed/Sticky elements act as scroll barriers (Roots). We found a target (even if it cannot scroll itself, it traps the context)
-		if (style.position === 'fixed' || style.position === 'sticky') {
-			if (startEl) cache.set(startEl, el);
-			return el;
-		}
-
 		// rule: Standard scrollable check
-		// inline isScrollable logic to reuse 'style'
+		const style = getComputedStyle(el);
 		const overflowY = style.overflowY;
 		if (overflowY !== 'hidden' && overflowY !== 'visible') {
 			const isScrollStyle = overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
@@ -58,6 +55,21 @@ export function findScrollTarget(el: Element | null): Element | Window {
 	return result;
 }
 
+function isTrapBarrier(el: Element): boolean {
+	const style = getComputedStyle(el);
+	if (style.position === 'fixed') {
+		// rule: If explicit scrollable fixed -> Trap (Sidebars)
+		if (style.overflowY === 'auto' || style.overflowY === 'scroll') return true;
+
+		// rule: If large overlay fixed -> Trap (Modal Backdrops)
+		// Small headers (height < 50% screen) are NOT traps
+		const rect = el.getBoundingClientRect();
+		if (rect.height > window.innerHeight * MODAL_height_THRESHOLD) return true;
+	}
+	// Note: We intentionally ignore 'sticky' because sticky headers usually want pass-through
+	return false;
+}
+
 /**
  * Find scroll target with scroll chaining support
  */
@@ -67,29 +79,32 @@ export function findScrollTargetChained(startEl: Element | null, deltaY: number)
 
 	while (current && depth < 20) {
 		const target = findScrollTarget(current);
+
+		// rule: Trap Check - Walk from current to target to ensure we don't cross a barrier (e.g. Fixed Modal Overlay)
+		// If we hit a barrier, that barrier IS our effective target (and it will block scrolling if strictly constrained)
+		let walker = current;
+		const stopNode = target instanceof Window ? document.body : target;
+
+		while (walker && walker !== stopNode && walker !== document.documentElement) {
+			if (isTrapBarrier(walker)) return walker;
+			walker = walker.parentElement as Element;
+		}
+
+		// rule: If target found
 		if (target instanceof Window) return target;
 
+		// rule: If we can scroll the target, do it.
 		if (canScrollBy(target, deltaY)) return target;
 
+		// rule: If the target itself is a barrier (e.g. scrollable modal at the edge), we are TRAPPED.
+		if (isTrapBarrier(target)) return target;
 
-		// rule: Trap logic - if the user is hovering a scrollable container (even if currently at edge), we MUST trap the event
-		// to prevent the background body from scrolling unexpectedly.
-		// Native behavior does this for 'contain', we extend it to Fixed/Sticky modals.
-		// rule: Respect 'overscroll-behavior'
+		// rule: respecting overscroll-behavior (Standard CSS)
 		const style = getComputedStyle(target);
 		const overscroll = style.overscrollBehaviorY || style.overscrollBehavior;
-
 		if (overscroll === 'contain' || overscroll === 'none') return target;
 
-		// rule: Trap logic - if a scrollable container is visually "modal" (Fixed/Sticky)
-		// we should strictly contain the scroll to prevent body bleeding, as this is the standard UX pattern.
-		// note: Absolute is NOT a barrier, but Fixed/Sticky are roots.
-		const isBarrier = style.position === 'fixed' || style.position === 'sticky';
-
-		// note: if it's a barrier (even if not scrollable), we trap it here. 
-		// Because findScrollTarget already returned it, meaning it's the "Ceiling" of our search.
-		if (isBarrier) return target;
-
+		// Chain to parent
 		current = (target as HTMLElement).parentElement;
 		depth++;
 	}
