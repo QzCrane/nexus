@@ -33,29 +33,38 @@ export const useSidePanelState = () => {
 
 	useEffect(() => {
 		const init = async () => {
+			// Always load settings immediately
 			const s = await loadSettings();
 			setSettings(s);
 			applyTheme(getThemeColors(s.theme, s.accentColor));
-			await loadOpenTools(isInstalled);
-			setLoading(false);
+
+			// Only load open tools when module manager is fully hydrated
+			// This prevents 'isInstalled' from returning false for actually installed tools during async init
+			if (!modulesLoading) {
+				await loadOpenTools(isInstalled);
+				setLoading(false);
+			}
 		};
 		init();
-
-		const listener = (message: any, _sender: any, _sendResponse: any) => {
-			if (message.type === 'HALO_ACTIVATE_TOOL' && message.toolId) {
-				handleToolSelect(message.toolId);
-			}
-			return true;
-		};
-		chrome.runtime.onMessage.addListener(listener);
-		return () => chrome.runtime.onMessage.removeListener(listener);
-	}, [isInstalled, loadOpenTools]);
+	}, [modulesLoading, isInstalled, loadOpenTools]);
 
 	const handleToolSelect = useCallback(async (toolId: ToolId) => {
 		const tool = TOOL_REGISTRY.find(t => t.id === toolId);
 		if (tool?.status === 'coming') return;
 		await baseToolSelect(toolId);
 	}, [baseToolSelect]);
+
+	const listener = useCallback((message: any) => {
+		if (message.type === 'HALO_ACTIVATE_TOOL' && message.toolId) {
+			handleToolSelect(message.toolId);
+		}
+		return true;
+	}, [handleToolSelect]);
+
+	useEffect(() => {
+		chrome.runtime.onMessage.addListener(listener);
+		return () => chrome.runtime.onMessage.removeListener(listener);
+	}, [listener]);
 
 	const handleSettingsChange = useCallback(async (updated: HaloSettings) => {
 		setSettings(updated);

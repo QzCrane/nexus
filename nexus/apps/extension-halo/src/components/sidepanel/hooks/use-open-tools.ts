@@ -35,30 +35,19 @@ export function useOpenTools(): UseOpenToolsResult {
 
 	// Ref for unload save (avoids stale closure)
 	const activeToolRef = useRef<ToolId | null>(null);
-	useEffect(() => { activeToolRef.current = activeTool; }, [activeTool]);
+	const initialized = useRef(false);
 
-	// Save state on sidepanel close
+	// Real-time persistence for activeTool
 	useEffect(() => {
-		const save = () => {
-			const current = activeToolRef.current;
-			if (current !== null) {
-				chrome.storage.local.set({ [ACTIVE_TOOL_KEY]: current });
-			} else {
-				chrome.storage.local.remove([ACTIVE_TOOL_KEY]);
-			}
-		};
+		// Prevent saving initial null state before storage load
+		if (!initialized.current) return;
 
-		const onVisChange = () => {
-			if (document.visibilityState === 'hidden') save();
-		};
-
-		document.addEventListener('visibilitychange', onVisChange);
-		window.addEventListener('beforeunload', save);
-		return () => {
-			document.removeEventListener('visibilitychange', onVisChange);
-			window.removeEventListener('beforeunload', save);
-		};
-	}, []);
+		if (activeTool !== null) {
+			chrome.storage.local.set({ [ACTIVE_TOOL_KEY]: activeTool });
+		} else {
+			chrome.storage.local.remove([ACTIVE_TOOL_KEY]);
+		}
+	}, [activeTool]);
 
 	const setActiveTool = useCallback((toolId: ToolId | null) => {
 		setActiveToolState(toolId);
@@ -81,6 +70,9 @@ export function useOpenTools(): UseOpenToolsResult {
 		}
 		// Fallback: home page
 		setActiveToolState(null);
+
+		// Mark as initialized to enable auto-save
+		setTimeout(() => { initialized.current = true; }, 0);
 	}, []);
 
 	const handleToolSelect = useCallback(async (toolId: ToolId) => {

@@ -66,6 +66,7 @@ export function bindCardEvents(params: EventsParams): void {
   // eff: enable rapid volume adjustment via mouse wheel with preventDefault to avoid scrolling the popup body
   ui.sliderArea.addEventListener('wheel', (e) => {
     e.preventDefault();
+    e.stopPropagation();
     if (!state.config.enabled) return;
 
     let v = parseInt(ui.slider.value, 10);
@@ -103,6 +104,7 @@ export function bindCardEvents(params: EventsParams): void {
 
       inp.parentElement?.addEventListener('wheel', (e) => {
         e.preventDefault();
+        e.stopPropagation();
         let v = parseFloat(inp.value);
         v = e.deltaY < 0
           ? Math.min(v + AUDIO_UI.EQ_STEP, AUDIO_UI.EQ_MAX)
