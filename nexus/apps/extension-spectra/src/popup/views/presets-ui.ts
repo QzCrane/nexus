@@ -67,8 +67,13 @@ function createPresetItem(domain: string, config: Partial<AudioConfig>): HTMLEle
 
 	const volumeEl = document.createElement('span');
 	volumeEl.className = 'preset-volume';
-	const spd = config.speed !== undefined && config.speed !== 1 ? ` | ${config.speed}x` : '';
-	volumeEl.textContent = config.volume !== undefined ? `${config.volume}%${spd}` : '—';
+	let speedDisplay = '';
+	if (config.speed !== undefined && config.speed !== 1) {
+		// rule: eliminate floating point artifacts but minimize unnecessary decimals (2.00 -> 2, 1.50 -> 1.5)
+		const cleanSpeed = parseFloat(config.speed.toFixed(2));
+		speedDisplay = ` | ${cleanSpeed}x`;
+	}
+	volumeEl.textContent = config.volume !== undefined ? `${config.volume}%${speedDisplay}` : '—';
 
 	const deleteBtn = document.createElement('button');
 	deleteBtn.className = 'btn-preset-delete';
