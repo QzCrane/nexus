@@ -18,6 +18,13 @@ export function initPresetsUI(): void {
 		clearBtn.onclick = handleClearAll;
 	}
 
+	// eff: auto-refresh list when storage changes (e.g. user saves a new preset from the main card view)
+	chrome.storage.onChanged.addListener((changes, area) => {
+		if (area === 'local' && changes.siteSettings) {
+			refreshPresetsList();
+		}
+	});
+
 	refreshPresetsList();
 }
 
