@@ -105,7 +105,7 @@ function cleanDest(dest) {
 
   // Try to stop turbo before cleanup if it exists
   try {
-    execSync('npx turbo daemon stop', { cwd: dest, stdio: 'ignore' });
+    execSync('bun x turbo daemon stop', { cwd: dest, stdio: 'ignore' });
   } catch (e) { }
 
   const entries = fs.readdirSync(dest, { withFileTypes: true });
