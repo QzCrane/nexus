@@ -134,9 +134,17 @@ export function shouldIgnoreInput(activeElement: Element | null): boolean {
 
 export function isSuspiciousList(el: Element): boolean {
 	const cls = String(el.className).toLowerCase();
-	// rule: Only bypass if it looks like a specialized virtual list or custom scrollbar host
-	if (cls.includes('scrollbar') || cls.includes('virtual') || cls.includes('v-list') || cls.includes('ps-container') || cls.includes('os-host')) return true;
-	// ChatGPT and modern apps often have many children; only bypass if extremely large
-	if (el.childElementCount > 120) return true;
+	// rule: ChatGPT main chat area often has many elements but should be handled by us
+	if (cls.includes('main') || el.getAttribute('role') === 'main') return false;
+
+	// rule: Virtual lists often have 'v-list', 'virtual', or specific lib markers
+	const isVirtualLib = cls.includes('scrollbar') || cls.includes('virtual') || cls.includes('v-list') || cls.includes('ps-container') || cls.includes('os-host');
+	if (isVirtualLib) return true;
+
+	// rule: Bilibili comment/danmaku list has many children and specific behavior
+	if (cls.includes('bili-comment') || cls.includes('danmaku')) return true;
+
+	// rule: Modern apps often have many children; only bypass if extremely large AND not a main role
+	if (el.childElementCount > 200) return true;
 	return false;
 }
