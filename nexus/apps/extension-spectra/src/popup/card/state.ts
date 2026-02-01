@@ -42,6 +42,7 @@ export function createUpdateFn(
         tabId,
         volume: config.volume,
         muted: config.muted,
+        enabled: config.enabled ?? true,
         isCapture: true,
         userInteracted: state.userInteracted,
       });
@@ -80,6 +81,7 @@ export function createUpdateFn(
         tabId,
         volume: config.volume,
         muted: config.muted,
+        enabled: config.enabled ?? true,
         isCapture: needsCapture,
         userInteracted: state.userInteracted,
       });
