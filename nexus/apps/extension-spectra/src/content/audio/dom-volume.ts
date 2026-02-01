@@ -9,10 +9,12 @@ const log = logger.content;
 let targetVolume = 1, targetMuted = false;
 let syncEnabled = true, userInteracted = false;
 let onNativeVolumeChange: ((v: number, m: boolean) => void) | null = null;
+let onNativeSpeedChange: ((s: number) => void) | null = null;
 
 export const markUserInteracted = () => { userInteracted = true; };
 export const hasUserInteracted = () => userInteracted;
 export const setNativeVolumeCallback = (cb: (v: number, m: boolean) => void) => { onNativeVolumeChange = cb; };
+export const setNativeSpeedCallback = (cb: (s: number) => void) => { onNativeSpeedChange = cb; };
 
 // eff: Static context object to avoid closure allocation per element
 const ctx: MonitorContext = {
@@ -21,6 +23,7 @@ const ctx: MonitorContext = {
 	getTargetVolume: () => targetVolume,
 	getTargetMuted: () => targetMuted,
 	onNativeVolumeChange: (v, m) => onNativeVolumeChange?.(v, m),
+	onNativeSpeedChange: (s) => onNativeSpeedChange?.(s),
 };
 
 function ensureMonitoring(): void {

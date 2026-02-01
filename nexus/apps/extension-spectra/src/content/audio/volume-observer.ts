@@ -3,7 +3,7 @@ import { logger } from '../../shared/logger';
 const log = logger.content;
 
 export type ElementState = {
-	volume: number; muted: boolean; settingByPlugin: boolean;
+	volume: number; muted: boolean; speed: number; settingByPlugin: boolean;
 	hasReceivedUserEvent: boolean;
 };
 
@@ -12,7 +12,7 @@ const monitoredElements = new WeakSet<HTMLMediaElement>();
 const elementStates = new WeakMap<HTMLMediaElement, ElementState>();
 
 const getDefault = (m: HTMLMediaElement): ElementState => ({
-	volume: m.volume, muted: m.muted, settingByPlugin: false, hasReceivedUserEvent: false
+	volume: m.volume, muted: m.muted, speed: m.playbackRate, settingByPlugin: false, hasReceivedUserEvent: false
 });
 
 export function getElementState(media: HTMLMediaElement): ElementState {
@@ -25,6 +25,7 @@ export function setElementState(media: HTMLMediaElement, p: Partial<ElementState
 	const s = getElementState(media);
 	if (p.volume !== undefined) s.volume = p.volume;
 	if (p.muted !== undefined) s.muted = p.muted;
+	if (p.speed !== undefined) s.speed = p.speed;
 	if (p.settingByPlugin !== undefined) s.settingByPlugin = p.settingByPlugin;
 	if (p.hasReceivedUserEvent !== undefined) s.hasReceivedUserEvent = p.hasReceivedUserEvent;
 }
@@ -38,6 +39,7 @@ export interface MonitorContext {
 	getTargetVolume: () => number;
 	getTargetMuted: () => boolean;
 	onNativeVolumeChange: (volume: number, muted: boolean) => void;
+	onNativeSpeedChange?: (speed: number) => void;
 }
 
 export function setupVolumeMonitor(media: HTMLMediaElement, ctx: MonitorContext): void {
@@ -81,6 +83,19 @@ export function setupVolumeMonitor(media: HTMLMediaElement, ctx: MonitorContext)
 			s.volume = nv; s.muted = nm; s.hasReceivedUserEvent = true;
 		} else {
 			s.volume = nv; s.muted = nm;
+		}
+	});
+
+	media.addEventListener('ratechange', (e) => {
+		const s = elementStates.get(media)!;
+		if (s.settingByPlugin) return;
+
+		// note: speed changes are almost always user or script initiated (no browser default like mute)
+		const ns = media.playbackRate;
+		if (Math.abs(ns - s.speed) > 0.005) {
+			log.debug(`[DOM] Rate: ${ns}`);
+			ctx.onNativeSpeedChange?.(ns);
+			s.speed = ns;
 		}
 	});
 }

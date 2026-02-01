@@ -3,7 +3,7 @@
 import { AudioMode } from '@nexus/audio-engine';
 import type { AudioConfig } from '@nexus/kernel';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../types';
-import { setDomVolume, isAnyMediaPlaying, releaseVolumeLock, enableVolumeLock, setNativeVolumeCallback, markUserInteracted as markDomUserInteracted, enableDirectTake, hasUserInteracted as hasDomUserInteracted } from '../audio/dom-volume';
+import { setDomVolume, isAnyMediaPlaying, releaseVolumeLock, enableVolumeLock, setNativeVolumeCallback, setNativeSpeedCallback, markUserInteracted as markDomUserInteracted, enableDirectTake, hasUserInteracted as hasDomUserInteracted } from '../audio/dom-volume';
 import { setSpeed } from './media-control';
 import { logger } from '../../shared/logger';
 
@@ -39,6 +39,15 @@ function handleNativeVolume(volume: number, muted: boolean) {
 	currentUpdateConfig(ch, { isNativeSync: true });
 }
 
+function handleNativeSpeed(speed: number) {
+	if (!currentState || !currentDeps || !currentUpdateConfig) return;
+	// note: avoid trivial updates
+	if (Math.abs((currentState.config.speed || 1) - speed) < 0.05) return;
+
+	log.debug(`[Native] Speed: ${speed}x`);
+	currentUpdateConfig({ speed }, { isNativeSync: true });
+}
+
 export function initModeExecutorCallbacks(
 	deps: PolicyExecutorDeps,
 	state: PolicyExecutorState,
@@ -53,6 +62,7 @@ export function initModeExecutorCallbacks(
 	currentBroadcastUI = broadcastUI;
 	currentUpdateConfig = updateConfig;
 	setNativeVolumeCallback(handleNativeVolume);
+	setNativeSpeedCallback(handleNativeSpeed);
 }
 
 // post: returns true if the user has engaged with the page, making it safe to initialize AudioContext

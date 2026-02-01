@@ -32,7 +32,9 @@ export function setSpeed(s: number, pitch?: boolean): { speed: number; preserveP
 	const as = document.getElementsByTagName('audio');
 
 	const apply = (m: HTMLMediaElement) => {
-		m.playbackRate = clamped;
+		if (Math.abs(m.playbackRate - clamped) > 0.005) {
+			m.playbackRate = clamped;
+		}
 		if ('preservesPitch' in m) (m as any).preservesPitch = p;
 	};
 
