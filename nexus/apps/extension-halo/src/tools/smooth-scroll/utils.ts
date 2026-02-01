@@ -127,3 +127,11 @@ export function shouldIgnoreInput(activeElement: Element | null): boolean {
 	if (current !== document.body && current !== document.documentElement && current.querySelector('video, audio')) return true;
 	return false;
 }
+
+export function isSuspiciousList(el: Element): boolean {
+	// Detect lists that might be Virtual or have Custom Logic
+	const cls = String(el.className);
+	if (cls.includes('list') || cls.includes('scroll') || cls.includes('wrap') || cls.includes('box')) return true;
+	if (el.childElementCount > 20) return true;
+	return false;
+}
