@@ -73,7 +73,7 @@ Template: `// field: <content>`
 
 ## §4 环境
 
-bun workspace | `bun install/run build` (apps/packages) | 内部包: `"@nexus/x": "workspace:*"`
+bun workspace | `bun install` & `bun run build` (apps/packages) | 内部包: `"@nexus/x": "workspace:*"`
 
 构建: esbuild 统一 | `--dev` 不压缩 | `--watch` 实时监视 | verify-architecture 自动执行
 
