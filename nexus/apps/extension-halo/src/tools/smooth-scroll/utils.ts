@@ -13,18 +13,18 @@ function isScrollable(el: Element): boolean {
 	const isScrollStyle = ['auto', 'scroll', 'overlay'].includes(overflowY);
 	if (isScrollStyle && el.scrollHeight > el.clientHeight + 10) return true;
 	if (overflowY === 'hidden' && el.clientHeight > 150) {
+		// Only consider hidden as scrollable if it has clear overflow content
+		// and looks like a list container. We rely on isSuspiciousList later to yield if needed.
 		if (el.scrollHeight > el.clientHeight + 50) return true;
-		const cls = String(el.className);
-		if (cls.includes('list') || cls.includes('scroll') || cls.includes('wrap') || cls.includes('box')) return true;
 	}
 	return false;
 }
 
 export function isVirtualList(el: Element): boolean {
 	const { overflowY } = getComputedStyle(el);
+	const cls = String(el.className).toLowerCase();
 	if (overflowY === 'hidden' && el.clientHeight > 150) {
-		const cls = String(el.className);
-		return cls.includes('list') || cls.includes('scroll') || cls.includes('wrap');
+		return cls.includes('virtual') || cls.includes('v-list') || el.hasAttribute('data-virtuoso-scroller');
 	}
 	return false;
 }
@@ -135,24 +135,25 @@ export function shouldIgnoreInput(activeElement: Element | null): boolean {
 export function isSuspiciousList(el: Element): boolean {
 	const cls = String(el.className).toLowerCase();
 
-	// rule: ChatGPT main chat area or any main content should be handled by us
-	// We check if it's inside <main> or has a main role, but only if it's not a known virtual list
-	const isMainContent = el.closest('main') || el.getAttribute('role') === 'main' || cls.includes('main');
-
-	// rule: Strong virtual list signatures
+	// rule: Strong virtual list signatures (Generic)
 	const isVirtual = cls.includes('virtual') || cls.includes('v-list') ||
 		cls.includes('scrollbar') || cls.includes('ps-container') ||
 		cls.includes('os-host') || el.hasAttribute('data-virtuoso-scroller');
 
-	// rule: Bilibili specific virtual lists
-	const isBilibiliVirtual = cls.includes('bili-comment') || cls.includes('danmaku') ||
-		cls.includes('reply-list') || cls.includes('bili-video-card');
+	// rule: Context check - Is this the primary scrolling area of the viewport?
+	// Using clientWidth/Height is efficient. If it covers more than 60% of both axes, it's a "Main Area".
+	const isMainArea = el.clientWidth > window.innerWidth * 0.6 && el.clientHeight > window.innerHeight * 0.6;
 
-	if (isBilibiliVirtual || (isVirtual && !isMainContent)) return true;
+	// rule: If it has virtual markers and is NOT the main area, yield to site logic.
+	if (isVirtual && !isMainArea) return true;
 
-	// rule: Heuristic - only bypass if extremely large AND not looking like main content
-	// ChatGPT can have many messages, so we use a high threshold and respect isMainContent
-	if (el.childElementCount > 500 && !isMainContent) return true;
+	// rule: Heuristic - many children in a non-main area usually indicates a specialized list (danmaku, comments, etc.)
+	// These lists often have their own optimized scroll handlers. Threshold 40 is a safe bet.
+	if (el.childElementCount > 40 && !isMainArea) return true;
+
+	// rule: Detect hidden-overflow containers with significant content (likely virtual list container)
+	const { overflowY } = getComputedStyle(el);
+	if (overflowY === 'hidden' && el.childElementCount > 10 && !isMainArea) return true;
 
 	return false;
 }
