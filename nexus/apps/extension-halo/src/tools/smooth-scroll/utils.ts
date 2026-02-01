@@ -56,11 +56,21 @@ export function findScrollTargetChained(startEl: Element | null, deltaY: number)
 
 		if (canScrollBy(target, deltaY)) return target;
 
-		// rule: Respect 'overscroll-behavior' and trap Fixed/Sticky containers (Modals)
+
+		// rule: Trap logic - if the user is hovering a scrollable container (even if currently at edge), we MUST trap the event
+		// to prevent the background body from scrolling unexpectedly.
+		// Native behavior does this for 'contain', we extend it to Fixed/Sticky modals.
 		const style = getComputedStyle(target);
 		const overscroll = style.overscrollBehaviorY || style.overscrollBehavior;
+
 		if (overscroll === 'contain' || overscroll === 'none') return target;
-		if (style.position === 'fixed' || style.position === 'sticky') return target;
+
+		// note: Only trap if it's visually a "modal" or "panel" (fixed/absolute/sticky) AND has explicit scroll overflow
+		// This prevents trapping on random layout divs that happen to be position:relative
+		const isFloating = style.position === 'fixed' || style.position === 'sticky' || style.position === 'absolute';
+		const isExplicitlyScrollable = style.overflowY === 'auto' || style.overflowY === 'scroll';
+
+		if (isFloating && isExplicitlyScrollable) return target;
 
 		current = (target as HTMLElement).parentElement;
 		depth++;
