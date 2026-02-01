@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const DIR = 'D:\\Project\\VolumeBooster\\reference';
+const DIR = 'D:\\Project\\Nexus\\reference';
 const FILES = {
     hz: 'hz-rules-list.txt',
     ps: 'photoshow-rules-list.txt',
@@ -16,11 +16,11 @@ function normalize(str) {
     s = s.replace(/^https?:\/\//, '').replace(/^www\./, '');
     s = s.replace(/[\[\]]/g, '');
     const tlds = [
-        'com', 'net', 'org', 'cn', 'ru', 'co\\.uk', 'jp', 'tv', 'io', 'cc', 'me', 
-        'de', 'pl', 'fr', 'kr', 'au', 'nz', 'tw', 'vn', 'us', 'ir', 'gr', 'info', 
-        'biz', 'eu', 'ua', 'cz', 'hu', 'ro', 'sk', 'no', 'fi', 'dk', 'se', 'nl', 
-        'be', 'at', 'ch', 'es', 'pt', 'it', 'ca', 'br', 'mx', 'cl', 'ar', 'pe', 
-        'co', 've', 'id', 'my', 'ph', 'sg', 'th', 'in', 'pk', 'bd', 'sa', 'ae', 
+        'com', 'net', 'org', 'cn', 'ru', 'co\\.uk', 'jp', 'tv', 'io', 'cc', 'me',
+        'de', 'pl', 'fr', 'kr', 'au', 'nz', 'tw', 'vn', 'us', 'ir', 'gr', 'info',
+        'biz', 'eu', 'ua', 'cz', 'hu', 'ro', 'sk', 'no', 'fi', 'dk', 'se', 'nl',
+        'be', 'at', 'ch', 'es', 'pt', 'it', 'ca', 'br', 'mx', 'cl', 'ar', 'pe',
+        'co', 've', 'id', 'my', 'ph', 'sg', 'th', 'in', 'pk', 'bd', 'sa', 'ae',
         'eg', 'za', 'ng', 'ke', 'su', 'hk', 'site', 'xyz', 'top', 'online'
     ];
     const tldRegex = new RegExp(`\\.(${tlds.join('|')})(?=\\/|$|\\s|\\)|_|-|:|\\[|\\])`, 'g');
@@ -28,7 +28,7 @@ function normalize(str) {
     s = s.replace(/_a$/, '');
     s = s.replace(/(?:-[sgxphqmbv]+)+$/, '');
     s = s.replace(/-cdn$/, '');
-    s = s.replace(/_cdn$/, ''); 
+    s = s.replace(/_cdn$/, '');
     s = s.replace(/[-_\.]+$/, '');
     if (s === 'x') return 'x';
     if (s === 'google_images') return 'google';
@@ -38,7 +38,7 @@ function normalize(str) {
 // Stats Counters
 let stats = {
     totalUnique: 0,
-    totalHZ: 0, 
+    totalHZ: 0,
     totalPS: 0,
     totalIM: 0,
     overlapHZ_PS: 0,
@@ -56,61 +56,61 @@ try {
     const lines = content.split('\n');
     let dataStart = 0;
     // Skip until header row is found
-    for(let i=0; i<lines.length; i++) {
-        if(lines[i].startsWith('Domain:HZ:')) {
+    for (let i = 0; i < lines.length; i++) {
+        if (lines[i].startsWith('Domain:HZ:')) {
             dataStart = i + 1;
             break;
         }
     }
     const dataLines = lines.slice(dataStart);
-    
+
     dataLines.forEach(l => {
         if (!l.trim()) return;
         const p = l.split(':');
-        
+
         let hzStr, psStr, imStr;
         if (p.length > 4) {
-             imStr = p[p.length - 1];
-             psStr = p[p.length - 2];
-             hzStr = p[p.length - 3];
+            imStr = p[p.length - 1];
+            psStr = p[p.length - 2];
+            hzStr = p[p.length - 3];
         } else {
-             hzStr = p[1];
-             psStr = p[2];
-             imStr = p[3];
+            hzStr = p[1];
+            psStr = p[2];
+            imStr = p[3];
         }
-        
+
         const normKey = p.slice(0, p.length - 3).join(':') || p[0];
-        
+
         // Count HZ from the number in the cell (or '√' if old format, but current is number)
         let hzVal = 0;
         if (hzStr !== '#' && hzStr !== '') {
             // It might be a number now
             const n = parseInt(hzStr);
-            hzVal = isNaN(n) ? 1 : n; 
+            hzVal = isNaN(n) ? 1 : n;
         }
-        
+
         const hasHZ = hzVal > 0;
         const hasPS = psStr !== '#';
         const hasIM = imStr !== '#';
-        
+
         const psIds = hasPS ? psStr.split(',') : [];
         const imIds = hasIM ? imStr.split(',') : [];
 
         indexData.set(normKey, { hz: hzVal, ps: new Set(psIds), im: new Set(imIds) });
-        
+
         // Update Stats
         stats.totalUnique++;
-        stats.totalHZ += hzVal; 
+        stats.totalHZ += hzVal;
         stats.totalPS += psIds.length;
         stats.totalIM += imIds.length;
-        
+
         if (hasHZ && hasPS) stats.overlapHZ_PS++;
         if (hasHZ && hasIM) stats.overlapHZ_IM++;
         if (hasPS && hasIM) stats.overlapPS_IM++;
-        
+
         if (hasHZ && hasPS && hasIM) stats.overlapAll++;
     });
-    
+
     console.log(`Loaded ${indexData.size} index rows.`);
 
     // Print Stats
@@ -119,7 +119,7 @@ try {
     console.log(`PhotoShow Rules: ${stats.totalPS}`);
     console.log(`Imagus Rules: ${stats.totalIM}`);
 
-} catch(e) { console.error('Error loading index', e); process.exit(1); }
+} catch (e) { console.error('Error loading index', e); process.exit(1); }
 
 
 // --- 2. Verify HZ Source ---
@@ -147,10 +147,10 @@ try {
             if (braceMatch) domains.push(braceMatch[1].trim());
             else {
                 const d = line.split('(')[0].trim();
-                if(d) domains.push(d);
+                if (d) domains.push(d);
             }
         }
-        
+
         domains.forEach(d => {
             hzSourceCount++;
             const norm = normalize(d);
@@ -162,10 +162,10 @@ try {
             }
         });
     });
-} catch(e) { console.error(e); }
+} catch (e) { console.error(e); }
 
 console.log(`HZ matched: ${hzMatchedRules} / ${hzSourceCount}`);
-if (hzMissingRules.length > 0) console.log('HZ Missing:', hzMissingRules.slice(0,3));
+if (hzMissingRules.length > 0) console.log('HZ Missing:', hzMissingRules.slice(0, 3));
 
 // Note: HZ matched might be > stats.totalHZ if multiple source rules map to same index row 
 // AND the index row count equals the sum of them. 
@@ -192,21 +192,21 @@ try {
             const rawContent = match[2];
             const parts = rawContent.split('/');
             parts.forEach(p => {
-                 let d = p.replace(/\(.*\)/g, '').trim(); 
-                 if (!d) return;
-                 psSourceCount++;
-                 const norm = normalize(d);
-                 
-                 const entry = indexData.get(norm);
-                 if (entry && entry.ps.has(id)) {
-                     psMatched++;
-                 } else {
-                     psMissing.push({ id, raw: d, norm });
-                 }
+                let d = p.replace(/\(.*\)/g, '').trim();
+                if (!d) return;
+                psSourceCount++;
+                const norm = normalize(d);
+
+                const entry = indexData.get(norm);
+                if (entry && entry.ps.has(id)) {
+                    psMatched++;
+                } else {
+                    psMissing.push({ id, raw: d, norm });
+                }
             });
         }
     });
-} catch(e) { console.error(e); }
+} catch (e) { console.error(e); }
 console.log(`PS matched: ${psMatched} / ${psSourceCount}`);
 if (psMissing.length > 0) {
     console.log('PS Missing:', JSON.stringify(psMissing, null, 2));
@@ -229,7 +229,7 @@ try {
             const id = match[1];
             const raw = match[2];
             imSourceCount++;
-            
+
             const norm = normalize(raw);
             const entry = indexData.get(norm);
             if (entry && entry.im.has(id)) {
@@ -239,7 +239,7 @@ try {
             }
         }
     });
-} catch(e) { console.error(e); }
+} catch (e) { console.error(e); }
 console.log(`Imagus matched: ${imMatched} / ${imSourceCount}`);
 if (imMissing.length > 0) {
     console.log('Imagus Missing:', JSON.stringify(imMissing, null, 2));
