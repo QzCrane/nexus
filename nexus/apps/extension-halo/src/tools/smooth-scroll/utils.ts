@@ -1,31 +1,13 @@
 // goal: Scroll utilities - target finding and caching
 
-// Element cache (cleared after scroll session)
-let cache = new WeakMap<Element, Element | Window>();
-let clearCacheTimer: ReturnType<typeof setTimeout> | null = null;
-
-/**
- * Schedule cache clear after scroll session ends
- */
-export function scheduleClearCache(): void {
-	if (clearCacheTimer) clearTimeout(clearCacheTimer);
-	clearCacheTimer = setTimeout(() => {
-		cache = new WeakMap();
-	}, 1000);
-}
-
 /**
  * Check if element has scrollable overflow
  */
 function isScrollable(el: Element): boolean {
-	// eff: getComputedStyle is expensive, but necessary. Caller handles caching.
 	const style = getComputedStyle(el);
 	const { overflowY } = style;
-
 	if (overflowY === 'hidden' || overflowY === 'visible') return false;
-
 	const isScrollStyle = overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
-	// note: +1px buffer to avoid rounding errors
 	return isScrollStyle && el.scrollHeight > el.clientHeight + 1;
 }
 
@@ -33,9 +15,19 @@ function isScrollable(el: Element): boolean {
  * Find nearest scrollable ancestor (with caching)
  * note: strictly finds scrollable capability, does not judge context
  */
+// Element cache (cleared after scroll session)
+let cache = new WeakMap<Element, Element | Window>();
+let clearCacheTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function scheduleClearCache(): void {
+	if (clearCacheTimer) clearTimeout(clearCacheTimer);
+	clearCacheTimer = setTimeout(() => {
+		cache = new WeakMap();
+	}, 1000);
+}
+
 export function findScrollTarget(el: Element | null): Element | Window {
 	const startEl = el;
-	// limit: Prevent infinite loops with a reasonable depth safety, though DOM usually isn't that deep
 	let depth = 0;
 	while (el && el !== document.body && el !== document.documentElement && depth < 100) {
 		const cached = cache.get(el);
@@ -55,92 +47,87 @@ export function findScrollTarget(el: Element | null): Element | Window {
 }
 
 /**
- * Determine if an element acts as a visual barrier that should trap scrolling
- * (e.g. Modals, Sidebars, Large Lists)
+ * Check if an element serves as a "Blocking Barrier" that should prevent scroll bubbling
+ * e.g. Fixed Modals, Sidebars, Sticky Panels of significant size
  */
-function isTrapContext(el: Element): boolean {
+function isBlockingBarrier(el: Element): boolean {
 	const style = getComputedStyle(el);
 
-	// rule: Fixed/Sticky elements create a new coordinate system/context
-	// If the user interacts with them, they likely expect the scroll to stay within
-	if (style.position === 'fixed' || style.position === 'sticky') return true;
+	// rule: Must be out-of-flow or sticky to be a candidate
+	if (style.position !== 'fixed' && style.position !== 'sticky') return false;
 
-	return false;
+	// rule: Size Heuristic
+	// If it's small (like a Header or FAB), it is NOT a barrier.
+	// We use a threshold of 150px height or 50% width to assume "Content Container".
+	const rect = el.getBoundingClientRect();
+	// Barrier if tall enough (Sidebar/Modal) OR wide enough (Full Overlay) but NOT short (Header)
+	// Headers are usually < 100px.
+	const isHeaderLike = rect.height < 150 && rect.width > 300;
+	if (isHeaderLike) return false;
+
+	return true;
 }
 
 /**
- * Find scroll target with scroll chaining prevention (The "Trap" Logic)
+ * Find scroll target with robust bubbling prevention
  */
 export function findScrollTargetChained(startEl: Element | null, deltaY: number): Element | Window {
 	let current = startEl;
-	let contextTrapped = false;
-
-	// Phase 1: Context Detection (Are we inside a Modal/Sidebar?)
-	// We walk up just to check if we are physically inside a "Fixed" container.
-	// If so, we must NEVER bubble to Window/Body.
-	let walker = startEl;
-	while (walker && walker !== document.body) {
-		if (isTrapContext(walker)) {
-			contextTrapped = true;
-			break;
-		}
-		walker = walker.parentElement;
-	}
-
 	let depth = 0;
+
 	while (current && depth < 20) {
 		const target = findScrollTarget(current);
 
-		// rule: If we found Window (meaning no scrollable ancestor found)
-		if (target instanceof Window) {
-			// CRITICAL: If we are in a Trapped Context (e.g. Fixed Modal), we CANNOT return Window.
-			// The Modal itself (or the element we stopped at) should consume the event to prevent Body scroll.
-			if (contextTrapped) {
-				// We return the highest valid element found (startEl or current) or just block it.
-				// Since we know 'target' (Window) is bad, we assume the user intended to scroll the 'Context'.
-				// Returning the context root (walker) would be ideal, but 'current' works as a proxy limit.
-				return current;
+		// rule: Path Verification
+		// Before we accept 'target' (especially if it jumped up to Window),
+		// we must verify we didn't walk through a solid wall (Barrier).
+		// If we did, we hit the wall.
+		let walker: Element | null = current;
+		const endNode = target instanceof Window ? document.body : target;
+		let barrier: Element | null = null;
+
+		while (walker && walker !== endNode && walker !== document.documentElement) {
+			if (isBlockingBarrier(walker)) {
+				barrier = walker;
+				break;
 			}
-			return target;
+			walker = walker.parentElement;
 		}
 
-		// rule: If we can scroll the target, prioritize it immediately
+		if (barrier) {
+			// We hit a barrier before reaching the proposed target.
+			// The barrier IS the dead end.
+			return barrier;
+		}
+
+		// rule: If valid window found and no barrier
+		if (target instanceof Window) return target;
+
+		// rule: If target is scrollable, use it
 		if (canScrollBy(target, deltaY)) return target;
 
-		// rule: Chaining Prevention Logic (The "Sticky" Rule)
-		// If the target cannot scroll (at edge), SHOULD we chain to parent?
+		// rule: Target at edge. Should we trap?
 
-		// 1. Respect CSS standards
+		// 1. CSS Containment
 		const style = getComputedStyle(target);
 		const overscroll = style.overscrollBehaviorY || style.overscrollBehavior;
 		if (overscroll === 'contain' || overscroll === 'none') return target;
 
-		// 2. Significant Component Trap
-		// If the scrollable element is large (e.g. Danmaku List, Chat Box, Code Block), 
-		// we assume it is a "Component" and should NOT bleed scroll to the page.
-		// Heuristic: Height > 120px (Larger than a typical dropdown/input)
-		const isSignificant = target.clientHeight > 120;
-		if (isSignificant) return target;
+		// 2. Significant Component (Large Scrollable Areas like Chat/Code)
+		// Even if not Fixed, a large scrollable area usually implies localized context.
+		// Heuristic: > 200px height.
+		if (target.clientHeight > 200) return target;
 
-		// 3. Fixed Context Trap
-		// If we are inside a fixed modal, and this inner scroller is done, 
-		// we generally do NOT want to bubble to Body.
-		// (Unless there is another scrollable parent inside the modal?)
-		// We loop to parent. If parent is Body, stop.
-		if (contextTrapped && (target.parentElement === document.body || target.parentElement === document.documentElement)) {
-			return target;
-		}
+		// 3. Is the target itself a Barrier? (e.g. Scrollable Fixed Sidebar)
+		if (isBlockingBarrier(target)) return target;
 
-		// Chain to parent (Bubbling)
+		// Chain to parent
 		current = (target as HTMLElement).parentElement;
 		depth++;
 	}
 	return window;
 }
 
-/**
- * Scan for the likely main scroller element (generic focus)
- */
 export function findMainScrollTarget(deltaY: number): Element | Window {
 	const candidates = document.elementsFromPoint(window.innerWidth / 2, window.innerHeight / 2);
 	for (const el of candidates) {
@@ -176,16 +163,9 @@ export function canScrollBy(target: Element | Window, deltaY: number): boolean {
 	return false;
 }
 
-/**
- * Check if input should be ignored (e.g. typing in text box)
- */
 const IGNORE_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT', 'OPTION', 'VIDEO', 'AUDIO', 'BUTTON', 'IFRAME']);
 const IGNORE_ROLES = new Set(['textbox', 'listbox', 'menu', 'slider', 'switch']);
 
-/**
- * Check if input should be ignored (e.g. typing in text box)
- * eff: Zero-alloc hot path
- */
 export function shouldIgnoreInput(activeElement: Element | null): boolean {
 	if (!activeElement) return false;
 
@@ -199,7 +179,6 @@ export function shouldIgnoreInput(activeElement: Element | null): boolean {
 	const role = current.getAttribute('role');
 	if (role && IGNORE_ROLES.has(role)) return true;
 
-	// Smart Video Player Detection (Expensive DOM check, strictly last)
 	if (current !== document.body && current !== document.documentElement && current.querySelector('video, audio')) return true;
 
 	return false;
