@@ -56,11 +56,11 @@ export function findScrollTargetChained(startEl: Element | null, deltaY: number)
 
 		if (canScrollBy(target, deltaY)) return target;
 
-		// rule: Respect 'overscroll-behavior'
-		const { overscrollBehaviorY, overscrollBehavior } = getComputedStyle(target);
-		if ((overscrollBehaviorY || overscrollBehavior) === 'contain' || (overscrollBehaviorY || overscrollBehavior) === 'none') {
-			return target;
-		}
+		// rule: Respect 'overscroll-behavior' and trap Fixed/Sticky containers (Modals)
+		const style = getComputedStyle(target);
+		const overscroll = style.overscrollBehaviorY || style.overscrollBehavior;
+		if (overscroll === 'contain' || overscroll === 'none') return target;
+		if (style.position === 'fixed' || style.position === 'sticky') return target;
 
 		current = (target as HTMLElement).parentElement;
 		depth++;

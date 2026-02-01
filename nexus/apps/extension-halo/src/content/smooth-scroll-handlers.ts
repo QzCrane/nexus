@@ -45,7 +45,11 @@ export function onWheel(e: WheelEvent): void {
 		hotTarget.targetRef = e.target;
 	}
 
-	if (!canScrollBy(target, deltaY)) return;
+	if (!canScrollBy(target, deltaY)) {
+		// rule: if we found a specific trapped target (Fixed/Contain) that can't scroll, kill the event to prevent native bleeding
+		if (target !== window) e.preventDefault();
+		return;
+	}
 
 	e.preventDefault();
 	scheduleClearCache();
