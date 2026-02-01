@@ -17,16 +17,16 @@ if (!['spectra', 'halo'].includes(targetApp)) {
 const CONFIG = {
   srcDir: path.resolve(__dirname, '..'),
   destDir: path.resolve(__dirname, `../../${targetApp}-public`),
-  
+
   // Base exclusions for all public repos
   baseExcludes: [
     '.agent', '.ai-context.md', 'plan.md', 'README.AI.md', 'scripts',
     'docs', 'store-listings', 'store-assets', 'assets',
     'privacy-justifications.md', 'policy-decision.md', 'cors-data-flow.md', 'context-index.md',
     'node_modules', '.turbo', 'dist', '*.tsbuildinfo', '*.zip', 'assets-backup',
-    '.git', '.vscode', '.idea', 'test', '*.log'
+    '.git', '.vscode', '.idea', 'test', '*.log', 'bun.lock', 'bun.lockb'
   ],
-  
+
   appSpecific: {
     spectra: {
       excludes: ['apps/extension-halo', 'apps/extension-cortex', 'packages/features/ai-engine', 'packages/ui-kit'],
@@ -76,11 +76,11 @@ function shouldExclude(relativePath) {
       const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
       return regex.test(relativePath) || regex.test(fileName);
     }
-    return relativePath === pattern || 
-           relativePath.startsWith(pattern + '/') ||
-           relativePath.endsWith('/' + pattern) ||
-           relativePath.includes('/' + pattern + '/') ||
-           fileName === pattern;
+    return relativePath === pattern ||
+      relativePath.startsWith(pattern + '/') ||
+      relativePath.endsWith('/' + pattern) ||
+      relativePath.includes('/' + pattern + '/') ||
+      fileName === pattern;
   });
 }
 
@@ -102,17 +102,17 @@ function copyDir(src, dest, basePath = '') {
 
 function cleanDest(dest) {
   if (!fs.existsSync(dest)) return;
-  
+
   // Try to stop turbo before cleanup if it exists
   try {
     execSync('npx turbo daemon stop', { cwd: dest, stdio: 'ignore' });
-  } catch (e) {}
+  } catch (e) { }
 
   const entries = fs.readdirSync(dest, { withFileTypes: true });
   for (const entry of entries) {
     if (entry.name === '.git' || entry.name === 'node_modules') continue;
     const fullPath = path.join(dest, entry.name);
-    
+
     // Windows retry logic
     let retries = 3;
     while (retries > 0) {
@@ -177,7 +177,12 @@ function main() {
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
     const scriptsToRemove = ['verify', 'prebuild', 'sync-public', 'sync-halo', 'sync-spectra'];
     scriptsToRemove.forEach(s => delete pkg.scripts?.[s]);
+    pkg.packageManager = "pnpm@10.0.0";
     fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, '\t') + '\n');
+
+    // Generate pnpm-workspace.yaml for pnpm compatibility
+    const workspaceYaml = "packages:\n  - 'apps/*'\n  - 'packages/*'\n  - 'packages/features/*'\n";
+    fs.writeFileSync(path.join(CONFIG.destDir, 'pnpm-workspace.yaml'), workspaceYaml);
   }
 
   // Git operations
@@ -186,7 +191,7 @@ function main() {
     const status = execSync('git status --porcelain', { cwd: CONFIG.destDir }).toString();
     if (status.trim()) {
       let commitMsg = 'chore: sync from nexus';
-      try { commitMsg = execSync('git log -1 --format=%s', { cwd: CONFIG.srcDir }).toString().trim(); } catch (e) {}
+      try { commitMsg = execSync('git log -1 --format=%s', { cwd: CONFIG.srcDir }).toString().trim(); } catch (e) { }
       execSync(`git commit -m "${commitMsg}"`, { cwd: CONFIG.destDir });
       console.log('\n✅ Commit created!');
     }
@@ -201,12 +206,12 @@ function main() {
     execSync('pnpm install', { cwd: CONFIG.destDir, stdio: 'inherit' });
     execSync('pnpm build', { cwd: CONFIG.destDir, stdio: 'inherit' });
     console.log('\n✅ Build verification passed!');
-    
+
     // Stop turbo daemon before cleanup to prevent file locks
     console.log('\nStopping turbo daemon...');
     try {
       execSync('npx turbo daemon stop', { cwd: CONFIG.destDir, stdio: 'ignore' });
-    } catch (e) {}
+    } catch (e) { }
 
     // Cleanup build artifacts
     console.log('Cleaning build artifacts...');
@@ -225,7 +230,7 @@ function main() {
         execSync('git commit -m "chore: update pnpm-lock.yaml"', { cwd: CONFIG.destDir });
         console.log('✅ pnpm-lock.yaml committed');
       }
-    } catch (e) {}
+    } catch (e) { }
   } catch (e) {
     console.error('\n❌ Build verification failed!');
     process.exit(1);
