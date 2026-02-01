@@ -48,6 +48,13 @@ export function onWheel(e: WheelEvent): void {
 	// rule: Bypass "Suspicious Lists" (Virtual/Custom/Bilibili) to support custom scrollbars
 	// We preventDefault to stop Body chaining, but return to allow Site JS to handle the scroll
 	if (target !== window && isSuspiciousList(target as Element)) {
+		const el = target as HTMLElement;
+		// try: Enforce native smooth scrolling if the site uses scrollTop
+		// Use setProperty with priority to override site styles
+		if (el.style && el.style.scrollBehavior !== 'smooth') {
+			el.style.setProperty('scroll-behavior', 'smooth', 'important');
+		}
+
 		e.preventDefault();
 		return;
 	}
