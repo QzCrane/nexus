@@ -1,7 +1,7 @@
 // goal: Event handlers for Smooth Scroll
 // eff: Loosely coupled handlers using shared state
 
-import { scheduleClearCache, findScrollTargetChained, canScrollBy } from '../tools/smooth-scroll/utils';
+import { scheduleClearCache, findScrollTargetChained, canScrollBy, isVirtualList } from '../tools/smooth-scroll/utils';
 import { scrollTo } from '../tools/smooth-scroll/engine';
 import { settings, state, lastScrollTime, acceleration, updateAcceleration } from './smooth-scroll-state';
 
@@ -46,6 +46,15 @@ export function onWheel(e: WheelEvent): void {
 	}
 
 	if (!canScrollBy(target, deltaY)) {
+		// rule: Special Case - Virtual List with no scrollTop support (Absolute/Transform)
+		// We traps it (stop propagation to save body) but ALLOW native/JS events on the list itself.
+		// This fixes "Not scrolling" + "Rolls Body" for complex JS scrollers like Bilibili Danmaku.
+		if (target !== window && isVirtualList(target as Element)) {
+			e.stopPropagation();
+			e.stopImmediatePropagation();
+			return;
+		}
+
 		// rule: if we found a specific trapped target (Fixed/Contain) that can't scroll, kill the event to prevent native bleeding
 		if (target !== window) {
 			e.preventDefault();
