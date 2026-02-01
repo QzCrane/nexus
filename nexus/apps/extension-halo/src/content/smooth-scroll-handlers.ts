@@ -47,10 +47,9 @@ export function onWheel(e: WheelEvent): void {
 
 	// rule: Bypass "Suspicious Lists" (Virtual/Custom/Bilibili) to support custom scrollbars
 	// We preventDefault to stop Body chaining, but return to allow Site JS to handle the scroll
-	// rule: Bypass "Suspicious Lists" (Virtual/Custom/Bilibili)
-	// We MUST NOT touch these with our engine OR force smooth behavior
-	// because they often have complex JS-based virtualization logic.
 	if (target !== window && isSuspiciousList(target as Element)) {
+		// rule: For suspicious/virtual lists, we MUST yield completely.
+		// DO NOT set scroll-behavior: smooth here, as it breaks site-side virtual list logic (e.g. Bilibili)
 		return;
 	}
 

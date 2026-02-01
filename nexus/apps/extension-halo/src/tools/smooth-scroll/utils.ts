@@ -134,20 +134,25 @@ export function shouldIgnoreInput(activeElement: Element | null): boolean {
 
 export function isSuspiciousList(el: Element): boolean {
 	const cls = String(el.className).toLowerCase();
-	const id = String(el.id).toLowerCase();
 
-	// rule: ChatGPT main chat area - always handle
-	if (cls.includes('main') || el.getAttribute('role') === 'main' || cls.includes('conversation')) return false;
+	// rule: ChatGPT main chat area or any main content should be handled by us
+	// We check if it's inside <main> or has a main role, but only if it's not a known virtual list
+	const isMainContent = el.closest('main') || el.getAttribute('role') === 'main' || cls.includes('main');
 
-	// rule: Bilibili specific components - always bypass
-	// These are extremely fragile virtual lists
-	if (cls.includes('bili-') || cls.includes('danmaku') || cls.includes('video-info-m')) return true;
+	// rule: Strong virtual list signatures
+	const isVirtual = cls.includes('virtual') || cls.includes('v-list') ||
+		cls.includes('scrollbar') || cls.includes('ps-container') ||
+		cls.includes('os-host') || el.hasAttribute('data-virtuoso-scroller');
 
-	// rule: Virtual lists often have specific lib markers
-	const isVirtualLib = cls.includes('scrollbar') || cls.includes('virtual') || cls.includes('v-list') || cls.includes('ps-container') || cls.includes('os-host');
-	if (isVirtualLib) return true;
+	// rule: Bilibili specific virtual lists
+	const isBilibiliVirtual = cls.includes('bili-comment') || cls.includes('danmaku') ||
+		cls.includes('reply-list') || cls.includes('bili-video-card');
 
-	// rule: Modern apps often have many children; bypass if extremely large
-	if (el.childElementCount > 120) return true;
+	if (isBilibiliVirtual || (isVirtual && !isMainContent)) return true;
+
+	// rule: Heuristic - only bypass if extremely large AND not looking like main content
+	// ChatGPT can have many messages, so we use a high threshold and respect isMainContent
+	if (el.childElementCount > 500 && !isMainContent) return true;
+
 	return false;
 }
