@@ -42,6 +42,7 @@ export function updateBadge(
 	safeSend(() => messenger.send('BADGE_UPDATE', {
 		volume: state.config.volume,
 		muted: state.config.muted,
+		enabled: state.config.enabled ?? true,
 		isCapture: isPredictedCapture,
 		userInteracted: state.userHasInteracted,
 	} as any)).catch(() => { });
