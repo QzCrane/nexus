@@ -22,6 +22,9 @@ v2.4.0 SaaT: `pluginType:'script'`伪工具 | Dual Discovery(panel.tsx/script.js
 v2.4.1 Unified: i18n Flat→Hydrate 架构 | Icon SSOT(Manifest) | System 隔离(Header 入口) | Extension Manager
 
 v2.5.0 Script Store: `src/scripts/`独立目录 | Fork Mode(编辑官方 → 创建副本) | Active Service 绿标
+v2.5.1 LLM Suite: `chatgpt-wide` → `llm-enhancer` | Support ChatGPT/DeepSeek/Gemini | Timeline/Widescreen/KeepAlive @2026-02-01
+v2.5.2 Bilibili+: Playback Speed | Esc Fix | Clean Home | Viewer Count (Planned) @2026-02-01
+v2.5.3 LLM Enhancer V3: 💎 Glassmorphism UX | Floating Dock | Keyboard shortcuts | Auto Scroll Highlight @2026-02-02
 
 v2.6.0 Resource Monitor: 系统级面板 | 11 种 CPU 机制 | Header⚡ 入口
 
@@ -46,7 +49,7 @@ v2.8.0 Extreme Perf: Smooth Scroll (Hot Cache/Zero-Alloc) | Ruler (rAF Lock) | H
 
 ## 路线图
 
-Phase 10-12 (P1): ✅bilibili-plus ✅chatgpt-wide ✅hover-zoom ✅extension-manager | checksum/ssl-check/csp-analyzer/random-gen | translate/page-annotate/download-manager/tab-group
+Phase 10-12 (P1): ✅bilibili-plus ✅llm-enhancer ✅hover-zoom ✅extension-manager | checksum/ssl-check/csp-analyzer/random-gen | translate/page-annotate/download-manager/tab-group
 Phase 13-15 (P2): ocr/ai-chat/code-explain | websocket/graphql/media-sniffer
 
 ## 技术原则

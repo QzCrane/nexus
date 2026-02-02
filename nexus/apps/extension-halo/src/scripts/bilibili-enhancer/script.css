@@ -1,0 +1,53 @@
+/* Bilibili Enhancer Styles */
+
+/* Clean Home Mode */
+body[halo-clean-mode] .recommended-swipe {
+	display: none !important;
+}
+body[halo-clean-mode] .bili-feed4 .feed-card:nth-child(n+8) {
+	/* Keep only first row or so */
+	/* display: none !important; */ 
+	/* Logic usually depends on exact DOM */
+}
+
+/* Hide Hot Search */
+.halo-hide-hot-search .nav-search-content .nav-search-input {
+	border-radius: 8px !important;
+}
+.halo-hide-hot-search .search-panel .hot-search {
+	display: none !important;
+}
+
+/* Stepless Rate */
+.halo-speed-menu {
+	position: absolute;
+	bottom: 100%;
+	left: 50%;
+	transform: translateX(-50%);
+	background: rgba(0, 0, 0, 0.9);
+	border-radius: 4px;
+	padding: 5px 0;
+	margin-bottom: 10px;
+	width: 60px;
+	text-align: center;
+	z-index: 1000;
+}
+.halo-speed-item {
+	padding: 4px 0;
+	color: #fff;
+	font-size: 12px;
+	cursor: pointer;
+}
+.halo-speed-item:hover {
+	background: rgba(255, 255, 255, 0.2);
+}
+.halo-speed-btn {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 14px;
+	color: #fff;
+	height: 100%;
+	padding: 0 10px;
+}

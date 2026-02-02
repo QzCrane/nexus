@@ -187,7 +187,7 @@ export async function syncSaaTTools(tools: PluginMeta[]): Promise<void> {
 					name: tool.id,
 					description: `SaaT: ${tool.id}`,
 					code: scriptCode,
-					enabled: false, // Default to disabled, let user enable it
+					enabled: true, // Default to ENABLED for immediate usage
 					type: config.type,
 					matches: config.matches,
 					excludeMatches: config.excludeMatches,

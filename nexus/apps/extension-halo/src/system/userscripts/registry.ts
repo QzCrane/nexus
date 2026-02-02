@@ -58,16 +58,12 @@ function wrapForMainWorld(code: string, name: string, type: 'javascript' | 'css'
 })();`;
 	}
 
-	// For JavaScript: inject via <script> tag to get true MAIN world execution
-	const escapedCode = code.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\${/g, '\\${');
+	// For JavaScript: Run directly in MAIN world (API handles context)
+	// We just wrap in a try-catch block for safety and logging
 	return `
 (function() {
 	try {
-		const s = document.createElement('script');
-		s.textContent = \`${escapedCode}\`;
-		const t = document.head || document.documentElement;
-		t.insertBefore(s, t.firstChild);
-		s.remove();
+		${code}
 		console.log('[HALO Script] ${escapedName} executed');
 	} catch(e) { console.error('[HALO Script] ${escapedName} failed:', e); }
 })();`;
@@ -130,7 +126,7 @@ async function registerAllScripts(scripts: UserScript[], globalEnabled: boolean)
 				js: [{ code: wrappedCode }],
 				runAt: toRunAt(script.runAt),
 				allFrames: false,
-				world: 'MAIN',
+				world: 'USER_SCRIPT',
 			});
 		} catch (e) {
 			console.warn(LOG_TAG, `Failed to prepare ${script.name}:`, e);

@@ -5,6 +5,8 @@ import { STORAGE_PREFIX } from '../kernel';
 import { DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY } from '../kernel';
 import { initUserScriptsEngine } from '../system/userscripts/engine';
 import { initUserScriptsRegistry } from '../system/userscripts/registry';
+import { syncSaaTTools } from '../kernel/services/saat-service';
+import { TOOL_REGISTRY } from '../kernel/tool-registry';
 
 const LOG_TAG = '[HALO]';
 
@@ -23,6 +25,9 @@ const MENU_PDF_LINK = 'halo-pdf-link';
 // Initialize on install
 chrome.runtime.onInstalled.addListener(async (details) => {
 	console.log(LOG_TAG, 'Extension installed/updated:', details.reason);
+
+	// Sync built-in SaaT tools (like llm-enhancer) to storage
+	await syncSaaTTools(TOOL_REGISTRY);
 
 	// Set defaults if not already set
 	const storage = await chrome.storage.sync.get([
@@ -185,6 +190,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			.catch(err => sendResponse({ success: false, error: err.message }));
 
 		return true; // async
+	}
+
+	// Inject CSS dynamically (Bypass CSP)
+	if (message.type === 'HALO_INJECT_CSS') {
+		const { css } = message;
+		if (sender.tab?.id && css) {
+			chrome.scripting.insertCSS({
+				target: { tabId: sender.tab.id },
+				css: css,
+			}).then(() => {
+				console.log(LOG_TAG, 'Injected dynamic CSS for tab', sender.tab?.id);
+				sendResponse({ success: true });
+			}).catch(e => {
+				console.warn(LOG_TAG, 'Failed to inject CSS:', e);
+				sendResponse({ success: false, error: e.message });
+			});
+			return true; // async
+		}
 	}
 
 	return false;

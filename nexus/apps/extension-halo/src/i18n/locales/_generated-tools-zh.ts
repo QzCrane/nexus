@@ -37,6 +37,7 @@ import { zh as json_formatter } from '../../tools/json-formatter/locales/zh';
 import { zh as json_path } from '../../tools/json-path/locales/zh';
 import { zh as json_to_csv } from '../../tools/json-to-csv/locales/zh';
 import { zh as jwt_decoder } from '../../tools/jwt-decoder/locales/zh';
+import { zh as llm_enhancer } from '../../tools/llm-enhancer/locales/zh';
 import { zh as lorem_ipsum } from '../../tools/lorem-ipsum/locales/zh';
 import { zh as markdown } from '../../tools/markdown/locales/zh';
 import { zh as media_sniffer } from '../../tools/media-sniffer/locales/zh';
@@ -85,7 +86,6 @@ import { zh as xml_formatter } from '../../tools/xml-formatter/locales/zh';
 import { zh as xor } from '../../tools/xor/locales/zh';
 import { zh as yaml } from '../../tools/yaml/locales/zh';
 import { zh as bilibili_plus } from '../../scripts/bilibili-plus/locales/zh';
-import { zh as chatgpt_wide } from '../../scripts/chatgpt-wide/locales/zh';
 import { zh as extension_manager } from '../../system/extension-manager/locales/zh';
 import { zh as module_store } from '../../system/module-store/locales/zh';
 import { zh as permissions } from '../../system/permissions/locales/zh';
@@ -129,6 +129,7 @@ export const TOOLS_ZH = {
 	...json_path,
 	...json_to_csv,
 	...jwt_decoder,
+	...llm_enhancer,
 	...lorem_ipsum,
 	...markdown,
 	...media_sniffer,
@@ -177,7 +178,6 @@ export const TOOLS_ZH = {
 	...xor,
 	...yaml,
 	...bilibili_plus,
-	...chatgpt_wide,
 	...extension_manager,
 	...module_store,
 	...permissions,

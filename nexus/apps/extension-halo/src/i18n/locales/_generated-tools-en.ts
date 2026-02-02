@@ -37,6 +37,7 @@ import { en as json_formatter } from '../../tools/json-formatter/locales/en';
 import { en as json_path } from '../../tools/json-path/locales/en';
 import { en as json_to_csv } from '../../tools/json-to-csv/locales/en';
 import { en as jwt_decoder } from '../../tools/jwt-decoder/locales/en';
+import { en as llm_enhancer } from '../../tools/llm-enhancer/locales/en';
 import { en as lorem_ipsum } from '../../tools/lorem-ipsum/locales/en';
 import { en as markdown } from '../../tools/markdown/locales/en';
 import { en as media_sniffer } from '../../tools/media-sniffer/locales/en';
@@ -85,7 +86,6 @@ import { en as xml_formatter } from '../../tools/xml-formatter/locales/en';
 import { en as xor } from '../../tools/xor/locales/en';
 import { en as yaml } from '../../tools/yaml/locales/en';
 import { en as bilibili_plus } from '../../scripts/bilibili-plus/locales/en';
-import { en as chatgpt_wide } from '../../scripts/chatgpt-wide/locales/en';
 import { en as extension_manager } from '../../system/extension-manager/locales/en';
 import { en as module_store } from '../../system/module-store/locales/en';
 import { en as permissions } from '../../system/permissions/locales/en';
@@ -129,6 +129,7 @@ export const TOOLS_EN = {
 	...json_path,
 	...json_to_csv,
 	...jwt_decoder,
+	...llm_enhancer,
 	...lorem_ipsum,
 	...markdown,
 	...media_sniffer,
@@ -177,7 +178,6 @@ export const TOOLS_EN = {
 	...xor,
 	...yaml,
 	...bilibili_plus,
-	...chatgpt_wide,
 	...extension_manager,
 	...module_store,
 	...permissions,

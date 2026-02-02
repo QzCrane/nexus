@@ -461,6 +461,18 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		script: undefined,
 	},
 	{
+		id: 'llm-enhancer',
+		icon: '🧠',
+		pluginType: 'tool',
+		category: 'ai',
+		size: 260338,
+		builtIn: true,
+		keywords: ["chatgpt","openai","deepseek","gemini","wide","timeline","ai"],
+		permissions: ["userScripts"],
+		background: undefined,
+		script: {"type":"javascript","runAt":"document_end","matches":["*://chatgpt.com/*","*://chat.openai.com/*","*://chat.deepseek.com/*","*://gemini.google.com/*","*://aistudio.google.com/*","*://claude.ai/*"]},
+	},
+	{
 		id: 'lorem-ipsum',
 		icon: '📄',
 		pluginType: 'tool',
@@ -1029,24 +1041,12 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '📺',
 		pluginType: 'script',
 		category: 'media',
-		size: 3530,
+		size: 5921,
 		builtIn: true,
 		keywords: ["bilibili","b站","哔哩哔哩","视频","广告","弹幕"],
 		permissions: ["userScripts"],
 		background: {"mechanism":"mutation_observer","frequency":"on-mutation","activeOnly":false,"level":"low","descriptionKey":"impact.mechanism.mutation_observer","sourceFile":"scripts/bilibili-plus/script.js","sourceLine":34,"sourceDetail":"new MutationObserver(() => {...})"},
 		script: {"type":"javascript","runAt":"document_start","matches":["*://*.bilibili.com/*"]},
-	},
-	{
-		id: 'chatgpt-wide',
-		icon: '🤖',
-		pluginType: 'script',
-		category: 'ai',
-		size: 1770,
-		builtIn: true,
-		keywords: ["chatgpt","openai","deepseek","宽屏","wide","ai"],
-		permissions: ["userScripts"],
-		background: undefined,
-		script: {"type":"css","runAt":"document_start","matches":["*://chatgpt.com/*","*://chat.openai.com/*","*://chat.deepseek.com/*"]},
 	},
 	{
 		id: 'extension-manager',
@@ -1113,7 +1113,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '📜',
 		pluginType: 'system',
 		category: 'dev',
-		size: 88398,
+		size: 88224,
 		builtIn: false,
 		keywords: ["script","inject","脚本","注入"],
 		permissions: ["webNavigation","*://*/*"],
@@ -1122,7 +1122,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 	}
 ];
 
-export const PLUGIN_IDS = ['api-tester', 'archive', 'base64', 'bookmark-manager', 'checksum', 'clipboard', 'code-formatter', 'code-snippets', 'color-palette', 'color-picker', 'cookie-manager', 'cron', 'crypto', 'csp-analyzer', 'csv-to-json', 'csv-viewer', 'diff', 'dom-selector', 'emoji-picker', 'exif-reader', 'font-inspector', 'gzip', 'hash', 'headers-viewer', 'hex-dump', 'history-search', 'hover-zoom', 'html-entity', 'http-status', 'image-tools', 'ip-lookup', 'json-formatter', 'json-path', 'json-to-csv', 'jwt-decoder', 'lorem-ipsum', 'markdown', 'media-sniffer', 'mock-data', 'morse', 'network', 'number-base', 'outline', 'page-annotate', 'password-gen', 'pdf', 'pomodoro', 'protobuf', 'punycode', 'qrcode', 'random-gen', 'reader-mode', 'regex', 'rot13', 'ruler', 'screenshot', 'session-manager', 'shortcuts', 'smooth-scroll', 'sql-formatter', 'ssl-cert', 'sticky-notes', 'storage-editor', 'subresource', 'tab-group', 'table-extractor', 'tabs', 'tech-stack', 'text-to-speech', 'text-tools', 'timer', 'timestamp', 'todo-list', 'totp', 'translate', 'unit-converter', 'url', 'user-agent', 'uuid', 'xml-formatter', 'xor', 'yaml', 'bilibili-plus', 'chatgpt-wide', 'extension-manager', 'module-store', 'permissions', 'resource-monitor', 'settings', 'userscripts'] as const;
+export const PLUGIN_IDS = ['api-tester', 'archive', 'base64', 'bookmark-manager', 'checksum', 'clipboard', 'code-formatter', 'code-snippets', 'color-palette', 'color-picker', 'cookie-manager', 'cron', 'crypto', 'csp-analyzer', 'csv-to-json', 'csv-viewer', 'diff', 'dom-selector', 'emoji-picker', 'exif-reader', 'font-inspector', 'gzip', 'hash', 'headers-viewer', 'hex-dump', 'history-search', 'hover-zoom', 'html-entity', 'http-status', 'image-tools', 'ip-lookup', 'json-formatter', 'json-path', 'json-to-csv', 'jwt-decoder', 'llm-enhancer', 'lorem-ipsum', 'markdown', 'media-sniffer', 'mock-data', 'morse', 'network', 'number-base', 'outline', 'page-annotate', 'password-gen', 'pdf', 'pomodoro', 'protobuf', 'punycode', 'qrcode', 'random-gen', 'reader-mode', 'regex', 'rot13', 'ruler', 'screenshot', 'session-manager', 'shortcuts', 'smooth-scroll', 'sql-formatter', 'ssl-cert', 'sticky-notes', 'storage-editor', 'subresource', 'tab-group', 'table-extractor', 'tabs', 'tech-stack', 'text-to-speech', 'text-tools', 'timer', 'timestamp', 'todo-list', 'totp', 'translate', 'unit-converter', 'url', 'user-agent', 'uuid', 'xml-formatter', 'xor', 'yaml', 'bilibili-plus', 'extension-manager', 'module-store', 'permissions', 'resource-monitor', 'settings', 'userscripts'] as const;
 export type PluginId = (typeof PLUGIN_IDS)[number];
 
 // Runtime filters (SSOT)
@@ -1153,8 +1153,8 @@ export const PERMISSION_USAGE_MAP: Record<string, string[]> = {
         "hover-zoom"
     ],
     "userScripts": [
-        "bilibili-plus",
-        "chatgpt-wide"
+        "llm-enhancer",
+        "bilibili-plus"
     ],
     "management": [
         "extension-manager"

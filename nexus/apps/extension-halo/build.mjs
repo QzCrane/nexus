@@ -32,14 +32,14 @@ function run(label, cmd, opts = {}) {
 if (!isWatch) {
 	const registryPath = path.resolve(__dirname, '../../scripts/generate-tool-registry.mjs');
 	const verifyPath = path.resolve(__dirname, '../../scripts/verify-architecture.js');
-	
+
 	if (existsSync(registryPath)) {
 		run('registry', 'bun ../../scripts/generate-tool-registry.mjs', { silent: true });
 	}
 	if (existsSync(verifyPath)) {
 		run('verify', 'bun ../../scripts/verify-architecture.js', { silent: true });
 	}
-	
+
 	if (!run('tsc', 'bun tsc --noEmit --skipLibCheck')) {
 		process.exit(1);
 	}
@@ -71,8 +71,21 @@ function copyScriptFiles(sourceDir, destBaseDir) {
 		let copied = false;
 		if (existsSync(scriptJs)) {
 			mkdirSync(destDir, { recursive: true });
-			copyFileSync(scriptJs, path.join(destDir, 'script.js'));
-			copied = true;
+			try {
+				esbuild.buildSync({
+					entryPoints: [scriptJs],
+					outfile: path.join(destDir, 'script.js'),
+					bundle: true,
+					minify: !isDev,
+					sourcemap: isDev ? 'inline' : false,
+					target: ['chrome100'],
+					format: 'iife',
+					logLevel: 'silent',
+				});
+				copied = true;
+			} catch (e) {
+				console.error(`❌ Failed to build script ${dir.name}:`, e.message);
+			}
 		}
 		if (existsSync(scriptCss)) {
 			mkdirSync(destDir, { recursive: true });
@@ -84,8 +97,25 @@ function copyScriptFiles(sourceDir, destBaseDir) {
 	return count;
 }
 
+// Helper to copy timeline assets specifically (since they are not standard script.js/css)
+function copyTimelineAssets() {
+	const src = path.join(__dirname, 'src/tools/llm-enhancer/timeline');
+	const dst = path.join(__dirname, 'dist/tools/llm-enhancer/timeline');
+	if (!existsSync(src)) return;
+	if (!existsSync(dst)) mkdirSync(dst, { recursive: true });
+
+	const files = readdirSync(src);
+	for (const f of files) {
+		if (f.endsWith('.css') || f.endsWith('.js')) {
+			copyFileSync(path.join(src, f), path.join(dst, f));
+		}
+	}
+	console.log('✓ Copied timeline assets');
+}
+
 const toolScriptsCount = copyScriptFiles(toolsDir, distToolsDir);
 const officialScriptsCount = copyScriptFiles(scriptsDir, distScriptsDir);
+copyTimelineAssets();
 
 const commonConfig = {
 	bundle: true,
@@ -125,12 +155,12 @@ if (isWatch) {
 		await ctx.watch();
 		return ctx;
 	}));
-	
+
 	process.on('SIGINT', async () => {
 		await Promise.all(contexts.map(ctx => ctx.dispose()));
 		process.exit(0);
 	});
-	
+
 } else {
 	// Build all entries in parallel, collect results
 	const results = await Promise.all(entries.map(async ({ entry, out }) => {
@@ -143,10 +173,10 @@ if (isWatch) {
 			process.exit(1);
 		}
 	}));
-	
+
 	// Single line output: all bundles with sizes + SaaT count
-	const saatInfo = toolScriptsCount + officialScriptsCount > 0 
-		? ` | SaaT:${toolScriptsCount + officialScriptsCount}` 
+	const saatInfo = toolScriptsCount + officialScriptsCount > 0
+		? ` | SaaT:${toolScriptsCount + officialScriptsCount}`
 		: '';
 	console.log(`✓ Build: ${results.join(' | ')}${saatInfo}`);
 	console.log(`🎉 Done → dist/`);

@@ -1,80 +1,155 @@
 // HALO SaaT: bilibili-plus - B站增强脚本
-// Features: 大杯模式(默认最高画质)、去广告、弹幕优化
-(function() {
+// Features: Clean Mode, Playback Speed, Esc Fix, Highest Quality
+
+(function () {
 	'use strict';
-	
+
 	const LOG_TAG = '[HALO:Bilibili+]';
-	
-	// ====== 广告移除 ======
-	const adStyles = `
-		/* 首页/视频页广告 */
+
+	// ====== Config ======
+	const CONFIG = {
+		speedStep: 0.25,
+		defaultQuality: true,
+		cleanHome: true
+	};
+
+	// ====== Styles: Clean Mode ======
+	const cleanStyles = `
+		/* === Ad Block === */
 		.ad-report, .bili-video-card__info--ad, .video-card-ad-small,
 		.pop-live-small-mode, .activity-banner, .eva-banner,
-		/* 右侧推广 */
 		.right-container .ad-floor, #slide_ad,
-		/* 播放页推广 */
 		.bilibili-player-dm-tip-wrap, .bpx-player-toast-wrap,
-		/* 评论区广告 */
 		.comment-list .ad-floor,
-		/* 搜索页广告 */
 		.activity-game-list, .bili-search-flex-wrap {
 			display: none !important;
 		}
+
+		/* === Clean Home Mode (Optional: Simplify Layout) === */
+		/* Can be toggled via class if needed, for now applied always */
+		.feed-card:has(.bili-video-card__info--ad) { dislay: none !important; }
 	`;
-	
+
 	function injectStyles(css) {
 		const style = document.createElement('style');
 		style.textContent = css;
 		style.setAttribute('data-halo', 'bilibili-plus');
 		(document.head || document.documentElement).appendChild(style);
 	}
-	
-	// ====== 默认最高画质 (大杯模式) ======
+
+	// ====== Feature: Playback Speed Shortcuts ======
+	function initSpeedControl() {
+		document.addEventListener('keydown', (e) => {
+			// Ignore if typing in input
+			if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName) || document.activeElement.isContentEditable) {
+				return;
+			}
+
+			const video = document.querySelector('video');
+			if (!video) return;
+
+			// [ Slower, ] Faster, \ Reset
+			if (e.key === '[' || e.key === '{') {
+				video.playbackRate = Math.max(0.25, video.playbackRate - CONFIG.speedStep);
+				showToast(`Speed: ${video.playbackRate}x`);
+			} else if (e.key === ']' || e.key === '}') {
+				video.playbackRate = Math.min(5.0, video.playbackRate + CONFIG.speedStep);
+				showToast(`Speed: ${video.playbackRate}x`);
+			} else if (e.key === '\\') {
+				video.playbackRate = 1.0;
+				showToast(`Speed: Reset (1.0x)`);
+			}
+		});
+	}
+
+	function showToast(msg) {
+		let toast = document.getElementById('halo-toast');
+		if (!toast) {
+			toast = document.createElement('div');
+			toast.id = 'halo-toast';
+			toast.style.cssText = `
+				position: fixed; top: 20%; left: 50%; transform: translate(-50%, -50%);
+				background: rgba(0,0,0,0.7); color: white; padding: 10px 20px;
+				border-radius: 5px; font-size: 16px; z-index: 10000; pointer-events: none;
+				transition: opacity 0.5s;
+			`;
+			document.body.appendChild(toast);
+		}
+		toast.textContent = msg;
+		toast.style.opacity = '1';
+		clearTimeout(toast.timer);
+		toast.timer = setTimeout(() => { toast.style.opacity = '0'; }, 1500);
+	}
+
+	// ====== Feature: Esc to Close Image Viewer ======
+	function initEscFix() {
+		document.addEventListener('keydown', (e) => {
+			if (e.key === 'Escape') {
+				// Try various close buttons for image viewers
+				const closeBtns = [
+					'.bili-album__close', // Dynamic album
+					'.preview-image-container .close-btn', // Comment images
+					'.image-viewer-close' // Generic
+				];
+
+				for (const sel of closeBtns) {
+					const btn = document.querySelector(sel);
+					if (btn) {
+						btn.click();
+						console.log(LOG_TAG, 'Closed image viewer via Esc');
+						return;
+					}
+				}
+			}
+		});
+	}
+
+	// ====== Feature: Highest Quality ======
 	function enableHighestQuality() {
 		const qualityObserver = new MutationObserver(() => {
 			const qualityBtn = document.querySelector('.bpx-player-ctrl-quality-menu-item:not(.bpx-state-disabled)');
 			if (qualityBtn && !sessionStorage.getItem('halo_bili_quality_set')) {
 				const items = document.querySelectorAll('.bpx-player-ctrl-quality-menu-item:not(.bpx-state-disabled)');
 				if (items.length > 0) {
-					items[0].click(); // 点击最高画质
+					// Usually the first one is the highest available (e.g. 4K/1080P+)
+					items[0].click();
 					sessionStorage.setItem('halo_bili_quality_set', '1');
 					console.log(LOG_TAG, 'Auto-selected highest quality');
+					showToast('Halo: Highest Quality Selected');
 				}
 			}
 		});
-		
+
 		qualityObserver.observe(document.body, { childList: true, subtree: true });
 	}
-	
-	// ====== 自动展开视频简介 ======
+
+	// ====== Feature: Auto Expand Description ======
 	function autoExpandDesc() {
 		const expandBtn = document.querySelector('.basic-desc-info.desc-info-btn');
 		if (expandBtn) {
 			expandBtn.click();
-			console.log(LOG_TAG, 'Auto-expanded description');
 		}
 	}
-	
-	// ====== 初始化 ======
+
+	// ====== Initialization ======
 	function init() {
 		console.log(LOG_TAG, 'Initializing...');
-		
-		// 注入广告屏蔽样式
-		injectStyles(adStyles);
-		
-		// DOM Ready 后执行
+
+		injectStyles(cleanStyles);
+		initSpeedControl();
+		initEscFix();
+
+		// DOM Ready
 		if (document.readyState === 'loading') {
 			document.addEventListener('DOMContentLoaded', () => {
 				enableHighestQuality();
-				setTimeout(autoExpandDesc, 1500);
+				setTimeout(autoExpandDesc, 2000);
 			});
 		} else {
 			enableHighestQuality();
-			setTimeout(autoExpandDesc, 1500);
+			setTimeout(autoExpandDesc, 2000);
 		}
-		
-		console.log(LOG_TAG, 'Initialized successfully');
 	}
-	
+
 	init();
 })();

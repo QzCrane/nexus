@@ -42,11 +42,9 @@ export function useOpenTools(): UseOpenToolsResult {
 		// Prevent saving initial null state before storage load
 		if (!initialized.current) return;
 
-		if (activeTool !== null) {
-			chrome.storage.local.set({ [ACTIVE_TOOL_KEY]: activeTool });
-		} else {
-			chrome.storage.local.remove([ACTIVE_TOOL_KEY]);
-		}
+		// Explicitly save state, using sentinel for Home to avoid ambiguity
+		const valToSave = activeTool === null ? 'HALO_LAUNCHER' : activeTool;
+		chrome.storage.local.set({ [ACTIVE_TOOL_KEY]: valToSave });
 	}, [activeTool]);
 
 	const setActiveTool = useCallback((toolId: ToolId | null) => {
@@ -58,18 +56,24 @@ export function useOpenTools(): UseOpenToolsResult {
 		const savedOpen = (storage[OPEN_TOOLS_KEY] as ToolId[] || []).filter(id => isInstalled(id));
 		setOpenTools(savedOpen);
 
-		// Restore activeTool (any tool is valid - system tools are always available)
-		const savedActive = storage[ACTIVE_TOOL_KEY] as ToolId | null;
-		if (savedActive) {
-			// System tool: always valid. User tool: must be installed.
-			const isValid = isSystemTool(savedActive) || isInstalled(savedActive);
+		// Restore activeTool
+		const savedActive = storage[ACTIVE_TOOL_KEY] as string | null;
+
+		if (savedActive === 'HALO_LAUNCHER') {
+			setActiveToolState(null);
+		} else if (savedActive) {
+			// Validate tool exists
+			const toolId = savedActive as ToolId;
+			const isValid = isSystemTool(toolId) || isInstalled(toolId);
 			if (isValid) {
-				setActiveToolState(savedActive);
-				return;
+				setActiveToolState(toolId);
+			} else {
+				setActiveToolState(null);
 			}
+		} else {
+			// First run or legacy data
+			setActiveToolState(null);
 		}
-		// Fallback: home page
-		setActiveToolState(null);
 
 		// Mark as initialized to enable auto-save
 		setTimeout(() => { initialized.current = true; }, 0);
