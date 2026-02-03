@@ -121,25 +121,31 @@ const UI = {
         
         /* Widescreen tokens */
         
-        /* 1. SCROLLBAR FIX: Ensure the scroll container itself is full width */
-        /* Target the actual scrollable elements in Gemini */
+        /* 1. SCROLLBAR FIX: Force the primary scroll container to span the entire viewport width */
+        /* This pushes the native scrollbar to the far right edge of the screen */
         body[data-halo-wide="true"] main,
         body[data-halo-wide="true"] .infinite-scroller, 
-        body[data-halo-wide="true"] .conversation-container, /* Sometimes this is the scroller */
-        body[data-halo-wide="true"] [class*="scroller"],    /* Catch-all for scroll containers */
-        body[data-halo-wide="true"] [class*="scrollable"] {
-            width: 100% !important;
-            max-width: 100% !important;
+        body[data-halo-wide="true"] .conversation-container,
+        body[data-halo-wide="true"] [data-test-id="chat-history-container"], /* Gemini specific */
+        body[data-halo-wide="true"] .scroller-v2 {
+            width: 100vw !important; /* Viewport Width is safer than % for scrollbar push */
+            max-width: 100vw !important;
             margin-left: 0 !important;
             margin-right: 0 !important;
-            overflow-y: auto !important; /* Force native scrollbar */
+            overflow-y: auto !important;
+            position: relative; /* Ensure it respects flow but takes space */
+            left: 0 !important;
+            right: 0 !important;
         }
         
-        /* Ensure the main chat surface takes full width */
+        /* Ensure the main chat wrapper doesn't constrain it */
         body[data-halo-wide="true"] .chat-app, 
         body[data-halo-wide="true"] .chat-history {
             width: 100% !important;
             max-width: 100% !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important; /* Centering helper */
         }
 
         /* 2. THE GOLDEN COLUMN: The actual text content container */
