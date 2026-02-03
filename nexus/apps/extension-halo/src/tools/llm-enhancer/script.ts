@@ -112,72 +112,35 @@ function detectSite(): SiteType {
 const UI = {
 	init() {
 		this.injectGlobalStyles();
-		this.bindShortcuts();
 	},
 
 	injectGlobalStyles() {
 		const css = `
-        :root { --halo-primary: #10a37f; --halo-z: 2147483647; }
-        
-        /* Widescreen tokens */
-        
-        /* 1. SCROLLBAR FIX: Force the primary scroll container to span the entire viewport width */
-        /* This pushes the native scrollbar to the far right edge of the screen */
-        body[data-halo-wide="true"] main,
-        body[data-halo-wide="true"] .infinite-scroller, 
-        body[data-halo-wide="true"] .conversation-container,
-        body[data-halo-wide="true"] [data-test-id="chat-history-container"], /* Gemini specific */
-        body[data-halo-wide="true"] .scroller-v2 {
-            width: 100vw !important; /* Viewport Width is safer than % for scrollbar push */
-            max-width: 100vw !important;
-            margin-left: 0 !important;
-            margin-right: 0 !important;
-            overflow-y: auto !important;
-            position: relative; /* Ensure it respects flow but takes space */
-            left: 0 !important;
-            right: 0 !important;
+        :root { 
+            --halo-primary: #10a37f; 
+            --halo-z: 2147483647; 
+            --halo-llm-width: 48rem; /* Default base */
         }
         
-        /* Ensure the main chat wrapper doesn't constrain it */
-        body[data-halo-wide="true"] .chat-app, 
-        body[data-halo-wide="true"] .chat-history {
-            width: 100% !important;
-            max-width: 100% !important;
-            display: flex !important;
-            flex-direction: column !important;
-            align-items: center !important; /* Centering helper */
-        }
-
-        /* 2. THE GOLDEN COLUMN: The actual text content container */
-        /* Controlled by var(--halo-llm-width) which is adjusted via Alt + Left/Right */
+        /* 1. Core Widescreen Containers */
+        /* Target the actual chat containers across different sites */
         body[data-halo-wide="true"] ms-message-list,
         body[data-halo-wide="true"] ms-message-list > div,
-        body[data-halo-wide="true"] .conversation-container > div, /* Inner wrapper */
+        body[data-halo-wide="true"] .conversation-container,
+        body[data-halo-wide="true"] .conversation-container > div,
         body[data-halo-wide="true"] .input-area-container,
         body[data-halo-wide="true"] .bottom-container,
         body[data-halo-wide="true"] .chat-container,
-        body[data-halo-wide="true"] .ds-chat-width { 
+        body[data-halo-wide="true"] .ds-chat-width,
+        body[data-halo-wide="true"] [data-test-id="chat-history-container"],
+        body[data-halo-wide="true"] .main-content-inner { 
             max-width: var(--halo-llm-width) !important;
             width: 100% !important;
             margin-left: auto !important;
             margin-right: auto !important;
-            padding-left: 2rem !important; /* Add breathing room since it's full width */
-            padding-right: 2rem !important;
         }
 
-        /* 3. MESSAGE LAYOUT & OVERLAP FIX */
-        body[data-halo-wide="true"] model-response,
-        body[data-halo-wide="true"] user-query,
-        body[data-halo-wide="true"] .model-response-container,
-        body[data-halo-wide="true"] .user-query-container {
-            max-width: 100% !important;
-            width: 100% !important;
-            margin-bottom: 2rem !important; /* Fix overlap by forcing gap */
-            display: block !important;      /* Ensure they don't collapse */
-            min-height: auto !important;    /* Let content dictate height */
-        }
-
-        /* 3. MESSAGE LAYOUT: Remove internal width limits (e.g. 48rem) and fix drift */
+        /* 2. Overlap & Drift Fix (Specific to responses) */
         body[data-halo-wide="true"] model-response,
         body[data-halo-wide="true"] user-query,
         body[data-halo-wide="true"] .model-response-container,
@@ -186,63 +149,25 @@ const UI = {
             width: 100% !important;
         }
 
-        /* Lock AI Content to Left (next to icon) */
-        body[data-halo-wide="true"] model-response > div,
-        body[data-halo-wide="true"] .model-response-container > div {
-            display: flex !important;
-            justify-content: flex-start !important;
-        }
-
-        body[data-halo-wide="true"] model-response .response-container-content,
-        body[data-halo-wide="true"] model-response [class*="content"] {
-            margin-left: 0 !important;
-            max-width: 100% !important;
-            flex: 1 !important;
-        }
-
-        /* Lock User Content to Right */
-        body[data-halo-wide="true"] user-query > div {
-            display: flex !important;
-            justify-content: flex-end !important;
-        }
-
-        /* 4. GEMINI INTERNAL VARIABLES: Override the hardcoded limits in their system */
+        /* 3. GEMINI SPECIFIC: Override internal width variables */
         body[data-halo-wide="true"] {
+            --ghc-chat-max-width: var(--halo-llm-width) !important;
             --chat-content-width-max: 100% !important;
             --gemini-chat-width-max: 100% !important;
             --message-list-width-max: 100% !important;
         }
+
+        /* 4. Fix Gemini Header Overlap */
+        /* Ensure the fixed/sticky header doesn't get messed up by parent flex changes */
+        header, .chat-view-header {
+            max-width: 100% !important;
+        }
         `;
 		const style = document.createElement('style');
+		style.id = 'halo-llm-css';
 		style.textContent = css;
 		document.head.appendChild(style);
 	},
-
-	bindShortcuts() {
-		window.addEventListener('keydown', (e) => {
-			if (!config.enabled) return;
-			if (e.altKey) {
-				// Timeline Nav
-				// @ts-ignore
-				if (e.key === 'ArrowUp') { e.preventDefault(); window.haloTimelineManager?.nav(-1); }
-				// @ts-ignore
-				if (e.key === 'ArrowDown') { e.preventDefault(); window.haloTimelineManager?.nav(1); }
-
-				// Width Adjustment (Alt + Left / Alt + Right)
-				if (e.key === 'ArrowLeft') {
-					e.preventDefault();
-					Actions.adjustWidth(-5);
-				}
-				if (e.key === 'ArrowRight') {
-					e.preventDefault();
-					Actions.adjustWidth(5);
-				}
-
-				// Toggle Wide Mode
-				if (e.code === 'KeyW') { e.preventDefault(); Actions.toggleWide(); }
-			}
-		});
-	}
 };
 
 // ====== Actions ======
@@ -251,8 +176,8 @@ const Actions = {
 	toggleWide() { config.widescreen = !config.widescreen; saveConfig(); },
 	adjustWidth(delta: number) {
 		let newWidth = (config.widthPercent || 100) + delta;
-		if (newWidth < 50) newWidth = 50;   // Min scale 50%
-		if (newWidth > 200) newWidth = 200; // Max scale 200%
+		if (newWidth < 50) newWidth = 50;
+		if (newWidth > 150) newWidth = 150;
 		config.widthPercent = newWidth;
 		saveConfig();
 		Actions.apply();
@@ -263,11 +188,9 @@ const Actions = {
 		if (isWide) {
 			document.body.setAttribute('data-halo-wide', 'true');
 
-			// LOGIC: 100% = Native Layout (~48rem).
-			// Range: 50% (24rem) to 200% (96rem).
+			// Base width is 48rem (approx 768px). 
+			// We apply the percentage scale to this base.
 			const percent = config.widthPercent || 100;
-			// We inject the raw percentage into CSS to let calc handle it, or pre-calc it.
-			// Pre-calc is safer: 48rem * (percent / 100)
 			const remValue = 48 * (percent / 100);
 			document.documentElement.style.setProperty('--halo-llm-width', `${remValue}rem`);
 		} else {

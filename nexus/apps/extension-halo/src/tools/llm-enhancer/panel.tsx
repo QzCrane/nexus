@@ -12,7 +12,7 @@ const DEFAULT_CONFIG = {
     // Note: 'enabled' is now primarily driven by halo_tool_prefs, but we keep it here for script compatibility or fallback
     widescreen: true,
     timeline: true,
-    widthPercent: 90,
+    widthPercent: 100,
     keepAlive: true,
     timeline_chatgpt: true,
     timeline_deepseek: true,
@@ -112,9 +112,15 @@ export const LLMEnhancerPanel: React.FC = () => {
                             </div>
                             <input 
                                 type="range"
-                                min="50" max="100" step="1" 
+                                min="50" max="150" step="1" 
                                 value={config.widthPercent} 
                                 onChange={(e) => updateConfig({ widthPercent: parseInt(e.target.value) })}
+                                onWheel={(e) => {
+                                    e.preventDefault();
+                                    const delta = e.deltaY > 0 ? -2 : 2;
+                                    const next = Math.min(150, Math.max(50, config.widthPercent + delta));
+                                    if (next !== config.widthPercent) updateConfig({ widthPercent: next });
+                                }}
                                 style={styles.input ? { ...styles.input, padding: 0 } : { width: '100%', cursor: 'pointer' }}
                             />
                         </div>
