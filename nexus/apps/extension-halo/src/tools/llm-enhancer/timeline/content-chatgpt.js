@@ -124,7 +124,7 @@ class TimelineManager {
     }
 
     async findCriticalElements() {
-        const firstTurn = await this.waitForElement('article[data-turn-id]');
+        const firstTurn = await this.waitForElement('article[data-turn-id], [data-testid^="conversation-turn-"]');
         if (!firstTurn) return false;
 
         this.conversationContainer = firstTurn.parentElement;
@@ -229,7 +229,27 @@ class TimelineManager {
         this.perfStart('recalc');
         if (!this.conversationContainer || !this.ui.timelineBar || !this.scrollContainer) return;
 
-        const userTurnElements = this.conversationContainer.querySelectorAll('article[data-turn="user"]');
+        // Try standard data-turn="user" first, then fallback to testing children for user characteristics
+        let userTurnElements = Array.from(this.conversationContainer.querySelectorAll('article[data-turn="user"]'));
+
+        if (userTurnElements.length === 0) {
+            // Fallback strategy: look for conversation turns and check for User identifier
+            const allTurns = this.conversationContainer.querySelectorAll('[data-testid^="conversation-turn-"]');
+            userTurnElements = Array.from(allTurns).filter(el => {
+                // Check if it has a user avatar or specific user-side class? 
+                // ChatGPT usually has specific SVG or 'You' text.
+                // Safest: check if it does NOT have 'data-turn="assistant"' or 'model' class if available
+                // Or simplified: check if it contains "You" or specific user avatar path but that's brittle.
+                // Alternate: ChatGPT DOM places user messages in distinctive wrappers.
+                // data-message-author-role="user" is a thing in some versions.
+                return el.querySelector('[data-message-author-role="user"]') || el.dataset.messageAuthorRole === 'user';
+            });
+        }
+
+        // If still empty, try older fallback
+        if (userTurnElements.length === 0) {
+            userTurnElements = this.conversationContainer.querySelectorAll('article[data-turn="user"]');
+        }
         // Reset visible window to avoid cleaning with stale indices after rebuild
         this.visibleRange = { start: 0, end: -1 };
         // If the conversation is transiently empty (branch switching), don't wipe UI immediately
@@ -633,6 +653,36 @@ class TimelineManager {
             } catch { }
         };
         try { window.addEventListener('storage', this.onStorage); } catch { }
+    }
+
+    // Expose API for dock
+    setVisible(visible) {
+        if (this.ui.timelineBar) {
+            this.ui.timelineBar.style.display = visible ? '' : 'none';
+        }
+        if (this.ui.slider) {
+            this.ui.slider.style.display = visible ? '' : 'none';
+        }
+    }
+
+    nav(direction) {
+        if (!this.markers || !this.markers.length) return;
+        let idx = -1;
+        if (this.activeTurnId) {
+            idx = this.markers.findIndex(m => m.id === this.activeTurnId);
+        }
+        if (idx === -1) {
+            idx = direction > 0 ? -1 : this.markers.length;
+        }
+
+        let nextIdx = idx + direction;
+        if (nextIdx < 0) nextIdx = 0;
+        if (nextIdx >= this.markers.length) nextIdx = this.markers.length - 1;
+
+        const target = this.markers[nextIdx];
+        if (target && target.element) {
+            this.smoothScrollTo(target.element);
+        }
     }
 
     smoothScrollTo(targetElement, duration = 600) {
@@ -1449,12 +1499,14 @@ function initializeTimeline() {
     if (timelineManagerInstance) {
         try { timelineManagerInstance.destroy(); } catch { }
         timelineManagerInstance = null;
+        window.haloTimelineManager = null;
     }
     // Remove any leftover UI before creating a new instance
     try { document.querySelector('.chatgpt-timeline-bar')?.remove(); } catch { }
     try { document.querySelector('.timeline-left-slider')?.remove(); } catch { }
     try { document.getElementById('chatgpt-timeline-tooltip')?.remove(); } catch { }
     timelineManagerInstance = new TimelineManager();
+    window.haloTimelineManager = timelineManagerInstance;
     timelineManagerInstance.init().catch(err => console.error("Timeline initialization failed:", err));
 }
 
@@ -1475,6 +1527,7 @@ function handleUrlChange() {
         if (timelineManagerInstance) {
             try { timelineManagerInstance.destroy(); } catch { }
             timelineManagerInstance = null;
+            window.haloTimelineManager = null;
         }
         try { document.querySelector('.chatgpt-timeline-bar')?.remove(); } catch { }
         try { document.querySelector('.timeline-left-slider')?.remove(); } catch { }
@@ -1484,7 +1537,8 @@ function handleUrlChange() {
 }
 
 const initialObserver = new MutationObserver(() => {
-    if (document.querySelector('article[data-turn-id]')) {
+    const found = document.querySelector('article[data-turn-id]') || document.querySelector('[data-testid^="conversation-turn-"]');
+    if (found) {
         if (isConversationRoute() && (timelineActive && providerEnabled)) { initializeTimeline(); }
         try { initialObserver.disconnect(); } catch { }
         // Create a single managed pageObserver

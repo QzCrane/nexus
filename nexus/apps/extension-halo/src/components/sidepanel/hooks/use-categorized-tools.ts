@@ -61,7 +61,7 @@ export function useCategorizedTools({
 			}
 
 			// Regular tool plugins
-			if (backgroundToolIds.includes(tool.id)) cats.active?.push(tool);
+			if (backgroundToolIds.includes(tool.id) || activeServices.has(tool.id)) cats.active?.push(tool);
 			if (cats[tool.category]) cats[tool.category]!.push(tool);
 			else cats.general?.push(tool);
 		});

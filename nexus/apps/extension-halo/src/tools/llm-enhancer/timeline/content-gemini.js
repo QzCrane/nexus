@@ -905,6 +905,36 @@
       }
     }
 
+    // Expose API
+    setVisible(visible) {
+      if (this.timelineBar) {
+        this.timelineBar.style.display = visible ? '' : 'none';
+      }
+      if (this.ui.slider) {
+        this.ui.slider.style.display = visible ? '' : 'none';
+      }
+    }
+
+    nav(direction) {
+      if (!this.markers || !this.markers.length) return;
+      let idx = -1;
+      if (this.activeIdx >= 0) {
+        idx = this.activeIdx;
+      }
+      if (idx === -1) {
+        idx = direction > 0 ? -1 : this.markers.length;
+      }
+
+      let nextIdx = idx + direction;
+      if (nextIdx < 0) nextIdx = 0;
+      if (nextIdx >= this.markers.length) nextIdx = this.markers.length - 1;
+
+      const target = this.markers[nextIdx];
+      if (target && target.el) {
+        this.scrollToMessage(target.el);
+      }
+    }
+
     scrollToMessage(targetEl) {
       if (!this.scrollContainer || !targetEl) return;
       const containerRect = this.scrollContainer.getBoundingClientRect();
@@ -1289,12 +1319,13 @@
   let initTimerId = null;
 
   function initializeTimeline() {
-    if (manager) { try { manager.destroy(); } catch { } manager = null; }
+    if (manager) { try { manager.destroy(); } catch { } manager = null; window.haloTimelineManager = null; }
     // Clean any leftovers
     try { document.querySelector('.chatgpt-timeline-bar')?.remove(); } catch { }
     try { document.querySelector('.timeline-left-slider')?.remove(); } catch { }
     try { document.getElementById('chatgpt-timeline-tooltip')?.remove(); } catch { }
     manager = new GeminiTimelineScaffold();
+    window.haloTimelineManager = manager;
     manager.init().catch(err => console.debug('[GeminiTimeline] init failed (Phase 1–3):', err));
   }
 
@@ -1302,7 +1333,7 @@
     if (location.href === currentUrl) return;
     try { if (initTimerId) { clearTimeout(initTimerId); initTimerId = null; } } catch { }
     currentUrl = location.href;
-    if (manager) { try { manager.destroy(); } catch { } manager = null; }
+    if (manager) { try { manager.destroy(); } catch { } manager = null; window.haloTimelineManager = null; }
     try { document.querySelector('.chatgpt-timeline-bar')?.remove(); } catch { }
     try { document.querySelector('.timeline-left-slider')?.remove(); } catch { }
     try { document.getElementById('chatgpt-timeline-tooltip')?.remove(); } catch { }

@@ -1447,6 +1447,37 @@
     this.hideSliderDeferred();
   };
 
+  // Expose API
+  DeepseekTimeline.prototype.setVisible = function (visible) {
+    if (this.ui.timelineBar) {
+      this.ui.timelineBar.style.display = visible ? '' : 'none';
+    }
+    if (this.ui.slider) {
+      this.ui.slider.style.display = visible ? '' : 'none';
+    }
+  };
+
+  DeepseekTimeline.prototype.nav = function (direction) {
+    if (!this.markers || !this.markers.length) return;
+    let idx = -1;
+    if (this.activeTurnId) {
+      idx = this.markers.findIndex(function (m) { return m.id === this.activeTurnId; }.bind(this));
+    }
+    if (idx === -1) {
+      idx = direction > 0 ? -1 : this.markers.length;
+    }
+
+    let nextIdx = idx + direction;
+    if (nextIdx < 0) nextIdx = 0;
+    if (nextIdx >= this.markers.length) nextIdx = this.markers.length - 1;
+
+    const target = this.markers[nextIdx];
+    if (target && target.element) {
+      this.smoothScrollTo(target.element);
+    }
+  };
+
+
   // --- Entry & SPA wiring (Stage 3) ---
   let timelineActive = true;       // global on/off
   let providerEnabled = true;      // per-provider on/off (deepseek)
@@ -1459,12 +1490,13 @@
   let initTimerId = null;           // delayed init timer for SPA route
 
   function initializeTimeline() {
-    if (manager) { try { manager.destroy(); } catch { } manager = null; }
+    if (manager) { try { manager.destroy(); } catch { } manager = null; window.haloTimelineManager = null; }
     // Remove any leftover UI before creating a new instance (align with ChatGPT)
     try { document.querySelector('.chatgpt-timeline-bar')?.remove(); } catch { }
     try { document.querySelector('.timeline-left-slider')?.remove(); } catch { }
     try { document.getElementById('chatgpt-timeline-tooltip')?.remove(); } catch { }
     manager = new DeepseekTimeline();
+    window.haloTimelineManager = manager;
     manager.init().catch(err => console.debug('[DeepseekTimeline] init failed:', err));
   }
 
@@ -1483,7 +1515,7 @@
     // Cancel any pending init from previous route
     try { if (initTimerId) { clearTimeout(initTimerId); initTimerId = null; } } catch { }
     currentUrl = location.href;
-    if (manager) { try { manager.destroy(); } catch { } manager = null; }
+    if (manager) { try { manager.destroy(); } catch { } manager = null; window.haloTimelineManager = null; }
     try { document.querySelector('.chatgpt-timeline-bar')?.remove(); } catch { }
     try { document.querySelector('.timeline-left-slider')?.remove(); } catch { }
     try { document.getElementById('chatgpt-timeline-tooltip')?.remove(); } catch { }

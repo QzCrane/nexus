@@ -21,7 +21,7 @@ const DEFAULT_CONFIG = {
 };
 
 let config = { ...DEFAULT_CONFIG };
-let timelineManager = null;
+const timelineManager = null; // Deprecated, use window.haloTimelineManager
 let currentSite = null;
 
 // Config loader (ASYNC)
@@ -167,8 +167,8 @@ const UI = {
 
 		const btns = [
 			{ id: 'btn-top', icon: ICONS.ARROW_UP, tip: 'Top', action: () => window.scrollTo({ top: 0, behavior: 'smooth' }) },
-			{ id: 'btn-prev', icon: { text: '▲' }, tip: 'Prev (Alt+↑)', action: () => timelineManager?.nav(-1) },
-			{ id: 'btn-next', icon: { text: '▼' }, tip: 'Next (Alt+↓)', action: () => timelineManager?.nav(1) },
+			{ id: 'btn-prev', icon: { text: '▲' }, tip: 'Prev (Alt+↑)', action: () => window.haloTimelineManager?.nav(-1) },
+			{ id: 'btn-next', icon: { text: '▼' }, tip: 'Next (Alt+↓)', action: () => window.haloTimelineManager?.nav(1) },
 			{ id: 'btn-wide', icon: ICONS.WIDE, tip: 'Widescreen (Alt+W)', action: () => Actions.toggleWide() }
 		];
 
@@ -198,8 +198,8 @@ const UI = {
 		window.addEventListener('keydown', (e) => {
 			if (!config.enabled) return; // shortcuts toggle removed from default config but we can support it if needed
 			if (e.altKey) {
-				if (e.key === 'ArrowUp') { e.preventDefault(); timelineManager?.nav(-1); }
-				if (e.key === 'ArrowDown') { e.preventDefault(); timelineManager?.nav(1); }
+				if (e.key === 'ArrowUp') { e.preventDefault(); window.haloTimelineManager?.nav(-1); }
+				if (e.key === 'ArrowDown') { e.preventDefault(); window.haloTimelineManager?.nav(1); }
 				if (e.code === 'KeyW') { e.preventDefault(); Actions.toggleWide(); }
 			}
 		});
@@ -228,8 +228,8 @@ const Actions = {
 		if (UI.dock) UI.dock.style.display = config.enabled ? 'block' : 'none';
 
 		// Timeline visibility
-		if (timelineManager) {
-			timelineManager.setVisible(config.enabled && config.timeline);
+		if (window.haloTimelineManager) {
+			window.haloTimelineManager?.setVisible(config.enabled && config.timeline);
 		}
 	}
 };
@@ -252,12 +252,20 @@ async function main() {
 	Actions.apply();
 
 	// Load specific content logic (side-effect imports)
-	if (currentSite === 'chatgpt') {
-		await import('./timeline/content-chatgpt');
-	} else if (currentSite === 'deepseek') {
-		await import('./timeline/content-deepseek');
-	} else if (currentSite === 'gemini') {
-		await import('./timeline/content-gemini');
+	const siteFiles = {
+		'chatgpt': 'content-chatgpt.js',
+		'deepseek': 'content-deepseek.js',
+		'gemini': 'content-gemini.js',
+		'claude': null // Not yet implemented
+	};
+
+	if (siteFiles[currentSite]) {
+		try {
+			const url = chrome.runtime.getURL(`tools/llm-enhancer/timeline/${siteFiles[currentSite]}`);
+			await import(url);
+		} catch (e) {
+			console.error(LOG_TAG, 'Failed to load timeline script:', e);
+		}
 	}
 
 	// Keep Alive
