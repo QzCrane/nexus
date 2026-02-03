@@ -1,10 +1,18 @@
 {
 	"id": "archive",
 	"icon": "💾",
-	"category": "efficiency",
+	"category": "visual",
 	"size": 120000,
-	"builtIn": false,
-	"keywords": [],
+	"builtIn": true,
+	"status": "coming",
+	"keywords": [
+		"archive",
+		"save",
+		"offline",
+		"cundang",
+		"存档",
+		"离线"
+	],
 	"permissions": [
 		"pageCapture",
 		"downloads"

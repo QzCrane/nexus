@@ -1,10 +1,20 @@
 {
 	"id": "color-picker",
 	"icon": "🎨",
-	"category": "visual",
+	"category": "general",
 	"size": 30000,
 	"builtIn": true,
-	"keywords": [],
+	"status": "ready",
+	"keywords": [
+		"color",
+		"picker",
+		"hex",
+		"rgb",
+		"hsl",
+		"yanse",
+		"颜色",
+		"取色"
+	],
 	"permissions": [
 		"clipboardWrite"
 	]

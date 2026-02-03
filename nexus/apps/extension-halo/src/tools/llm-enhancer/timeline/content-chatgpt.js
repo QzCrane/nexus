@@ -1496,7 +1496,9 @@ function cleanupGlobalObservers() {
 }
 
 function initializeTimeline() {
+    console.log('[ChatGPT-Timeline] initializeTimeline called');
     if (timelineManagerInstance) {
+        console.log('[ChatGPT-Timeline] Destroying old instance');
         try { timelineManagerInstance.destroy(); } catch { }
         timelineManagerInstance = null;
         window.haloTimelineManager = null;
@@ -1507,6 +1509,7 @@ function initializeTimeline() {
     try { document.getElementById('chatgpt-timeline-tooltip')?.remove(); } catch { }
     timelineManagerInstance = new TimelineManager();
     window.haloTimelineManager = timelineManagerInstance;
+    console.log('[ChatGPT-Timeline] New instance created and bridged to window.haloTimelineManager');
     timelineManagerInstance.init().catch(err => console.error("Timeline initialization failed:", err));
 }
 

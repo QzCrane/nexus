@@ -3,6 +3,14 @@
 	"icon": "📝",
 	"category": "efficiency",
 	"size": 20000,
-	"builtIn": false,
-	"keywords": []
+	"builtIn": true,
+	"status": "coming",
+	"keywords": [
+		"notes",
+		"memo",
+		"quick",
+		"biji",
+		"便签",
+		"笔记"
+	]
 }

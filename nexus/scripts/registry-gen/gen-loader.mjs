@@ -31,11 +31,11 @@ import { lazy } from 'react';
 		const folder = m.dirType === 'system' ? 'system' : (m.dirType === 'scripts' ? 'scripts' : 'tools');
 		// Normalize to forward slashes for cross-platform compatibility
 		const normalizedPanelDir = path.dirname(m.panelPath).replace(/\\/g, '/');
-		const searchPattern = `src/${folder}/${m.id}`;
+		const searchPattern = `src/${folder}/${m.dirName}`;
 		const baseIndex = normalizedPanelDir.indexOf(searchPattern);
 		const relativePart = baseIndex >= 0
 			? normalizedPanelDir.substring(baseIndex + `src/${folder}/`.length) + '/panel'
-			: `${m.id}/panel`;
+			: `${m.dirName}/panel`;
 		return `\t'${m.id}': lazy(() => import('../${folder}/${relativePart}').then(m => ({ default: m.${exportName} })))`;
 	});
 

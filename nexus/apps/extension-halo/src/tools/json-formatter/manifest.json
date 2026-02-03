@@ -1,9 +1,16 @@
 {
 	"id": "json-formatter",
 	"icon": "{}",
-	"category": "format",
+	"category": "dev",
 	"size": 28000,
 	"builtIn": true,
-	"keywords": [],
+	"status": "ready",
+	"keywords": [
+		"json",
+		"format",
+		"geshihua",
+		"格式化",
+		"美化"
+	],
 	"pluginType": "tool"
 }

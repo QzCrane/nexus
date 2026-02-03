@@ -5,7 +5,7 @@ import { STORAGE_PREFIX } from '../kernel';
 import { DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY } from '../kernel';
 import { initUserScriptsEngine } from '../system/userscripts/engine';
 import { initUserScriptsRegistry } from '../system/userscripts/registry';
-import { syncSaaTTools } from '../kernel/services/saat-service';
+import { syncSaaTTools, initSaaTService } from '../kernel/services/saat-service';
 import { TOOL_REGISTRY } from '../kernel/tool-registry';
 
 const LOG_TAG = '[HALO]';
@@ -15,6 +15,9 @@ initUserScriptsEngine();
 
 // Initialize UserScripts registry (Chrome 120+ true document_start injection)
 initUserScriptsRegistry();
+
+// Initialize SaaT service to listen for tool pref changes
+initSaaTService();
 
 // Context menu IDs
 const MENU_OPEN_HALO = 'halo-open';

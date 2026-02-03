@@ -1,8 +1,17 @@
 {
 	"id": "outline",
 	"icon": "📋",
-	"category": "dev",
+	"category": "general",
 	"size": 28000,
-	"builtIn": false,
-	"keywords": []
+	"builtIn": true,
+	"status": "ready",
+	"keywords": [
+		"outline",
+		"heading",
+		"toc",
+		"dagang",
+		"大纲",
+		"目录",
+		"标题"
+	]
 }

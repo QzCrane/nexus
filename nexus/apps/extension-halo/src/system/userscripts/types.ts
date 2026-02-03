@@ -14,6 +14,8 @@ export interface UserScript {
 	matches: string[];           // URL patterns, e.g., "*://*.example.com/*"
 	excludeMatches?: string[];   // Exclude patterns
 	runAt: UserScriptRunAt;
+	world?: 'ISOLATED' | 'MAIN' | 'USER_SCRIPT';
+	filePath?: string;
 	order: number;               // Execution order (lower = earlier)
 	// Metadata
 	version?: string;

@@ -252,6 +252,8 @@ async function main() {
 	Actions.apply();
 
 	// Load specific content logic (side-effect imports)
+	console.log(LOG_TAG, 'Detected site:', currentSite);
+
 	const siteFiles = {
 		'chatgpt': 'content-chatgpt.js',
 		'deepseek': 'content-deepseek.js',
@@ -262,7 +264,16 @@ async function main() {
 	if (siteFiles[currentSite]) {
 		try {
 			const url = chrome.runtime.getURL(`tools/llm-enhancer/timeline/${siteFiles[currentSite]}`);
+			console.log(LOG_TAG, 'Importing timeline script:', url);
 			await import(url);
+			console.log(LOG_TAG, 'Timeline script imported successfully');
+			// Check immediate availability
+			if (window.haloTimelineManager) {
+				console.log(LOG_TAG, 'Manager available immediately');
+				Actions.apply();
+			} else {
+				console.log(LOG_TAG, 'Manager not yet available (waiting for init)');
+			}
 		} catch (e) {
 			console.error(LOG_TAG, 'Failed to load timeline script:', e);
 		}

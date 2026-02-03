@@ -4,8 +4,11 @@
 	"pluginType": "system",
 	"category": "general",
 	"builtIn": true,
+	"status": "ready",
 	"keywords": [
+		"settings",
 		"config",
+		"shezhi",
 		"设置",
 		"配置"
 	]

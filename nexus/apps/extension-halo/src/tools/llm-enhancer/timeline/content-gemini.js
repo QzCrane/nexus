@@ -1319,6 +1319,7 @@
   let initTimerId = null;
 
   function initializeTimeline() {
+    console.log('[GeminiTimeline] initializeTimeline called');
     if (manager) { try { manager.destroy(); } catch { } manager = null; window.haloTimelineManager = null; }
     // Clean any leftovers
     try { document.querySelector('.chatgpt-timeline-bar')?.remove(); } catch { }
@@ -1326,6 +1327,7 @@
     try { document.getElementById('chatgpt-timeline-tooltip')?.remove(); } catch { }
     manager = new GeminiTimelineScaffold();
     window.haloTimelineManager = manager;
+    console.log('[GeminiTimeline] New instance created and bridged to window.haloTimelineManager');
     manager.init().catch(err => console.debug('[GeminiTimeline] init failed (Phase 1–3):', err));
   }
 

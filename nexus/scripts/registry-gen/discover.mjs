@@ -17,7 +17,7 @@ export function discoverPlugins(baseDir, type) {
 	const dirs = fs.readdirSync(baseDir, { withFileTypes: true })
 		.filter(d => d.isDirectory())
 		.map(d => d.name);
-	
+
 	const modules = [];
 	for (const dir of dirs) {
 		const manifestPath = path.join(baseDir, dir, 'manifest.json');
@@ -26,15 +26,15 @@ export function discoverPlugins(baseDir, type) {
 		const scriptJsPath = path.join(baseDir, dir, 'script.js');
 		const scriptCssPath = path.join(baseDir, dir, 'script.css');
 		const localesPath = path.join(baseDir, dir, 'locales');
-		
+
 		if (!fs.existsSync(manifestPath)) continue;
-		
+
 		// Parse manifest
 		let manifest;
 		try {
 			manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
 		} catch { continue; }
-		
+
 		// Determine plugin type from new schema
 		const pluginType = manifest.pluginType || (type === 'system' ? 'system' : (type === 'scripts' ? 'script' : 'tool'));
 		const isScriptPlugin = pluginType === 'script';
@@ -42,11 +42,12 @@ export function discoverPlugins(baseDir, type) {
 		const actualPanelPath = fs.existsSync(panelPath) ? panelPath : (fs.existsSync(nestedPanelPath) ? nestedPanelPath : null);
 		const hasPanel = actualPanelPath !== null;
 		const hasScript = fs.existsSync(scriptJsPath) || fs.existsSync(scriptCssPath);
-		
+
 		// Validate: script plugins need script file, panel plugins need panel.tsx
 		if (isScriptPlugin ? hasScript : hasPanel) {
 			modules.push({
-				id: dir,
+				id: manifest.id || dir,
+				dirName: dir,
 				pluginType,
 				dirType: type, // Physical directory type
 				manifestPath,

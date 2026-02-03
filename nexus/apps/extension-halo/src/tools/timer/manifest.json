@@ -3,8 +3,16 @@
 	"icon": "⏱️",
 	"category": "efficiency",
 	"size": 20000,
-	"builtIn": false,
-	"keywords": [],
+	"builtIn": true,
+	"status": "coming",
+	"keywords": [
+		"timer",
+		"pomodoro",
+		"stopwatch",
+		"jishiqi",
+		"计时器",
+		"番茄钟"
+	],
 	"background": {
 		"mechanism": "interval_fast",
 		"frequency": "10ms",

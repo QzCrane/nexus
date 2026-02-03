@@ -3,6 +3,13 @@
 	"icon": ".*",
 	"category": "dev",
 	"size": 22000,
-	"builtIn": false,
-	"keywords": []
+	"builtIn": true,
+	"status": "coming",
+	"keywords": [
+		"regex",
+		"regexp",
+		"regular",
+		"zhengze",
+		"正则"
+	]
 }

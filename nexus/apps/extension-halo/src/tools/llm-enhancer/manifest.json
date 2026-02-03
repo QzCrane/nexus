@@ -1,5 +1,6 @@
 {
 	"id": "llm-enhancer",
+	"pluginType": "tool",
 	"icon": "🧠",
 	"category": "ai",
 	"builtIn": true,
@@ -20,12 +21,10 @@
 		"timeline",
 		"ai"
 	],
-	"permissions": [
-		"userScripts"
-	],
 	"script": {
 		"type": "javascript",
 		"runAt": "document_end",
+		"world": "ISOLATED",
 		"matches": [
 			"*://chatgpt.com/*",
 			"*://chat.openai.com/*",

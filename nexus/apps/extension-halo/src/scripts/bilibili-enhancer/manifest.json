@@ -1,0 +1,24 @@
+{
+	"id": "bilibili-enhancer",
+	"icon": "📺",
+	"category": "efficiency",
+	"pluginType": "script",
+	"builtIn": true,
+	"status": "beta",
+	"keywords": [
+		"bilibili",
+		"video",
+		"clean",
+		"rate",
+		"speed",
+		"bili"
+	],
+	"script": {
+		"type": "javascript",
+		"runAt": "document_end",
+		"matches": [
+			"*://www.bilibili.com/*",
+			"*://live.bilibili.com/*"
+		]
+	}
+}

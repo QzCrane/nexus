@@ -22,7 +22,7 @@ export function generateI18n(allModules) {
 			const variable = m.id.replace(/-/g, '_');
 			// Map dirType to folder
 			const folder = m.dirType === 'system' ? 'system' : (m.dirType === 'scripts' ? 'scripts' : 'tools');
-			return `import { ${lang} as ${variable} } from '../../${folder}/${m.id}/locales/${lang}';`;
+			return `import { ${lang} as ${variable} } from '../../${folder}/${m.dirName}/locales/${lang}';`;
 		});
 
 		const spread = validModules.map(m => {

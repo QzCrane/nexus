@@ -33,12 +33,5 @@
 		"sourceFile": "tools/hover-zoom/content/index.ts",
 		"sourceLine": 1,
 		"sourceDetail": "mouseover/mousemove event listeners"
-	},
-	"script": {
-		"type": "javascript",
-		"runAt": "document_end",
-		"matches": [
-			"*://*/*"
-		]
 	}
 }

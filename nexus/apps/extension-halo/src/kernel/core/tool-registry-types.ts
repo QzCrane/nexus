@@ -35,6 +35,7 @@ export interface PluginMeta {
 		runAt: 'document_start' | 'document_end' | 'document_idle';
 		matches: string[];
 		excludeMatches?: string[];
+		world?: 'ISOLATED' | 'MAIN' | 'USER_SCRIPT';
 	};
 	// Runtime-only fields (not from manifest)
 	status?: ToolStatus;

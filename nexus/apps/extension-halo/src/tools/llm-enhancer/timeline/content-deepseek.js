@@ -1490,6 +1490,7 @@
   let initTimerId = null;           // delayed init timer for SPA route
 
   function initializeTimeline() {
+    console.log('[DeepseekTimeline] initializeTimeline called');
     if (manager) { try { manager.destroy(); } catch { } manager = null; window.haloTimelineManager = null; }
     // Remove any leftover UI before creating a new instance (align with ChatGPT)
     try { document.querySelector('.chatgpt-timeline-bar')?.remove(); } catch { }
@@ -1497,6 +1498,7 @@
     try { document.getElementById('chatgpt-timeline-tooltip')?.remove(); } catch { }
     manager = new DeepseekTimeline();
     window.haloTimelineManager = manager;
+    console.log('[DeepseekTimeline] New instance created and bridged to window.haloTimelineManager');
     manager.init().catch(err => console.debug('[DeepseekTimeline] init failed:', err));
   }
 

@@ -1,8 +1,15 @@
 {
 	"id": "screenshot",
 	"icon": "📸",
-	"category": "visual",
+	"category": "efficiency",
 	"size": 25000,
 	"builtIn": true,
-	"keywords": []
+	"status": "coming",
+	"keywords": [
+		"screenshot",
+		"capture",
+		"jietu",
+		"截图",
+		"截屏"
+	]
 }

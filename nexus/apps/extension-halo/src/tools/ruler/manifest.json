@@ -1,8 +1,16 @@
 {
 	"id": "ruler",
-	"icon": "📏",
-	"category": "visual",
+	"icon": "📐",
+	"category": "general",
 	"size": 35000,
 	"builtIn": true,
-	"keywords": []
+	"status": "ready",
+	"keywords": [
+		"ruler",
+		"measure",
+		"pixel",
+		"chizi",
+		"尺子",
+		"测量"
+	]
 }

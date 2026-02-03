@@ -1,9 +1,17 @@
 {
 	"id": "base64",
-	"icon": "64",
-	"category": "encode",
+	"icon": "🔐",
+	"category": "dev",
 	"size": 15000,
 	"builtIn": true,
-	"keywords": [],
+	"status": "coming",
+	"keywords": [
+		"base64",
+		"encode",
+		"decode",
+		"bianma",
+		"编码",
+		"解码"
+	],
 	"pluginType": "tool"
 }

@@ -3,8 +3,16 @@
 	"icon": "📎",
 	"category": "efficiency",
 	"size": 32000,
-	"builtIn": false,
-	"keywords": [],
+	"builtIn": true,
+	"status": "coming",
+	"keywords": [
+		"clipboard",
+		"copy",
+		"paste",
+		"jiantiepan",
+		"剪贴板",
+		"复制"
+	],
 	"permissions": [
 		"clipboardRead",
 		"clipboardWrite"

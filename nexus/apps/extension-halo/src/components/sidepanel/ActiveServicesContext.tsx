@@ -32,7 +32,8 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 				const localData = await chrome.storage.local.get({
 					halo_tool_clipboard_settings: { enabled: true },
 					halo_hover_zoom_settings: { enabled: true },
-					halo_userscripts: { globalEnabled: true, scripts: [] }
+					halo_userscripts: { globalEnabled: true, scripts: [] },
+					halo_saat_scripts: { scripts: [] }
 				});
 
 				const syncData = await chrome.storage.sync.get({
@@ -64,6 +65,17 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 					});
 				}
 
+				// Process SaaT Tools (Hidden Scripts)
+				const saatScripts = localData.halo_saat_scripts.scripts || [];
+				saatScripts.forEach((script: any) => {
+					if (script.saatToolId) {
+						// For SaaT, we track the tool ID as an "active service" if the script is enabled
+						if (script.enabled) {
+							active.add(script.saatToolId);
+						}
+					}
+				});
+
 				setScriptIds(prev => JSON.stringify(prev) !== JSON.stringify(currentScriptIds) ? currentScriptIds : prev);
 
 				setActiveServices(prev => {
@@ -80,7 +92,7 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 	// Event-driven only - no polling needed, storage.onChanged is sufficient
 	const listener = (changes: any, area: string) => {
 		let changed = false;
-		if (area === 'local' && (changes.halo_tool_clipboard_settings || changes.halo_hover_zoom_settings || changes.halo_userscripts)) changed = true;
+		if (area === 'local' && (changes.halo_tool_clipboard_settings || changes.halo_hover_zoom_settings || changes.halo_userscripts || changes.halo_saat_scripts)) changed = true;
 		if (area === 'sync' && changes.HALO_SMOOTH_SCROLL_SETTINGS) changed = true;
 		if (changed) checkState();
 	};

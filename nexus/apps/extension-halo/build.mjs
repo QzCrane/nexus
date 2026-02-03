@@ -60,19 +60,21 @@ const distScriptsDir = path.join(__dirname, 'dist/scripts');
 mkdirSync(distToolsDir, { recursive: true });
 mkdirSync(distScriptsDir, { recursive: true });
 
-function copyScriptFiles(sourceDir, destBaseDir) {
+
+async function buildScriptFiles(sourceDir, destBaseDir) {
 	if (!existsSync(sourceDir)) return 0;
 	const dirs = readdirSync(sourceDir, { withFileTypes: true }).filter(d => d.isDirectory());
-	let count = 0;
-	for (const dir of dirs) {
+
+	const promises = dirs.map(async (dir) => {
 		const scriptJs = path.join(sourceDir, dir.name, 'script.js');
 		const scriptCss = path.join(sourceDir, dir.name, 'script.css');
 		const destDir = path.join(destBaseDir, dir.name);
-		let copied = false;
+		let built = false;
+
 		if (existsSync(scriptJs)) {
 			mkdirSync(destDir, { recursive: true });
 			try {
-				esbuild.buildSync({
+				await esbuild.build({
 					entryPoints: [scriptJs],
 					outfile: path.join(destDir, 'script.js'),
 					bundle: true,
@@ -82,7 +84,7 @@ function copyScriptFiles(sourceDir, destBaseDir) {
 					format: 'iife',
 					logLevel: 'silent',
 				});
-				copied = true;
+				built = true;
 			} catch (e) {
 				console.error(`❌ Failed to build script ${dir.name}:`, e.message);
 			}
@@ -90,11 +92,13 @@ function copyScriptFiles(sourceDir, destBaseDir) {
 		if (existsSync(scriptCss)) {
 			mkdirSync(destDir, { recursive: true });
 			copyFileSync(scriptCss, path.join(destDir, 'script.css'));
-			copied = true;
+			built = true;
 		}
-		if (copied) count++;
-	}
-	return count;
+		return built ? 1 : 0;
+	});
+
+	const results = await Promise.all(promises);
+	return results.reduce((a, b) => a + b, 0);
 }
 
 // Helper to copy timeline assets specifically (since they are not standard script.js/css)
@@ -113,8 +117,10 @@ function copyTimelineAssets() {
 	console.log('✓ Copied timeline assets');
 }
 
-const toolScriptsCount = copyScriptFiles(toolsDir, distToolsDir);
-const officialScriptsCount = copyScriptFiles(scriptsDir, distScriptsDir);
+const [toolScriptsCount, officialScriptsCount] = await Promise.all([
+	buildScriptFiles(toolsDir, distToolsDir),
+	buildScriptFiles(scriptsDir, distScriptsDir)
+]);
 copyTimelineAssets();
 
 const commonConfig = {

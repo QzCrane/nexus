@@ -37,6 +37,7 @@ export interface ScriptConfig {
 	runAt: 'document_start' | 'document_end' | 'document_idle';
 	matches: string[];
 	excludeMatches?: string[];
+	world?: 'ISOLATED' | 'MAIN' | 'USER_SCRIPT';
 }
 
 // Unified plugin metadata
@@ -47,6 +48,7 @@ export interface PluginMeta {
 	category: ToolCategory;
 	size: number;
 	builtIn: boolean;
+	status?: 'ready' | 'beta' | 'coming' | 'disabled';
 	keywords: string[];
 	permissions?: string[];
 	background?: BackgroundProfile;
@@ -74,6 +76,7 @@ export interface PluginMeta {
 		category: '${manifest.category}',
 		size: ${size},
 		builtIn: ${manifest.builtIn ?? false},
+		status: ${manifest.status ? `'${manifest.status}'` : 'undefined'},
 		keywords: ${keywords},
 		permissions: ${permissions},
 		background: ${background},

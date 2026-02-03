@@ -4,7 +4,15 @@
 	"category": "general",
 	"size": 45000,
 	"builtIn": true,
-	"keywords": [],
+	"status": "ready",
+	"keywords": [
+		"qr",
+		"code",
+		"scan",
+		"erweima",
+		"二维码",
+		"扫码"
+	],
 	"permissions": [
 		"clipboardWrite"
 	]

@@ -76,38 +76,51 @@ function toRunAt(runAt: string): 'document_start' | 'document_end' | 'document_i
 	return 'document_idle';
 }
 
-// Unregister all HALO userscripts
+// Unregister all HALO userscripts and content scripts
 async function unregisterAllScripts(): Promise<void> {
-	if (!isUserScriptsAvailable()) return;
+	// 1. Unregister UserScripts
+	if (isUserScriptsAvailable()) {
+		try {
+			const registered = await chrome.userScripts.getScripts();
+			const haloIds = registered
+				.filter((s) => s.id.startsWith(SCRIPT_ID_PREFIX))
+				.map((s) => s.id);
 
+			if (haloIds.length > 0) {
+				await chrome.userScripts.unregister({ ids: haloIds });
+				console.log(LOG_TAG, `Unregistered ${haloIds.length} user scripts`);
+			}
+		} catch (e) {
+			console.warn(LOG_TAG, 'Failed to unregister user scripts:', e);
+		}
+	}
+
+	// 2. Unregister Content Scripts (ISOLATED world)
 	try {
-		const registered = await chrome.userScripts.getScripts();
-		const haloIds = registered
+		const registeredContent = await chrome.scripting.getRegisteredContentScripts();
+		const haloContentIds = registeredContent
 			.filter((s) => s.id.startsWith(SCRIPT_ID_PREFIX))
 			.map((s) => s.id);
 
-		if (haloIds.length > 0) {
-			await chrome.userScripts.unregister({ ids: haloIds });
-			console.log(LOG_TAG, `Unregistered ${haloIds.length} scripts`);
+		if (haloContentIds.length > 0) {
+			await chrome.scripting.unregisterContentScripts({ ids: haloContentIds });
+			console.log(LOG_TAG, `Unregistered ${haloContentIds.length} content scripts`);
 		}
 	} catch (e) {
-		console.warn(LOG_TAG, 'Failed to unregister scripts:', e);
+		// chrome.scripting might not be available or no permission
+		console.warn(LOG_TAG, 'Failed to unregister content scripts:', e);
 	}
 }
 
 // Register all enabled userscripts
 async function registerAllScripts(scripts: UserScript[], globalEnabled: boolean): Promise<void> {
-	if (!isUserScriptsAvailable()) {
-		console.warn(LOG_TAG, 'userScripts API not available (Chrome 120+ required)');
-		return;
-	}
-
 	if (!globalEnabled) {
 		console.log(LOG_TAG, 'Global disabled, skipping registration');
 		return;
 	}
 
-	const toRegister: chrome.userScripts.RegisteredUserScript[] = [];
+	const userScriptsToRegister: chrome.userScripts.RegisteredUserScript[] = [];
+	const contentScriptsToRegister: chrome.scripting.RegisteredContentScript[] = [];
 
 	for (const script of scripts) {
 		if (!script.enabled) continue;
@@ -117,48 +130,101 @@ async function registerAllScripts(scripts: UserScript[], globalEnabled: boolean)
 			const excludeMatches = script.excludeMatches?.length
 				? toMatchPatterns(script.excludeMatches)
 				: undefined;
-			const wrappedCode = wrapForMainWorld(script.code, script.name, script.type);
+			const fullId = `${SCRIPT_ID_PREFIX}${script.id}`;
 
-			toRegister.push({
-				id: `${SCRIPT_ID_PREFIX}${script.id}`,
-				matches,
-				excludeMatches,
-				js: [{ code: wrappedCode }],
-				runAt: toRunAt(script.runAt),
-				allFrames: false,
-				world: 'USER_SCRIPT',
-			});
+			// Determine World: Default to USER_SCRIPT (MAIN-like) if not specified
+			// Exception: CSS is always MAIN/USER_SCRIPT logic handled by wrapper usually, 
+			// but for ISOLATED world CSS should be injected via css property of scripting API if possible.
+			// For now, we keep CSS logic as is (wrapped JS) for USER_SCRIPT world, or plain CSS for ISOLATED?
+			// SaaT service treats CSS as 'javascript' wrapper for MAIN world.
+			// If world is ISOLATED and type is CSS, we should use native CSS injection of RegisterContentScript.
+
+			const world = script.world || 'USER_SCRIPT';
+
+			if (world === 'ISOLATED') {
+				// native Content Script register
+				if (!script.filePath) {
+					console.warn(LOG_TAG, `Skipping ISOLATED script ${script.id}: No file path found`);
+					continue;
+				}
+
+				const contentScript: chrome.scripting.RegisteredContentScript = {
+					id: fullId,
+					matches,
+					excludeMatches,
+					runAt: toRunAt(script.runAt),
+					allFrames: false,
+					world: 'ISOLATED'
+				};
+
+				if (script.type === 'css') {
+					contentScript.css = [script.filePath];
+				} else {
+					contentScript.js = [script.filePath];
+				}
+
+				contentScriptsToRegister.push(contentScript);
+			} else {
+				// MAIN / USER_SCRIPT world (Default)
+				const wrappedCode = wrapForMainWorld(script.code, script.name, script.type);
+				userScriptsToRegister.push({
+					id: fullId,
+					matches,
+					excludeMatches,
+					js: [{ code: wrappedCode }],
+					runAt: toRunAt(script.runAt),
+					allFrames: false,
+					world: 'USER_SCRIPT',
+				});
+			}
 		} catch (e) {
 			console.warn(LOG_TAG, `Failed to prepare ${script.name}:`, e);
 		}
 	}
 
-	if (toRegister.length > 0) {
+	// Register User Scripts
+	if (userScriptsToRegister.length > 0 && isUserScriptsAvailable()) {
 		try {
-			await chrome.userScripts.register(toRegister);
-			console.log(LOG_TAG, `Registered ${toRegister.length} scripts:`, toRegister.map((s) => s.id));
+			await chrome.userScripts.register(userScriptsToRegister);
+			console.log(LOG_TAG, `Registered ${userScriptsToRegister.length} user scripts`);
 		} catch (e) {
-			console.warn(LOG_TAG, 'Batch register failed, trying one by one:', e);
-			// Try registering one by one to identify problematic scripts
-			for (const script of toRegister) {
-				try {
-					await chrome.userScripts.register([script]);
-					console.log(LOG_TAG, `Registered: ${script.id}`);
-				} catch (innerE) {
-					console.error(LOG_TAG, `Failed to register ${script.id}:`, innerE);
-				}
-			}
+			console.warn(LOG_TAG, 'Failed to register user scripts:', e);
 		}
 	}
+
+	// Register Content Scripts (ISOLATED)
+	if (contentScriptsToRegister.length > 0) {
+		try {
+			// Check permission implicitly via API availability (background usually has permission)
+			if (chrome.scripting && chrome.scripting.registerContentScripts) {
+				await chrome.scripting.registerContentScripts(contentScriptsToRegister);
+				console.log(LOG_TAG, `Registered ${contentScriptsToRegister.length} content scripts`);
+			} else {
+				console.warn(LOG_TAG, 'chrome.scripting API not available');
+			}
+		} catch (e) {
+			console.warn(LOG_TAG, 'Failed to register content scripts:', e);
+		}
+	}
+
 }
 
-// Sync registered scripts with storage state
+const SAAT_STORAGE_KEY = 'halo_saat_scripts';
+
+// Sync registered scripts with storage state (UserScripts + SaaT)
 export async function syncRegisteredScripts(): Promise<void> {
-	const result = await chrome.storage.local.get(STORAGE_KEY);
-	const state: UserScriptState = result[STORAGE_KEY] || { scripts: [], globalEnabled: true };
+	const result = await chrome.storage.local.get([STORAGE_KEY, SAAT_STORAGE_KEY]);
+	const userState: UserScriptState = result[STORAGE_KEY] || { scripts: [], globalEnabled: true };
+	const saatState: UserScriptState = result[SAAT_STORAGE_KEY] || { scripts: [], globalEnabled: true };
+
+	// Merge scripts from both sources
+	// Note: We respect globalEnabled from UserScripts for user scripts, 
+	// but SaaT scripts might have their own enable logic or follow global?
+	// For now, let's assume globalEnabled affects EVERYTHING to be safe/consistent.
+	const allScripts = [...userState.scripts, ...saatState.scripts];
 
 	await unregisterAllScripts();
-	await registerAllScripts(state.scripts, state.globalEnabled);
+	await registerAllScripts(allScripts, userState.globalEnabled);
 }
 
 // Initialize the registry system
@@ -175,9 +241,11 @@ export function initUserScriptsRegistry(): void {
 
 	// Listen for storage changes to re-sync
 	chrome.storage.onChanged.addListener((changes, area) => {
-		if (area === 'local' && changes[STORAGE_KEY]) {
-			console.log(LOG_TAG, 'Storage changed, re-syncing...');
-			syncRegisteredScripts();
+		if (area === 'local') {
+			if (changes[STORAGE_KEY] || changes[SAAT_STORAGE_KEY]) {
+				console.log(LOG_TAG, 'Storage changed (User or SaaT), re-syncing...');
+				syncRegisteredScripts();
+			}
 		}
 	});
 }

@@ -99,4 +99,4 @@ export const generatedToolPanels = {
 export type LoadableToolId = keyof typeof generatedToolPanels;
 
 // Script plugin IDs (no React panel, uses userScripts engine)
-export const SCRIPT_PLUGIN_IDS: readonly string[] = ['bilibili-plus'];
+export const SCRIPT_PLUGIN_IDS: readonly string[] = ['bilibili-enhancer', 'bilibili-plus'];
