@@ -245,20 +245,25 @@ const Actions = {
 	toggleWide() { config.widescreen = !config.widescreen; saveConfig(); },
 	adjustWidth(delta: number) {
 		let newWidth = (config.widthPercent || 100) + delta;
-		if (newWidth < 30) newWidth = 30; // Min width
-		if (newWidth > 100) newWidth = 100; // Max width
+		if (newWidth < 50) newWidth = 50;   // Min scale 50%
+		if (newWidth > 200) newWidth = 200; // Max scale 200%
 		config.widthPercent = newWidth;
 		saveConfig();
-		// Optimization: Apply immediately to CSS to avoid storage lag feeling
-		document.documentElement.style.setProperty('--halo-llm-width', `${newWidth}%`);
+		Actions.apply();
 	},
-	// toggleSettings removed
 	apply() {
 		// 1. Widescreen
 		const isWide = config.widescreen;
 		if (isWide) {
 			document.body.setAttribute('data-halo-wide', 'true');
-			document.documentElement.style.setProperty('--halo-llm-width', `${config.widthPercent}%`);
+
+			// LOGIC: 100% = Native Layout (~48rem).
+			// Range: 50% (24rem) to 200% (96rem).
+			const percent = config.widthPercent || 100;
+			// We inject the raw percentage into CSS to let calc handle it, or pre-calc it.
+			// Pre-calc is safer: 48rem * (percent / 100)
+			const remValue = 48 * (percent / 100);
+			document.documentElement.style.setProperty('--halo-llm-width', `${remValue}rem`);
 		} else {
 			document.body.removeAttribute('data-halo-wide');
 		}
