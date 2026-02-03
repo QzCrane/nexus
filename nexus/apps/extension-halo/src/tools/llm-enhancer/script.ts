@@ -119,48 +119,72 @@ const UI = {
         :root { 
             --halo-primary: #10a37f; 
             --halo-z: 2147483647; 
-            --halo-llm-width: 48rem; /* Default base */
+            --halo-llm-width: 1000px;
         }
         
-        /* 1. Core Widescreen Containers */
-        /* Target the actual chat containers across different sites */
-        body[data-halo-wide="true"] ms-message-list,
-        body[data-halo-wide="true"] ms-message-list > div,
+        /* [LEVEL 1] PATH UNLOCKERS */
+        body[data-halo-wide="true"] .infinite-scroller,
         body[data-halo-wide="true"] .conversation-container,
-        body[data-halo-wide="true"] .conversation-container > div,
-        body[data-halo-wide="true"] .input-area-container,
-        body[data-halo-wide="true"] .bottom-container,
-        body[data-halo-wide="true"] .chat-container,
-        body[data-halo-wide="true"] .ds-chat-width,
+        body[data-halo-wide="true"] ms-chat-view,
+        body[data-halo-wide="true"] [class*="chat-view-container"] {
+            width: 100% !important;
+            max-width: 100% !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+        }
+
+        /* [LEVEL 2] ACTUAL WIDTH CONTROLLERS */
         body[data-halo-wide="true"] [data-test-id="chat-history-container"],
-        body[data-halo-wide="true"] .main-content-inner { 
+        body[data-halo-wide="true"] ms-message-list,
+        body[data-halo-wide="true"] ms-interactive-input,
+        body[data-halo-wide="true"] user-query,
+        body[data-halo-wide="true"] model-response,
+        body[data-halo-wide="true"] .input-area {
             max-width: var(--halo-llm-width) !important;
             width: 100% !important;
             margin-left: auto !important;
             margin-right: auto !important;
         }
 
-        /* 2. Overlap & Drift Fix (Specific to responses) */
-        body[data-halo-wide="true"] model-response,
-        body[data-halo-wide="true"] user-query,
-        body[data-halo-wide="true"] .model-response-container,
-        body[data-halo-wide="true"] .user-query-container {
+        /* [LEVEL 3] FORCE TRANSPARENCY & EXPANSION */
+        body[data-halo-wide="true"] ms-message-list *,
+        body[data-halo-wide="true"] ms-interactive-input *,
+        body[data-halo-wide="true"] user-query *,
+        body[data-halo-wide="true"] model-response * {
             max-width: 100% !important;
+        }
+        
+        /* Fix nested flex containers that constrain message width */
+        body[data-halo-wide="true"] .message-content-wrapper,
+        body[data-halo-wide="true"] .query-content-wrapper {
+            width: 100% !important;
+            flex: 1 !important;
+        }
+
+        /* CHATGPT SUPPORT */
+        body[data-halo-wide="true"] .xl\\:max-w-\\[48rem\\],
+        body[data-halo-wide="true"] .lg\\:max-w-\\[40rem\\],
+        body[data-halo-wide="true"] .md\\:max-w-3xl {
+            max-width: var(--halo-llm-width) !important;
             width: 100% !important;
         }
 
-        /* 3. GEMINI SPECIFIC: Override internal width variables */
+        /* GEMINI KEY VARIABLES */
         body[data-halo-wide="true"] {
             --ghc-chat-max-width: var(--halo-llm-width) !important;
             --chat-content-width-max: 100% !important;
-            --gemini-chat-width-max: 100% !important;
             --message-list-width-max: 100% !important;
+            --gemini-chat-width-max: 100% !important;
         }
 
-        /* 4. Fix Gemini Header Overlap */
-        /* Ensure the fixed/sticky header doesn't get messed up by parent flex changes */
-        header, .chat-view-header {
+        /* [LEVEL 4] OUTER UI PROTECTION */
+        header, .header, .chat-view-header, mat-progress-bar {
+            width: 100% !important;
             max-width: 100% !important;
+            left: 0 !important;
+            right: 0 !important;
+            z-index: 1000 !important;
         }
         `;
 		const style = document.createElement('style');
@@ -183,16 +207,15 @@ const Actions = {
 		Actions.apply();
 	},
 	apply() {
-		// 1. Widescreen
 		const isWide = config.widescreen;
 		if (isWide) {
 			document.body.setAttribute('data-halo-wide', 'true');
 
-			// Base width is 48rem (approx 768px). 
-			// We apply the percentage scale to this base.
+			// Base: 1000px. Scale: 50% (500px) to 150% (1500px)
 			const percent = config.widthPercent || 100;
-			const remValue = 48 * (percent / 100);
-			document.documentElement.style.setProperty('--halo-llm-width', `${remValue}rem`);
+			const pxValue = 1000 * (percent / 100);
+			document.documentElement.style.setProperty('--halo-llm-width', `${pxValue}px`);
+			console.log(LOG_TAG, `Widescreen Applied: ${percent}% -> ${pxValue}px`);
 		} else {
 			document.body.removeAttribute('data-halo-wide');
 		}
