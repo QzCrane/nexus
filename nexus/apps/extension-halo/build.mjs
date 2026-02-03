@@ -85,11 +85,12 @@ async function buildScriptFiles(sourceDir, destBaseDir) {
 		const destDir = path.join(destBaseDir, dir.name);
 		let built = false;
 
-		if (existsSync(scriptJs)) {
+		const scriptTs = path.join(sourceDir, dir.name, 'script.ts');
+		if (existsSync(scriptJs) || existsSync(scriptTs)) {
 			mkdirSync(destDir, { recursive: true });
 			try {
 				await esbuild.build({
-					entryPoints: [scriptJs],
+					entryPoints: [existsSync(scriptTs) ? scriptTs : scriptJs],
 					outfile: path.join(destDir, 'script.js'),
 					bundle: true,
 					minify: !isDev,

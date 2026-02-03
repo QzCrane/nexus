@@ -33,7 +33,7 @@ export interface BackgroundProfile {
 
 // Script plugin configuration (only for pluginType='script')
 export interface ScriptConfig {
-	type: 'javascript' | 'css';
+	type: 'javascript' | 'typescript' | 'css';
 	runAt: 'document_start' | 'document_end' | 'document_idle';
 	matches: string[];
 	excludeMatches?: string[];

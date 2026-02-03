@@ -19,7 +19,7 @@ export interface BackgroundProfile {
 
 // Script plugin configuration (only for pluginType='script')
 export interface ScriptConfig {
-	type: 'javascript' | 'css';
+	type: 'javascript' | 'typescript' | 'css';
 	runAt: 'document_start' | 'document_end' | 'document_idle';
 	matches: string[];
 	excludeMatches?: string[];
@@ -1217,7 +1217,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '📜',
 		pluginType: 'system',
 		category: 'dev',
-		size: 91209,
+		size: 91239,
 		builtIn: false,
 		status: undefined,
 		keywords: ["script","inject","脚本","注入"],

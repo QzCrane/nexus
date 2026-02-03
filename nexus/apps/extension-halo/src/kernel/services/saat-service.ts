@@ -14,7 +14,7 @@ export interface SaaTScriptState {
 	description: string;
 	code: string;
 	enabled: boolean;
-	type: 'javascript' | 'css';
+	type: 'javascript' | 'typescript' | 'css';
 	matches: string[];
 	excludeMatches: string[];
 	runAt: 'document_start' | 'document_end' | 'document_idle';
@@ -78,7 +78,7 @@ export async function toggleScriptTool(tool: PluginMeta): Promise<boolean> {
  * Load script code from bundled script file
  */
 // Helper: Resolve script path and load code
-async function resolveScript(toolId: string, type: 'javascript' | 'css'): Promise<{ code: string; path: string } | null> {
+async function resolveScript(toolId: string, type: 'javascript' | 'typescript' | 'css'): Promise<{ code: string; path: string } | null> {
 	const ext = type === 'css' ? 'css' : 'js';
 	const paths = [
 		`scripts/${toolId}/script.${ext}`,

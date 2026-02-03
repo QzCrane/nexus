@@ -41,7 +41,7 @@ function toMatchPatterns(patterns: string[]): string[] {
 }
 
 // Wrap user script code for MAIN world injection
-function wrapForMainWorld(code: string, name: string, type: 'javascript' | 'css'): string {
+function wrapForMainWorld(code: string, name: string, type: 'javascript' | 'typescript' | 'css'): string {
 	const escapedName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
 	if (type === 'css') {
