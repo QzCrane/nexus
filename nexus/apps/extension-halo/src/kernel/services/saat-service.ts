@@ -3,6 +3,8 @@
 
 import type { PluginMeta } from '../core/tool-registry-types';
 
+import type { PluginType, ScriptType } from '../registry/taxonomy';
+
 const LOG_TAG = '[HALO:SaaT]';
 const SAAT_STORAGE_KEY = 'halo_saat_scripts';
 const USERSCRIPTS_STORAGE_KEY = 'halo_userscripts'; // Kept for cleanup
@@ -14,7 +16,7 @@ export interface SaaTScriptState {
 	description: string;
 	code: string;
 	enabled: boolean;
-	type: 'javascript' | 'typescript' | 'css';
+	type: ScriptType;
 	matches: string[];
 	excludeMatches: string[];
 	runAt: 'document_start' | 'document_end' | 'document_idle';
@@ -78,7 +80,7 @@ export async function toggleScriptTool(tool: PluginMeta): Promise<boolean> {
  * Load script code from bundled script file
  */
 // Helper: Resolve script path and load code
-async function resolveScript(toolId: string, type: 'javascript' | 'typescript' | 'css'): Promise<{ code: string; path: string } | null> {
+async function resolveScript(toolId: string, type: ScriptType): Promise<{ code: string; path: string } | null> {
 	const ext = type === 'css' ? 'css' : 'js';
 	const paths = [
 		`scripts/${toolId}/script.${ext}`,

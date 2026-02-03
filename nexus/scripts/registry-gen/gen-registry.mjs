@@ -17,7 +17,7 @@ export function generateRegistry(allModules, manifestsMap) {
 // Schema: pluginType ('tool'|'script'|'system') + functional category
 
 import type { ToolCategory } from '../../i18n/types';
-import type { PluginType } from './taxonomy';
+import type { PluginType, ScriptType } from './taxonomy';
 
 // Background consumption profile
 export interface BackgroundProfile {
@@ -33,7 +33,7 @@ export interface BackgroundProfile {
 
 // Script plugin configuration (only for pluginType='script')
 export interface ScriptConfig {
-	type: 'javascript' | 'typescript' | 'css';
+	type: ScriptType;
 	runAt: 'document_start' | 'document_end' | 'document_idle';
 	matches: string[];
 	excludeMatches?: string[];

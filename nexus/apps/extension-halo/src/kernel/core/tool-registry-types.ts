@@ -2,7 +2,7 @@
 // eff: Unified types for all plugin types (tool/script/system)
 
 import type { ToolCategory } from '../../i18n/types';
-import type { PluginType } from '../registry/taxonomy';
+import type { PluginType, ScriptType } from '../registry/taxonomy';
 
 export type ToolStatus = 'ready' | 'beta' | 'coming' | 'disabled' | 'available';
 
@@ -31,7 +31,7 @@ export interface PluginMeta {
 	};
 	// Script plugin config (only for pluginType='script')
 	script?: {
-		type: 'javascript' | 'typescript' | 'css';
+		type: ScriptType;
 		runAt: 'document_start' | 'document_end' | 'document_idle';
 		matches: string[];
 		excludeMatches?: string[];

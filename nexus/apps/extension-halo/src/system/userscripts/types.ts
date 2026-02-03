@@ -1,7 +1,8 @@
 // goal: UserScripts type definitions - full feature parity with Tampermonkey
 // eff: Unified types for script management
 
-export type ScriptType = 'javascript' | 'typescript' | 'css';
+import type { ScriptType } from '../../kernel/registry/taxonomy';
+export { ScriptType };
 export type UserScriptRunAt = 'document_start' | 'document_end' | 'document_idle';
 
 export interface UserScript {

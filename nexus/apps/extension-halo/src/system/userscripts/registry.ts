@@ -40,8 +40,10 @@ function toMatchPatterns(patterns: string[]): string[] {
 	return result.length > 0 ? result : ['*://*/*'];
 }
 
+import type { ScriptType } from './types';
+
 // Wrap user script code for MAIN world injection
-function wrapForMainWorld(code: string, name: string, type: 'javascript' | 'typescript' | 'css'): string {
+function wrapForMainWorld(code: string, name: string, type: ScriptType): string {
 	const escapedName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
 	if (type === 'css') {

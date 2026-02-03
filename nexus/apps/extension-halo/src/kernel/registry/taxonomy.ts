@@ -12,6 +12,7 @@ export interface CategoryDef {
 
 // Plugin types (physical directory -> pluginType)
 export type PluginType = 'tool' | 'script' | 'system';
+export type ScriptType = 'javascript' | 'typescript' | 'css';
 
 export const TAXONOMY: CategoryDef[] = [
 	// Virtual category (runtime only, not in manifest)
