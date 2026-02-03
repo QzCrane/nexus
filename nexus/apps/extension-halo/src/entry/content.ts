@@ -163,4 +163,15 @@ if (window === window.top) {
 	});
 }
 
+// LLM Enhancer Loader
+const LLM_SITES = /(chatgpt|openai|deepseek|gemini|aistudio|claude)/;
+if (LLM_SITES.test(window.location.hostname)) {
+	const toolUrl = chrome.runtime.getURL('tools/llm-enhancer/script.js');
+	import(toolUrl).then(() => {
+		console.log(LOG_TAG, 'LLM Enhancer loaded');
+	}).catch(e => {
+		console.error(LOG_TAG, 'LLM Enhancer load failed:', e);
+	});
+}
+
 console.log(LOG_TAG, 'Content script ready in', (performance.now() - t0).toFixed(2), 'ms');

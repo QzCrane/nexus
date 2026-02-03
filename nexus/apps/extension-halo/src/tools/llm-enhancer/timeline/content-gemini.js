@@ -905,36 +905,6 @@
       }
     }
 
-    // Expose API
-    setVisible(visible) {
-      if (this.timelineBar) {
-        this.timelineBar.style.display = visible ? '' : 'none';
-      }
-      if (this.ui.slider) {
-        this.ui.slider.style.display = visible ? '' : 'none';
-      }
-    }
-
-    nav(direction) {
-      if (!this.markers || !this.markers.length) return;
-      let idx = -1;
-      if (this.activeIdx >= 0) {
-        idx = this.activeIdx;
-      }
-      if (idx === -1) {
-        idx = direction > 0 ? -1 : this.markers.length;
-      }
-
-      let nextIdx = idx + direction;
-      if (nextIdx < 0) nextIdx = 0;
-      if (nextIdx >= this.markers.length) nextIdx = this.markers.length - 1;
-
-      const target = this.markers[nextIdx];
-      if (target && target.el) {
-        this.scrollToMessage(target.el);
-      }
-    }
-
     scrollToMessage(targetEl) {
       if (!this.scrollContainer || !targetEl) return;
       const containerRect = this.scrollContainer.getBoundingClientRect();
@@ -1326,6 +1296,14 @@
     try { document.querySelector('.timeline-left-slider')?.remove(); } catch { }
     try { document.getElementById('chatgpt-timeline-tooltip')?.remove(); } catch { }
     manager = new GeminiTimelineScaffold();
+    // [Halo] Inject setVisible capability
+    manager.setVisible = function (visible) {
+      const bar = this.ui?.timelineBar || this.timelineBar || document.querySelector('.chatgpt-timeline-bar');
+      if (bar) bar.style.display = visible ? '' : 'none';
+
+      const slider = this.ui?.slider || this.slider || document.querySelector('.timeline-left-slider');
+      if (slider) slider.style.display = visible ? '' : 'none';
+    };
     window.haloTimelineManager = manager;
     console.log('[GeminiTimeline] New instance created and bridged to window.haloTimelineManager');
     manager.init().catch(err => console.debug('[GeminiTimeline] init failed (Phase 1–3):', err));

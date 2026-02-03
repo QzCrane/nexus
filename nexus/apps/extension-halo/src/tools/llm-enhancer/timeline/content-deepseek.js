@@ -1447,37 +1447,6 @@
     this.hideSliderDeferred();
   };
 
-  // Expose API
-  DeepseekTimeline.prototype.setVisible = function (visible) {
-    if (this.ui.timelineBar) {
-      this.ui.timelineBar.style.display = visible ? '' : 'none';
-    }
-    if (this.ui.slider) {
-      this.ui.slider.style.display = visible ? '' : 'none';
-    }
-  };
-
-  DeepseekTimeline.prototype.nav = function (direction) {
-    if (!this.markers || !this.markers.length) return;
-    let idx = -1;
-    if (this.activeTurnId) {
-      idx = this.markers.findIndex(function (m) { return m.id === this.activeTurnId; }.bind(this));
-    }
-    if (idx === -1) {
-      idx = direction > 0 ? -1 : this.markers.length;
-    }
-
-    let nextIdx = idx + direction;
-    if (nextIdx < 0) nextIdx = 0;
-    if (nextIdx >= this.markers.length) nextIdx = this.markers.length - 1;
-
-    const target = this.markers[nextIdx];
-    if (target && target.element) {
-      this.smoothScrollTo(target.element);
-    }
-  };
-
-
   // --- Entry & SPA wiring (Stage 3) ---
   let timelineActive = true;       // global on/off
   let providerEnabled = true;      // per-provider on/off (deepseek)
@@ -1497,6 +1466,14 @@
     try { document.querySelector('.timeline-left-slider')?.remove(); } catch { }
     try { document.getElementById('chatgpt-timeline-tooltip')?.remove(); } catch { }
     manager = new DeepseekTimeline();
+    // [Halo] Inject setVisible capability
+    manager.setVisible = function (visible) {
+      const bar = this.ui?.timelineBar || this.timelineBar || document.querySelector('.chatgpt-timeline-bar');
+      if (bar) bar.style.display = visible ? '' : 'none';
+
+      const slider = this.ui?.slider || this.slider || document.querySelector('.timeline-left-slider');
+      if (slider) slider.style.display = visible ? '' : 'none';
+    };
     window.haloTimelineManager = manager;
     console.log('[DeepseekTimeline] New instance created and bridged to window.haloTimelineManager');
     manager.init().catch(err => console.debug('[DeepseekTimeline] init failed:', err));

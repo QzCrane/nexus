@@ -100,35 +100,14 @@ function detectSite() {
 
 // ====== UI / Dock ======
 const UI = {
-	dock: null,
-
 	init() {
-		if (document.getElementById('halo-dock')) return;
 		this.injectGlobalStyles();
-		this.createDock();
 		this.bindShortcuts();
 	},
 
 	injectGlobalStyles() {
 		const css = `
         :root { --halo-primary: #10a37f; --halo-z: 2147483647; }
-        .halo-dock-bar {
-            display: flex; align-items: center; gap: 6px;
-            background: rgba(30,30,30,0.85); backdrop-filter: blur(16px);
-            border: 1px solid rgba(255,255,255,0.1); padding: 5px; border-radius: 100px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.3); transition: 0.2s;
-        }
-        @media (prefers-color-scheme: light) {
-            .halo-dock-bar { background: rgba(255,255,255,0.85); border-color: rgba(0,0,0,0.08); }
-        }
-        .halo-btn {
-            width: 32px; height: 32px; border-radius: 50%; border: none;
-            background: transparent; color: inherit; display: flex; align-items: center; justify-content: center;
-            cursor: pointer; transition: 0.2s; position: relative;
-        }
-        .halo-btn:hover { background: rgba(128,128,128,0.15); }
-        .halo-btn.active { color: var(--halo-primary); background: rgba(16, 163, 127, 0.1); }
-        #halo-dock { position: fixed; bottom: 24px; right: 80px; z-index: var(--halo-z); display: none; }
         
         /* Widescreen tokens */
         body[data-halo-wide="true"] .text-base, 
@@ -150,53 +129,6 @@ const UI = {
 		const style = document.createElement('style');
 		style.textContent = css;
 		document.head.appendChild(style);
-	},
-
-	createSvg(def, size = 18) {
-		const ns = 'http://www.w3.org/2000/svg';
-		const svg = document.createElementNS(ns, 'svg');
-		svg.setAttribute('width', size); svg.setAttribute('height', size);
-		svg.setAttribute('viewBox', def.viewBox); svg.setAttribute('fill', 'none');
-		svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '2');
-		svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round');
-		if (def.paths) def.paths.forEach(d => { const path = document.createElementNS(ns, 'path'); path.setAttribute('d', d); svg.appendChild(path); });
-		if (def.shapes) def.shapes.forEach(s => { const el = document.createElementNS(ns, s.tag); Object.entries(s.attrs).forEach(([k, v]) => el.setAttribute(k, v)); svg.appendChild(el); });
-		return svg;
-	},
-
-	createDock() {
-		const container = document.createElement('div');
-		container.id = 'halo-dock';
-		const bar = document.createElement('div');
-		bar.className = 'halo-dock-bar';
-
-		const btns = [
-			{ id: 'btn-top', icon: ICONS.ARROW_UP, tip: 'Top', action: () => window.scrollTo({ top: 0, behavior: 'smooth' }) },
-			{ id: 'btn-prev', icon: { text: '▲' }, tip: 'Prev (Alt+↑)', action: () => window.haloTimelineManager?.nav(-1) },
-			{ id: 'btn-next', icon: { text: '▼' }, tip: 'Next (Alt+↓)', action: () => window.haloTimelineManager?.nav(1) },
-			{ id: 'btn-wide', icon: ICONS.WIDE, tip: 'Widescreen (Alt+W)', action: () => Actions.toggleWide() }
-		];
-
-		btns.forEach(b => {
-			const btn = document.createElement('button');
-			btn.className = 'halo-btn';
-			if (b.id) btn.id = b.id;
-			if (b.icon.text) btn.textContent = b.icon.text;
-			else btn.appendChild(this.createSvg(b.icon));
-			btn.type = 'button';
-			btn.title = b.tip;
-			btn.onclick = b.action;
-			bar.appendChild(btn);
-		});
-
-		container.appendChild(bar);
-		document.body.appendChild(container);
-		this.dock = container;
-	},
-
-	toggleWideBtn(active) {
-		const b = document.getElementById('btn-wide');
-		if (b) active ? b.classList.add('active') : b.classList.remove('active');
 	},
 
 	bindShortcuts() {
@@ -225,10 +157,9 @@ const Actions = {
 		} else {
 			document.body.removeAttribute('data-halo-wide');
 		}
-		if (UI) UI.toggleWideBtn(isWide);
 
-		// 2. Global Dock Visibility
-		if (UI.dock) UI.dock.style.display = config.enabled ? 'block' : 'none';
+
+
 
 		// 3. Timeline Visibility (Global + Site-specific Config)
 		// Logic: Enabled if (Global Enabled) AND (Timeline Master) AND (Site Specific !== false)

@@ -81,7 +81,7 @@ async function buildScriptFiles(sourceDir, destBaseDir) {
 					minify: !isDev,
 					sourcemap: isDev ? 'inline' : false,
 					target: ['chrome100'],
-					format: 'iife',
+					format: 'esm',
 					logLevel: 'silent',
 				});
 				built = true;
