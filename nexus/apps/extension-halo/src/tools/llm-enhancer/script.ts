@@ -24,7 +24,7 @@ const DEFAULT_CONFIG: Config = {
 	enabled: true,
 	widescreen: true,
 	timeline: true,       // Master switch for timeline
-	widthPercent: 90,
+	widthPercent: 100,    // Default to 100% as requested
 	keepAlive: true,
 
 	// Site-specific timeline toggles
@@ -68,7 +68,7 @@ function saveConfig() {
 	const updates: Record<string, any> = {};
 	updates[STORAGE_KEY] = config;
 	chrome.storage.local.set(updates);
-	Actions.apply();
+	Actions.apply(); // Ensure apply is called to update CSS variables immediately
 }
 
 // Listen for config changes from Sidepanel
@@ -143,7 +143,7 @@ const UI = {
         }
 
         /* 2. THE GOLDEN COLUMN: The actual text content container */
-        /* User requested "Original width as base 100%", meaning NO artificial limits */
+        /* Controlled by var(--halo-llm-width) which is adjusted via Alt + Left/Right */
         body[data-halo-wide="true"] ms-message-list,
         body[data-halo-wide="true"] ms-message-list > div,
         body[data-halo-wide="true"] .conversation-container > div, /* Inner wrapper */
@@ -151,7 +151,7 @@ const UI = {
         body[data-halo-wide="true"] .bottom-container,
         body[data-halo-wide="true"] .chat-container,
         body[data-halo-wide="true"] .ds-chat-width { 
-            max-width: 100% !important; /* was var(--halo-llm-width) */
+            max-width: var(--halo-llm-width) !important;
             width: 100% !important;
             margin-left: auto !important;
             margin-right: auto !important;
@@ -214,12 +214,25 @@ const UI = {
 
 	bindShortcuts() {
 		window.addEventListener('keydown', (e) => {
-			if (!config.enabled) return; // shortcuts toggle removed from default config but we can support it if needed
+			if (!config.enabled) return;
 			if (e.altKey) {
+				// Timeline Nav
 				// @ts-ignore
 				if (e.key === 'ArrowUp') { e.preventDefault(); window.haloTimelineManager?.nav(-1); }
 				// @ts-ignore
 				if (e.key === 'ArrowDown') { e.preventDefault(); window.haloTimelineManager?.nav(1); }
+
+				// Width Adjustment (Alt + Left / Alt + Right)
+				if (e.key === 'ArrowLeft') {
+					e.preventDefault();
+					Actions.adjustWidth(-5);
+				}
+				if (e.key === 'ArrowRight') {
+					e.preventDefault();
+					Actions.adjustWidth(5);
+				}
+
+				// Toggle Wide Mode
 				if (e.code === 'KeyW') { e.preventDefault(); Actions.toggleWide(); }
 			}
 		});
@@ -230,6 +243,15 @@ const UI = {
 const Actions = {
 	setConfig(key: string, val: any) { config[key] = val; saveConfig(); },
 	toggleWide() { config.widescreen = !config.widescreen; saveConfig(); },
+	adjustWidth(delta: number) {
+		let newWidth = (config.widthPercent || 100) + delta;
+		if (newWidth < 30) newWidth = 30; // Min width
+		if (newWidth > 100) newWidth = 100; // Max width
+		config.widthPercent = newWidth;
+		saveConfig();
+		// Optimization: Apply immediately to CSS to avoid storage lag feeling
+		document.documentElement.style.setProperty('--halo-llm-width', `${newWidth}%`);
+	},
 	// toggleSettings removed
 	apply() {
 		// 1. Widescreen
