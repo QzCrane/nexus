@@ -121,30 +121,54 @@ const UI = {
         
         /* Widescreen tokens */
         
-        /* 1. SCROLLBAR FIX: Keep scroller at 100% screen width so scrollbar stays at window edge */
+        /* 1. SCROLLBAR FIX: Ensure the scroll container itself is full width */
+        /* Target the actual scrollable elements in Gemini */
         body[data-halo-wide="true"] main,
-        body[data-halo-wide="true"] .infinite-scroller,
-        body[data-halo-wide="true"] .chat-view-container,
-        body[data-halo-wide="true"] #chat-history,
-        body[data-halo-wide="true"] [data-test-id="chat-history-container"],
-        body[data-halo-wide="true"] .scroller-v2 {
-            max-width: 100% !important;
+        body[data-halo-wide="true"] .infinite-scroller, 
+        body[data-halo-wide="true"] .conversation-container, /* Sometimes this is the scroller */
+        body[data-halo-wide="true"] [class*="scroller"],    /* Catch-all for scroll containers */
+        body[data-halo-wide="true"] [class*="scrollable"] {
             width: 100% !important;
-            margin: 0 !important;
+            max-width: 100% !important;
+            margin-left: 0 !important;
+            margin-right: 0 !important;
+            overflow-y: auto !important; /* Force native scrollbar */
+        }
+        
+        /* Ensure the main chat surface takes full width */
+        body[data-halo-wide="true"] .chat-app, 
+        body[data-halo-wide="true"] .chat-history {
+            width: 100% !important;
+            max-width: 100% !important;
         }
 
-        /* 2. THE GOLDEN COLUMN: Target the children that define the chat's central width */
-        /* Center this column while allowing it to expand to widthPercent */
+        /* 2. THE GOLDEN COLUMN: The actual text content container */
+        /* User requested "Original width as base 100%", meaning NO artificial limits */
+        body[data-halo-wide="true"] ms-message-list,
         body[data-halo-wide="true"] ms-message-list > div,
-        body[data-halo-wide="true"] .conversation-container,
+        body[data-halo-wide="true"] .conversation-container > div, /* Inner wrapper */
         body[data-halo-wide="true"] .input-area-container,
         body[data-halo-wide="true"] .bottom-container,
         body[data-halo-wide="true"] .chat-container,
         body[data-halo-wide="true"] .ds-chat-width { 
-            max-width: var(--halo-llm-width) !important; 
+            max-width: 100% !important; /* was var(--halo-llm-width) */
             width: 100% !important;
             margin-left: auto !important;
             margin-right: auto !important;
+            padding-left: 2rem !important; /* Add breathing room since it's full width */
+            padding-right: 2rem !important;
+        }
+
+        /* 3. MESSAGE LAYOUT & OVERLAP FIX */
+        body[data-halo-wide="true"] model-response,
+        body[data-halo-wide="true"] user-query,
+        body[data-halo-wide="true"] .model-response-container,
+        body[data-halo-wide="true"] .user-query-container {
+            max-width: 100% !important;
+            width: 100% !important;
+            margin-bottom: 2rem !important; /* Fix overlap by forcing gap */
+            display: block !important;      /* Ensure they don't collapse */
+            min-height: auto !important;    /* Let content dictate height */
         }
 
         /* 3. MESSAGE LAYOUT: Remove internal width limits (e.g. 48rem) and fix drift */
