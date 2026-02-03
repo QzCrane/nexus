@@ -14,14 +14,19 @@ const ICONS = {
 const DEFAULT_CONFIG = {
 	enabled: true,
 	widescreen: true,
-	timeline: true,
+	timeline: true,       // Master switch for timeline
 	widthPercent: 90,
 	keepAlive: true,
-	// sites config is handled by granular storage or assumes all enabled if tool is active
+
+	// Site-specific timeline toggles
+	'timeline_chatgpt': true,
+	'timeline_deepseek': true,
+	'timeline_gemini': true,
 };
 
 let config = { ...DEFAULT_CONFIG };
-const timelineManager = null; // Deprecated, use window.haloTimelineManager
+// Deprecated timelineManager removed
+
 let currentSite = null;
 
 // Config loader (ASYNC)
@@ -212,10 +217,8 @@ const Actions = {
 	toggleWide() { config.widescreen = !config.widescreen; saveConfig(); },
 	// toggleSettings removed
 	apply() {
-		// Simple logic: if this script is running, the tool is enabled for this site.
+		// 1. Widescreen
 		const isWide = config.widescreen;
-
-		// Widescreen
 		if (isWide) {
 			document.body.setAttribute('data-halo-wide', 'true');
 			document.documentElement.style.setProperty('--halo-llm-width', `${config.widthPercent}%`);
@@ -224,12 +227,25 @@ const Actions = {
 		}
 		if (UI) UI.toggleWideBtn(isWide);
 
-		// Visibility
+		// 2. Global Dock Visibility
 		if (UI.dock) UI.dock.style.display = config.enabled ? 'block' : 'none';
 
-		// Timeline visibility
+		// 3. Timeline Visibility (Global + Site-specific Config)
+		// Logic: Enabled if (Global Enabled) AND (Timeline Master) AND (Site Specific !== false)
+		// We default site specific to true if undefined
 		if (window.haloTimelineManager) {
-			window.haloTimelineManager?.setVisible(config.enabled && config.timeline);
+			let siteEnabled = true;
+			if (currentSite) {
+				const settingKey = `timeline_${currentSite}`;
+				if (config[settingKey] === false) siteEnabled = false;
+			}
+
+			const shouldShow = config.enabled && config.timeline && siteEnabled;
+			try {
+				window.haloTimelineManager.setVisible(shouldShow);
+			} catch (e) {
+				console.warn(LOG_TAG, 'Failed to set timeline visibility:', e);
+			}
 		}
 	}
 };
@@ -262,18 +278,37 @@ async function main() {
 	};
 
 	if (siteFiles[currentSite]) {
+		// Robust Shim for Manager
+		let _haloTimelineManager = window.haloTimelineManager || null;
+
+		// If manager existed BEFORE we shimmed, we must apply config NOW
+		if (_haloTimelineManager) {
+			Actions.apply();
+		}
+
+		try {
+			Object.defineProperty(window, 'haloTimelineManager', {
+				get() { return _haloTimelineManager; },
+				set(val) {
+					_haloTimelineManager = val;
+					if (val) {
+						console.log(LOG_TAG, 'Timeline Manager initialized/updated, applying config...');
+						Actions.apply();
+					}
+				},
+				configurable: true
+			});
+		} catch (e) {
+			console.warn(LOG_TAG, 'Could not shim haloTimelineManager setter (already defined?):', e);
+			// Fallback: just confirm logic runs
+			Actions.apply();
+		}
+
 		try {
 			const url = chrome.runtime.getURL(`tools/llm-enhancer/timeline/${siteFiles[currentSite]}`);
 			console.log(LOG_TAG, 'Importing timeline script:', url);
 			await import(url);
 			console.log(LOG_TAG, 'Timeline script imported successfully');
-			// Check immediate availability
-			if (window.haloTimelineManager) {
-				console.log(LOG_TAG, 'Manager available immediately');
-				Actions.apply();
-			} else {
-				console.log(LOG_TAG, 'Manager not yet available (waiting for init)');
-			}
 		} catch (e) {
 			console.error(LOG_TAG, 'Failed to load timeline script:', e);
 		}

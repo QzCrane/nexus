@@ -14,6 +14,9 @@ const DEFAULT_CONFIG = {
     timeline: true,
     widthPercent: 90,
     keepAlive: true,
+    timeline_chatgpt: true,
+    timeline_deepseek: true,
+    timeline_gemini: true,
 };
 
 export const LLMEnhancerPanel: React.FC = () => {
@@ -124,6 +127,23 @@ export const LLMEnhancerPanel: React.FC = () => {
                         </div>
                         <Toggle checked={config.timeline} onChange={v => updateConfig({ timeline: v })} />
                     </div>
+
+                    {config.timeline && (
+                        <div style={{ paddingLeft: '12px', marginTop: '8px', borderLeft: '2px solid var(--halo-border)', opacity: 0.9 }}>
+                             <div style={{ ...styles.row, padding: '4px 0' }}>
+                                <div style={{ fontSize: '13px', color: 'var(--halo-text-secondary)' }}>ChatGPT</div>
+                                <Toggle checked={config.timeline_chatgpt ?? true} onChange={v => updateConfig({ timeline_chatgpt: v })} />
+                             </div>
+                             <div style={{ ...styles.row, padding: '4px 0' }}>
+                                <div style={{ fontSize: '13px', color: 'var(--halo-text-secondary)' }}>DeepSeek</div>
+                                <Toggle checked={config.timeline_deepseek ?? true} onChange={v => updateConfig({ timeline_deepseek: v })} />
+                             </div>
+                             <div style={{ ...styles.row, padding: '4px 0' }}>
+                                <div style={{ fontSize: '13px', color: 'var(--halo-text-secondary)' }}>Gemini</div>
+                                <Toggle checked={config.timeline_gemini ?? true} onChange={v => updateConfig({ timeline_gemini: v })} />
+                             </div>
+                        </div>
+                    )}
                 </div>
             </Card>
 
