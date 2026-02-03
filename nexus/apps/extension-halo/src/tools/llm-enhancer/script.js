@@ -187,6 +187,7 @@ async function main() {
 	if (!currentSite) return;
 
 	await loadConfig(); // Wait for config
+
 	UI.init();
 
 	// Inject Styles based on site (via CSS file injection)
@@ -209,12 +210,17 @@ async function main() {
 	};
 
 	if (siteFiles[currentSite]) {
-		// Robust Shim for Manager
-		let _haloTimelineManager = window.haloTimelineManager || null;
-
-		// If manager existed BEFORE we shimmed, we must apply config NOW
-		if (_haloTimelineManager) {
+		// New Event-based Mechanism
+		window.addEventListener('halo-timeline-ready', () => {
+			console.log(LOG_TAG, 'Timeline Ready Event received. Applying config...');
 			Actions.apply();
+		});
+
+		// Robust Shim for Manager (Backward Compatibility & fallback)
+		// We still use this because 'halo-timeline-ready' might have fired before we attached listener
+		let _haloTimelineManager = window.haloTimelineManager || null;
+		if (_haloTimelineManager) {
+			setTimeout(() => Actions.apply(), 50);
 		}
 
 		try {
@@ -223,15 +229,15 @@ async function main() {
 				set(val) {
 					_haloTimelineManager = val;
 					if (val) {
-						console.log(LOG_TAG, 'Timeline Manager initialized/updated, applying config...');
-						Actions.apply();
+						// Fallback: if event missed or not sent
+						console.log(LOG_TAG, 'Timeline Manager initialized (setter). Apply config soon...');
+						setTimeout(() => Actions.apply(), 100);
 					}
 				},
 				configurable: true
 			});
 		} catch (e) {
-			console.warn(LOG_TAG, 'Could not shim haloTimelineManager setter (already defined?):', e);
-			// Fallback: just confirm logic runs
+			// Ignore definition errors, likely already defined
 			Actions.apply();
 		}
 

@@ -28,6 +28,20 @@ function run(label, cmd, opts = {}) {
 	}
 }
 
+// Common Build Config
+const commonConfig = {
+	bundle: true,
+	minify: !isDev,
+	sourcemap: isDev,
+	define: { 'process.env.NODE_ENV': isDev ? '"development"' : '"production"' },
+	loader: { '.ts': 'ts', '.tsx': 'tsx' },
+	alias: {
+		'@nexus/contracts': path.resolve(__dirname, '../../packages/contracts/dist/index.js'),
+		'@nexus/kernel': path.resolve(__dirname, '../../packages/nexus-kernel/dist/index.js'),
+		'@nexus/ui-kit': path.resolve(__dirname, '../../packages/ui-kit/dist/index.js')
+	}
+};
+
 // Pre-flight checks (skip in watch mode)
 if (!isWatch) {
 	const registryPath = path.resolve(__dirname, '../../scripts/generate-tool-registry.mjs');
@@ -101,40 +115,48 @@ async function buildScriptFiles(sourceDir, destBaseDir) {
 	return results.reduce((a, b) => a + b, 0);
 }
 
-// Helper to copy timeline assets specifically (since they are not standard script.js/css)
-function copyTimelineAssets() {
+// Helper to build timeline assets (compile TS -> JS, copy CSS)
+async function buildTimelineAssets() {
 	const src = path.join(__dirname, 'src/tools/llm-enhancer/timeline');
 	const dst = path.join(__dirname, 'dist/tools/llm-enhancer/timeline');
 	if (!existsSync(src)) return;
-	if (!existsSync(dst)) mkdirSync(dst, { recursive: true });
+	mkdirSync(dst, { recursive: true });
 
+	// Copy CSS
 	const files = readdirSync(src);
 	for (const f of files) {
-		if (f.endsWith('.css') || f.endsWith('.js')) {
+		if (f.endsWith('.css')) {
 			copyFileSync(path.join(src, f), path.join(dst, f));
 		}
 	}
-	console.log('✓ Copied timeline assets');
+
+	// Build TS
+	try {
+		await esbuild.build({
+			...commonConfig,
+			entryPoints: [
+				path.join(src, 'content-chatgpt.ts'),
+				path.join(src, 'content-deepseek.ts'),
+				path.join(src, 'content-gemini.ts')
+			],
+			outdir: dst,
+			format: 'esm', // Must be ESM for dynamic import
+			target: ['chrome100'],
+			logLevel: 'warning'
+		});
+		console.log('✓ Built timeline assets');
+	} catch (e) {
+		console.error('❌ Failed to build timeline assets:', e.message);
+	}
 }
 
 const [toolScriptsCount, officialScriptsCount] = await Promise.all([
 	buildScriptFiles(toolsDir, distToolsDir),
 	buildScriptFiles(scriptsDir, distScriptsDir)
 ]);
-copyTimelineAssets();
+await buildTimelineAssets();
 
-const commonConfig = {
-	bundle: true,
-	minify: !isDev,
-	sourcemap: isDev,
-	define: { 'process.env.NODE_ENV': isDev ? '"development"' : '"production"' },
-	loader: { '.ts': 'ts', '.tsx': 'tsx' },
-	alias: {
-		'@nexus/contracts': path.resolve(__dirname, '../../packages/contracts/dist/index.js'),
-		'@nexus/kernel': path.resolve(__dirname, '../../packages/nexus-kernel/dist/index.js'),
-		'@nexus/ui-kit': path.resolve(__dirname, '../../packages/ui-kit/dist/index.js')
-	}
-};
+
 
 const entries = [
 	{ entry: 'src/entry/content.ts', out: 'content.js' },

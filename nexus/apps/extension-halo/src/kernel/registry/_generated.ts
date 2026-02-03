@@ -502,7 +502,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '🧠',
 		pluginType: 'tool',
 		category: 'ai',
-		size: 262920,
+		size: 105879,
 		builtIn: true,
 		status: undefined,
 		keywords: ["chatgpt","openai","deepseek","gemini","wide","timeline","ai"],

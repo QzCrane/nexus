@@ -58,7 +58,9 @@ html.dark, body.dark, html[data-theme="dark"], [data-theme="dark"], [data-color-
     width: 24px;
     height: calc(100vh - 100px); /* Avoid overlapping the bottom input area */
     z-index: 2147483646; /* ensure above site chrome */
-    display: flex;
+    z-index: 2147483646; /* ensure above site chrome */
+    display: none; /* Default hidden */
+    flex-direction: column;
     flex-direction: column;
     align-items: center;
     border-radius: 10px;
@@ -70,6 +72,11 @@ html.dark, body.dark, html[data-theme="dark"], [data-theme="dark"], [data-color-
     /* Isolate layout/paint to reduce reflow propagation during updates */
     contain: layout paint;
     touch-action: pan-y; /* allow vertical gestures only */
+}
+
+/* Activate via body class */
+body.halo-timeline-active .chatgpt-timeline-bar {
+    display: flex;
 }
 
 /* Scrollable track to host all dots (long canvas) */
@@ -309,6 +316,10 @@ html.dark .timeline-slider::before { background: rgba(255,255,255,0.10); }
     transition: opacity 180ms ease;
     z-index: 2147483646; /* align with bar */
     pointer-events: none;
+    display: none; /* Default hidden */
+}
+body.halo-timeline-active .timeline-left-slider {
+    display: block;
 }
 .timeline-left-slider.visible { opacity: 1;  pointer-events: auto; }
 .timeline-left-slider::before {
