@@ -22,7 +22,7 @@
 		"ai"
 	],
 	"script": {
-		"type": "javascript",
+		"type": "typescript",
 		"runAt": "document_end",
 		"world": "ISOLATED",
 		"matches": [

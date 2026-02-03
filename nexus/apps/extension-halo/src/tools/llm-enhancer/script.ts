@@ -2,6 +2,15 @@ const LOG_TAG = '[HALO:LLM]';
 const STORAGE_KEY = 'tool.llm-enhancer.config';
 const TOOL_PREFS_KEY = 'halo_tool_prefs';
 
+interface Config {
+	enabled: boolean;
+	widescreen: boolean;
+	timeline: boolean;
+	widthPercent: number;
+	keepAlive: boolean;
+	[key: string]: boolean | number | string | undefined; // For dynamic site keys
+}
+
 // ====== Icons ======
 const ICONS = {
 	LOGO: { viewBox: '0 0 24 24', paths: ['M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5'] },
@@ -11,7 +20,7 @@ const ICONS = {
 };
 
 // ====== Configuration ======
-const DEFAULT_CONFIG = {
+const DEFAULT_CONFIG: Config = {
 	enabled: true,
 	widescreen: true,
 	timeline: true,       // Master switch for timeline
@@ -24,13 +33,14 @@ const DEFAULT_CONFIG = {
 	'timeline_gemini': true,
 };
 
-let config = { ...DEFAULT_CONFIG };
+let config: Config = { ...DEFAULT_CONFIG };
 // Deprecated timelineManager removed
 
-let currentSite = null;
+type SiteType = 'chatgpt' | 'deepseek' | 'gemini' | 'claude' | null;
+let currentSite: SiteType = null;
 
 // Config loader (ASYNC)
-async function loadConfig() {
+async function loadConfig(): Promise<void> {
 	return new Promise((resolve) => {
 		try {
 			chrome.storage.local.get([STORAGE_KEY, TOOL_PREFS_KEY], (res) => {
@@ -55,7 +65,7 @@ async function loadConfig() {
 function saveConfig() {
 	// We only save transient states (like Widescreen toggles) here if we want them persisted.
 	// Ideally, sidepanel updates this, and we listen to changes.
-	const updates = {};
+	const updates: Record<string, any> = {};
 	updates[STORAGE_KEY] = config;
 	chrome.storage.local.set(updates);
 	Actions.apply();
@@ -89,7 +99,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 // ====== Site Detection ======
-function detectSite() {
+function detectSite(): SiteType {
 	const h = location.hostname;
 	if (h.includes('chatgpt') || h.includes('openai')) return 'chatgpt';
 	if (h.includes('deepseek')) return 'deepseek';
@@ -110,20 +120,67 @@ const UI = {
         :root { --halo-primary: #10a37f; --halo-z: 2147483647; }
         
         /* Widescreen tokens */
-        body[data-halo-wide="true"] .text-base, 
-        body[data-halo-wide="true"] .xl\\:max-w-3xl, 
-        body[data-halo-wide="true"] .ds-chat-width, 
-        body[data-halo-wide="true"] .ds-markdown-container,
-        body[data-halo-wide="true"] .chat-container,
-        body[data-halo-wide="true"] .conversation-container, 
-        body[data-halo-wide="true"] .model-response-container,
-        body[data-halo-wide="true"] .response-container-content,
-        body[data-halo-wide="true"] .bottom-container,
+        
+        /* 1. SCROLLBAR FIX: Keep scroller at 100% screen width so scrollbar stays at window edge */
+        body[data-halo-wide="true"] main,
+        body[data-halo-wide="true"] .infinite-scroller,
+        body[data-halo-wide="true"] .chat-view-container,
+        body[data-halo-wide="true"] #chat-history,
+        body[data-halo-wide="true"] [data-test-id="chat-history-container"],
+        body[data-halo-wide="true"] .scroller-v2 {
+            max-width: 100% !important;
+            width: 100% !important;
+            margin: 0 !important;
+        }
+
+        /* 2. THE GOLDEN COLUMN: Target the children that define the chat's central width */
+        /* Center this column while allowing it to expand to widthPercent */
+        body[data-halo-wide="true"] ms-message-list > div,
+        body[data-halo-wide="true"] .conversation-container,
         body[data-halo-wide="true"] .input-area-container,
-        body[data-halo-wide="true"] .max-w-3xl, 
-        body[data-halo-wide="true"] .max-w-2xl { 
+        body[data-halo-wide="true"] .bottom-container,
+        body[data-halo-wide="true"] .chat-container,
+        body[data-halo-wide="true"] .ds-chat-width { 
             max-width: var(--halo-llm-width) !important; 
-            margin-left: auto !important; margin-right: auto !important; 
+            width: 100% !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+        }
+
+        /* 3. MESSAGE LAYOUT: Remove internal width limits (e.g. 48rem) and fix drift */
+        body[data-halo-wide="true"] model-response,
+        body[data-halo-wide="true"] user-query,
+        body[data-halo-wide="true"] .model-response-container,
+        body[data-halo-wide="true"] .user-query-container {
+            max-width: 100% !important;
+            width: 100% !important;
+        }
+
+        /* Lock AI Content to Left (next to icon) */
+        body[data-halo-wide="true"] model-response > div,
+        body[data-halo-wide="true"] .model-response-container > div {
+            display: flex !important;
+            justify-content: flex-start !important;
+        }
+
+        body[data-halo-wide="true"] model-response .response-container-content,
+        body[data-halo-wide="true"] model-response [class*="content"] {
+            margin-left: 0 !important;
+            max-width: 100% !important;
+            flex: 1 !important;
+        }
+
+        /* Lock User Content to Right */
+        body[data-halo-wide="true"] user-query > div {
+            display: flex !important;
+            justify-content: flex-end !important;
+        }
+
+        /* 4. GEMINI INTERNAL VARIABLES: Override the hardcoded limits in their system */
+        body[data-halo-wide="true"] {
+            --chat-content-width-max: 100% !important;
+            --gemini-chat-width-max: 100% !important;
+            --message-list-width-max: 100% !important;
         }
         `;
 		const style = document.createElement('style');
@@ -135,7 +192,9 @@ const UI = {
 		window.addEventListener('keydown', (e) => {
 			if (!config.enabled) return; // shortcuts toggle removed from default config but we can support it if needed
 			if (e.altKey) {
+				// @ts-ignore
 				if (e.key === 'ArrowUp') { e.preventDefault(); window.haloTimelineManager?.nav(-1); }
+				// @ts-ignore
 				if (e.key === 'ArrowDown') { e.preventDefault(); window.haloTimelineManager?.nav(1); }
 				if (e.code === 'KeyW') { e.preventDefault(); Actions.toggleWide(); }
 			}
@@ -145,7 +204,7 @@ const UI = {
 
 // ====== Actions ======
 const Actions = {
-	setConfig(key, val) { config[key] = val; saveConfig(); },
+	setConfig(key: string, val: any) { config[key] = val; saveConfig(); },
 	toggleWide() { config.widescreen = !config.widescreen; saveConfig(); },
 	// toggleSettings removed
 	apply() {
@@ -158,12 +217,10 @@ const Actions = {
 			document.body.removeAttribute('data-halo-wide');
 		}
 
-
-
-
 		// 3. Timeline Visibility (Global + Site-specific Config)
 		// Logic: Enabled if (Global Enabled) AND (Timeline Master) AND (Site Specific !== false)
 		// We default site specific to true if undefined
+		// @ts-ignore
 		if (window.haloTimelineManager) {
 			let siteEnabled = true;
 			if (currentSite) {
@@ -173,6 +230,7 @@ const Actions = {
 
 			const shouldShow = config.enabled && config.timeline && siteEnabled;
 			try {
+				// @ts-ignore
 				window.haloTimelineManager.setVisible(shouldShow);
 			} catch (e) {
 				console.warn(LOG_TAG, 'Failed to set timeline visibility:', e);
@@ -202,14 +260,14 @@ async function main() {
 	// Load specific content logic (side-effect imports)
 	console.log(LOG_TAG, 'Detected site:', currentSite);
 
-	const siteFiles = {
+	const siteFiles: Record<string, string | null> = {
 		'chatgpt': 'content-chatgpt.js',
 		'deepseek': 'content-deepseek.js',
 		'gemini': 'content-gemini.js',
 		'claude': null // Not yet implemented
 	};
 
-	if (siteFiles[currentSite]) {
+	if (currentSite && siteFiles[currentSite]) {
 		// New Event-based Mechanism
 		window.addEventListener('halo-timeline-ready', () => {
 			console.log(LOG_TAG, 'Timeline Ready Event received. Applying config...');
@@ -218,6 +276,7 @@ async function main() {
 
 		// Robust Shim for Manager (Backward Compatibility & fallback)
 		// We still use this because 'halo-timeline-ready' might have fired before we attached listener
+		// @ts-ignore
 		let _haloTimelineManager = window.haloTimelineManager || null;
 		if (_haloTimelineManager) {
 			setTimeout(() => Actions.apply(), 50);
@@ -244,6 +303,7 @@ async function main() {
 		try {
 			const url = chrome.runtime.getURL(`tools/llm-enhancer/timeline/${siteFiles[currentSite]}`);
 			console.log(LOG_TAG, 'Importing timeline script:', url);
+			// @ts-ignore
 			await import(url);
 			console.log(LOG_TAG, 'Timeline script imported successfully');
 		} catch (e) {
@@ -254,7 +314,7 @@ async function main() {
 	// Keep Alive
 	setInterval(() => {
 		if (config.enabled && config.keepAlive) {
-			const b = document.querySelector('.btn-continue, [aria-label*="Continue"]');
+			const b = document.querySelector('.btn-continue, [aria-label*="Continue"]') as HTMLElement;
 			if (b) b.click();
 		}
 	}, 30000);

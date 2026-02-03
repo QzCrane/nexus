@@ -31,7 +31,7 @@ export interface PluginMeta {
 	};
 	// Script plugin config (only for pluginType='script')
 	script?: {
-		type: 'javascript' | 'css';
+		type: 'javascript' | 'typescript' | 'css';
 		runAt: 'document_start' | 'document_end' | 'document_idle';
 		matches: string[];
 		excludeMatches?: string[];
