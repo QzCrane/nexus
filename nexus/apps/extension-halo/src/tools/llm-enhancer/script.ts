@@ -121,72 +121,74 @@ const UI = {
             --halo-z: 2147483647; 
             --halo-llm-width: 1000px;
         }
+
+        /* ====== 1. 滚动条美化 (Overlay 风格) ====== */
+        ::-webkit-scrollbar { width: 10px !important; height: 10px !important; }
+        ::-webkit-scrollbar-track { background: transparent !important; }
+        ::-webkit-scrollbar-thumb { 
+            background-color: rgba(0, 0, 0, 0.15) !important; 
+            border-radius: 5px !important; 
+            border: 3px solid transparent !important; 
+            background-clip: content-box !important; 
+        }
+        ::-webkit-scrollbar-thumb:hover { background-color: rgba(0, 0, 0, 0.4) !important; }
+
+        /* ====== 2. 基础环境锁定 ====== */
+        body[data-halo-wide="true"], 
+        body[data-halo-wide="true"] html {
+            overflow: hidden !important; /* 禁掉外层滚动，防双滚动条 */
+            height: 100vh !important;
+        }
+
+        /* ====== 3. 容器布局 (基于你找到的选择器) ====== */
         
-        /* [LEVEL 1] PATH UNLOCKERS */
-        body[data-halo-wide="true"] .infinite-scroller,
-        body[data-halo-wide="true"] .conversation-container,
-        body[data-halo-wide="true"] ms-chat-view,
-        body[data-halo-wide="true"] [class*="chat-view-container"] {
+        /* [外层容器]：负责显示滚动条，必须全屏宽 */
+        body[data-halo-wide="true"] #chat-history,
+        body[data-halo-wide="true"] #chat-history > infinite-scroller {
             width: 100% !important;
             max-width: 100% !important;
+            height: 100vh !important;
+            overflow-y: auto !important; /* 开启滚动 */
+            scrollbar-gutter: stable !important; /* 防抖动 */
+            
+            /* 关键布局：让它成为垂直居中的指挥官 */
             display: flex !important;
             flex-direction: column !important;
-            align-items: center !important;
+            align-items: center !important; /* 让所有子元素（消息气泡）水平居中 */
+            padding: 0 !important;
         }
 
-        /* [LEVEL 2] ACTUAL WIDTH CONTROLLERS */
-        body[data-halo-wide="true"] [data-test-id="chat-history-container"],
-        body[data-halo-wide="true"] ms-message-list,
-        body[data-halo-wide="true"] ms-interactive-input,
-        body[data-halo-wide="true"] user-query,
-        body[data-halo-wide="true"] model-response,
-        body[data-halo-wide="true"] .input-area {
-            max-width: var(--halo-llm-width) !important;
+        /* [内层子元素]：真正的消息气泡，响应滑块宽度 */
+        /* 使用 > * 选中 infinite-scroller 下的所有直接子节点 */
+        body[data-halo-wide="true"] #chat-history > infinite-scroller > * {
+            max-width: var(--halo-llm-width) !important; /* 响应滑块 */
             width: 100% !important;
+            
+            /* 双重保险居中 (防止 flex 失效时的 fallback) */
             margin-left: auto !important;
             margin-right: auto !important;
+            
+            /* 防止被压缩 */
+            flex-shrink: 0 !important;
+            box-sizing: border-box !important;
         }
 
-        /* [LEVEL 3] FORCE TRANSPARENCY & EXPANSION */
-        body[data-halo-wide="true"] ms-message-list *,
-        body[data-halo-wide="true"] ms-interactive-input *,
-        body[data-halo-wide="true"] user-query *,
-        body[data-halo-wide="true"] model-response * {
-            max-width: 100% !important;
+        /* ====== 4. 底部输入框修复 ====== */
+        body[data-halo-wide="true"] .input-area,
+        body[data-halo-wide="true"] footer,
+        body[data-halo-wide="true"] .chat-input-container {
+             max-width: var(--halo-llm-width) !important;
+             margin-left: auto !important;
+             margin-right: auto !important;
         }
         
-        /* Fix nested flex containers that constrain message width */
-        body[data-halo-wide="true"] .message-content-wrapper,
-        body[data-halo-wide="true"] .query-content-wrapper {
-            width: 100% !important;
-            flex: 1 !important;
-        }
-
-        /* CHATGPT SUPPORT */
-        body[data-halo-wide="true"] .xl\\:max-w-\\[48rem\\],
-        body[data-halo-wide="true"] .lg\\:max-w-\\[40rem\\],
-        body[data-halo-wide="true"] .md\\:max-w-3xl {
-            max-width: var(--halo-llm-width) !important;
-            width: 100% !important;
-        }
-
-        /* GEMINI KEY VARIABLES */
-        body[data-halo-wide="true"] {
-            --ghc-chat-max-width: var(--halo-llm-width) !important;
-            --chat-content-width-max: 100% !important;
-            --message-list-width-max: 100% !important;
-            --gemini-chat-width-max: 100% !important;
-        }
-
-        /* [LEVEL 4] OUTER UI PROTECTION */
-        header, .header, .chat-view-header, mat-progress-bar {
-            width: 100% !important;
-            max-width: 100% !important;
-            left: 0 !important;
-            right: 0 !important;
-            z-index: 1000 !important;
-        }
+        /* 隐藏占位符 spacer，防止布局跑偏 */
+        body[data-halo-wide="true"] .spacer { display: none !important; }
         `;
+
+		const oldStyle = document.getElementById('halo-llm-css');
+		if (oldStyle) oldStyle.remove();
+
 		const style = document.createElement('style');
 		style.id = 'halo-llm-css';
 		style.textContent = css;
