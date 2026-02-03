@@ -25,6 +25,7 @@ v2.5.0 Script Store: `src/scripts/`独立目录 | Fork Mode(编辑官方 → 创
 v2.5.1 LLM Suite: `chatgpt-wide` → `llm-enhancer` | Support ChatGPT/DeepSeek/Gemini | Timeline/Widescreen/KeepAlive @2026-02-01
 v2.5.2 Bilibili+: Playback Speed | Esc Fix | Clean Home | Viewer Count (Planned) @2026-02-01
 v2.5.3 LLM Enhancer V3: 💎 Glassmorphism UX | Floating Dock | Keyboard shortcuts | Auto Scroll Highlight @2026-02-02
+v2.5.4 LLM Enhancer Fix: TypeScript Refactor | Event-Driven State Sync | CSS Visibility Control | Gemini Navigation Fix @2026-02-03
 
 v2.6.0 Resource Monitor: 系统级面板 | 11 种 CPU 机制 | Header⚡ 入口
 
