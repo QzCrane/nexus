@@ -40,11 +40,18 @@ function startMediaObserver(): void {
 
 	mediaObserver = new MutationObserver(() => {
 		if (hasMediaElements() && pendingSpeed !== null) {
-			applySpeed(pendingSpeed, pendingPitch ?? true);
+			const speed = pendingSpeed;
+			const pitch = pendingPitch ?? true;
+			// rule: YouTube also needs API call for queued speed
+			if (isYouTube()) {
+				setYouTubeSpeed(speed);
+			}
+			applySpeed(speed, pitch);
 			pendingSpeed = null;
 			pendingPitch = null;
 			mediaObserver?.disconnect();
 			mediaObserver = null;
+			log.info(`Speed ${speed}x applied (media now available)`);
 		}
 	});
 
@@ -97,6 +104,27 @@ export function setSpeed(s: number, pitch?: boolean): { speed: number; preserveP
 	applySpeed(clamped, p);
 	log.info(`Speed ${clamped}x, pitch=${p}`);
 	return { speed: clamped, preservePitch: p };
+}
+
+// eff: force apply speed regardless of last value - used on page load
+export function forceApplySpeed(s: number, pitch?: boolean): void {
+	const clamped = Math.max(0.1, Math.min(16, s));
+	const p = pitch ?? true;
+
+	if (isYouTube()) {
+		setYouTubeSpeed(clamped);
+	}
+
+	if (!hasMediaElements()) {
+		pendingSpeed = clamped;
+		pendingPitch = p;
+		startMediaObserver();
+		log.debug(`Speed ${clamped}x queued (force apply)`);
+		return;
+	}
+
+	applySpeed(clamped, p);
+	log.info(`Speed ${clamped}x force applied, pitch=${p}`);
 }
 
 export function togglePlay(): boolean {

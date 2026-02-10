@@ -8,6 +8,7 @@ let targetVolume = 1, targetMuted = false;
 let syncEnabled = true, userInteracted = false;
 let onNativeVolumeChange: ((v: number, m: boolean) => void) | null = null;
 let onNativeSpeedChange: ((s: number) => void) | null = null;
+let onVolumeApplied: ((v: number, m: boolean) => void) | null = null;
 
 // inv: pending volume to apply when media becomes available
 let pendingVolume: number | null = null;
@@ -18,6 +19,7 @@ export const markUserInteracted = () => { userInteracted = true; };
 export const hasUserInteracted = () => userInteracted;
 export const setNativeVolumeCallback = (cb: (v: number, m: boolean) => void) => { onNativeVolumeChange = cb; };
 export const setNativeSpeedCallback = (cb: (s: number) => void) => { onNativeSpeedChange = cb; };
+export const setVolumeAppliedCallback = (cb: (v: number, m: boolean) => void) => { onVolumeApplied = cb; };
 
 // eff: Static context object to avoid closure allocation per element
 const ctx: MonitorContext = {
@@ -43,9 +45,14 @@ function startVolumeObserver(): void {
 		if (hasMediaElements()) {
 			ensureMonitoring();
 			if (pendingVolume !== null) {
-				applyVolume(pendingVolume, pendingMuted ?? false);
+				const vol = pendingVolume;
+				const muted = pendingMuted ?? false;
+				applyVolume(vol, muted);
+				// eff: notify external (e.g., YouTube sync)
+				onVolumeApplied?.(vol, muted);
 				pendingVolume = null;
 				pendingMuted = null;
+				log.debug(`[DOM] Vol ${(vol * 100) | 0}% applied (media now available)`);
 			}
 			volumeObserver?.disconnect();
 			volumeObserver = null;

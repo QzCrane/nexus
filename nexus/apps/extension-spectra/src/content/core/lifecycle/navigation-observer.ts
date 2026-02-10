@@ -4,6 +4,7 @@
 import { isExtensionContextValid } from '../context-guard';
 import type { PolicyExecutor } from '../../logic/policy-executor';
 import { clearYouTubeCache } from '../../adapters/youtube-adapter';
+import { resetSpeedTracking } from '../../logic/mode-executor';
 
 interface NavigationObserverDeps {
 	policyExecutor: PolicyExecutor;
@@ -26,8 +27,9 @@ export function createNavigationObserver(deps: NavigationObserverDeps): () => vo
 		lastPath = cur;
 		if (debounceTimer) clearTimeout(debounceTimer);
 
-		// eff: clear YouTube cache on navigation
+		// eff: clear YouTube cache and reset speed tracking on navigation
 		clearYouTubeCache();
+		resetSpeedTracking();
 
 		debounceTimer = setTimeout(() => {
 			if (!isExtensionContextValid()) return;

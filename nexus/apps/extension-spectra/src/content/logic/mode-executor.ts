@@ -3,8 +3,8 @@
 import { AudioMode } from '@nexus/audio-engine';
 import type { AudioConfig } from '@nexus/kernel';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../types';
-import { setDomVolume, isAnyMediaPlaying, releaseVolumeLock, enableVolumeLock, setNativeVolumeCallback, setNativeSpeedCallback, markUserInteracted as markDomUserInteracted, enableDirectTake, hasUserInteracted as hasDomUserInteracted } from '../audio/dom-volume';
-import { setSpeed } from './media-control';
+import { setDomVolume, isAnyMediaPlaying, releaseVolumeLock, enableVolumeLock, setNativeVolumeCallback, setNativeSpeedCallback, setVolumeAppliedCallback, markUserInteracted as markDomUserInteracted, enableDirectTake, hasUserInteracted as hasDomUserInteracted } from '../audio/dom-volume';
+import { setSpeed, forceApplySpeed } from './media-control';
 import { isYouTube, setYouTubeVolume } from '../adapters/youtube-adapter';
 import { logger } from '../../shared/logger';
 
@@ -64,6 +64,10 @@ export function initModeExecutorCallbacks(
 	currentUpdateConfig = updateConfig;
 	setNativeVolumeCallback(handleNativeVolume);
 	setNativeSpeedCallback(handleNativeSpeed);
+	// rule: sync YouTube UI when queued volume is applied (page load scenario)
+	setVolumeAppliedCallback((vol, muted) => {
+		if (isYouTube()) setYouTubeVolume(vol * 100, muted);
+	});
 }
 
 // post: returns true if the user has engaged with the page, making it safe to initialize AudioContext
@@ -81,6 +85,13 @@ export function hasUserGesture(state: PolicyExecutorState): boolean {
 
 // inv: track last speed to avoid unnecessary DOM operations
 let lastExecutedSpeed = 1;
+let isFirstApply = true;
+
+// eff: reset speed tracking on navigation (page refresh/SPA nav)
+export function resetSpeedTracking(): void {
+	lastExecutedSpeed = 1;
+	isFirstApply = true;
+}
 
 // eff: orchestrates audio modifications by dispatching to specialized controllers based on activeMode
 export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState): void {
@@ -88,11 +99,18 @@ export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState
 	const mode = state.activeMode;
 	const config = state.config;
 
-	// eff: sync playback speed only when changed (prevents CPU waste)
+	// eff: sync playback speed - force apply on first call (page load), then only when changed
 	const currentSpeed = config.speed || 1.0;
-	if (Math.abs(lastExecutedSpeed - currentSpeed) > 0.005) {
+	const shouldApply = isFirstApply || Math.abs(lastExecutedSpeed - currentSpeed) > 0.005;
+	if (shouldApply) {
 		lastExecutedSpeed = currentSpeed;
-		setSpeed(currentSpeed);
+		const wasFirstApply = isFirstApply;
+		isFirstApply = false;
+		if (wasFirstApply) {
+			forceApplySpeed(currentSpeed);
+		} else {
+			setSpeed(currentSpeed);
+		}
 	}
 
 	if (mode === AudioMode.CAPTURE) {
