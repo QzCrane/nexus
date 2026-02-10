@@ -1,6 +1,6 @@
-import { logger } from '../../shared/logger';
+import { createLogger } from '../../shared/logger';
 
-const log = logger.content;
+const log = createLogger('VolumeObserver');
 
 export type ElementState = {
 	volume: number; muted: boolean; speed: number; settingByPlugin: boolean;
@@ -72,7 +72,6 @@ export function setupVolumeMonitor(media: HTMLMediaElement, ctx: MonitorContext)
 
 		// Sync Mode
 		const allowMute = ctx.getUserInteracted() || s.hasReceivedUserEvent;
-
 		if (diff > 0.005) {
 			log.debug(`[DOM] Vol: ${(nv * 100) | 0}%`);
 			ctx.onNativeVolumeChange(nv, allowMute ? nm : ctx.getTargetMuted());

@@ -1,44 +1,108 @@
-// goal: manages DOM-based volume control with proper bidirectional sync
-// role: detects user changes and syncs to plugin; applies plugin changes to page
-// theory: uses source tracking to prevent sync loops
+// goal: Sync DOM media volume with plugin state
+// role: manages DOM-based volume control with event-based monitoring
 
 import { createLogger } from '../../shared/logger';
+import { getElementState, isMonitored, markMonitored, setupVolumeMonitor, type MonitorContext } from './volume-observer';
+import { isYouTube, setYouTubeVolume } from '../adapters/youtube-adapter';
 
 const log = createLogger('DOMVolume');
 
-// inv: current plugin config state
-let pluginVolume = 1; // 0-1 range
-let pluginMuted = false;
-
-// inv: flag to prevent callback loops when plugin sets values
-let isApplyingPluginChange = false;
-
-// inv: user interaction tracking
-let userHasInteracted = false;
-
-// inv: native volume change callbacks
+let targetVolume = 1, targetMuted = false;
+let syncEnabled = true, userInteracted = false;
 let onNativeVolumeChange: ((v: number, m: boolean) => void) | null = null;
 let onNativeSpeedChange: ((s: number) => void) | null = null;
 
-// eff: mark that user has interacted with the page
-export function markUserInteracted(): void {
-	userHasInteracted = true;
+export const markUserInteracted = () => { userInteracted = true; };
+export const hasUserInteracted = () => userInteracted;
+export const setNativeVolumeCallback = (cb: (v: number, m: boolean) => void) => { onNativeVolumeChange = cb; };
+export const setNativeSpeedCallback = (cb: (s: number) => void) => { onNativeSpeedChange = cb; };
+
+// eff: Static context object to avoid closure allocation per element
+const ctx: MonitorContext = {
+	getUserInteracted: () => userInteracted,
+	isSyncEnabled: () => syncEnabled,
+	getTargetVolume: () => targetVolume,
+	getTargetMuted: () => targetMuted,
+	onNativeVolumeChange: (v, m) => onNativeVolumeChange?.(v, m),
+	onNativeSpeedChange: (s) => onNativeSpeedChange?.(s),
+};
+
+function ensureMonitoring(): void {
+	// eff: live collection
+	const videos = document.getElementsByTagName('video');
+	const audio = document.getElementsByTagName('audio');
+
+	for (let i = 0, l = videos.length; i < l; i++) {
+		const m = videos[i]!;
+		if (!isMonitored(m)) { setupVolumeMonitor(m, ctx); markMonitored(m); }
+	}
+	for (let i = 0, l = audio.length; i < l; i++) {
+		const m = audio[i]!;
+		if (!isMonitored(m)) { setupVolumeMonitor(m, ctx); markMonitored(m); }
+	}
 }
 
-// eff: check if user has interacted
-export function hasUserInteracted(): boolean {
-	return userHasInteracted;
+export function setDomVolume(vol: number, muted: boolean): void {
+	ensureMonitoring();
+
+	// Convert 0-100 to 0-1 if needed
+	const normalizedVol = vol > 1 ? vol / 100 : vol;
+
+	if (Math.abs(targetVolume - normalizedVol) < 0.005 && targetMuted === muted) return;
+
+	targetVolume = normalizedVol;
+	targetMuted = muted;
+
+	// rule: sync YouTube native UI
+	if (isYouTube()) {
+		setYouTubeVolume(vol, muted);
+	}
+
+	const videos = document.getElementsByTagName('video');
+	const audio = document.getElementsByTagName('audio');
+	let applied = 0;
+
+	const apply = (m: HTMLMediaElement) => {
+		if (Math.abs(m.volume - normalizedVol) < 0.005 && m.muted === muted) return;
+
+		const s = getElementState(m);
+		s.volume = normalizedVol; s.muted = muted; s.settingByPlugin = true;
+
+		try { m.volume = normalizedVol; m.muted = muted; applied++; } catch { }
+
+		// eff: clear flag asynchronously
+		setTimeout(() => { s.settingByPlugin = false; }, 100);
+	};
+
+	for (let i = 0, l = videos.length; i < l; i++) apply(videos[i]!);
+	for (let i = 0, l = audio.length; i < l; i++) apply(audio[i]!);
+
+	if (applied) log.debug(`[DOM] Vol Applied: ${(normalizedVol * 100) | 0}% -> ${applied}`);
 }
 
-// eff: register callback for native volume changes (page UI → plugin)
-export function setNativeVolumeCallback(cb: ((v: number, m: boolean) => void) | null): void {
-	onNativeVolumeChange = cb;
+export function releaseVolumeLock(): void {
+	syncEnabled = false; targetVolume = 1; targetMuted = false;
+	ensureMonitoring();
+
+	const unlock = (m: HTMLMediaElement) => {
+		const s = getElementState(m);
+		s.settingByPlugin = true;
+		try { m.volume = 1; m.muted = false; } catch { }
+		setTimeout(() => { s.settingByPlugin = false; }, 100);
+	};
+
+	const videos = document.getElementsByTagName('video');
+	const audio = document.getElementsByTagName('audio');
+	for (let i = 0, l = videos.length; i < l; i++) unlock(videos[i]!);
+	for (let i = 0, l = audio.length; i < l; i++) unlock(audio[i]!);
 }
 
-// eff: register callback for native speed changes
-export function setNativeSpeedCallback(cb: ((s: number) => void) | null): void {
-	onNativeSpeedChange = cb;
+export function enableVolumeLock(vol: number, muted: boolean): void {
+	syncEnabled = true;
+	setDomVolume(vol, muted);
 }
+
+export const enableDirectTake = () => { syncEnabled = false; };
 
 // eff: check if any media is currently playing
 export function isAnyMediaPlaying(): boolean {
@@ -56,191 +120,8 @@ export function isAnyMediaPlaying(): boolean {
 	return false;
 }
 
-// eff: apply volume from plugin to all media elements
-// note: this is called when plugin changes volume, should not trigger callbacks
-export function setDomVolume(vol: number, muted: boolean): void {
-	// Convert 0-100 to 0-1
-	const normalizedVol = vol / 100;
-
-	// Update plugin state
-	pluginVolume = normalizedVol;
-	pluginMuted = muted;
-
-	// Set flag to prevent callback loops
-	isApplyingPluginChange = true;
-
-	const videos = document.getElementsByTagName('video');
-	const audios = document.getElementsByTagName('audio');
-
-	for (let i = 0; i < videos.length; i++) {
-		const v = videos[i];
-		if (!v) continue;
-		if (Math.abs(v.volume - normalizedVol) > 0.001) v.volume = normalizedVol;
-		if (v.muted !== muted) v.muted = muted;
-	}
-	for (let i = 0; i < audios.length; i++) {
-		const a = audios[i];
-		if (!a) continue;
-		if (Math.abs(a.volume - normalizedVol) > 0.001) a.volume = normalizedVol;
-		if (a.muted !== muted) a.muted = muted;
-	}
-
-	// Clear flag after a tick to allow any pending setters to complete
-	setTimeout(() => { isApplyingPluginChange = false; }, 0);
+// eff: check if any media elements exist
+export function hasMediaElements(): boolean {
+	return document.getElementsByTagName('video').length > 0 ||
+		document.getElementsByTagName('audio').length > 0;
 }
-
-// eff: enable volume monitoring for new media elements
-export function enableVolumeLock(vol: number, muted: boolean): void {
-	// Apply immediately to existing elements
-	setDomVolume(vol, muted);
-	// Start monitoring for new elements
-	startMonitoring();
-}
-
-// eff: release volume monitoring
-export function releaseVolumeLock(): void {
-	stopMonitoring();
-}
-
-// inv: monitoring state
-let isMonitoring = false;
-let monitorInterval: ReturnType<typeof setInterval> | null = null;
-
-// eff: start monitoring for new media elements
-function startMonitoring(): void {
-	if (isMonitoring) return;
-	isMonitoring = true;
-
-	monitorInterval = setInterval(() => {
-		const videos = document.getElementsByTagName('video');
-		const audios = document.getElementsByTagName('audio');
-
-		let hasNewElement = false;
-
-		for (let i = 0; i < videos.length; i++) {
-			const v = videos[i];
-			if (!v) continue;
-			// Check if element needs initialization (different from plugin state)
-			if (Math.abs(v.volume - pluginVolume) > 0.001 || v.muted !== pluginMuted) {
-				hasNewElement = true;
-				isApplyingPluginChange = true;
-				if (Math.abs(v.volume - pluginVolume) > 0.001) v.volume = pluginVolume;
-				if (v.muted !== pluginMuted) v.muted = pluginMuted;
-			}
-		}
-		for (let i = 0; i < audios.length; i++) {
-			const a = audios[i];
-			if (!a) continue;
-			if (Math.abs(a.volume - pluginVolume) > 0.001 || a.muted !== pluginMuted) {
-				hasNewElement = true;
-				isApplyingPluginChange = true;
-				if (Math.abs(a.volume - pluginVolume) > 0.001) a.volume = pluginVolume;
-				if (a.muted !== pluginMuted) a.muted = pluginMuted;
-			}
-		}
-
-		if (hasNewElement) {
-			setTimeout(() => { isApplyingPluginChange = false; }, 0);
-		}
-	}, 500);
-}
-
-// eff: stop monitoring
-export function stopMonitoring(): void {
-	isMonitoring = false;
-	if (monitorInterval) {
-		clearInterval(monitorInterval);
-		monitorInterval = null;
-	}
-}
-
-// eff: ensure monitoring is active
-export function ensureMonitoring(): void {
-	if (!isMonitoring) {
-		startMonitoring();
-	}
-}
-
-// eff: hijack native volume setters to detect user changes
-function hijackVolumeSetters(): void {
-	const originalVolumeDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'volume');
-	const originalMutedDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'muted');
-
-	if (!originalVolumeDescriptor || !originalMutedDescriptor) return;
-
-	// eff: hijack volume setter
-	Object.defineProperty(HTMLMediaElement.prototype, 'volume', {
-		get() {
-			return originalVolumeDescriptor.get?.call(this) ?? 1;
-		},
-		set(value: number) {
-			const oldVol = originalVolumeDescriptor.get?.call(this) ?? 1;
-
-			// Always apply the value
-			originalVolumeDescriptor.set?.call(this, value);
-
-			// Skip callback if this is a plugin-initiated change
-			if (isApplyingPluginChange) return;
-
-			// Detect user-initiated change
-			if (Math.abs(oldVol - value) > 0.001) {
-				log.debug(`[Native] Volume changed: ${oldVol} → ${value}`);
-				if (onNativeVolumeChange) {
-					onNativeVolumeChange(value, this.muted);
-				}
-			}
-		},
-		configurable: true
-	});
-
-	// eff: hijack muted setter
-	Object.defineProperty(HTMLMediaElement.prototype, 'muted', {
-		get() {
-			return originalMutedDescriptor.get?.call(this) ?? false;
-		},
-		set(value: boolean) {
-			const oldMuted = originalMutedDescriptor.get?.call(this) ?? false;
-
-			// Always apply the value
-			originalMutedDescriptor.set?.call(this, value);
-
-			// Skip callback if this is a plugin-initiated change
-			if (isApplyingPluginChange) return;
-
-			// Detect user-initiated change
-			if (oldMuted !== value) {
-				log.debug(`[Native] Mute changed: ${oldMuted} → ${value}`);
-				if (onNativeVolumeChange) {
-					onNativeVolumeChange(-1, value);
-				}
-			}
-		},
-		configurable: true
-	});
-}
-
-// eff: hijack playbackRate setter for speed sync
-function hijackPlaybackRate(): void {
-	const originalDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'playbackRate');
-	if (!originalDescriptor) return;
-
-	Object.defineProperty(HTMLMediaElement.prototype, 'playbackRate', {
-		get() {
-			return originalDescriptor.get?.call(this) ?? 1;
-		},
-		set(value: number) {
-			const oldRate = originalDescriptor.get?.call(this) ?? 1;
-			originalDescriptor.set?.call(this, value);
-
-			// rule: notify plugin of speed changes from native UI
-			if (Math.abs(oldRate - value) > 0.001 && onNativeSpeedChange) {
-				onNativeSpeedChange(value);
-			}
-		},
-		configurable: true
-	});
-}
-
-// eff: initialize hijacking
-hijackVolumeSetters();
-hijackPlaybackRate();
