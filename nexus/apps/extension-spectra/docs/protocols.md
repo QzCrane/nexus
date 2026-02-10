@@ -41,6 +41,41 @@
 脚本: USER_SCRIPT_EXECUTE → `{code,context}` (UserJS eval)
 同步: TAB_REPORT/MEDIA_REPORT → `{gain,url,title}` (5s 心跳状态上报)
 
+## 双向同步协议
+
+### 页面 → 插件
+
+`页面音量变化 → volumechange 事件 → VolumeObserver → onNativeVolumeChange → PolicyExecutor.updateConfig()`
+
+- **VolumeObserver**: 监听 `volumechange`/`ratechange` 事件
+- **来源检测**: 通过 `settingByPlugin` 标志位跳过插件触发的变更
+- **阈值过滤**: 变化超过 0.005 才触发同步，避免抖动
+
+### 插件 → 页面
+
+`Popup/快捷键 → AUDIO_SET_CONFIG → Background → Content → setDomVolume() → 应用到媒体元素`
+
+- **setDomVolume**: 设置 `settingByPlugin = true`，应用音量，异步清理标志
+- **YouTube 特殊处理**: 额外调用 `setYouTubeVolume()` 同步原生 UI
+- **监控初始化**: `ensureMonitoring()` 确保所有媒体元素被监听
+
+### 防循环机制
+
+```typescript
+// 插件设置时标记
+s.settingByPlugin = true;
+media.volume = newVol;
+setTimeout(() => s.settingByPlugin = false, 100);
+
+// 事件监听中跳过
+media.addEventListener('volumechange', () => {
+    if (s.settingByPlugin) return; // 防止循环
+    onNativeVolumeChange(volume);
+});
+```
+
+详见 [bidirectional-sync-principles.md](./bidirectional-sync-principles.md)。
+
 ## 核心通信
 
 Kernel RPC: 统一通过`nexus-kernel.Client.send()`

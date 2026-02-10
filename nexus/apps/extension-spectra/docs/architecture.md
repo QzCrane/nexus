@@ -65,3 +65,4 @@ src/
 - **策略模式**: `PolicyExecutor` 动态决定使用 `Native` (轻量) 还是 `Capture` (强力) 模式，取决于 CORS 状态与用户交互。
 - **零拷贝**: 音频可视化数据通过 `Uint8Array` 直接传递，禁止序列化为普通数组。
 - **单一边界**: 所有配置变更必须通过 `PolicyExecutor` 统一入口，禁止各模块私自修改 State。
+- **双向同步**: 页面 UI 与插件状态双向同步，使用 `settingByPlugin` 标志位防止循环更新。详见 [bidirectional-sync-principles.md](./bidirectional-sync-principles.md)。
