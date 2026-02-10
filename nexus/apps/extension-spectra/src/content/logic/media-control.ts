@@ -3,6 +3,7 @@
 
 import { createLogger } from '../../shared/logger';
 import { simulateMouseHover } from '../utils/focus-helper';
+import { isYouTube, setYouTubeSpeed } from '../adapters/youtube-adapter';
 
 const log = createLogger('MediaControl');
 
@@ -24,9 +25,16 @@ function getPrimaryVideo(): HTMLVideoElement | null {
 }
 
 // eff: live collections iteration
+// note: playbackRate hijacking in injector enables universal player support
+// note: YouTube requires additional API call to sync native UI
 export function setSpeed(s: number, pitch?: boolean): { speed: number; preservePitch: boolean } {
 	const clamped = Math.max(0.1, Math.min(16, s));
 	const p = pitch ?? true;
+
+	// rule: YouTube requires native API call to update its UI
+	if (isYouTube()) {
+		setYouTubeSpeed(clamped);
+	}
 
 	const vs = document.getElementsByTagName('video');
 	const as = document.getElementsByTagName('audio');

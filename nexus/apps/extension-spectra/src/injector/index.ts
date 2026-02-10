@@ -1,6 +1,61 @@
 // SPECTRA INJECTOR: Intercepts native media APIs to enforce CORS and enable WebAudio hijacking.
 // Runs in "MAIN" world, sharing execution environment with page's JavaScript.
 (function () {
+	// === 0. PlaybackRate Hijacking (Universal Player Support) ===
+	// goal: intercept ALL playbackRate changes to enable bidirectional sync
+	// theory: by hijacking at prototype level before site scripts run, we catch all changes
+	// perf: minimal overhead - direct property access, no WeakMap lookup on hot path
+
+	(function hijackPlaybackRate() {
+		const proto = HTMLMediaElement.prototype;
+		const origDesc = Object.getOwnPropertyDescriptor(proto, 'playbackRate');
+
+		// eff: use direct property storage instead of WeakMap for better performance
+		// tradeoff: uses a symbol key to avoid collisions
+		const rateKey = Symbol('spectraPlaybackRate');
+		const lastRateKey = Symbol('spectraLastRate');
+
+		if (!origDesc) {
+			// Fallback for environments without native descriptor
+			Object.defineProperty(proto, 'playbackRate', {
+				get: function () { return this[rateKey] ?? 1; },
+				set: function (v) {
+					const newRate = +v || 1;
+					const oldRate = this[lastRateKey] ?? 1;
+					this[rateKey] = newRate;
+					this[lastRateKey] = newRate;
+					if ((newRate > oldRate ? newRate - oldRate : oldRate - newRate) > 0.001) {
+						window.postMessage({ type: 'SPECTRA_RATE', speed: newRate }, '*');
+					}
+				},
+				configurable: true,
+				enumerable: true,
+			});
+		} else {
+			const origGet = origDesc.get!;
+			const origSet = origDesc.set!;
+
+			Object.defineProperty(proto, 'playbackRate', {
+				get: function () {
+					// eff: prefer cached value to avoid native call overhead
+					return rateKey in this ? this[rateKey] : origGet.call(this);
+				},
+				set: function (v) {
+					const newRate = +v || 1;
+					const oldRate = this[lastRateKey] ?? origGet.call(this);
+					this[rateKey] = newRate;
+					this[lastRateKey] = newRate;
+					origSet.call(this, newRate);
+					if ((newRate > oldRate ? newRate - oldRate : oldRate - newRate) > 0.001) {
+						window.postMessage({ type: 'SPECTRA_RATE', speed: newRate }, '*');
+					}
+				},
+				configurable: true,
+				enumerable: true,
+			});
+		}
+	})();
+
 	// === 1. CORS Enforcement ===
 
 	const originalCreateElement = document.createElement;
@@ -192,6 +247,25 @@
 		// eff: sync webaudio state from content script to control fullscreen behavior
 		if (event.data.type === 'SPECTRA_WEBAUDIO_STATE') {
 			isWebAudioActive = !!event.data.active;
+		}
+
+		// eff: handle YouTube speed sync from content script
+		// note: YouTube API is only accessible in MAIN world (page context)
+		if (event.data.type === 'SPECTRA_YT_SPEED') {
+			const rate = event.data.speed;
+			const moviePlayer = document.querySelector('#movie_player') as any;
+			if (moviePlayer && typeof moviePlayer.setPlaybackRate === 'function') {
+				try {
+					const current = moviePlayer.getPlaybackRate();
+					if (Math.abs(current - rate) > 0.005) {
+						moviePlayer.setPlaybackRate(rate);
+						// Notify content script of success
+						window.postMessage({ type: 'SPECTRA_YT_SPEED_OK', speed: rate }, '*');
+					}
+				} catch (e) {
+					window.postMessage({ type: 'SPECTRA_YT_SPEED_FAIL', error: String(e) }, '*');
+				}
+			}
 		}
 	});
 

@@ -3,6 +3,7 @@
 
 import { isExtensionContextValid } from '../context-guard';
 import type { PolicyExecutor } from '../../logic/policy-executor';
+import { clearYouTubeCache } from '../../adapters/youtube-adapter';
 
 interface NavigationObserverDeps {
 	policyExecutor: PolicyExecutor;
@@ -24,6 +25,9 @@ export function createNavigationObserver(deps: NavigationObserverDeps): () => vo
 
 		lastPath = cur;
 		if (debounceTimer) clearTimeout(debounceTimer);
+
+		// eff: clear YouTube cache on navigation
+		clearYouTubeCache();
 
 		debounceTimer = setTimeout(() => {
 			if (!isExtensionContextValid()) return;
