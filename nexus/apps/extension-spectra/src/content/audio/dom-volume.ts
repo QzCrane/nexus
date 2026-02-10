@@ -1,15 +1,14 @@
-// goal: manages DOM-based volume control by intercepting native volume setters and applying plugin settings
-// role: provides a lightweight fallback for volume control without WebAudio overhead
+// goal: manages DOM-based volume control with lazy update strategy
+// role: only applies plugin settings on initial load and plugin-initiated changes
+//       user interactions with native UI are detected and synced to plugin
 
 import { createLogger } from '../../shared/logger';
 
 const log = createLogger('DOMVolume');
 
-// inv: global volume state (0-1 range)
+// inv: global volume state (0-1 range) - reflects plugin config
 let targetVolume = 1;
 let targetMuted = false;
-let isLocked = false;
-let isDirectTake = false;
 
 // inv: user interaction tracking
 let userHasInteracted = false;
@@ -17,6 +16,9 @@ let userHasInteracted = false;
 // inv: native volume change callbacks
 let onNativeVolumeChange: ((v: number, m: boolean) => void) | null = null;
 let onNativeSpeedChange: ((s: number) => void) | null = null;
+
+// inv: track which media elements have been initialized
+const initializedElements = new WeakSet<HTMLMediaElement>();
 
 // eff: mark that user has interacted with the page
 export function markUserInteracted(): void {
@@ -26,11 +28,6 @@ export function markUserInteracted(): void {
 // eff: check if user has interacted
 export function hasUserInteracted(): boolean {
 	return userHasInteracted;
-}
-
-// eff: enable direct take mode (native changes go straight to plugin)
-export function enableDirectTake(): void {
-	isDirectTake = true;
 }
 
 // eff: register callback for native volume changes
@@ -59,68 +56,94 @@ export function isAnyMediaPlaying(): boolean {
 	return false;
 }
 
-// eff: apply volume to all media elements
-function applyVolume(vol: number, muted: boolean): void {
+// eff: apply volume to a single media element (only if not user-controlled)
+function applyVolumeToElement(el: HTMLMediaElement, vol: number, muted: boolean): void {
+	// rule: only apply if element hasn't been user-modified
+	if (initializedElements.has(el)) {
+		// Element already initialized, don't auto-correct user changes
+		return;
+	}
+
+	// Mark as initialized so we don't override future user changes
+	initializedElements.add(el);
+
+	// Apply initial volume
+	if (Math.abs(el.volume - vol) > 0.001) {
+		el.volume = vol;
+	}
+	if (el.muted !== muted) {
+		el.muted = muted;
+	}
+}
+
+// eff: set volume from plugin - apply to all uninitialized media elements
+export function setDomVolume(vol: number, muted: boolean): void {
+	targetVolume = vol;
+	targetMuted = muted;
+
 	const videos = document.getElementsByTagName('video');
 	const audios = document.getElementsByTagName('audio');
 
 	for (let i = 0; i < videos.length; i++) {
 		const v = videos[i];
-		if (!v) continue;
-		if (Math.abs(v.volume - vol) > 0.001) v.volume = vol;
-		if (v.muted !== muted) v.muted = muted;
+		if (v) applyVolumeToElement(v, vol, muted);
 	}
 	for (let i = 0; i < audios.length; i++) {
 		const a = audios[i];
-		if (!a) continue;
-		if (Math.abs(a.volume - vol) > 0.001) a.volume = vol;
-		if (a.muted !== muted) a.muted = muted;
+		if (a) applyVolumeToElement(a, vol, muted);
 	}
 }
 
-// eff: set volume directly (bypasses lock)
-export function setDomVolume(vol: number, muted: boolean): void {
-	targetVolume = vol;
-	targetMuted = muted;
-	applyVolume(vol, muted);
-}
-
-// eff: enable volume lock - intercepts native setters
+// eff: enable volume monitoring - only initializes new elements, doesn't lock
 export function enableVolumeLock(vol: number, muted: boolean): void {
 	targetVolume = vol;
 	targetMuted = muted;
-	isLocked = true;
-	applyVolume(vol, muted);
+
+	// Apply to current uninitialized elements
+	const videos = document.getElementsByTagName('video');
+	const audios = document.getElementsByTagName('audio');
+
+	for (let i = 0; i < videos.length; i++) {
+		const v = videos[i];
+		if (v) applyVolumeToElement(v, vol, muted);
+	}
+	for (let i = 0; i < audios.length; i++) {
+		const a = audios[i];
+		if (a) applyVolumeToElement(a, vol, muted);
+	}
+
 	startMonitoring();
 }
 
-// eff: release volume lock
+// eff: release volume monitoring
 export function releaseVolumeLock(): void {
-	isLocked = false;
+	stopMonitoring();
 }
 
 // inv: monitoring state
 let isMonitoring = false;
 let monitorInterval: ReturnType<typeof setInterval> | null = null;
-let lastVideoCount = 0;
-let lastAudioCount = 0;
 
-// eff: start monitoring media elements
+// eff: start monitoring for new media elements
 function startMonitoring(): void {
 	if (isMonitoring) return;
 	isMonitoring = true;
 
-	// eff: periodically check for new media elements
+	// eff: periodically check for new media elements and initialize them
 	monitorInterval = setInterval(() => {
 		const videos = document.getElementsByTagName('video');
 		const audios = document.getElementsByTagName('audio');
 
-		// rule: if new media elements appeared, apply volume to them
-		if (videos.length !== lastVideoCount || audios.length !== lastAudioCount) {
-			lastVideoCount = videos.length;
-			lastAudioCount = audios.length;
-			if (isLocked) {
-				applyVolume(targetVolume, targetMuted);
+		for (let i = 0; i < videos.length; i++) {
+			const v = videos[i];
+			if (v && !initializedElements.has(v)) {
+				applyVolumeToElement(v, targetVolume, targetMuted);
+			}
+		}
+		for (let i = 0; i < audios.length; i++) {
+			const a = audios[i];
+			if (a && !initializedElements.has(a)) {
+				applyVolumeToElement(a, targetVolume, targetMuted);
 			}
 		}
 	}, 500);
@@ -137,80 +160,63 @@ export function stopMonitoring(): void {
 
 // eff: ensure monitoring is active
 export function ensureMonitoring(): void {
-	if (!isMonitoring && isLocked) {
+	if (!isMonitoring) {
 		startMonitoring();
 	}
 }
 
-// eff: hijack native volume setters to enforce plugin control
+// eff: hijack native volume setters to detect user changes (NOT to enforce)
 function hijackVolumeSetters(): void {
 	const originalVolumeDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'volume');
 	const originalMutedDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'muted');
 
 	if (!originalVolumeDescriptor || !originalMutedDescriptor) return;
 
-	// eff: hijack volume setter
+	// eff: hijack volume setter to detect user changes
 	Object.defineProperty(HTMLMediaElement.prototype, 'volume', {
 		get() {
 			return originalVolumeDescriptor.get?.call(this) ?? 1;
 		},
 		set(value: number) {
-			// rule: in direct take mode, pass through and notify plugin
-			if (isDirectTake && onNativeVolumeChange) {
-				const oldVol = originalVolumeDescriptor.get?.call(this) ?? 1;
-				originalVolumeDescriptor.set?.call(this, value);
-				if (Math.abs(oldVol - value) > 0.001) {
-					onNativeVolumeChange(value, this.muted);
-				}
-				return;
-			}
+			const oldVol = originalVolumeDescriptor.get?.call(this) ?? 1;
 
-			// rule: if locked, enforce target volume but allow reads
-			if (isLocked) {
-				// eff: only update if significantly different to avoid loops
-				const current = originalVolumeDescriptor.get?.call(this) ?? 1;
-				if (Math.abs(current - targetVolume) > 0.001) {
-					originalVolumeDescriptor.set?.call(this, targetVolume);
-				}
-				// note: notify plugin of native attempt
-				if (Math.abs(value - targetVolume) > 0.05 && onNativeVolumeChange) {
+			// Always apply the value (don't block user)
+			originalVolumeDescriptor.set?.call(this, value);
+
+			// Detect if this is a user-initiated change (significant difference)
+			if (Math.abs(oldVol - value) > 0.001) {
+				// Mark element as user-controlled
+				initializedElements.add(this);
+
+				// Notify plugin of user change
+				if (onNativeVolumeChange) {
 					onNativeVolumeChange(value, this.muted);
 				}
-			} else {
-				originalVolumeDescriptor.set?.call(this, value);
 			}
 		},
 		configurable: true
 	});
 
-	// eff: hijack muted setter
+	// eff: hijack muted setter to detect user changes
 	Object.defineProperty(HTMLMediaElement.prototype, 'muted', {
 		get() {
 			return originalMutedDescriptor.get?.call(this) ?? false;
 		},
 		set(value: boolean) {
-			// rule: in direct take mode, pass through and notify plugin
-			if (isDirectTake && onNativeVolumeChange) {
-				const oldMuted = originalMutedDescriptor.get?.call(this) ?? false;
-				originalMutedDescriptor.set?.call(this, value);
-				if (oldMuted !== value) {
-					onNativeVolumeChange(-1, value);
-				}
-				return;
-			}
+			const oldMuted = originalMutedDescriptor.get?.call(this) ?? false;
 
-			// rule: if locked, enforce target muted state
-			if (isLocked) {
-				const current = originalMutedDescriptor.get?.call(this) ?? false;
-				if (current !== targetMuted) {
-					originalMutedDescriptor.set?.call(this, targetMuted);
-				}
-				// note: notify plugin of native attempt
-				if (value !== targetMuted && onNativeVolumeChange) {
+			// Always apply the value (don't block user)
+			originalMutedDescriptor.set?.call(this, value);
+
+			// Detect if this is a user-initiated change
+			if (oldMuted !== value) {
+				// Mark element as user-controlled
+				initializedElements.add(this);
+
+				// Notify plugin of user change
+				if (onNativeVolumeChange) {
 					onNativeVolumeChange(-1, value);
 				}
-			} else {
-				originalMutedDescriptor.set?.call(this, value);
 			}
 		},
 		configurable: true

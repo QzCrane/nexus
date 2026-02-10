@@ -3,7 +3,7 @@
 import { AudioMode } from '@nexus/audio-engine';
 import type { AudioConfig } from '@nexus/kernel';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../types';
-import { setDomVolume, isAnyMediaPlaying, releaseVolumeLock, enableVolumeLock, setNativeVolumeCallback, setNativeSpeedCallback, markUserInteracted as markDomUserInteracted, enableDirectTake, hasUserInteracted as hasDomUserInteracted } from '../audio/dom-volume';
+import { setDomVolume, isAnyMediaPlaying, releaseVolumeLock, enableVolumeLock, setNativeVolumeCallback, setNativeSpeedCallback, markUserInteracted as markDomUserInteracted, hasUserInteracted as hasDomUserInteracted } from '../audio/dom-volume';
 import { setSpeed } from './media-control';
 import { isYouTube, setYouTubeVolume } from '../adapters/youtube-adapter';
 import { logger } from '../../shared/logger';
@@ -162,11 +162,6 @@ function applyWebAudioState(config: AudioConfig, deps: PolicyExecutorDeps): void
 
 	audioController.scanAndAttach();
 	audioController.updateParams(effectiveConfig);
-
-	// eff: if user has interacted, enable direct-take so native slider changes go straight to plugin
-	if (hasDomUserInteracted()) {
-		enableDirectTake();
-	}
 
 	// eff: notify injector for WebAudio API hijacking (for sites creating their own contexts)
 	// note: we broadcast the REAL requested volume, not the effective one, so hijacked contexts know the target
