@@ -79,26 +79,15 @@ export function hasUserGesture(state: PolicyExecutorState): boolean {
 	return false;
 }
 
-// inv: track last speed to avoid unnecessary DOM operations
-let lastExecutedSpeed = 1;
-
-// eff: reset speed tracking on navigation (page refresh/SPA nav)
-export function resetSpeedTracking(): void {
-	lastExecutedSpeed = 1;
-}
-
 // eff: orchestrates audio modifications by dispatching to specialized controllers based on activeMode
 export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState): void {
 	const { audioController, captureManager } = deps;
 	const mode = state.activeMode;
 	const config = state.config;
 
-	// eff: sync playback speed only when changed (prevents CPU waste)
+	// eff: sync playback speed - always apply to ensure consistency on page load/navigation
 	const currentSpeed = config.speed || 1.0;
-	if (Math.abs(lastExecutedSpeed - currentSpeed) > 0.005) {
-		lastExecutedSpeed = currentSpeed;
-		setSpeed(currentSpeed);
-	}
+	setSpeed(currentSpeed);
 
 	if (mode === AudioMode.CAPTURE) {
 		notifyWebAudioState(false); // exiting WEBAUDIO mode
