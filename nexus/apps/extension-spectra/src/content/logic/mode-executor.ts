@@ -3,7 +3,7 @@
 import { AudioMode } from '@nexus/audio-engine';
 import type { AudioConfig } from '@nexus/kernel';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../types';
-import { setDomVolume, isAnyMediaPlaying, releaseVolumeLock, enableVolumeLock, setNativeVolumeCallback, setNativeSpeedCallback, markUserInteracted as markDomUserInteracted, hasUserInteracted as hasDomUserInteracted } from '../audio/dom-volume';
+import { setDomVolume, isAnyMediaPlaying, releaseVolumeLock, enableVolumeLock, setNativeVolumeCallback, setNativeSpeedCallback } from '../audio/dom-volume';
 import { setSpeed } from './media-control';
 import { isYouTube, setYouTubeVolume } from '../adapters/youtube-adapter';
 import { logger } from '../../shared/logger';
