@@ -5,6 +5,7 @@ import type { AudioConfig } from '@nexus/kernel';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../types';
 import { setDomVolume, isAnyMediaPlaying, releaseVolumeLock, enableVolumeLock, setNativeVolumeCallback, setNativeSpeedCallback, markUserInteracted as markDomUserInteracted, enableDirectTake, hasUserInteracted as hasDomUserInteracted } from '../audio/dom-volume';
 import { setSpeed } from './media-control';
+import { isYouTube, setYouTubeVolume } from '../adapters/youtube-adapter';
 import { logger } from '../../shared/logger';
 
 const log = logger.content;
@@ -115,7 +116,8 @@ export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState
 		// mode: strictly uses DOM volume overrides and setter-redirection via 'enableVolumeLock'
 		const domVol = config.muted ? 0 : Math.min(1, config.volume / 100);
 		enableVolumeLock(domVol, config.muted);
-		// note: LITE mode doesn't need to notify injector (no fullscreen conflict)
+		// rule: sync YouTube native UI
+		if (isYouTube()) setYouTubeVolume(config.volume, config.muted);
 
 	} else if (mode === AudioMode.NATIVE_WEBAUDIO) {
 
@@ -161,6 +163,9 @@ function applyWebAudioState(config: AudioConfig, deps: PolicyExecutorDeps): void
 	}
 
 	setDomVolume(domVol, config.muted);
+	// rule: sync YouTube native UI
+	if (isYouTube()) setYouTubeVolume(config.volume, config.muted);
+
 	audioController.scanAndAttach();
 	audioController.updateParams(effectiveConfig);
 
@@ -180,4 +185,6 @@ function applyWebAudioState(config: AudioConfig, deps: PolicyExecutorDeps): void
 function fallbackToDom(config: AudioConfig): void {
 	const domVol = config.muted ? 0 : Math.min(1, config.volume / 100);
 	enableVolumeLock(domVol, config.muted);
+	// rule: sync YouTube native UI
+	if (isYouTube()) setYouTubeVolume(config.volume, config.muted);
 }

@@ -250,20 +250,38 @@
 		}
 
 		// eff: handle YouTube speed sync from content script
-		// note: YouTube API is only accessible in MAIN world (page context)
+		// note: YouTube API only accessible in MAIN world
 		if (event.data.type === 'SPECTRA_YT_SPEED') {
 			const rate = event.data.speed;
-			const moviePlayer = document.querySelector('#movie_player') as any;
-			if (moviePlayer && typeof moviePlayer.setPlaybackRate === 'function') {
+			const yt = document.querySelector('#movie_player') as any;
+			if (yt && typeof yt.setPlaybackRate === 'function') {
 				try {
-					const current = moviePlayer.getPlaybackRate();
-					if (Math.abs(current - rate) > 0.005) {
-						moviePlayer.setPlaybackRate(rate);
-						// Notify content script of success
+					if (Math.abs(yt.getPlaybackRate() - rate) > 0.005) {
+						yt.setPlaybackRate(rate);
 						window.postMessage({ type: 'SPECTRA_YT_SPEED_OK', speed: rate }, '*');
 					}
 				} catch (e) {
-					window.postMessage({ type: 'SPECTRA_YT_SPEED_FAIL', error: String(e) }, '*');
+					window.postMessage({ type: 'SPECTRA_YT_FAIL', feature: 'speed', error: String(e) }, '*');
+				}
+			}
+		}
+
+		// eff: handle YouTube volume sync from content script
+		if (event.data.type === 'SPECTRA_YT_VOLUME') {
+			const { volume, muted } = event.data;
+			const yt = document.querySelector('#movie_player') as any;
+			if (yt && typeof yt.setVolume === 'function') {
+				try {
+					if (Math.abs(yt.getVolume() - volume) > 1) {
+						yt.setVolume(volume);
+					}
+					const currentlyMuted = yt.isMuted();
+					if (currentlyMuted !== muted) {
+						muted ? yt.mute() : yt.unMute();
+					}
+					window.postMessage({ type: 'SPECTRA_YT_VOLUME_OK', volume, muted }, '*');
+				} catch (e) {
+					window.postMessage({ type: 'SPECTRA_YT_FAIL', feature: 'volume', error: String(e) }, '*');
 				}
 			}
 		}
