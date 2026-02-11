@@ -14,6 +14,12 @@ export interface CardInternalState {
   isDragging: boolean;
 }
 
+export type EqCurveDrawerFactory = (
+  canvas: HTMLCanvasElement,
+  sliderRow: HTMLElement,
+  getEqValues: () => number[]
+) => { draw: (color?: string) => void; updateMetrics: () => void };
+
 export interface InitCardParams {
   container: HTMLElement;
   template: HTMLTemplateElement;
@@ -22,11 +28,7 @@ export interface InitCardParams {
   registryEntries: DomainEntry[];
   getGlobalSettings: () => GlobalSettings;
   isBackground?: boolean;
-  createEqCurveDrawer?: (
-    canvas: HTMLCanvasElement,
-    sliderRow: HTMLElement,
-    getEqValues: () => number[]
-  ) => { draw: (color?: string) => void; updateMetrics: () => void };
+  createEqCurveDrawer?: EqCurveDrawerFactory;
 }
 
 // CardContext: unified handle passed to sub-modules (rendering, messaging, events) to access shared tab state and UI refs
