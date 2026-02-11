@@ -226,3 +226,51 @@ i18n: 禁硬编码字符串 | 必须下沉至工具目录 (SSOT) | 必须支持�
 - ❌ 阻塞式 IO
 - ❌ 静默吞没错误
 - ❌ 核心层依赖外层
+
+---
+
+## §10 Spectra 扩展专项规则
+
+### 10.1 单一事实来源 (SSOT)
+
+- **常量定义**: 业务常量必须在 `@nexus/kernel` 或 `src/{module}/constants.ts` 唯一定义
+- **默认值**: 禁止多处定义 `DEFAULT_XXX`，统一从 kernel 导入
+- **URL**: 禁止硬编码，统一放入 `constants.ts`
+- **导入路径**: `import { X } from '@nexus/kernel'` > 本地重新定义
+
+### 10.2 懒加载策略
+
+- **非首屏组件**: 必须使用动态导入 `await import('./module')`
+- **视觉模块**: `visualizer`, `remote`, `side-panel` 延迟加载
+- **首屏必需**: 仅保留核心 UI 初始化代码
+
+### 10.3 性能优化
+
+- **Tree Shaking**: 启用 `treeShaking: true`，移除死代码
+- **代码分割**: 按功能分割，popup 非首屏懒加载
+- **包大小预算**: popup < 200KB, content < 150KB, >1MB 告警
+- **零拷贝**: 音频数据 `ArrayBuffer` 转移所有权，禁 `Array.from`
+- **GC-Free**: 视觉循环零分配，预分配 Buffer
+
+### 10.4 Chrome 扩展安全
+
+- **上下文守卫**: 所有 Chrome API 调用前检查 `isExtensionContextValid()`
+- **错误处理**: `void chrome.runtime.lastError` 或 `.catch(() => {})`
+- **存储超时**: 使用 `safe-storage.ts` 包装，2s 超时降级内存
+- **CORS**: 探测依赖 User Gesture，敏感 API 走 Background
+
+### 10.5 代码组织
+
+- **分层**: `content/{core,logic,audio,video,input,ui}`
+- **文件大小**: 源码 ≤200 行，index.ts ≤50 行，>150 行预警
+- **职责**: 单文件单职责，目录深度 ≤3
+- **预检**: 修改前 `Pre-check lines` + `Pre-check tree`
+
+### 10.6 审查清单
+
+- [ ] 无重复 `const DEFAULT_` 定义
+- [ ] 无硬编码 URL/字符串
+- [ ] 懒加载路径正确
+- [ ] 类型检查通过 `tsc --noEmit`
+- [ ] 构建成功 `bun run build`
+- [ ] 包大小符合预算
