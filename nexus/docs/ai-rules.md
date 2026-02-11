@@ -149,3 +149,80 @@ i18n: 禁硬编码字符串 | 必须下沉至工具目录 (SSOT) | 必须支持�
 扩展: ModuleManager 3s 超时切换内存模式 | i18n 2s 超时使用浏览器 locale
 命令: `bun run test:playwright` → 截图到 `test/screenshots/`
 红线: 禁直接调用 chrome.storage (必须用 safeStorageGet/Set) | 初始化 Promise 必须有超时
+
+## §9 设计原则
+
+## 1. C.S.O (金融基石)
+
+### 1.1 一致性 (Consistency)
+
+- **LogSource**: Engine (Redis Pub) 唯一信源，禁 API 层双写
+- **Timezone**: Docker `tzdata` 强制 `Asia/Shanghai`，禁应用层补丁
+- **State**: 前端持仓 === 引擎内存 === 数据库
+- **Idempotency**: 核心写操作幂等 (RequestID 防重放)
+- **Precision**: 资金计算用 `Decimal`，禁 Float
+
+### 1.2 安全性 (Security)
+
+- **ZeroTrust**: 策略容器无公网权限 (deny all)
+- **SecretIsolation**: API Key 仅内存流转，绝不落盘
+- **ResourceLimit**: Docker 必须 `--cpus` `--memory`
+
+### 1.3 可观测性 (Observability)
+
+- **Logs**: Terminal (本地) | Redis Stream (业务)
+- **KernelLog**: `NAUTILUS_LOG_LEVEL` 源头控制，禁进 Redis
+- **Traces**: Order→Exchange 全链路追踪 ID
+- **Metrics**: Redis 队列 Lag + Heartbeat
+
+### 1.4 确定性 (Determinism)
+
+- **Backtest**: 固定 Seed + 固定时区 + 隔离环境 = 100% 可重复
+- **Serialization**: MsgPack Safe Mode (`default=str`)
+
+## 2. 三高 (High Architecture)
+
+### 2.1 高可用 (HA)
+
+- **Retry**: Redis/DB 断连自动重试 (Retry+Keepalive)
+- **Stateless**: API/Engine 无状态，挂掉重启即恢复
+- **AsyncPersistence**: 落盘不依赖实时在线 (Stream Storage)
+- **FailFast**: 启动检查失败立即崩溃，拒绝"带病运行"
+
+### 2.2 高性能 (HP)
+
+- **BinaryIPC**: MsgPack 替代 JSON
+- **NativeCore**: 核心计算下沉 Rust/C++
+- **ZeroCost**: 抽象零开销 (>5%性能损失则拒绝)
+- **NonBlocking**: IO 密集型必须异步
+
+### 2.3 高并发 (HC)
+
+- **Pooling**: Docker 容器池化 (BullMQ)
+- **Isolation**: 策略实例完全隔离，无锁设计
+
+## 3. 两性 (Nature)
+
+### 3.1 高维护性 (Maintainability)
+
+- **SSOT**: 禁跨层级状态复制
+- **Explicit**: 显式类型 > 隐式推断；显式报错 > 静默吞没
+- **Flat**: `src/features/[feature]/` (非铺平非深嵌套)
+- **Atomic**: 模块/函数只做一件事 (SRP)
+- **Dependency**: UI → API → Domain (Inward Rule)
+
+### 3.2 高扩展性 (Extensibility)
+
+- **InterfaceDriven**: 核心逻辑依赖抽象接口
+- **Plugin**: 策略动态加载，无需重打包镜像
+
+## 4. 红线
+
+- ❌ API 层 Log 双写
+- ❌ 应用层时区补丁
+- ❌ Float 资金计算
+- ❌ 无 RequestID 的写操作
+- ❌ JSON IPC 通信
+- ❌ 阻塞式 IO
+- ❌ 静默吞没错误
+- ❌ 核心层依赖外层

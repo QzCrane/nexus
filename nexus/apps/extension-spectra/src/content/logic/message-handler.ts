@@ -23,7 +23,7 @@ export interface MessageHandlerDeps {
 	policyExecutor: PolicyExecutor;
 	captureManager: CaptureManager;
 	settingsManager: SettingsManager;
-	getVisualizerData: () => number[] | null;
+	getVisualizerData: () => Uint8Array | null;
 }
 
 /**
@@ -99,7 +99,8 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 			}
 
 			case Actions.AUDIO_GET_VISUALIZER: {
-				sendResponse({ buffer: getVisualizerData() });
+				const vizData = getVisualizerData();
+				sendResponse({ buffer: vizData ? vizData.buffer : null });
 				break;
 			}
 
