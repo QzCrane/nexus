@@ -10,6 +10,7 @@ import { migrateRegistry } from '../utils/registry-helpers';
 import { TIMING } from '../constants';
 import { applyLang, updateCardsI18n } from './i18n-apply';
 import { safeStorageGet, safeStorageSet } from '../../shared/safe-storage';
+import { DEFAULT_GLOBAL_SETTINGS } from '@nexus/kernel';
 import { initRegistryUI, updateRegistryI18n } from './registry-ui';
 import { initPresetsUI, updatePresetsI18n } from './presets-ui';
 import { updateRemoteI18n } from '../../remote';
@@ -22,14 +23,6 @@ export interface SettingsState {
 
 // cardRenderCallbacks: registry of UI update hooks triggered when global settings (like visualization toggle) change
 export const cardRenderCallbacks: RenderCallback[] = [];
-
-const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
-  osdEnabled: true,
-  visualizerEnabled: true,
-  lang: 'en-US',
-  themeMode: 'system',
-  pauseRetentionSeconds: 60,
-};
 
 // post: loads settings from local storage, initializes the side-panel UI, and returns the unified state
 export async function initSettings(): Promise<SettingsState> {

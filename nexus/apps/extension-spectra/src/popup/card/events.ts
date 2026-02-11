@@ -1,11 +1,11 @@
 // goal: binds native DOM events (clicks, inputs, wheel, touch) to audio configuration updates and registry persistence
 
 import type { AudioConfig } from '@nexus/kernel';
+import { DEFAULT_AUDIO_CONFIG } from '@nexus/kernel';
 import type { CardUIElements } from '../types';
 import type { CardInternalState } from './types';
 import { AUDIO_UI, TIMING } from '../constants';
 import { getDomain, sendToBackground, sendToTab } from '../utils/dom';
-import { DEFAULT_CONFIG } from './types';
 import { bindMediaControls } from './media-events';
 import { safeStorageGet, safeStorageSet } from '../../shared/safe-storage';
 
@@ -140,7 +140,7 @@ export function bindCardEvents(params: EventsParams): void {
     setTimeout(() => { ui.btnSave.innerText = old; }, TIMING.BUTTON_FEEDBACK_DURATION);
   };
 
-  ui.btnReset.onclick = () => update(DEFAULT_CONFIG);
+  ui.btnReset.onclick = () => update(DEFAULT_AUDIO_CONFIG);
 
   bindMediaControls(ui, tabId, (changes) => update(changes));
 }
