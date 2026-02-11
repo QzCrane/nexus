@@ -7,6 +7,7 @@ import { AUDIO_UI, TIMING } from '../constants';
 import { getDomain, sendToBackground, sendToTab } from '../utils/dom';
 import { DEFAULT_CONFIG } from './types';
 import { bindMediaControls } from './media-events';
+import { safeStorageGet, safeStorageSet } from '../../shared/safe-storage';
 
 export interface EventsParams {
   ui: CardUIElements;
@@ -129,16 +130,14 @@ export function bindCardEvents(params: EventsParams): void {
       console.warn('Failed to get speed for preset save', e);
     }
 
-    chrome.storage.local.get(['siteSettings'], (r) => {
-      const s = (r.siteSettings as Record<string, AudioConfig>) || {};
-      s[domain] = state.config;
-      chrome.storage.local.set({ siteSettings: s }, () => {
-        // feedback: provide a transient visual confirmation on the save button
-        const old = ui.btnSave.innerText;
-        ui.btnSave.innerText = 'OK';
-        setTimeout(() => { ui.btnSave.innerText = old; }, TIMING.BUTTON_FEEDBACK_DURATION);
-      });
-    });
+    const { data: siteSettings } = await safeStorageGet<Record<string, AudioConfig>>('siteSettings');
+    const s = siteSettings || {};
+    s[domain] = state.config;
+    await safeStorageSet({ siteSettings: s });
+    // feedback: provide a transient visual confirmation on the save button
+    const old = ui.btnSave.innerText;
+    ui.btnSave.innerText = 'OK';
+    setTimeout(() => { ui.btnSave.innerText = old; }, TIMING.BUTTON_FEEDBACK_DURATION);
   };
 
   ui.btnReset.onclick = () => update(DEFAULT_CONFIG);
