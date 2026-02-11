@@ -10,7 +10,7 @@ description: Extension Spectra 发布标准流程 (测试 + 打包)
 
 ## 1. 版本控制
 
-- 同步修改版本号 (SemVer):
+- 同步递增版本号 (SemVer):
   - `apps/extension-spectra/package.json`
   - `apps/extension-spectra/public/manifest.json`
 
