@@ -29,6 +29,24 @@ export function sendVolumeAction(action: HotkeyAction, params?: HotkeyParams): v
 	if (updateConfigFn) updateConfigFn(ch, { showOSD: true });
 }
 
+// eff: handles speed adjustment hotkeys through unified config flow
+export function sendSpeedAction(action: HotkeyAction, params?: HotkeyParams): void {
+	const step = params?.step ?? 0.1;
+	const c = getConfig();
+	let newSpeed: number = c.speed ?? 1;
+
+	switch (action) {
+		case 'speed_up': newSpeed = Math.min(16, newSpeed + step); break;
+		case 'speed_down': newSpeed = Math.max(0.1, newSpeed - step); break;
+		case 'speed_reset': newSpeed = 1; break;
+		case 'speed_set': if (params?.speed !== undefined) newSpeed = params.speed; break;
+	}
+
+	// note: round to 2 decimal places to avoid floating point errors
+	newSpeed = Math.round(newSpeed * 100) / 100;
+	if (updateConfigFn) updateConfigFn({ speed: newSpeed }, { showOSD: true });
+}
+
 export function sendAudioReset(): void {
 	updateConfigFn?.(
 		{ volume: 100, muted: false, eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: false, compressor: false },

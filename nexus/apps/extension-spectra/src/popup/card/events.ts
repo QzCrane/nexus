@@ -143,5 +143,5 @@ export function bindCardEvents(params: EventsParams): void {
 
   ui.btnReset.onclick = () => update(DEFAULT_CONFIG);
 
-  bindMediaControls(ui, tabId, (speed) => update({ speed }));
+  bindMediaControls(ui, tabId, (changes) => update(changes));
 }

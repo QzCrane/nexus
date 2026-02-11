@@ -64,7 +64,9 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 
 				delete (configChanges as any).isNativeSync;
 
-				policyExecutor.updateConfig(configChanges, { isNativeSync });
+				// note: show OSD for remote control commands (volumeDelta/toggleMute indicate remote/hotkey)
+				const isRemoteCommand = payload.config.volumeDelta !== undefined || payload.config.toggleMute !== undefined;
+				policyExecutor.updateConfig(configChanges, { isNativeSync, showOSD: isRemoteCommand });
 				sendResponse({
 					success: true,
 					state: {
@@ -139,6 +141,20 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 
 
 
+
+			case Actions.MEDIA_SET_SPEED: {
+				// note: speed control now uses unified config flow through policyExecutor
+				const sp = msg.payload as { speed?: number; delta?: number; preservePitch?: boolean } | undefined;
+				let newSpeed: number;
+				if (sp?.delta !== undefined) {
+					newSpeed = Math.max(0.1, Math.min(16, (deps.state.config.speed || 1) + sp.delta));
+				} else {
+					newSpeed = Math.max(0.1, Math.min(16, sp?.speed ?? 1));
+				}
+				policyExecutor.updateConfig({ speed: newSpeed }, { showOSD: true });
+				sendResponse({ speed: newSpeed, preservePitch: sp?.preservePitch ?? true });
+				break;
+			}
 
 			default: {
 				// delegate playback messages to the specialized handler
