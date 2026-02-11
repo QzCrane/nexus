@@ -4,6 +4,7 @@
 import type { HotkeySettings, HotkeyAction } from '@nexus/contracts';
 import { Actions, DEFAULT_HOTKEY_SETTINGS } from '@nexus/contracts';
 import { swLog } from '../shared/logger';
+import { safeStorageGet } from '../shared/safe-storage';
 
 // slotMapping: active mapping of manifest slot IDs to functional hotkey actions
 let slotMapping: Record<string, HotkeyAction> = { ...DEFAULT_HOTKEY_SETTINGS.slots };
@@ -12,9 +13,9 @@ let slotMapping: Record<string, HotkeyAction> = { ...DEFAULT_HOTKEY_SETTINGS.slo
 // eff: synchronizes slotMapping from local storage
 async function loadSlotMapping(): Promise<void> {
 	try {
-		const result = await chrome.storage.local.get('hotkeySettings');
-		if (result.hotkeySettings?.slots) {
-			slotMapping = result.hotkeySettings.slots;
+		const { data } = await safeStorageGet<HotkeySettings>('hotkeySettings');
+		if (data?.slots) {
+			slotMapping = data.slots;
 		}
 	} catch { }
 }

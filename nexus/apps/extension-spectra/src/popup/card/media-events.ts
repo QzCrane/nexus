@@ -4,6 +4,7 @@ import type { AudioConfig } from '@nexus/kernel';
 import type { CardUIElements } from '../types';
 import { sendToTab } from '../utils/dom';
 import { syncSidePanelSpeed } from '../side-panel/controls';
+import { safeStorageGet, safeStorageSet } from '../../shared/safe-storage';
 
 const PAUSE_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
 const PLAY_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
@@ -68,14 +69,14 @@ export function bindMediaControls(ui: CardUIElements, tabId: number, update?: (c
 		const btn = ui.btnHotkeyTarget;
 
 		// note: highlight the button if this specific tab is currently designated as the global hotkey command target
-		chrome.storage.local.get(['hotkeyTargetTabId'], (result) => {
-			if (result.hotkeyTargetTabId === tabId) {
+		safeStorageGet<number>('hotkeyTargetTabId').then(({ data }) => {
+			if (data === tabId) {
 				btn.classList.add('active');
 			}
 		});
 
 		btn.onclick = () => {
-			chrome.storage.local.set({ hotkeyTargetTabId: tabId }, () => {
+			safeStorageSet({ hotkeyTargetTabId: tabId }).then(() => {
 				// note: enforce exclusive "active" state across all rendered cards in the popup
 				document.querySelectorAll('.btn-hotkey-target').forEach(b => b.classList.remove('active'));
 				btn.classList.add('active');

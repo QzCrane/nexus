@@ -6,6 +6,7 @@ import { DEFAULT_HOTKEY_SETTINGS } from '@nexus/contracts';
 import { createLogger } from '../../shared/logger';
 import { executeHotkeyAction, setConfigGetter, setConfigUpdater } from './hotkey-actions';
 import { showToast } from '../ui/toast';
+import { safeStorageGet } from '../../shared/safe-storage';
 
 const log = createLogger('Hotkeys');
 
@@ -39,8 +40,8 @@ function handleStorageChange(changes: { [key: string]: chrome.storage.StorageCha
 
 async function loadSettings(): Promise<void> {
 	try {
-		const r = await chrome.storage.local.get('hotkeySettings');
-		if (r.hotkeySettings) settings = r.hotkeySettings;
+		const { data } = await safeStorageGet<HotkeySettings>('hotkeySettings');
+		if (data) settings = data;
 	} catch { }
 }
 

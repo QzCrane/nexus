@@ -3,6 +3,7 @@
 import { DEFAULT_AUDIO_CONFIG } from '@nexus/kernel';
 import { getCurrentPanelTabId, getCardRegistration } from './index';
 import { syncSidePanelState } from './controls';
+import { safeStorageGet, safeStorageSet } from '../../shared/safe-storage';
 
 // note: effect presets are stored separately from general audio config to allow users to apply complex EQ profiles without overriding master volume
 const FX_PRESET_PREFIX = 'preset_fx_';
@@ -55,7 +56,7 @@ async function handleSave(): Promise<void> {
 	};
 
 	const key = `${FX_PRESET_PREFIX}${domain}`;
-	await chrome.storage.local.set({ [key]: fxPreset });
+	await safeStorageSet({ [key]: fxPreset });
 }
 
 // post: retrieves a stored effect profile for the specified domain, returns null if no custom preset exists
@@ -65,8 +66,8 @@ export async function loadFxPreset(domain: string): Promise<{
 	delay?: number;
 } | null> {
 	const key = `${FX_PRESET_PREFIX}${domain}`;
-	const result = await chrome.storage.local.get([key]);
-	return result[key] || null;
+	const { data } = await safeStorageGet<{ eqValues?: number[]; pan?: number; delay?: number }>(key);
+	return data || null;
 }
 
 async function getDomainForTab(tabId: number): Promise<string | null> {

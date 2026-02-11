@@ -9,6 +9,7 @@ import { applyTheme, THEME_ICONS, getNextThemeMode } from '../utils/theme';
 import { migrateRegistry } from '../utils/registry-helpers';
 import { TIMING } from '../constants';
 import { applyLang, updateCardsI18n } from './i18n-apply';
+import { safeStorageGet, safeStorageSet } from '../../shared/safe-storage';
 import { initRegistryUI, updateRegistryI18n } from './registry-ui';
 import { initPresetsUI, updatePresetsI18n } from './presets-ui';
 import { updateRemoteI18n } from '../../remote';
@@ -35,10 +36,14 @@ export async function initSettings(): Promise<SettingsState> {
   const ui = getSettingsUIElements();
 
   // Load settings: maintains compatibility with both modern 'globalSettings' and legacy individual registry keys
-  const storage = await chrome.storage.local.get(['globalSettings', 'restrictedRegistry', 'userRegistry']);
-  let gSettings: GlobalSettings = storage.globalSettings || { ...DEFAULT_GLOBAL_SETTINGS };
+  const [{ data: globalSettings }, { data: restrictedRegistry }, { data: userRegistry }] = await Promise.all([
+    safeStorageGet<GlobalSettings>('globalSettings'),
+    safeStorageGet<DomainEntry[]>('restrictedRegistry'),
+    safeStorageGet<DomainEntry[]>('userRegistry'),
+  ]);
+  let gSettings: GlobalSettings = globalSettings || { ...DEFAULT_GLOBAL_SETTINGS };
 
-  let registryEntries: DomainEntry[] = migrateRegistry(storage.restrictedRegistry || storage.userRegistry);
+  let registryEntries: DomainEntry[] = migrateRegistry(restrictedRegistry || userRegistry);
 
   initUIState(ui, gSettings, registryEntries);
 
@@ -61,7 +66,7 @@ export async function initSettings(): Promise<SettingsState> {
     const btnTheme = $<HTMLButtonElement>('btn-theme');
     if (btnTheme) btnTheme.textContent = THEME_ICONS[gSettings.themeMode];
 
-    chrome.storage.local.set({ globalSettings: gSettings });
+    safeStorageSet({ globalSettings: gSettings });
     broadcastSettings(gSettings);
 
     // eff: cascade i18n updates across all UI components (Cards, Registry, Presets, Remote)
@@ -136,7 +141,7 @@ function bindThemeButtonEvent(
     btnTheme.textContent = THEME_ICONS[nextMode];
     const selTheme = $<HTMLSelectElement>('set-theme');
     if (selTheme) selTheme.value = nextMode;
-    chrome.storage.local.set({ globalSettings: updated });
+    safeStorageSet({ globalSettings: updated });
   };
 }
 

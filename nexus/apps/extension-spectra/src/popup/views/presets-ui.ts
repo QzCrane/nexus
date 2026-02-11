@@ -2,6 +2,7 @@
 
 import type { AudioConfig } from '@nexus/kernel';
 import type { I18NDict } from '../types';
+import { safeStorageGet, safeStorageSet, safeStorageRemove } from '../../shared/safe-storage';
 
 let listEl: HTMLElement | null = null;
 let emptyEl: HTMLElement | null = null;
@@ -89,24 +90,24 @@ function createPresetItem(domain: string, config: Partial<AudioConfig>): HTMLEle
 
 // eff: removes a specific domain key from 'siteSettings' and refreshes the view
 async function handleDeletePreset(domain: string): Promise<void> {
-	const result = await chrome.storage.local.get(['siteSettings']);
-	const settings = (result.siteSettings as Record<string, Partial<AudioConfig>>) || {};
+	const { data: siteSettings } = await safeStorageGet<Record<string, Partial<AudioConfig>>>('siteSettings');
+	const settings = siteSettings || {};
 
 	delete settings[domain];
-	await chrome.storage.local.set({ siteSettings: settings });
+	await safeStorageSet({ siteSettings: settings });
 
 	refreshPresetsList();
 }
 
 // rule: destructive operation; wipes all site-specific configurations stored in local storage
 async function handleClearAll(): Promise<void> {
-	await chrome.storage.local.remove(['siteSettings']);
+	await safeStorageRemove('siteSettings');
 	refreshPresetsList();
 }
 
 async function loadAllPresets(): Promise<Record<string, Partial<AudioConfig>>> {
-	const result = await chrome.storage.local.get(['siteSettings']);
-	return (result.siteSettings as Record<string, Partial<AudioConfig>>) || {};
+	const { data: siteSettings } = await safeStorageGet<Record<string, Partial<AudioConfig>>>('siteSettings');
+	return siteSettings || {};
 }
 
 // goal: updates the local dictionary reference and triggers a list refresh to localize tooltips/empty-states

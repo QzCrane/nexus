@@ -1,6 +1,7 @@
 // goal: manages internationalization for the options page, including language persistence and dynamic text injection
 
 import { DICT } from './i18n-dict';
+import { safeStorageGet, safeStorageSet } from '../shared/safe-storage';
 
 let currentLang = 'en-US';
 let onLangChangeCallbacks: (() => void)[] = [];
@@ -8,8 +9,8 @@ let onLangChangeCallbacks: (() => void)[] = [];
 // eff: loads the preferred language from global settings, binds the selector, and performs the initial text injection
 export async function initI18n(): Promise<void> {
 	try {
-		const result = await chrome.storage.local.get('globalSettings');
-		currentLang = result.globalSettings?.language ?? 'en-US';
+		const { data } = await safeStorageGet<{ language?: string }>('globalSettings');
+		currentLang = data?.language ?? 'en-US';
 	} catch {
 		currentLang = 'en-US';
 	}
@@ -20,9 +21,9 @@ export async function initI18n(): Promise<void> {
 		select.addEventListener('change', async () => {
 			currentLang = select.value;
 			try {
-				const result = await chrome.storage.local.get('globalSettings');
-				await chrome.storage.local.set({
-					globalSettings: { ...result.globalSettings, language: currentLang }
+				const { data } = await safeStorageGet<{ language?: string }>('globalSettings');
+				await safeStorageSet({
+					globalSettings: { ...data, language: currentLang }
 				});
 			} catch { /* ignore */ }
 			applyI18n();
