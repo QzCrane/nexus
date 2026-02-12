@@ -36,6 +36,9 @@ export function setSpeed(s: number, pitch?: boolean): { speed: number; preserveP
 		setYouTubeSpeed(clamped);
 	}
 
+	// eff: notify injector to enforce this speed (prevents site from resetting it)
+	window.postMessage({ type: 'SPECTRA_TARGET_SPEED', speed: clamped }, '*');
+
 	const vs = document.getElementsByTagName('video');
 	const as = document.getElementsByTagName('audio');
 
