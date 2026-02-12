@@ -4,8 +4,11 @@
 import { AudioMode } from '@nexus/audio-engine';
 import { WebAudioController } from '@nexus/audio-engine';
 import { isExtensionContextValid } from '../context-guard';
+import { hasMediaElements as hasMedia } from '../../utils/media-utils';
 import type { PolicyExecutorState } from '../../types';
 import type { PolicyExecutor } from '../../logic/policy-executor';
+
+export const hasMediaElements = hasMedia;
 
 // eff: initializes a MutationObserver on the document root and triggers state re-application upon change detection
 // post: returns a cleanup function to disconnect the observer and clear pending timeouts
@@ -61,9 +64,4 @@ export function createMediaObserver(
 		document.removeEventListener('play', immediateAttachHandler, true);
 		document.removeEventListener('loadeddata', immediateAttachHandler, true);
 	};
-}
-
-// inv: returns true if at least one <audio> or <video> element exists
-export function hasMediaElements(): boolean {
-	return document.getElementsByTagName('video').length > 0 || document.getElementsByTagName('audio').length > 0;
 }

@@ -5,58 +5,27 @@ import { createLogger } from '../../shared/logger';
 import { simulateMouseHover } from '../utils/focus-helper';
 import { isYouTube, setYouTubeSpeed } from '../adapters/youtube-adapter';
 import { getElementState } from '../audio/volume-observer';
+import { getPrimaryVideo, applyToMedia } from '../utils/media-utils';
 
 const log = createLogger('MediaControl');
 
-// eff: single pass O(N) zero-alloc
-function getPrimaryVideo(): HTMLVideoElement | null {
-	const v = document.getElementsByTagName('video');
-	let best: HTMLVideoElement | null = null;
-	let maxA = 0;
-
-	for (let i = 0, l = v.length; i < l; i++) {
-		const el = v[i];
-		if (!el) continue;
-		const rect = el.getBoundingClientRect();
-		const a = rect.width * rect.height;
-		if (a > maxA) { maxA = a; best = el; }
-	}
-	return best || (v.length > 0 ? v[0]! : null);
-}
-
-// eff: live collections iteration
-// note: playbackRate hijacking in injector enables universal player support
-// note: YouTube requires additional API call to sync native UI
 export function setSpeed(s: number, pitch?: boolean): { speed: number; preservePitch: boolean } {
 	const clamped = Math.max(0.1, Math.min(16, s));
 	const p = pitch ?? true;
 
-	// rule: YouTube requires native API call to update its UI
-	if (isYouTube()) {
-		setYouTubeSpeed(clamped);
-	}
-
-	// eff: notify injector to enforce this speed (prevents site from resetting it)
+	if (isYouTube()) setYouTubeSpeed(clamped);
 	window.postMessage({ type: 'SPECTRA_TARGET_SPEED', speed: clamped }, '*');
 
-	const vs = document.getElementsByTagName('video');
-	const as = document.getElementsByTagName('audio');
-
-	const apply = (m: HTMLMediaElement) => {
+	applyToMedia(m => {
 		if (Math.abs(m.playbackRate - clamped) > 0.005) {
-			// eff: mark as plugin-set to prevent ratechange event from syncing back to config
 			const st = getElementState(m);
 			st.settingByPlugin = true;
 			m.playbackRate = clamped;
 			st.speed = clamped;
-			// eff: clear flag asynchronously after event has fired
 			setTimeout(() => { st.settingByPlugin = false; }, 100);
 		}
 		if ('preservesPitch' in m) (m as any).preservesPitch = p;
-	};
-
-	for (let i = 0; i < vs.length; i++) { const m = vs[i]; if (m) apply(m); }
-	for (let i = 0; i < as.length; i++) { const m = as[i]; if (m) apply(m); }
+	});
 
 	log.info(`Speed ${clamped}x, pitch=${p}`);
 	return { speed: clamped, preservePitch: p };
