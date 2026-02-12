@@ -3,6 +3,7 @@ import type { HotkeyAction, HotkeyParams, AudioConfig } from '@nexus/contracts';
 import { Actions } from '@nexus/contracts';
 import { listMarkers } from '../video/time-marker';
 import { showToast } from '../ui/toast';
+import { getPrimaryVideo } from '../utils/media-utils';
 
 let getConfigFn: (() => AudioConfig) | null = null;
 let updateConfigFn: ((changes: Partial<AudioConfig>, options?: { showOSD?: boolean; unMute?: boolean }) => void) | null = null;
@@ -61,7 +62,7 @@ export function sendCaptureToggle(): void {
 export function jumpMarker(fwd: boolean): void {
 	const m = listMarkers();
 	if (!m.length) return;
-	const v = document.getElementsByTagName('video')[0];
+	const v = getPrimaryVideo();
 	if (!v) return;
 	const t = v.currentTime;
 
@@ -77,7 +78,7 @@ export function jumpMarker(fwd: boolean): void {
 }
 
 export function toggleLoop(): void {
-	const v = document.getElementsByTagName('video')[0];
+	const v = getPrimaryVideo();
 	if (v) {
 		v.loop = !v.loop;
 		showToast(v.loop ? 'Loop ON' : 'Loop OFF');
