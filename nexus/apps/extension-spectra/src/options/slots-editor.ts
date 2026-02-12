@@ -20,11 +20,11 @@ export async function initSlotsEditor(): Promise<void> {
 
 async function loadSettings(): Promise<void> {
 	try {
-		const { data } = await safeStorageGet<HotkeySettings>('hotkeySettings');
-		if (data) {
-			settings = { ...DEFAULT_HOTKEY_SETTINGS, ...data };
+		const result = await safeStorageGet<{ hotkeySettings?: HotkeySettings }>(['hotkeySettings'], {});
+		if (result.hotkeySettings) {
+			settings = { ...DEFAULT_HOTKEY_SETTINGS, ...result.hotkeySettings };
 		}
-	} catch { /* ignore */ }
+	} catch { }
 }
 
 async function saveSettings(): Promise<void> {

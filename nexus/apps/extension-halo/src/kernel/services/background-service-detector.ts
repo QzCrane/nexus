@@ -50,7 +50,7 @@ export async function isBackgroundServiceActive(toolId: string): Promise<boolean
 	if (serviceType === 'panel_bound') return false;
 
 	// Global background service: check prefs
-	const local = await safeStorageGet([TOOL_PREFS_KEY], { [TOOL_PREFS_KEY]: {} }, 'local');
+	const local = await safeStorageGet([TOOL_PREFS_KEY], { [TOOL_PREFS_KEY]: {} }, { area: 'local' });
 	const prefs = (local[TOOL_PREFS_KEY] || {}) as Record<string, { enabled?: boolean }>;
 
 	// Default to enabled for global background tools
@@ -67,7 +67,7 @@ export async function getActiveBackgroundServices(): Promise<string[]> {
 	const local = await safeStorageGet([TOOL_PREFS_KEY, 'halo_userscripts'], {
 		[TOOL_PREFS_KEY]: {},
 		halo_userscripts: { scripts: [] }
-	}, 'local');
+	}, { area: 'local' });
 
 	const prefs = (local[TOOL_PREFS_KEY] || {}) as Record<string, { enabled?: boolean }>;
 

@@ -69,8 +69,8 @@ export function initSidePanel(): void {
 		}
 	});
 
-	safeStorageGet<boolean>('sidePanelPinned').then(({ data }) => {
-		state.isPinned = data ?? false;
+	safeStorageGet<{ sidePanelPinned?: boolean }>(['sidePanelPinned'], {}).then(result => {
+		state.isPinned = result.sidePanelPinned ?? false;
 		elements?.btnPin.classList.toggle('active', state.isPinned);
 	});
 

@@ -26,9 +26,9 @@ export async function initHotkeyEditor(): Promise<void> {
 
 // eff: retrieves settings from chrome.storage, falling back to PRESET_BINDINGS if the user has no custom config
 async function loadSettings(): Promise<void> {
-	const { data } = await safeStorageGet<SiteHotkeyConfig>('hotkeySettings');
-	if (data) {
-		settings = data;
+	const result = await safeStorageGet<{ hotkeySettings?: SiteHotkeyConfig }>(['hotkeySettings'], {});
+	if (result.hotkeySettings) {
+		settings = result.hotkeySettings;
 	} else {
 		settings = { enabled: true, bindings: [...PRESET_BINDINGS] };
 	}

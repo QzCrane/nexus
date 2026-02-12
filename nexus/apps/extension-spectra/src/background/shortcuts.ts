@@ -13,9 +13,9 @@ let slotMapping: Record<string, HotkeyAction> = { ...DEFAULT_HOTKEY_SETTINGS.slo
 // eff: synchronizes slotMapping from local storage
 async function loadSlotMapping(): Promise<void> {
 	try {
-		const { data } = await safeStorageGet<HotkeySettings>('hotkeySettings');
-		if (data?.slots) {
-			slotMapping = data.slots;
+		const result = await safeStorageGet<{ hotkeySettings?: HotkeySettings }>(['hotkeySettings'], {});
+		if (result.hotkeySettings?.slots) {
+			slotMapping = result.hotkeySettings.slots;
 		}
 	} catch { }
 }

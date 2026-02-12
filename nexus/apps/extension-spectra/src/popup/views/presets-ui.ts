@@ -90,8 +90,8 @@ function createPresetItem(domain: string, config: Partial<AudioConfig>): HTMLEle
 
 // eff: removes a specific domain key from 'siteSettings' and refreshes the view
 async function handleDeletePreset(domain: string): Promise<void> {
-	const { data: siteSettings } = await safeStorageGet<Record<string, Partial<AudioConfig>>>('siteSettings');
-	const settings = siteSettings || {};
+	const result = await safeStorageGet<{ siteSettings?: Record<string, Partial<AudioConfig>> }>(['siteSettings'], {});
+	const settings = result.siteSettings || {};
 
 	delete settings[domain];
 	await safeStorageSet({ siteSettings: settings });
@@ -99,15 +99,14 @@ async function handleDeletePreset(domain: string): Promise<void> {
 	refreshPresetsList();
 }
 
-// rule: destructive operation; wipes all site-specific configurations stored in local storage
 async function handleClearAll(): Promise<void> {
-	await safeStorageRemove('siteSettings');
+	await safeStorageRemove(['siteSettings']);
 	refreshPresetsList();
 }
 
 async function loadAllPresets(): Promise<Record<string, Partial<AudioConfig>>> {
-	const { data: siteSettings } = await safeStorageGet<Record<string, Partial<AudioConfig>>>('siteSettings');
-	return siteSettings || {};
+	const result = await safeStorageGet<{ siteSettings?: Record<string, Partial<AudioConfig>> }>(['siteSettings'], {});
+	return result.siteSettings || {};
 }
 
 // goal: updates the local dictionary reference and triggers a list refresh to localize tooltips/empty-states

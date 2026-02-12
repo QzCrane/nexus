@@ -66,8 +66,8 @@ export async function loadFxPreset(domain: string): Promise<{
 	delay?: number;
 } | null> {
 	const key = `${FX_PRESET_PREFIX}${domain}`;
-	const { data } = await safeStorageGet<{ eqValues?: number[]; pan?: number; delay?: number }>(key);
-	return data || null;
+	const result = await safeStorageGet<{ [k: string]: { eqValues?: number[]; pan?: number; delay?: number } }>([key], {});
+	return result[key] || null;
 }
 
 async function getDomainForTab(tabId: number): Promise<string | null> {

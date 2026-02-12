@@ -17,9 +17,9 @@ export async function initSiteEditor(): Promise<void> {
 
 async function loadSettings(): Promise<void> {
 	try {
-		const { data } = await safeStorageGet<HotkeySettings>('hotkeySettings');
-		if (data) settings = { ...DEFAULT_HOTKEY_SETTINGS, ...data };
-	} catch { /* ignore */ }
+		const result = await safeStorageGet<{ hotkeySettings?: HotkeySettings }>(['hotkeySettings'], {});
+		if (result.hotkeySettings) settings = { ...DEFAULT_HOTKEY_SETTINGS, ...result.hotkeySettings };
+	} catch { }
 }
 
 async function saveSettings(): Promise<void> {

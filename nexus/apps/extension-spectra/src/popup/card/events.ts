@@ -130,8 +130,8 @@ export function bindCardEvents(params: EventsParams): void {
       console.warn('Failed to get speed for preset save', e);
     }
 
-    const { data: siteSettings } = await safeStorageGet<Record<string, AudioConfig>>('siteSettings');
-    const s = siteSettings || {};
+    const result = await safeStorageGet<{ siteSettings?: Record<string, AudioConfig> }>(['siteSettings'], {});
+    const s = result.siteSettings || {};
     s[domain] = state.config;
     await safeStorageSet({ siteSettings: s });
     // feedback: provide a transient visual confirmation on the save button

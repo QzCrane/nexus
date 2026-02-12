@@ -39,7 +39,7 @@ export function useToolState<T>(
 	useEffect(() => {
 		let isMounted = true;
 		const baseValue = getInitialValue();
-		safeStorageGet([storageKey], { [storageKey]: baseValue }, area).then((res) => {
+		safeStorageGet([storageKey], { [storageKey]: baseValue }, { area }).then((res) => {
 			if (isMounted) {
 				const storedValue = res[storageKey] as T | undefined;
 				setState(storedValue !== undefined ? storedValue : baseValue);
@@ -54,7 +54,7 @@ export function useToolState<T>(
 		if (timerRef.current) clearTimeout(timerRef.current);
 
 		timerRef.current = setTimeout(() => {
-			safeStorageSet({ [storageKey]: newState }, area);
+			safeStorageSet({ [storageKey]: newState }, { area });
 		}, debounceMs);
 	}, [storageKey, debounceMs, area]);
 

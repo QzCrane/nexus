@@ -55,7 +55,7 @@ export function useBackgroundHelpers() {
 
 	// Toggle helper enabled state
 	const toggleHelper = async (id: string, enabled: boolean) => {
-		const local = await safeStorageGet([TOOL_PREFS_KEY], { [TOOL_PREFS_KEY]: {} }, 'local');
+		const local = await safeStorageGet([TOOL_PREFS_KEY], { [TOOL_PREFS_KEY]: {} }, { area: 'local' });
 		const prefs = (local[TOOL_PREFS_KEY] || {}) as Record<string, { enabled?: boolean }>;
 
 		const updated = {
@@ -63,7 +63,7 @@ export function useBackgroundHelpers() {
 			[id]: { ...prefs[id], enabled }
 		};
 
-		await safeStorageSet({ [TOOL_PREFS_KEY]: updated }, 'local');
+		await safeStorageSet({ [TOOL_PREFS_KEY]: updated }, { area: 'local' });
 	};
 
 	return {

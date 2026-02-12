@@ -28,15 +28,14 @@ export const cardRenderCallbacks: RenderCallback[] = [];
 export async function initSettings(): Promise<SettingsState> {
   const ui = getSettingsUIElements();
 
-  // Load settings: maintains compatibility with both modern 'globalSettings' and legacy individual registry keys
-  const [{ data: globalSettings }, { data: restrictedRegistry }, { data: userRegistry }] = await Promise.all([
-    safeStorageGet<GlobalSettings>('globalSettings'),
-    safeStorageGet<DomainEntry[]>('restrictedRegistry'),
-    safeStorageGet<DomainEntry[]>('userRegistry'),
-  ]);
-  let gSettings: GlobalSettings = globalSettings || { ...DEFAULT_GLOBAL_SETTINGS };
+  const result = await safeStorageGet<{
+    globalSettings?: GlobalSettings;
+    restrictedRegistry?: DomainEntry[];
+    userRegistry?: DomainEntry[];
+  }>(['globalSettings', 'restrictedRegistry', 'userRegistry'], {});
 
-  let registryEntries: DomainEntry[] = migrateRegistry(restrictedRegistry || userRegistry);
+  let gSettings: GlobalSettings = result.globalSettings || { ...DEFAULT_GLOBAL_SETTINGS };
+  let registryEntries: DomainEntry[] = migrateRegistry(result.restrictedRegistry || result.userRegistry);
 
   initUIState(ui, gSettings, registryEntries);
 

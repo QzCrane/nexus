@@ -68,9 +68,8 @@ export function bindMediaControls(ui: CardUIElements, tabId: number, update?: (c
 	if (ui.btnHotkeyTarget) {
 		const btn = ui.btnHotkeyTarget;
 
-		// note: highlight the button if this specific tab is currently designated as the global hotkey command target
-		safeStorageGet<number>('hotkeyTargetTabId').then(({ data }) => {
-			if (data === tabId) {
+		safeStorageGet<{ hotkeyTargetTabId?: number }>(['hotkeyTargetTabId'], {}).then(result => {
+			if (result.hotkeyTargetTabId === tabId) {
 				btn.classList.add('active');
 			}
 		});

@@ -41,8 +41,8 @@ function handleStorageChange(changes: { [key: string]: chrome.storage.StorageCha
 
 async function loadSettings(): Promise<void> {
 	try {
-		const { data } = await safeStorageGet<HotkeySettings>('hotkeySettings');
-		if (data) settings = data;
+		const result = await safeStorageGet<{ hotkeySettings?: HotkeySettings }>(['hotkeySettings'], {});
+		if (result.hotkeySettings) settings = result.hotkeySettings;
 	} catch { }
 }
 
