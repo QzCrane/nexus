@@ -47,6 +47,23 @@ export function createMediaObserver(
 				audioController.updateParams(state.config);
 			}
 		}
+
+		// eff: apply speed/volume state to new media elements to maintain consistency on video change
+		policyExecutor.applyState();
+
+		// eff: re-apply speed after a short delay to ensure it sticks (browser may reset on new video load)
+		// note: YouTube and other SPA sites often reset playbackRate shortly after loadeddata
+		if (e.type === 'loadeddata') {
+			const media = t as HTMLMediaElement;
+			const targetSpeed = state.config.speed || 1;
+			if (Math.abs(media.playbackRate - targetSpeed) > 0.005) {
+				setTimeout(() => {
+					if (Math.abs(media.playbackRate - targetSpeed) > 0.005) {
+						media.playbackRate = targetSpeed;
+					}
+				}, 100);
+			}
+		}
 	};
 
 	document.addEventListener('play', immediateAttachHandler, true);

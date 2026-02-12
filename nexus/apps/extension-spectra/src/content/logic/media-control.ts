@@ -4,6 +4,7 @@
 import { createLogger } from '../../shared/logger';
 import { simulateMouseHover } from '../utils/focus-helper';
 import { isYouTube, setYouTubeSpeed } from '../adapters/youtube-adapter';
+import { getElementState } from '../audio/volume-observer';
 
 const log = createLogger('MediaControl');
 
@@ -40,7 +41,13 @@ export function setSpeed(s: number, pitch?: boolean): { speed: number; preserveP
 
 	const apply = (m: HTMLMediaElement) => {
 		if (Math.abs(m.playbackRate - clamped) > 0.005) {
+			// eff: mark as plugin-set to prevent ratechange event from syncing back to config
+			const st = getElementState(m);
+			st.settingByPlugin = true;
 			m.playbackRate = clamped;
+			st.speed = clamped;
+			// eff: clear flag asynchronously after event has fired
+			setTimeout(() => { st.settingByPlugin = false; }, 100);
 		}
 		if ('preservesPitch' in m) (m as any).preservesPitch = p;
 	};

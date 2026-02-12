@@ -45,6 +45,16 @@ export interface MonitorContext {
 export function setupVolumeMonitor(media: HTMLMediaElement, ctx: MonitorContext): void {
 	getElementState(media); // Ensure init
 
+	// eff: reset state when media loads new content (prevents stale speed from triggering false sync)
+	media.addEventListener('emptied', () => {
+		const s = elementStates.get(media)!;
+		// inv: update stored speed to match browser default (1.0) to prevent ratechange feedback
+		s.speed = 1;
+		// inv: also reset volume state to match current element state
+		s.volume = media.volume;
+		s.muted = media.muted;
+	});
+
 	media.addEventListener('volumechange', (e) => {
 		const s = elementStates.get(media)!;
 		if (s.settingByPlugin) return;
