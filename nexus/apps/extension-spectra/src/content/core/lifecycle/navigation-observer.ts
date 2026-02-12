@@ -2,6 +2,7 @@
 // note: monkeypatching History API for pushState/replaceState
 
 import { isExtensionContextValid } from '../context-guard';
+import { debounce, createEventListener, createCleanupManager } from '../../utils/timing';
 import type { PolicyExecutor } from '../../logic/policy-executor';
 import { clearYouTubeCache } from '../../adapters/youtube-adapter';
 
@@ -10,51 +11,41 @@ interface NavigationObserverDeps {
 	onNavigate: () => void;
 }
 
-// eff: single timer instance properly cleared
-let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let lastPath = '';
 
 export function createNavigationObserver(deps: NavigationObserverDeps): () => void {
 	const { policyExecutor, onNavigate } = deps;
+	const cleanup = createCleanupManager();
 	lastPath = window.location.pathname;
 
 	const handleNav = () => {
 		if (!isExtensionContextValid()) return;
 		const cur = window.location.pathname;
-		if (cur === lastPath) return; // Ignore hash/query
+		if (cur === lastPath) return;
 
 		lastPath = cur;
-		if (debounceTimer) clearTimeout(debounceTimer);
-
-		// eff: clear YouTube cache on navigation
 		clearYouTubeCache();
-
-		debounceTimer = setTimeout(() => {
-			if (!isExtensionContextValid()) return;
-			policyExecutor.probeCors();
-			onNavigate();
-			debounceTimer = null;
-		}, 300);
+		debouncedNav();
 	};
 
-	window.addEventListener('popstate', handleNav);
+	const debouncedNav = debounce(() => {
+		if (!isExtensionContextValid()) return;
+		policyExecutor.probeCors();
+		onNavigate();
+	}, 300);
+
+	cleanup.add(createEventListener(window, 'popstate', handleNav));
 
 	const origPush = history.pushState;
-	history.pushState = function (...args) {
-		origPush.apply(this, args);
-		handleNav();
-	};
-
 	const origReplace = history.replaceState;
-	history.replaceState = function (...args) {
-		origReplace.apply(this, args);
-		handleNav();
-	};
+	history.pushState = function (...args) { origPush.apply(this, args); handleNav(); };
+	history.replaceState = function (...args) { origReplace.apply(this, args); handleNav(); };
 
-	return () => {
-		if (debounceTimer) clearTimeout(debounceTimer);
-		window.removeEventListener('popstate', handleNav);
+	cleanup.add(() => {
+		debouncedNav.cancel();
 		history.pushState = origPush;
 		history.replaceState = origReplace;
-	};
+	});
+
+	return cleanup.dispose;
 }

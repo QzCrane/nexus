@@ -91,8 +91,8 @@ export function createCleanupManager(): {
 export function createEventListener(
 	target: EventTarget,
 	event: string,
-	handler: EventListener,
-	options?: AddEventListenerOptions
+	handler: EventListenerOrEventListenerObject,
+	options?: boolean | AddEventListenerOptions
 ): CleanupFn {
 	target.addEventListener(event, handler, options);
 	return () => target.removeEventListener(event, handler, options);

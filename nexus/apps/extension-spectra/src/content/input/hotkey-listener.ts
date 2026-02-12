@@ -4,6 +4,7 @@
 import type { HotkeySettings, HotkeyBinding, SiteHotkeyConfig } from '@nexus/contracts';
 import { DEFAULT_HOTKEY_SETTINGS } from '@nexus/contracts';
 import { createLogger } from '../../shared/logger';
+import { createEventListener, createCleanupManager } from '../utils/timing';
 import { executeHotkeyAction, setConfigGetter, setConfigUpdater } from './hotkey-actions';
 import { showToast } from '../ui/toast';
 import { safeStorageGet } from '../../shared/safe-storage';
@@ -16,24 +17,24 @@ let lastHostname = '';
 
 export async function initHotkeyListener(): Promise<() => void> {
 	await loadSettings();
+	const cleanup = createCleanupManager();
+
+	cleanup.add(createEventListener(document, 'keydown', handleKeydown as EventListener, true));
 
 	if (chrome?.storage?.onChanged) {
-		chrome.storage.onChanged.addListener(handleStorageChange);
+		const handler = handleStorageChange;
+		chrome.storage.onChanged.addListener(handler);
+		cleanup.add(() => chrome.storage.onChanged.removeListener(handler));
 	}
 
-	document.addEventListener('keydown', handleKeydown, true);
 	log.info('Hotkey listener initialized');
-
-	return () => {
-		document.removeEventListener('keydown', handleKeydown, true);
-		if (chrome?.storage?.onChanged) chrome.storage.onChanged.removeListener(handleStorageChange);
-	};
+	return cleanup.dispose;
 }
 
 function handleStorageChange(changes: { [key: string]: chrome.storage.StorageChange }): void {
 	if (changes.hotkeySettings?.newValue) {
 		settings = changes.hotkeySettings.newValue;
-		cachedSite = undefined; // Invalidate cache
+		cachedSite = undefined;
 		log.debug('Settings updated');
 	}
 }
@@ -45,7 +46,6 @@ async function loadSettings(): Promise<void> {
 	} catch { }
 }
 
-// eff: Cached site config lookup
 function getSiteConfig(): SiteHotkeyConfig | null {
 	if (location.hostname === lastHostname && cachedSite !== undefined) return cachedSite;
 	lastHostname = location.hostname;
@@ -56,7 +56,6 @@ function getSiteConfig(): SiteHotkeyConfig | null {
 
 const IGNORE_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
 
-// eff: Zero-Alloc check
 function isInputElement(t: EventTarget | null): boolean {
 	if (!t || !(t instanceof HTMLElement)) return false;
 	if (t.isContentEditable) return true;
@@ -68,7 +67,6 @@ function handleKeydown(e: KeyboardEvent): void {
 	if (!site) return;
 	if (isInputElement(e.target)) return;
 
-	// eff: Inlined findMatch to avoid object allocation
 	const code = e.code;
 	const ctrl = e.ctrlKey, alt = e.altKey, shift = e.shiftKey, meta = e.metaKey;
 
@@ -91,7 +89,6 @@ function handleKeydown(e: KeyboardEvent): void {
 
 function executeWithOSD(b: HotkeyBinding): void {
 	const action = b.action;
-	// eff: simple check instead of array.includes
 	if (action !== 'none' && action !== 'open_popup' && action !== 'open_options' && action !== 'open_url' && action !== 'run_js') {
 		showToast(formatLabel(action, b.params));
 	}
