@@ -11,28 +11,23 @@ export function hijackPlaybackRate(): void {
 	const rateKey = Symbol('spectraPlaybackRate');
 	const lastRateKey = Symbol('spectraLastRate');
 
-	// eff: target speed to enforce (null = no enforcement)
-	let targetSpeed: number | null = null;
-
-	// eff: listen for target speed updates from content script
+	// eff: listen for target speed updates from content script and apply immediately
 	window.addEventListener('message', (e) => {
 		if (e.data?.type === 'SPECTRA_TARGET_SPEED') {
-			targetSpeed = e.data.speed;
+			document.querySelectorAll('video,audio').forEach(m => {
+				const el = m as HTMLMediaElement;
+				if (Math.abs(el.playbackRate - e.data.speed) > 0.005) {
+					el.playbackRate = e.data.speed;
+				}
+			});
 		}
 	});
-
-	const shouldEnforce = (rate: number): number => {
-		if (targetSpeed === null) return rate;
-		// inv: enforce target speed if site tries to set different rate
-		return Math.abs(rate - targetSpeed) > 0.005 ? targetSpeed : rate;
-	};
 
 	if (!origDesc) {
 		Object.defineProperty(proto, 'playbackRate', {
 			get: function () { return this[rateKey] ?? 1; },
 			set: function (v) {
-				const requestedRate = +v || 1;
-				const newRate = shouldEnforce(requestedRate);
+				const newRate = +v || 1;
 				const oldRate = this[lastRateKey] ?? 1;
 				this[rateKey] = newRate;
 				this[lastRateKey] = newRate;
@@ -52,8 +47,7 @@ export function hijackPlaybackRate(): void {
 				return rateKey in this ? this[rateKey] : origGet.call(this);
 			},
 			set: function (v) {
-				const requestedRate = +v || 1;
-				const newRate = shouldEnforce(requestedRate);
+				const newRate = +v || 1;
 				const oldRate = this[lastRateKey] ?? origGet.call(this);
 				this[rateKey] = newRate;
 				this[lastRateKey] = newRate;

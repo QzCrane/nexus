@@ -31,6 +31,10 @@ export function setSpeed(s: number, pitch?: boolean): { speed: number; preserveP
 	return { speed: clamped, preservePitch: p };
 }
 
+export function clearTargetSpeed(): void {
+	window.postMessage({ type: 'SPECTRA_CLEAR_TARGET_SPEED' }, '*');
+}
+
 export function togglePlay(): boolean {
 	const v = getPrimaryVideo();
 	if (!v) { log.warn('No video'); return false; }
