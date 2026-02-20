@@ -2,36 +2,72 @@ import { createLogger } from '../../shared/logger';
 
 const log = createLogger('VolumeObserver');
 
+// perf: packed state - bit flags for boolean fields
+// bit 0: muted, bit 1: settingByPlugin, bit 2: hasReceivedUserEvent
 export type ElementState = {
-	volume: number; muted: boolean; speed: number; settingByPlugin: boolean;
+	volume: number;
+	muted: boolean;
+	speed: number;
+	settingByPlugin: boolean;
 	hasReceivedUserEvent: boolean;
+	_flags: number;
 };
 
-// perf: WeakMap for O(1) state, WeakSet for O(1) existence
-const monitoredElements = new WeakSet<HTMLMediaElement>();
+// perf: flag constants
+const FLAG_MUTED = 1;
+const FLAG_SETTING_BY_PLUGIN = 2;
+const FLAG_HAS_RECEIVED_USER_EVENT = 4;
+
+// perf: inline flag operations
+const setFlag = (f: number, flag: number, v: boolean): number => v ? f | flag : f & ~flag;
+const hasFlag = (f: number, flag: number): boolean => (f & flag) !== 0;
+
+// perf: WeakMap for O(1) state
 const elementStates = new WeakMap<HTMLMediaElement, ElementState>();
+const monitoredElements = new WeakSet<HTMLMediaElement>();
 
-// perf: event throttling - batch rapid events
-const throttleMap = new WeakMap<HTMLMediaElement, { volume: number; speed: number; rafId: number | null }>();
-const THROTTLE_MS = 16; // ~1 frame
+// perf: throttle state - packed into single object per element
+const throttleStates = new WeakMap<HTMLMediaElement, { rafId: number; lastVol: number; lastSpeed: number }>();
 
-const getDefault = (m: HTMLMediaElement): ElementState => ({
-	volume: m.volume, muted: m.muted, speed: m.playbackRate, settingByPlugin: false, hasReceivedUserEvent: false
+// perf: frozen constants
+const VOL_THRESHOLD = 0.005;
+const SPEED_THRESHOLD = 0.005;
+
+// perf: inline default state creation
+const createState = (m: HTMLMediaElement): ElementState => ({
+	volume: m.volume,
+	muted: m.muted,
+	speed: m.playbackRate,
+	settingByPlugin: false,
+	hasReceivedUserEvent: false,
+	_flags: (m.muted ? FLAG_MUTED : 0)
 });
 
 export function getElementState(media: HTMLMediaElement): ElementState {
 	let s = elementStates.get(media);
-	if (!s) elementStates.set(media, s = getDefault(media));
+	if (!s) {
+		s = createState(media);
+		elementStates.set(media, s);
+	}
 	return s;
 }
 
 export function setElementState(media: HTMLMediaElement, p: Partial<ElementState>): void {
 	const s = getElementState(media);
 	if (p.volume !== undefined) s.volume = p.volume;
-	if (p.muted !== undefined) s.muted = p.muted;
+	if (p.muted !== undefined) {
+		s.muted = p.muted;
+		s._flags = setFlag(s._flags, FLAG_MUTED, p.muted);
+	}
 	if (p.speed !== undefined) s.speed = p.speed;
-	if (p.settingByPlugin !== undefined) s.settingByPlugin = p.settingByPlugin;
-	if (p.hasReceivedUserEvent !== undefined) s.hasReceivedUserEvent = p.hasReceivedUserEvent;
+	if (p.settingByPlugin !== undefined) {
+		s.settingByPlugin = p.settingByPlugin;
+		s._flags = setFlag(s._flags, FLAG_SETTING_BY_PLUGIN, p.settingByPlugin);
+	}
+	if (p.hasReceivedUserEvent !== undefined) {
+		s.hasReceivedUserEvent = p.hasReceivedUserEvent;
+		s._flags = setFlag(s._flags, FLAG_HAS_RECEIVED_USER_EVENT, p.hasReceivedUserEvent);
+	}
 }
 
 export const isMonitored = (media: HTMLMediaElement) => monitoredElements.has(media);
@@ -46,104 +82,100 @@ export interface MonitorContext {
 	onNativeSpeedChange?: (speed: number) => void;
 }
 
-// perf: inline diff calculation
+// perf: inline absolute value
 const fastAbs = (x: number): number => x > 0 ? x : -x;
 
 export function setupVolumeMonitor(media: HTMLMediaElement, ctx: MonitorContext): void {
-	getElementState(media); // Ensure init
+	const s = getElementState(media);
 
-	// perf: throttled handlers
-	const getThrottle = () => {
-		let t = throttleMap.get(media);
-		if (!t) {
-			t = { volume: media.volume, speed: media.playbackRate, rafId: null };
-			throttleMap.set(media, t);
-		}
-		return t;
-	};
+	// perf: get or create throttle state
+	let throttle = throttleStates.get(media);
+	if (!throttle) {
+		throttle = { rafId: 0, lastVol: media.volume, lastSpeed: media.playbackRate };
+		throttleStates.set(media, throttle);
+	}
 
-	// eff: reset state when media loads new content (prevents stale speed from triggering false sync)
+	// eff: emptied handler - reset state
 	media.addEventListener('emptied', () => {
-		const s = elementStates.get(media)!;
-		// inv: update stored speed to match browser default (1.0) to prevent ratechange feedback
 		s.speed = 1;
-		// inv: also reset volume state to match current element state
 		s.volume = media.volume;
 		s.muted = media.muted;
-		// perf: reset throttle state
-		const t = throttleMap.get(media);
-		if (t) {
-			t.volume = media.volume;
-			t.speed = 1;
+		s._flags = setFlag(s._flags, FLAG_MUTED, media.muted);
+		if (throttle) {
+			throttle.lastVol = media.volume;
+			throttle.lastSpeed = 1;
 		}
 	});
 
-	media.addEventListener('volumechange', (e) => {
-		const s = elementStates.get(media)!;
-		if (s.settingByPlugin) return;
+	// perf: volumechange with RAF throttling
+	media.addEventListener('volumechange', e => {
+		if (hasFlag(s._flags, FLAG_SETTING_BY_PLUGIN)) return;
+		if (throttle.rafId !== 0) return;
 
-		// perf: throttle rapid events
-		const t = getThrottle();
-		if (t.rafId !== null) return; // Already scheduled
-		
-		t.rafId = requestAnimationFrame(() => {
-			t.rafId = null;
-			
-			// rule: Ignore events unless untrusted or user interacted
+		throttle.rafId = requestAnimationFrame(() => {
+			throttle.rafId = 0;
+
 			if (!ctx.getUserInteracted() && !e.isTrusted) return;
 
-			const nv = media.volume, nm = media.muted;
-			const diff = fastAbs(nv - ctx.getTargetVolume());
-			const diffMute = nm !== ctx.getTargetMuted();
+			const nv = media.volume;
+			const nm = media.muted;
+			const volDiff = fastAbs(nv - ctx.getTargetVolume());
+			const muteDiff = nm !== ctx.getTargetMuted();
 
-			// Advanced Mode (Sync native range only)
 			if (!ctx.isSyncEnabled()) {
-				// Implicit unmute
-				if (s.muted && !nm && nv > 0) {
-					log.debug(`[DOM] Adv Unmute`);
+				// Advanced mode
+				const wasMuted = hasFlag(s._flags, FLAG_MUTED);
+				if (wasMuted && !nm && nv > 0) {
+					log.debug('[DOM] Adv Unmute');
 					ctx.onNativeVolumeChange(-1, nm);
-				} else if (fastAbs(nv - s.volume) > 0.005) {
+				} else if (fastAbs(nv - s.volume) > VOL_THRESHOLD) {
 					log.debug(`[DOM] Adv Vol: ${(nv * 100) | 0}%`);
 					ctx.onNativeVolumeChange(nv, nm);
 				}
-				s.volume = nv; s.muted = nm;
+				s.volume = nv;
+				s.muted = nm;
+				s._flags = setFlag(s._flags, FLAG_MUTED, nm);
 				return;
 			}
 
-			// Sync Mode
-			const allowMute = ctx.getUserInteracted() || s.hasReceivedUserEvent;
-			if (diff > 0.005) {
+			// Sync mode
+			const allowMute = ctx.getUserInteracted() || hasFlag(s._flags, FLAG_HAS_RECEIVED_USER_EVENT);
+			if (volDiff > VOL_THRESHOLD) {
 				log.debug(`[DOM] Vol: ${(nv * 100) | 0}%`);
 				ctx.onNativeVolumeChange(nv, allowMute ? nm : ctx.getTargetMuted());
-				s.volume = nv; s.muted = nm; s.hasReceivedUserEvent = true;
-			} else if (diffMute && allowMute) {
+				s.volume = nv;
+				s.muted = nm;
+				s._flags = setFlag(s._flags, FLAG_MUTED, nm);
+				s._flags = setFlag(s._flags, FLAG_HAS_RECEIVED_USER_EVENT, true);
+				s.hasReceivedUserEvent = true;
+			} else if (muteDiff && allowMute) {
 				log.debug(`[DOM] Mute: ${nm}`);
 				ctx.onNativeVolumeChange(-1, nm);
-				s.volume = nv; s.muted = nm; s.hasReceivedUserEvent = true;
+				s.volume = nv;
+				s.muted = nm;
+				s._flags = setFlag(s._flags, FLAG_MUTED, nm);
+				s._flags = setFlag(s._flags, FLAG_HAS_RECEIVED_USER_EVENT, true);
+				s.hasReceivedUserEvent = true;
 			} else {
-				s.volume = nv; s.muted = nm;
+				s.volume = nv;
+				s.muted = nm;
+				s._flags = setFlag(s._flags, FLAG_MUTED, nm);
 			}
 		});
 	});
 
-	media.addEventListener('ratechange', (e) => {
-		const s = elementStates.get(media)!;
-		if (s.settingByPlugin) return;
-
-		// perf: throttle rapid events
-		const t = getThrottle();
-		if (t.rafId !== null) {
-			// Update pending speed but don't schedule another frame
-			t.speed = media.playbackRate;
+	// perf: ratechange with RAF throttling
+	media.addEventListener('ratechange', () => {
+		if (hasFlag(s._flags, FLAG_SETTING_BY_PLUGIN)) return;
+		if (throttle.rafId !== 0) {
+			throttle.lastSpeed = media.playbackRate;
 			return;
 		}
-		
-		t.rafId = requestAnimationFrame(() => {
-			t.rafId = null;
-			
-			// note: speed changes are almost always user or script initiated (no browser default like mute)
+
+		throttle.rafId = requestAnimationFrame(() => {
+			throttle.rafId = 0;
 			const ns = media.playbackRate;
-			if (fastAbs(ns - s.speed) > 0.005) {
+			if (fastAbs(ns - s.speed) > SPEED_THRESHOLD) {
 				log.debug(`[DOM] Rate: ${ns}`);
 				ctx.onNativeSpeedChange?.(ns);
 				s.speed = ns;
