@@ -45,3 +45,24 @@ VideoControl: 变速 0.1x-16x | 旋转/镜像/缩放 | 亮度/对比度/饱和�
 
 1. `volume-observer.ts` 引入 `hasReceivedUserEvent` 标志，区分"页面初始化"和"用户操作"
 2. `core/lifecycle/user-interaction.ts` 的 `syncDomVolumeToState()` 移除对 muted 状态的同步，只同步 volume 用于 UI 显示
+
+### 2026-02-21: Enhanced Preset Management + Unified Version
+
+**功能**: 预设管理增强 + 版本统一管理
+
+**预设管理**:
+- Global/Site 双层级预设系统
+- 搜索过滤功能
+- 默认预设标记
+- 应用(✓)/预览(👁)/默认(★)/删除(✕) 操作
+- 音量(蓝色)/速度(橙色) 高亮显示
+- 水平紧凑布局
+
+**版本管理**:
+- package.json 作为唯一版本源 (SSOT)
+- build.mjs 构建时自动同步到 popup.html 和 manifest.json
+- 开发构建显示 `v{x.x.x} • Dev`，生产构建显示 `v{x.x.x} • Prod`
+
+**技术**:
+- Playback Rate Hijack (原型劫持实现双向同步)
+- 性能优化 (Bit Flags, Object Pooling, Loop Unrolling)

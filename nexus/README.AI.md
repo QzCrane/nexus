@@ -21,7 +21,7 @@
 
 ## 功能
 
-**SPECTRA**: Audio 800%/EQ/压缩/声道 | AudioContext 劫持 | Video 速率 16x/旋转/PiP/截图 | AB 循环 | 遥控 QR+WebRTC | 热键脚本
+**SPECTRA**: Audio 800%/EQ/压缩/声道 | AudioContext 劫持 | Playback Rate 双向同步 | Video 速率 16x/旋转/PiP/截图 | AB 循环 | 预设管理(Global/Site) | 遥控 QR+WebRTC | 热键脚本
 
 **HALO** (85 tools): 自动注册(`manifest.json`+`locales/`→`bun run generate-registry`) | 故障隔离(`ToolErrorBoundary`) | 智能意图(`useClipboardIntent`) | 搜索(Pinyin 全拼/简拼) | 性能(IdlePreload/VisibilityPause/EventDriven) | 资源监控(11 种 CPU 机制)
 Core(13) | Dev(34,含 UserScripts Pro) | Efficiency(13) | Security(5) | Media(3) | Browser(8)
