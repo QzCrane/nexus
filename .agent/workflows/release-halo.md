@@ -28,7 +28,7 @@ Halo 依赖以下核心模块，确保它们是最新的：
 bun run rimraf apps/extension-halo/dist
 
 # 2. 生产环境构建 (压缩, 无 Sourcemap)
-bun turbo run build --filter=@nexus/extension-halo
+bun run build --filter=@nexus/extension-halo
 
 # 3. 打包 ZIP
 cd apps/extension-halo

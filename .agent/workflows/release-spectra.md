@@ -12,7 +12,6 @@ description: Extension Spectra 发布标准流程 (测试 + 打包)
 
 - 递增版本号 (SemVer):
   - `apps/extension-spectra/package.json`
-  - `apps/extension-spectra/public/manifest.json`
 
 ## 2. 质量门禁
 
@@ -20,7 +19,7 @@ description: Extension Spectra 发布标准流程 (测试 + 打包)
 
 ```bash
 # 确保使用生产模式构建 (去除 sourcemap, 最小化)
-cd nexus ; bun turbo run build:prod --filter=@nexus/extension-spectra
+cd nexus ; bun run build:prod --filter=@nexus/extension-spectra
 cd apps/extension-spectra ; bun run test:e2e
 ```
 
