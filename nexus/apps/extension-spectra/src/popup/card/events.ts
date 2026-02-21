@@ -140,6 +140,35 @@ export function bindCardEvents(params: EventsParams): void {
     setTimeout(() => { ui.btnSave.innerText = old; }, TIMING.BUTTON_FEEDBACK_DURATION);
   };
 
+  // eff: save as global preset
+  if (ui.btnSaveGlobal) {
+    ui.btnSaveGlobal.onclick = async () => {
+      // eff: capture current playback speed
+      try {
+        const mediaState = await sendToTab<{ speed: number }>(tabId, 'MEDIA_GET_STATE', {});
+        if (mediaState && mediaState.speed) {
+          state.config.speed = mediaState.speed;
+        }
+      } catch (e) {
+        console.warn('Failed to get speed for global preset save', e);
+      }
+
+      // eff: prompt for preset name
+      const { getCurrentDict } = await import('../views/i18n-apply');
+      const dict = getCurrentDict();
+      const name = prompt(dict?.presetSaveGlobalPrompt || 'Enter preset name:', domain);
+      if (!name) return;
+
+      const { saveGlobalPreset } = await import('../views/presets-ui');
+      await saveGlobalPreset(name, state.config);
+
+      // feedback
+      const old = ui.btnSaveGlobal!.innerText;
+      ui.btnSaveGlobal!.innerText = 'OK';
+      setTimeout(() => { ui.btnSaveGlobal!.innerText = old; }, TIMING.BUTTON_FEEDBACK_DURATION);
+    };
+  }
+
   ui.btnReset.onclick = () => update(DEFAULT_AUDIO_CONFIG);
 
   bindMediaControls(ui, tabId, (changes) => update(changes));

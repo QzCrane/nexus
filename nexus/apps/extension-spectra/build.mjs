@@ -17,6 +17,10 @@ const __dirname = dirname(__filename);
 const distDir = resolve(__dirname, 'dist');
 const publicDir = resolve(__dirname, 'public');
 
+// inv: single source of truth for version
+const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'));
+const VERSION = pkg.version;
+
 const isWatch = process.argv.includes('--watch');
 const isDev = process.argv.includes('--dev') || isWatch;
 const isAnalyze = process.argv.includes('--analyze');
@@ -40,6 +44,28 @@ if (!isWatch) {
 if (existsSync(distDir)) rmSync(distDir, { recursive: true });
 mkdirSync(distDir, { recursive: true });
 cpSync(publicDir, distDir, { recursive: true });
+
+// eff: sync version to all files (SSOT: package.json)
+const buildMode = isDev ? 'Dev' : 'Prod';
+const versionString = `v${VERSION} • ${buildMode}`;
+
+// eff: update popup.html version display
+const popupHtmlPath = resolve(distDir, 'popup.html');
+if (existsSync(popupHtmlPath)) {
+	let popupHtml = readFileSync(popupHtmlPath, 'utf-8');
+	popupHtml = popupHtml.replace(/v\d+\.\d+\.\d+\s*•\s*(?:Build|Dev|Prod)/, versionString);
+	writeFileSync(popupHtmlPath, popupHtml);
+}
+
+// eff: update manifest.json version
+const manifestPath = resolve(distDir, 'manifest.json');
+if (existsSync(manifestPath)) {
+	const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+	manifest.version = VERSION;
+	writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+}
+
+console.log(`✓ Version: ${VERSION}`);
 
 // eff: Generate content hash for cache busting
 function getContentHash(filePath) {
