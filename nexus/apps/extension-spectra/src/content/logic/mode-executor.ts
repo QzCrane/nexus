@@ -3,10 +3,11 @@
 import { AudioMode } from '@nexus/audio-engine';
 import type { AudioConfig } from '@nexus/kernel';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../types';
-import { setDomVolume, releaseVolumeLock, enableVolumeLock, setNativeVolumeCallback, setNativeSpeedCallback, enableDirectTake } from '../audio/dom-volume';
+import { setDomVolume, releaseVolumeLock, enableVolumeLock, setNativeVolumeCallback, setNativeSpeedCallback } from '../audio/dom-volume';
 import { isAnyMediaPlaying } from '../audio/media-detection';
 import { setSpeed } from './media-control';
-import { isYouTube, setYouTubeVolume, setYouTubeSyncCallback } from '../adapters/youtube-adapter';
+import { applyToMedia, getPrimaryMedia } from '../utils/media-utils';
+import { getSiteBridge } from './site-bridge/registry';
 import { logger } from '../../shared/logger';
 
 const log = logger.content;
@@ -31,10 +32,8 @@ function notifyWebAudioState(active: boolean): void {
 function handleNativeVolume(volume: number, muted: boolean) {
 	if (!currentState || !currentDeps || !currentUpdateConfig) return;
 
-	// rule: on YouTube, we NO LONGER TRUST DOM volumechange events
-	// reason: they are heavily polluted by YouTube internal player resets and ad scripts
-	// instead, we rely EXCLUSIVELY on SPECTRA_YT_SYNC_BACK messages from the player API
-	if (isYouTube()) return;
+	const bridge = getSiteBridge();
+	if (bridge.shouldInhibitDomSync()) return;
 
 	const newVol = (volume * 100) | 0;
 	const lastVol = currentState.config.volume;
@@ -52,35 +51,47 @@ function handleNativeVolume(volume: number, muted: boolean) {
 }
 
 function handleNativeSpeed(speed: number) {
-	if (!currentState || !currentDeps || !currentUpdateConfig) return;
-	// note: avoid trivial updates
-	if (Math.abs((currentState.config.speed || 1) - speed) < 0.05) return;
+	if (!currentUpdateConfig) return;
+	const bridge = getSiteBridge();
+	if (bridge.shouldInhibitDomSync()) return;
 
 	log.debug(`[Native] Speed: ${speed}x`);
 	currentUpdateConfig({ speed }, { isNativeSync: true });
 }
 
-function handleYouTubeSyncBack(volume: number, muted: boolean, speed?: number) {
+function handleSiteSyncBack(changes: Partial<AudioConfig>, options?: { isNativeSync?: boolean }) {
 	if (!currentState || !currentUpdateConfig) return;
 
-	const changes: Partial<AudioConfig> = {};
-	if (volume >= 0) {
-		changes.volume = volume;
-		changes.muted = muted;
-	}
-	if (speed !== undefined) {
-		changes.speed = speed;
+	// rule: [Boost Guard] Prevent native ceiling reports (100%) from overwriting plugin boost (>100%)
+	if (changes.volume === 100 && currentState.config.volume > 100) {
+		log.debug(`[SiteBridge] Guard: Ignoring 100% report while boosting at ${currentState.config.volume}%`);
+		delete changes.volume;
+		if (Object.keys(changes).length === 0) return;
 	}
 
-	// note: avoid trivial updates to prevent UI jitter
-	const volDiff = volume >= 0 ? Math.abs(currentState.config.volume - volume) : 0;
-	const speedDiff = speed !== undefined ? Math.abs((currentState.config.speed || 1) - speed) : 0;
-	const muteDiff = volume >= 0 ? currentState.config.muted !== muted : false;
+	// rule: [Speed Persistence Guard] Ignore programmatic speed resets to 1x during media loading/ad-swaps
+	if (changes.speed === 1 && (currentState.config.speed || 1) !== 1) {
+		const media = getPrimaryMedia();
+		const isLoading = media && media.readyState < 2; // HAVE_CURRENT_DATA
+		if (isLoading) {
+			log.debug(`[SiteBridge] Speed Guard: Ignoring 1x reset during media swap`);
+			delete changes.speed;
+			if (Object.keys(changes).length === 0) return;
+		}
+	}
 
-	if (volDiff < 1 && speedDiff < 0.05 && !muteDiff) return;
+	// rule: prevent loop - ignore if diff is too small
+	const volDiff = changes.volume !== undefined ? Math.abs(currentState.config.volume - changes.volume) : 0;
+	const speedDiff = changes.speed !== undefined ? Math.abs((currentState.config.speed || 1) - changes.speed) : 0;
+	const muteDiff = changes.muted !== undefined ? currentState.config.muted !== changes.muted : false;
 
-	log.debug(`[YouTube] Auth Sync Back: ${volume}% ${muted} ${speed}x`);
-	currentUpdateConfig(changes, { isNativeSync: true });
+	// use previously approved thresholds (1% volume, 0.05 speed)
+	if (volDiff < 1 && speedDiff < 0.05 && !muteDiff && Object.keys(changes).length > 0) {
+		return;
+	}
+
+	log.debug(`[SiteBridge] Auth Sync Accepted:`, changes);
+	currentUpdateConfig(changes, options ?? { isNativeSync: true });
 }
 
 export function initModeExecutorCallbacks(
@@ -100,10 +111,10 @@ export function initModeExecutorCallbacks(
 	setNativeVolumeCallback(handleNativeVolume);
 	setNativeSpeedCallback(handleNativeSpeed);
 
-	// rule: on YouTube, attach authoritative sync-back listener
-	if (isYouTube()) {
-		setYouTubeSyncCallback(handleYouTubeSyncBack);
-	}
+	// rule: initialize active site bridge
+	getSiteBridge().onInitialize({
+		updateConfig: handleSiteSyncBack
+	});
 }
 
 // post: returns true if the user has engaged with the page, making it safe to initialize AudioContext
@@ -151,7 +162,7 @@ export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState
 		const domVol = config.muted ? 0 : Math.min(1, config.volume / 100);
 		enableVolumeLock(domVol, config.muted);
 		// rule: sync YouTube native UI
-		if (isYouTube()) setYouTubeVolume(config.volume, config.muted);
+		getSiteBridge().syncVolume(config.volume, config.muted);
 
 	} else if (mode === AudioMode.NATIVE_WEBAUDIO) {
 
@@ -197,8 +208,7 @@ function applyWebAudioState(config: AudioConfig, deps: PolicyExecutorDeps): void
 	}
 
 	setDomVolume(domVol, config.muted);
-	// rule: sync YouTube native UI
-	if (isYouTube()) setYouTubeVolume(config.volume, config.muted);
+	getSiteBridge().syncVolume(config.volume, config.muted);
 
 	audioController.scanAndAttach();
 	audioController.updateParams(effectiveConfig);
@@ -214,6 +224,5 @@ function applyWebAudioState(config: AudioConfig, deps: PolicyExecutorDeps): void
 function fallbackToDom(config: AudioConfig): void {
 	const domVol = config.muted ? 0 : Math.min(1, config.volume / 100);
 	enableVolumeLock(domVol, config.muted);
-	// rule: sync YouTube native UI
-	if (isYouTube()) setYouTubeVolume(config.volume, config.muted);
+	getSiteBridge().syncVolume(config.volume, config.muted);
 }
