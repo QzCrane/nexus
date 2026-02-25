@@ -52,15 +52,17 @@ export function setDomVolume(vol: number, muted: boolean): void {
 - **用户操作后**：不再自动纠正，等待用户操作或插件修改
 - **新媒体元素**：自动应用当前插件配置
 
-### 5. YouTube 特殊处理
+### 5. 站点网桥特化 (SiteBridge)
 
-YouTube 使用自定义播放器，需要额外 API 调用同步 UI：
+对于 YouTube 等使用自定义播放器且具有“权威 API”的站点，核心逻辑必须通过 `SiteBridge` 进行通信。
 
-```typescript
-if (isYouTube()) {
-    setYouTubeVolume(vol, muted);  // 同步 YouTube 原生 UI
-}
-```
+**规则**：
+
+1. **API 优先**：如果站点在 `shouldInhibitDomSync()` 中返回 `true`，核心逻辑必须通过 `SiteBridge` 同步状态，而非直接修改 DOM 属性（避免指令冲突）。
+2. **权威回流 (Authoritative Sync)**：网桥监听站点原生 API 事件（如 YouTube 的 `onVolumeChange`），并将结果作为“真实状态”回传至核心配置。
+3. **防御性同步 (Sync Guards)**：
+   - **Boost Guard**：忽略站点报告的 100% 音量，以维持插件的 >100% 增益。
+   - **Speed Guard**：忽略 SPA 导航或视频切换时的 programmatic 1.0x 倍速重置。
 
 ## 实现架构
 
@@ -70,7 +72,7 @@ if (isYouTube()) {
 |------|------|------|
 | VolumeObserver | `audio/volume-observer.ts` | 事件监听，检测用户操作 |
 | DOMVolume | `audio/dom-volume.ts` | 应用插件配置到页面 |
-| YouTubeAdapter | `adapters/youtube-adapter.ts` | YouTube 特殊 API 调用 |
+| SiteBridge | `logic/site-bridge/*` | 站点权威同步接口 (YouTube/Default) |
 
 ### 数据流
 
@@ -80,12 +82,13 @@ if (isYouTube()) {
 │  (video)    │                        │ (检测用户操作) │
 └─────────────┘                        └──────┬───────┘
        ↑                                      │
-       │ settingByPlugin=true                 │ onNativeVolumeChange
-       │                                      ▼
-┌──────┴──────┐                        ┌──────────────┐
+       │ [ModeExecutor]                       │ onNativeVolumeChange
+       │ setDomVolume()                       ▼
+┌──────┴──────┐      syncVolume()      ┌──────────────┐
 │  DOMVolume  │ ←───────────────────── │ PolicyExecutor│
-│ (应用配置)   │    setDomVolume()      │ (更新配置)    │
-└─────────────┘                        └──────────────┘
+│ (应用配置)   │ ─────────────────────→ │ (更新配置)    │
+└─────────────┘      [SiteBridge]      └──────────────┘
+                     (YouTube 权威同步)
 ```
 
 ## 关键规则

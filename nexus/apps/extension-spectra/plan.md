@@ -51,6 +51,7 @@ VideoControl: 变速 0.1x-16x | 旋转/镜像/缩放 | 亮度/对比度/饱和�
 **功能**: 预设管理增强 + 版本统一管理
 
 **预设管理**:
+
 - Global/Site 双层级预设系统
 - 搜索过滤功能
 - 默认预设标记
@@ -59,10 +60,28 @@ VideoControl: 变速 0.1x-16x | 旋转/镜像/缩放 | 亮度/对比度/饱和�
 - 水平紧凑布局
 
 **版本管理**:
+
 - package.json 作为唯一版本源 (SSOT)
 - build.mjs 构建时自动同步到 popup.html 和 manifest.json
 - 开发构建显示 `v{x.x.x} • Dev`，生产构建显示 `v{x.x.x} • Prod`
 
 **技术**:
+
 - Playback Rate Hijack (原型劫持实现双向同步)
 - 性能优化 (Bit Flags, Object Pooling, Loop Unrolling)
+
++
+
++### 2026-02-25: Site-Bridge Refactoring & YouTube Fixes
++
++**重构**: 实现 Pinnacle Site-Bridge 架构
++
++**目标**: 彻底解耦 core logic 与特定站点逻辑，消除 YouTube 变速/音量冲突。
++
++**修复**:
++1. **YouTube 倍速锁定**: 引入 `shouldInhibitDomSync` 拦截 DOM 暴力修改，解决 SPA 路由切换导致的倍速重置 Bug。
++2. **Boost Guard 升级**: 修复收到的 100% 权威报告覆盖插件 >100% 增益状态的问题。
++3. **Speed Persistence Guard**: 识别视频加载及广告切换时的 programmatic 1.0x 重置，强制维持用户设定。
++4. **架构升级**: 删除 `youtube-adapter.ts`，由 `Registry` 模式动态加载 `YouTubeBridge`。
++
++**状态**: 已随 v1.3.2 发布。

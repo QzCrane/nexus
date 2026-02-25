@@ -30,6 +30,7 @@ src/
 | **Video** | `video/` | **视频画面**。`transform`(旋转/镜像), `filter`(滤镜), `ab-loop`(循环), `time-marker`(标记)。        |
 | **Input** | `input/` | **交互输入**。`hotkey-*`(全键盘操作), `controllers`(快捷键动作映射)。                               |
 | **UI**    | `ui/`    | **屏幕反馈**。`osd`(音量条), `toast`(操作提示)。                                                    |
+| **Bridge**| `logic/site-bridge/` | **站点网桥**。Pinnacle Registry 模式，处理 YouTube 等复杂站点的权威 API 同步。      |
 | **Utils** | `utils/` | **辅助工具**。`focus-helper`(焦点模拟), `pause-tracker`(暂停状态)。                                 |
 
 ### 2. Background (`src/background/`)
