@@ -6,7 +6,7 @@ import type { PolicyExecutorDeps, PolicyExecutorState } from '../types';
 import { setDomVolume, releaseVolumeLock, enableVolumeLock, setNativeVolumeCallback, setNativeSpeedCallback, enableDirectTake } from '../audio/dom-volume';
 import { isAnyMediaPlaying } from '../audio/media-detection';
 import { setSpeed } from './media-control';
-import { isYouTube, setYouTubeVolume } from '../adapters/youtube-adapter';
+import { isYouTube, setYouTubeVolume, setYouTubeSyncCallback } from '../adapters/youtube-adapter';
 import { logger } from '../../shared/logger';
 
 const log = logger.content;
@@ -30,12 +30,22 @@ function notifyWebAudioState(active: boolean): void {
 // eff: register global handler for native changes
 function handleNativeVolume(volume: number, muted: boolean) {
 	if (!currentState || !currentDeps || !currentUpdateConfig) return;
+
+	// rule: on YouTube, we NO LONGER TRUST DOM volumechange events
+	// reason: they are heavily polluted by YouTube internal player resets and ad scripts
+	// instead, we rely EXCLUSIVELY on SPECTRA_YT_SYNC_BACK messages from the player API
+	if (isYouTube()) return;
+
+	const newVol = (volume * 100) | 0;
+	const lastVol = currentState.config.volume;
+
 	const ch: Partial<AudioConfig> = {};
 	if (volume < 0) {
 		ch.muted = muted;
 		log.debug(`[Native] Mute: ${muted}`);
 	} else {
-		ch.volume = (volume * 100) | 0; ch.muted = muted;
+		ch.volume = newVol;
+		ch.muted = muted;
 		log.debug(`[Native] Vol: ${ch.volume}%`);
 	}
 	currentUpdateConfig(ch, { isNativeSync: true });
@@ -48,6 +58,29 @@ function handleNativeSpeed(speed: number) {
 
 	log.debug(`[Native] Speed: ${speed}x`);
 	currentUpdateConfig({ speed }, { isNativeSync: true });
+}
+
+function handleYouTubeSyncBack(volume: number, muted: boolean, speed?: number) {
+	if (!currentState || !currentUpdateConfig) return;
+
+	const changes: Partial<AudioConfig> = {};
+	if (volume >= 0) {
+		changes.volume = volume;
+		changes.muted = muted;
+	}
+	if (speed !== undefined) {
+		changes.speed = speed;
+	}
+
+	// note: avoid trivial updates to prevent UI jitter
+	const volDiff = volume >= 0 ? Math.abs(currentState.config.volume - volume) : 0;
+	const speedDiff = speed !== undefined ? Math.abs((currentState.config.speed || 1) - speed) : 0;
+	const muteDiff = volume >= 0 ? currentState.config.muted !== muted : false;
+
+	if (volDiff < 1 && speedDiff < 0.05 && !muteDiff) return;
+
+	log.debug(`[YouTube] Auth Sync Back: ${volume}% ${muted} ${speed}x`);
+	currentUpdateConfig(changes, { isNativeSync: true });
 }
 
 export function initModeExecutorCallbacks(
@@ -63,8 +96,14 @@ export function initModeExecutorCallbacks(
 	currentUpdateBadge = updateBadge;
 	currentBroadcastUI = broadcastUI;
 	currentUpdateConfig = updateConfig;
+
 	setNativeVolumeCallback(handleNativeVolume);
 	setNativeSpeedCallback(handleNativeSpeed);
+
+	// rule: on YouTube, attach authoritative sync-back listener
+	if (isYouTube()) {
+		setYouTubeSyncCallback(handleYouTubeSyncBack);
+	}
 }
 
 // post: returns true if the user has engaged with the page, making it safe to initialize AudioContext

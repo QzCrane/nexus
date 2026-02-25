@@ -4,6 +4,7 @@
 import { AudioMode, WebAudioController } from '@nexus/audio-engine';
 import { logger } from '../../../shared/logger';
 import { getPrimaryMedia } from '../../utils/media-utils';
+import { isYouTube } from '../../adapters/youtube-adapter';
 import type { PolicyExecutorState } from '../../types';
 import type { PolicyExecutor } from '../../logic/policy-executor';
 
@@ -41,6 +42,8 @@ export function setupUserGestureListeners(
 }
 
 export function setupPopupConnectionListener(state: PolicyExecutorState, onPopupOpen?: () => void): void {
+	if (typeof chrome === 'undefined' || !chrome.runtime?.onConnect) return;
+
 	chrome.runtime.onConnect.addListener((port) => {
 		if (port.name === 'popup-connection') {
 			state.isPopupOpen = true;
@@ -52,6 +55,10 @@ export function setupPopupConnectionListener(state: PolicyExecutorState, onPopup
 }
 
 function syncDomVolumeToState(state: PolicyExecutorState): void {
+	// rule: on YouTube, DOM volume is a lie managed by YouTube's player API
+	// reason: we now rely exclusively on SPECTRA_YT_SYNC_BACK from the injector
+	if (isYouTube()) return;
+
 	const media = getPrimaryMedia();
 	if (!media) return;
 

@@ -41,10 +41,23 @@ export function setYouTubeVolume(volume: number, muted: boolean): void {
 	window.postMessage({ type: 'SPECTRA_YT_VOLUME', volume, muted }, '*');
 }
 
+// eff: register global handler for authoritative YT status sync
+let syncBackCallback: ((vol: number, muted: boolean, speed?: number) => void) | null = null;
+export const setYouTubeSyncCallback = (cb: typeof syncBackCallback) => { syncBackCallback = cb; };
+
 // eff: listen for injector responses
 export function initYouTubeAdapter(): void {
 	window.addEventListener('message', (e) => {
 		if (!e.data) return;
+
+		// rule: authoritative sync from YT player API
+		if (e.data.type === 'SPECTRA_YT_SYNC_BACK') {
+			if (syncBackCallback) {
+				syncBackCallback(e.data.volume ?? -1, e.data.muted ?? false, e.data.speed);
+			}
+			return;
+		}
+
 		if (e.data.type === 'SPECTRA_YT_SPEED_OK') {
 			log.debug(`YT speed synced: ${e.data.speed}x`);
 		}
