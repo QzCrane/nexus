@@ -40,6 +40,18 @@
 遥控: REMOTE_CREATE/GET/CLOSE → `{roomId,peerId}` (WebRTC 信令)
 脚本: USER_SCRIPT_EXECUTE → `{code,context}` (UserJS eval)
 同步: TAB_REPORT/MEDIA_REPORT → `{gain,url,title}` (5s 心跳状态上报)
+生命周期: INJECT_CONTENT_SCRIPT → `{tabId}` (popup 按需触发 content script 注入)
+
+## 热更新协议
+
+`扩展更新 → onInstalled(update) → performWarmUpdate → injectWithTransition(每个tab)`
+
+1. 检测旧实例 (`__SPECTRA_TEARDOWN__` 存在?)
+2. 调用旧实例 teardown → registry.dispose() → sentinel 写入 DOM stub
+3. 注入 injector.js (MAIN) → 注入 content.js (ISOLATED)
+4. 新实例 consumeStub() 恢复状态 → 无缝继续
+
+Popup Fallback: sendToTab 失败 → INJECT_CONTENT_SCRIPT → 等待800ms → 重试
 
 ## 双向同步协议
 

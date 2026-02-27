@@ -167,22 +167,18 @@ export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState
 	} else if (mode === AudioMode.NATIVE_WEBAUDIO) {
 
 		if (hasUserGesture(state)) {
-			if (!audioController.isReady()) {
-				// note: direct user gesture is required to successfully resume an AudioContext
-				audioController.initialize(true).then((success) => {
-					if (success) {
-						notifyWebAudioState(true); // entering WEBAUDIO mode
-						applyWebAudioState(config, deps);
-					} else {
-						notifyWebAudioState(false);
-						log.debug('WebAudio init failed -> fallback to DOM');
-						fallbackToDom(config);
-					}
-				});
-			} else {
-				notifyWebAudioState(true); // WEBAUDIO mode active
-				applyWebAudioState(config, deps);
-			}
+			// rule: always attempt to initialize or resume the context if we have a gesture
+			// this handles cases where it's 'ready' but suspended
+			audioController.initialize(true).then((success) => {
+				if (success) {
+					notifyWebAudioState(true); // entering/active in WEBAUDIO mode
+					applyWebAudioState(config, deps);
+				} else {
+					notifyWebAudioState(false);
+					log.debug('WebAudio resume/init failed -> fallback to DOM');
+					fallbackToDom(config);
+				}
+			});
 		} else {
 			notifyWebAudioState(false);
 			fallbackToDom(config);

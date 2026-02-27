@@ -25,6 +25,8 @@ export interface MessageHandlerDeps {
 	getVisualizerData: () => Uint8Array | null;
 }
 
+
+
 /**
  * Create Message Handler
  * CRITICAL: Use deps.state directly (not destructured copy) to ensure real-time config access
@@ -34,12 +36,32 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 	sender: chrome.runtime.MessageSender,
 	sendResponse: (response?: unknown) => void
 ) => boolean | undefined {
-	// CRITICAL: Keep reference to deps, not destructured state, to ensure real-time access
-	const { policyExecutor, captureManager, settingsManager, getVisualizerData } = deps;
-
 	return (message, _sender, sendResponse) => {
 		const msg = message as { action?: string; payload?: unknown; config?: AudioConfig; command?: string; settings?: unknown };
 		if (!msg?.action) return false;
+
+		const { policyExecutor, captureManager, settingsManager, getVisualizerData } = deps;
+
+		// Pinnacle: ANY message from the popup (or anyone) to a booting script marks it as 'interacted'
+		// since the user is obviously trying to control it.
+		if (msg.action === Actions.AUDIO_GET_STATUS) {
+			deps.state.userHasInteracted = true;
+		}
+
+		// Pinnacle: if the executor isn't ready yet, some messages can wait or return a safe 'booting' state
+		if (!policyExecutor) {
+			if (msg.action === Actions.AUDIO_GET_STATUS) {
+				sendResponse({
+					config: deps.state.config,
+					hasAudio: hasMediaElements(),
+					isPlaying: false,
+					mode: 'BOOTING',
+					userInteracted: deps.state.userHasInteracted,
+				});
+				return true;
+			}
+			return false;
+		}
 
 		switch (msg.action) {
 			case Actions.AUDIO_SET_CONFIG: {

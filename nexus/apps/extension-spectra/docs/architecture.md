@@ -42,8 +42,9 @@ src/
 | `index.ts`          | 入口。初始化各大监听器。        |
 | `helpers.ts`        | 徽章(Badge)管理、Tab 查询工具。 |
 | `remote-service.ts` | 远程控制服务 (WebRTC/Socket)。  |
-| `lifecycle.ts`      | 安装/更新/卸载事件处理。        |
-| `handlers/`         | 针对特定网站的特殊处理逻辑。    |
+| `lifecycle.ts`      | Tab 激活/更新/关闭事件处理。    |
+| `upgrade-manager.ts`| 零刷新热更新。扩展更新后向所有标签页重新注入 content/injector script。 |
+| `handlers/`         | 消息路由处理 (audio/capture/badge/registry/tab-state/settings/user-scripts)。 |
 
 ### 3. Offscreen (`src/offscreen/`)
 
@@ -67,3 +68,4 @@ src/
 - **零拷贝**: 音频可视化数据通过 `Uint8Array` 直接传递，禁止序列化为普通数组。
 - **单一边界**: 所有配置变更必须通过 `PolicyExecutor` 统一入口，禁止各模块私自修改 State。
 - **双向同步**: 页面 UI 与插件状态双向同步，使用 `settingByPlugin` 标志位防止循环更新。详见 [bidirectional-sync-principles.md](./bidirectional-sync-principles.md)。
+- **零刷新热更新**: 扩展更新后通过 `upgrade-manager` + `sentinel` DOM stub 无缝迁移状态，无需用户刷新页面。Popup 含 fallback 自动注入重试。详见 [protocols.md](./protocols.md#热更新协议)。
