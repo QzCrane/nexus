@@ -77,14 +77,23 @@ async function initSpectra(): Promise<void> {
   const policyEngine = new PolicyEngine();
   const audioController = new WebAudioController();
 
-  // task: attempt to inherit state from previous version
+  // task: attempt to inherit state from previous version (hot update)
   const recoveredState = consumeStub();
+
+  // task: if no stub, fetch persisted config from background (tabSession > domain preset > default)
+  let initialConfig = recoveredState?.config;
+  if (!initialConfig) {
+    try {
+      const bgStatus = await messenger.send('AUDIO_GET_STATUS');
+      if (bgStatus?.config) initialConfig = bgStatus.config;
+    } catch { /* background unreachable on first load race */ }
+  }
 
   const settingsManager = createSettingsManager(messenger);
   const captureManager = createCaptureManager(messenger);
 
   const state: PolicyExecutorState = {
-    config: recoveredState?.config ?? { ...DEFAULT_AUDIO_CONFIG },
+    config: initialConfig ?? { ...DEFAULT_AUDIO_CONFIG },
     activeMode: null,
     hasGesture: false,
     userHasInteracted: !!recoveredState,
