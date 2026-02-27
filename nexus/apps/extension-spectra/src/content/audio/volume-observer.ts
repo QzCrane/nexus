@@ -147,13 +147,14 @@ export function setupVolumeMonitor(media: HTMLMediaElement, ctx: MonitorContext)
 
 	// perf: ratechange with RAF throttling
 	media.addEventListener('ratechange', () => {
+		if (hasFlag(s._flags, FLAG_SETTING_BY_PLUGIN)) return;
 		if (throttle.rafId !== 0) return;
 
 		throttle.rafId = requestAnimationFrame(() => {
 			throttle.rafId = 0;
+			if (hasFlag(s._flags, FLAG_SETTING_BY_PLUGIN)) return;
 			const ns = media.playbackRate;
-			// note: we don't have getTargetSpeed in ctx currently, but we can compare to state
-			// for now let's just trigger callback
+			if (fastAbs(ns - s.speed) < SPEED_THRESHOLD) return;
 			ctx.onNativeSpeedChange(ns);
 			s.speed = ns;
 		});
