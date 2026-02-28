@@ -68,26 +68,28 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 				const payload = msg.payload as { config: Partial<AudioConfig> & { volumeDelta?: number; toggleMute?: boolean; isNativeSync?: boolean } };
 				const configChanges = { ...payload.config };
 				const isNativeSync = payload.config.isNativeSync;
-
+	
 				// Handle volume delta (Remote/Global Hotkeys)
 				// CRITICAL: Read from deps.state.config to get real-time value
-				if (payload.config.volumeDelta !== undefined) {
+				const hasVolumeDelta = payload.config.volumeDelta !== undefined;
+				if (hasVolumeDelta) {
 					const currentVol = deps.state.config.volume;
-					configChanges.volume = Math.max(0, Math.min(800, currentVol + payload.config.volumeDelta));
+					configChanges.volume = Math.max(0, Math.min(800, currentVol + payload.config.volumeDelta!));
 					delete (configChanges as any).volumeDelta;
 				}
-
+	
 				// Handle mute toggle (Remote/Global Hotkeys)
 				if (payload.config.toggleMute) {
 					configChanges.muted = !deps.state.config.muted;
 					delete (configChanges as any).toggleMute;
 				}
-
+	
 				delete (configChanges as any).isNativeSync;
-
+	
 				// note: show OSD for remote control commands (volumeDelta/toggleMute indicate remote/hotkey)
-				const isRemoteCommand = payload.config.volumeDelta !== undefined || payload.config.toggleMute !== undefined;
-				policyExecutor.updateConfig(configChanges, { isNativeSync, showOSD: isRemoteCommand });
+				const isRemoteCommand = hasVolumeDelta || payload.config.toggleMute !== undefined;
+				// fix: volume delta commands should auto-unmute (user is actively adjusting volume)
+				policyExecutor.updateConfig(configChanges, { isNativeSync, showOSD: isRemoteCommand, unMute: hasVolumeDelta });
 				sendResponse({
 					success: true,
 					state: {

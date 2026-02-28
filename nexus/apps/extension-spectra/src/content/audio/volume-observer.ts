@@ -83,9 +83,11 @@ export function setupVolumeMonitor(media: HTMLMediaElement, ctx: MonitorContext)
 	throttleStates.set(media, throttle);
 
 	// rule: initial state sync if element already has weird values (e.g. from previous session)
+	// fix: only report volume difference, preserve plugin's muted state to prevent
+	// autoplay-muted elements from silently overriding user configuration
 	if (fastAbs(media.volume - ctx.getTargetVolume()) > 0.3) {
-		log.debug('[DOM] Initial volume mismatch, reporting...');
-		ctx.onNativeVolumeChange(media.volume, media.muted);
+		log.debug('[DOM] Initial volume mismatch, reporting (preserving muted state)...');
+		ctx.onNativeVolumeChange(media.volume, ctx.getTargetMuted());
 	}
 
 	// perf: volumechange with RAF throttling
