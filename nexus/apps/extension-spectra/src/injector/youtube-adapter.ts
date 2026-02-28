@@ -35,6 +35,18 @@ export function initYouTubeAdapter(): void {
 			handleYtSpeed(currentTargetSpeed);
 		}
 	});
+
+	// rule: Invincible physical DOM trap. When YouTube changes video src natively (SPA), 
+	// the browser bypasses all JS setters and silently forces 1.0x, firing ratechange.
+	// This captures that rogue reset and violently throws the speed back into place.
+	document.addEventListener('ratechange', (e) => {
+		const v = e.target as HTMLVideoElement;
+		if (v && v.tagName === 'VIDEO' && currentTargetSpeed !== 1) {
+			if (Math.abs(v.playbackRate - currentTargetSpeed) > 0.005) {
+				v.playbackRate = currentTargetSpeed;
+			}
+		}
+	}, true);
 }
 
 function attachPlayerListeners(yt: any): void {
