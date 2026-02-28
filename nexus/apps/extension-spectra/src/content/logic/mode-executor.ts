@@ -79,20 +79,6 @@ function handleSiteSyncBack(changes: Partial<AudioConfig>, options?: { isNativeS
 		if (Object.keys(changes).length === 0) return;
 	}
 
-	// rule: [Speed Persistence Guard] Ignore programmatic speed resets to 1x during media loading/ad-swaps/navigation
-	if (changes.speed === 1 && (currentState.config.speed || 1) !== 1) {
-		const media = getPrimaryMedia();
-		const isLoading = media && media.readyState < 2;
-		const recentlySet = lastSpeedSetTime > 0 && Date.now() - lastSpeedSetTime < 3000;
-		if (isLoading || recentlySet) {
-			log.debug(`[SiteBridge] Speed Guard: Ignoring 1x reset (loading=${isLoading}, recent=${recentlySet}), re-applying ${currentState.config.speed}x`);
-			delete changes.speed;
-			// eff: actively re-apply user's speed to combat the reset
-			setSpeed(currentState.config.speed || 1);
-			if (Object.keys(changes).length === 0) return;
-		}
-	}
-
 	// rule: prevent loop - ignore if diff is too small
 	const volDiff = changes.volume !== undefined ? Math.abs(currentState.config.volume - changes.volume) : 0;
 	const speedDiff = changes.speed !== undefined ? Math.abs((currentState.config.speed || 1) - changes.speed) : 0;
@@ -152,7 +138,6 @@ export function executeMode(deps: PolicyExecutorDeps, state: PolicyExecutorState
 	// eff: sync playback speed - always apply to ensure consistency on page load/navigation
 	const currentSpeed = config.speed || 1.0;
 	setSpeed(currentSpeed);
-	lastSpeedSetTime = Date.now();
 
 	if (mode === AudioMode.CAPTURE) {
 		notifyWebAudioState(false); // exiting WEBAUDIO mode

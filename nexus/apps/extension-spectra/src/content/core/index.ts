@@ -25,6 +25,7 @@ import {
 import { initHotkeyListener, setConfigGetter, setConfigUpdater } from '../input/hotkey-listener';
 import { Registry } from '../../shared/registry';
 import { createSnapshot, mountStub, consumeStub } from './sentinel';
+import { getSiteBridge } from '../logic/site-bridge/registry';
 // note: YouTube specialization is now handled by SiteBridge architecture automagically
 
 const log = logger.content;
@@ -161,6 +162,12 @@ async function initSpectra(): Promise<void> {
 
   registry.addEventListener(window, 'message', ((event: MessageEvent) => {
     if (event.data?.type === 'SPECTRA_RATE') {
+      // fix: on YouTube, speed sync is handled exclusively by the YouTubeBridge
+      // SPECTRA_RATE from playback-rate.ts hijack would bypass bridge's cooldown/guard
+      // and poison the config to speed=1 during video transitions
+      const bridge = getSiteBridge();
+      if (bridge.shouldInhibitDomSync()) return;
+
       const newSpeed = event.data.speed;
       policyExecutor.updateConfig({ speed: newSpeed }, { isNativeSync: true });
     }
