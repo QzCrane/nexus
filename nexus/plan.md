@@ -6,7 +6,6 @@
 
 [HALO](apps/extension-halo/plan.md): 85 工具 ✅ | 自动注册 ✅ | 性能优化(Zero-Alloc/rAF) ✅
 [SPECTRA](apps/extension-spectra/plan.md): 音视频控制 ✅ | 零拷贝体系 ✅ | Site-Bridge 架构落地 ✅ | AI 人声分离 🔜
-[INFRA]: 迁移至 Bun Runtime (v1.3.5) ✅ | Pinnacle Site-Bridge 重构 ✅
 
 ## 里程碑
 

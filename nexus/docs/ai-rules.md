@@ -1,3 +1,3 @@
-# AI Rules (已迁移)
+# AI Rules
 
-> 读取 `.roo/rules/rules.md`
+> 读取 `rules.md`
