@@ -4,7 +4,7 @@
 
 ## 结构
 
-```
+```plaintext
 src/
 ├─ entry/: background, content, sidepanel.tsx
 ├─ components/
@@ -24,8 +24,7 @@ src/
 ## 插件架构
 
 pluginType: `tool`(面板) | `script`(SaaT,嵌套) | `system`(设置/商店/权限)
-
-**内部特性 (Features)**: 如 Dark Mode，不作为插件注册，而是作为 `Settings` 的内部组件 (`src/components/settings/internal/`) 存在。这避免了系统组件列表的污染，保持注册表纯净。
+**内部特性**: 沉入 `Settings` 内部组件(如 Dark Mode) | 绝禁直接注册防污染 Registry
 
 分类(SSOT): 虚拟(active,scripts,system) → 功能(general,encode,format,network,data,dev,efficiency,browser,visual,media,security,ai)
 
@@ -35,10 +34,10 @@ Registry 产出: `PLUGIN_REGISTRY` | `BACKGROUND_PLUGIN_IDS` | `get{Tool,Script,
 
 ## UI 系统 (Premium)
 
-主题: `theme.ts` 扩展了 Premium UI Tokens: `cardBg`, `glassBorder`, `shadow`。
-风格: 全面采用 Glassmorphism (毛玻璃) 设计，结合 CSS Variables 实现动态暗黑模式。
-组件: `Dark Mode` 控制面板位于 `Settings` 内部，提供亮度、对比度、滤镜及自定义 CSS 修复。
-安全: `MediaSniffer` 等工具增加了对敏感页面 (`chrome://`) 的检测与 Toast 提示。
+主题: `theme.ts` 扩展 Premium UI Tokens (`cardBg`, `glassBorder`, `shadow`)
+风格: Glassmorphism(毛玻璃) | 动态 CSS Variables 暗黑模式
+组件: `Dark Mode` 控制面板内置 Settings (亮度/对比/滤镜/CSS 修复)
+安全: 敏感路由 (`chrome://`) 强化拦截与 Toast 不可抗力提示
 
 ## 规范
 
@@ -72,10 +71,5 @@ Registry 产出: `PLUGIN_REGISTRY` | `BACKGROUND_PLUGIN_IDS` | `get{Tool,Script,
 
 全局 Keyframes: `slideInFromRight` | `slideInFromLeft` | `fadeInUp`
 
-配置: `HaloSettings.enableAnimations`(开关) | `animationSpeed`(fast/normal/slow)
-
-实际使用:
-
-- **Home↔Tool**: `LauncherLayout` 使用 `translateX` + CSS transition (0.3s)
-- **子页面**: `ScriptEditorPage` 使用 CSS animation `slideInFromRight` (0.28s)
-- **Tab 切换**: 暂无动画 (保持稳定性优先)
+配置: `enableAnimations`(开关) | `animationSpeed`(fast/normal/slow)
+执行链路: Home↔Tool(0.3s `translateX`) | 子页面(0.28s `slideInFromRight`) | Tab切换(禁动画防卡顿)

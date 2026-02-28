@@ -28,10 +28,10 @@ tools/qrcode/
 
 ```ts
 // CSS Variables
---halo - bg, --halo - bg - secondary, --halo - bg - tertiary;
---halo - text, --halo - text - secondary, --halo - text - muted;
---halo - border, --halo - accent, --halo - accent - hover;
---halo - success, --halo - error;
+(--halo - bg, --halo - bg - secondary, --halo - bg - tertiary);
+(--halo - text, --halo - text - secondary, --halo - text - muted);
+(--halo - border, --halo - accent, --halo - accent - hover);
+(--halo - success, --halo - error);
 ```
 
 ---

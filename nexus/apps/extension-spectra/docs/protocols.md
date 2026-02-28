@@ -77,12 +77,12 @@ Popup Fallback: sendToTab 失败 → INJECT_CONTENT_SCRIPT → 等待800ms → �
 // 插件设置时标记
 s.settingByPlugin = true;
 media.volume = newVol;
-setTimeout(() => s.settingByPlugin = false, 100);
+setTimeout(() => (s.settingByPlugin = false), 100);
 
 // 事件监听中跳过
-media.addEventListener('volumechange', () => {
-    if (s.settingByPlugin) return; // 防止循环
-    onNativeVolumeChange(volume);
+media.addEventListener("volumechange", () => {
+  if (s.settingByPlugin) return; // 防止循环
+  onNativeVolumeChange(volume);
 });
 ```
 

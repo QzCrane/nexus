@@ -70,31 +70,26 @@ VideoControl: 变速 0.1x-16x | 旋转/镜像/缩放 | 亮度/对比度/饱和�
 - Playback Rate Hijack (原型劫持实现双向同步)
 - 性能优化 (Bit Flags, Object Pooling, Loop Unrolling)
 
--
+- +### 2026-02-25: Site-Bridge Refactoring & YouTube Fixes
 
-+### 2026-02-25: Site-Bridge Refactoring & YouTube Fixes
-+
-+**重构**: 实现 Pinnacle Site-Bridge 架构
-+
-+**目标**: 彻底解耦 core logic 与特定站点逻辑，消除 YouTube 变速/音量冲突。
-+
-+**修复**:
-+1. **YouTube 倍速锁定**: 引入 `shouldInhibitDomSync` 拦截 DOM 暴力修改，解决 SPA 路由切换导致的倍速重置 Bug。
-+2. **Boost Guard 升级**: 修复收到的 100% 权威报告覆盖插件 >100% 增益状态的问题。
-+3. **Speed Persistence Guard**: 识别视频加载及广告切换时的 programmatic 1.0x 重置，强制维持用户设定。
-+4. **架构升级**: 删除 `youtube-adapter.ts`，由 `Registry` 模式动态加载 `YouTubeBridge`。
-+
-+**状态**: 已随 v1.3.2 发布。
+* +**重构**: 实现 Pinnacle Site-Bridge 架构
+* +**目标**: 彻底解耦 core logic 与特定站点逻辑，消除 YouTube 变速/音量冲突。
+* +**修复**:
+  +1. **YouTube 倍速锁定**: 引入 `shouldInhibitDomSync` 拦截 DOM 暴力修改，解决 SPA 路由切换导致的倍速重置 Bug。
+  +2. **Boost Guard 升级**: 修复收到的 100% 权威报告覆盖插件 >100% 增益状态的问题。
+  +3. **Speed Persistence Guard**: 识别视频加载及广告切换时的 programmatic 1.0x 重置，强制维持用户设定。
+  +4. **架构升级**: 删除 `youtube-adapter.ts`，由 `Registry` 模式动态加载 `YouTubeBridge`。
+* +**状态**: 已随 v1.3.2 发布。
 
-+### 2026-02-27: Zero-Refresh Hot Update Fix
+  +### 2026-02-27: Zero-Refresh Hot Update Fix
 
-+**问题**: 扩展更新/重载后 popup 显示 "no signal"，所有已打开标签页无法控制
+  +**问题**: 扩展更新/重载后 popup 显示 "no signal"，所有已打开标签页无法控制
 
-+**根因**: `manifest.json` 缺少 `scripting` 权限 → `chrome.scripting.executeScript` 为 undefined → `performWarmUpdate` 静默失败 → 新 content script 无法注入到已打开标签页
+  +**根因**: `manifest.json` 缺少 `scripting` 权限 → `chrome.scripting.executeScript` 为 undefined → `performWarmUpdate` 静默失败 → 新 content script 无法注入到已打开标签页
 
-+**修复**:
-+1. **manifest**: 添加 `scripting` 权限 (关键)
-+2. **upgrade-manager**: 重写 — scripting API 可用性检查 + 同时注入 injector.js (MAIN) + content.js (ISOLATED) + 导出按需注入函数
-+3. **popup/card/init**: 当 content script 无响应时，自动请求 background 注入然后重试
-+4. **contracts**: 新增 `INJECT_CONTENT_SCRIPT` action
-+5. **cleanup**: 清除 content/message-handler 中的调试日志
+  +**修复**:
+  +1. **manifest**: 添加 `scripting` 权限 (关键)
+  +2. **upgrade-manager**: 重写 — scripting API 可用性检查 + 同时注入 injector.js (MAIN) + content.js (ISOLATED) + 导出按需注入函数
+  +3. **popup/card/init**: 当 content script 无响应时，自动请求 background 注入然后重试
+  +4. **contracts**: 新增 `INJECT_CONTENT_SCRIPT` action
+  +5. **cleanup**: 清除 content/message-handler 中的调试日志

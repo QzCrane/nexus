@@ -124,14 +124,12 @@ Fallback 链:多源 URL 自动切换:P1
 ## 变更记录
 
 - **2026-01-09 AM**: Phase 1-3 完成
-
   - Info bar: 9 项可配置信息 (typeIcon/dims/ratio/scale/format/size/caption/source/hostname)
   - 详情增强: ratio (GCD 简化比例) + scale (显示缩放百分比)
   - 视频播放: MSE 播放器 (6KB) 替代 hls.js (1MB)，B 站 DASH 流支持
   - 视频保护: 跳过正在播放的视频，避免干扰原生预览
 
 - **2026-01-09 PM**: 视频性能极致优化
-
   - 流式增量加载: 首批 2MB 快速显示 → 后台持续加载后续批次 → 无缝播放
   - 动态分辨率: 根据 viewport (90%) 自动选择合适画质 (避免 4K 屏强制 1080P)
   - Background Proxy: 支持 arraybuffer (base64 分块编码，32KB 块)
@@ -139,14 +137,12 @@ Fallback 链:多源 URL 自动切换:P1
   - CORS 修复: Referer header 通过 background proxy 正确发送
 
 - **2026-01-09 EVE**: B 站体验增强
-
   - 视频音频: 移除静音限制，MSE 和标准视频均可播放声音
   - 图片规则增强: 扩展 match 模式 (`/bfs/|@`)，支持更多缩略图类型
   - 新增 host: biliimg.com
   - **待实现**: 弹幕功能 (需 Phase 5+)
 
 - **2026-01-09 NIGHT**: 图片原图规则修复
-
   - 移除错误的 `/archive/` 排除 → 视频封面也能获取原图
   - `media-loader.ts` 添加内联 HD 转换 → 视频回退缩略图时自动获取原图
   - `rule-resolver.ts` 优化 → 用户偏好图片时缩略图也应用 HD 规则

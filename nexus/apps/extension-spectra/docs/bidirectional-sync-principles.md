@@ -21,12 +21,14 @@
 // 插件设置前标记
 s.settingByPlugin = true;
 media.volume = newVolume;
-setTimeout(() => { s.settingByPlugin = false; }, 100);
+setTimeout(() => {
+  s.settingByPlugin = false;
+}, 100);
 
 // 事件监听中检查
-media.addEventListener('volumechange', () => {
-    if (s.settingByPlugin) return; // 跳过插件触发的
-    onNativeVolumeChange(volume);   // 只响应用户操作
+media.addEventListener("volumechange", () => {
+  if (s.settingByPlugin) return; // 跳过插件触发的
+  onNativeVolumeChange(volume); // 只响应用户操作
 });
 ```
 
@@ -36,13 +38,13 @@ media.addEventListener('volumechange', () => {
 
 ```typescript
 export function setDomVolume(vol: number, muted: boolean): void {
-    // 应用到所有未初始化的媒体元素
-    for (const m of mediaElements) {
-        if (Math.abs(m.volume - vol) > 0.005) {
-            s.settingByPlugin = true;
-            m.volume = vol;
-        }
+  // 应用到所有未初始化的媒体元素
+  for (const m of mediaElements) {
+    if (Math.abs(m.volume - vol) > 0.005) {
+      s.settingByPlugin = true;
+      m.volume = vol;
     }
+  }
 }
 ```
 
@@ -68,11 +70,11 @@ export function setDomVolume(vol: number, muted: boolean): void {
 
 ### 模块职责
 
-| 模块 | 文件 | 职责 |
-|------|------|------|
-| VolumeObserver | `audio/volume-observer.ts` | 事件监听，检测用户操作 |
-| DOMVolume | `audio/dom-volume.ts` | 应用插件配置到页面 |
-| SiteBridge | `logic/site-bridge/*` | 站点权威同步接口 (YouTube/Default) |
+| 模块           | 文件                       | 职责                               |
+| -------------- | -------------------------- | ---------------------------------- |
+| VolumeObserver | `audio/volume-observer.ts` | 事件监听，检测用户操作             |
+| DOMVolume      | `audio/dom-volume.ts`      | 应用插件配置到页面                 |
+| SiteBridge     | `logic/site-bridge/*`      | 站点权威同步接口 (YouTube/Default) |
 
 ### 数据流
 
@@ -100,12 +102,12 @@ export function setDomVolume(vol: number, muted: boolean): void {
 
 ## 常见错误
 
-| 错误 | 后果 | 正确做法 |
-|------|------|----------|
+| 错误              | 后果                   | 正确做法                    |
+| ----------------- | ---------------------- | --------------------------- |
 | 使用 WeakSet 标记 | 插件修改后无法再次应用 | 使用 settingByPlugin 标志位 |
-| Setter Hijack | 原生音量为 1，无法检测 | 使用 volumechange 事件 |
-| 同步清理标志位 | 事件可能在设置后触发 | 异步清理标志位 |
-| 无阈值判断 | 频繁触发更新 | 0.005 阈值过滤 |
+| Setter Hijack     | 原生音量为 1，无法检测 | 使用 volumechange 事件      |
+| 同步清理标志位    | 事件可能在设置后触发   | 异步清理标志位              |
+| 无阈值判断        | 频繁触发更新           | 0.005 阈值过滤              |
 
 ## 测试验证点
 
