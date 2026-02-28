@@ -56,25 +56,21 @@ export function setDomVolume(vol: number, muted: boolean): void {
 
 ### 5. 站点网桥特化 (SiteBridge)
 
-对于 YouTube 等使用自定义播放器且具有“权威 API”的站点，核心逻辑必须通过 `SiteBridge` 进行通信。
+**前提**: 强侵入站点 (如 YouTube) 必须通过 `SiteBridge` 权威通信。
 
-**规则**：
-
-1. **API 优先**：如果站点在 `shouldInhibitDomSync()` 中返回 `true`，核心逻辑必须通过 `SiteBridge` 同步状态，而非直接修改 DOM 属性（避免指令冲突）。
-2. **权威回流 (Authoritative Sync)**：网桥监听站点原生 API 事件（如 YouTube 的 `onVolumeChange`），并将结果作为“真实状态”回传至核心配置。
-3. **防御性同步 (Sync Guards)**：
-   - **Boost Guard**：忽略站点报告的 100% 音量，以维持插件的 >100% 增益。
-   - **Speed Guard**：忽略 SPA 导航或视频切换时的 programmatic 1.0x 倍速重置。
+- **API 优先**: `shouldInhibitDomSync() === true` 时，核心绝禁直改 DOM。
+- **权威回流 (Authoritative Sync)**: 网桥监听原生事件(如 `onVolumeChange`)作为唯一真值回传。
+- **防御性同步 (Sync Guards)**:
+  - **Boost Guard**: 强屏蔽官方 100% 音量上报，死守插件侧 >100% 增益。
+  - **Speed Guard**: 强屏蔽 SPA 导航引起的 1.0x 速率重置覆盖。
 
 ## 实现架构
 
 ### 模块职责
 
-| 模块           | 文件                       | 职责                               |
-| -------------- | -------------------------- | ---------------------------------- |
-| VolumeObserver | `audio/volume-observer.ts` | 事件监听，检测用户操作             |
-| DOMVolume      | `audio/dom-volume.ts`      | 应用插件配置到页面                 |
-| SiteBridge     | `logic/site-bridge/*`      | 站点权威同步接口 (YouTube/Default) |
+- VolumeObserver (`audio/volume-observer.ts`): 侦听器 | 检测原生用户变动
+- DOMVolume (`audio/dom-volume.ts`): 执行器 | 应用配置至 DOM
+- SiteBridge (`logic/site-bridge/*`): 网桥 | 权威接口代理 (YouTube 等)
 
 ### 数据流
 
@@ -100,14 +96,12 @@ export function setDomVolume(vol: number, muted: boolean): void {
 3. **阈值判断避免抖动**：`Math.abs(vol - target) > 0.005`
 4. **YouTube 双通道同步**：DOM 操作 + YouTube API 调用
 
-## 常见错误
+## 常见错误防范
 
-| 错误              | 后果                   | 正确做法                    |
-| ----------------- | ---------------------- | --------------------------- |
-| 使用 WeakSet 标记 | 插件修改后无法再次应用 | 使用 settingByPlugin 标志位 |
-| Setter Hijack     | 原生音量为 1，无法检测 | 使用 volumechange 事件      |
-| 同步清理标志位    | 事件可能在设置后触发   | 异步清理标志位              |
-| 无阈值判断        | 频繁触发更新           | 0.005 阈值过滤              |
+- **禁 WeakSet**: 无法重复应用 → 必须用 `settingByPlugin` 标志位
+- **禁 Setter Hijack**: 漏掉底层的变动 → 必须用原生 `volumechange` 事件
+- **禁同步清理**: 会误杀后续事件流 → 强制 `setTimeout(..., 100)` 异步放开锁
+- **禁无阈值**: 引发无限循环抖动 → 必须过滤 `Math.abs(vol - target) < 0.005`
 
 ## 测试验证点
 
