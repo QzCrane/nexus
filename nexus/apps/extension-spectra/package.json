@@ -9,8 +9,8 @@
 		"build": "bun build.mjs --dev",
 		"build:prod": "bun build.mjs",
 		"build:copy": "powershell -Command \"Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue; Copy-Item -Recurse public dist\"",
-		"test:e2e": "bun build ; bun test test/smoke.spec.ts",
-		"test:volume": "bun build ; bun test test/verify-volume.spec.ts",
+		"test:e2e": "bun run build ; bun test test/smoke.spec.ts",
+		"test:volume": "bun run build ; bun test test/verify-volume.spec.ts",
 		"test:unit": "bun test test/registry.spec.ts",
 		"test": "bun test test/registry.spec.ts",
 		"typecheck": "bun tsc --noEmit"

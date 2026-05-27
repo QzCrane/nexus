@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import puppeteer, { type Browser, type Page } from 'puppeteer';
 
 const EXTENSION_DIR = join(import.meta.dir, '..', 'dist');
-const TEST_PAGE = 'data:text/html,<html><body><video id="v" controls src="https://sample-videos.com/video321/mp4/240/big_buck_bunny_240p_1mb.mp4"></video></body></html>';
+const TEST_PAGE = 'file://' + join(import.meta.dir, 'fixtures', 'smoke-test.html');
 
 let browser: Browser;
 let page: Page;
@@ -20,7 +20,7 @@ beforeAll(async () => {
   });
   page = await browser.newPage();
   await page.goto(TEST_PAGE, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('#v');
+  await page.waitForSelector('#v', { timeout: 10000 });
 }, 30000);
 
 afterAll(async () => {

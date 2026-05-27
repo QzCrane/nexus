@@ -16,7 +16,7 @@ if (!['spectra', 'halo'].includes(targetApp)) {
 // ====== Configuration ======
 const CONFIG = {
   srcDir: path.resolve(__dirname, '..'),
-  destDir: path.resolve(__dirname, `../../${targetApp}-public`),
+  destDir: path.resolve(__dirname, `../${targetApp}-public`),
 
   // Base exclusions for all public repos
   baseExcludes: [
