@@ -16,7 +16,7 @@ if (!['spectra', 'halo'].includes(targetApp)) {
 // ====== Configuration ======
 const CONFIG = {
   srcDir: path.resolve(__dirname, '..'),
-  destDir: path.resolve(__dirname, `../${targetApp}-public`),
+  destDir: path.resolve(__dirname, `../../${targetApp}-public`),
 
   // Base exclusions for all public repos
   baseExcludes: [
@@ -24,7 +24,7 @@ const CONFIG = {
     'docs', 'store-listings', 'store-assets', 'assets',
     'privacy-justifications.md', 'policy-decision.md', 'cors-data-flow.md', 'context-index.md',
     'node_modules', '.turbo', 'dist', '*.tsbuildinfo', '*.zip', 'assets-backup',
-    '.git', '.vscode', '.idea', 'test', '*.log'
+    '.git', '.vscode', '.idea', 'test', '*.log', 'spectra-public'
   ],
 
   appSpecific: {
