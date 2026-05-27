@@ -2,7 +2,7 @@
 
 ## 1. 单一用途说明 (Single Purpose)
 
-```
+```text
 SPECTRA is an audio and video enhancement extension that provides volume amplification, playback speed control, and equalizer adjustments for any media content in the browser.
 ```
 
@@ -10,43 +10,49 @@ SPECTRA is an audio and video enhancement extension that provides volume amplifi
 
 ### tabs 权限
 
-```
+```text
 Required to detect when users switch between tabs, allowing the extension to apply the correct audio settings for each tab and update the badge indicator showing current volume/mute status.
 ```
 
 ### storage 权限
 
-```
+```text
 Required to save user preferences including volume levels, equalizer presets, playback speed settings, and per-site configurations. All data is stored locally on the user's device.
 ```
 
 ### tabCapture 权限
 
-```
+```text
 Required for the audio capture feature that enables volume amplification beyond 100%. This permission allows capturing the tab's audio stream to route it through the Web Audio API for processing.
 ```
 
 ### offscreen 权限
 
-```
+```text
 Required to maintain audio processing when the popup is closed. The offscreen document handles continuous audio capture and remote control WebRTC connections without interrupting user browsing.
 ```
 
 ### host_permissions (<all_urls>)
 
-```
+```text
 Required to inject content scripts into all websites so users can control audio/video on any webpage. The extension only processes media elements and does not collect or transmit any browsing data.
 ```
 
 ### userScripts 权限
 
-```
+```text
 Required to execute user-defined custom hotkey scripts. Users can configure custom JavaScript actions for keyboard shortcuts. This permission provides a secure sandbox for executing these user-created scripts. Scripts are only executed when explicitly triggered by user-configured hotkeys.
+```
+
+### scripting 权限
+
+```text
+Required to inject content scripts and execute JavaScript for audio processing on media elements within browser tabs. This allows the extension to detect audio/video sources and apply volume amplification, playback speed, and equalizer settings in real-time.
 ```
 
 ### 远程代码 (Remote Code) - 如有提示
 
-```
+```text
 This extension does NOT use any remote code. All JavaScript is bundled locally within the extension package.
 ```
 
@@ -54,14 +60,14 @@ This extension does NOT use any remote code. All JavaScript is bundled locally w
 
 ## 3. 数据使用声明
 
-### 勾选项建议：
+### 勾选项建议
 
 - ✅ "I certify that this extension does not collect or transmit user data"
 - 或者选择符合实际的选项
 
-### 如果有远程控制功能的数据说明：
+### 如果有远程控制功能的数据说明
 
-```
+```text
 The remote control feature uses peer-to-peer WebRTC connections (via PeerJS) to allow users to control their own browser from their mobile device. Connection IDs are randomly generated and not stored on any server. No personal data is collected or transmitted to third parties.
 ```
 

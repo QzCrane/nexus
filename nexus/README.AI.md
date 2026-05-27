@@ -34,6 +34,8 @@ Contracts 禁逻辑 | 源码 ≤200 行 | 禁绕 kernel 存储 | 禁动态 Paddi
 
 `bun run verify`: .ai-context | contracts 纯净 | 行数 150/200 | 硬编码 Action | HTML 引用 | 中文注释 | 依赖方向
 `bun run test:playwright`: Playwright 持久化上下文 | safe-storage(5s 超时) | i18n(2s) | ModuleManager(3s 降级)
+`bun run test:unit`: spectra Registry 单元测试 (7 tests)
+`bun run typecheck`: 全包 TypeScript 类型检查
 
 ## 索引
 

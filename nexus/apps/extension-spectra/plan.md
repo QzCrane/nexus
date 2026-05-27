@@ -7,11 +7,12 @@
 AudioEngine: 音量 800% | 31 段 EQ | 动态压缩 | 声道平衡/3D 环绕 | AudioContext 劫持
 VideoControl: 变速 0.1x-16x | 旋转/镜像/缩放 | 亮度/对比度/饱和度 | PiP
 
-## 阶段 2: 体验升级 (v1.1) 🚧
+## 阶段 2: 体验升级 (v1.1-v1.3) 🚧
 
-交互: ✅ 右键菜单预设 | ✅ 键盘快捷键 (Global/OSD) | ✅ 平滑滚动 (Boundary bubbled) | 媒体嗅探列表
-集成: SponsorBlock(跳过推广) | Lyrics Sync(字幕同步)
+交互: ✅ 右键菜单预设 | ✅ 键盘快捷键 (Global/OSD) | ✅ 平滑滚动 (Boundary bubbled)
+集成: 🔜 SponsorBlock(跳过推广) | 🔜 Lyrics Sync(字幕同步) | 🔜 媒体嗅探列表
 性能: ✅ Zero-Allocation (Loop/Audio/Capture) | ✅ O(N) Frequency Scan
+热更新: ✅ Zero-Refresh Hot Update (Sentinel + scripting)
 
 ## 阶段 3: 本地 AI (Moat) 🔜
 

@@ -9,7 +9,7 @@
 src/
 ├── background/         # Service Worker (持久化逻辑/消息路由)
 ├── content/            # Content Scripts (页面注入/Dom与音频控制)
-├── popup/              # 扩展弹出界面 (React)
+├── popup/              # 扩展弹出界面 (原生 DOM)
 ├── offscreen/          # 离屏文档 (音频处理核心/WebAudio)
 ├── injector/           # 注入脚本 (Main world 权限/API劫持)
 └── shared/             # 共享工具与类型

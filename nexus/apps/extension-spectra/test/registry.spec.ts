@@ -1,0 +1,80 @@
+import { describe, it, expect, beforeEach, mock } from 'bun:test';
+import { Registry } from '../src/shared/registry';
+
+describe('Registry', () => {
+  let registry: Registry;
+
+  beforeEach(() => {
+    registry = new Registry();
+  });
+
+  it('tracks and disposes a cleanup function', () => {
+    let called = false;
+    registry.track(() => { called = true; });
+    registry.dispose();
+    expect(called).toBe(true);
+  });
+
+  it('tracks and disposes an object with dispose method', () => {
+    let called = false;
+    registry.track({ dispose: () => { called = true; } });
+    registry.dispose();
+    expect(called).toBe(true);
+  });
+
+  it('disposes in LIFO order', () => {
+    const order: number[] = [];
+    registry.track(() => order.push(1));
+    registry.track(() => order.push(2));
+    registry.track(() => order.push(3));
+    registry.dispose();
+    expect(order).toEqual([3, 2, 1]);
+  });
+
+  it('calls all cleanups even if one throws', () => {
+    let secondCalled = false;
+    registry.track(() => { throw new Error('cleanup failed'); });
+    registry.track(() => { secondCalled = true; });
+    registry.dispose();
+    expect(secondCalled).toBe(true);
+  });
+
+  it('adds and removes DOM event listener', () => {
+    const div = { addEventListener: mock(), removeEventListener: mock() } as unknown as EventTarget;
+    const handler = () => {};
+    registry.addEventListener(div, 'click', handler);
+    expect(div.addEventListener).toHaveBeenCalledWith('click', handler, undefined);
+    registry.dispose();
+    expect(div.removeEventListener).toHaveBeenCalledWith('click', handler, undefined);
+  });
+
+  it('adds and clears interval', () => {
+    const originalSetInterval = globalThis.setInterval;
+    const originalClearInterval = globalThis.clearInterval;
+    const intervals: number[] = [];
+    const cleared: number[] = [];
+
+    globalThis.setInterval = ((cb: () => void, _ms: number) => {
+      const id = intervals.length + 1;
+      intervals.push(id);
+      return id;
+    }) as typeof setInterval;
+    globalThis.clearInterval = ((id: number) => { cleared.push(id); }) as typeof clearInterval;
+
+    const id = registry.setInterval(() => {}, 100);
+    expect(intervals).toContain(id);
+    registry.dispose();
+    expect(cleared).toContain(id);
+
+    globalThis.setInterval = originalSetInterval;
+    globalThis.clearInterval = originalClearInterval;
+  });
+
+  it('track returns the tracked item for chaining', () => {
+    const fn = () => {};
+    expect(registry.track(fn)).toBe(fn);
+
+    const obj = { dispose: () => {} };
+    expect(registry.track(obj)).toBe(obj);
+  });
+});
