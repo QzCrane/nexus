@@ -14,7 +14,7 @@ interface TimeMarker {
 const markers: TimeMarker[] = [];
 
 function generateId(): string {
-	return `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+	return `m_${crypto.randomUUID()}`;
 }
 
 function formatTime(seconds: number): string {

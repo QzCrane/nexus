@@ -1,9 +1,9 @@
 // goal: main controller for managing the WebAudio graph and media element attachments
 // note: world-class performance: uses centralized detachment and a factory for lean management
 
-import { AudioParams, CompressorOn, CompressorNativeOff } from '../constants.js';
+import { AudioParams, CompressorOn } from '../constants.js';
 import { scheduleCorsCheck } from './cors-checker.js';
-import { createAudioGraph, disconnectAudioGraph } from './node-factory.js';
+import { createAudioGraph, setCompressorEnabled } from './node-factory.js';
 import type { AudioConfig, AudioNodeSet, AudioMediaElement, CorsDetectedCallback, CorsSuccessCallback } from './types.js';
 
 export type { AudioConfig, CorsDetectedCallback, CorsSuccessCallback };
@@ -15,7 +15,29 @@ export class WebAudioController {
 	private skipCorsCheck = false;
 	private attachedNodes = new WeakMap<HTMLMediaElement, AudioNodeSet>();
 
+	private adoptExistingGraphs(): void {
+		document.querySelectorAll<HTMLMediaElement>('video, audio').forEach((element) => {
+			const media = element as AudioMediaElement;
+			if (!media._vm) return;
+			const vm = media._vm as AudioNodeSet & { chainTail?: AudioNode; compressorEnabled?: boolean };
+			if (!vm.chainTail) {
+				vm.chainTail = vm.eqNodes[vm.eqNodes.length - 1] ?? vm.bass;
+				// Older builds permanently routed through the limiter. Normalize it to bypass.
+				try { vm.chainTail.disconnect(); } catch { /* ignore */ }
+				try { vm.comp.disconnect(); } catch { /* ignore */ }
+				vm.chainTail.connect(vm.panner);
+				vm.compressorEnabled = false;
+			}
+			this.attachedNodes.set(element, vm as AudioNodeSet);
+			const graphContext = vm.source.context;
+			if (!this.ctx && graphContext instanceof AudioContext && graphContext.state !== 'closed') {
+				this.ctx = graphContext;
+			}
+		});
+	}
+
 	async initialize(attemptResume = false): Promise<boolean> {
+		this.adoptExistingGraphs();
 		if (this.ctx && this.ctx.state !== 'closed') {
 			if (this.ctx.state === 'suspended' && attemptResume) {
 				try { await this.ctx.resume(); } catch { return false; }
@@ -25,71 +47,37 @@ export class WebAudioController {
 		try {
 			const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
 			this.ctx = new AC();
-			if (attemptResume && this.ctx.state === 'suspended') this.ctx.resume().catch(() => { });
+			if (attemptResume && this.ctx.state === 'suspended') {
+				try { await this.ctx.resume(); } catch { return false; }
+			}
 			return this.ctx.state === 'running';
 		} catch { return false; }
 	}
 
 	cleanup(): void {
+		this.adoptExistingGraphs();
 		if (!this.ctx) return;
 		const t = this.ctx.currentTime, r = AudioParams.SMOOTH_TIME_FAST;
 		document.querySelectorAll('video, audio').forEach((el) => {
 			const m = el as AudioMediaElement;
 			if (!m._vm) return;
-			const { gain, bass, comp, eqNodes } = m._vm;
+			const { gain, bass, eqNodes, panner, delayNode } = m._vm;
 			gain.gain.setTargetAtTime(1, t, r);
 			gain.channelCount = 2;
+			gain.channelCountMode = 'max';
 			bass.gain.setTargetAtTime(0, t, r);
-			comp.threshold.setTargetAtTime(CompressorNativeOff.threshold, t, r);
-			comp.ratio.setTargetAtTime(CompressorNativeOff.ratio, t, r);
+			setCompressorEnabled(m._vm, false);
 			eqNodes.forEach((n) => n.gain.setTargetAtTime(0, t, r));
+			panner.pan.setTargetAtTime(0, t, r);
+			delayNode.delayTime.setTargetAtTime(0, t, r);
 		});
 	}
 
 	isReady(): boolean { return this.ctx !== null && this.ctx.state !== 'closed'; }
 
-	// eff: suspends AudioContext to prevent Chrome's fullscreen/WebAudio pipeline conflict
-	// note: MediaElementSourceNode cannot be detached; suspending ctx is the only reliable fix
-	async suspendContext(): Promise<void> {
-		if (this.ctx && this.ctx.state === 'running') {
-			try { await this.ctx.suspend(); } catch { /* ignore */ }
-		}
-	}
-
-	// eff: resumes AudioContext after fullscreen transition completes
-	async resumeContext(): Promise<void> {
-		if (this.ctx && this.ctx.state === 'suspended') {
-			try { await this.ctx.resume(); } catch { /* ignore */ }
-		}
-	}
-
-	// eff: completely destroys AudioContext to fix Chrome fullscreen bug
-	// note: this is the nuclear option - MediaElementSourceNode bindings persist even after suspend
-	// post: all attached media elements will be detached and ctx closed
+	// post: reset to transparent bypass without closing the context or invalidating source bindings
 	async destroyContext(): Promise<void> {
-		if (!this.ctx) return;
-
-		// step 1: detach all currently attached elements
-		document.querySelectorAll('video, audio').forEach(el => {
-			const m = el as HTMLMediaElement & { _vm?: unknown; dataset: DOMStringMap };
-			if (m._vm) {
-				try {
-					// disconnect source from the chain to release the binding
-					(m._vm as { source: MediaElementAudioSourceNode }).source.disconnect();
-				} catch { /* ignore */ }
-				delete m._vm;
-				delete m.dataset.vmAttached;
-				delete m.dataset.vmProbed;
-			}
-			this.attachedNodes.delete(el as HTMLMediaElement);
-		});
-
-		// step 2: close the AudioContext completely
-		try {
-			await this.ctx.close();
-		} catch { /* ignore */ }
-
-		this.ctx = null;
+		this.cleanup();
 	}
 
 	setCallbacks(onDetected: CorsDetectedCallback, onSuccess: CorsSuccessCallback): void {
@@ -112,7 +100,11 @@ export class WebAudioController {
 
 	attachNode(el: HTMLMediaElement): boolean {
 		const m = el as AudioMediaElement;
-		if (m._vm || m.dataset.vmAttached === 'true' || m.dataset.vmProbed === 'true' || !this.ctx) return false;
+		if (this.attachedNodes.has(el)
+			|| m._vm
+			|| m.dataset.vmAttached === 'true'
+			|| m.dataset.vmProbed === 'true'
+			|| !this.ctx) return false;
 
 		try {
 			if (!el.crossOrigin && el.src && !el.src.startsWith('data:') && !el.src.startsWith('blob:')) {
@@ -123,9 +115,10 @@ export class WebAudioController {
 			m.dataset.vmAttached = 'true';
 			this.attachedNodes.set(el, m._vm);
 
-			el.addEventListener('play', () => {
+			const resume = () => {
 				if (this.ctx?.state === 'suspended') this.ctx.resume().catch(() => { });
-			});
+			};
+			el.addEventListener('play', resume);
 
 			if (!this.skipCorsCheck) {
 				scheduleCorsCheck(m._vm.analyser, el, (restricted) => {
@@ -135,6 +128,7 @@ export class WebAudioController {
 			}
 			return true;
 		} catch {
+			m.dataset.vmProbed = 'true';
 			this.handleCorsDetected();
 			return false;
 		}
@@ -143,44 +137,61 @@ export class WebAudioController {
 	detachNode(el: HTMLMediaElement): void {
 		const vm = this.attachedNodes.get(el);
 		if (!vm) return;
+		// MediaElementSource bindings are permanent. Keep the graph and make it transparent.
+		const t = vm.source.context.currentTime;
+		vm.gain.gain.setTargetAtTime(1, t, AudioParams.SMOOTH_TIME_FAST);
+		vm.bass.gain.setTargetAtTime(0, t, AudioParams.SMOOTH_TIME_FAST);
+		vm.eqNodes.forEach((node) => node.gain.setTargetAtTime(0, t, AudioParams.SMOOTH_TIME_FAST));
+		vm.panner.pan.setTargetAtTime(0, t, AudioParams.SMOOTH_TIME_FAST);
+		vm.delayNode.delayTime.setTargetAtTime(0, t, AudioParams.SMOOTH_TIME_FAST);
+		setCompressorEnabled(vm, false);
+	}
 
-		try {
-			disconnectAudioGraph(vm);
-			const m = el as AudioMediaElement;
-			delete m._vm;
-			delete m.dataset.vmAttached;
-			this.attachedNodes.delete(el);
-		} catch (e) {
-			console.warn('[Spectra] Detach failed:', e);
+	private applyParamsToNode(vm: AudioNodeSet, config: AudioConfig): void {
+		const t = vm.source.context.currentTime;
+		const r = AudioParams.SMOOTH_TIME_FAST;
+		const v = config.muted ? 0 : config.volume / 100;
+		const { gain, bass, comp, eqNodes, panner, delayNode } = vm;
+
+		gain.gain.setTargetAtTime(v, t, r);
+		gain.channelCount = config.mono ? 1 : 2;
+		gain.channelCountMode = config.mono ? 'explicit' : 'max';
+		bass.gain.setTargetAtTime(config.bass ? AudioParams.BASS_GAIN : 0, t, r);
+
+		setCompressorEnabled(vm, config.compressor);
+		if (config.compressor) {
+			comp.threshold.setTargetAtTime(CompressorOn.threshold, t, r);
+			comp.knee.setTargetAtTime(CompressorOn.knee, t, r);
+			comp.ratio.setTargetAtTime(CompressorOn.ratio, t, r);
+			comp.attack.setTargetAtTime(CompressorOn.attack, t, r);
+			comp.release.setTargetAtTime(CompressorOn.release, t, r);
 		}
+
+		eqNodes.forEach((node, index) => node.gain.setTargetAtTime(config.eqValues[index] ?? 0, t, r));
+		panner.pan.setTargetAtTime(Math.max(-1, Math.min(1, config.pan ?? 0)), t, r);
+		delayNode.delayTime.setTargetAtTime(Math.max(0, Math.min(500, config.delay ?? 0)) / 1000, t, r);
+	}
+
+	updateElementParams(el: HTMLMediaElement, config: AudioConfig): boolean {
+		const media = el as AudioMediaElement;
+		const vm = this.attachedNodes.get(el) ?? media._vm;
+		if (!vm) return false;
+		this.attachedNodes.set(el, vm);
+		this.applyParamsToNode(vm, config);
+		return true;
 	}
 
 	updateParams(config: AudioConfig): void {
-		if (!this.ctx) return;
-		const t = this.ctx.currentTime, r = AudioParams.SMOOTH_TIME_FAST;
-		const v = config.muted ? 0 : config.volume / 100;
-
+		this.adoptExistingGraphs();
 		document.querySelectorAll('video, audio').forEach((el) => {
 			const m = el as AudioMediaElement;
 			if (!m._vm) return;
-			const { gain, bass, comp, eqNodes, panner, delayNode } = m._vm;
-
-			gain.gain.setTargetAtTime(v, t, r);
-			gain.channelCount = config.mono ? 1 : 2;
-			bass.gain.setTargetAtTime(config.bass ? AudioParams.BASS_GAIN : 0, t, r);
-
-			const cThresh = config.compressor ? CompressorOn.threshold : CompressorNativeOff.threshold;
-			const cRatio = config.compressor ? CompressorOn.ratio : CompressorNativeOff.ratio;
-			comp.threshold.setTargetAtTime(cThresh, t, r);
-			comp.ratio.setTargetAtTime(cRatio, t, r);
-
-			eqNodes.forEach((n, i) => n.gain.setTargetAtTime(config.eqValues[i] ?? 0, t, r));
-			panner.pan.setTargetAtTime(Math.max(-1, Math.min(1, config.pan ?? 0)), t, r);
-			delayNode.delayTime.setTargetAtTime((config.delay ?? 0) / 1000, t, r);
+			this.applyParamsToNode(m._vm, config);
 		});
 	}
 
 	getVisualizerData(): Uint8Array | null {
+		this.adoptExistingGraphs();
 		if (!this.ctx) return null;
 		for (const el of document.querySelectorAll('video, audio')) {
 			const m = el as AudioMediaElement;

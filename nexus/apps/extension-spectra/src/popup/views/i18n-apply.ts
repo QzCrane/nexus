@@ -2,7 +2,7 @@
 
 import type { I18NDict } from '../types';
 import { $$ } from '../utils/dom';
-import { getDict } from '../constants';
+import { getPopupDictionary } from '../../shared/i18n/catalog';
 
 // perf: cache current dictionary for access from other modules
 let currentDictCache: I18NDict | null = null;
@@ -14,9 +14,9 @@ export function getCurrentDict(): I18NDict | null {
 
 // eff: iterates through all elements with data-i18n attributes and replaces their text/titles/placeholders with localized strings
 export function applyLang(lang: string): I18NDict {
-	const dict = getDict(lang);
-	if (!dict) return getDict('en-US')!;
+	const dict = getPopupDictionary(lang);
 	currentDictCache = dict;
+	document.documentElement.lang = lang;
 
 	$$<HTMLElement>('[data-i18n]').forEach((el) => {
 		const key = el.dataset.i18n as keyof I18NDict;
@@ -31,6 +31,9 @@ export function applyLang(lang: string): I18NDict {
 		const value = dict[key];
 		if (typeof value === 'string') {
 			el.title = value;
+			if (el instanceof HTMLButtonElement || el.getAttribute('role') === 'button') {
+				el.setAttribute('aria-label', value);
+			}
 		}
 	});
 
@@ -63,20 +66,27 @@ export function updateCardsI18n(dict: I18NDict, vizEnabled: boolean): void {
 		if (btnSaveGlobal) btnSaveGlobal.title = dict.btnSaveAsGlobal;
 
 		const btnPause = card.querySelector('.btn-pause') as HTMLElement | null;
+		const btnMute = card.querySelector('.btn-mute') as HTMLElement | null;
 		const btnPip = card.querySelector('.btn-pip') as HTMLElement | null;
 		const btnHotkey = card.querySelector('.btn-hotkey-target') as HTMLElement | null;
 		const btnGotoTab = card.querySelector('.btn-goto-tab') as HTMLElement | null;
-		if (btnPause) btnPause.title = dict.btnPause;
-		if (btnPip) btnPip.title = dict.btnPip;
-		if (btnHotkey) btnHotkey.title = dict.btnHotkeyTarget;
-		if (btnGotoTab) btnGotoTab.title = dict.btnGotoTab;
+		setInteractiveLabel(btnPause, dict.btnPause);
+		setInteractiveLabel(btnMute, dict.btnMute);
+		setInteractiveLabel(btnPip, dict.btnPip);
+		setInteractiveLabel(btnHotkey, dict.btnHotkeyTarget);
+		setInteractiveLabel(btnGotoTab, dict.btnGotoTab);
 
 		const metaIcon = card.querySelector('.meta-icon') as HTMLElement | null;
 		if (metaIcon) metaIcon.title = dict.tipAdvancedSettings;
 
 		const maskText = card.querySelector('.sleep-text') as HTMLElement | null;
 		if (maskText) {
-			maskText.innerHTML = `<div>${dict.paused}</div><div style="font-size:11px; opacity:0.7; margin-top:4px; font-weight:400;">${dict.clickToResume}</div>`;
+			const paused = document.createElement('div');
+			paused.textContent = dict.paused;
+			const resume = document.createElement('div');
+			resume.className = 'sleep-resume-hint';
+			resume.textContent = dict.clickToResume;
+			maskText.replaceChildren(paused, resume);
 		}
 
 		const vizIsland = card.querySelector('.viz-island') as HTMLElement | null;
@@ -106,6 +116,12 @@ function updateSidePanelI18n(dict: I18NDict): void {
 
 	const btnPin = panel.querySelector('.btn-pin') as HTMLElement | null;
 	const btnClose = panel.querySelector('.btn-close-panel') as HTMLElement | null;
-	if (btnPin) btnPin.title = dict.tipPinPanel;
-	if (btnClose) btnClose.title = dict.tipClose;
+	setInteractiveLabel(btnPin, dict.tipPinPanel);
+	setInteractiveLabel(btnClose, dict.tipClose);
+}
+
+function setInteractiveLabel(element: HTMLElement | null, label: string): void {
+	if (!element) return;
+	element.title = label;
+	element.setAttribute('aria-label', label);
 }

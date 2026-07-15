@@ -8,6 +8,7 @@ const log = createLogger('VideoFilter');
 interface FilterState { b: number; c: number; s: number; g: boolean; i: boolean; }
 const DEF: FilterState = { b: 100, c: 100, s: 100, g: false, i: false };
 const fMap = new WeakMap<HTMLVideoElement, FilterState>();
+const enabledMap = new WeakMap<HTMLVideoElement, boolean>();
 
 function getState(v: HTMLVideoElement): FilterState {
 	let s = fMap.get(v);
@@ -17,6 +18,10 @@ function getState(v: HTMLVideoElement): FilterState {
 
 function apply(v: HTMLVideoElement) {
 	const s = getState(v);
+	if (enabledMap.get(v) === false) {
+		v.style.filter = 'none';
+		return;
+	}
 	const f: string[] = [];
 	if (s.b !== 100) f.push(`brightness(${s.b}%)`);
 	if (s.c !== 100) f.push(`contrast(${s.c}%)`);
@@ -30,6 +35,7 @@ function apply(v: HTMLVideoElement) {
 export function setVideoFilter(p: { brightness?: number; contrast?: number; saturate?: number; grayscale?: boolean; invert?: boolean }): boolean {
 	const v = getPrimaryVideo();
 	if (!v) return false;
+	enabledMap.set(v, true);
 	const s = getState(v);
 	if (p.brightness !== undefined) s.b = Math.max(0, Math.min(200, p.brightness));
 	if (p.contrast !== undefined) s.c = Math.max(0, Math.min(200, p.contrast));
@@ -44,12 +50,22 @@ export function resetVideoFilter(): boolean {
 	const v = getPrimaryVideo();
 	if (!v) return false;
 	fMap.set(v, { ...DEF });
+	enabledMap.set(v, true);
 	apply(v);
 	return true;
 }
 
+export function toggleVideoFilter(): boolean {
+	const v = getPrimaryVideo();
+	if (!v) return false;
+	const enabled = !(enabledMap.get(v) ?? true);
+	enabledMap.set(v, enabled);
+	apply(v);
+	return enabled;
+}
+
 const DIM_ID = 'spectra-dim-overlay';
-let dim = { act: false, op: 0.7 };
+const dim = { act: false, op: 0.7 };
 
 export function toggleDimBackground(p?: { enabled?: boolean; opacity?: number }): { active: boolean; opacity: number } {
 	const v = getPrimaryVideo();

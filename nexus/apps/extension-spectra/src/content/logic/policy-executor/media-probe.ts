@@ -16,7 +16,7 @@ export function findProbeCandidate(): HTMLMediaElement | null {
 		const isPlaying = !media.paused && !media.ended;
 		const hasAudio = !media.muted && media.volume > 0.05;
 		// note: infinite duration (live streams) or elements > 5s are preferred; skip short looping previews
-		const hasEnoughDuration = media.duration >= 5 || isNaN(media.duration);
+		const hasEnoughDuration = media.duration >= 5 || Number.isNaN(media.duration);
 		const isNotLoop = !media.loop;
 
 		if (isPlaying && hasAudio && hasEnoughDuration && isNotLoop) {

@@ -7,8 +7,9 @@ export class DefaultBridge implements SiteBridge {
 		return true;
 	}
 
-	onInitialize(_callbacks: BridgeCallbacks): void {
+	onInitialize(_callbacks: BridgeCallbacks): () => void {
 		// Generic DOM listeners are handled by VolumeObserver
+		return () => undefined;
 	}
 
 	syncVolume(_volume: number, _muted: boolean): void {

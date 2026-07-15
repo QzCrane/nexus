@@ -48,26 +48,9 @@ describe('Registry', () => {
     expect(div.removeEventListener).toHaveBeenCalledWith('click', handler, undefined);
   });
 
-  it('adds and clears interval', () => {
-    const originalSetInterval = globalThis.setInterval;
-    const originalClearInterval = globalThis.clearInterval;
-    const intervals: number[] = [];
-    const cleared: number[] = [];
-
-    globalThis.setInterval = ((cb: () => void, _ms: number) => {
-      const id = intervals.length + 1;
-      intervals.push(id);
-      return id;
-    }) as typeof setInterval;
-    globalThis.clearInterval = ((id: number) => { cleared.push(id); }) as typeof clearInterval;
-
-    const id = registry.setInterval(() => {}, 100);
-    expect(intervals).toContain(id);
-    registry.dispose();
-    expect(cleared).toContain(id);
-
-    globalThis.setInterval = originalSetInterval;
-    globalThis.clearInterval = originalClearInterval;
+  it('does not expose a recurring interval API', () => {
+    const legacyRegistry = registry as Registry & { setInterval?: unknown };
+    expect(legacyRegistry.setInterval).toBeUndefined();
   });
 
   it('track returns the tracked item for chaining', () => {

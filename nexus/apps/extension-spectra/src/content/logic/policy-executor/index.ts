@@ -1,6 +1,6 @@
 // goal: orchestrates PolicyEngine decisions with AudioController and CaptureManager
 
-import type { AudioConfig } from '@nexus/kernel';
+import { isDefaultAudioConfig } from '@nexus/contracts';
 import { AudioMode, type PolicyContext, type UrlInfo } from '@nexus/audio-engine';
 import { logger } from '../../../shared/logger';
 import { applyToMedia } from '../../utils/media-utils';
@@ -13,8 +13,15 @@ import { updateConfig } from './config-updater';
 
 const log = logger.content;
 
-export async function createPolicyExecutor(deps: PolicyExecutorDeps, state: PolicyExecutorState): Promise<PolicyExecutor> {
-	const startCors = await initCorsStatus(deps.messenger);
+export async function createPolicyExecutor(
+	deps: PolicyExecutorDeps,
+	state: PolicyExecutorState,
+	isCurrent: () => boolean = () => true,
+): Promise<PolicyExecutor | null> {
+	const startCors = await initCorsStatus();
+	// A newer content runtime may have taken ownership while storage/CORS state was
+	// loading. Do not let the superseded startup overwrite module-level callbacks.
+	if (!isCurrent()) return null;
 	const istate: InternalState = { corsStatus: startCors, lastBadgeHash: '', lastSyncHash: '' };
 
 	if (startCors !== 'PENDING') deps.audioController.setSkipCorsCheck(true);
@@ -23,15 +30,19 @@ export async function createPolicyExecutor(deps: PolicyExecutorDeps, state: Poli
 		fullUrl: window.location.href, domain: window.location.hostname, pathname: window.location.pathname, isIframe: window.self !== window.top
 	});
 
-	const applyState = () => {
+	const applyState = (options: { navigation?: boolean; modeIntent?: boolean } = {}) => {
 		const s = deps.settingsManager.get();
 		const u = getUrlInfo();
 		const restrict = istate.corsStatus === 'RESTRICTED';
 
 		const ctx: PolicyContext = {
-			urlInfo: u, enabled: state.config.enabled, volume: state.config.volume,
+			urlInfo: u,
+			enabled: state.config.enabled && (state.userHasInteracted || !isDefaultAudioConfig(state.config)),
+			volume: state.config.volume,
 			visualizerEnabled: s.visualizerEnabled || (state.userHasInteracted && istate.corsStatus === 'PENDING'),
-			userInteracted: state.userHasInteracted, forceNative: false, isRestricted: restrict,
+			userInteracted: state.userHasInteracted,
+			forceNative: istate.captureModeOverride === 'native',
+			isRestricted: restrict,
 			hasMediaElement: true, hasAudioContext: deps.audioController.isReady(), config: state.config
 		};
 
@@ -41,34 +52,47 @@ export async function createPolicyExecutor(deps: PolicyExecutorDeps, state: Poli
 			return;
 		}
 
-		const mode = deps.policyEngine.calculateMode(ctx);
-		if (mode !== state.activeMode) {
+		const policyMode = deps.policyEngine.calculateMode(ctx);
+		const mode = istate.captureModeOverride === 'capture' ? AudioMode.CAPTURE : policyMode;
+		state.desiredMode = mode;
+		const modeChanged = mode !== state.activeMode;
+		if (modeChanged) {
 			log.mode(state.activeMode, mode);
 			if (state.activeMode === AudioMode.NATIVE_WEBAUDIO) deps.audioController.cleanup();
-			if (state.activeMode === AudioMode.CAPTURE && mode !== AudioMode.CAPTURE && deps.captureManager.isActive()) {
-				deps.captureManager.request(false, state.config);
-			}
 			state.activeMode = mode;
 		}
 
-		executeMode(deps, state);
+		executeMode(deps, state, modeChanged || options.navigation === true || options.modeIntent === true);
 		updateBadge(deps, state, istate);
 		broadcastUI(deps, state, istate);
 	};
 
 	setupCorsCallback(deps, istate, applyState);
-	initModeExecutorCallbacks(deps, state, () => updateBadge(deps, state, istate), () => broadcastUI(deps, state, istate), applyState, (ch, opt) => updateConfig(deps, state, istate, ch, opt, applyState));
-	probeCorsOnMediaDetected(deps.messenger, istate, applyState);
+	const disposeModeExecutor = initModeExecutorCallbacks(deps, state, () => updateBadge(deps, state, istate), () => broadcastUI(deps, state, istate), (ch, opt) => updateConfig(deps, state, istate, ch, opt, applyState));
+	probeCorsOnMediaDetected(istate, applyState);
 
 	return {
+		dispose: disposeModeExecutor,
 		applyState,
 		updateBadge: () => updateBadge(deps, state, istate),
 		updateConfig: (ch, opt) => updateConfig(deps, state, istate, ch, opt, applyState),
 		hasUserGesture: () => hasUserGesture(state),
 		markUserInteracted: () => { state.userHasInteracted = true; },
+		toggleCaptureMode: () => {
+			const captureIsDesired = istate.captureModeOverride === 'capture'
+				|| (istate.captureModeOverride === undefined
+					&& (state.desiredMode === AudioMode.CAPTURE
+						|| (state.actualMode === 'capture' && state.phase !== 'stopping')));
+			istate.captureModeOverride = captureIsDesired ? 'native' : 'capture';
+			state.userHasInteracted = true;
+			// A trusted page/global hotkey or authenticated remote command is an
+			// explicit user intent and may satisfy the Capture activation boundary.
+			state.hasGesture = true;
+			applyState({ modeIntent: true });
+		},
 		getActiveMode: () => state.activeMode,
 		getUrlInfo,
-		probeCors: () => probeCorsOnMediaDetected(deps.messenger, istate, applyState),
+		probeCors: () => probeCorsOnMediaDetected(istate, applyState),
 	};
 }
 

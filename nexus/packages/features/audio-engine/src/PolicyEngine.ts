@@ -7,17 +7,20 @@ import type {
   AudioMode,
   SiteRule
 } from '@nexus/contracts';
+import { isDefaultAudioConfig } from '@nexus/contracts';
 
 export class PolicyEngine implements IPolicyEngine {
   // eff: detects if advanced features (EQ, Bass, Compressor, Visualizer, Volume > 100%) are active
   private needsAdvancedProcessing(context: PolicyContext): boolean {
-    const { volume, visualizerEnabled, config } = context;
+    const { volume, config } = context;
     if (volume > 100) return true;
-    if (visualizerEnabled) return true;
     if (config) {
       if (config.eqValues?.some(v => v !== 0)) return true;
       if (config.compressor) return true;
       if (config.bass) return true;
+	  if (config.mono) return true;
+	  if (config.pan !== 0) return true;
+	  if (config.delay !== 0) return true;
     }
     return false;
   }
@@ -31,7 +34,9 @@ export class PolicyEngine implements IPolicyEngine {
   public readonly calculateMode = (context: PolicyContext): AudioMode => {
     const { enabled, forceNative, isRestricted, userInteracted, volume } = context;
 
-    if (!enabled) return 'NATIVE_LITE';
+    if (!enabled || (context.config && isDefaultAudioConfig(context.config))) {
+      return 'DISABLED';
+    }
 
     if (!userInteracted && volume <= 100) {
       return 'NATIVE_LITE';

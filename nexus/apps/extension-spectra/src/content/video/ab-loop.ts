@@ -55,3 +55,10 @@ export function clearABLoop(): boolean {
 export function getABState(): { pointA: number | null; pointB: number | null; looping: boolean } {
 	return { pointA: s.a, pointB: s.b, looping: s.loop };
 }
+
+export function skipABLoop(): boolean {
+	const v = getPrimaryVideo();
+	if (!v || s.a === null || s.b === null) return false;
+	v.currentTime = Math.min(v.duration || Infinity, s.b + 0.05);
+	return true;
+}

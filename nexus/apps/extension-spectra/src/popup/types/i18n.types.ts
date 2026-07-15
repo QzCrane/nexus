@@ -60,6 +60,7 @@ export interface I18NDict {
 
 	// note: media playback and focus management tooltips
 	btnPause: string;
+	btnMute: string;
 	btnPip: string;
 	btnHotkeyTarget: string;
 	btnGotoTab: string;

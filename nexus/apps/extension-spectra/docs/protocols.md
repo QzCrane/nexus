@@ -1,94 +1,97 @@
-# Spectra Protocols
+# SPECTRA Runtime Protocols
 
-## 核心逻辑 (快捷键与消息)
+This document is the owner narrative for SPECTRA runtime state and cross-context communication.
 
-核心原则: Content Script 是状态的唯一事实来源 (SSOT)。Background 仅负责转发命令。
+## State ownership
 
-### 1. 全局快捷键流
+| Context | Owns | Must not do |
+| --- | --- | --- |
+| Popup / Options | User intent and immediate local rendering | Predict the active audio mode, write badges, or mutate storage directly |
+| Content (ISOLATED) | Desired config for the current document and its media registry | Claim Capture active before an acknowledged processor exists |
+| MAIN runtime | Actual page WebAudio graph, playback-rate/fullscreen patches, and their disposer | Install a second runtime or bind one media element twice |
+| Offscreen host | Actual tab-capture processors and authenticated PeerJS sessions | Create or close its own document |
+| Background | Routing, settings repository, session snapshots, leases, and badges derived from actual ACKs | Treat a read as activation or close offscreen outside the coordinator |
 
-`用户 (Alt+Up) → Chrome Command → Background (shortcuts.ts) → Content (message-handler.ts) → 执行动作`
+The shared read model is `AudioSessionSnapshot`: `tabId + documentId + origin`, generation, desired/actual mode, phase, config revision, actual config, and last error. UI, badge, and remote state are projections of this snapshot.
 
-- **Background**: 检测命令，向活动标签页转发 `SHORTCUT_TRIGGER`。无逻辑/不读取配置。
-- **Content**:
-  1. 接收 `SHORTCUT_TRIGGER`。
-  2. `executeHotkeyAction` 决定逻辑 (音量/倍速/画中画)。
-  3. `sendVolumeAction` 根据当前配置计算新状态。
-  4. 调用 `updateConfig({volume}, {showOSD: true})`。
-  5. **结果**: 状态更新 + 显示 OSD 音量条 + UI 通过 `AUDIO_SET_CONFIG` 同步。
+## Protocol v2
 
-### 2. UI 更新流
+All new cross-context requests use the mapped contracts in `@nexus/contracts`:
 
-`Popup (滑块) → AUDIO_SET_CONFIG → Background (Storage) → Content (Listener)`
-
-- **Popup**: 发送带有新值的 `AUDIO_SET_CONFIG`。
-- **Background**: 持久化到 `tabSession` (存储)。广播更新。
-- **Content**: `PolicyExecutor` 监听存储变化 → 应用到 WebAudio/TAB。
-
-### 3. 注册表与预设
-
-- **Tab Session (会话)**: 临时，自动保存到 `tabSession` 存储。
-- **Domain Preset (域名预设)**: 仅通过 `btnSave` (💾) 手动保存。按域名存储在 `siteSettings`。
-- **加载优先级**: 背景脚本合并顺序 `默认值 < 域名预设 < 会话配置`。
-
-## 消息协议
-
-音频: AUDIO_GET/SET, UI_SYNC → `{gain,pan,mono,...}` (节点参数+UI 反馈)
-劫持: CAPTURE_TOGGLE/STATE → `{enabled,tabId}` (劫持生命周期)
-快捷键: SHORTCUT_TRIGGER → `{command}` (只传指令名，不传配置)
-设置: SETTINGS_UPDATE/GET → `{settings}` (通用设置同步)
-视频: VIDEO_ROTATE/SCREENSHOT/AB → `{deg,loop:{start,end}}` (变换+AB 循环)
-遥控: REMOTE_CREATE/GET/CLOSE → `{roomId,peerId}` (WebRTC 信令)
-脚本: USER_SCRIPT_EXECUTE → `{code,context}` (UserJS eval)
-同步: TAB_REPORT/MEDIA_REPORT → `{gain,url,title}` (5s 心跳状态上报)
-生命周期: INJECT_CONTENT_SCRIPT → `{tabId}` (popup 按需触发 content script 注入)
-
-## 热更新协议
-
-`扩展更新 → onInstalled(update) → performWarmUpdate → injectWithTransition(每个tab)`
-
-1. 检测旧实例 (`__SPECTRA_TEARDOWN__` 存在?)
-2. 调用旧实例 teardown → registry.dispose() → sentinel 写入 DOM stub
-3. 注入 injector.js (MAIN) → 注入 content.js (ISOLATED)
-4. 新实例 consumeStub() 恢复状态 → 无缝继续
-
-Popup Fallback: sendToTab 失败 → INJECT_CONTENT_SCRIPT → 等待800ms → 重试
-
-## 双向同步协议
-
-### 页面 → 插件
-
-`页面音量变化 → volumechange 事件 → VolumeObserver → onNativeVolumeChange → PolicyExecutor.updateConfig()`
-
-- **VolumeObserver**: 监听 `volumechange`/`ratechange` 事件
-- **来源检测**: 通过 `settingByPlugin` 标志位跳过插件触发的变更
-- **阈值过滤**: 变化超过 0.005 才触发同步，避免抖动
-
-### 插件 → 页面
-
-`Popup/快捷键 → AUDIO_SET_CONFIG → Background → Content → setDomVolume() → 应用到媒体元素`
-
-- **setDomVolume**: 设置 `settingByPlugin = true`，应用音量，异步清理标志
-- **YouTube 特殊处理**: 额外调用 `setYouTubeVolume()` 同步原生 UI
-- **监控初始化**: `ensureMonitoring()` 确保所有媒体元素被监听
-
-### 防循环机制
-
-```typescript
-// 插件设置时标记
-s.settingByPlugin = true;
-media.volume = newVol;
-setTimeout(() => (s.settingByPlugin = false), 100);
-
-// 事件监听中跳过
-media.addEventListener("volumechange", () => {
-  if (s.settingByPlugin) return; // 防止循环
-  onNativeVolumeChange(volume);
-});
+```text
+{ protocolVersion, requestId, tabId?, documentId?, generation?, type, payload }
 ```
 
-详见 [bidirectional-sync-principles.md](./bidirectional-sync-principles.md)。
+Responses are exactly one of:
 
-## 核心通信
+```text
+{ ok: true, data }
+{ ok: false, error: { code, message, retryable } }
+```
 
-Kernel RPC: 统一通过`nexus-kernel.Client.send()`
-Capture Hook: content 与 offscreen 通过 Runtime Port 直连(不经 Kernel)
+Runtime guards validate the request type together with its payload and validate request-specific response data. A request from the wrong Chrome sender context is rejected even when its shape is valid.
+
+The one-release v1 adapter is isolated from current feature clients: all current clients emit v2 requests and events, while named compatibility broadcasts and legacy receivers keep already-loaded content contexts alive during an extension update. It was introduced with the 1.3.4 v2 rollout and is scheduled for removal in 1.4.0, after one complete store release cycle.
+
+## Audio configuration and mode transition
+
+```text
+UI/hotkey intent
+  -> background settings/session boundary
+  -> content desired config + generation
+  -> MAIN WebAudio or background/offscreen Capture start
+  -> actual ACK
+  -> AudioSessionSnapshot
+  -> badge/UI/remote projection
+```
+
+Reads such as Popup open, settings get, and audio status get are side-effect free. The default config remains transparent bypass: no AudioContext, compressor, EQ, limiter, or periodic work.
+
+Mode changes use a generation and an acknowledged handoff:
+
+1. Make the old path transparent.
+2. Start the new path for the current generation.
+3. Commit `active` only after the actual runtime ACK.
+4. Release the old path.
+5. Ignore every ACK from an older generation.
+
+If Capture creation fails, background returns a structured error and restores the last stable mode/snapshot. An offscreen processor ending unexpectedly publishes a typed event that reconciles the authoritative snapshot.
+
+## MAIN singleton and media lifecycle
+
+The document installs one versioned MAIN singleton. It owns every descriptor patch, observer, and listener through a common disposer. `MediaElementSourceNode` ownership is stored in a `WeakMap`; an element is never rebound during the document lifetime. A hot update reuses the compatible runtime. Sources that cannot be adopted stay in transparent bypass until the next full navigation.
+
+Content media discovery is event driven: one mutation registry plus `play`, `pause`, `loadedmetadata`, `volumechange`, and SPA navigation events. There are no 1/3/5-second discovery or state heartbeats. Top-level document replacement invalidation comes from `webNavigation.onBeforeNavigate`. Same-document History/query/hash changes come from `webNavigation.onHistoryStateUpdated` and `onReferenceFragmentUpdated`, travel through the validated `spectra.navigation.changed` v2 event, and are deduplicated by the current Content document before generation advances.
+
+## Unified offscreen lifecycle
+
+One `offscreen.html` hosts both tab audio and remote sessions. Background's coordinator is the only lifecycle owner:
+
+- audio lease: `audio:<tabId>`
+- remote lease: `remote:<sessionId>`
+- creation: serialized and rechecked inside the mutex
+- recovery: host HELLO reports actual processors and remote sessions after a service-worker restart
+- close: only after every local/recovered lease is gone and a one-shot `chrome.alarms` 30-second grace period expires, so worker suspension cannot lose cleanup
+- failed HELLO: fail closed as an unknown live host; never infer an empty host
+
+Audio and remote modules acquire/release leases and exchange typed host messages; they never call `chrome.offscreen.createDocument()` or `closeDocument()`.
+
+## Settings and concurrency
+
+Background owns the revisioned settings repository in `chrome.storage.local`. `chrome.storage.session` contains only current tab/document session mirrors. UI sends field-level patches. Site hotkeys use binding-level `ensure/delete/set-enabled/upsert/remove` intents so a revision-conflict retry is applied to the latest snapshot instead of replaying an old whole-site object.
+
+The 1.3.4 migration writes canonical `lang` and `themeMode` fields, then reads them back before marking schema v2 complete. Legacy `globalSettings.language` and `globalSettings.theme` values, plus unknown user fields, are retained unchanged for this release cycle but are never written from new UI changes. Options may offer the old `localStorage` `theme` value only through the typed `legacy-theme` consume intent on `spectra.settings.patch`; the background atomically consumes its eligibility bit. Any normal v2 `themeMode` patch disables that migration first, so a late legacy value cannot overwrite a current preference. The read-only aliases, localStorage adapter, and intent are scheduled for removal in 1.4.0.
+
+Hostnames are normalized to lowercase IDNA without a trailing dot. Domain rules match the exact host and dot-boundary subdomains; IP rules are exact only.
+
+## Hotkeys and privileged actions
+
+The action registry is exhaustive: Options exposes only actions with a runtime handler and valid parameter schema. Pitch bindings migrate to a disabled legacy list. Command slots expose only actions whose full intent fits the slot schema. Page-generated keyboard events are rejected with `event.isTrusted === false` before matching actions. `open_url` accepts only HTTP(S); `run_js` still requires Chrome's explicit userScripts permission and isolated userScripts world.
+
+## Authenticated remote control
+
+Each session has independent 128-bit session, peer, secret, and host-capability tokens. The pairing secret is carried only in the URL fragment. The host challenges a controller with a random nonce; HMAC-SHA-256 over nonce, session ID, and protocol version proves possession. No state or command is accepted before authentication. Sequence, generation, capability, session ID, and fixed tab ID are checked for every command. See [remote-security.md](./remote-security.md).
+
+## Visualizer and persistence budgets
+
+Popup updates are latest-value coalesced to at most 20 IPC writes per second; storage uses a 250 ms trailing write and flushes on committed change/page close. Visualizer sampling is subscription based, at most 15 Hz per tab and one batch per popup scheduler. Hidden or non-intersecting cards unsubscribe immediately.

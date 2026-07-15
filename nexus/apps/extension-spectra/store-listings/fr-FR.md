@@ -61,7 +61,7 @@ SPECTRA dispose d'un moteur de commutation intelligent unique :
 • Support des raccourcis globaux Chrome.
 
 🔒 **Confidentialité et Sécurité**
-• Zéro collecte de données. Tous les réglages restent locaux.
+• Aucune télémétrie ni publicité. Les réglages restent locaux ; la télécommande facultative et authentifiée utilise l'infrastructure PeerJS WebRTC déclarée.
 • Permissions minimales : je ne demande que le nécessaire.
 
 ⭐ **Vous aimez SPECTRA ? Donnez-moi 5 étoiles ! Votre soutien me motive.**

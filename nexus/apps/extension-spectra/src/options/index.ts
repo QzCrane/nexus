@@ -13,7 +13,7 @@ async function init(): Promise<void> {
 	console.log('[SPECTRA] Options page initializing...');
 
 	enableSmoothScroll();
-	initTheme();
+	await initTheme();
 
 	await initI18n();
 	initModal();

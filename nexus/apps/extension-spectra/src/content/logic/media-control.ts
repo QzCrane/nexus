@@ -16,6 +16,14 @@ const MAX_SPEED = 16;
 const THRESHOLD = 0.005;
 const CACHE_TTL = 100;
 
+interface PitchPreservingMediaElement extends HTMLMediaElement {
+	preservesPitch: boolean;
+}
+
+function supportsPitchPreservation(media: HTMLMediaElement): media is PitchPreservingMediaElement {
+	return 'preservesPitch' in media;
+}
+
 // perf: object pool for media arrays (avoids GC)
 const poolSize = 8;
 const pool: HTMLMediaElement[][] = [];
@@ -32,6 +40,8 @@ let pendingSpeed = 0;
 let pendingPitch = true;
 let hasPending = false;
 let rafId = 0;
+let speedControlActive = false;
+let clearSpeedPublished = false;
 
 // perf: acquire pooled array
 const acquire = (): HTMLMediaElement[] => {
@@ -81,13 +91,6 @@ const getMedia = (): HTMLMediaElement[] => {
 	return cachedMedia;
 };
 
-// perf: invalidate cache on DOM mutations
-const invalidateCache = (): void => { cacheValid = false; };
-if (typeof window !== 'undefined') {
-	const mo = new MutationObserver(invalidateCache);
-	mo.observe(document, { childList: true, subtree: true });
-}
-
 // perf: hot path - apply speed with loop unrolling
 const applySpeed = (): void => {
 	if (!hasPending) return;
@@ -106,6 +109,7 @@ const applySpeed = (): void => {
 
 		if (d0 > THRESHOLD || d0 < -THRESHOLD) {
 			const s = getElementState(e0);
+			if (!s.speedOwnedBySpectra) { s.baselineSpeed = e0.playbackRate; s.speedOwnedBySpectra = true; }
 			s.settingByPlugin = true;
 			e0.playbackRate = speed;
 			s.speed = speed;
@@ -113,6 +117,7 @@ const applySpeed = (): void => {
 		}
 		if (d1 > THRESHOLD || d1 < -THRESHOLD) {
 			const s = getElementState(e1);
+			if (!s.speedOwnedBySpectra) { s.baselineSpeed = e1.playbackRate; s.speedOwnedBySpectra = true; }
 			s.settingByPlugin = true;
 			e1.playbackRate = speed;
 			s.speed = speed;
@@ -120,6 +125,7 @@ const applySpeed = (): void => {
 		}
 		if (d2 > THRESHOLD || d2 < -THRESHOLD) {
 			const s = getElementState(e2);
+			if (!s.speedOwnedBySpectra) { s.baselineSpeed = e2.playbackRate; s.speedOwnedBySpectra = true; }
 			s.settingByPlugin = true;
 			e2.playbackRate = speed;
 			s.speed = speed;
@@ -127,6 +133,7 @@ const applySpeed = (): void => {
 		}
 		if (d3 > THRESHOLD || d3 < -THRESHOLD) {
 			const s = getElementState(e3);
+			if (!s.speedOwnedBySpectra) { s.baselineSpeed = e3.playbackRate; s.speedOwnedBySpectra = true; }
 			s.settingByPlugin = true;
 			e3.playbackRate = speed;
 			s.speed = speed;
@@ -134,10 +141,10 @@ const applySpeed = (): void => {
 		}
 
 		// perf: batch pitch setting
-		if ('preservesPitch' in e0) (e0 as any).preservesPitch = pitch;
-		if ('preservesPitch' in e1) (e1 as any).preservesPitch = pitch;
-		if ('preservesPitch' in e2) (e2 as any).preservesPitch = pitch;
-		if ('preservesPitch' in e3) (e3 as any).preservesPitch = pitch;
+		if (supportsPitchPreservation(e0)) e0.preservesPitch = pitch;
+		if (supportsPitchPreservation(e1)) e1.preservesPitch = pitch;
+		if (supportsPitchPreservation(e2)) e2.preservesPitch = pitch;
+		if (supportsPitchPreservation(e3)) e3.preservesPitch = pitch;
 	}
 
 	// perf: handle remainder
@@ -146,12 +153,13 @@ const applySpeed = (): void => {
 		const d = m.playbackRate - speed;
 		if (d > THRESHOLD || d < -THRESHOLD) {
 			const s = getElementState(m);
+			if (!s.speedOwnedBySpectra) { s.baselineSpeed = m.playbackRate; s.speedOwnedBySpectra = true; }
 			s.settingByPlugin = true;
 			m.playbackRate = speed;
 			s.speed = speed;
 			queueMicrotask(() => s.settingByPlugin = false);
 		}
-		if ('preservesPitch' in m) (m as any).preservesPitch = pitch;
+		if (supportsPitchPreservation(m)) m.preservesPitch = pitch;
 	}
 
 	hasPending = false;
@@ -174,6 +182,8 @@ export function setSpeed(s: number, pitch?: boolean): { speed: number; preserveP
 	// perf: inline clamp
 	const clamped = s < MIN_SPEED ? MIN_SPEED : s > MAX_SPEED ? MAX_SPEED : s;
 	const p = pitch ?? true;
+	speedControlActive = true;
+	clearSpeedPublished = false;
 
 	const bridge = getSiteBridge();
 	bridge.syncSpeed(clamped);
@@ -191,7 +201,28 @@ export function setSpeed(s: number, pitch?: boolean): { speed: number; preserveP
 }
 
 export function clearTargetSpeed(): void {
+	if (!speedControlActive && clearSpeedPublished) return;
 	window.postMessage({ type: 'SPECTRA_CLEAR_TARGET_SPEED' }, '*');
+	clearSpeedPublished = true;
+	hasPending = false;
+	if (rafId !== 0) {
+		cancelAnimationFrame(rafId);
+		rafId = 0;
+	}
+	if (!speedControlActive) return;
+	for (const media of getMedia()) {
+		const state = getElementState(media);
+		if (!state.speedOwnedBySpectra) continue;
+		state.settingByPlugin = true;
+		try {
+			media.playbackRate = state.baselineSpeed;
+			state.speed = state.baselineSpeed;
+			state.speedOwnedBySpectra = false;
+		} finally {
+			queueMicrotask(() => { state.settingByPlugin = false; });
+		}
+	}
+	speedControlActive = false;
 }
 
 export function togglePlay(): boolean {
@@ -236,7 +267,7 @@ export function adjustSpeed(d: number): { speed: number; preservePitch: boolean 
 
 export function getMediaState(): { playing: boolean; speed: number; pipActive: boolean; preservePitch: boolean } {
 	const v = getPrimaryVideo();
-	const p = v && 'preservesPitch' in v ? (v as any).preservesPitch : true;
+	const p = v && supportsPitchPreservation(v) ? v.preservesPitch : true;
 	return {
 		playing: v ? !v.paused : false,
 		speed: v?.playbackRate ?? 1,

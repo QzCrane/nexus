@@ -1,20 +1,20 @@
 // goal: binds native DOM events (clicks, inputs, wheel, touch) to audio configuration updates and registry persistence
 
-import type { AudioConfig } from '@nexus/kernel';
 import { DEFAULT_AUDIO_CONFIG } from '@nexus/kernel';
 import type { CardUIElements } from '../types';
 import type { CardInternalState } from './types';
+import type { ConfigUpdateFn } from './state';
 import { AUDIO_UI, TIMING } from '../constants';
-import { getDomain, sendToBackground, sendToTab } from '../utils/dom';
+import { getDomain, requestTab } from '../utils/dom';
 import { bindMediaControls } from './media-events';
-import { safeStorageGet, safeStorageSet } from '../../shared/safe-storage';
+import { patchSettings } from '../../shared/settings-client';
 
 export interface EventsParams {
   ui: CardUIElements;
   state: CardInternalState;
   tabId: number;
   tabUrl: string;
-  update: (changes: Partial<AudioConfig>) => void;
+  update: ConfigUpdateFn;
   getCapturing: () => boolean;
   onMetricsUpdate: () => void;
   render: () => void;
@@ -22,25 +22,22 @@ export interface EventsParams {
 
 // eff: attaches event listeners to the card UI components, managing the lifecycle of user interactions
 export function bindCardEvents(params: EventsParams): void {
-  const { ui, state, tabId, tabUrl, update, getCapturing, onMetricsUpdate } = params;
+  const { ui, state, tabId, tabUrl, update, onMetricsUpdate } = params;
   const domain = getDomain(tabUrl);
 
   ui.enable.onchange = (e) => {
     const enabled = (e.target as HTMLInputElement).checked;
     update({ enabled });
 
-    // rule: explicitly terminate the background capture session if the user disables the master switch
-    if (!enabled && getCapturing()) {
-      state.isCaptureActive = false;
-      sendToBackground('CAPTURE_TOGGLE', {
-        enabled: false,
-        config: state.config,
-        tabId,
-      });
-    }
   };
 
   ui.mask.onclick = () => update({ enabled: true });
+  ui.mask.onkeydown = (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      update({ enabled: true });
+    }
+  };
 
   const handleVolume = (val: string | number) => {
     const v = typeof val === 'string' ? parseInt(val, 10) : val;
@@ -58,7 +55,10 @@ export function bindCardEvents(params: EventsParams): void {
     params.render?.();
   };
 
-  ui.slider.onchange = () => { state.isDragging = false; };
+  ui.slider.onchange = () => {
+    state.isDragging = false;
+    void update.flush().catch(() => undefined);
+  };
   ui.slider.onmouseup = () => { state.isDragging = false; };
   ui.slider.ontouchend = () => { state.isDragging = false; };
   ui.slider.onmousedown = () => { state.isDragging = true; };
@@ -102,6 +102,9 @@ export function bindCardEvents(params: EventsParams): void {
         arr[i] = parseFloat((e.target as HTMLInputElement).value);
         update({ eqValues: arr });
       };
+      inp.onchange = () => {
+        void update.flush().catch(() => undefined);
+      };
 
       inp.parentElement?.addEventListener('wheel', (e) => {
         e.preventDefault();
@@ -122,18 +125,15 @@ export function bindCardEvents(params: EventsParams): void {
   ui.btnSave.onclick = async () => {
     // eff: capture current playback speed to include in the preset
     try {
-      const mediaState = await sendToTab<{ speed: number }>(tabId, 'MEDIA_GET_STATE', {});
-      if (mediaState && mediaState.speed) {
+      const mediaState = await requestTab(tabId, 'spectra.media.state.get', {});
+      if (mediaState?.speed) {
         state.config.speed = mediaState.speed;
       }
     } catch (e) {
       console.warn('Failed to get speed for preset save', e);
     }
 
-    const result = await safeStorageGet<{ siteSettings?: Record<string, AudioConfig> }>(['siteSettings'], {});
-    const s = result.siteSettings || {};
-    s[domain] = state.config;
-    await safeStorageSet({ siteSettings: s });
+	await patchSettings({ scope: 'audio-site', domain, value: state.config, mode: 'replace' });
     // feedback: provide a transient visual confirmation on the save button
     const old = ui.btnSave.innerText;
     ui.btnSave.innerText = 'OK';
@@ -145,8 +145,8 @@ export function bindCardEvents(params: EventsParams): void {
     ui.btnSaveGlobal.onclick = async () => {
       // eff: capture current playback speed
       try {
-        const mediaState = await sendToTab<{ speed: number }>(tabId, 'MEDIA_GET_STATE', {});
-        if (mediaState && mediaState.speed) {
+        const mediaState = await requestTab(tabId, 'spectra.media.state.get', {});
+        if (mediaState?.speed) {
           state.config.speed = mediaState.speed;
         }
       } catch (e) {

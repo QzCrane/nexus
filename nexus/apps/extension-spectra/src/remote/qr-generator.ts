@@ -3,10 +3,11 @@
  */
 
 import QRCode from 'qrcode';
-import { REMOTE_HOST, getRemoteUrl } from './constants.js';
+import { getRemoteUrl } from './constants.js';
+import type { RemotePairing } from './protocol';
 
-export async function generateRemoteQR(sessionId: string, baseUrl?: string): Promise<string> {
-	const url = baseUrl ? `${baseUrl}?s=${sessionId}` : getRemoteUrl(sessionId);
+export async function generateRemoteQR(pairing: RemotePairing, baseUrl?: string): Promise<string> {
+	const url = getRemoteUrl(pairing, baseUrl);
 
 	return QRCode.toDataURL(url, {
 		width: 200,
@@ -19,6 +20,6 @@ export async function generateRemoteQR(sessionId: string, baseUrl?: string): Pro
 }
 
 // For debugging
-export async function generateRemoteQRText(sessionId: string): Promise<string> {
-	return QRCode.toString(getRemoteUrl(sessionId), { type: 'terminal', small: true });
+export async function generateRemoteQRText(pairing: RemotePairing): Promise<string> {
+	return QRCode.toString(getRemoteUrl(pairing), { type: 'terminal', small: true });
 }

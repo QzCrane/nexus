@@ -1,9 +1,8 @@
-// goal: manages the main visualization rendering loop in the popup, polling spectral data from appropriate sources
+// goal: samples visualizer data through one visibility-aware popup scheduler
 
 import type { GlobalSettings } from '@nexus/kernel';
-import { OffscreenActions } from '@nexus/contracts';
 import { TIMING } from '../constants';
-import { sendToTab } from '../utils/dom';
+import { sendSpectraRequest } from '../../shared/spectra-client';
 import { drawViz } from './draw-viz';
 
 export interface VizLoopParams {
@@ -12,84 +11,140 @@ export interface VizLoopParams {
   getConfig: () => { enabled: boolean; muted: boolean };
   getCapturing: () => boolean;
   getGlobalSettings: () => GlobalSettings;
-  initialPredictedCapture: boolean;
-  isCaptureActive: boolean;
 }
 
-// post: returns a deferred start function that initiates the recursive requestAnimationFrame loop
-export function createVizLoop(params: VizLoopParams): () => void {
-  const { canvas, tabId, getConfig, getCapturing, getGlobalSettings, initialPredictedCapture, isCaptureActive } = params;
+interface VizSubscription {
+  params: VizLoopParams;
+  active: boolean;
+  visible: boolean;
+  requesting: boolean;
+  silent: boolean;
+}
 
-  let isRequesting = false;
-  let lastDraw = 0;
-  let loopStarted = false;
+const subscriptions = new Set<VizSubscription>();
+const subscriptionsByCanvas = new Map<Element, VizSubscription>();
+let frameTimer: ReturnType<typeof setTimeout> | null = null;
+let frameId = 0;
 
-  // eff: reusable msg objects to reduce gc pressure
-  const msgOffscreen = { target: 'offscreen', action: OffscreenActions.OFFSCREEN_GET_VIZ, tabId };
-  // note: sendToTab wrapper might still alloc, but at least we can optimize the payload if needed
-  // sendToTab signature: (tabId, action, payload), payload is {} here
-
-  const loop = async (timestamp: number) => {
-    // rule: throttle rendering to ~30 FPS to reduce CPU overhead in the popup process
-    if (timestamp - lastDraw < TIMING.VIZ_FRAME_INTERVAL) {
-      requestAnimationFrame(loop);
-      return;
-    }
-    lastDraw = timestamp;
-
-    const config = getConfig();
-    const gSettings = getGlobalSettings();
-
-    if (config.enabled && !config.muted) {
-      // rule: if visualizer is globally disabled, render a flat baseline and continue the loop silently
-      if (gSettings.visualizerEnabled === false) {
-        drawViz(canvas, null, true, getCapturing());
-        requestAnimationFrame(loop);
-        return;
+const intersectionObserver = typeof IntersectionObserver === 'undefined'
+  ? null
+  : new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const subscription = subscriptionsByCanvas.get(entry.target);
+        if (subscription) subscription.visible = entry.isIntersecting && entry.intersectionRatio > 0;
       }
+      scheduleFrame();
+    });
 
-      if (!isRequesting) {
-        isRequesting = true;
-        let buffer: Uint8Array | null = null;
-        const currentCapturing = getCapturing();
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopScheduledFrame();
+  else scheduleFrame();
+});
 
-        try {
-          if (currentCapturing) {
-            // mode: Capture -> poll high-fidelity spectral data from the offscreen document
-            const res = await chrome.runtime.sendMessage(msgOffscreen).catch(() => null);
-            if (res?.buffer) {
-              buffer = new Uint8Array(res.buffer);
-            } else {
-              // note: fallback to content script probe
-              const data = await sendToTab<{ buffer: ArrayBuffer }>(tabId, 'AUDIO_GET_VISUALIZER', {});
-              if (data?.buffer) buffer = new Uint8Array(data.buffer);
-            }
-          } else {
-            // mode: Native -> poll data directly from the content script
-            const data = await sendToTab<{ buffer: ArrayBuffer }>(tabId, 'AUDIO_GET_VISUALIZER', {});
-            if (data?.buffer) buffer = new Uint8Array(data.buffer);
-          }
-        } catch { } // silent fail
+function stopScheduledFrame(): void {
+  if (frameTimer) {
+    clearTimeout(frameTimer);
+    frameTimer = null;
+  }
+  if (frameId) {
+    cancelAnimationFrame(frameId);
+    frameId = 0;
+  }
+}
 
-        drawViz(canvas, buffer, false, currentCapturing);
-        isRequesting = false;
-      }
-    } else {
-      drawViz(canvas, null, true, getCapturing());
+function hasVisibleSubscriptions(): boolean {
+  for (const subscription of subscriptions) {
+    if (subscription.active && subscription.visible) return true;
+  }
+  return false;
+}
+
+function scheduleFrame(): void {
+  if (document.hidden || frameTimer || frameId || !hasVisibleSubscriptions()) return;
+  frameTimer = setTimeout(() => {
+    frameTimer = null;
+    frameId = requestAnimationFrame(runFrame);
+  }, TIMING.VIZ_FRAME_INTERVAL);
+}
+
+function runFrame(): void {
+  frameId = 0;
+  const ready: VizSubscription[] = [];
+  for (const subscription of subscriptions) {
+    if (!subscription.active || !subscription.visible || subscription.requesting) continue;
+    const { params } = subscription;
+    const config = params.getConfig();
+    const settings = params.getGlobalSettings();
+    if (!config.enabled || config.muted || settings.visualizerEnabled === false) {
+      if (!subscription.silent) drawViz(params.canvas, null, true, params.getCapturing());
+      subscription.silent = true;
+      continue;
     }
+    subscription.silent = false;
+    subscription.requesting = true;
+    ready.push(subscription);
+  }
+  if (ready.length > 0) void sampleBatch(ready);
+  scheduleFrame();
+}
 
-    requestAnimationFrame(loop);
-  };
+async function sampleBatch(ready: VizSubscription[]): Promise<void> {
+  try {
+    const response = await sendSpectraRequest('spectra.audio.visualizer.batch', {
+      tabIds: [...new Set(ready.map((subscription) => subscription.params.tabId))],
+    });
+    for (const subscription of ready) {
+      const frame = response.ok
+        ? (response.data.frames[String(subscription.params.tabId)] ?? null)
+        : null;
+      drawViz(
+        subscription.params.canvas,
+        frame,
+        !frame,
+        subscription.params.getCapturing(),
+      );
+    }
+  } catch {
+    for (const subscription of ready) {
+      drawViz(subscription.params.canvas, null, true, subscription.params.getCapturing());
+    }
+  } finally {
+    for (const subscription of ready) subscription.requesting = false;
+    scheduleFrame();
+  }
+}
 
-  const startLoop = () => {
-    if (!loopStarted) { loopStarted = true; requestAnimationFrame(loop); }
+function register(params: VizLoopParams): () => void {
+  const subscription: VizSubscription = {
+    params,
+    active: true,
+	visible: !intersectionObserver,
+    requesting: false,
+    silent: false,
   };
+  subscriptions.add(subscription);
+  subscriptionsByCanvas.set(params.canvas, subscription);
+  intersectionObserver?.observe(params.canvas);
+  scheduleFrame();
 
   return () => {
-    if (initialPredictedCapture && !isCaptureActive) {
-      setTimeout(startLoop, TIMING.CAPTURE_INIT_DELAY);
-    } else {
-      startLoop();
-    }
+    subscription.active = false;
+    subscriptions.delete(subscription);
+    subscriptionsByCanvas.delete(params.canvas);
+    intersectionObserver?.unobserve(params.canvas);
+    if (!hasVisibleSubscriptions()) stopScheduledFrame();
   };
+}
+
+// post: returns an idempotent start function; all cards share the same 15 Hz scheduler
+export function createVizLoop(params: VizLoopParams): () => void {
+  let cleanup: (() => void) | null = null;
+
+  const start = () => {
+    if (cleanup) return;
+    cleanup = register(params);
+    window.addEventListener('pagehide', () => cleanup?.(), { once: true });
+  };
+
+  return start;
 }

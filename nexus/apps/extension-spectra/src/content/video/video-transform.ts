@@ -25,11 +25,11 @@ function apply(v: HTMLVideoElement) {
 	log.info(`Transform: r=${s.r}, m=${s.m}`);
 }
 
-export function rotateVideo(): number {
+export function rotateVideo(delta: 90 | -90 = 90): number {
 	const v = getPrimaryVideo();
 	if (!v) return 0;
 	const s = getState(v);
-	s.r = (s.r + 90) % 360;
+	s.r = (s.r + delta + 360) % 360;
 	apply(v);
 	return s.r;
 }

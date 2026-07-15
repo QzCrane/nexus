@@ -11,8 +11,8 @@ export interface SiteBridge {
 	/** Check if this bridge should be active for the current site */
 	isMatch(): boolean;
 
-	/** Initialize site-specific listeners and hooks */
-	onInitialize(callbacks: BridgeCallbacks): void;
+	/** Initialize site-specific listeners and hooks and return their unified disposer. */
+	onInitialize(callbacks: BridgeCallbacks): () => void;
 
 	/** Sync Spectra volume/mute state to site-specific player */
 	syncVolume(volume: number, muted: boolean): void;

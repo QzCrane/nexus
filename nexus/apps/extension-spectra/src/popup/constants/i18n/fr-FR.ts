@@ -58,6 +58,7 @@ export const FR_FR: I18NDict = {
 	spHotkeyPinned: 'Épinglé',
 	spHotkeyLast: 'Dernier actif',
 	btnPause: 'Pause/Lecture',
+	btnMute: 'Couper le son',
 	btnPip: 'Image dans l\'image',
 	btnHotkeyTarget: 'Cible raccourci',
 	btnGotoTab: 'Aller à l\'onglet',

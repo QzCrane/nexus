@@ -58,15 +58,15 @@ function renderOSD(type: 'volume' | 'speed', c: AudioConfig, cap: boolean, s: Co
 		o.classList.remove('m');
 		// map speed 0.1-16 to percentage for bar display
 		const pct = Math.min(100, Math.max(0, (speed / 16) * 100));
-		f.style.width = pct + '%';
-		t.textContent = speed.toFixed(2) + 'x';
+		f.style.width = `${pct}%`;
+		t.textContent = `${speed.toFixed(2)}x`;
 		i.textContent = speed > 1 ? '⚡' : (speed < 1 ? '🐢' : '⏱️');
 	} else {
 		// volume display mode
 		const muted = c.muted || c.volume === 0;
 		o.classList.toggle('m', muted);
-		f.style.width = Math.min(100, (c.volume / 800) * 100) + '%';
-		t.textContent = muted ? 'MUTE' : c.volume + '%';
+		f.style.width = `${Math.min(100, (c.volume / 800) * 100)}%`;
+		t.textContent = muted ? s.osdMessages.muted : `${c.volume}%`;
 		i.textContent = muted ? '🔇' : (c.volume > 100 ? '🚀' : '🔊');
 	}
 

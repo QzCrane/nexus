@@ -58,6 +58,7 @@ export const EN_US: I18NDict = {
   spHotkeyPinned: 'Pinned',
   spHotkeyLast: 'Last Active',
   btnPause: 'Pause/Play',
+  btnMute: 'Mute',
   btnPip: 'Picture-in-Picture',
   btnHotkeyTarget: 'Hotkey Target',
   btnGotoTab: 'Go to Tab',

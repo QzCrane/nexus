@@ -61,7 +61,7 @@ SPECTRA verfügt über eine branchenführende intelligente Umschalteinheit:
 • Unterstützung für globale Chrome-Hotkeys.
 
 🔒 **Datenschutz & Sicherheit**
-• Keine Datensammlung. Alle Einstellungen sind lokal.
+• Keine Telemetrie oder Werbung. Einstellungen bleiben lokal; die optionale, authentifizierte Handy-Fernbedienung nutzt die offengelegte PeerJS-WebRTC-Infrastruktur.
 • Minimale Berechtigungen – ich frage nur nach dem Nötigsten.
 
 ⭐ **Lieben Sie SPECTRA? Geben Sie mir eine 5-Sterne-Bewertung! Ihr Support hilft mir.**

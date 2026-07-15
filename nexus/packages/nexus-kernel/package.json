@@ -24,6 +24,7 @@
 	"scripts": {
 		"build": "bun tsc -b",
 		"dev": "bun tsc -b --watch",
+		"lint": "biome check src --max-diagnostics=100",
 		"typecheck": "bun tsc --noEmit"
 	},
 	"dependencies": {

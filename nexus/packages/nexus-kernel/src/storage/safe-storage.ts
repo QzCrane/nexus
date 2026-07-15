@@ -6,7 +6,7 @@ const MAX_RETRIES = 3;
 
 const wait = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
-export type StorageArea = 'local' | 'sync';
+export type StorageArea = 'local' | 'sync' | 'session';
 
 interface SafeStorageOptions {
 	area?: StorageArea;
@@ -45,7 +45,11 @@ export async function safeStorageGet<T extends Record<string, unknown>>(
 ): Promise<T> {
 	if (typeof chrome === 'undefined' || !chrome.storage) return defaults;
 	const { area = 'local', timeout = DEFAULT_TIMEOUT, retries = MAX_RETRIES } = options;
-	const storage = area === 'local' ? chrome.storage.local : chrome.storage.sync;
+	const storage = area === 'local'
+		? chrome.storage.local
+		: area === 'session'
+			? chrome.storage.session
+			: chrome.storage.sync;
 	const keyArr = Array.isArray(keys) ? keys : [keys];
 
 	return withRetry(
@@ -63,7 +67,11 @@ export async function safeStorageSet(
 ): Promise<boolean> {
 	if (typeof chrome === 'undefined' || !chrome.storage) return false;
 	const { area = 'local', timeout = DEFAULT_TIMEOUT, retries = MAX_RETRIES } = options;
-	const storage = area === 'local' ? chrome.storage.local : chrome.storage.sync;
+	const storage = area === 'local'
+		? chrome.storage.local
+		: area === 'session'
+			? chrome.storage.session
+			: chrome.storage.sync;
 
 	return withRetry(
 		async () => { await storage.set(items); return true; },
@@ -80,7 +88,11 @@ export async function safeStorageRemove(
 ): Promise<boolean> {
 	if (typeof chrome === 'undefined' || !chrome.storage) return false;
 	const { area = 'local', timeout = DEFAULT_TIMEOUT, retries = MAX_RETRIES } = options;
-	const storage = area === 'local' ? chrome.storage.local : chrome.storage.sync;
+	const storage = area === 'local'
+		? chrome.storage.local
+		: area === 'session'
+			? chrome.storage.session
+			: chrome.storage.sync;
 	const keyArr = Array.isArray(keys) ? keys : [keys];
 
 	return withRetry(

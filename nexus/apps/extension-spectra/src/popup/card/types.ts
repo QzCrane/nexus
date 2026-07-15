@@ -2,7 +2,13 @@
 
 import type { AudioConfig, GlobalSettings } from '@nexus/kernel';
 import { DEFAULT_AUDIO_CONFIG } from '@nexus/kernel';
-import type { DomainEntry } from '@nexus/contracts';
+import type {
+  AudioMode,
+  AudioSessionError,
+  AudioSessionPhase,
+  DomainEntry,
+  SpectraAudioMode,
+} from '@nexus/contracts';
 import type { CardUIElements, I18NDict } from '../types';
 
 export interface CardInternalState {
@@ -10,7 +16,11 @@ export interface CardInternalState {
   isCaptureActive: boolean;
   userInteracted: boolean;
   isRestrictedSite: boolean;
-  actualMode: 'NATIVE_WEBAUDIO' | 'NATIVE_LITE' | 'CAPTURE' | null;
+  actualMode: AudioMode | SpectraAudioMode | null;
+  desiredMode: SpectraAudioMode;
+  phase: AudioSessionPhase;
+  generation: number;
+  lastError: AudioSessionError | null;
   // isDragging: flag to prevent UI jitter by skipping re-renders while the user is actively manipulating sliders
   isDragging: boolean;
 }
@@ -53,7 +63,7 @@ export function cleanConfig(config: Partial<AudioConfig> | null): AudioConfig {
     c.enabled = true;
   }
   // note: strip internal command triggers used for temporary sync that shouldn't persist in the configuration state
-  delete (c as any).toggleMute;
-  delete (c as any).volumeDelta;
+  Reflect.deleteProperty(c, 'toggleMute');
+  Reflect.deleteProperty(c, 'volumeDelta');
   return c;
 }

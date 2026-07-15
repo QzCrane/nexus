@@ -1,11 +1,12 @@
 // goal: manages the domain registry UI, allowing users to categorize domains as either 'restricted' (needs capture) or 'safe'
 
-import type { DomainEntry } from '@nexus/contracts';
+import { normalizeHostname, type DomainEntry, type RegistrySnapshot } from '@nexus/contracts';
 import { $ } from '../utils/dom';
 import type { I18NDict } from '../types';
-import { safeStorageSet } from '../../shared/safe-storage';
+import { addRegistryDomain, removeRegistryDomain } from '../../shared/registry-client';
 
 type TabType = 'restricted' | 'safe';
+type RegistryNavigationKey = 'ArrowLeft' | 'ArrowRight' | 'Home' | 'End';
 
 interface RegistryUIElements {
 	tabRestricted: HTMLButtonElement | null;
@@ -20,6 +21,7 @@ let currentTab: TabType = 'restricted';
 let allEntries: DomainEntry[] = [];
 let filterText = '';
 let currentDict: I18NDict | null = null;
+let mutationQueue: Promise<void> = Promise.resolve();
 
 function getUIElements(): RegistryUIElements {
 	return {
@@ -47,65 +49,108 @@ function renderList(ui: RegistryUIElements): void {
 		const emptyMsg = currentTab === 'restricted'
 			? (currentDict?.registryEmptyRestricted ?? 'No sites need capture')
 			: (currentDict?.registryEmptySafe ?? 'No safe sites');
-		ui.listContainer.innerHTML = `<div class="registry-empty">${emptyMsg}</div>`;
+		const empty = document.createElement('div');
+		empty.className = 'registry-empty';
+		empty.textContent = emptyMsg;
+		ui.listContainer.replaceChildren(empty);
 		return;
 	}
 
-	ui.listContainer.innerHTML = filtered.map(e => `
-		<div class="registry-item" data-domain="${e.domain}">
-			<span class="registry-item-domain">${e.domain}</span>
-			<span class="registry-item-source">${e.source === 'auto' ? 'AUTO' : 'USER'}</span>
-			<button class="registry-item-delete" title="${currentDict?.tipDelete || 'Delete'}">×</button>
-		</div>
-	`).join('');
+	const fragment = document.createDocumentFragment();
+	const deleteLabel = currentDict?.tipDelete || 'Delete';
+	for (const entry of filtered) {
+		const item = document.createElement('div');
+		item.className = 'registry-item';
 
-	ui.listContainer.querySelectorAll('.registry-item-delete').forEach(btn => {
-		btn.addEventListener('click', (e) => {
-			const item = (e.target as HTMLElement).closest('.registry-item') as HTMLElement;
-			const domain = item?.dataset.domain;
-			if (domain) deleteDomain(domain, ui);
-		});
-	});
+		const domain = document.createElement('span');
+		domain.className = 'registry-item-domain';
+		domain.textContent = entry.domain;
+
+		const source = document.createElement('span');
+		source.className = 'registry-item-source';
+		source.textContent = entry.source === 'auto' ? 'AUTO' : 'USER';
+
+		const deleteButton = document.createElement('button');
+		deleteButton.type = 'button';
+		deleteButton.className = 'registry-item-delete';
+		deleteButton.title = deleteLabel;
+		deleteButton.setAttribute('aria-label', `${deleteLabel}: ${entry.domain}`);
+		deleteButton.textContent = '×';
+		deleteButton.addEventListener('click', () => deleteDomain(entry.domain, ui));
+
+		item.append(domain, source, deleteButton);
+		fragment.append(item);
+	}
+	ui.listContainer.replaceChildren(fragment);
+}
+
+function applyMutation(
+	operation: () => Promise<RegistrySnapshot>,
+	ui: RegistryUIElements,
+): Promise<void> {
+	const task = async () => {
+		const snapshot = await operation();
+		allEntries.splice(0, allEntries.length, ...snapshot.entries);
+		renderList(ui);
+	};
+	const result = mutationQueue.then(task, task);
+	mutationQueue = result.catch(() => undefined);
+	return result;
 }
 
 function deleteDomain(domain: string, ui: RegistryUIElements): void {
-	allEntries = allEntries.filter(e => e.domain !== domain);
-	saveAndRender(ui);
+	void applyMutation(() => removeRegistryDomain(domain), ui).catch(() => undefined);
 }
 
 // eff: normalizes the domain input and adds it to the in-memory registry with a specific category tag
 function addDomain(domain: string, ui: RegistryUIElements): void {
-	const cleaned = domain.trim().toLowerCase();
+	const cleaned = normalizeHostname(domain);
 	if (!cleaned) return;
 
-	if (allEntries.some(e => e.domain === cleaned)) return;
-
-	allEntries.push({
-		domain: cleaned,
-		source: 'user',
-		restricted: currentTab === 'restricted',
-		probed: false,
-		addedAt: Date.now(),
-	});
-
-	saveAndRender(ui);
-
-	if (ui.newDomainInput) ui.newDomainInput.value = '';
-}
-
-// goal: persists the latest registry state to local storage and updates the visible list
-function saveAndRender(ui: RegistryUIElements): void {
-	safeStorageSet({ restrictedRegistry: allEntries });
-	renderList(ui);
+	const restricted = currentTab === 'restricted';
+	void applyMutation(() => addRegistryDomain(cleaned, restricted), ui)
+		.then(() => {
+			if (ui.newDomainInput?.value === domain) ui.newDomainInput.value = '';
+		})
+		.catch(() => undefined);
 }
 
 function switchTab(tab: TabType, ui: RegistryUIElements): void {
 	currentTab = tab;
 
-	if (ui.tabRestricted) ui.tabRestricted.classList.toggle('active', tab === 'restricted');
-	if (ui.tabSafe) ui.tabSafe.classList.toggle('active', tab === 'safe');
+	for (const [type, button] of [
+		['restricted', ui.tabRestricted],
+		['safe', ui.tabSafe],
+	] as const) {
+		if (!button) continue;
+		const selected = type === tab;
+		button.classList.toggle('active', selected);
+		button.setAttribute('aria-selected', String(selected));
+		button.tabIndex = selected ? 0 : -1;
+	}
+	ui.listContainer?.setAttribute('aria-labelledby', tab === 'restricted' ? 'tab-restricted' : 'tab-safe');
 
 	renderList(ui);
+}
+
+export function resolveRegistryNavigationKey(
+	current: TabType,
+	key: string,
+): TabType | null {
+	if (key === 'Home') return 'restricted';
+	if (key === 'End') return 'safe';
+	if (key === 'ArrowLeft' || key === 'ArrowRight') {
+		return current === 'restricted' ? 'safe' : 'restricted';
+	}
+	return null;
+}
+
+function handleTabKeydown(event: KeyboardEvent, tab: TabType, ui: RegistryUIElements): void {
+	const next = resolveRegistryNavigationKey(tab, event.key as RegistryNavigationKey);
+	if (!next) return;
+	event.preventDefault();
+	switchTab(next, ui);
+	(next === 'restricted' ? ui.tabRestricted : ui.tabSafe)?.focus();
 }
 
 // goal: bootstraps listeners for search input, category switching, and new domain addition
@@ -113,10 +158,12 @@ export function initRegistryUI(entries: DomainEntry[]): void {
 	allEntries = entries;
 	const ui = getUIElements();
 
-	renderList(ui);
+	switchTab(currentTab, ui);
 
 	ui.tabRestricted?.addEventListener('click', () => switchTab('restricted', ui));
 	ui.tabSafe?.addEventListener('click', () => switchTab('safe', ui));
+	ui.tabRestricted?.addEventListener('keydown', (event) => handleTabKeydown(event, 'restricted', ui));
+	ui.tabSafe?.addEventListener('keydown', (event) => handleTabKeydown(event, 'safe', ui));
 
 	ui.filterInput?.addEventListener('input', (e) => {
 		filterText = (e.target as HTMLInputElement).value;

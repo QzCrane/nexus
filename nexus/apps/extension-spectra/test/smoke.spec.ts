@@ -1,55 +1,2048 @@
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
-import { join } from 'node:path';
-import puppeteer, { type Browser, type Page } from 'puppeteer';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import puppeteer, {
+	type Browser,
+	type CDPSession,
+	type Page,
+	type Target,
+	type WebWorker,
+} from 'puppeteer';
 
-const EXTENSION_DIR = join(import.meta.dir, '..', 'dist');
-const TEST_PAGE = 'file://' + join(import.meta.dir, 'fixtures', 'smoke-test.html');
+const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
+const FIXTURE_PATH = join(import.meta.dir, 'fixtures', 'smoke-test.html');
+const REMOTE_SITE_DIR = resolve(import.meta.dir, '..', '..', '..', '..', 'remote-site');
+
+if (!existsSync(join(EXTENSION_DIR, 'manifest.json'))) {
+	throw new Error(`SPECTRA extension directory is missing manifest.json: ${EXTENSION_DIR}`);
+}
 
 let browser: Browser;
-let page: Page;
+let serviceWorkerConnection: Browser | null = null;
+let fixturePage: Page;
+let serviceWorkerTarget: Target;
+let serviceWorker: WebWorker;
+let extensionId = '';
+let fixtureUrl = '';
+let server: ReturnType<typeof Bun.serve>;
+
+const fixtureErrors: string[] = [];
+
+interface ContentStatus {
+	config?: {
+		volume?: number;
+		muted?: boolean;
+		speed?: number;
+	};
+	hasAudio: boolean;
+	mode: string;
+	phase?: string;
+	generation?: number;
+}
+
+interface AudioConfig {
+	enabled: boolean;
+	volume: number;
+	muted: boolean;
+	compressor: boolean;
+	mono: boolean;
+	bass: boolean;
+	eqValues: number[];
+	pan: number;
+	delay: number;
+	speed: number;
+}
+
+interface CaptureState {
+	tabId: number;
+	generation: number;
+	phase: 'idle' | 'starting' | 'active' | 'stopping' | 'error';
+	active: boolean;
+	actualMode: 'bypass' | 'capture';
+	lastError: { code: string; message: string; retryable: boolean } | null;
+}
+
+interface CaptureResponse {
+	ok: boolean;
+	data?: CaptureState;
+	error?: { code: string; message: string; retryable: boolean };
+}
+
+interface OffscreenHostSnapshot {
+	audioTabs: Array<{ tabId: number; generation: number }>;
+	remoteTabs: Array<{ tabId: number; sessionId: string }>;
+}
+
+interface RemotePublicSession {
+	protocolVersion: 2;
+	sessionId: string;
+	peerId: string;
+	secret: string;
+	createdAt: number;
+	pairingExpiresAt: number;
+	tabId: number;
+	connected: boolean;
+}
+
+interface SyntheticCaptureState {
+	calls: number;
+	pending: boolean;
+	processorStates: string[];
+}
+
+interface WebAudioProbe {
+	controllerReady: boolean;
+	contextState: string | null;
+	hasGraph: boolean;
+	listenersReady: boolean;
+	runtimeRevision: string | null;
+	sameController: boolean | null;
+	sameSource: boolean | null;
+	oldRuntimeDisposed: boolean | null;
+}
+
+const DEFAULT_AUDIO_CONFIG: AudioConfig = {
+	enabled: true,
+	volume: 100,
+	muted: false,
+	compressor: false,
+	mono: false,
+	bass: false,
+	eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+	pan: 0,
+	delay: 0,
+	speed: 1,
+};
+
+function collectPageErrors(page: Page, errors: string[]): void {
+	page.on('pageerror', (error) => errors.push(error.message));
+}
+
+interface ExtensionLayoutAudit {
+	documentOverflow: number;
+	controlsOutsideViewport: string[];
+	clippedText: string[];
+}
+
+interface ExtensionAccessibilityAudit {
+	interactiveCount: number;
+	namelessInteractive: string[];
+	missingState: string[];
+	domPressedCount: number;
+	axPressedCount: number;
+}
+
+async function inspectExtensionLayout(page: Page): Promise<ExtensionLayoutAudit> {
+	return page.evaluate(() => {
+		const isVisible = (element: Element): element is HTMLElement => {
+			if (!(element instanceof HTMLElement)) return false;
+			const style = getComputedStyle(element);
+			const rect = element.getBoundingClientRect();
+			return style.display !== 'none'
+				&& style.visibility !== 'hidden'
+				&& !element.closest('[hidden], [inert]')
+				&& rect.width > 4
+				&& rect.height > 4;
+		};
+		const describe = (element: HTMLElement): string => {
+			const identity = element.id
+				? `#${element.id}`
+				: element.classList.length > 0
+					? `.${[...element.classList].slice(0, 2).join('.')}`
+					: element.tagName.toLowerCase();
+			return `${identity}:${element.textContent?.trim().replace(/\s+/gu, ' ').slice(0, 48) ?? ''}`;
+		};
+		const controls = [...document.querySelectorAll<HTMLElement>(
+			'button, input, select, textarea, a[href], [role="button"], [role="tab"]',
+		)].filter(isVisible);
+		const controlsOutsideViewport = controls.filter((element) => {
+			const rect = element.getBoundingClientRect();
+			return rect.left < -1 || rect.right > window.innerWidth + 1;
+		}).map(describe);
+		const textElements = [...document.querySelectorAll<HTMLElement>(
+			'button, a[href], label, h1, h2, h3, h4, p, [role="tab"]',
+		)].filter(isVisible);
+		const clippedText = textElements.filter((element) => {
+			const style = getComputedStyle(element);
+			if (style.textOverflow === 'ellipsis' || style.overflowX === 'auto' || style.overflowX === 'scroll') {
+				return false;
+			}
+			return element.scrollWidth > element.clientWidth + 1;
+		}).map(describe);
+		return {
+			documentOverflow: Math.max(
+				document.documentElement.scrollWidth,
+				document.body.scrollWidth,
+			) - window.innerWidth,
+			controlsOutsideViewport,
+			clippedText,
+		};
+	});
+}
+
+async function inspectExtensionAccessibility(page: Page): Promise<ExtensionAccessibilityAudit> {
+	const client = await page.createCDPSession();
+	try {
+		await client.send('Accessibility.enable');
+		const { nodes } = await client.send('Accessibility.getFullAXTree');
+		const interactiveRoles = new Set([
+			'button',
+			'checkbox',
+			'combobox',
+			'link',
+			'slider',
+			'spinbutton',
+			'switch',
+			'tab',
+			'textbox',
+		]);
+		const stateProperty = (node: (typeof nodes)[number], name: string): boolean => (
+			node.properties?.some((property) => property.name === name) ?? false
+		);
+		const activeInteractive = nodes.filter((node) => (
+			!node.ignored && interactiveRoles.has(String(node.role?.value ?? ''))
+		));
+		const namelessInteractive = activeInteractive.filter((node) => (
+			String(node.name?.value ?? '').trim().length === 0
+		)).map((node) => `${String(node.role?.value ?? 'unknown')}:${node.backendDOMNodeId ?? 'virtual'}`);
+		const missingState = activeInteractive.flatMap((node) => {
+			const role = String(node.role?.value ?? '');
+			const descriptor = `${role}:${String(node.name?.value ?? '')}`;
+			if ((role === 'checkbox' || role === 'switch') && !stateProperty(node, 'checked')) return [descriptor];
+			if (role === 'tab' && !stateProperty(node, 'selected')) return [descriptor];
+			if ((role === 'slider' || role === 'spinbutton') && node.value === undefined) return [descriptor];
+			return [];
+		});
+		const domPressedCount = await page.evaluate(() => (
+			[...document.querySelectorAll<HTMLElement>('[aria-pressed]')].filter((element) => {
+				const style = getComputedStyle(element);
+				return style.display !== 'none'
+					&& style.visibility !== 'hidden'
+					&& !element.closest('[hidden], [inert]');
+			}).length
+		));
+		return {
+			interactiveCount: activeInteractive.length,
+			namelessInteractive,
+			missingState,
+			domPressedCount,
+			axPressedCount: activeInteractive.filter((node) => stateProperty(node, 'pressed')).length,
+		};
+	} finally {
+		await client.send('Accessibility.disable').catch(() => undefined);
+		await client.detach().catch(() => undefined);
+	}
+}
+
+async function readContentStatus(url = fixturePage.url()): Promise<ContentStatus> {
+	return serviceWorker.evaluate(async (targetUrl) => {
+		const tabs = await chrome.tabs.query({});
+		const tab = tabs.find((candidate) => candidate.url === targetUrl);
+		if (tab?.id === undefined) throw new Error(`Unable to find fixture tab: ${targetUrl}`);
+		const response = await chrome.tabs.sendMessage(tab.id, {
+			protocolVersion: 2,
+			requestId: crypto.randomUUID(),
+			tabId: tab.id,
+			type: 'spectra.audio.runtime.get',
+			payload: {},
+		});
+		if (!response?.ok) throw new Error(response?.error?.message ?? 'Unable to read content runtime');
+		return { ...response.data, mode: response.data.actualMode };
+	}, url) as Promise<ContentStatus>;
+}
+
+async function waitForContentStatus(
+	predicate: (status: ContentStatus) => boolean,
+	timeoutMs = 5_000,
+): Promise<ContentStatus> {
+	const deadline = Date.now() + timeoutMs;
+	let lastStatus: ContentStatus | undefined;
+	while (Date.now() < deadline) {
+		try {
+			lastStatus = await readContentStatus();
+			if (predicate(lastStatus)) return lastStatus;
+		} catch {
+			// Content initialization and service-worker startup are eventually consistent.
+		}
+		await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+	}
+	throw new Error(`Timed out waiting for content status: ${JSON.stringify(lastStatus)}`);
+}
+
+async function getOffscreenContextCount(worker = serviceWorker): Promise<number> {
+	return worker.evaluate(async () => {
+		const contexts = await chrome.runtime.getContexts({
+			contextTypes: ['OFFSCREEN_DOCUMENT' as chrome.runtime.ContextType],
+		});
+		return contexts.length;
+	});
+}
+
+async function eventually<T>(
+	read: () => Promise<T>,
+	predicate: (value: T) => boolean,
+	label: string,
+	timeoutMs = 10_000,
+): Promise<T> {
+	const deadline = Date.now() + timeoutMs;
+	let lastValue: T | undefined;
+	let lastError: unknown;
+	while (Date.now() < deadline) {
+		try {
+			lastValue = await read();
+			if (predicate(lastValue)) return lastValue;
+		} catch (error) {
+			lastError = error;
+		}
+		await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+	}
+	throw new Error(
+		`Timed out waiting for ${label}: ${JSON.stringify(lastValue)}${lastError ? ` (${String(lastError)})` : ''}`,
+	);
+}
+
+async function getTabId(url: string, worker = serviceWorker): Promise<number> {
+	return worker.evaluate(async (targetUrl) => {
+		const tab = (await chrome.tabs.query({})).find((candidate) => candidate.url === targetUrl);
+		if (tab?.id === undefined) throw new Error(`Unable to find tab: ${targetUrl}`);
+		return tab.id;
+	}, url);
+}
+
+async function readOffscreenSnapshot(worker = serviceWorker): Promise<OffscreenHostSnapshot> {
+	return worker.evaluate(async () => {
+		const deadline = Date.now() + 5_000;
+		let response: unknown;
+		while (Date.now() < deadline) {
+			response = await chrome.runtime.sendMessage({
+				target: 'offscreen',
+				type: 'OFFSCREEN_HOST_HELLO',
+			}).catch(() => undefined);
+			if (response
+				&& typeof response === 'object'
+				&& Array.isArray((response as { audioTabs?: unknown }).audioTabs)
+				&& Array.isArray((response as { remoteTabs?: unknown }).remoteTabs)) {
+				return response;
+			}
+			await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+		}
+		throw new Error(`Invalid offscreen host snapshot: ${JSON.stringify(response)}`);
+	}) as Promise<OffscreenHostSnapshot>;
+}
+
+async function openExtensionClient(path = 'popup.html'): Promise<Page> {
+	const page = await browser.newPage();
+	await page.goto(`chrome-extension://${extensionId}/${path}`, { waitUntil: 'domcontentloaded' });
+	return page;
+}
+
+async function sendFromActionPopup<T>(message: Record<string, unknown>): Promise<T> {
+	const knownTargets = new Set(browser.targets());
+	const popupUrl = `chrome-extension://${extensionId}/popup.html`;
+	const popupTargetPromise = browser.waitForTarget(
+		(target) => !knownTargets.has(target) && target.url() === popupUrl,
+		{ timeout: 10_000 },
+	);
+	let popupClient: CDPSession | null = null;
+	try {
+		await withDiagnosticTimeout(
+			'open the real extension action popup',
+			() => serviceWorker.evaluate(async () => chrome.action.openPopup()),
+			10_000,
+		);
+		const target = await withDiagnosticTimeout(
+			'discover the real extension action popup',
+			() => popupTargetPromise,
+			10_000,
+		);
+		popupClient = await withDiagnosticTimeout(
+			'attach to the real extension action popup',
+			() => target.createCDPSession(),
+			10_000,
+		);
+		await popupClient.send('Runtime.enable');
+		const serializedMessage = JSON.stringify(message);
+		const evaluation = await withDiagnosticTimeout(
+			'send remote request from the real extension action popup',
+			() => popupClient!.send('Runtime.evaluate', {
+				expression: `(async () => {
+					const request = ${serializedMessage};
+					request.requestId = crypto.randomUUID();
+					return chrome.runtime.sendMessage(request);
+				})()`,
+				awaitPromise: true,
+				returnByValue: true,
+			}),
+			15_000,
+		);
+		if (evaluation.exceptionDetails) {
+			throw new Error(
+				evaluation.exceptionDetails.exception?.description
+					?? evaluation.exceptionDetails.text
+					?? 'Action popup request evaluation failed',
+			);
+		}
+		return evaluation.result.value as T;
+	} finally {
+		void popupTargetPromise.catch(() => undefined);
+		await popupClient?.send('Runtime.evaluate', { expression: 'close()' }).catch(() => undefined);
+		await popupClient?.detach().catch(() => undefined);
+	}
+}
+
+async function installVisualizerBatchProbe(): Promise<void> {
+	await serviceWorker.evaluate(() => {
+		type Probe = { count: number; listener: (message: unknown) => void };
+		const scope = globalThis as typeof globalThis & { __spectraVisualizerProbe?: Probe };
+		if (scope.__spectraVisualizerProbe) {
+			chrome.runtime.onMessage.removeListener(scope.__spectraVisualizerProbe.listener);
+		}
+		const probe: Probe = {
+			count: 0,
+			listener(message: unknown) {
+				if (message && typeof message === 'object'
+					&& (message as { type?: unknown }).type === 'spectra.audio.visualizer.batch') {
+					probe.count++;
+				}
+			},
+		};
+		scope.__spectraVisualizerProbe = probe;
+		chrome.runtime.onMessage.addListener(probe.listener);
+	});
+}
+
+async function readVisualizerBatchCount(): Promise<number> {
+	return serviceWorker.evaluate(() => {
+		return (globalThis as typeof globalThis & {
+			__spectraVisualizerProbe?: { count: number };
+		}).__spectraVisualizerProbe?.count ?? 0;
+	});
+}
+
+async function removeVisualizerBatchProbe(): Promise<void> {
+	await serviceWorker.evaluate(() => {
+		type Probe = { count: number; listener: (message: unknown) => void };
+		const scope = globalThis as typeof globalThis & { __spectraVisualizerProbe?: Probe };
+		if (!scope.__spectraVisualizerProbe) return;
+		chrome.runtime.onMessage.removeListener(scope.__spectraVisualizerProbe.listener);
+		delete scope.__spectraVisualizerProbe;
+	}).catch(() => undefined);
+}
+
+async function sendCaptureRequest(
+	_client: Page,
+	tabId: number,
+	enabled: boolean,
+	generation: number,
+	config: AudioConfig = DEFAULT_AUDIO_CONFIG,
+): Promise<CaptureResponse> {
+	return serviceWorker.evaluate(async (request) => {
+		const [injection] = await chrome.scripting.executeScript({
+			target: { tabId: request.tabId },
+			world: 'ISOLATED',
+			func: async (value: typeof request) => chrome.runtime.sendMessage({
+				protocolVersion: 2,
+				requestId: crypto.randomUUID(),
+				tabId: value.tabId,
+				generation: value.generation,
+				type: 'spectra.audio.capture.set',
+				payload: { enabled: value.enabled, config: value.config },
+			}),
+			args: [request],
+		});
+		if (injection?.result === undefined) throw new Error('Capture caller returned no result');
+		return injection.result;
+	}, { tabId, enabled, generation, config }) as Promise<CaptureResponse>;
+}
+
+async function sendCaptureConfig(
+	_client: Page,
+	tabId: number,
+	generation: number,
+	config: AudioConfig,
+): Promise<CaptureResponse> {
+	return serviceWorker.evaluate(async (request) => {
+		const [injection] = await chrome.scripting.executeScript({
+			target: { tabId: request.tabId },
+			world: 'ISOLATED',
+			func: async (value: typeof request) => chrome.runtime.sendMessage({
+				protocolVersion: 2,
+				requestId: crypto.randomUUID(),
+				tabId: value.tabId,
+				generation: value.generation,
+				type: 'spectra.audio.capture.config',
+				payload: { config: value.config },
+			}),
+			args: [request],
+		});
+		if (injection?.result === undefined) throw new Error('Capture config caller returned no result');
+		return injection.result;
+	}, { tabId, generation, config }) as Promise<CaptureResponse>;
+}
+
+async function triggerHotkey(tabId: number, action: 'capture_toggle'): Promise<void> {
+	const response = await serviceWorker.evaluate(async (request) => {
+		return chrome.tabs.sendMessage(request.tabId, {
+			protocolVersion: 2,
+			requestId: crypto.randomUUID(),
+			tabId: request.tabId,
+			type: 'spectra.hotkey.trigger',
+			payload: { action: request.action },
+		});
+	}, { tabId, action });
+	if (!response?.ok) throw new Error(response?.error?.message ?? `Unable to trigger ${action}`);
+}
+
+async function configureRuntime(
+	url: string,
+	config: AudioConfig,
+	worker = serviceWorker,
+): Promise<ContentStatus> {
+	return worker.evaluate(async ({ targetUrl, nextConfig }) => {
+		const tab = (await chrome.tabs.query({})).find((candidate) => candidate.url === targetUrl);
+		if (tab?.id === undefined) throw new Error(`Unable to find runtime tab: ${targetUrl}`);
+		const response = await chrome.tabs.sendMessage(tab.id, {
+			protocolVersion: 2,
+			requestId: crypto.randomUUID(),
+			tabId: tab.id,
+			type: 'spectra.audio.runtime.configure',
+			payload: { config: nextConfig },
+		});
+		if (!response?.ok) throw new Error(response?.error?.message ?? 'Unable to configure runtime');
+		return { ...response.data, mode: response.data.actualMode };
+	}, { targetUrl: url, nextConfig: config }) as Promise<ContentStatus>;
+}
+
+async function markRegistryDomain(client: Page, domain: string, restricted: boolean): Promise<void> {
+	const response = await client.evaluate(async ({ targetDomain, isRestricted }) => {
+		return chrome.runtime.sendMessage({
+			protocolVersion: 2,
+			requestId: crypto.randomUUID(),
+			type: 'spectra.registry.mark-probed',
+			payload: { domain: targetDomain, restricted: isRestricted },
+		});
+	}, { targetDomain: domain, isRestricted: restricted });
+	if (!response?.ok) throw new Error(response?.error?.message ?? 'Unable to update the domain registry');
+}
+
+async function getOffscreenTarget(): Promise<Target> {
+	return browser.waitForTarget(
+		(target) => target.url() === `chrome-extension://${extensionId}/offscreen.html`,
+		{ timeout: 10_000 },
+	);
+}
+
+async function evaluateOffscreen<T>(expression: string): Promise<T> {
+	const target = await getOffscreenTarget();
+	const client = await target.createCDPSession();
+	try {
+		await client.send('Runtime.enable');
+		const evaluation = await client.send('Runtime.evaluate', {
+			expression,
+			awaitPromise: true,
+			returnByValue: true,
+		});
+		if (evaluation.exceptionDetails) {
+			throw new Error(evaluation.exceptionDetails.exception?.description ?? 'Offscreen evaluation failed');
+		}
+		return evaluation.result.value as T;
+	} finally {
+		await client.detach().catch(() => undefined);
+	}
+}
+
+async function installTabCaptureStreamIdStub(worker = serviceWorker): Promise<void> {
+	const installed = await worker.evaluate(() => {
+		const api = chrome.tabCapture as typeof chrome.tabCapture & {
+			__spectraSmokeOriginalGetMediaStreamId?: typeof chrome.tabCapture.getMediaStreamId;
+		};
+		api.__spectraSmokeOriginalGetMediaStreamId ??= api.getMediaStreamId.bind(api);
+		const stub: typeof chrome.tabCapture.getMediaStreamId = (_options, callback) => {
+			callback('spectra-smoke-stream-id');
+		};
+		try {
+			Object.defineProperty(api, 'getMediaStreamId', { configurable: true, value: stub });
+		} catch {
+			api.getMediaStreamId = stub;
+		}
+		return api.getMediaStreamId === stub;
+	});
+	if (!installed) throw new Error('Unable to install the test-only tabCapture stream-id stub');
+}
+
+async function installSyntheticCaptureHarness(): Promise<void> {
+	const installed = await evaluateOffscreen<boolean>(`(() => {
+		const scope = globalThis;
+		if (scope.__spectraSmokeCaptureHarness) return true;
+		const OriginalAudioContext = scope.AudioContext;
+		const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+		const state = {
+			calls: 0,
+			blockNext: false,
+			releaseNext: null,
+			processorContexts: [],
+			fixtures: [],
+			originalGetUserMedia,
+			OriginalAudioContext,
+		};
+		scope.__spectraSmokeCaptureHarness = state;
+		scope.AudioContext = new Proxy(OriginalAudioContext, {
+			construct(target, args) {
+				const context = Reflect.construct(target, args, target);
+				state.processorContexts.push(context);
+				return context;
+			},
+		});
+		Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+			configurable: true,
+			value: async (constraints) => {
+				const mandatory = constraints && constraints.audio && constraints.audio.mandatory;
+				if (!mandatory || mandatory.chromeMediaSource !== 'tab') {
+					return originalGetUserMedia(constraints);
+				}
+				state.calls += 1;
+				if (state.blockNext) {
+					state.blockNext = false;
+					await new Promise((resolve) => { state.releaseNext = resolve; });
+					state.releaseNext = null;
+				}
+				const context = new OriginalAudioContext();
+				const oscillator = context.createOscillator();
+				const destination = context.createMediaStreamDestination();
+				oscillator.connect(destination);
+				oscillator.start();
+				if (context.state === 'suspended') await context.resume();
+				state.fixtures.push({ context, oscillator, stream: destination.stream });
+				return destination.stream;
+			},
+		});
+		return true;
+	})()`);
+	if (!installed) throw new Error('Unable to install the synthetic offscreen capture harness');
+}
+
+async function readSyntheticCaptureState(): Promise<SyntheticCaptureState> {
+	return evaluateOffscreen<SyntheticCaptureState>(`(() => {
+		const state = globalThis.__spectraSmokeCaptureHarness;
+		if (!state) throw new Error('Synthetic capture harness is not installed');
+		return {
+			calls: state.calls,
+			pending: typeof state.releaseNext === 'function',
+			processorStates: state.processorContexts.map((context) => context.state),
+		};
+	})()`);
+}
+
+async function blockNextSyntheticCapture(): Promise<void> {
+	await evaluateOffscreen<boolean>(`(() => {
+		const state = globalThis.__spectraSmokeCaptureHarness;
+		if (!state) throw new Error('Synthetic capture harness is not installed');
+		state.blockNext = true;
+		return true;
+	})()`);
+}
+
+async function releaseSyntheticCapture(): Promise<void> {
+	await evaluateOffscreen<boolean>(`(() => {
+		const release = globalThis.__spectraSmokeCaptureHarness?.releaseNext;
+		if (typeof release === 'function') release();
+		return true;
+	})()`);
+}
+
+async function cleanupSyntheticCaptureHarness(): Promise<void> {
+	if (!browser?.targets().some((target) => (
+		target.url() === `chrome-extension://${extensionId}/offscreen.html`
+	))) return;
+	await evaluateOffscreen<boolean>(`(async () => {
+		const state = globalThis.__spectraSmokeCaptureHarness;
+		if (!state) return true;
+		if (typeof state.releaseNext === 'function') state.releaseNext();
+		for (const fixture of state.fixtures) {
+			try { fixture.oscillator.stop(); } catch {}
+			for (const track of fixture.stream.getTracks()) track.stop();
+			try { await fixture.context.close(); } catch {}
+		}
+		return true;
+	})()`).catch(() => undefined);
+}
+
+async function inspectWebAudio(tabId: number, saveMarkers = false): Promise<WebAudioProbe> {
+	return serviceWorker.evaluate(async ({ targetTabId, shouldSave }) => {
+		const [injection] = await chrome.scripting.executeScript({
+			target: { tabId: targetTabId },
+			world: 'ISOLATED',
+			func: (save) => {
+				const scope = window as Window & {
+					__SPECTRA_AUDIO_CONTROLLER_V2__?: { isReady(): boolean };
+					__SPECTRA_CONTENT_RUNTIME__?: { revision?: string; disposed?: boolean };
+					__SPECTRA_LISTENERS_READY__?: boolean;
+					__spectraSmokeController?: object;
+					__spectraSmokeSource?: object;
+					__spectraSmokeRuntime?: { disposed?: boolean };
+				};
+				const media = document.querySelector('video, audio') as (HTMLMediaElement & {
+					_vm?: { source?: { context?: { state?: string } } };
+				}) | null;
+				const controller = scope.__SPECTRA_AUDIO_CONTROLLER_V2__;
+				const runtime = scope.__SPECTRA_CONTENT_RUNTIME__;
+				const source = media?._vm?.source;
+				if (save) {
+					scope.__spectraSmokeController = controller;
+					scope.__spectraSmokeSource = source;
+					scope.__spectraSmokeRuntime = runtime;
+				}
+				return {
+					controllerReady: controller?.isReady() === true,
+					contextState: source?.context?.state ?? null,
+					hasGraph: media?.dataset.vmAttached === 'true' && Boolean(source),
+					listenersReady: scope.__SPECTRA_LISTENERS_READY__ === true,
+					runtimeRevision: runtime?.revision ?? null,
+					sameController: scope.__spectraSmokeController
+						? scope.__spectraSmokeController === controller
+						: null,
+					sameSource: scope.__spectraSmokeSource ? scope.__spectraSmokeSource === source : null,
+					oldRuntimeDisposed: scope.__spectraSmokeRuntime
+						? scope.__spectraSmokeRuntime.disposed === true
+						: null,
+				};
+			},
+			args: [shouldSave],
+		});
+		if (!injection?.result) throw new Error('Unable to inspect the isolated WebAudio runtime');
+		return injection.result;
+	}, { targetTabId: tabId, shouldSave: saveMarkers }) as Promise<WebAudioProbe>;
+}
+
+async function reinjectContent(tabId: number): Promise<void> {
+	await serviceWorker.evaluate(async (targetTabId) => {
+		await chrome.scripting.executeScript({
+			target: { tabId: targetTabId },
+			world: 'ISOLATED',
+			files: ['content.js'],
+		});
+	}, tabId);
+}
+
+function describeServiceWorkerTargets(): string {
+	const expectedUrl = `chrome-extension://${extensionId}/background.js`;
+	const targets = browser.targets()
+		.filter((target) => (
+			target.type() === 'service_worker'
+			|| target.url() === expectedUrl
+			|| target.url().startsWith(`chrome-extension://${extensionId}/`)
+		))
+		.map((target) => `${target.type()}:${target.url() || '<empty>'}`);
+	return targets.length > 0 ? targets.join(', ') : '<none>';
+}
+
+async function withDiagnosticTimeout<T>(
+	label: string,
+	operation: () => Promise<T>,
+	timeoutMs = 10_000,
+): Promise<T> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		return await Promise.race([
+			operation(),
+			new Promise<never>((_resolve, reject) => {
+				timer = setTimeout(() => reject(new Error(
+					`${label} timed out after ${timeoutMs}ms; service-worker targets: ${describeServiceWorkerTargets()}`,
+				)), timeoutMs);
+			}),
+		]);
+	} finally {
+		if (timer !== undefined) clearTimeout(timer);
+	}
+}
+
+async function waitForWorkerVersion(
+	client: CDPSession,
+	predicate: (version: { scriptURL: string; runningStatus: string; versionId: string; registrationId: string }) => boolean,
+	timeoutMs = 10_000,
+): Promise<{ scriptURL: string; runningStatus: string; versionId: string; registrationId: string }> {
+	return new Promise((resolveVersion, reject) => {
+		const timer = setTimeout(() => {
+			client.off('ServiceWorker.workerVersionUpdated', onUpdate);
+			reject(new Error('Timed out waiting for the SPECTRA service-worker version update'));
+		}, timeoutMs);
+		const onUpdate = (event: { versions: Array<{ scriptURL: string; runningStatus: string; versionId: string; registrationId: string }> }) => {
+			const version = event.versions.find(predicate);
+			if (!version) return;
+			clearTimeout(timer);
+			client.off('ServiceWorker.workerVersionUpdated', onUpdate);
+			resolveVersion(version);
+		};
+		client.on('ServiceWorker.workerVersionUpdated', onUpdate);
+	});
+}
+
+async function refreshServiceWorkerHandle(
+	previousMarker?: string,
+	timeoutMs = 10_000,
+): Promise<void> {
+	const expectedUrl = `chrome-extension://${extensionId}/background.js`;
+	await serviceWorkerConnection?.disconnect().catch(() => undefined);
+	serviceWorkerConnection = null;
+
+	// Chrome reuses the service-worker target id across stop/start. Puppeteer's
+	// WorkerTarget caches its first WebWorker forever, so target.worker() on the
+	// launch connection keeps pointing at the destroyed execution context. A
+	// fresh browser connection gives this harness a fresh WorkerTarget/session
+	// without relaunching Chrome or disturbing the extension pages.
+	const connection = await withDiagnosticTimeout(
+		'connect a fresh service-worker target session',
+		() => puppeteer.connect({ browserWSEndpoint: browser.wsEndpoint() }),
+		timeoutMs,
+	);
+	try {
+		const target = await withDiagnosticTimeout(
+			'discover replacement service-worker target',
+			() => connection.waitForTarget(
+				(candidate) => candidate.type() === 'service_worker' && candidate.url() === expectedUrl,
+				{ timeout: timeoutMs },
+			),
+			timeoutMs,
+		);
+		const worker = await withDiagnosticTimeout(
+			'resolve replacement service-worker target',
+			() => target.worker(),
+			timeoutMs,
+		);
+		if (!worker) throw new Error('Replacement service-worker target has no execution context');
+		const identity = await withDiagnosticTimeout(
+			'probe replacement service-worker identity',
+			() => worker.evaluate(() => ({
+				runtimeId: chrome.runtime.id,
+				marker: (globalThis as typeof globalThis & {
+					__spectraSmokeWorkerMarker?: string;
+				}).__spectraSmokeWorkerMarker,
+			})),
+			timeoutMs,
+		);
+		if (identity.runtimeId !== extensionId) {
+			throw new Error(`Replacement worker belongs to unexpected extension ${identity.runtimeId}`);
+		}
+		if (previousMarker !== undefined && identity.marker === previousMarker) {
+			throw new Error('Replacement worker retained the stopped execution-context marker');
+		}
+		serviceWorkerConnection = connection;
+		serviceWorkerTarget = target;
+		serviceWorker = worker;
+	} catch (error) {
+		await connection.disconnect().catch(() => undefined);
+		throw error;
+	}
+}
+
+async function waitForServiceWorkerMarkerToDisappear(marker: string, timeoutMs = 10_000): Promise<void> {
+	const expectedUrl = `chrome-extension://${extensionId}/background.js`;
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		let oldContextAlive = false;
+		for (const target of browser.targets()) {
+			if (target.type() !== 'service_worker' || target.url() !== expectedUrl) continue;
+			const worker = await withDiagnosticTimeout(
+				'resolve stopping service-worker target',
+				() => target.worker(),
+				1_000,
+			).catch(() => null);
+			if (!worker) continue;
+			const currentMarker = await withDiagnosticTimeout(
+				'probe stopping service-worker marker',
+				() => worker.evaluate(() => (
+					(globalThis as typeof globalThis & { __spectraSmokeWorkerMarker?: string })
+						.__spectraSmokeWorkerMarker
+				)),
+				1_000,
+			).catch(() => undefined);
+			if (currentMarker === marker) {
+				oldContextAlive = true;
+				break;
+			}
+		}
+		if (!oldContextAlive) return;
+		await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+	}
+	throw new Error('Timed out waiting for the old SPECTRA service-worker context to stop');
+}
+
+async function restartServiceWorker(): Promise<void> {
+	let stage = 'mark current worker';
+	const workerScriptUrl = `chrome-extension://${extensionId}/background.js`;
+	let previousMarker = '';
+	let client: CDPSession | null = null;
+	try {
+		previousMarker = await withDiagnosticTimeout(stage, () => serviceWorker.evaluate(() => {
+			const marker = crypto.randomUUID();
+			(globalThis as typeof globalThis & { __spectraSmokeWorkerMarker?: string })
+				.__spectraSmokeWorkerMarker = marker;
+			return marker;
+		}));
+
+		stage = 'create page CDP session';
+		client = await withDiagnosticTimeout(stage, () => fixturePage.createCDPSession());
+		stage = 'enable service-worker domain';
+		const initialVersion = await withDiagnosticTimeout(stage, async () => {
+			const initialVersionPromise = waitForWorkerVersion(
+				client!,
+				(version) => version.scriptURL === workerScriptUrl && version.runningStatus === 'running',
+			);
+			const [, version] = await Promise.all([
+				client!.send('ServiceWorker.enable'),
+				initialVersionPromise,
+			]);
+			return version;
+		}, 12_000);
+
+		stage = 'stop service worker';
+		await withDiagnosticTimeout(stage, async () => {
+			const stoppedPromise = waitForWorkerVersion(
+				client!,
+				(version) => version.versionId === initialVersion.versionId && version.runningStatus === 'stopped',
+			);
+			await Promise.all([
+				client!.send('ServiceWorker.stopWorker', { versionId: initialVersion.versionId }),
+				stoppedPromise,
+			]);
+		}, 12_000);
+		stage = 'observe old worker shutdown';
+		await withDiagnosticTimeout(stage, () => waitForServiceWorkerMarkerToDisappear(previousMarker), 12_000);
+
+		stage = 'start service worker';
+		await withDiagnosticTimeout(stage, () => client!.send('ServiceWorker.startWorker', {
+			scopeURL: `chrome-extension://${extensionId}/`,
+		}));
+		stage = 'observe replacement worker';
+		await withDiagnosticTimeout(stage, () => refreshServiceWorkerHandle(previousMarker, 15_000), 17_000);
+	} catch (error) {
+		const detail = error instanceof Error ? error.message : String(error);
+		throw new Error(`Service-worker restart failed during ${stage}: ${detail}`, { cause: error });
+	} finally {
+		if (client) {
+			await withDiagnosticTimeout(
+				'disable service-worker CDP domain',
+				() => client!.send('ServiceWorker.disable'),
+				2_000,
+			).catch(() => undefined);
+			await withDiagnosticTimeout(
+				'detach service-worker CDP session',
+				() => client!.detach(),
+				2_000,
+			).catch(() => undefined);
+		}
+	}
+}
+
+async function readRestartedWorkerState(): Promise<{
+	settings: unknown;
+	contextCount: number;
+	status: unknown;
+}> {
+	const extensionClient = await browser.newPage();
+	try {
+		await extensionClient.goto(`chrome-extension://${extensionId}/popup.html`, {
+			waitUntil: 'domcontentloaded',
+		});
+		return await extensionClient.evaluate(async ({ fixture }) => {
+			const settings = await chrome.runtime.sendMessage({
+				protocolVersion: 2,
+				requestId: crypto.randomUUID(),
+				type: 'spectra.settings.get',
+				payload: {},
+			});
+			const contexts = await chrome.runtime.getContexts({
+				contextTypes: ['OFFSCREEN_DOCUMENT' as chrome.runtime.ContextType],
+			});
+			const tab = (await chrome.tabs.query({})).find((candidate) => candidate.url === fixture);
+			if (tab?.id === undefined) throw new Error(`Unable to find restarted fixture tab: ${fixture}`);
+			const status = await chrome.tabs.sendMessage(tab.id, {
+				protocolVersion: 2,
+				requestId: crypto.randomUUID(),
+				tabId: tab.id,
+				type: 'spectra.audio.runtime.get',
+				payload: {},
+			});
+			return { settings, contextCount: contexts.length, status };
+		}, { fixture: fixturePage.url() });
+	} finally {
+		await extensionClient.close();
+	}
+}
+
+function remotePairingUrl(session: RemotePublicSession, secret = session.secret): string {
+	const fragment = new URLSearchParams({
+		v: String(session.protocolVersion),
+		s: session.sessionId,
+		p: session.peerId,
+		k: secret,
+		e: String(session.pairingExpiresAt),
+	});
+	return `${new URL(fixtureUrl).origin}/remote/#${fragment.toString()}`;
+}
 
 beforeAll(async () => {
-  browser = await puppeteer.launch({
-    headless: true,
-    args: [
-      `--disable-extensions-except=${EXTENSION_DIR}`,
-      `--load-extension=${EXTENSION_DIR}`,
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-    ],
-  });
-  page = await browser.newPage();
-  await page.goto(TEST_PAGE, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('#v', { timeout: 10000 });
-}, 30000);
+	server = Bun.serve({
+		port: 0,
+		hostname: '127.0.0.1',
+		fetch(request) {
+			const pathname = new URL(request.url).pathname;
+			const remoteFiles: Record<string, { file: string; type: string }> = {
+				'/remote/': { file: 'index.html', type: 'text/html; charset=utf-8' },
+				'/remote/index.html': { file: 'index.html', type: 'text/html; charset=utf-8' },
+				'/remote/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },
+				'/remote/styles.css': { file: 'styles.css', type: 'text/css; charset=utf-8' },
+				'/remote/vendor/peerjs.min.js': {
+					file: join('vendor', 'peerjs.min.js'),
+					type: 'text/javascript; charset=utf-8',
+				},
+			};
+			const remoteFile = remoteFiles[pathname];
+			if (remoteFile) {
+				return new Response(Bun.file(join(REMOTE_SITE_DIR, remoteFile.file)), {
+					headers: { 'content-type': remoteFile.type },
+				});
+			}
+			if (pathname === '/captions.vtt') {
+				return new Response('WEBVTT\n\n', {
+					headers: { 'content-type': 'text/vtt; charset=utf-8' },
+				});
+			}
+			if (pathname !== '/' && pathname !== '/smoke-test.html') {
+				return new Response('Not found', { status: 404 });
+			}
+			return new Response(Bun.file(FIXTURE_PATH), {
+				headers: { 'content-type': 'text/html; charset=utf-8' },
+			});
+		},
+	});
+	fixtureUrl = `http://127.0.0.1:${server.port}/smoke-test.html`;
+
+	browser = await puppeteer.launch({
+		headless: true,
+		args: [
+			`--disable-extensions-except=${EXTENSION_DIR}`,
+			`--load-extension=${EXTENSION_DIR}`,
+			'--no-sandbox',
+			'--disable-setuid-sandbox',
+		],
+	});
+
+	serviceWorkerTarget = await browser.waitForTarget(
+		(target) => target.type() === 'service_worker'
+			&& /^chrome-extension:\/\/[^/]+\/background\.js$/u.test(target.url()),
+		{ timeout: 15_000 },
+	);
+	extensionId = new URL(serviceWorkerTarget.url()).host;
+	const worker = await serviceWorkerTarget.worker();
+	if (!worker) throw new Error('SPECTRA service worker target has no worker execution context');
+	serviceWorker = worker;
+
+	fixturePage = await browser.newPage();
+	collectPageErrors(fixturePage, fixtureErrors);
+	await fixturePage.evaluateOnNewDocument(() => {
+		const scope = window as Window & { __spectraAudioContextCount?: number };
+		scope.__spectraAudioContextCount = 0;
+		const Original = window.AudioContext;
+		if (!Original) return;
+		window.AudioContext = new Proxy(Original, {
+			construct(target, args, newTarget) {
+				scope.__spectraAudioContextCount = (scope.__spectraAudioContextCount ?? 0) + 1;
+				return Reflect.construct(target, args, newTarget);
+			},
+		});
+	});
+	await fixturePage.goto(fixtureUrl, { waitUntil: 'domcontentloaded' });
+	await fixturePage.waitForFunction(
+		() => document.documentElement.dataset.spectraContentLoaded === 'true',
+		{ timeout: 15_000 },
+	);
+	await waitForContentStatus((status) => status.mode === 'bypass' && status.phase === 'idle');
+}, 30_000);
 
 afterAll(async () => {
-  await browser?.close();
+	await cleanupSyntheticCaptureHarness();
+	await serviceWorkerConnection?.disconnect().catch(() => undefined);
+	await browser?.close();
+	server?.stop(true);
 });
 
-describe('SPECTRA Smoke Test', () => {
-  it('content script injects data attribute', async () => {
-    const attr = await page.$eval('html', el => el.getAttribute('data-spectra-content-loaded'));
-    expect(attr).toBe('true');
-  });
+describe('SPECTRA built extension smoke', () => {
+	test('loads the MV3 worker, isolated content runtime, and MAIN runtime', async () => {
+		expect(serviceWorkerTarget.url()).toBe(`chrome-extension://${extensionId}/background.js`);
+		expect(await fixturePage.evaluate(() => document.documentElement.dataset.spectraContentLoaded)).toBe('true');
+		expect(await fixturePage.evaluate(() => {
+			return (window as Window & { __SPECTRA_MAIN_RUNTIME__?: { revision?: string } })
+				.__SPECTRA_MAIN_RUNTIME__?.revision;
+		})).toBe('2.0.1');
+		expect(fixtureErrors).toEqual([]);
+	});
 
-  it('video element supports playbackRate (speed API)', async () => {
-    const rate = await page.$eval('#v', (el) => {
-      const v = el as HTMLVideoElement;
-      v.playbackRate = 2.0;
-      return v.playbackRate;
-    });
-    expect(rate).toBeGreaterThanOrEqual(1.9);
-    expect(rate).toBeLessThanOrEqual(2.1);
-  });
+	test('leaves untouched media transparent and creates no AudioContext', async () => {
+		const offscreenBefore = await getOffscreenContextCount();
+		const status = await readContentStatus();
+		const state = await fixturePage.evaluate(() => {
+			const video = document.querySelector<HTMLVideoElement>('#v');
+			return {
+				volume: video?.volume,
+				muted: video?.muted,
+				playbackRate: video?.playbackRate,
+				audioContexts: (window as Window & { __spectraAudioContextCount?: number })
+					.__spectraAudioContextCount,
+			};
+		});
+		expect(status.mode).toBe('bypass');
+		expect(status.phase).toBe('idle');
+		expect(state).toEqual({ volume: 1, muted: false, playbackRate: 1, audioContexts: 0 });
+		expect(offscreenBefore).toBe(0);
+		expect(await getOffscreenContextCount()).toBe(0);
+	});
 
-  it('video element has volume api accessible', async () => {
-    const vol = await page.$eval('#v', (el) => {
-      const v = el as HTMLVideoElement;
-      v.volume = 0.5;
-      return v.volume;
-    });
-    expect(vol).toBeGreaterThan(0.4);
-    expect(vol).toBeLessThan(0.6);
-  });
+	test('keeps one versioned MAIN runtime across repeated injection', async () => {
+		await fixturePage.evaluate(() => {
+			const scope = window as Window & {
+				__SPECTRA_MAIN_RUNTIME__?: object;
+				__spectraRuntimeBefore?: object;
+			};
+			scope.__spectraRuntimeBefore = scope.__SPECTRA_MAIN_RUNTIME__;
+		});
+
+		const result = await serviceWorker.evaluate(async ({ url }) => {
+			const tabs = await chrome.tabs.query({});
+			const tab = tabs.find((candidate) => candidate.url === url);
+			if (tab?.id === undefined) throw new Error(`Unable to find fixture tab: ${url}`);
+			await chrome.scripting.executeScript({
+				target: { tabId: tab.id },
+				files: ['injector.js'],
+				world: 'MAIN',
+			});
+			return tab.id;
+		}, { url: fixtureUrl });
+		expect(result).toBeGreaterThan(0);
+
+		expect(await fixturePage.evaluate(() => {
+			const scope = window as Window & {
+				__SPECTRA_MAIN_RUNTIME__?: { revision?: string };
+				__spectraRuntimeBefore?: object;
+			};
+			return {
+				same: scope.__SPECTRA_MAIN_RUNTIME__ === scope.__spectraRuntimeBefore,
+				revision: scope.__SPECTRA_MAIN_RUNTIME__?.revision,
+			};
+		})).toEqual({ same: true, revision: '2.0.1' });
+	});
+
+	test('tracks SPA media additions and removals without activating WebAudio', async () => {
+		await fixturePage.evaluate(() => {
+			document.querySelector('#v')?.remove();
+			history.pushState({}, '', '/spa/empty');
+		});
+		expect((await waitForContentStatus((status) => !status.hasAudio)).hasAudio).toBe(false);
+
+		await fixturePage.evaluate(() => {
+			const container = document.createElement('section');
+			container.id = 'spa-media';
+			const video = document.createElement('video');
+			video.id = 'v';
+			video.controls = true;
+			video.setAttribute('aria-label', 'SPA smoke test video');
+			container.append(video);
+			document.body.append(container);
+			history.pushState({}, '', '/spa/media');
+		});
+		expect((await waitForContentStatus((status) => status.hasAudio)).hasAudio).toBe(true);
+		expect(await fixturePage.evaluate(() => {
+			return (window as Window & { __spectraAudioContextCount?: number })
+				.__spectraAudioContextCount;
+		})).toBe(0);
+
+		const initialGeneration = (await readContentStatus()).generation ?? 0;
+		await fixturePage.evaluate(() => history.pushState({}, '', '/spa/media?route=2'));
+		const queryGeneration = (await waitForContentStatus(
+			(status) => (status.generation ?? 0) > initialGeneration,
+		)).generation ?? 0;
+		await fixturePage.evaluate(() => { location.hash = 'details'; });
+		const hashGeneration = (await waitForContentStatus(
+			(status) => (status.generation ?? 0) > queryGeneration,
+		)).generation ?? 0;
+		expect(hashGeneration).toBeGreaterThan(queryGeneration);
+		expect(await fixturePage.evaluate(() => location.search)).toBe('?route=2');
+		expect(await fixturePage.evaluate(() => location.hash)).toBe('#details');
+	});
+
+	test('fullscreen lifecycle preserves the site volume, mute, and playback rate', async () => {
+		const preserved = await fixturePage.evaluate(async () => {
+			const video = document.querySelector<HTMLVideoElement>('#v');
+			if (!video) throw new Error('SPA video is missing');
+			video.volume = 0.37;
+			video.muted = true;
+			video.playbackRate = 0.75;
+			document.dispatchEvent(new Event('fullscreenchange'));
+			document.dispatchEvent(new Event('webkitfullscreenchange'));
+			await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+			return {
+				volume: video.volume,
+				muted: video.muted,
+				playbackRate: video.playbackRate,
+				audioContexts: (window as Window & { __spectraAudioContextCount?: number })
+					.__spectraAudioContextCount,
+			};
+		});
+		expect(preserved).toEqual({
+			volume: 0.37,
+			muted: true,
+			playbackRate: 0.75,
+			audioContexts: 0,
+		});
+		const status = await readContentStatus();
+		expect(status).toMatchObject({
+			mode: 'bypass',
+			phase: 'idle',
+			config: { volume: 100, muted: false, speed: 1 },
+		});
+	});
+
+	test('initializes popup and options scripts without page exceptions', async () => {
+		const popupErrors: string[] = [];
+		const popup = await browser.newPage();
+		collectPageErrors(popup, popupErrors);
+		await popup.goto(`chrome-extension://${extensionId}/popup.html`, { waitUntil: 'domcontentloaded' });
+		await popup.waitForSelector('#view-main:not([hidden])');
+		await popup.click('#btn-settings');
+		await popup.waitForSelector('#view-settings:not([hidden])');
+		expect(await popup.evaluate(() => ({
+			mainHidden: document.querySelector('#view-main')?.hasAttribute('hidden'),
+			mainInert: document.querySelector('#view-main')?.hasAttribute('inert'),
+			mainAriaHidden: document.querySelector('#view-main')?.getAttribute('aria-hidden'),
+			settingsAriaHidden: document.querySelector('#view-settings')?.getAttribute('aria-hidden'),
+		}))).toEqual({
+			mainHidden: true,
+			mainInert: true,
+			mainAriaHidden: 'true',
+			settingsAriaHidden: 'false',
+		});
+		await popup.focus('#tab-restricted');
+		await popup.keyboard.press('ArrowRight');
+		expect(await popup.evaluate(() => ({
+			activeId: document.activeElement?.id,
+			restrictedSelected: document.querySelector('#tab-restricted')?.getAttribute('aria-selected'),
+			restrictedTabIndex: (document.querySelector('#tab-restricted') as HTMLElement | null)?.tabIndex,
+			safeSelected: document.querySelector('#tab-safe')?.getAttribute('aria-selected'),
+			safeTabIndex: (document.querySelector('#tab-safe') as HTMLElement | null)?.tabIndex,
+			panelLabel: document.querySelector('#registry-list')?.getAttribute('aria-labelledby'),
+		}))).toEqual({
+			activeId: 'tab-safe',
+			restrictedSelected: 'false',
+			restrictedTabIndex: -1,
+			safeSelected: 'true',
+			safeTabIndex: 0,
+			panelLabel: 'tab-safe',
+		});
+		await popup.click('#btn-back');
+		await popup.waitForSelector('#view-main:not([hidden])');
+		expect(popupErrors).toEqual([]);
+		await popup.close();
+		expect(await getOffscreenContextCount()).toBe(0);
+		expect(await fixturePage.evaluate(() => {
+			return (window as Window & { __spectraAudioContextCount?: number })
+				.__spectraAudioContextCount;
+		})).toBe(0);
+
+		const optionsErrors: string[] = [];
+		const options = await browser.newPage();
+		collectPageErrors(options, optionsErrors);
+		await options.goto(`chrome-extension://${extensionId}/options.html`, { waitUntil: 'domcontentloaded' });
+		await options.waitForFunction(() => document.querySelectorAll('#slots-list .slot-row').length === 20);
+		expect(await options.evaluate(() => document.documentElement.dataset.theme)).toMatch(/^(light|dark)$/);
+
+		const accessibilityTestDomain = 'a11y-smoke.example';
+		await options.type('#site-input', accessibilityTestDomain);
+		await options.click('#site-add-btn');
+		await options.waitForFunction((domain) => {
+			const select = document.querySelector<HTMLSelectElement>('#site-select');
+			return select?.value === domain && !document.querySelector('#site-config')?.hasAttribute('hidden');
+		}, {}, accessibilityTestDomain);
+
+		await options.click('#site-add-binding');
+		await options.waitForFunction(() => document.activeElement?.id === 'edit-key');
+		await options.focus('#modal-save');
+		await options.keyboard.press('Tab');
+		expect(await options.evaluate(() => document.activeElement?.classList.contains('modal-close'))).toBe(true);
+		await options.keyboard.down('Shift');
+		await options.keyboard.press('Tab');
+		await options.keyboard.up('Shift');
+		expect(await options.evaluate(() => document.activeElement?.id)).toBe('modal-save');
+		await options.keyboard.press('Escape');
+		expect(await options.evaluate(() => {
+			const modal = document.querySelector('#edit-modal');
+			return {
+				hidden: modal?.hasAttribute('hidden'),
+				inert: modal?.hasAttribute('inert'),
+				ariaHidden: modal?.getAttribute('aria-hidden'),
+				activeId: document.activeElement?.id,
+			};
+		})).toEqual({
+			hidden: true,
+			inert: true,
+			ariaHidden: 'true',
+			activeId: 'site-add-binding',
+		});
+
+		options.once('dialog', (dialog) => void dialog.accept());
+		await options.click('#site-delete');
+		await options.waitForFunction((domain) => {
+			const select = document.querySelector<HTMLSelectElement>('#site-select');
+			return ![...select?.options ?? []].some((option) => option.value === domain);
+		}, {}, accessibilityTestDomain);
+		expect(optionsErrors).toEqual([]);
+		await options.close();
+	});
+
+	test('keeps English and Chinese extension layouts bounded and exposes dynamic controls in the AX tree', async () => {
+		const assertPageAudit = async (page: Page, label: string) => {
+			const layout = await inspectExtensionLayout(page);
+			expect(layout.documentOverflow, `${label} document overflow`).toBeLessThanOrEqual(0);
+			expect(layout.controlsOutsideViewport, `${label} controls outside viewport`).toEqual([]);
+			expect(layout.clippedText, `${label} clipped text`).toEqual([]);
+			const accessibility = await inspectExtensionAccessibility(page);
+			expect(accessibility.interactiveCount, `${label} interactive AX nodes`).toBeGreaterThan(0);
+			expect(accessibility.namelessInteractive, `${label} unnamed controls`).toEqual([]);
+			expect(accessibility.missingState, `${label} missing AX states`).toEqual([]);
+			expect(accessibility.axPressedCount, `${label} pressed states`).toBeGreaterThanOrEqual(
+				accessibility.domPressedCount,
+			);
+		};
+
+		await fixturePage.bringToFront();
+		const popupUrl = `chrome-extension://${extensionId}/popup.html`;
+		const knownTargets = new Set(browser.targets());
+		const popupTargetPromise = browser.waitForTarget(
+			(target) => !knownTargets.has(target) && target.url() === popupUrl,
+			{ timeout: 10_000 },
+		);
+		await serviceWorker.evaluate(async () => chrome.action.openPopup());
+		const popupTarget = await popupTargetPromise;
+		const popup = await popupTarget.asPage();
+		await popup.waitForSelector('#view-main:not([hidden])');
+		await popup.waitForSelector('.glass-card');
+		const originalLanguage = await popup.$eval('#set-lang', (element) => (
+			(element as HTMLSelectElement).value
+		));
+		try {
+			for (const language of ['en-US', 'zh-CN']) {
+				await popup.select('#set-lang', language);
+				await popup.waitForFunction(
+					(expected) => document.documentElement.lang === expected,
+					{},
+					language,
+				);
+				await assertPageAudit(popup, `popup main ${language}`);
+				await popup.click('#btn-settings');
+				await popup.waitForSelector('#view-settings:not([hidden])');
+				await assertPageAudit(popup, `popup settings ${language}`);
+				await popup.click('#btn-back');
+				await popup.waitForSelector('#view-main:not([hidden])');
+			}
+		} finally {
+			await popup.select('#set-lang', originalLanguage).catch(() => undefined);
+			await popup.close();
+		}
+
+		const options = await browser.newPage();
+		await options.setViewport({ width: 390, height: 800, deviceScaleFactor: 1 });
+		await options.goto(`chrome-extension://${extensionId}/options.html`, { waitUntil: 'domcontentloaded' });
+		await options.waitForFunction(() => document.querySelectorAll('#slots-list .slot-row').length === 20);
+		try {
+			for (const language of ['en-US', 'zh-CN']) {
+				await options.select('#lang-select', language);
+				await options.waitForFunction(
+					(expected) => document.documentElement.lang === expected,
+					{},
+					language,
+				);
+				await assertPageAudit(options, `options ${language}`);
+			}
+		} finally {
+			await options.select('#lang-select', originalLanguage).catch(() => undefined);
+			await options.close();
+		}
+	}, 20_000);
+
+	test('stops visualizer IPC after the real action popup is no longer visible', async () => {
+		await fixturePage.bringToFront();
+		await installVisualizerBatchProbe();
+		const knownTargets = new Set(browser.targets());
+		const popupUrl = `chrome-extension://${extensionId}/popup.html`;
+		const popupTargetPromise = browser.waitForTarget(
+			(target) => !knownTargets.has(target) && target.url() === popupUrl,
+			{ timeout: 5_000 },
+		);
+		let popupClient: CDPSession | null = null;
+		try {
+			await serviceWorker.evaluate(async () => chrome.action.openPopup());
+			const popupTarget = await popupTargetPromise;
+			popupClient = await popupTarget.createCDPSession();
+			await popupClient.send('Runtime.enable');
+
+			const samplingDeadline = Date.now() + 3_000;
+			let visibleBatchCount = 0;
+			while (visibleBatchCount === 0 && Date.now() < samplingDeadline) {
+				await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+				visibleBatchCount = await readVisualizerBatchCount();
+			}
+			expect(visibleBatchCount).toBeGreaterThan(0);
+
+			await popupClient.send('Runtime.evaluate', { expression: 'close()' });
+			await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+			const countAfterClose = await readVisualizerBatchCount();
+			await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+			expect(await readVisualizerBatchCount()).toBe(countAfterClose);
+		} finally {
+			void popupTargetPromise.catch(() => undefined);
+			await popupClient?.send('Runtime.evaluate', { expression: 'close()' }).catch(() => undefined);
+			await popupClient?.detach().catch(() => undefined);
+			await removeVisualizerBatchProbe();
+		}
+	}, 10_000);
+
+	test('delivers only the selected locale strings to the Content OSD', async () => {
+		const targetUrl = fixturePage.url();
+		const extensionClient = await browser.newPage();
+		await extensionClient.goto(`chrome-extension://${extensionId}/popup.html`, {
+			waitUntil: 'domcontentloaded',
+		});
+		const settings = await extensionClient.evaluate(async ({ url }) => {
+			const request = (type: string, payload: Record<string, unknown>) => chrome.runtime.sendMessage({
+				protocolVersion: 2,
+				requestId: crypto.randomUUID(),
+				type,
+				payload,
+			});
+			const current = await request('spectra.settings.get', {});
+			if (!current?.ok) throw new Error('Unable to read settings before OSD smoke test');
+			const changed = await request('spectra.settings.patch', {
+				expectedRevision: current.data.revision,
+				patch: { scope: 'global', changes: { lang: 'zh-CN' } },
+			});
+			if (!changed?.ok) throw new Error('Unable to select zh-CN for OSD smoke test');
+			const tab = (await chrome.tabs.query({})).find((candidate) => candidate.url === url);
+			if (tab?.id === undefined) throw new Error(`Unable to find OSD fixture tab: ${url}`);
+			const configure = async (muted: boolean) => {
+				const currentRuntime = await chrome.tabs.sendMessage(tab.id!, {
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					tabId: tab.id,
+					type: 'spectra.audio.runtime.get',
+					payload: {},
+				});
+				if (!currentRuntime?.ok) throw new Error('Unable to read OSD fixture runtime');
+				const configured = await chrome.tabs.sendMessage(tab.id!, {
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					tabId: tab.id,
+					type: 'spectra.audio.runtime.configure',
+					payload: { config: { ...currentRuntime.data.config, muted } },
+				});
+				if (!configured?.ok) throw new Error(configured?.error?.message ?? 'Unable to configure OSD fixture');
+			};
+			await configure(false);
+			const hotkey = await chrome.tabs.sendMessage(tab.id, {
+				protocolVersion: 2,
+				requestId: crypto.randomUUID(),
+				tabId: tab.id,
+				type: 'spectra.hotkey.trigger',
+				payload: { action: 'volume_mute' },
+			});
+			if (!hotkey?.ok) throw new Error(hotkey?.error?.message ?? 'Unable to trigger mute OSD');
+			return {
+				originalLanguage: current.data.globalSettings.lang,
+				revision: changed.data.revision,
+			};
+		}, { url: targetUrl });
+
+		try {
+			await fixturePage.waitForFunction(() => {
+				for (const host of document.body.querySelectorAll('div')) {
+					if (host.shadowRoot?.getElementById('t')?.textContent === '静音') return true;
+				}
+				return false;
+			}, { timeout: 5_000 });
+		} finally {
+			await extensionClient.evaluate(async ({ language, revision, url }) => {
+				await chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					type: 'spectra.settings.patch',
+					payload: {
+						expectedRevision: revision,
+						patch: { scope: 'global', changes: { lang: language } },
+					},
+				});
+				const tab = (await chrome.tabs.query({})).find((candidate) => candidate.url === url);
+				if (tab?.id !== undefined) {
+					const currentRuntime = await chrome.tabs.sendMessage(tab.id, {
+						protocolVersion: 2,
+						requestId: crypto.randomUUID(),
+						tabId: tab.id,
+						type: 'spectra.audio.runtime.get',
+						payload: {},
+					}).catch(() => undefined);
+					if (currentRuntime?.ok) {
+						await chrome.tabs.sendMessage(tab.id, {
+							protocolVersion: 2,
+							requestId: crypto.randomUUID(),
+							tabId: tab.id,
+							type: 'spectra.audio.runtime.configure',
+							payload: { config: { ...currentRuntime.data.config, muted: false } },
+						}).catch(() => undefined);
+					}
+				}
+			}, {
+				language: settings.originalLanguage,
+				revision: settings.revision,
+				url: targetUrl,
+			});
+			await extensionClient.close();
+		}
+	});
+
+	test('serializes denied capture attempts through one offscreen host and rolls back', async () => {
+		const secondaryUrl = `${fixtureUrl}?secondary=1`;
+		const secondary = await browser.newPage();
+		await secondary.goto(secondaryUrl, { waitUntil: 'domcontentloaded' });
+		await secondary.waitForFunction(
+			() => document.documentElement.dataset.spectraContentLoaded === 'true',
+			{ timeout: 15_000 },
+		);
+		const extensionClient = await browser.newPage();
+		await extensionClient.goto(`chrome-extension://${extensionId}/popup.html`, {
+			waitUntil: 'domcontentloaded',
+		});
+
+		const primaryUrl = fixturePage.url();
+		try {
+			const result = await extensionClient.evaluate(async ({ urls }) => {
+				const tabs = await chrome.tabs.query({});
+				const tabIds = urls.map((url) => {
+					const tabId = tabs.find((tab) => tab.url === url)?.id;
+					if (tabId === undefined) throw new Error(`Unable to find capture tab: ${url}`);
+					return tabId;
+				});
+				const config = {
+					enabled: true,
+					volume: 100,
+					muted: false,
+					compressor: false,
+					mono: false,
+					bass: false,
+					eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+					pan: 0,
+					delay: 0,
+					speed: 1,
+				};
+				const captureRequest = async (tabId: number, enabled: boolean, generation: number) => {
+					const [injection] = await chrome.scripting.executeScript({
+						target: { tabId },
+						world: 'ISOLATED',
+						func: async (request) => chrome.runtime.sendMessage({
+							protocolVersion: 2,
+							requestId: crypto.randomUUID(),
+							tabId: request.tabId,
+							generation: request.generation,
+							type: 'spectra.audio.capture.set',
+							payload: {
+								enabled: request.enabled,
+								config: request.config,
+							},
+						}),
+						args: [{ tabId, enabled, generation, config }],
+					});
+					return injection?.result;
+				};
+				const starts = await Promise.all(tabIds.map((tabId, index) => (
+					captureRequest(tabId, true, index + 1)
+				)));
+				const contexts = await chrome.runtime.getContexts({
+					contextTypes: ['OFFSCREEN_DOCUMENT' as chrome.runtime.ContextType],
+				});
+				// Host introspection is background-only; the Puppeteer side reads it
+				// through the service worker after these v2 UI requests settle.
+				const snapshot = { audioTabs: [], remoteTabs: [] };
+				const stops = await Promise.all(tabIds.map((tabId, index) => (
+					captureRequest(tabId, false, index + 100)
+				)));
+				const waitForStatus = async (
+					tabId: number,
+					predicate: (status: { mode?: string; phase?: string }) => boolean,
+				) => {
+					const deadline = Date.now() + 5_000;
+					let status: { mode?: string; phase?: string; config?: typeof config } = {};
+					while (Date.now() < deadline) {
+						const response = await chrome.tabs.sendMessage(tabId, {
+							protocolVersion: 2,
+							requestId: crypto.randomUUID(),
+							tabId,
+							type: 'spectra.audio.runtime.get',
+							payload: {},
+						});
+						if (!response?.ok) throw new Error(response?.error?.message ?? 'Unable to read capture fixture runtime');
+						status = { ...response.data, mode: response.data.actualMode };
+						if (predicate(status)) return status;
+						await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+					}
+					throw new Error(`Timed out waiting for tab ${tabId} status: ${JSON.stringify(status)}`);
+				};
+				const stoppedStatuses = await Promise.all(tabIds.map((tabId) => waitForStatus(
+					tabId,
+					(status) => status.mode === 'bypass' && status.phase === 'idle',
+				)));
+
+				const configure = async (tabId: number, changes: Partial<typeof config>) => {
+					const current = await chrome.tabs.sendMessage(tabId, {
+						protocolVersion: 2,
+						requestId: crypto.randomUUID(),
+						tabId,
+						type: 'spectra.audio.runtime.get',
+						payload: {},
+					});
+					if (!current?.ok) throw new Error('Unable to read runtime before configure');
+					const response = await chrome.tabs.sendMessage(tabId, {
+						protocolVersion: 2,
+						requestId: crypto.randomUUID(),
+						tabId,
+						type: 'spectra.audio.runtime.configure',
+						payload: { config: { ...current.data.config, ...changes } },
+					});
+					if (!response?.ok) throw new Error(response?.error?.message ?? 'Unable to configure runtime');
+				};
+				await configure(tabIds[0]!, { enabled: true, volume: 125, muted: false });
+				const webAudioStatus = await waitForStatus(
+					tabIds[0]!,
+					(status) => status.mode === 'webaudio' && status.phase === 'active',
+				);
+				await configure(tabIds[0]!, { enabled: false });
+				const finalStatus = await waitForStatus(
+					tabIds[0]!,
+					(status) => status.mode === 'bypass' && status.phase === 'idle',
+				);
+				return {
+					tabIds,
+					starts,
+					contexts: contexts.length,
+					snapshot,
+					stops,
+					stoppedStatuses,
+					webAudioStatus,
+					finalStatus,
+				};
+			}, { urls: [primaryUrl, secondaryUrl] });
+			const hostSnapshot = await readOffscreenSnapshot();
+			expect(result.contexts).toBe(1);
+			expect(hostSnapshot.remoteTabs).toEqual([]);
+			for (const [index, start] of result.starts.entries()) {
+				expect(start).toMatchObject({ ok: true, data: { phase: 'error', active: false } });
+				const describedTab = hostSnapshot.audioTabs.find(
+					(audio: { tabId: number }) => audio.tabId === result.tabIds[index],
+				);
+				expect(start.data.lastError.message).toMatch(/not been invoked|activeTab permission/u);
+				expect(describedTab).toBeUndefined();
+			}
+			for (const stop of result.stops) {
+				expect(stop).toMatchObject({ ok: true, data: { phase: 'idle', active: false } });
+			}
+			expect(result.stoppedStatuses).toEqual([
+				expect.objectContaining({ mode: 'bypass', phase: 'idle' }),
+				expect.objectContaining({ mode: 'bypass', phase: 'idle' }),
+			]);
+			expect(result.webAudioStatus).toMatchObject({ mode: 'webaudio', phase: 'active' });
+			expect(result.finalStatus).toMatchObject({ mode: 'bypass', phase: 'idle' });
+		} finally {
+			await extensionClient.close();
+			await secondary.close();
+		}
+	}, 35_000);
+
+	test('keeps one real WebAudio controller, graph, and source across content reinjection', async () => {
+		const extensionClient = await openExtensionClient();
+		try {
+			await markRegistryDomain(extensionClient, '127.0.0.1', false);
+		} finally {
+			await extensionClient.close();
+		}
+
+		await fixturePage.goto(fixtureUrl, { waitUntil: 'domcontentloaded' });
+		await fixturePage.waitForFunction(
+			() => document.documentElement.dataset.spectraContentLoaded === 'true',
+			{ timeout: 15_000 },
+		);
+		await fixturePage.click('body');
+		const tabId = await getTabId(fixturePage.url());
+		await configureRuntime(fixturePage.url(), { ...DEFAULT_AUDIO_CONFIG, volume: 130 });
+		await waitForContentStatus(
+			(status) => status.mode === 'webaudio' && status.phase === 'active',
+			10_000,
+		);
+
+		const before = await inspectWebAudio(tabId, true);
+		expect(before).toMatchObject({
+			controllerReady: true,
+			contextState: 'running',
+			hasGraph: true,
+			listenersReady: true,
+			runtimeRevision: '2.0.1',
+		});
+
+		await reinjectContent(tabId);
+		const after = await eventually(
+			() => inspectWebAudio(tabId),
+			(probe) => probe.listenersReady
+				&& probe.sameController === true
+				&& probe.sameSource === true
+				&& probe.oldRuntimeDisposed === true,
+			'reinjected isolated runtime handoff',
+			10_000,
+		);
+		expect(after).toMatchObject({
+			controllerReady: true,
+			contextState: 'running',
+			hasGraph: true,
+			sameController: true,
+			sameSource: true,
+			oldRuntimeDisposed: true,
+		});
+
+		await configureRuntime(fixturePage.url(), DEFAULT_AUDIO_CONFIG);
+		await waitForContentStatus((status) => status.mode === 'bypass' && status.phase === 'idle');
+	}, 35_000);
+
+	test('creates an acknowledged capture processor with a real synthetic MediaStream', async () => {
+		await installSyntheticCaptureHarness();
+		await installTabCaptureStreamIdStub();
+		const extensionClient = await openExtensionClient();
+		const tabId = await getTabId(fixturePage.url());
+		try {
+			const started = await sendCaptureRequest(extensionClient, tabId, true, 300);
+			expect(started).toMatchObject({
+				ok: true,
+				data: { tabId, generation: 300, phase: 'active', active: true, actualMode: 'capture' },
+			});
+			const host = await readOffscreenSnapshot();
+			expect(host.audioTabs).toContainEqual({ tabId, generation: 300 });
+			expect(await getOffscreenContextCount()).toBe(1);
+			const harness = await readSyntheticCaptureState();
+			expect(harness.calls).toBeGreaterThan(0);
+			expect(harness.processorStates.filter((state) => state === 'running')).toHaveLength(1);
+
+			const stopped = await sendCaptureRequest(extensionClient, tabId, false, 301);
+			expect(stopped).toMatchObject({ ok: true, data: { phase: 'idle', active: false } });
+			expect((await readOffscreenSnapshot()).audioTabs).toEqual([]);
+		} finally {
+			await extensionClient.close();
+		}
+	}, 35_000);
+
+	test('routes the Capture hotkey atomically from WebAudio to Capture and back', async () => {
+		await installSyntheticCaptureHarness();
+		await installTabCaptureStreamIdStub();
+		const extensionClient = await openExtensionClient();
+		const tabId = await getTabId(fixturePage.url());
+		try {
+			await markRegistryDomain(extensionClient, '127.0.0.1', false);
+			await configureRuntime(fixturePage.url(), { ...DEFAULT_AUDIO_CONFIG, volume: 130 });
+			await waitForContentStatus(
+				(status) => status.mode === 'webaudio' && status.phase === 'active',
+				10_000,
+			);
+
+			await triggerHotkey(tabId, 'capture_toggle');
+			const captured = await waitForContentStatus(
+				(status) => status.mode === 'capture' && status.phase === 'active',
+				15_000,
+			);
+			expect((await readOffscreenSnapshot()).audioTabs).toContainEqual({
+				tabId,
+				generation: captured.generation,
+			});
+
+			await triggerHotkey(tabId, 'capture_toggle');
+			const restored = await waitForContentStatus(
+				(status) => status.mode === 'webaudio' && status.phase === 'active',
+				15_000,
+			);
+			expect(restored.generation).toBeGreaterThan(captured.generation ?? 0);
+			expect((await readOffscreenSnapshot()).audioTabs).toEqual([]);
+		} finally {
+			await configureRuntime(fixturePage.url(), DEFAULT_AUDIO_CONFIG).catch(() => undefined);
+			await waitForContentStatus(
+				(status) => status.mode === 'bypass' && status.phase === 'idle',
+				10_000,
+			).catch(() => undefined);
+			await extensionClient.close();
+		}
+	}, 45_000);
+
+	test('resolves START pending to a newer WebAudio mode and discards the stale capture ACK', async () => {
+		const extensionClient = await openExtensionClient();
+		const tabId = await getTabId(fixturePage.url());
+		await blockNextSyntheticCapture();
+		try {
+			const startPromise = sendCaptureRequest(extensionClient, tabId, true, 400);
+			await eventually(
+				readSyntheticCaptureState,
+				(state) => state.pending,
+				'pending offscreen getUserMedia',
+			);
+			await eventually(
+				() => readContentStatus(),
+				(status) => status.phase === 'starting' && (status.generation ?? 0) >= 400,
+				'content capture starting state',
+			);
+
+			const webAudioPromise = configureRuntime(
+				fixturePage.url(),
+				{ ...DEFAULT_AUDIO_CONFIG, volume: 140 },
+			);
+			await releaseSyntheticCapture();
+			const [startResponse] = await Promise.all([startPromise, webAudioPromise]);
+			expect(startResponse.ok).toBe(true);
+
+			const finalStatus = await waitForContentStatus(
+				(status) => status.mode === 'webaudio' && status.phase === 'active',
+				15_000,
+			);
+			expect((await readOffscreenSnapshot()).audioTabs).toEqual([]);
+			const stale = await sendCaptureRequest(
+				extensionClient,
+				tabId,
+				true,
+				Math.max(0, (finalStatus.generation ?? 401) - 1),
+			);
+			expect(stale).toMatchObject({ ok: true, data: { active: false } });
+			expect((await readOffscreenSnapshot()).audioTabs).toEqual([]);
+			await configureRuntime(fixturePage.url(), DEFAULT_AUDIO_CONFIG);
+			await waitForContentStatus((status) => status.mode === 'bypass' && status.phase === 'idle');
+		} finally {
+			await releaseSyntheticCapture();
+			await extensionClient.close();
+		}
+	}, 45_000);
+
+	test('restores active capture across worker restart and shares one host with authenticated remote', async () => {
+		await installSyntheticCaptureHarness();
+		await installTabCaptureStreamIdStub();
+		const extensionClient = await openExtensionClient();
+		const secondary = await browser.newPage();
+		const wrongRemote = await browser.newPage();
+		const authenticatedRemote = await browser.newPage();
+		const tabId = await getTabId(fixturePage.url());
+		const secondaryUrl = `${fixtureUrl}?remote-secondary=1`;
+		let session: RemotePublicSession | null = null;
+		try {
+			await configureRuntime(fixturePage.url(), DEFAULT_AUDIO_CONFIG);
+			await waitForContentStatus((status) => status.mode === 'bypass' && status.phase === 'idle');
+			await secondary.goto(secondaryUrl, { waitUntil: 'domcontentloaded' });
+			await secondary.waitForFunction(
+				() => document.documentElement.dataset.spectraContentLoaded === 'true',
+				{ timeout: 15_000 },
+			);
+
+			const started = await sendCaptureRequest(extensionClient, tabId, true, 500);
+			expect(started).toMatchObject({ ok: true, data: { generation: 500, phase: 'active', active: true } });
+			expect(await sendFromActionPopup({
+				protocolVersion: 2,
+				tabId,
+				type: 'spectra.audio.session.get',
+				payload: { tabId },
+			})).toMatchObject({
+				ok: true,
+				data: { generation: 500, actualMode: 'capture', phase: 'active' },
+			});
+			await restartServiceWorker();
+
+			const recovered = await sendCaptureConfig(
+				extensionClient,
+				tabId,
+				501,
+				DEFAULT_AUDIO_CONFIG,
+			);
+			expect(recovered).toMatchObject({
+				ok: true,
+				data: { generation: 501, phase: 'active', active: true, actualMode: 'capture' },
+			});
+			expect(await getOffscreenContextCount()).toBe(1);
+			expect((await readOffscreenSnapshot()).audioTabs).toContainEqual({ tabId, generation: 501 });
+
+			const creation = await sendFromActionPopup<{
+				ok: boolean;
+				data?: RemotePublicSession;
+				error?: { message?: string };
+			}>({
+				protocolVersion: 2,
+				tabId,
+				type: 'spectra.remote.session.create',
+				payload: { tabId },
+			});
+			if (!creation?.ok) {
+				throw new Error(creation?.error?.message ?? 'PeerJS remote session creation failed');
+			}
+			session = creation.data as RemotePublicSession;
+			const sharedHost = await readOffscreenSnapshot();
+			expect(await getOffscreenContextCount()).toBe(1);
+			expect(sharedHost.audioTabs).toContainEqual({ tabId, generation: 501 });
+			expect(sharedHost.remoteTabs).toContainEqual({ tabId, sessionId: session.sessionId });
+
+			await wrongRemote.goto(remotePairingUrl(session, 'AAAAAAAAAAAAAAAAAAAAAA'), {
+				waitUntil: 'domcontentloaded',
+			});
+			await eventually(
+				() => wrongRemote.$eval('#status-text', (element) => element.textContent ?? ''),
+				(status) => /Authentication failed|Host rejected authentication/u.test(status),
+				'wrong-secret remote authentication rejection',
+				25_000,
+			);
+			expect(await wrongRemote.$eval('#tab-title', (element) => element.textContent)).toBe(
+				'Waiting for authenticated sync…',
+			);
+			expect(await wrongRemote.$eval('[data-command="volume_up"]', (element) => (
+				(element as HTMLButtonElement).disabled
+			))).toBe(true);
+			expect((await readContentStatus()).config?.volume).toBe(100);
+
+			await authenticatedRemote.goto(remotePairingUrl(session), { waitUntil: 'domcontentloaded' });
+			await authenticatedRemote.waitForFunction(
+				() => document.querySelector('#status-text')?.textContent === 'Authenticated and connected',
+				{ timeout: 25_000 },
+			);
+			await authenticatedRemote.waitForFunction(
+				() => document.querySelector('#tab-title')?.textContent === 'SPECTRA extension smoke fixture',
+				{ timeout: 10_000 },
+			);
+			expect(await authenticatedRemote.$eval('[data-command="volume_up"]', (element) => (
+				(element as HTMLButtonElement).disabled
+			))).toBe(false);
+			expect((await readOffscreenSnapshot()).remoteTabs).toContainEqual({ tabId, sessionId: session.sessionId });
+
+			// The offscreen host survives the worker. Its recovered generation must
+			// authorize the first post-restart command instead of forcing a sync-only drop.
+			await restartServiceWorker();
+			await authenticatedRemote.click('[data-command="volume_up"]');
+			await eventually(
+				() => readContentStatus(),
+				(status) => status.config?.volume === 110,
+				'first remote command after service-worker recovery',
+				10_000,
+			);
+			expect((await readContentStatus(secondaryUrl)).config?.volume).toBe(100);
+
+			const stopped = await sendCaptureRequest(extensionClient, tabId, false, 502);
+			expect(stopped).toMatchObject({ ok: true, data: { phase: 'idle', active: false } });
+			expect(await sendFromActionPopup({
+				protocolVersion: 2,
+				tabId,
+				type: 'spectra.audio.session.get',
+				payload: { tabId },
+			})).toMatchObject({
+				ok: true,
+				data: { generation: 502, actualMode: 'bypass', phase: 'idle' },
+			});
+			await configureRuntime(fixturePage.url(), DEFAULT_AUDIO_CONFIG);
+			await configureRuntime(secondaryUrl, DEFAULT_AUDIO_CONFIG);
+			expect((await readContentStatus(secondaryUrl)).config?.volume).toBe(100);
+
+			const closed = await sendFromActionPopup({
+				protocolVersion: 2,
+				tabId,
+				type: 'spectra.remote.session.close',
+				payload: { tabId, sessionId: session.sessionId },
+			});
+			expect(closed).toEqual({ ok: true, data: { closed: true } });
+			session = null;
+			await eventually(
+				readOffscreenSnapshot,
+				(snapshot) => snapshot.remoteTabs.length === 0 && snapshot.audioTabs.length === 0,
+				'remote and capture lease cleanup',
+			);
+			await configureRuntime(fixturePage.url(), DEFAULT_AUDIO_CONFIG);
+		} finally {
+			if (session) {
+				await sendFromActionPopup({
+					protocolVersion: 2,
+					tabId,
+					type: 'spectra.remote.session.close',
+					payload: { tabId, sessionId: session.sessionId },
+				}).catch(() => undefined);
+			}
+			await sendCaptureRequest(extensionClient, tabId, false, 599).catch(() => undefined);
+			await Promise.all([
+				extensionClient.close(),
+				secondary.close(),
+				wrongRemote.close(),
+				authenticatedRemote.close(),
+			]);
+		}
+	}, 120_000);
+
+	test('cleans active capture on immediate navigation and close after worker restart', async () => {
+		await installSyntheticCaptureHarness();
+		await installTabCaptureStreamIdStub();
+		const extensionClient = await openExtensionClient();
+		const navigating = await browser.newPage();
+		const closing = await browser.newPage();
+		const navigatingUrl = `${fixtureUrl}?restart-navigation=1`;
+		const closingUrl = `${fixtureUrl}?restart-close=1`;
+		try {
+			await Promise.all([
+				navigating.goto(navigatingUrl, { waitUntil: 'domcontentloaded' }),
+				closing.goto(closingUrl, { waitUntil: 'domcontentloaded' }),
+			]);
+			await Promise.all([
+				navigating.waitForFunction(() => document.documentElement.dataset.spectraContentLoaded === 'true'),
+				closing.waitForFunction(() => document.documentElement.dataset.spectraContentLoaded === 'true'),
+			]);
+			const [navigatingTabId, closingTabId] = await Promise.all([
+				getTabId(navigatingUrl),
+				getTabId(closingUrl),
+			]);
+			const starts = await Promise.all([
+				sendCaptureRequest(extensionClient, navigatingTabId, true, 700),
+				sendCaptureRequest(extensionClient, closingTabId, true, 800),
+			]);
+			expect(starts).toEqual([
+				expect.objectContaining({ ok: true, data: expect.objectContaining({ active: true }) }),
+				expect.objectContaining({ ok: true, data: expect.objectContaining({ active: true }) }),
+			]);
+
+			await restartServiceWorker();
+			await Promise.all([
+				navigating.goto(`http://localhost:${server.port}/smoke-test.html?after-restart=1`, {
+					waitUntil: 'domcontentloaded',
+				}),
+				closing.close(),
+			]);
+			await eventually(
+				readOffscreenSnapshot,
+				(snapshot) => !snapshot.audioTabs.some(
+					(audio) => audio.tabId === navigatingTabId || audio.tabId === closingTabId,
+				),
+				'navigation and tab-close capture cleanup',
+				15_000,
+			);
+			expect(await getOffscreenContextCount()).toBe(1);
+		} finally {
+			await extensionClient.close();
+			await navigating.close().catch(() => undefined);
+			await closing.close().catch(() => undefined);
+		}
+	}, 60_000);
+
+	test('restarts the MV3 worker and reconciles the existing offscreen host', async () => {
+		expect(await getOffscreenContextCount()).toBe(1);
+		await restartServiceWorker();
+		const restartedState = await readRestartedWorkerState();
+		expect(restartedState.settings).toMatchObject({ ok: true });
+		expect(restartedState.contextCount).toBe(1);
+		expect(await readOffscreenSnapshot()).toEqual({ audioTabs: [], remoteTabs: [] });
+		expect(restartedState.status).toMatchObject({ ok: true, data: { actualMode: 'bypass' } });
+		expect(fixtureErrors).toEqual([]);
+	}, 35_000);
 });

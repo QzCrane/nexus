@@ -1,6 +1,6 @@
 // goal: binds interactive video manipulation controls (filters, transforms, A/B loops) in the side panel to content script actions
 
-import { sendToTab } from '../utils/dom';
+import { requestTab } from '../utils/dom';
 
 let currentTabId: number | null = null;
 
@@ -27,56 +27,60 @@ function bindButtons(panel: HTMLElement): void {
 	btns.forEach(btn => {
 		const action = btn.dataset.action;
 		if (!action) return;
+		if (['mirror', 'crop', 'fullscreen', 'dim', 'mark-a', 'mark-b'].includes(action)) {
+			btn.setAttribute('aria-pressed', String(btn.classList.contains('active')));
+		}
 
 		btn.onclick = async () => {
 			if (!currentTabId) return;
 
 			switch (action) {
 				case 'rotate': {
-					const res = await sendToTab<{ rotation: number }>(currentTabId, 'VIDEO_ROTATE', {});
+					const res = await requestTab(currentTabId, 'spectra.video.rotate', { delta: 90 });
 					if (res) btn.title = `Rotation: ${res.rotation}°`;
 					break;
 				}
 				case 'mirror': {
-					const res = await sendToTab<{ mirrored: boolean }>(currentTabId, 'VIDEO_MIRROR', {});
-					if (res) btn.classList.toggle('active', res.mirrored);
+					const res = await requestTab(currentTabId, 'spectra.video.mirror.toggle', {});
+					if (res) setPressed(btn, res.mirrored);
 					break;
 				}
 				case 'screenshot': {
 					// note: triggering a screenshot typically involves content script capturing the video element into a canvas
-					await sendToTab<{ dataUrl: string | null }>(currentTabId, 'VIDEO_SCREENSHOT', {});
+					await requestTab(currentTabId, 'spectra.video.screenshot', {});
 					break;
 				}
 				case 'crop': {
-					const res = await sendToTab<{ cropped: boolean }>(currentTabId, 'VIDEO_CROP', {});
-					if (res) btn.classList.toggle('active', res.cropped);
+					const res = await requestTab(currentTabId, 'spectra.video.crop.toggle', {});
+					if (res) setPressed(btn, res.cropped);
 					break;
 				}
 				case 'fullscreen': {
-					const res = await sendToTab<{ active: boolean }>(currentTabId, 'VIDEO_FULLSCREEN', {});
-					if (res) btn.classList.toggle('active', res.active);
+					const res = await requestTab(currentTabId, 'spectra.video.fullscreen.toggle', {});
+					if (res) setPressed(btn, res.active);
 					break;
 				}
 				case 'dim': {
-					const res = await sendToTab<{ active: boolean; opacity: number }>(currentTabId, 'VIDEO_DIM_BACKGROUND', {});
-					if (res) btn.classList.toggle('active', res.active);
+					const res = await requestTab(currentTabId, 'spectra.video.dim.toggle', {});
+					if (res) setPressed(btn, res.active);
 					break;
 				}
 				case 'mark-a': {
-					await sendToTab(currentTabId, 'VIDEO_AB_SET_A', {});
-					btn.classList.add('active');
+					await requestTab(currentTabId, 'spectra.video.ab.a.set', {});
+					setPressed(btn, true);
 					break;
 				}
 				case 'mark-b': {
-					await sendToTab(currentTabId, 'VIDEO_AB_SET_B', {});
-					btn.classList.add('active');
+					await requestTab(currentTabId, 'spectra.video.ab.b.set', {});
+					setPressed(btn, true);
 					break;
 				}
 				case 'ab-loop': {
 					// note: reset both A and B markers globally when clearing the loop
-					await sendToTab(currentTabId, 'VIDEO_AB_CLEAR', {});
-					panel.querySelector('.sp-btn-marker[data-action="mark-a"]')?.classList.remove('active');
-					panel.querySelector('.sp-btn-marker[data-action="mark-b"]')?.classList.remove('active');
+					await requestTab(currentTabId, 'spectra.video.ab.clear', {});
+					for (const marker of panel.querySelectorAll<HTMLElement>('.sp-btn-marker[data-action="mark-a"], .sp-btn-marker[data-action="mark-b"]')) {
+						setPressed(marker, false);
+					}
 					break;
 				}
 			}
@@ -84,8 +88,17 @@ function bindButtons(panel: HTMLElement): void {
 	});
 }
 
+function setPressed(button: HTMLElement, pressed: boolean): void {
+	button.classList.toggle('active', pressed);
+	button.setAttribute('aria-pressed', String(pressed));
+}
+
 function bindFilterSliders(panel: HTMLElement): void {
-	const sliders = [
+	const sliders: Array<{
+		cls: string;
+		val: string;
+		key: 'brightness' | 'contrast' | 'saturate';
+	}> = [
 		{ cls: '.sp-brightness', val: '.sp-brightness-val', key: 'brightness' },
 		{ cls: '.sp-contrast', val: '.sp-contrast-val', key: 'contrast' },
 		{ cls: '.sp-saturate', val: '.sp-saturate-val', key: 'saturate' },
@@ -102,7 +115,7 @@ function bindFilterSliders(panel: HTMLElement): void {
 
 		slider.onchange = async () => {
 			if (!currentTabId) return;
-			await sendToTab(currentTabId, 'VIDEO_SET_FILTER', { [key]: parseInt(slider.value, 10) });
+			await requestTab(currentTabId, 'spectra.video.filter.set', { [key]: parseInt(slider.value, 10) });
 		};
 	});
 }
@@ -114,14 +127,14 @@ function bindFilterSwitches(panel: HTMLElement): void {
 	if (grayscale) {
 		grayscale.onchange = async () => {
 			if (!currentTabId) return;
-			await sendToTab(currentTabId, 'VIDEO_SET_FILTER', { grayscale: grayscale.checked });
+			await requestTab(currentTabId, 'spectra.video.filter.set', { grayscale: grayscale.checked });
 		};
 	}
 
 	if (invert) {
 		invert.onchange = async () => {
 			if (!currentTabId) return;
-			await sendToTab(currentTabId, 'VIDEO_SET_FILTER', { invert: invert.checked });
+			await requestTab(currentTabId, 'spectra.video.filter.set', { invert: invert.checked });
 		};
 	}
 }
@@ -134,7 +147,7 @@ function bindSeekButtons(panel: HTMLElement): void {
 		btn.onclick = async () => {
 			if (!currentTabId) return;
 			const delta = parseFloat(btn.dataset.delta ?? '0');
-			await sendToTab(currentTabId, 'VIDEO_SEEK', { delta });
+			await requestTab(currentTabId, 'spectra.video.seek', { delta });
 		};
 	});
 }

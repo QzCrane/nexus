@@ -1,8 +1,8 @@
 // goal: defines messaging listeners for the tab card to handle state synchronization between the popup, background, and content scripts
 
-import type { AudioConfig } from '@nexus/kernel';
-import { Actions } from '@nexus/contracts';
+import { isSpectraEventEnvelope } from '@nexus/contracts';
 import type { CardInternalState } from './types';
+import { applyLegacyCardMessage } from './legacy-message-adapter';
 
 export interface MessagingParams {
   tabId: number;
@@ -15,52 +15,32 @@ export function setupCardMessaging(params: MessagingParams): () => void {
   const { tabId, state, render } = params;
 
   const onMessageListener = (
-    msg: { action: string; payload?: any; config?: AudioConfig; mode?: any; isCaptureActive?: boolean },
+	rawMessage: unknown,
     sender: chrome.runtime.MessageSender
   ): boolean | undefined => {
-    const action = msg.action;
-    const payload = msg.payload || {};
-
-    // rule: UI_SYNC is triggered by the content script or background to refresh the popup's view of a tab's audio configuration
-    const isFromTargetTab = (sender.tab?.id === tabId) || (payload.tabId === tabId);
-    if (action === Actions.UI_SYNC && isFromTargetTab) {
-      const config = payload.config || msg.config;
-      if (config) {
-        const cleanedConfig = { ...config };
-        // note: strip transient command fields to prevent them from being interpreted as persistent state
-        delete (cleanedConfig as any).toggleMute;
-        delete (cleanedConfig as any).volumeDelta;
-
-        if (state.isDragging) {
-          // rule: do not sync volume/mute from external sources while the user is actively dragging, to avoid "slider fighting"
-          const { volume, muted, ...otherConfig } = cleanedConfig;
-          state.config = { ...state.config, ...otherConfig };
-        } else {
-          state.config = cleanedConfig;
-        }
-      }
-
-      if (payload.mode || msg.mode) state.actualMode = (payload.mode || msg.mode);
-      if (payload.isCaptureActive !== undefined) state.isCaptureActive = payload.isCaptureActive;
-      else if (msg.isCaptureActive !== undefined) state.isCaptureActive = msg.isCaptureActive;
-
-      // note: sync restricted status to ensure UI correctly reflects browser-protected pages (e.g. chrome://)
-      if (payload.isRestricted !== undefined) state.isRestrictedSite = payload.isRestricted;
-
-      render();
-    }
-
-    // rule: CAPTURE_STATE_CHANGE notification from background indicates the offscreen document has successfully claimed the tab's stream
-    if (action === Actions.CAPTURE_STATE_CHANGE) {
-      const msgTabId = payload.tabId ?? sender.tab?.id;
-      if (msgTabId === tabId) {
-        state.isCaptureActive = !!payload.enabled;
-        if (state.isCaptureActive) {
-          state.actualMode = 'CAPTURE';
-        }
-        render();
-      }
-    }
+	if (isSpectraEventEnvelope(rawMessage) && rawMessage.type === 'spectra.audio.session.changed') {
+		const snapshot = rawMessage.payload;
+		if (snapshot.tabId === tabId) {
+			if (state.isDragging) {
+				const { volume: _volume, muted: _muted, ...otherConfig } = snapshot.actualConfig;
+				state.config = { ...state.config, ...otherConfig };
+			} else {
+				state.config = snapshot.actualConfig;
+			}
+			state.actualMode = snapshot.actualMode;
+			state.desiredMode = snapshot.desiredMode;
+			state.phase = snapshot.phase;
+			state.generation = snapshot.generation;
+			state.lastError = snapshot.lastError;
+			state.isCaptureActive = snapshot.actualMode === 'capture';
+			render();
+		}
+		return false;
+	}
+	// Capture lifecycle events are compatibility notifications, not authoritative
+	// UI state. The preceding session.changed snapshot is the only mode/phase source.
+	if (isSpectraEventEnvelope(rawMessage) && rawMessage.type === 'spectra.audio.capture.changed') return false;
+	applyLegacyCardMessage(rawMessage, sender, params);
     return false;
   };
 

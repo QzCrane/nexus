@@ -2,6 +2,7 @@
 // note: supports data migration from legacy string arrays to structured DomainEntry objects
 
 import type { DomainEntry, DomainSource, RegistryResult } from '@nexus/contracts';
+import { findBestHostnameMatch, normalizeHostname } from '@nexus/contracts';
 
 const KEY = 'restrictedRegistry';
 
@@ -23,7 +24,7 @@ function migrateOldFormat(rawData: unknown): DomainEntry[] {
 // post: ensures registry is initialized in local storage
 export async function initRegistry(): Promise<DomainEntry[]> {
 	const result = await chrome.storage.local.get([KEY, 'userRegistry']);
-	const rawData = result[KEY] || result['userRegistry'];
+	const rawData = result[KEY] || result.userRegistry;
 
 	if (rawData) {
 		const entries = migrateOldFormat(rawData);
@@ -42,22 +43,26 @@ export async function getRegistry(): Promise<DomainEntry[]> {
 
 export async function isRestricted(domain: string): Promise<boolean> {
 	const entries = await getRegistry();
-	return entries.some(e => domain.includes(e.domain) || e.domain.includes(domain));
+	const entry = findBestHostnameMatch(domain, entries, (item) => item.domain);
+	return entry?.restricted !== false && entry !== null;
 }
 
 // eff: returns domain entry if found, otherwise null
 export async function queryDomain(domain: string): Promise<DomainEntry | null> {
 	const entries = await getRegistry();
-	return entries.find(e => e.domain === domain || domain.includes(e.domain)) ?? null;
+	return findBestHostnameMatch(domain, entries, (item) => item.domain);
 }
 
 export async function addDomain(
 	domain: string, source: DomainSource, restricted: boolean = true
 ): Promise<RegistryResult> {
+	const normalizedDomain = normalizeHostname(domain);
+	if (!normalizedDomain) return { success: false, reason: 'invalid_domain' };
 	const entries = await getRegistry();
-	const existing = entries.find(e => e.domain === domain || domain.includes(e.domain));
+	const existing = entries.find(e => normalizeHostname(e.domain) === normalizedDomain);
 
 	if (existing) {
+		existing.source = source;
 		existing.probed = true;
 		existing.restricted = restricted;
 		await chrome.storage.local.set({ [KEY]: entries });
@@ -65,7 +70,7 @@ export async function addDomain(
 	}
 
 	const entry: DomainEntry = {
-		domain, source, probed: true, restricted, addedAt: Date.now(),
+		domain: normalizedDomain, source, probed: true, restricted, addedAt: Date.now(),
 	};
 	entries.push(entry);
 	await chrome.storage.local.set({ [KEY]: entries });
@@ -73,8 +78,10 @@ export async function addDomain(
 }
 
 export async function removeDomain(domain: string): Promise<RegistryResult> {
+	const normalizedDomain = normalizeHostname(domain);
+	if (!normalizedDomain) return { success: false, reason: 'invalid_domain' };
 	const entries = await getRegistry();
-	const filtered = entries.filter(e => e.domain !== domain);
+	const filtered = entries.filter(e => normalizeHostname(e.domain) !== normalizedDomain);
 	if (filtered.length === entries.length) return { success: false, reason: 'not_found' };
 	await chrome.storage.local.set({ [KEY]: filtered });
 	return { success: true };
@@ -82,8 +89,10 @@ export async function removeDomain(domain: string): Promise<RegistryResult> {
 
 // eff: record probing results; v3.7 caches both restricted and safe sites
 export async function markProbed(domain: string, restricted: boolean): Promise<RegistryResult> {
+	const normalizedDomain = normalizeHostname(domain);
+	if (!normalizedDomain) return { success: false, reason: 'invalid_domain' };
 	const entries = await getRegistry();
-	const existing = entries.find(e => domain.includes(e.domain));
+	const existing = entries.find(e => normalizeHostname(e.domain) === normalizedDomain);
 
 	if (existing) {
 		existing.probed = true;
@@ -92,7 +101,7 @@ export async function markProbed(domain: string, restricted: boolean): Promise<R
 		return { success: true, reason: 'updated', entry: existing };
 	}
 
-	return addDomain(domain, 'auto', restricted);
+	return addDomain(normalizedDomain, 'auto', restricted);
 }
 
 // @deprecated: use getRegistry() for full entry data
@@ -103,8 +112,18 @@ export async function getDomainList(): Promise<string[]> {
 // eff: manual override for registry list, usually triggered by user input
 export async function setRegistry(domains: string[]): Promise<void> {
 	const now = Date.now();
-	const entries: DomainEntry[] = domains.map((domain, i) => ({
-		domain, source: 'user' as DomainSource, probed: false, addedAt: now - i,
-	}));
+	const entries: DomainEntry[] = [];
+	const seen = new Set<string>();
+	for (const [index, domain] of domains.entries()) {
+		const normalized = normalizeHostname(domain);
+		if (!normalized || seen.has(normalized)) continue;
+		seen.add(normalized);
+		entries.push({
+			domain: normalized,
+			source: 'user' as DomainSource,
+			probed: false,
+			addedAt: now - index,
+		});
+	}
 	await chrome.storage.local.set({ [KEY]: entries });
 }

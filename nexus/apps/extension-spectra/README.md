@@ -14,7 +14,7 @@
 - **Compressor** - Prevent distortion at high volumes
 - **Bass Boost** - Enhanced low frequencies
 - **Pan Control** - Adjust left/right balance
-- **Audio Delay** - Sync audio with video (±500ms)
+- **Audio Delay** - Sync audio with video (0–500ms)
 
 ### 🎬 Video Control
 
@@ -74,8 +74,9 @@ bun run dev
 
 ## Privacy
 
-- **Zero Telemetry** - No data collection
-- **Local Only** - All processing on your device
+- **Zero Telemetry** - No analytics, advertising, or developer-operated collection
+- **Local by Default** - Settings and media processing stay on your device
+- **Transparent Remote Networking** - Optional remote pairing uses Cloudflare Pages and PeerJS WebRTC infrastructure as documented
 - **Minimal Permissions** - Only what's needed
 - [Privacy Policy](PRIVACY.md)
 

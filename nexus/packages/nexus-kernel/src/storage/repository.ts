@@ -1,11 +1,6 @@
 // goal: type-safe storage repository providing unified access to split storage modules
 // note: acts as a compatibility layer for audio config, settings, and domain registries
 
-import {
-  AudioConfig, DEFAULT_AUDIO_CONFIG,
-  GlobalSettings, DEFAULT_GLOBAL_SETTINGS
-} from '../messages/protocol.js';
-
 import * as audioConfig from './audio-config.js';
 import * as globalSettings from './global-settings.js';
 import * as userRegistry from './user-registry.js';
@@ -46,6 +41,7 @@ export class StorageRepository {
     get: tabSessionModule.getTabSessionConfig,
     set: tabSessionModule.setTabSessionConfig,
     remove: tabSessionModule.removeTabSessionConfig,
+	flush: tabSessionModule.flushTabSessionConfig,
     has: tabSessionModule.hasTabSessionConfig,
   };
 

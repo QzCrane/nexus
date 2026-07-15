@@ -7,8 +7,17 @@
 	"scripts": {
 		"dev": "turbo run dev",
 		"build": "turbo run build --output-logs=new-only",
-		"lint": "turbo run lint",
+		"lint": "turbo run lint --filter=@nexus/contracts --filter=@nexus/kernel --filter=@nexus/audio-engine --filter=@nexus/extension-spectra && bun run lint:workspace-fallbacks && bun run lint:spectra-release",
+		"lint:workspace-fallbacks": "bun scripts/check-workspace-lint.mjs",
+		"lint:spectra-release": "biome check scripts/check-spectra-remote-live.mjs scripts/check-toolchain.mjs scripts/check-workspace-lint.mjs scripts/baselines/halo-biome-baseline.v1.json scripts/release-spectra.mjs ../remote-site/app.js ../remote-site/index.html ../remote-site/styles.css --max-diagnostics=100",
 		"typecheck": "turbo run typecheck",
+		"typecheck:spectra": "turbo run typecheck --filter=@nexus/contracts --filter=@nexus/kernel --filter=@nexus/audio-engine --filter=@nexus/extension-spectra",
+		"build:spectra-deps": "turbo run build --filter=@nexus/contracts --filter=@nexus/kernel --filter=@nexus/audio-engine",
+		"test:spectra": "bun run --cwd apps/extension-spectra test",
+		"check:toolchain": "bun scripts/check-toolchain.mjs",
+		"check:spectra-remote-live": "bun scripts/check-spectra-remote-live.mjs",
+		"release:spectra": "bunx bun@1.3.14 scripts/release-spectra.mjs",
+		"release:spectra:plan": "bunx bun@1.3.14 scripts/release-spectra.mjs --list",
 		"verify": "bun scripts/verify-architecture.js",
 		"verify:q": "bun scripts/verify-architecture.js -q",
 		"verify:v": "bun scripts/verify-architecture.js -v",
@@ -18,12 +27,19 @@
 		"generate-registry": "bun scripts/generate-tool-registry.mjs"
 	},
 	"devDependencies": {
+		"@biomejs/biome": "2.5.3",
 		"chrome-types": "^0.1.327",
 		"sharp": "^0.34.5",
-		"turbo": "^2.0.0",
+		"turbo": "2.10.5",
 		"typescript": "^5.3.0"
 	},
-	"packageManager": "bun@1.3.5",
+	"overrides": {
+		"basic-ftp": "5.3.1",
+		"ip-address": "10.2.0",
+		"js-yaml": "4.3.0",
+		"ws": "8.21.1"
+	},
+	"packageManager": "bun@1.3.14",
 	"workspaces": [
 		"apps/*",
 		"packages/*",

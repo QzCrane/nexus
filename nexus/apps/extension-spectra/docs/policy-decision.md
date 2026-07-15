@@ -1,35 +1,30 @@
 # 策略决策
 
-**核心**: 调节行为/进入劫持才激活增强，否则保持 LITE。
+**核心**: 默认配置保持透明旁路；仅恢复非默认站点配置或收到明确用户修改后激活音频处理。
 
 ## 决策矩阵
 
 交互 : 需求 : 受限 : 模式 : 色
-❌ : 任意 : 任意 : LITE : 🔵
-✅ : ❌ : 任意 : LITE : 🔵
+❌ : 任意 : 任意 : BYPASS : 无
+✅ : ❌ : 任意 : BYPASS : 无
 ✅ : ✅ : ❌ : WEBAUDIO : 🔵
 ✅ : ✅ : ✅ : CAPTURE : 🟣
 
 ## 触发定义
 
-- 需求: volume>100 | EQ | comp | bass | viz
-- 交互: 手动调节非 enabled 参数
-- 劫持即交互: isPredictedCapture 为真自动触发
+- 需求: volume/mute | EQ | compressor | bass | mono | pan | delay | speed
+- 交互: 用户明确修改音频配置或恢复到非默认站点配置
+- CORS/受限探测只影响已存在处理需求时选择 WEBAUDIO 或 CAPTURE，本身不得激活处理
 
 ## 模式说明
 
-- LITE: DOM 原始控制 (0-100%)
+- BYPASS: 与网站原始音频等价，不创建 AudioContext，不锁定音量或播放速度
 - WEBAUDIO: 页面内 WebAudio 链路 (Hybrid Sync: 0-100% DOM Attenuation, >100% Boost)
 - CAPTURE: Tab Capture 劫持 (高 CPU)
 
 ## 全屏策略
 
-**仅 CAPTURE 需暂停**: WEBAUDIO 模式无需特殊处理
-
-- **CAPTURE 冲突**: Chrome 的 tabCapture + fullscreen 冲突，需暂停抓取
-- **WEBAUDIO 误区**: 之前误认为 `createMediaElementSource()` 需全屏暂停，实际根因是 `media-observer.ts` 的 `detachNode` 误触发
-- **真正根因 (2026-01-08)**: MutationObserver removedNodes 在 YouTube 全屏 DOM 重组时误调用 `detachNode()`，破坏 WebAudio 链路
-- **修复**: 移除 removedNodes → detachNode 逻辑，WEBAUDIO 全屏无需任何暂停
+Fullscreen 不改变音频运行时：不暂停或关闭 AudioContext，不强制 `volume=1`，不取消静音。DOM 重组只更新媒体 registry；已绑定的 `MediaElementSourceNode` 在整个页面生命周期内保持唯一。
 
 ## 音量同步规则
 
@@ -41,9 +36,11 @@
 
 ## 资源回收 (Offscreen)
 
-**策略**: 45 秒空闲销毁
+**策略**: 唯一 offscreen host，由 background coordinator 独占生命周期所有权
 
-- **触发**: 所有活动抓取会话结束
-- **动作**: 启动 45s 倒计时 → `chrome.offscreen.closeDocument()`
-- **恢复**: 新抓取请求时自动重建 (`ensureOffscreen`)
+- **租约**: 音频使用 `audio:<tabId>`，遥控使用 `remote:<sessionId>`
+- **并发**: 创建操作经过单实例互斥锁，任何模块不得直接创建或关闭文档
+- **触发**: 所有音频与遥控租约均释放
+- **动作**: coordinator 启动 30 秒倒计时，届时再次确认无租约后关闭唯一 host
+- **恢复**: Service Worker 启动后通过 host handshake 恢复 processor、遥控会话和租约镜像
 - **目的**: 彻底释放 ~50MB 常驻内存，实现零负载待机

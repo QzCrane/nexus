@@ -58,6 +58,7 @@ export const JA_JP: I18NDict = {
 	spHotkeyPinned: 'ピン留め',
 	spHotkeyLast: '最後にアクティブ',
 	btnPause: '一時停止/再生',
+	btnMute: 'ミュート',
 	btnPip: 'ピクチャーインピクチャー',
 	btnHotkeyTarget: 'ホットキー対象',
 	btnGotoTab: 'タブへ移動',

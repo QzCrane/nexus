@@ -1,22 +1,29 @@
 // goal: helper utilities for translating content-script hotkey interactions
 import type { HotkeyAction, HotkeyParams, AudioConfig } from '@nexus/contracts';
-import { Actions } from '@nexus/contracts';
 import { listMarkers } from '../video/time-marker';
 import { showToast } from '../ui/toast';
 import { getPrimaryVideo } from '../utils/media-utils';
+import { sendSpectraRequest } from '../../shared/spectra-client';
 
 let getConfigFn: (() => AudioConfig) | null = null;
 let updateConfigFn: ((changes: Partial<AudioConfig>, options?: { showOSD?: boolean; unMute?: boolean }) => void) | null = null;
+let toggleCaptureModeFn: (() => void) | null = null;
 
 export function setConfigGetter(getter: () => AudioConfig): void { getConfigFn = getter; }
 export function setConfigUpdater(updater: (changes: Partial<AudioConfig>, options?: { showOSD?: boolean; unMute?: boolean }) => void): void { updateConfigFn = updater; }
+export function setCaptureModeToggler(toggle: () => void): () => void {
+	toggleCaptureModeFn = toggle;
+	return () => {
+		if (toggleCaptureModeFn === toggle) toggleCaptureModeFn = null;
+	};
+}
 
 function getConfig(): AudioConfig {
 	return getConfigFn ? getConfigFn() : { volume: 100, muted: false } as AudioConfig;
 }
 
 export function sendVolumeAction(action: HotkeyAction, params?: HotkeyParams): void {
-	const step = params?.step ?? 10;
+	const step = Number.isFinite(params?.step) ? Math.abs(params!.step!) : 10;
 	const c = getConfig();
 	let ch: Partial<AudioConfig> = {};
 	let shouldUnMute = false;
@@ -32,7 +39,7 @@ export function sendVolumeAction(action: HotkeyAction, params?: HotkeyParams): v
 			break;
 		case 'volume_mute': ch = { muted: !c.muted }; break;
 		case 'volume_set':
-			if (params?.volume !== undefined) ch = { volume: params.volume };
+			if (Number.isFinite(params?.volume)) ch = { volume: Math.max(0, Math.min(800, params!.volume!)) };
 			shouldUnMute = true;
 			break;
 	}
@@ -42,7 +49,7 @@ export function sendVolumeAction(action: HotkeyAction, params?: HotkeyParams): v
 
 // eff: handles speed adjustment hotkeys through unified config flow
 export function sendSpeedAction(action: HotkeyAction, params?: HotkeyParams): void {
-	const step = params?.step ?? 0.1;
+	const step = Number.isFinite(params?.step) ? Math.abs(params!.step!) : 0.1;
 	const c = getConfig();
 	let newSpeed: number = c.speed ?? 1;
 
@@ -50,7 +57,7 @@ export function sendSpeedAction(action: HotkeyAction, params?: HotkeyParams): vo
 		case 'speed_up': newSpeed = Math.min(16, newSpeed + step); break;
 		case 'speed_down': newSpeed = Math.max(0.1, newSpeed - step); break;
 		case 'speed_reset': newSpeed = 1; break;
-		case 'speed_set': if (params?.speed !== undefined) newSpeed = params.speed; break;
+		case 'speed_set': if (Number.isFinite(params?.speed)) newSpeed = Math.max(0.1, Math.min(16, params!.speed!)); break;
 	}
 
 	// note: round to 2 decimal places to avoid floating point errors
@@ -60,13 +67,54 @@ export function sendSpeedAction(action: HotkeyAction, params?: HotkeyParams): vo
 
 export function sendAudioReset(): void {
 	updateConfigFn?.(
-		{ volume: 100, muted: false, eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: false, compressor: false },
+		{ volume: 100, muted: false, eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: false, compressor: false, mono: false, pan: 0, delay: 0 },
 		{ showOSD: true }
 	);
 }
 
+export function sendAudioAdjustment(action: HotkeyAction, params?: HotkeyParams): void {
+	const config = getConfig();
+	const step = Number.isFinite(params?.step) ? Math.abs(params!.step!) : undefined;
+	let changes: Partial<AudioConfig> | null = null;
+
+	switch (action) {
+		case 'gain_up':
+			changes = { volume: Math.min(800, config.volume + (step ?? 10)), muted: false };
+			break;
+		case 'gain_down':
+			changes = { volume: Math.max(0, config.volume - (step ?? 10)), muted: false };
+			break;
+		case 'delay_up':
+			changes = { delay: Math.min(500, (config.delay ?? 0) + (step ?? 10)) };
+			break;
+		case 'delay_down':
+			changes = { delay: Math.max(0, (config.delay ?? 0) - (step ?? 10)) };
+			break;
+		case 'delay_reset':
+			changes = { delay: 0 };
+			break;
+		case 'pan_left':
+			changes = { pan: Math.max(-1, (config.pan ?? 0) - Math.min(1, step ?? 0.1)) };
+			break;
+		case 'pan_right':
+			changes = { pan: Math.min(1, (config.pan ?? 0) + Math.min(1, step ?? 0.1)) };
+			break;
+		case 'pan_reset':
+			changes = { pan: 0 };
+			break;
+		case 'mono_toggle':
+			changes = { mono: !config.mono };
+			break;
+	}
+
+	if (changes) updateConfigFn?.(changes, { showOSD: true, unMute: action === 'gain_up' || action === 'gain_down' });
+}
+
 export function sendCaptureToggle(): void {
-	chrome.runtime.sendMessage({ action: Actions.CAPTURE_TOGGLE });
+	// Capture is a document-owned mode intent. The policy executor performs the
+	// transparent handoff and advances generation before its manager contacts
+	// background/offscreen; hotkeys must never bypass that state machine.
+	toggleCaptureModeFn?.();
 }
 
 export function jumpMarker(fwd: boolean): void {
@@ -96,5 +144,8 @@ export function toggleLoop(): void {
 }
 
 export function sendTabAction(action: HotkeyAction): void {
-	chrome.runtime.sendMessage({ action: action === 'tab_pin' ? 'TAB_PIN' : 'TAB_MUTE' });
+	const type = action === 'tab_pin'
+		? 'spectra.tab.pinned.toggle' as const
+		: 'spectra.tab.muted.toggle' as const;
+	void sendSpectraRequest(type, {}).catch(() => undefined);
 }

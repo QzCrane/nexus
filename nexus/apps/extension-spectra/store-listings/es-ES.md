@@ -61,7 +61,7 @@ SPECTRA cuenta con un motor de conmutación inteligente líder en la industria:
 • Soporte para atajos globales de Chrome.
 
 🔒 **Privacidad y Seguridad**
-• Cero recolección de datos. Todos los ajustes son locales.
+• Sin telemetría ni publicidad. Los ajustes permanecen locales; el control remoto opcional y autenticado usa la infraestructura PeerJS WebRTC indicada.
 • Permisos mínimos: solo pido lo necesario.
 
 ⭐ **¿Te gusta SPECTRA? ¡Déjame una reseña de 5 estrellas! Tu apoyo impulsa mi innovación.**

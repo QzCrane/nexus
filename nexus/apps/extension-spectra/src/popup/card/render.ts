@@ -4,7 +4,6 @@ import type { CardUIElements } from '../types';
 import type { CardInternalState } from './types';
 import { COLORS, AUDIO_UI } from '../constants';
 import type { GlobalSettings } from '@nexus/kernel';
-import { predictCapture } from '@nexus/audio-engine';
 
 export interface RenderParams {
   ui: CardUIElements;
@@ -17,7 +16,7 @@ export interface RenderParams {
 
 // post: returns a sync-render function that updates HTML elements, CSS variables, and canvas overlays based on current state
 export function createRenderFn(params: RenderParams): () => void {
-  const { ui, state, getCapturing, drawEqCurve, getVizEnabled, getGlobalSettings } = params;
+  const { ui, state, getCapturing, drawEqCurve, getVizEnabled } = params;
 
   return () => {
     if (!ui.card) return;
@@ -30,22 +29,23 @@ export function createRenderFn(params: RenderParams): () => void {
     ui.card.classList.toggle('muted', muted);
 
     ui.mask.classList.toggle('hidden', !disabled);
+		ui.mask.hidden = !disabled;
+		ui.mask.setAttribute('aria-hidden', String(!disabled));
+		ui.mask.toggleAttribute('inert', !disabled);
+		ui.mask.tabIndex = disabled ? 0 : -1;
+		const controls = ui.card.querySelector<HTMLElement>('.control-stack');
+		controls?.toggleAttribute('inert', disabled);
+		controls?.setAttribute('aria-hidden', String(disabled));
     ui.enable.checked = config.enabled;
 
     ui.slider.value = String(config.volume);
     ui.fill.style.width = `${(config.volume / AUDIO_UI.MAX_VOLUME) * 100}%`;
     ui.val.innerText = muted ? 'MUTE' : `${config.volume}%`;
     ui.mute.classList.toggle('active', muted);
+		ui.mute.setAttribute('aria-pressed', String(muted));
 
     const actualCapturing = getCapturing();
-    const settings = getGlobalSettings();
-    // note: use predictive logic to determine if the next volume change will likely trigger a capture transition
-    const isPredictedCapture = !actualCapturing && predictCapture({
-      config,
-      isRestricted: state.isRestrictedSite,
-      visualizerEnabled: settings.visualizerEnabled,
-    });
-    const isCapture = actualCapturing || isPredictedCapture;
+    const isCapture = actualCapturing;
     const isMutedOrZero = muted || config.volume === 0;
 
     // rule: dynamic color coding to indicate source/mode status (Gray: Silenced, Purple: High-Fidelity Capture, Blue: Standard)
@@ -91,14 +91,16 @@ export function createRenderFn(params: RenderParams): () => void {
     drawEqCurve(fillColor);
 
     if (ui.vizIsland) {
-      ui.vizIsland.classList.toggle('hidden', !getVizEnabled());
+		const vizHidden = !getVizEnabled();
+      ui.vizIsland.classList.toggle('hidden', vizHidden);
+		ui.vizIsland.hidden = vizHidden;
+		ui.vizIsland.setAttribute('aria-hidden', String(vizHidden));
     }
   };
 }
 
 // eff: updates the mute button icon glyph and transparency based on silence/boost status
 function renderVolumeIcon(muteBtn: HTMLElement, muted: boolean, volume: number): void {
-  muteBtn.innerHTML = '';
   const iconSpan = document.createElement('span');
   iconSpan.style.fontSize = '16px';
 
@@ -110,5 +112,5 @@ function renderVolumeIcon(muteBtn: HTMLElement, muted: boolean, volume: number):
     iconSpan.innerText = volume > 100 ? '🚀' : '🔊';
   }
 
-  muteBtn.appendChild(iconSpan);
+  muteBtn.replaceChildren(iconSpan);
 }

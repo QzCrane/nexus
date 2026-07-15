@@ -1,7 +1,7 @@
 {
   "name": "nexus-root",
   "private": true,
-  "packageManager": "bun@1.3.5",
+  "packageManager": "bun@1.3.14",
   "scripts": {
     "dev": "bun --cwd nexus dev",
     "build": "bun --cwd nexus build",

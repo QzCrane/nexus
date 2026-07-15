@@ -61,7 +61,7 @@ SPECTRA features an industry-leading intelligent switching engine:
 • Support for Chrome Global shortcuts and per-site configurations.
 
 🔒 **Privacy & Security**
-• Zero data collection. All settings stay local.
+• No telemetry or advertising. Settings stay local; optional, authenticated phone remote sessions use disclosed PeerJS WebRTC infrastructure.
 • Minimal permissions—I only ask for what I need.
 
 ⭐ **Love SPECTRA? Give me a 5-star review! Your support keeps me innovating.**

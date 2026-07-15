@@ -58,6 +58,7 @@ export const ZH_CN: I18NDict = {
 	spHotkeyPinned: '固定标签',
 	spHotkeyLast: '上次活动',
 	btnPause: '暂停/播放',
+	btnMute: '静音',
 	btnPip: '画中画',
 	btnHotkeyTarget: '快捷键目标',
 	btnGotoTab: '转到标签页',

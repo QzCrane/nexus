@@ -7,6 +7,7 @@ export {
 	getTabSessionConfig,
 	setTabSessionConfig,
 	removeTabSessionConfig,
+	flushTabSessionConfig,
 	hasTabSessionConfig,
 } from './tab-session.js';
 export { safeStorageGet, safeStorageSet, safeStorageRemove } from './safe-storage.js';

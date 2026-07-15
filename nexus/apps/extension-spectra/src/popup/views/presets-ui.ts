@@ -2,9 +2,10 @@
 // features: apply preset, global vs site-specific, search/filter, set as default, preview config
 
 import type { AudioConfig } from '@nexus/kernel';
-import { DEFAULT_AUDIO_CONFIG } from '@nexus/kernel';
+import { isSpectraEventEnvelope } from '@nexus/contracts';
 import type { I18NDict } from '../types';
-import { safeStorageGet, safeStorageSet, safeStorageRemove } from '../../shared/safe-storage';
+import { getSettingsSnapshot, patchSettings } from '../../shared/settings-client';
+import { handleDialogKeydown } from '../utils/dialog';
 
 // perf: preset types for global vs site-specific
 export type PresetType = 'site' | 'global';
@@ -21,12 +22,6 @@ export interface PresetEntry {
 	meta: PresetMeta;
 }
 
-export type PresetsStorage = {
-	siteSettings?: Record<string, Partial<AudioConfig>>;
-	globalPresets?: Record<string, PresetEntry>;
-	defaultPresetId?: string | null;
-};
-
 // perf: module-level state
 let listEl: HTMLElement | null = null;
 let emptyEl: HTMLElement | null = null;
@@ -35,6 +30,7 @@ let searchInput: HTMLInputElement | null = null;
 let currentDict: I18NDict | null = null;
 let currentDomain: string = '';
 let onApplyPreset: ((config: Partial<AudioConfig>) => void) | null = null;
+let closeActivePreview: ((restoreFocus?: boolean) => void) | null = null;
 
 // eff: initializes the presets UI with search, filters, and action handlers
 // note: domain and applyHandler are optional - when not provided, preset application is disabled
@@ -56,11 +52,13 @@ export function initPresetsUI(
 		searchInput.placeholder = currentDict?.presetSearchPlaceholder || 'Search presets...';
 	}
 
-	// eff: auto-refresh on storage changes
-	chrome.storage.onChanged.addListener((changes, area) => {
-		if (area === 'local' && (changes.siteSettings || changes.globalPresets)) {
-			refreshPresetsList();
+
+	// eff: refresh only from the background repository's validated snapshot event
+	chrome.runtime.onMessage.addListener((message: unknown) => {
+		if (isSpectraEventEnvelope(message) && message.type === 'spectra.settings.changed') {
+			void refreshPresetsList();
 		}
+		return false;
 	});
 
 	refreshPresetsList();
@@ -83,7 +81,7 @@ async function refreshPresetsList(): Promise<void> {
 
 	const hasPresets = filteredSites.length > 0 || filteredGlobals.length > 0;
 
-	listEl.innerHTML = '';
+	listEl.replaceChildren();
 
 	if (!hasPresets) {
 		listEl.style.display = 'none';
@@ -102,7 +100,7 @@ async function refreshPresetsList(): Promise<void> {
 		listEl.appendChild(globalHeader);
 
 		filteredGlobals.forEach(([name, entry]) => {
-			const item = createPresetItem(name, entry.config, 'global', entry.meta.isDefault);
+			const item = createPresetItem(name, entry.config, 'global', entry.meta.isDefault === true || defaultId === name);
 			listEl!.appendChild(item);
 		});
 	}
@@ -178,7 +176,7 @@ function createPresetItem(
 	// apply button
 	const applyBtn = document.createElement('button');
 	applyBtn.className = 'btn-preset-action apply';
-	applyBtn.innerHTML = '✓';
+	applyBtn.textContent = '✓';
 	applyBtn.title = currentDict?.presetApplyTooltip || 'Apply';
 	applyBtn.onclick = (e) => {
 		e.stopPropagation();
@@ -188,7 +186,7 @@ function createPresetItem(
 	// preview button
 	const previewBtn = document.createElement('button');
 	previewBtn.className = 'btn-preset-action preview';
-	previewBtn.innerHTML = '👁';
+	previewBtn.textContent = '👁';
 	previewBtn.title = currentDict?.presetPreviewTooltip || 'Preview';
 	previewBtn.onclick = (e) => {
 		e.stopPropagation();
@@ -198,7 +196,7 @@ function createPresetItem(
 	// set default button (global presets only)
 	const defaultBtn = document.createElement('button');
 	defaultBtn.className = `btn-preset-action default ${isDefault ? 'active' : ''}`;
-	defaultBtn.innerHTML = '★';
+	defaultBtn.textContent = '★';
 	defaultBtn.title = isDefault
 		? (currentDict?.presetRemoveDefaultTooltip || 'Remove default')
 		: (currentDict?.presetSetDefaultTooltip || 'Set as default');
@@ -210,7 +208,7 @@ function createPresetItem(
 	// delete button
 	const deleteBtn = document.createElement('button');
 	deleteBtn.className = 'btn-preset-action delete';
-	deleteBtn.innerHTML = '✕';
+	deleteBtn.textContent = '✕';
 	deleteBtn.title = currentDict?.presetDeleteTooltip || 'Delete';
 	deleteBtn.onclick = (e) => {
 		e.stopPropagation();
@@ -280,10 +278,7 @@ async function handleApplyPreset(id: string, type: PresetType, config: Partial<A
 
 	// eff: if global preset applied, also save to current site
 	if (type === 'global' && currentDomain) {
-		const result = await safeStorageGet<PresetsStorage>(['siteSettings'], {});
-		const settings = result.siteSettings || {};
-		settings[currentDomain] = config;
-		await safeStorageSet({ siteSettings: settings });
+		await patchSettings({ scope: 'audio-site', domain: currentDomain, value: config, mode: 'replace' });
 	}
 
 	// feedback: visual confirmation
@@ -292,21 +287,43 @@ async function handleApplyPreset(id: string, type: PresetType, config: Partial<A
 
 // eff: shows preset details in a modal/preview panel
 function showPresetPreview(id: string, config: Partial<AudioConfig>): void {
+	closeActivePreview?.(false);
+	const previouslyFocused = document.activeElement instanceof HTMLElement
+		? document.activeElement
+		: null;
 	const modal = document.createElement('div');
 	modal.className = 'preset-preview-modal';
+	modal.id = 'preset-preview-modal';
+	modal.setAttribute('role', 'dialog');
+	modal.setAttribute('aria-modal', 'true');
+	modal.setAttribute('aria-labelledby', 'preset-preview-title');
+	modal.setAttribute('aria-describedby', 'preset-preview-details');
+	modal.tabIndex = -1;
 
 	const content = document.createElement('div');
 	content.className = 'preset-preview-content';
 
 	const header = document.createElement('h3');
+	header.id = 'preset-preview-title';
 	header.textContent = id;
 
 	const details = document.createElement('pre');
+	details.id = 'preset-preview-details';
+	details.tabIndex = 0;
 	details.textContent = JSON.stringify(config, null, 2);
 
 	const closeBtn = document.createElement('button');
+	closeBtn.type = 'button';
 	closeBtn.textContent = currentDict?.btnClose || 'Close';
-	closeBtn.onclick = () => modal.remove();
+	closeBtn.setAttribute('aria-label', currentDict?.btnClose || 'Close');
+	const close = (restoreFocus = true) => {
+		if (!modal.isConnected) return;
+		modal.remove();
+		if (closeActivePreview === close) closeActivePreview = null;
+		if (restoreFocus) previouslyFocused?.focus();
+	};
+	closeActivePreview = close;
+	closeBtn.onclick = () => close();
 
 	content.appendChild(header);
 	content.appendChild(details);
@@ -314,18 +331,19 @@ function showPresetPreview(id: string, config: Partial<AudioConfig>): void {
 	modal.appendChild(content);
 
 	modal.onclick = (e) => {
-		if (e.target === modal) modal.remove();
+		if (e.target === modal) close();
 	};
+	modal.addEventListener('keydown', (event) => handleDialogKeydown(event, modal, close));
 
 	document.body.appendChild(modal);
+	closeBtn.focus();
 }
 
 // eff: sets or removes a global preset as default
 async function handleSetDefaultPreset(id: string, type: PresetType, setAsDefault: boolean): Promise<void> {
 	if (type !== 'global') return;
 
-	const result = await safeStorageGet<PresetsStorage>(['defaultPresetId'], {});
-	await safeStorageSet({ defaultPresetId: setAsDefault ? id : null });
+	await patchSettings({ scope: 'default-preset', value: setAsDefault ? id : null });
 
 	refreshPresetsList();
 }
@@ -333,28 +351,23 @@ async function handleSetDefaultPreset(id: string, type: PresetType, setAsDefault
 // eff: deletes a preset
 async function handleDeletePreset(id: string, type: PresetType): Promise<void> {
 	if (type === 'site') {
-		const result = await safeStorageGet<PresetsStorage>(['siteSettings'], {});
-		const settings = result.siteSettings || {};
-		delete settings[id];
-		await safeStorageSet({ siteSettings: settings });
+		await patchSettings({ scope: 'audio-site', domain: id, value: null });
 	} else {
-		const result = await safeStorageGet<PresetsStorage>(['globalPresets'], {});
-		const presets = result.globalPresets || {};
-		delete presets[id];
-		await safeStorageSet({ globalPresets: presets });
-
-		// eff: if deleting default preset, clear default
-		const defaultResult = await safeStorageGet<PresetsStorage>(['defaultPresetId'], {});
-		if (defaultResult.defaultPresetId === id) {
-			await safeStorageSet({ defaultPresetId: null });
-		}
+		await patchSettings({ scope: 'audio-preset', name: id, value: null });
 	}
 
 	refreshPresetsList();
 }
 
 async function handleClearAll(): Promise<void> {
-	await safeStorageRemove(['siteSettings', 'globalPresets', 'defaultPresetId']);
+	const { sitePresets, globalPresets } = await loadAllPresets();
+	for (const domain of Object.keys(sitePresets)) {
+		await patchSettings({ scope: 'audio-site', domain, value: null });
+	}
+	for (const name of Object.keys(globalPresets)) {
+		await patchSettings({ scope: 'audio-preset', name, value: null });
+	}
+	await patchSettings({ scope: 'default-preset', value: null });
 	refreshPresetsList();
 }
 
@@ -364,15 +377,12 @@ async function loadAllPresets(): Promise<{
 	globalPresets: Record<string, PresetEntry>;
 	defaultId: string | null;
 }> {
-	const result = await safeStorageGet<PresetsStorage>(
-		['siteSettings', 'globalPresets', 'defaultPresetId'],
-		{}
-	);
+	const snapshot = await getSettingsSnapshot();
 
 	return {
-		sitePresets: result.siteSettings || {},
-		globalPresets: result.globalPresets || {},
-		defaultId: result.defaultPresetId || null
+		sitePresets: snapshot.audioSites,
+		globalPresets: snapshot.audioPresets,
+		defaultId: snapshot.defaultPresetId,
 	};
 }
 
@@ -385,25 +395,27 @@ export async function getDefaultPreset(): Promise<Partial<AudioConfig> | null> {
 
 // eff: saves current config as a global preset
 export async function saveGlobalPreset(name: string, config: Partial<AudioConfig>): Promise<void> {
-	const result = await safeStorageGet<PresetsStorage>(['globalPresets'], {});
-	const presets = result.globalPresets || {};
-
-	presets[name] = {
-		config,
-		meta: {
-			type: 'global',
-			name,
-			createdAt: Date.now()
-		}
-	};
-
-	await safeStorageSet({ globalPresets: presets });
+	await patchSettings({
+		scope: 'audio-preset',
+		name,
+		value: {
+			config,
+			meta: {
+				type: 'global',
+				name,
+				createdAt: Date.now(),
+			},
+		},
+	});
 }
 
 // goal: shows a transient toast notification
 function showToast(message: string): void {
 	const toast = document.createElement('div');
 	toast.className = 'preset-toast';
+	toast.setAttribute('role', 'status');
+	toast.setAttribute('aria-live', 'polite');
+	toast.setAttribute('aria-atomic', 'true');
 	toast.textContent = message;
 	document.body.appendChild(toast);
 

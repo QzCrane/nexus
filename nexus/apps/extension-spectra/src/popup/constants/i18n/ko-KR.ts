@@ -58,6 +58,7 @@ export const KO_KR: I18NDict = {
 	spHotkeyPinned: '고정됨',
 	spHotkeyLast: '마지막 활성',
 	btnPause: '일시정지/재생',
+	btnMute: '음소거',
 	btnPip: '화면 속 화면',
 	btnHotkeyTarget: '단축키 대상',
 	btnGotoTab: '탭으로 이동',

@@ -2,7 +2,43 @@
 // pre: requires "scripting" permission in manifest.json
 
 import { swLog } from '../shared/logger';
-import { tabAudioStates } from './state';
+
+export const WARM_UPDATE_CONCURRENCY = 4;
+
+type UpgradeTab = Pick<chrome.tabs.Tab, 'active' | 'id'>;
+type TabInjector = (tabId: number) => Promise<void>;
+
+async function injectBounded(tabIds: number[], inject: TabInjector): Promise<void> {
+	let cursor = 0;
+	const workerCount = Math.min(WARM_UPDATE_CONCURRENCY, tabIds.length);
+	await Promise.all(Array.from({ length: workerCount }, async () => {
+		while (cursor < tabIds.length) {
+			const tabId = tabIds[cursor++];
+			if (tabId === undefined) continue;
+			try {
+				await inject(tabId);
+			} catch (error) {
+				swLog.warn(`[Upgrade] Tab ${tabId} failed: ${error instanceof Error ? error.message : String(error)}`);
+			}
+		}
+	}));
+}
+
+// Active tabs are refreshed first. Background work is a bounded, awaited queue:
+// no delayed timer is left behind for an MV3 worker suspension to discard.
+export async function refreshTabsForUpgrade(
+	tabs: UpgradeTab[],
+	inject: TabInjector = injectWithTransition,
+): Promise<void> {
+	const activeTabIds: number[] = [];
+	const backgroundTabIds: number[] = [];
+	for (const tab of tabs) {
+		if (tab.id === undefined) continue;
+		(tab.active ? activeTabIds : backgroundTabIds).push(tab.id);
+	}
+	await injectBounded(activeTabIds, inject);
+	await injectBounded(backgroundTabIds, inject);
+}
 
 export async function performWarmUpdate(): Promise<void> {
 	if (!chrome.scripting?.executeScript) {
@@ -18,20 +54,10 @@ export async function performWarmUpdate(): Promise<void> {
 		return;
 	}
 
-	const activeTabs = tabs.filter(t => t.active && t.id);
-	const backgroundTabs = tabs.filter(t => !t.active && t.id);
+	const activeTabs = tabs.filter(tab => tab.active && tab.id !== undefined);
 
 	swLog.info(`[Upgrade] ${tabs.length} tabs (${activeTabs.length} active)`);
-
-	for (const tab of activeTabs) {
-		if (tab.id) await injectWithTransition(tab.id);
-	}
-
-	for (let i = 0; i < backgroundTabs.length; i++) {
-		const tid = backgroundTabs[i]?.id;
-		if (!tid) continue;
-		setTimeout(() => { injectWithTransition(tid).catch(() => { }); }, 500 * (i + 1));
-	}
+	await refreshTabsForUpgrade(tabs);
 }
 
 // eff: re-injects content + injector into a single tab, with graceful teardown of prior instance
@@ -41,7 +67,10 @@ async function injectWithTransition(tabId: number): Promise<void> {
 		try {
 			const r = await chrome.scripting.executeScript({
 				target: { tabId },
-				func: () => !!(window as any).__SPECTRA_TEARDOWN__
+				func: () => {
+					const pageWindow = window as Window & { __SPECTRA_TEARDOWN__?: () => void };
+					return typeof pageWindow.__SPECTRA_TEARDOWN__ === 'function';
+				},
 			});
 			hasOldInstance = r?.[0]?.result === true;
 		} catch { /* page may block script execution */ }
@@ -51,11 +80,12 @@ async function injectWithTransition(tabId: number): Promise<void> {
 			await chrome.scripting.executeScript({
 				target: { tabId },
 				func: () => {
-					if ((window as any).__SPECTRA_TEARDOWN__) {
-						(window as any).__SPECTRA_TEARDOWN__();
-						delete (window as any).__SPECTRA_TEARDOWN__;
+					const pageWindow = window as Window & { __SPECTRA_TEARDOWN__?: () => void };
+					if (typeof pageWindow.__SPECTRA_TEARDOWN__ === 'function') {
+						pageWindow.__SPECTRA_TEARDOWN__();
+						delete pageWindow.__SPECTRA_TEARDOWN__;
 					}
-				}
+				},
 			});
 			await new Promise(r => setTimeout(r, 200));
 		}
@@ -73,14 +103,6 @@ async function injectWithTransition(tabId: number): Promise<void> {
 		});
 
 		await new Promise(r => setTimeout(r, 300));
-
-		const existing = tabAudioStates.get(tabId);
-		tabAudioStates.set(tabId, {
-			hasMediaElement: true,
-			lastAudibleTime: existing?.lastAudibleTime ?? 0,
-			lastActivatedTime: Date.now(),
-			userManuallyActivated: true,
-		});
 
 		swLog.debug(`[Upgrade] Tab ${tabId}: transition complete`);
 	} catch (e) {

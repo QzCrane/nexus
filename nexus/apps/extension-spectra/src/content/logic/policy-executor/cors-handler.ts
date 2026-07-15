@@ -7,20 +7,20 @@ import { logger } from '../../../shared/logger';
 import type { PolicyExecutorDeps } from '../../types';
 import type { InternalState, CorsStatus } from './types';
 import { findProbeCandidate } from './media-probe';
-import { getDict } from '../../../popup/constants/i18n';
+import { markRegistryDomainProbed, queryRegistryDomain } from '../../../shared/registry-client';
 
 const log = logger.content;
 
+function formatDomainMessage(template: string, domain: string): string {
+	return template.replaceAll('{domain}', domain);
+}
+
 // post: returns the persisted CORS status from the domain registry or PENDING if unknown
-export async function initCorsStatus(
-	messenger: Pick<PolicyExecutorDeps['messenger'], 'send'>
-): Promise<CorsStatus> {
+export async function initCorsStatus(): Promise<CorsStatus> {
 	const hostname = window.location.hostname;
 
 	try {
-		const result = await safeSend(() =>
-			messenger.send('REGISTRY_QUERY_DOMAIN', { domain: hostname })
-		);
+		const result = await safeSend(() => queryRegistryDomain(hostname));
 
 		if (result?.entry) {
 			if (result.entry.probed) {
@@ -42,7 +42,7 @@ export function setupCorsCallback(
 	internalState: InternalState,
 	onStatusChange: () => void
 ): void {
-	const { messenger, audioController, settingsManager } = deps;
+	const { audioController, settingsManager } = deps;
 
 	audioController.setCallbacks(
 		// failure: CORS restriction detected (no audio data passing through node)
@@ -53,11 +53,10 @@ export function setupCorsCallback(
 			internalState.corsStatus = 'RESTRICTED';
 
 			const settings = settingsManager.get();
-			safeSend(() => messenger.send('REGISTRY_MARK_PROBED', { domain: hostname, restricted: true }))
+			safeSend(() => markRegistryDomainProbed(hostname, true))
 				.then((response) => {
-					if (response?.success) {
-						const dict = getDict(settings.lang || 'en-US');
-						showToast(dict.autoAddedToast(hostname));
+					if (response) {
+						showToast(formatDomainMessage(settings.osdMessages.corsAutoAdded, hostname));
 					}
 				})
 				.catch(() => { });
@@ -77,13 +76,12 @@ export function setupCorsCallback(
 			internalState.corsStatus = 'SAFE';
 
 			const settings = settingsManager.get();
-			safeSend(() => messenger.send('REGISTRY_MARK_PROBED', { domain: hostname, restricted: false }))
+			safeSend(() => markRegistryDomainProbed(hostname, false))
 				.then((response) => {
-					const dict = getDict(settings.lang || 'en-US');
 					const message = wasRestricted
-						? dict.corsCorrectedSafe(hostname)
-						: dict.corsAddedSafe(hostname);
-					if (response?.success) showToast(message);
+						? settings.osdMessages.corsCorrectedSafe
+						: settings.osdMessages.corsAddedSafe;
+					if (response) showToast(formatDomainMessage(message, hostname));
 				})
 				.catch(() => { });
 
@@ -94,7 +92,6 @@ export function setupCorsCallback(
 
 // goal: triggers an active CORS probe if suitable audible media is discovered while status is PENDING
 export async function probeCorsOnMediaDetected(
-	messenger: Pick<PolicyExecutorDeps['messenger'], 'send'>,
 	internalState?: InternalState,
 	onStatusChange?: () => void
 ): Promise<void> {
@@ -105,9 +102,7 @@ export async function probeCorsOnMediaDetected(
 	}
 
 	try {
-		const result = await safeSend(() =>
-			messenger.send('REGISTRY_QUERY_DOMAIN', { domain: hostname })
-		);
+		const result = await safeSend(() => queryRegistryDomain(hostname));
 
 		if (result?.entry?.probed) {
 			log.debug(`[CORS Sync] ${hostname}: Already probed (${result.entry.restricted ? 'RESTRICTED' : 'SAFE'})`);

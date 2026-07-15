@@ -2,38 +2,35 @@
 // rule: standard commands are mapped directly; custom slots (slot_1-16) use user-defined mappings
 
 import type { HotkeySettings, HotkeyAction } from '@nexus/contracts';
-import { Actions, DEFAULT_HOTKEY_SETTINGS } from '@nexus/contracts';
+import { DEFAULT_HOTKEY_SETTINGS } from '@nexus/contracts';
 import { swLog } from '../shared/logger';
-import { safeStorageGet } from '../shared/safe-storage';
+import { sendSpectraTabRequest } from '../shared/spectra-client';
+import { settingsRepository } from './settings-repository';
+import { hotkeyTargetRepository } from './hotkey-target-repository';
 
 // slotMapping: active mapping of manifest slot IDs to functional hotkey actions
 let slotMapping: Record<string, HotkeyAction> = { ...DEFAULT_HOTKEY_SETTINGS.slots };
 
 
-// eff: synchronizes slotMapping from local storage
+// eff: synchronizes slotMapping from the background-owned settings repository
 async function loadSlotMapping(): Promise<void> {
 	try {
-		const result = await safeStorageGet<{ hotkeySettings?: HotkeySettings }>(['hotkeySettings'], {});
-		if (result.hotkeySettings?.slots) {
-			slotMapping = result.hotkeySettings.slots;
-		}
+		updateShortcutSettings((await settingsRepository.getSnapshot()).hotkeySettings);
 	} catch { }
 }
 
-// eff: initializes global listeners for chrome.commands and storage-based hotkey updates
-export function setupShortcutListeners(): void {
-	loadSlotMapping();
+export function updateShortcutSettings(settings: HotkeySettings): void {
+	slotMapping = { ...settings.slots };
+}
 
-	chrome.storage.onChanged.addListener((changes) => {
-		if (changes.hotkeySettings?.newValue?.slots) {
-			slotMapping = changes.hotkeySettings.newValue.slots;
-		}
-	});
+// eff: initializes global listeners for chrome.commands and repository-backed hotkey updates
+export function setupShortcutListeners(): void {
+	void loadSlotMapping();
 
 	chrome.commands.onCommand.addListener(async (command) => {
 		swLog.debug(`Shortcut command: ${command}`);
 
-		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+		const tab = await resolveShortcutTarget();
 		if (!tab?.id || !tab.url) return;
 
 		let domain = '';
@@ -55,6 +52,28 @@ export function setupShortcutListeners(): void {
 
 		await executeAction(action, tab.id, domain);
 	});
+
+	chrome.tabs.onRemoved.addListener((tabId) => {
+		void clearRemovedShortcutTarget(tabId);
+	});
+}
+
+async function resolveShortcutTarget(): Promise<chrome.tabs.Tab | undefined> {
+	const { tabId: targetId } = await hotkeyTargetRepository.get();
+	if (targetId !== null) {
+		try {
+			const target = await chrome.tabs.get(targetId);
+			if (target.url && /^https?:|^file:/u.test(target.url)) return target;
+		} catch {
+			await hotkeyTargetRepository.clearIfMatches(targetId);
+		}
+	}
+	const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+	return active;
+}
+
+async function clearRemovedShortcutTarget(tabId: number): Promise<void> {
+	await hotkeyTargetRepository.clearIfMatches(tabId);
 }
 
 // goal: maps literal manifest command names to unified HotkeyActions
@@ -72,9 +91,6 @@ function resolveDirectCommand(command: string): HotkeyAction | undefined {
 // rule: content script handles all state updates using its real-time config, ensuring UI sync
 async function executeAction(action: HotkeyAction, tabId: number, _domain: string): Promise<void> {
 	try {
-		await chrome.tabs.sendMessage(tabId, {
-			action: Actions.SHORTCUT_TRIGGER,
-			payload: { command: action }
-		});
+		await sendSpectraTabRequest(tabId, 'spectra.hotkey.trigger', { action });
 	} catch { }
 }

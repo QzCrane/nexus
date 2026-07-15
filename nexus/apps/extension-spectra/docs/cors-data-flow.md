@@ -1,25 +1,24 @@
-# CORS 数据流
+# CORS Audio Decision Flow
 
-**原理**: 跨域不报错，但 AnalyserNode 返回全零。
+`createMediaElementSource()` may succeed while cross-origin audio produces no analyser data, so SPECTRA treats the analyser callback—not an exception—as the runtime signal.
 
-## 检测序列
+## Flow
 
-1. 查表 → 命中用缓存 / 否则 PENDING
-2. 页面加载 5s 内轮询媒体元素
-3. 观察模式 (6s): 有数据 →SAFE / 超时 →RESTRICTED
-4. 结果 → REGISTRY_MARK_PROBED 持久化 → applyState()
-5. SPA: 路径变化 → probeCors()
+1. Normalize the current hostname and query the background-owned registry.
+2. A previously probed entry restores `SAFE` or `RESTRICTED`; an unknown host starts as `PENDING`.
+3. The event-driven media registry reacts to newly inserted media, playback, metadata, volume, and SPA navigation. It selects an audible, playing candidate once; there is no discovery polling.
+4. The WebAudio controller reports real analyser success or failure through its callbacks.
+5. Background persists the normalized probe result through the v2 registry boundary.
+6. Policy is recalculated for the current document generation. A late callback from an older generation cannot activate Capture.
 
-## 职责
+While status is unknown, policy fails closed for advanced processing. Default/no-op configuration remains transparent bypass and does not create an AudioContext merely to probe a site.
 
-- cors-handler.ts: internalState 读写
-- cors-prober.ts: WebAudio 探测执行
-- navigation-observer.ts: SPA 导航重测
+## Ownership
 
-## 决策规则
+- `policy-executor/cors-handler.ts`: current-document CORS phase and controller callbacks
+- `policy-executor/media-probe.ts`: one-shot candidate selection
+- `core/lifecycle/media-observer.ts`: event-driven media discovery and disposal
+- `shared/registry-client.ts`: typed registry requests
+- background registry repository: normalized persistence and domain matching
 
-isRestricted = (corsStatus !== 'SAFE')
-
-!needsAdvanced → LITE (🔵)
-!isRestricted → WEB (🔵)
-其他 → CAPTURE (🟣)
+The authoritative audio mode and error remain in `AudioSessionSnapshot`; the registry result is an input to policy, not an independent claim that Capture is active.

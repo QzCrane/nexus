@@ -22,6 +22,9 @@ export interface AudioNodeSet {
 	analyser: AnalyserNode;
 	panner: StereoPannerNode;
 	delayNode: DelayNode;
+	// tail immediately before the optional compressor branch
+	chainTail: AudioNode;
+	compressorEnabled: boolean;
 }
 
 export interface AudioMediaElement extends HTMLMediaElement {

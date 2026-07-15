@@ -2,8 +2,11 @@
 
 import type { AudioConfig, GlobalSettings } from '@nexus/kernel';
 import type { CardInternalState } from './types';
-import { sendToTab, sendToBackground } from '../utils/dom';
-import { createBadgePayload } from '../../shared/badge-logic';
+import { sendSpectraRequest, sendSpectraTabRequest } from '../../shared/spectra-client';
+
+export type ConfigUpdateFn = ((changes: Partial<AudioConfig>) => void) & {
+	flush: () => Promise<void>;
+};
 
 export function createGetCapturing(
   state: CardInternalState,
@@ -20,63 +23,96 @@ export function createUpdateFn(
   _getCapturing: () => boolean,
   render: () => void,
   _getGlobalSettings: () => GlobalSettings
-): (changes: Partial<AudioConfig>) => void {
-  return async (changes: Partial<AudioConfig>) => {
-    // rule: only mark "user interacted" if the change involves an actual audio parameter (not just opening the card)
-    const isOperation = Object.keys(changes).some(k => k !== 'enabled');
-    if (isOperation) {
-      state.userInteracted = true;
-    }
+): ConfigUpdateFn {
+	const minSendIntervalMs = 50;
+	let pending = false;
+	let inFlight: Promise<void> | null = null;
+	let timer: ReturnType<typeof setTimeout> | null = null;
+	let lastSentAt = 0;
+	let localRevision = 0;
 
-    // eff: apply changes immediately to local state for responsive UI feedback
-    state.config = { ...state.config, ...changes };
-    const config = state.config;
+	const scheduleFlush = () => {
+		if (timer || inFlight) return;
+		const delay = Math.max(0, minSendIntervalMs - (performance.now() - lastSentAt));
+		timer = setTimeout(() => {
+			timer = null;
+			void flush().catch(() => undefined);
+		}, delay);
+	};
 
-    if (state.isCaptureActive) {
-      // mode: Capture -> Update the offscreen document directly and notify content script for UI synchronization
-      sendToBackground('CAPTURE_UPDATE_CONFIG', { tabId, config });
-      sendToTab(tabId, 'AUDIO_SET_CONFIG', { config }).catch(() => { });
+	const flush = (): Promise<void> => {
+		if (inFlight) return inFlight;
+		if (!pending) return Promise.resolve();
+		pending = false;
+		lastSentAt = performance.now();
+		const sentRevision = localRevision;
+		const config: AudioConfig = {
+			...state.config,
+			eqValues: [...state.config.eqValues],
+		};
 
-      // note: ensure badge reflects the active capture and volume status immediately
-      state.userInteracted = true;
-      const payload = createBadgePayload(config, true, state.userInteracted);
-      sendToBackground('BADGE_UPDATE', { tabId, ...payload });
+		inFlight = (async () => {
+			// Popup emits config intent only. Content/background/offscreen publish the acknowledged path.
+			const response = await sendSpectraTabRequest(
+				tabId,
+				'spectra.audio.runtime.configure',
+				{ config },
+			);
 
-      render();
-      return;
-    }
+			if (response.ok) {
+				// A response for an earlier drag sample must not overwrite a newer
+				// optimistic value that is waiting to be coalesced and sent.
+				if (localRevision === sentRevision) state.config = response.data.config;
+				state.actualMode = response.data.actualMode;
+				state.desiredMode = response.data.desiredMode;
+				state.phase = response.data.phase;
+				state.generation = response.data.generation;
+				state.lastError = response.data.lastError;
+				state.isCaptureActive = response.data.actualMode === 'capture';
+			}
+		})().finally(() => {
+			inFlight = null;
+			render();
+			if (pending) scheduleFlush();
+		});
+		return inFlight;
+	};
 
-    // mode: Native -> Delegate processing to the content script; handle potential mode escalation (e.g. forced capture for CORS)
-    const response = await sendToTab<{
-      success: boolean;
-      state: { mode: string; config: AudioConfig };
-    }>(tabId, 'AUDIO_SET_CONFIG', { config });
+	const drain = async (): Promise<void> => {
+		while (pending || inFlight) {
+			if (inFlight) await inFlight;
+			else {
+				if (timer) {
+					clearTimeout(timer);
+					timer = null;
+				}
+				await flush();
+			}
+		}
+	};
 
-    if (response?.success && response.state) {
-      const suggestedMode = response.state.mode;
-      const wasCapturing = state.isCaptureActive;
-      const needsCapture = suggestedMode === 'CAPTURE';
+	window.addEventListener('pagehide', () => {
+		if (timer) {
+			clearTimeout(timer);
+			timer = null;
+		}
+		void drain()
+			.then(() => sendSpectraRequest('spectra.audio.session.flush', {}, { tabId }))
+			.catch(() => undefined);
+	}, { once: true });
 
-      // rule: if the content script requests mode escalation, trigger background capture toggle
-      if (needsCapture && !wasCapturing) {
-        state.isCaptureActive = true;
-        state.actualMode = 'CAPTURE';
-        sendToBackground('CAPTURE_TOGGLE', { enabled: true, config, tabId });
-      } else if (!needsCapture && wasCapturing) {
-        state.isCaptureActive = false;
-        state.actualMode = suggestedMode as any;
-        sendToBackground('CAPTURE_TOGGLE', { enabled: false, config, tabId });
-      }
+	const update = ((changes: Partial<AudioConfig>) => {
+		// This function is only invoked by explicit controls/preset actions; reads never call it.
+		if (Object.keys(changes).length > 0) state.userInteracted = true;
 
-      if (needsCapture) {
-        state.userInteracted = true;
-      }
-
-      const payload = createBadgePayload(config, needsCapture, state.userInteracted);
-      sendToBackground('BADGE_UPDATE', { tabId, ...payload });
-    }
-
-    render();
-  };
+		// eff: apply changes immediately to local state for responsive UI feedback
+		state.config = { ...state.config, ...changes };
+		localRevision += 1;
+		pending = true;
+		render();
+		scheduleFlush();
+	}) as ConfigUpdateFn;
+	update.flush = drain;
+	return update;
 }
 

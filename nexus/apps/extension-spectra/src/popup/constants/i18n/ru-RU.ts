@@ -58,6 +58,7 @@ export const RU_RU: I18NDict = {
 	spHotkeyPinned: 'Закреплённая',
 	spHotkeyLast: 'Последняя активная',
 	btnPause: 'Пауза/Воспроизведение',
+	btnMute: 'Отключить звук',
 	btnPip: 'Картинка в картинке',
 	btnHotkeyTarget: 'Цель горячей клавиши',
 	btnGotoTab: 'Перейти на вкладку',

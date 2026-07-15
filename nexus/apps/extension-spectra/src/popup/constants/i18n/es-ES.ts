@@ -58,6 +58,7 @@ export const ES_ES: I18NDict = {
 	spHotkeyPinned: 'Fijada',
 	spHotkeyLast: 'Último activo',
 	btnPause: 'Pausar/Reproducir',
+	btnMute: 'Silenciar',
 	btnPip: 'Imagen en imagen',
 	btnHotkeyTarget: 'Destino atajo',
 	btnGotoTab: 'Ir a pestaña',

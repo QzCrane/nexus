@@ -1,0 +1,597 @@
+import { describe, expect, test } from 'bun:test';
+import { SPECTRA_SETTINGS_SCHEMA_VERSION } from '@nexus/contracts';
+import type { SettingsStorageArea } from '../src/background/settings-repository';
+import {
+	SETTINGS_WRITE_DEBOUNCE_MS,
+	SettingsRepository,
+	SettingsRevisionConflictError,
+} from '../src/background/settings-repository';
+
+class FakeStorageArea implements SettingsStorageArea {
+	readonly values: Record<string, unknown>;
+	readonly writes: Array<Record<string, unknown>> = [];
+
+	constructor(initial: Record<string, unknown> = {}) {
+		this.values = structuredClone(initial);
+	}
+
+	async get(keys: string | string[]): Promise<Record<string, unknown>> {
+		const result: Record<string, unknown> = {};
+		for (const key of Array.isArray(keys) ? keys : [keys]) {
+			if (key in this.values) result[key] = structuredClone(this.values[key]);
+		}
+		return result;
+	}
+
+	async set(items: Record<string, unknown>): Promise<void> {
+		const copy = structuredClone(items);
+		this.writes.push(copy);
+		Object.assign(this.values, copy);
+	}
+}
+
+const legacyPitchBinding = {
+	id: 'legacy-pitch',
+	enabled: true,
+	key: { code: 'KeyP', modifiers: { ctrl: true, alt: false, shift: false, meta: false } },
+	action: 'pitch_up',
+};
+
+describe('background settings repository', () => {
+	test('performs a two-phase idempotent migration and merges legacy default flags deterministically', async () => {
+		const storage = new FakeStorageArea({
+			globalSettings: { lang: 'en-US', language: 'es-ES', extensionOwned: 'keep-me' },
+			hotkeySettings: {
+				slots: { slot_01: 'volume_up' },
+				sites: { 'EXAMPLE.COM.': { enabled: true, bindings: [legacyPitchBinding] } },
+				futureField: { retained: true },
+			},
+			siteSettings: { 'EXAMPLE.COM.': { volume: 150, delay: -250, futureAudioField: true } },
+			globalPresets: {
+				Zulu: {
+					config: { volume: 140, delay: -50, futureConfigField: 'zulu' },
+					meta: { type: 'global', name: 'Zulu', createdAt: 2, isDefault: true, futureMetaField: 'zulu' },
+					futurePresetField: 'zulu',
+				},
+				Alpha: {
+					config: { volume: 120 },
+					meta: { type: 'global', name: 'Alpha', createdAt: 1, futureMetaField: 'alpha' },
+					isDefault: true,
+				},
+				opaqueFutureEntry: { futureShape: 'keep-me' },
+			},
+		});
+		const repository = new SettingsRepository(storage);
+
+		const first = await repository.initialize();
+		const writesAfterMigration = storage.writes.length;
+		const second = await repository.initialize();
+
+		expect(first.revision).toBe(0);
+		expect(second.revision).toBe(0);
+		expect(first.globalSettings.lang).toBe('es-ES');
+		expect(first.hotkeySettings.sites['example.com']?.bindings[0]?.enabled).toBe(false);
+		expect(first.hotkeySettings.disabledLegacyBindings?.[0]?.disabledReason).toBe('unsupported_action');
+		expect(first.audioSites['example.com']).toEqual({ volume: 150, delay: 0 });
+		expect(first.audioPresets.Alpha?.meta.isDefault).toBe(true);
+		expect(first.audioPresets.Zulu?.config.delay).toBe(0);
+		expect(first.defaultPresetId).toBe('Alpha');
+		expect(storage.writes).toHaveLength(2);
+		expect(writesAfterMigration).toBe(2);
+		expect(storage.writes[0]?.spectraSettingsMeta).toBeUndefined();
+		expect(Object.keys(storage.writes[1] ?? {})).toEqual(['spectraSettingsMeta']);
+		expect((storage.values.globalSettings as Record<string, unknown>).extensionOwned).toBe('keep-me');
+		expect((storage.values.spectraSettingsMeta as Record<string, unknown>).legacyThemeModeMissing).toBe(true);
+		expect((storage.values.hotkeySettings as Record<string, unknown>).futureField).toEqual({ retained: true });
+		expect((storage.values.siteSettings as Record<string, Record<string, unknown>>)['example.com']?.delay).toBe(0);
+		expect((storage.values.siteSettings as Record<string, Record<string, unknown>>)['example.com']?.futureAudioField).toBe(true);
+		expect(storage.values.defaultPresetId).toBe('Alpha');
+
+		const presets = storage.values.globalPresets as Record<string, Record<string, unknown>>;
+		expect((presets.Alpha as Record<string, Record<string, unknown>>).meta?.isDefault).toBe(true);
+		expect((presets.Zulu as Record<string, Record<string, unknown>>).meta?.isDefault).toBe(false);
+		expect((presets.Zulu as Record<string, Record<string, unknown>>).config?.delay).toBe(0);
+		expect((presets.Zulu as Record<string, unknown>).futurePresetField).toBe('zulu');
+		expect((presets.Zulu as Record<string, Record<string, unknown>>).meta?.futureMetaField).toBe('zulu');
+		expect((presets.Zulu as Record<string, Record<string, unknown>>).config?.futureConfigField).toBe('zulu');
+		expect(presets.opaqueFutureEntry).toEqual({ futureShape: 'keep-me' });
+	});
+
+	test('merges legacy site keys that collide after hostname normalization', async () => {
+		const firstBinding = {
+			id: 'first',
+			enabled: true,
+			key: { code: 'KeyA', modifiers: { ctrl: true, alt: false, shift: false, meta: false } },
+			action: 'volume_up',
+		};
+		const secondBinding = {
+			id: 'second',
+			enabled: true,
+			key: { code: 'KeyB', modifiers: { ctrl: false, alt: true, shift: false, meta: false } },
+			action: 'volume_down',
+		};
+		const storage = new FakeStorageArea({
+			hotkeySettings: {
+				sites: {
+					'EXAMPLE.COM.': { enabled: true, bindings: [firstBinding] },
+					'example.com': { enabled: false, bindings: [secondBinding] },
+				},
+			},
+			siteSettings: {
+				'EXAMPLE.COM.': { volume: 150, delay: -50, firstFutureField: true },
+				'example.com': { pan: 0.25, secondFutureField: true },
+			},
+		});
+		const repository = new SettingsRepository(storage);
+
+		const first = await repository.initialize();
+		const writesAfterMigration = storage.writes.length;
+		const second = await repository.initialize();
+
+		expect(first.hotkeySettings.sites['example.com']?.enabled).toBe(true);
+		expect(first.hotkeySettings.sites['example.com']?.bindings.map(({ id }) => id)).toEqual([
+			'first',
+			'second',
+		]);
+		expect(first.audioSites['example.com']).toEqual({ volume: 150, delay: 0, pan: 0.25 });
+		expect(second.hotkeySettings.sites['example.com']).toEqual(first.hotkeySettings.sites['example.com']);
+		expect(storage.writes).toHaveLength(writesAfterMigration);
+		const persistedSite = (storage.values.siteSettings as Record<string, Record<string, unknown>>)['example.com'];
+		expect(persistedSite).toMatchObject({
+			volume: 150,
+			delay: 0,
+			pan: 0.25,
+			firstFutureField: true,
+			secondFutureField: true,
+		});
+	});
+
+	test('atomically consumes a legacy theme candidate exactly once', async () => {
+		const storage = new FakeStorageArea({
+			globalSettings: { osdEnabled: true, futureGlobalField: 'keep-me' },
+		});
+		const repository = new SettingsRepository(storage);
+		const initial = await repository.initialize();
+
+		expect(initial.globalSettings.themeMode).toBe('system');
+		expect((storage.values.spectraSettingsMeta as Record<string, unknown>).legacyThemeModeMissing).toBe(true);
+		const first = await repository.applyPatch(
+			{ scope: 'legacy-theme', candidate: 'dark' },
+			initial.revision,
+		);
+		await expect(repository.applyPatch(
+			{ scope: 'legacy-theme', candidate: 'light' },
+			initial.revision,
+		)).rejects.toBeInstanceOf(SettingsRevisionConflictError);
+		const second = await repository.applyPatch(
+			{ scope: 'legacy-theme', candidate: 'light' },
+			first.revision,
+		);
+
+		expect(first.globalSettings.themeMode).toBe('dark');
+		expect(first.revision).toBe(1);
+		expect(second.globalSettings.themeMode).toBe('dark');
+		expect(second.revision).toBe(1);
+		await repository.flush();
+		expect((storage.values.globalSettings as Record<string, unknown>).themeMode).toBe('dark');
+		expect((storage.values.globalSettings as Record<string, unknown>).futureGlobalField).toBe('keep-me');
+		expect((storage.values.spectraSettingsMeta as Record<string, unknown>).legacyThemeModeMissing).toBe(false);
+	});
+
+	test('consumes a missing legacy theme without changing the public revision', async () => {
+		const storage = new FakeStorageArea();
+		const repository = new SettingsRepository(storage);
+		const initial = await repository.initialize();
+
+		const result = await repository.applyPatch(
+			{ scope: 'legacy-theme', candidate: null },
+			initial.revision,
+		);
+		expect(result.revision).toBe(initial.revision);
+		await repository.flush();
+		expect((storage.values.spectraSettingsMeta as Record<string, unknown>).legacyThemeModeMissing).toBe(false);
+	});
+
+	test('never lets a late legacy candidate overwrite a v2 theme patch', async () => {
+		const storage = new FakeStorageArea();
+		const repository = new SettingsRepository(storage);
+		const initial = await repository.initialize();
+
+		const modern = await repository.applyPatch(
+			{ scope: 'global', changes: { themeMode: 'light' } },
+			initial.revision,
+		);
+		await expect(repository.applyPatch(
+			{ scope: 'legacy-theme', candidate: 'dark' },
+			initial.revision,
+		)).rejects.toBeInstanceOf(SettingsRevisionConflictError);
+		const legacy = await repository.applyPatch(
+			{ scope: 'legacy-theme', candidate: 'dark' },
+			modern.revision,
+		);
+
+		expect(modern.globalSettings.themeMode).toBe('light');
+		expect(legacy.globalSettings.themeMode).toBe('light');
+		expect(legacy.revision).toBe(modern.revision);
+		await repository.flush();
+		expect((storage.values.globalSettings as Record<string, unknown>).themeMode).toBe('light');
+		expect((storage.values.spectraSettingsMeta as Record<string, unknown>).legacyThemeModeMissing).toBe(false);
+	});
+
+	test('retains legacy global aliases for one release without updating them', async () => {
+		const storage = new FakeStorageArea({
+			globalSettings: {
+				language: 'es-ES',
+				theme: 'dark',
+				futureGlobalField: 'keep-me',
+			},
+		});
+		const repository = new SettingsRepository(storage);
+		const initial = await repository.initialize();
+
+		expect(initial.globalSettings).toMatchObject({ lang: 'es-ES', themeMode: 'dark' });
+		const modern = await repository.applyPatch({
+			scope: 'global',
+			changes: { lang: 'de-DE', themeMode: 'light' },
+		}, initial.revision);
+		expect(modern.globalSettings).toMatchObject({ lang: 'de-DE', themeMode: 'light' });
+		await repository.flush();
+
+		const persisted = storage.values.globalSettings as Record<string, unknown>;
+		expect(persisted).toMatchObject({
+			lang: 'de-DE',
+			themeMode: 'light',
+			language: 'es-ES',
+			theme: 'dark',
+			futureGlobalField: 'keep-me',
+		});
+	});
+
+	test('serializes concurrent audio patches by revision and flushes them as one write', async () => {
+		const storage = new FakeStorageArea();
+		const repository = new SettingsRepository(storage);
+		const initial = await repository.initialize();
+		const migrationWrites = storage.writes.length;
+
+		const [siteAttempt, presetAttempt] = await Promise.allSettled([
+			repository.applyPatch({
+				scope: 'audio-site',
+				domain: 'MUSIC.EXAMPLE.COM.',
+				value: { volume: 160 },
+			}, initial.revision),
+			repository.applyPatch({
+				scope: 'audio-preset',
+				name: 'Voice',
+				value: {
+					config: { mono: true },
+					meta: { type: 'global', name: 'Voice', createdAt: 1 },
+				},
+			}, initial.revision),
+		]);
+
+		expect(siteAttempt.status).toBe('fulfilled');
+		expect(presetAttempt.status).toBe('rejected');
+		if (siteAttempt.status !== 'fulfilled' || presetAttempt.status !== 'rejected') {
+			throw new Error('Unexpected concurrent patch result');
+		}
+		expect(siteAttempt.value.revision).toBe(1);
+		expect(siteAttempt.value.audioSites['music.example.com']?.volume).toBe(160);
+		expect(presetAttempt.reason).toBeInstanceOf(SettingsRevisionConflictError);
+		expect((presetAttempt.reason as SettingsRevisionConflictError).currentRevision).toBe(1);
+
+		const preset = await repository.applyPatch({
+			scope: 'audio-preset',
+			name: 'Voice',
+			value: {
+				config: { mono: true },
+				meta: { type: 'global', name: 'Voice', createdAt: 1 },
+			},
+		}, 1);
+		expect(preset.revision).toBe(2);
+		expect(preset.audioPresets.Voice?.config.mono).toBe(true);
+
+		const [defaultAttempt, staleSiteAttempt] = await Promise.allSettled([
+			repository.applyPatch({ scope: 'default-preset', value: 'Voice' }, 2),
+			repository.applyPatch({
+				scope: 'audio-site',
+				domain: 'other.example',
+				value: { volume: 90 },
+			}, 2),
+		]);
+		expect(defaultAttempt.status).toBe('fulfilled');
+		expect(staleSiteAttempt.status).toBe('rejected');
+		if (defaultAttempt.status !== 'fulfilled' || staleSiteAttempt.status !== 'rejected') {
+			throw new Error('Unexpected concurrent default patch result');
+		}
+		expect(defaultAttempt.value.revision).toBe(3);
+		expect(defaultAttempt.value.defaultPresetId).toBe('Voice');
+		expect((staleSiteAttempt.reason as SettingsRevisionConflictError).currentRevision).toBe(3);
+		expect(storage.writes).toHaveLength(migrationWrites);
+
+		await repository.flush();
+		expect(storage.writes).toHaveLength(migrationWrites + 1);
+		expect((storage.values.spectraSettingsMeta as Record<string, unknown>).revision).toBe(3);
+		expect(storage.values.defaultPresetId).toBe('Voice');
+		expect((storage.values.siteSettings as Record<string, Record<string, unknown>>)['music.example.com']?.volume).toBe(160);
+		expect((storage.values.siteSettings as Record<string, unknown>)['other.example']).toBeUndefined();
+		const voice = requireRecord((storage.values.globalPresets as Record<string, unknown>).Voice);
+		expect(requireRecord(voice.config).mono).toBe(true);
+		expect(requireRecord(voice.meta).isDefault).toBe(true);
+	});
+
+	test('preserves unknown audio fields and deterministically falls back when deleting the default preset', async () => {
+		const storage = new FakeStorageArea({
+			globalSettings: { futureGlobalField: 'keep-global' },
+			hotkeySettings: { futureHotkeyField: 'keep-hotkey' },
+			siteSettings: {
+				'example.com': { volume: 110, delay: 25, futureSiteField: 'keep-site' },
+			},
+			globalPresets: {
+				Zulu: presetEntry('Zulu', 3, { volume: 130 }),
+				Middle: {
+					...presetEntry('Middle', 2, { volume: 120, futureConfigField: 'keep-config' }),
+					futurePresetField: 'keep-preset',
+					meta: {
+						type: 'global',
+						name: 'Middle',
+						createdAt: 2,
+						isDefault: true,
+						futureMetaField: 'keep-meta',
+					},
+				},
+				Alpha: presetEntry('Alpha', 1, { volume: 100 }),
+			},
+			defaultPresetId: 'Middle',
+			spectraSettingsMeta: validMeta(0),
+		});
+		const repository = new SettingsRepository(storage);
+
+		await repository.initialize();
+		const site = await repository.applyPatch({
+			scope: 'audio-site',
+			domain: 'example.com',
+			value: { volume: 175 },
+			mode: 'replace',
+		}, 0);
+		const preset = await repository.applyPatch({
+			scope: 'audio-preset',
+			name: 'Middle',
+			value: {
+				config: { pan: 0.2 },
+				meta: { type: 'global', name: 'Middle', createdAt: 20 },
+			},
+		}, site.revision);
+		await repository.applyPatch({ scope: 'audio-preset', name: 'Middle', value: null }, preset.revision);
+		await repository.flush();
+
+		expect(storage.values.defaultPresetId).toBe('Alpha');
+		const siteSettings = (storage.values.siteSettings as Record<string, Record<string, unknown>>)['example.com'];
+		expect(siteSettings?.volume).toBe(175);
+		expect(siteSettings?.delay).toBe(0);
+		expect(siteSettings?.futureSiteField).toBe('keep-site');
+		expect((storage.values.globalSettings as Record<string, unknown>).futureGlobalField).toBe('keep-global');
+		expect((storage.values.hotkeySettings as Record<string, unknown>).futureHotkeyField).toBe('keep-hotkey');
+		const presets = storage.values.globalPresets as Record<string, Record<string, unknown>>;
+		expect(presets.Middle).toBeUndefined();
+		expect(requireRecord(requireRecord(presets.Alpha).meta).isDefault).toBe(true);
+		expect(requireRecord(requireRecord(presets.Zulu).meta).isDefault).toBe(false);
+	});
+
+	test('preserves unknown preset fields while patching an existing preset', async () => {
+		const storage = new FakeStorageArea({
+			globalPresets: {
+				Voice: {
+					config: { volume: 130, futureConfigField: 'keep-config' },
+					meta: {
+						type: 'global',
+						name: 'Voice',
+						createdAt: 1,
+						isDefault: true,
+						futureMetaField: 'keep-meta',
+					},
+					futurePresetField: 'keep-preset',
+				},
+			},
+			defaultPresetId: 'Voice',
+			spectraSettingsMeta: validMeta(0),
+		});
+		const repository = new SettingsRepository(storage);
+		await repository.initialize();
+		await repository.applyPatch({
+			scope: 'audio-preset',
+			name: 'Voice',
+			value: {
+				config: { delay: 75 },
+				meta: { type: 'global', name: 'Voice', createdAt: 2 },
+			},
+		}, 0);
+		await repository.flush();
+
+		const voice = requireRecord((storage.values.globalPresets as Record<string, unknown>).Voice);
+		const voiceConfig = requireRecord(voice.config);
+		const voiceMeta = requireRecord(voice.meta);
+		expect(voice.futurePresetField).toBe('keep-preset');
+		expect(voiceConfig.volume).toBe(130);
+		expect(voiceConfig.delay).toBe(75);
+		expect(voiceConfig.futureConfigField).toBe('keep-config');
+		expect(voiceMeta.createdAt).toBe(2);
+		expect(voiceMeta.futureMetaField).toBe('keep-meta');
+		expect(voiceMeta.isDefault).toBe(true);
+	});
+
+	test('uses one 250ms trailing storage write and exposes lifecycle flush', async () => {
+		const originalSetTimeout = Object.getOwnPropertyDescriptor(globalThis, 'setTimeout');
+		const originalClearTimeout = Object.getOwnPropertyDescriptor(globalThis, 'clearTimeout');
+		const timers = new Map<number, { callback: () => void; delay: number }>();
+		let nextTimerId = 0;
+		Object.defineProperty(globalThis, 'setTimeout', {
+			configurable: true,
+			value: (callback: () => void, delay: number) => {
+				const timerId = ++nextTimerId;
+				timers.set(timerId, { callback, delay });
+				return timerId;
+			},
+		});
+		Object.defineProperty(globalThis, 'clearTimeout', {
+			configurable: true,
+			value: (timerId: number) => timers.delete(timerId),
+		});
+
+		const storage = new FakeStorageArea();
+		const repository = new SettingsRepository(storage);
+		try {
+			const initial = await repository.initialize();
+			const migrationWrites = storage.writes.length;
+			const first = await repository.applyPatch({ scope: 'global', changes: { osdEnabled: false } }, initial.revision);
+			expect([...timers.values()].map(({ delay }) => delay)).toEqual([SETTINGS_WRITE_DEBOUNCE_MS]);
+			await repository.applyPatch({ scope: 'global', changes: { visualizerEnabled: false } }, first.revision);
+			expect(timers).toHaveLength(1);
+			expect([...timers.values()].map(({ delay }) => delay)).toEqual([250]);
+			expect(storage.writes).toHaveLength(migrationWrites);
+
+			const [timerId, timer] = [...timers.entries()][0] ?? [];
+			if (timerId === undefined || !timer) throw new Error('Trailing write timer was not scheduled');
+			timers.delete(timerId);
+			timer.callback();
+			await waitFor(() => storage.writes.length === migrationWrites + 1);
+			expect((storage.values.spectraSettingsMeta as Record<string, unknown>).revision).toBe(2);
+			expect((storage.values.globalSettings as Record<string, unknown>).osdEnabled).toBe(false);
+			expect((storage.values.globalSettings as Record<string, unknown>).visualizerEnabled).toBe(false);
+
+			await repository.applyPatch({ scope: 'global', changes: { osdEnabled: true } }, 2);
+			expect(timers).toHaveLength(1);
+			await repository.flush();
+			expect(timers).toHaveLength(0);
+			expect((storage.values.spectraSettingsMeta as Record<string, unknown>).revision).toBe(3);
+		} finally {
+			await repository.flush();
+			restoreProperty('setTimeout', originalSetTimeout);
+			restoreProperty('clearTimeout', originalClearTimeout);
+		}
+	});
+
+	test('applies hotkey field patches without clobbering another editor', async () => {
+		const repository = new SettingsRepository(new FakeStorageArea());
+		const initial = await repository.initialize();
+		const slots = await repository.applyPatch(
+			{ scope: 'hotkey-slots', changes: { slot_01: 'volume_down' } },
+			initial.revision,
+		);
+
+		await expect(repository.applyPatch(
+			{ scope: 'hotkey-site', domain: 'music.example.com', value: { enabled: true, bindings: [] } },
+			initial.revision,
+		)).rejects.toBeInstanceOf(SettingsRevisionConflictError);
+
+		const site = await repository.applyPatch(
+			{ scope: 'hotkey-site', domain: 'music.example.com', value: { enabled: true, bindings: [] } },
+			slots.revision,
+		);
+		expect(site.hotkeySettings.slots.slot_01).toBe('volume_down');
+		expect(site.hotkeySettings.sites['music.example.com']?.enabled).toBe(true);
+		await repository.flush();
+	});
+
+	test('applies binding-level site mutations against the latest repository state', async () => {
+		const repository = new SettingsRepository(new FakeStorageArea());
+		const initial = await repository.initialize();
+		const site = await repository.applyPatch({
+			scope: 'hotkey-site-mutation',
+			domain: 'MUSIC.EXAMPLE.COM.',
+			mutation: { type: 'ensure-site', enabled: true },
+		}, initial.revision);
+		const first = await repository.applyPatch({
+			scope: 'hotkey-site-mutation',
+			domain: 'music.example.com',
+			mutation: {
+				type: 'upsert-binding',
+				binding: {
+					id: 'first',
+					enabled: true,
+					key: { code: 'KeyA', modifiers: { ctrl: true, alt: false, shift: false, meta: false } },
+					action: 'volume_up',
+				},
+			},
+		}, site.revision);
+		const second = await repository.applyPatch({
+			scope: 'hotkey-site-mutation',
+			domain: 'music.example.com',
+			mutation: {
+				type: 'upsert-binding',
+				binding: {
+					id: 'second',
+					enabled: true,
+					key: { code: 'KeyB', modifiers: { ctrl: false, alt: true, shift: false, meta: false } },
+					action: 'volume_down',
+				},
+			},
+		}, first.revision);
+
+		expect(second.hotkeySettings.sites['music.example.com']).toMatchObject({ enabled: true });
+		expect(second.hotkeySettings.sites['music.example.com']?.bindings.map(({ id }) => id)).toEqual([
+			'first',
+			'second',
+		]);
+		const removed = await repository.applyPatch({
+			scope: 'hotkey-site-mutation',
+			domain: 'music.example.com',
+			mutation: { type: 'remove-binding', bindingId: 'first' },
+		}, second.revision);
+		expect(removed.hotkeySettings.sites['music.example.com']?.bindings.map(({ id }) => id)).toEqual(['second']);
+		await repository.flush();
+	});
+
+	test('resolves the most-specific domain rule while keeping IP rules exact', async () => {
+		const repository = new SettingsRepository(new FakeStorageArea({
+			siteSettings: {
+				'example.com': { volume: 110 },
+				'music.example.com': { volume: 175 },
+				'127.0.0.1': { volume: 200 },
+			},
+			globalPresets: {},
+			defaultPresetId: null,
+			spectraSettingsMeta: validMeta(0),
+		}));
+
+		expect((await repository.resolveAudioConfig('deep.music.example.com')).volume).toBe(175);
+		expect((await repository.resolveAudioConfig('www.example.com')).volume).toBe(110);
+		expect((await repository.resolveAudioConfig('notexample.com')).volume).toBe(100);
+		expect((await repository.resolveAudioConfig('127.0.0.1')).volume).toBe(200);
+		expect((await repository.resolveAudioConfig('x.127.0.0.1')).volume).toBe(100);
+	});
+});
+
+function presetEntry(name: string, createdAt: number, config: Record<string, unknown>): Record<string, unknown> {
+	return {
+		config,
+		meta: { type: 'global', name, createdAt, isDefault: false },
+	};
+}
+
+function validMeta(revision: number): Record<string, unknown> {
+	return {
+		schemaVersion: SPECTRA_SETTINGS_SCHEMA_VERSION,
+		revision,
+		migratedAt: 1,
+	};
+}
+
+function requireRecord(value: unknown): Record<string, unknown> {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		throw new Error('Expected a settings record');
+	}
+	return value as Record<string, unknown>;
+}
+
+async function waitFor(condition: () => boolean): Promise<void> {
+	for (let attempt = 0; attempt < 20; attempt += 1) {
+		if (condition()) return;
+		await Promise.resolve();
+	}
+	throw new Error('Condition was not reached after flushing microtasks');
+}
+
+function restoreProperty(key: 'setTimeout' | 'clearTimeout', descriptor?: PropertyDescriptor): void {
+	if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+	else Reflect.deleteProperty(globalThis, key);
+}

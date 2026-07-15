@@ -1,163 +1,256 @@
 /**
- * SPECTRA Build Script (esbuild)
- * goal: fast TypeScript build with pre-flight checks, tree-shaking, and bundle analysis
- * output: compressed single-line logs per step
+ * SPECTRA esbuild pipeline.
+ * Default output is a minified production extension; development modes are explicit.
  */
 
 import esbuild from 'esbuild';
-import { cpSync, rmSync, existsSync, mkdirSync, statSync, writeFileSync, readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, resolve } from 'path';
-import { execSync } from 'child_process';
-import { createHash } from 'crypto';
+import {
+	cpSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from 'node:fs';
+import { createHash } from 'node:crypto';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
+import { checkBundleBudget } from './scripts/check-bundle-budget.mjs';
+import { writeI18nAssets } from './scripts/i18n-assets.ts';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const distDir = resolve(__dirname, 'dist');
-const publicDir = resolve(__dirname, 'public');
-
-// inv: single source of truth for version
-const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'));
-const VERSION = pkg.version;
+const projectDir = dirname(fileURLToPath(import.meta.url));
+const distDir = resolve(projectDir, 'dist');
+const publicDir = resolve(projectDir, 'public');
+const packageJson = JSON.parse(readFileSync(resolve(projectDir, 'package.json'), 'utf8'));
+const version = packageJson.version;
 
 const isWatch = process.argv.includes('--watch');
 const isDev = process.argv.includes('--dev') || isWatch;
 const isAnalyze = process.argv.includes('--analyze');
-
-function run(label, cmd, opts = {}) {
-	try {
-		execSync(cmd, { stdio: 'pipe', cwd: __dirname, ...opts });
-		return true;
-	} catch (e) {
-		if (!opts.silent) console.error(`❌ ${label}: ${e.stderr?.toString().trim() || e.message}`);
-		return false;
-	}
-}
-
-if (!isWatch) {
-	if (!run('tsc', 'bun tsc --noEmit --skipLibCheck')) process.exit(1);
-	console.log('✓ TSC OK');
-}
-
-// eff: Fast clean & copy
-if (existsSync(distDir)) rmSync(distDir, { recursive: true });
-mkdirSync(distDir, { recursive: true });
-cpSync(publicDir, distDir, { recursive: true });
-
-// eff: sync version to all files (SSOT: package.json)
-const buildMode = isDev ? 'Dev' : 'Prod';
-const versionString = `v${VERSION} • ${buildMode}`;
-
-// eff: update popup.html version display
-const popupHtmlPath = resolve(distDir, 'popup.html');
-if (existsSync(popupHtmlPath)) {
-	let popupHtml = readFileSync(popupHtmlPath, 'utf-8');
-	popupHtml = popupHtml.replace(/v\d+\.\d+\.\d+\s*•\s*(?:Build|Dev|Prod)/, versionString);
-	writeFileSync(popupHtmlPath, popupHtml);
-}
-
-// eff: update manifest.json version
-const manifestPath = resolve(distDir, 'manifest.json');
-if (existsSync(manifestPath)) {
-	const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
-	manifest.version = VERSION;
-	writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
-}
-
-console.log(`✓ Version: ${VERSION}`);
-
-// eff: Generate content hash for cache busting
-function getContentHash(filePath) {
-	const content = readFileSync(filePath);
-	return createHash('md5').update(content).digest('hex').slice(0, 8);
-}
-
-const cfg = {
-	bundle: true,
-	minify: !isDev,
-	treeShaking: true,
-	splitting: false, // MV3 不支持代码分割
-	sourcemap: isDev ? 'inline' : false,
-	define: { 'process.env.NODE_ENV': isDev ? '"development"' : '"production"' },
-	loader: { '.ts': 'ts', '.tsx': 'tsx' },
-	alias: {
-		'@nexus/contracts': resolve(__dirname, '../../packages/contracts/dist/index.js'),
-		'@nexus/kernel': resolve(__dirname, '../../packages/nexus-kernel/dist/index.js'),
-		'@nexus/audio-engine': resolve(__dirname, '../../packages/features/audio-engine/dist/index.js')
-	},
-	// eff: 消除未使用的代码
-	treeShaking: true,
-	// eff: 标记副作用-free 的模块
-	ignoreAnnotations: false,
-};
+const emitSourceMap = process.argv.includes('--sourcemap');
 
 const entries = [
 	{ entry: 'src/background/index.ts', out: 'background.js' },
 	{ entry: 'src/content/core/index.ts', out: 'content.js' },
 	{ entry: 'src/popup/index.ts', out: 'popup.js' },
 	{ entry: 'src/offscreen/index.ts', out: 'offscreen.js' },
-	{ entry: 'src/offscreen-remote/index.ts', out: 'offscreen-remote.js' },
 	{ entry: 'src/options/index.ts', out: 'options.js' },
-	{ entry: 'src/injector/index.ts', out: 'injector.js' }
+	{ entry: 'src/injector/index.ts', out: 'injector.js' },
 ];
 
-if (isWatch) {
-	console.log('👀 Watch...');
-	const ctxs = await Promise.all(entries.map(async ({ entry, out }) => {
-		const c = await esbuild.context({
-			...cfg, entryPoints: [entry], outfile: `dist/${out}`, logLevel: 'warning',
-			plugins: [{ name: 'notify', setup: b => b.onEnd(r => !r.errors.length && console.log(`✓ ${out}`)) }]
-		});
-		await c.watch(); return c;
-	}));
-	process.on('SIGINT', async () => { await Promise.all(ctxs.map(c => c.dispose())); process.exit(0); });
-} else {
-	const results = [];
-	const metafiles = [];
+function runTypecheck() {
+	try {
+		execFileSync(process.execPath, ['tsc', '--noEmit', '--skipLibCheck'], { cwd: projectDir, stdio: 'pipe' });
+	} catch (error) {
+		const detail = [error.stdout, error.stderr]
+			.map((stream) => stream?.toString().trim())
+			.filter(Boolean)
+			.join('\n') || error.message;
+		throw new Error(`TypeScript check failed:\n${detail}`);
+	}
+}
 
+function prepareDist() {
+	rmSync(distDir, { recursive: true, force: true });
+	mkdirSync(distDir, { recursive: true });
+	cpSync(publicDir, distDir, { recursive: true });
+
+	const manifestPath = resolve(distDir, 'manifest.json');
+	const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+	manifest.version = version;
+	writeFileSync(
+		manifestPath,
+		isDev ? `${JSON.stringify(manifest, null, 2)}\n` : JSON.stringify(manifest),
+	);
+
+	const popupPath = resolve(distDir, 'popup.html');
+	if (existsSync(popupPath)) {
+		const mode = isDev ? 'Dev' : 'Prod';
+		const popup = readFileSync(popupPath, 'utf8')
+			.replace(/v\d+\.\d+\.\d+\s*•\s*(?:Build|Dev|Prod)/, `v${version} • ${mode}`);
+		writeFileSync(popupPath, popup);
+	}
+}
+
+// Production markup is shipped as-is by Chrome. Collapse formatting whitespace
+// without touching quoted attribute values, so source HTML can stay readable.
+function minifyHtml(source) {
+	const withoutComments = source.replace(/<!--[\s\S]*?-->/gu, '');
+	let output = '';
+	let inTag = false;
+	let quote = '';
+	let pendingWhitespace = false;
+	for (const character of withoutComments) {
+		if (quote) {
+			output += character;
+			if (character === quote) quote = '';
+			continue;
+		}
+		if (inTag && (character === '"' || character === "'")) {
+			if (pendingWhitespace && output.at(-1) !== '<') output += ' ';
+			pendingWhitespace = false;
+			quote = character;
+			output += character;
+			continue;
+		}
+		if (/\s/u.test(character)) {
+			pendingWhitespace = true;
+			continue;
+		}
+		if (pendingWhitespace) {
+			const previous = output.at(-1);
+			if (previous
+				&& previous !== '<'
+				&& character !== '>'
+				&& !(previous === '>' && character === '<')) output += ' ';
+			pendingWhitespace = false;
+		}
+		output += character;
+		if (character === '<') inTag = true;
+		else if (character === '>') inTag = false;
+	}
+	return output.trim();
+}
+
+function minifyProductionAssets() {
+	if (isDev) return;
+	for (const name of ['popup.html', 'options.html', 'offscreen.html']) {
+		const path = resolve(distDir, name);
+		if (existsSync(path)) writeFileSync(path, minifyHtml(readFileSync(path, 'utf8')));
+	}
+
+	const localesDir = resolve(distDir, '_locales');
+	if (!existsSync(localesDir)) return;
+	for (const locale of readdirSync(localesDir, { withFileTypes: true })) {
+		if (!locale.isDirectory()) continue;
+		const path = resolve(localesDir, locale.name, 'messages.json');
+		if (!existsSync(path)) continue;
+		writeFileSync(path, JSON.stringify(JSON.parse(readFileSync(path, 'utf8'))));
+	}
+}
+
+async function minifyProductionStyles() {
+	if (isDev) return;
+	for (const name of ['popup.css', 'options.css']) {
+		const path = resolve(distDir, name);
+		if (!existsSync(path)) continue;
+		const result = await esbuild.transform(readFileSync(path, 'utf8'), {
+			loader: 'css',
+			minify: true,
+			legalComments: 'none',
+		});
+		writeFileSync(path, result.code);
+	}
+}
+
+function assertProductionJavaScript(outputs) {
+	if (isDev) return;
+	const diagnosticCalls = [];
+	for (const name of outputs) {
+		const path = resolve(distDir, name);
+		if (/\bconsole\.(?:debug|info|log)\s*\(/u.test(readFileSync(path, 'utf8'))) {
+			diagnosticCalls.push(name);
+		}
+	}
+	if (diagnosticCalls.length > 0) {
+		throw new Error(`Production bundles contain diagnostic console calls: ${diagnosticCalls.join(', ')}`);
+	}
+}
+
+const common = {
+	absWorkingDir: projectDir,
+	bundle: true,
+	treeShaking: true,
+	splitting: false,
+	platform: 'browser',
+	target: ['chrome120'],
+	charset: 'utf8',
+	legalComments: 'none',
+	minify: !isDev,
+	sourcemap: emitSourceMap ? 'external' : false,
+	sourcesContent: false,
+	define: { 'process.env.NODE_ENV': isDev ? '"development"' : '"production"' },
+	// Production keeps actionable warnings/errors but removes diagnostic chatter,
+	// including logger.info implementations bundled from the shared kernel.
+	pure: isDev ? [] : ['console.debug', 'console.info', 'console.log'],
+	drop: isDev ? [] : ['debugger'],
+	loader: { '.ts': 'ts', '.tsx': 'tsx' },
+	alias: {
+		// Bundle the current workspace sources. Release still builds the package
+		// outputs for tests and declarations, but extension code must never pick up
+		// a stale dist/ tree left by an earlier local build.
+		'@nexus/contracts': resolve(projectDir, '../../packages/contracts/src/index.ts'),
+		'@nexus/kernel': resolve(projectDir, '../../packages/nexus-kernel/src/index.ts'),
+		'@nexus/audio-engine': resolve(projectDir, '../../packages/features/audio-engine/src/index.ts'),
+		// PeerJS pulls every Firefox/Safari/legacy-Chrome compatibility shim from
+		// webrtc-adapter. SPECTRA is compiled for Chrome 120+, whose native WebRTC
+		// surface needs only the browserDetails object PeerJS reads at runtime.
+		'webrtc-adapter': resolve(projectDir, 'scripts/chrome120-webrtc-adapter.mjs'),
+	},
+	logLevel: 'warning',
+};
+
+runTypecheck();
+prepareDist();
+await minifyProductionStyles();
+writeI18nAssets(distDir);
+minifyProductionAssets();
+console.log(`✓ SPECTRA ${version} ${isDev ? 'development' : 'production'} build`);
+
+if (isWatch) {
+	const contexts = await Promise.all(entries.map(async ({ entry, out }) => {
+		const context = await esbuild.context({
+			...common,
+			entryPoints: [entry],
+			outfile: resolve(distDir, out),
+			plugins: [{
+				name: 'build-notifier',
+				setup(build) {
+					build.onEnd((result) => {
+						if (result.errors.length === 0) console.log(`✓ ${out}`);
+					});
+				},
+			}],
+		});
+		await context.watch();
+		return context;
+	}));
+	process.on('SIGINT', async () => {
+		await Promise.all(contexts.map((context) => context.dispose()));
+		process.exit(0);
+	});
+	console.log('Watching SPECTRA entrypoints…');
+} else {
+	const metafiles = [];
+	const summary = [];
 	for (const { entry, out } of entries) {
 		const result = await esbuild.build({
-			...cfg,
+			...common,
 			entryPoints: [entry],
-			outfile: `dist/${out}`,
-			write: true,
-			metafile: isAnalyze,
+			outfile: resolve(distDir, out),
+			metafile: true,
 		});
-
-		if (isAnalyze && result.metafile) {
-			metafiles.push({ name: out, meta: result.metafile });
-		}
-
-		const size = (statSync(`dist/${out}`).size / 1024).toFixed(0);
-		results.push(`${out.split('.')[0]}:${size}KB`);
+		metafiles.push({ name: out, metafile: result.metafile });
+		summary.push(`${out}:${Math.ceil(statSync(resolve(distDir, out)).size / 1024)}KiB`);
 	}
 
-	// eff: 生成构建分析报告
-	if (isAnalyze && metafiles.length > 0) {
-		const analysis = metafiles.map(({ name, meta }) => {
-			const inputs = Object.entries(meta.inputs)
-				.map(([path, info]) => ({ path, bytes: info.bytes }))
-				.sort((a, b) => b.bytes - a.bytes)
-				.slice(0, 10);
-			return { name, totalBytes: meta.outputs[`dist/${name}`].bytes, topInputs: inputs };
-		});
+	assertProductionJavaScript(entries.map(({ out }) => out));
+	if (!isDev) checkBundleBudget({ distDir, metafiles });
 
-		writeFileSync('dist/build-analysis.json', JSON.stringify(analysis, null, 2));
-		console.log('✓ Build analysis: dist/build-analysis.json');
+	if (isAnalyze) {
+		const report = metafiles.map(({ name, metafile }) => ({
+			name,
+			sha256: createHash('sha256').update(readFileSync(resolve(distDir, name))).digest('hex'),
+			inputs: Object.entries(metafile.outputs).find(([output]) => {
+				const normalized = output.replaceAll('\\', '/');
+				return normalized === `dist/${name}` || normalized.endsWith(`/dist/${name}`);
+			})?.[1].inputs ?? {},
+		}));
+		writeFileSync(resolve(distDir, 'build-analysis.json'), `${JSON.stringify(report, null, 2)}\n`);
 	}
 
-	console.log(`✓ Build: ${results.join(' | ')}`);
-
-	// eff: 生产构建校验大小
-	if (!isDev) {
-		const maxSize = 1024; // 1MB
-		const oversized = results.filter(r => {
-			const size = parseInt(r.match(/:(\d+)KB/)[1]);
-			return size > maxSize;
-		});
-		if (oversized.length > 0) {
-			console.warn(`⚠️  Oversized bundles: ${oversized.join(', ')}`);
-		}
-	}
+	console.log(`✓ ${summary.join(' | ')}`);
 }

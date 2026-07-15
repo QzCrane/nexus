@@ -27,18 +27,32 @@ export function createAudioGraph(ctx: AudioContext, el: HTMLMediaElement): Audio
 	const panner = ctx.createStereoPanner();
 	const delayNode = ctx.createDelay(1);
 
-	// Connection chain: Source -> Gain -> Bass -> EQ -> Comp -> Panner -> Delay -> Analyser -> Dest
+	// Connection chain defaults to a physically transparent compressor bypass.
+	// The compressor is connected only when the user explicitly enables it.
 	let head: AudioNode = source;
 	head.connect(gain); head = gain;
 	head.connect(bass); head = bass;
 	eqNodes.forEach((n) => { head.connect(n); head = n; });
-	head.connect(comp); head = comp;
+	const chainTail = head;
 	head.connect(panner); head = panner;
 	head.connect(delayNode); head = delayNode;
 	head.connect(analyser);
 	analyser.connect(ctx.destination);
 
-	return { source, gain, bass, comp, eqNodes, analyser, panner, delayNode };
+	return { source, gain, bass, comp, eqNodes, analyser, panner, delayNode, chainTail, compressorEnabled: false };
+}
+
+export function setCompressorEnabled(vm: AudioNodeSet, enabled: boolean): void {
+	if (vm.compressorEnabled === enabled) return;
+	vm.chainTail.disconnect();
+	vm.comp.disconnect();
+	if (enabled) {
+		vm.chainTail.connect(vm.comp);
+		vm.comp.connect(vm.panner);
+	} else {
+		vm.chainTail.connect(vm.panner);
+	}
+	vm.compressorEnabled = enabled;
 }
 
 export function disconnectAudioGraph(vm: AudioNodeSet): void {

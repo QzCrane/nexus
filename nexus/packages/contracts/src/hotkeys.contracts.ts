@@ -91,6 +91,7 @@ export interface HotkeyBinding {
 	action: HotkeyAction;
 	params?: HotkeyParams;
 	conditions?: HotkeyConditions;
+	disabledReason?: 'unsupported_action';
 }
 
 export interface HotkeyParams {
@@ -120,6 +121,7 @@ export interface SiteHotkeyConfig {
 export interface HotkeySettings {
 	slots: SlotMapping;
 	sites: Record<string, SiteHotkeyConfig>;
+	disabledLegacyBindings?: HotkeyBinding[];
 }
 
 export const DEFAULT_MODIFIERS: Readonly<KeyModifiers> = {

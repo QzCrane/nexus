@@ -2,17 +2,23 @@
 // eff: zero-alloc hot path for keydown events
 
 import type { HotkeySettings, HotkeyBinding, SiteHotkeyConfig } from '@nexus/contracts';
-import { DEFAULT_HOTKEY_SETTINGS } from '@nexus/contracts';
+import {
+	DEFAULT_HOTKEY_SETTINGS,
+	findBestHostnameMatch,
+	isSpectraEventEnvelope,
+	normalizeHostname,
+} from '@nexus/contracts';
 import { createLogger } from '../../shared/logger';
+import { sendSpectraRequest } from '../../shared/spectra-client';
 import { createEventListener, createCleanupManager } from '../utils/timing';
-import { executeHotkeyAction, setConfigGetter, setConfigUpdater } from './hotkey-actions';
+import { executeHotkeyAction } from './hotkey-actions';
+import { isTrustedHotkeyEvent } from './hotkey-event';
 import { showToast } from '../ui/toast';
-import { safeStorageGet } from '../../shared/safe-storage';
 
 const log = createLogger('Hotkeys');
 
 let settings: HotkeySettings = { ...DEFAULT_HOTKEY_SETTINGS };
-let cachedSite: SiteHotkeyConfig | null | undefined = undefined;
+let cachedSite: SiteHotkeyConfig | null | undefined;
 let lastHostname = '';
 
 export async function initHotkeyListener(): Promise<() => void> {
@@ -21,36 +27,41 @@ export async function initHotkeyListener(): Promise<() => void> {
 
 	cleanup.add(createEventListener(document, 'keydown', handleKeydown as EventListener, true));
 
-	if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
-		const handler = handleStorageChange;
-		chrome.storage.onChanged.addListener(handler);
-		cleanup.add(() => chrome.storage.onChanged.removeListener(handler));
-	}
+	chrome.runtime.onMessage.addListener(handleSettingsEvent);
+	cleanup.add(() => chrome.runtime.onMessage.removeListener(handleSettingsEvent));
 
 	log.info('Hotkey listener initialized');
 	return cleanup.dispose;
 }
 
-function handleStorageChange(changes: { [key: string]: chrome.storage.StorageChange }): void {
-	if (changes.hotkeySettings?.newValue) {
-		settings = changes.hotkeySettings.newValue;
+function handleSettingsEvent(message: unknown): false {
+	if (isSpectraEventEnvelope(message) && message.type === 'spectra.hotkeys.changed') {
+		settings = message.payload;
 		cachedSite = undefined;
 		log.debug('Settings updated');
 	}
+	return false;
 }
 
 async function loadSettings(): Promise<void> {
 	try {
-		const result = await safeStorageGet<{ hotkeySettings?: HotkeySettings }>(['hotkeySettings'], {});
-		if (result.hotkeySettings) settings = result.hotkeySettings;
+		const result = await sendSpectraRequest('spectra.hotkeys.get', {});
+		if (result.ok) settings = result.data;
 	} catch { }
 }
 
 function getSiteConfig(): SiteHotkeyConfig | null {
 	if (location.hostname === lastHostname && cachedSite !== undefined) return cachedSite;
 	lastHostname = location.hostname;
-	const site = settings.sites[lastHostname];
-	cachedSite = (site && site.enabled) ? site : null;
+	const hostname = normalizeHostname(lastHostname);
+	if (!hostname) {
+		cachedSite = null;
+		return cachedSite;
+	}
+
+	const match = findBestHostnameMatch(hostname, Object.entries(settings.sites), ([domain]) => domain);
+	const site = match?.[1];
+	cachedSite = site?.enabled ? site : null;
 	return cachedSite;
 }
 
@@ -63,6 +74,7 @@ function isInputElement(t: EventTarget | null): boolean {
 }
 
 function handleKeydown(e: KeyboardEvent): void {
+	if (!isTrustedHotkeyEvent(e)) return;
 	const site = getSiteConfig();
 	if (!site) return;
 	if (isInputElement(e.target)) return;
@@ -71,7 +83,7 @@ function handleKeydown(e: KeyboardEvent): void {
 	const ctrl = e.ctrlKey, alt = e.altKey, shift = e.shiftKey, meta = e.metaKey;
 
 	for (const b of site.bindings) {
-		if (!b.enabled) continue;
+		if (!b.enabled || b.disabledReason) continue;
 		const k = b.key;
 		if (k.code === code &&
 			k.modifiers.ctrl === ctrl &&
@@ -111,4 +123,4 @@ function formatLabel(action: string, p?: { step?: number }): string {
 	}
 }
 
-export { setConfigGetter, setConfigUpdater };
+export { setCaptureModeToggler, setConfigGetter, setConfigUpdater } from './hotkey-actions';

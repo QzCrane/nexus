@@ -2,13 +2,13 @@
 // ban: direct state mutation of the global config outside this module
 
 import type { AudioConfig } from '@nexus/kernel';
-import { predictCapture } from '@nexus/audio-engine';
+import { rpcFailure, type SpectraResponse } from '@nexus/contracts';
 import { showOSD, showSpeedOSD } from '../../ui/osd';
-import { safeSend } from '../../core/context-guard';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../../types';
 import type { InternalState } from './types';
 import { updateBadge } from './badge-sync';
 import { markUserInteracted } from '../../audio/dom-volume';
+import { sendSpectraRequest } from '../../../shared/spectra-client';
 
 // eff: updates internal state, triggers badge/OSD refreshes, and persists changes to storage
 export function updateConfig(
@@ -18,8 +18,8 @@ export function updateConfig(
 	changes: Partial<AudioConfig>,
 	options: { showOSD?: boolean; unMute?: boolean; isNativeSync?: boolean } = {},
 	applyStateFn: () => void
-): void {
-	const { messenger, settingsManager } = deps;
+): Promise<SpectraResponse<'spectra.audio.config.set'>> {
+	const { settingsManager } = deps;
 
 	// rule: any configuration update NOT from native sync is considered a user engagement
 	// this activates the "Special Features" like sticky badge and bi-directional sync
@@ -37,7 +37,8 @@ export function updateConfig(
 	}
 
 	// inv: remove transient delta fields before state consolidation
-	delete (newConfig as any).volumeDelta;
+	Reflect.deleteProperty(newConfig, 'volumeDelta');
+	Reflect.deleteProperty(newConfig, 'toggleMute');
 
 	state.config = newConfig;
 
@@ -57,21 +58,47 @@ export function updateConfig(
 		if (isSpeedOnlyChange) {
 			showSpeedOSD(newConfig.speed ?? 1, settings, state.isPopupOpen);
 		} else {
-			const isRestricted = internalState.corsStatus === 'RESTRICTED';
-			const predictedCapture = predictCapture({
-				config: newConfig,
-				isRestricted,
-				visualizerEnabled: settings.visualizerEnabled,
-			});
 			showOSD(
 				state.config,
-				predictedCapture,
+				state.actualMode === 'capture' && state.phase === 'active',
 				settings,
 				state.isPopupOpen
 			);
 		}
 	}
 
-	// eff: sync the updated domain configuration to the background worker for persistence
-	safeSend(() => messenger.send('AUDIO_SET_CONFIG', { config: state.config })).catch(() => { });
+	return persistConfigSnapshot(internalState, state.config, state.generation);
+}
+
+// post: config writes reach the background in update order. The returned
+// promise resolves only after the background has accepted (and queued) this
+// snapshot, allowing runtime.configure to delay its ACK without blocking other
+// local policy side effects.
+export function persistConfigSnapshot(
+	internalState: InternalState,
+	config: AudioConfig,
+	generation: number,
+): Promise<SpectraResponse<'spectra.audio.config.set'>> {
+	const snapshot: AudioConfig = { ...config, eqValues: [...config.eqValues] };
+	const previous = internalState.configPersistenceTail ?? Promise.resolve();
+	const operation = previous.then(async () => {
+		try {
+			return await sendSpectraRequest(
+		'spectra.audio.config.set',
+				{ config: snapshot },
+				{ generation },
+			);
+		} catch (error) {
+			return rpcFailure(
+				'audio_config_persist_failed',
+				error instanceof Error ? error.message : String(error),
+				true,
+			);
+		}
+	});
+	internalState.configPersistenceTail = operation.then(
+		() => undefined,
+		() => undefined,
+	);
+	return operation;
 }

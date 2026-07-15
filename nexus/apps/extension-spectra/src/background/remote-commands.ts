@@ -1,100 +1,156 @@
-// goal: execute and synchronize remote control commands
-import { Actions } from '@nexus/contracts';
+// Executes the fixed, validated remote command set against one bound tab.
 
-export type RemoteCommand =
-	| 'volume_up' | 'volume_down' | 'volume_max' | 'volume_100' | 'mute'
-	| 'play_pause' | 'seek_forward' | 'seek_backward' | 'seek_forward_30' | 'seek_backward_30'
-	| 'speed_up' | 'speed_down' | 'speed_reset' | 'fullscreen' | 'pip';
+import type {
+	AudioConfig,
+	AudioRuntimeStatus,
+	SpectraRequestPayload,
+	SpectraRequestType,
+	SpectraResponseData,
+} from '@nexus/contracts';
+import { isRemoteCommand, type RemoteState } from '../remote/protocol';
+import { sendSpectraTabRequest } from '../shared/spectra-client';
+import { getAudioSession } from './audio-session-store';
 
 type StateCallback = (tabId: number, state: RemoteState) => void;
 
-export interface RemoteState {
-	volume: number; muted: boolean; playing: boolean; speed: number;
-	tabTitle?: string; tabDomain?: string; tabFavIcon?: string;
+let stateCallback: StateCallback | null = null;
+
+export type { RemoteCommand, RemoteState } from '../remote/protocol';
+
+export function setStateCallback(callback: StateCallback | null): void {
+	stateCallback = callback;
 }
 
-let cb: StateCallback | null = null;
-const favCache = new Map<string, string>();
+export async function executeCommand(command: unknown, tabId: number): Promise<boolean> {
+	if (!isRemoteCommand(command) || !Number.isInteger(tabId) || tabId <= 0) return false;
 
-export function setStateCallback(fn: StateCallback | null): void { cb = fn; }
-
-// eff: reuse msg objects where possible? difficult with dynamic args. Optimizing dispatch.
-export async function executeCommand(cmd: RemoteCommand, tid: number): Promise<void> {
-	/* eslint-disable @typescript-eslint/no-unused-vars */
-	switch (cmd) {
-		case 'volume_up': await send(tid, Actions.AUDIO_SET_CONFIG, { config: { volumeDelta: 10, muted: false } }); break;
-		case 'volume_down': await send(tid, Actions.AUDIO_SET_CONFIG, { config: { volumeDelta: -10, muted: false } }); break;
-		case 'volume_max': await send(tid, Actions.AUDIO_SET_CONFIG, { config: { volume: 800, muted: false } }); break;
-		case 'volume_100': await send(tid, Actions.AUDIO_SET_CONFIG, { config: { volume: 100, muted: false } }); break;
-		case 'mute': await send(tid, Actions.AUDIO_SET_CONFIG, { config: { toggleMute: true } }); break;
-		case 'play_pause': await send(tid, Actions.MEDIA_TOGGLE_PLAY); break;
-		case 'seek_forward': await send(tid, Actions.VIDEO_SEEK, { delta: 10 }); break;
-		case 'seek_backward': await send(tid, Actions.VIDEO_SEEK, { delta: -10 }); break;
-		case 'seek_forward_30': await send(tid, Actions.VIDEO_SEEK, { delta: 30 }); break;
-		case 'seek_backward_30': await send(tid, Actions.VIDEO_SEEK, { delta: -30 }); break;
-		case 'speed_up': await send(tid, Actions.MEDIA_SET_SPEED, { delta: 0.25 }); break;
-		case 'speed_down': await send(tid, Actions.MEDIA_SET_SPEED, { delta: -0.25 }); break;
-		case 'speed_reset': await send(tid, Actions.MEDIA_SET_SPEED, { speed: 1 }); break;
-		case 'fullscreen': await send(tid, Actions.VIDEO_FULLSCREEN); break;
-		case 'pip': await send(tid, Actions.MEDIA_TOGGLE_PIP); break;
+	switch (command) {
+		case 'volume_up':
+			await updateAudioConfig(tabId, (config) => ({
+				...config,
+				volume: Math.min(800, config.volume + 10),
+				muted: false,
+			}));
+			break;
+		case 'volume_down':
+			await updateAudioConfig(tabId, (config) => ({
+				...config,
+				volume: Math.max(0, config.volume - 10),
+				muted: false,
+			}));
+			break;
+		case 'volume_max':
+			await updateAudioConfig(tabId, (config) => ({ ...config, volume: 800, muted: false }));
+			break;
+		case 'volume_100':
+			await updateAudioConfig(tabId, (config) => ({ ...config, volume: 100, muted: false }));
+			break;
+		case 'mute':
+			await updateAudioConfig(tabId, (config) => ({ ...config, muted: !config.muted }));
+			break;
+		case 'play_pause':
+			await requestTab(tabId, 'spectra.media.play.toggle', {});
+			break;
+		case 'seek_forward':
+			await requestTab(tabId, 'spectra.video.seek', { delta: 10 });
+			break;
+		case 'seek_backward':
+			await requestTab(tabId, 'spectra.video.seek', { delta: -10 });
+			break;
+		case 'seek_forward_30':
+			await requestTab(tabId, 'spectra.video.seek', { delta: 30 });
+			break;
+		case 'seek_backward_30':
+			await requestTab(tabId, 'spectra.video.seek', { delta: -30 });
+			break;
+		case 'speed_up':
+			await requestTab(tabId, 'spectra.media.speed.set', { delta: 0.25 });
+			break;
+		case 'speed_down':
+			await requestTab(tabId, 'spectra.media.speed.set', { delta: -0.25 });
+			break;
+		case 'speed_reset':
+			await requestTab(tabId, 'spectra.media.speed.set', { speed: 1 });
+			break;
+		case 'fullscreen':
+			await requestTab(tabId, 'spectra.video.fullscreen.toggle', {});
+			break;
+		case 'pip':
+			await requestTab(tabId, 'spectra.media.pip.toggle', {});
+			break;
 	}
-	await syncState(tid);
+
+	await syncState(tabId);
+	return true;
 }
 
-// eff: aggregated state sync with caching
-export async function syncState(tid: number): Promise<void> {
-	if (!cb) return;
+export async function syncState(tabId: number): Promise<void> {
+	if (!stateCallback || !Number.isInteger(tabId) || tabId <= 0) return;
 	try {
-		const [aRes, mRes, tab] = await Promise.all([
-			send(tid, Actions.AUDIO_GET_STATUS) as Promise<{ config?: { volume?: number; muted?: boolean }; isPlaying?: boolean } | undefined>,
-			send(tid, Actions.MEDIA_GET_STATE) as Promise<{ playing?: boolean; speed?: number } | undefined>,
-			chrome.tabs.get(tid).catch(() => undefined)
+		const [audioSession, mediaResponse, tab] = await Promise.all([
+			getAudioSession(tabId).catch(() => null),
+			requestTab(tabId, 'spectra.media.state.get', {}).catch(() => undefined),
+			chrome.tabs.get(tabId).catch(() => undefined),
 		]);
 
-		let dom = '', fav = '';
+		const config = audioSession?.actualConfig;
+		let tabDomain = '';
 		if (tab?.url) {
-			try { dom = new URL(tab.url).hostname; } catch { }
-			if (tab.favIconUrl) fav = await getFav(tab.favIconUrl);
+			try {
+				const parsed = new URL(tab.url);
+				if (parsed.protocol === 'http:' || parsed.protocol === 'https:') tabDomain = parsed.hostname;
+			} catch {
+				// Non-web tabs intentionally expose no domain.
+			}
 		}
 
-		cb(tid, {
-			volume: aRes?.config?.volume ?? 100,
-			muted: aRes?.config?.muted ?? false,
-			playing: mRes?.playing ?? aRes?.isPlaying ?? false,
-			speed: mRes?.speed ?? 1,
-			tabTitle: tab?.title || '',
-			tabDomain: dom,
-			tabFavIcon: fav,
+		stateCallback(tabId, {
+			generation: firstSafeInteger(audioSession?.generation) ?? 0,
+			volume: finiteNumber(config?.volume, 100),
+			muted: config?.muted === true,
+			playing: mediaResponse?.playing ?? false,
+			speed: finiteNumber(mediaResponse?.speed, 1),
+			tabTitle: (tab?.title ?? '').slice(0, 512),
+			tabDomain,
 		});
-	} catch { }
+	} catch {
+		// The tab may have navigated or closed between authentication and sync.
+	}
 }
 
-function send(tid: number, act: string, pl?: unknown) {
-	return chrome.tabs.sendMessage(tid, pl ? { action: act, payload: pl } : { action: act });
+async function getAudioStatus(tabId: number): Promise<AudioRuntimeStatus | undefined> {
+	const response = await sendSpectraTabRequest(tabId, 'spectra.audio.runtime.get', {}).catch(() => undefined);
+	return response?.ok ? response.data : undefined;
 }
 
-async function getFav(url: string): Promise<string> {
-	if (!url || url.length < 5) return '';
-	if (url.startsWith('data:')) return url;
-	const c = favCache.get(url);
-	if (c) return c;
+async function updateAudioConfig(
+	tabId: number,
+	update: (config: AudioConfig) => AudioConfig,
+): Promise<void> {
+	const status = await getAudioStatus(tabId);
+	if (!status) throw new Error('Audio runtime is unavailable');
+	const response = await sendSpectraTabRequest(
+		tabId,
+		'spectra.audio.runtime.configure',
+		{ config: update(status.config) },
+	);
+	if (!response.ok) throw new Error(response.error.message);
+}
 
-	try {
-		const r = await fetch(url);
-		const b = await r.blob();
-		return new Promise(res => {
-			const rd = new FileReader();
-			rd.onloadend = () => {
-				const d = rd.result as string;
-				favCache.set(url, d);
-				if (favCache.size > 100) {
-					const k = favCache.keys().next().value;
-					if (k) favCache.delete(k);
-				}
-				res(d);
-			};
-			rd.onerror = () => res('');
-			rd.readAsDataURL(b);
-		});
-	} catch { return ''; }
+async function requestTab<T extends SpectraRequestType>(
+	tabId: number,
+	type: T,
+	payload: SpectraRequestPayload<T>,
+): Promise<SpectraResponseData<T>> {
+	const response = await sendSpectraTabRequest(tabId, type, payload);
+	if (!response.ok) throw new Error(response.error.message);
+	return response.data;
+}
+
+function finiteNumber(value: unknown, fallback: number): number {
+	return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function firstSafeInteger(...values: unknown[]): number | undefined {
+	return values.find((value): value is number => Number.isSafeInteger(value) && (value as number) >= 0);
 }

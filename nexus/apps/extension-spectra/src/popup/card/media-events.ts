@@ -2,30 +2,30 @@
 
 import type { AudioConfig } from '@nexus/kernel';
 import type { CardUIElements } from '../types';
-import { sendToTab } from '../utils/dom';
+import { requestTab } from '../utils/dom';
 import { syncSidePanelSpeed } from '../side-panel/controls';
-import { safeStorageGet, safeStorageSet } from '../../shared/safe-storage';
+import { getHotkeyTarget, setHotkeyTarget } from '../../shared/registry-client';
 
-const PAUSE_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
-const PLAY_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+const SVG_NS = 'http://www.w3.org/2000/svg';
 
 // eff: attaches click and input handlers to playback buttons, speed controls, and tab-focus utilities
 // note: speed controls now use unified update flow through onSpeedChange callback
 export function bindMediaControls(ui: CardUIElements, tabId: number, update?: (changes: Partial<AudioConfig>) => void): void {
 	if (ui.btnPause) {
 		ui.btnPause.onclick = async () => {
-			const res = await sendToTab<{ playing: boolean }>(tabId, 'MEDIA_TOGGLE_PLAY', {});
+			const res = await requestTab(tabId, 'spectra.media.play.toggle', {});
 			if (res && ui.btnPause) {
-				ui.btnPause.innerHTML = res.playing ? PAUSE_SVG : PLAY_SVG;
+				ui.btnPause.replaceChildren(createPlaybackIcon(res.playing));
 			}
 		};
 	}
 
 	if (ui.btnPip) {
 		ui.btnPip.onclick = async () => {
-			const res = await sendToTab<{ active: boolean }>(tabId, 'MEDIA_TOGGLE_PIP', {});
+			const res = await requestTab(tabId, 'spectra.media.pip.toggle', {});
 			if (res && ui.btnPip) {
 				ui.btnPip.classList.toggle('active', res.active);
+				ui.btnPip.setAttribute('aria-pressed', String(res.active));
 			}
 		};
 	}
@@ -67,19 +67,25 @@ export function bindMediaControls(ui: CardUIElements, tabId: number, update?: (c
 
 	if (ui.btnHotkeyTarget) {
 		const btn = ui.btnHotkeyTarget;
+		btn.setAttribute('aria-pressed', 'false');
 
-		safeStorageGet<{ hotkeyTargetTabId?: number }>(['hotkeyTargetTabId'], {}).then(result => {
-			if (result.hotkeyTargetTabId === tabId) {
+		void getHotkeyTarget().then(result => {
+			if (result.tabId === tabId) {
 				btn.classList.add('active');
+				btn.setAttribute('aria-pressed', 'true');
 			}
-		});
+		}).catch(() => undefined);
 
 		btn.onclick = () => {
-			safeStorageSet({ hotkeyTargetTabId: tabId }).then(() => {
+			void setHotkeyTarget(tabId).then(() => {
 				// note: enforce exclusive "active" state across all rendered cards in the popup
-				document.querySelectorAll('.btn-hotkey-target').forEach(b => b.classList.remove('active'));
+				document.querySelectorAll<HTMLElement>('.btn-hotkey-target').forEach((button) => {
+					button.classList.remove('active');
+					button.setAttribute('aria-pressed', 'false');
+				});
 				btn.classList.add('active');
-			});
+				btn.setAttribute('aria-pressed', 'true');
+			}).catch(() => undefined);
 		};
 	}
 
@@ -88,5 +94,31 @@ export function bindMediaControls(ui: CardUIElements, tabId: number, update?: (c
 			chrome.tabs.update(tabId, { active: true });
 		};
 	}
+}
+
+function createPlaybackIcon(playing: boolean): SVGSVGElement {
+	const svg = document.createElementNS(SVG_NS, 'svg');
+	svg.setAttribute('width', '12');
+	svg.setAttribute('height', '12');
+	svg.setAttribute('viewBox', '0 0 24 24');
+	svg.setAttribute('fill', 'currentColor');
+	svg.setAttribute('aria-hidden', 'true');
+
+	if (playing) {
+		for (const x of ['6', '14']) {
+			const rect = document.createElementNS(SVG_NS, 'rect');
+			rect.setAttribute('x', x);
+			rect.setAttribute('y', '4');
+			rect.setAttribute('width', '4');
+			rect.setAttribute('height', '16');
+			svg.append(rect);
+		}
+	} else {
+		const path = document.createElementNS(SVG_NS, 'path');
+		path.setAttribute('d', 'M8 5v14l11-7z');
+		svg.append(path);
+	}
+
+	return svg;
 }
 

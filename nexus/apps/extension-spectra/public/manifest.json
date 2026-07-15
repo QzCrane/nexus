@@ -1,11 +1,14 @@
 {
   "manifest_version": 3,
+  "minimum_chrome_version": "120",
   "name": "__MSG_extName__",
   "version": "0.0.0",
   "description": "__MSG_extDescription__",
   "default_locale": "en",
   "permissions": [
     "tabs",
+    "alarms",
+    "webNavigation",
     "storage",
     "tabCapture",
     "offscreen",
@@ -48,17 +51,6 @@
       ],
       "run_at": "document_start",
       "world": "ISOLATED"
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "offscreen.html",
-        "offscreen.js"
-      ],
-      "matches": [
-        "<all_urls>"
-      ]
     }
   ],
   "commands": {

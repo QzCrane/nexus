@@ -1,79 +1,106 @@
 // goal: orchestrates content script initialization, core module bootstrapping, and lifecycle loops
 document.documentElement.setAttribute('data-spectra-content-loaded', 'true');
 
-import { createMessenger, DEFAULT_AUDIO_CONFIG } from '@nexus/kernel';
 import { PolicyEngine, WebAudioController } from '@nexus/audio-engine';
 
-import { isExtensionContextValid, safeSend } from './context-guard';
+import { isExtensionContextValid } from './context-guard';
 import { createSettingsManager } from './settings-manager';
 import { createCaptureManager } from '../audio/capture-manager';
 import type { CaptureManager } from '../audio/capture-manager';
 import { createPolicyExecutor } from '../logic/policy-executor';
-import { createMessageHandler, flushPendingQueue } from '../logic/message-handler';
+import { createMessageHandler } from '../logic/message-handler';
 import { logger } from '../../shared/logger';
 
 import {
   createMediaObserver,
-  createStateReapplyInterval,
-  createMediaReportInterval,
+  createMediaStateReporter,
   reportMediaState,
   setupUserGestureListeners,
   setupPopupConnectionListener,
   setupFullscreenHandler,
   createNavigationObserver,
 } from './lifecycle';
-import { initHotkeyListener, setConfigGetter, setConfigUpdater } from '../input/hotkey-listener';
+import {
+  initHotkeyListener,
+  setCaptureModeToggler,
+  setConfigGetter,
+  setConfigUpdater,
+} from '../input/hotkey-listener';
 import { Registry } from '../../shared/registry';
 import { createSnapshot, mountStub, consumeStub } from './sentinel';
-import { getSiteBridge } from '../logic/site-bridge/registry';
+import { sendSpectraRequest } from '../../shared/spectra-client';
+import { assembleInitialState } from './initial-state';
 import type { ContentDeps, PolicyExecutorState } from '../types';
 import type { PolicyExecutor } from '../logic/policy-executor';
 import type { SettingsManager } from './settings-manager';
 
 const log = logger.content;
 
-// task: handle legacy versions that don't have the teardown listener
-// note: pre-PHS versions don't know how to clean up, so we manually scan and kill them
-function cleanupLegacyTransitions() {
-  const media = document.querySelectorAll('video, audio');
-  log.debug(`[Transition] Scanning ${media.length} media elements for legacy traces...`);
-
-  media.forEach(el => {
-    const m = el as any;
-    // rule: if an old _vm exists, try to disconnect it to release the media element
-    if (m._vm) {
-      try {
-        if (m._vm.source) m._vm.source.disconnect();
-        if (m._vm.context && m._vm.context.close) m._vm.context.close();
-      } catch (e) { }
-      delete m._vm;
-    }
-    // rule: clear dataset flags that would prevent new version from attaching
-    delete m.dataset.vmAttached;
-    delete m.dataset.vmProbed;
-  });
+interface SpectraContentWindow extends Window {
+  __SPECTRA_TEARDOWN__?: () => void;
+  __SPECTRA_INJECTED__?: boolean;
+  __SPECTRA_VERSION__?: string;
+  __SPECTRA_LISTENERS_READY__?: boolean;
+  __SPECTRA_AUDIO_CONTROLLER_V2__?: WebAudioController;
+  __SPECTRA_CONTENT_RUNTIME__?: ContentRuntime;
 }
 
-window.addEventListener('SPECTRA_TERMINATED_OLD_VERSION', () => {
-  if ((window as any).__SPECTRA_TEARDOWN__) {
-    (window as any).__SPECTRA_TEARDOWN__();
-    delete (window as any).__SPECTRA_TEARDOWN__;
-  }
+const spectraWindow = window as SpectraContentWindow;
+
+interface ContentRuntime {
+  readonly revision: string;
+  readonly registry: Registry;
+  disposed: boolean;
+  state?: PolicyExecutorState;
+  dispose(): void;
+}
+
+const CONTENT_RUNTIME_REVISION = '2.0.1';
+
+function createContentRuntime(): ContentRuntime {
+  const registry = new Registry();
+  const runtime: ContentRuntime = {
+    revision: CONTENT_RUNTIME_REVISION,
+    registry,
+    disposed: false,
+    dispose() {
+      if (runtime.disposed) return;
+      runtime.disposed = true;
+      registry.dispose();
+      if (runtime.state) mountStub(createSnapshot(runtime.state));
+      if (spectraWindow.__SPECTRA_CONTENT_RUNTIME__ === runtime) {
+        spectraWindow.__SPECTRA_LISTENERS_READY__ = false;
+      }
+    },
+  };
+  return runtime;
+}
+
+function isCurrentRuntime(runtime: ContentRuntime): boolean {
+  return !runtime.disposed && spectraWindow.__SPECTRA_CONTENT_RUNTIME__ === runtime;
+}
+
+// A dynamic reinjection disposes listeners and UI state immediately. The audio
+// controller/graphs remain page-owned because MediaElementSourceNode bindings
+// cannot be recreated safely after their AudioContext is closed.
+spectraWindow.__SPECTRA_CONTENT_RUNTIME__?.dispose();
+spectraWindow.__SPECTRA_TEARDOWN__?.();
+
+const contentRuntime = createContentRuntime();
+spectraWindow.__SPECTRA_CONTENT_RUNTIME__ = contentRuntime;
+spectraWindow.__SPECTRA_TEARDOWN__ = () => contentRuntime.dispose();
+spectraWindow.__SPECTRA_INJECTED__ = true;
+spectraWindow.__SPECTRA_VERSION__ = chrome.runtime.getManifest().version;
+spectraWindow.__SPECTRA_LISTENERS_READY__ = false;
+
+contentRuntime.registry.addEventListener(window, 'SPECTRA_TERMINATED_OLD_VERSION', () => {
+  contentRuntime.dispose();
 });
 
-// task: always ensure a clean slate, especially after extension reloads where isolated variables are lost
-cleanupLegacyTransitions();
-
-// eff: force re-initialization on every injection (static + dynamic coexist safely)
-(window as any).__SPECTRA_INJECTED__ = true;
-(window as any).__SPECTRA_VERSION__ = chrome.runtime.getManifest().version;
-(window as any).__SPECTRA_LISTENERS_READY__ = false;
-
-initSpectra();
+void initSpectra(contentRuntime);
 
 interface InitContext {
   registry: Registry;
-  messenger: ReturnType<typeof createMessenger>;
   policyEngine: PolicyEngine;
   audioController: WebAudioController;
   settingsManager: SettingsManager;
@@ -83,24 +110,19 @@ interface InitContext {
 }
 
 // eff: tries to inherit state from a zero-refresh stub, or falls back to background fetch
-async function createInitialState(messenger: ReturnType<typeof createMessenger>): Promise<PolicyExecutorState> {
+async function createInitialState(): Promise<{ state: PolicyExecutorState; recovered: boolean }> {
   const recoveredState = consumeStub();
+  const sessionRequest = sendSpectraRequest('spectra.audio.session.current', {})
+    .then((result) => result.ok ? result.data : null)
+    .catch(() => null);
+  const configRequest = recoveredState?.config
+    ? Promise.resolve(null)
+    : sendSpectraRequest('spectra.audio.config.get', {})
+      .then((result) => result.ok ? result.data : null)
+      .catch(() => null);
+  const [session, config] = await Promise.all([sessionRequest, configRequest]);
 
-  let initialConfig = recoveredState?.config;
-  if (!initialConfig) {
-    try {
-      const bgStatus = await messenger.send('AUDIO_GET_STATUS');
-      if (bgStatus?.config) initialConfig = bgStatus.config;
-    } catch { /* background unreachable on first load race */ }
-  }
-
-  return {
-    config: initialConfig ?? { ...DEFAULT_AUDIO_CONFIG },
-    activeMode: null,
-    hasGesture: false,
-    userHasInteracted: !!recoveredState,
-    isPopupOpen: false,
-  };
+  return assembleInitialState({ handoff: recoveredState, session, config });
 }
 
 // eff: sets up core messaging infrastructure (onMessage listener + policy executor)
@@ -112,38 +134,20 @@ function bootstrapMessaging(ctx: InitContext): void {
   ctx.registry.track(() => chrome.runtime.onMessage.removeListener(messageHandler));
 }
 
-// eff: registers teardown cleanup hooks into the registry
-function bootstrapTeardown(ctx: InitContext): void {
-  ctx.registry.track(() => {
-    log.debug('[Registry] Tearing down AudioContext...');
-    ctx.audioController.destroyContext().catch(() => { });
-  });
-
-  ctx.registry.track(() => {
-    const snapshot = createSnapshot(ctx.state);
-    mountStub(snapshot);
-  });
-
-  (window as any).__SPECTRA_TEARDOWN__ = () => {
-    ctx.registry.dispose();
-    log.info('SPECTRA Version Transition: Old logic dismantled.');
-  };
-}
-
-// eff: registers all lifecycle listeners (popup, media, gestures, fullscreen, navigation, hotkeys, rate sync)
-function bootstrapLifecycle(ctx: InitContext): void {
-  const { state, messenger, audioController, captureManager, registry, deps } = ctx;
+// eff: registers all lifecycle listeners (popup, media, gestures, fullscreen, navigation, hotkeys)
+function bootstrapLifecycle(ctx: InitContext, runtime: ContentRuntime): void {
+  const { state, audioController, captureManager, registry, deps } = ctx;
   const policyExecutor = deps.policyExecutor!;
 
-  setupPopupConnectionListener(state, () => policyExecutor.updateBadge());
+  registry.track(setupPopupConnectionListener(state));
 
   registry.track(createMediaObserver(state, audioController, policyExecutor));
 
-  const stateReapplyId = createStateReapplyInterval(state, policyExecutor);
-  registry.track(() => clearInterval(stateReapplyId));
+  registry.track(createMediaStateReporter(state));
 
-  const mediaReportId = createMediaReportInterval(messenger, state);
-  registry.track(() => clearInterval(mediaReportId));
+  registry.addEventListener(window, 'pagehide', () => {
+	void sendSpectraRequest('spectra.audio.session.flush', {}).catch(() => undefined);
+  });
 
   const gestureCleanup = setupUserGestureListeners(state, audioController, policyExecutor);
   registry.track(gestureCleanup);
@@ -152,102 +156,120 @@ function bootstrapLifecycle(ctx: InitContext): void {
 
   registry.track(createNavigationObserver({
     policyExecutor,
-    onNavigate: () => policyExecutor.applyState(),
+    onNavigate: () => policyExecutor.applyState({ navigation: true }),
   }));
 
   setConfigGetter(() => state.config);
   setConfigUpdater((changes, options) => policyExecutor.updateConfig(changes, options));
+  registry.track(setCaptureModeToggler(() => policyExecutor.toggleCaptureMode()));
 
-  registry.addEventListener(window, 'message', ((event: MessageEvent) => {
-    if (event.data?.type === 'SPECTRA_RATE') {
-      const bridge = getSiteBridge();
-      if (bridge.shouldInhibitDomSync()) return;
-
-      const newSpeed = event.data.speed;
-      policyExecutor.updateConfig({ speed: newSpeed }, { isNativeSync: true });
-    }
-  }) as any);
-
-  initHotkeyListener().then(cleanup => { registry.track(cleanup); });
+  void initHotkeyListener().then((cleanup) => {
+    if (isCurrentRuntime(runtime)) registry.track(cleanup);
+    else cleanup();
+  });
 }
 
 // eff: applies the initial state -- either from a hot swap stub or a fresh background load
-async function applyInitialState(ctx: InitContext): Promise<void> {
-  const { state, messenger, settingsManager, deps } = ctx;
+async function applyInitialState(
+  ctx: InitContext,
+  recovered: boolean,
+  runtime: ContentRuntime,
+): Promise<void> {
+  if (!isCurrentRuntime(runtime)) return;
+  const { state, settingsManager, deps } = ctx;
   const policyExecutor = deps.policyExecutor!;
-  const hasRecovered = stdhubConsumed();
-
   try {
-    if (hasRecovered) {
-      log.info('[Handoff] State recovered from stub.');
+    if (recovered) {
+      await settingsManager.load();
+      if (!isCurrentRuntime(runtime)) return;
+      log.info('[Handoff] Runtime state recovered from an authenticated source.');
       policyExecutor.applyState();
     } else {
-      await loadConfigAndApply(messenger, state, settingsManager, policyExecutor);
+      await loadConfigAndApply(state, settingsManager, policyExecutor, runtime);
     }
-    reportMediaState(messenger, state);
+    if (!isCurrentRuntime(runtime)) return;
+    reportMediaState(state);
   } catch (e) {
     log.error('Initialization failed:', e);
   }
 }
 
-// eff: wrapper around consumeStub() that returns true if a build was recovered
-function stdhubConsumed(): boolean {
-  return consumeStub() !== undefined;
-}
-
 // goal: bootstraps the extension logic within the host page context
-async function initSpectra(): Promise<void> {
-  const registry = new Registry();
+async function initSpectra(runtime: ContentRuntime): Promise<void> {
+  const { registry } = runtime;
   log.info(`SPECTRA Initializing... ${chrome.runtime.getManifest().version}`);
 
-  const messenger = createMessenger('content');
   const policyEngine = new PolicyEngine();
-  const audioController = new WebAudioController();
-  const settingsManager = createSettingsManager(messenger);
-  const captureManager = createCaptureManager(messenger);
-  const state = await createInitialState(messenger);
+  const audioController = spectraWindow.__SPECTRA_AUDIO_CONTROLLER_V2__ ?? new WebAudioController();
+  spectraWindow.__SPECTRA_AUDIO_CONTROLLER_V2__ = audioController;
+  const settingsManager = createSettingsManager();
+  const captureManager = createCaptureManager();
+  const initial = await createInitialState();
+  if (!isCurrentRuntime(runtime)) return;
+  const state = initial.state;
+  runtime.state = state;
 
-  const deps: ContentDeps = { messenger, policyEngine, audioController, captureManager, settingsManager, state, getVisualizerData: () => audioController.getVisualizerData() };
+	if (initial.recovered) {
+		captureManager.restoreState({
+			active: state.actualMode === 'capture',
+			phase: state.phase,
+			generation: state.generation,
+			error: state.lastError,
+		});
+	}
 
-  bootstrapMessaging({ registry, messenger, policyEngine, audioController, settingsManager, captureManager, state, deps });
+  const deps: ContentDeps = { policyEngine, audioController, captureManager, settingsManager, state, getVisualizerData: () => audioController.getVisualizerData() };
+
+  bootstrapMessaging({ registry, policyEngine, audioController, settingsManager, captureManager, state, deps });
 
   const policyExecutor = await createPolicyExecutor(
-    { messenger, policyEngine, audioController, captureManager, settingsManager },
-    state
+    { policyEngine, audioController, captureManager, settingsManager },
+    state,
+    () => isCurrentRuntime(runtime),
   );
+  if (!policyExecutor || !isCurrentRuntime(runtime)) return;
   deps.policyExecutor = policyExecutor;
-  flushPendingQueue();
+  registry.track(policyExecutor);
 
-  bootstrapTeardown({ registry, messenger, policyEngine, audioController, settingsManager, captureManager, state, deps });
-  bootstrapLifecycle({ registry, messenger, policyEngine, audioController, settingsManager, captureManager, state, deps });
+  bootstrapLifecycle(
+    { registry, policyEngine, audioController, settingsManager, captureManager, state, deps },
+    runtime,
+  );
 
-  await applyInitialState({ registry, messenger, policyEngine, audioController, settingsManager, captureManager, state, deps });
+  await applyInitialState(
+    { registry, policyEngine, audioController, settingsManager, captureManager, state, deps },
+    initial.recovered,
+    runtime,
+  );
 
-  (window as any).__SPECTRA_LISTENERS_READY__ = true;
+  if (!isCurrentRuntime(runtime)) return;
+  spectraWindow.__SPECTRA_LISTENERS_READY__ = true;
   log.info('Content Script ready.');
 }
 
 // eff: retrieves initial configuration from storage and executes the first state application
 async function loadConfigAndApply(
-  messenger: ReturnType<typeof createMessenger>,
   state: PolicyExecutorState,
   settingsManager: SettingsManager,
-  policyExecutor: PolicyExecutor
+  policyExecutor: PolicyExecutor,
+  runtime: ContentRuntime,
 ): Promise<void> {
-  if (!isExtensionContextValid()) {
+  if (!isCurrentRuntime(runtime) || !isExtensionContextValid()) {
     log.debug('Extension context invalidated, skipping config load.');
     return;
   }
 
   try {
-    const status = await safeSend(() => messenger.send('AUDIO_GET_STATUS'));
-    if (status?.config) {
-      state.config = status.config;
+    const result = await sendSpectraRequest('spectra.audio.config.get', {});
+    if (!isCurrentRuntime(runtime)) return;
+    if (result.ok) {
+      state.config = result.data;
     }
 
     await settingsManager.load();
+    if (!isCurrentRuntime(runtime)) return;
 
-    reportMediaState(messenger);
+    reportMediaState();
 
     policyExecutor.applyState();
   } catch {
