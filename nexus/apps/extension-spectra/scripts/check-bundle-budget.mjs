@@ -6,16 +6,16 @@ const KiB = 1024;
 export const BUNDLE_BUDGETS = Object.freeze({
 	'background.js': 220 * KiB,
 	'content-bootstrap.js': 10 * KiB,
-	'content-runtime.js': 190 * KiB,
-	'popup.js': 195 * KiB,
+	'content-runtime.js': 140 * KiB,
+	'popup.js': 175 * KiB,
 	'offscreen.js': 135 * KiB,
 	'options.js': 95 * KiB,
 });
 
 export const AGGREGATE_BUDGETS = Object.freeze({
 	defaultStartup: 225 * KiB,
-	javascript: 575 * KiB,
-	dist: 680 * KiB,
+	javascript: 515 * KiB,
+	dist: 620 * KiB,
 });
 
 const IMPORT_PATTERN = /(?:\bimport\s*(?:[^"'()]*?from\s*)?|\bimport\s*\()\s*["']([^"']+)["']/gu;

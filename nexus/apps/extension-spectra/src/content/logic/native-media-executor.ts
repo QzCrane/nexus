@@ -19,7 +19,6 @@ import {
 	type ControlStrategyFailure,
 	type ControlValues,
 } from '@nexus/contracts';
-import { CapabilityPlanner, type CapabilityPlannerContext } from '@nexus/audio-engine';
 import { sendSpectraRequest } from '../../shared/spectra-client';
 import {
 	MediaRegistry,
@@ -27,6 +26,7 @@ import {
 	type MediaRegistryRemovalReason,
 } from '../core/media-registry';
 import { VideoEffectsController } from '../video/video-effects-controller';
+import { contentControlStrategy } from './content-control-policy';
 
 interface PendingWrite {
 	intentId: string;
@@ -426,7 +426,6 @@ function waitForNativeEvent(
 }
 
 export class NativeMediaExecutor {
-	private readonly planner = new CapabilityPlanner();
 	private readonly pending = new Map<string, Map<ControlField, PendingWrite>>();
 	private readonly observed = new Map<string, Partial<ControlValues>>();
 	private readonly desiredMedia: ControlPatch = {};
@@ -782,11 +781,8 @@ export class NativeMediaExecutor {
 				this.putError(fields, field, value, intent, 'capability-unavailable', 'The active target is audio-only');
 				return;
 			}
-			const plan = this.planner.plan(
-				field,
-				this.plannerContext(field, true, intent.requestedCoverage),
-			);
-			if (plan.strategy !== 'extension-css' && plan.strategy !== 'extension-overlay') {
+			const strategy = contentControlStrategy(field, intent.requestedCoverage);
+			if (strategy !== 'extension-css' && strategy !== 'extension-overlay') {
 				this.putError(fields, field, value, intent, 'capability-unavailable', 'No admitted video enhancement is available');
 				return;
 			}
@@ -795,15 +791,12 @@ export class NativeMediaExecutor {
 				field as 'rotation' | 'mirrored' | 'fill' | 'filterEnabled' | 'filter' | 'dimEnabled' | 'dimOpacity',
 				value as never,
 			) as ControlValues[ControlField];
-			this.putState(fields, field, value, actual, intent, plan.strategy);
+			this.putState(fields, field, value, actual, intent, strategy);
 			return;
 		}
 
-		const plan = this.planner.plan(
-			field,
-			this.plannerContext(field, true, intent.requestedCoverage),
-		);
-		if (plan.strategy !== 'dom-native') {
+		const strategy = contentControlStrategy(field, intent.requestedCoverage);
+		if (strategy !== 'dom-native') {
 			this.putError(fields, field, value, intent, 'capability-unavailable', 'No complete standard media strategy is available');
 			return;
 		}
@@ -1030,33 +1023,6 @@ export class NativeMediaExecutor {
 		if (!valuesMatch(current, attempted, tolerance)) return;
 		writeRestorableMediaField(element, field, baseline);
 		await stableReadback(() => readRestorableMediaField(element, field));
-	}
-
-	private plannerContext(
-		field: ControlField,
-		hasTarget: boolean,
-		requiredCoverage: 'active-target' | 'full',
-	): CapabilityPlannerContext {
-		const support = { write: true, readback: true, coverage: 'active-target' as const };
-		const context: CapabilityPlannerContext = {
-			explicitIntent: true,
-			requiredCoverage,
-			siteNative: {},
-			domNative: {},
-			chromeNative: {},
-			extensionState: {},
-			extensionCss: {},
-			extensionOverlay: {},
-			mediaWebAudio: { eligibility: 'unknown', fullCoverage: false, actualReadback: false },
-			capture: { available: false, authorized: false, activationAvailable: false, actualReadback: false },
-			activeProcessor: 'none',
-		};
-		if (field === 'audioEnabled') context.extensionState = { [field]: support };
-		else if (field === 'dimEnabled' || field === 'dimOpacity') {
-			context.extensionOverlay = { [field]: support };
-		} else if (VIDEO_EFFECT_FIELDS.has(field)) context.extensionCss = { [field]: support };
-		else if (hasTarget) context.domNative = { [field]: support };
-		return context;
 	}
 
 	private putState(

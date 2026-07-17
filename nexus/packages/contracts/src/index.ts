@@ -120,6 +120,7 @@ export {
 	compileEffectiveVolume,
 	splitLegacyVolume,
 	classifyControlStrategy,
+	isControlStrategyAdmittedForCapability,
 	isControlStrategyFailure,
 	shouldTryNextControlStrategy,
 	matchSiteNativeAdapter,

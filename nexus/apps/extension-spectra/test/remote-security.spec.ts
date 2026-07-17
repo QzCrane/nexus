@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createRemoteHostController } from '../src/offscreen-remote/remote-host';
 import { getRemoteUrl } from '../src/remote/constants';
+import { generateRemoteQR } from '../src/remote/qr-generator';
 import {
 	REMOTE_PAIRING_TTL_MS,
 	createRemotePairing,
@@ -32,6 +33,18 @@ describe('remote protocol v2', () => {
 		expect(() => getRemoteUrl(pairing, 'javascript:alert(1)')).toThrow();
 		expect(() => getRemoteUrl(pairing, 'https://user:password@example.com')).toThrow();
 		expect(new URL(getRemoteUrl(pairing, 'http://localhost:8788')).protocol).toBe('http:');
+	});
+
+	test('renders the exact fragment-secret pairing URL as a local SVG data URL', async () => {
+		const pairing = createRemotePairing();
+		const qr = await generateRemoteQR(pairing, 'https://remote.example.test');
+		expect(qr).toStartWith('data:image/svg+xml;charset=utf-8,');
+		const svg = decodeURIComponent(qr.slice(qr.indexOf(',') + 1));
+		expect(svg).toContain('<svg');
+		expect(svg).toContain('<path');
+		// The secret is encoded into QR modules, never copied into a network URL or
+		// metadata field in the generated image.
+		expect(svg).not.toContain(pairing.secret);
 	});
 
 	test('accepts only the correct HMAC proof', async () => {

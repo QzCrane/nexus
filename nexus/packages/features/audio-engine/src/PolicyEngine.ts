@@ -8,23 +8,9 @@ import type {
   SiteRule
 } from '@nexus/contracts';
 import { isDefaultAudioConfig, resolveAudioVolume } from '@nexus/contracts';
+import { requiresAudioProcessor } from './color-predictor.js';
 
 export class PolicyEngine implements IPolicyEngine {
-  // eff: detects if advanced features (EQ, Bass, Compressor, Visualizer, Volume > 100%) are active
-  private needsAdvancedProcessing(context: PolicyContext): boolean {
-    const { config } = context;
-    if (config && resolveAudioVolume(config).boost > 1) return true;
-    if (config) {
-      if (config.eqValues?.some(v => v !== 0)) return true;
-      if (config.compressor) return true;
-      if (config.bass) return true;
-	  if (config.mono) return true;
-	  if (config.pan !== 0) return true;
-	  if (config.delay !== 0) return true;
-    }
-    return false;
-  }
-
   // eff: computes AudioMode using falling-priority rules:
   // 1. Off/default -> transparent bypass
   // 2. Native-only controls -> transparent bypass
@@ -41,7 +27,7 @@ export class PolicyEngine implements IPolicyEngine {
       return 'NATIVE_LITE';
     }
 
-    if (!this.needsAdvancedProcessing(context)) return 'NATIVE_LITE';
+    if (!context.config || !requiresAudioProcessor(context.config)) return 'NATIVE_LITE';
 
 	// A preference flag cannot turn an unproven cross-origin resource into a
 	// safe MediaElementSource binding. Unknown/unsafe coverage always delegates

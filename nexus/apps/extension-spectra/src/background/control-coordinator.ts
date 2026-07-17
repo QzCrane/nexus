@@ -5,6 +5,8 @@ import {
 	CONTROL_ALGORITHM_POLICIES,
 	SITE_NATIVE_ADAPTER_DESCRIPTORS,
 	SPECTRA_PROTOCOL_VERSION,
+	isControlApplyAck,
+	isControlOperationAck,
 	isControlSnapshot,
 	isControlStrategyFailure,
 	isSpectraRequestEnvelope,
@@ -994,8 +996,6 @@ async function executeIntent(request: RoutedControlSubmitRequest): Promise<Contr
 const RESET_AUDIO_TARGET_PATCH: ControlPatch = {
 	volumeBase: 100,
 	mediaMuted: false,
-	speed: 1,
-	preservePitch: true,
 };
 
 const RESET_AUDIO_PROCESSOR_PATCH: ControlPatch = {
@@ -1617,13 +1617,22 @@ async function executeFieldOperation(
 			baseline.documentId,
 			baseline.generation,
 		);
-		const targetRollback = target
+		const targetActual = target
 			? await captureActualPatch(
 				baseline,
 				target,
-				Object.keys(RESET_AUDIO_TARGET_PATCH) as ControlDirectField[],
+				[
+					...Object.keys(RESET_AUDIO_TARGET_PATCH) as ControlDirectField[],
+					'speed',
+					'preservePitch',
+				],
 			)
 			: {};
+		const targetRollback: ControlPatch = {};
+		for (const field of Object.keys(RESET_AUDIO_TARGET_PATCH) as ControlDirectField[]) {
+			const value = targetActual[field];
+			if (value !== undefined) (targetRollback as Record<string, unknown>)[field] = value;
+		}
 		const processorRollback = await captureActualPatch(
 			baseline,
 			target,
@@ -1641,7 +1650,13 @@ async function executeFieldOperation(
 				}, staged);
 				fields = { ...fields, ...targetPrepared.fields };
 				assertAppliedPatch(targetPrepared.fields, RESET_AUDIO_TARGET_PATCH, 'Audio target reset');
-				staged = stageSnapshot(baseline, fields, target);
+				// Speed and pitch preservation are native playback controls, not part
+				// of audio reset. Read them only to compile the processor's current
+				// native context; never write or commit them as reset side effects.
+				staged = stageSnapshot(baseline, {
+					...nativeObservationFields(targetActual, baseline.revision),
+					...fields,
+				}, target);
 			}
 			const processorPrepared = await prepareIntent({
 				...common,
@@ -1900,13 +1915,25 @@ function enqueueTabTask<T>(tabId: number, operation: () => Promise<T>): Promise<
 }
 
 function submitSerialized(request: RoutedControlSubmitRequest): Promise<ControlApplyAck> {
-	return enqueueTabTask(request.tabId, () => executeIntent(request));
+	return enqueueTabTask(request.tabId, async () => {
+		const acknowledgement = await executeIntent(request);
+		if (!isControlApplyAck(acknowledgement)) {
+			throw new Error('Control executor returned a strategy outside the capability policy');
+		}
+		return acknowledgement;
+	});
 }
 
 function submitOperationSerialized(
 	request: RoutedControlOperationRequest,
 ): Promise<ControlOperationAck> {
-	return enqueueTabTask(request.tabId, () => executeControlOperation(request));
+	return enqueueTabTask(request.tabId, async () => {
+		const acknowledgement = await executeControlOperation(request);
+		if (!isControlOperationAck(acknowledgement)) {
+			throw new Error('Control operation returned a strategy outside the capability policy');
+		}
+		return acknowledgement;
+	});
 }
 
 export function submitControlRequest(request: RoutedControlSubmitRequest): Promise<ControlApplyAck> {

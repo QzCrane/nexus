@@ -101,7 +101,10 @@ export function audioGraphSignature(config: AudioGraphConfig): string {
 		`compressor:${normalized.compressor ? 1 : 0}`,
 		`mono:${normalized.mono ? 1 : 0}`,
 		`pan:${normalized.pan === 0 ? 0 : 1}`,
-		`delay:${normalized.delay === 0 ? 0 : normalized.delay}`,
+		// Delay amount is a parameter, not topology. Rebuild only when the node
+		// enters or leaves the sparse graph; continuous slider updates ramp the
+		// existing DelayNode and therefore never allocate/crossfade a new lane.
+		`delay:${normalized.delay === 0 ? 0 : 1}`,
 	].join('|');
 }
 
@@ -416,6 +419,7 @@ export class AudioGraphRouter {
 			rampParam(node.gain, config.eqValues[index] ?? 0, time);
 		}
 		if (lane.panner) rampParam(lane.panner.pan, config.pan, time);
+		if (lane.delay) rampParam(lane.delay.delayTime, config.delay / 1_000, time);
 	}
 
 	private destroyLane(lane: GraphLane): void {

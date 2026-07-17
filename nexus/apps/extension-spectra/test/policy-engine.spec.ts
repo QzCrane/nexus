@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { PolicyEngine, type PolicyContext } from '@nexus/audio-engine';
+import {
+	PolicyEngine,
+	needsAdvancedProcessing,
+	predictCapture,
+	requiresAudioProcessor,
+	type PolicyContext,
+} from '@nexus/audio-engine';
 import { DEFAULT_AUDIO_CONFIG, type AudioConfig } from '@nexus/contracts';
 import { evaluateMediaSourceEligibility } from '../src/content/logic/policy-executor';
 
@@ -42,6 +48,44 @@ describe('audio policy activation boundary', () => {
 			volume: config.volume,
 			config,
 		})).toBe('NATIVE_WEBAUDIO');
+	});
+
+	test('shares one complete processor-needs algorithm and keeps Visualizer observation-only', () => {
+		for (const changes of [
+			{ boost: 1.5, volume: 150 },
+			{ eqValues: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+			{ bass: true },
+			{ compressor: true },
+			{ mono: true },
+			{ pan: -0.25 },
+			{ delay: 80 },
+		] satisfies Array<Partial<AudioConfig>>) {
+			const config = audioConfig(changes);
+			expect(requiresAudioProcessor(config)).toBe(true);
+			expect(needsAdvancedProcessing({
+				config,
+				isRestricted: true,
+				visualizerEnabled: false,
+			})).toBe(true);
+			expect(predictCapture({
+				config,
+				isRestricted: true,
+				visualizerEnabled: false,
+			})).toBe(true);
+		}
+
+		const neutral = audioConfig();
+		expect(requiresAudioProcessor(neutral)).toBe(false);
+		expect(needsAdvancedProcessing({
+			config: neutral,
+			isRestricted: true,
+			visualizerEnabled: true,
+		})).toBe(false);
+		expect(predictCapture({
+			config: neutral,
+			isRestricted: true,
+			visualizerEnabled: true,
+		})).toBe(false);
 	});
 
 	test('requires every registered source to be prospectively safe for Media WebAudio', () => {

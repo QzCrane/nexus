@@ -42,5 +42,9 @@ export type {
 	MediaSourceEligibilityReason,
 } from './WebAudioController.js';
 
-export { predictCapture, needsAdvancedProcessing } from './color-predictor.js';
+export {
+	needsAdvancedProcessing,
+	predictCapture,
+	requiresAudioProcessor,
+} from './color-predictor.js';
 export type { ColorContext } from './color-predictor.js';

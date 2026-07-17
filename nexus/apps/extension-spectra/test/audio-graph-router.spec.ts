@@ -100,7 +100,7 @@ describe('shared sparse audio graph router', () => {
 		expect(context.created.biquad).toBe(filterCount);
 	});
 
-	test('treats delay changes as topology changes and creates analyser only while subscribed', async () => {
+	test('ramps delay values in one topology and creates analyser only while subscribed', async () => {
 		const context = new FakeAudioContext();
 		const router = new AudioGraphRouter(context as unknown as AudioContext, undefined, {
 			crossfadeMs: 0,
@@ -108,8 +108,9 @@ describe('shared sparse audio graph router', () => {
 		await router.apply({ ...DEFAULT_AUDIO_GRAPH_CONFIG, delay: 50 });
 		const firstSignature = router.getSnapshot()?.graphSignature;
 		await router.apply({ ...DEFAULT_AUDIO_GRAPH_CONFIG, delay: 75 });
-		expect(router.getSnapshot()?.graphSignature).not.toBe(firstSignature);
-		expect(context.created.delay).toBe(2);
+		expect(router.getSnapshot()?.graphSignature).toBe(firstSignature);
+		expect(context.created.delay).toBe(1);
+		expect(router.getSnapshot()?.normalizedActualConfig.delay).toBe(75);
 		expect(context.created.analyser).toBe(0);
 
 		const unsubscribe = router.subscribeVisualizer();

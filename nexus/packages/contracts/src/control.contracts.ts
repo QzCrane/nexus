@@ -1068,6 +1068,19 @@ export function classifyControlStrategy(strategy: ControlStrategy): ControlStrat
 	return CONTROL_STRATEGY_RULES[strategy].class;
 }
 
+// Cross-process ACKs must prove more than "this is a known strategy name".
+// The strategy must also belong to the exact capability policy. This prevents
+// a future executor (or a stale context) from reporting Capture as page volume,
+// CSS as fullscreen, or extension state as a successful native operation.
+export function isControlStrategyAdmittedForCapability(
+	capability: ControlCapability,
+	strategy: ControlStrategy,
+): boolean {
+	if (strategy === 'unsupported') return false;
+	return (CONTROL_ALGORITHM_POLICIES[capability].orderedStrategies as readonly ControlStrategy[])
+		.includes(strategy);
+}
+
 export function isControlError(value: unknown): value is ControlError {
 	return isRecord(value)
 		&& hasOnlyKeys(value, errorKeys)
@@ -1277,14 +1290,30 @@ function isControlActualContext(value: unknown): value is ControlActualContext {
 
 function isControlFieldState(field: ControlField, value: unknown): boolean {
 	if (!isRecord(value) || !hasOnlyKeys(value, fieldStateKeys)) return false;
+	const strategy = value.strategy as ControlStrategy;
+	const admittedStrategy = typeof value.strategy === 'string'
+		&& strategySet.has(value.strategy)
+		&& (
+			isControlStrategyAdmittedForCapability(field, strategy)
+			|| (strategy === 'unsupported'
+				&& value.phase === 'error'
+				&& value.controlled === false
+				&& value.lastError !== null)
+			// A neutral or disabled processor reports an observation-only release:
+			// no graph owns the field, and saved desired DSP values may remain idle.
+			|| (strategy === 'observe'
+				&& CONTROL_ALGORITHM_ADJUDICATIONS[field].augmentationAdmission
+					=== 'proven-safe-source-or-explicit-full-output'
+				&& value.controlled === false
+				&& (value.phase === 'idle' || value.phase === 'applied'))
+		);
 	return (value.desired === null || isControlValue(field, value.desired))
 		&& (value.actual === null || isControlValue(field, value.actual))
 		&& (value.restoreBaseline === undefined || isControlValue(field, value.restoreBaseline))
 		&& isSafeNonNegativeInteger(value.revision)
 		&& typeof value.phase === 'string'
 		&& phaseSet.has(value.phase)
-		&& typeof value.strategy === 'string'
-		&& strategySet.has(value.strategy)
+		&& admittedStrategy
 		&& typeof value.coverage === 'string'
 		&& coverageSet.has(value.coverage)
 		&& typeof value.controlled === 'boolean'
@@ -1383,6 +1412,10 @@ export function isControlOperationAck(value: unknown): value is ControlOperation
 		&& operationSet.has(value.operation)
 		&& typeof value.strategy === 'string'
 		&& strategySet.has(value.strategy)
+		&& isControlStrategyAdmittedForCapability(
+			value.operation as ControlOperation,
+			value.strategy as ControlStrategy,
+		)
 		&& typeof value.coverage === 'string'
 		&& coverageSet.has(value.coverage)
 		&& isControlFieldStates(value.fields)

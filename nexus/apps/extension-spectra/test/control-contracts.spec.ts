@@ -15,12 +15,24 @@ import {
 	SITE_NATIVE_ADAPTER_DESCRIPTORS,
 	classifyControlStrategy,
 	isControlIntent,
+	isControlOperationAck,
 	isControlPatch,
 	isControlSnapshot,
 	shouldTryNextControlStrategy,
 	splitLegacyVolume,
 	type ControlFieldState,
 } from '@nexus/contracts';
+import {
+	CONTENT_ACTIVE_VIDEO_OPERATIONS,
+	CONTENT_DOM_NATIVE_FIELDS,
+	CONTENT_EXTENSION_CSS_FIELDS,
+	CONTENT_EXTENSION_OVERLAY_FIELDS,
+	contentControlStrategy,
+	isContentActiveVideoOperation,
+} from '../src/content/logic/content-control-policy';
+import {
+	isSpectraEventEnvelope as isContentSpectraEventEnvelope,
+} from '../../../packages/contracts/src/spectra.content-runtime';
 
 function field<T>(actual: T): ControlFieldState<T> {
 	return {
@@ -96,6 +108,29 @@ describe('per-field SPECTRA control contracts', () => {
 		})).toBe(false);
 		expect(isControlSnapshot({
 			...snapshot,
+			fields: {
+				volumeBase: {
+					...field(100),
+					strategy: 'capture',
+					coverage: 'opaque',
+				},
+			},
+		})).toBe(false);
+		expect(isControlSnapshot({
+			...snapshot,
+			fields: {
+				boost: {
+					...field(2),
+					actual: 1,
+					phase: 'idle',
+					strategy: 'observe',
+					coverage: 'full',
+					controlled: false,
+				},
+			},
+		})).toBe(true);
+		expect(isControlSnapshot({
+			...snapshot,
 			activeVideo: {
 				frameId: 0,
 				documentId: 'document-42',
@@ -103,6 +138,39 @@ describe('per-field SPECTRA control contracts', () => {
 				sourceRevision: 0,
 				kind: 'audio',
 			},
+		})).toBe(false);
+	});
+
+	test('rejects operation success ACKs whose executor exceeds the declared algorithm policy', () => {
+		const target = {
+			frameId: 0,
+			documentId: 'document-42',
+			mediaId: 'media:video',
+			sourceRevision: 1,
+			kind: 'video',
+		} as const;
+		const acknowledgement = {
+			operationId: 'operation:screenshot',
+			tabId: 42,
+			documentId: 'document-42',
+			generation: 3,
+			revision: 11,
+			target,
+			operation: 'screenshot',
+			strategy: 'chrome-native',
+			coverage: 'active-target',
+			fields: {},
+			result: {
+				saved: true,
+				method: 'capture-visible-tab',
+				width: 1920,
+				height: 1080,
+			},
+		} as const;
+		expect(isControlOperationAck(acknowledgement)).toBe(true);
+		expect(isControlOperationAck({
+			...acknowledgement,
+			strategy: 'extension-state',
 		})).toBe(false);
 	});
 
@@ -312,5 +380,54 @@ describe('per-field SPECTRA control contracts', () => {
 			abLoop: { pointA: 2, pointB: 4, enabled: true },
 		})).toBe(false);
 		expect(isControlPatch({ visualizer: true })).toBe(false);
+	});
+
+	test('release-gates the narrow Content strategy projection against the canonical policy', () => {
+		for (const field of CONTENT_DOM_NATIVE_FIELDS) {
+			expect(CONTROL_ALGORITHM_POLICIES[field].orderedStrategies[0]).toBe('dom-native');
+			expect(contentControlStrategy(field, 'active-target')).toBe('dom-native');
+			expect(contentControlStrategy(field, 'full')).toBeNull();
+		}
+		for (const field of CONTENT_EXTENSION_CSS_FIELDS) {
+			expect(CONTROL_ALGORITHM_POLICIES[field].orderedStrategies).toEqual(['extension-css']);
+			expect(contentControlStrategy(field, 'active-target')).toBe('extension-css');
+		}
+		for (const field of CONTENT_EXTENSION_OVERLAY_FIELDS) {
+			expect(CONTROL_ALGORITHM_POLICIES[field].orderedStrategies).toEqual(['extension-overlay']);
+			expect(contentControlStrategy(field, 'active-target')).toBe('extension-overlay');
+		}
+		for (const operation of CONTROL_OPERATIONS) {
+			expect(isContentActiveVideoOperation(operation)).toBe(
+				CONTENT_ACTIVE_VIDEO_OPERATIONS.includes(operation as never),
+			);
+			if (isContentActiveVideoOperation(operation)) {
+				expect(CONTROL_ALGORITHM_POLICIES[operation].scope).toBe('active-video');
+			}
+		}
+	});
+
+	test('keeps the Content runtime facade aligned with the formal settings wire values', () => {
+		const event = {
+			protocolVersion: 2,
+			type: 'spectra.content.settings.changed',
+			payload: {
+				osdEnabled: true,
+				visualizerEnabled: true,
+				lang: 'zh-CN',
+				themeMode: 'system',
+				pauseRetentionSeconds: 60,
+				osdMessages: {
+					muted: '静音',
+					corsAutoAdded: '自动',
+					corsAddedSafe: '安全',
+					corsCorrectedSafe: '已更正',
+				},
+			},
+		};
+		expect(isContentSpectraEventEnvelope(event)).toBe(true);
+		expect(isContentSpectraEventEnvelope({
+			...event,
+			payload: { ...event.payload, themeMode: 'auto' },
+		})).toBe(false);
 	});
 });

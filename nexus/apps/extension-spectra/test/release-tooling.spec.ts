@@ -316,6 +316,19 @@ describe('release gate orchestration', () => {
 		]);
 
 		const packageJson = JSON.parse(readFileSync(resolve(import.meta.dir, '../package.json'), 'utf8'));
+		expect(packageJson.scripts.test).toBe('bun run test:unit && bun run test:chrome');
+		expect(RELEASE_STEPS.find((step) => step.label === 'unit and contract tests')?.args).toEqual([
+			'run',
+			'--cwd',
+			'apps/extension-spectra',
+			'test:unit',
+		]);
+		expect(RELEASE_STEPS.find((step) => step.label === 'Chrome integration')?.args).toEqual([
+			'run',
+			'--cwd',
+			'apps/extension-spectra',
+			'test:chrome',
+		]);
 		expect(Object.keys(packageJson.scripts).filter((name) => name.endsWith(':stage'))).toEqual(['package:stage']);
 		const previousPath = process.env[RELEASE_RECEIPT_PATH_ENV];
 		const previousCapability = process.env[RELEASE_RECEIPT_CAPABILITY_ENV];

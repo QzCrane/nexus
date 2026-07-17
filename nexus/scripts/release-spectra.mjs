@@ -42,7 +42,7 @@ export const RELEASE_STEPS = Object.freeze([
 	{ label: 'Biome lint', args: ['run', 'lint'] },
 	{ label: 'workspace dependency build', args: ['run', 'build:spectra-deps'] },
 	{ label: 'TypeScript check', args: ['run', 'typecheck:spectra'] },
-	{ label: 'unit and contract tests', args: ['run', '--cwd', 'apps/extension-spectra', 'test'] },
+	{ label: 'unit and contract tests', args: ['run', '--cwd', 'apps/extension-spectra', 'test:unit'] },
 	{ label: 'Chrome integration', args: ['run', '--cwd', 'apps/extension-spectra', 'test:chrome'] },
 	{ label: 'production build', args: ['run', '--cwd', 'apps/extension-spectra', 'build:prod'] },
 	{ label: 'bundle budget', args: ['run', '--cwd', 'apps/extension-spectra', 'budget'] },

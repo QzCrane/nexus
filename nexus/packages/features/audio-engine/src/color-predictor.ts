@@ -8,16 +8,23 @@ export interface ColorContext {
 	visualizerEnabled: boolean;
 }
 
-// eff: returns true if any advanced audio feature is enabled
+// One canonical answer for whether output processing is required. Visualizer
+// is intentionally absent: it may observe an already-owned processor, but it
+// never creates Media WebAudio or Capture by itself.
+export function requiresAudioProcessor(config: AudioConfig): boolean {
+	return resolveAudioVolume(config).boost > 1
+		|| config.eqValues.some((value) => value !== 0)
+		|| config.compressor
+		|| config.bass
+		|| config.mono
+		|| config.pan !== 0
+		|| config.delay !== 0;
+}
+
+// eff: compatibility projection for UI color logic; processor admission stays
+// identical to PolicyEngine and does not treat visualization as a writer.
 export function needsAdvancedProcessing(ctx: ColorContext): boolean {
-	const { config, visualizerEnabled } = ctx;
-	return (
-		resolveAudioVolume(config).boost > 1 ||
-		visualizerEnabled ||
-		config.eqValues?.some(v => v !== 0) ||
-		config.compressor ||
-		config.bass
-	);
+	return requiresAudioProcessor(ctx.config);
 }
 
 // eff: returns true if the environment warrants CAPTURE mode (Restricted + Advanced Needs)

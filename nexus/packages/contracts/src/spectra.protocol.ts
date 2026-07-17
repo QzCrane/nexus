@@ -65,10 +65,7 @@ import {
 	type ControlReadResult,
 	type MediaTarget,
 } from './control.contracts.js';
-import {
-	SPECTRA_CONTENT_BOOTSTRAP_REVISION,
-	SPECTRA_PROTOCOL_VERSION,
-} from './spectra.bootstrap.js';
+import { SPECTRA_PROTOCOL_VERSION } from './spectra.bootstrap.js';
 
 export {
 	SPECTRA_CONTENT_BOOTSTRAP_REVISION,

@@ -1,7 +1,6 @@
 // goal: execute momentary, target-bound control algorithms with structured actual ACKs
 
 import {
-	CONTROL_ALGORITHM_POLICIES,
 	SPECTRA_PROTOCOL_VERSION,
 	isSpectraRequestEnvelope,
 	rpcFailure,
@@ -26,6 +25,7 @@ import {
 	removeMarker,
 } from '../video/time-marker';
 import { NativeMediaExecutor } from './native-media-executor';
+import { isContentActiveVideoOperation } from './content-control-policy';
 
 function abLoopState(target: ControlOperationIntent['target']): ABLoopState {
 	const state = getABState(target);
@@ -81,7 +81,7 @@ export async function executeControlOperation(
 	nativeExecutor: NativeMediaExecutor,
 ): Promise<ControlOperationAck> {
 	const registry = getActiveMediaRegistry();
-	const videoScoped = CONTROL_ALGORITHM_POLICIES[originalIntent.operation].scope === 'active-video';
+	const videoScoped = isContentActiveVideoOperation(originalIntent.operation);
 	const resolvedTarget = (videoScoped
 		? registry?.resolveVideo(originalIntent.target)
 		: registry?.resolve(originalIntent.target))?.target

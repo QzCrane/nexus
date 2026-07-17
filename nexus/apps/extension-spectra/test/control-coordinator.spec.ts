@@ -879,8 +879,6 @@ describe('authoritative control coordinator', () => {
 		expect(intents[0]?.patch).toEqual({
 			volumeBase: 100,
 			mediaMuted: false,
-			speed: 1,
-			preservePitch: true,
 		});
 		expect(intents[1]?.actualContext).toEqual({
 			volumeBase: 100,
@@ -1159,9 +1157,9 @@ describe('authoritative control coordinator', () => {
 		expect(intents[2]?.patch).toMatchObject({
 			volumeBase: 72,
 			mediaMuted: false,
-			speed: 1,
-			preservePitch: true,
 		});
+		expect(intents[2]?.patch).not.toHaveProperty('speed');
+		expect(intents[2]?.patch).not.toHaveProperty('preservePitch');
 		expect(harness.snapshotEvents).toBe(0);
 		expect(await controlCoordinatorTestApi.getSnapshot(7)).toBeNull();
 	});

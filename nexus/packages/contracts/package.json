@@ -3,6 +3,7 @@
 	"version": "0.0.1",
 	"description": "NEXUS pure contracts layer - contains only interfaces and type definitions, no business logic",
 	"type": "module",
+	"sideEffects": false,
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
 	"exports": {

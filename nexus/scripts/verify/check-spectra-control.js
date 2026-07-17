@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS } from './spectra-control-algorithm-catalog.mjs';
 import { error, ok, scanDir, section } from './utils.js';
 
 const APP_PATH = 'apps/extension-spectra';
@@ -45,6 +46,96 @@ const CANONICAL_WRITERS = Object.freeze({
 
 function normalize(root, fullPath) {
 	return path.relative(root, fullPath).replaceAll('\\', '/');
+}
+
+function checkSourceAlgorithmCatalog(root, contracts, architecture) {
+	const extractCapabilities = (name) => {
+		const match = contracts.match(new RegExp(`export const ${name} = \\[(.*?)\\] as const`, 'su'));
+		return match
+			? [...match[1].matchAll(/'([^']+)'/gu)].map((item) => item[1])
+			: [];
+	};
+	const capabilities = new Set([
+		...extractCapabilities('CONTROL_FIELDS'),
+		...extractCapabilities('CONTROL_OPERATIONS'),
+	]);
+	const covered = new Set();
+	const ids = new Set();
+	const decisions = new Set([
+		'native-control',
+		'hybrid-state-native',
+		'controlled-augmentation',
+		'observation-only',
+		'pure-computation',
+		'intent-routing',
+		'lifecycle-orchestration',
+	]);
+	const admissions = new Set([
+		'none',
+		'allowlisted-site-api-after-dom-failure',
+		'extension-owned',
+		'proven-safe-media-or-explicit-full-output',
+		'existing-processor-only',
+		'sandbox-only',
+		'not-applicable',
+	]);
+	const recurring = new Set([
+		'none',
+		'while-owned',
+		'while-subscribed',
+		'page-lifetime-after-media-binding',
+	]);
+
+	for (const [index, algorithm] of SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS.entries()) {
+		const expectedId = `ALG-${String(index + 1).padStart(3, '0')}`;
+		if (algorithm.id !== expectedId || ids.has(algorithm.id)) {
+			error(`SCTRL-002/SCTRL-016: source algorithm IDs must be unique and sequential (${algorithm.id}/${expectedId})`);
+		}
+		ids.add(algorithm.id);
+		if (!decisions.has(algorithm.decision)
+			|| !admissions.has(algorithm.augmentationAdmission)
+			|| !recurring.has(algorithm.recurringWork)
+			|| !['forbidden', 'site-adapter-only'].includes(algorithm.interceptionPolicy)) {
+			error(`SCTRL-002: invalid source algorithm adjudication for ${algorithm.id}`);
+		}
+		if (algorithm.decision === 'native-control'
+			&& !['none', 'allowlisted-site-api-after-dom-failure'].includes(
+				algorithm.augmentationAdmission,
+			)) {
+			error(`SCTRL-002: native algorithm ${algorithm.id} cannot admit generic augmentation`);
+		}
+		if (algorithm.interceptionPolicy === 'site-adapter-only'
+			&& algorithm.augmentationAdmission !== 'allowlisted-site-api-after-dom-failure') {
+			error(`SCTRL-004: ${algorithm.id} grants MAIN without the exact site-adapter admission`);
+		}
+		if (!algorithm.successProof || !algorithm.performanceBoundary) {
+			error(`SCTRL-005/SCTRL-013: ${algorithm.id} needs success proof and a performance boundary`);
+		}
+		for (const capability of algorithm.capabilities) {
+			if (!capabilities.has(capability)) {
+				error(`SCTRL-002: ${algorithm.id} references unknown capability ${capability}`);
+			}
+			covered.add(capability);
+		}
+		const sourcePath = path.join(root, algorithm.source);
+		if (!fs.existsSync(sourcePath)) {
+			error(`SCTRL-016: ${algorithm.id} source is missing (${algorithm.source})`);
+		} else if (!fs.readFileSync(sourcePath, 'utf8').includes(algorithm.anchor)) {
+			error(`SCTRL-016: ${algorithm.id} source anchor drifted (${algorithm.anchor})`);
+		}
+		if (!architecture.includes(`| \`${algorithm.id}\` |`)) {
+			error(`SCTRL-016: architecture is missing source algorithm row ${algorithm.id}`);
+		}
+	}
+
+	for (const capability of capabilities) {
+		if (!covered.has(capability)) {
+			error(`SCTRL-002/SCTRL-016: source algorithm catalog does not own ${capability}`);
+		}
+	}
+	if (SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS.length !== 34) {
+		error(`SCTRL-002/SCTRL-016: source algorithm inventory drifted (${SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS.length}/34)`);
+	}
 }
 
 function checkDefaultRuntime(root) {
@@ -128,6 +219,11 @@ function checkPolicyOwner(root) {
 	if (!contracts.includes('CONTROL_ALGORITHM_ADJUDICATIONS')
 		|| !contracts.includes('satisfies Record<ControlCapability, ControlAlgorithmAdjudication>')) {
 		error('SCTRL-002: every algorithm needs an exhaustive native/augmentation adjudication');
+	}
+	if (!contracts.includes('export function isControlStrategyAdmittedForCapability(')
+		|| !contracts.includes('isControlStrategyAdmittedForCapability(field, strategy)')
+		|| !contracts.includes('isControlStrategyAdmittedForCapability(\n\t\t\tvalue.operation as ControlOperation')) {
+		error('SCTRL-002/SCTRL-005: field and operation ACKs must reject strategies outside the exact capability policy');
 	}
 	const policyBlock = contracts.match(
 		/export const CONTROL_ALGORITHM_POLICIES = \{(.*?)\}\s+as const satisfies Record<ControlCapability, ControlAlgorithmPolicy>/su,
@@ -262,6 +358,7 @@ function checkPolicyOwner(root) {
 			'### Per-capability native and augmentation ledger',
 			'### Native versus interception adjudication for every algorithm',
 			'#### Algorithm entry points and implementation anchors',
+			'### Source algorithm adjudication catalog',
 			'### Media WebAudio complete-coverage admission',
 			'### Implementation status ledger',
 		]) {
@@ -373,6 +470,7 @@ function checkPolicyOwner(root) {
 		if (/^\|\s*(?:partial|pending)\s*\|/mu.test(architecture)) {
 			error('SCTRL-016: implementation ledger contains release-blocking partial/pending work');
 		}
+		checkSourceAlgorithmCatalog(root, contracts, architecture);
 		const runtimeProtocols = fs.readFileSync(
 			path.join(root, APP_PATH, 'docs/protocols.md'),
 			'utf8',
@@ -411,6 +509,16 @@ function checkProductionLoadingTopology(root) {
 		'utf8',
 	);
 	const popup = fs.readFileSync(path.join(root, APP_PATH, 'public/popup.html'), 'utf8');
+	for (const packagePath of [
+		'packages/contracts/package.json',
+		'packages/features/audio-engine/package.json',
+		'packages/nexus-kernel/package.json',
+	]) {
+		const packageJson = JSON.parse(fs.readFileSync(path.join(root, packagePath), 'utf8'));
+		if (packageJson.sideEffects !== false) {
+			error(`SCTRL-013/SCTRL-034: pure runtime package must remain tree-shakeable (${packagePath})`);
+		}
+	}
 	for (const required of [
 		"export const SPECTRA_PROTOCOL_VERSION = 2 as const",
 		'export function isBootstrapInboundRequest(',
@@ -657,11 +765,35 @@ function checkRetiredPaths(root) {
 		path.join(root, SOURCE_PATH, 'content/logic/control-operation-executor.ts'),
 		'utf8',
 	);
-	if (!operationExecutor.includes("CONTROL_ALGORITHM_POLICIES[originalIntent.operation].scope === 'active-video'")
+	const contentPolicy = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'content/logic/content-control-policy.ts'),
+		'utf8',
+	);
+	const controlContractsTest = fs.readFileSync(
+		path.join(root, APP_PATH, 'test/control-contracts.spec.ts'),
+		'utf8',
+	);
+	if (!operationExecutor.includes('isContentActiveVideoOperation(originalIntent.operation)')
 		|| !operationExecutor.includes('registry?.resolveVideo(originalIntent.target)')
 		|| !operationExecutor.includes('registry?.resolve(originalIntent.target)')
 		|| !operationExecutor.includes('const intent = { ...originalIntent, target: resolvedTarget }')) {
 		error('SCTRL-005/SCTRL-006/SCTRL-025: momentary operations must resolve their contract-scoped actual target');
+	}
+	for (const required of [
+		'CONTENT_DOM_NATIVE_FIELDS',
+		'CONTENT_EXTENSION_CSS_FIELDS',
+		'CONTENT_EXTENSION_OVERLAY_FIELDS',
+		'CONTENT_ACTIVE_VIDEO_OPERATIONS',
+		"if (requestedCoverage !== 'active-target') return null",
+	]) {
+		if (!contentPolicy.includes(required)) {
+			error(`SCTRL-002/SCTRL-004: narrow Content strategy projection is incomplete (${required})`);
+		}
+	}
+	if (operationExecutor.includes('CONTROL_ALGORITHM_POLICIES')
+		|| nativeExecutor.includes('CapabilityPlanner')
+		|| !controlContractsTest.includes('release-gates the narrow Content strategy projection against the canonical policy')) {
+		error('SCTRL-002/SCTRL-004/SCTRL-016: Content projection must stay small and release-gated against the canonical policy');
 	}
 	for (const required of [
 		"throw new Error('The marker does not exist on the selected media source')",
@@ -837,6 +969,22 @@ function checkRetiredPaths(root) {
 		|| !coordinator.includes("code: 'transaction-rollback-failed'")
 		|| (coordinator.match(/compensateControlPatch\(/gu) ?? []).length < 3) {
 		error('SCTRL-003/SCTRL-005: compound reset/restore operations must compensate side effects and expose rollback failure');
+	}
+	const audioResetTargetPatch = coordinator.match(
+		/const RESET_AUDIO_TARGET_PATCH: ControlPatch = \{([\s\S]*?)\n\};/u,
+	)?.[1] ?? '';
+	if (!audioResetTargetPatch.includes('volumeBase: 100')
+		|| !audioResetTargetPatch.includes('mediaMuted: false')
+		|| audioResetTargetPatch.includes('speed')
+		|| audioResetTargetPatch.includes('preservePitch')
+		|| !coordinator.includes('nativeObservationFields(targetActual, baseline.revision)')
+		|| !coordinatorTest.includes("not.toHaveProperty('speed')")
+		|| !coordinatorTest.includes("not.toHaveProperty('preservePitch')")) {
+		error('SCTRL-002/SCTRL-003: audio reset may write native volume/mute but must only observe speed and pitch preservation');
+	}
+	if (!coordinator.includes('if (!isControlApplyAck(acknowledgement))')
+		|| !coordinator.includes('if (!isControlOperationAck(acknowledgement))')) {
+		error('SCTRL-002/SCTRL-005: every coordinator result must pass capability-specific ACK validation before publication');
 	}
 	if (!coordinator.includes('invalidateNavigation(details.tabId, true)')
 		|| (coordinator.match(/invalidateNavigation\(details\.tabId, true\)/gu) ?? []).length !== 2) {

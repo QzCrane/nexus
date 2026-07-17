@@ -24,6 +24,18 @@ import { writeI18nAssets } from './scripts/i18n-assets.ts';
 const projectDir = dirname(fileURLToPath(import.meta.url));
 const distDir = resolve(projectDir, 'dist');
 const publicDir = resolve(projectDir, 'public');
+const contentContractsRuntime = resolve(
+	projectDir,
+	'../../packages/contracts/src/spectra.content-runtime.ts',
+);
+const contentAudioEngineRuntime = resolve(
+	projectDir,
+	'../../packages/features/audio-engine/src/content-runtime.ts',
+);
+const contentKernelRuntime = resolve(
+	projectDir,
+	'../../packages/nexus-kernel/src/content-runtime.ts',
+);
 const packageJson = JSON.parse(readFileSync(resolve(projectDir, 'package.json'), 'utf8'));
 const version = packageJson.version;
 
@@ -239,6 +251,14 @@ if (isWatch) {
 	const buildOne = async ({ entry, out }) => {
 		const result = await esbuild.build({
 			...common,
+			alias: out === 'content-runtime.js'
+				? {
+					...common.alias,
+					'@nexus/contracts': contentContractsRuntime,
+					'@nexus/audio-engine': contentAudioEngineRuntime,
+					'@nexus/kernel': contentKernelRuntime,
+				}
+				: common.alias,
 			entryPoints: [entry],
 			outfile: resolve(distDir, out),
 			metafile: true,
@@ -248,6 +268,9 @@ if (isWatch) {
 	};
 
 	if (isDev) {
+		// Standalone files keep source-level Chrome diagnostics readable. Content
+		// scripts must also stay standalone in production because executeScript()
+		// injects classic files rather than extension-page ESM entrypoints.
 		for (const entry of entries) await buildOne(entry);
 	} else {
 		for (const entry of isolatedEntries) await buildOne(entry);
@@ -272,19 +295,23 @@ if (isWatch) {
 	}
 
 	assertProductionJavaScript();
-	if (!isDev) checkBundleBudget({ distDir, metafiles });
-
 	if (isAnalyze) {
 		const report = metafiles.map(({ name, metafile }) => ({
 			name,
 			sha256: createHash('sha256').update(readFileSync(resolve(distDir, name))).digest('hex'),
-			inputs: Object.entries(metafile.outputs).find(([output]) => {
-				const normalized = output.replaceAll('\\', '/');
-				return normalized === `dist/${name}` || normalized.endsWith(`/dist/${name}`);
-			})?.[1].inputs ?? {},
+			outputs: Object.fromEntries(Object.entries(metafile.outputs)
+				.map(([output, detail]) => [
+					output.replaceAll('\\', '/'),
+					{ bytes: detail.bytes, inputs: detail.inputs },
+				])
+				.sort(([left], [right]) => left.localeCompare(right))),
 		}));
 		writeFileSync(resolve(distDir, 'build-analysis.json'), `${JSON.stringify(report, null, 2)}\n`);
 	}
+	// Keep the metafile evidence even when a hard budget fails so the failure is
+	// actionable instead of requiring a temporary budget increase or a second
+	// custom build just to identify contributors.
+	if (!isDev) checkBundleBudget({ distDir, metafiles });
 
 	console.log(`✓ ${summary.join(' | ')}`);
 }

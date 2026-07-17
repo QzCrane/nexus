@@ -137,14 +137,22 @@ are extension-origin ES modules and may share deterministic production chunks;
 those chunks are not web-accessible resources. Development builds stay
 standalone for readable Chrome smoke diagnostics.
 
+The contracts, audio-engine and kernel packages declare `sideEffects:false`.
+They are pure runtime libraries: this lets production tree shaking remove
+unused barrel exports instead of charging every extension context for protocol
+families it cannot execute. The architecture checker requires those package
+flags so a metadata edit cannot silently reintroduce duplicated control code.
+
 `scripts/check-bundle-budget.mjs` charges every static and dynamic ESM import to
 the entrypoint that can load it. Raw entry-file size is never accepted as a
 Popup/offscreen budget because it would hide shared chunks. It also counts the
 unique Background plus bootstrap dependency closure as the default startup
-path. Current hard ceilings are 225 KiB default startup, 575 KiB total
-JavaScript and 680 KiB complete dist; entry dependency closures are bounded at
-220 KiB Background, 10 KiB bootstrap, 190 KiB lazy content runtime, 195 KiB
-Popup, 135 KiB offscreen and 95 KiB Options. A missing split bundle, an import
+path. Current hard ceilings are 225 KiB default startup, 515 KiB total
+JavaScript and 620 KiB complete dist; entry dependency closures are bounded at
+220 KiB Background, 10 KiB bootstrap, 140 KiB lazy content runtime, 175 KiB
+Popup, 135 KiB offscreen and 95 KiB Options. These are transitive runtime
+ceilings with only 1–4% headroom over the measured candidate after the local
+SVG QR encoder and context-specific Content facades landed. A missing split bundle, an import
 escaping `dist`, diagnostic production JavaScript or any exceeded closure
 fails release packaging.
 
@@ -209,7 +217,7 @@ This matrix is exhaustive for the persisted fields and momentary operations expo
 | Marker add/remove/list | extension state keyed by media/source | No page write. Label and count are bounded. |
 | Marker jump/previous/next | marker lookup then native seek plan | Uses the same `currentTime` ACK path. |
 | A/B skip | native seek to the verified end boundary | Uses the same target and source revision as the loop. |
-| Audio reset | one atomic per-field patch | Neutralizes owned DSP, volume, mute and Boost without resetting unrelated playback/video state. |
+| Audio reset | one atomic per-field patch | Neutralizes owned DSP, Main volume, media mute and Boost. Playback speed and pitch preservation are read only as processor context and are never written by reset. |
 | Video effects toggle/reset | one atomic patch for extension-owned video fields | Never touches native playback/audio state or site-authored CSS. |
 | Show info | snapshot read | Side-effect-free OSD projection. |
 | Open Popup/Options | Chrome extension UI APIs | The operation itself only opens browser UI. A rendered foreground Popup may then acquire an observation-only document lease for live page-to-Popup synchronization; that lease never admits MAIN, AudioContext or offscreen processing. |
@@ -262,6 +270,12 @@ active-target request cannot silently widen itself into whole-tab Capture.
 
 This ledger is deliberately one row per contract capability. `CONTROL_ALGORITHM_ADJUDICATIONS` is its executable owner. `native-only` means no CSS, processor, Capture or generic MAIN fallback exists. `hybrid-extension-native` means extension-owned state performs only bounded selection or estimation before the standard DOM API remains the sole page writer. `augmentation-only` means the product capability has no equivalent page/browser primitive; it does not grant generic interception. Every row preserves zero idle work unless the final column names an owned, subscribed or post-binding browser lifetime.
 
+The exhaustive result is 17 native-only capabilities, five hybrid
+extension/native capabilities, 26 augmentation-only capabilities and two
+observation-only capabilities. These counts are release-gated: changing a
+capability family requires changing the executable adjudication, its source
+algorithm anchor, the mirror below and the contract tests in the same commit.
+
 | Contract capability | Native adjudication | Controlled augmentation admission | Success proof and performance boundary |
 | --- | --- | --- | --- |
 | `audioEnabled` | augmentation-only; there is no page-wide native mode | coordinator-owned session gate only | gate ACK plus expanded actual state for every dependent DSP field; disabling marks retained DSP settings idle and releases all runtime work |
@@ -306,7 +320,7 @@ This ledger is deliberately one row per contract capability. `CONTROL_ALGORITHM_
 | `ab-set-b` | augmentation-only media/source-keyed state | bounded A/B state plus one scheduler only after both points are valid | operation result; rejects `B <= A` and stale source identity |
 | `ab-clear` | augmentation-only state release | dispose the owned timer/video-frame callback and remove the same-source points | operation result; recurring work is zero before ACK |
 | `ab-skip` | hybrid-extension-native: extension state selects B from the same-source loop, then standard DOM seek is the only writer | bounded A/B state lookup only | same-source native seek ACK |
-| `audio-reset` | augmentation-only coordinator compound operation | atomically neutralize/release owned audio fields | per-field snapshot ACK; unrelated media/video state is untouched |
+| `audio-reset` | augmentation-only coordinator compound operation | atomically neutralize/release owned audio fields | per-field snapshot ACK; Main volume/media mute may use their native writers, while speed, pitch preservation and video state are untouched |
 | `video-effects-toggle` | augmentation-only coordinator compound operation | acquire/release only extension-owned video fields | per-field computed/overlay readback; no native playback writes |
 | `video-effects-reset` | augmentation-only coordinator compound operation | remove only extension-owned CSS/overlay state | restored current cascade readback; zero idle work |
 | `show-info` | observation-only | none | authoritative snapshot projection; status read acquires no runtime lease |
@@ -456,6 +470,7 @@ moves responsibility must update this list, the executable matrices, tests and
 | `src/content/video/video-effects-controller.ts::apply` and `assertOwnerReadback` | Reversible CSS/overlay ownership | Positive effects require computed/overlay readback; disabling rotation, scale, fill and filter requires owner attributes and variables to be absent before ACK. |
 | `src/content/logic/control-operation-executor.ts::executeControlOperation` | Contract-scoped target resolution and momentary operation truth | `active-video` operations resolve the independent video registry target while media/source operations resolve active media; missing marker/media/A-B targets reject instead of returning an `ok` envelope with a false action result. |
 | `src/background/control-coordinator.ts::executeFieldOperation` | Compound operation transaction | Playback, seek, video toggle/reset and audio reset require every relevant field phase to be `applied` before returning operation success. |
+| `packages/contracts/src/control.contracts.ts::isControlStrategyAdmittedForCapability` and ACK validators | Capability-specific cross-process strategy admission | Reject a known strategy name when it belongs to another capability, so stale or drifting executors cannot report Capture volume, CSS fullscreen or extension-state screenshot success. |
 
 `audioEnabled.actual` is derived from the requested configuration and actual
 processor state. A neutral enabled configuration may report `true` while the
@@ -554,6 +569,65 @@ is synchronized to opaque output.
 | retired runtime-coexistence phase; current `runtime-loader.ts` and manifest bootstrap | During migration the lazy loader temporarily coexisted with legacy runtime writers. | Landed: reads remain bootstrap-only and side-effect free. Explicit control/restored non-default state acquires one document runtime lease; READY handshake replaces sleeps. Last lease disposes observers/listeners. |
 
 The rows above preserve the migration rationale, not live dual paths. Release is blocked unless static checks prove every retired writer symbol and generic MAIN path is absent from production reachability.
+
+### Source algorithm adjudication catalog
+
+Capability policy answers what a user may control; the source algorithm catalog
+answers how the implementation may calculate, route, observe or mutate it. The
+executable owner is
+`scripts/verify/spectra-control-algorithm-catalog.mjs`, deliberately outside all
+extension bundles. `check-spectra-control.js` verifies every source/symbol
+anchor, the decision/admission/lifetime vocabulary, sequential IDs and complete
+coverage of all 50 capabilities. A source move, new algorithm or changed owner
+therefore requires the catalog, this table and the implementation to change in
+one release-gated commit.
+
+`pure-computation` and `intent-routing` have no page mutation authority.
+`observation-only` may subscribe only to an existing native/owned source.
+`native-control` may call only the named DOM/Chrome/official API.
+`hybrid-state-native` may calculate or store a target, but the final page write
+still uses the canonical native executor. `controlled-augmentation` and
+`lifecycle-orchestration` may own only the explicitly named extension resource;
+neither class admits a constructor/prototype/descriptor/createElement/History
+or page-AudioContext interception. The one `site-adapter-only` entry is the
+bounded official player call after a retryable DOM failure.
+
+| Algorithm ID | Source algorithm | Decision | Native / controlled-augmentation judgment | Success and performance boundary |
+| --- | --- | --- | --- | --- |
+| `ALG-001` | Per-capability planner | pure computation | Selects only a capability-owned candidate; never executes or grants a fallback. | One bounded candidate pass per intent; coverage and admission are part of the result. |
+| `ALG-002` | Cross-process ACK admission | pure computation | Rejects known strategy names when the exact field/operation does not admit them. | Constant policy lookup at every snapshot/apply/operation boundary. |
+| `ALG-003` | Standard media writer/readback | native control | `HTMLMediaElement`/PiP/Fullscreen APIs only; native failure cannot become CSS/WebAudio/Capture/MAIN. | Temporary event/getter window on the same media/source; no retained work. |
+| `ALG-004` | Allowlisted official player fallback | native control | One official YouTube API invocation only after retryable DOM failure; this is the sole MAIN admission. | Reads official before/actual values in the invocation and leaves no bridge/listener. |
+| `ALG-005` | Chrome tab mute/pin | native control | Chrome `tabs.update` plus browser getter/event only. | One write/get pair; later synchronization reuses Chrome events. |
+| `ALG-006` | Audio session gate | lifecycle orchestration | Extension state may acquire/release an admitted processor, but cannot write native media fields. | Neutral configuration allocates nothing; dependent actual/error fields prove startup. |
+| `ALG-007` | Processor-needs predicate | pure computation | Boost/EQ/Bass/Compressor/Mono/Pan/Delay share one predicate; Visualizer is excluded. | Constant bounded config scan; Policy and UI prediction cannot drift. |
+| `ALG-008` | DSP mode selection | lifecycle orchestration | Transparent bypass first, safe complete Media WebAudio second, authorized full-output Capture last. | Stateless selection; processor allocation follows only after admission. |
+| `ALG-009` | Prospective media eligibility | pure computation | Same-origin/origin-owned/preloaded-CORS evidence only; no binding or silence probe. | One registry-sized pass before any irreversible source creation. |
+| `ALG-010` | MediaElementSource singleton | controlled augmentation | Safe media graph only; no generic page AudioContext interception. | WeakMap gives one source per element; the minimal route lasts only to navigation after first bind. |
+| `ALG-011` | Sparse shared DSP topology | controlled augmentation | Adds only explicitly enabled Web Audio nodes to an admitted processor. | Snapshot reports normalized config/signature/source count; neutral lane has no DSP nodes. |
+| `ALG-012` | Latest DSP apply/crossfade | controlled augmentation | Parameter changes reuse nodes; topology changes build one gated candidate. | One active plus one latest pending apply; Boost/EQ/Pan/Delay ramp in place. |
+| `ALG-013` | Capture processor handoff | controlled augmentation | Full-tab Capture only for explicit full/opaque scope; never a target/native-field fallback. | Candidate is running/read back behind zero gain before atomic gate switch; previous stable processor survives failure. |
+| `ALG-014` | Capture Visualizer sampling | observation only | Analyser may attach only to an existing processor. | One analyser per processor, cached at no more than 15 Hz while subscribed. |
+| `ALG-015` | Media identity/target selection | observation only | Native DOM/events provide identities and facts; no page write or scan-based pseudo-control. | Mutation/Intersection/native events only; sticky target scoring uses cached data. |
+| `ALG-016` | Page-native synchronization | observation only | Genuine page events commit actual state directly; reflected extension events are absorbed. | Reuses registry events and the loop attribute observer; no polling or descriptor patch. |
+| `ALG-017` | Frame cadence and step | hybrid state/native | Extension estimates a bounded median delta; canonical native seek is the only writer. | At most eight rVFC samples/750ms, source-revision cache, result always marked approximate. |
+| `ALG-018` | Rotation/mirror/fill | controlled augmentation | Owned individual CSS `rotate`/`scale`/`object-fit`; never replaces site `transform`. | Owner plus computed-style readback; ResizeObserver only for an owned 90/270-degree rotation. |
+| `ALG-019` | Video filter composition | controlled augmentation | Captures current computed filter, composes owned functions and removes ownership on disable. | Computed-filter readback; no observer, inline replacement or MAIN style patch. |
+| `ALG-020` | Dim overlay geometry | controlled augmentation | Closed-shadow four-region overlay; never rewrites target layout/z-index. | One coalesced rAF on resize/scroll only while enabled, with geometry/opacity readback. |
+| `ALG-021` | A/B scheduler | hybrid state/native | Source-keyed points and scheduling are extension-owned; boundary jump uses canonical seek. | One timer plus near-boundary rVFC only for a complete playing loop; all disposed on release. |
+| `ALG-022` | Time marker index/jump | hybrid state/native | Marker metadata is extension-owned; every jump remains native seek. | 1,000-marker/source bound and binary lookup; no recurring work. |
+| `ALG-023` | Screenshot verify/crop/save | native control | Chrome visible-tab capture is the only frame acquisition; no media canvas/CORS/DRM workaround. | Target/geometry verified twice and download must reach complete; no image IPC. |
+| `ALG-024` | Page settings release | lifecycle orchestration | Restores only baselines SPECTRA actually owns and defers official fields to their adapter. | Explicit registry-sized pass with per-field readback/rollback; no retained work. |
+| `ALG-025` | Compound reset/toggle transaction | lifecycle orchestration | Expands into typed field algorithms; cannot bypass per-field strategy. | Serialized per tab; every field applies before commit and compensation preserves the previous stable snapshot. |
+| `ALG-026` | Info OSD projection | observation only | Reads media/snapshot facts and writes extension UI only. | One projection per action; acquires no processing or writer lease. |
+| `ALG-027` | Popup/options/URL browser actions | native control | Chrome UI/navigation APIs only; URL remains HTTP(S)-validated. | One browser result per explicit operation; no content emulation. |
+| `ALG-028` | userScripts execution | controlled augmentation | Explicit permission and isolated userScripts sandbox only; no shared site-adapter MAIN authority. | Bounded script/tab validation and one sandbox result; no recurring work. |
+| `ALG-029` | Hotkey normalization | intent routing | Key handlers only build canonical intents; they never become another writer. | Compiled O(1) key map and one configured-site listener; descriptor owns repeat/coalescing/activation rules. |
+| `ALG-030` | Popup latest-value patching | intent routing | Optimistic presentation has no authority; coordinator actual ACK replaces it. | Continuous sends cap at 20 Hz and storage trails at 250ms with flush. |
+| `ALG-031` | Remote command routing | intent routing | Authenticated commands use the same coordinator and cannot choose strategy or tab fallback. | Event-driven actual snapshot push; no post-command multi-source polling. |
+| `ALG-032` | Remote authentication/replay boundary | lifecycle orchestration | HMAC/sequence/generation/fixed-tab gate precedes all state and command traffic. | One authenticated controller; only bounded pairing/reconnect timers. |
+| `ALG-033` | Offscreen host lease lifecycle | lifecycle orchestration | One extension-owned offscreen document for audio and remote; modules cannot close it directly. | Serialized creation/handshake/recovery; closes 30s after final lease release. |
+| `ALG-034` | Popup Visualizer scheduler | observation only | Visible subscribed cards read one existing processor batch; no processing acquisition. | One rAF scheduler and one in-flight IPC batch; stops immediately when hidden/unsubscribed. |
 
 ## Control state
 
@@ -714,13 +788,16 @@ Canonical DSP parameters are product behavior, not executor-local defaults:
 | Visualizer | post-processor master tap, `fftSize=256`/128 byte bins, only while explicitly subscribed |
 
 Topology signatures include enabled Bass/Compressor/Mono, non-zero EQ band
-indices, zero/non-zero Pan and the exact Delay. Parameter-only changes reuse the
-lane. Topology changes build a candidate and use a `40ms` complementary linear crossfade
+indices, and zero/non-zero Pan and Delay. Parameter-only EQ, Pan, Delay and
+Boost changes reuse the lane and ramp for `15ms`. Topology changes build a
+candidate and use a `40ms` complementary linear crossfade
 (`old + candidate = 1`) before destroying the old lane; this is not
 an equal-power mix and cannot double gain.
 
 - Mono is deterministic and Pan remains after Mono.
-- Delay changes use a candidate lane/crossfade rather than Doppler-like modulation of an active `DelayNode`.
+- Non-zero Delay amount changes ramp the existing `DelayNode`; only the
+  zero/non-zero boundary allocates or removes the node through a candidate
+  lane/crossfade. The 20 Hz input cap plus 15ms ramp bounds modulation work.
 - Compressor-off is a physical bypass. No neutral feature node remains in the main chain.
 - Analyser is a subscription tap, never a permanent output node. A visualizer subscription cannot start an otherwise absent processor.
 
