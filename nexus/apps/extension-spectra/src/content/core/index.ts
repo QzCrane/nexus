@@ -45,7 +45,7 @@ import { registerControlOperationExecutor } from '../logic/control-operation-exe
 import { MediaRegistry, setActiveMediaRegistry } from './media-registry';
 import { disposeABLoops, listABOwnership, observeABLoopSources } from '../video/ab-loop';
 import { disposeMarkers, listMarkerOwnership, observeMarkerSources } from '../video/time-marker';
-import { disposeTrustedActivationPrompt } from '../input/trusted-activation-prompt';
+import { registerTrustedActivationBridge } from '../input/trusted-activation-bridge';
 
 const log = logger.content;
 
@@ -297,8 +297,7 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
 	registry.track(nativeExecutor);
 	registry.track(registerNativeMediaExecutor(nativeExecutor));
 	registry.track(registerControlOperationExecutor(nativeExecutor));
-	registry.track(disposeTrustedActivationPrompt);
-
+	registry.track(registerTrustedActivationBridge());
 	bootstrapMessaging({ registry, policyEngine, audioController, settingsManager, captureManager, state, deps });
 
   const policyExecutor = await createPolicyExecutor(

@@ -331,9 +331,33 @@ describe('extension-page DOM and idle contracts', () => {
 	test('keeps video-only Popup acknowledgements independent from active media', () => {
 		const mediaControls = readFileSync(resolve(import.meta.dir, '../src/popup/card/media-events.ts'), 'utf8');
 		const videoControls = readFileSync(resolve(import.meta.dir, '../src/popup/side-panel/video-controls.ts'), 'utf8');
-		expect(mediaControls).toContain("mutation.field === 'pip'");
-		expect(mediaControls).toContain('state.controlSnapshot?.activeVideo ?? null');
+		expect(mediaControls).toContain('togglePictureInPicture(tabId)');
+		expect(mediaControls).not.toContain("mutation.field === 'pip'");
 		expect(videoControls).toContain('activeMedia: currentSnapshot.activeMedia');
 		expect(videoControls).not.toContain('activeMedia: ack.target ?? currentSnapshot.activeMedia');
+	});
+
+	test('keeps Popup PiP single-click, native-only, and lifecycle-bound', () => {
+		const popup = readFileSync(resolve(import.meta.dir, '../src/popup/card/media-events.ts'), 'utf8');
+		const bridge = readFileSync(
+			resolve(import.meta.dir, '../src/content/input/trusted-activation-bridge.ts'),
+			'utf8',
+		);
+		const protocol = readFileSync(
+			resolve(import.meta.dir, '../../../packages/contracts/src/spectra.protocol.ts'),
+			'utf8',
+		);
+		const pipHandler = popup.slice(
+			popup.indexOf('if (ui.btnPip)'),
+			popup.indexOf('// rule: speed controls'),
+		);
+		expect(popup).toContain('chrome.scripting.executeScript');
+		expect(popup).toContain("world: 'ISOLATED'");
+		expect(popup).toContain("'enterpictureinpicture'");
+		expect(popup).toContain("'leavepictureinpicture'");
+		expect(pipHandler).not.toContain('chrome.tabs.update');
+		expect(bridge).toContain('navigator.userActivation.isActive');
+		expect(bridge).toContain("submitTrustedActivationControl('pip')");
+		expect(protocol).not.toContain('spectra.content.activation.prompt');
 	});
 });

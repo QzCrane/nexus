@@ -34,7 +34,6 @@ import type {
 export const SPECTRA_UI_REQUEST_TYPES = [
 	'spectra.content.runtime.ensure',
 	'spectra.content.runtime.release',
-	'spectra.content.activation.prompt',
 	'spectra.control.snapshot.get',
 	'spectra.control.intent.submit',
 	'spectra.control.operation.submit',
@@ -162,8 +161,6 @@ function isUiResponseData(type: SpectraUiRequestType, value: unknown): boolean {
 			&& value.ready === true;
 		case 'spectra.content.runtime.release': return isRecord(value)
 			&& hasExact(value, ['accepted']) && value.accepted === true;
-		case 'spectra.content.activation.prompt': return isRecord(value)
-			&& hasExact(value, ['armed']) && value.armed === true;
 		case 'spectra.control.snapshot.get': return value === null || isUiControlSnapshot(value);
 		case 'spectra.control.intent.submit': return isUiControlApplyAck(value);
 		case 'spectra.control.operation.submit': return isUiControlOperationAck(value);

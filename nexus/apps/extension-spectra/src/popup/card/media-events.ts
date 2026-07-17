@@ -3,12 +3,15 @@
 import type { AudioConfig } from '@nexus/kernel';
 import type { CardUIElements } from '../types';
 import type { ControlMutation, ControlOperationAck } from '@nexus/contracts';
-import { sendSpectraRequest, sendSpectraTabRequest } from '../../shared/ui-spectra-client';
+import { sendSpectraRequest } from '../../shared/ui-spectra-client';
 import { syncSidePanelSpeed } from '../side-panel/controls';
 import { getHotkeyTarget, setHotkeyTarget } from '../../shared/registry-client';
 import type { CardInternalState } from './types';
-import { getCurrentDict } from '../views/i18n-apply';
 import { showPopupToast } from '../toast';
+import {
+	SPECTRA_TRUSTED_PIP_EVENT,
+	type SpectraTrustedPipResult,
+} from '../../shared/trusted-activation';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -25,6 +28,47 @@ class ControlUiError extends Error {
 	}
 }
 
+async function togglePictureInPicture(tabId: number): Promise<SpectraTrustedPipResult> {
+	const injections = await chrome.scripting.executeScript({
+		target: { tabId },
+		world: 'ISOLATED',
+		args: [SPECTRA_TRUSTED_PIP_EVENT],
+		func: ((eventName: string) => {
+			const entering = document.pictureInPictureElement === null;
+			const actualEvent = entering ? 'enterpictureinpicture' : 'leavepictureinpicture';
+			return new Promise<SpectraTrustedPipResult>((resolve, reject) => {
+				let timer: ReturnType<typeof setTimeout> | null = null;
+				const cleanup = () => {
+					document.removeEventListener(actualEvent, onActual, true);
+					if (timer !== null) clearTimeout(timer);
+				};
+				const onActual = () => {
+					cleanup();
+					resolve({ active: document.pictureInPictureElement !== null });
+				};
+				document.addEventListener(actualEvent, onActual, { capture: true, once: true });
+				timer = setTimeout(() => {
+					cleanup();
+					reject(new Error('Native Picture-in-Picture did not acknowledge the click'));
+				}, 2_000);
+				document.dispatchEvent(new Event(eventName));
+			});
+		}) as unknown as () => void,
+	}) as unknown as Array<{
+		result?: SpectraTrustedPipResult;
+		error?: { message?: string } | string;
+	}>;
+	const [injection] = injections;
+	const result = injection?.result as SpectraTrustedPipResult | undefined;
+	if (!result || typeof result.active !== 'boolean') {
+		const injectionError = typeof injection?.error === 'string'
+			? injection.error
+			: injection?.error?.message;
+		throw new Error(injectionError ?? 'The native PiP runtime returned no actual state');
+	}
+	return result;
+}
+
 function asControlUiFailure(error: unknown): ControlUiFailure {
 	if (error instanceof ControlUiError) return error.failure;
 	return {
@@ -37,47 +81,20 @@ function asControlUiFailure(error: unknown): ControlUiFailure {
 async function reportControlFailure(
 	error: unknown,
 	state: CardInternalState,
-	tabId: number,
-	field?: 'pip',
 ): Promise<void> {
 	const failure = asControlUiFailure(error);
 	state.lastError = failure;
-	if (field === 'pip' && failure.code === 'user-activation-required') {
-		const dict = getCurrentDict();
-		try {
-			const prompt = await sendSpectraTabRequest(
-				tabId,
-				'spectra.content.activation.prompt',
-				{
-					field: 'pip',
-					label: dict?.pipActivationPrompt ?? 'Click to enter Picture-in-Picture',
-				},
-			);
-			if (!prompt.ok) throw new ControlUiError(prompt.error);
-			await chrome.tabs.update(tabId, { active: true });
-			return;
-		} catch {
-			const message = dict?.pipActivationRequired
-				?? 'Open the page and use its configured Picture-in-Picture hotkey.';
-			state.lastError = { ...failure, message };
-			showPopupToast(message, 'error');
-			return;
-		}
-	}
 	showPopupToast(failure.message, 'error');
 }
 
 async function submitMutation(tabId: number, state: CardInternalState, mutation: ControlMutation) {
-	const target = mutation.field === 'pip'
-		? state.controlSnapshot?.activeVideo ?? null
-		: state.controlSnapshot?.activeMedia ?? null;
 	const response = await sendSpectraRequest(
 		'spectra.control.intent.submit',
 		{
 			tabId,
 			source: 'popup',
 			requestedCoverage: 'active-target',
-			target,
+			target: state.controlSnapshot?.activeMedia ?? null,
 			baseRevision: state.controlRevision,
 			mutations: [mutation],
 		},
@@ -120,22 +137,22 @@ export function bindMediaControls(
 				if (!response.ok) throw new ControlUiError(response.error);
 				const playing = (response.data as ControlOperationAck<'playback-toggle'>).result.playing;
 				if (typeof playing === 'boolean' && ui.btnPause) renderPlaybackButton(ui.btnPause, playing);
-			}).catch((error: unknown) => reportControlFailure(error, state, tabId));
+			}).catch((error: unknown) => reportControlFailure(error, state));
 		};
 	}
 
 	if (ui.btnPip) {
 		ui.btnPip.onclick = () => {
 			ui.btnPip?.setAttribute('aria-busy', 'true');
-			void submitMutation(tabId, state, { field: 'pip', operation: 'toggle' })
-				.then((ack) => {
-					const active = ack.fields.pip?.actual;
-					if (typeof active === 'boolean' && ui.btnPip) {
-						ui.btnPip.classList.toggle('active', active);
-						ui.btnPip.setAttribute('aria-pressed', String(active));
-					}
+			// The first call in the click stack is a one-shot isolated-world injection.
+			// It reaches the sole native writer without a Background/message await.
+			void togglePictureInPicture(tabId)
+				.then((result) => {
+					if (!ui.btnPip) return;
+					ui.btnPip.classList.toggle('active', result.active);
+					ui.btnPip.setAttribute('aria-pressed', String(result.active));
 				})
-				.catch((error: unknown) => reportControlFailure(error, state, tabId, 'pip'))
+				.catch((error: unknown) => reportControlFailure(error, state))
 				.finally(() => ui.btnPip?.removeAttribute('aria-busy'));
 		};
 	}
@@ -151,7 +168,7 @@ export function bindMediaControls(
 					if (ui.speedInput) ui.speedInput.value = actual.toFixed(2);
 					syncSidePanelSpeed(actual);
 				})
-				.catch((error: unknown) => reportControlFailure(error, state, tabId));
+				.catch((error: unknown) => reportControlFailure(error, state));
 		};
 	});
 

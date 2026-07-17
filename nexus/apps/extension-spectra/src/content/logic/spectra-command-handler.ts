@@ -17,6 +17,7 @@ import { getActiveMediaRegistry } from '../core/media-registry';
 import { getABState } from '../video/ab-loop';
 import { listMarkers } from '../video/time-marker';
 import { sendSpectraRequest } from '../../shared/spectra-client';
+import { submitTrustedActivationControl } from '../input/hotkey-helpers';
 
 type ContentCommandType = Extract<
 	SpectraRequestType,
@@ -131,8 +132,8 @@ export function handleSpectraContentCommand(
 				);
 				return true;
 			case 'spectra.media.pip.toggle':
-				void submitLegacyMutations([{ field: 'pip', operation: 'toggle' }]).then(
-					(ack) => sendResponse(rpcSuccess({ active: ack.fields.pip?.actual === true })),
+				void submitTrustedActivationControl('pip').then(
+					(result) => sendResponse(rpcSuccess({ active: result.actual })),
 					(error) => respondWithFailure(sendResponse, error),
 				);
 				return true;

@@ -18,10 +18,11 @@ a second policy.
   internal last-resort processor for explicit full-output DSP only.
 - Untouched pages keep native constructor/descriptor identity and create no
   AudioContext, offscreen processor, analyser or periodic IPC.
-- Popup PiP now preserves the browser's activation boundary without leaving a
-  dead control: a rejected cross-context attempt arms one 15-second page button,
-  activates the bound tab and lets the user's real click invoke the same native
-  Picture-in-Picture API. No synthetic gesture, MAIN or Capture path exists.
+- Popup PiP is now a true one-click toggle. The click immediately enters one
+  extension ISOLATED-world execution, synchronously reaches the lifecycle-bound
+  Content trigger and invokes the same native writer while browser activation is
+  still live. Success comes only from the enter/leave event and
+  `pictureInPictureElement`; there is no second prompt, MAIN or Capture path.
 - Extension reloads retire the previous bootstrap idempotently. Expected stale
   Sentinel handoffs remain fail-closed but silent, and unrelated protocol errors
   are still observable.
@@ -93,7 +94,7 @@ There is no generic MAIN runtime, constructor/prototype/descriptor patch,
 | `packages/contracts/src/spectra.ui-runtime.ts`; `spectra.ui-settings-runtime.ts`; `test/ui-runtime-contract.spec.ts` | Closed 24-request/six-event Popup/remote facade plus a ten-request/one-event Options facade. Internal or cross-surface requests are rejected before both success and shared-error handling, and mutations cannot drift from the canonical wire shape. |
 | `src/background/handlers/commands.ts`; `background/handlers/tab-state.ts` | Exact, disjoint v2 listener ownership. Pin/mute/UI commands cannot consume `spectra.tab.visible.list` or return a competing malformed-command response. |
 | `src/content/core/extension-context.ts`; `content/core/bootstrap.ts`; `content/core/sentinel.ts` | One side-effect-free invalidation detector handles both missing runtime identity and synchronous send throws, disposes the old bootstrap once and keeps expected stale handoff rejection out of the production console. |
-| `src/popup/card/media-events.ts`; `content/input/trusted-activation-prompt.ts`; `content/ui/toast.ts` | Preserves structured PiP errors and converts only `user-activation-required` into a bounded, accessible page-click handoff. All Popup media promises terminate in an ACK or visible feedback. |
+| `src/popup/card/media-events.ts`; `content/input/trusted-activation-bridge.ts`; `shared/trusted-activation.ts` | Executes Popup PiP once inside the original click activation, crosses isolated worlds through one synchronous lifecycle-bound event, admits only live activation and resolves from native enter/leave plus getter state. All Popup media promises terminate in actual state or visible feedback. |
 
 ## Algorithm-level decisions
 
@@ -176,7 +177,7 @@ prints current startup closures and largest contributors for every release.
 - Architecture verification passes, including the 51-capability and
   50-algorithm source catalog. Biome and all four relevant workspace typechecks
   pass.
-- The unit/contract/runtime suite passes 345 tests with 3,244 assertions across
+- The unit/contract/runtime suite passes 345 tests with 3,241 assertions across
   55 files.
 - Chrome integration covers untouched-page transparency, side-effect-free
   status reads, bidirectional page/Popup state, WebAudio/Capture transitions,
@@ -184,9 +185,9 @@ prints current startup closures and largest contributors for every release.
   behavior and service-worker restart.
 - The QR replacement has a boundary test proving a local SVG data URL encodes
   the fragment-secret pairing URL without placing the secret in SVG metadata.
-- Chrome integration passes 21/21 with 147 assertions against the development
-  build and the same 21/21 with 147 assertions against the extracted production
-  ZIP. The added cases prove exact visible-tab routing, trusted-click PiP,
+- Chrome integration passes 21/21 with 149 assertions against the development
+  build and the same 21/21 with 149 assertions against the extracted production
+  ZIP. The added cases prove exact visible-tab routing, one-click Popup PiP,
   extension-reload retirement and the acknowledged single-slider color model.
 - Dependency audit reports no vulnerabilities. The production remote page
   matches local bytes, MIME types and all release-gated security headers.

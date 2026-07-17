@@ -26,7 +26,6 @@ import {
 } from './spectra-command-handler';
 import { shouldAcceptAudioSessionPhase } from '../../shared/audio-session-phase';
 import { SPECTRA_SAME_DOCUMENT_NAVIGATION_EVENT } from '../core/lifecycle/navigation-observer';
-import { armTrustedActivationPrompt } from '../input/trusted-activation-prompt';
 
 export interface MessageHandlerDeps {
 	state: PolicyExecutorState;
@@ -130,22 +129,6 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 		if (applyCaptureEvent(deps, message)) return false;
 		if (applyContentSettingsEvent(deps, message)) return false;
 		if (applyNavigationEvent(message, _sender)) return false;
-		if (isRecord(message)
-			&& message.protocolVersion === SPECTRA_PROTOCOL_VERSION
-			&& message.type === 'spectra.content.activation.prompt') {
-			if (!isSpectraRequestEnvelope(message)) {
-				sendResponse(rpcFailure('invalid_request', 'Malformed activation prompt request'));
-				return false;
-			}
-			if (_sender.id && _sender.id !== chrome.runtime.id) {
-				sendResponse(rpcFailure('forbidden', 'Activation prompt is extension-internal only'));
-				return false;
-			}
-			const payload = message.payload as { field: 'pip'; label: string };
-			armTrustedActivationPrompt(payload.field, payload.label);
-			sendResponse(rpcSuccess({ armed: true as const }));
-			return false;
-		}
 		if (isRecord(message)
 			&& message.protocolVersion === SPECTRA_PROTOCOL_VERSION
 			&& typeof message.type === 'string'

@@ -60,8 +60,6 @@ export const KO_KR: I18NDict = {
 	btnPause: '일시정지/재생',
 	btnMute: '음소거',
 	btnPip: '화면 속 화면',
-	pipActivationRequired: '페이지에서 Alt+P를 눌러 화면 속 화면을 시작하세요.',
-	pipActivationPrompt: '클릭하여 화면 속 화면 시작',
 	btnHotkeyTarget: '단축키 대상',
 	btnGotoTab: '탭으로 이동',
 	pauseRetentionLabel: '일시정지 유지',

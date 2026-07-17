@@ -18,7 +18,7 @@ const TAB_FIELDS = new Set<ControlMutation['field']>(['tabMuted', 'tabPinned']);
 
 export async function submitTrustedActivationControl(
 	field: 'playing' | 'pip' | 'fullscreen',
-): Promise<void> {
+): Promise<{ target: import('@nexus/contracts').MediaTarget; actual: boolean }> {
 	const executor = getActiveNativeMediaExecutor();
 	if (!executor) throw new Error('The native media runtime is unavailable');
 	// The browser API is invoked synchronously inside the trusted keydown stack.
@@ -31,6 +31,7 @@ export async function submitTrustedActivationControl(
 		patch: { [field]: result.actual },
 	});
 	if (!response.ok) throw new Error(response.error.message);
+	return result;
 }
 
 export async function submitHotkeyMutations(mutations: readonly ControlMutation[]): Promise<void> {

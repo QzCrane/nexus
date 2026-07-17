@@ -1279,12 +1279,23 @@ function checkRetiredPaths(root) {
 		path.join(root, SOURCE_PATH, 'popup/card/media-events.ts'),
 		'utf8',
 	);
+	const popupPipBridge = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'content/input/trusted-activation-bridge.ts'),
+		'utf8',
+	);
+	const hotkeyHelpers = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'content/input/hotkey-helpers.ts'),
+		'utf8',
+	);
 	if ((videoControls.match(/target: currentSnapshot\?\.activeVideo \?\? null/gu) ?? []).length !== 3
 		|| videoControls.includes('target: currentSnapshot?.activeMedia ?? null')
 		|| !videoControls.includes('activeMedia: currentSnapshot.activeMedia')
 		|| videoControls.includes('activeMedia: ack.target ?? currentSnapshot.activeMedia')
-		|| !popupMediaControls.includes("mutation.field === 'pip'")
-		|| !popupMediaControls.includes('state.controlSnapshot?.activeVideo ?? null')
+		|| !popupMediaControls.includes('togglePictureInPicture(tabId)')
+		|| !popupMediaControls.includes("world: 'ISOLATED'")
+		|| !popupPipBridge.includes('navigator.userActivation.isActive')
+		|| !popupPipBridge.includes("submitTrustedActivationControl('pip')")
+		|| !hotkeyHelpers.includes('executor.toggleTrustedActivation(field)')
 		|| !nativeExecutor.includes('this.registry.resolveVideo(intent.target)')) {
 		error('SCTRL-005/SCTRL-014/SCTRL-025: video controls must target the independent active-video identity');
 	}

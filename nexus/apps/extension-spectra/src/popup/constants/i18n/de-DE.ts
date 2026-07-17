@@ -60,8 +60,6 @@ export const DE_DE: I18NDict = {
 	btnPause: 'Pause/Wiedergabe',
 	btnMute: 'Stummschalten',
 	btnPip: 'Bild-in-Bild',
-	pipActivationRequired: 'Öffne die Seite und drücke Alt+P für Bild-in-Bild.',
-	pipActivationPrompt: 'Klicken, um Bild-in-Bild zu starten',
 	btnHotkeyTarget: 'Hotkey-Ziel',
 	btnGotoTab: 'Zum Tab',
 	pauseRetentionLabel: 'Pause-Aufbewahrung',

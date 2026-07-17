@@ -1750,7 +1750,7 @@ describe('SPECTRA built extension smoke', () => {
 		}
 	}, 20_000);
 
-	test('bridges Popup PiP through one bounded trusted page click', async () => {
+	test('toggles native PiP from one Popup click without a second prompt', async () => {
 		await fixturePage.bringToFront();
 		const errorsBefore = fixtureErrors.length;
 		await evaluateServiceWorker(async ({ url }) => {
@@ -1762,6 +1762,8 @@ describe('SPECTRA built extension smoke', () => {
 				func: () => {
 					const scope = window as Window & {
 						__spectraOriginalRequestPictureInPicture?: HTMLVideoElement['requestPictureInPicture'];
+						__spectraOriginalExitPictureInPicture?: Document['exitPictureInPicture'];
+						__spectraPipActivation?: boolean;
 					};
 					if (!scope.__spectraOriginalRequestPictureInPicture) {
 						scope.__spectraOriginalRequestPictureInPicture = HTMLVideoElement.prototype.requestPictureInPicture;
@@ -1770,9 +1772,32 @@ describe('SPECTRA built extension smoke', () => {
 						configurable: true,
 						value: true,
 					});
-					HTMLVideoElement.prototype.requestPictureInPicture = () => Promise.reject(
-						new DOMException('A user gesture is required', 'NotAllowedError'),
-					);
+					Object.defineProperty(document, 'pictureInPictureElement', {
+						configurable: true,
+						value: null,
+					});
+					scope.__spectraOriginalExitPictureInPicture = document.exitPictureInPicture;
+					HTMLVideoElement.prototype.requestPictureInPicture = function requestPictureInPicture() {
+						scope.__spectraPipActivation = navigator.userActivation.isActive;
+						if (!scope.__spectraPipActivation) {
+							return Promise.reject(new DOMException('A user gesture is required', 'NotAllowedError'));
+						}
+						Object.defineProperty(document, 'pictureInPictureElement', {
+							configurable: true,
+							value: this,
+						});
+						this.dispatchEvent(new Event('enterpictureinpicture'));
+						return Promise.resolve({ width: 320, height: 180 } as PictureInPictureWindow);
+					};
+					document.exitPictureInPicture = () => {
+						const current = document.pictureInPictureElement;
+						Object.defineProperty(document, 'pictureInPictureElement', {
+							configurable: true,
+							value: null,
+						});
+						current?.dispatchEvent(new Event('leavepictureinpicture'));
+						return Promise.resolve();
+					};
 				},
 			});
 		}, { url: fixturePage.url() });
@@ -1788,20 +1813,20 @@ describe('SPECTRA built extension smoke', () => {
 		try {
 			await popup.waitForSelector('.glass-card');
 			await popup.$eval('.btn-pip', (element) => (element as HTMLButtonElement).click());
-			await fixturePage.waitForFunction(() => {
-				const host = document.querySelector('#spectra-toast-host');
-				const button = host?.shadowRoot?.querySelector<HTMLButtonElement>('#action');
-				return Boolean(button && !button.hidden && button.textContent?.trim());
+			await new Promise((resolveWait) => setTimeout(resolveWait, 1_000));
+			const popupState = await popup.evaluate(() => ({
+				pressed: document.querySelector('.btn-pip')?.getAttribute('aria-pressed'),
+				busy: document.querySelector('.btn-pip')?.getAttribute('aria-busy'),
+				toast: document.querySelector('.preset-toast')?.textContent,
+			}));
+			expect({ popupState, diagnostics }).toEqual({
+				popupState: { pressed: 'true', busy: null },
+				diagnostics: [],
 			});
-			const actionHandle = await fixturePage.evaluateHandle(() => (
-				document.querySelector('#spectra-toast-host')
-					?.shadowRoot?.querySelector<HTMLButtonElement>('#action') ?? null
-			));
-			const action = actionHandle.asElement();
-			if (!action) throw new Error('Trusted PiP activation prompt is missing');
-			await action.click();
-			await actionHandle.dispose();
-			await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+			expect(await fixturePage.$('#spectra-toast-host')).toBeNull();
+
+			await popup.$eval('.btn-pip', (element) => (element as HTMLButtonElement).click());
+			await popup.waitForFunction(() => document.querySelector('.btn-pip')?.getAttribute('aria-pressed') === 'false');
 			expect(diagnostics).toEqual([]);
 			expect(fixtureErrors.slice(errorsBefore)).toEqual([]);
 		} finally {
@@ -1815,12 +1840,20 @@ describe('SPECTRA built extension smoke', () => {
 					func: () => {
 						const scope = window as Window & {
 							__spectraOriginalRequestPictureInPicture?: HTMLVideoElement['requestPictureInPicture'];
+							__spectraOriginalExitPictureInPicture?: Document['exitPictureInPicture'];
+							__spectraPipActivation?: boolean;
 						};
 						if (scope.__spectraOriginalRequestPictureInPicture) {
 							HTMLVideoElement.prototype.requestPictureInPicture = scope.__spectraOriginalRequestPictureInPicture;
 							delete scope.__spectraOriginalRequestPictureInPicture;
 						}
+						if (scope.__spectraOriginalExitPictureInPicture) {
+							document.exitPictureInPicture = scope.__spectraOriginalExitPictureInPicture;
+							delete scope.__spectraOriginalExitPictureInPicture;
+						}
+						delete scope.__spectraPipActivation;
 						Reflect.deleteProperty(document, 'pictureInPictureEnabled');
+						Reflect.deleteProperty(document, 'pictureInPictureElement');
 					},
 				});
 			}, { url: fixturePage.url() });

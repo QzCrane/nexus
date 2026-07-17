@@ -523,9 +523,9 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		decision: 'native-control',
 		augmentationAdmission: 'none',
 		interceptionPolicy: 'forbidden',
-		successProof: 'trusted page key event or explicitly armed one-shot page prompt executes the standard DOM API in the activation stack and reports actual ACK to the coordinator',
+		successProof: 'trusted page key event or one immediate Popup ISOLATED-world execution synchronously reaches the lifecycle-bound Content trigger, executes the standard DOM API under live user activation and reports actual ACK to the coordinator',
 		recurringWork: 'while-owned',
-		performanceBoundary: 'one native call and bounded event/getter readback per trusted action; no activation synthesis, polling or retained prompt after click, timeout or runtime release',
+		performanceBoundary: 'one native call and bounded event/getter readback per trusted action; one listener only with the Content lease, no second prompt, MAIN script, activation synthesis or polling',
 	},
 	{
 		id: 'ALG-040',

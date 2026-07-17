@@ -60,8 +60,6 @@ export const FR_FR: I18NDict = {
 	btnPause: 'Pause/Lecture',
 	btnMute: 'Couper le son',
 	btnPip: 'Image dans l\'image',
-	pipActivationRequired: 'Ouvrez la page et appuyez sur Alt+P pour activer l\'image dans l\'image.',
-	pipActivationPrompt: 'Cliquez pour activer l\'image dans l\'image',
 	btnHotkeyTarget: 'Cible raccourci',
 	btnGotoTab: 'Aller à l\'onglet',
 	pauseRetentionLabel: 'Rétention de pause',
