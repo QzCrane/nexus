@@ -89,7 +89,9 @@ describe('editable hotkey action contract', () => {
 		expect(isHotkeyParamsForAction('speed_set', { speed: 1.5 })).toBe(true);
 		expect(isHotkeyParamsForAction('speed_set', undefined)).toBe(false);
 		expect(isHotkeyParamsForAction('volume_set', { volume: 100 })).toBe(true);
-		expect(isHotkeyParamsForAction('volume_set', { volume: 101 })).toBe(false);
+		expect(isHotkeyParamsForAction('volume_set', { volume: 101 })).toBe(true);
+		expect(isHotkeyParamsForAction('volume_set', { volume: 800 })).toBe(true);
+		expect(isHotkeyParamsForAction('volume_set', { volume: 801 })).toBe(false);
 		expect(isHotkeyParamsForAction('open_url', { url: 'javascript:alert(1)' })).toBe(false);
 		expect(isHotkeyParamsForAction('open_url', { url: 'https://example.com/' })).toBe(true);
 		expect(isHotkeyParamsForAction('run_js', { script: '' })).toBe(false);

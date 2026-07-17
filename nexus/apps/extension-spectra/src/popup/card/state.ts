@@ -1,7 +1,12 @@
 // goal: manages the internal state of a tab control card and orchestrates configuration updates across background and content scripts
 
 import type { AudioConfig, GlobalSettings } from '@nexus/kernel';
-import type { ControlPatch } from '@nexus/contracts';
+import {
+	isActiveCaptureLifecycle,
+	resolveAudioVolume,
+	type ControlOperationAck,
+	type ControlPatch,
+} from '@nexus/contracts';
 import { mergeAudioConfig, mergeControlFields, type CardInternalState } from './types';
 import { sendSpectraRequest } from '../../shared/ui-spectra-client';
 
@@ -12,9 +17,10 @@ export type ConfigUpdateFn = ((changes: Partial<AudioConfig>) => void) & {
 export function createGetCapturing(
   state: CardInternalState,
 ): () => boolean {
-  return () => {
-    return !!state.isCaptureActive;
-  };
+  return () => isActiveCaptureLifecycle({
+	actualMode: state.actualMode,
+	phase: state.phase,
+  });
 }
 
 // post: returns an async update function that applies changes optimistically and routes commands based on the active capture mode
@@ -32,25 +38,25 @@ export function createUpdateFn(
 	let lastSentAt = 0;
 	let localRevision = 0;
 	let pendingPatch: ControlPatch = {};
+	let pendingEffectiveVolume: number | null = null;
 
-	const toControlPatch = (changes: Partial<AudioConfig>): ControlPatch => {
+	const toControlPatch = (
+		changes: Partial<AudioConfig>,
+		config: AudioConfig = state.config,
+	): ControlPatch => {
 		const patch: ControlPatch = {};
-		if (changes.enabled !== undefined) patch.audioEnabled = state.config.enabled;
-		if (changes.volume !== undefined || changes.volumeBase !== undefined) {
-			patch.volumeBase = state.config.volumeBase ?? Math.min(100, state.config.volume);
-		}
-		if (changes.volume !== undefined || changes.boost !== undefined) {
-			patch.boost = state.config.boost ?? (state.config.volume > 100 ? state.config.volume / 100 : 1);
-		}
-		if (changes.muted !== undefined) patch.mediaMuted = state.config.muted;
-		if (changes.speed !== undefined) patch.speed = state.config.speed;
-		if (changes.preservePitch !== undefined) patch.preservePitch = state.config.preservePitch;
-		if (changes.eqValues !== undefined) patch.eqValues = [...state.config.eqValues];
-		if (changes.bass !== undefined) patch.bass = state.config.bass;
-		if (changes.compressor !== undefined) patch.compressor = state.config.compressor;
-		if (changes.mono !== undefined) patch.mono = state.config.mono;
-		if (changes.pan !== undefined) patch.pan = state.config.pan;
-		if (changes.delay !== undefined) patch.delay = state.config.delay;
+		if (changes.enabled !== undefined) patch.audioEnabled = config.enabled;
+		// The public 0-800 control is submitted as one compound operation below.
+		// Never duplicate its split native/processor fields into ordinary patches.
+		if (changes.muted !== undefined) patch.mediaMuted = config.muted;
+		if (changes.speed !== undefined) patch.speed = config.speed;
+		if (changes.preservePitch !== undefined) patch.preservePitch = config.preservePitch;
+		if (changes.eqValues !== undefined) patch.eqValues = [...config.eqValues];
+		if (changes.bass !== undefined) patch.bass = config.bass;
+		if (changes.compressor !== undefined) patch.compressor = config.compressor;
+		if (changes.mono !== undefined) patch.mono = config.mono;
+		if (changes.pan !== undefined) patch.pan = config.pan;
+		if (changes.delay !== undefined) patch.delay = config.delay;
 		return patch;
 	};
 
@@ -88,9 +94,38 @@ export function createUpdateFn(
 		lastSentAt = performance.now();
 		const sentRevision = localRevision;
 		const patch = pendingPatch;
+		const effectiveVolume = pendingEffectiveVolume;
 		pendingPatch = {};
+		pendingEffectiveVolume = null;
 
 		inFlight = (async () => {
+			if (effectiveVolume !== null) {
+				const response = await sendSpectraRequest(
+					'spectra.control.operation.submit',
+					{
+						tabId,
+						source: 'popup',
+						target: state.controlSnapshot?.activeMedia ?? null,
+						baseRevision: state.controlRevision,
+						operation: 'effective-volume',
+						payload: { operation: 'set', value: effectiveVolume },
+					},
+					{ tabId },
+				);
+				if (!response.ok) {
+					state.lastError = response.error;
+					throw new Error(response.error.message);
+				}
+				const acknowledgement = response.data as ControlOperationAck<'effective-volume'>;
+				state.controlRevision = Math.max(state.controlRevision, acknowledgement.revision);
+				state.controlGeneration = Math.max(state.controlGeneration, acknowledgement.generation);
+				state.stableConfig = mergeControlFields(state.stableConfig, acknowledgement.fields);
+				state.stableConfig = mergeAudioConfig(state.stableConfig, {
+					volume: acknowledgement.result.effectiveVolume,
+					volumeBase: acknowledgement.result.volumeBase,
+					boost: acknowledgement.result.boost,
+				});
+			}
 			for (const group of splitByCoverage(patch)) {
 				const response = await sendSpectraRequest(
 					'spectra.control.intent.submit',
@@ -169,11 +204,24 @@ export function createUpdateFn(
 
 	const update = ((changes: Partial<AudioConfig>) => {
 		// This function is only invoked by explicit controls/preset actions; reads never call it.
-		if (Object.keys(changes).length > 0) state.userInteracted = true;
+		const previous = state.config;
+		const next = mergeAudioConfig(previous, changes);
+		const hasVolumeChange = changes.volume !== undefined
+			|| changes.volumeBase !== undefined
+			|| changes.boost !== undefined;
+		const previousVolume = resolveAudioVolume(previous).effectiveVolume;
+		const nextVolume = resolveAudioVolume(next).effectiveVolume;
+		const volumeChanged = hasVolumeChange && previousVolume !== nextVolume;
+		const patch = toControlPatch(changes, next);
+		// Identical range-input samples are discarded before the runtime boundary.
+		// This keeps repeated values at zero IPC and zero persistence work.
+		if (!volumeChanged && Object.keys(patch).length === 0) return;
+		state.userInteracted = true;
 
 		// eff: apply changes immediately to local state for responsive UI feedback
-		state.config = mergeAudioConfig(state.config, changes);
-		pendingPatch = { ...pendingPatch, ...toControlPatch(changes) };
+		state.config = next;
+		if (volumeChanged) pendingEffectiveVolume = nextVolume;
+		pendingPatch = { ...pendingPatch, ...patch };
 		localRevision += 1;
 		pending = true;
 		render();

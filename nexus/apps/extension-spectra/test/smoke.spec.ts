@@ -129,6 +129,16 @@ interface WebAudioProbe {
 	oldRuntimeDisposed: boolean | null;
 }
 
+interface PopupVolumePresentation {
+	sliderCount: number;
+	min: string;
+	max: string;
+	value: string;
+	fillColor: string;
+	valueColor: string;
+	sliderAccent: string;
+}
+
 const DEFAULT_AUDIO_CONFIG: AudioConfig = {
 	enabled: true,
 	volume: 100,
@@ -522,25 +532,87 @@ async function openExtensionClient(path = 'popup.html'): Promise<Page> {
 	return page;
 }
 
-async function sendFromActionPopup<T>(message: Record<string, unknown>): Promise<T> {
+async function openActionPopupTarget(timeoutMs = 10_000): Promise<Target> {
 	const knownTargets = new Set(browser.targets());
 	const popupUrl = `chrome-extension://${extensionId}/popup.html`;
-	const popupTargetPromise = browser.waitForTarget(
+	const targetPromise = browser.waitForTarget(
 		(target) => !knownTargets.has(target) && target.url() === popupUrl,
-		{ timeout: 10_000 },
+		{ timeout: timeoutMs },
 	);
-	let popupClient: CDPSession | null = null;
 	try {
 		await withDiagnosticTimeout(
 			'open the real extension action popup',
 			() => evaluateServiceWorker(async () => chrome.action.openPopup()),
-			10_000,
+			timeoutMs,
 		);
-		const target = await withDiagnosticTimeout(
+		return await withDiagnosticTimeout(
 			'discover the real extension action popup',
-			() => popupTargetPromise,
-			10_000,
+			() => targetPromise,
+			timeoutMs,
 		);
+	} catch (error) {
+		void targetPromise.catch(() => undefined);
+		throw error;
+	}
+}
+
+async function readPopupVolumePresentation(): Promise<PopupVolumePresentation> {
+	await fixturePage.bringToFront();
+	const target = await openActionPopupTarget();
+	const popup = await target.asPage();
+	try {
+		await popup.waitForSelector('.glass-card .vol-slider', { timeout: 8_000 });
+		return await popup.evaluate(() => {
+			const sliders = [...document.querySelectorAll<HTMLInputElement>('.vol-slider')];
+			const slider = sliders[0];
+			const fill = document.querySelector<HTMLElement>('.slider-fill');
+			const value = document.querySelector<HTMLElement>('.vol-number');
+			if (!slider || !fill || !value) throw new Error('Popup volume presentation is incomplete');
+			return {
+				sliderCount: sliders.length,
+				min: slider.min,
+				max: slider.max,
+				value: slider.value,
+				fillColor: getComputedStyle(fill).backgroundColor,
+				valueColor: getComputedStyle(value).color,
+				sliderAccent: getComputedStyle(slider).getPropertyValue('--slider-accent').trim(),
+			};
+		});
+	} finally {
+		await popup.close().catch(() => undefined);
+	}
+}
+
+async function submitEffectiveVolume(tabId: number, value: number): Promise<void> {
+	const response = await sendFromActionPopup<{
+		ok: boolean;
+		error?: { message?: string };
+	}>({
+		protocolVersion: 2,
+		tabId,
+		type: 'spectra.control.operation.submit',
+		payload: {
+			tabId,
+			source: 'popup',
+			target: null,
+			operation: 'effective-volume',
+			payload: { operation: 'set', value },
+		},
+	});
+	if (!response.ok) throw new Error(response.error?.message ?? `Unable to set effective volume to ${value}`);
+}
+
+async function readBadgeColor(tabId: number): Promise<number[]> {
+	return evaluateServiceWorker(
+		async (targetTabId) => chrome.action.getBadgeBackgroundColor({ tabId: targetTabId }),
+		tabId,
+	) as Promise<number[]>;
+}
+
+async function sendFromActionPopup<T>(message: Record<string, unknown>): Promise<T> {
+	let popupClient: CDPSession | null = null;
+	try {
+		const target = await openActionPopupTarget();
 		popupClient = await withDiagnosticTimeout(
 			'attach to the real extension action popup',
 			() => target.createCDPSession(),
@@ -570,7 +642,6 @@ async function sendFromActionPopup<T>(message: Record<string, unknown>): Promise
 		}
 		return evaluation.result.value as T;
 	} finally {
-		void popupTargetPromise.catch(() => undefined);
 		await popupClient?.send('Runtime.evaluate', { expression: 'close()' }).catch(() => undefined);
 		await popupClient?.detach().catch(() => undefined);
 	}
@@ -1584,14 +1655,7 @@ describe('SPECTRA built extension smoke', () => {
 		};
 
 		await fixturePage.bringToFront();
-		const popupUrl = `chrome-extension://${extensionId}/popup.html`;
-		const knownTargets = new Set(browser.targets());
-		const popupTargetPromise = browser.waitForTarget(
-			(target) => !knownTargets.has(target) && target.url() === popupUrl,
-			{ timeout: 10_000 },
-		);
-		await evaluateServiceWorker(async () => chrome.action.openPopup());
-		const popupTarget = await popupTargetPromise;
+		const popupTarget = await openActionPopupTarget();
 		const popup = await popupTarget.asPage();
 		const popupDiagnostics: string[] = [];
 		popup.on('pageerror', (error) => popupDiagnostics.push(`pageerror: ${error.message}`));
@@ -1673,16 +1737,9 @@ describe('SPECTRA built extension smoke', () => {
 	test('keeps visualizer IPC at zero without an active processor and after popup close', async () => {
 		await fixturePage.bringToFront();
 		await installVisualizerBatchProbe();
-		const knownTargets = new Set(browser.targets());
-		const popupUrl = `chrome-extension://${extensionId}/popup.html`;
-		const popupTargetPromise = browser.waitForTarget(
-			(target) => !knownTargets.has(target) && target.url() === popupUrl,
-			{ timeout: 5_000 },
-		);
 		let popupClient: CDPSession | null = null;
 		try {
-			await evaluateServiceWorker(async () => chrome.action.openPopup());
-			const popupTarget = await popupTargetPromise;
+			const popupTarget = await openActionPopupTarget(5_000);
 			popupClient = await popupTarget.createCDPSession();
 			await popupClient.send('Runtime.enable');
 
@@ -1695,7 +1752,6 @@ describe('SPECTRA built extension smoke', () => {
 			await new Promise((resolveWait) => setTimeout(resolveWait, 250));
 			expect(await readVisualizerBatchCount()).toBe(countAfterClose);
 		} finally {
-			void popupTargetPromise.catch(() => undefined);
 			await popupClient?.send('Runtime.evaluate', { expression: 'close()' }).catch(() => undefined);
 			await popupClient?.detach().catch(() => undefined);
 			await removeVisualizerBatchProbe();
@@ -1998,6 +2054,128 @@ describe('SPECTRA built extension smoke', () => {
 		}
 	}, 35_000);
 
+	test('keeps the single 0-800 control and every color on acknowledged actual state', async () => {
+		await installSyntheticCaptureHarness();
+		await installTabCaptureStreamIdStub();
+		await fixturePage.bringToFront();
+		const extensionClient = await openExtensionClient();
+		const tabId = await getTabId(fixturePage.url());
+		let pendingStart: Promise<CaptureResponse> | null = null;
+		try {
+			await submitEffectiveVolume(tabId, 80);
+			const initial = await readContentStatus();
+			const captureGeneration = (initial.generation ?? 0) + 1;
+			const started = await sendCaptureRequest(
+				extensionClient,
+				tabId,
+				true,
+				captureGeneration,
+				{ ...DEFAULT_AUDIO_CONFIG, volume: 80, volumeBase: 80 },
+			);
+			expect(started).toMatchObject({
+				ok: true,
+				data: { phase: 'active', active: true, actualMode: 'capture' },
+			});
+			const capture80 = await readPopupVolumePresentation();
+			expect(capture80).toMatchObject({
+				sliderCount: 1,
+				min: '0',
+				max: '800',
+				value: '80',
+				fillColor: 'rgb(124, 58, 237)',
+				valueColor: 'rgb(124, 58, 237)',
+				sliderAccent: '#7c3aed',
+			});
+			expect(await readBadgeColor(tabId)).toEqual([124, 58, 237, 255]);
+
+			await sendCaptureRequest(
+				extensionClient,
+				tabId,
+				false,
+				captureGeneration + 1,
+				{ ...DEFAULT_AUDIO_CONFIG, volume: 80, volumeBase: 80 },
+			);
+			await markRegistryDomain(extensionClient, '127.0.0.1', false);
+			await selectSafeWebAudioFixture();
+			await submitEffectiveVolume(tabId, 350);
+			const webAudio = await waitForContentStatus(
+				(status) => status.mode === 'webaudio' && status.phase === 'active'
+					&& status.config?.volume === 350,
+				15_000,
+			);
+			const webAudio350 = await readPopupVolumePresentation();
+			expect(webAudio350).toMatchObject({
+				sliderCount: 1,
+				min: '0',
+				max: '800',
+				value: '350',
+				fillColor: 'rgb(37, 99, 235)',
+				valueColor: 'rgb(37, 99, 235)',
+				sliderAccent: '#2563eb',
+			});
+			expect(await readBadgeColor(tabId)).toEqual([37, 99, 235, 255]);
+
+			await blockNextSyntheticCapture();
+			pendingStart = sendCaptureRequest(
+				extensionClient,
+				tabId,
+				true,
+				(webAudio.generation ?? captureGeneration + 1) + 1,
+				{ ...DEFAULT_AUDIO_CONFIG, volume: 350, volumeBase: 100, boost: 3.5 },
+			);
+			await eventually(
+				readSyntheticCaptureState,
+				(state) => state.pending,
+				'blocked Capture startup for color verification',
+			);
+			const starting = await readPopupVolumePresentation();
+			expect(starting).toMatchObject({
+				value: '350',
+				fillColor: 'rgb(37, 99, 235)',
+				valueColor: 'rgb(37, 99, 235)',
+				sliderAccent: '#2563eb',
+			});
+			expect(await readBadgeColor(tabId)).toEqual([37, 99, 235, 255]);
+
+			await releaseSyntheticCapture();
+			const active = await pendingStart;
+			pendingStart = null;
+			expect(active).toMatchObject({ ok: true, data: { phase: 'active', active: true } });
+			const capture350 = await readPopupVolumePresentation();
+			expect(capture350).toMatchObject({
+				value: '350',
+				fillColor: 'rgb(124, 58, 237)',
+				valueColor: 'rgb(124, 58, 237)',
+				sliderAccent: '#7c3aed',
+			});
+			expect(await readBadgeColor(tabId)).toEqual([124, 58, 237, 255]);
+
+			await submitEffectiveVolume(tabId, 0);
+			const silent = await readPopupVolumePresentation();
+			expect(silent).toMatchObject({
+				value: '0',
+				fillColor: 'rgb(156, 163, 175)',
+				valueColor: 'rgb(156, 163, 175)',
+				sliderAccent: '#9ca3af',
+			});
+			expect(await readBadgeColor(tabId)).toEqual([156, 163, 175, 255]);
+		} finally {
+			await releaseSyntheticCapture();
+			await pendingStart?.catch(() => undefined);
+			const status = await readContentStatus().catch(() => ({ generation: 0 } as ContentStatus));
+			await sendCaptureRequest(
+				extensionClient,
+				tabId,
+				false,
+				(status.generation ?? 0) + 1,
+				DEFAULT_AUDIO_CONFIG,
+			).catch(() => undefined);
+			await submitEffectiveVolume(tabId, 100).catch(() => undefined);
+			await configureRuntime(fixturePage.url(), DEFAULT_AUDIO_CONFIG).catch(() => undefined);
+			await extensionClient.close();
+		}
+	}, 60_000);
+
 	test('switches atomically from WebAudio to explicit Capture and back', async () => {
 		await installSyntheticCaptureHarness();
 		await installTabCaptureStreamIdStub();
@@ -2250,6 +2428,10 @@ describe('SPECTRA built extension smoke', () => {
 			expect(await authenticatedRemote.$eval('[data-command="volume_up"]', (element) => (
 				(element as HTMLButtonElement).disabled
 			))).toBe(false);
+			await authenticatedRemote.waitForSelector('.volume-display.capture-active');
+			expect(await authenticatedRemote.$eval('#vol-display', (element) => (
+				getComputedStyle(element).color
+			))).toBe('rgb(124, 58, 237)');
 			expect((await readOffscreenSnapshot()).remoteTabs).toContainEqual({ tabId, sessionId: session.sessionId });
 
 			// The offscreen host survives the worker. Its recovered generation must
@@ -2262,7 +2444,7 @@ describe('SPECTRA built extension smoke', () => {
 			await withDiagnosticTimeout(
 				'send the first authenticated remote command after worker restart',
 				() => authenticatedRemote.$eval(
-					'[data-command="boost_up"]',
+					'[data-command="volume_up"]',
 					(element) => (element as HTMLButtonElement).click(),
 				),
 				5_000,

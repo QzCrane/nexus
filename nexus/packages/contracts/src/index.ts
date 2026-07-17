@@ -20,8 +20,10 @@ export type {
   AudioState,
   SpectraAudioMode,
   AudioSessionPhase,
+  AudioVolumeState,
   AudioSessionError,
   AudioSessionSnapshot,
+  AudioSessionIdentity,
   AudioRuntimeStatus,
   AudioCaptureState,
   TabSessionIdentity,
@@ -42,7 +44,11 @@ export {
   isAudioRuntimeStatus,
   isAudioCaptureState,
   isDefaultAudioConfig,
-  resolveAudioVolume
+  resolveAudioVolume,
+  audioSessionMatchesIdentity,
+  audioSessionMatchesControlDocument,
+  isActiveCaptureLifecycle,
+  resolveAudioVolumeState
 } from './audio.contracts.js';
 
 // Per-field SPECTRA control contracts
@@ -118,6 +124,7 @@ export {
 	CONTROL_ALGORITHM_POLICIES,
 	CONTROL_ALGORITHM_ADJUDICATIONS,
 	compileEffectiveVolume,
+	splitEffectiveVolume,
 	splitLegacyVolume,
 	classifyControlStrategy,
 	isControlStrategyAdmittedForCapability,

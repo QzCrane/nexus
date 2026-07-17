@@ -6,8 +6,14 @@ import { UIColors } from '@nexus/audio-engine';
 export interface BadgeInfo {
 	volume: number;
 	muted: boolean;
+	enabled: boolean;
 	isCapture: boolean;
+	userInteracted: boolean;
+	authority: 'control' | 'session' | 'legacy';
 	text: string;
+	documentId: string | null;
+	origin: string | null;
+	generation: number | null;
 }
 
 export const BADGE_COLORS = UIColors;

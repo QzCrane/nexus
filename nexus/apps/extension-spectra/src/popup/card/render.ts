@@ -4,13 +4,13 @@ import type { CardUIElements } from '../types';
 import type { CardInternalState } from './types';
 import { COLORS, AUDIO_UI } from '../constants';
 import type { GlobalSettings } from '@nexus/kernel';
-import { resolveAudioVolume } from '@nexus/contracts';
+import type { AudioSessionPhase, SpectraAudioMode } from '@nexus/contracts';
+import { resolveAudioVolume, resolveAudioVolumeState } from '@nexus/contracts';
 import { renderPlaybackButton } from './media-events';
 
 export interface RenderParams {
   ui: CardUIElements;
   state: CardInternalState;
-  getCapturing: () => boolean;
   drawEqCurve: (color: string) => void;
   getVizEnabled: () => boolean;
   getGlobalSettings: () => GlobalSettings;
@@ -18,7 +18,7 @@ export interface RenderParams {
 
 // post: returns a sync-render function that updates HTML elements, CSS variables, and canvas overlays based on current state
 export function createRenderFn(params: RenderParams): () => void {
-  const { ui, state, getCapturing, drawEqCurve, getVizEnabled } = params;
+  const { ui, state, drawEqCurve, getVizEnabled } = params;
 
   return () => {
     if (!ui.card) return;
@@ -41,35 +41,26 @@ export function createRenderFn(params: RenderParams): () => void {
 		controls?.setAttribute('aria-hidden', String(disabled));
     ui.enable.checked = config.enabled;
 
-    ui.slider.value = String(volume.volumeBase);
-    ui.fill.style.width = `${volume.volumeBase}%`;
-    ui.val.innerText = muted ? 'MUTE' : `${volume.volumeBase}%`;
-    ui.boostSlider.value = String(volume.boost);
-    ui.boostFill.style.width = `${((volume.boost - AUDIO_UI.BOOST_MIN) / (AUDIO_UI.BOOST_MAX - AUDIO_UI.BOOST_MIN)) * 100}%`;
-    ui.boostVal.innerText = `${volume.boost.toFixed(1)}×`;
+    ui.slider.value = String(volume.effectiveVolume);
+    ui.fill.style.width = `${(volume.effectiveVolume / AUDIO_UI.MAX_VOLUME) * 100}%`;
+    ui.val.innerText = muted ? 'MUTE' : `${formatVolume(volume.effectiveVolume)}%`;
     ui.mute.classList.toggle('active', muted);
 		ui.mute.setAttribute('aria-pressed', String(muted));
 
-    const actualCapturing = getCapturing();
-    const isCapture = actualCapturing;
-    const isMutedOrZero = muted || volume.volumeBase === 0;
-
-    // rule: dynamic color coding to indicate source/mode status (Gray: Silenced, Purple: High-Fidelity Capture, Blue: Standard)
-    let fillColor: string;
-    if (isMutedOrZero) {
-      fillColor = COLORS.MUTED;
-    } else if (isCapture) {
-      fillColor = COLORS.CAPTURE;
-    } else {
-      fillColor = COLORS.NATIVE;
-    }
+    // Color reports the acknowledged runtime, never a guessed threshold:
+    // >100% can remain blue when Media WebAudio is the actual safe strategy.
+    const fillColor = actualVolumeColor(
+      muted,
+      volume.effectiveVolume,
+      state.actualMode,
+      state.phase,
+    );
 
     ui.fill.style.backgroundColor = fillColor;
     ui.val.style.color = fillColor;
     ui.slider.style.setProperty('--slider-accent', fillColor);
-    ui.boostSlider.style.setProperty('--slider-accent', COLORS.CAPTURE);
 
-    renderVolumeIcon(ui.mute, muted, volume.volumeBase, volume.boost);
+    renderVolumeIcon(ui.mute, muted, volume.effectiveVolume);
 
     if (ui.comp) ui.comp.checked = config.compressor;
     if (ui.bass) ui.bass.checked = config.bass;
@@ -118,19 +109,33 @@ export function createRenderFn(params: RenderParams): () => void {
 function renderVolumeIcon(
   muteBtn: HTMLElement,
   muted: boolean,
-  volumeBase: number,
-  boost: number,
+  volume: number,
 ): void {
   const iconSpan = document.createElement('span');
   iconSpan.style.fontSize = '16px';
 
-  if (muted || volumeBase === 0) {
+  if (muted || volume === 0) {
     iconSpan.innerText = '🔇';
     muteBtn.style.opacity = '0.7';
   } else {
     muteBtn.style.opacity = '1';
-    iconSpan.innerText = boost > 1 ? '🚀' : '🔊';
+    iconSpan.innerText = volume > 100 ? '🚀' : '🔊';
   }
 
   muteBtn.replaceChildren(iconSpan);
+}
+
+function formatVolume(volume: number): string {
+  return Number.isInteger(volume) ? String(volume) : volume.toFixed(1).replace(/\.0$/u, '');
+}
+
+export function actualVolumeColor(
+  muted: boolean,
+  volume: number,
+  actualMode: SpectraAudioMode | null,
+  phase: AudioSessionPhase,
+): string {
+  const state = resolveAudioVolumeState({ muted, volume, actualMode, phase });
+  if (state === 'silent') return COLORS.MUTED;
+  return state === 'capture' ? COLORS.CAPTURE : COLORS.NATIVE;
 }

@@ -154,7 +154,7 @@ export function createAudioRuntimeControlDelegate(
 			changes.volumeBase = current.volumeBase;
 			changes.volume = Math.round(current.volumeBase * changes.boost * 100) / 100;
 		}
-		// The existing OSD has exact actual-value projections only for Main volume,
+		// The existing OSD has exact actual-value projections only for effective volume,
 		// Boost and speed. Pan/delay/mono hotkeys retain their listener-owned label
 		// instead of displaying a misleading volume OSD and then a second toast.
 		const persisted = await policyExecutor.updateConfig(changes, {

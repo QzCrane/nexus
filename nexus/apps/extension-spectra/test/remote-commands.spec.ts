@@ -3,6 +3,7 @@ import {
 	REMOTE_COMMANDS,
 	REMOTE_COMMAND_DESCRIPTORS,
 	type ControlApplyAck,
+	type ControlOperationAck,
 	type ControlSnapshot,
 } from '@nexus/contracts';
 import {
@@ -22,13 +23,13 @@ describe('remote acknowledged audio state', () => {
 	test('maps every remote button to one canonical control algorithm and transform', () => {
 		expect(Object.keys(REMOTE_COMMAND_DESCRIPTORS).sort()).toEqual([...REMOTE_COMMANDS].sort());
 		expect(REMOTE_COMMAND_DESCRIPTORS.volume_up).toEqual({
-			capability: 'volumeBase', operation: 'delta', value: 10, legacyAlias: false,
+			capability: 'effective-volume', operation: 'delta', value: 10, legacyAlias: false,
 		});
 		expect(REMOTE_COMMAND_DESCRIPTORS.boost_up).toEqual({
-			capability: 'boost', operation: 'delta', value: 0.1, legacyAlias: false,
+			capability: 'effective-volume', operation: 'delta', value: 10, legacyAlias: true,
 		});
 		expect(REMOTE_COMMAND_DESCRIPTORS.volume_max).toEqual({
-			capability: 'boost', operation: 'set', value: 8, legacyAlias: true,
+			capability: 'effective-volume', operation: 'set', value: 800, legacyAlias: false,
 		});
 	});
 
@@ -78,6 +79,9 @@ describe('remote acknowledged audio state', () => {
 				volume: 100,
 				volumeBase: 100,
 				boost: 1,
+				actualMode: 'bypass',
+				phase: 'idle',
+				volumeState: 'native',
 				muted: false,
 				playing: true,
 				speed: 1.5,
@@ -144,12 +148,12 @@ describe('remote acknowledged audio state', () => {
 		}
 	});
 
-	test('submits one typed coordinator mutation and never calls a legacy media RPC', async () => {
+	test('submits one typed effective-volume operation and never calls a legacy media RPC', async () => {
 		const requests: unknown[] = [];
 		const control = gateway({
-			submit: async (request) => {
+			submitOperation: async (request) => {
 				requests.push(structuredClone(request));
-				return controlAck({ volumeBase: field(90) });
+				return operationAck({ volumeBase: field(90) }, 90);
 			},
 		});
 		expect(await executeCommand('volume_down', TAB_ID, control)).toBe(true);
@@ -157,14 +161,14 @@ describe('remote acknowledged audio state', () => {
 		expect(requests[0]).toMatchObject({
 			tabId: TAB_ID,
 			source: 'remote',
-			requestedCoverage: 'active-target',
-			mutations: [{ field: 'volumeBase', operation: 'delta', value: -10 }],
+			operation: 'effective-volume',
+			payload: { operation: 'delta', value: -10 },
 		});
 	});
 
 	test('rejects a transport-success response whose requested field failed', async () => {
 		const control = gateway({
-			submit: async () => controlAck({
+			submitOperation: async () => operationAck({
 				volumeBase: {
 					...field(90),
 					actual: null,
@@ -177,7 +181,7 @@ describe('remote acknowledged audio state', () => {
 						retryable: true,
 					},
 				},
-			}),
+			}, 100),
 		});
 		await expect(executeCommand('volume_down', TAB_ID, control)).rejects.toThrow('Page rejected volume');
 	});
@@ -203,6 +207,27 @@ function controlAck(fields: ControlApplyAck['fields']): ControlApplyAck {
 		revision: 8,
 		target: null,
 		fields,
+	};
+}
+
+function operationAck(
+	fields: ControlApplyAck['fields'],
+	effectiveVolume: number,
+): ControlOperationAck<'effective-volume'> {
+	const volumeBase = effectiveVolume <= 100 ? effectiveVolume : 100;
+	const boost = effectiveVolume <= 100 ? 1 : effectiveVolume / 100;
+	return {
+		operationId: 'remote-operation',
+		tabId: TAB_ID,
+		documentId: 'document-remote',
+		generation: 3,
+		revision: 8,
+		target: null,
+		operation: 'effective-volume',
+		strategy: 'extension-state',
+		coverage: boost > 1 ? 'full' : 'active-target',
+		fields,
+		result: { effectiveVolume, volumeBase, boost },
 	};
 }
 

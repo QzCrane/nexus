@@ -279,6 +279,7 @@ export interface AudioState {
 
 export type SpectraAudioMode = 'bypass' | 'webaudio' | 'capture';
 export type AudioSessionPhase = 'idle' | 'starting' | 'active' | 'stopping' | 'error';
+export type AudioVolumeState = 'silent' | 'native' | 'capture';
 
 export interface AudioSessionError {
 	code: string;
@@ -301,6 +302,63 @@ export interface AudioSessionSnapshot extends TabSessionIdentity {
 	configRevision: number;
 	actualConfig: AudioConfig;
 	lastError: AudioSessionError | null;
+}
+
+export type AudioSessionIdentity = TabSessionIdentity & { generation: number };
+
+// post: true only when lifecycle and field-level actual state belong to the
+// same top-level document generation. UI surfaces must fail closed on a
+// missing or stale session instead of carrying Capture color across navigation.
+export function audioSessionMatchesIdentity<T extends AudioSessionIdentity>(
+	session: T | null | undefined,
+	identity: AudioSessionIdentity | null | undefined,
+): session is T {
+	return session !== null
+		&& session !== undefined
+		&& identity !== null
+		&& identity !== undefined
+		&& session.tabId === identity.tabId
+		&& session.documentId === identity.documentId
+		&& session.origin === identity.origin
+		&& session.generation === identity.generation;
+}
+
+// ControlSnapshot generation orders per-field document control, while an audio
+// session generation orders processor transitions. They share document
+// identity but intentionally keep independent monotonic clocks.
+export function audioSessionMatchesControlDocument<T extends TabSessionIdentity>(
+	session: T | null | undefined,
+	control: TabSessionIdentity | null | undefined,
+): session is T {
+	return session !== null
+		&& session !== undefined
+		&& control !== null
+		&& control !== undefined
+		&& session.tabId === control.tabId
+		&& session.documentId === control.documentId
+		&& session.origin === control.origin;
+}
+
+export function isActiveCaptureLifecycle(value: {
+	actualMode: SpectraAudioMode | null | undefined;
+	phase: AudioSessionPhase;
+}): boolean {
+	return value.actualMode === 'capture' && value.phase === 'active';
+}
+
+// post: the single semantic state behind Popup, badge and authenticated remote
+// colors. Volume thresholds never imply Capture; only an acknowledged active
+// Capture lifecycle can do so.
+export function resolveAudioVolumeState(value: {
+	volume: number;
+	muted: boolean;
+	actualMode: SpectraAudioMode | null | undefined;
+	phase: AudioSessionPhase;
+}): AudioVolumeState {
+	if (value.muted || value.volume <= 0) return 'silent';
+	return isActiveCaptureLifecycle(value)
+		? 'capture'
+		: 'native';
 }
 
 // goal: complete, side-effect-free status returned by the current document runtime

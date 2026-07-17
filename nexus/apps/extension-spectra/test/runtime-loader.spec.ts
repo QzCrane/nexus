@@ -32,6 +32,7 @@ interface RuntimeHarness {
 function installChromeHarness(
 	runtimeAlreadyReady = false,
 	ownedSources: ContentRuntimeSourceOwnership[] = [],
+	releaseFails = false,
 ): RuntimeHarness {
 	const harness = { executeCount: 0, statusCount: 0, releaseCount: 0 };
 	const runtimeMessages = new ChromeEvent();
@@ -58,6 +59,7 @@ function installChromeHarness(
 			sendMessage: async (_tabId: number, message: { type: string }) => {
 				if (message.type === 'spectra.content.runtime.release') {
 					harness.releaseCount += 1;
+					if (releaseFails) throw new Error('release response lost');
 					return { ok: true, data: { accepted: true } };
 				}
 				if (message.type !== 'spectra.content.runtime.status') throw new Error('Unexpected tab request');
@@ -200,6 +202,19 @@ describe('document-scoped content runtime loader', () => {
 		await ensureContentRuntime(7, 'document-7', 'control', 'owned-state');
 		await Bun.sleep(300);
 		expect(harness.releaseCount).toBe(0);
+	});
+
+	test('invalidates an ambiguous READY cache after a lost release response', async () => {
+		const harness = installChromeHarness(true, [], true);
+		await ensureContentRuntime(7, 'document-7', 'control', 'request-a');
+		releaseContentRuntimeLease(7, 'document-7', 'control', 'request-a');
+		await Bun.sleep(300);
+		expect(harness.releaseCount).toBe(1);
+		expect(harness.statusCount).toBe(1);
+
+		await ensureContentRuntime(7, 'document-7', 'control', 'request-b');
+		expect(harness.statusCount).toBe(2);
+		expect(harness.executeCount).toBe(0);
 	});
 
 	test('holds the heavy runtime only while the current site has an enabled custom hotkey', async () => {

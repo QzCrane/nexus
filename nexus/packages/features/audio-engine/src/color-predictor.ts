@@ -1,4 +1,4 @@
-// goal: unified heuristics for predicting UI color states (e.g., CAPTURE vs NATIVE) based on audit policy
+// goal: processor-requirement and policy-candidate helpers; UI color must use acknowledged runtime state
 
 import { resolveAudioVolume, type AudioConfig } from '@nexus/contracts';
 
@@ -21,13 +21,13 @@ export function requiresAudioProcessor(config: AudioConfig): boolean {
 		|| config.delay !== 0;
 }
 
-// eff: compatibility projection for UI color logic; processor admission stays
-// identical to PolicyEngine and does not treat visualization as a writer.
+// eff: compatibility projection for processor admission; visualization is an
+// observer and never creates Media WebAudio or Capture by itself.
 export function needsAdvancedProcessing(ctx: ColorContext): boolean {
 	return requiresAudioProcessor(ctx.config);
 }
 
-// eff: returns true if the environment warrants CAPTURE mode (Restricted + Advanced Needs)
+// eff: predicts a Capture policy candidate; this is never evidence for purple UI state
 export function predictCapture(ctx: ColorContext): boolean {
 	return ctx.config.enabled && ctx.isRestricted && needsAdvancedProcessing(ctx);
 }

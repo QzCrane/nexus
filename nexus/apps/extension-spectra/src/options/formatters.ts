@@ -49,7 +49,7 @@ export function parseParams(action: HotkeyAction, value: string): HotkeyBinding[
 		}
 		case 'volume_set': {
 			const volume = Number(value);
-			return Number.isFinite(volume) && volume >= 0 && volume <= 100 ? { volume } : undefined;
+			return Number.isFinite(volume) && volume >= 0 && volume <= 800 ? { volume } : undefined;
 		}
 		case 'run_js': return value.trim() ? { script: value } : undefined;
 		case 'open_url': {

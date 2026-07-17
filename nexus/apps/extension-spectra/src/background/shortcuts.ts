@@ -160,16 +160,12 @@ async function executeAction(action: HotkeyAction, tabId: number, _domain: strin
 			case 'speed_down': await submitMutations(tabId, [{ field: 'speed', operation: 'delta', value: -0.1 }]); return;
 			case 'speed_reset': await submitMutations(tabId, [{ field: 'speed', operation: 'set', value: 1 }]); return;
 			case 'speed_set': return;
-			case 'volume_up': await submitMutations(tabId, [
-				{ field: 'volumeBase', operation: 'delta', value: 10 },
-			]); return;
-			case 'volume_down': await submitMutations(tabId, [
-				{ field: 'volumeBase', operation: 'delta', value: -10 },
-			]); return;
+			case 'volume_up': await operation('effective-volume', { operation: 'delta', value: 10 }); return;
+			case 'volume_down': await operation('effective-volume', { operation: 'delta', value: -10 }); return;
 			case 'volume_mute': await submitMutations(tabId, [{ field: 'mediaMuted', operation: 'toggle' }]); return;
 			case 'volume_set': return;
-			case 'gain_up': await submitMutations(tabId, [{ field: 'boost', operation: 'delta', value: 0.1 }]); return;
-			case 'gain_down': await submitMutations(tabId, [{ field: 'boost', operation: 'delta', value: -0.1 }]); return;
+			case 'gain_up': await operation('effective-volume', { operation: 'delta', value: 10 }); return;
+			case 'gain_down': await operation('effective-volume', { operation: 'delta', value: -10 }); return;
 			case 'delay_up': await submitMutations(tabId, [{ field: 'delay', operation: 'delta', value: 10 }]); return;
 			case 'delay_down': await submitMutations(tabId, [{ field: 'delay', operation: 'delta', value: -10 }]); return;
 			case 'delay_reset': await submitMutations(tabId, [{ field: 'delay', operation: 'set', value: 0 }]); return;

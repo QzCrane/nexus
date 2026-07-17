@@ -14,13 +14,12 @@ import {
 	statSync,
 	writeFileSync,
 } from 'node:fs';
-import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import sharp from 'sharp';
 import { minify } from 'terser';
-import { checkBundleBudget } from './scripts/check-bundle-budget.mjs';
+import { checkProductionArtifacts } from './scripts/check-production-artifacts.mjs';
 import { collectExternalBoundaryProperties } from './scripts/external-boundary-properties.mjs';
 import { writeI18nAssets } from './scripts/i18n-assets.ts';
 
@@ -34,10 +33,6 @@ const contentContractsRuntime = resolve(
 const contentAudioEngineRuntime = resolve(
 	projectDir,
 	'../../packages/features/audio-engine/src/content-runtime.ts',
-);
-const uiAudioEngineRuntime = resolve(
-	projectDir,
-	'../../packages/features/audio-engine/src/constants.ts',
 );
 const contentKernelRuntime = resolve(
 	projectDir,
@@ -54,16 +49,34 @@ const emitSourceMap = process.argv.includes('--sourcemap');
 
 const entries = [
 	{ entry: 'src/background/index.ts', out: 'background.js' },
-	{ entry: 'src/content/core/bootstrap.ts', out: 'content-bootstrap.js' },
-	{ entry: 'src/content/core/index.ts', out: 'content-runtime.js' },
-	{ entry: 'src/content/video/video-effects-controller.ts', out: 'content-video-effects.js', format: 'esm' },
+	{
+		entry: 'src/content/core/bootstrap.ts',
+		out: 'content-bootstrap.js',
+		sharingDomain: 'isolated-bootstrap',
+	},
+	{
+		entry: 'src/content/core/index.ts',
+		out: 'content-runtime.js',
+		sharingDomain: 'isolated-runtime',
+	},
+	{
+		entry: 'src/content/video/video-effects-controller.ts',
+		out: 'content-video-effects.js',
+		format: 'esm',
+		sharingDomain: 'isolated-video-module',
+	},
 	{ entry: 'src/popup/index.ts', out: 'popup.js' },
 	{ entry: 'src/offscreen/index.ts', out: 'offscreen.js' },
 	{ entry: 'src/options/index.ts', out: 'options.js' },
 ];
 
 const vendorEntries = [
-	{ entry: 'src/offscreen-remote/peerjs-vendor.ts', out: 'peerjs-vendor.js', format: 'iife' },
+	{
+		entry: 'src/offscreen-remote/peerjs-vendor.ts',
+		out: 'peerjs-vendor.js',
+		format: 'iife',
+		sharingDomain: 'offscreen-vendor',
+	},
 ];
 
 const allEntries = [...vendorEntries, ...entries];
@@ -72,12 +85,9 @@ const isolatedEntries = entries.filter(({ out }) => out.startsWith('content-'));
 const moduleEntries = entries.filter(({ out }) => !out.startsWith('content-'));
 const moduleEntryGroups = [
 	{
-		name: 'runtime',
-		entries: moduleEntries.filter(({ out }) => out !== 'popup.js'),
-	},
-	{
-		name: 'popup',
-		entries: moduleEntries.filter(({ out }) => out === 'popup.js'),
+		name: 'extension',
+		entries: moduleEntries,
+		sharingDomain: 'extension-pages',
 	},
 ];
 
@@ -397,7 +407,9 @@ async function minifyProductionJavaScript() {
 		const result = await minify(source, {
 			ecma: 2022,
 			module: /^\s*(?:import|export)\b/mu.test(source),
-			compress: { passes: 2 },
+			compress: {
+				passes: 4,
+			},
 			mangle: {
 				toplevel: true,
 				properties: opaqueVendor ? {
@@ -510,7 +522,7 @@ if (isWatch) {
 } else {
 	const metafiles = [];
 	const summary = [];
-	const buildOne = async ({ entry, out, format }) => {
+	const buildOne = async ({ entry, out, format, sharingDomain }) => {
 		const result = await esbuild.build({
 			...common,
 			alias: out.startsWith('content-')
@@ -526,7 +538,11 @@ if (isWatch) {
 			format,
 			metafile: true,
 		});
-		metafiles.push({ name: out, metafile: result.metafile });
+		metafiles.push({
+			name: out,
+			sharingDomain: sharingDomain ?? `standalone:${out}`,
+			metafile: result.metafile,
+		});
 		summary.push(out);
 	};
 
@@ -545,13 +561,7 @@ if (isWatch) {
 			]));
 			const result = await esbuild.build({
 				...common,
-				alias: group.name === 'popup'
-					? {
-						...common.alias,
-						'@nexus/kernel': contentKernelRuntime,
-						'@nexus/audio-engine': uiAudioEngineRuntime,
-					}
-					: common.alias,
+				alias: common.alias,
 				entryPoints: moduleEntryPoints,
 				outdir: distDir,
 				entryNames: '[name]',
@@ -561,19 +571,22 @@ if (isWatch) {
 				plugins: [contractRuntimeFacadePlugin()],
 				metafile: true,
 			});
-			for (const { out } of group.entries) {
-				metafiles.push({ name: out, metafile: result.metafile });
-				summary.push(out);
-			}
+			metafiles.push({
+				name: group.name,
+				sharingDomain: group.sharingDomain,
+				metafile: result.metafile,
+			});
+			for (const { out } of group.entries) summary.push(out);
 		}
 	}
 
 	await minifyProductionJavaScript();
 	assertProductionJavaScript();
+	if (!isDev) checkProductionArtifacts({ distDir, metafiles });
 	if (isAnalyze) {
-		const report = metafiles.map(({ name, metafile }) => ({
+		const report = metafiles.map(({ name, sharingDomain, metafile }) => ({
 			name,
-			sha256: createHash('sha256').update(readFileSync(resolve(distDir, name))).digest('hex'),
+			sharingDomain,
 			outputs: Object.fromEntries(Object.entries(metafile.outputs)
 				.map(([output, detail]) => [
 					output.replaceAll('\\', '/'),
@@ -583,10 +596,6 @@ if (isWatch) {
 		}));
 		writeFileSync(resolve(distDir, 'build-analysis.json'), `${JSON.stringify(report, null, 2)}\n`);
 	}
-	// Keep the metafile evidence even when a hard budget fails so the failure is
-	// actionable instead of requiring a temporary budget increase or a second
-	// custom build just to identify contributors.
-	if (!isDev) checkBundleBudget({ distDir, metafiles });
 
 	console.log(`✓ ${summary.map((out) => (
 		`${out}:${Math.ceil(statSync(resolve(distDir, out)).size / 1024)}KiB`

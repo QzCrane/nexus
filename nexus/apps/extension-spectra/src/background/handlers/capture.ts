@@ -12,6 +12,7 @@ import {
 	type AudioCaptureState,
 	type AudioConfig,
 	type AudioProcessorConfig,
+	type AudioSessionSnapshot,
 	type SpectraEventEnvelope,
 	type SpectraAudioMode,
 	type TabSessionIdentity,
@@ -33,6 +34,7 @@ import {
 	isAudioSessionIdentityInvalidated,
 	updateAudioSession,
 } from '../audio-session-store';
+import { updateBadgeFromSession } from './badge';
 
 interface CaptureRuntimeState {
 	generation: number;
@@ -188,16 +190,16 @@ async function commitCaptureSnapshot(
 		config?: AudioConfig;
 		error?: string | null;
 	},
-): Promise<void> {
+): Promise<AudioSessionSnapshot | null> {
 	const current = await getAudioSession(tabId);
 	const identity = state.identity ?? current;
-	if (!identity) return;
+	if (!identity) return null;
 	if (current
 		&& (current.documentId !== identity.documentId || current.origin !== identity.origin)) {
 		// A late ACK from a torn-down document must never replace the new document's snapshot.
-		return;
+		return null;
 	}
-	await updateAudioSession(identity, {
+	return updateAudioSession(identity, {
 		config: update.config,
 		desiredMode: current?.desiredMode
 			?? (update.actualMode === 'capture' ? 'capture' : 'bypass'),
@@ -215,7 +217,8 @@ async function publishAcknowledgedCaptureState(
 	state: CaptureRuntimeState,
 	update: Parameters<typeof commitCaptureSnapshot>[2],
 ): Promise<void> {
-	await commitCaptureSnapshot(tabId, state, update);
+	const snapshot = await commitCaptureSnapshot(tabId, state, update);
+	if (snapshot) await updateBadgeFromSession(snapshot, false);
 	publishCaptureState(tabId, state);
 }
 

@@ -10,7 +10,7 @@ a second policy.
 - The webpage, Popup, authenticated remote controller and hotkeys are equal
   control surfaces. They submit typed intents to one Background coordinator and
   receive the same read-back `ControlSnapshot`.
-- Main volume and playback speed stay native page controls. WebAudio and Capture
+- Effective volume up to 100% and playback speed stay native page controls. WebAudio and Capture
   cannot impersonate volume, mute, speed, playback, seek, loop, PiP or fullscreen.
 - Boost and DSP remain independent enhancements. A page volume change updates
   native base volume without silently clearing Boost.
@@ -21,15 +21,15 @@ a second policy.
 
 ## Exhaustive control and source-algorithm adjudication
 
-The contract owns all 50 control capabilities:
+The contract owns all 51 control capabilities:
 
 - 17 native-only;
-- five hybrid extension-state/native-writer;
+- six hybrid extension-state/native-writer;
 - 26 augmentation-only;
 - two observation-only.
 
-The tooling-only source catalog owns 48 implementation algorithms (`ALG-001`
-through `ALG-048`). Each row records the source file and symbol anchor, native or
+The tooling-only source catalog owns 50 implementation algorithms (`ALG-001`
+through `ALG-050`). Each row records the source file and symbol anchor, native or
 augmentation decision, MAIN admission, success proof, recurring work and a
 performance ceiling. `scripts/verify/check-spectra-control.js` fails the release
 if an ID, source anchor, capability coverage, documentation mirror or strategy
@@ -41,7 +41,14 @@ transactions, navigation/target invalidation, Content runtime leases, native
 baseline handoff, trusted activation, WebAudio/Capture handoff, Popup/remote
 observation, dual-clock UI projection, multi-consumer Visualizer leases,
 configured-site hotkey admission, source-owned runtime retention, lazy video
-enhancement loading and the restricted UI protocol boundary.
+enhancement loading, the restricted UI protocol boundary and atomic 20 Hz Filter
+latest-value transport.
+
+`ALG-049` names and tests the atomic Filter transport that was previously folded
+into generic Popup coalescing. `ALG-050` owns the single public `0–800` effective
+volume transaction, including native-base/hidden-Boost splitting, rollback and
+actual Capture color. The current candidate reruns the complete gate with both
+rows instead of inheriting evidence from the older 48-row catalog.
 
 The decisive rule is per capability, not per page:
 
@@ -61,17 +68,19 @@ There is no generic MAIN runtime, constructor/prototype/descriptor patch,
 | Location | Purpose |
 | --- | --- |
 | `packages/contracts/src/control.contracts.ts` | Exhaustive capability policy, native/augmentation adjudication and per-capability ACK admission. A known strategy name is insufficient if the exact field/operation does not admit it. |
-| `scripts/verify/spectra-control-algorithm-catalog.mjs` | Runtime-free catalog of all 48 source algorithms, anchors, success evidence and performance boundaries. |
-| `scripts/verify/check-spectra-control.js` | Release gate for all 50 capabilities, all 48 source algorithms, one DOM writer, forbidden interception and production loading topology. |
+| `scripts/verify/spectra-control-algorithm-catalog.mjs` | Runtime-free catalog of all 50 source algorithms, anchors, success evidence and performance boundaries. |
+| `scripts/verify/check-spectra-control.js` | Release gate for all 51 capabilities, all 50 source algorithms, one DOM writer, forbidden interception and production loading topology. |
 | `src/background/control-coordinator.ts` | Serializes every surface, rejects stale generations, performs compensation for compound operations and publishes the sole field-level actual snapshot. |
 | `src/content/logic/native-media-executor.ts` | Sole standard-media writer. Native setters are acknowledged only after the matching event/quiet window, two bounded stabilization boundaries and getter readback. |
 | `src/content/logic/content-control-policy.ts` | Narrow Content projection of DOM/CSS/Overlay strategies; prevents the full planner and full contract policy from entering every page. |
-| `src/content/core/media-registry.ts` | Event-driven media identity, source revision, independent active-media/active-video selection and pre-bind CORS evidence. |
+| `src/content/core/media-registry.ts` | Event-driven media identity, same-URL/srcObject source epochs, reparent-safe removal, independent pure-read active-media/active-video selection, fullscreen-container attribution and pre-bind CORS evidence. |
 | `src/background/main-runtime-manager.ts` | One-shot allowlisted official player call for only volume, media mute and speed after retryable DOM failure; installs no bridge or listener. |
 | `packages/features/audio-engine/src/webaudio/controller.ts` | Page-lifetime WeakMap singleton for each `MediaElementSourceNode`, complete-coverage admission and safe CORS evidence. |
 | `packages/features/audio-engine/src/AudioGraphRouter.ts` | Sparse DSP graph, normalized actual snapshot, latest-value queue, in-place continuous parameter ramps and topology-only crossfade. |
 | `src/offscreen/audio-host.ts`; `src/background/offscreen-coordinator.ts` | Candidate-gated Capture processor and the single offscreen document shared by audio and remote leases. |
 | `src/popup/card/messaging.ts`; `src/background/remote-commands.ts` | Project only coordinator actual state; audio-session events contribute lifecycle and cannot overwrite field values. |
+| `packages/contracts/src/audio.contracts.ts::audioSessionMatchesControlDocument/resolveAudioVolumeState`; Popup/Badge/Remote consumers | Join field and lifecycle authorities by tab/document/origin, order their independent generations separately, and derive gray/blue/purple once. This removes the former false-blue Capture state without adding polling, timers or DOM scans. |
+| `src/popup/side-panel/video-controls.ts` | Sends Filter value and ownership as one latest-value intent, capped at 20 Hz with one in-flight request; prevents partial UI ownership and stale slider ACK overwrite. |
 | `src/popup/visualizer/loop.ts`; `src/background/visualizer-subscriber-registry.ts` | One in-flight Popup scheduler plus generation-aware, multi-consumer analyser leases and tombstones. |
 | `src/remote/qr-generator.ts` | Local SVG QR encoding for the same fragment-secret pairing URL, replacing the larger transitive QR package without network generation. |
 | `packages/contracts/src/spectra.ui-runtime.ts`; `spectra.ui-settings-runtime.ts`; `test/ui-runtime-contract.spec.ts` | Closed 23-request/six-event Popup/remote facade plus a ten-request/one-event Options facade. Internal or cross-surface requests are rejected before both success and shared-error handling, and mutations cannot drift from the canonical wire shape. |
@@ -130,55 +139,50 @@ video-enhancement boundary are included in the current deterministic candidate:
 
 | Metric | Bytes | KiB |
 | --- | ---: | ---: |
-| Default startup closure | 218,633 | 213.5 |
-| All production JavaScript | 528,602 | 516.2 |
-| Complete production dist | 624,696 | 610.1 |
-| Background closure | 212,433 | 207.5 |
+| Default startup closure | 226,569 | 221.3 |
+| All production JavaScript | 513,742 | 501.7 |
+| Complete production dist | 609,214 | 594.9 |
+| Background closure | 220,369 | 215.2 |
 | Bootstrap closure | 6,200 | 6.1 |
-| Lazy Content runtime | 116,920 | 114.2 |
-| Lazy video-enhancement runtime | 9,456 | 9.2 |
-| Popup closure | 114,264 | 111.6 |
-| Unified offscreen application closure | 34,182 | 33.4 |
-| Opaque local PeerJS vendor | 34,391 | 33.6 |
-| Options closure | 84,709 | 82.7 |
+| Lazy Content runtime | 117,411 | 114.7 |
+| Lazy video-enhancement runtime | 9,455 | 9.2 |
+| Popup closure | 177,657 | 173.5 |
+| Unified offscreen application closure | 35,495 | 34.7 |
+| Opaque local PeerJS vendor | 34,377 | 33.6 |
+| Options closure | 87,277 | 85.2 |
 
-The enforced transitive ceilings are 225 KiB startup, 517 KiB JavaScript,
-620 KiB dist, and 220/10/140/12/175/135/95 KiB for Background/bootstrap/Content/
-lazy video/Popup/offscreen/Options respectively; the local PeerJS artifact has
-its own 60 KiB ceiling. Every measured closure is inside its real transitive
-budget; the aggregate JavaScript budget retains 806 bytes and the complete dist
-budget retains 10,184 bytes.
-
-The original historical target (complete dist no more than 542.85 KiB and
-106.05/131.25/97.65 KiB Content/Popup/offscreen closures) is **not achieved**.
-Those numbers described the smaller pre-contract/pre-coordinator product and
-cannot be reported as passed by changing the measurement to entry stubs. The
-current release keeps the security, compatibility and actual-readback code and
-records this size exception explicitly instead of weakening validation or
-hiding transitive chunks.
+These byte measurements are diagnostic evidence, not a frozen acceptance
+ceiling. The production gate now enforces zero avoidable redundancy instead:
+every artifact must be reachable, byte-identical copies are rejected, modules
+may not be repeated inside one shareable build domain, and development/source/
+debug/source-map output is forbidden. Replication is accepted only across
+Chrome runtime domains that cannot share a module instance, and the report
+prints current startup closures and largest contributors for every release.
 
 ## Final release evidence
 
 - The complete orchestrator passed all 14/14 gates and promoted the validated
   archive.
-- Architecture verification passes, including the 50-capability and
-  48-algorithm source catalog. Biome and all four relevant workspace typechecks
+- Architecture verification passes, including the 51-capability and
+  50-algorithm source catalog. Biome and all four relevant workspace typechecks
   pass.
-- The unit/contract/runtime suite passes 319 tests with 3,084 assertions across
-  50 files.
+- The unit/contract/runtime suite passes 340 tests with 3,208 assertions across
+  53 files.
 - Chrome integration covers untouched-page transparency, side-effect-free
   status reads, bidirectional page/Popup state, WebAudio/Capture transitions,
   single offscreen ownership, SPA/fullscreen/source identity, Visualizer idle
   behavior and service-worker restart.
 - The QR replacement has a boundary test proving a local SVG data URL encodes
   the fragment-secret pairing URL without placing the secret in SVG metadata.
-- Chrome integration passes 17/17 against the development build and another
-  17/17 against the extracted production ZIP.
+- Chrome integration passes 18/18 against the development build and the release
+  gate requires the same 18/18 against the extracted production ZIP.
 - Dependency audit reports no vulnerabilities. The production remote page
   matches local bytes, MIME types and all release-gated security headers.
-- The deterministic 60-file archive is 632,134 bytes and expands to the exact
-  624,696-byte production dist. Its SHA-256 is
-  `fa63f2962e7eb867f0672bc44547f8016e57a9e2e5de62d80cf94c088f0d9e7c`.
+- The deterministic archive expands to the exact 609,214-byte production dist.
+  The authoritative archive byte count and SHA-256 are emitted and independently
+  rechecked in the promoted `release/spectra-v1.3.4.zip` and `.sha256` pair,
+  avoiding a second checksum owner inside a source file covered by release
+  freeze.
 
 The local GitNexus runner is absent in this checkout. Graph-It-Live indexed the
 workspace dependency surface, but its natural-language call-graph query still

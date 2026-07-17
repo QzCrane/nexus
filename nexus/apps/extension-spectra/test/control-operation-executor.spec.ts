@@ -14,6 +14,8 @@ import { disposeMarkers } from '../src/content/video/time-marker';
 const originalMedia = Object.getOwnPropertyDescriptor(globalThis, 'HTMLMediaElement');
 const originalVideo = Object.getOwnPropertyDescriptor(globalThis, 'HTMLVideoElement');
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+const originalSetTimeout = Object.getOwnPropertyDescriptor(globalThis, 'setTimeout');
+const originalClearTimeout = Object.getOwnPropertyDescriptor(globalThis, 'clearTimeout');
 
 class FakeMediaElement extends EventTarget {
 	currentTime = 4;
@@ -45,6 +47,8 @@ afterEach(() => {
 	restore('HTMLMediaElement', originalMedia);
 	restore('HTMLVideoElement', originalVideo);
 	restore('document', originalDocument);
+	restore('setTimeout', originalSetTimeout);
+	restore('clearTimeout', originalClearTimeout);
 });
 
 describe('control operation truthfulness', () => {
@@ -225,6 +229,196 @@ describe('control operation truthfulness', () => {
 			disposeRegistry();
 		}
 	});
+
+	test('uses native seek readback for adjacent-marker result and currentTime field ACK', async () => {
+		Object.defineProperty(globalThis, 'HTMLMediaElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		Object.defineProperty(globalThis, 'HTMLVideoElement', {
+			configurable: true,
+			value: class FakeVideoElement extends FakeMediaElement { },
+		});
+		const media = new FakeMediaElement();
+		let readbackTime = 0;
+		Object.defineProperty(media, 'currentTime', {
+			configurable: true,
+			get: () => readbackTime,
+			set: (value: number) => {
+				readbackTime = value + 0.01;
+			},
+		});
+		const registry = {
+			resolve: () => ({ element: media as unknown as HTMLMediaElement, target }),
+			list: () => [{ element: media as unknown as HTMLMediaElement, target }],
+		} as unknown as MediaRegistry;
+		const disposeRegistry = setActiveMediaRegistry(registry);
+		try {
+			media.currentTime = 20;
+			const added = await executeControlOperation(
+				intent('marker-add', { label: 'actual-readback' }, target),
+				{} as NativeMediaExecutor,
+			);
+			const markerTime = (added.result as { marker: { time: number } }).marker.time;
+			media.currentTime = 0;
+			const jumped = await executeControlOperation(
+				intent('marker-jump-next', {}, target),
+				{} as NativeMediaExecutor,
+			);
+			const result = jumped.result as {
+				jumped: boolean;
+				actualTime: number | null;
+				marker: { time: number } | null;
+			};
+			expect(result.jumped).toBe(true);
+			expect(result.marker?.time).toBe(markerTime);
+			expect(result.actualTime).toBeCloseTo(markerTime + 0.01, 8);
+			expect(jumped.fields.currentTime).toMatchObject({
+				desired: result.actualTime,
+				actual: result.actualTime,
+				strategy: 'dom-native',
+			});
+		} finally {
+			disposeRegistry();
+		}
+	});
+
+	test('keeps A/B skip beyond B and acknowledges the exact native seek readback', async () => {
+		Object.defineProperty(globalThis, 'HTMLMediaElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		Object.defineProperty(globalThis, 'HTMLVideoElement', {
+			configurable: true,
+			value: class FakeVideoElement extends FakeMediaElement { },
+		});
+		const timers = new Map<number, () => void>();
+		let nextTimerId = 0;
+		Object.defineProperty(globalThis, 'setTimeout', {
+			configurable: true,
+			value: (callback: () => void) => {
+				const id = ++nextTimerId;
+				timers.set(id, callback);
+				return id;
+			},
+		});
+		Object.defineProperty(globalThis, 'clearTimeout', {
+			configurable: true,
+			value: (id: number) => timers.delete(id),
+		});
+		const media = new FakeMediaElement();
+		media.paused = false;
+		let readbackTime = 0;
+		Object.defineProperty(media, 'currentTime', {
+			configurable: true,
+			get: () => readbackTime,
+			set: (value: number) => {
+				readbackTime = value + 0.01;
+			},
+		});
+		const registry = {
+			resolve: () => ({ element: media as unknown as HTMLMediaElement, target }),
+			list: () => [{ element: media as unknown as HTMLMediaElement, target }],
+		} as unknown as MediaRegistry;
+		const disposeRegistry = setActiveMediaRegistry(registry);
+		try {
+			media.currentTime = 1;
+			await executeControlOperation(intent('ab-set-a', {}, target), {} as NativeMediaExecutor);
+			media.currentTime = 2;
+			await executeControlOperation(intent('ab-set-b', {}, target), {} as NativeMediaExecutor);
+			await Promise.resolve();
+			await Promise.resolve();
+
+			const skipped = await executeControlOperation(
+				intent('ab-skip', {}, target),
+				{} as NativeMediaExecutor,
+			);
+			const result = skipped.result as {
+				skipped: boolean;
+				currentTime: number | null;
+			};
+			expect(result.skipped).toBe(true);
+			expect(result.currentTime).toBe(readbackTime);
+			expect(skipped.fields.currentTime?.actual).toBe(readbackTime);
+
+			media.dispatchEvent(new Event('seeked'));
+			expect(timers.size).toBe(0);
+			expect(media.currentTime).toBe(result.currentTime);
+		} finally {
+			disposeRegistry();
+		}
+	});
+
+	test('uses the bounded timer backup when hidden video frame callbacks stop', async () => {
+		class FakeFrameVideoElement extends FakeMediaElement {
+			private nextFrameId = 0;
+			readonly frameCallbacks = new Map<number, VideoFrameRequestCallback>();
+
+			requestVideoFrameCallback(callback: VideoFrameRequestCallback): number {
+				const id = ++this.nextFrameId;
+				this.frameCallbacks.set(id, callback);
+				return id;
+			}
+
+			cancelVideoFrameCallback(id: number): void {
+				this.frameCallbacks.delete(id);
+			}
+		}
+		Object.defineProperty(globalThis, 'HTMLMediaElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		Object.defineProperty(globalThis, 'HTMLVideoElement', {
+			configurable: true,
+			value: FakeFrameVideoElement,
+		});
+		const timers = new Map<number, () => void>();
+		let nextTimerId = 0;
+		Object.defineProperty(globalThis, 'setTimeout', {
+			configurable: true,
+			value: (callback: () => void) => {
+				const id = ++nextTimerId;
+				timers.set(id, callback);
+				return id;
+			},
+		});
+		Object.defineProperty(globalThis, 'clearTimeout', {
+			configurable: true,
+			value: (id: number) => timers.delete(id),
+		});
+		const video = new FakeFrameVideoElement();
+		video.paused = false;
+		const registry = {
+			resolve: () => ({ element: video as unknown as HTMLVideoElement, target: videoTarget }),
+			resolveVideo: () => ({ element: video as unknown as HTMLVideoElement, target: videoTarget }),
+			list: () => [{ element: video as unknown as HTMLVideoElement, target: videoTarget }],
+		} as unknown as MediaRegistry;
+		const disposeRegistry = setActiveMediaRegistry(registry);
+		try {
+			video.currentTime = 0;
+			await executeControlOperation(intent('ab-set-a', {}, videoTarget), {} as NativeMediaExecutor);
+			video.currentTime = 1;
+			await executeControlOperation(intent('ab-set-b', {}, videoTarget), {} as NativeMediaExecutor);
+			await Promise.resolve();
+			await Promise.resolve();
+			expect(timers.size).toBe(1);
+
+			video.currentTime = 0.95;
+			fireOnlyTimer(timers);
+			expect(video.frameCallbacks.size).toBe(1);
+			expect(timers.size).toBe(1);
+
+			// The rVFC callback intentionally never fires, matching a hidden tab.
+			video.currentTime = 1.01;
+			fireOnlyTimer(timers);
+			await Promise.resolve();
+			await Promise.resolve();
+			expect(video.frameCallbacks.size).toBe(0);
+			expect(video.currentTime).toBe(0);
+		} finally {
+			disposeRegistry();
+		}
+	});
 });
 
 function intent<O extends ControlOperation>(
@@ -248,4 +442,11 @@ function intent<O extends ControlOperation>(
 function restore(key: string, descriptor?: PropertyDescriptor): void {
 	if (descriptor) Object.defineProperty(globalThis, key, descriptor);
 	else Reflect.deleteProperty(globalThis, key);
+}
+
+function fireOnlyTimer(timers: Map<number, () => void>): void {
+	expect(timers.size).toBe(1);
+	const [id, callback] = [...timers.entries()][0]!;
+	timers.delete(id);
+	callback();
 }

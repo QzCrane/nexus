@@ -31,6 +31,8 @@ describe('hotkey editor contract', () => {
 		expect(parseParams('speed_set', '17')).toBeUndefined();
 		expect(parseParams('volume_set', '-1')).toBeUndefined();
 		expect(parseParams('volume_set', '0')).toEqual({ volume: 0 });
+		expect(parseParams('volume_set', '800')).toEqual({ volume: 800 });
+		expect(parseParams('volume_set', '801')).toBeUndefined();
 	});
 
 	test('formats physical key codes accessibly', () => {

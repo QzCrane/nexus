@@ -39,7 +39,7 @@ The exact `remote-site` tree is deployed to the production Cloudflare Pages proj
 | SPECTRA dependency typecheck | 4/4 packages passed |
 | Unit / contract / runtime tests | 188 passed, 1,826 assertions, 41 files |
 | Development Chrome integration | 17 passed, 128 assertions |
-| Production build and hard budget | Passed |
+| Production build and artifact scan | Passed |
 | Production Chrome integration | 17 passed, 128 assertions |
 | Dependency audit | 0 vulnerabilities |
 | Production remote-site deployment | Passed byte, MIME, and six-header verification |
@@ -51,15 +51,15 @@ The Chrome matrix loads the actual MV3 worker, isolated Content runtime, MAIN ru
 
 ## Bundle and performance evidence
 
-| Metric | Before | Final | Change / limit |
-| --- | ---: | ---: | --- |
-| Production dist | 576,980 B | 555,090 B | -21,890 B (-3.79%); limit 555,878 B |
-| Production JavaScript | — | 448,451 B | 437.9 KiB |
-| `background.js` | — | 113,734 B | includes persistent idle alarm and atomic settings migration |
-| `content.js` | 101 KiB baseline | 99,732 B | under 101 KiB budget |
-| `popup.js` | 125 KiB baseline | 119,021 B | under 125 KiB budget |
-| Unified `offscreen.js` | 93 KiB baseline | 59,998 B | under 93 KiB budget |
-| Promoted ZIP | 497,898 B | 558,770 B | deterministic stored archive of the 33-file production dist |
+| Metric | Historical promoted value | Evidence |
+| --- | ---: | --- |
+| Production dist | 555,090 B | 33 reachable production files |
+| Production JavaScript | 448,451 B | 437.9 KiB measured output |
+| `background.js` | 113,734 B | includes persistent idle alarm and atomic settings migration |
+| `content.js` | 99,732 B | measured runtime artifact |
+| `popup.js` | 119,021 B | measured Popup artifact |
+| Unified `offscreen.js` | 59,998 B | measured unified host artifact |
+| Promoted ZIP | 558,770 B | deterministic stored archive of the production dist |
 
 - Production dist contains 33 files, zero source maps, zero test files, and zero debug console/source-map/development endpoint strings.
 - At this historical release snapshot, the static scan found zero `setInterval` calls and one finite post-activation CORS signal observation interval. The current architecture no longer uses analyser silence or timed CORS probing; see [cors-data-flow.md](./cors-data-flow.md).

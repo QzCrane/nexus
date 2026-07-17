@@ -24,7 +24,7 @@ const STRATEGIES = new Set<ControlStrategy>([
 const COVERAGES = new Set(['full', 'active-target', 'partial', 'opaque']);
 const PHASES = new Set(['idle', 'applying', 'applied', 'error']);
 const OPERATIONS = new Set<ControlOperation>([
-	'restore-page-settings', 'playback-toggle', 'seek-relative', 'audio-reset',
+	'restore-page-settings', 'effective-volume', 'playback-toggle', 'seek-relative', 'audio-reset',
 	'frame-step', 'screenshot', 'marker-add', 'marker-remove', 'marker-jump',
 	'marker-jump-previous', 'marker-jump-next', 'ab-set-a', 'ab-set-b', 'ab-clear',
 	'ab-skip', 'video-effects-toggle', 'video-effects-reset', 'show-info',
@@ -65,6 +65,7 @@ const FIELD_STRATEGIES = {
 } as const satisfies Record<ControlField, readonly ControlStrategy[]>;
 const OPERATION_STRATEGIES = {
 	'restore-page-settings': 'extension-state',
+	'effective-volume': 'extension-state',
 	'playback-toggle': 'dom-native',
 	'seek-relative': 'dom-native',
 	'frame-step': 'dom-native',
@@ -230,6 +231,12 @@ function isOperationResult(operation: ControlOperation, value: unknown): boolean
 			return hasOnly(value, new Set(['releasedFields']))
 				&& Array.isArray(value.releasedFields)
 				&& value.releasedFields.every((field) => typeof field === 'string' && CONTROL_FIELDS.has(field as ControlField));
+		case 'effective-volume':
+			return hasOnly(value, new Set(['effectiveVolume', 'volumeBase', 'boost']))
+				&& isFiniteInRange(value.effectiveVolume, 0, 800)
+				&& isFiniteInRange(value.volumeBase, 0, 100)
+				&& isFiniteInRange(value.boost, 1, 8)
+				&& Math.round(value.volumeBase * value.boost * 100) / 100 === value.effectiveVolume;
 		case 'playback-toggle':
 			return hasOnly(value, new Set(['playing'])) && typeof value.playing === 'boolean';
 		case 'seek-relative':

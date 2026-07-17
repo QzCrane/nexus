@@ -168,7 +168,17 @@ async function disposeDocumentRuntime(
 		{ runtimeRevision: ready.runtimeRevision },
 		{ documentId },
 	).catch(() => null);
-	if (response?.ok) readyDocuments.delete(key);
+	// A missing RELEASE ACK is an ambiguous outcome: the document may already
+	// have disposed the runtime even though the response was lost. Never keep a
+	// READY cache entry after that boundary. The next consumer probes the
+	// document and either reuses a still-live runtime or performs a fresh
+	// injection, so a transient messaging failure cannot hand out a dead host.
+	if (readyDocuments.get(key)?.runtimeRevision === ready.runtimeRevision) {
+		readyDocuments.delete(key);
+	}
+	if (response && !response.ok) {
+		swLog.warn(`[Runtime] release was not acknowledged: ${response.error.code}`);
+	}
 }
 
 function beginDocumentRuntimeDisposal(

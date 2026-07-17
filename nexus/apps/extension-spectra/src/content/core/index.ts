@@ -228,12 +228,13 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
 	};
 
 	if (initial.recovered) {
+		const captureActive = state.actualMode === 'capture' && state.phase === 'active';
 		captureManager.restoreState({
-			active: state.actualMode === 'capture',
+			active: captureActive,
 			phase: state.phase,
 			generation: state.generation,
 			error: state.lastError,
-			actualConfig: state.actualMode === 'capture' ? state.appliedConfig : undefined,
+			actualConfig: captureActive ? state.appliedConfig : undefined,
 		});
 	}
 

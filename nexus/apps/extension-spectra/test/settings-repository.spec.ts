@@ -555,11 +555,10 @@ describe('background settings repository', () => {
 		const snapshot = await repository.initialize();
 		expect(snapshot.hotkeySettings.sites['example.com']?.bindings.map(({ id }) => id)).toEqual(['C', 'D']);
 		expect(snapshot.hotkeySettings.sites['example.com']?.bindings[1]).toMatchObject({
-			enabled: false,
-			params: { volume: 100 },
-			disabledReason: 'unsupported_action',
+			enabled: true,
+			params: { volume: 800 },
 		});
-		expect(snapshot.hotkeySettings.disabledLegacyBindings?.map(({ id }) => id)).toContain('D');
+		expect(snapshot.hotkeySettings.disabledLegacyBindings?.map(({ id }) => id) ?? []).not.toContain('D');
 	});
 
 	test('applies binding-level site mutations against the latest repository state', async () => {

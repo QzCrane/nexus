@@ -121,13 +121,13 @@ export const HOTKEY_ACTION_DESCRIPTORS = {
 	speed_down: descriptor('speed', 'actual-osd', 'coalesce-20hz'),
 	speed_reset: descriptor('speed', 'actual-osd'),
 	speed_set: descriptor('speed', 'actual-osd', 'ignore-repeat', false, 'speed'),
-	volume_up: descriptor('volumeBase', 'actual-osd', 'coalesce-20hz'),
-	volume_down: descriptor('volumeBase', 'actual-osd', 'coalesce-20hz'),
+	volume_up: descriptor('effective-volume', 'actual-osd', 'coalesce-20hz'),
+	volume_down: descriptor('effective-volume', 'actual-osd', 'coalesce-20hz'),
 	volume_mute: descriptor('mediaMuted', 'actual-osd'),
-	volume_set: descriptor('volumeBase', 'actual-osd', 'ignore-repeat', false, 'volume'),
+	volume_set: descriptor('effective-volume', 'actual-osd', 'ignore-repeat', false, 'volume'),
 	audio_reset: descriptor('audio-reset', 'actual-osd'),
-	gain_up: descriptor('boost', 'actual-osd', 'coalesce-20hz'),
-	gain_down: descriptor('boost', 'actual-osd', 'coalesce-20hz'),
+	gain_up: descriptor('effective-volume', 'actual-osd', 'coalesce-20hz'),
+	gain_down: descriptor('effective-volume', 'actual-osd', 'coalesce-20hz'),
 	pitch_up: descriptor(null, 'handler-result', 'ignore-repeat', false, 'none', 'disabled-legacy'),
 	pitch_down: descriptor(null, 'handler-result', 'ignore-repeat', false, 'none', 'disabled-legacy'),
 	pitch_reset: descriptor(null, 'handler-result', 'ignore-repeat', false, 'none', 'disabled-legacy'),
@@ -202,7 +202,7 @@ export interface HotkeyBinding {
 export interface HotkeyParams {
 	// inv: speed range 0.1-16
 	speed?: number;
-	// inv: page-native Main volume range 0-100; Boost is a separate capability
+	// inv: the only public effective-volume range is 0-800
 	volume?: number;
 	step?: number;
 	script?: string;
@@ -241,7 +241,7 @@ export function isHotkeyParamsForAction(
 	if (value === undefined) return required === 'none';
 	if (!isRecord(value) || !Object.keys(value).every((key) => HOTKEY_PARAM_KEYS.has(key))) return false;
 	if (value.speed !== undefined && !isFiniteInRange(value.speed, 0.1, 16)) return false;
-	if (value.volume !== undefined && !isFiniteInRange(value.volume, 0, 100)) return false;
+	if (value.volume !== undefined && !isFiniteInRange(value.volume, 0, 800)) return false;
 	if (value.step !== undefined && !isFiniteInRange(value.step, 0.001, 800)) return false;
 	if (value.script !== undefined && (
 		typeof value.script !== 'string' || value.script.length === 0 || value.script.length > 100_000

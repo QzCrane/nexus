@@ -7,7 +7,7 @@ import type { PolicyExecutorDeps, PolicyExecutorState } from '../../types';
 import type { InternalState } from './types';
 import { sendSpectraRequest } from '../../../shared/spectra-client';
 
-// note: kept for legacy compatibility, prefer predictCapture for mode-based logic
+// note: kept for legacy callers; actual UI color still requires session phase=active
 export function isEffectivelyCapturing(
 	state: PolicyExecutorState,
 	captureManager: PolicyExecutorDeps['captureManager']

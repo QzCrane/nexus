@@ -1032,7 +1032,7 @@ export class NativeMediaExecutor {
 			this.putError(
 				fields,
 				field,
-				value,
+				effectiveDesired,
 				intent,
 				failure.code,
 				failure.message,

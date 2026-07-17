@@ -101,9 +101,8 @@ export class MediaRegistry {
 		this.fullscreenListener = () => {
 			const fullscreenElement = document.fullscreenElement;
 			const entering = fullscreenElement
-				? [...this.byElement.values()].find(({ element }) =>
-					fullscreenElement === element || fullscreenElement.contains(element))
-				: undefined;
+				? this.fullscreenRecord(fullscreenElement)
+				: null;
 			const record = entering
 				?? (this.fullscreenMediaId ? this.byId.get(this.fullscreenMediaId) : undefined);
 			if (!record) return;
@@ -348,16 +347,39 @@ export class MediaRegistry {
 			: null;
 	}
 
-	private best(kind: 'media' | 'video'): MediaRecord | null {
-		const activeId = kind === 'video' ? this.activeVideoId : this.activeMediaId;
-		const active = activeId ? this.byId.get(activeId) : undefined;
-		if (active && (kind === 'media' || active.target.kind === 'video')) return active;
+	private bestRecord(
+		records: Iterable<MediaRecord>,
+		kind: 'media' | 'video' = 'media',
+	): MediaRecord | null {
 		let best: MediaRecord | null = null;
-		for (const record of this.byElement.values()) {
+		for (const record of records) {
 			if (kind === 'video' && record.target.kind !== 'video') continue;
 			if (!best || this.compare(record, best) > 0) best = record;
 		}
 		return best;
+	}
+
+	private fullscreenRecord(owner: Element): MediaRecord | null {
+		if (owner instanceof HTMLMediaElement) {
+			const exact = this.byElement.get(owner);
+			if (exact) return exact;
+		}
+		const contained = [...this.byElement.values()].filter(({ element }) => owner.contains(element));
+		if (contained.length === 0) return null;
+		const activeVideo = this.activeVideoId ? this.byId.get(this.activeVideoId) : undefined;
+		if (activeVideo && contained.includes(activeVideo)) return activeVideo;
+		const bestVideo = this.bestRecord(contained, 'video');
+		if (bestVideo) return bestVideo;
+		const activeMedia = this.activeMediaId ? this.byId.get(this.activeMediaId) : undefined;
+		if (activeMedia && contained.includes(activeMedia)) return activeMedia;
+		return this.bestRecord(contained);
+	}
+
+	private best(kind: 'media' | 'video'): MediaRecord | null {
+		const activeId = kind === 'video' ? this.activeVideoId : this.activeMediaId;
+		const active = activeId ? this.byId.get(activeId) : undefined;
+		if (active && (kind === 'media' || active.target.kind === 'video')) return active;
+		return this.bestRecord(this.byElement.values(), kind);
 	}
 
 	peek(

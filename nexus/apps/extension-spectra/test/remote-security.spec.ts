@@ -126,6 +126,9 @@ describe('authenticated remote host', () => {
 			volume: 110,
 			volumeBase: 100,
 			boost: 1.1,
+			actualMode: 'webaudio' as const,
+			phase: 'active' as const,
+			volumeState: 'native' as const,
 			muted: false,
 			playing: true,
 			speed: 1.25,
@@ -147,7 +150,7 @@ describe('authenticated remote host', () => {
 			sessionId: session.sessionId,
 			proof,
 		});
-		await tick();
+		await waitFor(() => connection.sent.some((message) => message.type === 'spectra.remote.state'));
 
 		expect(connection.sent).toContainEqual({
 			type: 'spectra.remote.state',
@@ -183,6 +186,8 @@ describe('authenticated remote host', () => {
 		harness.controller.sendState(23, session.sessionId, {
 			generation: 7,
 			volume: 125,
+			actualMode: 'capture',
+			phase: 'active',
 			muted: false,
 			playing: true,
 			speed: 1.25,
@@ -351,4 +356,12 @@ function cryptoToken(byteLength: number): string {
 async function tick(): Promise<void> {
 	await Promise.resolve();
 	await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 1_000): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (!predicate()) {
+		if (Date.now() >= deadline) throw new Error('Timed out waiting for remote host state');
+		await tick();
+	}
 }

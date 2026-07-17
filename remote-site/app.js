@@ -10,7 +10,7 @@
   const TOKEN_RE = /^[A-Za-z0-9_-]{22}$/;
   const NONCE_RE = /^[A-Za-z0-9_-]{43}$/;
   const COMMANDS = new Set([
-    'volume_down', 'volume_up', 'volume_100', 'mute', 'play_pause',
+    'volume_down', 'volume_up', 'volume_100', 'volume_max', 'mute', 'play_pause',
     'boost_down', 'boost_up', 'boost_reset', 'boost_max',
     'seek_backward_30', 'seek_backward', 'seek_forward', 'seek_forward_30',
     'speed_down', 'speed_reset', 'speed_up',
@@ -49,8 +49,9 @@
       this.statusMessage = 'Waiting to connect…';
       this.state = {
         volume: 100,
-        volumeBase: 100,
-        boost: 1,
+        actualMode: 'bypass',
+        phase: 'idle',
+        volumeState: 'native',
         muted: false,
         playing: false,
         speed: 1,
@@ -152,17 +153,11 @@
 
       if (data.type === 'spectra.remote.state' && this.authenticated && isRemoteState(data)) {
         this.generation = data.generation;
-        const legacyVolume = Math.max(0, Math.min(800, data.volume));
-        const volumeBase = Number.isFinite(data.volumeBase)
-          ? Math.max(0, Math.min(100, Math.round(data.volumeBase)))
-          : Math.min(100, Math.round(legacyVolume));
-        const boost = Number.isFinite(data.boost)
-          ? Math.max(1, Math.min(8, Math.round(data.boost * 10) / 10))
-          : legacyVolume > 100 ? Math.max(1, Math.min(8, legacyVolume / 100)) : 1;
         this.state = {
-          volume: Math.round(volumeBase * boost * 10) / 10,
-          volumeBase,
-          boost,
+          volume: Math.round(Math.max(0, Math.min(800, data.volume)) * 10) / 10,
+          actualMode: data.actualMode || 'bypass',
+          phase: data.phase || 'idle',
+          volumeState: data.volumeState || deriveVolumeState(data),
           muted: data.muted,
           playing: data.playing,
           speed: Math.max(0.25, Math.min(16, data.speed)),
@@ -309,8 +304,13 @@
 
     setHeaderStatus(active.statusMessage, active.connected);
     setControlsEnabled(active.authenticated);
-    byId('vol-display').textContent = `${active.state.volumeBase}%`;
-    byId('boost-display').textContent = `${active.state.boost.toFixed(1)}×`;
+    byId('vol-display').textContent = `${formatVolume(active.state.volume)}%`;
+    const volumeDisplay = byId('volume-display');
+    volumeDisplay.classList.toggle(
+      'capture-active',
+		active.state.volumeState === 'capture',
+    );
+    volumeDisplay.classList.toggle('silent', active.state.volumeState === 'silent');
     byId('btn-mute').classList.toggle('muted', active.state.muted);
     byId('btn-play-pause').textContent = active.state.playing ? '⏸' : '▶';
     byId('speed-display').textContent = `${active.state.speed.toFixed(2)}x`;
@@ -471,11 +471,34 @@
       && Number.isFinite(data.volume)
       && (data.volumeBase === undefined || Number.isFinite(data.volumeBase))
       && (data.boost === undefined || Number.isFinite(data.boost))
+      && (data.actualMode === undefined
+        || data.actualMode === 'bypass'
+        || data.actualMode === 'webaudio'
+        || data.actualMode === 'capture')
+      && (data.phase === undefined
+        || data.phase === 'idle'
+        || data.phase === 'starting'
+        || data.phase === 'active'
+        || data.phase === 'stopping'
+        || data.phase === 'error')
+		&& (data.volumeState === undefined
+			|| data.volumeState === 'silent'
+			|| data.volumeState === 'native'
+			|| data.volumeState === 'capture')
       && typeof data.muted === 'boolean'
       && typeof data.playing === 'boolean'
       && Number.isFinite(data.speed)
       && (data.tabTitle === undefined || typeof data.tabTitle === 'string')
       && (data.tabDomain === undefined || typeof data.tabDomain === 'string');
+  }
+
+  function formatVolume(value) {
+    return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, '');
+  }
+
+  function deriveVolumeState(data) {
+    if (data.muted || data.volume <= 0) return 'silent';
+    return data.actualMode === 'capture' && data.phase === 'active' ? 'capture' : 'native';
   }
 
   function isCloseReason(value) {

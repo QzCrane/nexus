@@ -399,7 +399,7 @@ describe('authoritative control coordinator', () => {
 		expect(harness.snapshotEvents).toBe(2);
 	});
 
-	test('preserves independent Boost when page-native volume changes', async () => {
+	test('normalizes hidden Boost when the page owns a new effective volume', async () => {
 		const harness = installHarness();
 		const target = {
 			frameId: 0,
@@ -433,13 +433,62 @@ describe('authoritative control coordinator', () => {
 			patch: { volumeBase: 55 },
 		});
 
-		expect(routed).toHaveLength(1);
+		expect(routed).toHaveLength(2);
+		expect(routed[1]).toMatchObject({
+			source: 'system',
+			requestedCoverage: 'full',
+			patch: { boost: 1 },
+		});
 		expect(ack.revision).toBe(2);
 		expect(ack.fields.volumeBase?.actual).toBe(55);
-		expect(ack.fields.boost?.actual).toBeUndefined();
-		expect((await controlCoordinatorTestApi.getSnapshot(7))?.fields.boost?.actual).toBe(2);
+		expect(ack.fields.boost?.actual).toBe(1);
+		expect((await controlCoordinatorTestApi.getSnapshot(7))?.fields.boost?.actual).toBe(1);
 		expect((await controlCoordinatorTestApi.getSnapshot(7))?.revision).toBe(2);
 		expect(harness.snapshotEvents).toBe(2);
+	});
+
+	test('turns an acknowledged repeated effective volume into zero Content IPC and zero storage writes', async () => {
+		const harness = installHarness();
+		const target = {
+			frameId: 0,
+			documentId: harness.documentId,
+			mediaId: 'media:effective-noop',
+			sourceRevision: 0,
+			kind: 'audio' as const,
+		};
+		harness.contentResponder = ({ type, payload }) => {
+			if (type !== 'spectra.control.actual.read') throw new Error(`Unexpected ${type}`);
+			return actualReadAck(payload as ControlReadRequest, target);
+		};
+		await controlCoordinatorTestApi.targetChanged(7, target);
+		harness.contentResponder = ({ type, payload }) => {
+			if (type !== 'spectra.control.intent.execute') throw new Error(`Unexpected ${type}`);
+			return { ok: true, data: releasedPatchAck(payload as ControlIntent) };
+		};
+		await controlCoordinatorTestApi.submit({
+			tabId: 7,
+			source: 'system',
+			requestedCoverage: 'full',
+			target,
+			patch: { boost: 1 },
+		});
+		harness.contentMessages.length = 0;
+		const writes = harness.storageWrites;
+		const events = harness.snapshotEvents;
+
+		const ack = await controlCoordinatorTestApi.submitOperation({
+			tabId: 7,
+			source: 'popup',
+			target,
+			operation: 'effective-volume',
+			payload: { operation: 'set', value: 72 },
+		});
+
+		expect(ack.result).toEqual({ effectiveVolume: 72, volumeBase: 72, boost: 1 });
+		expect(ack.fields).toEqual({});
+		expect(harness.contentMessages).toHaveLength(0);
+		expect(harness.storageWrites).toBe(writes);
+		expect(harness.snapshotEvents).toBe(events);
 	});
 
 	test('never invokes MAIN after a successful DOM readback', async () => {

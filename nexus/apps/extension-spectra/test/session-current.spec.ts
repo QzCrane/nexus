@@ -4,6 +4,7 @@ import {
 	SPECTRA_PROTOCOL_VERSION,
 	isSpectraRequestEnvelope,
 	isSpectraResponse,
+	resolveAudioVolume,
 	type AudioConfig,
 	type AudioSessionSnapshot,
 } from '@nexus/contracts';
@@ -13,10 +14,22 @@ import { assembleInitialState } from '../src/content/core/initial-state';
 import type { PolicyExecutorState } from '../src/content/types';
 
 function config(patch: Partial<AudioConfig> = {}): AudioConfig {
-	return {
+	const merged = {
 		...DEFAULT_AUDIO_CONFIG,
 		...patch,
 		eqValues: patch.eqValues ? [...patch.eqValues] : [...DEFAULT_AUDIO_CONFIG.eqValues],
+	};
+	const legacyEffectiveOnly = patch.volume !== undefined
+		&& patch.volumeBase === undefined
+		&& patch.boost === undefined;
+	const volume = legacyEffectiveOnly
+		? resolveAudioVolume({ volume: patch.volume })
+		: resolveAudioVolume(merged);
+	return {
+		...merged,
+		volume: volume.effectiveVolume,
+		volumeBase: volume.volumeBase,
+		boost: volume.boost,
 	};
 }
 

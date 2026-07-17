@@ -1,6 +1,10 @@
 // goal: defines messaging listeners for the tab card to handle state synchronization between the popup, background, and content scripts
 
 import { isSpectraUiEventEnvelope } from '@nexus/contracts/ui-runtime';
+import {
+	audioSessionMatchesControlDocument,
+	isActiveCaptureLifecycle,
+} from '@nexus/contracts';
 import type { CardInternalState } from './types';
 import { applyLegacyCardMessage } from './legacy-message-adapter';
 import { mergeControlSnapshot } from './types';
@@ -26,13 +30,30 @@ export function setupCardMessaging(params: MessagingParams): () => void {
 			|| snapshot.generation === state.controlGeneration
 				&& snapshot.revision < state.controlRevision) return false;
 		state.controlSnapshot = snapshot;
+		const lifecycleMatches = state.audioDocumentId === snapshot.documentId
+			&& state.audioOrigin === snapshot.origin;
+		if (!lifecycleMatches) {
+			// Never carry a purple Capture lifecycle across a navigation or a worker
+			// identity reset while waiting for the matching session handshake.
+			state.actualMode = 'bypass';
+			state.desiredMode = 'bypass';
+			state.phase = 'idle';
+			state.isCaptureActive = false;
+			state.audioDocumentId = null;
+			state.audioOrigin = null;
+			state.audioGeneration = -1;
+			state.audioConfigRevision = 0;
+		}
 		state.stableConfig = mergeControlSnapshot(state.stableConfig, snapshot);
 		const incoming = state.stableConfig;
-		if (state.draggingField === 'volumeBase') {
-			const { volume: _volume, volumeBase: _volumeBase, muted: _muted, ...otherConfig } = incoming;
-			state.config = { ...state.config, ...otherConfig };
-		} else if (state.draggingField === 'boost') {
-			const { volume: _volume, boost: _boost, muted: _muted, ...otherConfig } = incoming;
+		if (state.draggingField === 'volume') {
+			const {
+				volume: _volume,
+				volumeBase: _volumeBase,
+				boost: _boost,
+				muted: _muted,
+				...otherConfig
+			} = incoming;
 			state.config = { ...state.config, ...otherConfig };
 		} else {
 			state.config = incoming;
@@ -46,7 +67,10 @@ export function setupCardMessaging(params: MessagingParams): () => void {
 	}
 	if (isSpectraUiEventEnvelope(rawMessage) && rawMessage.type === 'spectra.audio.session.changed') {
 		const snapshot = rawMessage.payload;
+		const control = state.controlSnapshot;
+		const matchesControl = audioSessionMatchesControlDocument(snapshot, control);
 		if (snapshot.tabId === tabId
+			&& matchesControl
 			&& (snapshot.generation > state.audioGeneration
 				|| snapshot.generation === state.audioGeneration
 					&& snapshot.configRevision >= state.audioConfigRevision)) {
@@ -56,10 +80,15 @@ export function setupCardMessaging(params: MessagingParams): () => void {
 			state.actualMode = snapshot.actualMode;
 			state.desiredMode = snapshot.desiredMode;
 			state.phase = snapshot.phase;
+			state.audioDocumentId = snapshot.documentId;
+			state.audioOrigin = snapshot.origin;
 			state.audioGeneration = snapshot.generation;
 			state.audioConfigRevision = snapshot.configRevision;
 			state.lastError = snapshot.lastError;
-			state.isCaptureActive = snapshot.actualMode === 'capture';
+			state.isCaptureActive = isActiveCaptureLifecycle({
+				actualMode: snapshot.actualMode,
+				phase: snapshot.phase,
+			});
 			render();
 		}
 		return false;

@@ -65,15 +65,15 @@ function renderOSD(type: 'volume' | 'speed', c: AudioConfig, cap: boolean, s: Co
 	} else {
 		// volume display mode
 		const volume = resolveAudioVolume(c);
-		const muted = c.muted || volume.volumeBase === 0;
+		const muted = c.muted || volume.effectiveVolume === 0;
 		o.classList.toggle('m', muted);
-		f.style.width = `${volume.volumeBase}%`;
+		f.style.width = `${Math.max(0, Math.min(100, volume.effectiveVolume / 8))}%`;
 		t.textContent = muted
 			? s.osdMessages.muted
-			: volume.boost > 1
-				? `${volume.volumeBase}% × ${volume.boost.toFixed(1)}`
-				: `${volume.volumeBase}%`;
-		i.textContent = muted ? '🔇' : (volume.boost > 1 ? '🚀' : '🔊');
+			: `${Number.isInteger(volume.effectiveVolume)
+				? volume.effectiveVolume
+				: volume.effectiveVolume.toFixed(1)}%`;
+		i.textContent = muted ? '🔇' : (volume.effectiveVolume > 100 ? '🚀' : '🔊');
 	}
 
 	state.lastType = type;

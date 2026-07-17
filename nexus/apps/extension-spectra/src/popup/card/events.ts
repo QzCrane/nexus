@@ -51,14 +51,11 @@ export function bindCardEvents(params: EventsParams): void {
   };
 
   const handleVolume = (val: string | number) => {
-    const v = typeof val === 'string' ? parseInt(val, 10) : val;
-    update({ volumeBase: v });
-  };
-
-  const handleBoost = (val: string | number) => {
     const raw = typeof val === 'string' ? Number.parseFloat(val) : val;
-    const boost = Math.round(Math.max(AUDIO_UI.BOOST_MIN, Math.min(AUDIO_UI.BOOST_MAX, raw)) * 10) / 10;
-    update({ boost });
+    const volume = Math.max(0, Math.min(AUDIO_UI.MAX_VOLUME, raw));
+    // `volume` is the single product-level control. mergeAudioConfig performs
+    // the internal native-volume/processor-boost split atomically in UI state.
+    update({ volume });
   };
 
 	const submitToggle = async (field: 'mediaMuted'): Promise<void> => {
@@ -96,7 +93,7 @@ export function bindCardEvents(params: EventsParams): void {
   };
 
   ui.slider.oninput = (e) => {
-    setDragging('volumeBase');
+    setDragging('volume');
     handleVolume((e.target as HTMLInputElement).value);
   };
 
@@ -107,8 +104,8 @@ export function bindCardEvents(params: EventsParams): void {
   };
   ui.slider.onmouseup = () => setDragging(null);
   ui.slider.ontouchend = () => setDragging(null);
-  ui.slider.onmousedown = () => setDragging('volumeBase');
-  ui.slider.ontouchstart = () => setDragging('volumeBase');
+  ui.slider.onmousedown = () => setDragging('volume');
+  ui.slider.ontouchstart = () => setDragging('volume');
 
   // eff: enable rapid volume adjustment via mouse wheel with preventDefault to avoid scrolling the popup body
   ui.sliderArea.addEventListener('wheel', (e) => {
@@ -118,32 +115,9 @@ export function bindCardEvents(params: EventsParams): void {
 
     let v = parseInt(ui.slider.value, 10);
     v = e.deltaY < 0
-      ? Math.min(v + AUDIO_UI.MAIN_VOLUME_STEP, AUDIO_UI.MAIN_VOLUME_MAX)
-      : Math.max(v - AUDIO_UI.MAIN_VOLUME_STEP, 0);
+      ? Math.min(v + AUDIO_UI.VOLUME_STEP, AUDIO_UI.MAX_VOLUME)
+      : Math.max(v - AUDIO_UI.VOLUME_STEP, 0);
     handleVolume(v);
-  }, { passive: false });
-
-  ui.boostSlider.oninput = (event) => {
-    setDragging('boost');
-    handleBoost((event.target as HTMLInputElement).value);
-  };
-  ui.boostSlider.onchange = () => {
-    setDragging(null);
-    void update.flush().catch(() => undefined);
-  };
-  ui.boostSlider.onmouseup = () => setDragging(null);
-  ui.boostSlider.ontouchend = () => setDragging(null);
-  ui.boostSlider.onmousedown = () => setDragging('boost');
-  ui.boostSlider.ontouchstart = () => setDragging('boost');
-  ui.boostSliderArea.addEventListener('wheel', (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (!state.config.enabled) return;
-    const current = Number.parseFloat(ui.boostSlider.value);
-    const next = event.deltaY < 0
-      ? Math.min(current + AUDIO_UI.BOOST_STEP, AUDIO_UI.BOOST_MAX)
-      : Math.max(current - AUDIO_UI.BOOST_STEP, AUDIO_UI.BOOST_MIN);
-    handleBoost(next);
   }, { passive: false });
 
   ui.mute.onclick = () => {

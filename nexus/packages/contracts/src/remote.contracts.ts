@@ -1,6 +1,11 @@
 // goal: extension-internal UI/background boundary for authenticated remote sessions
 
 import type { ControlCapability } from './control.contracts.js';
+import type {
+	AudioSessionPhase,
+	AudioVolumeState,
+	SpectraAudioMode,
+} from './audio.contracts.js';
 
 export interface RemotePublicSession {
 	protocolVersion: 2;
@@ -73,14 +78,14 @@ const remoteDescriptor = (
 // exhaustive map fixes their canonical capability and transform so handler,
 // phone UI and tests cannot silently diverge on steps or volume/Boost meaning.
 export const REMOTE_COMMAND_DESCRIPTORS = {
-	volume_up: remoteDescriptor('volumeBase', 'delta', 10),
-	volume_down: remoteDescriptor('volumeBase', 'delta', -10),
-	volume_max: remoteDescriptor('boost', 'set', 8, true),
-	volume_100: remoteDescriptor('volumeBase', 'set', 100),
-	boost_up: remoteDescriptor('boost', 'delta', 0.1),
-	boost_down: remoteDescriptor('boost', 'delta', -0.1),
-	boost_reset: remoteDescriptor('boost', 'set', 1),
-	boost_max: remoteDescriptor('boost', 'set', 8),
+	volume_up: remoteDescriptor('effective-volume', 'delta', 10),
+	volume_down: remoteDescriptor('effective-volume', 'delta', -10),
+	volume_max: remoteDescriptor('effective-volume', 'set', 800),
+	volume_100: remoteDescriptor('effective-volume', 'set', 100),
+	boost_up: remoteDescriptor('effective-volume', 'delta', 10, true),
+	boost_down: remoteDescriptor('effective-volume', 'delta', -10, true),
+	boost_reset: remoteDescriptor('effective-volume', 'set', 100, true),
+	boost_max: remoteDescriptor('effective-volume', 'set', 800, true),
 	mute: remoteDescriptor('mediaMuted', 'toggle'),
 	play_pause: remoteDescriptor('playback-toggle', 'toggle'),
 	seek_forward: remoteDescriptor('seek-relative', 'delta', 10),
@@ -100,6 +105,10 @@ export interface RemoteState {
 	volume: number;
 	volumeBase?: number;
 	boost?: number;
+	actualMode: SpectraAudioMode;
+	phase: AudioSessionPhase;
+	/** Canonical color/state projection; optional only for one-release clients. */
+	volumeState?: AudioVolumeState;
 	muted: boolean;
 	playing: boolean;
 	speed: number;
@@ -163,6 +172,9 @@ export function isRemoteState(value: unknown): value is RemoteState {
 		'volume',
 		'volumeBase',
 		'boost',
+		'actualMode',
+		'phase',
+		'volumeState',
 		'muted',
 		'playing',
 		'speed',
@@ -174,6 +186,11 @@ export function isRemoteState(value: unknown): value is RemoteState {
 		&& isFiniteInRange(value.volume, 0, 800)
 		&& (value.volumeBase === undefined || isFiniteInRange(value.volumeBase, 0, 100))
 		&& (value.boost === undefined || isFiniteInRange(value.boost, 1, 8))
+		&& (value.actualMode === 'bypass' || value.actualMode === 'webaudio' || value.actualMode === 'capture')
+		&& (value.phase === 'idle' || value.phase === 'starting' || value.phase === 'active'
+			|| value.phase === 'stopping' || value.phase === 'error')
+		&& (value.volumeState === undefined || value.volumeState === 'silent'
+			|| value.volumeState === 'native' || value.volumeState === 'capture')
 		&& typeof value.muted === 'boolean'
 		&& typeof value.playing === 'boolean'
 		&& isFiniteInRange(value.speed, 0.1, 16)

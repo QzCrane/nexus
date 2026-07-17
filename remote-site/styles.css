@@ -4,12 +4,12 @@
   --surface: rgba(255, 255, 255, 0.06);
   --surface-hover: rgba(255, 255, 255, 0.12);
   --border: rgba(255, 255, 255, 0.12);
-  --accent: #8292ff;
-  --accent-2: #a06bdb;
+  --accent: #2563eb;
+  --accent-2: #7c3aed;
   --success: #50c878;
   --danger: #ff6b6b;
   --text: #fff;
-  --text-dim: rgba(255, 255, 255, 0.68);
+  --text-dim: #9ca3af;
 }
 
 :root.light {
@@ -18,12 +18,12 @@
   --surface: rgba(0, 0, 0, 0.05);
   --surface-hover: rgba(0, 0, 0, 0.1);
   --border: rgba(0, 0, 0, 0.12);
-  --accent: #5262cf;
-  --accent-2: #7042a5;
+  --accent: #2563eb;
+  --accent-2: #7c3aed;
   --success: #258a4b;
   --danger: #c93737;
   --text: #172033;
-  --text-dim: rgba(23, 32, 51, 0.68);
+  --text-dim: #6b7280;
 }
 
 * { box-sizing: border-box; }
@@ -91,7 +91,8 @@ dialog input:focus { outline: 3px solid var(--accent); outline-offset: 1px; }
 .tab-domain { margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); font-size: 0.78rem; }
 .volume-display { padding: 18px; text-align: center; }
 .volume-value { font-size: clamp(2.6rem, 14vw, 3.5rem); font-weight: 750; color: var(--accent); }
-.boost-display .volume-value { color: #8b5cf6; }
+.volume-display.capture-active .volume-value { color: var(--accent-2); }
+.volume-display.silent .volume-value { color: var(--text-dim); }
 .volume-label, .section-title { color: var(--text-dim); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; }
 .control-section { padding: 12px; }
 .section-title { margin: 0 0 10px 4px; }

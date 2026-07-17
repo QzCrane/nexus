@@ -347,6 +347,7 @@ export function matchSiteNativeAdapter(
 // pretend to be persistent desired values in ControlSnapshot.
 export const CONTROL_OPERATIONS = [
 	'restore-page-settings',
+	'effective-volume',
 	'playback-toggle',
 	'seek-relative',
 	'frame-step',
@@ -572,6 +573,12 @@ export const CONTROL_ALGORITHM_POLICIES = {
 		scope: 'document', kind: 'compound', orderedStrategies: ['extension-state'],
 		acknowledgements: ['coordinator-snapshot'], mainWorld: 'forbidden', recurringWork: 'none',
 	},
+	'effective-volume': {
+		scope: 'requested-audio-scope', kind: 'compound',
+		orderedStrategies: ['dom-native', 'site-native', 'extension-state', 'media-webaudio', 'capture'],
+		acknowledgements: ['dom-event-getter', 'official-stable-getter', 'processor-readback'],
+		mainWorld: 'site-adapter-only', recurringWork: 'none',
+	},
 	'playback-toggle': {
 		scope: 'active-media', kind: 'compound', orderedStrategies: ['dom-native'],
 		acknowledgements: ['dom-event-getter'], mainWorld: 'forbidden', recurringWork: 'none',
@@ -695,6 +702,7 @@ export const CONTROL_ALGORITHM_ADJUDICATIONS = {
 	delay: { nativePreference: 'augmentation-only', augmentationAdmission: 'proven-safe-source-or-explicit-full-output' },
 	visualizer: { nativePreference: 'observation-only', augmentationAdmission: 'existing-processor-only' },
 	'restore-page-settings': { nativePreference: 'augmentation-only', augmentationAdmission: 'extension-owned-capability' },
+	'effective-volume': { nativePreference: 'hybrid-extension-native', augmentationAdmission: 'proven-safe-source-or-explicit-full-output' },
 	'playback-toggle': { nativePreference: 'native-only', augmentationAdmission: 'none' },
 	'seek-relative': { nativePreference: 'native-only', augmentationAdmission: 'none' },
 	'frame-step': { nativePreference: 'hybrid-extension-native', augmentationAdmission: 'extension-owned-capability' },
@@ -791,6 +799,7 @@ export interface ControlOperationPayloadMap {
 	// Background replaces this internal exclusion list from its persisted
 	// site-native baseline record. User-facing callers still send `{}`.
 	'restore-page-settings': { excludedNativeFields?: SiteNativeControlField[] };
+	'effective-volume': { operation: 'set' | 'delta'; value: number };
 	'playback-toggle': Record<string, never>;
 	'seek-relative': { delta: number };
 	'frame-step': { direction: -1 | 1 };
@@ -816,6 +825,7 @@ export interface ControlOperationPayloadMap {
 
 export interface ControlOperationResultMap {
 	'restore-page-settings': { releasedFields: ControlField[] };
+	'effective-volume': { effectiveVolume: number; volumeBase: number; boost: number };
 	'playback-toggle': { playing: boolean };
 	'seek-relative': { currentTime: number };
 	'frame-step': ControlFrameStepResult;
@@ -1057,12 +1067,15 @@ export function compileEffectiveVolume(volumeBase: number, boost: number): numbe
 	return Math.max(0, Math.min(800, Math.round(base * multiplier * 100) / 100));
 }
 
-export function splitLegacyVolume(volume: number): { volumeBase: number; boost: number } {
+export function splitEffectiveVolume(volume: number): { volumeBase: number; boost: number } {
 	const normalized = Math.max(0, Math.min(800, Number.isFinite(volume) ? volume : 100));
 	return normalized <= 100
 		? { volumeBase: normalized, boost: 1 }
 		: { volumeBase: 100, boost: normalized / 100 };
 }
+
+/** @deprecated One-release v1 name. Use splitEffectiveVolume. */
+export const splitLegacyVolume = splitEffectiveVolume;
 
 export function classifyControlStrategy(strategy: ControlStrategy): ControlStrategyClass {
 	return CONTROL_STRATEGY_RULES[strategy].class;
@@ -1158,6 +1171,14 @@ function isOperationPayload(operation: ControlOperation, value: unknown): boolea
 		return isRecord(value) && hasOnlyKeys(value, new Set(['delta']))
 			&& isFiniteInRange(value.delta, -86_400, 86_400) && value.delta !== 0;
 	}
+	if (operation === 'effective-volume') {
+		if (!isRecord(value) || !hasOnlyKeys(value, new Set(['operation', 'value']))
+			|| (value.operation !== 'set' && value.operation !== 'delta')
+			|| typeof value.value !== 'number' || !Number.isFinite(value.value)) return false;
+		return value.operation === 'set'
+			? value.value >= 0 && value.value <= 800
+			: value.value >= -800 && value.value <= 800 && value.value !== 0;
+	}
 	if (operation === 'frame-step') {
 		return isRecord(value) && hasOnlyKeys(value, new Set(['direction']))
 			&& (value.direction === -1 || value.direction === 1);
@@ -1195,6 +1216,12 @@ function isOperationResult(operation: ControlOperation, value: unknown): boolean
 			return hasOnlyKeys(value, new Set(['releasedFields']))
 				&& Array.isArray(value.releasedFields)
 				&& value.releasedFields.every((field) => typeof field === 'string' && controlFields.has(field));
+		case 'effective-volume':
+			return hasOnlyKeys(value, new Set(['effectiveVolume', 'volumeBase', 'boost']))
+				&& isFiniteInRange(value.effectiveVolume, 0, 800)
+				&& isFiniteInRange(value.volumeBase, 0, 100)
+				&& isFiniteInRange(value.boost, 1, 8)
+				&& compileEffectiveVolume(value.volumeBase, value.boost) === value.effectiveVolume;
 		case 'playback-toggle':
 			return hasOnlyKeys(value, new Set(['playing'])) && typeof value.playing === 'boolean';
 		case 'seek-relative':

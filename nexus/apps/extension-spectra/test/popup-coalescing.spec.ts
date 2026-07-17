@@ -23,7 +23,7 @@ describe('Popup latest-value config transport', () => {
 		const state = createState();
 		const update = createUpdateFn(state, 5, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
 
-		for (let index = 0; index < 100; index += 1) update({ volumeBase: index + 1 });
+		for (let index = 0; index < 100; index += 1) update({ volume: index + 1 });
 		expect(harness.timers.size).toBe(1);
 		expect(harness.requests).toHaveLength(0);
 		harness.fireOnlyTimer();
@@ -34,17 +34,30 @@ describe('Popup latest-value config transport', () => {
 		expect(harness.requests).toHaveLength(1);
 	});
 
+	test('drops a repeated acknowledged value before scheduling any IPC', async () => {
+		const harness = installHarness();
+		const state = createState();
+		const update = createUpdateFn(state, 6, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
+
+		update({ volume: 100 });
+		update({ volume: 100 });
+		expect(harness.timers.size).toBe(0);
+		expect(harness.requests).toHaveLength(0);
+		await update.flush();
+		expect(harness.requests).toHaveLength(0);
+	});
+
 	test('keeps newer optimistic values when an older ACK arrives', async () => {
 		const harness = installHarness();
 		const state = createState();
 		const update = createUpdateFn(state, 7, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
 
-		update({ volumeBase: 10 });
+		update({ volume: 10 });
 		harness.fireOnlyTimer();
 		await waitFor(() => harness.requests.length === 1);
 
-		update({ volumeBase: 20 });
-		update({ volumeBase: 30 });
+		update({ volume: 20 });
+		update({ volume: 30 });
 		harness.resolveRequest(0, runtimeResponse(10, 1));
 		await waitFor(() => harness.timers.size === 1);
 		expect(state.config.volumeBase).toBe(30);
@@ -62,10 +75,10 @@ describe('Popup latest-value config transport', () => {
 		const state = createState();
 		const update = createUpdateFn(state, 9, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
 
-		update({ volumeBase: 50 });
+		update({ volume: 50 });
 		harness.fireOnlyTimer();
 		await waitFor(() => harness.requests.length === 1);
-		update({ volumeBase: 75 });
+		update({ volume: 75 });
 		harness.window.dispatchEvent(new Event('pagehide'));
 
 		harness.resolveRequest(0, runtimeResponse(50, 1));
@@ -82,7 +95,7 @@ describe('Popup latest-value config transport', () => {
 		const state = createState();
 		const update = createUpdateFn(state, 11, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
 
-		update({ volumeBase: 40 });
+		update({ volume: 40 });
 		expect(harness.timers.size).toBe(1);
 		const drained = update.flush();
 		await waitFor(() => harness.requests.length === 1);
@@ -93,28 +106,43 @@ describe('Popup latest-value config transport', () => {
 		expect(state.config.volumeBase).toBe(40);
 	});
 
-	test('changes page volume and Boost without implicitly clearing media mute', async () => {
+	test('maps an above-100 single-slider value to Boost without rewriting native volume or mute', async () => {
 		const harness = installHarness();
 		const state = createState();
 		state.config.muted = true;
 		state.stableConfig.muted = true;
 		const update = createUpdateFn(state, 12, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
 
-		update({ volumeBase: 40, boost: 2 });
+		update({ volume: 200 });
 		const drained = update.flush();
 		await waitFor(() => harness.requests.length === 1);
-		expect(requestPatch(harness.requests[0]?.message)).toEqual({ volumeBase: 40 });
-		harness.resolveRequest(0, runtimeResponse(40, 1));
-		await waitFor(() => harness.requests.length === 2);
-		expect(requestPatch(harness.requests[1]?.message)).toEqual({ boost: 2 });
-		harness.resolveRequest(1, runtimeBoostResponse(2, 2));
+		expect(requestVolume(harness.requests[0]?.message)).toBe(200);
+		expect(requestType(harness.requests[0]?.message)).toBe('spectra.control.operation.submit');
+		harness.resolveRequest(0, runtimeResponse(200, 1));
 		await drained;
 
 		expect(state.config.muted).toBe(true);
 		expect(state.stableConfig.muted).toBe(true);
-		expect(harness.requests.every(({ message }) => (
-			(requestPatch(message) as { mediaMuted?: unknown }).mediaMuted === undefined
-		))).toBe(true);
+		expect(harness.requests).toHaveLength(1);
+	});
+
+	test('changes both hidden fields only once when the single slider crosses 100', async () => {
+		const harness = installHarness();
+		const state = createState();
+		state.config = { ...state.config, volume: 40, volumeBase: 40, boost: 1 };
+		state.stableConfig = { ...state.config };
+		const update = createUpdateFn(state, 13, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
+
+		update({ volume: 250 });
+		const drained = update.flush();
+		await waitFor(() => harness.requests.length === 1);
+		expect(requestVolume(harness.requests[0]?.message)).toBe(250);
+		expect(requestType(harness.requests[0]?.message)).toBe('spectra.control.operation.submit');
+		harness.resolveRequest(0, runtimeResponse(250, 1));
+		await drained;
+
+		expect(state.config.volume).toBe(250);
+		expect(harness.requests).toHaveLength(1);
 	});
 });
 
@@ -131,6 +159,8 @@ function createState(): CardInternalState {
 		phase: 'idle',
 		controlGeneration: 0,
 		controlRevision: 0,
+		audioDocumentId: null,
+		audioOrigin: null,
 		audioGeneration: 0,
 		audioConfigRevision: 0,
 		lastError: null,
@@ -139,70 +169,44 @@ function createState(): CardInternalState {
 	};
 }
 
-function runtimeResponse(volumeBase: number, generation: number): Record<string, unknown> {
+function runtimeResponse(effectiveVolume: number, generation: number): Record<string, unknown> {
+	const volumeBase = effectiveVolume <= 100 ? effectiveVolume : 100;
+	const boost = effectiveVolume <= 100 ? 1 : effectiveVolume / 100;
 	return {
 		ok: true,
 		data: {
-			intentId: `intent-${generation}`,
+			operationId: `operation-${generation}`,
 			tabId: 1,
 			documentId: 'document-popup',
 			generation,
 			revision: generation,
 			target: null,
-			fields: {
-				volumeBase: {
-					desired: volumeBase,
-					actual: volumeBase,
-					revision: generation,
-					phase: 'applied',
-					strategy: 'dom-native',
-					coverage: 'active-target',
-					controlled: true,
-					intentId: `intent-${generation}`,
-					lastError: null,
-				},
-			},
+			operation: 'effective-volume',
+			strategy: 'extension-state',
+			coverage: boost > 1 ? 'full' : 'active-target',
+			fields: {},
+			result: { effectiveVolume, volumeBase, boost },
 		},
 	};
 }
 
-function runtimeBoostResponse(boost: number, generation: number): Record<string, unknown> {
-	return {
-		ok: true,
-		data: {
-			intentId: `boost-${generation}`,
-			tabId: 1,
-			documentId: 'document-popup',
-			generation,
-			revision: generation,
-			target: null,
-			fields: {
-				boost: {
-					desired: boost,
-					actual: boost,
-					revision: generation,
-					phase: 'applied',
-					strategy: 'media-webaudio',
-					coverage: 'full',
-					controlled: true,
-					intentId: `boost-${generation}`,
-					lastError: null,
-				},
-			},
-		},
-	};
-}
-
-function requestPatch(message: unknown): Record<string, unknown> {
+function requestPayload(message: unknown): Record<string, unknown> {
 	if (!message || typeof message !== 'object') return {};
 	const payload = (message as { payload?: unknown }).payload;
-	if (!payload || typeof payload !== 'object') return {};
-	const patch = (payload as { patch?: unknown }).patch;
-	return patch && typeof patch === 'object' ? patch as Record<string, unknown> : {};
+	return payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
 }
 
 function requestVolume(message: unknown): unknown {
-	return requestPatch(message).volumeBase;
+	const payload = requestPayload(message).payload;
+	return payload && typeof payload === 'object'
+		? (payload as { value?: unknown }).value
+		: undefined;
+}
+
+function requestType(message: unknown): unknown {
+	return message && typeof message === 'object'
+		? (message as { type?: unknown }).type
+		: undefined;
 }
 
 function installHarness() {

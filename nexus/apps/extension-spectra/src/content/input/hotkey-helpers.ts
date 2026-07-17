@@ -71,26 +71,23 @@ export async function submitHotkeyOperation<O extends ControlOperation>(
 
 export function sendVolumeAction(action: HotkeyAction, params?: HotkeyParams): Promise<void> {
 	const step = Number.isFinite(params?.step) ? Math.abs(params!.step!) : 10;
-	const mutations: ControlMutation[] = [];
 	switch (action) {
 		case 'volume_up':
-			mutations.push({ field: 'volumeBase', operation: 'delta', value: step });
-			break;
+			return submitHotkeyOperation('effective-volume', { operation: 'delta', value: step }).then(() => undefined);
 		case 'volume_down':
-			mutations.push({ field: 'volumeBase', operation: 'delta', value: -step });
-			break;
-		case 'volume_mute': mutations.push({ field: 'mediaMuted', operation: 'toggle' }); break;
+			return submitHotkeyOperation('effective-volume', { operation: 'delta', value: -step }).then(() => undefined);
+		case 'volume_mute':
+			return submitHotkeyMutations([{ field: 'mediaMuted', operation: 'toggle' }]);
 		case 'volume_set':
-			if (Number.isFinite(params?.volume)) {
-				mutations.push({
-					field: 'volumeBase',
+			return Number.isFinite(params?.volume)
+				? submitHotkeyOperation('effective-volume', {
 					operation: 'set',
-					value: Math.max(0, Math.min(100, params!.volume!)),
-				});
-			}
-			break;
+					value: Math.max(0, Math.min(800, params!.volume!)),
+				}).then(() => undefined)
+				: Promise.resolve();
+		default:
+			return Promise.resolve();
 	}
-	return mutations.length > 0 ? submitHotkeyMutations(mutations) : Promise.resolve();
 }
 
 // eff: handles speed adjustment hotkeys through unified config flow
@@ -113,11 +110,13 @@ export function sendAudioAdjustment(action: HotkeyAction, params?: HotkeyParams)
 	let mutation: ControlMutation | null = null;
 	switch (action) {
 		case 'gain_up':
-			mutation = { field: 'boost', operation: 'delta', value: Math.min(1, step ?? 0.1) };
-			break;
+			return submitHotkeyOperation('effective-volume', {
+				operation: 'delta', value: Math.min(8, step ?? 0.1) * 100,
+			}).then(() => undefined);
 		case 'gain_down':
-			mutation = { field: 'boost', operation: 'delta', value: -Math.min(1, step ?? 0.1) };
-			break;
+			return submitHotkeyOperation('effective-volume', {
+				operation: 'delta', value: -Math.min(8, step ?? 0.1) * 100,
+			}).then(() => undefined);
 		case 'delay_up': mutation = { field: 'delay', operation: 'delta', value: step ?? 10 }; break;
 		case 'delay_down': mutation = { field: 'delay', operation: 'delta', value: -(step ?? 10) }; break;
 		case 'delay_reset': mutation = { field: 'delay', operation: 'set', value: 0 }; break;

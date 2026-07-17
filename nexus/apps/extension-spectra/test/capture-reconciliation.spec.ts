@@ -390,7 +390,7 @@ describe('capture restart reconciliation barrier', () => {
 
 		try {
 			await updateAudioSession(identity, {
-				config: { ...DEFAULT_AUDIO_CONFIG, volume: 141 },
+				config: { ...DEFAULT_AUDIO_CONFIG, volume: 141, boost: 1.41 },
 				desiredMode: 'capture',
 				actualMode: 'bypass',
 				phase: 'idle',

@@ -43,10 +43,10 @@ import {
 	verifyRemoteSiteDeployment,
 } from '../../../scripts/check-spectra-remote-live.mjs';
 import {
-	BUNDLE_BUDGETS,
+	analyzeProductionArtifacts,
 	bundleFootprint,
-	checkBundleBudget,
-} from '../scripts/check-bundle-budget.mjs';
+	checkProductionArtifacts,
+} from '../scripts/check-production-artifacts.mjs';
 import { collectExternalBoundaryProperties } from '../scripts/external-boundary-properties.mjs';
 
 const temporaryDirectories: string[] = [];
@@ -112,7 +112,7 @@ describe('release ZIP tooling', () => {
 	});
 });
 
-describe('production bundle budget', () => {
+describe('production artifact integrity', () => {
 	test('reserves browser API members and nested dictionaries without disabling internal property mangling', () => {
 		const source = `
 			const internal = { mayMangle: true };
@@ -155,19 +155,25 @@ describe('production bundle budget', () => {
 		]);
 	});
 
-	test('tracks the passive bootstrap and lazy capability runtimes independently', () => {
-		expect(Object.keys(BUNDLE_BUDGETS)).toEqual([
-			'peerjs-vendor.js',
-			'background.js',
-			'content-bootstrap.js',
-			'content-runtime.js',
-			'content-video-effects.js',
-			'popup.js',
-			'offscreen.js',
-			'options.js',
-		]);
-		expect(BUNDLE_BUDGETS['content-bootstrap.js']).toBeLessThan(BUNDLE_BUDGETS['content-runtime.js']);
-		expect(BUNDLE_BUDGETS['content-video-effects.js']).toBeLessThan(BUNDLE_BUDGETS['content-runtime.js']);
+	test('accepts a fully reachable production graph without a historical byte ceiling', () => {
+		const directory = temporaryDirectory();
+		writeFileSync(resolve(directory, 'manifest.json'), JSON.stringify({
+			manifest_version: 3,
+			background: { service_worker: 'background.js' },
+			action: { default_popup: 'popup.html' },
+		}));
+		writeFileSync(resolve(directory, 'background.js'), 'export const background = true;\n');
+		writeFileSync(
+			resolve(directory, 'popup.html'),
+			'<a href="chrome://extensions/shortcuts">Shortcuts</a><script type="module" src="popup.js"></script>\n',
+		);
+		writeFileSync(resolve(directory, 'popup.js'), 'export const popup = true;\n');
+
+		const report = analyzeProductionArtifacts({ distDir: directory });
+		expect(report.failures).toEqual([]);
+		expect(report.reachable).toBe(report.files);
+		expect(report.duplicates).toEqual([]);
+		expect(() => checkProductionArtifacts({ distDir: directory })).not.toThrow();
 	});
 
 	test('charges shared ESM chunks to every entrypoint that loads them', () => {
@@ -177,8 +183,8 @@ describe('production bundle budget', () => {
 		writeFileSync(resolve(directory, 'chunks/shared.js'), 'export const shared = true;\n');
 		const footprint = bundleFootprint(directory, 'popup.js');
 		expect(footprint.files.map((path) => path.replaceAll('\\', '/'))).toEqual([
-			resolve(directory, 'popup.js').replaceAll('\\', '/'),
 			resolve(directory, 'chunks/shared.js').replaceAll('\\', '/'),
+			resolve(directory, 'popup.js').replaceAll('\\', '/'),
 		]);
 		expect(footprint.bytes).toBe(
 			readFileSync(resolve(directory, 'popup.js')).byteLength
@@ -186,13 +192,43 @@ describe('production bundle budget', () => {
 		);
 	});
 
-	test('fails with an actionable error when a required split bundle is missing', () => {
+	test('rejects missing, unreachable and byte-identical artifacts with actionable evidence', () => {
 		const directory = temporaryDirectory();
-		for (const name of Object.keys(BUNDLE_BUDGETS).filter((name) => name !== 'content-runtime.js')) {
-			writeFileSync(resolve(directory, name), '');
-		}
-		expect(() => checkBundleBudget({ distDir: directory })).toThrow(
-			'content-runtime.js: required production bundle is missing',
+		writeFileSync(resolve(directory, 'manifest.json'), JSON.stringify({
+			manifest_version: 3,
+			background: { service_worker: 'missing.js' },
+		}));
+		writeFileSync(resolve(directory, 'orphan-a.js'), 'export const duplicate = true;\n');
+		writeFileSync(resolve(directory, 'orphan-b.js'), 'export const duplicate = true;\n');
+
+		const report = analyzeProductionArtifacts({ distDir: directory });
+		expect(report.failures.join('\n')).toContain('referenced production artifact is missing (missing.js)');
+		expect(report.failures.join('\n')).toContain('orphan-a.js: unreachable production artifact');
+		expect(report.failures.join('\n')).toContain('byte-identical production artifacts: orphan-a.js, orphan-b.js');
+		expect(() => checkProductionArtifacts({ distDir: directory })).toThrow('Production artifact integrity failed');
+	});
+
+	test('rejects avoidable module replication inside one shareable build domain', () => {
+		const directory = temporaryDirectory();
+		writeFileSync(resolve(directory, 'manifest.json'), JSON.stringify({
+			manifest_version: 3,
+			background: { service_worker: 'background.js' },
+		}));
+		writeFileSync(resolve(directory, 'background.js'), 'export const background = true;\n');
+		const metafile = (output: string) => ({
+			outputs: {
+				[output]: { inputs: { 'shared-runtime.ts': { bytesInOutput: 12 } } },
+			},
+		});
+		const report = analyzeProductionArtifacts({
+			distDir: directory,
+			metafiles: [
+				{ name: 'popup', sharingDomain: 'extension-pages', metafile: metafile('popup.js') },
+				{ name: 'offscreen', sharingDomain: 'extension-pages', metafile: metafile('offscreen.js') },
+			],
+		});
+		expect(report.failures.join('\n')).toContain(
+			'shared-runtime.ts: repeated in shareable build domain (popup, offscreen)',
 		);
 	});
 });
@@ -342,7 +378,7 @@ describe('release gate orchestration', () => {
 			'unit and contract tests',
 			'Chrome integration',
 			'production build',
-			'bundle budget',
+			'production artifact integrity',
 			'dependency audit',
 			'remote-site live deployment',
 			'deterministic staging ZIP',
@@ -397,8 +433,9 @@ describe('release gate orchestration', () => {
 		const previousOverride = process.env[REMOTE_SITE_BASE_URL_ENV];
 		process.env[REMOTE_SITE_BASE_URL_ENV] = 'http://127.0.0.1:1234';
 		try {
-				expect(() => runRelease({
+			expect(() => runRelease({
 				runtimeVersion: EXPECTED_BUN_VERSION,
+				readSourceDigest: () => 'a'.repeat(64),
 				spawnProcess(_executable: string, args: string[], options: { env?: NodeJS.ProcessEnv }) {
 					invoked.push(args);
 					if (args[0] === 'scripts/check-spectra-remote-live.mjs') remoteEnvironment = options.env;

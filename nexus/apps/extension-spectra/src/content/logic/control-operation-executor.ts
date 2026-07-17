@@ -168,17 +168,14 @@ export async function executeControlOperation(
 			));
 		}
 		case 'ab-skip': {
-			const skipped = await skipABLoop(intent.target);
-			if (!skipped) throw new Error('No complete A/B loop exists on the selected media source');
-			const currentTime = skipped
-				? getActiveMediaRegistry()?.resolve(intent.target)?.element.currentTime ?? null
-				: null;
-			const fields = currentTime === null
-				? {}
-				: operationField(intent, 'currentTime', currentTime, 'dom-native');
+			const currentTime = await skipABLoop(intent.target);
+			if (currentTime === null) {
+				throw new Error('No complete A/B loop exists on the selected media source');
+			}
+			const fields = operationField(intent, 'currentTime', currentTime, 'dom-native');
 			return ack(intent, 'dom-native', {
 				abLoop: abLoopState(intent.target),
-				skipped,
+				skipped: true,
 				currentTime,
 			}, fields);
 		}

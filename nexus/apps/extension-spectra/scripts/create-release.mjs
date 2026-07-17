@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkBundleBudget } from './check-bundle-budget.mjs';
+import { checkProductionArtifacts } from './check-production-artifacts.mjs';
 
 const projectDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const distDir = resolve(projectDir, 'dist');
@@ -124,34 +124,7 @@ export function createRelease({ stage = true } = {}) {
 	if (!popup.includes(`v${pkg.version} • Prod`)) {
 		throw new Error('Release dist is not a verified production build; run bun run build:prod first');
 	}
-	checkBundleBudget({ distDir });
-	const forbidden = files.filter((path) => {
-		const name = relative(distDir, path).replaceAll('\\', '/');
-		const segments = name.toLowerCase().split('/');
-		const base = segments.at(-1) ?? '';
-		return base.endsWith('.map')
-			|| base.endsWith('.ts')
-			|| base.endsWith('.tsx')
-			|| base === 'build-analysis.json'
-			|| base === '.ds_store'
-			|| base === 'thumbs.db'
-			|| base.endsWith('.log')
-			|| /(?:^|\.)(?:spec|test)\.[^.]+$/u.test(base)
-			|| segments.some((segment) => ['test', 'tests', 'coverage', 'node_modules', '.git'].includes(segment));
-	});
-	if (forbidden.length) throw new Error(`Release contains development artifacts:\n${forbidden.join('\n')}`);
-	const sourceMapReferences = files.filter((path) => {
-		if (!path.endsWith('.js')) return false;
-		return /[#@]\s*sourceMappingURL=/u.test(readFileSync(path, 'utf8'));
-	});
-	if (sourceMapReferences.length) {
-		throw new Error(`Release JavaScript references source maps:\n${sourceMapReferences.join('\n')}`);
-	}
-	const diagnosticCalls = files.filter((path) => path.endsWith('.js')
-		&& /\bconsole\.(?:debug|info|log)\s*\(/u.test(readFileSync(path, 'utf8')));
-	if (diagnosticCalls.length) {
-		throw new Error(`Release JavaScript contains diagnostic console calls:\n${diagnosticCalls.join('\n')}`);
-	}
+	checkProductionArtifacts({ distDir });
 
 	const first = createArchive(files);
 	const second = createArchive(files);

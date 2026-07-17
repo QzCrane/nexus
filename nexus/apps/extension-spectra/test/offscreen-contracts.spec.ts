@@ -27,6 +27,8 @@ const remoteSession = {
 const remoteState = {
 	generation: 4,
 	volume: 125,
+	actualMode: 'bypass' as const,
+	phase: 'idle' as const,
 	muted: false,
 	playing: true,
 	speed: 1.25,

@@ -35,6 +35,10 @@ class FakeElement extends EventTarget {
 	querySelectorAll(): FakeMediaElement[] {
 		return [...this.descendants];
 	}
+
+	contains(node: unknown): boolean {
+		return node === this || this.descendants.some((descendant) => descendant.contains(node));
+	}
 }
 
 class FakeMediaElement extends FakeElement {
@@ -46,6 +50,7 @@ class FakeMediaElement extends FakeElement {
 	playbackRate: number;
 	src = '';
 	currentSrc = '';
+	srcObject: object | null = null;
 	readonly listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
 
 	constructor(volume: number, muted = false, playbackRate = 1) {
@@ -85,9 +90,12 @@ class FakeMediaElement extends FakeElement {
 	}
 }
 
+class FakeVideoElement extends FakeMediaElement { }
+
 class FakeDocument extends EventTarget {
 	readonly documentElement = new FakeElement();
 	media: FakeMediaElement[] = [];
+	fullscreenElement: FakeElement | FakeMediaElement | null = null;
 
 	querySelectorAll(): FakeMediaElement[] {
 		return [...this.media];
@@ -132,6 +140,99 @@ class FakeIntersectionObserver {
 }
 
 describe('event-driven media registry', () => {
+	test('keeps reads pure, separates active media/video, and versions every logical source epoch', async () => {
+		const descriptors = captureGlobalDescriptors([
+			'document',
+			'Node',
+			'Element',
+			'HTMLMediaElement',
+			'HTMLVideoElement',
+			'MutationObserver',
+			'IntersectionObserver',
+		]);
+		const document = new FakeDocument();
+		const audio = new FakeMediaElement(0.8);
+		const video = new FakeVideoElement(0.9);
+		audio.currentSrc = 'https://media.example/reused.mp3';
+		video.currentSrc = 'https://media.example/video.mp4';
+		document.documentElement.descendants.push(audio, video);
+
+		installGlobal('document', document);
+		installGlobal('Node', EventTarget);
+		installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement);
+		installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver);
+		installGlobal('IntersectionObserver', FakeIntersectionObserver);
+
+		const events: Array<{ target: MediaTarget; event: string }> = [];
+		let registry: MediaRegistry | null = null;
+		try {
+			registry = new MediaRegistry((eventTarget, event) => {
+				events.push({ target: eventTarget, event });
+			});
+			registry.setDocumentId('document:registry');
+			const audioTarget = registry.list().find(({ element }) => element === audio)?.target;
+			const videoTarget = registry.list().find(({ element }) => element === video)?.target;
+			expect(audioTarget).toBeDefined();
+			expect(videoTarget).toBeDefined();
+
+			// Explicit selection is the only selection write. Reads of either identity
+			// cannot steal the other target or emit a selected event.
+			expect(registry.select(videoTarget!)).toBe(true);
+			expect(registry.select(audioTarget!)).toBe(true);
+			const selectedBeforeReads = events.filter(({ event }) => event === 'selected').length;
+			expect(registry.peek(videoTarget!)?.target).toEqual(videoTarget);
+			expect(registry.resolve(null)?.target).toEqual(audioTarget);
+			expect(registry.resolveVideo(null)?.target).toEqual(videoTarget);
+			expect(events.filter(({ event }) => event === 'selected')).toHaveLength(selectedBeforeReads);
+
+			// A page-owned fullscreen container is attributed to its contained active
+			// video even when the independently active media target is audio.
+			document.fullscreenElement = document.documentElement;
+			document.dispatchEvent(new Event('fullscreenchange'));
+			expect(events.filter(({ event }) => event === 'fullscreenchange').at(-1)?.target)
+				.toEqual(videoTarget);
+
+			// `emptied + loadstart` is one same-URL load epoch; loadedmetadata closes
+			// it so the next explicit load can advance the source revision again.
+			audio.dispatchEvent(new Event('emptied'));
+			audio.dispatchEvent(new Event('loadstart'));
+			audio.dispatchEvent(new Event('loadedmetadata'));
+			let currentAudioTarget = registry.list().find(({ element }) => element === audio)?.target;
+			expect(currentAudioTarget).toMatchObject({
+				mediaId: audioTarget?.mediaId,
+				sourceRevision: 1,
+			});
+
+			const firstStream = {};
+			audio.srcObject = firstStream;
+			audio.dispatchEvent(new Event('loadstart'));
+			audio.dispatchEvent(new Event('loadedmetadata'));
+			const secondStream = {};
+			audio.srcObject = secondStream;
+			audio.dispatchEvent(new Event('loadstart'));
+			audio.dispatchEvent(new Event('loadedmetadata'));
+			currentAudioTarget = registry.list().find(({ element }) => element === audio)?.target;
+			expect(currentAudioTarget).toMatchObject({
+				mediaId: audioTarget?.mediaId,
+				sourceRevision: 3,
+			});
+			expect(registry.resolve(audioTarget!)).toBeNull();
+
+			// A framework reparent commonly appears as remove+add in one observer
+			// batch. Deferring detach to a microtask preserves identity and revision.
+			FakeMutationObserver.latest?.emit([audio], [audio]);
+			await Promise.resolve();
+			expect(registry.list().find(({ element }) => element === audio)?.target)
+				.toEqual(currentAudioTarget);
+		} finally {
+			registry?.dispose();
+			restoreGlobalDescriptors(descriptors);
+			FakeMutationObserver.latest = null;
+		}
+	});
+
 	test('projects graph ownership without writing native media fields and disposes removed media', async () => {
 		const descriptors = captureGlobalDescriptors([
 			'chrome',
@@ -161,7 +262,7 @@ describe('event-driven media registry', () => {
 		installGlobal('Node', EventTarget);
 		installGlobal('Element', FakeElement);
 		installGlobal('HTMLMediaElement', FakeMediaElement);
-		installGlobal('HTMLVideoElement', FakeMediaElement);
+		installGlobal('HTMLVideoElement', FakeVideoElement);
 		installGlobal('MutationObserver', FakeMutationObserver);
 		installGlobal('IntersectionObserver', FakeIntersectionObserver);
 		installGlobal('setTimeout', (callback: () => void, delay: number) => {

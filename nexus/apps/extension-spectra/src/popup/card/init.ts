@@ -1,7 +1,9 @@
 // goal: main entry point for initializing a tab control card, aggregating status probing, DOM setup, and event binding
 
 import {
+	audioSessionMatchesControlDocument,
   hostnameMatchesRule,
+	isActiveCaptureLifecycle,
   type AudioSessionSnapshot,
 } from '@nexus/contracts';
 import { getDomain } from '../utils/dom';
@@ -110,9 +112,17 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     if (response.ok) acknowledgedSession = response.data;
   } catch { /* session reads stay side-effect free while the worker restarts */ }
 
-  const isCaptureActive = acknowledgedSession
-    ? acknowledgedSession.actualMode === 'capture'
-    : status?.actualMode === 'capture';
+	// Processor color is valid only when lifecycle and field-level actual state
+	// identify the same document. A direct runtime read may fill this role only
+	// when its generation agrees with the current ControlSnapshot.
+	if (!audioSessionMatchesControlDocument(acknowledgedSession, controlSnapshot)) acknowledgedSession = null;
+	// Runtime status has no documentId/origin proof. It remains useful for media
+	// presence, but only the matching AudioSessionSnapshot may color lifecycle.
+	const lifecycle = acknowledgedSession;
+	const isCaptureActive = isActiveCaptureLifecycle({
+		actualMode: lifecycle?.actualMode,
+		phase: lifecycle?.phase ?? 'idle',
+	});
 
   let isRemoteActive = false;
   try {
@@ -154,13 +164,12 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     isCaptureActive,
     userInteracted: status?.userInteracted ?? (controlSnapshot?.revision ?? 0) > 0,
     isRestrictedSite,
-    actualMode: acknowledgedSession?.actualMode ?? status?.actualMode ?? 'bypass',
-    desiredMode: acknowledgedSession?.desiredMode ?? status?.desiredMode ?? 'bypass',
-    phase: acknowledgedSession?.phase ?? status?.phase ?? 'idle',
-    audioGeneration: Math.max(
-      acknowledgedSession?.generation ?? 0,
-      status?.generation ?? 0,
-    ),
+    actualMode: lifecycle?.actualMode ?? 'bypass',
+    desiredMode: lifecycle?.desiredMode ?? 'bypass',
+    phase: lifecycle?.phase ?? 'idle',
+    audioDocumentId: lifecycle ? controlSnapshot?.documentId ?? null : null,
+    audioOrigin: lifecycle ? controlSnapshot?.origin ?? null : null,
+    audioGeneration: lifecycle?.generation ?? -1,
     audioConfigRevision: acknowledgedSession?.configRevision ?? 0,
     controlGeneration: controlSnapshot?.generation ?? 0,
     controlRevision: controlSnapshot?.revision ?? 0,
@@ -186,7 +195,6 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   const renderCard = createRenderFn({
     ui,
     state,
-    getCapturing,
     drawEqCurve,
     getVizEnabled: () => getGlobalSettings().visualizerEnabled !== false,
     getGlobalSettings,

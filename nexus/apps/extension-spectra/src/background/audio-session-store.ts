@@ -3,6 +3,7 @@
 import {
 	DEFAULT_AUDIO_CONFIG,
 	isAudioSessionSnapshot,
+	resolveAudioVolume,
 	SPECTRA_PROTOCOL_VERSION,
 	type AudioConfig,
 	type AudioSessionPhase,
@@ -111,13 +112,25 @@ function normalizePhase(value: unknown, mode: SpectraAudioMode): AudioSessionPha
 }
 
 function normalizeConfig(value: Partial<AudioConfig> | undefined): AudioConfig {
-	return {
+	const config: AudioConfig = {
 		...DEFAULT_AUDIO_CONFIG,
 		...value,
 		eqValues: Array.isArray(value?.eqValues)
 			? value.eqValues.slice(0, 10).map((item) => Math.max(-12, Math.min(12, item)))
 			: [...DEFAULT_AUDIO_CONFIG.eqValues],
 		delay: Math.max(0, Math.min(500, value?.delay ?? DEFAULT_AUDIO_CONFIG.delay)),
+	};
+	const legacyEffectiveOnly = value?.volume !== undefined
+		&& value.volumeBase === undefined
+		&& value.boost === undefined;
+	const volume = legacyEffectiveOnly
+		? resolveAudioVolume({ volume: Number(value?.volume) })
+		: resolveAudioVolume(config);
+	return {
+		...config,
+		volume: volume.effectiveVolume,
+		volumeBase: volume.volumeBase,
+		boost: volume.boost,
 	};
 }
 

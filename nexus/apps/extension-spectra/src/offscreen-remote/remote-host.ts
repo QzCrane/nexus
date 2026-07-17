@@ -6,6 +6,7 @@ import type Peer from 'peerjs';
 import type { DataConnection } from 'peerjs';
 import {
 	isRemoteState,
+	resolveAudioVolumeState,
 	type OffscreenHostResponse,
 	type RemoteHostCloseReason,
 	type RemoteHostEvent,
@@ -476,9 +477,12 @@ function sanitizeRemoteState(state: RemoteState): RemoteState {
 		: state.volume > 100 ? Math.max(1, Math.min(8, state.volume / 100)) : 1;
 	return {
 		generation: state.generation,
-		volume: Math.round(volumeBase * boost * 10) / 10,
+		volume: Math.round(Math.max(0, Math.min(800, state.volume)) * 10) / 10,
 		volumeBase,
 		boost,
+		actualMode: state.actualMode,
+		phase: state.phase,
+		volumeState: state.volumeState ?? resolveAudioVolumeState(state),
 		muted: state.muted,
 		playing: state.playing,
 		speed: Math.max(0.25, Math.min(16, state.speed)),

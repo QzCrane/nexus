@@ -4,7 +4,6 @@ import type { AudioConfig, GlobalSettings } from '@nexus/kernel';
 import type { ControlFieldStates, ControlSnapshot } from '@nexus/contracts';
 import { DEFAULT_AUDIO_CONFIG } from '@nexus/kernel';
 import type {
-  AudioMode,
   AudioSessionError,
   AudioSessionPhase,
   DomainEntry,
@@ -20,17 +19,19 @@ export interface CardInternalState {
   isCaptureActive: boolean;
   userInteracted: boolean;
   isRestrictedSite: boolean;
-  actualMode: AudioMode | SpectraAudioMode | null;
+  actualMode: SpectraAudioMode;
   desiredMode: SpectraAudioMode;
   phase: AudioSessionPhase;
   controlGeneration: number;
   controlRevision: number;
+  audioDocumentId: string | null;
+  audioOrigin: string | null;
   audioGeneration: number;
   audioConfigRevision: number;
   lastError: AudioSessionError | null;
   // isDragging: flag to prevent UI jitter by skipping re-renders while the user is actively manipulating sliders
   isDragging: boolean;
-  draggingField: 'volumeBase' | 'boost' | null;
+  draggingField: 'volume' | null;
 }
 
 export type EqCurveDrawerFactory = (

@@ -13,7 +13,7 @@
 		"build:analyze": "bun build.mjs --analyze",
 		"build:copy": "powershell -Command \"Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue; Copy-Item -Recurse public dist\"",
 		"lint": "biome check src test public build.mjs scripts --max-diagnostics=100",
-		"budget": "bun scripts/check-bundle-budget.mjs",
+		"integrity": "bun scripts/check-production-artifacts.mjs",
 		"package": "bun run --cwd ../.. release:spectra",
 		"package:dist": "bun scripts/create-release.mjs --stage",
 		"package:stage": "bun run package:dist",

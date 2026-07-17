@@ -270,6 +270,112 @@ describe('native media single-writer correlation', () => {
 			executor.dispose();
 		}
 	}, 1_000);
+
+	test('reports the seekable-clamped value as desired and actual', async () => {
+		Object.defineProperty(globalThis, 'HTMLMediaElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		Object.defineProperty(globalThis, 'HTMLVideoElement', {
+			configurable: true,
+			value: class FakeVideoElement extends FakeMediaElement { },
+		});
+		Object.defineProperty(globalThis, 'document', {
+			configurable: true,
+			value: { pictureInPictureElement: null, fullscreenElement: null },
+		});
+
+		const registry = new FakeRegistry();
+		Object.defineProperty(registry.element, 'seekable', {
+			configurable: true,
+			value: {
+				length: 1,
+				start: () => 10,
+				end: () => 30,
+			} satisfies TimeRanges,
+		});
+		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
+		try {
+			const result = await executor.execute({
+				intentId: 'intent:clamped-seek',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 2,
+				source: 'popup',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { currentTime: 5 },
+			});
+			expect(result.fields.currentTime).toMatchObject({
+				desired: 10,
+				actual: 10,
+				phase: 'applied',
+				strategy: 'dom-native',
+			});
+			expect(registry.element.currentTime).toBe(10);
+		} finally {
+			executor.dispose();
+		}
+	});
+
+	test('does not replay a failed native intent onto later media registrations', async () => {
+		const sent: unknown[] = [];
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				runtime: {
+					id: 'spectra-test',
+					sendMessage: async (message: unknown) => { sent.push(message); },
+				},
+			},
+		});
+		Object.defineProperty(globalThis, 'HTMLMediaElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		Object.defineProperty(globalThis, 'HTMLVideoElement', {
+			configurable: true,
+			value: class FakeVideoElement extends FakeMediaElement { },
+		});
+		Object.defineProperty(globalThis, 'document', {
+			configurable: true,
+			value: { pictureInPictureElement: null, fullscreenElement: null },
+		});
+
+		const registry = new FakeRegistry();
+		registry.element.volumeWriteHook = (value) => {
+			if (Math.abs(value - 0.4) > 0.001) return;
+			registry.element.forceVolume(1);
+			throw new Error('Volume readback mismatch after site rollback');
+		};
+		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
+		try {
+			const result = await executor.execute({
+				intentId: 'intent:failed-desired',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 2,
+				source: 'popup',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { volumeBase: 40 },
+			});
+			expect(result.fields.volumeBase?.phase).toBe('error');
+
+			registry.emit('registered');
+			await Promise.resolve();
+			expect(sent).toEqual([]);
+		} finally {
+			executor.dispose();
+		}
+	});
+
 	test('consumes a late owned seek event without publishing a duplicate page revision', async () => {
 		const sent: unknown[] = [];
 		Object.defineProperty(globalThis, 'chrome', {

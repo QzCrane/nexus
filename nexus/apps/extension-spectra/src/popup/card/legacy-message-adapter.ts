@@ -31,11 +31,14 @@ export function applyLegacyCardMessage(
 		const config = isRecord(payload.config) ? payload.config as Partial<AudioConfig> : msg.config;
 		if (config) {
 			const cleanedConfig = cleanConfig(config);
-			if (params.state.draggingField === 'volumeBase') {
-				const { volume: _volume, volumeBase: _volumeBase, muted: _muted, ...otherConfig } = cleanedConfig;
-				params.state.config = { ...params.state.config, ...otherConfig };
-			} else if (params.state.draggingField === 'boost') {
-				const { volume: _volume, boost: _boost, muted: _muted, ...otherConfig } = cleanedConfig;
+			if (params.state.draggingField === 'volume') {
+				const {
+					volume: _volume,
+					volumeBase: _volumeBase,
+					boost: _boost,
+					muted: _muted,
+					...otherConfig
+				} = cleanedConfig;
 				params.state.config = { ...params.state.config, ...otherConfig };
 			} else {
 				params.state.config = cleanedConfig;

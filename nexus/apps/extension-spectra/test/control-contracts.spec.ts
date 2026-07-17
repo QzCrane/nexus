@@ -19,6 +19,7 @@ import {
 	isControlPatch,
 	isControlSnapshot,
 	shouldTryNextControlStrategy,
+	splitEffectiveVolume,
 	splitLegacyVolume,
 	type ControlFieldState,
 } from '@nexus/contracts';
@@ -49,11 +50,12 @@ function field<T>(actual: T): ControlFieldState<T> {
 }
 
 describe('per-field SPECTRA control contracts', () => {
-	test('keeps native volume and boost independent while compiling the legacy engine value', () => {
+	test('splits one effective volume into native base and hidden Boost', () => {
 		expect(compileEffectiveVolume(50, 2)).toBe(100);
 		expect(compileEffectiveVolume(100, 8)).toBe(800);
-		expect(splitLegacyVolume(75)).toEqual({ volumeBase: 75, boost: 1 });
-		expect(splitLegacyVolume(250)).toEqual({ volumeBase: 100, boost: 2.5 });
+		expect(splitEffectiveVolume(75)).toEqual({ volumeBase: 75, boost: 1 });
+		expect(splitEffectiveVolume(250)).toEqual({ volumeBase: 100, boost: 2.5 });
+		expect(splitLegacyVolume(250)).toEqual(splitEffectiveVolume(250));
 	});
 
 	test('accepts a routed, revisioned intent and rejects empty or out-of-range patches', () => {
@@ -176,9 +178,9 @@ describe('per-field SPECTRA control contracts', () => {
 
 	test('covers every persistent field and momentary operation without classifying augmentation as native', () => {
 		expect(CONTROL_FIELDS).toHaveLength(28);
-		expect(CONTROL_OPERATIONS).toHaveLength(22);
+		expect(CONTROL_OPERATIONS).toHaveLength(23);
 		expect(CONTROL_DIRECT_FIELDS).toHaveLength(26);
-		expect(CONTROL_CAPABILITIES).toHaveLength(50);
+		expect(CONTROL_CAPABILITIES).toHaveLength(51);
 		expect(new Set(CONTROL_CAPABILITIES).size).toBe(
 			CONTROL_FIELDS.length + CONTROL_OPERATIONS.length,
 		);
@@ -278,7 +280,7 @@ describe('per-field SPECTRA control contracts', () => {
 					break;
 				case 'hybrid-extension-native':
 					expect(hasNative).toBe(true);
-					expect(policy.kind).toBe('state-then-native');
+					expect(['state-then-native', 'compound']).toContain(policy.kind);
 					expect(adjudication.augmentationAdmission).not.toBe('none');
 					break;
 				case 'augmentation-only':
@@ -290,13 +292,13 @@ describe('per-field SPECTRA control contracts', () => {
 		}
 		expect(Object.fromEntries(totals)).toEqual({
 			'augmentation-only': 26,
-			'hybrid-extension-native': 5,
+			'hybrid-extension-native': 6,
 			'native-only': 17,
 			'observation-only': 2,
 		});
 	});
 
-	test('keeps all 50 executable strategy orders, MAIN boundaries, ACKs, and lifetimes mirrored in the owner design', () => {
+	test('keeps all 51 executable strategy orders, MAIN boundaries, ACKs, and lifetimes mirrored in the owner design', () => {
 		const architecture = readFileSync(
 			new URL('../docs/control-architecture.md', import.meta.url),
 			'utf8',
@@ -344,10 +346,10 @@ describe('per-field SPECTRA control contracts', () => {
 				));
 
 		expect(capabilitiesFor('media-webaudio')).toEqual([
-			'boost', 'eqValues', 'bass', 'compressor', 'mono', 'pan', 'delay',
+			'boost', 'eqValues', 'bass', 'compressor', 'mono', 'pan', 'delay', 'effective-volume',
 		]);
 		expect(capabilitiesFor('capture')).toEqual([
-			'boost', 'eqValues', 'bass', 'compressor', 'mono', 'pan', 'delay',
+			'boost', 'eqValues', 'bass', 'compressor', 'mono', 'pan', 'delay', 'effective-volume',
 		]);
 		expect(capabilitiesFor('extension-css')).toEqual([
 			'rotation', 'mirrored', 'fill', 'filterEnabled', 'filter',
@@ -358,7 +360,7 @@ describe('per-field SPECTRA control contracts', () => {
 		]);
 		const declaredSiteNative = Object.values(SITE_NATIVE_ADAPTER_DESCRIPTORS)
 			.flatMap((descriptor) => [...descriptor.fields]);
-		expect(capabilitiesFor('site-native')).toEqual(declaredSiteNative);
+		expect(capabilitiesFor('site-native')).toEqual([...declaredSiteNative, 'effective-volume']);
 
 		for (const activationBound of ['playing', 'pip', 'fullscreen'] as const) {
 			const strategies = CONTROL_ALGORITHM_POLICIES[activationBound].orderedStrategies;

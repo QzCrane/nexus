@@ -203,20 +203,6 @@ function sanitizeBinding(value: unknown): HotkeyBinding | null {
 		},
 		action: value.action as HotkeyAction,
 	};
-	if (binding.action === 'volume_set'
-		&& isRecord(value.params)
-		&& typeof value.params.volume === 'number'
-		&& Number.isFinite(value.params.volume)
-		&& value.params.volume > 100
-		&& value.params.volume <= 800) {
-		// v1 combined-volume shortcuts cannot be represented by the v2 native
-		// Main-volume field without also changing Boost. Keep the binding visible
-		// as disabled migration diagnostics instead of silently clamping it.
-		binding.enabled = false;
-		binding.params = { volume: 100 };
-		binding.disabledReason = 'unsupported_action';
-		return binding;
-	}
 	if (!isHotkeyParamsForAction(binding.action, value.params)) return null;
 	if (value.params) binding.params = { ...value.params };
 	if (isRecord(value.conditions)) binding.conditions = { ...value.conditions };

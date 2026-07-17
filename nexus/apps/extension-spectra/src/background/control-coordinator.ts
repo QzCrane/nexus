@@ -2,6 +2,7 @@
 
 import {
 	DEFAULT_AUDIO_CONFIG,
+	audioSessionMatchesControlDocument,
 	CONTROL_ALGORITHM_POLICIES,
 	SITE_NATIVE_ADAPTER_DESCRIPTORS,
 	SPECTRA_PROTOCOL_VERSION,
@@ -10,10 +11,13 @@ import {
 	isControlSnapshot,
 	isControlStrategyFailure,
 	isSpectraRequestEnvelope,
+	compileEffectiveVolume,
+	isActiveCaptureLifecycle,
 	resolveAudioVolume,
 	rpcFailure,
 	rpcSuccess,
 	shouldTryNextControlStrategy,
+	splitEffectiveVolume,
 	type AudioConfig,
 	type ControlActualContext,
 	type ControlApplyAck,
@@ -37,9 +41,10 @@ import {
 } from '@nexus/contracts';
 import { sendSpectraTabRequest } from '../shared/spectra-client';
 import { storage } from './state';
-import { updateBadgeForTab } from './handlers/badge';
+import { updateBadgeFromControlProjection } from './handlers/badge';
 import { executeUserScriptInTab } from './handlers/user-scripts';
 import { applyMainSiteControl } from './main-runtime-manager';
+import { getAudioSession } from './audio-session-store';
 import {
 	ensureContentRuntime,
 	releaseContentRuntimeLease,
@@ -162,7 +167,7 @@ const RUNTIME_RESIDENT_NATIVE_FIELDS = new Set<ControlField>([
 
 function hasRuntimeOwnedState(snapshot: ControlSnapshot): boolean {
 	return Object.entries(snapshot.fields).some(([rawField, state]) => {
-		if (!state?.controlled || state.phase !== 'applied') return false;
+		if (!state?.controlled || (state.phase !== 'applied' && state.phase !== 'error')) return false;
 		const field = rawField as ControlField;
 		if (field === 'audioEnabled') return false;
 		if (state.strategy === 'chrome-native' || state.strategy === 'site-native'
@@ -796,15 +801,15 @@ async function persistControlProjection(
 		.catch(() => null) ?? { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] };
 	const projected = projectAudioConfig(current, projectedFields);
 	await storage.tabSession.set(snapshot.tabId, projected, identity);
-	const isCapture = Object.values(snapshot.fields)
-		.some((field) => field?.phase === 'applied' && field.strategy === 'capture');
-	await updateBadgeForTab(snapshot.tabId, {
-		volume: projected.volume,
-		muted: projected.muted,
-		enabled: projected.enabled,
-		isCapture,
+	const session = await getAudioSession(snapshot.tabId).catch(() => null);
+	const isCaptureActive = audioSessionMatchesControlDocument(session, snapshot)
+		&& isActiveCaptureLifecycle(session);
+	await updateBadgeFromControlProjection(
+		snapshot,
+		projected,
+		isCaptureActive,
 		userInteracted,
-	});
+	);
 }
 
 interface PreparedControlIntent {
@@ -845,10 +850,75 @@ async function prepareIntent(
 			intent.target,
 		));
 	}
+	if (pageObservation && typeof intent.patch.volumeBase === 'number') {
+		const knownBoost = snapshot.fields.boost?.actual;
+		const session = typeof knownBoost === 'number'
+			? null
+			: await getAudioSession(snapshot.tabId).catch(() => null);
+		const sessionMatches = session?.documentId === snapshot.documentId
+			&& session.origin === snapshot.origin
+			&& session.generation === snapshot.generation;
+		const currentBoost = typeof knownBoost === 'number'
+			? knownBoost
+			: sessionMatches
+				? resolveAudioVolume(session.actualConfig).boost
+				: 1;
+		if (currentBoost !== 1) {
+			// A page-side volume gesture owns the public effective-volume value. Reset
+			// the hidden processor multiplier once, in the same coordinator commit,
+			// so page 50% can never be projected as stale 50% x old Boost.
+			const normalizationIntent: ControlIntent = {
+				...intent,
+				source: 'system',
+				requestedCoverage: 'full',
+				actualContext: { ...intent.actualContext, volumeBase: intent.patch.volumeBase },
+				patch: { boost: 1 },
+			};
+			const response = await sendSpectraTabRequest(
+				intent.tabId,
+				'spectra.control.intent.execute',
+				normalizationIntent,
+				{ documentId: intent.documentId, generation: intent.generation },
+			).catch(() => null);
+			if (response?.ok
+				&& response.data.intentId === intent.intentId
+				&& response.data.documentId === intent.documentId
+				&& response.data.generation === intent.generation
+				&& response.data.revision === intent.baseRevision + 1) {
+				fields = { ...fields, ...response.data.fields };
+			} else {
+				const existingStrategy = snapshot.fields.boost?.strategy;
+				const strategy = existingStrategy === 'capture' || existingStrategy === 'media-webaudio'
+					? existingStrategy
+					: sessionMatches && session.actualMode === 'capture'
+						? 'capture'
+						: 'media-webaudio';
+				fields.boost = {
+					desired: 1,
+					actual: currentBoost,
+					revision: intent.baseRevision + 1,
+					phase: 'error',
+					strategy,
+					coverage: 'full',
+					controlled: true,
+					intentId: intent.intentId,
+					lastError: {
+						code: 'strategy-runtime-failed',
+						message: response?.ok
+							? 'The processor returned a stale Boost reset acknowledgement'
+							: response && !response.ok
+								? response.error.message
+								: 'The processor did not acknowledge the Boost reset',
+						retryable: true,
+					},
+				};
+			}
+		}
+	}
 	const routedPatch: ControlPatch = pageObservation ? {} : chromeResult.remaining;
 	if (Object.keys(routedPatch).length > 0) {
-		// Page observations never echo a second DOM write. Main volume and Boost
-		// remain independent, so site-side volume changes only update base gain.
+		// Page observations never echo a second DOM write. The only processor work
+		// they may cause is the one-shot hidden Boost normalization above.
 		const routedIntent: ControlIntent = {
 			...intent,
 			source: pageObservation ? 'system' : intent.source,
@@ -1551,6 +1621,149 @@ async function executeFieldOperation(
 		source: request.source,
 		target: request.target,
 	} as const;
+	if (request.operation === 'effective-volume') {
+		const baseline = await getOrCreateSnapshot(request.tabId);
+		const snapshotActual = (field: 'volumeBase' | 'boost'): number | null => {
+			const actual = baseline.fields[field]?.actual;
+			return typeof actual === 'number' ? actual : null;
+		};
+		const knownVolumeBase = snapshotActual('volumeBase');
+		const knownBoost = snapshotActual('boost');
+		// ControlSnapshot is the actual-value owner. Only a cold snapshot needs one
+		// Content readback; established and repeated slider samples avoid that IPC.
+		const readback = knownVolumeBase === null || knownBoost === null
+			? await sendSpectraTabRequest(
+				request.tabId,
+				'spectra.control.actual.read',
+				{ fields: ['volumeBase', 'boost'], target: request.target },
+				{ documentId: baseline.documentId, generation: baseline.generation },
+			).catch(() => null)
+			: null;
+		const actualField = <K extends 'volumeBase' | 'boost'>(field: K, fallback: number): number => {
+			const direct = readback?.ok ? readback.data.patch[field] : undefined;
+			if (typeof direct === 'number') return direct;
+			const known = field === 'volumeBase' ? knownVolumeBase : knownBoost;
+			return known ?? fallback;
+		};
+		const current = {
+			volumeBase: actualField('volumeBase', 100),
+			boost: actualField('boost', 1),
+		};
+		const currentEffective = compileEffectiveVolume(current.volumeBase, current.boost);
+		const desiredEffective = Math.max(0, Math.min(800,
+			request.payload.operation === 'delta'
+				? currentEffective + request.payload.value
+				: request.payload.value,
+		));
+		const desired = splitEffectiveVolume(desiredEffective);
+		let target = readback?.ok ? readback.data.target : request.target ?? baseline.activeMedia;
+		const targetPatch: ControlPatch = current.volumeBase === desired.volumeBase
+			? {}
+			: { volumeBase: desired.volumeBase };
+		const processorPatch: ControlPatch = current.boost === desired.boost
+			? {}
+			: { boost: desired.boost };
+
+		// A repeated slider sample at the already acknowledged value is a true
+		// no-op: no content IPC, no storage write and no synthetic revision.
+		if (Object.keys(targetPatch).length === 0 && Object.keys(processorPatch).length === 0) {
+			return {
+				operationId,
+				tabId: request.tabId,
+				documentId: baseline.documentId,
+				generation: baseline.generation,
+				revision: baseline.revision,
+				target,
+				operation: request.operation,
+				strategy: 'extension-state',
+				coverage: desired.boost === 1 ? 'active-target' : 'full',
+				fields: {},
+				result: { effectiveVolume: currentEffective, ...current },
+			};
+		}
+
+		const previousSiteBaseline = await readSiteNativeBaseline(
+			baseline.tabId,
+			baseline.documentId,
+			baseline.generation,
+		);
+		let fields: ControlFieldStates = {};
+		try {
+			let staged = baseline;
+			if (Object.keys(targetPatch).length > 0) {
+				const prepared = await prepareIntent({
+					...common,
+					target,
+					requestedCoverage: 'active-target',
+					patch: targetPatch,
+				}, staged);
+				fields = { ...fields, ...prepared.fields };
+				assertAppliedPatch(prepared.fields, targetPatch, 'Effective volume native stage');
+				target = prepared.ackTarget;
+				staged = stageSnapshot(baseline, fields, target);
+			}
+			if (Object.keys(processorPatch).length > 0) {
+				const prepared = await prepareIntent({
+					...common,
+					target,
+					requestedCoverage: 'full',
+					patch: processorPatch,
+				}, staged);
+				fields = { ...fields, ...prepared.fields };
+				if (desired.boost === 1) {
+					assertReleasedPatch(prepared.fields, processorPatch, 'Effective volume processor release');
+				} else {
+					assertAppliedPatch(prepared.fields, processorPatch, 'Effective volume processor stage');
+				}
+				target = prepared.ackTarget ?? target;
+			}
+			const actualVolumeBase = typeof fields.volumeBase?.actual === 'number'
+				? fields.volumeBase.actual
+				: current.volumeBase;
+			const actualBoost = typeof fields.boost?.actual === 'number'
+				? fields.boost.actual
+				: current.boost;
+			const effectiveVolume = compileEffectiveVolume(actualVolumeBase, actualBoost);
+			const committed = await commitControlFields(
+				baseline,
+				fields,
+				target,
+				request.source,
+			);
+			return {
+				operationId,
+				tabId: request.tabId,
+				documentId: committed.documentId,
+				generation: committed.generation,
+				revision: committed.revision,
+				target,
+				operation: request.operation,
+				strategy: 'extension-state',
+				coverage: Object.keys(processorPatch).length > 0 ? 'full' : 'active-target',
+				fields,
+				result: { effectiveVolume, volumeBase: actualVolumeBase, boost: actualBoost },
+			};
+		} catch (error) {
+			const compensation = await compensateControlPatch(
+				baseline,
+				target,
+				targetPatch.volumeBase === undefined ? {} : { volumeBase: current.volumeBase },
+				processorPatch.boost === undefined ? {} : { boost: current.boost },
+				fields,
+				previousSiteBaseline,
+			);
+			if (!compensation.ok) {
+				await commitCompensationFailure(
+					baseline,
+					target,
+					{ volumeBase: current.volumeBase, boost: current.boost },
+					compensation,
+					error,
+				);
+			}
+			throw error;
+		}
+	}
 	if (request.operation === 'playback-toggle') {
 		const fieldAck = await executeIntent({
 			...common,
@@ -1769,6 +1982,7 @@ async function executeControlOperation(
 	}
 	const operationId = crypto.randomUUID();
 	if (request.operation === 'playback-toggle'
+		|| request.operation === 'effective-volume'
 		|| request.operation === 'seek-relative'
 		|| request.operation === 'audio-reset'
 		|| request.operation === 'video-effects-toggle'

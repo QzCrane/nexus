@@ -65,10 +65,10 @@ describe('Popup audio-session authority', () => {
 				protocolVersion: 2,
 				type: 'spectra.audio.capture.changed',
 				tabId: 17,
-				generation: 5,
+				generation: 6,
 				payload: {
 					tabId: 17,
-					generation: 5,
+					generation: 6,
 					phase: 'active',
 					active: true,
 					actualMode: 'capture',
@@ -207,12 +207,12 @@ describe('Popup audio-session authority', () => {
 				type: 'spectra.audio.session.changed',
 				tabId: 17,
 				documentId: 'document-17',
-				generation: 7,
+				generation: 6,
 				payload: {
 					tabId: 17,
 					documentId: 'document-17',
 					origin: 'https://media.example',
-					generation: 7,
+					generation: 6,
 					desiredMode: 'capture',
 					actualMode: 'capture',
 					phase: 'active',
@@ -226,12 +226,12 @@ describe('Popup audio-session authority', () => {
 				type: 'spectra.control.snapshot.changed',
 				tabId: 17,
 				documentId: 'document-17',
-				generation: 2,
+				generation: 5,
 				payload: {
 					tabId: 17,
 					documentId: 'document-17',
 					origin: 'https://media.example',
-					generation: 2,
+					generation: 5,
 					revision: 1,
 					activeMedia: null,
 					activeVideo: null,
@@ -255,8 +255,80 @@ describe('Popup audio-session authority', () => {
 			expect(state.desiredMode).toBe('capture');
 			expect(state.phase).toBe('active');
 			expect(state.isCaptureActive).toBe(true);
-			expect(state.audioGeneration).toBe(7);
-			expect(state.controlGeneration).toBe(2);
+			expect(state.audioGeneration).toBe(6);
+			expect(state.controlGeneration).toBe(5);
+		} finally {
+			if (chromeDescriptor) Object.defineProperty(globalThis, 'chrome', chromeDescriptor);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
+	});
+
+	test('drops purple Capture state at a document boundary and ignores the delayed old session', () => {
+		const chromeDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		let listener: RuntimeListener | undefined;
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				runtime: {
+					onMessage: {
+						addListener: (next: RuntimeListener) => { listener = next; },
+						removeListener: () => undefined,
+					},
+				},
+			},
+		});
+		const state = createState();
+		state.actualMode = 'capture';
+		state.desiredMode = 'capture';
+		state.phase = 'active';
+		state.isCaptureActive = true;
+		state.audioDocumentId = 'document-17';
+		state.audioOrigin = 'https://media.example';
+
+		try {
+			setupCardMessaging({ tabId: 17, state, render: () => undefined });
+			listener?.({
+				protocolVersion: 2,
+				type: 'spectra.control.snapshot.changed',
+				tabId: 17,
+				documentId: 'document-18',
+				generation: 6,
+				payload: {
+					tabId: 17,
+					documentId: 'document-18',
+					origin: 'https://next.example',
+					generation: 6,
+					revision: 0,
+					activeMedia: null,
+					activeVideo: null,
+					fields: {},
+				},
+			}, {});
+			expect(state).toMatchObject({
+				actualMode: 'bypass', phase: 'idle', isCaptureActive: false,
+				audioDocumentId: null, audioOrigin: null, audioGeneration: -1,
+			});
+
+			listener?.({
+				protocolVersion: 2,
+				type: 'spectra.audio.session.changed',
+				tabId: 17,
+				documentId: 'document-17',
+				generation: 5,
+				payload: {
+					tabId: 17,
+					documentId: 'document-17',
+					origin: 'https://media.example',
+					generation: 5,
+					desiredMode: 'capture',
+					actualMode: 'capture',
+					phase: 'active',
+					configRevision: 9,
+					actualConfig: { ...DEFAULT_AUDIO_CONFIG },
+					lastError: null,
+				},
+			}, {});
+			expect(state).toMatchObject({ actualMode: 'bypass', phase: 'idle', isCaptureActive: false });
 		} finally {
 			if (chromeDescriptor) Object.defineProperty(globalThis, 'chrome', chromeDescriptor);
 			else Reflect.deleteProperty(globalThis, 'chrome');
@@ -268,16 +340,27 @@ function createState(): CardInternalState {
 	return {
 		config: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
 		stableConfig: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
-		controlSnapshot: null,
+		controlSnapshot: {
+			tabId: 17,
+			documentId: 'document-17',
+			origin: 'https://media.example',
+			generation: 5,
+			revision: 0,
+			activeMedia: null,
+			activeVideo: null,
+			fields: {},
+		},
 		isCaptureActive: false,
 		userInteracted: false,
 		isRestrictedSite: false,
 		actualMode: 'bypass',
 		desiredMode: 'bypass',
 		phase: 'idle',
-		controlGeneration: 0,
+		controlGeneration: 5,
 		controlRevision: 0,
-		audioGeneration: 0,
+		audioDocumentId: null,
+		audioOrigin: null,
+		audioGeneration: 5,
 		audioConfigRevision: 0,
 		lastError: null,
 		isDragging: false,

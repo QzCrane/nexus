@@ -153,8 +153,8 @@ function checkSourceAlgorithmCatalog(root, contracts, architecture) {
 	if (mainWorldAdmissions !== 1) {
 		error(`SCTRL-004: exactly one source algorithm may admit the one-shot site adapter (${mainWorldAdmissions}/1)`);
 	}
-	if (SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS.length !== 48) {
-		error(`SCTRL-002/SCTRL-016: source algorithm inventory drifted (${SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS.length}/48)`);
+	if (SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS.length !== 50) {
+		error(`SCTRL-002/SCTRL-016: source algorithm inventory drifted (${SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS.length}/50)`);
 	}
 }
 
@@ -254,11 +254,18 @@ function checkPolicyOwner(root) {
 	if (!policyBlock || !adapterBlock) {
 		error('SCTRL-002/SCTRL-004: unable to parse policy and site-native adapter owners');
 	} else {
+		const controlFieldBlock = contracts.match(/export const CONTROL_FIELDS = \[(.*?)\] as const/su);
+		const controlFields = new Set(
+			controlFieldBlock
+				? [...controlFieldBlock[1].matchAll(/'([^']+)'/gu)].map((entry) => entry[1])
+				: [],
+		);
 		const policyEntries = [...policyBlock[1].matchAll(
 			/^\s*(?:'([^']+)'|([A-Za-z][A-Za-z0-9]*)):\s*\{(.*?\n\s*\},)/gmsu,
 		)];
 		const policySiteNative = policyEntries
-			.filter((entry) => entry[3].includes("'site-native'"))
+			.filter((entry) => entry[3].includes("'site-native'")
+				&& controlFields.has(entry[1] ?? entry[2]))
 			.map((entry) => entry[1] ?? entry[2])
 			.sort();
 		const declaredSiteNative = [...adapterBlock[1].matchAll(/fields:\s*\[([^\]]*)\]/gsu)]
@@ -386,8 +393,8 @@ function checkPolicyOwner(root) {
 				error(`SCTRL-016: control owner is missing ${requiredSection}`);
 			}
 		}
-		if (!architecture.includes('28 persistent snapshot fields plus 22 momentary')) {
-			error('SCTRL-016: the control owner must record the exact 28-field/22-operation inventory');
+		if (!architecture.includes('28 persistent snapshot fields plus 23 momentary')) {
+			error('SCTRL-016: the control owner must record the exact 28-field/23-operation inventory');
 		}
 		if (architecture.includes('equal-power/linear')) {
 			error('SCTRL-016: audio topology must name the implemented crossfade curve exactly');
@@ -476,8 +483,8 @@ function checkPolicyOwner(root) {
 				...extractCapabilities('CONTROL_FIELDS'),
 				...extractCapabilities('CONTROL_OPERATIONS'),
 			].length;
-			if (expectedCount !== 50) {
-				error(`SCTRL-002: canonical capability count must be 50, found ${expectedCount}`);
+			if (expectedCount !== 51) {
+				error(`SCTRL-002: canonical capability count must be 51, found ${expectedCount}`);
 			}
 			if (entries.length !== expectedCount) {
 				error(`SCTRL-002: parsed ${entries.length}/${expectedCount} algorithm adjudications`);
@@ -488,7 +495,7 @@ function checkPolicyOwner(root) {
 			}, new Map());
 			for (const [preference, expected] of Object.entries({
 				'native-only': 17,
-				'hybrid-extension-native': 5,
+				'hybrid-extension-native': 6,
 				'augmentation-only': 26,
 				'observation-only': 2,
 			})) {
@@ -578,8 +585,8 @@ function checkProductionLoadingTopology(root) {
 		path.join(root, APP_PATH, 'test/ui-runtime-contract.spec.ts'),
 		'utf8',
 	);
-	const budget = fs.readFileSync(
-		path.join(root, APP_PATH, 'scripts/check-bundle-budget.mjs'),
+	const artifactIntegrity = fs.readFileSync(
+		path.join(root, APP_PATH, 'scripts/check-production-artifacts.mjs'),
 		'utf8',
 	);
 	const popup = fs.readFileSync(path.join(root, APP_PATH, 'public/popup.html'), 'utf8');
@@ -611,14 +618,16 @@ function checkProductionLoadingTopology(root) {
 		"const isolatedEntries = entries.filter(({ out }) => out.startsWith('content-'))",
 		"const moduleEntries = entries.filter(({ out }) => !out.startsWith('content-'))",
 		'const moduleEntryGroups = [',
-		"name: 'runtime'",
-		"name: 'popup'",
+		"name: 'extension'",
+		"sharingDomain: 'extension-pages'",
 		'chunkNames: `chunks/${group.name}/[name]-[hash]`',
 		'plugins: [contractRuntimeFacadePlugin()]',
 		'const addEsmExportProperties = (source) => {',
 		'const addCrossContextSingletonProperties = (source) => {',
 		"import { collectExternalBoundaryProperties } from './scripts/external-boundary-properties.mjs'",
-		"out: 'peerjs-vendor.js', format: 'iife'",
+		"import { checkProductionArtifacts } from './scripts/check-production-artifacts.mjs'",
+		"out: 'peerjs-vendor.js'",
+		"format: 'iife'",
 		"path.endsWith('peerjs-vendor.js')",
 		"'target', 'documentIds', 'frameIds', 'allFrames', 'world', 'func', 'args'",
 		"keep_quoted: true",
@@ -640,12 +649,14 @@ function checkProductionLoadingTopology(root) {
 		|| !remoteHost.includes("import type { DataConnection } from 'peerjs'")
 		|| /(?:^|\n)import\s+(?!type\b)[^;\n]*\bfrom\s+['"]peerjs['"]/u.test(remoteHost)
 		|| !remoteHost.includes("throw new Error('Local PeerJS vendor runtime is unavailable')")
-		|| !budget.includes("'peerjs-vendor.js': 60 * KiB")) {
+		|| !build.includes("sharingDomain: 'offscreen-vendor'")) {
 		error('SCTRL-004/SCTRL-014/SCTRL-034/SCTRL-044: production external ABI and opaque PeerJS vendor boundary drifted');
 	}
 	const videoEffectsResource = (manifest.web_accessible_resources ?? [])
 		.find((item) => item.resources?.includes('content-video-effects.js'));
-	if (!build.includes("{ entry: 'src/content/video/video-effects-controller.ts', out: 'content-video-effects.js', format: 'esm' }")
+	if (!build.includes("entry: 'src/content/video/video-effects-controller.ts'")
+		|| !build.includes("out: 'content-video-effects.js'")
+		|| !build.includes("sharingDomain: 'isolated-video-module'")
 		|| !nativeExecutor.includes("import(chrome.runtime.getURL('content-video-effects.js'))")
 		|| nativeExecutor.includes("import { VideoEffectsController } from '../video/video-effects-controller'")
 		|| videoEffectsResource?.use_dynamic_url !== true) {
@@ -685,13 +696,16 @@ function checkProductionLoadingTopology(root) {
 	}
 	for (const required of [
 		'export function bundleFootprint(',
-		'defaultStartup: 225 * KiB',
-		"'content-video-effects.js': 12 * KiB",
-		"...bundleFootprint(distDir, 'background.js').files",
-		"...bundleFootprint(distDir, 'content-bootstrap.js').files",
+		'export function analyzeProductionArtifacts(',
+		'export function checkProductionArtifacts(',
+		'unreachable production artifact',
+		'byte-identical production artifacts',
+		'repeated in shareable build domain',
+		'source map reference is forbidden',
+		'diagnostic console call is forbidden',
 	]) {
-		if (!budget.includes(required)) {
-			error(`SCTRL-013/SCTRL-034: transitive bundle budget drifted (${required})`);
+		if (!artifactIntegrity.includes(required)) {
+			error(`SCTRL-013/SCTRL-034: production artifact integrity drifted (${required})`);
 		}
 	}
 }
@@ -1273,6 +1287,12 @@ function checkRetiredPaths(root) {
 		|| !popupMediaControls.includes('state.controlSnapshot?.activeVideo ?? null')
 		|| !nativeExecutor.includes('this.registry.resolveVideo(intent.target)')) {
 		error('SCTRL-005/SCTRL-014/SCTRL-025: video controls must target the independent active-video identity');
+	}
+	if (!videoControls.includes('const FILTER_SEND_INTERVAL_MS = 50')
+		|| !videoControls.includes('await submitPatch({ filter, filterEnabled: true })')
+		|| !videoControls.includes('if (filterInFlight || !pendingFilter) return;')
+		|| videoControls.includes("submitMutation({ field: 'filter'")) {
+		error('SCTRL-005/SCTRL-013/SCTRL-016: Filter must use one 20 Hz latest-value intent for value plus ownership');
 	}
 
 	const hotkeyContracts = fs.readFileSync(

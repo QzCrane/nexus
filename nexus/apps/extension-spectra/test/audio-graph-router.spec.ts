@@ -98,6 +98,14 @@ describe('shared sparse audio graph router', () => {
 		});
 		expect(updated.graphSignature).toBe(first.graphSignature);
 		expect(context.created.biquad).toBe(filterCount);
+		const master = context.nodes.filter((node) => node.kind === 'gain')[1]!;
+		const eq = context.nodes.find((node) => node.kind === 'biquad' && node.type === 'peaking')!;
+		const panner = context.nodes.find((node) => node.kind === 'panner')!;
+		const delay = context.nodes.find((node) => node.kind === 'delay')!;
+		expect(master.gain.ramps.at(-1)).toMatchObject({ value: 2 });
+		expect(eq.gain.ramps).toContainEqual({ value: 6, endTime: 1.015 });
+		expect(panner.pan.ramps).toContainEqual({ value: -0.5, endTime: 1.015 });
+		expect(delay.delayTime.ramps).toContainEqual({ value: 0.125, endTime: 1.015 });
 	});
 
 	test('ramps delay values in one topology and creates analyser only while subscribed', async () => {
@@ -131,13 +139,42 @@ describe('shared sparse audio graph router', () => {
 			eqValues: [0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
 		}));
 	});
+
+	test('keeps delay work to one active apply plus the latest pending value', async () => {
+		const context = new FakeAudioContext();
+		const router = new AudioGraphRouter(context as unknown as AudioContext, undefined, {
+			crossfadeMs: 0,
+		});
+		const first = router.apply({ ...DEFAULT_AUDIO_GRAPH_CONFIG, delay: 50 });
+		const superseded = router.apply({ ...DEFAULT_AUDIO_GRAPH_CONFIG, delay: 60 });
+		const newer = router.apply({ ...DEFAULT_AUDIO_GRAPH_CONFIG, delay: 70 });
+		const latest = router.apply({ ...DEFAULT_AUDIO_GRAPH_CONFIG, delay: 80 });
+		const [firstSnapshot, supersededSnapshot, newerSnapshot, latestSnapshot] = await Promise.all([
+			first,
+			superseded,
+			newer,
+			latest,
+		]);
+
+		expect(firstSnapshot.normalizedActualConfig.delay).toBe(50);
+		expect(supersededSnapshot.normalizedActualConfig.delay).toBe(80);
+		expect(newerSnapshot.normalizedActualConfig.delay).toBe(80);
+		expect(latestSnapshot.normalizedActualConfig.delay).toBe(80);
+		expect(context.created.delay).toBe(1);
+		const delay = context.nodes.find((node) => node.kind === 'delay')!;
+		expect(delay.delayTime.ramps.map(({ value }) => value)).toEqual([0.08]);
+	});
 });
 
 class FakeAudioParam {
 	value = 0;
+	readonly ramps: Array<{ value: number; endTime: number }> = [];
 	cancelScheduledValues(): void { }
 	setValueAtTime(value: number): void { this.value = value; }
-	linearRampToValueAtTime(value: number): void { this.value = value; }
+	linearRampToValueAtTime(value: number, endTime: number): void {
+		this.value = value;
+		this.ramps.push({ value, endTime });
+	}
 }
 
 class FakeAudioNode {
@@ -184,6 +221,7 @@ class FakeAudioContext {
 	readonly state = 'running' as const;
 	readonly currentTime = 1;
 	readonly destination = new FakeAudioNode(this, 'destination');
+	readonly nodes: FakeAudioNode[] = [];
 	readonly delayMaximums: number[] = [];
 	readonly created = {
 		gain: 0,
@@ -196,34 +234,53 @@ class FakeAudioContext {
 		merger: 0,
 	};
 
-	createGain(): FakeAudioNode { this.created.gain += 1; return new FakeAudioNode(this, 'gain'); }
+	createGain(): FakeAudioNode {
+		this.created.gain += 1;
+		const node = new FakeAudioNode(this, 'gain');
+		this.nodes.push(node);
+		return node;
+	}
 	createBiquadFilter(): FakeAudioNode {
 		this.created.biquad += 1;
-		return new FakeAudioNode(this, 'biquad');
+		const node = new FakeAudioNode(this, 'biquad');
+		this.nodes.push(node);
+		return node;
 	}
 	createDynamicsCompressor(): FakeAudioNode {
 		this.created.compressor += 1;
-		return new FakeAudioNode(this, 'compressor');
+		const node = new FakeAudioNode(this, 'compressor');
+		this.nodes.push(node);
+		return node;
 	}
 	createStereoPanner(): FakeAudioNode {
 		this.created.panner += 1;
-		return new FakeAudioNode(this, 'panner');
+		const node = new FakeAudioNode(this, 'panner');
+		this.nodes.push(node);
+		return node;
 	}
 	createDelay(maximum: number): FakeAudioNode {
 		this.created.delay += 1;
 		this.delayMaximums.push(maximum);
-		return new FakeAudioNode(this, 'delay');
+		const node = new FakeAudioNode(this, 'delay');
+		this.nodes.push(node);
+		return node;
 	}
 	createAnalyser(): FakeAnalyserNode {
 		this.created.analyser += 1;
-		return new FakeAnalyserNode(this, 'analyser');
+		const node = new FakeAnalyserNode(this, 'analyser');
+		this.nodes.push(node);
+		return node;
 	}
 	createChannelSplitter(): FakeAudioNode {
 		this.created.splitter += 1;
-		return new FakeAudioNode(this, 'splitter');
+		const node = new FakeAudioNode(this, 'splitter');
+		this.nodes.push(node);
+		return node;
 	}
 	createChannelMerger(): FakeAudioNode {
 		this.created.merger += 1;
-		return new FakeAudioNode(this, 'merger');
+		const node = new FakeAudioNode(this, 'merger');
+		this.nodes.push(node);
+		return node;
 	}
 }

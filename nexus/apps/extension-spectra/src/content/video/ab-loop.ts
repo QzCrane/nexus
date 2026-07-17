@@ -240,15 +240,14 @@ export function listABOwnership(): Array<{ target: MediaTarget; active: boolean 
 	}));
 }
 
-export async function skipABLoop(target: MediaTarget | null = null): Promise<boolean> {
+export async function skipABLoop(target: MediaTarget | null = null): Promise<number | null> {
 	const context = active(target);
 	const state = context && states.get(context.key);
-	if (!context || !state || state.pointB === null) return false;
+	if (!context || !state || state.pointB === null) return null;
 	state.skipSuppressed = true;
 	clearSchedule(state);
 	try {
-		await seekNativeMedia(context.element, state.pointB + 0.05);
-		return true;
+		return await seekNativeMedia(context.element, state.pointB + 0.05);
 	} catch (error) {
 		state.skipSuppressed = false;
 		arm(state);
