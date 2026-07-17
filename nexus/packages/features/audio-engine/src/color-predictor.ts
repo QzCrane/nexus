@@ -1,6 +1,6 @@
 // goal: unified heuristics for predicting UI color states (e.g., CAPTURE vs NATIVE) based on audit policy
 
-import type { AudioConfig } from '@nexus/contracts';
+import { resolveAudioVolume, type AudioConfig } from '@nexus/contracts';
 
 export interface ColorContext {
 	config: AudioConfig;
@@ -12,7 +12,7 @@ export interface ColorContext {
 export function needsAdvancedProcessing(ctx: ColorContext): boolean {
 	const { config, visualizerEnabled } = ctx;
 	return (
-		config.volume > 100 ||
+		resolveAudioVolume(config).boost > 1 ||
 		visualizerEnabled ||
 		config.eqValues?.some(v => v !== 0) ||
 		config.compressor ||

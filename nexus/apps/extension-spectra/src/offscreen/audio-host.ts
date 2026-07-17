@@ -1,8 +1,13 @@
-// goal: acknowledged, generation-aware tab-capture audio processing for the unified offscreen host
+// goal: acknowledged, revisioned tab-capture processing on one sparse shared graph
 
-import { AudioParams, CompressorOn } from '@nexus/audio-engine';
+import {
+	AudioGraphRouter,
+	audioConfigToGraphConfig,
+	type AudioGraphSnapshot,
+} from '@nexus/audio-engine';
 import {
 	type AudioConfig,
+	type AudioProcessorConfig,
 	type OffscreenAudioEvent,
 	type OffscreenAudioRequest,
 	type OffscreenAudioRequestType,
@@ -13,24 +18,22 @@ import {
 export interface AudioHostDescription {
 	tabId: number;
 	generation: number;
+	controlRevision: number;
+	graphSignature: string;
+	normalizedActualConfig: AudioProcessorConfig;
 }
 
 interface AudioProcessor {
 	tabId: number;
 	generation: number;
+	controlRevision: number;
 	ctx: AudioContext;
 	stream: MediaStream;
 	source: MediaStreamAudioSourceNode;
-	gain: GainNode;
-	bass: BiquadFilterNode;
-	comp: DynamicsCompressorNode;
-	eqNodes: BiquadFilterNode[];
-	panner: StereoPannerNode;
-	delayNode: DelayNode;
-	analyser: AnalyserNode;
-	chainTail: AudioNode;
-	compressorEnabled: boolean;
-	vizBuffer: Uint8Array<ArrayBuffer>;
+	commitGate: GainNode;
+	router: AudioGraphRouter;
+	snapshot: AudioGraphSnapshot;
+	vizDisposer: (() => void) | null;
 	lastVizAt: number;
 	lastVizFrame: number[] | null;
 	trackEndedDisposers: Array<() => void>;
@@ -47,10 +50,10 @@ interface AudioIntent {
 export type AudioHostResult = OffscreenAudioResult;
 
 const processors = new Map<number, AudioProcessor>();
-// A processor is committed only while its START remains the latest intent for
-// the tab. STOP/UPDATE intents are retained even when no processor exists so a
-// delayed getUserMedia()/resume() cannot resurrect an older capture graph.
 const latestIntents = new Map<number, AudioIntent>();
+const lastControlRevisions = new Map<number, number>();
+const visualizerSubscriptions = new Set<number>();
+const CAPTURE_GATE_SWITCH_LEAD_MS = 20;
 
 function recordIntent(tabId: number, generation: number, kind: AudioIntentKind): AudioIntent {
 	const current = latestIntents.get(tabId);
@@ -72,96 +75,132 @@ function isCurrentStartIntent(tabId: number, generation: number): boolean {
 	return intent?.generation === generation && intent.kind === 'start';
 }
 
-function describeCurrentState(tabId: number, fallbackGeneration: number): AudioHostResult {
-	const processor = processors.get(tabId);
-	if (processor) {
-		return { ok: true, tabId, generation: processor.generation, phase: 'active' };
-	}
-	const generation = Math.max(fallbackGeneration, latestIntents.get(tabId)?.generation ?? 0);
-	return { ok: true, tabId, generation, phase: 'idle' };
+function setImmediate(param: AudioParam, value: number, time: number): void {
+	param.cancelScheduledValues(time);
+	param.setValueAtTime(value, time);
 }
 
-function errorResult(tabId: number, generation: number, error: unknown): AudioHostResult {
+function idleResult(tabId: number, generation: number, controlRevision: number): AudioHostResult {
+	return {
+		ok: true,
+		tabId,
+		generation,
+		controlRevision,
+		phase: 'idle',
+		contextState: 'closed',
+		graphSignature: 'none',
+		normalizedActualConfig: null,
+	};
+}
+
+function activeResult(processor: AudioProcessor): AudioHostResult {
+	if (processor.ctx.state !== 'running') {
+		return errorResult(
+			processor.tabId,
+			processor.generation,
+			processor.controlRevision,
+			`Capture AudioContext is ${processor.ctx.state}`,
+			'capture_context_not_running',
+		);
+	}
+	return {
+		ok: true,
+		tabId: processor.tabId,
+		generation: processor.generation,
+		controlRevision: processor.controlRevision,
+		phase: 'active',
+		contextState: 'running',
+		graphSignature: processor.snapshot.graphSignature,
+		normalizedActualConfig: processor.snapshot.normalizedActualConfig,
+	};
+}
+
+function describeCurrentState(tabId: number, fallbackGeneration: number): AudioHostResult {
+	const processor = processors.get(tabId);
+	if (processor) return activeResult(processor);
+	const generation = Math.max(fallbackGeneration, latestIntents.get(tabId)?.generation ?? 0);
+	return idleResult(tabId, generation, lastControlRevisions.get(tabId) ?? 0);
+}
+
+function errorResult(
+	tabId: number,
+	generation: number,
+	controlRevision: number,
+	error: unknown,
+	code = 'capture_start_failed',
+): AudioHostResult {
 	const message = error instanceof Error ? error.message : String(error);
 	return {
 		ok: false,
 		tabId,
 		generation,
-		error: { code: 'capture_start_failed', message, retryable: true },
+		controlRevision,
+		error: { code, message, retryable: true },
 	};
 }
 
-function staleIntentResult(tabId: number, generation: number): AudioHostResult {
-	return {
-		ok: false,
+function staleIntentResult(
+	tabId: number,
+	generation: number,
+	controlRevision: number,
+): AudioHostResult {
+	return errorResult(
 		tabId,
 		generation,
-		error: {
-			code: 'stale_capture_intent',
-			message: 'Capture configuration belongs to a stopped generation',
-			retryable: true,
-		},
-	};
+		controlRevision,
+		'Capture configuration belongs to a stopped generation',
+		'stale_capture_intent',
+	);
 }
 
-function setCompressorPath(processor: AudioProcessor, enabled: boolean): void {
-	if (processor.compressorEnabled === enabled) return;
-	processor.chainTail.disconnect();
-	processor.comp.disconnect();
-	if (enabled) {
-		processor.chainTail.connect(processor.comp);
-		processor.comp.connect(processor.panner);
-	} else {
-		processor.chainTail.connect(processor.panner);
-	}
-	processor.compressorEnabled = enabled;
+function ensureVisualizerSubscription(processor: AudioProcessor): void {
+	if (!visualizerSubscriptions.has(processor.tabId) || processor.vizDisposer) return;
+	processor.vizDisposer = processor.router.subscribeVisualizer();
 }
 
-function applyConfig(processor: AudioProcessor, config: AudioConfig): void {
-	const t = processor.ctx.currentTime;
-	const ramp = AudioParams.SMOOTH_TIME;
-	const volume = Number.isFinite(config.volume) ? Math.max(0, Math.min(800, config.volume)) : 100;
-	processor.gain.gain.setTargetAtTime(config.muted ? 0 : volume / 100, t, ramp);
-	processor.gain.channelCount = config.mono ? 1 : 2;
-	processor.gain.channelCountMode = config.mono ? 'explicit' : 'max';
-	processor.bass.gain.setTargetAtTime(config.bass ? AudioParams.BASS_GAIN : 0, t, ramp);
+function releaseVisualizerSubscription(processor: AudioProcessor): void {
+	processor.vizDisposer?.();
+	processor.vizDisposer = null;
+	processor.lastVizFrame = null;
+	processor.lastVizAt = 0;
+}
 
-	for (let i = 0; i < processor.eqNodes.length; i++) {
-		const value = Math.max(-12, Math.min(12, config.eqValues?.[i] ?? 0));
-		processor.eqNodes[i]!.gain.setTargetAtTime(value, t, ramp);
+function setVisualizerSubscriptions(tabIds: number[]): { subscribedTabIds: number[] } {
+	visualizerSubscriptions.clear();
+	for (const tabId of tabIds) visualizerSubscriptions.add(tabId);
+	for (const processor of processors.values()) {
+		if (visualizerSubscriptions.has(processor.tabId)) ensureVisualizerSubscription(processor);
+		else releaseVisualizerSubscription(processor);
 	}
+	return { subscribedTabIds: [...visualizerSubscriptions].sort((left, right) => left - right) };
+}
 
-	setCompressorPath(processor, config.compressor);
-	if (config.compressor) {
-		processor.comp.threshold.setTargetAtTime(CompressorOn.threshold, t, ramp);
-		processor.comp.knee.setTargetAtTime(CompressorOn.knee, t, ramp);
-		processor.comp.ratio.setTargetAtTime(CompressorOn.ratio, t, ramp);
-		processor.comp.attack.setTargetAtTime(CompressorOn.attack, t, ramp);
-		processor.comp.release.setTargetAtTime(CompressorOn.release, t, ramp);
-	}
-
-	processor.panner.pan.setTargetAtTime(Math.max(-1, Math.min(1, config.pan ?? 0)), t, ramp);
-	const delayMs = Math.max(0, Math.min(500, config.delay ?? 0));
-	processor.delayNode.delayTime.setTargetAtTime(delayMs / 1000, t, ramp);
+async function applyProcessorConfig(
+	processor: AudioProcessor,
+	config: AudioConfig,
+	controlRevision: number,
+): Promise<void> {
+	if (controlRevision < processor.controlRevision) return;
+	const snapshot = await processor.router.apply(audioConfigToGraphConfig(config), {
+		requireRunning: true,
+	});
+	processor.controlRevision = controlRevision;
+	processor.snapshot = snapshot;
+	lastControlRevisions.set(processor.tabId, controlRevision);
 }
 
 async function disposeProcessor(processor: AudioProcessor): Promise<void> {
 	if (processor.disposing) return;
 	processor.disposing = true;
 	if (processors.get(processor.tabId) === processor) processors.delete(processor.tabId);
+	releaseVisualizerSubscription(processor);
 	for (const dispose of processor.trackEndedDisposers) dispose();
 	processor.trackEndedDisposers.length = 0;
+	setImmediate(processor.commitGate.gain, 0, processor.ctx.currentTime);
 	for (const track of processor.stream.getTracks()) track.stop();
+	await processor.router.dispose(true);
 	try { processor.source.disconnect(); } catch { /* already disconnected */ }
-	try { processor.gain.disconnect(); } catch { /* already disconnected */ }
-	try { processor.bass.disconnect(); } catch { /* already disconnected */ }
-	for (const node of processor.eqNodes) {
-		try { node.disconnect(); } catch { /* already disconnected */ }
-	}
-	try { processor.comp.disconnect(); } catch { /* already disconnected */ }
-	try { processor.panner.disconnect(); } catch { /* already disconnected */ }
-	try { processor.delayNode.disconnect(); } catch { /* already disconnected */ }
-	try { processor.analyser.disconnect(); } catch { /* already disconnected */ }
+	try { processor.commitGate.disconnect(); } catch { /* already disconnected */ }
 	try { await processor.ctx.close(); } catch { /* document teardown may have closed it */ }
 }
 
@@ -197,6 +236,7 @@ async function startCapture(
 	streamId: string,
 	config: AudioConfig,
 	generation: number,
+	controlRevision: number,
 ): Promise<AudioHostResult> {
 	const intent = recordIntent(tabId, generation, 'start');
 	if (intent.generation !== generation || intent.kind !== 'start') {
@@ -204,12 +244,10 @@ async function startCapture(
 	}
 	const existing = processors.get(tabId);
 	if (existing) {
-		if (existing.generation > generation) {
-			return { ok: true, tabId, generation: existing.generation, phase: 'active' };
-		}
+		if (existing.generation > generation) return activeResult(existing);
 		if (existing.generation === generation) {
-			applyConfig(existing, config);
-			return { ok: true, tabId, generation, phase: 'active' };
+			await applyProcessorConfig(existing, config, controlRevision);
+			return activeResult(existing);
 		}
 	}
 
@@ -223,89 +261,86 @@ async function startCapture(
 			} as MediaTrackConstraints,
 			video: false,
 		});
+		const audioTracks = stream.getAudioTracks();
+		if (audioTracks.length === 0 || audioTracks.every((track) => track.readyState === 'ended')) {
+			throw new Error('Tab capture returned no live audio track');
+		}
 		ctx = new AudioContext();
 		const source = ctx.createMediaStreamSource(stream);
-		const gain = ctx.createGain();
-		const bass = ctx.createBiquadFilter();
-		bass.type = 'lowshelf';
-		bass.frequency.value = AudioParams.BASS_FREQUENCY;
-
-		const eqNodes = AudioParams.EQ_FREQUENCIES.map((frequency) => {
-			const node = ctx!.createBiquadFilter();
-			node.type = 'peaking';
-			node.frequency.value = frequency;
-			node.Q.value = AudioParams.EQ_Q;
-			return node;
+		const commitGate = ctx.createGain();
+		setImmediate(commitGate.gain, 0, ctx.currentTime);
+		commitGate.connect(ctx.destination);
+		const graphRouter = new AudioGraphRouter(ctx, commitGate);
+		graphRouter.connectSource(source);
+		if (ctx.state === 'suspended') await ctx.resume();
+		if (ctx.state !== 'running') throw new Error(`Capture AudioContext is ${ctx.state}`);
+		const snapshot = await graphRouter.apply(audioConfigToGraphConfig(config), {
+			requireRunning: true,
 		});
-		const comp = ctx.createDynamicsCompressor();
-		const panner = ctx.createStereoPanner();
-		const delayNode = ctx.createDelay(0.5);
-		const analyser = ctx.createAnalyser();
-		analyser.fftSize = AudioParams.FFT_SIZE;
-		const vizBuffer = new Uint8Array(analyser.frequencyBinCount) as Uint8Array<ArrayBuffer>;
-
-		let chainTail: AudioNode = source;
-		chainTail.connect(gain); chainTail = gain;
-		chainTail.connect(bass); chainTail = bass;
-		for (const node of eqNodes) { chainTail.connect(node); chainTail = node; }
-		// Compressor starts physically bypassed. It is connected only when explicitly enabled.
-		chainTail.connect(panner);
-		panner.connect(delayNode);
-		delayNode.connect(analyser);
-
 		candidate = {
 			tabId,
 			generation,
+			controlRevision,
 			ctx,
 			stream,
 			source,
-			gain,
-			bass,
-			comp,
-			eqNodes,
-			panner,
-			delayNode,
-			analyser,
-			chainTail,
-			compressorEnabled: false,
-			vizBuffer,
+			commitGate,
+			router: graphRouter,
+			snapshot,
+			vizDisposer: null,
 			lastVizAt: 0,
 			lastVizFrame: null,
 			trackEndedDisposers: [],
 			disposing: false,
 		};
 		observeTrackEnd(candidate);
-		applyConfig(candidate, config);
-		if (ctx.state === 'suspended') await ctx.resume();
 		if (!isCurrentStartIntent(tabId, generation)) {
 			await disposeProcessor(candidate);
 			return describeCurrentState(tabId, generation);
 		}
 
-		// Commit only after the replacement graph is fully constructed and runnable.
-		// The previous acknowledged processor keeps producing audio if setup fails.
 		const current = processors.get(tabId);
 		if (current?.generation === generation) {
-			applyConfig(current, config);
+			await applyProcessorConfig(current, config, controlRevision);
 			await disposeProcessor(candidate);
-			return { ok: true, tabId, generation, phase: 'active' };
+			return activeResult(current);
 		}
 		if (current && current.generation > generation) {
 			await disposeProcessor(candidate);
-			return { ok: true, tabId, generation: current.generation, phase: 'active' };
+			return activeResult(current);
 		}
-		const previousDisposal = current ? disposeProcessor(current) : Promise.resolve();
+
+		// Candidate is connected and running before commit. Replacements schedule
+		// both independent AudioContext gates for the same near-future wall-clock
+		// boundary, avoiding a full-gain overlap without tearing down the stable
+		// processor before the candidate is ready.
+		if (current) {
+			const leadSeconds = CAPTURE_GATE_SWITCH_LEAD_MS / 1_000;
+			setImmediate(candidate.commitGate.gain, 0, candidate.ctx.currentTime);
+			candidate.commitGate.gain.setValueAtTime(1, candidate.ctx.currentTime + leadSeconds);
+			current.commitGate.gain.cancelScheduledValues(current.ctx.currentTime);
+			current.commitGate.gain.setValueAtTime(0, current.ctx.currentTime + leadSeconds);
+		} else {
+			setImmediate(candidate.commitGate.gain, 1, candidate.ctx.currentTime);
+		}
 		processors.set(tabId, candidate);
-		candidate.analyser.connect(ctx.destination);
-		await previousDisposal;
-		return { ok: true, tabId, generation, phase: 'active' };
+		lastControlRevisions.set(tabId, controlRevision);
+		ensureVisualizerSubscription(candidate);
+		if (current) {
+			await new Promise<void>((resolve) => setTimeout(
+				resolve,
+				CAPTURE_GATE_SWITCH_LEAD_MS + 5,
+			));
+			await disposeProcessor(current);
+		}
+		return activeResult(candidate);
 	} catch (error) {
 		if (candidate) await disposeProcessor(candidate);
 		else {
 			if (stream) for (const track of stream.getTracks()) track.stop();
 			if (ctx) try { await ctx.close(); } catch { /* ignore */ }
 		}
-		return errorResult(tabId, generation, error);
+		return errorResult(tabId, generation, controlRevision, error);
 	}
 }
 
@@ -313,11 +348,10 @@ async function stopCapture(tabId: number, generation: number): Promise<AudioHost
 	const intent = recordIntent(tabId, generation, 'stop');
 	const processor = processors.get(tabId);
 	if (!processor) return describeCurrentState(tabId, intent.generation);
-	if (processor.generation > generation) {
-		return { ok: true, tabId, generation: processor.generation, phase: 'active' };
-	}
+	if (processor.generation > generation) return activeResult(processor);
+	const controlRevision = processor.controlRevision;
 	await disposeProcessor(processor);
-	return { ok: true, tabId, generation, phase: 'idle' };
+	return idleResult(tabId, generation, controlRevision);
 }
 
 async function cancelPendingStart(
@@ -327,26 +361,34 @@ async function cancelPendingStart(
 ): Promise<AudioHostResult> {
 	recordIntent(tabId, generation, 'stop');
 	const processor = processors.get(tabId);
-	if (stopCommitted && processor?.generation === generation) {
-		await disposeProcessor(processor);
-	}
+	if (stopCommitted && processor?.generation === generation) await disposeProcessor(processor);
 	return describeCurrentState(tabId, generation);
 }
 
 function getVisualizerFrame(tabId: number): { buffer: number[] | null } {
 	const processor = processors.get(tabId);
-	if (!processor) return { buffer: null };
+	if (!processor || !visualizerSubscriptions.has(tabId)) return { buffer: null };
+	ensureVisualizerSubscription(processor);
 	const now = performance.now();
-	if (!processor.lastVizFrame || now - processor.lastVizAt >= 1000 / 15) {
-		processor.analyser.getByteFrequencyData(processor.vizBuffer);
-		processor.lastVizFrame = Array.from(processor.vizBuffer);
+	if (!processor.lastVizFrame || now - processor.lastVizAt >= 1_000 / 15) {
+		const data = processor.router.getVisualizerData();
+		processor.lastVizFrame = data ? Array.from(data) : null;
 		processor.lastVizAt = now;
 	}
 	return { buffer: processor.lastVizFrame };
 }
 
 export function describeAudioHost(): AudioHostDescription[] {
-	return [...processors.values()].map(({ tabId, generation }) => ({ tabId, generation }));
+	return [...processors.values()].map(({ tabId, generation, controlRevision, snapshot }) => ({
+		tabId,
+		generation,
+		controlRevision,
+		graphSignature: snapshot.graphSignature,
+		normalizedActualConfig: {
+			...snapshot.normalizedActualConfig,
+			eqValues: [...snapshot.normalizedActualConfig.eqValues],
+		},
+	}));
 }
 
 export async function handleAudioHostMessage(
@@ -359,35 +401,38 @@ export async function handleAudioHostMessage(
 				message.streamId,
 				message.config,
 				message.generation,
+				message.controlRevision ?? 0,
 			);
 		case 'OFFSCREEN_AUDIO_STOP':
 			return stopCapture(message.tabId, message.generation);
 		case 'OFFSCREEN_AUDIO_CANCEL_START':
-			return cancelPendingStart(
-				message.tabId,
-				message.generation,
-				message.stopCommitted,
-			);
-		case 'OFFSCREEN_AUDIO_UPDATE':
-		{
-			const { tabId, generation: requestedGeneration } = message;
+			return cancelPendingStart(message.tabId, message.generation, message.stopCommitted);
+		case 'OFFSCREEN_AUDIO_UPDATE': {
+			const { tabId, generation, controlRevision: requestedControlRevision } = message;
+			const controlRevision = requestedControlRevision ?? 0;
 			const previousIntent = latestIntents.get(tabId);
-			if (previousIntent?.kind === 'stop'
-				&& requestedGeneration <= previousIntent.generation) {
-				return staleIntentResult(tabId, previousIntent.generation);
+			if (previousIntent?.kind === 'stop' && generation <= previousIntent.generation) {
+				return staleIntentResult(tabId, previousIntent.generation, controlRevision);
 			}
-			if (!previousIntent || requestedGeneration > previousIntent.generation) {
-				recordIntent(tabId, requestedGeneration, 'update');
+			if (!previousIntent || generation > previousIntent.generation) {
+				recordIntent(tabId, generation, 'update');
 			}
 			const processor = processors.get(tabId);
-			if (!processor) return errorResult(tabId, requestedGeneration, 'Capture is not active');
-			const { generation } = message;
-			if (generation < processor.generation) {
-				return { ok: true, tabId: processor.tabId, generation: processor.generation, phase: 'active' };
+			if (!processor) {
+				return errorResult(
+					tabId,
+					generation,
+					controlRevision,
+					'Capture is not active',
+					'capture_not_active',
+				);
+			}
+			if (generation < processor.generation || controlRevision < processor.controlRevision) {
+				return activeResult(processor);
 			}
 			processor.generation = generation;
-			applyConfig(processor, message.config);
-			return { ok: true, tabId: processor.tabId, generation: processor.generation, phase: 'active' };
+			await applyProcessorConfig(processor, message.config, controlRevision);
+			return activeResult(processor);
 		}
 		case 'OFFSCREEN_AUDIO_GET_VIZ':
 			return getVisualizerFrame(message.tabId);
@@ -396,10 +441,14 @@ export async function handleAudioHostMessage(
 			for (const tabId of message.tabIds) frames[String(tabId)] = getVisualizerFrame(tabId).buffer;
 			return { frames };
 		}
+		case 'OFFSCREEN_AUDIO_SET_VIZ_SUBSCRIPTIONS':
+			return setVisualizerSubscriptions(message.tabIds);
 	}
 }
 
 export async function destroyAudioHost(): Promise<void> {
 	await Promise.all([...processors.values()].map(disposeProcessor));
 	latestIntents.clear();
+	lastControlRevisions.clear();
+	visualizerSubscriptions.clear();
 }

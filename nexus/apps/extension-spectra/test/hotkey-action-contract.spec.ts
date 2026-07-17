@@ -1,11 +1,14 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
-	executeHotkeyAction,
-	HANDLED_HOTKEY_ACTIONS,
-	setCaptureModeToggler,
-} from '../src/content/input/hotkey-actions';
+	HOTKEY_ACTIONS,
+	HOTKEY_ACTION_DESCRIPTORS,
+	isHotkeyParamsForAction,
+	isHotkeySettings,
+	isSlotHotkeyAction,
+} from '@nexus/contracts';
+import { HANDLED_HOTKEY_ACTIONS } from '../src/content/input/hotkey-actions';
 import { isTrustedHotkeyEvent } from '../src/content/input/hotkey-event';
 import {
 	EDITABLE_HOTKEY_ACTIONS,
@@ -19,6 +22,34 @@ describe('editable hotkey action contract', () => {
 		for (const action of EDITABLE_HOTKEY_ACTIONS) {
 			expect(HANDLED_HOTKEY_ACTIONS.has(action), action).toBe(true);
 		}
+	});
+
+	test('maps every persisted hotkey to one canonical capability or an explicit disabled disposition', () => {
+		expect(Object.keys(HOTKEY_ACTION_DESCRIPTORS).sort()).toEqual([...HOTKEY_ACTIONS].sort());
+		for (const action of HOTKEY_ACTIONS) {
+			const descriptor = HOTKEY_ACTION_DESCRIPTORS[action];
+			if (descriptor.availability === 'enabled') expect(descriptor.capability, action).not.toBeNull();
+			if (descriptor.availability === 'disabled-legacy') expect(descriptor.capability, action).toBeNull();
+			expect(['actual-osd', 'handler-result', 'listener-label', 'none']).toContain(
+				descriptor.feedbackOwner,
+			);
+		}
+	});
+
+	test('assigns exactly one feedback owner and never adds a second generic toast', () => {
+		expect(HOTKEY_ACTION_DESCRIPTORS.volume_up.feedbackOwner).toBe('actual-osd');
+		expect(HOTKEY_ACTION_DESCRIPTORS.speed_down.feedbackOwner).toBe('actual-osd');
+		expect(HOTKEY_ACTION_DESCRIPTORS.marker_add.feedbackOwner).toBe('handler-result');
+		expect(HOTKEY_ACTION_DESCRIPTORS.show_info.feedbackOwner).toBe('handler-result');
+		expect(HOTKEY_ACTION_DESCRIPTORS.pan_left.feedbackOwner).toBe('listener-label');
+		expect(HOTKEY_ACTION_DESCRIPTORS.open_popup.feedbackOwner).toBe('none');
+
+		const listener = readFileSync(
+			resolve(import.meta.dir, '../src/content/input/hotkey-listener.ts'),
+			'utf8',
+		);
+		expect(listener).toContain("feedbackOwner === 'listener-label'");
+		expect(listener).not.toContain("action !== 'open_popup'");
 	});
 
 	test('unsupported pitch actions remain outside the editable registry', () => {
@@ -35,23 +66,40 @@ describe('editable hotkey action contract', () => {
 		for (const action of ['speed_set', 'volume_set', 'run_js', 'open_url'] as const) {
 			expect(EDITABLE_HOTKEY_ACTIONS.has(action), action).toBe(true);
 			expect(SLOT_HOTKEY_ACTIONS.has(action), action).toBe(false);
+			expect(isSlotHotkeyAction(action), action).toBe(false);
 		}
+		expect(isSlotHotkeyAction('pitch_up')).toBe(false);
+		expect(isSlotHotkeyAction('volume_up')).toBe(true);
+		expect(isSlotHotkeyAction('future_action')).toBe(false);
 	});
 
-	test('routes Capture hotkeys through the content-owned mode state machine', () => {
-		const toggle = mock(() => undefined);
-		const dispose = setCaptureModeToggler(toggle);
-		try {
-			executeHotkeyAction('capture_toggle');
-			expect(toggle).toHaveBeenCalledTimes(1);
-		} finally {
-			dispose();
-		}
+	test('migrates Capture implementation shortcuts to disabled legacy state', () => {
+		expect(HOTKEY_ACTION_DESCRIPTORS.capture_toggle).toMatchObject({
+			availability: 'disabled-legacy',
+			capability: null,
+		});
 		const helper = readFileSync(
 			resolve(import.meta.dir, '../src/content/input/hotkey-helpers.ts'),
 			'utf8',
 		);
 		expect(helper).not.toContain("'spectra.audio.capture.set'");
+	});
+
+	test('validates required hotkey parameters at storage and execution boundaries', () => {
+		expect(isHotkeyParamsForAction('speed_set', { speed: 1.5 })).toBe(true);
+		expect(isHotkeyParamsForAction('speed_set', undefined)).toBe(false);
+		expect(isHotkeyParamsForAction('volume_set', { volume: 100 })).toBe(true);
+		expect(isHotkeyParamsForAction('volume_set', { volume: 101 })).toBe(false);
+		expect(isHotkeyParamsForAction('open_url', { url: 'javascript:alert(1)' })).toBe(false);
+		expect(isHotkeyParamsForAction('open_url', { url: 'https://example.com/' })).toBe(true);
+		expect(isHotkeyParamsForAction('run_js', { script: '' })).toBe(false);
+		expect(isHotkeyParamsForAction('volume_up', { step: 10 })).toBe(true);
+		expect(isHotkeyParamsForAction('volume_up', { volume: 10 })).toBe(false);
+
+		expect(isHotkeySettings({
+			slots: { slot_01: 'speed_set' },
+			sites: {},
+		})).toBe(false);
 	});
 });
 

@@ -33,6 +33,7 @@ export interface MessageHandlerDeps {
 	captureManager: CaptureManager;
 	settingsManager: SettingsManager;
 	getVisualizerData: () => Uint8Array | null;
+	setVisualizerSubscribed: (subscribed: boolean) => boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -67,6 +68,7 @@ function createRuntimeStatus(deps: MessageHandlerDeps): AudioRuntimeStatus {
 
 function applyCaptureEvent(deps: MessageHandlerDeps, message: unknown): boolean {
 	if (!isSpectraEventEnvelope(message) || message.type !== 'spectra.audio.capture.changed') return false;
+	const runtimeOwnsTransition = deps.captureManager.hasLocalRequest();
 	deps.captureManager.handleMessage(message);
 	const snapshot = message.payload;
 	if (shouldAcceptAudioSessionPhase(
@@ -79,6 +81,16 @@ function applyCaptureEvent(deps: MessageHandlerDeps, message: unknown): boolean 
 		deps.state.phase = snapshot.phase;
 		deps.state.actualMode = snapshot.actualMode;
 		deps.state.lastError = snapshot.lastError?.message;
+		if (!runtimeOwnsTransition
+			&& snapshot.phase === 'idle'
+			&& snapshot.actualMode === 'bypass'
+			&& normalizeMode(deps.state.desiredMode) === 'webaudio') {
+			// A typed Capture request can originate outside PolicyExecutor (for
+			// example an acknowledged full-output transition). Once its processor is
+			// actually idle, restore the already-desired WebAudio path. Transitions
+			// initiated by ModeExecutor are excluded to avoid re-entering its own ACK.
+			void deps.policyExecutor?.applyState({ modeIntent: true });
+		}
 	}
 	return true;
 }
@@ -121,6 +133,7 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 			&& message.protocolVersion === SPECTRA_PROTOCOL_VERSION
 			&& typeof message.type === 'string'
 			&& (message.type === 'spectra.audio.visualizer.get'
+				|| message.type === 'spectra.audio.visualizer.subscription.set'
 				|| message.type === 'spectra.hotkey.trigger'
 				|| message.type.startsWith('spectra.media.')
 				|| message.type.startsWith('spectra.video.'))) {

@@ -11,6 +11,7 @@
   const NONCE_RE = /^[A-Za-z0-9_-]{43}$/;
   const COMMANDS = new Set([
     'volume_down', 'volume_up', 'volume_100', 'mute', 'play_pause',
+    'boost_down', 'boost_up', 'boost_reset', 'boost_max',
     'seek_backward_30', 'seek_backward', 'seek_forward', 'seek_forward_30',
     'speed_down', 'speed_reset', 'speed_up',
   ]);
@@ -48,6 +49,8 @@
       this.statusMessage = 'Waiting to connect…';
       this.state = {
         volume: 100,
+        volumeBase: 100,
+        boost: 1,
         muted: false,
         playing: false,
         speed: 1,
@@ -149,8 +152,17 @@
 
       if (data.type === 'spectra.remote.state' && this.authenticated && isRemoteState(data)) {
         this.generation = data.generation;
+        const legacyVolume = Math.max(0, Math.min(800, data.volume));
+        const volumeBase = Number.isFinite(data.volumeBase)
+          ? Math.max(0, Math.min(100, Math.round(data.volumeBase)))
+          : Math.min(100, Math.round(legacyVolume));
+        const boost = Number.isFinite(data.boost)
+          ? Math.max(1, Math.min(8, Math.round(data.boost * 10) / 10))
+          : legacyVolume > 100 ? Math.max(1, Math.min(8, legacyVolume / 100)) : 1;
         this.state = {
-          volume: Math.max(0, Math.min(800, Math.round(data.volume))),
+          volume: Math.round(volumeBase * boost * 10) / 10,
+          volumeBase,
+          boost,
           muted: data.muted,
           playing: data.playing,
           speed: Math.max(0.25, Math.min(16, data.speed)),
@@ -297,7 +309,8 @@
 
     setHeaderStatus(active.statusMessage, active.connected);
     setControlsEnabled(active.authenticated);
-    byId('vol-display').textContent = `${active.state.volume}%`;
+    byId('vol-display').textContent = `${active.state.volumeBase}%`;
+    byId('boost-display').textContent = `${active.state.boost.toFixed(1)}×`;
     byId('btn-mute').classList.toggle('muted', active.state.muted);
     byId('btn-play-pause').textContent = active.state.playing ? '⏸' : '▶';
     byId('speed-display').textContent = `${active.state.speed.toFixed(2)}x`;
@@ -456,6 +469,8 @@
   function isRemoteState(data) {
     return Number.isSafeInteger(data.generation) && data.generation >= 0
       && Number.isFinite(data.volume)
+      && (data.volumeBase === undefined || Number.isFinite(data.volumeBase))
+      && (data.boost === undefined || Number.isFinite(data.boost))
       && typeof data.muted === 'boolean'
       && typeof data.playing === 'boolean'
       && Number.isFinite(data.speed)

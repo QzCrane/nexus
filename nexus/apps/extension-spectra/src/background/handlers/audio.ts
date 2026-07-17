@@ -11,6 +11,7 @@ import {
 	type AudioConfig,
 	type AudioSessionSnapshot,
 	type TabSessionIdentity,
+	type VisualizerBatchPayload,
 } from '@nexus/contracts';
 import { router, storage, captureStates } from '../state';
 import {
@@ -23,6 +24,14 @@ import { sendOffscreenMessageIfPresent } from '../offscreen-coordinator';
 import { settingsRepository } from '../settings-repository';
 import { updateBadgeFromSession } from './badge';
 import { sendSpectraTabRequest } from '../../shared/spectra-client';
+import {
+	advanceVisualizerSubscriberLeases,
+	nextVisualizerSubscriberExpiry,
+	planVisualizerSubscriberLease,
+	removeVisualizerTab,
+	visualizerSubscriberUnion,
+	type VisualizerSubscriberLeases,
+} from '../visualizer-subscriber-registry';
 
 const sessionIdentityFromSender = identityFromSender;
 
@@ -76,6 +85,56 @@ function normalizeVisualizerFrame(value: unknown): number[] | null {
 	return value as number[];
 }
 
+let subscribedPageTabs = new Set<number>();
+let subscribedCaptureKey: string | null = null;
+const visualizerSubscribers: VisualizerSubscriberLeases = new Map();
+let visualizerExpiryTimer: ReturnType<typeof setTimeout> | null = null;
+let visualizerExpiryAt: number | null = null;
+let visualizerQueue: Promise<void> = Promise.resolve();
+
+async function updateVisualizerSubscriptions(
+	pageTabIds: number[],
+	captureTabIds: number[],
+): Promise<boolean> {
+	const nextPageTabs = new Set(pageTabIds);
+	const removedPageTabs = [...subscribedPageTabs].filter((tabId) => !nextPageTabs.has(tabId));
+	const addedPageTabs = [...nextPageTabs].filter((tabId) => !subscribedPageTabs.has(tabId));
+	const pageResults = await Promise.all([
+		...removedPageTabs.map(async (tabId) => {
+			const response = await sendSpectraTabRequest(
+			tabId,
+			'spectra.audio.visualizer.subscription.set',
+			{ subscribed: false },
+			).catch(() => null);
+			return response === null || (response.ok === true && response.data.subscribed === false);
+		}),
+		...addedPageTabs.map(async (tabId) => {
+			const response = await sendSpectraTabRequest(
+			tabId,
+			'spectra.audio.visualizer.subscription.set',
+			{ subscribed: true },
+			).catch(() => null);
+			return response?.ok === true && response.data.subscribed === true;
+		}),
+	]);
+	if (pageResults.some((accepted) => !accepted)) return false;
+
+	const captureKey = [...captureTabIds].sort((left, right) => left - right).join(',');
+	if (captureKey !== subscribedCaptureKey) {
+		const response = await sendOffscreenMessageIfPresent({
+			type: 'OFFSCREEN_AUDIO_SET_VIZ_SUBSCRIPTIONS',
+			tabIds: captureTabIds,
+		}).catch(() => null);
+		if (captureTabIds.length > 0 && (!response
+			|| [...response.subscribedTabIds].sort((left, right) => left - right).join(',') !== captureKey)) {
+			return false;
+		}
+	}
+	subscribedPageTabs = nextPageTabs;
+	subscribedCaptureKey = captureKey;
+	return true;
+}
+
 // note: one-release adapter for old popup contexts. Current content publishes
 // acknowledged v2 session snapshots and current popup contexts consume them.
 function broadcastLegacyUiSyncForOneRelease(
@@ -88,13 +147,104 @@ function broadcastLegacyUiSyncForOneRelease(
 	}).catch(() => { });
 }
 
-async function getVisualizerBatch(tabIds: number[]): Promise<{ frames: Record<string, number[] | null> }> {
+function replaceVisualizerSubscribers(candidate: VisualizerSubscriberLeases): void {
+	visualizerSubscribers.clear();
+	for (const [subscriberId, subscriber] of candidate) {
+		visualizerSubscribers.set(subscriberId, subscriber);
+	}
+}
+
+function scheduleVisualizerLeaseExpiry(): void {
+	const next = nextVisualizerSubscriberExpiry(visualizerSubscribers);
+	if (next === null) {
+		if (visualizerExpiryTimer) clearTimeout(visualizerExpiryTimer);
+		visualizerExpiryTimer = null;
+		visualizerExpiryAt = null;
+		return;
+	}
+	// Keeping an already-earlier timer avoids a clear/set pair on every 15 Hz
+	// heartbeat. At most one timer exists, and it wakes no more than once per TTL.
+	if (visualizerExpiryTimer && visualizerExpiryAt !== null && visualizerExpiryAt <= next) return;
+	if (visualizerExpiryTimer) clearTimeout(visualizerExpiryTimer);
+	visualizerExpiryAt = next;
+	visualizerExpiryTimer = setTimeout(() => {
+		visualizerExpiryTimer = null;
+		visualizerExpiryAt = null;
+		const operation = visualizerQueue.then(async () => {
+			const candidate = advanceVisualizerSubscriberLeases(visualizerSubscribers, Date.now());
+			if (candidate === visualizerSubscribers) {
+				scheduleVisualizerLeaseExpiry();
+				return;
+			}
+			const union = visualizerSubscriberUnion(candidate);
+			await updateVisualizerSubscriptions(
+				union.filter((tabId) => captureStates.get(tabId) !== true),
+				union.filter((tabId) => captureStates.get(tabId) === true),
+			);
+			replaceVisualizerSubscribers(candidate);
+			scheduleVisualizerLeaseExpiry();
+		});
+		visualizerQueue = operation.then(() => undefined, () => {
+			// A failed release does not revive the consumer. The next real request
+			// reconciles the desired union, while the bounded tombstone remains.
+			const candidate = advanceVisualizerSubscriberLeases(visualizerSubscribers, Date.now());
+			replaceVisualizerSubscribers(candidate);
+			scheduleVisualizerLeaseExpiry();
+		});
+	}, Math.max(0, next - Date.now()));
+}
+
+async function getVisualizerBatchNow(payload: VisualizerBatchPayload): Promise<{
+	subscriberId: string;
+	generation: number;
+	frames: Record<string, number[] | null>;
+}> {
+	const plan = planVisualizerSubscriberLease(visualizerSubscribers, payload, Date.now());
+	if (!plan.accepted && plan.candidate === visualizerSubscribers) {
+		return {
+			subscriberId: payload.subscriberId,
+			generation: plan.responseGeneration,
+			frames: {},
+		};
+	}
+	const candidateSubscribers = plan.candidate;
+	const unionTabIds = visualizerSubscriberUnion(candidateSubscribers);
+	const unionCaptureTabIds = unionTabIds.filter((tabId) => captureStates.get(tabId) === true);
+	const unionPageTabIds = unionTabIds.filter((tabId) => captureStates.get(tabId) !== true);
+	const admitted = await updateVisualizerSubscriptions(unionPageTabIds, unionCaptureTabIds);
+	if (!admitted) {
+		if (payload.tabIds.length === 0) {
+			// Explicit release is authoritative even when an already-disappearing
+			// processor cannot acknowledge teardown. Keep the tombstone so an older
+			// in-flight batch cannot revive it.
+			replaceVisualizerSubscribers(candidateSubscribers);
+			scheduleVisualizerLeaseExpiry();
+			return { subscriberId: payload.subscriberId, generation: payload.generation, frames: {} };
+		}
+		const previousUnion = visualizerSubscriberUnion(visualizerSubscribers);
+		void updateVisualizerSubscriptions(
+			previousUnion.filter((tabId) => captureStates.get(tabId) !== true),
+			previousUnion.filter((tabId) => captureStates.get(tabId) === true),
+		);
+		scheduleVisualizerLeaseExpiry();
+		return { subscriberId: payload.subscriberId, generation: payload.generation, frames: {} };
+	}
+	replaceVisualizerSubscribers(candidateSubscribers);
+	scheduleVisualizerLeaseExpiry();
+	if (!plan.accepted) {
+		return {
+			subscriberId: payload.subscriberId,
+			generation: plan.responseGeneration,
+			frames: {},
+		};
+	}
+
+	const { tabIds } = payload;
 	const frames: Record<string, number[] | null> = Object.fromEntries(
 		tabIds.map((tabId) => [String(tabId), null]),
 	);
 	const captureTabIds = tabIds.filter((tabId) => captureStates.get(tabId) === true);
 	const pageTabIds = tabIds.filter((tabId) => captureStates.get(tabId) !== true);
-
 	if (captureTabIds.length > 0) {
 		const result = await sendOffscreenMessageIfPresent({
 			type: 'OFFSCREEN_AUDIO_GET_VIZ_BATCH',
@@ -115,7 +265,17 @@ async function getVisualizerBatch(tabIds: number[]): Promise<{ frames: Record<st
 		frames[String(tabId)] = normalizeVisualizerFrame(buffer);
 	}));
 
-	return { frames };
+	return { subscriberId: payload.subscriberId, generation: payload.generation, frames };
+}
+
+function getVisualizerBatch(payload: VisualizerBatchPayload): Promise<{
+	subscriberId: string;
+	generation: number;
+	frames: Record<string, number[] | null>;
+}> {
+	const result = visualizerQueue.then(() => getVisualizerBatchNow(payload));
+	visualizerQueue = result.then(() => undefined, () => undefined);
+	return result;
 }
 
 export function registerAudioV2Listener(): void {
@@ -208,7 +368,7 @@ export function registerAudioV2Listener(): void {
 				]);
 				return { flushed: true as const };
 			}
-			return getVisualizerBatch(message.payload.tabIds);
+			return getVisualizerBatch(message.payload);
 		};
 		void operation()
 			.then((result) => sendResponse(rpcSuccess(result)))
@@ -224,6 +384,17 @@ export function registerAudioV2Listener(): void {
 // eff: registers listeners for AUDIO_GET_STATUS, AUDIO_SET_CONFIG, and UI_SYNC actions
 export function registerAudioHandlers(): void {
 	registerAudioV2Listener();
+	chrome.tabs.onRemoved.addListener((tabId) => {
+		const candidate = removeVisualizerTab(visualizerSubscribers, tabId);
+		if (candidate === visualizerSubscribers) return;
+		replaceVisualizerSubscribers(candidate);
+		const union = visualizerSubscriberUnion(visualizerSubscribers);
+		void updateVisualizerSubscriptions(
+			union.filter((candidate) => captureStates.get(candidate) !== true),
+			union.filter((candidate) => captureStates.get(candidate) === true),
+		);
+		scheduleVisualizerLeaseExpiry();
+	});
 	router.on(Actions.AUDIO_GET_STATUS, async (_, sender) => {
 		const tabId = sender.tab?.id;
 		const config = await resolveAudioConfigForSender(sender);

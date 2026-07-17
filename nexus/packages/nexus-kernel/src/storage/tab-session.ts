@@ -2,7 +2,7 @@
 // note: uses chrome.storage.session with tabId-prefixed keys
 
 import { AudioConfig, DEFAULT_AUDIO_CONFIG } from '../messages/protocol.js';
-import type { TabSessionIdentity } from '@nexus/contracts';
+import { resolveAudioVolume, type TabSessionIdentity } from '@nexus/contracts';
 
 const TAB_SESSION_PREFIX = 'tab_session_';
 const STORAGE_WRITE_DEBOUNCE_MS = 250;
@@ -85,20 +85,59 @@ function identitiesMatch(left: TabSessionIdentity, right: TabSessionIdentity): b
 		&& left.origin === right.origin;
 }
 
+function canonicalizeAudioConfig(value: Partial<AudioConfig>): AudioConfig {
+	const volume = resolveAudioVolume({
+		volume: value.volume ?? DEFAULT_AUDIO_CONFIG.volume,
+		volumeBase: value.volumeBase,
+		boost: value.boost,
+	});
+	return {
+		...DEFAULT_AUDIO_CONFIG,
+		...value,
+		volume: volume.effectiveVolume,
+		volumeBase: volume.volumeBase,
+		boost: volume.boost,
+	};
+}
+
+function mergeCanonicalAudioConfig(
+	current: Partial<AudioConfig>,
+	patch: Partial<AudioConfig>,
+): AudioConfig {
+	const merged = { ...current, ...patch };
+	const legacyOnly = patch.volume !== undefined
+		&& patch.volumeBase === undefined
+		&& patch.boost === undefined;
+	const volume = legacyOnly
+		? resolveAudioVolume({ volume: patch.volume ?? DEFAULT_AUDIO_CONFIG.volume })
+		: resolveAudioVolume({
+			volume: merged.volume ?? DEFAULT_AUDIO_CONFIG.volume,
+			volumeBase: merged.volumeBase,
+			boost: merged.boost,
+		});
+	return {
+		...DEFAULT_AUDIO_CONFIG,
+		...merged,
+		volume: volume.effectiveVolume,
+		volumeBase: volume.volumeBase,
+		boost: volume.boost,
+	};
+}
+
 // eff: retrieves session config for a specific tab, returns null if no session exists
 export async function getTabSessionConfig(tabId: number, identity?: TabSessionIdentity): Promise<AudioConfig | null> {
 	const stored = await serialized(tabId, () => readStoredValue(tabId));
 	if (!stored) return null;
 	if (isStoredTabSession(stored)) {
 		if (identity && !identitiesMatch(stored.identity, identity)) return null;
-		return { ...DEFAULT_AUDIO_CONFIG, ...stored.config };
+		return canonicalizeAudioConfig(stored.config);
 	}
 	// Legacy tabId-only entries cannot be proven to belong to the current document.
 	if (identity) {
 		await removeTabSessionConfig(tabId);
 		return null;
 	}
-	return { ...DEFAULT_AUDIO_CONFIG, ...(stored as Partial<AudioConfig>) };
+	return canonicalizeAudioConfig(stored as Partial<AudioConfig>);
 }
 
 // eff: saves session config for a specific tab
@@ -111,8 +150,8 @@ export async function setTabSessionConfig(
 		const stored = await readStoredValue(tabId);
 		if (!identity) {
 			pendingWrites.set(tabId, isStoredTabSession(stored)
-				? { ...stored, config: { ...DEFAULT_AUDIO_CONFIG, ...stored.config, ...config }, updatedAt: Date.now() }
-				: { ...DEFAULT_AUDIO_CONFIG, ...(stored as object), ...config });
+				? { ...stored, config: mergeCanonicalAudioConfig(stored.config, config), updatedAt: Date.now() }
+				: mergeCanonicalAudioConfig(stored as Partial<AudioConfig>, config));
 			scheduleWrite(tabId);
 			return;
 		}
@@ -122,7 +161,7 @@ export async function setTabSessionConfig(
 			: DEFAULT_AUDIO_CONFIG;
 		pendingWrites.set(tabId, {
 			identity,
-			config: { ...DEFAULT_AUDIO_CONFIG, ...existing, ...config },
+			config: mergeCanonicalAudioConfig(existing, config),
 			updatedAt: Date.now(),
 		});
 		scheduleWrite(tabId);

@@ -49,7 +49,11 @@ beforeEach(async () => {
 describe('document-bound tab sessions', () => {
 	test('does not leak settings into a different document', async () => {
 		await setTabSessionConfig(7, { volume: 250 }, firstDocument);
-		expect((await getTabSessionConfig(7, firstDocument))?.volume).toBe(250);
+		expect(await getTabSessionConfig(7, firstDocument)).toMatchObject({
+			volume: 250,
+			volumeBase: 100,
+			boost: 2.5,
+		});
 		expect(await getTabSessionConfig(7, secondDocument)).toBeNull();
 
 		await setTabSessionConfig(7, { muted: true }, secondDocument);
@@ -70,7 +74,12 @@ describe('document-bound tab sessions', () => {
 		await setTabSessionConfig(7, { volume: 175, muted: true }, firstDocument);
 
 		expect(setCalls).toHaveLength(0);
-		expect(await getTabSessionConfig(7, firstDocument)).toMatchObject({ volume: 175, muted: true });
+		expect(await getTabSessionConfig(7, firstDocument)).toMatchObject({
+			volume: 175,
+			volumeBase: 100,
+			boost: 1.75,
+			muted: true,
+		});
 
 		await flushTabSessionConfig(7);
 		expect(setCalls).toHaveLength(1);

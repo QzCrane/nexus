@@ -16,6 +16,7 @@ interface CaptureReply {
 	active?: boolean;
 	generation?: number;
 	error?: string;
+	actualConfig?: AudioConfig;
 }
 
 interface CaptureStateEvent {
@@ -30,11 +31,8 @@ let active = false;
 let phase: CaptureReply['phase'] = 'idle';
 let generation = 0;
 let lastError: string | undefined;
+let actualConfig: AudioConfig | null = null;
 let pending: Promise<CaptureReply> | null = null;
-
-const notifyInjector = (isActive: boolean) => {
-	window.postMessage({ type: 'SPECTRA_CAPTURE_STATE', active: isActive, generation }, '*');
-};
 
 function applyConfirmedState(event: CaptureStateEvent): void {
 	const nextGeneration = event.generation ?? generation;
@@ -47,19 +45,23 @@ function applyConfirmedState(event: CaptureStateEvent): void {
 	// acknowledged processor state. Capture remains actual while stopping/erroring
 	// until the offscreen host confirms it is idle.
 	const nextActive = event.enabled ?? nextPhase === 'active';
-	if (active !== nextActive) {
-		active = nextActive;
-		notifyInjector(active);
-	}
+	active = nextActive;
+	if (!nextActive) actualConfig = null;
+}
+
+function cloneConfig(config: AudioConfig): AudioConfig {
+	return { ...config, eqValues: [...config.eqValues] };
 }
 
 export function createCaptureManager() {
 	return {
 		isActive: () => active,
 		isPending: () => phase === 'starting' || phase === 'stopping' || pending !== null,
+		hasLocalRequest: () => pending !== null,
 		getPhase: () => phase,
 		getGeneration: () => generation,
 		getLastError: () => lastError,
+		getActualConfig: () => actualConfig ? cloneConfig(actualConfig) : null,
 		waitForSettled: async () => {
 			const operation = pending;
 			if (operation) await operation.catch(() => undefined);
@@ -74,12 +76,16 @@ export function createCaptureManager() {
 			phase: CaptureReply['phase'];
 			generation: number;
 			error?: string;
-		}) => applyConfirmedState({
-			enabled: snapshot.active,
-			phase: snapshot.phase,
-			generation: snapshot.generation,
-			error: snapshot.error,
-		}),
+			actualConfig?: AudioConfig;
+		}) => {
+			actualConfig = snapshot.actualConfig ? cloneConfig(snapshot.actualConfig) : null;
+			applyConfirmedState({
+				enabled: snapshot.active,
+				phase: snapshot.phase,
+				generation: snapshot.generation,
+				error: snapshot.error,
+			});
+		},
 		handleMessage,
 		request,
 		syncConfig,
@@ -91,8 +97,17 @@ async function request(enabled: boolean, config: AudioConfig, requestedGeneratio
 		return { status: 'error', phase: 'error', active: false, generation, error: 'Extension context is unavailable' };
 	}
 	if (pending) await pending.catch(() => undefined);
-	if (enabled === active && ((enabled && phase === 'active') || (!enabled && phase === 'idle'))) {
-		return { status: 'processing', phase, active, generation };
+	if (enabled === active
+		&& ((!enabled && phase === 'idle')
+			|| (enabled && phase === 'active' && actualConfig !== null))) {
+		const currentActual = enabled ? actualConfig : null;
+		return {
+			status: 'processing',
+			phase,
+			active,
+			generation,
+			...(currentActual ? { actualConfig: cloneConfig(currentActual) } : {}),
+		};
 	}
 
 	const previousActive = active;
@@ -123,6 +138,9 @@ async function request(enabled: boolean, config: AudioConfig, requestedGeneratio
 			active: response.data.active,
 			generation: response.data.generation,
 			error: response.data.lastError?.message,
+			...(response.data.actualConfig
+				? { actualConfig: cloneConfig(response.data.actualConfig) }
+				: {}),
 		};
 	});
 	pending = operation;
@@ -146,6 +164,26 @@ async function request(enabled: boolean, config: AudioConfig, requestedGeneratio
 			phase: response.phase,
 			generation: responseGeneration,
 		});
+		if (response.active && response.phase === 'active') {
+			const confirmedActual = response.actualConfig ?? actualConfig;
+			if (!confirmedActual) {
+				const error = 'Capture processor did not return an actual configuration';
+				applyConfirmedState({
+					enabled: true,
+					phase: 'error',
+					generation: responseGeneration,
+					error,
+				});
+				return {
+					...response,
+					status: 'error',
+					phase: 'error',
+					error,
+				};
+			}
+			actualConfig = cloneConfig(confirmedActual);
+			return { ...response, actualConfig: confirmedActual };
+		}
 		return response;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
@@ -180,8 +218,8 @@ function handleMessage(message: unknown): boolean {
 	return true;
 }
 
-async function syncConfig(config: AudioConfig, requestedGeneration = generation): Promise<boolean> {
-	if (!active || !isExtensionContextValid()) return false;
+async function syncConfig(config: AudioConfig, requestedGeneration = generation): Promise<AudioConfig | null> {
+	if (!active || !isExtensionContextValid()) return null;
 	try {
 		const nextGeneration = Math.max(generation, requestedGeneration);
 		const response = await sendSpectraRequest(
@@ -195,10 +233,14 @@ async function syncConfig(config: AudioConfig, requestedGeneration = generation)
 		}
 		generation = response.data.generation;
 		lastError = undefined;
-		return true;
+		if (!response.data.actualConfig) {
+			throw new Error('Capture processor did not return an actual configuration');
+		}
+		actualConfig = cloneConfig(response.data.actualConfig);
+		return cloneConfig(actualConfig);
 	} catch (error) {
 		lastError = error instanceof Error ? error.message : String(error);
-		return false;
+		return null;
 	}
 }
 

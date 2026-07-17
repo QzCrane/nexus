@@ -2,7 +2,7 @@
 // features: apply preset, global vs site-specific, search/filter, set as default, preview config
 
 import type { AudioConfig } from '@nexus/kernel';
-import { isSpectraEventEnvelope } from '@nexus/contracts';
+import { isSpectraEventEnvelope, resolveAudioVolume } from '@nexus/contracts';
 import type { I18NDict } from '../types';
 import { getSettingsSnapshot, patchSettings } from '../../shared/settings-client';
 import { handleDialogKeydown } from '../utils/dialog';
@@ -232,9 +232,16 @@ function createSummaryNodes(config: Partial<AudioConfig>): DocumentFragment {
 
 	// eff: add volume with highlight
 	if (config.volume !== undefined) {
+		const volume = resolveAudioVolume({
+			volume: config.volume,
+			volumeBase: config.volumeBase,
+			boost: config.boost,
+		});
 		const volSpan = document.createElement('span');
 		volSpan.className = 'vol-highlight';
-		volSpan.textContent = `${config.volume}%`;
+		volSpan.textContent = volume.boost > 1
+			? `${volume.volumeBase}% × ${volume.boost.toFixed(1)}`
+			: `${volume.volumeBase}%`;
 		fragment.appendChild(volSpan);
 	}
 

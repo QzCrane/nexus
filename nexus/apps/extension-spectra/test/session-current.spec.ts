@@ -164,9 +164,9 @@ describe('content session restore', () => {
 				desiredMode: 'bypass',
 				actualMode: 'bypass',
 				phase: 'idle',
-				actualConfig: config({ volume: 80 }),
+				actualConfig: config({ volume: 80, volumeBase: 80 }),
 			}),
-			config: config({ volume: 80 }),
+			config: config({ volume: 80, volumeBase: 80 }),
 		});
 		expect(lite.state.desiredMode).toBe(AudioMode.NATIVE_LITE);
 	});

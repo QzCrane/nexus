@@ -1,24 +1,43 @@
-# CORS Audio Decision Flow
+# Media WebAudio source-eligibility flow
 
-`createMediaElementSource()` may succeed while cross-origin audio produces no analyser data, so SPECTRA treats the analyser callback—not an exception—as the runtime signal.
+This document records the current source-admission algorithm. It does not own a
+second mode matrix; [control-architecture.md](./control-architecture.md) remains
+authoritative.
 
-## Flow
+`createMediaElementSource()` is irreversible for an element and analyser
+silence cannot distinguish silence from CORS or protected media. SPECTRA
+therefore never binds or samples a source as a probe.
 
-1. Normalize the current hostname and query the background-owned registry.
-2. A previously probed entry restores `SAFE` or `RESTRICTED`; an unknown host starts as `PENDING`.
-3. The event-driven media registry reacts to newly inserted media, playback, metadata, volume, and SPA navigation. It selects an audible, playing candidate once; there is no discovery polling.
-4. The WebAudio controller reports real analyser success or failure through its callbacks.
-5. Background persists the normalized probe result through the v2 registry boundary.
-6. Policy is recalculated for the current document generation. A late callback from an older generation cannot activate Capture.
+## Admission
 
-While status is unknown, policy fails closed for advanced processing. Default/no-op configuration remains transparent bypass and does not create an AudioContext merely to probe a site.
+1. `MediaRegistry` records every top-level media element and source revision.
+2. Before binding, it captures immutable eligibility evidence for that exact
+   element/source: same-origin URL or a CORS mode already established before
+   resource selection.
+3. `assessMediaSourceCoverage()` requires every current registry source to be
+   proven eligible. Unknown, inaccessible, protected or unsafe sources fail the
+   Media WebAudio candidate without side effects.
+4. `WebAudioController.ensureAttached()` consumes the same evidence snapshot,
+   creates at most one page-lifetime `MediaElementSourceNode` per element and
+   confirms that every source is connected to the shared graph.
+5. Only a running graph with full source count, matching graph signature and
+   normalized actual config can ACK Media WebAudio.
+6. A registered/removed/reloaded source triggers event-driven reconciliation;
+   stale document/source/generation results are discarded.
 
-## Ownership
+If complete safe coverage is unavailable, explicit full-output DSP may request
+authorized Capture. Active-target requests fail rather than silently widening
+to the tab. Default/native-only control creates neither Media WebAudio nor
+Capture.
 
-- `policy-executor/cors-handler.ts`: current-document CORS phase and controller callbacks
-- `policy-executor/media-probe.ts`: one-shot candidate selection
-- `core/lifecycle/media-observer.ts`: event-driven media discovery and disposal
-- `shared/registry-client.ts`: typed registry requests
-- background registry repository: normalized persistence and domain matching
+## Ownership and cost
 
-The authoritative audio mode and error remain in `AudioSessionSnapshot`; the registry result is an input to policy, not an independent claim that Capture is active.
+- `content/core/media-registry.ts`: source identity, preload evidence and
+  event-driven lifecycle.
+- `packages/features/audio-engine/src/webaudio/controller.ts`: prospective
+  assessment, unique binding, reconnect and complete actual readback.
+- `content/logic/policy-executor/index.ts`: coverage decision.
+- `content/logic/mode-executor.ts`: acknowledged backend handoff and rollback.
+
+There is no CORS probe repository, analyser-silence heuristic, timed observation
+window, standing MAIN bridge or discovery polling.

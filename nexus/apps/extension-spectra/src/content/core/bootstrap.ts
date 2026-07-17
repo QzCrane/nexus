@@ -1,0 +1,187 @@
+// goal: zero-work manifest entry that exposes only a versioned document message boundary
+
+import {
+	SPECTRA_CONTENT_BOOTSTRAP_REVISION,
+	SPECTRA_PROTOCOL_VERSION,
+	bootstrapRpcFailure,
+	bootstrapRpcSuccess,
+	isBootstrapHelloResponse,
+	isBootstrapInboundRequest,
+} from '@nexus/contracts/bootstrap';
+import {
+	getContentBootstrapState,
+	requiresContentRuntime,
+	setContentBootstrapState,
+	type ContentBootstrapState,
+} from '../../shared/content-runtime';
+
+const previous = getContentBootstrapState();
+if (previous?.bootstrapRevision !== SPECTRA_CONTENT_BOOTSTRAP_REVISION) previous?.dispose();
+
+if (!getContentBootstrapState()) {
+	let disposed = false;
+
+	const readNativeActual = (
+		request: import('@nexus/contracts').ControlReadRequest,
+	): import('@nexus/contracts').ControlReadResult | null => {
+		const videoOnly = request.fields.every((field) => field === 'pip' || field === 'fullscreen');
+		const media = [...document.querySelectorAll<HTMLMediaElement>('video,audio')]
+			.filter((element) => !videoOnly || element instanceof HTMLVideoElement)
+			.filter((element) => element.isConnected);
+		const fullscreen = document.fullscreenElement;
+		const element = media.find((candidate) => document.pictureInPictureElement === candidate)
+			?? media.find((candidate) => fullscreen === candidate
+				|| fullscreen instanceof Element && fullscreen.contains(candidate))
+			?? media.find((candidate) => !candidate.paused && !candidate.ended)
+			?? media[0];
+		if (!element) return null;
+		const patch: import('@nexus/contracts').ControlPatch = {};
+		for (const field of request.fields) {
+			let actual: unknown;
+			switch (field) {
+				case 'volumeBase': actual = Math.round(element.volume * 10_000) / 100; break;
+				case 'mediaMuted': actual = element.muted; break;
+				case 'speed': actual = element.playbackRate; break;
+				case 'preservePitch':
+					if ('preservesPitch' in element) actual = element.preservesPitch;
+					break;
+				case 'playing': actual = !element.paused; break;
+				case 'currentTime': actual = element.currentTime; break;
+				case 'loop': actual = element.loop; break;
+				case 'pip': actual = document.pictureInPictureElement === element; break;
+				case 'fullscreen': actual = fullscreen === element
+					|| fullscreen instanceof Element && fullscreen.contains(element); break;
+			}
+			if (actual !== undefined) (patch as Record<string, unknown>)[field] = actual;
+		}
+		return Object.keys(patch).length > 0 ? { target: null, patch } : null;
+	};
+
+	const state: ContentBootstrapState = {
+		bootstrapRevision: SPECTRA_CONTENT_BOOTSTRAP_REVISION,
+		runtimeRevision: null as string | null,
+		ready: false,
+		dispose() {
+			if (disposed) return;
+			disposed = true;
+			chrome.runtime.onMessage.removeListener(onMessage);
+			window.removeEventListener('pagehide', onPageHide);
+			delete state.disposeRuntime;
+			if (getContentBootstrapState() === state) setContentBootstrapState(undefined);
+		},
+	};
+
+	const onMessage = (
+		message: unknown,
+		sender: chrome.runtime.MessageSender,
+		sendResponse: (response?: unknown) => void,
+	): boolean => {
+		if (disposed || sender.id && sender.id !== chrome.runtime.id) return false;
+		if (!message || typeof message !== 'object') return false;
+		const candidate = message as { protocolVersion?: unknown; type?: unknown };
+		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION || typeof candidate.type !== 'string') {
+			return false;
+		}
+		if (candidate.type === 'spectra.content.runtime.status') {
+			if (!isBootstrapInboundRequest(message) || message.type !== 'spectra.content.runtime.status') {
+				sendResponse(bootstrapRpcFailure('invalid_request', 'Malformed content runtime status request'));
+				return false;
+			}
+			sendResponse(bootstrapRpcSuccess({
+				bootstrapRevision: state.bootstrapRevision,
+				runtimeRevision: state.runtimeRevision,
+				ready: state.ready,
+				ownedSources: state.getOwnedSources?.() ?? [],
+			}));
+			return false;
+		}
+		if (candidate.type === 'spectra.control.actual.read' && !state.ready) {
+			if (!isBootstrapInboundRequest(message) || message.type !== 'spectra.control.actual.read') {
+				sendResponse(bootstrapRpcFailure('invalid_request', 'Malformed native observation request'));
+				return false;
+			}
+			const passiveFields = new Set([
+				'volumeBase', 'mediaMuted', 'speed', 'preservePitch', 'playing',
+				'currentTime', 'loop', 'pip', 'fullscreen',
+			]);
+			if (message.payload.target !== null
+				|| !message.payload.fields.every((field) => passiveFields.has(field))) {
+				sendResponse(bootstrapRpcFailure(
+					'content_runtime_not_loaded',
+					'The document runtime is required for a target-bound or augmented read',
+					true,
+				));
+				return false;
+			}
+			const result = readNativeActual(message.payload);
+			if (!result) {
+				sendResponse(bootstrapRpcFailure('capability-unavailable', 'No observable native media state'));
+				return false;
+			}
+			sendResponse(bootstrapRpcSuccess(result));
+			return false;
+		}
+		if (candidate.type === 'spectra.content.runtime.release' && state.ready) {
+			if (!isBootstrapInboundRequest(message) || message.type !== 'spectra.content.runtime.release') {
+				sendResponse(bootstrapRpcFailure('invalid_request', 'Malformed content runtime release'));
+				return false;
+			}
+			if (message.payload.runtimeRevision !== state.runtimeRevision) {
+				sendResponse(bootstrapRpcFailure('runtime_revision_mismatch', 'Content runtime release revision is stale'));
+				return false;
+			}
+			void (state.disposeRuntime?.() ?? Promise.resolve()).then(() => {
+				state.runtimeRevision = null;
+				state.ready = false;
+				sendResponse(bootstrapRpcSuccess({ accepted: true as const }));
+		}, (error: unknown) => sendResponse(bootstrapRpcFailure(
+				'runtime_release_failed',
+				error instanceof Error ? error.message : String(error),
+				true,
+			)));
+			return true;
+		}
+		if (isBootstrapInboundRequest(message)
+			&& requiresContentRuntime(message.type)
+			&& !state.ready) {
+			sendResponse(bootstrapRpcFailure(
+				'content_runtime_not_loaded',
+				'The document runtime has not been acquired for this control',
+				true,
+			));
+			return false;
+		}
+		return false;
+	};
+
+	const onPageHide = (): void => {
+		if (!state.runtimeRevision) return;
+		void sendBootstrapRequest('spectra.content.runtime.release', {
+			runtimeRevision: state.runtimeRevision,
+		});
+	};
+
+	setContentBootstrapState(state);
+	chrome.runtime.onMessage.addListener(onMessage);
+	window.addEventListener('pagehide', onPageHide, { once: true });
+
+	void sendBootstrapRequest('spectra.content.bootstrap.hello', {
+		bootstrapRevision: SPECTRA_CONTENT_BOOTSTRAP_REVISION,
+	}).then((response) => {
+		if (!isBootstrapHelloResponse(response) || disposed || response.data.runtimeRevision === null) return;
+		state.runtimeRevision = response.data.runtimeRevision;
+		state.ready = true;
+	}).catch(() => undefined);
+}
+
+function sendBootstrapRequest(
+	type: 'spectra.content.bootstrap.hello' | 'spectra.content.runtime.release',
+	payload: { bootstrapRevision: string } | { runtimeRevision: string },
+): Promise<unknown> {
+	return chrome.runtime.sendMessage({
+		protocolVersion: SPECTRA_PROTOCOL_VERSION,
+		requestId: crypto.randomUUID(),
+		type,
+		payload,
+	});
+}

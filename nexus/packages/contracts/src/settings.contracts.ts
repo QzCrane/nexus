@@ -4,10 +4,11 @@ import { normalizeHostname } from './domain.contracts.js';
 import { isAudioConfigPatch, type AudioConfig } from './audio.contracts.js';
 import {
 	HOTKEY_ACTIONS,
+	isHotkeyParamsForAction,
+	isSlotHotkeyAction,
 	type HotkeyAction,
 	type HotkeyBinding,
 	type HotkeyConditions,
-	type HotkeyParams,
 	type HotkeySettings,
 	type KeyCombo,
 	type KeyModifiers,
@@ -145,7 +146,6 @@ const HOTKEY_BINDING_KEYS = new Set<keyof HotkeyBinding>([
 ]);
 const KEY_COMBO_KEYS = new Set<keyof KeyCombo>(['code', 'modifiers']);
 const KEY_MODIFIER_KEYS = new Set<keyof KeyModifiers>(['ctrl', 'alt', 'shift', 'meta']);
-const HOTKEY_PARAM_KEYS = new Set<keyof HotkeyParams>(['speed', 'volume', 'step', 'script', 'url']);
 const HOTKEY_CONDITION_KEYS = new Set<keyof HotkeyConditions>(['domains', 'requireMedia']);
 const SETTINGS_PATCH_REQUEST_KEYS = new Set<keyof SettingsPatchRequest>(['expectedRevision', 'patch']);
 const LEGACY_THEME_PATCH_KEYS = new Set(['scope', 'candidate']);
@@ -176,23 +176,6 @@ function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string
 
 function isNonNegativeInteger(value: unknown): value is number {
 	return typeof value === 'number' && Number.isInteger(value) && value >= 0;
-}
-
-function isFiniteInRange(value: unknown, minimum: number, maximum: number): value is number {
-	return typeof value === 'number'
-		&& Number.isFinite(value)
-		&& value >= minimum
-		&& value <= maximum;
-}
-
-function isHttpUrl(value: string): boolean {
-	if (value.length === 0 || value.length > 2048) return false;
-	try {
-		const url = new URL(value);
-		return url.protocol === 'http:' || url.protocol === 'https:';
-	} catch {
-		return false;
-	}
 }
 
 function isPresetName(value: unknown): value is string {
@@ -253,18 +236,6 @@ function isKeyCombo(value: unknown): value is KeyCombo {
 		&& isKeyModifiers(value.modifiers);
 }
 
-function isHotkeyParams(value: unknown, action: HotkeyAction): value is HotkeyParams {
-	if (!isRecord(value) || !hasOnlyKeys(value, HOTKEY_PARAM_KEYS)) return false;
-	if (value.speed !== undefined && !isFiniteInRange(value.speed, 0.1, 16)) return false;
-	if (value.volume !== undefined && !isFiniteInRange(value.volume, 0, 800)) return false;
-	if (value.step !== undefined && !isFiniteInRange(value.step, 0.001, 800)) return false;
-	if (value.script !== undefined && (typeof value.script !== 'string' || value.script.length > 100_000)) return false;
-	if (value.url !== undefined && (typeof value.url !== 'string' || !isHttpUrl(value.url))) return false;
-	if (action === 'open_url') return typeof value.url === 'string' && isHttpUrl(value.url);
-	if (action === 'run_js') return typeof value.script === 'string' && value.script.length > 0;
-	return true;
-}
-
 function isHotkeyConditions(value: unknown): value is HotkeyConditions {
 	if (!isRecord(value) || !hasOnlyKeys(value, HOTKEY_CONDITION_KEYS)) return false;
 	if (value.requireMedia !== undefined && typeof value.requireMedia !== 'boolean') return false;
@@ -280,11 +251,7 @@ function isHotkeyBinding(value: unknown): value is HotkeyBinding {
 	if (typeof value.enabled !== 'boolean' || typeof value.action !== 'string' || !HOTKEY_ACTION_SET.has(value.action)) return false;
 	if (!isKeyCombo(value.key)) return false;
 	const action = value.action as HotkeyAction;
-	if (value.params !== undefined && !isHotkeyParams(value.params, action)) return false;
-	if ((action === 'open_url' || action === 'run_js' || action === 'speed_set' || action === 'volume_set')
-		&& value.params === undefined) return false;
-	if (action === 'speed_set' && (!isRecord(value.params) || value.params.speed === undefined)) return false;
-	if (action === 'volume_set' && (!isRecord(value.params) || value.params.volume === undefined)) return false;
+	if (!isHotkeyParamsForAction(action, value.params)) return false;
 	if (value.conditions !== undefined && !isHotkeyConditions(value.conditions)) return false;
 	return value.disabledReason === undefined || value.disabledReason === 'unsupported_action';
 }
@@ -331,8 +298,7 @@ export function isHotkeySettings(value: unknown): value is HotkeySettings {
 	if (!Object.entries(value.slots).every(([slot, action]) => (
 		slot.length > 0
 		&& slot.length <= 128
-		&& typeof action === 'string'
-		&& HOTKEY_ACTION_SET.has(action)
+		&& isSlotHotkeyAction(action)
 	))) return false;
 	if (!isRecord(value.sites) || Object.keys(value.sites).length > 1000) return false;
 	if (!Object.entries(value.sites).every(([domain, site]) => (
@@ -403,7 +369,7 @@ export function isSettingsPatchRequest(value: unknown): value is SettingsPatchRe
 			&& Object.entries(patch.changes).every(([slot, action]) => (
 				slot.length > 0
 				&& slot.length <= 128
-				&& (action === null || (typeof action === 'string' && HOTKEY_ACTION_SET.has(action)))
+				&& (action === null || isSlotHotkeyAction(action))
 			));
 	}
 	if (patch.scope === 'hotkey-site') {

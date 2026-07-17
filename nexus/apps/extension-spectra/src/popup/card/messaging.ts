@@ -3,6 +3,7 @@
 import { isSpectraEventEnvelope } from '@nexus/contracts';
 import type { CardInternalState } from './types';
 import { applyLegacyCardMessage } from './legacy-message-adapter';
+import { mergeControlSnapshot } from './types';
 
 export interface MessagingParams {
   tabId: number;
@@ -18,19 +19,45 @@ export function setupCardMessaging(params: MessagingParams): () => void {
 	rawMessage: unknown,
     sender: chrome.runtime.MessageSender
   ): boolean | undefined => {
+	if (isSpectraEventEnvelope(rawMessage) && rawMessage.type === 'spectra.control.snapshot.changed') {
+		const snapshot = rawMessage.payload;
+		if (snapshot.tabId !== tabId) return false;
+		if (snapshot.generation < state.controlGeneration
+			|| snapshot.generation === state.controlGeneration
+				&& snapshot.revision < state.controlRevision) return false;
+		state.controlSnapshot = snapshot;
+		state.stableConfig = mergeControlSnapshot(state.stableConfig, snapshot);
+		const incoming = state.stableConfig;
+		if (state.draggingField === 'volumeBase') {
+			const { volume: _volume, volumeBase: _volumeBase, muted: _muted, ...otherConfig } = incoming;
+			state.config = { ...state.config, ...otherConfig };
+		} else if (state.draggingField === 'boost') {
+			const { volume: _volume, boost: _boost, muted: _muted, ...otherConfig } = incoming;
+			state.config = { ...state.config, ...otherConfig };
+		} else {
+			state.config = incoming;
+		}
+		state.controlGeneration = Math.max(state.controlGeneration, snapshot.generation);
+		state.controlRevision = Math.max(state.controlRevision, snapshot.revision);
+		state.lastError = Object.values(snapshot.fields)
+			.find((field) => field?.lastError)?.lastError ?? null;
+		render();
+		return false;
+	}
 	if (isSpectraEventEnvelope(rawMessage) && rawMessage.type === 'spectra.audio.session.changed') {
 		const snapshot = rawMessage.payload;
-		if (snapshot.tabId === tabId) {
-			if (state.isDragging) {
-				const { volume: _volume, muted: _muted, ...otherConfig } = snapshot.actualConfig;
-				state.config = { ...state.config, ...otherConfig };
-			} else {
-				state.config = snapshot.actualConfig;
-			}
+		if (snapshot.tabId === tabId
+			&& (snapshot.generation > state.audioGeneration
+				|| snapshot.generation === state.audioGeneration
+					&& snapshot.configRevision >= state.audioConfigRevision)) {
+			// ControlSnapshot is the sole per-field actual authority. Session events
+			// contribute processor lifecycle only and cannot overwrite a newer
+			// page-native volume/speed revision.
 			state.actualMode = snapshot.actualMode;
 			state.desiredMode = snapshot.desiredMode;
 			state.phase = snapshot.phase;
-			state.generation = snapshot.generation;
+			state.audioGeneration = snapshot.generation;
+			state.audioConfigRevision = snapshot.configRevision;
 			state.lastError = snapshot.lastError;
 			state.isCaptureActive = snapshot.actualMode === 'capture';
 			render();

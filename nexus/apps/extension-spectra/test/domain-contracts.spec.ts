@@ -3,9 +3,9 @@ import {
 	findBestHostnameMatch,
 	hostnameMatchesRule,
 	isSpectraRequestEnvelope,
+	matchSiteNativeAdapter,
 	normalizeHostname,
 } from '@nexus/contracts';
-import { isYouTubeHostname } from '../src/content/logic/site-bridge/youtube-bridge';
 
 describe('canonical domain contracts', () => {
 	test('normalizes URLs, trailing dots, case, and IDNA', () => {
@@ -26,11 +26,12 @@ describe('canonical domain contracts', () => {
 	});
 
 	test('does not activate site adapters on substring lookalikes', () => {
-		expect(isYouTubeHostname('youtube.com')).toBe(true);
-		expect(isYouTubeHostname('music.youtube.com.')).toBe(true);
-		expect(isYouTubeHostname('youtu.be')).toBe(true);
-		expect(isYouTubeHostname('evil-youtube.com')).toBe(false);
-		expect(isYouTubeHostname('youtube.com.evil.example')).toBe(false);
+		expect(matchSiteNativeAdapter('youtube.com', 'speed')).toBe('youtube');
+		expect(matchSiteNativeAdapter('music.youtube.com.', 'volumeBase')).toBe('youtube');
+		expect(matchSiteNativeAdapter('youtu.be', 'speed')).toBeNull();
+		expect(matchSiteNativeAdapter('evil-youtube.com', 'speed')).toBeNull();
+		expect(matchSiteNativeAdapter('youtube.com.evil.example', 'speed')).toBeNull();
+		expect(matchSiteNativeAdapter('youtube.com', 'pip')).toBeNull();
 	});
 });
 

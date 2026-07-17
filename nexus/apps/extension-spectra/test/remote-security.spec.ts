@@ -103,6 +103,47 @@ describe('authenticated remote host', () => {
 		expect(connection.sent.some((message) => message.type === 'spectra.remote.state')).toBe(false);
 	});
 
+	test('caches initial actual state privately and sends it in the authenticated handshake', async () => {
+		const harness = createHarness();
+		const sessionPromise = harness.controller.createSession(19);
+		harness.peer.emit('open', harness.peer.id);
+		const session = await sessionPromise;
+		const initialState = {
+			generation: 4,
+			volume: 110,
+			volumeBase: 100,
+			boost: 1.1,
+			muted: false,
+			playing: true,
+			speed: 1.25,
+			tabTitle: 'Initial actual state',
+			tabDomain: 'media.example',
+		};
+		expect(harness.controller.sendState(19, session.sessionId, initialState)).toBe(false);
+
+		const connection = new FakeConnection();
+		harness.peer.emit('connection', connection);
+		connection.emit('open');
+		expect(connection.sent.some((message) => message.type === 'spectra.remote.state')).toBe(false);
+		const challenge = connection.sent.find((message) => message.type === 'spectra.remote.challenge');
+		if (!challenge || typeof challenge.nonce !== 'string') throw new Error('Remote challenge was not sent');
+		const proof = await createRemoteProof(session.secret, session.sessionId, challenge.nonce);
+		connection.emit('data', {
+			type: 'spectra.remote.authenticate',
+			protocolVersion: 2,
+			sessionId: session.sessionId,
+			proof,
+		});
+		await tick();
+
+		expect(connection.sent).toContainEqual({
+			type: 'spectra.remote.state',
+			protocolVersion: 2,
+			sessionId: session.sessionId,
+			...initialState,
+		});
+	});
+
 	test('authenticates, binds commands to generation, and drops replayed commands', async () => {
 		const harness = createHarness();
 		const sessionPromise = harness.controller.createSession(23);

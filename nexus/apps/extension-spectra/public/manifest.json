@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "minimum_chrome_version": "120",
+  "minimum_chrome_version": "135",
   "name": "__MSG_extName__",
   "version": "0.0.0",
   "description": "__MSG_extDescription__",
@@ -10,6 +10,7 @@
     "alarms",
     "webNavigation",
     "storage",
+	"downloads",
     "tabCapture",
     "offscreen",
     "userScripts",
@@ -37,17 +38,7 @@
         "<all_urls>"
       ],
       "js": [
-        "injector.js"
-      ],
-      "run_at": "document_start",
-      "world": "MAIN"
-    },
-    {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
-        "content.js"
+        "content-bootstrap.js"
       ],
       "run_at": "document_start",
       "world": "ISOLATED"

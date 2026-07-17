@@ -4,6 +4,7 @@
 import type { HotkeySettings, HotkeyBinding, SiteHotkeyConfig } from '@nexus/contracts';
 import {
 	DEFAULT_HOTKEY_SETTINGS,
+	HOTKEY_ACTION_DESCRIPTORS,
 	findBestHostnameMatch,
 	isSpectraEventEnvelope,
 	normalizeHostname,
@@ -19,16 +20,37 @@ const log = createLogger('Hotkeys');
 
 let settings: HotkeySettings = { ...DEFAULT_HOTKEY_SETTINGS };
 let cachedSite: SiteHotkeyConfig | null | undefined;
+let cachedBindings: Map<string, HotkeyBinding> | undefined;
 let lastHostname = '';
+const lastExecution = new Map<string, number>();
+const coalesced = new Map<string, ReturnType<typeof setTimeout>>();
+let keydownDisposer: (() => void) | null = null;
+
+function synchronizeKeydownListener(): void {
+	const shouldListen = getSiteConfig() !== null;
+	if (shouldListen && !keydownDisposer) {
+		keydownDisposer = createEventListener(document, 'keydown', handleKeydown as EventListener, true);
+	} else if (!shouldListen && keydownDisposer) {
+		keydownDisposer();
+		keydownDisposer = null;
+	}
+}
 
 export async function initHotkeyListener(): Promise<() => void> {
 	await loadSettings();
 	const cleanup = createCleanupManager();
 
-	cleanup.add(createEventListener(document, 'keydown', handleKeydown as EventListener, true));
+	synchronizeKeydownListener();
 
 	chrome.runtime.onMessage.addListener(handleSettingsEvent);
 	cleanup.add(() => chrome.runtime.onMessage.removeListener(handleSettingsEvent));
+	cleanup.add(() => {
+		keydownDisposer?.();
+		keydownDisposer = null;
+		for (const timer of coalesced.values()) clearTimeout(timer);
+		coalesced.clear();
+		lastExecution.clear();
+	});
 
 	log.info('Hotkey listener initialized');
 	return cleanup.dispose;
@@ -38,6 +60,8 @@ function handleSettingsEvent(message: unknown): false {
 	if (isSpectraEventEnvelope(message) && message.type === 'spectra.hotkeys.changed') {
 		settings = message.payload;
 		cachedSite = undefined;
+		cachedBindings = undefined;
+		synchronizeKeydownListener();
 		log.debug('Settings updated');
 	}
 	return false;
@@ -62,7 +86,30 @@ function getSiteConfig(): SiteHotkeyConfig | null {
 	const match = findBestHostnameMatch(hostname, Object.entries(settings.sites), ([domain]) => domain);
 	const site = match?.[1];
 	cachedSite = site?.enabled ? site : null;
+	cachedBindings = undefined;
 	return cachedSite;
+}
+
+function bindingKey(code: string, ctrl: boolean, alt: boolean, shift: boolean, meta: boolean): string {
+	return `${code}:${ctrl ? 1 : 0}${alt ? 1 : 0}${shift ? 1 : 0}${meta ? 1 : 0}`;
+}
+
+function getBindingMap(site: SiteHotkeyConfig): Map<string, HotkeyBinding> {
+	if (cachedBindings) return cachedBindings;
+	const bindings = new Map<string, HotkeyBinding>();
+	for (const binding of site.bindings) {
+		if (!binding.enabled || binding.disabledReason) continue;
+		const { code, modifiers } = binding.key;
+		bindings.set(bindingKey(
+			code,
+			modifiers.ctrl,
+			modifiers.alt,
+			modifiers.shift,
+			modifiers.meta,
+		), binding);
+	}
+	cachedBindings = bindings;
+	return bindings;
 }
 
 const IGNORE_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
@@ -77,34 +124,45 @@ function handleKeydown(e: KeyboardEvent): void {
 	if (!isTrustedHotkeyEvent(e)) return;
 	const site = getSiteConfig();
 	if (!site) return;
-	if (isInputElement(e.target)) return;
+	if (e.composedPath().some((target) => isInputElement(target))) return;
 
-	const code = e.code;
-	const ctrl = e.ctrlKey, alt = e.altKey, shift = e.shiftKey, meta = e.metaKey;
-
-	for (const b of site.bindings) {
-		if (!b.enabled || b.disabledReason) continue;
-		const k = b.key;
-		if (k.code === code &&
-			k.modifiers.ctrl === ctrl &&
-			k.modifiers.alt === alt &&
-			k.modifiers.shift === shift &&
-			k.modifiers.meta === meta) {
-
-			e.preventDefault();
-			e.stopPropagation();
-			executeWithOSD(b);
-			return;
-		}
+	const binding = getBindingMap(site).get(bindingKey(
+		e.code,
+		e.ctrlKey,
+		e.altKey,
+		e.shiftKey,
+		e.metaKey,
+	));
+	if (!binding) return;
+	const descriptor = HOTKEY_ACTION_DESCRIPTORS[binding.action];
+	if (e.repeat && descriptor.repeatPolicy !== 'coalesce-20hz') return;
+	e.preventDefault();
+	e.stopPropagation();
+	if (descriptor.repeatPolicy !== 'coalesce-20hz' || !e.repeat) {
+		lastExecution.set(binding.id, performance.now());
+		void executeWithOSD(binding);
+		return;
 	}
+	if (coalesced.has(binding.id)) return;
+	const wait = Math.max(0, 50 - (performance.now() - (lastExecution.get(binding.id) ?? 0)));
+	coalesced.set(binding.id, setTimeout(() => {
+		coalesced.delete(binding.id);
+		lastExecution.set(binding.id, performance.now());
+		void executeWithOSD(binding);
+	}, wait));
 }
 
-function executeWithOSD(b: HotkeyBinding): void {
+async function executeWithOSD(b: HotkeyBinding): Promise<void> {
 	const action = b.action;
-	if (action !== 'none' && action !== 'open_popup' && action !== 'open_options' && action !== 'open_url' && action !== 'run_js') {
-		showToast(formatLabel(action, b.params));
+	try {
+		await executeHotkeyAction(action, b.params);
+		if (HOTKEY_ACTION_DESCRIPTORS[action].feedbackOwner === 'listener-label') {
+			showToast(formatLabel(action, b.params));
+		}
+	} catch (error) {
+		log.warn(`Hotkey ${action} failed`, error);
+		showToast(error instanceof Error ? error.message : String(error));
 	}
-	executeHotkeyAction(action, b.params);
 }
 
 function formatLabel(action: string, p?: { step?: number }): string {
@@ -122,5 +180,3 @@ function formatLabel(action: string, p?: { step?: number }): string {
 		default: return action.replace(/_/g, ' ');
 	}
 }
-
-export { setCaptureModeToggler, setConfigGetter, setConfigUpdater } from './hotkey-actions';

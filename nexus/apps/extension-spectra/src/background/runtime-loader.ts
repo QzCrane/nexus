@@ -1,0 +1,569 @@
+// goal: single-flight, document-scoped loader for the optional heavy content runtime
+
+import {
+	SPECTRA_CONTENT_RUNTIME_REVISION,
+	SPECTRA_PROTOCOL_VERSION,
+	HOTKEY_ACTION_DESCRIPTORS,
+	findBestHostnameMatch,
+	isDefaultAudioConfig,
+	normalizeHostname,
+	resolveAudioVolume,
+	isSpectraRequestEnvelope,
+	rpcFailure,
+	rpcSuccess,
+	type ContentRuntimeLeaseReason,
+	type ContentRuntimeReadyResult,
+	type ContentRuntimeSourceOwnership,
+	type MediaTarget,
+	type HotkeySettings,
+} from '@nexus/contracts';
+import { sendSpectraTabRequest } from '../shared/spectra-client';
+import { swLog } from '../shared/logger';
+import { settingsRepository } from './settings-repository';
+
+const READY_TIMEOUT_MS = 5_000;
+
+interface RuntimeWaiter {
+	resolve(result: ContentRuntimeReadyResult): void;
+	reject(error: Error): void;
+	timeoutId: ReturnType<typeof setTimeout>;
+}
+
+const readyDocuments = new Map<string, ContentRuntimeReadyResult>();
+const loadingDocuments = new Map<string, Promise<ContentRuntimeReadyResult>>();
+const disposingDocuments = new Map<string, Promise<void>>();
+const waiters = new Map<string, RuntimeWaiter>();
+const leases = new Map<string, Set<string>>();
+const disposeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const hotkeyLeases = new Map<string, string>();
+let initialized = false;
+
+const RUNTIME_HANDOFF_GRACE_MS = 250;
+
+function runtimeKey(tabId: number, documentId: string): string {
+	return `${tabId}:${documentId}`;
+}
+
+function runtimeLeaseKey(reason: ContentRuntimeLeaseReason, capability: string): string {
+	return `${reason}:${capability}`;
+}
+
+function enabledSiteHotkeyCapability(
+	url: string | undefined,
+	settings: HotkeySettings,
+): string | null {
+	if (!url) return null;
+	let hostname: string | null = null;
+	try { hostname = normalizeHostname(new URL(url).hostname); } catch { return null; }
+	if (!hostname) return null;
+	const match = findBestHostnameMatch(
+		hostname,
+		Object.entries(settings.sites),
+		([domain]) => domain,
+	);
+	if (!match) return null;
+	const [domain, site] = match;
+	const enabled = site.enabled && site.bindings.some((binding) => (
+		binding.enabled
+		&& !binding.disabledReason
+		&& HOTKEY_ACTION_DESCRIPTORS[binding.action].availability === 'enabled'
+	));
+	return enabled ? `site:${domain}` : null;
+}
+
+export async function reconcileHotkeyRuntimeLease(
+	tabId: number,
+	documentId: string,
+	url: string | undefined,
+	settings?: HotkeySettings,
+): Promise<void> {
+	const key = runtimeKey(tabId, documentId);
+	const hotkeys = settings ?? (await settingsRepository.getSnapshot()).hotkeySettings;
+	const capability = enabledSiteHotkeyCapability(url, hotkeys);
+	const previous = hotkeyLeases.get(key);
+	if (previous === capability) return;
+	if (previous) {
+		hotkeyLeases.delete(key);
+		releaseContentRuntimeLease(tabId, documentId, 'hotkey', previous);
+	}
+	if (!capability) return;
+	await ensureContentRuntime(tabId, documentId, 'hotkey', capability);
+	hotkeyLeases.set(key, capability);
+}
+
+export async function reconcileAllHotkeyRuntimeLeases(settings: HotkeySettings): Promise<void> {
+	const tabs = await chrome.tabs.query({});
+	await Promise.allSettled(tabs.map(async (tab) => {
+		if (!tab.id || !tab.url) return;
+		const documentId = await currentTopDocumentId(tab.id);
+		await reconcileHotkeyRuntimeLease(tab.id, documentId, tab.url, settings);
+	}));
+}
+
+function sourceLeaseCapability(kind: 'marker' | 'ab', target: MediaTarget): string {
+	return `owner:${kind}:${target.mediaId.slice(0, 64)}:${target.sourceRevision}`;
+}
+
+function acquireRuntimeLease(
+	key: string,
+	reason: ContentRuntimeLeaseReason,
+	capability: string,
+): void {
+	const timer = disposeTimers.get(key);
+	if (timer) clearTimeout(timer);
+	disposeTimers.delete(key);
+	const active = leases.get(key) ?? new Set<string>();
+	active.add(runtimeLeaseKey(reason, capability));
+	leases.set(key, active);
+}
+
+export function retainSourceRuntimeLease(
+	tabId: number,
+	target: MediaTarget,
+	kind: 'marker' | 'ab',
+): void {
+	acquireRuntimeLease(
+		runtimeKey(tabId, target.documentId),
+		'control',
+		sourceLeaseCapability(kind, target),
+	);
+}
+
+export function releaseSourceRuntimeLease(
+	tabId: number,
+	target: MediaTarget,
+	kind: 'marker' | 'ab',
+): void {
+	releaseContentRuntimeLease(
+		tabId,
+		target.documentId,
+		'control',
+		sourceLeaseCapability(kind, target),
+	);
+}
+
+function recoverSourceRuntimeLeases(
+	tabId: number,
+	documentId: string,
+	ownedSources: readonly ContentRuntimeSourceOwnership[],
+): void {
+	for (const owned of ownedSources) {
+		if (owned.target.documentId !== documentId) continue;
+		if (owned.markerCount > 0) retainSourceRuntimeLease(tabId, owned.target, 'marker');
+		if (owned.abActive) retainSourceRuntimeLease(tabId, owned.target, 'ab');
+	}
+}
+
+async function disposeDocumentRuntime(
+	tabId: number,
+	documentId: string,
+	key: string,
+): Promise<void> {
+	if ((leases.get(key)?.size ?? 0) > 0) return;
+	const ready = readyDocuments.get(key);
+	if (!ready) return;
+	const response = await sendSpectraTabRequest(
+		tabId,
+		'spectra.content.runtime.release',
+		{ runtimeRevision: ready.runtimeRevision },
+		{ documentId },
+	).catch(() => null);
+	if (response?.ok) readyDocuments.delete(key);
+}
+
+function beginDocumentRuntimeDisposal(
+	tabId: number,
+	documentId: string,
+	key: string,
+): Promise<void> {
+	const existing = disposingDocuments.get(key);
+	if (existing) return existing;
+	const operation = disposeDocumentRuntime(tabId, documentId, key)
+		.finally(() => {
+			if (disposingDocuments.get(key) === operation) disposingDocuments.delete(key);
+		});
+	disposingDocuments.set(key, operation);
+	return operation;
+}
+
+export function releaseContentRuntimeLease(
+	tabId: number,
+	documentId: string,
+	reason: ContentRuntimeLeaseReason,
+	capability: string,
+): void {
+	const key = runtimeKey(tabId, documentId);
+	const active = leases.get(key);
+	if (!active?.delete(runtimeLeaseKey(reason, capability))) return;
+	if (active && active.size > 0) return;
+	leases.delete(key);
+	const previous = disposeTimers.get(key);
+	if (previous) clearTimeout(previous);
+	disposeTimers.set(key, setTimeout(() => {
+		disposeTimers.delete(key);
+		void beginDocumentRuntimeDisposal(tabId, documentId, key)
+			.catch((error) => swLog.warn(`[Runtime] release failed: ${String(error)}`));
+	}, RUNTIME_HANDOFF_GRACE_MS));
+}
+
+function senderIdentity(sender: chrome.runtime.MessageSender): { tabId: number; documentId: string } | null {
+	const tabId = sender.tab?.id;
+	if (!tabId || !sender.documentId) return null;
+	return { tabId, documentId: sender.documentId };
+}
+
+async function currentTopDocumentId(tabId: number): Promise<string> {
+	const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
+	if (!frame?.documentId) throw new Error('The tab has no current top-level document');
+	return frame.documentId;
+}
+
+async function resolveDocumentId(tabId: number, requested?: string): Promise<string> {
+	const current = await currentTopDocumentId(tabId);
+	if (requested && requested !== current) throw new Error('The requested document is stale');
+	return current;
+}
+
+async function probeRuntime(tabId: number, documentId: string): Promise<ContentRuntimeReadyResult | null> {
+	const response = await sendSpectraTabRequest(
+		tabId,
+		'spectra.content.runtime.status',
+		{},
+		{ documentId },
+	).catch(() => null);
+	if (!response?.ok
+		|| !response.data.ready
+		|| response.data.runtimeRevision !== SPECTRA_CONTENT_RUNTIME_REVISION) return null;
+	recoverSourceRuntimeLeases(tabId, documentId, response.data.ownedSources);
+	return {
+		documentId,
+		runtimeRevision: response.data.runtimeRevision,
+		ready: true,
+	};
+}
+
+function createReadyWaiter(key: string): Promise<ContentRuntimeReadyResult> {
+	return new Promise((resolve, reject) => {
+		const timeoutId = setTimeout(() => {
+			waiters.delete(key);
+			reject(new Error('Content runtime READY handshake timed out'));
+		}, READY_TIMEOUT_MS);
+		waiters.set(key, { resolve, reject, timeoutId });
+	});
+}
+
+function commitReady(tabId: number, documentId: string, runtimeRevision: string): ContentRuntimeReadyResult {
+	const key = runtimeKey(tabId, documentId);
+	const result: ContentRuntimeReadyResult = { documentId, runtimeRevision, ready: true };
+	readyDocuments.set(key, result);
+	const waiter = waiters.get(key);
+	if (waiter) {
+		clearTimeout(waiter.timeoutId);
+		waiters.delete(key);
+		waiter.resolve(result);
+	}
+	return result;
+}
+
+function forgetDocument(tabId: number, documentId?: string): void {
+	const prefix = `${tabId}:`;
+	for (const key of [...readyDocuments.keys()]) {
+		if (key.startsWith(prefix) && (!documentId || key === runtimeKey(tabId, documentId))) {
+			readyDocuments.delete(key);
+		}
+	}
+	for (const [key, waiter] of [...waiters.entries()]) {
+		if (!key.startsWith(prefix) || documentId && key !== runtimeKey(tabId, documentId)) continue;
+		clearTimeout(waiter.timeoutId);
+		waiters.delete(key);
+		waiter.reject(new Error('Content runtime document was released'));
+	}
+	for (const key of [...loadingDocuments.keys()]) {
+		if (key.startsWith(prefix) && (!documentId || key === runtimeKey(tabId, documentId))) {
+			loadingDocuments.delete(key);
+		}
+	}
+	for (const key of [...disposingDocuments.keys()]) {
+		if (key.startsWith(prefix) && (!documentId || key === runtimeKey(tabId, documentId))) {
+			disposingDocuments.delete(key);
+		}
+	}
+	for (const key of [...leases.keys()]) {
+		if (key.startsWith(prefix) && (!documentId || key === runtimeKey(tabId, documentId))) {
+			leases.delete(key);
+		}
+	}
+	for (const [key, timer] of [...disposeTimers.entries()]) {
+		if (!key.startsWith(prefix) || documentId && key !== runtimeKey(tabId, documentId)) continue;
+		clearTimeout(timer);
+		disposeTimers.delete(key);
+	}
+	for (const key of [...hotkeyLeases.keys()]) {
+		if (key.startsWith(prefix) && (!documentId || key === runtimeKey(tabId, documentId))) {
+			hotkeyLeases.delete(key);
+		}
+	}
+}
+
+async function loadRuntime(tabId: number, documentId: string): Promise<ContentRuntimeReadyResult> {
+	const key = runtimeKey(tabId, documentId);
+	const waitForReady = createReadyWaiter(key);
+	try {
+		await chrome.scripting.executeScript({
+			target: { tabId, documentIds: [documentId] },
+			files: ['content-runtime.js'],
+			world: 'ISOLATED',
+		});
+		return await waitForReady;
+	} catch (error) {
+		const waiter = waiters.get(key);
+		if (waiter) {
+			clearTimeout(waiter.timeoutId);
+			waiters.delete(key);
+		}
+		throw error;
+	}
+}
+
+async function ensureReadyDocument(
+	tabId: number,
+	documentId: string,
+): Promise<ContentRuntimeReadyResult> {
+	const key = runtimeKey(tabId, documentId);
+	const pending = loadingDocuments.get(key);
+	if (pending) return pending;
+	const loading = (async () => {
+		const known = readyDocuments.get(key);
+		if (known?.runtimeRevision === SPECTRA_CONTENT_RUNTIME_REVISION) return known;
+
+		const probed = await probeRuntime(tabId, documentId);
+		if (probed) {
+			readyDocuments.set(key, probed);
+			return probed;
+		}
+		return loadRuntime(tabId, documentId);
+	})()
+		.finally(() => loadingDocuments.delete(key));
+	loadingDocuments.set(key, loading);
+	return loading;
+}
+
+export async function ensureContentRuntime(
+	tabId: number,
+	documentId: string | undefined,
+	reason: ContentRuntimeLeaseReason,
+	capability: string,
+): Promise<ContentRuntimeReadyResult> {
+	const currentDocumentId = await resolveDocumentId(tabId, documentId);
+	const key = runtimeKey(tabId, currentDocumentId);
+	acquireRuntimeLease(key, reason, capability);
+	try {
+		// A lease acquired while the last consumer is awaiting its RELEASE ACK
+		// must reload after that handshake. Returning the old READY entry would
+		// otherwise hand a new caller a runtime that is being torn down.
+		await disposingDocuments.get(key);
+		return await ensureReadyDocument(tabId, currentDocumentId);
+	} catch (error) {
+		releaseContentRuntimeLease(tabId, currentDocumentId, reason, capability);
+		throw error;
+	}
+}
+
+async function restoreIfConfigured(tabId: number, documentId: string, url: string | undefined): Promise<void> {
+	if (!url) return;
+	let hostname = '';
+	try { hostname = new URL(url).hostname; } catch { return; }
+	const config = await settingsRepository.resolveAudioConfig(hostname);
+	if (isDefaultAudioConfig(config)) return;
+	const capability = `settings:${hostname}`;
+	await ensureContentRuntime(tabId, documentId, 'restore', capability);
+	try {
+		const { submitControlRequest } = await import('./control-coordinator');
+		const volume = resolveAudioVolume(config);
+		if (config.enabled) {
+			await submitControlRequest({
+				tabId,
+				source: 'restore',
+				requestedCoverage: 'active-target',
+				target: null,
+				patch: {
+					volumeBase: volume.volumeBase,
+					mediaMuted: config.muted,
+					speed: config.speed,
+					preservePitch: config.preservePitch,
+				},
+			});
+		}
+		await submitControlRequest({
+			tabId,
+			source: 'restore',
+			requestedCoverage: 'full',
+			target: null,
+			patch: {
+				audioEnabled: config.enabled,
+				boost: config.enabled ? volume.boost : 1,
+				eqValues: config.enabled ? [...config.eqValues] : [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+				bass: config.enabled && config.bass,
+				compressor: config.enabled && config.compressor,
+				mono: config.enabled && config.mono,
+				pan: config.enabled ? config.pan : 0,
+				delay: config.enabled ? config.delay : 0,
+			},
+		});
+	} finally {
+		releaseContentRuntimeLease(tabId, documentId, 'restore', capability);
+	}
+}
+
+export function initializeContentRuntimeLoader(): void {
+	if (initialized) return;
+	initialized = true;
+
+	chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+		if (!message || typeof message !== 'object') return false;
+		const candidate = message as { protocolVersion?: unknown; type?: unknown };
+		const isRuntimeMessage = candidate.type === 'spectra.content.bootstrap.hello'
+			|| candidate.type === 'spectra.content.runtime.ensure'
+			|| candidate.type === 'spectra.content.runtime.ready'
+			|| candidate.type === 'spectra.content.runtime.release';
+		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION || !isRuntimeMessage) return false;
+		if (sender.id && sender.id !== chrome.runtime.id) {
+			sendResponse(rpcFailure('forbidden', 'Content runtime RPC is extension-internal only'));
+			return false;
+		}
+		if (!isSpectraRequestEnvelope(message)
+			|| (message.type !== 'spectra.content.bootstrap.hello'
+				&& message.type !== 'spectra.content.runtime.ensure'
+				&& message.type !== 'spectra.content.runtime.ready'
+				&& message.type !== 'spectra.content.runtime.release')) {
+			sendResponse(rpcFailure('invalid_request', 'Malformed content runtime request'));
+			return false;
+		}
+
+		if (message.type === 'spectra.content.bootstrap.hello') {
+			const identity = senderIdentity(sender);
+			if (!identity) {
+				sendResponse(rpcFailure('forbidden', 'Bootstrap HELLO requires a document identity'));
+				return false;
+			}
+			const known = readyDocuments.get(runtimeKey(identity.tabId, identity.documentId));
+			sendResponse(rpcSuccess({
+				accepted: true as const,
+				runtimeRevision: known?.runtimeRevision ?? null,
+			}));
+			void Promise.allSettled([
+				restoreIfConfigured(identity.tabId, identity.documentId, sender.url),
+				reconcileHotkeyRuntimeLease(identity.tabId, identity.documentId, sender.url),
+			]).then((results) => {
+				for (const result of results) {
+					if (result.status === 'rejected') swLog.warn(`[Runtime] bootstrap projection failed: ${String(result.reason)}`);
+				}
+			});
+			return false;
+		}
+
+		if (message.type === 'spectra.content.runtime.ensure') {
+			void ensureContentRuntime(
+				message.payload.tabId,
+				message.payload.documentId,
+				message.payload.reason,
+				message.payload.capability ?? message.requestId,
+			).then(
+				(result) => sendResponse(rpcSuccess(result)),
+				(error) => sendResponse(rpcFailure(
+					'content_runtime_load_failed',
+					error instanceof Error ? error.message : String(error),
+					true,
+				)),
+			);
+			return true;
+		}
+
+		if (message.type === 'spectra.content.runtime.release'
+			&& message.payload.tabId !== undefined
+			&& message.payload.documentId !== undefined
+			&& message.payload.reason !== undefined
+			&& message.payload.capability !== undefined) {
+			if (sender.tab) {
+				sendResponse(rpcFailure('forbidden', 'A document cannot release another runtime consumer'));
+				return false;
+			}
+			releaseContentRuntimeLease(
+				message.payload.tabId,
+				message.payload.documentId,
+				message.payload.reason,
+				message.payload.capability,
+			);
+			sendResponse(rpcSuccess({ accepted: true as const }));
+			return false;
+		}
+
+		const identity = senderIdentity(sender);
+		if (!identity) {
+			sendResponse(rpcFailure('forbidden', 'Runtime lifecycle requires a document identity'));
+			return false;
+		}
+		if (message.type === 'spectra.content.runtime.ready') {
+			if (message.payload.runtimeRevision !== SPECTRA_CONTENT_RUNTIME_REVISION) {
+				sendResponse(rpcFailure('runtime_revision_mismatch', 'Unexpected content runtime revision'));
+				return false;
+			}
+			void currentTopDocumentId(identity.tabId).then(
+				(currentDocumentId) => {
+					if (currentDocumentId !== identity.documentId) {
+						sendResponse(rpcFailure('stale_document', 'Runtime READY belongs to a stale document'));
+						return;
+					}
+					commitReady(identity.tabId, identity.documentId, message.payload.runtimeRevision);
+					sendResponse(rpcSuccess({ accepted: true as const }));
+				},
+				(error) => sendResponse(rpcFailure(
+					'runtime_identity_unavailable',
+					error instanceof Error ? error.message : String(error),
+					true,
+				)),
+			);
+			return true;
+		}
+
+		forgetDocument(identity.tabId, identity.documentId);
+		sendResponse(rpcSuccess({ accepted: true as const }));
+		return false;
+	});
+
+	chrome.tabs.onRemoved.addListener((tabId) => forgetDocument(tabId));
+	chrome.webNavigation.onCommitted.addListener((details) => {
+		if (details.frameId === 0) forgetDocument(details.tabId);
+	});
+	const reconcileSameDocument = (details: {
+		frameId: number;
+		tabId: number;
+		documentId: string;
+		url: string;
+	}): void => {
+		if (details.frameId !== 0) return;
+		void Promise.allSettled([
+			reconcileHotkeyRuntimeLease(details.tabId, details.documentId, details.url),
+		]);
+	};
+	chrome.webNavigation.onHistoryStateUpdated.addListener(reconcileSameDocument);
+	chrome.webNavigation.onReferenceFragmentUpdated.addListener(reconcileSameDocument);
+}
+
+// Test-only reset for module-scoped MV3 state. It is tree-shaken from the
+// production entry because background imports only the initializer/ensure API.
+export function resetContentRuntimeLoaderForTests(): void {
+	for (const waiter of waiters.values()) {
+		clearTimeout(waiter.timeoutId);
+		waiter.reject(new Error('Content runtime loader test reset'));
+	}
+	readyDocuments.clear();
+	loadingDocuments.clear();
+	disposingDocuments.clear();
+	waiters.clear();
+	leases.clear();
+	for (const timer of disposeTimers.values()) clearTimeout(timer);
+	disposeTimers.clear();
+	hotkeyLeases.clear();
+	initialized = false;
+}

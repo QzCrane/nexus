@@ -39,4 +39,5 @@ export interface ContentDeps extends PolicyExecutorDeps {
 	state: PolicyExecutorState;
 	policyExecutor?: import('../logic/policy-executor').PolicyExecutor;
 	getVisualizerData: () => Uint8Array | null;
+	setVisualizerSubscribed: (subscribed: boolean) => boolean;
 }

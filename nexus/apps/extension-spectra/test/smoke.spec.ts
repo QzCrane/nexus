@@ -1,13 +1,17 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import puppeteer, {
 	type Browser,
 	type CDPSession,
+	type EvaluateFunc,
 	type Page,
 	type Target,
 	type WebWorker,
 } from 'puppeteer';
+import { SPECTRA_CONTENT_RUNTIME_REVISION } from '@nexus/contracts';
 
 const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
 const FIXTURE_PATH = join(import.meta.dir, 'fixtures', 'smoke-test.html');
@@ -25,8 +29,12 @@ let serviceWorker: WebWorker;
 let extensionId = '';
 let fixtureUrl = '';
 let server: ReturnType<typeof Bun.serve>;
+let browserProfileDir = '';
+let runtimeLeaseClient: Page | null = null;
+let serviceWorkerRefreshPromise: Promise<void> | null = null;
 
 const fixtureErrors: string[] = [];
+const smokeRuntimeLeases = new Map<string, SmokeRuntimeLease>();
 
 interface ContentStatus {
 	config?: {
@@ -40,9 +48,28 @@ interface ContentStatus {
 	generation?: number;
 }
 
+interface ContentBootstrapStatus {
+	bootstrapRevision: string;
+	runtimeRevision: string | null;
+	ready: boolean;
+	ownedSources: Array<{
+		mediaId: string;
+		sourceRevision: number;
+	}>;
+}
+
+interface SmokeRuntimeLease {
+	tabId: number;
+	documentId: string;
+	runtimeRevision: string;
+	capability: string;
+}
+
 interface AudioConfig {
 	enabled: boolean;
 	volume: number;
+	volumeBase: number;
+	boost: number;
 	muted: boolean;
 	compressor: boolean;
 	mono: boolean;
@@ -51,6 +78,7 @@ interface AudioConfig {
 	pan: number;
 	delay: number;
 	speed: number;
+	preservePitch: boolean;
 }
 
 interface CaptureState {
@@ -104,6 +132,8 @@ interface WebAudioProbe {
 const DEFAULT_AUDIO_CONFIG: AudioConfig = {
 	enabled: true,
 	volume: 100,
+	volumeBase: 100,
+	boost: 1,
 	muted: false,
 	compressor: false,
 	mono: false,
@@ -112,7 +142,10 @@ const DEFAULT_AUDIO_CONFIG: AudioConfig = {
 	pan: 0,
 	delay: 0,
 	speed: 1,
+	preservePitch: true,
 };
+
+const SILENT_WAV_DATA_URL = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
 
 function collectPageErrors(page: Page, errors: string[]): void {
 	page.on('pageerror', (error) => errors.push(error.message));
@@ -235,7 +268,7 @@ async function inspectExtensionAccessibility(page: Page): Promise<ExtensionAcces
 }
 
 async function readContentStatus(url = fixturePage.url()): Promise<ContentStatus> {
-	return serviceWorker.evaluate(async (targetUrl) => {
+	return evaluateServiceWorker(async (targetUrl) => {
 		const tabs = await chrome.tabs.query({});
 		const tab = tabs.find((candidate) => candidate.url === targetUrl);
 		if (tab?.id === undefined) throw new Error(`Unable to find fixture tab: ${targetUrl}`);
@@ -249,6 +282,150 @@ async function readContentStatus(url = fixturePage.url()): Promise<ContentStatus
 		if (!response?.ok) throw new Error(response?.error?.message ?? 'Unable to read content runtime');
 		return { ...response.data, mode: response.data.actualMode };
 	}, url) as Promise<ContentStatus>;
+}
+
+async function readContentBootstrapStatus(url = fixturePage.url()): Promise<ContentBootstrapStatus> {
+	return evaluateServiceWorker(async (targetUrl) => {
+		const tab = (await chrome.tabs.query({})).find((candidate) => candidate.url === targetUrl);
+		if (tab?.id === undefined) throw new Error(`Unable to find bootstrap tab: ${targetUrl}`);
+		const response = await chrome.tabs.sendMessage(tab.id, {
+			protocolVersion: 2,
+			requestId: crypto.randomUUID(),
+			tabId: tab.id,
+			type: 'spectra.content.runtime.status',
+			payload: {},
+		});
+		if (!response?.ok) throw new Error(response?.error?.message ?? 'Unable to read content bootstrap');
+		return response.data;
+	}, url) as Promise<ContentBootstrapStatus>;
+}
+
+async function waitForContentBootstrapStatus(
+	url = fixturePage.url(),
+	timeoutMs = 15_000,
+): Promise<ContentBootstrapStatus> {
+	return eventually(
+		() => readContentBootstrapStatus(url),
+		(status) => status.bootstrapRevision.length > 0,
+		`content bootstrap for ${url}`,
+		timeoutMs,
+	);
+}
+
+async function getRuntimeLeaseClient(): Promise<Page> {
+	if (runtimeLeaseClient && !runtimeLeaseClient.isClosed()) return runtimeLeaseClient;
+	runtimeLeaseClient = await browser.newPage();
+	await runtimeLeaseClient.goto(`chrome-extension://${extensionId}/options.html`, {
+		waitUntil: 'domcontentloaded',
+	});
+	return runtimeLeaseClient;
+}
+
+function isDetachedServiceWorkerError(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	return message.includes('detached frame or worker')
+		|| message.includes('Execution context was destroyed');
+}
+
+async function refreshSuspendedServiceWorker(): Promise<void> {
+	if (!serviceWorkerRefreshPromise) {
+		serviceWorkerRefreshPromise = (async () => {
+			// Start the browser-owned MV3 lifecycle directly. A product RPC is not a
+			// valid wake primitive because handler registration may itself be waiting
+			// for offscreen recovery. The fresh connection remains necessary because
+			// Puppeteer caches the destroyed WebWorker on its old target.
+			const client = await fixturePage.createCDPSession();
+			try {
+				await client.send('ServiceWorker.enable');
+				await client.send('ServiceWorker.startWorker', {
+					scopeURL: `chrome-extension://${extensionId}/`,
+				});
+				await refreshServiceWorkerHandle(undefined, 15_000);
+			} finally {
+				await client.send('ServiceWorker.disable').catch(() => undefined);
+				await client.detach().catch(() => undefined);
+			}
+		})().finally(() => {
+			serviceWorkerRefreshPromise = null;
+		});
+	}
+	await serviceWorkerRefreshPromise;
+}
+
+async function evaluateServiceWorker<
+	Params extends unknown[],
+	Func extends EvaluateFunc<Params> = EvaluateFunc<Params>,
+>(func: Func | string, ...args: Params): Promise<Awaited<ReturnType<Func>>> {
+	const hasCurrentIdentity = async (): Promise<boolean> => {
+		try {
+			const runtimeId = await serviceWorker.evaluate(() => (
+				typeof chrome === 'undefined' ? null : chrome.runtime?.id ?? null
+			));
+			return runtimeId === extensionId;
+		} catch {
+			return false;
+		}
+	};
+	if (!await hasCurrentIdentity()) await refreshSuspendedServiceWorker();
+	const evaluate = () => serviceWorker.evaluate<Params, Func>(func, ...args);
+	try {
+		return await evaluate();
+	} catch (error) {
+		if (!isDetachedServiceWorkerError(error)) throw error;
+		await refreshSuspendedServiceWorker();
+		return evaluate();
+	}
+}
+
+async function acquireSmokeRuntime(
+	url = fixturePage.url(),
+	capability = 'smoke-suite',
+): Promise<SmokeRuntimeLease> {
+	const tabId = await getTabId(url);
+	const client = await getRuntimeLeaseClient();
+	const response = await client.evaluate(async ({ targetTabId, leaseCapability }) => {
+		return chrome.runtime.sendMessage({
+			protocolVersion: 2,
+			requestId: crypto.randomUUID(),
+			type: 'spectra.content.runtime.ensure',
+			payload: {
+				tabId: targetTabId,
+				reason: 'observation',
+				capability: leaseCapability,
+			},
+		});
+	}, { targetTabId: tabId, leaseCapability: capability });
+	if (!response?.ok) throw new Error(response?.error?.message ?? 'Unable to acquire smoke runtime');
+	const lease: SmokeRuntimeLease = {
+		tabId,
+		documentId: response.data.documentId,
+		runtimeRevision: response.data.runtimeRevision,
+		capability,
+	};
+	smokeRuntimeLeases.set(`${tabId}:${lease.documentId}:${capability}`, lease);
+	return lease;
+}
+
+async function releaseSmokeRuntimes(): Promise<void> {
+	if (smokeRuntimeLeases.size === 0 || !runtimeLeaseClient || runtimeLeaseClient.isClosed()) return;
+	const client = runtimeLeaseClient;
+	for (const lease of smokeRuntimeLeases.values()) {
+		await client.evaluate(async (owned) => {
+			await chrome.runtime.sendMessage({
+				protocolVersion: 2,
+				requestId: crypto.randomUUID(),
+				type: 'spectra.content.runtime.release',
+				payload: {
+					runtimeRevision: owned.runtimeRevision,
+					tabId: owned.tabId,
+					documentId: owned.documentId,
+					reason: 'observation',
+					capability: owned.capability,
+				},
+			});
+		}, lease).catch(() => undefined);
+	}
+	smokeRuntimeLeases.clear();
 }
 
 async function waitForContentStatus(
@@ -269,8 +446,11 @@ async function waitForContentStatus(
 	throw new Error(`Timed out waiting for content status: ${JSON.stringify(lastStatus)}`);
 }
 
-async function getOffscreenContextCount(worker = serviceWorker): Promise<number> {
-	return worker.evaluate(async () => {
+async function getOffscreenContextCount(worker?: WebWorker): Promise<number> {
+	const evaluate = worker
+		? worker.evaluate.bind(worker)
+		: evaluateServiceWorker;
+	return evaluate(async () => {
 		const contexts = await chrome.runtime.getContexts({
 			contextTypes: ['OFFSCREEN_DOCUMENT' as chrome.runtime.ContextType],
 		});
@@ -301,16 +481,22 @@ async function eventually<T>(
 	);
 }
 
-async function getTabId(url: string, worker = serviceWorker): Promise<number> {
-	return worker.evaluate(async (targetUrl) => {
+async function getTabId(url: string, worker?: WebWorker): Promise<number> {
+	const evaluate = worker
+		? worker.evaluate.bind(worker)
+		: evaluateServiceWorker;
+	return evaluate(async (targetUrl: string) => {
 		const tab = (await chrome.tabs.query({})).find((candidate) => candidate.url === targetUrl);
 		if (tab?.id === undefined) throw new Error(`Unable to find tab: ${targetUrl}`);
 		return tab.id;
 	}, url);
 }
 
-async function readOffscreenSnapshot(worker = serviceWorker): Promise<OffscreenHostSnapshot> {
-	return worker.evaluate(async () => {
+async function readOffscreenSnapshot(worker?: WebWorker): Promise<OffscreenHostSnapshot> {
+	const evaluate = worker
+		? worker.evaluate.bind(worker)
+		: evaluateServiceWorker;
+	return evaluate(async () => {
 		const deadline = Date.now() + 5_000;
 		let response: unknown;
 		while (Date.now() < deadline) {
@@ -347,7 +533,7 @@ async function sendFromActionPopup<T>(message: Record<string, unknown>): Promise
 	try {
 		await withDiagnosticTimeout(
 			'open the real extension action popup',
-			() => serviceWorker.evaluate(async () => chrome.action.openPopup()),
+			() => evaluateServiceWorker(async () => chrome.action.openPopup()),
 			10_000,
 		);
 		const target = await withDiagnosticTimeout(
@@ -391,7 +577,7 @@ async function sendFromActionPopup<T>(message: Record<string, unknown>): Promise
 }
 
 async function installVisualizerBatchProbe(): Promise<void> {
-	await serviceWorker.evaluate(() => {
+	await evaluateServiceWorker(() => {
 		type Probe = { count: number; listener: (message: unknown) => void };
 		const scope = globalThis as typeof globalThis & { __spectraVisualizerProbe?: Probe };
 		if (scope.__spectraVisualizerProbe) {
@@ -412,7 +598,7 @@ async function installVisualizerBatchProbe(): Promise<void> {
 }
 
 async function readVisualizerBatchCount(): Promise<number> {
-	return serviceWorker.evaluate(() => {
+	return evaluateServiceWorker(() => {
 		return (globalThis as typeof globalThis & {
 			__spectraVisualizerProbe?: { count: number };
 		}).__spectraVisualizerProbe?.count ?? 0;
@@ -420,7 +606,7 @@ async function readVisualizerBatchCount(): Promise<number> {
 }
 
 async function removeVisualizerBatchProbe(): Promise<void> {
-	await serviceWorker.evaluate(() => {
+	await evaluateServiceWorker(() => {
 		type Probe = { count: number; listener: (message: unknown) => void };
 		const scope = globalThis as typeof globalThis & { __spectraVisualizerProbe?: Probe };
 		if (!scope.__spectraVisualizerProbe) return;
@@ -436,7 +622,7 @@ async function sendCaptureRequest(
 	generation: number,
 	config: AudioConfig = DEFAULT_AUDIO_CONFIG,
 ): Promise<CaptureResponse> {
-	return serviceWorker.evaluate(async (request) => {
+	return evaluateServiceWorker(async (request) => {
 		const [injection] = await chrome.scripting.executeScript({
 			target: { tabId: request.tabId },
 			world: 'ISOLATED',
@@ -461,7 +647,7 @@ async function sendCaptureConfig(
 	generation: number,
 	config: AudioConfig,
 ): Promise<CaptureResponse> {
-	return serviceWorker.evaluate(async (request) => {
+	return evaluateServiceWorker(async (request) => {
 		const [injection] = await chrome.scripting.executeScript({
 			target: { tabId: request.tabId },
 			world: 'ISOLATED',
@@ -480,25 +666,16 @@ async function sendCaptureConfig(
 	}, { tabId, generation, config }) as Promise<CaptureResponse>;
 }
 
-async function triggerHotkey(tabId: number, action: 'capture_toggle'): Promise<void> {
-	const response = await serviceWorker.evaluate(async (request) => {
-		return chrome.tabs.sendMessage(request.tabId, {
-			protocolVersion: 2,
-			requestId: crypto.randomUUID(),
-			tabId: request.tabId,
-			type: 'spectra.hotkey.trigger',
-			payload: { action: request.action },
-		});
-	}, { tabId, action });
-	if (!response?.ok) throw new Error(response?.error?.message ?? `Unable to trigger ${action}`);
-}
-
 async function configureRuntime(
 	url: string,
 	config: AudioConfig,
-	worker = serviceWorker,
+	worker?: WebWorker,
 ): Promise<ContentStatus> {
-	return worker.evaluate(async ({ targetUrl, nextConfig }) => {
+	await acquireSmokeRuntime(url);
+	const evaluate = worker
+		? worker.evaluate.bind(worker)
+		: evaluateServiceWorker;
+	return evaluate(async ({ targetUrl, nextConfig }: { targetUrl: string; nextConfig: AudioConfig }) => {
 		const tab = (await chrome.tabs.query({})).find((candidate) => candidate.url === targetUrl);
 		if (tab?.id === undefined) throw new Error(`Unable to find runtime tab: ${targetUrl}`);
 		const response = await chrome.tabs.sendMessage(tab.id, {
@@ -511,6 +688,24 @@ async function configureRuntime(
 		if (!response?.ok) throw new Error(response?.error?.message ?? 'Unable to configure runtime');
 		return { ...response.data, mode: response.data.actualMode };
 	}, { targetUrl: url, nextConfig: config }) as Promise<ContentStatus>;
+}
+
+async function selectSafeWebAudioFixture(): Promise<void> {
+	await fixturePage.evaluate((source) => {
+		const media = document.querySelector<HTMLMediaElement>('#v');
+		if (!media) throw new Error('WebAudio smoke fixture media is missing');
+		if (media.src === source || media.currentSrc === source) return;
+		media.src = source;
+		media.load();
+	}, SILENT_WAV_DATA_URL);
+	await fixturePage.waitForFunction(
+		(source) => {
+			const media = document.querySelector<HTMLMediaElement>('#v');
+			return media?.src === source || media?.currentSrc === source;
+		},
+		{ timeout: 5_000 },
+		SILENT_WAV_DATA_URL,
+	);
 }
 
 async function markRegistryDomain(client: Page, domain: string, restricted: boolean): Promise<void> {
@@ -551,8 +746,11 @@ async function evaluateOffscreen<T>(expression: string): Promise<T> {
 	}
 }
 
-async function installTabCaptureStreamIdStub(worker = serviceWorker): Promise<void> {
-	const installed = await worker.evaluate(() => {
+async function installTabCaptureStreamIdStub(worker?: WebWorker): Promise<void> {
+	const evaluate = worker
+		? worker.evaluate.bind(worker)
+		: evaluateServiceWorker;
+	const installed = await evaluate(() => {
 		const api = chrome.tabCapture as typeof chrome.tabCapture & {
 			__spectraSmokeOriginalGetMediaStreamId?: typeof chrome.tabCapture.getMediaStreamId;
 		};
@@ -570,7 +768,37 @@ async function installTabCaptureStreamIdStub(worker = serviceWorker): Promise<vo
 	if (!installed) throw new Error('Unable to install the test-only tabCapture stream-id stub');
 }
 
+async function ensureOffscreenHostForSyntheticHarness(): Promise<void> {
+	if (await getOffscreenContextCount() > 0) return;
+	const tabId = await getTabId(fixturePage.url());
+	const created = await sendFromActionPopup<{
+		ok: boolean;
+		data?: RemotePublicSession;
+		error?: { message?: string };
+	}>({
+		protocolVersion: 2,
+		tabId,
+		type: 'spectra.remote.session.create',
+		payload: { tabId },
+	});
+	if (!created.ok || !created.data) {
+		throw new Error(created.error?.message ?? 'Unable to create the offscreen smoke host');
+	}
+	await eventually(
+		getOffscreenContextCount,
+		(count) => count === 1,
+		'offscreen host for the synthetic capture harness',
+	);
+	await sendFromActionPopup({
+		protocolVersion: 2,
+		tabId,
+		type: 'spectra.remote.session.close',
+		payload: { tabId, sessionId: created.data.sessionId },
+	});
+}
+
 async function installSyntheticCaptureHarness(): Promise<void> {
+	await ensureOffscreenHostForSyntheticHarness();
 	const installed = await evaluateOffscreen<boolean>(`(() => {
 		const scope = globalThis;
 		if (scope.__spectraSmokeCaptureHarness) return true;
@@ -668,25 +896,30 @@ async function cleanupSyntheticCaptureHarness(): Promise<void> {
 }
 
 async function inspectWebAudio(tabId: number, saveMarkers = false): Promise<WebAudioProbe> {
-	return serviceWorker.evaluate(async ({ targetTabId, shouldSave }) => {
+	return evaluateServiceWorker(async ({ targetTabId, shouldSave }) => {
 		const [injection] = await chrome.scripting.executeScript({
 			target: { tabId: targetTabId },
 			world: 'ISOLATED',
 			func: (save) => {
 				const scope = window as Window & {
-					__SPECTRA_AUDIO_CONTROLLER_V2__?: { isReady(): boolean };
+					__SPECTRA_AUDIO_CONTROLLER_V2__?: {
+						isReady(): boolean;
+						runtime?: {
+							context?: { state?: string };
+							sources?: WeakMap<HTMLMediaElement, object>;
+						};
+					};
 					__SPECTRA_CONTENT_RUNTIME__?: { revision?: string; disposed?: boolean };
 					__SPECTRA_LISTENERS_READY__?: boolean;
 					__spectraSmokeController?: object;
 					__spectraSmokeSource?: object;
 					__spectraSmokeRuntime?: { disposed?: boolean };
 				};
-				const media = document.querySelector('video, audio') as (HTMLMediaElement & {
-					_vm?: { source?: { context?: { state?: string } } };
-				}) | null;
+				const media = document.querySelector<HTMLMediaElement>('video, audio');
 				const controller = scope.__SPECTRA_AUDIO_CONTROLLER_V2__;
 				const runtime = scope.__SPECTRA_CONTENT_RUNTIME__;
-				const source = media?._vm?.source;
+				const audioRuntime = controller?.runtime;
+				const source = media ? audioRuntime?.sources?.get(media) : undefined;
 				if (save) {
 					scope.__spectraSmokeController = controller;
 					scope.__spectraSmokeSource = source;
@@ -694,8 +927,8 @@ async function inspectWebAudio(tabId: number, saveMarkers = false): Promise<WebA
 				}
 				return {
 					controllerReady: controller?.isReady() === true,
-					contextState: source?.context?.state ?? null,
-					hasGraph: media?.dataset.vmAttached === 'true' && Boolean(source),
+					contextState: audioRuntime?.context?.state ?? null,
+					hasGraph: Boolean(source),
 					listenersReady: scope.__SPECTRA_LISTENERS_READY__ === true,
 					runtimeRevision: runtime?.revision ?? null,
 					sameController: scope.__spectraSmokeController
@@ -715,11 +948,11 @@ async function inspectWebAudio(tabId: number, saveMarkers = false): Promise<WebA
 }
 
 async function reinjectContent(tabId: number): Promise<void> {
-	await serviceWorker.evaluate(async (targetTabId) => {
+	await evaluateServiceWorker(async (targetTabId) => {
 		await chrome.scripting.executeScript({
 			target: { tabId: targetTabId },
 			world: 'ISOLATED',
-			files: ['content.js'],
+			files: ['content-runtime.js'],
 		});
 	}, tabId);
 }
@@ -873,7 +1106,7 @@ async function restartServiceWorker(): Promise<void> {
 	let previousMarker = '';
 	let client: CDPSession | null = null;
 	try {
-		previousMarker = await withDiagnosticTimeout(stage, () => serviceWorker.evaluate(() => {
+		previousMarker = await withDiagnosticTimeout(stage, () => evaluateServiceWorker(() => {
 			const marker = crypto.randomUUID();
 			(globalThis as typeof globalThis & { __spectraSmokeWorkerMarker?: string })
 				.__spectraSmokeWorkerMarker = marker;
@@ -913,8 +1146,15 @@ async function restartServiceWorker(): Promise<void> {
 		await withDiagnosticTimeout(stage, () => client!.send('ServiceWorker.startWorker', {
 			scopeURL: `chrome-extension://${extensionId}/`,
 		}));
-		stage = 'observe replacement worker';
-		await withDiagnosticTimeout(stage, () => refreshServiceWorkerHandle(previousMarker, 15_000), 17_000);
+		stage = 'reacquire replacement worker through the suspend-safe helper';
+		const replacementRuntimeId = await withDiagnosticTimeout(
+			stage,
+			() => evaluateServiceWorker(() => chrome.runtime.id),
+			17_000,
+		);
+		if (replacementRuntimeId !== extensionId) {
+			throw new Error(`Replacement worker belongs to unexpected extension ${replacementRuntimeId}`);
+		}
 	} catch (error) {
 		const detail = error instanceof Error ? error.message : String(error);
 		throw new Error(`Service-worker restart failed during ${stage}: ${detail}`, { cause: error });
@@ -1017,9 +1257,11 @@ beforeAll(async () => {
 		},
 	});
 	fixtureUrl = `http://127.0.0.1:${server.port}/smoke-test.html`;
+	browserProfileDir = await mkdtemp(join(tmpdir(), 'spectra-smoke-'));
 
 	browser = await puppeteer.launch({
 		headless: true,
+		userDataDir: browserProfileDir,
 		args: [
 			`--disable-extensions-except=${EXTENSION_DIR}`,
 			`--load-extension=${EXTENSION_DIR}`,
@@ -1053,34 +1295,44 @@ beforeAll(async () => {
 		});
 	});
 	await fixturePage.goto(fixtureUrl, { waitUntil: 'domcontentloaded' });
-	await fixturePage.waitForFunction(
-		() => document.documentElement.dataset.spectraContentLoaded === 'true',
-		{ timeout: 15_000 },
-	);
-	await waitForContentStatus((status) => status.mode === 'bypass' && status.phase === 'idle');
+	await waitForContentBootstrapStatus(fixtureUrl);
 }, 30_000);
 
 afterAll(async () => {
 	await cleanupSyntheticCaptureHarness();
+	await releaseSmokeRuntimes();
+	await runtimeLeaseClient?.close().catch(() => undefined);
 	await serviceWorkerConnection?.disconnect().catch(() => undefined);
-	await browser?.close();
+	await browser?.close().catch(() => undefined);
+	if (browserProfileDir) {
+		await rm(browserProfileDir, {
+			recursive: true,
+			force: true,
+			maxRetries: 5,
+			retryDelay: 100,
+		});
+	}
 	server?.stop(true);
 });
 
 describe('SPECTRA built extension smoke', () => {
-	test('loads the MV3 worker, isolated content runtime, and MAIN runtime', async () => {
+	test('loads the MV3 worker and isolated zero-work bootstrap without MAIN', async () => {
 		expect(serviceWorkerTarget.url()).toBe(`chrome-extension://${extensionId}/background.js`);
-		expect(await fixturePage.evaluate(() => document.documentElement.dataset.spectraContentLoaded)).toBe('true');
-		expect(await fixturePage.evaluate(() => {
-			return (window as Window & { __SPECTRA_MAIN_RUNTIME__?: { revision?: string } })
-				.__SPECTRA_MAIN_RUNTIME__?.revision;
-		})).toBe('2.0.1');
+		expect(await readContentBootstrapStatus()).toMatchObject({
+			ready: false,
+			runtimeRevision: null,
+			ownedSources: [],
+		});
+		expect(await fixturePage.evaluate(() => ({
+			legacyMarker: document.documentElement.dataset.spectraContentLoaded,
+			mainRuntime: '__SPECTRA_MAIN_RUNTIME__' in window,
+		}))).toEqual({ legacyMarker: undefined, mainRuntime: false });
 		expect(fixtureErrors).toEqual([]);
 	});
 
 	test('leaves untouched media transparent and creates no AudioContext', async () => {
 		const offscreenBefore = await getOffscreenContextCount();
-		const status = await readContentStatus();
+		const status = await readContentBootstrapStatus();
 		const state = await fixturePage.evaluate(() => {
 			const video = document.querySelector<HTMLVideoElement>('#v');
 			return {
@@ -1091,48 +1343,56 @@ describe('SPECTRA built extension smoke', () => {
 					.__spectraAudioContextCount,
 			};
 		});
-		expect(status.mode).toBe('bypass');
-		expect(status.phase).toBe('idle');
+		expect(status).toMatchObject({ ready: false, runtimeRevision: null, ownedSources: [] });
 		expect(state).toEqual({ volume: 1, muted: false, playbackRate: 1, audioContexts: 0 });
 		expect(offscreenBefore).toBe(0);
 		expect(await getOffscreenContextCount()).toBe(0);
 	});
 
-	test('keeps one versioned MAIN runtime across repeated injection', async () => {
-		await fixturePage.evaluate(() => {
-			const scope = window as Window & {
-				__SPECTRA_MAIN_RUNTIME__?: object;
-				__spectraRuntimeBefore?: object;
-			};
-			scope.__spectraRuntimeBefore = scope.__SPECTRA_MAIN_RUNTIME__;
-		});
-
-		const result = await serviceWorker.evaluate(async ({ url }) => {
+	test('keeps one versioned isolated bootstrap across repeated injection', async () => {
+		const result = await evaluateServiceWorker(async ({ url }) => {
 			const tabs = await chrome.tabs.query({});
 			const tab = tabs.find((candidate) => candidate.url === url);
 			if (tab?.id === undefined) throw new Error(`Unable to find fixture tab: ${url}`);
 			await chrome.scripting.executeScript({
 				target: { tabId: tab.id },
-				files: ['injector.js'],
-				world: 'MAIN',
+				world: 'ISOLATED',
+				func: () => {
+					const scope = window as Window & {
+						__SPECTRA_CONTENT_BOOTSTRAP__?: object;
+						__spectraBootstrapBefore?: object;
+					};
+					scope.__spectraBootstrapBefore = scope.__SPECTRA_CONTENT_BOOTSTRAP__;
+				},
 			});
-			return tab.id;
+			await chrome.scripting.executeScript({
+				target: { tabId: tab.id },
+				files: ['content-bootstrap.js'],
+				world: 'ISOLATED',
+			});
+			const [inspection] = await chrome.scripting.executeScript({
+				target: { tabId: tab.id },
+				world: 'ISOLATED',
+				func: () => {
+					const scope = window as Window & {
+						__SPECTRA_CONTENT_BOOTSTRAP__?: { bootstrapRevision?: string };
+						__spectraBootstrapBefore?: object;
+					};
+					return {
+						same: scope.__SPECTRA_CONTENT_BOOTSTRAP__ === scope.__spectraBootstrapBefore,
+						revision: scope.__SPECTRA_CONTENT_BOOTSTRAP__?.bootstrapRevision,
+					};
+				},
+			});
+			return inspection?.result;
 		}, { url: fixtureUrl });
-		expect(result).toBeGreaterThan(0);
-
-		expect(await fixturePage.evaluate(() => {
-			const scope = window as Window & {
-				__SPECTRA_MAIN_RUNTIME__?: { revision?: string };
-				__spectraRuntimeBefore?: object;
-			};
-			return {
-				same: scope.__SPECTRA_MAIN_RUNTIME__ === scope.__spectraRuntimeBefore,
-				revision: scope.__SPECTRA_MAIN_RUNTIME__?.revision,
-			};
-		})).toEqual({ same: true, revision: '2.0.1' });
+		expect(result).toMatchObject({ same: true });
+		expect(typeof result?.revision).toBe('string');
+		expect(await fixturePage.evaluate(() => '__SPECTRA_MAIN_RUNTIME__' in window)).toBe(false);
 	});
 
 	test('tracks SPA media additions and removals without activating WebAudio', async () => {
+		await acquireSmokeRuntime();
 		await fixturePage.evaluate(() => {
 			document.querySelector('#v')?.remove();
 			history.pushState({}, '', '/spa/empty');
@@ -1320,7 +1580,7 @@ describe('SPECTRA built extension smoke', () => {
 			(target) => !knownTargets.has(target) && target.url() === popupUrl,
 			{ timeout: 10_000 },
 		);
-		await serviceWorker.evaluate(async () => chrome.action.openPopup());
+		await evaluateServiceWorker(async () => chrome.action.openPopup());
 		const popupTarget = await popupTargetPromise;
 		const popup = await popupTarget.asPage();
 		await popup.waitForSelector('#view-main:not([hidden])');
@@ -1345,6 +1605,11 @@ describe('SPECTRA built extension smoke', () => {
 			}
 		} finally {
 			await popup.select('#set-lang', originalLanguage).catch(() => undefined);
+			await popup.waitForFunction(
+				(expected) => document.documentElement.lang === expected,
+				{ timeout: 5_000 },
+				originalLanguage,
+			).catch(() => undefined);
 			await popup.close();
 		}
 
@@ -1364,11 +1629,16 @@ describe('SPECTRA built extension smoke', () => {
 			}
 		} finally {
 			await options.select('#lang-select', originalLanguage).catch(() => undefined);
+			await options.waitForFunction(
+				(expected) => document.documentElement.lang === expected,
+				{ timeout: 5_000 },
+				originalLanguage,
+			).catch(() => undefined);
 			await options.close();
 		}
 	}, 20_000);
 
-	test('stops visualizer IPC after the real action popup is no longer visible', async () => {
+	test('keeps visualizer IPC at zero without an active processor and after popup close', async () => {
 		await fixturePage.bringToFront();
 		await installVisualizerBatchProbe();
 		const knownTargets = new Set(browser.targets());
@@ -1379,18 +1649,13 @@ describe('SPECTRA built extension smoke', () => {
 		);
 		let popupClient: CDPSession | null = null;
 		try {
-			await serviceWorker.evaluate(async () => chrome.action.openPopup());
+			await evaluateServiceWorker(async () => chrome.action.openPopup());
 			const popupTarget = await popupTargetPromise;
 			popupClient = await popupTarget.createCDPSession();
 			await popupClient.send('Runtime.enable');
 
-			const samplingDeadline = Date.now() + 3_000;
-			let visibleBatchCount = 0;
-			while (visibleBatchCount === 0 && Date.now() < samplingDeadline) {
-				await new Promise((resolveWait) => setTimeout(resolveWait, 50));
-				visibleBatchCount = await readVisualizerBatchCount();
-			}
-			expect(visibleBatchCount).toBeGreaterThan(0);
+			await new Promise((resolveWait) => setTimeout(resolveWait, 500));
+			expect(await readVisualizerBatchCount()).toBe(0);
 
 			await popupClient.send('Runtime.evaluate', { expression: 'close()' });
 			await new Promise((resolveWait) => setTimeout(resolveWait, 100));
@@ -1407,68 +1672,70 @@ describe('SPECTRA built extension smoke', () => {
 
 	test('delivers only the selected locale strings to the Content OSD', async () => {
 		const targetUrl = fixturePage.url();
-		const extensionClient = await browser.newPage();
-		await extensionClient.goto(`chrome-extension://${extensionId}/popup.html`, {
-			waitUntil: 'domcontentloaded',
-		});
-		const settings = await extensionClient.evaluate(async ({ url }) => {
-			const request = (type: string, payload: Record<string, unknown>) => chrome.runtime.sendMessage({
-				protocolVersion: 2,
-				requestId: crypto.randomUUID(),
-				type,
-				payload,
-			});
-			const current = await request('spectra.settings.get', {});
-			if (!current?.ok) throw new Error('Unable to read settings before OSD smoke test');
-			const changed = await request('spectra.settings.patch', {
-				expectedRevision: current.data.revision,
-				patch: { scope: 'global', changes: { lang: 'zh-CN' } },
-			});
-			if (!changed?.ok) throw new Error('Unable to select zh-CN for OSD smoke test');
-			const tab = (await chrome.tabs.query({})).find((candidate) => candidate.url === url);
-			if (tab?.id === undefined) throw new Error(`Unable to find OSD fixture tab: ${url}`);
-			const configure = async (muted: boolean) => {
-				const currentRuntime = await chrome.tabs.sendMessage(tab.id!, {
+		const extensionClient = await openExtensionClient('options.html');
+		const settings = await withDiagnosticTimeout('select zh-CN for the OSD smoke test', () => (
+			extensionClient.evaluate(async () => {
+				const request = (type: string, payload: Record<string, unknown>) => chrome.runtime.sendMessage({
 					protocolVersion: 2,
 					requestId: crypto.randomUUID(),
-					tabId: tab.id,
-					type: 'spectra.audio.runtime.get',
-					payload: {},
+					type,
+					payload,
 				});
-				if (!currentRuntime?.ok) throw new Error('Unable to read OSD fixture runtime');
-				const configured = await chrome.tabs.sendMessage(tab.id!, {
-					protocolVersion: 2,
-					requestId: crypto.randomUUID(),
-					tabId: tab.id,
-					type: 'spectra.audio.runtime.configure',
-					payload: { config: { ...currentRuntime.data.config, muted } },
+				const current = await request('spectra.settings.get', {});
+				if (!current?.ok) throw new Error('Unable to read settings before OSD smoke test');
+				const changed = await request('spectra.settings.patch', {
+					expectedRevision: current.data.revision,
+					patch: { scope: 'global', changes: { lang: 'zh-CN' } },
 				});
-				if (!configured?.ok) throw new Error(configured?.error?.message ?? 'Unable to configure OSD fixture');
-			};
-			await configure(false);
-			const hotkey = await chrome.tabs.sendMessage(tab.id, {
-				protocolVersion: 2,
-				requestId: crypto.randomUUID(),
-				tabId: tab.id,
-				type: 'spectra.hotkey.trigger',
-				payload: { action: 'volume_mute' },
-			});
-			if (!hotkey?.ok) throw new Error(hotkey?.error?.message ?? 'Unable to trigger mute OSD');
-			return {
-				originalLanguage: current.data.globalSettings.lang,
-				revision: changed.data.revision,
-			};
-		}, { url: targetUrl });
+				if (!changed?.ok) throw new Error('Unable to select zh-CN for OSD smoke test');
+				return {
+					originalLanguage: current.data.globalSettings.lang,
+					revision: changed.data.revision,
+				};
+			})
+		), 5_000);
 
 		try {
-			await fixturePage.waitForFunction(() => {
+			await configureRuntime(targetUrl, {
+				...DEFAULT_AUDIO_CONFIG,
+				muted: false,
+			});
+			const tabId = await getTabId(targetUrl);
+			const nativeBaseline = await extensionClient.evaluate(async (targetTabId) => (
+				chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					type: 'spectra.control.intent.submit',
+					payload: {
+						tabId: targetTabId,
+						source: 'popup',
+						requestedCoverage: 'active-target',
+						target: null,
+						mutations: [{ field: 'mediaMuted', operation: 'set', value: false }],
+					},
+				})
+			), tabId);
+			if (!nativeBaseline?.ok || nativeBaseline.data.fields.mediaMuted?.actual !== false) {
+				throw new Error(nativeBaseline?.error?.message ?? 'Unable to establish the native mute baseline');
+			}
+			const hotkey = await withDiagnosticTimeout('trigger the mute OSD', () => (
+				evaluateServiceWorker(async (targetTabId) => chrome.tabs.sendMessage(targetTabId, {
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					tabId: targetTabId,
+					type: 'spectra.hotkey.trigger',
+					payload: { action: 'volume_mute' },
+				}), tabId)
+			), 5_000);
+			if (!hotkey?.ok) throw new Error(hotkey?.error?.message ?? 'Unable to trigger mute OSD');
+			await withDiagnosticTimeout('observe the localized mute OSD', () => fixturePage.waitForFunction(() => {
 				for (const host of document.body.querySelectorAll('div')) {
 					if (host.shadowRoot?.getElementById('t')?.textContent === '静音') return true;
 				}
 				return false;
-			}, { timeout: 5_000 });
+			}, { timeout: 5_000 }), 6_000);
 		} finally {
-			await extensionClient.evaluate(async ({ language, revision, url }) => {
+			await evaluateServiceWorker(async ({ language, revision }) => {
 				await chrome.runtime.sendMessage({
 					protocolVersion: 2,
 					requestId: crypto.randomUUID(),
@@ -1478,42 +1745,20 @@ describe('SPECTRA built extension smoke', () => {
 						patch: { scope: 'global', changes: { lang: language } },
 					},
 				});
-				const tab = (await chrome.tabs.query({})).find((candidate) => candidate.url === url);
-				if (tab?.id !== undefined) {
-					const currentRuntime = await chrome.tabs.sendMessage(tab.id, {
-						protocolVersion: 2,
-						requestId: crypto.randomUUID(),
-						tabId: tab.id,
-						type: 'spectra.audio.runtime.get',
-						payload: {},
-					}).catch(() => undefined);
-					if (currentRuntime?.ok) {
-						await chrome.tabs.sendMessage(tab.id, {
-							protocolVersion: 2,
-							requestId: crypto.randomUUID(),
-							tabId: tab.id,
-							type: 'spectra.audio.runtime.configure',
-							payload: { config: { ...currentRuntime.data.config, muted: false } },
-						}).catch(() => undefined);
-					}
-				}
 			}, {
 				language: settings.originalLanguage,
 				revision: settings.revision,
-				url: targetUrl,
 			});
-			await extensionClient.close();
+			await configureRuntime(targetUrl, { ...DEFAULT_AUDIO_CONFIG, muted: false }).catch(() => undefined);
+			await extensionClient.close().catch(() => undefined);
 		}
-	});
+	}, 20_000);
 
 	test('serializes denied capture attempts through one offscreen host and rolls back', async () => {
 		const secondaryUrl = `${fixtureUrl}?secondary=1`;
 		const secondary = await browser.newPage();
 		await secondary.goto(secondaryUrl, { waitUntil: 'domcontentloaded' });
-		await secondary.waitForFunction(
-			() => document.documentElement.dataset.spectraContentLoaded === 'true',
-			{ timeout: 15_000 },
-		);
+		await waitForContentBootstrapStatus(secondaryUrl);
 		const extensionClient = await browser.newPage();
 		await extensionClient.goto(`chrome-extension://${extensionId}/popup.html`, {
 			waitUntil: 'domcontentloaded',
@@ -1521,6 +1766,10 @@ describe('SPECTRA built extension smoke', () => {
 
 		const primaryUrl = fixturePage.url();
 		try {
+			await Promise.all([
+				acquireSmokeRuntime(primaryUrl, 'capture-denied-primary'),
+				acquireSmokeRuntime(secondaryUrl, 'capture-denied-secondary'),
+			]);
 			const result = await extensionClient.evaluate(async ({ urls }) => {
 				const tabs = await chrome.tabs.query({});
 				const tabIds = urls.map((url) => {
@@ -1531,6 +1780,8 @@ describe('SPECTRA built extension smoke', () => {
 				const config = {
 					enabled: true,
 					volume: 100,
+					volumeBase: 100,
+					boost: 1,
 					muted: false,
 					compressor: false,
 					mono: false,
@@ -1539,6 +1790,7 @@ describe('SPECTRA built extension smoke', () => {
 					pan: 0,
 					delay: 0,
 					speed: 1,
+					preservePitch: true,
 				};
 				const captureRequest = async (tabId: number, enabled: boolean, generation: number) => {
 					const [injection] = await chrome.scripting.executeScript({
@@ -1597,34 +1849,6 @@ describe('SPECTRA built extension smoke', () => {
 					(status) => status.mode === 'bypass' && status.phase === 'idle',
 				)));
 
-				const configure = async (tabId: number, changes: Partial<typeof config>) => {
-					const current = await chrome.tabs.sendMessage(tabId, {
-						protocolVersion: 2,
-						requestId: crypto.randomUUID(),
-						tabId,
-						type: 'spectra.audio.runtime.get',
-						payload: {},
-					});
-					if (!current?.ok) throw new Error('Unable to read runtime before configure');
-					const response = await chrome.tabs.sendMessage(tabId, {
-						protocolVersion: 2,
-						requestId: crypto.randomUUID(),
-						tabId,
-						type: 'spectra.audio.runtime.configure',
-						payload: { config: { ...current.data.config, ...changes } },
-					});
-					if (!response?.ok) throw new Error(response?.error?.message ?? 'Unable to configure runtime');
-				};
-				await configure(tabIds[0]!, { enabled: true, volume: 125, muted: false });
-				const webAudioStatus = await waitForStatus(
-					tabIds[0]!,
-					(status) => status.mode === 'webaudio' && status.phase === 'active',
-				);
-				await configure(tabIds[0]!, { enabled: false });
-				const finalStatus = await waitForStatus(
-					tabIds[0]!,
-					(status) => status.mode === 'bypass' && status.phase === 'idle',
-				);
 				return {
 					tabIds,
 					starts,
@@ -1632,8 +1856,6 @@ describe('SPECTRA built extension smoke', () => {
 					snapshot,
 					stops,
 					stoppedStatuses,
-					webAudioStatus,
-					finalStatus,
 				};
 			}, { urls: [primaryUrl, secondaryUrl] });
 			const hostSnapshot = await readOffscreenSnapshot();
@@ -1654,8 +1876,6 @@ describe('SPECTRA built extension smoke', () => {
 				expect.objectContaining({ mode: 'bypass', phase: 'idle' }),
 				expect.objectContaining({ mode: 'bypass', phase: 'idle' }),
 			]);
-			expect(result.webAudioStatus).toMatchObject({ mode: 'webaudio', phase: 'active' });
-			expect(result.finalStatus).toMatchObject({ mode: 'bypass', phase: 'idle' });
 		} finally {
 			await extensionClient.close();
 			await secondary.close();
@@ -1671,13 +1891,16 @@ describe('SPECTRA built extension smoke', () => {
 		}
 
 		await fixturePage.goto(fixtureUrl, { waitUntil: 'domcontentloaded' });
-		await fixturePage.waitForFunction(
-			() => document.documentElement.dataset.spectraContentLoaded === 'true',
-			{ timeout: 15_000 },
-		);
+		await waitForContentBootstrapStatus(fixtureUrl);
+		await selectSafeWebAudioFixture();
+		await fixturePage.bringToFront();
 		await fixturePage.click('body');
 		const tabId = await getTabId(fixturePage.url());
-		await configureRuntime(fixturePage.url(), { ...DEFAULT_AUDIO_CONFIG, volume: 130 });
+		await configureRuntime(fixturePage.url(), {
+			...DEFAULT_AUDIO_CONFIG,
+			volume: 130,
+			boost: 1.3,
+		});
 		await waitForContentStatus(
 			(status) => status.mode === 'webaudio' && status.phase === 'active',
 			10_000,
@@ -1689,7 +1912,7 @@ describe('SPECTRA built extension smoke', () => {
 			contextState: 'running',
 			hasGraph: true,
 			listenersReady: true,
-			runtimeRevision: '2.0.1',
+			runtimeRevision: SPECTRA_CONTENT_RUNTIME_REVISION,
 		});
 
 		await reinjectContent(tabId);
@@ -1727,7 +1950,9 @@ describe('SPECTRA built extension smoke', () => {
 				data: { tabId, generation: 300, phase: 'active', active: true, actualMode: 'capture' },
 			});
 			const host = await readOffscreenSnapshot();
-			expect(host.audioTabs).toContainEqual({ tabId, generation: 300 });
+			expect(host.audioTabs).toEqual(expect.arrayContaining([
+				expect.objectContaining({ tabId, generation: 300 }),
+			]));
 			expect(await getOffscreenContextCount()).toBe(1);
 			const harness = await readSyntheticCaptureState();
 			expect(harness.calls).toBeGreaterThan(0);
@@ -1741,30 +1966,48 @@ describe('SPECTRA built extension smoke', () => {
 		}
 	}, 35_000);
 
-	test('routes the Capture hotkey atomically from WebAudio to Capture and back', async () => {
+	test('switches atomically from WebAudio to explicit Capture and back', async () => {
 		await installSyntheticCaptureHarness();
 		await installTabCaptureStreamIdStub();
 		const extensionClient = await openExtensionClient();
 		const tabId = await getTabId(fixturePage.url());
 		try {
 			await markRegistryDomain(extensionClient, '127.0.0.1', false);
-			await configureRuntime(fixturePage.url(), { ...DEFAULT_AUDIO_CONFIG, volume: 130 });
-			await waitForContentStatus(
+			await selectSafeWebAudioFixture();
+			await configureRuntime(fixturePage.url(), {
+				...DEFAULT_AUDIO_CONFIG,
+				volume: 130,
+				boost: 1.3,
+			});
+			const webAudio = await waitForContentStatus(
 				(status) => status.mode === 'webaudio' && status.phase === 'active',
 				10_000,
 			);
 
-			await triggerHotkey(tabId, 'capture_toggle');
+			const started = await sendCaptureRequest(
+				extensionClient,
+				tabId,
+				true,
+				(webAudio.generation ?? 0) + 1,
+				{ ...DEFAULT_AUDIO_CONFIG, volume: 130, boost: 1.3 },
+			);
+			expect(started).toMatchObject({ ok: true, data: { active: true, phase: 'active' } });
 			const captured = await waitForContentStatus(
 				(status) => status.mode === 'capture' && status.phase === 'active',
 				15_000,
 			);
-			expect((await readOffscreenSnapshot()).audioTabs).toContainEqual({
-				tabId,
-				generation: captured.generation,
-			});
+			expect((await readOffscreenSnapshot()).audioTabs).toEqual(expect.arrayContaining([
+				expect.objectContaining({ tabId, generation: captured.generation }),
+			]));
 
-			await triggerHotkey(tabId, 'capture_toggle');
+			const stopped = await sendCaptureRequest(
+				extensionClient,
+				tabId,
+				false,
+				(captured.generation ?? 0) + 1,
+				{ ...DEFAULT_AUDIO_CONFIG, volume: 130, boost: 1.3 },
+			);
+			expect(stopped).toMatchObject({ ok: true, data: { active: false } });
 			const restored = await waitForContentStatus(
 				(status) => status.mode === 'webaudio' && status.phase === 'active',
 				15_000,
@@ -1786,6 +2029,7 @@ describe('SPECTRA built extension smoke', () => {
 		const tabId = await getTabId(fixturePage.url());
 		await blockNextSyntheticCapture();
 		try {
+			await selectSafeWebAudioFixture();
 			const startPromise = sendCaptureRequest(extensionClient, tabId, true, 400);
 			await eventually(
 				readSyntheticCaptureState,
@@ -1800,7 +2044,7 @@ describe('SPECTRA built extension smoke', () => {
 
 			const webAudioPromise = configureRuntime(
 				fixturePage.url(),
-				{ ...DEFAULT_AUDIO_CONFIG, volume: 140 },
+				{ ...DEFAULT_AUDIO_CONFIG, volume: 140, boost: 1.4 },
 			);
 			await releaseSyntheticCapture();
 			const [startResponse] = await Promise.all([startPromise, webAudioPromise]);
@@ -1841,10 +2085,7 @@ describe('SPECTRA built extension smoke', () => {
 			await configureRuntime(fixturePage.url(), DEFAULT_AUDIO_CONFIG);
 			await waitForContentStatus((status) => status.mode === 'bypass' && status.phase === 'idle');
 			await secondary.goto(secondaryUrl, { waitUntil: 'domcontentloaded' });
-			await secondary.waitForFunction(
-				() => document.documentElement.dataset.spectraContentLoaded === 'true',
-				{ timeout: 15_000 },
-			);
+			await waitForContentBootstrapStatus(secondaryUrl);
 
 			const started = await sendCaptureRequest(extensionClient, tabId, true, 500);
 			expect(started).toMatchObject({ ok: true, data: { generation: 500, phase: 'active', active: true } });
@@ -1870,7 +2111,9 @@ describe('SPECTRA built extension smoke', () => {
 				data: { generation: 501, phase: 'active', active: true, actualMode: 'capture' },
 			});
 			expect(await getOffscreenContextCount()).toBe(1);
-			expect((await readOffscreenSnapshot()).audioTabs).toContainEqual({ tabId, generation: 501 });
+			expect((await readOffscreenSnapshot()).audioTabs).toEqual(expect.arrayContaining([
+				expect.objectContaining({ tabId, generation: 501 }),
+			]));
 
 			const creation = await sendFromActionPopup<{
 				ok: boolean;
@@ -1888,7 +2131,9 @@ describe('SPECTRA built extension smoke', () => {
 			session = creation.data as RemotePublicSession;
 			const sharedHost = await readOffscreenSnapshot();
 			expect(await getOffscreenContextCount()).toBe(1);
-			expect(sharedHost.audioTabs).toContainEqual({ tabId, generation: 501 });
+			expect(sharedHost.audioTabs).toEqual(expect.arrayContaining([
+				expect.objectContaining({ tabId, generation: 501 }),
+			]));
 			expect(sharedHost.remoteTabs).toContainEqual({ tabId, sessionId: session.sessionId });
 
 			await wrongRemote.goto(remotePairingUrl(session, 'AAAAAAAAAAAAAAAAAAAAAA'), {
@@ -1909,14 +2154,44 @@ describe('SPECTRA built extension smoke', () => {
 			expect((await readContentStatus()).config?.volume).toBe(100);
 
 			await authenticatedRemote.goto(remotePairingUrl(session), { waitUntil: 'domcontentloaded' });
-			await authenticatedRemote.waitForFunction(
-				() => document.querySelector('#status-text')?.textContent === 'Authenticated and connected',
-				{ timeout: 25_000 },
-			);
-			await authenticatedRemote.waitForFunction(
-				() => document.querySelector('#tab-title')?.textContent === 'SPECTRA extension smoke fixture',
-				{ timeout: 10_000 },
-			);
+			try {
+				await authenticatedRemote.waitForFunction(
+					() => document.querySelector('#status-text')?.textContent === 'Authenticated and connected',
+					{ timeout: 25_000, polling: 100 },
+				);
+			} catch (error) {
+				const [remoteStatus, remoteTitle, hostSnapshot] = await Promise.all([
+					authenticatedRemote.$eval('#status-text', (element) => element.textContent ?? ''),
+					authenticatedRemote.$eval('#tab-title', (element) => element.textContent ?? ''),
+					readOffscreenSnapshot(),
+				]);
+				throw new Error(
+					`Authenticated remote did not connect: status=${JSON.stringify(remoteStatus)} title=${JSON.stringify(remoteTitle)} host=${JSON.stringify(hostSnapshot)}`,
+					{ cause: error },
+				);
+			}
+			try {
+				await authenticatedRemote.waitForFunction(
+					() => document.querySelector('#tab-title')?.textContent === 'SPECTRA extension smoke fixture',
+					{ timeout: 10_000, polling: 100 },
+				);
+			} catch (error) {
+				const [remoteStatus, remoteTitle, snapshotResponse] = await Promise.all([
+					authenticatedRemote.$eval('#status-text', (element) => element.textContent ?? ''),
+					authenticatedRemote.$eval('#tab-title', (element) => element.textContent ?? ''),
+					extensionClient.evaluate(async (targetTabId) => chrome.runtime.sendMessage({
+						protocolVersion: 2,
+						requestId: crypto.randomUUID(),
+						tabId: targetTabId,
+						type: 'spectra.control.snapshot.get',
+						payload: { tabId: targetTabId },
+					}), tabId),
+				]);
+				throw new Error(
+					`Authenticated remote did not receive state: status=${JSON.stringify(remoteStatus)} title=${JSON.stringify(remoteTitle)} snapshot=${JSON.stringify(snapshotResponse)}`,
+					{ cause: error },
+				);
+			}
 			expect(await authenticatedRemote.$eval('[data-command="volume_up"]', (element) => (
 				(element as HTMLButtonElement).disabled
 			))).toBe(false);
@@ -1924,18 +2199,55 @@ describe('SPECTRA built extension smoke', () => {
 
 			// The offscreen host survives the worker. Its recovered generation must
 			// authorize the first post-restart command instead of forcing a sync-only drop.
-			await restartServiceWorker();
-			await authenticatedRemote.click('[data-command="volume_up"]');
+			await withDiagnosticTimeout(
+				'restart service worker with an authenticated remote session',
+				restartServiceWorker,
+				45_000,
+			);
+			await withDiagnosticTimeout(
+				'send the first authenticated remote command after worker restart',
+				() => authenticatedRemote.$eval(
+					'[data-command="boost_up"]',
+					(element) => (element as HTMLButtonElement).click(),
+				),
+				5_000,
+			);
 			await eventually(
 				() => readContentStatus(),
-				(status) => status.config?.volume === 110,
+				(status) => status.config?.volume === 110 && status.config?.boost === 1.1,
 				'first remote command after service-worker recovery',
 				10_000,
 			);
-			expect((await readContentStatus(secondaryUrl)).config?.volume).toBe(100);
+			const secondaryTabId = await getTabId(secondaryUrl);
+			const secondarySnapshot = await extensionClient.evaluate(async (targetTabId) => chrome.runtime.sendMessage({
+				protocolVersion: 2,
+				requestId: crypto.randomUUID(),
+				tabId: targetTabId,
+				type: 'spectra.control.snapshot.get',
+				payload: { tabId: targetTabId },
+			}), secondaryTabId);
+			expect(secondarySnapshot).toMatchObject({
+				ok: true,
+				data: {
+					fields: {
+						volumeBase: { actual: 100 },
+					},
+				},
+			});
+			await configureRuntime(fixturePage.url(), DEFAULT_AUDIO_CONFIG);
+			const resetStatus = await waitForContentStatus(
+				(status) => status.actualMode === 'bypass'
+					&& status.phase === 'idle'
+					&& status.config?.volume === 100
+					&& status.config?.boost === 1,
+			);
 
-			const stopped = await sendCaptureRequest(extensionClient, tabId, false, 502);
-			expect(stopped).toMatchObject({ ok: true, data: { phase: 'idle', active: false } });
+			const stopGeneration = Math.max(502, (resetStatus.generation ?? 501) + 1);
+			const stopped = await sendCaptureRequest(extensionClient, tabId, false, stopGeneration);
+			expect(stopped).toMatchObject({
+				ok: true,
+				data: { generation: stopGeneration, actualMode: 'bypass', phase: 'idle', active: false },
+			});
 			expect(await sendFromActionPopup({
 				protocolVersion: 2,
 				tabId,
@@ -1943,7 +2255,7 @@ describe('SPECTRA built extension smoke', () => {
 				payload: { tabId },
 			})).toMatchObject({
 				ok: true,
-				data: { generation: 502, actualMode: 'bypass', phase: 'idle' },
+				data: { generation: stopGeneration, actualMode: 'bypass', phase: 'idle' },
 			});
 			await configureRuntime(fixturePage.url(), DEFAULT_AUDIO_CONFIG);
 			await configureRuntime(secondaryUrl, DEFAULT_AUDIO_CONFIG);
@@ -1973,6 +2285,7 @@ describe('SPECTRA built extension smoke', () => {
 				}).catch(() => undefined);
 			}
 			await sendCaptureRequest(extensionClient, tabId, false, 599).catch(() => undefined);
+			await configureRuntime(fixturePage.url(), DEFAULT_AUDIO_CONFIG).catch(() => undefined);
 			await Promise.all([
 				extensionClient.close(),
 				secondary.close(),
@@ -1996,8 +2309,8 @@ describe('SPECTRA built extension smoke', () => {
 				closing.goto(closingUrl, { waitUntil: 'domcontentloaded' }),
 			]);
 			await Promise.all([
-				navigating.waitForFunction(() => document.documentElement.dataset.spectraContentLoaded === 'true'),
-				closing.waitForFunction(() => document.documentElement.dataset.spectraContentLoaded === 'true'),
+				waitForContentBootstrapStatus(navigatingUrl),
+				waitForContentBootstrapStatus(closingUrl),
 			]);
 			const [navigatingTabId, closingTabId] = await Promise.all([
 				getTabId(navigatingUrl),

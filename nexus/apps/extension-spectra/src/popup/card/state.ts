@@ -1,8 +1,9 @@
 // goal: manages the internal state of a tab control card and orchestrates configuration updates across background and content scripts
 
 import type { AudioConfig, GlobalSettings } from '@nexus/kernel';
-import type { CardInternalState } from './types';
-import { sendSpectraRequest, sendSpectraTabRequest } from '../../shared/spectra-client';
+import type { ControlPatch } from '@nexus/contracts';
+import { mergeAudioConfig, mergeControlFields, type CardInternalState } from './types';
+import { sendSpectraRequest } from '../../shared/spectra-client';
 
 export type ConfigUpdateFn = ((changes: Partial<AudioConfig>) => void) & {
 	flush: () => Promise<void>;
@@ -30,6 +31,46 @@ export function createUpdateFn(
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	let lastSentAt = 0;
 	let localRevision = 0;
+	let pendingPatch: ControlPatch = {};
+
+	const toControlPatch = (changes: Partial<AudioConfig>): ControlPatch => {
+		const patch: ControlPatch = {};
+		if (changes.enabled !== undefined) patch.audioEnabled = state.config.enabled;
+		if (changes.volume !== undefined || changes.volumeBase !== undefined) {
+			patch.volumeBase = state.config.volumeBase ?? Math.min(100, state.config.volume);
+		}
+		if (changes.volume !== undefined || changes.boost !== undefined) {
+			patch.boost = state.config.boost ?? (state.config.volume > 100 ? state.config.volume / 100 : 1);
+		}
+		if (changes.muted !== undefined) patch.mediaMuted = state.config.muted;
+		if (changes.speed !== undefined) patch.speed = state.config.speed;
+		if (changes.preservePitch !== undefined) patch.preservePitch = state.config.preservePitch;
+		if (changes.eqValues !== undefined) patch.eqValues = [...state.config.eqValues];
+		if (changes.bass !== undefined) patch.bass = state.config.bass;
+		if (changes.compressor !== undefined) patch.compressor = state.config.compressor;
+		if (changes.mono !== undefined) patch.mono = state.config.mono;
+		if (changes.pan !== undefined) patch.pan = state.config.pan;
+		if (changes.delay !== undefined) patch.delay = state.config.delay;
+		return patch;
+	};
+
+	const splitByCoverage = (patch: ControlPatch): Array<{
+		requestedCoverage: 'active-target' | 'full';
+		patch: ControlPatch;
+	}> => {
+		const target: ControlPatch = {};
+		const full: ControlPatch = {};
+		for (const [field, value] of Object.entries(patch)) {
+			const output = ['audioEnabled', 'boost', 'eqValues', 'bass', 'compressor', 'mono', 'pan', 'delay'].includes(field)
+				? full
+				: target;
+			(output as Record<string, unknown>)[field] = value;
+		}
+		return [
+			...(Object.keys(target).length > 0 ? [{ requestedCoverage: 'active-target' as const, patch: target }] : []),
+			...(Object.keys(full).length > 0 ? [{ requestedCoverage: 'full' as const, patch: full }] : []),
+		];
+	};
 
 	const scheduleFlush = () => {
 		if (timer || inFlight) return;
@@ -46,31 +87,56 @@ export function createUpdateFn(
 		pending = false;
 		lastSentAt = performance.now();
 		const sentRevision = localRevision;
-		const config: AudioConfig = {
-			...state.config,
-			eqValues: [...state.config.eqValues],
-		};
+		const patch = pendingPatch;
+		pendingPatch = {};
 
 		inFlight = (async () => {
-			// Popup emits config intent only. Content/background/offscreen publish the acknowledged path.
-			const response = await sendSpectraTabRequest(
-				tabId,
-				'spectra.audio.runtime.configure',
-				{ config },
-			);
-
-			if (response.ok) {
-				// A response for an earlier drag sample must not overwrite a newer
-				// optimistic value that is waiting to be coalesced and sent.
-				if (localRevision === sentRevision) state.config = response.data.config;
-				state.actualMode = response.data.actualMode;
-				state.desiredMode = response.data.desiredMode;
-				state.phase = response.data.phase;
-				state.generation = response.data.generation;
-				state.lastError = response.data.lastError;
-				state.isCaptureActive = response.data.actualMode === 'capture';
+			for (const group of splitByCoverage(patch)) {
+				const response = await sendSpectraRequest(
+					'spectra.control.intent.submit',
+					{
+						tabId,
+						source: 'popup',
+						requestedCoverage: group.requestedCoverage,
+						target: state.controlSnapshot?.activeMedia ?? null,
+						baseRevision: state.controlRevision,
+						patch: group.patch,
+					},
+					{ tabId },
+				);
+				if (!response.ok) {
+					state.lastError = response.error;
+					throw new Error(response.error.message);
+				}
+				state.controlRevision = Math.max(state.controlRevision, response.data.revision);
+				state.controlGeneration = Math.max(
+					state.controlGeneration,
+					response.data.generation,
+				);
+				const applied = Object.values(response.data.fields);
+				const failed = applied.find((field) => field?.lastError)?.lastError ?? null;
+				if (failed) {
+					state.lastError = failed;
+					throw new Error(failed.message);
+				}
+				state.stableConfig = mergeControlFields(state.stableConfig, response.data.fields);
 			}
-		})().finally(() => {
+			// A response for an earlier drag sample must not overwrite a newer
+			// optimistic value that is waiting to be coalesced and sent.
+			if (localRevision === sentRevision) {
+				state.config = mergeAudioConfig(state.stableConfig, {
+					eqValues: [...state.stableConfig.eqValues],
+				});
+			}
+			state.lastError = null;
+		})().catch((error) => {
+			if (localRevision === sentRevision) {
+				state.config = mergeAudioConfig(state.stableConfig, {
+					eqValues: [...state.stableConfig.eqValues],
+				});
+			}
+			throw error;
+		}).finally(() => {
 			inFlight = null;
 			render();
 			if (pending) scheduleFlush();
@@ -106,7 +172,8 @@ export function createUpdateFn(
 		if (Object.keys(changes).length > 0) state.userInteracted = true;
 
 		// eff: apply changes immediately to local state for responsive UI feedback
-		state.config = { ...state.config, ...changes };
+		state.config = mergeAudioConfig(state.config, changes);
+		pendingPatch = { ...pendingPatch, ...toControlPatch(changes) };
 		localRevision += 1;
 		pending = true;
 		render();

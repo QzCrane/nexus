@@ -1,18 +1,23 @@
 # SPECTRA architecture
 
-SPECTRA is a Chrome MV3 extension with explicit ownership across its runtime contexts. The shared protocol and the authoritative `AudioSessionSnapshot` are defined in `@nexus/contracts`; extension contexts do not invent private wire shapes.
+SPECTRA is a Chrome MV3 extension with explicit ownership across its runtime contexts. The shared protocol and authoritative snapshots are defined in `@nexus/contracts`; extension contexts do not invent private wire shapes. Per-field control behavior is owned by [control-architecture.md](./control-architecture.md).
 
 ## Runtime ownership
 
 | Context | Owns | Does not own |
 | --- | --- | --- |
 | Popup / Options | User intent, immediate local rendering and accessible interaction | Actual audio mode, badge state or direct storage writes |
-| Content (isolated world) | Current document identity, desired config/mode and the event-driven media registry | Claiming Capture active before an ACK |
-| MAIN injector | The page WebAudio graph, playback-rate/fullscreen wrappers and their disposer | Persistent settings or cross-tab state |
+| Content (isolated world) | Current document identity, event-driven media registry, the sole DOM/CSS writers and the admitted Media WebAudio graph | Claiming Capture active before an ACK |
+| MAIN site adapter | One allowlisted official page-world API call after a typed DOM failure | Any standing runtime, listener, patch, setting or cross-tab state |
 | Background service worker | Protocol routing, settings repository, session snapshots, badge projection and offscreen leases | WebAudio nodes or optimistic UI state |
 | Unified offscreen host | Actual Capture processors and authenticated PeerJS sessions | Direct document creation/closure |
 
-The stable read model is `AudioSessionSnapshot`, keyed by `tabId + documentId + origin`. It contains the generation, desired/actual mode, phase, configuration revision, actual configuration and last structured error. Popup, badge and remote state are projections of that snapshot.
+`ControlSnapshot` is the sole actual source for media, video and DSP fields and
+the independent active-media/active-video identities. `AudioSessionSnapshot`,
+keyed by `tabId + documentId + origin`, owns only processor lifecycle: desired
+and actual mode, phase, generation, normalized actual configuration and the last
+structured error. Popup, badge and authenticated remote views preserve that
+separation instead of overlaying one snapshot on the other.
 
 ## Audio lifecycle
 
@@ -24,7 +29,7 @@ Each document runs one generation-aware state machine:
 
 Default configuration is a transparent bypass: no extension-created `AudioContext`, no DSP and no page-volume or playback-rate ownership. A restored non-default site configuration or explicit user intent may activate processing.
 
-Capture becomes active only after the unified offscreen host creates a processor and returns a current-generation ACK. Transitions first make the old path transparent, start and confirm the new path, then release the old path, preventing double gain.
+Capture becomes active only after the unified offscreen host creates a processor and returns a current-generation ACK. Cross-backend transitions acknowledge the old path at unity, build and confirm the new path, then release the old path. This prevents double DSP and premature ACK; because page `AudioContext` and `tabCapture` have no shared sample clock, the contract permits a bounded unity handoff and does not claim sample-synchronous crossfade.
 
 ## Unified offscreen host
 
@@ -36,11 +41,11 @@ Capture becomes active only after the unified offscreen host creates a processor
 - the host closes only after every lease has been released for a one-shot, service-worker-safe 30-second alarm
 - a host handshake reconstructs processors, remote sessions and leases after a service-worker restart
 
-## MAIN runtime
+## MAIN site adapters
 
-The injector installs one versioned singleton per page. Its `AudioContext`, wrapper descriptors, observers and listeners share one disposer. A `WeakMap` guarantees at most one `MediaElementSourceNode` per media element for the page lifetime. A hot update reuses the compatible runtime; a source that cannot be safely adopted remains in transparent bypass until the next full navigation and is never rebound.
+There is no generic MAIN runtime. Known site adapters are loaded on demand through one document-scoped manager and use the site's official API as the single writer. The default page retains native constructor and descriptor identity.
 
-Fullscreen does not suspend the audio context, force volume to one or clear mute. Leaving WebAudio atomically resets DSP parameters and restores page-owned baselines.
+Media WebAudio ownership remains in the isolated document runtime. A `WeakMap` guarantees at most one `MediaElementSourceNode` per media element for the page lifetime. Fullscreen does not suspend audio, force volume to one or clear mute. Leaving processing acknowledges a neutral route before releasing owned work and restores page-owned baselines; page volume and media mute never enter the processor contract.
 
 ## Settings and media discovery
 

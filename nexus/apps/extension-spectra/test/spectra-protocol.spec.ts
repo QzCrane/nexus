@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import {
 	DEFAULT_AUDIO_CONFIG,
 	DEFAULT_GLOBAL_SETTINGS,
+	SPECTRA_CONTENT_BOOTSTRAP_REVISION,
+	SPECTRA_CONTENT_RUNTIME_REVISION,
 	SPECTRA_PROTOCOL_VERSION,
 	SPECTRA_SETTINGS_SCHEMA_VERSION,
 	isAudioConfig,
@@ -357,12 +359,66 @@ describe('SPECTRA mapped v2 envelopes', () => {
 			type: 'spectra.settings.get',
 			payload: { tabId: 42 },
 		})).toBe(false);
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'source-released',
+			documentId: 'document-42',
+			type: 'spectra.content.source.released',
+			payload: {
+				target: {
+					frameId: 0,
+					documentId: 'document-42',
+					mediaId: 'media-42',
+					sourceRevision: 2,
+					kind: 'video',
+				},
+			},
+		})).toBe(true);
+		const targetChanged = {
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'target-changed',
+			documentId: 'document-42',
+			type: 'spectra.content.target.changed',
+			payload: {
+				target: {
+					frameId: 0,
+					documentId: 'document-42',
+					mediaId: 'media-42',
+					sourceRevision: 3,
+					kind: 'video',
+				},
+			},
+		} as const;
+		expect(isSpectraRequestEnvelope(targetChanged)).toBe(true);
+		expect(isSpectraRequestEnvelope({
+			...targetChanged,
+			documentId: 'document-forged',
+		})).toBe(false);
 		expect(isSpectraRequestEnvelope({ ...request, action: 'AUDIO_GET_STATUS' })).toBe(false);
 		expect(isSpectraRequestEnvelope({
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			requestId: 'visualizer-batch',
 			type: 'spectra.audio.visualizer.batch',
-			payload: { tabIds: [7, 42] },
+			payload: { subscriberId: 'popup-1', generation: 1, tabIds: [7, 42] },
+		})).toBe(true);
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'screenshot-capture',
+			documentId: 'document-42',
+			generation: 2,
+			type: 'spectra.screenshot.capture-visible',
+			payload: {
+				captureToken: 'capture-token-42',
+				rect: { x: 0, y: 0, width: 640, height: 360, viewportWidth: 1280, viewportHeight: 720 },
+			},
+		})).toBe(true);
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'screenshot-target-verify',
+			documentId: 'document-42',
+			generation: 2,
+			type: 'spectra.screenshot.target.verify',
+			payload: { captureToken: 'capture-token-42' },
 		})).toBe(true);
 		expect(isSpectraRequestEnvelope({
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
@@ -411,7 +467,7 @@ describe('SPECTRA mapped v2 envelopes', () => {
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			requestId: 'visualizer-duplicate',
 			type: 'spectra.audio.visualizer.batch',
-			payload: { tabIds: [7, 7] },
+			payload: { subscriberId: 'popup-1', generation: 1, tabIds: [7, 7] },
 		})).toBe(false);
 		expect(isSpectraRequestEnvelope({
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
@@ -648,6 +704,22 @@ describe('SPECTRA mapped v2 envelopes', () => {
 		}))).toBe(false);
 		expect(isSpectraResponse('spectra.user-script.execute', rpcSuccess({ executed: true }))).toBe(true);
 		expect(isSpectraResponse('spectra.audio.runtime.get', rpcSuccess(createRuntimeStatus()))).toBe(true);
+		expect(isSpectraResponse('spectra.content.runtime.status', rpcSuccess({
+			bootstrapRevision: SPECTRA_CONTENT_BOOTSTRAP_REVISION,
+			runtimeRevision: SPECTRA_CONTENT_RUNTIME_REVISION,
+			ready: true,
+			ownedSources: [{
+				target: {
+					frameId: 0,
+					documentId: 'document-42',
+					mediaId: 'media-42',
+					sourceRevision: 2,
+					kind: 'video',
+				},
+				markerCount: 3,
+				abActive: true,
+			}],
+		}))).toBe(true);
 		expect(isSpectraResponse('spectra.audio.runtime.get', rpcSuccess({
 			...createRuntimeStatus(),
 			mode: 'CAPTURE',
@@ -665,9 +737,13 @@ describe('SPECTRA mapped v2 envelopes', () => {
 		expect(isSpectraResponse('spectra.tab.muted.toggle', rpcSuccess({ muted: false }))).toBe(true);
 		expect(isSpectraResponse('spectra.ui.open', rpcSuccess({ opened: true }))).toBe(true);
 		expect(isSpectraResponse('spectra.audio.visualizer.batch', rpcSuccess({
+			subscriberId: 'popup-1',
+			generation: 1,
 			frames: { '7': [0, 128, 255], '42': null },
 		}))).toBe(true);
 		expect(isSpectraResponse('spectra.audio.visualizer.batch', rpcSuccess({
+			subscriberId: 'popup-1',
+			generation: 1,
 			frames: { '7': [256] },
 		}))).toBe(false);
 		expect(isSpectraResponse('spectra.content.settings.get', rpcSuccess({
@@ -688,6 +764,14 @@ describe('SPECTRA mapped v2 envelopes', () => {
 		expect(isSpectraResponse('spectra.video.screenshot', rpcSuccess({
 			dataUrl: 'javascript:alert(1)',
 		}))).toBe(false);
+		expect(isSpectraResponse(
+			'spectra.screenshot.target.verify',
+			rpcSuccess({ valid: true }),
+		)).toBe(true);
+		expect(isSpectraResponse(
+			'spectra.screenshot.target.verify',
+			rpcSuccess({ valid: false }),
+		)).toBe(false);
 		expect(isSpectraResponse('spectra.tab.visible.list', rpcSuccess({ tabs: [7, 42] }))).toBe(true);
 		expect(isSpectraResponse('spectra.tab.visible.list', rpcSuccess({ tabs: [7, 7] }))).toBe(false);
 		expect(isSpectraResponse('spectra.settings.patch', rpcFailure('revision_conflict', 'retry', true))).toBe(true);

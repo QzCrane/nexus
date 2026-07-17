@@ -1,0 +1,316 @@
+import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import {
+	compileEffectiveVolume,
+	CONTROL_ALGORITHM_ADJUDICATIONS,
+	CONTROL_ALGORITHM_POLICIES,
+	CONTROL_CAPABILITIES,
+	CONTROL_DIRECT_FIELDS,
+	CONTROL_FIELDS,
+	CONTROL_OPERATIONS,
+	CONTROL_RETRYABLE_STRATEGY_FAILURES,
+	CONTROL_STRATEGIES,
+	CONTROL_STRATEGY_RULES,
+	CONTROL_TERMINAL_STRATEGY_FAILURES,
+	SITE_NATIVE_ADAPTER_DESCRIPTORS,
+	classifyControlStrategy,
+	isControlIntent,
+	isControlPatch,
+	isControlSnapshot,
+	shouldTryNextControlStrategy,
+	splitLegacyVolume,
+	type ControlFieldState,
+} from '@nexus/contracts';
+
+function field<T>(actual: T): ControlFieldState<T> {
+	return {
+		desired: actual,
+		actual,
+		revision: 4,
+		phase: 'applied',
+		strategy: 'dom-native',
+		coverage: 'active-target',
+		controlled: true,
+		intentId: 'intent-4',
+		lastError: null,
+	};
+}
+
+describe('per-field SPECTRA control contracts', () => {
+	test('keeps native volume and boost independent while compiling the legacy engine value', () => {
+		expect(compileEffectiveVolume(50, 2)).toBe(100);
+		expect(compileEffectiveVolume(100, 8)).toBe(800);
+		expect(splitLegacyVolume(75)).toEqual({ volumeBase: 75, boost: 1 });
+		expect(splitLegacyVolume(250)).toEqual({ volumeBase: 100, boost: 2.5 });
+	});
+
+	test('accepts a routed, revisioned intent and rejects empty or out-of-range patches', () => {
+		const intent = {
+			intentId: 'intent-4',
+			tabId: 42,
+			documentId: 'document-42',
+			generation: 3,
+			baseRevision: 9,
+			source: 'popup',
+			requestedCoverage: 'active-target',
+			target: {
+				frameId: 0,
+				documentId: 'document-42',
+				mediaId: 'media:3:1',
+				sourceRevision: 2,
+				kind: 'video',
+			},
+			actualContext: {},
+			patch: { volumeBase: 50, boost: 2, speed: 1 },
+		} as const;
+		expect(isControlIntent(intent)).toBe(true);
+		expect(isControlIntent({ ...intent, patch: {} })).toBe(false);
+		expect(isControlIntent({ ...intent, patch: { volumeBase: 101 } })).toBe(false);
+		expect(isControlIntent({ ...intent, generation: -1 })).toBe(false);
+		expect(isControlIntent({ ...intent, requestedCoverage: 'opaque' })).toBe(false);
+	});
+
+	test('validates actual per-field strategy and ownership without inferring it from 100% or 1x', () => {
+		const snapshot = {
+			tabId: 42,
+			documentId: 'document-42',
+			origin: 'https://media.example',
+			generation: 3,
+			revision: 10,
+			activeMedia: null,
+			activeVideo: null,
+			fields: {
+				volumeBase: field(100),
+				speed: field(1),
+				boost: {
+					...field(1),
+					strategy: 'media-webaudio',
+					coverage: 'full',
+				},
+			},
+		} as const;
+		expect(isControlSnapshot(snapshot)).toBe(true);
+		expect(isControlSnapshot({
+			...snapshot,
+			fields: { speed: { ...field(1), strategy: 'generic-main' } },
+		})).toBe(false);
+		expect(isControlSnapshot({
+			...snapshot,
+			activeVideo: {
+				frameId: 0,
+				documentId: 'document-42',
+				mediaId: 'media:audio',
+				sourceRevision: 0,
+				kind: 'audio',
+			},
+		})).toBe(false);
+	});
+
+	test('covers every persistent field and momentary operation without classifying augmentation as native', () => {
+		expect(CONTROL_FIELDS).toHaveLength(28);
+		expect(CONTROL_OPERATIONS).toHaveLength(22);
+		expect(CONTROL_DIRECT_FIELDS).toHaveLength(26);
+		expect(CONTROL_CAPABILITIES).toHaveLength(50);
+		expect(new Set(CONTROL_CAPABILITIES).size).toBe(
+			CONTROL_FIELDS.length + CONTROL_OPERATIONS.length,
+		);
+		expect(classifyControlStrategy('site-native')).toBe('native');
+		expect(classifyControlStrategy('dom-native')).toBe('native');
+		expect(classifyControlStrategy('extension-css')).toBe('augmentation');
+		expect(classifyControlStrategy('media-webaudio')).toBe('augmentation');
+		expect(classifyControlStrategy('unsupported')).toBe('unsupported');
+	});
+
+	test('locks every strategy to one writer owner and forbids permission-boundary bypasses', () => {
+		expect(Object.keys(CONTROL_STRATEGY_RULES).sort()).toEqual([...CONTROL_STRATEGIES].sort());
+		for (const strategy of CONTROL_STRATEGIES) {
+			const rule = CONTROL_STRATEGY_RULES[strategy];
+			expect(rule.canBypassUserActivation).toBe(false);
+			expect(rule.canBypassCorsOrDrm).toBe(false);
+			if (rule.class === 'native' || rule.class === 'augmentation') {
+				expect(rule.requiresActualReadback).toBe(true);
+			}
+			if (rule.mainWorld === 'allowlisted-site-api-only') {
+				expect(strategy).toBe('site-native');
+			}
+			if (rule.interception === 'irreversible-media-source-binding') {
+				expect(rule.admissionEvidence).toBe('proven-media-source-eligibility');
+				expect(strategy).toBe('media-webaudio');
+			}
+		}
+		expect(CONTROL_STRATEGY_RULES['dom-native'].audioRuntimeCost).toBe('none');
+		expect(CONTROL_STRATEGY_RULES['site-native'].requiresDisposer).toBe(false);
+		expect(CONTROL_STRATEGY_RULES['media-webaudio'].audioRuntimeCost).toBe('lazy-audio-context');
+		expect(CONTROL_STRATEGY_RULES.capture.audioRuntimeCost).toBe('lazy-offscreen-capture');
+		expect(CONTROL_STRATEGY_RULES.capture.interception).toBe('authorized-tab-stream');
+		expect(CONTROL_STRATEGY_RULES['extension-css'].interception).toBe(
+			'reversible-extension-layer',
+		);
+	});
+
+	test('falls through only for capability incompleteness and stops at browser boundaries', () => {
+		for (const failure of CONTROL_RETRYABLE_STRATEGY_FAILURES) {
+			expect(shouldTryNextControlStrategy(failure)).toBe(true);
+		}
+		for (const failure of CONTROL_TERMINAL_STRATEGY_FAILURES) {
+			expect(shouldTryNextControlStrategy(failure)).toBe(false);
+		}
+	});
+
+	test('classifies every algorithm exhaustively and keeps native candidates ahead of augmentation', () => {
+		expect(Object.keys(CONTROL_ALGORITHM_POLICIES).sort()).toEqual(
+			[...CONTROL_CAPABILITIES].sort(),
+		);
+		for (const capability of CONTROL_CAPABILITIES) {
+			const policy = CONTROL_ALGORITHM_POLICIES[capability];
+			expect(policy.orderedStrategies.length).toBeGreaterThan(0);
+			expect(policy.orderedStrategies).not.toContain('unsupported');
+			const nativeIndexes: number[] = [];
+			const augmentationIndexes: number[] = [];
+			for (const [index, strategy] of policy.orderedStrategies.entries()) {
+				const classification = classifyControlStrategy(strategy);
+				if (classification === 'native') nativeIndexes.push(index);
+				if (classification === 'augmentation') augmentationIndexes.push(index);
+			}
+			if (nativeIndexes.length > 0 && augmentationIndexes.length > 0) {
+				expect(Math.max(...nativeIndexes)).toBeLessThan(Math.min(...augmentationIndexes));
+			}
+			if (policy.mainWorld === 'site-adapter-only') {
+				expect(policy.orderedStrategies).toContain('site-native');
+			}
+		}
+	});
+
+	test('adjudicates native-only, hybrid, augmentation-only, and observation-only algorithms exhaustively', () => {
+		expect(Object.keys(CONTROL_ALGORITHM_ADJUDICATIONS).sort()).toEqual(
+			[...CONTROL_CAPABILITIES].sort(),
+		);
+		const totals = new Map<string, number>();
+		for (const capability of CONTROL_CAPABILITIES) {
+			const policy = CONTROL_ALGORITHM_POLICIES[capability];
+			const adjudication = CONTROL_ALGORITHM_ADJUDICATIONS[capability];
+			totals.set(
+				adjudication.nativePreference,
+				(totals.get(adjudication.nativePreference) ?? 0) + 1,
+			);
+			const classes = policy.orderedStrategies.map(classifyControlStrategy);
+			const hasNative = classes.includes('native');
+			const hasAugmentation = classes.includes('augmentation');
+			const hasObservation = classes.includes('observe');
+
+			switch (adjudication.nativePreference) {
+				case 'observation-only':
+					expect(hasObservation).toBe(true);
+					expect(hasNative).toBe(false);
+					break;
+				case 'native-only':
+					expect(hasNative).toBe(true);
+					expect(hasAugmentation).toBe(false);
+					expect(adjudication.augmentationAdmission).toBe('none');
+					break;
+				case 'hybrid-extension-native':
+					expect(hasNative).toBe(true);
+					expect(policy.kind).toBe('state-then-native');
+					expect(adjudication.augmentationAdmission).not.toBe('none');
+					break;
+				case 'augmentation-only':
+					expect(hasNative).toBe(false);
+					expect(hasAugmentation).toBe(true);
+					expect(adjudication.augmentationAdmission).not.toBe('none');
+					break;
+			}
+		}
+		expect(Object.fromEntries(totals)).toEqual({
+			'augmentation-only': 26,
+			'hybrid-extension-native': 5,
+			'native-only': 17,
+			'observation-only': 2,
+		});
+	});
+
+	test('keeps all 50 executable strategy orders, MAIN boundaries, ACKs, and lifetimes mirrored in the owner design', () => {
+		const architecture = readFileSync(
+			new URL('../docs/control-architecture.md', import.meta.url),
+			'utf8',
+		);
+		for (const capability of CONTROL_CAPABILITIES) {
+			const policy = CONTROL_ALGORITHM_POLICIES[capability];
+			const adjudication = CONTROL_ALGORITHM_ADJUDICATIONS[capability];
+			const exactRow = [
+				`| \`${capability}\``,
+				`\`${adjudication.nativePreference}\``,
+				`\`${adjudication.augmentationAdmission}\``,
+				`\`${policy.orderedStrategies.join(' -> ')}\``,
+				`\`${policy.mainWorld}\``,
+				`\`${policy.acknowledgements.join(' + ')}\``,
+				`\`${policy.recurringWork}\` |`,
+			].join(' | ');
+			expect(architecture).toContain(exactRow);
+		}
+	});
+
+	test('records recurring work only for explicitly owned or subscribed algorithms', () => {
+		const recurring = Object.entries(CONTROL_ALGORITHM_POLICIES)
+			.filter(([, policy]) => policy.recurringWork !== 'none')
+			.map(([capability, policy]) => [capability, policy.recurringWork]);
+		expect(recurring).toEqual([
+			['boost', 'page-lifetime-after-media-binding'],
+			['dimEnabled', 'while-owned'],
+			['dimOpacity', 'while-owned'],
+			['abLoop', 'while-owned'],
+			['eqValues', 'page-lifetime-after-media-binding'],
+			['bass', 'page-lifetime-after-media-binding'],
+			['compressor', 'page-lifetime-after-media-binding'],
+			['mono', 'page-lifetime-after-media-binding'],
+			['pan', 'page-lifetime-after-media-binding'],
+			['delay', 'page-lifetime-after-media-binding'],
+			['visualizer', 'while-subscribed'],
+		]);
+	});
+
+	test('keeps invasive strategies inside their audited capability families', () => {
+		const capabilitiesFor = (strategy: keyof typeof CONTROL_STRATEGY_RULES) =>
+			CONTROL_CAPABILITIES.filter((capability) =>
+				CONTROL_ALGORITHM_POLICIES[capability].orderedStrategies.some(
+					(candidate) => candidate === strategy,
+				));
+
+		expect(capabilitiesFor('media-webaudio')).toEqual([
+			'boost', 'eqValues', 'bass', 'compressor', 'mono', 'pan', 'delay',
+		]);
+		expect(capabilitiesFor('capture')).toEqual([
+			'boost', 'eqValues', 'bass', 'compressor', 'mono', 'pan', 'delay',
+		]);
+		expect(capabilitiesFor('extension-css')).toEqual([
+			'rotation', 'mirrored', 'fill', 'filterEnabled', 'filter',
+		]);
+		expect(capabilitiesFor('extension-overlay')).toEqual(['dimEnabled', 'dimOpacity']);
+		expect(capabilitiesFor('chrome-native')).toEqual([
+			'tabMuted', 'tabPinned', 'screenshot', 'open-popup', 'open-options', 'open-url',
+		]);
+		const declaredSiteNative = Object.values(SITE_NATIVE_ADAPTER_DESCRIPTORS)
+			.flatMap((descriptor) => [...descriptor.fields]);
+		expect(capabilitiesFor('site-native')).toEqual(declaredSiteNative);
+
+		for (const activationBound of ['playing', 'pip', 'fullscreen'] as const) {
+			const strategies = CONTROL_ALGORITHM_POLICIES[activationBound].orderedStrategies;
+			expect(strategies).not.toContain('media-webaudio');
+			expect(strategies).not.toContain('capture');
+		}
+		for (const protectedBoundary of ['screenshot', 'run-user-script'] as const) {
+			expect(CONTROL_ALGORITHM_POLICIES[protectedBoundary].mainWorld).toBe('forbidden');
+		}
+	});
+
+	test('keeps A/B and visualizer on their operation/subscription entry points', () => {
+		expect(isControlPatch({
+			filterEnabled: true,
+			dimEnabled: true,
+			tabPinned: false,
+		})).toBe(true);
+		expect(isControlPatch({
+			abLoop: { pointA: 2, pointB: 4, enabled: true },
+		})).toBe(false);
+		expect(isControlPatch({ visualizer: true })).toBe(false);
+	});
+});

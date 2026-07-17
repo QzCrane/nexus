@@ -2,12 +2,11 @@
 // ban: direct state mutation of the global config outside this module
 
 import type { AudioConfig } from '@nexus/kernel';
-import { rpcFailure, type SpectraResponse } from '@nexus/contracts';
+import { resolveAudioVolume, rpcFailure, type SpectraResponse } from '@nexus/contracts';
 import { showOSD, showSpeedOSD } from '../../ui/osd';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../../types';
 import type { InternalState } from './types';
 import { updateBadge } from './badge-sync';
-import { markUserInteracted } from '../../audio/dom-volume';
 import { sendSpectraRequest } from '../../../shared/spectra-client';
 
 // eff: updates internal state, triggers badge/OSD refreshes, and persists changes to storage
@@ -16,8 +15,8 @@ export function updateConfig(
 	state: PolicyExecutorState,
 	internalState: InternalState,
 	changes: Partial<AudioConfig>,
-	options: { showOSD?: boolean; unMute?: boolean; isNativeSync?: boolean } = {},
-	applyStateFn: () => void
+	options: { showOSD?: boolean; isNativeSync?: boolean } = {},
+	applyStateFn: () => Promise<void>
 ): Promise<SpectraResponse<'spectra.audio.config.set'>> {
 	const { settingsManager } = deps;
 
@@ -25,16 +24,23 @@ export function updateConfig(
 	// this activates the "Special Features" like sticky badge and bi-directional sync
 	if (!options.isNativeSync) {
 		state.userHasInteracted = true;
-		// eff: sync to dom-volume module to enable native->plugin message routing
-		markUserInteracted();
 	}
 
 	const newConfig = { ...state.config, ...changes };
-
-	// note: auto-unmute if specifically requested (e.g. volume adjustment via hotkey)
-	if (options.unMute) {
-		newConfig.muted = false;
-	}
+	const legacyVolume = changes.volume;
+	const legacyVolumeOnly = legacyVolume !== undefined
+		&& changes.volumeBase === undefined
+		&& changes.boost === undefined;
+	const volume = legacyVolumeOnly
+		? resolveAudioVolume({ volume: legacyVolume ?? 100 })
+		: resolveAudioVolume({
+			volume: newConfig.volume,
+			volumeBase: newConfig.volumeBase,
+			boost: newConfig.boost,
+		});
+	newConfig.volumeBase = volume.volumeBase;
+	newConfig.boost = volume.boost;
+	newConfig.volume = volume.effectiveVolume;
 
 	// inv: remove transient delta fields before state consolidation
 	Reflect.deleteProperty(newConfig, 'volumeDelta');
@@ -45,29 +51,29 @@ export function updateConfig(
 	// rule: NEVER trigger applyState for a native sync update
 	// reason: applying state writes the current config BACK to the DOM/Injector;
 	// if we do this during a native sync, we create a feedback loop that causes volume drift/jitter
-	if (!options.isNativeSync) {
-		applyStateFn();
-	}
+	return (async () => {
+		if (!options.isNativeSync) await applyStateFn();
 
-	updateBadge(deps, state, internalState);
+		updateBadge(deps, state, internalState);
 
-	if (options.showOSD) {
-		const settings = settingsManager.get();
-		// note: show speed OSD for speed-only changes, volume OSD for other changes
-		const isSpeedOnlyChange = Object.keys(changes).length === 1 && 'speed' in changes;
-		if (isSpeedOnlyChange) {
-			showSpeedOSD(newConfig.speed ?? 1, settings, state.isPopupOpen);
-		} else {
-			showOSD(
-				state.config,
-				state.actualMode === 'capture' && state.phase === 'active',
-				settings,
-				state.isPopupOpen
-			);
+		if (options.showOSD) {
+			const settings = settingsManager.get();
+			// note: show speed OSD for speed-only changes, volume OSD for other changes
+			const isSpeedOnlyChange = Object.keys(changes).length === 1 && 'speed' in changes;
+			if (isSpeedOnlyChange) {
+				showSpeedOSD(newConfig.speed ?? 1, settings, state.isPopupOpen);
+			} else {
+				showOSD(
+					state.config,
+					state.actualMode === 'capture' && state.phase === 'active',
+					settings,
+					state.isPopupOpen
+				);
+			}
 		}
-	}
 
-	return persistConfigSnapshot(internalState, state.config, state.generation);
+		return persistConfigSnapshot(internalState, state.config, state.generation);
+	})();
 }
 
 // post: config writes reach the background in update order. The returned

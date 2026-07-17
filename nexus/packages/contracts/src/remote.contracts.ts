@@ -1,5 +1,7 @@
 // goal: extension-internal UI/background boundary for authenticated remote sessions
 
+import type { ControlCapability } from './control.contracts.js';
+
 export interface RemotePublicSession {
 	protocolVersion: 2;
 	sessionId: string;
@@ -32,6 +34,10 @@ export const REMOTE_COMMANDS = [
 	'volume_down',
 	'volume_max',
 	'volume_100',
+	'boost_up',
+	'boost_down',
+	'boost_reset',
+	'boost_max',
 	'mute',
 	'play_pause',
 	'seek_forward',
@@ -47,9 +53,53 @@ export const REMOTE_COMMANDS = [
 
 export type RemoteCommand = (typeof REMOTE_COMMANDS)[number];
 
+export type RemoteCommandOperation = 'delta' | 'set' | 'toggle';
+
+export interface RemoteCommandDescriptor {
+	capability: ControlCapability;
+	operation: RemoteCommandOperation;
+	value?: number;
+	legacyAlias: boolean;
+}
+
+const remoteDescriptor = (
+	capability: ControlCapability,
+	operation: RemoteCommandOperation,
+	value?: number,
+	legacyAlias = false,
+): RemoteCommandDescriptor => ({ capability, operation, value, legacyAlias });
+
+// Remote buttons are surface aliases, never independent algorithms. This
+// exhaustive map fixes their canonical capability and transform so handler,
+// phone UI and tests cannot silently diverge on steps or volume/Boost meaning.
+export const REMOTE_COMMAND_DESCRIPTORS = {
+	volume_up: remoteDescriptor('volumeBase', 'delta', 10),
+	volume_down: remoteDescriptor('volumeBase', 'delta', -10),
+	volume_max: remoteDescriptor('boost', 'set', 8, true),
+	volume_100: remoteDescriptor('volumeBase', 'set', 100),
+	boost_up: remoteDescriptor('boost', 'delta', 0.1),
+	boost_down: remoteDescriptor('boost', 'delta', -0.1),
+	boost_reset: remoteDescriptor('boost', 'set', 1),
+	boost_max: remoteDescriptor('boost', 'set', 8),
+	mute: remoteDescriptor('mediaMuted', 'toggle'),
+	play_pause: remoteDescriptor('playback-toggle', 'toggle'),
+	seek_forward: remoteDescriptor('seek-relative', 'delta', 10),
+	seek_backward: remoteDescriptor('seek-relative', 'delta', -10),
+	seek_forward_30: remoteDescriptor('seek-relative', 'delta', 30),
+	seek_backward_30: remoteDescriptor('seek-relative', 'delta', -30),
+	speed_up: remoteDescriptor('speed', 'delta', 0.25),
+	speed_down: remoteDescriptor('speed', 'delta', -0.25),
+	speed_reset: remoteDescriptor('speed', 'set', 1),
+	fullscreen: remoteDescriptor('fullscreen', 'toggle'),
+	pip: remoteDescriptor('pip', 'toggle'),
+} as const satisfies Record<RemoteCommand, RemoteCommandDescriptor>;
+
 export interface RemoteState {
 	generation: number;
+	/** @deprecated one-release effective-volume projection */
 	volume: number;
+	volumeBase?: number;
+	boost?: number;
 	muted: boolean;
 	playing: boolean;
 	speed: number;
@@ -111,6 +161,8 @@ export function isRemoteState(value: unknown): value is RemoteState {
 	if (!keys.every((key) => [
 		'generation',
 		'volume',
+		'volumeBase',
+		'boost',
 		'muted',
 		'playing',
 		'speed',
@@ -120,6 +172,8 @@ export function isRemoteState(value: unknown): value is RemoteState {
 	return Number.isSafeInteger(value.generation)
 		&& (value.generation as number) >= 0
 		&& isFiniteInRange(value.volume, 0, 800)
+		&& (value.volumeBase === undefined || isFiniteInRange(value.volumeBase, 0, 100))
+		&& (value.boost === undefined || isFiniteInRange(value.boost, 1, 8))
 		&& typeof value.muted === 'boolean'
 		&& typeof value.playing === 'boolean'
 		&& isFiniteInRange(value.speed, 0.1, 16)

@@ -5,6 +5,7 @@
   --g2: #64748b;
   --text: #0f172a;
   --primary: #2563eb;
+  --boost: #8b5cf6;
   --active: #10b981;
   --danger: #ef4444;
   --success: #16a34a;
@@ -643,6 +644,16 @@ input:checked + .slider-round:before {
   color: var(--danger);
 }
 
+.boost-icon {
+  width: 34px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.boost-row {
+  margin-top: -4px;
+}
+
 .slider-rail-container {
   flex: 1;
   height: 20px;
@@ -676,6 +687,11 @@ input:checked + .slider-round:before {
   cursor: pointer;
 }
 
+.boost-slider::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+}
+
 .slider-fill {
   position: absolute;
   height: 6px;
@@ -686,6 +702,10 @@ input:checked + .slider-round:before {
   pointer-events: none;
   transition: background 0.2s;
   z-index: 5;
+}
+
+.boost-fill {
+  background-color: var(--boost);
 }
 
 .slider-bg {
@@ -715,6 +735,10 @@ input:checked + .slider-round:before {
   text-align: right;
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
+}
+
+.boost-number {
+  color: var(--boost);
 }
 
 .glass-card.muted .vol-number {

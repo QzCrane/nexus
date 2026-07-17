@@ -2,6 +2,7 @@
 // pre: requires "scripting" permission in manifest.json
 
 import { swLog } from '../shared/logger';
+import { ensureContentRuntime, releaseContentRuntimeLease } from './runtime-loader';
 
 export const WARM_UPDATE_CONCURRENCY = 4;
 
@@ -87,22 +88,19 @@ async function injectWithTransition(tabId: number): Promise<void> {
 					}
 				},
 			});
-			await new Promise(r => setTimeout(r, 200));
 		}
 
-		// inv: injector.js MUST run before content.js (playbackRate hijack setup)
 		await chrome.scripting.executeScript({
 			target: { tabId },
-			files: ['injector.js'],
-			world: 'MAIN'
+			files: ['content-bootstrap.js'],
+			world: 'ISOLATED',
 		});
 
-		await chrome.scripting.executeScript({
-			target: { tabId },
-			files: ['content.js']
-		});
-
-		await new Promise(r => setTimeout(r, 300));
+		if (hasOldInstance) {
+			const capability = 'warm-update';
+			const ready = await ensureContentRuntime(tabId, undefined, 'restore', capability);
+			releaseContentRuntimeLease(tabId, ready.documentId, 'restore', capability);
+		}
 
 		swLog.debug(`[Upgrade] Tab ${tabId}: transition complete`);
 	} catch (e) {
@@ -117,12 +115,8 @@ export async function injectContentScriptOnDemand(tabId: number): Promise<boolea
 	try {
 		await chrome.scripting.executeScript({
 			target: { tabId },
-			files: ['injector.js'],
-			world: 'MAIN'
-		});
-		await chrome.scripting.executeScript({
-			target: { tabId },
-			files: ['content.js']
+			files: ['content-bootstrap.js'],
+			world: 'ISOLATED',
 		});
 		return true;
 	} catch (e) {

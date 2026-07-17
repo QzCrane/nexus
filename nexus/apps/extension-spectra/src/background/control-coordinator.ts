@@ -1,0 +1,2125 @@
+// goal: authoritative per-field intent ordering, actual ACK commit, and snapshot projection
+
+import {
+	DEFAULT_AUDIO_CONFIG,
+	CONTROL_ALGORITHM_POLICIES,
+	SITE_NATIVE_ADAPTER_DESCRIPTORS,
+	SPECTRA_PROTOCOL_VERSION,
+	isControlSnapshot,
+	isControlStrategyFailure,
+	isSpectraRequestEnvelope,
+	resolveAudioVolume,
+	rpcFailure,
+	rpcSuccess,
+	shouldTryNextControlStrategy,
+	type AudioConfig,
+	type ControlActualContext,
+	type ControlApplyAck,
+	type ControlCapability,
+	type ControlDirectField,
+	type ControlField,
+	type ControlFieldStates,
+	type ControlIntent,
+	type ControlMutation,
+	type ControlOperationAck,
+	type ControlOperationIntent,
+	type ControlOperationRequest,
+	type ControlOperationResult,
+	type ControlPatch,
+	type ControlSnapshot,
+	type ControlSubmitRequest,
+	type ControlValues,
+	type MediaTarget,
+	type SiteNativeControlField,
+	type SpectraEventEnvelope,
+} from '@nexus/contracts';
+import { sendSpectraTabRequest } from '../shared/spectra-client';
+import { storage } from './state';
+import { updateBadgeForTab } from './handlers/badge';
+import { executeUserScriptInTab } from './handlers/user-scripts';
+import { applyMainSiteControl } from './main-runtime-manager';
+import {
+	ensureContentRuntime,
+	releaseContentRuntimeLease,
+	releaseSourceRuntimeLease,
+	retainSourceRuntimeLease,
+} from './runtime-loader';
+
+const STORAGE_PREFIX = 'spectra.control.tab.';
+const GENERATION_PREFIX = 'spectra.control.generation.';
+const SITE_NATIVE_BASELINE_PREFIX = 'spectra.control.site-native-baseline.';
+const snapshots = new Map<number, ControlSnapshot>();
+const queues = new Map<number, Promise<void>>();
+const invalidations = new Map<number, Promise<void>>();
+let initialized = false;
+
+type RoutedControlSubmitRequest = Omit<ControlSubmitRequest, 'tabId'> & { tabId: number };
+type ResolvedControlSubmitRequest = Omit<RoutedControlSubmitRequest, 'patch' | 'mutations'> & {
+	patch: ControlPatch;
+};
+type RoutedControlOperationRequest = ControlOperationRequest & { tabId: number };
+
+// Page-originated messages are observations emitted by the trusted content
+// runtime after a native event/getter readback. They must update the shared
+// snapshot without routing the same value back to the DOM as a second write.
+const PAGE_OBSERVABLE_FIELDS = new Set<ControlField>([
+	'volumeBase',
+	'mediaMuted',
+	'speed',
+	'preservePitch',
+	'playing',
+	'currentTime',
+	'loop',
+	'pip',
+	'fullscreen',
+]);
+
+const AUDIO_PROJECTION_FIELDS = new Set<ControlField>([
+	'audioEnabled',
+	'volumeBase',
+	'boost',
+	'mediaMuted',
+	'speed',
+	'preservePitch',
+	'eqValues',
+	'bass',
+	'compressor',
+	'mono',
+	'pan',
+	'delay',
+]);
+
+const SITE_NATIVE_FIELDS = new Set<ControlField>(
+	Object.values(SITE_NATIVE_ADAPTER_DESCRIPTORS)
+		.flatMap((descriptor) => [...descriptor.fields]),
+);
+
+interface ControlTargetProjection {
+	activeMedia: ControlSnapshot['activeMedia'];
+	activeVideo: ControlSnapshot['activeVideo'];
+}
+
+function controlTargetScopeFlags(capabilities: readonly ControlCapability[]): {
+	updatesMedia: boolean;
+	updatesVideo: boolean;
+} {
+	const scopes = capabilities.map((capability) => CONTROL_ALGORITHM_POLICIES[capability].scope);
+	return {
+		updatesMedia: scopes.some((scope) => scope === 'active-media'
+			|| scope === 'media-source'
+			|| scope === 'requested-audio-scope'),
+		updatesVideo: scopes.some((scope) => scope === 'active-video'),
+	};
+}
+
+function assertUnambiguousTargetScope(request: RoutedControlSubmitRequest): void {
+	const capabilities = [
+		...Object.keys(request.patch ?? {}),
+		...(request.mutations ?? []).map(({ field }) => field),
+	] as ControlCapability[];
+	const { updatesMedia, updatesVideo } = controlTargetScopeFlags(capabilities);
+	if (updatesVideo && request.target?.kind === 'audio') {
+		throw new Error('A video-scoped control cannot target an audio element');
+	}
+	if (updatesMedia && updatesVideo && request.target === null) {
+		throw new Error('Mixed media/video controls require one explicit video target');
+	}
+}
+
+// An ACK target identifies what executed; it is not permission to replace both
+// active identities. Contract scope is the executable owner of that projection:
+// video-only controls update only activeVideo, tab/document controls update
+// neither, and media/audio/source controls update activeMedia (plus activeVideo
+// when the resolved media itself is a video).
+function projectControlTarget(
+	baseline: Pick<ControlSnapshot, 'activeMedia' | 'activeVideo'>,
+	capabilities: readonly ControlCapability[],
+	target: MediaTarget | null,
+): ControlTargetProjection {
+	let activeMedia = baseline.activeMedia;
+	let activeVideo = baseline.activeVideo;
+	if (!target) return { activeMedia, activeVideo };
+
+	const { updatesMedia, updatesVideo } = controlTargetScopeFlags(capabilities);
+	if (updatesMedia) {
+		activeMedia = target;
+		if (target.kind === 'video') activeVideo = target;
+	}
+	if (updatesVideo && target.kind === 'video') activeVideo = target;
+	return { activeMedia, activeVideo };
+}
+
+const RUNTIME_OWNER_CAPABILITY = 'owned-control-state';
+const RUNTIME_RESIDENT_NATIVE_FIELDS = new Set<ControlField>([
+	'volumeBase',
+	'mediaMuted',
+	'speed',
+	'preservePitch',
+	'loop',
+]);
+
+function hasRuntimeOwnedState(snapshot: ControlSnapshot): boolean {
+	return Object.entries(snapshot.fields).some(([rawField, state]) => {
+		if (!state?.controlled || state.phase !== 'applied') return false;
+		const field = rawField as ControlField;
+		if (field === 'audioEnabled') return false;
+		if (state.strategy === 'chrome-native' || state.strategy === 'site-native'
+			|| state.strategy === 'observe' || state.strategy === 'unsupported') return false;
+		if (state.strategy === 'dom-native') return RUNTIME_RESIDENT_NATIVE_FIELDS.has(field);
+		return true;
+	});
+}
+
+async function reconcileRuntimeOwnership(snapshot: ControlSnapshot): Promise<void> {
+	if (hasRuntimeOwnedState(snapshot)) {
+		await ensureContentRuntime(
+			snapshot.tabId,
+			snapshot.documentId,
+			'control',
+			RUNTIME_OWNER_CAPABILITY,
+		);
+		return;
+	}
+	releaseContentRuntimeLease(
+		snapshot.tabId,
+		snapshot.documentId,
+		'control',
+		RUNTIME_OWNER_CAPABILITY,
+	);
+}
+
+function isSiteNativeControlField(field: ControlField): field is SiteNativeControlField {
+	return SITE_NATIVE_FIELDS.has(field);
+}
+
+function storageKey(tabId: number): string {
+	return `${STORAGE_PREFIX}${tabId}`;
+}
+
+function generationKey(tabId: number): string {
+	return `${GENERATION_PREFIX}${tabId}`;
+}
+
+function siteNativeBaselineKey(tabId: number): string {
+	return `${SITE_NATIVE_BASELINE_PREFIX}${tabId}`;
+}
+
+interface SiteNativeBaselineRecord {
+	documentId: string;
+	generation: number;
+	values: Partial<Record<SiteNativeControlField, number | boolean>>;
+}
+
+function isSiteNativeBaselineValue(field: SiteNativeControlField, value: unknown): boolean {
+	if (field === 'mediaMuted') return typeof value === 'boolean';
+	if (typeof value !== 'number' || !Number.isFinite(value)) return false;
+	return field === 'volumeBase'
+		? value >= 0 && value <= 100
+		: value >= 0.1 && value <= 16;
+}
+
+async function readSiteNativeBaseline(
+	tabId: number,
+	documentId: string,
+	generation: number,
+): Promise<SiteNativeBaselineRecord | null> {
+	const key = siteNativeBaselineKey(tabId);
+	const stored = await chrome.storage.session.get(key).catch(() => ({})) as Record<string, unknown>;
+	const candidate = stored[key];
+	if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null;
+	const record = candidate as Partial<SiteNativeBaselineRecord>;
+	if (record.documentId !== documentId || record.generation !== generation
+		|| !record.values || typeof record.values !== 'object' || Array.isArray(record.values)) {
+		return null;
+	}
+	const values: SiteNativeBaselineRecord['values'] = {};
+	for (const field of SITE_NATIVE_FIELDS) {
+		if (!isSiteNativeControlField(field)) continue;
+		const value = record.values[field];
+		if (value !== undefined && isSiteNativeBaselineValue(field, value)) values[field] = value;
+	}
+	return { documentId, generation, values };
+}
+
+async function rememberSiteNativeBaseline(
+	intent: ControlIntent,
+	field: SiteNativeControlField,
+	value: number | boolean,
+): Promise<void> {
+	const existing = await readSiteNativeBaseline(
+		intent.tabId,
+		intent.documentId,
+		intent.generation,
+	) ?? { documentId: intent.documentId, generation: intent.generation, values: {} };
+	if (existing.values[field] !== undefined) return;
+	existing.values[field] = value;
+	await chrome.storage.session.set({ [siteNativeBaselineKey(intent.tabId)]: existing });
+}
+
+async function clearSiteNativeBaseline(tabId: number): Promise<void> {
+	await chrome.storage.session.remove(siteNativeBaselineKey(tabId)).catch(() => undefined);
+}
+
+async function currentIdentity(tabId: number): Promise<{ documentId: string; origin: string }> {
+	const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
+	if (!frame?.documentId) throw new Error('The tab has no current document');
+	const url = new URL(frame.url);
+	if (url.origin === 'null') throw new Error('The current document has no controllable origin');
+	return { documentId: frame.documentId, origin: url.origin };
+}
+
+function sameMediaTarget(
+	left: import('@nexus/contracts').MediaTarget | null,
+	right: import('@nexus/contracts').MediaTarget | null,
+): boolean {
+	return left === right || Boolean(left && right
+		&& left.documentId === right.documentId
+		&& left.frameId === right.frameId
+		&& left.mediaId === right.mediaId
+		&& left.sourceRevision === right.sourceRevision
+		&& left.kind === right.kind);
+}
+
+function nativeObservationFields(
+	patch: ControlPatch,
+	revision: number,
+): ControlFieldStates {
+	const fields: ControlFieldStates = {};
+	for (const [rawField, actual] of Object.entries(patch)) {
+		const field = rawField as ControlField;
+		(fields as Record<string, unknown>)[field] = {
+			desired: actual,
+			actual,
+			revision,
+			phase: 'applied',
+			strategy: 'dom-native',
+			coverage: 'active-target',
+			controlled: false,
+			lastError: null,
+		};
+	}
+	return fields;
+}
+
+async function readPersistedSnapshot(tabId: number): Promise<ControlSnapshot | null> {
+	const key = storageKey(tabId);
+	const stored = await chrome.storage.session.get(key)
+		.catch(() => ({})) as Record<string, unknown>;
+	const value = stored[key];
+	return isControlSnapshot(value) ? value : null;
+}
+
+async function readPersistedGeneration(tabId: number): Promise<number> {
+	const key = generationKey(tabId);
+	const stored = await chrome.storage.session.get(key)
+		.catch(() => ({})) as Record<string, unknown>;
+	const value = stored[key];
+	return Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : 0;
+}
+
+async function persistGeneration(tabId: number, generation: number): Promise<void> {
+	await chrome.storage.session.set({ [generationKey(tabId)]: generation });
+}
+
+async function getSnapshot(tabId: number): Promise<ControlSnapshot | null> {
+	await invalidations.get(tabId);
+	const known = snapshots.get(tabId) ?? await readPersistedSnapshot(tabId);
+	if (!known) return null;
+	const identity = await currentIdentity(tabId).catch(() => null);
+	if (!identity
+		|| known.documentId !== identity.documentId
+		|| known.origin !== identity.origin) return null;
+	snapshots.set(tabId, known);
+	return known;
+}
+
+export async function getControlViewSnapshot(tabId: number): Promise<ControlSnapshot | null> {
+	const existing = await getSnapshot(tabId);
+	const identity = await currentIdentity(tabId).catch(() => null);
+	if (!identity) return existing;
+	const generation = existing?.generation ?? await readPersistedGeneration(tabId);
+	const videoFields = ['pip', 'fullscreen'] as const satisfies readonly ControlDirectField[];
+	const mediaFields = [...PAGE_OBSERVABLE_FIELDS]
+		.filter((field): field is ControlDirectField => !videoFields.includes(field as typeof videoFields[number]));
+	const read = (fields: readonly ControlDirectField[]) => sendSpectraTabRequest(
+		tabId,
+		'spectra.control.actual.read',
+		{ fields, target: null },
+		{ documentId: identity.documentId, generation },
+	).catch(() => null);
+	const [mediaResponse, videoResponse] = await Promise.all([
+		read(mediaFields),
+		read(videoFields),
+	]);
+	if (!mediaResponse?.ok && !videoResponse?.ok) return existing;
+	const base: ControlSnapshot = existing ?? {
+		tabId,
+		documentId: identity.documentId,
+		origin: identity.origin,
+		generation,
+		revision: 0,
+		activeMedia: null,
+		activeVideo: null,
+		fields: {},
+	};
+	const fields = {
+		...base.fields,
+		...(mediaResponse?.ok ? nativeObservationFields(mediaResponse.data.patch, base.revision) : {}),
+		...(videoResponse?.ok ? nativeObservationFields(videoResponse.data.patch, base.revision) : {}),
+	};
+	const activeMedia = mediaResponse?.ok
+		? mediaResponse.data.target
+		: mediaResponse?.error.code === 'capability-unavailable'
+			? null
+			: base.activeMedia;
+	const observedVideo = videoResponse?.ok
+		? videoResponse.data.target
+		: videoResponse?.error.code === 'capability-unavailable'
+			? null
+			: base.activeVideo;
+	return {
+		...base,
+		activeMedia,
+		activeVideo: observedVideo?.kind === 'video' ? observedVideo : null,
+		fields,
+	};
+}
+
+async function getOrCreateSnapshot(tabId: number): Promise<ControlSnapshot> {
+	const existing = await getSnapshot(tabId);
+	if (existing) return existing;
+	const [identity, persisted, storedGeneration] = await Promise.all([
+		currentIdentity(tabId),
+		readPersistedSnapshot(tabId),
+		readPersistedGeneration(tabId),
+	]);
+	const generation = persisted
+		&& (persisted.documentId !== identity.documentId || persisted.origin !== identity.origin)
+		? Math.max(storedGeneration, persisted.generation + 1)
+		: storedGeneration;
+	if (generation !== storedGeneration) await persistGeneration(tabId, generation);
+	return {
+		tabId,
+		documentId: identity.documentId,
+		origin: identity.origin,
+		generation,
+		revision: 0,
+		activeMedia: null,
+		activeVideo: null,
+		fields: {},
+	};
+}
+
+function createIntent(
+	snapshot: ControlSnapshot,
+	request: ResolvedControlSubmitRequest,
+): ControlIntent {
+	const actualContext: ControlActualContext = {};
+	for (const field of ['volumeBase', 'mediaMuted', 'speed', 'preservePitch'] as const) {
+		const state = snapshot.fields[field];
+		if (state?.phase === 'applied' && state.actual !== null) {
+			(actualContext as Record<string, unknown>)[field] = state.actual;
+		}
+		if (request.source === 'page' && request.patch[field] !== undefined) {
+			(actualContext as Record<string, unknown>)[field] = request.patch[field];
+		}
+	}
+	return {
+		intentId: crypto.randomUUID(),
+		tabId: request.tabId,
+		documentId: snapshot.documentId,
+		generation: snapshot.generation,
+		baseRevision: snapshot.revision,
+		source: request.source,
+		requestedCoverage: request.requestedCoverage,
+		// `null` is an explicit live-active selection. Content resolves it from
+		// the current document registry; Background must not silently replace it
+		// with a possibly stale snapshot target.
+		target: request.target,
+		actualContext,
+		patch: request.patch,
+	};
+}
+
+function defaultControlValue(field: ControlField): ControlValues[ControlField] {
+	switch (field) {
+		case 'volumeBase': return 100;
+		case 'boost': return 1;
+		case 'speed': return 1;
+		case 'currentTime': return 0;
+		case 'rotation': return 0;
+		case 'dimOpacity': return 0.72;
+		case 'pan': return 0;
+		case 'delay': return 0;
+		case 'eqValues': return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+		case 'filter': return {
+			brightness: 100,
+			contrast: 100,
+			saturate: 100,
+			grayscale: false,
+			invert: false,
+		};
+		case 'abLoop': return { pointA: null, pointB: null, enabled: false };
+		default: return false;
+	}
+}
+
+function normalizeMutationValue(
+	field: ControlField,
+	value: ControlValues[ControlField],
+): ControlValues[ControlField] {
+	if (typeof value !== 'number') return value;
+	switch (field) {
+		case 'volumeBase': return Math.max(0, Math.min(100, value));
+		case 'boost': return Math.round(Math.max(1, Math.min(8, value)) * 10) / 10;
+		case 'speed': return Math.round(Math.max(0.1, Math.min(16, value)) * 100) / 100;
+		case 'currentTime': return Math.max(0, value);
+		case 'rotation': return ((Math.round(value / 90) * 90 % 360) + 360) % 360 as 0 | 90 | 180 | 270;
+		case 'dimOpacity': return Math.max(0, Math.min(1, value));
+		case 'pan': return Math.round(Math.max(-1, Math.min(1, value)) * 100) / 100;
+		case 'delay': return Math.round(Math.max(0, Math.min(500, value)));
+		default: return value;
+	}
+}
+
+function applyMutation(
+	current: ControlValues[ControlField],
+	mutation: ControlMutation,
+): ControlValues[ControlField] {
+	if (mutation.operation === 'set') {
+		return normalizeMutationValue(mutation.field, mutation.value as ControlValues[ControlField]);
+	}
+	if (mutation.operation === 'toggle') return !current;
+	return normalizeMutationValue(
+		mutation.field,
+		(Number(current) + Number(mutation.value)) as ControlValues[ControlField],
+	);
+}
+
+async function resolveSubmitRequest(
+	snapshot: ControlSnapshot,
+	request: RoutedControlSubmitRequest,
+): Promise<ResolvedControlSubmitRequest> {
+	assertUnambiguousTargetScope(request);
+	const patch: ControlPatch = { ...(request.patch ?? {}) };
+	const baselines: ControlPatch = {};
+	let resolvedTarget = request.target;
+	const missingFields = [...new Set((request.mutations ?? [])
+		.map((mutation) => mutation.field)
+		.filter((field) => patch[field] === undefined
+			&& (snapshot.fields[field]?.actual === undefined
+				|| request.target === null && field !== 'tabMuted' && field !== 'tabPinned'
+					&& (PAGE_OBSERVABLE_FIELDS.has(field) || !AUDIO_PROJECTION_FIELDS.has(field)))))];
+	const tabFields = missingFields.filter((field) => field === 'tabMuted' || field === 'tabPinned');
+	if (tabFields.length > 0) {
+		const tab = await chrome.tabs.get(request.tabId);
+		for (const field of tabFields) {
+			(baselines as Record<string, unknown>)[field] = field === 'tabMuted'
+				? tab.mutedInfo?.muted === true
+				: tab.pinned === true;
+		}
+	}
+	const contentFields = missingFields.filter((field) => field !== 'tabMuted' && field !== 'tabPinned');
+	if (contentFields.length > 0) {
+		const response = await sendSpectraTabRequest(
+			request.tabId,
+			'spectra.control.actual.read',
+			{ fields: contentFields, target: resolvedTarget },
+			{ documentId: snapshot.documentId, generation: snapshot.generation },
+		);
+		if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
+		Object.assign(baselines, response.data.patch);
+		resolvedTarget = response.data.target ?? resolvedTarget;
+	}
+	for (const mutation of request.mutations ?? []) {
+		const pending = patch[mutation.field] as ControlValues[ControlField] | undefined;
+		const existing = snapshot.fields[mutation.field]?.actual
+			?? baselines[mutation.field]
+			?? snapshot.fields[mutation.field]?.desired
+			?? defaultControlValue(mutation.field);
+		(patch as Record<string, unknown>)[mutation.field] = applyMutation(
+			pending ?? existing as ControlValues[ControlField],
+			mutation,
+		);
+	}
+	if (Object.keys(patch).length === 0) throw new Error('Control request has no effective mutation');
+	return {
+		tabId: request.tabId,
+		source: request.source,
+		requestedCoverage: request.requestedCoverage,
+		target: resolvedTarget,
+		...(request.baseRevision === undefined ? {} : { baseRevision: request.baseRevision }),
+		patch,
+	};
+}
+
+function assignFieldState<K extends ControlField>(
+	fields: ControlFieldStates,
+	field: K,
+	desired: ControlValues[K],
+	actual: ControlValues[K],
+	revision: number,
+	intentId: string,
+): void {
+	const matches = JSON.stringify(desired) === JSON.stringify(actual);
+	(fields as Record<string, unknown>)[field] = {
+		desired,
+		actual,
+		revision,
+		phase: matches ? 'applied' : 'error',
+		strategy: 'chrome-native',
+		coverage: 'full',
+		controlled: matches,
+		intentId,
+		lastError: matches
+			? null
+			: {
+				code: 'readback-mismatch',
+				message: 'Chrome state differs from the requested value',
+				retryable: true,
+			},
+	};
+}
+
+async function applyChromeFields(intent: ControlIntent): Promise<{
+	remaining: ControlPatch;
+	fields: ControlFieldStates;
+}> {
+	const remaining = { ...intent.patch };
+	const fields: ControlFieldStates = {};
+	const revision = intent.baseRevision + 1;
+
+	if (remaining.tabMuted !== undefined) {
+		const desired = remaining.tabMuted;
+		delete remaining.tabMuted;
+		await chrome.tabs.update(intent.tabId, { muted: desired });
+		const actual = (await chrome.tabs.get(intent.tabId)).mutedInfo?.muted === true;
+		assignFieldState(fields, 'tabMuted', desired, actual, revision, intent.intentId);
+	}
+	if (remaining.tabPinned !== undefined) {
+		const desired = remaining.tabPinned;
+		delete remaining.tabPinned;
+		await chrome.tabs.update(intent.tabId, { pinned: desired });
+		const actual = (await chrome.tabs.get(intent.tabId)).pinned === true;
+		assignFieldState(fields, 'tabPinned', desired, actual, revision, intent.intentId);
+	}
+	return { remaining, fields };
+}
+
+function applyPageObservation(intent: ControlIntent): ControlFieldStates {
+	if (intent.requestedCoverage !== 'active-target') {
+		throw new Error('A page observation cannot claim full-output coverage');
+	}
+	if (!intent.target) throw new Error('A page observation requires an identified media target');
+	const fields: ControlFieldStates = {};
+	const revision = intent.baseRevision + 1;
+	for (const [rawField, rawValue] of Object.entries(intent.patch)) {
+		const field = rawField as ControlField;
+		if (!PAGE_OBSERVABLE_FIELDS.has(field)) {
+			throw new Error(`Page observation is not admitted for ${field}`);
+		}
+		(fields as Record<string, unknown>)[field] = {
+			desired: rawValue,
+			actual: rawValue,
+			revision,
+			phase: 'applied',
+			strategy: 'dom-native',
+			coverage: 'active-target',
+			controlled: false,
+			intentId: intent.intentId,
+			lastError: null,
+		};
+	}
+	return fields;
+}
+
+function isSiteNativeReflection(
+	snapshot: ControlSnapshot,
+	request: RoutedControlSubmitRequest,
+): boolean {
+	if (request.source !== 'page' || !request.patch || Object.keys(request.patch).length === 0
+		|| !request.target || !snapshot.activeMedia
+		|| request.target.documentId !== snapshot.activeMedia.documentId
+		|| request.target.mediaId !== snapshot.activeMedia.mediaId
+		|| request.target.sourceRevision !== snapshot.activeMedia.sourceRevision) return false;
+	return Object.entries(request.patch).every(([rawField, actual]) => {
+		const field = rawField as ControlField;
+		const current = snapshot.fields[field];
+		return current?.strategy === 'site-native'
+			&& current.phase === 'applied'
+			&& JSON.stringify(current.actual) === JSON.stringify(actual);
+	});
+}
+
+async function applySiteNativeFallback(
+	intent: ControlIntent,
+	contentFields: ControlFieldStates,
+): Promise<ControlFieldStates> {
+	const fields = { ...contentFields };
+	for (const [rawField, state] of Object.entries(contentFields)) {
+		const field = rawField as ControlField;
+		if (intent.requestedCoverage !== 'active-target'
+			|| state?.phase !== 'error' || !state.lastError
+			|| !isControlStrategyFailure(state.lastError.code)
+			|| !shouldTryNextControlStrategy(state.lastError.code)
+			|| !isSiteNativeControlField(field)
+			|| !(CONTROL_ALGORITHM_POLICIES[field].orderedStrategies as readonly string[])
+				.includes('site-native')) continue;
+		const desired = intent.patch[field];
+		if (desired === undefined) continue;
+		try {
+			const result = await applyMainSiteControl({
+				tabId: intent.tabId,
+				documentId: intent.documentId,
+				generation: intent.generation,
+				intentId: intent.intentId,
+				field,
+				value: desired as ControlValues[SiteNativeControlField],
+			});
+			const originalBaseline = state.restoreBaseline;
+			await rememberSiteNativeBaseline(
+				intent,
+				field,
+				isSiteNativeBaselineValue(field, originalBaseline)
+					? originalBaseline as number | boolean
+					: result.before,
+			);
+			(fields as Record<string, unknown>)[field] = {
+				desired,
+				actual: result.actual,
+				revision: intent.baseRevision + 1,
+				phase: 'applied',
+				strategy: 'site-native',
+				coverage: 'active-target',
+				controlled: true,
+				intentId: intent.intentId,
+				lastError: null,
+			};
+		} catch (error) {
+			const siteMessage = error instanceof Error ? error.message : String(error);
+			(fields as Record<string, unknown>)[field] = {
+				...state,
+				strategy: 'unsupported',
+				coverage: 'partial',
+				controlled: false,
+				lastError: {
+					code: 'strategy-runtime-failed',
+					message: `${state.lastError.message}; official site API: ${siteMessage}`,
+					retryable: true,
+				},
+			};
+		}
+	}
+	return fields;
+}
+
+async function publishSnapshot(snapshot: ControlSnapshot): Promise<void> {
+	snapshots.set(snapshot.tabId, snapshot);
+	await chrome.storage.session.set({ [storageKey(snapshot.tabId)]: snapshot });
+	const event: SpectraEventEnvelope<'spectra.control.snapshot.changed'> = {
+		protocolVersion: SPECTRA_PROTOCOL_VERSION,
+		type: 'spectra.control.snapshot.changed',
+		payload: snapshot,
+		tabId: snapshot.tabId,
+		documentId: snapshot.documentId,
+		generation: snapshot.generation,
+	};
+	await chrome.runtime.sendMessage(event).catch(() => undefined);
+}
+
+function projectAudioConfig(
+	current: AudioConfig,
+	fields: ControlFieldStates,
+): AudioConfig {
+	const next: AudioConfig = {
+		...current,
+		eqValues: [...current.eqValues],
+	};
+	const actual = <K extends ControlField>(field: K): ControlValues[K] | undefined => {
+		const state = fields[field];
+		return state?.phase === 'applied' && state.actual !== null
+			? state.actual as ControlValues[K]
+			: undefined;
+	};
+	const enabled = actual('audioEnabled');
+	const volumeBase = actual('volumeBase');
+	const boost = actual('boost');
+	const muted = actual('mediaMuted');
+	const speed = actual('speed');
+	const preservePitch = actual('preservePitch');
+	const eqValues = actual('eqValues');
+	const bass = actual('bass');
+	const compressor = actual('compressor');
+	const mono = actual('mono');
+	const pan = actual('pan');
+	const delay = actual('delay');
+	if (typeof enabled === 'boolean') next.enabled = enabled;
+	if (typeof volumeBase === 'number') next.volumeBase = volumeBase;
+	if (typeof boost === 'number') next.boost = boost;
+	if (typeof muted === 'boolean') next.muted = muted;
+	if (typeof speed === 'number') next.speed = speed;
+	if (typeof preservePitch === 'boolean') next.preservePitch = preservePitch;
+	if (Array.isArray(eqValues)) next.eqValues = [...eqValues];
+	if (typeof bass === 'boolean') next.bass = bass;
+	if (typeof compressor === 'boolean') next.compressor = compressor;
+	if (typeof mono === 'boolean') next.mono = mono;
+	if (typeof pan === 'number') next.pan = pan;
+	if (typeof delay === 'number') next.delay = delay;
+	const volume = resolveAudioVolume({
+		volume: next.volume,
+		volumeBase: next.volumeBase,
+		boost: next.boost,
+	});
+	next.volumeBase = volume.volumeBase;
+	next.boost = volume.boost;
+	next.volume = volume.effectiveVolume;
+	return next;
+}
+
+async function persistControlProjection(
+	snapshot: ControlSnapshot,
+	changedFields: ControlFieldStates,
+	userInteracted: boolean,
+): Promise<void> {
+	const projectedFields = Object.fromEntries(
+		Object.entries(changedFields).filter(([field]) => AUDIO_PROJECTION_FIELDS.has(field as ControlField)),
+	) as ControlFieldStates;
+	if (Object.keys(projectedFields).length === 0) return;
+	const identity = {
+		tabId: snapshot.tabId,
+		documentId: snapshot.documentId,
+		origin: snapshot.origin,
+	};
+	const current = await storage.tabSession.get(snapshot.tabId, identity)
+		.catch(() => null) ?? { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] };
+	const projected = projectAudioConfig(current, projectedFields);
+	await storage.tabSession.set(snapshot.tabId, projected, identity);
+	const isCapture = Object.values(snapshot.fields)
+		.some((field) => field?.phase === 'applied' && field.strategy === 'capture');
+	await updateBadgeForTab(snapshot.tabId, {
+		volume: projected.volume,
+		muted: projected.muted,
+		enabled: projected.enabled,
+		isCapture,
+		userInteracted,
+	});
+}
+
+interface PreparedControlIntent {
+	intent: ControlIntent;
+	baseline: ControlSnapshot;
+	ackTarget: MediaTarget | null;
+	activeMedia: ControlSnapshot['activeMedia'];
+	activeVideo: ControlSnapshot['activeVideo'];
+	fields: ControlFieldStates;
+}
+
+async function prepareIntent(
+	request: RoutedControlSubmitRequest,
+	contextSnapshot?: ControlSnapshot,
+): Promise<PreparedControlIntent> {
+	const snapshot = contextSnapshot ?? await getOrCreateSnapshot(request.tabId);
+	if (request.baseRevision !== undefined && request.baseRevision !== snapshot.revision) {
+		throw new Error(`Stale control revision: expected ${snapshot.revision}`);
+	}
+	if (request.target && request.target.documentId !== snapshot.documentId) {
+		throw new Error('The selected media target belongs to a stale document');
+	}
+
+	const resolvedRequest = await resolveSubmitRequest(snapshot, request);
+	const intent = createIntent(snapshot, resolvedRequest);
+	const pageObservation = intent.source === 'page';
+	const chromeResult = pageObservation
+		? { remaining: {}, fields: applyPageObservation(intent) }
+		: await applyChromeFields(intent);
+	let fields: ControlFieldStates = { ...chromeResult.fields };
+	let ackTarget = intent.target;
+	let activeMedia = snapshot.activeMedia;
+	let activeVideo = snapshot.activeVideo;
+	if (pageObservation) {
+		({ activeMedia, activeVideo } = projectControlTarget(
+			snapshot,
+			Object.keys(intent.patch) as ControlCapability[],
+			intent.target,
+		));
+	}
+	const routedPatch: ControlPatch = pageObservation ? {} : chromeResult.remaining;
+	if (Object.keys(routedPatch).length > 0) {
+		// Page observations never echo a second DOM write. Main volume and Boost
+		// remain independent, so site-side volume changes only update base gain.
+		const routedIntent: ControlIntent = {
+			...intent,
+			source: pageObservation ? 'system' : intent.source,
+			patch: routedPatch,
+		};
+		const response = await sendSpectraTabRequest(
+			intent.tabId,
+			'spectra.control.intent.execute',
+			routedIntent,
+			{ documentId: intent.documentId, generation: intent.generation },
+		);
+		if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
+		if (response.data.intentId !== intent.intentId
+			|| response.data.tabId !== intent.tabId
+			|| response.data.documentId !== intent.documentId
+			|| response.data.generation !== intent.generation
+			|| response.data.revision !== intent.baseRevision + 1
+			|| response.data.target && response.data.target.documentId !== intent.documentId) {
+			throw new Error('Content runtime returned a stale control ACK');
+		}
+		ackTarget = response.data.target;
+		({ activeMedia, activeVideo } = projectControlTarget(
+			snapshot,
+			Object.keys(routedPatch) as ControlCapability[],
+			response.data.target,
+		));
+		fields = {
+			...fields,
+			...await applySiteNativeFallback(routedIntent, response.data.fields),
+		};
+	}
+
+	const baseline = await getOrCreateSnapshot(intent.tabId);
+	if (baseline.documentId !== intent.documentId
+		|| baseline.generation !== intent.generation
+		|| baseline.revision !== intent.baseRevision) {
+		throw new Error('Control ACK arrived after the document or revision changed');
+	}
+	return { intent, baseline, ackTarget, activeMedia, activeVideo, fields };
+}
+
+async function commitControlFields(
+	baseline: ControlSnapshot,
+	fields: ControlFieldStates,
+	activeMedia: ControlSnapshot['activeMedia'],
+	source: ControlIntent['source'],
+	activeVideo: ControlSnapshot['activeVideo'] = activeMedia?.kind === 'video'
+		? activeMedia
+		: baseline.activeVideo,
+): Promise<ControlSnapshot> {
+	const current = await getOrCreateSnapshot(baseline.tabId);
+	if (current.documentId !== baseline.documentId
+		|| current.generation !== baseline.generation
+		|| current.revision !== baseline.revision) {
+		throw new Error('Control transaction lost its document or revision before commit');
+	}
+	const revision = baseline.revision + 1;
+	const committed: ControlSnapshot = {
+		...current,
+		revision,
+		activeMedia,
+		activeVideo,
+		fields: { ...current.fields, ...fields },
+	};
+	await persistControlProjection(
+		committed,
+		fields,
+		source !== 'page' && source !== 'restore' && source !== 'system',
+	);
+	await publishSnapshot(committed);
+	await reconcileRuntimeOwnership(committed);
+	return committed;
+}
+
+async function applyChromeTabObservation(
+	tabId: number,
+	patch: Pick<ControlPatch, 'tabMuted' | 'tabPinned'>,
+): Promise<ControlSnapshot> {
+	const baseline = await getOrCreateSnapshot(tabId);
+	const fields: ControlFieldStates = {};
+	for (const [rawField, actual] of Object.entries(patch)) {
+		const field = rawField as 'tabMuted' | 'tabPinned';
+		if (typeof actual !== 'boolean') continue;
+		const current = baseline.fields[field];
+		if (current?.phase === 'applied' && current.actual === actual) continue;
+		(fields as Record<string, unknown>)[field] = {
+			desired: actual,
+			actual,
+			revision: baseline.revision + 1,
+			phase: 'applied',
+			strategy: 'chrome-native',
+			coverage: 'full',
+			controlled: false,
+			intentId: crypto.randomUUID(),
+			lastError: null,
+		};
+	}
+	if (Object.keys(fields).length === 0) return baseline;
+	return commitControlFields(baseline, fields, baseline.activeMedia, 'page');
+}
+
+function observeChromeTabState(
+	tabId: number,
+	patch: Pick<ControlPatch, 'tabMuted' | 'tabPinned'>,
+): Promise<ControlSnapshot> {
+	return enqueueTabTask(tabId, () => applyChromeTabObservation(tabId, patch));
+}
+
+async function executeIntent(request: RoutedControlSubmitRequest): Promise<ControlApplyAck> {
+	const current = await getOrCreateSnapshot(request.tabId);
+	if (isSiteNativeReflection(current, request)) {
+		const fields = Object.fromEntries(
+			Object.keys(request.patch ?? {}).map((field) => [field, current.fields[field as ControlField]]),
+		) as ControlFieldStates;
+		return {
+			intentId: crypto.randomUUID(),
+			tabId: current.tabId,
+			documentId: current.documentId,
+			generation: current.generation,
+			revision: current.revision,
+			target: current.activeMedia,
+			fields,
+		};
+	}
+	const prepared = await prepareIntent(request, current);
+	const { intent, baseline, ackTarget, activeMedia, activeVideo, fields } = prepared;
+	const committed = await commitControlFields(
+		baseline,
+		fields,
+		activeMedia,
+		intent.source,
+		activeVideo,
+	);
+	return {
+		intentId: intent.intentId,
+		tabId: intent.tabId,
+		documentId: intent.documentId,
+		generation: intent.generation,
+		revision: committed.revision,
+		target: ackTarget,
+		fields,
+	};
+}
+
+const RESET_AUDIO_TARGET_PATCH: ControlPatch = {
+	volumeBase: 100,
+	mediaMuted: false,
+	speed: 1,
+	preservePitch: true,
+};
+
+const RESET_AUDIO_PROCESSOR_PATCH: ControlPatch = {
+	audioEnabled: false,
+	boost: 1,
+	eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+	bass: false,
+	compressor: false,
+	mono: false,
+	pan: 0,
+	delay: 0,
+};
+
+const RESET_VIDEO_PATCH: ControlPatch = {
+	rotation: 0,
+	mirrored: false,
+	fill: false,
+	filterEnabled: false,
+	filter: {
+		brightness: 100,
+		contrast: 100,
+		saturate: 100,
+		grayscale: false,
+		invert: false,
+	},
+	dimEnabled: false,
+	dimOpacity: 0.72,
+};
+
+const RESTORABLE_TARGET_FIELDS = [
+	'volumeBase', 'mediaMuted', 'speed', 'preservePitch', 'loop',
+	'rotation', 'mirrored', 'fill', 'filterEnabled', 'filter', 'dimEnabled', 'dimOpacity',
+] as const satisfies readonly ControlDirectField[];
+
+const RESTORABLE_PROCESSOR_FIELDS = [
+	'audioEnabled', 'boost', 'eqValues', 'bass', 'compressor', 'mono', 'pan', 'delay',
+] as const satisfies readonly ControlDirectField[];
+
+function snapshotActualPatch(
+	snapshot: ControlSnapshot,
+	fields: readonly ControlDirectField[],
+	controlledOnly: boolean,
+): ControlPatch {
+	const patch: ControlPatch = {};
+	for (const field of fields) {
+		const state = snapshot.fields[field];
+		if (!state || state.actual === null || controlledOnly && !state.controlled) continue;
+		(patch as Record<string, unknown>)[field] = structuredClone(state.actual);
+	}
+	return patch;
+}
+
+async function captureActualPatch(
+	snapshot: ControlSnapshot,
+	target: ControlSnapshot['activeMedia'],
+	fields: readonly ControlDirectField[],
+	controlledOnly = false,
+): Promise<ControlPatch> {
+	const patch = snapshotActualPatch(snapshot, fields, controlledOnly);
+	const response = await sendSpectraTabRequest(
+		snapshot.tabId,
+		'spectra.control.actual.read',
+		{ fields, target },
+		{ documentId: snapshot.documentId, generation: snapshot.generation },
+	).catch(() => null);
+	if (response?.ok) {
+		for (const [rawField, value] of Object.entries(response.data.patch)) {
+			const field = rawField as ControlField;
+			if (controlledOnly && !snapshot.fields[field]?.controlled) continue;
+			(patch as Record<string, unknown>)[field] = value;
+		}
+	}
+	return patch;
+}
+
+async function restoreSiteBaselineRecord(
+	tabId: number,
+	record: SiteNativeBaselineRecord | null,
+): Promise<void> {
+	if (record) {
+		await chrome.storage.session.set({ [siteNativeBaselineKey(tabId)]: record });
+	} else {
+		await clearSiteNativeBaseline(tabId);
+	}
+}
+
+interface CompensationResult {
+	ok: boolean;
+	fields: ControlFieldStates;
+	error: string | null;
+}
+
+async function compensateControlPatch(
+	baseline: ControlSnapshot,
+	target: ControlSnapshot['activeMedia'],
+	targetPatch: ControlPatch,
+	processorPatch: ControlPatch,
+	writerFields: ControlFieldStates,
+	previousSiteBaseline: SiteNativeBaselineRecord | null,
+): Promise<CompensationResult> {
+	const fields: ControlFieldStates = {};
+	const failures: string[] = [];
+	const isolatedTargetPatch: ControlPatch = { ...targetPatch };
+	for (const [rawField, value] of Object.entries(targetPatch)) {
+		const field = rawField as ControlField;
+		const writer = writerFields[field]?.strategy ?? baseline.fields[field]?.strategy;
+		if (writer !== 'site-native' || !isSiteNativeControlField(field)) continue;
+		delete (isolatedTargetPatch as Record<string, unknown>)[field];
+		try {
+			const result = await applyMainSiteControl({
+				tabId: baseline.tabId,
+				documentId: baseline.documentId,
+				generation: baseline.generation,
+				intentId: crypto.randomUUID(),
+				field,
+				value: value as ControlValues[SiteNativeControlField],
+			});
+			if (JSON.stringify(result.actual) !== JSON.stringify(value)) {
+				throw new Error(`official readback mismatch for ${field}`);
+			}
+		} catch (error) {
+			failures.push(`${field}: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+	for (const [patch, requestedCoverage] of [
+		[isolatedTargetPatch, 'active-target'],
+		[processorPatch, 'full'],
+	] as const) {
+		if (Object.keys(patch).length === 0) continue;
+		try {
+			const prepared = await prepareIntent({
+				tabId: baseline.tabId,
+				source: 'restore',
+				requestedCoverage,
+				target,
+				patch,
+			}, baseline);
+			Object.assign(fields, prepared.fields);
+			assertAppliedPatch(prepared.fields, patch, 'Compensating rollback');
+		} catch (error) {
+			failures.push(error instanceof Error ? error.message : String(error));
+		}
+	}
+	try {
+		await restoreSiteBaselineRecord(baseline.tabId, previousSiteBaseline);
+	} catch (error) {
+		failures.push(`site baseline: ${error instanceof Error ? error.message : String(error)}`);
+	}
+	return {
+		ok: failures.length === 0,
+		fields,
+		error: failures.length === 0 ? null : failures.join('; '),
+	};
+}
+
+async function commitCompensationFailure(
+	baseline: ControlSnapshot,
+	target: ControlSnapshot['activeMedia'],
+	rollbackPatch: ControlPatch,
+	compensation: CompensationResult,
+	originalError: unknown,
+): Promise<void> {
+	const message = originalError instanceof Error ? originalError.message : String(originalError);
+	const intentId = crypto.randomUUID();
+	const fields: ControlFieldStates = {};
+	for (const [rawField, expected] of Object.entries(rollbackPatch)) {
+		const field = rawField as ControlField;
+		const rollbackState = compensation.fields[field];
+		const previous = baseline.fields[field];
+		(fields as Record<string, unknown>)[field] = {
+			desired: previous?.desired ?? expected,
+			actual: rollbackState?.actual ?? null,
+			revision: baseline.revision + 1,
+			phase: 'error',
+			strategy: rollbackState?.strategy ?? previous?.strategy ?? 'unsupported',
+			coverage: rollbackState?.coverage ?? previous?.coverage ?? 'partial',
+			controlled: false,
+			intentId,
+			lastError: {
+				code: 'transaction-rollback-failed',
+				message: `${message}; rollback: ${compensation.error ?? 'unknown failure'}`,
+				retryable: true,
+			},
+		};
+	}
+	await commitControlFields(baseline, fields, target, 'system');
+}
+
+function operationIntent(
+	snapshot: ControlSnapshot,
+	request: RoutedControlOperationRequest,
+	operationId: string,
+): ControlOperationIntent {
+	return {
+		operationId,
+		tabId: request.tabId,
+		documentId: snapshot.documentId,
+		generation: snapshot.generation,
+		baseRevision: snapshot.revision,
+		source: request.source,
+		// Preserve the same nullable live-active semantic used by field intents.
+		target: request.target,
+		operation: request.operation,
+		payload: request.payload,
+	} as ControlOperationIntent;
+}
+
+interface PreparedContentOperation {
+	intent: ControlOperationIntent;
+	baseline: ControlSnapshot;
+	acknowledgement: ControlOperationAck;
+}
+
+async function restoreSiteNativeFields(
+	snapshot: ControlSnapshot,
+	operationId: string,
+): Promise<{
+	fields: ControlFieldStates;
+	excludedNativeFields: SiteNativeControlField[];
+	restoredFields: SiteNativeControlField[];
+	failedFields: SiteNativeControlField[];
+}> {
+	const baseline = await readSiteNativeBaseline(
+		snapshot.tabId,
+		snapshot.documentId,
+		snapshot.generation,
+	);
+	const fields: ControlFieldStates = {};
+	const excludedNativeFields = Object.keys(baseline?.values ?? {}) as SiteNativeControlField[];
+	const restoredFields: SiteNativeControlField[] = [];
+	const failedFields: SiteNativeControlField[] = [];
+	for (const field of excludedNativeFields) {
+		const desired = baseline?.values[field];
+		if (desired === undefined) continue;
+		try {
+			const result = await applyMainSiteControl({
+				tabId: snapshot.tabId,
+				documentId: snapshot.documentId,
+				generation: snapshot.generation,
+				intentId: operationId,
+				field,
+				value: desired as ControlValues[SiteNativeControlField],
+			});
+			(fields as Record<string, unknown>)[field] = {
+				desired: null,
+				actual: result.actual,
+				revision: snapshot.revision + 1,
+				phase: 'applied',
+				strategy: 'site-native',
+				coverage: 'active-target',
+				controlled: false,
+				intentId: operationId,
+				lastError: null,
+			};
+			restoredFields.push(field);
+		} catch (error) {
+			failedFields.push(field);
+			(fields as Record<string, unknown>)[field] = {
+				desired: null,
+				actual: snapshot.fields[field]?.actual ?? null,
+				revision: snapshot.revision + 1,
+				phase: 'error',
+				strategy: 'site-native',
+				coverage: 'active-target',
+				controlled: true,
+				intentId: operationId,
+				lastError: {
+					code: 'strategy-runtime-failed',
+					message: error instanceof Error ? error.message : String(error),
+					retryable: true,
+				},
+			};
+		}
+	}
+	if (baseline && failedFields.length > 0) {
+		const values: SiteNativeBaselineRecord['values'] = {};
+		for (const field of failedFields) values[field] = baseline.values[field];
+		await chrome.storage.session.set({
+			[siteNativeBaselineKey(snapshot.tabId)]: { ...baseline, values },
+		});
+	}
+	return { fields, excludedNativeFields, restoredFields, failedFields };
+}
+
+function stageSnapshot(
+	baseline: ControlSnapshot,
+	fields: ControlFieldStates,
+	activeMedia: ControlSnapshot['activeMedia'],
+): ControlSnapshot {
+	return {
+		...baseline,
+		activeMedia: activeMedia ?? baseline.activeMedia,
+		activeVideo: activeMedia?.kind === 'video' ? activeMedia : baseline.activeVideo,
+		fields: { ...baseline.fields, ...fields },
+	};
+}
+
+function assertAppliedPatch(
+	fields: ControlFieldStates,
+	patch: ControlPatch,
+	label: string,
+): void {
+	assertAppliedFields(fields, Object.keys(patch) as ControlField[], label);
+}
+
+function assertReleasedPatch(
+	fields: ControlFieldStates,
+	patch: ControlPatch,
+	label: string,
+): void {
+	for (const field of Object.keys(patch) as ControlField[]) {
+		const state = fields[field];
+		if (state?.phase === 'applied'
+			|| (state?.phase === 'idle'
+				&& JSON.stringify(state.actual) === JSON.stringify(patch[field as keyof ControlPatch]))) {
+			continue;
+		}
+		const detail = state?.lastError
+			? `${state.lastError.code}: ${state.lastError.message}`
+			: 'missing released field acknowledgement';
+		throw new Error(`${label} failed for ${field}: ${detail}`);
+	}
+}
+
+function assertAppliedFields(
+	fields: ControlFieldStates,
+	requiredFields: readonly ControlField[],
+	label: string,
+): void {
+	for (const field of requiredFields) {
+		const state = fields[field];
+		if (state?.phase === 'applied') continue;
+		const detail = state?.lastError
+			? `${state.lastError.code}: ${state.lastError.message}`
+			: 'missing actual field acknowledgement';
+		throw new Error(`${label} failed for ${field}: ${detail}`);
+	}
+}
+
+async function prepareContentOperation(
+	request: RoutedControlOperationRequest,
+	operationId: string,
+	contextSnapshot?: ControlSnapshot,
+): Promise<PreparedContentOperation> {
+	const snapshot = contextSnapshot ?? await getOrCreateSnapshot(request.tabId);
+	const intent = operationIntent(snapshot, request, operationId);
+	const response = await sendSpectraTabRequest(
+		request.tabId,
+		'spectra.control.operation.execute',
+		intent,
+		{ documentId: intent.documentId, generation: intent.generation },
+	);
+	if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
+	const ack = response.data;
+	if (ack.operationId !== operationId
+		|| ack.operation !== request.operation
+		|| ack.documentId !== intent.documentId
+		|| ack.generation !== intent.generation
+		|| ack.revision !== intent.baseRevision + 1) {
+		throw new Error('Content runtime returned a stale control operation ACK');
+	}
+	const current = await getOrCreateSnapshot(request.tabId);
+	if (current.documentId !== intent.documentId
+		|| current.generation !== intent.generation
+		|| current.revision !== intent.baseRevision) {
+		throw new Error('Control operation ACK arrived after the document or revision changed');
+	}
+	return { intent, baseline: current, acknowledgement: ack };
+}
+
+async function commitContentOperation(
+	prepared: PreparedContentOperation,
+	source: ControlOperationIntent['source'],
+): Promise<ControlOperationAck> {
+	const { intent, baseline, acknowledgement } = prepared;
+	const projection = intent.operation === 'ab-clear' && source === 'restore'
+		? { activeMedia: baseline.activeMedia, activeVideo: baseline.activeVideo }
+		: projectControlTarget(baseline, [intent.operation], acknowledgement.target);
+	const committed = await commitControlFields(
+		baseline,
+		acknowledgement.fields,
+		projection.activeMedia,
+		source,
+		projection.activeVideo,
+	);
+	if (committed.revision !== intent.baseRevision + 1) {
+		throw new Error('Control operation committed an unexpected revision');
+	}
+	return { ...acknowledgement, revision: committed.revision } as ControlOperationAck;
+}
+
+async function routeContentOperation(
+	request: RoutedControlOperationRequest,
+	operationId: string,
+): Promise<ControlOperationAck> {
+	const acknowledgement = await commitContentOperation(
+		await prepareContentOperation(request, operationId),
+		request.source,
+	);
+	reconcileOperationSourceOwnership(acknowledgement);
+	return acknowledgement;
+}
+
+function reconcileOperationSourceOwnership(ack: ControlOperationAck): void {
+	const target = ack.target;
+	if (!target) return;
+	if (ack.operation === 'marker-add') {
+		if (ack.result.remaining > 0) retainSourceRuntimeLease(ack.tabId, target, 'marker');
+		return;
+	}
+	if (ack.operation === 'marker-remove') {
+		if (ack.result.remaining === 0) releaseSourceRuntimeLease(ack.tabId, target, 'marker');
+		return;
+	}
+	if (ack.operation === 'ab-set-a' || ack.operation === 'ab-set-b') {
+		retainSourceRuntimeLease(ack.tabId, target, 'ab');
+		return;
+	}
+	if (ack.operation === 'ab-clear') releaseSourceRuntimeLease(ack.tabId, target, 'ab');
+}
+
+async function handleSourceReleased(tabId: number, target: import('@nexus/contracts').MediaTarget): Promise<void> {
+	releaseSourceRuntimeLease(tabId, target, 'marker');
+	releaseSourceRuntimeLease(tabId, target, 'ab');
+	const snapshot = await getSnapshot(tabId);
+	if (!snapshot || snapshot.documentId !== target.documentId) return;
+	const ownsActiveSource = snapshot.activeMedia?.mediaId === target.mediaId
+		&& snapshot.activeMedia.sourceRevision === target.sourceRevision;
+	const ownsActiveVideo = snapshot.activeVideo?.mediaId === target.mediaId
+		&& snapshot.activeVideo.sourceRevision === target.sourceRevision;
+	const ab = snapshot.fields.abLoop;
+	if (!ownsActiveSource && !ownsActiveVideo
+		&& (!ab || ab.phase === 'idle' || !ab.controlled)) return;
+	const intentId = crypto.randomUUID();
+	const fields: ControlFieldStates = ab && (ownsActiveSource || snapshot.activeMedia === null)
+		? {
+			abLoop: {
+				desired: null,
+				actual: { pointA: null, pointB: null, enabled: false },
+				revision: snapshot.revision + 1,
+				phase: 'idle',
+				strategy: 'extension-state',
+				coverage: 'active-target',
+				controlled: false,
+				intentId,
+				lastError: null,
+			},
+		}
+		: {};
+	await commitControlFields(
+		snapshot,
+		fields,
+		ownsActiveSource ? null : snapshot.activeMedia,
+		'system',
+		ownsActiveVideo ? null : snapshot.activeVideo,
+	);
+}
+
+async function handleTargetChanged(
+	tabId: number,
+	target: import('@nexus/contracts').MediaTarget,
+): Promise<void> {
+	const baseline = await getOrCreateSnapshot(tabId);
+	if (target.frameId !== 0 || target.documentId !== baseline.documentId) {
+		throw new Error('Active media selection belongs to a stale or unsupported frame');
+	}
+	if (sameMediaTarget(baseline.activeMedia, target)
+		&& (target.kind !== 'video' || sameMediaTarget(baseline.activeVideo, target))) return;
+	const response = await sendSpectraTabRequest(
+		tabId,
+		'spectra.control.actual.read',
+		{
+			fields: [...PAGE_OBSERVABLE_FIELDS] as ControlDirectField[],
+			target,
+		},
+		{ documentId: baseline.documentId, generation: baseline.generation },
+	);
+	if (!response.ok || !sameMediaTarget(response.data.target, target)) {
+		throw new Error(response.ok
+			? 'Active media readback resolved a different source'
+			: `${response.error.code}: ${response.error.message}`);
+	}
+	const fields = nativeObservationFields(response.data.patch, baseline.revision + 1);
+	await commitControlFields(baseline, fields, target, 'page');
+}
+
+async function commitBackgroundOperation<O extends Extract<
+	ControlOperationRequest['operation'],
+	'open-popup' | 'open-options' | 'open-url' | 'run-user-script'
+>>(
+	request: RoutedControlOperationRequest & { operation: O },
+	operationId: string,
+	strategy: 'chrome-native' | 'extension-state',
+	result: ControlOperationResult<O>,
+	expected: Pick<ControlSnapshot, 'documentId' | 'generation'>,
+): Promise<ControlOperationAck<O>> {
+	const current = await getOrCreateSnapshot(request.tabId);
+	if (current.documentId !== expected.documentId || current.generation !== expected.generation) {
+		throw new Error('Background operation completed after its target document changed');
+	}
+	const revision = current.revision + 1;
+	const committed = { ...current, revision };
+	await publishSnapshot(committed);
+	const acknowledgement: ControlOperationAck<O> = {
+		operationId,
+		tabId: request.tabId,
+		documentId: committed.documentId,
+		generation: committed.generation,
+		revision,
+		// Extension UI, URL and sandbox operations do not own a media source.
+		// Returning the active media here would falsely project a media-scoped ACK
+		// into Popup/remote reducers even though no media writer ran.
+		target: null,
+		operation: request.operation,
+		strategy,
+		coverage: 'full',
+		fields: {},
+		result,
+	};
+	return acknowledgement;
+}
+
+async function currentOperationTab(
+	tabId: number,
+	documentId: string,
+): Promise<chrome.tabs.Tab> {
+	const identity = await currentIdentity(tabId);
+	if (identity.documentId !== documentId) {
+		throw new Error('Background operation belongs to a stale document');
+	}
+	const tab = await chrome.tabs.get(tabId);
+	if (tab.id !== tabId || !Number.isInteger(tab.windowId)) {
+		throw new Error('Background operation target tab is unavailable');
+	}
+	return tab;
+}
+
+function normalizeHttpUrl(value: string): string {
+	if (value.length === 0 || value.length > 8_192) throw new Error('Invalid URL');
+	const url = new URL(value);
+	if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+		throw new Error('Only HTTP(S) URLs may be opened');
+	}
+	return url.href;
+}
+
+async function executeFieldOperation(
+	request: RoutedControlOperationRequest,
+	operationId: string,
+): Promise<ControlOperationAck> {
+	const common = {
+		tabId: request.tabId,
+		source: request.source,
+		target: request.target,
+	} as const;
+	if (request.operation === 'playback-toggle') {
+		const fieldAck = await executeIntent({
+			...common,
+			requestedCoverage: 'active-target',
+			mutations: [{ field: 'playing', operation: 'toggle' }],
+		});
+		assertAppliedFields(fieldAck.fields, ['playing'], 'Playback toggle');
+		const playing = fieldAck.fields.playing?.actual;
+		if (typeof playing !== 'boolean') throw new Error('Playback toggle did not return actual state');
+		return {
+			operationId,
+			tabId: request.tabId,
+			documentId: fieldAck.documentId,
+			generation: fieldAck.generation,
+			revision: fieldAck.revision,
+			target: fieldAck.target,
+			operation: request.operation,
+			strategy: fieldAck.fields.playing?.strategy ?? 'unsupported',
+			coverage: fieldAck.fields.playing?.coverage ?? 'partial',
+			fields: fieldAck.fields,
+			result: { playing },
+		};
+	}
+	if (request.operation === 'seek-relative') {
+		const fieldAck = await executeIntent({
+			...common,
+			requestedCoverage: 'active-target',
+			mutations: [{ field: 'currentTime', operation: 'delta', value: request.payload.delta }],
+		});
+		assertAppliedFields(fieldAck.fields, ['currentTime'], 'Relative seek');
+		const currentTime = fieldAck.fields.currentTime?.actual;
+		if (typeof currentTime !== 'number') throw new Error('Relative seek did not return actual state');
+		return {
+			operationId,
+			tabId: request.tabId,
+			documentId: fieldAck.documentId,
+			generation: fieldAck.generation,
+			revision: fieldAck.revision,
+			target: fieldAck.target,
+			operation: request.operation,
+			strategy: fieldAck.fields.currentTime?.strategy ?? 'unsupported',
+			coverage: fieldAck.fields.currentTime?.coverage ?? 'partial',
+			fields: fieldAck.fields,
+			result: { currentTime },
+		};
+	}
+	if (request.operation === 'audio-reset') {
+		const baseline = await getOrCreateSnapshot(request.tabId);
+		let target = request.target ?? baseline.activeMedia;
+		if (!target) {
+			// Snapshot state may legitimately be empty before the first Popup action.
+			// Resolve one standard field only to discover the actual active media; a
+			// page without media is non-fatal because the processor still must release.
+			const observed = await sendSpectraTabRequest(
+				request.tabId,
+				'spectra.control.actual.read',
+				{ fields: ['volumeBase'], target: null },
+				{ documentId: baseline.documentId, generation: baseline.generation },
+			).catch(() => null);
+			if (observed?.ok) target = observed.data.target;
+		}
+		const previousSiteBaseline = await readSiteNativeBaseline(
+			baseline.tabId,
+			baseline.documentId,
+			baseline.generation,
+		);
+		const targetRollback = target
+			? await captureActualPatch(
+				baseline,
+				target,
+				Object.keys(RESET_AUDIO_TARGET_PATCH) as ControlDirectField[],
+			)
+			: {};
+		const processorRollback = await captureActualPatch(
+			baseline,
+			target,
+			Object.keys(RESET_AUDIO_PROCESSOR_PATCH) as ControlDirectField[],
+		);
+		let staged = baseline;
+		let fields: ControlFieldStates = {};
+		try {
+			if (target) {
+				const targetPrepared = await prepareIntent({
+					...common,
+					target,
+					requestedCoverage: 'active-target',
+					patch: RESET_AUDIO_TARGET_PATCH,
+				}, staged);
+				fields = { ...fields, ...targetPrepared.fields };
+				assertAppliedPatch(targetPrepared.fields, RESET_AUDIO_TARGET_PATCH, 'Audio target reset');
+				staged = stageSnapshot(baseline, fields, target);
+			}
+			const processorPrepared = await prepareIntent({
+				...common,
+				target,
+				requestedCoverage: 'full',
+				patch: RESET_AUDIO_PROCESSOR_PATCH,
+			}, staged);
+			fields = { ...fields, ...processorPrepared.fields };
+			assertReleasedPatch(
+				processorPrepared.fields,
+				RESET_AUDIO_PROCESSOR_PATCH,
+				'Audio processor reset',
+			);
+			const committed = await commitControlFields(
+				baseline,
+				fields,
+				target,
+				request.source,
+			);
+			return {
+				operationId,
+				tabId: request.tabId,
+				documentId: committed.documentId,
+				generation: committed.generation,
+				revision: committed.revision,
+				target,
+				operation: request.operation,
+				strategy: 'extension-state',
+				coverage: 'full',
+				fields,
+				result: { reset: true },
+			};
+		} catch (error) {
+			const compensation = await compensateControlPatch(
+				baseline,
+				target,
+				targetRollback,
+				processorRollback,
+				fields,
+				previousSiteBaseline,
+			);
+			if (!compensation.ok) {
+				await commitCompensationFailure(
+					baseline,
+					target,
+					{ ...targetRollback, ...processorRollback },
+					compensation,
+					error,
+				);
+			}
+			throw error;
+		}
+	}
+	if (request.operation === 'video-effects-toggle') {
+		const fieldAck = await executeIntent({
+			...common,
+			requestedCoverage: 'active-target',
+			mutations: [{ field: 'filterEnabled', operation: 'toggle' }],
+		});
+		assertAppliedFields(fieldAck.fields, ['filterEnabled'], 'Video effects toggle');
+		const enabled = fieldAck.fields.filterEnabled?.actual;
+		if (typeof enabled !== 'boolean') throw new Error('Video effects toggle did not return actual state');
+		return {
+			operationId,
+			tabId: request.tabId,
+			documentId: fieldAck.documentId,
+			generation: fieldAck.generation,
+			revision: fieldAck.revision,
+			target: fieldAck.target,
+			operation: request.operation,
+			strategy: fieldAck.fields.filterEnabled?.strategy ?? 'unsupported',
+			coverage: fieldAck.fields.filterEnabled?.coverage ?? 'partial',
+			fields: fieldAck.fields,
+			result: { enabled },
+		};
+	}
+	if (request.operation === 'video-effects-reset') {
+		const fieldAck = await executeIntent({
+			...common,
+			requestedCoverage: 'active-target',
+			patch: RESET_VIDEO_PATCH,
+		});
+		assertAppliedPatch(fieldAck.fields, RESET_VIDEO_PATCH, 'Video effects reset');
+		return {
+			operationId,
+			tabId: request.tabId,
+			documentId: fieldAck.documentId,
+			generation: fieldAck.generation,
+			revision: fieldAck.revision,
+			target: fieldAck.target,
+			operation: request.operation,
+			strategy: 'extension-state',
+			coverage: 'active-target',
+			fields: fieldAck.fields,
+			result: { reset: true },
+		};
+	}
+	throw new Error(`Operation ${request.operation} is not a field operation`);
+}
+
+async function executeControlOperation(
+	request: RoutedControlOperationRequest,
+): Promise<ControlOperationAck> {
+	const snapshot = await getOrCreateSnapshot(request.tabId);
+	if (request.baseRevision !== undefined && request.baseRevision !== snapshot.revision) {
+		throw new Error(`Stale control revision: expected ${snapshot.revision}`);
+	}
+	if (request.target && request.target.documentId !== snapshot.documentId) {
+		throw new Error('The selected media target belongs to a stale document');
+	}
+	const operationId = crypto.randomUUID();
+	if (request.operation === 'playback-toggle'
+		|| request.operation === 'seek-relative'
+		|| request.operation === 'audio-reset'
+		|| request.operation === 'video-effects-toggle'
+		|| request.operation === 'video-effects-reset') {
+		return executeFieldOperation(request, operationId);
+	}
+	if (request.operation === 'open-popup') {
+		const tab = await currentOperationTab(request.tabId, snapshot.documentId);
+		await chrome.action.openPopup({ windowId: tab.windowId });
+		return commitBackgroundOperation(request, operationId, 'chrome-native', { opened: true }, snapshot);
+	}
+	if (request.operation === 'open-options') {
+		await chrome.runtime.openOptionsPage();
+		return commitBackgroundOperation(request, operationId, 'chrome-native', { opened: true }, snapshot);
+	}
+	if (request.operation === 'open-url') {
+		const tab = await currentOperationTab(request.tabId, snapshot.documentId);
+		await chrome.tabs.create({
+			url: normalizeHttpUrl(request.payload.url),
+			windowId: tab.windowId,
+			index: tab.index + 1,
+			openerTabId: request.tabId,
+			active: true,
+		});
+		return commitBackgroundOperation(request, operationId, 'chrome-native', { opened: true }, snapshot);
+	}
+	if (request.operation === 'run-user-script') {
+		const result = await executeUserScriptInTab(
+			request.tabId,
+			snapshot.documentId,
+			request.payload.script,
+		);
+		if (!result.success) throw new Error(result.error ?? 'User script execution failed');
+		return commitBackgroundOperation(request, operationId, 'extension-state', { executed: true }, snapshot);
+	}
+	if (request.operation === 'restore-page-settings') {
+		const baseline = await getOrCreateSnapshot(request.tabId);
+		const target = request.target ?? baseline.activeMedia;
+		const previousSiteBaseline = await readSiteNativeBaseline(
+			baseline.tabId,
+			baseline.documentId,
+			baseline.generation,
+		);
+		const targetRollback = await captureActualPatch(
+			baseline,
+			target,
+			RESTORABLE_TARGET_FIELDS,
+			true,
+		);
+		const processorRollback = await captureActualPatch(
+			baseline,
+			target,
+			RESTORABLE_PROCESSOR_FIELDS,
+		);
+		let fields: ControlFieldStates = {};
+		try {
+			const siteRelease = await restoreSiteNativeFields(baseline, operationId);
+			fields = { ...fields, ...siteRelease.fields };
+			if (siteRelease.failedFields.length > 0) {
+				throw new Error(`Official site release failed for ${siteRelease.failedFields.join(', ')}`);
+			}
+			const contentRequest = {
+				...request,
+				payload: { excludedNativeFields: siteRelease.excludedNativeFields },
+			} as RoutedControlOperationRequest;
+			const preparedRelease = await prepareContentOperation(contentRequest, operationId, baseline);
+			const released = preparedRelease.acknowledgement as ControlOperationAck<'restore-page-settings'>;
+			fields = { ...fields, ...released.fields };
+			const staged = stageSnapshot(baseline, fields, released.target);
+			const processorPrepared = await prepareIntent({
+				tabId: request.tabId,
+				source: request.source,
+				requestedCoverage: 'full',
+				target: released.target,
+				patch: RESET_AUDIO_PROCESSOR_PATCH,
+			}, staged);
+			fields = { ...fields, ...processorPrepared.fields };
+			assertReleasedPatch(
+				processorPrepared.fields,
+				RESET_AUDIO_PROCESSOR_PATCH,
+				'Page processor release',
+			);
+			const committed = await commitControlFields(
+				baseline,
+				fields,
+				released.target,
+				request.source,
+			);
+			await clearSiteNativeBaseline(request.tabId);
+			return {
+				...released,
+				revision: committed.revision,
+				fields,
+				result: {
+					releasedFields: [
+						...new Set([
+							...released.result.releasedFields,
+							...siteRelease.restoredFields,
+							...Object.keys(processorPrepared.fields) as ControlField[],
+						]),
+					],
+				},
+			} as ControlOperationAck<'restore-page-settings'>;
+		} catch (error) {
+			const compensation = await compensateControlPatch(
+				baseline,
+				target,
+				targetRollback,
+				processorRollback,
+				fields,
+				previousSiteBaseline,
+			);
+			if (!compensation.ok) {
+				await commitCompensationFailure(
+					baseline,
+					target,
+					{ ...targetRollback, ...processorRollback },
+					compensation,
+					error,
+				);
+			}
+			throw error;
+		}
+	}
+	return routeContentOperation(request, operationId);
+}
+
+function enqueueTabTask<T>(tabId: number, operation: () => Promise<T>): Promise<T> {
+	const previous = queues.get(tabId) ?? Promise.resolve();
+	let resolveResult!: (value: T) => void;
+	let rejectResult!: (reason: unknown) => void;
+	const result = new Promise<T>((resolve, reject) => {
+		resolveResult = resolve;
+		rejectResult = reject;
+	});
+	const next = previous.then(async () => {
+		try { resolveResult(await operation()); }
+		catch (error) { rejectResult(error); }
+	}).finally(() => {
+		if (queues.get(tabId) === next) queues.delete(tabId);
+	});
+	queues.set(tabId, next);
+	return result;
+}
+
+function submitSerialized(request: RoutedControlSubmitRequest): Promise<ControlApplyAck> {
+	return enqueueTabTask(request.tabId, () => executeIntent(request));
+}
+
+function submitOperationSerialized(
+	request: RoutedControlOperationRequest,
+): Promise<ControlOperationAck> {
+	return enqueueTabTask(request.tabId, () => executeControlOperation(request));
+}
+
+export function submitControlRequest(request: RoutedControlSubmitRequest): Promise<ControlApplyAck> {
+	return submitSerialized(request);
+}
+
+export function submitControlOperation(
+	request: RoutedControlOperationRequest,
+): Promise<ControlOperationAck> {
+	return submitOperationSerialized(request);
+}
+
+async function removeTab(tabId: number): Promise<void> {
+	snapshots.delete(tabId);
+	queues.delete(tabId);
+	invalidations.delete(tabId);
+	await chrome.storage.session.remove([
+		storageKey(tabId),
+		generationKey(tabId),
+		siteNativeBaselineKey(tabId),
+	]).catch(() => undefined);
+}
+
+function invalidateNavigation(tabId: number, preserveDocumentState = false): Promise<void> {
+	const previous = invalidations.get(tabId) ?? Promise.resolve();
+	const operation = previous.then(async () => {
+		const [memory, persisted, storedGeneration] = await Promise.all([
+			Promise.resolve(snapshots.get(tabId) ?? null),
+			readPersistedSnapshot(tabId),
+			readPersistedGeneration(tabId),
+		]);
+		const generation = Math.max(
+			storedGeneration,
+			memory?.generation ?? 0,
+			persisted?.generation ?? 0,
+		) + 1;
+		const previousSnapshot = memory ?? persisted;
+		if (preserveDocumentState && previousSnapshot) {
+			const revision = previousSnapshot.revision + 1;
+			const carried: ControlSnapshot = {
+				...previousSnapshot,
+				generation,
+				revision,
+				fields: Object.fromEntries(Object.entries(previousSnapshot.fields).map(([field, state]) => [
+					field,
+					state ? { ...state, revision } : state,
+				])) as ControlFieldStates,
+			};
+			const siteBaseline = await readSiteNativeBaseline(
+				tabId,
+				previousSnapshot.documentId,
+				previousSnapshot.generation,
+			);
+			await persistGeneration(tabId, generation);
+			if (siteBaseline) {
+				await chrome.storage.session.set({
+					[siteNativeBaselineKey(tabId)]: { ...siteBaseline, generation },
+				});
+			}
+			await publishSnapshot(carried);
+			await reconcileRuntimeOwnership(carried);
+			return;
+		}
+		snapshots.delete(tabId);
+		await Promise.all([
+			persistGeneration(tabId, generation),
+			chrome.storage.session.remove([
+				storageKey(tabId),
+				siteNativeBaselineKey(tabId),
+			]),
+		]);
+	}).finally(() => {
+		if (invalidations.get(tabId) === operation) invalidations.delete(tabId);
+	});
+	invalidations.set(tabId, operation);
+	return operation;
+}
+
+export function initializeControlCoordinator(): void {
+	if (initialized) return;
+	initialized = true;
+	chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+		if (!message || typeof message !== 'object') return false;
+		const candidate = message as { protocolVersion?: unknown; type?: unknown };
+		const isControlMessage = candidate.type === 'spectra.control.snapshot.get'
+			|| candidate.type === 'spectra.control.intent.submit'
+			|| candidate.type === 'spectra.control.operation.submit'
+			|| candidate.type === 'spectra.content.source.released'
+			|| candidate.type === 'spectra.content.target.changed';
+		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION || !isControlMessage) return false;
+		if (sender.id && sender.id !== chrome.runtime.id) {
+			sendResponse(rpcFailure('forbidden', 'Control coordinator RPC is extension-internal only'));
+			return false;
+		}
+		if (!isSpectraRequestEnvelope(message)
+			|| (message.type !== 'spectra.control.snapshot.get'
+				&& message.type !== 'spectra.control.intent.submit'
+				&& message.type !== 'spectra.control.operation.submit'
+				&& message.type !== 'spectra.content.source.released'
+				&& message.type !== 'spectra.content.target.changed')) {
+			sendResponse(rpcFailure('invalid_request', 'Malformed control coordinator request'));
+			return false;
+		}
+
+		if (message.type === 'spectra.content.source.released') {
+			const tabId = sender.tab?.id;
+			if (!tabId || sender.documentId !== message.payload.target.documentId) {
+				sendResponse(rpcFailure('forbidden', 'Source lifecycle must match its sending document'));
+				return false;
+			}
+			void enqueueTabTask(tabId, () => handleSourceReleased(tabId, message.payload.target)).then(
+				() => sendResponse(rpcSuccess({ accepted: true as const })),
+				(error) => sendResponse(rpcFailure(
+					'source_release_failed',
+					error instanceof Error ? error.message : String(error),
+					true,
+				)),
+			);
+			return true;
+		}
+
+		if (message.type === 'spectra.content.target.changed') {
+			const tabId = sender.tab?.id;
+			if (!tabId || sender.documentId !== message.payload.target.documentId) {
+				sendResponse(rpcFailure('forbidden', 'Active media selection must match its sending document'));
+				return false;
+			}
+			void enqueueTabTask(tabId, () => handleTargetChanged(tabId, message.payload.target)).then(
+				() => sendResponse(rpcSuccess({ accepted: true as const })),
+				(error) => sendResponse(rpcFailure(
+					'target_change_failed',
+					error instanceof Error ? error.message : String(error),
+					true,
+				)),
+			);
+			return true;
+		}
+
+		if (message.type === 'spectra.control.snapshot.get') {
+			void getControlViewSnapshot(message.payload.tabId).then(
+				(snapshot) => sendResponse(rpcSuccess(snapshot)),
+				(error) => sendResponse(rpcFailure('snapshot_unavailable', String(error), true)),
+			);
+			return true;
+		}
+
+		const tabId = message.payload.tabId ?? sender.tab?.id ?? message.tabId;
+		if (!tabId) {
+			sendResponse(rpcFailure('invalid_request', 'Control intent requires a target tab'));
+			return false;
+		}
+		if (message.type === 'spectra.control.intent.submit'
+			&& message.payload.source === 'page'
+			&& sender.tab?.id !== tabId) {
+			sendResponse(rpcFailure('forbidden', 'Page intent tab does not match its sender'));
+			return false;
+		}
+		const operation = message.type === 'spectra.control.operation.submit'
+			? submitOperationSerialized({ ...message.payload, tabId } as RoutedControlOperationRequest)
+			: submitSerialized({ ...message.payload, tabId });
+		void operation.then(
+			(ack) => sendResponse(rpcSuccess(ack)),
+			(error) => sendResponse(rpcFailure(
+				message.type === 'spectra.control.operation.submit'
+					? 'control_operation_failed'
+					: 'control_apply_failed',
+				error instanceof Error ? error.message : String(error),
+				true,
+			)),
+		);
+		return true;
+	});
+
+	chrome.tabs.onRemoved.addListener((tabId) => { void removeTab(tabId); });
+	chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+		const patch: Pick<ControlPatch, 'tabMuted' | 'tabPinned'> = {};
+		if (typeof changeInfo.pinned === 'boolean') patch.tabPinned = changeInfo.pinned;
+		if (typeof changeInfo.mutedInfo?.muted === 'boolean') {
+			patch.tabMuted = changeInfo.mutedInfo.muted;
+		}
+		if (Object.keys(patch).length > 0) void observeChromeTabState(tabId, patch);
+	});
+	chrome.webNavigation.onCommitted.addListener((details) => {
+		if (details.frameId === 0) void invalidateNavigation(details.tabId);
+	});
+	chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
+		if (details.frameId === 0) void invalidateNavigation(details.tabId, true);
+	});
+	chrome.webNavigation.onReferenceFragmentUpdated.addListener((details) => {
+		if (details.frameId === 0) void invalidateNavigation(details.tabId, true);
+	});
+}
+
+// Direct test surface for module-scoped MV3 state. These exports are not used
+// by the background entry and are removed from production bundles.
+export const controlCoordinatorTestApi = {
+	submit: submitSerialized,
+	submitOperation: submitOperationSerialized,
+	getSnapshot,
+	getViewSnapshot: getControlViewSnapshot,
+	targetChanged: handleTargetChanged,
+	sourceReleased: handleSourceReleased,
+	observeChromeTabState,
+	invalidateNavigation,
+	async reset(): Promise<void> {
+		await Promise.allSettled([...invalidations.values()]);
+		// Drain the repository's trailing debounce while the test/background
+		// Chrome storage owner still exists. Otherwise a late timer can outlive
+		// the service-worker harness and write through a deleted global.
+		await storage.tabSession.flush().catch(() => undefined);
+		snapshots.clear();
+		queues.clear();
+		invalidations.clear();
+		initialized = false;
+	},
+};

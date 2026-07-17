@@ -1,28 +1,27 @@
-// goal: execute strictly validated SPECTRA v2 media/video commands in one document
+// goal: one-release legacy media/video adapter delegating every mutation to the v2 coordinator
 
 import {
 	rpcFailure,
 	rpcSuccess,
+	type ControlMutation,
+	type ControlOperation,
+	type ControlOperationAck,
+	type ControlOperationPayload,
+	type ControlOperationRequest,
 	type SpectraRequestEnvelope,
 	type SpectraRequestType,
 } from '@nexus/contracts';
 import type { PolicyExecutor, PolicyExecutorState } from './policy-executor';
 import { executeHotkeyAction } from '../input/hotkey-actions';
-import { getMediaState, seekVideo, togglePip, togglePlay } from './media-control';
-import {
-	rotateVideo,
-	takeScreenshot,
-	toggleCrop,
-	toggleFullscreen,
-	toggleMirror,
-} from '../video/video-transform';
-import { resetVideoFilter, setVideoFilter, toggleDimBackground } from '../video/video-filter';
-import { clearABLoop, getABState, setPointA, setPointB } from '../video/ab-loop';
-import { addMarker, jumpToMarker, listMarkers, removeMarker } from '../video/time-marker';
+import { getActiveMediaRegistry } from '../core/media-registry';
+import { getABState } from '../video/ab-loop';
+import { listMarkers } from '../video/time-marker';
+import { sendSpectraRequest } from '../../shared/spectra-client';
 
 type ContentCommandType = Extract<
 	SpectraRequestType,
 	| 'spectra.audio.visualizer.get'
+	| 'spectra.audio.visualizer.subscription.set'
 	| 'spectra.hotkey.trigger'
 	| `spectra.media.${string}`
 	| `spectra.video.${string}`
@@ -32,24 +31,70 @@ export interface SpectraCommandHandlerDeps {
 	state: PolicyExecutorState;
 	policyExecutor?: PolicyExecutor;
 	getVisualizerData: () => Uint8Array | null;
+	setVisualizerSubscribed: (subscribed: boolean) => boolean;
 }
 
 export function isContentCommandType(type: SpectraRequestType): type is ContentCommandType {
 	return type === 'spectra.audio.visualizer.get'
+		|| type === 'spectra.audio.visualizer.subscription.set'
 		|| type === 'spectra.hotkey.trigger'
 		|| type.startsWith('spectra.media.')
 		|| type.startsWith('spectra.video.');
 }
 
-function respondWithFailure(
-	sendResponse: (response?: unknown) => void,
-	error: unknown,
-): void {
+function respondWithFailure(sendResponse: (response?: unknown) => void, error: unknown): void {
 	sendResponse(rpcFailure(
 		'command_failed',
 		error instanceof Error ? error.message : String(error),
 		true,
 	));
+}
+
+function activeMediaState(): {
+	playing: boolean;
+	speed: number;
+	pipActive: boolean;
+	preservePitch: boolean;
+} {
+	const media = getActiveMediaRegistry()?.resolve(null)?.element ?? null;
+	return {
+		playing: media ? !media.paused : false,
+		speed: media?.playbackRate ?? 1,
+		pipActive: document.pictureInPictureElement === media,
+		preservePitch: media && 'preservesPitch' in media
+			? (media as HTMLMediaElement & { preservesPitch: boolean }).preservesPitch
+			: true,
+	};
+}
+
+async function submitLegacyOperation<O extends ControlOperation>(
+	operation: O,
+	payload: ControlOperationPayload<O>,
+): Promise<ControlOperationAck<O>> {
+	const response = await sendSpectraRequest('spectra.control.operation.submit', {
+		source: 'popup',
+		target: null,
+		operation,
+		payload,
+	} as unknown as ControlOperationRequest);
+	if (!response.ok) throw new Error(response.error.message);
+	return response.data as ControlOperationAck<O>;
+}
+
+async function submitLegacyMutations(
+	mutations: readonly ControlMutation[],
+): Promise<import('@nexus/contracts').ControlApplyAck> {
+	const response = await sendSpectraRequest('spectra.control.intent.submit', {
+		source: 'popup',
+		requestedCoverage: 'active-target',
+		target: null,
+		mutations,
+	});
+	if (!response.ok) throw new Error(response.error.message);
+	const failure = Object.values(response.data.fields)
+		.find((field) => field?.phase !== 'applied');
+	if (failure) throw new Error(failure.lastError?.message ?? 'Legacy control was not applied');
+	return response.data;
 }
 
 // post: returns true when an asynchronous response keeps the message port open
@@ -60,96 +105,179 @@ export function handleSpectraContentCommand(
 ): boolean {
 	try {
 		switch (message.type) {
-			case 'spectra.audio.visualizer.get': {
+		case 'spectra.audio.visualizer.get': {
 				const data = deps.getVisualizerData();
 				sendResponse(rpcSuccess({ buffer: data ? Array.from(data) : null }));
 				return false;
 			}
-			case 'spectra.hotkey.trigger':
-				executeHotkeyAction(message.payload.action);
-				sendResponse(rpcSuccess({ handled: true as const }));
+			case 'spectra.audio.visualizer.subscription.set': {
+				const subscribed = deps.setVisualizerSubscribed(message.payload.subscribed);
+				sendResponse(rpcSuccess({ subscribed }));
 				return false;
+			}
+			case 'spectra.hotkey.trigger':
+				void executeHotkeyAction(message.payload.action).then(
+					() => sendResponse(rpcSuccess({ handled: true as const })),
+					(error) => respondWithFailure(sendResponse, error),
+				);
+				return true;
 			case 'spectra.media.state.get':
-				sendResponse(rpcSuccess(getMediaState()));
+				sendResponse(rpcSuccess(activeMediaState()));
 				return false;
 			case 'spectra.media.play.toggle':
-				sendResponse(rpcSuccess({ playing: togglePlay() }));
-				return false;
+				void submitLegacyOperation('playback-toggle', {}).then(
+					(ack) => sendResponse(rpcSuccess({ playing: ack.result.playing })),
+					(error) => respondWithFailure(sendResponse, error),
+				);
+				return true;
 			case 'spectra.media.pip.toggle':
-				void togglePip().then(
-					(active) => sendResponse(rpcSuccess({ active })),
+				void submitLegacyMutations([{ field: 'pip', operation: 'toggle' }]).then(
+					(ack) => sendResponse(rpcSuccess({ active: ack.fields.pip?.actual === true })),
 					(error) => respondWithFailure(sendResponse, error),
 				);
 				return true;
 			case 'spectra.media.speed.set': {
-				if (!deps.policyExecutor) {
-					sendResponse(rpcFailure('runtime_booting', 'Audio runtime is still starting', true));
-					return false;
+				const mutations: ControlMutation[] = [];
+				if (message.payload.delta !== undefined) {
+					mutations.push({ field: 'speed', operation: 'delta', value: message.payload.delta });
+				} else {
+					mutations.push({ field: 'speed', operation: 'set', value: message.payload.speed ?? 1 });
 				}
-				const requested = message.payload.delta === undefined
-					? message.payload.speed ?? 1
-					: (deps.state.config.speed || 1) + message.payload.delta;
-				const speed = Math.max(0.1, Math.min(16, requested));
-				const preservePitch = message.payload.preservePitch ?? true;
-				void deps.policyExecutor.updateConfig({ speed }, { showOSD: true }).then(
-					(result) => sendResponse(result.ok
-						? rpcSuccess({ speed, preservePitch })
-						: result),
+				if (message.payload.preservePitch !== undefined) {
+					mutations.push({
+						field: 'preservePitch',
+						operation: 'set',
+						value: message.payload.preservePitch,
+					});
+				}
+				void submitLegacyMutations(mutations).then(
+					(ack) => sendResponse(rpcSuccess({
+						speed: Number(ack.fields.speed?.actual ?? activeMediaState().speed),
+						preservePitch: Boolean(
+							ack.fields.preservePitch?.actual ?? activeMediaState().preservePitch,
+						),
+					})),
 					(error) => respondWithFailure(sendResponse, error),
 				);
 				return true;
 			}
 			case 'spectra.video.rotate':
-				sendResponse(rpcSuccess({ rotation: rotateVideo(message.payload.delta) }));
-				return false;
+				void submitLegacyMutations([{ field: 'rotation', operation: 'delta', value: message.payload.delta }]).then(
+					(ack) => sendResponse(rpcSuccess({ rotation: Number(ack.fields.rotation?.actual ?? 0) })),
+					(error) => respondWithFailure(sendResponse, error),
+				);
+				return true;
 			case 'spectra.video.mirror.toggle':
-				sendResponse(rpcSuccess({ mirrored: toggleMirror() }));
-				return false;
+				void submitLegacyMutations([{ field: 'mirrored', operation: 'toggle' }]).then(
+					(ack) => sendResponse(rpcSuccess({ mirrored: ack.fields.mirrored?.actual === true })),
+					(error) => respondWithFailure(sendResponse, error),
+				);
+				return true;
 			case 'spectra.video.screenshot':
-				sendResponse(rpcSuccess({ dataUrl: takeScreenshot() }));
-				return false;
+				void submitLegacyOperation('screenshot', {}).then(
+					(ack) => sendResponse(rpcSuccess(ack.result)),
+					(error) => respondWithFailure(sendResponse, error),
+				);
+				return true;
 			case 'spectra.video.fullscreen.toggle':
-				void toggleFullscreen().then(
-					(active) => sendResponse(rpcSuccess({ active })),
+				void submitLegacyMutations([{ field: 'fullscreen', operation: 'toggle' }]).then(
+					(ack) => sendResponse(rpcSuccess({ active: ack.fields.fullscreen?.actual === true })),
 					(error) => respondWithFailure(sendResponse, error),
 				);
 				return true;
 			case 'spectra.video.crop.toggle':
-				sendResponse(rpcSuccess({ cropped: toggleCrop() }));
-				return false;
+				void submitLegacyMutations([{ field: 'fill', operation: 'toggle' }]).then(
+					(ack) => sendResponse(rpcSuccess({ cropped: ack.fields.fill?.actual === true })),
+					(error) => respondWithFailure(sendResponse, error),
+				);
+				return true;
 			case 'spectra.video.seek':
-				sendResponse(rpcSuccess({ currentTime: seekVideo(message.payload.delta) }));
-				return false;
+				void submitLegacyOperation('seek-relative', { delta: message.payload.delta }).then(
+					(ack) => sendResponse(rpcSuccess({ currentTime: ack.result.currentTime })),
+					(error) => respondWithFailure(sendResponse, error),
+				);
+				return true;
 			case 'spectra.video.filter.set':
-				sendResponse(rpcSuccess({ applied: setVideoFilter(message.payload) }));
-				return false;
+				void submitLegacyMutations([
+					{ field: 'filter', operation: 'set', value: {
+						brightness: message.payload.brightness ?? 100,
+						contrast: message.payload.contrast ?? 100,
+						saturate: message.payload.saturate ?? 100,
+						grayscale: message.payload.grayscale ?? false,
+						invert: message.payload.invert ?? false,
+					} },
+					{ field: 'filterEnabled', operation: 'set', value: true },
+				]).then(
+					(ack) => sendResponse(rpcSuccess({ applied: ack.fields.filter?.phase === 'applied' })),
+					(error) => respondWithFailure(sendResponse, error),
+				);
+				return true;
 			case 'spectra.video.filter.reset':
-				sendResponse(rpcSuccess({ reset: resetVideoFilter() }));
-				return false;
-			case 'spectra.video.dim.toggle':
-				sendResponse(rpcSuccess(toggleDimBackground(message.payload)));
-				return false;
+				void submitLegacyOperation('video-effects-reset', {}).then(
+					() => sendResponse(rpcSuccess({ reset: true as const })),
+					(error) => respondWithFailure(sendResponse, error),
+				);
+				return true;
+			case 'spectra.video.dim.toggle': {
+				const mutations: ControlMutation[] = [{
+					field: 'dimEnabled',
+					operation: message.payload.enabled === undefined ? 'toggle' : 'set',
+					...(message.payload.enabled === undefined ? {} : { value: message.payload.enabled }),
+				}];
+				if (message.payload.opacity !== undefined) mutations.push({
+					field: 'dimOpacity', operation: 'set', value: message.payload.opacity,
+				});
+				void submitLegacyMutations(mutations).then(
+					(ack) => sendResponse(rpcSuccess({
+						active: ack.fields.dimEnabled?.actual === true,
+						opacity: Number(ack.fields.dimOpacity?.actual ?? message.payload.opacity ?? 0.72),
+					})),
+					(error) => respondWithFailure(sendResponse, error),
+				);
+				return true;
+			}
 			case 'spectra.video.ab.a.set':
-				sendResponse(rpcSuccess({ pointA: setPointA() }));
-				return false;
+				void submitLegacyOperation('ab-set-a', {}).then(
+					(ack) => sendResponse(rpcSuccess({ pointA: ack.result.abLoop.pointA })),
+					(error) => respondWithFailure(sendResponse, error),
+				);
+				return true;
 			case 'spectra.video.ab.b.set':
-				sendResponse(rpcSuccess(setPointB()));
-				return false;
+				void submitLegacyOperation('ab-set-b', {}).then(
+					(ack) => sendResponse(rpcSuccess({
+						pointB: ack.result.abLoop.pointB,
+						looping: ack.result.abLoop.enabled,
+					})),
+					(error) => respondWithFailure(sendResponse, error),
+				);
+				return true;
 			case 'spectra.video.ab.clear':
-				sendResponse(rpcSuccess({ cleared: clearABLoop() }));
-				return false;
+				void submitLegacyOperation('ab-clear', {}).then(
+					(ack) => sendResponse(rpcSuccess({ cleared: ack.result.cleared })),
+					(error) => respondWithFailure(sendResponse, error),
+				);
+				return true;
 			case 'spectra.video.ab.get':
 				sendResponse(rpcSuccess(getABState()));
 				return false;
 			case 'spectra.video.marker.add':
-				sendResponse(rpcSuccess({ marker: addMarker(message.payload.label) }));
-				return false;
+				void submitLegacyOperation('marker-add', message.payload).then(
+					(ack) => sendResponse(rpcSuccess({ marker: ack.result.marker })),
+					(error) => respondWithFailure(sendResponse, error),
+				);
+				return true;
 			case 'spectra.video.marker.remove':
-				sendResponse(rpcSuccess({ removed: removeMarker(message.payload.id) }));
-				return false;
+				void submitLegacyOperation('marker-remove', message.payload).then(
+					(ack) => sendResponse(rpcSuccess({ removed: ack.result.removed })),
+					(error) => respondWithFailure(sendResponse, error),
+				);
+				return true;
 			case 'spectra.video.marker.jump':
-				sendResponse(rpcSuccess(jumpToMarker(message.payload.id)));
-				return false;
+				void submitLegacyOperation('marker-jump', message.payload).then(
+					(ack) => sendResponse(rpcSuccess(ack.result)),
+					(error) => respondWithFailure(sendResponse, error),
+				);
+				return true;
 			case 'spectra.video.marker.list':
 				sendResponse(rpcSuccess({ markers: listMarkers() }));
 				return false;

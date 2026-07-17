@@ -2,10 +2,13 @@
 
 import type { Result } from './common.types.js';
 
-// inv: 0-800 range where 100 is unity gain
+// `volume` remains the one-release v1 compatibility projection. New code owns
+// `volumeBase` (page-native 0-100) and `boost` (processor 1-8) independently.
 export interface AudioConfig {
   enabled: boolean;
   volume: number;
+  volumeBase?: number;
+  boost?: number;
   muted: boolean;
   compressor: boolean;
   mono: boolean;
@@ -18,11 +21,30 @@ export interface AudioConfig {
   delay: number;
   // inv: 0.1 to 16.0, default 1.0
   speed: number;
+  // Standard HTMLMediaElement pitch-preservation preference.
+  preservePitch: boolean;
+}
+
+// Exact graph state shared by Media WebAudio and Capture. Playback speed and
+// the product enable switch are intentionally outside the processor boundary.
+export interface AudioProcessorConfig {
+  // Processor gain is Boost only. Page volume and media mute remain owned by
+  // the standard DOM/allowlisted official-player writers and cannot be encoded
+  // as a second DSP writer at this boundary.
+  boostGain: number;
+  compressor: boolean;
+  mono: boolean;
+  bass: boolean;
+  eqValues: number[];
+  pan: number;
+  delay: number;
 }
 
 export const DEFAULT_AUDIO_CONFIG: Readonly<AudioConfig> = {
   enabled: true,
   volume: 100,
+  volumeBase: 100,
+  boost: 1,
   muted: false,
   compressor: false,
   mono: false,
@@ -30,12 +52,15 @@ export const DEFAULT_AUDIO_CONFIG: Readonly<AudioConfig> = {
   eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   pan: 0,
   delay: 0,
-  speed: 1.0
+  speed: 1.0,
+  preservePitch: true,
 } as const;
 
 const AUDIO_CONFIG_KEYS = new Set<keyof AudioConfig>([
   'enabled',
   'volume',
+  'volumeBase',
+  'boost',
   'muted',
   'compressor',
   'mono',
@@ -44,6 +69,17 @@ const AUDIO_CONFIG_KEYS = new Set<keyof AudioConfig>([
   'pan',
   'delay',
   'speed',
+  'preservePitch',
+]);
+
+const AUDIO_PROCESSOR_CONFIG_KEYS = new Set<keyof AudioProcessorConfig>([
+  'boostGain',
+  'compressor',
+  'mono',
+  'bass',
+  'eqValues',
+  'pan',
+  'delay',
 ]);
 
 const AUDIO_SESSION_KEYS = new Set<keyof AudioSessionSnapshot>([
@@ -79,6 +115,7 @@ const AUDIO_CAPTURE_STATE_KEYS = new Set<keyof AudioCaptureState>([
   'active',
   'actualMode',
   'lastError',
+  'actualConfig',
 ]);
 
 const AUDIO_SESSION_MODES = new Set<SpectraAudioMode>(['bypass', 'webaudio', 'capture']);
@@ -98,6 +135,28 @@ function isFiniteInRange(value: unknown, minimum: number, maximum: number): valu
     && Number.isFinite(value)
     && value >= minimum
     && value <= maximum;
+}
+
+export interface ResolvedAudioVolume {
+  volumeBase: number;
+  boost: number;
+  effectiveVolume: number;
+}
+
+export function resolveAudioVolume(config: Pick<AudioConfig, 'volume' | 'volumeBase' | 'boost'>): ResolvedAudioVolume {
+  const legacy = Math.max(0, Math.min(800, Number.isFinite(config.volume) ? config.volume : 100));
+  const hasCanonical = config.volumeBase !== undefined || config.boost !== undefined;
+  const volumeBase = hasCanonical
+    ? Math.max(0, Math.min(100, Number.isFinite(config.volumeBase) ? Number(config.volumeBase) : 100))
+    : Math.min(100, legacy);
+  const boost = hasCanonical
+    ? Math.max(1, Math.min(8, Number.isFinite(config.boost) ? Number(config.boost) : 1))
+    : legacy > 100 ? legacy / 100 : 1;
+  return {
+    volumeBase,
+    boost,
+    effectiveVolume: Math.round(volumeBase * boost * 100) / 100,
+  };
 }
 
 function isNonNegativeInteger(value: unknown): value is number {
@@ -130,6 +189,8 @@ export function isAudioConfig(value: unknown): value is AudioConfig {
   if (!isRecord(value) || !hasOnlyKeys(value, AUDIO_CONFIG_KEYS)) return false;
   return typeof value.enabled === 'boolean'
     && isFiniteInRange(value.volume, 0, 800)
+    && (value.volumeBase === undefined || isFiniteInRange(value.volumeBase, 0, 100))
+    && (value.boost === undefined || isFiniteInRange(value.boost, 1, 8))
     && typeof value.muted === 'boolean'
     && typeof value.compressor === 'boolean'
     && typeof value.mono === 'boolean'
@@ -139,7 +200,21 @@ export function isAudioConfig(value: unknown): value is AudioConfig {
     && value.eqValues.every((item) => isFiniteInRange(item, -12, 12))
     && isFiniteInRange(value.pan, -1, 1)
     && isFiniteInRange(value.delay, 0, 500)
-    && isFiniteInRange(value.speed, 0.1, 16);
+    && isFiniteInRange(value.speed, 0.1, 16)
+    && typeof value.preservePitch === 'boolean';
+}
+
+export function isAudioProcessorConfig(value: unknown): value is AudioProcessorConfig {
+  if (!isRecord(value) || !hasOnlyKeys(value, AUDIO_PROCESSOR_CONFIG_KEYS)) return false;
+  return isFiniteInRange(value.boostGain, 1, 8)
+    && typeof value.compressor === 'boolean'
+    && typeof value.mono === 'boolean'
+    && typeof value.bass === 'boolean'
+    && Array.isArray(value.eqValues)
+    && value.eqValues.length === 10
+    && value.eqValues.every((item) => isFiniteInRange(item, -12, 12))
+    && isFiniteInRange(value.pan, -1, 1)
+    && isFiniteInRange(value.delay, 0, 500);
 }
 
 // post: validates a field-level audio update without requiring unrelated fields
@@ -147,6 +222,8 @@ export function isAudioConfigPatch(value: unknown): value is Partial<AudioConfig
   if (!isRecord(value) || !hasOnlyKeys(value, AUDIO_CONFIG_KEYS)) return false;
   return (value.enabled === undefined || typeof value.enabled === 'boolean')
     && (value.volume === undefined || isFiniteInRange(value.volume, 0, 800))
+    && (value.volumeBase === undefined || isFiniteInRange(value.volumeBase, 0, 100))
+    && (value.boost === undefined || isFiniteInRange(value.boost, 1, 8))
     && (value.muted === undefined || typeof value.muted === 'boolean')
     && (value.compressor === undefined || typeof value.compressor === 'boolean')
     && (value.mono === undefined || typeof value.mono === 'boolean')
@@ -158,13 +235,16 @@ export function isAudioConfigPatch(value: unknown): value is Partial<AudioConfig
     ))
     && (value.pan === undefined || isFiniteInRange(value.pan, -1, 1))
     && (value.delay === undefined || isFiniteInRange(value.delay, 0, 500))
-    && (value.speed === undefined || isFiniteInRange(value.speed, 0.1, 16));
+    && (value.speed === undefined || isFiniteInRange(value.speed, 0.1, 16))
+    && (value.preservePitch === undefined || typeof value.preservePitch === 'boolean');
 }
 
 // post: identifies the transparent, never-activated site configuration
 export function isDefaultAudioConfig(config: AudioConfig): boolean {
+	const volume = resolveAudioVolume(config);
 	return config.enabled === DEFAULT_AUDIO_CONFIG.enabled
-		&& config.volume === DEFAULT_AUDIO_CONFIG.volume
+		&& volume.volumeBase === DEFAULT_AUDIO_CONFIG.volumeBase
+		&& volume.boost === DEFAULT_AUDIO_CONFIG.boost
 		&& config.muted === DEFAULT_AUDIO_CONFIG.muted
 		&& config.compressor === DEFAULT_AUDIO_CONFIG.compressor
 		&& config.mono === DEFAULT_AUDIO_CONFIG.mono
@@ -172,14 +252,18 @@ export function isDefaultAudioConfig(config: AudioConfig): boolean {
 		&& config.pan === DEFAULT_AUDIO_CONFIG.pan
 		&& config.delay === DEFAULT_AUDIO_CONFIG.delay
 		&& config.speed === DEFAULT_AUDIO_CONFIG.speed
+		&& config.preservePitch === DEFAULT_AUDIO_CONFIG.preservePitch
 		&& config.eqValues.length === DEFAULT_AUDIO_CONFIG.eqValues.length
 		&& config.eqValues.every((value, index) => value === DEFAULT_AUDIO_CONFIG.eqValues[index]);
 }
 
 // Types of audio processing engines
 export type AudioMode =
-  | 'NATIVE_WEBAUDIO'  // direct injection via WebAudio
-  | 'NATIVE_LITE'      // lightweight mode for overhead reduction
+  // Legacy internal tokens kept for the v1 adapter. `NATIVE_WEBAUDIO` means
+  // explicitly admitted extension-owned Media WebAudio, never page injection
+  // or a native fallback; `NATIVE_LITE` means transparent/native-only bypass.
+  | 'NATIVE_WEBAUDIO'
+  | 'NATIVE_LITE'
   | 'CAPTURE'          // browser tab capture mode (prevents CORS issues)
   | 'DISABLED';
 
@@ -241,6 +325,7 @@ export interface AudioCaptureState {
   active: boolean;
   actualMode: 'bypass' | 'capture';
   lastError: AudioSessionError | null;
+  actualConfig?: AudioConfig;
 }
 
 // post: validates the complete acknowledged state before UI, badge, or remote code consumes it
@@ -291,6 +376,7 @@ export function isAudioCaptureState(value: unknown): value is AudioCaptureState 
     && typeof value.active === 'boolean'
     && (value.actualMode === 'bypass' || value.actualMode === 'capture')
     && value.actualMode === (value.active ? 'capture' : 'bypass')
+    && (value.actualConfig === undefined || isAudioConfig(value.actualConfig))
     && (value.lastError === null || isAudioSessionError(value.lastError));
 }
 

@@ -190,13 +190,11 @@ describe('options translations', () => {
 
 	test('keeps locale tables out of the content bundle and sends only current strings', () => {
 		const settingsManager = readFileSync(resolve(import.meta.dir, '../src/content/core/settings-manager.ts'), 'utf8');
-		const corsHandler = readFileSync(
-			resolve(import.meta.dir, '../src/content/logic/policy-executor/cors-handler.ts'),
-			'utf8',
-		);
 		expect(settingsManager).toContain('spectra.content.settings.get');
-		expect(corsHandler).toContain('settings.osdMessages.corsAutoAdded');
-		expect(corsHandler).not.toContain('cors-messages');
+		expect(settingsManager).toContain('osdMessages');
+		expect(settingsManager).toContain("import type { ContentOSDMessages } from '../../shared/i18n/content-osd'");
+		expect(settingsManager).not.toContain('getContentOSDMessages');
+		expect(settingsManager).not.toContain('constants/i18n');
 	});
 
 	test('offers every supported locale in both extension UIs', () => {
@@ -315,13 +313,23 @@ describe('extension-page DOM and idle contracts', () => {
 		}
 	});
 
-	test('uses lifecycle events instead of recurring YouTube and remote UI polling', () => {
-		const youtube = readFileSync(resolve(import.meta.dir, '../src/injector/youtube-adapter.ts'), 'utf8');
+	test('uses one-shot site-native execution and no recurring remote UI polling', () => {
+		const siteNative = readFileSync(resolve(import.meta.dir, '../src/background/main-runtime-manager.ts'), 'utf8');
 		const remoteBindings = readFileSync(resolve(import.meta.dir, '../src/remote/ui-bindings.ts'), 'utf8');
 		const remoteModal = readFileSync(resolve(import.meta.dir, '../src/remote/modal-renderer.ts'), 'utf8');
-		expect(youtube).toContain('MutationObserver');
-		expect(`${youtube}\n${remoteBindings}\n${remoteModal}`).not.toContain('setInterval(');
+		expect(siteNative).toContain("world: 'MAIN'");
+		expect(siteNative).not.toContain('addEventListener(');
+		expect(`${siteNative}\n${remoteBindings}\n${remoteModal}`).not.toContain('setInterval(');
 		expect(remoteBindings).toContain('spectra.remote.session.changed');
 		expect(remoteModal).toContain('spectra.remote.session.closed');
+	});
+
+	test('keeps video-only Popup acknowledgements independent from active media', () => {
+		const mediaControls = readFileSync(resolve(import.meta.dir, '../src/popup/card/media-events.ts'), 'utf8');
+		const videoControls = readFileSync(resolve(import.meta.dir, '../src/popup/side-panel/video-controls.ts'), 'utf8');
+		expect(mediaControls).toContain("mutation.field === 'pip'");
+		expect(mediaControls).toContain('state.controlSnapshot?.activeVideo ?? null');
+		expect(videoControls).toContain('activeMedia: currentSnapshot.activeMedia');
+		expect(videoControls).not.toContain('activeMedia: ack.target ?? currentSnapshot.activeMedia');
 	});
 });

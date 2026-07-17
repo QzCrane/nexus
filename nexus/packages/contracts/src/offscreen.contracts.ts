@@ -1,6 +1,11 @@
 // goal: one runtime-validated contract for the SPECTRA background/offscreen boundary
 
-import { isAudioConfig, type AudioConfig } from './audio.contracts.js';
+import {
+	isAudioConfig,
+	isAudioProcessorConfig,
+	type AudioConfig,
+	type AudioProcessorConfig,
+} from './audio.contracts.js';
 import {
 	isRemoteCommand,
 	isRemotePublicSession,
@@ -12,16 +17,44 @@ import {
 } from './remote.contracts.js';
 
 export interface OffscreenHostSnapshot {
-	audioTabs: Array<{ tabId: number; generation: number }>;
+	audioTabs: Array<{
+		tabId: number;
+		generation: number;
+		controlRevision?: number;
+		graphSignature?: string;
+		normalizedActualConfig?: AudioProcessorConfig;
+	}>;
 	remoteTabs: Array<{ tabId: number; sessionId: string }>;
 }
 
 export type OffscreenAudioResult =
-	| { ok: true; tabId: number; generation: number; phase: 'active' | 'idle'; error?: never }
+	| {
+		ok: true;
+		tabId: number;
+		generation: number;
+		controlRevision: number;
+		phase: 'active';
+		contextState: 'running';
+		graphSignature: string;
+		normalizedActualConfig: AudioProcessorConfig;
+		error?: never;
+	}
+	| {
+		ok: true;
+		tabId: number;
+		generation: number;
+		controlRevision: number;
+		phase: 'idle';
+		contextState: 'closed';
+		graphSignature: 'none';
+		normalizedActualConfig: null;
+		error?: never;
+	}
 	| {
 		ok: false;
 		tabId: number;
 		generation: number;
+		controlRevision: number;
 		error: { code: string; message: string; retryable: boolean };
 		phase?: never;
 	};
@@ -32,6 +65,10 @@ export interface OffscreenVisualizerFrame {
 
 export interface OffscreenVisualizerBatch {
 	frames: Record<string, number[] | null>;
+}
+
+export interface OffscreenVisualizerSubscriptions {
+	subscribedTabIds: number[];
 }
 
 export interface RemoteHostSession extends RemotePublicSession {
@@ -70,6 +107,7 @@ export interface OffscreenHostRequestMap {
 		streamId: string;
 		config: AudioConfig;
 		generation: number;
+		controlRevision?: number;
 	}, OffscreenAudioResult>;
 	OFFSCREEN_AUDIO_STOP: OffscreenHostRequestDefinition<{
 		tabId: number;
@@ -83,6 +121,7 @@ export interface OffscreenHostRequestMap {
 	OFFSCREEN_AUDIO_UPDATE: OffscreenHostRequestDefinition<{
 		tabId: number;
 		generation: number;
+		controlRevision?: number;
 		config: AudioConfig;
 	}, OffscreenAudioResult>;
 	OFFSCREEN_AUDIO_GET_VIZ: OffscreenHostRequestDefinition<{
@@ -91,6 +130,9 @@ export interface OffscreenHostRequestMap {
 	OFFSCREEN_AUDIO_GET_VIZ_BATCH: OffscreenHostRequestDefinition<{
 		tabIds: number[];
 	}, OffscreenVisualizerBatch>;
+	OFFSCREEN_AUDIO_SET_VIZ_SUBSCRIPTIONS: OffscreenHostRequestDefinition<{
+		tabIds: number[];
+	}, OffscreenVisualizerSubscriptions>;
 	REMOTE_HOST_CREATE_SESSION: OffscreenHostRequestDefinition<{
 		tabId: number;
 	}, RemoteHostCreateResponse>;
@@ -199,13 +241,22 @@ export function isOffscreenHostRequest(value: unknown): value is OffscreenHostWi
 		case 'REMOTE_HOST_DESCRIBE':
 			return hasOnlyKeys(value, ['target', 'type']);
 		case 'OFFSCREEN_AUDIO_START':
-			return hasOnlyKeys(value, ['target', 'type', 'tabId', 'streamId', 'config', 'generation'])
+			return hasOnlyKeys(value, [
+				'target',
+				'type',
+				'tabId',
+				'streamId',
+				'config',
+				'generation',
+				'controlRevision',
+			])
 				&& isTabId(value.tabId)
 				&& typeof value.streamId === 'string'
 				&& value.streamId.length > 0
 				&& value.streamId.length <= MAX_STREAM_ID_LENGTH
 				&& isAudioConfig(value.config)
-				&& isGeneration(value.generation);
+				&& isGeneration(value.generation)
+				&& (value.controlRevision === undefined || isGeneration(value.controlRevision));
 		case 'OFFSCREEN_AUDIO_STOP':
 			return hasOnlyKeys(value, ['target', 'type', 'tabId', 'generation'])
 				&& isTabId(value.tabId)
@@ -216,9 +267,17 @@ export function isOffscreenHostRequest(value: unknown): value is OffscreenHostWi
 				&& isGeneration(value.generation)
 				&& typeof value.stopCommitted === 'boolean';
 		case 'OFFSCREEN_AUDIO_UPDATE':
-			return hasOnlyKeys(value, ['target', 'type', 'tabId', 'generation', 'config'])
+			return hasOnlyKeys(value, [
+				'target',
+				'type',
+				'tabId',
+				'generation',
+				'controlRevision',
+				'config',
+			])
 				&& isTabId(value.tabId)
 				&& isGeneration(value.generation)
+				&& (value.controlRevision === undefined || isGeneration(value.controlRevision))
 				&& isAudioConfig(value.config);
 		case 'OFFSCREEN_AUDIO_GET_VIZ':
 		case 'REMOTE_HOST_CREATE_SESSION':
@@ -226,6 +285,7 @@ export function isOffscreenHostRequest(value: unknown): value is OffscreenHostWi
 		case 'REMOTE_HOST_CLOSE_TAB':
 			return hasOnlyKeys(value, ['target', 'type', 'tabId']) && isTabId(value.tabId);
 		case 'OFFSCREEN_AUDIO_GET_VIZ_BATCH':
+		case 'OFFSCREEN_AUDIO_SET_VIZ_SUBSCRIPTIONS':
 			return hasOnlyKeys(value, ['target', 'type', 'tabIds'])
 				&& isTabIdList(value.tabIds);
 		case 'REMOTE_HOST_CLOSE_SESSION':
@@ -260,6 +320,10 @@ export function isOffscreenHostResponse<TType extends OffscreenHostRequestType>(
 				&& isVisualizerFrame(value.buffer);
 		case 'OFFSCREEN_AUDIO_GET_VIZ_BATCH':
 			return isVisualizerBatch(value);
+		case 'OFFSCREEN_AUDIO_SET_VIZ_SUBSCRIPTIONS':
+			return isRecord(value)
+				&& hasOnlyKeys(value, ['subscribedTabIds'])
+				&& isTabIdList(value.subscribedTabIds);
 		case 'REMOTE_HOST_CREATE_SESSION':
 			return isRemoteHostCreateResponse(value);
 		case 'REMOTE_HOST_GET_STATUS':
@@ -334,9 +398,19 @@ export function isOffscreenHostSnapshot(value: unknown): value is OffscreenHostS
 	if (!Array.isArray(value.audioTabs)
 		|| value.audioTabs.length > MAX_HOST_RESOURCES
 		|| !value.audioTabs.every((audio) => isRecord(audio)
-			&& hasOnlyKeys(audio, ['tabId', 'generation'])
+			&& hasOnlyKeys(audio, [
+				'tabId',
+				'generation',
+				'controlRevision',
+				'graphSignature',
+				'normalizedActualConfig',
+			])
 			&& isTabId(audio.tabId)
-			&& isGeneration(audio.generation))) return false;
+			&& isGeneration(audio.generation)
+			&& (audio.controlRevision === undefined || isGeneration(audio.controlRevision))
+			&& (audio.graphSignature === undefined || isBoundedString(audio.graphSignature, 512))
+			&& (audio.normalizedActualConfig === undefined
+				|| isAudioProcessorConfig(audio.normalizedActualConfig)))) return false;
 	if (!Array.isArray(value.remoteTabs)
 		|| value.remoteTabs.length > MAX_HOST_RESOURCES
 		|| !value.remoteTabs.every((remote) => isRecord(remote)
@@ -349,13 +423,43 @@ export function isOffscreenHostSnapshot(value: unknown): value is OffscreenHostS
 }
 
 export function isOffscreenAudioResult(value: unknown): value is OffscreenAudioResult {
-	if (!isRecord(value) || !isTabId(value.tabId) || !isGeneration(value.generation)) return false;
+	if (!isRecord(value)
+		|| !isTabId(value.tabId)
+		|| !isGeneration(value.generation)
+		|| !isGeneration(value.controlRevision)) return false;
 	if (value.ok === true) {
-		return hasOnlyKeys(value, ['ok', 'tabId', 'generation', 'phase'])
-			&& (value.phase === 'active' || value.phase === 'idle');
+		if (value.phase === 'active') {
+			return hasOnlyKeys(value, [
+				'ok',
+				'tabId',
+				'generation',
+				'controlRevision',
+				'phase',
+				'contextState',
+				'graphSignature',
+				'normalizedActualConfig',
+			])
+				&& value.contextState === 'running'
+				&& isBoundedString(value.graphSignature, 512)
+				&& isAudioProcessorConfig(value.normalizedActualConfig);
+		}
+		return value.phase === 'idle'
+			&& hasOnlyKeys(value, [
+				'ok',
+				'tabId',
+				'generation',
+				'controlRevision',
+				'phase',
+				'contextState',
+				'graphSignature',
+				'normalizedActualConfig',
+			])
+			&& value.contextState === 'closed'
+			&& value.graphSignature === 'none'
+			&& value.normalizedActualConfig === null;
 	}
 	return value.ok === false
-		&& hasOnlyKeys(value, ['ok', 'tabId', 'generation', 'error'])
+		&& hasOnlyKeys(value, ['ok', 'tabId', 'generation', 'controlRevision', 'error'])
 		&& isRecord(value.error)
 		&& hasOnlyKeys(value.error, ['code', 'message', 'retryable'])
 		&& isBoundedString(value.error.code, MAX_ERROR_CODE_LENGTH)

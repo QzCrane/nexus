@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { DEFAULT_AUDIO_CONFIG, SPECTRA_PROTOCOL_VERSION } from '@nexus/contracts';
+import { DEFAULT_AUDIO_CONFIG, SPECTRA_PROTOCOL_VERSION, resolveAudioVolume } from '@nexus/contracts';
 import {
 	cleanupCaptureState,
 	reconcileCaptureStates,
@@ -52,12 +52,7 @@ describe('capture restart reconciliation barrier', () => {
 						offscreenMessages.push(structuredClone(message));
 						if (message.type === 'OFFSCREEN_HOST_HELLO') return hello.promise;
 						if (message.type === 'OFFSCREEN_AUDIO_STOP') {
-							return {
-								ok: true,
-								tabId: message.tabId,
-								generation: message.generation,
-								phase: 'idle',
-							};
+							return idleAck(message.tabId, message.generation);
 						}
 						return undefined;
 					},
@@ -115,7 +110,7 @@ describe('capture restart reconciliation barrier', () => {
 						return { audioTabs: [{ tabId: 51, generation: 9 }], remoteTabs: [] };
 					}
 					if (message.type === 'OFFSCREEN_AUDIO_STOP') {
-						return { ok: true, tabId: 51, generation: message.generation, phase: 'idle' };
+						return idleAck(51, message.generation);
 					}
 					return undefined;
 				},
@@ -158,13 +153,14 @@ describe('capture restart reconciliation barrier', () => {
 								ok: false,
 								tabId: 61,
 								generation: message.generation,
+								controlRevision: 0,
 								error: { code: 'busy', message: 'still stopping', retryable: true },
 							};
 						}
-						return { ok: true, tabId: 61, generation: message.generation, phase: 'idle' };
+						return idleAck(61, message.generation);
 					}
 					if (message.type === 'OFFSCREEN_AUDIO_STOP') {
-						return { ok: true, tabId: message.tabId, generation: message.generation, phase: 'idle' };
+						return idleAck(message.tabId, message.generation);
 					}
 					return undefined;
 				},
@@ -205,14 +201,15 @@ describe('capture restart reconciliation barrier', () => {
 								ok: false,
 								tabId: 72,
 								generation: message.generation,
+								controlRevision: Number(message.controlRevision ?? 0),
 								error: { code: 'denied', message: 'temporary denial', retryable: true },
 							};
 						}
-						return { ok: true, tabId: 72, generation: message.generation, phase: 'active' };
+						return activeAck(72, message.generation, message.controlRevision);
 					}
 					if (message.type === 'OFFSCREEN_AUDIO_CANCEL_START'
 						|| message.type === 'OFFSCREEN_AUDIO_STOP') {
-						return { ok: true, tabId: 72, generation: message.generation, phase: 'idle' };
+						return idleAck(72, message.generation);
 					}
 					return undefined;
 				},
@@ -254,7 +251,13 @@ describe('capture restart reconciliation barrier', () => {
 		const timerHarness = installFastTimerHarness();
 		const listeners: RuntimeMessageListener[] = [];
 		const runtimeMessages: Array<Record<string, unknown>> = [];
-		const config = { ...DEFAULT_AUDIO_CONFIG, volume: 137, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] };
+		const config = {
+			...DEFAULT_AUDIO_CONFIG,
+			volume: 137,
+			volumeBase: 100,
+			boost: 1.37,
+			eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
+		};
 		const identity = {
 			tabId: 73,
 			documentId: 'document-73',
@@ -271,10 +274,10 @@ describe('capture restart reconciliation barrier', () => {
 				sendOffscreen: async (message) => {
 					if (message.type === 'OFFSCREEN_HOST_HELLO') return { audioTabs: [], remoteTabs: [] };
 					if (message.type === 'OFFSCREEN_AUDIO_START') {
-						return { ok: true, tabId: 73, generation: message.generation, phase: 'active' };
+						return activeAck(73, message.generation, message.controlRevision, config);
 					}
 					if (message.type === 'OFFSCREEN_AUDIO_STOP') {
-						return { ok: true, tabId: 73, generation: message.generation, phase: 'idle' };
+						return idleAck(73, message.generation, 1);
 					}
 					return undefined;
 				},
@@ -466,6 +469,45 @@ function createChromeHarness(options: {
 				set: async () => undefined,
 				remove: async () => undefined,
 			},
+		},
+	};
+}
+
+function idleAck(tabId: unknown, generation: unknown, controlRevision = 0) {
+	return {
+		ok: true,
+		tabId: Number(tabId),
+		generation: Number(generation),
+		controlRevision,
+		phase: 'idle',
+		contextState: 'closed',
+		graphSignature: 'none',
+		normalizedActualConfig: null,
+	};
+}
+
+function activeAck(
+	tabId: unknown,
+	generation: unknown,
+	controlRevision: unknown,
+	config = DEFAULT_AUDIO_CONFIG,
+) {
+	return {
+		ok: true,
+		tabId: Number(tabId),
+		generation: Number(generation),
+		controlRevision: Number(controlRevision ?? 0),
+		phase: 'active',
+		contextState: 'running',
+		graphSignature: 'bass:0|eq:-|compressor:0|mono:0|pan:0|delay:0',
+		normalizedActualConfig: {
+			boostGain: resolveAudioVolume(config).boost,
+			compressor: config.compressor,
+			mono: config.mono,
+			bass: config.bass,
+			eqValues: [...config.eqValues],
+			pan: config.pan,
+			delay: config.delay,
 		},
 	};
 }

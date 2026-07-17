@@ -20,6 +20,7 @@ const CONFIG: AudioConfig = {
 	pan: 0,
 	delay: 0,
 	speed: 1,
+	preservePitch: true,
 };
 
 function deferred<T>() {
@@ -31,12 +32,6 @@ function deferred<T>() {
 describe('capture manager acknowledged state', () => {
 	test('waits for ACKs, ignores stale generations, and exposes failures', async () => {
 		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
-		const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
-		const postMessage = mock(() => undefined);
-		Object.defineProperty(globalThis, 'window', {
-			configurable: true,
-			value: { postMessage },
-		});
 
 		try {
 			const startReply = deferred<RpcResult<AudioCaptureState>>();
@@ -55,7 +50,6 @@ describe('capture manager acknowledged state', () => {
 			expect(manager.getPhase()).toBe('starting');
 			expect(manager.isActive()).toBe(false);
 			expect(manager.isPending()).toBe(true);
-			expect(postMessage).not.toHaveBeenCalled();
 			startReply.resolve(rpcSuccess({
 				tabId: 9,
 				phase: 'active',
@@ -63,6 +57,7 @@ describe('capture manager acknowledged state', () => {
 				actualMode: 'capture',
 				generation: 10,
 				lastError: null,
+				actualConfig: CONFIG,
 			}));
 			await start;
 			expect(manager.getPhase()).toBe('active');
@@ -90,8 +85,9 @@ describe('capture manager acknowledged state', () => {
 				actualMode: 'capture',
 				generation: 11,
 				lastError: null,
+				actualConfig: CONFIG,
 			}));
-			expect(await sync).toBe(true);
+			expect(await sync).toEqual(CONFIG);
 			expect(manager.getGeneration()).toBe(11);
 
 			expect(manager.handleMessage({
@@ -182,23 +178,9 @@ describe('capture manager acknowledged state', () => {
 			expect(manager.isActive()).toBe(false);
 			expect(manager.getGeneration()).toBe(15);
 			expect(send).toHaveBeenCalledTimes(6);
-			expect(postMessage).toHaveBeenCalledWith(
-				{ type: 'SPECTRA_CAPTURE_STATE', active: true, generation: 10 },
-				'*',
-			);
-			expect(postMessage).toHaveBeenCalledWith(
-				{ type: 'SPECTRA_CAPTURE_STATE', active: false, generation: 12 },
-				'*',
-			);
-			expect(postMessage).toHaveBeenLastCalledWith(
-				{ type: 'SPECTRA_CAPTURE_STATE', active: false, generation: 15 },
-				'*',
-			);
 		} finally {
 			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
 			else delete (globalThis as { chrome?: unknown }).chrome;
-			if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
-			else delete (globalThis as { window?: unknown }).window;
 		}
 	});
 });

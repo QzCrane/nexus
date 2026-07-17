@@ -16,6 +16,7 @@ import { checkHardcodedActions } from './verify/check-actions.js';
 import { checkDependencyDirection, checkReadmeAI, checkHtmlResources } from './verify/check-misc.js';
 import { checkChineseComments } from './verify/check-chinese.js';
 import { checkPermissionUsage } from './verify/check-permissions.js';
+import { checkSpectraControlArchitecture } from './verify/check-spectra-control.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,6 +40,7 @@ function main() {
 	checkHardcodedActions(ROOT);
 	checkHtmlResources(ROOT);
 	checkPermissionUsage(ROOT);
+	checkSpectraControlArchitecture(ROOT);
 	checkChineseComments(ROOT);
 
 	if (counters.errors > 0) {

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { PolicyEngine, type PolicyContext } from '@nexus/audio-engine';
 import { DEFAULT_AUDIO_CONFIG, type AudioConfig } from '@nexus/contracts';
-import { shouldAcceptNativeConfigSync } from '../src/content/logic/mode-executor';
+import { evaluateMediaSourceEligibility } from '../src/content/logic/policy-executor';
 
 const BASE_CONTEXT: PolicyContext = {
 	urlInfo: {
@@ -44,10 +44,34 @@ describe('audio policy activation boundary', () => {
 		})).toBe('NATIVE_WEBAUDIO');
 	});
 
-	test('does not import website-native state into an untouched default session', () => {
-		expect(shouldAcceptNativeConfigSync(audioConfig(), false)).toBe(false);
-		expect(shouldAcceptNativeConfigSync(audioConfig({ volume: 80 }), false)).toBe(true);
-		expect(shouldAcceptNativeConfigSync(audioConfig(), true)).toBe(true);
+	test('requires every registered source to be prospectively safe for Media WebAudio', () => {
+		const descriptors = new Map([
+			['document', Object.getOwnPropertyDescriptor(globalThis, 'document')],
+			['location', Object.getOwnPropertyDescriptor(globalThis, 'location')],
+		] as const);
+		Object.defineProperty(globalThis, 'document', {
+			configurable: true,
+			value: { baseURI: 'https://media.example/watch' },
+		});
+		Object.defineProperty(globalThis, 'location', {
+			configurable: true,
+			value: { href: 'https://media.example/watch', origin: 'https://media.example' },
+		});
+		try {
+			const safe = { currentSrc: 'https://media.example/a.mp3', src: '' } as HTMLMediaElement;
+			const safeSecond = { currentSrc: 'https://media.example/b.mp3', src: '' } as HTMLMediaElement;
+			const pending = { currentSrc: '', src: '' } as HTMLMediaElement;
+			const unsafe = { currentSrc: 'https://cdn.example/c.mp3', src: '' } as HTMLMediaElement;
+			expect(evaluateMediaSourceEligibility([safe, safeSecond])).toBe('SAFE');
+			expect(evaluateMediaSourceEligibility([safe, pending])).toBe('PENDING');
+			expect(evaluateMediaSourceEligibility([safe, unsafe])).toBe('RESTRICTED');
+			expect(evaluateMediaSourceEligibility([safe], () => true)).toBe('RESTRICTED');
+		} finally {
+			for (const [key, descriptor] of descriptors) {
+				if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+				else Reflect.deleteProperty(globalThis, key);
+			}
+		}
 	});
 });
 

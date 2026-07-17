@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { Actions, DEFAULT_AUDIO_CONFIG } from '@nexus/contracts';
 import { setupCardMessaging } from '../src/popup/card/messaging';
-import type { CardInternalState } from '../src/popup/card/types';
+import { initialControlConfig, type CardInternalState } from '../src/popup/card/types';
 
 type RuntimeListener = (
 	message: unknown,
@@ -9,6 +11,37 @@ type RuntimeListener = (
 ) => boolean | undefined;
 
 describe('Popup audio-session authority', () => {
+	test('initializes fields only from ControlSnapshot actual state', () => {
+		const config = initialControlConfig({
+			tabId: 17,
+			documentId: 'document-17',
+			origin: 'https://media.example',
+			generation: 2,
+			revision: 3,
+			activeMedia: null,
+			activeVideo: null,
+			fields: {
+				volumeBase: {
+					desired: 35,
+					actual: 35,
+					revision: 3,
+					phase: 'applied',
+					strategy: 'dom-native',
+					coverage: 'active-target',
+					controlled: false,
+					lastError: null,
+				},
+			},
+		});
+		expect(config.volumeBase).toBe(35);
+		expect(config.boost).toBe(1);
+		expect(config.volume).toBe(35);
+
+		const initSource = readFileSync(resolve(import.meta.dir, '../src/popup/card/init.ts'), 'utf8');
+		expect(initSource).not.toContain('.actualConfig');
+		expect(initSource).not.toContain('status?.config');
+	});
+
 	test('ignores capture predictions and updates mode only from AudioSessionSnapshot', () => {
 		const chromeDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 		let listener: RuntimeListener | undefined;
@@ -66,7 +99,12 @@ describe('Popup audio-session authority', () => {
 					actualMode: 'capture',
 					phase: 'active',
 					configRevision: 1,
-					actualConfig: { ...DEFAULT_AUDIO_CONFIG, volume: 137 },
+					actualConfig: {
+						...DEFAULT_AUDIO_CONFIG,
+						volume: 137,
+						volumeBase: 100,
+						boost: 1.37,
+					},
 					lastError: null,
 				},
 			}, {});
@@ -74,8 +112,151 @@ describe('Popup audio-session authority', () => {
 			expect(state.actualMode).toBe('capture');
 			expect(state.phase).toBe('active');
 			expect(state.isCaptureActive).toBe(true);
-			expect(state.config.volume).toBe(137);
+			expect(state.config.volume).toBe(100);
 			expect(renders).toBe(1);
+		} finally {
+			if (chromeDescriptor) Object.defineProperty(globalThis, 'chrome', chromeDescriptor);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
+	});
+
+	test('applies page-native control snapshots without collapsing Main volume and Boost', () => {
+		const chromeDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		let listener: RuntimeListener | undefined;
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				runtime: {
+					onMessage: {
+						addListener: (next: RuntimeListener) => { listener = next; },
+						removeListener: () => undefined,
+					},
+				},
+			},
+		});
+		const state = createState();
+		state.config.volumeBase = 50;
+		state.config.boost = 2;
+		state.config.volume = 100;
+		state.stableConfig.volumeBase = 50;
+		state.stableConfig.boost = 2;
+		state.stableConfig.volume = 100;
+
+		try {
+			setupCardMessaging({ tabId: 17, state, render: () => undefined });
+			listener?.({
+				protocolVersion: 2,
+				type: 'spectra.control.snapshot.changed',
+				tabId: 17,
+				documentId: 'document-17',
+				generation: 6,
+				payload: {
+					tabId: 17,
+					documentId: 'document-17',
+					origin: 'https://media.example',
+					generation: 6,
+					revision: 2,
+					activeMedia: null,
+					activeVideo: null,
+					fields: {
+						volumeBase: {
+							desired: 40,
+							actual: 40,
+							revision: 2,
+							phase: 'applied',
+							strategy: 'dom-native',
+							coverage: 'active-target',
+							controlled: false,
+							intentId: 'page-volume-2',
+							lastError: null,
+						},
+					},
+				},
+			}, {});
+
+			expect(state.config.volumeBase).toBe(40);
+			expect(state.config.boost).toBe(2);
+			expect(state.config.volume).toBe(80);
+			expect(state.controlGeneration).toBe(6);
+		} finally {
+			if (chromeDescriptor) Object.defineProperty(globalThis, 'chrome', chromeDescriptor);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
+	});
+
+	test('keeps processor lifecycle owned by AudioSessionSnapshot after a DOM control update', () => {
+		const chromeDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		let listener: RuntimeListener | undefined;
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				runtime: {
+					onMessage: {
+						addListener: (next: RuntimeListener) => { listener = next; },
+						removeListener: () => undefined,
+					},
+				},
+			},
+		});
+		const state = createState();
+
+		try {
+			setupCardMessaging({ tabId: 17, state, render: () => undefined });
+			listener?.({
+				protocolVersion: 2,
+				type: 'spectra.audio.session.changed',
+				tabId: 17,
+				documentId: 'document-17',
+				generation: 7,
+				payload: {
+					tabId: 17,
+					documentId: 'document-17',
+					origin: 'https://media.example',
+					generation: 7,
+					desiredMode: 'capture',
+					actualMode: 'capture',
+					phase: 'active',
+					configRevision: 4,
+					actualConfig: { ...DEFAULT_AUDIO_CONFIG },
+					lastError: null,
+				},
+			}, {});
+			listener?.({
+				protocolVersion: 2,
+				type: 'spectra.control.snapshot.changed',
+				tabId: 17,
+				documentId: 'document-17',
+				generation: 2,
+				payload: {
+					tabId: 17,
+					documentId: 'document-17',
+					origin: 'https://media.example',
+					generation: 2,
+					revision: 1,
+					activeMedia: null,
+					activeVideo: null,
+					fields: {
+						speed: {
+							desired: 1.25,
+							actual: 1.25,
+							revision: 1,
+							phase: 'applied',
+							strategy: 'dom-native',
+							coverage: 'active-target',
+							controlled: false,
+							lastError: null,
+						},
+					},
+				},
+			}, {});
+
+			expect(state.config.speed).toBe(1.25);
+			expect(state.actualMode).toBe('capture');
+			expect(state.desiredMode).toBe('capture');
+			expect(state.phase).toBe('active');
+			expect(state.isCaptureActive).toBe(true);
+			expect(state.audioGeneration).toBe(7);
+			expect(state.controlGeneration).toBe(2);
 		} finally {
 			if (chromeDescriptor) Object.defineProperty(globalThis, 'chrome', chromeDescriptor);
 			else Reflect.deleteProperty(globalThis, 'chrome');
@@ -86,14 +267,20 @@ describe('Popup audio-session authority', () => {
 function createState(): CardInternalState {
 	return {
 		config: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
+		stableConfig: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
+		controlSnapshot: null,
 		isCaptureActive: false,
 		userInteracted: false,
 		isRestrictedSite: false,
 		actualMode: 'bypass',
 		desiredMode: 'bypass',
 		phase: 'idle',
-		generation: 0,
+		controlGeneration: 0,
+		controlRevision: 0,
+		audioGeneration: 0,
+		audioConfigRevision: 0,
 		lastError: null,
 		isDragging: false,
+		draggingField: null,
 	};
 }

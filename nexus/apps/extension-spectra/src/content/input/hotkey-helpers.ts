@@ -1,151 +1,142 @@
-// goal: helper utilities for translating content-script hotkey interactions
-import type { HotkeyAction, HotkeyParams, AudioConfig } from '@nexus/contracts';
-import { listMarkers } from '../video/time-marker';
-import { showToast } from '../ui/toast';
-import { getPrimaryVideo } from '../utils/media-utils';
+// goal: translate content hotkeys into canonical coordinator mutations
+import type {
+	ControlMutation,
+	ControlOperation,
+	ControlOperationAck,
+	ControlOperationPayload,
+	ControlOperationRequest,
+	HotkeyAction,
+	HotkeyParams,
+} from '@nexus/contracts';
 import { sendSpectraRequest } from '../../shared/spectra-client';
+import { getActiveNativeMediaExecutor } from '../logic/native-media-executor';
 
-let getConfigFn: (() => AudioConfig) | null = null;
-let updateConfigFn: ((changes: Partial<AudioConfig>, options?: { showOSD?: boolean; unMute?: boolean }) => void) | null = null;
-let toggleCaptureModeFn: (() => void) | null = null;
+const FULL_OUTPUT_FIELDS = new Set<ControlMutation['field']>([
+	'boost', 'eqValues', 'bass', 'compressor', 'mono', 'pan', 'delay',
+]);
+const TAB_FIELDS = new Set<ControlMutation['field']>(['tabMuted', 'tabPinned']);
 
-export function setConfigGetter(getter: () => AudioConfig): void { getConfigFn = getter; }
-export function setConfigUpdater(updater: (changes: Partial<AudioConfig>, options?: { showOSD?: boolean; unMute?: boolean }) => void): void { updateConfigFn = updater; }
-export function setCaptureModeToggler(toggle: () => void): () => void {
-	toggleCaptureModeFn = toggle;
-	return () => {
-		if (toggleCaptureModeFn === toggle) toggleCaptureModeFn = null;
-	};
+export async function submitTrustedActivationHotkey(
+	field: 'playing' | 'pip' | 'fullscreen',
+): Promise<void> {
+	const executor = getActiveNativeMediaExecutor();
+	if (!executor) throw new Error('The native media runtime is unavailable');
+	// The browser API is invoked synchronously inside the trusted keydown stack.
+	// Only the observed actual value crosses Background afterwards.
+	const result = await executor.toggleTrustedActivation(field);
+	const response = await sendSpectraRequest('spectra.control.intent.submit', {
+		source: 'page',
+		requestedCoverage: 'active-target',
+		target: result.target,
+		patch: { [field]: result.actual },
+	});
+	if (!response.ok) throw new Error(response.error.message);
 }
 
-function getConfig(): AudioConfig {
-	return getConfigFn ? getConfigFn() : { volume: 100, muted: false } as AudioConfig;
+export async function submitHotkeyMutations(mutations: readonly ControlMutation[]): Promise<void> {
+	const target = mutations.filter((mutation) =>
+		!FULL_OUTPUT_FIELDS.has(mutation.field) && !TAB_FIELDS.has(mutation.field));
+	const full = mutations.filter((mutation) =>
+		FULL_OUTPUT_FIELDS.has(mutation.field) || TAB_FIELDS.has(mutation.field));
+	for (const group of [
+		...(target.length > 0 ? [{ requestedCoverage: 'active-target' as const, mutations: target }] : []),
+		...(full.length > 0 ? [{ requestedCoverage: 'full' as const, mutations: full }] : []),
+	]) {
+		const response = await sendSpectraRequest('spectra.control.intent.submit', {
+			source: 'hotkey',
+			requestedCoverage: group.requestedCoverage,
+			target: null,
+			mutations: group.mutations,
+		});
+		if (!response.ok) throw new Error(response.error.message);
+		const failure = Object.values(response.data.fields)
+			.find((field) => field?.phase !== 'applied');
+		if (failure) throw new Error(failure.lastError?.message ?? 'Hotkey control was not applied');
+	}
 }
 
-export function sendVolumeAction(action: HotkeyAction, params?: HotkeyParams): void {
+export async function submitHotkeyOperation<O extends ControlOperation>(
+	operation: O,
+	payload: ControlOperationPayload<O>,
+): Promise<ControlOperationAck<O>> {
+	const response = await sendSpectraRequest('spectra.control.operation.submit', {
+		source: 'hotkey',
+		target: null,
+		operation,
+		payload,
+	} as unknown as ControlOperationRequest);
+	if (!response.ok) throw new Error(response.error.message);
+	return response.data as ControlOperationAck<O>;
+}
+
+export function sendVolumeAction(action: HotkeyAction, params?: HotkeyParams): Promise<void> {
 	const step = Number.isFinite(params?.step) ? Math.abs(params!.step!) : 10;
-	const c = getConfig();
-	let ch: Partial<AudioConfig> = {};
-	let shouldUnMute = false;
-
+	const mutations: ControlMutation[] = [];
 	switch (action) {
 		case 'volume_up':
-			ch = { volume: Math.min(800, (c.volume ?? 100) + step) };
-			shouldUnMute = true;
+			mutations.push({ field: 'volumeBase', operation: 'delta', value: step });
 			break;
 		case 'volume_down':
-			ch = { volume: Math.max(0, (c.volume ?? 100) - step) };
-			shouldUnMute = true;
+			mutations.push({ field: 'volumeBase', operation: 'delta', value: -step });
 			break;
-		case 'volume_mute': ch = { muted: !c.muted }; break;
+		case 'volume_mute': mutations.push({ field: 'mediaMuted', operation: 'toggle' }); break;
 		case 'volume_set':
-			if (Number.isFinite(params?.volume)) ch = { volume: Math.max(0, Math.min(800, params!.volume!)) };
-			shouldUnMute = true;
+			if (Number.isFinite(params?.volume)) {
+				mutations.push({
+					field: 'volumeBase',
+					operation: 'set',
+					value: Math.max(0, Math.min(100, params!.volume!)),
+				});
+			}
 			break;
 	}
-
-	if (updateConfigFn) updateConfigFn(ch, { showOSD: true, unMute: shouldUnMute });
+	return mutations.length > 0 ? submitHotkeyMutations(mutations) : Promise.resolve();
 }
 
 // eff: handles speed adjustment hotkeys through unified config flow
-export function sendSpeedAction(action: HotkeyAction, params?: HotkeyParams): void {
+export function sendSpeedAction(action: HotkeyAction, params?: HotkeyParams): Promise<void> {
 	const step = Number.isFinite(params?.step) ? Math.abs(params!.step!) : 0.1;
-	const c = getConfig();
-	let newSpeed: number = c.speed ?? 1;
-
 	switch (action) {
-		case 'speed_up': newSpeed = Math.min(16, newSpeed + step); break;
-		case 'speed_down': newSpeed = Math.max(0.1, newSpeed - step); break;
-		case 'speed_reset': newSpeed = 1; break;
-		case 'speed_set': if (Number.isFinite(params?.speed)) newSpeed = Math.max(0.1, Math.min(16, params!.speed!)); break;
+		case 'speed_up': return submitHotkeyMutations([{ field: 'speed', operation: 'delta', value: step }]);
+		case 'speed_down': return submitHotkeyMutations([{ field: 'speed', operation: 'delta', value: -step }]);
+		case 'speed_reset': return submitHotkeyMutations([{ field: 'speed', operation: 'set', value: 1 }]);
+		case 'speed_set':
+			return Number.isFinite(params?.speed)
+				? submitHotkeyMutations([{ field: 'speed', operation: 'set', value: Math.max(0.1, Math.min(16, params!.speed!)) }])
+				: Promise.resolve();
+		default: return Promise.resolve();
 	}
-
-	// note: round to 2 decimal places to avoid floating point errors
-	newSpeed = Math.round(newSpeed * 100) / 100;
-	if (updateConfigFn) updateConfigFn({ speed: newSpeed }, { showOSD: true });
 }
 
-export function sendAudioReset(): void {
-	updateConfigFn?.(
-		{ volume: 100, muted: false, eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: false, compressor: false, mono: false, pan: 0, delay: 0 },
-		{ showOSD: true }
-	);
-}
-
-export function sendAudioAdjustment(action: HotkeyAction, params?: HotkeyParams): void {
-	const config = getConfig();
+export function sendAudioAdjustment(action: HotkeyAction, params?: HotkeyParams): Promise<void> {
 	const step = Number.isFinite(params?.step) ? Math.abs(params!.step!) : undefined;
-	let changes: Partial<AudioConfig> | null = null;
-
+	let mutation: ControlMutation | null = null;
 	switch (action) {
 		case 'gain_up':
-			changes = { volume: Math.min(800, config.volume + (step ?? 10)), muted: false };
+			mutation = { field: 'boost', operation: 'delta', value: Math.min(1, step ?? 0.1) };
 			break;
 		case 'gain_down':
-			changes = { volume: Math.max(0, config.volume - (step ?? 10)), muted: false };
+			mutation = { field: 'boost', operation: 'delta', value: -Math.min(1, step ?? 0.1) };
 			break;
-		case 'delay_up':
-			changes = { delay: Math.min(500, (config.delay ?? 0) + (step ?? 10)) };
-			break;
-		case 'delay_down':
-			changes = { delay: Math.max(0, (config.delay ?? 0) - (step ?? 10)) };
-			break;
-		case 'delay_reset':
-			changes = { delay: 0 };
-			break;
-		case 'pan_left':
-			changes = { pan: Math.max(-1, (config.pan ?? 0) - Math.min(1, step ?? 0.1)) };
-			break;
-		case 'pan_right':
-			changes = { pan: Math.min(1, (config.pan ?? 0) + Math.min(1, step ?? 0.1)) };
-			break;
-		case 'pan_reset':
-			changes = { pan: 0 };
-			break;
-		case 'mono_toggle':
-			changes = { mono: !config.mono };
-			break;
+		case 'delay_up': mutation = { field: 'delay', operation: 'delta', value: step ?? 10 }; break;
+		case 'delay_down': mutation = { field: 'delay', operation: 'delta', value: -(step ?? 10) }; break;
+		case 'delay_reset': mutation = { field: 'delay', operation: 'set', value: 0 }; break;
+		case 'pan_left': mutation = { field: 'pan', operation: 'delta', value: -Math.min(1, step ?? 0.1) }; break;
+		case 'pan_right': mutation = { field: 'pan', operation: 'delta', value: Math.min(1, step ?? 0.1) }; break;
+		case 'pan_reset': mutation = { field: 'pan', operation: 'set', value: 0 }; break;
+		case 'mono_toggle': mutation = { field: 'mono', operation: 'toggle' }; break;
 	}
-
-	if (changes) updateConfigFn?.(changes, { showOSD: true, unMute: action === 'gain_up' || action === 'gain_down' });
+	if (!mutation) return Promise.resolve();
+	return submitHotkeyMutations([mutation]);
 }
 
-export function sendCaptureToggle(): void {
-	// Capture is a document-owned mode intent. The policy executor performs the
-	// transparent handoff and advances generation before its manager contacts
-	// background/offscreen; hotkeys must never bypass that state machine.
-	toggleCaptureModeFn?.();
+export async function toggleLoop(): Promise<void> {
+	await submitHotkeyMutations([{ field: 'loop', operation: 'toggle' }]);
 }
 
-export function jumpMarker(fwd: boolean): void {
-	const m = listMarkers();
-	if (!m.length) return;
-	const v = getPrimaryVideo();
-	if (!v) return;
-	const t = v.currentTime;
-
-	if (fwd) {
-		const next = m.find(x => x && x.time > t + 0.5);
-		if (next) { v.currentTime = next.time; showToast(`Jump to ${next.label}`); }
-	} else {
-		for (let i = m.length - 1; i >= 0; i--) {
-			const mk = m[i];
-			if (mk && mk.time < t - 0.5) { v.currentTime = mk.time; showToast(`Jump to ${mk.label}`); return; }
-		}
-	}
-}
-
-export function toggleLoop(): void {
-	const v = getPrimaryVideo();
-	if (v) {
-		v.loop = !v.loop;
-		showToast(v.loop ? 'Loop ON' : 'Loop OFF');
-	}
-}
-
-export function sendTabAction(action: HotkeyAction): void {
-	const type = action === 'tab_pin'
-		? 'spectra.tab.pinned.toggle' as const
-		: 'spectra.tab.muted.toggle' as const;
-	void sendSpectraRequest(type, {}).catch(() => undefined);
+export function sendTabAction(action: HotkeyAction): Promise<void> {
+	return submitHotkeyMutations([{
+		field: action === 'tab_pin' ? 'tabPinned' : 'tabMuted',
+		operation: 'toggle',
+	}]);
 }

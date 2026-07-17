@@ -32,6 +32,44 @@ function deferred<T>() {
 }
 
 describe('content audio v2 boundary', () => {
+	test('keeps visualizer reads side-effect free and changes analyser ownership only through subscription intents', () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: { runtime: { id: 'spectra-test' } },
+		});
+		try {
+			const setVisualizerSubscribed = mock(() => true);
+			const handler = createMessageHandler({
+				state: { config: CONFIG },
+				captureManager: { handleMessage: mock(() => false) },
+				settingsManager: {},
+				getVisualizerData: () => new Uint8Array([1, 2, 3]),
+				setVisualizerSubscribed,
+			} as unknown as MessageHandlerDeps);
+			let response: unknown;
+			expect(handler(
+				envelope('spectra.audio.visualizer.get', {}),
+				{ id: 'spectra-test' },
+				(value) => { response = value; },
+			)).toBe(false);
+			expect(response).toEqual(rpcSuccess({ buffer: [1, 2, 3] }));
+			expect(setVisualizerSubscribed).not.toHaveBeenCalled();
+
+			expect(handler(
+				envelope('spectra.audio.visualizer.subscription.set', { subscribed: true }),
+				{ id: 'spectra-test' },
+				(value) => { response = value; },
+			)).toBe(false);
+			expect(setVisualizerSubscribed).toHaveBeenCalledTimes(1);
+			expect(setVisualizerSubscribed).toHaveBeenCalledWith(true);
+			expect(response).toEqual(rpcSuccess({ subscribed: true }));
+		} finally {
+			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
+	});
+
 	test('does not regress stable runtime state on same-generation capture intents', () => {
 		const state = {
 			config: CONFIG,
@@ -48,9 +86,14 @@ describe('content audio v2 boundary', () => {
 		const handleMessage = mock(() => true);
 		const handler = createMessageHandler({
 			state,
-			captureManager: { handleMessage } as MessageHandlerDeps['captureManager'],
+			captureManager: {
+				handleMessage,
+				isPending: () => false,
+				hasLocalRequest: () => false,
+			} as MessageHandlerDeps['captureManager'],
 			settingsManager: {} as MessageHandlerDeps['settingsManager'],
 			getVisualizerData: () => null,
+			setVisualizerSubscribed: () => false,
 		});
 		const event = (generation: number, phase: 'starting' | 'active' | 'stopping' | 'idle' | 'error') => ({
 			protocolVersion: 2,
@@ -88,6 +131,53 @@ describe('content audio v2 boundary', () => {
 		expect(handleMessage).toHaveBeenCalledTimes(7);
 	});
 
+	test('restores desired WebAudio only after an external Capture stop ACK', async () => {
+		const state = {
+			config: CONFIG,
+			appliedConfig: CONFIG,
+			activeMode: 'NATIVE_WEBAUDIO',
+			desiredMode: 'NATIVE_WEBAUDIO',
+			actualMode: 'capture',
+			phase: 'active',
+			generation: 4,
+			hasGesture: true,
+			userHasInteracted: true,
+			isPopupOpen: false,
+		} as MessageHandlerDeps['state'];
+		const applyState = mock(async () => undefined);
+		const handler = createMessageHandler({
+			state,
+			policyExecutor: { applyState } as unknown as MessageHandlerDeps['policyExecutor'],
+			captureManager: {
+				handleMessage: () => true,
+				isPending: () => false,
+				hasLocalRequest: () => false,
+			} as MessageHandlerDeps['captureManager'],
+			settingsManager: {} as MessageHandlerDeps['settingsManager'],
+			getVisualizerData: () => null,
+			setVisualizerSubscribed: () => false,
+		});
+
+		handler({
+			protocolVersion: 2,
+			type: 'spectra.audio.capture.changed',
+			tabId: 42,
+			generation: 5,
+			payload: {
+				tabId: 42,
+				generation: 5,
+				phase: 'idle',
+				active: false,
+				actualMode: 'bypass',
+				lastError: null,
+			},
+		}, {}, () => undefined);
+		await Promise.resolve();
+
+		expect(state.actualMode).toBe('bypass');
+		expect(applyState).toHaveBeenCalledWith({ modeIntent: true });
+	});
+
 	test('rejects malformed config before policy code and keeps status reads side-effect free', () => {
 		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 		const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
@@ -118,6 +208,7 @@ describe('content audio v2 boundary', () => {
 				captureManager: { handleMessage: mock(() => false) },
 				settingsManager: {},
 				getVisualizerData: () => null,
+				setVisualizerSubscribed: () => false,
 			} as unknown as MessageHandlerDeps;
 			const handler = createMessageHandler(deps);
 			let response: unknown;
@@ -186,6 +277,7 @@ describe('content audio v2 boundary', () => {
 				captureManager: { handleMessage: mock(() => false) },
 				settingsManager: {},
 				getVisualizerData: () => null,
+				setVisualizerSubscribed: () => false,
 			} as unknown as MessageHandlerDeps;
 			const handler = createMessageHandler(deps);
 			let response: unknown;
@@ -233,6 +325,7 @@ describe('content audio v2 boundary', () => {
 				captureManager: { handleMessage: mock(() => false) },
 				settingsManager: {},
 				getVisualizerData: () => null,
+				setVisualizerSubscribed: () => false,
 			} as unknown as MessageHandlerDeps;
 			const handler = createMessageHandler(deps);
 			let response: unknown;

@@ -5,9 +5,13 @@ import {
 	DEFAULT_HOTKEY_SETTINGS,
 	DEFAULT_AUDIO_CONFIG,
 	HOTKEY_ACTIONS,
+	HOTKEY_ACTION_DESCRIPTORS,
+	isHotkeyParamsForAction,
+	isSlotHotkeyAction,
 	SPECTRA_SETTINGS_SCHEMA_VERSION,
 	findBestHostnameMatch,
 	normalizeHostname,
+	resolveAudioVolume,
 	type GlobalSettings,
 	type AudioConfig,
 	type AudioPresetValue,
@@ -29,7 +33,9 @@ const DEFAULT_PRESET_KEY = 'defaultPresetId';
 const META_KEY = 'spectraSettingsMeta';
 export const SETTINGS_WRITE_DEBOUNCE_MS = 250;
 const MAX_PAUSE_RETENTION_SECONDS = 86_400;
-const UNSUPPORTED_ACTIONS = new Set<HotkeyAction>(['pitch_up', 'pitch_down', 'pitch_reset']);
+const UNSUPPORTED_ACTIONS = new Set<HotkeyAction>(
+	HOTKEY_ACTIONS.filter((action) => HOTKEY_ACTION_DESCRIPTORS[action].availability === 'disabled-legacy'),
+);
 const HOTKEY_ACTION_SET = new Set<string>(HOTKEY_ACTIONS);
 const SUPPORTED_LANGUAGES = new Set<GlobalSettings['lang']>([
 	'en-US', 'zh-CN', 'zh-TW', 'ja-JP', 'ko-KR', 'es-ES', 'ru-RU', 'de-DE', 'fr-FR',
@@ -37,7 +43,7 @@ const SUPPORTED_LANGUAGES = new Set<GlobalSettings['lang']>([
 const THEME_MODES = new Set<GlobalSettings['themeMode']>(['light', 'dark', 'system']);
 const MAX_SITE_HOTKEY_BINDINGS = 1000;
 const AUDIO_CONFIG_KEYS = new Set<keyof AudioConfig>([
-	'enabled', 'volume', 'muted', 'compressor', 'mono', 'bass', 'eqValues', 'pan', 'delay', 'speed',
+	'enabled', 'volume', 'volumeBase', 'boost', 'muted', 'compressor', 'mono', 'bass', 'eqValues', 'pan', 'delay', 'speed',
 ]);
 
 interface SettingsMeta {
@@ -197,7 +203,22 @@ function sanitizeBinding(value: unknown): HotkeyBinding | null {
 		},
 		action: value.action as HotkeyAction,
 	};
-	if (isRecord(value.params)) binding.params = { ...value.params };
+	if (binding.action === 'volume_set'
+		&& isRecord(value.params)
+		&& typeof value.params.volume === 'number'
+		&& Number.isFinite(value.params.volume)
+		&& value.params.volume > 100
+		&& value.params.volume <= 800) {
+		// v1 combined-volume shortcuts cannot be represented by the v2 native
+		// Main-volume field without also changing Boost. Keep the binding visible
+		// as disabled migration diagnostics instead of silently clamping it.
+		binding.enabled = false;
+		binding.params = { volume: 100 };
+		binding.disabledReason = 'unsupported_action';
+		return binding;
+	}
+	if (!isHotkeyParamsForAction(binding.action, value.params)) return null;
+	if (value.params) binding.params = { ...value.params };
 	if (isRecord(value.conditions)) binding.conditions = { ...value.conditions };
 	if (value.disabledReason === 'unsupported_action') binding.disabledReason = value.disabledReason;
 	return binding;
@@ -209,7 +230,7 @@ function sanitizeSite(value: unknown, disabledLegacy: HotkeyBinding[]): SiteHotk
 		? source.bindings.map(sanitizeBinding).filter((binding): binding is HotkeyBinding => !!binding)
 		: [];
 	for (const binding of bindings) {
-		if (UNSUPPORTED_ACTIONS.has(binding.action)) {
+		if (UNSUPPORTED_ACTIONS.has(binding.action) || binding.disabledReason === 'unsupported_action') {
 			binding.enabled = false;
 			binding.disabledReason = 'unsupported_action';
 			if (!disabledLegacy.some((legacy) => legacy.id === binding.id)) {
@@ -237,9 +258,7 @@ function normalizeHotkeySettings(raw: unknown): HotkeySettings {
 	const normalized = cloneDefaultHotkeys();
 	if (isRecord(source.slots)) {
 		for (const [command, action] of Object.entries(source.slots)) {
-			if (typeof action === 'string' && HOTKEY_ACTION_SET.has(action)) {
-				normalized.slots[command] = action as HotkeyAction;
-			}
+			if (isSlotHotkeyAction(action)) normalized.slots[command] = action;
 		}
 	}
 
@@ -378,6 +397,29 @@ function sanitizeAudioPatch(value: Partial<AudioConfig>): Partial<AudioConfig> {
 		}
 		patch.volume = value.volume;
 	}
+	if (value.volumeBase !== undefined) {
+		if (!Number.isFinite(value.volumeBase) || value.volumeBase < 0 || value.volumeBase > 100) {
+			throw new InvalidSettingsPatchError('volumeBase must be between 0 and 100');
+		}
+		patch.volumeBase = value.volumeBase;
+	}
+	if (value.boost !== undefined) {
+		if (!Number.isFinite(value.boost) || value.boost < 1 || value.boost > 8) {
+			throw new InvalidSettingsPatchError('boost must be between 1 and 8');
+		}
+		patch.boost = value.boost;
+	}
+	if (patch.volumeBase !== undefined || patch.boost !== undefined) {
+		patch.volume = resolveAudioVolume({
+			volume: patch.volume ?? 100,
+			volumeBase: patch.volumeBase,
+			boost: patch.boost,
+		}).effectiveVolume;
+	} else if (patch.volume !== undefined) {
+		const migrated = resolveAudioVolume({ volume: patch.volume });
+		patch.volumeBase = migrated.volumeBase;
+		patch.boost = migrated.boost;
+	}
 	if (value.pan !== undefined) {
 		if (!Number.isFinite(value.pan) || value.pan < -1 || value.pan > 1) {
 			throw new InvalidSettingsPatchError('pan must be between -1 and 1');
@@ -396,6 +438,12 @@ function sanitizeAudioPatch(value: Partial<AudioConfig>): Partial<AudioConfig> {
 		}
 		patch.speed = value.speed;
 	}
+	if (value.preservePitch !== undefined) {
+		if (typeof value.preservePitch !== 'boolean') {
+			throw new InvalidSettingsPatchError('preservePitch must be a boolean');
+		}
+		patch.preservePitch = value.preservePitch;
+	}
 	if (value.eqValues !== undefined) {
 		if (value.eqValues.length !== 10 || value.eqValues.some((item) => !Number.isFinite(item) || item < -12 || item > 12)) {
 			throw new InvalidSettingsPatchError('eqValues must contain ten values between -12 and 12');
@@ -408,11 +456,29 @@ function sanitizeAudioPatch(value: Partial<AudioConfig>): Partial<AudioConfig> {
 function snapshotAudioPatch(value: unknown): Partial<AudioConfig> {
 	if (!isRecord(value)) return {};
 	const patch: Partial<AudioConfig> = {};
-	for (const key of ['enabled', 'muted', 'compressor', 'mono', 'bass'] as const) {
+	for (const key of ['enabled', 'muted', 'compressor', 'mono', 'bass', 'preservePitch'] as const) {
 		if (typeof value[key] === 'boolean') patch[key] = value[key];
 	}
 	if (typeof value.volume === 'number' && Number.isFinite(value.volume)
 		&& value.volume >= 0 && value.volume <= 800) patch.volume = value.volume;
+	if (typeof value.volumeBase === 'number' && Number.isFinite(value.volumeBase)
+		&& value.volumeBase >= 0 && value.volumeBase <= 100) patch.volumeBase = value.volumeBase;
+	if (typeof value.boost === 'number' && Number.isFinite(value.boost)
+		&& value.boost >= 1 && value.boost <= 8) patch.boost = value.boost;
+	if (patch.volumeBase === undefined && patch.boost === undefined && patch.volume !== undefined) {
+		const migrated = resolveAudioVolume({ volume: patch.volume });
+		patch.volumeBase = migrated.volumeBase;
+		patch.boost = migrated.boost;
+	} else if (patch.volumeBase !== undefined || patch.boost !== undefined) {
+		const canonical = resolveAudioVolume({
+			volume: patch.volume ?? 100,
+			volumeBase: patch.volumeBase,
+			boost: patch.boost,
+		});
+		patch.volumeBase = canonical.volumeBase;
+		patch.boost = canonical.boost;
+		patch.volume = canonical.effectiveVolume;
+	}
 	if (typeof value.pan === 'number' && Number.isFinite(value.pan)
 		&& value.pan >= -1 && value.pan <= 1) patch.pan = value.pan;
 	if (typeof value.delay === 'number' && Number.isFinite(value.delay)) {
@@ -589,7 +655,7 @@ export class SettingsRepository {
 					for (const [command, action] of Object.entries(patch.changes)) {
 						if (!command || command.length > 128) throw new InvalidSettingsPatchError('Invalid shortcut slot');
 						if (action === null) delete slots[command];
-						else if (HOTKEY_ACTION_SET.has(action)) slots[command] = action;
+						else if (isSlotHotkeyAction(action)) slots[command] = action;
 						else throw new InvalidSettingsPatchError(`Unsupported hotkey action: ${action}`);
 					}
 					hotkeySettings = { ...hotkeySettings, slots };

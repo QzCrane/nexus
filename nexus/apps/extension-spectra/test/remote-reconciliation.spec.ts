@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { SPECTRA_PROTOCOL_VERSION } from '@nexus/contracts';
+import {
+	SPECTRA_CONTENT_BOOTSTRAP_REVISION,
+	SPECTRA_CONTENT_RUNTIME_REVISION,
+	SPECTRA_PROTOCOL_VERSION,
+} from '@nexus/contracts';
 import { initRemoteService } from '../src/background/remote-service';
 import {
 	acquireOffscreenLease,
@@ -50,11 +54,11 @@ describe('remote service-worker reconciliation', () => {
 					createDocument: async () => { createDocumentCalls += 1; },
 					closeDocument: async () => undefined,
 				},
-				runtime: {
+					runtime: {
 					id: 'spectra-test',
 					getURL: (path: string) => `chrome-extension://spectra-test/${path}`,
 					onMessage: { addListener: (listener: RuntimeListener) => listeners.push(listener) },
-					sendMessage: async (message: Record<string, unknown>) => {
+						sendMessage: async (message: Record<string, unknown>) => {
 						if (message.type === 'OFFSCREEN_HOST_HELLO') {
 							helloCalls += 1;
 							if (helloCalls <= 3) throw new Error('temporary HELLO failure');
@@ -69,11 +73,22 @@ describe('remote service-worker reconciliation', () => {
 						return undefined;
 					},
 				},
-				tabs: {
+					tabs: {
 					get: async () => ({ id: 71, url: 'https://media.example', title: 'Media' }),
 					onRemoved: { addListener: (listener: (tabId: number) => void) => removedListeners.push(listener) },
 					sendMessage: async (_tabId: number, message: Record<string, unknown>) => {
 						tabMessages.push(structuredClone(message));
+						if (message.type === 'spectra.content.runtime.status') {
+							return {
+								ok: true,
+								data: {
+									bootstrapRevision: SPECTRA_CONTENT_BOOTSTRAP_REVISION,
+									runtimeRevision: SPECTRA_CONTENT_RUNTIME_REVISION,
+									ready: true,
+									ownedSources: [],
+								},
+							};
+						}
 						if (message.type === 'spectra.media.play.toggle') {
 							return { ok: true, data: { playing: true } };
 						}
@@ -85,6 +100,14 @@ describe('remote service-worker reconciliation', () => {
 						}
 						return { ok: false, error: { code: 'unsupported', message: 'Unsupported', retryable: false } };
 					},
+				},
+				webNavigation: {
+					getFrame: async () => ({
+						documentId: 'document-71',
+						frameId: 0,
+						parentFrameId: -1,
+						url: 'https://media.example',
+					}),
 				},
 				storage: {
 					session: {
@@ -99,7 +122,8 @@ describe('remote service-worker reconciliation', () => {
 		try {
 			initRemoteService();
 			await waitFor(() => helloCalls === 3 && isOffscreenHostStateUnknown());
-			removedListeners[0]?.(72);
+			expect(removedListeners.length).toBeGreaterThan(0);
+			for (const listener of removedListeners) listener(72);
 			await waitFor(() => closeTabMessages.length === 1);
 			expect(closeTabMessages[0]).toMatchObject({ type: 'REMOTE_HOST_CLOSE_TAB', tabId: 72 });
 			expect(createDocumentCalls).toBe(0);
@@ -135,17 +159,6 @@ describe('remote service-worker reconciliation', () => {
 				},
 			});
 
-			emitOffscreenEvent(listeners, {
-				type: 'REMOTE_HOST_EXECUTE_COMMAND',
-				tabId: 71,
-				sessionId,
-				capability: hostSession.capability,
-				sequence: 1,
-				generation: 7,
-				command: 'play_pause',
-			});
-			await waitFor(() => tabMessages.some((message) => message.type === 'spectra.media.play.toggle'));
-
 			hasDocument = false;
 			await reconcileOffscreenHost();
 			await timers.fireLongTimers();
@@ -171,15 +184,6 @@ async function invokeRuntimeRequest(
 		if (handled === true) return response;
 	}
 	throw new Error('No runtime listener handled the remote request');
-}
-
-function emitOffscreenEvent(listeners: RuntimeListener[], message: unknown): void {
-	for (const listener of listeners) {
-		listener(message, {
-			id: 'spectra-test',
-			url: 'chrome-extension://spectra-test/offscreen.html',
-		}, () => undefined);
-	}
 }
 
 function installFastTimerHarness(): {

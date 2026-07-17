@@ -4,6 +4,8 @@ import type { CardUIElements } from '../types';
 import type { CardInternalState } from './types';
 import { COLORS, AUDIO_UI } from '../constants';
 import type { GlobalSettings } from '@nexus/kernel';
+import { resolveAudioVolume } from '@nexus/contracts';
+import { renderPlaybackButton } from './media-events';
 
 export interface RenderParams {
   ui: CardUIElements;
@@ -22,6 +24,7 @@ export function createRenderFn(params: RenderParams): () => void {
     if (!ui.card) return;
 
     const config = state.config;
+    const volume = resolveAudioVolume(config);
     const disabled = !config.enabled;
     const muted = config.muted;
 
@@ -38,15 +41,18 @@ export function createRenderFn(params: RenderParams): () => void {
 		controls?.setAttribute('aria-hidden', String(disabled));
     ui.enable.checked = config.enabled;
 
-    ui.slider.value = String(config.volume);
-    ui.fill.style.width = `${(config.volume / AUDIO_UI.MAX_VOLUME) * 100}%`;
-    ui.val.innerText = muted ? 'MUTE' : `${config.volume}%`;
+    ui.slider.value = String(volume.volumeBase);
+    ui.fill.style.width = `${volume.volumeBase}%`;
+    ui.val.innerText = muted ? 'MUTE' : `${volume.volumeBase}%`;
+    ui.boostSlider.value = String(volume.boost);
+    ui.boostFill.style.width = `${((volume.boost - AUDIO_UI.BOOST_MIN) / (AUDIO_UI.BOOST_MAX - AUDIO_UI.BOOST_MIN)) * 100}%`;
+    ui.boostVal.innerText = `${volume.boost.toFixed(1)}×`;
     ui.mute.classList.toggle('active', muted);
 		ui.mute.setAttribute('aria-pressed', String(muted));
 
     const actualCapturing = getCapturing();
     const isCapture = actualCapturing;
-    const isMutedOrZero = muted || config.volume === 0;
+    const isMutedOrZero = muted || volume.volumeBase === 0;
 
     // rule: dynamic color coding to indicate source/mode status (Gray: Silenced, Purple: High-Fidelity Capture, Blue: Standard)
     let fillColor: string;
@@ -61,8 +67,9 @@ export function createRenderFn(params: RenderParams): () => void {
     ui.fill.style.backgroundColor = fillColor;
     ui.val.style.color = fillColor;
     ui.slider.style.setProperty('--slider-accent', fillColor);
+    ui.boostSlider.style.setProperty('--slider-accent', COLORS.CAPTURE);
 
-    renderVolumeIcon(ui.mute, muted, config.volume);
+    renderVolumeIcon(ui.mute, muted, volume.volumeBase, volume.boost);
 
     if (ui.comp) ui.comp.checked = config.compressor;
     if (ui.bass) ui.bass.checked = config.bass;
@@ -74,6 +81,14 @@ export function createRenderFn(params: RenderParams): () => void {
         ui.speedInput.value = (config.speed || 1.0).toFixed(2);
       }
     }
+
+		const playing = state.controlSnapshot?.fields.playing?.actual;
+		if (ui.btnPause && typeof playing === 'boolean') renderPlaybackButton(ui.btnPause, playing);
+		const pip = state.controlSnapshot?.fields.pip?.actual;
+		if (ui.btnPip && typeof pip === 'boolean') {
+			ui.btnPip.classList.toggle('active', pip);
+			ui.btnPip.setAttribute('aria-pressed', String(pip));
+		}
 
     ui.eqInputs.forEach((inp, i) => {
       // rule: skip input value updates if the element is focused to prevent "cursor jumping" during user interaction
@@ -100,16 +115,21 @@ export function createRenderFn(params: RenderParams): () => void {
 }
 
 // eff: updates the mute button icon glyph and transparency based on silence/boost status
-function renderVolumeIcon(muteBtn: HTMLElement, muted: boolean, volume: number): void {
+function renderVolumeIcon(
+  muteBtn: HTMLElement,
+  muted: boolean,
+  volumeBase: number,
+  boost: number,
+): void {
   const iconSpan = document.createElement('span');
   iconSpan.style.fontSize = '16px';
 
-  if (muted || volume === 0) {
+  if (muted || volumeBase === 0) {
     iconSpan.innerText = '🔇';
     muteBtn.style.opacity = '0.7';
   } else {
     muteBtn.style.opacity = '1';
-    iconSpan.innerText = volume > 100 ? '🚀' : '🔊';
+    iconSpan.innerText = boost > 1 ? '🚀' : '🔊';
   }
 
   muteBtn.replaceChildren(iconSpan);

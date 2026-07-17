@@ -10,7 +10,6 @@ import { logger } from '../../shared/logger';
 import type { PolicyExecutorState } from '../types';
 
 const log = logger.content;
-const STUB_ID = '__SPECTRA_STATE_STUB__';
 const MAX_STUB_AGE_MS = 30_000;
 const MAX_CLOCK_SKEW_MS = 5_000;
 const SNAPSHOT_KEYS = new Set([
@@ -77,24 +76,14 @@ export function createSnapshot(state: PolicyExecutorState): string {
 	return JSON.stringify(snapshot);
 }
 
-// The state is authoritative only in an isolated-world window property. The DOM
-// marker makes handoff observable/debuggable, but a page-created marker has no
-// matching unforgeable isolated-world token and is therefore never consumed.
+// Isolated-world state never enters page-visible DOM. Content-script revisions
+// in the same isolated world share this window wrapper; the random token binds
+// the record to the serialized payload without exposing either to the page.
 export function mountStub(snapshot: string): void {
 	const token = crypto.randomUUID();
 	const handoff = { token, snapshot, createdAt: Date.now() };
 	(window as HandoffWindow).__SPECTRA_ISOLATED_HANDOFF__ = handoff;
-
-	let element = document.getElementById(STUB_ID);
-	if (!element) {
-		element = document.createElement('div');
-		element.id = STUB_ID;
-		element.style.display = 'none';
-		document.documentElement.appendChild(element);
-	}
-	element.setAttribute('data-token', token);
-	element.setAttribute('data-state', snapshot);
-	log.debug('[Sentinel] Authenticated state handoff mounted');
+	log.debug('[Sentinel] Isolated state handoff mounted');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -141,15 +130,7 @@ export function consumeStub(): Partial<PolicyExecutorState> | null {
 	const host = window as HandoffWindow;
 	const handoff = host.__SPECTRA_ISOLATED_HANDOFF__;
 	delete host.__SPECTRA_ISOLATED_HANDOFF__;
-	const element = document.getElementById(STUB_ID);
-	element?.remove();
-
-	if (!handoff || !element
-		|| element.getAttribute('data-token') !== handoff.token
-		|| element.getAttribute('data-state') !== handoff.snapshot) {
-		if (element) log.warn('[Sentinel] Rejected unauthenticated state stub');
-		return null;
-	}
+	if (!handoff?.token || !handoff.snapshot) return null;
 
 	const recovered = parseSnapshot(handoff.snapshot, handoff.createdAt);
 	if (!recovered) {

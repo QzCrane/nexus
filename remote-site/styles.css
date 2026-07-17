@@ -91,6 +91,7 @@ dialog input:focus { outline: 3px solid var(--accent); outline-offset: 1px; }
 .tab-domain { margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); font-size: 0.78rem; }
 .volume-display { padding: 18px; text-align: center; }
 .volume-value { font-size: clamp(2.6rem, 14vw, 3.5rem); font-weight: 750; color: var(--accent); }
+.boost-display .volume-value { color: #8b5cf6; }
 .volume-label, .section-title { color: var(--text-dim); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; }
 .control-section { padding: 12px; }
 .section-title { margin: 0 0 10px 4px; }

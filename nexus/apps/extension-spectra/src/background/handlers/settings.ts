@@ -18,6 +18,7 @@ import {
 } from '../settings-repository';
 import { withContentOSDMessages } from '../../shared/i18n/content-osd';
 import { updateShortcutSettings } from '../shortcuts';
+import { reconcileAllHotkeyRuntimeLeases } from '../runtime-loader';
 
 // note: one-release compatibility adapter for content contexts that were loaded
 // before protocol v2. New callers and current content contexts never emit v1.
@@ -41,6 +42,7 @@ async function broadcastSettings(snapshot: SettingsSnapshot, scope: SettingsPatc
 	const broadcasts: Array<Promise<unknown>> = [extensionBroadcast];
 	if (scope === 'hotkey-slots' || scope === 'hotkey-site' || scope === 'hotkey-site-mutation') {
 		updateShortcutSettings(snapshot.hotkeySettings);
+		broadcasts.push(reconcileAllHotkeyRuntimeLeases(snapshot.hotkeySettings));
 		const hotkeyEvent: SpectraEventEnvelope<'spectra.hotkeys.changed'> = {
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			type: 'spectra.hotkeys.changed',

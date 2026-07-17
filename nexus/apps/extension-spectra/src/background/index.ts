@@ -11,6 +11,7 @@ import { registerRegistryHandlers } from './handlers/registry';
 import { registerTabStateHandlers } from './handlers/tab-state';
 import { registerUserScriptsHandler } from './handlers/user-scripts';
 import { registerCommandHandlers } from './handlers/commands';
+import { registerScreenshotHandler } from './handlers/screenshot';
 import { setupShortcutListeners } from './shortcuts';
 import { setupLifecycleListeners } from './lifecycle';
 import { initRemoteService } from './remote-service';
@@ -21,9 +22,15 @@ import {
 	initializeOffscreenCoordinator,
 	retireLegacyOffscreenDocument,
 } from './offscreen-coordinator';
+import { initializeContentRuntimeLoader } from './runtime-loader';
+import { initializeMainRuntimeManager } from './main-runtime-manager';
+import { initializeControlCoordinator } from './control-coordinator';
 
 // eff: initialize all functional modules and start message routing
 initializeOffscreenCoordinator();
+initializeMainRuntimeManager();
+initializeContentRuntimeLoader();
+initializeControlCoordinator();
 registerAudioHandlers();
 registerSettingsHandlers();
 registerCaptureHandlers();
@@ -32,6 +39,7 @@ registerRegistryHandlers();
 registerTabStateHandlers();
 registerUserScriptsHandler();
 registerCommandHandlers();
+registerScreenshotHandler();
 initRemoteService();
 
 setupShortcutListeners();

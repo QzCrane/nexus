@@ -16,6 +16,9 @@ export interface CardUIElements {
   slider: HTMLInputElement;
   fill: HTMLElement;
   val: HTMLElement;
+  boostSlider: HTMLInputElement;
+  boostFill: HTMLElement;
+  boostVal: HTMLElement;
   mute: HTMLElement;
   comp: HTMLInputElement;
   bass: HTMLInputElement;
@@ -29,6 +32,7 @@ export interface CardUIElements {
   btnSaveGlobal: HTMLElement | null;
   canvas: HTMLCanvasElement;
   sliderArea: HTMLElement;
+  boostSliderArea: HTMLElement;
   tComp: HTMLElement;
   tBass: HTMLElement;
   tMono: HTMLElement;

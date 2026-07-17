@@ -9,7 +9,7 @@ import type { PolicyExecutor } from '../../logic/policy-executor';
 const log = logger.content;
 
 // eff: Statically allocated listener to avoid repeated closure creation
-let listenerCtx: { state: PolicyExecutorState; ctrl: WebAudioController; exec: PolicyExecutor; probed: boolean; cleanup: () => void } | null = null;
+let listenerCtx: { state: PolicyExecutorState; ctrl: WebAudioController; exec: PolicyExecutor; cleanup: () => void } | null = null;
 
 function handleGesture() {
 	if (!listenerCtx) return;
@@ -17,11 +17,6 @@ function handleGesture() {
 	const { state, ctrl, exec } = context;
 	state.hasGesture = true;
 	context.cleanup();
-
-	if (!context.probed) {
-		context.probed = true;
-		exec.probeCors();
-	}
 
 	if (state.activeMode === AudioMode.NATIVE_WEBAUDIO && !ctrl.isReady()) {
 		log.debug('[Interact] Retry WebAudio init');
@@ -42,7 +37,7 @@ export function setupUserGestureListeners(
 		}
 		if (listenerCtx?.cleanup === cleanup) listenerCtx = null;
 	};
-	listenerCtx = { state, ctrl: audioController, exec: policyExecutor, probed: false, cleanup };
+	listenerCtx = { state, ctrl: audioController, exec: policyExecutor, cleanup };
 	for (const event of evts) document.addEventListener(event, handleGesture, { passive: true });
 	return cleanup;
 }

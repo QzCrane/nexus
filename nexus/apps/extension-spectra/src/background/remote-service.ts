@@ -22,6 +22,10 @@ import {
 } from './offscreen-coordinator';
 import { executeCommand, setStateCallback, syncState } from './remote-commands';
 import {
+	ensureContentRuntime,
+	releaseContentRuntimeLease,
+} from './runtime-loader';
+import {
 	isSessionId,
 	type RemotePublicSession,
 } from '../remote/protocol';
@@ -37,6 +41,10 @@ interface SessionAuthorization {
 }
 
 const authorizations = new Map<number, SessionAuthorization>();
+const remoteObservationLeases = new Map<number, {
+	documentId: string;
+	capability: string;
+}>();
 const sessionCreations = new Map<number, Promise<{ success: boolean; session?: RemotePublicSession; error?: string }>>();
 const closingTabs = new Set<number>();
 let restorePromise: Promise<void> | null = null;
@@ -86,6 +94,7 @@ function rememberSession(session: HostSession): void {
 	const existing = authorizations.get(session.tabId);
 	if (existing && existing.session.sessionId !== session.sessionId) {
 		releaseOffscreenLease(sessionLeaseKey(existing.session.sessionId));
+		releaseRemoteObservation(session.tabId);
 	}
 	authorizations.set(session.tabId, {
 		session,
@@ -96,11 +105,33 @@ function rememberSession(session: HostSession): void {
 	});
 }
 
+function releaseRemoteObservation(tabId: number): void {
+	const lease = remoteObservationLeases.get(tabId);
+	if (!lease) return;
+	remoteObservationLeases.delete(tabId);
+	releaseContentRuntimeLease(tabId, lease.documentId, 'remote', lease.capability);
+}
+
+async function acquireRemoteObservation(session: HostSession): Promise<void> {
+	const capability = `session:${session.sessionId}`;
+	const ready = await ensureContentRuntime(session.tabId, undefined, 'remote', capability);
+	const previous = remoteObservationLeases.get(session.tabId);
+	if (previous && (previous.documentId !== ready.documentId
+		|| previous.capability !== capability)) {
+		releaseContentRuntimeLease(session.tabId, previous.documentId, 'remote', previous.capability);
+	}
+	remoteObservationLeases.set(session.tabId, {
+		documentId: ready.documentId,
+		capability,
+	});
+}
+
 function forgetSession(tabId: number): void {
 	const known = authorizations.get(tabId);
 	authorizations.delete(tabId);
 	if (known) releaseOffscreenLease(sessionLeaseKey(known.session.sessionId));
 	releaseOffscreenLease(pendingLeaseKey(tabId));
+	releaseRemoteObservation(tabId);
 }
 
 function toPublicSession(session: HostSession): RemotePublicSession {
@@ -129,6 +160,13 @@ async function restoreSessions(): Promise<void> {
 			throw new Error('Remote host status does not match its HELLO snapshot');
 		}
 		rememberSession(response.session);
+		// Seed the offscreen session with a side-effect-free actual projection even
+		// when no controller is connected yet. The host stores it without sending
+		// anything before HMAC authentication, then can deliver the first state in
+		// the same authenticated handshake instead of depending on a later worker
+		// event racing the remote page's initial render.
+		await syncState(tabId);
+		if (response.session.connected) await acquireRemoteObservation(response.session);
 	}));
 }
 
@@ -162,7 +200,13 @@ function createSession(tabId: number): Promise<{ success: boolean; session?: Rem
 async function createSessionOnce(tabId: number): Promise<{ success: boolean; session?: RemotePublicSession; error?: string }> {
 	await ensureRemoteSessionsRestored();
 	const existing = authorizations.get(tabId);
-	if (existing) return { success: true, session: toPublicSession(existing.session) };
+	if (existing) {
+		await syncState(tabId);
+		if (existing.session.connected) {
+			await acquireRemoteObservation(existing.session).catch(() => undefined);
+		}
+		return { success: true, session: toPublicSession(existing.session) };
+	}
 
 	await assertControllableTab(tabId);
 	// Chrome can eventually reuse a numeric tab id. A successful controllability
@@ -181,6 +225,7 @@ async function createSessionOnce(tabId: number): Promise<{ success: boolean; ses
 		await acquireOffscreenLease(sessionLeaseKey(response.session.sessionId));
 		releaseOffscreenLease(pendingLeaseKey(tabId));
 		rememberSession(response.session);
+		await syncState(tabId);
 		return { success: true, session: toPublicSession(response.session) };
 	} catch (error) {
 		forgetSession(tabId);
@@ -202,6 +247,7 @@ async function getSession(tabId: number): Promise<{ session: RemotePublicSession
 			return { session: null, connected: false };
 		}
 		rememberSession(response.session);
+		if (response.session.connected) await acquireRemoteObservation(response.session);
 		return { session: toPublicSession(response.session), connected: response.session.connected };
 	} catch {
 		return { session: toPublicSession(known.session), connected: known.session.connected };
@@ -270,6 +316,7 @@ async function handleHostCommand(
 ): Promise<void> {
 	const authorization = await authorizeHostEvent(message);
 	if (!authorization) return;
+	await acquireRemoteObservation(authorization.session).catch(() => undefined);
 	if (message.sequence <= authorization.lastSequence
 		|| message.generation !== authorization.generation) {
 		await syncState(authorization.session.tabId);
@@ -287,7 +334,10 @@ async function handleHostSync(
 	message: Extract<RemoteHostEvent, { type: 'REMOTE_HOST_REQUEST_SYNC' }>,
 ): Promise<void> {
 	const authorization = await authorizeHostEvent(message);
-	if (authorization) await syncState(authorization.session.tabId);
+	if (authorization) {
+		await acquireRemoteObservation(authorization.session).catch(() => undefined);
+		await syncState(authorization.session.tabId);
+	}
 }
 
 async function closeTabSession(tabId: number): Promise<void> {
@@ -404,6 +454,13 @@ export function initRemoteService(): void {
 			void authorizeHostEvent(message).then((authorization) => {
 				if (authorization && typeof message.connected === 'boolean') {
 					authorization.session.connected = message.connected;
+					if (message.connected) {
+						void acquireRemoteObservation(authorization.session)
+							.then(() => syncState(authorization.session.tabId))
+							.catch(() => undefined);
+					} else {
+						releaseRemoteObservation(authorization.session.tabId);
+					}
 					publishRemoteChanged(
 						authorization.session.tabId,
 						authorization.session.sessionId,

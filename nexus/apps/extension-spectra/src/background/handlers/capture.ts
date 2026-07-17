@@ -6,14 +6,17 @@ import {
 	SPECTRA_PROTOCOL_VERSION,
 	isOffscreenHostEvent,
 	isSpectraRequestEnvelope,
+	resolveAudioVolume,
 	rpcFailure,
 	rpcSuccess,
 	type AudioCaptureState,
 	type AudioConfig,
+	type AudioProcessorConfig,
 	type SpectraEventEnvelope,
 	type SpectraAudioMode,
 	type TabSessionIdentity,
 } from '@nexus/contracts';
+import { audioGraphSignature } from '@nexus/audio-engine';
 import { router, captureStates } from '../state';
 import {
 	acquireOffscreenLease,
@@ -33,10 +36,31 @@ import {
 
 interface CaptureRuntimeState {
 	generation: number;
+	controlRevision: number;
 	phase: 'idle' | 'starting' | 'active' | 'stopping' | 'error';
 	active: boolean;
 	lastError?: string;
+	actualConfig?: AudioConfig;
 	identity?: TabSessionIdentity;
+}
+
+function actualConfigFromProcessor(
+	requested: AudioConfig,
+	processor: AudioProcessorConfig,
+): AudioConfig {
+	const volumeBase = resolveAudioVolume(requested).volumeBase;
+	return {
+		...requested,
+		volumeBase,
+		boost: processor.boostGain,
+		volume: Math.round(volumeBase * processor.boostGain * 100) / 100,
+		bass: processor.bass,
+		eqValues: [...processor.eqValues],
+		compressor: processor.compressor,
+		mono: processor.mono,
+		pan: processor.pan,
+		delay: processor.delay,
+	};
 }
 
 const sessions = new Map<number, CaptureRuntimeState>();
@@ -77,7 +101,7 @@ function isStaleContentSender(sender: chrome.runtime.MessageSender): boolean {
 function getSession(tabId: number): CaptureRuntimeState {
 	let session = sessions.get(tabId);
 	if (!session) {
-		session = { generation: 0, phase: 'idle', active: false };
+		session = { generation: 0, controlRevision: 0, phase: 'idle', active: false };
 		sessions.set(tabId, session);
 	}
 	return session;
@@ -90,6 +114,9 @@ function toCaptureState(tabId: number, state = getSession(tabId)): AudioCaptureS
 		phase: state.phase,
 		active: state.active,
 		actualMode: state.active ? 'capture' : 'bypass',
+		...(state.active && state.actualConfig
+			? { actualConfig: { ...state.actualConfig, eqValues: [...state.actualConfig.eqValues] } }
+			: {}),
 		lastError: state.lastError
 			? { code: 'capture_error', message: state.lastError, retryable: true }
 			: null,
@@ -254,6 +281,7 @@ async function startCapture(
 	const generation = requestedGeneration === undefined || requestedGeneration === state.generation
 		? state.generation + 1
 		: requestedGeneration;
+	const controlRevision = state.controlRevision + 1;
 	state.generation = generation;
 	state.phase = 'starting';
 	state.lastError = undefined;
@@ -270,6 +298,7 @@ async function startCapture(
 				streamId,
 				config,
 				generation,
+				controlRevision,
 			}),
 			OFFSCREEN_ACK_TIMEOUT_MS,
 			'Offscreen audio processor did not acknowledge startup',
@@ -278,16 +307,19 @@ async function startCapture(
 		if (state.generation !== generation) {
 			return { status: 'processing' as const, phase: state.phase, generation: state.generation };
 		}
-		if (result?.ok && result.phase === 'active' && result.generation > generation) {
+		if (result?.ok && result.phase === 'active' && result.generation > generation
+			&& audioGraphSignature(result.normalizedActualConfig) === result.graphSignature) {
 			// The host is authoritative after a worker restart. Preserve its processor
 			// and lease instead of treating a lower-generation retry as startup failure.
 			state.generation = result.generation;
+			state.controlRevision = result.controlRevision;
 			state.active = true;
 			state.phase = 'active';
+			state.actualConfig = actualConfigFromProcessor(config, result.normalizedActualConfig);
 			await publishAcknowledgedCaptureState(tabId, state, {
 				actualMode: 'capture',
 				phase: 'active',
-				config,
+				config: state.actualConfig,
 				error: null,
 			});
 			return {
@@ -297,16 +329,23 @@ async function startCapture(
 				generation: result.generation,
 			};
 		}
-		if (!result?.ok || result.phase !== 'active' || result.generation !== generation) {
+		if (!result?.ok
+			|| result.phase !== 'active'
+			|| result.generation !== generation
+			|| result.controlRevision !== controlRevision
+			|| result.contextState !== 'running'
+			|| audioGraphSignature(result.normalizedActualConfig) !== result.graphSignature) {
 			throw new Error(result?.error?.message || 'Offscreen audio processor rejected startup');
 		}
 
 		state.active = true;
+		state.controlRevision = result.controlRevision;
 		state.phase = 'active';
+		state.actualConfig = actualConfigFromProcessor(config, result.normalizedActualConfig);
 		await publishAcknowledgedCaptureState(tabId, state, {
 			actualMode: 'capture',
 			phase: 'active',
-			config,
+			config: state.actualConfig,
 			error: null,
 		});
 		swLog.capture(`Tab ${tabId}: capture active (generation ${generation})`);
@@ -368,6 +407,7 @@ async function stopCapture(
 		if (!result) {
 			state.active = false;
 			state.phase = 'idle';
+			state.actualConfig = undefined;
 			releaseLease = true;
 			await publishAcknowledgedCaptureState(tabId, state, {
 				actualMode: 'bypass',
@@ -380,11 +420,17 @@ async function stopCapture(
 		if (state.generation !== generation) {
 			return { status: 'processing' as const, phase: state.phase, generation: state.generation };
 		}
-		if (result?.ok && result.phase === 'active' && result.generation > generation) {
+		if (result?.ok && result.phase === 'active' && result.generation > generation
+			&& audioGraphSignature(result.normalizedActualConfig) === result.graphSignature) {
 			await acquireOffscreenLease(`audio:${tabId}`);
 			state.generation = result.generation;
+			state.controlRevision = result.controlRevision;
 			state.active = true;
 			state.phase = 'error';
+			state.actualConfig = actualConfigFromProcessor(
+				state.actualConfig ?? DEFAULT_AUDIO_CONFIG,
+				result.normalizedActualConfig,
+			);
 			state.lastError = 'A newer capture processor is still active';
 			await publishAcknowledgedCaptureState(tabId, state, {
 				actualMode: 'capture',
@@ -403,7 +449,9 @@ async function stopCapture(
 			throw new Error(result?.error?.message || 'Offscreen audio processor rejected shutdown');
 		}
 		state.active = false;
+		state.controlRevision = result.controlRevision;
 		state.phase = 'idle';
+		state.actualConfig = undefined;
 		releaseLease = true;
 		await publishAcknowledgedCaptureState(tabId, state, {
 			actualMode: 'bypass',
@@ -452,13 +500,20 @@ async function updateCaptureConfig(
 			return { ok: false, generation: state.generation, error: 'Capture is not active' };
 		}
 		try {
+			const controlRevision = state.controlRevision + 1;
 			const result = await sendOffscreenMessage({
 				type: 'OFFSCREEN_AUDIO_UPDATE',
 				tabId,
 				generation: requestedGeneration,
+				controlRevision,
 				config,
 			});
-			if (!result?.ok || result.generation !== requestedGeneration) {
+			if (!result?.ok
+				|| result.phase !== 'active'
+				|| result.generation !== requestedGeneration
+				|| result.controlRevision !== controlRevision
+				|| result.contextState !== 'running'
+				|| audioGraphSignature(result.normalizedActualConfig) !== result.graphSignature) {
 				state.lastError = result?.error?.message || 'Capture configuration update failed';
 				await publishAcknowledgedCaptureState(tabId, state, {
 					actualMode: state.active ? 'capture' : undefined,
@@ -468,11 +523,13 @@ async function updateCaptureConfig(
 				return { ok: false, generation: state.generation, error: state.lastError };
 			}
 			state.generation = requestedGeneration;
+			state.controlRevision = result.controlRevision;
+			state.actualConfig = actualConfigFromProcessor(config, result.normalizedActualConfig);
 			state.lastError = undefined;
 			await commitCaptureSnapshot(tabId, state, {
 				actualMode: 'capture',
 				phase: 'active',
-				config,
+				config: state.actualConfig,
 				error: null,
 			});
 			return { ok: true, generation: state.generation };
@@ -684,14 +741,18 @@ export async function reconcileCaptureStates(): Promise<void> {
 		const state = getSession(audio.tabId);
 		if (snapshot) state.identity = snapshot;
 		state.generation = Math.max(audio.generation, snapshot?.generation ?? 0);
+		state.controlRevision = audio.controlRevision ?? 0;
 		state.phase = 'active';
 		state.active = true;
+		state.actualConfig = audio.normalizedActualConfig
+			? actualConfigFromProcessor(snapshot?.actualConfig ?? DEFAULT_AUDIO_CONFIG, audio.normalizedActualConfig)
+			: snapshot?.actualConfig;
 		state.lastError = undefined;
 		captureStates.set(audio.tabId, true);
 		await publishAcknowledgedCaptureState(audio.tabId, state, {
 			actualMode: 'capture',
 			phase: 'active',
-			config: snapshot?.actualConfig,
+			config: state.actualConfig,
 			error: null,
 		});
 	}

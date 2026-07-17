@@ -42,6 +42,11 @@ import {
 	REMOTE_SITE_SECURITY_HEADER_NAMES,
 	verifyRemoteSiteDeployment,
 } from '../../../scripts/check-spectra-remote-live.mjs';
+import {
+	BUNDLE_BUDGETS,
+	bundleFootprint,
+	checkBundleBudget,
+} from '../scripts/check-bundle-budget.mjs';
 
 const temporaryDirectories: string[] = [];
 
@@ -103,6 +108,46 @@ describe('release ZIP tooling', () => {
 		const archivePath = resolve(directory, 'malicious.zip');
 		writeFileSync(archivePath, archive);
 		expect(() => extractStoredZip(archivePath, resolve(directory, 'extracted'))).toThrow('Unsafe ZIP entry path');
+	});
+});
+
+describe('production bundle budget', () => {
+	test('tracks the passive bootstrap and lazy content runtime independently', () => {
+		expect(Object.keys(BUNDLE_BUDGETS)).toEqual([
+			'background.js',
+			'content-bootstrap.js',
+			'content-runtime.js',
+			'popup.js',
+			'offscreen.js',
+			'options.js',
+		]);
+		expect(BUNDLE_BUDGETS['content-bootstrap.js']).toBeLessThan(BUNDLE_BUDGETS['content-runtime.js']);
+	});
+
+	test('charges shared ESM chunks to every entrypoint that loads them', () => {
+		const directory = temporaryDirectory();
+		mkdirSync(resolve(directory, 'chunks'));
+		writeFileSync(resolve(directory, 'popup.js'), 'import "./chunks/shared.js";\n');
+		writeFileSync(resolve(directory, 'chunks/shared.js'), 'export const shared = true;\n');
+		const footprint = bundleFootprint(directory, 'popup.js');
+		expect(footprint.files.map((path) => path.replaceAll('\\', '/'))).toEqual([
+			resolve(directory, 'popup.js').replaceAll('\\', '/'),
+			resolve(directory, 'chunks/shared.js').replaceAll('\\', '/'),
+		]);
+		expect(footprint.bytes).toBe(
+			readFileSync(resolve(directory, 'popup.js')).byteLength
+			+ readFileSync(resolve(directory, 'chunks/shared.js')).byteLength,
+		);
+	});
+
+	test('fails with an actionable error when a required split bundle is missing', () => {
+		const directory = temporaryDirectory();
+		for (const name of Object.keys(BUNDLE_BUDGETS).filter((name) => name !== 'content-runtime.js')) {
+			writeFileSync(resolve(directory, name), '');
+		}
+		expect(() => checkBundleBudget({ distDir: directory })).toThrow(
+			'content-runtime.js: required production bundle is missing',
+		);
 	});
 });
 
@@ -294,6 +339,7 @@ describe('release gate orchestration', () => {
 		process.env[REMOTE_SITE_BASE_URL_ENV] = 'http://127.0.0.1:1234';
 		try {
 				expect(() => runRelease({
+				runtimeVersion: EXPECTED_BUN_VERSION,
 				spawnProcess(_executable: string, args: string[], options: { env?: NodeJS.ProcessEnv }) {
 					invoked.push(args);
 					if (args[0] === 'scripts/check-spectra-remote-live.mjs') remoteEnvironment = options.env;
@@ -322,6 +368,7 @@ describe('release gate orchestration', () => {
 		const invoked: string[][] = [];
 		let cleanupCalls = 0;
 		expect(() => runRelease({
+			runtimeVersion: EXPECTED_BUN_VERSION,
 			spawnProcess(_executable: string, args: string[]) {
 				invoked.push(args);
 				return { status: args.includes('package:stage') ? 1 : 0 };
@@ -340,6 +387,7 @@ describe('release gate orchestration', () => {
 		let digestReadCount = 0;
 		let cleanupCalls = 0;
 		expect(() => runRelease({
+			runtimeVersion: EXPECTED_BUN_VERSION,
 			spawnProcess(_executable: string, args: string[]) {
 				invoked.push(args);
 				return { status: 0 };

@@ -1,6 +1,7 @@
 // goal: transient visual feedback (On-Screen Display) for adjustments
 
 import type { AudioConfig } from '@nexus/kernel';
+import { resolveAudioVolume } from '@nexus/contracts';
 import type { ContentGlobalSettings } from '../core/settings-manager';
 
 interface OSDState { root: ShadowRoot | null; timer: ReturnType<typeof setTimeout> | null; lastType: 'volume' | 'speed' | null }
@@ -63,11 +64,16 @@ function renderOSD(type: 'volume' | 'speed', c: AudioConfig, cap: boolean, s: Co
 		i.textContent = speed > 1 ? '⚡' : (speed < 1 ? '🐢' : '⏱️');
 	} else {
 		// volume display mode
-		const muted = c.muted || c.volume === 0;
+		const volume = resolveAudioVolume(c);
+		const muted = c.muted || volume.volumeBase === 0;
 		o.classList.toggle('m', muted);
-		f.style.width = `${Math.min(100, (c.volume / 800) * 100)}%`;
-		t.textContent = muted ? s.osdMessages.muted : `${c.volume}%`;
-		i.textContent = muted ? '🔇' : (c.volume > 100 ? '🚀' : '🔊');
+		f.style.width = `${volume.volumeBase}%`;
+		t.textContent = muted
+			? s.osdMessages.muted
+			: volume.boost > 1
+				? `${volume.volumeBase}% × ${volume.boost.toFixed(1)}`
+				: `${volume.volumeBase}%`;
+		i.textContent = muted ? '🔇' : (volume.boost > 1 ? '🚀' : '🔊');
 	}
 
 	state.lastType = type;

@@ -6,12 +6,10 @@ import {
 } from '../src/content/core/lifecycle/navigation-observer';
 
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
-const originalHistory = Object.getOwnPropertyDescriptor(globalThis, 'history');
 const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 
 afterEach(() => {
 	restoreProperty('window', originalWindow);
-	restoreProperty('history', originalHistory);
 	restoreProperty('chrome', originalChrome);
 });
 
@@ -40,41 +38,23 @@ describe('SPA navigation observer', () => {
 			value: { runtime: { id: 'spectra-test' } },
 		});
 
-		const applyUrl = (url?: string | URL | null) => {
-			if (url === undefined || url === null) return;
-			const next = new URL(String(url), `${location.origin}${location.pathname}${location.search}${location.hash}`);
-			location.origin = next.origin;
-			location.pathname = next.pathname;
-			location.search = next.search;
-			location.hash = next.hash;
-		};
-		const history = {
-			pushState: mock((_data: unknown, _unused: string, url?: string | URL | null) => applyUrl(url)),
-			replaceState: mock((_data: unknown, _unused: string, url?: string | URL | null) => applyUrl(url)),
-		};
-		Object.defineProperty(globalThis, 'history', { configurable: true, value: history });
-
-		const probeCors = mock(() => undefined);
 		let generation = 7;
 		const onNavigate = mock(() => { generation += 1; });
-		const dispose = createNavigationObserver({
-			policyExecutor: { probeCors } as never,
-			onNavigate,
-		});
+		const dispose = createNavigationObserver({ onNavigate });
 
 		try {
-			history.pushState({}, '', '/watch?v=two');
+			location.search = '?v=two';
+			target.dispatchEvent(new Event(SPECTRA_SAME_DOCUMENT_NAVIGATION_EVENT));
 			expect(generation).toBe(8);
 			expect(onNavigate).toHaveBeenCalledTimes(1);
 
-			history.replaceState({}, '', '/watch?v=two');
+			target.dispatchEvent(new Event(SPECTRA_SAME_DOCUMENT_NAVIGATION_EVENT));
 			expect(onNavigate).toHaveBeenCalledTimes(1);
 
 			location.hash = '#chapter';
 			target.dispatchEvent(new Event(SPECTRA_SAME_DOCUMENT_NAVIGATION_EVENT));
 			expect(generation).toBe(9);
 			expect(onNavigate).toHaveBeenCalledTimes(2);
-			expect(probeCors).toHaveBeenCalledTimes(2);
 		} finally {
 			dispose();
 		}
@@ -82,7 +62,7 @@ describe('SPA navigation observer', () => {
 });
 
 function restoreProperty(
-	key: 'window' | 'history' | 'chrome',
+	key: 'window' | 'chrome',
 	descriptor?: PropertyDescriptor,
 ): void {
 	if (descriptor) Object.defineProperty(globalThis, key, descriptor);

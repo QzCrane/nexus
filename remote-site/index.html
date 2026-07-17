@@ -43,7 +43,7 @@
 
       <div class="volume-display">
         <div class="volume-value" id="vol-display">100%</div>
-        <div class="volume-label">VOLUME</div>
+        <div class="volume-label">MAIN VOLUME</div>
       </div>
 
       <section class="control-section" aria-label="Volume">
@@ -52,6 +52,20 @@
           <button class="btn" type="button" data-command="volume_up" aria-label="Volume up">➕<span>+10</span></button>
           <button class="btn" type="button" data-command="volume_100" aria-label="Set volume to 100 percent">1️⃣<span>100%</span></button>
           <button class="btn" id="btn-mute" type="button" data-command="mute" aria-label="Toggle mute">🔇<span>Mute</span></button>
+        </div>
+      </section>
+
+      <div class="volume-display boost-display">
+        <div class="volume-value" id="boost-display">1.0×</div>
+        <div class="volume-label">BOOST</div>
+      </div>
+
+      <section class="control-section" aria-label="Audio boost">
+        <div class="btn-grid cols-4">
+          <button class="btn" type="button" data-command="boost_down" aria-label="Decrease audio boost">➖<span>-0.1×</span></button>
+          <button class="btn" type="button" data-command="boost_up" aria-label="Increase audio boost">➕<span>+0.1×</span></button>
+          <button class="btn" type="button" data-command="boost_reset" aria-label="Reset audio boost">1️⃣<span>1.0×</span></button>
+          <button class="btn" type="button" data-command="boost_max" aria-label="Set audio boost to maximum">🚀<span>8.0×</span></button>
         </div>
       </section>
 

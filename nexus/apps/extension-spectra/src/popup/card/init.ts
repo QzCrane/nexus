@@ -1,6 +1,5 @@
 // goal: main entry point for initializing a tab control card, aggregating status probing, DOM setup, and event binding
 
-import { DEFAULT_AUDIO_CONFIG } from '@nexus/kernel';
 import {
   hostnameMatchesRule,
   type AudioSessionSnapshot,
@@ -8,13 +7,71 @@ import {
 import { getDomain } from '../utils/dom';
 import { sendSpectraRequest, sendSpectraTabRequest } from '../../shared/spectra-client';
 import { cardRenderCallbacks } from '../views/settings';
-import { cleanConfig, type CardInternalState, type InitCardParams } from './types';
+import { VISUALIZER_STATE_CHANGED_EVENT } from '../visualizer/events';
+import {
+	initialControlConfig,
+  mergeAudioConfig,
+  type CardInternalState,
+  type InitCardParams,
+} from './types';
 import { createGetCapturing, createUpdateFn } from './state';
 import { createRenderFn } from './render';
 import { bindCardEvents } from './events';
 import { setupCardMessaging } from './messaging';
 import { prepareCardDom } from './dom-init';
 import { bindCardIconClick, registerCard } from '../side-panel';
+
+interface PopupObservationLease {
+  documentId: string;
+  runtimeRevision: string;
+  capability: string;
+}
+
+const observationLeases = new Map<number, PopupObservationLease>();
+let popupClosing = false;
+
+async function acquirePopupObservation(tabId: number): Promise<void> {
+  if (observationLeases.has(tabId) || popupClosing) return;
+  const capability = `popup:${crypto.randomUUID()}`;
+  const response = await sendSpectraRequest('spectra.content.runtime.ensure', {
+    tabId,
+    reason: 'observation',
+    capability,
+  }).catch(() => null);
+  if (!response?.ok) return;
+  const lease = {
+    documentId: response.data.documentId,
+    runtimeRevision: response.data.runtimeRevision,
+    capability,
+  };
+  if (popupClosing) {
+    void sendSpectraRequest('spectra.content.runtime.release', {
+      runtimeRevision: lease.runtimeRevision,
+      tabId,
+      documentId: lease.documentId,
+      reason: 'observation',
+      capability: lease.capability,
+    }).catch(() => undefined);
+    return;
+  }
+  observationLeases.set(tabId, lease);
+}
+
+function releasePopupObservations(): void {
+  popupClosing = true;
+  for (const [tabId, lease] of observationLeases) {
+    void sendSpectraRequest('spectra.content.runtime.release', {
+      runtimeRevision: lease.runtimeRevision,
+      tabId,
+      documentId: lease.documentId,
+      reason: 'observation',
+      capability: lease.capability,
+    }).catch(() => undefined);
+  }
+  observationLeases.clear();
+}
+
+window.addEventListener('pagehide', releasePopupObservations, { once: true });
 
 // post: returns true if card was successfully initialized and appended to the container; false if the tab is non-responsive or should be skipped
 export async function initCard(params: InitCardParams): Promise<boolean> {
@@ -34,8 +91,14 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     }
   };
 
-  const status = await getRuntimeStatus();
-  if (!status) return false;
+  const [status, controlSnapshot] = await Promise.all([
+    getRuntimeStatus(),
+    sendSpectraRequest(
+      'spectra.control.snapshot.get',
+      { tabId },
+      { tabId },
+    ).then((response) => response.ok ? response.data : null).catch(() => null),
+  ]);
 
   let acknowledgedSession: AudioSessionSnapshot | null = null;
   try {
@@ -49,7 +112,7 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
 
   const isCaptureActive = acknowledgedSession
     ? acknowledgedSession.actualMode === 'capture'
-    : status.actualMode === 'capture';
+    : status?.actualMode === 'capture';
 
   let isRemoteActive = false;
   try {
@@ -61,12 +124,12 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     isRemoteActive = remoteStatus.ok && remoteStatus.data.connected;
   } catch { /* silent fail */ }
 
-  const hasActiveMedia = tab.audible || isCaptureActive || status.isPlaying;
+  const hasActiveMedia = tab.audible || isCaptureActive || status?.isPlaying === true;
 
   // rule: retention logic ensures a card stays visible for a grace period after audio stops, allowing the user to resume control
-  if (!hasActiveMedia && !isRemoteActive) {
+  if (params.isBackground && !hasActiveMedia && !isRemoteActive) {
     const pauseRetentionSeconds = getGlobalSettings().pauseRetentionSeconds ?? 60;
-    if (pauseRetentionSeconds > 0 && status.pausedAt) {
+    if (pauseRetentionSeconds > 0 && status?.pausedAt) {
       const pausedSeconds = (Date.now() - status.pausedAt) / 1000;
       if (pausedSeconds > pauseRetentionSeconds) {
         return false;
@@ -80,23 +143,30 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     e.restricted !== false && hostnameMatchesRule(domain, e.domain)
   );
 
-  // note: priority is Content Script runtime state > Saved Profile; cleanConfig ensures schema compliance
-  // rule: status.config reflects current session state (may differ from saved preset)
-  const runtimeConfig = acknowledgedSession?.actualConfig ?? status.config;
-  const savedConfig = runtimeConfig ?? DEFAULT_AUDIO_CONFIG;
-  const config = cleanConfig(savedConfig);
+	// ControlSnapshot owns every field-level actual. Runtime/session status below
+	// contributes lifecycle only and may never overwrite or backfill these fields.
+	const config = initialControlConfig(controlSnapshot);
 
   const state: CardInternalState = {
     config,
+    stableConfig: mergeAudioConfig(config, { eqValues: [...config.eqValues] }),
+    controlSnapshot,
     isCaptureActive,
-    userInteracted: status.userInteracted,
+    userInteracted: status?.userInteracted ?? (controlSnapshot?.revision ?? 0) > 0,
     isRestrictedSite,
-    actualMode: acknowledgedSession?.actualMode ?? status.actualMode,
-    desiredMode: acknowledgedSession?.desiredMode ?? status.desiredMode,
-    phase: acknowledgedSession?.phase ?? status.phase,
-    generation: acknowledgedSession?.generation ?? status.generation,
-    lastError: acknowledgedSession?.lastError ?? status.lastError,
+    actualMode: acknowledgedSession?.actualMode ?? status?.actualMode ?? 'bypass',
+    desiredMode: acknowledgedSession?.desiredMode ?? status?.desiredMode ?? 'bypass',
+    phase: acknowledgedSession?.phase ?? status?.phase ?? 'idle',
+    audioGeneration: Math.max(
+      acknowledgedSession?.generation ?? 0,
+      status?.generation ?? 0,
+    ),
+    audioConfigRevision: acknowledgedSession?.configRevision ?? 0,
+    controlGeneration: controlSnapshot?.generation ?? 0,
+    controlRevision: controlSnapshot?.revision ?? 0,
+    lastError: acknowledgedSession?.lastError ?? status?.lastError ?? null,
     isDragging: false,
+    draggingField: null,
   };
 
   const { ui, cardEl } = prepareCardDom({ template, container, tab, dict });
@@ -113,7 +183,7 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   const drawEqCurve = (color: string) => eqDrawer?.draw(color);
   const updateMetrics = eqDrawer?.updateMetrics ?? (() => { });
 
-  const render = createRenderFn({
+  const renderCard = createRenderFn({
     ui,
     state,
     getCapturing,
@@ -121,6 +191,10 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     getVizEnabled: () => getGlobalSettings().visualizerEnabled !== false,
     getGlobalSettings,
   });
+  const render = () => {
+    renderCard();
+    document.dispatchEvent(new Event(VISUALIZER_STATE_CHANGED_EVENT));
+  };
 
   const update = createUpdateFn(state, tabId, getCapturing, render, getGlobalSettings);
 
@@ -155,6 +229,12 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
 
   render();
 
+  // Snapshot reads stay side-effect free. Once the foreground card is visible,
+  // a document-scoped observation lease installs only event listeners/registry
+  // state so page-side changes can flow back to Popup. It never admits MAIN,
+  // AudioContext or offscreen processing by itself.
+  if (!params.isBackground) void acquirePopupObservation(tabId);
+
   // goal: dynamically import the visualizer loop to optimize initial popup load time
   if (ui.canvas) {
     const { createVizLoop } = await import('../visualizer/loop');
@@ -163,6 +243,8 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
       tabId,
       getConfig: () => state.config,
       getCapturing,
+      isProcessorActive: () => state.phase === 'active'
+        && (state.actualMode === 'webaudio' || state.actualMode === 'capture'),
       getGlobalSettings,
     });
     startViz();

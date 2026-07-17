@@ -1,19 +1,36 @@
 import { describe, expect, mock, test } from 'bun:test';
-import type { AudioConfig } from '@nexus/contracts';
 import { AudioMode, type WebAudioController } from '@nexus/audio-engine';
+import type { MediaTarget } from '@nexus/contracts';
 import type { PolicyExecutor } from '../src/content/logic/policy-executor';
 import type { PolicyExecutorState } from '../src/content/types';
-import { enableVolumeLock, releaseVolumeLock } from '../src/content/audio/dom-volume';
 import {
 	createMediaObserver,
 	hasMediaElements,
-	MEDIA_REGISTRY_REFRESH_EVENT,
 } from '../src/content/core/lifecycle/media-observer';
+import {
+	MediaRegistry,
+	setActiveMediaRegistry,
+} from '../src/content/core/media-registry';
+import { isAnyMediaPlaying } from '../src/content/audio/media-detection';
+import {
+	abLoopTestApi,
+	disposeABLoops,
+	observeABLoopSources,
+	setPointA,
+	setPointB,
+} from '../src/content/video/ab-loop';
+import {
+	addMarker,
+	disposeMarkers,
+	observeMarkerSources,
+	timeMarkerTestApi,
+} from '../src/content/video/time-marker';
 
 type MutationCallback = (records: MutationRecord[]) => void;
 
 class FakeElement extends EventTarget {
 	readonly descendants: FakeMediaElement[] = [];
+	isConnected = true;
 
 	querySelectorAll(): FakeMediaElement[] {
 		return [...this.descendants];
@@ -21,9 +38,14 @@ class FakeElement extends EventTarget {
 }
 
 class FakeMediaElement extends FakeElement {
+	currentTime = 0;
+	paused = true;
+	ended = false;
 	volume: number;
 	muted: boolean;
 	playbackRate: number;
+	src = '';
+	currentSrc = '';
 	readonly listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
 
 	constructor(volume: number, muted = false, playbackRate = 1) {
@@ -91,10 +113,26 @@ class FakeMutationObserver {
 			removedNodes: removed,
 		} as unknown as MutationRecord]);
 	}
+
+	emitAttribute(target: FakeMediaElement, attributeName: string): void {
+		this.callback([{
+			type: 'attributes',
+			target,
+			attributeName,
+			addedNodes: [],
+			removedNodes: [],
+		} as unknown as MutationRecord]);
+	}
+}
+
+class FakeIntersectionObserver {
+	readonly observe = mock(() => undefined);
+	readonly unobserve = mock(() => undefined);
+	readonly disconnect = mock(() => undefined);
 }
 
 describe('event-driven media registry', () => {
-	test('applies current config per element and fully disposes removed media before reinsertion', () => {
+	test('projects graph ownership without writing native media fields and disposes removed media', async () => {
 		const descriptors = captureGlobalDescriptors([
 			'chrome',
 			'document',
@@ -102,22 +140,20 @@ describe('event-driven media registry', () => {
 			'Node',
 			'Element',
 			'HTMLMediaElement',
+			'HTMLVideoElement',
 			'MutationObserver',
+			'IntersectionObserver',
 			'setTimeout',
 			'clearTimeout',
-			'requestAnimationFrame',
-			'cancelAnimationFrame',
 		]);
 		const document = new FakeDocument();
 		const window = new EventTarget();
 		const first = new FakeMediaElement(0.7);
 		const second = new FakeMediaElement(0.9);
-		document.media = [first];
+		second.currentSrc = 'https://media.example/one.mp4';
+		document.documentElement.descendants.push(first);
 		const timers = new Map<number, { callback: () => void; delay: number }>();
-		const frames = new Map<number, FrameRequestCallback>();
-		const cancelledFrames: number[] = [];
 		let nextTimerId = 0;
-		let nextFrameId = 0;
 
 		installGlobal('chrome', { runtime: { id: 'spectra-test' } });
 		installGlobal('document', document);
@@ -125,27 +161,19 @@ describe('event-driven media registry', () => {
 		installGlobal('Node', EventTarget);
 		installGlobal('Element', FakeElement);
 		installGlobal('HTMLMediaElement', FakeMediaElement);
+		installGlobal('HTMLVideoElement', FakeMediaElement);
 		installGlobal('MutationObserver', FakeMutationObserver);
+		installGlobal('IntersectionObserver', FakeIntersectionObserver);
 		installGlobal('setTimeout', (callback: () => void, delay: number) => {
 			const timerId = ++nextTimerId;
 			timers.set(timerId, { callback, delay });
 			return timerId;
 		});
 		installGlobal('clearTimeout', (timerId: number) => timers.delete(timerId));
-		installGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-			const frameId = ++nextFrameId;
-			frames.set(frameId, callback);
-			return frameId;
-		});
-		installGlobal('cancelAnimationFrame', (frameId: number) => {
-			cancelledFrames.push(frameId);
-			frames.delete(frameId);
-		});
 
 		const attachNode = mock((_media: HTMLMediaElement) => true);
-		const updateElementParams = mock((_media: HTMLMediaElement, _config: AudioConfig) => true);
 		const detachNode = mock((_media: HTMLMediaElement) => undefined);
-		const audioController = { attachNode, updateElementParams, detachNode } as unknown as WebAudioController;
+		const audioController = { attachNode, detachNode } as unknown as WebAudioController;
 		const state: PolicyExecutorState = {
 			config: {
 				enabled: true,
@@ -170,88 +198,110 @@ describe('event-driven media registry', () => {
 		};
 
 		let dispose = () => undefined;
+		let disposeActiveRegistry = () => undefined;
+		let disposeABSourceObserver = () => undefined;
+		let disposeMarkerSourceObserver = () => undefined;
+		const releasedABTargets: MediaTarget[] = [];
+		const registryEvents: Array<{ target: MediaTarget; event: string }> = [];
+		let mediaRegistry: MediaRegistry | null = null;
 		try {
-			enableVolumeLock(0.6, false);
+			mediaRegistry = new MediaRegistry((target, event) => {
+				registryEvents.push({ target, event });
+			});
+			disposeActiveRegistry = setActiveMediaRegistry(mediaRegistry);
+			disposeABSourceObserver = observeABLoopSources(
+				mediaRegistry,
+				(target) => releasedABTargets.push(target),
+			);
+			disposeMarkerSourceObserver = observeMarkerSources(mediaRegistry);
 			dispose = createMediaObserver(
 				state,
 				audioController,
 				{} as PolicyExecutor,
 			);
 			expect(hasMediaElements()).toBe(true);
-			expect(first.volume).toBe(0.6);
-			expect(first.playbackRate).toBe(1.5);
-			expect(first.listenerCount('play')).toBe(1);
-			expect(first.listenerCount('pause')).toBe(1);
-			expect(first.listenerCount('loadedmetadata')).toBe(1);
-			expect(first.listenerCount('volumechange')).toBe(1);
+			const playListenersBeforeStatusRead = first.listenerCount('play');
+			expect(isAnyMediaPlaying()).toBe(false);
+			expect(isAnyMediaPlaying()).toBe(false);
+			expect(first.listenerCount('play')).toBe(playListenersBeforeStatusRead);
+			expect(first.volume).toBe(0.7);
+			expect(first.playbackRate).toBe(1);
 			expect(attachNode).toHaveBeenCalledWith(first);
-			expect(updateElementParams).toHaveBeenCalledWith(first, expect.objectContaining({ volume: 100 }));
 
-			document.media.push(second);
 			FakeMutationObserver.latest?.emit([second]);
-			expect(second.volume).toBe(0.6);
-			expect(second.playbackRate).toBe(1.5);
-			expect(second.listenerCount('play')).toBe(1);
-			expect(second.listenerCount('volumechange')).toBe(1);
+			expect(second.volume).toBe(0.9);
+			expect(second.playbackRate).toBe(1);
 			expect(attachNode).toHaveBeenCalledWith(second);
 			expect(attachNode).toHaveBeenCalledTimes(2);
-			expect(updateElementParams).toHaveBeenCalledWith(second, expect.objectContaining({ volume: 100 }));
+			const secondTarget = mediaRegistry.list().find(({ element }) => element === second)?.target;
+			expect(secondTarget).toBeDefined();
+			mediaRegistry.select(secondTarget ?? null);
+			expect(registryEvents.filter(({ event }) => event === 'selected')).toEqual([{
+				target: secondTarget,
+				event: 'selected',
+			}]);
+			expect(setPointA()).toBe(0);
+			second.currentTime = 1;
+			expect(setPointB()).toEqual({ pointB: 1, looping: true });
+			expect(addMarker()).not.toBeNull();
+			expect(abLoopTestApi.sourceCount()).toBe(1);
+			expect(timeMarkerTestApi.sourceCount()).toBe(1);
+
+			second.currentSrc = 'https://media.example/two.mp4';
+			FakeMutationObserver.latest?.emitAttribute(second, 'src');
+			const replacedTarget = mediaRegistry.list().find(({ element }) => element === second)?.target;
+			expect(replacedTarget).toMatchObject({
+				mediaId: secondTarget?.mediaId,
+				sourceRevision: 1,
+			});
+			expect(registryEvents.filter(({ event }) => event === 'selected').at(-1)?.target)
+				.toMatchObject({ mediaId: secondTarget?.mediaId, sourceRevision: 1 });
+			expect(abLoopTestApi.sourceCount()).toBe(0);
+			expect(timeMarkerTestApi.sourceCount()).toBe(0);
+			expect(releasedABTargets).toEqual([]);
+			expect(second.listenerCount('play')).toBe(1);
+			expect(detachNode).toHaveBeenCalledWith(second);
+			expect(attachNode).toHaveBeenCalledTimes(3);
 
 			second.volume = 0.2;
 			second.playbackRate = 1;
 			second.dispatchEvent(new Event('loadedmetadata'));
-			expect(second.volume).toBe(0.6);
-			expect(second.playbackRate).toBe(1.5);
+			expect(second.volume).toBe(0.2);
+			expect(second.playbackRate).toBe(1);
+			expect(attachNode).toHaveBeenCalledTimes(4);
 
-			fireTimersByDelay(timers, 100);
-			second.volume = 0.4;
-			second.dispatchEvent(new Event('volumechange'));
-			expect(frames).toHaveLength(1);
-			const pendingFrame = [...frames.keys()][0];
-			if (pendingFrame === undefined) throw new Error('Expected a pending volume frame');
-
-			document.media = [first];
+			const detachCallsBeforeReparent = detachNode.mock.calls.length;
 			FakeMutationObserver.latest?.emit([], [second]);
+			await Promise.resolve();
+			expect(mediaRegistry.list().some(({ element }) => element === second)).toBe(true);
+			expect(detachNode.mock.calls).toHaveLength(detachCallsBeforeReparent);
+
+			second.isConnected = false;
+			FakeMutationObserver.latest?.emit([], [second]);
+			await Promise.resolve();
 			expect(hasMediaElements()).toBe(true);
-			expect(second.listenerCount('play')).toBe(0);
-			expect(second.listenerCount('pause')).toBe(0);
-			expect(second.listenerCount('loadedmetadata')).toBe(0);
-			expect(second.listenerCount('volumechange')).toBe(0);
-			expect(cancelledFrames).toContain(pendingFrame);
-			expect(frames).toHaveLength(0);
-			expect(second.volume).toBe(0.9);
+			expect(second.volume).toBe(0.2);
 			expect(second.playbackRate).toBe(1);
 			expect(detachNode).toHaveBeenCalledWith(second);
 
-			document.media = [first, second];
-			document.dispatchEvent(new Event(MEDIA_REGISTRY_REFRESH_EVENT));
-			expect(second.listenerCount('play')).toBe(1);
-			expect(second.listenerCount('volumechange')).toBe(1);
-			expect(second.volume).toBe(0.6);
-			expect(second.playbackRate).toBe(1.5);
-			expect(attachNode).toHaveBeenCalledTimes(3);
+			second.isConnected = true;
+			FakeMutationObserver.latest?.emit([second]);
+			expect(second.volume).toBe(0.2);
+			expect(second.playbackRate).toBe(1);
+			expect(attachNode).toHaveBeenCalledTimes(5);
 		} finally {
 			dispose();
-			releaseVolumeLock();
-			expect(FakeMutationObserver.latest?.disconnect).toHaveBeenCalledTimes(1);
-			expect(first.listenerCount('play')).toBe(0);
-			expect(second.listenerCount('play')).toBe(0);
+			disposeABSourceObserver();
+			disposeMarkerSourceObserver();
+			disposeABLoops();
+			disposeMarkers();
+			disposeActiveRegistry();
+			mediaRegistry?.dispose();
 			restoreGlobalDescriptors(descriptors);
 			FakeMutationObserver.latest = null;
 		}
 	});
 });
-
-function fireTimersByDelay(
-	timers: Map<number, { callback: () => void; delay: number }>,
-	delay: number,
-): void {
-	for (const [timerId, timer] of [...timers]) {
-		if (timer.delay !== delay) continue;
-		timers.delete(timerId);
-		timer.callback();
-	}
-}
 
 function installGlobal(key: string, value: unknown): void {
 	Object.defineProperty(globalThis, key, { configurable: true, value });

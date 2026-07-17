@@ -34,64 +34,67 @@ describe('offscreen audio host', () => {
 
 	test('acknowledges capture only after a transparent graph exists and ignores stale generations', async () => {
 		const started = await start(7, 4, DEFAULT_CONFIG);
-		expect(started).toEqual({ ok: true, tabId: 7, generation: 4, phase: 'active' });
-		expect(describeAudioHost()).toEqual([{ tabId: 7, generation: 4 }]);
+		expectActive(started, 7, 4, 1);
+		expectHost(7, 4, 1, { boostGain: 1 });
 		expect(audioHarness.getUserMediaCalls).toHaveLength(1);
 		expect(audioHarness.contexts).toHaveLength(1);
 
 		const firstContext = audioHarness.contexts[0]!;
 		const firstStream = audioHarness.streams[0]!;
 		expect(firstContext.resumeCalls).toBe(1);
-		expect(firstContext.gains[0]!.gain.lastValue).toBe(1);
-		expect(firstContext.compressors[0]!.connections).toHaveLength(0);
-		expect(firstContext.delays[0]!.delayTime.lastValue).toBe(0);
+		expect(firstContext.compressors).toHaveLength(0);
+		expect(firstContext.delays).toHaveLength(0);
+		expect(firstContext.analysers).toHaveLength(0);
 
 		const sameGeneration = await start(7, 4, config({
 			volume: 250,
 			compressor: true,
 			pan: 2,
 			delay: -80,
-		}));
-		expect(sameGeneration).toEqual({ ok: true, tabId: 7, generation: 4, phase: 'active' });
+		}), 2);
+		expectActive(sameGeneration, 7, 4, 2);
 		expect(audioHarness.getUserMediaCalls).toHaveLength(1);
 		expect(audioHarness.contexts).toHaveLength(1);
-		expect(firstContext.gains[0]!.gain.lastValue).toBe(2.5);
-		expect(firstContext.compressors[0]!.connections).toEqual([firstContext.panners[0]]);
-		expect(firstContext.panners[0]!.pan.lastValue).toBe(1);
-		expect(firstContext.delays[0]!.delayTime.lastValue).toBe(0);
+		expect(sameGeneration).toMatchObject({
+			normalizedActualConfig: { boostGain: 2.5, pan: 1, delay: 0, compressor: true },
+		});
+		expect(firstContext.compressors).toHaveLength(1);
+		expect(firstContext.panners[0]!.pan.value).toBe(1);
+		expect(firstContext.delays).toHaveLength(0);
 
-		const gainWritesBeforeStaleUpdate = firstContext.gains[0]!.gain.writes.length;
+		const gainCreationsBeforeStaleUpdate = firstContext.gains.length;
 		const staleUpdate = await handleAudioHostMessage({
 			type: 'OFFSCREEN_AUDIO_UPDATE',
 			tabId: 7,
 			generation: 3,
+			controlRevision: 1,
 			config: config({ volume: 700 }),
 		});
-		expect(staleUpdate).toEqual({ ok: true, tabId: 7, generation: 4, phase: 'active' });
-		expect(firstContext.gains[0]!.gain.writes).toHaveLength(gainWritesBeforeStaleUpdate);
+		expectActive(staleUpdate, 7, 4, 2);
+		expect(firstContext.gains).toHaveLength(gainCreationsBeforeStaleUpdate);
 
 		const staleStop = await handleAudioHostMessage({
 			type: 'OFFSCREEN_AUDIO_STOP',
 			tabId: 7,
 			generation: 3,
 		});
-		expect(staleStop).toEqual({ ok: true, tabId: 7, generation: 4, phase: 'active' });
+		expectActive(staleStop, 7, 4, 2);
 		expect(firstStream.track.stopCalls).toBe(0);
 		expect(firstContext.closeCalls).toBe(0);
 
-		const newerStart = await start(7, 5, DEFAULT_CONFIG);
-		expect(newerStart).toEqual({ ok: true, tabId: 7, generation: 5, phase: 'active' });
+		const newerStart = await start(7, 5, DEFAULT_CONFIG, 3);
+		expectActive(newerStart, 7, 5, 3);
 		expect(firstStream.track.stopCalls).toBe(1);
 		expect(firstContext.closeCalls).toBe(1);
 		expect(audioHarness.contexts).toHaveLength(2);
-		expect(describeAudioHost()).toEqual([{ tabId: 7, generation: 5 }]);
+		expectHost(7, 5, 3, { boostGain: 1 });
 
 		const stopped = await handleAudioHostMessage({
 			type: 'OFFSCREEN_AUDIO_STOP',
 			tabId: 7,
 			generation: 5,
 		});
-		expect(stopped).toEqual({ ok: true, tabId: 7, generation: 5, phase: 'idle' });
+		expectIdle(stopped, 7, 5, 3);
 		expect(describeAudioHost()).toEqual([]);
 	});
 
@@ -104,6 +107,7 @@ describe('offscreen audio host', () => {
 			ok: false,
 			tabId: 12,
 			generation: 2,
+			controlRevision: 1,
 			error: {
 				code: 'capture_start_failed',
 				message: 'capture permission denied',
@@ -112,6 +116,26 @@ describe('offscreen audio host', () => {
 		});
 		expect(describeAudioHost()).toEqual([]);
 		expect(audioHarness.contexts).toHaveLength(0);
+	});
+
+	test('rejects a capture stream without a live audio track before publishing a processor', async () => {
+		audioHarness.nextStreamHasAudio = false;
+
+		const result = await start(11, 3, DEFAULT_CONFIG);
+
+		expect(result).toMatchObject({
+			ok: false,
+			tabId: 11,
+			generation: 3,
+			error: {
+				code: 'capture_start_failed',
+				message: 'Tab capture returned no live audio track',
+				retryable: true,
+			},
+		});
+		expect(describeAudioHost()).toEqual([]);
+		expect(audioHarness.contexts).toHaveLength(0);
+		expect(audioHarness.streams[0]?.track.stopCalls).toBe(1);
 	});
 
 	test('keeps the acknowledged processor when a newer replacement cannot be created', async () => {
@@ -126,11 +150,31 @@ describe('offscreen audio host', () => {
 			ok: false,
 			tabId: 13,
 			generation: 5,
+			controlRevision: 1,
 			error: { code: 'capture_start_failed', message: 'replacement denied', retryable: true },
 		});
-		expect(describeAudioHost()).toEqual([{ tabId: 13, generation: 4 }]);
+		expectHost(13, 4, 1, { boostGain: 1 });
 		expect(originalStream.track.stopCalls).toBe(0);
 		expect(originalContext.closeCalls).toBe(0);
+	});
+
+	test('switches replacement capture gates at one boundary without a full-gain overlap', async () => {
+		await start(19, 1, DEFAULT_CONFIG);
+		const originalContext = audioHarness.contexts[0]!;
+		await start(19, 2, config({ volume: 240 }), 2);
+		const replacementContext = audioHarness.contexts[1]!;
+		const originalGate = originalContext.gains[0]!.gain;
+		const replacementGate = replacementContext.gains[0]!.gain;
+		const switchDown = originalGate.writes.find((write) => (
+			write.value === 0 && write.startTime > originalContext.currentTime
+		));
+		const switchUp = replacementGate.writes.find((write) => (
+			write.value === 1 && write.startTime > replacementContext.currentTime
+		));
+
+		expect(switchDown).toBeDefined();
+		expect(switchUp).toBeDefined();
+		expect(switchDown?.startTime).toBe(switchUp?.startTime);
 	});
 
 	test('advances processor generation only on an acknowledged config update', async () => {
@@ -139,17 +183,18 @@ describe('offscreen audio host', () => {
 			type: 'OFFSCREEN_AUDIO_UPDATE',
 			tabId: 14,
 			generation: 3,
+			controlRevision: 2,
 			config: config({ volume: 160 }),
 		});
 
-		expect(updated).toEqual({ ok: true, tabId: 14, generation: 3, phase: 'active' });
-		expect(describeAudioHost()).toEqual([{ tabId: 14, generation: 3 }]);
+		expectActive(updated, 14, 3, 2);
+		expectHost(14, 3, 2, { boostGain: 1.6 });
 		const staleStop = await handleAudioHostMessage({
 			type: 'OFFSCREEN_AUDIO_STOP',
 			tabId: 14,
 			generation: 2,
 		});
-		expect(staleStop).toEqual({ ok: true, tabId: 14, generation: 3, phase: 'active' });
+		expectActive(staleStop, 14, 3, 2);
 	});
 
 	test('keeps a higher-generation stop tombstone while getUserMedia is pending', async () => {
@@ -163,10 +208,10 @@ describe('offscreen audio host', () => {
 			tabId: 15,
 			generation: 5,
 		});
-		expect(stopped).toEqual({ ok: true, tabId: 15, generation: 5, phase: 'idle' });
+		expectIdle(stopped, 15, 5, 0);
 
 		gate.resolve();
-		expect(await pendingStart).toEqual({ ok: true, tabId: 15, generation: 5, phase: 'idle' });
+		expectIdle(await pendingStart, 15, 5, 0);
 		expect(describeAudioHost()).toEqual([]);
 	});
 
@@ -181,10 +226,10 @@ describe('offscreen audio host', () => {
 			tabId: 16,
 			generation: 7,
 			stopCommitted: true,
-		})).toEqual({ ok: true, tabId: 16, generation: 7, phase: 'idle' });
+		})).toMatchObject({ ok: true, tabId: 16, generation: 7, phase: 'idle' });
 
 		gate.resolve();
-		expect(await pendingStart).toEqual({ ok: true, tabId: 16, generation: 7, phase: 'idle' });
+		expectIdle(await pendingStart, 16, 7, 0);
 		expect(describeAudioHost()).toEqual([]);
 	});
 
@@ -202,11 +247,13 @@ describe('offscreen audio host', () => {
 			type: 'OFFSCREEN_AUDIO_UPDATE',
 			tabId: 18,
 			generation: 6,
+			controlRevision: 1,
 			config: config({ volume: 700 }),
 		})).toEqual({
 			ok: false,
 			tabId: 18,
 			generation: 6,
+			controlRevision: 1,
 			error: {
 				code: 'stale_capture_intent',
 				message: 'Capture configuration belongs to a stopped generation',
@@ -215,35 +262,32 @@ describe('offscreen audio host', () => {
 		});
 		expect(context.gains[0]!.gain.writes).toHaveLength(gainWrites);
 
-		expect(await start(18, 6, config({ volume: 250 }))).toEqual({
-			ok: true,
-			tabId: 18,
-			generation: 6,
-			phase: 'idle',
-		});
+		expectIdle(await start(18, 6, config({ volume: 250 })), 18, 6, 1);
 		expect(audioHarness.contexts).toHaveLength(1);
 
-		expect(await start(18, 7, config({ volume: 250 }))).toEqual({
-			ok: true,
-			tabId: 18,
-			generation: 7,
-			phase: 'active',
-		});
+		expectActive(await start(18, 7, config({ volume: 250 }), 2), 18, 7, 2);
 		expect(audioHarness.contexts).toHaveLength(2);
 	});
 
 	test('removes the acknowledged processor when its capture track ends', async () => {
 		await start(17, 3, DEFAULT_CONFIG);
-		expect(describeAudioHost()).toEqual([{ tabId: 17, generation: 3 }]);
+		expectHost(17, 3, 1, { boostGain: 1 });
 
 		audioHarness.streams[0]!.track.end();
-		await waitFor(() => describeAudioHost().length === 0);
+		await waitFor(() => describeAudioHost().length === 0
+			&& audioHarness.contexts[0]!.closeCalls === 1);
 		expect(audioHarness.contexts[0]!.closeCalls).toBe(1);
 	});
 
 	test('returns one throttled visualizer batch keyed by every requested tab', async () => {
 		await start(21, 1, DEFAULT_CONFIG);
 		await start(22, 1, DEFAULT_CONFIG);
+		expect(audioHarness.contexts[0]!.analysers).toHaveLength(0);
+		expect(audioHarness.contexts[1]!.analysers).toHaveLength(0);
+		await handleAudioHostMessage({
+			type: 'OFFSCREEN_AUDIO_SET_VIZ_SUBSCRIPTIONS',
+			tabIds: [21, 22],
+		});
 
 		const firstBatch = await handleAudioHostMessage({
 			type: 'OFFSCREEN_AUDIO_GET_VIZ_BATCH',
@@ -264,16 +308,30 @@ describe('offscreen audio host', () => {
 		expect(secondBatch.frames['22']).toBe(firstBatch.frames['22']);
 		expect(audioHarness.contexts[0]!.analysers[0]!.readCalls).toBe(1);
 		expect(audioHarness.contexts[1]!.analysers[0]!.readCalls).toBe(1);
+		await handleAudioHostMessage({
+			type: 'OFFSCREEN_AUDIO_SET_VIZ_SUBSCRIPTIONS',
+			tabIds: [],
+		});
+		expect(await handleAudioHostMessage({
+			type: 'OFFSCREEN_AUDIO_GET_VIZ',
+			tabId: 21,
+		})).toEqual({ buffer: null });
 	});
 });
 
-function start(tabId: number, generation: number, audioConfig: AudioConfig): Promise<unknown> {
+function start(
+	tabId: number,
+	generation: number,
+	audioConfig: AudioConfig,
+	controlRevision = 1,
+): Promise<unknown> {
 	return handleAudioHostMessage({
 		type: 'OFFSCREEN_AUDIO_START',
 		tabId,
 		generation,
 		streamId: `stream-${tabId}-${generation}`,
 		config: audioConfig,
+		controlRevision,
 	});
 }
 
@@ -285,12 +343,66 @@ function config(overrides: Partial<AudioConfig>): AudioConfig {
 	};
 }
 
+function expectActive(
+	value: unknown,
+	tabId: number,
+	generation: number,
+	controlRevision: number,
+): void {
+	expect(value).toMatchObject({
+		ok: true,
+		tabId,
+		generation,
+		controlRevision,
+		phase: 'active',
+		contextState: 'running',
+		graphSignature: expect.any(String),
+		normalizedActualConfig: expect.any(Object),
+	});
+}
+
+function expectHost(
+	tabId: number,
+	generation: number,
+	controlRevision: number,
+	actualConfig: Record<string, unknown>,
+): void {
+	expect(describeAudioHost()).toEqual([
+		expect.objectContaining({
+			tabId,
+			generation,
+			controlRevision,
+			graphSignature: expect.any(String),
+			normalizedActualConfig: expect.objectContaining(actualConfig),
+		}),
+	]);
+}
+
+function expectIdle(
+	value: unknown,
+	tabId: number,
+	generation: number,
+	controlRevision: number,
+): void {
+	expect(value).toEqual({
+		ok: true,
+		tabId,
+		generation,
+		controlRevision,
+		phase: 'idle',
+		contextState: 'closed',
+		graphSignature: 'none',
+		normalizedActualConfig: null,
+	});
+}
+
 interface AudioHarness {
 	contexts: FakeAudioContext[];
 	streams: FakeMediaStream[];
 	getUserMediaCalls: MediaStreamConstraints[];
 	getUserMediaError: Error | null;
 	getUserMediaGate: Promise<void> | null;
+	nextStreamHasAudio: boolean;
 	restore(): void;
 }
 
@@ -306,6 +418,7 @@ function installAudioHarness(): AudioHarness {
 		getUserMediaCalls,
 		getUserMediaError: null,
 		getUserMediaGate: null,
+		nextStreamHasAudio: true,
 		restore() {
 			restoreProperty('navigator', navigatorDescriptor);
 			restoreProperty('AudioContext', audioContextDescriptor);
@@ -327,7 +440,8 @@ function installAudioHarness(): AudioHarness {
 					getUserMediaCalls.push(constraints);
 					if (harness.getUserMediaError) throw harness.getUserMediaError;
 					if (harness.getUserMediaGate) await harness.getUserMediaGate;
-					const stream = new FakeMediaStream();
+					const stream = new FakeMediaStream(harness.nextStreamHasAudio);
+					harness.nextStreamHasAudio = true;
 					streams.push(stream);
 					return stream as unknown as MediaStream;
 				},
@@ -354,20 +468,33 @@ class FakeAudioParam {
 		this.value = value;
 		this.writes.push({ value, startTime, timeConstant });
 	}
+	cancelScheduledValues(): void { }
+	setValueAtTime(value: number, startTime: number): void {
+		this.value = value;
+		this.writes.push({ value, startTime, timeConstant: 0 });
+	}
+	linearRampToValueAtTime(value: number, endTime: number): void {
+		this.value = value;
+		this.writes.push({ value, startTime: endTime, timeConstant: 0 });
+	}
 }
 
 class FakeAudioNode {
 	readonly connections: FakeAudioNode[] = [];
 	disconnectCalls = 0;
 
-	connect(target: FakeAudioNode): FakeAudioNode {
+	connect(target: FakeAudioNode, _output?: number, _input?: number): FakeAudioNode {
 		this.connections.push(target);
 		return target;
 	}
 
-	disconnect(): void {
+	disconnect(target?: FakeAudioNode): void {
 		this.disconnectCalls += 1;
-		this.connections.length = 0;
+		if (!target) this.connections.length = 0;
+		else {
+			const index = this.connections.indexOf(target);
+			if (index >= 0) this.connections.splice(index, 1);
+		}
 	}
 }
 
@@ -421,6 +548,7 @@ class FakeAnalyserNode extends FakeAudioNode {
 }
 
 class FakeMediaTrack {
+	readyState: MediaStreamTrackState = 'live';
 	stopCalls = 0;
 	private readonly endedListeners = new Set<() => void>();
 	addEventListener(type: string, listener: () => void): void {
@@ -439,8 +567,12 @@ class FakeMediaTrack {
 
 class FakeMediaStream {
 	readonly track = new FakeMediaTrack();
+	constructor(private readonly hasAudio: boolean) { }
 	getTracks(): FakeMediaTrack[] {
 		return [this.track];
+	}
+	getAudioTracks(): FakeMediaTrack[] {
+		return this.hasAudio ? [this.track] : [];
 	}
 }
 
@@ -453,6 +585,8 @@ class FakeAudioContext {
 	readonly panners: FakeStereoPannerNode[] = [];
 	readonly delays: FakeDelayNode[] = [];
 	readonly analysers: FakeAnalyserNode[] = [];
+	readonly splitters: FakeAudioNode[] = [];
+	readonly mergers: FakeAudioNode[] = [];
 	state = 'suspended';
 	resumeCalls = 0;
 	closeCalls = 0;
@@ -485,9 +619,21 @@ class FakeAudioContext {
 		return node;
 	}
 
-	createDelay(): FakeDelayNode {
+	createDelay(_maximum?: number): FakeDelayNode {
 		const node = new FakeDelayNode();
 		this.delays.push(node);
+		return node;
+	}
+
+	createChannelSplitter(): FakeAudioNode {
+		const node = new FakeAudioNode();
+		this.splitters.push(node);
+		return node;
+	}
+
+	createChannelMerger(): FakeAudioNode {
+		const node = new FakeAudioNode();
+		this.mergers.push(node);
 		return node;
 	}
 

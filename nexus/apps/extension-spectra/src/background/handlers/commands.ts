@@ -8,27 +8,39 @@ import {
 	rpcSuccess,
 } from '@nexus/contracts';
 import { router } from '../state';
+import { submitControlRequest } from '../control-coordinator';
 
 async function togglePinned(tabId: number): Promise<{ pinned: boolean }> {
-	const tab = await chrome.tabs.get(tabId);
-	const updated = await chrome.tabs.update(tabId, { pinned: !tab.pinned });
-	if (!updated) throw new Error('Tab disappeared while toggling its pinned state');
-	return { pinned: updated.pinned };
+	const ack = await submitControlRequest({
+		tabId,
+		source: 'hotkey',
+		requestedCoverage: 'full',
+		target: null,
+		mutations: [{ field: 'tabPinned', operation: 'toggle' }],
+	});
+	const pinned = ack.fields.tabPinned?.actual;
+	if (typeof pinned !== 'boolean') throw new Error('Tab pin did not return an actual state');
+	return { pinned };
 }
 
 async function toggleMuted(tabId: number): Promise<{ muted: boolean }> {
-	const tab = await chrome.tabs.get(tabId);
-	const muted = tab.mutedInfo?.muted === true;
-	const updated = await chrome.tabs.update(tabId, { muted: !muted });
-	if (!updated) throw new Error('Tab disappeared while toggling its muted state');
-	return { muted: updated.mutedInfo?.muted === true };
+	const ack = await submitControlRequest({
+		tabId,
+		source: 'hotkey',
+		requestedCoverage: 'full',
+		target: null,
+		mutations: [{ field: 'tabMuted', operation: 'toggle' }],
+	});
+	const muted = ack.fields.tabMuted?.actual;
+	if (typeof muted !== 'boolean') throw new Error('Tab mute did not return an actual state');
+	return { muted };
 }
 
-async function openView(view: 'options' | 'popup'): Promise<{ opened: true }> {
+async function openView(view: 'options' | 'popup', windowId?: number): Promise<{ opened: true }> {
 	if (view === 'options') {
 		await chrome.runtime.openOptionsPage();
 	} else {
-		await chrome.action.openPopup();
+		await chrome.action.openPopup(windowId === undefined ? {} : { windowId });
 	}
 	return { opened: true };
 }
@@ -53,7 +65,7 @@ function registerCommandsV2Listener(): void {
 		}
 
 		const operation = async () => {
-			if (message.type === 'spectra.ui.open') return openView(message.payload.view);
+			if (message.type === 'spectra.ui.open') return openView(message.payload.view, sender.tab?.windowId);
 			const tabId = sender.tab?.id;
 			if (!tabId || (message.tabId !== undefined && message.tabId !== tabId)) {
 				throw new Error('Tab command requires its content-script tab');
@@ -86,6 +98,6 @@ export function registerCommandHandlers(): void {
 		if (!sender.tab?.id) throw new Error('Tab mute requires a content-script tab');
 		return toggleMuted(sender.tab.id);
 	});
-	router.on(Actions.OPEN_OPTIONS, () => openView('options'));
-	router.on(Actions.OPEN_POPUP, () => openView('popup'));
+	router.on(Actions.OPEN_OPTIONS, (_, sender) => openView('options', sender.tab?.windowId));
+	router.on(Actions.OPEN_POPUP, (_, sender) => openView('popup', sender.tab?.windowId));
 }

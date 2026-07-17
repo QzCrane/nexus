@@ -18,8 +18,9 @@
     "declarationMap": true,
     "sourceMap": true,
     "baseUrl": ".",
-    "paths": {
-      "@nexus/contracts": ["packages/contracts/src"],
+		"paths": {
+			"@nexus/contracts": ["packages/contracts/src"],
+			"@nexus/contracts/bootstrap": ["packages/contracts/src/spectra.bootstrap.ts"],
       "@nexus/kernel": ["packages/nexus-kernel/src"],
       "@nexus/ui-kit": ["packages/ui-kit/src"],
       "@nexus/audio-engine": ["packages/features/audio-engine/src"],

@@ -1,11 +1,13 @@
 // goal: manages the lifecycle and visibility of the advanced settings side panel in the popup
 
 import type { AudioConfig } from '@nexus/kernel';
+import { isSpectraEventEnvelope } from '@nexus/contracts';
 import { bindSidePanelControls, syncSidePanelState } from './controls';
-import { bindVideoControls, setVideoControlTabId } from './video-controls';
+import { bindVideoControls, setVideoControlTabId, syncVideoControlSnapshot } from './video-controls';
 import { bindFooterActions } from './footer-actions';
 import { getCardRegistration as getCardReg, updateCardConfig as updateReg } from './registry';
 import { getSafeImageUrl } from '../utils/dom';
+import { sendSpectraRequest } from '../../shared/spectra-client';
 
 export { registerCard, getCardRegistration } from './registry';
 
@@ -32,6 +34,7 @@ const state: SidePanelState = {
 let elements: SidePanelElements | null = null;
 let lastTrigger: HTMLElement | null = null;
 let closeAnimationTimer: ReturnType<typeof setTimeout> | null = null;
+let snapshotListenerInstalled = false;
 
 // eff: updates the internal registry and refreshes the panel UI if it's currently focused on the modified tab
 export function updateCardConfig(tabId: number, config: AudioConfig): void {
@@ -81,6 +84,16 @@ export function initSidePanel(): void {
 	});
 
 	bindFooterActions();
+	if (!snapshotListenerInstalled) {
+		snapshotListenerInstalled = true;
+		chrome.runtime.onMessage.addListener((message: unknown) => {
+			if (!state.isOpen || !isSpectraEventEnvelope(message)
+				|| message.type !== 'spectra.control.snapshot.changed'
+				|| message.payload.tabId !== state.currentTabId) return false;
+			syncVideoControlSnapshot(message.payload);
+			return false;
+		});
+	}
 }
 
 // eff: attaches a toggle listener to a card icon to open/close advanced settings for that specific tab
@@ -150,6 +163,13 @@ function openSidePanel(tabId: number, title: string, faviconUrl: string): void {
 
 	setVideoControlTabId(tabId);
 	bindVideoControls();
+	void sendSpectraRequest('spectra.control.snapshot.get', { tabId }, { tabId })
+		.then((response) => {
+			if (response.ok && response.data && state.isOpen && state.currentTabId === tabId) {
+				syncVideoControlSnapshot(response.data);
+			}
+		})
+		.catch(() => undefined);
 }
 
 // eff: slides out the panel and cleans up transition classes after the CSS animation completes

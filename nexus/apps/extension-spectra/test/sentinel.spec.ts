@@ -4,7 +4,7 @@ import { consumeStub, createSnapshot, mountStub } from '../src/content/core/sent
 import type { PolicyExecutorState } from '../src/content/types';
 
 describe('authenticated content runtime handoff', () => {
-	test('restores the complete generation state and rejects a page-forged DOM stub', () => {
+	test('restores the complete generation state without exposing a DOM stub', () => {
 		const environment = installDom();
 		try {
 			const state: PolicyExecutorState = {
@@ -32,18 +32,14 @@ describe('authenticated content runtime handoff', () => {
 				userHasInteracted: true,
 			});
 
-			const forged = environment.document.createElement('div');
-			forged.id = '__SPECTRA_STATE_STUB__';
-			forged.setAttribute('data-token', 'page-controlled');
-			forged.setAttribute('data-state', createSnapshot({ ...state, generation: 999 }));
-			environment.document.documentElement.appendChild(forged);
+			expect(environment.document.getElementById('__SPECTRA_STATE_STUB__')).toBeNull();
 			expect(consumeStub()).toBeNull();
 		} finally {
 			environment.restore();
 		}
 	});
 
-	test('rejects tampering and invalid state even with a fresh handoff marker', () => {
+	test('rejects tampering inside the isolated handoff record', () => {
 		const environment = installDom();
 		try {
 			const state: PolicyExecutorState = {
@@ -59,15 +55,18 @@ describe('authenticated content runtime handoff', () => {
 				isPopupOpen: false,
 			};
 			mountStub(createSnapshot(state));
-			environment.document.getElementById('__SPECTRA_STATE_STUB__')
-				?.setAttribute('data-state', '{"generation":999}');
+			const handoff = (window as Window & {
+				__SPECTRA_ISOLATED_HANDOFF__?: { token: string; snapshot: string; createdAt: number };
+			}).__SPECTRA_ISOLATED_HANDOFF__;
+			if (!handoff) throw new Error('Expected isolated handoff');
+			handoff.snapshot = '{"generation":999}';
 			expect(consumeStub()).toBeNull();
 		} finally {
 			environment.restore();
 		}
 	});
 
-	test('rejects the legacy HEAD DOM-only sentinel and leaves recovery to background identity', () => {
+	test('ignores legacy DOM-only state without touching page-owned DOM', () => {
 		const environment = installDom();
 		try {
 			const legacy = environment.document.createElement('div');
@@ -82,7 +81,7 @@ describe('authenticated content runtime handoff', () => {
 			environment.document.documentElement.appendChild(legacy);
 
 			expect(consumeStub()).toBeNull();
-			expect(environment.document.getElementById('__SPECTRA_STATE_STUB__')).toBeNull();
+			expect(environment.document.getElementById('__SPECTRA_STATE_STUB__')).toBe(legacy);
 		} finally {
 			environment.restore();
 		}

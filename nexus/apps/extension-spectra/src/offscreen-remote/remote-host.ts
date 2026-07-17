@@ -461,9 +461,17 @@ export function createRemoteHostController(
 }
 
 function sanitizeRemoteState(state: RemoteState): RemoteState {
+	const volumeBase = typeof state.volumeBase === 'number'
+		? Math.max(0, Math.min(100, Math.round(state.volumeBase)))
+		: Math.max(0, Math.min(100, Math.round(state.volume)));
+	const boost = typeof state.boost === 'number'
+		? Math.max(1, Math.min(8, Math.round(state.boost * 10) / 10))
+		: state.volume > 100 ? Math.max(1, Math.min(8, state.volume / 100)) : 1;
 	return {
 		generation: state.generation,
-		volume: Math.max(0, Math.min(800, Math.round(state.volume))),
+		volume: Math.round(volumeBase * boost * 10) / 10,
+		volumeBase,
+		boost,
 		muted: state.muted,
 		playing: state.playing,
 		speed: Math.max(0.25, Math.min(16, state.speed)),

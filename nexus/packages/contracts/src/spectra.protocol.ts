@@ -43,8 +43,60 @@ import {
 	type RegistrySnapshot,
 } from './registry.contracts.js';
 import { normalizeHostname } from './domain.contracts.js';
+import {
+	isControlApplyAck,
+	isControlIntent,
+	isControlOperationAck,
+	isControlOperationIntent,
+	isControlOperationRequest,
+	isControlSnapshot,
+	isControlSubmitRequest,
+	isControlReadRequest,
+	isControlReadResult,
+	isMediaTarget,
+	type ControlApplyAck,
+	type ControlIntent,
+	type ControlOperationAck,
+	type ControlOperationIntent,
+	type ControlOperationRequest,
+	type ControlSnapshot,
+	type ControlSubmitRequest,
+	type ControlReadRequest,
+	type ControlReadResult,
+	type MediaTarget,
+} from './control.contracts.js';
+import {
+	SPECTRA_CONTENT_BOOTSTRAP_REVISION,
+	SPECTRA_PROTOCOL_VERSION,
+} from './spectra.bootstrap.js';
 
-export const SPECTRA_PROTOCOL_VERSION = 2 as const;
+export {
+	SPECTRA_CONTENT_BOOTSTRAP_REVISION,
+	SPECTRA_PROTOCOL_VERSION,
+} from './spectra.bootstrap.js';
+
+export const SPECTRA_CONTENT_RUNTIME_REVISION = '3.1.0' as const;
+
+export type ContentRuntimeLeaseReason = 'control' | 'restore' | 'hotkey' | 'remote' | 'observation';
+
+export interface ContentRuntimeSourceOwnership {
+	target: MediaTarget;
+	markerCount: number;
+	abActive: boolean;
+}
+
+export interface ContentRuntimeStatus {
+	bootstrapRevision: string;
+	runtimeRevision: string | null;
+	ready: boolean;
+	ownedSources: ContentRuntimeSourceOwnership[];
+}
+
+export interface ContentRuntimeReadyResult {
+	documentId: string;
+	runtimeRevision: string;
+	ready: true;
+}
 
 export interface RpcError {
 	code: string;
@@ -53,10 +105,14 @@ export interface RpcError {
 }
 
 export interface VisualizerBatchPayload {
+	subscriberId: string;
+	generation: number;
 	tabIds: number[];
 }
 
 export interface VisualizerBatchResult {
+	subscriberId: string;
+	generation: number;
 	frames: Record<string, number[] | null>;
 }
 
@@ -123,11 +179,93 @@ export interface VideoFilterPayload {
 	invert?: boolean;
 }
 
+export interface ScreenshotCapturePayload {
+	captureToken: string;
+	rect: {
+		x: number;
+		y: number;
+		width: number;
+		height: number;
+		viewportWidth: number;
+		viewportHeight: number;
+	};
+}
+
+export interface ScreenshotResult {
+	saved: true;
+	method: 'capture-visible-tab';
+	width: number;
+	height: number;
+}
+
 export type RpcResult<T> =
 	| { ok: true; data: T }
 	| { ok: false; error: RpcError };
 
 export interface SpectraRequestMap {
+	'spectra.content.bootstrap.hello': {
+		payload: { bootstrapRevision: string };
+		response: { accepted: true; runtimeRevision: string | null };
+	};
+	'spectra.content.runtime.status': {
+		payload: Record<string, never>;
+		response: ContentRuntimeStatus;
+	};
+	'spectra.content.runtime.ensure': {
+		payload: {
+			tabId: number;
+			documentId?: string;
+			reason: ContentRuntimeLeaseReason;
+			capability?: string;
+		};
+		response: ContentRuntimeReadyResult;
+	};
+	'spectra.content.runtime.ready': {
+		payload: { runtimeRevision: string };
+		response: { accepted: true };
+	};
+	'spectra.content.runtime.release': {
+		payload: {
+			runtimeRevision: string;
+			tabId?: number;
+			documentId?: string;
+			reason?: ContentRuntimeLeaseReason;
+			capability?: string;
+		};
+		response: { accepted: true };
+	};
+	'spectra.content.source.released': {
+		payload: { target: MediaTarget };
+		response: { accepted: true };
+	};
+	'spectra.content.target.changed': {
+		payload: { target: MediaTarget };
+		response: { accepted: true };
+	};
+	'spectra.control.snapshot.get': {
+		payload: { tabId: number };
+		response: ControlSnapshot | null;
+	};
+	'spectra.control.intent.submit': {
+		payload: ControlSubmitRequest;
+		response: ControlApplyAck;
+	};
+	'spectra.control.intent.execute': {
+		payload: ControlIntent;
+		response: ControlApplyAck;
+	};
+	'spectra.control.operation.submit': {
+		payload: ControlOperationRequest;
+		response: ControlOperationAck;
+	};
+	'spectra.control.operation.execute': {
+		payload: ControlOperationIntent;
+		response: ControlOperationAck;
+	};
+	'spectra.control.actual.read': {
+		payload: ControlReadRequest;
+		response: ControlReadResult;
+	};
 	'spectra.content.settings.get': {
 		payload: Record<string, never>;
 		response: SpectraContentSettings;
@@ -244,6 +382,10 @@ export interface SpectraRequestMap {
 		payload: Record<string, never>;
 		response: { buffer: number[] | null };
 	};
+	'spectra.audio.visualizer.subscription.set': {
+		payload: { subscribed: boolean };
+		response: { subscribed: boolean };
+	};
 	'spectra.hotkey.trigger': {
 		payload: { action: HotkeyAction };
 		response: { handled: true };
@@ -274,7 +416,15 @@ export interface SpectraRequestMap {
 	};
 	'spectra.video.screenshot': {
 		payload: Record<string, never>;
-		response: { dataUrl: string | null };
+		response: ScreenshotResult;
+	};
+	'spectra.screenshot.capture-visible': {
+		payload: ScreenshotCapturePayload;
+		response: ScreenshotResult;
+	};
+	'spectra.screenshot.target.verify': {
+		payload: { captureToken: string };
+		response: { valid: true };
 	};
 	'spectra.video.fullscreen.toggle': {
 		payload: Record<string, never>;
@@ -355,6 +505,7 @@ export interface SpectraRequestMap {
 }
 
 export interface SpectraEventMap {
+	'spectra.control.snapshot.changed': ControlSnapshot;
 	'spectra.content.settings.changed': SpectraContentSettings;
 	'spectra.settings.changed': SettingsSnapshot;
 	'spectra.hotkeys.changed': HotkeySettings;
@@ -442,6 +593,14 @@ const EVENT_ENVELOPE_KEYS = new Set([
 	'generation',
 ]);
 const AUDIO_SESSION_GET_PAYLOAD_KEYS = new Set(['tabId']);
+const CONTENT_BOOTSTRAP_HELLO_PAYLOAD_KEYS = new Set(['bootstrapRevision']);
+const CONTENT_RUNTIME_ENSURE_PAYLOAD_KEYS = new Set(['tabId', 'documentId', 'reason', 'capability']);
+const CONTENT_RUNTIME_REVISION_PAYLOAD_KEYS = new Set(['runtimeRevision']);
+const CONTENT_RUNTIME_RELEASE_PAYLOAD_KEYS = new Set([
+	'runtimeRevision', 'tabId', 'documentId', 'reason', 'capability',
+]);
+const CONTENT_SOURCE_RELEASED_PAYLOAD_KEYS = new Set(['target']);
+const CONTENT_TARGET_CHANGED_PAYLOAD_KEYS = new Set(['target']);
 const AUDIO_CONFIG_PAYLOAD_KEYS = new Set(['config']);
 const AUDIO_SESSION_PUBLISH_PAYLOAD_KEYS = new Set([
 	'config',
@@ -457,7 +616,8 @@ const TAB_ID_PAYLOAD_KEYS = new Set(['tabId']);
 const REMOTE_SESSION_PAYLOAD_KEYS = new Set(['tabId']);
 const REMOTE_SESSION_CLOSE_PAYLOAD_KEYS = new Set(['tabId', 'sessionId']);
 const USER_SCRIPT_PAYLOAD_KEYS = new Set(['script']);
-const VISUALIZER_BATCH_PAYLOAD_KEYS = new Set(['tabIds']);
+const VISUALIZER_BATCH_PAYLOAD_KEYS = new Set(['subscriberId', 'generation', 'tabIds']);
+const VISUALIZER_SUBSCRIPTION_PAYLOAD_KEYS = new Set(['subscribed']);
 const CONTENT_SETTINGS_KEYS = new Set([
 	'osdEnabled',
 	'visualizerEnabled',
@@ -484,6 +644,9 @@ const VIDEO_FILTER_PAYLOAD_KEYS = new Set([
 	'invert',
 ]);
 const VIDEO_DIM_PAYLOAD_KEYS = new Set(['enabled', 'opacity']);
+const SCREENSHOT_CAPTURE_PAYLOAD_KEYS = new Set(['captureToken', 'rect']);
+const SCREENSHOT_TARGET_VERIFY_PAYLOAD_KEYS = new Set(['captureToken']);
+const SCREENSHOT_RECT_KEYS = new Set(['x', 'y', 'width', 'height', 'viewportWidth', 'viewportHeight']);
 const MARKER_LABEL_PAYLOAD_KEYS = new Set(['label']);
 const MARKER_ID_PAYLOAD_KEYS = new Set(['id']);
 const TAB_MEDIA_REPORT_PAYLOAD_KEYS = new Set(['hasMediaElement', 'userInteracted']);
@@ -493,6 +656,11 @@ const HOTKEY_TARGET_KEYS = new Set(['tabId']);
 const RPC_SUCCESS_KEYS = new Set(['ok', 'data']);
 const RPC_FAILURE_KEYS = new Set(['ok', 'error']);
 const RPC_ERROR_KEYS = new Set<keyof RpcError>(['code', 'message', 'retryable']);
+const ACCEPTED_RESULT_KEYS = new Set(['accepted']);
+const BOOTSTRAP_HELLO_RESULT_KEYS = new Set(['accepted', 'runtimeRevision']);
+const CONTENT_RUNTIME_STATUS_KEYS = new Set(['bootstrapRevision', 'runtimeRevision', 'ready', 'ownedSources']);
+const CONTENT_RUNTIME_SOURCE_OWNERSHIP_KEYS = new Set(['target', 'markerCount', 'abActive']);
+const CONTENT_RUNTIME_READY_RESULT_KEYS = new Set(['documentId', 'runtimeRevision', 'ready']);
 const AUDIO_SESSION_FLUSH_RESULT_KEYS = new Set(['flushed']);
 const REMOTE_SESSION_STATUS_KEYS = new Set(['session', 'connected']);
 const CLOSED_RESULT_KEYS = new Set(['closed']);
@@ -512,7 +680,8 @@ const MEDIA_STATE_RESULT_KEYS = new Set(['playing', 'speed', 'pipActive', 'prese
 const MEDIA_SPEED_RESULT_KEYS = new Set(['speed', 'preservePitch']);
 const ROTATION_RESULT_KEYS = new Set(['rotation']);
 const MIRRORED_RESULT_KEYS = new Set(['mirrored']);
-const DATA_URL_RESULT_KEYS = new Set(['dataUrl']);
+const SCREENSHOT_RESULT_KEYS = new Set(['saved', 'method', 'width', 'height']);
+const SCREENSHOT_TARGET_VERIFY_RESULT_KEYS = new Set(['valid']);
 const CROPPED_RESULT_KEYS = new Set(['cropped']);
 const CURRENT_TIME_RESULT_KEYS = new Set(['currentTime']);
 const APPLIED_RESULT_KEYS = new Set(['applied']);
@@ -537,6 +706,13 @@ const NAVIGATION_CHANGED_KEYS = new Set(['url']);
 const BASE64URL_128_RE = /^[A-Za-z0-9_-]{22}$/u;
 const AUDIO_SESSION_MODES = new Set<SpectraAudioMode>(['bypass', 'webaudio', 'capture']);
 const AUDIO_SESSION_PHASES = new Set<AudioSessionPhase>(['idle', 'starting', 'active', 'stopping', 'error']);
+const CONTENT_RUNTIME_LEASE_REASONS = new Set<ContentRuntimeLeaseReason>([
+	'control',
+	'restore',
+	'hotkey',
+	'remote',
+	'observation',
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -556,6 +732,82 @@ function isNonNegativeInteger(value: unknown): value is number {
 
 function isEmptyPayload(value: unknown): value is Record<string, never> {
 	return isRecord(value) && Object.keys(value).length === 0;
+}
+
+function isRuntimeRevision(value: unknown): value is string {
+	return typeof value === 'string' && /^[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?$/u.test(value);
+}
+
+function isDocumentId(value: unknown): value is string {
+	return typeof value === 'string' && value.length > 0 && value.length <= 256;
+}
+
+function isContentBootstrapHelloPayload(
+	value: unknown,
+): value is SpectraRequestPayload<'spectra.content.bootstrap.hello'> {
+	return isRecord(value)
+		&& hasOnlyKeys(value, CONTENT_BOOTSTRAP_HELLO_PAYLOAD_KEYS)
+		&& isRuntimeRevision(value.bootstrapRevision);
+}
+
+function isContentRuntimeEnsurePayload(
+	value: unknown,
+): value is SpectraRequestPayload<'spectra.content.runtime.ensure'> {
+	return isRecord(value)
+		&& hasOnlyKeys(value, CONTENT_RUNTIME_ENSURE_PAYLOAD_KEYS)
+		&& isPositiveInteger(value.tabId)
+		&& (value.documentId === undefined || isDocumentId(value.documentId))
+		&& typeof value.reason === 'string'
+		&& CONTENT_RUNTIME_LEASE_REASONS.has(value.reason as ContentRuntimeLeaseReason)
+		&& (value.capability === undefined || (
+			typeof value.capability === 'string'
+			&& value.capability.length > 0
+			&& value.capability.length <= 128
+		));
+}
+
+function isContentRuntimeRevisionPayload(
+	value: unknown,
+): value is SpectraRequestPayload<'spectra.content.runtime.ready'> {
+	return isRecord(value)
+		&& hasOnlyKeys(value, CONTENT_RUNTIME_REVISION_PAYLOAD_KEYS)
+		&& isRuntimeRevision(value.runtimeRevision);
+}
+
+function isContentRuntimeReleasePayload(
+	value: unknown,
+): value is SpectraRequestPayload<'spectra.content.runtime.release'> {
+	if (!isRecord(value)
+		|| !hasOnlyKeys(value, CONTENT_RUNTIME_RELEASE_PAYLOAD_KEYS)
+		|| !isRuntimeRevision(value.runtimeRevision)) return false;
+	const hasLeaseIdentity = value.tabId !== undefined
+		|| value.documentId !== undefined
+		|| value.reason !== undefined
+		|| value.capability !== undefined;
+	if (!hasLeaseIdentity) return true;
+	return isPositiveInteger(value.tabId)
+		&& isDocumentId(value.documentId)
+		&& typeof value.reason === 'string'
+		&& CONTENT_RUNTIME_LEASE_REASONS.has(value.reason as ContentRuntimeLeaseReason)
+		&& typeof value.capability === 'string'
+		&& value.capability.length > 0
+		&& value.capability.length <= 128;
+}
+
+function isContentSourceReleasedPayload(
+	value: unknown,
+): value is SpectraRequestPayload<'spectra.content.source.released'> {
+	return isRecord(value)
+		&& hasOnlyKeys(value, CONTENT_SOURCE_RELEASED_PAYLOAD_KEYS)
+		&& isMediaTarget(value.target);
+}
+
+function isContentTargetChangedPayload(
+	value: unknown,
+): value is SpectraRequestPayload<'spectra.content.target.changed'> {
+	return isRecord(value)
+		&& hasOnlyKeys(value, CONTENT_TARGET_CHANGED_PAYLOAD_KEYS)
+		&& isMediaTarget(value.target);
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -645,6 +897,34 @@ function isVideoSeekPayload(
 	return isRecord(value)
 		&& hasOnlyKeys(value, VIDEO_SEEK_PAYLOAD_KEYS)
 		&& isFiniteInRange(value.delta, -86_400, 86_400);
+}
+
+function isScreenshotCapturePayload(
+	value: unknown,
+): value is ScreenshotCapturePayload {
+	if (!isRecord(value)
+		|| !hasOnlyKeys(value, SCREENSHOT_CAPTURE_PAYLOAD_KEYS)
+		|| typeof value.captureToken !== 'string'
+		|| value.captureToken.length === 0
+		|| value.captureToken.length > 128
+		|| !isRecord(value.rect)
+		|| !hasOnlyKeys(value.rect, SCREENSHOT_RECT_KEYS)) return false;
+	return isFiniteInRange(value.rect.x, -100_000, 100_000)
+		&& isFiniteInRange(value.rect.y, -100_000, 100_000)
+		&& isFiniteInRange(value.rect.width, 1, 100_000)
+		&& isFiniteInRange(value.rect.height, 1, 100_000)
+		&& isFiniteInRange(value.rect.viewportWidth, 1, 100_000)
+		&& isFiniteInRange(value.rect.viewportHeight, 1, 100_000);
+}
+
+function isScreenshotTargetVerifyPayload(
+	value: unknown,
+): value is SpectraRequestPayload<'spectra.screenshot.target.verify'> {
+	return isRecord(value)
+		&& hasOnlyKeys(value, SCREENSHOT_TARGET_VERIFY_PAYLOAD_KEYS)
+		&& typeof value.captureToken === 'string'
+		&& value.captureToken.length > 0
+		&& value.captureToken.length <= 128;
 }
 
 function isVideoFilterPayload(value: unknown): value is VideoFilterPayload {
@@ -882,8 +1162,11 @@ function isVisualizerBatchPayload(
 ): value is SpectraRequestPayload<'spectra.audio.visualizer.batch'> {
 	if (!isRecord(value)
 		|| !hasOnlyKeys(value, VISUALIZER_BATCH_PAYLOAD_KEYS)
+		|| typeof value.subscriberId !== 'string'
+		|| value.subscriberId.length === 0
+		|| value.subscriberId.length > 128
+		|| !isNonNegativeInteger(value.generation)
 		|| !Array.isArray(value.tabIds)
-		|| value.tabIds.length === 0
 		|| value.tabIds.length > 64) return false;
 	const unique = new Set<number>();
 	for (const tabId of value.tabIds) {
@@ -891,6 +1174,14 @@ function isVisualizerBatchPayload(
 		unique.add(tabId);
 	}
 	return true;
+}
+
+function isVisualizerSubscriptionPayload(
+	value: unknown,
+): value is SpectraRequestPayload<'spectra.audio.visualizer.subscription.set'> {
+	return isRecord(value)
+		&& hasOnlyKeys(value, VISUALIZER_SUBSCRIPTION_PAYLOAD_KEYS)
+		&& typeof value.subscribed === 'boolean';
 }
 
 function isVisualizerFrame(value: unknown): value is number[] | null {
@@ -902,13 +1193,32 @@ function isVisualizerFrame(value: unknown): value is number[] | null {
 }
 
 function isVisualizerBatchResult(value: unknown): value is VisualizerBatchResult {
-	if (!isRecord(value) || !hasOnlyKeys(value, new Set(['frames'])) || !isRecord(value.frames)) return false;
+	if (!isRecord(value)
+		|| !hasOnlyKeys(value, new Set(['subscriberId', 'generation', 'frames']))
+		|| typeof value.subscriberId !== 'string'
+		|| value.subscriberId.length === 0
+		|| value.subscriberId.length > 128
+		|| !isNonNegativeInteger(value.generation)
+		|| !isRecord(value.frames)) return false;
 	return Object.entries(value.frames).every(([tabId, frame]) => (
 		/^[1-9]\d*$/u.test(tabId) && isVisualizerFrame(frame)
 	));
 }
 
 const REQUEST_PAYLOAD_GUARDS = {
+	'spectra.content.bootstrap.hello': isContentBootstrapHelloPayload,
+	'spectra.content.runtime.status': isEmptyPayload,
+	'spectra.content.runtime.ensure': isContentRuntimeEnsurePayload,
+	'spectra.content.runtime.ready': isContentRuntimeRevisionPayload,
+	'spectra.content.runtime.release': isContentRuntimeReleasePayload,
+	'spectra.content.source.released': isContentSourceReleasedPayload,
+	'spectra.content.target.changed': isContentTargetChangedPayload,
+	'spectra.control.snapshot.get': isTabIdPayload,
+	'spectra.control.intent.submit': isControlSubmitRequest,
+	'spectra.control.intent.execute': isControlIntent,
+	'spectra.control.operation.submit': isControlOperationRequest,
+	'spectra.control.operation.execute': isControlOperationIntent,
+	'spectra.control.actual.read': isControlReadRequest,
 	'spectra.content.settings.get': isEmptyPayload,
 	'spectra.content.inject': isTabIdPayload,
 	'spectra.settings.get': isEmptyPayload,
@@ -938,6 +1248,7 @@ const REQUEST_PAYLOAD_GUARDS = {
 	'spectra.audio.capture.config': isAudioConfigPayload,
 	'spectra.audio.visualizer.batch': isVisualizerBatchPayload,
 	'spectra.audio.visualizer.get': isEmptyPayload,
+	'spectra.audio.visualizer.subscription.set': isVisualizerSubscriptionPayload,
 	'spectra.hotkey.trigger': isHotkeyTriggerPayload,
 	'spectra.media.state.get': isEmptyPayload,
 	'spectra.media.play.toggle': isEmptyPayload,
@@ -946,6 +1257,8 @@ const REQUEST_PAYLOAD_GUARDS = {
 	'spectra.video.rotate': isVideoRotatePayload,
 	'spectra.video.mirror.toggle': isEmptyPayload,
 	'spectra.video.screenshot': isEmptyPayload,
+	'spectra.screenshot.capture-visible': isScreenshotCapturePayload,
+	'spectra.screenshot.target.verify': isScreenshotTargetVerifyPayload,
 	'spectra.video.fullscreen.toggle': isEmptyPayload,
 	'spectra.video.crop.toggle': isEmptyPayload,
 	'spectra.video.seek': isVideoSeekPayload,
@@ -1021,12 +1334,12 @@ function isVisibleTabsResult(
 function isScreenshotResult(
 	value: unknown,
 ): value is SpectraResponseData<'spectra.video.screenshot'> {
-	if (!isRecord(value) || !hasOnlyKeys(value, DATA_URL_RESULT_KEYS)) return false;
-	return value.dataUrl === null || (
-		typeof value.dataUrl === 'string'
-		&& value.dataUrl.length <= 50_000_000
-		&& /^data:image\/png;base64,[A-Za-z0-9+/=]+$/u.test(value.dataUrl)
-	);
+	return isRecord(value)
+		&& hasOnlyKeys(value, SCREENSHOT_RESULT_KEYS)
+		&& value.saved === true
+		&& value.method === 'capture-visible-tab'
+		&& isFiniteInRange(value.width, 1, 100_000)
+		&& isFiniteInRange(value.height, 1, 100_000);
 }
 
 function isNullableTime(value: unknown): value is number | null {
@@ -1062,7 +1375,68 @@ function isMarkersResult(
 		&& value.markers.every(isTimeMarker);
 }
 
+function isContentBootstrapHelloResult(
+	value: unknown,
+): value is SpectraResponseData<'spectra.content.bootstrap.hello'> {
+	return isRecord(value)
+		&& hasOnlyKeys(value, BOOTSTRAP_HELLO_RESULT_KEYS)
+		&& value.accepted === true
+		&& (value.runtimeRevision === null || isRuntimeRevision(value.runtimeRevision));
+}
+
+function isContentRuntimeStatus(
+	value: unknown,
+): value is SpectraResponseData<'spectra.content.runtime.status'> {
+	return isRecord(value)
+		&& hasOnlyKeys(value, CONTENT_RUNTIME_STATUS_KEYS)
+		&& isRuntimeRevision(value.bootstrapRevision)
+		&& (value.runtimeRevision === null || isRuntimeRevision(value.runtimeRevision))
+		&& typeof value.ready === 'boolean'
+		&& (!value.ready || value.runtimeRevision !== null)
+		&& Array.isArray(value.ownedSources)
+		&& value.ownedSources.length <= 2_000
+		&& value.ownedSources.every((ownership) => isRecord(ownership)
+			&& hasOnlyKeys(ownership, CONTENT_RUNTIME_SOURCE_OWNERSHIP_KEYS)
+			&& isMediaTarget(ownership.target)
+			&& isNonNegativeInteger(ownership.markerCount)
+			&& ownership.markerCount <= 1_000
+			&& typeof ownership.abActive === 'boolean');
+}
+
+function isContentRuntimeReadyResult(
+	value: unknown,
+): value is SpectraResponseData<'spectra.content.runtime.ensure'> {
+	return isRecord(value)
+		&& hasOnlyKeys(value, CONTENT_RUNTIME_READY_RESULT_KEYS)
+		&& isDocumentId(value.documentId)
+		&& isRuntimeRevision(value.runtimeRevision)
+		&& value.ready === true;
+}
+
+function isAcceptedResult(
+	value: unknown,
+): value is SpectraResponseData<'spectra.content.runtime.ready' | 'spectra.content.runtime.release'> {
+	return isRecord(value)
+		&& hasOnlyKeys(value, ACCEPTED_RESULT_KEYS)
+		&& value.accepted === true;
+}
+
 const RESPONSE_DATA_GUARDS = {
+	'spectra.content.bootstrap.hello': isContentBootstrapHelloResult,
+	'spectra.content.runtime.status': isContentRuntimeStatus,
+	'spectra.content.runtime.ensure': isContentRuntimeReadyResult,
+	'spectra.content.runtime.ready': isAcceptedResult,
+	'spectra.content.runtime.release': isAcceptedResult,
+	'spectra.content.source.released': isAcceptedResult,
+	'spectra.content.target.changed': isAcceptedResult,
+	'spectra.control.snapshot.get': (
+		value: unknown,
+	): value is SpectraResponseData<'spectra.control.snapshot.get'> => value === null || isControlSnapshot(value),
+	'spectra.control.intent.submit': isControlApplyAck,
+	'spectra.control.intent.execute': isControlApplyAck,
+	'spectra.control.operation.submit': isControlOperationAck,
+	'spectra.control.operation.execute': isControlOperationAck,
+	'spectra.control.actual.read': isControlReadResult,
 	'spectra.content.settings.get': isContentSettings,
 	'spectra.content.inject': (
 		value: unknown,
@@ -1122,6 +1496,10 @@ const RESPONSE_DATA_GUARDS = {
 	'spectra.audio.capture.config': isAudioCaptureState,
 	'spectra.audio.visualizer.batch': isVisualizerBatchResult,
 	'spectra.audio.visualizer.get': isVisualizerResult,
+	'spectra.audio.visualizer.subscription.set': (
+		value,
+	): value is SpectraResponseData<'spectra.audio.visualizer.subscription.set'> =>
+		isBooleanFieldResult(value, VISUALIZER_SUBSCRIPTION_PAYLOAD_KEYS, 'subscribed'),
 	'spectra.hotkey.trigger': (
 		value: unknown,
 	): value is SpectraResponseData<'spectra.hotkey.trigger'> => isRecord(value)
@@ -1156,6 +1534,12 @@ const RESPONSE_DATA_GUARDS = {
 		'mirrored',
 	),
 	'spectra.video.screenshot': isScreenshotResult,
+	'spectra.screenshot.capture-visible': isScreenshotResult,
+	'spectra.screenshot.target.verify': (
+		value: unknown,
+	): value is SpectraResponseData<'spectra.screenshot.target.verify'> => isRecord(value)
+		&& hasOnlyKeys(value, SCREENSHOT_TARGET_VERIFY_RESULT_KEYS)
+		&& value.valid === true,
 	'spectra.video.fullscreen.toggle': (
 		value: unknown,
 	): value is SpectraResponseData<'spectra.video.fullscreen.toggle'> => isBooleanFieldResult(
@@ -1257,6 +1641,7 @@ const RESPONSE_DATA_GUARDS = {
 } satisfies { [T in SpectraRequestType]: RuntimeGuard<SpectraResponseData<T>> };
 
 const EVENT_PAYLOAD_GUARDS = {
+	'spectra.control.snapshot.changed': isControlSnapshot,
 	'spectra.content.settings.changed': isContentSettings,
 	'spectra.settings.changed': isSettingsSnapshot,
 	'spectra.hotkeys.changed': isHotkeySettings,
@@ -1331,6 +1716,33 @@ export function isSpectraRequestEnvelope(value: unknown): value is SpectraReques
 	}
 	if (value.type === 'spectra.content.inject') {
 		return isTabIdPayload(value.payload) && value.tabId === value.payload.tabId;
+	}
+	if (value.type === 'spectra.control.intent.execute'
+		|| value.type === 'spectra.control.operation.execute') {
+		const payload = value.payload as ControlIntent | ControlOperationIntent;
+		return isPositiveInteger(value.tabId)
+			&& value.tabId === payload.tabId
+			&& isDocumentId(value.documentId)
+			&& value.documentId === payload.documentId
+			&& isNonNegativeInteger(value.generation)
+			&& value.generation === payload.generation;
+	}
+	if (value.type === 'spectra.content.source.released'
+		|| value.type === 'spectra.content.target.changed') {
+		const payload = value.payload as SpectraRequestPayload<
+			'spectra.content.source.released' | 'spectra.content.target.changed'
+		>;
+		return value.tabId === undefined
+			&& value.generation === undefined
+			&& (value.documentId === undefined || value.documentId === payload.target.documentId);
+	}
+	if (value.type === 'spectra.control.intent.submit'
+		|| value.type === 'spectra.control.operation.submit') {
+		const payload = value.payload as ControlSubmitRequest | ControlOperationRequest;
+		return (value.tabId === undefined || isPositiveInteger(value.tabId))
+			&& (payload.tabId === undefined
+				|| value.tabId === undefined
+				|| value.tabId === payload.tabId);
 	}
 	if (value.type === 'spectra.audio.runtime.get'
 		|| value.type === 'spectra.audio.runtime.configure'

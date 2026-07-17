@@ -9,6 +9,10 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
+		},
+		"./bootstrap": {
+			"types": "./dist/spectra.bootstrap.d.ts",
+			"import": "./dist/spectra.bootstrap.js"
 		}
 	},
 	"scripts": {

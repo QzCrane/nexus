@@ -201,8 +201,9 @@ export function runRelease({
 	spawnProcess = spawnSync,
 	readSourceDigest = computeReleaseSourceDigest,
 	cleanupStaging = cleanupReleaseStaging,
+	runtimeVersion = Bun.version,
 } = {}) {
-	assertReleaseRuntime();
+	assertReleaseRuntime(runtimeVersion);
 	const frozenSourceDigest = readSourceDigest();
 	const completedSteps = [];
 	let receipt;

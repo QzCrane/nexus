@@ -1,7 +1,9 @@
 import { describe, expect, mock, test } from 'bun:test';
-import { AudioMode } from '@nexus/audio-engine';
+import { AudioMode, audioGraphSignature } from '@nexus/audio-engine';
 import { DEFAULT_AUDIO_CONFIG, type AudioConfig } from '@nexus/contracts';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../src/content/types';
+import type { MediaRegistry } from '../src/content/core/media-registry';
+import { setActiveMediaRegistry } from '../src/content/core/media-registry';
 import {
 	executeMode,
 	initModeExecutorCallbacks,
@@ -87,6 +89,7 @@ describe('mode executor applied configuration', () => {
 			);
 
 			executeMode(deps, state);
+			await Promise.resolve();
 			expect(state.phase).toBe('starting');
 			expect(state.appliedConfig).toEqual(priorApplied);
 
@@ -117,4 +120,296 @@ describe('mode executor applied configuration', () => {
 			else Reflect.deleteProperty(globalThis, 'window');
 		}
 	});
+
+	test('activates Media WebAudio only after every safe registry source is attached', async () => {
+		const globals = installCoverageGlobals();
+		const first = media('https://media.example/first.mp3');
+		const second = media('https://media.example/second.mp3');
+		const disposeRegistry = setActiveMediaRegistry({
+			list: () => [
+				{ element: first, target: {} },
+				{ element: second, target: {} },
+			],
+		} as unknown as MediaRegistry);
+		const ensureAttached = mock(() => true);
+		const state = webAudioState();
+		const normalizedActualConfig = {
+			boostGain: 2,
+			bass: false,
+			eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
+			compressor: false,
+			mono: false,
+			pan: 0,
+			delay: 0,
+		};
+		const deps = {
+			audioController: {
+				cleanup: mock(async () => undefined),
+				initialize: mock(async () => true),
+				ensureAttached,
+				hasCompleteCoverage: mock(() => true),
+				applyConfig: mock(async () => ({
+					phase: 'active',
+					contextState: 'running',
+					sourceCount: 2,
+					outputChannels: 2,
+					graphSignature: 'bass:0|eq:-|compressor:0|mono:0|pan:0|delay:0',
+					normalizedActualConfig,
+				})),
+			},
+			captureManager: inactiveCaptureManager(),
+			settingsManager: {},
+			policyEngine: {},
+		} as unknown as PolicyExecutorDeps;
+		try {
+			await executeMode(deps, state);
+			expect(ensureAttached).toHaveBeenCalledTimes(2);
+			expect(ensureAttached).toHaveBeenNthCalledWith(1, first, undefined);
+			expect(ensureAttached).toHaveBeenNthCalledWith(2, second, undefined);
+			expect(state.actualMode).toBe('webaudio');
+			expect(state.phase).toBe('active');
+		} finally {
+			disposeRegistry();
+			globals.restore();
+		}
+	});
+
+	test('a newly registered unsafe source cannot leave partial WebAudio reported active', async () => {
+		const globals = installCoverageGlobals();
+		const safe = media('https://media.example/first.mp3');
+		const unsafe = media('https://cdn.example/second.mp3');
+		const disposeRegistry = setActiveMediaRegistry({
+			list: () => [
+				{ element: safe, target: {} },
+				{ element: unsafe, target: {} },
+			],
+		} as unknown as MediaRegistry);
+		const initialize = mock(async () => true);
+		const state = webAudioState();
+		state.actualMode = 'webaudio';
+		state.phase = 'active';
+		const deps = {
+			audioController: {
+				cleanup: mock(async () => undefined),
+				initialize,
+			},
+			captureManager: inactiveCaptureManager(),
+			settingsManager: {},
+			policyEngine: {},
+		} as unknown as PolicyExecutorDeps;
+		try {
+			await executeMode(deps, state);
+			expect(initialize).not.toHaveBeenCalled();
+			expect(state.actualMode).toBe('bypass');
+			expect(state.phase).toBe('error');
+			expect(state.lastError).toContain('unsafe');
+		} finally {
+			disposeRegistry();
+			globals.restore();
+		}
+	});
+
+	test('neutralizes Media WebAudio before Capture and restores the stable graph after candidate failure', async () => {
+		const order: string[] = [];
+		const state = webAudioState();
+		state.activeMode = AudioMode.CAPTURE;
+		state.desiredMode = AudioMode.CAPTURE;
+		state.actualMode = 'webaudio';
+		state.phase = 'active';
+		const normalizedActualConfig = {
+			boostGain: 2,
+			bass: false,
+			eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
+			compressor: false,
+			mono: false,
+			pan: 0,
+			delay: 0,
+		};
+		const deps = {
+			audioController: {
+				cleanup: mock(async () => { order.push('webaudio:unity'); }),
+				initialize: mock(async () => {
+					order.push('webaudio:restore');
+					return true;
+				}),
+				applyConfig: mock(async () => {
+					order.push('webaudio:actual');
+					return {
+						phase: 'active' as const,
+						contextState: 'running' as const,
+						sourceCount: 1,
+						outputChannels: 2,
+						graphSignature: audioGraphSignature(normalizedActualConfig),
+						normalizedActualConfig,
+					};
+				}),
+			},
+			captureManager: {
+				isActive: () => false,
+				isPending: () => false,
+				request: mock(async () => {
+					order.push('capture:candidate');
+					return {
+						status: 'error' as const,
+						phase: 'error' as const,
+						active: false,
+						generation: 4,
+						error: 'capture denied',
+					};
+				}),
+				getGeneration: () => 4,
+				getLastError: () => 'capture denied',
+			},
+			settingsManager: {},
+			policyEngine: {},
+		} as unknown as PolicyExecutorDeps;
+
+		await executeMode(deps, state);
+
+		expect(order).toEqual([
+			'webaudio:unity',
+			'capture:candidate',
+			'webaudio:restore',
+			'webaudio:actual',
+		]);
+		expect(state.actualMode).toBe('webaudio');
+		expect(state.phase).toBe('error');
+		expect(state.appliedConfig.boost).toBe(2);
+	});
+
+	test('uses Capture as a unity relay until the complete Media WebAudio graph is verified', async () => {
+		const globals = installCoverageGlobals();
+		const source = media('https://media.example/relay.mp3');
+		const disposeRegistry = setActiveMediaRegistry({
+			list: () => [{ element: source, target: {} }],
+		} as unknown as MediaRegistry);
+		const order: string[] = [];
+		const state = webAudioState();
+		state.actualMode = 'capture';
+		state.phase = 'active';
+		const normalizedActualConfig = {
+			boostGain: 2,
+			bass: false,
+			eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
+			compressor: false,
+			mono: false,
+			pan: 0,
+			delay: 0,
+		};
+		const deps = {
+			audioController: {
+				cleanup: mock(async () => undefined),
+				initialize: mock(async () => {
+					order.push('webaudio:initialize');
+					return true;
+				}),
+				ensureAttached: mock(() => {
+					order.push('webaudio:attach');
+					return true;
+				}),
+				hasCompleteCoverage: mock(() => true),
+				applyConfig: mock(async () => {
+					order.push('webaudio:actual');
+					return {
+						phase: 'active' as const,
+						contextState: 'running' as const,
+						sourceCount: 1,
+						outputChannels: 2,
+						graphSignature: audioGraphSignature(normalizedActualConfig),
+						normalizedActualConfig,
+					};
+				}),
+			},
+			captureManager: {
+				isActive: () => true,
+				isPending: () => false,
+				syncConfig: mock(async (config: AudioConfig) => {
+					order.push('capture:unity');
+					return cloneConfig(config);
+				}),
+				request: mock(async (enabled: boolean) => {
+					expect(enabled).toBe(false);
+					order.push('capture:stop');
+					return {
+						status: 'processing' as const,
+						phase: 'idle' as const,
+						active: false,
+						generation: 4,
+					};
+				}),
+				getGeneration: () => 4,
+				getLastError: () => undefined,
+			},
+			settingsManager: {},
+			policyEngine: {},
+		} as unknown as PolicyExecutorDeps;
+
+		try {
+			await executeMode(deps, state);
+			expect(order).toEqual([
+				'capture:unity',
+				'webaudio:initialize',
+				'webaudio:attach',
+				'webaudio:actual',
+				'capture:stop',
+			]);
+			expect(state.actualMode).toBe('webaudio');
+			expect(state.phase).toBe('active');
+		} finally {
+			disposeRegistry();
+			globals.restore();
+		}
+	});
 });
+
+function webAudioState(): PolicyExecutorState {
+	const config = cloneConfig({ ...DEFAULT_AUDIO_CONFIG, boost: 2, volume: 200 });
+	return {
+		config,
+		appliedConfig: cloneConfig(DEFAULT_AUDIO_CONFIG),
+		activeMode: AudioMode.NATIVE_WEBAUDIO,
+		desiredMode: AudioMode.NATIVE_WEBAUDIO,
+		actualMode: 'bypass',
+		phase: 'idle',
+		generation: 4,
+		hasGesture: true,
+		userHasInteracted: true,
+		isPopupOpen: false,
+	};
+}
+
+function inactiveCaptureManager() {
+	return {
+		isActive: () => false,
+		isPending: () => false,
+		getGeneration: () => 4,
+		getLastError: () => undefined,
+	};
+}
+
+function media(currentSrc: string): HTMLMediaElement {
+	return { currentSrc, src: currentSrc } as HTMLMediaElement;
+}
+
+function installCoverageGlobals(): { restore(): void } {
+	const descriptors = new Map([
+		['document', Object.getOwnPropertyDescriptor(globalThis, 'document')],
+		['location', Object.getOwnPropertyDescriptor(globalThis, 'location')],
+	] as const);
+	Object.defineProperty(globalThis, 'document', {
+		configurable: true,
+		value: { baseURI: 'https://media.example/watch' },
+	});
+	Object.defineProperty(globalThis, 'location', {
+		configurable: true,
+		value: { href: 'https://media.example/watch', origin: 'https://media.example' },
+	});
+	return {
+		restore() {
+			for (const [key, descriptor] of descriptors) {
+				if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+				else Reflect.deleteProperty(globalThis, key);
+			}
+		},
+	};
+}

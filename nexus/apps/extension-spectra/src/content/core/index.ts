@@ -1,7 +1,9 @@
 // goal: orchestrates content script initialization, core module bootstrapping, and lifecycle loops
-document.documentElement.setAttribute('data-spectra-content-loaded', 'true');
 
 import { PolicyEngine, WebAudioController } from '@nexus/audio-engine';
+import {
+	SPECTRA_CONTENT_RUNTIME_REVISION,
+} from '@nexus/contracts';
 
 import { isExtensionContextValid } from './context-guard';
 import { createSettingsManager } from './settings-manager';
@@ -22,22 +24,37 @@ import {
 } from './lifecycle';
 import {
   initHotkeyListener,
-  setCaptureModeToggler,
-  setConfigGetter,
-  setConfigUpdater,
 } from '../input/hotkey-listener';
 import { Registry } from '../../shared/registry';
 import { createSnapshot, mountStub, consumeStub } from './sentinel';
 import { sendSpectraRequest } from '../../shared/spectra-client';
+import {
+	setContentRuntimeDisposer,
+	setContentRuntimeOwnershipProvider,
+	setContentRuntimeReady,
+} from '../../shared/content-runtime';
 import { assembleInitialState } from './initial-state';
 import type { ContentDeps, PolicyExecutorState } from '../types';
 import type { PolicyExecutor } from '../logic/policy-executor';
 import type { SettingsManager } from './settings-manager';
+import {
+	NativeMediaExecutor,
+	registerNativeMediaExecutor,
+} from '../logic/native-media-executor';
+import { createAudioRuntimeControlDelegate } from '../logic/audio-runtime-control-delegate';
+import { registerControlOperationExecutor } from '../logic/control-operation-executor';
+import { MediaRegistry, setActiveMediaRegistry } from './media-registry';
+import {
+	VideoEffectsController,
+	setActiveVideoEffectsController,
+} from '../video/video-effects-controller';
+import { disposeABLoops, listABOwnership, observeABLoopSources } from '../video/ab-loop';
+import { disposeMarkers, listMarkerOwnership, observeMarkerSources } from '../video/time-marker';
 
 const log = logger.content;
 
 interface SpectraContentWindow extends Window {
-  __SPECTRA_TEARDOWN__?: () => void;
+  __SPECTRA_TEARDOWN__?: () => void | Promise<void>;
   __SPECTRA_INJECTED__?: boolean;
   __SPECTRA_VERSION__?: string;
   __SPECTRA_LISTENERS_READY__?: boolean;
@@ -52,25 +69,31 @@ interface ContentRuntime {
   readonly registry: Registry;
   disposed: boolean;
   state?: PolicyExecutorState;
-  dispose(): void;
+  release?: () => Promise<void>;
+  disposing?: Promise<void>;
+  dispose(handoff?: boolean): Promise<void>;
 }
-
-const CONTENT_RUNTIME_REVISION = '2.0.1';
 
 function createContentRuntime(): ContentRuntime {
   const registry = new Registry();
   const runtime: ContentRuntime = {
-    revision: CONTENT_RUNTIME_REVISION,
+		revision: SPECTRA_CONTENT_RUNTIME_REVISION,
     registry,
     disposed: false,
-    dispose() {
-      if (runtime.disposed) return;
-      runtime.disposed = true;
-      registry.dispose();
-      if (runtime.state) mountStub(createSnapshot(runtime.state));
-      if (spectraWindow.__SPECTRA_CONTENT_RUNTIME__ === runtime) {
-        spectraWindow.__SPECTRA_LISTENERS_READY__ = false;
-      }
+    dispose(handoff = false) {
+      if (runtime.disposing) return runtime.disposing;
+			runtime.disposed = true;
+			runtime.disposing = (async () => {
+				if (!handoff) await runtime.release?.();
+				registry.dispose();
+				if (runtime.state) mountStub(createSnapshot(runtime.state));
+				if (spectraWindow.__SPECTRA_CONTENT_RUNTIME__ === runtime) {
+					setContentRuntimeReady(null);
+					setContentRuntimeDisposer(null);
+					spectraWindow.__SPECTRA_LISTENERS_READY__ = false;
+				}
+			})();
+			return runtime.disposing;
     },
   };
   return runtime;
@@ -83,18 +106,19 @@ function isCurrentRuntime(runtime: ContentRuntime): boolean {
 // A dynamic reinjection disposes listeners and UI state immediately. The audio
 // controller/graphs remain page-owned because MediaElementSourceNode bindings
 // cannot be recreated safely after their AudioContext is closed.
-spectraWindow.__SPECTRA_CONTENT_RUNTIME__?.dispose();
-spectraWindow.__SPECTRA_TEARDOWN__?.();
+void spectraWindow.__SPECTRA_CONTENT_RUNTIME__?.dispose(true);
+void spectraWindow.__SPECTRA_TEARDOWN__?.();
 
 const contentRuntime = createContentRuntime();
 spectraWindow.__SPECTRA_CONTENT_RUNTIME__ = contentRuntime;
-spectraWindow.__SPECTRA_TEARDOWN__ = () => contentRuntime.dispose();
+spectraWindow.__SPECTRA_TEARDOWN__ = () => contentRuntime.dispose(true);
+setContentRuntimeDisposer(() => contentRuntime.dispose(false));
 spectraWindow.__SPECTRA_INJECTED__ = true;
 spectraWindow.__SPECTRA_VERSION__ = chrome.runtime.getManifest().version;
 spectraWindow.__SPECTRA_LISTENERS_READY__ = false;
 
 contentRuntime.registry.addEventListener(window, 'SPECTRA_TERMINATED_OLD_VERSION', () => {
-  contentRuntime.dispose();
+  void contentRuntime.dispose();
 });
 
 void initSpectra(contentRuntime);
@@ -155,13 +179,8 @@ function bootstrapLifecycle(ctx: InitContext, runtime: ContentRuntime): void {
   registry.track(setupFullscreenHandler(state, policyExecutor, captureManager));
 
   registry.track(createNavigationObserver({
-    policyExecutor,
     onNavigate: () => policyExecutor.applyState({ navigation: true }),
   }));
-
-  setConfigGetter(() => state.config);
-  setConfigUpdater((changes, options) => policyExecutor.updateConfig(changes, options));
-  registry.track(setCaptureModeToggler(() => policyExecutor.toggleCaptureMode()));
 
   void initHotkeyListener().then((cleanup) => {
     if (isCurrentRuntime(runtime)) registry.track(cleanup);
@@ -206,8 +225,14 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
   const captureManager = createCaptureManager();
   const initial = await createInitialState();
   if (!isCurrentRuntime(runtime)) return;
-  const state = initial.state;
-  runtime.state = state;
+	const state = initial.state;
+	runtime.state = state;
+	runtime.release = async () => {
+		if (captureManager.isActive()) {
+			await captureManager.request(false, state.config, captureManager.getGeneration() + 1);
+		}
+		await audioController.cleanup();
+	};
 
 	if (initial.recovered) {
 		captureManager.restoreState({
@@ -215,12 +240,73 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
 			phase: state.phase,
 			generation: state.generation,
 			error: state.lastError,
+			actualConfig: state.actualMode === 'capture' ? state.appliedConfig : undefined,
 		});
 	}
 
-  const deps: ContentDeps = { policyEngine, audioController, captureManager, settingsManager, state, getVisualizerData: () => audioController.getVisualizerData() };
+	const deps: ContentDeps = {
+		policyEngine,
+		audioController,
+		captureManager,
+		settingsManager,
+		state,
+		getVisualizerData: () => audioController.getVisualizerData(),
+		setVisualizerSubscribed: (subscribed) => audioController.setVisualizerSubscribed(subscribed),
+	};
+	const mediaRegistry = new MediaRegistry();
+	registry.track(mediaRegistry);
+	registry.track(setActiveMediaRegistry(mediaRegistry));
+	registry.track(setContentRuntimeOwnershipProvider(() => {
+		const ownership = new Map<string, {
+			target: import('@nexus/contracts').MediaTarget;
+			markerCount: number;
+			abActive: boolean;
+		}>();
+		for (const marker of listMarkerOwnership()) {
+			ownership.set(
+				`${marker.target.documentId}:${marker.target.mediaId}:${marker.target.sourceRevision}`,
+				{ target: marker.target, markerCount: marker.markerCount, abActive: false },
+			);
+		}
+		for (const ab of listABOwnership()) {
+			const key = `${ab.target.documentId}:${ab.target.mediaId}:${ab.target.sourceRevision}`;
+			const current = ownership.get(key);
+			ownership.set(key, {
+				target: ab.target,
+				markerCount: current?.markerCount ?? 0,
+				abActive: ab.active,
+			});
+		}
+		return [...ownership.values()];
+	}));
+	registry.track(mediaRegistry.subscribe((target, event) => {
+		if (event !== 'removed') return;
+		void sendSpectraRequest(
+			'spectra.content.source.released',
+			{ target },
+			{ documentId: target.documentId },
+		).catch(() => undefined);
+	}));
+	registry.track(observeABLoopSources(mediaRegistry, (target) => {
+		void sendSpectraRequest('spectra.control.operation.submit', {
+			source: 'restore',
+			target,
+			operation: 'ab-clear',
+			payload: {},
+		}).catch(() => undefined);
+	}));
+	registry.track(observeMarkerSources(mediaRegistry));
+	const videoEffects = new VideoEffectsController();
+	registry.track(videoEffects);
+	registry.track(setActiveVideoEffectsController(videoEffects));
+	registry.track(disposeABLoops);
+	registry.track(disposeMarkers);
+	const nativeExecutor = new NativeMediaExecutor(mediaRegistry, videoEffects);
+	registry.track(nativeExecutor);
+	registry.track(registerNativeMediaExecutor(nativeExecutor));
+	registry.track(registerControlOperationExecutor(nativeExecutor));
 
-  bootstrapMessaging({ registry, policyEngine, audioController, settingsManager, captureManager, state, deps });
+	bootstrapMessaging({ registry, policyEngine, audioController, settingsManager, captureManager, state, deps });
 
   const policyExecutor = await createPolicyExecutor(
     { policyEngine, audioController, captureManager, settingsManager },
@@ -230,6 +316,12 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
   if (!policyExecutor || !isCurrentRuntime(runtime)) return;
   deps.policyExecutor = policyExecutor;
   registry.track(policyExecutor);
+	nativeExecutor.setAudioRuntimeDelegate(createAudioRuntimeControlDelegate(
+		policyExecutor,
+		state,
+		settingsManager,
+	));
+	registry.track(() => nativeExecutor.setAudioRuntimeDelegate(null));
 
   bootstrapLifecycle(
     { registry, policyEngine, audioController, settingsManager, captureManager, state, deps },
@@ -242,9 +334,13 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
     runtime,
   );
 
-  if (!isCurrentRuntime(runtime)) return;
-  spectraWindow.__SPECTRA_LISTENERS_READY__ = true;
-  log.info('Content Script ready.');
+	if (!isCurrentRuntime(runtime)) return;
+	spectraWindow.__SPECTRA_LISTENERS_READY__ = true;
+	setContentRuntimeReady(runtime.revision);
+	void sendSpectraRequest('spectra.content.runtime.ready', {
+		runtimeRevision: runtime.revision,
+	}).catch(() => undefined);
+	log.info('Content Script ready.');
 }
 
 // eff: retrieves initial configuration from storage and executes the first state application

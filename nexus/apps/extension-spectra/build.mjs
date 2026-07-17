@@ -34,12 +34,15 @@ const emitSourceMap = process.argv.includes('--sourcemap');
 
 const entries = [
 	{ entry: 'src/background/index.ts', out: 'background.js' },
-	{ entry: 'src/content/core/index.ts', out: 'content.js' },
+	{ entry: 'src/content/core/bootstrap.ts', out: 'content-bootstrap.js' },
+	{ entry: 'src/content/core/index.ts', out: 'content-runtime.js' },
 	{ entry: 'src/popup/index.ts', out: 'popup.js' },
 	{ entry: 'src/offscreen/index.ts', out: 'offscreen.js' },
 	{ entry: 'src/options/index.ts', out: 'options.js' },
-	{ entry: 'src/injector/index.ts', out: 'injector.js' },
 ];
+
+const isolatedEntries = entries.filter(({ out }) => out.startsWith('content-'));
+const moduleEntries = entries.filter(({ out }) => !out.startsWith('content-'));
 
 function runTypecheck() {
 	try {
@@ -146,18 +149,24 @@ async function minifyProductionStyles() {
 	}
 }
 
-function assertProductionJavaScript(outputs) {
+function assertProductionJavaScript() {
 	if (isDev) return;
 	const diagnosticCalls = [];
-	for (const name of outputs) {
-		const path = resolve(distDir, name);
+	for (const path of walkFiles(distDir).filter((candidate) => candidate.endsWith('.js'))) {
 		if (/\bconsole\.(?:debug|info|log)\s*\(/u.test(readFileSync(path, 'utf8'))) {
-			diagnosticCalls.push(name);
+			diagnosticCalls.push(path.slice(distDir.length + 1).replaceAll('\\', '/'));
 		}
 	}
 	if (diagnosticCalls.length > 0) {
 		throw new Error(`Production bundles contain diagnostic console calls: ${diagnosticCalls.join(', ')}`);
 	}
+}
+
+function walkFiles(directory) {
+	return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+		const path = resolve(directory, entry.name);
+		return entry.isDirectory() ? walkFiles(path) : [path];
+	});
 }
 
 const common = {
@@ -182,6 +191,7 @@ const common = {
 		// Bundle the current workspace sources. Release still builds the package
 		// outputs for tests and declarations, but extension code must never pick up
 		// a stale dist/ tree left by an earlier local build.
+		'@nexus/contracts/bootstrap': resolve(projectDir, '../../packages/contracts/src/spectra.bootstrap.ts'),
 		'@nexus/contracts': resolve(projectDir, '../../packages/contracts/src/index.ts'),
 		'@nexus/kernel': resolve(projectDir, '../../packages/nexus-kernel/src/index.ts'),
 		'@nexus/audio-engine': resolve(projectDir, '../../packages/features/audio-engine/src/index.ts'),
@@ -226,7 +236,7 @@ if (isWatch) {
 } else {
 	const metafiles = [];
 	const summary = [];
-	for (const { entry, out } of entries) {
+	const buildOne = async ({ entry, out }) => {
 		const result = await esbuild.build({
 			...common,
 			entryPoints: [entry],
@@ -235,9 +245,33 @@ if (isWatch) {
 		});
 		metafiles.push({ name: out, metafile: result.metafile });
 		summary.push(`${out}:${Math.ceil(statSync(resolve(distDir, out)).size / 1024)}KiB`);
+	};
+
+	if (isDev) {
+		for (const entry of entries) await buildOne(entry);
+	} else {
+		for (const entry of isolatedEntries) await buildOne(entry);
+		const moduleEntryPoints = Object.fromEntries(moduleEntries.map(({ entry, out }) => [
+			out.slice(0, -'.js'.length),
+			entry,
+		]));
+		const result = await esbuild.build({
+			...common,
+			entryPoints: moduleEntryPoints,
+			outdir: distDir,
+			entryNames: '[name]',
+			chunkNames: 'chunks/[name]-[hash]',
+			format: 'esm',
+			splitting: true,
+			metafile: true,
+		});
+		for (const { out } of moduleEntries) {
+			metafiles.push({ name: out, metafile: result.metafile });
+			summary.push(`${out}:${Math.ceil(statSync(resolve(distDir, out)).size / 1024)}KiB`);
+		}
 	}
 
-	assertProductionJavaScript(entries.map(({ out }) => out));
+	assertProductionJavaScript();
 	if (!isDev) checkBundleBudget({ distDir, metafiles });
 
 	if (isAnalyze) {

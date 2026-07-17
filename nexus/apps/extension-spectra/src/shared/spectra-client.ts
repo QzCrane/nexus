@@ -8,6 +8,7 @@ import {
 	type SpectraRequestType,
 	type SpectraResponse,
 } from '@nexus/contracts';
+import { requiresContentRuntime } from './content-runtime';
 
 export interface SpectraRequestContext {
 	tabId?: number;
@@ -62,6 +63,41 @@ export async function sendSpectraTabRequest<T extends SpectraRequestType>(
 	context: Omit<SpectraRequestContext, 'tabId'> = {},
 ): Promise<SpectraResponse<T>> {
 	const message = createEnvelope(type, payload, { ...context, tabId });
-	const response: unknown = await chrome.tabs.sendMessage(tabId, message);
-	return validateResponse(type, response);
+	const deliver = async (documentId?: string): Promise<SpectraResponse<T>> => {
+		const response: unknown = documentId
+			? await chrome.tabs.sendMessage(tabId, message, { documentId })
+			: await chrome.tabs.sendMessage(tabId, message);
+		return validateResponse(type, response);
+	};
+
+	let firstResponse: SpectraResponse<T> | null = null;
+	try {
+		firstResponse = await deliver(context.documentId);
+		if (firstResponse.ok
+			|| firstResponse.error.code !== 'content_runtime_not_loaded'
+			|| !requiresContentRuntime(type)) return firstResponse;
+	} catch (error) {
+		if (!requiresContentRuntime(type)) throw error;
+	}
+
+	const ensureResponse = await sendSpectraRequest('spectra.content.runtime.ensure', {
+		tabId,
+		...(context.documentId ? { documentId: context.documentId } : {}),
+		reason: type === 'spectra.hotkey.trigger' ? 'hotkey' : 'control',
+		capability: `request:${message.requestId}`,
+	});
+	if (!ensureResponse.ok) return { ok: false, error: ensureResponse.error };
+	const reason = type === 'spectra.hotkey.trigger' ? 'hotkey' : 'control';
+	const capability = `request:${message.requestId}`;
+	try {
+		return await deliver(ensureResponse.data.documentId);
+	} finally {
+		void sendSpectraRequest('spectra.content.runtime.release', {
+			runtimeRevision: ensureResponse.data.runtimeRevision,
+			tabId,
+			documentId: ensureResponse.data.documentId,
+			reason,
+			capability,
+		}).catch(() => undefined);
+	}
 }

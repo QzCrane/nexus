@@ -1,5 +1,13 @@
 # SPECTRA optimization review — 2026-07-15
 
+> Historical release evidence for the promoted 1.3.4 archive listed below.
+> It is not the owner of the current control architecture. The exhaustive
+> native/augmentation decisions, current implementation anchors and static
+> invariants are maintained in
+> [control-architecture.md](./control-architecture.md); current runtime ownership
+> is maintained in [architecture.md](./architecture.md) and
+> [protocols.md](./protocols.md).
+
 ## Outcome
 
 The implementation is complete inside the approved scope: SPECTRA, contracts, kernel, audio-engine, remote-site, and root tooling. Halo and ui-kit source files remain unchanged.
@@ -54,7 +62,7 @@ The Chrome matrix loads the actual MV3 worker, isolated Content runtime, MAIN ru
 | Promoted ZIP | 497,898 B | 558,770 B | deterministic stored archive of the 33-file production dist |
 
 - Production dist contains 33 files, zero source maps, zero test files, and zero debug console/source-map/development endpoint strings.
-- Static scan of `apps/extension-spectra/src` finds zero `setInterval` calls. The shared audio engine retains one finite 500 ms CORS signal observation interval, created only after processing activation; it is not idle media discovery.
+- At this historical release snapshot, the static scan found zero `setInterval` calls and one finite post-activation CORS signal observation interval. The current architecture no longer uses analyser silence or timed CORS probing; see [cors-data-flow.md](./cors-data-flow.md).
 - Real Chrome default-path smoke reports zero extension-created `AudioContext` instances and zero offscreen documents before user intent.
 - A 100-value slider burst produces one latest-value IPC containing the final value.
 - Settings persistence uses one 250 ms trailing storage write and flushes on committed change/page close.

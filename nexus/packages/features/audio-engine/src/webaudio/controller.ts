@@ -1,209 +1,277 @@
-// goal: main controller for managing the WebAudio graph and media element attachments
-// note: world-class performance: uses centralized detachment and a factory for lean management
+// goal: one page-lifetime media source owner backed by the shared sparse graph
 
-import { AudioParams, CompressorOn } from '../constants.js';
-import { scheduleCorsCheck } from './cors-checker.js';
-import { createAudioGraph, setCompressorEnabled } from './node-factory.js';
-import type { AudioConfig, AudioNodeSet, AudioMediaElement, CorsDetectedCallback, CorsSuccessCallback } from './types.js';
+import type { AudioConfig } from '@nexus/contracts';
+import {
+	AudioGraphRouter,
+	audioConfigToGraphConfig,
+	type AudioGraphSnapshot,
+} from '../AudioGraphRouter.js';
 
-export type { AudioConfig, CorsDetectedCallback, CorsSuccessCallback };
+export type { AudioConfig };
+
+export interface MediaSourceEligibilityEvidence {
+	kind: 'preload-cors';
+	resourceUrl: string;
+}
+
+export type MediaSourceEligibilityReason =
+	| 'same-origin'
+	| 'origin-owned-data'
+	| 'origin-owned-blob'
+	| 'explicit-preload-cors'
+	| 'resource-unselected'
+	| 'cross-origin-unproven'
+	| 'invalid-resource-url';
+
+export interface MediaSourceEligibility {
+	eligible: boolean;
+	reason: MediaSourceEligibilityReason;
+	resourceUrl: string;
+}
+
+export interface MediaSourceCoverageAssessment {
+	eligibility: 'proven' | 'unknown' | 'unsafe';
+	fullCoverage: boolean;
+	total: number;
+	eligible: number;
+	failures: MediaSourceEligibility[];
+}
+
+interface MediaAudioRuntime {
+	version: 2;
+	context: AudioContext;
+	router: AudioGraphRouter;
+	sources: WeakMap<HTMLMediaElement, MediaElementAudioSourceNode>;
+	elements: Set<HTMLMediaElement>;
+}
+
+interface RuntimeScope extends Window {
+	__SPECTRA_MEDIA_AUDIO_RUNTIME_V2__?: MediaAudioRuntime;
+}
+
+function pageOrigin(): string | null {
+	try {
+		const origin = globalThis.location?.origin;
+		return origin && origin !== 'null' ? origin : null;
+	} catch {
+		return null;
+	}
+}
+
+function resolveResourceUrl(element: HTMLMediaElement): string {
+	return element.currentSrc || element.src || '';
+}
+
+export function assessMediaSourceEligibility(
+	element: HTMLMediaElement,
+	evidence?: MediaSourceEligibilityEvidence,
+): MediaSourceEligibility {
+	const resourceUrl = resolveResourceUrl(element);
+	if (!resourceUrl) return { eligible: false, reason: 'resource-unselected', resourceUrl };
+	if (evidence?.resourceUrl === resourceUrl) {
+		return {
+			eligible: true,
+			reason: 'explicit-preload-cors',
+			resourceUrl,
+		};
+	}
+	if (resourceUrl.startsWith('data:')) {
+		return { eligible: true, reason: 'origin-owned-data', resourceUrl };
+	}
+	try {
+		const base = globalThis.document?.baseURI || globalThis.location?.href;
+		const url = new URL(resourceUrl, base);
+		const origin = pageOrigin();
+		if (url.protocol === 'blob:' && origin && url.origin === origin) {
+			return { eligible: true, reason: 'origin-owned-blob', resourceUrl: url.href };
+		}
+		if (origin && url.origin === origin) {
+			return { eligible: true, reason: 'same-origin', resourceUrl: url.href };
+		}
+		return { eligible: false, reason: 'cross-origin-unproven', resourceUrl: url.href };
+	} catch {
+		return { eligible: false, reason: 'invalid-resource-url', resourceUrl };
+	}
+}
+
+// post: full Media WebAudio coverage is prospective only when every current
+// registry source is selected and proven safe before any irreversible binding.
+export function assessMediaSourceCoverage(
+	elements: readonly HTMLMediaElement[],
+	evidenceFor: (element: HTMLMediaElement) => MediaSourceEligibilityEvidence | undefined = () => undefined,
+): MediaSourceCoverageAssessment {
+	const assessments = elements.map((element) => assessMediaSourceEligibility(element, evidenceFor(element)));
+	const failures = assessments.filter((assessment) => !assessment.eligible);
+	const hasUnsafe = failures.some((failure) => failure.reason !== 'resource-unselected');
+	return {
+		eligibility: elements.length === 0 || (!hasUnsafe && failures.length > 0)
+			? 'unknown'
+			: hasUnsafe
+				? 'unsafe'
+				: 'proven',
+		fullCoverage: elements.length > 0 && failures.length === 0,
+		total: elements.length,
+		eligible: assessments.length - failures.length,
+		failures,
+	};
+}
 
 export class WebAudioController {
-	private ctx: AudioContext | null = null;
-	private onCorsDetected: CorsDetectedCallback | null = null;
-	private onCorsSuccess: CorsSuccessCallback | null = null;
-	private skipCorsCheck = false;
-	private attachedNodes = new WeakMap<HTMLMediaElement, AudioNodeSet>();
+	private runtime: MediaAudioRuntime | null = null;
+	private readonly ownedSources = new Set<HTMLMediaElement>();
+	private visualizerRequested = false;
+	private visualizerDisposer: (() => void) | null = null;
+	private readonly bindingFailures = new WeakMap<HTMLMediaElement, string>();
 
-	private adoptExistingGraphs(): void {
-		document.querySelectorAll<HTMLMediaElement>('video, audio').forEach((element) => {
-			const media = element as AudioMediaElement;
-			if (!media._vm) return;
-			const vm = media._vm as AudioNodeSet & { chainTail?: AudioNode; compressorEnabled?: boolean };
-			if (!vm.chainTail) {
-				vm.chainTail = vm.eqNodes[vm.eqNodes.length - 1] ?? vm.bass;
-				// Older builds permanently routed through the limiter. Normalize it to bypass.
-				try { vm.chainTail.disconnect(); } catch { /* ignore */ }
-				try { vm.comp.disconnect(); } catch { /* ignore */ }
-				vm.chainTail.connect(vm.panner);
-				vm.compressorEnabled = false;
-			}
-			this.attachedNodes.set(element, vm as AudioNodeSet);
-			const graphContext = vm.source.context;
-			if (!this.ctx && graphContext instanceof AudioContext && graphContext.state !== 'closed') {
-				this.ctx = graphContext;
-			}
-		});
+	private synchronizeVisualizerTap(): boolean {
+		const canSubscribe = this.visualizerRequested
+			&& this.runtime !== null
+			&& this.runtime.context.state !== 'closed'
+			&& this.runtime.elements.size > 0;
+		if (canSubscribe && !this.visualizerDisposer) {
+			this.visualizerDisposer = this.runtime?.router.subscribeVisualizer() ?? null;
+		}
+		if (!canSubscribe && this.visualizerDisposer) {
+			this.visualizerDisposer();
+			this.visualizerDisposer = null;
+		}
+		return this.visualizerDisposer !== null;
 	}
 
 	async initialize(attemptResume = false): Promise<boolean> {
-		this.adoptExistingGraphs();
-		if (this.ctx && this.ctx.state !== 'closed') {
-			if (this.ctx.state === 'suspended' && attemptResume) {
-				try { await this.ctx.resume(); } catch { return false; }
+		const scope = window as RuntimeScope;
+		const existing = scope.__SPECTRA_MEDIA_AUDIO_RUNTIME_V2__;
+		if (existing?.version === 2 && existing.context.state !== 'closed') {
+			this.runtime = existing;
+			if (attemptResume && existing.context.state === 'suspended') {
+				try { await existing.context.resume(); } catch { return false; }
 			}
-			return this.ctx.state === 'running';
+			this.synchronizeVisualizerTap();
+			return existing.context.state === 'running';
 		}
 		try {
-			const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-			this.ctx = new AC();
-			if (attemptResume && this.ctx.state === 'suspended') {
-				try { await this.ctx.resume(); } catch { return false; }
-			}
-			return this.ctx.state === 'running';
-		} catch { return false; }
-	}
-
-	cleanup(): void {
-		this.adoptExistingGraphs();
-		if (!this.ctx) return;
-		const t = this.ctx.currentTime, r = AudioParams.SMOOTH_TIME_FAST;
-		document.querySelectorAll('video, audio').forEach((el) => {
-			const m = el as AudioMediaElement;
-			if (!m._vm) return;
-			const { gain, bass, eqNodes, panner, delayNode } = m._vm;
-			gain.gain.setTargetAtTime(1, t, r);
-			gain.channelCount = 2;
-			gain.channelCountMode = 'max';
-			bass.gain.setTargetAtTime(0, t, r);
-			setCompressorEnabled(m._vm, false);
-			eqNodes.forEach((n) => n.gain.setTargetAtTime(0, t, r));
-			panner.pan.setTargetAtTime(0, t, r);
-			delayNode.delayTime.setTargetAtTime(0, t, r);
-		});
-	}
-
-	isReady(): boolean { return this.ctx !== null && this.ctx.state !== 'closed'; }
-
-	// post: reset to transparent bypass without closing the context or invalidating source bindings
-	async destroyContext(): Promise<void> {
-		this.cleanup();
-	}
-
-	setCallbacks(onDetected: CorsDetectedCallback, onSuccess: CorsSuccessCallback): void {
-		this.onCorsDetected = onDetected;
-		this.onCorsSuccess = onSuccess;
-	}
-
-	setSkipCorsCheck(skip: boolean): void {
-		this.skipCorsCheck = skip;
-	}
-
-	scanAndAttach(): number {
-		if (!this.ctx) return 0;
-		let attached = 0;
-		document.querySelectorAll('video, audio').forEach((el) => {
-			if (this.attachNode(el as HTMLMediaElement)) attached++;
-		});
-		return attached;
-	}
-
-	attachNode(el: HTMLMediaElement): boolean {
-		const m = el as AudioMediaElement;
-		if (this.attachedNodes.has(el)
-			|| m._vm
-			|| m.dataset.vmAttached === 'true'
-			|| m.dataset.vmProbed === 'true'
-			|| !this.ctx) return false;
-
-		try {
-			if (!el.crossOrigin && el.src && !el.src.startsWith('data:') && !el.src.startsWith('blob:')) {
-				el.crossOrigin = 'anonymous';
-			}
-
-			m._vm = createAudioGraph(this.ctx, el);
-			m.dataset.vmAttached = 'true';
-			this.attachedNodes.set(el, m._vm);
-
-			const resume = () => {
-				if (this.ctx?.state === 'suspended') this.ctx.resume().catch(() => { });
+			const AudioContextConstructor = window.AudioContext
+				|| (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+			const context = new AudioContextConstructor();
+			const runtime: MediaAudioRuntime = {
+				version: 2,
+				context,
+				router: new AudioGraphRouter(context),
+				sources: new WeakMap(),
+				elements: new Set(),
 			};
-			el.addEventListener('play', resume);
-
-			if (!this.skipCorsCheck) {
-				scheduleCorsCheck(m._vm.analyser, el, (restricted) => {
-					if (restricted) this.handleCorsDetected();
-					else this.handleCorsSuccess();
-				});
-			}
-			return true;
+			scope.__SPECTRA_MEDIA_AUDIO_RUNTIME_V2__ = runtime;
+			this.runtime = runtime;
+			if (attemptResume && context.state === 'suspended') await context.resume();
+			this.synchronizeVisualizerTap();
+			return context.state === 'running';
 		} catch {
-			m.dataset.vmProbed = 'true';
-			this.handleCorsDetected();
 			return false;
 		}
 	}
 
-	detachNode(el: HTMLMediaElement): void {
-		const vm = this.attachedNodes.get(el);
-		if (!vm) return;
-		// MediaElementSource bindings are permanent. Keep the graph and make it transparent.
-		const t = vm.source.context.currentTime;
-		vm.gain.gain.setTargetAtTime(1, t, AudioParams.SMOOTH_TIME_FAST);
-		vm.bass.gain.setTargetAtTime(0, t, AudioParams.SMOOTH_TIME_FAST);
-		vm.eqNodes.forEach((node) => node.gain.setTargetAtTime(0, t, AudioParams.SMOOTH_TIME_FAST));
-		vm.panner.pan.setTargetAtTime(0, t, AudioParams.SMOOTH_TIME_FAST);
-		vm.delayNode.delayTime.setTargetAtTime(0, t, AudioParams.SMOOTH_TIME_FAST);
-		setCompressorEnabled(vm, false);
+	async cleanup(): Promise<void> {
+		if (!this.runtime || this.runtime.context.state === 'closed') return;
+		// Mode transitions own only the processing route. The explicit visualizer
+		// subscriber lease owns the analyser request, so a temporary bypass or a
+		// failed Capture handoff must not silently cancel an existing consumer.
+		await this.runtime.router.bypass();
 	}
 
-	private applyParamsToNode(vm: AudioNodeSet, config: AudioConfig): void {
-		const t = vm.source.context.currentTime;
-		const r = AudioParams.SMOOTH_TIME_FAST;
-		const v = config.muted ? 0 : config.volume / 100;
-		const { gain, bass, comp, eqNodes, panner, delayNode } = vm;
+	isReady(): boolean {
+		return this.runtime !== null && this.runtime.context.state !== 'closed';
+	}
 
-		gain.gain.setTargetAtTime(v, t, r);
-		gain.channelCount = config.mono ? 1 : 2;
-		gain.channelCountMode = config.mono ? 'explicit' : 'max';
-		bass.gain.setTargetAtTime(config.bass ? AudioParams.BASS_GAIN : 0, t, r);
-
-		setCompressorEnabled(vm, config.compressor);
-		if (config.compressor) {
-			comp.threshold.setTargetAtTime(CompressorOn.threshold, t, r);
-			comp.knee.setTargetAtTime(CompressorOn.knee, t, r);
-			comp.ratio.setTargetAtTime(CompressorOn.ratio, t, r);
-			comp.attack.setTargetAtTime(CompressorOn.attack, t, r);
-			comp.release.setTargetAtTime(CompressorOn.release, t, r);
+	ensureAttached(
+		element: HTMLMediaElement,
+		evidence?: MediaSourceEligibilityEvidence,
+	): boolean {
+		if (!this.runtime || this.runtime.context.state === 'closed') return false;
+		const eligibility = assessMediaSourceEligibility(element, evidence);
+		if (!eligibility.eligible) return false;
+		// A MediaElementSourceNode is page-lifetime and cannot be recreated. DOM
+		// removal disconnects only its graph route; reinsertion reconnects the
+		// existing binding and still counts as successful coverage.
+		const existing = this.runtime.sources.get(element);
+		if (existing) {
+			if (!this.runtime.elements.has(element)) {
+				this.runtime.router.connectSource(existing);
+			}
+			this.runtime.elements.add(element);
+			this.ownedSources.add(element);
+			this.bindingFailures.delete(element);
+			this.synchronizeVisualizerTap();
+			return true;
 		}
-
-		eqNodes.forEach((node, index) => node.gain.setTargetAtTime(config.eqValues[index] ?? 0, t, r));
-		panner.pan.setTargetAtTime(Math.max(-1, Math.min(1, config.pan ?? 0)), t, r);
-		delayNode.delayTime.setTargetAtTime(Math.max(0, Math.min(500, config.delay ?? 0)) / 1000, t, r);
+		try {
+			const source = this.runtime.context.createMediaElementSource(element);
+			this.runtime.sources.set(element, source);
+			this.runtime.elements.add(element);
+			this.ownedSources.add(element);
+			this.runtime.router.connectSource(source);
+			this.bindingFailures.delete(element);
+			this.synchronizeVisualizerTap();
+			return true;
+		} catch {
+			this.bindingFailures.set(element, eligibility.resourceUrl);
+			return false;
+		}
 	}
 
-	updateElementParams(el: HTMLMediaElement, config: AudioConfig): boolean {
-		const media = el as AudioMediaElement;
-		const vm = this.attachedNodes.get(el) ?? media._vm;
-		if (!vm) return false;
-		this.attachedNodes.set(el, vm);
-		this.applyParamsToNode(vm, config);
-		return true;
+	attachNode(
+		element: HTMLMediaElement,
+		evidence?: MediaSourceEligibilityEvidence,
+	): boolean {
+		return this.ensureAttached(element, evidence);
 	}
 
-	updateParams(config: AudioConfig): void {
-		this.adoptExistingGraphs();
-		document.querySelectorAll('video, audio').forEach((el) => {
-			const m = el as AudioMediaElement;
-			if (!m._vm) return;
-			this.applyParamsToNode(m._vm, config);
+	hasKnownBindingFailure(element: HTMLMediaElement): boolean {
+		return this.bindingFailures.get(element) === resolveResourceUrl(element);
+	}
+
+	hasCompleteCoverage(
+		elements: readonly HTMLMediaElement[],
+		evidenceFor: (element: HTMLMediaElement) => MediaSourceEligibilityEvidence | undefined = () => undefined,
+	): boolean {
+		const runtime = this.runtime;
+		if (!runtime || runtime.context.state === 'closed') return false;
+		if (!assessMediaSourceCoverage(elements, evidenceFor).fullCoverage) return false;
+		return elements.length > 0 && elements.every((element) =>
+			!this.hasKnownBindingFailure(element)
+			&& runtime.sources.has(element)
+			&& runtime.elements.has(element));
+	}
+
+	// The element-to-source binding is page-lifetime, but its shared graph route
+	// is connected only while the registry owns the element.
+	detachNode(element: HTMLMediaElement): void {
+		if (!this.ownedSources.delete(element)) return;
+		if (!this.runtime?.elements.delete(element)) return;
+		const source = this.runtime.sources.get(element);
+		if (source) this.runtime.router.disconnectSource(source);
+		this.synchronizeVisualizerTap();
+	}
+
+	async applyConfig(config: AudioConfig): Promise<AudioGraphSnapshot> {
+		if (!this.runtime || this.runtime.elements.size === 0) {
+			throw new Error('No proven media source is attached');
+		}
+		return this.runtime.router.apply(audioConfigToGraphConfig(config), {
+			requireRunning: true,
 		});
 	}
 
-	getVisualizerData(): Uint8Array | null {
-		this.adoptExistingGraphs();
-		if (!this.ctx) return null;
-		for (const el of document.querySelectorAll('video, audio')) {
-			const m = el as AudioMediaElement;
-			if (m._vm?.analyser) {
-				const data = new Uint8Array(m._vm.analyser.frequencyBinCount);
-				m._vm.analyser.getByteFrequencyData(data);
-				return data;
-			}
-		}
-		return null;
+	getActualSnapshot(): AudioGraphSnapshot | null {
+		return this.runtime?.router.getSnapshot() ?? null;
 	}
 
-	private handleCorsSuccess(): void { this.onCorsSuccess?.(window.location.hostname); }
-	private handleCorsDetected(): void { this.onCorsDetected?.(window.location.hostname); }
+	getVisualizerData(): Uint8Array | null {
+		if (!this.synchronizeVisualizerTap() || !this.runtime) return null;
+		return this.runtime.router.getVisualizerData();
+	}
+
+	setVisualizerSubscribed(subscribed: boolean): boolean {
+		this.visualizerRequested = subscribed;
+		return this.synchronizeVisualizerTap();
+	}
 }

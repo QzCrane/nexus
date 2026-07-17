@@ -4,12 +4,14 @@ import type { GlobalSettings } from '@nexus/kernel';
 import { TIMING } from '../constants';
 import { sendSpectraRequest } from '../../shared/spectra-client';
 import { drawViz } from './draw-viz';
+import { VISUALIZER_STATE_CHANGED_EVENT } from './events';
 
 export interface VizLoopParams {
   canvas: HTMLCanvasElement;
   tabId: number;
   getConfig: () => { enabled: boolean; muted: boolean };
   getCapturing: () => boolean;
+  isProcessorActive: () => boolean;
   getGlobalSettings: () => GlobalSettings;
 }
 
@@ -25,6 +27,12 @@ const subscriptions = new Set<VizSubscription>();
 const subscriptionsByCanvas = new Map<Element, VizSubscription>();
 let frameTimer: ReturnType<typeof setTimeout> | null = null;
 let frameId = 0;
+let announcedTabIds = '';
+let batchInFlight = false;
+let subscriberGeneration = 0;
+const subscriberId = typeof crypto.randomUUID === 'function'
+  ? `popup-${crypto.randomUUID()}`
+  : `popup-${Array.from(crypto.getRandomValues(new Uint32Array(2))).join('-')}`;
 
 const intersectionObserver = typeof IntersectionObserver === 'undefined'
   ? null
@@ -33,13 +41,20 @@ const intersectionObserver = typeof IntersectionObserver === 'undefined'
         const subscription = subscriptionsByCanvas.get(entry.target);
         if (subscription) subscription.visible = entry.isIntersecting && entry.intersectionRatio > 0;
       }
-      scheduleFrame();
+      reconcileScheduler();
     });
 
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) stopScheduledFrame();
-  else scheduleFrame();
+  if (document.hidden) {
+    stopScheduledFrame();
+    releaseSubscriptions();
+  }
+  else reconcileScheduler();
 });
+
+document.addEventListener(VISUALIZER_STATE_CHANGED_EVENT, reconcileScheduler);
+
+window.addEventListener('pagehide', releaseSubscriptions);
 
 function stopScheduledFrame(): void {
   if (frameTimer) {
@@ -52,15 +67,33 @@ function stopScheduledFrame(): void {
   }
 }
 
-function hasVisibleSubscriptions(): boolean {
+function isRunnable(subscription: VizSubscription): boolean {
+  if (!subscription.active || !subscription.visible) return false;
+  const config = subscription.params.getConfig();
+  return config.enabled
+    && !config.muted
+    && subscription.params.getGlobalSettings().visualizerEnabled !== false
+    && subscription.params.isProcessorActive();
+}
+
+function hasRunnableSubscriptions(): boolean {
   for (const subscription of subscriptions) {
-    if (subscription.active && subscription.visible) return true;
+    if (isRunnable(subscription)) return true;
   }
   return false;
 }
 
+function reconcileScheduler(): void {
+  if (document.hidden || !hasRunnableSubscriptions()) {
+    stopScheduledFrame();
+    releaseSubscriptions();
+    return;
+  }
+  scheduleFrame();
+}
+
 function scheduleFrame(): void {
-  if (document.hidden || frameTimer || frameId || !hasVisibleSubscriptions()) return;
+  if (document.hidden || frameTimer || frameId || !hasRunnableSubscriptions()) return;
   frameTimer = setTimeout(() => {
     frameTimer = null;
     frameId = requestAnimationFrame(runFrame);
@@ -69,13 +102,14 @@ function scheduleFrame(): void {
 
 function runFrame(): void {
   frameId = 0;
+  // The in-flight request owns the next scheduling decision in its `finally`.
+  // Do not wake a 15 Hz timer merely to discover that IPC is still pending.
+  if (batchInFlight) return;
   const ready: VizSubscription[] = [];
   for (const subscription of subscriptions) {
     if (!subscription.active || !subscription.visible || subscription.requesting) continue;
     const { params } = subscription;
-    const config = params.getConfig();
-    const settings = params.getGlobalSettings();
-    if (!config.enabled || config.muted || settings.visualizerEnabled === false) {
+    if (!isRunnable(subscription)) {
       if (!subscription.silent) drawViz(params.canvas, null, true, params.getCapturing());
       subscription.silent = true;
       continue;
@@ -84,17 +118,31 @@ function runFrame(): void {
     subscription.requesting = true;
     ready.push(subscription);
   }
-  if (ready.length > 0) void sampleBatch(ready);
-  scheduleFrame();
+  if (ready.length > 0) {
+    void sampleBatch(ready);
+    return;
+  }
+  releaseSubscriptions();
 }
 
 async function sampleBatch(ready: VizSubscription[]): Promise<void> {
+  const tabIds = [...new Set(ready.map((subscription) => subscription.params.tabId))];
+  announcedTabIds = [...tabIds].sort((left, right) => left - right).join(',');
+  const generation = ++subscriberGeneration;
+  batchInFlight = true;
   try {
     const response = await sendSpectraRequest('spectra.audio.visualizer.batch', {
-      tabIds: [...new Set(ready.map((subscription) => subscription.params.tabId))],
+      subscriberId,
+      generation,
+      tabIds,
     });
     for (const subscription of ready) {
       const frame = response.ok
+        && response.data.subscriberId === subscriberId
+        && response.data.generation === generation
+        && subscriberGeneration === generation
+        && subscription.active
+        && subscription.visible
         ? (response.data.frames[String(subscription.params.tabId)] ?? null)
         : null;
       drawViz(
@@ -110,8 +158,20 @@ async function sampleBatch(ready: VizSubscription[]): Promise<void> {
     }
   } finally {
     for (const subscription of ready) subscription.requesting = false;
-    scheduleFrame();
+    batchInFlight = false;
+    reconcileScheduler();
   }
+}
+
+function releaseSubscriptions(): void {
+  if (!announcedTabIds) return;
+  announcedTabIds = '';
+  const generation = ++subscriberGeneration;
+  void sendSpectraRequest('spectra.audio.visualizer.batch', {
+    subscriberId,
+    generation,
+    tabIds: [],
+  }).catch(() => undefined);
 }
 
 function register(params: VizLoopParams): () => void {
@@ -125,14 +185,14 @@ function register(params: VizLoopParams): () => void {
   subscriptions.add(subscription);
   subscriptionsByCanvas.set(params.canvas, subscription);
   intersectionObserver?.observe(params.canvas);
-  scheduleFrame();
+  reconcileScheduler();
 
   return () => {
     subscription.active = false;
     subscriptions.delete(subscription);
     subscriptionsByCanvas.delete(params.canvas);
     intersectionObserver?.unobserve(params.canvas);
-    if (!hasVisibleSubscriptions()) stopScheduledFrame();
+    reconcileScheduler();
   };
 }
 

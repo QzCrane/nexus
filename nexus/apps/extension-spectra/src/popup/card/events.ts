@@ -1,13 +1,13 @@
 // goal: binds native DOM events (clicks, inputs, wheel, touch) to audio configuration updates and registry persistence
 
-import { DEFAULT_AUDIO_CONFIG } from '@nexus/kernel';
 import type { CardUIElements } from '../types';
 import type { CardInternalState } from './types';
 import type { ConfigUpdateFn } from './state';
 import { AUDIO_UI, TIMING } from '../constants';
-import { getDomain, requestTab } from '../utils/dom';
+import { getDomain } from '../utils/dom';
 import { bindMediaControls } from './media-events';
 import { patchSettings } from '../../shared/settings-client';
+import { sendSpectraRequest } from '../../shared/spectra-client';
 
 export interface EventsParams {
   ui: CardUIElements;
@@ -22,8 +22,19 @@ export interface EventsParams {
 
 // eff: attaches event listeners to the card UI components, managing the lifecycle of user interactions
 export function bindCardEvents(params: EventsParams): void {
-  const { ui, state, tabId, tabUrl, update, onMetricsUpdate } = params;
+  const { ui, state, tabId, tabUrl, update, onMetricsUpdate, render } = params;
   const domain = getDomain(tabUrl);
+
+	const readActualSpeed = async (): Promise<number | null> => {
+		const response = await sendSpectraRequest(
+			'spectra.control.snapshot.get',
+			{ tabId },
+			{ tabId },
+		);
+		if (!response.ok) return null;
+		const speed = response.data?.fields.speed?.actual;
+		return typeof speed === 'number' ? speed : null;
+	};
 
   ui.enable.onchange = (e) => {
     const enabled = (e.target as HTMLInputElement).checked;
@@ -41,28 +52,63 @@ export function bindCardEvents(params: EventsParams): void {
 
   const handleVolume = (val: string | number) => {
     const v = typeof val === 'string' ? parseInt(val, 10) : val;
-    update({ volume: v, muted: false });
+    update({ volumeBase: v });
+  };
+
+  const handleBoost = (val: string | number) => {
+    const raw = typeof val === 'string' ? Number.parseFloat(val) : val;
+    const boost = Math.round(Math.max(AUDIO_UI.BOOST_MIN, Math.min(AUDIO_UI.BOOST_MAX, raw)) * 10) / 10;
+    update({ boost });
+  };
+
+	const submitToggle = async (field: 'mediaMuted'): Promise<void> => {
+		const response = await sendSpectraRequest(
+			'spectra.control.intent.submit',
+			{
+				tabId,
+				source: 'popup',
+				requestedCoverage: 'active-target',
+				target: state.controlSnapshot?.activeMedia ?? null,
+				baseRevision: state.controlRevision,
+				mutations: [{ field, operation: 'toggle' }],
+			},
+			{ tabId },
+		);
+		if (!response.ok) {
+			state.lastError = response.error;
+			throw new Error(response.error.message);
+		}
+		const fieldState = response.data.fields[field];
+		if (fieldState?.phase !== 'applied') {
+			const error = fieldState?.lastError ?? {
+				code: 'control_not_applied',
+				message: 'Mute state was not applied',
+				retryable: true,
+			};
+			state.lastError = error;
+			throw new Error(error.message);
+		}
+	};
+
+  const setDragging = (field: CardInternalState['draggingField']) => {
+    state.draggingField = field;
+    state.isDragging = field !== null;
   };
 
   ui.slider.oninput = (e) => {
-    state.isDragging = true;
+    setDragging('volumeBase');
     handleVolume((e.target as HTMLInputElement).value);
   };
 
   // note: manage dragging state across various input modalities to prevent "flicker" during external UI sync
-  const _endDragging = () => {
-    state.isDragging = false;
-    params.render?.();
-  };
-
   ui.slider.onchange = () => {
-    state.isDragging = false;
+    setDragging(null);
     void update.flush().catch(() => undefined);
   };
-  ui.slider.onmouseup = () => { state.isDragging = false; };
-  ui.slider.ontouchend = () => { state.isDragging = false; };
-  ui.slider.onmousedown = () => { state.isDragging = true; };
-  ui.slider.ontouchstart = () => { state.isDragging = true; };
+  ui.slider.onmouseup = () => setDragging(null);
+  ui.slider.ontouchend = () => setDragging(null);
+  ui.slider.onmousedown = () => setDragging('volumeBase');
+  ui.slider.ontouchstart = () => setDragging('volumeBase');
 
   // eff: enable rapid volume adjustment via mouse wheel with preventDefault to avoid scrolling the popup body
   ui.sliderArea.addEventListener('wheel', (e) => {
@@ -72,12 +118,37 @@ export function bindCardEvents(params: EventsParams): void {
 
     let v = parseInt(ui.slider.value, 10);
     v = e.deltaY < 0
-      ? Math.min(v + AUDIO_UI.VOLUME_STEP, AUDIO_UI.MAX_VOLUME)
-      : Math.max(v - AUDIO_UI.VOLUME_STEP, 0);
+      ? Math.min(v + AUDIO_UI.MAIN_VOLUME_STEP, AUDIO_UI.MAIN_VOLUME_MAX)
+      : Math.max(v - AUDIO_UI.MAIN_VOLUME_STEP, 0);
     handleVolume(v);
   }, { passive: false });
 
-  ui.mute.onclick = () => update({ muted: !state.config.muted });
+  ui.boostSlider.oninput = (event) => {
+    setDragging('boost');
+    handleBoost((event.target as HTMLInputElement).value);
+  };
+  ui.boostSlider.onchange = () => {
+    setDragging(null);
+    void update.flush().catch(() => undefined);
+  };
+  ui.boostSlider.onmouseup = () => setDragging(null);
+  ui.boostSlider.ontouchend = () => setDragging(null);
+  ui.boostSlider.onmousedown = () => setDragging('boost');
+  ui.boostSlider.ontouchstart = () => setDragging('boost');
+  ui.boostSliderArea.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!state.config.enabled) return;
+    const current = Number.parseFloat(ui.boostSlider.value);
+    const next = event.deltaY < 0
+      ? Math.min(current + AUDIO_UI.BOOST_STEP, AUDIO_UI.BOOST_MAX)
+      : Math.max(current - AUDIO_UI.BOOST_STEP, AUDIO_UI.BOOST_MIN);
+    handleBoost(next);
+  }, { passive: false });
+
+  ui.mute.onclick = () => {
+	void submitToggle('mediaMuted').catch(() => render());
+  };
 
   if (ui.comp) ui.comp.onchange = (e) => update({ compressor: (e.target as HTMLInputElement).checked });
   if (ui.bass) ui.bass.onchange = (e) => update({ bass: (e.target as HTMLInputElement).checked });
@@ -125,9 +196,9 @@ export function bindCardEvents(params: EventsParams): void {
   ui.btnSave.onclick = async () => {
     // eff: capture current playback speed to include in the preset
     try {
-      const mediaState = await requestTab(tabId, 'spectra.media.state.get', {});
-      if (mediaState?.speed) {
-        state.config.speed = mediaState.speed;
+      const speed = await readActualSpeed();
+	  if (speed !== null) {
+		state.config.speed = speed;
       }
     } catch (e) {
       console.warn('Failed to get speed for preset save', e);
@@ -145,9 +216,9 @@ export function bindCardEvents(params: EventsParams): void {
     ui.btnSaveGlobal.onclick = async () => {
       // eff: capture current playback speed
       try {
-        const mediaState = await requestTab(tabId, 'spectra.media.state.get', {});
-        if (mediaState?.speed) {
-          state.config.speed = mediaState.speed;
+        const speed = await readActualSpeed();
+		if (speed !== null) {
+		  state.config.speed = speed;
         }
       } catch (e) {
         console.warn('Failed to get speed for global preset save', e);
@@ -169,7 +240,28 @@ export function bindCardEvents(params: EventsParams): void {
     };
   }
 
-  ui.btnReset.onclick = () => update(DEFAULT_AUDIO_CONFIG);
+  ui.btnReset.onclick = () => {
+	void sendSpectraRequest(
+		'spectra.control.operation.submit',
+		{
+			tabId,
+			source: 'popup',
+			target: state.controlSnapshot?.activeMedia ?? null,
+			baseRevision: state.controlRevision,
+			operation: 'audio-reset',
+			payload: {},
+		},
+		{ tabId },
+	).then((response) => {
+		if (!response.ok) state.lastError = response.error;
+	}, (error) => {
+		state.lastError = {
+			code: 'audio_reset_failed',
+			message: error instanceof Error ? error.message : String(error),
+			retryable: true,
+		};
+	}).finally(render);
+  };
 
-  bindMediaControls(ui, tabId, (changes) => update(changes));
+  bindMediaControls(ui, tabId, state, (changes) => update(changes));
 }

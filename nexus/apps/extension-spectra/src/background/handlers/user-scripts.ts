@@ -20,22 +20,41 @@ async function isUserScriptsAvailable(): Promise<boolean> {
 	}
 }
 
-// eff: configures the USER_SCRIPT world to allow eval-like functionality
+// eff: configures the isolated USER_SCRIPT sandbox only for a real execution
 async function initUserScriptsWorld(): Promise<void> {
+	await chrome.userScripts.configureWorld({
+		csp: "script-src 'self' 'unsafe-inline'",
+	});
+	swLog.debug('UserScripts world configured');
+}
+
+let userScriptsWorldReady: Promise<void> | null = null;
+
+async function ensureUserScriptsWorld(): Promise<void> {
+	userScriptsWorldReady ??= initUserScriptsWorld();
 	try {
-		await chrome.userScripts.configureWorld({
-			csp: "script-src 'self' 'unsafe-inline'",
-		});
-		swLog.debug('UserScripts world configured');
-	} catch (e) {
-		swLog.warn('Failed to configure userScripts world:', e);
+		await userScriptsWorldReady;
+	} catch (error) {
+		userScriptsWorldReady = null;
+		throw error;
 	}
 }
 
-const userScriptsWorldReady = initUserScriptsWorld();
+function isExecutableUserScript(script: unknown): script is string {
+	return typeof script === 'string' && script.length > 0 && script.length <= 100_000;
+}
 
-// eff: executes user-provided script in the target tab's MAIN world
-async function executeUserScript(tabId: number, script: string): Promise<{ success: boolean; error?: string }> {
+// eff: executes user-provided script in the target tab's USER_SCRIPT sandbox
+export async function executeUserScriptInTab(
+	tabId: number,
+	documentId: string,
+	script: string,
+): Promise<{ success: boolean; error?: string }> {
+	if (!Number.isSafeInteger(tabId) || tabId <= 0
+		|| typeof documentId !== 'string' || documentId.length === 0 || documentId.length > 256
+		|| !isExecutableUserScript(script)) {
+		return { success: false, error: 'Invalid user script request' };
+	}
 	const available = await isUserScriptsAvailable();
 	if (!available) {
 		return {
@@ -45,13 +64,24 @@ async function executeUserScript(tabId: number, script: string): Promise<{ succe
 	}
 
 	try {
-		await userScriptsWorldReady;
-		await chrome.userScripts.execute({
-			target: { tabId },
+		await ensureUserScriptsWorld();
+		const before = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
+		if (before?.documentId !== documentId) {
+			return { success: false, error: 'User script target document is stale' };
+		}
+		const results = await chrome.userScripts.execute({
+			target: { tabId, documentIds: [documentId] },
 			js: [{ code: script }],
 			world: 'USER_SCRIPT',
 			injectImmediately: true,
 		});
+		if (results.length !== 1 || results[0]?.documentId !== documentId) {
+			return { success: false, error: 'User script result came from a stale document' };
+		}
+		const after = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
+		if (after?.documentId !== documentId) {
+			return { success: false, error: 'User script document navigated before acknowledgement' };
+		}
 		return { success: true };
 	} catch (e) {
 		const message = e instanceof Error ? e.message : String(e);
@@ -66,7 +96,7 @@ export function registerUserScriptsHandler(): void {
 		if (!isRecord(message)
 			|| message.protocolVersion !== SPECTRA_PROTOCOL_VERSION
 			|| message.type !== 'spectra.user-script.execute') return false;
-		if (sender.id !== chrome.runtime.id || !sender.tab?.id) {
+		if (sender.id !== chrome.runtime.id || !sender.tab?.id || !sender.documentId) {
 			sendResponse(rpcFailure('forbidden', 'User scripts require an extension content-script context'));
 			return false;
 		}
@@ -75,7 +105,7 @@ export function registerUserScriptsHandler(): void {
 			return false;
 		}
 		if (message.type !== 'spectra.user-script.execute') return false;
-		void executeUserScript(sender.tab.id, message.payload.script)
+		void executeUserScriptInTab(sender.tab.id, sender.documentId, message.payload.script)
 			.then((result) => {
 				sendResponse(result.success
 					? rpcSuccess({ executed: true as const })
@@ -93,13 +123,13 @@ export function registerUserScriptsHandler(): void {
 
 	router.on('USER_SCRIPT_EXECUTE', async (req, sender) => {
 		const tabId = sender.tab?.id;
-		if (!tabId) {
+		if (!tabId || !sender.documentId) {
 			return { success: false, error: 'No tab context' };
 		}
-		if (!req.script) {
+		if (!isExecutableUserScript(req.script)) {
 			return { success: false, error: 'No script provided' };
 		}
-		return executeUserScript(tabId, req.script);
+		return executeUserScriptInTab(tabId, sender.documentId, req.script);
 	});
 
 	swLog.debug('UserScripts handler registered');

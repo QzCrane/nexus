@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { SPECTRA_SETTINGS_SCHEMA_VERSION } from '@nexus/contracts';
 import type { SettingsStorageArea } from '../src/background/settings-repository';
 import {
+	InvalidSettingsPatchError,
 	SETTINGS_WRITE_DEBOUNCE_MS,
 	SettingsRepository,
 	SettingsRevisionConflictError,
@@ -72,7 +73,12 @@ describe('background settings repository', () => {
 		expect(first.globalSettings.lang).toBe('es-ES');
 		expect(first.hotkeySettings.sites['example.com']?.bindings[0]?.enabled).toBe(false);
 		expect(first.hotkeySettings.disabledLegacyBindings?.[0]?.disabledReason).toBe('unsupported_action');
-		expect(first.audioSites['example.com']).toEqual({ volume: 150, delay: 0 });
+		expect(first.audioSites['example.com']).toEqual({
+			volume: 150,
+			volumeBase: 100,
+			boost: 1.5,
+			delay: 0,
+		});
 		expect(first.audioPresets.Alpha?.meta.isDefault).toBe(true);
 		expect(first.audioPresets.Zulu?.config.delay).toBe(0);
 		expect(first.defaultPresetId).toBe('Alpha');
@@ -133,7 +139,13 @@ describe('background settings repository', () => {
 			'first',
 			'second',
 		]);
-		expect(first.audioSites['example.com']).toEqual({ volume: 150, delay: 0, pan: 0.25 });
+		expect(first.audioSites['example.com']).toEqual({
+			volume: 150,
+			volumeBase: 100,
+			boost: 1.5,
+			delay: 0,
+			pan: 0.25,
+		});
 		expect(second.hotkeySettings.sites['example.com']).toEqual(first.hotkeySettings.sites['example.com']);
 		expect(storage.writes).toHaveLength(writesAfterMigration);
 		const persistedSite = (storage.values.siteSettings as Record<string, Record<string, unknown>>)['example.com'];
@@ -490,6 +502,64 @@ describe('background settings repository', () => {
 		expect(site.hotkeySettings.slots.slot_01).toBe('volume_down');
 		expect(site.hotkeySettings.sites['music.example.com']?.enabled).toBe(true);
 		await repository.flush();
+	});
+
+	test('rejects parameterized and disabled legacy actions from Chrome command slots', async () => {
+		const repository = new SettingsRepository(new FakeStorageArea());
+		const initial = await repository.initialize();
+		for (const action of ['speed_set', 'pitch_up'] as const) {
+			await expect(repository.applyPatch(
+				{ scope: 'hotkey-slots', changes: { slot_01: action } },
+				initial.revision,
+			)).rejects.toBeInstanceOf(InvalidSettingsPatchError);
+		}
+	});
+
+	test('removes invalid legacy Chrome command slots during normalization', async () => {
+		const repository = new SettingsRepository(new FakeStorageArea({
+			hotkeySettings: {
+				slots: { slot_01: 'speed_set', slot_02: 'pitch_up', slot_03: 'volume_down' },
+				sites: {},
+			},
+		}));
+		const snapshot = await repository.initialize();
+		expect(snapshot.hotkeySettings.slots.slot_01).toBeUndefined();
+		expect(snapshot.hotkeySettings.slots.slot_02).toBeUndefined();
+		expect(snapshot.hotkeySettings.slots.slot_03).toBe('volume_down');
+	});
+
+	test('removes legacy site bindings whose required parameters are missing or unsafe', async () => {
+		const binding = (id: string, action: 'speed_set' | 'volume_set' | 'open_url', params?: Record<string, unknown>) => ({
+			id,
+			enabled: true,
+			key: { code: `Key${id}`, modifiers: { ctrl: false, alt: false, shift: false, meta: false } },
+			action,
+			...(params ? { params } : {}),
+		});
+		const repository = new SettingsRepository(new FakeStorageArea({
+			hotkeySettings: {
+				slots: {},
+				sites: {
+					'example.com': {
+						enabled: true,
+						bindings: [
+							binding('A', 'speed_set'),
+							binding('B', 'open_url', { url: 'javascript:alert(1)' }),
+							binding('C', 'speed_set', { speed: 1.5 }),
+							binding('D', 'volume_set', { volume: 800 }),
+						],
+					},
+				},
+			},
+		}));
+		const snapshot = await repository.initialize();
+		expect(snapshot.hotkeySettings.sites['example.com']?.bindings.map(({ id }) => id)).toEqual(['C', 'D']);
+		expect(snapshot.hotkeySettings.sites['example.com']?.bindings[1]).toMatchObject({
+			enabled: false,
+			params: { volume: 100 },
+			disabledReason: 'unsupported_action',
+		});
+		expect(snapshot.hotkeySettings.disabledLegacyBindings?.map(({ id }) => id)).toContain('D');
 	});
 
 	test('applies binding-level site mutations against the latest repository state', async () => {
