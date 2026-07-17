@@ -16,10 +16,10 @@
 	],
 	"summary": {
 		"checkedFiles": 925,
-		"diagnostics": 903,
-		"errors": 634,
-		"warnings": 176,
-		"infos": 93
+		"diagnostics": 906,
+		"errors": 631,
+		"warnings": 173,
+		"infos": 102
 	},
 	"categories": [
 		{
@@ -92,11 +92,11 @@
 		},
 		{
 			"category": "lint/correctness/noUnusedVariables",
-			"count": 33
+			"count": 30
 		},
 		{
 			"category": "lint/correctness/useExhaustiveDependencies",
-			"count": 124
+			"count": 123
 		},
 		{
 			"category": "lint/correctness/useParseIntRadix",
@@ -128,7 +128,7 @@
 		},
 		{
 			"category": "lint/style/useTemplate",
-			"count": 27
+			"count": 36
 		},
 		{
 			"category": "lint/suspicious/noArrayIndexKey",
@@ -137,10 +137,6 @@
 		{
 			"category": "lint/suspicious/noAssignInExpressions",
 			"count": 4
-		},
-		{
-			"category": "lint/suspicious/noDoubleEquals",
-			"count": 2
 		},
 		{
 			"category": "lint/suspicious/noDuplicateProperties",
@@ -2786,19 +2782,6 @@
 			]
 		},
 		{
-			"fingerprint": "21ac4c0b0291eda643cdd233a743957b18ca02555e8daddb4ce65e8d902b818f",
-			"severity": "error",
-			"path": "apps/extension-halo/src/content/dom-selector.ts",
-			"category": "lint/suspicious/noDoubleEquals",
-			"message": "Using == may be unsafe if you are relying on type coercion.",
-			"range": [
-				98,
-				36,
-				98,
-				38
-			]
-		},
-		{
 			"fingerprint": "21e7332782216cd0fa276516cd961bf73aa1c0e3aa399459de080594a83f3c9c",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/tabs/TabItem.tsx",
@@ -3147,19 +3130,6 @@
 				23,
 				6,
 				57
-			]
-		},
-		{
-			"fingerprint": "28cb8907421ec1d3631d7df7a67506efcffd3fd31a2236e3eeddc3f3ff188247",
-			"severity": "error",
-			"path": "apps/extension-halo/src/content/dom-selector.ts",
-			"category": "lint/suspicious/noDoubleEquals",
-			"message": "Using != may be unsafe if you are relying on type coercion.",
-			"range": [
-				100,
-				12,
-				100,
-				14
 			]
 		},
 		{
@@ -3553,6 +3523,19 @@
 			]
 		},
 		{
+			"fingerprint": "314c6a9061a97c54b9b05442bde1931322d67c0d5900f113f96ad3e9a5fd0534",
+			"severity": "info",
+			"path": "apps/extension-halo/src/content/dom-selector.ts",
+			"category": "lint/style/useTemplate",
+			"message": "Template literals are preferred over string concatenation.",
+			"range": [
+				95,
+				16,
+				95,
+				27
+			]
+		},
+		{
 			"fingerprint": "31502db47e58718d96f818a7c47ba70ebee1ab1f19895e765be7f83a65ea4bf6",
 			"severity": "error",
 			"path": "apps/extension-halo/src/entry/content.ts",
@@ -3680,19 +3663,6 @@
 				18,
 				69,
 				19
-			]
-		},
-		{
-			"fingerprint": "33a2f4fa54282b4045a77f5c1d666461e5d68638ee30309593daeb2be51b4949",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/system/userscripts/registry.ts",
-			"category": "lint/complexity/useOptionalChain",
-			"message": "Change to an optional chain.",
-			"range": [
-				201,
-				8,
-				201,
-				67
 			]
 		},
 		{
@@ -3839,6 +3809,19 @@
 			]
 		},
 		{
+			"fingerprint": "37a29e49f09eddc5c410187c18c42a244517b0476209ce350b4d45e98f872463",
+			"severity": "info",
+			"path": "apps/extension-halo/src/system/userscripts/registry.ts",
+			"category": "lint/style/useTemplate",
+			"message": "Template literals are preferred over string concatenation.",
+			"range": [
+				89,
+				3,
+				89,
+				85
+			]
+		},
+		{
 			"fingerprint": "37d57b070372bdf8ae58e6e1df69b423b101a6346eed1a982b475eb6e2d935fa",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/cookie-manager/panel.tsx",
@@ -3979,19 +3962,6 @@
 				5,
 				114,
 				49
-			]
-		},
-		{
-			"fingerprint": "3b893b639116e75e9709f1ea2af51ba79f33bc3cdf6ad4370aa5c25f0d94613f",
-			"severity": "info",
-			"path": "apps/extension-halo/src/content/dom-selector.ts",
-			"category": "lint/style/useTemplate",
-			"message": "Template literals are preferred over string concatenation.",
-			"range": [
-				92,
-				16,
-				92,
-				27
 			]
 		},
 		{
@@ -4398,6 +4368,19 @@
 			]
 		},
 		{
+			"fingerprint": "42d5b64bf8238cf82355ba388941d542ab8d0c1b0ea59ac05f195b4ccbc6a221",
+			"severity": "info",
+			"path": "apps/extension-halo/src/system/userscripts/registry.ts",
+			"category": "lint/style/useTemplate",
+			"message": "Template literals are preferred over string concatenation.",
+			"range": [
+				77,
+				4,
+				77,
+				90
+			]
+		},
+		{
 			"fingerprint": "431fb54de3e570988c82121e5a8fad7cbf46d519ebb17cc9523a5427c4c75608",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/pdf/panel.tsx",
@@ -4684,19 +4667,6 @@
 			]
 		},
 		{
-			"fingerprint": "47de6d8ece05a46535318eafffc8b724d612b197eb37b24cc4f779159988c177",
-			"severity": "info",
-			"path": "apps/extension-halo/src/content/dom-selector.ts",
-			"category": "lint/style/useTemplate",
-			"message": "Template literals are preferred over string concatenation.",
-			"range": [
-				100,
-				30,
-				100,
-				57
-			]
-		},
-		{
 			"fingerprint": "485d3e5602792bc33408dc1889592ed928b2e5b90b37628ec10988f8606208e4",
 			"severity": "warning",
 			"path": "apps/extension-halo/src/tools/csp-analyzer/panel.tsx",
@@ -4785,19 +4755,6 @@
 				7,
 				81,
 				71
-			]
-		},
-		{
-			"fingerprint": "4a439130f02089b643ae53d3bda69b00e5bc2ca907c1b0f57ac4c33458ed6042",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/tools/base64/core.ts",
-			"category": "lint/correctness/noUnusedVariables",
-			"message": "This variable e is unused.",
-			"range": [
-				36,
-				11,
-				36,
-				12
 			]
 		},
 		{
@@ -4993,19 +4950,6 @@
 				21,
 				37,
 				32
-			]
-		},
-		{
-			"fingerprint": "4e7686a6ede9f2552e13b0202da9a36865cd149c7af1b3a8c2fd6b4b0b3a66b6",
-			"severity": "error",
-			"path": "apps/extension-halo/src/content/dom-selector.ts",
-			"category": "lint/suspicious/noAssignInExpressions",
-			"message": "The assignment should not be in an expression.",
-			"range": [
-				97,
-				11,
-				97,
-				54
 			]
 		},
 		{
@@ -5321,6 +5265,19 @@
 			]
 		},
 		{
+			"fingerprint": "563e444a785f1fb1dfd7c6fcc263da0aefd011f053ec9672d2998fdbcc0ebba8",
+			"severity": "info",
+			"path": "apps/extension-halo/src/system/userscripts/engine.ts",
+			"category": "lint/style/useTemplate",
+			"message": "Template literals are preferred over string concatenation.",
+			"range": [
+				54,
+				4,
+				54,
+				17
+			]
+		},
+		{
 			"fingerprint": "56dc47298a07c265d5dbad2968eb4827317e8af81d6067b888f123163552f0be",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/headers-viewer/panel.tsx",
@@ -5396,6 +5353,19 @@
 				5,
 				98,
 				125
+			]
+		},
+		{
+			"fingerprint": "58b99d044c332df45e8c0ab6abda4b328e8c690c482c4d99e05424096b3faad7",
+			"severity": "info",
+			"path": "apps/extension-halo/src/system/userscripts/registry.ts",
+			"category": "lint/style/useTemplate",
+			"message": "Template literals are preferred over string concatenation.",
+			"range": [
+				73,
+				4,
+				73,
+				52
 			]
 		},
 		{
@@ -5916,6 +5886,19 @@
 				28,
 				5,
 				39
+			]
+		},
+		{
+			"fingerprint": "67b0697c14358350448dab352f6301a1302391cfef03eb33e1e1f06124c66bfe",
+			"severity": "info",
+			"path": "apps/extension-halo/src/system/userscripts/registry.ts",
+			"category": "lint/style/useTemplate",
+			"message": "Template literals are preferred over string concatenation.",
+			"range": [
+				74,
+				4,
+				74,
+				75
 			]
 		},
 		{
@@ -6686,19 +6669,6 @@
 			]
 		},
 		{
-			"fingerprint": "78e572e5bfc01a8aecf9634c8c1d73fcc5ec5a5a79d5be69d122600cc13ead1b",
-			"severity": "info",
-			"path": "apps/extension-halo/src/content/dom-selector.ts",
-			"category": "lint/style/useTemplate",
-			"message": "Template literals are preferred over string concatenation.",
-			"range": [
-				120,
-				11,
-				120,
-				111
-			]
-		},
-		{
 			"fingerprint": "797f0cbb5b2d4d81fbc0c9b75d46fc9ea6e405dad98acb86b9a83a0d5bcd3160",
 			"severity": "warning",
 			"path": "apps/extension-halo/src/components/sidepanel/LauncherToolItem.tsx",
@@ -6894,19 +6864,6 @@
 			]
 		},
 		{
-			"fingerprint": "7d2a733852da9a926557eae447b0b2a9256d359ecc65edfc5c6133af0116bd87",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/tools/hover-zoom/content/viewer/mse-player.ts",
-			"category": "lint/correctness/noUnusedVariables",
-			"message": "This variable e is unused.",
-			"range": [
-				121,
-				12,
-				121,
-				13
-			]
-		},
-		{
 			"fingerprint": "7e4338ceedb689d649e51bcbf7fcf9c930a16a3b4b236651ec1a84c0f4ff1253",
 			"severity": "warning",
 			"path": "apps/extension-halo/src/system/module-store/module-list.tsx",
@@ -7086,6 +7043,19 @@
 				7,
 				81,
 				64
+			]
+		},
+		{
+			"fingerprint": "81832528f8cab6ea15bf06b15557821479e7280158a1747297aa6116e1d1bbac",
+			"severity": "info",
+			"path": "apps/extension-halo/src/system/userscripts/engine.ts",
+			"category": "lint/style/useTemplate",
+			"message": "Template literals are preferred over string concatenation.",
+			"range": [
+				55,
+				4,
+				55,
+				65
 			]
 		},
 		{
@@ -7281,6 +7251,19 @@
 				8,
 				88,
 				9
+			]
+		},
+		{
+			"fingerprint": "87437797d3309e76fc9d87d9b2ad531a11f375a98628dba6c60b163f95bbf155",
+			"severity": "info",
+			"path": "apps/extension-halo/src/system/userscripts/registry.ts",
+			"category": "lint/style/useTemplate",
+			"message": "Template literals are preferred over string concatenation.",
+			"range": [
+				87,
+				3,
+				87,
+				20
 			]
 		},
 		{
@@ -7635,6 +7618,19 @@
 			]
 		},
 		{
+			"fingerprint": "8f104a09385d8cdf5ad5f96396d85f04e8db21238e6da9dac265d6d72d70bc8b",
+			"severity": "info",
+			"path": "apps/extension-halo/src/system/userscripts/engine.ts",
+			"category": "lint/style/useTemplate",
+			"message": "Template literals are preferred over string concatenation.",
+			"range": [
+				57,
+				4,
+				57,
+				69
+			]
+		},
+		{
 			"fingerprint": "8f15c70fd6e62de5cff905ffb41cd798d02c42de6062da1895aa2a71ad31427d",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/color-picker/panel.tsx",
@@ -7736,19 +7732,6 @@
 				38,
 				6,
 				54
-			]
-		},
-		{
-			"fingerprint": "903add9356741a875d8ba40a943aaf618a455a154c6fa3c325f11da9a814935a",
-			"severity": "info",
-			"path": "apps/extension-halo/src/components/core/lazy-tool-loader.tsx",
-			"category": "lint/complexity/noUselessFragments",
-			"message": "This fragment is unnecessary.",
-			"range": [
-				41,
-				21,
-				41,
-				36
 			]
 		},
 		{
@@ -8012,6 +7995,19 @@
 			]
 		},
 		{
+			"fingerprint": "95019304b6367b663b55fcb87cb03fe53112c6c1ec3951392b649197376c74ba",
+			"severity": "info",
+			"path": "apps/extension-halo/src/components/core/lazy-tool-loader.tsx",
+			"category": "lint/complexity/noUselessFragments",
+			"message": "This fragment is unnecessary.",
+			"range": [
+				60,
+				21,
+				60,
+				36
+			]
+		},
+		{
 			"fingerprint": "956d94d741a0ab85588e536d286239bd01161b8f93dffe680b330ccf400fcdc8",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/clipboard/ClipboardItem.tsx",
@@ -8126,6 +8122,19 @@
 				45,
 				21,
 				47
+			]
+		},
+		{
+			"fingerprint": "98098caef2f592fcbd1c7629a7c8ee619b1ec92d73841ed728abd34be64ceb30",
+			"severity": "info",
+			"path": "apps/extension-halo/src/system/userscripts/registry.ts",
+			"category": "lint/style/useTemplate",
+			"message": "Template literals are preferred over string concatenation.",
+			"range": [
+				76,
+				4,
+				76,
+				75
 			]
 		},
 		{
@@ -8935,19 +8944,6 @@
 			]
 		},
 		{
-			"fingerprint": "a8567e44d2941b19f3615de518d19ccdd67ff4e2e022bdb4a1015d6d27a80724",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/tools/hover-zoom/content/viewer/mse-player.ts",
-			"category": "lint/correctness/noUnusedVariables",
-			"message": "This variable e is unused.",
-			"range": [
-				107,
-				12,
-				107,
-				13
-			]
-		},
-		{
 			"fingerprint": "a86e0fa5ed0f77d89f64811c338ed72b9f1acfc9b2d13109629320f07553e312",
 			"severity": "info",
 			"path": "apps/extension-halo/src/tools/lorem-ipsum/core.ts",
@@ -9010,6 +9006,19 @@
 				17,
 				86,
 				18
+			]
+		},
+		{
+			"fingerprint": "a9a5096261359a6803c2dabd1fb1417a0bba5217ce4576617376d1d12080cb7d",
+			"severity": "warning",
+			"path": "apps/extension-halo/src/system/userscripts/registry.ts",
+			"category": "lint/complexity/useOptionalChain",
+			"message": "Change to an optional chain.",
+			"range": [
+				221,
+				8,
+				221,
+				67
 			]
 		},
 		{
@@ -10560,6 +10569,19 @@
 			]
 		},
 		{
+			"fingerprint": "cdb3a0202adec10ebc5ebb90886080dd754517dbf677439b8330957b9472cbce",
+			"severity": "info",
+			"path": "apps/extension-halo/src/system/userscripts/registry.ts",
+			"category": "lint/style/useTemplate",
+			"message": "Template literals are preferred over string concatenation.",
+			"range": [
+				88,
+				3,
+				88,
+				70
+			]
+		},
+		{
 			"fingerprint": "cdec006afcfa93b6d7fb1b3e53c8e1318a8380346ee49a1bf3d6bf2767e28ae0",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/archive/panel.tsx",
@@ -10791,6 +10813,19 @@
 				10,
 				11,
 				18
+			]
+		},
+		{
+			"fingerprint": "d31939a64ba617184497a6360ecad09ff4d7b7bfc634156a919a414e57ac10e0",
+			"severity": "info",
+			"path": "apps/extension-halo/src/content/dom-selector.ts",
+			"category": "lint/style/useTemplate",
+			"message": "Template literals are preferred over string concatenation.",
+			"range": [
+				124,
+				11,
+				124,
+				111
 			]
 		},
 		{
@@ -11207,6 +11242,19 @@
 				7,
 				59,
 				59
+			]
+		},
+		{
+			"fingerprint": "dc711694401ec75face4ea2dc5dcf5fd76bf0e5d7b082a1e90a6faab971a9a8b",
+			"severity": "error",
+			"path": "apps/extension-halo/src/content/dom-selector.ts",
+			"category": "lint/suspicious/noAssignInExpressions",
+			"message": "The assignment should not be in an expression.",
+			"range": [
+				101,
+				12,
+				101,
+				44
 			]
 		},
 		{
@@ -11870,19 +11918,6 @@
 				8,
 				120,
 				9
-			]
-		},
-		{
-			"fingerprint": "ec6f49683d9fbfa3fe227111bb720f78147105cc20bd8c7e6aff7651323e4e1d",
-			"severity": "error",
-			"path": "apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
-			"category": "lint/correctness/useExhaustiveDependencies",
-			"message": "This hook specifies more dependencies than necessary: toolId.",
-			"range": [
-				39,
-				2,
-				39,
-				11
 			]
 		},
 		{

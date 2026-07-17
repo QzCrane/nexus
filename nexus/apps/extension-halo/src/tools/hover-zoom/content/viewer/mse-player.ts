@@ -116,7 +116,7 @@ export async function playDashStreams(
 			session.videoOffset += data.byteLength;
 			await appendBuffer(session.videoBuffer, data, session);
 			console.log(LOG_TAG, 'Video chunk loaded', session.videoOffset);
-		} catch (e) { session.videoEnded = true; }
+		} catch { session.videoEnded = true; }
 	}
 
 	async function loadAudioChunk(isInitial = false) {
@@ -130,7 +130,7 @@ export async function playDashStreams(
 			session.audioOffset += data.byteLength;
 			await appendBuffer(session.audioBuffer, data, session);
 			console.log(LOG_TAG, 'Audio chunk loaded', session.audioOffset);
-		} catch (e) { session.audioEnded = true; }
+		} catch { session.audioEnded = true; }
 	}
 
 	// Initial load with smaller chunks for fast first frame

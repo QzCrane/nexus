@@ -23,7 +23,6 @@ interface WindowBounds {
 // over its own windowId/saveTimeout and silently writing bounds for a closed
 // window or fighting over chrome.storage.local writes.
 let activeBoundsListener: ((w: chrome.windows.Window) => void) | null = null;
-let activeBoundsWindowId: number | null = null;
 let activeRemovedListener: ((closedId: number) => void) | null = null;
 let activeSaveTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -39,7 +38,6 @@ function detachBoundsListener(): void {
 		activeSaveTimeout = null;
 	}
 	activeBoundsListener = null;
-	activeBoundsWindowId = null;
 	activeRemovedListener = null;
 }
 
@@ -134,7 +132,6 @@ export async function popOutWindow(): Promise<void> {
 	if (chrome.windows.onBoundsChanged) {
 		chrome.windows.onBoundsChanged.addListener(saveBounds);
 		activeBoundsListener = saveBounds;
-		activeBoundsWindowId = windowId;
 		if (chrome.windows.onRemoved) {
 			chrome.windows.onRemoved.addListener(onRemovedHandler);
 			activeRemovedListener = onRemovedHandler;

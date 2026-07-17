@@ -96,11 +96,12 @@ function getCssPath(el: Element): string {
 			path.unshift(selector);
 			break;
 		} else {
-			let sib = el, nth = 1;
-			while (sib = sib.previousElementSibling as Element) {
-				if (sib.nodeName.toLowerCase() == selector) nth++;
+			let sib: Element | null = el;
+			let nth = 1;
+			while ((sib = sib.previousElementSibling) !== null) {
+				if (sib.nodeName.toLowerCase() === selector) nth++;
 			}
-			if (nth != 1) selector += ":nth-of-type(" + nth + ")";
+			if (nth !== 1) selector += `:nth-of-type(${nth})`;
 		}
 		path.unshift(selector);
 		el = el.parentNode as Element;

@@ -40,7 +40,7 @@ export function decode(input: string, urlSafe: boolean = false): string {
 		const binary = atob(base64);
 		const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
 		return new TextDecoder().decode(bytes);
-	} catch (e) {
+	} catch {
 		throw new Error('Invalid Base64 string');
 	}
 }

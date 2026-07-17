@@ -60,7 +60,7 @@ export function useToolState<T>(
 			}
 		});
 		return () => { isMounted = false; };
-	}, [toolId, storageKey, area]);
+	}, [storageKey, area]);
 
 	// Save state with debounce
 	const saveState = useCallback((newState: T) => {
