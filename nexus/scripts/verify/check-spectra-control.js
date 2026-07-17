@@ -242,7 +242,7 @@ function checkPolicyOwner(root) {
 	}
 	if (!contracts.includes('export function isControlStrategyAdmittedForCapability(')
 		|| !contracts.includes('isControlStrategyAdmittedForCapability(field, strategy)')
-		|| !contracts.includes('isControlStrategyAdmittedForCapability(\n\t\t\tvalue.operation as ControlOperation')) {
+		|| !/isControlStrategyAdmittedForCapability\(\s*value\.operation as ControlOperation,/u.test(contracts)) {
 		error('SCTRL-002/SCTRL-005: field and operation ACKs must reject strategies outside the exact capability policy');
 	}
 	const policyBlock = contracts.match(
