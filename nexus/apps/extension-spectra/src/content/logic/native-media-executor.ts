@@ -25,7 +25,10 @@ import {
 	type MediaRegistryEvent,
 	type MediaRegistryRemovalReason,
 } from '../core/media-registry';
-import { VideoEffectsController } from '../video/video-effects-controller';
+import type {
+	VideoEffectsController,
+	VideoEffectState,
+} from '../video/video-effects-controller';
 import { contentControlStrategy } from './content-control-policy';
 
 interface PendingWrite {
@@ -51,6 +54,40 @@ interface OwnedMediaField {
 
 interface NativeMediaOwnershipStore {
 	byElement: WeakMap<HTMLMediaElement, Map<RestorableMediaField, OwnedMediaField>>;
+}
+
+type VideoEffectsControllerPort = Pick<VideoEffectsController, 'apply' | 'dispose' | 'release' | 'snapshot'>;
+
+interface VideoEffectsRuntimeModule {
+	VideoEffectsController: new () => VideoEffectsControllerPort;
+}
+
+const DEFAULT_VIDEO_EFFECT_STATE: Readonly<VideoEffectState> = Object.freeze({
+	rotation: 0,
+	mirrored: false,
+	fill: false,
+	filterEnabled: false,
+	filter: Object.freeze({
+		brightness: 100,
+		contrast: 100,
+		saturate: 100,
+		grayscale: false,
+		invert: false,
+	}),
+	dimEnabled: false,
+	dimOpacity: 0.7,
+});
+
+let videoEffectsRuntimePromise: Promise<VideoEffectsRuntimeModule> | null = null;
+
+function loadVideoEffectsRuntime(): Promise<VideoEffectsRuntimeModule> {
+	videoEffectsRuntimePromise ??= import(chrome.runtime.getURL('content-video-effects.js'))
+		.then((module) => module as VideoEffectsRuntimeModule)
+		.catch((error) => {
+			videoEffectsRuntimePromise = null;
+			throw error;
+		});
+	return videoEffectsRuntimePromise;
 }
 
 const ownershipScope = globalThis as typeof globalThis & {
@@ -200,10 +237,10 @@ async function writeWithStableEventAck<T>(
 		// setter side effect with no authoritative event to acknowledge it.
 		return stableReadback(read);
 	}
-	let finish!: () => void;
+	let finish!: (matched: boolean) => void;
 	let quietTimer: ReturnType<typeof setTimeout> | null = null;
 	let timeoutId: ReturnType<typeof setTimeout> | null = null;
-	const acknowledgement = new Promise<void>((resolve) => {
+	const acknowledgement = new Promise<boolean>((resolve) => {
 		finish = resolve;
 	});
 	const onEvent = (): void => {
@@ -212,13 +249,15 @@ async function writeWithStableEventAck<T>(
 		if (!valuesMatch(expected, read(), tolerance)) return;
 		// A page-player setter can acknowledge our value and restore its own value
 		// in a timer. Require one short event-quiet window before committing.
-		quietTimer = setTimeout(finish, NATIVE_EVENT_QUIET_MS);
+		quietTimer = setTimeout(() => finish(true), NATIVE_EVENT_QUIET_MS);
 	};
 	target.addEventListener(type, onEvent);
-	timeoutId = setTimeout(finish, timeoutMs);
+	timeoutId = setTimeout(() => finish(false), timeoutMs);
 	try {
 		await write();
-		await acknowledgement;
+		if (!await acknowledgement) {
+			throw new Error(`Native ${type} event readback did not acknowledge the requested value`);
+		}
 		return await stableReadback(read);
 	} finally {
 		target.removeEventListener(type, onEvent);
@@ -431,7 +470,7 @@ export class NativeMediaExecutor {
 	private readonly desiredMedia: ControlPatch = {};
 	private readonly appliedDesiredRevision = new Map<string, number>();
 	private readonly replayPending = new Set<string>();
-	private readonly effects: VideoEffectsController;
+	private effects: VideoEffectsControllerPort | null;
 	private readonly ownsEffects: boolean;
 	private readonly registry: MediaRegistry;
 	private readonly ownsRegistry: boolean;
@@ -441,10 +480,10 @@ export class NativeMediaExecutor {
 	private desiredRevision = 0;
 	private disposed = false;
 
-	constructor(registry?: MediaRegistry, effects?: VideoEffectsController) {
+	constructor(registry?: MediaRegistry, effects?: VideoEffectsControllerPort) {
 		this.registry = registry ?? new MediaRegistry();
 		this.ownsRegistry = registry === undefined;
-		this.effects = effects ?? new VideoEffectsController();
+		this.effects = effects ?? null;
 		this.ownsEffects = effects === undefined;
 		this.unsubscribeRegistry = this.registry.subscribe(
 			(target, event, element, removalReason) =>
@@ -456,6 +495,14 @@ export class NativeMediaExecutor {
 		for (const { element, target } of this.registry.list()) {
 			this.primeObserved(target.mediaId, element);
 		}
+	}
+
+	private async ensureVideoEffects(): Promise<VideoEffectsControllerPort> {
+		if (this.effects) return this.effects;
+		const { VideoEffectsController: Controller } = await loadVideoEffectsRuntime();
+		if (this.disposed) throw new Error('Native media executor is disposed');
+		this.effects = new Controller();
+		return this.effects;
 	}
 
 	setAudioRuntimeDelegate(delegate: AudioRuntimeControlDelegate | null): void {
@@ -680,7 +727,7 @@ export class NativeMediaExecutor {
 			}
 			this.appliedDesiredRevision.delete(key);
 			if (element instanceof HTMLVideoElement) {
-				const releasedState = this.effects.release(element);
+				const releasedState = this.effects?.release(element) ?? DEFAULT_VIDEO_EFFECT_STATE;
 				for (const field of VIDEO_EFFECT_FIELDS) released.add(field);
 				if (key === activeKey) {
 					for (const field of VIDEO_EFFECT_FIELDS) {
@@ -726,7 +773,7 @@ export class NativeMediaExecutor {
 		if (resolved) {
 			const { element, target } = resolved;
 			const effectState = element instanceof HTMLVideoElement
-				? this.effects.snapshot(element)
+				? this.effects?.snapshot(element) ?? DEFAULT_VIDEO_EFFECT_STATE
 				: null;
 			for (const field of request.fields) {
 				if ((patch as Record<string, unknown>)[field] !== undefined) continue;
@@ -786,7 +833,8 @@ export class NativeMediaExecutor {
 				this.putError(fields, field, value, intent, 'capability-unavailable', 'No admitted video enhancement is available');
 				return;
 			}
-			const actual = await this.effects.apply(
+			const effects = await this.ensureVideoEffects();
+			const actual = await effects.apply(
 				element,
 				field as 'rotation' | 'mirrored' | 'fill' | 'filterEnabled' | 'filter' | 'dimEnabled' | 'dimOpacity',
 				value as never,
@@ -883,7 +931,7 @@ export class NativeMediaExecutor {
 				case 'playing': {
 					const actual = await writeWithStableEventAck(
 						element,
-						value ? 'play' : 'pause',
+						value ? 'playing' : 'pause',
 						() => value ? element.play() : element.pause(),
 						() => !element.paused,
 						effectiveDesired,
@@ -1160,7 +1208,7 @@ export class NativeMediaExecutor {
 			this.replayPending.delete(key);
 			if (removalReason === 'detached') {
 				void this.releaseDetachedOwnership(element);
-				if (element instanceof HTMLVideoElement) this.effects.release(element);
+				if (element instanceof HTMLVideoElement) this.effects?.release(element);
 			}
 			return;
 		}
@@ -1341,7 +1389,8 @@ export class NativeMediaExecutor {
 		this.replayPending.clear();
 		this.unsubscribeRegistry();
 		if (this.ownsRegistry) this.registry.dispose();
-		if (this.ownsEffects) this.effects.dispose();
+		if (this.ownsEffects) this.effects?.dispose();
+		this.effects = null;
 	}
 }
 

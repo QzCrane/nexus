@@ -2,7 +2,7 @@
 
 import type { GlobalSettings } from '@nexus/kernel';
 import { TIMING } from '../constants';
-import { sendSpectraRequest } from '../../shared/spectra-client';
+import { sendSpectraRequest } from '../../shared/ui-spectra-client';
 import { drawViz } from './draw-viz';
 import { VISUALIZER_STATE_CHANGED_EVENT } from './events';
 

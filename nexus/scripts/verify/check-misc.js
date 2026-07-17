@@ -93,6 +93,12 @@ export function checkHtmlResources(ROOT) {
 					path.join(ROOT, 'apps', app, 'src', tsxPath),
 					path.join(ROOT, 'apps', app, 'src', baseName, 'index.ts'),
 					path.join(ROOT, 'apps', app, 'src', baseName, 'index.tsx'),
+					// Some production-only local vendor entries are deliberately emitted
+					// from a feature directory instead of copied into public/. Treat the
+					// matching source entry as the HTML resource owner without requiring a
+					// duplicate, unminified public artifact.
+					path.join(ROOT, 'apps', app, 'src', 'offscreen-remote', tsPath),
+					path.join(ROOT, 'apps', app, 'src', 'offscreen-remote', tsxPath),
 					// HALO uses entry/ directory
 					path.join(ROOT, 'apps', app, 'src', 'entry', tsPath),
 					path.join(ROOT, 'apps', app, 'src', 'entry', tsxPath),

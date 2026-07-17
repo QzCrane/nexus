@@ -1,10 +1,10 @@
 /** Secure remote pairing modal. Dynamic values are assigned through DOM APIs. */
 
-import { isSpectraEventEnvelope } from '@nexus/contracts';
+import { isSpectraUiEventEnvelope } from '@nexus/contracts/ui-runtime';
 import type { I18NDict } from '../popup/types';
 import { getRemoteUrl } from './constants.js';
 import type { RemotePairing } from './protocol';
-import { sendSpectraRequest } from '../shared/spectra-client';
+import { sendSpectraRequest } from '../shared/ui-spectra-client';
 import { handleDialogKeydown } from '../popup/utils/dialog';
 
 let isModalOpen = false;
@@ -124,7 +124,7 @@ export function renderRemoteModal(
 	adjustPopupHeight(true);
 	closeButton.focus();
 	statusMessageListener = (message: unknown): false => {
-		if (!isSpectraEventEnvelope(message)) return false;
+		if (!isSpectraUiEventEnvelope(message)) return false;
 		if (message.type === 'spectra.remote.session.changed'
 			&& message.payload.tabId === tabId
 			&& message.payload.sessionId === pairing.sessionId) {

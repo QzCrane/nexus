@@ -1,13 +1,13 @@
 // goal: revision-aware client for the background-owned settings repository
 
 import {
-	isSpectraEventEnvelope,
 	type RpcResult,
 	type SettingsPatch,
 	type SettingsPatchRequest,
 	type SettingsSnapshot,
 } from '@nexus/contracts';
-import { sendSpectraRequest } from './spectra-client';
+import { isSpectraSettingsUiEventEnvelope } from '@nexus/contracts/ui-settings-runtime';
+import { sendSettingsUiRequest } from './ui-settings-spectra-client';
 
 let cachedSnapshot: SettingsSnapshot | null = null;
 let patchQueue: Promise<void> = Promise.resolve();
@@ -19,7 +19,7 @@ export interface SettingsPatchRetryTransport {
 
 export async function getSettingsSnapshot(forceRefresh = false): Promise<SettingsSnapshot> {
 	if (cachedSnapshot && !forceRefresh) return cachedSnapshot;
-	const result = await sendSpectraRequest('spectra.settings.get', {});
+	const result = await sendSettingsUiRequest('spectra.settings.get', {});
 	if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`);
 	cachedSnapshot = result.data;
 	return result.data;
@@ -56,7 +56,7 @@ export function patchSettings(patch: SettingsPatch): Promise<SettingsSnapshot> {
 		try {
 			const snapshot = await applySettingsPatchWithRetry(patch, {
 				getSnapshot: getSettingsSnapshot,
-				sendPatch: request => sendSpectraRequest('spectra.settings.patch', request),
+				sendPatch: request => sendSettingsUiRequest('spectra.settings.patch', request),
 			});
 			cachedSnapshot = snapshot;
 			resolveResult(snapshot);
@@ -74,13 +74,13 @@ export function clearSettingsSnapshotCache(): void {
 
 export async function flushSettings(): Promise<void> {
 	await patchQueue;
-	const response = await sendSpectraRequest('spectra.settings.flush', {});
+	const response = await sendSettingsUiRequest('spectra.settings.flush', {});
 	if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
 }
 
 if (typeof window !== 'undefined') {
 	const onSettingsChanged = (message: unknown): false => {
-		if (isSpectraEventEnvelope(message) && message.type === 'spectra.settings.changed') {
+		if (isSpectraSettingsUiEventEnvelope(message)) {
 			cachedSnapshot = message.payload;
 		}
 		return false;

@@ -2,7 +2,6 @@
 
 import { isDefaultAudioConfig, resolveAudioVolume } from '@nexus/contracts';
 import {
-	AudioMode,
 	assessMediaSourceCoverage,
 	type PolicyContext,
 	type MediaSourceEligibilityEvidence,
@@ -93,7 +92,6 @@ export async function createPolicyExecutor(
 		const modeChanged = mode !== state.activeMode;
 		if (modeChanged) {
 			log.mode(state.activeMode, mode);
-			if (state.activeMode === AudioMode.NATIVE_WEBAUDIO) await deps.audioController.cleanup();
 			state.activeMode = mode;
 		}
 

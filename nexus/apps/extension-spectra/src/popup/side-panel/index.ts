@@ -1,13 +1,13 @@
 // goal: manages the lifecycle and visibility of the advanced settings side panel in the popup
 
 import type { AudioConfig } from '@nexus/kernel';
-import { isSpectraEventEnvelope } from '@nexus/contracts';
+import { isSpectraUiEventEnvelope } from '@nexus/contracts/ui-runtime';
 import { bindSidePanelControls, syncSidePanelState } from './controls';
 import { bindVideoControls, setVideoControlTabId, syncVideoControlSnapshot } from './video-controls';
 import { bindFooterActions } from './footer-actions';
 import { getCardRegistration as getCardReg, updateCardConfig as updateReg } from './registry';
 import { getSafeImageUrl } from '../utils/dom';
-import { sendSpectraRequest } from '../../shared/spectra-client';
+import { sendSpectraRequest } from '../../shared/ui-spectra-client';
 
 export { registerCard, getCardRegistration } from './registry';
 
@@ -87,7 +87,7 @@ export function initSidePanel(): void {
 	if (!snapshotListenerInstalled) {
 		snapshotListenerInstalled = true;
 		chrome.runtime.onMessage.addListener((message: unknown) => {
-			if (!state.isOpen || !isSpectraEventEnvelope(message)
+			if (!state.isOpen || !isSpectraUiEventEnvelope(message)
 				|| message.type !== 'spectra.control.snapshot.changed'
 				|| message.payload.tabId !== state.currentTabId) return false;
 			syncVideoControlSnapshot(message.payload);

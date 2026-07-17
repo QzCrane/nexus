@@ -20,13 +20,16 @@ class FakeMediaElement extends EventTarget {
 	paused = true;
 	ended = false;
 	private nativeVolume = 1;
+	emitVolumeChange = true;
 	volumeWriteHook: ((value: number) => void) | null = null;
 	private nativeMuted = false;
 	private nativePlaybackRate = 1;
 	get volume(): number { return this.nativeVolume; }
 	set volume(value: number) {
 		this.nativeVolume = value;
-		queueMicrotask(() => this.dispatchEvent(new Event('volumechange')));
+		if (this.emitVolumeChange) {
+			queueMicrotask(() => this.dispatchEvent(new Event('volumechange')));
+		}
 		this.volumeWriteHook?.(value);
 	}
 	forceVolume(value: number): void {
@@ -48,7 +51,10 @@ class FakeMediaElement extends EventTarget {
 	readonly seekable = { length: 0 } as TimeRanges;
 	play(): Promise<void> {
 		this.paused = false;
-		queueMicrotask(() => this.dispatchEvent(new Event('play')));
+		queueMicrotask(() => {
+			this.dispatchEvent(new Event('play'));
+			this.dispatchEvent(new Event('playing'));
+		});
 		return Promise.resolve();
 	}
 	pause(): void {
@@ -167,6 +173,53 @@ describe('native media single-writer correlation', () => {
 			}
 		}
 	}, 5_000);
+
+	test('rejects a getter match when no native event acknowledges the setter', async () => {
+		Object.defineProperty(globalThis, 'HTMLMediaElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		Object.defineProperty(globalThis, 'HTMLVideoElement', {
+			configurable: true,
+			value: class FakeVideoElement extends FakeMediaElement { },
+		});
+		Object.defineProperty(globalThis, 'document', {
+			configurable: true,
+			value: { pictureInPictureElement: null, fullscreenElement: null },
+		});
+		Object.defineProperty(globalThis, 'requestAnimationFrame', {
+			configurable: true,
+			value: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0),
+		});
+
+		const registry = new FakeRegistry();
+		registry.element.emitVolumeChange = false;
+		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
+		try {
+			const result = await executor.execute({
+				intentId: 'intent:no-native-event',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 2,
+				source: 'popup',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { volumeBase: 40 },
+			});
+			expect(result.fields.volumeBase).toMatchObject({
+				phase: 'error',
+				strategy: 'unsupported',
+				restoreBaseline: 100,
+				lastError: { code: 'readback-mismatch' },
+			});
+			expect(registry.element.volume).toBe(1);
+		} finally {
+			executor.dispose();
+		}
+	}, 2_000);
 
 	test('bounds stable native ACKs when a hidden tab suspends animation frames', async () => {
 		Object.defineProperty(globalThis, 'HTMLMediaElement', {

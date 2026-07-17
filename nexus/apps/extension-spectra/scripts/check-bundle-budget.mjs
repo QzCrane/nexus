@@ -4,9 +4,11 @@ import { fileURLToPath } from 'node:url';
 
 const KiB = 1024;
 export const BUNDLE_BUDGETS = Object.freeze({
+	'peerjs-vendor.js': 60 * KiB,
 	'background.js': 220 * KiB,
 	'content-bootstrap.js': 10 * KiB,
 	'content-runtime.js': 140 * KiB,
+	'content-video-effects.js': 12 * KiB,
 	'popup.js': 175 * KiB,
 	'offscreen.js': 135 * KiB,
 	'options.js': 95 * KiB,
@@ -14,7 +16,7 @@ export const BUNDLE_BUDGETS = Object.freeze({
 
 export const AGGREGATE_BUDGETS = Object.freeze({
 	defaultStartup: 225 * KiB,
-	javascript: 515 * KiB,
+	javascript: 517 * KiB,
 	dist: 620 * KiB,
 });
 

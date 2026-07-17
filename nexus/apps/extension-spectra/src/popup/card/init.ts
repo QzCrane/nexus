@@ -5,7 +5,7 @@ import {
   type AudioSessionSnapshot,
 } from '@nexus/contracts';
 import { getDomain } from '../utils/dom';
-import { sendSpectraRequest, sendSpectraTabRequest } from '../../shared/spectra-client';
+import { sendSpectraRequest, sendSpectraTabRequest } from '../../shared/ui-spectra-client';
 import { cardRenderCallbacks } from '../views/settings';
 import { VISUALIZER_STATE_CHANGED_EVENT } from '../visualizer/events';
 import {

@@ -44,6 +44,17 @@
       "world": "ISOLATED"
     }
   ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "content-video-effects.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ],
+      "use_dynamic_url": true
+    }
+  ],
   "commands": {
     "volume_up": {
       "suggested_key": {

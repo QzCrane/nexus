@@ -68,6 +68,7 @@ async function executeModeTransition(
 	const mode = state.activeMode;
 	const config = state.config;
 	const previousActualMode = state.actualMode;
+	const previousAppliedConfig = cloneAudioConfig(state.appliedConfig);
 
 	// A pending START owns no acknowledged processor yet, so it cannot be made
 	// transparent. Let it settle before bringing up a replacement path; once it
@@ -115,8 +116,7 @@ async function executeModeTransition(
 			} else {
 				// Restore the last acknowledged path when capture startup fails.
 				const restoredWebAudio = previousActualMode === 'webaudio'
-					&& await audioController.initialize(true)
-					? await applyWebAudioState(config, deps).catch(() => null)
+					? await restoreWebAudioState(previousAppliedConfig, deps).catch(() => null)
 					: null;
 				if (restoredWebAudio) {
 					state.actualMode = 'webaudio';
@@ -400,6 +400,26 @@ async function applyWebAudioState(config: AudioConfig, deps: PolicyExecutorDeps)
 		throw new Error('WebAudio graph signature does not match its normalized actual configuration');
 	}
 	return actualConfigFromGraphSnapshot(config, snapshot);
+}
+
+async function restoreWebAudioState(
+	config: AudioConfig,
+	deps: PolicyExecutorDeps,
+): Promise<AudioConfig | null> {
+	const registry = getActiveMediaRegistry();
+	const entries = registry?.list() ?? [];
+	const elements = entries.map(({ element }) => element);
+	const evidenceFor = (element: HTMLMediaElement) =>
+		typeof registry?.getEligibilityEvidence === 'function'
+			? registry.getEligibilityEvidence(element)
+			: undefined;
+	if (!assessMediaSourceCoverage(elements, evidenceFor).fullCoverage) return null;
+	if (!await deps.audioController.initialize(true)) return null;
+	if (!elements.every((element) => deps.audioController.ensureAttached(element, evidenceFor(element)))) {
+		return null;
+	}
+	if (!deps.audioController.hasCompleteCoverage(elements, evidenceFor)) return null;
+	return applyWebAudioState(config, deps);
 }
 
 function actualConfigFromGraphSnapshot(

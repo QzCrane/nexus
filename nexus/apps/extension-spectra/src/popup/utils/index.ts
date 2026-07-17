@@ -7,7 +7,6 @@ export {
   getSettingsUIElements,
   getDomain,
   isRestrictedUrl,
-  requestTab,
 } from './dom';
 
 export {

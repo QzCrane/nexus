@@ -4,9 +4,9 @@ import { $, isRestrictedUrl } from './utils';
 import { initNavigation } from './views/navigation';
 import { initSettings } from './views/settings';
 import { initCard } from './card';
-import { isSpectraEventEnvelope } from '@nexus/contracts';
+import { isSpectraUiEventEnvelope } from '@nexus/contracts/ui-runtime';
 import { enableSmoothScroll } from '../shared/smooth-scroll';
-import { sendSpectraRequest } from '../shared/spectra-client';
+import { sendSpectraRequest } from '../shared/ui-spectra-client';
 import type { EqCurveDrawerFactory } from './card/types';
 
 // eff: bootstraps the popup UI by identifying active tabs, loading settings, and rendering control cards
@@ -40,7 +40,7 @@ async function main(): Promise<void> {
 
   // goal: consume only the repository's normalized, revisioned settings view
   const onSettingsChanged = (message: unknown): false => {
-    if (isSpectraEventEnvelope(message) && message.type === 'spectra.settings.changed') {
+    if (isSpectraUiEventEnvelope(message) && message.type === 'spectra.settings.changed') {
       currentSettings = message.payload.globalSettings;
     }
     return false;

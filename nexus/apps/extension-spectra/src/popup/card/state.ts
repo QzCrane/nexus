@@ -3,7 +3,7 @@
 import type { AudioConfig, GlobalSettings } from '@nexus/kernel';
 import type { ControlPatch } from '@nexus/contracts';
 import { mergeAudioConfig, mergeControlFields, type CardInternalState } from './types';
-import { sendSpectraRequest } from '../../shared/spectra-client';
+import { sendSpectraRequest } from '../../shared/ui-spectra-client';
 
 export type ConfigUpdateFn = ((changes: Partial<AudioConfig>) => void) & {
 	flush: () => Promise<void>;

@@ -19,7 +19,6 @@ import {
   reportMediaState,
   setupUserGestureListeners,
   setupPopupConnectionListener,
-  setupFullscreenHandler,
   createNavigationObserver,
 } from './lifecycle';
 import {
@@ -44,10 +43,6 @@ import {
 import { createAudioRuntimeControlDelegate } from '../logic/audio-runtime-control-delegate';
 import { registerControlOperationExecutor } from '../logic/control-operation-executor';
 import { MediaRegistry, setActiveMediaRegistry } from './media-registry';
-import {
-	VideoEffectsController,
-	setActiveVideoEffectsController,
-} from '../video/video-effects-controller';
 import { disposeABLoops, listABOwnership, observeABLoopSources } from '../video/ab-loop';
 import { disposeMarkers, listMarkerOwnership, observeMarkerSources } from '../video/time-marker';
 
@@ -160,7 +155,7 @@ function bootstrapMessaging(ctx: InitContext): void {
 
 // eff: registers all lifecycle listeners (popup, media, gestures, fullscreen, navigation, hotkeys)
 function bootstrapLifecycle(ctx: InitContext, runtime: ContentRuntime): void {
-  const { state, audioController, captureManager, registry, deps } = ctx;
+  const { state, audioController, registry, deps } = ctx;
   const policyExecutor = deps.policyExecutor!;
 
   registry.track(setupPopupConnectionListener(state));
@@ -175,8 +170,6 @@ function bootstrapLifecycle(ctx: InitContext, runtime: ContentRuntime): void {
 
   const gestureCleanup = setupUserGestureListeners(state, audioController, policyExecutor);
   registry.track(gestureCleanup);
-
-  registry.track(setupFullscreenHandler(state, policyExecutor, captureManager));
 
   registry.track(createNavigationObserver({
     onNavigate: () => policyExecutor.applyState({ navigation: true }),
@@ -296,12 +289,9 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
 		}).catch(() => undefined);
 	}));
 	registry.track(observeMarkerSources(mediaRegistry));
-	const videoEffects = new VideoEffectsController();
-	registry.track(videoEffects);
-	registry.track(setActiveVideoEffectsController(videoEffects));
 	registry.track(disposeABLoops);
 	registry.track(disposeMarkers);
-	const nativeExecutor = new NativeMediaExecutor(mediaRegistry, videoEffects);
+	const nativeExecutor = new NativeMediaExecutor(mediaRegistry);
 	registry.track(nativeExecutor);
 	registry.track(registerNativeMediaExecutor(nativeExecutor));
 	registry.track(registerControlOperationExecutor(nativeExecutor));

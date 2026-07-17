@@ -47,6 +47,7 @@ import {
 	bundleFootprint,
 	checkBundleBudget,
 } from '../scripts/check-bundle-budget.mjs';
+import { collectExternalBoundaryProperties } from '../scripts/external-boundary-properties.mjs';
 
 const temporaryDirectories: string[] = [];
 
@@ -112,16 +113,61 @@ describe('release ZIP tooling', () => {
 });
 
 describe('production bundle budget', () => {
-	test('tracks the passive bootstrap and lazy content runtime independently', () => {
+	test('reserves browser API members and nested dictionaries without disabling internal property mangling', () => {
+		const source = `
+			const internal = { mayMangle: true };
+			chrome.tabs.query({ active: true, currentWindow: true });
+			chrome.scripting.executeScript({
+				target: { tabId: 1, documentIds: ['doc'] },
+				world: 'MAIN',
+				func() {},
+				args: [{ requestId: 'request' }],
+			});
+			navigator.mediaDevices.getUserMedia({
+				audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: 'stream' } },
+				video: false,
+			});
+			connection.send({ type: 'authenticate', proof });
+		`;
+		expect([...collectExternalBoundaryProperties(source)].sort()).toEqual([
+			'active',
+			'args',
+			'audio',
+			'chromeMediaSource',
+			'chromeMediaSourceId',
+			'currentWindow',
+			'documentIds',
+			'executeScript',
+			'func',
+			'getUserMedia',
+			'mandatory',
+			'mediaDevices',
+			'proof',
+			'query',
+			'requestId',
+			'scripting',
+			'tabId',
+			'tabs',
+			'target',
+			'type',
+			'video',
+			'world',
+		]);
+	});
+
+	test('tracks the passive bootstrap and lazy capability runtimes independently', () => {
 		expect(Object.keys(BUNDLE_BUDGETS)).toEqual([
+			'peerjs-vendor.js',
 			'background.js',
 			'content-bootstrap.js',
 			'content-runtime.js',
+			'content-video-effects.js',
 			'popup.js',
 			'offscreen.js',
 			'options.js',
 		]);
 		expect(BUNDLE_BUDGETS['content-bootstrap.js']).toBeLessThan(BUNDLE_BUDGETS['content-runtime.js']);
+		expect(BUNDLE_BUDGETS['content-video-effects.js']).toBeLessThan(BUNDLE_BUDGETS['content-runtime.js']);
 	});
 
 	test('charges shared ESM chunks to every entrypoint that loads them', () => {

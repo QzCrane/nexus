@@ -3,7 +3,7 @@
 import type { AudioConfig } from '@nexus/kernel';
 import type { CardUIElements } from '../types';
 import type { ControlMutation, ControlOperationAck } from '@nexus/contracts';
-import { sendSpectraRequest } from '../../shared/spectra-client';
+import { sendSpectraRequest } from '../../shared/ui-spectra-client';
 import { syncSidePanelSpeed } from '../side-panel/controls';
 import { getHotkeyTarget, setHotkeyTarget } from '../../shared/registry-client';
 import type { CardInternalState } from './types';

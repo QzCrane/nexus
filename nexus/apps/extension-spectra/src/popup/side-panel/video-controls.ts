@@ -10,7 +10,7 @@ import type {
 	ControlSnapshot,
 	VideoFilterState,
 } from '@nexus/contracts';
-import { sendSpectraRequest } from '../../shared/spectra-client';
+import { sendSpectraRequest } from '../../shared/ui-spectra-client';
 
 let currentTabId: number | null = null;
 let currentSnapshot: ControlSnapshot | null = null;

@@ -1,6 +1,6 @@
 // goal: defines messaging listeners for the tab card to handle state synchronization between the popup, background, and content scripts
 
-import { isSpectraEventEnvelope } from '@nexus/contracts';
+import { isSpectraUiEventEnvelope } from '@nexus/contracts/ui-runtime';
 import type { CardInternalState } from './types';
 import { applyLegacyCardMessage } from './legacy-message-adapter';
 import { mergeControlSnapshot } from './types';
@@ -19,7 +19,7 @@ export function setupCardMessaging(params: MessagingParams): () => void {
 	rawMessage: unknown,
     sender: chrome.runtime.MessageSender
   ): boolean | undefined => {
-	if (isSpectraEventEnvelope(rawMessage) && rawMessage.type === 'spectra.control.snapshot.changed') {
+	if (isSpectraUiEventEnvelope(rawMessage) && rawMessage.type === 'spectra.control.snapshot.changed') {
 		const snapshot = rawMessage.payload;
 		if (snapshot.tabId !== tabId) return false;
 		if (snapshot.generation < state.controlGeneration
@@ -44,7 +44,7 @@ export function setupCardMessaging(params: MessagingParams): () => void {
 		render();
 		return false;
 	}
-	if (isSpectraEventEnvelope(rawMessage) && rawMessage.type === 'spectra.audio.session.changed') {
+	if (isSpectraUiEventEnvelope(rawMessage) && rawMessage.type === 'spectra.audio.session.changed') {
 		const snapshot = rawMessage.payload;
 		if (snapshot.tabId === tabId
 			&& (snapshot.generation > state.audioGeneration
@@ -66,7 +66,7 @@ export function setupCardMessaging(params: MessagingParams): () => void {
 	}
 	// Capture lifecycle events are compatibility notifications, not authoritative
 	// UI state. The preceding session.changed snapshot is the only mode/phase source.
-	if (isSpectraEventEnvelope(rawMessage) && rawMessage.type === 'spectra.audio.capture.changed') return false;
+	if (isSpectraUiEventEnvelope(rawMessage) && rawMessage.type === 'spectra.audio.capture.changed') return false;
 	applyLegacyCardMessage(rawMessage, sender, params);
     return false;
   };

@@ -7,7 +7,7 @@ import { AUDIO_UI, TIMING } from '../constants';
 import { getDomain } from '../utils/dom';
 import { bindMediaControls } from './media-events';
 import { patchSettings } from '../../shared/settings-client';
-import { sendSpectraRequest } from '../../shared/spectra-client';
+import { sendSpectraRequest } from '../../shared/ui-spectra-client';
 
 export interface EventsParams {
   ui: CardUIElements;

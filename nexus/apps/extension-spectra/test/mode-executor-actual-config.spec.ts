@@ -210,6 +210,11 @@ describe('mode executor applied configuration', () => {
 	});
 
 	test('neutralizes Media WebAudio before Capture and restores the stable graph after candidate failure', async () => {
+		const globals = installCoverageGlobals();
+		const source = media('https://media.example/restore.mp3');
+		const disposeRegistry = setActiveMediaRegistry({
+			list: () => [{ element: source, target: {} }],
+		} as unknown as MediaRegistry);
 		const order: string[] = [];
 		const state = webAudioState();
 		state.activeMode = AudioMode.CAPTURE;
@@ -232,6 +237,8 @@ describe('mode executor applied configuration', () => {
 					order.push('webaudio:restore');
 					return true;
 				}),
+				ensureAttached: mock(() => true),
+				hasCompleteCoverage: mock(() => true),
 				applyConfig: mock(async () => {
 					order.push('webaudio:actual');
 					return {
@@ -264,17 +271,22 @@ describe('mode executor applied configuration', () => {
 			policyEngine: {},
 		} as unknown as PolicyExecutorDeps;
 
-		await executeMode(deps, state);
+		try {
+			await executeMode(deps, state);
 
-		expect(order).toEqual([
-			'webaudio:unity',
-			'capture:candidate',
-			'webaudio:restore',
-			'webaudio:actual',
-		]);
-		expect(state.actualMode).toBe('webaudio');
-		expect(state.phase).toBe('error');
-		expect(state.appliedConfig.boost).toBe(2);
+			expect(order).toEqual([
+				'webaudio:unity',
+				'capture:candidate',
+				'webaudio:restore',
+				'webaudio:actual',
+			]);
+			expect(state.actualMode).toBe('webaudio');
+			expect(state.phase).toBe('error');
+			expect(state.appliedConfig.boost).toBe(2);
+		} finally {
+			disposeRegistry();
+			globals.restore();
+		}
 	});
 
 	test('uses Capture as a unity relay until the complete Media WebAudio graph is verified', async () => {

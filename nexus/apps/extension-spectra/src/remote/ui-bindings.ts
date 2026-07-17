@@ -9,8 +9,8 @@ import { generateRemoteQR } from './qr-generator.js';
 import { renderRemoteModal, closeRemoteModal, isRemoteModalOpen, setRemoteI18n } from './modal-renderer.js';
 import type { I18NDict } from '../popup/types';
 import { isRemotePairing } from './protocol';
-import { sendSpectraRequest } from '../shared/spectra-client';
-import { isSpectraEventEnvelope } from '@nexus/contracts';
+import { sendSpectraRequest } from '../shared/ui-spectra-client';
+import { isSpectraUiEventEnvelope } from '@nexus/contracts/ui-runtime';
 
 let currentDict: I18NDict | null = null;
 let currentTabId: number | null = null;
@@ -36,7 +36,7 @@ export function bindRemoteUI(tabId: number, dict?: I18NDict): () => void {
 	}
 
 	const messageListener = (message: unknown): false => {
-		if (!isSpectraEventEnvelope(message)) return false;
+		if (!isSpectraUiEventEnvelope(message)) return false;
 		if (message.type === 'spectra.remote.session.changed'
 			&& message.payload.tabId === currentTabId
 			&& message.payload.sessionId === currentSessionId) {

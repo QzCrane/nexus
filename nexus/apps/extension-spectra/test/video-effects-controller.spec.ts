@@ -4,6 +4,12 @@ import { VideoEffectsController } from '../src/content/video/video-effects-contr
 class FakeStyle {
 	private readonly values = new Map<string, string>();
 	private readonly priorities = new Map<string, string>();
+	cssText = '';
+	left = '';
+	top = '';
+	width = '';
+	height = '';
+	opacity = '';
 	setProperty(name: string, value: string, priority = ''): void {
 		this.values.set(name, value);
 		this.priorities.set(name, priority);
@@ -33,27 +39,74 @@ class FakeVideo {
 	getAttribute(name: string): string | null { return this.attributes.get(name) ?? null; }
 	removeAttribute(name: string): void { this.attributes.delete(name); }
 	hasAttribute(name: string): boolean { return this.attributes.has(name); }
+	getBoundingClientRect(): DOMRect {
+		return {
+			top: 90,
+			left: 160,
+			right: 800,
+			bottom: 450,
+			width: 640,
+			height: 360,
+			x: 160,
+			y: 90,
+			toJSON: () => ({}),
+		} as DOMRect;
+	}
 }
 
-class FakeStyleElement {
+class FakeDomElement {
 	readonly dataset: Record<string, string> = {};
+	readonly style = new FakeStyle();
+	readonly children: FakeDomElement[] = [];
 	textContent = '';
 	isConnected = false;
-	remove(): void { this.isConnected = false; }
+	parentElement: FakeDomElement | null = null;
+	clientWidth = 1280;
+	clientHeight = 720;
+	appendChild(element: FakeDomElement): FakeDomElement {
+		if (element.parentElement && element.parentElement !== this) {
+			element.parentElement.children.splice(element.parentElement.children.indexOf(element), 1);
+		}
+		element.parentElement = this;
+		element.isConnected = true;
+		if (!this.children.includes(element)) this.children.push(element);
+		return element;
+	}
+	attachShadow(): FakeDomElement { return new FakeDomElement(); }
+	contains(element: unknown): boolean {
+		return this.children.includes(element as FakeDomElement)
+			|| this.children.some((child) => child.contains(element));
+	}
+	remove(): void {
+		if (this.parentElement) {
+			const index = this.parentElement.children.indexOf(this);
+			if (index >= 0) this.parentElement.children.splice(index, 1);
+		}
+		this.parentElement = null;
+		this.isConnected = false;
+	}
 }
+
+class FakeStyleElement extends FakeDomElement { }
 
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
 const originalVideo = Object.getOwnPropertyDescriptor(globalThis, 'HTMLVideoElement');
+const originalElement = Object.getOwnPropertyDescriptor(globalThis, 'HTMLElement');
 const originalComputed = Object.getOwnPropertyDescriptor(globalThis, 'getComputedStyle');
 const originalResizeObserver = Object.getOwnPropertyDescriptor(globalThis, 'ResizeObserver');
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+const originalRequestAnimationFrame = Object.getOwnPropertyDescriptor(globalThis, 'requestAnimationFrame');
+const originalCancelAnimationFrame = Object.getOwnPropertyDescriptor(globalThis, 'cancelAnimationFrame');
 
 afterEach(() => {
 	restore('document', originalDocument);
 	restore('HTMLVideoElement', originalVideo);
+	restore('HTMLElement', originalElement);
 	restore('getComputedStyle', originalComputed);
 	restore('ResizeObserver', originalResizeObserver);
 	restore('window', originalWindow);
+	restore('requestAnimationFrame', originalRequestAnimationFrame);
+	restore('cancelAnimationFrame', originalCancelAnimationFrame);
 });
 
 describe('extension-owned video effect release', () => {
@@ -155,6 +208,88 @@ describe('extension-owned video effect release', () => {
 			await controller.apply(video, 'filterEnabled', false);
 			expect(video.hasAttribute('data-spectra-filter')).toBe(false);
 			expect(video.style.getPropertyValue('--spectra-filter')).toBe('');
+		} finally {
+			controller.dispose();
+		}
+	});
+
+	test('preserves independent CSS effects when the dim target changes', async () => {
+		Object.defineProperty(globalThis, 'HTMLVideoElement', {
+			configurable: true,
+			value: FakeVideo,
+		});
+		Object.defineProperty(globalThis, 'HTMLElement', {
+			configurable: true,
+			value: FakeDomElement,
+		});
+		Object.defineProperty(globalThis, 'ResizeObserver', {
+			configurable: true,
+			value: class {
+				observe(): void { }
+				unobserve(): void { }
+				disconnect(): void { }
+			},
+		});
+		Object.defineProperty(globalThis, 'requestAnimationFrame', {
+			configurable: true,
+			value: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0),
+		});
+		Object.defineProperty(globalThis, 'cancelAnimationFrame', {
+			configurable: true,
+			value: (id: number) => clearTimeout(id),
+		});
+		Object.defineProperty(globalThis, 'window', {
+			configurable: true,
+			value: {
+				visualViewport: undefined,
+				addEventListener: () => undefined,
+				removeEventListener: () => undefined,
+			},
+		});
+		const root = new FakeDomElement();
+		root.isConnected = true;
+		Object.defineProperty(globalThis, 'document', {
+			configurable: true,
+			value: {
+				head: root,
+				documentElement: root,
+				fullscreenElement: null,
+				createElement: (tag: string) => tag === 'style'
+					? new FakeStyleElement()
+					: new FakeDomElement(),
+				addEventListener: () => undefined,
+				removeEventListener: () => undefined,
+			},
+		});
+		Object.defineProperty(globalThis, 'getComputedStyle', {
+			configurable: true,
+			value: (video: FakeVideo) => ({
+				objectFit: video.hasAttribute('data-spectra-fill') ? 'cover' : 'contain',
+				rotate: video.hasAttribute('data-spectra-rotate')
+					? video.style.getPropertyValue('--spectra-rotate')
+					: 'none',
+				scale: video.hasAttribute('data-spectra-scale')
+					? `${video.style.getPropertyValue('--spectra-scale-x')} ${video.style.getPropertyValue('--spectra-scale-y')}`
+					: 'none',
+				filter: 'none',
+			}),
+		});
+
+		const controller = new VideoEffectsController();
+		const first = new FakeVideo() as unknown as HTMLVideoElement;
+		const second = new FakeVideo() as unknown as HTMLVideoElement;
+		try {
+			await controller.apply(first, 'rotation', 90);
+			await controller.apply(first, 'dimEnabled', true);
+			await controller.apply(second, 'dimEnabled', true);
+
+			expect(controller.snapshot(first)).toMatchObject({
+				rotation: 90,
+				dimEnabled: false,
+			});
+			expect(first.hasAttribute('data-spectra-video-effects-owner')).toBe(true);
+			expect(first.style.getPropertyValue('--spectra-rotate')).toBe('90deg');
+			expect(controller.snapshot(second).dimEnabled).toBe(true);
 		} finally {
 			controller.dispose();
 		}

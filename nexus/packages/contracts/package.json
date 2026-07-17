@@ -14,6 +14,14 @@
 		"./bootstrap": {
 			"types": "./dist/spectra.bootstrap.d.ts",
 			"import": "./dist/spectra.bootstrap.js"
+		},
+		"./ui-runtime": {
+			"types": "./dist/spectra.ui-runtime.d.ts",
+			"import": "./dist/spectra.ui-runtime.js"
+		},
+		"./ui-settings-runtime": {
+			"types": "./dist/spectra.ui-settings-runtime.d.ts",
+			"import": "./dist/spectra.ui-settings-runtime.js"
 		}
 	},
 	"scripts": {

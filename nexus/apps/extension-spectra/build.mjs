@@ -18,7 +18,10 @@ import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import sharp from 'sharp';
+import { minify } from 'terser';
 import { checkBundleBudget } from './scripts/check-bundle-budget.mjs';
+import { collectExternalBoundaryProperties } from './scripts/external-boundary-properties.mjs';
 import { writeI18nAssets } from './scripts/i18n-assets.ts';
 
 const projectDir = dirname(fileURLToPath(import.meta.url));
@@ -32,10 +35,15 @@ const contentAudioEngineRuntime = resolve(
 	projectDir,
 	'../../packages/features/audio-engine/src/content-runtime.ts',
 );
+const uiAudioEngineRuntime = resolve(
+	projectDir,
+	'../../packages/features/audio-engine/src/constants.ts',
+);
 const contentKernelRuntime = resolve(
 	projectDir,
 	'../../packages/nexus-kernel/src/content-runtime.ts',
 );
+const contractsIndexPath = resolve(projectDir, '../../packages/contracts/src/index.ts');
 const packageJson = JSON.parse(readFileSync(resolve(projectDir, 'package.json'), 'utf8'));
 const version = packageJson.version;
 
@@ -48,13 +56,124 @@ const entries = [
 	{ entry: 'src/background/index.ts', out: 'background.js' },
 	{ entry: 'src/content/core/bootstrap.ts', out: 'content-bootstrap.js' },
 	{ entry: 'src/content/core/index.ts', out: 'content-runtime.js' },
+	{ entry: 'src/content/video/video-effects-controller.ts', out: 'content-video-effects.js', format: 'esm' },
 	{ entry: 'src/popup/index.ts', out: 'popup.js' },
 	{ entry: 'src/offscreen/index.ts', out: 'offscreen.js' },
 	{ entry: 'src/options/index.ts', out: 'options.js' },
 ];
 
+const vendorEntries = [
+	{ entry: 'src/offscreen-remote/peerjs-vendor.ts', out: 'peerjs-vendor.js', format: 'iife' },
+];
+
+const allEntries = [...vendorEntries, ...entries];
+
 const isolatedEntries = entries.filter(({ out }) => out.startsWith('content-'));
 const moduleEntries = entries.filter(({ out }) => !out.startsWith('content-'));
+const moduleEntryGroups = [
+	{
+		name: 'runtime',
+		entries: moduleEntries.filter(({ out }) => out !== 'popup.js'),
+	},
+	{
+		name: 'popup',
+		entries: moduleEntries.filter(({ out }) => out === 'popup.js'),
+	},
+];
+
+function namedContractExports() {
+	const valueExports = new Map();
+	const typeExports = new Set();
+	const source = readFileSync(contractsIndexPath, 'utf8');
+	for (const match of source.matchAll(
+		/\bexport\s+(type\s+)?\{([^}]*)\}\s*from\s*['"](\.\/[^'"]+)['"]\s*;/gu,
+	)) {
+		const modulePath = resolve(dirname(contractsIndexPath), match[3]);
+		for (const rawSpecifier of match[2].split(',')) {
+			const specifier = rawSpecifier
+				.replace(/\/\*[\s\S]*?\*\//gu, '')
+				.replace(/\/\/.*$/gu, '')
+				.trim();
+			if (!specifier) continue;
+			const isType = Boolean(match[1]) || specifier.startsWith('type ');
+			const normalized = specifier.replace(/^type\s+/u, '');
+			const [localName, exportedName = localName] = normalized.split(/\s+as\s+/u);
+			if (isType) {
+				typeExports.add(exportedName.trim());
+				continue;
+			}
+			valueExports.set(exportedName.trim(), {
+				localName: localName.trim(),
+				modulePath,
+			});
+		}
+	}
+	return { typeExports, valueExports };
+}
+
+const { typeExports: contractTypeExports, valueExports: contractValueExports } = namedContractExports();
+
+function runtimeContractNames(importer) {
+	const names = new Set();
+	const source = readFileSync(importer, 'utf8');
+	for (const match of source.matchAll(
+		/\b(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@nexus\/contracts['"]\s*;?/gu,
+	)) {
+		if (match[1]) continue;
+		for (const rawSpecifier of match[2].split(',')) {
+			const specifier = rawSpecifier
+				.replace(/\/\*[\s\S]*?\*\//gu, '')
+				.replace(/\/\/.*$/gu, '')
+				.trim();
+			if (!specifier || specifier.startsWith('type ')) continue;
+			names.add(specifier.split(/\s+as\s+/u)[0].trim());
+		}
+	}
+	return names;
+}
+
+function contractRuntimeFacade(importer) {
+	const byModule = new Map();
+	for (const exportedName of runtimeContractNames(importer)) {
+		const binding = contractValueExports.get(exportedName);
+		if (!binding) {
+			// TypeScript permits type-only symbols in a normal import declaration.
+			// esbuild erases those specifiers, so the runtime facade must not pull in
+			// their source modules or report them as missing value exports.
+			if (contractTypeExports.has(exportedName)) continue;
+			throw new Error(`${importer}: unknown @nexus/contracts runtime export ${exportedName}`);
+		}
+		const bindings = byModule.get(binding.modulePath) ?? [];
+		bindings.push(binding.localName === exportedName
+			? exportedName
+			: `${binding.localName} as ${exportedName}`);
+		byModule.set(binding.modulePath, bindings);
+	}
+	return [...byModule.entries()]
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(([modulePath, bindings]) => (
+			`export { ${bindings.sort().join(', ')} } from ${JSON.stringify(modulePath.replaceAll('\\', '/'))};`
+		))
+		.join('\n');
+}
+
+function contractRuntimeFacadePlugin() {
+	const namespace = 'spectra-contract-runtime';
+	return {
+		name: 'spectra-contract-runtime-facade',
+		setup(build) {
+			build.onResolve({ filter: /^@nexus\/contracts$/ }, (args) => {
+				if (!args.importer) return null;
+				return { path: resolve(args.importer), namespace };
+			});
+			build.onLoad({ filter: /.*/, namespace }, (args) => ({
+				contents: contractRuntimeFacade(args.path),
+				loader: 'ts',
+				resolveDir: dirname(args.path),
+			}));
+		},
+	};
+}
 
 function runTypecheck() {
 	try {
@@ -161,6 +280,145 @@ async function minifyProductionStyles() {
 	}
 }
 
+async function optimizeProductionIcons() {
+	if (isDev) return;
+	const iconsDir = resolve(distDir, 'icons');
+	if (!existsSync(iconsDir)) return;
+	for (const name of readdirSync(iconsDir).filter((entry) => entry.endsWith('.png')).sort()) {
+		const path = resolve(iconsDir, name);
+		const source = readFileSync(path);
+		const optimized = await sharp(source, { failOn: 'error' })
+			.png({ palette: true, colours: 256, compressionLevel: 9, effort: 10, dither: 0 })
+			.toBuffer();
+		if (optimized.length < source.length) writeFileSync(path, optimized);
+	}
+}
+
+function collectReservedProperties(paths) {
+	const reserved = new Set([
+		// Chrome extension APIs are not part of Terser's built-in DOM property set.
+		'addListener', 'removeListener', 'hasListener', 'lastError', 'sendMessage',
+		'connect', 'disconnect', 'postMessage', 'onMessage', 'onConnect', 'onDisconnect',
+		'id', 'url', 'title', 'windowId', 'index', 'active', 'audible', 'mutedInfo',
+		'muted', 'pinned', 'status', 'state', 'incognito', 'openerTabId', 'documentId',
+		'frameId', 'error', 'result',
+		// Chrome API dictionaries are externally interpreted records. Their keys
+		// are not ordinary JavaScript implementation properties and must survive
+		// property mangling even when a specific key is used only in an object
+		// literal rather than a chrome.* member chain.
+		'target', 'documentIds', 'frameIds', 'allFrames', 'world', 'func', 'args',
+		'files', 'injectImmediately', 'matches', 'excludeMatches', 'runAt',
+		'persistAcrossSessions', 'cssOrigin', 'reasons', 'justification', 'messaging',
+		'filename', 'saveAs', 'conflictAction', 'format', 'quality', 'text', 'color',
+		// PeerJS is a runtime library with public methods and browser-owned objects.
+		'on', 'off', 'send', 'close', 'open', 'peer', 'destroy', 'reconnect',
+		'disconnected', 'destroyed',
+		// Versioned content globals are a cross-injection ABI used by runtime
+		// handoff and release smoke. Their deliberately small public projection
+		// must keep the same names across independently minified artifacts.
+		'bootstrapRevision', 'context', 'dispose', 'disposed', 'isReady',
+		'revision', 'runtime', 'sources',
+	]);
+	const addStringProperties = (source) => {
+		for (const match of source.matchAll(/(["'`])([A-Za-z_$][\w$]*)\1/gu)) {
+			if (match[2]) reserved.add(match[2]);
+		}
+		for (const match of source.matchAll(/\bchrome((?:\??\.[A-Za-z_$][\w$]*)+)/gu)) {
+			for (const property of match[1].split(/\??\./u)) {
+				if (property) reserved.add(property);
+			}
+		}
+	};
+	const addEsmExportProperties = (source) => {
+		// Terser processes each emitted file independently. A dynamic import reads
+		// the export name as a module-namespace property in the caller, while the
+		// provider exposes it as syntax rather than a property. Reserve both sides
+		// from every emitted export list so code-split chunks cannot disagree.
+		for (const match of source.matchAll(/\bexport\s*\{([^}]*)\}/gu)) {
+			for (const rawSpecifier of match[1].split(',')) {
+				const specifier = rawSpecifier.trim();
+				if (!specifier) continue;
+				const parts = specifier.split(/\s+as\s+/u);
+				const exportedName = (parts[1] ?? parts[0]).trim();
+				if (/^[A-Za-z_$][\w$]*$/u.test(exportedName)) reserved.add(exportedName);
+			}
+		}
+	};
+	const addCrossContextSingletonProperties = (source) => {
+		// Versioned globals are an explicit handoff ABI between separately injected
+		// scripts and test/upgrade probes. They are intentionally readable outside
+		// the bundle that defines them.
+		for (const match of source.matchAll(/\.(__[A-Za-z_$][\w$]*)/gu)) {
+			if (match[1]) reserved.add(match[1]);
+		}
+	};
+	for (const path of paths) {
+		const source = readFileSync(path, 'utf8');
+		addEsmExportProperties(source);
+		addCrossContextSingletonProperties(source);
+		for (const property of collectExternalBoundaryProperties(source, path)) {
+			reserved.add(property);
+		}
+		for (const match of source.matchAll(/\bchrome((?:\??\.[A-Za-z_$][\w$]*)+)/gu)) {
+			for (const property of match[1].split(/\??\./u)) {
+				if (property) reserved.add(property);
+			}
+		}
+	}
+	const contractsDir = resolve(projectDir, '../../packages/contracts/src');
+	for (const path of walkFiles(contractsDir).filter((entry) => entry.endsWith('.ts')).sort()) {
+		addStringProperties(readFileSync(path, 'utf8'));
+	}
+
+	// Remote control messages cross into a separately deployed bundle. Reserve
+	// every property that bundle reads directly in addition to quoted wire keys.
+	const remoteSite = resolve(projectDir, '../../../remote-site/app.js');
+	if (existsSync(remoteSite)) {
+		const source = readFileSync(remoteSite, 'utf8');
+		addStringProperties(source);
+		for (const property of collectExternalBoundaryProperties(source, remoteSite)) {
+			reserved.add(property);
+		}
+		for (const match of source.matchAll(/\.([A-Za-z_$][\w$]*)/gu)) {
+			if (match[1]) reserved.add(match[1]);
+		}
+	}
+	return [...reserved].sort();
+}
+
+async function minifyProductionJavaScript() {
+	if (isDev || emitSourceMap) return;
+	const paths = walkFiles(distDir).filter((path) => path.endsWith('.js')).sort();
+	const reserved = collectReservedProperties(paths);
+	const nameCache = {};
+	for (const path of paths) {
+		const source = readFileSync(path, 'utf8');
+		const opaqueVendor = path.endsWith('peerjs-vendor.js');
+		const result = await minify(source, {
+			ecma: 2022,
+			module: /^\s*(?:import|export)\b/mu.test(source),
+			compress: { passes: 2 },
+			mangle: {
+				toplevel: true,
+				properties: opaqueVendor ? {
+					// PeerJS marks implementation-only members with `_`; its public,
+					// signaling and WebRTC property names remain byte-for-byte stable.
+					regex: /^_/u,
+					keep_quoted: true,
+				} : {
+					builtins: false,
+					keep_quoted: true,
+					reserved,
+				},
+			},
+			format: { comments: false },
+			nameCache,
+		});
+		if (typeof result.code !== 'string') throw new Error(`Terser emitted no code for ${path}`);
+		writeFileSync(path, result.code);
+	}
+}
+
 function assertProductionJavaScript() {
 	if (isDev) return;
 	const diagnosticCalls = [];
@@ -204,6 +462,8 @@ const common = {
 		// outputs for tests and declarations, but extension code must never pick up
 		// a stale dist/ tree left by an earlier local build.
 		'@nexus/contracts/bootstrap': resolve(projectDir, '../../packages/contracts/src/spectra.bootstrap.ts'),
+		'@nexus/contracts/ui-runtime': resolve(projectDir, '../../packages/contracts/src/spectra.ui-runtime.ts'),
+		'@nexus/contracts/ui-settings-runtime': resolve(projectDir, '../../packages/contracts/src/spectra.ui-settings-runtime.ts'),
 		'@nexus/contracts': resolve(projectDir, '../../packages/contracts/src/index.ts'),
 		'@nexus/kernel': resolve(projectDir, '../../packages/nexus-kernel/src/index.ts'),
 		'@nexus/audio-engine': resolve(projectDir, '../../packages/features/audio-engine/src/index.ts'),
@@ -218,16 +478,18 @@ const common = {
 runTypecheck();
 prepareDist();
 await minifyProductionStyles();
+await optimizeProductionIcons();
 writeI18nAssets(distDir);
 minifyProductionAssets();
 console.log(`✓ SPECTRA ${version} ${isDev ? 'development' : 'production'} build`);
 
 if (isWatch) {
-	const contexts = await Promise.all(entries.map(async ({ entry, out }) => {
+	const contexts = await Promise.all(allEntries.map(async ({ entry, out, format }) => {
 		const context = await esbuild.context({
 			...common,
 			entryPoints: [entry],
 			outfile: resolve(distDir, out),
+			format,
 			plugins: [{
 				name: 'build-notifier',
 				setup(build) {
@@ -248,10 +510,10 @@ if (isWatch) {
 } else {
 	const metafiles = [];
 	const summary = [];
-	const buildOne = async ({ entry, out }) => {
+	const buildOne = async ({ entry, out, format }) => {
 		const result = await esbuild.build({
 			...common,
-			alias: out === 'content-runtime.js'
+			alias: out.startsWith('content-')
 				? {
 					...common.alias,
 					'@nexus/contracts': contentContractsRuntime,
@@ -261,39 +523,52 @@ if (isWatch) {
 				: common.alias,
 			entryPoints: [entry],
 			outfile: resolve(distDir, out),
+			format,
 			metafile: true,
 		});
 		metafiles.push({ name: out, metafile: result.metafile });
-		summary.push(`${out}:${Math.ceil(statSync(resolve(distDir, out)).size / 1024)}KiB`);
+		summary.push(out);
 	};
 
 	if (isDev) {
 		// Standalone files keep source-level Chrome diagnostics readable. Content
 		// scripts must also stay standalone in production because executeScript()
 		// injects classic files rather than extension-page ESM entrypoints.
-		for (const entry of entries) await buildOne(entry);
+		for (const entry of allEntries) await buildOne(entry);
 	} else {
+		for (const entry of vendorEntries) await buildOne(entry);
 		for (const entry of isolatedEntries) await buildOne(entry);
-		const moduleEntryPoints = Object.fromEntries(moduleEntries.map(({ entry, out }) => [
-			out.slice(0, -'.js'.length),
-			entry,
-		]));
-		const result = await esbuild.build({
-			...common,
-			entryPoints: moduleEntryPoints,
-			outdir: distDir,
-			entryNames: '[name]',
-			chunkNames: 'chunks/[name]-[hash]',
-			format: 'esm',
-			splitting: true,
-			metafile: true,
-		});
-		for (const { out } of moduleEntries) {
-			metafiles.push({ name: out, metafile: result.metafile });
-			summary.push(`${out}:${Math.ceil(statSync(resolve(distDir, out)).size / 1024)}KiB`);
+		for (const group of moduleEntryGroups) {
+			const moduleEntryPoints = Object.fromEntries(group.entries.map(({ entry, out }) => [
+				out.slice(0, -'.js'.length),
+				entry,
+			]));
+			const result = await esbuild.build({
+				...common,
+				alias: group.name === 'popup'
+					? {
+						...common.alias,
+						'@nexus/kernel': contentKernelRuntime,
+						'@nexus/audio-engine': uiAudioEngineRuntime,
+					}
+					: common.alias,
+				entryPoints: moduleEntryPoints,
+				outdir: distDir,
+				entryNames: '[name]',
+				chunkNames: `chunks/${group.name}/[name]-[hash]`,
+				format: 'esm',
+				splitting: true,
+				plugins: [contractRuntimeFacadePlugin()],
+				metafile: true,
+			});
+			for (const { out } of group.entries) {
+				metafiles.push({ name: out, metafile: result.metafile });
+				summary.push(out);
+			}
 		}
 	}
 
+	await minifyProductionJavaScript();
 	assertProductionJavaScript();
 	if (isAnalyze) {
 		const report = metafiles.map(({ name, metafile }) => ({
@@ -313,5 +588,7 @@ if (isWatch) {
 	// custom build just to identify contributors.
 	if (!isDev) checkBundleBudget({ distDir, metafiles });
 
-	console.log(`✓ ${summary.join(' | ')}`);
+	console.log(`✓ ${summary.map((out) => (
+		`${out}:${Math.ceil(statSync(resolve(distDir, out)).size / 1024)}KiB`
+	)).join(' | ')}`);
 }

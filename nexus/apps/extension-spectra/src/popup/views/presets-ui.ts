@@ -2,7 +2,8 @@
 // features: apply preset, global vs site-specific, search/filter, set as default, preview config
 
 import type { AudioConfig } from '@nexus/kernel';
-import { isSpectraEventEnvelope, resolveAudioVolume } from '@nexus/contracts';
+import { resolveAudioVolume } from '@nexus/contracts';
+import { isSpectraUiEventEnvelope } from '@nexus/contracts/ui-runtime';
 import type { I18NDict } from '../types';
 import { getSettingsSnapshot, patchSettings } from '../../shared/settings-client';
 import { handleDialogKeydown } from '../utils/dialog';
@@ -55,7 +56,7 @@ export function initPresetsUI(
 
 	// eff: refresh only from the background repository's validated snapshot event
 	chrome.runtime.onMessage.addListener((message: unknown) => {
-		if (isSpectraEventEnvelope(message) && message.type === 'spectra.settings.changed') {
+		if (isSpectraUiEventEnvelope(message) && message.type === 'spectra.settings.changed') {
 			void refreshPresetsList();
 		}
 		return false;

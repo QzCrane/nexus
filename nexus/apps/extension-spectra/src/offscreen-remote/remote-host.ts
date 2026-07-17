@@ -2,7 +2,8 @@
 // The module intentionally does not register a runtime listener by itself: the
 // unified offscreen entry owns that listener and delegates REMOTE_HOST_* calls.
 
-import Peer, { type DataConnection } from 'peerjs';
+import type Peer from 'peerjs';
+import type { DataConnection } from 'peerjs';
 import {
 	isRemoteState,
 	type OffscreenHostResponse,
@@ -78,10 +79,16 @@ interface PendingSessionCreation {
 export function createRemoteHostController(
 	dependencies: RemoteHostControllerDependencies = {},
 ): RemoteHostController {
-	const createPeer = dependencies.createPeer ?? ((peerId: string) => new Peer(peerId, {
-		debug: 0,
-		referrerPolicy: 'no-referrer',
-	}));
+	const createPeer = dependencies.createPeer ?? ((peerId: string) => {
+		const PeerConstructor = (globalThis as typeof globalThis & {
+			Peer?: typeof import('peerjs').default;
+		}).Peer;
+		if (!PeerConstructor) throw new Error('Local PeerJS vendor runtime is unavailable');
+		return new PeerConstructor(peerId, {
+			debug: 0,
+			referrerPolicy: 'no-referrer',
+		});
+	});
 	const sendRuntimeMessage = dependencies.sendRuntimeMessage ?? ((message: unknown) => chrome.runtime.sendMessage(message));
 	const now = dependencies.now ?? Date.now;
 	const setTimer = dependencies.setTimer ?? ((callback, delayMs) => window.setTimeout(callback, delayMs));

@@ -61,6 +61,8 @@ function checkSourceAlgorithmCatalog(root, contracts, architecture) {
 	]);
 	const covered = new Set();
 	const ids = new Set();
+	const sourceAnchors = new Set();
+	let mainWorldAdmissions = 0;
 	const decisions = new Set([
 		'native-control',
 		'hybrid-state-native',
@@ -92,6 +94,11 @@ function checkSourceAlgorithmCatalog(root, contracts, architecture) {
 			error(`SCTRL-002/SCTRL-016: source algorithm IDs must be unique and sequential (${algorithm.id}/${expectedId})`);
 		}
 		ids.add(algorithm.id);
+		const sourceAnchor = `${algorithm.source}#${algorithm.anchor}`;
+		if (sourceAnchors.has(sourceAnchor)) {
+			error(`SCTRL-016: source algorithm anchor must be unique (${sourceAnchor})`);
+		}
+		sourceAnchors.add(sourceAnchor);
 		if (!decisions.has(algorithm.decision)
 			|| !admissions.has(algorithm.augmentationAdmission)
 			|| !recurring.has(algorithm.recurringWork)
@@ -107,6 +114,16 @@ function checkSourceAlgorithmCatalog(root, contracts, architecture) {
 		if (algorithm.interceptionPolicy === 'site-adapter-only'
 			&& algorithm.augmentationAdmission !== 'allowlisted-site-api-after-dom-failure') {
 			error(`SCTRL-004: ${algorithm.id} grants MAIN without the exact site-adapter admission`);
+		}
+		if (algorithm.interceptionPolicy === 'site-adapter-only') mainWorldAdmissions += 1;
+		if (algorithm.decision !== 'native-control'
+			&& algorithm.interceptionPolicy === 'site-adapter-only') {
+			error(`SCTRL-004: non-native algorithm ${algorithm.id} cannot acquire MAIN authority`);
+		}
+		if (algorithm.recurringWork !== 'none'
+			&& ['controlled-augmentation', 'lifecycle-orchestration'].includes(algorithm.decision)
+			&& ['none', 'not-applicable'].includes(algorithm.augmentationAdmission)) {
+			error(`SCTRL-013: recurring algorithm ${algorithm.id} needs an explicit owned/subscribed admission`);
 		}
 		if (!algorithm.successProof || !algorithm.performanceBoundary) {
 			error(`SCTRL-005/SCTRL-013: ${algorithm.id} needs success proof and a performance boundary`);
@@ -133,8 +150,11 @@ function checkSourceAlgorithmCatalog(root, contracts, architecture) {
 			error(`SCTRL-002/SCTRL-016: source algorithm catalog does not own ${capability}`);
 		}
 	}
-	if (SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS.length !== 34) {
-		error(`SCTRL-002/SCTRL-016: source algorithm inventory drifted (${SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS.length}/34)`);
+	if (mainWorldAdmissions !== 1) {
+		error(`SCTRL-004: exactly one source algorithm may admit the one-shot site adapter (${mainWorldAdmissions}/1)`);
+	}
+	if (SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS.length !== 48) {
+		error(`SCTRL-002/SCTRL-016: source algorithm inventory drifted (${SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS.length}/48)`);
 	}
 }
 
@@ -390,6 +410,16 @@ function checkPolicyOwner(root) {
 			'SCTRL-032',
 			'SCTRL-033',
 			'SCTRL-034',
+			'SCTRL-035',
+			'SCTRL-036',
+			'SCTRL-037',
+			'SCTRL-038',
+			'SCTRL-039',
+			'SCTRL-040',
+			'SCTRL-041',
+			'SCTRL-042',
+			'SCTRL-043',
+			'SCTRL-044',
 		]) {
 			if (!architecture.includes(`- \`${invariant}\``)) {
 				error(`SCTRL-016: control owner is missing ${invariant}`);
@@ -504,6 +534,50 @@ function checkProductionLoadingTopology(root) {
 		'utf8',
 	);
 	const build = fs.readFileSync(path.join(root, APP_PATH, 'build.mjs'), 'utf8');
+	const externalBoundary = fs.readFileSync(
+		path.join(root, APP_PATH, 'scripts/external-boundary-properties.mjs'),
+		'utf8',
+	);
+	const remoteHost = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'offscreen-remote/remote-host.ts'),
+		'utf8',
+	);
+	const manifest = JSON.parse(fs.readFileSync(
+		path.join(root, APP_PATH, 'public/manifest.json'),
+		'utf8',
+	));
+	const nativeExecutor = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'content/logic/native-media-executor.ts'),
+		'utf8',
+	);
+	const uiRuntime = fs.readFileSync(
+		path.join(root, 'packages/contracts/src/spectra.ui-runtime.ts'),
+		'utf8',
+	);
+	const uiClient = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'shared/ui-spectra-client.ts'),
+		'utf8',
+	);
+	const settingsUiRuntime = fs.readFileSync(
+		path.join(root, 'packages/contracts/src/spectra.ui-settings-runtime.ts'),
+		'utf8',
+	);
+	const settingsUiClient = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'shared/ui-settings-spectra-client.ts'),
+		'utf8',
+	);
+	const settingsClient = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'shared/settings-client.ts'),
+		'utf8',
+	);
+	const registryClient = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'shared/registry-client.ts'),
+		'utf8',
+	);
+	const uiRuntimeTest = fs.readFileSync(
+		path.join(root, APP_PATH, 'test/ui-runtime-contract.spec.ts'),
+		'utf8',
+	);
 	const budget = fs.readFileSync(
 		path.join(root, APP_PATH, 'scripts/check-bundle-budget.mjs'),
 		'utf8',
@@ -536,7 +610,18 @@ function checkProductionLoadingTopology(root) {
 	for (const required of [
 		"const isolatedEntries = entries.filter(({ out }) => out.startsWith('content-'))",
 		"const moduleEntries = entries.filter(({ out }) => !out.startsWith('content-'))",
-		"chunkNames: 'chunks/[name]-[hash]'",
+		'const moduleEntryGroups = [',
+		"name: 'runtime'",
+		"name: 'popup'",
+		'chunkNames: `chunks/${group.name}/[name]-[hash]`',
+		'plugins: [contractRuntimeFacadePlugin()]',
+		'const addEsmExportProperties = (source) => {',
+		'const addCrossContextSingletonProperties = (source) => {',
+		"import { collectExternalBoundaryProperties } from './scripts/external-boundary-properties.mjs'",
+		"out: 'peerjs-vendor.js', format: 'iife'",
+		"path.endsWith('peerjs-vendor.js')",
+		"'target', 'documentIds', 'frameIds', 'allFrames', 'world', 'func', 'args'",
+		"keep_quoted: true",
 		'splitting: true',
 	]) {
 		if (!build.includes(required)) {
@@ -546,9 +631,62 @@ function checkProductionLoadingTopology(root) {
 	if (!popup.includes('<script type="module" src="popup.js"></script>')) {
 		error('SCTRL-034: Popup must remain an extension-origin module before sharing private chunks');
 	}
+	const offscreen = fs.readFileSync(path.join(root, APP_PATH, 'public/offscreen.html'), 'utf8');
+	if (!externalBoundary.includes("const EXTERNAL_TRANSPORT_METHODS = new Set(['postMessage', 'send', 'sendMessage'])")
+		|| !externalBoundary.includes('export function collectExternalBoundaryProperties(')
+		|| !externalBoundary.includes('collectLiteralProperties(argument, names)')
+		|| !offscreen.includes('<script src="peerjs-vendor.js"></script>')
+		|| !remoteHost.includes("import type Peer from 'peerjs'")
+		|| !remoteHost.includes("import type { DataConnection } from 'peerjs'")
+		|| /(?:^|\n)import\s+(?!type\b)[^;\n]*\bfrom\s+['"]peerjs['"]/u.test(remoteHost)
+		|| !remoteHost.includes("throw new Error('Local PeerJS vendor runtime is unavailable')")
+		|| !budget.includes("'peerjs-vendor.js': 60 * KiB")) {
+		error('SCTRL-004/SCTRL-014/SCTRL-034/SCTRL-044: production external ABI and opaque PeerJS vendor boundary drifted');
+	}
+	const videoEffectsResource = (manifest.web_accessible_resources ?? [])
+		.find((item) => item.resources?.includes('content-video-effects.js'));
+	if (!build.includes("{ entry: 'src/content/video/video-effects-controller.ts', out: 'content-video-effects.js', format: 'esm' }")
+		|| !nativeExecutor.includes("import(chrome.runtime.getURL('content-video-effects.js'))")
+		|| nativeExecutor.includes("import { VideoEffectsController } from '../video/video-effects-controller'")
+		|| videoEffectsResource?.use_dynamic_url !== true) {
+		error('SCTRL-001/SCTRL-013/SCTRL-042: video enhancement code must remain lazy, extension-owned and absent from native-only startup');
+	}
+	if (!build.includes("'@nexus/contracts/ui-runtime': resolve(")
+		|| !build.includes("'@nexus/contracts/ui-settings-runtime': resolve(")
+		|| !uiClient.includes("from '@nexus/contracts/ui-runtime'")
+		|| !uiRuntime.includes('export const SPECTRA_UI_REQUEST_TYPES = [')
+		|| !uiRuntime.includes('export type SpectraUiRequestType = (typeof SPECTRA_UI_REQUEST_TYPES)[number]')
+		|| !uiRuntime.includes('export function isSpectraUiRequestType(')
+		|| !uiRuntime.includes('export const SPECTRA_UI_EVENT_TYPES = [')
+		|| !uiRuntime.includes('export type SpectraUiEventType = (typeof SPECTRA_UI_EVENT_TYPES)[number]')
+		|| !uiRuntime.includes('export function isSpectraUiEventType(')
+		|| !uiRuntime.includes('if (isSpectraSettingsUiRequestType(type)) return isSpectraSettingsUiResponse(type, value);')
+		|| (uiClient.match(/T extends SpectraUiRequestType/gu) ?? []).length !== 2
+		|| !uiRuntimeTest.includes("const internalType: SpectraRequestType = 'spectra.audio.capture.set'")
+		|| !uiRuntimeTest.includes('expect(isSpectraUiResponse(internalType, failure)).toBe(false)')
+		|| !uiRuntimeTest.includes('matches canonical validation for every allowed event')
+		|| (uiRuntime.match(/default: return false;/gu) ?? []).length !== 1) {
+		error('SCTRL-014/SCTRL-034/SCTRL-043: extension UI must use the restricted protocol validator surface');
+	}
+	if (!settingsUiRuntime.includes('export const SPECTRA_SETTINGS_UI_REQUEST_TYPES = [')
+		|| !settingsUiRuntime.includes('export function isSpectraSettingsUiResponse')
+		|| !settingsUiRuntime.includes('export function isSpectraSettingsUiEventEnvelope')
+		|| settingsUiRuntime.includes('spectra.control.snapshot.get')
+		|| settingsUiRuntime.includes('spectra.audio.session.get')
+		|| !settingsUiClient.includes("from '@nexus/contracts/ui-settings-runtime'")
+		|| settingsUiClient.includes("from '@nexus/contracts/ui-runtime'")
+		|| !settingsClient.includes("from '@nexus/contracts/ui-settings-runtime'")
+		|| !settingsClient.includes("from './ui-settings-spectra-client'")
+		|| !registryClient.includes("from './ui-settings-spectra-client'")
+		|| settingsClient.includes("from './ui-spectra-client'")
+		|| registryClient.includes("from './ui-spectra-client'")
+		|| !uiRuntimeTest.includes('keeps the Options facade narrow and canonically equivalent')) {
+		error('SCTRL-014/SCTRL-034/SCTRL-043: Options must not load Popup control/session validators');
+	}
 	for (const required of [
 		'export function bundleFootprint(',
 		'defaultStartup: 225 * KiB',
+		"'content-video-effects.js': 12 * KiB",
 		"...bundleFootprint(distDir, 'background.js').files",
 		"...bundleFootprint(distDir, 'content-bootstrap.js').files",
 	]) {
@@ -680,7 +818,8 @@ function checkRetiredPaths(root) {
 		error('SCTRL-003/SCTRL-004: the losing DOM writer must be excluded from site-native restore');
 	}
 	if (!nativeExecutor.includes("if (event === 'removed')")
-		|| !nativeExecutor.includes('this.effects.release(element)')) {
+		|| !nativeExecutor.includes('this.pending.delete(target.mediaId)')
+		|| !nativeExecutor.includes('this.effects?.release(element)')) {
 		error('SCTRL-007/SCTRL-013: removed media must release pending writes and extension-owned presentation state');
 	}
 	const nativeReadStart = nativeExecutor.indexOf('\n\tread(request: ControlReadRequest)');
@@ -747,6 +886,12 @@ function checkRetiredPaths(root) {
 		path.join(root, SOURCE_PATH, 'content/core/index.ts'),
 		'utf8',
 	);
+	if (fs.existsSync(path.join(root, SOURCE_PATH, 'content/core/lifecycle/fullscreen-handler.ts'))
+		|| contentCoreIndex.includes('setupFullscreenHandler')
+		|| !mediaRegistry.includes("this.emit(record.target, 'fullscreenchange', record.element)")
+		|| !nativeExecutor.includes("} else if (event === 'fullscreenchange')")) {
+		error('SCTRL-012/SCTRL-013/SCTRL-025: fullscreen must use the registry native event path without a second applyState lifecycle');
+	}
 	const abLoop = fs.readFileSync(
 		path.join(root, SOURCE_PATH, 'content/video/ab-loop.ts'),
 		'utf8',
@@ -846,6 +991,15 @@ function checkRetiredPaths(root) {
 		|| !videoEffects.includes('rect.left - offsetLeft')
 		|| !videoEffects.includes('this.dimBoxes(video)')) {
 		error('SCTRL-005/SCTRL-013: dim overlay must read back visual-viewport geometry only while owned');
+	}
+	if (videoEffects.includes('if (previousState) previousState.dimEnabled = false;\n\t\t\tthis.release(previous);')
+		|| !videoEffects.includes('if (previousState && !this.hasActiveEffect(previousState))')
+		|| !videoEffects.includes('if (this.dimTarget && this.dimTarget !== video)')
+		|| !fs.readFileSync(
+			path.join(root, APP_PATH, 'test/video-effects-controller.spec.ts'),
+			'utf8',
+		).includes('preserves independent CSS effects when the dim target changes')) {
+		error('SCTRL-003/SCTRL-009: dim owner handoff must preserve independent CSS effects on the previous video');
 	}
 	const videoSnapshot = videoEffects.match(
 		/snapshot\(video: HTMLVideoElement\): VideoEffectState \{(.*?)\n\t\}/su,
@@ -1177,8 +1331,10 @@ function checkRetiredPaths(root) {
 	if (!nativeAckFunction.includes('target.addEventListener(type, onEvent)')
 		|| nativeAckFunction.indexOf('target.addEventListener(type, onEvent)')
 			> nativeAckFunction.indexOf('await write()')
-		|| !nativeAckFunction.includes('await acknowledgement')
-		|| !nativeAckTest.includes('waits through microtask, rAF and 50ms page rollbacks before rejecting native ACKs')) {
+		|| !nativeAckFunction.includes('if (!await acknowledgement)')
+		|| !nativeExecutor.includes("value ? 'playing' : 'pause'")
+		|| !nativeAckTest.includes('waits through microtask, rAF and 50ms page rollbacks before rejecting native ACKs')
+		|| !nativeAckTest.includes('rejects a getter match when no native event acknowledges the setter')) {
 		error('SCTRL-005/SCTRL-017: native event listeners and rollback regression coverage must precede actual ACK');
 	}
 	if (!nativeExecutor.includes('requestVideoFrameCallback')
@@ -1231,6 +1387,11 @@ function checkRetiredPaths(root) {
 		path.join(root, SOURCE_PATH, 'content/logic/mode-executor.ts'),
 		'utf8',
 	);
+	if (!modeExecutor.includes('const previousAppliedConfig = cloneAudioConfig(state.appliedConfig)')
+		|| !modeExecutor.includes('restoreWebAudioState(previousAppliedConfig, deps)')
+		|| !modeExecutor.includes('async function restoreWebAudioState(')) {
+		error('SCTRL-003/SCTRL-011/SCTRL-038: mode handoff must have one transition owner and restore only proven previous actual WebAudio');
+	}
 	for (const required of [
 		'assessMediaSourceCoverage(mediaElements, evidenceFor)',
 		'audioController.ensureAttached(element, evidenceFor(element))',
@@ -1266,6 +1427,9 @@ function checkRetiredPaths(root) {
 		path.join(root, SOURCE_PATH, 'content/logic/policy-executor/index.ts'),
 		'utf8',
 	);
+	if (policyExecutor.includes('state.activeMode === AudioMode.NATIVE_WEBAUDIO) await deps.audioController.cleanup()')) {
+		error('SCTRL-003/SCTRL-011/SCTRL-038: PolicyExecutor cannot pre-release the old WebAudio path');
+	}
 	if (!policyExecutor.includes('evaluateMediaSourceEligibility(')
 		|| !policyExecutor.includes('deps.audioController.hasKnownBindingFailure(element)')) {
 		error('SCTRL-008/SCTRL-011: policy must route unknown, unsafe or failed full coverage away from Media WebAudio');

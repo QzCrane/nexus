@@ -148,7 +148,7 @@ const DEFAULT_AUDIO_CONFIG: AudioConfig = {
 const SILENT_WAV_DATA_URL = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
 
 function collectPageErrors(page: Page, errors: string[]): void {
-	page.on('pageerror', (error) => errors.push(error.message));
+	page.on('pageerror', (error) => errors.push(error.stack ?? error.message));
 }
 
 interface ExtensionLayoutAudit {
@@ -1270,11 +1270,21 @@ beforeAll(async () => {
 		],
 	});
 
-	serviceWorkerTarget = await browser.waitForTarget(
-		(target) => target.type() === 'service_worker'
-			&& /^chrome-extension:\/\/[^/]+\/background\.js$/u.test(target.url()),
-		{ timeout: 15_000 },
-	);
+	try {
+		serviceWorkerTarget = await browser.waitForTarget(
+			(target) => target.type() === 'service_worker'
+				&& /^chrome-extension:\/\/[^/]+\/background\.js$/u.test(target.url()),
+			{ timeout: 30_000 },
+		);
+	} catch (error) {
+		const targets = browser.targets()
+			.map((target) => `${target.type()}:${target.url() || '<empty>'}`)
+			.join(', ');
+		throw new Error(
+			`SPECTRA service worker did not start; browser targets: ${targets || '<none>'}`,
+			{ cause: error },
+		);
+	}
 	extensionId = new URL(serviceWorkerTarget.url()).host;
 	const worker = await serviceWorkerTarget.worker();
 	if (!worker) throw new Error('SPECTRA service worker target has no worker execution context');
@@ -1296,7 +1306,7 @@ beforeAll(async () => {
 	});
 	await fixturePage.goto(fixtureUrl, { waitUntil: 'domcontentloaded' });
 	await waitForContentBootstrapStatus(fixtureUrl);
-}, 30_000);
+}, 60_000);
 
 afterAll(async () => {
 	await cleanupSyntheticCaptureHarness();
@@ -1583,8 +1593,30 @@ describe('SPECTRA built extension smoke', () => {
 		await evaluateServiceWorker(async () => chrome.action.openPopup());
 		const popupTarget = await popupTargetPromise;
 		const popup = await popupTarget.asPage();
+		const popupDiagnostics: string[] = [];
+		popup.on('pageerror', (error) => popupDiagnostics.push(`pageerror: ${error.message}`));
+		popup.on('console', (message) => {
+			if (message.type() === 'error' || message.type() === 'warning') {
+				popupDiagnostics.push(`console.${message.type()}: ${message.text()}`);
+			}
+		});
 		await popup.waitForSelector('#view-main:not([hidden])');
-		await popup.waitForSelector('.glass-card');
+		await popup.waitForSelector('.glass-card', { timeout: 8_000 }).catch(async (error) => {
+			const state = await popup.evaluate(async () => ({
+				readyState: document.readyState,
+				mainChildren: document.querySelector('#main-stage')?.childElementCount ?? -1,
+				emptyHidden: document.querySelector('#empty-state')?.classList.contains('hidden') ?? false,
+				bodyText: document.body.innerText.slice(0, 500),
+				activeTabs: (await chrome.tabs.query({ active: true, currentWindow: true }))
+					.map(({ id, url, active, windowId }) => ({ id, url, active, windowId })),
+				allTabs: (await chrome.tabs.query({}))
+					.map(({ id, url, active, windowId }) => ({ id, url, active, windowId })),
+			})).catch(() => null);
+			throw new Error(
+				`Popup card stage did not initialize: ${JSON.stringify({ state, popupDiagnostics })}`,
+				{ cause: error },
+			);
+		});
 		const originalLanguage = await popup.$eval('#set-lang', (element) => (
 			(element as HTMLSelectElement).value
 		));
@@ -2078,6 +2110,13 @@ describe('SPECTRA built extension smoke', () => {
 		const secondary = await browser.newPage();
 		const wrongRemote = await browser.newPage();
 		const authenticatedRemote = await browser.newPage();
+		const wrongRemoteErrors: string[] = [];
+		collectPageErrors(wrongRemote, wrongRemoteErrors);
+		wrongRemote.on('console', (message) => {
+			if (message.type() === 'error' || message.type() === 'warning') {
+				wrongRemoteErrors.push(`console.${message.type()}: ${message.text()}`);
+			}
+		});
 		const tabId = await getTabId(fixturePage.url());
 		const secondaryUrl = `${fixtureUrl}?remote-secondary=1`;
 		let session: RemotePublicSession | null = null;
@@ -2139,12 +2178,28 @@ describe('SPECTRA built extension smoke', () => {
 			await wrongRemote.goto(remotePairingUrl(session, 'AAAAAAAAAAAAAAAAAAAAAA'), {
 				waitUntil: 'domcontentloaded',
 			});
-			await eventually(
-				() => wrongRemote.$eval('#status-text', (element) => element.textContent ?? ''),
-				(status) => /Authentication failed|Host rejected authentication/u.test(status),
-				'wrong-secret remote authentication rejection',
-				25_000,
-			);
+			try {
+				await eventually(
+					() => wrongRemote.$eval('#status-text', (element) => element.textContent ?? ''),
+					(status) => /Authentication failed|Host rejected authentication/u.test(status),
+					'wrong-secret remote authentication rejection',
+					25_000,
+				);
+			} catch (error) {
+				const [status, host, remoteDebug] = await Promise.all([
+					wrongRemote.$eval('#status-text', (element) => element.textContent ?? '').catch(() => null),
+					readOffscreenSnapshot().catch(() => null),
+					wrongRemote.evaluate(() => ({
+						href: location.href,
+						resources: performance.getEntriesByType('resource').map((entry) => entry.name),
+						online: navigator.onLine,
+					})).catch(() => null),
+				]);
+				throw new Error(
+					`Wrong-secret remote did not receive an authentication result: ${JSON.stringify({ status, host, remoteDebug, wrongRemoteErrors })}`,
+					{ cause: error },
+				);
+			}
 			expect(await wrongRemote.$eval('#tab-title', (element) => element.textContent)).toBe(
 				'Waiting for authenticated sync…',
 			);

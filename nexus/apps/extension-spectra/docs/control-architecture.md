@@ -131,11 +131,14 @@ executor. A target-bound or augmentation read returns
 through the document lease/READY transaction instead of widening a passive
 getter.
 
-`build.mjs` keeps both content artifacts isolated because Chrome injects them
-into page-specific isolated worlds. Background, Popup, Options and offscreen
-are extension-origin ES modules and may share deterministic production chunks;
-those chunks are not web-accessible resources. Development builds stay
-standalone for readable Chrome smoke diagnostics.
+`build.mjs` keeps the bootstrap, main Content runtime and video-enhancement
+Content artifacts isolated because Chrome injects them into page-specific
+isolated worlds. The video artifact is a dynamic-URL web-accessible module but
+is imported only after an explicit video enhancement intent. Background,
+Popup, Options and offscreen are extension-origin ES modules and may share
+deterministic production chunks; those private chunks are not web-accessible
+resources. Development builds stay standalone for readable Chrome smoke
+diagnostics.
 
 The contracts, audio-engine and kernel packages declare `sideEffects:false`.
 They are pure runtime libraries: this lets production tree shaking remove
@@ -147,14 +150,21 @@ flags so a metadata edit cannot silently reintroduce duplicated control code.
 the entrypoint that can load it. Raw entry-file size is never accepted as a
 Popup/offscreen budget because it would hide shared chunks. It also counts the
 unique Background plus bootstrap dependency closure as the default startup
-path. Current hard ceilings are 225 KiB default startup, 515 KiB total
+path. Current hard ceilings are 225 KiB default startup, 517 KiB total
 JavaScript and 620 KiB complete dist; entry dependency closures are bounded at
-220 KiB Background, 10 KiB bootstrap, 140 KiB lazy content runtime, 175 KiB
-Popup, 135 KiB offscreen and 95 KiB Options. These are transitive runtime
-ceilings with only 1–4% headroom over the measured candidate after the local
-SVG QR encoder and context-specific Content facades landed. A missing split bundle, an import
-escaping `dist`, diagnostic production JavaScript or any exceeded closure
-fails release packaging.
+220 KiB Background, 10 KiB bootstrap, 140 KiB lazy Content runtime, 12 KiB lazy
+video enhancement, 175 KiB Popup, 135 KiB offscreen and 95 KiB Options. These
+are transitive runtime ceilings; exact measured bytes and aggregate headroom
+belong to the dated optimization report. A missing split bundle, an import
+escaping `dist`, diagnostic production JavaScript or any exceeded closure fails
+release packaging.
+
+Production property mangling is restricted by external ownership. Chrome API
+dictionary keys, every emitted ESM export name and every versioned `__SPECTRA_*__`
+cross-context singleton key are reserved before Terser processes the separate
+files. Internal names may still shrink, but a caller chunk, Chrome API, injected
+script or upgrade probe can never observe a renamed boundary key. The extracted
+ZIP smoke is the executable proof for this post-bundle invariant.
 
 ### Failure-directed escalation
 
@@ -199,7 +209,7 @@ This matrix is exhaustive for the persisted fields and momentary operations expo
 | Mirror | active video | extension CSS individual `scale` | Computed-style readback; never overwrite the site's `transform`. |
 | Fill/crop | active video | extension `object-fit:cover` owner rule | Computed `object-fit`; disabling removes the owner attribute. |
 | Filter enabled/values | active video | extension CSS filter composition | Computed-style readback; compose without replacing source inline style. |
-| Dim enabled/opacity | active video | extension closed-shadow four-region overlay | Overlay geometry/opacity readback; never rewrite video position or z-index. |
+| Dim enabled/opacity | active video | extension closed-shadow four-region overlay | Overlay geometry/opacity readback; never rewrite video position or z-index, and switching the dim target preserves every independent effect still owned on the previous video. |
 | A/B state | `mediaId + sourceRevision` | extension state + native seek executor | Points validate `0 <= A < B`; boundary seek ACK updates the same target only. |
 | Tab pinned | tab | `chrome.tabs.update({pinned})` | `tabs.onUpdated`/`tabs.get` readback. |
 | EQ / Bass / Compressor / Mono / Pan / Delay | explicit full audio output | safe shared Media WebAudio -> Capture | Processor parameter/topology readback; Capture is the only opaque full-output fallback and target-only requests fail before activation. |
@@ -295,7 +305,7 @@ algorithm anchor, the mirror below and the contract tests in the same commit.
 | `fill` | augmentation-only; no implemented native or official adapter exists | extension-owned `object-fit` rule | computed style; disabling removes ownership rather than guessing a restore value |
 | `filterEnabled` | augmentation-only; no implemented native or official adapter exists | reversible composed CSS | computed style; no work while disabled |
 | `filter` | augmentation-only; no implemented native or official adapter exists | reversible composed CSS | captures the computed site baseline at acquisition and composes it with SPECTRA values; disabling removes ownership and reveals the site's current cascade |
-| `dimEnabled` | augmentation-only; no page/browser dim primitive | extension-owned closed-shadow four-region overlay | overlay geometry readback; one coalesced frame only while enabled |
+| `dimEnabled` | augmentation-only; no page/browser dim primitive | extension-owned closed-shadow four-region overlay | overlay geometry readback; one coalesced frame only while enabled; target handoff releases only the previous dim owner and preserves its independent CSS effects |
 | `dimOpacity` | augmentation-only; part of the owned dim layer | same owned overlay only | computed/owned opacity readback; no overlay while dim is disabled |
 | `abLoop` | augmentation-only metadata; boundary motion still uses native seek | media/source-keyed extension state | coordinator state plus native seek ACK; one scheduler only while enabled |
 | `tabPinned` | native-only through Chrome tab state | none | `tabs.get`/tab event readback; event-driven only |
@@ -471,6 +481,7 @@ moves responsibility must update this list, the executable matrices, tests and
 | `src/content/logic/control-operation-executor.ts::executeControlOperation` | Contract-scoped target resolution and momentary operation truth | `active-video` operations resolve the independent video registry target while media/source operations resolve active media; missing marker/media/A-B targets reject instead of returning an `ok` envelope with a false action result. |
 | `src/background/control-coordinator.ts::executeFieldOperation` | Compound operation transaction | Playback, seek, video toggle/reset and audio reset require every relevant field phase to be `applied` before returning operation success. |
 | `packages/contracts/src/control.contracts.ts::isControlStrategyAdmittedForCapability` and ACK validators | Capability-specific cross-process strategy admission | Reject a known strategy name when it belongs to another capability, so stale or drifting executors cannot report Capture volume, CSS fullscreen or extension-state screenshot success. |
+| `packages/contracts/src/spectra.ui-runtime.ts::SPECTRA_UI_REQUEST_TYPES` and `SPECTRA_UI_EVENT_TYPES` | Closed protocol surface for Popup, Options and remote UI | The 23 request types and six event types are explicit tuples. UI clients are compile-time limited to that subset; success, error and event envelopes reuse canonical control/settings/audio/remote validators. `test/ui-runtime-contract.spec.ts` proves parity and rejects internal types even when they carry a syntactically valid shared error. |
 
 `audioEnabled.actual` is derived from the requested configuration and actual
 processor state. A neutral enabled configuration may report `true` while the
@@ -582,6 +593,16 @@ coverage of all 50 capabilities. A source move, new algorithm or changed owner
 therefore requires the catalog, this table and the implementation to change in
 one release-gated commit.
 
+The catalog boundary is every production unit reachable from a control surface
+(page, Popup, authenticated remote, hotkey or Chrome lifecycle) that selects a
+strategy, calculates a target/value, mutates native or extension state, observes
+actual state, synchronizes a consumer, owns a lease/disposer, or gates a
+privileged boundary. Small value-formatting helpers outside those paths are not
+separate control algorithms. Under that definition the inventory contains 48
+source algorithms, including the cross-cutting state, identity, observation,
+handoff and bundle-admission algorithms that the earlier 34-row implementation
+catalog did not name separately.
+
 `pure-computation` and `intent-routing` have no page mutation authority.
 `observation-only` may subscribe only to an existing native/owned source.
 `native-control` may call only the named DOM/Chrome/official API.
@@ -596,7 +617,7 @@ bounded official player call after a retryable DOM failure.
 | --- | --- | --- | --- | --- |
 | `ALG-001` | Per-capability planner | pure computation | Selects only a capability-owned candidate; never executes or grants a fallback. | One bounded candidate pass per intent; coverage and admission are part of the result. |
 | `ALG-002` | Cross-process ACK admission | pure computation | Rejects known strategy names when the exact field/operation does not admit them. | Constant policy lookup at every snapshot/apply/operation boundary. |
-| `ALG-003` | Standard media writer/readback | native control | `HTMLMediaElement`/PiP/Fullscreen APIs only; native failure cannot become CSS/WebAudio/Capture/MAIN. | Temporary event/getter window on the same media/source; no retained work. |
+| `ALG-003` | Standard media writer/readback | native control | `HTMLMediaElement`/PiP/Fullscreen APIs only; native failure cannot become CSS/WebAudio/Capture/MAIN. | Temporary event/getter window on the same media/source; a matching getter without the required event is not an ACK; no retained work. |
 | `ALG-004` | Allowlisted official player fallback | native control | One official YouTube API invocation only after retryable DOM failure; this is the sole MAIN admission. | Reads official before/actual values in the invocation and leaves no bridge/listener. |
 | `ALG-005` | Chrome tab mute/pin | native control | Chrome `tabs.update` plus browser getter/event only. | One write/get pair; later synchronization reuses Chrome events. |
 | `ALG-006` | Audio session gate | lifecycle orchestration | Extension state may acquire/release an admitted processor, but cannot write native media fields. | Neutral configuration allocates nothing; dependent actual/error fields prove startup. |
@@ -609,11 +630,11 @@ bounded official player call after a retryable DOM failure.
 | `ALG-013` | Capture processor handoff | controlled augmentation | Full-tab Capture only for explicit full/opaque scope; never a target/native-field fallback. | Candidate is running/read back behind zero gain before atomic gate switch; previous stable processor survives failure. |
 | `ALG-014` | Capture Visualizer sampling | observation only | Analyser may attach only to an existing processor. | One analyser per processor, cached at no more than 15 Hz while subscribed. |
 | `ALG-015` | Media identity/target selection | observation only | Native DOM/events provide identities and facts; no page write or scan-based pseudo-control. | Mutation/Intersection/native events only; sticky target scoring uses cached data. |
-| `ALG-016` | Page-native synchronization | observation only | Genuine page events commit actual state directly; reflected extension events are absorbed. | Reuses registry events and the loop attribute observer; no polling or descriptor patch. |
+| `ALG-016` | Page-native synchronization | observation only | Genuine page events commit actual state directly; reflected extension events are absorbed. | Reuses registry events and the loop attribute observer; fullscreen has no second lifecycle `applyState`, polling or descriptor patch. |
 | `ALG-017` | Frame cadence and step | hybrid state/native | Extension estimates a bounded median delta; canonical native seek is the only writer. | At most eight rVFC samples/750ms, source-revision cache, result always marked approximate. |
 | `ALG-018` | Rotation/mirror/fill | controlled augmentation | Owned individual CSS `rotate`/`scale`/`object-fit`; never replaces site `transform`. | Owner plus computed-style readback; ResizeObserver only for an owned 90/270-degree rotation. |
 | `ALG-019` | Video filter composition | controlled augmentation | Captures current computed filter, composes owned functions and removes ownership on disable. | Computed-filter readback; no observer, inline replacement or MAIN style patch. |
-| `ALG-020` | Dim overlay geometry | controlled augmentation | Closed-shadow four-region overlay; never rewrites target layout/z-index. | One coalesced rAF on resize/scroll only while enabled, with geometry/opacity readback. |
+| `ALG-020` | Dim overlay geometry | controlled augmentation | Closed-shadow four-region overlay; never rewrites target layout/z-index or releases another effect when the dim target changes. | One coalesced rAF on resize/scroll only while enabled, with geometry/opacity readback and per-effect owner release. |
 | `ALG-021` | A/B scheduler | hybrid state/native | Source-keyed points and scheduling are extension-owned; boundary jump uses canonical seek. | One timer plus near-boundary rVFC only for a complete playing loop; all disposed on release. |
 | `ALG-022` | Time marker index/jump | hybrid state/native | Marker metadata is extension-owned; every jump remains native seek. | 1,000-marker/source bound and binary lookup; no recurring work. |
 | `ALG-023` | Screenshot verify/crop/save | native control | Chrome visible-tab capture is the only frame acquisition; no media canvas/CORS/DRM workaround. | Target/geometry verified twice and download must reach complete; no image IPC. |
@@ -628,6 +649,20 @@ bounded official player call after a retryable DOM failure.
 | `ALG-032` | Remote authentication/replay boundary | lifecycle orchestration | HMAC/sequence/generation/fixed-tab gate precedes all state and command traffic. | One authenticated controller; only bounded pairing/reconnect timers. |
 | `ALG-033` | Offscreen host lease lifecycle | lifecycle orchestration | One extension-owned offscreen document for audio and remote; modules cannot close it directly. | Serialized creation/handshake/recovery; closes 30s after final lease release. |
 | `ALG-034` | Popup Visualizer scheduler | observation only | Visible subscribed cards read one existing processor batch; no processing acquisition. | One rAF scheduler and one in-flight IPC batch; stops immediately when hidden/unsubscribed. |
+| `ALG-035` | Authoritative per-tab control transaction | lifecycle orchestration | Serializes every surface into one actual snapshot commit; no caller becomes a second state owner. | One bounded queue task per intent/event, one revision commit, no polling. |
+| `ALG-036` | Document generation and target invalidation | observation only | Navigation and typed target/source events invalidate identity; they never emulate control. | Event-driven generation/identity update; stale intent/ACK cannot commit. |
+| `ALG-037` | Multi-consumer Content runtime lease | lifecycle orchestration | Loads only the isolated runtime owned by explicit control/restore/hotkey/observation/source tokens. | READY handshake, one runtime/document, final-token disposer; default bootstrap remains minimal. |
+| `ALG-038` | Native baseline ownership and warm handoff | lifecycle orchestration | A page-lifetime WeakMap remembers only SPECTRA-owned native fields; no setter/descriptor interception. | Restore is O(owned fields) and writes only when current actual still equals the last SPECTRA ACK. |
+| `ALG-039` | Trusted activation native fast path | native control | Page keydown executes play/PiP/fullscreen in the trusted stack using only the standard API. | One native call plus bounded event/getter ACK; Popup/remote cannot synthesize activation. |
+| `ALG-040` | Cross-mode WebAudio/Capture handoff | lifecycle orchestration | Old DSP becomes unity, candidate actual is verified, then the retired lease is released or restored. | One serialized transition, no full-gain overlap, duplicate source or stale commit. |
+| `ALG-041` | Popup live observation lease | lifecycle orchestration | Foreground Popup acquires event observation only; no MAIN/audio/Capture authority. | One token/card while visible, released on pagehide; page changes push without polling. |
+| `ALG-042` | Single UI actual projection with dual clocks | observation only | `ControlSnapshot` owns fields; the independent audio clock owns processor lifecycle only. | One accepted event/render per domain revision; no cross-domain max-generation suppression. |
+| `ALG-043` | Authenticated remote observation lease | lifecycle orchestration | Only the fixed authenticated tab/session can retain page observation and receive state. | Event-driven snapshot push for one controller; released on close/replacement/reconnect expiry. |
+| `ALG-044` | Multi-consumer Visualizer subscriber registry | observation only | Subscriber token/generation union observes only existing processors; no consumer can release another. | Bounded lease map and tombstones; final release removes analyser work and periodic IPC. |
+| `ALG-045` | Configured-site hotkey runtime admission | lifecycle orchestration | A normalized host with an enabled handled binding may own one listener runtime; other sites remain bootstrap-only. | O(1) chord lookup; no default-site listener or command-time binding scan. |
+| `ALG-046` | Source-scoped Marker/A-B runtime ownership | lifecycle orchestration | Source-keyed extension state retains runtime without changing the native writer boundary. | One token/source feature; source removal/final clear releases all work and survives worker restart reconciliation. |
+| `ALG-047` | Lazy video enhancement module admission | lifecycle orchestration | Video CSS/overlay implementation loads only after an explicit non-native enhancement intent. | Native-only/default pages omit the module; neutral reads/writes remain DOM-free. |
+| `ALG-048` | Extension-UI protocol allowlist | pure computation | Popup/remote can send only the 23 exported request types and accept only six events; Options is further restricted to ten settings/registry requests and one settings event. Both successful and failed responses reject non-surface types. | Canonical focused validators own nested semantics and mutation parity tests prevent lightweight wire-shape drift; Options never loads control/audio/remote validators and privileged router code stays out of every UI bundle. |
 
 ## Control state
 
@@ -976,6 +1011,7 @@ These locations are architectural owners, not suggestions. A future implementati
 | `src/popup/card/types.ts`; `src/popup/card/init.ts`; `src/popup/card/messaging.ts` | field projection from `ControlSnapshot`; lifecycle projection from `AudioSessionSnapshot` | Prevent two actual authorities and keep control/audio generation domains independent. |
 | `src/background/control-coordinator.ts`; `src/background/handlers/user-scripts.ts` | source-window browser operations and document-bound sandbox execution | Prevent multi-window commands or navigation races from acknowledging work against another tab/document. |
 | `packages/contracts/src/spectra.protocol.ts` | v2 control apply/get/subscribe wire definitions | Make all surfaces receive one snapshot and actual ACK shape. |
+| `packages/contracts/src/spectra.ui-runtime.ts`; `spectra.ui-settings-runtime.ts`; `src/shared/ui-*-spectra-client.ts` | surface-specific UI protocol allowlists and runtime guards | Keep canonical validation while preventing the Options settings editor from loading Popup control ACK/snapshot and audio/remote validator code. |
 | `scripts/verify-architecture.js` | `SCTRL-*` static enforcement | Turn this owner document into a release gate instead of advisory prose. |
 | `build.mjs`; `scripts/check-bundle-budget.mjs` | isolated content artifacts, extension-origin shared ESM chunks and dependency-closure budgets | Optimize real startup/load cost and prevent small entry stubs from hiding large transitive bundles. |
 
@@ -991,6 +1027,7 @@ change.
 | landed | `packages/features/audio-engine/src/AudioGraphRouter.ts`; `webaudio/controller.ts`; `offscreen/audio-host.ts` | Share one sparse graph, require prospective and actual full-registry coverage before Media WebAudio ACK, reconnect rather than recreate page-lifetime sources, provide normalized graph/Capture readback and preserve the stable processor during candidate failure. The contract records the minimal unity route that must remain after an irreversible media binding. |
 | landed | `src/content/core/bootstrap.ts`, `background/runtime-loader.ts`, `content/core/media-registry.ts` | Keep default pages bootstrap-only and make the optional runtime/document target identity explicit. |
 | landed | `packages/contracts/src/spectra.bootstrap.ts`; `build.mjs`; `scripts/check-bundle-budget.mjs` | Reduce the always-on content boundary to the four required message families, share production code only between extension-origin module contexts and budget each entry's real import closure plus the default startup closure. |
+| landed | `build.mjs`; `scripts/external-boundary-properties.mjs`; `src/offscreen-remote/peerjs-vendor.ts`; `test/release-tooling.spec.ts`; production Chrome smoke | Preserve Chrome/browser dictionaries, transport payload keys, dynamic ESM exports and versioned singleton members before property mangling. Build PeerJS as an opaque local vendor artifact whose public/signaling/WebRTC ABI is never application-mangled; only its underscore-prefixed private members may be shortened. This prevents production-only loss of `currentWindow`, Capture constraints, remote HMAC proof and cross-injection runtime methods while keeping SPECTRA-owned properties optimized. |
 | landed | `src/content/logic/native-media-executor.ts`; `scripts/verify/check-spectra-control.js` | Centralize the only direct standard-media property assignments, including volume, mute, speed, pitch preservation, seek and loop; make a second direct property writer a release error. |
 | landed | `src/content/core/media-registry.ts`; `src/content/logic/native-media-executor.ts`; `src/background/control-coordinator.ts` page-observation path | Commit verified page-side volume, mute, speed, pitch, transport, seek, loop, PiP and fullscreen facts to the shared snapshot without echoing a second DOM write; reuse events/one existing observer and add no polling. |
 | landed | `src/content/audio/media-detection.ts`; `content/core/lifecycle/media-observer.ts`; `content/utils/pause-tracker.ts`; `content/logic/native-media-executor.ts` | Make status/read paths pure registry projections: no listener installation, DOM fallback, synthetic registry event or read-triggered correlation state. Pause retention is updated only by registry events. |
@@ -1044,7 +1081,7 @@ There is no standing adapter bridge or page `postMessage` channel. Background pe
 - `SCTRL-006`: intent and ACK identity includes document, generation, revision and intent ID.
 - `SCTRL-007`: 100% and 1x are literal controlled values.
 - `SCTRL-008`: MediaElementSource eligibility is proven before irreversible binding.
-- `SCTRL-009`: extension CSS removal restores the site's current cascade.
+- `SCTRL-009`: extension CSS removal restores the site's current cascade; dim-target handoff releases only dim ownership and preserves independent effects on the previous video.
 - `SCTRL-010`: transport/video state is bound to media ID and source revision.
 - `SCTRL-011`: Capture is last-resort; processor handoff never double-applies DSP, never ACKs before actual readback and restores the last stable configuration after candidate failure.
 - `SCTRL-012`: status reads do not write settings, badge, page state or activate processing.
@@ -1070,6 +1107,16 @@ There is no standing adapter bridge or page `postMessage` channel. Background pe
 - `SCTRL-032`: processor configuration exposes only `boostGain: 1–8`; page volume, media mute and a zero-gain mute substitute cannot cross the WebAudio/Capture boundary.
 - `SCTRL-033`: Background control consumers invoke the serialized coordinator directly; MV3 worker self-RPC is forbidden, and remote state is cached privately before authentication then exposed only after HMAC success.
 - `SCTRL-034`: the default content bootstrap uses only the minimal bootstrap contract; production extension pages may share private ESM chunks, and budgets measure transitive entry/default-startup closures rather than entry stubs.
+- `SCTRL-035`: native event-driven writes install their bounded listener before the setter and cannot ACK until the event/quiet/stabilized getter boundary completes.
+- `SCTRL-036`: strategy escalation consumes only canonical typed failure codes; activation, permission, stale identity, CORS and protected-content failures are terminal.
+- `SCTRL-037`: processor actual state comes only from normalized graph/host readback (`graphSignature`, actual config, source count and context state), never from desired input echo.
+- `SCTRL-038`: WebAudio/Capture transitions neutralize the old DSP, verify the candidate actual path and only then release; failure restores the previous stable route.
+- `SCTRL-039`: visible Popup and authenticated remote synchronization requires independent document observation tokens; ordinary status reads acquire none.
+- `SCTRL-040`: successful per-media desired replay is separate from page observation; a page event cannot become a document-global restore template.
+- `SCTRL-041`: user-activation-bound APIs execute only inside a trusted page event stack or return the native activation error; no cross-process gesture emulation exists.
+- `SCTRL-042`: video enhancement implementation is a lazy capability-owned module; native-only/default control does not load or instantiate it.
+- `SCTRL-043`: Popup, Options and remote use a restricted protocol validator and cannot import or execute the Background request router.
+- `SCTRL-044`: production property mangling stops at every external ABI. Browser/Chrome dictionaries, transport payloads, ESM exports and versioned singleton members retain their names; PeerJS is a separately budgeted local vendor artifact with only private underscore members eligible for mangling.
 
 ## Migration and release gate
 

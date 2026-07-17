@@ -2,12 +2,6 @@
 
 import type { SettingsUIElements } from '../types';
 import { RESTRICTED_URL_PREFIXES } from '../constants';
-import type {
-  SpectraRequestPayload,
-  SpectraRequestType,
-  SpectraResponseData,
-} from '@nexus/contracts';
-import { sendSpectraTabRequest } from '../../shared/spectra-client';
 
 export function $<T extends HTMLElement>(id: string): T | null {
   return document.getElementById(id) as T | null;
@@ -64,26 +58,4 @@ export function isRestrictedUrl(url: string | undefined): boolean {
   if (!url) return true;
   return RESTRICTED_URL_PREFIXES.some(prefix => url.startsWith(prefix));
 }
-
-// eff: sends one runtime-validated SPECTRA v2 request to a specific content document
-export async function requestTab<T extends SpectraRequestType>(
-  tabId: number,
-  type: T,
-  payload: SpectraRequestPayload<T>,
-): Promise<SpectraResponseData<T> | null> {
-  try {
-    const response = await sendSpectraTabRequest(tabId, type, payload);
-    if (response.ok) return response.data;
-    console.warn(`[Popup] ${type} rejected: ${response.error.code}: ${response.error.message}`);
-    return null;
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('Receiving end does not exist')) {
-      console.debug(`[Popup] tab request skipped for ${type} (no content script)`);
-    } else {
-      console.error(`[Popup] tab request failed for ${type}:`, error);
-    }
-    return null;
-  }
-}
-
 

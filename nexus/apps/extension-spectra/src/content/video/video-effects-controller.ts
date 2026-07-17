@@ -32,19 +32,6 @@ interface VideoOwnerBaseline {
 	properties: Map<string, { value: string; priority: string }>;
 }
 
-let activeVideoEffectsController: VideoEffectsController | null = null;
-
-export function setActiveVideoEffectsController(controller: VideoEffectsController | null): () => void {
-	activeVideoEffectsController = controller;
-	return () => {
-		if (activeVideoEffectsController === controller) activeVideoEffectsController = null;
-	};
-}
-
-export function getActiveVideoEffectsController(): VideoEffectsController | null {
-	return activeVideoEffectsController;
-}
-
 export interface VideoEffectState {
 	rotation: 0 | 90 | 180 | 270;
 	mirrored: boolean;
@@ -420,7 +407,11 @@ export class VideoEffectsController {
 			const previous = this.dimTarget;
 			const previousState = this.states.get(previous);
 			if (previousState) previousState.dimEnabled = false;
-			this.release(previous);
+			this.disposeDim();
+			if (previousState && !this.hasActiveEffect(previousState)) {
+				if (this.hasConfiguredState(previousState)) this.releaseDomOwnership(previous);
+				else this.release(previous);
+			}
 		}
 		if (!this.dimHost) {
 			const host = document.createElement('div');
