@@ -1,2 +1,8 @@
 # Vendored supply-chain artifacts are byte-verified and must never receive EOL conversion.
 remote-site/vendor/peerjs.min.js -text
+
+# Live-deployment assets are compared byte-for-byte with the published site.
+remote-site/*.html text eol=lf
+remote-site/*.js text eol=lf
+remote-site/*.css text eol=lf
+remote-site/_headers text eol=lf
