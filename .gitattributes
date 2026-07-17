@@ -1,0 +1,2 @@
+# Vendored supply-chain artifacts are byte-verified and must never receive EOL conversion.
+remote-site/vendor/peerjs.min.js -text
