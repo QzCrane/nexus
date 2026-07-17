@@ -16,6 +16,33 @@ interface WindowBounds {
 	top?: number;
 }
 
+// rule: track the active bounds-changed listener and its owning window id so we
+// can remove the previous listener before adding a new one (and on window close).
+// Previously each popOutWindow() call added a fresh listener without removing
+// the old one — listeners accumulated indefinitely, each holding a stale closure
+// over its own windowId/saveTimeout and silently writing bounds for a closed
+// window or fighting over chrome.storage.local writes.
+let activeBoundsListener: ((w: chrome.windows.Window) => void) | null = null;
+let activeBoundsWindowId: number | null = null;
+let activeRemovedListener: ((closedId: number) => void) | null = null;
+let activeSaveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function detachBoundsListener(): void {
+	if (activeBoundsListener && chrome.windows.onBoundsChanged) {
+		chrome.windows.onBoundsChanged.removeListener(activeBoundsListener);
+	}
+	if (activeRemovedListener && chrome.windows.onRemoved) {
+		(chrome.windows.onRemoved.removeListener as unknown as (cb: (windowId: number) => void) => void)(activeRemovedListener);
+	}
+	if (activeSaveTimeout) {
+		clearTimeout(activeSaveTimeout);
+		activeSaveTimeout = null;
+	}
+	activeBoundsListener = null;
+	activeBoundsWindowId = null;
+	activeRemovedListener = null;
+}
+
 /**
  * Open HALO in a standalone popup window
  * - Window persists until user closes it
@@ -66,15 +93,19 @@ export async function popOutWindow(): Promise<void> {
 
 	logger.info('Created HALO popup window:', createdWindow.id);
 
-	// Save bounds when window is resized/moved (debounced via onRemoved cleanup)
+	// rule: drop any previous listener before installing a new one. Without this,
+	// repeated popOutWindow() calls (e.g., user closes popout, opens again) would
+	// stack listeners and the stale ones would keep firing for the dead windowId.
+	detachBoundsListener();
+
 	const windowId = createdWindow.id;
-	let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	const saveBounds = async (changedWindow: chrome.windows.Window) => {
 		if (changedWindow.id !== windowId) return;
 
-		if (saveTimeout) clearTimeout(saveTimeout);
-		saveTimeout = setTimeout(async () => {
+		if (activeSaveTimeout) clearTimeout(activeSaveTimeout);
+		activeSaveTimeout = setTimeout(async () => {
+			activeSaveTimeout = null;
 			try {
 				const w = await chrome.windows.get(windowId);
 				if (w.width && w.height) {
@@ -92,8 +123,21 @@ export async function popOutWindow(): Promise<void> {
 		}, 500);
 	};
 
+	// rule: also clean up when the popout itself is closed so we don't leak a
+	// listener that fires forever for a window that no longer exists.
+	const onRemovedHandler = (closedId: number) => {
+		if (closedId !== windowId) return;
+		detachBoundsListener();
+	};
+
 	// Use onBoundsChanged if available (Chrome 86+)
 	if (chrome.windows.onBoundsChanged) {
 		chrome.windows.onBoundsChanged.addListener(saveBounds);
+		activeBoundsListener = saveBounds;
+		activeBoundsWindowId = windowId;
+		if (chrome.windows.onRemoved) {
+			chrome.windows.onRemoved.addListener(onRemovedHandler);
+			activeRemovedListener = onRemovedHandler;
+		}
 	}
 }

@@ -31,6 +31,11 @@ export class TransformController {
 	private drag: DragState = { isDragging: false, startX: 0, startY: 0 };
 	private zoomTimer: number | null = null;
 	private dom: ViewerDOM | null = null;
+	private boundWheel?: (e: WheelEvent) => void;
+	private boundDragStart?: (e: MouseEvent) => void;
+	private boundDragMove?: (e: MouseEvent) => void;
+	private boundDragEnd?: (e: MouseEvent) => void;
+	private boundAction?: (e: MouseEvent) => void;
 
 	// Callbacks
 	public onDownload?: () => void;
@@ -83,12 +88,46 @@ export class TransformController {
 
 	private bindEvents() {
 		if (!this.dom) return;
-		this.dom.viewer.addEventListener('wheel', this.onWheel.bind(this), { passive: false });
-		this.dom.img.addEventListener('mousedown', this.onDragStart.bind(this));
-		this.dom.video.addEventListener('mousedown', this.onDragStart.bind(this));
-		window.addEventListener('mousemove', this.onDragMove.bind(this));
-		window.addEventListener('mouseup', this.onDragEnd.bind(this));
-		this.dom.actionsBar.addEventListener('click', this.onAction.bind(this));
+		this.boundWheel = this.onWheel.bind(this);
+		this.boundDragStart = this.onDragStart.bind(this);
+		this.boundDragMove = this.onDragMove.bind(this);
+		this.boundDragEnd = this.onDragEnd.bind(this);
+		this.boundAction = this.onAction.bind(this);
+		this.dom.viewer.addEventListener('wheel', this.boundWheel, { passive: false });
+		this.dom.img.addEventListener('mousedown', this.boundDragStart);
+		this.dom.video.addEventListener('mousedown', this.boundDragStart);
+		window.addEventListener('mousemove', this.boundDragMove);
+		window.addEventListener('mouseup', this.boundDragEnd);
+		this.dom.actionsBar.addEventListener('click', this.boundAction);
+	}
+
+	destroy() {
+		if (this.zoomTimer) {
+			clearTimeout(this.zoomTimer);
+			this.zoomTimer = null;
+		}
+		if (this.boundWheel && this.dom) {
+			this.dom.viewer.removeEventListener('wheel', this.boundWheel);
+			this.boundWheel = undefined;
+		}
+		if (this.boundDragStart && this.dom) {
+			this.dom.img.removeEventListener('mousedown', this.boundDragStart);
+			this.dom.video.removeEventListener('mousedown', this.boundDragStart);
+			this.boundDragStart = undefined;
+		}
+		if (this.boundDragMove) {
+			window.removeEventListener('mousemove', this.boundDragMove);
+			this.boundDragMove = undefined;
+		}
+		if (this.boundDragEnd) {
+			window.removeEventListener('mouseup', this.boundDragEnd);
+			this.boundDragEnd = undefined;
+		}
+		if (this.boundAction && this.dom) {
+			this.dom.actionsBar.removeEventListener('click', this.boundAction);
+			this.boundAction = undefined;
+		}
+		this.dom = null;
 	}
 
 	private onWheel(e: WheelEvent) {

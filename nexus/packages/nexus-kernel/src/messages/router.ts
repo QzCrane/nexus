@@ -261,7 +261,13 @@ export function createRouter() {
         const handler = handlers.get(message.action);
         if (!handler) return false;
 
-        Promise.resolve(handler(message.payload, sender))
+        // rule: defer handler invocation so a synchronous throw is caught by .catch().
+        // The previous `Promise.resolve(handler(...))` evaluated `handler(...)` as the
+        // argument to Promise.resolve — a sync throw escaped into chrome.runtime.onMessage
+        // before the .catch was attached, and the sender got an unstructured
+        // chrome.runtime.lastError instead of the intended `{ error: messageText }`.
+        Promise.resolve()
+          .then(() => handler(message.payload, sender))
           .then(sendResponse)
           .catch((error: unknown) => {
             const messageText = error instanceof Error ? error.message : String(error);

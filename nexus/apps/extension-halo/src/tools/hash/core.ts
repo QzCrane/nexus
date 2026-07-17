@@ -117,7 +117,14 @@ export async function generateFileHash(file: File, algorithm: HashAlgorithm): Pr
 		// MD5 uses custom implementation
 		if (algorithm === 'MD5') {
 			const bytes = new Uint8Array(arrayBuffer);
-			const str = String.fromCharCode(...bytes);
+			// rule: chunk the conversion — V8's spread call argument limit is ~65K, so
+			// `String.fromCharCode(...bytes)` previously threw RangeError for any file >64KB,
+			// silently caught and returned '' (broke MD5 file hashing entirely).
+			let str = '';
+			const CHUNK = 0x8000;
+			for (let i = 0; i < bytes.length; i += CHUNK) {
+				str += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+			}
 			return md5(str);
 		}
 

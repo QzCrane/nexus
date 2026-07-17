@@ -42,33 +42,53 @@ function toMatchPatterns(patterns: string[]): string[] {
 
 import type { ScriptType } from './types';
 
+// rule: escape a string for safe interpolation into a JS string literal.
+// Backslash first (so we don't double-escape the escapes), then quote chars,
+// then newlines (which would otherwise terminate the literal mid-source).
+function escapeForJsString(s: string): string {
+	return s
+		.replace(/\\/g, '\\\\')
+		.replace(/'/g, "\\'")
+		.replace(/"/g, '\\"')
+		.replace(/\n/g, '\\n')
+		.replace(/\r/g, '\\r');
+}
+
 // Wrap user script code for MAIN world injection
+// rule: build the wrapper via string concatenation, never a template literal. The
+// previous `${code}` / `${escapedName}` interpolations allowed user-controlled
+// content containing ` or ${} to break out of the wrapping template literal and
+// inject arbitrary code into the registered userscript (runs in MAIN world via
+// chrome.userScripts.register). User JS legitimately contains template literals,
+// so escaping is not viable — concatenation is the only safe option.
 function wrapForMainWorld(code: string, name: string, type: ScriptType): string {
-	const escapedName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+	const safeName = escapeForJsString(name);
 
 	if (type === 'css') {
-		const escapedCode = code.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
-		return `
-(function() {
-	try {
-		const style = document.createElement('style');
-		style.textContent = \`${escapedCode}\`;
-		style.setAttribute('data-halo-script', '${escapedName}');
-		(document.head || document.documentElement).appendChild(style);
-		console.log('[HALO Script] ${escapedName} CSS injected');
-	} catch(e) { console.error('[HALO Script] ${escapedName} CSS failed:', e); }
-})();`;
+		const safeCss = escapeForJsString(code);
+		return [
+			'(function() {',
+			'    try {',
+			'        const style = document.createElement("style");',
+			"        style.textContent = '" + safeCss + "';",
+			"        style.setAttribute(\"data-halo-script\", '" + safeName + "');",
+			'        (document.head || document.documentElement).appendChild(style);',
+			"        console.log(\"[HALO Script] " + safeName + " CSS injected\");",
+			"    } catch(e) { console.error(\"[HALO Script] " + safeName + " CSS failed:\", e); }",
+			'})();',
+		].join('\n');
 	}
 
 	// For JavaScript: Run directly in MAIN world (API handles context)
 	// We just wrap in a try-catch block for safety and logging
-	return `
-(function() {
-	try {
-		${code}
-		console.log('[HALO Script] ${escapedName} executed');
-	} catch(e) { console.error('[HALO Script] ${escapedName} failed:', e); }
-})();`;
+	return [
+		'(function() {',
+		'    try {',
+		'        ' + code,
+		"        console.log(\"[HALO Script] " + safeName + " executed\");",
+		"    } catch(e) { console.error(\"[HALO Script] " + safeName + " failed:\", e); }",
+		'})();',
+	].join('\n');
 }
 
 // Convert runAt to Chrome's format

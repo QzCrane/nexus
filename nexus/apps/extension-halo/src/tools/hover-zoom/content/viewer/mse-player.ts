@@ -78,10 +78,22 @@ export async function playDashStreams(
 	const objectUrl = URL.createObjectURL(session.mediaSource);
 	videoEl.src = objectUrl;
 
+	let openTimeoutId: ReturnType<typeof setTimeout> | null = null;
 	await new Promise<void>((resolve, reject) => {
-		session.mediaSource.addEventListener('sourceopen', () => resolve(), { once: true });
-		session.mediaSource.addEventListener('error', (e) => reject(e), { once: true });
-		setTimeout(() => reject(new Error('MediaSource open timeout')), 5000);
+		session.mediaSource.addEventListener('sourceopen', () => {
+			if (openTimeoutId) { clearTimeout(openTimeoutId); openTimeoutId = null; }
+			resolve();
+		}, { once: true });
+		session.mediaSource.addEventListener('error', (e) => {
+			if (openTimeoutId) { clearTimeout(openTimeoutId); openTimeoutId = null; }
+			URL.revokeObjectURL(objectUrl);
+			reject(e);
+		}, { once: true });
+		openTimeoutId = setTimeout(() => {
+			openTimeoutId = null;
+			URL.revokeObjectURL(objectUrl);
+			reject(new Error('MediaSource open timeout'));
+		}, 5000);
 	});
 
 	if (session.aborted) { cleanup(); return () => { }; }

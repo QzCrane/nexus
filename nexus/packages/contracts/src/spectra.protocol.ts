@@ -777,18 +777,22 @@ function isContentRuntimeReleasePayload(
 	if (!isRecord(value)
 		|| !hasOnlyKeys(value, CONTENT_RUNTIME_RELEASE_PAYLOAD_KEYS)
 		|| !isRuntimeRevision(value.runtimeRevision)) return false;
-	const hasLeaseIdentity = value.tabId !== undefined
-		|| value.documentId !== undefined
-		|| value.reason !== undefined
-		|| value.capability !== undefined;
-	if (!hasLeaseIdentity) return true;
-	return isPositiveInteger(value.tabId)
-		&& isDocumentId(value.documentId)
-		&& typeof value.reason === 'string'
-		&& CONTENT_RUNTIME_LEASE_REASONS.has(value.reason as ContentRuntimeLeaseReason)
-		&& typeof value.capability === 'string'
-		&& value.capability.length > 0
-		&& value.capability.length <= 128;
+	// rule: validate each optional field independently — the previous all-or-none check
+	// required ALL four fields to be present+valid if ANY was present, rejecting partial
+	// identities like { tabId: 5 } alone. The type declaration permits each of
+	// tabId/documentId/reason/capability to be omitted independently (mirrors
+	// isContentRuntimeEnsurePayload's per-field optional pattern at lines ~756-763).
+	return (value.tabId === undefined || isPositiveInteger(value.tabId))
+		&& (value.documentId === undefined || isDocumentId(value.documentId))
+		&& (value.reason === undefined || (
+			typeof value.reason === 'string'
+			&& CONTENT_RUNTIME_LEASE_REASONS.has(value.reason as ContentRuntimeLeaseReason)
+		))
+		&& (value.capability === undefined || (
+			typeof value.capability === 'string'
+			&& value.capability.length > 0
+			&& value.capability.length <= 128
+		));
 }
 
 function isContentSourceReleasedPayload(

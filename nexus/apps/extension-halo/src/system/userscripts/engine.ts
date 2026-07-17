@@ -36,17 +36,29 @@ export function initUserScriptsEngine(): void {
 }
 
 // Wrapper function injected into page via inline <script> tag
+// rule: build the script body via string concatenation, never a template literal.
+// The previous `${code}` / `${name...}` interpolations allowed user-controlled
+// content containing ` or ${} to break out of the wrapping template literal and
+// inject arbitrary code into the page's MAIN world. User JS legitimately contains
+// template literals, so escaping is not viable — concatenation is the only safe option.
 function executeUserScript(code: string, name: string): void {
 	try {
+		const safeName = name
+			.replace(/\\/g, '\\\\')
+			.replace(/'/g, "\\'")
+			.replace(/"/g, '\\"')
+			.replace(/\n/g, '\\n')
+			.replace(/\r/g, '\\r');
+		const scriptText = [
+			'try {',
+			'    ' + code,
+			'    console.log("[HALO Script] ' + safeName + ' executed");',
+			'} catch (e) {',
+			'    console.error("[HALO Script] ' + safeName + ' failed:", e);',
+			'}',
+		].join('\n');
 		const scriptEl = document.createElement('script');
-		scriptEl.textContent = `
-			try {
-				${code}
-				console.log('[HALO Script] ${name.replace(/'/g, "\\'")} executed');
-			} catch (e) {
-				console.error('[HALO Script] ${name.replace(/'/g, "\\'")} failed:', e);
-			}
-		`;
+		scriptEl.textContent = scriptText;
 		const target = document.head || document.documentElement;
 		target.insertBefore(scriptEl, target.firstChild);
 		scriptEl.remove();

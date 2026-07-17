@@ -6,6 +6,18 @@ import { normalizeHostname, resolveAudioVolume } from '@nexus/contracts';
 const KEY = 'siteSettings';
 type SiteSettingsMap = Record<string, AudioConfig>;
 
+// rule: per-key serialization queue — concurrent setAudioConfig/removeAudioConfig for
+// different domains previously raced: second get() read pre-first-write state and the
+// second set() clobbered, silently losing the first domain's write. Mirrors the
+// `serialized()` pattern in tab-session.ts:26-35.
+let operationQueue: Promise<void> = Promise.resolve();
+function serialized<T>(operation: () => Promise<T>): Promise<T> {
+	const previous = operationQueue;
+	const result = previous.then(operation, operation);
+	operationQueue = result.then(() => undefined, () => undefined);
+	return result;
+}
+
 function canonicalizeAudioConfig(value: Partial<AudioConfig>): AudioConfig {
 	const volume = resolveAudioVolume({
 		volume: value.volume ?? DEFAULT_AUDIO_CONFIG.volume,
@@ -36,17 +48,21 @@ export async function getAudioConfig(domain: string): Promise<AudioConfig> {
 export async function setAudioConfig(domain: string, config: Partial<AudioConfig>): Promise<void> {
 	const normalizedDomain = normalizeHostname(domain);
 	if (!normalizedDomain) throw new Error('Invalid audio settings hostname');
-	const result = await chrome.storage.local.get(KEY);
-	const settings: SiteSettingsMap = result[KEY] || {};
-	settings[normalizedDomain] = canonicalizeAudioConfig({ ...settings[normalizedDomain], ...config });
-	await chrome.storage.local.set({ [KEY]: settings });
+	await serialized(async () => {
+		const result = await chrome.storage.local.get(KEY);
+		const settings: SiteSettingsMap = result[KEY] || {};
+		settings[normalizedDomain] = canonicalizeAudioConfig({ ...settings[normalizedDomain], ...config });
+		await chrome.storage.local.set({ [KEY]: settings });
+	});
 }
 
 export async function removeAudioConfig(domain: string): Promise<void> {
 	const normalizedDomain = normalizeHostname(domain);
 	if (!normalizedDomain) return;
-	const result = await chrome.storage.local.get(KEY);
-	const settings: SiteSettingsMap = result[KEY] || {};
-	delete settings[normalizedDomain];
-	await chrome.storage.local.set({ [KEY]: settings });
+	await serialized(async () => {
+		const result = await chrome.storage.local.get(KEY);
+		const settings: SiteSettingsMap = result[KEY] || {};
+		delete settings[normalizedDomain];
+		await chrome.storage.local.set({ [KEY]: settings });
+	});
 }

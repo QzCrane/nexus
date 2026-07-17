@@ -79,10 +79,16 @@ export class ModuleManager {
 }
 
 let instance: ModuleManager | null = null;
+let initPromise: Promise<ModuleManager> | null = null;
 export const getModuleManager = async (): Promise<ModuleManager> => {
-	if (!instance) {
-		instance = new ModuleManager();
-		await instance.initialize();
-	}
-	return instance;
+	if (instance) return instance;
+	if (initPromise) return initPromise;
+	initPromise = (async () => {
+		const m = new ModuleManager();
+		await m.initialize();
+		instance = m;
+		initPromise = null;
+		return m;
+	})();
+	return initPromise;
 };

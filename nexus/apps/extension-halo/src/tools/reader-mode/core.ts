@@ -37,6 +37,27 @@ export async function extractArticle(): Promise<ArticleContent | null> {
 				const clone = content.cloneNode(true) as Element;
 				clone.querySelectorAll('script, style, nav, header, footer, aside, .ad, .advertisement, .social-share').forEach((el) => el.remove());
 
+				// rule: sanitize before returning innerHTML — page DOM is attacker-controlled
+				// and panel.tsx renders via dangerouslySetInnerHTML in the sidepanel context
+				// which has chrome.storage access. Inline <script>/on*/javascript: URLs would
+				// otherwise execute in the extension privileged context (XSS → RCE-equivalent).
+				clone.querySelectorAll('script, iframe, object, embed, link, meta, base, form, svg, math').forEach((el) => el.remove());
+				clone.querySelectorAll('*').forEach((el) => {
+					for (const attr of Array.from(el.attributes)) {
+						const name = attr.name.toLowerCase();
+						if (name.startsWith('on') || name === 'style') {
+							el.removeAttribute(attr.name);
+							continue;
+						}
+						if (name === 'href' || name === 'src' || name === 'xlink:href' || name === 'formaction' || name === 'poster') {
+							const val = attr.value.trim().toLowerCase();
+							if (val.startsWith('javascript:') || val.startsWith('vbscript:') || val.startsWith('data:text/html') || val.startsWith('data:application/')) {
+								el.removeAttribute(attr.name);
+							}
+						}
+					}
+				});
+
 				return {
 					title,
 					content: clone.innerHTML,

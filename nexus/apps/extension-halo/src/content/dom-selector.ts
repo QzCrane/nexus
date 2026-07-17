@@ -4,6 +4,7 @@
 let isActive = false;
 let overlay: HTMLElement | null = null;
 let targetElement: Element | null = null;
+let currentClickHandler: ((e: MouseEvent) => void) | null = null;
 
 // CSS for overlay
 const OVERLAY_STYLE = `
@@ -22,7 +23,8 @@ export function start(onSelect: (data: { css: string; xpath: string }) => void) 
 	isActive = true;
 	createOverlay();
 	document.addEventListener('mouseover', handleHover, true);
-	document.addEventListener('click', (e) => handleClick(e, onSelect), true);
+	currentClickHandler = (e) => handleClick(e, onSelect);
+	document.addEventListener('click', currentClickHandler, true);
 	document.body.style.cursor = 'crosshair';
 }
 
@@ -31,9 +33,10 @@ export function stop() {
 	isActive = false;
 	removeOverlay();
 	document.removeEventListener('mouseover', handleHover, true);
-	// Note: 'click' listener removal is tricky with anonymous function, 
-	// but we check isActive inside handleClick so it's effectively disabled.
-	// Ideally we should store the bound function.
+	if (currentClickHandler) {
+		document.removeEventListener('click', currentClickHandler, true);
+		currentClickHandler = null;
+	}
 	document.body.style.cursor = '';
 }
 

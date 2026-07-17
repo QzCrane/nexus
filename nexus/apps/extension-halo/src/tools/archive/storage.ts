@@ -8,6 +8,13 @@ const STORE_NAME = 'mhtml_blobs';
 
 let dbInstance: IDBDatabase | null = null;
 
+export function closeArchiveDB(): void {
+	if (dbInstance) {
+		dbInstance.close();
+		dbInstance = null;
+	}
+}
+
 // Open IndexedDB
 async function openDB(): Promise<IDBDatabase> {
 	if (dbInstance) return dbInstance;
@@ -17,6 +24,7 @@ async function openDB(): Promise<IDBDatabase> {
 		request.onerror = () => reject(request.error);
 		request.onsuccess = () => {
 			dbInstance = request.result;
+			dbInstance.addEventListener('versionchange', () => closeArchiveDB());
 			resolve(dbInstance);
 		};
 		request.onupgradeneeded = (event) => {

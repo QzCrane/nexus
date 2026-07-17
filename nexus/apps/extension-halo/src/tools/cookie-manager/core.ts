@@ -27,9 +27,18 @@ export async function getCookiesForCurrentTab(): Promise<CookieInfo[]> {
 }
 
 // Delete a cookie
-export async function deleteCookie(name: string, domain: string, path: string): Promise<boolean> {
+export async function deleteCookie(
+	name: string,
+	domain: string,
+	path: string,
+	secure: boolean = false,
+): Promise<boolean> {
 	try {
-		const url = `http${domain.startsWith('.') ? 's' : ''}://${domain.replace(/^\./, '')}${path}`;
+		// rule: derive scheme from the cookie's secure flag — the previous form inferred
+		// https from a leading '.' in the domain, which is unrelated to the cookie's actual
+		// secure flag and caused silent deletion failures for both secure (http:// used) and
+		// non-secure (https:// used) cookies.
+		const url = `${secure ? 'https' : 'http'}://${domain.replace(/^\./, '')}${path}`;
 		await chrome.cookies.remove({ url, name });
 		return true;
 	} catch {

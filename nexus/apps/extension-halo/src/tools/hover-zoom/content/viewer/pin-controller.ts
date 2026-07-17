@@ -23,6 +23,10 @@ export class PinController {
 	private closeBtn: HTMLElement | null = null;
 	private pinIndicator: HTMLElement | null = null;
 	public onClose?: () => void;
+	private boundMouseMove?: (e: MouseEvent) => void;
+	private boundMouseUp?: (e: MouseEvent) => void;
+	private boundMouseDown?: (e: MouseEvent) => void;
+	private boundCloseClick?: (e: Event) => void;
 
 	bindDOM(dom: ViewerDOM) {
 		this.dom = dom;
@@ -48,10 +52,36 @@ export class PinController {
 
 	private bindEvents() {
 		if (!this.dom) return;
-		this.closeBtn?.addEventListener('click', (e) => { e.stopPropagation(); this.onClose?.(); });
-		this.dom.viewer.addEventListener('mousedown', this.handleMouseDown.bind(this));
-		window.addEventListener('mousemove', this.handleMouseMove.bind(this));
-		window.addEventListener('mouseup', this.handleMouseUp.bind(this));
+		this.boundCloseClick = (e) => { e.stopPropagation(); this.onClose?.(); };
+		this.boundMouseDown = this.handleMouseDown.bind(this);
+		this.boundMouseMove = this.handleMouseMove.bind(this);
+		this.boundMouseUp = this.handleMouseUp.bind(this);
+		this.closeBtn?.addEventListener('click', this.boundCloseClick);
+		this.dom.viewer.addEventListener('mousedown', this.boundMouseDown);
+		window.addEventListener('mousemove', this.boundMouseMove);
+		window.addEventListener('mouseup', this.boundMouseUp);
+	}
+
+	destroy() {
+		if (this.boundCloseClick) {
+			this.closeBtn?.removeEventListener('click', this.boundCloseClick);
+			this.boundCloseClick = undefined;
+		}
+		if (this.boundMouseDown && this.dom) {
+			this.dom.viewer.removeEventListener('mousedown', this.boundMouseDown);
+			this.boundMouseDown = undefined;
+		}
+		if (this.boundMouseMove) {
+			window.removeEventListener('mousemove', this.boundMouseMove);
+			this.boundMouseMove = undefined;
+		}
+		if (this.boundMouseUp) {
+			window.removeEventListener('mouseup', this.boundMouseUp);
+			this.boundMouseUp = undefined;
+		}
+		this.closeBtn = null;
+		this.pinIndicator = null;
+		this.dom = null;
 	}
 
 	pin() {

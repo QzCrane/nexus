@@ -145,6 +145,13 @@ export function updateInfoBar(
 	}
 
 	// Build meta info with separator
+	// rule: use textContent — parts include source.caption (attacker-controlled via
+	// page <img alt/title>); the previous innerHTML assignment allowed XSS execution
+	// in the extension content-script context.
 	const metaText = parts.join(' / ');
-	dom.infoBar.innerHTML = `<span class="halo-hz-meta">${metaText}</span>`;
+	dom.infoBar.replaceChildren();
+	const span = document.createElement('span');
+	span.className = 'halo-hz-meta';
+	span.textContent = metaText;
+	dom.infoBar.appendChild(span);
 }

@@ -24,14 +24,22 @@ async function withRetry<T>(
 	let lastErr: unknown;
 
 	for (let i = 0; i < retries; i++) {
+		// rule: capture the timeout timer and clear it in finally — when fn() resolves first,
+		// the unhandled timer previously held the MV3 service worker alive for `timeout` ms
+		// per call, defeating SW lifecycle reclamation.
+		let timer: ReturnType<typeof setTimeout> | undefined;
 		try {
 			return await Promise.race([
 				fn(),
-				new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timeout')), timeout))
+				new Promise<T>((_, reject) => {
+					timer = setTimeout(() => reject(new Error('timeout')), timeout);
+				})
 			]);
 		} catch (e) {
 			lastErr = e;
 			if (i < retries - 1) await wait(500 * (i + 1));
+		} finally {
+			if (timer !== undefined) clearTimeout(timer);
 		}
 	}
 	console.warn(`[SafeStorage] ${op} failed after ${retries} attempts:`, lastErr);

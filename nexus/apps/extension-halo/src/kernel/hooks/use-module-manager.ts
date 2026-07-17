@@ -24,17 +24,29 @@ export const useModuleManager = (): UseModuleManagerResult => {
 
 	useEffect(() => {
 		let cancelled = false;
+		// rule: capture the unsubscribe handle on a closure variable so the effect's
+		// cleanup function can invoke it. The previous `return unsub` was the resolved
+		// value of the promise callback, not the useEffect cleanup — so the listener
+		// was never removed and accumulated across every mount/unmount cycle, leaking
+		// memory and forcing stale-state updates on unmounted components.
+		let unsubscribe: (() => void) | null = null;
+
 		getModuleManager().then((m) => {
 			if (cancelled) return;
 			setManager(m);
 			setLoading(false);
 
 			// Subscribe to changes
-			const unsub = m.subscribe(() => forceUpdate((n) => n + 1));
-			return unsub;
+			unsubscribe = m.subscribe(() => forceUpdate((n) => n + 1));
 		});
 
-		return () => { cancelled = true; };
+		return () => {
+			cancelled = true;
+			if (unsubscribe) {
+				unsubscribe();
+				unsubscribe = null;
+			}
+		};
 	}, []);
 
 	const getStatus = useCallback((id: string): ModuleStatus => {

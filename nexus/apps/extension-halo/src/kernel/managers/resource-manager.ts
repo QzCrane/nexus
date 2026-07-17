@@ -11,8 +11,18 @@ export class ResourceManager {
 	private db: IDBDatabase | null = null;
 
 	private async ensureDB(): Promise<IDBDatabase> {
-		if (!this.db) this.db = await openDB();
+		if (!this.db) {
+			this.db = await openDB();
+			this.db.addEventListener('versionchange', () => this.close());
+		}
 		return this.db;
+	}
+
+	close(): void {
+		if (this.db) {
+			this.db.close();
+			this.db = null;
+		}
 	}
 
 	// Get cached resource by ID

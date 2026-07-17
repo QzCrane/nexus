@@ -7,7 +7,14 @@ export function encode(input: string, urlSafe: boolean = false): string {
 	if (!input) return '';
 	try {
 		const utf8 = new TextEncoder().encode(input);
-		const binary = String.fromCharCode(...utf8);
+		// rule: chunk the conversion — V8's spread call argument limit is ~65K, so
+		// `String.fromCharCode(...utf8)` throws RangeError on any input whose UTF-8 form
+		// exceeds ~64KB. 0x8000 (32KB) chunks stay well under the limit.
+		let binary = '';
+		const CHUNK = 0x8000;
+		for (let i = 0; i < utf8.length; i += CHUNK) {
+			binary += String.fromCharCode(...utf8.subarray(i, i + CHUNK));
+		}
 		let base64 = btoa(binary);
 
 		if (urlSafe) {

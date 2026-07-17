@@ -2,16 +2,22 @@ import type { UserScriptState } from './types';
 
 export const STORAGE_KEY = 'halo_userscripts';
 
-// Default state
-const DEFAULT_STATE: UserScriptState = {
-	scripts: [],
-	globalEnabled: true,
-};
+// rule: factory rather than a shared constant. The previous shared DEFAULT_STATE
+// was returned by reference from getUserScriptsState() whenever storage was empty,
+// so the first caller to mutate its returned state (e.g., `state.scripts.push(...)`)
+// corrupted every subsequent empty-storage read across the extension — the
+// "default" silently became whatever the last mutator left behind.
+function createDefaultState(): UserScriptState {
+	return { scripts: [], globalEnabled: true };
+}
 
 // Get all scripts
 export async function getUserScriptsState(): Promise<UserScriptState> {
 	const result = await chrome.storage.local.get(STORAGE_KEY);
-	return result[STORAGE_KEY] || DEFAULT_STATE;
+	if (result[STORAGE_KEY]) {
+		return result[STORAGE_KEY] as UserScriptState;
+	}
+	return createDefaultState();
 }
 
 // Save state

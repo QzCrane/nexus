@@ -37,9 +37,17 @@ export function parseMarkdown(md: string): string {
 	// Strikethrough
 	html = html.replace(/~~(.+?)~~/g, '<del>$1</del>');
 
-	// Links and images
-	html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%;" />');
-	html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+	// Links and images — rule: validate URL scheme before substitution; reject
+	// javascript:/vbscript:/data:text/html which would execute on click or load.
+	const SAFE_URL = (url: string): string => {
+		const trimmed = url.trim();
+		if (/^(https?:|mailto:|data:image\/|\/|\.\/|\.\.\/|#|tel:)/i.test(trimmed)) return trimmed;
+		return '#';
+	};
+	html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, url) =>
+		`<img src="${SAFE_URL(url)}" alt="${alt}" style="max-width:100%;" />`);
+	html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) =>
+		`<a href="${SAFE_URL(url)}" target="_blank" rel="noopener noreferrer">${text}</a>`);
 
 	// Blockquotes
 	html = html.replace(/^>\s+(.*)$/gm, '<blockquote>$1</blockquote>');

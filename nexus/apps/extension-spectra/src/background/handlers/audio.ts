@@ -24,6 +24,7 @@ import { sendOffscreenMessageIfPresent } from '../offscreen-coordinator';
 import { settingsRepository } from '../settings-repository';
 import { updateBadgeFromSession } from './badge';
 import { sendSpectraTabRequest } from '../../shared/spectra-client';
+import { swLog } from '../../shared/logger';
 import {
 	advanceVisualizerSubscriberLeases,
 	nextVisualizerSubscriberExpiry,
@@ -419,7 +420,17 @@ export function registerAudioHandlers(): void {
 				isNativeSync: _isNativeSync,
 				...persistentConfig
 			} = req.config as RuntimeAudioPatch;
-			try { await storage.tabSession.set(tabId, persistentConfig, identity); } catch { }
+			// rule: log storage write failure — the previous empty catch silently swallowed
+			// quota/unavailable errors while the handler returned success:true, so the user's
+			// audio config silently reverted to the prior value on next content script load.
+			try {
+				await storage.tabSession.set(tabId, persistentConfig, identity);
+			} catch (error) {
+				swLog.warn('audio: tabSession.set failed; config not persisted', {
+					tabId,
+					error: error instanceof Error ? error.message : String(error),
+				});
+			}
 		}
 		return { success: true };
 	});

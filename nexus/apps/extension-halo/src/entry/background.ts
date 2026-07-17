@@ -168,6 +168,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		const { url, method = 'GET', headers = {}, body, responseType = 'text' } = message;
 		console.log(LOG_TAG, 'HoverZoom proxy request:', url.slice(0, 80), 'type:', responseType);
 
+		// rule: validate URL before fetch — the proxy handler can be invoked by any content
+		// script and previously allowed fetching arbitrary URLs (internal network hosts, cloud
+		// metadata endpoints, file://) bypassing page CORS (SSRF). Restrict to http(s) and
+		// reject loopback/private/link-local/cloud-metadata hosts.
+		let parsedUrl: URL;
+		try {
+			parsedUrl = new URL(url);
+		} catch {
+			sendResponse({ success: false, error: 'invalid URL' });
+			return true;
+		}
+		if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+			sendResponse({ success: false, error: 'only http(s) supported' });
+			return true;
+		}
+		const host = parsedUrl.hostname.toLowerCase();
+		const isPrivateHost = host === 'localhost' || host === '::1' ||
+			host.endsWith('.localhost') ||
+			host === '127.0.0.1' || host.startsWith('127.') ||
+			host.startsWith('10.') || host.startsWith('192.168.') ||
+			/^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+			host.startsWith('169.254.') || host === 'metadata.google.internal' ||
+			host.endsWith('.internal') || host.endsWith('.local');
+		if (isPrivateHost) {
+			sendResponse({ success: false, error: 'private/internal hosts blocked' });
+			return true;
+		}
+
 		fetch(url, {
 			method,
 			headers: { ...headers },

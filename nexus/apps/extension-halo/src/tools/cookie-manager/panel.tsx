@@ -34,7 +34,7 @@ export const CookieManagerPanel: React.FC = () => {
 
 	// Delete cookie
 	const handleDelete = useCallback(async (cookie: CookieInfo) => {
-		await deleteCookie(cookie.name, cookie.domain, cookie.path);
+		await deleteCookie(cookie.name, cookie.domain, cookie.path, cookie.secure);
 		loadCookies();
 	}, [loadCookies]);
 

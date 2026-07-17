@@ -149,8 +149,11 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
 
   const domain = getDomain(tab.url || '');
 
+  // rule: only treat as restricted when explicitly marked true; undefined (not probed)
+  // and false (safe) must NOT be reported as restricted — the previous `!== false`
+  // fail-closed check incorrectly marked every legacy/setRegistry entry as restricted.
   const isRestrictedSite = registryEntries.some(e =>
-    e.restricted !== false && hostnameMatchesRule(domain, e.domain)
+    e.restricted === true && hostnameMatchesRule(domain, e.domain)
   );
 
 	// ControlSnapshot owns every field-level actual. Runtime/session status below

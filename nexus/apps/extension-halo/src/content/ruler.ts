@@ -45,6 +45,10 @@ function createOverlay(): void {
 }
 
 function removeOverlay(): void {
+	if (rafId !== null) {
+		cancelAnimationFrame(rafId);
+		rafId = null;
+	}
 	if (overlay) {
 		overlay.remove();
 		overlay = null;

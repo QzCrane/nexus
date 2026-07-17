@@ -12,6 +12,25 @@ const PRELOAD_DELAY = 150; // ms before preload on hover
 // Preload cache to avoid duplicate preloads
 const preloadedTools = new Set<string>();
 
+// rule: trigger React.lazy's underlying dynamic import. The previous
+// `Promise.resolve(LazyPanel)` only wrapped the lazy component object in an
+// already-resolved promise — React.lazy never started the dynamic import, so
+// the preload was a complete no-op. React.lazy components expose their import
+// thunk at `_payload._result` (with `_status === -1` meaning "not yet started");
+// calling `_init(_payload)` kicks off the import. This internal shape has been
+// stable across React 18.x.
+function preloadLazyComponent(LazyPanel: unknown): void {
+	if (typeof LazyPanel !== 'object' || LazyPanel === null) return;
+	const lazy = LazyPanel as {
+		_payload?: { _status?: number; _result?: unknown };
+		_init?: (payload: unknown) => unknown;
+	};
+	const payload = lazy._payload;
+	if (!payload || payload._status !== -1 || typeof payload._result !== 'function') return;
+	if (typeof lazy._init !== 'function') return;
+	lazy._init(payload);
+}
+
 // Skeleton loading component
 const LoadingSkeleton: React.FC = () => (
 	<Card variant="default" padding="md">
@@ -61,11 +80,9 @@ export const useToolPreload = () => {
 
 		timerRef.current = setTimeout(() => {
 			try {
-				// Access the lazy component to trigger module load
 				const LazyPanel = generatedToolPanels[toolId as LoadableToolId];
-				// Force load by creating element (React will preload the module)
 				if (LazyPanel) {
-					void Promise.resolve(LazyPanel);
+					preloadLazyComponent(LazyPanel);
 				}
 				preloadedTools.add(toolId);
 			} catch { /* ignore preload failures */ }
@@ -105,17 +122,17 @@ export function preloadToolsOnIdle(toolIds: ToolId[], count = 5): void {
 		: (cb: () => void) => setTimeout(cb, 200);
 
 	scheduleIdle(() => {
-		toPreload.forEach((toolId, index) => {
-			// Stagger preloads to avoid blocking
-			setTimeout(() => {
-				try {
-					const LazyPanel = generatedToolPanels[toolId as LoadableToolId];
-					if (LazyPanel) void Promise.resolve(LazyPanel);
-					preloadedTools.add(toolId);
-				} catch { /* ignore */ }
-			}, index * 50); // 50ms between each preload
+			toPreload.forEach((toolId, index) => {
+				// Stagger preloads to avoid blocking
+				setTimeout(() => {
+					try {
+						const LazyPanel = generatedToolPanels[toolId as LoadableToolId];
+						if (LazyPanel) preloadLazyComponent(LazyPanel);
+						preloadedTools.add(toolId);
+					} catch { /* ignore */ }
+				}, index * 50); // 50ms between each preload
+			});
 		});
-	});
 }
 
 /**
