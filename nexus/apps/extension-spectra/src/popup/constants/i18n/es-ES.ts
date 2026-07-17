@@ -60,6 +60,8 @@ export const ES_ES: I18NDict = {
 	btnPause: 'Pausar/Reproducir',
 	btnMute: 'Silenciar',
 	btnPip: 'Imagen en imagen',
+	pipActivationRequired: 'Abre la página y pulsa Alt+P para activar Imagen en imagen.',
+	pipActivationPrompt: 'Haz clic para activar Imagen en imagen',
 	btnHotkeyTarget: 'Destino atajo',
 	btnGotoTab: 'Ir a pestaña',
 	pauseRetentionLabel: 'Retención de pausa',

@@ -10,6 +10,12 @@ import {
 import { router } from '../state';
 import { submitControlRequest } from '../control-coordinator';
 
+const COMMAND_REQUEST_TYPES: ReadonlySet<string> = new Set([
+	'spectra.tab.pinned.toggle',
+	'spectra.tab.muted.toggle',
+	'spectra.ui.open',
+] as const);
+
 async function togglePinned(tabId: number): Promise<{ pinned: boolean }> {
 	const ack = await submitControlRequest({
 		tabId,
@@ -51,7 +57,7 @@ function registerCommandsV2Listener(): void {
 		const candidate = message as { protocolVersion?: unknown; type?: unknown };
 		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION
 			|| typeof candidate.type !== 'string'
-			|| (!candidate.type.startsWith('spectra.tab.') && candidate.type !== 'spectra.ui.open')) return false;
+			|| !COMMAND_REQUEST_TYPES.has(candidate.type)) return false;
 		if (sender.id && sender.id !== chrome.runtime.id) {
 			sendResponse(rpcFailure('forbidden', 'Command RPC is extension-internal only'));
 			return false;

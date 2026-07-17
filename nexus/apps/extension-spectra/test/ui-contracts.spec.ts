@@ -261,6 +261,7 @@ describe('extension-page DOM and idle contracts', () => {
 
 	test('uses one focus-trap contract for preset and remote dialogs with live status', () => {
 		const preset = readFileSync(resolve(import.meta.dir, '../src/popup/views/presets-ui.ts'), 'utf8');
+		const popupToast = readFileSync(resolve(import.meta.dir, '../src/popup/toast.ts'), 'utf8');
 		const remote = readFileSync(resolve(import.meta.dir, '../src/remote/modal-renderer.ts'), 'utf8');
 		const options = readFileSync(resolve(import.meta.dir, '../src/options/modal.ts'), 'utf8');
 		for (const [path, source] of [['preset', preset], ['remote', remote]] as const) {
@@ -268,7 +269,8 @@ describe('extension-page DOM and idle contracts', () => {
 			expect(source, path).toContain("setAttribute('role', 'dialog')");
 			expect(source, path).toContain("setAttribute('aria-modal', 'true')");
 		}
-		expect(preset).toContain("setAttribute('role', 'status')");
+		expect(popupToast).toContain("tone === 'error' ? 'alert' : 'status'");
+		expect(popupToast).toContain("tone === 'error' ? 'assertive' : 'polite'");
 		expect(remote).toContain("setAttribute('role', 'status')");
 		expect(preset).toContain('previouslyFocused?.focus()');
 		expect(options).toContain("event.key === 'Escape'");

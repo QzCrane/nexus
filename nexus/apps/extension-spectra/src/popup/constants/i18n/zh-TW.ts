@@ -60,6 +60,8 @@ export const ZH_TW: I18NDict = {
 	btnPause: '暫停/播放',
 	btnMute: '靜音',
 	btnPip: '子母畫面',
+	pipActivationRequired: '請在網頁內按 Alt+P 進入子母畫面。',
+	pipActivationPrompt: '點擊進入子母畫面',
 	btnHotkeyTarget: '快速鍵目標',
 	btnGotoTab: '前往分頁',
 	pauseRetentionLabel: '暫停保留',

@@ -81,6 +81,7 @@ const CONTENT_OPERATIONS = new Set<ControlOperation>([
 	'ab-clear', 'ab-skip', 'show-info',
 ]);
 const CONTENT_COMMAND_TYPES = new Set([
+	'spectra.content.activation.prompt',
 	'spectra.audio.visualizer.get',
 	'spectra.audio.visualizer.subscription.set',
 	'spectra.hotkey.trigger',
@@ -265,6 +266,10 @@ function isEmpty(value: unknown): boolean {
 }
 
 function isContentCommandPayload(type: string, value: unknown): boolean {
+	if (type === 'spectra.content.activation.prompt') return isRecord(value)
+		&& hasOnly(value, new Set(['field', 'label']))
+		&& value.field === 'pip'
+		&& isBoundedString(value.label, 256);
 	if (type === 'spectra.media.speed.set') {
 		return isRecord(value)
 			&& hasOnly(value, new Set(['speed', 'delta', 'preservePitch']))
@@ -414,6 +419,8 @@ function isContentResponseData(type: string, value: unknown): boolean {
 		|| type === 'spectra.content.source.released'
 		|| type === 'spectra.content.target.changed') return isRecord(value)
 		&& hasOnly(value, new Set(['accepted'])) && value.accepted === true;
+	if (type === 'spectra.content.activation.prompt') return isRecord(value)
+		&& hasOnly(value, new Set(['armed'])) && value.armed === true;
 	if (type === 'spectra.control.intent.submit') return isControlAck(value);
 	if (type === 'spectra.control.operation.submit') return isControlAck(value, true);
 	if (type === 'spectra.content.settings.get') return isContentSettings(value);

@@ -60,6 +60,8 @@ export const JA_JP: I18NDict = {
 	btnPause: '一時停止/再生',
 	btnMute: 'ミュート',
 	btnPip: 'ピクチャーインピクチャー',
+	pipActivationRequired: 'ページ上で Alt+P を押してピクチャーインピクチャーを開始してください。',
+	pipActivationPrompt: 'クリックしてピクチャーインピクチャーを開始',
 	btnHotkeyTarget: 'ホットキー対象',
 	btnGotoTab: 'タブへ移動',
 	pauseRetentionLabel: '一時停止保持',

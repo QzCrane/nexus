@@ -33,6 +33,7 @@ import {
 } from '../src/content/logic/content-control-policy';
 import {
 	isSpectraEventEnvelope as isContentSpectraEventEnvelope,
+	isSpectraRequestEnvelope as isContentSpectraRequestEnvelope,
 } from '../../../packages/contracts/src/spectra.content-runtime';
 
 function field<T>(actual: T): ControlFieldState<T> {
@@ -50,6 +51,21 @@ function field<T>(actual: T): ControlFieldState<T> {
 }
 
 describe('per-field SPECTRA control contracts', () => {
+	test('keeps the one-shot activation prompt inside the narrow Content boundary', () => {
+		const request = {
+			protocolVersion: 2,
+			requestId: 'prompt-42',
+			tabId: 42,
+			type: 'spectra.content.activation.prompt',
+			payload: { field: 'pip', label: 'Click to enter Picture-in-Picture' },
+		} as const;
+		expect(isContentSpectraRequestEnvelope(request)).toBe(true);
+		expect(isContentSpectraRequestEnvelope({
+			...request,
+			payload: { field: 'pip', label: '' },
+		})).toBe(false);
+	});
+
 	test('splits one effective volume into native base and hidden Boost', () => {
 		expect(compileEffectiveVolume(50, 2)).toBe(100);
 		expect(compileEffectiveVolume(100, 8)).toBe(800);

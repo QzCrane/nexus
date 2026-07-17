@@ -20,6 +20,7 @@ const runtimeRequiredTypes: ReadonlySet<SpectraRequestType> = new Set([
 	'spectra.control.intent.execute',
 	'spectra.control.operation.execute',
 	'spectra.control.actual.read',
+	'spectra.content.activation.prompt',
 	'spectra.hotkey.trigger',
 	'spectra.media.play.toggle',
 	'spectra.media.pip.toggle',

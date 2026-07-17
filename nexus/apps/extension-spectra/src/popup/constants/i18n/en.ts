@@ -60,6 +60,8 @@ export const EN_US: I18NDict = {
   btnPause: 'Pause/Play',
   btnMute: 'Mute',
   btnPip: 'Picture-in-Picture',
+  pipActivationRequired: 'Open the page and press Alt+P to enter Picture-in-Picture.',
+  pipActivationPrompt: 'Click to enter Picture-in-Picture',
   btnHotkeyTarget: 'Hotkey Target',
   btnGotoTab: 'Go to Tab',
   pauseRetentionLabel: 'Pause Retention',

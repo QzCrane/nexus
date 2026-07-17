@@ -7,6 +7,7 @@ import { isSpectraUiEventEnvelope } from '@nexus/contracts/ui-runtime';
 import type { I18NDict } from '../types';
 import { getSettingsSnapshot, patchSettings } from '../../shared/settings-client';
 import { handleDialogKeydown } from '../utils/dialog';
+import { showPopupToast } from '../toast';
 
 // perf: preset types for global vs site-specific
 export type PresetType = 'site' | 'global';
@@ -290,7 +291,7 @@ async function handleApplyPreset(id: string, type: PresetType, config: Partial<A
 	}
 
 	// feedback: visual confirmation
-	showToast(currentDict?.presetAppliedToast?.(id) || `Applied: ${id}`);
+	showPopupToast(currentDict?.presetAppliedToast?.(id) || `Applied: ${id}`);
 }
 
 // eff: shows preset details in a modal/preview panel
@@ -418,21 +419,6 @@ export async function saveGlobalPreset(name: string, config: Partial<AudioConfig
 }
 
 // goal: shows a transient toast notification
-function showToast(message: string): void {
-	const toast = document.createElement('div');
-	toast.className = 'preset-toast';
-	toast.setAttribute('role', 'status');
-	toast.setAttribute('aria-live', 'polite');
-	toast.setAttribute('aria-atomic', 'true');
-	toast.textContent = message;
-	document.body.appendChild(toast);
-
-	setTimeout(() => {
-		toast.classList.add('fade-out');
-		setTimeout(() => toast.remove(), 300);
-	}, 2000);
-}
-
 // goal: updates i18n dictionary
 export function updatePresetsI18n(dict: I18NDict): void {
 	currentDict = dict;

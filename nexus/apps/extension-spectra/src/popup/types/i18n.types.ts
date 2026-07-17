@@ -62,6 +62,8 @@ export interface I18NDict {
 	btnPause: string;
 	btnMute: string;
 	btnPip: string;
+	pipActivationRequired: string;
+	pipActivationPrompt: string;
 	btnHotkeyTarget: string;
 	btnGotoTab: string;
 

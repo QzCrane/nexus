@@ -60,6 +60,8 @@ export const RU_RU: I18NDict = {
 	btnPause: 'Пауза/Воспроизведение',
 	btnMute: 'Отключить звук',
 	btnPip: 'Картинка в картинке',
+	pipActivationRequired: 'Откройте страницу и нажмите Alt+P для режима «картинка в картинке».',
+	pipActivationPrompt: 'Нажмите для режима «картинка в картинке»',
 	btnHotkeyTarget: 'Цель горячей клавиши',
 	btnGotoTab: 'Перейти на вкладку',
 	pauseRetentionLabel: 'Удержание паузы',

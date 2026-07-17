@@ -141,6 +141,7 @@ function createUiSuccessData(): Record<SpectraUiRequestType, unknown> {
 			ready: true,
 		},
 		'spectra.content.runtime.release': { accepted: true },
+		'spectra.content.activation.prompt': { armed: true },
 		'spectra.control.snapshot.get': snapshot,
 		'spectra.control.intent.submit': {
 			intentId: 'intent-42',
@@ -233,7 +234,7 @@ function createUiEvents(): Record<SpectraUiEventType, SpectraEventEnvelope> {
 
 describe('restricted extension UI protocol facade', () => {
 	test('owns one unique closed request and event allowlist', () => {
-		expect(SPECTRA_UI_REQUEST_TYPES).toHaveLength(23);
+		expect(SPECTRA_UI_REQUEST_TYPES).toHaveLength(24);
 		expect(new Set(SPECTRA_UI_REQUEST_TYPES).size).toBe(SPECTRA_UI_REQUEST_TYPES.length);
 		expect(SPECTRA_UI_EVENT_TYPES).toHaveLength(6);
 		expect(new Set(SPECTRA_UI_EVENT_TYPES).size).toBe(SPECTRA_UI_EVENT_TYPES.length);

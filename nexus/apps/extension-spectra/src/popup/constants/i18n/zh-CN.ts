@@ -60,6 +60,8 @@ export const ZH_CN: I18NDict = {
 	btnPause: '暂停/播放',
 	btnMute: '静音',
 	btnPip: '画中画',
+	pipActivationRequired: '请在网页内按 Alt+P 进入画中画。',
+	pipActivationPrompt: '点击进入画中画',
 	btnHotkeyTarget: '快捷键目标',
 	btnGotoTab: '转到标签页',
 	pauseRetentionLabel: '暂停保留',

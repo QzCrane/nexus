@@ -134,7 +134,8 @@ export function consumeStub(): Partial<PolicyExecutorState> | null {
 
 	const recovered = parseSnapshot(handoff.snapshot, handoff.createdAt);
 	if (!recovered) {
-		log.warn('[Sentinel] Rejected invalid or stale state handoff');
+		// Expected fail-closed path during an extension update or stale same-document handoff.
+		// Rejection is the security behavior; it is not a production console error.
 		return null;
 	}
 	log.info('[Sentinel] Recovered authenticated runtime state');

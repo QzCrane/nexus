@@ -3,12 +3,69 @@
 import type { AudioConfig } from '@nexus/kernel';
 import type { CardUIElements } from '../types';
 import type { ControlMutation, ControlOperationAck } from '@nexus/contracts';
-import { sendSpectraRequest } from '../../shared/ui-spectra-client';
+import { sendSpectraRequest, sendSpectraTabRequest } from '../../shared/ui-spectra-client';
 import { syncSidePanelSpeed } from '../side-panel/controls';
 import { getHotkeyTarget, setHotkeyTarget } from '../../shared/registry-client';
 import type { CardInternalState } from './types';
+import { getCurrentDict } from '../views/i18n-apply';
+import { showPopupToast } from '../toast';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+
+interface ControlUiFailure {
+	code: string;
+	message: string;
+	retryable: boolean;
+}
+
+class ControlUiError extends Error {
+	constructor(readonly failure: ControlUiFailure) {
+		super(failure.message);
+		this.name = 'ControlUiError';
+	}
+}
+
+function asControlUiFailure(error: unknown): ControlUiFailure {
+	if (error instanceof ControlUiError) return error.failure;
+	return {
+		code: 'control_failed',
+		message: error instanceof Error ? error.message : String(error),
+		retryable: true,
+	};
+}
+
+async function reportControlFailure(
+	error: unknown,
+	state: CardInternalState,
+	tabId: number,
+	field?: 'pip',
+): Promise<void> {
+	const failure = asControlUiFailure(error);
+	state.lastError = failure;
+	if (field === 'pip' && failure.code === 'user-activation-required') {
+		const dict = getCurrentDict();
+		try {
+			const prompt = await sendSpectraTabRequest(
+				tabId,
+				'spectra.content.activation.prompt',
+				{
+					field: 'pip',
+					label: dict?.pipActivationPrompt ?? 'Click to enter Picture-in-Picture',
+				},
+			);
+			if (!prompt.ok) throw new ControlUiError(prompt.error);
+			await chrome.tabs.update(tabId, { active: true });
+			return;
+		} catch {
+			const message = dict?.pipActivationRequired
+				?? 'Open the page and use its configured Picture-in-Picture hotkey.';
+			state.lastError = { ...failure, message };
+			showPopupToast(message, 'error');
+			return;
+		}
+	}
+	showPopupToast(failure.message, 'error');
+}
 
 async function submitMutation(tabId: number, state: CardInternalState, mutation: ControlMutation) {
 	const target = mutation.field === 'pip'
@@ -26,10 +83,14 @@ async function submitMutation(tabId: number, state: CardInternalState, mutation:
 		},
 		{ tabId },
 	);
-	if (!response.ok) throw new Error(response.error.message);
+	if (!response.ok) throw new ControlUiError(response.error);
 	const field = response.data.fields[mutation.field];
 	if (field?.phase !== 'applied') {
-		throw new Error(field?.lastError?.message ?? `Control ${mutation.field} was not applied`);
+		throw new ControlUiError(field?.lastError ?? {
+			code: 'control_not_applied',
+			message: `Control ${mutation.field} was not applied`,
+			retryable: true,
+		});
 	}
 	return response.data;
 }
@@ -43,8 +104,8 @@ export function bindMediaControls(
 	update?: (changes: Partial<AudioConfig>) => void,
 ): void {
 	if (ui.btnPause) {
-		ui.btnPause.onclick = async () => {
-			const response = await sendSpectraRequest(
+		ui.btnPause.onclick = () => {
+			void sendSpectraRequest(
 				'spectra.control.operation.submit',
 				{
 					tabId,
@@ -55,21 +116,27 @@ export function bindMediaControls(
 					payload: {},
 				},
 				{ tabId },
-			);
-			if (!response.ok) throw new Error(response.error.message);
-			const playing = (response.data as ControlOperationAck<'playback-toggle'>).result.playing;
-			if (typeof playing === 'boolean' && ui.btnPause) renderPlaybackButton(ui.btnPause, playing);
+			).then((response) => {
+				if (!response.ok) throw new ControlUiError(response.error);
+				const playing = (response.data as ControlOperationAck<'playback-toggle'>).result.playing;
+				if (typeof playing === 'boolean' && ui.btnPause) renderPlaybackButton(ui.btnPause, playing);
+			}).catch((error: unknown) => reportControlFailure(error, state, tabId));
 		};
 	}
 
 	if (ui.btnPip) {
-		ui.btnPip.onclick = async () => {
-			const ack = await submitMutation(tabId, state, { field: 'pip', operation: 'toggle' });
-			const active = ack.fields.pip?.actual;
-			if (typeof active === 'boolean' && ui.btnPip) {
-				ui.btnPip.classList.toggle('active', active);
-				ui.btnPip.setAttribute('aria-pressed', String(active));
-			}
+		ui.btnPip.onclick = () => {
+			ui.btnPip?.setAttribute('aria-busy', 'true');
+			void submitMutation(tabId, state, { field: 'pip', operation: 'toggle' })
+				.then((ack) => {
+					const active = ack.fields.pip?.actual;
+					if (typeof active === 'boolean' && ui.btnPip) {
+						ui.btnPip.classList.toggle('active', active);
+						ui.btnPip.setAttribute('aria-pressed', String(active));
+					}
+				})
+				.catch((error: unknown) => reportControlFailure(error, state, tabId, 'pip'))
+				.finally(() => ui.btnPip?.removeAttribute('aria-busy'));
 		};
 	}
 
@@ -83,7 +150,8 @@ export function bindMediaControls(
 					if (typeof actual !== 'number') return;
 					if (ui.speedInput) ui.speedInput.value = actual.toFixed(2);
 					syncSidePanelSpeed(actual);
-				});
+				})
+				.catch((error: unknown) => reportControlFailure(error, state, tabId));
 		};
 	});
 

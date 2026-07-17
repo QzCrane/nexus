@@ -395,6 +395,22 @@ describe('SPECTRA mapped v2 envelopes', () => {
 			documentId: 'document-forged',
 		})).toBe(false);
 		expect(isSpectraRequestEnvelope({ ...request, action: 'AUDIO_GET_STATUS' })).toBe(false);
+		const activationPrompt = {
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'activation-prompt',
+			tabId: 42,
+			type: 'spectra.content.activation.prompt',
+			payload: { field: 'pip', label: 'Click to enter Picture-in-Picture' },
+		} as const;
+		expect(isSpectraRequestEnvelope(activationPrompt)).toBe(true);
+		expect(isSpectraRequestEnvelope({
+			...activationPrompt,
+			payload: { ...activationPrompt.payload, field: 'fullscreen' },
+		})).toBe(false);
+		expect(isSpectraRequestEnvelope({
+			...activationPrompt,
+			payload: { ...activationPrompt.payload, label: 'x'.repeat(257) },
+		})).toBe(false);
 		expect(isSpectraRequestEnvelope({
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			requestId: 'visualizer-batch',
@@ -736,6 +752,8 @@ describe('SPECTRA mapped v2 envelopes', () => {
 		expect(isSpectraResponse('spectra.tab.pinned.toggle', rpcSuccess({ pinned: true }))).toBe(true);
 		expect(isSpectraResponse('spectra.tab.muted.toggle', rpcSuccess({ muted: false }))).toBe(true);
 		expect(isSpectraResponse('spectra.ui.open', rpcSuccess({ opened: true }))).toBe(true);
+		expect(isSpectraResponse('spectra.content.activation.prompt', rpcSuccess({ armed: true }))).toBe(true);
+		expect(isSpectraResponse('spectra.content.activation.prompt', rpcSuccess({ armed: false }))).toBe(false);
 		expect(isSpectraResponse('spectra.audio.visualizer.batch', rpcSuccess({
 			subscriberId: 'popup-1',
 			generation: 1,

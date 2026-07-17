@@ -18,6 +18,13 @@ a second policy.
   internal last-resort processor for explicit full-output DSP only.
 - Untouched pages keep native constructor/descriptor identity and create no
   AudioContext, offscreen processor, analyser or periodic IPC.
+- Popup PiP now preserves the browser's activation boundary without leaving a
+  dead control: a rejected cross-context attempt arms one 15-second page button,
+  activates the bound tab and lets the user's real click invoke the same native
+  Picture-in-Picture API. No synthetic gesture, MAIN or Capture path exists.
+- Extension reloads retire the previous bootstrap idempotently. Expected stale
+  Sentinel handoffs remain fail-closed but silent, and unrelated protocol errors
+  are still observable.
 
 ## Exhaustive control and source-algorithm adjudication
 
@@ -83,7 +90,10 @@ There is no generic MAIN runtime, constructor/prototype/descriptor patch,
 | `src/popup/side-panel/video-controls.ts` | Sends Filter value and ownership as one latest-value intent, capped at 20 Hz with one in-flight request; prevents partial UI ownership and stale slider ACK overwrite. |
 | `src/popup/visualizer/loop.ts`; `src/background/visualizer-subscriber-registry.ts` | One in-flight Popup scheduler plus generation-aware, multi-consumer analyser leases and tombstones. |
 | `src/remote/qr-generator.ts` | Local SVG QR encoding for the same fragment-secret pairing URL, replacing the larger transitive QR package without network generation. |
-| `packages/contracts/src/spectra.ui-runtime.ts`; `spectra.ui-settings-runtime.ts`; `test/ui-runtime-contract.spec.ts` | Closed 23-request/six-event Popup/remote facade plus a ten-request/one-event Options facade. Internal or cross-surface requests are rejected before both success and shared-error handling, and mutations cannot drift from the canonical wire shape. |
+| `packages/contracts/src/spectra.ui-runtime.ts`; `spectra.ui-settings-runtime.ts`; `test/ui-runtime-contract.spec.ts` | Closed 24-request/six-event Popup/remote facade plus a ten-request/one-event Options facade. Internal or cross-surface requests are rejected before both success and shared-error handling, and mutations cannot drift from the canonical wire shape. |
+| `src/background/handlers/commands.ts`; `background/handlers/tab-state.ts` | Exact, disjoint v2 listener ownership. Pin/mute/UI commands cannot consume `spectra.tab.visible.list` or return a competing malformed-command response. |
+| `src/content/core/extension-context.ts`; `content/core/bootstrap.ts`; `content/core/sentinel.ts` | One side-effect-free invalidation detector handles both missing runtime identity and synchronous send throws, disposes the old bootstrap once and keeps expected stale handoff rejection out of the production console. |
+| `src/popup/card/media-events.ts`; `content/input/trusted-activation-prompt.ts`; `content/ui/toast.ts` | Preserves structured PiP errors and converts only `user-activation-required` into a bounded, accessible page-click handoff. All Popup media promises terminate in an ACK or visible feedback. |
 
 ## Algorithm-level decisions
 
@@ -139,17 +149,17 @@ video-enhancement boundary are included in the current deterministic candidate:
 
 | Metric | Bytes | KiB |
 | --- | ---: | ---: |
-| Default startup closure | 226,569 | 221.3 |
-| All production JavaScript | 513,742 | 501.7 |
-| Complete production dist | 609,214 | 594.9 |
-| Background closure | 220,369 | 215.2 |
-| Bootstrap closure | 6,200 | 6.1 |
-| Lazy Content runtime | 117,411 | 114.7 |
+| Default startup closure | 227,328 | 222.0 |
+| All production JavaScript | 517,691 | 505.6 |
+| Complete production dist | 613,566 | 599.2 |
+| Background closure | 220,715 | 215.5 |
+| Bootstrap closure | 6,613 | 6.5 |
+| Lazy Content runtime | 119,430 | 116.6 |
 | Lazy video-enhancement runtime | 9,455 | 9.2 |
-| Popup closure | 177,657 | 173.5 |
+| Popup closure | 179,130 | 174.9 |
 | Unified offscreen application closure | 35,495 | 34.7 |
 | Opaque local PeerJS vendor | 34,377 | 33.6 |
-| Options closure | 87,277 | 85.2 |
+| Options closure | 87,543 | 85.5 |
 
 These byte measurements are diagnostic evidence, not a frozen acceptance
 ceiling. The production gate now enforces zero avoidable redundancy instead:
@@ -166,27 +176,28 @@ prints current startup closures and largest contributors for every release.
 - Architecture verification passes, including the 51-capability and
   50-algorithm source catalog. Biome and all four relevant workspace typechecks
   pass.
-- The unit/contract/runtime suite passes 340 tests with 3,208 assertions across
-  53 files.
+- The unit/contract/runtime suite passes 345 tests with 3,244 assertions across
+  55 files.
 - Chrome integration covers untouched-page transparency, side-effect-free
   status reads, bidirectional page/Popup state, WebAudio/Capture transitions,
   single offscreen ownership, SPA/fullscreen/source identity, Visualizer idle
   behavior and service-worker restart.
 - The QR replacement has a boundary test proving a local SVG data URL encodes
   the fragment-secret pairing URL without placing the secret in SVG metadata.
-- Chrome integration passes 18/18 against the development build and the release
-  gate requires the same 18/18 against the extracted production ZIP.
+- Chrome integration passes 21/21 with 147 assertions against the development
+  build and the same 21/21 with 147 assertions against the extracted production
+  ZIP. The added cases prove exact visible-tab routing, trusted-click PiP,
+  extension-reload retirement and the acknowledged single-slider color model.
 - Dependency audit reports no vulnerabilities. The production remote page
   matches local bytes, MIME types and all release-gated security headers.
-- The deterministic archive expands to the exact 609,214-byte production dist.
-  The authoritative archive byte count and SHA-256 are emitted and independently
-  rechecked in the promoted `release/spectra-v1.3.4.zip` and `.sha256` pair,
-  avoiding a second checksum owner inside a source file covered by release
-  freeze.
+- The deterministic archive is 622,188 bytes and expands to the exact
+  613,566-byte production dist. Its SHA-256 is
+  `4c21e7930cdd3ffe9029b2a19784323cdcc19ddb483ca575ccfa5c02b4ec55c6`.
+  The release gate independently rechecks the promoted
+  `release/spectra-v1.3.4.zip` and `.sha256` pair, avoiding a second checksum
+  owner inside a source file covered by release freeze.
 
-The local GitNexus runner is absent in this checkout. Graph-It-Live indexed the
-workspace dependency surface, but its natural-language call-graph query still
-reported an uninitialized call-graph index. The release therefore treats direct
-source anchors, exhaustive TypeScript records, static architecture checks and
-executable browser/tests as the evidence owners; it does not claim an
-unavailable graph result.
+The GitNexus MCP transport was unavailable during the final pass. The release
+therefore treats direct source anchors, exhaustive TypeScript records, static
+architecture checks and executable browser/tests as the evidence owners; it
+does not claim an unavailable graph result.

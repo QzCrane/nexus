@@ -60,3 +60,15 @@ Remote control remains PeerJS-based but is capability-bound and authenticated. A
 ## Protocol and compatibility
 
 New code sends protocol v2 envelopes and validates both request payloads and response data at runtime. Narrow named v1 adapters remain for one release so already-loaded contexts can receive compatibility events; they are not an alternate internal protocol. See [protocols.md](./protocols.md) for the wire contract and transition diagrams.
+
+Every `chrome.runtime.onMessage` listener owns an exact request-type set. Prefix
+matching is not routing: a listener must return `false` before validation when
+the type belongs to another owner, so `spectra.tab.visible.list` cannot be
+claimed by the pin/mute command listener. The canonical request map and narrow
+UI/Content facades validate the same payload and response shape.
+
+Already-loaded Content contexts treat extension reload/update invalidation as a
+terminal lifecycle event. The side-effect-free context guard catches both a
+missing runtime id and the synchronous `sendMessage()` invalidation throw,
+disposes the old bootstrap once and suppresses only that known teardown error.
+Unrelated malformed-command and transport failures continue to surface.

@@ -14,6 +14,10 @@ import {
 	setContentBootstrapState,
 	type ContentBootstrapState,
 } from '../../shared/content-runtime';
+import {
+	isExtensionContextValid,
+	runWithValidExtensionContext,
+} from './extension-context';
 
 const previous = getContentBootstrapState();
 if (previous?.bootstrapRevision !== SPECTRA_CONTENT_BOOTSTRAP_REVISION) previous?.dispose();
@@ -64,7 +68,7 @@ if (!getContentBootstrapState()) {
 		dispose() {
 			if (disposed) return;
 			disposed = true;
-			chrome.runtime.onMessage.removeListener(onMessage);
+			try { chrome.runtime.onMessage.removeListener(onMessage); } catch { /* invalidated context */ }
 			window.removeEventListener('pagehide', onPageHide);
 			delete state.disposeRuntime;
 			if (getContentBootstrapState() === state) setContentBootstrapState(undefined);
@@ -76,7 +80,12 @@ if (!getContentBootstrapState()) {
 		sender: chrome.runtime.MessageSender,
 		sendResponse: (response?: unknown) => void,
 	): boolean => {
-		if (disposed || sender.id && sender.id !== chrome.runtime.id) return false;
+		if (disposed) return false;
+		if (!isExtensionContextValid()) {
+			state.dispose();
+			return false;
+		}
+		if (sender.id && sender.id !== chrome.runtime.id) return false;
 		if (!message || typeof message !== 'object') return false;
 		const candidate = message as { protocolVersion?: unknown; type?: unknown };
 		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION || typeof candidate.type !== 'string') {
@@ -158,7 +167,7 @@ if (!getContentBootstrapState()) {
 		if (!state.runtimeRevision) return;
 		void sendBootstrapRequest('spectra.content.runtime.release', {
 			runtimeRevision: state.runtimeRevision,
-		});
+		}, state.dispose);
 	};
 
 	setContentBootstrapState(state);
@@ -167,7 +176,7 @@ if (!getContentBootstrapState()) {
 
 	void sendBootstrapRequest('spectra.content.bootstrap.hello', {
 		bootstrapRevision: SPECTRA_CONTENT_BOOTSTRAP_REVISION,
-	}).then((response) => {
+	}, state.dispose).then((response) => {
 		if (!isBootstrapHelloResponse(response) || disposed || response.data.runtimeRevision === null) return;
 		state.runtimeRevision = response.data.runtimeRevision;
 		state.ready = true;
@@ -177,11 +186,12 @@ if (!getContentBootstrapState()) {
 function sendBootstrapRequest(
 	type: 'spectra.content.bootstrap.hello' | 'spectra.content.runtime.release',
 	payload: { bootstrapRevision: string } | { runtimeRevision: string },
-): Promise<unknown> {
-	return chrome.runtime.sendMessage({
+	onInvalidated?: () => void,
+): Promise<unknown | undefined> {
+	return runWithValidExtensionContext(() => chrome.runtime.sendMessage({
 		protocolVersion: SPECTRA_PROTOCOL_VERSION,
 		requestId: crypto.randomUUID(),
 		type,
 		payload,
-	});
+	}), onInvalidated);
 }

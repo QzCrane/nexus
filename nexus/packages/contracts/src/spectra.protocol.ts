@@ -239,6 +239,10 @@ export interface SpectraRequestMap {
 		payload: { target: MediaTarget };
 		response: { accepted: true };
 	};
+	'spectra.content.activation.prompt': {
+		payload: { field: 'pip'; label: string };
+		response: { armed: true };
+	};
 	'spectra.control.snapshot.get': {
 		payload: { tabId: number };
 		response: ControlSnapshot | null;
@@ -598,6 +602,7 @@ const CONTENT_RUNTIME_RELEASE_PAYLOAD_KEYS = new Set([
 ]);
 const CONTENT_SOURCE_RELEASED_PAYLOAD_KEYS = new Set(['target']);
 const CONTENT_TARGET_CHANGED_PAYLOAD_KEYS = new Set(['target']);
+const CONTENT_ACTIVATION_PROMPT_PAYLOAD_KEYS = new Set(['field', 'label']);
 const AUDIO_CONFIG_PAYLOAD_KEYS = new Set(['config']);
 const AUDIO_SESSION_PUBLISH_PAYLOAD_KEYS = new Set([
 	'config',
@@ -654,6 +659,7 @@ const RPC_SUCCESS_KEYS = new Set(['ok', 'data']);
 const RPC_FAILURE_KEYS = new Set(['ok', 'error']);
 const RPC_ERROR_KEYS = new Set<keyof RpcError>(['code', 'message', 'retryable']);
 const ACCEPTED_RESULT_KEYS = new Set(['accepted']);
+const ARMED_RESULT_KEYS = new Set(['armed']);
 const BOOTSTRAP_HELLO_RESULT_KEYS = new Set(['accepted', 'runtimeRevision']);
 const CONTENT_RUNTIME_STATUS_KEYS = new Set(['bootstrapRevision', 'runtimeRevision', 'ready', 'ownedSources']);
 const CONTENT_RUNTIME_SOURCE_OWNERSHIP_KEYS = new Set(['target', 'markerCount', 'abActive']);
@@ -805,6 +811,17 @@ function isContentTargetChangedPayload(
 	return isRecord(value)
 		&& hasOnlyKeys(value, CONTENT_TARGET_CHANGED_PAYLOAD_KEYS)
 		&& isMediaTarget(value.target);
+}
+
+function isContentActivationPromptPayload(
+	value: unknown,
+): value is SpectraRequestPayload<'spectra.content.activation.prompt'> {
+	return isRecord(value)
+		&& hasOnlyKeys(value, CONTENT_ACTIVATION_PROMPT_PAYLOAD_KEYS)
+		&& value.field === 'pip'
+		&& typeof value.label === 'string'
+		&& value.label.length > 0
+		&& value.label.length <= 256;
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -1210,6 +1227,7 @@ const REQUEST_PAYLOAD_GUARDS = {
 	'spectra.content.runtime.release': isContentRuntimeReleasePayload,
 	'spectra.content.source.released': isContentSourceReleasedPayload,
 	'spectra.content.target.changed': isContentTargetChangedPayload,
+	'spectra.content.activation.prompt': isContentActivationPromptPayload,
 	'spectra.control.snapshot.get': isTabIdPayload,
 	'spectra.control.intent.submit': isControlSubmitRequest,
 	'spectra.control.intent.execute': isControlIntent,
@@ -1426,6 +1444,11 @@ const RESPONSE_DATA_GUARDS = {
 	'spectra.content.runtime.release': isAcceptedResult,
 	'spectra.content.source.released': isAcceptedResult,
 	'spectra.content.target.changed': isAcceptedResult,
+	'spectra.content.activation.prompt': (
+		value: unknown,
+	): value is SpectraResponseData<'spectra.content.activation.prompt'> => isRecord(value)
+		&& hasOnlyKeys(value, ARMED_RESULT_KEYS)
+		&& value.armed === true,
 	'spectra.control.snapshot.get': (
 		value: unknown,
 	): value is SpectraResponseData<'spectra.control.snapshot.get'> => value === null || isControlSnapshot(value),

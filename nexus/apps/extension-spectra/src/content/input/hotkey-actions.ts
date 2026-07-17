@@ -5,7 +5,7 @@ import { createLogger } from '../../shared/logger';
 import { showToast } from '../ui/toast';
 import {
 	sendVolumeAction, sendSpeedAction, sendAudioAdjustment, toggleLoop, sendTabAction,
-	submitHotkeyMutations, submitHotkeyOperation, submitTrustedActivationHotkey,
+	submitHotkeyMutations, submitHotkeyOperation, submitTrustedActivationControl,
 } from './hotkey-helpers';
 
 const log = createLogger('HotkeyActions');
@@ -32,7 +32,7 @@ function openUrl(params?: HotkeyParams): Promise<unknown> | undefined {
 // inv: every persisted HotkeyAction has an explicit runtime disposition.
 export const HOTKEY_ACTION_HANDLERS = {
 	none: () => undefined,
-	play_pause: () => submitTrustedActivationHotkey('playing'),
+	play_pause: () => submitTrustedActivationControl('playing'),
 	seek_forward_5s: () => submitHotkeyOperation('seek-relative', { delta: 5 }),
 	seek_forward_10s: () => submitHotkeyOperation('seek-relative', { delta: 10 }),
 	seek_forward_30s: () => submitHotkeyOperation('seek-relative', { delta: 30 }),
@@ -63,8 +63,8 @@ export const HOTKEY_ACTION_HANDLERS = {
 	pan_reset: (params) => sendAudioAdjustment('pan_reset', params),
 	mono_toggle: (params) => sendAudioAdjustment('mono_toggle', params),
 	capture_toggle: () => showToast('Capture is automatic; reassign this legacy shortcut in Options'),
-	fullscreen_toggle: () => submitTrustedActivationHotkey('fullscreen'),
-	pip_toggle: () => submitTrustedActivationHotkey('pip'),
+	fullscreen_toggle: () => submitTrustedActivationControl('fullscreen'),
+	pip_toggle: () => submitTrustedActivationControl('pip'),
 	rotate_cw: () => submitHotkeyMutations([{ field: 'rotation', operation: 'delta', value: 90 }]),
 	rotate_ccw: () => submitHotkeyMutations([{ field: 'rotation', operation: 'delta', value: -90 }]),
 	mirror_toggle: () => submitHotkeyMutations([{ field: 'mirrored', operation: 'toggle' }]),

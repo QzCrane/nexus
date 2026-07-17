@@ -16,7 +16,7 @@ const FULL_OUTPUT_FIELDS = new Set<ControlMutation['field']>([
 ]);
 const TAB_FIELDS = new Set<ControlMutation['field']>(['tabMuted', 'tabPinned']);
 
-export async function submitTrustedActivationHotkey(
+export async function submitTrustedActivationControl(
 	field: 'playing' | 'pip' | 'fullscreen',
 ): Promise<void> {
 	const executor = getActiveNativeMediaExecutor();

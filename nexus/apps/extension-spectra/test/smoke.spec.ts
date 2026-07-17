@@ -1411,6 +1411,21 @@ describe('SPECTRA built extension smoke', () => {
 		expect(fixtureErrors).toEqual([]);
 	});
 
+	test('routes the visible-tab v2 request to its sole background owner', async () => {
+		const client = await openExtensionClient();
+		try {
+			const response = await client.evaluate(() => chrome.runtime.sendMessage({
+				protocolVersion: 2,
+				requestId: crypto.randomUUID(),
+				type: 'spectra.tab.visible.list',
+				payload: {},
+			}));
+			expect(response).toMatchObject({ ok: true, data: { tabs: expect.any(Array) } });
+		} finally {
+			await client.close();
+		}
+	});
+
 	test('leaves untouched media transparent and creates no AudioContext', async () => {
 		const offscreenBefore = await getOffscreenContextCount();
 		const status = await readContentBootstrapStatus();
@@ -1708,6 +1723,7 @@ describe('SPECTRA built extension smoke', () => {
 			).catch(() => undefined);
 			await popup.close();
 		}
+		expect(popupDiagnostics).toEqual([]);
 
 		const options = await browser.newPage();
 		await options.setViewport({ width: 390, height: 800, deviceScaleFactor: 1 });
@@ -1731,6 +1747,83 @@ describe('SPECTRA built extension smoke', () => {
 				originalLanguage,
 			).catch(() => undefined);
 			await options.close();
+		}
+	}, 20_000);
+
+	test('bridges Popup PiP through one bounded trusted page click', async () => {
+		await fixturePage.bringToFront();
+		const errorsBefore = fixtureErrors.length;
+		await evaluateServiceWorker(async ({ url }) => {
+			const tab = (await chrome.tabs.query({})).find((candidate) => candidate.url === url);
+			if (tab?.id === undefined) throw new Error(`Unable to find PiP fixture tab: ${url}`);
+			await chrome.scripting.executeScript({
+				target: { tabId: tab.id },
+				world: 'ISOLATED',
+				func: () => {
+					const scope = window as Window & {
+						__spectraOriginalRequestPictureInPicture?: HTMLVideoElement['requestPictureInPicture'];
+					};
+					if (!scope.__spectraOriginalRequestPictureInPicture) {
+						scope.__spectraOriginalRequestPictureInPicture = HTMLVideoElement.prototype.requestPictureInPicture;
+					}
+					Object.defineProperty(document, 'pictureInPictureEnabled', {
+						configurable: true,
+						value: true,
+					});
+					HTMLVideoElement.prototype.requestPictureInPicture = () => Promise.reject(
+						new DOMException('A user gesture is required', 'NotAllowedError'),
+					);
+				},
+			});
+		}, { url: fixturePage.url() });
+		const popupTarget = await openActionPopupTarget();
+		const popup = await popupTarget.asPage();
+		const diagnostics: string[] = [];
+		popup.on('pageerror', (error) => diagnostics.push(`pageerror: ${error.message}`));
+		popup.on('console', (message) => {
+			if (message.type() === 'error' || message.type() === 'warning') {
+				diagnostics.push(`console.${message.type()}: ${message.text()}`);
+			}
+		});
+		try {
+			await popup.waitForSelector('.glass-card');
+			await popup.$eval('.btn-pip', (element) => (element as HTMLButtonElement).click());
+			await fixturePage.waitForFunction(() => {
+				const host = document.querySelector('#spectra-toast-host');
+				const button = host?.shadowRoot?.querySelector<HTMLButtonElement>('#action');
+				return Boolean(button && !button.hidden && button.textContent?.trim());
+			});
+			const actionHandle = await fixturePage.evaluateHandle(() => (
+				document.querySelector('#spectra-toast-host')
+					?.shadowRoot?.querySelector<HTMLButtonElement>('#action') ?? null
+			));
+			const action = actionHandle.asElement();
+			if (!action) throw new Error('Trusted PiP activation prompt is missing');
+			await action.click();
+			await actionHandle.dispose();
+			await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+			expect(diagnostics).toEqual([]);
+			expect(fixtureErrors.slice(errorsBefore)).toEqual([]);
+		} finally {
+			await popup.close().catch(() => undefined);
+			await evaluateServiceWorker(async ({ url }) => {
+				const tab = (await chrome.tabs.query({})).find((candidate) => candidate.url === url);
+				if (tab?.id === undefined) return;
+				await chrome.scripting.executeScript({
+					target: { tabId: tab.id },
+					world: 'ISOLATED',
+					func: () => {
+						const scope = window as Window & {
+							__spectraOriginalRequestPictureInPicture?: HTMLVideoElement['requestPictureInPicture'];
+						};
+						if (scope.__spectraOriginalRequestPictureInPicture) {
+							HTMLVideoElement.prototype.requestPictureInPicture = scope.__spectraOriginalRequestPictureInPicture;
+							delete scope.__spectraOriginalRequestPictureInPicture;
+						}
+						Reflect.deleteProperty(document, 'pictureInPictureEnabled');
+					},
+				});
+			}, { url: fixturePage.url() });
 		}
 	}, 20_000);
 
@@ -2595,4 +2688,36 @@ describe('SPECTRA built extension smoke', () => {
 		expect(restartedState.status).toMatchObject({ ok: true, data: { actualMode: 'bypass' } });
 		expect(fixtureErrors).toEqual([]);
 	}, 35_000);
+
+	test('retires the old Content bootstrap silently after an extension reload', async () => {
+		await releaseSmokeRuntimes();
+		await runtimeLeaseClient?.close().catch(() => undefined);
+		runtimeLeaseClient = null;
+		const errorsBefore = fixtureErrors.length;
+		const reloadDiagnostics: string[] = [];
+		const onConsole = (message: import('puppeteer').ConsoleMessage) => {
+			if ((message.type() === 'error' || message.type() === 'warning')
+				&& /SPECTRA|Extension context invalidated/u.test(message.text())) {
+				reloadDiagnostics.push(`console.${message.type()}: ${message.text()}`);
+			}
+		};
+		fixturePage.on('console', onConsole);
+		const extensionClient = await openExtensionClient();
+		try {
+			await extensionClient.evaluate(() => {
+				chrome.runtime.reload();
+			}).catch(() => undefined);
+			await extensionClient.close().catch(() => undefined);
+			await new Promise((resolveWait) => setTimeout(resolveWait, 500));
+			await fixturePage.goto(`${fixtureUrl}?after-extension-reload=1`, {
+				waitUntil: 'domcontentloaded',
+			});
+			await new Promise((resolveWait) => setTimeout(resolveWait, 500));
+			expect(fixtureErrors.slice(errorsBefore)).toEqual([]);
+			expect(reloadDiagnostics).toEqual([]);
+		} finally {
+			fixturePage.off('console', onConsole);
+			await extensionClient.close().catch(() => undefined);
+		}
+	}, 30_000);
 });
