@@ -25,14 +25,20 @@ let lastHostname = '';
 const lastExecution = new Map<string, number>();
 const coalesced = new Map<string, ReturnType<typeof setTimeout>>();
 let keydownDisposer: (() => void) | null = null;
+let keyupDisposer: (() => void) | null = null;
 
 function synchronizeKeydownListener(): void {
 	const shouldListen = getSiteConfig() !== null;
 	if (shouldListen && !keydownDisposer) {
 		keydownDisposer = createEventListener(document, 'keydown', handleKeydown as EventListener, true);
+		keyupDisposer = createEventListener(document, 'keyup', handleKeyup as EventListener, true);
 	} else if (!shouldListen && keydownDisposer) {
 		keydownDisposer();
 		keydownDisposer = null;
+		if (keyupDisposer) {
+			keyupDisposer();
+			keyupDisposer = null;
+		}
 	}
 }
 
@@ -47,6 +53,10 @@ export async function initHotkeyListener(): Promise<() => void> {
 	cleanup.add(() => {
 		keydownDisposer?.();
 		keydownDisposer = null;
+		if (keyupDisposer) {
+			keyupDisposer();
+			keyupDisposer = null;
+		}
 		for (const timer of coalesced.values()) clearTimeout(timer);
 		coalesced.clear();
 		lastExecution.clear();
@@ -150,6 +160,28 @@ function handleKeydown(e: KeyboardEvent): void {
 		lastExecution.set(binding.id, performance.now());
 		void executeWithOSD(binding);
 	}, wait));
+}
+
+function handleKeyup(e: KeyboardEvent): void {
+	if (!isTrustedHotkeyEvent(e)) return;
+	const site = getSiteConfig();
+	if (!site) return;
+
+	const binding = getBindingMap(site).get(bindingKey(
+		e.code,
+		e.ctrlKey,
+		e.altKey,
+		e.shiftKey,
+		e.metaKey,
+	));
+	if (!binding) return;
+
+	// 立即清除待执行的定时器，防止松手后继续执行
+	const timer = coalesced.get(binding.id);
+	if (timer) {
+		clearTimeout(timer);
+		coalesced.delete(binding.id);
+	}
 }
 
 async function executeWithOSD(b: HotkeyBinding): Promise<void> {

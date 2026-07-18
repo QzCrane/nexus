@@ -8,6 +8,7 @@ import { getDomain } from '../utils/dom';
 import { bindMediaControls } from './media-events';
 import { patchSettings } from '../../shared/settings-client';
 import { sendSpectraRequest } from '../../shared/ui-spectra-client';
+import { showPopupToast } from '../toast';
 
 export interface EventsParams {
   ui: CardUIElements;
@@ -56,6 +57,8 @@ export function bindCardEvents(params: EventsParams): void {
     // `volume` is the single product-level control. mergeAudioConfig performs
     // the internal native-volume/processor-boost split atomically in UI state.
     update({ volume });
+    // feedback: show toast for volume changes
+    showPopupToast(`🔊 ${Math.round(volume)}%`);
   };
 
 	const submitToggle = async (field: 'mediaMuted'): Promise<void> => {
