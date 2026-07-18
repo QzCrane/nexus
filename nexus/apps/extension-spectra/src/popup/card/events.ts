@@ -108,16 +108,27 @@ export function bindCardEvents(params: EventsParams): void {
   ui.slider.ontouchstart = () => setDragging('volume');
 
   // eff: enable rapid volume adjustment via mouse wheel with preventDefault to avoid scrolling the popup body
+  let wheelTimer: ReturnType<typeof setTimeout> | null = null;
   ui.sliderArea.addEventListener('wheel', (e) => {
     e.preventDefault();
     e.stopPropagation();
     if (!state.config.enabled) return;
+
+    // Set dragging state to prevent render from updating slider.value
+    setDragging('volume');
 
     let v = parseInt(ui.slider.value, 10);
     v = e.deltaY < 0
       ? Math.min(v + AUDIO_UI.VOLUME_STEP, AUDIO_UI.MAX_VOLUME)
       : Math.max(v - AUDIO_UI.VOLUME_STEP, 0);
     handleVolume(v);
+
+    // Clear dragging state after wheel stops (300ms debounce)
+    if (wheelTimer) clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(() => {
+      setDragging(null);
+      void update.flush().catch(() => undefined);
+    }, 300);
   }, { passive: false });
 
   ui.mute.onclick = () => {

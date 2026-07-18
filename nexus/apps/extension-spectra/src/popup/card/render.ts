@@ -41,11 +41,15 @@ export function createRenderFn(params: RenderParams): () => void {
 		controls?.setAttribute('aria-hidden', String(disabled));
     ui.enable.checked = config.enabled;
 
-    // rule: only update slider if not actively dragging to prevent "jumping back" during user interaction
-    if (!state.isDragging) {
-      ui.slider.value = String(volume.effectiveVolume);
+    // rule: always update slider to reflect actual state, but preserve user's dragging position
+    // by only updating when the value has actually changed significantly
+    const currentSliderValue = parseFloat(ui.slider.value);
+    const newSliderValue = volume.effectiveVolume;
+    // Only update if not dragging OR if the difference is significant (> 5%)
+    if (!state.isDragging || Math.abs(currentSliderValue - newSliderValue) > 5) {
+      ui.slider.value = String(newSliderValue);
     }
-    ui.fill.style.width = `${(volume.effectiveVolume / AUDIO_UI.MAX_VOLUME) * 100}%`;
+    ui.fill.style.width = `${(newSliderValue / AUDIO_UI.MAX_VOLUME) * 100}%`;
     ui.val.innerText = muted ? 'MUTE' : `${formatVolume(volume.effectiveVolume)}%`;
     ui.mute.classList.toggle('active', muted);
 		ui.mute.setAttribute('aria-pressed', String(muted));

@@ -1281,15 +1281,6 @@ export class NativeMediaExecutor {
 			}
 			if (this.matches(observed[field], actual, field === 'currentTime' ? 0.05 : 0.01)) continue;
 			this.observe(mediaId, field, actual as ControlValues[ControlField]);
-			// rule: when the plugin owns this restorable field, the page's change is
-			// treated as interference (e.g. video-start volume reset) rather than a
-			// new actual state. Schedule a re-assert of our lastApplied value so the
-			// popup slider stays where the user put it. Ownership is only relinquished
-			// after sustained page resistance (see performReassert).
-			if (isRestorableMediaField(field) && this.isFieldOwned(element, field)) {
-				this.scheduleReassert(element, target, field, mediaId);
-				continue;
-			}
 			(patch as Record<string, unknown>)[field] = actual;
 		}
 		if (Object.keys(patch).length === 0) return;
