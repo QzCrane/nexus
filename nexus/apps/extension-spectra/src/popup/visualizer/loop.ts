@@ -70,12 +70,12 @@ function stopScheduledFrame(): void {
 function isRunnable(subscription: VizSubscription): boolean {
   if (!subscription.active || !subscription.visible) return false;
   const config = subscription.params.getConfig();
-  // rule: visualizer requires both audio enabled AND an active processor
-  // to have meaningful frequency data to display
+  // rule: visualizer should run whenever audio is enabled and not muted
+  // Always request data from background - it will return empty frames when no audio is playing
+  // This prevents the visualizer from getting stuck
   return config.enabled
     && !config.muted
-    && subscription.params.getGlobalSettings().visualizerEnabled !== false
-    && subscription.params.isProcessorActive();
+    && subscription.params.getGlobalSettings().visualizerEnabled !== false;
 }
 
 function hasRunnableSubscriptions(): boolean {

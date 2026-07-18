@@ -57,8 +57,6 @@ export function bindCardEvents(params: EventsParams): void {
     // `volume` is the single product-level control. mergeAudioConfig performs
     // the internal native-volume/processor-boost split atomically in UI state.
     update({ volume });
-    // feedback: show toast for volume changes
-    showPopupToast(`🔊 ${Math.round(volume)}%`);
   };
 
 	const submitToggle = async (field: 'mediaMuted'): Promise<void> => {
@@ -196,12 +194,10 @@ export function bindCardEvents(params: EventsParams): void {
       await patchSettings({ scope: 'audio-site', domain, value: state.config, mode: 'replace' });
       // feedback: provide a transient visual confirmation on the save button
       const old = ui.btnSave.innerText;
-      ui.btnSave.innerText = 'OK';
+      ui.btnSave.innerText = '保存成功';
       setTimeout(() => { ui.btnSave.innerText = old; }, TIMING.BUTTON_FEEDBACK_DURATION);
-      showPopupToast('💾 配置已保存');
     } catch (error) {
       console.error('Failed to save config:', error);
-      showPopupToast('❌ 保存失败', 'error');
     }
   };
 

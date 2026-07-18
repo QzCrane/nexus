@@ -186,11 +186,12 @@ function handleKeyup(e: KeyboardEvent): void {
 
 async function executeWithOSD(b: HotkeyBinding): Promise<void> {
 	const action = b.action;
+	// Show toast immediately before awaiting the action to avoid IPC delay
+	if (HOTKEY_ACTION_DESCRIPTORS[action].feedbackOwner === 'listener-label') {
+		showToast(formatLabel(action, b.params));
+	}
 	try {
 		await executeHotkeyAction(action, b.params);
-		if (HOTKEY_ACTION_DESCRIPTORS[action].feedbackOwner === 'listener-label') {
-			showToast(formatLabel(action, b.params));
-		}
 	} catch (error) {
 		log.warn(`Hotkey ${action} failed`, error);
 		showToast(error instanceof Error ? error.message : String(error));
