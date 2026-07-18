@@ -55,6 +55,16 @@ const entries = [
 		sharingDomain: 'isolated-bootstrap',
 	},
 	{
+		entry: 'src/content/injector/fullscreen-bridge.ts',
+		out: 'content-fullscreen-bridge.js',
+		sharingDomain: 'main-fullscreen-bridge',
+	},
+	{
+		entry: 'src/content/injector/playback-rate-bridge.ts',
+		out: 'content-playback-rate-bridge.js',
+		sharingDomain: 'main-playback-rate-bridge',
+	},
+	{
 		entry: 'src/content/core/index.ts',
 		out: 'content-runtime.js',
 		sharingDomain: 'isolated-runtime',

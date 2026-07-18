@@ -14,6 +14,7 @@ import {
 	releaseSourceRuntimeLease,
 	resetContentRuntimeLoaderForTests,
 } from '../src/background/runtime-loader';
+import { settingsRepository } from '../src/background/settings-repository';
 
 type Listener = (...args: never[]) => unknown;
 
@@ -27,20 +28,38 @@ interface RuntimeHarness {
 	executeCount: number;
 	statusCount: number;
 	releaseCount: number;
+	navigationCommitted: ChromeEvent;
+	navigationDOMContentLoaded: ChromeEvent;
+	runtimeMessages: ChromeEvent;
 }
+
+const originalGetSnapshot = settingsRepository.getSnapshot;
 
 function installChromeHarness(
 	runtimeAlreadyReady = false,
 	ownedSources: ContentRuntimeSourceOwnership[] = [],
 	releaseFails = false,
+	hotkeySettings?: HotkeySettings,
+	injectionSettles = true,
 ): RuntimeHarness {
-	const harness = { executeCount: 0, statusCount: 0, releaseCount: 0 };
 	const runtimeMessages = new ChromeEvent();
 	const tabRemoved = new ChromeEvent();
 	const navigationCommitted = new ChromeEvent();
+	const navigationDOMContentLoaded = new ChromeEvent();
+	const harness = {
+		executeCount: 0,
+		statusCount: 0,
+		releaseCount: 0,
+		navigationCommitted,
+		navigationDOMContentLoaded,
+		runtimeMessages,
+	};
 	const historyUpdated = new ChromeEvent();
 	const fragmentUpdated = new ChromeEvent();
 	const documentId = 'document-7';
+	if (hotkeySettings) {
+		settingsRepository.getSnapshot = async () => ({ hotkeySettings } as never);
+	}
 
 	const chromeMock = {
 		runtime: {
@@ -50,6 +69,7 @@ function installChromeHarness(
 		webNavigation: {
 			getFrame: async () => ({ documentId, url: 'https://media.example/watch' }),
 			onCommitted: navigationCommitted,
+			onDOMContentLoaded: navigationDOMContentLoaded,
 			onHistoryStateUpdated: historyUpdated,
 			onReferenceFragmentUpdated: fragmentUpdated,
 		},
@@ -105,6 +125,7 @@ function installChromeHarness(
 						}, () => undefined);
 					}
 				});
+				if (!injectionSettles) await new Promise<never>(() => undefined);
 			},
 		},
 	} as unknown as typeof chrome;
@@ -115,6 +136,7 @@ function installChromeHarness(
 
 afterEach(() => {
 	resetContentRuntimeLoaderForTests();
+	settingsRepository.getSnapshot = originalGetSnapshot;
 	Reflect.deleteProperty(globalThis, 'chrome');
 });
 
@@ -132,6 +154,16 @@ describe('document-scoped content runtime loader', () => {
 			ready: true,
 		});
 		expect(harness.statusCount).toBe(1);
+		expect(harness.executeCount).toBe(1);
+	});
+
+	test('accepts READY even while the executeScript promise remains pending', async () => {
+		const harness = installChromeHarness(false, [], false, undefined, false);
+		const result = await Promise.race([
+			ensureContentRuntime(7, 'document-7', 'control', 'slow-injection'),
+			Bun.sleep(100).then(() => { throw new Error('READY was held behind executeScript'); }),
+		]);
+		expect(result.ready).toBe(true);
 		expect(harness.executeCount).toBe(1);
 	});
 
@@ -251,5 +283,82 @@ describe('document-scoped content runtime loader', () => {
 		);
 		await Bun.sleep(300);
 		expect(harness.releaseCount).toBe(1);
+	});
+
+	test('acquires a configured hotkey runtime from a new document HELLO without opening Popup', async () => {
+		const enabled: HotkeySettings = {
+			slots: {},
+			sites: {
+				'media.example': {
+					enabled: true,
+					bindings: [{
+						id: 'instant-play',
+						enabled: true,
+						key: { code: 'KeyK', modifiers: { ctrl: false, alt: true, shift: false, meta: false } },
+						action: 'play_pause',
+					}],
+				},
+			},
+			disabledLegacyBindings: [],
+		};
+		const harness = installChromeHarness(false, [], false, enabled);
+		for (const listener of harness.runtimeMessages.listeners) {
+			(listener as (
+				message: unknown,
+				sender: chrome.runtime.MessageSender,
+				sendResponse: (response: unknown) => void,
+			) => unknown)({
+				protocolVersion: SPECTRA_PROTOCOL_VERSION,
+				requestId: 'bootstrap-hello-1',
+				type: 'spectra.content.bootstrap.hello',
+				payload: { bootstrapRevision: SPECTRA_CONTENT_BOOTSTRAP_REVISION },
+			}, {
+				id: 'spectra-test',
+				tab: { id: 7, url: 'https://media.example/watch' } as chrome.tabs.Tab,
+				documentId: 'document-7',
+				// Deliberately omit sender.url: the tab URL is the reliable fallback
+				// that makes a fresh document independent from the Popup lifecycle.
+			}, () => undefined);
+		}
+		for (let attempt = 0; attempt < 20 && harness.executeCount === 0; attempt += 1) {
+			await Bun.sleep(5);
+		}
+		expect(harness.executeCount).toBe(1);
+	});
+
+	test('retries a configured hotkey lease at DOMContentLoaded when bootstrap HELLO was missed', async () => {
+		const enabled: HotkeySettings = {
+			slots: {},
+			sites: {
+				'media.example': {
+					enabled: true,
+					bindings: [{
+						id: 'cold-volume',
+						enabled: true,
+						key: { code: 'ArrowUp', modifiers: { ctrl: false, alt: true, shift: false, meta: false } },
+						action: 'volume_up',
+					}],
+				},
+			},
+			disabledLegacyBindings: [],
+		};
+		const harness = installChromeHarness(false, [], false, enabled);
+		for (const listener of harness.navigationDOMContentLoaded.listeners) {
+			(listener as (details: {
+				frameId: number;
+				tabId: number;
+				documentId: string;
+				url: string;
+			}) => void)({
+				frameId: 0,
+				tabId: 7,
+				documentId: 'document-7',
+				url: 'https://media.example/watch',
+			});
+		}
+		for (let attempt = 0; attempt < 20 && harness.executeCount === 0; attempt += 1) {
+			await Bun.sleep(5);
+		}
+		expect(harness.executeCount).toBe(1);
 	});
 });

@@ -50,7 +50,7 @@ describe('audio policy activation boundary', () => {
 		})).toBe('NATIVE_WEBAUDIO');
 	});
 
-	test('shares one complete processor-needs algorithm and keeps Visualizer observation-only', () => {
+	test('shares one complete DSP-needs algorithm independently from analyser leases', () => {
 		for (const changes of [
 			{ boost: 1.5, volume: 150 },
 			{ eqValues: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
@@ -86,6 +86,25 @@ describe('audio policy activation boundary', () => {
 			isRestricted: true,
 			visualizerEnabled: true,
 		})).toBe(false);
+	});
+
+	test('admits a neutral processor only while a live visualizer lease has media', () => {
+		const policy = new PolicyEngine();
+		const visualizerContext = {
+			...BASE_CONTEXT,
+			userInteracted: false,
+			visualizerEnabled: true,
+			config: audioConfig(),
+		};
+		expect(policy.calculateMode(visualizerContext)).toBe('NATIVE_WEBAUDIO');
+		expect(policy.calculateMode({
+			...visualizerContext,
+			isRestricted: true,
+		})).toBe('CAPTURE');
+		expect(policy.calculateMode({
+			...visualizerContext,
+			hasMediaElement: false,
+		})).toBe('DISABLED');
 	});
 
 	test('requires every registered source to be prospectively safe for Media WebAudio', () => {

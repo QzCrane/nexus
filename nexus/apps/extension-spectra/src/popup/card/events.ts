@@ -3,11 +3,13 @@
 import type { CardUIElements } from '../types';
 import type { CardInternalState } from './types';
 import type { ConfigUpdateFn } from './state';
+import type { ControlOperationAck } from '@nexus/contracts';
 import { AUDIO_UI, TIMING } from '../constants';
 import { getDomain } from '../utils/dom';
 import { bindMediaControls } from './media-events';
 import { patchSettings } from '../../shared/settings-client';
 import { sendSpectraRequest } from '../../shared/ui-spectra-client';
+import { mergeAudioConfig, mergeControlFields } from './types';
 import { showPopupToast } from '../toast';
 
 export interface EventsParams {
@@ -19,6 +21,25 @@ export interface EventsParams {
   getCapturing: () => boolean;
   onMetricsUpdate: () => void;
   render: () => void;
+}
+
+// eff: transiently swaps a save button's icon for a localized success/failure
+// label. Both .btn-save and .btn-save-global share this helper so the feedback
+// style stays consistent. The .feedback/.saved/.failed classes in popup.css
+// auto-size the button and tint it green/red; after the feedback window the
+// original icon HTML is restored.
+function showSaveFeedback(button: HTMLElement, success: boolean, dict: { saveSuccess: string; saveFailed: string }): void {
+  const originalHTML = button.innerHTML;
+  button.classList.remove('saved', 'failed');
+  button.classList.add('feedback', success ? 'saved' : 'failed');
+  const candidate = success ? dict.saveSuccess : dict.saveFailed;
+  button.innerText = typeof candidate === 'string' && candidate.trim().length > 0
+    ? candidate
+    : success ? 'Saved' : 'Failed';
+  setTimeout(() => {
+    button.classList.remove('feedback', 'saved', 'failed');
+    button.innerHTML = originalHTML;
+  }, TIMING.BUTTON_FEEDBACK_DURATION);
 }
 
 // eff: attaches event listeners to the card UI components, managing the lifecycle of user interactions
@@ -190,18 +211,16 @@ export function bindCardEvents(params: EventsParams): void {
       console.warn('Failed to get speed for preset save', e);
     }
 
+    const { getCurrentDict } = await import('../views/i18n-apply');
+    const dict = getCurrentDict();
     try {
       await patchSettings({ scope: 'audio-site', domain, value: state.config, mode: 'replace' });
-      // feedback: provide a transient visual confirmation on the save button
-      const old = ui.btnSave.innerText;
-      ui.btnSave.innerText = '保存成功';
-      setTimeout(() => { ui.btnSave.innerText = old; }, TIMING.BUTTON_FEEDBACK_DURATION);
+      // feedback: shared i18n success indicator on the save button
+      if (dict) showSaveFeedback(ui.btnSave, true, dict);
     } catch (error) {
       console.error('Failed to save config:', error);
-      // feedback: show error message on button
-      const old = ui.btnSave.innerText;
-      ui.btnSave.innerText = '保存失败';
-      setTimeout(() => { ui.btnSave.innerText = old; }, TIMING.BUTTON_FEEDBACK_DURATION);
+      // feedback: shared i18n failure indicator on the save button
+      if (dict) showSaveFeedback(ui.btnSave, false, dict);
     }
   };
 
@@ -224,37 +243,74 @@ export function bindCardEvents(params: EventsParams): void {
       const name = prompt(dict?.presetSaveGlobalPrompt || 'Enter preset name:', domain);
       if (!name) return;
 
-      const { saveGlobalPreset } = await import('../views/presets-ui');
-      await saveGlobalPreset(name, state.config);
-
-      // feedback
-      const old = ui.btnSaveGlobal!.innerText;
-      ui.btnSaveGlobal!.innerText = 'OK';
-      setTimeout(() => { ui.btnSaveGlobal!.innerText = old; }, TIMING.BUTTON_FEEDBACK_DURATION);
+      try {
+        const { saveGlobalPreset } = await import('../views/presets-ui');
+        await saveGlobalPreset(name, state.config);
+        // feedback: shared i18n success indicator — same style as btnSave
+        if (dict) showSaveFeedback(ui.btnSaveGlobal!, true, dict);
+      } catch (error) {
+        console.error('Failed to save global preset:', error);
+        // feedback: previously btnSaveGlobal had no failure feedback at all;
+        // share the same failure indicator as btnSave for consistency.
+        if (dict) showSaveFeedback(ui.btnSaveGlobal!, false, dict);
+      }
     };
   }
 
   ui.btnReset.onclick = () => {
-	void sendSpectraRequest(
-		'spectra.control.operation.submit',
-		{
-			tabId,
-			source: 'popup',
-			target: state.controlSnapshot?.activeMedia ?? null,
-			baseRevision: state.controlRevision,
-			operation: 'audio-reset',
-			payload: {},
-		},
-		{ tabId },
-	).then((response) => {
-		if (!response.ok) state.lastError = response.error;
-	}, (error) => {
-		state.lastError = {
-			code: 'audio_reset_failed',
-			message: error instanceof Error ? error.message : String(error),
-			retryable: true,
-		};
-	}).finally(render);
+	ui.btnReset.setAttribute('aria-busy', 'true');
+	ui.btnReset.setAttribute('disabled', '');
+	void (async () => {
+		// Drain local slider/EQ mutations first so reset cannot race a trailing
+		// debounce that would immediately re-apply the pre-reset values. A failed
+		// stale mutation must not cancel the explicit reset that follows it.
+		await update.flush().catch(() => undefined);
+		const response = await sendSpectraRequest(
+			'spectra.control.operation.submit',
+			{
+				tabId,
+				source: 'popup',
+				// Reset is an execution-time command: let the serialized coordinator
+				// resolve the current media instead of pinning stale Popup identity.
+				target: null,
+				operation: 'audio-reset',
+				payload: {},
+			},
+			{ tabId },
+		);
+		if (!response.ok) throw new Error(response.error.message);
+		const acknowledgement = response.data as ControlOperationAck<'audio-reset'>;
+		if (acknowledgement.result.reset !== true) throw new Error('Audio reset was not acknowledged');
+		state.controlRevision = Math.max(state.controlRevision, acknowledgement.revision);
+		state.controlGeneration = Math.max(state.controlGeneration, acknowledgement.generation);
+		const acknowledged = mergeControlFields(state.stableConfig, acknowledgement.fields);
+		state.stableConfig = mergeAudioConfig(acknowledged, {
+			enabled: true,
+			volume: 100,
+			volumeBase: 100,
+			speed: 1,
+			boost: 1,
+			muted: false,
+			compressor: false,
+			mono: false,
+			bass: false,
+			eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+			pan: 0,
+			delay: 0,
+		});
+		state.config = mergeAudioConfig(state.stableConfig, {
+			eqValues: [...state.stableConfig.eqValues],
+		});
+		state.lastError = null;
+	})().catch((error: unknown) => {
+		const message = error instanceof Error ? error.message : String(error);
+		state.lastError = { code: 'audio_reset_failed', message, retryable: true };
+		showPopupToast(message, 'error');
+	}).finally(() => {
+		ui.btnReset.removeAttribute('disabled');
+		ui.btnReset.removeAttribute('aria-busy');
+		render();
+	});
   };
 
   bindMediaControls(ui, tabId, state, (changes) => update(changes));

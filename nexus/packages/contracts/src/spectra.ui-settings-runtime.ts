@@ -69,7 +69,7 @@ function isRegistryAddResult(value: unknown, userOnly = false): boolean {
 		|| !isRegistryEntries(value.entries)
 		|| !isDomainEntry(value.entry)) return false;
 	const entry = value.entry;
-	return value.entries.some((candidate) => candidate.domain === entry.domain)
+	return value.entries.some((candidate) => candidate.fingerprint === entry.fingerprint)
 		&& (!userOnly || entry.source === 'user')
 		&& typeof value.created === 'boolean';
 }

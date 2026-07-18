@@ -2,14 +2,18 @@
 
 import type { AudioConfig } from '@nexus/kernel';
 import type { CardUIElements } from '../types';
-import type { ControlMutation, ControlOperationAck } from '@nexus/contracts';
+import type { ControlMutation, ControlOperationAck, MediaTarget } from '@nexus/contracts';
 import { sendSpectraRequest } from '../../shared/ui-spectra-client';
 import { syncSidePanelSpeed } from '../side-panel/controls';
 import { getHotkeyTarget, setHotkeyTarget } from '../../shared/registry-client';
 import type { CardInternalState } from './types';
 import { showPopupToast } from '../toast';
+import { getCurrentDict } from '../views/i18n-apply';
 import {
 	SPECTRA_TRUSTED_PIP_EVENT,
+	SPECTRA_TRUSTED_PIP_REQUEST_ATTRIBUTE,
+	SPECTRA_TRUSTED_PIP_RESULT_ATTRIBUTE,
+	type SpectraTrustedPipOutcome,
 	type SpectraTrustedPipResult,
 } from '../../shared/trusted-activation';
 
@@ -28,45 +32,86 @@ class ControlUiError extends Error {
 	}
 }
 
-async function togglePictureInPicture(tabId: number): Promise<SpectraTrustedPipResult> {
+async function togglePictureInPicture(
+	tabId: number,
+	documentId: string,
+	target: MediaTarget,
+): Promise<SpectraTrustedPipResult> {
+	if (!documentId) throw new Error('The current document identity is unavailable');
+	if (target.kind !== 'video' || target.documentId !== documentId) {
+		throw new Error('The selected video target is unavailable');
+	}
+	const requestId = crypto.randomUUID();
 	const injections = await chrome.scripting.executeScript({
 		target: { tabId },
 		world: 'ISOLATED',
-		args: [SPECTRA_TRUSTED_PIP_EVENT],
-		func: ((eventName: string) => {
-			const entering = document.pictureInPictureElement === null;
-			const actualEvent = entering ? 'enterpictureinpicture' : 'leavepictureinpicture';
-			return new Promise<SpectraTrustedPipResult>((resolve, reject) => {
-				let timer: ReturnType<typeof setTimeout> | null = null;
-				const cleanup = () => {
-					document.removeEventListener(actualEvent, onActual, true);
-					if (timer !== null) clearTimeout(timer);
-				};
-				const onActual = () => {
-					cleanup();
-					resolve({ active: document.pictureInPictureElement !== null });
-				};
-				document.addEventListener(actualEvent, onActual, { capture: true, once: true });
-				timer = setTimeout(() => {
-					cleanup();
-					reject(new Error('Native Picture-in-Picture did not acknowledge the click'));
-				}, 2_000);
-				document.dispatchEvent(new Event(eventName));
-			});
+		args: [
+			SPECTRA_TRUSTED_PIP_EVENT,
+			SPECTRA_TRUSTED_PIP_REQUEST_ATTRIBUTE,
+			SPECTRA_TRUSTED_PIP_RESULT_ATTRIBUTE,
+			requestId,
+			documentId,
+			target,
+		],
+		func: ((
+			requestEvent: string,
+			requestAttribute: string,
+			resultAttribute: string,
+			currentRequestId: string,
+			currentDocumentId: string,
+			currentTarget: MediaTarget,
+		) => {
+			document.documentElement.removeAttribute(resultAttribute);
+			document.documentElement.setAttribute(
+				requestAttribute,
+				JSON.stringify({
+					requestId: currentRequestId,
+					documentId: currentDocumentId,
+					target: currentTarget,
+				}),
+			);
+			document.dispatchEvent(new Event(requestEvent));
+			return { requestId: currentRequestId };
 		}) as unknown as () => void,
 	}) as unknown as Array<{
-		result?: SpectraTrustedPipResult;
+		result?: { requestId: string };
 		error?: { message?: string } | string;
 	}>;
 	const [injection] = injections;
-	const result = injection?.result as SpectraTrustedPipResult | undefined;
-	if (!result || typeof result.active !== 'boolean') {
+	if (injection?.result?.requestId !== requestId) {
 		const injectionError = typeof injection?.error === 'string'
 			? injection.error
 			: injection?.error?.message;
-		throw new Error(injectionError ?? 'The native PiP runtime returned no actual state');
+		throw new Error(injectionError ?? 'The native PiP bridge did not accept the request');
 	}
-	return result;
+
+	const deadline = performance.now() + 2_000;
+	while (performance.now() < deadline) {
+		await new Promise((resolve) => setTimeout(resolve, 25));
+		const [readback] = await chrome.scripting.executeScript({
+			target: { tabId },
+			world: 'ISOLATED',
+			args: [SPECTRA_TRUSTED_PIP_REQUEST_ATTRIBUTE, SPECTRA_TRUSTED_PIP_RESULT_ATTRIBUTE, requestId],
+			func: ((requestAttribute: string, resultAttribute: string, currentRequestId: string) => {
+				const encoded = document.documentElement.getAttribute(resultAttribute);
+				if (!encoded) return null;
+				try {
+					const outcome = JSON.parse(encoded) as SpectraTrustedPipOutcome;
+					if (!outcome || outcome.requestId !== currentRequestId) return null;
+					document.documentElement.removeAttribute(requestAttribute);
+					document.documentElement.removeAttribute(resultAttribute);
+					return outcome;
+				} catch {
+					return null;
+				}
+			}) as unknown as () => void,
+		}) as unknown as Array<{ result?: SpectraTrustedPipOutcome | null }>;
+		const outcome = readback?.result;
+		if (!outcome) continue;
+		if (!outcome.ok) throw new Error(outcome.error);
+		return { active: outcome.active };
+	}
+	throw new Error('Native Picture-in-Picture bridge did not acknowledge the click');
 }
 
 function asControlUiFailure(error: unknown): ControlUiFailure {
@@ -143,10 +188,17 @@ export function bindMediaControls(
 
 	if (ui.btnPip) {
 		ui.btnPip.onclick = () => {
+			const snapshot = state.controlSnapshot;
+			const target = snapshot?.activeVideo
+				?? (snapshot?.activeMedia?.kind === 'video' ? snapshot.activeMedia : null);
+			if (!snapshot?.documentId || !target) {
+				void reportControlFailure(new Error('No active video target'), state);
+				return;
+			}
 			ui.btnPip?.setAttribute('aria-busy', 'true');
 			// The first call in the click stack is a one-shot isolated-world injection.
 			// It reaches the sole native writer without a Background/message await.
-			void togglePictureInPicture(tabId)
+			void togglePictureInPicture(tabId, snapshot.documentId, target)
 				.then((result) => {
 					if (!ui.btnPip) return;
 					ui.btnPip.classList.toggle('active', result.active);
@@ -205,14 +257,17 @@ export function bindMediaControls(
 		}).catch(() => undefined);
 
 		btn.onclick = () => {
-			void setHotkeyTarget(tabId).then(() => {
+			const clearing = btn.classList.contains('active');
+			void setHotkeyTarget(clearing ? null : tabId).then(() => {
 				// note: enforce exclusive "active" state across all rendered cards in the popup
 				document.querySelectorAll<HTMLElement>('.btn-hotkey-target').forEach((button) => {
 					button.classList.remove('active');
 					button.setAttribute('aria-pressed', 'false');
 				});
-				btn.classList.add('active');
-				btn.setAttribute('aria-pressed', 'true');
+				if (!clearing) {
+					btn.classList.add('active');
+					btn.setAttribute('aria-pressed', 'true');
+				}
 			}).catch(() => undefined);
 		};
 	}
@@ -227,7 +282,12 @@ export function bindMediaControls(
 export function renderPlaybackButton(button: HTMLElement, playing: boolean): void {
 	button.replaceChildren(createPlaybackIcon(playing));
 	button.setAttribute('aria-pressed', String(playing));
-	button.setAttribute('aria-label', playing ? 'Pause media' : 'Play media');
+	const localized = getCurrentDict()?.btnPause;
+	const label = typeof localized === 'string' && localized.trim().length > 0
+		? localized
+		: 'Pause/Play';
+	button.title = label;
+	button.setAttribute('aria-label', label);
 }
 
 function createPlaybackIcon(playing: boolean): SVGSVGElement {

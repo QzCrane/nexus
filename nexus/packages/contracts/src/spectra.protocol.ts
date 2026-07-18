@@ -35,8 +35,10 @@ import {
 } from './remote.contracts.js';
 import {
 	isDomainEntry,
+	isMediaRouteFingerprint,
 	isRegistryEntries,
 	type HotkeyTargetState,
+	type MediaRoute,
 	type RegistryAddResult,
 	type RegistryQueryResult,
 	type RegistryRemoveResult,
@@ -72,7 +74,7 @@ export {
 	SPECTRA_PROTOCOL_VERSION,
 } from './spectra.bootstrap.js';
 
-export const SPECTRA_CONTENT_RUNTIME_REVISION = '3.1.0' as const;
+export const SPECTRA_CONTENT_RUNTIME_REVISION = '3.3.2' as const;
 
 export type ContentRuntimeLeaseReason = 'control' | 'restore' | 'hotkey' | 'remote' | 'observation';
 
@@ -292,19 +294,19 @@ export interface SpectraRequestMap {
 		response: RegistrySnapshot;
 	};
 	'spectra.registry.add': {
-		payload: { domain: string; restricted: boolean };
+		payload: { domain: string; route: MediaRoute };
 		response: RegistryAddResult;
 	};
 	'spectra.registry.remove': {
-		payload: { domain: string };
+		payload: { fingerprint: string };
 		response: RegistryRemoveResult;
 	};
 	'spectra.registry.query': {
-		payload: { domain: string };
+		payload: { domain: string; fingerprint: string };
 		response: RegistryQueryResult;
 	};
 	'spectra.registry.mark-probed': {
-		payload: { domain: string; restricted: boolean };
+		payload: { domain: string; fingerprint: string; route: MediaRoute };
 		response: RegistryAddResult;
 	};
 	'spectra.hotkey-target.get': {
@@ -501,11 +503,22 @@ export interface SpectraRequestMap {
 	};
 }
 
+export type SpectraHotkeyActualFeedback =
+	| { kind: 'volume'; value: number; muted: boolean; capture: boolean }
+	| { kind: 'speed'; value: number };
+
 export interface SpectraEventMap {
 	'spectra.control.snapshot.changed': ControlSnapshot;
 	'spectra.content.settings.changed': SpectraContentSettings;
 	'spectra.settings.changed': SettingsSnapshot;
 	'spectra.hotkeys.changed': HotkeySettings;
+	'spectra.hotkey.target.feedback': {
+		action: HotkeyAction;
+		targetTabId: number;
+		targetTitle: string;
+		targetHostname: string;
+		feedback?: SpectraHotkeyActualFeedback;
+	};
 	'spectra.navigation.changed': NavigationChangedEvent;
 	'spectra.remote.session.changed': RemoteSessionChangedEvent;
 	'spectra.remote.session.closed': RemoteSessionClosedEvent;
@@ -549,6 +562,8 @@ type SpectraEventEnvelopeFor<T extends SpectraEventType> = SpectraEventBase & {
 		? Required<Pick<SpectraContextFields, 'tabId' | 'generation'>>
 	: T extends 'spectra.navigation.changed'
 		? Required<Pick<SpectraContextFields, 'tabId' | 'documentId'>>
+	: T extends 'spectra.hotkey.target.feedback'
+		? Required<Pick<SpectraContextFields, 'tabId'>>
 	: T extends 'spectra.remote.session.changed' | 'spectra.remote.session.closed'
 		? Required<Pick<SpectraContextFields, 'tabId'>>
 		: unknown);
@@ -630,6 +645,11 @@ const OSD_MESSAGES_KEYS = new Set([
 	'corsCorrectedSafe',
 ]);
 const HOTKEY_TRIGGER_PAYLOAD_KEYS = new Set(['action']);
+const HOTKEY_TARGET_FEEDBACK_KEYS = new Set([
+	'action', 'targetTabId', 'targetTitle', 'targetHostname', 'feedback',
+]);
+const HOTKEY_VOLUME_FEEDBACK_KEYS = new Set(['kind', 'value', 'muted', 'capture']);
+const HOTKEY_SPEED_FEEDBACK_KEYS = new Set(['kind', 'value']);
 const MEDIA_SPEED_PAYLOAD_KEYS = new Set(['speed', 'delta', 'preservePitch']);
 const VIDEO_ROTATE_PAYLOAD_KEYS = new Set(['delta']);
 const VIDEO_SEEK_PAYLOAD_KEYS = new Set(['delta']);
@@ -647,8 +667,10 @@ const SCREENSHOT_RECT_KEYS = new Set(['x', 'y', 'width', 'height', 'viewportWidt
 const MARKER_LABEL_PAYLOAD_KEYS = new Set(['label']);
 const MARKER_ID_PAYLOAD_KEYS = new Set(['id']);
 const TAB_MEDIA_REPORT_PAYLOAD_KEYS = new Set(['hasMediaElement', 'userInteracted']);
-const REGISTRY_DOMAIN_PAYLOAD_KEYS = new Set(['domain']);
-const REGISTRY_ADD_PAYLOAD_KEYS = new Set(['domain', 'restricted']);
+const REGISTRY_ADD_PAYLOAD_KEYS = new Set(['domain', 'route']);
+const REGISTRY_REMOVE_PAYLOAD_KEYS = new Set(['fingerprint']);
+const REGISTRY_QUERY_PAYLOAD_KEYS = new Set(['domain', 'fingerprint']);
+const REGISTRY_RECORD_PAYLOAD_KEYS = new Set(['domain', 'fingerprint', 'route']);
 const HOTKEY_TARGET_KEYS = new Set(['tabId']);
 const RPC_SUCCESS_KEYS = new Set(['ok', 'data']);
 const RPC_FAILURE_KEYS = new Set(['ok', 'error']);
@@ -873,6 +895,33 @@ function isHotkeyTriggerPayload(
 		&& HOTKEY_ACTION_SET.has(value.action as HotkeyAction);
 }
 
+function isHotkeyTargetFeedback(
+	value: unknown,
+): value is SpectraEventPayload<'spectra.hotkey.target.feedback'> {
+	return isRecord(value)
+		&& hasOnlyKeys(value, HOTKEY_TARGET_FEEDBACK_KEYS)
+		&& typeof value.action === 'string'
+		&& HOTKEY_ACTION_SET.has(value.action as HotkeyAction)
+		&& isPositiveInteger(value.targetTabId)
+		&& typeof value.targetTitle === 'string'
+		&& value.targetTitle.length > 0
+		&& value.targetTitle.length <= 512
+		&& typeof value.targetHostname === 'string'
+		&& value.targetHostname.length > 0
+		&& value.targetHostname.length <= 253
+		&& (value.feedback === undefined || (
+			isRecord(value.feedback)
+			&& (value.feedback.kind === 'volume'
+				? hasOnlyKeys(value.feedback, HOTKEY_VOLUME_FEEDBACK_KEYS)
+					&& isFiniteInRange(value.feedback.value, 0, 800)
+					&& typeof value.feedback.muted === 'boolean'
+					&& typeof value.feedback.capture === 'boolean'
+				: value.feedback.kind === 'speed'
+					&& hasOnlyKeys(value.feedback, HOTKEY_SPEED_FEEDBACK_KEYS)
+					&& isFiniteInRange(value.feedback.value, 0.1, 16))
+		));
+}
+
 function isMediaSpeedPayload(
 	value: unknown,
 ): value is SpectraRequestPayload<'spectra.media.speed.set'> {
@@ -991,15 +1040,34 @@ function isRegistryAddPayload(
 	return isRecord(value)
 		&& hasOnlyKeys(value, REGISTRY_ADD_PAYLOAD_KEYS)
 		&& isRegistryDomain(value.domain)
-		&& typeof value.restricted === 'boolean';
+		&& (value.route === 'direct' || value.route === 'capture');
 }
 
 function isRegistryRemovePayload(
 	value: unknown,
 ): value is SpectraRequestPayload<'spectra.registry.remove'> {
 	return isRecord(value)
-		&& hasOnlyKeys(value, REGISTRY_DOMAIN_PAYLOAD_KEYS)
-		&& isRegistryDomain(value.domain);
+		&& hasOnlyKeys(value, REGISTRY_REMOVE_PAYLOAD_KEYS)
+		&& isMediaRouteFingerprint(value.fingerprint);
+}
+
+function isRegistryQueryPayload(
+	value: unknown,
+): value is SpectraRequestPayload<'spectra.registry.query'> {
+	return isRecord(value)
+		&& hasOnlyKeys(value, REGISTRY_QUERY_PAYLOAD_KEYS)
+		&& isRegistryDomain(value.domain)
+		&& isMediaRouteFingerprint(value.fingerprint);
+}
+
+function isRegistryRecordPayload(
+	value: unknown,
+): value is SpectraRequestPayload<'spectra.registry.mark-probed'> {
+	return isRecord(value)
+		&& hasOnlyKeys(value, REGISTRY_RECORD_PAYLOAD_KEYS)
+		&& isRegistryDomain(value.domain)
+		&& isMediaRouteFingerprint(value.fingerprint)
+		&& (value.route === 'direct' || value.route === 'capture');
 }
 
 function isHotkeyTargetState(value: unknown): value is HotkeyTargetState {
@@ -1020,7 +1088,7 @@ function isRegistryAddResult(value: unknown): value is RegistryAddResult {
 		|| !isRegistryEntries(value.entries)
 		|| !isDomainEntry(value.entry)) return false;
 	const addedEntry = value.entry;
-	return value.entries.some((entry) => entry.domain === addedEntry.domain)
+	return value.entries.some((entry) => entry.fingerprint === addedEntry.fingerprint)
 		&& typeof value.created === 'boolean';
 }
 
@@ -1229,8 +1297,8 @@ const REQUEST_PAYLOAD_GUARDS = {
 	'spectra.registry.get': isEmptyPayload,
 	'spectra.registry.add': isRegistryAddPayload,
 	'spectra.registry.remove': isRegistryRemovePayload,
-	'spectra.registry.query': isRegistryRemovePayload,
-	'spectra.registry.mark-probed': isRegistryAddPayload,
+	'spectra.registry.query': isRegistryQueryPayload,
+	'spectra.registry.mark-probed': isRegistryRecordPayload,
 	'spectra.hotkey-target.get': isEmptyPayload,
 	'spectra.hotkey-target.set': isHotkeyTargetState,
 	'spectra.remote.session.get': isRemoteSessionPayload,
@@ -1646,6 +1714,7 @@ const EVENT_PAYLOAD_GUARDS = {
 	'spectra.content.settings.changed': isContentSettings,
 	'spectra.settings.changed': isSettingsSnapshot,
 	'spectra.hotkeys.changed': isHotkeySettings,
+	'spectra.hotkey.target.feedback': isHotkeyTargetFeedback,
 	'spectra.navigation.changed': isNavigationChangedEvent,
 	'spectra.remote.session.changed': isRemoteSessionChangedEvent,
 	'spectra.remote.session.closed': isRemoteSessionClosedEvent,
@@ -1790,6 +1859,9 @@ export function isSpectraEventEnvelope(value: unknown): value is SpectraEventEnv
 			&& typeof value.documentId === 'string'
 			&& value.documentId.length > 0
 			&& value.generation === undefined;
+	}
+	if (value.type === 'spectra.hotkey.target.feedback') {
+		return isPositiveInteger(value.tabId);
 	}
 	if (value.type === 'spectra.remote.session.changed' || value.type === 'spectra.remote.session.closed') {
 		return isRecord(value.payload) && value.tabId === value.payload.tabId;

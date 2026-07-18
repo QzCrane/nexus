@@ -2,6 +2,7 @@
 
 import type {
 	HotkeyTargetState,
+	MediaRoute,
 	RegistryAddResult,
 	RegistryQueryResult,
 	RegistryRemoveResult,
@@ -15,29 +16,37 @@ export async function getRegistrySnapshot(): Promise<RegistrySnapshot> {
 	return response.data;
 }
 
-export async function addRegistryDomain(domain: string, restricted: boolean): Promise<RegistryAddResult> {
-	const response = await sendSettingsUiRequest('spectra.registry.add', { domain, restricted });
+export async function addRegistryDomain(domain: string, route: MediaRoute): Promise<RegistryAddResult> {
+	const response = await sendSettingsUiRequest('spectra.registry.add', { domain, route });
 	if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
 	return response.data;
 }
 
-export async function removeRegistryDomain(domain: string): Promise<RegistryRemoveResult> {
-	const response = await sendSettingsUiRequest('spectra.registry.remove', { domain });
+export async function removeRegistryDomain(fingerprint: string): Promise<RegistryRemoveResult> {
+	const response = await sendSettingsUiRequest('spectra.registry.remove', { fingerprint });
 	if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
 	return response.data;
 }
 
-export async function queryRegistryDomain(domain: string): Promise<RegistryQueryResult> {
-	const response = await sendSettingsUiRequest('spectra.registry.query', { domain });
+export async function queryRegistryDomain(
+	domain: string,
+	fingerprint: string,
+): Promise<RegistryQueryResult> {
+	const response = await sendSettingsUiRequest('spectra.registry.query', { domain, fingerprint });
 	if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
 	return response.data;
 }
 
 export async function markRegistryDomainProbed(
 	domain: string,
-	restricted: boolean,
+	fingerprint: string,
+	route: MediaRoute,
 ): Promise<RegistryAddResult> {
-	const response = await sendSettingsUiRequest('spectra.registry.mark-probed', { domain, restricted });
+	const response = await sendSettingsUiRequest('spectra.registry.mark-probed', {
+		domain,
+		fingerprint,
+		route,
+	});
 	if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
 	return response.data;
 }

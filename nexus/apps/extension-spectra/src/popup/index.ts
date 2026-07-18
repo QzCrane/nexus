@@ -2,7 +2,7 @@
 
 import { $, isRestrictedUrl } from './utils';
 import { initNavigation } from './views/navigation';
-import { initSettings } from './views/settings';
+import { initSettings, type SettingsState } from './views/settings';
 import { initCard } from './card';
 import { isSpectraUiEventEnvelope } from '@nexus/contracts/ui-runtime';
 import { enableSmoothScroll } from '../shared/smooth-scroll';
@@ -27,16 +27,14 @@ async function main(): Promise<void> {
     console.error('[SPECTRA Popup] initNavigation failed:', error);
   }
 
-  let gSettings, registryEntries, dict;
+  let settings: SettingsState;
   try {
-    const settings = await initSettings();
-    gSettings = settings.gSettings;
-    registryEntries = settings.registryEntries;
-    dict = settings.dict;
+    settings = await initSettings();
   } catch (error) {
     console.error('[SPECTRA Popup] initSettings failed:', error);
     return;
   }
+  const { gSettings, registryEntries, dict } = settings;
 
   // eff: lazy load side panel only when needed
   try {
@@ -176,4 +174,3 @@ async function main(): Promise<void> {
 }
 
 document.addEventListener('DOMContentLoaded', main);
-

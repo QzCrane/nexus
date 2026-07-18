@@ -92,6 +92,18 @@ async function injectWithTransition(tabId: number): Promise<void> {
 
 		await chrome.scripting.executeScript({
 			target: { tabId },
+			files: ['content-fullscreen-bridge.js'],
+			world: 'MAIN',
+		});
+
+		await chrome.scripting.executeScript({
+			target: { tabId },
+			files: ['content-playback-rate-bridge.js'],
+			world: 'MAIN',
+		});
+
+		await chrome.scripting.executeScript({
+			target: { tabId },
 			files: ['content-bootstrap.js'],
 			world: 'ISOLATED',
 		});
@@ -113,6 +125,16 @@ export async function injectContentScriptOnDemand(tabId: number): Promise<boolea
 	if (!chrome.scripting?.executeScript) return false;
 
 	try {
+		await chrome.scripting.executeScript({
+			target: { tabId },
+			files: ['content-fullscreen-bridge.js'],
+			world: 'MAIN',
+		});
+		await chrome.scripting.executeScript({
+			target: { tabId },
+			files: ['content-playback-rate-bridge.js'],
+			world: 'MAIN',
+		});
 		await chrome.scripting.executeScript({
 			target: { tabId },
 			files: ['content-bootstrap.js'],

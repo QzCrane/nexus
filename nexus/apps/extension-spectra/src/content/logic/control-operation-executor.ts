@@ -185,10 +185,13 @@ export async function executeControlOperation(
 			const abLabel = ab.pointA !== null && ab.pointB !== null
 				? ` · A/B ${ab.pointA.toFixed(1)}–${ab.pointB.toFixed(1)}s`
 				: '';
-			showToast(`${media.playing ? 'Playing' : 'Paused'} · ${media.speed.toFixed(2)}x${abLabel}`);
+			const shown = intent.source === 'hotkey';
+			if (shown) {
+				showToast(`${media.playing ? 'Playing' : 'Paused'} · ${media.speed.toFixed(2)}x${abLabel}`);
+			}
 			// The selected media is read only to compose the OSD. The document-scoped
 			// operation executes no media writer, so its ACK cannot borrow that target.
-			return ack(intent, 'observe', { shown: true }, {}, null);
+			return ack(intent, 'observe', { shown }, {}, null);
 		}
 		default:
 			throw new Error(`Operation ${intent.operation} must execute in Background or through field intents`);

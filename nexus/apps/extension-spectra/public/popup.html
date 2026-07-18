@@ -679,25 +679,6 @@
               Advanced
             </div>
             <div class="setting-card" style="padding: 16px">
-              <!-- Tab Switcher -->
-              <div class="registry-tabs" role="tablist" aria-labelledby="registry-group-title">
-                <button
-                  type="button"
-                  id="tab-restricted"
-                  class="registry-tab active"
-                  data-i18n="tabRestricted"
-                  role="tab"
-                  aria-selected="true"
-                  aria-controls="registry-list"
-                  tabindex="0"
-                >
-                  🔒 Need Capture
-                </button>
-                <button type="button" id="tab-safe" class="registry-tab" data-i18n="tabSafe" role="tab" aria-selected="false" aria-controls="registry-list" tabindex="-1">
-                  ✅ Safe Sites
-                </button>
-              </div>
-
               <!-- Search Box -->
               <div class="registry-search">
                 <input
@@ -710,10 +691,10 @@
                 />
               </div>
 
-              <!-- Domain List -->
-              <div id="registry-list" class="registry-list" role="tabpanel" aria-labelledby="tab-restricted" aria-live="polite"></div>
+              <!-- One media fingerprint route table -->
+              <ul id="registry-list" class="registry-list" aria-labelledby="registry-group-title" aria-live="polite"></ul>
 
-              <!-- Add New Domain -->
+              <!-- Add a site-level fallback route -->
               <div class="registry-add">
                 <input
                   type="text"
@@ -722,12 +703,16 @@
                   placeholder="example.com"
                   aria-label="New domain"
                 />
+                <select id="registry-new-route" class="registry-route-select" aria-label="Processing route">
+                  <option value="capture" data-i18n="tabRestricted">Capture when needed</option>
+                  <option value="direct" data-i18n="tabSafe">Direct</option>
+                </select>
                 <button type="button" id="btn-add-domain" class="btn-small" title="Add domain" aria-label="Add domain">+</button>
               </div>
 
               <!-- Hint Text -->
               <div class="setting-sub registry-hint" data-i18n="registryHint">
-                Sites are auto-detected. Manually add if needed.
+                One route is cached per media fingerprint. Capture starts only when processing needs it.
               </div>
             </div>
           </div>

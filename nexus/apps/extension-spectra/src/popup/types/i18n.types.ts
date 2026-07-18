@@ -104,6 +104,11 @@ export interface I18NDict {
 	btnClose: string;
 	btnSaveAsGlobal: string;
 	presetSaveGlobalPrompt: string;
+	// note: transient save-button feedback shown inline on the button after a
+	// site-config or global-preset save attempt. Shared by both save buttons so
+	// the feedback style is consistent across them.
+	saveSuccess: string;
+	saveFailed: string;
 
 	// note: remote synchronization and mobile connection UI
 	btnRemoteTooltip: string;

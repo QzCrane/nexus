@@ -18,16 +18,20 @@ export class PolicyEngine implements IPolicyEngine {
   // 4. Explicit DSP without complete safe coverage -> authorized Capture
   public readonly calculateMode = (context: PolicyContext): AudioMode => {
     const { enabled, isRestricted, userInteracted } = context;
+	const visualizerRequested = context.visualizerEnabled && context.hasMediaElement;
 
-    if (!enabled || (context.config && isDefaultAudioConfig(context.config))) {
+    if (!enabled || (context.config && isDefaultAudioConfig(context.config) && !visualizerRequested)) {
       return 'DISABLED';
     }
 
-    if (!userInteracted && (!context.config || resolveAudioVolume(context.config).boost <= 1)) {
+    if (!visualizerRequested
+		&& !userInteracted
+		&& (!context.config || resolveAudioVolume(context.config).boost <= 1)) {
       return 'NATIVE_LITE';
     }
 
-    if (!context.config || !requiresAudioProcessor(context.config)) return 'NATIVE_LITE';
+	if (!context.config
+		|| (!visualizerRequested && !requiresAudioProcessor(context.config))) return 'NATIVE_LITE';
 
 	// A preference flag cannot turn an unproven cross-origin resource into a
 	// safe MediaElementSource binding. Unknown/unsafe coverage always delegates

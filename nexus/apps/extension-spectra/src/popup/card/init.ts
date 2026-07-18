@@ -2,11 +2,9 @@
 
 import {
 	audioSessionMatchesControlDocument,
-  hostnameMatchesRule,
 	isActiveCaptureLifecycle,
   type AudioSessionSnapshot,
 } from '@nexus/contracts';
-import { getDomain } from '../utils/dom';
 import { sendSpectraRequest, sendSpectraTabRequest } from '../../shared/ui-spectra-client';
 import { cardRenderCallbacks } from '../views/settings';
 import { VISUALIZER_STATE_CHANGED_EVENT } from '../visualizer/events';
@@ -77,7 +75,7 @@ window.addEventListener('pagehide', releasePopupObservations, { once: true });
 
 // post: returns true if card was successfully initialized and appended to the container; false if the tab is non-responsive or should be skipped
 export async function initCard(params: InitCardParams): Promise<boolean> {
-  const { container, template, tab, dict, registryEntries, getGlobalSettings, createEqCurveDrawer } = params;
+  const { container, template, tab, dict, getGlobalSettings, createEqCurveDrawer } = params;
 
   if (!tab.id) return false;
   const tabId = tab.id;
@@ -114,11 +112,16 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
 
 	// Processor color is valid only when lifecycle and field-level actual state
 	// identify the same document. A direct runtime read may fill this role only
-	// when its generation agrees with the current ControlSnapshot.
+	// for an acknowledged active Capture returned by the currently routed tab.
 	if (!audioSessionMatchesControlDocument(acknowledgedSession, controlSnapshot)) acknowledgedSession = null;
-	// Runtime status has no documentId/origin proof. It remains useful for media
-	// presence, but only the matching AudioSessionSnapshot may color lifecycle.
-	const lifecycle = acknowledgedSession;
+	// An extension-page Capture request can commit before its document identity
+	// is projected into ControlSnapshot. The direct content runtime read is still
+	// routed to this exact tab and can safely prevent a false-blue Capture card;
+	// all non-Capture lifecycle colors continue to require the matched session.
+	const runtimeCaptureLifecycle = status?.actualMode === 'capture' && status.phase === 'active'
+		? status
+		: null;
+	const lifecycle = acknowledgedSession ?? runtimeCaptureLifecycle;
 	const isCaptureActive = isActiveCaptureLifecycle({
 		actualMode: lifecycle?.actualMode,
 		phase: lifecycle?.phase ?? 'idle',
@@ -147,14 +150,9 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     }
   }
 
-  const domain = getDomain(tab.url || '');
-
-  // rule: only treat as restricted when explicitly marked true; undefined (not probed)
-  // and false (safe) must NOT be reported as restricted — the previous `!== false`
-  // fail-closed check incorrectly marked every legacy/setRegistry entry as restricted.
-  const isRestrictedSite = registryEntries.some(e =>
-    e.restricted === true && hostnameMatchesRule(domain, e.domain)
-  );
+  // Route caches never predict card color. Only the acknowledged active runtime
+  // may project the legacy compatibility flag used by the message adapter.
+  const isRestrictedSite = isCaptureActive;
 
 	// ControlSnapshot owns every field-level actual. Runtime/session status below
 	// contributes lifecycle only and may never overwrite or backfill these fields.
@@ -173,7 +171,7 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     audioDocumentId: lifecycle ? controlSnapshot?.documentId ?? null : null,
     audioOrigin: lifecycle ? controlSnapshot?.origin ?? null : null,
     audioGeneration: lifecycle?.generation ?? -1,
-    audioConfigRevision: acknowledgedSession?.configRevision ?? 0,
+	    audioConfigRevision: acknowledgedSession?.configRevision ?? 0,
     controlGeneration: controlSnapshot?.generation ?? 0,
     controlRevision: controlSnapshot?.revision ?? 0,
     lastError: acknowledgedSession?.lastError ?? status?.lastError ?? null,
@@ -225,7 +223,7 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   });
 
   if (ui.icon) {
-    bindCardIconClick(ui.icon, tabId, tab.title || '', tab.favIconUrl || '');
+    bindCardIconClick(ui.icon, tabId, tab.title || '', ui.icon.src);
   }
 
   // note: register the update handle globally so settings can trigger re-renders from the Settings view

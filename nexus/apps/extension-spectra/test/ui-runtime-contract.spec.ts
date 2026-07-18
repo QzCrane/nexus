@@ -125,10 +125,10 @@ function createAudioRuntime(): AudioRuntimeStatus {
 
 const registryEntry = {
 	domain: 'example.com',
+	fingerprint: 'site:example.com',
+	route: 'direct' as const,
 	source: 'user' as const,
-	probed: true,
-	restricted: false,
-	addedAt: 1,
+	updatedAt: 1,
 };
 
 function createUiSuccessData(): Record<SpectraUiRequestType, unknown> {

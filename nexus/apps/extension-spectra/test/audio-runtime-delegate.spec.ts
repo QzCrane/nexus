@@ -6,6 +6,39 @@ import type { PolicyExecutorState } from '../src/content/types';
 import { mergeControlFields } from '../src/popup/card/types';
 
 describe('audio runtime coverage boundary', () => {
+	test('requests page OSD only for real hotkey-sourced boost changes', async () => {
+		for (const source of ['restore', 'remote', 'hotkey'] as const) {
+			const state: PolicyExecutorState = {
+				config: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
+				appliedConfig: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
+				activeMode: 'NATIVE_LITE',
+				desiredMode: 'NATIVE_LITE',
+				actualMode: 'bypass',
+				phase: 'idle',
+				generation: 2,
+				hasGesture: true,
+				userHasInteracted: true,
+				isPopupOpen: false,
+			};
+			const updateConfig = mock(async () => ({ ok: true as const, data: { revision: 1 } }));
+			const delegate = createAudioRuntimeControlDelegate({ updateConfig } as unknown as PolicyExecutor, state);
+			const intent: ControlIntent = {
+				intentId: `intent:${source}`,
+				tabId: 7,
+				documentId: 'document:dsp',
+				generation: 2,
+				baseRevision: 3,
+				source,
+				requestedCoverage: 'full',
+				target: null,
+				actualContext: {},
+				patch: { boost: 2 },
+			};
+			await delegate.apply(intent, intent.patch);
+			expect(updateConfig.mock.calls[0]?.[1]).toEqual({ showOSD: source === 'hotkey' });
+		}
+	});
+
 	test('rejects target-only DSP before mutating config or starting Capture', async () => {
 		const updateConfig = mock(async () => {
 			throw new Error('target-only DSP must not reach policy execution');

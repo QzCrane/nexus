@@ -13,7 +13,6 @@ import {
 } from '../src/shared/i18n/catalog';
 import { createLocaleAssetCatalogs, createLocaleCatalogs } from '../scripts/i18n-assets';
 import { getContentOSDMessages } from '../src/shared/i18n/content-osd';
-import { resolveRegistryNavigationKey } from '../src/popup/views/registry-ui';
 
 describe('hotkey editor contract', () => {
 	test('only exposes actions with runtime handlers', () => {
@@ -220,13 +219,6 @@ describe('options translations', () => {
 		}
 	});
 
-	test('implements keyboard navigation for registry tabs', () => {
-		expect(resolveRegistryNavigationKey('restricted', 'ArrowRight')).toBe('safe');
-		expect(resolveRegistryNavigationKey('safe', 'ArrowLeft')).toBe('restricted');
-		expect(resolveRegistryNavigationKey('safe', 'Home')).toBe('restricted');
-		expect(resolveRegistryNavigationKey('restricted', 'End')).toBe('safe');
-		expect(resolveRegistryNavigationKey('restricted', 'Enter')).toBeNull();
-	});
 });
 
 describe('extension-page DOM and idle contracts', () => {
@@ -240,19 +232,22 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(theme).not.toContain('spectra-theme-v2-migrated');
 	});
 
-	test('exposes stateful controls and registry tabs to assistive technology', () => {
+	test('exposes stateful controls and one media route list to assistive technology', () => {
 		const popup = readFileSync(resolve(import.meta.dir, '../public/popup.html'), 'utf8');
-		expect(popup).toContain('role="tablist"');
-		expect(popup).toContain('role="tabpanel"');
-		expect(popup).toContain('aria-selected="true"');
+		expect(popup).toContain('<ul id="registry-list" class="registry-list"');
+		expect(popup).toContain('id="registry-new-route"');
+		expect(popup).not.toContain('id="tab-restricted"');
+		expect(popup).not.toContain('id="tab-safe"');
 		expect(popup).toContain('aria-pressed="false"');
+		const registry = readFileSync(resolve(import.meta.dir, '../src/popup/views/registry-ui.ts'), 'utf8');
+		expect(registry).toContain('changes.mediaRouteRegistry');
+		expect(registry).toContain("entry.fingerprint.startsWith('site:')");
 
 		for (const path of [
 			'../src/popup/card/media-events.ts',
 			'../src/popup/card/render.ts',
 			'../src/popup/side-panel/index.ts',
 			'../src/popup/side-panel/video-controls.ts',
-			'../src/popup/views/registry-ui.ts',
 		]) {
 			const source = readFileSync(resolve(import.meta.dir, path), 'utf8');
 			expect(source, path).toMatch(/aria-(?:pressed|selected)/u);
@@ -289,6 +284,10 @@ describe('extension-page DOM and idle contracts', () => {
 		}
 		const visualizer = readFileSync(resolve(import.meta.dir, '../src/popup/visualizer/loop.ts'), 'utf8');
 		expect(visualizer).not.toMatch(/predictedCapture|CAPTURE_INIT_DELAY/iu);
+		expect(visualizer).toContain('visible: true');
+		expect(visualizer).not.toContain('visible: !intersectionObserver');
+		expect(visualizer).toContain("window.addEventListener('blur', releaseSubscriptions)");
+		expect(visualizer).toContain('spectra-visualizer:$' + '{subscriberId}');
 	});
 
 	test('gives every popup range control an accessible name', () => {
@@ -331,7 +330,8 @@ describe('extension-page DOM and idle contracts', () => {
 	test('keeps video-only Popup acknowledgements independent from active media', () => {
 		const mediaControls = readFileSync(resolve(import.meta.dir, '../src/popup/card/media-events.ts'), 'utf8');
 		const videoControls = readFileSync(resolve(import.meta.dir, '../src/popup/side-panel/video-controls.ts'), 'utf8');
-		expect(mediaControls).toContain('togglePictureInPicture(tabId)');
+		expect(mediaControls).toContain('togglePictureInPicture(tabId, snapshot.documentId, target)');
+		expect(mediaControls).toContain('const target = snapshot?.activeVideo');
 		expect(mediaControls).not.toContain("mutation.field === 'pip'");
 		expect(videoControls).toContain('activeMedia: currentSnapshot.activeMedia');
 		expect(videoControls).not.toContain('activeMedia: ack.target ?? currentSnapshot.activeMedia');
@@ -341,6 +341,10 @@ describe('extension-page DOM and idle contracts', () => {
 		const popup = readFileSync(resolve(import.meta.dir, '../src/popup/card/media-events.ts'), 'utf8');
 		const bridge = readFileSync(
 			resolve(import.meta.dir, '../src/content/input/trusted-activation-bridge.ts'),
+			'utf8',
+		);
+		const nativeExecutor = readFileSync(
+			resolve(import.meta.dir, '../src/content/logic/native-media-executor.ts'),
 			'utf8',
 		);
 		const protocol = readFileSync(
@@ -353,11 +357,100 @@ describe('extension-page DOM and idle contracts', () => {
 		);
 		expect(popup).toContain('chrome.scripting.executeScript');
 		expect(popup).toContain("world: 'ISOLATED'");
-		expect(popup).toContain("'enterpictureinpicture'");
-		expect(popup).toContain("'leavepictureinpicture'");
+		expect(popup).toContain('SPECTRA_TRUSTED_PIP_REQUEST_ATTRIBUTE');
+		expect(popup).toContain('documentId: currentDocumentId');
+		expect(popup).toContain('target: currentTarget');
+		expect(popup).toContain('while (performance.now() < deadline)');
 		expect(pipHandler).not.toContain('chrome.tabs.update');
 		expect(bridge).toContain('navigator.userActivation.isActive');
-		expect(bridge).toContain("submitTrustedActivationControl('pip')");
+		expect(bridge).toContain("submitTrustedActivationControl('pip', request.documentId, request.target)");
+		expect(bridge).toContain('dispatchOutcome');
+		expect(nativeExecutor).toContain('element.disablePictureInPicture = false');
+		expect(nativeExecutor).toContain('element.disablePictureInPicture = true');
 		expect(protocol).not.toContain('spectra.content.activation.prompt');
+	});
+
+	test('keeps card tooltips defined and routes site identity through Chromium favicon service', () => {
+		const domInit = readFileSync(resolve(import.meta.dir, '../src/popup/card/dom-init.ts'), 'utf8');
+		const domUtils = readFileSync(resolve(import.meta.dir, '../src/popup/utils/dom.ts'), 'utf8');
+		const events = readFileSync(resolve(import.meta.dir, '../src/popup/card/events.ts'), 'utf8');
+		const i18n = readFileSync(resolve(import.meta.dir, '../src/popup/views/i18n-apply.ts'), 'utf8');
+		const remote = readFileSync(resolve(import.meta.dir, '../src/remote/ui-bindings.ts'), 'utf8');
+		const manifest = readFileSync(resolve(import.meta.dir, '../public/manifest.json'), 'utf8');
+		expect(domInit).toContain("setButtonLabel(ui.btnReset, dict.resetTooltip, 'Reset')");
+		expect(domInit).toContain("setButtonLabel(ui.btnSave, dict.saveTooltip, 'Save')");
+		expect(domInit).toContain('setButtonLabel(ui.btnSaveGlobal');
+		expect(domUtils).toContain("chrome.runtime.getURL('_favicon/')");
+		expect(domUtils).not.toContain('if (!faviconUrl) return fallback');
+		expect(JSON.parse(manifest).permissions).toContain('favicon');
+		expect(JSON.parse(manifest).permissions).not.toContain('_favicon');
+		expect(i18n).toContain("setInteractiveLabel(btnPause, dict.btnPause, 'Pause/Play')");
+		expect(remote).toContain("button.setAttribute('aria-label', label)");
+		expect(events).toContain('await update.flush()');
+		expect(events).toContain("ControlOperationAck<'audio-reset'>");
+		expect(events).toContain('state.stableConfig = mergeAudioConfig(acknowledged');
+		expect(events).toContain('speed: 1');
+	});
+
+	test('keeps fullscreen handoff and alternate-target feedback lifecycle-bound', () => {
+		const manifest = JSON.parse(readFileSync(
+			resolve(import.meta.dir, '../public/manifest.json'),
+			'utf8',
+		)) as { content_scripts?: Array<{ js?: string[]; world?: string }> };
+		const mediaControls = readFileSync(resolve(import.meta.dir, '../src/popup/card/media-events.ts'), 'utf8');
+		const shortcuts = readFileSync(resolve(import.meta.dir, '../src/background/shortcuts.ts'), 'utf8');
+		const hotkeys = readFileSync(resolve(import.meta.dir, '../src/content/input/hotkey-listener.ts'), 'utf8');
+		const toast = readFileSync(resolve(import.meta.dir, '../src/content/ui/toast.ts'), 'utf8');
+		const osd = readFileSync(resolve(import.meta.dir, '../src/content/ui/osd.ts'), 'utf8');
+		const audioDelegate = readFileSync(
+			resolve(import.meta.dir, '../src/content/logic/audio-runtime-control-delegate.ts'),
+			'utf8',
+		);
+		const operations = readFileSync(
+			resolve(import.meta.dir, '../src/content/logic/control-operation-executor.ts'),
+			'utf8',
+		);
+		const playbackBridge = readFileSync(
+			resolve(import.meta.dir, '../src/content/injector/playback-rate-bridge.ts'),
+			'utf8',
+		);
+		const handoff = readFileSync(resolve(import.meta.dir, '../src/content/core/fullscreen-audio-handoff.ts'), 'utf8');
+		expect(manifest.content_scripts).toContainEqual(expect.objectContaining({
+			js: ['content-fullscreen-bridge.js'],
+			world: 'MAIN',
+		}));
+		expect(manifest.content_scripts).toContainEqual(expect.objectContaining({
+			js: ['content-playback-rate-bridge.js'],
+			world: 'MAIN',
+		}));
+		expect(handoff).toContain("captureManager.request(");
+		expect(handoff).toContain('await currentSuspension');
+		expect(handoff).toContain('policyExecutor.applyState({ modeIntent: true })');
+		expect(mediaControls).toContain('setHotkeyTarget(clearing ? null : tabId)');
+		expect(shortcuts).toContain("type: 'spectra.hotkey.target.feedback'");
+		expect(shortcuts).toContain('initialFrame.documentId');
+		expect(shortcuts).toContain('currentFrame?.documentId !== ready.documentId');
+		expect(shortcuts).toContain('readShortcutActualFeedback(action, tabId)');
+		expect(hotkeys).toContain("variant: 'alternate-target'");
+		expect(hotkeys).toContain('showHotkeyActualOSD(message.payload.feedback');
+		expect(hotkeys).toContain("feedbackOwner === 'listener-label'");
+		expect(hotkeys).not.toContain("feedbackOwner === 'listener-label' || feedbackOwner === 'actual-osd'");
+		expect(toast).not.toContain('.t.alternate');
+		expect(toast).not.toContain("classList.toggle('alternate'");
+		expect(toast).toContain("setTimeout(() => t.classList.add('hide'), 1_800)");
+		expect(osd).toContain('const OSD_HIDE_DELAY_MS = 2_000');
+		expect(osd).toContain('export function hideOSD()');
+		expect(osd).toContain("variant?: 'alternate-target'");
+		expect(audioDelegate).toContain("source !== 'hotkey'");
+		expect(audioDelegate).toContain("intent.source === 'hotkey'");
+		expect(operations).toContain("const shown = intent.source === 'hotkey'");
+		expect(playbackBridge).toContain("element.closest('.xgplayer, xg-video-container')");
+		expect(playbackBridge).toContain('selected.click()');
+		expect(playbackBridge).toContain("'xg-playbackrate li'");
+		expect(playbackBridge).toContain('document.querySelectorAll<HTMLElement>(RATE_CONTROL_SELECTOR)');
+		expect(playbackBridge).toContain('new MutationObserver');
+		expect(playbackBridge).toContain('synchronizeAttachedPlayerController');
+		expect(playbackBridge).toContain("'setPlaybackRate'");
+		expect(playbackBridge).toContain('element.playbackRate = request.speed');
 	});
 });

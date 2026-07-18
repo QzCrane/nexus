@@ -14,6 +14,7 @@ import {
 import type { PolicyExecutor } from './policy-executor';
 import type { PolicyExecutorState } from '../types';
 import type { AudioRuntimeControlDelegate } from './native-media-executor';
+import type { FullscreenAudioHandoff } from '../core/fullscreen-audio-handoff';
 import type { SettingsManager } from '../core/settings-manager';
 import { showOSD, showSpeedOSD } from '../ui/osd';
 
@@ -50,6 +51,7 @@ export function createAudioRuntimeControlDelegate(
 	policyExecutor: PolicyExecutor,
 	state: PolicyExecutorState,
 	settingsManager?: Pick<SettingsManager, 'get'>,
+	fullscreenHandoff?: Pick<FullscreenAudioHandoff, 'run'>,
 ): AudioRuntimeControlDelegate {
 	const synchronizeNative = (context: ControlActualContext): void => {
 		if (typeof context.volumeBase === 'number') {
@@ -77,9 +79,8 @@ export function createAudioRuntimeControlDelegate(
 		context: ControlActualContext,
 		source: ControlIntent['source'],
 	): void => {
-		if (!settingsManager) return;
+		if (!settingsManager || source !== 'hotkey') return;
 		const settings = settingsManager.get();
-		const popupOwnsFeedback = source === 'popup';
 		const hasVolumeFeedback = typeof context.volumeBase === 'number'
 			|| typeof context.mediaMuted === 'boolean';
 		if (hasVolumeFeedback) {
@@ -87,12 +88,12 @@ export function createAudioRuntimeControlDelegate(
 				state.config,
 				state.actualMode === 'capture' && state.phase === 'active',
 				settings,
-				popupOwnsFeedback,
+				false,
 			);
 			return;
 		}
 		if (typeof context.speed === 'number') {
-			showSpeedOSD(context.speed, settings, popupOwnsFeedback);
+			showSpeedOSD(context.speed, settings, false);
 		}
 	};
 	const read = (fields: readonly ControlField[]): ControlPatch => {
@@ -158,7 +159,7 @@ export function createAudioRuntimeControlDelegate(
 		// Boost and speed. Pan/delay/mono hotkeys retain their listener-owned label
 		// instead of displaying a misleading volume OSD and then a second toast.
 		const persisted = await policyExecutor.updateConfig(changes, {
-			showOSD: changes.boost !== undefined,
+			showOSD: changes.boost !== undefined && intent.source === 'hotkey',
 		});
 		if (!persisted.ok) throw new Error(persisted.error.message);
 
@@ -234,5 +235,13 @@ export function createAudioRuntimeControlDelegate(
 		}
 		return fields;
 	};
-	return { apply, read, synchronizeNative, showNativeFeedback };
+	return {
+		apply,
+		read,
+		synchronizeNative,
+		showNativeFeedback,
+		...(fullscreenHandoff
+			? { runFullscreenTransition: fullscreenHandoff.run.bind(fullscreenHandoff) }
+			: {}),
+	};
 }

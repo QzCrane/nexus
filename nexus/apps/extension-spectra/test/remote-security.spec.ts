@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { createRemoteHostController } from '../src/offscreen-remote/remote-host';
 import { getRemoteUrl } from '../src/remote/constants';
 import { generateRemoteQR } from '../src/remote/qr-generator';
+import { isSafeRemoteQrDataUrl } from '../src/remote/modal-renderer';
 import {
 	REMOTE_PAIRING_TTL_MS,
 	createRemotePairing,
@@ -45,6 +46,9 @@ describe('remote protocol v2', () => {
 		// The secret is encoded into QR modules, never copied into a network URL or
 		// metadata field in the generated image.
 		expect(svg).not.toContain(pairing.secret);
+		expect(isSafeRemoteQrDataUrl(qr)).toBe(true);
+		expect(isSafeRemoteQrDataUrl('data:image/svg+xml;charset=utf-8,%3Csvg%20onload%3Dalert(1)%3E%3C%2Fsvg%3E')).toBe(false);
+		expect(isSafeRemoteQrDataUrl('https://remote.example.test/qr.svg')).toBe(false);
 	});
 
 	test('accepts only the correct HMAC proof', async () => {
@@ -178,7 +182,9 @@ describe('authenticated remote host', () => {
 			sessionId: session.sessionId,
 			proof,
 		});
-		await tick();
+		await waitFor(() => connection.sent.some(
+			(message) => message.type === 'spectra.remote.auth-result' && message.ok,
+		));
 
 		expect(connection.sent.some((message) => message.type === 'spectra.remote.auth-result' && message.ok)).toBe(true);
 		expect(harness.runtimeMessages.some((message) => message.type === 'REMOTE_HOST_REQUEST_SYNC')).toBe(true);
@@ -251,7 +257,9 @@ describe('authenticated remote host', () => {
 			sessionId: session.sessionId,
 			proof,
 		});
-		await tick();
+		await waitFor(() => connection.sent.some(
+			(message) => message.type === 'spectra.remote.auth-result' && message.ok,
+		));
 
 		expect(await harness.controller.closeSession(29, session.sessionId, 'manual')).toBe(true);
 		expect(connection.sent).toContainEqual({

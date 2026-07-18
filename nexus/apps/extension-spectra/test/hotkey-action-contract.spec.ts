@@ -116,4 +116,36 @@ describe('page hotkey trust boundary', () => {
 		);
 		expect(listener).toContain('if (!isTrustedHotkeyEvent(e)) return;');
 	});
+
+	test('coalesces held shortcuts without repeat toasts and settles on physical keyup', () => {
+		const listener = readFileSync(
+			resolve(import.meta.dir, '../src/content/input/hotkey-listener.ts'),
+			'utf8',
+		);
+		const repeatBranch = listener.slice(
+			listener.indexOf('// Repeat keydown under coalesce-20hz'),
+			listener.indexOf('function handleKeyup'),
+		);
+		expect(repeatBranch).toContain('executeBinding(binding, false)');
+		expect(repeatBranch).not.toContain('executeWithOSD(binding)');
+		expect(listener).toContain('activeBindingsByCode.get(e.code)');
+		expect(listener).toContain('cancelCoalesced(active.binding.id)');
+		expect(listener).toContain('inFlightBindings.has(binding.id)');
+		expect(listener).toContain('if (!isBindingActive(binding.id)) return;');
+		expect(listener).toContain('hideToast()');
+		expect(listener).toContain('hideOSD()');
+		expect(listener).toContain('releasedRepeatedBindings');
+		expect(listener).toContain("feedbackOwner === 'listener-label'");
+		expect(listener).toContain("e.code === 'F5'");
+		expect(listener).toContain("e.code === 'KeyR'");
+		expect(listener).toContain("createEventListener(window, 'blur', cancelActiveBindings)");
+		expect(listener).toContain("createEventListener(window, 'pagehide', cancelActiveBindings)");
+		const toast = readFileSync(
+			resolve(import.meta.dir, '../src/content/ui/toast.ts'),
+			'utf8',
+		);
+		expect(toast).toContain('document.documentElement.appendChild(h)');
+		expect(toast).toContain('!s.host?.isConnected');
+		expect(toast).not.toContain('if (!document.body) return');
+	});
 });

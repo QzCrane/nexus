@@ -32,7 +32,7 @@ export interface SpectraCommandHandlerDeps {
 	state: PolicyExecutorState;
 	policyExecutor?: PolicyExecutor;
 	getVisualizerData: () => Uint8Array | null;
-	setVisualizerSubscribed: (subscribed: boolean) => boolean;
+	setVisualizerSubscribed: (subscribed: boolean) => Promise<boolean>;
 }
 
 export function isContentCommandType(type: SpectraRequestType): type is ContentCommandType {
@@ -112,9 +112,11 @@ export function handleSpectraContentCommand(
 				return false;
 			}
 			case 'spectra.audio.visualizer.subscription.set': {
-				const subscribed = deps.setVisualizerSubscribed(message.payload.subscribed);
-				sendResponse(rpcSuccess({ subscribed }));
-				return false;
+				void deps.setVisualizerSubscribed(message.payload.subscribed).then(
+					(subscribed) => sendResponse(rpcSuccess({ subscribed })),
+					(error) => respondWithFailure(sendResponse, error),
+				);
+				return true;
 			}
 			case 'spectra.hotkey.trigger':
 				void executeHotkeyAction(message.payload.action).then(

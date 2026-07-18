@@ -1,8 +1,15 @@
 // goal: handles the creation and initial population of a tab control card's DOM structure from a template
 
 import type { I18NDict, CardUIElements } from '../types';
-import { getDomain, getSafeImageUrl } from '../utils/dom';
+import { getDomain, getWebsiteIconUrl } from '../utils/dom';
 import { getCardUIElements } from './ui-elements';
+
+function setButtonLabel(button: HTMLElement | null, value: unknown, fallback: string): void {
+	if (!button) return;
+	const label = typeof value === 'string' && value.trim().length > 0 ? value : fallback;
+	button.title = label;
+	button.setAttribute('aria-label', label);
+}
 
 // eff: clones the card template, injects tab-specific metadata and translations, and appends it to the popup container
 export function prepareCardDom(params: {
@@ -26,8 +33,9 @@ export function prepareCardDom(params: {
 	if (ui.tMono) ui.tMono.innerText = dict.mono;
 	if (ui.tEq) ui.tEq.innerText = dict.eqTitle;
 
-	ui.btnSave.title = dict.saveTooltip;
-	ui.btnReset.title = dict.resetTooltip;
+	setButtonLabel(ui.btnSave, dict.saveTooltip, 'Save');
+	setButtonLabel(ui.btnReset, dict.resetTooltip, 'Reset');
+	setButtonLabel(ui.btnSaveGlobal, dict.btnSaveAsGlobal, 'Save as Global Preset');
 	ui.maskText.textContent = '';
 	const paused = document.createElement('div');
 	paused.textContent = dict.paused;
@@ -38,12 +46,13 @@ export function prepareCardDom(params: {
 	ui.title.innerText = tab.title || '';
 	ui.title.title = tab.title || '';
 	ui.domain.innerText = domain;
-	ui.icon.src = getSafeImageUrl(tab.favIconUrl, chrome.runtime.getURL('icons/icon48.png'));
+	const fallbackIcon = chrome.runtime.getURL('icons/icon48.png');
+	ui.icon.src = getWebsiteIconUrl(tab.url, tab.favIconUrl, fallbackIcon);
 	ui.icon.alt = '';
 	// rule: provide fallback when favicon fails to load (e.g. CSP restrictions)
 	ui.icon.onerror = () => {
 		ui.icon.onerror = null;
-		ui.icon.src = chrome.runtime.getURL('icons/icon48.png');
+		ui.icon.src = fallbackIcon;
 	};
 	ui.mask.setAttribute('role', 'button');
 	ui.mask.setAttribute('aria-label', `${dict.paused}. ${dict.clickToResume}`);

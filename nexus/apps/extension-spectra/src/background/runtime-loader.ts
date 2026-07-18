@@ -21,7 +21,10 @@ import { sendSpectraTabRequest } from '../shared/spectra-client';
 import { swLog } from '../shared/logger';
 import { settingsRepository } from './settings-repository';
 
-const READY_TIMEOUT_MS = 5_000;
+// Heavy SPA startup can legitimately spend several seconds restoring settings
+// and discovering media before the runtime publishes READY. Keep the handshake
+// bounded, but do not classify a normal cold start as a failed injection.
+const READY_TIMEOUT_MS = 15_000;
 
 interface RuntimeWaiter {
 	resolve(result: ContentRuntimeReadyResult): void;
@@ -319,12 +322,16 @@ async function loadRuntime(tabId: number, documentId: string): Promise<ContentRu
 	const key = runtimeKey(tabId, documentId);
 	const waitForReady = createReadyWaiter(key);
 	try {
-		await chrome.scripting.executeScript({
+		const waitForInjection = chrome.scripting.executeScript({
 			target: { tabId, documentIds: [documentId] },
 			files: ['content-runtime.js'],
 			world: 'ISOLATED',
 		});
-		return await waitForReady;
+		const first = await Promise.race([
+			waitForReady.then((result) => ({ kind: 'ready' as const, result })),
+			waitForInjection.then(() => ({ kind: 'injected' as const })),
+		]);
+		return first.kind === 'ready' ? first.result : await waitForReady;
 	} catch (error) {
 		const waiter = waiters.get(key);
 		if (waiter) {
@@ -428,6 +435,9 @@ async function restoreIfConfigured(tabId: number, documentId: string, url: strin
 export function initializeContentRuntimeLoader(): void {
 	if (initialized) return;
 	initialized = true;
+	void settingsRepository.getSnapshot()
+		.then((snapshot) => reconcileAllHotkeyRuntimeLeases(snapshot.hotkeySettings))
+		.catch((error) => swLog.warn(`[Runtime] startup hotkey projection failed: ${String(error)}`));
 
 	chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
 		if (!message || typeof message !== 'object') return false;
@@ -462,8 +472,8 @@ export function initializeContentRuntimeLoader(): void {
 				runtimeRevision: known?.runtimeRevision ?? null,
 			}));
 			void Promise.allSettled([
-				restoreIfConfigured(identity.tabId, identity.documentId, sender.url),
-				reconcileHotkeyRuntimeLease(identity.tabId, identity.documentId, sender.url),
+				restoreIfConfigured(identity.tabId, identity.documentId, sender.url ?? sender.tab?.url),
+				reconcileHotkeyRuntimeLease(identity.tabId, identity.documentId, sender.url ?? sender.tab?.url),
 			]).then((results) => {
 				for (const result of results) {
 					if (result.status === 'rejected') swLog.warn(`[Runtime] bootstrap projection failed: ${String(result.reason)}`);
@@ -558,6 +568,10 @@ export function initializeContentRuntimeLoader(): void {
 	};
 	chrome.webNavigation.onHistoryStateUpdated.addListener(reconcileSameDocument);
 	chrome.webNavigation.onReferenceFragmentUpdated.addListener(reconcileSameDocument);
+	// Full navigations normally acquire their hotkey lease from the manifest
+	// bootstrap HELLO. DOMContentLoaded is an independent retry boundary for the
+	// cases where that document-start message races service-worker startup.
+	chrome.webNavigation.onDOMContentLoaded.addListener(reconcileSameDocument);
 }
 
 // Test-only reset for module-scoped MV3 state. It is tree-shaken from the

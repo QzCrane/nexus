@@ -2,6 +2,7 @@
 
 import {
 	SPECTRA_PROTOCOL_VERSION,
+	createSiteRouteFingerprint,
 	isSpectraRequestEnvelope,
 	rpcFailure,
 	rpcSuccess,
@@ -49,19 +50,23 @@ function registerV2RegistryListener(): void {
 				return rpcSuccess(await registryRepository.add(
 					message.payload.domain,
 					'user',
-					message.payload.restricted,
+					message.payload.route,
 				));
 			}
 			if (message.type === 'spectra.registry.remove') {
-				return rpcSuccess(await registryRepository.remove(message.payload.domain));
+				return rpcSuccess(await registryRepository.remove(message.payload.fingerprint));
 			}
 			if (message.type === 'spectra.registry.query') {
-				return rpcSuccess(await registryRepository.query(message.payload.domain));
+				return rpcSuccess(await registryRepository.query(
+					message.payload.domain,
+					message.payload.fingerprint,
+				));
 			}
 			if (message.type === 'spectra.registry.mark-probed') {
 				return rpcSuccess(await registryRepository.markProbed(
 					message.payload.domain,
-					message.payload.restricted,
+					message.payload.fingerprint,
+					message.payload.route,
 				));
 			}
 			if (message.type === 'spectra.hotkey-target.get') {
@@ -90,7 +95,7 @@ export function registerRegistryHandlers(): void {
 
 	router.on('REGISTRY_ADD_DOMAIN', async (req) => {
 		try {
-			const result = await registryRepository.add(req.domain, 'auto', true);
+			const result = await registryRepository.add(req.domain, 'auto', 'capture');
 			return { success: true, reason: result.created ? undefined : 'updated' };
 		} catch (error) {
 			return { success: false, reason: error instanceof Error ? error.message : String(error) };
@@ -99,7 +104,9 @@ export function registerRegistryHandlers(): void {
 
 	router.on('REGISTRY_REMOVE_DOMAIN', async (req) => {
 		try {
-			const result = await registryRepository.remove(req.domain);
+			const fingerprint = createSiteRouteFingerprint(req.domain);
+			if (!fingerprint) return { success: false };
+			const result = await registryRepository.remove(fingerprint);
 			return { success: result.removed };
 		} catch {
 			return { success: false };
@@ -108,7 +115,10 @@ export function registerRegistryHandlers(): void {
 
 	router.on('REGISTRY_QUERY_DOMAIN', async (req) => {
 		try {
-			return await registryRepository.query(req.domain);
+			const fingerprint = createSiteRouteFingerprint(req.domain);
+			return fingerprint
+				? await registryRepository.query(req.domain, fingerprint)
+				: { entry: null };
 		} catch {
 			return { entry: null };
 		}
@@ -116,7 +126,13 @@ export function registerRegistryHandlers(): void {
 
 	router.on('REGISTRY_MARK_PROBED', async (req) => {
 		try {
-			const result = await registryRepository.markProbed(req.domain, req.restricted);
+			const fingerprint = createSiteRouteFingerprint(req.domain);
+			if (!fingerprint) return { success: false, reason: 'invalid_domain' };
+			const result = await registryRepository.markProbed(
+				req.domain,
+				fingerprint,
+				req.restricted ? 'capture' : 'direct',
+			);
 			return { success: true, reason: result.created ? undefined : 'updated' };
 		} catch (error) {
 			return { success: false, reason: error instanceof Error ? error.message : String(error) };

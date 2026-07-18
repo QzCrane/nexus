@@ -53,6 +53,32 @@ export function getSafeImageUrl(value: string | undefined, fallback: string): st
   }
 }
 
+// post: resolves a site icon through Chromium's extension-owned favicon endpoint
+// so remote icon hosts, page CSP, and chrome://favicon URLs cannot erase identity.
+export function getWebsiteIconUrl(
+  pageUrl: string | undefined,
+  faviconUrl: string | undefined,
+  fallback: string,
+  size = 32,
+): string {
+  const direct = getSafeImageUrl(faviconUrl, '');
+  if (direct.startsWith('data:image/')) return direct;
+
+  try {
+    const page = new URL(pageUrl ?? '');
+    if (['http:', 'https:', 'file:', 'chrome:', 'edge:'].includes(page.protocol)) {
+      const endpoint = new URL(chrome.runtime.getURL('_favicon/'));
+      endpoint.searchParams.set('pageUrl', page.href);
+      endpoint.searchParams.set('size', String(Math.max(16, Math.min(64, Math.round(size)))));
+      return endpoint.href;
+    }
+  } catch {
+    // Invalid/missing page URLs may still carry a browser-provided HTTP icon.
+  }
+
+  return direct || fallback;
+}
+
 // rule: identifies browser-internal or restricted URLs (e.g. chrome://, edge://) where extensions are disabled
 export function isRestrictedUrl(url: string | undefined): boolean {
   if (!url) return true;
