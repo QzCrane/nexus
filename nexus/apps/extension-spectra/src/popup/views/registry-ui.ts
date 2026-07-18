@@ -3,7 +3,11 @@
 import { normalizeHostname, type DomainEntry, type RegistrySnapshot } from '@nexus/contracts';
 import { $ } from '../utils/dom';
 import type { I18NDict } from '../types';
-import { addRegistryDomain, removeRegistryDomain } from '../../shared/registry-client';
+import {
+	addRegistryDomain,
+	getRegistrySnapshot,
+	removeRegistryDomain,
+} from '../../shared/registry-client';
 
 type TabType = 'restricted' | 'safe';
 type RegistryNavigationKey = 'ArrowLeft' | 'ArrowRight' | 'Home' | 'End';
@@ -131,6 +135,13 @@ function switchTab(tab: TabType, ui: RegistryUIElements): void {
 	ui.listContainer?.setAttribute('aria-labelledby', tab === 'restricted' ? 'tab-restricted' : 'tab-safe');
 
 	renderList(ui);
+	// Automatic safe/restricted corrections are background-owned and can happen
+	// while this Popup remains open. Refresh on every category visit so an
+	// acknowledged Capture cannot remain rendered in the stale safe snapshot.
+	void getRegistrySnapshot().then((snapshot) => {
+		allEntries.splice(0, allEntries.length, ...snapshot.entries);
+		renderList(ui);
+	}).catch(() => undefined);
 }
 
 export function resolveRegistryNavigationKey(

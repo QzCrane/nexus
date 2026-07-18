@@ -49,7 +49,19 @@ const RATE_OPTION_CHILD_SELECTOR = [
 	'[data-playback-rate]',
 ].join(',');
 
+const RATE_CLICK_TARGET_SELECTOR = [
+	'button',
+	'li',
+	'[role="menuitem"]',
+	'[role="menuitemradio"]',
+	'[role="option"]',
+].join(',');
+
+const RATE_TEXT_SCAN_LIMIT = 512;
+const RATE_TEXT_LENGTH_LIMIT = 24;
+
 const clickedRateOptions = new WeakMap<HTMLElement, number>();
+const deferredTextRateOptions = new Set<HTMLElement>();
 let latestRateRequest: { element: HTMLMediaElement; speed: number } | null = null;
 let rateMenuObserver: MutationObserver | null = null;
 let rateMenuSyncQueued = false;
@@ -74,6 +86,68 @@ function isRendered(element: HTMLElement): boolean {
 	return style.display !== 'none'
 		&& style.visibility !== 'hidden'
 		&& Number.parseFloat(style.opacity || '1') > 0;
+}
+
+function compactTextLength(element: HTMLElement): number {
+	return (element.textContent ?? '').replace(/\s+/gu, '').length;
+}
+
+function discoverTextRateOptions(roots: Iterable<Element>): HTMLElement[] {
+	const scanned = new Set<HTMLElement>();
+	for (const root of roots) {
+		if (scanned.size >= RATE_TEXT_SCAN_LIMIT) break;
+		if (root instanceof HTMLElement) scanned.add(root);
+		for (const descendant of root.querySelectorAll<HTMLElement>('*')) {
+			if (scanned.size >= RATE_TEXT_SCAN_LIMIT) break;
+			scanned.add(descendant);
+		}
+	}
+
+	const candidates = new Set<HTMLElement>();
+	for (const leaf of scanned) {
+		if (leaf.children.length > 0
+			|| compactTextLength(leaf) > RATE_TEXT_LENGTH_LIMIT
+			|| parseRateOption(leaf) === null) continue;
+		const explicitTarget = leaf.closest<HTMLElement>(RATE_CLICK_TARGET_SELECTOR);
+		if (explicitTarget && compactTextLength(explicitTarget) <= RATE_TEXT_LENGTH_LIMIT) {
+			candidates.add(explicitTarget);
+			continue;
+		}
+		const parent = leaf.parentElement;
+		if (!parent) continue;
+		const directRateChildren = [...parent.children].filter((child): child is HTMLElement => (
+			child instanceof HTMLElement
+			&& child.children.length === 0
+			&& compactTextLength(child) <= RATE_TEXT_LENGTH_LIMIT
+			&& parseRateOption(child) !== null
+		));
+		const target = directRateChildren.length >= 2 ? leaf : parent;
+		if (compactTextLength(target) <= RATE_TEXT_LENGTH_LIMIT) candidates.add(target);
+	}
+
+	const grouped = new Map<HTMLElement, Map<number, HTMLElement>>();
+	for (const candidate of candidates) {
+		const rate = parseRateOption(candidate);
+		if (rate === null || !candidate.parentElement || !candidate.isConnected || !isRendered(candidate)) continue;
+		const group = grouped.get(candidate.parentElement) ?? new Map<number, HTMLElement>();
+		if (!group.has(rate)) group.set(rate, candidate);
+		grouped.set(candidate.parentElement, group);
+	}
+	const options: HTMLElement[] = [];
+	for (const group of grouped.values()) {
+		if (group.size < 2) continue;
+		options.push(...group.values());
+	}
+	return options;
+}
+
+function rememberTextRateOptions(roots: Iterable<Element>): boolean {
+	for (const option of [...deferredTextRateOptions]) {
+		if (!option.isConnected) deferredTextRateOptions.delete(option);
+	}
+	const discovered = discoverTextRateOptions(roots);
+	for (const option of discovered) deferredTextRateOptions.add(option);
+	return discovered.length > 0;
 }
 
 function collectRateOptions(element: HTMLMediaElement): HTMLElement[] {
@@ -104,6 +178,13 @@ function collectRateOptions(element: HTMLMediaElement): HTMLElement[] {
 	for (const group of grouped.values()) {
 		if (new Set(group.map((option) => parseRateOption(option))).size < 2) continue;
 		for (const option of group) options.add(option);
+	}
+	for (const option of [...deferredTextRateOptions]) {
+		if (!option.isConnected) {
+			deferredTextRateOptions.delete(option);
+			continue;
+		}
+		if (isRendered(option)) options.add(option);
 	}
 	return [...options];
 }
@@ -195,7 +276,19 @@ function synchronizePlayerRateUI(
 
 function ensureDeferredRateMenuSync(): void {
 	if (rateMenuObserver || !document.documentElement) return;
-	rateMenuObserver = new MutationObserver(() => {
+	rateMenuObserver = new MutationObserver((mutations) => {
+		const roots: Element[] = [];
+		for (const mutation of mutations) {
+			for (const node of mutation.addedNodes) {
+				if (!(node instanceof Element)) continue;
+				roots.push(node);
+				const parent = node.parentElement;
+				if (parent && parent !== document.body && parent !== document.documentElement) {
+					roots.push(parent);
+				}
+			}
+		}
+		rememberTextRateOptions(roots);
 		if (rateMenuSyncQueued) return;
 		rateMenuSyncQueued = true;
 		queueMicrotask(() => {
@@ -206,6 +299,9 @@ function ensureDeferredRateMenuSync(): void {
 		});
 	});
 	rateMenuObserver.observe(document.documentElement, { childList: true, subtree: true });
+	if (document.body) {
+		rememberTextRateOptions([...document.body.children].reverse().slice(0, 24));
+	}
 }
 
 function decodeRequest(element: HTMLMediaElement): SpectraPlaybackRateRequest | null {

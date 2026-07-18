@@ -1,8 +1,20 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, mock, test } from 'bun:test';
 import {
+	injectContentScriptOnDemand,
+	performWarmUpdate,
 	refreshTabsForUpgrade,
 	WARM_UPDATE_CONCURRENCY,
 } from '../src/background/upgrade-manager';
+
+const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+
+afterEach(() => {
+	if (originalChrome) {
+		Object.defineProperty(globalThis, 'chrome', originalChrome);
+		return;
+	}
+	Reflect.deleteProperty(globalThis, 'chrome');
+});
 
 describe('MV3 warm update scheduling', () => {
 	test('awaits active tabs first and processes every background tab with bounded concurrency', async () => {
@@ -60,7 +72,53 @@ describe('MV3 warm update scheduling', () => {
 		});
 		expect([...visited].sort((left, right) => left - right)).toEqual([11, 12, 13, 14, 15]);
 	});
+
+	test('injects both MAIN-world bridges before the content bootstrap during warm update', async () => {
+		const executeScript = mock(async (details: chrome.scripting.ScriptInjection) => {
+			if ('func' in details) return [{ frameId: 0, result: false }];
+			return [{ frameId: 0 }];
+		});
+		installChrome(executeScript);
+
+		await performWarmUpdate();
+
+		expect(executeScript.mock.calls.map(([details]) => (
+			'files' in details ? { files: details.files, world: details.world } : { probe: true }
+		))).toEqual([
+			{ probe: true },
+			{ files: ['content-fullscreen-bridge.js'], world: 'MAIN' },
+			{ files: ['content-playback-rate-bridge.js'], world: 'MAIN' },
+			{ files: ['content-bootstrap.js'], world: 'ISOLATED' },
+		]);
+	});
+
+	test('injects the playback-rate bridge on the popup on-demand recovery path', async () => {
+		const executeScript = mock(async () => [{ frameId: 0 }]);
+		installChrome(executeScript);
+
+		expect(await injectContentScriptOnDemand(21)).toBe(true);
+		expect(executeScript.mock.calls.map(([details]) => ({
+			files: details.files,
+			world: details.world,
+		}))).toEqual([
+			{ files: ['content-fullscreen-bridge.js'], world: 'MAIN' },
+			{ files: ['content-playback-rate-bridge.js'], world: 'MAIN' },
+			{ files: ['content-bootstrap.js'], world: 'ISOLATED' },
+		]);
+	});
 });
+
+function installChrome(executeScript: ReturnType<typeof mock>): void {
+	Object.defineProperty(globalThis, 'chrome', {
+		configurable: true,
+		value: {
+			scripting: { executeScript },
+			tabs: {
+				query: async () => [{ id: 7, active: true }],
+			},
+		},
+	});
+}
 
 async function waitFor(condition: () => boolean): Promise<void> {
 	for (let attempt = 0; attempt < 20; attempt += 1) {

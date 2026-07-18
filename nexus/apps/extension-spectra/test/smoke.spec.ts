@@ -1588,18 +1588,20 @@ describe('SPECTRA built extension smoke', () => {
 
 			let selectedClicks = 0;
 			const portal = document.createElement('div');
-			portal.className = 'xgplayer-playbackrate';
+			portal.className = 'm_a7b';
 			for (const rate of [1, 1.5, 2]) {
-				const option = document.createElement('li');
-				option.dataset.value = String(rate);
-				option.textContent = `${rate}x`;
+				const option = document.createElement('div');
+				option.className = `i_${String(rate).replace('.', '_')}`;
+				const label = document.createElement('span');
+				label.textContent = rate === 1 ? '正常' : `${rate}倍`;
+				option.append(label);
 				if (rate === 1) option.className = 'selected';
 				if (rate === 1.5) option.addEventListener('click', () => { selectedClicks += 1; });
 				portal.append(option);
 			}
 			document.body.append(portal);
 			await new Promise((resolveWait) => setTimeout(resolveWait, 50));
-			const options = [...portal.querySelectorAll<HTMLElement>('li')];
+			const options = [...portal.children] as HTMLElement[];
 			return {
 				requestMatches: result.requestId === requestId,
 				actual: result.actual,
@@ -2208,12 +2210,28 @@ describe('SPECTRA built extension smoke', () => {
 				}), tabId)
 			), 5_000);
 			if (!hotkey?.ok) throw new Error(hotkey?.error?.message ?? 'Unable to trigger mute OSD');
+			await withDiagnosticTimeout('observe the actual media mute', () => fixturePage.waitForFunction(() => (
+				document.querySelector<HTMLMediaElement>('video,audio')?.muted === true
+			), { timeout: 5_000 }), 6_000);
 			await withDiagnosticTimeout('observe the localized mute OSD', () => fixturePage.waitForFunction(() => {
 				for (const host of document.body.querySelectorAll('div')) {
 					if (host.shadowRoot?.getElementById('t')?.textContent === '静音') return true;
 				}
 				return false;
 			}, { timeout: 5_000 }), 6_000);
+			const unmuted = await withDiagnosticTimeout('trigger the unmute ACK', () => (
+				evaluateServiceWorker(async (targetTabId) => chrome.tabs.sendMessage(targetTabId, {
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					tabId: targetTabId,
+					type: 'spectra.hotkey.trigger',
+					payload: { action: 'volume_mute' },
+				}), tabId)
+			), 5_000);
+			if (!unmuted?.ok) throw new Error(unmuted?.error?.message ?? 'Unable to trigger unmute');
+			await withDiagnosticTimeout('observe the actual media unmute', () => fixturePage.waitForFunction(() => (
+				document.querySelector<HTMLMediaElement>('video,audio')?.muted === false
+			), { timeout: 5_000 }), 6_000);
 		} finally {
 			await evaluateServiceWorker(async ({ language, revision }) => {
 				await chrome.runtime.sendMessage({

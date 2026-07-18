@@ -28,6 +28,34 @@ import { ensureContentRuntime, releaseContentRuntimeLease } from './runtime-load
 // slotMapping: active mapping of manifest slot IDs to functional hotkey actions
 let slotMapping: Record<string, HotkeyAction> = { ...DEFAULT_HOTKEY_SETTINGS.slots };
 
+export interface ShortcutRuntimePort {
+	ensure(tabId: number, capability: string): Promise<{ documentId: string }>;
+	release(tabId: number, documentId: string, capability: string): void;
+}
+
+const shortcutRuntimePort: ShortcutRuntimePort = {
+	ensure: (tabId, capability) => ensureContentRuntime(tabId, undefined, 'hotkey', capability),
+	release: (tabId, documentId, capability) => {
+		releaseContentRuntimeLease(tabId, documentId, 'hotkey', capability);
+	},
+};
+
+// Every Chrome command is valid on a fresh document, independently from Popup
+// observation and from whether that site also has a custom page binding.
+export async function runWithShortcutRuntime<T>(
+	tabId: number,
+	operation: () => Promise<T>,
+	port: ShortcutRuntimePort = shortcutRuntimePort,
+): Promise<T> {
+	const capability = `command:${crypto.randomUUID()}`;
+	const ready = await port.ensure(tabId, capability);
+	try {
+		return await operation();
+	} finally {
+		port.release(tabId, ready.documentId, capability);
+	}
+}
+
 
 // eff: synchronizes slotMapping from the background-owned settings repository
 async function loadSlotMapping(): Promise<void> {
@@ -53,6 +81,7 @@ export function setupShortcutListeners(): void {
 		if (!route) return;
 		const tab = route.target;
 		if (!tab?.id || !tab.url) return;
+		const tabId = tab.id;
 
 		let domain = '';
 		try {
@@ -71,9 +100,14 @@ export function setupShortcutListeners(): void {
 
 		if (!action) return;
 
-		await executeAction(action, tab.id, domain);
-		if (route.active?.id !== undefined && route.active.id !== tab.id) {
-			const feedback = await readShortcutActualFeedback(action, tab.id);
+		try {
+			await runWithShortcutRuntime(tabId, () => executeAction(action, tabId, domain));
+		} catch (error) {
+			swLog.warn(`Shortcut ${action} failed`, error);
+			return;
+		}
+		if (route.active?.id !== undefined && route.active.id !== tabId) {
+			const feedback = await readShortcutActualFeedback(action, tabId);
 			await notifyAlternateShortcutTarget(route.active, tab, action, domain, feedback);
 		}
 	});
@@ -208,8 +242,7 @@ async function submitMutations(tabId: number, mutations: ControlMutation[]): Pro
 // eff: translates Chrome commands directly into the same coordinator protocol
 // used by Popup, page hotkeys and authenticated remote controls.
 async function executeAction(action: HotkeyAction, tabId: number, _domain: string): Promise<void> {
-	try {
-		const operation = async (
+	const operation = async (
 			type: Parameters<typeof submitControlOperation>[0]['operation'],
 			payload: Parameters<typeof submitControlOperation>[0]['payload'] = {},
 		) => submitControlOperation({
@@ -276,8 +309,5 @@ async function executeAction(action: HotkeyAction, tabId: number, _domain: strin
 			case 'loop_toggle': await submitMutations(tabId, [{ field: 'loop', operation: 'toggle' }]); return;
 			case 'tab_pin': await submitMutations(tabId, [{ field: 'tabPinned', operation: 'toggle' }]); return;
 			case 'tab_mute': await submitMutations(tabId, [{ field: 'tabMuted', operation: 'toggle' }]); return;
-		}
-	} catch (error) {
-		swLog.warn(`Shortcut ${action} failed`, error);
 	}
 }

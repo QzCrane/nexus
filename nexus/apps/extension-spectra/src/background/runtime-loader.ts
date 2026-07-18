@@ -322,12 +322,16 @@ async function loadRuntime(tabId: number, documentId: string): Promise<ContentRu
 	const key = runtimeKey(tabId, documentId);
 	const waitForReady = createReadyWaiter(key);
 	try {
-		await chrome.scripting.executeScript({
+		const waitForInjection = chrome.scripting.executeScript({
 			target: { tabId, documentIds: [documentId] },
 			files: ['content-runtime.js'],
 			world: 'ISOLATED',
 		});
-		return await waitForReady;
+		const first = await Promise.race([
+			waitForReady.then((result) => ({ kind: 'ready' as const, result })),
+			waitForInjection.then(() => ({ kind: 'injected' as const })),
+		]);
+		return first.kind === 'ready' ? first.result : await waitForReady;
 	} catch (error) {
 		const waiter = waiters.get(key);
 		if (waiter) {
@@ -564,6 +568,10 @@ export function initializeContentRuntimeLoader(): void {
 	};
 	chrome.webNavigation.onHistoryStateUpdated.addListener(reconcileSameDocument);
 	chrome.webNavigation.onReferenceFragmentUpdated.addListener(reconcileSameDocument);
+	// Full navigations normally acquire their hotkey lease from the manifest
+	// bootstrap HELLO. DOMContentLoaded is an independent retry boundary for the
+	// cases where that document-start message races service-worker startup.
+	chrome.webNavigation.onDOMContentLoaded.addListener(reconcileSameDocument);
 }
 
 // Test-only reset for module-scoped MV3 state. It is tree-shaken from the

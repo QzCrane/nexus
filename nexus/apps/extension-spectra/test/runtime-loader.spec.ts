@@ -29,6 +29,7 @@ interface RuntimeHarness {
 	statusCount: number;
 	releaseCount: number;
 	navigationCommitted: ChromeEvent;
+	navigationDOMContentLoaded: ChromeEvent;
 	runtimeMessages: ChromeEvent;
 }
 
@@ -39,15 +40,18 @@ function installChromeHarness(
 	ownedSources: ContentRuntimeSourceOwnership[] = [],
 	releaseFails = false,
 	hotkeySettings?: HotkeySettings,
+	injectionSettles = true,
 ): RuntimeHarness {
 	const runtimeMessages = new ChromeEvent();
 	const tabRemoved = new ChromeEvent();
 	const navigationCommitted = new ChromeEvent();
+	const navigationDOMContentLoaded = new ChromeEvent();
 	const harness = {
 		executeCount: 0,
 		statusCount: 0,
 		releaseCount: 0,
 		navigationCommitted,
+		navigationDOMContentLoaded,
 		runtimeMessages,
 	};
 	const historyUpdated = new ChromeEvent();
@@ -65,6 +69,7 @@ function installChromeHarness(
 		webNavigation: {
 			getFrame: async () => ({ documentId, url: 'https://media.example/watch' }),
 			onCommitted: navigationCommitted,
+			onDOMContentLoaded: navigationDOMContentLoaded,
 			onHistoryStateUpdated: historyUpdated,
 			onReferenceFragmentUpdated: fragmentUpdated,
 		},
@@ -120,6 +125,7 @@ function installChromeHarness(
 						}, () => undefined);
 					}
 				});
+				if (!injectionSettles) await new Promise<never>(() => undefined);
 			},
 		},
 	} as unknown as typeof chrome;
@@ -148,6 +154,16 @@ describe('document-scoped content runtime loader', () => {
 			ready: true,
 		});
 		expect(harness.statusCount).toBe(1);
+		expect(harness.executeCount).toBe(1);
+	});
+
+	test('accepts READY even while the executeScript promise remains pending', async () => {
+		const harness = installChromeHarness(false, [], false, undefined, false);
+		const result = await Promise.race([
+			ensureContentRuntime(7, 'document-7', 'control', 'slow-injection'),
+			Bun.sleep(100).then(() => { throw new Error('READY was held behind executeScript'); }),
+		]);
+		expect(result.ready).toBe(true);
 		expect(harness.executeCount).toBe(1);
 	});
 
@@ -303,6 +319,42 @@ describe('document-scoped content runtime loader', () => {
 				// Deliberately omit sender.url: the tab URL is the reliable fallback
 				// that makes a fresh document independent from the Popup lifecycle.
 			}, () => undefined);
+		}
+		for (let attempt = 0; attempt < 20 && harness.executeCount === 0; attempt += 1) {
+			await Bun.sleep(5);
+		}
+		expect(harness.executeCount).toBe(1);
+	});
+
+	test('retries a configured hotkey lease at DOMContentLoaded when bootstrap HELLO was missed', async () => {
+		const enabled: HotkeySettings = {
+			slots: {},
+			sites: {
+				'media.example': {
+					enabled: true,
+					bindings: [{
+						id: 'cold-volume',
+						enabled: true,
+						key: { code: 'ArrowUp', modifiers: { ctrl: false, alt: true, shift: false, meta: false } },
+						action: 'volume_up',
+					}],
+				},
+			},
+			disabledLegacyBindings: [],
+		};
+		const harness = installChromeHarness(false, [], false, enabled);
+		for (const listener of harness.navigationDOMContentLoaded.listeners) {
+			(listener as (details: {
+				frameId: number;
+				tabId: number;
+				documentId: string;
+				url: string;
+			}) => void)({
+				frameId: 0,
+				tabId: 7,
+				documentId: 'document-7',
+				url: 'https://media.example/watch',
+			});
 		}
 		for (let attempt = 0; attempt < 20 && harness.executeCount === 0; attempt += 1) {
 			await Bun.sleep(5);

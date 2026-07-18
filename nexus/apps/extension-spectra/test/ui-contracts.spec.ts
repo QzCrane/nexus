@@ -246,6 +246,8 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(popup).toContain('role="tabpanel"');
 		expect(popup).toContain('aria-selected="true"');
 		expect(popup).toContain('aria-pressed="false"');
+		const registry = readFileSync(resolve(import.meta.dir, '../src/popup/views/registry-ui.ts'), 'utf8');
+		expect(registry).toContain('getRegistrySnapshot().then');
 
 		for (const path of [
 			'../src/popup/card/media-events.ts',
@@ -435,7 +437,7 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(shortcuts).toContain("type: 'spectra.hotkey.target.feedback'");
 		expect(shortcuts).toContain('initialFrame.documentId');
 		expect(shortcuts).toContain('currentFrame?.documentId !== ready.documentId');
-		expect(shortcuts).toContain('readShortcutActualFeedback(action, tab.id)');
+		expect(shortcuts).toContain('readShortcutActualFeedback(action, tabId)');
 		expect(hotkeys).toContain("variant: 'alternate-target'");
 		expect(hotkeys).toContain('showHotkeyActualOSD(message.payload.feedback');
 		expect(hotkeys).toContain("feedbackOwner === 'listener-label'");
