@@ -6,7 +6,7 @@
 
 任务准备: plan.md(路线) → 模块定位 → 场景架构
 
-场景导读: 音频模式 →spectra/docs/policy-decision.md | 状态同步 →spectra/docs/cors-data-flow.md | 新 Action→contracts/src/messages/definitions.ts | 规则/依赖 →docs/ai-rules.md
+场景导读: 控制架构 →spectra/docs/control-architecture.md | 跨上下文协议 →spectra/docs/protocols.md | 运行时所有权 →spectra/docs/architecture.md | 状态同步 →spectra/docs/cors-data-flow.md | 新 Action→contracts/src/messages/definitions.ts | 规则/依赖 →docs/ai-rules.md
 
 ## 开源
 
@@ -21,7 +21,7 @@
 
 ## 功能
 
-**SPECTRA**: Audio 800%/EQ/压缩/声道 | AudioContext 劫持 | Playback Rate 双向同步 | Video 速率 16x/旋转/PiP/截图 | AB 循环 | 预设管理(Global/Site) | 遥控 QR+WebRTC | 热键脚本 | 零刷新热更新(scripting+sentinel)
+**SPECTRA**: Audio 800%/EQ/压缩/声道 | Native-first 音频增强/Capture fallback | Playback Rate 双向同步(站点 one-shot adapter) | Video 速率 16x/旋转/PiP/截图 | AB 循环 | 预设管理(Global/Site) | 遥控 QR+WebRTC | 冷文档快捷键/标准 Toast | 零刷新热更新(scripting+sentinel)
 
 **HALO** (85 tools): 自动注册(`manifest.json`+`locales/`→`bun run generate-registry`) | 故障隔离(`ToolErrorBoundary`) | 智能意图(`useClipboardIntent`) | 搜索(Pinyin 全拼/简拼) | 性能(IdlePreload/VisibilityPause/EventDriven) | 资源监控(11 种 CPU 机制)
 Core(13) | Dev(34,含 UserScripts Pro) | Efficiency(13) | Security(5) | Media(3) | Browser(8)
@@ -41,7 +41,8 @@ Contracts 禁逻辑 | 源码 ≤200 行 | 禁绕 kernel 存储 | 禁动态 Paddi
 
 规则: docs/ai-rules.md | 商业: docs/business-model.md
 规划: plan.md + apps/{extension-halo,extension-spectra}/plan.md
-架构: apps/extension-halo/docs/{architecture,research,plan-hover-zoom-v2}.md | apps/extension-spectra/docs/{policy-decision,protocols,cors-data-flow}.md
+架构: apps/extension-halo/docs/{architecture,research,plan-hover-zoom-v2}.md | apps/extension-spectra/docs/{control-architecture,architecture,protocols,cors-data-flow}.md
+工程同步: docs/engineering-principles.md | apps/extension-spectra/docs/development-sync-2026-07-19.md | apps/extension-spectra/docs/regression-recovery-2026-07-18.md
 
 ## 路线 2026
 

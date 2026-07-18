@@ -64,6 +64,19 @@ bun run build
 bun run dev
 ```
 
+## Engineering documentation
+
+- [Control architecture](docs/control-architecture.md) — the single owner for
+  media, audio, video, site adapters and remote-control behavior.
+- [Runtime protocols](docs/protocols.md) — v2 messages, ACK/Snapshot projection,
+  READY, leases, Toast and native PiP/fullscreen lifecycle.
+- [Architecture](docs/architecture.md) — context ownership, route cache and
+  processor lifecycle boundaries.
+- [Development sync 2026-07-19](docs/development-sync-2026-07-19.md) — the
+  implementation summary for the current main branch.
+- [Regression recovery 2026-07-18](docs/regression-recovery-2026-07-18.md) —
+  historical baseline plus current verification status.
+
 ## Tech Stack
 
 - **Manifest V3** - Modern Chrome extension architecture
@@ -82,7 +95,7 @@ bun run dev
 
 ## License
 
-MIT License - see [LICENSE](./LICENSE)
+MIT License - see [LICENSE](../../LICENSE)
 
 ## Contributing
 

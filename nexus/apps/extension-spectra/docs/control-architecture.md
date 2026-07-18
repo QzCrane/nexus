@@ -119,6 +119,92 @@ The implementation must not hide invasive behavior under the word "native". Ever
 
 Generic constructor, prototype, descriptor, setter, `createElement`, History API and page-AudioContext interception are forbidden hijacks. They are not planner candidates. A controlled augmentation must have a bounded owner, actual readback, a disposer and a restore rule; otherwise it is unsupported.
 
+## Media route registry and eligibility cache
+
+The registry is a capability-route cache, not a pair of competing site lists. The
+Background repository owns the persisted v2 record and the policy executor owns
+the in-memory lookup used during one document generation:
+
+```ts
+type MediaRouteRecord = {
+  domain: string;
+  fingerprint: `media:v1:${string}` | `site:${string}`;
+  route: 'direct' | 'capture';
+  source: 'user' | 'auto';
+  updatedAt: number;
+};
+```
+
+Resolution is deterministic: an exact `media:v1:*` fingerprint wins, then a
+normalized `site:*` fallback is considered. A fingerprint can resolve to one
+route only. User records outrank automatic observations, and an explicit,
+current ACK may correct an automatic record. Legacy hijack/safe-list records are
+migrated once into this route shape; they are never consulted as independent
+writers after migration. The Popup and Options pages render and edit the same
+registry-v2 list through the Background repository, so adding a site fallback
+cannot silently leave a conflicting entry in another list.
+
+Eligibility is a routing hint, not activation. A cached `capture` route does not
+create an offscreen document, a processor, or a purple status. Capture is lazily
+activated only after a control transaction proves that direct/native coverage is
+insufficient and a full-output processor is explicitly needed. A cached route is
+invalidated on document identity changes, runtime disposal, unsupported/terminal
+errors and a newer user decision. Actual mode and UI color still come only from
+the current `AudioSessionSnapshot` ACK.
+
+## Runtime, shortcut and feedback ownership
+
+The content bootstrap is cold-document safe. The first hotkey on a newly loaded
+document performs an identity-bound runtime ensure, waits for the READY barrier,
+and only then submits its intent; opening Popup is not a prerequisite. READY is
+invalidated by navigation, extension update, context invalidation and dispose,
+and a timed-out handshake returns a structured error without an unhandled
+Promise rejection.
+
+There is one feedback owner per hotkey. The owner starts a standard Toast only
+for a real shortcut/action intent, keeps the normal volume bar and timeout, and
+cancels repeat work, pending timers, and Toast inertia on keyup. A shortcut
+targeting another tab may project the same Toast visual style in the current tab
+with an additional focus-tab label; refresh, bootstrap, Popup open and snapshot
+synchronization never create a Toast.
+
+## Site adapters, PiP and fullscreen
+
+Site playback-rate synchronization is a one-shot, site-scoped official API
+adapter. The adapter is attempted only after the standard DOM writer/readback
+fails, validates the current document and media identity, and accepts success
+only from the site's getter or authoritative event. A page that exposes no
+stable official API remains `unsupported`; the extension does not install a
+generic page bridge or claim that every site's player UI can be synchronized.
+
+PiP and fullscreen are native lifecycle operations bound to the current
+`activeVideo`. The trusted page-event bridge performs the browser API call inside
+the real activation stack, then commits only the observed native state. Leaving
+fullscreen uses the temporary audio handoff solely to preserve the page's
+volume/mute baseline while native fullscreen is entered; it restores that
+baseline immediately after the transition and never uses a volume mutation as a
+gesture substitute. PiP recovery targets the actual
+`document.pictureInPictureElement`/owner media, so a site that moves its PiP
+surface away from the visible page can still be returned through the native
+leave-PiP lifecycle when the browser exposes it.
+
+## UI, visualizer, favicon and remote boundaries
+
+All Popup/Options/remote labels, tooltips, state transitions and reset actions
+use the canonical locale key table. Missing keys produce an observable fallback
+and a contract-test failure, never `undefined`. Reset writes literal `volume=1`
+and `rate=1`; restoring page-owned values is a separate explicit operation.
+
+The visualizer is a subscriber of an already active processor. It owns one
+generation-aware lease, one in-flight sample batch and a bounded sampling loop;
+it does not create an analyser or processor merely because a Popup is visible.
+
+Favicon lookup uses a browser-supported URL/service or a page-declared icon and
+handles failure as a normal projection error. `_favicon` is not a manifest
+permission. Remote QR images are generated and validated as complete local
+`data:`/SVG URLs before rendering; invalid URLs and missing controllable origins
+remain structured boundary errors.
+
 ### Strategy admission and performance gates
 
 `CONTROL_STRATEGY_RULES` is the executable owner of these gates. A strategy is not admitted merely because a setter exists.

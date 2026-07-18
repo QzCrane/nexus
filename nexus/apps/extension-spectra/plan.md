@@ -22,11 +22,21 @@ VideoControl: 变速 0.1x-16x | 旋转/镜像/缩放 | 亮度/对比度/饱和�
 
 ## 关联
 
-[决策记录](docs/policy-decision.md) | [协议](docs/protocols.md) | [CORS 数据流](docs/cors-data-flow.md)
+[控制架构](docs/control-architecture.md) | [运行时架构](docs/architecture.md) | [协议](docs/protocols.md) | [CORS 数据流](docs/cors-data-flow.md) | [开发同步 2026-07-19](docs/development-sync-2026-07-19.md) | [原则索引](../../docs/engineering-principles.md)
 
 ---
 
 ## 变更记录
+
+### 2026-07-19: Runtime and route-registry synchronization
+
+当前主分支的媒体能力缓存已统一为“一个媒体指纹、一个 `direct | capture`
+路径”，精确 `media:v1:*` 优先于 `site:*` 回退；缓存选择不等于 Capture
+激活。冷文档快捷键通过 identity-bound READY ensure 直接可用，Toast 只由
+明确快捷键 intent 触发，PiP/fullscreen 使用 trusted activation 与原生
+生命周期，站点倍速 UI 使用受限 one-shot official adapter。详细实现证据见
+[development-sync-2026-07-19.md](docs/development-sync-2026-07-19.md)，规范以
+[control-architecture.md](docs/control-architecture.md) 为准。
 
 ### 2026-01-08: Fix YouTube Fullscreen Freeze
 
