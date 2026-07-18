@@ -2,11 +2,9 @@
 
 import {
 	audioSessionMatchesControlDocument,
-  hostnameMatchesRule,
 	isActiveCaptureLifecycle,
   type AudioSessionSnapshot,
 } from '@nexus/contracts';
-import { getDomain } from '../utils/dom';
 import { sendSpectraRequest, sendSpectraTabRequest } from '../../shared/ui-spectra-client';
 import { cardRenderCallbacks } from '../views/settings';
 import { VISUALIZER_STATE_CHANGED_EVENT } from '../visualizer/events';
@@ -77,7 +75,7 @@ window.addEventListener('pagehide', releasePopupObservations, { once: true });
 
 // post: returns true if card was successfully initialized and appended to the container; false if the tab is non-responsive or should be skipped
 export async function initCard(params: InitCardParams): Promise<boolean> {
-  const { container, template, tab, dict, registryEntries, getGlobalSettings, createEqCurveDrawer } = params;
+  const { container, template, tab, dict, getGlobalSettings, createEqCurveDrawer } = params;
 
   if (!tab.id) return false;
   const tabId = tab.id;
@@ -152,14 +150,9 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     }
   }
 
-  const domain = getDomain(tab.url || '');
-
-  // rule: only treat as restricted when explicitly marked true; undefined (not probed)
-  // and false (safe) must NOT be reported as restricted — the previous `!== false`
-  // fail-closed check incorrectly marked every legacy/setRegistry entry as restricted.
-  const isRestrictedSite = registryEntries.some(e =>
-    e.restricted === true && hostnameMatchesRule(domain, e.domain)
-  );
+  // Route caches never predict card color. Only the acknowledged active runtime
+  // may project the legacy compatibility flag used by the message adapter.
+  const isRestrictedSite = isCaptureActive;
 
 	// ControlSnapshot owns every field-level actual. Runtime/session status below
 	// contributes lifecycle only and may never overwrite or backfill these fields.

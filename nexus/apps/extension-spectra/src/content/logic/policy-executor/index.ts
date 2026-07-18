@@ -14,7 +14,10 @@ import type { PolicyExecutor, InternalState } from './types';
 import { updateBadge, broadcastUI } from './badge-sync';
 import { updateConfig } from './config-updater';
 import { getActiveMediaRegistry } from '../../core/media-registry';
-import { createMediaEligibilityCache } from './eligibility-cache';
+import {
+	createMediaEligibilityCache,
+	createMediaRouteFingerprint,
+} from './eligibility-cache';
 
 const log = logger.content;
 
@@ -51,6 +54,18 @@ export async function createPolicyExecutor(
 		);
 	};
 
+	const currentMediaFingerprint = (): string => {
+		const registry = getActiveMediaRegistry();
+		const elements = registry?.list().map(({ element }) => element) ?? [];
+		return createMediaRouteFingerprint(
+			window.location.hostname,
+			elements,
+			(element) => typeof registry?.getEligibilityEvidence === 'function'
+				? registry.getEligibilityEvidence(element)
+				: undefined,
+		);
+	};
+
 	const getUrlInfo = (): UrlInfo => ({
 		fullUrl: window.location.href, domain: window.location.hostname, pathname: window.location.pathname, isIframe: window.self !== window.top
 	});
@@ -58,7 +73,8 @@ export async function createPolicyExecutor(
 	const applyState = async (options: { navigation?: boolean; modeIntent?: boolean } = {}): Promise<void> => {
 		const s = deps.settingsManager.get();
 		const u = getUrlInfo();
-		istate.corsStatus = await eligibilityCache.resolve(evaluateSourceEligibility());
+		const fingerprint = currentMediaFingerprint();
+		istate.corsStatus = await eligibilityCache.resolve(fingerprint, evaluateSourceEligibility());
 		// Full-output DSP may claim Media WebAudio coverage only when every
 		// registered source is proven safe before its irreversible binding.
 		// Unselected media remains unknown and therefore takes the conservative
@@ -104,7 +120,7 @@ export async function createPolicyExecutor(
 		}
 
 		await executeMode(deps, state, modeChanged || options.navigation === true || options.modeIntent === true);
-		await eligibilityCache.recordActual(state.actualMode, state.phase);
+		await eligibilityCache.recordActual(fingerprint, state.actualMode, state.phase);
 		updateBadge(deps, state, istate);
 		broadcastUI(deps, state, istate);
 	};

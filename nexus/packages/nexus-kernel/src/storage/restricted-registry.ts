@@ -1,15 +1,33 @@
-// goal: manages persistence for the restricted domain registry driven by CORS detection
-// note: supports data migration from legacy string arrays to structured DomainEntry objects
+// goal: persists one direct/capture route per media fingerprint
+// note: migrates legacy domain safe/restricted entries without keeping two lists
 
-import type { DomainEntry, DomainSource, RegistryResult } from '@nexus/contracts';
-import { findBestHostnameMatch, isDomainEntry, normalizeHostname } from '@nexus/contracts';
+import type {
+	DomainEntry,
+	DomainSource,
+	MediaRoute,
+	RegistryResult,
+} from '@nexus/contracts';
+import {
+	createSiteRouteFingerprint,
+	findBestHostnameMatch,
+	isDomainEntry,
+	isMediaRouteFingerprint,
+	normalizeHostname,
+} from '@nexus/contracts';
 
-const KEY = 'restrictedRegistry';
+const KEY = 'mediaRouteRegistry';
+const LEGACY_KEY = 'restrictedRegistry';
 
-// rule: per-key serialization queue — concurrent addDomain/removeDomain/markProbed
-// previously raced: the second getRegistry() read pre-first-write state and the second
-// set() clobbered, silently losing the first mutation. Mirrors the `serialized()` pattern
-// in tab-session.ts:26-35 and audio-config.ts.
+interface LegacyDomainEntry {
+	domain: string;
+	source?: DomainSource;
+	probed?: boolean;
+	restricted?: boolean;
+	addedAt?: number;
+}
+
+// rule: one background-owned storage queue prevents concurrent route updates
+// from losing an entry while chrome.storage.local is read-modify-written.
 let operationQueue: Promise<void> = Promise.resolve();
 function serialized<T>(operation: () => Promise<T>): Promise<T> {
 	const previous = operationQueue;
@@ -18,87 +36,130 @@ function serialized<T>(operation: () => Promise<T>): Promise<T> {
 	return result;
 }
 
-// eff: migrates legacy string[] format to DomainEntry[]
-function migrateOldFormat(rawData: unknown): DomainEntry[] {
-	if (!Array.isArray(rawData) || !rawData.length) return [];
-	// rule: validate each entry via isDomainEntry instead of trusting the head element's
-	// shape — the previous `as DomainEntry[]` cast let malformed stored data pass through
-	// and then trip fail-closed consumers downstream. Also reject null/array head values
-	// (typeof null === 'object', typeof [] === 'object') which previously slipped past.
-	if (typeof rawData[0] === 'object' && rawData[0] !== null && !Array.isArray(rawData[0])) {
-		return rawData.filter(isDomainEntry);
+function normalizeEntries(entries: readonly DomainEntry[]): DomainEntry[] {
+	const normalized = new Map<string, DomainEntry>();
+	for (const value of entries) {
+		if (!isDomainEntry(value)) continue;
+		const previous = normalized.get(value.fingerprint);
+		if (!previous || value.updatedAt >= previous.updatedAt) {
+			normalized.set(value.fingerprint, { ...value });
+		}
 	}
-
-	// eff: legacy string array conversion with O(n) scan
-	// rule: legacy `userRegistry` (deprecated, see user-registry.ts:1) held user-defined
-	// RESTRICTED domains, so migrated entries must keep restricted:true — leaving undefined
-	// would let `restricted === true` checks at init.ts:152 and isRestricted() misclassify
-	// them as not-restricted, silently un-blocking every domain the user previously blocked.
-	if (typeof rawData[0] === 'string') {
-		const now = Date.now();
-		return (rawData as string[]).map((domain, i) => ({
-			domain, source: 'user' as DomainSource, probed: false, restricted: true, addedAt: now - i,
-		}));
-	}
-	return [];
+	return [...normalized.values()];
 }
 
-// post: ensures registry is initialized in local storage
-export async function initRegistry(): Promise<DomainEntry[]> {
-	const result = await chrome.storage.local.get([KEY, 'userRegistry']);
-	const rawData = result[KEY] || result.userRegistry;
+function isLegacyEntry(value: unknown): value is LegacyDomainEntry {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+	const candidate = value as Record<string, unknown>;
+	return typeof candidate.domain === 'string'
+		&& (candidate.source === undefined || candidate.source === 'user' || candidate.source === 'auto')
+		&& (candidate.restricted === undefined || typeof candidate.restricted === 'boolean')
+		&& (candidate.addedAt === undefined || Number.isSafeInteger(candidate.addedAt));
+}
 
-	if (rawData) {
-		const entries = migrateOldFormat(rawData);
-		await chrome.storage.local.set({ [KEY]: entries });
-		return entries;
+function looksLikeCurrentEntry(value: unknown): boolean {
+	return Boolean(value
+		&& typeof value === 'object'
+		&& !Array.isArray(value)
+		&& ('fingerprint' in value || 'route' in value || 'updatedAt' in value));
+}
+
+// eff: converts every legacy domain decision into one site-level fingerprint.
+// Exact media:v1 fingerprints learned later take precedence over this fallback.
+function migrateOldFormat(rawData: unknown): DomainEntry[] {
+	if (!Array.isArray(rawData) || rawData.length === 0) return [];
+	if (rawData.every(isDomainEntry)) return normalizeEntries(rawData);
+	if (rawData.some(looksLikeCurrentEntry)) return normalizeEntries(rawData.filter(isDomainEntry));
+
+	const now = Date.now();
+	const migrated: DomainEntry[] = [];
+	for (const [index, raw] of rawData.entries()) {
+		const legacy: LegacyDomainEntry | null = typeof raw === 'string'
+			? { domain: raw, source: 'user', restricted: true }
+			: isLegacyEntry(raw)
+				? raw
+				: null;
+		if (!legacy) continue;
+		const domain = normalizeHostname(legacy.domain);
+		const fingerprint = domain ? createSiteRouteFingerprint(domain) : null;
+		if (!domain || !fingerprint) continue;
+		migrated.push({
+			domain,
+			fingerprint,
+			route: legacy.restricted === false ? 'direct' : 'capture',
+			source: legacy.source === 'auto' ? 'auto' : 'user',
+			updatedAt: typeof legacy.addedAt === 'number' && legacy.addedAt >= 0
+				? legacy.addedAt
+				: now - index,
+		});
 	}
+	return normalizeEntries(migrated);
+}
 
-	await chrome.storage.local.set({ [KEY]: [] });
-	return [];
+export async function initRegistry(): Promise<DomainEntry[]> {
+	const result = await chrome.storage.local.get([KEY, LEGACY_KEY, 'userRegistry']);
+	const rawData = result[KEY] ?? result[LEGACY_KEY] ?? result.userRegistry;
+	const entries = migrateOldFormat(rawData);
+	await chrome.storage.local.set({ [KEY]: entries });
+	return entries;
 }
 
 export async function getRegistry(): Promise<DomainEntry[]> {
 	const result = await chrome.storage.local.get(KEY);
-	return result[KEY] ? migrateOldFormat(result[KEY]) : initRegistry();
+	if (result[KEY] === undefined) return initRegistry();
+	const entries = migrateOldFormat(result[KEY]);
+	if (!Array.isArray(result[KEY]) || entries.length !== result[KEY].length) {
+		await chrome.storage.local.set({ [KEY]: entries });
+	}
+	return entries;
 }
 
 export async function isRestricted(domain: string): Promise<boolean> {
-	const entries = await getRegistry();
-	const entry = findBestHostnameMatch(domain, entries, (item) => item.domain);
-	// rule: restricted iff flag is explicitly true; undefined (not probed) and false (safe)
-	// must NOT be reported as restricted. The previous `restricted !== false` fail-closed
-	// check marked every legacy/setRegistry entry (restricted: undefined) as restricted.
-	return entry !== null && entry.restricted === true;
+	const normalized = normalizeHostname(domain);
+	if (!normalized) return false;
+	const fallback = createSiteRouteFingerprint(normalized);
+	const entry = fallback ? await queryDomain(normalized, fallback) : null;
+	return entry?.route === 'capture';
 }
 
-// eff: returns domain entry if found, otherwise null
-export async function queryDomain(domain: string): Promise<DomainEntry | null> {
+// eff: exact media fingerprints win; site fingerprints are migration/manual fallbacks.
+export async function queryDomain(domain: string, fingerprint: string): Promise<DomainEntry | null> {
+	const normalizedDomain = normalizeHostname(domain);
+	if (!normalizedDomain || !isMediaRouteFingerprint(fingerprint)) return null;
 	const entries = await getRegistry();
-	return findBestHostnameMatch(domain, entries, (item) => item.domain);
+	const exact = entries.find((entry) => entry.fingerprint === fingerprint);
+	if (exact?.domain === normalizedDomain) return exact;
+	const siteEntries = entries.filter((entry) => entry.fingerprint.startsWith('site:'));
+	return findBestHostnameMatch(normalizedDomain, siteEntries, (entry) => entry.domain);
 }
 
-// eff: internal add-or-update logic — runs inside the caller's serialized block.
-// rule: must NOT call serialized() itself — doing so from inside markProbed's
-// serialized block would deadlock waiting on the same operationQueue.
 async function addOrUpdateDomain(
 	normalizedDomain: string,
+	fingerprint: string,
 	source: DomainSource,
-	restricted: boolean,
+	route: MediaRoute,
 ): Promise<RegistryResult> {
 	const entries = await getRegistry();
-	const existing = entries.find(e => normalizeHostname(e.domain) === normalizedDomain);
-
+	const existing = entries.find((entry) => entry.fingerprint === fingerprint);
 	if (existing) {
+		// Automatic observations never overwrite a route pinned by the user.
+		if (source === 'auto' && existing.source === 'user') {
+			return { success: true, reason: 'user_override', entry: existing };
+		}
+		existing.domain = normalizedDomain;
 		existing.source = source;
-		existing.probed = true;
-		existing.restricted = restricted;
+		existing.route = route;
+		existing.updatedAt = Date.now();
 		await chrome.storage.local.set({ [KEY]: entries });
 		return { success: true, reason: 'updated', entry: existing };
 	}
 
 	const entry: DomainEntry = {
-		domain: normalizedDomain, source, probed: true, restricted, addedAt: Date.now(),
+		domain: normalizedDomain,
+		fingerprint,
+		route,
+		source,
+		updatedAt: Date.now(),
 	};
 	entries.push(entry);
 	await chrome.storage.local.set({ [KEY]: entries });
@@ -106,58 +167,65 @@ async function addOrUpdateDomain(
 }
 
 export async function addDomain(
-	domain: string, source: DomainSource, restricted: boolean = true
+	domain: string,
+	source: DomainSource,
+	route: MediaRoute = 'capture',
+	fingerprint?: string,
 ): Promise<RegistryResult> {
 	const normalizedDomain = normalizeHostname(domain);
-	if (!normalizedDomain) return { success: false, reason: 'invalid_domain' };
-	return serialized(() => addOrUpdateDomain(normalizedDomain, source, restricted));
+	const routeFingerprint = fingerprint ?? (normalizedDomain
+		? createSiteRouteFingerprint(normalizedDomain)
+		: null);
+	if (!normalizedDomain || !routeFingerprint || !isMediaRouteFingerprint(routeFingerprint)) {
+		return { success: false, reason: 'invalid_route_identity' };
+	}
+	if (routeFingerprint.startsWith('site:')
+		&& routeFingerprint !== createSiteRouteFingerprint(normalizedDomain)) {
+		return { success: false, reason: 'invalid_route_identity' };
+	}
+	return serialized(() => addOrUpdateDomain(normalizedDomain, routeFingerprint, source, route));
 }
 
-export async function removeDomain(domain: string): Promise<RegistryResult> {
-	const normalizedDomain = normalizeHostname(domain);
-	if (!normalizedDomain) return { success: false, reason: 'invalid_domain' };
+export async function removeDomain(fingerprint: string): Promise<RegistryResult> {
+	if (!isMediaRouteFingerprint(fingerprint)) return { success: false, reason: 'invalid_fingerprint' };
 	return serialized(async () => {
 		const entries = await getRegistry();
-		const filtered = entries.filter(e => normalizeHostname(e.domain) !== normalizedDomain);
+		const filtered = entries.filter((entry) => entry.fingerprint !== fingerprint);
 		if (filtered.length === entries.length) return { success: false, reason: 'not_found' };
 		await chrome.storage.local.set({ [KEY]: filtered });
 		return { success: true };
 	});
 }
 
-// eff: record probing results; v3.7 caches both restricted and safe sites
-export async function markProbed(domain: string, restricted: boolean): Promise<RegistryResult> {
-	const normalizedDomain = normalizeHostname(domain);
-	if (!normalizedDomain) return { success: false, reason: 'invalid_domain' };
-	// rule: call addOrUpdateDomain (not addDomain) to avoid nested serialized() deadlock.
-	return serialized(() => addOrUpdateDomain(normalizedDomain, 'auto', restricted));
+export async function markProbed(
+	domain: string,
+	fingerprint: string,
+	route: MediaRoute,
+): Promise<RegistryResult> {
+	return addDomain(domain, 'auto', route, fingerprint);
 }
 
-// @deprecated: use getRegistry() for full entry data
+// @deprecated: retained for one release while old consumers move to fingerprints.
 export async function getDomainList(): Promise<string[]> {
-	return (await getRegistry()).map(e => e.domain);
+	return [...new Set((await getRegistry()).map((entry) => entry.domain))];
 }
 
-// eff: manual override for registry list, usually triggered by user input
+// eff: legacy bulk values become user-pinned, on-demand Capture site fallbacks.
 export async function setRegistry(domains: string[]): Promise<void> {
 	const now = Date.now();
 	const entries: DomainEntry[] = [];
 	const seen = new Set<string>();
-	for (const [index, domain] of domains.entries()) {
-		const normalized = normalizeHostname(domain);
-		if (!normalized || seen.has(normalized)) continue;
-		seen.add(normalized);
+	for (const [index, value] of domains.entries()) {
+		const domain = normalizeHostname(value);
+		const fingerprint = domain ? createSiteRouteFingerprint(domain) : null;
+		if (!domain || !fingerprint || seen.has(fingerprint)) continue;
+		seen.add(fingerprint);
 		entries.push({
-			domain: normalized,
-			source: 'user' as DomainSource,
-			probed: false,
-			// rule: explicit restricted:true — setRegistry replaces the deprecated setUserRegistry
-			// (user-registry.ts:1) which held user-defined RESTRICTED domains, and matches the
-			// addDomain() default. Omitting produced restricted:undefined entries that the
-			// previous fail-closed consumers happened to treat as restricted by accident;
-			// making the field explicit keeps the data model correct under the new tri-state checks.
-			restricted: true,
-			addedAt: now - index,
+			domain,
+			fingerprint,
+			route: 'capture',
+			source: 'user',
+			updatedAt: now - index,
 		});
 	}
 	await chrome.storage.local.set({ [KEY]: entries });

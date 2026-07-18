@@ -236,6 +236,7 @@ export {
 export type {
   DomainSource,
   DomainEntry,
+	MediaRoute,
 	RegistryStorage,
   RegistryResult,
 	RegistrySnapshot,
@@ -244,7 +245,12 @@ export type {
 	RegistryQueryResult,
 	HotkeyTargetState
 } from './registry.contracts.js';
-export { isDomainEntry, isRegistryEntries } from './registry.contracts.js';
+export {
+	createSiteRouteFingerprint,
+	isDomainEntry,
+	isMediaRouteFingerprint,
+	isRegistryEntries,
+} from './registry.contracts.js';
 
 export {
 	REMOTE_COMMANDS,

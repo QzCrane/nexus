@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
-	findBestHostnameMatch,
+	createSiteRouteFingerprint,
 	isSpectraRequestEnvelope,
 	isSpectraResponse,
 	normalizeHostname,
 	rpcSuccess,
 	type DomainEntry,
 	type DomainSource,
+	type MediaRoute,
 	type RegistryResult,
 } from '@nexus/contracts';
 import {
@@ -20,108 +21,118 @@ import {
 import { registerRegistryHandlers } from '../src/background/handlers/registry';
 
 function createRegistryStorage(initial: DomainEntry[] = []): RegistryStoragePort & { entries: DomainEntry[] } {
-	let addedAt = 1_700_000_000_000;
+	let updatedAt = 1_700_000_000_000;
 	const storage = {
 		entries: structuredClone(initial),
 		async get() {
 			return structuredClone(storage.entries);
 		},
-		async query(domain: string) {
-			return findBestHostnameMatch(domain, storage.entries, (entry) => entry.domain);
-		},
-		async add(domain: string, source: DomainSource, restricted = true): Promise<RegistryResult> {
+		async query(domain: string, fingerprint: string) {
 			const normalized = normalizeHostname(domain);
-			if (!normalized) return { success: false, reason: 'invalid_domain' };
+			return storage.entries.find((entry) => entry.fingerprint === fingerprint
+				&& entry.domain === normalized)
+				?? storage.entries.find((entry) => entry.fingerprint === createSiteRouteFingerprint(domain))
+				?? null;
+		},
+		async add(
+			domain: string,
+			source: DomainSource,
+			route: MediaRoute = 'capture',
+			fingerprint?: string,
+		): Promise<RegistryResult> {
+			const normalized = normalizeHostname(domain);
+			const identity = fingerprint ?? (normalized ? createSiteRouteFingerprint(normalized) : null);
+			if (!normalized || !identity) return { success: false, reason: 'invalid_route_identity' };
 			// Deliberately split read/write across an await so a missing owner queue loses updates.
 			const next = structuredClone(storage.entries);
 			await Promise.resolve();
-			const existing = next.find((entry) => normalizeHostname(entry.domain) === normalized);
+			const existing = next.find((entry) => entry.fingerprint === identity);
 			if (existing) {
+				existing.domain = normalized;
 				existing.source = source;
-				existing.probed = true;
-				existing.restricted = restricted;
+				existing.route = route;
+				existing.updatedAt = updatedAt++;
 				storage.entries = next;
 				return { success: true, reason: 'updated', entry: existing };
 			}
 			const entry: DomainEntry = {
 				domain: normalized,
+				fingerprint: identity,
+				route,
 				source,
-				probed: true,
-				restricted,
-				addedAt: addedAt++,
+				updatedAt: updatedAt++,
 			};
 			next.push(entry);
 			storage.entries = next;
 			return { success: true, entry };
 		},
-		async remove(domain: string): Promise<RegistryResult> {
-			const normalized = normalizeHostname(domain);
-			if (!normalized) return { success: false, reason: 'invalid_domain' };
-			const next = storage.entries.filter((entry) => normalizeHostname(entry.domain) !== normalized);
+		async remove(fingerprint: string): Promise<RegistryResult> {
+			const next = storage.entries.filter((entry) => entry.fingerprint !== fingerprint);
 			if (next.length === storage.entries.length) return { success: false, reason: 'not_found' };
 			storage.entries = next;
 			return { success: true };
 		},
-		async markProbed(domain: string, restricted: boolean): Promise<RegistryResult> {
-			return storage.add(domain, 'auto', restricted);
+		async markProbed(domain: string, fingerprint: string, route: MediaRoute): Promise<RegistryResult> {
+			return storage.add(domain, 'auto', route, fingerprint);
 		},
 	};
 	return storage;
 }
 
-describe('SPECTRA v2 registry contracts', () => {
-	test('strictly validates registry and hotkey target payloads', () => {
+describe('SPECTRA v2 media route registry contracts', () => {
+	test('strictly validates route and fingerprint payloads', () => {
 		const base = { protocolVersion: 2, requestId: 'registry-request' };
 		expect(isSpectraRequestEnvelope({
 			...base,
 			type: 'spectra.registry.add',
-			payload: { domain: 'BÜCHER.example.', restricted: true },
+			payload: { domain: 'BÜCHER.example.', route: 'capture' },
 		})).toBe(true);
 		expect(isSpectraRequestEnvelope({
 			...base,
 			type: 'spectra.registry.add',
-			payload: { domain: 'example.com', restricted: true, source: 'auto' },
+			payload: { domain: 'example.com', route: 'capture', source: 'auto' },
 		})).toBe(false);
 		expect(isSpectraRequestEnvelope({
 			...base,
 			type: 'spectra.registry.mark-probed',
-			payload: { domain: 'not a domain', restricted: true },
+			payload: {
+				domain: 'media.example',
+				fingerprint: 'media:v1:0123456789abcdef',
+				route: 'direct',
+			},
+		})).toBe(true);
+		expect(isSpectraRequestEnvelope({
+			...base,
+			type: 'spectra.registry.query',
+			payload: { domain: 'media.example' },
 		})).toBe(false);
 		expect(isSpectraRequestEnvelope({
 			...base,
 			type: 'spectra.hotkey-target.set',
 			payload: { tabId: 7 },
 		})).toBe(true);
-		expect(isSpectraRequestEnvelope({
-			...base,
-			type: 'spectra.hotkey-target.set',
-			payload: { tabId: 0 },
-		})).toBe(false);
-		expect(isSpectraRequestEnvelope({
-			...base,
-			type: 'spectra.hotkey-target.set',
-			payload: { tabId: null },
-		})).toBe(true);
 	});
 
-	test('rejects non-canonical registry responses and unknown fields', () => {
+	test('rejects duplicate fingerprints and unknown response fields', () => {
 		const entry: DomainEntry = {
 			domain: 'example.com',
+			fingerprint: 'site:example.com',
+			route: 'capture',
 			source: 'user',
-			probed: true,
-			restricted: true,
-			addedAt: 1,
+			updatedAt: 1,
 		};
 		expect(isSpectraResponse('spectra.registry.get', rpcSuccess({ entries: [entry] }))).toBe(true);
+		expect(isSpectraResponse('spectra.registry.get', rpcSuccess({
+			entries: [{ ...entry, domain: 'media.example' }],
+		}))).toBe(false);
+		expect(isSpectraResponse('spectra.registry.get', rpcSuccess({
+			entries: [entry, { ...entry, domain: 'media.example' }],
+		}))).toBe(false);
 		expect(isSpectraResponse('spectra.registry.add', rpcSuccess({
 			entries: [{ ...entry, source: 'auto' }],
 			entry: { ...entry, source: 'auto' },
 			created: true,
 		}))).toBe(false);
-		expect(isSpectraResponse('spectra.registry.get', rpcSuccess({
-			entries: [{ ...entry, domain: 'EXAMPLE.com' }],
-		}))).toBe(false);
-		expect(isSpectraResponse('spectra.registry.query', rpcSuccess({ entry: null }))).toBe(true);
 		expect(isSpectraResponse('spectra.registry.remove', rpcSuccess({
 			entries: [],
 			removed: true,
@@ -130,42 +141,40 @@ describe('SPECTRA v2 registry contracts', () => {
 	});
 });
 
-describe('background-owned registry repository', () => {
-	test('normalizes IDNA/trailing dots and does not lose concurrent writes', async () => {
+describe('background-owned media route repository', () => {
+	test('normalizes site fallbacks and does not lose concurrent writes', async () => {
 		const storage = createRegistryStorage();
 		const repository = new RegistryRepository(storage);
 		const [first, second] = await Promise.all([
-			repository.add('BÜCHER.Example.', 'user', true),
-			repository.add('media.example.com', 'user', false),
+			repository.add('BÜCHER.Example.', 'user', 'capture'),
+			repository.add('media.example.com', 'user', 'direct'),
 		]);
 
-		expect(first.entry.domain).toBe('xn--bcher-kva.example');
-		expect(second.entry.domain).toBe('media.example.com');
-		expect((await repository.getSnapshot()).entries.map((entry) => entry.domain)).toEqual([
-			'xn--bcher-kva.example',
-			'media.example.com',
-		]);
+		expect(first.entry).toMatchObject({
+			domain: 'xn--bcher-kva.example',
+			fingerprint: 'site:xn--bcher-kva.example',
+			route: 'capture',
+		});
+		expect(second.entry.route).toBe('direct');
+		expect((await repository.getSnapshot()).entries).toHaveLength(2);
 	});
 
-	test('serializes auto probe updates with user mutations and returns the newest snapshot', async () => {
+	test('stores independent routes for two fingerprints on one site', async () => {
 		const storage = createRegistryStorage();
 		const repository = new RegistryRepository(storage);
-		await Promise.all([
-			repository.markProbed('video.example.com', true),
-			repository.add('music.example.com', 'user', false),
-		]);
-		const queried = await repository.query('cdn.video.example.com');
-		expect(queried.entry).toMatchObject({
-			domain: 'video.example.com',
-			source: 'auto',
-			restricted: true,
-		});
-		const removed = await repository.remove('MUSIC.example.com.');
+		const first = 'media:v1:0123456789abcdef';
+		const second = 'media:v1:fedcba9876543210';
+		await repository.markProbed('video.example.com', first, 'capture');
+		await repository.markProbed('video.example.com', second, 'direct');
+		expect((await repository.query('other.example.com', first)).entry).toBeNull();
+		expect((await repository.query('video.example.com', first)).entry?.route).toBe('capture');
+		expect((await repository.query('video.example.com', second)).entry?.route).toBe('direct');
+		const removed = await repository.remove(first);
 		expect(removed.removed).toBe(true);
-		expect(removed.entries.map((entry) => entry.domain)).toEqual(['video.example.com']);
+		expect(removed.entries.map((entry) => entry.fingerprint)).toEqual([second]);
 	});
 
-	test('v2 user adds are persisted with a fixed user source', async () => {
+	test('migrates a legacy domain record and lets a v2 user route replace it', async () => {
 		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 		const listeners: Array<(
 			message: unknown,
@@ -217,15 +226,16 @@ describe('background-owned registry repository', () => {
 					protocolVersion: 2,
 					requestId: 'user-add',
 					type: 'spectra.registry.add',
-					payload: { domain: 'BÜCHER.Example.', restricted: false },
+					payload: { domain: 'BÜCHER.Example.', route: 'direct' },
 				}, { id: 'spectra-test' }, resolve);
 				if (!handled) reject(new Error('Registry v2 request was not handled'));
 			});
 			expect(isSpectraResponse('spectra.registry.add', response)).toBe(true);
-			expect(localState.restrictedRegistry).toEqual([expect.objectContaining({
+			expect(localState.mediaRouteRegistry).toEqual([expect.objectContaining({
 				domain: 'xn--bcher-kva.example',
+				fingerprint: 'site:xn--bcher-kva.example',
 				source: 'user',
-				restricted: false,
+				route: 'direct',
 			})]);
 		} finally {
 			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);

@@ -1,6 +1,11 @@
-// goal: manages the domain registry UI, allowing users to categorize domains as either 'restricted' (needs capture) or 'safe'
+// goal: manages one media-fingerprint-to-route table with no duplicate domain lists
 
-import { normalizeHostname, type DomainEntry, type RegistrySnapshot } from '@nexus/contracts';
+import {
+	normalizeHostname,
+	type DomainEntry,
+	type MediaRoute,
+	type RegistrySnapshot,
+} from '@nexus/contracts';
 import { $ } from '../utils/dom';
 import type { I18NDict } from '../types';
 import {
@@ -9,53 +14,54 @@ import {
 	removeRegistryDomain,
 } from '../../shared/registry-client';
 
-type TabType = 'restricted' | 'safe';
-type RegistryNavigationKey = 'ArrowLeft' | 'ArrowRight' | 'Home' | 'End';
-
 interface RegistryUIElements {
-	tabRestricted: HTMLButtonElement | null;
-	tabSafe: HTMLButtonElement | null;
 	filterInput: HTMLInputElement | null;
 	listContainer: HTMLElement | null;
 	newDomainInput: HTMLInputElement | null;
+	routeSelect: HTMLSelectElement | null;
 	btnAdd: HTMLButtonElement | null;
 }
 
-let currentTab: TabType = 'restricted';
 let allEntries: DomainEntry[] = [];
 let filterText = '';
 let currentDict: I18NDict | null = null;
 let mutationQueue: Promise<void> = Promise.resolve();
+let storageListenerInstalled = false;
 
 function getUIElements(): RegistryUIElements {
 	return {
-		tabRestricted: $<HTMLButtonElement>('tab-restricted'),
-		tabSafe: $<HTMLButtonElement>('tab-safe'),
 		filterInput: $<HTMLInputElement>('registry-filter'),
 		listContainer: $<HTMLElement>('registry-list'),
 		newDomainInput: $<HTMLInputElement>('registry-new-domain'),
+		routeSelect: $<HTMLSelectElement>('registry-new-route'),
 		btnAdd: $<HTMLButtonElement>('btn-add-domain'),
 	};
 }
 
-// eff: filters registry entries based on the current search text and active category tab, then reconstructs the list DOM
+function routeLabel(route: MediaRoute): string {
+	if (route === 'capture') return currentDict?.tabRestricted ?? 'Capture when needed';
+	return currentDict?.tabSafe ?? 'Direct';
+}
+
+function fingerprintLabel(entry: DomainEntry): string {
+	if (entry.fingerprint.startsWith('site:')) return 'SITE';
+	return entry.fingerprint.slice('media:v1:'.length);
+}
+
 function renderList(ui: RegistryUIElements): void {
 	if (!ui.listContainer) return;
-
-	const filtered = allEntries.filter(e => {
-		// rule: 'restricted' domains must have the restricted property truthy; 'safe' domains must have it falsy
-		const matchTab = currentTab === 'restricted' ? e.restricted !== false : e.restricted === false;
-		const matchFilter = !filterText || e.domain.toLowerCase().includes(filterText.toLowerCase());
-		return matchTab && matchFilter;
-	});
+	const query = filterText.trim().toLowerCase();
+	const filtered = allEntries
+		.filter((entry) => !query
+			|| entry.domain.toLowerCase().includes(query)
+			|| entry.fingerprint.toLowerCase().includes(query)
+			|| entry.route.includes(query))
+		.sort((left, right) => right.updatedAt - left.updatedAt);
 
 	if (filtered.length === 0) {
-		const emptyMsg = currentTab === 'restricted'
-			? (currentDict?.registryEmptyRestricted ?? 'No sites need capture')
-			: (currentDict?.registryEmptySafe ?? 'No safe sites');
 		const empty = document.createElement('div');
 		empty.className = 'registry-empty';
-		empty.textContent = emptyMsg;
+		empty.textContent = currentDict?.registryEmptyRestricted ?? 'No cached media routes';
 		ui.listContainer.replaceChildren(empty);
 		return;
 	}
@@ -63,12 +69,23 @@ function renderList(ui: RegistryUIElements): void {
 	const fragment = document.createDocumentFragment();
 	const deleteLabel = currentDict?.tipDelete || 'Delete';
 	for (const entry of filtered) {
-		const item = document.createElement('div');
+		const item = document.createElement('li');
 		item.className = 'registry-item';
 
+		const identity = document.createElement('div');
+		identity.className = 'registry-item-identity';
 		const domain = document.createElement('span');
 		domain.className = 'registry-item-domain';
 		domain.textContent = entry.domain;
+		const fingerprint = document.createElement('code');
+		fingerprint.className = 'registry-item-fingerprint';
+		fingerprint.textContent = fingerprintLabel(entry);
+		fingerprint.title = entry.fingerprint;
+		identity.append(domain, fingerprint);
+
+		const route = document.createElement('span');
+		route.className = `registry-item-route registry-item-route-${entry.route}`;
+		route.textContent = routeLabel(entry.route);
 
 		const source = document.createElement('span');
 		source.className = 'registry-item-source';
@@ -78,123 +95,83 @@ function renderList(ui: RegistryUIElements): void {
 		deleteButton.type = 'button';
 		deleteButton.className = 'registry-item-delete';
 		deleteButton.title = deleteLabel;
-		deleteButton.setAttribute('aria-label', `${deleteLabel}: ${entry.domain}`);
+		deleteButton.setAttribute('aria-label', `${deleteLabel}: ${entry.domain} ${fingerprintLabel(entry)}`);
 		deleteButton.textContent = '×';
-		deleteButton.addEventListener('click', () => deleteDomain(entry.domain, ui));
+		deleteButton.addEventListener('click', () => deleteEntry(entry.fingerprint, ui));
 
-		item.append(domain, source, deleteButton);
+		item.append(identity, route, source, deleteButton);
 		fragment.append(item);
 	}
 	ui.listContainer.replaceChildren(fragment);
+}
+
+function replaceSnapshot(snapshot: RegistrySnapshot, ui: RegistryUIElements): void {
+	allEntries.splice(0, allEntries.length, ...snapshot.entries);
+	renderList(ui);
 }
 
 function applyMutation(
 	operation: () => Promise<RegistrySnapshot>,
 	ui: RegistryUIElements,
 ): Promise<void> {
-	const task = async () => {
-		const snapshot = await operation();
-		allEntries.splice(0, allEntries.length, ...snapshot.entries);
-		renderList(ui);
-	};
+	const task = async () => replaceSnapshot(await operation(), ui);
 	const result = mutationQueue.then(task, task);
 	mutationQueue = result.catch(() => undefined);
 	return result;
 }
 
-function deleteDomain(domain: string, ui: RegistryUIElements): void {
-	void applyMutation(() => removeRegistryDomain(domain), ui).catch(() => undefined);
+function refreshSnapshot(ui: RegistryUIElements): void {
+	void getRegistrySnapshot()
+		.then((snapshot) => replaceSnapshot(snapshot, ui))
+		.catch(() => undefined);
 }
 
-// eff: normalizes the domain input and adds it to the in-memory registry with a specific category tag
-function addDomain(domain: string, ui: RegistryUIElements): void {
+function deleteEntry(fingerprint: string, ui: RegistryUIElements): void {
+	void applyMutation(() => removeRegistryDomain(fingerprint), ui).catch(() => undefined);
+}
+
+function addDomain(domain: string, route: MediaRoute, ui: RegistryUIElements): void {
 	const cleaned = normalizeHostname(domain);
 	if (!cleaned) return;
-
-	const restricted = currentTab === 'restricted';
-	void applyMutation(() => addRegistryDomain(cleaned, restricted), ui)
+	void applyMutation(() => addRegistryDomain(cleaned, route), ui)
 		.then(() => {
 			if (ui.newDomainInput?.value === domain) ui.newDomainInput.value = '';
 		})
 		.catch(() => undefined);
 }
 
-function switchTab(tab: TabType, ui: RegistryUIElements): void {
-	currentTab = tab;
-
-	for (const [type, button] of [
-		['restricted', ui.tabRestricted],
-		['safe', ui.tabSafe],
-	] as const) {
-		if (!button) continue;
-		const selected = type === tab;
-		button.classList.toggle('active', selected);
-		button.setAttribute('aria-selected', String(selected));
-		button.tabIndex = selected ? 0 : -1;
-	}
-	ui.listContainer?.setAttribute('aria-labelledby', tab === 'restricted' ? 'tab-restricted' : 'tab-safe');
-
-	renderList(ui);
-	// Automatic safe/restricted corrections are background-owned and can happen
-	// while this Popup remains open. Refresh on every category visit so an
-	// acknowledged Capture cannot remain rendered in the stale safe snapshot.
-	void getRegistrySnapshot().then((snapshot) => {
-		allEntries.splice(0, allEntries.length, ...snapshot.entries);
-		renderList(ui);
-	}).catch(() => undefined);
-}
-
-export function resolveRegistryNavigationKey(
-	current: TabType,
-	key: string,
-): TabType | null {
-	if (key === 'Home') return 'restricted';
-	if (key === 'End') return 'safe';
-	if (key === 'ArrowLeft' || key === 'ArrowRight') {
-		return current === 'restricted' ? 'safe' : 'restricted';
-	}
-	return null;
-}
-
-function handleTabKeydown(event: KeyboardEvent, tab: TabType, ui: RegistryUIElements): void {
-	const next = resolveRegistryNavigationKey(tab, event.key as RegistryNavigationKey);
-	if (!next) return;
-	event.preventDefault();
-	switchTab(next, ui);
-	(next === 'restricted' ? ui.tabRestricted : ui.tabSafe)?.focus();
-}
-
-// goal: bootstraps listeners for search input, category switching, and new domain addition
 export function initRegistryUI(entries: DomainEntry[]): void {
 	allEntries = entries;
 	const ui = getUIElements();
+	renderList(ui);
+	refreshSnapshot(ui);
 
-	switchTab(currentTab, ui);
-
-	ui.tabRestricted?.addEventListener('click', () => switchTab('restricted', ui));
-	ui.tabSafe?.addEventListener('click', () => switchTab('safe', ui));
-	ui.tabRestricted?.addEventListener('keydown', (event) => handleTabKeydown(event, 'restricted', ui));
-	ui.tabSafe?.addEventListener('keydown', (event) => handleTabKeydown(event, 'safe', ui));
-
-	ui.filterInput?.addEventListener('input', (e) => {
-		filterText = (e.target as HTMLInputElement).value;
+	ui.filterInput?.addEventListener('input', (event) => {
+		filterText = (event.target as HTMLInputElement).value;
 		renderList(ui);
 	});
 
-	ui.btnAdd?.addEventListener('click', () => {
-		if (ui.newDomainInput) addDomain(ui.newDomainInput.value, ui);
+	const submit = () => {
+		if (!ui.newDomainInput) return;
+		const route: MediaRoute = ui.routeSelect?.value === 'direct' ? 'direct' : 'capture';
+		addDomain(ui.newDomainInput.value, route, ui);
+	};
+	ui.btnAdd?.addEventListener('click', submit);
+	ui.newDomainInput?.addEventListener('keydown', (event) => {
+		if (event.key === 'Enter') submit();
 	});
 
-	ui.newDomainInput?.addEventListener('keydown', (e) => {
-		if (e.key === 'Enter' && ui.newDomainInput) {
-			addDomain(ui.newDomainInput.value, ui);
-		}
-	});
+	if (!storageListenerInstalled && chrome.storage?.onChanged) {
+		storageListenerInstalled = true;
+		const listener = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
+			if (areaName === 'local' && changes.mediaRouteRegistry) refreshSnapshot(ui);
+		};
+		chrome.storage.onChanged.addListener(listener);
+		window.addEventListener('unload', () => chrome.storage.onChanged.removeListener(listener), { once: true });
+	}
 }
 
-// post: updates the localized UI dictionary and triggers a list rerender to update tooltips and empty states
 export function updateRegistryI18n(dict: I18NDict): void {
 	currentDict = dict;
-	const ui = getUIElements();
-	renderList(ui);
+	renderList(getUIElements());
 }

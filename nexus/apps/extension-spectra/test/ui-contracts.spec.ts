@@ -13,7 +13,6 @@ import {
 } from '../src/shared/i18n/catalog';
 import { createLocaleAssetCatalogs, createLocaleCatalogs } from '../scripts/i18n-assets';
 import { getContentOSDMessages } from '../src/shared/i18n/content-osd';
-import { resolveRegistryNavigationKey } from '../src/popup/views/registry-ui';
 
 describe('hotkey editor contract', () => {
 	test('only exposes actions with runtime handlers', () => {
@@ -220,13 +219,6 @@ describe('options translations', () => {
 		}
 	});
 
-	test('implements keyboard navigation for registry tabs', () => {
-		expect(resolveRegistryNavigationKey('restricted', 'ArrowRight')).toBe('safe');
-		expect(resolveRegistryNavigationKey('safe', 'ArrowLeft')).toBe('restricted');
-		expect(resolveRegistryNavigationKey('safe', 'Home')).toBe('restricted');
-		expect(resolveRegistryNavigationKey('restricted', 'End')).toBe('safe');
-		expect(resolveRegistryNavigationKey('restricted', 'Enter')).toBeNull();
-	});
 });
 
 describe('extension-page DOM and idle contracts', () => {
@@ -240,21 +232,22 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(theme).not.toContain('spectra-theme-v2-migrated');
 	});
 
-	test('exposes stateful controls and registry tabs to assistive technology', () => {
+	test('exposes stateful controls and one media route list to assistive technology', () => {
 		const popup = readFileSync(resolve(import.meta.dir, '../public/popup.html'), 'utf8');
-		expect(popup).toContain('role="tablist"');
-		expect(popup).toContain('role="tabpanel"');
-		expect(popup).toContain('aria-selected="true"');
+		expect(popup).toContain('<ul id="registry-list" class="registry-list"');
+		expect(popup).toContain('id="registry-new-route"');
+		expect(popup).not.toContain('id="tab-restricted"');
+		expect(popup).not.toContain('id="tab-safe"');
 		expect(popup).toContain('aria-pressed="false"');
 		const registry = readFileSync(resolve(import.meta.dir, '../src/popup/views/registry-ui.ts'), 'utf8');
-		expect(registry).toContain('getRegistrySnapshot().then');
+		expect(registry).toContain('changes.mediaRouteRegistry');
+		expect(registry).toContain("entry.fingerprint.startsWith('site:')");
 
 		for (const path of [
 			'../src/popup/card/media-events.ts',
 			'../src/popup/card/render.ts',
 			'../src/popup/side-panel/index.ts',
 			'../src/popup/side-panel/video-controls.ts',
-			'../src/popup/views/registry-ui.ts',
 		]) {
 			const source = readFileSync(resolve(import.meta.dir, path), 'utf8');
 			expect(source, path).toMatch(/aria-(?:pressed|selected)/u);

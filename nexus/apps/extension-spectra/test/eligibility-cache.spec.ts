@@ -1,78 +1,120 @@
 import { describe, expect, mock, test } from 'bun:test';
-import type { DomainEntry } from '@nexus/contracts';
+import type { DomainEntry, MediaRoute } from '@nexus/contracts';
 import {
 	createMediaEligibilityCache,
+	createMediaRouteFingerprint,
 	type EligibilityCachePort,
 } from '../src/content/logic/policy-executor/eligibility-cache';
 
-function entry(restricted: boolean, source: DomainEntry['source'] = 'auto'): DomainEntry {
+const firstFingerprint = 'media:v1:0123456789abcdef';
+const secondFingerprint = 'media:v1:fedcba9876543210';
+
+function entry(
+	fingerprint: string,
+	route: MediaRoute,
+	source: DomainEntry['source'] = 'auto',
+): DomainEntry {
 	return {
 		domain: 'media.example',
+		fingerprint,
+		route,
 		source,
-		probed: true,
-		restricted,
+		updatedAt: 1,
 	};
 }
 
-function port(cached: DomainEntry | null): EligibilityCachePort & {
+function port(cached: DomainEntry[] = []): EligibilityCachePort & {
 	mark: ReturnType<typeof mock>;
 } {
 	return {
-		query: mock(async () => ({ entry: cached })),
-		mark: mock(async () => undefined),
+		query: mock(async (_domain: string, fingerprint: string) => ({
+			entry: cached.find((candidate) => candidate.fingerprint === fingerprint) ?? null,
+		})),
+		mark: mock(async (domain: string, fingerprint: string, route: MediaRoute) => {
+			const recorded: DomainEntry = { domain, fingerprint, route, source: 'auto', updatedAt: 2 };
+			return { entries: [recorded], entry: recorded, created: true };
+		}),
 	};
 }
 
-describe('domain media eligibility cache', () => {
-	test('reuses a persisted restricted decision without probing again', async () => {
-		const cachePort = port(entry(true));
+describe('media fingerprint route cache', () => {
+	test('reuses a persisted Capture route for the same unknown fingerprint', async () => {
+		const cachePort = port([entry(firstFingerprint, 'capture')]);
 		const cache = createMediaEligibilityCache('media.example', cachePort);
-		expect(await cache.resolve('PENDING')).toBe('RESTRICTED');
-		expect(await cache.resolve('SAFE')).toBe('RESTRICTED');
+		expect(await cache.resolve(firstFingerprint, 'PENDING')).toBe('RESTRICTED');
 		expect(cachePort.mark).not.toHaveBeenCalled();
 	});
 
-	test('persists a new definitive decision once', async () => {
-		const cachePort = port(null);
+	test('persists a definitive direct route once for one fingerprint', async () => {
+		const cachePort = port();
 		const cache = createMediaEligibilityCache('media.example', cachePort);
-		expect(await cache.resolve('PENDING')).toBe('PENDING');
-		expect(await cache.resolve('RESTRICTED')).toBe('RESTRICTED');
-		expect(await cache.resolve('RESTRICTED')).toBe('RESTRICTED');
+		expect(await cache.resolve(firstFingerprint, 'PENDING')).toBe('PENDING');
+		expect(await cache.resolve(firstFingerprint, 'SAFE')).toBe('SAFE');
+		expect(await cache.resolve(firstFingerprint, 'SAFE')).toBe('SAFE');
 		expect(cachePort.mark).toHaveBeenCalledTimes(1);
-		expect(cachePort.mark).toHaveBeenCalledWith('media.example', true);
+		expect(cachePort.mark).toHaveBeenCalledWith('media.example', firstFingerprint, 'direct');
 	});
 
-	test('requires live source evidence before reusing a safe-domain hint', async () => {
-		const cachePort = port(entry(false));
+	test('keeps two media fingerprints on the same site independent', async () => {
+		const cachePort = port([
+			entry(firstFingerprint, 'capture'),
+			entry(secondFingerprint, 'direct'),
+		]);
 		const cache = createMediaEligibilityCache('media.example', cachePort);
-		expect(await cache.resolve('PENDING')).toBe('PENDING');
-		expect(await cache.resolve('SAFE')).toBe('SAFE');
+		expect(await cache.resolve(firstFingerprint, 'PENDING')).toBe('RESTRICTED');
+		expect(await cache.resolve(secondFingerprint, 'PENDING')).toBe('SAFE');
+	});
+
+	test('lets current evidence correct an automatic cached route', async () => {
+		const cachePort = port([entry(firstFingerprint, 'capture')]);
+		const cache = createMediaEligibilityCache('media.example', cachePort);
+		expect(await cache.resolve(firstFingerprint, 'SAFE')).toBe('SAFE');
+		expect(cachePort.mark).toHaveBeenCalledWith('media.example', firstFingerprint, 'direct');
+	});
+
+	test('records acknowledged Capture as the successful on-demand route', async () => {
+		const cachePort = port();
+		const cache = createMediaEligibilityCache('media.example', cachePort);
+		await cache.recordActual(firstFingerprint, 'capture', 'active');
+		expect(cachePort.mark).toHaveBeenCalledWith('media.example', firstFingerprint, 'capture');
+		expect(await cache.resolve(firstFingerprint, 'PENDING')).toBe('RESTRICTED');
+	});
+
+	test('does not cache transitional or failed processors', async () => {
+		const cachePort = port();
+		const cache = createMediaEligibilityCache('media.example', cachePort);
+		await cache.recordActual(firstFingerprint, 'capture', 'starting');
+		await cache.recordActual(firstFingerprint, 'capture', 'error');
 		expect(cachePort.mark).not.toHaveBeenCalled();
 	});
 
-	test('moves an automatic safe entry to restricted after acknowledged Capture', async () => {
-		const cachePort = port(entry(false));
+	test('keeps a user-pinned direct route authoritative', async () => {
+		const cachePort = port([entry(firstFingerprint, 'direct', 'user')]);
 		const cache = createMediaEligibilityCache('media.example', cachePort);
-		expect(await cache.resolve('PENDING')).toBe('PENDING');
-		await cache.recordActual('capture', 'active');
-		expect(cachePort.mark).toHaveBeenCalledTimes(1);
-		expect(cachePort.mark).toHaveBeenCalledWith('media.example', true);
-		expect(await cache.resolve('SAFE')).toBe('RESTRICTED');
-	});
-
-	test('does not classify transitional or failed processors as acknowledged', async () => {
-		const cachePort = port(entry(false));
-		const cache = createMediaEligibilityCache('media.example', cachePort);
-		await cache.recordActual('capture', 'starting');
-		await cache.recordActual('capture', 'error');
+		expect(await cache.resolve(firstFingerprint, 'RESTRICTED')).toBe('SAFE');
+		await cache.recordActual(firstFingerprint, 'capture', 'active');
 		expect(cachePort.mark).not.toHaveBeenCalled();
 	});
 
-	test('keeps a manual safe entry authoritative over automatic processor classification', async () => {
-		const cachePort = port(entry(false, 'user'));
-		const cache = createMediaEligibilityCache('media.example', cachePort);
-		expect(await cache.resolve('RESTRICTED')).toBe('SAFE');
-		await cache.recordActual('capture', 'active');
-		expect(cachePort.mark).not.toHaveBeenCalled();
+	test('fingerprints origins and transport shape without retaining media paths', () => {
+		const media = (currentSrc: string, crossOrigin = '') => ({
+			currentSrc,
+			src: currentSrc,
+			srcObject: null,
+			crossOrigin,
+		}) as unknown as HTMLMediaElement;
+		const first = createMediaRouteFingerprint('media.example', [
+			media('https://cdn.example/video/one.m4s', 'anonymous'),
+		]);
+		const sameShape = createMediaRouteFingerprint('media.example', [
+			media('https://cdn.example/video/two.m4s', 'anonymous'),
+		]);
+		const otherOrigin = createMediaRouteFingerprint('media.example', [
+			media('https://other.example/video/one.m4s', 'anonymous'),
+		]);
+		expect(first).toBe(sameShape);
+		expect(first).not.toBe(otherOrigin);
+		expect(first).toMatch(/^media:v1:[a-f0-9]{16}$/);
+		expect(first).not.toContain('video');
 	});
 });

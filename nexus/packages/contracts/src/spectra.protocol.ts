@@ -35,8 +35,10 @@ import {
 } from './remote.contracts.js';
 import {
 	isDomainEntry,
+	isMediaRouteFingerprint,
 	isRegistryEntries,
 	type HotkeyTargetState,
+	type MediaRoute,
 	type RegistryAddResult,
 	type RegistryQueryResult,
 	type RegistryRemoveResult,
@@ -292,19 +294,19 @@ export interface SpectraRequestMap {
 		response: RegistrySnapshot;
 	};
 	'spectra.registry.add': {
-		payload: { domain: string; restricted: boolean };
+		payload: { domain: string; route: MediaRoute };
 		response: RegistryAddResult;
 	};
 	'spectra.registry.remove': {
-		payload: { domain: string };
+		payload: { fingerprint: string };
 		response: RegistryRemoveResult;
 	};
 	'spectra.registry.query': {
-		payload: { domain: string };
+		payload: { domain: string; fingerprint: string };
 		response: RegistryQueryResult;
 	};
 	'spectra.registry.mark-probed': {
-		payload: { domain: string; restricted: boolean };
+		payload: { domain: string; fingerprint: string; route: MediaRoute };
 		response: RegistryAddResult;
 	};
 	'spectra.hotkey-target.get': {
@@ -665,8 +667,10 @@ const SCREENSHOT_RECT_KEYS = new Set(['x', 'y', 'width', 'height', 'viewportWidt
 const MARKER_LABEL_PAYLOAD_KEYS = new Set(['label']);
 const MARKER_ID_PAYLOAD_KEYS = new Set(['id']);
 const TAB_MEDIA_REPORT_PAYLOAD_KEYS = new Set(['hasMediaElement', 'userInteracted']);
-const REGISTRY_DOMAIN_PAYLOAD_KEYS = new Set(['domain']);
-const REGISTRY_ADD_PAYLOAD_KEYS = new Set(['domain', 'restricted']);
+const REGISTRY_ADD_PAYLOAD_KEYS = new Set(['domain', 'route']);
+const REGISTRY_REMOVE_PAYLOAD_KEYS = new Set(['fingerprint']);
+const REGISTRY_QUERY_PAYLOAD_KEYS = new Set(['domain', 'fingerprint']);
+const REGISTRY_RECORD_PAYLOAD_KEYS = new Set(['domain', 'fingerprint', 'route']);
 const HOTKEY_TARGET_KEYS = new Set(['tabId']);
 const RPC_SUCCESS_KEYS = new Set(['ok', 'data']);
 const RPC_FAILURE_KEYS = new Set(['ok', 'error']);
@@ -1036,15 +1040,34 @@ function isRegistryAddPayload(
 	return isRecord(value)
 		&& hasOnlyKeys(value, REGISTRY_ADD_PAYLOAD_KEYS)
 		&& isRegistryDomain(value.domain)
-		&& typeof value.restricted === 'boolean';
+		&& (value.route === 'direct' || value.route === 'capture');
 }
 
 function isRegistryRemovePayload(
 	value: unknown,
 ): value is SpectraRequestPayload<'spectra.registry.remove'> {
 	return isRecord(value)
-		&& hasOnlyKeys(value, REGISTRY_DOMAIN_PAYLOAD_KEYS)
-		&& isRegistryDomain(value.domain);
+		&& hasOnlyKeys(value, REGISTRY_REMOVE_PAYLOAD_KEYS)
+		&& isMediaRouteFingerprint(value.fingerprint);
+}
+
+function isRegistryQueryPayload(
+	value: unknown,
+): value is SpectraRequestPayload<'spectra.registry.query'> {
+	return isRecord(value)
+		&& hasOnlyKeys(value, REGISTRY_QUERY_PAYLOAD_KEYS)
+		&& isRegistryDomain(value.domain)
+		&& isMediaRouteFingerprint(value.fingerprint);
+}
+
+function isRegistryRecordPayload(
+	value: unknown,
+): value is SpectraRequestPayload<'spectra.registry.mark-probed'> {
+	return isRecord(value)
+		&& hasOnlyKeys(value, REGISTRY_RECORD_PAYLOAD_KEYS)
+		&& isRegistryDomain(value.domain)
+		&& isMediaRouteFingerprint(value.fingerprint)
+		&& (value.route === 'direct' || value.route === 'capture');
 }
 
 function isHotkeyTargetState(value: unknown): value is HotkeyTargetState {
@@ -1065,7 +1088,7 @@ function isRegistryAddResult(value: unknown): value is RegistryAddResult {
 		|| !isRegistryEntries(value.entries)
 		|| !isDomainEntry(value.entry)) return false;
 	const addedEntry = value.entry;
-	return value.entries.some((entry) => entry.domain === addedEntry.domain)
+	return value.entries.some((entry) => entry.fingerprint === addedEntry.fingerprint)
 		&& typeof value.created === 'boolean';
 }
 
@@ -1274,8 +1297,8 @@ const REQUEST_PAYLOAD_GUARDS = {
 	'spectra.registry.get': isEmptyPayload,
 	'spectra.registry.add': isRegistryAddPayload,
 	'spectra.registry.remove': isRegistryRemovePayload,
-	'spectra.registry.query': isRegistryRemovePayload,
-	'spectra.registry.mark-probed': isRegistryAddPayload,
+	'spectra.registry.query': isRegistryQueryPayload,
+	'spectra.registry.mark-probed': isRegistryRecordPayload,
 	'spectra.hotkey-target.get': isEmptyPayload,
 	'spectra.hotkey-target.set': isHotkeyTargetState,
 	'spectra.remote.session.get': isRemoteSessionPayload,

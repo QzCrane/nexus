@@ -831,7 +831,11 @@ async function markRegistryDomain(client: Page, domain: string, restricted: bool
 			protocolVersion: 2,
 			requestId: crypto.randomUUID(),
 			type: 'spectra.registry.mark-probed',
-			payload: { domain: targetDomain, restricted: isRestricted },
+			payload: {
+				domain: targetDomain,
+				fingerprint: `site:${targetDomain}`,
+				route: isRestricted ? 'capture' : 'direct',
+			},
 		});
 	}, { targetDomain: domain, isRestricted: restricted });
 	if (!response?.ok) throw new Error(response?.error?.message ?? 'Unable to update the domain registry');
@@ -1676,22 +1680,17 @@ describe('SPECTRA built extension smoke', () => {
 			mainAriaHidden: 'true',
 			settingsAriaHidden: 'false',
 		});
-		await popup.focus('#tab-restricted');
-		await popup.keyboard.press('ArrowRight');
 		expect(await popup.evaluate(() => ({
-			activeId: document.activeElement?.id,
-			restrictedSelected: document.querySelector('#tab-restricted')?.getAttribute('aria-selected'),
-			restrictedTabIndex: (document.querySelector('#tab-restricted') as HTMLElement | null)?.tabIndex,
-			safeSelected: document.querySelector('#tab-safe')?.getAttribute('aria-selected'),
-			safeTabIndex: (document.querySelector('#tab-safe') as HTMLElement | null)?.tabIndex,
+			listTag: document.querySelector('#registry-list')?.tagName,
 			panelLabel: document.querySelector('#registry-list')?.getAttribute('aria-labelledby'),
+			routeValues: [...document.querySelectorAll<HTMLOptionElement>('#registry-new-route option')]
+				.map((option) => option.value),
+			hasLegacyTabs: Boolean(document.querySelector('#tab-restricted, #tab-safe')),
 		}))).toEqual({
-			activeId: 'tab-safe',
-			restrictedSelected: 'false',
-			restrictedTabIndex: -1,
-			safeSelected: 'true',
-			safeTabIndex: 0,
-			panelLabel: 'tab-safe',
+			listTag: 'UL',
+			panelLabel: 'registry-group-title',
+			routeValues: ['capture', 'direct'],
+			hasLegacyTabs: false,
 		});
 		await popup.click('#btn-back');
 		await popup.waitForSelector('#view-main:not([hidden])');
