@@ -70,9 +70,8 @@ function stopScheduledFrame(): void {
 function isRunnable(subscription: VizSubscription): boolean {
   if (!subscription.active || !subscription.visible) return false;
   const config = subscription.params.getConfig();
-  // rule: visualizer should run whenever audio is enabled and not muted
-  // Always request data from background - it will return empty frames when no audio is playing
-  // This prevents the visualizer from getting stuck
+  // Always run visualizer when audio is enabled - it will show silence when no audio is playing
+  // This ensures the visualizer never gets "stuck" and always reflects real audio state
   return config.enabled
     && !config.muted
     && subscription.params.getGlobalSettings().visualizerEnabled !== false;

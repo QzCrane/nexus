@@ -185,7 +185,7 @@ export function bindCardEvents(params: EventsParams): void {
       const speed = await readActualSpeed();
 	  if (speed !== null) {
 		state.config.speed = speed;
-      }
+	  }
     } catch (e) {
       console.warn('Failed to get speed for preset save', e);
     }
@@ -198,6 +198,10 @@ export function bindCardEvents(params: EventsParams): void {
       setTimeout(() => { ui.btnSave.innerText = old; }, TIMING.BUTTON_FEEDBACK_DURATION);
     } catch (error) {
       console.error('Failed to save config:', error);
+      // feedback: show error message on button
+      const old = ui.btnSave.innerText;
+      ui.btnSave.innerText = '保存失败';
+      setTimeout(() => { ui.btnSave.innerText = old; }, TIMING.BUTTON_FEEDBACK_DURATION);
     }
   };
 

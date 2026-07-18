@@ -154,12 +154,9 @@ function handleKeydown(e: KeyboardEvent): void {
 		return;
 	}
 	if (coalesced.has(binding.id)) return;
-	const wait = Math.max(0, 50 - (performance.now() - (lastExecution.get(binding.id) ?? 0)));
-	coalesced.set(binding.id, setTimeout(() => {
-		coalesced.delete(binding.id);
-		lastExecution.set(binding.id, performance.now());
-		void executeWithOSD(binding);
-	}, wait));
+	// Execute synchronously for instant toast feedback
+	lastExecution.set(binding.id, performance.now());
+	void executeWithOSD(binding);
 }
 
 function handleKeyup(e: KeyboardEvent): void {
@@ -186,8 +183,9 @@ function handleKeyup(e: KeyboardEvent): void {
 
 async function executeWithOSD(b: HotkeyBinding): Promise<void> {
 	const action = b.action;
-	// Show toast immediately before awaiting the action to avoid IPC delay
-	if (HOTKEY_ACTION_DESCRIPTORS[action].feedbackOwner === 'listener-label') {
+	const feedbackOwner = HOTKEY_ACTION_DESCRIPTORS[action].feedbackOwner;
+	// Show toast immediately for instant feedback, before awaiting the action
+	if (feedbackOwner === 'listener-label' || feedbackOwner === 'actual-osd') {
 		showToast(formatLabel(action, b.params));
 	}
 	try {
