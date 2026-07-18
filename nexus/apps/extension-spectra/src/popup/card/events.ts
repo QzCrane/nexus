@@ -192,11 +192,17 @@ export function bindCardEvents(params: EventsParams): void {
       console.warn('Failed to get speed for preset save', e);
     }
 
-	await patchSettings({ scope: 'audio-site', domain, value: state.config, mode: 'replace' });
-    // feedback: provide a transient visual confirmation on the save button
-    const old = ui.btnSave.innerText;
-    ui.btnSave.innerText = 'OK';
-    setTimeout(() => { ui.btnSave.innerText = old; }, TIMING.BUTTON_FEEDBACK_DURATION);
+    try {
+      await patchSettings({ scope: 'audio-site', domain, value: state.config, mode: 'replace' });
+      // feedback: provide a transient visual confirmation on the save button
+      const old = ui.btnSave.innerText;
+      ui.btnSave.innerText = 'OK';
+      setTimeout(() => { ui.btnSave.innerText = old; }, TIMING.BUTTON_FEEDBACK_DURATION);
+      showPopupToast('💾 配置已保存');
+    } catch (error) {
+      console.error('Failed to save config:', error);
+      showPopupToast('❌ 保存失败', 'error');
+    }
   };
 
   // eff: save as global preset
