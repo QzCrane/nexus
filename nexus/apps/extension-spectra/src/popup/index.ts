@@ -21,18 +21,39 @@ async function main(): Promise<void> {
     // note: failure to query tabs usually indicates the popup was opened in a non-browser context (e.g. devtools)
   }
 
-  initNavigation();
+  try {
+    initNavigation();
+  } catch (error) {
+    console.error('[SPECTRA Popup] initNavigation failed:', error);
+  }
 
-  const { gSettings, registryEntries, dict } = await initSettings();
+  let gSettings, registryEntries, dict;
+  try {
+    const settings = await initSettings();
+    gSettings = settings.gSettings;
+    registryEntries = settings.registryEntries;
+    dict = settings.dict;
+  } catch (error) {
+    console.error('[SPECTRA Popup] initSettings failed:', error);
+    return;
+  }
 
   // eff: lazy load side panel only when needed
-  const { initSidePanel } = await import('./side-panel');
-  initSidePanel();
+  try {
+    const { initSidePanel } = await import('./side-panel');
+    initSidePanel();
+  } catch (error) {
+    console.error('[SPECTRA Popup] initSidePanel failed:', error);
+  }
 
   if (activeTab?.id) {
-    const { bindRemoteUI } = await import('../remote');
-    const disposeRemoteUI = bindRemoteUI(activeTab.id, dict);
-    window.addEventListener('pagehide', disposeRemoteUI, { once: true });
+    try {
+      const { bindRemoteUI } = await import('../remote');
+      const disposeRemoteUI = bindRemoteUI(activeTab.id, dict);
+      window.addEventListener('pagehide', disposeRemoteUI, { once: true });
+    } catch (error) {
+      console.error('[SPECTRA Popup] bindRemoteUI failed:', error);
+    }
   }
 
   let currentSettings = gSettings;

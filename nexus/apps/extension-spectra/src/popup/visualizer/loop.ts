@@ -70,10 +70,12 @@ function stopScheduledFrame(): void {
 function isRunnable(subscription: VizSubscription): boolean {
   if (!subscription.active || !subscription.visible) return false;
   const config = subscription.params.getConfig();
+  // rule: visualizer should run whenever audio is enabled and not muted,
+  // regardless of processor state. Background returns empty frames when
+  // no WebAudio graph exists, keeping the bar flat without blocking UI.
   return config.enabled
     && !config.muted
-    && subscription.params.getGlobalSettings().visualizerEnabled !== false
-    && subscription.params.isProcessorActive();
+    && subscription.params.getGlobalSettings().visualizerEnabled !== false;
 }
 
 function hasRunnableSubscriptions(): boolean {

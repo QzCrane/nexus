@@ -122,6 +122,9 @@ function updateSidePanelI18n(dict: I18NDict): void {
 
 function setInteractiveLabel(element: HTMLElement | null, label: string): void {
 	if (!element) return;
-	element.title = label;
-	element.setAttribute('aria-label', label);
+	// rule: only set text content if label is a valid string to prevent "undefined" display
+	if (typeof label === 'string' && label.length > 0) {
+		element.title = label;
+		element.setAttribute('aria-label', label);
+	}
 }

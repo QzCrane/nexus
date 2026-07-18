@@ -40,6 +40,11 @@ export function prepareCardDom(params: {
 	ui.domain.innerText = domain;
 	ui.icon.src = getSafeImageUrl(tab.favIconUrl, chrome.runtime.getURL('icons/icon48.png'));
 	ui.icon.alt = '';
+	// rule: provide fallback when favicon fails to load (e.g. CSP restrictions)
+	ui.icon.onerror = () => {
+		ui.icon.onerror = null;
+		ui.icon.src = chrome.runtime.getURL('icons/icon48.png');
+	};
 	ui.mask.setAttribute('role', 'button');
 	ui.mask.setAttribute('aria-label', `${dict.paused}. ${dict.clickToResume}`);
 	ui.mask.tabIndex = 0;

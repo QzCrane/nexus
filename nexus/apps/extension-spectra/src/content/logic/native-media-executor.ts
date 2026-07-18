@@ -480,6 +480,17 @@ export class NativeMediaExecutor {
 	private desiredRevision = 0;
 	private disposed = false;
 
+	// rule: when the plugin owns a restorable field (volume/mute/speed) and the
+	// page changes it without a matching pending write, we re-assert our value
+	// instead of immediately surrendering ownership. This prevents brief page
+	// interference (e.g. video-start volume resets) from yanking the popup slider
+	// back. Only after sustained resistance does ownership get relinquished so a
+	// deliberate user gesture on the page's own UI can still win.
+	private readonly reassertTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	private readonly reassertAttempts = new Map<string, number>();
+	private static readonly REASSERT_DEBOUNCE_MS = 400;
+	private static readonly REASSERT_THRESHOLD = 3;
+
 	constructor(registry?: MediaRegistry, effects?: VideoEffectsControllerPort) {
 		this.registry = registry ?? new MediaRegistry();
 		this.ownsRegistry = registry === undefined;
@@ -1270,6 +1281,15 @@ export class NativeMediaExecutor {
 			}
 			if (this.matches(observed[field], actual, field === 'currentTime' ? 0.05 : 0.01)) continue;
 			this.observe(mediaId, field, actual as ControlValues[ControlField]);
+			// rule: when the plugin owns this restorable field, the page's change is
+			// treated as interference (e.g. video-start volume reset) rather than a
+			// new actual state. Schedule a re-assert of our lastApplied value so the
+			// popup slider stays where the user put it. Ownership is only relinquished
+			// after sustained page resistance (see performReassert).
+			if (isRestorableMediaField(field) && this.isFieldOwned(element, field)) {
+				this.scheduleReassert(element, target, field, mediaId);
+				continue;
+			}
 			(patch as Record<string, unknown>)[field] = actual;
 		}
 		if (Object.keys(patch).length === 0) return;
@@ -1377,6 +1397,106 @@ export class NativeMediaExecutor {
 		return valuesMatch(expected, actual, tolerance);
 	}
 
+	private isFieldOwned(element: HTMLMediaElement, field: RestorableMediaField): boolean {
+		const ownership = nativeMediaOwnership.byElement.get(element);
+		return ownership?.has(field) ?? false;
+	}
+
+	private scheduleReassert(
+		element: HTMLMediaElement,
+		target: import('@nexus/contracts').MediaTarget,
+		field: RestorableMediaField,
+		mediaId: string,
+	): void {
+		const key = `${mediaId}:${field}`;
+		const existing = this.reassertTimers.get(key);
+		if (existing) clearTimeout(existing);
+		const timer = setTimeout(() => {
+			this.reassertTimers.delete(key);
+			void this.performReassert(element, target, field, mediaId, key);
+		}, NativeMediaExecutor.REASSERT_DEBOUNCE_MS);
+		this.reassertTimers.set(key, timer);
+	}
+
+	private async performReassert(
+		element: HTMLMediaElement,
+		target: import('@nexus/contracts').MediaTarget,
+		field: RestorableMediaField,
+		mediaId: string,
+		key: string,
+	): Promise<void> {
+		const ownership = nativeMediaOwnership.byElement.get(element);
+		const owned = ownership?.get(field);
+		if (!owned) return;
+		const tolerance = field === 'volumeBase' || field === 'speed' ? 0.01 : 0;
+		const current = readRestorableMediaField(element, field);
+		if (valuesMatch(current, owned.lastApplied, tolerance)) {
+			this.reassertAttempts.delete(key);
+			return;
+		}
+		const intentId = `reassert:${crypto.randomUUID()}`;
+		const pending: PendingWrite = {
+			intentId,
+			revision: 0,
+			expected: owned.lastApplied,
+			tolerance,
+			timeoutId: setTimeout(() => this.clearPending(mediaId, field, intentId), 1500),
+		};
+		this.markPending(mediaId, field, pending);
+		try {
+			const actual = await writeWithStableEventAck(
+				element,
+				field === 'volumeBase' ? 'volumechange' : field === 'mediaMuted' ? 'volumechange' : 'ratechange',
+				() => writeRestorableMediaField(element, field, owned.lastApplied),
+				() => readRestorableMediaField(element, field),
+				owned.lastApplied,
+				tolerance,
+			);
+			this.observe(mediaId, field, actual as ControlValues[ControlField]);
+			this.clearPending(mediaId, field, intentId);
+			this.reassertAttempts.delete(key);
+		} catch {
+			this.clearPending(mediaId, field, intentId);
+			const attempts = (this.reassertAttempts.get(key) ?? 0) + 1;
+			this.reassertAttempts.set(key, attempts);
+			if (attempts >= NativeMediaExecutor.REASSERT_THRESHOLD) {
+				this.relinquishOwnedField(element, target, field, mediaId);
+			}
+		}
+	}
+
+	private relinquishOwnedField(
+		element: HTMLMediaElement,
+		target: import('@nexus/contracts').MediaTarget,
+		field: RestorableMediaField,
+		mediaId: string,
+	): void {
+		if (this.tabId === null) return;
+		const ownership = nativeMediaOwnership.byElement.get(element);
+		ownership?.delete(field);
+		if (ownership?.size === 0) nativeMediaOwnership.byElement.delete(element);
+		this.reassertAttempts.delete(`${mediaId}:${field}`);
+		const actual = readRestorableMediaField(element, field);
+		this.observe(mediaId, field, actual as ControlValues[ControlField]);
+		void sendSpectraRequest('spectra.control.intent.submit', {
+			tabId: this.tabId,
+			source: 'page',
+			requestedCoverage: 'active-target',
+			target,
+			patch: { [field]: actual },
+		}).catch(() => undefined);
+	}
+
+	private clearReassertForMedia(mediaId: string): void {
+		for (const [key, timer] of this.reassertTimers.entries()) {
+			if (key.startsWith(`${mediaId}:`)) {
+				clearTimeout(timer);
+				this.reassertTimers.delete(key);
+				this.reassertAttempts.delete(key);
+			}
+		}
+	}
+
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
@@ -1387,6 +1507,9 @@ export class NativeMediaExecutor {
 		this.observed.clear();
 		this.appliedDesiredRevision.clear();
 		this.replayPending.clear();
+		for (const timer of this.reassertTimers.values()) clearTimeout(timer);
+		this.reassertTimers.clear();
+		this.reassertAttempts.clear();
 		this.unsubscribeRegistry();
 		if (this.ownsRegistry) this.registry.dispose();
 		if (this.ownsEffects) this.effects?.dispose();

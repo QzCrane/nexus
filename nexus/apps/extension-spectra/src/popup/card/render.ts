@@ -41,7 +41,10 @@ export function createRenderFn(params: RenderParams): () => void {
 		controls?.setAttribute('aria-hidden', String(disabled));
     ui.enable.checked = config.enabled;
 
-    ui.slider.value = String(volume.effectiveVolume);
+    // rule: only update slider if not actively dragging to prevent "jumping back" during user interaction
+    if (!state.isDragging) {
+      ui.slider.value = String(volume.effectiveVolume);
+    }
     ui.fill.style.width = `${(volume.effectiveVolume / AUDIO_UI.MAX_VOLUME) * 100}%`;
     ui.val.innerText = muted ? 'MUTE' : `${formatVolume(volume.effectiveVolume)}%`;
     ui.mute.classList.toggle('active', muted);
