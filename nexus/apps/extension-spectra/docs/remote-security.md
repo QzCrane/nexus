@@ -1,5 +1,11 @@
 # Authenticated Remote Protocol v2
 
+This document is the sole owner of remote pairing, HMAC authentication,
+PeerJS/offscreen session binding and reconnect expiry. Cross-context wire
+envelopes remain owned by [protocols.md](./protocols.md); media-control
+semantics remain owned by [control-architecture.md](./control-architecture.md).
+Do not copy either policy into this security evidence document.
+
 ## Trust boundaries
 
 - The Popup may create, inspect, or close a session only for an explicit `tabId`. Closing also requires the matching `sessionId`.

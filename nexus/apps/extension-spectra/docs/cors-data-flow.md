@@ -4,6 +4,11 @@ This document records the current source-admission algorithm. It does not own a
 second mode matrix; [control-architecture.md](./control-architecture.md) remains
 authoritative.
 
+This file is the sole owner of source eligibility evidence and irreversible
+Media WebAudio admission. Runtime ownership and wire semantics are delegated to
+[architecture.md](./architecture.md) and [protocols.md](./protocols.md);
+neither is duplicated here.
+
 `createMediaElementSource()` is irreversible for an element and analyser
 silence cannot distinguish silence from CORS or protected media. SPECTRA
 therefore never binds or samples a source as a probe.
