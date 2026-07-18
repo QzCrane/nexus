@@ -289,7 +289,7 @@ function isOperationResult(operation: ControlOperation, value: unknown): boolean
 		case 'video-effects-toggle':
 			return hasOnly(value, new Set(['enabled'])) && typeof value.enabled === 'boolean';
 		case 'show-info':
-			return hasOnly(value, new Set(['shown'])) && value.shown === true;
+			return hasOnly(value, new Set(['shown'])) && typeof value.shown === 'boolean';
 		case 'open-popup':
 		case 'open-options':
 		case 'open-url':

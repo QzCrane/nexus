@@ -99,6 +99,8 @@ export const EN_US: I18NDict = {
   btnClose: 'Close',
   btnSaveAsGlobal: 'Save as Global Preset',
   presetSaveGlobalPrompt: 'Enter preset name:',
+  saveSuccess: 'Saved',
+  saveFailed: 'Failed',
   // group: remote control bridge
   btnRemoteTooltip: 'Remote Control',
   remoteModalTitle: '📱 Remote Control',

@@ -50,7 +50,7 @@ export {
 	resolveAudioVolume,
 };
 
-export const SPECTRA_CONTENT_RUNTIME_REVISION = '3.1.0' as const;
+export const SPECTRA_CONTENT_RUNTIME_REVISION = '3.3.2' as const;
 
 // One-release legacy capture event adapter. Keeping the single literal avoids
 // shipping the unrelated Nexus/Halo action table into every page runtime.
@@ -127,7 +127,7 @@ function isBoundedString(value: unknown, maximum: number): value is string {
 	return typeof value === 'string' && value.length > 0 && value.length <= maximum;
 }
 
-function isMediaTarget(value: unknown): value is MediaTarget {
+export function isMediaTarget(value: unknown): value is MediaTarget {
 	return isRecord(value)
 		&& hasOnly(value, new Set(['frameId', 'documentId', 'mediaId', 'sourceRevision', 'kind']))
 		&& isInteger(value.frameId)
@@ -364,6 +364,25 @@ export function isSpectraEventEnvelope(value: unknown): value is SpectraEventEnv
 		&& value.generation === value.payload.generation;
 	if (value.type === 'spectra.content.settings.changed') return isContentSettings(value.payload);
 	if (value.type === 'spectra.hotkeys.changed') return isHotkeySettings(value.payload);
+	if (value.type === 'spectra.hotkey.target.feedback') return isInteger(value.tabId, true)
+		&& isRecord(value.payload)
+		&& hasOnly(value.payload, new Set(['action', 'targetTabId', 'targetTitle', 'targetHostname', 'feedback']))
+		&& typeof value.payload.action === 'string'
+		&& Object.hasOwn(HOTKEY_ACTION_DESCRIPTORS, value.payload.action)
+		&& isInteger(value.payload.targetTabId, true)
+		&& isBoundedString(value.payload.targetTitle, 512)
+		&& isBoundedString(value.payload.targetHostname, 253)
+		&& (value.payload.feedback === undefined || (
+			isRecord(value.payload.feedback)
+			&& (value.payload.feedback.kind === 'volume'
+				? hasOnly(value.payload.feedback, new Set(['kind', 'value', 'muted', 'capture']))
+					&& isFiniteInRange(value.payload.feedback.value, 0, 800)
+					&& typeof value.payload.feedback.muted === 'boolean'
+					&& typeof value.payload.feedback.capture === 'boolean'
+				: value.payload.feedback.kind === 'speed'
+					&& hasOnly(value.payload.feedback, new Set(['kind', 'value']))
+					&& isFiniteInRange(value.payload.feedback.value, 0.1, 16))
+		));
 	if (value.type === 'spectra.navigation.changed') return isInteger(value.tabId, true)
 		&& isBoundedString(value.documentId, 256)
 		&& value.generation === undefined

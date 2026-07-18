@@ -98,6 +98,8 @@ export const DE_DE: I18NDict = {
 	btnClose: 'Schließen',
 	btnSaveAsGlobal: 'Als globales Preset speichern',
 	presetSaveGlobalPrompt: 'Preset-Namen eingeben:',
+	saveSuccess: 'Gespeichert',
+	saveFailed: 'Fehlgeschlagen',
 	// Fernbedienung
 	btnRemoteTooltip: 'Fernbedienung',
 	remoteModalTitle: '📱 Fernbedienung',

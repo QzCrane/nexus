@@ -842,7 +842,7 @@ export interface ControlOperationResultMap {
 	'audio-reset': { reset: true };
 	'video-effects-toggle': { enabled: boolean };
 	'video-effects-reset': { reset: true };
-	'show-info': { shown: true };
+	'show-info': { shown: boolean };
 	'open-popup': { opened: true };
 	'open-options': { opened: true };
 	'run-user-script': { executed: true };
@@ -1274,7 +1274,7 @@ function isOperationResult(operation: ControlOperation, value: unknown): boolean
 		case 'video-effects-toggle':
 			return hasOnlyKeys(value, new Set(['enabled'])) && typeof value.enabled === 'boolean';
 		case 'show-info':
-			return hasOnlyKeys(value, new Set(['shown'])) && value.shown === true;
+			return hasOnlyKeys(value, new Set(['shown'])) && typeof value.shown === 'boolean';
 		case 'open-popup':
 		case 'open-options':
 		case 'open-url':

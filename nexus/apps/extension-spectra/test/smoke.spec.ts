@@ -12,6 +12,11 @@ import puppeteer, {
 	type WebWorker,
 } from 'puppeteer';
 import { SPECTRA_CONTENT_RUNTIME_REVISION } from '@nexus/contracts';
+import {
+	SPECTRA_PLAYBACK_RATE_EVENT,
+	SPECTRA_PLAYBACK_RATE_REQUEST_ATTRIBUTE,
+	SPECTRA_PLAYBACK_RATE_RESULT_ATTRIBUTE,
+} from '../src/shared/playback-rate-bridge';
 
 const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
 const FIXTURE_PATH = join(import.meta.dir, 'fixtures', 'smoke-test.html');
@@ -556,12 +561,39 @@ async function openActionPopupTarget(timeoutMs = 10_000): Promise<Target> {
 	}
 }
 
-async function readPopupVolumePresentation(): Promise<PopupVolumePresentation> {
+async function readPopupVolumePresentation(expectedAccent?: string): Promise<PopupVolumePresentation> {
 	await fixturePage.bringToFront();
 	const target = await openActionPopupTarget();
 	const popup = await target.asPage();
 	try {
 		await popup.waitForSelector('.glass-card .vol-slider', { timeout: 8_000 });
+		if (expectedAccent) {
+			await popup.waitForFunction((accent) => {
+				const slider = document.querySelector<HTMLElement>('.vol-slider');
+				return slider
+					&& getComputedStyle(slider).getPropertyValue('--slider-accent').trim() === accent;
+			}, { timeout: 8_000 }, expectedAccent).catch(async (error) => {
+				const diagnostic = await popup.evaluate(async () => {
+					const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+					const request = (type: string, payload: Record<string, unknown>) => chrome.runtime.sendMessage({
+						protocolVersion: 2,
+						requestId: crypto.randomUUID(),
+						tabId: tab?.id,
+						type,
+						payload,
+					});
+					return {
+						accent: getComputedStyle(document.querySelector<HTMLElement>('.vol-slider')!)
+							.getPropertyValue('--slider-accent').trim(),
+						session: tab?.id ? await request('spectra.audio.session.get', { tabId: tab.id }) : null,
+						control: tab?.id ? await request('spectra.control.snapshot.get', { tabId: tab.id }) : null,
+					};
+				});
+				throw new Error(`Popup accent did not reach ${expectedAccent}: ${JSON.stringify(diagnostic)}`, {
+					cause: error,
+				});
+			});
+		}
 		return await popup.evaluate(() => {
 			const sliders = [...document.querySelectorAll<HTMLInputElement>('.vol-slider')];
 			const slider = sliders[0];
@@ -579,8 +611,22 @@ async function readPopupVolumePresentation(): Promise<PopupVolumePresentation> {
 			};
 		});
 	} finally {
-		await popup.close().catch(() => undefined);
+		await closeActionPopup(popup);
 	}
+}
+
+async function closeActionPopup(popup: Page): Promise<void> {
+	if (popup.isClosed()) return;
+	// Let the real action-popup lifecycle dispatch blur/pagehide so analyser
+	// leases reach the worker before CDP destroys the target.
+	await popup.evaluate(() => window.close()).catch(() => undefined);
+	await eventually(
+		async () => popup.isClosed(),
+		(closed) => closed,
+		'action popup close',
+		1_000,
+	).catch(() => undefined);
+	if (!popup.isClosed()) await popup.close().catch(() => undefined);
 }
 
 async function submitEffectiveVolume(tabId: number, value: number): Promise<void> {
@@ -1526,6 +1572,57 @@ describe('SPECTRA built extension smoke', () => {
 		expect(await fixturePage.evaluate(() => location.hash)).toBe('#details');
 	});
 
+	test('synchronizes a deferred body-portal playback-rate menu with the controlled video', async () => {
+		const state = await fixturePage.evaluate(async ({ eventName, requestAttribute, resultAttribute }) => {
+			const video = document.querySelector<HTMLVideoElement>('#v');
+			const player = video?.parentElement;
+			if (!video || !player) throw new Error('SPA video is missing');
+			player.classList.add('xgplayer');
+			const requestId = crypto.randomUUID();
+			video.setAttribute(requestAttribute, JSON.stringify({ requestId, speed: 1.5 }));
+			video.dispatchEvent(new Event(eventName));
+			const result = JSON.parse(video.getAttribute(resultAttribute) ?? '{}') as {
+				requestId?: string;
+				actual?: number;
+			};
+
+			let selectedClicks = 0;
+			const portal = document.createElement('div');
+			portal.className = 'xgplayer-playbackrate';
+			for (const rate of [1, 1.5, 2]) {
+				const option = document.createElement('li');
+				option.dataset.value = String(rate);
+				option.textContent = `${rate}x`;
+				if (rate === 1) option.className = 'selected';
+				if (rate === 1.5) option.addEventListener('click', () => { selectedClicks += 1; });
+				portal.append(option);
+			}
+			document.body.append(portal);
+			await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+			const options = [...portal.querySelectorAll<HTMLElement>('li')];
+			return {
+				requestMatches: result.requestId === requestId,
+				actual: result.actual,
+				playbackRate: video.playbackRate,
+				rootRate: player.getAttribute('data-spectra-playback-rate'),
+				selectedClicks,
+				selected: options.map((option) => option.getAttribute('aria-selected')),
+			};
+		}, {
+			eventName: SPECTRA_PLAYBACK_RATE_EVENT,
+			requestAttribute: SPECTRA_PLAYBACK_RATE_REQUEST_ATTRIBUTE,
+			resultAttribute: SPECTRA_PLAYBACK_RATE_RESULT_ATTRIBUTE,
+		});
+		expect(state).toEqual({
+			requestMatches: true,
+			actual: 1.5,
+			playbackRate: 1.5,
+			rootRate: '1.5',
+			selectedClicks: 1,
+			selected: ['false', 'true', 'false'],
+		});
+	});
+
 	test('fullscreen lifecycle preserves the site volume, mute, and playback rate', async () => {
 		const preserved = await fixturePage.evaluate(async () => {
 			const video = document.querySelector<HTMLVideoElement>('#v');
@@ -1708,12 +1805,84 @@ describe('SPECTRA built extension smoke', () => {
 					language,
 				);
 				await assertPageAudit(popup, `popup main ${language}`);
+				await popup.waitForFunction(() => {
+					const canvas = document.querySelector('.viz-canvas') as HTMLCanvasElement | null;
+					if (!canvas) return false;
+					const pixels = canvas.getContext('2d')?.getImageData(0, 0, canvas.width, canvas.height).data;
+					return Boolean(pixels?.some((value, index) => index % 4 === 3 && value > 0));
+				}, { timeout: 5_000 });
+				const cardIdentity = await popup.evaluate(async () => {
+					const selectors = [
+						'#btn-theme', '#btn-hotkeys', '#btn-shortcuts', '#btn-remote', '#btn-settings',
+						'.btn-reset', '.btn-save', '.btn-save-global', '.btn-mute', '.btn-pause',
+						'.btn-pip', '.btn-hotkey-target', '.btn-goto-tab',
+					].join(', ');
+					const controls = [...document.querySelectorAll<HTMLElement>(selectors)].map((element) => ({
+						title: element.title,
+						ariaLabel: element.getAttribute('aria-label') ?? '',
+					}));
+					const canvas = document.querySelector('.viz-canvas') as HTMLCanvasElement | null;
+					const island = document.querySelector('.viz-island') as HTMLElement | null;
+					const bounds = canvas?.getBoundingClientRect();
+					return {
+						controls,
+						icon: (document.querySelector('.meta-icon') as HTMLImageElement | null)?.src ?? '',
+						permissions: await chrome.permissions.getAll(),
+						visualizer: {
+							hidden: island?.hidden ?? true,
+							width: bounds?.width ?? 0,
+							height: bounds?.height ?? 0,
+						},
+					};
+				});
+				expect(cardIdentity.controls).toHaveLength(13);
+				expect(cardIdentity.controls.every(({ title, ariaLabel }) => (
+					title.length > 0
+					&& ariaLabel.length > 0
+					&& title !== 'undefined'
+					&& ariaLabel !== 'undefined'
+				))).toBe(true);
+				expect(cardIdentity.permissions.permissions).toContain('favicon');
+				expect(cardIdentity.icon).toContain('/_favicon/');
+				expect(cardIdentity.visualizer).toMatchObject({ hidden: false, height: 40 });
+				expect(cardIdentity.visualizer.width).toBeGreaterThan(0);
 				await popup.click('#btn-settings');
 				await popup.waitForSelector('#view-settings:not([hidden])');
 				await assertPageAudit(popup, `popup settings ${language}`);
 				await popup.click('#btn-back');
 				await popup.waitForSelector('#view-main:not([hidden])');
 			}
+			await popup.$eval('.vol-slider', (element) => {
+				const slider = element as HTMLInputElement;
+				slider.value = '180';
+				slider.dispatchEvent(new Event('input', { bubbles: true }));
+				slider.dispatchEvent(new Event('change', { bubbles: true }));
+			});
+			await popup.waitForFunction(() => (
+				(document.querySelector('.vol-slider') as HTMLInputElement | null)?.value === '180'
+			));
+			await popup.click('.btn-reset');
+			await popup.waitForFunction(() => {
+				const reset = document.querySelector('.btn-reset');
+				const slider = document.querySelector('.vol-slider') as HTMLInputElement | null;
+				const speed = document.querySelector('.speed-input') as HTMLInputElement | null;
+				const eq = [...document.querySelectorAll<HTMLInputElement>('.eq-input')];
+				return reset?.getAttribute('aria-busy') !== 'true'
+					&& slider?.value === '100'
+					&& speed?.value === '1.00'
+					&& eq.every((input) => Number(input.value) === 0);
+			}, { timeout: 20_000 }).catch(async (error) => {
+				const state = await popup.evaluate(() => ({
+					busy: document.querySelector('.btn-reset')?.getAttribute('aria-busy'),
+					disabled: (document.querySelector('.btn-reset') as HTMLButtonElement | null)?.disabled,
+					slider: (document.querySelector('.vol-slider') as HTMLInputElement | null)?.value,
+					speed: (document.querySelector('.speed-input') as HTMLInputElement | null)?.value,
+					toast: document.querySelector('[role="alert"]')?.textContent,
+				}));
+				throw new Error(`Popup reset did not settle: ${JSON.stringify({ state, popupDiagnostics })}`, {
+					cause: error,
+				});
+			});
 		} finally {
 			await popup.select('#set-lang', originalLanguage).catch(() => undefined);
 			await popup.waitForFunction(
@@ -1721,7 +1890,7 @@ describe('SPECTRA built extension smoke', () => {
 				{ timeout: 5_000 },
 				originalLanguage,
 			).catch(() => undefined);
-			await popup.close();
+			await closeActionPopup(popup);
 		}
 		expect(popupDiagnostics).toEqual([]);
 
@@ -1748,7 +1917,7 @@ describe('SPECTRA built extension smoke', () => {
 			).catch(() => undefined);
 			await options.close();
 		}
-	}, 20_000);
+	}, 35_000);
 
 	test('toggles native PiP from one Popup click without a second prompt', async () => {
 		await fixturePage.bringToFront();
@@ -1776,11 +1945,17 @@ describe('SPECTRA built extension smoke', () => {
 						configurable: true,
 						value: null,
 					});
+					const fixtureVideo = document.querySelector('video');
+					if (!fixtureVideo) throw new Error('PiP fixture video is missing');
+					fixtureVideo.disablePictureInPicture = true;
 					scope.__spectraOriginalExitPictureInPicture = document.exitPictureInPicture;
 					HTMLVideoElement.prototype.requestPictureInPicture = function requestPictureInPicture() {
 						scope.__spectraPipActivation = navigator.userActivation.isActive;
 						if (!scope.__spectraPipActivation) {
 							return Promise.reject(new DOMException('A user gesture is required', 'NotAllowedError'));
+						}
+						if (this.disablePictureInPicture) {
+							return Promise.reject(new DOMException('Picture-in-Picture is disabled', 'InvalidStateError'));
 						}
 						Object.defineProperty(document, 'pictureInPictureElement', {
 							configurable: true,
@@ -1830,7 +2005,7 @@ describe('SPECTRA built extension smoke', () => {
 			expect(diagnostics).toEqual([]);
 			expect(fixtureErrors.slice(errorsBefore)).toEqual([]);
 		} finally {
-			await popup.close().catch(() => undefined);
+			await closeActionPopup(popup);
 			await evaluateServiceWorker(async ({ url }) => {
 				const tab = (await chrome.tabs.query({})).find((candidate) => candidate.url === url);
 				if (tab?.id === undefined) return;
@@ -1851,6 +2026,9 @@ describe('SPECTRA built extension smoke', () => {
 							document.exitPictureInPicture = scope.__spectraOriginalExitPictureInPicture;
 							delete scope.__spectraOriginalExitPictureInPicture;
 						}
+						document.querySelectorAll('video').forEach((video) => {
+							video.disablePictureInPicture = false;
+						});
 						delete scope.__spectraPipActivation;
 						Reflect.deleteProperty(document, 'pictureInPictureEnabled');
 						Reflect.deleteProperty(document, 'pictureInPictureElement');
@@ -1860,8 +2038,96 @@ describe('SPECTRA built extension smoke', () => {
 		}
 	}, 20_000);
 
+	test('renders non-idle spectrum bars from a neutral playing media graph', async () => {
+		const visualizerErrors: string[] = [];
+		const visualizerPage = await browser.newPage();
+		collectPageErrors(visualizerPage, visualizerErrors);
+		const visualizerUrl = `${fixtureUrl}?dynamic-visualizer=1`;
+		let popup: Page | null = null;
+		try {
+			await visualizerPage.goto(visualizerUrl, { waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(visualizerUrl);
+			await visualizerPage.bringToFront();
+			await visualizerPage.click('body');
+			await visualizerPage.evaluate(async () => {
+			const media = document.querySelector<HTMLVideoElement>('#v');
+			if (!media) throw new Error('Visualizer fixture media is missing');
+			const sampleRate = 8_000;
+			const sampleCount = sampleRate;
+			const bytes = new ArrayBuffer(44 + sampleCount * 2);
+			const view = new DataView(bytes);
+			const writeAscii = (offset: number, value: string) => {
+				for (let index = 0; index < value.length; index += 1) {
+					view.setUint8(offset + index, value.charCodeAt(index));
+				}
+			};
+			writeAscii(0, 'RIFF');
+			view.setUint32(4, 36 + sampleCount * 2, true);
+			writeAscii(8, 'WAVE');
+			writeAscii(12, 'fmt ');
+			view.setUint32(16, 16, true);
+			view.setUint16(20, 1, true);
+			view.setUint16(22, 1, true);
+			view.setUint32(24, sampleRate, true);
+			view.setUint32(28, sampleRate * 2, true);
+			view.setUint16(32, 2, true);
+			view.setUint16(34, 16, true);
+			writeAscii(36, 'data');
+			view.setUint32(40, sampleCount * 2, true);
+			for (let index = 0; index < sampleCount; index += 1) {
+				const sample = Math.sin(2 * Math.PI * 440 * index / sampleRate);
+				view.setInt16(44 + index * 2, Math.round(sample * 16_000), true);
+			}
+			media.src = URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
+			media.loop = true;
+			media.muted = false;
+			media.volume = 0.15;
+			await media.play();
+			});
+
+			const popupTarget = await openActionPopupTarget();
+			popup = await popupTarget.asPage();
+			await popup.waitForSelector('.glass-card');
+			await popup.waitForFunction(() => {
+				const canvas = document.querySelector<HTMLCanvasElement>('.viz-canvas');
+				if (!canvas) return false;
+				const pixels = canvas.getContext('2d')?.getImageData(
+					0,
+					0,
+					canvas.width,
+					Math.max(1, canvas.height - 4),
+				).data;
+				return Boolean(pixels?.some((value, index) => index % 4 === 3 && value > 0));
+			}, { timeout: 15_000 });
+		} finally {
+			if (popup) await closeActionPopup(popup);
+			await visualizerPage.close().catch(() => undefined);
+		}
+		expect(visualizerErrors).toEqual([]);
+	}, 25_000);
+
 	test('keeps visualizer IPC at zero without an active processor and after popup close', async () => {
 		await fixturePage.bringToFront();
+		const tabId = await getTabId(fixturePage.url());
+		const disabled = await sendFromActionPopup<{
+			ok: boolean;
+			data?: { fields?: { audioEnabled?: { actual?: boolean } } };
+			error?: { message?: string };
+		}>({
+			protocolVersion: 2,
+			tabId,
+			type: 'spectra.control.intent.submit',
+			payload: {
+				tabId,
+				source: 'popup',
+				requestedCoverage: 'full',
+				target: null,
+				patch: { audioEnabled: false },
+			},
+		});
+		if (!disabled.ok || disabled.data?.fields?.audioEnabled?.actual !== false) {
+			throw new Error(disabled.error?.message ?? 'Unable to establish the bypass visualizer baseline');
+		}
 		await installVisualizerBatchProbe();
 		let popupClient: CDPSession | null = null;
 		try {
@@ -2202,7 +2468,20 @@ describe('SPECTRA built extension smoke', () => {
 				ok: true,
 				data: { phase: 'active', active: true, actualMode: 'capture' },
 			});
-			const capture80 = await readPopupVolumePresentation();
+			const captureSession = await sendFromActionPopup<{
+				ok: boolean;
+				data?: { actualMode?: string; phase?: string };
+			}>({
+				protocolVersion: 2,
+				requestId: crypto.randomUUID(),
+				type: 'spectra.audio.session.get',
+				payload: { tabId },
+			});
+			expect(captureSession).toMatchObject({
+				ok: true,
+				data: { actualMode: 'capture', phase: 'active' },
+			});
+			const capture80 = await readPopupVolumePresentation('#7c3aed');
 			expect(capture80).toMatchObject({
 				sliderCount: 1,
 				min: '0',
@@ -2267,7 +2546,7 @@ describe('SPECTRA built extension smoke', () => {
 			const active = await pendingStart;
 			pendingStart = null;
 			expect(active).toMatchObject({ ok: true, data: { phase: 'active', active: true } });
-			const capture350 = await readPopupVolumePresentation();
+			const capture350 = await readPopupVolumePresentation('#7c3aed');
 			expect(capture350).toMatchObject({
 				value: '350',
 				fillColor: 'rgb(124, 58, 237)',
@@ -2351,12 +2630,12 @@ describe('SPECTRA built extension smoke', () => {
 			expect(restored.generation).toBeGreaterThan(captured.generation ?? 0);
 			expect((await readOffscreenSnapshot()).audioTabs).toEqual([]);
 		} finally {
+			await extensionClient.close();
 			await configureRuntime(fixturePage.url(), DEFAULT_AUDIO_CONFIG).catch(() => undefined);
 			await waitForContentStatus(
 				(status) => status.mode === 'bypass' && status.phase === 'idle',
 				10_000,
 			).catch(() => undefined);
-			await extensionClient.close();
 		}
 	}, 45_000);
 
@@ -2399,11 +2678,12 @@ describe('SPECTRA built extension smoke', () => {
 			);
 			expect(stale).toMatchObject({ ok: true, data: { active: false } });
 			expect((await readOffscreenSnapshot()).audioTabs).toEqual([]);
+			await extensionClient.close();
 			await configureRuntime(fixturePage.url(), DEFAULT_AUDIO_CONFIG);
 			await waitForContentStatus((status) => status.mode === 'bypass' && status.phase === 'idle');
 		} finally {
 			await releaseSyntheticCapture();
-			await extensionClient.close();
+			await extensionClient.close().catch(() => undefined);
 		}
 	}, 45_000);
 

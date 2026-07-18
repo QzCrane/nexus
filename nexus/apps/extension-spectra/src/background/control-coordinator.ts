@@ -51,6 +51,7 @@ import {
 	releaseSourceRuntimeLease,
 	retainSourceRuntimeLease,
 } from './runtime-loader';
+import { swLog } from '../shared/logger';
 
 const STORAGE_PREFIX = 'spectra.control.tab.';
 const GENERATION_PREFIX = 'spectra.control.generation.';
@@ -1066,10 +1067,14 @@ async function executeIntent(request: RoutedControlSubmitRequest): Promise<Contr
 const RESET_AUDIO_TARGET_PATCH: ControlPatch = {
 	volumeBase: 100,
 	mediaMuted: false,
+	speed: 1,
 };
 
 const RESET_AUDIO_PROCESSOR_PATCH: ControlPatch = {
-	audioEnabled: false,
+	// rule: reset clears DSP parameters but keeps the audio enhancement enabled.
+	// Closing the master switch on reset discarded the user's enhancement preference
+	// and left the page silent until they re-toggled it.
+	audioEnabled: true,
 	boost: 1,
 	eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 	bass: false,
@@ -1830,17 +1835,14 @@ async function executeFieldOperation(
 			baseline.documentId,
 			baseline.generation,
 		);
-		const targetActual = target
-			? await captureActualPatch(
-				baseline,
-				target,
-				[
-					...Object.keys(RESET_AUDIO_TARGET_PATCH) as ControlDirectField[],
-					'speed',
-					'preservePitch',
-				],
-			)
-			: {};
+		const targetActual = await captureActualPatch(
+			baseline,
+			target,
+			[
+				...Object.keys(RESET_AUDIO_TARGET_PATCH) as ControlDirectField[],
+				'preservePitch',
+			],
+		);
 		const targetRollback: ControlPatch = {};
 		for (const field of Object.keys(RESET_AUDIO_TARGET_PATCH) as ControlDirectField[]) {
 			const value = targetActual[field];
@@ -1854,22 +1856,29 @@ async function executeFieldOperation(
 		let staged = baseline;
 		let fields: ControlFieldStates = {};
 		try {
-			if (target) {
-				const targetPrepared = await prepareIntent({
-					...common,
-					target,
-					requestedCoverage: 'active-target',
-					patch: RESET_AUDIO_TARGET_PATCH,
-				}, staged);
-				fields = { ...fields, ...targetPrepared.fields };
+			const targetPrepared = await prepareIntent({
+				...common,
+				target,
+				requestedCoverage: 'active-target',
+				patch: RESET_AUDIO_TARGET_PATCH,
+			}, staged);
+			const targetUnavailable = target === null
+				&& (Object.keys(RESET_AUDIO_TARGET_PATCH) as ControlDirectField[]).every((field) => {
+					const failure = targetPrepared.fields[field]?.lastError;
+					return Boolean(failure
+						&& (failure.code === 'capability-unavailable' || failure.code === 'strategy-runtime-failed')
+						&& failure.message.includes('No active media target'));
+				});
+			if (!targetUnavailable) {
 				assertAppliedPatch(targetPrepared.fields, RESET_AUDIO_TARGET_PATCH, 'Audio target reset');
-				// Speed and pitch preservation are native playback controls, not part
-				// of audio reset. Read them only to compile the processor's current
-				// native context; never write or commit them as reset side effects.
+				target = targetPrepared.ackTarget ?? targetPrepared.activeMedia ?? target;
+				fields = { ...fields, ...targetPrepared.fields };
+				// Reset explicitly normalizes playback speed. Pitch preservation is
+				// observation-only and is carried into the processor's native context.
 				staged = stageSnapshot(baseline, {
 					...nativeObservationFields(targetActual, baseline.revision),
 					...fields,
-				}, target);
+				}, targetPrepared.activeMedia ?? target);
 			}
 			const processorPrepared = await prepareIntent({
 				...common,
@@ -2328,16 +2337,32 @@ export function initializeControlCoordinator(): void {
 		if (typeof changeInfo.mutedInfo?.muted === 'boolean') {
 			patch.tabMuted = changeInfo.mutedInfo.muted;
 		}
-		if (Object.keys(patch).length > 0) void observeChromeTabState(tabId, patch);
+		if (Object.keys(patch).length > 0) {
+			void observeChromeTabState(tabId, patch).catch((error: unknown) => {
+				swLog.debug(`[Control] Ignored tab-state observation without a controllable document: ${String(error)}`);
+			});
+		}
 	});
 	chrome.webNavigation.onCommitted.addListener((details) => {
-		if (details.frameId === 0) void invalidateNavigation(details.tabId);
+		if (details.frameId === 0) {
+			void invalidateNavigation(details.tabId).catch((error: unknown) => {
+				swLog.debug(`[Control] Navigation invalidation settled at browser boundary: ${String(error)}`);
+			});
+		}
 	});
 	chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
-		if (details.frameId === 0) void invalidateNavigation(details.tabId, true);
+		if (details.frameId === 0) {
+			void invalidateNavigation(details.tabId, true).catch((error: unknown) => {
+				swLog.debug(`[Control] History projection settled at browser boundary: ${String(error)}`);
+			});
+		}
 	});
 	chrome.webNavigation.onReferenceFragmentUpdated.addListener((details) => {
-		if (details.frameId === 0) void invalidateNavigation(details.tabId, true);
+		if (details.frameId === 0) {
+			void invalidateNavigation(details.tabId, true).catch((error: unknown) => {
+				swLog.debug(`[Control] Fragment projection settled at browser boundary: ${String(error)}`);
+			});
+		}
 	});
 }
 

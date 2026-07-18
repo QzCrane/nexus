@@ -32,14 +32,14 @@ function deferred<T>() {
 }
 
 describe('content audio v2 boundary', () => {
-	test('keeps visualizer reads side-effect free and changes analyser ownership only through subscription intents', () => {
+	test('keeps visualizer reads side-effect free and changes analyser ownership only through subscription intents', async () => {
 		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 		Object.defineProperty(globalThis, 'chrome', {
 			configurable: true,
 			value: { runtime: { id: 'spectra-test' } },
 		});
 		try {
-			const setVisualizerSubscribed = mock(() => true);
+			const setVisualizerSubscribed = mock(async () => true);
 			const handler = createMessageHandler({
 				state: { config: CONFIG },
 				captureManager: { handleMessage: mock(() => false) },
@@ -60,7 +60,8 @@ describe('content audio v2 boundary', () => {
 				envelope('spectra.audio.visualizer.subscription.set', { subscribed: true }),
 				{ id: 'spectra-test' },
 				(value) => { response = value; },
-			)).toBe(false);
+			)).toBe(true);
+			await Promise.resolve();
 			expect(setVisualizerSubscribed).toHaveBeenCalledTimes(1);
 			expect(setVisualizerSubscribed).toHaveBeenCalledWith(true);
 			expect(response).toEqual(rpcSuccess({ subscribed: true }));

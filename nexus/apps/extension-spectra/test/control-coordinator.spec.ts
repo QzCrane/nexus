@@ -928,6 +928,7 @@ describe('authoritative control coordinator', () => {
 		expect(intents[0]?.patch).toEqual({
 			volumeBase: 100,
 			mediaMuted: false,
+			speed: 1,
 		});
 		expect(intents[1]?.actualContext).toEqual({
 			volumeBase: 100,
@@ -940,7 +941,7 @@ describe('authoritative control coordinator', () => {
 		expect(harness.snapshotEvents).toBe(1);
 	});
 
-	test('discovers the actual active media before reset when the background snapshot has no target', async () => {
+	test('resolves the live active media during reset when passive bootstrap readback has no target', async () => {
 		const harness = installHarness();
 		const target = {
 			frameId: 0,
@@ -952,16 +953,17 @@ describe('authoritative control coordinator', () => {
 		const intents: ControlIntent[] = [];
 		harness.contentResponder = ({ type, payload }) => {
 			if (type === 'spectra.control.actual.read') {
-				return actualReadAck(payload as ControlReadRequest, target);
+				return actualReadAck(payload as ControlReadRequest, null);
 			}
 			const intent = payload as ControlIntent;
 			intents.push(intent);
+			const acknowledgement = intent.requestedCoverage === 'full'
+				? releasedPatchAck(intent)
+				: appliedPatchAck(intent, () => 'dom-native');
+			if (intent.requestedCoverage === 'active-target') acknowledgement.target = target;
 			return {
 				ok: true,
-				data: appliedPatchAck(intent, (field) => (
-					field === 'audioEnabled' ? 'extension-state'
-						: intent.requestedCoverage === 'full' ? 'observe' : 'dom-native'
-				)),
+				data: acknowledgement,
 			};
 		};
 
@@ -981,7 +983,8 @@ describe('authoritative control coordinator', () => {
 			'spectra.control.intent.execute',
 		]);
 		expect(intents).toHaveLength(2);
-		expect(intents[0]?.target).toEqual(target);
+		expect(intents[0]?.target).toBeNull();
+		expect(intents[1]?.target).toEqual(target);
 		expect(ack.target).toEqual(target);
 		expect((await controlCoordinatorTestApi.getSnapshot(7))?.activeMedia).toEqual(target);
 		expect(harness.snapshotEvents).toBe(1);
@@ -1125,6 +1128,21 @@ describe('authoritative control coordinator', () => {
 			}
 			const intent = payload as ControlIntent;
 			intentCount += 1;
+			if (intent.requestedCoverage === 'active-target') {
+				const unavailable = appliedPatchAck(intent, () => 'unsupported');
+				for (const state of Object.values(unavailable.fields)) {
+					if (!state) continue;
+					state.actual = null;
+					state.phase = 'error';
+					state.controlled = false;
+					state.lastError = {
+						code: 'capability-unavailable',
+						message: 'No active media target',
+						retryable: true,
+					};
+				}
+				return { ok: true, data: unavailable };
+			}
 			const result = releasedPatchAck(intent);
 			if (result.fields.boost) {
 				result.fields.boost = {
@@ -1152,7 +1170,7 @@ describe('authoritative control coordinator', () => {
 			payload: {},
 		})).rejects.toThrow('Audio processor reset failed for boost');
 
-		expect(intentCount).toBe(1);
+		expect(intentCount).toBe(2);
 		expect(harness.snapshotEvents).toBe(0);
 		expect(await controlCoordinatorTestApi.getSnapshot(7)).toBeNull();
 	});
@@ -1206,8 +1224,8 @@ describe('authoritative control coordinator', () => {
 		expect(intents[2]?.patch).toMatchObject({
 			volumeBase: 72,
 			mediaMuted: false,
+			speed: 1,
 		});
-		expect(intents[2]?.patch).not.toHaveProperty('speed');
 		expect(intents[2]?.patch).not.toHaveProperty('preservePitch');
 		expect(harness.snapshotEvents).toBe(0);
 		expect(await controlCoordinatorTestApi.getSnapshot(7)).toBeNull();

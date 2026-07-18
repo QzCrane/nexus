@@ -72,13 +72,7 @@ export function updateRemoteI18n(dict: I18NDict): void {
 	currentDict = dict;
 	setRemoteI18n(dict);
 	const btnRemote = document.getElementById('btn-remote');
-	if (btnRemote) {
-		if (isConnected) {
-			btnRemote.title = dict.remoteConnectedTooltip;
-		} else {
-			btnRemote.title = dict.btnRemoteTooltip;
-		}
-	}
+	if (btnRemote) setRemoteButtonLabel(btnRemote, isConnected);
 }
 
 export function isRemoteConnected(): boolean {
@@ -111,7 +105,16 @@ function setConnected(connected: boolean): void {
 	const btnRemote = document.getElementById('btn-remote');
 	if (!btnRemote) return;
 	btnRemote.classList.toggle('remote-connected', connected);
-	if (currentDict) btnRemote.title = connected ? currentDict.remoteConnectedTooltip : currentDict.btnRemoteTooltip;
+	setRemoteButtonLabel(btnRemote, connected);
+}
+
+function setRemoteButtonLabel(button: HTMLElement, connected: boolean): void {
+	const candidate = connected ? currentDict?.remoteConnectedTooltip : currentDict?.btnRemoteTooltip;
+	const label = typeof candidate === 'string' && candidate.trim().length > 0
+		? candidate
+		: connected ? 'Remote Connected' : 'Remote Control';
+	button.title = label;
+	button.setAttribute('aria-label', label);
 }
 
 async function toggleRemoteModal(): Promise<void> {

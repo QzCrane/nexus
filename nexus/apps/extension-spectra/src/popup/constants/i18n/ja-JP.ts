@@ -98,6 +98,8 @@ export const JA_JP: I18NDict = {
 	btnClose: '閉じる',
 	btnSaveAsGlobal: 'グローバルプリセットとして保存',
 	presetSaveGlobalPrompt: 'プリセット名を入力:',
+	saveSuccess: '保存済み',
+	saveFailed: '失敗',
 	// group: remote control bridge
 	btnRemoteTooltip: 'リモコン',
 	remoteModalTitle: '📱 リモコン',

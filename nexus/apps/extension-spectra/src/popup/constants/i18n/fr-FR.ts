@@ -98,6 +98,8 @@ export const FR_FR: I18NDict = {
 	btnClose: 'Fermer',
 	btnSaveAsGlobal: 'Enregistrer comme preset global',
 	presetSaveGlobalPrompt: 'Nom du preset:',
+	saveSuccess: 'Enregistré',
+	saveFailed: 'Échec',
 	// Télécommande
 	btnRemoteTooltip: 'Télécommande',
 	remoteModalTitle: '📱 Télécommande',

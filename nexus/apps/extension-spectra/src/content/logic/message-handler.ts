@@ -33,7 +33,7 @@ export interface MessageHandlerDeps {
 	captureManager: CaptureManager;
 	settingsManager: SettingsManager;
 	getVisualizerData: () => Uint8Array | null;
-	setVisualizerSubscribed: (subscribed: boolean) => boolean;
+	setVisualizerSubscribed: (subscribed: boolean) => Promise<boolean>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

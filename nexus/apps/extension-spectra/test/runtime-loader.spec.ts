@@ -14,6 +14,7 @@ import {
 	releaseSourceRuntimeLease,
 	resetContentRuntimeLoaderForTests,
 } from '../src/background/runtime-loader';
+import { settingsRepository } from '../src/background/settings-repository';
 
 type Listener = (...args: never[]) => unknown;
 
@@ -27,20 +28,34 @@ interface RuntimeHarness {
 	executeCount: number;
 	statusCount: number;
 	releaseCount: number;
+	navigationCommitted: ChromeEvent;
+	runtimeMessages: ChromeEvent;
 }
+
+const originalGetSnapshot = settingsRepository.getSnapshot;
 
 function installChromeHarness(
 	runtimeAlreadyReady = false,
 	ownedSources: ContentRuntimeSourceOwnership[] = [],
 	releaseFails = false,
+	hotkeySettings?: HotkeySettings,
 ): RuntimeHarness {
-	const harness = { executeCount: 0, statusCount: 0, releaseCount: 0 };
 	const runtimeMessages = new ChromeEvent();
 	const tabRemoved = new ChromeEvent();
 	const navigationCommitted = new ChromeEvent();
+	const harness = {
+		executeCount: 0,
+		statusCount: 0,
+		releaseCount: 0,
+		navigationCommitted,
+		runtimeMessages,
+	};
 	const historyUpdated = new ChromeEvent();
 	const fragmentUpdated = new ChromeEvent();
 	const documentId = 'document-7';
+	if (hotkeySettings) {
+		settingsRepository.getSnapshot = async () => ({ hotkeySettings } as never);
+	}
 
 	const chromeMock = {
 		runtime: {
@@ -115,6 +130,7 @@ function installChromeHarness(
 
 afterEach(() => {
 	resetContentRuntimeLoaderForTests();
+	settingsRepository.getSnapshot = originalGetSnapshot;
 	Reflect.deleteProperty(globalThis, 'chrome');
 });
 
@@ -251,5 +267,46 @@ describe('document-scoped content runtime loader', () => {
 		);
 		await Bun.sleep(300);
 		expect(harness.releaseCount).toBe(1);
+	});
+
+	test('acquires a configured hotkey runtime from a new document HELLO without opening Popup', async () => {
+		const enabled: HotkeySettings = {
+			slots: {},
+			sites: {
+				'media.example': {
+					enabled: true,
+					bindings: [{
+						id: 'instant-play',
+						enabled: true,
+						key: { code: 'KeyK', modifiers: { ctrl: false, alt: true, shift: false, meta: false } },
+						action: 'play_pause',
+					}],
+				},
+			},
+			disabledLegacyBindings: [],
+		};
+		const harness = installChromeHarness(false, [], false, enabled);
+		for (const listener of harness.runtimeMessages.listeners) {
+			(listener as (
+				message: unknown,
+				sender: chrome.runtime.MessageSender,
+				sendResponse: (response: unknown) => void,
+			) => unknown)({
+				protocolVersion: SPECTRA_PROTOCOL_VERSION,
+				requestId: 'bootstrap-hello-1',
+				type: 'spectra.content.bootstrap.hello',
+				payload: { bootstrapRevision: SPECTRA_CONTENT_BOOTSTRAP_REVISION },
+			}, {
+				id: 'spectra-test',
+				tab: { id: 7, url: 'https://media.example/watch' } as chrome.tabs.Tab,
+				documentId: 'document-7',
+				// Deliberately omit sender.url: the tab URL is the reliable fallback
+				// that makes a fresh document independent from the Popup lifecycle.
+			}, () => undefined);
+		}
+		for (let attempt = 0; attempt < 20 && harness.executeCount === 0; attempt += 1) {
+			await Bun.sleep(5);
+		}
+		expect(harness.executeCount).toBe(1);
 	});
 });

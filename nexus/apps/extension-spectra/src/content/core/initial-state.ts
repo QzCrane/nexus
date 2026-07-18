@@ -65,6 +65,7 @@ export function assembleInitialState(
 			hasGesture: handoff?.hasGesture ?? false,
 			userHasInteracted: handoff?.userHasInteracted ?? false,
 			isPopupOpen: false,
+			visualizerSubscribed: false,
 		},
 	};
 }

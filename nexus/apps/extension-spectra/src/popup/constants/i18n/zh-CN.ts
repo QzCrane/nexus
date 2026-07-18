@@ -99,6 +99,8 @@ export const ZH_CN: I18NDict = {
 	btnClose: '关闭',
 	btnSaveAsGlobal: '保存为全局预设',
 	presetSaveGlobalPrompt: '输入预设名称：',
+	saveSuccess: '已保存',
+	saveFailed: '保存失败',
 	// group: remote control bridge
 	btnRemoteTooltip: '手机遥控',
 	remoteModalTitle: '📱 手机遥控',

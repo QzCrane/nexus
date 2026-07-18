@@ -91,6 +91,15 @@ export function initSidePanel(): void {
 				|| message.type !== 'spectra.control.snapshot.changed'
 				|| message.payload.tabId !== state.currentTabId) return false;
 			syncVideoControlSnapshot(message.payload);
+			const speed = message.payload.fields.speed?.actual;
+			if (typeof speed === 'number' && state.currentTabId !== null) {
+				const registration = getCardReg(state.currentTabId);
+				if (registration) {
+					const config = { ...registration.getConfig(), speed };
+					updateReg(state.currentTabId, config);
+					syncSidePanelState(config);
+				}
+			}
 			return false;
 		});
 	}

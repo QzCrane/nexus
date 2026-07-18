@@ -98,6 +98,8 @@ export const KO_KR: I18NDict = {
 	btnClose: '닫기',
 	btnSaveAsGlobal: '글로벌 프리셋으로 저장',
 	presetSaveGlobalPrompt: '프리셋 이름 입력:',
+	saveSuccess: '저장됨',
+	saveFailed: '실패',
 	// 리모컨
 	btnRemoteTooltip: '리모컨',
 	remoteModalTitle: '📱 리모컨',

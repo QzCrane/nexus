@@ -98,6 +98,8 @@ export const ES_ES: I18NDict = {
 	btnClose: 'Cerrar',
 	btnSaveAsGlobal: 'Guardar como preset global',
 	presetSaveGlobalPrompt: 'Nombre del preset:',
+	saveSuccess: 'Guardado',
+	saveFailed: 'Error',
 	// Control remoto
 	btnRemoteTooltip: 'Control remoto',
 	remoteModalTitle: '📱 Control remoto',

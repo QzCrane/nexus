@@ -96,6 +96,8 @@ export const ZH_TW: I18NDict = {
 	btnClose: '關閉',
 	btnSaveAsGlobal: '儲存為全域預設',
 	presetSaveGlobalPrompt: '輸入預設名稱：',
+	saveSuccess: '已儲存',
+	saveFailed: '儲存失敗',
 	btnRemoteTooltip: '手機遙控',
 	remoteModalTitle: '📱 手機遙控',
 	remoteSessionCode: '工作階段代碼',

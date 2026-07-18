@@ -30,7 +30,7 @@ export function renderRemoteModal(
 	tabId: number,
 	isConnected = false,
 ): void {
-	if (!isPngDataUrl(qrDataUrl)) throw new Error('Invalid remote QR image URL');
+	if (!isSafeRemoteQrDataUrl(qrDataUrl)) throw new Error('Invalid remote QR image URL');
 	closeRemoteModal(false);
 	activePairing = pairing;
 	activeTabId = tabId;
@@ -206,4 +206,21 @@ function updateStatusNodes(modal: HTMLElement, connected: boolean): void {
 
 function isPngDataUrl(value: string): boolean {
 	return /^data:image\/png;base64,[A-Za-z0-9+/=]+$/u.test(value);
+}
+
+export function isSafeRemoteQrDataUrl(value: string): boolean {
+	if (isPngDataUrl(value)) return true;
+	const prefix = 'data:image/svg+xml;charset=utf-8,';
+	if (!value.startsWith(prefix) || value.length > 1_000_000) return false;
+	try {
+		const svg = decodeURIComponent(value.slice(prefix.length));
+		if (!/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 \d+ \d+">/u.test(svg)
+			|| !/<rect fill="#[0-9A-Fa-f]{6}" width="\d+" height="\d+"\/>/u.test(svg)
+			|| !/<path fill="#[0-9A-Fa-f]{6}" d="[A-Za-z0-9,.\-\s]+"\/><\/svg>$/u.test(svg)) {
+			return false;
+		}
+		return !/<(?:script|foreignObject|iframe|object|embed)\b|\bon\w+\s*=|\b(?:href|style)\s*=/iu.test(svg);
+	} catch {
+		return false;
+	}
 }

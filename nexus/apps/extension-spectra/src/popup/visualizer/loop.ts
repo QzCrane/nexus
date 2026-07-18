@@ -33,13 +33,22 @@ let subscriberGeneration = 0;
 const subscriberId = typeof crypto.randomUUID === 'function'
   ? `popup-${crypto.randomUUID()}`
   : `popup-${Array.from(crypto.getRandomValues(new Uint32Array(2))).join('-')}`;
+const visualizerLifetimePort = chrome.runtime.connect(chrome.runtime.id, {
+  name: `spectra-visualizer:${subscriberId}`,
+});
 
 const intersectionObserver = typeof IntersectionObserver === 'undefined'
   ? null
   : new IntersectionObserver((entries) => {
       for (const entry of entries) {
         const subscription = subscriptionsByCanvas.get(entry.target);
-        if (subscription) subscription.visible = entry.isIntersecting && entry.intersectionRatio > 0;
+        if (subscription) {
+          const bounds = entry.target.getBoundingClientRect();
+          // Popup intersection ratios are unreliable while the action bubble is
+          // opening. A connected, laid-out canvas is renderable even when Chrome
+          // transiently reports a zero intersection ratio.
+          subscription.visible = entry.target.isConnected && bounds.width > 0 && bounds.height > 0;
+        }
       }
       reconcileScheduler();
     });
@@ -55,6 +64,11 @@ document.addEventListener('visibilitychange', () => {
 document.addEventListener(VISUALIZER_STATE_CHANGED_EVENT, reconcileScheduler);
 
 window.addEventListener('pagehide', releaseSubscriptions);
+// Chrome action popups emit blur before their document is torn down. Releasing
+// at that earlier boundary gives the MV3 message time to reach the worker;
+// pagehide remains the fallback for non-action extension pages.
+window.addEventListener('blur', releaseSubscriptions);
+window.addEventListener('pagehide', () => visualizerLifetimePort.disconnect(), { once: true });
 
 function stopScheduledFrame(): void {
   if (frameTimer) {
@@ -70,8 +84,14 @@ function stopScheduledFrame(): void {
 function isRunnable(subscription: VizSubscription): boolean {
   if (!subscription.active || !subscription.visible) return false;
   const config = subscription.params.getConfig();
-  // Always run visualizer when audio is enabled - it will show silence when no audio is playing
-  // This ensures the visualizer never gets "stuck" and always reflects real audio state
+  // rule: sample whenever enhancement is on and not muted. Do NOT gate on
+  // isProcessorActive()/state.phase — that gate only updates on a matching
+  // spectra.audio.session.changed event, and when the handshake is stale or
+  // unmatched the popup's state.phase stays 'idle', freezing the visualizer
+  // ("音频条卡住") even while real audio is playing. The background returns
+  // null frames when no audio is actually active, and runFrame's silent flag
+  // handles that case by drawing a flat canvas — so the gate is both redundant
+  // and harmful here.
   return config.enabled
     && !config.muted
     && subscription.params.getGlobalSettings().visualizerEnabled !== false;
@@ -179,12 +199,21 @@ function register(params: VizLoopParams): () => void {
   const subscription: VizSubscription = {
     params,
     active: true,
-	visible: !intersectionObserver,
+	// note: assume visible until IntersectionObserver says otherwise. The previous
+	// `!intersectionObserver` initialization was `false` in every modern browser, so the
+	// visualizer never started until the observer's first async callback fired — and if that
+	// callback raced with a 0-ratio report (e.g., canvas not yet laid out), the loop stayed
+	// dormant forever, producing "频谱不显示".
+	visible: true,
     requesting: false,
     silent: false,
   };
   subscriptions.add(subscription);
   subscriptionsByCanvas.set(params.canvas, subscription);
+  // Paint the mounted idle state synchronously. The Popup can be reported as a
+  // hidden document for its first animation frame, but the user should still
+  // see the spectrum strip as soon as the card appears.
+  drawViz(params.canvas, null, true, params.getCapturing());
   intersectionObserver?.observe(params.canvas);
   reconcileScheduler();
 

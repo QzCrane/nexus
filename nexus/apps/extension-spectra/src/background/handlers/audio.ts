@@ -97,9 +97,19 @@ async function updateVisualizerSubscriptions(
 	pageTabIds: number[],
 	captureTabIds: number[],
 ): Promise<boolean> {
-	const nextPageTabs = new Set(pageTabIds);
-	const removedPageTabs = [...subscribedPageTabs].filter((tabId) => !nextPageTabs.has(tabId));
-	const addedPageTabs = [...nextPageTabs].filter((tabId) => !subscribedPageTabs.has(tabId));
+	// Content owns the analyser *intent* for every subscribed tab, including a
+	// tab currently sampled from offscreen Capture. Releasing that content lease
+	// merely because sampling moved to Capture would immediately tear Capture
+	// down and make the spectrum oscillate between null sources.
+	const nextContentTabs = new Set(pageTabIds);
+	for (const tabId of captureTabIds) {
+		// A processor that was already captured before Popup opened is sampled
+		// entirely offscreen and needs no new content intent. Keep content demand
+		// only when that demand itself admitted the Capture transition.
+		if (subscribedPageTabs.has(tabId)) nextContentTabs.add(tabId);
+	}
+	const removedPageTabs = [...subscribedPageTabs].filter((tabId) => !nextContentTabs.has(tabId));
+	const addedPageTabs = [...nextContentTabs].filter((tabId) => !subscribedPageTabs.has(tabId));
 	const pageResults = await Promise.all([
 		...removedPageTabs.map(async (tabId) => {
 			const response = await sendSpectraTabRequest(
@@ -131,7 +141,7 @@ async function updateVisualizerSubscriptions(
 			return false;
 		}
 	}
-	subscribedPageTabs = nextPageTabs;
+	subscribedPageTabs = nextContentTabs;
 	subscribedCaptureKey = captureKey;
 	return true;
 }
@@ -279,6 +289,28 @@ function getVisualizerBatch(payload: VisualizerBatchPayload): Promise<{
 	return result;
 }
 
+function releaseDisconnectedVisualizerSubscriber(subscriberId: string): void {
+	const operation = visualizerQueue.then(async () => {
+		// Each Popup uses a random page-lifetime id. A maximal tombstone makes a
+		// delayed unload batch unable to resurrect a disconnected subscriber even
+		// if the Port closed before its first request reached the worker.
+		const plan = planVisualizerSubscriberLease(visualizerSubscribers, {
+			subscriberId,
+			generation: Number.MAX_SAFE_INTEGER,
+			tabIds: [],
+		}, Date.now());
+		const candidate = plan.candidate;
+		const union = visualizerSubscriberUnion(candidate);
+		await updateVisualizerSubscriptions(
+			union.filter((tabId) => captureStates.get(tabId) !== true),
+			union.filter((tabId) => captureStates.get(tabId) === true),
+		).catch(() => false);
+		replaceVisualizerSubscribers(candidate);
+		scheduleVisualizerLeaseExpiry();
+	});
+	visualizerQueue = operation.then(() => undefined, () => undefined);
+}
+
 export function registerAudioV2Listener(): void {
 	chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
 		if (!message || typeof message !== 'object') return false;
@@ -385,6 +417,27 @@ export function registerAudioV2Listener(): void {
 // eff: registers listeners for AUDIO_GET_STATUS, AUDIO_SET_CONFIG, and UI_SYNC actions
 export function registerAudioHandlers(): void {
 	registerAudioV2Listener();
+	chrome.runtime.onConnect.addListener((port) => {
+		const prefix = 'spectra-visualizer:';
+		if ((port.sender?.id && port.sender.id !== chrome.runtime.id)
+			|| !port.name.startsWith(prefix)) return;
+		const subscriberId = port.name.slice(prefix.length);
+		if (!/^popup-[a-z0-9-]{1,100}$/iu.test(subscriberId)) return;
+		port.onDisconnect.addListener(() => {
+			releaseDisconnectedVisualizerSubscriber(subscriberId);
+		});
+	});
+	chrome.webNavigation.onCommitted.addListener((details) => {
+		if (details.frameId !== 0) return;
+		// A top-level navigation replaces the content document while preserving
+		// tabId. Serialize invalidation behind any active batch so the next popup
+		// heartbeat replays the analyser lease into the new document.
+		const invalidation = visualizerQueue.then(
+			() => { subscribedPageTabs.delete(details.tabId); },
+			() => { subscribedPageTabs.delete(details.tabId); },
+		);
+		visualizerQueue = invalidation.then(() => undefined, () => undefined);
+	});
 	chrome.tabs.onRemoved.addListener((tabId) => {
 		const candidate = removeVisualizerTab(visualizerSubscribers, tabId);
 		if (candidate === visualizerSubscribers) return;

@@ -98,6 +98,8 @@ export const RU_RU: I18NDict = {
 	btnClose: 'Закрыть',
 	btnSaveAsGlobal: 'Сохранить как глобальный пресет',
 	presetSaveGlobalPrompt: 'Введите имя пресета:',
+	saveSuccess: 'Сохранено',
+	saveFailed: 'Ошибка',
 	// Пульт
 	btnRemoteTooltip: 'Пульт',
 	remoteModalTitle: '📱 Пульт управления',

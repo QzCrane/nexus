@@ -671,6 +671,30 @@ describe('SPECTRA mapped v2 envelopes', () => {
 		})).toBe(false);
 		expect(isSpectraEventEnvelope({
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			type: 'spectra.hotkey.target.feedback',
+			tabId: 42,
+			payload: {
+				action: 'volume_up',
+				targetTabId: 7,
+				targetTitle: 'Media',
+				targetHostname: 'media.example',
+				feedback: { kind: 'volume', value: 125, muted: false, capture: true },
+			},
+		})).toBe(true);
+		expect(isSpectraEventEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			type: 'spectra.hotkey.target.feedback',
+			tabId: 42,
+			payload: {
+				action: 'speed_up',
+				targetTabId: 7,
+				targetTitle: 'Media',
+				targetHostname: 'media.example',
+				feedback: { kind: 'speed', value: 17 },
+			},
+		})).toBe(false);
+		expect(isSpectraEventEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			type: 'spectra.navigation.changed',
 			tabId: 42,
 			documentId: 'document-42',

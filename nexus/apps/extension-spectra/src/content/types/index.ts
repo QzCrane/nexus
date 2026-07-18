@@ -24,6 +24,9 @@ export interface PolicyExecutorState {
 	// userHasInteracted: sticky marker; True if user has explicitly tweaked audio via Spectra's UI or hotkeys
 	userHasInteracted: boolean;
 	isPopupOpen: boolean;
+	// Volatile analyser demand. This is a live Popup lease, not a persisted
+	// preference, and it may temporarily admit a neutral audio processor.
+	visualizerSubscribed?: boolean;
 }
 
 // PolicyExecutorDeps: dependency injection container for the executor lifecycle
@@ -39,5 +42,5 @@ export interface ContentDeps extends PolicyExecutorDeps {
 	state: PolicyExecutorState;
 	policyExecutor?: import('../logic/policy-executor').PolicyExecutor;
 	getVisualizerData: () => Uint8Array | null;
-	setVisualizerSubscribed: (subscribed: boolean) => boolean;
+	setVisualizerSubscribed: (subscribed: boolean) => Promise<boolean>;
 }

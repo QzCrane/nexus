@@ -1,12 +1,29 @@
 // goal: handles global chrome keyboard shortcuts (manifest commands and custom slots)
 // rule: standard commands are mapped directly; custom slots (slot_1-16) use user-defined mappings
 
-import type { ControlMutation, HotkeySettings, HotkeyAction } from '@nexus/contracts';
-import { DEFAULT_HOTKEY_SETTINGS, isSlotHotkeyAction } from '@nexus/contracts';
+import type {
+	ControlMutation,
+	HotkeySettings,
+	HotkeyAction,
+	SpectraEventEnvelope,
+	SpectraHotkeyActualFeedback,
+} from '@nexus/contracts';
+import {
+	compileEffectiveVolume,
+	DEFAULT_HOTKEY_SETTINGS,
+	HOTKEY_ACTION_DESCRIPTORS,
+	SPECTRA_PROTOCOL_VERSION,
+	isSlotHotkeyAction,
+} from '@nexus/contracts';
 import { swLog } from '../shared/logger';
 import { settingsRepository } from './settings-repository';
 import { hotkeyTargetRepository } from './hotkey-target-repository';
-import { submitControlOperation, submitControlRequest } from './control-coordinator';
+import {
+	getControlViewSnapshot,
+	submitControlOperation,
+	submitControlRequest,
+} from './control-coordinator';
+import { ensureContentRuntime, releaseContentRuntimeLease } from './runtime-loader';
 
 // slotMapping: active mapping of manifest slot IDs to functional hotkey actions
 let slotMapping: Record<string, HotkeyAction> = { ...DEFAULT_HOTKEY_SETTINGS.slots };
@@ -32,7 +49,9 @@ export function setupShortcutListeners(): void {
 	chrome.commands.onCommand.addListener(async (command) => {
 		swLog.debug(`Shortcut command: ${command}`);
 
-		const tab = await resolveShortcutTarget();
+		const route = await resolveShortcutTarget();
+		if (!route) return;
+		const tab = route.target;
 		if (!tab?.id || !tab.url) return;
 
 		let domain = '';
@@ -53,6 +72,10 @@ export function setupShortcutListeners(): void {
 		if (!action) return;
 
 		await executeAction(action, tab.id, domain);
+		if (route.active?.id !== undefined && route.active.id !== tab.id) {
+			const feedback = await readShortcutActualFeedback(action, tab.id);
+			await notifyAlternateShortcutTarget(route.active, tab, action, domain, feedback);
+		}
 	});
 
 	chrome.tabs.onRemoved.addListener((tabId) => {
@@ -60,18 +83,89 @@ export function setupShortcutListeners(): void {
 	});
 }
 
-async function resolveShortcutTarget(): Promise<chrome.tabs.Tab | undefined> {
+interface ShortcutRoute {
+	target: chrome.tabs.Tab;
+	active: chrome.tabs.Tab | undefined;
+}
+
+async function resolveShortcutTarget(): Promise<ShortcutRoute | undefined> {
+	const [activeCandidate] = await chrome.tabs.query({ active: true, currentWindow: true });
+	const active = activeCandidate?.url && /^https?:/u.test(activeCandidate.url)
+		? activeCandidate
+		: undefined;
 	const { tabId: targetId } = await hotkeyTargetRepository.get();
 	if (targetId !== null) {
 		try {
 			const target = await chrome.tabs.get(targetId);
-			if (target.url && /^https?:/u.test(target.url)) return target;
+			if (target.url && /^https?:/u.test(target.url)) return { target, active };
 		} catch {
 			await hotkeyTargetRepository.clearIfMatches(targetId);
 		}
 	}
-	const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
-	return active?.url && /^https?:/u.test(active.url) ? active : undefined;
+	return active ? { target: active, active } : undefined;
+}
+
+async function notifyAlternateShortcutTarget(
+	active: chrome.tabs.Tab,
+	target: chrome.tabs.Tab,
+	action: HotkeyAction,
+	targetHostname: string,
+	feedback?: SpectraHotkeyActualFeedback,
+): Promise<void> {
+	if (active.id === undefined || target.id === undefined) return;
+	const capability = 'alternate-target-feedback';
+	let documentId: string | null = null;
+	try {
+		const initialFrame = await chrome.webNavigation.getFrame({ tabId: active.id, frameId: 0 });
+		if (!initialFrame?.documentId) return;
+		const ready = await ensureContentRuntime(active.id, initialFrame.documentId, 'hotkey', capability);
+		documentId = ready.documentId;
+		const currentFrame = await chrome.webNavigation.getFrame({ tabId: active.id, frameId: 0 });
+		if (currentFrame?.documentId !== ready.documentId) return;
+		const event: SpectraEventEnvelope<'spectra.hotkey.target.feedback'> = {
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			type: 'spectra.hotkey.target.feedback',
+			tabId: active.id,
+			documentId: ready.documentId,
+			payload: {
+				action,
+				targetTabId: target.id,
+				targetTitle: target.title?.trim() || targetHostname,
+				targetHostname,
+				...(feedback ? { feedback } : {}),
+			},
+		};
+		await chrome.tabs.sendMessage(active.id, event, { documentId: ready.documentId });
+	} catch (error) {
+		swLog.debug(`Alternate shortcut feedback was unavailable: ${error instanceof Error ? error.message : String(error)}`);
+	} finally {
+		if (documentId) {
+			releaseContentRuntimeLease(active.id, documentId, 'hotkey', capability);
+		}
+	}
+}
+
+async function readShortcutActualFeedback(
+	action: HotkeyAction,
+	tabId: number,
+): Promise<SpectraHotkeyActualFeedback | undefined> {
+	if (HOTKEY_ACTION_DESCRIPTORS[action].feedbackOwner !== 'actual-osd') return undefined;
+	const snapshot = await getControlViewSnapshot(tabId).catch(() => null);
+	if (!snapshot) return undefined;
+	if (action.startsWith('speed_')) {
+		const speed = snapshot.fields.speed?.actual;
+		return typeof speed === 'number' ? { kind: 'speed', value: speed } : undefined;
+	}
+	const volumeBase = snapshot.fields.volumeBase?.actual;
+	const boost = snapshot.fields.boost?.actual;
+	if (typeof volumeBase !== 'number' || typeof boost !== 'number') return undefined;
+	return {
+		kind: 'volume',
+		value: compileEffectiveVolume(volumeBase, boost),
+		muted: snapshot.fields.mediaMuted?.actual === true,
+		capture: snapshot.fields.volumeBase?.strategy === 'capture'
+			|| snapshot.fields.boost?.strategy === 'capture',
+	};
 }
 
 async function clearRemovedShortcutTarget(tabId: number): Promise<void> {

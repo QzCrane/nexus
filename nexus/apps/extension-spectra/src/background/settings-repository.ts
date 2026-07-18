@@ -42,8 +42,11 @@ const SUPPORTED_LANGUAGES = new Set<GlobalSettings['lang']>([
 ]);
 const THEME_MODES = new Set<GlobalSettings['themeMode']>(['light', 'dark', 'system']);
 const MAX_SITE_HOTKEY_BINDINGS = 1000;
+// note: must include EVERY field sanitizeAudioPatch handles below. Missing `preservePitch`
+// here caused `audio-site` replace-mode saves to throw `Unknown audio setting: preservePitch`
+// because state.config (a full AudioConfig) always carries preservePitch.
 const AUDIO_CONFIG_KEYS = new Set<keyof AudioConfig>([
-	'enabled', 'volume', 'volumeBase', 'boost', 'muted', 'compressor', 'mono', 'bass', 'eqValues', 'pan', 'delay', 'speed',
+	'enabled', 'volume', 'volumeBase', 'boost', 'muted', 'compressor', 'mono', 'bass', 'eqValues', 'pan', 'delay', 'speed', 'preservePitch',
 ]);
 
 interface SettingsMeta {

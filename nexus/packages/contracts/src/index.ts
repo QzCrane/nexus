@@ -201,6 +201,7 @@ export type {
 	ScreenshotResult,
 	SpectraRequestMap,
 	SpectraEventMap,
+	SpectraHotkeyActualFeedback,
 	SpectraRequestType,
 	SpectraEventType,
 	SpectraRequestPayload,

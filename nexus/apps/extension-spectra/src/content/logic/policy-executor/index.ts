@@ -64,11 +64,17 @@ export async function createPolicyExecutor(
 		const restrict = istate.corsStatus !== 'SAFE';
 
 		const volume = resolveAudioVolume(state.config);
+		const visualizerSubscribed = state.visualizerSubscribed === true
+			&& s.visualizerEnabled !== false;
 		const ctx: PolicyContext = {
 			urlInfo: u,
-			enabled: state.config.enabled && (state.userHasInteracted || !isDefaultAudioConfig(state.config)),
+			enabled: state.config.enabled && (
+				state.userHasInteracted
+				|| !isDefaultAudioConfig(state.config)
+				|| visualizerSubscribed
+			),
 			volume: volume.effectiveVolume,
-			visualizerEnabled: s.visualizerEnabled || (state.userHasInteracted && istate.corsStatus === 'PENDING'),
+			visualizerEnabled: visualizerSubscribed,
 			userInteracted: state.userHasInteracted,
 			forceNative: false,
 			isRestricted: restrict,

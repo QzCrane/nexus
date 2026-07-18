@@ -72,7 +72,7 @@ export {
 	SPECTRA_PROTOCOL_VERSION,
 } from './spectra.bootstrap.js';
 
-export const SPECTRA_CONTENT_RUNTIME_REVISION = '3.1.0' as const;
+export const SPECTRA_CONTENT_RUNTIME_REVISION = '3.3.2' as const;
 
 export type ContentRuntimeLeaseReason = 'control' | 'restore' | 'hotkey' | 'remote' | 'observation';
 
@@ -501,11 +501,22 @@ export interface SpectraRequestMap {
 	};
 }
 
+export type SpectraHotkeyActualFeedback =
+	| { kind: 'volume'; value: number; muted: boolean; capture: boolean }
+	| { kind: 'speed'; value: number };
+
 export interface SpectraEventMap {
 	'spectra.control.snapshot.changed': ControlSnapshot;
 	'spectra.content.settings.changed': SpectraContentSettings;
 	'spectra.settings.changed': SettingsSnapshot;
 	'spectra.hotkeys.changed': HotkeySettings;
+	'spectra.hotkey.target.feedback': {
+		action: HotkeyAction;
+		targetTabId: number;
+		targetTitle: string;
+		targetHostname: string;
+		feedback?: SpectraHotkeyActualFeedback;
+	};
 	'spectra.navigation.changed': NavigationChangedEvent;
 	'spectra.remote.session.changed': RemoteSessionChangedEvent;
 	'spectra.remote.session.closed': RemoteSessionClosedEvent;
@@ -549,6 +560,8 @@ type SpectraEventEnvelopeFor<T extends SpectraEventType> = SpectraEventBase & {
 		? Required<Pick<SpectraContextFields, 'tabId' | 'generation'>>
 	: T extends 'spectra.navigation.changed'
 		? Required<Pick<SpectraContextFields, 'tabId' | 'documentId'>>
+	: T extends 'spectra.hotkey.target.feedback'
+		? Required<Pick<SpectraContextFields, 'tabId'>>
 	: T extends 'spectra.remote.session.changed' | 'spectra.remote.session.closed'
 		? Required<Pick<SpectraContextFields, 'tabId'>>
 		: unknown);
@@ -630,6 +643,11 @@ const OSD_MESSAGES_KEYS = new Set([
 	'corsCorrectedSafe',
 ]);
 const HOTKEY_TRIGGER_PAYLOAD_KEYS = new Set(['action']);
+const HOTKEY_TARGET_FEEDBACK_KEYS = new Set([
+	'action', 'targetTabId', 'targetTitle', 'targetHostname', 'feedback',
+]);
+const HOTKEY_VOLUME_FEEDBACK_KEYS = new Set(['kind', 'value', 'muted', 'capture']);
+const HOTKEY_SPEED_FEEDBACK_KEYS = new Set(['kind', 'value']);
 const MEDIA_SPEED_PAYLOAD_KEYS = new Set(['speed', 'delta', 'preservePitch']);
 const VIDEO_ROTATE_PAYLOAD_KEYS = new Set(['delta']);
 const VIDEO_SEEK_PAYLOAD_KEYS = new Set(['delta']);
@@ -871,6 +889,33 @@ function isHotkeyTriggerPayload(
 		&& hasOnlyKeys(value, HOTKEY_TRIGGER_PAYLOAD_KEYS)
 		&& typeof value.action === 'string'
 		&& HOTKEY_ACTION_SET.has(value.action as HotkeyAction);
+}
+
+function isHotkeyTargetFeedback(
+	value: unknown,
+): value is SpectraEventPayload<'spectra.hotkey.target.feedback'> {
+	return isRecord(value)
+		&& hasOnlyKeys(value, HOTKEY_TARGET_FEEDBACK_KEYS)
+		&& typeof value.action === 'string'
+		&& HOTKEY_ACTION_SET.has(value.action as HotkeyAction)
+		&& isPositiveInteger(value.targetTabId)
+		&& typeof value.targetTitle === 'string'
+		&& value.targetTitle.length > 0
+		&& value.targetTitle.length <= 512
+		&& typeof value.targetHostname === 'string'
+		&& value.targetHostname.length > 0
+		&& value.targetHostname.length <= 253
+		&& (value.feedback === undefined || (
+			isRecord(value.feedback)
+			&& (value.feedback.kind === 'volume'
+				? hasOnlyKeys(value.feedback, HOTKEY_VOLUME_FEEDBACK_KEYS)
+					&& isFiniteInRange(value.feedback.value, 0, 800)
+					&& typeof value.feedback.muted === 'boolean'
+					&& typeof value.feedback.capture === 'boolean'
+				: value.feedback.kind === 'speed'
+					&& hasOnlyKeys(value.feedback, HOTKEY_SPEED_FEEDBACK_KEYS)
+					&& isFiniteInRange(value.feedback.value, 0.1, 16))
+		));
 }
 
 function isMediaSpeedPayload(
@@ -1646,6 +1691,7 @@ const EVENT_PAYLOAD_GUARDS = {
 	'spectra.content.settings.changed': isContentSettings,
 	'spectra.settings.changed': isSettingsSnapshot,
 	'spectra.hotkeys.changed': isHotkeySettings,
+	'spectra.hotkey.target.feedback': isHotkeyTargetFeedback,
 	'spectra.navigation.changed': isNavigationChangedEvent,
 	'spectra.remote.session.changed': isRemoteSessionChangedEvent,
 	'spectra.remote.session.closed': isRemoteSessionClosedEvent,
@@ -1790,6 +1836,9 @@ export function isSpectraEventEnvelope(value: unknown): value is SpectraEventEnv
 			&& typeof value.documentId === 'string'
 			&& value.documentId.length > 0
 			&& value.generation === undefined;
+	}
+	if (value.type === 'spectra.hotkey.target.feedback') {
+		return isPositiveInteger(value.tabId);
 	}
 	if (value.type === 'spectra.remote.session.changed' || value.type === 'spectra.remote.session.closed') {
 		return isRecord(value.payload) && value.tabId === value.payload.tabId;

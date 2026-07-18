@@ -18,6 +18,7 @@ import {
 	type ControlStrategy,
 	type ControlStrategyFailure,
 	type ControlValues,
+	type MediaTarget,
 } from '@nexus/contracts';
 import { sendSpectraRequest } from '../../shared/spectra-client';
 import {
@@ -30,6 +31,7 @@ import type {
 	VideoEffectState,
 } from '../video/video-effects-controller';
 import { contentControlStrategy } from './content-control-policy';
+import { writePageSynchronizedPlaybackRate } from './page-playback-rate-bridge';
 
 interface PendingWrite {
 	intentId: string;
@@ -144,6 +146,7 @@ export interface AudioRuntimeControlDelegate {
 	read(fields: readonly ControlField[]): ControlPatch;
 	synchronizeNative(context: ControlActualContext): void;
 	showNativeFeedback?(context: ControlActualContext, source: ControlIntent['source']): void;
+	runFullscreenTransition?<T>(operation: () => Promise<T>): Promise<T>;
 }
 
 const VIDEO_EFFECT_FIELDS = new Set<ControlField>([
@@ -331,6 +334,17 @@ function fullscreenOwnsMedia(element: HTMLMediaElement): boolean {
 		|| typeof Element !== 'undefined' && owner instanceof Element && owner.contains(element);
 }
 
+function resolvePictureInPictureOwner(
+	registry: MediaRegistry,
+): ReturnType<MediaRegistry['resolveVideo']> {
+	const owner = document.pictureInPictureElement;
+	if (!(owner instanceof HTMLVideoElement)) return null;
+	const registered = registry.list().find(({ element }) => element === owner);
+	return registered?.element instanceof HTMLVideoElement
+		? { element: registered.element, target: registered.target }
+		: null;
+}
+
 function readRestorableMediaField(
 	element: HTMLMediaElement,
 	field: RestorableMediaField,
@@ -376,7 +390,16 @@ export function writeNativeMediaMuted(element: HTMLMediaElement, muted: boolean)
 }
 
 export function writeNativePlaybackRate(element: HTMLMediaElement, speed: number): number {
-	element.playbackRate = Math.max(0.1, Math.min(16, speed));
+	const next = Math.max(0.1, Math.min(16, speed));
+	const pageActual = writePageSynchronizedPlaybackRate(element, next);
+	if (pageActual !== null) return pageActual;
+	// Keep the standard default/current pair coherent when the page has not
+	// deliberately separated them. Player UIs commonly project the default while
+	// playback itself reads the current rate.
+	if (Math.abs(element.defaultPlaybackRate - element.playbackRate) <= 0.005) {
+		element.defaultPlaybackRate = next;
+	}
+	element.playbackRate = next;
 	return element.playbackRate;
 }
 
@@ -479,17 +502,6 @@ export class NativeMediaExecutor {
 	private tabId: number | null = null;
 	private desiredRevision = 0;
 	private disposed = false;
-
-	// rule: when the plugin owns a restorable field (volume/mute/speed) and the
-	// page changes it without a matching pending write, we re-assert our value
-	// instead of immediately surrendering ownership. This prevents brief page
-	// interference (e.g. video-start volume resets) from yanking the popup slider
-	// back. Only after sustained resistance does ownership get relinquished so a
-	// deliberate user gesture on the page's own UI can still win.
-	private readonly reassertTimers = new Map<string, ReturnType<typeof setTimeout>>();
-	private readonly reassertAttempts = new Map<string, number>();
-	private static readonly REASSERT_DEBOUNCE_MS = 400;
-	private static readonly REASSERT_THRESHOLD = 3;
 
 	constructor(registry?: MediaRegistry, effects?: VideoEffectsControllerPort) {
 		this.registry = registry ?? new MediaRegistry();
@@ -599,14 +611,40 @@ export class NativeMediaExecutor {
 
 	async toggleTrustedActivation(
 		field: 'playing' | 'pip' | 'fullscreen',
+		explicitTarget?: MediaTarget,
 	): Promise<{
 		target: import('@nexus/contracts').MediaTarget;
 		actual: boolean;
 	}> {
 		if (this.disposed) throw new Error('Native media executor is disposed');
-		const resolved = field === 'playing'
-			? this.registry.resolve(null)
-			: this.registry.resolveVideo(null);
+		if (field === 'pip' && explicitTarget && document.pictureInPictureElement) {
+			const requested = this.registry.resolveVideo(explicitTarget);
+			if (!requested) throw new Error('No active video target');
+			const owner = document.pictureInPictureElement;
+			const registeredOwner = resolvePictureInPictureOwner(this.registry);
+			const acknowledgementTarget = owner instanceof EventTarget
+				? owner
+				: requested.element;
+			const actual = await writeWithStableEventAck(
+				acknowledgementTarget,
+				'leavepictureinpicture',
+				() => document.exitPictureInPicture(),
+				() => document.pictureInPictureElement !== null,
+				false,
+				0,
+			);
+			return {
+				target: registeredOwner?.target ?? requested.target,
+				actual,
+			};
+		}
+		const resolved = field === 'pip' && explicitTarget
+			? this.registry.resolveVideo(explicitTarget)
+			: field === 'playing'
+				? this.registry.resolve(null)
+				: field === 'pip'
+					? resolvePictureInPictureOwner(this.registry) ?? this.registry.resolveVideo(null)
+					: this.registry.resolveVideo(null);
 		if (!resolved) throw new Error(field === 'playing' ? 'No active media target' : 'No active video target');
 		const { element, target } = resolved;
 		const current = field === 'playing'
@@ -778,9 +816,13 @@ export class NativeMediaExecutor {
 		const videoResolver = this.registry as MediaRegistry & {
 			resolveVideo?(target: import('@nexus/contracts').MediaTarget | null): ReturnType<MediaRegistry['resolve']>;
 		};
-		const resolved = onlyVideoFields && typeof videoResolver.resolveVideo === 'function'
-			? videoResolver.resolveVideo(request.target)
-			: this.registry.resolve(request.target);
+		const pipOwner = request.target === null && request.fields.includes('pip')
+			? resolvePictureInPictureOwner(this.registry)
+			: null;
+		const resolved = pipOwner
+			?? (onlyVideoFields && typeof videoResolver.resolveVideo === 'function'
+				? videoResolver.resolveVideo(request.target)
+				: this.registry.resolve(request.target));
 		if (resolved) {
 			const { element, target } = resolved;
 			const effectState = element instanceof HTMLVideoElement
@@ -983,7 +1025,21 @@ export class NativeMediaExecutor {
 						element,
 						value ? 'enterpictureinpicture' : 'leavepictureinpicture',
 						async () => {
-							if (value) await element.requestPictureInPicture();
+							if (value) {
+								if (document.pictureInPictureElement
+									&& document.pictureInPictureElement !== element) {
+									await document.exitPictureInPicture();
+								}
+								// Sites may set disablePictureInPicture as a UI preference. The
+								// explicit extension click temporarily lifts it for this native call.
+								const restoreDisabled = element.disablePictureInPicture;
+								if (restoreDisabled) element.disablePictureInPicture = false;
+								try {
+									await element.requestPictureInPicture();
+								} finally {
+									if (restoreDisabled) element.disablePictureInPicture = true;
+								}
+							}
 							else if (document.pictureInPictureElement === element) await document.exitPictureInPicture();
 						},
 						() => document.pictureInPictureElement === element,
@@ -998,13 +1054,16 @@ export class NativeMediaExecutor {
 					break;
 				}
 				case 'fullscreen': {
+					const requestFullscreen = async (): Promise<void> => {
+						if (value) await element.requestFullscreen();
+						else if (fullscreenOwnsMedia(element)) await document.exitFullscreen();
+					};
 					const actual = await writeWithStableEventAck(
 						document,
 						'fullscreenchange',
-						async () => {
-							if (value) await element.requestFullscreen();
-							else if (fullscreenOwnsMedia(element)) await document.exitFullscreen();
-						},
+						() => value && this.audioRuntimeDelegate?.runFullscreenTransition
+							? this.audioRuntimeDelegate.runFullscreenTransition(requestFullscreen)
+							: requestFullscreen(),
 						() => fullscreenOwnsMedia(element),
 						effectiveDesired,
 						tolerance,
@@ -1388,106 +1447,6 @@ export class NativeMediaExecutor {
 		return valuesMatch(expected, actual, tolerance);
 	}
 
-	private isFieldOwned(element: HTMLMediaElement, field: RestorableMediaField): boolean {
-		const ownership = nativeMediaOwnership.byElement.get(element);
-		return ownership?.has(field) ?? false;
-	}
-
-	private scheduleReassert(
-		element: HTMLMediaElement,
-		target: import('@nexus/contracts').MediaTarget,
-		field: RestorableMediaField,
-		mediaId: string,
-	): void {
-		const key = `${mediaId}:${field}`;
-		const existing = this.reassertTimers.get(key);
-		if (existing) clearTimeout(existing);
-		const timer = setTimeout(() => {
-			this.reassertTimers.delete(key);
-			void this.performReassert(element, target, field, mediaId, key);
-		}, NativeMediaExecutor.REASSERT_DEBOUNCE_MS);
-		this.reassertTimers.set(key, timer);
-	}
-
-	private async performReassert(
-		element: HTMLMediaElement,
-		target: import('@nexus/contracts').MediaTarget,
-		field: RestorableMediaField,
-		mediaId: string,
-		key: string,
-	): Promise<void> {
-		const ownership = nativeMediaOwnership.byElement.get(element);
-		const owned = ownership?.get(field);
-		if (!owned) return;
-		const tolerance = field === 'volumeBase' || field === 'speed' ? 0.01 : 0;
-		const current = readRestorableMediaField(element, field);
-		if (valuesMatch(current, owned.lastApplied, tolerance)) {
-			this.reassertAttempts.delete(key);
-			return;
-		}
-		const intentId = `reassert:${crypto.randomUUID()}`;
-		const pending: PendingWrite = {
-			intentId,
-			revision: 0,
-			expected: owned.lastApplied,
-			tolerance,
-			timeoutId: setTimeout(() => this.clearPending(mediaId, field, intentId), 1500),
-		};
-		this.markPending(mediaId, field, pending);
-		try {
-			const actual = await writeWithStableEventAck(
-				element,
-				field === 'volumeBase' ? 'volumechange' : field === 'mediaMuted' ? 'volumechange' : 'ratechange',
-				() => writeRestorableMediaField(element, field, owned.lastApplied),
-				() => readRestorableMediaField(element, field),
-				owned.lastApplied,
-				tolerance,
-			);
-			this.observe(mediaId, field, actual as ControlValues[ControlField]);
-			this.clearPending(mediaId, field, intentId);
-			this.reassertAttempts.delete(key);
-		} catch {
-			this.clearPending(mediaId, field, intentId);
-			const attempts = (this.reassertAttempts.get(key) ?? 0) + 1;
-			this.reassertAttempts.set(key, attempts);
-			if (attempts >= NativeMediaExecutor.REASSERT_THRESHOLD) {
-				this.relinquishOwnedField(element, target, field, mediaId);
-			}
-		}
-	}
-
-	private relinquishOwnedField(
-		element: HTMLMediaElement,
-		target: import('@nexus/contracts').MediaTarget,
-		field: RestorableMediaField,
-		mediaId: string,
-	): void {
-		if (this.tabId === null) return;
-		const ownership = nativeMediaOwnership.byElement.get(element);
-		ownership?.delete(field);
-		if (ownership?.size === 0) nativeMediaOwnership.byElement.delete(element);
-		this.reassertAttempts.delete(`${mediaId}:${field}`);
-		const actual = readRestorableMediaField(element, field);
-		this.observe(mediaId, field, actual as ControlValues[ControlField]);
-		void sendSpectraRequest('spectra.control.intent.submit', {
-			tabId: this.tabId,
-			source: 'page',
-			requestedCoverage: 'active-target',
-			target,
-			patch: { [field]: actual },
-		}).catch(() => undefined);
-	}
-
-	private clearReassertForMedia(mediaId: string): void {
-		for (const [key, timer] of this.reassertTimers.entries()) {
-			if (key.startsWith(`${mediaId}:`)) {
-				clearTimeout(timer);
-				this.reassertTimers.delete(key);
-				this.reassertAttempts.delete(key);
-			}
-		}
-	}
-
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
@@ -1498,9 +1457,6 @@ export class NativeMediaExecutor {
 		this.observed.clear();
 		this.appliedDesiredRevision.clear();
 		this.replayPending.clear();
-		for (const timer of this.reassertTimers.values()) clearTimeout(timer);
-		this.reassertTimers.clear();
-		this.reassertAttempts.clear();
 		this.unsubscribeRegistry();
 		if (this.ownsRegistry) this.registry.dispose();
 		if (this.ownsEffects) this.effects?.dispose();

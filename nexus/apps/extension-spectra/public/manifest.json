@@ -14,7 +14,8 @@
     "tabCapture",
     "offscreen",
     "userScripts",
-    "scripting"
+    "scripting",
+    "favicon"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -33,6 +34,26 @@
   },
   "options_page": "options.html",
   "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content-fullscreen-bridge.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content-playback-rate-bridge.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
     {
       "matches": [
         "<all_urls>"

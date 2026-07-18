@@ -471,6 +471,30 @@ body {
   border-color: var(--success);
 }
 
+/* rule: shared transient feedback state for both save buttons (.btn-save and
+   .btn-save-global). Replaces the icon with localized text ("Saved"/"Failed")
+   and tints the border + text. Both buttons use the same mechanism so the
+   feedback style is consistent — previously .btn-save showed hardcoded
+   Chinese "保存成功"/"保存失败" while .btn-save-global showed English "OK",
+   with no failure feedback at all. */
+.btn-text.feedback {
+  width: auto;
+  min-width: 28px;
+  padding: 0 8px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.btn-text.feedback.saved {
+  color: var(--success);
+  background: var(--w);
+  border-color: var(--success);
+}
+.btn-text.feedback.failed {
+  color: var(--danger);
+  background: var(--w);
+  border-color: var(--danger);
+}
+
 .switch-main {
   position: relative;
   width: 44px;
