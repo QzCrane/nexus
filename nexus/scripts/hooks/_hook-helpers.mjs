@@ -44,27 +44,52 @@ export function relPath(p) {
 
 /**
  * Read the host's stdin until EOF. Always resolves; never rejects.
+ *
+ * If `NEXUS_HOOK_DEBUG=1` is set in the environment, the raw payload
+ * is also tee'd to stderr prefixed with `[hook-debug]` so you can
+ * inspect what the host actually sent:
+ *
+ *   NEXUS_HOOK_DEBUG=1 bun --cwd nexus scripts/hooks/ai-pre-write-guard.mjs
  */
 export function readStdin() {
 	return new Promise((resolve) => {
 		let data = '';
 		process.stdin.setEncoding('utf8');
-		process.stdin.on('data', (c) => (data += c));
-		process.stdin.on('end', () => resolve(data));
+		process.stdin.on('data', (c) => {
+			data += c;
+			// biome-ignore lint/suspicious/noUndeclaredEnvVars: debug-only env var, intentionally not in turbo.json
+			if (process.env.NEXUS_HOOK_DEBUG === '1') {
+				process.stderr.write(`[hook-debug] stdin chunk (${c.length} bytes):\n${c}\n`);
+			}
+		});
+		process.stdin.on('end', () => {
+			// biome-ignore lint/suspicious/noUndeclaredEnvVars: debug-only env var, intentionally not in turbo.json
+			if (process.env.NEXUS_HOOK_DEBUG === '1') {
+				process.stderr.write(`[hook-debug] stdin total ${data.length} bytes\n`);
+			}
+			resolve(data);
+		});
 	});
 }
 
 /**
  * Safe JSON.parse with empty-object fallback. Never throws.
+ *
+ * Returns `{}` for any non-object input (arrays, primitives, null)
+ * because hook handlers expect a payload object shape.
  */
 export function parsePayload(raw) {
 	if (!raw) return {};
+	let obj;
 	try {
-		const obj = JSON.parse(raw);
-		return obj && typeof obj === 'object' ? obj : {};
+		obj = JSON.parse(raw);
 	} catch {
 		return {};
 	}
+	if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) {
+		return {};
+	}
+	return obj;
 }
 
 // ---------- tool-call extractors --------------------------------------
@@ -145,13 +170,24 @@ export function run(cmd, args, opts = {}) {
  * process.exit(0) to allow, process.exit(2) to block, or just return
  * to allow. On uncaught error we log to stderr and exit 0 — a broken
  * hook must never freeze the agent.
+ *
+ * When `NEXUS_HOOK_DEBUG=1`, the parsed payload and final exit code
+ * are logged to stderr so you can trace the decision flow:
+ *
+ *   NEXUS_HOOK_DEBUG=1 bun --cwd nexus scripts/hooks/ai-pre-write-guard.mjs
  */
 export async function runHook(name, handler) {
+	// biome-ignore lint/suspicious/noUndeclaredEnvVars: debug-only env var, intentionally not in turbo.json
+	const debug = process.env.NEXUS_HOOK_DEBUG === '1';
 	let payload = {};
 	try {
 		payload = parsePayload(await readStdin());
 	} catch {
+		if (debug) process.stderr.write(`[${name}] stdin parse failed; allowing\n`);
 		process.exit(0);
+	}
+	if (debug) {
+		process.stderr.write(`[${name}] parsed payload: ${JSON.stringify(payload)}\n`);
 	}
 	try {
 		await handler(payload);
@@ -159,6 +195,7 @@ export async function runHook(name, handler) {
 		process.stderr.write(`[${name}] error: ${err?.message ?? err}\n`);
 		process.exit(0);
 	}
+	if (debug) process.stderr.write(`[${name}] handler returned without exit; allowing\n`);
 	// If the handler didn't already exit, default to allow.
 	process.exit(0);
 }
