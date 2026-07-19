@@ -1,0 +1,40 @@
+# Lefthook — NEXUS 工程门禁
+# Docs: https://github.com/evilmartians/lefthook
+#
+# 设计原则:
+# 1. pre-commit: 只跑 staged 文件(md/biome),秒级,AI 也要守规矩
+# 2. commit-msg: 强制 Conventional Commits,commitlint 校验
+# 3. pre-push: 跑全量 verify(架构校验),不阻塞 lint-staged 的小步快跑
+# 4. post-merge: 同步技能表 + 重建 AGENTS/CLAUDE 硬链接(防 GitNexus analyze 破坏)
+
+pre-commit:
+  parallel: true
+  commands:
+    docs-frontmatter:
+      glob: "*.md"
+      run: bun --cwd nexus scripts/lint-docs.mjs
+      skip:
+        - merge
+        - rebase
+    biome-check:
+      glob: "*.{ts,tsx,js,jsx,mjs,cjs,json}"
+      run: bunx @biomejs/biome check --no-errors-on-unmatched --max-diagnostics=50 {staged_files}
+      stage_fixed: true
+
+commit-msg:
+  commands:
+    commitlint:
+      run: bunx commitlint --edit {1}
+
+pre-push:
+  parallel: false
+  commands:
+    verify-architecture:
+      run: bun run verify:q
+    sync-skills:
+      run: bun run sync:skills
+
+post-merge:
+  commands:
+    post-merge-sync:
+      run: bun run sync:skills

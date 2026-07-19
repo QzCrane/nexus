@@ -196,7 +196,18 @@ PiP 和 fullscreen 只走标准 API、真实 user activation、生命周期事�
 
 ### EPR-028：对外文案不得超过已证明能力
 
-“所有网站”“零 CPU”“任何受保护媒体稳定工作”“完全不传输数据”等绝对句式只有在浏览器能力和发布门真正证明时才能出现。原生失败、权限、activation、CORS、DRM、闭合 Shadow DOM 和不支持站点必须允许结构化 unsupported；营销文案不能把内部 Capture 或站点 adapter 扩大成普遍保证。
+"所有网站""零 CPU""任何受保护媒体稳定工作""完全不传输数据"等绝对句式只有在浏览器能力和发布门真正证明时才能出现。原生失败、权限、activation、CORS、DRM、闭合 Shadow DOM 和不支持站点必须允许结构化 unsupported;营销文案不能把内部 Capture 或站点 adapter 扩大成普遍保证。
+
+### EPR-029：质量门硬化到 Git/CI/AI 钩子,文档风格靠 lint 守
+
+- **Git 钩子**(Lefthook,Go 实现,毫秒级)必须在所有协作者本地安装:`bun run prepare` → `bunx lefthook install`。
+  - `pre-commit`:staged 文件跑 `lint-docs` + `biome check`,脏代码无法进入历史。
+  - `commit-msg`:commitlint 强制 Conventional Commits(`feat/fix/refactor/perf/docs/test/build/ci/chore/...`),AI 生成的 commit 也必须守规矩。
+  - `pre-push`:跑全量 `verify:q`(架构校验),阻塞破损 push。
+  - `post-merge`:`sync:skills` 重新生成技能表 + 重建 AGENTS/CLAUDE 硬链接。
+- **Markdown 文档**必须含 Diátaxis frontmatter(`type`/`status`/`audience`),由 `lint-docs.mjs` 校验,新文档无 frontmatter 拒绝提交。
+- **CI** 复用同一组脚本:Turbo pipeline + lefthook 共享 `lint` / `typecheck` / `verify:q` 入口。
+- **Claude Code / Antigravity hooks** 可选扩展(PreToolUse 拦截危险写,PostToolUse 自动 lint),但本地 Git 钩子是底线,缺它不算工程化。
 
 ## 4. 之前问题的原则化映射
 
