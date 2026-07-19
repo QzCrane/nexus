@@ -11,6 +11,7 @@
 		"verify:q": "bun --cwd nexus verify:q",
 		"generate-registry": "bun --cwd nexus generate-registry",
 		"sync:skills": "bun --cwd nexus sync:skills",
+		"hooks:test": "bun --cwd nexus scripts/hooks/test.mjs",
 		"postinstall": "bun run sync:skills && bunx lefthook install",
 		"prepare": "bunx lefthook install"
 	},

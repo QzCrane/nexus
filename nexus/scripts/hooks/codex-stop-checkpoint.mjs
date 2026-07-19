@@ -2,13 +2,13 @@
 // codex-stop-checkpoint.mjs
 //
 // Codex CLI Stop hook. Fires when the agent turn ends (equivalent
-// of Claude Code's Stop hook). Surfaces a short reminder of what
-// to run before declaring done.
+// of Claude Code's Stop hook). Surfaces a short reminder of what to
+// run before declaring done.
 //
 // Rule owner: AGENTS.md EPR-029 (硬化质量门到 Git/CI/AI 钩子)
 
 import { execSync } from 'node:child_process';
-import { readStdin } from './_read-stdin.mjs';
+import { runHook } from './_hook-helpers.mjs';
 
 function shortGitStatus() {
 	try {
@@ -20,11 +20,9 @@ function shortGitStatus() {
 	}
 }
 
-async function main() {
-	await readStdin(); // drain
+await runHook('codex-stop-checkpoint', async () => {
 	const status = shortGitStatus();
-	const lines = [];
-	lines.push('[codex-stop-checkpoint] turn ending.');
+	const lines = ['[codex-stop-checkpoint] turn ending.'];
 	if (status.dirty) {
 		lines.push(
 			`  working tree: ${status.count} modified/new file(s). ` +
@@ -41,7 +39,4 @@ async function main() {
 		'  rule of thumb: each closed-loop commit = contract + impl + test + doc.',
 	);
 	process.stdout.write(`${lines.join('\n')}\n`);
-	process.exit(0);
-}
-
-main().catch(() => process.exit(0));
+});

@@ -7,24 +7,20 @@
 // Forbidden zones:
 //   1. docs/_archive/         historical snapshots; must not be edited
 //   2. AGENTS.md / CLAUDE.md  root rule files; managed by humans + postanalyze
-//   3. control-architecture.md  / control/*-index.md  // index files; humans own
-//      them; the topic sub-files are the actual owner
+//   3. control-architecture.md / control/<NN>-*.md / principles/<NN>-*.md
+//                             progressive-disclosure index files; humans
+//                             own them; the topic sub-files are the owner
 //   4. any .md without Diátaxis frontmatter (type / status / audience)
 //
-// stdin: { tool_name, tool_input:{file_path, content}, ... }
-// stdout: human-readable reason (Claude shows it to the user)
-// exit 0: allow
-// exit 2: block
-//
-// Rule owner: AGENTS.md EPR-029 (质量门硬化到 Git/CI/AI 钩子)
+// Rule owner: AGENTS.md EPR-029 (硬化质量门到 Git/CI/AI 钩子)
 
-import { join, normalize, relative, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { readStdin } from './_read-stdin.mjs';
-
-const root = join(fileURLToPath(import.meta.url), '..', '..', '..');
-const cwd = process.cwd();
-const base = (p) => normalize(relative(root, join(cwd, p))).split(sep).join('/');
+import {
+	blockMessage,
+	extractWriteTargets,
+	relPath,
+	runHook,
+	WRITE_TOOLS,
+} from './_hook-helpers.mjs';
 
 const FORBIDDEN_PATTERNS = [
 	{
@@ -45,13 +41,15 @@ const FORBIDDEN_PATTERNS = [
 			/control-architecture\.md$|control\/\d{2}-[a-z-]+\.md$|principles\/0[1-5]-[a-z-]+\.md$/,
 		reason:
 			'This is a progressive-disclosure index or a topic sub-file. ' +
-			'Indexes hold ONLY the topic map + summary table; topic files hold ' +
-			'the normative content. Do not put detailed rules in indexes, ' +
-			'and do not duplicate content between index and sub-file.',
+			'Indexes hold ONLY the topic map + summary table; topic files ' +
+			'hold the normative content. Do not duplicate rules between them.',
 	},
 ];
 
-function fileNeedsFrontmatter(filePath, content) {
+const FRONTMATTER_TYPE = /(explanation|tutorial|how-to|reference)/;
+const FRONTMATTER_STATUS = /(stable|draft|deprecated)/;
+
+function frontmatterProblem(filePath, content) {
 	if (!filePath.endsWith('.md')) return null;
 	if (filePath.endsWith('CHANGELOG.md')) return null;
 	if (!content) return null;
@@ -60,74 +58,51 @@ function fileNeedsFrontmatter(filePath, content) {
 	const end = head.indexOf('---', 3);
 	if (end < 0) return 'unterminated frontmatter block';
 	const block = head.slice(3, end);
-	if (!/type:\s*(explanation|tutorial|how-to|reference)/.test(block)) {
+	if (!/type:\s*/.test(block) || !FRONTMATTER_TYPE.test(block))
 		return 'frontmatter missing `type` (explanation/tutorial/how-to/reference)';
-	}
-	if (!/status:\s*(stable|draft|deprecated)/.test(block)) {
+	if (!/status:\s*/.test(block) || !FRONTMATTER_STATUS.test(block))
 		return 'frontmatter missing `status` (stable/draft/deprecated)';
-	}
-	if (!/audience:\s*\S+/.test(block)) {
-		return 'frontmatter missing `audience`';
+	if (!/audience:\s*\S+/.test(block)) return 'frontmatter missing `audience`';
+	return null;
+}
+
+function matchForbidden(rel) {
+	for (const { pattern, reason } of FORBIDDEN_PATTERNS) {
+		if (pattern.test(rel)) return reason;
 	}
 	return null;
 }
 
-async function main() {
-	const raw = await readStdin();
-	let payload = {};
-	try {
-		payload = JSON.parse(raw || '{}');
-	} catch {
-		// tolerate non-JSON stdin
-	}
+await runHook('ai-pre-write-guard', async (payload) => {
 	const tool = payload.tool_name ?? '';
-	if (!['Write', 'Edit', 'MultiEdit'].includes(tool)) {
-		process.exit(0);
-	}
-	const input = payload.tool_input ?? {};
-	const candidates = [];
-	if (typeof input.file_path === 'string') candidates.push(input.file_path);
-	if (Array.isArray(input.edits)) {
-		for (const edit of input.edits) {
-			if (edit?.file_path) candidates.push(edit.file_path);
-		}
-	}
-	if (candidates.length === 0) process.exit(0);
+	if (!WRITE_TOOLS.has(tool)) return; // allow non-write tools
 
-	for (const filePath of candidates) {
-		const rel = base(filePath);
-		for (const { pattern, reason } of FORBIDDEN_PATTERNS) {
-			if (pattern.test(rel)) {
-				process.stdout.write(
-					`[ai-pre-write-guard] BLOCKED writing ${rel}\n` +
-						`  reason: ${reason}\n` +
-						`  tool:   ${tool}\n` +
-						`  rule:   EPR-029 (engineering-principles.md)\n`,
-				);
-				process.exit(2);
-			}
-		}
-	}
+	const targets = extractWriteTargets(payload);
+	if (targets.length === 0) return; // nothing to check
 
-	// Frontmatter check applies to Write only (Edit replaces a slice, not the file head).
-	if (tool === 'Write') {
-		const filePath = candidates[0];
-		const content = typeof input.content === 'string' ? input.content : '';
-		const reason = fileNeedsFrontmatter(filePath, content);
+	for (const filePath of targets) {
+		const rel = relPath(filePath);
+		const reason = matchForbidden(rel);
 		if (reason) {
-			process.stdout.write(
-				`[ai-pre-write-guard] BLOCKED writing ${base(filePath)}\n` +
-					`  reason: ${reason}\n` +
-					`  rule:   Diátaxis frontmatter (type/status/audience) required.\n`,
-			);
+			blockMessage({ reason, target: rel, tool, rule: 'EPR-029' });
 			process.exit(2);
 		}
 	}
 
-	process.exit(0);
-}
-
-main().catch((err) => {
-	process.stderr.write(`[ai-pre-write-guard] error: ${err?.message ?? err}\n`);
-	process.exit(0); // never block the agent on a hook crash
+	// Frontmatter check applies to Write only: Edit replaces a slice
+	// and the agent typically keeps the existing head intact.
+	if (tool === 'Write' || tool === 'write') {
+		const filePath = targets[0];
+		const content = payload?.tool_input?.content ?? '';
+		const reason = frontmatterProblem(filePath, content);
+		if (reason) {
+			blockMessage({
+				reason,
+				target: relPath(filePath),
+				tool,
+				rule: 'Diátaxis frontmatter (type/status/audience) required',
+			});
+			process.exit(2);
+		}
+	}
 });

@@ -34,6 +34,10 @@ commit-msg:
 pre-push:
   parallel: false
   commands:
+    hooks-smoke:
+      # Run the unified AI-hook smoke suite. Cheap (~1s) and catches
+      # refactor regressions in the pre/post/stop helpers.
+      run: bun --cwd nexus scripts/hooks/test.mjs
     verify-architecture:
       run: bun run verify:q
     sync-skills:
