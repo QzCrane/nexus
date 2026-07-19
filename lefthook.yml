@@ -17,7 +17,12 @@ pre-commit:
         - merge
         - rebase
     biome-check:
-      glob: "*.{ts,tsx,js,jsx,mjs,cjs,json}"
+      glob: "**/*.{ts,tsx,js,jsx,mjs,cjs,json}"
+      # biome must run from inside `nexus/` (where biome.json lives); biome
+      # 2.x refuses to start when it detects a "root config" above the
+      # working dir. `root: "nexus/"` tells lefthook to cd there before
+      # running, so the workspace-relative staged paths resolve correctly.
+      root: "nexus/"
       run: bunx @biomejs/biome check --no-errors-on-unmatched --max-diagnostics=50 {staged_files}
       stage_fixed: true
 
