@@ -7,15 +7,7 @@
 // Rule owner: AGENTS.md EPR-029 (质量门硬化到 Git/CI/AI 钩子)
 
 import { execSync } from 'node:child_process';
-
-function readStdin() {
-	return new Promise((resolve) => {
-		let data = '';
-		process.stdin.setEncoding('utf8');
-		process.stdin.on('data', (c) => (data += c));
-		process.stdin.on('end', () => resolve(data));
-	});
-}
+import { readStdin } from './_read-stdin.mjs';
 
 function shortGitStatus() {
 	try {

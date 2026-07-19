@@ -20,6 +20,7 @@
 
 import { join, normalize, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readStdin } from './_read-stdin.mjs';
 
 const root = join(fileURLToPath(import.meta.url), '..', '..', '..');
 const cwd = process.cwd();
@@ -49,15 +50,6 @@ const FORBIDDEN_PATTERNS = [
 			'and do not duplicate content between index and sub-file.',
 	},
 ];
-
-function readStdin() {
-	return new Promise((resolve) => {
-		let data = '';
-		process.stdin.setEncoding('utf8');
-		process.stdin.on('data', (c) => (data += c));
-		process.stdin.on('end', () => resolve(data));
-	});
-}
 
 function fileNeedsFrontmatter(filePath, content) {
 	if (!filePath.endsWith('.md')) return null;

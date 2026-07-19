@@ -11,19 +11,11 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, normalize, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readStdin } from './_read-stdin.mjs';
 
 const root = join(fileURLToPath(import.meta.url), '..', '..', '..');
 const cwd = process.cwd();
 const base = (p) => normalize(relative(root, join(cwd, p))).split(sep).join('/');
-
-function readStdin() {
-	return new Promise((resolve) => {
-		let data = '';
-		process.stdin.setEncoding('utf8');
-		process.stdin.on('data', (c) => (data += c));
-		process.stdin.on('end', () => resolve(data));
-	});
-}
 
 function run(cmd, args) {
 	const result = spawnSync(cmd, args, {

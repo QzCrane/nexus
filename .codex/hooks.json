@@ -1,0 +1,30 @@
+{
+	"_doc": "Codex CLI hooks (experimental, v0.114+, March 2026). PreToolUse only matches the `Bash` tool; direct file writes via the agent's Write/Edit/MultiEdit are NOT hookable. On Windows Codex hooks are unavailable per the official docs; rely on AGENTS.md + Lefthook instead.",
+	"_enabling": "Add `[features]\\ncodex_hooks = true` to ~/.codex/config.toml, then both ~/.codex/hooks.json and this file run additively.",
+	"hooks": {
+		"PreToolUse": [
+			{
+				"matcher": "Bash",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "bun --cwd nexus scripts/hooks/codex-bash-guard.mjs",
+						"_doc": "Block bash commands that would rm/mv/redirect into docs/_archive/, AGENTS.md, CLAUDE.md, or the progressive-disclosure index files. Exit 2 = block."
+					}
+				]
+			}
+		],
+		"Stop": [
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "bun --cwd nexus scripts/hooks/codex-stop-checkpoint.mjs",
+						"_doc": "At AI turn end, remind the operator whether pre-commit / pre-push gates are still ahead. Informational only."
+					}
+				]
+			}
+		]
+	}
+}
