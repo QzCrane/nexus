@@ -36,26 +36,27 @@ export function checkDependencyDirection(ROOT) {
 }
 
 export function checkReadmeAI(ROOT) {
-	section('检查 README.AI.md...');
+	section('检查 README.md (AI 入口) ...');
 
-	const readmeAI = path.join(ROOT, 'README.AI.md');
-	if (!fs.existsSync(readmeAI)) {
-		error('README.AI.md 缺失！');
+	// 自 v2.5+ 起, README.AI.md 已合并入 README.md
+	const readme = path.join(ROOT, 'README.md');
+	if (!fs.existsSync(readme)) {
+		error('README.md 缺失！');
 		return;
 	}
 
-	ok('README.AI.md 存在');
+	ok('README.md 存在');
 
 	const messagesFile = path.join(ROOT, 'packages/contracts/src/messages.contracts.ts');
 	if (fs.existsSync(messagesFile)) {
 		const messagesContent = fs.readFileSync(messagesFile, 'utf-8');
-		const readmeContent = fs.readFileSync(readmeAI, 'utf-8');
+		const readmeContent = fs.readFileSync(readme, 'utf-8');
 		const messageNames = messagesContent.match(/'[A-Z_]+'/g) || [];
 		const uniqueMessages = [...new Set(messageNames.map(m => m.replace(/'/g, '')))];
 
 		const missing = uniqueMessages.slice(0, 5).filter(msg => !readmeContent.includes(msg));
 		if (missing.length > 0) {
-			warn(`README.AI.md 可能缺少: ${missing.join(', ')}`);
+			warn(`README.md 可能缺少: ${missing.join(', ')}`);
 		} else {
 			ok('消息速查表包含主要消息');
 		}

@@ -35,7 +35,7 @@ VideoControl: 变速 0.1x-16x | 旋转/镜像/缩放 | 亮度/对比度/饱和�
 Capture 激活。冷文档快捷键通过 identity-bound READY ensure 直接可用，Toast 只由
 明确快捷键 intent 触发，PiP/fullscreen 使用 trusted activation 与原生
 生命周期，站点倍速 UI 使用受限 one-shot official adapter。详细实现证据见
-[development-sync-2026-07-19.md](docs/development-sync-2026-07-19.md)，规范以
+[development-sync-2026-07-19.md](docs/_archive/2026-Q3/development-sync-2026-07-19.md)（已归档），规范以
 [control-architecture.md](docs/control-architecture.md) 为准。
 
 ### 2026-01-08: Fix YouTube Fullscreen Freeze

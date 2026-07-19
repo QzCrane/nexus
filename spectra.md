@@ -1320,7 +1320,7 @@ dispose 等待或取消所有 transition
 创建回归说明文档：
 
 ```text
-docs/regression-recovery-2026-07-18.md
+nexus/apps/extension-spectra/docs/_archive/2026-Q3/regression-recovery-2026-07-18.md
 ```
 
 内容必须列出：

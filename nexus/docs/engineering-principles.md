@@ -23,8 +23,8 @@ SPECTRA 的控制问题必须按“字段/媒体/文档/运行时”建模，不
 1. `AGENTS.md`、`CLAUDE.md`、`rules.md`：仓库级工作流、安全、测试、依赖和 Git 约束。
 2. SPECTRA `docs/control-architecture.md`：媒体、音频、视频、站点适配器和远程控制的唯一规范所有者。
 3. SPECTRA `docs/protocols.md`、`docs/architecture.md`、`docs/remote-security.md`、`docs/cors-data-flow.md`：分别细化跨上下文协议、运行时所有权、远程认证和 WebAudio 来源准入；不得维护第二份策略矩阵。
-4. SPECTRA `docs/bidirectional-sync-principles.md`、`docs/policy-decision.md`：入口索引，只引用上面的规范所有者。
-5. `regression-recovery-*` 与 `optimization-review-*`：历史根因和发布证据，不是当前行为的规范所有者。
+4. ~~SPECTRA `docs/bidirectional-sync-principles.md`、`docs/policy-decision.md`~~：9 行入口索引已删除（合并入 `control-architecture.md` 对应章节）；不要新建空壳入口文件。
+5. `regression-recovery-*` 与 `optimization-review-*`：已归档至 `apps/extension-spectra/docs/_archive/2026-Q3/`，作为历史根因和发布证据，不是当前行为的规范所有者。
 6. `plan.md`、市场调研、README、商店文案：规划、产品定位或对外说明，不能反向定义运行时行为。
 7. `PRIVACY.md`、`store-listings/privacy-justifications.md`：隐私与权限申报；必须和实际发布包、远程站点及网络流量保持一致。
 
@@ -252,11 +252,10 @@ PiP 和 fullscreen 只走标准 API、真实 user activation、生命周期事�
 
 ### NEXUS 工作区与产品治理
 
-- [`README.md`](../README.md)：monorepo 项目入口。
-- [`README.AI.md`](../README.AI.md)：模块 DNA、开发导读、红线和验证命令；部分数字/发布命令需要定期更新。
+- [`README.md`](../README.md)：monorepo 项目入口 + AI 入口(原 README.AI.md 内容已合并)。
 - [`plan.md`](../plan.md)：NEXUS 产品路线。
 - [`docs/business-model.md`](business-model.md)：商业模式与本地隐私定位。
-- [`docs/halo-dev-flow.md`](halo-dev-flow.md)：HALO 工具目录、SidePanel 和命名规范。
+- [`apps/extension-halo/PLAN.md`](../apps/extension-halo/PLAN.md)：HALO 唯一规划/架构 owner(原 plan.md / docs/architecture.md / docs/halo-dev-flow.md 已合并)。
 
 ### SPECTRA 规范、证据与产品资料
 
@@ -265,12 +264,9 @@ PiP 和 fullscreen 只走标准 API、真实 user activation、生命周期事�
 - [`apps/extension-spectra/docs/protocols.md`](../apps/extension-spectra/docs/protocols.md)：跨上下文 state/message/lease 协议。
 - [`apps/extension-spectra/docs/remote-security.md`](../apps/extension-spectra/docs/remote-security.md)：远程配对、HMAC、命令绑定和 offscreen 集成。
 - [`apps/extension-spectra/docs/cors-data-flow.md`](../apps/extension-spectra/docs/cors-data-flow.md)：不可逆 WebAudio 绑定前的来源准入。
-- [`apps/extension-spectra/docs/bidirectional-sync-principles.md`](../apps/extension-spectra/docs/bidirectional-sync-principles.md)：双向同步入口，规则归属控制架构。
-- [`apps/extension-spectra/docs/policy-decision.md`](../apps/extension-spectra/docs/policy-decision.md)：策略入口，规则归属控制架构。
-- [`apps/extension-spectra/docs/regression-recovery-2026-07-18.md`](../apps/extension-spectra/docs/regression-recovery-2026-07-18.md)：2026-07-18 回归基线和待恢复矩阵，历史证据。
-- [`apps/extension-spectra/docs/development-sync-2026-07-19.md`](../apps/extension-spectra/docs/development-sync-2026-07-19.md)：当前主分支相对旧基线的实现同步与验证证据。
-- [`apps/extension-spectra/docs/optimization-review-2026-07-15.md`](../apps/extension-spectra/docs/optimization-review-2026-07-15.md)：v1.3.4 历史发布证据。
-- [`apps/extension-spectra/docs/optimization-review-2026-07-17.md`](../apps/extension-spectra/docs/optimization-review-2026-07-17.md)：native-first 历史发布证据，当前规范仍回链 control architecture。
+- ~~`apps/extension-spectra/docs/bidirectional-sync-principles.md`~~: 9 行入口索引，已删除（合并入 control-architecture.md §Bidirectional sync）。
+- ~~`apps/extension-spectra/docs/policy-decision.md`~~: 9 行入口索引，已删除（合并入 control-architecture.md §Policy）。
+- [`apps/extension-spectra/docs/_archive/2026-Q3/`](../apps/extension-spectra/docs/_archive/2026-Q3/README.md)：2026-Q3 历史快照归档（regression-recovery / optimization-review / development-sync）。
 - [`apps/extension-spectra/plan.md`](../apps/extension-spectra/plan.md)：SPECTRA 产品路线和历史修复记录。
 - [`apps/extension-spectra/README.md`](../apps/extension-spectra/README.md)：功能、安装、技术栈和对外简介。
 - [`apps/extension-spectra/PRIVACY.md`](../apps/extension-spectra/PRIVACY.md)：本地数据、可选远程和第三方网络披露。
@@ -299,11 +295,7 @@ PiP 和 fullscreen 只走标准 API、真实 user activation、生命周期事�
 
 ### HALO 市场研究
 
-- [`docs/market-research-summary.md`](market-research-summary.md)：整体竞品痛点与 HALO 差异化。
-- [`docs/market-research-dark-reader.md`](market-research-dark-reader.md)：性能、兼容性和早注入策略。
-- [`docs/market-research-lightshot.md`](market-research-lightshot.md)：截图隐私、完全本地处理和 OCR。
-- [`docs/market-research-onetab.md`](market-research-onetab.md)：标签丢失、双备份和同步。
-- [`docs/market-research-halo-extra.md`](market-research-halo-extra.md)：QR、滚动、剪贴板、限时功能的本地优先策略。
+- [`docs/market-research.md`](market-research.md)：HALO 7 大功能(Dark Reader / OneTab / Lightshot / QR / SmoothScroll / Clipboard / Time Limit)竞品痛点汇总 + 差异化策略 + 交付路线(原 5 份散落调研已合并,信息零损失)。
 
 ### 独立远程站点
 
@@ -311,14 +303,14 @@ PiP 和 fullscreen 只走标准 API、真实 user activation、生命周期事�
 
 ## 7. 已发现的文档漂移与处理规则
 
-1. `regression-recovery-2026-07-18.md` 的基线、当前 commit、测试数量和“待实施”状态是历史快照；修复完成后不覆盖历史数字，应新增当前验证报告或更新“已验证于”字段。
-2. 两份 `optimization-review` 已声明为历史证据，当前实现以 `control-architecture.md`、`architecture.md` 和 `protocols.md` 为准。
-3. `README.AI.md` 中的工具数量、旧版命令和公开仓库强制推送说明需要在下次发布前重新核对；不得将 `push -f` 当作默认工作流。
-4. SPECTRA 商店文案中的“所有网站”“零 CPU”“受保护媒体稳定工作”等绝对表述超过当前结构化 unsupported 和浏览器安全边界；发布前必须改成能力范围与失败语义可证明的表述。
-5. 商业模式的“零上传”必须表述为产品不运营数据收集服务；SPECTRA 可选远程的标题/域名/控制状态和第三方连接元数据必须继续按 `PRIVACY.md` 披露。
-6. HALO 研究中的 Google Drive/跨设备备份属于可选外部能力，必须保留本地默认路径、最小权限和显式 opt-in，不能与“零网络请求”核心定位混为默认行为。
+1. [`regression-recovery-2026-07-18.md`](../apps/extension-spectra/docs/_archive/2026-Q3/regression-recovery-2026-07-18.md) 的基线、当前 commit、测试数量和"待实施"状态是历史快照，已归档；修复完成后不覆盖历史数字，应新增当前验证报告或更新"已验证于"字段。
+2. 两份 `optimization-review` 已声明为历史证据并归档到 `_archive/2026-Q3/`，当前实现以 `control-architecture.md`、`architecture.md` 和 `protocols.md` 为准。
+3. `README.md` (原 README.AI.md 内容已合并) 中的工具数量、旧版命令和公开仓库强制推送说明需要在下次发布前重新核对；不得将 `push -f` 当作默认工作流。
+4. SPECTRA 商店文案中的"所有网站""零 CPU""受保护媒体稳定工作"等绝对表述超过当前结构化 unsupported 和浏览器安全边界；发布前必须改成能力范围与失败语义可证明的表述。
+5. 商业模式的"零上传"必须表述为产品不运营数据收集服务；SPECTRA 可选远程的标题/域名/控制状态和第三方连接元数据必须继续按 `PRIVACY.md` 披露。
+6. HALO 研究中的 Google Drive/跨设备备份属于可选外部能力，必须保留本地默认路径、最小权限和显式 opt-in，不能与"零网络请求"核心定位混为默认行为。
 7. 根 `rules.md` 要求的文档压缩格式与现有架构文档的大量表格存在表达层冲突；格式偏好不能压过架构可读性，表格只保留在能降低歧义的矩阵/映射场景。
-8. `AGENTS.md` 与 `CLAUDE.md` 内容重复，后续只保留一个维护源或增加一致性检查，避免工具规则分叉。
+8. `AGENTS.md` 与 `CLAUDE.md` 通过 NTFS 硬链接共享同一 inode(由 `postanalyze.mjs` 维护),两者物理上不会分叉。
 9. GitNexus 当前索引提示落后主分支提交，且 clusters 为空；本次文档结论以直接 Markdown/source 读取为主，重新索引后再补一次图谱审计。
 
 ## 8. 文档维护 SOP
