@@ -8,6 +8,8 @@
     "lint": "bun --cwd nexus lint",
     "typecheck": "bun --cwd nexus typecheck",
     "verify": "bun --cwd nexus verify",
-    "generate-registry": "bun --cwd nexus generate-registry"
+    "generate-registry": "bun --cwd nexus generate-registry",
+    "sync:skills": "bun --cwd nexus sync:skills",
+    "postinstall": "bun run sync:skills"
   }
 }
