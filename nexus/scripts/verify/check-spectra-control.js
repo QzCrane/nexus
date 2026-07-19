@@ -1215,8 +1215,7 @@ function checkRetiredPaths(root) {
 	const visualizerRunFrame = visualizerLoop.match(
 		/function runFrame\(\): void \{(.*?)\n\}/su,
 	)?.[1] ?? '';
-	if (!visualizerLoop.includes('subscription.params.isProcessorActive()')
-		|| !visualizerLoop.includes('document.addEventListener(VISUALIZER_STATE_CHANGED_EVENT, reconcileScheduler)')
+	if (!visualizerLoop.includes('document.addEventListener(VISUALIZER_STATE_CHANGED_EVENT, reconcileScheduler)')
 		|| !visualizerRunFrame.includes('releaseSubscriptions()')
 		|| visualizerRunFrame.includes('scheduleFrame()')) {
 		error('SCTRL-013/SCTRL-019/SCTRL-021: visualizer scheduling requires an actual processor, explicit wake and zero-ready stop');

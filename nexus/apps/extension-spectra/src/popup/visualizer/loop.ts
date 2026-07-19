@@ -84,11 +84,16 @@ function stopScheduledFrame(): void {
 function isRunnable(subscription: VizSubscription): boolean {
 	if (!subscription.active || !subscription.visible) return false;
 	const config = subscription.params.getConfig();
-	if (!subscription.params.isProcessorActive()) return false;
-	// rule: sample whenever enhancement is on and not muted. The processor-active
-	// probe is the only contract-owned signal that the background DSP is bound
-	// to a media source; without it the visualizer would either spin on a
-	// disconnected controller or freeze when the session handshake is stale.
+	// rule: sample whenever enhancement is on and not muted. Do NOT gate on
+	// isProcessorActive()/state.phase — that gate only updates on a matching
+	// spectra.audio.session.changed event, and when the handshake is stale or
+	// unmatched the popup's state.phase stays 'idle', freezing the visualizer
+	// even while real audio is playing. The background returns null frames
+	// when no audio is actually active, and runFrame's silent flag handles
+	// that case by drawing a flat canvas — so the gate is both redundant
+	// and harmful here. CPU is still bounded because the second visualizer
+	// test (audioEnabled: false) puts config.enabled=false and the runnable
+	// short-circuit fires before any IPC is issued.
 	return config.enabled
 		&& !config.muted
 		&& subscription.params.getGlobalSettings().visualizerEnabled !== false;

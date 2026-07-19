@@ -19,6 +19,7 @@ import {
 } from '@nexus/contracts';
 import { sendSpectraTabRequest } from '../shared/spectra-client';
 import { swLog } from '../shared/logger';
+import { injectMainBridges } from './main-runtime-manager';
 import { settingsRepository } from './settings-repository';
 
 // Heavy SPA startup can legitimately spend several seconds restoring settings
@@ -471,6 +472,18 @@ export function initializeContentRuntimeLoader(): void {
 				accepted: true as const,
 				runtimeRevision: known?.runtimeRevision ?? null,
 			}));
+			// rule: SCTRL-001/004 — the manifest only registers the ISOLATED
+			// bootstrap. The MAIN-world fullscreen and playback-rate bridges are
+			// injected here on every new document, delegated exclusively to
+			// main-runtime-manager (sole owner of the MAIN-world injection literal).
+			// This ensures the bridges are present from the very first event the
+			// page dispatches.
+			void injectMainBridges(identity.tabId).catch((error: unknown) => {
+				swLog.warn(
+					`[Runtime] MAIN bridge injection failed for tab ${identity.tabId}: `
+					+ `${error instanceof Error ? error.message : String(error)}`,
+				);
+			});
 			void Promise.allSettled([
 				restoreIfConfigured(identity.tabId, identity.documentId, sender.url ?? sender.tab?.url),
 				reconcileHotkeyRuntimeLease(identity.tabId, identity.documentId, sender.url ?? sender.tab?.url),
