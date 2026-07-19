@@ -1067,7 +1067,6 @@ async function executeIntent(request: RoutedControlSubmitRequest): Promise<Contr
 const RESET_AUDIO_TARGET_PATCH: ControlPatch = {
 	volumeBase: 100,
 	mediaMuted: false,
-	speed: 1,
 };
 
 const RESET_AUDIO_PROCESSOR_PATCH: ControlPatch = {

@@ -235,7 +235,7 @@ function handleKeydown(e: KeyboardEvent): void {
 	// Repeat keydown under coalesce-20hz: throttle the action to ~20 Hz (50 ms)
 	// and execute it WITHOUT the toast. The initial press already showed the
 	// OSD; re-showing it on every repeat floods the toast and creates phantom
-	// "惯性" toasts after keyup because pending executeWithOSD promises keep
+	// "drift" toasts after keyup because pending executeWithOSD promises keep
 	// resolving. The 50 ms timer is cleared on keyup so no queued action fires
 	// after the user releases the key.
 	if (coalesced.has(binding.id) || inFlightBindings.has(binding.id)) return;

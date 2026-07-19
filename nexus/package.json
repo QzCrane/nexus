@@ -21,10 +21,13 @@
 		"verify": "bun scripts/verify-architecture.js",
 		"verify:q": "bun scripts/verify-architecture.js -q",
 		"verify:v": "bun scripts/verify-architecture.js -v",
-		"prebuild": "bun scripts/verify-architecture.js -q",
+		"prebuild": "bun run sync:skills && bun scripts/verify-architecture.js -q",
 		"sync-spectra": "bun scripts/sync-public.cjs spectra",
 		"sync-halo": "bun scripts/sync-public.cjs halo",
-		"generate-registry": "bun scripts/generate-tool-registry.mjs"
+		"generate-registry": "bun scripts/generate-tool-registry.mjs",
+		"sync:skills": "bun scripts/sync-skills.mjs",
+		"postanalyze": "bun scripts/postanalyze.mjs",
+		"analyze": "node ../.gitnexus/run.cjs analyze && bun run postanalyze"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.3",

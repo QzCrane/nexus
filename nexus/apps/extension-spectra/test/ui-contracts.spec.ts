@@ -330,7 +330,12 @@ describe('extension-page DOM and idle contracts', () => {
 	test('keeps video-only Popup acknowledgements independent from active media', () => {
 		const mediaControls = readFileSync(resolve(import.meta.dir, '../src/popup/card/media-events.ts'), 'utf8');
 		const videoControls = readFileSync(resolve(import.meta.dir, '../src/popup/side-panel/video-controls.ts'), 'utf8');
-		expect(mediaControls).toContain('togglePictureInPicture(tabId, snapshot.documentId, target)');
+		// rule: SCTRL-005/014/025 — the click handler stores the target context
+		// once and dispatches the single-parameter toggle; the helper re-resolves
+		// the target from the captured snapshot so video-only ACKs never inherit
+		// the active-media identity.
+		expect(mediaControls).toContain('pipToggleByTab.set(tabId, { documentId: snapshot.documentId, target })');
+		expect(mediaControls).toContain('togglePictureInPicture(tabId)');
 		expect(mediaControls).toContain('const target = snapshot?.activeVideo');
 		expect(mediaControls).not.toContain("mutation.field === 'pip'");
 		expect(videoControls).toContain('activeMedia: currentSnapshot.activeMedia');
@@ -363,7 +368,10 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(popup).toContain('while (performance.now() < deadline)');
 		expect(pipHandler).not.toContain('chrome.tabs.update');
 		expect(bridge).toContain('navigator.userActivation.isActive');
-		expect(bridge).toContain("submitTrustedActivationControl('pip', request.documentId, request.target)");
+		// rule: SCTRL-014/025 — the ISOLATED bridge invokes the canonical
+		// control entry with no positional context; the document/target context
+		// was already bound at click time and resolved inside the executor.
+		expect(bridge).toContain("submitTrustedActivationControl('pip')");
 		expect(bridge).toContain('dispatchOutcome');
 		expect(nativeExecutor).toContain('element.disablePictureInPicture = false');
 		expect(nativeExecutor).toContain('element.disablePictureInPicture = true');
@@ -415,14 +423,26 @@ describe('extension-page DOM and idle contracts', () => {
 			'utf8',
 		);
 		const handoff = readFileSync(resolve(import.meta.dir, '../src/content/core/fullscreen-audio-handoff.ts'), 'utf8');
+		// rule: SCTRL-001/004 — MAIN world content scripts are no longer
+		// registered in the manifest. main-runtime-manager.ts owns the only
+		// `world: 'MAIN'` injection; the manifest only carries the ISOLATED
+		// bootstrap that every page receives at document_start.
 		expect(manifest.content_scripts).toContainEqual(expect.objectContaining({
-			js: ['content-fullscreen-bridge.js'],
-			world: 'MAIN',
+			js: ['content-bootstrap.js'],
+			world: 'ISOLATED',
 		}));
-		expect(manifest.content_scripts).toContainEqual(expect.objectContaining({
-			js: ['content-playback-rate-bridge.js'],
-			world: 'MAIN',
-		}));
+		for (const entry of manifest.content_scripts ?? []) {
+			expect(entry.world).not.toBe('MAIN');
+		}
+		const mainRuntime = readFileSync(
+			resolve(import.meta.dir, '../src/background/main-runtime-manager.ts'),
+			'utf8',
+		);
+		expect(mainRuntime).toContain("'content-fullscreen-bridge.js'");
+		expect(mainRuntime).toContain("'content-playback-rate-bridge.js'");
+		expect(mainRuntime).toContain('export async function injectMainBridges');
+		expect(mainRuntime).toContain('export async function injectMainBootstrap');
+		expect(mainRuntime).toContain("world: 'MAIN'");
 		expect(handoff).toContain("captureManager.request(");
 		expect(handoff).toContain('await currentSuspension');
 		expect(handoff).toContain('policyExecutor.applyState({ modeIntent: true })');
@@ -443,7 +463,8 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(osd).toContain("variant?: 'alternate-target'");
 		expect(audioDelegate).toContain("source !== 'hotkey'");
 		expect(audioDelegate).toContain("intent.source === 'hotkey'");
-		expect(operations).toContain("const shown = intent.source === 'hotkey'");
+		expect(operations).toContain("if (intent.source === 'hotkey') {");
+		expect(operations).toContain("return ack(intent, 'observe', { shown: true }, {}, null)");
 		expect(playbackBridge).toContain("element.closest('.xgplayer, xg-video-container')");
 		expect(playbackBridge).toContain('selected.click()');
 		expect(playbackBridge).toContain("'xg-playbackrate li'");
@@ -451,6 +472,10 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(playbackBridge).toContain('new MutationObserver');
 		expect(playbackBridge).toContain('synchronizeAttachedPlayerController');
 		expect(playbackBridge).toContain("'setPlaybackRate'");
-		expect(playbackBridge).toContain('element.playbackRate = request.speed');
+		// rule: SCTRL-003 — playbackRate writes must route through the
+		// executor-owned Reflect.set path; direct assignment is forbidden so
+		// page-side reassertions cannot bypass the architecture owner.
+		expect(playbackBridge).toContain("Reflect.set(element, 'playbackRate', request.speed)");
+		expect(playbackBridge).not.toMatch(/element\.playbackRate\s*=\s*request\.speed/);
 	});
 });

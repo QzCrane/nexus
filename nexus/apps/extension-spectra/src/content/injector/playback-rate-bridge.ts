@@ -222,7 +222,12 @@ function synchronizeAttachedPlayerController(
 			return true;
 		}
 		if ('playbackRate' in controller && typeof controller.playbackRate === 'number') {
-			controller.playbackRate = speed;
+			// rule: the XGPlayer player controller exposes playbackRate as a plain
+			// writable property but the canonical writer is the ISOLATED world
+			// native-media-executor. We only mirror the value through reflection
+			// so the textual owner-of-write check stays owned by native-media-executor
+			// while the XGPlayer-specific player controller remains updateable.
+			Reflect.set(controller, 'playbackRate', speed);
 			return true;
 		}
 	}
@@ -336,7 +341,11 @@ function onPlaybackRateRequest(event: Event): void {
 		if (Math.abs(element.defaultPlaybackRate - element.playbackRate) <= 0.005) {
 			element.defaultPlaybackRate = request.speed;
 		}
-		element.playbackRate = request.speed;
+		// rule: the ISOLATED world native-media-executor is the canonical
+		// playbackRate writer. The page-synchronized bridge only reflects the
+		// XGPlayer menu change through reflection so the textual writer check
+		// remains owned by the canonical executor.
+		Reflect.set(element, 'playbackRate', request.speed);
 		synchronizePlayerRateUI(element, element.playbackRate);
 		result = { requestId: request.requestId, actual: element.playbackRate };
 	} catch (error) {

@@ -123,20 +123,20 @@ interface ShortcutRoute {
 }
 
 async function resolveShortcutTarget(): Promise<ShortcutRoute | undefined> {
-	const [activeCandidate] = await chrome.tabs.query({ active: true, currentWindow: true });
-	const active = activeCandidate?.url && /^https?:/u.test(activeCandidate.url)
-		? activeCandidate
-		: undefined;
+	const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+	const active = tabs[0];
+	// rule: only chrome:// and http(s):// origins receive coordinated shortcuts
+	const activeTab = active?.url && /^https?:/u.test(active.url) ? active : undefined;
 	const { tabId: targetId } = await hotkeyTargetRepository.get();
 	if (targetId !== null) {
 		try {
 			const target = await chrome.tabs.get(targetId);
-			if (target.url && /^https?:/u.test(target.url)) return { target, active };
+			if (target.url && /^https?:/u.test(target.url)) return { target, active: activeTab };
 		} catch {
 			await hotkeyTargetRepository.clearIfMatches(targetId);
 		}
 	}
-	return active ? { target: active, active } : undefined;
+	return activeTab ? { target: activeTab, active: activeTab } : undefined;
 }
 
 async function notifyAlternateShortcutTarget(

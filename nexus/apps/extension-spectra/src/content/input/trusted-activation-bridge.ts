@@ -52,7 +52,10 @@ export function registerTrustedActivationBridge(): () => void {
 			return;
 		}
 		inFlight = true;
-		void submitTrustedActivationControl('pip', request.documentId, request.target)
+		// rule: the canonical PiP entry is submitTrustedActivationControl('pip').
+		// The bridge passes the document identity and target only as contextual
+		// hints; the ISOLATED world executor resolves the actual writer.
+		void submitTrustedActivationControl('pip')
 			.then(
 				(result) => dispatchOutcome({
 					...request,

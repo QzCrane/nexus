@@ -7,7 +7,6 @@ import type {
 	ControlOperationRequest,
 	HotkeyAction,
 	HotkeyParams,
-	MediaTarget,
 } from '@nexus/contracts';
 import { sendSpectraRequest } from '../../shared/spectra-client';
 import { getActiveNativeMediaExecutor } from '../logic/native-media-executor';
@@ -20,14 +19,15 @@ const TAB_FIELDS = new Set<ControlMutation['field']>(['tabMuted', 'tabPinned']);
 export async function submitTrustedActivationControl(
 	field: 'playing' | 'pip' | 'fullscreen',
 	documentId?: string,
-	target?: MediaTarget,
 ): Promise<{ target: import('@nexus/contracts').MediaTarget; actual: boolean }> {
 	const executor = getActiveNativeMediaExecutor();
 	if (!executor) throw new Error('The native media runtime is unavailable');
 	if (documentId) executor.bindRequestContext(undefined, documentId);
 	// The browser API is invoked synchronously inside the trusted keydown stack.
-	// Only the observed actual value crosses Background afterwards.
-	const result = await executor.toggleTrustedActivation(field, target);
+	// Only the observed actual value crosses Background afterwards. The ISOLATED
+	// world executor remains the canonical resolver of the actual media element
+	// for the toggle; the click-time context is bound separately, never here.
+	const result = await executor.toggleTrustedActivation(field);
 	const response = await sendSpectraRequest('spectra.control.intent.submit', {
 		source: 'page',
 		requestedCoverage: 'active-target',

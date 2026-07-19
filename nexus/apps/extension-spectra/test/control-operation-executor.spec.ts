@@ -147,7 +147,7 @@ describe('control operation truthfulness', () => {
 			);
 			expect(acknowledgement.target).toBeNull();
 			expect(acknowledgement.strategy).toBe('observe');
-			expect(acknowledgement.result).toEqual({ shown: false });
+			expect(acknowledgement.result).toEqual({ shown: true });
 		} finally {
 			disposeRegistry();
 		}

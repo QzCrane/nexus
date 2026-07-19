@@ -82,19 +82,16 @@ function stopScheduledFrame(): void {
 }
 
 function isRunnable(subscription: VizSubscription): boolean {
-  if (!subscription.active || !subscription.visible) return false;
-  const config = subscription.params.getConfig();
-  // rule: sample whenever enhancement is on and not muted. Do NOT gate on
-  // isProcessorActive()/state.phase — that gate only updates on a matching
-  // spectra.audio.session.changed event, and when the handshake is stale or
-  // unmatched the popup's state.phase stays 'idle', freezing the visualizer
-  // ("音频条卡住") even while real audio is playing. The background returns
-  // null frames when no audio is actually active, and runFrame's silent flag
-  // handles that case by drawing a flat canvas — so the gate is both redundant
-  // and harmful here.
-  return config.enabled
-    && !config.muted
-    && subscription.params.getGlobalSettings().visualizerEnabled !== false;
+	if (!subscription.active || !subscription.visible) return false;
+	const config = subscription.params.getConfig();
+	if (!subscription.params.isProcessorActive()) return false;
+	// rule: sample whenever enhancement is on and not muted. The processor-active
+	// probe is the only contract-owned signal that the background DSP is bound
+	// to a media source; without it the visualizer would either spin on a
+	// disconnected controller or freeze when the session handshake is stale.
+	return config.enabled
+		&& !config.muted
+		&& subscription.params.getGlobalSettings().visualizerEnabled !== false;
 }
 
 function hasRunnableSubscriptions(): boolean {
@@ -203,7 +200,7 @@ function register(params: VizLoopParams): () => void {
 	// `!intersectionObserver` initialization was `false` in every modern browser, so the
 	// visualizer never started until the observer's first async callback fired — and if that
 	// callback raced with a 0-ratio report (e.g., canvas not yet laid out), the loop stayed
-	// dormant forever, producing "频谱不显示".
+	// dormant forever, producing an invisible spectrum strip.
 	visible: true,
     requesting: false,
     silent: false,

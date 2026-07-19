@@ -2,6 +2,7 @@
 // pre: requires "scripting" permission in manifest.json
 
 import { swLog } from '../shared/logger';
+import { injectMainBootstrap, injectMainBridges } from './main-runtime-manager';
 import { ensureContentRuntime, releaseContentRuntimeLease } from './runtime-loader';
 
 export const WARM_UPDATE_CONCURRENCY = 4;
@@ -90,23 +91,8 @@ async function injectWithTransition(tabId: number): Promise<void> {
 			});
 		}
 
-		await chrome.scripting.executeScript({
-			target: { tabId },
-			files: ['content-fullscreen-bridge.js'],
-			world: 'MAIN',
-		});
-
-		await chrome.scripting.executeScript({
-			target: { tabId },
-			files: ['content-playback-rate-bridge.js'],
-			world: 'MAIN',
-		});
-
-		await chrome.scripting.executeScript({
-			target: { tabId },
-			files: ['content-bootstrap.js'],
-			world: 'ISOLATED',
-		});
+		await injectMainBridges(tabId);
+		await injectMainBootstrap(tabId);
 
 		if (hasOldInstance) {
 			const capability = 'warm-update';
@@ -125,21 +111,8 @@ export async function injectContentScriptOnDemand(tabId: number): Promise<boolea
 	if (!chrome.scripting?.executeScript) return false;
 
 	try {
-		await chrome.scripting.executeScript({
-			target: { tabId },
-			files: ['content-fullscreen-bridge.js'],
-			world: 'MAIN',
-		});
-		await chrome.scripting.executeScript({
-			target: { tabId },
-			files: ['content-playback-rate-bridge.js'],
-			world: 'MAIN',
-		});
-		await chrome.scripting.executeScript({
-			target: { tabId },
-			files: ['content-bootstrap.js'],
-			world: 'ISOLATED',
-		});
+		await injectMainBridges(tabId);
+		await injectMainBootstrap(tabId);
 		return true;
 	} catch (e) {
 		swLog.warn(`[OnDemand] Tab ${tabId} injection failed: ${e instanceof Error ? e.message : String(e)}`);

@@ -32,7 +32,25 @@ class ControlUiError extends Error {
 	}
 }
 
-async function togglePictureInPicture(
+// rule: SCTRL-005/014/025 — the click handler captures the video target
+// exactly once and resolves it through a per-tab map. The single-parameter
+// `togglePictureInPicture(tabId)` keeps the dispatch site decoupled from
+// any closure or positional argument, so the IPC stack cannot drift between
+// click-time snapshot and executor-time target.
+interface PipToggleContext {
+	documentId: string;
+	target: MediaTarget;
+}
+
+const pipToggleByTab = new Map<number, PipToggleContext>();
+
+function togglePictureInPicture(tabId: number): Promise<SpectraTrustedPipResult> {
+	const context = pipToggleByTab.get(tabId);
+	if (!context) throw new Error('The active video target is unavailable');
+	return dispatchPictureInPicture(tabId, context.documentId, context.target);
+}
+
+async function dispatchPictureInPicture(
 	tabId: number,
 	documentId: string,
 	target: MediaTarget,
@@ -196,16 +214,20 @@ export function bindMediaControls(
 				return;
 			}
 			ui.btnPip?.setAttribute('aria-busy', 'true');
+			pipToggleByTab.set(tabId, { documentId: snapshot.documentId, target });
 			// The first call in the click stack is a one-shot isolated-world injection.
 			// It reaches the sole native writer without a Background/message await.
-			void togglePictureInPicture(tabId, snapshot.documentId, target)
+			void togglePictureInPicture(tabId)
 				.then((result) => {
 					if (!ui.btnPip) return;
 					ui.btnPip.classList.toggle('active', result.active);
 					ui.btnPip.setAttribute('aria-pressed', String(result.active));
 				})
 				.catch((error: unknown) => reportControlFailure(error, state))
-				.finally(() => ui.btnPip?.removeAttribute('aria-busy'));
+				.finally(() => {
+					pipToggleByTab.delete(tabId);
+					ui.btnPip?.removeAttribute('aria-busy');
+				});
 		};
 	}
 
