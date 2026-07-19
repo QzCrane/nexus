@@ -15,8 +15,7 @@ import { updateBadge, broadcastUI } from './badge-sync';
 import { updateConfig } from './config-updater';
 import { getActiveMediaRegistry } from '../../core/media-registry';
 import {
-	createMediaEligibilityCache,
-	createMediaRouteFingerprint,
+	createSiteEligibilityCache,
 } from './eligibility-cache';
 
 const log = logger.content;
@@ -39,7 +38,7 @@ export async function createPolicyExecutor(
 ): Promise<PolicyExecutor | null> {
 	if (!isCurrent()) return null;
 	const istate: InternalState = { corsStatus: 'PENDING', lastBadgeHash: '', lastSyncHash: '' };
-	const eligibilityCache = createMediaEligibilityCache(window.location.hostname);
+	const eligibilityCache = createSiteEligibilityCache(window.location.hostname);
 
 	const evaluateSourceEligibility = (): InternalState['corsStatus'] => {
 		const registry = getActiveMediaRegistry();
@@ -54,18 +53,6 @@ export async function createPolicyExecutor(
 		);
 	};
 
-	const currentMediaFingerprint = (): string => {
-		const registry = getActiveMediaRegistry();
-		const elements = registry?.list().map(({ element }) => element) ?? [];
-		return createMediaRouteFingerprint(
-			window.location.hostname,
-			elements,
-			(element) => typeof registry?.getEligibilityEvidence === 'function'
-				? registry.getEligibilityEvidence(element)
-				: undefined,
-		);
-	};
-
 	const getUrlInfo = (): UrlInfo => ({
 		fullUrl: window.location.href, domain: window.location.hostname, pathname: window.location.pathname, isIframe: window.self !== window.top
 	});
@@ -73,8 +60,7 @@ export async function createPolicyExecutor(
 	const applyState = async (options: { navigation?: boolean; modeIntent?: boolean } = {}): Promise<void> => {
 		const s = deps.settingsManager.get();
 		const u = getUrlInfo();
-		const fingerprint = currentMediaFingerprint();
-		istate.corsStatus = await eligibilityCache.resolve(fingerprint, evaluateSourceEligibility());
+		istate.corsStatus = await eligibilityCache.resolve(evaluateSourceEligibility());
 		// Full-output DSP may claim Media WebAudio coverage only when every
 		// registered source is proven safe before its irreversible binding.
 		// Unselected media remains unknown and therefore takes the conservative
@@ -120,7 +106,7 @@ export async function createPolicyExecutor(
 		}
 
 		await executeMode(deps, state, modeChanged || options.navigation === true || options.modeIntent === true);
-		await eligibilityCache.recordActual(fingerprint, state.actualMode, state.phase);
+		await eligibilityCache.recordActual(state.actualMode, state.phase);
 		updateBadge(deps, state, istate);
 		broadcastUI(deps, state, istate);
 	};

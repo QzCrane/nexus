@@ -12,6 +12,7 @@ import {
 } from '@nexus/contracts';
 import {
 	RegistryRepository,
+	normalizeRegistryEntries,
 	type RegistryStoragePort,
 } from '../src/background/registry-repository';
 import {
@@ -38,10 +39,10 @@ function createRegistryStorage(initial: DomainEntry[] = []): RegistryStoragePort
 			domain: string,
 			source: DomainSource,
 			route: MediaRoute = 'capture',
-			fingerprint?: string,
+			_fingerprint?: string,
 		): Promise<RegistryResult> {
 			const normalized = normalizeHostname(domain);
-			const identity = fingerprint ?? (normalized ? createSiteRouteFingerprint(normalized) : null);
+			const identity = normalized ? createSiteRouteFingerprint(normalized) : null;
 			if (!normalized || !identity) return { success: false, reason: 'invalid_route_identity' };
 			// Deliberately split read/write across an await so a missing owner queue loses updates.
 			const next = structuredClone(storage.entries);
@@ -142,6 +143,39 @@ describe('SPECTRA v2 media route registry contracts', () => {
 });
 
 describe('background-owned media route repository', () => {
+	test('collapses legacy per-video entries into one user-preferred site record', () => {
+		const entries = normalizeRegistryEntries([
+			{
+				domain: 'video.example.com',
+				fingerprint: 'media:v1:0123456789abcdef',
+				route: 'capture',
+				source: 'auto',
+				updatedAt: 30,
+			},
+			{
+				domain: 'video.example.com',
+				fingerprint: 'media:v1:fedcba9876543210',
+				route: 'direct',
+				source: 'auto',
+				updatedAt: 40,
+			},
+			{
+				domain: 'video.example.com',
+				fingerprint: 'media:v1:0011223344556677',
+				route: 'capture',
+				source: 'user',
+				updatedAt: 1,
+			},
+		]);
+		expect(entries).toEqual([{
+			domain: 'video.example.com',
+			fingerprint: 'site:video.example.com',
+			route: 'capture',
+			source: 'user',
+			updatedAt: 1,
+		}]);
+	});
+
 	test('normalizes site fallbacks and does not lose concurrent writes', async () => {
 		const storage = createRegistryStorage();
 		const repository = new RegistryRepository(storage);
@@ -159,22 +193,27 @@ describe('background-owned media route repository', () => {
 		expect((await repository.getSnapshot()).entries).toHaveLength(2);
 	});
 
-	test('stores independent routes for two fingerprints on one site', async () => {
+	test('folds repeated media observations into one site route', async () => {
 		const storage = createRegistryStorage();
 		const repository = new RegistryRepository(storage);
 		const first = 'media:v1:0123456789abcdef';
 		const second = 'media:v1:fedcba9876543210';
 		await repository.markProbed('video.example.com', first, 'capture');
+		expect((await repository.getSnapshot()).entries).toEqual([expect.objectContaining({
+			domain: 'video.example.com',
+			fingerprint: 'site:video.example.com',
+			route: 'capture',
+		})]);
 		await repository.markProbed('video.example.com', second, 'direct');
-		expect((await repository.query('other.example.com', first)).entry).toBeNull();
-		expect((await repository.query('video.example.com', first)).entry?.route).toBe('capture');
+		expect((await repository.getSnapshot()).entries).toHaveLength(1);
+		expect((await repository.query('video.example.com', first)).entry?.route).toBe('direct');
 		expect((await repository.query('video.example.com', second)).entry?.route).toBe('direct');
-		const removed = await repository.remove(first);
+		const removed = await repository.remove('site:video.example.com');
 		expect(removed.removed).toBe(true);
-		expect(removed.entries.map((entry) => entry.fingerprint)).toEqual([second]);
+		expect(removed.entries).toEqual([]);
 	});
 
-	test('migrates a legacy domain record and lets a v2 user route replace it', async () => {
+	test('collapses stored per-video routes before a v2 user route replaces the site decision', async () => {
 		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 		const listeners: Array<(
 			message: unknown,
@@ -182,13 +221,22 @@ describe('background-owned media route repository', () => {
 			sendResponse: (response: unknown) => void,
 		) => boolean | undefined> = [];
 		const localState: Record<string, unknown> = {
-			restrictedRegistry: [{
-				domain: 'xn--bcher-kva.example',
-				source: 'auto',
-				probed: true,
-				restricted: true,
-				addedAt: 1,
-			}],
+			mediaRouteRegistry: [
+				{
+					domain: 'xn--bcher-kva.example',
+					fingerprint: 'media:v1:0123456789abcdef',
+					source: 'auto',
+					route: 'capture',
+					updatedAt: 1,
+				},
+				{
+					domain: 'xn--bcher-kva.example',
+					fingerprint: 'media:v1:fedcba9876543210',
+					source: 'auto',
+					route: 'direct',
+					updatedAt: 2,
+				},
+			],
 		};
 		const sessionState: Record<string, unknown> = {};
 		const readArea = (state: Record<string, unknown>, keys: string | string[]) => {
@@ -221,12 +269,28 @@ describe('background-owned media route repository', () => {
 			registerRegistryHandlers();
 			const listener = listeners[0];
 			if (!listener) throw new Error('Registry v2 listener was not registered');
+			const snapshot = await new Promise<unknown>((resolve, reject) => {
+				const handled = listener({
+					protocolVersion: 2,
+					requestId: 'site-collapse',
+					type: 'spectra.registry.get',
+					payload: {},
+				}, { id: 'spectra-test' }, resolve);
+				if (!handled) reject(new Error('Registry v2 request was not handled'));
+			});
+			expect(isSpectraResponse('spectra.registry.get', snapshot)).toBe(true);
+			expect(localState.mediaRouteRegistry).toEqual([expect.objectContaining({
+				domain: 'xn--bcher-kva.example',
+				fingerprint: 'site:xn--bcher-kva.example',
+				source: 'auto',
+				route: 'direct',
+			})]);
 			const response = await new Promise<unknown>((resolve, reject) => {
 				const handled = listener({
 					protocolVersion: 2,
 					requestId: 'user-add',
 					type: 'spectra.registry.add',
-					payload: { domain: 'BÜCHER.Example.', route: 'direct' },
+					payload: { domain: 'BÜCHER.Example.', route: 'capture' },
 				}, { id: 'spectra-test' }, resolve);
 				if (!handled) reject(new Error('Registry v2 request was not handled'));
 			});
@@ -235,7 +299,7 @@ describe('background-owned media route repository', () => {
 				domain: 'xn--bcher-kva.example',
 				fingerprint: 'site:xn--bcher-kva.example',
 				source: 'user',
-				route: 'direct',
+				route: 'capture',
 			})]);
 		} finally {
 			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);

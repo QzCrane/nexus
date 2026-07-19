@@ -1,4 +1,4 @@
-// goal: manages one media-fingerprint-to-route table with no duplicate domain lists
+// goal: manages one site-to-route table with no duplicate per-video entries
 
 import {
 	normalizeHostname,
@@ -44,8 +44,7 @@ function routeLabel(route: MediaRoute): string {
 }
 
 function fingerprintLabel(entry: DomainEntry): string {
-	if (entry.fingerprint.startsWith('site:')) return 'SITE';
-	return entry.fingerprint.slice('media:v1:'.length);
+	return entry.fingerprint.startsWith('site:') ? 'SITE' : 'LEGACY';
 }
 
 function renderList(ui: RegistryUIElements): void {
@@ -61,7 +60,7 @@ function renderList(ui: RegistryUIElements): void {
 	if (filtered.length === 0) {
 		const empty = document.createElement('div');
 		empty.className = 'registry-empty';
-		empty.textContent = currentDict?.registryEmptyRestricted ?? 'No cached media routes';
+		empty.textContent = currentDict?.registryEmptyRestricted ?? 'No cached site routes';
 		ui.listContainer.replaceChildren(empty);
 		return;
 	}

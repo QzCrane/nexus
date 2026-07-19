@@ -55,7 +55,7 @@ The media route registry is a separate Background-owned repository. Popup and
 Options use one registry client and render the same v2 snapshot. The route data
 shape and persistence owner are summarized here; resolution precedence, legacy
 migration and cache-versus-activation semantics are normative in
-[control-architecture.md](./control-architecture.md#media-route-registry-and-eligibility-cache).
+[control-architecture.md](./control-architecture.md#site-route-registry-and-eligibility-cache).
 
 Content discovers media through one mutation registry plus media, visibility and SPA-navigation events. Chrome's `webNavigation.onHistoryStateUpdated` and `onReferenceFragmentUpdated` deliver same-document changes as validated v2 events because an isolated-world History wrapper cannot observe page-world `pushState`; Content deduplicates those events before advancing generation. Every element gets one registration/disposer and independently receives the current desired configuration. There are no 1/3/5-second discovery loops or visible-tab heartbeats.
 
@@ -100,8 +100,8 @@ documents is normative; do not edit this table to introduce a second rule.
 
 | Concern | Current owner | Boundary that must remain true |
 | --- | --- | --- |
-| Route persistence/migration | `background/registry-repository.ts` + `restricted-registry.ts` | one v2 route per fingerprint; UI never writes storage |
-| Route resolution | `content/logic/policy-executor/eligibility-cache.ts` | exact media fingerprint before normalized site fallback |
+| Route persistence/migration | `background/registry-repository.ts` + `restricted-registry.ts` | one v2 route per normalized site; UI never writes storage |
+| Route resolution | `content/logic/policy-executor/eligibility-cache.ts` | one site cache; media instances stay in document memory |
 | Processor lifecycle | `background/offscreen-coordinator.ts` + audio runtime delegate | cache does not equal activation; actual ACK drives status |
 | Shortcut readiness | `background/runtime-loader.ts` + `background/shortcuts.ts` | cold document ensure before first intent |
 | Toast/OSD feedback | `content/ui/toast.ts` + `content/ui/osd.ts` | one feedback owner; no refresh/bootstrap toast |

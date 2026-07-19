@@ -1,11 +1,11 @@
-// goal: choose one on-demand processing route for each privacy-preserving media fingerprint
+// goal: learn one bounded direct/capture route for each site, never for each video instance
 
-import type {
-	MediaRoute,
-	RegistryAddResult,
-	RegistryQueryResult,
+import {
+	createSiteRouteFingerprint,
+	type MediaRoute,
+	type RegistryAddResult,
+	type RegistryQueryResult,
 } from '@nexus/contracts';
-import type { MediaSourceEligibilityEvidence } from '@nexus/audio-engine';
 import {
 	markRegistryDomainProbed,
 	queryRegistryDomain,
@@ -22,63 +22,19 @@ const registryPort: EligibilityCachePort = {
 	mark: markRegistryDomainProbed,
 };
 
-export interface MediaEligibilityCache {
-	resolve(fingerprint: string, liveStatus: CorsStatus): Promise<CorsStatus>;
+export interface SiteEligibilityCache {
+	resolve(liveStatus: CorsStatus): Promise<CorsStatus>;
 	recordActual(
-		fingerprint: string,
 		actualMode: 'bypass' | 'webaudio' | 'capture',
 		phase: 'idle' | 'starting' | 'active' | 'stopping' | 'error',
 	): Promise<void>;
 }
 
-interface FingerprintDecision {
+interface SiteDecision {
 	cachedStatus: CorsStatus;
 	lastPersistedStatus: CorsStatus;
 	manualStatus: Exclude<CorsStatus, 'PENDING'> | null;
 	hydrated: Promise<void>;
-}
-
-function stableHash(input: string): string {
-	let first = 0x811c9dc5;
-	let second = 0x9e3779b9;
-	for (let index = 0; index < input.length; index += 1) {
-		const code = input.charCodeAt(index);
-		first = Math.imul(first ^ code, 0x01000193);
-		second = Math.imul(second ^ code, 0x85ebca6b);
-		second ^= second >>> 13;
-	}
-	return `${(first >>> 0).toString(16).padStart(8, '0')}${(second >>> 0).toString(16).padStart(8, '0')}`;
-}
-
-function resourceShape(element: HTMLMediaElement): string {
-	const cors = element.crossOrigin || 'none';
-	if (element.srcObject) return `stream|${cors}`;
-	const resource = element.currentSrc || element.src || '';
-	if (!resource) return `unselected|${cors}`;
-	if (resource.startsWith('data:')) return `data|${cors}`;
-	try {
-		const url = new URL(resource, globalThis.document?.baseURI || globalThis.location?.href);
-		const transport = url.protocol === 'blob:' ? `blob:${url.origin}` : `${url.protocol}//${url.host}`;
-		return `${transport}|${cors}`;
-	} catch {
-		return `invalid|${cors}`;
-	}
-}
-
-// post: hashes only origins/transport classes and CORS mode; complete media URLs never leave the page.
-export function createMediaRouteFingerprint(
-	domain: string,
-	elements: readonly HTMLMediaElement[],
-	evidenceFor: (element: HTMLMediaElement) => MediaSourceEligibilityEvidence | undefined = () => undefined,
-): string {
-	const frameOrigin = (() => {
-		try { return globalThis.location?.origin || 'null'; } catch { return 'null'; }
-	})();
-	const shapes = elements.map((element) => {
-		const evidence = evidenceFor(element)?.kind ?? 'none';
-		return `${resourceShape(element)}|${evidence}`;
-	}).sort();
-	return `media:v1:${stableHash([domain, frameOrigin, ...shapes].join('\n'))}`;
 }
 
 function routeToStatus(route: MediaRoute): Exclude<CorsStatus, 'PENDING'> {
@@ -89,66 +45,57 @@ function statusToRoute(status: Exclude<CorsStatus, 'PENDING'>): MediaRoute {
 	return status === 'RESTRICTED' ? 'capture' : 'direct';
 }
 
-export function createMediaEligibilityCache(
+export function createSiteEligibilityCache(
 	domain: string,
 	port: EligibilityCachePort = registryPort,
-): MediaEligibilityCache {
-	const decisions = new Map<string, FingerprintDecision>();
-
-	const decisionFor = (fingerprint: string): FingerprintDecision => {
-		const existing = decisions.get(fingerprint);
-		if (existing) return existing;
-		const decision: FingerprintDecision = {
-			cachedStatus: 'PENDING',
-			lastPersistedStatus: 'PENDING',
-			manualStatus: null,
-			hydrated: Promise.resolve(),
-		};
-		decision.hydrated = port.query(domain, fingerprint)
-			.then(({ entry }) => {
-				if (!entry) return;
-				decision.cachedStatus = routeToStatus(entry.route);
-				decision.lastPersistedStatus = decision.cachedStatus;
-				if (entry.source === 'user') decision.manualStatus = decision.cachedStatus;
-			})
-			.catch(() => undefined);
-		decisions.set(fingerprint, decision);
-		return decision;
+): SiteEligibilityCache {
+	const fingerprint = createSiteRouteFingerprint(domain);
+	if (!fingerprint) throw new Error('Invalid site eligibility domain');
+	const decision: SiteDecision = {
+		cachedStatus: 'PENDING',
+		lastPersistedStatus: 'PENDING',
+		manualStatus: null,
+		hydrated: Promise.resolve(),
 	};
+	decision.hydrated = port.query(domain, fingerprint)
+		.then(({ entry }) => {
+			if (!entry) return;
+			decision.cachedStatus = routeToStatus(entry.route);
+			decision.lastPersistedStatus = decision.cachedStatus;
+			if (entry.source === 'user') decision.manualStatus = decision.cachedStatus;
+		})
+		.catch(() => undefined);
 
 	const persist = async (
-		fingerprint: string,
-		decision: FingerprintDecision,
+		currentDecision: SiteDecision,
 		status: Exclude<CorsStatus, 'PENDING'>,
 	): Promise<void> => {
-		if (decision.manualStatus || decision.lastPersistedStatus === status) return;
-		decision.lastPersistedStatus = status;
+		if (currentDecision.manualStatus || currentDecision.lastPersistedStatus === status) return;
+		currentDecision.lastPersistedStatus = status;
 		await port.mark(domain, fingerprint, statusToRoute(status)).then((result) => {
 			if (result.entry.source === 'user') {
-				decision.manualStatus = routeToStatus(result.entry.route);
-				decision.cachedStatus = decision.manualStatus;
+				currentDecision.manualStatus = routeToStatus(result.entry.route);
+				currentDecision.cachedStatus = currentDecision.manualStatus;
 			}
 		}).catch(() => {
-			if (decision.lastPersistedStatus === status) decision.lastPersistedStatus = 'PENDING';
+			if (currentDecision.lastPersistedStatus === status) currentDecision.lastPersistedStatus = 'PENDING';
 		});
 	};
 
 	return {
-		async resolve(fingerprint, liveStatus) {
-			const decision = decisionFor(fingerprint);
+		async resolve(liveStatus) {
 			await decision.hydrated;
 			if (decision.manualStatus) return decision.manualStatus;
-			// Current-document evidence corrects an automatic route. The cache is
-			// only consulted while the source is genuinely unselected/unknown.
+			// Current-document evidence corrects the automatic site route. The
+			// persisted decision is only used while the current document is unknown.
 			if (liveStatus !== 'PENDING') {
 				decision.cachedStatus = liveStatus;
-				void persist(fingerprint, decision, liveStatus);
+				void persist(decision, liveStatus);
 				return liveStatus;
 			}
 			return decision.cachedStatus;
 		},
-		async recordActual(fingerprint, actualMode, phase) {
-			const decision = decisionFor(fingerprint);
+		async recordActual(actualMode, phase) {
 			await decision.hydrated;
 			if (decision.manualStatus || phase !== 'active') return;
 			const status = actualMode === 'capture'
@@ -157,9 +104,9 @@ export function createMediaEligibilityCache(
 					? 'SAFE'
 					: null;
 			if (!status) return;
-			// This records the successful route, not a domain-wide capability claim.
+			// This records the acknowledged site route, never a media-instance event.
 			decision.cachedStatus = status;
-			await persist(fingerprint, decision, status);
+			await persist(decision, status);
 		},
 	};
 }

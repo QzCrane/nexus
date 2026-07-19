@@ -1,5 +1,5 @@
-// goal: persists one direct/capture route per media fingerprint
-// note: migrates legacy domain safe/restricted entries without keeping two lists
+// goal: persists one direct/capture route per site, never per video instance
+// note: folds legacy media fingerprints into their site behavior record
 
 import type {
 	DomainEntry,
@@ -40,12 +40,18 @@ function normalizeEntries(entries: readonly DomainEntry[]): DomainEntry[] {
 	const normalized = new Map<string, DomainEntry>();
 	for (const value of entries) {
 		if (!isDomainEntry(value)) continue;
-		const previous = normalized.get(value.fingerprint);
-		if (!previous || value.updatedAt >= previous.updatedAt) {
-			normalized.set(value.fingerprint, { ...value });
+		const domain = normalizeHostname(value.domain);
+		const fingerprint = domain ? createSiteRouteFingerprint(domain) : null;
+		if (!domain || !fingerprint) continue;
+		const entry: DomainEntry = { ...value, domain, fingerprint };
+		const previous = normalized.get(domain);
+		if (!previous
+			|| (entry.source === 'user' && previous.source !== 'user')
+			|| (entry.source === previous.source && entry.updatedAt >= previous.updatedAt)) {
+			normalized.set(domain, entry);
 		}
 	}
-	return [...normalized.values()];
+	return [...normalized.values()].sort((left, right) => left.domain.localeCompare(right.domain));
 }
 
 function isLegacyEntry(value: unknown): value is LegacyDomainEntry {
@@ -64,8 +70,8 @@ function looksLikeCurrentEntry(value: unknown): boolean {
 		&& ('fingerprint' in value || 'route' in value || 'updatedAt' in value));
 }
 
-// eff: converts every legacy domain decision into one site-level fingerprint.
-// Exact media:v1 fingerprints learned later take precedence over this fallback.
+// eff: converts legacy and v1 media decisions into one site-level route.
+// User decisions take precedence; automatic entries collapse by latest evidence.
 function migrateOldFormat(rawData: unknown): DomainEntry[] {
 	if (!Array.isArray(rawData) || rawData.length === 0) return [];
 	if (rawData.every(isDomainEntry)) return normalizeEntries(rawData);
@@ -108,7 +114,7 @@ export async function getRegistry(): Promise<DomainEntry[]> {
 	const result = await chrome.storage.local.get(KEY);
 	if (result[KEY] === undefined) return initRegistry();
 	const entries = migrateOldFormat(result[KEY]);
-	if (!Array.isArray(result[KEY]) || entries.length !== result[KEY].length) {
+	if (!Array.isArray(result[KEY]) || JSON.stringify(entries) !== JSON.stringify(result[KEY])) {
 		await chrome.storage.local.set({ [KEY]: entries });
 	}
 	return entries;
@@ -122,23 +128,20 @@ export async function isRestricted(domain: string): Promise<boolean> {
 	return entry?.route === 'capture';
 }
 
-// eff: exact media fingerprints win; site fingerprints are migration/manual fallbacks.
 export async function queryDomain(domain: string, fingerprint: string): Promise<DomainEntry | null> {
 	const normalizedDomain = normalizeHostname(domain);
 	if (!normalizedDomain || !isMediaRouteFingerprint(fingerprint)) return null;
 	const entries = await getRegistry();
-	const exact = entries.find((entry) => entry.fingerprint === fingerprint);
-	if (exact?.domain === normalizedDomain) return exact;
-	const siteEntries = entries.filter((entry) => entry.fingerprint.startsWith('site:'));
-	return findBestHostnameMatch(normalizedDomain, siteEntries, (entry) => entry.domain);
+	return findBestHostnameMatch(normalizedDomain, entries, (entry) => entry.domain);
 }
 
 async function addOrUpdateDomain(
 	normalizedDomain: string,
-	fingerprint: string,
 	source: DomainSource,
 	route: MediaRoute,
 ): Promise<RegistryResult> {
+	const fingerprint = createSiteRouteFingerprint(normalizedDomain);
+	if (!fingerprint) return { success: false, reason: 'invalid_route_identity' };
 	const entries = await getRegistry();
 	const existing = entries.find((entry) => entry.fingerprint === fingerprint);
 	if (existing) {
@@ -170,20 +173,13 @@ export async function addDomain(
 	domain: string,
 	source: DomainSource,
 	route: MediaRoute = 'capture',
-	fingerprint?: string,
+	_fingerprint?: string,
 ): Promise<RegistryResult> {
 	const normalizedDomain = normalizeHostname(domain);
-	const routeFingerprint = fingerprint ?? (normalizedDomain
-		? createSiteRouteFingerprint(normalizedDomain)
-		: null);
-	if (!normalizedDomain || !routeFingerprint || !isMediaRouteFingerprint(routeFingerprint)) {
+	if (!normalizedDomain || !createSiteRouteFingerprint(normalizedDomain)) {
 		return { success: false, reason: 'invalid_route_identity' };
 	}
-	if (routeFingerprint.startsWith('site:')
-		&& routeFingerprint !== createSiteRouteFingerprint(normalizedDomain)) {
-		return { success: false, reason: 'invalid_route_identity' };
-	}
-	return serialized(() => addOrUpdateDomain(normalizedDomain, routeFingerprint, source, route));
+	return serialized(() => addOrUpdateDomain(normalizedDomain, source, route));
 }
 
 export async function removeDomain(fingerprint: string): Promise<RegistryResult> {
@@ -202,6 +198,7 @@ export async function markProbed(
 	fingerprint: string,
 	route: MediaRoute,
 ): Promise<RegistryResult> {
+	if (!isMediaRouteFingerprint(fingerprint)) return { success: false, reason: 'invalid_fingerprint' };
 	return addDomain(domain, 'auto', route, fingerprint);
 }
 

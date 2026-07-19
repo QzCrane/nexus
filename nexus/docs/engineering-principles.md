@@ -88,19 +88,19 @@ observe → exact DOM/Chrome native → one-shot official site API → reversibl
 
 Capture 只服务明确的 full-output DSP 或确实无法由安全 WebAudio 覆盖的处理需求。状态读取、普通原生音量、静音、倍速、播放、PiP、fullscreen 和仅存在缓存成员都不能启动 Capture。候选处理器必须在关闭 gate 下创建、读回实际配置后再切换；失败时恢复上一个稳定路径。
 
-### EPR-009：媒体指纹只映射一个路径
+### EPR-009：每个网站只映射一个路径
 
 媒体能力缓存的最小模型是：
 
 ```ts
-{ fingerprint, route: 'direct' | 'capture', source: 'user' | 'auto', updatedAt }
+{ domain, fingerprint: `site:${string}`, route: 'direct' | 'capture', source: 'user' | 'auto', updatedAt }
 ```
 
-- 一个精确媒体指纹只能有一个 route，不维护“安全列表”和“劫持列表”两份能力结构。
-- `media:v1:*` 精确指纹优先；`site:*` 只能作为旧数据或用户手动站点回退。
-- 自动观察不能覆盖用户固定路径；当前明确 ACK 可以纠正自动缓存。
+- 一个规范化网站只能有一个 route，不维护“安全列表”和“劫持列表”两份能力结构。
+- `site:*` 是唯一持久化身份；`media:v1:*` 仅用于旧版本兼容读取，并在迁移时按域名折叠。
+- 自动观察更新已有网站路径，不能覆盖用户固定路径；当前明确 ACK 可以纠正自动缓存。
 - 缓存选择路径，不代表路径已激活；颜色和 UI 只能读取当前实际 ACK。
-- 站点回退指纹必须和规范化域名一致，精确媒体指纹也必须校验当前域名，避免跨域误命中。
+- 视频实例、`currentSrc` 变化和页面媒体数量只属于当前文档内存状态，永远不增加持久化列表行。
 
 ### EPR-010：不可逆操作先证明准入
 
@@ -209,7 +209,7 @@ PiP 和 fullscreen 只走标准 API、真实 user activation、生命周期事�
 | current document has no controllable origin | EPR-010、EPR-020 | 作为 terminal structured error，不能假装成功或无限重试 |
 | READY handshake timeout | EPR-004、EPR-005、EPR-019 | 失效 cache、status probe、按 identity 重新注入；不产生 unhandled rejection |
 | QR image URL invalid | EPR-021、EPR-022 | 生成前验证完整 URL/协议/fragment，渲染失败可观察且不泄露 secret |
-| 安全/劫持列表冲突 | EPR-001、EPR-009 | 一个媒体指纹一个 route；site fallback 不是第二种能力列表 |
+| 安全/劫持列表冲突 | EPR-001、EPR-009 | 一个网站一个 route；视频实例不是第二种能力列表 |
 
 ## 5. 运行时检查清单
 

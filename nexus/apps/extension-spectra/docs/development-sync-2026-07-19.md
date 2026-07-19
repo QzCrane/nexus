@@ -28,9 +28,9 @@ not rely on commit archaeology.
   `packages/nexus-kernel/src/storage/restricted-registry.ts` now persist a
   registry-v2 route record instead of maintaining independent hijack and safe
   lists.
-- Exact `media:v1:*` fingerprints resolve before normalized `site:*` fallback;
-  one fingerprint has one `direct | capture` route, user records outrank auto
-  observations, and legacy data is migrated atomically.
+- One normalized `site:*` record owns each site's `direct | capture` route;
+  user records outrank auto observations, and legacy `media:v1:*` rows collapse
+  atomically into that site record.
 - `eligibility-cache.ts` is an in-memory routing hint. Cache reads do not
   activate Capture, create offscreen work or change the badge color. Identity,
   runtime revision and document navigation invalidate stale entries.
@@ -81,7 +81,7 @@ not rely on commit archaeology.
 ## Contracts and tests
 
 - `registry.contracts.ts`, `spectra.protocol.ts`, content-runtime and UI-runtime
-  contracts define the v2 envelopes, route/fingerprint payloads, runtime READY,
+  contracts define the v2 envelopes, site-route compatibility payloads, runtime READY,
   actual ACK and projection boundaries.
 - Added/updated tests cover eligibility cache migration and precedence, registry
   v2, native media stable ACK, shortcuts, runtime readiness, upgrade injection,

@@ -1,4 +1,4 @@
-// goal: provides one serialized owner for every registry read-modify-write operation
+// goal: provides one serialized owner for site-level route records and migration
 
 import {
 	createSiteRouteFingerprint,
@@ -50,18 +50,24 @@ function normalizeEntry(value: DomainEntry): DomainEntry | null {
 	return entry;
 }
 
-// post: removes malformed/duplicate storage records and emits stable normalized hostnames
+// post: folds legacy media-instance routes into one stable site route per hostname.
+// User entries outrank automatic observations; otherwise latest evidence wins.
 export function normalizeRegistryEntries(entries: readonly DomainEntry[]): DomainEntry[] {
 	const normalized = new Map<string, DomainEntry>();
 	for (const value of entries) {
 		const entry = normalizeEntry(value);
 		if (!entry) continue;
-		const previous = normalized.get(entry.fingerprint);
-		if (!previous || entry.updatedAt >= previous.updatedAt) {
-			normalized.set(entry.fingerprint, entry);
+		const fingerprint = createSiteRouteFingerprint(entry.domain);
+		if (!fingerprint) continue;
+		const siteEntry: DomainEntry = { ...entry, fingerprint };
+		const previous = normalized.get(siteEntry.domain);
+		if (!previous
+			|| (siteEntry.source === 'user' && previous.source !== 'user')
+			|| (siteEntry.source === previous.source && siteEntry.updatedAt >= previous.updatedAt)) {
+			normalized.set(siteEntry.domain, siteEntry);
 		}
 	}
-	return [...normalized.values()];
+	return [...normalized.values()].sort((left, right) => left.domain.localeCompare(right.domain));
 }
 
 export class RegistryRepository {
@@ -115,8 +121,12 @@ export class RegistryRepository {
 		return this.serialize(async () => {
 			const normalizedDomain = normalizeHostname(domain);
 			if (!normalizedDomain) throw new Error('Invalid registry domain');
-			const entry = await this.registry.query(normalizedDomain, fingerprint);
-			return { entry: entry ? normalizeEntry(entry) : null };
+			if (!isMediaRouteFingerprint(fingerprint)) throw new Error('Invalid registry fingerprint');
+			const siteFingerprint = createSiteRouteFingerprint(normalizedDomain);
+			if (!siteFingerprint) throw new Error('Invalid registry domain');
+			const entry = await this.registry.query(normalizedDomain, siteFingerprint);
+			const normalized = entry ? normalizeRegistryEntries([entry]) : [];
+			return { entry: normalized[0] ?? null };
 		});
 	}
 
@@ -128,16 +138,19 @@ export class RegistryRepository {
 		return this.serialize(async () => {
 			const normalizedDomain = normalizeHostname(domain);
 			if (!normalizedDomain) throw new Error('Invalid registry domain');
+			if (!isMediaRouteFingerprint(fingerprint)) throw new Error('Invalid registry fingerprint');
+			const siteFingerprint = createSiteRouteFingerprint(normalizedDomain);
+			if (!siteFingerprint) throw new Error('Invalid registry domain');
 			const before = normalizeRegistryEntries(await this.registry.get());
 			const result = await this.registry.markProbed(normalizedDomain, fingerprint, route);
 			if (!result.success) throw new Error(`Registry probe update failed: ${result.reason ?? 'unknown'}`);
 			const snapshot = await this.readSnapshot();
-			const entry = snapshot.entries.find((candidate) => candidate.fingerprint === fingerprint);
+			const entry = snapshot.entries.find((candidate) => candidate.fingerprint === siteFingerprint);
 			if (!entry) throw new Error('Registry probe update did not persist an entry');
 			return {
 				...snapshot,
 				entry,
-				created: !before.some((candidate) => candidate.fingerprint === fingerprint),
+				created: !before.some((candidate) => candidate.fingerprint === siteFingerprint),
 			};
 		});
 	}

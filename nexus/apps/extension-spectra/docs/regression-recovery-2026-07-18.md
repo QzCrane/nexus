@@ -32,7 +32,7 @@
 | 动态频谱失效 | active processor subscriber lease、单 in-flight batch、15 Hz 上限 | 已落地；无 active processor 时保持零资源 |
 
 同时纳入本轮同步的历史回归包括：冷文档快捷键 READY ensure、长按
-Toast 取消与跨标签焦点提示、媒体指纹单 route 缓存、Capture lazy
+Toast 取消与跨标签焦点提示、网站单 route 缓存、Capture lazy
 activation、站点倍速 one-shot bridge、PiP/fullscreen 音频 baseline handoff、
 QR image URL 校验及 `no-controllable-origin`/READY timeout 的结构化错误。
 

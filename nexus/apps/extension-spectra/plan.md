@@ -30,9 +30,9 @@ VideoControl: 变速 0.1x-16x | 旋转/镜像/缩放 | 亮度/对比度/饱和�
 
 ### 2026-07-19: Runtime and route-registry synchronization
 
-当前主分支的媒体能力缓存已统一为“一个媒体指纹、一个 `direct | capture`
-路径”，精确 `media:v1:*` 优先于 `site:*` 回退；缓存选择不等于 Capture
-激活。冷文档快捷键通过 identity-bound READY ensure 直接可用，Toast 只由
+当前主分支的媒体能力缓存已统一为“一个网站、一个 `direct | capture`
+路径”；旧 `media:v1:*` 条目在读取时折叠到规范化站点记录，缓存选择不等于
+Capture 激活。冷文档快捷键通过 identity-bound READY ensure 直接可用，Toast 只由
 明确快捷键 intent 触发，PiP/fullscreen 使用 trusted activation 与原生
 生命周期，站点倍速 UI 使用受限 one-shot official adapter。详细实现证据见
 [development-sync-2026-07-19.md](docs/development-sync-2026-07-19.md)，规范以

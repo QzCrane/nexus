@@ -20,6 +20,7 @@ import {
 	HOTKEY_ACTION_DESCRIPTORS,
 	isHotkeyParamsForAction,
 } from './hotkeys.contracts.js';
+import { createSiteRouteFingerprint } from './registry.contracts.js';
 import { isHotkeySettings } from './settings.contracts.js';
 import { SPECTRA_PROTOCOL_VERSION } from './spectra.bootstrap.js';
 import type {
@@ -42,6 +43,7 @@ export {
 	DEFAULT_HOTKEY_SETTINGS,
 	HOTKEY_ACTION_DESCRIPTORS,
 	SPECTRA_PROTOCOL_VERSION,
+	createSiteRouteFingerprint,
 	findBestHostnameMatch,
 	isAudioConfig,
 	isDefaultAudioConfig,

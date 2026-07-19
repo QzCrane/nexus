@@ -119,30 +119,30 @@ The implementation must not hide invasive behavior under the word "native". Ever
 
 Generic constructor, prototype, descriptor, setter, `createElement`, History API and page-AudioContext interception are forbidden hijacks. They are not planner candidates. A controlled augmentation must have a bounded owner, actual readback, a disposer and a restore rule; otherwise it is unsupported.
 
-## Media route registry and eligibility cache
+## Site route registry and eligibility cache
 
-The registry is a capability-route cache, not a pair of competing site lists. The
-Background repository owns the persisted v2 record and the policy executor owns
-the in-memory lookup used during one document generation:
+The registry is a capability-route cache, not a pair of competing site lists or
+a log of video instances. The Background repository owns one persisted route per
+normalized site and the policy executor owns one in-memory decision per document:
 
 ```ts
-type MediaRouteRecord = {
+type SiteRouteRecord = {
   domain: string;
-  fingerprint: `media:v1:${string}` | `site:${string}`;
+  fingerprint: `site:${string}`;
   route: 'direct' | 'capture';
   source: 'user' | 'auto';
   updatedAt: number;
 };
 ```
 
-Resolution is deterministic: an exact `media:v1:*` fingerprint wins, then a
-normalized `site:*` fallback is considered. A fingerprint can resolve to one
-route only. User records outrank automatic observations, and an explicit,
-current ACK may correct an automatic record. Legacy hijack/safe-list records are
-migrated once into this route shape; they are never consulted as independent
-writers after migration. The Popup and Options pages render and edit the same
-registry-v2 list through the Background repository, so adding a site fallback
-cannot silently leave a conflicting entry in another list.
+Resolution is deterministic: a user-pinned site route wins, then the latest
+automatic site observation, then the native/direct default. Every opened video
+updates the current document's evidence only; an acknowledged route updates the
+existing site record in place. Legacy `media:v1:*` entries are accepted during
+read and collapsed by normalized domain, with user entries preferred over
+automatic observations. The Popup and Options pages render and edit the same
+registry-v2 list through the Background repository, so one site never expands
+into a second list of video rows.
 
 Eligibility is a routing hint, not activation. A cached `capture` route does not
 create an offscreen document, a processor, or a purple status. Capture is lazily

@@ -1,4 +1,4 @@
-// goal: defines the one-entry-per-media-fingerprint processing-route registry
+// goal: defines the one-entry-per-site processing-route registry
 
 import { normalizeHostname } from './domain.contracts.js';
 
@@ -7,8 +7,8 @@ export type MediaRoute = 'direct' | 'capture';
 
 export interface DomainEntry {
 	domain: string;
-	// fingerprint is the registry identity. `media:v1:*` entries describe one
-	// media-source shape; `site:*` entries are migrated/manual site fallbacks.
+	// `site:*` is the persisted identity. `media:v1:*` remains accepted only so
+	// existing installations can collapse legacy per-video records during read.
 	fingerprint: string;
 	route: MediaRoute;
 	source: DomainSource;

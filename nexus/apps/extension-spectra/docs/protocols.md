@@ -55,10 +55,12 @@ spectra.registry.mark-probed
   -> { domain, fingerprint, route } -> { entries, entry, created }
 ```
 
-`fingerprint` is either an exact `media:v1:<16 lowercase hex>` identity or a
-normalized `site:*` fallback, and `route` is exactly `direct | capture`. Route
-precedence, legacy migration, one-route enforcement and cache invalidation are
-owned by [control-architecture.md](./control-architecture.md#media-route-registry-and-eligibility-cache).
+`fingerprint` remains in query/probe payloads for rolling compatibility, while
+the persisted identity is always normalized `site:*`; any legacy
+`media:v1:<16 lowercase hex>` value collapses into that site record during the
+read/write transaction. `route` is exactly `direct | capture`. Route
+precedence, migration and cache invalidation are owned by
+[control-architecture.md](./control-architecture.md#site-route-registry-and-eligibility-cache).
 A returned snapshot is the only registry value that may advance the UI
 projection; it does not activate Capture by itself.
 
