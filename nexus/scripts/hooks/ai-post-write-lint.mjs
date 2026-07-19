@@ -19,7 +19,7 @@ import {
 
 const JS_EXT = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
 
-await runHook('ai-post-write-lint', async (payload) => {
+async function main(payload) {
 	const tool = payload.tool_name ?? '';
 	if (!WRITE_TOOLS.has(tool)) return;
 
@@ -70,4 +70,11 @@ await runHook('ai-post-write-lint', async (payload) => {
 		process.stdout.write(`[ai-post-write-lint]\n${warnings.join('\n\n')}\n`);
 	}
 	// PostToolUse is informational, never blocking.
-});
+}
+
+// Only run the hook when invoked directly (not when imported by the
+// test runner). Bun sets `import.meta.main` to true for the entry
+// script; imported modules see `false`.
+if (import.meta.main) {
+	await runHook('ai-post-write-lint', main);
+}

@@ -51,10 +51,7 @@ const FORBIDDEN_PATTERNS = [
 	},
 	{
 		// sed -i in-place edit on protected files
-		pattern: new RegExp(
-			`\\bsed\\s+-i[^\\s]*\\s+[^|;&]*\\b(?:AGENTS\\.md|CLAUDE\\.md|control-architecture\\.md)\\b`,
-			'i',
-		),
+		pattern: /\bsed\s+-i[^\s]*\s+[^|;&]*\b(?:AGENTS\.md|CLAUDE\.md|control-architecture\.md)\b/i,
 		reason:
 			'sed -i on AGENTS.md / CLAUDE.md is forbidden because the hardlink relationship ' +
 			'must be preserved (or rebuilt by postanalyze.mjs).',
@@ -80,15 +77,17 @@ const FORBIDDEN_PATTERNS = [
  * Split a shell command on its metacharacters so each sub-command
  * is judged independently. Catches `cd / && rm -rf AGENTS.md` style
  * smuggling.
+ *
+ * Exported so the test runner can exercise the splitter directly.
  */
-function splitCommands(command) {
+export function splitCommands(command) {
 	return command
 		.split(/\s*(?:;|&&|\|\||\|\n|\n)\s*/g)
 		.map((c) => c.trim())
 		.filter(Boolean);
 }
 
-await runHook('codex-bash-guard', async (payload) => {
+async function main(payload) {
 	const tool = payload.tool_name ?? '';
 	if (tool !== 'Bash') return;
 
@@ -108,4 +107,11 @@ await runHook('codex-bash-guard', async (payload) => {
 			}
 		}
 	}
-});
+}
+
+// Only run the hook when invoked directly (not when imported by the
+// test runner). Bun sets `import.meta.main` to true for the entry
+// script; imported modules see `false`.
+if (import.meta.main) {
+	await runHook('codex-bash-guard', main);
+}

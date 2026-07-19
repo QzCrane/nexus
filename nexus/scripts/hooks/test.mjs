@@ -28,10 +28,14 @@ import { fileURLToPath } from 'node:url';
 import {
 	extractBashCommand,
 	extractWriteTargets,
+	formatBlockMessage,
+	formatCheckpointMessage,
 	parsePayload,
 	relPath,
 	WRITE_TOOLS,
 } from './_hook-helpers.mjs';
+import { frontmatterProblem } from './ai-pre-write-guard.mjs';
+import { splitCommands } from './codex-bash-guard.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hooksDir = here;
@@ -176,6 +180,61 @@ ok('WRITE_TOOLS: has Write', WRITE_TOOLS.has('Write'));
 ok('WRITE_TOOLS: has Edit', WRITE_TOOLS.has('Edit'));
 ok('WRITE_TOOLS: has MultiEdit', WRITE_TOOLS.has('MultiEdit'));
 ok('WRITE_TOOLS: missing Read', !WRITE_TOOLS.has('Read'));
+
+// formatBlockMessage: produces the standard BLOCKED layout
+eq(
+	'formatBlockMessage: full payload (reason + target + tool + rule)',
+	formatBlockMessage({ reason: 'no', target: 'AGENTS.md', tool: 'Write', rule: 'EPR-029' }),
+	'[hook] BLOCKED AGENTS.md\n  reason: no\n  tool:   Write\n  rule:   EPR-029\n',
+);
+eq(
+	'formatBlockMessage: omits tool+rule when not given',
+	formatBlockMessage({ reason: 'no', target: 'x.md' }),
+	'[hook] BLOCKED x.md\n  reason: no\n',
+);
+eq(
+	'formatBlockMessage: empty reason still renders',
+	formatBlockMessage({ reason: '', target: 'x.md' }),
+	'[hook] BLOCKED x.md\n  reason: \n',
+);
+
+// formatCheckpointMessage: stable header + rule-of-thumb footer
+{
+	const msg = formatCheckpointMessage('ai-stop-checkpoint');
+	ok('formatCheckpointMessage: starts with header', msg.startsWith('[ai-stop-checkpoint] turn ending.\n'));
+	ok('formatCheckpointMessage: contains rule of thumb', msg.includes('rule of thumb: each closed-loop commit'));
+	ok('formatCheckpointMessage: ends with newline', msg.endsWith('\n'));
+	ok('formatCheckpointMessage: name parameter is interpolated', !msg.startsWith('[hook]'));
+}
+{
+	const msg = formatCheckpointMessage('codex-stop-checkpoint');
+	ok('formatCheckpointMessage: codex header', msg.startsWith('[codex-stop-checkpoint] turn ending.\n'));
+}
+
+// splitCommands: metacharacter splitting
+eq('splitCommands: empty string → []', splitCommands(''), []);
+eq('splitCommands: whitespace only → []', splitCommands('   '), []);
+eq('splitCommands: single command', splitCommands('git status'), ['git status']);
+eq('splitCommands: && separator', splitCommands('cd / && rm x'), ['cd /', 'rm x']);
+eq('splitCommands: || separator', splitCommands('a || b'), ['a', 'b']);
+eq('splitCommands: ; separator', splitCommands('a; b; c'), ['a', 'b', 'c']);
+eq('splitCommands: mixed && and ;', splitCommands('a && b; c || d'), ['a', 'b', 'c', 'd']);
+eq('splitCommands: trailing separator is trimmed', splitCommands('a &&'), ['a']);
+eq('splitCommands: newline as separator', splitCommands('rm x\nrm y'), ['rm x', 'rm y']);
+eq('splitCommands: pipe-newline separator', splitCommands('a |\nb'), ['a', 'b']);
+
+// frontmatterProblem: Diátaxis frontmatter validation
+eq('frontmatterProblem: non-.md file → null', frontmatterProblem('foo.ts', 'export {}'), null);
+eq('frontmatterProblem: CHANGELOG.md → null (exempt)', frontmatterProblem('CHANGELOG.md', '# changes\n'), null);
+eq('frontmatterProblem: empty content → null', frontmatterProblem('foo.md', ''), null);
+eq('frontmatterProblem: missing --- delimiter', frontmatterProblem('foo.md', '# no fm\n'), 'missing frontmatter delimiter `---`');
+eq('frontmatterProblem: unterminated frontmatter', frontmatterProblem('foo.md', '---\ntype: explanation\n'), 'unterminated frontmatter block');
+eq('frontmatterProblem: missing type', frontmatterProblem('foo.md', '---\nstatus: stable\naudience: dev\n---\n'), 'frontmatter missing `type` (explanation/tutorial/how-to/reference)');
+eq('frontmatterProblem: missing status', frontmatterProblem('foo.md', '---\ntype: explanation\naudience: dev\n---\n'), 'frontmatter missing `status` (stable/draft/deprecated)');
+eq('frontmatterProblem: missing audience', frontmatterProblem('foo.md', '---\ntype: explanation\nstatus: stable\n---\n'), 'frontmatter missing `audience`');
+eq('frontmatterProblem: complete frontmatter → null', frontmatterProblem('foo.md', '---\ntype: how-to\nstatus: stable\naudience: developer\n---\n# ok\n'), null);
+eq('frontmatterProblem: type=reference ok', frontmatterProblem('foo.md', '---\ntype: reference\nstatus: draft\naudience: contributor\n---\n'), null);
+ok('frontmatterProblem: content after frontmatter is ignored', frontmatterProblem('foo.md', '---\ntype: explanation\nstatus: stable\naudience: x\n---\n# body') === null);
 
 // =====================================================================
 // B. Hook smoke tests — table-driven

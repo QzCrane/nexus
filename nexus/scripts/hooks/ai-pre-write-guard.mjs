@@ -49,7 +49,18 @@ const FORBIDDEN_PATTERNS = [
 const FRONTMATTER_TYPE = /(explanation|tutorial|how-to|reference)/;
 const FRONTMATTER_STATUS = /(stable|draft|deprecated)/;
 
-function frontmatterProblem(filePath, content) {
+/**
+ * Inspect a file's content for Diátaxis frontmatter problems. Returns
+ * a one-line description of the issue, or `null` if the file passes.
+ *
+ * Exported so the test runner can exercise the frontmatter logic
+ * directly without spawning a hook process.
+ *
+ * Skips:
+ *   - non-.md files entirely
+ *   - CHANGELOG.md (a freeform changelog, no Diátaxis category)
+ */
+export function frontmatterProblem(filePath, content) {
 	if (!filePath.endsWith('.md')) return null;
 	if (filePath.endsWith('CHANGELOG.md')) return null;
 	if (!content) return null;
@@ -73,7 +84,7 @@ function matchForbidden(rel) {
 	return null;
 }
 
-await runHook('ai-pre-write-guard', async (payload) => {
+async function main(payload) {
 	const tool = payload.tool_name ?? '';
 	if (!WRITE_TOOLS.has(tool)) return; // allow non-write tools
 
@@ -105,4 +116,11 @@ await runHook('ai-pre-write-guard', async (payload) => {
 			process.exit(2);
 		}
 	}
-});
+}
+
+// Only run the hook when invoked directly (not when imported by the
+// test runner). Bun sets `import.meta.main` to true for the entry
+// script; imported modules see `false`.
+if (import.meta.main) {
+	await runHook('ai-pre-write-guard', main);
+}

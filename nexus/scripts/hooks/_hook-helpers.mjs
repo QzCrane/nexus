@@ -17,7 +17,7 @@
 //
 // Rule owner: AGENTS.md EPR-029 (硬化质量门到 Git/CI/AI 钩子)
 
-import { spawnSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import { join, normalize, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -129,6 +129,26 @@ export function extractBashCommand(payload) {
 // ---------- output formatting ----------------------------------------
 
 /**
+ * Format a uniform BLOCKED log line as a string (no I/O). Factored
+ * out of `blockMessage` so the test runner can assert the exact text
+ * without capturing stdout.
+ *
+ *   `reason`  — short, single-line human explanation
+ *   `target`  — file path or command that was blocked
+ *   `tool`    — tool name (Write, Edit, Bash, ...)
+ *   `rule`    — optional rule identifier (e.g. "EPR-029")
+ */
+export function formatBlockMessage({ reason, target, tool, rule }) {
+	const lines = [
+		`[hook] BLOCKED ${target}`,
+		`  reason: ${reason}`,
+		tool ? `  tool:   ${tool}` : null,
+		rule ? `  rule:   ${rule}` : null,
+	].filter(Boolean);
+	return `${lines.join('\n')}\n`;
+}
+
+/**
  * Print a uniform BLOCKED log line. Returns nothing; just writes to
  * stdout (which is what Claude Code / Codex display in the chat).
  *
@@ -137,14 +157,56 @@ export function extractBashCommand(payload) {
  *   `tool`    — tool name (Write, Edit, Bash, ...)
  *   `rule`    — optional rule identifier (e.g. "EPR-029")
  */
-export function blockMessage({ reason, target, tool, rule }) {
-	const lines = [
-		`[hook] BLOCKED ${target}`,
-		`  reason: ${reason}`,
-		tool ? `  tool:   ${tool}` : null,
-		rule ? `  rule:   ${rule}` : null,
-	].filter(Boolean);
-	process.stdout.write(`${lines.join('\n')}\n`);
+export function blockMessage(opts) {
+	process.stdout.write(formatBlockMessage(opts));
+}
+
+// ---------- checkpoint formatting (Stop hooks) ------------------------
+
+/**
+ * Read `git status --short` and summarize the count. Never throws.
+ * Returns `{ dirty: boolean|null, count: number }` where `dirty` is
+ * null when git is unavailable (e.g., not a git repo / git missing
+ * from PATH).
+ */
+export function gitStatusShort() {
+	try {
+		const out = execSync('git status --short', { encoding: 'utf8' });
+		const lines = out.split('\n').filter(Boolean);
+		return { dirty: lines.length > 0, count: lines.length };
+	} catch {
+		return { dirty: null, count: 0 };
+	}
+}
+
+/**
+ * Render the Stop-hook reminder shown at the end of an AI turn. The
+ * `name` parameter is the hook label printed at the top of the block
+ * (e.g. "ai-stop-checkpoint" or "codex-stop-checkpoint"). Shared by
+ * every AI-tool Stop hook so the message stays in lockstep across
+ * Claude Code / Antigravity / Codex CLI.
+ */
+export function formatCheckpointMessage(name) {
+	const status = gitStatusShort();
+	const lines = [`[${name}] turn ending.`];
+	if (status.dirty) {
+		lines.push(
+			`  working tree: ${status.count} modified/new file(s). ` +
+				'lefthook pre-commit will run `lint-docs` + `biome check`; ' +
+				'pre-push will run `verify:q`.',
+		);
+	} else if (status.dirty === false) {
+		lines.push(
+			'  working tree clean. if you did not commit, consider ' +
+				'`bun run verify:q` to confirm the architecture gate is still green.',
+		);
+	}
+	// When status.dirty === null (git unavailable), skip the tree line
+	// but still print the rule-of-thumb reminder below.
+	lines.push(
+		'  rule of thumb: each closed-loop commit = contract + impl + test + doc.',
+	);
+	return `${lines.join('\n')}\n`;
 }
 
 // ---------- child-process runner --------------------------------------
