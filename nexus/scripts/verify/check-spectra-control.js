@@ -379,15 +379,21 @@ function checkPolicyOwner(root) {
 	const document = path.join(root, APP_PATH, 'docs/control-architecture.md');
 	if (!fs.existsSync(document)) error('SCTRL-016: control-architecture.md owner is missing');
 	else {
-		const architecture = fs.readFileSync(document, 'utf8');
+		// 自 v2.6+ 起,控制架构按 progressive disclosure 拆分到 control/ 子目录
+		// 新结构采用编号章节 (§X.Y),验证脚本需识别重命名后的标题
+		const controlDir = path.join(root, APP_PATH, 'docs/control');
+		const subFiles = fs.existsSync(controlDir)
+			? fs.readdirSync(controlDir).filter(f => f.endsWith('.md')).map(f => path.join(controlDir, f))
+			: [];
+		const architecture = [fs.readFileSync(document, 'utf8'), ...subFiles.map(f => fs.readFileSync(f, 'utf8'))].join('\n\n');
 		for (const requiredSection of [
-			'### Failure-directed escalation',
-			'### Per-capability native and augmentation ledger',
-			'### Native versus interception adjudication for every algorithm',
-			'#### Algorithm entry points and implementation anchors',
-			'### Source algorithm adjudication catalog',
-			'### Media WebAudio complete-coverage admission',
-			'### Implementation status ledger',
+			'### §7.3 Failure-directed escalation',
+			'### §8.5 Per-capability native and augmentation ledger',
+			'### §8.6 Native versus interception adjudication for every algorithm',
+			'#### §8.6.1 Algorithm entry points and implementation anchors',
+			'### §9.4 Source algorithm adjudication catalog',
+			'### §12.1 Media WebAudio complete-coverage admission',
+			'### §17.1 Implementation status ledger',
 		]) {
 			if (!architecture.includes(requiredSection)) {
 				error(`SCTRL-016: control owner is missing ${requiredSection}`);
@@ -1184,10 +1190,16 @@ function checkRetiredPaths(root) {
 		path.join(root, SOURCE_PATH, 'content/core/bootstrap.ts'),
 		'utf8',
 	);
-	const controlArchitecture = fs.readFileSync(
-		path.join(root, APP_PATH, 'docs/control-architecture.md'),
-		'utf8',
-	);
+	const controlArchitecture = (() => {
+		const idx = fs.readFileSync(
+			path.join(root, APP_PATH, 'docs/control-architecture.md'),
+			'utf8',
+		);
+		const controlDir = path.join(root, APP_PATH, 'docs/control');
+		if (!fs.existsSync(controlDir)) return idx;
+		const subs = fs.readdirSync(controlDir).filter(f => f.endsWith('.md'));
+		return [idx, ...subs.map(f => fs.readFileSync(path.join(controlDir, f), 'utf8'))].join('\n\n');
+	})();
 	if (!controlArchitecture.includes('top-level document only (`frameId: 0`)')
 		|| !bootstrap.includes("document.querySelectorAll<HTMLMediaElement>('video,audio')")
 		|| !bootstrap.includes("request.fields.every((field) => field === 'pip' || field === 'fullscreen')")
