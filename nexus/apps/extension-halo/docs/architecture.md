@@ -1,3 +1,9 @@
+---
+type: explanation
+status: stable
+audience: developer
+---
+
 # HALO 架构 (v2.5.0)
 
 > DNA: SidePanel-only | 零上传 | 原子化 | 本地优先 | 极致性能

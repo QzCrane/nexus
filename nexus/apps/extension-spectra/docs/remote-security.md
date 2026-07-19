@@ -1,3 +1,9 @@
+---
+type: reference
+status: stable
+audience: developer
+---
+
 # Authenticated Remote Protocol v2
 
 This document is the sole owner of remote pairing, HMAC authentication,

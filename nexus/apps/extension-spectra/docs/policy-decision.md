@@ -1,3 +1,9 @@
+---
+type: explanation
+status: stable
+audience: developer
+---
+
 # 策略决策（入口索引）
 
 SPECTRA 的控制策略、原生优先级、WebAudio/Capture 升降级与静态不变量统一由 [control-architecture.md](./control-architecture.md) 管理。

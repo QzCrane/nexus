@@ -1,3 +1,9 @@
+---
+type: reference
+status: stable
+audience: developer
+---
+
 # SPECTRA control architecture
 
 This document is the single owner for SPECTRA media, audio, video, site-adapter and remote-control behavior. Runtime code, protocol contracts, tests and static architecture checks must conform to it. Other documents may link here but must not restate control rules.

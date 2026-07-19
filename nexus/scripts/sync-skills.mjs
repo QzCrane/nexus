@@ -1,54 +1,41 @@
 #!/usr/bin/env node
 /**
- * sync-skills.mjs — NEXUS skill sync engine
+ * sync-skills.mjs — NEXUS skill index injector
  *
  * Single source of truth: `<repo>/.agents/skills/<name>/SKILL.md`
  *
  * Why `.agents/skills/`:
  *   `.agents/skills/` is the cross-tool loader path adopted in 2026 by
  *   Cursor, OpenAI Codex, GitHub Copilot, Gemini CLI, Cline, OpenCode,
- *   and Pi (per https://agentskills.io/ and the OpenAI Skills catalog at
- *   https://github.com/openai/skills). Reading the source from this very
- *   path means those 6+ tools discover skills with zero sync work.
+ *   Amp, Kimi, Replit (per https://agentskills.io/ and the OpenAI Skills
+ *   catalog at https://github.com/openai/skills). Reading the source
+ *   from this very path means those 6+ tools discover skills with zero
+ *   sync work.
  *
  * Outputs (idempotent; safe to re-run any time):
- *   - `<repo>/.claude/skills/<name>/SKILL.md`     (Claude Code only — has
- *                                                  its own loader path; not
- *                                                  shared with the .agents
- *                                                  ecosystem)
- *   - `<repo>/.agent/workflows/<name>.md`         (Antigravity / TRAE;
- *                                                  body rewritten to inject
- *                                                  `// turbo` before each
- *                                                  bash code block, since
- *                                                  only Antigravity honours
- *                                                  that directive)
- *   - `<repo>/AGENTS.md` § Project Skills         (table injected between
- *                                                  `<!-- nexus:skills-start -->`
- *                                                  and `<!-- nexus:skills-end -->`;
- *                                                  CLAUDE.md is a hardlink to
- *                                                  AGENTS.md, so both stay in
- *                                                  sync automatically)
+ *   - `<repo>/AGENTS.md` § Project Skills index
+ *     (table injected between `<!-- nexus:skills-start -->` and
+ *      `<!-- nexus:skills-end -->`; CLAUDE.md is a hardlink to
+ *      AGENTS.md, so both stay in sync automatically)
  *
- * Why only two output formats (vs the previous three):
- *   - .agents/skills/  — already the source, so Cursor / Codex / Copilot /
- *                          Gemini / Cline / OpenCode see it natively
- *   - .claude/skills/   — Claude Code's unique loader (not shared)
- *   - .agent/workflows/ — Antigravity / TRAE's `// turbo` workflow system
- *
- * History: previously the source lived at `.skills/` and the script
- * mirrored to `.codex/skills/` as well. After OpenAI moved Codex to
- * `.agents/skills/` (mid-2026), that mirror became dead weight.
+ * History:
+ *   - 2026-05: original mirror to `.skills/` source.
+ *   - 2026-06: source moved to `.agents/skills/`; mirrored to
+ *              `.claude/skills/`, `.codex/skills/`, `.agent/workflows/`.
+ *   - 2026-07: dropped all three mirrors. `.agents/skills/` is the
+ *              native loader for 6+ modern tools; Claude Code /
+ *              Antigravity / TRAE users maintain their own global
+ *              skills in `~/.claude/skills/` and `~/.agent/skills/`
+ *              respectively. The script now only refreshes the
+ *              AGENTS.md index table.
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..', '..');   // nexus/scripts/ → nexus/ → repo
-const skillsSrc = join(repoRoot, '.agents', 'skills');  // ← source = the cross-tool standard path
-const claudeOut = join(repoRoot, '.claude', 'skills');
-const agentOut = join(repoRoot, '.agent', 'workflows');
+const skillsSrc = join(repoRoot, '.agents', 'skills');
 const agentsMd = join(repoRoot, 'AGENTS.md');
 
 // --- Frontmatter parsing (no external deps) --------------------------------
@@ -59,8 +46,7 @@ const agentsMd = join(repoRoot, 'AGENTS.md');
  * We preserve the raw frontmatter string verbatim (do NOT parse-and-rebuild)
  * because nested keys like `metadata:\n  category: ...` would be flattened
  * by a naive map. The flat dict only holds top-level scalar values, used
- * by the index row / Antigravity frontmatter where we only need `name` and
- * `description`.
+ * by the index row where we only need `name` and `description`.
  *
  * @param {string} raw
  * @returns {{ rawFrontmatter: string, frontmatter: Record<string,string>, body: string }}
@@ -82,57 +68,18 @@ function splitFrontmatter(raw) {
   return { rawFrontmatter, frontmatter: fm, body: m[2] };
 }
 
-// --- Output builders --------------------------------------------------------
-
-/**
- * Build Antigravity/TRAE workflow file: injects `// turbo` before every bash
- * code block so the IDE auto-runs them. Only Antigravity honours this; the
- * raw body goes to Claude untouched.
- */
-function buildAntigravityWorkflow(name, fm, body) {
-  const desc = (fm.description || '').split('\n')[0].trim().slice(0, 240);
-  const withTurbo = injectTurbo(body);
-  return `---\ndescription: ${desc}\n---\n\n${withTurbo.trim()}\n`;
-}
-
-/**
- * Insert `// turbo` (or `// turbo-all` for the first block in the body)
- * immediately before every ```bash fenced code block. Preserves
- * indentation, leaves other code-block languages alone.
- */
-function injectTurbo(body) {
-  let firstSeen = false;
-  return body.replace(/^```bash\s*$/gm, () => {
-    const tag = firstSeen ? '// turbo' : '// turbo-all';
-    firstSeen = true;
-    return `${tag}\n\n\`\`\`bash`;
-  });
-}
+// --- AGENTS.md index injection ---------------------------------------------
 
 /**
  * Build a table row for the § Project Skills index injected into AGENTS.md.
+ * Pulls description (everything before the 触发短语 marker) and trigger
+ * phrases (the part after 触发短语) from the SKILL.md frontmatter.
  */
 function buildIndexRow(name, fm) {
   const desc = (fm.description || '').split('触发短语')[0].trim().slice(0, 80);
   const triggers = (fm.description || '').match(/触发短语[:：]?\s*([^。\n]+)/);
   const triggerText = triggers ? triggers[1].trim().replace(/[""「」]/g, '') : '';
   return `| \`${name}\` | ${desc} | ${triggerText} |`;
-}
-
-// --- File writers -----------------------------------------------------------
-
-/** Mirror `<repo>/.agents/skills/<name>/SKILL.md` into `<out>/<name>/SKILL.md`. */
-function writeSkillMirror(name, body) {
-  const dir = join(claudeOut, name);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'SKILL.md'), body);
-}
-
-/** Write Antigravity workflow file (transforms to .md with // turbo injected). */
-function writeAntigravityWorkflow(name, content) {
-  const path = join(agentOut, `${name}.md`);
-  if (!existsSync(dirname(path))) mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, content);
 }
 
 /**
@@ -165,31 +112,7 @@ function injectSkillsIndex(rows) {
   writeFileSync(agentsMd, next);
 }
 
-// --- Cleanup: remove stale outputs whose source no longer exists -------------
-
-function pruneStaleOutputs(presentNames) {
-  if (existsSync(claudeOut)) {
-    for (const name of readdirSync(claudeOut)) {
-      if (name === 'gitnexus') continue;  // GitNexus-managed; do not touch
-      if (!presentNames.includes(name)) {
-        rmSync(join(claudeOut, name), { recursive: true, force: true });
-        console.log(`[sync-skills] Pruned stale skill dir: ${claudeOut}/${name}`);
-      }
-    }
-  }
-  if (existsSync(agentOut)) {
-    for (const f of readdirSync(agentOut)) {
-      if (!f.endsWith('.md')) continue;
-      const name = f.replace(/\.md$/, '');
-      if (!presentNames.includes(name)) {
-        rmSync(join(agentOut, f), { force: true });
-        console.log(`[sync-skills] Pruned stale workflow: ${agentOut}/${f}`);
-      }
-    }
-  }
-}
-
-// --- Main -------------------------------------------------------------------
+// --- Main ------------------------------------------------------------------
 
 function listSkillNames() {
   if (!existsSync(skillsSrc)) {
@@ -213,32 +136,15 @@ function main() {
   const indexRows = [];
   for (const name of names) {
     const raw = readFileSync(join(skillsSrc, name, 'SKILL.md'), 'utf-8');
-    const { rawFrontmatter, frontmatter, body } = splitFrontmatter(raw);
-
-    // 1. Mirror verbatim to .claude/skills/ (Claude Code only).
-    //    Use the raw frontmatter string so nested blocks (`metadata:`, etc.)
-    //    are preserved exactly as authored.
-    const full = `---\n${rawFrontmatter}\n---\n\n${body.trim()}\n`;
-    writeSkillMirror(name, full);
-
-    // 2. Generate .agent/workflows/<name>.md with // turbo injected
-    writeAntigravityWorkflow(name, buildAntigravityWorkflow(name, frontmatter, body));
-
-    // 3. Collect index row
+    const { frontmatter } = splitFrontmatter(raw);
     indexRows.push(buildIndexRow(name, frontmatter));
   }
 
-  // 4. Inject index into AGENTS.md
   injectSkillsIndex(indexRows);
 
-  // 5. Prune stale outputs
-  pruneStaleOutputs(names);
-
-  console.log(`[sync-skills] Done. ${names.length} skill(s) synced.`);
-  console.log(`  source:  ${skillsSrc}  (native loader for Cursor / Codex / Copilot / Gemini / Cline / OpenCode)`);
-  console.log(`  mirror:  ${claudeOut}  (Claude Code only)`);
-  console.log(`  output:  ${agentOut}  (TRAE / Antigravity workflows with // turbo)`);
-  console.log(`  inject:  ${agentsMd} (§ Project Skills table)`);
+  console.log(`[sync-skills] Done. ${names.length} skill(s) indexed into AGENTS.md.`);
+  console.log(`  source: ${skillsSrc}  (native loader for Cursor / Codex / Copilot / Gemini / Cline / OpenCode / Amp / Kimi / Replit)`);
+  console.log(`  inject: ${agentsMd} (§ Project Skills table)`);
 }
 
 main();

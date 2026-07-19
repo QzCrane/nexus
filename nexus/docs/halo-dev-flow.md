@@ -1,3 +1,9 @@
+---
+type: how-to
+status: stable
+audience: developer
+---
+
 # HALO 开发流程
 
 ## §3 工具模块规范

@@ -20,7 +20,7 @@ const CONFIG = {
 
   // Base exclusions for all public repos
   baseExcludes: [
-    '.agent', '.ai-context.md', 'plan.md', 'README.AI.md', 'scripts',
+    '.agent', 'plan.md', 'README.AI.md', 'scripts',
     'docs', 'store-listings', 'store-assets', 'assets',
     'privacy-justifications.md', 'policy-decision.md', 'cors-data-flow.md', 'context-index.md',
     'node_modules', '.turbo', 'dist', '*.tsbuildinfo', '*.zip', 'assets-backup',

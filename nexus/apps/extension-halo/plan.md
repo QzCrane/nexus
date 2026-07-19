@@ -70,7 +70,7 @@ Local First: 零上传，数据本地处理
 
 ## 关联
 
-[开发规则](../../docs/ai-rules.md)
+[开发规则](../../../AGENTS.md)
 
 ---
 

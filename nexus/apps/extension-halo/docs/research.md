@@ -1,3 +1,9 @@
+---
+type: explanation
+status: draft
+audience: developer
+---
+
 # HALO 市场调研汇总 (2025)
 
 > 核心定位: Zero Upload | Zero Tracking | Zero Cost | Local First

@@ -1,3 +1,9 @@
+---
+type: explanation
+status: draft
+audience: developer
+---
+
 # Bilibili Danmaku (弹幕) 功能规划 - Phase 5
 
 > 创建: 2026-01-09 | 状态: 规划中

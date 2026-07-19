@@ -1,3 +1,9 @@
+---
+type: explanation
+status: stable
+audience: developer
+---
+
 # 双向同步业务原则（入口索引）
 
 网页、Popup、遥控与热键的唯一 writer、revision、真实 ACK 和回声关联规则统一由 [control-architecture.md](./control-architecture.md) 管理。

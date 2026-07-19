@@ -1,3 +1,9 @@
+---
+type: reference
+status: stable
+audience: developer
+---
+
 # Media WebAudio source-eligibility flow
 
 This document records the current source-admission algorithm. It does not own a

@@ -6,12 +6,12 @@
 
 任务准备: plan.md(路线) → 模块定位 → 场景架构
 
-场景导读: 控制架构 →spectra/docs/control-architecture.md | 跨上下文协议 →spectra/docs/protocols.md | 运行时所有权 →spectra/docs/architecture.md | 状态同步 →spectra/docs/cors-data-flow.md | 新 Action→contracts/src/messages/definitions.ts | 规则/依赖 →docs/ai-rules.md
+场景导读: 控制架构 →spectra/docs/control-architecture.md | 跨上下文协议 →spectra/docs/protocols.md | 运行时所有权 →spectra/docs/architecture.md | 状态同步 →spectra/docs/cors-data-flow.md | 新 Action→contracts/src/messages/definitions.ts | 规则/依赖 →docs/engineering-principles.md
 
 ## 开源
 
 双仓库: nexus(私有) → {spectra,halo}-public | `bun run sync-{spectra,halo}` → `cd ../*-public; git push -f`
-排除: scripts/ docs/ .agent/ store-listings/ test/ assets/ _.ai-context.md plan.md
+排除: scripts/ docs/ .agent/ store-listings/ test/ assets/ plan.md
 隔离: `.git/info/exclude`排除`_-public/`|`.vscode/settings.json`屏蔽子仓库 Git 状态
 
 ## 模块
@@ -32,14 +32,14 @@ Contracts 禁逻辑 | 源码 ≤200 行 | 禁绕 kernel 存储 | 禁动态 Paddi
 
 ## 验证/测试
 
-`bun run verify`: .ai-context | contracts 纯净 | 行数 150/200 | 硬编码 Action | HTML 引用 | 中文注释 | 依赖方向
+`bun run verify`: contracts 纯净 | 行数 150/200 | 硬编码 Action | HTML 引用 | 中文注释 | 依赖方向
 `bun run test:playwright`: Playwright 持久化上下文 | safe-storage(5s 超时) | i18n(2s) | ModuleManager(3s 降级)
 `bun run test:unit`: spectra Registry 单元测试 (7 tests)
 `bun run typecheck`: 全包 TypeScript 类型检查
 
 ## 索引
 
-规则: docs/ai-rules.md | 商业: docs/business-model.md
+规则: [AGENTS.md](../AGENTS.md) + [docs/engineering-principles.md](docs/engineering-principles.md) | 商业: docs/business-model.md
 规划: plan.md + apps/{extension-halo,extension-spectra}/plan.md
 架构: apps/extension-halo/docs/{architecture,research,plan-hover-zoom-v2}.md | apps/extension-spectra/docs/{control-architecture,architecture,protocols,cors-data-flow}.md
 工程同步: docs/engineering-principles.md | apps/extension-spectra/docs/development-sync-2026-07-19.md | apps/extension-spectra/docs/regression-recovery-2026-07-18.md

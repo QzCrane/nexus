@@ -1,3 +1,9 @@
+---
+type: reference
+status: stable
+audience: developer
+---
+
 # SPECTRA runtime protocols
 
 This document owns cross-context state and message flow. Per-capability writer

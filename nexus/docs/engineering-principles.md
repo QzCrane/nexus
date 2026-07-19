@@ -1,3 +1,9 @@
+---
+type: explanation
+status: stable
+audience: contributor
+---
+
 # NEXUS 工程原则与 Markdown 文档索引
 
 > 分析日期：2026-07-19
@@ -249,7 +255,6 @@ PiP 和 fullscreen 只走标准 API、真实 user activation、生命周期事�
 - [`README.md`](../README.md)：monorepo 项目入口。
 - [`README.AI.md`](../README.AI.md)：模块 DNA、开发导读、红线和验证命令；部分数字/发布命令需要定期更新。
 - [`plan.md`](../plan.md)：NEXUS 产品路线。
-- [`docs/ai-rules.md`](ai-rules.md)：指向根 `rules.md` 的短入口。
 - [`docs/business-model.md`](business-model.md)：商业模式与本地隐私定位。
 - [`docs/halo-dev-flow.md`](halo-dev-flow.md)：HALO 工具目录、SidePanel 和命名规范。
 

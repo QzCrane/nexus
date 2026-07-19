@@ -1,3 +1,9 @@
+---
+type: explanation
+status: draft
+audience: developer
+---
+
 # HALO 功能差距分析 (竞品对标)
 
 > 目标: 秒杀全网竞品

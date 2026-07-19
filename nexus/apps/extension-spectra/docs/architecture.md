@@ -1,3 +1,9 @@
+---
+type: explanation
+status: stable
+audience: developer
+---
+
 # SPECTRA architecture
 
 SPECTRA is a Chrome MV3 extension with explicit ownership across its runtime contexts. The shared protocol and authoritative snapshots are defined in `@nexus/contracts`; extension contexts do not invent private wire shapes. Per-field control behavior is owned by [control-architecture.md](./control-architecture.md).

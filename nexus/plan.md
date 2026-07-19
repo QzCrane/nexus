@@ -15,4 +15,4 @@ Q3 2026: 生态互联 - HALO-SPECTRA 数据互通，移动端扩展
 
 ## 资源
 
-[AI 规则](docs/ai-rules.md) | [商业模式](docs/business-model.md) | [音频决策](apps/extension-spectra/docs/policy-decision.md)
+[工程原则](docs/engineering-principles.md) | [商业模式](docs/business-model.md) | [音频决策](apps/extension-spectra/docs/policy-decision.md)

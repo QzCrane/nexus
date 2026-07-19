@@ -1,3 +1,9 @@
+---
+type: explanation
+status: draft
+audience: developer
+---
+
 # Hover Zoom 2.0 规划 - 超越 HZ+
 
 > 目标: 比 HZ+ 更优(功能/性能/维护性) | 基于 HZ+ 4792 行 + 396 plugins 深度分析

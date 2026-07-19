@@ -90,7 +90,7 @@
 
 ## §11 运行环境 (Environment)
 
-- **OS**: Windows 10。
+- **OS**: Windows 11。
 - **Shell**: 宿主机强制 **PowerShell7** | 容器 (Docker) 内部强制 **bash/sh** (严禁混淆宿主与沙箱环境)。
 - **Runtime/包管理**: 强制全局统一使用 **Bun** 作为唯一 Runtime 与 Package Manager | **绝对严禁**使用 npm/pnpm/yarn 混入工程破坏 `bun.lockb` | **执行临时包必须使用 `bunx`，严禁使用 `npx`**。
 - **依赖约束**: 安装新依赖包时，必须基于当前工程环境联网搜索，选择**最新稳定兼容版 (Latest Stable Compatible Version)**，绝对严禁盲目引入跨主版本的不兼容包或实验性 (Alpha/Beta/RC) 版本。

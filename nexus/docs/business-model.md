@@ -1,3 +1,9 @@
+---
+type: explanation
+status: stable
+audience: all
+---
+
 # NEXUS 商业模式
 
 > 核心: 零上传 | 免费开源 | Freemium 变现
