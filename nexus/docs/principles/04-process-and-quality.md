@@ -2,55 +2,70 @@
 type: explanation
 status: stable
 audience: contributor
+last_reviewed: 2026-07-20
 ---
 
-# 04. Process & quality gate (EPR-026..029 + 运行时检查清单)
+# 04. Process and quality gates (EPR-026..029)
 
-> 主题 owner: 测试覆盖、提交闭环、文案真实性、Git/CI/AI 钩子,以及改前/改后/发布前的运行时检查清单。
-> 完整目录: [engineering-principles.md](../engineering-principles.md)
+> Owner: testing evidence, reversible delivery, truthful public copy, and Git/AI quality gates.
+> Index: [engineering-principles.md](../engineering-principles.md)
 
-## EPR-026: 测试必须覆盖时序和真实浏览器语义
+## EPR-026: tests cover ordering and real browser semantics
 
-单元测试验证纯函数和边界;契约测试验证协议/i18n/权限;状态机测试覆盖随机导航、媒体插入、source 替换、Popup、快捷键、processor handoff、dispose、重启和更新;Chrome smoke 必须覆盖真实 `event.isTrusted`、PiP activation、fullscreen、MutationObserver、source replacement、hidden tab、worker restart 和 ZIP 产物。类型检查或测试变绿不能单独证明架构完成。
+Unit tests verify pure functions and bounded transforms. Contract tests verify protocol, storage, permission, and localization shapes. State-machine and integration tests cover navigation, media/source replacement, UI closure, shortcuts, processor handoff, disposal, restart, and update. Chrome tests cover browser-only semantics such as trusted activation, PiP/fullscreen lifecycle, MutationObserver behavior, service-worker suspension, offscreen ownership, and the production extension artifact.
 
-## EPR-027: 每个提交形成一个可回滚闭环
+Typecheck, lint, unit tests, build, browser tests, and artifact inspection prove different properties. No single green command proves architectural completion.
 
-一个 commit 至少同时包含契约、实现、测试和文档中的必要闭环;改动前先定位 owner、调用方、runtime domain 和失败处理者,改动后运行局部测试、完整测试、真实 Chrome、architecture gate 和 diff 检查。历史报告必须标记日期、基线、验证范围和剩余风险,不得把旧数字当作当前状态。
+## EPR-027: each change forms a reversible closure
 
-## EPR-028: 对外文案不得超过已证明能力
+A coherent change includes the necessary contract, implementation, focused tests, owner documentation, migration, and public/release projection. Before editing, locate the authority, callers, runtime domain, identity, lifecycle owner, and failure handler. After editing, inspect the complete diff and run the smallest direct tests followed by every applicable repository and browser gate.
 
-"所有网站""零 CPU""任何受保护媒体稳定工作""完全不传输数据"等绝对句式只有在浏览器能力和发布门真正证明时才能出现。原生失败、权限、activation、CORS、DRM、闭合 Shadow DOM 和不支持站点必须允许结构化 unsupported;营销文案不能把内部 Capture 或站点 adapter 扩大成普遍保证。
+A commit should be independently understandable and reversible. Historical reports state their date, commit, evidence scope, and remaining risks; their measurements do not become present-tense facts.
 
-## EPR-029: 质量门硬化到 Git/CI/AI 钩子,文档风格靠 lint 守
+## EPR-028: public copy never exceeds verified capability
 
-- **Git 钩子**(Lefthook,Go 实现,毫秒级)必须在所有协作者本地安装:`bun run prepare` -> `bunx lefthook install`。
-  - `pre-commit`:staged 文件跑 `lint-docs` + `biome check`,脏代码无法进入历史。
-  - `commit-msg`:commitlint 强制 Conventional Commits(`feat/fix/refactor/perf/docs/test/build/ci/chore/...`),AI 生成的 commit 也必须守规矩。
-  - `pre-push`:跑全量 `verify:q`(架构校验),阻塞破损 push。
-  - `post-merge`:`sync:skills` 重新生成技能表 + 重建 AGENTS/CLAUDE 硬链接。
-- **Markdown 文档**必须含 Diátaxis frontmatter(`type`/`status`/`audience`),由 `lint-docs.mjs` 校验,新文档无 frontmatter 拒绝提交。
-- **CI** 复用同一组脚本:Turbo pipeline + lefthook 共享 `lint` / `typecheck` / `verify:q` 入口。
-- **Claude Code / Antigravity hooks** 可选扩展(PreToolUse 拦截危险写,PostToolUse 自动 lint),但本地 Git 钩子是底线,缺它不算工程化。
+Statements such as “all websites,” “zero CPU,” “any protected media,” “completely no data transmission,” guaranteed screenshots, or hearing-protection outcomes require a defined release gate that actually proves their scope. Browser permissions, user activation, origin/frame restrictions, CORS, protected content, closed component boundaries, and unsupported page APIs remain legitimate structured failures.
 
-## 5. 运行时检查清单
+README, privacy policy, store copy, permission declarations, and remote-site disclosure must match the exact production artifact and physical network behavior.
 
-### 改代码前
+## EPR-029: Git and AI hooks enforce one quality floor
 
-- 明确文件属于 authority、projection、transport、executor、adapter、storage 还是 test。
-- 写出它拥有的 identity、revision、generation、lease 和失败处理者。
-- 用 GitNexus 查询调用链和上游影响;共享 symbol 先做 impact。
-- 找到唯一 owner 文档和现有静态检查,不在第二个文档复制规则。
+The deployed local Git gate is [`../../../lefthook.yml`](../../../lefthook.yml). Root [`../../../package.json`](../../../package.json) installs Lefthook through `postinstall` and `prepare`.
 
-### 改代码后
+- **pre-commit** runs the Markdown structure linter and Biome on the configured staged-file sets;
+- **commit-msg** runs commitlint with the repository Conventional Commit configuration;
+- **pre-push** runs the AI-hook smoke suite, `verify:q`, and `sync:skills`;
+- **post-merge** runs `sync:skills`, which refreshes the generated Project Skills table in `AGENTS.md`;
+- **post-analyze** is a separate workspace script that restores the `CLAUDE.md` → `AGENTS.md` hardlink after GitNexus regeneration.
 
-- 更新 contracts、实现、测试和 owner 文档。
-- 验证无第二 writer、无无身份 Runtime、无跨域 stale ACK、无默认值伪 actual。
-- 运行定向单元/契约、全量单元、typecheck、lint、build、Chrome dev smoke、production ZIP smoke、architecture gate 和 `git diff --check`。
-- 用 `detect_changes(scope="all")` 审计实际影响范围。
+The host-specific AI hooks documented in [`../../scripts/hooks/README.md`](../../scripts/hooks/README.md) provide earlier feedback where the host exposes the required interception point. They are not a security boundary and do not replace Git, tests, review, or CI.
 
-### 发布前
+The repository must not claim that CI is deployed merely because local scripts are CI-ready. A PR or release checks the actual GitHub workflow/check status. When CI workflows exist, they should invoke the same maintained lint, typecheck, verification, test, build, and release scripts rather than reimplementing their logic.
 
-- 检查 PR/branch 是否包含完整闭环,历史报告数字是否明确标注时间。
-- 检查 manifest 权限、隐私政策、store listing、remote-site 字节/CSP/MIME 与实际产物一致。
-- 检查默认页面没有 AudioContext、Capture、analyser、offscreen 或周期性 IPC。
-- 检查所有远端状态都由 ACK/Snapshot 驱动,未认证远程端没有状态和命令通道。
+Active internal Markdown under the configured documentation roots uses the required Diátaxis frontmatter and passes `nexus/scripts/lint-docs.mjs`. That linter checks structure; link validity, dynamic facts, technical semantics, and public-claim truth still require review and executable evidence.
+
+## Change checklist
+
+### Before code changes
+
+- identify authority, projection, transport, executor, adapter, storage owner, and tests;
+- write down identity, revision/generation, lease, cancellation, and failure ownership;
+- inspect callers and impact before modifying a shared symbol;
+- locate the owner document and existing static/release gates;
+- distinguish implementation, compatibility code, proposal, and historical evidence.
+
+### After code changes
+
+- close contracts, implementation, focused tests, owner documentation, and migrations;
+- verify there is no second writer, unbound runtime, stale ACK, guessed actual state, or missing disposer;
+- run applicable unit/contract, typecheck, lint, architecture, build, browser, production-artifact, privacy, and localization checks;
+- inspect `git diff --check`, the complete changed-file list, generated output, and dependency/permission/network changes;
+- report every omitted gate or unresolved failure instead of describing the change as complete.
+
+### Before release
+
+- verify the candidate commit and working tree are explicit;
+- reconcile manifest permissions, privacy policy, store locales, remote-site bytes/CSP/MIME, and the production package;
+- verify default/inactive pages do not allocate AudioContext, Capture, analyser, offscreen, polling, or recurring work unless the owner contract requires it;
+- verify remote state and commands are driven by current authenticated ACK/snapshot identity;
+- inspect the actual GitHub checks and release-script output rather than relying on a roadmap or old report.
