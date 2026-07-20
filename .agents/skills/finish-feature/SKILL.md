@@ -1,8 +1,8 @@
 ---
 name: finish-feature
-description: 任务交付门禁(verify + build + commit + push)。触发短语:"finish feature", "ship it", "end task", "完工"。
+description: 完成功能或修复时执行交付闭环：范围审计、聚焦测试、全量适用质量门、文档/隐私/发布投影同步，并按用户授权提交或推送。触发短语:"finish feature", "ship it", "end task", "完工", "交付"。
 license: Proprietary. See LICENSE.txt
-compatibility: Requires bun 1.3.14, PowerShell 7+, git 2.30+
+compatibility: Requires bun 1.3.14 and git 2.30+
 metadata:
   category: develop
   app: all
@@ -11,62 +11,78 @@ metadata:
 allowed-tools: Bash Read Edit Grep
 ---
 
-# Finish Feature
-
-交付前必检,确认质量与文档对齐。**慢是为了不必返工。**
+# Finish feature
 
 ## Trigger
 
-当用户说 "finish feature" / "ship it" / "end task" / "交付" / "完工" 时自动加载。
+Use after implementation is complete and before claiming delivery.
 
 ## Process
 
-### 1. 上下文工程更新
+### 1. Reconstruct the intended closure
 
-- [ ] 模块级 `.ai-context.md`(工具/功能/红线/依赖变化)
-- [ ] `README.AI.md` 消息速查表、模块索引
-- [ ] `docs/ai-rules.md` 依赖清单、规则
-- [ ] 所有相关 `.md` 文档
-- [ ] 告知用户更新 `nexus.md`(AI 无权直接改)
+- Re-read the user request, [`rules.md`](../../rules.md), the domain owner, and the final diff.
+- Separate requested changes from accidental cleanup.
+- Confirm contracts, identities, lifecycle, errors, permissions, privacy, and public projections affected by the diff.
+- Remove debug code, stale generated output, dead compatibility paths, and comments that no longer describe behavior.
 
-### 2. 自动化验证(全量质量门)
+### 2. Run focused evidence first
+
+Run the smallest tests that directly exercise the changed behavior. Include browser/lifecycle cases when the change depends on Chrome, activation, navigation, service-worker restart, media, offscreen, permissions, or production artifacts.
+
+A typecheck or build is not a substitute for behavior tests.
+
+### 3. Run the applicable repository gates
+
+From `nexus/`:
 
 ```bash
+bun run typecheck
+bun run lint
 bun run verify:q
+bun run build
 ```
 
-> `verify:q` 已经包含 build 校验(typecheck + 跨模块依赖 + 中文错误检测),**不要**单独跑 `bun run build` —— 重复且更慢。
+Run `bun run verify:v`, application release checks, production-artifact inspection, Chrome tests, remote-site checks, or localization checks when the changed/release scope requires them.
 
-### 3. 最终清单(审计)
+Do not run every expensive command blindly for an isolated documentation-only change; do not omit a required gate because it is slow.
 
-- [ ] verify-architecture 各项规则通过
-- [ ] 警告数无增长(对比 `verify:v` 输出)
-- [ ] 文档信息熵极高(无损压缩,无冗余)
+### 4. Reconcile documentation and release truth
 
-### 4. 提交与推送
+- Update exactly one domain owner for changed normative behavior.
+- Update README, roadmap, privacy, permission justification, store copy, or archive evidence only when their projection changed.
+- Verify relative links and counts against executable owners.
+- Do not update nonexistent `.ai-context.md`, `README.AI.md`, or `ai-rules.md` files.
+- Run `bun run sync:skills` when a project skill changed and inspect the `AGENTS.md` index.
 
-```bash
-git add -A ; git commit -m "feat: <简述功能>" ; git push
-```
+### 5. Review the final diff
 
-> 必须在 `nexus/` 目录执行(根 `package.json` 在那里)。
-> 提交信息遵循 Conventional Commits(`feat` / `fix` / `refactor` / `chore` 等)。
+Check for:
 
-## Anti-Rationalization
+- duplicated authorities or writers;
+- stale identity/ACK paths and missing disposers;
+- unbounded retries, timers, queues, caches, or input;
+- dependency, lockfile, permission, network, and external-ABI changes;
+- unverifiable public claims;
+- accidental secrets, personal data, generated artifacts, or unrelated files.
 
-- "我改的是 trivial 改动,不用走 verify" → **错**。`finish-feature` 的存在就是为了给 trivial 改动也上护栏。
-- "build 很慢,跳过" → **错**。`verify:q` 已经优化为快速模式,直接跑。
-- "typecheck 已经在 prebuild 跑过了" → **错**。`verify:q` 跑的是**全量** typecheck,不是单模块。
-- "我先 push,等会再补 commit message" → **错**。一次性写好,避免半成品进 git。
+### 6. Commit and push only within authorization
 
-## Verification
+Prepare a Conventional Commit that describes the actual closure. Commit or push only when the user or invoking workflow authorized that Git mutation. Never force-push a shared/release branch by default.
 
-- [ ] `bun run verify:q` 退出码 0
-- [ ] git status clean
-- [ ] git log 显示新 commit 已推送
-- [ ] 文档已同步(无过期引用)
+## Prohibited shortcuts
 
-## PowerShell 注意事项
+- Declaring completion from a green typecheck alone.
+- Hiding a failing test by weakening the assertion or excluding the file.
+- Adding a generic “docs updated” line without checking the actual owner.
+- Committing unrelated workspace changes with the feature.
+- Pushing first and treating CI as the initial test run.
 
-- PowerShell 不支持 `&&`,每条命令单独执行,或用 `;` 分隔
-- 文件路径用 `\`,URL 用 `/`
+## Completion evidence
+
+- requested behavior is implemented and no known requested item remains;
+- focused behavior tests pass;
+- all applicable type, lint, architecture, build, browser, artifact, privacy, and release gates pass;
+- final diff is scoped and reviewed;
+- documentation and public projections match implementation;
+- Git status and commit/push state are reported accurately.
