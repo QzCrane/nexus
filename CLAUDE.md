@@ -7,20 +7,21 @@
 Read these before changing the repository:
 
 1. [`rules.md`](rules.md): repository-wide constraints.
-2. [`nexus/docs/documentation-index.md`](nexus/docs/documentation-index.md): documentation authority and domain owners.
+2. [`nexus/docs/README.md`](nexus/docs/README.md): documentation authority and domain owners.
 3. The application or package owner document for the behavior being changed.
-4. The relevant contracts, implementation, tests, and release gates.
+4. The relevant contracts, implementation, tests, production artifacts, and release gates.
 
 Do not treat this file as a second copy of the rules. It is the agent entrypoint and generated skill index.
 
 ## Working boundary
 
-- Primary workspace: `nexus/`
-- Runtime and package manager: Bun
+- Primary workspace: `nexus/`.
+- Runtime and package manager: **Bun 1.3.14**.
 - Use repository scripts rather than inventing parallel commands.
 - Generated files are changed through their source/generator.
 - Before editing a shared symbol, inspect callers, identities, lifecycle ownership, failure paths, tests, and release projections.
 - Close behavior through contract, implementation, tests, owner documentation, and applicable privacy/release evidence.
+- A roadmap, proposal, research note, redirect, or archived report is never implementation authority.
 
 ## Project skills
 
@@ -44,4 +45,4 @@ The source of truth is [`.agents/skills/`](.agents/skills/). `bun run sync:skill
 
 ## Stop conditions
 
-Do not declare work complete while the diff contains a known broken link, duplicated authority, stale generated output, failing required check, unresolved lifecycle leak, unverified public claim, or an unexplained change outside the requested scope.
+Do not declare work complete while the diff contains a known broken link, duplicated authority, stale generated output, failing required check, unresolved lifecycle leak, unverified public claim, toolchain-version drift, or an unexplained change outside the requested scope.
