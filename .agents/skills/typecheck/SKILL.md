@@ -1,49 +1,70 @@
 ---
 name: typecheck
-description: 跑 TypeScript 类型检查(全 monorepo 或单 workspace)。触发短语:"typecheck", "ts check", "类型检查"。
+description: 运行全 workspace、SPECTRA 依赖闭包或单包 TypeScript 检查，并把类型错误追溯到契约与运行时边界。触发短语:"typecheck", "ts check", "类型检查", "ts 报错"。
 license: Proprietary. See LICENSE.txt
-compatibility: Requires bun 1.3.14, TypeScript 5.3+
+compatibility: Requires bun 1.3.14 and the repository TypeScript version
 metadata:
   category: develop
   app: all
   phase: execute
   user-invocable: true
-allowed-tools: Bash
+allowed-tools: Bash Read Grep
 ---
 
-# TypeScript Typecheck
-
-跑 `tsc --noEmit` 检查类型错误。**改完 .ts/.tsx 必跑。**
+# Typecheck
 
 ## Trigger
 
-当用户说 "typecheck" / "ts check" / "类型检查" / "ts 报错了吗" 时自动加载。
+Use after TypeScript/config/contract changes, when diagnosing compiler errors, and before merge/release.
 
-## Process
+## Commands
 
-### 1. 全 monorepo 检查
+From `nexus/`:
 
 ```bash
+# Entire workspace
 bun run typecheck
-```
 
-> 用 turbo 并行跑所有 workspace 的 typecheck。**日常用这个**。
-
-### 2. 仅 Spectra 相关
-
-```bash
+# SPECTRA dependency closure
 bun run typecheck:spectra
+
+# One package/application when iterating
+bun run --cwd apps/extension-spectra typecheck
+bun run --cwd apps/extension-halo typecheck
 ```
 
-> 只跑 contracts / kernel / audio-engine / extension-spectra,通常 10-15 秒。**Spectra 开发时用**。
+Read the current package scripts when targeting another workspace. Do not assume every package exposes the same command.
 
-## Anti-Rationalization
+## Diagnosis order
 
-- "我只改了一行类型,不用跑" → **错**。typecheck 5 秒,debug 5 小时。
-- "build 跑过了,typecheck 自动通过" → **错**。build 不一定严格类型检查(取决于 tsconfig)。
-- "ts-ignore 一下,先跑过" → **错**。每个 ts-ignore 都是技术债,会在下次重构时爆炸。
+1. Read the first causal compiler error, not only the final cascade.
+2. Identify the owning contract/type and its runtime boundary.
+3. Check for duplicated DTOs, stale generated types, wrong dependency direction, or a mismatched discriminant.
+4. Fix the model or validator before adding an assertion.
+5. Re-run the focused package, then the affected dependency closure or full workspace.
 
-## Verification
+TypeScript establishes compile-time relationships. It does not validate storage, message, network, browser, JSON, or third-party data at runtime.
 
-- [ ] typecheck 退出码 0
-- [ ] 无 `any` 警告(项目规则禁止 `any`,必须用 `unknown` + 类型守卫)
+## Assertions and suppressions
+
+- Prefer type guards, runtime validators, derived types, and discriminated unions.
+- An assertion is acceptable only after an explicit runtime boundary proves the shape and the reason is local and reviewable.
+- `as any`, blanket `@ts-ignore`, and widening a public type to silence callers are prohibited shortcuts.
+- `@ts-expect-error` belongs only in a test or compatibility case that asserts the expected compiler failure and explains the boundary.
+
+## Prohibited shortcuts
+
+- Editing generated declarations instead of the generator/source.
+- Making required fields optional to avoid updating a lifecycle or protocol.
+- Adding parallel interfaces in applications instead of using the contract owner.
+- Assuming build success includes strict typecheck.
+- Reporting “no any warnings” from `tsc`; compiler success does not prove the repository's semantic `any` policy.
+
+## Completion evidence
+
+- focused package typecheck passes;
+- affected dependency closure/full workspace passes as applicable;
+- no new unsafe assertion or suppression was introduced;
+- runtime validation exists at untrusted boundaries;
+- generated types are refreshed through their owner;
+- the fix preserves the intended dependency and contract direction.
