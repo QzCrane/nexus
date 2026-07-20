@@ -2,66 +2,49 @@
 
 ## Nombre
 
-SPECTRA - Amplificador de Volumen, EQ y Control Multimedia
+SPECTRA - Volumen, Ecualizador y Control Multimedia
 
-## Resumen (Máx. 132 caracteres)
+## Resumen (máx. 132 caracteres)
 
-Refuerzo 800%, EQ, video, remoto. 🔵🟣 Modo dual de alto rendimiento, compatible con todos los sitios web.
+Hasta 800 % de volumen, ecualizador de 10 bandas, controles multimedia y un mando móvil autenticado opcional.
 
 ## Descripción detallada
 
-🚀 **¿Por qué SPECTRA? Porque otras extensiones fallan.**
+SPECTRA reúne controles de audio, reproducción y vídeo en una extensión de Chrome. La configuración y el procesamiento multimedia permanecen en el dispositivo de forma predeterminada.
 
-¿Estás cansado de problemas como estos con otros amplificadores?
-❌ Silenciamiento repentino al abrir páginas nuevas.
-❌ Modo de pantalla completa fallido que te obliga a pulsar F11.
-❌ Cambios de volumen que refrescan la página o causan lag.
-❌ Código pesado que dispara el uso de CPU y calienta tu equipo.
+### Audio
 
-**Como desarrollador independiente, mi visión con SPECTRA no era solo crear un potente amplificador de volumen, sino un centro de control de accesibilidad total. Con un ecualizador de 10 bandas integrado, rotación de video y un revolucionario control remoto Web, mi objetivo es brindar un nivel de control sin precedentes para todos, especialmente para quienes tienen necesidades visuales/auditivas o limitaciones de movilidad física.**
+- Control de volumen de hasta 800 %
+- Ecualizador de 10 bandas, de 32 Hz a 16 kHz
+- Graves, compresor, mono, balance estéreo y retardo
+- Silencio del medio y del tabulador del navegador como estados independientes
 
----
+Una amplificación alta puede causar distorsión o niveles de escucha inseguros. Aumenta el volumen de forma gradual y utiliza el compresor según la fuente y el equipo de reproducción.
 
-🔵🟣 **Innovación: Arquitectura de Modo Dual de Ultra-Rendimiento**
+### Reproducción y vídeo
 
-SPECTRA cuenta con un motor de conmutación inteligente líder en la industria:
+- Velocidad, reproducción/pausa, búsqueda, bucles, marcadores y bucle A/B
+- Rotación, espejo, relleno, filtros y atenuación del fondo
+- Imagen en imagen y pantalla completa mediante las funciones estándar del navegador
+- Capturas del fotograma visible cuando la página y el medio permiten la captura
 
-• 🔵 **Modo Nativo**: Para audio sin restricciones de origen, utiliza directamente el motor del navegador. **Cero consumo de CPU**, latencia mínima y máxima fidelidad.
-• 🟣 **Modo de Captura**: Se activa automáticamente para contenido complejo protegidos (CORS), asegurando estabilidad en sitios como TikTok, Netflix y Disney+.
+La disponibilidad depende de la página, el elemento multimedia, la compatibilidad del navegador, los permisos y la activación del usuario. SPECTRA informa de las operaciones no compatibles en lugar de prometer el mismo resultado en todos los sitios web.
 
----
+### Mando móvil opcional
 
-✅ **¿Qué hace a SPECTRA diferente?**
+Crea una sesión de emparejamiento y escanea el código QR. El dispositivo de control debe completar una autenticación HMAC-SHA-256 antes de recibir el estado o enviar órdenes.
 
-• **Consistencia perfecta**: El volumen permanece exactamente donde lo configuraste.
-• **Pantalla completa real**: Disfruta de una experiencia de pantalla completa con un solo clic, sin F11.
-• **Compatibilidad universal**: Funciona a la perfección incluso en sitios con medios protegidos.
-• **Extremadamente ligero**: Código optimizado que ahorra batería y recursos del sistema.
+El mando está desactivado de forma predeterminada. Al activarlo, utiliza Cloudflare Pages, señalización de PeerJS y servicios STUN/TURN. Después de la autenticación, el título, el dominio y el estado de control multimedia del tabulador seleccionado pueden intercambiarse con el dispositivo emparejado. El canal remoto no envía el contenido de la página, favicons, audio ni vídeo.
 
-🎵 **Potencia de Audio (Listo para Accesibilidad)**
-• **Refuerzo de volumen al 800%** - Amplificación potente para usuarios que necesitan mayor claridad de audio.
-• **Ecualizador pro de 10 bandas** - Ajuste preciso de 32Hz a 16kHz para compensar necesidades de frecuencias específicas.
-• **Compresor y Limitador nativo** - Sonido cristalino sin distorsión, protegiendo su audición de picos repentinos.
-• **Bass Boost** - Siente frecuencias bajas profundas y potentes.
-• **Balance Estéreo** - Ajuste flexible de los canales izquierdo/derecho para necesidades de audición unilateral.
+### Ajustes y atajos
 
-🎬 **Control de Video**
-• **Velocidad de reproducción** - Control de precisión de 0.25x a 16x.
-• **Rotación y Espejo** - Corrije videos en cualquier ángulo.
-• **Picture-in-Picture (PiP)** - Desliza tus videos mientras trabajas.
-• **Captura de pantalla HD** - Captura cualquier fotograma al instante.
-• **Bucle AB** - Repite secciones para estudio o diversión.
+- Preferencias locales globales y por sitio
+- Atajos multimedia configurables
+- Interfaz traducida
+- Estado real confirmado compartido por el popup y el mando autenticado
 
-📱 **Control Remoto Revolucionario (Soporte de Movilidad)**
-• **Remoto instantáneo para móvil** - Escanea el QR y listo. Tu teléfono es el mando. Ideal para usuarios a los que les resulta difícil mover el ratón o el teclado, permitiendo el control desde la distancia.
-• **Gestión multi-pestaña** - Cambia y controla varias pestañas desde un solo teléfono.
+### Privacidad
 
-⌨️ **Atajos de Teclado Avanzados**
-• Más de 70 acciones configurables.
-• Soporte para atajos globales de Chrome.
+SPECTRA no contiene publicidad, análisis, telemetría ni un servicio de recopilación operado por el desarrollador. Los ajustes y el procesamiento permanecen locales de forma predeterminada. La red opcional del mando se describe aquí y en la política de privacidad.
 
-🔒 **Privacidad y Seguridad**
-• Sin telemetría ni publicidad. Los ajustes permanecen locales; el control remoto opcional y autenticado usa la infraestructura PeerJS WebRTC indicada.
-• Permisos mínimos: solo pido lo necesario.
-
-⭐ **¿Te gusta SPECTRA? ¡Déjame una reseña de 5 estrellas! Tu apoyo impulsa mi innovación.**
+SPECTRA no elude la seguridad del navegador, los permisos, las restricciones de contenido protegido ni los requisitos de activación del usuario.
