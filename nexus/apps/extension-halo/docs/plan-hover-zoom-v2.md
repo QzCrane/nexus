@@ -2,161 +2,132 @@
 type: explanation
 status: draft
 audience: developer
+last_reviewed: 2026-07-20
 ---
 
-# Hover Zoom 2.0 规划 - 超越 HZ+
+# HALO Hover Zoom workstream
 
-> 目标: 比 HZ+ 更优(功能/性能/维护性) | 基于 HZ+ 4792 行 + 396 plugins 深度分析
+This document records the intended architecture, acceptance criteria, and remaining work for HALO's hover-preview capability. Historical completion marks and competitor measurements from January 2026 must be confirmed against current source and tests before they are treated as landed behavior.
 
-## HZ+ 架构分析
+## Product boundary
 
-**核心文件** (2.1MB 总大小):
+Hover Zoom resolves a user-targeted page asset into a preview without taking over the page's media lifecycle. It may display an image, a directly playable video, or a supported stream assembled through an owned viewer. It must preserve page interaction, avoid hidden network work while inactive, and dispose every listener, request, media source, animation, and object URL.
 
-- `hoverzoom.js`: 4792 行 单体架构 | jQuery 依赖 | 全局状态
-- `hls.js`: 1MB HLS 播放库
-- `plugins/`: 396 个站点规则文件 (各 300-48000 行)
-- `background.js`: API 代理 (CORB 绕过)
+## Architecture
 
-**HZ+ 问题**:
+```text
+hover-zoom/
+├─ core/                 orchestration and lifecycle
+├─ resolvers/            bounded source resolution
+├─ rules/                declarative site and generic rules
+├─ viewer/               image/video/gallery presentation
+├─ network/              permissioned fetch/proxy boundary
+├─ state/                owned settings and session state
+└─ locales/              user-visible text
+```
 
-1. **巨型单体**: 4792 行单文件 → 难维护/难测试
-2. **jQuery 依赖**: 296KB 冗余 + 不兼容现代框架
-3. **全局污染**: `hoverZoomPlugins` 数组注入 window
-4. **同步插件加载**: 396 插件全量加载 → 慢启动
-5. **无类型**: 纯 JS → IDE 无提示/运行时错误
-6. **样式内联**: CSS 硬编码 JS → 无法复用
+The exact filenames may change. These constraints remain:
 
-**HZ+ 优势** (必须借鉴):
+- one resolver result contract;
+- generic rules before site-specific exceptions unless a proven precedence rule says otherwise;
+- site rules declare their hosts, permissions, and network behavior;
+- resolution and rendering are separate;
+- the viewer owns one current preview and one disposer;
+- no page-global arrays, jQuery dependency, or all-sites plugin bundle;
+- no fixed file-size or line-count claim substitutes for responsibility boundaries.
 
-1. **丰富详情**: dimensions/ratio/scale/duration/host/filename/contentLength/lastModified
-2. **Video+Audio 分离播放**: `.video` + `.audio` URL 标记 → MSE 合成
-3. **Gallery 模式**: 左右键切换多图
-4. **fallback 链**: 多源 URL 失败自动尝试下一个
-5. **HLS/DASH 支持**: hls.js 集成
-6. **Ambilight 环境光**: canvas 抽取颜色渲染背景
+## Resolution contract
 
----
+A resolved item identifies:
 
-## Halo HoverZoom 2.0 路线图
+- source URL or typed stream components;
+- media type and confidence;
+- source page and optional site adapter;
+- fallback candidates in deterministic order;
+- optional gallery membership;
+- optional metadata whose provenance is known;
+- required permissions or headers;
+- cancellation and expiry behavior.
 
-### Phase 1: 信息栏完善 ✅ (已完成)
+A thumbnail-to-original rewrite is accepted only when the result is validated or the failure is recoverable through the declared fallback chain. A guessed URL is not success.
 
-- [x] 9 项 info bar (typeIcon/dims/ratio/scale/format/size/caption/source/hostname)
-- [x] 各项独立开关
-- [x] i18n 支持
+## Viewer lifecycle
 
-### Phase 2: 详情增强 ✅ (已完成)
+The viewer must:
 
-**目标**: 超越 HZ+ 的 displayDetails()
+- cancel obsolete resolution and network work when the target changes;
+- prevent stale responses from replacing a newer preview;
+- avoid interfering with a page video that the user is already controlling;
+- pause animation and optional media while hidden;
+- release MediaSource, SourceBuffer, object URL, event, observer, and animation ownership on close;
+- isolate keyboard commands while pinned without permanently swallowing page input;
+- keep geometry changes bounded to the viewer rather than rewriting page layout.
 
-| 信息项        | HZ+ 有 | Halo 状态 | 优先级 |
-| ------------- | ------ | --------- | ------ |
-| dimensions    | ✅     | ✅        | -      |
-| ratio         | ✅     | ✅        | P1 ✅  |
-| scale         | ✅     | ✅        | P1 ✅  |
-| duration      | ✅     | ❌        | P3     |
-| filename      | ✅     | ❌        | P3     |
-| contentLength | ✅     | ✅ (size) | -      |
-| lastModified  | ✅     | ❌        | P3     |
+## Current capability evidence to verify
 
-**实现**: `info.ts` - `calcRatio()` (GCD 简化) + `calcScale()` (显示/原始百分比)
+The January 2026 notes claim that the implementation contained:
 
-### Phase 3: 视频播放 ✅ (已完成)
+- a configurable information bar;
+- ratio and scale calculation;
+- Bilibili image and DASH resolution;
+- a MediaSource-based video path;
+- pinned viewer movement and resizing;
+- incremental media loading and thumbnail fallback behavior.
 
-**目标**: 真正播放视频 (非仅封面)
+These are review targets, not current release guarantees. Confirm each claim through current symbols, tests, and a browser smoke before updating status.
 
-**实现方案**:
+## Remaining work
 
-- ✅ **B 站规则** (`rules/definitions/bilibili.ts`): 已实现 API 调用获取 DASH 流
-- ✅ **MSE 播放器** (`viewer/mse-player.ts`): 合成 video+audio m4s 流
-- ✅ **视频保护** (`image-resolver.ts`): 跳过正在播放的视频 (!paused)
-- ✅ **media-display.ts**: 集成 MSE 播放，DASH 流自动处理
+### P0: architecture and correctness
 
-**架构**:
+- prove cancellation and stale-result rejection across rapid hover changes;
+- verify every resolver and site rule has bounded host/permission behavior;
+- test source replacement, framework reparenting, hidden tabs, navigation, and viewer disposal;
+- validate MediaSource error recovery, SourceBuffer sequencing, and memory release;
+- replace undocumented background proxy behavior with typed requests and response guards.
 
-- `rules/definitions/bilibili.ts`: B 站 API 适配 (6 条规则)
-- `viewer/mse-player.ts`: MediaSource Extensions 播放器 (+6KB)
-- `viewer/media-display.ts`: 集成 MSE 或回退到缩略图
+### P1: fallback and interaction
 
-### Phase 4: Gallery 模式 (待实现)
+- deterministic fallback chain with per-candidate failure reason;
+- gallery navigation with adjacent-item prefetch limits;
+- zoom/pan and pinned mode with accessible keyboard/focus behavior;
+- filename and metadata display only when derived from a trustworthy source;
+- download naming and output rules that reject unsafe paths and unsupported schemes.
 
-**功能**:
+### P2: optional presentation
 
-- ← → 键切换图集
-- 指示器 "3/12"
-- 预加载相邻图
+- ambient background effects with explicit CPU/GPU and reduced-motion boundaries;
+- rotation or flip owned by the viewer;
+- advanced stream formats only when package size, browser support, licensing, and lifecycle cost are justified.
 
-**数据结构**: `EnhancedResult.gallery?: string[]`
+## Bilibili integration
 
-### Phase 5: Bilibili 弹幕 (新增规划)
+Bilibili-specific resolution is an adapter, not a generic permission to depend on undocumented endpoints indefinitely. It must isolate API shape changes, validate response fields, handle authentication/region/rate limits, and degrade to the next declared candidate.
 
-**详细规划**: 见 `plan-danmaku.md`
+Danmaku is a separate candidate capability described in [plan-danmaku.md](plan-danmaku.md). Hover preview remains complete without it.
 
-**核心架构**:
+## Performance evidence
 
-- `danmaku/proto-decoder.ts`: Protobuf 手动解码 (无依赖)
-- `danmaku/canvas-renderer.ts`: Canvas 渲染 + 碰撞检测
-- `danmaku/controller.ts`: 时间轴同步 + 用户控制
+Do not retain fixed claims such as “6 KB versus 1 MB,” “zero allocation,” or guaranteed frame rate without a reproducible production-build benchmark. Measure at least:
 
-**工作量**: ~10h
+- initial idle cost;
+- first hover-to-preview latency by media type;
+- cancellation latency;
+- peak memory for large image and streamed video;
+- hidden-tab/background work;
+- viewer close and navigation cleanup;
+- package contribution by optional feature.
 
-### Phase 6: 高级功能 (待实现)
+## Acceptance gate
 
-功能:说明:优先级
-Ambilight:环境光背景 (canvas 提取色):P2
-Fallback 链:多源 URL 自动切换:P1
-锁定模式:点击固定 viewer:P2
-缩放平移:滚轮缩放 + 拖动:P1
-旋转/翻转:R 键旋转 F 键翻转:P3
-下载命名:模板: `<host>/<filename>`:P3
+A phase is complete only when current source and tests prove:
 
----
+1. deterministic resolution and fallback;
+2. identity-bound stale-result rejection;
+3. permission and network disclosure;
+4. complete viewer disposal;
+5. accessible keyboard, focus, and reduced-motion behavior;
+6. measured production performance;
+7. updated owner documentation and registry metadata.
 
-## 架构优势 (vs HZ+)
-
-维度:HZ+: Halo HoverZoom
-语言:JS: TypeScript
-依赖:jQuery 296KB: 零依赖
-结构:单文件 4792 行: 模块化 ≤200 行/文件
-规则:396 独立 plugins: RuleEngine 统一注册
-加载:全量同步: 按需懒加载
-样式:内联 JS: 独立 CSS + CSS 变量
-类型:无: 完整 TS 类型
-测试:无: Playwright 集成
-体积:1.3MB (hls.js): 6KB (MSE 原生)
-
----
-
-## 变更记录
-
-- **2026-01-09 AM**: Phase 1-3 完成
-  - Info bar: 9 项可配置信息 (typeIcon/dims/ratio/scale/format/size/caption/source/hostname)
-  - 详情增强: ratio (GCD 简化比例) + scale (显示缩放百分比)
-  - 视频播放: MSE 播放器 (6KB) 替代 hls.js (1MB)，B 站 DASH 流支持
-  - 视频保护: 跳过正在播放的视频，避免干扰原生预览
-
-- **2026-01-09 PM**: 视频性能极致优化
-  - 流式增量加载: 首批 2MB 快速显示 → 后台持续加载后续批次 → 无缝播放
-  - 动态分辨率: 根据 viewport (90%) 自动选择合适画质 (避免 4K 屏强制 1080P)
-  - Background Proxy: 支持 arraybuffer (base64 分块编码，32KB 块)
-  - 新增设置: videoFallbackToImage (默认 false，视频失败不降级)
-  - CORS 修复: Referer header 通过 background proxy 正确发送
-
-- **2026-01-09 EVE**: B 站体验增强
-  - 视频音频: 移除静音限制，MSE 和标准视频均可播放声音
-  - 图片规则增强: 扩展 match 模式 (`/bfs/|@`)，支持更多缩略图类型
-  - 新增 host: biliimg.com
-  - **待实现**: 弹幕功能 (需 Phase 5+)
-
-- **2026-01-09 NIGHT**: 图片原图规则修复
-  - 移除错误的 `/archive/` 排除 → 视频封面也能获取原图
-  - `media-loader.ts` 添加内联 HD 转换 → 视频回退缩略图时自动获取原图
-  - `rule-resolver.ts` 优化 → 用户偏好图片时缩略图也应用 HD 规则
-  - 弹幕 Phase 5 规划完成 → `docs/plan-danmaku.md`
-
-- **2026-01-09 NIGHT+**: 固定悬浮模式 + 视频首帧优化
-  - **固定悬浮**: 按 pinKey (默认空格) 固定浮窗，支持拖动移动和四角缩放
-  - **按键隔离**: 固定时 stopImmediatePropagation 阻止按键冒泡到页面
-  - **关闭按钮**: 固定后显示 X 关闭按钮，Esc 也可关闭
-  - **视觉反馈**: 固定状态蓝色边框 + 📌 图标
-  - **视频首帧优化**: 初始加载 768KB (原 2MB) 快速显示首帧
+Historical change notes remain available in Git history. New implementation evidence belongs in dated verification reports rather than an ever-growing roadmap changelog.
