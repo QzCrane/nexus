@@ -1,27 +1,17 @@
-# Lefthook — NEXUS 工程门禁
-# Docs: https://github.com/evilmartians/lefthook
-#
-# 设计原则:
-# 1. pre-commit: 只跑 staged 文件(md/biome),秒级,AI 也要守规矩
-# 2. commit-msg: 强制 Conventional Commits,commitlint 校验
-# 3. pre-push: 跑全量 verify(架构校验),不阻塞 lint-staged 的小步快跑
-# 4. post-merge: 同步技能表 + 重建 AGENTS/CLAUDE 硬链接(防 GitNexus analyze 破坏)
+# Lefthook — NEXUS local quality gates
+# https://github.com/evilmartians/lefthook
 
 pre-commit:
   parallel: true
   commands:
-    docs-frontmatter:
-      glob: "*.md"
-      run: bun --cwd nexus scripts/lint-docs.mjs
+    documentation-architecture:
+      glob: "**/*.md"
+      run: bun run docs:check
       skip:
         - merge
         - rebase
     biome-check:
       glob: "**/*.{ts,tsx,js,jsx,mjs,cjs,json}"
-      # biome must run from inside `nexus/` (where biome.json lives); biome
-      # 2.x refuses to start when it detects a "root config" above the
-      # working dir. `root: "nexus/"` tells lefthook to cd there before
-      # running, so the workspace-relative staged paths resolve correctly.
       root: "nexus/"
       run: bunx @biomejs/biome check --no-errors-on-unmatched --max-diagnostics=50 {staged_files}
       stage_fixed: true
@@ -34,9 +24,11 @@ commit-msg:
 pre-push:
   parallel: false
   commands:
+    toolchain:
+      run: bun --cwd nexus run check:toolchain
+    documentation-architecture:
+      run: bun run docs:check
     hooks-smoke:
-      # Run the unified AI-hook smoke suite. Cheap (~1s) and catches
-      # refactor regressions in the pre/post/stop helpers.
       run: bun --cwd nexus scripts/hooks/test.mjs
     verify-architecture:
       run: bun run verify:q
@@ -45,5 +37,5 @@ pre-push:
 
 post-merge:
   commands:
-    post-merge-sync:
+    sync-skills:
       run: bun run sync:skills
