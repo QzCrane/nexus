@@ -2,7 +2,7 @@
 name: new-module
 description: 创建新的 workspace 包、应用或有明确边界的模块：先定义 owner/依赖方向，再脚手架、接入构建与验证。触发短语:"new module", "create app", "scaffold", "建模块", "新应用"。
 license: Proprietary. See LICENSE.txt
-compatibility: Requires bun 1.3.14
+compatibility: Requires Bun 1.3.14
 metadata:
   category: develop
   app: all
@@ -23,7 +23,7 @@ Use when a new package, application, plugin family, or independently owned runti
 
 Before creating files:
 
-- read [`rules.md`](../../../rules.md), the documentation map, and neighboring owners;
+- read [`rules.md`](../../../rules.md), [`nexus/docs/README.md`](../../../nexus/docs/README.md), and neighboring owners;
 - confirm an existing package/module cannot naturally own the behavior;
 - define responsibility, public API, dependency direction, state/lifecycle owner, failure boundary, and tests;
 - decide whether the unit is a workspace package, application-internal module, HALO plugin, or SPECTRA capability implementation.
@@ -40,38 +40,41 @@ mkdir -p packages/<name>
 mkdir -p apps/<name>
 ```
 
-Create `package.json` deliberately rather than accepting unused template fields. Use:
+Create `package.json` deliberately. Use:
 
 - a unique `@nexus/<name>` package name;
 - `private: true` unless publication is explicitly designed;
 - `type: "module"`;
+- `packageManager: "bun@1.3.14"` only when the new directory is an independent package-manager root;
 - scripts required by the workspace gates;
 - dependencies only at the owning package.
 
-A package normally extends the appropriate repository TypeScript base config. Confirm the relative path instead of copying `../../tsconfig.base.json` blindly into every depth.
+A package normally extends the appropriate TypeScript base config. Confirm the actual relative path instead of copying one depth blindly.
 
-For HALO plugins, follow the executable registry/manifest contract in `apps/extension-halo/plan.md`. For SPECTRA, add a new unit only inside an existing capability owner unless the control contracts and documentation define a new boundary.
+For HALO plugins, follow [`apps/extension-halo/docs/architecture.md`](../../../nexus/apps/extension-halo/docs/architecture.md) and executable registry metadata. For SPECTRA, add a unit only within an existing capability owner unless the control contracts and [`docs/control/README.md`](../../../nexus/apps/extension-spectra/docs/control/README.md) define a new boundary.
 
 ### 3. Connect the build graph
 
-- Confirm `nexus/package.json` workspace globs already include the new path.
+- Confirm `nexus/package.json` workspace globs include the path.
 - Add public exports and Turbo/package scripts required by actual consumers.
 - Keep contracts free of application behavior and avoid reverse imports.
 - Run `bun install` to refresh workspace links and `bun.lock`.
-- Do not add a manual module inventory that duplicates package manifests or registries.
+- Do not add a manual inventory duplicating manifests or registries.
 
 ### 4. Add tests and documentation
 
-- Add focused tests for the new public boundary and lifecycle.
-- Add a README or owner document only when contributors need a stable entrypoint.
-- Register the document in `nexus/docs/documentation-index.md` if it is a new active owner.
-- Update architecture diagrams or plans only when their actual semantics changed.
-- Do not create `.ai-context.md`, `README.AI.md`, or `ai-rules.md`; they are not current repository owners.
+- Add focused tests for the public boundary and lifecycle.
+- Add a README or owner only when contributors need a stable entrypoint.
+- Register a new active owner in `nexus/docs/README.md` or the application documentation index.
+- Put architecture, roadmap, research, proposal, and historical evidence in their existing physical domains.
+- Do not create `.ai-context.md`, `README.AI.md`, or `ai-rules.md`.
 
 ### 5. Verify
 
 ```bash
 bun install
+bun run docs:check
+bun --cwd nexus run check:toolchain
 bun run typecheck
 bun run lint
 bun run verify:q
@@ -87,12 +90,14 @@ Run package-specific tests and production-artifact checks where applicable.
 - Adding deep cross-package imports instead of a public facade.
 - Treating an arbitrary line limit as proof a split is needed.
 - Scaffolding generated registry output by hand.
+- Introducing another Bun version or lockfile.
+- Creating an unindexed owner document.
 
 ## Completion evidence
 
-- the owner and dependency direction are explicit;
-- package/tsconfig/scripts match repository conventions at the actual path;
+- owner and dependency direction are explicit;
+- package, tsconfig, scripts, and Bun 1.3.14 boundary match repository conventions;
 - workspace install resolves consumers without an alternate lockfile;
 - focused tests and applicable repository gates pass;
 - documentation map and public API are updated only where needed;
-- no duplicate registry, state owner, or compatibility facade was introduced.
+- no duplicate registry, state owner, compatibility facade, or documentation owner was introduced.
