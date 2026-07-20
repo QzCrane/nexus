@@ -6,62 +6,45 @@ SPECTRA - Volume Booster, EQ & Media Control
 
 ## Summary (Max 132 chars)
 
-800% volume boost, EQ, video controls, mobile remote. 🔵🟣 High-performance dual-mode switching for all websites.
+Boost volume up to 800%, use a 10-band EQ, control media and video, and pair an optional authenticated phone remote.
 
 ## Detailed Description
 
-🚀 **Why SPECTRA? Because other extensions are broken.**
+SPECTRA brings audio, playback, and video controls into one Chrome extension while keeping settings and media processing local by default.
 
-Tired of extension issues like:
-❌ Random muting when opening new pages?
-❌ Fullscreen mode that fails unless you hit F11?
-❌ Volume adjustments that cause page refreshes or lag?
-❌ Bloated code that spikes your CPU and drains battery?
+### Audio controls
 
-**As an independent developer, my goal with SPECTRA was not just to build a powerful volume booster, but to create a comprehensive accessibility control center. With a built-in 10-band equalizer, video rotation, and a revolutionary mobile Web remote, I aim to provide an unprecedented level of control for everyone, especially those with hearing/vision needs or physical mobility constraints.**
+- Volume control up to 800%
+- 10-band equalizer from 32 Hz to 16 kHz
+- Bass, compressor, mono, stereo balance, and delay controls
+- Separate media-mute and browser tab-mute state
 
----
+High amplification can distort audio or produce unsafe listening levels. Increase volume gradually and use the compressor only when it fits your source and listening setup.
 
-🔵🟣 **Innovation: The Ultra-Performance Dual-Mode Architecture**
+### Playback and video
 
-SPECTRA features an industry-leading intelligent switching engine:
+- Playback speed, play/pause, seek, loop, markers, and A/B loop
+- Video rotation, mirroring, fill, filters, and background dimming
+- Picture-in-Picture and fullscreen through standard browser behavior
+- Visible-frame screenshots when the current page and media allow capture
 
-• 🔵 **Native Mode**: For non-CORS audio, it enhances sound directly via the core browser engine. **Zero CPU overhead**, zero latency, and original high-fidelity audio.
-• 🟣 **Capture Mode**: Automatically engages for complex cross-origin content, ensuring stable enhancement on ALL sites (TikTok, Netflix, Disney+, etc.).
+Availability depends on the page, media element, browser support, permissions, and user-activation rules. SPECTRA reports an unsupported operation instead of promising the same result on every website.
 
----
+### Optional phone remote
 
-✅ **What Makes SPECTRA Different**
+Create a pairing session and scan its QR code to use a phone as a remote. The controller must pass an HMAC-SHA-256 authentication challenge before it receives state or can send commands.
 
-• **Seamless Consistency**: Volume stays exactly where you set it—no more random mutes.
-• **True Fullscreen Support**: One-click real fullscreen experience, No F11 manual override required.
-• **Universal Compatibility**: Works flawlessly where others fail, including protected media sites.
-• **Extremely Lightweight**: Optimized code and logic that save energy and system resources.
+The remote is off by default. When enabled, it uses Cloudflare Pages, PeerJS signaling, STUN, and TURN services. After authentication, the selected tab's title, domain, and media-control state may be exchanged with the paired device. Page content, favicons, audio, and video are not sent through the remote channel.
 
-🎵 **Audio Powerhouse (Accessibility Ready)**
-• **800% Volume Boost** - Powerful amplification for users who need extra audio clarity.
-• **10-Band Pro Equailzer** - Fine-tune from 32Hz to 16kHz to compensate for frequency-specific needs.
-• **Native Compressor & Limiter** - Crystal clear sound at high volumes, protecting your hearing from distortion.
-• **Bass Boost** - Feel deep, punchy low frequencies.
-• **Stereo Balance** - Flexible left/right channel adjustment for single-side hearing needs.
+### Settings and hotkeys
 
-🎬 **Video Mastery**
-• **Playback Speed** - 0.25x to 16x precision control.
-• **Rotation & Mirroring** - Handle videos at any angle.
-• **Picture-in-Picture (PiP)** - Float your videos while you work.
-• **HD Screenshots** - Capture any frame instantly.
-• **AB Loop** - Repeat sections for learning or fun.
+- Local global and per-site preferences
+- Configurable media-control hotkeys
+- Translated product surfaces
+- Acknowledged state shared by the extension Popup and authenticated remote
 
-📱 **Revolutionary Remote Control (Mobility Support)**
-• **Instant Phone Remote** - Scan QR, no app required. Your phone is the remote. Perfect for users who find it difficult to use a keyboard or mouse or simply want to control media from a distance.
-• **Multi-Tab Management** - Switch and control multiple tabs from one phone.
+### Privacy
 
-⌨️ **Advanced Hotkeys**
-• Over 70 customizable atomic actions.
-• Support for Chrome Global shortcuts and per-site configurations.
+SPECTRA has no advertising, analytics, telemetry, or developer-operated collection service. Settings and media processing stay on the device by default. Optional remote networking is described above and in the privacy policy.
 
-🔒 **Privacy & Security**
-• No telemetry or advertising. Settings stay local; optional, authenticated phone remote sessions use disclosed PeerJS WebRTC infrastructure.
-• Minimal permissions—I only ask for what I need.
-
-⭐ **Love SPECTRA? Give me a 5-star review! Your support keeps me innovating.**
+SPECTRA does not bypass browser security, permissions, protected-content restrictions, or user-activation requirements.
