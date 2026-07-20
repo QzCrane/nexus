@@ -83,6 +83,26 @@ invalidated on document identity changes, runtime disposal, unsupported/terminal
 errors and a newer user decision. Actual mode and UI color still come only from
 the current `AudioSessionSnapshot` ACK.
 
+### §4.1 Last-resort Capture fallback
+
+A user-pinned `direct` route is authoritative for routing, but it cannot grant
+Media WebAudio access to a cross-origin media source. When `assessMediaSourceCoverage`
+reports `fullCoverage: false` on the NATIVE_WEBAUDIO path and the requested
+configuration explicitly needs a processor (`requiresAudioProcessor` is true —
+volume > 100, non-zero EQ, bass, compressor, mono, pan, or delay), the executor
+escalates to Capture as the last-resort full-output path before falling back to
+`bypass+error`. Capture is chosen because `tabCapture` is not blocked by page
+CORS, so a site that was mistakenly pinned to `direct` can still be served when
+the user actually requests a processor-backed configuration.
+
+The escalation is activation-bound: it requires `hasUserGesture(state)` and
+follows SCTRL-011 — the processor handoff never double-applies DSP, never ACKs
+before actual readback, and a candidate failure leaves the prior stable
+configuration in `bypass+error` with the capture denial surfaced as `lastError`.
+A transparent configuration (no boost, no DSP) never escalates, because a
+coverage gap without a processor need is reported directly through the bypass
+path and does not justify the activation-bound Capture lease.
+
 ## §5 Runtime, shortcut and feedback ownership
 
 The content bootstrap is cold-document safe. The first hotkey on a newly loaded

@@ -4,6 +4,7 @@ import {
 	AudioMode,
 	assessMediaSourceCoverage,
 	audioGraphSignature,
+	requiresAudioProcessor,
 	type AudioGraphSnapshot,
 } from '@nexus/audio-engine';
 import { DEFAULT_AUDIO_CONFIG, type AudioConfig } from '@nexus/kernel';
@@ -232,6 +233,33 @@ async function executeModeTransition(
 				state.lastError = restored
 					? undefined
 					: captureManager.getLastError() ?? 'Media WebAudio coverage is incomplete';
+			} else if (requiresAudioProcessor(config) && hasUserGesture(state)) {
+				// rule: Capture is the last-resort full-output path (SCTRL-011).
+				// When Media WebAudio coverage fails but a processor is explicitly
+				// needed (volume > 100, EQ, bass, etc.), capture can still serve
+				// the request because tabCapture is not blocked by page CORS.
+				// A user gesture is required because capture is an
+				// activation-bound full-output path. This also covers the case
+				// where a site was mistakenly pinned to `direct` in the registry
+				// but the page's media sources are in fact cross-origin.
+				log.capture('WebAudio coverage failed with active processor need, falling back to Capture');
+				state.phase = 'starting';
+				const result = await captureManager.request(true, config, generation);
+				if (run !== executionRun) return;
+				if (result.phase === 'active') {
+					state.generation = result.generation ?? run;
+					state.actualMode = 'capture';
+					state.phase = 'active';
+					state.appliedConfig = result.actualConfig
+						? cloneAudioConfig(result.actualConfig)
+						: captureManager.getActualConfig() ?? transparentAudioConfig();
+					state.lastError = undefined;
+				} else {
+					state.actualMode = 'bypass';
+					state.phase = 'error';
+					state.appliedConfig = toDomAppliedConfig(config);
+					state.lastError = result.error ?? 'Capture fallback failed after WebAudio coverage failure';
+				}
 			} else {
 				state.actualMode = 'bypass';
 				state.phase = 'error';

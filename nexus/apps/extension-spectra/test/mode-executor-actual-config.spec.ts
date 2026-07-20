@@ -199,10 +199,121 @@ describe('mode executor applied configuration', () => {
 		} as unknown as PolicyExecutorDeps;
 		try {
 			await executeMode(deps, state);
+			// rule: Coverage failure with an active processor need escalates to
+			// Capture (SCTRL-011). The processor is never left partially applied
+			// through WebAudio, but Capture denial still surfaces as bypass+error.
 			expect(initialize).not.toHaveBeenCalled();
 			expect(state.actualMode).toBe('bypass');
 			expect(state.phase).toBe('error');
-			expect(state.lastError).toContain('unsafe');
+			expect(state.lastError).toBe('capture permission denied');
+		} finally {
+			disposeRegistry();
+			globals.restore();
+		}
+	});
+
+	test('falls back to Capture when WebAudio coverage fails with active processor need', async () => {
+		const globals = installCoverageGlobals();
+		const safe = media('https://media.example/first.mp3');
+		const unsafe = media('https://cdn.example/second.mp3');
+		const disposeRegistry = setActiveMediaRegistry({
+			list: () => [
+				{ element: safe, target: {} },
+				{ element: unsafe, target: {} },
+			],
+		} as unknown as MediaRegistry);
+		const initialize = mock(async () => true);
+		const state = webAudioState();
+		state.actualMode = 'webaudio';
+		state.phase = 'active';
+		const capturedActual = cloneConfig({ ...DEFAULT_AUDIO_CONFIG, boost: 2, volume: 200 });
+		const request = mock(async () => ({
+			status: 'active' as const,
+			phase: 'active' as const,
+			active: true,
+			generation: 7,
+			actualConfig: capturedActual,
+		}));
+		const deps = {
+			audioController: {
+				cleanup: mock(async () => undefined),
+				initialize,
+			},
+			captureManager: {
+				isActive: () => false,
+				isPending: () => false,
+				request,
+				getGeneration: () => 7,
+				getLastError: () => undefined,
+				getActualConfig: () => capturedActual,
+			},
+			settingsManager: {},
+			policyEngine: {},
+		} as unknown as PolicyExecutorDeps;
+		try {
+			await executeMode(deps, state);
+			// rule: when WebAudio coverage fails but a processor is explicitly
+			// needed (volume > 100, EQ, etc.), Capture becomes the last-resort
+			// full-output path because tabCapture is not blocked by page CORS.
+			expect(initialize).not.toHaveBeenCalled();
+			expect(request).toHaveBeenCalledWith(true, state.config, 4);
+			expect(state.actualMode).toBe('capture');
+			expect(state.phase).toBe('active');
+			expect(state.lastError).toBeUndefined();
+			expect(state.appliedConfig).toEqual(capturedActual);
+		} finally {
+			disposeRegistry();
+			globals.restore();
+		}
+	});
+
+	test('keeps WebAudio bypass when coverage fails without a processor need', async () => {
+		const globals = installCoverageGlobals();
+		const safe = media('https://media.example/first.mp3');
+		const unsafe = media('https://cdn.example/second.mp3');
+		const disposeRegistry = setActiveMediaRegistry({
+			list: () => [
+				{ element: safe, target: {} },
+				{ element: unsafe, target: {} },
+			],
+		} as unknown as MediaRegistry);
+		const initialize = mock(async () => true);
+		const state = webAudioState();
+		// rule: a transparent config (no boost, no DSP) does not justify the
+		// activation-bound Capture path; bypass reports the coverage gap directly.
+		state.config = cloneConfig(DEFAULT_AUDIO_CONFIG);
+		state.appliedConfig = cloneConfig(DEFAULT_AUDIO_CONFIG);
+		state.actualMode = 'webaudio';
+		state.phase = 'active';
+		const request = mock(async () => ({
+			status: 'active' as const,
+			phase: 'active' as const,
+			active: true,
+			generation: 7,
+		}));
+		const deps = {
+			audioController: {
+				cleanup: mock(async () => undefined),
+				initialize,
+			},
+			captureManager: {
+				isActive: () => false,
+				isPending: () => false,
+				request,
+				getGeneration: () => 7,
+				getLastError: () => undefined,
+				getActualConfig: () => null,
+			},
+			settingsManager: {},
+			policyEngine: {},
+		} as unknown as PolicyExecutorDeps;
+		try {
+			await executeMode(deps, state);
+			expect(initialize).not.toHaveBeenCalled();
+			expect(request).not.toHaveBeenCalled();
+			expect(state.actualMode).toBe('bypass');
+			expect(state.phase).toBe('error');
+			expect(state.lastError).toBe('Media WebAudio coverage is unsafe');
 		} finally {
 			disposeRegistry();
 			globals.restore();
@@ -396,6 +507,14 @@ function inactiveCaptureManager() {
 		isPending: () => false,
 		getGeneration: () => 4,
 		getLastError: () => undefined,
+		request: mock(async () => ({
+			status: 'error' as const,
+			phase: 'error' as const,
+			active: false,
+			generation: 4,
+			error: 'capture permission denied',
+		})),
+		getActualConfig: () => null,
 	};
 }
 
