@@ -1,82 +1,98 @@
 ---
 name: new-module
-description: 创建新模块/应用的标准流程(脚手架 + 文档注册 + 验证)。触发短语:"new module", "create app", "scaffold", "建模块"。
+description: 创建新的 workspace 包、应用或有明确边界的模块：先定义 owner/依赖方向，再脚手架、接入构建与验证。触发短语:"new module", "create app", "scaffold", "建模块", "新应用"。
 license: Proprietary. See LICENSE.txt
-compatibility: Requires bun 1.3.14, PowerShell 7+
+compatibility: Requires bun 1.3.14
 metadata:
   category: develop
   app: all
   phase: execute
   user-invocable: true
-allowed-tools: Bash Read Write Edit
+allowed-tools: Bash Read Write Edit Grep
 ---
 
-# New Module
-
-规范心跳,严禁"幽灵模块"。**没注册 = 不存在。**
+# New module
 
 ## Trigger
 
-当用户说 "new module" / "create app" / "scaffold" / "建模块" / "新应用" 时自动加载。
+Use when a new package, application, plugin family, or independently owned runtime module is genuinely required.
 
 ## Process
 
-### 1. 初始化(脚手架)
+### 1. Prove the boundary
+
+Before creating files:
+
+- read [`rules.md`](../../rules.md), the documentation map, and neighboring owners;
+- confirm an existing package/module cannot naturally own the behavior;
+- define responsibility, public API, dependency direction, state/lifecycle owner, failure boundary, and tests;
+- decide whether the unit is a workspace package, application-internal module, HALO plugin, or SPECTRA capability implementation.
+
+A new directory is not an architecture boundary by itself.
+
+### 2. Scaffold at the correct level
+
+For a new workspace package/application, run from `nexus/`:
 
 ```bash
-# 创建目录
-mkdir [packages|apps]/<name>
-
-# 初始化 package.json(必须是 @nexus/<name> 命名空间)
-cd [packages|apps]/<name> ; bun init -y
+mkdir -p packages/<name>
+# or
+mkdir -p apps/<name>
 ```
 
-随后**手动**编辑 `package.json`:
+Create `package.json` deliberately rather than accepting unused template fields. Use:
 
-- `name`: `@nexus/<name>`(必须)
-- `type`: `"module"`(必须)
-- `private`: `true`(默认)
-- `description`: 一句话用途
+- a unique `@nexus/<name>` package name;
+- `private: true` unless publication is explicitly designed;
+- `type: "module"`;
+- scripts required by the workspace gates;
+- dependencies only at the owning package.
 
-随后**手动**创建 `tsconfig.json`:
+A package normally extends the appropriate repository TypeScript base config. Confirm the relative path instead of copying `../../tsconfig.base.json` blindly into every depth.
 
-```json
-{
-  "extends": "../../tsconfig.base.json"
-}
-```
+For HALO plugins, follow the executable registry/manifest contract in `apps/extension-halo/plan.md`. For SPECTRA, add a new unit only inside an existing capability owner unless the control contracts and documentation define a new boundary.
 
-### 2. 文档注册(强制,不可跳过)
+### 3. Connect the build graph
 
-- [ ] **必须**创建 `.ai-context.md`(用途、职责、依赖、红线)
-- [ ] 在 `nexus/README.AI.md` 架构图中登记
-- [ ] 在 `nexus/docs/ai-rules.md` 依赖清单中登记(如适用)
-- [ ] 在 `nexus/package.json` workspaces 中确认 glob 覆盖
+- Confirm `nexus/package.json` workspace globs already include the new path.
+- Add public exports and Turbo/package scripts required by actual consumers.
+- Keep contracts free of application behavior and avoid reverse imports.
+- Run `bun install` to refresh workspace links and `bun.lock`.
+- Do not add a manual module inventory that duplicates package manifests or registries.
 
-### 3. 激活与验证
+### 4. Add tests and documentation
+
+- Add focused tests for the new public boundary and lifecycle.
+- Add a README or owner document only when contributors need a stable entrypoint.
+- Register the document in `nexus/docs/documentation-index.md` if it is a new active owner.
+- Update architecture diagrams or plans only when their actual semantics changed.
+- Do not create `.ai-context.md`, `README.AI.md`, or `ai-rules.md`; they are not current repository owners.
+
+### 5. Verify
 
 ```bash
-# 1. 更新 workspace 链接
 bun install
-
-# 2. 验证构建(确认脚手架可用)
+bun run typecheck
+bun run lint
+bun run verify:q
 bun run build
 ```
 
-> 必须在 `nexus/` 根目录执行。
+Run package-specific tests and production-artifact checks where applicable.
 
-## Anti-Rationalization
+## Prohibited shortcuts
 
-- "先不写 .ai-context.md,以后补" → **错**。没有 .ai-context.md 的模块对 AI 是黑盒,半年后没人知道它干嘛的。
-- "我随便起个名字就行" → **错**。必须 `@nexus/<name>` 命名空间,否则 monorepo 链接会出问题。
-- "我不用 type=module" → **错**。根 `package.json` 是 `"type": "module"`,子包必须一致。
-- "workspace 链接不需要,bun 自己能识别" → **错**。需要 `bun install` 触发链接重建。
+- Creating a package to avoid refactoring an existing owner.
+- Copying an application module into `packages/` without a reusable contract.
+- Adding deep cross-package imports instead of a public facade.
+- Treating an arbitrary line limit as proof a split is needed.
+- Scaffolding generated registry output by hand.
 
-## Verification
+## Completion evidence
 
-- [ ] 目录已创建,`package.json` 配置正确
-- [ ] `tsconfig.json` 继承基础配置
-- [ ] `.ai-context.md` 已创建
-- [ ] `README.AI.md` 架构图已更新
-- [ ] `bun run build` 通过
-- [ ] `bun install` 链接已建立(其他 workspace 可以 `import` 它)
+- the owner and dependency direction are explicit;
+- package/tsconfig/scripts match repository conventions at the actual path;
+- workspace install resolves consumers without an alternate lockfile;
+- focused tests and applicable repository gates pass;
+- documentation map and public API are updated only where needed;
+- no duplicate registry, state owner, or compatibility facade was introduced.
