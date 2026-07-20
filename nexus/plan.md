@@ -1,18 +1,54 @@
-# NEXUS 规划
+---
+type: reference
+status: draft
+audience: contributor
+last_reviewed: 2026-07-20
+---
 
-> DNA: Contracts ← Kernel ← {Audio, UI-Kit} ← {Spectra, Halo}
+# NEXUS portfolio roadmap
 
-## 子项目
+> Dependency direction: Contracts → Kernel → shared feature packages → SPECTRA / HALO
 
-[HALO](apps/extension-halo/plan.md): 85 工具 ✅ | 自动注册 ✅ | 性能优化(Zero-Alloc/rAF) ✅
-[SPECTRA](apps/extension-spectra/plan.md): 音视频控制 ✅ | 零拷贝体系 ✅ | Site-Bridge 架构落地 ✅ | AI 人声分离 🔜
+This file records portfolio sequencing. It does not prove that a feature has landed; current behavior is defined by contracts, source, tests, and the domain owner documents.
 
-## 里程碑
+## Current workstreams
 
-Q1 2026: HALO 抢占 - 全量开发者/效率功能，确立隐私/性能口碑 [进行中]
-Q2 2026: SPECTRA AI - WASM AI(Vocal Remover, STT)，毛利壁垒
-Q3 2026: 生态互联 - HALO-SPECTRA 数据互通，移动端扩展
+### SPECTRA
 
-## 资源
+- Current owner: [control architecture](apps/extension-spectra/docs/control-architecture.md)
+- Roadmap: [SPECTRA plan](apps/extension-spectra/plan.md)
+- Current focus: preserve the landed control architecture, close release-evidence gaps, and keep public claims aligned with actual browser boundaries.
+- Candidate expansion: local AI audio/transcription features only after a measured prototype, explicit resource budget, privacy review, and product acceptance criteria.
 
-[工程原则](docs/engineering-principles.md) | [商业模式](docs/business-model.md) | [控制架构](apps/extension-spectra/docs/control-architecture.md)
+### HALO
+
+- Current owner: [HALO architecture and roadmap](apps/extension-halo/plan.md)
+- Current focus: registry/taxonomy and permission ownership, background lifecycle correctness, and release-readiness documentation.
+- Candidate expansion: complete prioritized tools only when their lifecycle, permissions, storage, i18n, tests, and registry metadata close in one change.
+
+## 2026 milestone status
+
+| Window | Original intent | Status as of 2026-07-20 | Required decision |
+| --- | --- | --- | --- |
+| Q1 | Establish HALO breadth and local-first performance baseline | Window elapsed; do not infer completion from the date | Reconcile the HALO owner document with executable registry and release checks |
+| Q2 | Prototype SPECTRA local AI features | Window elapsed; features remain proposals unless source/tests prove otherwise | Decide whether AI work outranks control/release closure |
+| Q3 | Product hardening and ecosystem interoperability | Current planning window | Define a typed inter-application contract before sharing data or runtime state |
+| Q4 | Distribution, mobile, or cloud expansion | Uncommitted candidate | Require a privacy, permission, maintenance, and operating-cost review before approval |
+
+## Portfolio gates
+
+A milestone is complete only when all applicable layers agree:
+
+```text
+contract → implementation → tests → owner documentation → privacy/permissions → production artifact → release evidence
+```
+
+A roadmap checkbox, version heading, market note, or archived report cannot substitute for this chain.
+
+## References
+
+- [Documentation map](docs/documentation-index.md)
+- [Engineering principles](docs/engineering-principles.md)
+- [Business model](docs/business-model.md)
+- [SPECTRA control architecture](apps/extension-spectra/docs/control-architecture.md)
+- [HALO owner](apps/extension-halo/plan.md)
