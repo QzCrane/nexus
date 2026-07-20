@@ -49,21 +49,21 @@ Do not maintain a static current version, tool count, or dependency list in this
 
 ### 3. Run repository and HALO gates
 
-From the repository root:
+Run from `nexus/`:
 
 ```bash
 bun run docs:check
-bun --cwd nexus run check:toolchain
-bun --cwd nexus run --cwd apps/extension-halo typecheck
+bun run check:toolchain
+bun run --cwd apps/extension-halo typecheck
 bun run lint
-bun --cwd nexus run verify:v
-bun --cwd nexus run generate-registry
-bun --cwd nexus run --cwd apps/extension-halo test:ui
-bun --cwd nexus run --cwd apps/extension-halo test:playwright
-bun --cwd nexus run --cwd apps/extension-halo build:prod
+bun run verify:v
+bun run generate-registry
+bun run --cwd apps/extension-halo test:ui
+bun run --cwd apps/extension-halo test:playwright
+bun run --cwd apps/extension-halo build:prod
 ```
 
-If nested `bun run --cwd` syntax differs from the installed Bun 1.3.14 CLI, use the application commands documented in `nexus/apps/extension-halo/README.md`; do not invent another runtime. Confirm SidePanel launch, service-worker recovery, permissions, restricted pages, import/export, local persistence, i18n, and cleanup.
+Confirm SidePanel launch, service-worker recovery, permissions, restricted pages, import/export, local persistence, i18n, and cleanup.
 
 “Local first” does not require every optional capability to work offline. Test and disclose each network-backed feature separately; inactive features create no hidden network or recurring work.
 
