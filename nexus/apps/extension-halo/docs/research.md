@@ -1,68 +1,67 @@
 ---
 type: explanation
-status: draft
+status: archived
 audience: developer
+research_period: 2025
+last_reviewed: 2026-07-20
 ---
 
-# HALO 市场调研汇总 (2025)
+# HALO market research summary
 
-> 核心定位: Zero Upload | Zero Tracking | Zero Cost | Local First
+This file preserves 2025 product hypotheses. Competitor user counts, prices, ratings, issue totals, browser behavior, and product policies are time-sensitive and were not revalidated during the 2026-07-20 repository documentation review. Recheck primary store listings, official documentation, repositories, and current product behavior before using any item for a release or investment decision.
 
-## 竞品痛点 → HALO 差异化
+The detailed repository-level evidence remains in [`../../../docs/market-research.md`](../../../docs/market-research.md). This application summary records only the durable problem hypotheses.
 
-### Dark Reader (6M+)
+## Durable problem hypotheses
 
-痛点: 性能(500ms+/CPU 高/卡顿) | 白闪 | 配置复杂(4 种模式) | 兼容差(Akamai 封禁/PDF 反转)
-→ HALO: CSS filter 注入(<50ms) | document_start 早注入 | 一键开关+智能白名单 | 纯 CSS 零 JS 轮询
+### Page appearance tools
 
-### OneTab (2M+)
+Observed user complaints centered on render cost, visual flash, compatibility, and configuration complexity. HALO's candidate response is early, reversible, site-scoped styling with a small default runtime and explicit compatibility fallbacks.
 
-痛点: 数据丢失(崩溃/更新后消失) | 无云同步 | localStorage 溢出静默丢弃 | 功能单一(无搜索/分组)
-→ HALO: IndexedDB+chrome.storage.sync 双备份 | Fuse.js 模糊搜索 | 分组/预览
+A CSS-first approach is not automatically correct for every page. It must preserve images/video, accessibility, print/PDF behavior, site-authored themes, and browser restrictions. Performance targets require current measurement on defined pages and hardware.
 
-### Toby (1M+)
+### Tab and session tools
 
-痛点: $40/年付费墙 | 曾承诺永久免费
-→ HALO: 开源永久免费
+The durable risks are data loss, silent storage failure, difficult recovery, and cross-device conflict. HALO should prioritize versioned local persistence, export/import, atomic writes, recovery testing, and explicit conflict semantics before optional synchronization.
 
-### Lightshot (10M+)
+`chrome.storage.sync` is capacity-limited and is not a complete backup system. A future Google Drive or other cloud path is an explicit network feature, not part of the local default.
 
-痛点: 隐私灾难(公开 URL 可遍历/无加密/银行信息泄露) | 默认上传 | 功能简陋(无 OCR/滚动截图)
-→ HALO: 100%本地处理 | Canvas 批注 | Tesseract.js 本地 OCR
+### Screenshot and OCR tools
 
-### QR 扩展 (5M+)
+The product opportunity is local capture, editing, export, and optional local OCR without an upload-by-default service. The design must distinguish visible-tab capture, whole-page composition, protected browser pages, cross-origin frames, memory limits, and file-output behavior.
 
-痛点: 隐私(动态 QR 追踪) | Quishing 钓鱼 | 过度权限
-→ HALO: 离线生成 | URL 预览(防钓鱼) | 仅 activeTab
+### QR and clipboard tools
 
-### SmoothScroll (500k+)
+The durable requirements are bounded permissions, local processing, input/output preview, history retention controls, and protection against accidental handling of secrets. Clipboard access and URL opening require explicit user actions and clear failure states.
 
-痛点: YouTube 卡顿 | 老设备性能差 | 配置复杂
-→ HALO: CSS scroll-behavior 优先(零 JS) | 自动降级 | 简单滑块
+### Scrolling and focus tools
 
-### Clipboard 扩展 (500k+)
+The problem is not only animation quality. A correct design must coexist with virtualized pages, editable controls, video shortcuts, nested scroll containers, accessibility settings, hidden SidePanel state, and browser lifecycle events.
 
-痛点: 隐私(闭源访问所有复制) | 明文存储 | 剪贴板劫持
-→ HALO: 开源可审计 | 敏感检测 | 只读模式 | 仅 clipboardRead
+### Website time limits
 
-### StayFocusd/BlockSite (10M+)
+No browser extension can make a universal tamper-proof promise against switching browsers, profiles, devices, clocks, or uninstalling the extension. HALO may provide user-controlled friction and accountability, but public copy must not frame this as an unbreakable enforcement system.
 
-痛点: 易绕过(换浏览器/改时间/清数据) | 配置复杂 | 付费墙
-→ HALO: 时间服务器校验+挑战任务+锁定模式 | 简单界面
+## Product principles derived from the research
 
-## 需求频率
+- local processing and local persistence by default;
+- explicit opt-in and disclosure for network features;
+- recovery and export before feature breadth;
+- event-driven inactive state;
+- narrow permissions owned by the invoking capability;
+- measured performance rather than fixed “zero cost” or “10×” claims;
+- simple default interaction with advanced controls available only where they solve an evidenced problem.
 
-1.性能拖慢(愤怒) | 2.数据丢失(绝望) | 3.隐私泄露(恐惧) | 4.复杂难用(困惑)
+## Evidence standard for future updates
 
-## HALO 护城河
+For each competitor claim, record:
 
-L3 信任: 开源+零遥测 | L2 性能: CSS 注入<50ms | L1 隐私: 100%本地 | L0 功能: 深色+标签+截图一站式
+- source URL and source type;
+- observation and publication date;
+- product/browser/version and region;
+- exact metric definition;
+- whether it is direct evidence, a user report, or an inference;
+- the counterexample or alternative explanation;
+- the HALO acceptance criterion derived from it.
 
-## 趋势机会
-
-✅ 阅读模式(去广告纯净) | ✅ 快捷便签(页面笔记) | ❌ 页面录制/下载管理(复杂非核心)
-
-## 技术选型
-
-截图: chrome.tabs.captureVisibleTab + html2canvas | 批注: Canvas/Fabric.js | OCR: Tesseract.js(WASM)
-存储: IndexedDB(大容量) + chrome.storage.sync(同步) | 搜索: Fuse.js | 备份: JSON 导出+可选 GDrive
+Do not copy a market claim into the HALO owner document. Convert only durable, tested consequences into architecture or product acceptance criteria.
