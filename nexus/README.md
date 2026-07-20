@@ -3,15 +3,15 @@
 The `nexus/` directory is the Bun monorepo for the SPECTRA and HALO browser-extension ecosystem.
 
 ```text
-contracts -> kernel -> shared feature packages -> applications
+contracts → kernel → shared feature packages → applications
 ```
 
-The dependency arrows describe ownership, not permission to import arbitrary internals. Applications consume shared packages through their public facades; contracts describe wire and data shapes without application behavior.
+Dependency arrows describe ownership, not permission to import arbitrary internals. Applications consume shared packages through public facades; contracts describe wire and data shapes without application behavior.
 
 ## Applications
 
 - [SPECTRA](apps/extension-spectra/README.md): audio, video, playback, hotkey, and authenticated remote control.
-- [HALO](apps/extension-halo/plan.md): SidePanel developer and productivity toolkit.
+- [HALO](apps/extension-halo/README.md): SidePanel developer and productivity toolkit.
 - Cortex: concept only; no active application owner exists in this repository.
 
 ## Shared packages
@@ -23,44 +23,47 @@ The dependency arrows describe ownership, not permission to import arbitrary int
 
 Counts of tools, capabilities, algorithms, and invariants belong to executable registries or contracts. Navigation documents do not duplicate those counts as durable facts.
 
-## Development commands
+## Toolchain and commands
 
-Run from the repository root unless a command explicitly documents another working directory:
+The entire workspace is pinned to **Bun 1.3.14**.
+
+Run from the repository root:
 
 ```bash
-bun install --cwd nexus
+bun install
 bun run dev
 bun run build
 bun run lint
 bun run typecheck
 bun run verify
+bun run docs:check
 bun run generate-registry
 ```
 
-Use application-specific tests and production-artifact checks before release. The canonical quality checklist is [docs/principles/04-process-and-quality.md](docs/principles/04-process-and-quality.md).
-
-## Public repository synchronization
-
-The private monorepo may generate public SPECTRA or HALO repositories through the maintained synchronization scripts. Treat generated output as a release artifact:
-
-1. run the appropriate sync script;
-2. inspect the generated repository diff and exclusions;
-3. run its validation suite;
-4. push through the documented release workflow.
-
-Do not use force-push as the default synchronization behavior. A history rewrite requires an explicit release decision and a verified target branch.
+Use application-specific tests and production-artifact checks before release. The quality owner is [EPR-026..029](docs/principles/04-process-and-quality.md).
 
 ## Documentation
 
-- [Documentation map](docs/documentation-index.md): canonical inventory and authority order
-- [Engineering principles](docs/engineering-principles.md): EPR-001..029 index
-- [Portfolio roadmap](plan.md): current milestones and unresolved decisions
-- [Business model](docs/business-model.md): commercial hypotheses and privacy constraints
-- [SPECTRA control architecture](apps/extension-spectra/docs/control-architecture.md)
-- [SPECTRA runtime protocols](apps/extension-spectra/docs/protocols.md)
-- [SPECTRA runtime topology](apps/extension-spectra/docs/architecture.md)
-- [HALO architecture and roadmap](apps/extension-halo/plan.md)
+- [Documentation architecture](docs/README.md)
+- [Engineering principles](docs/engineering/README.md)
+- [Portfolio roadmap](docs/product/roadmap.md)
+- [Business model](docs/product/business-model.md)
+- [Research standard](docs/research/README.md)
+- [SPECTRA documentation](apps/extension-spectra/docs/README.md)
+- [HALO documentation](apps/extension-halo/docs/README.md)
+
+## Public repository synchronization
+
+The private monorepo may generate public SPECTRA or HALO repositories through the maintained synchronization script. Generated output is a release artifact:
+
+1. run the appropriate sync command;
+2. inspect exclusions and the generated repository diff;
+3. verify the generated package remains pinned to Bun 1.3.14;
+4. run its validation suite;
+5. push only through an authorized release workflow.
+
+The script preserves the destination repository's existing `.git` directory; it does not transplant private-repository history. Force-push is not the default.
 
 ## Repository constraints
 
-Repository-wide constraints are owned by [`../rules.md`](../rules.md). Domain documents may tighten those constraints for a subsystem, but a README, roadmap, research note, or store listing cannot override an executable contract or release gate.
+Repository-wide constraints are owned by [`../rules.md`](../rules.md). Domain documents may tighten constraints for a subsystem, but a README, roadmap, research note, proposal, or store listing cannot override executable contracts or release gates.
