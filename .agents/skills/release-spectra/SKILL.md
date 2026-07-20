@@ -1,8 +1,8 @@
 ---
 name: release-spectra
-description: 执行 SPECTRA 发布闭环：计划检查、版本与工作树审计、生产打包、Chrome/远程/隐私/商店文案核对、可选 public 同步。触发短语:"release spectra", "spectra 发布", "spectra 上架"。
+description: 执行 SPECTRA 发布闭环：文档与 Bun 1.3.14 门禁、版本与工作树审计、生产打包、Chrome/远程/隐私/商店文案核对、可选 public 同步。触发短语:"release spectra", "spectra 发布", "spectra 上架"。
 license: Proprietary. See LICENSE.txt
-compatibility: Requires bun 1.3.14, git 2.30+, Chrome, and authorized store access
+compatibility: Requires Bun 1.3.14, git 2.30+, Chrome, and authorized store access
 metadata:
   category: release
   app: spectra
@@ -15,21 +15,27 @@ allowed-tools: Bash Read Edit Grep Glob WebSearch
 
 ## Trigger
 
-Use only for an intended release or release-candidate build, not for an ordinary development build.
+Use only for an intended release or release-candidate build, not an ordinary development build.
 
 ## Process
 
 ### 1. Establish the release candidate
 
-- Confirm the target version and source commit.
-- Review the complete diff since the previous release/tag.
+- Confirm target version and source commit.
+- Review the complete diff since the previous release or tag.
 - Ensure the working tree is understood; do not package accidental local changes.
-- Reconcile `apps/extension-spectra/package.json`, manifest generation/output, release notes, and store version requirements.
-- Check current Chrome Web Store policy and any time-sensitive provider/browser behavior from primary sources.
+- Reconcile `apps/extension-spectra/package.json`, generated/submitted manifest version, release notes, and store requirements.
+- Revalidate current Chrome Web Store policy and time-sensitive browser/provider behavior from primary sources.
 
-Do not copy a “current version” into this skill. Read the manifest/package and release plan.
+Do not copy a static “current version” into this skill. Read the candidate manifests and release plan.
 
-### 2. Inspect the maintained release plan
+### 2. Read the canonical owners and executable release plan
+
+- [SPECTRA documentation](../../../nexus/apps/extension-spectra/docs/README.md)
+- [Control architecture](../../../nexus/apps/extension-spectra/docs/control/README.md)
+- [Runtime architecture](../../../nexus/apps/extension-spectra/docs/architecture/runtime.md)
+- [Protocols](../../../nexus/apps/extension-spectra/docs/reference/protocols.md)
+- [Remote security](../../../nexus/apps/extension-spectra/docs/security/remote-control.md)
 
 From `nexus/`:
 
@@ -37,66 +43,66 @@ From `nexus/`:
 bun run release:spectra:plan
 ```
 
-Read the listed phases, inputs, output paths, and checks. If the script and this skill differ, the script is the executable release authority and this skill must be updated.
+The maintained release script owns exact Bun 1.3.14 execution, production build, artifact integrity, staging, ZIP creation, and output naming. If this skill differs, update the skill rather than creating a parallel process.
 
 ### 3. Run prerequisite gates
 
-At minimum, run the current applicable set:
+From the repository root:
 
 ```bash
-bun run typecheck:spectra
+bun run docs:check
+bun --cwd nexus run check:toolchain
+bun --cwd nexus run typecheck:spectra
 bun run lint
-bun run verify:v
-bun run test:spectra
-bun run check:spectra-remote-live
+bun --cwd nexus run verify:v
+bun --cwd nexus run test:spectra
+bun --cwd nexus run check:spectra-remote-live
 ```
 
-Also inspect required Chrome integration, production artifact, localization, permission, and remote-security results. A smoke test alone does not prove audio routing, activation, navigation, update recovery, or remote authentication.
+Also inspect required Chrome integration, production-artifact, localization, permission, and remote-security results. A smoke test alone does not prove routing, activation, navigation, update recovery, or authentication.
 
-### 4. Build the release artifact
+### 4. Build and inspect the release artifact
 
 ```bash
-bun run release:spectra
+bun --cwd nexus run release:spectra
 ```
 
-The maintained script owns the exact Bun version, production build, artifact integrity, staging, ZIP creation, and output naming. Do not create a second manual ZIP path unless diagnosing the release tool.
-
-Inspect the ZIP contents rather than enforcing an undocumented fixed size. Reject source maps, tests, source files, debug assets, undeclared remote code, duplicate bundles, stale locales, or unreferenced artifacts.
+Inspect the ZIP instead of enforcing an undocumented fixed size. Reject source maps, tests, source files, private docs, debug assets, undeclared remote code, duplicate bundles, stale locales, or unreachable artifacts. Record the exact checksum and candidate commit.
 
 ### 5. Reconcile public truth
 
-Compare the exact artifact with:
+Compare the artifact with:
 
-- [`nexus/apps/extension-spectra/README.md`](../../../nexus/apps/extension-spectra/README.md)
-- [`nexus/apps/extension-spectra/PRIVACY.md`](../../../nexus/apps/extension-spectra/PRIVACY.md)
-- store locale files and `privacy-justifications.md`
-- manifest permissions and host permissions
-- [`remote-site/`](../../../remote-site/) and its live byte/security-header gate
-- control, protocol, topology, source-admission, and remote-security owner documents
+- [`README.md`](../../../nexus/apps/extension-spectra/README.md);
+- [`PRIVACY.md`](../../../nexus/apps/extension-spectra/PRIVACY.md);
+- all store locales and `privacy-justifications.md`;
+- manifest and host permissions;
+- [`remote-site/`](../../../remote-site/) plus its live byte/header gate;
+- canonical control, runtime, protocol, admission, and remote-security owners.
 
-Every locale must describe the same feature and limitation set. Do not publish universal compatibility, protected-content, zero-CPU, medical, or no-transmission claims beyond evidence.
+Every locale describes the same verified feature and limitation set. Do not publish universal compatibility, protected-content, zero-CPU, medical, or no-transmission claims beyond evidence.
 
 ### 6. Publish and synchronize within authorization
 
-- Upload to the Chrome Developer Dashboard only with explicit release authorization.
-- Record the submitted artifact checksum/version and the actual review status.
-- Run `bun run sync-spectra` only when the public-repository scope is approved; inspect its generated diff before pushing.
-- Commit, tag, push, public sync, and store submission are separate mutations. Do not infer permission for all of them from permission to build a candidate.
+- Upload only with explicit store authorization.
+- Record submitted checksum, version, and actual review status.
+- Run `bun run sync-spectra` only when public-repository synchronization is separately approved; inspect its generated Bun 1.3.14 repository and diff before push.
+- Commit, tag, push, public sync, and store submission are separate mutations.
 
 ## Prohibited shortcuts
 
 - Packaging from a dirty or unexplained tree.
-- Skipping Chrome/remote tests because unit tests pass.
-- Manually editing generated manifest/locale output.
-- Reusing old store copy without comparing the artifact and privacy flow.
+- Skipping documentation/toolchain/Chrome/remote gates because unit tests pass.
+- Manually editing generated manifest, locale, or public-sync output.
+- Reusing old store copy without comparing artifact and privacy flow.
 - Treating a ZIP size threshold as the release gate.
-- Claiming store review duration or acceptance before the platform reports it.
+- Claiming store acceptance or review duration before the platform reports it.
 
 ## Completion evidence
 
-- target commit/version and release diff are recorded;
-- prerequisite gates pass at the same candidate commit;
+- candidate commit/version and release diff are recorded;
+- Bun 1.3.14, documentation, type, lint, architecture, test, browser, remote, and artifact gates pass at that commit;
 - maintained release script produces the inspected ZIP and checksum;
-- permissions, privacy, remote deployment, store declarations, and all locales match the artifact;
+- permissions, privacy, remote deployment, store declarations, and locales match the artifact;
 - authorized Git/public/store mutations are completed and reported separately;
-- any omitted gate or unresolved risk is explicit, so the result is labeled candidate rather than released.
+- omitted gates or unresolved risks are explicit, so an incomplete result remains a candidate.
