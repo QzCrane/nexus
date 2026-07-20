@@ -1,106 +1,78 @@
 # SPECTRA
 
-🎵 **Professional Media Controller** - Chrome Extension for Audio/Video Enhancement
+SPECTRA is a Chrome Manifest V3 extension for audio, video, playback, hotkey, and optional authenticated mobile-remote control.
 
-[![Chrome Web Store](https://img.shields.io/badge/Chrome-Web%20Store-4285F4?logo=googlechrome&logoColor=white)](https://chrome.google.com/webstore)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+This README is an entrypoint. Current behavior is defined by the linked owner documents and executable contracts.
 
-## Features
+## Capability overview
 
-### 🔊 Audio Enhancement
+### Audio
 
-- **800% Volume Boost** - Amplify any audio beyond browser limits
-- **10-Band Equalizer** - Fine-tune your sound
-- **Compressor** - Prevent distortion at high volumes
-- **Bass Boost** - Enhanced low frequencies
-- **Pan Control** - Adjust left/right balance
-- **Audio Delay** - Sync audio with video (0–500ms)
+- effective volume from 0–800%;
+- 10-band equalizer at 32 Hz–16 kHz;
+- compressor, bass, mono, pan, and delay controls;
+- separate media-mute and tab-mute state;
+- processing resources created only when a non-neutral audio feature needs them.
 
-### 🎬 Video Control
+### Playback and video
 
-- **Speed 0.1x - 16x** - Precise playback rate control
-- **Rotate/Mirror** - Transform video orientation
-- **Picture-in-Picture** - Floating video window
-- **Screenshot** - Capture video frames
-- **Background Dim** - Focus on video content
-- **AB Loop** - Repeat any section
+- playback speed, pitch preservation, play/pause, seek, loop, markers, and A/B loop when supported by the current media;
+- reversible rotation, mirror, fill, filter, and dim effects;
+- Picture-in-Picture and fullscreen through standard browser lifecycle rules;
+- visible-frame screenshots when the current target is capturable.
 
-### 📱 Remote Control
+### Remote control
 
-- **Phone Remote** - Control from your mobile device
-- **QR Code Connection** - Easy pairing via WebRTC
-- **Multi-Session** - Manage multiple tabs
+- explicit QR pairing;
+- HMAC-SHA-256 authentication before state or commands are exchanged;
+- commands bound to the selected session and tab;
+- disclosed PeerJS, STUN, and TURN network dependencies.
 
-### ⚙️ Settings
+### Settings and interaction
 
-- **Per-Site Presets** - Save settings for each domain
-- **Custom Hotkeys** - Configure keyboard shortcuts
-- **Multi-Language** - EN/中文/日本語/한국어/ES/FR/DE/RU
+- local global and per-site preferences;
+- configurable hotkeys;
+- translated product surfaces;
+- one acknowledged state projection shared by Popup and authenticated remote clients.
 
-## Installation
-
-### Chrome Web Store (Recommended)
-
-[Install from Chrome Web Store](https://chrome.google.com/webstore)
-
-### Manual Installation
-
-1. Download the latest release
-2. Open `chrome://extensions/`
-3. Enable "Developer mode"
-4. Click "Load unpacked"
-5. Select the `dist` folder
+A page or browser may not expose every operation. SPECTRA reports unsupported or failed operations instead of claiming universal compatibility.
 
 ## Development
 
+From the repository root:
+
 ```bash
-# Install dependencies
-bun install
-
-# Build
+bun install --cwd nexus
 bun run build
-
-# Development mode
-bun run dev
+bun run lint
+bun run typecheck
+bun run verify
 ```
+
+Load the generated unpacked extension through Chrome's extension-development page for local testing. Use the production release workflow for store artifacts.
+
+## Chrome Web Store
+
+Add the canonical product listing URL after publication. The Chrome Web Store homepage is not a product install link and is intentionally not used here.
 
 ## Engineering documentation
 
-- [Control architecture](docs/control-architecture.md) — the single owner for
-  media, audio, video, site adapters and remote-control behavior.
-- [Runtime protocols](docs/protocols.md) — v2 messages, ACK/Snapshot projection,
-  READY, leases, Toast and native PiP/fullscreen lifecycle.
-- [Architecture](docs/architecture.md) — context ownership, route cache and
-  processor lifecycle boundaries.
-- [Development sync 2026-07-19 (archived)](docs/_archive/2026-Q3/development-sync-2026-07-19.md) —
-  the implementation summary for the current main branch.
-- [Regression recovery 2026-07-18 (archived)](docs/_archive/2026-Q3/regression-recovery-2026-07-18.md) —
-  historical baseline plus current verification status.
-
-## Tech Stack
-
-- **Manifest V3** - Modern Chrome extension architecture
-- **TypeScript** - Type-safe codebase
-- **WebAudio API** - Professional audio processing
-- **WebRTC** - Peer-to-peer remote control
-- **Monorepo** - Bun + Turborepo
+- [Control architecture](docs/control-architecture.md): capability strategy, writers, acknowledgement semantics, and release invariants.
+- [Runtime protocols](docs/protocols.md): cross-context envelopes, state flow, READY, and leases.
+- [Runtime topology](docs/architecture.md): context ownership and loading boundaries.
+- [Remote security](docs/remote-security.md): pairing, authentication, and network disclosure.
+- [WebAudio source admission](docs/cors-data-flow.md): source eligibility and binding boundaries.
+- [Roadmap](plan.md): proposed and unresolved work.
+- [Historical archive](docs/_archive/2026-Q3/README.md): dated implementation and regression evidence.
 
 ## Privacy
 
-- **Zero Telemetry** - No analytics, advertising, or developer-operated collection
-- **Local by Default** - Settings and media processing stay on your device
-- **Transparent Remote Networking** - Optional remote pairing uses Cloudflare Pages and PeerJS WebRTC infrastructure as documented
-- **Minimal Permissions** - Only what's needed
-- [Privacy Policy](PRIVACY.md)
+SPECTRA has no advertising, analytics, telemetry, or developer-operated collection service. Settings and media processing remain local by default. The optional remote feature creates disclosed third-party network connections and sends a limited control projection only after authentication. See [PRIVACY.md](PRIVACY.md).
+
+## Contribution boundary
+
+Change a capability through its contract, implementation, tests, and owner documentation in one closure. Follow the [repository documentation map](../../docs/documentation-index.md) and [`rules.md`](../../../rules.md).
 
 ## License
 
-MIT License - see [LICENSE](../../LICENSE)
-
-## Contributing
-
-Contributions are welcome! Please read our contributing guidelines first.
-
----
-
-Made with ❤️ by [QzCrane](https://github.com/QzCrane)
+MIT License. See [`../../LICENSE`](../../LICENSE).
