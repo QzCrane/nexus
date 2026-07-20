@@ -1,238 +1,316 @@
+#!/usr/bin/env node
+
 /**
- * Sync to Public Repository (Morphic Version)
- * Usage: node scripts/sync-public.cjs <spectra|halo>
+ * Generate an application-specific public repository from the private NEXUS
+ * workspace while preserving the destination repository's own Git history.
+ *
+ * Usage: bun scripts/sync-public.cjs <spectra|halo>
  */
 
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
+const fs = require('node:fs');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 
+const BUN_VERSION = '1.3.14';
+const PACKAGE_MANAGER = `bun@${BUN_VERSION}`;
+const SUPPORTED_APPS = new Set(['spectra', 'halo']);
 const targetApp = process.argv[2];
-if (!['spectra', 'halo'].includes(targetApp)) {
-  console.error('Usage: node scripts/sync-public.cjs <spectra|halo>');
+
+if (!SUPPORTED_APPS.has(targetApp)) {
+  console.error('Usage: bun scripts/sync-public.cjs <spectra|halo>');
   process.exit(1);
 }
 
-// ====== Configuration ======
-const CONFIG = {
-  srcDir: path.resolve(__dirname, '..'),
-  destDir: path.resolve(__dirname, `../../${targetApp}-public`),
+const sourceRoot = path.resolve(__dirname, '..');
+const destinationRoot = path.resolve(__dirname, `../../${targetApp}-public`);
 
-  // Base exclusions for all public repos
-  baseExcludes: [
-    '.agent', 'plan.md', 'README.AI.md', 'scripts',
-    'docs', 'store-listings', 'store-assets', 'assets',
-    'privacy-justifications.md', 'policy-decision.md', 'cors-data-flow.md', 'context-index.md',
-    'node_modules', '.turbo', 'dist', '*.tsbuildinfo', '*.zip', 'assets-backup',
-    '.git', '.vscode', '.idea', 'test', '*.log', 'spectra-public'
-  ],
+const BASE_EXCLUDES = [
+  '.agent',
+  '.agents',
+  '.claude',
+  '.codex',
+  '.git',
+  '.github',
+  '.gitnexus',
+  '.idea',
+  '.turbo',
+  '.vscode',
+  'AGENTS.md',
+  'CLAUDE.md',
+  'docs',
+  'scripts',
+  'store-assets',
+  'store-listings',
+  'test',
+  'node_modules',
+  'dist',
+  'build',
+  '*.log',
+  '*.tsbuildinfo',
+  '*.zip',
+];
 
-  appSpecific: {
-    spectra: {
-      excludes: ['apps/extension-halo', 'apps/extension-cortex', 'packages/features/ai-engine', 'packages/ui-kit'],
-      readmeSrc: 'apps/extension-spectra/README.md',
-      privacySrc: 'apps/extension-spectra/PRIVACY.md',
-      artifactDirs: [
-        'packages/contracts/dist',
-        'packages/contracts/.turbo',
-        'packages/nexus-kernel/dist',
-        'packages/nexus-kernel/.turbo',
-        'packages/features/audio-engine/dist',
-        'packages/features/audio-engine/.turbo',
-        'apps/extension-spectra/dist',
-        'apps/extension-spectra/.turbo',
-        '.turbo'
-      ]
-    },
-    halo: {
-      excludes: ['apps/extension-spectra', 'apps/extension-cortex', 'packages/features/ai-engine', 'packages/features/audio-engine'],
-      readmeSrc: 'apps/extension-halo/README.md',
-      privacySrc: 'apps/extension-halo/PRIVACY.md', // Add if exists
-      artifactDirs: [
-        'packages/contracts/dist',
-        'packages/contracts/.turbo',
-        'packages/nexus-kernel/dist',
-        'packages/nexus-kernel/.turbo',
-        'packages/ui-kit/dist',
-        'packages/ui-kit/.turbo',
-        'apps/extension-halo/dist',
-        'apps/extension-halo/.turbo',
-        '.turbo'
-      ]
-    }
-  }
-};
+const APP_CONFIG = {
+  spectra: {
+    excludes: [
+      'apps/extension-halo',
+      'apps/extension-cortex',
+      'packages/features/ai-engine',
+      'packages/ui-kit',
+    ],
+    readme: 'apps/extension-spectra/README.md',
+    privacy: 'apps/extension-spectra/PRIVACY.md',
+    artifacts: [
+      'packages/contracts/dist',
+      'packages/contracts/.turbo',
+      'packages/nexus-kernel/dist',
+      'packages/nexus-kernel/.turbo',
+      'packages/features/audio-engine/dist',
+      'packages/features/audio-engine/.turbo',
+      'apps/extension-spectra/dist',
+      'apps/extension-spectra/.turbo',
+      '.turbo',
+    ],
+  },
+  halo: {
+    excludes: [
+      'apps/extension-spectra',
+      'apps/extension-cortex',
+      'packages/features/ai-engine',
+      'packages/features/audio-engine',
+    ],
+    readme: 'apps/extension-halo/README.md',
+    privacy: 'apps/extension-halo/PRIVACY.md',
+    artifacts: [
+      'packages/contracts/dist',
+      'packages/contracts/.turbo',
+      'packages/nexus-kernel/dist',
+      'packages/nexus-kernel/.turbo',
+      'packages/ui-kit/dist',
+      'packages/ui-kit/.turbo',
+      'apps/extension-halo/dist',
+      'apps/extension-halo/.turbo',
+      '.turbo',
+    ],
+  },
+}[targetApp];
 
-const APP_CONFIG = CONFIG.appSpecific[targetApp];
-const ALL_EXCLUDES = [...CONFIG.baseExcludes, ...APP_CONFIG.excludes];
+const excludes = [...BASE_EXCLUDES, ...APP_CONFIG.excludes];
 
-// ====== Helpers ======
-
-function shouldExclude(relativePath) {
-  const fileName = path.basename(relativePath);
-  return ALL_EXCLUDES.some(pattern => {
-    if (pattern.startsWith('*.')) return fileName.endsWith(pattern.slice(1));
-    if (pattern.includes('*')) {
-      const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
-      return regex.test(relativePath) || regex.test(fileName);
-    }
-    return relativePath === pattern ||
-      relativePath.startsWith(pattern + '/') ||
-      relativePath.endsWith('/' + pattern) ||
-      relativePath.includes('/' + pattern + '/') ||
-      fileName === pattern;
+function run(command, args, options = {}) {
+  return execFileSync(command, args, {
+    cwd: options.cwd,
+    encoding: options.encoding ?? 'utf8',
+    stdio: options.stdio ?? 'inherit',
   });
 }
 
-function copyDir(src, dest, basePath = '') {
-  if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
-  const entries = fs.readdirSync(src, { withFileTypes: true });
-  for (const entry of entries) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
+function runOptional(command, args, options = {}) {
+  try {
+    return run(command, args, options);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[sync-public] optional command failed: ${command} ${args.join(' ')} | ${message}`);
+    return null;
+  }
+}
+
+function matchesPattern(relativePath, pattern) {
+  const normalized = relativePath.replaceAll('\\', '/');
+  const fileName = path.posix.basename(normalized);
+
+  if (pattern.startsWith('*.')) return fileName.endsWith(pattern.slice(1));
+  if (pattern.includes('*')) {
+    const escaped = pattern
+      .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+      .replaceAll('*', '.*');
+    const expression = new RegExp(`^${escaped}$`);
+    return expression.test(normalized) || expression.test(fileName);
+  }
+
+  return (
+    normalized === pattern ||
+    normalized.startsWith(`${pattern}/`) ||
+    normalized.endsWith(`/${pattern}`) ||
+    normalized.includes(`/${pattern}/`) ||
+    fileName === pattern
+  );
+}
+
+function shouldExclude(relativePath) {
+  return excludes.some((pattern) => matchesPattern(relativePath, pattern));
+}
+
+function copyDirectory(source, destination, basePath = '') {
+  fs.mkdirSync(destination, { recursive: true });
+
+  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+    const sourcePath = path.join(source, entry.name);
+    const destinationPath = path.join(destination, entry.name);
     const relativePath = basePath ? `${basePath}/${entry.name}` : entry.name;
+
     if (shouldExclude(relativePath)) continue;
-    if (entry.isDirectory()) copyDir(srcPath, destPath, relativePath);
-    else {
-      fs.copyFileSync(srcPath, destPath);
-      console.log(`  [COPY] ${relativePath}`);
+
+    if (entry.isDirectory()) {
+      copyDirectory(sourcePath, destinationPath, relativePath);
+      continue;
+    }
+
+    if (entry.isFile()) {
+      fs.copyFileSync(sourcePath, destinationPath);
+      console.log(`  [copy] ${relativePath}`);
     }
   }
 }
 
-function cleanDest(dest) {
-  if (!fs.existsSync(dest)) return;
+function sleep(milliseconds) {
+  const shared = new SharedArrayBuffer(4);
+  Atomics.wait(new Int32Array(shared), 0, 0, milliseconds);
+}
 
-  // Try to stop turbo before cleanup if it exists
-  try {
-    execSync('bun x turbo daemon stop', { cwd: dest, stdio: 'ignore' });
-  } catch (e) { }
+function cleanDestination() {
+  if (!fs.existsSync(destinationRoot)) return;
 
-  const entries = fs.readdirSync(dest, { withFileTypes: true });
-  for (const entry of entries) {
+  runOptional('bunx', ['turbo', 'daemon', 'stop'], {
+    cwd: destinationRoot,
+    stdio: 'ignore',
+  });
+
+  for (const entry of fs.readdirSync(destinationRoot, { withFileTypes: true })) {
     if (entry.name === '.git' || entry.name === 'node_modules') continue;
-    const fullPath = path.join(dest, entry.name);
 
-    // Windows retry logic
-    let retries = 3;
-    while (retries > 0) {
+    const target = path.join(destinationRoot, entry.name);
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
       try {
-        fs.rmSync(fullPath, { recursive: true, force: true });
+        fs.rmSync(target, { recursive: true, force: true });
+        lastError = null;
         break;
-      } catch (err) {
-        retries--;
-        if (retries === 0) console.warn(`  [WARN] Failed to remove ${entry.name}: ${err.message}`);
-        else execSync('timeout /t 1 /nobreak', { stdio: 'ignore', shell: true });
+      } catch (error) {
+        lastError = error;
+        if (attempt < 3) sleep(250 * attempt);
       }
     }
+
+    if (lastError) {
+      const message = lastError instanceof Error ? lastError.message : String(lastError);
+      throw new Error(`Failed to remove ${target}: ${message}`, { cause: lastError });
+    }
   }
 }
 
-// ====== Main ======
+function readJson(filePath) {
+  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+}
+
+function writeJson(filePath, value) {
+  fs.writeFileSync(filePath, `${JSON.stringify(value, null, '\t')}\n`);
+}
+
+function verifySourceToolchain() {
+  const sourcePackage = readJson(path.join(sourceRoot, 'package.json'));
+  if (sourcePackage.packageManager !== PACKAGE_MANAGER) {
+    throw new Error(
+      `Source workspace must declare packageManager=${PACKAGE_MANAGER}; found ${sourcePackage.packageManager ?? 'missing'}`,
+    );
+  }
+}
+
+function copyPublicEntrypoints() {
+  const readmePath = path.join(sourceRoot, APP_CONFIG.readme);
+  if (!fs.existsSync(readmePath)) {
+    throw new Error(`Public README source is missing: ${APP_CONFIG.readme}`);
+  }
+  fs.copyFileSync(readmePath, path.join(destinationRoot, 'README.md'));
+
+  const licensePath = path.join(sourceRoot, 'LICENSE');
+  if (fs.existsSync(licensePath)) {
+    fs.copyFileSync(licensePath, path.join(destinationRoot, 'LICENSE'));
+  }
+
+  if (APP_CONFIG.privacy) {
+    const privacyPath = path.join(sourceRoot, APP_CONFIG.privacy);
+    if (fs.existsSync(privacyPath)) {
+      fs.copyFileSync(privacyPath, path.join(destinationRoot, 'PRIVACY.md'));
+    }
+  }
+}
+
+function patchPublicPackage() {
+  const packagePath = path.join(destinationRoot, 'package.json');
+  if (!fs.existsSync(packagePath)) {
+    throw new Error(`Generated public repository has no package.json: ${packagePath}`);
+  }
+
+  const packageJson = readJson(packagePath);
+  for (const script of ['verify', 'verify:q', 'verify:v', 'prebuild', 'sync:skills', 'sync-halo', 'sync-spectra']) {
+    if (packageJson.scripts) delete packageJson.scripts[script];
+  }
+  packageJson.packageManager = PACKAGE_MANAGER;
+  writeJson(packagePath, packageJson);
+}
+
+function cleanGeneratedArtifacts() {
+  runOptional('bunx', ['turbo', 'daemon', 'stop'], {
+    cwd: destinationRoot,
+    stdio: 'ignore',
+  });
+
+  for (const relativePath of APP_CONFIG.artifacts) {
+    const target = path.join(destinationRoot, relativePath);
+    if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
+  }
+}
+
+function createGeneratedCommit() {
+  run('git', ['add', '-A'], { cwd: destinationRoot, stdio: 'ignore' });
+  const status = run('git', ['status', '--porcelain'], {
+    cwd: destinationRoot,
+    stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  if (!status.trim()) {
+    console.log('[sync-public] no generated changes');
+    return;
+  }
+
+  const sourceMessage = runOptional('git', ['log', '-1', '--format=%s'], {
+    cwd: sourceRoot,
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  const commitMessage = sourceMessage?.trim() || `chore(${targetApp}): sync from nexus`;
+  run('git', ['commit', '-m', commitMessage], { cwd: destinationRoot });
+}
 
 function main() {
-  console.log(`========================================`);
-  console.log(`  NEXUS → ${targetApp.toUpperCase()} Public Repo Sync`);
-  console.log(`========================================\n`);
+  console.log(`NEXUS → ${targetApp.toUpperCase()} public repository`);
+  console.log(`Toolchain: ${PACKAGE_MANAGER}`);
 
-  if (!fs.existsSync(CONFIG.destDir)) {
-    console.log(`Creating destination ${CONFIG.destDir}...`);
-    fs.mkdirSync(CONFIG.destDir, { recursive: true });
-    execSync('git init', { cwd: CONFIG.destDir });
+  verifySourceToolchain();
+
+  if (!fs.existsSync(destinationRoot)) {
+    fs.mkdirSync(destinationRoot, { recursive: true });
+    run('git', ['init'], { cwd: destinationRoot });
   }
 
-  console.log('Cleaning destination...\n');
-  cleanDest(CONFIG.destDir);
+  cleanDestination();
+  copyDirectory(sourceRoot, destinationRoot);
+  copyPublicEntrypoints();
+  patchPublicPackage();
 
-  console.log('Copying files...\n');
-  copyDir(CONFIG.srcDir, CONFIG.destDir);
+  run('bun', ['install'], { cwd: destinationRoot });
+  run('bun', ['run', 'build'], { cwd: destinationRoot });
 
-  // Post-process: Copy special files
-  console.log('\n  [POST] Copying README and LICENSE...');
-  const readmeSrc = path.join(CONFIG.srcDir, APP_CONFIG.readmeSrc);
-  if (fs.existsSync(readmeSrc)) {
-    fs.copyFileSync(readmeSrc, path.join(CONFIG.destDir, 'README.md'));
-    console.log(`  [COPY] ${APP_CONFIG.readmeSrc} -> README.md`);
+  cleanGeneratedArtifacts();
+  createGeneratedCommit();
+
+  const generatedPackage = readJson(path.join(destinationRoot, 'package.json'));
+  if (generatedPackage.packageManager !== PACKAGE_MANAGER) {
+    throw new Error(`Generated packageManager drifted from ${PACKAGE_MANAGER}`);
   }
 
-  const licensePath = path.join(CONFIG.srcDir, 'LICENSE');
-  if (fs.existsSync(licensePath)) {
-    fs.copyFileSync(licensePath, path.join(CONFIG.destDir, 'LICENSE'));
-    console.log('  [COPY] LICENSE');
-  }
-
-  // Copy PRIVACY.md to root (required for Chrome Web Store)
-  if (APP_CONFIG.privacySrc) {
-    const privacySrc = path.join(CONFIG.srcDir, APP_CONFIG.privacySrc);
-    if (fs.existsSync(privacySrc)) {
-      fs.copyFileSync(privacySrc, path.join(CONFIG.destDir, 'PRIVACY.md'));
-      console.log(`  [COPY] ${APP_CONFIG.privacySrc} -> PRIVACY.md`);
-    }
-  }
-
-  // Patch package.json
-  console.log('  [POST] Patching package.json...');
-  const pkgPath = path.join(CONFIG.destDir, 'package.json');
-  if (fs.existsSync(pkgPath)) {
-    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-    const scriptsToRemove = ['verify', 'prebuild', 'sync-public', 'sync-halo', 'sync-spectra'];
-    scriptsToRemove.forEach(s => delete pkg.scripts?.[s]);
-    pkg.packageManager = "bun@1.3.5";
-    fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, '\t') + '\n');
-  }
-
-  // Git operations
-  try {
-    execSync('git add -A', { cwd: CONFIG.destDir });
-    const status = execSync('git status --porcelain', { cwd: CONFIG.destDir }).toString();
-    if (status.trim()) {
-      let commitMsg = 'chore: sync from nexus';
-      try { commitMsg = execSync('git log -1 --format=%s', { cwd: CONFIG.srcDir }).toString().trim(); } catch (e) { }
-      execSync(`git commit -m "${commitMsg}"`, { cwd: CONFIG.destDir });
-      console.log('\n✅ Commit created!');
-    }
-  } catch (e) { console.error('Git error:', e.message); }
-
-  // Build Verification
-  console.log('\n========================================');
-  console.log('  Build Verification');
-  console.log('========================================\n');
-
-  try {
-    execSync('bun install', { cwd: CONFIG.destDir, stdio: 'inherit' });
-    execSync('bun run build', { cwd: CONFIG.destDir, stdio: 'inherit' });
-    console.log('\n✅ Build verification passed!');
-
-    // Stop turbo daemon before cleanup to prevent file locks
-    console.log('\nStopping turbo daemon...');
-    try {
-      execSync('bun x turbo daemon stop', { cwd: CONFIG.destDir, stdio: 'ignore' });
-    } catch (e) { }
-
-    // Cleanup build artifacts
-    console.log('Cleaning build artifacts...');
-    APP_CONFIG.artifactDirs.forEach(dir => {
-      // Protect critical files
-      if (dir === 'package.json' || dir === 'bun.lockb' || dir === 'bun.lock') return;
-      const fullPath = path.join(CONFIG.destDir, dir);
-      if (fs.existsSync(fullPath)) fs.rmSync(fullPath, { recursive: true, force: true });
-    });
-
-    // Commit bun.lock if changed
-    try {
-      const lockStatus = execSync('git status --porcelain bun.lock bun.lockb', { cwd: CONFIG.destDir }).toString();
-      if (lockStatus.trim()) {
-        execSync('git add bun.lock bun.lockb', { cwd: CONFIG.destDir });
-        execSync('git commit -m "chore: update bun lockfile"', { cwd: CONFIG.destDir });
-        console.log('✅ bun lockfile committed');
-      }
-    } catch (e) { }
-  } catch (e) {
-    console.error('\n❌ Build verification failed!');
-    process.exit(1);
-  }
-
-  console.log('\n✅ Sync Complete!\n');
+  console.log(`[sync-public] complete: ${destinationRoot}`);
+  console.log('[sync-public] inspect the generated diff before any push');
 }
 
 main();
