@@ -7,18 +7,19 @@ last_reviewed: 2026-07-20
 
 # NEXUS repository rules
 
-This file owns repository-wide workflow, security, dependency, architecture, quality, and Git constraints. Domain contracts may impose stricter rules, but a README, roadmap, research note, archived report, or store listing cannot relax this floor.
+This file owns repository-wide workflow, security, dependency, architecture, quality, documentation, toolchain, and Git constraints. Domain contracts may impose stricter rules, but a README, roadmap, proposal, research note, archived report, or store listing cannot relax this floor.
 
 When prose conflicts with executable contracts, source, tests, or a release gate, stop and reconcile the sources. Do not silently choose the convenient interpretation.
 
 ## 1. Working directory and toolchain
 
 - The primary workspace is `nexus/`.
-- Repository-root scripts proxy into the workspace; do not invent another working directory.
-- Bun is the package manager and runtime for repository scripts.
-- Do not introduce `npm`, `pnpm`, Yarn lockfiles, or package-manager-specific commands without an explicit migration decision.
-- Use the versions and commands declared by the repository. A global tool installation is not an authority.
-- Generated files are updated through their generator, not by manual edits that the next build will erase.
+- Repository-root scripts proxy into the workspace; do not invent another working directory or parallel command surface.
+- **Bun 1.3.14** is the repository runtime and package manager.
+- Root, workspace, release, public-sync, CI, skills, and documentation references must remain aligned to `bun@1.3.14`.
+- Do not introduce npm, pnpm, Yarn, another Bun version, or another package-manager lockfile without an explicit repository-wide migration decision.
+- `nexus/scripts/check-toolchain.mjs` is the executable toolchain-drift gate. A global installation, README example, or generated public package is not an independent authority.
+- Generated files are updated through their generator, not by manual edits the next build will erase.
 
 ## 2. Change preparation
 
@@ -36,8 +37,9 @@ Do not preserve a known-wrong structure merely to minimize the diff. Do not repl
 
 - Each domain has one authoritative model.
 - Projections, caches, UI state, adapters, generated indexes, and compatibility fields do not become second authorities.
-- The same identifier, status, permission, route, capability, or lifecycle must not be manually enumerated in multiple modules.
-- Legacy aliases are bounded migrations with an owner and removal condition.
+- The same identifier, status, permission, route, capability, lifecycle, toolchain version, or document owner must not be manually enumerated in competing sources.
+- Legacy aliases are bounded migrations with an owner, exact target, and removal date or condition.
+- A registered compatibility symlink may preserve an executable path only when it points to the canonical physical content and the documentation gate validates it.
 - Plans and checklists do not prove implementation.
 - Historical reports keep their original date, commit, and evidence; they do not overwrite current state.
 
@@ -56,12 +58,12 @@ Do not preserve a known-wrong structure merely to minimize the diff. Do not repl
 - Work that survives UI closure belongs to a background/runtime owner, not a mounted component.
 - Every document-, tab-, media-, session-, or source-scoped operation carries enough identity to reject stale results.
 - Subscriptions, observers, timers, animation frames, object URLs, audio nodes, streams, ports, and network requests require a disposer or cancellation path.
-- Start, active, stopping, error, recovery, and terminal states must be observable where they affect user behavior.
+- Start, active, stopping, error, recovery, and terminal states are observable where they affect user behavior.
 - A read does not acquire mutation or processing resources unless the contract explicitly defines that side effect.
 
 ## 6. Errors and asynchronous work
 
-- Do not use empty `catch` blocks or discard rejected promises.
+- Do not use empty catch blocks or discard rejected promises.
 - Catch values begin as `unknown` and are narrowed before use.
 - Errors retain an actionable code, message, phase, retryability, and relevant identity.
 - Retrying is bounded, cancellable, and justified by the failure class.
@@ -85,7 +87,7 @@ Before adding or upgrading a dependency:
 
 - confirm the current official package, stable version, license, maintenance state, security advisories, browser/runtime compatibility, bundle contribution, and transitive dependencies;
 - verify that the platform or existing code cannot provide the capability with lower lifecycle and maintenance cost;
-- pin or range versions according to repository policy and update the lockfile with Bun;
+- pin or range versions according to repository policy and update the lockfile with Bun 1.3.14;
 - add only the dependency needed by the owning package;
 - document any external ABI, network, worker, or asset implications.
 
@@ -120,32 +122,38 @@ The verification set may include:
 - unit and property tests for pure logic;
 - contract and runtime-guard tests;
 - state-machine and lifecycle tests;
+- Bun 1.3.14 toolchain verification;
+- documentation architecture, links, redirects, symlinks, and owner reachability;
 - TypeScript, lint, formatting, and architecture checks;
 - production build and artifact inspection;
 - Chrome integration and user-activation behavior;
 - navigation, service-worker restart, update, hidden-state, cancellation, and disposal cases;
-- privacy, permissions, localization, remote-site, and store-copy reconciliation.
+- privacy, permissions, localization, remote-site, store-copy, and generated-public-repository reconciliation.
 
-A green typecheck or unit suite alone does not prove browser behavior or release readiness.
+A green typecheck, unit suite, docs check, or workflow registration alone does not prove browser behavior or release readiness. A CI workflow that never starts a runner is infrastructure failure, not a passing or failing project check.
 
-## 12. Documentation
+## 12. Documentation architecture
 
-- Active internal documentation uses one Diátaxis type and a lifecycle status.
-- The canonical documentation map is [`nexus/docs/documentation-index.md`](nexus/docs/documentation-index.md).
+- The canonical documentation map is [`nexus/docs/README.md`](nexus/docs/README.md).
+- Repository documentation is organized by authority and lifecycle: engineering, product, research, application architecture, roadmap, proposal, public projection, and archive.
+- Active internal documentation uses one Diátaxis type, lifecycle status, audience, and where applicable an explicit owner.
 - Put normative behavior in one owner; link to it elsewhere.
+- Roadmaps sequence work, proposals describe unresolved designs, research records dated evidence, public documents project verified behavior, and archives preserve historical state. None substitutes for implementation.
+- A document move creates the canonical destination, updates indexes and executable consumers, supplies a bounded deprecated alias or registered symlink when needed, and declares removal timing.
 - Use tables when they reduce ambiguity in a matrix, mapping, comparison, or ledger. Do not use tables merely for visual compression.
 - Code examples are executable or clearly marked as pseudocode.
-- Relative links are interfaces and must remain valid after a move or rename.
-- Research, plans, audits, and verification snapshots state their date and evidence scope.
+- Relative links are interfaces and remain valid after a move or rename.
+- Research, plans, audits, and verification snapshots state date and evidence scope.
 - Dynamic facts such as versions, prices, policies, counts, APIs, and market data are revalidated before current use.
 - Public documentation does not promise more than the current production artifact and browser tests prove.
+- `bun run docs:check` is the executable structural gate; weakening it to hide a duplicate owner, orphan, invalid redirect, or dead link is prohibited.
 
 ## 13. Git and review
 
 - Use Conventional Commits: `feat`, `fix`, `docs`, `refactor`, `test`, `perf`, `build`, `ci`, or `chore` with an accurate scope and message.
 - One commit should form a coherent and reversible closure.
 - Do not mix unrelated cleanup into a behavioral fix.
-- Review the final diff for accidental generated output, secrets, debug code, stale links, and deleted evidence.
+- Review the final diff for accidental generated output, secrets, debug code, stale links, toolchain drift, and deleted evidence.
 - Do not force-push a shared or release branch by default.
 - Do not merge with failing required checks or unresolved review findings.
 - A generated public-repository sync is inspected and validated as a release artifact before push.
@@ -154,7 +162,7 @@ A green typecheck or unit suite alone does not prove browser behavior or release
 
 Use current primary sources when a decision depends on package versions, browser APIs, build-tool syntax, store policy, remote provider behavior, CVEs, deprecations, or migration guides.
 
-Search summaries, copied articles, and old repository notes are discovery aids, not final authority. Record the version, date, platform, and source that the implementation actually targets.
+Search summaries, copied articles, and old repository notes are discovery aids, not final authority. Record the version, date, platform, and source the implementation targets.
 
 When the same failure survives two attempted fixes, return to the root model: inspect upstream issues, actual runtime evidence, identity/lifecycle assumptions, and competing owners instead of adding another workaround.
 
@@ -169,4 +177,6 @@ When the same failure survives two attempted fixes, return to the root model: in
 - permission, activation, origin, protected-content, or sandbox bypass claims;
 - public claims known to exceed the production artifact;
 - modifying generated files instead of their source;
+- introducing a Bun version other than 1.3.14 or an alternate package-manager lockfile without a repository migration;
+- moving documentation without updating its authority graph and executable validation;
 - changing behavior without corresponding verification and owner documentation.
