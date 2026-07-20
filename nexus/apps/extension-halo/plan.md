@@ -1,207 +1,163 @@
 ---
 type: reference
-status: stable
+status: draft
 audience: developer
+last_reviewed: 2026-07-20
 ---
 
-# HALO 规划与架构 (v2.5+)
+# HALO architecture and roadmap
 
-> DNA: SidePanel-only | 零上传 | 原子化 | 本地优先 | 极致性能
->
-> 本文档是 HALO 的**唯一**规划/架构 owner。原 [plan.md](./plan.md)、[architecture.md](./architecture.md)、[docs/halo-dev-flow.md](../../docs/halo-dev-flow.md) 三份分散文档已合并入此。
+HALO is a SidePanel-first developer and productivity toolkit. This file is the application owner for module boundaries, registry semantics, and current sequencing. Executable registry data, source, tests, and release gates remain the implementation truth.
 
-## §1 模块结构
+Local-first is the default. A feature that uses synchronization, external APIs, or cloud storage must be a separate explicit capability with narrow permissions, failure semantics, and disclosure; it must not be hidden behind a blanket “zero network” claim.
 
-```plaintext
-src/
-├─ entry/: background, content, sidepanel.tsx
-├─ components/
-│  ├─ manager/: ToolManager, ToolManagerItem
-│  ├─ search/: SearchBar, search-utils
-│  ├─ core/: ToolErrorBoundary, lazy-tool-loader, ToolPanelRenderer
-│  ├─ legacy/: (deprecated components)
-│  ├─ settings/internal/dark-mode/: Internal feature (not a plugin)
-│  └─ sidepanel/: Launcher components
-├─ kernel/{registry(_generated,taxonomy,module), managers(Perm/Module), services(saat)}
-├─ tools/[id]/{manifest.json, panel.tsx} → pluginType:'tool'
-├─ scripts/[id]/{manifest.json, script.js} → pluginType:'script'
-├─ system/[id]/{manifest.json, panel.tsx} → pluginType:'system'
-└─ i18n/{locales/, _generated-tools-*.ts}
-```
-
-## §2 工具模块规范
-
-每个工具目录结构:
+## Runtime surfaces
 
 ```text
-tools/qrcode/
-├── index.ts        # 导出入口 (≤50行)
-├── types.ts        # 类型定义
-├── core.ts         # 核心逻辑 (≤150行)
-└── panel.tsx       # UI 组件 (≤200行)
+src/
+├─ entry/                  background, content, sidepanel
+├─ components/             shell, navigation, shared interaction
+├─ kernel/                 registry, taxonomy, managers, shared services
+├─ tools/<id>/             user-invoked panel tools
+├─ scripts/<id>/           user-controlled script capabilities
+├─ system/<id>/            settings, permissions, module management
+└─ i18n/                   locale sources and generated aggregates
 ```
 
-**命名约定**：
+The exact directory tree may evolve. These ownership rules do not:
 
-- 工具 ID: `qrcode`, `color-picker` (kebab-case)
-- 存储键: `HALO_QRCODE_HISTORY` (UPPER_SNAKE)
-- 消息类型: `HALO_RULER_START` (UPPER_SNAKE)
+- `tool`, `script`, and `system` are distinct plugin types;
+- system capabilities are not disguised as ordinary tools;
+- registry metadata has one executable source;
+- a plugin owns its state and lifecycle and communicates through public kernel boundaries;
+- a panel component does not become the background authority for work that must survive panel closure.
 
-## §3 插件架构
+## Plugin contract
 
-pluginType: `tool`(面板) | `script`(SaaT,嵌套) | `system`(设置/商店/权限)
-**内部特性**: 沉入 `Settings` 内部组件(如 Dark Mode) | 绝禁直接注册防污染 Registry
+Each plugin declares enough metadata for registry generation, permission review, localization, loading, and lifecycle management. A typical tool may use:
 
-分类(SSOT): 虚拟(active,scripts,system) → 功能(general,encode,format,network,data,dev,efficiency,browser,visual,media,security,ai)
-
-排序: active → scripts → system → 功能分类
-
-Registry 产出: `PLUGIN_REGISTRY` | `BACKGROUND_PLUGIN_IDS` | `get{Tool,Script,System}Plugins()`
-
-## §4 SidePanel 规范
-
-入口: `src/entry/sidepanel.tsx`
-
-### 主题系统
-
-```ts
-// CSS Variables
-(--halo - bg, --halo - bg - secondary, --halo - bg - tertiary);
-(--halo - text, --halo - text - secondary, --halo - text - muted);
-(--halo - border, --halo - accent, --halo - accent - hover);
-(--halo - success, --halo - error);
+```text
+tools/<id>/
+├─ manifest.json
+├─ index.ts
+├─ types.ts
+├─ core.ts
+├─ panel.tsx
+└─ locales/
 ```
 
-### 入口方式
+Files are split by responsibility, not by an absolute line quota. Large files are review signals; a split is valid only when it creates an explicit boundary rather than hiding one workflow across fragments.
 
-| 入口     | 触发             | 说明               |
-| :------- | :--------------- | :----------------- |
-| 图标点击 | action.onClicked | 直接打开 SidePanel |
-| 右键菜单 | contextMenus     | 页面/选择/链接     |
-| 快捷键   | commands         | 待实现             |
+### Naming
 
-## §5 UI 系统 (Premium)
+- plugin ID and directory: kebab-case;
+- storage keys: owned, namespaced, and versioned;
+- messages: typed contracts rather than string lists copied across listeners;
+- React components may use PascalCase when required by the local convention;
+- hooks follow the existing `useCamelCase` convention.
 
-主题: `theme.ts` 扩展 Premium UI Tokens (`cardBg`, `glassBorder`, `shadow`)
-风格: Glassmorphism(毛玻璃) | 动态 CSS Variables 暗黑模式
-组件: `Dark Mode` 控制面板内置 Settings (亮度/对比/滤镜/CSS 修复)
-安全: 敏感路由 (`chrome://`) 强化拦截与 Toast 不可抗力提示
+## Registry and taxonomy
 
-## §6 规范
+The registry is the source of plugin identity, type, category, loading metadata, and required permissions. Generated projections may include plugin lists and typed helpers, but no UI or background module maintains a second manual inventory.
 
-行数: ≤150 推荐 | >150 警告 | >200 必拆
-模块: `{core.ts, panel.tsx, index.ts(≤50)}`
-类型: `PluginMeta`(统一) / `ToolMeta`(别名)
+Taxonomy contains virtual views such as active, scripts, and system plus functional categories. Sorting and labels originate from the taxonomy/registry boundary and are translated at the UI edge.
 
-## §7 核心服务
+A plugin count is a generated observation. Documentation does not freeze a total that can drift after the next registry change.
 
-搜索: unified-search.ts(多语言/拼音) | i18n: 去中心化+自动聚合 | 状态: useToolState(原子隔离) | 权限: PermissionManager(声明式) | SaaT: saat-service.ts
+## SidePanel ownership
 
-## §8 i18n 架构
+`src/entry/sidepanel.tsx` owns application composition. It does not own plugin business logic.
 
-原则: 工具自治 | SSOT | 扁平源码 | 嵌套运行时
+Entry routes may include the browser action, context menus, and configured commands. Each route resolves a typed destination, reports restricted browser pages as bounded errors, and avoids duplicate state managers.
 
-流程: 开发(扁平 Key `tools.qrcode.name`) → 构建(扫描`src/{tools,system}/*/locales`生成`_generated-tools-*.ts`) → 运行(hydrateTranslations 还原嵌套)
+### UI system
 
-目录: `src/tools/[id]/locales/{en,zh}.ts` 独立维护 → `src/i18n/locales/`聚合
+- shared design tokens own color, spacing, surface, focus, and motion vocabulary;
+- user-visible text and accessible names use canonical locale keys;
+- animations respect the user setting and reduced-motion environment;
+- a tool failure is isolated by the shared error boundary and does not destroy the SidePanel shell;
+- theme or dark-mode behavior embedded in Settings is an internal feature unless it satisfies the complete plugin contract.
 
-格式: 必须扁平 Key(`"tools.my-tool.name": "My Tool"`) | 禁嵌套 tools 对象(防覆盖)
+## State and background work
 
-使用: `t('tools.${toolId}.name')` | `t('myTool.action.save')`
+Panel-local state may remain in the panel. Work that must continue after panel closure requires an explicit background owner, persisted state model, wake/recovery behavior, and tests for service-worker suspension.
 
-优势: 解决合并冲突 | 兼容 i18next 标准查找
+Do not keep a feature alive through unbounded intervals, hidden panels, or duplicated storage listeners. Prefer browser events, alarms, and narrowly owned lifecycle tokens.
 
-## §9 动画系统 (v2.5.0)
+## Permissions
 
-位置: `src/components/ui/animated-transition/` | `public/sidepanel.html`(keyframes)
+Permissions are declared by the plugin's executable metadata and compiled into a reviewable usage map. A new permission must identify:
 
-组件: `SimpleTransition`(CSS 过渡) | `AnimatedTransition`(状态驱动,复杂场景)
+- the exact plugin and user action that needs it;
+- whether it is install-time, optional, or runtime-granted;
+- the data and browser surface it exposes;
+- the behavior when unavailable or revoked;
+- tests and public disclosure where applicable.
 
-全局 Keyframes: `slideInFromRight` | `slideInFromLeft` | `fadeInUp`
+Settings, the permission manager, and store copy consume the same permission source rather than maintaining parallel lists.
 
-配置: `enableAnimations`(开关) | `animationSpeed`(fast/normal/slow)
-执行链路: Home↔Tool(0.3s `translateX`) | 子页面(0.28s `slideInFromRight`) | Tab切换(禁动画防卡顿)
+## i18n
 
-## §10 工具库 (v2.6)
+Plugin locale sources remain local to the plugin and compile into generated runtime aggregates. Canonical keys are flat at the source boundary and are hydrated only by the maintained generator.
 
-> 定位: 离线优先开发者/效率工具箱 | 对标: DevToys, IT-Tools, He3
-> 状态: 84 User + 3 System Tools | SidePanel | Local First
+A plugin is incomplete when its name, description, primary actions, errors, or accessible labels are missing from required locales. Generated locale files are not edited manually.
 
-System(3): settings, module-store, permissions
-Core(10): qrcode, color-picker, json-formatter, hash, uuid, timestamp, url...
-Dev(37): userscripts, regex, network, jwt, diff, sql, protobuf, dom, api-tester...
-Efficiency(13): smooth-scroll, tabs, clipboard, pomodoro, session-manager...
-Sec/Media/Browser(19): password-gen, image-tools, reader-mode, translate, bilibili-plus...
+## Performance boundaries
 
-## §11 变更历史
+- inactive plugins allocate no recurring work;
+- SidePanel visibility pauses optional rendering and sampling;
+- registry generation occurs at build time rather than by runtime directory scans;
+- large data operations use bounded batches and cancellation;
+- hot input paths avoid repeated parsing, allocation, layout reads, or storage writes;
+- performance claims require measured startup, interaction, memory, and background-wake evidence.
 
-v2.2.0 Global Persistence: `useToolState`原子化存储 | Playwright+SafeStorage | `useClipboardIntent`智能意图
+“Zero allocation,” “zero CPU,” and fixed speedup factors are not documentation guarantees unless a release benchmark defines the workload and proves the claim.
 
-v2.3.0 UserScripts Pro: chrome.userScripts API(MAIN world/document_start) | registry.ts 动态注册 | Smooth Scroll 智能输入检测 | i18n 去中心化
+## Current engineering priorities
 
-v2.4.0 SaaT: `pluginType:'script'`伪工具 | Dual Discovery(panel.tsx/script.js) | saat-service.ts 管理 | bilibili-plus/chatgpt-wide 首批
+### P0: ownership closure
 
-v2.4.1 Unified: i18n Flat→Hydrate 架构 | Icon SSOT(Manifest) | System 隔离(Header 入口) | Extension Manager
+- finish taxonomy and registry as the sole plugin inventory;
+- generate and verify the permission-usage map from plugin metadata;
+- remove remaining manual content-script and active-service registration lists;
+- ensure background-capable tools recover after service-worker suspension.
 
-v2.5.0 Script Store: `src/scripts/`独立目录 | Fork Mode(编辑官方 → 创建副本) | Active Service 绿标
-v2.5.1 LLM Suite: `chatgpt-wide` → `llm-enhancer` | Support ChatGPT/DeepSeek/Gemini | Timeline/Widescreen/KeepAlive @2026-02-01
-v2.5.2 Bilibili+: Playback Speed | Esc Fix | Clean Home | Viewer Count (Planned) @2026-02-01
-v2.5.3 LLM Enhancer V3: Glassmorphism UX | Floating Dock | Keyboard shortcuts | Auto Scroll Highlight @2026-02-02
-v2.5.4 LLM Enhancer Fix: TypeScript Refactor | Event-Driven State Sync | CSS Visibility Control | Gemini Navigation Fix @2026-02-03
+### P1: release readiness
 
-v2.6.0 Resource Monitor: 系统级面板 | 11 种 CPU 机制 | Header 入口
+- add HALO product README, privacy policy, store listings, locale assets, and release checks before public distribution;
+- verify every shipped plugin's permissions, data retention, import/export behavior, and error isolation;
+- replace stale tool/version counts in public documents with generated evidence.
 
-v2.6.1 Perf: 消除 setInterval→ 事件驱动 | Visibility Pause(totp/timestamp)
+### P2: product workstreams
 
-v2.6.2 SSOT: manifest.json `background` 字段声明 CPU 消耗 | sourceFile/Line/Detail 注解 | TOOL/SYS/SCRIPT 标签
+- complete prioritized existing workstreams before adding broad new categories;
+- treat OCR, AI, cloud backup, translation providers, external validators, and remote APIs as separately reviewed network capabilities;
+- require acceptance criteria and lifecycle tests in each workstream plan.
 
-v2.7.0 Hover Zoom Refactor: Single Resolver Type 架构 | 移除硬编码 HD 规则 | 按功能拆分文件夹 | ViewMode/DNR 架构同步
+## Open architectural problems
 
-v2.7.1 Smooth Scroll+: 捕获阶段拦截(虚拟滚动兼容) | 视频页跳过方向键 | SidePanel 键盘滚动 | overlay/hidden 容器支持 @2026-01-07
+### Persistent background timers
 
-v2.7.2 Hover Zoom Fix: B 站图片原图解析(参考 PhotoShow) | RuleEngine 子域名匹配 | fetch blob 获取跨域文件大小 | 精度 2 位小数 @2026-01-08
+Pomodoro, countdown, and similar tools need a Background-owned deadline model, browser alarm recovery, persisted state, and a projection into the SidePanel. A mounted React component is not the clock authority.
 
-v2.8.0 Extreme Perf: Smooth Scroll (Hot Cache/Zero-Alloc) | Ruler (rAF Lock) | Hover Zoom (Zero-Alloc Debounce) | DomHelpers (Linear Scan) @2026-02-01
+### Generated Content entry
 
-## §12 核心任务 (EPR 映射)
+A plugin requiring Content execution must be discoverable from its manifest and generated into the Content entry. Manual imports are a temporary migration state and must fail a registry verification check when they drift.
 
-| EPR | 任务 | 状态 |
-|---|---|---|
-| EPR-001 SSOT | System Isolation: settings/module-store/permissions 标记 `system:true` → 仅 Header 入口 | 完成 |
-| EPR-007 Capability | SaaT: Registry 支持 `pluginType:'script'` \| 点击 Toggle 启/停 | 完成 |
-| EPR-001 SSOT | Taxonomy SSOT: kernel/registry/taxonomy.ts 统一管理 ID/Icon/排序 | 进行中 |
-| EPR-021 Boundary | Permission SSOT: Manifest `permissions:[]` → 构建生成 `PERMISSION_USAGE_MAP` | 进行中 |
+### Active-service projection
 
-## §13 路线图
+The active-service UI must derive from plugin lifecycle state rather than a manually maintained storage-key list. Each service exposes an owned status contract and disposer.
 
-Phase 10-12 (P1): 完成 bilibili-plus, llm-enhancer, hover-zoom, extension-manager | checksum/ssl-check/csp-analyzer/random-gen | translate/page-annotate/download-manager/tab-group
-Phase 13-15 (P2): ocr/ai-chat/code-explain | websocket/graphql/media-sniffer
+## Research and workstream documents
 
-## §14 技术原则
+- [Market hypotheses](docs/research.md)
+- [Feature gap backlog](docs/feature-gap-analysis.md)
+- [Hover Zoom workstream](docs/plan-hover-zoom-v2.md)
+- [Danmaku proposal](docs/plan-danmaku.md)
+- [Repository documentation map](../../docs/documentation-index.md)
 
-- **SSOT**: 定义/类型/UI 源于单一事实(Manifest/Registry)
-- **Atomic**: 单工具 ≤200 行,独立生命周期
-- **Isolation**: 系统/用户插件物理逻辑隔离
-- **Local First**: 零上传,数据本地处理
+These documents may propose features or preserve dated evidence. They do not override this owner or prove completion.
 
-## §15 待解决问题
+## Completion rule
 
-**#1 面板工具后台运行**: 计时器/番茄钟等工具切换标签页时停止运行 → 需 Background Timer + Storage 状态同步方案
-
-**#2 Content Script SSOT**: 目前需手动在 `entry/content.ts` 导入新工具,非真正唯一源 → 需构建系统根据 manifest.script 自动生成入口
-
-**#3 ActiveServices 状态追踪**: 需手动在 `ActiveServicesContext` 添加 storage key → 需动态化读取 manifest 配置
-
-## §16 Spectra vs Halo 对比
-
-### 设计差异（保留）
-
-| 维度     | Spectra      | Halo              |
-| -------- | ------------ | ----------------- |
-| UI 架构  | Popup        | SidePanel (React) |
-| 核心依赖 | audio-engine | ui-kit            |
-| 功能定位 | 媒体增强     | 开发者工具箱      |
-
-### Halo 发布前需补充
-
-`_locales/` | `store-listings/` | `PRIVACY.md` | `README.md` | `assets/`
+A HALO capability closes only when metadata, permissions, implementation, lifecycle, state recovery, i18n, tests, documentation, and release projection agree. A version heading, checklist mark, or tool-count claim is insufficient.
