@@ -1,8 +1,8 @@
 ---
 name: update-context
-description: 更新全上下文工程文档的标准流程(6 层文档同步)。触发短语:"update context", "sync docs", "更新文档"。
+description: 将代码或产品变更同步到唯一 owner、入口、计划、隐私/商店投影和历史证据，并修复链接与漂移；不维护已删除的 AI 专用文档层。触发短语:"update context", "sync docs", "更新文档", "文档同步"。
 license: Proprietary. See LICENSE.txt
-compatibility: Requires Read/Write access to .ai-context.md, plan.md, ai-rules.md, README.AI.md
+compatibility: Requires repository read/write access
 metadata:
   category: maintenance
   app: all
@@ -11,82 +11,91 @@ metadata:
 allowed-tools: Read Edit Grep
 ---
 
-# Update Context Docs
-
-保持 6 层上下文文档与代码同步。**快、压缩、不冗余。**
+# Update documentation context
 
 ## Trigger
 
-当用户说 "update context" / "sync docs" / "更新文档" / "同步 ai context" 时自动加载。**也**在以下情况自动触发:
+Use after a behavior, architecture, permission, lifecycle, public claim, release process, or documentation owner changes.
 
-- 完成重大功能开发后
-- 架构变更后
-- 新增/删除模块后
-- 新增红线/规则后
+## Principle
+
+Documentation follows ownership, not a fixed number of layers. Update only the documents whose semantic projection changed. Do not create or maintain `.ai-context.md`, `README.AI.md`, `docs/ai-rules.md`, or a user-home `nexus.md`; they are not current repository authorities.
+
+The canonical map is [`nexus/docs/documentation-index.md`](../../nexus/docs/documentation-index.md).
 
 ## Process
 
-### 1. 识别变更范围
+### 1. Classify the change
 
-确认本次开发涉及的层级:
+Determine whether the change affects:
 
-| 层级 | 位置 | 何时更新 |
-|---|---|---|
-| **入口层** | `~/.agent/rules/nexus.md`, `~/nexus/README.AI.md` | 新增工作流、架构大改 |
-| **规划层** | `plan.md`, `apps/*/plan.md` | 任何功能完成 |
-| **规则层** | `docs/ai-rules.md`, `docs/business-model.md` | 新增红线/规则 |
-| **架构层** | `docs/*.md`, `apps/*/docs/*.md` | 模块接口/依赖变化 |
-| **模块层** | `.ai-context.md` | 任何模块内部变化 |
-| **工作流** | `~/.agent/workflows/*.md` | 新增/修改流程 |
+- repository rules or contributor workflow;
+- a domain contract/architecture owner;
+- a roadmap or unresolved proposal;
+- user/developer entrypoints;
+- permissions, privacy, remote/network behavior, or store copy;
+- a dated release/regression/audit record;
+- an agent skill or generated index.
 
-### 2. 更新模块层(`.ai-context.md`)
+A code change may affect none, one, or several projections. Do not update every Markdown file mechanically.
 
-每个被修改的模块/应用:
+### 2. Update the normative owner once
 
-- [ ] 更新工具数量/功能列表
-- [ ] 添加新红线/通信协议
-- [ ] 更新依赖变化
-- [ ] 保持压缩格式(无冗余描述)
+- Put current behavior in the one owner listed by the documentation map.
+- Link from neighboring documents instead of copying the complete rule/matrix.
+- Update counts only when the executable registry/contract/gate changed.
+- Distinguish desired, actual, proposed, historical, and public behavior.
+- Add the corresponding contract/test/release-gate evidence in the same closure.
 
-### 3. 更新规划层(`plan.md`)
+### 3. Update planning only when sequencing changed
 
-- [ ] 标记完成的功能 ✅
-- [ ] 添加新章节记录重大变更(含日期)
-- [ ] 更新版本号
+Roadmaps describe future or unresolved work. Do not mark a feature complete from a commit title or checkbox; require implementation and verification evidence. Add `last_reviewed` or an evidence date when the current status depends on time.
 
-### 4. 更新规则层(`ai-rules.md`)
+### 4. Reconcile public projections
 
-如有新规则/红线/标准:
+When permissions, data flow, network providers, transmitted fields, retention, or user-visible capability changes, compare:
 
-- [ ] 在对应章节添加
-- [ ] 保持压缩格式(禁表格,用 `|` 分隔)
+- product README;
+- privacy policy;
+- permission/data-use justification;
+- every store locale;
+- remote-site disclosure and release gate;
+- actual manifest and production artifact.
 
-### 5. 更新入口层(`README.AI.md`)
+Public copy cannot be broader than verified behavior. Translate one capability set across locales rather than maintaining independent promises.
 
-- [ ] 同步规则层变更
-- [ ] 更新工作流列表
-- [ ] 更新功能摘要
+### 5. Preserve historical evidence
 
-### 6. 更新规则文件(`nexus.md`)[需用户手动]
+Create a dated report for a release, regression recovery, benchmark, or audit when its exact commit/results matter. Mark it archived and link current owners. Do not rewrite old measurements into present-tense claims.
 
-⚠️ **AI 无权修改** `~/.agent/rules/nexus.md`,需告知用户:
+### 6. Update skills correctly
 
-- 更新上下文工程层级计数
-- 添加新工作流
-- 更新架构图
+Edit `.agents/skills/<name>/SKILL.md`, then run `bun run sync:skills` so the `AGENTS.md` index is refreshed. Keep `CLAUDE.md` identical/hardlinked through the maintained post-analyze flow.
 
-## Anti-Rationalization
+### 7. Validate structure and links
 
-- "我改的只是小功能,不用更新文档" → **错**。小功能累积就是大改动,文档漂移从今天开始。
-- "我可以自己改 nexus.md" → **错**。AI 无权直接改用户级文件,必须告知用户。
-- "表格比 | 分隔可读性强" → **错**。项目约定 `|` 分隔,统一优先于可读性。
-- "更新 README.AI.md 等下次" → **错**。README.AI.md 是 AI 入口,过期会导致后续 AI 决策错误。
+- run the documentation linter for changed active docs;
+- verify relative paths from the file's own directory;
+- search for renamed paths, removed anchors, old counts, stale versions, and conflicting phrases;
+- check frontmatter type/status/audience where required;
+- inspect the final Markdown rendering for malformed lists, tables, code fences, and headings.
 
-## Verification
+## Prohibited shortcuts
 
-- [ ] `.ai-context.md` 已更新
-- [ ] `plan.md` 变更章节已添加(含日期)
-- [ ] `ai-rules.md` 新规则已添加
-- [ ] `README.AI.md` 已同步
-- [ ] 已告知用户更新 `nexus.md`(如需要)
-- [ ] 所有变更已 `git add && git commit`
+- Copying one rule into multiple owners “for convenience.”
+- Updating a roadmap instead of the implemented contract.
+- Replacing evidence with a vague “docs synchronized” sentence.
+- Keeping a broken link because the target existed historically.
+- Treating a research/market number as current without revalidation.
+- Editing only the English store listing after a capability or limitation changes.
+- Adding a document without placing it in the authority map.
+
+## Completion evidence
+
+- changed semantics appear in exactly one normative owner;
+- all affected projections agree with that owner and implementation;
+- plans remain proposals, archives remain historical, and public copy remains verified;
+- no old path/count/version/claim survives in active docs;
+- documentation lint and manual link/render review pass;
+- skill index is regenerated when applicable;
+- final diff contains no unrelated documentation churn.
