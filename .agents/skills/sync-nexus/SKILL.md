@@ -1,76 +1,101 @@
 ---
 name: sync-nexus
-description: 自动化同步 Nexus 私有库到 Public 开源库,保留 Git 历史。触发短语:"sync nexus", "push to public", "同步开源"。
+description: 使用受审计的同步脚本生成 SPECTRA 或 HALO public 仓库候选：先验证、清空目标工作树但保留其 .git、复制/排除、构建、审查生成提交，再按授权推送。触发短语:"sync nexus", "push to public", "同步开源", "sync spectra", "sync halo"。
 license: Proprietary. See LICENSE.txt
-compatibility: Requires bun 1.3.14, PowerShell 7+, git 2.30+
+compatibility: Requires bun 1.3.14, git 2.30+, and a sibling public-repository checkout
 metadata:
   category: release
   app: nexus
   phase: execute
   user-invocable: true
-allowed-tools: Bash Read
+allowed-tools: Bash Read Grep
 ---
 
-# Sync Nexus → Public
-
-同步 Nexus Monorepo → 开源仓库 (Spectra),保留 Git 历史。**脚本已经做 90% 的事,不要手动复制。**
+# Sync NEXUS to a public repository
 
 ## Trigger
 
-当用户说 "sync nexus" / "push to public" / "同步开源" / "推到公网" 时自动加载。
+Use when generating the approved SPECTRA or HALO public repository from the private monorepo.
+
+## Critical behavior
+
+`nexus/scripts/sync-public.cjs` is destructive to the destination working tree: it removes everything except the destination's `.git` and `node_modules`, copies the filtered private workspace, rewrites selected root files, runs install/build, and creates one or more commits.
+
+It preserves the destination repository's existing Git history. It does **not** transplant the private repository's commit graph.
+
+The script does not push. Push remains a separate authorized action.
 
 ## Process
 
-### 1. 前置检查
+### 1. Select and inspect the target
 
-- [ ] Nexus 仓库已提交推送(`git status` clean)
-- [ ] `spectra-public` 文件夹与 `nexus` 同级存在
-- [ ] 没有占用 `spectra-public` 的进程(IDE 打开的文件要保存)
-- [ ] 确认本次提交信息已包含 release 描述
+- Choose exactly one target: `spectra` or `halo`.
+- Confirm the sibling checkout is the intended public repository and its current branch/remote are correct.
+- Save or discard unrelated destination changes before running the script.
+- Read the current `CONFIG` in `nexus/scripts/sync-public.cjs`; the script, not this skill, owns source paths, exclusions, copied README/privacy files, artifact cleanup, and package rewriting.
+- Verify that required public README/privacy files actually exist for the selected application.
 
-### 2. 执行同步脚本
+### 2. Validate the private source first
+
+From `nexus/`, run the applicable type, lint, architecture, tests, build, privacy, and release gates. The sync script currently performs destination install/build, but that does not replace private-source verification.
+
+At minimum:
+
+```bash
+bun run lint
+bun run typecheck
+bun run verify:v
+bun run build
+```
+
+Add SPECTRA or HALO release-specific checks for the target.
+
+### 3. Run the maintained sync
 
 ```bash
 bun run sync-spectra
+# or
+bun run sync-halo
 ```
 
-> 在 `nexus/` 目录执行。
+Do not manually copy files around the script. If an exclusion or projection is wrong, fix and test the sync configuration as a deliberate code change.
 
-**脚本会自动完成**:
+### 4. Audit the generated repository
 
-1. 运行 `verify-architecture` → 检测中文(error 级别)
-   ↓ (失败则退出,不会同步)
-2. 清理 public 目录(保留 `.git`)
-3. 复制文件(应用 `excludePatterns` 列表)
-4. 验证构建
-5. `git commit`(复用 nexus 提交信息)
-6. 打印 `git push` 命令(**不自动推**,等用户确认)
+Before push, inspect:
 
-### 3. 推送 Public 仓库
+- `git status`, generated commits, and complete diff against the destination's previous commit;
+- public README, privacy policy, license, package metadata, toolchain version, scripts, and lockfile;
+- absence of private docs, secrets, internal assets, tests, build artifacts, local agent configuration, and excluded applications;
+- successful clean install and build in the generated repository;
+- whether destination cleanup removed a file that public users still require.
+
+The current sync script rewrites package metadata. Compare every rewritten value with the source toolchain and release policy; a stale hard-coded version blocks push.
+
+### 5. Push only with authorization
+
+Run from the destination repository after the generated diff and commit history are approved:
 
 ```bash
-cd ../spectra-public
-git push origin main
+git push origin <approved-branch>
 ```
 
-### 4. 排除内容(只复制公开部分)
+Do not assume `main`, force-push, tag, release, or publish a store artifact unless those actions were separately authorized.
 
-- `.agent/`、`docs/`、`scripts/`、`store-listings/`(内部配置)
-- `.ai-context.md`、`plan.md`、`README.AI.md`(AI 内部文档)
-- `apps/extension-halo/`(未发布,内部测试)
-- `.gitnexus/`、`AGENTS.md`、`CLAUDE.md`(本地配置)
+## Prohibited shortcuts
 
-## Anti-Rationalization
+- Running against an unverified path or a destination with valuable uncommitted files.
+- Claiming that the script preserves private Git history.
+- Treating the generated commit as reviewed because the destination build passed.
+- Editing the destination to hide a wrong source/exclusion rule instead of fixing the generator.
+- Pushing a generated package with a mismatched toolchain, privacy policy, permission set, or README.
+- Temporarily weakening exclusions without reviewing information-disclosure consequences.
 
-- "我自己复制文件就行" → **错**。脚本会保留 Git 历史 + 跳过排除文件 + 跑 verify,手工会丢历史。
-- "可以跳过 verify-architecture" → **错**。中文 error 会被开源审查看到,影响可信度。
-- "可以自动 push" → **错**。push 是不可逆操作,必须人工确认。
-- "排除列表我可以临时改" → **错**。改之前先在工程群里确认,避免泄露内部信息。
+## Completion evidence
 
-## Verification
-
-- [ ] `sync-spectra` 退出码 0
-- [ ] spectra-public 仓库有最新 commit
-- [ ] spectra-public 仓库文件列表符合 `excludePatterns`
-- [ ] 已手动 `git push origin main`
-- [ ] GitHub 上可见同步内容
+- selected target and destination path/remote are recorded;
+- private-source release gates pass;
+- sync script exits successfully;
+- generated repository diff, commits, exclusions, metadata, lockfile, install, and build are inspected;
+- no private/internal data is present;
+- push status is reported separately and performed only when authorized.
