@@ -2,116 +2,98 @@
 type: explanation
 status: stable
 audience: developer
+last_reviewed: 2026-07-20
 ---
 
-# SPECTRA architecture
+# SPECTRA runtime architecture
 
-SPECTRA is a Chrome MV3 extension with explicit ownership across its runtime contexts. The shared protocol and authoritative snapshots are defined in `@nexus/contracts`; extension contexts do not invent private wire shapes. Per-field control behavior is owned by [control-architecture.md](./control-architecture.md).
+SPECTRA is a Chrome Manifest V3 extension with explicit ownership across runtime contexts. Shared protocol and authoritative snapshots are defined in `@nexus/contracts`; extension contexts do not invent private wire shapes. Per-field control behavior belongs to [the control architecture](./control-architecture.md).
 
 ## Runtime ownership
 
 | Context | Owns | Does not own |
 | --- | --- | --- |
-| Popup / Options | User intent, immediate local rendering and accessible interaction | Actual audio mode, badge state or direct storage writes |
-| Content (isolated world) | Current document identity, event-driven media registry, the sole DOM/CSS writers and the admitted Media WebAudio graph | Claiming Capture active before an ACK |
-| MAIN site adapter | One allowlisted official page-world API call after a typed DOM failure | Any standing runtime, listener, patch, setting or cross-tab state |
-| Background service worker | Protocol routing, settings repository, session snapshots, badge projection and offscreen leases | WebAudio nodes or optimistic UI state |
-| Unified offscreen host | Actual Capture processors and authenticated PeerJS sessions | Direct document creation/closure |
+| Popup / Options | user intent, immediate local rendering, accessible interaction | actual audio mode, badge state, direct storage writes, or executor choice |
+| Content, isolated world | document identity, media registry, DOM/CSS writers, admitted Media WebAudio graph | Capture-active claims before host ACK |
+| MAIN one-shot adapter | one allowlisted official page API call after a typed DOM failure | standing runtime, listener, patch, settings, or cross-tab state |
+| Background service worker | routing, settings repository, snapshots, badge projection, runtime/offscreen leases | WebAudio nodes or optimistic UI state |
+| Unified offscreen host | actual Capture processors and authenticated remote sessions | direct document creation/closure or inferred leases |
 
-`ControlSnapshot` is the sole actual source for media, video and DSP fields and
-the independent active-media/active-video identities. `AudioSessionSnapshot`,
-keyed by `tabId + documentId + origin`, owns only processor lifecycle: desired
-and actual mode, phase, generation, normalized actual configuration and the last
-structured error. Popup, badge and authenticated remote views preserve that
-separation instead of overlaying one snapshot on the other.
+`ControlSnapshot` owns actual media, video, DSP fields, and independent active-media/active-video identities. `AudioSessionSnapshot`, keyed by document identity, owns processor desired/actual mode, phase, generation, normalized actual configuration, and structured error. Popup, badge, and authenticated remote projections preserve that separation.
 
 ## Audio lifecycle
 
-Each document runs one generation-aware state machine:
+Each document runs a generation-aware lifecycle:
 
-- mode: `bypass | webaudio | capture`
-- phase: `idle | starting | active | stopping | error`
-- navigation or a mode transition advances `generation`; a late ACK cannot update a newer document
+```text
+mode: bypass | webaudio | capture
+phase: idle | starting | active | stopping | error
+```
 
-Default configuration is a transparent bypass: no extension-created `AudioContext`, no DSP and no page-volume or playback-rate ownership. A restored non-default site configuration or explicit user intent may activate processing.
+Navigation or a mode transition advances generation; late ACKs cannot update a newer document. The default is transparent bypass: no extension-created AudioContext, DSP, or page-field ownership. Restored non-neutral settings or explicit intent may acquire processing.
 
-Capture becomes active only after the unified offscreen host creates a processor and returns a current-generation ACK. Cross-backend transitions acknowledge the old path at unity, build and confirm the new path, then release the old path. This prevents double DSP and premature ACK; because page `AudioContext` and `tabCapture` have no shared sample clock, the contract permits a bounded unity handoff and does not claim sample-synchronous crossfade.
+Capture becomes active only after the unified offscreen host creates a current-generation processor and returns actual readback. Cross-backend transitions neutralize the stable old route, verify the candidate, switch ownership, and then release the old route. The architecture promises no double DSP and no premature ACK; it does not claim a sample-synchronous crossfade between independent browser audio paths.
 
 ## Unified offscreen host
 
-`offscreen.html` hosts both per-tab Capture processors and authenticated remote sessions. `background/offscreen-coordinator.ts` is the sole owner of `chrome.offscreen.createDocument()` and `closeDocument()`.
+`offscreen.html` hosts per-tab Capture processors and authenticated remote sessions. `background/offscreen-coordinator.ts` is the sole owner of `chrome.offscreen.createDocument()` and `closeDocument()`.
 
 - audio lease: `audio:<tabId>`
 - remote lease: `remote:<sessionId>`
-- concurrent creation is serialized
-- the host closes only after every lease has been released for a one-shot, service-worker-safe 30-second alarm
-- a host handshake reconstructs processors, remote sessions and leases after a service-worker restart
+- concurrent creation is serialized;
+- the host closes only after all leases are released and the one-shot grace alarm expires;
+- HELLO reconstructs processors, remote sessions, and leases after service-worker restart.
 
-## MAIN site adapters
+## Site adapters
 
-There is no generic MAIN runtime. Known site adapters are loaded on demand through one document-scoped manager and use the site's official API as the single writer. The default page retains native constructor and descriptor identity.
+There is no generic MAIN runtime. A known site adapter is one document-bound official API invocation selected only after the standard native path fails with an admitted failure. The default page retains native constructor and descriptor identity.
 
-Media WebAudio ownership remains in the isolated document runtime. A `WeakMap` guarantees at most one `MediaElementSourceNode` per media element for the page lifetime. Fullscreen does not suspend audio, force volume to one or clear mute. Leaving processing acknowledges a neutral route before releasing owned work and restores page-owned baselines; page volume and media mute never enter the processor contract.
+Media WebAudio remains isolated-world ownership. A media element receives at most one page-lifetime `MediaElementSourceNode`. Leaving active processing returns an irreversibly bound source to the minimal unity route; it does not close and recreate the binding. Page volume and media mute never enter the processor contract.
 
-## Settings and media discovery
+Strategy and adapter rules are owned by [control/02-strategy-and-routes.md](./control/02-strategy-and-routes.md).
 
-Background owns the revisioned settings repository in `chrome.storage.local`. UI contexts send field-level patches; `chrome.storage.session` stores only current tab/document mirrors. The one-release legacy theme adapter can only submit a candidate to the repository's atomic consume operation; it cannot inspect migration metadata or write storage. Canonical `lang` and `themeMode` are the only fields updated by new code, while old aliases remain read-only through 1.3.4. Domain matching uses normalized lower-case IDNA hostnames, label boundaries for domains and exact matching for IP addresses.
+## Settings and route registry
 
-The media route registry is a separate Background-owned repository. Popup and
-Options use one registry client and render the same v2 snapshot. The route data
-shape and persistence owner are summarized here; resolution precedence, legacy
-migration and cache-versus-activation semantics are normative in
-[control-architecture.md](./control-architecture.md#site-route-registry-and-eligibility-cache).
+Background owns the revisioned settings repository in `chrome.storage.local`. UI contexts submit typed field patches; session storage contains only current mirrors. Canonical fields replace legacy aliases through bounded read-only migration.
 
-Content discovers media through one mutation registry plus media, visibility and SPA-navigation events. Chrome's `webNavigation.onHistoryStateUpdated` and `onReferenceFragmentUpdated` deliver same-document changes as validated v2 events because an isolated-world History wrapper cannot observe page-world `pushState`; Content deduplicates those events before advancing generation. Every element gets one registration/disposer and independently receives the current desired configuration. There are no 1/3/5-second discovery loops or visible-tab heartbeats.
+The media route registry is a separate Background-owned repository. Popup and Options render the same v2 snapshot. One normalized site has one `direct | capture` route; a cached route is a planning hint, not processing activation. Exact precedence and migration rules are in [control/02-strategy-and-routes.md §4](./control/02-strategy-and-routes.md#4-site-route-registry-and-eligibility-cache).
+
+## Media discovery and identity
+
+Content maintains media through one event-driven registry plus media, visibility, and SPA-navigation events. Same-document navigation arrives through Chrome navigation events and is deduplicated before generation advances. Every element has one registration/disposer and independently receives current desired configuration.
+
+The passive bootstrap may perform a bounded top-level getter before the heavy runtime exists. Once the runtime is acquired, reads resolve through the registry without rescanning the document or changing selection.
+
+## Runtime loading and shortcuts
+
+The manifest loads a minimal isolated bootstrap. Heavy Content runtime ownership is acquired through identity-bound consumer tokens. The final consumer releases listeners and owned resources; a status read acquires none.
+
+Cold-document hotkeys use the same READY ensure path as other runtime consumers. READY is invalidated by navigation, update, context invalidation, health failure, and dispose. Exact readiness and feedback rules are in [control/02-strategy-and-routes.md §5](./control/02-strategy-and-routes.md#5-runtime-shortcut-and-feedback-ownership).
 
 ## Remote control
 
-Remote control remains PeerJS-based but is capability-bound and authenticated. A 128-bit fragment secret proves possession through an HMAC-SHA-256 nonce challenge before state or commands are exchanged. Commands are allowlisted and bound to the exact session, tab, generation and monotonic sequence. See [remote-security.md](./remote-security.md).
+Remote control is optional, capability-bound, and authenticated. A fragment secret proves possession through an HMAC-SHA-256 nonce challenge before state or commands are exchanged. Commands are allowlisted and bound to session, tab, generation, and monotonic sequence. See [remote-security.md](./remote-security.md).
 
-## Protocol and compatibility
+## Protocol compatibility
 
-New code sends protocol v2 envelopes and validates both request payloads and response data at runtime. Narrow named v1 adapters remain for one release so already-loaded contexts can receive compatibility events; they are not an alternate internal protocol. See [protocols.md](./protocols.md) for the wire contract and transition diagrams.
+Current code sends v2 envelopes and validates request payloads and response data at runtime. Narrow named compatibility adapters are temporary translation boundaries, not alternate internal protocols. See [protocols.md](./protocols.md).
 
-Every `chrome.runtime.onMessage` listener owns an exact request-type set. Prefix
-matching is not routing: a listener must return `false` before validation when
-the type belongs to another owner, so `spectra.tab.visible.list` cannot be
-claimed by the pin/mute command listener. The canonical request map and narrow
-UI/Content facades validate the same payload and response shape.
+Every message listener owns an exact request-type set. A prefix match does not grant ownership; an unrelated listener returns `false` before validation.
 
-The runtime loader and shortcut path share the identity-bound ensure protocol.
-The wire fields are defined in [protocols.md](./protocols.md#content-ready-and-cold-document-shortcuts);
-cold-document readiness, invalidation and feedback behavior are normative in
-[control-architecture.md](./control-architecture.md#runtime-shortcut-and-feedback-ownership).
+## Boundary projections
 
-`playback-rate-bridge.ts` is loaded on demand by the document-scoped manager.
-Its one-shot official-player behavior and unsupported boundary are defined only
-in [control-architecture.md](./control-architecture.md#site-adapters-pip-and-fullscreen).
+Favicon and QR rendering are UI/security boundaries, not media-runtime capabilities. PiP, fullscreen, and playback-rate adapter semantics belong to [control/02-strategy-and-routes.md §6](./control/02-strategy-and-routes.md#6-site-adapters-pip-and-fullscreen). Favicon, QR, and origin payload validation belongs to [protocols.md](./protocols.md#boundary-payloads) and [remote-security.md](./remote-security.md).
 
-Favicon and QR are boundary projections, not runtime capabilities. Their
-validation and failure semantics are defined by
-[protocols.md](./protocols.md#boundary-payloads) and the remote security owner;
-this topology document only records that they do not belong to the media runtime.
+## Current implementation ownership
 
-Already-loaded Content contexts treat extension reload/update invalidation as a
-terminal lifecycle event. The side-effect-free context guard catches both a
-missing runtime id and the synchronous `sendMessage()` invalidation throw,
-disposes the old bootstrap once and suppresses only that known teardown error.
-Unrelated malformed-command and transport failures continue to surface.
-
-## Current ownership checklist (2026-07-19)
-
-This table is a navigation aid only. The boundary text in the linked owner
-documents is normative; do not edit this table to introduce a second rule.
-
-| Concern | Current owner | Boundary that must remain true |
+| Concern | Owner | Invariant |
 | --- | --- | --- |
-| Route persistence/migration | `background/registry-repository.ts` + `restricted-registry.ts` | one v2 route per normalized site; UI never writes storage |
-| Route resolution | `content/logic/policy-executor/eligibility-cache.ts` | one site cache; media instances stay in document memory |
-| Processor lifecycle | `background/offscreen-coordinator.ts` + audio runtime delegate | cache does not equal activation; actual ACK drives status |
-| Shortcut readiness | `background/runtime-loader.ts` + `background/shortcuts.ts` | cold document ensure before first intent |
-| Toast/OSD feedback | `content/ui/toast.ts` + `content/ui/osd.ts` | one feedback owner; no refresh/bootstrap toast |
-| Playback-rate site UI | `content/injector/playback-rate-bridge.ts` | one-shot official adapter with getter/event readback |
-| PiP/fullscreen | trusted activation and fullscreen handoff bridges | native lifecycle and page baseline restoration |
-| Visualizer | `popup/visualizer/loop.ts` | active processor only; bounded subscriber lease |
-| Favicon/QR | Popup/remote renderers | supported URL/data validation; no undeclared permission |
+| Route persistence and migration | `background/registry-repository.ts` | one normalized site route; UI never writes storage |
+| Route resolution | Content policy executor | cache is not activation |
+| Processor lifecycle | offscreen coordinator and audio delegate | actual host ACK drives status |
+| Shortcut readiness | runtime loader and shortcuts | first cold-document intent waits for READY |
+| Toast/OSD | Content feedback modules | one feedback owner; no bootstrap/snapshot toast |
+| Site playback UI | one-shot adapter manager | official getter/event readback, no standing bridge |
+| PiP/fullscreen | trusted activation bridge and native executor | actual native lifecycle and baseline preservation |
+| Visualizer | subscriber registry and Popup scheduler | existing active processor only, bounded lease |
+| Favicon/QR | Popup and remote renderers | validated payload, no undeclared capability |
