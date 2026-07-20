@@ -18,7 +18,20 @@ const repositoryRoot = resolve(scriptDirectory, '..', '..');
 const VALID_TYPES = new Set(['tutorial', 'how-to', 'reference', 'explanation']);
 const VALID_STATUSES = new Set(['stable', 'draft', 'deprecated', 'archived']);
 const VALID_AUDIENCES = new Set(['all', 'developer', 'reviewer', 'contributor', 'user']);
-const IGNORED_DIRECTORIES = new Set(['.git', '.turbo', 'build', 'coverage', 'dist', 'node_modules']);
+const IGNORED_DIRECTORIES = new Set([
+	'.git',
+	'.turbo',
+	'build',
+	'coverage',
+	'dist',
+	'node_modules',
+	// Third-party reference code (hoverzoom-plus / imagus-reborn / photoshow).
+	'reference',
+	// sync-nexus generated public-repo candidates; their READMEs are completed
+	// only when the public repository is materialized.
+	'halo-public',
+	'spectra-public',
+]);
 
 /**
  * Cross-platform compatibility projections that must remain byte-identical to
@@ -66,6 +79,10 @@ const GRAPH_ROOTS = [
 
 function normalizePath(filePath) {
 	return relative(repositoryRoot, filePath).split(sep).join('/');
+}
+
+function normalizeEol(text) {
+	return text.replace(/\r\n/gu, '\n');
 }
 
 function parseArguments(argv) {
@@ -261,7 +278,7 @@ function lintRegisteredMirror(filePath, relativePath) {
 	const targetPath = resolve(repositoryRoot, targetRelativePath);
 	if (!existsSync(targetPath)) return [`compatibility mirror target is missing: ${targetRelativePath}`];
 	if (!hasExactCase(targetPath)) return [`compatibility mirror target has incorrect case: ${targetRelativePath}`];
-	if (readFileSync(filePath, 'utf8') !== readFileSync(targetPath, 'utf8')) {
+	if (normalizeEol(readFileSync(filePath, 'utf8')) !== normalizeEol(readFileSync(targetPath, 'utf8'))) {
 		return [`compatibility mirror drifted from canonical owner: ${targetRelativePath}`];
 	}
 	return [];
