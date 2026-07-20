@@ -31,23 +31,23 @@ This command is the script authority for the current code-lint set. It runs conf
 
 ### Documentation architecture
 
-From the repository root or `nexus/` as shown:
+From the repository root or `nexus/`:
 
 ```bash
 bun run docs:check
-# equivalent inside nexus/
-bun run docs:check
 ```
 
-The documentation gate checks canonical entrypoints, frontmatter, one-H1 structure, local links, registered migration symlinks, deprecated redirects, and reachability from documentation roots. It does not prove that dynamic public facts are current; those still require source revalidation.
+The documentation gate checks canonical entrypoints, frontmatter, one-H1 structure, exact-case local links, deprecated redirects, byte-identical generated compatibility mirrors, stable-owner uniqueness, and reachability from documentation roots. It does not prove that dynamic public facts are current; those still require primary-source revalidation.
 
 ### Toolchain drift
+
+From the repository root:
 
 ```bash
 bun --cwd nexus run check:toolchain
 ```
 
-This requires runtime Bun 1.3.14, matching root/workspace package metadata, pinned Biome/Turbo versions, and no recognized stale Bun-version reference in repository text/configuration.
+This requires runtime Bun 1.3.14, matching root/workspace package metadata, pinned Biome/Turbo versions, and no recognized stale Bun-version reference in repository text or configuration.
 
 ### Focused workspace lint
 
@@ -61,11 +61,11 @@ A focused pass does not replace applicable repository gates before merge or rele
 
 ### Automatic fixes
 
-Use Biome write mode only on intended files, then inspect the diff. Do not broadly rewrite generated, vendored, archived, or unrelated files.
+Use Biome write mode only on intended files, then inspect the diff. Do not broadly rewrite generated, vendored, archived, compatibility-mirror, or unrelated files. Edit the canonical owner of a generated compatibility mirror, then refresh the mirror through the maintained migration mechanism.
 
 ## Interpretation
 
-A failure may indicate formatting, import order, unsupported syntax, missing documentation ownership, dead local links, invalid redirects, an orphan owner, a toolchain mismatch, or a repository fallback rule. Read the exact diagnostic before changing code.
+A failure may indicate formatting, import order, unsupported syntax, missing documentation ownership, dead or mis-cased local links, invalid redirects, compatibility-mirror drift, an orphan owner, a duplicate stable owner, a toolchain mismatch, or a repository fallback rule. Read the exact diagnostic before changing code.
 
 Biome alone does not prove behavior, browser lifecycle, privacy truth, architecture correctness, or production-artifact integrity.
 
@@ -74,9 +74,9 @@ Biome alone does not prove behavior, browser lifecycle, privacy truth, architect
 - Adding a blanket suppression without documenting the exact false positive and boundary.
 - Formatting unrelated files to hide the meaningful diff.
 - Treating clean lint or docs checks as behavior verification.
-- Editing generated output rather than its source.
+- Editing generated output or a compatibility mirror rather than its canonical source.
 - Ignoring warnings or infrastructure failures because a command did not run.
-- Weakening the documentation graph to make an orphan or duplicate owner disappear.
+- Weakening the documentation graph to make an orphan, duplicate owner, or mirror drift disappear.
 
 ## Completion evidence
 
@@ -85,4 +85,4 @@ Biome alone does not prove behavior, browser lifecycle, privacy truth, architect
 - `docs:check` passes for the final tree;
 - Bun 1.3.14 toolchain check passes;
 - suppressions are narrow and justified;
-- final diff contains no unrelated formatting churn or generated-file edits.
+- final diff contains no unrelated formatting churn or unauthorized generated-file edits.
