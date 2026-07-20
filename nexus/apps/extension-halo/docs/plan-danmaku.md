@@ -2,200 +2,137 @@
 type: explanation
 status: draft
 audience: developer
+created: 2026-01-09
+last_reviewed: 2026-07-20
 ---
 
-# Bilibili Danmaku (弹幕) 功能规划 - Phase 5
+# Bilibili danmaku proposal
 
-> 创建: 2026-01-09 | 状态: 规划中
+This is an optional Hover Zoom workstream. It is not a shipped capability and is not required for the core preview lifecycle.
 
-## 概述
+Bilibili endpoints, protobuf shapes, access rules, rate limits, and browser behavior are time-sensitive. Revalidate them against current official behavior and captured test fixtures before implementation. Do not embed a network contract in production solely from the historical endpoint examples formerly stored in this file.
 
-为 Hover Zoom 视频预览添加 B 站弹幕支持，实现完整的视频预览体验。
+## Product boundary
 
----
+The capability displays user-requested timed comments over a supported Bilibili preview. It must:
 
-## 技术调研
+- start only for an explicit supported preview;
+- disclose and constrain external requests;
+- avoid retaining account identifiers or comment history beyond the active preview unless a separate product decision permits it;
+- remain optional and independently disposable;
+- degrade to video without danmaku when data is unavailable, malformed, blocked, or too expensive to render.
 
-### B 站弹幕 API
+## Proposed architecture
 
-**v2 API (推荐 - 分段请求)**:
-
-```
-GET https://api.bilibili.com/x/v2/dm/web/seg.so?oid={cid}&segment_index=1&type=1
-Response: Protobuf (DmSegMobileReply)
-```
-
-**v1 API (旧版 XML)**:
-
-```
-GET https://api.bilibili.com/x/v1/dm/list.so?oid={cid}
-Response: XML (压缩)
-```
-
-### Protobuf 解析
-
-B 站弹幕使用 Protobuf 格式，主要结构：
-
-```protobuf
-message DmSegMobileReply {
-  repeated DanmakuElem elems = 1;
-}
-
-message DanmakuElem {
-  int64 id = 1;          // 弹幕 ID
-  int32 progress = 2;    // 时间戳 (ms)
-  int32 mode = 3;        // 模式 (1滚动 4底部 5顶部)
-  int32 fontsize = 4;    // 字号 (18/25/36)
-  uint32 color = 5;      // 颜色 (RGB)
-  string midHash = 6;    // 用户哈希
-  string content = 7;    // 弹幕内容
-  int64 ctime = 8;       // 发送时间
-  int32 weight = 9;      // 权重 (屏蔽等级)
-  string action = 10;    // 动作
-  int32 pool = 11;       // 弹幕池 (0普通 1字幕 2特殊)
-}
-```
-
-### 渲染方案
-
-| 方案              | 优点               | 缺点           |
-| ----------------- | ------------------ | -------------- |
-| **Canvas 覆盖层** | 性能最佳、控制精细 | 实现复杂       |
-| CSS Animation     | 实现简单           | 大量弹幕时卡顿 |
-| WebGL             | 极致性能           | 过度工程       |
-
-**推荐: Canvas 覆盖层**
-
----
-
-## 架构设计
-
-```
+```text
 hover-zoom/
-├── viewer/
-│   ├── danmaku/
-│   │   ├── index.ts          # Re-exports
-│   │   ├── types.ts          # Danmaku types
-│   │   ├── proto-decoder.ts  # (≤200L) Protobuf → DanmakuItem[]
-│   │   ├── canvas-renderer.ts# (≤200L) Canvas 渲染 + 碰撞检测
-│   │   └── controller.ts     # (≤200L) 时间轴同步 + 用户控制
-│   └── media-display.ts      # 集成弹幕层
-└── rules/
-    └── definitions/bilibili.ts # 扩展返回 cid (用于弹幕 API)
+└─ viewer/danmaku/
+   ├─ index.ts
+   ├─ types.ts
+   ├─ decoder.ts
+   ├─ timeline.ts
+   ├─ renderer.ts
+   └─ controller.ts
 ```
 
-### 核心接口
+Responsibilities:
 
-```typescript
+- **adapter**: obtain the current media identifier and typed request parameters;
+- **decoder**: parse bounded untrusted bytes into validated items;
+- **timeline**: index items by media time and expose seek/reset operations;
+- **renderer**: draw an already-selected visible set without owning network or video state;
+- **controller**: bind one video, settings snapshot, cancellation signal, and disposer.
+
+The split is by ownership. File length is a review signal, not the acceptance criterion.
+
+## Data model
+
+```ts
 interface DanmakuItem {
   id: string;
-  time: number; // 出现时间 (ms)
-  mode: "scroll" | "top" | "bottom";
+  timeMs: number;
+  mode: 'scroll' | 'top' | 'bottom';
   fontSize: number;
-  color: string; // #RRGGBB
+  color: string;
   content: string;
-}
-
-interface DanmakuController {
-  load(cid: number): Promise<void>;
-  attach(video: HTMLVideoElement, container: HTMLElement): void;
-  detach(): void;
-  toggle(): void; // 开关弹幕
-  setOpacity(val: number): void;
-  setSpeed(val: number): void;
+  weight?: number;
 }
 ```
 
----
+All fields are range-checked. Invalid UTF-8, oversized content, unsupported modes, extreme timestamps, duplicate IDs, excessive counts, and malformed wire data are rejected or normalized through documented rules.
 
-## 实现步骤
+Do not expose sender hashes or account identifiers to the renderer when they are not needed for the product.
 
-### Step 1: Protobuf 解码器 (proto-decoder.ts)
+## Network boundary
 
-**策略**: 手动解码 Protobuf (避免引入 protobuf.js 依赖)
+The Bilibili adapter must declare:
 
-- Varint 解码
-- 字段解析 (wire type 0/2)
-- 返回 `DanmakuItem[]`
+- exact host permissions;
+- request method, response type, and maximum accepted bytes;
+- segmentation and pagination limits;
+- timeout, cancellation, retry, and rate-limit behavior;
+- authentication/cookie policy;
+- response validation and version fallback;
+- privacy and store disclosure impact.
 
-### Step 2: Canvas 渲染器 (canvas-renderer.ts)
+Background proxying does not remove these obligations. It is a transport boundary, not permission to fetch arbitrary URLs or forward ambient page credentials.
 
-**核心功能**:
+## Decoder requirements
 
-- Canvas 尺寸自适应视频
-- 弹幕轨道分配 (碰撞检测)
-- 滚动动画 (requestAnimationFrame)
-- 顶部/底部弹幕定时消失
+A hand-written protobuf decoder is acceptable only when the supported schema is narrow, fixtures cover all wire types used, unknown fields are safely skipped, integer overflow is handled, and malformed length-delimited fields cannot allocate unbounded memory.
 
-**性能优化**:
+Using a maintained protobuf implementation may be safer if its package and bundle cost are acceptable. “No dependency” is not automatically lower risk.
 
-- 仅渲染可见时间窗口弹幕
-- 复用文字测量缓存
-- 脏区域重绘
+Required tests include:
 
-### Step 3: 控制器 (controller.ts)
+- empty and truncated messages;
+- overlong varints and integer boundaries;
+- unknown fields and reordered fields;
+- invalid lengths and excessive item counts;
+- Unicode and zero-length content;
+- recorded valid fixtures from each supported endpoint version.
 
-**功能**:
+## Timeline and rendering
 
-- 与 video.currentTime 同步
-- 暂停/播放时停止/恢复
-- 用户设置 (透明度/速度/开关)
+The controller follows the bound video's actual events:
 
-### Step 4: 集成
+- play/pause controls animation;
+- seek and source replacement reset the timeline;
+- playback-rate changes adjust motion without rebuilding all items;
+- resize updates the canvas at a bounded cadence;
+- hidden or detached viewers stop rendering;
+- disposal cancels fetch/decode work and removes every event and animation owner.
 
-- 修改 `bilibili.ts` 返回 `cid` 用于弹幕请求
-- 修改 `media-display.ts` 初始化弹幕层
-- 添加设置项 (danmaku: enable/opacity/speed)
+The renderer uses a bounded visible window and lane allocator. It must define overload behavior rather than promising to render every incoming item. Candidate policies include weight-based sampling, per-second caps, duplicate suppression, and user-controlled density.
 
----
+Canvas is the default candidate because it provides one rendering surface and predictable cleanup. WebGL requires measured evidence that Canvas cannot meet the defined load; CSS elements are unsuitable for large unbounded item counts.
 
-## 设置项
+## Settings
 
-```typescript
+Candidate settings:
+
+```ts
 interface DanmakuSettings {
-  enable: boolean; // 默认 true
-  opacity: number; // 0-1, 默认 0.8
-  speed: number; // 0.5-2, 默认 1
-  fontSize: number; // 0.5-2, 默认 1 (倍率)
-  area: number; // 0.25-1, 默认 0.5 (屏幕占比)
+  enabled: boolean;
+  opacity: number;
+  speed: number;
+  fontScale: number;
+  maxScreenRatio: number;
+  density: number;
 }
 ```
 
----
+Every value has contract bounds and neutral defaults. Settings are local, versioned, and do not create network or rendering work while the capability is disabled.
 
-## 风险 & 挑战
+## Acceptance criteria
 
-1. **Protobuf 手动解码** - 需测试边界情况
-2. **大量弹幕性能** - 需限流 (如最多显示 100 条/秒)
-3. **视频尺寸变化** - Canvas 需重新调整
-4. **跨域请求** - 需通过 Background Proxy
+- current endpoint and response behavior are documented with dated fixtures;
+- host permissions and external data flow are reviewed;
+- untrusted bytes are bounded and fully validated;
+- playback, seek, rate, resize, hidden-state, source-change, and dispose tests pass;
+- overload behavior is deterministic under large datasets;
+- accessibility includes a disable control and reduced-motion-compatible behavior;
+- production memory, CPU, frame pacing, and package cost are measured;
+- failures leave the underlying preview usable and leak no requests, timers, canvases, or listeners.
 
----
-
-## 工作量估计
-
-| 模块               | 估计时间 |
-| ------------------ | -------- |
-| proto-decoder.ts   | 2h       |
-| canvas-renderer.ts | 4h       |
-| controller.ts      | 2h       |
-| 集成 + 测试        | 2h       |
-| **总计**           | **~10h** |
-
----
-
-## 依赖
-
-- **无新增运行时依赖** (手动解析 Protobuf)
-- 复用现有 Background Proxy 获取弹幕数据
-
----
-
-## 验收标准
-
-- [ ] 弹幕与视频时间轴同步
-- [ ] 滚动/顶部/底部弹幕正确显示
-- [ ] 弹幕颜色/字号正确
-- [ ] 开关/透明度/速度设置生效
-- [ ] 性能: 1000 条弹幕流畅 (60fps)
-- [ ] 视频暂停时弹幕暂停
+The former ten-hour estimate was removed because it ignored endpoint investigation, security review, browser integration, fixtures, performance testing, accessibility, and maintenance risk.
