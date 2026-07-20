@@ -1,162 +1,172 @@
-# AI Rules (System Directive) - 绝对服从
+---
+type: reference
+status: stable
+audience: contributor
+last_reviewed: 2026-07-20
+---
 
-## §0 核心指令压缩 (Compression)
+# NEXUS repository rules
 
-- 完整性>行数 | 压缩表述不丢信息 | 模块仅含必需信息
-- 格式: 禁表格 | `字段1: 字段2: 字段3` → `A: B: C` | 流程 `→` | 约束 `-`
-- 禁词: 禁用"请注意/建议/的时候/进行/执行/相关的/可以/能够/应该" → 必须**直接陈述**
-- 技巧: 单行 `{a,b}` | 删对齐空行 | 列表 `/` | 重复规则 `→见[文件]`
+This file owns repository-wide workflow, security, dependency, architecture, quality, and Git constraints. Domain contracts may impose stricter rules, but a README, roadmap, research note, archived report, or store listing cannot relax this floor.
 
-## §1 认知铁律 (Directives)
+When prose conflicts with executable contracts, source, tests, or a release gate, stop and reconcile the sources. Do not silently choose the convenient interpretation.
 
-- **思考极致**: 强制全工程级深度审计 | 极限推演数据流与逻辑链 | 绝禁断章取义。
-- **定位**: 纯粹编码架构机器 | 绝禁情感沟通 | 盲区强制联网 | 输出即最好实践与人类最高水平。
-- **环境边界 (打破代码真空)**: 绝禁将代码逻辑与宿主环境 (如 Browser/V8/OS) 剥离分析！只要涉及跨域通信、底层 API、或多子系统互联同步，必须第一时间排查**物理运行时机制、上下文丢失、底层限制或引擎的隐式重置**，绝禁在表层业务代码中“垒屎山”修 Bug。
-- **执行**: 最优算法 | 结构一步到位 | 最小化中间态 | **只增量修改禁全量替换 | 绝禁篡改原有正确逻辑**。
-- **标准**: 苛刻 (完美架构/神速构建为底线) | 分步精研 | 治本禁治标 | 变更后立即同步上下文。
-- **上下文**: 通读并绝对遵循全量工程规约。
+## 1. Working directory and toolchain
 
-## §2 代码落地 (Implementation)
+- The primary workspace is `nexus/`.
+- Repository-root scripts proxy into the workspace; do not invent another working directory.
+- Bun is the package manager and runtime for repository scripts.
+- Do not introduce `npm`, `pnpm`, Yarn lockfiles, or package-manager-specific commands without an explicit migration decision.
+- Use the versions and commands declared by the repository. A global tool installation is not an authority.
+- Generated files are updated through their generator, not by manual edits that the next build will erase.
 
-- **总则**: 先规划，后编写 | 拒绝过度拆解碎片。
-- **结构 (Domain-Driven)**: 物理上按业务模块聚合 `module/{index.ts, types.ts, core.ts, [feature].ts}`。
-- **红线**: 单文件聚焦单一核心业务域 | 目录深度 ≤ 3 **(框架强约束路由除外)** | **绝对路径优于相对路径** (禁 `../../../` 深层地狱)。
+## 2. Change preparation
 
-### §2.1 代码注释 (Comments)
+Before modifying behavior:
 
-- Default: ∅ (默认不写注释)。
-- Priority: Rename > Type/Constraint > Effect > Why > None (命名优于类型，类型优于注释效果，最后才是Why)。
-- Valid约束: Atomic(精确到行) ∧ Head(顶部) ∧ Non-derivable(不可通过英语/代码字面推导的才写)。
-- Scope: File `{goal, tradeoff, ban, risk}` | Func `{pre, post, invariant, effect}` | Line `{invariant, rule, @tag}`。
-- Filter: **强制丢弃** 可推导/自解释/废话/情绪记录/旧代码/作者签名 等噪声。**严禁因偷懒遗留 TODO**，若因客观依赖受限必需挂起，必须使用带有条件触发器的标记 (如 `// TODO: [原因] 待 [条件/版本] 升级后移除`)。
-- Write触发: 仅当逻辑不可推导、需要限制未来修改、或删除该注释会导致后续接手者犯错时才写。
-- Template: `// field: <content>`
+1. identify the domain authority and public contract;
+2. inspect callers, consumers, lifecycle owners, tests, and release gates;
+3. distinguish implemented behavior, compatibility code, historical evidence, and proposed work;
+4. state the identity, revision/generation, owner, disposer, and failure handler affected by the change;
+5. check whether a smaller owner-level fix eliminates multiple symptoms.
 
-## §3 安全红线 (Security)
+Do not preserve a known-wrong structure merely to minimize the diff. Do not replace a large file merely to avoid understanding it. The required scope is the smallest coherent change that restores one correct ownership model.
 
-- **敏感**: 零硬编码 Key/Token/私钥 (强制使用 `.env`) | 日志强制脱敏 | 生产禁 `console.log`。
-- **环境变量校验**: 绝对严禁将 `process.env.XXX` 散落在全工程各地！必须在工程入口配置层 (Config) 利用 Zod 或等效库进行统一种子校验拦截，缺失/类型错误必须在启动时立刻 FailFast 阻断。
-- **隔离**: `.env` 绝对不入 Git | 必须提供 `.env.example` 模板并保持同步。
-- **URL/数字**: 严禁硬编码 URL 与 **Magic Number(魔法数字)**，业务阈值与常量必须统一提取至 `config/constants`。
-- **端侧边界**: 若为全栈框架 (如 Next.js)，必须严格执行 Client/Server 物理隔离。**绝对严禁**在客户端环境 (如 `use client` 组件) 暴露服务端密钥或调用 Node/Bun 原生 API。
-- **权限**: 严格遵循最小权限原则 (PoLP)。
+## 3. Single source of truth
 
-## §4 语言规范 (Language)
+- Each domain has one authoritative model.
+- Projections, caches, UI state, adapters, generated indexes, and compatibility fields do not become second authorities.
+- The same identifier, status, permission, route, capability, or lifecycle must not be manually enumerated in multiple modules.
+- Legacy aliases are bounded migrations with an owner and removal condition.
+- Plans and checklists do not prove implementation.
+- Historical reports keep their original date, commit, and evidence; they do not overwrite current state.
 
-- **语种**: 思考/分析/文档/PR/终端 → 中文 | 代码注释/Git Commit → 英文。
-- **格式化**: 绝禁自主发明风格 | 强制读取/服从根配置(`biome.json`等)或同文件前置风格 | 巨量修改后强制调终端跑 `格式化脚本` (如 `bunx prettier --write <file>`)，绝禁用 Token 手动凑空格。
+## 4. Module and dependency direction
 
-## §5 架构宏观 (Repository Level)
+- Contracts describe data, protocol, and validation shape without application business logic.
+- Shared packages expose public facades; applications do not deep-import another domain's internals.
+- Dependency direction remains acyclic and explicit.
+- A module owns one cohesive responsibility and a complete lifecycle.
+- File size, directory depth, and import count are review signals, not mechanical architecture rules. Split only at a real boundary.
+- Do not create wrapper layers that only rename calls or duplicate an existing contract.
 
-- **防失忆 (高内聚)**: **绝禁过度拆解碎片文件** | 强关联逻辑强制单文件一镜到底 (折叠+JSDoc) | 仅当突破 AI 操控极限时才允许物理分块。
-- **边界与跨域调用**: 不同业务域绝对禁止深度互相 import 内部文件。必须且只能通过该模块的 `index.ts` (Facade/门面) 暴露出极简的接口函数进行通信。
-- **通用下沉隔离**: 全局复用的类型、网络层、基础组件，强制剥离下沉至独立的 `shared/` 或 `common/` 物理目录，禁止业务域反向污染。
-- **依赖流向**: 单向流 | 严禁深层内部下引上 | **严禁循环依赖**。
-- **逻辑分层 (非物理目录)**: 后端严格遵循 `CLI/API → Controllers → Services → Core → Config → Types` | 前端UI严禁混入后端 Controller 模式，状态管理必须纯函数下沉 (如 Hooks/Zustand)。
-- **业务域聚合**: SSOT(单点真相) | 业务域高内聚防断联 | 依赖抽象(接口) | 边界清晰 | **Pinnacle Registry (严禁硬编码合约)**。
-- **目录/命名**: 物理深度 ≤ 3 | 严格按业务功能分组。**文件默认统一 kebab-case** (除暴露 React 组件依赖的 `PascalCase.tsx` 或 Hooks 强依赖的 `useCamelCase.ts` 外)。
-- **视觉约束 (UI/UX)**: 严禁极其简陋的 MVP 裸奔样式 | 必须使用统一的 Design System (或预设的 Tailwind Config)，严禁内联乱写杂色 (如 `red`, `blue`) | 严禁使用空白占位图，必须通过工具生成 Demo 级别的高保真占位资产。
+## 5. State, identity, and lifecycle
 
-## §6 设计微观 (Component)
+- Mutable state has one owner and an explicit persistence boundary.
+- Work that survives UI closure belongs to a background/runtime owner, not a mounted component.
+- Every document-, tab-, media-, session-, or source-scoped operation carries enough identity to reject stale results.
+- Subscriptions, observers, timers, animation frames, object URLs, audio nodes, streams, ports, and network requests require a disposer or cancellation path.
+- Start, active, stopping, error, recovery, and terminal states must be observable where they affect user behavior.
+- A read does not acquire mutation or processing resources unless the contract explicitly defines that side effect.
 
-- **HA(高可用)**: 异常重试(指数退避) | 核心无状态(支持重启恢复) | 降级容灾(严禁级联失败) | FailFast(快速失败) | 防多开系统锁(Singleton PID Check **- 测试环境需支持沙箱隔离前缀避免锁死并行测试**)。
-- **HP(高性能)**: 追求最快算法 | IO 必须异步且禁阻塞 | 引入缓存(TTL) | 零拷贝(禁用低效 `Array.from`) | 内存预分配(循环内禁 `alloc`) | 懒加载。
-- **HC(高并发)**: 并发必须合理(禁无限并发) | 限流(p-limit) | 任务沙箱隔离 | **持久化驱动 (Task Queue 优先)** | 任务级 Stagger 偏移缓冲。
-- **行为仿真**: 必须集成行为引擎 | 禁止机械化重复时序 | 模拟作息活跃曲线 | **(Pinnacle) 强制执行地址种子人格化与因果行为序列**。
-- **维护性**: 显式调用优于隐式钩子 | 变量/函数自解释命名禁缩写 | 代码体量内聚防断联 | 核心逻辑必须 100% 覆盖。
-- **扩展性**: 核心依赖强制抽象 | 预留可扩展机制 | 行为策略可配置。
+## 6. Errors and asynchronous work
 
-## §7 异常处理 (Error Handling)
+- Do not use empty `catch` blocks or discard rejected promises.
+- Catch values begin as `unknown` and are narrowed before use.
+- Errors retain an actionable code, message, phase, retryability, and relevant identity.
+- Retrying is bounded, cancellable, and justified by the failure class.
+- Permission denial, user-activation failure, stale identity, invalid input, unsupported browser behavior, and protected-content boundaries are not converted into generic timeouts.
+- Core I/O has an explicit timeout or cancellation model when the underlying API supports it.
 
-- **异常**: 预期异常必须捕获，**绝对禁止空 `catch`** | 向上传播时必须附带上下文 | 可恢复则恢复，否则立即 FailFast | 捕获后必须记录并带原始 Error 堆栈。
-- **边界**: 外部输入强制校验，**零信任用户数据** | 输出验证严格，禁止任何敏感数据泄露 | 模块边界内部交互可校验信任。
+## 7. Security and privacy
 
-## §8 日志观测 (Logging)
+- Secrets, credentials, private keys, session tokens, personal data, and environment-specific sensitive configuration do not enter Git.
+- Validate messages, senders, URLs, origins, file paths, network responses, and untrusted bytes before execution or allocation.
+- Privileged operations are allowlisted by capability and user action.
+- Do not download or execute remote extension code.
+- Do not broaden permissions to avoid designing an exact boundary.
+- Public privacy claims match physical traffic, third-party providers, transmitted fields, retention, and opt-in behavior.
+- Local-first and zero-telemetry claims do not imply zero network traffic when an optional network feature exists.
+- User-authored scripts remain inside the declared sandbox and never inherit internal privileged adapters.
 
-- **格式**: `[LEVEL] msg | ctx`，必须支持标签化/易过滤。
-- **脱敏**: 绝对禁止打印 Token/密码 等敏感内容。
-- **性能**: 高频循环内严禁写日志 | 采用批量落盘或采样策略。
+## 8. Dependencies
 
-## §9 测试度量 (Testing)
+Before adding or upgrading a dependency:
 
-- **单元**: 核心链路 100% 覆盖 | 着重覆盖边界条件与异常抛出 | Mock必须针对外部依赖，**严禁混入集成环境** | 必须秒级执行，禁止慢 IO。
-- **集成**: 必须引入真实依赖，严禁 Mock 核心链路 | 测试后强制自动清理，绝对禁止残留 | 物理独立测试环境，严禁污染生产数据。
+- confirm the current official package, stable version, license, maintenance state, security advisories, browser/runtime compatibility, bundle contribution, and transitive dependencies;
+- verify that the platform or existing code cannot provide the capability with lower lifecycle and maintenance cost;
+- pin or range versions according to repository policy and update the lockfile with Bun;
+- add only the dependency needed by the owning package;
+- document any external ABI, network, worker, or asset implications.
 
-## §10 性能底线 (Performance)
+A dependency is not justified only because it reduces initial implementation time.
 
-- **算法**: 时间复杂度优先，空间次之 | 高频查找用 Map 替代 Object，或使用 Set 去重 | 合理使用空间换时间策略。
-- **IO**: IO/网络请求必须批量操作，严禁在循环内单次发起 IO | 并行请求代替串行等待 | 大数据传输强制走 gzip/brotli 压缩。
-- **内存**: 用完即弃及时释放避免泄漏 | 频繁创建的巨量小对象强制池化 (Pool) | 减少不必要的实例化以降低 GC (垃圾回收) 压力。
+## 9. Performance
 
-## §11 运行环境 (Environment)
+- Correctness and ownership come before micro-optimization.
+- Inactive features perform no recurring work unless a documented browser lifecycle requires it.
+- Prefer browser events, subscriptions, and one-shot alarms over polling.
+- Pause optional rendering, sampling, and expensive work when hidden or unowned.
+- Bound concurrency, retries, queues, caches, input size, IPC rate, storage writes, and memory growth.
+- Avoid repeated allocation, parsing, layout reads, serialization, and I/O in hot loops.
+- Claims such as “zero CPU,” “zero allocation,” “10× faster,” or fixed memory limits require a reproducible workload and production-build measurement.
+- Performance optimization must not replace an actual read with a cached guess or remove required validation.
 
-- **OS**: Windows 11。
-- **Shell**: 宿主机强制 **PowerShell7** | 容器 (Docker) 内部强制 **bash/sh** (严禁混淆宿主与沙箱环境)。
-- **Runtime/包管理**: 强制全局统一使用 **Bun** 作为唯一 Runtime 与 Package Manager | **绝对严禁**使用 npm/pnpm/yarn 混入工程破坏 `bun.lockb` | **执行临时包必须使用 `bunx`，严禁使用 `npx`**。
-- **依赖约束**: 安装新依赖包时，必须基于当前工程环境联网搜索，选择**最新稳定兼容版 (Latest Stable Compatible Version)**，绝对严禁盲目引入跨主版本的不兼容包或实验性 (Alpha/Beta/RC) 版本。
-- **Docker**: 容器化运行优先 | 必须携带 `-it` (交互式终端)。
+## 10. TypeScript
 
-## §12 数据管理 (Data)
+- `strict: true` is the baseline.
+- Avoid `any`; `as any` is prohibited except inside a narrowly documented compatibility boundary that cannot be expressed safely otherwise and has a removal plan.
+- Prefer derived types and discriminated unions to duplicated DTOs and unstructured string switches.
+- Runtime validation remains necessary at extension, storage, network, and untrusted-data boundaries; compile-time types are not runtime proof.
+- Type assertions require evidence that the checked runtime boundary establishes the asserted shape.
+- Every promise is awaited, returned, deliberately detached through an owned helper, or handled.
 
-- **主权**: 数据库为**唯一真相源 (True Source)** | 硬编码仅限种子数据 | 空库必须检测，非空数据库非强制不得覆盖。
-- **隔离**: 敏感配置数据不得入 Git | 配置自动备份 | 进程运行状态数据互相隔离。
-- **更新**: 增量更新先行 | 入库前防重复去重 | 外部源数据保持持续/定时抓取状态更新。
-- **演进**: Schema 变更必须走强制的 **Migration 迁移结构**，绝对严禁使用 `sync: true` 破坏性热同步数据库。
+## 11. Testing and verification
 
-## §13 文档与知识流 (SSOT)
+A change runs the smallest focused checks during development and the complete applicable gate before merge.
 
-- **三层防幻觉架构**:
-  1. **全局规约**: 本 rule 即最高级调度中心。
-  2. **总纲图谱**: 顶层仅保留 `plan.md`/`architecture.md` | **绝禁建立海量细碎文档**防检索挂断。
-  3. **底层细节**: 零碎分支/绕行逻辑严禁文档化，全部退回源码 JSDoc/内联注释。
-- **同步**: 代码变更 → 依工作流 (SOP) 触发标配命令(绝禁自主发散) → 同步顶层 MD。
-- **验证**：确保数据流与图谱一致 | 代码示例必须可运行 | 内部链接不得死链。
+The verification set may include:
 
-## §14 Git 规范 (Conventional Commits)
+- unit and property tests for pure logic;
+- contract and runtime-guard tests;
+- state-machine and lifecycle tests;
+- TypeScript, lint, formatting, and architecture checks;
+- production build and artifact inspection;
+- Chrome integration and user-activation behavior;
+- navigation, service-worker restart, update, hidden-state, cancellation, and disposal cases;
+- privacy, permissions, localization, remote-site, and store-copy reconciliation.
 
-- `feat:` 新功能 (Features)
-- `fix:` 修复 (Bug Fixes)
-- `docs:` 文档 (Documentation)
-- `refactor:` 重构代码 (Refactoring)
-- `test:` 测试 (Testing)
-- `chore:` 构建层/辅助工具/依赖变更
-- `perf:` 纯性能逻辑优化 (Performance)
+A green typecheck or unit suite alone does not prove browser behavior or release readiness.
 
-## §15 红线死刑区 ❌ (Absolute Bans)
+## 12. Documentation
 
-- ❌ 硬编码 敏感信息/URL/配置
-- ❌ 循环依赖 / 底层反向引用上层
-- ❌ 静默吞没异常 / 空 `catch {}`
-- ❌ `any` 滥用 / 使用类型断言 `as` 强行绕过编译
-- ❌ 循环内部执行高频 IO 或 内存 `alloc`
-- ❌ 无限并发 / 无上限次数或无退避的重试
-- ❌ 跨层级复制粘贴 / 逻辑代码重复定义
-- ❌ 单文件多重职责 / 目录嵌套深度 > 3
-- ❌ 未处理/悬挂的 `Promise` / 未被顶层截获的异常
-- ❌ 粗暴全量替换原有大段代码
-- ❌ 在未理解前提下改变原有业务逻辑
-- ❌ 机械拼凑代码片段
+- Active internal documentation uses one Diátaxis type and a lifecycle status.
+- The canonical documentation map is [`nexus/docs/documentation-index.md`](nexus/docs/documentation-index.md).
+- Put normative behavior in one owner; link to it elsewhere.
+- Use tables when they reduce ambiguity in a matrix, mapping, comparison, or ledger. Do not use tables merely for visual compression.
+- Code examples are executable or clearly marked as pseudocode.
+- Relative links are interfaces and must remain valid after a move or rename.
+- Research, plans, audits, and verification snapshots state their date and evidence scope.
+- Dynamic facts such as versions, prices, policies, counts, APIs, and market data are revalidated before current use.
+- Public documentation does not promise more than the current production artifact and browser tests prove.
 
-## §16 时效与联网验证 (Chronos & Web Search)
+## 13. Git and review
 
-- **网络触发器 (Web Search)**: 必须主动查全网，**绝禁**依赖预训练数据盲猜以下场景：
-  1. **包版本**: 装包前必查“最新稳定版本号”。
-  2. **API集成**: 外联新系统前必查官方文档防接口废止 (Breaking Changes)。
-  3. **未知故障**: 遇知识体系外 Error 堆栈，速查 Issue/StackOverflow。
-  4. **配置语法**: 构建工具版本跃迁时(Next/Biome等)，绝禁凭记忆输出已废除写法。
-  5. **Runtime**: 遇底层 API 异常，必检该特性在 Bun 侧兼容支持度。
-  6. **鉴权/爬虫**: 接入平台 OAuth/策略前，必检最新协议与频控锁限制。
-  7. **CVE/废弃**: 引入敏感依赖库必查安全漏洞与 Deprecated 状态。
-  8. **环境变更**: 框架大版本跨越起手必通读官方 Migration Guide。
-  9. **死锁熔断**: 同一 Bug 连修 2 次失败，绝禁强猜，必查上游 GitHub Issues 定坑。
-- **时效核验**: 遇强依赖时间/外部工况的任务前，**主动验证当前真实有效时间状态** | 绝禁盲用缓存。
-- **生命管理**: 业务链路强嵌生命周期 (待定/进行/超时)，触达极限时效必须立刻 FailFast。
+- Use Conventional Commits: `feat`, `fix`, `docs`, `refactor`, `test`, `perf`, `build`, `ci`, or `chore` with an accurate scope and message.
+- One commit should form a coherent and reversible closure.
+- Do not mix unrelated cleanup into a behavioral fix.
+- Review the final diff for accidental generated output, secrets, debug code, stale links, and deleted evidence.
+- Do not force-push a shared or release branch by default.
+- Do not merge with failing required checks or unresolved review findings.
+- A generated public-repository sync is inspected and validated as a release artifact before push.
 
-## §17 TypeScript 严准则 (TypeScript Strict)
+## 14. Current external facts
 
-- **思维**: 摒弃基于类的标称(Nominal)打法，转向针对接口的**结构化(Structural)类型思维** | 接口必须描述数据的真实物理形状，而非抽象起源。
-- **红线**: 绝对禁止滥用 `any` | 绝对禁止使用 `as any` 暴力绕过 TS 编译器 | 捕获的异常必须是 `unknown` 并配合 `instanceof Error` 做收窄判断。
-- **工具**: 高优使用 TS 派生类型工具 (`Pick/Partial/Omit`) 规避 DTO 以及 Interface 的重复定义。
-- **模式**: 联合类型(Union) 优于 传统枚举(Enum) | 更推荐通过属性 Tag 表驱动做类型窄化，而非满篇 `instanceof` 类校验。
-- **异步**: 必须 `await` 或 `catch` 每一个 `Promise`（绝禁悬挂） | 对于核心 IO，必须显式具备**超时 (Timeout) 与 中断 (AbortController) 机制**。
-- **配置**: `strict: true` 为物理绝对底线 | 严禁工程中存在任何隐式 `any`。
+Use current primary sources when a decision depends on package versions, browser APIs, build-tool syntax, store policy, remote provider behavior, CVEs, deprecations, or migration guides.
+
+Search summaries, copied articles, and old repository notes are discovery aids, not final authority. Record the version, date, platform, and source that the implementation actually targets.
+
+When the same failure survives two attempted fixes, return to the root model: inspect upstream issues, actual runtime evidence, identity/lifecycle assumptions, and competing owners instead of adding another workaround.
+
+## 15. Absolute prohibitions
+
+- committed secrets or sensitive production configuration;
+- circular dependencies or unowned cross-layer mutation;
+- silent exception swallowing or unhandled asynchronous work;
+- unbounded concurrency, retry, polling, queue, cache, or allocation;
+- duplicated authorities or direct writes around an owning repository/coordinator;
+- remote code execution inside the extension;
+- permission, activation, origin, protected-content, or sandbox bypass claims;
+- public claims known to exceed the production artifact;
+- modifying generated files instead of their source;
+- changing behavior without corresponding verification and owner documentation.
