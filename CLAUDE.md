@@ -11,7 +11,7 @@ Read these before changing the repository:
 3. The application or package owner document for the behavior being changed.
 4. The relevant contracts, implementation, tests, and release gates.
 
-Do not treat this file as a second copy of the rules. It mirrors `AGENTS.md` for tools that load `CLAUDE.md`; the local post-analyze hook restores the hardlink after GitNexus regeneration.
+Do not treat this file as a second copy of the rules. It is the agent entrypoint and generated skill index.
 
 ## Working boundary
 
