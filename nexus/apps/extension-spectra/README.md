@@ -2,7 +2,7 @@
 
 SPECTRA is a Chrome Manifest V3 extension for audio, video, playback, hotkey, and optional authenticated mobile-remote control.
 
-This README is an entrypoint. Current behavior is defined by the linked owner documents and executable contracts.
+This README is a product and developer entrypoint. Current behavior is defined by executable contracts/source/tests and the [SPECTRA documentation owners](docs/README.md).
 
 ## Capability overview
 
@@ -16,7 +16,7 @@ This README is an entrypoint. Current behavior is defined by the linked owner do
 
 ### Playback and video
 
-- playback speed, pitch preservation, play/pause, seek, loop, markers, and A/B loop when supported by the current media;
+- playback speed, pitch preservation, play/pause, seek, loop, markers, and A/B loop when supported by current media;
 - reversible rotation, mirror, fill, filter, and dim effects;
 - Picture-in-Picture and fullscreen through standard browser lifecycle rules;
 - visible-frame screenshots when the current target is capturable.
@@ -39,39 +39,41 @@ A page or browser may not expose every operation. SPECTRA reports unsupported or
 
 ## Development
 
-From the repository root:
+The repository is pinned to **Bun 1.3.14**. From the repository root:
 
 ```bash
-bun install --cwd nexus
+bun install
 bun run build
 bun run lint
 bun run typecheck
 bun run verify
+bun run docs:check
 ```
 
 Load the generated unpacked extension through Chrome's extension-development page for local testing. Use the production release workflow for store artifacts.
 
-## Chrome Web Store
+## Documentation
 
-Add the canonical product listing URL after publication. The Chrome Web Store homepage is not a product install link and is intentionally not used here.
-
-## Engineering documentation
-
-- [Control architecture](docs/control-architecture.md): capability strategy, writers, acknowledgement semantics, and release invariants.
-- [Runtime protocols](docs/protocols.md): cross-context envelopes, state flow, READY, and leases.
-- [Runtime topology](docs/architecture.md): context ownership and loading boundaries.
-- [Remote security](docs/remote-security.md): pairing, authentication, and network disclosure.
-- [WebAudio source admission](docs/cors-data-flow.md): source eligibility and binding boundaries.
-- [Roadmap](plan.md): proposed and unresolved work.
-- [Historical archive](docs/_archive/2026-Q3/README.md): dated implementation and regression evidence.
+- [Documentation map](docs/README.md)
+- [Control architecture](docs/control/README.md)
+- [Runtime protocols](docs/reference/protocols.md)
+- [Runtime architecture](docs/architecture/runtime.md)
+- [Remote security](docs/security/remote-control.md)
+- [Media WebAudio admission](docs/architecture/media-source-admission.md)
+- [Roadmap](docs/roadmap.md)
+- [Historical archive](docs/_archive/2026-Q3/README.md)
 
 ## Privacy
 
 SPECTRA has no advertising, analytics, telemetry, or developer-operated collection service. Settings and media processing remain local by default. The optional remote feature creates disclosed third-party network connections and sends a limited control projection only after authentication. See [PRIVACY.md](PRIVACY.md).
 
+## Chrome Web Store
+
+Add the canonical product listing URL after publication. The Chrome Web Store homepage is not a product install link and is intentionally not used here.
+
 ## Contribution boundary
 
-Change a capability through its contract, implementation, tests, and owner documentation in one closure. Follow the [repository documentation map](../../docs/documentation-index.md) and [`rules.md`](../../../rules.md).
+Change a capability through its contract, implementation, tests, owner documentation, and release evidence in one closure. Follow the [repository documentation architecture](../../docs/README.md) and [`rules.md`](../../../rules.md).
 
 ## License
 
