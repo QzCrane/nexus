@@ -1,6 +1,7 @@
 // goal: owns the session-scoped global hotkey target and removes stale tab identities
 
 import type { HotkeyTargetState } from '@nexus/contracts';
+import { createSerializedQueue } from '@nexus/kernel';
 
 const HOTKEY_TARGET_KEY = 'hotkeyTargetTabId';
 
@@ -19,21 +20,15 @@ function isPositiveInteger(value: unknown): value is number {
 }
 
 export class HotkeyTargetRepository {
-	private queue: Promise<void> = Promise.resolve();
+	private serialized = createSerializedQueue();
 
 	constructor(
 		private readonly targetStorage: HotkeyTargetStoragePort,
 		private readonly tabs: HotkeyTargetTabsPort,
 	) {}
 
-	private serialize<T>(operation: () => Promise<T>): Promise<T> {
-		const result = this.queue.then(operation, operation);
-		this.queue = result.then(() => undefined, () => undefined);
-		return result;
-	}
-
 	get(): Promise<HotkeyTargetState> {
-		return this.serialize(async () => {
+		return this.serialized(async () => {
 			const stored = await this.targetStorage.get();
 			if (!isPositiveInteger(stored)) {
 				if (stored !== undefined && stored !== null) await this.targetStorage.remove();
@@ -50,7 +45,7 @@ export class HotkeyTargetRepository {
 	}
 
 	set(tabId: number | null): Promise<HotkeyTargetState> {
-		return this.serialize(async () => {
+		return this.serialized(async () => {
 			if (tabId === null) {
 				await this.targetStorage.remove();
 				return { tabId: null };
@@ -63,7 +58,7 @@ export class HotkeyTargetRepository {
 	}
 
 	clearIfMatches(tabId: number): Promise<void> {
-		return this.serialize(async () => {
+		return this.serialized(async () => {
 			const stored = await this.targetStorage.get();
 			if (stored === tabId) await this.targetStorage.remove();
 		});

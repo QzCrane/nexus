@@ -3,6 +3,7 @@
 
 import { AudioConfig, DEFAULT_AUDIO_CONFIG } from '../messages/protocol.js';
 import { resolveAudioVolume, type TabSessionIdentity } from '@nexus/contracts';
+import { createKeyedSerializedQueue } from './serialized-queue.js';
 
 const TAB_SESSION_PREFIX = 'tab_session_';
 const STORAGE_WRITE_DEBOUNCE_MS = 250;
@@ -17,21 +18,10 @@ type StoredSessionValue = StoredTabSession | AudioConfig;
 
 const pendingWrites = new Map<number, StoredSessionValue>();
 const writeTimers = new Map<number, ReturnType<typeof setTimeout>>();
-const operationQueues = new Map<number, Promise<void>>();
+const serialized = createKeyedSerializedQueue<number>();
 
 function keyFor(tabId: number): string {
 	return `${TAB_SESSION_PREFIX}${tabId}`;
-}
-
-function serialized<T>(tabId: number, operation: () => Promise<T>): Promise<T> {
-	const previous = operationQueues.get(tabId) ?? Promise.resolve();
-	const result = previous.then(operation, operation);
-	const tail = result.then(() => undefined, () => undefined);
-	operationQueues.set(tabId, tail);
-	void tail.finally(() => {
-		if (operationQueues.get(tabId) === tail) operationQueues.delete(tabId);
-	});
-	return result;
 }
 
 function clearWriteTimer(tabId: number): void {

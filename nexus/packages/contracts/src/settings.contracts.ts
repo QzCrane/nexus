@@ -398,23 +398,7 @@ export function isSettingsPatchRequest(value: unknown): value is SettingsPatchRe
 	}
 	if (patch.scope === 'default-preset') {
 		return hasOnlyKeys(patch, DEFAULT_PRESET_PATCH_KEYS)
-			&& (patch.value === null || isPresetName(patch.value));
+		&& (patch.value === null || isPresetName(patch.value));
 	}
 	return false;
-}
-
-// goal: abstraction for chrome.storage to provide type-safe persistence
-export interface IStorageRepository {
-  getAudioConfig(domain: string): Promise<import('./audio.contracts.js').AudioConfig>;
-
-  setAudioConfig(domain: string, config: Partial<import('./audio.contracts.js').AudioConfig>): Promise<void>;
-
-  getGlobalSettings(): Promise<GlobalSettings>;
-
-  setGlobalSettings(settings: Partial<GlobalSettings>): Promise<void>;
-
-  // eff: subscribes to storage changes, returns unsubscribe function
-  onChanged(callback: (changes: Record<string, { oldValue?: unknown; newValue?: unknown }>) => void): () => void;
-
-  clear(): Promise<void>;
 }

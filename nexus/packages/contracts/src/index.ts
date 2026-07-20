@@ -159,7 +159,6 @@ export type {
 export type {
   GlobalSettings,
   SupportedLanguage,
-  IStorageRepository,
   ThemeMode,
   SettingsSnapshot,
   AudioPresetMeta,

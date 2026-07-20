@@ -39,6 +39,7 @@ import {
 	type SiteNativeControlField,
 	type SpectraEventEnvelope,
 } from '@nexus/contracts';
+import { createKeyedSerializedQueue } from '@nexus/kernel';
 import { sendSpectraTabRequest } from '../shared/spectra-client';
 import { storage } from './state';
 import { updateBadgeFromControlProjection } from './handlers/badge';
@@ -57,7 +58,7 @@ const STORAGE_PREFIX = 'spectra.control.tab.';
 const GENERATION_PREFIX = 'spectra.control.generation.';
 const SITE_NATIVE_BASELINE_PREFIX = 'spectra.control.site-native-baseline.';
 const snapshots = new Map<number, ControlSnapshot>();
-const queues = new Map<number, Promise<void>>();
+const serialized = createKeyedSerializedQueue<number>();
 const invalidations = new Map<number, Promise<void>>();
 let initialized = false;
 
@@ -1025,7 +1026,7 @@ function observeChromeTabState(
 	tabId: number,
 	patch: Pick<ControlPatch, 'tabMuted' | 'tabPinned'>,
 ): Promise<ControlSnapshot> {
-	return enqueueTabTask(tabId, () => applyChromeTabObservation(tabId, patch));
+	return serialized(tabId, () => applyChromeTabObservation(tabId, patch));
 }
 
 async function executeIntent(request: RoutedControlSubmitRequest): Promise<ControlApplyAck> {
@@ -2118,26 +2119,8 @@ async function executeControlOperation(
 	return routeContentOperation(request, operationId);
 }
 
-function enqueueTabTask<T>(tabId: number, operation: () => Promise<T>): Promise<T> {
-	const previous = queues.get(tabId) ?? Promise.resolve();
-	let resolveResult!: (value: T) => void;
-	let rejectResult!: (reason: unknown) => void;
-	const result = new Promise<T>((resolve, reject) => {
-		resolveResult = resolve;
-		rejectResult = reject;
-	});
-	const next = previous.then(async () => {
-		try { resolveResult(await operation()); }
-		catch (error) { rejectResult(error); }
-	}).finally(() => {
-		if (queues.get(tabId) === next) queues.delete(tabId);
-	});
-	queues.set(tabId, next);
-	return result;
-}
-
 function submitSerialized(request: RoutedControlSubmitRequest): Promise<ControlApplyAck> {
-	return enqueueTabTask(request.tabId, async () => {
+	return serialized(request.tabId, async () => {
 		const acknowledgement = await executeIntent(request);
 		if (!isControlApplyAck(acknowledgement)) {
 			throw new Error('Control executor returned a strategy outside the capability policy');
@@ -2149,7 +2132,7 @@ function submitSerialized(request: RoutedControlSubmitRequest): Promise<ControlA
 function submitOperationSerialized(
 	request: RoutedControlOperationRequest,
 ): Promise<ControlOperationAck> {
-	return enqueueTabTask(request.tabId, async () => {
+	return serialized(request.tabId, async () => {
 		const acknowledgement = await executeControlOperation(request);
 		if (!isControlOperationAck(acknowledgement)) {
 			throw new Error('Control operation returned a strategy outside the capability policy');
@@ -2170,7 +2153,6 @@ export function submitControlOperation(
 
 async function removeTab(tabId: number): Promise<void> {
 	snapshots.delete(tabId);
-	queues.delete(tabId);
 	invalidations.delete(tabId);
 	await chrome.storage.session.remove([
 		storageKey(tabId),
@@ -2266,7 +2248,7 @@ export function initializeControlCoordinator(): void {
 				sendResponse(rpcFailure('forbidden', 'Source lifecycle must match its sending document'));
 				return false;
 			}
-			void enqueueTabTask(tabId, () => handleSourceReleased(tabId, message.payload.target)).then(
+			void serialized(tabId, () => handleSourceReleased(tabId, message.payload.target)).then(
 				() => sendResponse(rpcSuccess({ accepted: true as const })),
 				(error) => sendResponse(rpcFailure(
 					'source_release_failed',
@@ -2283,7 +2265,7 @@ export function initializeControlCoordinator(): void {
 				sendResponse(rpcFailure('forbidden', 'Active media selection must match its sending document'));
 				return false;
 			}
-			void enqueueTabTask(tabId, () => handleTargetChanged(tabId, message.payload.target)).then(
+			void serialized(tabId, () => handleTargetChanged(tabId, message.payload.target)).then(
 				() => sendResponse(rpcSuccess({ accepted: true as const })),
 				(error) => sendResponse(rpcFailure(
 					'target_change_failed',
@@ -2383,7 +2365,6 @@ export const controlCoordinatorTestApi = {
 		// the service-worker harness and write through a deleted global.
 		await storage.tabSession.flush().catch(() => undefined);
 		snapshots.clear();
-		queues.clear();
 		invalidations.clear();
 		initialized = false;
 	},

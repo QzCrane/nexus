@@ -1,28 +1,10 @@
 // goal: type-safe storage repository providing unified access to split storage modules
-// note: acts as a compatibility layer for audio config, settings, and domain registries
+// note: acts as a compatibility layer for the site route registry and tab session config
 
-import * as audioConfig from './audio-config.js';
-import * as globalSettings from './global-settings.js';
-import * as userRegistry from './user-registry.js';
 import * as restrictedRegistry from './restricted-registry.js';
 import * as tabSessionModule from './tab-session.js';
 
 export class StorageRepository {
-  // Audio config operations
-  getAudioConfig = audioConfig.getAudioConfig;
-  setAudioConfig = audioConfig.setAudioConfig;
-  removeAudioConfig = audioConfig.removeAudioConfig;
-
-  // Global settings operations
-  getGlobalSettings = globalSettings.getGlobalSettings;
-  setGlobalSettings = globalSettings.setGlobalSettings;
-
-  // @deprecated: legacy user registry interfaces
-  getUserRegistry = userRegistry.getUserRegistry;
-  addToUserRegistry = userRegistry.addToUserRegistry;
-  removeFromUserRegistry = userRegistry.removeFromUserRegistry;
-  setUserRegistry = userRegistry.setUserRegistry;
-
   // Restricted domain registry (v3.0+)
   registry = {
     init: restrictedRegistry.initRegistry,
@@ -61,4 +43,3 @@ export class StorageRepository {
     return () => { };
   }
 }
-

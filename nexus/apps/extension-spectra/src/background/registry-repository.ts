@@ -13,6 +13,7 @@ import {
 	type RegistryResult,
 	type RegistrySnapshot,
 } from '@nexus/contracts';
+import { createSerializedQueue } from '@nexus/kernel';
 import { storage } from './state';
 
 export interface RegistryStoragePort {
@@ -76,26 +77,20 @@ export function normalizeRegistryEntries(entries: readonly DomainEntry[]): Domai
 }
 
 export class RegistryRepository {
-	private queue: Promise<void> = Promise.resolve();
+	private serialized = createSerializedQueue();
 
 	constructor(private readonly registry: RegistryStoragePort) {}
-
-	private serialize<T>(operation: () => Promise<T>): Promise<T> {
-		const result = this.queue.then(operation, operation);
-		this.queue = result.then(() => undefined, () => undefined);
-		return result;
-	}
 
 	private async readSnapshot(): Promise<RegistrySnapshot> {
 		return { entries: normalizeRegistryEntries(await this.registry.get()) };
 	}
 
 	getSnapshot(): Promise<RegistrySnapshot> {
-		return this.serialize(() => this.readSnapshot());
+		return this.serialized(() => this.readSnapshot());
 	}
 
 	add(domain: string, source: DomainSource, route: MediaRoute): Promise<RegistryAddResult> {
-		return this.serialize(async () => {
+		return this.serialized(async () => {
 			const normalizedDomain = normalizeHostname(domain);
 			if (!normalizedDomain) throw new Error('Invalid registry domain');
 			const before = normalizeRegistryEntries(await this.registry.get());
@@ -115,7 +110,7 @@ export class RegistryRepository {
 	}
 
 	remove(fingerprint: string): Promise<RegistryRemoveResult> {
-		return this.serialize(async () => {
+		return this.serialized(async () => {
 			const result = await this.registry.remove(fingerprint);
 			const snapshot = await this.readSnapshot();
 			return { ...snapshot, removed: result.success };
@@ -123,7 +118,7 @@ export class RegistryRepository {
 	}
 
 	query(domain: string, fingerprint: string): Promise<RegistryQueryResult> {
-		return this.serialize(async () => {
+		return this.serialized(async () => {
 			const normalizedDomain = normalizeHostname(domain);
 			if (!normalizedDomain) throw new Error('Invalid registry domain');
 			if (!isMediaRouteFingerprint(fingerprint)) throw new Error('Invalid registry fingerprint');
@@ -141,7 +136,7 @@ export class RegistryRepository {
 		route: MediaRoute,
 		options: { force?: boolean } = {},
 	): Promise<RegistryAddResult> {
-		return this.serialize(async () => {
+		return this.serialized(async () => {
 			const normalizedDomain = normalizeHostname(domain);
 			if (!normalizedDomain) throw new Error('Invalid registry domain');
 			if (!isMediaRouteFingerprint(fingerprint)) throw new Error('Invalid registry fingerprint');

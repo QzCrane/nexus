@@ -14,6 +14,7 @@ import {
 	isMediaRouteFingerprint,
 	normalizeHostname,
 } from '@nexus/contracts';
+import { createSerializedQueue } from './serialized-queue.js';
 
 const KEY = 'mediaRouteRegistry';
 const LEGACY_KEY = 'restrictedRegistry';
@@ -28,13 +29,7 @@ interface LegacyDomainEntry {
 
 // rule: one background-owned storage queue prevents concurrent route updates
 // from losing an entry while chrome.storage.local is read-modify-written.
-let operationQueue: Promise<void> = Promise.resolve();
-function serialized<T>(operation: () => Promise<T>): Promise<T> {
-	const previous = operationQueue;
-	const result = previous.then(operation, operation);
-	operationQueue = result.then(() => undefined, () => undefined);
-	return result;
-}
+const serialized = createSerializedQueue();
 
 function normalizeEntries(entries: readonly DomainEntry[]): DomainEntry[] {
 	const normalized = new Map<string, DomainEntry>();
@@ -106,7 +101,14 @@ export async function initRegistry(): Promise<DomainEntry[]> {
 	const result = await chrome.storage.local.get([KEY, LEGACY_KEY, 'userRegistry']);
 	const rawData = result[KEY] ?? result[LEGACY_KEY] ?? result.userRegistry;
 	const entries = migrateOldFormat(rawData);
-	await chrome.storage.local.set({ [KEY]: entries });
+	// Direct migration: write the new key, then delete legacy keys so every
+	// subsequent read is a single-key lookup. No read-time compat path remains.
+	const stale: string[] = [];
+	if (result[LEGACY_KEY] !== undefined) stale.push(LEGACY_KEY);
+	if (result.userRegistry !== undefined) stale.push('userRegistry');
+	const writes: Promise<unknown>[] = [chrome.storage.local.set({ [KEY]: entries })];
+	if (stale.length > 0) writes.push(chrome.storage.local.remove(stale));
+	await Promise.all(writes);
 	return entries;
 }
 

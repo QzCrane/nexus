@@ -12,12 +12,13 @@ import {
 	type SpectraEventEnvelope,
 	type TabSessionIdentity,
 } from '@nexus/contracts';
+import { createKeyedSerializedQueue } from '@nexus/kernel';
 import { shouldAcceptAudioSessionPhase } from '../shared/audio-session-phase';
 
 const KEY_PREFIX = 'spectra_audio_session_';
 const STORAGE_WRITE_DEBOUNCE_MS = 250;
 const snapshots = new Map<number, AudioSessionSnapshot>();
-const operationQueues = new Map<number, Promise<void>>();
+const serialized = createKeyedSerializedQueue<number>();
 const invalidatedDocuments = new Map<number, Set<string>>();
 const pendingWrites = new Map<number, AudioSessionSnapshot>();
 const writeTimers = new Map<number, ReturnType<typeof setTimeout>>();
@@ -48,17 +49,6 @@ export function identityFromSender(sender: chrome.runtime.MessageSender): TabSes
 	} catch {
 		return null;
 	}
-}
-
-function serialized<T>(tabId: number, operation: () => Promise<T>): Promise<T> {
-	const previous = operationQueues.get(tabId) ?? Promise.resolve();
-	const result = previous.then(operation, operation);
-	const tail = result.then(() => undefined, () => undefined);
-	operationQueues.set(tabId, tail);
-	void tail.finally(() => {
-		if (operationQueues.get(tabId) === tail) operationQueues.delete(tabId);
-	});
-	return result;
 }
 
 function clearWriteTimer(tabId: number): void {
