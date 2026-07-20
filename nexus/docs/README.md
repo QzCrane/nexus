@@ -97,6 +97,7 @@ A lower layer may summarize or link upward. It must not copy a complete policy m
 | public projection | README/privacy/store copy | no; must remain narrower than verified behavior |
 | archived | historical evidence | no |
 | deprecated redirect | temporary path compatibility | no |
+| generated compatibility mirror | byte-identical executable path compatibility | no; canonical owner is the only edit source |
 
 ## Lifecycle rules
 
@@ -105,7 +106,7 @@ A lower layer may summarize or link upward. It must not copy a complete policy m
 - `archived`: immutable historical evidence.
 - `deprecated`: compatibility alias with `redirect_to` and a removal date.
 
-A document move is complete only when the canonical index, inbound links, executable path checks, and redirects are updated together. Deprecated aliases contain no normative content and are removed after their announced migration window.
+A document move is complete only when the canonical index, inbound links, executable consumers, and compatibility projections are updated together. Deprecated redirects contain no normative content and are removed after their announced migration window. A generated compatibility mirror exists only when an executable consumer still requires the former path; the documentation gate verifies byte equality with the canonical owner and rejects independent edits.
 
 ## Structural quality gates
 
@@ -113,11 +114,12 @@ The documentation checker must enforce:
 
 - required frontmatter for active internal docs;
 - one H1 per document;
-- valid local relative links;
+- exact-case valid local relative links;
 - valid deprecated redirects;
-- no duplicate canonical owner for one domain;
+- byte-identical registered compatibility mirrors;
+- no duplicate stable owner for one domain;
 - Bun toolchain references pinned to `1.3.14`;
 - no active document orphaned from a documentation entrypoint;
-- no roadmap, research note, or archive presented as implemented truth.
+- no roadmap, proposal, research note, or archive presented as implemented truth.
 
 Dynamic facts—versions, prices, competitor counts, browser policies, external APIs, and network providers—must be revalidated from current primary sources before they drive a decision or release.
