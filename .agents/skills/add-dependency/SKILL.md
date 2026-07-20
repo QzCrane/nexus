@@ -21,7 +21,7 @@ Use this skill when adding, replacing, or materially upgrading a package.
 
 ### 1. Identify the owning workspace
 
-- Read [`rules.md`](../../rules.md), the owning package manifest, and the domain owner document.
+- Read [`rules.md`](../../../rules.md), the owning package manifest, and the domain owner document.
 - Search all workspace `package.json` files and imports for an existing equivalent capability.
 - Decide whether the dependency belongs to one application/package or is genuinely shared.
 - Prefer platform APIs or an existing dependency when they provide the same complete behavior with lower lifecycle cost.
