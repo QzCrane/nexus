@@ -21,7 +21,7 @@ Use after a behavior, architecture, permission, lifecycle, public claim, release
 
 Documentation follows ownership, not a fixed number of layers. Update only the documents whose semantic projection changed. Do not create or maintain `.ai-context.md`, `README.AI.md`, `docs/ai-rules.md`, or a user-home `nexus.md`; they are not current repository authorities.
 
-The canonical map is [`nexus/docs/documentation-index.md`](../../nexus/docs/documentation-index.md).
+The canonical map is [`nexus/docs/documentation-index.md`](../../../nexus/docs/documentation-index.md).
 
 ## Process
 
