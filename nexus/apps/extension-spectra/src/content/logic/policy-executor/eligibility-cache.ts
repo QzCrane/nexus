@@ -14,7 +14,12 @@ import type { CorsStatus } from './types';
 
 export interface EligibilityCachePort {
 	query(domain: string, fingerprint: string): Promise<RegistryQueryResult>;
-	mark(domain: string, fingerprint: string, route: MediaRoute): Promise<RegistryAddResult>;
+	mark(
+		domain: string,
+		fingerprint: string,
+		route: MediaRoute,
+		options?: { force?: boolean },
+	): Promise<RegistryAddResult>;
 }
 
 const registryPort: EligibilityCachePort = {
@@ -69,13 +74,26 @@ export function createSiteEligibilityCache(
 	const persist = async (
 		currentDecision: SiteDecision,
 		status: Exclude<CorsStatus, 'PENDING'>,
+		options: { force?: boolean } = {},
 	): Promise<void> => {
-		if (currentDecision.manualStatus || currentDecision.lastPersistedStatus === status) return;
+		if (currentDecision.lastPersistedStatus === status) return;
+		// rule: a user-pinned route is authoritative for mode selection
+		// (resolve), but an acknowledged Capture success proves the pinned
+		// `direct` route is wrong and must be corrected. Only Capture forces
+		// the overwrite; WebAudio success still respects a user-pinned Capture.
+		if (currentDecision.manualStatus && !options.force) return;
 		currentDecision.lastPersistedStatus = status;
-		await port.mark(domain, fingerprint, statusToRoute(status)).then((result) => {
+		await port.mark(domain, fingerprint, statusToRoute(status), options).then((result) => {
 			if (result.entry.source === 'user') {
 				currentDecision.manualStatus = routeToStatus(result.entry.route);
 				currentDecision.cachedStatus = currentDecision.manualStatus;
+			} else if (options.force) {
+				// A forced mark overwrites a user-pinned `direct` entry with an
+				// automatic `capture` entry. Clear `manualStatus` so the next
+				// `resolve` in this document honors the corrected auto route
+				// instead of the stale user pin.
+				currentDecision.manualStatus = null;
+				currentDecision.cachedStatus = status;
 			}
 		}).catch(() => {
 			if (currentDecision.lastPersistedStatus === status) currentDecision.lastPersistedStatus = 'PENDING';
@@ -97,16 +115,22 @@ export function createSiteEligibilityCache(
 		},
 		async recordActual(actualMode, phase) {
 			await decision.hydrated;
-			if (decision.manualStatus || phase !== 'active') return;
+			if (phase !== 'active') return;
 			const status = actualMode === 'capture'
 				? 'RESTRICTED'
 				: actualMode === 'webaudio'
 					? 'SAFE'
 					: null;
 			if (!status) return;
+			if (decision.manualStatus === status) return;
 			// This records the acknowledged site route, never a media-instance event.
+			// Capture is the last-resort full-output path: when Capture is
+			// acknowledged active, the pinned `direct` route is provably wrong
+			// (native CORS failed) and must be corrected so the next document
+			// skips the futile native attempt. WebAudio success never overwrites a
+			// user-pinned Capture choice.
 			decision.cachedStatus = status;
-			await persist(decision, status);
+			await persist(decision, status, { force: actualMode === 'capture' });
 		},
 	};
 }

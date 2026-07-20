@@ -306,7 +306,7 @@ export interface SpectraRequestMap {
 		response: RegistryQueryResult;
 	};
 	'spectra.registry.mark-probed': {
-		payload: { domain: string; fingerprint: string; route: MediaRoute };
+		payload: { domain: string; fingerprint: string; route: MediaRoute; force?: boolean };
 		response: RegistryAddResult;
 	};
 	'spectra.hotkey-target.get': {
@@ -670,7 +670,7 @@ const TAB_MEDIA_REPORT_PAYLOAD_KEYS = new Set(['hasMediaElement', 'userInteracte
 const REGISTRY_ADD_PAYLOAD_KEYS = new Set(['domain', 'route']);
 const REGISTRY_REMOVE_PAYLOAD_KEYS = new Set(['fingerprint']);
 const REGISTRY_QUERY_PAYLOAD_KEYS = new Set(['domain', 'fingerprint']);
-const REGISTRY_RECORD_PAYLOAD_KEYS = new Set(['domain', 'fingerprint', 'route']);
+const REGISTRY_RECORD_PAYLOAD_KEYS = new Set(['domain', 'fingerprint', 'route', 'force']);
 const HOTKEY_TARGET_KEYS = new Set(['tabId']);
 const RPC_SUCCESS_KEYS = new Set(['ok', 'data']);
 const RPC_FAILURE_KEYS = new Set(['ok', 'error']);
@@ -1067,7 +1067,8 @@ function isRegistryRecordPayload(
 		&& hasOnlyKeys(value, REGISTRY_RECORD_PAYLOAD_KEYS)
 		&& isRegistryDomain(value.domain)
 		&& isMediaRouteFingerprint(value.fingerprint)
-		&& (value.route === 'direct' || value.route === 'capture');
+		&& (value.route === 'direct' || value.route === 'capture')
+		&& (value.force === undefined || typeof value.force === 'boolean');
 }
 
 function isHotkeyTargetState(value: unknown): value is HotkeyTargetState {

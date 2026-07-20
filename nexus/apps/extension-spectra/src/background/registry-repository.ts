@@ -25,7 +25,12 @@ export interface RegistryStoragePort {
 		fingerprint?: string,
 	): Promise<RegistryResult>;
 	remove(fingerprint: string): Promise<RegistryResult>;
-	markProbed(domain: string, fingerprint: string, route: MediaRoute): Promise<RegistryResult>;
+	markProbed(
+		domain: string,
+		fingerprint: string,
+		route: MediaRoute,
+		options?: { force?: boolean },
+	): Promise<RegistryResult>;
 }
 
 function normalizeEntry(value: DomainEntry): DomainEntry | null {
@@ -134,6 +139,7 @@ export class RegistryRepository {
 		domain: string,
 		fingerprint: string,
 		route: MediaRoute,
+		options: { force?: boolean } = {},
 	): Promise<RegistryAddResult> {
 		return this.serialize(async () => {
 			const normalizedDomain = normalizeHostname(domain);
@@ -142,7 +148,7 @@ export class RegistryRepository {
 			const siteFingerprint = createSiteRouteFingerprint(normalizedDomain);
 			if (!siteFingerprint) throw new Error('Invalid registry domain');
 			const before = normalizeRegistryEntries(await this.registry.get());
-			const result = await this.registry.markProbed(normalizedDomain, fingerprint, route);
+			const result = await this.registry.markProbed(normalizedDomain, fingerprint, route, options);
 			if (!result.success) throw new Error(`Registry probe update failed: ${result.reason ?? 'unknown'}`);
 			const snapshot = await this.readSnapshot();
 			const entry = snapshot.entries.find((candidate) => candidate.fingerprint === siteFingerprint);

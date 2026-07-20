@@ -24,13 +24,35 @@ function entry(
 function port(cached: DomainEntry[] = []): EligibilityCachePort & {
 	mark: ReturnType<typeof mock>;
 } {
+	// The mock mirrors the real storage layer's user_override rule so tests
+	// exercise the force-overwrite path the same way production does.
+	const stored: DomainEntry[] = cached.map((value) => ({ ...value }));
 	return {
 		query: mock(async (_domain: string, fingerprint: string) => ({
-			entry: cached.find((candidate) => candidate.fingerprint === fingerprint) ?? null,
+			entry: stored.find((candidate) => candidate.fingerprint === fingerprint) ?? null,
 		})),
-		mark: mock(async (domain: string, fingerprint: string, route: MediaRoute) => {
+		mark: mock(async (
+			domain: string,
+			fingerprint: string,
+			route: MediaRoute,
+			options: { force?: boolean } = {},
+		): Promise<{ entries: DomainEntry[]; entry: DomainEntry; created: boolean }> => {
+			const existing = stored.find((candidate) => candidate.fingerprint === fingerprint);
+			if (existing) {
+				// Automatic observations never overwrite a user-pinned route unless
+				// forced (the acknowledged-correction path).
+				if (!options.force && existing.source === 'user') {
+					return { entries: [...stored], entry: existing, created: false };
+				}
+				existing.domain = domain;
+				existing.source = 'auto';
+				existing.route = route;
+				existing.updatedAt = 2;
+				return { entries: [...stored], entry: existing, created: false };
+			}
 			const recorded: DomainEntry = { domain, fingerprint, route, source: 'auto', updatedAt: 2 };
-			return { entries: [recorded], entry: recorded, created: true };
+			stored.push(recorded);
+			return { entries: [...stored], entry: recorded, created: true };
 		}),
 	};
 }
@@ -50,7 +72,7 @@ describe('site route cache', () => {
 		expect(await cache.resolve('SAFE')).toBe('SAFE');
 		expect(await cache.resolve('SAFE')).toBe('SAFE');
 		expect(cachePort.mark).toHaveBeenCalledTimes(1);
-		expect(cachePort.mark).toHaveBeenCalledWith('media.example', siteFingerprint, 'direct');
+		expect(cachePort.mark).toHaveBeenCalledWith('media.example', siteFingerprint, 'direct', {});
 	});
 
 	test('uses one site key even as individual videos change', async () => {
@@ -60,21 +82,21 @@ describe('site route cache', () => {
 		await cache.resolve('RESTRICTED');
 		expect(cachePort.query).toHaveBeenCalledWith('media.example', siteFingerprint);
 		expect(cachePort.mark).toHaveBeenCalledTimes(1);
-		expect(cachePort.mark).toHaveBeenCalledWith('media.example', siteFingerprint, 'capture');
+		expect(cachePort.mark).toHaveBeenCalledWith('media.example', siteFingerprint, 'capture', {});
 	});
 
 	test('lets current evidence correct an automatic cached route', async () => {
 		const cachePort = port([entry(siteFingerprint, 'capture')]);
 		const cache = createSiteEligibilityCache('media.example', cachePort);
 		expect(await cache.resolve('SAFE')).toBe('SAFE');
-		expect(cachePort.mark).toHaveBeenCalledWith('media.example', siteFingerprint, 'direct');
+		expect(cachePort.mark).toHaveBeenCalledWith('media.example', siteFingerprint, 'direct', {});
 	});
 
 	test('records acknowledged Capture as the successful on-demand route', async () => {
 		const cachePort = port();
 		const cache = createSiteEligibilityCache('media.example', cachePort);
 		await cache.recordActual('capture', 'active');
-		expect(cachePort.mark).toHaveBeenCalledWith('media.example', siteFingerprint, 'capture');
+		expect(cachePort.mark).toHaveBeenCalledWith('media.example', siteFingerprint, 'capture', { force: true });
 		expect(await cache.resolve('PENDING')).toBe('RESTRICTED');
 	});
 
@@ -86,11 +108,29 @@ describe('site route cache', () => {
 		expect(cachePort.mark).not.toHaveBeenCalled();
 	});
 
-	test('keeps a user-pinned direct route authoritative', async () => {
+	test('keeps a user-pinned direct route authoritative for mode selection but corrects it after acknowledged Capture', async () => {
 		const cachePort = port([entry(siteFingerprint, 'direct', 'user')]);
 		const cache = createSiteEligibilityCache('media.example', cachePort);
+		// resolve still honors the user-pinned direct route when choosing a mode.
 		expect(await cache.resolve('RESTRICTED')).toBe('SAFE');
+		// rule: when Capture is acknowledged active, the pinned `direct` route
+		// is provably wrong (native CORS failed) and must be corrected so the
+		// next document skips the futile native attempt.
 		await cache.recordActual('capture', 'active');
+		expect(cachePort.mark).toHaveBeenCalledWith('media.example', siteFingerprint, 'capture', { force: true });
+		// The forced mark clears the in-memory user pin, so subsequent resolve
+		// honors the corrected auto capture route instead of the stale pin.
+		expect(await cache.resolve('PENDING')).toBe('RESTRICTED');
+	});
+
+	test('keeps a user-pinned capture route authoritative after acknowledged WebAudio', async () => {
+		const cachePort = port([entry(siteFingerprint, 'capture', 'user')]);
+		const cache = createSiteEligibilityCache('media.example', cachePort);
+		expect(await cache.resolve('SAFE')).toBe('RESTRICTED');
+		// rule: WebAudio success never overwrites a user-pinned Capture choice,
+		// because the user may have intentionally chosen Capture (e.g. for a
+		// site where WebAudio coverage is fragile).
+		await cache.recordActual('webaudio', 'active');
 		expect(cachePort.mark).not.toHaveBeenCalled();
 	});
 });

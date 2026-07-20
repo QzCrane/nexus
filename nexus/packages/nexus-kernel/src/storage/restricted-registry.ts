@@ -139,6 +139,7 @@ async function addOrUpdateDomain(
 	normalizedDomain: string,
 	source: DomainSource,
 	route: MediaRoute,
+	options: { force?: boolean } = {},
 ): Promise<RegistryResult> {
 	const fingerprint = createSiteRouteFingerprint(normalizedDomain);
 	if (!fingerprint) return { success: false, reason: 'invalid_route_identity' };
@@ -146,7 +147,11 @@ async function addOrUpdateDomain(
 	const existing = entries.find((entry) => entry.fingerprint === fingerprint);
 	if (existing) {
 		// Automatic observations never overwrite a route pinned by the user.
-		if (source === 'auto' && existing.source === 'user') {
+		// `force` is reserved for the acknowledged-correction path: when
+		// Capture is acknowledged active on a user-pinned `direct` route, the
+		// pinned route is provably wrong (native CORS failed) and must be
+		// corrected so the next document skips the futile native attempt.
+		if (source === 'auto' && existing.source === 'user' && !options.force) {
 			return { success: true, reason: 'user_override', entry: existing };
 		}
 		existing.domain = normalizedDomain;
@@ -174,12 +179,13 @@ export async function addDomain(
 	source: DomainSource,
 	route: MediaRoute = 'capture',
 	_fingerprint?: string,
+	options: { force?: boolean } = {},
 ): Promise<RegistryResult> {
 	const normalizedDomain = normalizeHostname(domain);
 	if (!normalizedDomain || !createSiteRouteFingerprint(normalizedDomain)) {
 		return { success: false, reason: 'invalid_route_identity' };
 	}
-	return serialized(() => addOrUpdateDomain(normalizedDomain, source, route));
+	return serialized(() => addOrUpdateDomain(normalizedDomain, source, route, options));
 }
 
 export async function removeDomain(fingerprint: string): Promise<RegistryResult> {
@@ -197,9 +203,10 @@ export async function markProbed(
 	domain: string,
 	fingerprint: string,
 	route: MediaRoute,
+	options: { force?: boolean } = {},
 ): Promise<RegistryResult> {
 	if (!isMediaRouteFingerprint(fingerprint)) return { success: false, reason: 'invalid_fingerprint' };
-	return addDomain(domain, 'auto', route, fingerprint);
+	return addDomain(domain, 'auto', route, fingerprint, options);
 }
 
 // @deprecated: retained for one release while old consumers move to fingerprints.

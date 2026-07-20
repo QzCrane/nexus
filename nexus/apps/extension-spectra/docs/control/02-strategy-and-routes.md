@@ -103,6 +103,24 @@ A transparent configuration (no boost, no DSP) never escalates, because a
 coverage gap without a processor need is reported directly through the bypass
 path and does not justify the activation-bound Capture lease.
 
+When Capture is acknowledged `active`, `recordActual` corrects the registry so
+the next document skips the futile native attempt. A user-pinned `direct` route
+remains authoritative for `resolve` (mode selection still honors it), but the
+acknowledged Capture proves the pinned route is wrong: `persist` runs with
+`force: true`, propagating through `markRegistryDomainProbed` → the
+`spectra.registry.mark-probed` payload → `RegistryRepository.markProbed` → the
+kernel storage's `addOrUpdateDomain`, where `force` bypasses the
+`user_override` rule that normally prevents an automatic observation from
+overwriting a user-pinned route. The overwritten entry becomes `capture/auto`,
+so the next document hydrates with `manualStatus = null` and `resolve` returns
+`RESTRICTED` without trying native first. The in-memory `manualStatus` is
+cleared on the same force path, so the current document also honors the
+corrected route on subsequent `resolve` calls. The correction is asymmetric:
+acknowledged Capture overwrites a user-pinned `direct`, but acknowledged WebAudio
+never overwrites a user-pinned `capture` (`force` is only set when
+`actualMode === 'capture'`), because the user may have intentionally chosen
+Capture for a site where WebAudio coverage is fragile.
+
 ## §5 Runtime, shortcut and feedback ownership
 
 The content bootstrap is cold-document safe. The first hotkey on a newly loaded

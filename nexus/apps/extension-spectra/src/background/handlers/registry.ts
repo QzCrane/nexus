@@ -67,6 +67,7 @@ function registerV2RegistryListener(): void {
 					message.payload.domain,
 					message.payload.fingerprint,
 					message.payload.route,
+					{ force: message.payload.force === true },
 				));
 			}
 			if (message.type === 'spectra.hotkey-target.get') {

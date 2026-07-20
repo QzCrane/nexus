@@ -41,11 +41,13 @@ export async function markRegistryDomainProbed(
 	domain: string,
 	fingerprint: string,
 	route: MediaRoute,
+	options: { force?: boolean } = {},
 ): Promise<RegistryAddResult> {
 	const response = await sendSettingsUiRequest('spectra.registry.mark-probed', {
 		domain,
 		fingerprint,
 		route,
+		...(options.force ? { force: true } : {}),
 	});
 	if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
 	return response.data;

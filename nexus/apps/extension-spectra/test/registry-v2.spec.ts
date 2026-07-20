@@ -40,6 +40,7 @@ function createRegistryStorage(initial: DomainEntry[] = []): RegistryStoragePort
 			source: DomainSource,
 			route: MediaRoute = 'capture',
 			_fingerprint?: string,
+			options: { force?: boolean } = {},
 		): Promise<RegistryResult> {
 			const normalized = normalizeHostname(domain);
 			const identity = normalized ? createSiteRouteFingerprint(normalized) : null;
@@ -49,6 +50,10 @@ function createRegistryStorage(initial: DomainEntry[] = []): RegistryStoragePort
 			await Promise.resolve();
 			const existing = next.find((entry) => entry.fingerprint === identity);
 			if (existing) {
+				// Mirror the real storage: auto never overwrites a user-pinned route unless forced.
+				if (source === 'auto' && existing.source === 'user' && !options.force) {
+					return { success: true, reason: 'user_override', entry: existing };
+				}
 				existing.domain = normalized;
 				existing.source = source;
 				existing.route = route;
@@ -73,8 +78,13 @@ function createRegistryStorage(initial: DomainEntry[] = []): RegistryStoragePort
 			storage.entries = next;
 			return { success: true };
 		},
-		async markProbed(domain: string, fingerprint: string, route: MediaRoute): Promise<RegistryResult> {
-			return storage.add(domain, 'auto', route, fingerprint);
+		async markProbed(
+			domain: string,
+			fingerprint: string,
+			route: MediaRoute,
+			options: { force?: boolean } = {},
+		): Promise<RegistryResult> {
+			return storage.add(domain, 'auto', route, fingerprint, options);
 		},
 	};
 	return storage;
@@ -102,6 +112,26 @@ describe('SPECTRA v2 media route registry contracts', () => {
 				route: 'direct',
 			},
 		})).toBe(true);
+		expect(isSpectraRequestEnvelope({
+			...base,
+			type: 'spectra.registry.mark-probed',
+			payload: {
+				domain: 'media.example',
+				fingerprint: 'media:v1:0123456789abcdef',
+				route: 'capture',
+				force: true,
+			},
+		})).toBe(true);
+		expect(isSpectraRequestEnvelope({
+			...base,
+			type: 'spectra.registry.mark-probed',
+			payload: {
+				domain: 'media.example',
+				fingerprint: 'media:v1:0123456789abcdef',
+				route: 'capture',
+				force: 'yes',
+			},
+		})).toBe(false);
 		expect(isSpectraRequestEnvelope({
 			...base,
 			type: 'spectra.registry.query',
@@ -139,6 +169,38 @@ describe('SPECTRA v2 media route registry contracts', () => {
 			removed: true,
 			extra: true,
 		}))).toBe(false);
+	});
+
+	test('markProbed without force preserves a user-pinned direct route', async () => {
+		const initial: DomainEntry = {
+			domain: 'video.example.com',
+			fingerprint: 'site:video.example.com',
+			route: 'direct',
+			source: 'user',
+			updatedAt: 1,
+		};
+		const storage = createRegistryStorage([initial]);
+		const repository = new RegistryRepository(storage);
+		await repository.markProbed('video.example.com', 'site:video.example.com', 'capture');
+		const entry = (await repository.getSnapshot()).entries.find((e) => e.fingerprint === 'site:video.example.com');
+		expect(entry?.route).toBe('direct');
+		expect(entry?.source).toBe('user');
+	});
+
+	test('markProbed with force overwrites a user-pinned direct route', async () => {
+		const initial: DomainEntry = {
+			domain: 'video.example.com',
+			fingerprint: 'site:video.example.com',
+			route: 'direct',
+			source: 'user',
+			updatedAt: 1,
+		};
+		const storage = createRegistryStorage([initial]);
+		const repository = new RegistryRepository(storage);
+		await repository.markProbed('video.example.com', 'site:video.example.com', 'capture', { force: true });
+		const entry = (await repository.getSnapshot()).entries.find((e) => e.fingerprint === 'site:video.example.com');
+		expect(entry?.route).toBe('capture');
+		expect(entry?.source).toBe('auto');
 	});
 });
 
