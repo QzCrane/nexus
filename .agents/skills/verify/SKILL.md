@@ -1,6 +1,6 @@
 ---
 name: verify
-description: 运行架构校验脚本(verify-architecture)。触发短语:"verify", "check architecture", "架构校验"。
+description: 运行 NEXUS 架构验证器的快速、默认或详细模式，解释具体规则失败，并补足不在该脚本内的测试/构建/文档检查。触发短语:"verify", "check architecture", "架构校验", "verify 一下"。
 license: Proprietary. See LICENSE.txt
 compatibility: Requires bun 1.3.14
 metadata:
@@ -8,51 +8,80 @@ metadata:
   app: all
   phase: execute
   user-invocable: true
-allowed-tools: Bash
+allowed-tools: Bash Read Grep
 ---
 
-# Verify Architecture
-
-跑 `verify-architecture.js`,检查跨模块依赖 + 中文检测 + 类型一致性。**改完代码必跑。**
+# Verify architecture
 
 ## Trigger
 
-当用户说 "verify" / "check architecture" / "架构校验" / "verify 一下" 时自动加载。
+Use after cross-module, contract, registry, permission, runtime, release-surface, or architectural changes, and before merge/release.
 
-## Process
+## Commands
 
-### 1. 快速模式(默认)
+From `nexus/`:
 
 ```bash
+# Fast feedback
 bun run verify:q
-```
 
-> `verify:q` 是快速模式,只检查关键规则,通常 5-10 秒。**日常开发用这个**。
+# Default verifier
+bun run verify
 
-### 2. 详细模式(发布前)
-
-```bash
+# Detailed output for review/release
 bun run verify:v
 ```
 
-> `verify:v` 是详细模式,跑全量规则 + 警告,通常 30-60 秒。**发布前 / PR 提交前用**。
+`nexus/scripts/verify-architecture.js` is the executable owner of the current rule set and mode behavior. Read its output and source when the skill text and script differ.
 
-## 它检查什么
+## Failure handling
 
-- 跨模块依赖合规(workspace 引用是否正确)
-- 中文检测(error 级别会卡同步到 public 仓库)
-- 类型契约一致性(contracts 包 vs 实现)
-- 死代码扫描
-- 重复依赖检测
-- 文件命名规范
+1. Identify the exact rule ID/check and files involved.
+2. Determine the violated owner or dependency/lifecycle boundary.
+3. Fix the source model rather than adding an exclusion or duplicate compatibility path.
+4. Run the focused check again.
+5. Run the detailed/applicable full gate before delivery.
 
-## Anti-Rationalization
+A verifier failure can expose stale generated output, wrong dependency direction, duplicate definitions, forbidden paths, contract drift, release-surface mismatch, or another repository-specific invariant. Do not reduce it to “formatting” without reading the diagnostic.
 
-- "我只改了一个文件,不用跑" → **错**。一个文件可能跨模块被引用,验证一下 5 秒。
-- "build 跑过了就行" → **错**。build 不检查中文、不检查跨模块契约。
-- "verify:v 太慢,跳过" → **错**。发布前必须跑详细模式。
+## Scope boundary
 
-## Verification
+Architecture verification does not automatically prove all of the following unless the current script explicitly runs them:
 
-- [ ] `verify:q` 退出码 0
-- [ ] 警告数与上次对比无增长
+- TypeScript across every workspace;
+- Biome and documentation lint;
+- unit, Chrome, SidePanel, Playwright, remote-live, or production-artifact tests;
+- privacy/store translation accuracy;
+- current external package, API, policy, or provider facts;
+- absence of runtime races or resource leaks.
+
+Run the missing gates required by the change.
+
+## Changing a verifier rule
+
+A rule change is a behavioral code change. It requires:
+
+- the owner principle/contract and failure class;
+- positive and negative fixtures/tests;
+- analysis of existing violations and migration impact;
+- no silent grandfathering that lets new violations through;
+- updated documentation when the enforced architecture changed.
+
+Do not weaken a rule solely because current code fails it.
+
+## Prohibited shortcuts
+
+- Skipping verification because only one file changed.
+- Adding path/name exceptions without proving a different legitimate invariant.
+- Treating warning-count stability as correctness.
+- Claiming a green verifier replaces tests or browser evidence.
+- Editing generated output to satisfy the check temporarily.
+- Running only quiet mode before a release that requires detailed evidence.
+
+## Completion evidence
+
+- selected mode matches the task stage;
+- every failure is resolved or explicitly reported as a blocker;
+- detailed/applicable verification passes at the final commit;
+- required type, lint, test, build, browser, artifact, documentation, and privacy gates also pass;
+- verifier-rule changes include tests and owner documentation.
