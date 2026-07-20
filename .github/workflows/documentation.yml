@@ -1,0 +1,68 @@
+name: Documentation architecture
+
+on:
+  pull_request:
+    paths:
+      - "**/*.md"
+      - ".github/workflows/documentation.yml"
+      - "lefthook.yml"
+      - "package.json"
+      - "nexus/package.json"
+      - "nexus/scripts/lint-docs.mjs"
+      - "nexus/scripts/check-toolchain.mjs"
+      - "nexus/scripts/sync-public.cjs"
+  push:
+    branches:
+      - "**"
+    paths:
+      - "**/*.md"
+      - ".github/workflows/documentation.yml"
+      - "lefthook.yml"
+      - "package.json"
+      - "nexus/package.json"
+      - "nexus/scripts/lint-docs.mjs"
+      - "nexus/scripts/check-toolchain.mjs"
+      - "nexus/scripts/sync-public.cjs"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: documentation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  documentation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bun 1.3.14
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install workspace dependencies
+        run: bun install --cwd nexus --frozen-lockfile
+
+      - name: Check documentation architecture
+        run: bun run docs:check
+
+      - name: Check pinned toolchain
+        run: bun --cwd nexus run check:toolchain
+
+      - name: Check documentation tooling format
+        run: >-
+          bun --cwd nexus x biome check
+          scripts/lint-docs.mjs
+          scripts/check-toolchain.mjs
+          scripts/sync-public.cjs
+          --max-diagnostics=100
+
+      - name: Test AI-tool hooks
+        run: bun --cwd nexus scripts/hooks/test.mjs
+
+      - name: Verify repository architecture
+        run: bun run verify:q
