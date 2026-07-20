@@ -1,58 +1,83 @@
 ---
 name: test
-description: 跑单元测试 + Chrome 端到端测试(Spectra 优先)。触发短语:"test", "run tests", "跑测试"。
+description: 按变更机制选择 NEXUS 聚焦测试、SPECTRA Chrome 测试或 HALO UI/Playwright 测试，并补足生命周期与生产构建证据。触发短语:"test", "run tests", "跑测试", "e2e"。
 license: Proprietary. See LICENSE.txt
-compatibility: Requires bun 1.3.14, Chrome 120+ (for e2e)
+compatibility: Requires bun 1.3.14 and the browsers required by the selected suite
 metadata:
   category: develop
-  app: spectra
+  app: all
   phase: execute
   user-invocable: true
-allowed-tools: Bash
+allowed-tools: Bash Read Grep
 ---
 
-# Run Tests
-
-跑 Spectra 的单元测试 + Chrome e2e。**改完业务逻辑必跑。**
+# Run tests
 
 ## Trigger
 
-当用户说 "test" / "run tests" / "跑测试" / "跑一下测试" 时自动加载。
+Use after behavior changes, when reproducing a regression, or before merge/release.
 
-## Process
+## Select by mechanism
 
-### 1. 单元测试(快速)
+Choose tests from the behavior's real boundary:
+
+- pure contracts/algorithms: focused unit tests;
+- storage, revision, identity, and lifecycle: state-machine/integration tests;
+- Content, activation, navigation, media, offscreen, remote, or extension packaging: Chrome tests;
+- HALO SidePanel interaction and layout: UI review and Playwright tests;
+- production-only bundling/property behavior: production build and artifact checks.
+
+Do not run only the nearest file when the failure crosses contexts. Do not run every browser suite blindly for an isolated pure function.
+
+## SPECTRA
+
+From `nexus/`:
 
 ```bash
+# Maintained complete SPECTRA test script
+bun run test:spectra
+
+# Focused app scripts when iterating
 bun run --cwd apps/extension-spectra test:unit
-```
-
-> 通常 5-15 秒。**改完单文件用这个**。
-
-### 2. Chrome e2e(慢,真实环境)
-
-```bash
-bun run --cwd apps/extension-spectra test:e2e
-```
-
-> 跑 Chrome 实例 + Puppeteer,通常 30-60 秒。**改完 audio pipeline / content script 用**。
-
-### 3. Smoke test(发布前)
-
-```bash
+bun run --cwd apps/extension-spectra test:chrome
 bun run --cwd apps/extension-spectra test:smoke
 ```
 
-> 最快 smoke,验证构建产物可加载。**发布前用**。
+`test:e2e` currently aliases the Chrome suite. Read the package manifest instead of assuming a separate end-to-end implementation.
 
-## Anti-Rationalization
+Changes to audio routing, user activation, Content runtime, navigation, offscreen, remote authentication, production property mangling, or release packaging need the corresponding specialized gates in addition to the generic test command.
 
-- "我只改了样式,不用跑测试" → **错**。样式变更可能影响 e2e 选择器。
-- "单元测试太慢" → **错**。5-15 秒而已,比手动验证快。
-- "e2e 太慢,跳过" → **错**。Spectra 涉及音视频管道,单元测试覆盖不到真实 Chrome 行为。
+## HALO
 
-## Verification
+```bash
+bun run --cwd apps/extension-halo test:ui
+bun run --cwd apps/extension-halo test:playwright
+```
 
-- [ ] test:unit 退出码 0
-- [ ] test:e2e 退出码 0(发布前)
-- [ ] 无 flaky test 失败(连续跑 2 次都过)
+Add focused unit tests for plugin core logic, registry generation, permissions, storage recovery, background lifecycle, and data conversion rather than forcing all correctness through UI snapshots.
+
+## Regression workflow
+
+1. Reproduce the failure at a known commit/environment.
+2. Add or identify a test that fails for the right reason.
+3. Fix the owner/mechanism rather than the assertion symptom.
+4. Run the focused test, neighboring contract/lifecycle tests, and applicable browser suite.
+5. Check the failure does not disappear only because of timing, retries, hidden skips, or a changed fixture.
+
+## Prohibited shortcuts
+
+- Deleting, skipping, weakening, or widening timeouts solely to make a test green.
+- Calling a test “flaky” without reproducing and identifying the uncontrolled state.
+- Treating one successful run as proof against a known race.
+- Claiming UI/browser behavior from unit tests or types alone.
+- Requiring arbitrary repeated runs when no race hypothesis exists.
+- Updating snapshots without reviewing the semantic difference.
+
+## Completion evidence
+
+- selected suites are justified by the changed mechanism;
+- the regression test fails before and passes after the fix when reproducible;
+- focused and neighboring tests pass;
+- applicable Chrome/HALO/production gates pass;
+- no unexpected skip, retry, warning, artifact, open handle, or leaked process remains;
+- environment/browser/version constraints are recorded when they affect the result.
