@@ -76,7 +76,7 @@ function splitFrontmatter(raw) {
  * phrases (the part after 触发短语) from the SKILL.md frontmatter.
  */
 function buildIndexRow(name, fm) {
-  const desc = (fm.description || '').split('触发短语')[0].trim().slice(0, 80);
+  const desc = (fm.description || '').split('触发短语')[0].trim();
   const triggers = (fm.description || '').match(/触发短语[:：]?\s*([^。\n]+)/);
   const triggerText = triggers ? triggers[1].trim().replace(/[""「」]/g, '') : '';
   return `| \`${name}\` | ${desc} | ${triggerText} |`;
