@@ -11,11 +11,12 @@ These files preserve dated implementation, regression, and release evidence. The
 
 Current normative entrypoints:
 
-- [control architecture](../../control-architecture.md)
-- [runtime protocols](../../protocols.md)
-- [runtime topology](../../architecture.md)
-- [WebAudio source admission](../../cors-data-flow.md)
-- [remote security](../../remote-security.md)
+- [documentation map](../../README.md)
+- [control architecture](../../control/README.md)
+- [runtime protocols](../../reference/protocols.md)
+- [runtime architecture](../../architecture/runtime.md)
+- [Media WebAudio admission](../../architecture/media-source-admission.md)
+- [remote security](../../security/remote-control.md)
 
 ## Archived files
 
@@ -31,5 +32,5 @@ Current normative entrypoints:
 - Keep the original date, commit, test count, artifact size, and unresolved risks intact.
 - A historical “current,” “landed,” or “pending” statement is scoped to the report's named commit.
 - Cite the applicable current owner with any historical report used in a decision.
-- When current behavior differs, add a new dated verification report; do not rewrite the old evidence.
-- Archiving is an explicit lifecycle decision. Do not claim that a linter automatically archives reports unless an executable automation performs that action.
+- When current behavior differs, add a new dated verification report; do not rewrite old evidence.
+- Archiving is an explicit lifecycle decision. Do not claim that a linter automatically archives reports unless executable automation performs that action.
