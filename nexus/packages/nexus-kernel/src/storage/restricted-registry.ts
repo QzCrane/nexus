@@ -101,14 +101,17 @@ export async function initRegistry(): Promise<DomainEntry[]> {
 	const result = await chrome.storage.local.get([KEY, LEGACY_KEY, 'userRegistry']);
 	const rawData = result[KEY] ?? result[LEGACY_KEY] ?? result.userRegistry;
 	const entries = migrateOldFormat(rawData);
-	// Direct migration: write the new key, then delete legacy keys so every
+	// Direct migration: write the new key first, then delete legacy keys so every
 	// subsequent read is a single-key lookup. No read-time compat path remains.
+	// Sequential await (not Promise.all) prevents data loss if set fails but
+	// remove succeeds — legacy keys must survive until the new key is confirmed.
 	const stale: string[] = [];
 	if (result[LEGACY_KEY] !== undefined) stale.push(LEGACY_KEY);
 	if (result.userRegistry !== undefined) stale.push('userRegistry');
-	const writes: Promise<unknown>[] = [chrome.storage.local.set({ [KEY]: entries })];
-	if (stale.length > 0) writes.push(chrome.storage.local.remove(stale));
-	await Promise.all(writes);
+	await chrome.storage.local.set({ [KEY]: entries });
+	if (stale.length > 0) {
+		await chrome.storage.local.remove(stale);
+	}
 	return entries;
 }
 

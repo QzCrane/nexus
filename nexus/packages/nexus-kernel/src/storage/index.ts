@@ -11,3 +11,4 @@ export {
 export { safeStorageGet, safeStorageSet, safeStorageRemove } from './safe-storage.js';
 export type { StorageArea } from './safe-storage.js';
 export { createSerializedQueue, createKeyedSerializedQueue } from './serialized-queue.js';
+export type { SerializedQueue, KeyedSerializedQueue } from './serialized-queue.js';

@@ -2360,6 +2360,7 @@ export const controlCoordinatorTestApi = {
 	invalidateNavigation,
 	async reset(): Promise<void> {
 		await Promise.allSettled([...invalidations.values()]);
+		await serialized.drain();
 		// Drain the repository's trailing debounce while the test/background
 		// Chrome storage owner still exists. Otherwise a late timer can outlive
 		// the service-worker harness and write through a deleted global.
