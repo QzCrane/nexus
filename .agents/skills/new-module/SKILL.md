@@ -23,7 +23,7 @@ Use when a new package, application, plugin family, or independently owned runti
 
 Before creating files:
 
-- read [`rules.md`](../../rules.md), the documentation map, and neighboring owners;
+- read [`rules.md`](../../../rules.md), the documentation map, and neighboring owners;
 - confirm an existing package/module cannot naturally own the behavior;
 - define responsibility, public API, dependency direction, state/lifecycle owner, failure boundary, and tests;
 - decide whether the unit is a workspace package, application-internal module, HALO plugin, or SPECTRA capability implementation.
