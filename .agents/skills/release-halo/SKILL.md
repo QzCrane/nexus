@@ -1,85 +1,112 @@
 ---
 name: release-halo
-description: Extension Halo 发布标准流程(版本 + 依赖检查 + 打包 + 验证 + 同步)。触发短语:"release halo", "halo 发布"。
+description: 执行 HALO 发布准备与候选包审计：版本、registry/permission、生产构建、SidePanel/Playwright、隐私与商店材料、可选 public 同步。触发短语:"release halo", "halo 发布", "halo 上架"。
 license: Proprietary. See LICENSE.txt
-compatibility: Requires bun 1.3.14, PowerShell 7+, Chrome Web Store access
+compatibility: Requires bun 1.3.14, git 2.30+, Chrome, and authorized store access
 metadata:
   category: release
   app: halo
   phase: execute
   user-invocable: true
-allowed-tools: Bash Read Edit Glob
+allowed-tools: Bash Read Edit Grep Glob WebSearch
 ---
 
-# Release Halo
-
-Halo (SidePanel 工具箱) 发布流程。**离线优先,权限最小化。**
+# Release HALO
 
 ## Trigger
 
-当用户说 "release halo" / "halo 发布" / "halo 上架" 时自动加载。
+Use for a HALO release candidate or publication decision. An ordinary production build is not a release.
 
 ## Process
 
-### 1. 版本与日志
+### 1. Check release readiness before changing the version
 
-- [ ] 递增 `apps/extension-halo/package.json` 版本号(SemVer)
-- [ ] 同步 `apps/extension-halo/src/manifest.json` 版本号
-- [ ] 更新项目根 `CHANGELOG.md`(添加新版本条目)
+Read [`nexus/apps/extension-halo/plan.md`](../../../nexus/apps/extension-halo/plan.md) and verify that the repository actually contains the required public surfaces:
 
-### 2. 依赖检查
+- product README;
+- privacy policy matching all network/storage behavior;
+- localized store copy and assets;
+- release/package instructions or reproducible script;
+- permission-usage evidence;
+- production tests and artifact inspection.
 
-Halo 依赖以下核心模块,**确认它们已是最新**:
+If these do not exist, stop at a release-readiness report or create them as an explicit release task. Do not upload an undocumented extension merely because `dist/` builds.
 
-- `@nexus/kernel`(RPC + Storage)
-- `@nexus/ui-kit`(组件库)
-- `@nexus/contracts`(类型契约)
+### 2. Establish the candidate
 
-### 3. 构建发布包
+- Select the target commit and SemVer change from actual release content.
+- Reconcile `apps/extension-halo/package.json` with the generated/submitted manifest version.
+- Review changes since the previous release/tag and identify permission, storage, network, migration, and user-data effects.
+- Revalidate current Chrome Web Store requirements from primary sources.
+
+Do not maintain a static current version or dependency list in this skill; read manifests and lockfile.
+
+### 3. Run repository and HALO gates
+
+From `nexus/`:
 
 ```bash
-# 1. 清理旧构建
-Remove-Item -Recurse -Force apps/extension-halo/dist -ErrorAction SilentlyContinue
-
-# 2. 生产环境构建(压缩 + 无 Sourcemap)
+bun run --cwd apps/extension-halo typecheck
+bun run lint
+bun run verify:v
+bun run --cwd apps/extension-halo test:ui
+bun run --cwd apps/extension-halo test:playwright
 bun run --cwd apps/extension-halo build:prod
-
-# 3. 打包 ZIP(PowerShell Compress-Archive,与 release-spectra 风格一致)
-Compress-Archive -Path .\apps\extension-halo\dist\* -DestinationPath .\halo-v<VER>.zip -Force
 ```
 
-> 验证 zip 大小应合理(< 5MB,无冗余资源)。
+Also run registry generation/verification and any focused tool tests affected by the release. Confirm SidePanel launch, service-worker recovery, permissions, restricted pages, import/export, local persistence, i18n, and cleanup.
 
-### 4. 验证清单(Halo 特有)
+“Local first” does not require every optional capability to work offline. Test and disclose each network-backed feature separately; verify inactive features create no hidden network or recurring work.
 
-- [ ] **SidePanel**: 点击工具栏图标能正确打开侧边栏
-- [ ] **Permissions**: 检查 manifest 权限是否最小化(Halo 应比 Spectra 更少 —— 不需要 video 权限)
-- [ ] **Offline**: 所有工具在无网络环境下可用(离线优先)
-- [ ] **DarkReader**: 暗色模式应用不冲突
-- [ ] **Cross-browser**: Chrome / Edge / Brave 都能正常加载
+### 4. Inspect the production output
 
-### 5. 交付
+Review `apps/extension-halo/dist/` for:
 
-- [ ] 提交代码: `feat(halo): release vX.Y.Z`
-- [ ] 上传 `halo-vX.Y.Z.zip` 到 Chrome Web Store
-- [ ] 填写商店素材(截图、宣传语)
+- correct manifest/version/permissions;
+- complete required locales and assets;
+- no source maps, tests, source files, private docs, secrets, or debug code;
+- no undeclared remote code or network destination;
+- no duplicate/unreferenced bundles;
+- correct package root when loaded unpacked.
 
-### 6. 开源同步
+The repository currently has no dedicated `release:halo` packager. Until one is added, create a candidate ZIP reproducibly from the contents of `dist/`, not from its parent directory, and record its checksum. On PowerShell:
 
-```bash
-bun run sync-halo
-cd ../halo-public ; git push origin main
+```powershell
+Compress-Archive -Path .\apps\extension-halo\dist\* -DestinationPath .\halo-v<version>.zip -Force
+Get-FileHash .\halo-v<version>.zip -Algorithm SHA256
 ```
 
-## Anti-Rationalization
+Do not use a fixed “under 5 MB” rule as proof. Explain unexpected size changes from the artifact graph.
 
-- "Halo 没有视频功能,不用检查 video 权限" → **对**,但要确认 manifest 里也没有声明。
-- "打包大小无所谓" → **错**。Chrome Web Store 对 > 50MB 警告。
-- "可以跳过离线测试" → **错**。Halo 定位是离线工具箱,网络依赖就是 bug。
+### 5. Reconcile public truth
 
-## Verification
+- Permission declarations match the exact manifest and plugin registry.
+- Privacy copy distinguishes local defaults from optional network capabilities.
+- Store listings contain only implemented, tested features and limitations.
+- Tool counts come from the generated registry at the release commit.
+- Cross-browser claims are made only for browsers actually included in the release test matrix.
 
-- [ ] zip 文件已生成,大小 < 5MB
-- [ ] CHANGELOG.md 已更新
-- [ ] git tag 已创建(或在 commit message 中标注版本)
-- [ ] halo-public 已同步
+### 6. Publish and synchronize within authorization
+
+- Upload or submit only with explicit authorization.
+- Record the exact ZIP checksum and store submission status.
+- Run `bun run sync-halo` only when public-repository synchronization is approved; inspect the generated diff before push.
+- Commit, tag, push, public sync, and store submission remain separate authorized actions.
+
+## Prohibited shortcuts
+
+- Version bump before the candidate scope is known.
+- Treating build success as release readiness.
+- Claiming every tool works offline when a feature uses external services.
+- Copying SPECTRA permissions or release assumptions into HALO.
+- Publishing without privacy, store, locale, and permission reconciliation.
+- Hand-copying public repository files around the sync script.
+
+## Completion evidence
+
+- release prerequisites exist or the result is explicitly labeled not ready;
+- candidate commit/version and change scope are recorded;
+- repository/HALO type, lint, architecture, UI, browser, and production-build checks pass;
+- artifact contents and checksum are inspected;
+- permissions, privacy, locales, store copy, and generated registry agree;
+- each authorized publication/sync/Git action is reported separately.
