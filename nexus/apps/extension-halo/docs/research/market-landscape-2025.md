@@ -11,7 +11,7 @@ last_reviewed: 2026-07-20
 
 This document preserves durable problem hypotheses derived from 2025 research. Competitor user counts, prices, ratings, issue totals, browser behavior, and product policies are time-sensitive and were not revalidated during the 2026-07-20 documentation restructuring. Recheck primary store listings, official documentation, repositories, and current product behavior before using any dynamic claim for a release or investment decision.
 
-The detailed legacy evidence remains in [`../../../../../docs/market-research.md`](../../../../../docs/market-research.md). This application summary records only durable problem hypotheses.
+The detailed legacy evidence remains in [`../../../../docs/market-research.md`](../../../../docs/market-research.md). This application summary records only durable problem hypotheses.
 
 ## Page appearance tools
 
