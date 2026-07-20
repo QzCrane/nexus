@@ -423,17 +423,26 @@ describe('extension-page DOM and idle contracts', () => {
 			'utf8',
 		);
 		const handoff = readFileSync(resolve(import.meta.dir, '../src/content/core/fullscreen-audio-handoff.ts'), 'utf8');
-		// rule: SCTRL-001/004 — MAIN world content scripts are no longer
-		// registered in the manifest. main-runtime-manager.ts owns the only
-		// `world: 'MAIN'` injection; the manifest only carries the ISOLATED
-		// bootstrap that every page receives at document_start.
-		expect(manifest.content_scripts).toContainEqual(expect.objectContaining({
-			js: ['content-bootstrap.js'],
-			world: 'ISOLATED',
-		}));
-		for (const entry of manifest.content_scripts ?? []) {
-			expect(entry.world).not.toBe('MAIN');
-		}
+		// rule: MAIN-world fullscreen and playback-rate bridges are registered in
+	// the manifest at document_start so Chrome injects them before any page
+	// script can call requestFullscreen or set playbackRate. This is the only
+	// path that does not race with service-worker wake-up or page CSP.
+	// main-runtime-manager.ts remains the owner of the `world: 'MAIN'`
+	// re-injection literal used by warm-update and on-demand paths; the bridge
+	// modules' V1 guard makes a second injection a no-op, so the two paths
+	// coexist safely.
+	expect(manifest.content_scripts).toContainEqual(expect.objectContaining({
+		js: ['content-fullscreen-bridge.js'],
+		world: 'MAIN',
+	}));
+	expect(manifest.content_scripts).toContainEqual(expect.objectContaining({
+		js: ['content-playback-rate-bridge.js'],
+		world: 'MAIN',
+	}));
+	expect(manifest.content_scripts).toContainEqual(expect.objectContaining({
+		js: ['content-bootstrap.js'],
+		world: 'ISOLATED',
+	}));
 		const mainRuntime = readFileSync(
 			resolve(import.meta.dir, '../src/background/main-runtime-manager.ts'),
 			'utf8',

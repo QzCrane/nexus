@@ -161,12 +161,49 @@ function checkSourceAlgorithmCatalog(root, contracts, architecture) {
 function checkDefaultRuntime(root) {
 	const app = path.join(root, APP_PATH);
 	const manifest = JSON.parse(fs.readFileSync(path.join(app, 'public/manifest.json'), 'utf8'));
+	// Allowlist: MAIN-world bridges that must be present at document_start so
+	// Chrome injects them before any page script can call requestFullscreen or
+	// set playbackRate. Each bridge module owns a V1 guard that makes a second
+	// injection (warm-update / on-demand via main-runtime-manager.ts) a no-op,
+	// so the manifest entry and the runtime re-injection path coexist safely.
+	const ALLOWED_MAIN_BRIDGES = Object.freeze({
+		'content-fullscreen-bridge.js': '__SPECTRA_FULLSCREEN_BRIDGE_V1__',
+		'content-playback-rate-bridge.js': '__SPECTRA_PLAYBACK_RATE_BRIDGE_V1__',
+	});
+	const seenMainBridges = new Set();
 	const scripts = manifest.content_scripts ?? [];
 	for (const item of scripts) {
-		if (item.world === 'MAIN') error('SCTRL-001/SCTRL-004: manifest must not inject MAIN world code');
 		const files = item.js ?? [];
-		if (files.length !== 1 || files[0] !== 'content-bootstrap.js') {
-			error(`SCTRL-001: manifest content entry must be only content-bootstrap.js, got ${files.join(', ')}`);
+		if (item.world === 'MAIN') {
+			if (files.length !== 1 || !Object.hasOwn(ALLOWED_MAIN_BRIDGES, files[0])) {
+				error(`SCTRL-001/SCTRL-004: manifest MAIN world entry must be an allowlisted bridge, got ${files.join(', ')}`);
+			} else {
+				seenMainBridges.add(files[0]);
+			}
+		} else {
+			if (files.length !== 1 || files[0] !== 'content-bootstrap.js') {
+				error(`SCTRL-001: manifest ISOLATED content entry must be only content-bootstrap.js, got ${files.join(', ')}`);
+			}
+		}
+	}
+	for (const bridge of Object.keys(ALLOWED_MAIN_BRIDGES)) {
+		if (!seenMainBridges.has(bridge)) {
+			error(`SCTRL-001/SCTRL-004: manifest must register the MAIN world bridge ${bridge} at document_start`);
+		}
+	}
+	// Verify each allowlisted bridge module actually owns its V1 guard so the
+	// manifest entry cannot silently drift away from the no-op re-injection
+	// contract that main-runtime-manager.ts relies on.
+	const BRIDGE_SOURCE_NAME = {
+		'content-fullscreen-bridge.js': 'fullscreen-bridge.ts',
+		'content-playback-rate-bridge.js': 'playback-rate-bridge.ts',
+	};
+	for (const [bridge, guard] of Object.entries(ALLOWED_MAIN_BRIDGES)) {
+		const bridgePath = path.join(app, 'src/content/injector', BRIDGE_SOURCE_NAME[bridge]);
+		if (!fs.existsSync(bridgePath)) {
+			error(`SCTRL-001/SCTRL-004: allowlisted MAIN bridge source is missing (${bridgePath})`);
+		} else if (!fs.readFileSync(bridgePath, 'utf8').includes(guard)) {
+			error(`SCTRL-001/SCTRL-004: MAIN bridge ${bridge} lost its V1 guard ${guard}`);
 		}
 	}
 
@@ -515,21 +552,21 @@ function checkPolicyOwner(root) {
 		}
 		checkSourceAlgorithmCatalog(root, contracts, architecture);
 		const runtimeProtocols = fs.readFileSync(
-			path.join(root, APP_PATH, 'docs/protocols.md'),
+			path.join(root, APP_PATH, 'docs/reference/protocols.md'),
 			'utf8',
 		);
 		const sourceEligibility = fs.readFileSync(
-			path.join(root, APP_PATH, 'docs/cors-data-flow.md'),
+			path.join(root, APP_PATH, 'docs/architecture/media-source-admission.md'),
 			'utf8',
 		);
-		if (!runtimeProtocols.includes('`ControlSnapshot` is the only actual source')
-			|| !runtimeProtocols.includes('MAIN one-shot adapter')
+		if (!runtimeProtocols.includes('`ControlSnapshot` is the sole actual source')
+			|| !runtimeProtocols.includes('one allowlisted official API call')
 			|| !runtimeProtocols.includes('`boostGain: 1–8`')
 			|| runtimeProtocols.includes('MAIN WebAudio')) {
 			error('SCTRL-014/SCTRL-016/SCTRL-032: runtime protocol narrative drifted from control ownership');
 		}
 		if (!sourceEligibility.includes('never binds or samples a source as a probe')
-			|| !sourceEligibility.includes('same-origin URL or a CORS mode already established before')
+			|| !sourceEligibility.includes('same-origin URL or CORS mode established before')
 			|| sourceEligibility.includes('cors-handler.ts')
 			|| sourceEligibility.includes('media-probe.ts')) {
 			error('SCTRL-008/SCTRL-016: Media WebAudio eligibility narrative regained probe-based admission');

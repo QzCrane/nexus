@@ -14,7 +14,7 @@ audience: developer
 - `SCTRL-001`: untouched pages preserve native constructor and descriptor identity and have zero processing work.
 - `SCTRL-002`: planning is per field; no page-wide mode owns unrelated controls.
 - `SCTRL-003`: one writer exists for each `{document, media, field}`.
-- `SCTRL-004`: generic MAIN monkey-patching is forbidden.
+- `SCTRL-004`: generic MAIN monkey-patching is forbidden; the two V1-guarded MAIN bridges (`content-fullscreen-bridge.js`, `content-playback-rate-bridge.js`) are the only allowlisted manifest entries at `document_start`, and `main-runtime-manager.ts` remains the sole owner of the `world: 'MAIN'` re-injection literal for warm-update and on-demand paths.
 - `SCTRL-005`: only readback actual state may be acknowledged.
 - `SCTRL-006`: intent and ACK identity includes document, generation, revision and intent ID.
 - `SCTRL-007`: 100% and 1x are literal controlled values.
