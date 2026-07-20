@@ -34,7 +34,7 @@ apps/extension-spectra/docs/
 apps/extension-halo/docs/
 ```
 
-Operational documentation remains beside the executable system it explains, such as `scripts/hooks/README.md`. Agent workflows remain under `.agents/skills/`. Store listings and privacy declarations remain beside the published application because they are release projections rather than internal architecture.
+Operational documentation remains beside the executable system it explains. Agent workflows and public release projections remain beside their own sources rather than being copied into this directory.
 
 ## Authority order
 
@@ -56,6 +56,8 @@ A lower layer may summarize or link upward. It must not copy a complete policy m
 - [Portfolio roadmap](product/roadmap.md)
 - [Business model](product/business-model.md)
 - [Research index](research/README.md)
+- [AI-tool hook architecture](../scripts/hooks/README.md)
+- [Agent workflow sources](../../.agents/skills/README.md)
 - [Root contributor rules](../../rules.md)
 - [Workspace entrypoint](../README.md)
 
