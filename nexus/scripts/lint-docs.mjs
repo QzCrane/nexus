@@ -3,18 +3,12 @@
 /**
  * NEXUS documentation architecture checker.
  *
- * Validates frontmatter, lifecycle redirects, registered compatibility symlinks,
- * local links, canonical entrypoints, H1 structure, and documentation reachability.
+ * Validates frontmatter, lifecycle redirects, generated compatibility mirrors,
+ * exact-case local links, canonical entrypoints, H1 structure, owner uniqueness,
+ * and documentation reachability.
  */
 
-import {
-	existsSync,
-	lstatSync,
-	readFileSync,
-	readlinkSync,
-	readdirSync,
-	statSync,
-} from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -26,10 +20,14 @@ const VALID_STATUSES = new Set(['stable', 'draft', 'deprecated', 'archived']);
 const VALID_AUDIENCES = new Set(['all', 'developer', 'reviewer', 'contributor', 'user']);
 const IGNORED_DIRECTORIES = new Set(['.git', '.turbo', 'build', 'coverage', 'dist', 'node_modules']);
 
-const REGISTERED_MARKDOWN_SYMLINKS = new Map([
+/**
+ * Cross-platform compatibility projections that must remain byte-identical to
+ * their canonical owner. A mirror has no independent edit authority.
+ */
+const REGISTERED_MARKDOWN_MIRRORS = new Map([
 	[
 		'nexus/apps/extension-spectra/docs/control-architecture.md',
-		'control/04a-algorithm-matrix.md',
+		'nexus/apps/extension-spectra/docs/control/04a-algorithm-matrix.md',
 	],
 ]);
 
@@ -93,8 +91,8 @@ function parseArguments(argv) {
 
 function collectMarkdown(target, output = []) {
 	if (!existsSync(target)) return output;
-	const stats = lstatSync(target);
-	if (stats.isSymbolicLink() || stats.isFile()) {
+	const stats = statSync(target);
+	if (stats.isFile()) {
 		if (extname(target).toLowerCase() === '.md') output.push(target);
 		return output;
 	}
@@ -110,6 +108,7 @@ function collectMarkdown(target, output = []) {
 function parseFrontmatter(raw) {
 	const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/u);
 	if (!match) return { body: raw, fields: {}, present: false };
+
 	const fields = {};
 	for (const line of match[1].split(/\r?\n/u)) {
 		if (!line.trim() || line.trimStart().startsWith('#') || /^\s/u.test(line)) continue;
@@ -127,8 +126,12 @@ function isDetailedArchive(relativePath) {
 	return relativePath.includes('/_archive/') && !relativePath.endsWith('/README.md');
 }
 
+function isRegisteredMirror(relativePath) {
+	return REGISTERED_MARKDOWN_MIRRORS.has(relativePath);
+}
+
 function requiresDiataxis(relativePath) {
-	if (isDetailedArchive(relativePath) || REGISTERED_MARKDOWN_SYMLINKS.has(relativePath)) return false;
+	if (isDetailedArchive(relativePath) || isRegisteredMirror(relativePath)) return false;
 	return (
 		relativePath === 'spectra.md' ||
 		relativePath === 'nexus/scripts/hooks/README.md' ||
@@ -164,6 +167,21 @@ function linkDestination(rawDestination) {
 	return trimmed.match(/^\S+/u)?.[0] ?? null;
 }
 
+function hasExactCase(absolutePath) {
+	const repositoryRelative = relative(repositoryRoot, absolutePath);
+	if (repositoryRelative === '') return true;
+	if (repositoryRelative.startsWith('..') || resolve(repositoryRoot, repositoryRelative) !== absolutePath) {
+		return false;
+	}
+
+	let current = repositoryRoot;
+	for (const segment of repositoryRelative.split(sep)) {
+		if (!readdirSync(current).includes(segment)) return false;
+		current = join(current, segment);
+	}
+	return true;
+}
+
 function resolveLocalLink(sourceFile, destination) {
 	if (destination.startsWith('#') || /^(?:https?:|mailto:|tel:|data:|chrome:|about:)/iu.test(destination)) {
 		return null;
@@ -174,6 +192,7 @@ function resolveLocalLink(sourceFile, destination) {
 
 	const pathOnly = destination.split('#', 1)[0].split('?', 1)[0];
 	if (!pathOnly) return null;
+
 	let decoded;
 	try {
 		decoded = decodeURIComponent(pathOnly);
@@ -188,6 +207,7 @@ function resolveLocalLink(sourceFile, destination) {
 		return { error: `link escapes repository: ${destination}` };
 	}
 	if (!existsSync(resolved)) return { error: `missing local target: ${destination}` };
+	if (!hasExactCase(resolved)) return { error: `local target has incorrect path casing: ${destination}` };
 
 	const stats = statSync(resolved);
 	if (stats.isDirectory() && !existsSync(join(resolved, 'README.md'))) {
@@ -199,10 +219,17 @@ function resolveLocalLink(sourceFile, destination) {
 function lintFrontmatter(relativePath, parsed) {
 	if (!requiresDiataxis(relativePath)) return [];
 	if (!parsed.present) return ['missing Diátaxis frontmatter'];
+
 	const issues = [];
-	if (!VALID_TYPES.has(parsed.fields.type)) issues.push(`invalid or missing type: ${parsed.fields.type ?? 'missing'}`);
-	if (!VALID_STATUSES.has(parsed.fields.status)) issues.push(`invalid or missing status: ${parsed.fields.status ?? 'missing'}`);
-	if (!VALID_AUDIENCES.has(parsed.fields.audience)) issues.push(`invalid or missing audience: ${parsed.fields.audience ?? 'missing'}`);
+	if (!VALID_TYPES.has(parsed.fields.type)) {
+		issues.push(`invalid or missing type: ${parsed.fields.type ?? 'missing'}`);
+	}
+	if (!VALID_STATUSES.has(parsed.fields.status)) {
+		issues.push(`invalid or missing status: ${parsed.fields.status ?? 'missing'}`);
+	}
+	if (!VALID_AUDIENCES.has(parsed.fields.audience)) {
+		issues.push(`invalid or missing audience: ${parsed.fields.audience ?? 'missing'}`);
+	}
 	return issues;
 }
 
@@ -215,7 +242,9 @@ function lintRedirect(filePath, relativePath, parsed) {
 	} else {
 		const resolved = resolveLocalLink(filePath, redirect);
 		if (resolved?.error) issues.push(`invalid redirect_to: ${resolved.error}`);
-		if (resolved?.target && normalizePath(resolved.target) === relativePath) issues.push('redirect_to points to itself');
+		if (resolved?.target && normalizePath(resolved.target) === relativePath) {
+			issues.push('redirect_to points to itself');
+		}
 	}
 	if (!/^\d{4}-\d{2}-\d{2}$/u.test(parsed.fields.remove_after ?? '')) {
 		issues.push('deprecated document requires remove_after: YYYY-MM-DD');
@@ -225,26 +254,28 @@ function lintRedirect(filePath, relativePath, parsed) {
 	return issues;
 }
 
-function lintRegisteredSymlink(filePath, relativePath) {
-	const expected = REGISTERED_MARKDOWN_SYMLINKS.get(relativePath);
-	if (!expected) return [`unregistered Markdown symlink: ${relativePath}`];
-	const actual = readlinkSync(filePath).split(sep).join('/');
-	if (actual !== expected) return [`symlink target mismatch: expected ${expected}, found ${actual}`];
-	const target = resolve(dirname(filePath), actual);
-	if (!existsSync(target)) return [`symlink target is missing: ${actual}`];
+function lintRegisteredMirror(filePath, relativePath) {
+	const targetRelativePath = REGISTERED_MARKDOWN_MIRRORS.get(relativePath);
+	if (!targetRelativePath) return [`unregistered Markdown compatibility mirror: ${relativePath}`];
+
+	const targetPath = resolve(repositoryRoot, targetRelativePath);
+	if (!existsSync(targetPath)) return [`compatibility mirror target is missing: ${targetRelativePath}`];
+	if (!hasExactCase(targetPath)) return [`compatibility mirror target has incorrect case: ${targetRelativePath}`];
+	if (readFileSync(filePath, 'utf8') !== readFileSync(targetPath, 'utf8')) {
+		return [`compatibility mirror drifted from canonical owner: ${targetRelativePath}`];
+	}
 	return [];
 }
 
 function lintFile(filePath) {
 	const relativePath = normalizePath(filePath);
-	if (lstatSync(filePath).isSymbolicLink()) {
-		const target = resolve(dirname(filePath), readlinkSync(filePath));
+	if (isRegisteredMirror(relativePath)) {
 		return {
-			issues: lintRegisteredSymlink(filePath, relativePath),
-			linkTargets: existsSync(target) ? [normalizePath(target)] : [],
+			issues: lintRegisteredMirror(filePath, relativePath),
+			linkTargets: [REGISTERED_MARKDOWN_MIRRORS.get(relativePath)],
 			parsed: { fields: { status: 'deprecated' } },
 			relativePath,
-			symlink: true,
+			mirror: true,
 		};
 	}
 
@@ -270,12 +301,12 @@ function lintFile(filePath) {
 			}
 		}
 	}
-	return { issues, linkTargets, parsed, relativePath, symlink: false };
+	return { issues, linkTargets, parsed, relativePath, mirror: false };
 }
 
 function isCanonicalInternalDocument(result) {
 	return (
-		!result.symlink &&
+		!result.mirror &&
 		requiresDiataxis(result.relativePath) &&
 		!isDetailedArchive(result.relativePath) &&
 		!['deprecated', 'archived'].includes(result.parsed.fields.status)
@@ -298,6 +329,22 @@ function findOrphans(resultsByPath) {
 		.filter((result) => !reachable.has(result.relativePath))
 		.map((result) => result.relativePath)
 		.sort();
+}
+
+function findDuplicateOwners(resultsByPath) {
+	const byOwner = new Map();
+	for (const result of resultsByPath.values()) {
+		if (!isCanonicalInternalDocument(result)) continue;
+		if (result.parsed.fields.status !== 'stable') continue;
+		const owner = result.parsed.fields.owner;
+		if (!owner) continue;
+		const paths = byOwner.get(owner) ?? [];
+		paths.push(result.relativePath);
+		byOwner.set(owner, paths);
+	}
+	return [...byOwner.entries()]
+		.filter(([, paths]) => paths.length > 1)
+		.map(([owner, paths]) => ({ owner, paths: paths.sort() }));
 }
 
 function main() {
@@ -323,9 +370,18 @@ function main() {
 		resultsByPath.set(result.relativePath, result);
 		for (const issue of result.issues) failures.push({ path: result.relativePath, issue });
 	}
+
 	if (globalScan) {
 		for (const orphan of findOrphans(resultsByPath)) {
 			failures.push({ path: orphan, issue: 'active canonical document is unreachable from documentation entrypoints' });
+		}
+		for (const duplicate of findDuplicateOwners(resultsByPath)) {
+			for (const path of duplicate.paths) {
+				failures.push({
+					path,
+					issue: `stable owner "${duplicate.owner}" is duplicated across: ${duplicate.paths.join(', ')}`,
+				});
+			}
 		}
 	}
 
@@ -334,8 +390,11 @@ function main() {
 		for (const failure of failures) console.error(`  ${failure.path}: ${failure.issue}`);
 		process.exit(1);
 	}
+
 	console.log(`[docs:check] ${markdownFiles.length} Markdown file(s) passed`);
-	console.log(`[docs:check] entrypoints=${REQUIRED_ENTRYPOINTS.length} symlinks=${REGISTERED_MARKDOWN_SYMLINKS.size} strict=${args.strict}`);
+	console.log(
+		`[docs:check] entrypoints=${REQUIRED_ENTRYPOINTS.length} mirrors=${REGISTERED_MARKDOWN_MIRRORS.size} strict=${args.strict}`,
+	);
 }
 
 main();
