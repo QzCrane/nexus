@@ -27,7 +27,7 @@ describe('shared sparse audio graph router', () => {
 
 	test('keeps canonical DSP parameters mirrored in the architecture owner', () => {
 		const architecture = readFileSync(
-			new URL('../docs/control-architecture.md', import.meta.url),
+			new URL('../docs/control/05-control-state.md', import.meta.url),
 			'utf8',
 		);
 		expect(architecture).toContain(
