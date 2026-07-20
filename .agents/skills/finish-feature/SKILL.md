@@ -21,7 +21,7 @@ Use after implementation is complete and before claiming delivery.
 
 ### 1. Reconstruct the intended closure
 
-- Re-read the user request, [`rules.md`](../../rules.md), the domain owner, and the final diff.
+- Re-read the user request, [`rules.md`](../../../rules.md), the domain owner, and the final diff.
 - Separate requested changes from accidental cleanup.
 - Confirm contracts, identities, lifecycle, errors, permissions, privacy, and public projections affected by the diff.
 - Remove debug code, stale generated output, dead compatibility paths, and comments that no longer describe behavior.
