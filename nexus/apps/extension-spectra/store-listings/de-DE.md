@@ -2,66 +2,49 @@
 
 ## Name
 
-SPECTRA - Lautstärke-Verstärker, EQ & Mediensteuerung
+SPECTRA - Lautstärke, Equalizer & Mediensteuerung
 
-## Zusammenfassung (Max. 132 Zeichen)
+## Kurzbeschreibung (max. 132 Zeichen)
 
-800% Verstärker, EQ, Video, Fernbedienung. 🔵🟣 Hochleistungs-Dualmodus, kompatibel mit allen Websites.
+Bis zu 800 % Lautstärke, 10-Band-EQ, Medien- und Videosteuerung sowie eine optionale authentifizierte Handy-Fernbedienung.
 
-## Detaillierte Beschreibung
+## Ausführliche Beschreibung
 
-🚀 **Warum SPECTRA? Weil andere Erweiterungen fehlerhaft sind.**
+SPECTRA bündelt Audio-, Wiedergabe- und Videosteuerung in einer Chrome-Erweiterung. Einstellungen und Medienverarbeitung bleiben standardmäßig auf dem Gerät.
 
-Haben Sie genug von Problemen wie:
-❌ Plötzliche Stummschaltung beim Öffnen neuer Seiten?
-❌ Defekter Vollbildmodus, der Sie zwingt, F11 zu drücken?
-❌ Lautstärkeeinstellungen, die Seiten-Reloads oder Lags verursachen?
-❌ Aufgeblähter Code, der die CPU belastet und den Akku leert?
+### Audio
 
-**Als unabhängiger Entwickler war mein Ziel mit SPECTRA nicht nur der Bau eines leistungsstarken Verstärkers, sondern die Schaffung einer umfassenden Barrierefreiheits-Schaltzentrale. Mit integriertem 10-Band-Equalizer, Videorotation und einer revolutionären mobilen Web-Fernbedienung biete ich eine beispiellose Kontrolle für alle, insbesondere für Menschen mit Hör-/Sehbedürfnissen oder eingeschränkter Mobilität.**
+- Lautstärkeregelung bis 800 %
+- 10-Band-Equalizer von 32 Hz bis 16 kHz
+- Bass, Kompressor, Mono, Balance und Verzögerung
+- getrennte Stummschaltung für Medium und Browser-Tab
 
----
+Hohe Verstärkung kann Verzerrungen und gesundheitlich bedenkliche Pegel verursachen. Erhöhe die Lautstärke schrittweise und verwende den Kompressor passend zu Quelle und Wiedergabegerät.
 
-🔵🟣 **Innovation: Die Ultra-Performance Dual-Modus Architektur**
+### Wiedergabe und Video
 
-SPECTRA verfügt über eine branchenführende intelligente Umschalteinheit:
+- Geschwindigkeit, Wiedergabe/Pause, Suche, Schleifen, Marker und A/B-Schleife
+- Drehen, Spiegeln, Füllen, Filter und Hintergrundabdunklung
+- Bild-in-Bild und Vollbild über die Standardfunktionen des Browsers
+- Screenshots sichtbarer Videobilder, wenn Seite und Medium die Aufnahme zulassen
 
-• 🔵 **Native Modus**: Verstärkt den Ton direkt über die Browser-Engine. **Null CPU-Zusatzlast**, keine Verzögerung und maximale Audio-Treue.
-• 🟣 **Capture Modus**: Wird automatisch für komplexe Cross-Origin-Inhalte aktiviert, um Stabilität auf TikTok, Netflix, Disney+ usw. sicherzustellen.
+Die Verfügbarkeit hängt von Seite, Medienelement, Browserunterstützung, Berechtigungen und Benutzeraktivierung ab. SPECTRA meldet nicht unterstützte Vorgänge, statt identisches Verhalten auf jeder Website zu versprechen.
 
----
+### Optionale Handy-Fernbedienung
 
-✅ **Was SPECTRA anders macht**
+Erstelle eine Kopplungssitzung und scanne den QR-Code. Das Steuergerät muss eine HMAC-SHA-256-Authentifizierung abschließen, bevor es Statusdaten erhält oder Befehle senden kann.
 
-• **Nahtlose Konsistenz**: Die Lautstärke bleibt genau dort, wo Sie sie eingestellt haben.
-• **Echter Vollbild-Support**: Ein-Klick-Vollbild-Erlebnis ohne F11.
-• **Universelle Kompatibilität**: Funktioniert dort reibungslos, wo andere scheitern.
-• **Extrem Leichtgewicht**: Optimierter Code schont Akku und Systemressourcen.
+Die Fernbedienung ist standardmäßig deaktiviert. Bei Aktivierung nutzt sie Cloudflare Pages, PeerJS-Signalisierung sowie STUN- und TURN-Dienste. Nach der Authentifizierung können Titel, Domain und Mediensteuerungsstatus des ausgewählten Tabs mit dem gekoppelten Gerät ausgetauscht werden. Seiteninhalt, Favicons, Audio und Video werden nicht über den Fernkanal übertragen.
 
-🎵 **Audio Powerhouse (Barrierefrei)**
-• **800% Lautstärkeschub** - Kraftvolle Verstärkung für klare Audio-Wiedergabe.
-• **10-Band Pro Equalizer** - Präzises Tuning von 32Hz bis 16kHz zum Ausgleich frequenzspezifischer Defizite.
-• **Nativer Kompressor & Limiter** - Kristallklarer Sound schützt das Gehör vor plötzlichen Spitzen und Verzerrungen.
-• **Bass Boost** - Tiefe, druckvolle Bassfrequenzen.
-• **Stereo-Balance** - Flexible Kanalanpassung (ideal bei einseitiger Schwerhörigkeit).
+### Einstellungen und Tastenkürzel
 
-🎬 **Video-Steuerung**
-• **Wiedergabegeschwindigkeit** - 0.25x bis 16x Präzisionssteuerung.
-• **Rotation & Spiegelung** - Videos in jedem Winkel anpassen.
-• **Bild-im-Bild (PiP)** - Videos schweben lassen, während Sie arbeiten.
-• **HD Screenshots** - Jeden Moment sofort festhalten.
-• **AB Loop** - Abschnitte wiederholen (ideal zum Lernen).
+- lokale globale und websitespezifische Einstellungen
+- konfigurierbare Medien-Tastenkürzel
+- mehrsprachige Benutzeroberfläche
+- bestätigter Ist-Zustand für Popup und authentifizierte Fernbedienung
 
-📱 **Revolutionäre Fernbedienung (Mobilitäts-Support)**
-• **Sofort-Fernbedienung** - QR scannen, Ihr Handy wird zur Fernbedienung. Ideal für Nutzer, denen die Bedienung von Maus/Tastatur schwerfällt. Steuern Sie Ihre Medien bequem aus der Distanz.
-• **Multi-Tab Management** - Mehrere Tabs von einem Handy aus steuern.
+### Datenschutz
 
-⌨️ **Fortgeschrittene Hotkeys**
-• Über 70 anpassbare atomare Aktionen.
-• Unterstützung für globale Chrome-Hotkeys.
+SPECTRA enthält keine Werbung, Analyse, Telemetrie oder vom Entwickler betriebene Datensammlung. Einstellungen und Medienverarbeitung bleiben standardmäßig lokal. Der optionale Netzwerkverkehr der Fernbedienung ist oben und in der Datenschutzerklärung beschrieben.
 
-🔒 **Datenschutz & Sicherheit**
-• Keine Telemetrie oder Werbung. Einstellungen bleiben lokal; die optionale, authentifizierte Handy-Fernbedienung nutzt die offengelegte PeerJS-WebRTC-Infrastruktur.
-• Minimale Berechtigungen – ich frage nur nach dem Nötigsten.
-
-⭐ **Lieben Sie SPECTRA? Geben Sie mir eine 5-Sterne-Bewertung! Ihr Support hilft mir.**
+SPECTRA umgeht keine Browser-Sicherheitsmechanismen, Berechtigungen, Einschränkungen geschützter Inhalte oder Anforderungen an Benutzeraktivierung.
