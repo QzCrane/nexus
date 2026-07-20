@@ -8,7 +8,7 @@
 		"updateCommand": "bun scripts/check-workspace-lint.mjs --update-halo-baseline --acknowledge-halo-scope-exception"
 	},
 	"biomeVersion": "2.5.3",
-	"biomeConfigSha256": "fd3601565b50d592017a6cc7627e677d099f8cf6da4b96042249017abd022699",
+	"biomeConfigSha256": "bba171a66d1587946b3a3a9bc18f466139b25a515b6550ecdfbc53544ded52c6",
 	"scanTargets": [
 		"apps/extension-halo/src",
 		"apps/extension-halo/public",
