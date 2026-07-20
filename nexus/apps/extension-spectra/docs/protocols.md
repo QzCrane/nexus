@@ -2,186 +2,120 @@
 type: reference
 status: stable
 audience: developer
+last_reviewed: 2026-07-20
 ---
 
 # SPECTRA runtime protocols
 
-This document owns cross-context state and message flow. Per-capability writer
-selection remains exclusively in [control-architecture.md](./control-architecture.md).
+This document owns cross-context envelopes, request/response validation, state flow, READY, and leases. Per-capability writer selection belongs to [the control architecture](./control-architecture.md); remote authentication belongs to [remote security](./remote-security.md).
 
 ## State ownership
 
 | Context | Owns | Must not do |
 | --- | --- | --- |
-| Popup / Options | intent, immediate local rendering and accessibility | predict actual state, write badge/storage or choose an executor |
-| Content (ISOLATED) | document/media identity, DOM/CSS writers, source-keyed state and admitted Media WebAudio | acknowledge stale work or claim Capture before its actual ACK |
-| MAIN one-shot adapter | one allowlisted official player setter/getter after typed native failure | install a runtime, listener, patch or cross-world message bridge |
-| Background | serialized coordinator, settings repository, `ControlSnapshot`, `AudioSessionSnapshot`, badge and leases | treat reads as activation or close offscreen outside its coordinator |
-| Unified offscreen host | actual Capture processors and authenticated PeerJS sessions | create/close its own document or infer a Background lease |
+| Popup / Options | intent, immediate local rendering, accessibility | predict actual state, write badge/storage, or select an executor |
+| Content, isolated world | document/media identity, DOM/CSS writers, source-keyed state, admitted Media WebAudio | acknowledge stale work or claim Capture before actual ACK |
+| One-shot site adapter | one allowlisted official player call after a typed native failure | install a standing runtime, listener, patch, or cross-world bridge |
+| Background | serialization, settings repository, `ControlSnapshot`, `AudioSessionSnapshot`, badge, and leases | treat reads as activation or close offscreen outside its coordinator |
+| Unified offscreen host | actual Capture processors and authenticated remote sessions | create/close its own document or infer a Background lease |
 
-`ControlSnapshot` is the only actual source for the 50 control capabilities and
-for `activeMedia` / `activeVideo`. `AudioSessionSnapshot` owns processor
-lifecycle only. UI and remote code never use audio-session config to overwrite
-control fields.
+`ControlSnapshot` is the sole actual source for all **51 control capabilities** and for independent `activeMedia` / `activeVideo` identities. `AudioSessionSnapshot` owns processor lifecycle only. UI and remote code never copy audio-session configuration over control fields.
 
-## Protocol v2
+## Protocol v2 envelope
 
-All current requests use the mapped contracts in `@nexus/contracts`:
+Every current request uses the mapped contract in `@nexus/contracts`:
 
 ```text
 { protocolVersion, requestId, tabId?, documentId?, generation?, type, payload }
 ```
 
-Responses are exactly one of:
+Every response is exactly one of:
 
 ```text
 { ok: true, data }
 { ok: false, error: { code, message, retryable } }
 ```
 
-Runtime guards validate request type, payload, sender context and
-request-specific response data. The narrow v1 adapter supports already-loaded
-1.3.4 contexts for one store cycle; current clients send only v2.
+Runtime guards validate request type, payload, sender context, identity, and request-specific response data. Narrow v1 adapters exist only for explicitly supported rolling compatibility; current clients send v2.
 
-### Registry v2 messages
-
-Registry operations use the same envelope and return the typed contracts below;
-UI contexts never write registry storage directly:
-
-```text
-spectra.registry.get
-  -> { entries: DomainEntry[] }
-spectra.registry.add
-  -> { domain, route } -> { entries, entry, created }
-spectra.registry.remove
-  -> { fingerprint } -> { entries, removed }
-spectra.registry.query
-  -> { domain, fingerprint } -> { entry: DomainEntry | null }
-spectra.registry.mark-probed
-  -> { domain, fingerprint, route } -> { entries, entry, created }
-```
-
-`fingerprint` remains in query/probe payloads for rolling compatibility, while
-the persisted identity is always normalized `site:*`; any legacy
-`media:v1:<16 lowercase hex>` value collapses into that site record during the
-read/write transaction. `route` is exactly `direct | capture`. Route
-precedence, migration and cache invalidation are owned by
-[control-architecture.md](./control-architecture.md#site-route-registry-and-eligibility-cache).
-A returned snapshot is the only registry value that may advance the UI
-projection; it does not activate Capture by itself.
+Each `chrome.runtime.onMessage` listener owns an exact request-type set. Prefix similarity is not ownership: a listener returns `false` before validation when another handler owns the type.
 
 ## Control transaction
 
 ```text
-page event / Popup / remote / hotkey intent
-  -> Background coordinator orders document generation + revision
-  -> least-invasive admitted writer executes once
-  -> event/getter, computed owner, processor or Chrome readback
-  -> coordinator commits ControlSnapshot
-  -> Popup, authenticated remote and badge receive one projection
+page observation / Popup / authenticated remote / hotkey intent
+  → Background orders document generation and field revision
+  → the least-invasive admitted writer executes once
+  → event/getter/Chrome/processor readback proves actual state
+  → Background commits ControlSnapshot
+  → Popup, authenticated remote, badge, and feedback consume projections
 ```
 
-Page observations bypass the writer stage: verified native events commit
-`controlled:false` actual state and are never echoed back to Content. Reads do
-not acquire processing, MAIN or offscreen work.
+A candidate returned by an executor is not an ACK. Only readback carrying current `tabId + documentId + origin + generation + revision` can commit. A failed field rolls back its optimistic projection without discarding unrelated successful fields.
 
-Actual state and UI projection are deliberately separate. A writer may return a
-candidate, but only the event/getter/processor/Chrome readback that carries the
-current `tabId + documentId + origin + generation + revision` can become an
-ACK. Background commits that ACK to `ControlSnapshot`; Popup, Options, badge,
-remote and Toast consume projections of that snapshot and never synthesize a
-second state. A failed field rolls back its own optimistic projection and keeps
-unrelated fields intact.
+Verified page observations bypass the writer stage, commit `controlled:false`, and never echo a second write to Content. Reads do not acquire Media WebAudio, Capture, a MAIN adapter, or an offscreen lease.
+
+## Registry v2
+
+UI contexts use the Background-owned registry repository:
+
+```text
+spectra.registry.get
+spectra.registry.add
+spectra.registry.remove
+spectra.registry.query
+spectra.registry.mark-probed
+```
+
+Persisted identity is normalized `site:*`; legacy `media:v1:*` fingerprints are compatibility inputs collapsed into the site record during a repository transaction. `route` is `direct | capture`. A returned registry snapshot may update UI projection, but never activates Capture.
+
+Resolution, migration, and activation semantics are owned by [control/02-strategy-and-routes.md §4](./control/02-strategy-and-routes.md#4-site-route-registry-and-eligibility-cache).
 
 ## Processor lifecycle
 
-Only Boost/EQ/Bass/Compressor/Mono/Pan/Delay can request a processor, and only
-with explicit full-output intent. Complete safe media coverage admits one lazy
-Media WebAudio graph; otherwise authorized Capture may own opaque full output.
-The processor contract exposes `boostGain: 1–8` and DSP parameters only. Page
-volume, media mute, speed and transport cannot cross that boundary.
+Only Boost, EQ, Bass, Compressor, Mono, Pan, and Delay can request a processor, and only with explicit full-output intent. The processor contract contains `boostGain: 1–8` and DSP parameters; page volume, media mute, speed, and transport never cross that boundary.
 
-A transition uses current `documentId + generation + controlRevision`:
+A transition binds current document identity, generation, and control revision:
 
 1. acknowledge the stable old route at unity;
-2. create the candidate behind a closed gate;
-3. verify normalized actual config, graph signature and running context;
-4. switch gates and commit `active`;
-5. release the old route; or restore it if the candidate fails.
+2. build the candidate behind a closed gate;
+3. verify normalized actual configuration, graph signature, source coverage, and running context;
+4. switch gates and commit active;
+5. release the old route, or restore it when the candidate fails.
 
-This prevents double DSP and premature ACK. Media WebAudio and `tabCapture` do
-not share a sample clock, so the protocol promises a bounded unity handoff, not
-sample-synchronous crossfade.
+Media WebAudio and `tabCapture` have no shared sample clock. The protocol promises a bounded unity handoff without double processing, not sample-synchronous crossfade.
 
 ## Runtime and offscreen leases
 
-The passive top-level bootstrap performs only bounded one-shot getters. Heavy
-Content runtime ownership is tokenized by document and consumer; the final
-control/restore/hotkey/Popup/remote/source token releases listeners and owned
-work. A status GET never creates a token.
+The passive bootstrap performs only bounded one-shot getters. Heavy Content ownership is tokenized by document and consumer. The final control, restore, hotkey, Popup, remote, or source token releases owned work; a status read creates no token.
 
-One `offscreen.html` hosts Capture and remote sessions. Background serializes
-creation, reconciles actual host state through HELLO after worker restart, and
-owns `audio:<tabId>` / `remote:<sessionId>` leases. A one-shot Chrome alarm
-closes the host 30 seconds after the last lease disappears. Feature modules
-never call `createDocument()` or `closeDocument()` directly.
+One `offscreen.html` hosts Capture processors and remote sessions. Background serializes creation, reconstructs actual host state through HELLO after a worker restart, and owns `audio:<tabId>` / `remote:<sessionId>` leases. A one-shot Chrome alarm closes the host after the final lease grace period. Feature modules never call `createDocument()` or `closeDocument()` directly.
 
-### Content READY and cold-document shortcuts
+## READY and cold-document shortcuts
 
-The wire contract is `spectra.content.runtime.ensure` with `{ tabId,
-documentId?, reason, capability? }` and a `{ documentId, runtimeRevision,
-ready:true }` result; Content acknowledges with
-`spectra.content.runtime.ready { runtimeRevision }`. The identity, cache,
-invalidation and cold-document behavior are normative in
-[control-architecture.md](./control-architecture.md#runtime-shortcut-and-feedback-ownership).
+The wire request is `spectra.content.runtime.ensure` with document identity, reason, and optional capability. Content acknowledges with its `runtimeRevision`. READY means the complete initialization barrier has passed, not that a script answered.
 
-### Shortcut feedback event
+Identity, invalidation, timeout, cold-document behavior, and feedback ownership are defined in [control/02-strategy-and-routes.md §5](./control/02-strategy-and-routes.md#5-runtime-shortcut-and-feedback-ownership).
 
-The cross-tab feedback event is
-`spectra.hotkey.target.feedback { action, targetTabId, targetTitle,
-targetHostname, feedback? }`. Toast ownership, hold/repeat cancellation and
-the rule that refresh/bootstrap/snapshot traffic stays silent are normative in
-[control-architecture.md](./control-architecture.md#runtime-shortcut-and-feedback-ownership).
+## Native PiP, fullscreen, and site playback rate
 
-### Native PiP/fullscreen messages
+- `spectra.media.pip.toggle` and `spectra.video.fullscreen.toggle` return observed native active state.
+- `spectra.media.speed.set` remains the normal control request; the planner may admit the bounded official adapter only after the standard DOM path fails with an allowed failure.
 
-`spectra.media.pip.toggle` and `spectra.video.fullscreen.toggle` accept an
-empty payload and return `{ active: boolean }`. Their trusted-activation,
-`activeVideo`, native lifecycle and audio-baseline rules are normative in
-[control-architecture.md](./control-architecture.md#site-adapters-pip-and-fullscreen).
-
-### Site playback-rate boundary
-
-The protocol carries the normal `spectra.media.speed.set` request/response;
-site-adapter selection and unsupported semantics are normative in
-[control-architecture.md](./control-architecture.md#site-adapters-pip-and-fullscreen).
+Activation and adapter boundaries are defined in [control/02-strategy-and-routes.md §6](./control/02-strategy-and-routes.md#6-site-adapters-pip-and-fullscreen).
 
 ## Privileged boundaries
 
-- Site-native MAIN execution is one allowlisted official API call with stable
-  getter readback; it cannot bypass activation, CORS, DRM or document identity.
-- Trusted page hotkeys invoke play/PiP/fullscreen inside the trusted event stack
-  and submit only observed actual state afterward.
-- `run-user-script` requires explicit `userScripts` permission and stays in the
-  `USER_SCRIPT` sandbox.
-- `open-url` accepts only HTTP(S).
-- Remote state and commands remain unavailable until HMAC authentication, then
-  stay bound to fixed session/tab/generation/sequence values.
+- site-native MAIN execution is one allowlisted official API call with getter readback;
+- trusted page hotkeys invoke activation-bound native APIs within the trusted event stack;
+- user scripts require explicit permission and remain in the user-script sandbox;
+- URL opening accepts HTTP(S) only;
+- remote state and commands remain unavailable until HMAC authentication and stay bound to session, tab, generation, and monotonic sequence.
 
 ## Performance boundaries
 
-Default pages have no extension AudioContext, offscreen document, analyser or
-periodic task. UI continuous values coalesce to at most 20 IPC writes per
-second; persistence uses a 250 ms trailing write. Visualizer consumers use
-generation-aware leases, one in-flight batch and at most 15 Hz sampling from an
-already-active processor. Hidden/non-intersecting consumers release their own
-lease immediately.
+Default pages have no extension AudioContext, offscreen document, analyser, or periodic work. Continuous UI values are coalesced; persistence is trailing; visualizer consumers use generation-aware leases and bounded sampling from an already-active processor. Hidden or destroyed consumers release their own leases.
 
-### Boundary payloads
+## Boundary payloads
 
-Favicon, QR and origin-sensitive fields are validated at the boundary. Favicon
-requests use supported browser URL rules and never require an `_favicon`
-permission. QR rendering accepts only a complete, validated local `data:`/SVG
-image URL; `Invalid remote QR image URL` is a structured render error. A document
-without a controllable origin is terminal for the affected operation and must
-not be retried as if it were a transient runtime timeout.
+Favicon, QR, URL, and origin-sensitive fields are validated before use. QR rendering accepts only a complete validated local image URL. A document without a controllable origin is terminal for that operation and must not be retried as a transient timeout.
