@@ -3,7 +3,7 @@
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
-	"description": "Project NEXUS - Chrome Extension Ecosystem (SPECTRA,  HALO)",
+	"description": "Project NEXUS - Chrome Extension Ecosystem (SPECTRA, HALO)",
 	"scripts": {
 		"dev": "turbo run dev",
 		"build": "turbo run build --output-logs=new-only",
@@ -21,7 +21,8 @@
 		"verify": "bun scripts/verify-architecture.js",
 		"verify:q": "bun scripts/verify-architecture.js -q",
 		"verify:v": "bun scripts/verify-architecture.js -v",
-		"prebuild": "bun run sync:skills && bun scripts/verify-architecture.js -q",
+		"docs:check": "bun scripts/lint-docs.mjs --strict",
+		"prebuild": "bun run sync:skills && bun run docs:check && bun scripts/verify-architecture.js -q",
 		"sync-spectra": "bun scripts/sync-public.cjs spectra",
 		"sync-halo": "bun scripts/sync-public.cjs halo",
 		"generate-registry": "bun scripts/generate-tool-registry.mjs",
