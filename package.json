@@ -9,6 +9,7 @@
 		"typecheck": "bun --cwd nexus typecheck",
 		"verify": "bun --cwd nexus verify",
 		"verify:q": "bun --cwd nexus verify:q",
+		"docs:check": "bun --cwd nexus docs:check",
 		"generate-registry": "bun --cwd nexus generate-registry",
 		"sync:skills": "bun --cwd nexus sync:skills",
 		"hooks:test": "bun --cwd nexus scripts/hooks/test.mjs",
