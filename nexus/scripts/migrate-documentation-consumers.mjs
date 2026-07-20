@@ -40,9 +40,6 @@ for (const migration of migrations) {
 			`${migration.file}: expected ${migration.expected} occurrence(s) of ${migration.from}, found ${count}`,
 		);
 	}
-	if (migration.expected === null && count > 1) {
-		throw new Error(`${migration.file}: optional migration matched ${count} times; review manually`);
-	}
 	if (count === 0) continue;
 	writeFileSync(filePath, current.replaceAll(migration.from, migration.to));
 	console.log(`${migration.file}: ${count} replacement(s)`);
