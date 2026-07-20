@@ -1,13 +1,18 @@
 # NEXUS project skills
 
-`.agents/skills/` is the repository source of truth for project-specific agent skills. Each skill lives in `<name>/SKILL.md` and follows the Agent Skills frontmatter shape used by the repository loader.
+`.agents/skills/` is the repository source of truth for project-specific agent workflows. Each skill lives in `<name>/SKILL.md` and follows the frontmatter shape consumed by `nexus/scripts/sync-skills.mjs`.
 
 ## Ownership
 
 - Edit the `SKILL.md` in this directory.
-- Do not create a second `.skills/`, `.claude/skills/`, `.codex/skills/`, or workflow mirror inside the repository.
-- `nexus/scripts/sync-skills.mjs` validates the source directories and refreshes the Project Skills table in [`../../AGENTS.md`](../../AGENTS.md).
-- [`../../CLAUDE.md`](../../CLAUDE.md) mirrors `AGENTS.md`; the local post-analyze hook restores their hardlink after GitNexus regeneration.
+- Do not create a second `.skills/`, `.claude/skills/`, `.codex/skills/`, or repository workflow mirror.
+- `nexus/scripts/sync-skills.mjs` validates source directories and refreshes the Project Skills table in [`../../AGENTS.md`](../../AGENTS.md).
+- [`../../CLAUDE.md`](../../CLAUDE.md) mirrors `AGENTS.md`; the post-analyze hook restores their hardlink after GitNexus regeneration.
+- Repository documentation ownership is defined by [`../../nexus/docs/README.md`](../../nexus/docs/README.md).
+
+## Toolchain
+
+All executable skill commands target **Bun 1.3.14**. A skill must not introduce another Bun version, package manager, lockfile, or parallel command path. Dynamic external-tool behavior is revalidated before a skill claims support.
 
 ## Current skill directories
 
@@ -23,18 +28,18 @@
 - `update-context`
 - `verify`
 
-The directory list is descriptive. The sync script discovers actual skill directories and is the executable owner of the generated index.
+This list is descriptive. The sync script discovers actual skill directories and owns the generated index.
 
 ## Frontmatter
 
 Each `SKILL.md` starts with YAML frontmatter containing at least:
 
 - `name`: lowercase letters, numbers, and hyphens; matches the directory name;
-- `description`: a concrete capability statement with trigger phrases.
+- `description`: concrete capability statement with trigger phrases.
 
 Optional fields may include `license`, `compatibility`, `metadata`, and `allowed-tools`. Preserve nested frontmatter instead of flattening and rebuilding it through a lossy parser.
 
-The body should make the workflow executable. Use sections such as trigger, prerequisites, process, prohibited shortcuts, verification, and completion evidence when they improve clarity.
+The body makes the workflow executable. Use trigger, prerequisites, process, prohibited shortcuts, verification, and completion evidence where useful. Link canonical architecture/roadmap owners rather than deprecated aliases.
 
 ## Updating skills
 
@@ -42,10 +47,21 @@ From the repository root:
 
 ```bash
 bun run sync:skills
+bun run docs:check
+bun --cwd nexus run check:toolchain
+bun run hooks:test
 ```
 
-Then inspect the `AGENTS.md` index diff and run the maintained skill validation or pre-push gate. A new directory is not complete until its frontmatter parses, the generated index contains it, its commands match the repository toolchain, and its verification steps are current.
+Then inspect:
+
+- the generated `AGENTS.md` table;
+- `AGENTS.md` / `CLAUDE.md` content equality;
+- commands and paths against current package scripts;
+- Bun 1.3.14 references;
+- documentation ownership and release authorization boundaries.
+
+A new or changed skill is incomplete until frontmatter parses, the generated index contains it, commands match actual scripts, documentation links resolve, and applicable tests pass.
 
 ## External specifications
 
-External skill specifications and loader behavior can change. Revalidate their current official documentation before adding a field or claiming support for another tool. This README records repository policy, not a permanent list of third-party products.
+External skill specifications and loader behavior can change. Revalidate current official documentation before adding a field or claiming support for another tool. This README records repository policy, not a permanent list of third-party products.
