@@ -42,7 +42,7 @@ These totals mirror executable contracts and gates. A count changes only with co
 - [Media WebAudio source admission](../architecture/media-source-admission.md)
 - [Roadmap](../roadmap.md)
 - [SPECTRA documentation map](../README.md)
-- [Repository documentation map](../../../../../docs/README.md)
+- [Repository documentation map](../../../../docs/README.md)
 
 ## Implementation and verification
 
