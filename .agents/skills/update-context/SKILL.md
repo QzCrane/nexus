@@ -1,27 +1,27 @@
 ---
 name: update-context
-description: 将代码或产品变更同步到唯一 owner、入口、计划、隐私/商店投影和历史证据，并修复链接与漂移；不维护已删除的 AI 专用文档层。触发短语:"update context", "sync docs", "更新文档", "文档同步"。
+description: 将代码或产品变更同步到唯一 owner、入口、路线图、隐私/商店投影和历史证据，并修复链接与漂移。触发短语:"update context", "sync docs", "更新文档", "文档同步"。
 license: Proprietary. See LICENSE.txt
-compatibility: Requires repository read/write access
+compatibility: Requires Bun 1.3.14 and repository read/write access
 metadata:
   category: maintenance
   app: all
   phase: execute
   user-invocable: true
-allowed-tools: Read Edit Grep
+allowed-tools: Bash Read Edit Grep
 ---
 
 # Update documentation context
 
 ## Trigger
 
-Use after a behavior, architecture, permission, lifecycle, public claim, release process, or documentation owner changes.
+Use after a behavior, architecture, permission, lifecycle, public claim, release process, toolchain, or documentation owner changes.
 
 ## Principle
 
-Documentation follows ownership, not a fixed number of layers. Update only the documents whose semantic projection changed. Do not create or maintain `.ai-context.md`, `README.AI.md`, `docs/ai-rules.md`, or a user-home `nexus.md`; they are not current repository authorities.
+Documentation follows authority and lifecycle, not a fixed number of AI-specific layers. Do not create `.ai-context.md`, `README.AI.md`, `docs/ai-rules.md`, or a user-home `nexus.md`; they are not current repository authorities.
 
-The canonical map is [`nexus/docs/documentation-index.md`](../../../nexus/docs/documentation-index.md).
+The canonical map is [`nexus/docs/README.md`](../../../nexus/docs/README.md).
 
 ## Process
 
@@ -32,28 +32,29 @@ Determine whether the change affects:
 - repository rules or contributor workflow;
 - a domain contract/architecture owner;
 - a roadmap or unresolved proposal;
+- research or dated evidence;
 - user/developer entrypoints;
 - permissions, privacy, remote/network behavior, or store copy;
-- a dated release/regression/audit record;
+- an archived release/regression/audit record;
 - an agent skill or generated index.
 
-A code change may affect none, one, or several projections. Do not update every Markdown file mechanically.
+A change may affect none, one, or several projections. Do not update every Markdown file mechanically.
 
 ### 2. Update the normative owner once
 
-- Put current behavior in the one owner listed by the documentation map.
-- Link from neighboring documents instead of copying the complete rule/matrix.
-- Update counts only when the executable registry/contract/gate changed.
-- Distinguish desired, actual, proposed, historical, and public behavior.
-- Add the corresponding contract/test/release-gate evidence in the same closure.
+- Put current behavior in the owner listed by the documentation map.
+- Link from neighboring documents instead of copying the complete rule or matrix.
+- Update counts only when the executable registry, contract, and gate changed.
+- Distinguish desired, actual, proposed, researched, historical, and public behavior.
+- Add contract, implementation, test, and release evidence in the same closure.
 
-### 3. Update planning only when sequencing changed
+### 3. Keep planning and research separate
 
-Roadmaps describe future or unresolved work. Do not mark a feature complete from a commit title or checkbox; require implementation and verification evidence. Add `last_reviewed` or an evidence date when the current status depends on time.
+Roadmaps describe sequencing; proposals describe unresolved design; research records dated evidence. None proves implementation. Add `last_reviewed`, evidence dates, and revalidation triggers when time-sensitive facts drive a decision.
 
 ### 4. Reconcile public projections
 
-When permissions, data flow, network providers, transmitted fields, retention, or user-visible capability changes, compare:
+When permissions, data flow, providers, transmitted fields, retention, or user-visible capability changes, compare:
 
 - product README;
 - privacy policy;
@@ -64,38 +65,54 @@ When permissions, data flow, network providers, transmitted fields, retention, o
 
 Public copy cannot be broader than verified behavior. Translate one capability set across locales rather than maintaining independent promises.
 
-### 5. Preserve historical evidence
+### 5. Move documents as a migration
 
-Create a dated report for a release, regression recovery, benchmark, or audit when its exact commit/results matter. Mark it archived and link current owners. Do not rewrite old measurements into present-tense claims.
+When reorganizing paths:
 
-### 6. Update skills correctly
+- create the canonical destination and index it;
+- replace the old path with a short `deprecated` redirect containing `redirect_to` and `remove_after`;
+- update executable consumers and high-value inbound links to the canonical path;
+- keep aliases non-normative and remove them after the announced window;
+- never copy a current owner into two maintained files.
 
-Edit `.agents/skills/<name>/SKILL.md`, then run `bun run sync:skills` so the `AGENTS.md` index is refreshed. Keep `CLAUDE.md` identical/hardlinked through the maintained post-analyze flow.
+### 6. Preserve historical evidence
 
-### 7. Validate structure and links
+Create a dated report when an exact commit, benchmark, regression, or release result matters. Mark it archived and link current owners. Do not rewrite old measurements into present-tense claims.
 
-- run the documentation linter for changed active docs;
-- verify relative paths from the file's own directory;
-- search for renamed paths, removed anchors, old counts, stale versions, and conflicting phrases;
-- check frontmatter type/status/audience where required;
-- inspect the final Markdown rendering for malformed lists, tables, code fences, and headings.
+### 7. Update skills correctly
+
+Edit `.agents/skills/<name>/SKILL.md`, then run `bun run sync:skills` so `AGENTS.md` is regenerated. Keep `CLAUDE.md` identical/hardlinked through the maintained post-analyze flow.
+
+### 8. Validate
+
+```bash
+bun run docs:check
+bun --cwd nexus run check:toolchain
+```
+
+Also:
+
+- verify relative paths from each file's own directory;
+- search for renamed paths, stale anchors, counts, versions, and conflicting phrases;
+- inspect Markdown rendering;
+- run affected tests and release gates when docs are executable mirrors.
 
 ## Prohibited shortcuts
 
 - Copying one rule into multiple owners “for convenience.”
 - Updating a roadmap instead of the implemented contract.
-- Replacing evidence with a vague “docs synchronized” sentence.
-- Keeping a broken link because the target existed historically.
-- Treating a research/market number as current without revalidation.
-- Editing only the English store listing after a capability or limitation changes.
-- Adding a document without placing it in the authority map.
+- Keeping a dead link because the target existed historically.
+- Treating market data as current without revalidation.
+- Editing only one store locale after a capability or limitation changes.
+- Moving a file without redirect, consumer migration, and link validation.
+- Claiming docs are synchronized before `docs:check` passes.
 
 ## Completion evidence
 
 - changed semantics appear in exactly one normative owner;
-- all affected projections agree with that owner and implementation;
-- plans remain proposals, archives remain historical, and public copy remains verified;
-- no old path/count/version/claim survives in active docs;
-- documentation lint and manual link/render review pass;
+- all affected projections agree with implementation;
+- plans remain plans, proposals remain proposals, research remains dated, and archives remain historical;
+- no stale path, count, version, or public claim survives in active docs;
+- documentation and toolchain gates pass;
 - skill index is regenerated when applicable;
 - final diff contains no unrelated documentation churn.
