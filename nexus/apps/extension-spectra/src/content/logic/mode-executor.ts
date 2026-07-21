@@ -258,7 +258,7 @@ async function executeModeTransition(
 					state.actualMode = 'bypass';
 					state.phase = 'error';
 					state.appliedConfig = toDomAppliedConfig(config);
-					state.lastError = result.error ?? 'Capture fallback failed after WebAudio coverage failure';
+					state.lastError = formatCaptureFallbackError(result.error);
 				}
 			} else {
 				state.actualMode = 'bypass';
@@ -382,6 +382,22 @@ function transparentAudioConfig(): AudioConfig {
 
 function cloneAudioConfig(config: AudioConfig): AudioConfig {
 	return { ...config, eqValues: [...config.eqValues] };
+}
+
+// post: surfaces a actionable reason when the capture fallback fails because the
+// extension has not been invoked for the tab. Chrome's tabCapture API requires
+// activeTab permission, which is only granted after the user clicks the toolbar
+// icon, opens the popup, or triggers a command shortcut that invokes the
+// extension. Without that grant, every cross-origin site that needs capture as
+// the last-resort audio processor path receives a chrome.runtime.lastError
+// string that mentions activeTab; we translate it into a user-facing hint
+// rather than surfacing the raw Chrome wording.
+function formatCaptureFallbackError(error: string | undefined): string {
+	if (!error) return 'Capture fallback failed after WebAudio coverage failure';
+	if (error.includes('activeTab') || error.includes('has not been invoked')) {
+		return 'Click the extension icon to grant audio processing permission for this tab';
+	}
+	return error;
 }
 
 // post: describes only controls the native media-element path can implement.

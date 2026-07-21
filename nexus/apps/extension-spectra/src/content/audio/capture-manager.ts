@@ -156,7 +156,18 @@ async function request(enabled: boolean, config: AudioConfig, requestedGeneratio
 				generation: responseGeneration,
 				error: response.error || 'Capture transition failed',
 			});
-			log.error('Capture transition failed:', response.error);
+			// rule: the activeTab-not-granted error is an expected user-permission
+			// state, not a code defect. Surfacing it as console.error makes the
+			// DevTools red noise look like a bug. Downgrade to warn so the message
+			// remains visible for debugging while not masquerading as a fault.
+			const errorMessage = response.error ?? '';
+			const isPermissionError = errorMessage.includes('activeTab')
+				|| errorMessage.includes('has not been invoked');
+			if (isPermissionError) {
+				log.warn('Capture transition blocked by missing activeTab permission:', errorMessage);
+			} else {
+				log.error('Capture transition failed:', errorMessage);
+			}
 			return response;
 		}
 		applyConfirmedState({

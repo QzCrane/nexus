@@ -199,6 +199,14 @@ async function commitCaptureSnapshot(
 		// A late ACK from a torn-down document must never replace the new document's snapshot.
 		return null;
 	}
+	if (isAudioSessionIdentityInvalidated(identity)) {
+		// rule: a stale document identity (e.g., from a capture session whose tab
+		// navigated or was closed before OFFSCREEN_AUDIO_ENDED arrived) must not
+		// reach updateAudioSession, which would throw StaleAudioSessionError and
+		// escape as an unhandled rejection through the void serializeTransition
+		// caller in registerOffscreenAudioLifecycleListener.
+		return null;
+	}
 	return updateAudioSession(identity, {
 		config: update.config,
 		desiredMode: current?.desiredMode
@@ -618,13 +626,24 @@ function registerOffscreenAudioLifecycleListener(): void {
 			state.active = false;
 			state.phase = 'error';
 			state.lastError = 'The tab capture stream ended unexpectedly';
-			await publishAcknowledgedCaptureState(tabId, state, {
-				actualMode: 'bypass',
-				phase: 'error',
-				config: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
-				error: state.lastError,
-			});
-			releaseOffscreenLease(`audio:${tabId}`);
+			try {
+				await publishAcknowledgedCaptureState(tabId, state, {
+					actualMode: 'bypass',
+					phase: 'error',
+					config: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
+					error: state.lastError,
+				});
+			} catch (error) {
+				// rule: publishAcknowledgedCaptureState may reject if the audio
+				// session store throws (e.g., StaleAudioSessionError when the tab
+				// navigated before OFFSCREEN_AUDIO_ENDED arrived). The lease must
+				// still be released so the offscreen host can drop the processor;
+				// without this catch the rejection escaped via `void` and surfaced
+				// as `Uncaught (in promise) StaleAudioSessionError`.
+				swLog.warn(`Tab ${tabId}: unable to publish capture-ended state`, error);
+			} finally {
+				releaseOffscreenLease(`audio:${tabId}`);
+			}
 		});
 		return false;
 	});

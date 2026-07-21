@@ -267,6 +267,60 @@ describe('mode executor applied configuration', () => {
 		}
 	});
 
+	test('translates activeTab denial into an actionable user-facing hint', async () => {
+		// rule: Chrome's tabCapture API requires activeTab permission, which is
+		// only granted after the user invokes the extension. When a cross-origin
+		// site (e.g. bilibili) falls through WebAudio coverage failure into the
+		// capture fallback path without that grant, the raw lastError mentions
+		// "Extension has not been invoked for the current page" / "activeTab".
+		// mode-executor must surface an actionable hint rather than the raw
+		// Chrome wording, so users know to click the toolbar icon.
+		const globals = installCoverageGlobals();
+		const safe = media('https://media.example/first.mp3');
+		const unsafe = media('https://cdn.example/second.mp3');
+		const disposeRegistry = setActiveMediaRegistry({
+			list: () => [
+				{ element: safe, target: {} },
+				{ element: unsafe, target: {} },
+			],
+		} as unknown as MediaRegistry);
+		const state = webAudioState();
+		state.actualMode = 'webaudio';
+		state.phase = 'active';
+		const request = mock(async () => ({
+			status: 'error' as const,
+			phase: 'error' as const,
+			active: false,
+			generation: 7,
+			error: 'Extension has not been invoked for the current page (see activeTab permission). Chrome pages cannot be captured.',
+		}));
+		const deps = {
+			audioController: {
+				cleanup: mock(async () => undefined),
+				initialize: mock(async () => true),
+			},
+			captureManager: {
+				isActive: () => false,
+				isPending: () => false,
+				request,
+				getGeneration: () => 7,
+				getLastError: () => 'Extension has not been invoked for the current page (see activeTab permission). Chrome pages cannot be captured.',
+				getActualConfig: () => null,
+			},
+			settingsManager: {},
+			policyEngine: {},
+		} as unknown as PolicyExecutorDeps;
+		try {
+			await executeMode(deps, state);
+			expect(state.actualMode).toBe('bypass');
+			expect(state.phase).toBe('error');
+			expect(state.lastError).toBe('Click the extension icon to grant audio processing permission for this tab');
+		} finally {
+			disposeRegistry();
+			globals.restore();
+		}
+	});
+
 	test('keeps WebAudio bypass when coverage fails without a processor need', async () => {
 		const globals = installCoverageGlobals();
 		const safe = media('https://media.example/first.mp3');

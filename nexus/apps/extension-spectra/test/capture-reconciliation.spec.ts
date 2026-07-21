@@ -9,6 +9,7 @@ import {
 import {
 	forgetAudioSession,
 	getAudioSession,
+	removeAudioSession,
 	updateAudioSession,
 } from '../src/background/audio-session-store';
 import { getOffscreenLeaseCount } from '../src/background/offscreen-coordinator';
@@ -416,6 +417,110 @@ describe('capture restart reconciliation barrier', () => {
 		} finally {
 			cleanupCaptureState(74);
 			await forgetAudioSession(74);
+			timerHarness.restore();
+			restore('chrome', chromeDescriptor);
+		}
+	});
+
+	test('drops OFFSCREEN_AUDIO_ENDED for an invalidated document without throwing and still releases the lease', async () => {
+		// rule: when a tab navigates, lifecycle.clearTabDocumentState calls
+		// removeAudioSession(tabId), which invalidates the prior documentId but
+		// does not clear the invalidation set (only forgetAudioSession does).
+		// If OFFSCREEN_AUDIO_ENDED arrives from the offscreen host afterwards,
+		// the capture state still references the old document identity. Without
+		// the invalidation guard in commitCaptureSnapshot, updateAudioSession
+		// would throw StaleAudioSessionError and escape as an unhandled rejection
+		// through the `void serializeTransition` fire-and-forget caller.
+		const chromeDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const timerHarness = installFastTimerHarness();
+		const listeners: RuntimeMessageListener[] = [];
+		const runtimeMessages: Array<Record<string, unknown>> = [];
+		const identity = {
+			tabId: 75,
+			documentId: 'document-75a',
+			origin: 'https://media.example',
+		};
+		const config = {
+			...DEFAULT_AUDIO_CONFIG,
+			volume: 137,
+			volumeBase: 100,
+			boost: 1.37,
+			eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
+		};
+
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: createChromeHarness({
+				queryTabs: [{ id: 75 }],
+				listeners,
+				runtimeMessages,
+				getStreamId: (callback) => callback('stream-75'),
+				sendOffscreen: async (message) => {
+					if (message.type === 'OFFSCREEN_HOST_HELLO') return { audioTabs: [], remoteTabs: [] };
+					if (message.type === 'OFFSCREEN_AUDIO_START') {
+						return activeAck(75, message.generation, message.controlRevision, config);
+					}
+					if (message.type === 'OFFSCREEN_AUDIO_STOP') {
+						return idleAck(75, message.generation, 1);
+					}
+					return undefined;
+				},
+			}),
+		});
+
+		try {
+			await updateAudioSession(identity, {
+				config: DEFAULT_AUDIO_CONFIG,
+				desiredMode: 'capture',
+				actualMode: 'bypass',
+				phase: 'idle',
+				generation: 30,
+				error: null,
+			});
+			registerCaptureHandlers();
+
+			const started = await invokeRuntimeRequest(listeners, {
+				protocolVersion: SPECTRA_PROTOCOL_VERSION,
+				requestId: 'capture-stale-start',
+				type: 'spectra.audio.capture.set',
+				tabId: 75,
+				generation: 31,
+				payload: { enabled: true, config },
+			}) as { ok: boolean };
+			expect(started.ok).toBe(true);
+			expect(getOffscreenLeaseCount()).toBe(1);
+
+			// Simulate top-level navigation: lifecycle.clearTabDocumentState calls
+			// removeAudioSession, which invalidates document-75a and deletes the
+			// cached snapshot. A new document has NOT yet written a session.
+			await removeAudioSession(75);
+			expect(await getAudioSession(75)).toBeNull();
+
+			// OFFSCREEN_AUDIO_ENDED arrives with the stale capture state's identity.
+			// This must not throw StaleAudioSessionError, must release the lease,
+			// and must not emit any session.changed event for the invalidated doc.
+			runtimeMessages.length = 0;
+			const unhandled: unknown[] = [];
+			const rejectionListener = (reason: unknown) => unhandled.push(reason);
+			process.on('unhandledRejection', rejectionListener);
+			try {
+				emitRuntimeEvent(listeners, {
+					type: 'OFFSCREEN_AUDIO_ENDED',
+					tabId: 75,
+					generation: 31,
+				});
+				await waitForAsync(async () => getOffscreenLeaseCount() === 0);
+			} finally {
+				process.off('unhandledRejection', rejectionListener);
+			}
+
+			expect(getOffscreenLeaseCount()).toBe(0);
+			expect(unhandled).toHaveLength(0);
+			expect(await getAudioSession(75)).toBeNull();
+			expect(runtimeMessages.some((m) => m.type === 'spectra.audio.session.changed')).toBe(false);
+		} finally {
+			cleanupCaptureState(75);
+			await forgetAudioSession(75);
 			timerHarness.restore();
 			restore('chrome', chromeDescriptor);
 		}
