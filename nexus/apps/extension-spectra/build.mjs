@@ -65,6 +65,11 @@ const entries = [
 		sharingDomain: 'main-playback-rate-bridge',
 	},
 	{
+		entry: 'src/content/injector/youtube-volume-bridge.ts',
+		out: 'content-youtube-volume-bridge.js',
+		sharingDomain: 'main-youtube-volume-bridge',
+	},
+	{
 		entry: 'src/content/core/index.ts',
 		out: 'content-runtime.js',
 		sharingDomain: 'isolated-runtime',

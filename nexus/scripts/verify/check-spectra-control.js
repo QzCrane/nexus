@@ -169,6 +169,7 @@ function checkDefaultRuntime(root) {
 	const ALLOWED_MAIN_BRIDGES = Object.freeze({
 		'content-fullscreen-bridge.js': '__SPECTRA_FULLSCREEN_BRIDGE_V1__',
 		'content-playback-rate-bridge.js': '__SPECTRA_PLAYBACK_RATE_BRIDGE_V1__',
+		'content-youtube-volume-bridge.js': '__SPECTRA_YOUTUBE_VOLUME_BRIDGE_V1__',
 	});
 	const seenMainBridges = new Set();
 	const scripts = manifest.content_scripts ?? [];
@@ -197,6 +198,7 @@ function checkDefaultRuntime(root) {
 	const BRIDGE_SOURCE_NAME = {
 		'content-fullscreen-bridge.js': 'fullscreen-bridge.ts',
 		'content-playback-rate-bridge.js': 'playback-rate-bridge.ts',
+		'content-youtube-volume-bridge.js': 'youtube-volume-bridge.ts',
 	};
 	for (const [bridge, guard] of Object.entries(ALLOWED_MAIN_BRIDGES)) {
 		const bridgePath = path.join(app, 'src/content/injector', BRIDGE_SOURCE_NAME[bridge]);

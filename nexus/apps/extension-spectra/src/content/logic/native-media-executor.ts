@@ -32,6 +32,7 @@ import type {
 } from '../video/video-effects-controller';
 import { contentControlStrategy } from './content-control-policy';
 import { writePageSynchronizedPlaybackRate } from './page-playback-rate-bridge';
+import { SPECTRA_YOUTUBE_VOLUME_ATTRIBUTE } from '../../shared/youtube-volume-bridge';
 
 interface PendingWrite {
 	intentId: string;
@@ -345,12 +346,31 @@ function resolvePictureInPictureOwner(
 		: null;
 }
 
+// YouTube applies a non-linear volume curve to HTMLMediaElement.volume, so
+// element.volume * 100 does not match the user-facing slider value (e.g. a
+// full YouTube slider yields element.volume = 0.6131, which would display as
+// 61.31% instead of 100%). The MAIN-world youtube-volume-bridge syncs
+// #movie_player.getVolume() (0–100, linear) to a data attribute on <html>;
+// this reader prefers that attribute and falls back to element.volume when
+// the bridge has not populated it (non-YouTube pages, bridge not yet loaded).
+function readEffectiveVolumeBase(element: HTMLMediaElement): number {
+	const root = document.documentElement;
+	const attr = root?.getAttribute(SPECTRA_YOUTUBE_VOLUME_ATTRIBUTE);
+	if (attr !== null) {
+		const parsed = Number.parseFloat(attr);
+		if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 100) {
+			return Math.round(parsed * 100) / 100;
+		}
+	}
+	return Math.round(element.volume * 10_000) / 100;
+}
+
 function readRestorableMediaField(
 	element: HTMLMediaElement,
 	field: RestorableMediaField,
 ): ControlValues[RestorableMediaField] {
 	switch (field) {
-		case 'volumeBase': return Math.round(element.volume * 10_000) / 100;
+		case 'volumeBase': return readEffectiveVolumeBase(element);
 		case 'mediaMuted': return element.muted;
 		case 'speed': return element.playbackRate;
 		case 'preservePitch': {
@@ -1298,7 +1318,7 @@ export class NativeMediaExecutor {
 		const mediaId = target.mediaId;
 		const candidates: ControlPatch = {};
 		if (event === 'volumechange') {
-			candidates.volumeBase = Math.round(element.volume * 10_000) / 100;
+			candidates.volumeBase = readEffectiveVolumeBase(element);
 			candidates.mediaMuted = element.muted;
 		} else if (event === 'ratechange') {
 			candidates.speed = element.playbackRate;
@@ -1415,7 +1435,7 @@ export class NativeMediaExecutor {
 	private primeObserved(mediaId: string, element: HTMLMediaElement): void {
 		if (this.observed.has(mediaId)) return;
 		const values: Partial<ControlValues> = {
-			volumeBase: Math.round(element.volume * 10_000) / 100,
+			volumeBase: readEffectiveVolumeBase(element),
 			mediaMuted: element.muted,
 			speed: element.playbackRate,
 			playing: !element.paused,
