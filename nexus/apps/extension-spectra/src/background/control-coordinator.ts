@@ -262,7 +262,8 @@ async function rememberSiteNativeBaseline(
 	) ?? { documentId: intent.documentId, generation: intent.generation, values: {} };
 	if (existing.values[field] !== undefined) return;
 	existing.values[field] = value;
-	await chrome.storage.session.set({ [siteNativeBaselineKey(intent.tabId)]: existing });
+	await chrome.storage.session.set({ [siteNativeBaselineKey(intent.tabId)]: existing })
+		.catch((error) => swLog.warn('setSiteNativeBaselineField persist failed', error));
 }
 
 async function clearSiteNativeBaseline(tabId: number): Promise<void> {
@@ -327,7 +328,8 @@ async function readPersistedGeneration(tabId: number): Promise<number> {
 }
 
 async function persistGeneration(tabId: number, generation: number): Promise<void> {
-	await chrome.storage.session.set({ [generationKey(tabId)]: generation });
+	await chrome.storage.session.set({ [generationKey(tabId)]: generation })
+		.catch((error) => swLog.warn('persistGeneration failed', error));
 }
 
 async function getSnapshot(tabId: number): Promise<ControlSnapshot | null> {
@@ -729,8 +731,15 @@ async function applySiteNativeFallback(
 }
 
 async function publishSnapshot(snapshot: ControlSnapshot): Promise<void> {
+	const previous = snapshots.get(snapshot.tabId);
 	snapshots.set(snapshot.tabId, snapshot);
-	await chrome.storage.session.set({ [storageKey(snapshot.tabId)]: snapshot });
+	try {
+		await chrome.storage.session.set({ [storageKey(snapshot.tabId)]: snapshot });
+	} catch (error) {
+		if (previous) snapshots.set(snapshot.tabId, previous);
+		else snapshots.delete(snapshot.tabId);
+		throw error;
+	}
 	const event: SpectraEventEnvelope<'spectra.control.snapshot.changed'> = {
 		protocolVersion: SPECTRA_PROTOCOL_VERSION,
 		type: 'spectra.control.snapshot.changed',
@@ -1157,7 +1166,8 @@ async function restoreSiteBaselineRecord(
 	record: SiteNativeBaselineRecord | null,
 ): Promise<void> {
 	if (record) {
-		await chrome.storage.session.set({ [siteNativeBaselineKey(tabId)]: record });
+		await chrome.storage.session.set({ [siteNativeBaselineKey(tabId)]: record })
+			.catch((error) => swLog.warn('restoreSiteBaselineRecord persist failed', error));
 	} else {
 		await clearSiteNativeBaseline(tabId);
 	}
@@ -1356,7 +1366,7 @@ async function restoreSiteNativeFields(
 		for (const field of failedFields) values[field] = baseline.values[field];
 		await chrome.storage.session.set({
 			[siteNativeBaselineKey(snapshot.tabId)]: { ...baseline, values },
-		});
+		}).catch((error) => swLog.warn('baseline restore persist failed', error));
 	}
 	return { fields, excludedNativeFields, restoredFields, failedFields };
 }
@@ -2201,7 +2211,7 @@ function invalidateNavigation(tabId: number, preserveDocumentState = false): Pro
 			if (siteBaseline) {
 				await chrome.storage.session.set({
 					[siteNativeBaselineKey(tabId)]: { ...siteBaseline, generation },
-				});
+				}).catch((error) => swLog.warn('generation carry siteBaseline persist failed', error));
 			}
 			await publishSnapshot(carried);
 			await reconcileRuntimeOwnership(carried);

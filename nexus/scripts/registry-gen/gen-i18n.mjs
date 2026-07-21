@@ -1,8 +1,8 @@
 // goal: Generate i18n aggregation files
 // eff: Collect locales from all plugins
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { OUTPUT_I18N_EN, OUTPUT_I18N_ZH } from './config.mjs';
 
 /**

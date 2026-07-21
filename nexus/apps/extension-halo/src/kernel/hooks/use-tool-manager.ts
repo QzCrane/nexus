@@ -44,10 +44,18 @@ export function useToolManager(): UseToolManagerResult {
 
 	// Load on mount
 	useEffect(() => {
+		// rule: track mount state so the .catch handler doesn't call setReady on
+		// an unmounted component (React warning + stale state write).
+		let mounted = true;
 		loadToolPrefs().then((p) => {
+			if (!mounted) return;
 			setPrefs(p);
 			setReady(true);
+		}).catch((e) => {
+			console.error('useToolManager: loadToolPrefs failed', e);
+			if (mounted) setReady(true);
 		});
+		return () => { mounted = false; };
 	}, []);
 
 	// Get prefs for a tool (with defaults)

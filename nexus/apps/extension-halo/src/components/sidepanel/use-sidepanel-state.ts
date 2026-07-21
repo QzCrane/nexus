@@ -32,20 +32,31 @@ export const useSidePanelState = () => {
 	}, [modulesLoading, isInstalled]);
 
 	useEffect(() => {
+		// rule: track mount state so async init() doesn't write state on an
+		// unmounted component (React warning + stale closure writes).
+		let mounted = true;
 		const init = async () => {
-			// Always load settings immediately
-			const s = await loadSettings();
-			setSettings(s);
-			applyTheme(getThemeColors(s.theme, s.accentColor));
+			try {
+				// Always load settings immediately
+				const s = await loadSettings();
+				if (!mounted) return;
+				setSettings(s);
+				applyTheme(getThemeColors(s.theme, s.accentColor));
 
-			// Only load open tools when module manager is fully hydrated
-			// This prevents 'isInstalled' from returning false for actually installed tools during async init
-			if (!modulesLoading) {
-				await loadOpenTools(isInstalled);
-				setLoading(false);
+				// Only load open tools when module manager is fully hydrated
+				// This prevents 'isInstalled' from returning false for actually installed tools during async init
+				if (!modulesLoading) {
+					await loadOpenTools(isInstalled);
+					if (!mounted) return;
+					setLoading(false);
+				}
+			} catch (e) {
+				console.error('[HALO:SidePanel] init failed', e);
+				if (mounted) setLoading(false);
 			}
 		};
 		init();
+		return () => { mounted = false; };
 	}, [modulesLoading, isInstalled, loadOpenTools]);
 
 	const handleToolSelect = useCallback(async (toolId: ToolId) => {

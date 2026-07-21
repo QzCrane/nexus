@@ -23,6 +23,9 @@ commit-msg:
 
 pre-push:
   parallel: false
+  skip:
+    - merge
+    - rebase
   commands:
     toolchain:
       run: bun --cwd nexus run check:toolchain
@@ -32,6 +35,8 @@ pre-push:
       run: bun --cwd nexus scripts/hooks/test.mjs
     verify-architecture:
       run: bun run verify:q
+    typecheck:
+      run: bun --cwd nexus run typecheck:spectra
     ai-pitfalls:
       run: bun --cwd nexus run lint:ai-pitfalls
     sync-skills:

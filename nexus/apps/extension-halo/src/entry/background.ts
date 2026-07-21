@@ -191,7 +191,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	// Hover Zoom CORS proxy - bypass CORB for cross-origin API calls
 	if (message.type === 'HALO_HZ_PROXY_AJAX') {
 		const { url, method = 'GET', headers = {}, body, responseType = 'text' } = message;
-		console.log(LOG_TAG, 'HoverZoom proxy request:', url.slice(0, 80), 'type:', responseType);
+		// rule: validate url before .slice — if a caller omits url or sends a non-string,
+		// the unconditional url.slice(0, 80) below would throw and the handler would return
+		// without sendResponse, hanging the caller's promise. Reject explicitly instead.
+		if (!url || typeof url !== 'string') {
+			sendResponse({ success: false, error: 'missing url' });
+			return true;
+		}
 
 		// rule: validate URL before fetch — the proxy handler can be invoked by any content
 		// script and previously allowed fetching arbitrary URLs (internal network hosts, cloud
@@ -216,6 +222,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			sendResponse({ success: false, error: 'private/internal hosts blocked' });
 			return true;
 		}
+
+		// url is now guaranteed to be a non-empty string and a valid http(s) URL
+		console.log(LOG_TAG, 'HoverZoom proxy request:', url.slice(0, 80), 'type:', responseType);
 
 		fetch(url, {
 			method,

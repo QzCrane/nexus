@@ -28,7 +28,7 @@ export function applyTheme(mode: ThemeMode): void {
 }
 
 // eff: cleans up media query listeners when switching to a fixed theme
-function removeSystemThemeListener(): void {
+export function removeSystemThemeListener(): void {
 	if (systemMediaQuery && systemThemeListener) {
 		systemMediaQuery.removeEventListener('change', systemThemeListener);
 		systemThemeListener = null;

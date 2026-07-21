@@ -2,10 +2,11 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { BIOME_VERSION, BUN_VERSION, TURBO_VERSION } from './toolchain-versions.mjs';
 
 const workspaceDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const repositoryRoot = resolve(workspaceDir, '..');
-const expected = Object.freeze({ bun: '1.3.14', biome: '2.5.3', turbo: '2.10.5' });
+const expected = Object.freeze({ bun: BUN_VERSION, biome: BIOME_VERSION, turbo: TURBO_VERSION });
 const expectedPackageManager = `bun@${expected.bun}`;
 
 const workspaceManifest = JSON.parse(readFileSync(resolve(workspaceDir, 'package.json'), 'utf8'));

@@ -24,7 +24,6 @@ export const Button: React.FC<ButtonProps> = ({
 		cursor: disabled || loading ? 'not-allowed' : 'pointer',
 		transition: 'all 0.2s',
 		border: 'none',
-		outline: 'none',
 		opacity: disabled || loading ? 0.6 : 1,
 		padding: size === 'sm' ? '4px 8px' : size === 'lg' ? '10px 20px' : '6px 12px',
 		fontSize: size === 'sm' ? '12px' : size === 'lg' ? '16px' : '14px',
@@ -59,9 +58,11 @@ export const Button: React.FC<ButtonProps> = ({
 		<button
 			style={finalStyle}
 			disabled={disabled || loading}
+			aria-busy={loading}
+			aria-disabled={disabled || loading}
 			{...props}
 		>
-			{loading ? '...' : children}
+			{loading ? <span aria-hidden="true">...</span> : children}
 		</button>
 	);
 };

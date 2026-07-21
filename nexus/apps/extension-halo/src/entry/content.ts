@@ -92,6 +92,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 			if (deactivateId) {
 				activeTools.delete(deactivateId);
 				sendResponse({ success: true });
+			} else {
+				// rule: respond on every early-return path — otherwise the caller's
+				// promise hangs forever waiting for a response that never arrives.
+				sendResponse({ success: false, error: 'Missing toolId' });
 			}
 			break;
 		}

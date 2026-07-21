@@ -1,6 +1,6 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,7 +20,7 @@ for (const [id, permissions] of Object.entries(updates)) {
     if (fs.existsSync(manifestPath)) {
         const content = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
         content.permissions = permissions;
-        fs.writeFileSync(manifestPath, JSON.stringify(content, null, '\t') + '\n');
+        fs.writeFileSync(manifestPath, `${JSON.stringify(content, null, '\t')}\n`);
         console.log(`Updated ${id}`);
     } else {
         console.warn(`Missing tool ${id}`);

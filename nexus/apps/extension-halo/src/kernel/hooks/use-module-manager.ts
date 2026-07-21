@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { ModuleManager, getModuleManager } from '../managers/module-manager';
-import { ALL_MODULES, OPTIONAL_MODULES, type ModuleState, type ModuleStatus } from '../registry/module-registry';
+import { ALL_MODULES, type ModuleStatus } from '../registry/module-registry';
 import type { ModuleMeta } from '../core/tool-registry-types';
 
 interface UseModuleManagerResult {
@@ -38,6 +38,12 @@ export const useModuleManager = (): UseModuleManagerResult => {
 
 			// Subscribe to changes
 			unsubscribe = m.subscribe(() => forceUpdate((n) => n + 1));
+		}).catch((e) => {
+			// rule: swallow rejection so the floating promise doesn't throw an
+			// unhandled rejection. Preserve the cancelled guard so we don't
+			// setLoading on an unmounted component.
+			if (!cancelled) setLoading(false);
+			console.error('useModuleManager: getModuleManager failed', e);
 		});
 
 		return () => {

@@ -3,8 +3,8 @@
  * Errors on Chinese in public-facing code (blocks sync)
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { error, ok, scanDir, section, log } from './utils.js';
 
 // Skip directories
@@ -87,7 +87,7 @@ export function checkChineseComments(root) {
             affectedFiles.push(relativePath);
           }
         }
-      } catch (e) {
+      } catch (_e) {
         // Ignore read errors
       }
     });

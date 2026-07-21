@@ -53,8 +53,17 @@ export async function importScripts(json: string): Promise<{ imported: number; s
 }
 
 // Install script from URL
-export async function installFromUrl(url: string): Promise<UserScript> {
-	const response = await fetch(url);
+export async function installFromUrl(inputUrl: string): Promise<UserScript> {
+	// rule: scheme validation — restrict to http(s) before fetch. Without this, a
+	// user (or a pasted URL) could pass file://, data:, or chrome-extension:// URLs
+	// which fetch would resolve in the extension's privileged context, leaking
+	// local/packaged file contents into the imported script source.
+	const parsedUrl = new URL(inputUrl);
+	if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
+		throw new Error('Only http(s) URLs are allowed');
+	}
+
+	const response = await fetch(inputUrl);
 	if (!response.ok) throw new Error(`Failed to fetch: ${response.status}`);
 
 	const code = await response.text();
@@ -62,13 +71,13 @@ export async function installFromUrl(url: string): Promise<UserScript> {
 
 	if (header) {
 		const scriptData = createScriptFromHeader(code, header);
-		scriptData.updateUrl = url;
+		scriptData.updateUrl = inputUrl;
 		return await addUserScript(scriptData);
 	} else {
 		// No header found, create minimal script
 		return await addUserScript({
-			name: new URL(url).pathname.split('/').pop() || 'Imported Script',
-			description: `Imported from ${url}`,
+			name: parsedUrl.pathname.split('/').pop() || 'Imported Script',
+			description: `Imported from ${inputUrl}`,
 			code,
 			enabled: true,
 			type: 'javascript',

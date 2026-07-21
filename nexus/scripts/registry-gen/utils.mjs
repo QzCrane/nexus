@@ -1,8 +1,8 @@
 // goal: Utility functions for registry generation
 // eff: String conversion, size calculation, export detection
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 
 /**
  * Convert kebab-case to PascalCase

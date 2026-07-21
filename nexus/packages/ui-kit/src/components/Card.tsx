@@ -50,7 +50,7 @@ export function Card({
 	const variantStyle = VARIANT_STYLES[variant];
 
 	return (
-		<div 
+		<section
 			className={`nexus-card ${className}`}
 			style={{
 				...variantStyle,
@@ -62,11 +62,11 @@ export function Card({
 		>
 			{(title || subtitle) && (
 				<div className="card-header" style={{ marginBottom: padding !== 'none' ? '10px' : '0' }}>
-					{title && <div className="card-title" style={{ fontWeight: 600, fontSize: '14px', color: 'var(--halo-text, #fff)' }}>{title}</div>}
+					{title && <h3 className="card-title" style={{ fontWeight: 600, fontSize: '14px', color: 'var(--halo-text, #fff)' }}>{title}</h3>}
 					{subtitle && <div className="card-subtitle" style={{ fontSize: '12px', color: 'var(--halo-text-muted, #888)' }}>{subtitle}</div>}
 				</div>
 			)}
 			{children}
-		</div>
+		</section>
 	);
 }

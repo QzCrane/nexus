@@ -4,11 +4,12 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
+import { BIOME_VERSION } from './toolchain-versions.mjs';
 import { RELEASE_STEPS } from './release-spectra.mjs';
 
 const BASELINE_SCHEMA_VERSION = 1;
 const BASELINE_ID = 'halo-biome-scope-exception-v1';
-const EXPECTED_BIOME_VERSION = '2.5.3';
+const EXPECTED_BIOME_VERSION = BIOME_VERSION;
 const MAX_BUFFER_BYTES = 32 * 1024 * 1024;
 const UPDATE_FLAG = '--update-halo-baseline';
 const ACKNOWLEDGE_FLAG = '--acknowledge-halo-scope-exception';
@@ -434,9 +435,7 @@ function assertWorkspaceCoverage() {
 	if (fallbackScript !== 'bun scripts/check-workspace-lint.mjs') {
 		throw new Error('lint:workspace-fallbacks must invoke the version-controlled workspace lint gate');
 	}
-	const releaseRunsRootLint = RELEASE_STEPS.some((step) => (
-		step.args.length === 2 && step.args[0] === 'run' && step.args[1] === 'lint'
-	));
+	const releaseRunsRootLint = RELEASE_STEPS.some((step) => step.label === 'Biome lint');
 	if (!releaseRunsRootLint) throw new Error('SPECTRA release does not invoke the root lint gate');
 	return discovered.size;
 }
@@ -491,6 +490,18 @@ function enforceHaloBaseline(baseline, report, processedFiles) {
 	}
 	if (failures.length > 0) {
 		throw new Error(`Halo scope-exception baseline rejected the scan:\n${failures.join('\n\n')}`);
+	}
+	const baselineCount = baseline.diagnostics.length;
+	const currentCount = currentDiagnostics.length;
+	if (baselineCount > 0 && currentCount < baselineCount) {
+		const reduction = (baselineCount - currentCount) / baselineCount;
+		if (reduction >= 0.10) {
+			console.log(
+				`ℹ Halo diagnostics reduced by ${(reduction * 100).toFixed(1)}% ` +
+					`(${baselineCount} → ${currentCount}); consider updating the baseline ` +
+					`with bun scripts/check-workspace-lint.mjs ${UPDATE_FLAG} ${ACKNOWLEDGE_FLAG}`,
+			);
+		}
 	}
 	return {
 		currentDiagnostics: currentDiagnostics.length,

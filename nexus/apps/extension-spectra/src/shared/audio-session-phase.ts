@@ -36,5 +36,8 @@ export function shouldAcceptAudioSessionPhase(
 	if (currentPhase === 'idle' || currentPhase === 'active') {
 		return nextPhase === 'error';
 	}
-	return true;
+	if (currentPhase === 'error') {
+		return nextPhase === 'active' || nextPhase === 'idle';
+	}
+	return false;
 }

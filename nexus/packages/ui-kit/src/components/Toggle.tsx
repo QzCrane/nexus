@@ -1,6 +1,5 @@
 // goal: reusable toggle switch component with customizable styling
 
-import React from 'react';
 
 export interface ToggleProps {
 	checked: boolean;
@@ -12,23 +11,15 @@ export interface ToggleProps {
 	className?: string;
 }
 
-const SIZE_MAP = {
-	sm: { track: 'w-8 h-4', thumb: 'w-3 h-3', translate: 'translate-x-4' },
-	md: { track: 'w-10 h-5', thumb: 'w-4 h-4', translate: 'translate-x-5' },
-	lg: { track: 'w-12 h-6', thumb: 'w-5 h-5', translate: 'translate-x-6' }
-};
-
-export function Toggle({ 
-	checked, 
-	onChange, 
-	label, 
-	sublabel, 
-	disabled = false, 
+export function Toggle({
+	checked,
+	onChange,
+	label,
+	sublabel,
+	disabled = false,
 	size = 'md',
-	className = '' 
+	className = ''
 }: ToggleProps) {
-	const sizes = SIZE_MAP[size];
-
 	const handleClick = () => {
 		if (!disabled) onChange(!checked);
 	};
@@ -45,9 +36,10 @@ export function Toggle({
 				type="button"
 				role="switch"
 				aria-checked={checked}
+				aria-label={label}
 				disabled={disabled}
 				onClick={handleClick}
-				className={`toggle-track ${sizes.track}`}
+				className="toggle-track"
 				style={{
 					position: 'relative',
 					display: 'inline-flex',
@@ -64,15 +56,15 @@ export function Toggle({
 				}}
 			>
 				<span
-					className={`toggle-thumb ${sizes.thumb}`}
+					className="toggle-thumb"
 					style={{
 						display: 'block',
 						borderRadius: '9999px',
 						backgroundColor: '#fff',
 						boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
 						transition: 'transform 0.2s ease',
-						transform: checked 
-							? `translateX(${size === 'sm' ? '16px' : size === 'md' ? '20px' : '24px'})` 
+						transform: checked
+							? `translateX(${size === 'sm' ? '16px' : size === 'md' ? '20px' : '24px'})`
 							: 'translateX(0)',
 						width: size === 'sm' ? '12px' : size === 'md' ? '16px' : '20px',
 						height: size === 'sm' ? '12px' : size === 'md' ? '16px' : '20px'

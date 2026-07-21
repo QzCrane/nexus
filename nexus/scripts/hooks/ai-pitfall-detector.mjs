@@ -221,34 +221,20 @@ function checkSerializedQueueBrokenChain(_content, lines) {
 	const queueVarPattern = /\b(opQueue|queue|serializedQueue)\.then\s*\(/;
 	lines.forEach((line, idx) => {
 		if (!queueVarPattern.test(line)) return;
-		// Scan forward up to 6 lines looking for `.catch(` before `;` or end of chain.
+		// Scan forward up to 6 lines looking for `.catch(` before `;` or end of window.
+		// If the chain ends (via `;`) or the window is exhausted without a `.catch`,
+		// flag it so the AI can review.
 		let foundCatch = false;
-		let chainEnded = false;
 		for (let i = idx; i < Math.min(lines.length, idx + 6); i++) {
 			const l = lines[i] ?? '';
 			if (/\.catch\s*\(/.test(l)) {
 				foundCatch = true;
 				break;
 			}
-			// Statement terminator — chain ended. On the first line, terminator
-			// at end-of-line counts; on subsequent lines any terminator counts.
-			if (i === idx && /;\s*$/.test(l)) {
-				chainEnded = true;
-				break;
-			}
-			if (i > idx && /;\s*$/.test(l)) {
-				chainEnded = true;
-				break;
-			}
+			// Statement terminator — chain ended without `.catch`.
+			if (/;\s*$/.test(l)) break;
 		}
 		if (foundCatch) return;
-		// If the chain ended without `.catch`, flag it. If we ran out of window
-		// without seeing a terminator (multi-line continuation), also flag it:
-		// a 6-line chain with no catch and no terminator is almost certainly broken.
-		if (!chainEnded) {
-			// Reached end of scan window without finding `;` or `.catch` — be
-			// conservative and flag it so the AI can review.
-		}
 		const col = line.search(queueVarPattern) + 1;
 		issues.push({
 			rule: 'serialized-queue-broken-chain',
@@ -275,7 +261,6 @@ function checkOnMessageAsyncNoReturn(_content, lines) {
 		// Find the closing `})` of the listener. Scan forward up to 80 lines.
 		let depth = 0;
 		let foundReturnTrue = false;
-		let endIdx = idx;
 		for (let i = idx; i < Math.min(lines.length, idx + 80); i++) {
 			const l = lines[i] ?? '';
 			// Track braces to find the listener body end.
@@ -283,10 +268,7 @@ function checkOnMessageAsyncNoReturn(_content, lines) {
 				if (ch === '{') depth++;
 				else if (ch === '}') {
 					depth--;
-					if (depth === 0) {
-						endIdx = i;
-						break;
-					}
+					if (depth === 0) break;
 				}
 			}
 			if (/return\s+true\b/.test(l)) foundReturnTrue = true;
@@ -302,9 +284,6 @@ function checkOnMessageAsyncNoReturn(_content, lines) {
 				message: 'async onMessage listener missing `return true` — async sendResponse will be lost',
 			});
 		}
-		// Skip ahead to avoid re-scanning nested listeners.
-		// (forEach will still iterate; minor cost.)
-		void endIdx;
 	});
 	return issues;
 }

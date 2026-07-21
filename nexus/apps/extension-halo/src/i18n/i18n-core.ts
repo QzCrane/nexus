@@ -118,7 +118,10 @@ export const initI18n = async () => {
 export const waitForI18n = () => i18nPromise;
 
 // Start initialization
-initI18n();
+// rule: swallow rejection so the floating promise doesn't throw an unhandled
+// rejection. initI18n already catches its own internal errors, but defensive
+// .catch guards against future regressions.
+initI18n().catch((e) => console.error('i18n init failed', e));
 
 // Listen for external changes (syncs across multiple instances)
 if (typeof chrome !== 'undefined' && chrome.storage) {

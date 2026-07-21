@@ -1,6 +1,7 @@
 // goal: Core logic for API testing - request execution and history
 
 import type { RequestConfig, ResponseData, Header, SavedRequest } from './types';
+import { isPrivateHost } from '../../kernel/utils/ssrf-guard';
 
 const HISTORY_KEY = 'halo_api_history';
 const MAX_HISTORY = 20;
@@ -23,6 +24,34 @@ export async function executeRequest(config: RequestConfig): Promise<ResponseDat
 		headers,
 		body: config.method !== 'GET' && config.method !== 'HEAD' && config.body ? config.body : undefined,
 	};
+
+	// rule: SSRF guard — the API tester is user-driven, but without this check a user
+	// (or a pasted/imported request) could hit private network hosts, cloud metadata
+	// endpoints, or loopback services that the browser context has access to. Reject
+	// before fetch. Delegate to the shared ssrf-guard for full IPv4/IPv6 coverage.
+	let parsedUrl: URL;
+	try {
+		parsedUrl = new URL(config.url);
+	} catch {
+		return {
+			status: 0,
+			statusText: 'Invalid URL',
+			headers: {},
+			body: 'Invalid URL',
+			time: 0,
+			size: 0,
+		};
+	}
+	if (isPrivateHost(parsedUrl.hostname)) {
+		return {
+			status: 0,
+			statusText: 'Blocked',
+			headers: {},
+			body: 'Target host is in a private network range',
+			time: Math.round(performance.now() - start),
+			size: 0,
+		};
+	}
 
 	const res = await fetch(config.url, init);
 	const body = await res.text();

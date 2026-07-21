@@ -24,9 +24,8 @@ export function getDomain(url: string): string {
 }
 
 // Browser internal URLs where extensions are disabled
-// Browser internal URLs where extensions are disabled
 // eff: sorted by likelihood of occurrence for slight performance edge
-const RESTRICTED = ['chrome', 'edge', 'about', 'moz-extension', 'file'];
+const RESTRICTED = ['chrome:', 'edge:', 'about:', 'moz-extension:', 'file:', 'chrome-extension:'];
 
 // rule: identifies browser-internal or restricted URLs where extensions cannot operate
 export function isRestrictedUrl(url: string | undefined): boolean {

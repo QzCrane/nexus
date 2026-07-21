@@ -3,7 +3,11 @@ import type { EnhancedResult } from '../resolvers/rule-resolver';
 
 export function downloadMedia(source: EnhancedResult | null) {
 	if (source) {
-		chrome.runtime.sendMessage({ type: 'HALO_DOWNLOAD', url: source.url });
+		// rule: swallow rejection — the background may not have a HALO_DOWNLOAD
+		// handler (e.g. optional downloads permission not granted), in which case
+		// chrome.runtime.sendMessage rejects. The user already clicked download,
+		// so an unhandled rejection would surface as a confusing console error.
+		chrome.runtime.sendMessage({ type: 'HALO_DOWNLOAD', url: source.url }).catch(() => {});
 	}
 }
 

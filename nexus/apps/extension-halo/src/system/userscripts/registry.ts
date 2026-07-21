@@ -30,7 +30,7 @@ function toMatchPatterns(patterns: string[]): string[] {
 	for (const p of patterns) {
 		try {
 			const normalized = normalizePattern(p.trim());
-			if (normalized && normalized.includes('://')) {
+			if (normalized?.includes('://')) {
 				result.push(normalized);
 			}
 		} catch {
@@ -70,11 +70,11 @@ function wrapForMainWorld(code: string, name: string, type: ScriptType): string 
 			'(function() {',
 			'    try {',
 			'        const style = document.createElement("style");',
-			"        style.textContent = '" + safeCss + "';",
-			"        style.setAttribute(\"data-halo-script\", '" + safeName + "');",
+			`        style.textContent = '${safeCss}';`,
+			`        style.setAttribute("data-halo-script", '${safeName}');`,
 			'        (document.head || document.documentElement).appendChild(style);',
-			"        console.log(\"[HALO Script] " + safeName + " CSS injected\");",
-			"    } catch(e) { console.error(\"[HALO Script] " + safeName + " CSS failed:\", e); }",
+			`        console.log("[HALO Script] ${safeName} CSS injected");`,
+			`    } catch(e) { console.error("[HALO Script] ${safeName} CSS failed:", e); }`,
 			'})();',
 		].join('\n');
 	}
@@ -84,9 +84,9 @@ function wrapForMainWorld(code: string, name: string, type: ScriptType): string 
 	return [
 		'(function() {',
 		'    try {',
-		'        ' + code,
-		"        console.log(\"[HALO Script] " + safeName + " executed\");",
-		"    } catch(e) { console.error(\"[HALO Script] " + safeName + " failed:\", e); }",
+		`        ${code}`,
+		`        console.log("[HALO Script] ${safeName} executed");`,
+		`    } catch(e) { console.error("[HALO Script] ${safeName} failed:", e); }`,
 		'})();',
 	].join('\n');
 }
@@ -218,7 +218,7 @@ async function registerAllScripts(scripts: UserScript[], globalEnabled: boolean)
 	if (contentScriptsToRegister.length > 0) {
 		try {
 			// Check permission implicitly via API availability (background usually has permission)
-			if (chrome.scripting && chrome.scripting.registerContentScripts) {
+			if (chrome.scripting?.registerContentScripts) {
 				await chrome.scripting.registerContentScripts(contentScriptsToRegister);
 				console.log(LOG_TAG, `Registered ${contentScriptsToRegister.length} content scripts`);
 			} else {
@@ -250,24 +250,40 @@ export async function syncRegisteredScripts(): Promise<void> {
 }
 
 // Initialize the registry system
-export function initUserScriptsRegistry(): void {
+// rule: return a cleanup function and guard against double-registration, mirroring
+// initUserScriptsEngine. Without the guard, repeated init (e.g. SW restart, hot
+// reload) would stack N storage.onChanged listeners that each triggered a
+// syncRegisteredScripts call, amplifying one storage write into N syncs.
+let registryInitialized = false;
+export function initUserScriptsRegistry(): () => void {
+	if (registryInitialized) return () => {};
 	if (!isUserScriptsAvailable()) {
 		console.warn(LOG_TAG, 'userScripts API not available - requires Chrome 120+ and Developer Mode');
-		return;
+		return () => {};
 	}
+	registryInitialized = true;
 
 	console.log(LOG_TAG, 'Registry initialized');
 
+	// rule: swallow sync failures so the floating promise doesn't crash the SW.
+	// Errors are logged via the .catch handler; syncRegisteredScripts already
+	// logs internally for its sub-operations.
 	// Initial sync
-	syncRegisteredScripts();
+	syncRegisteredScripts().catch((e) => console.warn(LOG_TAG, 'sync failed', e));
 
 	// Listen for storage changes to re-sync
-	chrome.storage.onChanged.addListener((changes, area) => {
+	const listener = (changes: { [key: string]: chrome.storage.StorageChange }, area: string) => {
 		if (area === 'local') {
 			if (changes[STORAGE_KEY] || changes[SAAT_STORAGE_KEY]) {
 				console.log(LOG_TAG, 'Storage changed (User or SaaT), re-syncing...');
-				syncRegisteredScripts();
+				syncRegisteredScripts().catch((e) => console.warn(LOG_TAG, 'sync failed', e));
 			}
 		}
-	});
+	};
+	chrome.storage.onChanged.addListener(listener);
+
+	return () => {
+		chrome.storage.onChanged.removeListener(listener);
+		registryInitialized = false;
+	};
 }

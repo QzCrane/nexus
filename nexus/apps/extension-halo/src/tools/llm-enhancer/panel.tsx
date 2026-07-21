@@ -66,7 +66,7 @@ export const LLMEnhancerPanel: React.FC = () => {
     const updateConfig = useCallback((patch: Partial<typeof DEFAULT_CONFIG>) => {
         const next = { ...config, ...patch };
         setConfig(next);
-        chrome.storage.local.set({ [DATA_KEY]: next });
+        chrome.storage.local.set({ [DATA_KEY]: next }).catch((e) => console.warn('llm-enhancer persist failed', e));
     }, [config]);
 
     return (
@@ -114,7 +114,7 @@ export const LLMEnhancerPanel: React.FC = () => {
                                 type="range"
                                 min="50" max="150" step="1" 
                                 value={config.widthPercent} 
-                                onChange={(e) => updateConfig({ widthPercent: parseInt(e.target.value) })}
+                                onChange={(e) => updateConfig({ widthPercent: parseInt(e.target.value, 10) })}
                                 onWheel={(e) => {
                                     e.preventDefault();
                                     const delta = e.deltaY > 0 ? -2 : 2;

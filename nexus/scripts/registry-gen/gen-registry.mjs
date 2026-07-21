@@ -1,8 +1,8 @@
 // goal: Generate _generated.ts registry file
 // eff: Unified PLUGIN_REGISTRY with new schema
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { OUTPUT_REGISTRY } from './config.mjs';
 import { calculateFolderSize } from './utils.mjs';
 

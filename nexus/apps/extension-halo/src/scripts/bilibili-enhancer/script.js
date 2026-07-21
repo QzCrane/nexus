@@ -61,11 +61,16 @@
 	}
 
 	// === Feature: Hide Hot Search ===
+	// rule: module-level flag prevents stacking focusin listeners on repeated
+	// applyConfig() calls (e.g. from saveConfig). Without the guard, each toggle
+	// would add another listener that ran the same handler on every focusin.
+	let focusinBound = false;
 	function applyHideHotSearch() {
 		document.body.classList.add('halo-hide-hot-search');
 
 		const navSearchform = document.querySelector('#nav-searchform');
-		if (navSearchform) {
+		if (navSearchform && !focusinBound) {
+			focusinBound = true;
 			navSearchform.addEventListener('focusin', () => {
 				const history = document.querySelector('.search-panel .history');
 				const searchPanel = document.querySelector('.search-panel');

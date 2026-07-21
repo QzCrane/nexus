@@ -42,7 +42,7 @@ export function checkHardcodedActions(ROOT) {
 	}
 
 	const violations = [];
-	const skipFiles = ['actions.ts', 'messages.contracts.ts', 'definitions.ts'];
+	const skipFiles = ['actions.ts', 'definitions.ts'];
 	const srcDirs = [
 		path.join(ROOT, 'apps/extension-spectra/src'),
 		path.join(ROOT, 'apps/extension-halo/src'),

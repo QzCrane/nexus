@@ -32,7 +32,7 @@ function run(label, cmd, opts = {}) {
 const commonConfig = {
 	bundle: true,
 	minify: !isDev,
-	sourcemap: isDev,
+	sourcemap: isDev ? true : 'linked',
 	define: { 'process.env.NODE_ENV': isDev ? '"development"' : '"production"' },
 	loader: { '.ts': 'ts', '.tsx': 'tsx' },
 	alias: {
@@ -46,11 +46,21 @@ if (!isWatch) {
 	const registryPath = path.resolve(__dirname, '../../scripts/generate-tool-registry.mjs');
 	const verifyPath = path.resolve(__dirname, '../../scripts/verify-architecture.js');
 
+	// rule: check return values — `silent: true` previously swallowed failures
+	// (the helper returned false but the caller ignored it), so a broken registry
+	// or failing architecture verify would not fail the build. Now we exit on
+	// non-zero return.
 	if (existsSync(registryPath)) {
-		run('registry', 'bun ../../scripts/generate-tool-registry.mjs', { silent: true });
+		if (!run('registry', 'bun ../../scripts/generate-tool-registry.mjs', { silent: true })) {
+			console.error('❌ registry generation failed');
+			process.exit(1);
+		}
 	}
 	if (existsSync(verifyPath)) {
-		run('verify', 'bun ../../scripts/verify-architecture.js', { silent: true });
+		if (!run('verify', 'bun ../../scripts/verify-architecture.js', { silent: true })) {
+			console.error('❌ verify failed');
+			process.exit(1);
+		}
 	}
 
 	if (!run('tsc', 'bun tsc --noEmit --skipLibCheck')) {

@@ -7,6 +7,7 @@ import { createKeyedSerializedQueue } from './serialized-queue.js';
 
 const TAB_SESSION_PREFIX = 'tab_session_';
 const STORAGE_WRITE_DEBOUNCE_MS = 250;
+const MAX_WRITE_RETRIES = 5;
 
 interface StoredTabSession {
 	identity: TabSessionIdentity;
@@ -18,6 +19,7 @@ type StoredSessionValue = StoredTabSession | AudioConfig;
 
 const pendingWrites = new Map<number, StoredSessionValue>();
 const writeTimers = new Map<number, ReturnType<typeof setTimeout>>();
+const writeRetries = new Map<number, number>();
 const serialized = createKeyedSerializedQueue<number>();
 
 function keyFor(tabId: number): string {
@@ -32,9 +34,17 @@ function clearWriteTimer(tabId: number): void {
 
 function scheduleWrite(tabId: number): void {
 	clearWriteTimer(tabId);
+	const attempts = (writeRetries.get(tabId) ?? 0) + 1;
+	if (attempts > MAX_WRITE_RETRIES) {
+		writeRetries.delete(tabId);
+		pendingWrites.delete(tabId);
+		console.warn(`[tab-session] giving up on tab ${tabId} after ${MAX_WRITE_RETRIES} failed writes`);
+		return;
+	}
+	writeRetries.set(tabId, attempts);
 	writeTimers.set(tabId, setTimeout(() => {
 		writeTimers.delete(tabId);
-		void flushTabSessionConfig(tabId);
+		void flushTabSessionConfig(tabId).catch(() => undefined);
 	}, STORAGE_WRITE_DEBOUNCE_MS));
 }
 
@@ -51,6 +61,7 @@ async function flushTabSessionConfigInternal(tabId: number): Promise<void> {
 	try {
 		await chrome.storage.session.set({ [keyFor(tabId)]: pending });
 		if (pendingWrites.get(tabId) === pending) pendingWrites.delete(tabId);
+		writeRetries.delete(tabId);
 	} catch (error) {
 		scheduleWrite(tabId);
 		throw error;

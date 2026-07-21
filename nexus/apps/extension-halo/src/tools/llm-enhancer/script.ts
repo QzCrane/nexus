@@ -12,7 +12,7 @@ interface Config {
 }
 
 // ====== Icons ======
-const ICONS = {
+const _ICONS = {
 	LOGO: { viewBox: '0 0 24 24', paths: ['M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5'] },
 	ARROW_UP: { viewBox: '0 0 24 24', paths: ['M18 15l-6-6-6 6'] },
 	WIDE: { viewBox: '0 0 24 24', shapes: [{ tag: 'rect', attrs: { x: 2, y: 3, width: 20, height: 14, rx: 2, ry: 2 } }, { tag: 'line', attrs: { x1: 8, y1: 21, x2: 16, y2: 21 } }, { tag: 'line', attrs: { x1: 12, y1: 17, x2: 12, y2: 21 } }] },
@@ -52,13 +52,13 @@ async function loadConfig(): Promise<void> {
 
 				// 2. Load Global Enabled State (Override)
 				const prefs = res[TOOL_PREFS_KEY];
-				if (prefs && prefs['llm-enhancer']) {
+				if (prefs?.['llm-enhancer']) {
 					config.enabled = !!prefs['llm-enhancer'].enabled;
 				}
 
 				resolve();
 			});
-		} catch (e) { resolve(); }
+		} catch (_e) { resolve(); }
 	});
 }
 
@@ -67,7 +67,7 @@ function saveConfig() {
 	// Ideally, sidepanel updates this, and we listen to changes.
 	const updates: Record<string, any> = {};
 	updates[STORAGE_KEY] = config;
-	chrome.storage.local.set(updates);
+	chrome.storage.local.set(updates).catch((e) => console.warn('llm-enhancer persist failed', e));
 	Actions.apply(); // Ensure apply is called to update CSS variables immediately
 }
 
@@ -85,7 +85,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 		// Global Prefs Change
 		if (changes[TOOL_PREFS_KEY]) {
 			const newPrefs = changes[TOOL_PREFS_KEY].newValue;
-			if (newPrefs && newPrefs['llm-enhancer']) {
+			if (newPrefs?.['llm-enhancer']) {
 				const newEnabled = !!newPrefs['llm-enhancer'].enabled;
 				if (config.enabled !== newEnabled) {
 					config.enabled = newEnabled;
@@ -225,7 +225,7 @@ const Actions = {
 		// 3. Timeline Visibility (Global + Site-specific Config)
 		// Logic: Enabled if (Global Enabled) AND (Timeline Master) AND (Site Specific !== false)
 		// We default site specific to true if undefined
-		// @ts-ignore
+		// @ts-expect-error
 		if (window.haloTimelineManager) {
 			let siteEnabled = true;
 			if (currentSite) {
@@ -235,7 +235,7 @@ const Actions = {
 
 			const shouldShow = config.enabled && config.timeline && siteEnabled;
 			try {
-				// @ts-ignore
+				// @ts-expect-error
 				window.haloTimelineManager.setVisible(shouldShow);
 			} catch (e) {
 				console.warn(LOG_TAG, 'Failed to set timeline visibility:', e);
@@ -281,7 +281,7 @@ async function main() {
 
 		// Robust Shim for Manager (Backward Compatibility & fallback)
 		// We still use this because 'halo-timeline-ready' might have fired before we attached listener
-		// @ts-ignore
+		// @ts-expect-error
 		let _haloTimelineManager = window.haloTimelineManager || null;
 		if (_haloTimelineManager) {
 			setTimeout(() => Actions.apply(), 50);
@@ -300,7 +300,7 @@ async function main() {
 				},
 				configurable: true
 			});
-		} catch (e) {
+		} catch (_e) {
 			// Ignore definition errors, likely already defined
 			Actions.apply();
 		}
@@ -308,7 +308,6 @@ async function main() {
 		try {
 			const url = chrome.runtime.getURL(`tools/llm-enhancer/timeline/${siteFiles[currentSite]}`);
 			console.log(LOG_TAG, 'Importing timeline script:', url);
-			// @ts-ignore
 			await import(url);
 			console.log(LOG_TAG, 'Timeline script imported successfully');
 		} catch (e) {

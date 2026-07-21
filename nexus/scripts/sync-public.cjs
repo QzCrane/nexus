@@ -11,6 +11,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
+// Keep in sync with scripts/toolchain-versions.mjs (CJS cannot import ESM statically).
 const BUN_VERSION = '1.3.14';
 const PACKAGE_MANAGER = `bun@${BUN_VERSION}`;
 const SUPPORTED_APPS = new Set(['spectra', 'halo']);

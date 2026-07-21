@@ -11,6 +11,11 @@ reference
 .graph-it
 .wrangler
 .turbo/
+.cache/
+coverage/
+.vscode/
+.idea/
+release/
 
 # NEXUS skills: only `<repo>/.agents/skills/<name>/SKILL.md` is tracked.
 # This is the Anthropic cross-tool standard path (per https://agentskills.io/),

@@ -130,7 +130,15 @@ function onKeydown(e: KeyboardEvent): void {
 	scrollTo(target, 0, deltaY);
 }
 
-export function initScroll(): void {
+// rule: guard against double-init and return a cleanup function so callers (e.g.
+// tests, hot reload) can detach the listeners. Without the guard, repeated
+// initScroll() calls would stack N wheel/keydown/storage listeners that each
+// handled the same event, causing N scroll actions per wheel tick.
+let scrollInitStarted = false;
+export function initScroll(): () => void {
+	if (scrollInitStarted) return () => {};
+	scrollInitStarted = true;
+
 	configure(cfg.animationTime, cfg.easing);
 	window.addEventListener('wheel', onWheel, { passive: false });
 	window.addEventListener('keydown', onKeydown);
@@ -142,10 +150,18 @@ export function initScroll(): void {
 		}
 	});
 
-	chrome.storage.onChanged.addListener((changes, area) => {
+	const listener = (changes: { [key: string]: chrome.storage.StorageChange }, area: string) => {
 		if (area === 'sync' && changes.HALO_SMOOTH_SCROLL_SETTINGS) {
 			cfg = { ...cfg, ...changes.HALO_SMOOTH_SCROLL_SETTINGS.newValue };
 			configure(cfg.animationTime, cfg.easing);
 		}
-	});
+	};
+	chrome.storage.onChanged.addListener(listener);
+
+	return () => {
+		window.removeEventListener('wheel', onWheel);
+		window.removeEventListener('keydown', onKeydown);
+		chrome.storage.onChanged.removeListener(listener);
+		scrollInitStarted = false;
+	};
 }

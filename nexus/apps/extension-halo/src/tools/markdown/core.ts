@@ -7,10 +7,24 @@
 function sanitizeHtml(html: string): string {
 	return html
 		.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-		.replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
-		.replace(/\son\w+\s*=\s*'[^']*'/gi, '')
-		.replace(/\son\w+\s*=\s*[^\s>]+/gi, '')
+		.replace(/[\s"'/]on\w+\s*=\s*"[^"]*"/gi, '')
+		.replace(/[\s"'/]on\w+\s*=\s*'[^']*'/gi, '')
+		.replace(/[\s"'/]on\w+\s*=\s*[^\s>]+/gi, '')
 		.replace(/javascript:/gi, '');
+}
+
+// rule: escape attribute values before concatenation into HTML. The general HTML
+// escape below escapes &, <, > in the whole input but NOT ", so href/src/alt
+// values remain vulnerable to attribute injection (e.g.
+// ![alt](http://x.invalid"onerror=alert(1)) would close the src attribute and
+// inject an onerror handler). escapeAttr closes this hole by escaping " (and
+// re-escaping &, <, > so the function is safe to call on any string).
+function escapeAttr(s: string): string {
+	return s
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;');
 }
 
 // Simple Markdown parser - handles common syntax
@@ -58,9 +72,9 @@ export function parseMarkdown(md: string): string {
 		return '#';
 	};
 	html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, url) =>
-		`<img src="${SAFE_URL(url)}" alt="${alt}" style="max-width:100%;" />`);
+		`<img src="${escapeAttr(SAFE_URL(url))}" alt="${escapeAttr(alt)}" style="max-width:100%;" />`);
 	html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) =>
-		`<a href="${SAFE_URL(url)}" target="_blank" rel="noopener noreferrer">${text}</a>`);
+		`<a href="${escapeAttr(SAFE_URL(url))}" target="_blank" rel="noopener noreferrer">${text}</a>`);
 
 	// Blockquotes
 	html = html.replace(/^>\s+(.*)$/gm, '<blockquote>$1</blockquote>');

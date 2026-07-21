@@ -4,9 +4,10 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { BUN_VERSION } from './toolchain-versions.mjs';
 import { REMOTE_SITE_BASE_URL_ENV } from './check-spectra-remote-live.mjs';
 
-export const EXPECTED_BUN_VERSION = '1.3.14';
+export const EXPECTED_BUN_VERSION = BUN_VERSION;
 export const PRODUCTION_REMOTE_SITE_BASE_URL = 'https://nexus-remote.pages.dev/';
 
 const workspaceDir = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -25,6 +26,9 @@ export const RELEASE_SOURCE_DIGEST_ENV = 'SPECTRA_RELEASE_SOURCE_SHA256';
 const SOURCE_DIGEST_IGNORED_DIRECTORIES = new Set([
 	'.git',
 	'.turbo',
+	'.cache',
+	'_archive',
+	'assets-backup',
 	'coverage',
 	'dist',
 	'node_modules',

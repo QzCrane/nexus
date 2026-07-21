@@ -5,9 +5,9 @@
  * This prevents Chrome Web Store rejection due to unused permissions.
  */
 
-import fs from 'fs';
-import path from 'path';
-import { counters, error, ok, section, log } from './utils.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { error, ok, section, log } from './utils.js';
 
 // Maps manifest permissions to their corresponding chrome API patterns
 const PERMISSION_API_MAP = {
@@ -28,12 +28,14 @@ const PERMISSION_API_MAP = {
   'identity': ['chrome.identity'],
   'management': ['chrome.management'],
   'declarativeNetRequest': ['chrome.declarativeNetRequest'],
+  'userScripts': ['chrome.userScripts'],
 };
 
 // Permissions that don't have direct API calls but are still required
 const IMPLICIT_PERMISSIONS = [
   'activeTab',  // Implicit via user action
   '<all_urls>', // Host permission
+  'favicon',    // Implicit via favicon access
 ];
 
 export function checkPermissionUsage(root) {

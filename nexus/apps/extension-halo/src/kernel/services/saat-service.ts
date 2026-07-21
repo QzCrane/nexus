@@ -272,32 +272,42 @@ export function initSaaTService(): () => void {
 	if (saatInitialized) return () => {};
 	saatInitialized = true;
 
-	const listener = async (changes: { [key: string]: chrome.storage.StorageChange }, area: string) => {
-		if (area === 'local' && changes[TOOL_PREFS_KEY]) {
-			const newPrefs = changes[TOOL_PREFS_KEY].newValue || {};
-			const result = await chrome.storage.local.get(SAAT_STORAGE_KEY);
-			const state = result[SAAT_STORAGE_KEY];
-			if (!state?.scripts) return;
+	// rule: wrap the async listener body in try/catch — chrome.storage.onChanged
+	// does not await the listener, so a rejection from the inner await chain would
+	// surface as an unhandled promise rejection. Catch and log so one bad write
+	// doesn't crash the SW.
+	const listener = (changes: { [key: string]: chrome.storage.StorageChange }, area: string) => {
+		const toolPrefsChange = changes[TOOL_PREFS_KEY];
+		if (area !== 'local' || !toolPrefsChange) return;
+		(async () => {
+			try {
+				const newPrefs = toolPrefsChange.newValue || {};
+				const result = await chrome.storage.local.get(SAAT_STORAGE_KEY);
+				const state = result[SAAT_STORAGE_KEY];
+				if (!state?.scripts) return;
 
-			let changed = false;
-			const scripts = state.scripts as SaaTScriptState[];
+				let changed = false;
+				const scripts = state.scripts as SaaTScriptState[];
 
-			for (const script of scripts) {
-				if (script.saatToolId) {
-					const isEnabled = newPrefs[script.saatToolId]?.enabled ?? true;
-					if (script.enabled !== isEnabled) {
-						script.enabled = isEnabled;
-						script.updatedAt = Date.now();
-						changed = true;
-						console.log(LOG_TAG, `Syncing enabled state for ${script.saatToolId}: ${isEnabled}`);
+				for (const script of scripts) {
+					if (script.saatToolId) {
+						const isEnabled = newPrefs[script.saatToolId]?.enabled ?? true;
+						if (script.enabled !== isEnabled) {
+							script.enabled = isEnabled;
+							script.updatedAt = Date.now();
+							changed = true;
+							console.log(LOG_TAG, `Syncing enabled state for ${script.saatToolId}: ${isEnabled}`);
+						}
 					}
 				}
-			}
 
-			if (changed) {
-				await chrome.storage.local.set({ [SAAT_STORAGE_KEY]: state });
+				if (changed) {
+					await chrome.storage.local.set({ [SAAT_STORAGE_KEY]: state });
+				}
+			} catch (e) {
+				console.warn(LOG_TAG, 'SaaT listener failed', e);
 			}
-		}
+		})();
 	};
 
 	chrome.storage.onChanged.addListener(listener);

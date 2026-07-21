@@ -1,8 +1,8 @@
 // goal: Generate _generated-tool-loader.ts
 // eff: Lazy loader for panel plugins only
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { OUTPUT_LOADER } from './config.mjs';
 import { toPascalCase, detectPanelExport } from './utils.mjs';
 
@@ -25,7 +25,7 @@ import { lazy } from 'react';
 
 	// Build tool-to-export map
 	const entries = panelModules.map(m => {
-		const exportName = detectPanelExport(m.panelPath) || toPascalCase(m.id) + 'Panel';
+		const exportName = detectPanelExport(m.panelPath) || `${toPascalCase(m.id)}Panel`;
 		// Handle nested panel paths (e.g., tools/hover-zoom/components/ui/panel.tsx)
 		// Extract relative path from panelPath for import statement
 		const folder = m.dirType === 'system' ? 'system' : (m.dirType === 'scripts' ? 'scripts' : 'tools');
@@ -34,7 +34,7 @@ import { lazy } from 'react';
 		const searchPattern = `src/${folder}/${m.dirName}`;
 		const baseIndex = normalizedPanelDir.indexOf(searchPattern);
 		const relativePart = baseIndex >= 0
-			? normalizedPanelDir.substring(baseIndex + `src/${folder}/`.length) + '/panel'
+			? `${normalizedPanelDir.substring(baseIndex + `src/${folder}/`.length)}/panel`
 			: `${m.dirName}/panel`;
 		return `\t'${m.id}': lazy(() => import('../${folder}/${relativePart}').then(m => ({ default: m.${exportName} })))`;
 	});

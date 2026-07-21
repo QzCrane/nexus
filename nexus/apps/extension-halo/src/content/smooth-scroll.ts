@@ -30,8 +30,16 @@ export const detachListeners = () => {
 	window.removeEventListener('mousedown', onMouseDown);
 }
 
-export async function init(): Promise<void> {
-	if (location.protocol === 'chrome-extension:') return;
+// rule: guard against double-init and return a cleanup function so callers (e.g.
+// tests, hot reload) can detach the storage listener. Without the guard, repeated
+// init() calls would stack N storage.onChanged listeners that each called
+// updateSettings, amplifying one storage write into N updates.
+let initStarted = false;
+export async function init(): Promise<() => void> {
+	if (initStarted) return () => {};
+	initStarted = true;
+
+	if (location.protocol === 'chrome-extension:') return () => {};
 
 	try {
 		const res = await chrome.storage.sync.get([STORAGE_KEY]);
@@ -48,7 +56,13 @@ export async function init(): Promise<void> {
 	if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
 	else setTimeout(boot, 100);
 
-	chrome.storage.onChanged.addListener((c, a) => {
+	const listener = (c: { [key: string]: chrome.storage.StorageChange }, a: string) => {
 		if (a === 'sync' && c[STORAGE_KEY]) updateSettings(c[STORAGE_KEY].newValue);
-	});
+	};
+	chrome.storage.onChanged.addListener(listener);
+
+	return () => {
+		chrome.storage.onChanged.removeListener(listener);
+		initStarted = false;
+	};
 }

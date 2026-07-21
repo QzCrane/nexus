@@ -118,12 +118,12 @@ export function createSiteEligibilityCache(
 			// Current-document evidence corrects the automatic site route. The
 			// persisted decision is only used while the current document is unknown.
 			if (liveStatus !== 'PENDING') {
-				decision.cachedStatus = liveStatus;
-				void persist(decision, liveStatus);
-				return liveStatus;
-			}
-			return decision.cachedStatus;
-		},
+			decision.cachedStatus = liveStatus;
+			void persist(decision, liveStatus).catch(() => undefined);
+			return liveStatus;
+		}
+		return decision.cachedStatus;
+	},
 		async recordActual(actualMode, phase) {
 			await decision.hydrated;
 			if (phase !== 'active') return;

@@ -2,9 +2,9 @@
 // goal: Analyze and report tool categories from _generated.ts
 // usage: node scripts/analyze-categories.mjs
 
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const GENERATED_PATH = path.join(__dirname, '../apps/extension-halo/src/kernel/registry/_generated.ts');
@@ -14,9 +14,10 @@ const content = fs.readFileSync(GENERATED_PATH, 'utf-8');
 // Extract all plugins with category
 const pluginRegex = /id:\s*'([^']+)'[\s\S]*?pluginType:\s*'([^']+)'[\s\S]*?category:\s*'([^']+)'/g;
 const plugins = [];
-let match;
-while ((match = pluginRegex.exec(content)) !== null) {
+let match = pluginRegex.exec(content);
+while (match !== null) {
 	plugins.push({ id: match[1], type: match[2], category: match[3] });
+	match = pluginRegex.exec(content);
 }
 
 // Group by category
@@ -42,5 +43,5 @@ for (const cat of categories) {
 	if (system.length > 0) console.log(`  system: ${system.map(p => p.id).join(', ')}`);
 }
 
-console.log('\n' + '='.repeat(60));
+console.log(`\n${'='.repeat(60)}`);
 console.log(`Total: ${plugins.length} plugins (${plugins.filter(p => p.type === 'tool').length} tools, ${plugins.filter(p => p.type === 'script').length} scripts, ${plugins.filter(p => p.type === 'system').length} system)`);

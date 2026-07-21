@@ -34,7 +34,7 @@ export function useOpenTools(): UseOpenToolsResult {
 	const [openTools, setOpenTools] = useState<ToolId[]>([]);
 
 	// Ref for unload save (avoids stale closure)
-	const activeToolRef = useRef<ToolId | null>(null);
+	const _activeToolRef = useRef<ToolId | null>(null);
 	const initialized = useRef(false);
 
 	// Real-time persistence for activeTool
@@ -44,7 +44,7 @@ export function useOpenTools(): UseOpenToolsResult {
 
 		// Explicitly save state, using sentinel for Home to avoid ambiguity
 		const valToSave = activeTool === null ? 'HALO_LAUNCHER' : activeTool;
-		chrome.storage.local.set({ [ACTIVE_TOOL_KEY]: valToSave });
+		chrome.storage.local.set({ [ACTIVE_TOOL_KEY]: valToSave }).catch((e) => console.warn('openTools persist failed', e));
 	}, [activeTool]);
 
 	const setActiveTool = useCallback((toolId: ToolId | null) => {
@@ -87,7 +87,7 @@ export function useOpenTools(): UseOpenToolsResult {
 			setOpenTools(prev => {
 				if (prev.includes(toolId)) return prev;
 				const newOpen = prev.length >= MAX_OPEN_TOOLS ? [...prev.slice(1), toolId] : [...prev, toolId];
-				chrome.storage.local.set({ [OPEN_TOOLS_KEY]: newOpen });
+				chrome.storage.local.set({ [OPEN_TOOLS_KEY]: newOpen }).catch((e) => console.warn('openTools persist failed', e));
 				return newOpen;
 			});
 		}
@@ -105,7 +105,7 @@ export function useOpenTools(): UseOpenToolsResult {
 				}
 				return current;
 			});
-			chrome.storage.local.set({ [OPEN_TOOLS_KEY]: newOpen });
+			chrome.storage.local.set({ [OPEN_TOOLS_KEY]: newOpen }).catch((e) => console.warn('openTools persist failed', e));
 			return newOpen;
 		});
 	}, []);

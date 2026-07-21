@@ -1,8 +1,8 @@
 // goal: Discover plugins from directories
 // eff: Scan tools/scripts/system directories, parse manifests
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 
 /**
  * Discover plugins with manifest.json

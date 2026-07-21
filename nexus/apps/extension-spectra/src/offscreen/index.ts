@@ -33,7 +33,12 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
 		return remoteHost.handleRuntimeMessage(message, sendResponse);
 	}
 
-	void handleAudioHostMessage(message).then(sendResponse);
+	void handleAudioHostMessage(message)
+		.then(sendResponse)
+		.catch((error) => sendResponse({
+			success: false,
+			error: error instanceof Error ? error.message : String(error),
+		}));
 	return true;
 });
 

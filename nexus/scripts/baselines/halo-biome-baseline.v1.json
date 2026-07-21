@@ -8,18 +8,18 @@
 		"updateCommand": "bun scripts/check-workspace-lint.mjs --update-halo-baseline --acknowledge-halo-scope-exception"
 	},
 	"biomeVersion": "2.5.3",
-	"biomeConfigSha256": "bba171a66d1587946b3a3a9bc18f466139b25a515b6550ecdfbc53544ded52c6",
+	"biomeConfigSha256": "54bdd574d2a15452db859d0eab217322e87ea3dce19c3772908d819cc5c84d37",
 	"scanTargets": [
 		"apps/extension-halo/src",
 		"apps/extension-halo/public",
 		"apps/extension-halo/build.mjs"
 	],
 	"summary": {
-		"checkedFiles": 925,
-		"diagnostics": 872,
+		"checkedFiles": 923,
+		"diagnostics": 851,
 		"errors": 616,
-		"warnings": 166,
-		"infos": 90
+		"warnings": 153,
+		"infos": 82
 	},
 	"categories": [
 		{
@@ -72,7 +72,7 @@
 		},
 		{
 			"category": "lint/complexity/useOptionalChain",
-			"count": 13
+			"count": 9
 		},
 		{
 			"category": "lint/correctness/noSwitchDeclarations",
@@ -84,7 +84,7 @@
 		},
 		{
 			"category": "lint/correctness/noUnusedImports",
-			"count": 75
+			"count": 74
 		},
 		{
 			"category": "lint/correctness/noUnusedPrivateClassMembers",
@@ -92,7 +92,7 @@
 		},
 		{
 			"category": "lint/correctness/noUnusedVariables",
-			"count": 30
+			"count": 26
 		},
 		{
 			"category": "lint/correctness/useExhaustiveDependencies",
@@ -100,7 +100,7 @@
 		},
 		{
 			"category": "lint/correctness/useParseIntRadix",
-			"count": 28
+			"count": 27
 		},
 		{
 			"category": "lint/security/noDangerouslySetInnerHtml",
@@ -124,7 +124,7 @@
 		},
 		{
 			"category": "lint/style/useTemplate",
-			"count": 31
+			"count": 24
 		},
 		{
 			"category": "lint/suspicious/noArrayIndexKey",
@@ -156,7 +156,7 @@
 		},
 		{
 			"category": "lint/suspicious/noTsIgnore",
-			"count": 15
+			"count": 11
 		}
 	],
 	"processedFiles": [
@@ -276,8 +276,6 @@
 		"apps/extension-halo/src/kernel/services/background-service-detector.ts",
 		"apps/extension-halo/src/kernel/services/saat-service.ts",
 		"apps/extension-halo/src/kernel/settings.ts",
-		"apps/extension-halo/src/kernel/storage.ts",
-		"apps/extension-halo/src/kernel/theme.ts",
 		"apps/extension-halo/src/kernel/tool-prefs-storage.ts",
 		"apps/extension-halo/src/kernel/types.ts",
 		"apps/extension-halo/src/kernel/use-tool-manager.ts",
@@ -1933,19 +1931,6 @@
 			]
 		},
 		{
-			"fingerprint": "0db0b688a288dcd9b60a18fe13f19805192f1995291b9b455cee17d2e81f88db",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/tools/llm-enhancer/script.ts",
-			"category": "lint/correctness/noUnusedVariables",
-			"message": "This variable e is unused.",
-			"range": [
-				61,
-				12,
-				61,
-				13
-			]
-		},
-		{
 			"fingerprint": "0db8316f8cc69bb0888eb5fa93a6bf022d6f1cee27062e5d7b342c8236e94fbe",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/user-agent/panel.tsx",
@@ -3025,19 +3010,6 @@
 			]
 		},
 		{
-			"fingerprint": "28c770902fa776b2fdd3fa02380e991b9f852cce8a5b91c12c460f67fb41817b",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/kernel/hooks/use-module-manager.ts",
-			"category": "lint/correctness/noUnusedImports",
-			"message": "Several of these imports are unused.",
-			"range": [
-				6,
-				23,
-				6,
-				57
-			]
-		},
-		{
 			"fingerprint": "29614eb04fb5bb07ca09eb2cefb6958dfe2f28d9ca374a68832304ae9ec57a70",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/regex/panel.tsx",
@@ -3191,19 +3163,6 @@
 				5,
 				135,
 				6
-			]
-		},
-		{
-			"fingerprint": "2d0547ac7c9f10c208d640f392201d2ae22a6bd03574b8b4c3dddbdcc113f368",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/system/userscripts/registry.ts",
-			"category": "lint/complexity/useOptionalChain",
-			"message": "Change to an optional chain.",
-			"range": [
-				33,
-				8,
-				33,
-				48
 			]
 		},
 		{
@@ -3685,19 +3644,6 @@
 				7,
 				40,
 				40
-			]
-		},
-		{
-			"fingerprint": "37a29e49f09eddc5c410187c18c42a244517b0476209ce350b4d45e98f872463",
-			"severity": "info",
-			"path": "apps/extension-halo/src/system/userscripts/registry.ts",
-			"category": "lint/style/useTemplate",
-			"message": "Template literals are preferred over string concatenation.",
-			"range": [
-				89,
-				3,
-				89,
-				85
 			]
 		},
 		{
@@ -4218,19 +4164,6 @@
 				4,
 				75,
 				5
-			]
-		},
-		{
-			"fingerprint": "42d5b64bf8238cf82355ba388941d542ab8d0c1b0ea59ac05f195b4ccbc6a221",
-			"severity": "info",
-			"path": "apps/extension-halo/src/system/userscripts/registry.ts",
-			"category": "lint/style/useTemplate",
-			"message": "Template literals are preferred over string concatenation.",
-			"range": [
-				77,
-				4,
-				77,
-				90
 			]
 		},
 		{
@@ -5118,19 +5051,6 @@
 			]
 		},
 		{
-			"fingerprint": "58b99d044c332df45e8c0ab6abda4b328e8c690c482c4d99e05424096b3faad7",
-			"severity": "info",
-			"path": "apps/extension-halo/src/system/userscripts/registry.ts",
-			"category": "lint/style/useTemplate",
-			"message": "Template literals are preferred over string concatenation.",
-			"range": [
-				73,
-				4,
-				73,
-				52
-			]
-		},
-		{
 			"fingerprint": "58bc1d42ad1610266350d9104d942d925352c27d116e04c7537893e27eda716a",
 			"severity": "error",
 			"path": "apps/extension-halo/src/i18n/index.ts",
@@ -5651,19 +5571,6 @@
 			]
 		},
 		{
-			"fingerprint": "67b0697c14358350448dab352f6301a1302391cfef03eb33e1e1f06124c66bfe",
-			"severity": "info",
-			"path": "apps/extension-halo/src/system/userscripts/registry.ts",
-			"category": "lint/style/useTemplate",
-			"message": "Template literals are preferred over string concatenation.",
-			"range": [
-				74,
-				4,
-				74,
-				75
-			]
-		},
-		{
 			"fingerprint": "67bd861113d7a2631d3f5cf8ee1df3a45df2a98eb61f40ea36a14dc16e593280",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/ruler/MeasurementCard.tsx",
@@ -6155,19 +6062,6 @@
 				7,
 				125,
 				67
-			]
-		},
-		{
-			"fingerprint": "7304cf4ace5ca37e850dbc172423fa44fb16493aa40b974be4b04dff6a38a004",
-			"severity": "info",
-			"path": "apps/extension-halo/src/tools/llm-enhancer/panel.tsx",
-			"category": "lint/correctness/useParseIntRadix",
-			"message": "Missing radix parameter",
-			"range": [
-				117,
-				79,
-				117,
-				103
 			]
 		},
 		{
@@ -6948,19 +6842,6 @@
 				8,
 				88,
 				9
-			]
-		},
-		{
-			"fingerprint": "87437797d3309e76fc9d87d9b2ad531a11f375a98628dba6c60b163f95bbf155",
-			"severity": "info",
-			"path": "apps/extension-halo/src/system/userscripts/registry.ts",
-			"category": "lint/style/useTemplate",
-			"message": "Template literals are preferred over string concatenation.",
-			"range": [
-				87,
-				3,
-				87,
-				20
 			]
 		},
 		{
@@ -7796,19 +7677,6 @@
 			]
 		},
 		{
-			"fingerprint": "98098caef2f592fcbd1c7629a7c8ee619b1ec92d73841ed728abd34be64ceb30",
-			"severity": "info",
-			"path": "apps/extension-halo/src/system/userscripts/registry.ts",
-			"category": "lint/style/useTemplate",
-			"message": "Template literals are preferred over string concatenation.",
-			"range": [
-				76,
-				4,
-				76,
-				75
-			]
-		},
-		{
 			"fingerprint": "980b45ab129b2533e491741de60352d04704a54884e2d974cb097145ac32b8a8",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/todo-list/panel.tsx",
@@ -8277,19 +8145,6 @@
 			]
 		},
 		{
-			"fingerprint": "9f2a95291110b1e3d7f32ca25a47aab5d9ef034e349867c41c0dd22f9c930b17",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/tools/llm-enhancer/script.ts",
-			"category": "lint/complexity/useOptionalChain",
-			"message": "Change to an optional chain.",
-			"range": [
-				88,
-				8,
-				88,
-				44
-			]
-		},
-		{
 			"fingerprint": "9fb4c5dc9d0a85e6ebf02031b8c3c2beab8770294f3868a41afea7cc1a065b70",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/qrcode/panel.tsx",
@@ -8430,19 +8285,6 @@
 				5,
 				55,
 				65
-			]
-		},
-		{
-			"fingerprint": "a29fe075ab94b97d918eb6b0743fbb6605899f2b89fffb4efbd9a774c1e0eaa7",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/tools/llm-enhancer/script.ts",
-			"category": "lint/suspicious/noTsIgnore",
-			"message": "Unsafe use of the @ts-ignore directive found in this comment.",
-			"range": [
-				284,
-				6,
-				284,
-				16
 			]
 		},
 		{
@@ -8667,19 +8509,6 @@
 			]
 		},
 		{
-			"fingerprint": "a9a5096261359a6803c2dabd1fb1417a0bba5217ce4576617376d1d12080cb7d",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/system/userscripts/registry.ts",
-			"category": "lint/complexity/useOptionalChain",
-			"message": "Change to an optional chain.",
-			"range": [
-				221,
-				8,
-				221,
-				67
-			]
-		},
-		{
 			"fingerprint": "aa8edef64995e5c153f4d277866bf4047f9e8598ca052eff73df8c3386f88bff",
 			"severity": "warning",
 			"path": "apps/extension-halo/src/tools/xor/panel.tsx",
@@ -8755,19 +8584,6 @@
 				96,
 				26,
 				120
-			]
-		},
-		{
-			"fingerprint": "ac3923ee9624251b5c2741d0f16a5d5a2ec85f5ab60b24c06afea6fdf1bc49f0",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/tools/llm-enhancer/script.ts",
-			"category": "lint/suspicious/noTsIgnore",
-			"message": "Unsafe use of the @ts-ignore directive found in this comment.",
-			"range": [
-				228,
-				6,
-				228,
-				16
 			]
 		},
 		{
@@ -9473,19 +9289,6 @@
 			]
 		},
 		{
-			"fingerprint": "bd0a2236e4434028aa4c79aaffb5a0875a072c4c5a93fba17dc7825bded082a3",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/tools/llm-enhancer/script.ts",
-			"category": "lint/correctness/noUnusedVariables",
-			"message": "This variable e is unused.",
-			"range": [
-				303,
-				12,
-				303,
-				13
-			]
-		},
-		{
 			"fingerprint": "bd348c61be892c8b607dd8f09ad87695e494c6771c6fb3b6c89916491bf34845",
 			"severity": "error",
 			"path": "apps/extension-halo/src/system/userscripts/components/SettingsModal.tsx",
@@ -9496,19 +9299,6 @@
 				9,
 				52,
 				194
-			]
-		},
-		{
-			"fingerprint": "bd34a5205132c2559bf426e83731d3170894415f6d653faaac81edfb64d074ed",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/components/sidepanel/hooks/use-open-tools.ts",
-			"category": "lint/correctness/noUnusedVariables",
-			"message": "This variable activeToolRef is unused.",
-			"range": [
-				37,
-				8,
-				37,
-				21
 			]
 		},
 		{
@@ -9613,19 +9403,6 @@
 				17,
 				57,
 				47
-			]
-		},
-		{
-			"fingerprint": "bedd1d3f7d2a17edc1b7a4fdbaf9f19d6c7f4f657852559aed9d62ca4c15a592",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/tools/llm-enhancer/script.ts",
-			"category": "lint/suspicious/noTsIgnore",
-			"message": "Unsafe use of the @ts-ignore directive found in this comment.",
-			"range": [
-				238,
-				8,
-				238,
-				18
 			]
 		},
 		{
@@ -9834,19 +9611,6 @@
 				11,
 				120,
 				12
-			]
-		},
-		{
-			"fingerprint": "c3a52ee351e9e51b7a85adef606ca5e304c571bb326c77e2bc39a30babd45fde",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/tools/llm-enhancer/script.ts",
-			"category": "lint/complexity/useOptionalChain",
-			"message": "Change to an optional chain.",
-			"range": [
-				55,
-				9,
-				55,
-				39
 			]
 		},
 		{
@@ -10214,19 +9978,6 @@
 			]
 		},
 		{
-			"fingerprint": "cdb3a0202adec10ebc5ebb90886080dd754517dbf677439b8330957b9472cbce",
-			"severity": "info",
-			"path": "apps/extension-halo/src/system/userscripts/registry.ts",
-			"category": "lint/style/useTemplate",
-			"message": "Template literals are preferred over string concatenation.",
-			"range": [
-				88,
-				3,
-				88,
-				70
-			]
-		},
-		{
 			"fingerprint": "cdec006afcfa93b6d7fb1b3e53c8e1318a8380346ee49a1bf3d6bf2767e28ae0",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/archive/panel.tsx",
@@ -10315,19 +10066,6 @@
 				5,
 				110,
 				6
-			]
-		},
-		{
-			"fingerprint": "cf82186da78360d9246a982ddb2a474d498c843a57bfd540c0ca262bc50c83da",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/tools/llm-enhancer/script.ts",
-			"category": "lint/suspicious/noTsIgnore",
-			"message": "Unsafe use of the @ts-ignore directive found in this comment.",
-			"range": [
-				311,
-				7,
-				311,
-				17
 			]
 		},
 		{
@@ -11472,19 +11210,6 @@
 				6,
 				177,
 				82
-			]
-		},
-		{
-			"fingerprint": "eb7d731efafd63e1eb1e6f18f760c374455833d8160d064bc8d616e45c93633e",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/tools/llm-enhancer/script.ts",
-			"category": "lint/correctness/noUnusedVariables",
-			"message": "This variable ICONS is unused.",
-			"range": [
-				15,
-				7,
-				15,
-				12
 			]
 		},
 		{
