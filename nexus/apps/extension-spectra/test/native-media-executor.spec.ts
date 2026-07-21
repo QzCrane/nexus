@@ -873,6 +873,92 @@ describe('native media single-writer correlation', () => {
 			executor.dispose();
 		}
 	});
+
+	test('does not read element.volume into volumeBase on state reads', () => {
+		// Sites like YouTube apply a non-linear volume curve to element.volume
+		// (e.g. element.volume reads 0.6131 at their 100% slider). Reading
+		// element.volume into volumeBase would report 61.31% instead of the
+		// user-facing 100%. volumeBase is SPECTRA's intended volume (default
+		// 100), not a measurement; state reads must not populate volumeBase
+		// from element.volume. The coordinator falls back to
+		// actualField('volumeBase', 100) when the executor does not return it.
+		Object.defineProperty(globalThis, 'HTMLMediaElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		Object.defineProperty(globalThis, 'HTMLVideoElement', {
+			configurable: true,
+			value: class FakeVideoElement extends FakeMediaElement { },
+		});
+		Object.defineProperty(globalThis, 'document', {
+			configurable: true,
+			value: { pictureInPictureElement: null, fullscreenElement: null },
+		});
+		const registry = new FakeRegistry();
+		// Simulate YouTube's non-linear curve: element.volume = 0.6131
+		// corresponds to the user's 100% slider.
+		registry.element.forceVolume(0.6131);
+		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
+		try {
+			const result = executor.read({
+				target: registry.target,
+				fields: ['volumeBase', 'mediaMuted'],
+			});
+			// volumeBase must NOT be populated from element.volume (0.6131
+			// would yield 61.31). Only mediaMuted should appear in the patch.
+			expect((result.patch as Record<string, unknown>).volumeBase).toBeUndefined();
+			expect((result.patch as Record<string, unknown>).mediaMuted).toBe(false);
+		} finally {
+			executor.dispose();
+		}
+	});
+
+	test('does not report volumeBase on volumechange observations', async () => {
+		// volumechange must only update mediaMuted, not volumeBase. Sites with
+		// non-linear volume curves would otherwise leak their internal
+		// HTMLMediaElement.volume into SPECTRA's intended-volume field.
+		Object.defineProperty(globalThis, 'HTMLMediaElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		Object.defineProperty(globalThis, 'HTMLVideoElement', {
+			configurable: true,
+			value: class FakeVideoElement extends FakeMediaElement { },
+		});
+		Object.defineProperty(globalThis, 'document', {
+			configurable: true,
+			value: { pictureInPictureElement: null, fullscreenElement: null },
+		});
+		Object.defineProperty(globalThis, 'requestAnimationFrame', {
+			configurable: true,
+			value: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0),
+		});
+		const registry = new FakeRegistry();
+		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
+		try {
+			// Prime observed state first so the observer can compare.
+			executor.read({
+				target: registry.target,
+				fields: ['mediaMuted'],
+			});
+			// Simulate a page volume change. YouTube would set element.volume
+			// to 0.3065 (50% slider), but volumeBase must not be reported.
+			registry.element.forceVolume(0.3065);
+			await new Promise((resolve) => setTimeout(resolve, 50));
+			// The observed patch must not include volumeBase. Only mediaMuted
+			// is an actionable page-side change for SPECTRA's volume field.
+			// (volumeBase is set only by explicit writes via applyField.)
+			const result = executor.read({
+				target: registry.target,
+				fields: ['volumeBase', 'mediaMuted'],
+			});
+			expect((result.patch as Record<string, unknown>).volumeBase).toBeUndefined();
+		} finally {
+			executor.dispose();
+		}
+	}, 2_000);
 });
 
 function restore(key: string, descriptor?: PropertyDescriptor): void {
