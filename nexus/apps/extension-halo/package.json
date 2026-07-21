@@ -10,8 +10,8 @@
 		"build:prod": "bun build.mjs",
 		"lint": "biome check src --max-diagnostics=100",
 		"typecheck": "bun tsc --noEmit",
-		"test:ui": "bun build ; bun test/ui-review.spec.ts",
-		"test:playwright": "bun build ; bun test/ui-playwright.spec.ts"
+		"test:ui": "bun run build ; bun test/ui-review.spec.ts",
+		"test:playwright": "bun run build ; bun test/ui-playwright.spec.ts"
 	},
 	"dependencies": {
 		"@nexus/kernel": "workspace:*",

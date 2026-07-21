@@ -232,7 +232,11 @@ function createPresetItem(
 function createSummaryNodes(config: Partial<AudioConfig>): DocumentFragment {
 	const fragment = document.createDocumentFragment();
 
-	// eff: add volume with highlight
+	// eff: add volume with highlight — show the single effective volume the
+	// user actually hears (volumeBase × boost) instead of splitting it into
+	// a base/boost product. The product form leaked the hidden boost field
+	// and read like a multiplier (e.g. "100% × 2.0") rather than the
+	// one-control value the popup slider exposes (e.g. "200%").
 	if (config.volume !== undefined) {
 		const volume = resolveAudioVolume({
 			volume: config.volume,
@@ -241,9 +245,10 @@ function createSummaryNodes(config: Partial<AudioConfig>): DocumentFragment {
 		});
 		const volSpan = document.createElement('span');
 		volSpan.className = 'vol-highlight';
-		volSpan.textContent = volume.boost > 1
-			? `${volume.volumeBase}% × ${volume.boost.toFixed(1)}`
-			: `${volume.volumeBase}%`;
+		const display = Number.isInteger(volume.effectiveVolume)
+			? String(volume.effectiveVolume)
+			: volume.effectiveVolume.toFixed(1).replace(/\.0$/u, '');
+		volSpan.textContent = `${display}%`;
 		fragment.appendChild(volSpan);
 	}
 
@@ -258,12 +263,20 @@ function createSummaryNodes(config: Partial<AudioConfig>): DocumentFragment {
 		fragment.appendChild(spdSpan);
 	}
 
-	// eff: add other effects
+	// eff: add other effects — labels come from the active i18n dictionary so
+	// the summary respects the user's chosen language instead of leaking
+	// English strings ("Comp", "Bass", "Pan:R", "Default", ...).
 	const effects: string[] = [];
-	if (config.compressor) effects.push('Comp');
-	if (config.bass) effects.push('Bass');
-	if (config.mono) effects.push('Mono');
-	if (config.pan !== undefined && config.pan !== 0) effects.push(`Pan:${config.pan > 0 ? 'R' : 'L'}`);
+	if (config.compressor) effects.push(currentDict?.presetEffectComp ?? 'Comp');
+	if (config.bass) effects.push(currentDict?.bass ?? 'Bass');
+	if (config.mono) effects.push(currentDict?.mono ?? 'Mono');
+	if (config.pan !== undefined && config.pan !== 0) {
+		const panLabel = currentDict?.presetEffectPan ?? 'Pan';
+		const panSide = config.pan > 0
+			? (currentDict?.presetEffectPanRight ?? 'R')
+			: (currentDict?.presetEffectPanLeft ?? 'L');
+		effects.push(`${panLabel}:${panSide}`);
+	}
 
 	if (effects.length > 0) {
 		if (fragment.childNodes.length > 0) {
@@ -273,7 +286,7 @@ function createSummaryNodes(config: Partial<AudioConfig>): DocumentFragment {
 	}
 
 	if (fragment.childNodes.length === 0) {
-		fragment.appendChild(document.createTextNode('Default'));
+		fragment.appendChild(document.createTextNode(currentDict?.presetEffectDefault ?? 'Default'));
 	}
 
 	return fragment;
@@ -403,7 +416,18 @@ export async function getDefaultPreset(): Promise<Partial<AudioConfig> | null> {
 }
 
 // eff: saves current config as a global preset
-export async function saveGlobalPreset(name: string, config: Partial<AudioConfig>): Promise<void> {
+// Zero-interaction save: the preset name is auto-generated from the localized
+// base label plus a compact timestamp, with a numeric suffix on collision so
+// repeated saves within the same minute do not overwrite each other. The
+// caller no longer prompts the user — the previous prompt pre-filled the
+// current domain, which read as "name this after the domain" and was the
+// root complaint behind the request that global presets stop being named
+// after the domain.
+export async function saveGlobalPreset(config: Partial<AudioConfig>): Promise<string> {
+	const { globalPresets } = await loadAllPresets();
+	const baseName = currentDict?.presetDefaultName || 'Preset';
+	const stamp = formatPresetStamp(new Date());
+	const name = resolveUniquePresetName(baseName, stamp, globalPresets);
 	await patchSettings({
 		scope: 'audio-preset',
 		name,
@@ -416,6 +440,25 @@ export async function saveGlobalPreset(name: string, config: Partial<AudioConfig
 			},
 		},
 	});
+	return name;
+}
+
+function formatPresetStamp(date: Date): string {
+	const pad = (n: number) => String(n).padStart(2, '0');
+	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} `
+		+ `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function resolveUniquePresetName(
+	baseName: string,
+	stamp: string,
+	existing: Record<string, PresetEntry>,
+): string {
+	const candidate = `${baseName} ${stamp}`;
+	if (!Object.hasOwn(existing, candidate)) return candidate;
+	let seq = 2;
+	while (Object.hasOwn(existing, `${candidate} (${seq})`)) seq += 1;
+	return `${candidate} (${seq})`;
 }
 
 // goal: shows a transient toast notification

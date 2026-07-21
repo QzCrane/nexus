@@ -146,7 +146,9 @@ function registerV2SettingsListener(): void {
 			}
 		};
 
-		operation().then(sendResponse);
+		operation()
+			.then(sendResponse)
+			.catch((error) => sendResponse(rpcFailure('settings_unavailable', error instanceof Error ? error.message : String(error))));
 		return true;
 	});
 }

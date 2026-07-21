@@ -589,7 +589,15 @@ export class SettingsRepository {
 				Object.entries(snapshot.audioSites),
 				([domain]) => domain,
 			);
-			const patch = match?.[1];
+			// fallback: when no site-specific config matches, apply the user's
+			// chosen default global preset so new sites inherit that baseline
+			// instead of the silent DEFAULT_AUDIO_CONFIG. Site entries still win
+			// because they are the explicit per-domain authority.
+			let patch = match?.[1];
+			if (!patch && snapshot.defaultPresetId) {
+				const presetEntry = snapshot.audioPresets[snapshot.defaultPresetId];
+				if (presetEntry?.config) patch = presetEntry.config;
+			}
 			return {
 				...DEFAULT_AUDIO_CONFIG,
 				...patch,

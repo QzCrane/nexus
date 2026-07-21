@@ -22,8 +22,12 @@ export async function getMyIpInfo(): Promise<IpInfo | null> {
 
 // Lookup specific IP
 export async function lookupIp(ip: string): Promise<IpInfo | null> {
+	// rule: validate input before constructing URL — without this, a malformed `ip`
+	// (e.g. `../some/path`) could be path-injected into the ipinfo.io URL.
+	if (!isValidIp(ip)) return null;
+	const safeIp = encodeURIComponent(ip);
 	try {
-		const response = await fetch(`https://ipinfo.io/${ip}/json`);
+		const response = await fetch(`https://ipinfo.io/${safeIp}/json`);
 		if (!response.ok) throw new Error('API error');
 		return await response.json();
 	} catch {
@@ -33,12 +37,21 @@ export async function lookupIp(ip: string): Promise<IpInfo | null> {
 
 // Validate IP address
 export function isValidIp(ip: string): boolean {
+	// IPv4
 	const ipv4 = /^(\d{1,3}\.){3}\d{1,3}$/;
-	const ipv6 = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/;
 	if (ipv4.test(ip)) {
-		return ip.split('.').every((n) => parseInt(n) <= 255);
+		return ip.split('.').every((octet) => Number(octet) >= 0 && Number(octet) <= 255);
 	}
-	return ipv6.test(ip);
+	// rule: IPv6 — use URL parsing instead of a regex. The previous regex
+	// `^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$` only matched the fully-expanded
+	// form and rejected all valid abbreviated forms (::1, fe80::1, 2001:db8::1, etc.).
+	// Wrapping in brackets forces URL to parse the host as an IPv6 literal per RFC 3986.
+	try {
+		new URL(`http://[${ip}]/`);
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 // Format location

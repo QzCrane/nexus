@@ -1,6 +1,7 @@
 // goal: Headers Viewer core logic - fetch and analyze headers
 
 import type { HeaderInfo, HeaderCategory } from './types';
+import { isPrivateHost } from '../../kernel/utils/ssrf-guard';
 
 // Security headers
 const SECURITY_HEADERS = ['content-security-policy', 'strict-transport-security', 'x-frame-options', 'x-content-type-options', 'x-xss-protection', 'referrer-policy', 'permissions-policy'];
@@ -18,6 +19,21 @@ function categorizeHeader(name: string): HeaderCategory {
 
 // Fetch headers for URL
 export async function fetchHeaders(url: string): Promise<HeaderInfo[]> {
+	// rule: SSRF guard — reject non-http(s) schemes and private/loopback hosts
+	// before issuing any fetch. Without this, the tool could be pointed at
+	// http://localhost/admin or file:///etc/passwd and exfiltrate response headers.
+	try {
+		const parsedUrl = new URL(url);
+		if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+			return [];
+		}
+		if (isPrivateHost(parsedUrl.hostname)) {
+			return [];
+		}
+	} catch {
+		return [];
+	}
+
 	try {
 		const response = await fetch(url, { method: 'HEAD', mode: 'cors' });
 		const headers: HeaderInfo[] = [];

@@ -27,7 +27,14 @@ export async function compress(input: string): Promise<string> {
 		offset += chunk.length;
 	}
 
-	return btoa(String.fromCharCode(...compressed));
+	// rule: chunk the conversion — V8's spread call argument limit is ~65K, so
+	// `String.fromCharCode(...compressed)` throws RangeError on large inputs.
+	let binary = '';
+	const CHUNK = 0x8000;
+	for (let i = 0; i < compressed.length; i += CHUNK) {
+		binary += String.fromCharCode(...compressed.subarray(i, i + CHUNK));
+	}
+	return btoa(binary);
 }
 
 // Decompress Base64 to string

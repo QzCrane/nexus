@@ -53,11 +53,20 @@ export async function deleteSession(id: string): Promise<void> {
 }
 
 // Restore session (open all tabs)
+// rule: filter tabs to safe URL schemes — without this, a restored session could
+// open data: URLs (which can be used to bypass CSP/SB) or other dangerous schemes
+// like javascript: that were stored from a compromised session.
+const SAFE_SCHEMES = ['http:', 'https:', 'ftp:'];
 export async function restoreSession(session: Session, newWindow = false): Promise<void> {
+	const safeTabs = session.tabs.filter(t => {
+		try { return SAFE_SCHEMES.includes(new URL(t.url).protocol); }
+		catch { return false; }
+	});
+
 	if (newWindow) {
-		await chrome.windows.create({ url: session.tabs.map(t => t.url) });
+		await chrome.windows.create({ url: safeTabs.map(t => t.url) });
 	} else {
-		for (const tab of session.tabs) {
+		for (const tab of safeTabs) {
 			await chrome.tabs.create({ url: tab.url, active: false, pinned: tab.pinned });
 		}
 	}

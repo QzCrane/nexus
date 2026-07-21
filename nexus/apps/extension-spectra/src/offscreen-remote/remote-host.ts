@@ -132,7 +132,8 @@ export function createRemoteHostController(
 		session.expiryTimer = setTimer(() => {
 			const current = sessions.get(session.tabId);
 			if (current !== session || current.authenticated) return;
-			void closeSession(session.tabId, session.pairing.sessionId, reason);
+			void closeSession(session.tabId, session.pairing.sessionId, reason)
+				.catch((error) => console.warn(LOG, 'Expiry close failed', error));
 		}, delay);
 	}
 

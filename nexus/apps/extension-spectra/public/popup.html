@@ -687,6 +687,7 @@
                   class="registry-filter-input"
                   placeholder="🔍 Filter..."
                   data-i18n-placeholder="filterPlaceholder"
+                  data-i18n-aria="registryFilterAria"
                   aria-label="Filter domains"
                 />
               </div>
@@ -701,13 +702,14 @@
                   id="registry-new-domain"
                   class="registry-add-input"
                   placeholder="example.com"
+                  data-i18n-aria="registryNewDomainAria"
                   aria-label="New domain"
                 />
-                <select id="registry-new-route" class="registry-route-select" aria-label="Processing route">
+                <select id="registry-new-route" class="registry-route-select" data-i18n-aria="registryRouteAria" aria-label="Processing route">
                   <option value="capture" data-i18n="tabRestricted">Capture when needed</option>
                   <option value="direct" data-i18n="tabSafe">Direct</option>
                 </select>
-                <button type="button" id="btn-add-domain" class="btn-small" title="Add domain" aria-label="Add domain">+</button>
+                <button type="button" id="btn-add-domain" class="btn-small" data-i18n-aria="registryAddDomainTitle" title="Add domain" aria-label="Add domain">+</button>
               </div>
 
               <!-- Hint Text -->
@@ -730,6 +732,7 @@
                   id="preset-search"
                   class="preset-search-input"
                   placeholder="Search presets..."
+                  data-i18n-aria="presetSearchAria"
                   aria-label="Search presets"
                 />
               </div>

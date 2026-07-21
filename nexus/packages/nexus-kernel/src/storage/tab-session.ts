@@ -34,14 +34,6 @@ function clearWriteTimer(tabId: number): void {
 
 function scheduleWrite(tabId: number): void {
 	clearWriteTimer(tabId);
-	const attempts = (writeRetries.get(tabId) ?? 0) + 1;
-	if (attempts > MAX_WRITE_RETRIES) {
-		writeRetries.delete(tabId);
-		pendingWrites.delete(tabId);
-		console.warn(`[tab-session] giving up on tab ${tabId} after ${MAX_WRITE_RETRIES} failed writes`);
-		return;
-	}
-	writeRetries.set(tabId, attempts);
 	writeTimers.set(tabId, setTimeout(() => {
 		writeTimers.delete(tabId);
 		void flushTabSessionConfig(tabId).catch(() => undefined);
@@ -63,6 +55,14 @@ async function flushTabSessionConfigInternal(tabId: number): Promise<void> {
 		if (pendingWrites.get(tabId) === pending) pendingWrites.delete(tabId);
 		writeRetries.delete(tabId);
 	} catch (error) {
+		const retries = (writeRetries.get(tabId) ?? 0) + 1;
+		if (retries > MAX_WRITE_RETRIES) {
+			writeRetries.delete(tabId);
+			pendingWrites.delete(tabId);
+			console.warn(`[tab-session] giving up on tab ${tabId} after ${MAX_WRITE_RETRIES} failed writes`);
+			throw error;
+		}
+		writeRetries.set(tabId, retries);
 		scheduleWrite(tabId);
 		throw error;
 	}

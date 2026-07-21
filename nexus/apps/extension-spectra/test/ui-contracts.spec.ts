@@ -241,7 +241,13 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(popup).toContain('aria-pressed="false"');
 		const registry = readFileSync(resolve(import.meta.dir, '../src/popup/views/registry-ui.ts'), 'utf8');
 		expect(registry).toContain('changes.mediaRouteRegistry');
-		expect(registry).toContain("entry.fingerprint.startsWith('site:')");
+		// The UI relies on the storage-layer normalization contract: every entry
+		// arrives with a site:* fingerprint (normalizeRegistryEntries rewrites
+		// legacy media:v1:* records on read), so the UI labels source via the
+		// DomainEntry.source field rather than re-deriving it from the fingerprint
+		// prefix. Verifying the storage-side normalization is the responsibility of
+		// registry-v2.spec.ts.
+		expect(registry).toContain('entry.source === \'auto\'');
 
 		for (const path of [
 			'../src/popup/card/media-events.ts',

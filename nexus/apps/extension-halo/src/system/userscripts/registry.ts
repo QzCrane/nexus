@@ -84,7 +84,8 @@ function wrapForMainWorld(code: string, name: string, type: ScriptType): string 
 	return [
 		'(function() {',
 		'    try {',
-		`        ${code}`,
+		// biome-ignore lint/style/useTemplate: concatenation required — user code may contain backticks/`${}` — see rule at top of function
+		'        ' + code,
 		`        console.log("[HALO Script] ${safeName} executed");`,
 		`    } catch(e) { console.error("[HALO Script] ${safeName} failed:", e); }`,
 		'})();',

@@ -84,7 +84,14 @@ export async function encryptAES(plaintext: string, key: CryptoKey, mode: AESMod
 	const combined = new Uint8Array(iv.length + ciphertext.byteLength);
 	combined.set(iv);
 	combined.set(new Uint8Array(ciphertext), iv.length);
-	return btoa(String.fromCharCode(...combined));
+	// rule: chunk the conversion — V8's spread call argument limit is ~65K, so
+	// `String.fromCharCode(...combined)` throws RangeError on large ciphertext.
+	let binary = '';
+	const CHUNK = 0x8000;
+	for (let i = 0; i < combined.length; i += CHUNK) {
+		binary += String.fromCharCode(...combined.subarray(i, i + CHUNK));
+	}
+	return btoa(binary);
 }
 
 // AES decrypt

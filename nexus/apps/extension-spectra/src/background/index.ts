@@ -1,5 +1,4 @@
 // goal: service worker entry point for SPECTRA
-console.log('[SPECTRA] [DEBUG] background.js execution started');
 // note: coordinates message routing between popup, content script, offscreen, and remote services
 
 import { router } from './state';

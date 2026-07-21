@@ -36,6 +36,24 @@ const DEFAULT_CONFIG: Config = {
 let config: Config = { ...DEFAULT_CONFIG };
 // Deprecated timelineManager removed
 
+// rule: keepAlive interval lifecycle — must be cleared on config change to avoid
+// leaked intervals clicking buttons on a disabled tool. Previously setInterval
+// was called once in main() and never cleared, so toggling keepAlive off (or
+// disabling the tool) left the interval running for the page's lifetime.
+let keepAliveInterval: ReturnType<typeof setInterval> | null = null;
+function updateKeepAlive() {
+	if (keepAliveInterval) {
+		clearInterval(keepAliveInterval);
+		keepAliveInterval = null;
+	}
+	if (config.enabled && config.keepAlive) {
+		keepAliveInterval = setInterval(() => {
+			const b = document.querySelector('.btn-continue, [aria-label*="Continue"]') as HTMLElement;
+			if (b) b.click();
+		}, 30000);
+	}
+}
+
 type SiteType = 'chatgpt' | 'deepseek' | 'gemini' | 'claude' | null;
 let currentSite: SiteType = null;
 
@@ -94,7 +112,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
 			}
 		}
 
-		if (needApply) Actions.apply();
+		if (needApply) {
+			Actions.apply();
+			updateKeepAlive();
+		}
 	}
 });
 
@@ -273,37 +294,23 @@ async function main() {
 	};
 
 	if (currentSite && siteFiles[currentSite]) {
-		// New Event-based Mechanism
-		window.addEventListener('halo-timeline-ready', () => {
+		// rule: extract listener to a named function so it can be removed via
+		// removeEventListener if needed (previously an anonymous arrow was
+		// impossible to remove — L-3).
+		const onTimelineReady = () => {
 			console.log(LOG_TAG, 'Timeline Ready Event received. Applying config...');
 			Actions.apply();
-		});
+		};
+		window.addEventListener('halo-timeline-ready', onTimelineReady);
 
-		// Robust Shim for Manager (Backward Compatibility & fallback)
-		// We still use this because 'halo-timeline-ready' might have fired before we attached listener
-		// @ts-expect-error
-		let _haloTimelineManager = window.haloTimelineManager || null;
-		if (_haloTimelineManager) {
-			setTimeout(() => Actions.apply(), 50);
-		}
-
-		try {
-			Object.defineProperty(window, 'haloTimelineManager', {
-				get() { return _haloTimelineManager; },
-				set(val) {
-					_haloTimelineManager = val;
-					if (val) {
-						// Fallback: if event missed or not sent
-						console.log(LOG_TAG, 'Timeline Manager initialized (setter). Apply config soon...');
-						setTimeout(() => Actions.apply(), 100);
-					}
-				},
-				configurable: true
-			});
-		} catch (_e) {
-			// Ignore definition errors, likely already defined
-			Actions.apply();
-		}
+		// rule: removed Object.defineProperty(window, 'haloTimelineManager', ...) shim (M-3).
+		// Hijacking the global getter/setter polluted window state and made the
+		// property's behavior non-transparent (any other code reading the global
+		// would hit our getter). The 'halo-timeline-ready' event is sufficient
+		// because we attach the listener BEFORE importing the timeline script, so
+		// the event cannot be missed. Legacy timeline scripts that only set
+		// window.haloTimelineManager without dispatching the event are no longer
+		// supported (intentional — they should dispatch the event when ready).
 
 		try {
 			const url = chrome.runtime.getURL(`tools/llm-enhancer/timeline/${siteFiles[currentSite]}`);
@@ -315,13 +322,9 @@ async function main() {
 		}
 	}
 
-	// Keep Alive
-	setInterval(() => {
-		if (config.enabled && config.keepAlive) {
-			const b = document.querySelector('.btn-continue, [aria-label*="Continue"]') as HTMLElement;
-			if (b) b.click();
-		}
-	}, 30000);
+	// rule: start keep-alive interval via updateKeepAlive() so it can be cleared
+	// and reset on config change (see updateKeepAlive declaration above — M-2).
+	updateKeepAlive();
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', main);

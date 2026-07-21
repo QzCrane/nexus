@@ -9,10 +9,10 @@
 	"files": {
 		"includes": [
 			"**",
-			"!!**/dist",
-			"!!**/node_modules",
-			"!!**/.turbo",
-			"!!apps/extension-spectra/assets-backup"
+			"!**/dist",
+			"!**/node_modules",
+			"!**/.turbo",
+			"!apps/extension-spectra/assets-backup"
 		]
 	},
 	"formatter": {

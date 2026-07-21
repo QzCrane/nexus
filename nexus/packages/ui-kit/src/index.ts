@@ -8,6 +8,7 @@ export {
 	applyTheme,
 	getEffectiveTheme,
 	getNextThemeMode,
+	removeSystemThemeListener,
 	THEME_ICONS
 } from './theme.js';
 

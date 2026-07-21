@@ -356,7 +356,8 @@ async function closeTabSession(tabId: number): Promise<void> {
 				return;
 			} catch (error) {
 				lastError = error;
-				await Promise.resolve();
+				const backoff = Math.min(1000 * 2 ** attempt, 4000);
+				await new Promise((r) => setTimeout(r, backoff));
 			}
 		}
 	} finally {
@@ -490,7 +491,12 @@ export function initRemoteService(): void {
 async function assertControllableTab(tabId: number): Promise<void> {
 	const tab = await chrome.tabs.get(tabId);
 	if (!tab.url) throw new Error('TAB_UNAVAILABLE');
-	const protocol = new URL(tab.url).protocol;
+	let protocol: string;
+	try {
+		protocol = new URL(tab.url).protocol;
+	} catch {
+		throw new Error('TAB_UNAVAILABLE');
+	}
 	if (protocol !== 'http:' && protocol !== 'https:' && protocol !== 'file:') throw new Error('TAB_NOT_CONTROLLABLE');
 }
 

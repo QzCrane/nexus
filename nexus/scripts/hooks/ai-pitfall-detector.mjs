@@ -356,7 +356,9 @@ function checkMissingJsExtension(filePath, _content, lines) {
 			// Allow: .js, .json, .css, .svg, .tsx (anywhere), .ts (only in test files)
 			if (/\.(js|json|css|svg|tsx)$/.test(importPath)) continue;
 			if (isTest && /\.ts$/.test(importPath)) continue;
-			if (/\.[a-z0-9]+$/i.test(importPath)) continue; // some other extension; skip
+			// Some other extension; skip — but NOT .ts, which must be flagged
+			// in non-test files so the rule above stays effective.
+			if (/\.[a-z0-9]+$/i.test(importPath) && !/\.ts$/i.test(importPath)) continue;
 			const col = m.index + 1;
 			issues.push({
 				rule: 'missing-js-extension',

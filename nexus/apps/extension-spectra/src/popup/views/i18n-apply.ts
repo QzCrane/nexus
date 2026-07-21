@@ -40,6 +40,19 @@ export function applyLang(lang: string): I18NDict {
 		}
 	});
 
+	// eff: apply localized aria-label / title for elements that carry an
+	// explicit data-i18n-aria attribute. Static markup previously hard-coded
+	// English aria-labels (registry inputs, preset search, etc.) which broke
+	// screen-reader output under non-English locales.
+	$$<HTMLElement>('[data-i18n-aria]').forEach((el) => {
+		const key = el.dataset.i18nAria as keyof I18NDict;
+		const value = dict[key];
+		if (typeof value === 'string' && value.trim().length > 0) {
+			el.setAttribute('aria-label', value);
+			el.title = value;
+		}
+	});
+
 	return dict;
 }
 

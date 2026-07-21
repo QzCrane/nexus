@@ -1,8 +1,15 @@
 // HALO SaaT: bilibili-plus - B站增强脚本
 // Features: Clean Mode, Playback Speed, Esc Fix, Highest Quality
 
-(function () {
-	'use strict';
+(() => {
+	
+
+	// rule: init guard — content scripts can be injected multiple times (e.g. after
+	// extension update/reload or programmatic re-injection), and each injection
+	// re-registered keydown listeners and re-observed mutations, multiplying input
+	// handling per key press and leaking observers.
+	if (window.__haloBiliPlusInit) return;
+	window.__haloBiliPlusInit = true;
 
 	const LOG_TAG = '[HALO:Bilibili+]';
 
@@ -27,7 +34,7 @@
 
 		/* === Clean Home Mode (Optional: Simplify Layout) === */
 		/* Can be toggled via class if needed, for now applied always */
-		.feed-card:has(.bili-video-card__info--ad) { dislay: none !important; }
+		.feed-card:has(.bili-video-card__info--ad) { display: none !important; }
 	`;
 
 	function injectStyles(css) {
@@ -116,11 +123,17 @@
 					sessionStorage.setItem('halo_bili_quality_set', '1');
 					console.log(LOG_TAG, 'Auto-selected highest quality');
 					showToast('Halo: Highest Quality Selected');
+					// rule: stop observing once quality is set — without disconnect the
+					// observer keeps firing on every DOM mutation for the page's lifetime.
+					qualityObserver.disconnect();
 				}
 			}
 		});
 
 		qualityObserver.observe(document.body, { childList: true, subtree: true });
+		// rule: safety net — force disconnect after 30s on pages where the quality
+		// menu never appears (e.g. embedded players, error pages).
+		setTimeout(() => qualityObserver.disconnect(), 30000);
 	}
 
 	// ====== Feature: Auto Expand Description ======
@@ -138,6 +151,15 @@
 		injectStyles(cleanStyles);
 		initSpeedControl();
 		initEscFix();
+
+		// rule: clear pending toast timer on page unload — without this the
+		// setTimeout callback fires after the page is gone, logging a warning.
+		const clearToastTimer = () => {
+			const toast = document.getElementById('halo-toast');
+			if (toast?.timer) clearTimeout(toast.timer);
+		};
+		window.addEventListener('pagehide', clearToastTimer);
+		window.addEventListener('unload', clearToastTimer);
 
 		// DOM Ready
 		if (document.readyState === 'loading') {

@@ -98,6 +98,15 @@ export function useToolState<T>(
 		return () => chrome.storage.onChanged.removeListener(handler);
 	}, [storageKey, area]);
 
+	// rule: clear pending debounced save on unmount — without this, the setTimeout
+	// from saveState fires after the component is gone, attempting a storage write
+	// for a component that no longer exists (and racing with cleanup).
+	useEffect(() => {
+		return () => {
+			if (timerRef.current) clearTimeout(timerRef.current);
+		};
+	}, []);
+
 	return [state, updateState, isReady] as const;
 }
 

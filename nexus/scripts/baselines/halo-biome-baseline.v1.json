@@ -8,7 +8,7 @@
 		"updateCommand": "bun scripts/check-workspace-lint.mjs --update-halo-baseline --acknowledge-halo-scope-exception"
 	},
 	"biomeVersion": "2.5.3",
-	"biomeConfigSha256": "54bdd574d2a15452db859d0eab217322e87ea3dce19c3772908d819cc5c84d37",
+	"biomeConfigSha256": "d4eafcebb61cae2ba72ddb5eeb784365d38281c117070199e874f373e42cd49e",
 	"scanTargets": [
 		"apps/extension-halo/src",
 		"apps/extension-halo/public",
@@ -16,10 +16,10 @@
 	],
 	"summary": {
 		"checkedFiles": 923,
-		"diagnostics": 851,
-		"errors": 616,
-		"warnings": 153,
-		"infos": 82
+		"diagnostics": 836,
+		"errors": 609,
+		"warnings": 149,
+		"infos": 78
 	},
 	"categories": [
 		{
@@ -63,10 +63,6 @@
 			"count": 1
 		},
 		{
-			"category": "lint/complexity/useArrowFunction",
-			"count": 1
-		},
-		{
 			"category": "lint/complexity/useLiteralKeys",
 			"count": 15
 		},
@@ -84,7 +80,7 @@
 		},
 		{
 			"category": "lint/correctness/noUnusedImports",
-			"count": 74
+			"count": 72
 		},
 		{
 			"category": "lint/correctness/noUnusedPrivateClassMembers",
@@ -96,11 +92,11 @@
 		},
 		{
 			"category": "lint/correctness/useExhaustiveDependencies",
-			"count": 122
+			"count": 115
 		},
 		{
 			"category": "lint/correctness/useParseIntRadix",
-			"count": 27
+			"count": 23
 		},
 		{
 			"category": "lint/security/noDangerouslySetInnerHtml",
@@ -144,10 +140,6 @@
 		},
 		{
 			"category": "lint/suspicious/noImplicitAnyLet",
-			"count": 1
-		},
-		{
-			"category": "lint/suspicious/noRedundantUseStrict",
 			"count": 1
 		},
 		{
@@ -1255,19 +1247,6 @@
 			]
 		},
 		{
-			"fingerprint": "03cbabd22d992f02d0c9277b79cf938d4b153ae9dc1f47a3c996a4640257af52",
-			"severity": "error",
-			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
-			"category": "lint/a11y/useButtonType",
-			"message": "Provide an explicit type prop for the button element.",
-			"range": [
-				90,
-				5,
-				90,
-				55
-			]
-		},
-		{
 			"fingerprint": "03e0dd7594ec0029a985afc455c4360e557370a8be1c6772289b584f9b3826b2",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/unit-converter/panel.tsx",
@@ -1395,19 +1374,6 @@
 				7,
 				72,
 				57
-			]
-		},
-		{
-			"fingerprint": "0547dc1bc9b8aa7f63d4ff1a212f56a20693f7adf616ac80dadfa305bcf6f8b8",
-			"severity": "info",
-			"path": "apps/extension-halo/src/tools/ip-lookup/core.ts",
-			"category": "lint/correctness/useParseIntRadix",
-			"message": "Missing radix parameter",
-			"range": [
-				39,
-				37,
-				39,
-				48
 			]
 		},
 		{
@@ -1632,19 +1598,6 @@
 			]
 		},
 		{
-			"fingerprint": "090b12767935449b05490ca45000edbf384e94df9fa176f5324b1faa00a80854",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/scripts/bilibili-plus/script.js",
-			"category": "lint/suspicious/noRedundantUseStrict",
-			"message": "Redundant use strict directive.",
-			"range": [
-				5,
-				2,
-				5,
-				15
-			]
-		},
-		{
 			"fingerprint": "091b8278fae5877847239ea902efa8541237dc482a8da09421f7eb4912b2907c",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/base64/panel.tsx",
@@ -1655,19 +1608,6 @@
 				7,
 				75,
 				63
-			]
-		},
-		{
-			"fingerprint": "092597f735d3db1272ada222d288925d66d2104d364519b7754378a1ccfad6f0",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
-			"category": "lint/correctness/noUnusedImports",
-			"message": "Several of these imports are unused.",
-			"range": [
-				3,
-				17,
-				3,
-				25
 			]
 		},
 		{
@@ -2425,19 +2365,6 @@
 			]
 		},
 		{
-			"fingerprint": "1a41bc6d614ceab5938da427529af80b460ea0334a44862b8d94a7be701dd26e",
-			"severity": "error",
-			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
-			"category": "lint/correctness/useExhaustiveDependencies",
-			"message": "This hook does not specify its dependency on state.",
-			"range": [
-				21,
-				2,
-				21,
-				11
-			]
-		},
-		{
 			"fingerprint": "1a44eb4d0d773394aba93ec3abe50971edb435d1a25797734b7a875e0882385e",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/qrcode/panel.tsx",
@@ -2815,19 +2742,6 @@
 			]
 		},
 		{
-			"fingerprint": "24bade0ae3b215f0806d2d08c6e4525f2bf62d3d77cad3d809bac8ea93a37d5f",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/scripts/bilibili-plus/script.js",
-			"category": "lint/complexity/useArrowFunction",
-			"message": "This function expression can be turned into an arrow function.",
-			"range": [
-				4,
-				2,
-				155,
-				2
-			]
-		},
-		{
 			"fingerprint": "25110f27b84034e892da9b7ecf01a246c7acdfd0b915fb7e9f275f57cf057942",
 			"severity": "error",
 			"path": "apps/extension-halo/src/system/resource-monitor/panel.tsx",
@@ -2854,19 +2768,6 @@
 			]
 		},
 		{
-			"fingerprint": "2544ce3339e6c1e44b709936879b32af9421ea64469b05bc6d97c758e01648d4",
-			"severity": "error",
-			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
-			"category": "lint/a11y/useButtonType",
-			"message": "Provide an explicit type prop for the button element.",
-			"range": [
-				94,
-				5,
-				94,
-				63
-			]
-		},
-		{
 			"fingerprint": "25876fe09eba3a187dcbf78e66bf56cb272cf1813dedd41fe30d20ef7d9bf7b1",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/http-status/panel.tsx",
@@ -2890,19 +2791,6 @@
 				33,
 				142,
 				159
-			]
-		},
-		{
-			"fingerprint": "25ff00b6be9ca229143f8d70a480fb9bd52e234011388931ee4f8045cea25208",
-			"severity": "info",
-			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
-			"category": "lint/correctness/useParseIntRadix",
-			"message": "Missing radix parameter",
-			"range": [
-				107,
-				82,
-				107,
-				106
 			]
 		},
 		{
@@ -3777,19 +3665,6 @@
 			]
 		},
 		{
-			"fingerprint": "3c402242f45803e1c337ab90744b3dc5d0c421082d7cb1d72b8efe8a2d973cd8",
-			"severity": "error",
-			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
-			"category": "lint/correctness/useExhaustiveDependencies",
-			"message": "This hook does not specify its dependency on setState.",
-			"range": [
-				43,
-				23,
-				43,
-				34
-			]
-		},
-		{
 			"fingerprint": "3c6310474c1e59d06b969a11a19bf8af99e820cfb811b10d5fe3bb16b212ab8c",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/timer/panel.tsx",
@@ -4411,19 +4286,6 @@
 				19,
 				83,
 				20
-			]
-		},
-		{
-			"fingerprint": "475f83ad5d7f90ea39c16ddeff4e1b823c1d988681be2d1cd6604da144873f49",
-			"severity": "error",
-			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
-			"category": "lint/correctness/useExhaustiveDependencies",
-			"message": "This hook does not specify its dependency on setState.",
-			"range": [
-				48,
-				22,
-				48,
-				33
 			]
 		},
 		{
@@ -5506,19 +5368,6 @@
 			]
 		},
 		{
-			"fingerprint": "63a13c96067f8913107ff68e42110362fe0262a34e30ca6a19e0d124bd71e29a",
-			"severity": "info",
-			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
-			"category": "lint/correctness/useParseIntRadix",
-			"message": "Missing radix parameter",
-			"range": [
-				102,
-				76,
-				102,
-				100
-			]
-		},
-		{
 			"fingerprint": "63d79571392d8de9e794244ad2fe533bd879144ffb7ca668445497e814435e7e",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/mock-data/panel.tsx",
@@ -5844,19 +5693,6 @@
 			]
 		},
 		{
-			"fingerprint": "6d791ca7e615704da970f5a50fe53b2b88f79b90d5a10fc029bf16633b6989eb",
-			"severity": "error",
-			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
-			"category": "lint/a11y/noSvgWithoutTitle",
-			"message": "Alternative text title element cannot be empty",
-			"range": [
-				73,
-				5,
-				73,
-				57
-			]
-		},
-		{
 			"fingerprint": "6da3270ad5d506da9de3e7859f09e3bceb6c0bf172ab8bae77793731fd8dcb50",
 			"severity": "warning",
 			"path": "apps/extension-halo/src/content/smooth-scroll-handlers.ts",
@@ -5906,19 +5742,6 @@
 				7,
 				115,
 				57
-			]
-		},
-		{
-			"fingerprint": "6ea7bc7d4b8d0a5eb357cd0a38579bde10a5dfb2f6789119d9dda65a32c4831f",
-			"severity": "error",
-			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
-			"category": "lint/a11y/useButtonType",
-			"message": "Provide an explicit type prop for the button element.",
-			"range": [
-				93,
-				5,
-				93,
-				62
 			]
 		},
 		{
@@ -7027,19 +6850,6 @@
 			]
 		},
 		{
-			"fingerprint": "8a6f52cfe203492996e8bf1e92ed5e2a1a576ae51d296dfa627bc31294a92be9",
-			"severity": "error",
-			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
-			"category": "lint/correctness/useExhaustiveDependencies",
-			"message": "This hook does not specify its dependency on setState.",
-			"range": [
-				21,
-				2,
-				21,
-				11
-			]
-		},
-		{
 			"fingerprint": "8a762b798c3330e831776a698ece7cdd3cfc61bcf719f0d2dee17608412187a2",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/crypto/rsa-panel.tsx",
@@ -7752,19 +7562,6 @@
 				10,
 				73,
 				81
-			]
-		},
-		{
-			"fingerprint": "9917f1c2580084500918adfe2f312e131e90f3449e1d1100a5a1914ad102f35a",
-			"severity": "info",
-			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
-			"category": "lint/correctness/useParseIntRadix",
-			"message": "Missing radix parameter",
-			"range": [
-				112,
-				81,
-				112,
-				105
 			]
 		},
 		{
@@ -8483,19 +8280,6 @@
 			]
 		},
 		{
-			"fingerprint": "a92cf42ff5afbb43e6004e437d51333245f7c8a47d3cab00817bd6f6c9775b2d",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/tools/hash/core.ts",
-			"category": "lint/correctness/noUnusedImports",
-			"message": "This import is unused.",
-			"range": [
-				4,
-				8,
-				4,
-				22
-			]
-		},
-		{
 			"fingerprint": "a964eba474ae8a335800331bd8d12289ab0d9782fb336f5af73aad02a5123607",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/tabs/panel.tsx",
@@ -9159,6 +8943,19 @@
 			]
 		},
 		{
+			"fingerprint": "b8f4cec832675514bbf4057b070223df840aaebe3a0a2923e882366a91486819",
+			"severity": "error",
+			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
+			"category": "lint/a11y/noSvgWithoutTitle",
+			"message": "Alternative text title element cannot be empty",
+			"range": [
+				94,
+				5,
+				94,
+				57
+			]
+		},
+		{
 			"fingerprint": "baa542010b4f51009a2a974365802dc9bfee6d3a0a7ed792da2974bc9659f9be",
 			"severity": "error",
 			"path": "apps/extension-halo/src/components/sidepanel/classic-layout-parts.tsx",
@@ -9234,6 +9031,19 @@
 				21,
 				19,
 				32
+			]
+		},
+		{
+			"fingerprint": "bbc47c6f445eeb2e6e56090aad559f0324ba6fc78dcfc3bf199f0c51405ff3a8",
+			"severity": "error",
+			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
+			"category": "lint/a11y/useButtonType",
+			"message": "Provide an explicit type prop for the button element.",
+			"range": [
+				115,
+				5,
+				115,
+				63
 			]
 		},
 		{
@@ -10511,6 +10321,19 @@
 			]
 		},
 		{
+			"fingerprint": "d9e8bde3d2e27c6d86d5b9487d274ae373391d92d932c8545f5d495be613ab86",
+			"severity": "error",
+			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
+			"category": "lint/a11y/useButtonType",
+			"message": "Provide an explicit type prop for the button element.",
+			"range": [
+				111,
+				5,
+				111,
+				55
+			]
+		},
+		{
 			"fingerprint": "da20d108e69f39a28d1033be91b5eab6263df29164ce0ffa7c2a0c159ba0e0b1",
 			"severity": "warning",
 			"path": "apps/extension-halo/src/tools/llm-enhancer/timeline/styles-deepseek.css",
@@ -11083,19 +10906,6 @@
 			]
 		},
 		{
-			"fingerprint": "e97e58b097485578ef4ee564f0be5abfc84e3dcd477e2f1a04dc570dbc747da4",
-			"severity": "error",
-			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
-			"category": "lint/correctness/useExhaustiveDependencies",
-			"message": "This hook does not specify its dependency on setState.",
-			"range": [
-				53,
-				21,
-				53,
-				32
-			]
-		},
-		{
 			"fingerprint": "e9b419d1fad3b566ba6fb876283f3d061ba2617bf60df9c0258fbe150102de1d",
 			"severity": "error",
 			"path": "apps/extension-halo/src/system/extension-manager/panel.tsx",
@@ -11538,6 +11348,19 @@
 			]
 		},
 		{
+			"fingerprint": "f336d87bcdfd368057b1cecc62078896af11e404ac01fa63b0d921eb7e9e061e",
+			"severity": "error",
+			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
+			"category": "lint/a11y/useButtonType",
+			"message": "Provide an explicit type prop for the button element.",
+			"range": [
+				114,
+				5,
+				114,
+				62
+			]
+		},
+		{
 			"fingerprint": "f38bccedef04477fb56cc6847dc369a91b576350cd5f5738c9e5fbc68f35e8df",
 			"severity": "info",
 			"path": "apps/extension-halo/src/tools/xml-formatter/core.ts",
@@ -11678,19 +11501,6 @@
 				50,
 				68,
 				52
-			]
-		},
-		{
-			"fingerprint": "f66c83479c3d8d02898427a599db6046aedb57b23b316d6e491e7c67dd6ff428",
-			"severity": "error",
-			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
-			"category": "lint/correctness/useExhaustiveDependencies",
-			"message": "This hook specifies a dependency more specific than its captures: state.phase",
-			"range": [
-				21,
-				2,
-				21,
-				11
 			]
 		},
 		{
@@ -11976,19 +11786,6 @@
 				45,
 				2,
 				45,
-				11
-			]
-		},
-		{
-			"fingerprint": "fb9d8cc61bcd24002edf4d56a524dbb1c9968aa35aa4d65d7cc44b73985c5608",
-			"severity": "error",
-			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
-			"category": "lint/correctness/useExhaustiveDependencies",
-			"message": "This hook does not specify its dependency on state.sessionsCompleted.",
-			"range": [
-				21,
-				2,
-				21,
 				11
 			]
 		},

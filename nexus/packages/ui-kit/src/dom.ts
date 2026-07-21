@@ -25,6 +25,10 @@ export function getDomain(url: string): string {
 
 // Browser internal URLs where extensions are disabled
 // eff: sorted by likelihood of occurrence for slight performance edge
+// Restricted URL prefixes. Includes moz-extension: and file: for broader
+// browser support (HALO may run on Firefox via polyfill). SPECTRA popup uses
+// a narrower list (chrome:/edge:/about:/chrome-extension:) because it only
+// targets Chromium.
 const RESTRICTED = ['chrome:', 'edge:', 'about:', 'moz-extension:', 'file:', 'chrome-extension:'];
 
 // rule: identifies browser-internal or restricted URLs where extensions cannot operate

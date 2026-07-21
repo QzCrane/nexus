@@ -43,9 +43,11 @@ function routeLabel(route: MediaRoute): string {
 	return currentDict?.tabSafe ?? 'Direct';
 }
 
-function fingerprintLabel(entry: DomainEntry): string {
-	return entry.fingerprint.startsWith('site:') ? 'SITE' : 'LEGACY';
-}
+// post: every registry entry is normalized to a site:* fingerprint before it
+// reaches the UI (normalizeRegistryEntries in registry-repository.ts rewrites
+// legacy media:v1:* records on read), so a per-item "SITE" badge carries no
+// information. The fingerprint string itself is kept as a tooltip on the
+// domain label for diagnostics.
 
 function renderList(ui: RegistryUIElements): void {
 	if (!ui.listContainer) return;
@@ -76,11 +78,8 @@ function renderList(ui: RegistryUIElements): void {
 		const domain = document.createElement('span');
 		domain.className = 'registry-item-domain';
 		domain.textContent = entry.domain;
-		const fingerprint = document.createElement('code');
-		fingerprint.className = 'registry-item-fingerprint';
-		fingerprint.textContent = fingerprintLabel(entry);
-		fingerprint.title = entry.fingerprint;
-		identity.append(domain, fingerprint);
+		domain.title = entry.fingerprint;
+		identity.append(domain);
 
 		const route = document.createElement('span');
 		route.className = `registry-item-route registry-item-route-${entry.route}`;
@@ -88,13 +87,15 @@ function renderList(ui: RegistryUIElements): void {
 
 		const source = document.createElement('span');
 		source.className = 'registry-item-source';
-		source.textContent = entry.source === 'auto' ? 'AUTO' : 'USER';
+		source.textContent = entry.source === 'auto'
+			? (currentDict?.registrySourceAuto ?? 'AUTO')
+			: (currentDict?.registrySourceUser ?? 'USER');
 
 		const deleteButton = document.createElement('button');
 		deleteButton.type = 'button';
 		deleteButton.className = 'registry-item-delete';
 		deleteButton.title = deleteLabel;
-		deleteButton.setAttribute('aria-label', `${deleteLabel}: ${entry.domain} ${fingerprintLabel(entry)}`);
+		deleteButton.setAttribute('aria-label', `${deleteLabel}: ${entry.domain}`);
 		deleteButton.textContent = '×';
 		deleteButton.addEventListener('click', () => deleteEntry(entry.fingerprint, ui));
 

@@ -33,7 +33,7 @@ import {
 } from '../src/content/logic/content-control-policy';
 import {
 	isSpectraEventEnvelope as isContentSpectraEventEnvelope,
-} from '../../../packages/contracts/src/spectra.content-runtime';
+} from '@nexus/contracts/content-runtime';
 
 function field<T>(actual: T): ControlFieldState<T> {
 	return {

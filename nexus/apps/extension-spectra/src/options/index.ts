@@ -10,8 +10,6 @@ import { enableSmoothScroll } from '../shared/smooth-scroll';
 
 // eff: initializes global page behaviors and sub-modules in sequence
 async function init(): Promise<void> {
-	console.log('[SPECTRA] Options page initializing...');
-
 	enableSmoothScroll();
 	await initTheme();
 
@@ -30,8 +28,6 @@ async function init(): Promise<void> {
 			chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
 		});
 	}
-
-	console.log('[SPECTRA] Options page ready');
 }
 
 document.addEventListener('DOMContentLoaded', init);

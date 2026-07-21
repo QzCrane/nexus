@@ -23,6 +23,10 @@
 			"types": "./dist/spectra.ui-settings-runtime.d.ts",
 			"import": "./dist/spectra.ui-settings-runtime.js"
 		},
+		"./content-runtime": {
+			"types": "./dist/spectra.content-runtime.d.ts",
+			"import": "./dist/spectra.content-runtime.js"
+		},
 		"./*": null
 	},
 	"scripts": {
