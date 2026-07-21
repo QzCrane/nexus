@@ -43,7 +43,15 @@ if (!getContentBootstrapState()) {
 		for (const field of request.fields) {
 			let actual: unknown;
 			switch (field) {
-				case 'volumeBase': actual = Math.round(element.volume * 10_000) / 100; break;
+				// volumeBase is SPECTRA's intended volume (default 100), not a
+				// measurement of element.volume. Sites like YouTube apply a
+				// non-linear volume curve (element.volume reads 0.6131 at their
+				// 100% slider), so reading element.volume here would report
+				// 61.31 instead of the user's expectation. The coordinator falls
+				// back to actualField('volumeBase', 100) when the bootstrap read
+				// does not populate this field; element.volume reads remain in
+				// NativeMediaExecutor's applyField and readRestorableMediaField.
+				case 'volumeBase': break;
 				case 'mediaMuted': actual = element.muted; break;
 				case 'speed': actual = element.playbackRate; break;
 				case 'preservePitch':
