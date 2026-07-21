@@ -2,8 +2,8 @@
  * 检查依赖方向和其他杂项
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { error, ok, warn, section } from './utils.js';
 
 export function checkDependencyDirection(ROOT) {
@@ -47,19 +47,20 @@ export function checkReadmeAI(ROOT) {
 
 	ok('README.md 存在');
 
-	const messagesFile = path.join(ROOT, 'packages/contracts/src/messages.contracts.ts');
-	if (fs.existsSync(messagesFile)) {
-		const messagesContent = fs.readFileSync(messagesFile, 'utf-8');
-		const readmeContent = fs.readFileSync(readme, 'utf-8');
-		const messageNames = messagesContent.match(/'[A-Z_]+'/g) || [];
-		const uniqueMessages = [...new Set(messageNames.map(m => m.replace(/'/g, '')))];
+	const messagesIndex = path.join(ROOT, 'packages/contracts/src/messages/index.ts');
+	if (!fs.existsSync(messagesIndex)) {
+		return;
+	}
+	const messagesContent = fs.readFileSync(messagesIndex, 'utf-8');
+	const readmeContent = fs.readFileSync(readme, 'utf-8');
+	const messageNames = messagesContent.match(/'[A-Z_]+'/g) || [];
+	const uniqueMessages = [...new Set(messageNames.map(m => m.replace(/'/g, '')))];
 
-		const missing = uniqueMessages.slice(0, 5).filter(msg => !readmeContent.includes(msg));
-		if (missing.length > 0) {
-			warn(`README.md 可能缺少: ${missing.join(', ')}`);
-		} else {
-			ok('消息速查表包含主要消息');
-		}
+	const missing = uniqueMessages.slice(0, 5).filter(msg => !readmeContent.includes(msg));
+	if (missing.length > 0) {
+		warn(`README.md 可能缺少: ${missing.join(', ')}`);
+	} else {
+		ok('消息速查表包含主要消息');
 	}
 }
 
@@ -67,7 +68,7 @@ export function checkHtmlResources(ROOT) {
 	section('检查 HTML 资源引用...');
 
 	const apps = ['extension-spectra', 'extension-halo'];
-	let allIssues = [];
+	const allIssues = [];
 
 	for (const app of apps) {
 		const publicDir = path.join(ROOT, 'apps', app, 'public');

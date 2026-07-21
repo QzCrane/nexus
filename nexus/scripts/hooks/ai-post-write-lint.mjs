@@ -7,7 +7,7 @@
 //
 // Rule owner: AGENTS.md EPR-029 (硬化质量门到 Git/CI/AI 钩子)
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
 	extractWriteTargets,
@@ -16,6 +16,7 @@ import {
 	runHook,
 	WRITE_TOOLS,
 } from './_hook-helpers.mjs';
+import { scanFileContent, formatIssue } from './ai-pitfall-detector.mjs';
 
 const JS_EXT = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
 
@@ -63,6 +64,26 @@ async function main(payload) {
 		} else {
 			const note = (r.stdout || '').trim();
 			if (note) warnings.push(`[biome format] reformatted: ${note}`);
+		}
+
+		// Static heuristic scan for common AI authoring pitfalls.
+		// Non-blocking: surfaces issues back to the AI so it can decide
+		// whether to fix. Errors would still be caught by lefthook
+		// pre-push (lint:ai-pitfalls).
+		for (const p of jsFiles) {
+			const abs = join(process.cwd(), p);
+			let content;
+			try {
+				content = readFileSync(abs, 'utf8');
+			} catch {
+				continue;
+			}
+			const issues = scanFileContent(abs, content);
+			if (issues.length === 0) continue;
+			const block = issues
+				.map((issue) => `  ${formatIssue(relPath(p), issue)}`)
+				.join('\n');
+			warnings.push(`[ai-pitfall-detector]\n${block}`);
 		}
 	}
 

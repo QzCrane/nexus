@@ -10,6 +10,7 @@
 		"lint": "turbo run lint --filter=@nexus/contracts --filter=@nexus/kernel --filter=@nexus/audio-engine --filter=@nexus/extension-spectra && bun run lint:workspace-fallbacks && bun run lint:spectra-release",
 		"lint:workspace-fallbacks": "bun scripts/check-workspace-lint.mjs",
 		"lint:spectra-release": "biome check scripts/check-spectra-remote-live.mjs scripts/check-toolchain.mjs scripts/check-workspace-lint.mjs scripts/baselines/halo-biome-baseline.v1.json scripts/release-spectra.mjs ../remote-site/app.js ../remote-site/index.html ../remote-site/styles.css --max-diagnostics=100",
+		"lint:ai-pitfalls": "bun scripts/hooks/ai-pitfall-detector.mjs",
 		"typecheck": "turbo run typecheck",
 		"typecheck:spectra": "turbo run typecheck --filter=@nexus/contracts --filter=@nexus/kernel --filter=@nexus/audio-engine --filter=@nexus/extension-spectra",
 		"build:spectra-deps": "turbo run build --filter=@nexus/contracts --filter=@nexus/kernel --filter=@nexus/audio-engine",
@@ -39,6 +40,7 @@
 	},
 	"overrides": {
 		"basic-ftp": "5.3.1",
+		"chrome-types": "^0.1.327",
 		"ip-address": "10.2.0",
 		"js-yaml": "4.3.0",
 		"ws": "8.21.1"

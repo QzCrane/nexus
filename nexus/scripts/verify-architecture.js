@@ -6,8 +6,8 @@
  * -v: verbose output (show all warnings)
  */
 
-import path from 'path';
-import { fileURLToPath } from 'url';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { counters, quiet } from './verify/utils.js';
 import { checkAiContextFiles } from './verify/check-ai-context.js';
 import { checkContractsPurity } from './verify/check-contracts.js';
@@ -17,6 +17,7 @@ import { checkDependencyDirection, checkReadmeAI, checkHtmlResources } from './v
 import { checkChineseComments } from './verify/check-chinese.js';
 import { checkPermissionUsage } from './verify/check-permissions.js';
 import { checkSpectraControlArchitecture } from './verify/check-spectra-control.js';
+import { checkAiHygiene } from './verify/check-ai-hygiene.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,6 +43,7 @@ function main() {
 	checkPermissionUsage(ROOT);
 	checkSpectraControlArchitecture(ROOT);
 	checkChineseComments(ROOT);
+	checkAiHygiene(ROOT);
 
 	if (counters.errors > 0) {
 		console.log(`${RED}❌ verify: ${counters.errors} errors, ${counters.warnings} warnings${RESET}`);

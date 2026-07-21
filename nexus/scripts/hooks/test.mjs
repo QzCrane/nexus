@@ -36,6 +36,7 @@ import {
 } from './_hook-helpers.mjs';
 import { frontmatterProblem } from './ai-pre-write-guard.mjs';
 import { splitCommands } from './codex-bash-guard.mjs';
+import { scanFileContent } from './ai-pitfall-detector.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hooksDir = here;
@@ -501,7 +502,126 @@ for (const c of cases) {
 }
 
 // =====================================================================
-// C. Config validator — verify .claude/.codex hook commands resolve
+// D. ai-pitfall-detector unit tests — scanFileContent pure function
+// =====================================================================
+
+console.log('\n=== D. ai-pitfall-detector unit tests ===');
+
+function hasRule(issues, rule) {
+	return issues.some((i) => i.rule === rule);
+}
+
+function ruleCount(issues, rule) {
+	return issues.filter((i) => i.rule === rule).length;
+}
+
+// Rule 1: storage-write-uncaught
+ok('pitfall/storage-write-uncaught: bare storage.set flagged',
+	hasRule(scanFileContent('a.ts', 'chrome.storage.local.set({x:1});\n'), 'storage-write-uncaught'));
+ok('pitfall/storage-write-uncaught: safeStorageSet flagged',
+	hasRule(scanFileContent('a.ts', 'await safeStorageSet({x:1});\n'), 'storage-write-uncaught'));
+ok('pitfall/storage-write-uncaught: try-block not flagged',
+	!hasRule(scanFileContent('a.ts', 'try {\n  chrome.storage.local.set({x:1});\n} catch (e) {}\n'), 'storage-write-uncaught'));
+ok('pitfall/storage-write-uncaught: .catch() not flagged',
+	!hasRule(scanFileContent('a.ts', 'await chrome.storage.local.set({x:1}).catch(() => undefined);\n'), 'storage-write-uncaught'));
+ok('pitfall/storage-write-uncaught: bypass comment skips',
+	!hasRule(scanFileContent('a.ts', 'chrome.storage.local.set({x:1}); // bypass-storage-check\n'), 'storage-write-uncaught'));
+
+// Rule 2: fetch-uncaught
+ok('pitfall/fetch-uncaught: bare await fetch flagged',
+	hasRule(scanFileContent('a.ts', 'await fetch(url);\n'), 'fetch-uncaught'));
+ok('pitfall/fetch-uncaught: fetch().then without catch flagged',
+	hasRule(scanFileContent('a.ts', 'fetch(url).then(r => r.json());\n'), 'fetch-uncaught'));
+ok('pitfall/fetch-uncaught: try-block not flagged',
+	!hasRule(scanFileContent('a.ts', 'try {\n  await fetch(url);\n} catch (e) {}\n'), 'fetch-uncaught'));
+ok('pitfall/fetch-uncaught: chained .catch not flagged',
+	!hasRule(scanFileContent('a.ts', 'await fetch(url).then(r => r.json()).catch(() => undefined);\n'), 'fetch-uncaught'));
+ok('pitfall/fetch-uncaught: biome-ignore line not flagged',
+	!hasRule(scanFileContent('a.ts', '// biome-ignore lint/suspicious/noExplicitAny: allow\nawait fetch(url);\n'), 'fetch-uncaught'));
+
+// Rule 3: listener-leak
+ok('pitfall/listener-leak: addEventListener without remove flagged',
+	hasRule(scanFileContent('a.ts', 'el.addEventListener("click", handler);\n'), 'listener-leak'));
+ok('pitfall/listener-leak: matching remove not flagged',
+	!hasRule(scanFileContent('a.ts', 'el.addEventListener("click", handler);\nel.removeEventListener("click", handler);\n'), 'listener-leak'));
+ok('pitfall/listener-leak: different event types flagged independently',
+	ruleCount(scanFileContent('a.ts', 'el.addEventListener("click", h1);\nel.addEventListener("keydown", h2);\nel.removeEventListener("click", h1);\n'), 'listener-leak') === 1);
+
+// Rule 4: ssrf-fetch
+ok('pitfall/ssrf-fetch: dynamic fetch flagged',
+	hasRule(scanFileContent('a.ts', 'await fetch(userUrl);\n'), 'ssrf-fetch'));
+ok('pitfall/ssrf-fetch: template literal http flagged',
+	hasRule(scanFileContent('a.ts', 'await fetch(`https://' + '$' + '{host}/api`);\n'), 'ssrf-fetch'));
+ok('pitfall/ssrf-fetch: relative path not flagged',
+	!hasRule(scanFileContent('a.ts', 'await fetch("./local");\n'), 'ssrf-fetch'));
+ok('pitfall/ssrf-fetch: isPrivateHost import disables rule',
+	!hasRule(scanFileContent('a.ts', 'import { isPrivateHost } from "./ssrf.js";\nawait fetch(userUrl);\n'), 'ssrf-fetch'));
+ok('pitfall/ssrf-fetch: preceding isPrivateHost check not flagged',
+	!hasRule(scanFileContent('a.ts', 'if (isPrivateHost(url.hostname)) return;\nawait fetch(url);\n'), 'ssrf-fetch'));
+
+// Rule 5: serialized-queue-broken-chain
+ok('pitfall/serialized-queue: opQueue.then without catch flagged',
+	hasRule(scanFileContent('a.ts', 'opQueue = opQueue.then(() => fn());\n'), 'serialized-queue-broken-chain'));
+ok('pitfall/serialized-queue: opQueue.then with .catch not flagged',
+	!hasRule(scanFileContent('a.ts', 'opQueue = opQueue.then(() => fn()).catch(() => undefined);\n'), 'serialized-queue-broken-chain'));
+ok('pitfall/serialized-queue: queue.then with .catch not flagged',
+	!hasRule(scanFileContent('a.ts', 'queue = queue.then(() => fn()).catch(() => undefined);\n'), 'serialized-queue-broken-chain'));
+
+// Rule 6: onmessage-async-no-return
+ok('pitfall/onmessage-async: listener without return true flagged',
+	hasRule(scanFileContent('a.ts', 'chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {\n  sendResponse(await work());\n});\n'), 'onmessage-async-no-return'));
+ok('pitfall/onmessage-async: listener with return true not flagged',
+	!hasRule(scanFileContent('a.ts', 'chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {\n  sendResponse(await work());\n  return true;\n});\n'), 'onmessage-async-no-return'));
+
+// Rule 7: deep-path-import
+ok('pitfall/deep-path-import: @nexus/contracts/src flagged',
+	hasRule(scanFileContent('a.ts', 'import { X } from "@nexus/contracts/src/foo";\n'), 'deep-path-import'));
+ok('pitfall/deep-path-import: @nexus/kernel/storage not flagged',
+	!hasRule(scanFileContent('a.ts', 'import { X } from "@nexus/kernel/storage";\n'), 'deep-path-import'));
+ok('pitfall/deep-path-import: @nexus/contracts root not flagged',
+	!hasRule(scanFileContent('a.ts', 'import { X } from "@nexus/contracts";\n'), 'deep-path-import'));
+
+// Rule 8: branded-type-reuse
+ok('pitfall/branded-type: TabId import flagged',
+	hasRule(scanFileContent('a.ts', 'import { TabId } from "./types";\n'), 'branded-type-reuse'));
+ok('pitfall/branded-type: VolumeLevel type reference flagged',
+	hasRule(scanFileContent('a.ts', 'function f(x: VolumeLevel): void {}\n'), 'branded-type-reuse'));
+ok('pitfall/branded-type: DomainName import flagged',
+	hasRule(scanFileContent('a.ts', 'import type { DomainName } from "./types";\n'), 'branded-type-reuse'));
+ok('pitfall/branded-type: string literal not flagged',
+	!hasRule(scanFileContent('a.ts', 'const x = "TabId";\n'), 'branded-type-reuse'));
+
+// Rule 9: missing-js-extension
+ok('pitfall/missing-js-extension: relative import without ext flagged',
+	hasRule(scanFileContent('a.ts', 'import { x } from "./foo";\n'), 'missing-js-extension'));
+ok('pitfall/missing-js-extension: .js not flagged',
+	!hasRule(scanFileContent('a.ts', 'import { x } from "./foo.js";\n'), 'missing-js-extension'));
+ok('pitfall/missing-js-extension: .json not flagged',
+	!hasRule(scanFileContent('a.ts', 'import data from "./data.json";\n'), 'missing-js-extension'));
+ok('pitfall/missing-js-extension: .css not flagged',
+	!hasRule(scanFileContent('a.ts', 'import "./style.css";\n'), 'missing-js-extension'));
+ok('pitfall/missing-js-extension: biome-ignore line not flagged',
+	!hasRule(scanFileContent('a.ts', '// biome-ignore lint/style/useImportType: allow\nimport { x } from "./foo";\n'), 'missing-js-extension'));
+ok('pitfall/missing-js-extension: package import not flagged',
+	!hasRule(scanFileContent('a.ts', 'import { x } from "@nexus/contracts";\n'), 'missing-js-extension'));
+
+// Scan integration: returns sorted issues
+{
+	const issues = scanFileContent('a.ts', 'chrome.storage.local.set({x:1});\nawait fetch(url);\n');
+	ok('pitfall/integration: returns multiple issues', issues.length >= 2);
+	ok('pitfall/integration: issues sorted by line', issues.every((i, idx) => idx === 0 || issues[idx - 1].line <= i.line));
+}
+
+// CLI mode: no args → no changed files (smoke)
+{
+	const r = runHook('ai-pitfall-detector.mjs', {});
+	// Hook returns its own exit logic; non-zero errors are acceptable
+	// here because git may be missing. Just assert it does not crash.
+	ok('pitfall/cli: empty payload exits 0 or 1', r.status === 0 || r.status === 1);
+}
+
+// =====================================================================
+// C. config validator — verify .claude/.codex hook commands resolve
 // =====================================================================
 
 console.log('\n=== C. config validator ===');

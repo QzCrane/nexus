@@ -18,5 +18,6 @@ This directory owns the complete EPR-001..029 definitions referenced by the comp
 | EPR-019..025 | [`03-runtime-and-quality.md`](03-runtime-and-quality.md) | restart/update recovery, structured errors, external boundaries, authenticated remote, privacy, performance, module direction |
 | EPR-026..029 | [`04-process-and-quality.md`](04-process-and-quality.md) | browser-semantic tests, reversible delivery, truthful public copy, Git/AI gates |
 | Regression map | [`05-problem-to-principle-map.md`](05-problem-to-principle-map.md) | historical failures mapped to durable acceptance criteria |
+| AI authoring hygiene | [`06-ai-authoring-hygiene.md`](06-ai-authoring-hygiene.md) | AI 编写代码时的卫生规则 — 防止历史已修复问题再次引入 |
 
 The repository documentation map is [`../README.md`](../README.md). SPECTRA and HALO architecture owners remain separate; this directory does not maintain a second capability matrix.
