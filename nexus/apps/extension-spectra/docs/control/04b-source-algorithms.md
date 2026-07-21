@@ -24,9 +24,9 @@ files move.
 
 | Current source/symbol | Current algorithm | Decision and target algorithm |
 | --- | --- | --- |
-| retired `src/content/audio/dom-volume.ts::applyToElement`; retired mode-local native writers | Wrote both `volume` and `muted`, then could also write a site API and processor. | Replaced with one selected native writer. `volumeBase` writes only site API or `media.volume`; `mediaMuted` writes only site API or `media.muted`. `AudioProcessorConfig` has neither mute nor zero-gain admission: its only level field is `boostGain: 1–8`. |
+| retired `src/content/audio/dom-volume.ts::applyToElement`; retired mode-local native writers | Wrote both `volume` and `muted`, then could also write a page API and processor. | Replaced with one selected native writer. `volumeBase` writes only `media.volume`; `mediaMuted` writes only `media.muted`. `AudioProcessorConfig` has neither mute nor zero-gain admission: its only level field is `boostGain: 1–8`. |
 | `src/popup/card/events.ts::handleVolume`; `hotkey-helpers.ts::sendVolumeAction/sendAudioAdjustment`; `remote-commands.ts::executeCommand` | Historically gave Popup, hotkeys and remote different native/Boost delta rules. | All surfaces now submit one typed `effective-volume 0–800` operation. Only the coordinator splits internal base/Boost writers; legacy gain/Boost actions are aliases. |
-| `src/injector/webaudio-hijack.ts` | Replaces `AudioContext`, redirects `destination`, creates booster plus an implicit limiter and supports only volume for future contexts. | Remove from production. It cannot prove existing-context coverage or ACK mute/EQ/other DSP. Known official page-player objects use a capability adapter; opaque output uses Capture. No implicit limiter remains. |
+| `src/injector/webaudio-hijack.ts` | Replaces `AudioContext`, redirects `destination`, creates booster plus an implicit limiter and supports only volume for future contexts. | Remove from production. It cannot prove existing-context coverage or ACK mute/EQ/other DSP. Opaque output uses Capture. No implicit limiter remains. |
 | retired `packages/features/audio-engine/src/webaudio/node-factory.ts::createAudioGraph` | Created gain, Bass, compressor, analyser, ten EQ nodes, panner and delay for every media element, including neutral features. | Replaced by `AudioGraphRouter`: one document mix graph; one page-lifetime source per safe media; only non-neutral nodes exist. Neutral state is a transparent route with no DSP nodes. |
 | `WebAudioController::attachNode` and retired `cors-checker.ts` | Previously set `crossOrigin` after source selection, irreversibly bound, then inferred CORS from analyser silence. | Current controller proves resource eligibility before `createMediaElementSource`. Same-origin or pre-load verified CORS may bind; unknown cross-origin goes directly to Capture. Silence is never a CORS test. |
 | retired `content-bootstrap.js::installAudioMain`; retired `injector/dom-volume.ts` | Always-on `AudioContext` plus a hidden root-level capture even when no Boost/EQ/Visualizer was active. | Activation is now capability-driven: only the requested non-neutral DSP fields build nodes. Default page has no audio runtime; Capture is gated by `requestedCoverage:'full'` plus Capture lease. |
@@ -38,27 +38,27 @@ files move.
 
 | Current source/symbol | Current algorithm | Decision and target algorithm |
 | --- | --- | --- |
-| `media-control.ts::setSpeed/applySpeed`; `media-observer.ts` | Site API, isolated DOM, generic MAIN message and new-media observer can all write playback rate; preserve-pitch is echoed without durable state. | One writer: `playbackRate` first, with the implemented YouTube official API only after DOM failure; `preservesPitch` remains DOM-only. ACK follows the matching getter/event. New media restoration goes through the same executor and revision. |
+| `media-control.ts::setSpeed/applySpeed`; `media-observer.ts` | Page API, isolated DOM, generic MAIN message and new-media observer can all write playback rate; preserve-pitch is echoed without durable state. | One writer: `playbackRate` only; `preservesPitch` remains DOM-only. ACK follows the matching getter/event. New media restoration goes through the same executor and revision. |
 | `time-marker.ts`, `ab-loop.ts` | A/B and marker jumps called `currentTime` directly with no mediaId/sourceRevision check. | A/B and markers are now keyed by `mediaId + sourceRevision`; their jumps go through the standard seek executor. Stale source identity is rejected before any page write. |
 | `video-transform.ts::apply`, `video-filter.ts::apply` | Read inline `style.transform/filter`, replaced page values with extension values, never captured baseline. | Owners now read computed style for readback, capture the computed baseline at acquisition, and only override on top with extension attributes/variables. Disabling removes only owner state. |
 | `dim-background.ts::apply` | Used inline `position:fixed` overlay that rewrote video `z-index`. | New overlay uses closed-shadow four-region geometry; never rewrites video `position`/`z-index`; target handoff releases the previous dim owner only and preserves independent CSS effects. |
 | `pip-controller.ts::request`; `fullscreen-controller.ts::request` | Custom click prompt, persistence of `document.pictureInPictureElement` was by timer, listener could outlive click or runtime. | Standard API only, real user activation, `enter`/`leave` events, `pictureInPictureElement` getter. Popup PiP may inject one ISOLATED click after a native activation error, then defers to the same executor. No retention after click, timeout or runtime disposal. |
 | `hotkey-helpers.ts::seekFrame` | Hard-coded `1/30s` and labelled frame step as exact. | Source-scoped cadence via `requestVideoFrameCallback` with bounded consecutive samples; mandatory `approximate:true`; paused uncached source is unsupported. |
-| retired user-script facade without `userScripts` permission | Could run arbitrary page scripts. | Requires explicit `userScripts` permission, runs in isolated sandbox, never inherits site-adapter MAIN authority. |
+| retired user-script facade without `userScripts` permission | Could run arbitrary page scripts. | Requires explicit `userScripts` permission, runs in isolated sandbox, never inherits MAIN authority. |
 | `media-observer.ts::onTimeUpdate` plus timer | Periodic IPC for active media. | Event-driven `seeked`/`playing`/capture token; latest-value coalescing, trailing storage write, no per-frame IPC. |
 
-### §9.3 Entry, synchronization and site-adapter algorithms
+### §9.3 Entry, synchronization and runtime algorithms
 
 | Current source/symbol | Current algorithm | Decision and target algorithm |
 | --- | --- | --- |
-| `content-bootstrap.js` plus `injector/main-runtime-manager.ts` (legacy) | Content bootstrap loaded a generic MAIN bundle; site adapters shared one main bundle. | Manifest content entry is `content-bootstrap.js` only. Each adapter is a one-shot, allowlisted setter/getter call dispatched by `main-runtime-manager.ts::applyMainSiteControl` from Background, capturing pre/post values without installing a bridge, wrapper, listener or descriptor patch. |
-| `site-adapter.ts` (legacy) | Each adapter registered listeners and wrapper functions. | Adapters are no module; they are values in `SITE_NATIVE_EXECUTORS` consumed by `main-runtime-manager` with `satisfies Record<SiteNativeAdapterId, SerializedMainExecutor>`. |
+| `content-bootstrap.js` plus `injector/main-runtime-manager.ts` (legacy) | Content bootstrap loaded a generic MAIN bundle; site adapters shared one main bundle. | Manifest content entry is `content-bootstrap.js` only. `main-runtime-manager.ts` injects only versioned bridges (fullscreen, playback-rate) on demand; no generic MAIN bundle, adapter dispatch, bridge, wrapper, listener or descriptor patch remains. |
+| `site-adapter.ts` (legacy, removed) | Each adapter registered listeners and wrapper functions. | Removed entirely; `main-runtime-manager` now injects only versioned fullscreen and playback-rate bridges and no longer dispatches site-native calls. |
 | retired `document-observers/site-sync.ts` | Long-lived MutationObserver that wrote from page to extension. | Event-driven: per-frame `media-registry` events plus `webNavigation`; no permanent page observer; same-document navigation only advances `generation`. |
 | `media-registry.ts::register` | Heuristic based on first `play` event; could latch on a wrong element. | Identity-bound Runtime ensure before any persistent action; selection criteria require user interaction or genuine page control; reused elements emit logical remove/register around `sourceRevision`. |
 | `remote-commands.ts::executeCommand` | Sent `chrome.runtime.sendMessage` to itself with `action:'control.request'`, accepting its own response. | Background now calls the serialized coordinator directly: `submit`, `submitOperation`, `getSnapshot`. Remote no longer self-RPCs. |
 | `remote-commands.ts::projectSnapshot` | Projected every actual field on every event, even those not authenticated to view. | Remote now projects only fields the device is allowed to see, retains same-document stable state on failure, and persists `sessionStorage`-backed `stableRemoteStates` keyed by `tabId`. |
 | `control-coordinator.ts::applyPageObservation` | Routed page observations as a second content write, doubling IPC and risking echo. | Page observations commit without routing a second content write; `source:'system'` is preserved for downstream projections. |
-| `control-coordinator.ts::applySiteNativeFallback` (legacy) | Restored site-native baselines on dispose, racing with the page's own restore. | Baselines are written through the same writer on restore; official reflected events are absorbed; DOM restore never competes. |
+| `control-coordinator.ts::applySiteNativeFallback` (legacy, removed) | Restored site-native baselines on dispose, racing with the page's own restore. | Removed; the coordinator no longer maintains or restores site-native baselines. Restore writes only SPECTRA-owned fields through the same writer; DOM restore never competes. |
 | `control-coordinator.ts::executeFieldOperation` | Partial ACK could return `ok`. | Every relevant field phase must be `applied` before operation success; per-field rollback on failure. |
 | `media-observer.ts::tryAssignFromUser` | Inferred active media from `currentSrc` change. | Active media requires user interaction, page control, PiP owner, playback, or stable visibility; `currentSrc` change alone never advances selection. |
 | `extension-settings::read` synchronous fallback | Read defaults from disk on every Popup open. | Background owns the read; settings repository is the only authority; extension reads cached snapshot only. |
@@ -70,13 +70,13 @@ files move.
 | `src/content/audio/dom-volume.ts` (retired) | Mixed `volume` + `muted` writes | native-control | none | forbidden | none |
 | `src/injector/webaudio-hijack.ts` (retired) | Hijack `AudioContext`, redispatch to `destination` | controlled-augmentation | none | forbidden | none |
 | `packages/features/audio-engine/src/webaudio/node-factory.ts` (retired) | All-features graph per element | controlled-augmentation | proven-safe-source-or-explicit-full-output | forbidden | page-lifetime-after-media-binding |
-| `src/injector/youtube-adapter.ts` | Allowlisted one-shot MAIN for speed/volume | hybrid-state-native | allowlisted-site-api-after-dom-failure | site-adapter-only | none |
-| `src/background/main-runtime-manager.ts` | Multi-adapter dispatch | intent-routing | extension-owned | site-adapter-only | none |
-| `src/content/audio/volume-observer.ts` | Reassert volume on `volumechange` | observation-only | not-applicable | forbidden | while-subscribed |
+| `src/injector/youtube-adapter.ts` (retired, removed) | Allowlisted one-shot MAIN for speed/volume | hybrid-state-native | none (removed) | forbidden (removed) | none |
+| `src/background/main-runtime-manager.ts` | Versioned bridge injection (fullscreen, playback-rate) | intent-routing | extension-owned | forbidden | none |
+| `src/content/audio/volume-observer.ts` (retired) | Reassert volume on `volumechange` | observation-only | not-applicable | forbidden | while-subscribed |
 | `src/content/core/lifecycle/media-observer.ts` | Lifecycle: identity, source, generation | lifecycle-orchestration | extension-owned | forbidden | page-lifetime-after-media-binding |
-| `src/content/logic/media-control.ts` | DOM audio property writes (volume, muted, rate, currentTime, loop) | native-control | none | forbidden | none |
+| `src/content/logic/media-control.ts` (retired) | DOM audio property writes (volume, muted, rate, currentTime, loop) | native-control | none | forbidden | none |
 | `src/content/video/ab-loop.ts`, `src/content/video/time-marker.ts` | Direct `currentTime` write | native-control | none | forbidden | while-owned |
-| `src/content/video/video-filter.ts`, `src/content/video/video-transform.ts` | CSS Filter/transform composition | controlled-augmentation | extension-owned | forbidden | while-owned |
+| `src/content/video/video-filter.ts` (retired), `src/content/video/video-transform.ts` | CSS Filter/transform composition (filter composition now owned by `video-effects-controller.ts`) | controlled-augmentation | extension-owned | forbidden | while-owned |
 | `src/background/control-coordinator.ts` | Coordinator transaction over field/operation units | intent-routing | extension-owned | forbidden | none |
 | `src/content/input/hotkey-helpers.ts` | Hotkey -> typed intent | intent-routing | extension-owned | forbidden | none |
 | `src/content/logic/audio-runtime-control-delegate.ts` | Compile effective-volume 0–800 and DSP intents | controlled-augmentation | proven-safe-source-or-explicit-full-output | forbidden | while-owned |
@@ -106,20 +106,19 @@ catalog did not name separately.
 
 `pure-computation` and `intent-routing` have no page mutation authority.
 `observation-only` may subscribe only to an existing native/owned source.
-`native-control` may call only the named DOM/Chrome/official API.
+`native-control` may call only the named DOM/Chrome API.
 `hybrid-state-native` may calculate or store a target, but the final page write
 still uses the canonical native executor. `controlled-augmentation` and
 `lifecycle-orchestration` may own only the explicitly named extension resource;
 neither class admits a constructor/prototype/descriptor/createElement/History
-or page-AudioContext interception. The one `site-adapter-only` entry is the
-bounded official player call after a retryable DOM failure.
+or page-AudioContext interception.
 
 | Algorithm ID | Source algorithm | Decision | Native / controlled-augmentation judgment | Success and performance boundary |
 | --- | --- | --- | --- | --- |
 | `ALG-001` | Per-capability planner | pure computation | Selects only a capability-owned candidate; never executes or grants a fallback. | One bounded candidate pass per intent; coverage and admission are part of the result. |
 | `ALG-002` | Cross-process ACK admission | pure computation | Rejects known strategy names when the exact field/operation does not admit them. | Constant policy lookup at every snapshot/apply/operation boundary. |
 | `ALG-003` | Standard media writer/readback | native control | `HTMLMediaElement`/PiP/Fullscreen APIs only; native failure cannot become CSS/WebAudio/Capture/MAIN. | Temporary event/getter window on the same media/source; a matching getter without the required event is not an ACK; no retained work. |
-| `ALG-004` | Allowlisted official player fallback | native control | One official YouTube API invocation only after retryable DOM failure; this is the sole MAIN admission. | Reads official before/actual values in the invocation and leaves no bridge/listener. |
+| `ALG-004` | (retired) Removed MAIN fallback | native control | Retired; this MAIN admission path was removed. Speed and volume use standard DOM APIs only. | No longer applicable; no bridge, listener or MAIN admission exists. |
 | `ALG-005` | Chrome tab mute/pin | native control | Chrome `tabs.update` plus browser getter/event only. | One write/get pair; later synchronization reuses Chrome events. |
 | `ALG-006` | Audio session gate | lifecycle orchestration | Extension state may acquire/release an admitted processor, but cannot write native media fields. | Neutral configuration allocates nothing; dependent actual/error fields prove startup. |
 | `ALG-007` | Processor-needs predicate | pure computation | Boost/EQ/Bass/Compressor/Mono/Pan/Delay share one predicate; Visualizer is excluded. | Constant bounded config scan; Policy and UI prediction cannot drift. |
@@ -139,11 +138,11 @@ bounded official player call after a retryable DOM failure.
 | `ALG-021` | A/B scheduler | hybrid state/native | Source-keyed points and scheduling are extension-owned; boundary jump uses canonical seek. | One timer plus near-boundary rVFC only for a complete playing loop; all disposed on release. |
 | `ALG-022` | Time marker index/jump | hybrid state/native | Marker metadata is extension-owned; every jump remains native seek. | 1,000-marker/source bound and binary lookup; no recurring work. |
 | `ALG-023` | Screenshot verify/crop/save | native control | Chrome visible-tab capture is the only frame acquisition; no media canvas/CORS/DRM workaround. | Target/geometry verified twice and download must reach complete; no image IPC. |
-| `ALG-024` | Page settings release | lifecycle orchestration | Restores only baselines SPECTRA actually owns and defers official fields to their adapter. | Explicit registry-sized pass with per-field readback/rollback; no retained work. |
+| `ALG-024` | Page settings release | lifecycle orchestration | Restores only baselines SPECTRA actually owns; the payload is an empty record. | Explicit registry-sized pass with per-field readback/rollback; no retained work. |
 | `ALG-025` | Compound reset/toggle transaction | lifecycle orchestration | Expands into typed field algorithms; cannot bypass per-field strategy. | Serialized per tab; every field applies before commit and compensation preserves the previous stable snapshot. |
 | `ALG-026` | Info OSD projection | observation only | Reads media/snapshot facts and writes extension UI only. | One projection per action; acquires no processing or writer lease. |
 | `ALG-027` | Popup/options/URL browser actions | native control | Chrome UI/navigation APIs only; URL remains HTTP(S)-validated. | One browser result per explicit operation; no content emulation. |
-| `ALG-028` | userScripts execution | controlled augmentation | Explicit permission and isolated userScripts sandbox only; no shared site-adapter MAIN authority. | Bounded script/tab validation and one sandbox result; no recurring work. |
+| `ALG-028` | userScripts execution | controlled augmentation | Explicit permission and isolated userScripts sandbox only; no shared MAIN authority. | Bounded script/tab validation and one sandbox result; no recurring work. |
 | `ALG-029` | Hotkey normalization | intent routing | Key handlers only build canonical intents; they never become another writer. | Compiled O(1) key map and one configured-site listener; descriptor owns repeat/coalescing/activation rules. |
 | `ALG-030` | Popup latest-value patching | intent routing | Optimistic presentation has no authority; coordinator actual ACK replaces it. | Continuous sends cap at 20 Hz, identical values are dropped before IPC, and storage trails at 250ms with flush. |
 | `ALG-031` | Remote command routing | intent routing | Authenticated commands use the same coordinator and cannot choose strategy or tab fallback. | Event-driven actual snapshot push; no post-command multi-source polling. |

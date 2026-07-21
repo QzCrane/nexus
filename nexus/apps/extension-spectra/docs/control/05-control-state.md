@@ -11,17 +11,19 @@ audience: developer
 
 ## §10 Control state
 
-The background `ControlCoordinator` owns intent ordering, per-field revisions and the authoritative snapshot. Content owns the current document's media registry and executes document APIs. Offscreen owns acknowledged Capture processors. Site adapters own only their official API calls.
+The background `ControlCoordinator` owns intent ordering, per-field revisions and the authoritative snapshot. Content owns the current document's media registry and executes document APIs. Offscreen owns acknowledged Capture processors.
 
 ```ts
 interface ControlFieldState<T> {
   desired: T | null;
   actual: T | null;
+  // Captured before a failed standard writer attempt and consumed only on a
+  // same-writer restore of the same field.
+  restoreBaseline?: T;
   revision: number;
   phase: 'idle' | 'applying' | 'applied' | 'error';
   strategy:
     | 'observe'
-    | 'site-native'
     | 'dom-native'
     | 'chrome-native'
     | 'extension-state'
@@ -47,7 +49,7 @@ explicitly listed for that capability.
 
 ### §10.1 Echo correlation
 
-DOM and site writes use per-target, per-field tokens:
+DOM writes use per-target, per-field tokens:
 
 ```text
 { intentId, fieldRevision, expectedValue, tolerance }
@@ -99,10 +101,10 @@ AudioConfig.volume = clamp(volumeBase * boost, 0, 800)
 effective output ~= volumeBase / 100 * boost
 ```
 
-- Site API or DOM owns `volumeBase` and `mediaMuted`; only one selected native writer applies each field.
+- DOM owns `volumeBase` and `mediaMuted`; only one selected native writer applies each field.
 - Popup, remote and hotkeys submit only `effective-volume 0–800`; the coordinator performs the split and atomic rollback.
 - A page volume change updates the public effective volume and resets a non-neutral hidden Boost to 1 in the same commit.
-- Media mute preserves the numeric volume and is applied only through the selected media/site-native writer; processor state remains unchanged.
+- Media mute preserves the numeric volume and is applied only through the selected media writer; processor state remains unchanged.
 - Tab mute is a separate Chrome-native field and never changes media mute.
 - `volume_up/down/set` and one-release `gain/boost` aliases all change the same effective-volume state.
 - Same-region changes touch one writer; only a crossing of the native 100% boundary touches both. Repeated acknowledged values do no Content IPC, revision or storage write.
@@ -120,7 +122,7 @@ EQ, Bass, Compressor, Mono, Pan, Delay and Boost have no generic HTMLMediaElemen
 - If every source in the requested scope is safe to bind, use one document DSP graph fed by page-lifetime-unique `MediaElementSourceNode` instances.
 - If any required source is unsafe, inaccessible or opaque, use Capture.
 - Never set `crossOrigin` after resource selection and never call `createMediaElementSource()` as a probe.
-- Same-origin, `data:`, origin-owned `blob:`/MediaSource and the exact resource successfully loaded with pre-load CORS mode can be safe. A site-native control adapter is never source-binding evidence; unknown cross-origin media goes directly to Capture.
+- Same-origin, `data:`, origin-owned `blob:`/MediaSource and the exact resource successfully loaded with pre-load CORS mode can be safe. No page control surface is source-binding evidence; unknown cross-origin media goes directly to Capture.
 - A bound `MediaElementSourceNode` is never closed and rebound. Exit returns it to a transparent route.
 
 ### §12.1 Media WebAudio complete-coverage admission

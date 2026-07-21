@@ -27,12 +27,19 @@ const onCopy = () => {
 		if (active instanceof HTMLInputElement && active.type === 'password') return;
 		const selection = document.getSelection()?.toString();
 		if (selection?.trim()) {
-			chrome.runtime.sendMessage({
-				type: 'HALO_CLIPBOARD_ADD',
-				text: selection,
-				sourceUrl: window.location.href,
-				sourceTitle: document.title,
-			});
+			// rule: wrap sendMessage — when the SW is restarting or the extension is
+			// being unloaded, this throws "Extension context invalidated" and would
+			// surface as an unhandled rejection in the page console on every copy.
+			try {
+				void chrome.runtime.sendMessage({
+					type: 'HALO_CLIPBOARD_ADD',
+					text: selection,
+					sourceUrl: window.location.href,
+					sourceTitle: document.title,
+				});
+			} catch {
+				// best-effort notification; ignore SW-restart races
+			}
 		}
 	}, 50);
 };
@@ -67,6 +74,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 // ===== MESSAGE HANDLER =====
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+	// rule: chrome.runtime permits primitive messages (e.g. chrome.runtime.sendMessage("ping"));
+	// without this guard, message.type on a string/number/null throws TypeError inside the
+	// listener, Chrome swallows the throw but sendResponse is never called, hanging the caller.
+	if (!message || typeof message !== 'object') {
+		sendResponse({ success: false, error: 'Invalid message format' });
+		return false;
+	}
 	switch (message.type) {
 		case 'HALO_GET_STATUS':
 			sendResponse({
@@ -112,7 +126,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 		case 'HALO_DOM_SELECTOR_START':
 			DomSelector.start((data) => {
-				chrome.runtime.sendMessage({ type: 'HALO_DOM_SELECTED', payload: data });
+				// rule: best-effort notification — wrap to avoid unhandled rejection
+				// when the SW is restarting or the extension is being unloaded.
+				try {
+					void chrome.runtime.sendMessage({ type: 'HALO_DOM_SELECTED', payload: data });
+				} catch {
+					// ignore SW-restart races
+				}
 			});
 			sendResponse({ success: true });
 			break;

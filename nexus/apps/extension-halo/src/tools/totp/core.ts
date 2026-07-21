@@ -24,8 +24,20 @@ function base32ToBytes(base32: string): Uint8Array {
 
 // HMAC-SHA1 implementation using Web Crypto API
 async function hmacSha1(key: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
-	const cryptoKey = await crypto.subtle.importKey('raw', key as any, { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
-	const sig = await crypto.subtle.sign('HMAC', cryptoKey, data as any);
+	// rule: Uint8Array<ArrayBufferLike>.buffer may be a SharedArrayBuffer at the
+	// type level, which violates BufferSource's ArrayBuffer requirement. The
+	// values we pass here are always backed by a regular ArrayBuffer (allocated
+	// via `new Uint8Array(...)`), so a single `as BufferSource` cast is the
+	// narrowest escape — narrower than the prior `as any` which hid every other
+	// type relationship in this call.
+	const cryptoKey = await crypto.subtle.importKey(
+		'raw',
+		key as BufferSource,
+		{ name: 'HMAC', hash: 'SHA-1' },
+		false,
+		['sign'],
+	);
+	const sig = await crypto.subtle.sign('HMAC', cryptoKey, data as BufferSource);
 	return new Uint8Array(sig);
 }
 

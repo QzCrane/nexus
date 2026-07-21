@@ -16,8 +16,8 @@
 	],
 	"summary": {
 		"checkedFiles": 923,
-		"diagnostics": 836,
-		"errors": 609,
+		"diagnostics": 832,
+		"errors": 605,
 		"warnings": 149,
 		"infos": 78
 	},
@@ -35,12 +35,8 @@
 			"count": 63
 		},
 		{
-			"category": "lint/a11y/noSvgWithoutTitle",
-			"count": 1
-		},
-		{
 			"category": "lint/a11y/useButtonType",
-			"count": 309
+			"count": 306
 		},
 		{
 			"category": "lint/a11y/useKeyWithClickEvents",
@@ -2885,6 +2881,19 @@
 			]
 		},
 		{
+			"fingerprint": "2841634d39c0a3bc65196882424285476bf0461402ffa71d4569f1fb0d324ac5",
+			"severity": "info",
+			"path": "apps/extension-halo/src/tools/totp/core.ts",
+			"category": "lint/correctness/useParseIntRadix",
+			"message": "Missing radix parameter",
+			"range": [
+				92,
+				12,
+				92,
+				60
+			]
+		},
+		{
 			"fingerprint": "28aebbda34cbcd82bf28eb2a48b97550e7c5e33f518dccf329e1414edace10c8",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/checksum/panel.tsx",
@@ -3600,19 +3609,6 @@
 			]
 		},
 		{
-			"fingerprint": "3a4c8cd2671b68e6cab5717ca1fe2eca315b2978189a8634dfc43a419cad91a3",
-			"severity": "info",
-			"path": "apps/extension-halo/src/tools/totp/core.ts",
-			"category": "lint/correctness/useParseIntRadix",
-			"message": "Missing radix parameter",
-			"range": [
-				80,
-				12,
-				80,
-				60
-			]
-		},
-		{
 			"fingerprint": "3b1c9bb88d8a9ae31764a55e9caa47119e5dfb02cab8fda906ea964dc362481a",
 			"severity": "error",
 			"path": "apps/extension-halo/src/system/permissions/panel.tsx",
@@ -4091,19 +4087,6 @@
 				21,
 				49,
 				32
-			]
-		},
-		{
-			"fingerprint": "4419a1ee508623055ab34e3891ff535a637c605aa38b41d73c203e87877b280e",
-			"severity": "info",
-			"path": "apps/extension-halo/src/tools/totp/core.ts",
-			"category": "lint/correctness/useParseIntRadix",
-			"message": "Missing radix parameter",
-			"range": [
-				79,
-				12,
-				79,
-				59
 			]
 		},
 		{
@@ -8943,19 +8926,6 @@
 			]
 		},
 		{
-			"fingerprint": "b8f4cec832675514bbf4057b070223df840aaebe3a0a2923e882366a91486819",
-			"severity": "error",
-			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
-			"category": "lint/a11y/noSvgWithoutTitle",
-			"message": "Alternative text title element cannot be empty",
-			"range": [
-				94,
-				5,
-				94,
-				57
-			]
-		},
-		{
 			"fingerprint": "baa542010b4f51009a2a974365802dc9bfee6d3a0a7ed792da2974bc9659f9be",
 			"severity": "error",
 			"path": "apps/extension-halo/src/components/sidepanel/classic-layout-parts.tsx",
@@ -9031,19 +9001,6 @@
 				21,
 				19,
 				32
-			]
-		},
-		{
-			"fingerprint": "bbc47c6f445eeb2e6e56090aad559f0324ba6fc78dcfc3bf199f0c51405ff3a8",
-			"severity": "error",
-			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
-			"category": "lint/a11y/useButtonType",
-			"message": "Provide an explicit type prop for the button element.",
-			"range": [
-				115,
-				5,
-				115,
-				63
 			]
 		},
 		{
@@ -9213,6 +9170,19 @@
 				17,
 				57,
 				47
+			]
+		},
+		{
+			"fingerprint": "beed31e318abddf0d475ad67a3d66bdcc77649b60092fcf25298adfdcc28f9d6",
+			"severity": "info",
+			"path": "apps/extension-halo/src/tools/totp/core.ts",
+			"category": "lint/style/useExponentiationOperator",
+			"message": "Use the '**' operator instead of 'Math.pow'.",
+			"range": [
+				70,
+				23,
+				70,
+				43
 			]
 		},
 		{
@@ -10100,6 +10070,19 @@
 			]
 		},
 		{
+			"fingerprint": "d57d3749ee0f7c876493e8f711b1f451d62368efd5df3b094657d843b1fe330a",
+			"severity": "info",
+			"path": "apps/extension-halo/src/tools/totp/core.ts",
+			"category": "lint/correctness/useParseIntRadix",
+			"message": "Missing radix parameter",
+			"range": [
+				91,
+				12,
+				91,
+				59
+			]
+		},
+		{
 			"fingerprint": "d5b6d9c3e9baa944ac644ee07863b543a7a5edc2203f24c77e3ac40be592767e",
 			"severity": "error",
 			"path": "apps/extension-halo/src/components/ui/overlay/OverlayProvider.tsx",
@@ -10318,19 +10301,6 @@
 				6,
 				61,
 				83
-			]
-		},
-		{
-			"fingerprint": "d9e8bde3d2e27c6d86d5b9487d274ae373391d92d932c8545f5d495be613ab86",
-			"severity": "error",
-			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
-			"category": "lint/a11y/useButtonType",
-			"message": "Provide an explicit type prop for the button element.",
-			"range": [
-				111,
-				5,
-				111,
-				55
 			]
 		},
 		{
@@ -11348,19 +11318,6 @@
 			]
 		},
 		{
-			"fingerprint": "f336d87bcdfd368057b1cecc62078896af11e404ac01fa63b0d921eb7e9e061e",
-			"severity": "error",
-			"path": "apps/extension-halo/src/tools/pomodoro/panel.tsx",
-			"category": "lint/a11y/useButtonType",
-			"message": "Provide an explicit type prop for the button element.",
-			"range": [
-				114,
-				5,
-				114,
-				62
-			]
-		},
-		{
 			"fingerprint": "f38bccedef04477fb56cc6847dc369a91b576350cd5f5738c9e5fbc68f35e8df",
 			"severity": "info",
 			"path": "apps/extension-halo/src/tools/xml-formatter/core.ts",
@@ -11917,19 +11874,6 @@
 				8,
 				63,
 				9
-			]
-		},
-		{
-			"fingerprint": "ffaf4b727ef035a0e39ba3b5bb08504bb29542aff74d2dbb2fb522b5a2c77476",
-			"severity": "info",
-			"path": "apps/extension-halo/src/tools/totp/core.ts",
-			"category": "lint/style/useExponentiationOperator",
-			"message": "Use the '**' operator instead of 'Math.pow'.",
-			"range": [
-				58,
-				23,
-				58,
-				43
 			]
 		},
 		{

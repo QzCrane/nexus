@@ -182,9 +182,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			text,
 			sourceUrl || sender.url,
 			sourceTitle || sender.tab?.title
-		).then(() => {
-			sendResponse({ success: true });
-		});
+		).then(
+			() => { sendResponse({ success: true }); },
+			(error) => { sendResponse({ success: false, error: String(error) }); },
+		);
 		return true; // async
 	}
 

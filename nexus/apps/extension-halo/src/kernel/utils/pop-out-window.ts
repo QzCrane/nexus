@@ -31,7 +31,14 @@ function detachBoundsListener(): void {
 		chrome.windows.onBoundsChanged.removeListener(activeBoundsListener);
 	}
 	if (activeRemovedListener && chrome.windows.onRemoved) {
-		(chrome.windows.onRemoved.removeListener as unknown as (cb: (windowId: number) => void) => void)(activeRemovedListener);
+		// rule: chrome-types has a known defect where ChromeEvent.removeListener
+		// is typed as the full addListener overload (callback, filters?) which
+		// (closedId: number) => void does not match. Runtime accepts the simpler
+		// callback form, so a double `as unknown as` assertion is required to
+		// escape the overloaded signature.
+		(chrome.windows.onRemoved.removeListener as unknown as (cb: (windowId: number) => void) => void)(
+			activeRemovedListener,
+		);
 	}
 	if (activeSaveTimeout) {
 		clearTimeout(activeSaveTimeout);

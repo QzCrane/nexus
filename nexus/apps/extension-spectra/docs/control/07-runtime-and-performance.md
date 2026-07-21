@@ -4,9 +4,9 @@ status: stable
 audience: developer
 ---
 
-# 07. Runtime & Performance (Loading, ownership map, cross-world adapters)
+# 07. Runtime & Performance (Loading, ownership map, cross-world bridges)
 
-> 主题 owner 段: §16 Runtime loading and performance · §17 Implementation ownership and migration map · §18 Cross-world site adapters
+> 主题 owner 段: §16 Runtime loading and performance · §17 Implementation ownership and migration map · §18 Cross-world bridges
 > 完整目录: [control-architecture.md](../control-architecture.md)
 
 ## §16 Runtime loading and performance
@@ -45,7 +45,7 @@ unique token schedules the acknowledged runtime disposer. The 250ms handoff
 window permits Popup/remote/control ownership transfer without unload/reload
 churn and is cancelled immediately by a new lease.
 
-MAIN site-adapter leases are keyed by `tabId + documentId + generation + capability`. The background manager is the only production source allowed to execute MAIN code.
+MAIN bridge leases are keyed by `tabId + documentId + generation + capability`. The background manager is the only production source allowed to execute MAIN code.
 
 Default invariant:
 
@@ -76,13 +76,13 @@ These locations are architectural owners, not suggestions. A future implementati
 | `packages/features/audio-engine/src/CapabilityPlanner.ts` | pure least-invasive per-capability selection | Make native/augmentation admission deterministic and unit-testable without browser side effects. |
 | `src/background/control-coordinator.ts` | intent ordering, per-field revision, stable snapshot and rollback | Establish the only authority that commits actual state. |
 | `src/background/runtime-loader.ts` | document-scoped heavy-runtime lease and READY handshake | Preserve the zero-work default and remove fixed injection sleeps. |
-| `src/background/main-runtime-manager.ts` | one-shot allowlisted site API calls only | Delete the generic MAIN runtime while retaining the three implemented official page-world controls without a standing lease. |
+| `src/background/main-runtime-manager.ts` | versioned bridge injection only (fullscreen, playback-rate) | Delete the generic MAIN runtime and adapter dispatch; only versioned bridges remain without a standing lease. |
 | `src/content/core/bootstrap.ts` | lightweight HELLO/message/pagehide boundary plus bounded passive native getter | Keep idle injection side-effect-free while allowing first-open UI/remote actual state without installing the heavy registry. |
 | `src/content/core/media-registry.ts` | `mediaId`, `sourceRevision`, cached visibility and sticky active target | Remove document scans/layout reads from command hot paths. |
 | `src/content/logic/native-media-executor.ts` | sole DOM writer, registration-time event baseline and pure registry-backed readback | Replace concurrent `media-control.ts`, `dom-volume.ts` and bridge writes while preventing status reads from initializing mutable correlation state. |
 | `src/content/core/media-registry.ts`; `src/background/control-coordinator.ts::handleTargetChanged` | explicit media/source selection synchronization | Commit a new active target only after a sender-bound one-shot actual readback confirms the same `mediaId + sourceRevision`. |
 | `src/background/control-coordinator.ts::projectControlTarget`; Popup card/side-panel target selection | ACK target projection into independent active identities | Use the exhaustive contract scope to stop video, tab and document operations from stealing or clearing the unrelated media/video target. |
-| `packages/contracts/src/control.contracts.ts::SITE_NATIVE_ADAPTER_DESCRIPTORS`; `src/background/main-runtime-manager.ts` | exact site-native capability allowlist and one-shot implementation | Ensure only implemented site APIs can follow a failed DOM attempt and no standing bridge can drift back in. |
+| `packages/contracts/src/control.contracts.ts`; `src/background/main-runtime-manager.ts` | versioned fullscreen and playback-rate bridge descriptors | Ensure only the two implemented versioned bridges can be injected and no standing bridge or generic MAIN dispatch can drift back in. |
 | `packages/features/audio-engine/src/webaudio/*` | page-lifetime source registry and one lazy shared graph | Prove eligibility before irreversible binding and create only active nodes. |
 | `src/content/video/video-effects-controller.ts` | media-keyed CSS/overlay owner with runtime-random selector token and pure snapshot | Restore the site's exact pre-existing attributes/custom properties, make a neutral never-owned write DOM-free, and prevent a site-authored `data-spectra-*` name from matching extension CSS. |
 | `src/content/video/ab-loop.ts`; `time-marker.ts` | media/source-keyed A/B and marker algorithms with disposers | Prevent state leaking across source revisions, suppress skip re-entry, use a hidden-tab boundary timer and return actual seek readback for every marker jump. |
@@ -104,8 +104,8 @@ change.
 
 | Status | Location | Concrete change and purpose |
 | --- | --- | --- |
-| landed | deleted `src/injector/*`; manifest/build; `src/background/main-runtime-manager.ts` | Remove generic constructor/descriptor/element interception and default MAIN cost. A failed DOM readback may invoke the allowlisted YouTube official setter/getter once through privileged `executeScript`; a bounded quiet window and stable getter complete the ACK, and no adapter bundle or page listener remains. |
-| landed | `packages/features/audio-engine/src/AudioGraphRouter.ts`; `webaudio/controller.ts`; `offscreen/audio-host.ts` | Share one sparse graph, require prospective and actual full-registry coverage before Media WebAudio ACK, reconnect rather than recreate page-lifetime sources, provide normalized graph/Capture readback and preserve the stable processor during candidate failure. The contract records the minimal unity route that must remain after an irreversible media binding. |
+| landed | deleted `src/injector/*`; manifest/build; `src/background/main-runtime-manager.ts` | Remove generic constructor/descriptor/element interception and default MAIN cost. Only versioned fullscreen and playback-rate bridges remain; no adapter bundle, page listener or generic MAIN dispatch remains. |
+| landed | `packages/features/audio-engine/src/AudioGraphRouter.ts`; `packages/features/audio-engine/src/webaudio/controller.ts`; `src/offscreen/audio-host.ts` | Share one sparse graph, require prospective and actual full-registry coverage before Media WebAudio ACK, reconnect rather than recreate page-lifetime sources, provide normalized graph/Capture readback and preserve the stable processor during candidate failure. The contract records the minimal unity route that must remain after an irreversible media binding. |
 | landed | `src/content/core/bootstrap.ts`, `background/runtime-loader.ts`, `content/core/media-registry.ts` | Keep default pages bootstrap-only and make the optional runtime/document target identity explicit. |
 | landed | `packages/contracts/src/spectra.bootstrap.ts`; `build.mjs`; `scripts/check-production-artifacts.mjs` | Reduce the always-on content boundary to the four required message families, share production code only between extension-origin module contexts, measure every real closure and reject all avoidable production redundancy. |
 | landed | `build.mjs`; `scripts/external-boundary-properties.mjs`; `src/offscreen-remote/peerjs-vendor.ts`; `test/release-tooling.spec.ts`; production Chrome smoke | Preserve Chrome/browser dictionaries, transport payload keys, dynamic ESM exports and versioned singleton members before property mangling. Build PeerJS as an opaque local vendor artifact whose public/signaling/WebRTC ABI is never application-mangled; only its underscore-prefixed private members may be shortened. This prevents production-only loss of `currentWindow`, Capture constraints, remote HMAC proof and cross-injection runtime methods while keeping SPECTRA-owned properties optimized. |
@@ -117,7 +117,7 @@ change.
 | landed | `packages/contracts/src/control.contracts.ts`; `src/background/control-coordinator.ts`; `src/content/core/media-registry.ts`; `src/popup/side-panel/video-controls.ts` | Keep `activeMedia` and `activeVideo` as separate actual identities. Audio/transport and video-only controls no longer steal or misroute one another's target, while all surfaces still submit typed mutations or operations to the serialized coordinator. |
 | landed | deleted `src/content/logic/media-control.ts`, `media-message-handler.ts`, `audio/dom-volume.ts`, `audio/volume-observer.ts`; `logic/mode-executor.ts` | Retire competing media writers. The remaining audio-topology compatibility layer delegates native fields to the canonical executor and cannot write volume, mute, speed, seek, pitch or loop. |
 | landed | `scripts/verify/check-spectra-control.js`; `src/content/logic/native-media-executor.ts` | Enforce one direct writer module, forbid indirect legacy writer imports/calls and fail when generic MAIN, raw cross-world messages or retired control modules return. |
-| landed | deleted `src/content/logic/site-bridge/*` and `src/injector/*`; `background/main-runtime-manager.ts` | Replace raw page messages, echo caches and permanent listeners with one allowlisted official setter/getter invocation whose result is returned directly by Chrome. |
+| landed | deleted `src/content/logic/site-bridge/*` and `src/injector/*`; `background/main-runtime-manager.ts` | Replace raw page messages, echo caches and permanent listeners with versioned fullscreen and playback-rate bridges injected on demand. |
 | landed | `src/content/video/ab-loop.ts`; `time-marker.ts` | Bind A/B and markers to `mediaId + sourceRevision`, use one bounded A/B scheduler, binary marker lookup and the unique acknowledged seek executor. |
 | landed | `src/content/input/hotkey-actions.ts`; `hotkey-helpers.ts`; `hotkey-listener.ts`; `background/shortcuts.ts` | Translate every enabled shortcut through its exhaustive descriptor into a typed coordinator intent/operation; preserve repeat/coalescing and activation rules without direct media writes. |
 | landed | `src/background/remote-commands.ts`; `remote-service.ts`; `offscreen-remote/remote-host.ts`; Popup card/side-panel modules | Remote and extension UI submit canonical coordinator mutations, consume snapshot pushes, reject stale generations/revisions and roll optimistic rendering back to the latest stable actual snapshot. Background uses a direct serialized coordinator gateway rather than unreliable worker self-RPC; create/restore privately seeds actual state so HMAC success can deliver the first projection immediately. Popup fields initialize from `ControlSnapshot` only; `AudioSessionSnapshot` owns processor lifecycle only. |
@@ -127,18 +127,18 @@ change.
 | landed | `packages/contracts/src/audio.contracts.ts`; `packages/features/audio-engine/src/AudioGraphRouter.ts`; Capture/WebAudio readback adapters | Encode processor level only as `boostGain: 1–8` and remove processor mute. This makes the native page volume/mute writer boundary structural rather than relying on callers to force an unused DSP mute field off. |
 
 The static checker enforces direct and indirect writer ownership, forbidden
-generic MAIN behavior, the one-shot allowlist boundary, 51-row strategy parity
+generic MAIN behavior, the versioned bridge boundary, 51-row strategy parity
 and a fully landed ledger. Release promotion also runs integration coverage for
 the cross-surface synchronization path.
 
-## §18 Cross-world site adapters
+## §18 Cross-world bridges
 
-Adapter descriptors report per field:
+Bridge descriptors report per bridge:
 
 ```text
-observe / write / coverage / readback / ready-state
+inject / acknowledge / dispose
 ```
 
-An official API setter is followed by its official getter or authoritative event. Site API and DOM are never simultaneous writers for one field.
+Each versioned bridge (fullscreen, playback-rate) is injected on demand, performs its scoped DOM API call inside the real activation stack, and acknowledges only the observed native state. The bridge is versioned with a `__SPECTRA_*_BRIDGE_V1__` guard to prevent duplicate injection.
 
-There is no standing adapter bridge or page `postMessage` channel. Background performs one allowlisted `executeScript` call for the exact field, validates document/generation/intent identity around the call, and accepts only the official getter value returned directly by Chrome. A stale document or unsupported official API fails closed.
+There is no standing bridge or page `postMessage` channel. Background performs one `scripting.executeScript` for the exact bridge, validates document/generation/intent identity around the call, and accepts only the native getter/event value returned by the bridge. A stale document or unsupported bridge fails closed.
