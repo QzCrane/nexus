@@ -146,22 +146,6 @@ only from the site's getter or authoritative event. A page that exposes no
 stable official API remains `unsupported`; the extension does not install a
 generic page bridge or claim that every site's player UI can be synchronized.
 
-YouTube volume read bridge. YouTube applies a non-linear curve to
-`HTMLMediaElement.volume`, so `element.volume * 100` does not match the
-user-facing slider value (a full YouTube slider yields
-`element.volume ≈ 0.6131`, which would display as 61.31 % instead of
-100 %). The `content-youtube-volume-bridge.js` MAIN-world content script
-(matches `*://*.youtube.com/*`, registered at `document_start` with a
-`__SPECTRA_YOUTUBE_VOLUME_BRIDGE_V1__` guard) reads
-`#movie_player.getVolume()` — the official 0–100 linear value — and syncs
-it to `data-spectra-yt-volume` on `<html>`. The ISOLATED-world
-`native-media-executor.ts` prefers that attribute for every `volumeBase`
-read (observation, restore baseline, actual readback) and falls back to
-`element.volume` when the bridge has not populated it (non-YouTube pages or
-before the player loads). The write path still verifies the DOM write
-through `element.volume`, so the site-native fallback adapter remains the
-sole MAIN write surface and is unchanged.
-
 PiP and fullscreen are native lifecycle operations bound to the current
 `activeVideo`. The trusted page-event bridge performs the browser API call inside
 the real activation stack, then commits only the observed native state. Leaving
