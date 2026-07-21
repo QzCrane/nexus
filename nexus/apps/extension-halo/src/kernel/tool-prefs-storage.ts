@@ -1,8 +1,8 @@
 // goal: Tool preferences storage utilities
 // eff: Load/save tool prefs from chrome.storage.local
 
-import type { ToolPrefs } from './tool-registry';
-import { TOOL_PREFS_KEY } from './tool-registry';
+import type { ToolPrefs } from './registry/tool-registry';
+import { TOOL_PREFS_KEY } from './registry/tool-registry';
 
 /** Load tool preferences from storage */
 export async function loadToolPrefs(): Promise<Record<string, ToolPrefs>> {

@@ -14,14 +14,17 @@ import {
 } from '@nexus/contracts';
 import { createKeyedSerializedQueue } from '@nexus/kernel';
 import { shouldAcceptAudioSessionPhase } from '../shared/audio-session-phase';
+import { swLog } from '../shared/logger';
 
 const KEY_PREFIX = 'spectra_audio_session_';
 const STORAGE_WRITE_DEBOUNCE_MS = 250;
+const MAX_WRITE_RETRIES = 5;
 const snapshots = new Map<number, AudioSessionSnapshot>();
 const serialized = createKeyedSerializedQueue<number>();
 const invalidatedDocuments = new Map<number, Set<string>>();
 const pendingWrites = new Map<number, AudioSessionSnapshot>();
 const writeTimers = new Map<number, ReturnType<typeof setTimeout>>();
+const retryCounts = new Map<number, number>();
 
 export class StaleAudioSessionError extends Error {
 	constructor() {
@@ -57,24 +60,40 @@ function clearWriteTimer(tabId: number): void {
 	writeTimers.delete(tabId);
 }
 
-function scheduleWrite(tabId: number, snapshot: AudioSessionSnapshot): void {
+function scheduleWrite(tabId: number, snapshot: AudioSessionSnapshot, delay = STORAGE_WRITE_DEBOUNCE_MS): void {
 	pendingWrites.set(tabId, snapshot);
 	clearWriteTimer(tabId);
 	writeTimers.set(tabId, setTimeout(() => {
 		writeTimers.delete(tabId);
 		void flushAudioSessions(tabId).catch(() => undefined);
-	}, STORAGE_WRITE_DEBOUNCE_MS));
+	}, delay));
 }
 
 async function flushAudioSessionInternal(tabId: number): Promise<void> {
 	clearWriteTimer(tabId);
 	const pending = pendingWrites.get(tabId);
-	if (!pending) return;
+	if (!pending) {
+		retryCounts.delete(tabId);
+		return;
+	}
 	try {
 		await chrome.storage.session.set({ [key(tabId)]: pending });
 		if (pendingWrites.get(tabId) === pending) pendingWrites.delete(tabId);
+		retryCounts.delete(tabId);
 	} catch (error) {
-		scheduleWrite(tabId, pendingWrites.get(tabId) ?? pending);
+		const retries = (retryCounts.get(tabId) ?? 0) + 1;
+		if (retries > MAX_WRITE_RETRIES) {
+			swLog.warn(
+				`[AudioSession] Storage write failed after ${MAX_WRITE_RETRIES} retries, dropping snapshot for tab ${tabId}`,
+				error,
+			);
+			pendingWrites.delete(tabId);
+			retryCounts.delete(tabId);
+			return;
+		}
+		retryCounts.set(tabId, retries);
+		const backoffDelay = STORAGE_WRITE_DEBOUNCE_MS * 2 ** (retries - 1);
+		scheduleWrite(tabId, pending, backoffDelay);
 		throw error;
 	}
 }
@@ -215,14 +234,13 @@ async function readAudioSession(tabId: number): Promise<AudioSessionSnapshot | n
 }
 
 export async function removeAudioSession(tabId: number): Promise<void> {
-	const cached = snapshots.get(tabId);
-	if (cached) invalidateDocument(tabId, cached.documentId);
 	await serialized(tabId, async () => {
 		const previous = await readAudioSession(tabId);
 		if (previous) invalidateDocument(tabId, previous.documentId);
 		snapshots.delete(tabId);
 		clearWriteTimer(tabId);
 		pendingWrites.delete(tabId);
+		retryCounts.delete(tabId);
 		await chrome.storage.session.remove(key(tabId));
 	});
 }
@@ -238,6 +256,7 @@ export async function forgetAudioSession(tabId: number): Promise<void> {
 		invalidatedDocuments.delete(tabId);
 		clearWriteTimer(tabId);
 		pendingWrites.delete(tabId);
+		retryCounts.delete(tabId);
 		await chrome.storage.session.remove(key(tabId));
 	});
 }

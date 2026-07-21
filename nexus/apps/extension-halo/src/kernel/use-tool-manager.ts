@@ -2,8 +2,8 @@
 // eff: Search, filter, sort, pin/unpin, enable/disable
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import type { ToolMeta, ToolPrefs } from './tool-registry';
-import { TOOL_REGISTRY, DEFAULT_TOOL_PREFS, getReadyTools } from './tool-registry';
+import type { ToolMeta, ToolPrefs } from './registry/tool-registry';
+import { TOOL_REGISTRY, DEFAULT_TOOL_PREFS, getReadyTools } from './registry/tool-registry';
 import { loadToolPrefs, saveToolPrefs } from './tool-prefs-storage';
 import type { ToolCategory } from '../i18n/types';
 
@@ -123,7 +123,7 @@ export function useToolManager(): UseToolManagerResult {
 		} else if (sortMode === 'usage') {
 			list.sort((a, b) => getPrefs(b.id).usageCount - getPrefs(a.id).usageCount);
 		} else {
-			const catOrder: ToolCategory[] = ['general', 'dev', 'efficiency', 'visual', 'ai'];
+			const catOrder: ToolCategory[] = ['general', 'encode', 'format', 'network', 'data', 'dev', 'efficiency', 'browser', 'visual', 'media', 'security', 'ai', 'active', 'scripts', 'system'];
 			list.sort((a, b) => {
 				const pinnedA = getPrefs(a.id).pinned ? 0 : 1;
 				const pinnedB = getPrefs(b.id).pinned ? 0 : 1;

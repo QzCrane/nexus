@@ -6,7 +6,8 @@ import { DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY } from '../kernel';
 import { initUserScriptsEngine } from '../system/userscripts/engine';
 import { initUserScriptsRegistry } from '../system/userscripts/registry';
 import { syncSaaTTools, initSaaTService } from '../kernel/services/saat-service';
-import { TOOL_REGISTRY } from '../kernel/tool-registry';
+import { TOOL_REGISTRY } from '../kernel/registry/tool-registry';
+import { isPrivateHost } from '../kernel/utils/ssrf-guard';
 
 const LOG_TAG = '[HALO]';
 
@@ -24,6 +25,26 @@ const MENU_OPEN_HALO = 'halo-open';
 const MENU_QR_SELECTION = 'halo-qr-selection';
 const MENU_COLOR_PICK = 'halo-color-pick';
 const MENU_PDF_LINK = 'halo-pdf-link';
+
+/**
+ * rule: send a prefill message to the side panel with retry + linear backoff.
+ * The previous implementation used a single 500ms setTimeout, which raced
+ * against side panel load — if the panel took longer than 500ms to register
+ * its runtime.onMessage listener, the message was silently lost and the tool
+ * opened empty. Pre-fill is best-effort, so on final failure we give up
+ * silently rather than surfacing an error to the user.
+ */
+async function sendPrefillMessage(message: unknown, maxRetries = 5): Promise<void> {
+	for (let i = 0; i < maxRetries; i++) {
+		try {
+			await chrome.runtime.sendMessage(message);
+			return;
+		} catch {
+			// Panel not ready yet (or no listener registered). Back off and retry.
+			await new Promise((r) => setTimeout(r, 100 * (i + 1))); // 100ms, 200ms, 300ms, 400ms, 500ms
+		}
+	}
+}
 
 // Initialize on install
 chrome.runtime.onInstalled.addListener(async (details) => {
@@ -54,7 +75,13 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 	}
 
 	// Create context menus
-	chrome.contextMenus.removeAll(() => {
+	// rule: convert callback-style removeAll to async/await with try/catch.
+	// Previously, if removeAll invoked its callback with chrome.runtime.lastError,
+	// the create calls still ran (or didn't, depending on chrome's internal
+	// ordering) and any error was silently swallowed. Now any failure is
+	// logged and we skip the create calls.
+	try {
+		await chrome.contextMenus.removeAll();
 		chrome.contextMenus.create({
 			id: MENU_OPEN_HALO,
 			title: '🌟 Open HALO Toolbox',
@@ -79,7 +106,9 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 			contexts: ['link'],
 			targetUrlPatterns: ['*://*/*.pdf', '*://*/*.pdf?*'],
 		});
-	});
+	} catch (err) {
+		console.warn(LOG_TAG, 'Context menu setup failed', err);
+	}
 });
 
 // Handle context menu clicks
@@ -91,46 +120,42 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 			await chrome.sidePanel.open({ tabId: tab.id });
 			break;
 
-		case MENU_QR_SELECTION:
+		case MENU_QR_SELECTION: {
 			// Open sidepanel with QR tool and prefill text
 			await chrome.sidePanel.open({ tabId: tab.id });
 			const text = info.selectionText || info.linkUrl || '';
 			if (text) {
 				// Send message to sidepanel to prefill QR input
-				setTimeout(() => {
-					chrome.runtime.sendMessage({
-						type: 'HALO_PREFILL_QR',
-						text,
-					});
-				}, 500);
+				void sendPrefillMessage({
+					type: 'HALO_PREFILL_QR',
+					text,
+				});
 			}
 			break;
+		}
 
 		case MENU_COLOR_PICK:
 			// Activate color eyedropper (future: use EyeDropper API)
 			await chrome.sidePanel.open({ tabId: tab.id });
-			setTimeout(() => {
-				chrome.runtime.sendMessage({
-					type: 'HALO_ACTIVATE_TOOL',
-					toolId: 'color-picker',
-				});
-			}, 500);
+			void sendPrefillMessage({
+				type: 'HALO_ACTIVATE_TOOL',
+				toolId: 'color-picker',
+			});
 			break;
 
-		case MENU_PDF_LINK:
+		case MENU_PDF_LINK: {
 			// Open sidepanel with PDF tool and store the PDF URL
 			await chrome.sidePanel.open({ tabId: tab.id });
 			const pdfUrl = info.linkUrl;
 			if (pdfUrl) {
-				setTimeout(() => {
-					chrome.runtime.sendMessage({
-						type: 'HALO_ACTIVATE_TOOL',
-						toolId: 'pdf',
-						pdfUrl,
-					});
-				}, 500);
+				void sendPrefillMessage({
+					type: 'HALO_ACTIVATE_TOOL',
+					toolId: 'pdf',
+					pdfUrl,
+				});
 			}
 			break;
+		}
 	}
 });
 
@@ -184,14 +209,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			return true;
 		}
 		const host = parsedUrl.hostname.toLowerCase();
-		const isPrivateHost = host === 'localhost' || host === '::1' ||
-			host.endsWith('.localhost') ||
-			host === '127.0.0.1' || host.startsWith('127.') ||
-			host.startsWith('10.') || host.startsWith('192.168.') ||
-			/^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
-			host.startsWith('169.254.') || host === 'metadata.google.internal' ||
-			host.endsWith('.internal') || host.endsWith('.local');
-		if (isPrivateHost) {
+		// rule: delegate to ssrf-guard — covers IPv6 ULA/link-local, IPv4-mapped IPv6,
+		// 0.0.0.0, CGN 100.64.0.0/10, TEST-NET ranges, decimal/hex IP representations,
+		// and cloud metadata endpoints.
+		if (isPrivateHost(host)) {
 			sendResponse({ success: false, error: 'private/internal hosts blocked' });
 			return true;
 		}
@@ -226,19 +247,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	// Inject CSS dynamically (Bypass CSP)
 	if (message.type === 'HALO_INJECT_CSS') {
 		const { css } = message;
-		if (sender.tab?.id && css) {
-			chrome.scripting.insertCSS({
-				target: { tabId: sender.tab.id },
-				css: css,
-			}).then(() => {
-				console.log(LOG_TAG, 'Injected dynamic CSS for tab', sender.tab?.id);
-				sendResponse({ success: true });
-			}).catch(e => {
-				console.warn(LOG_TAG, 'Failed to inject CSS:', e);
-				sendResponse({ success: false, error: e.message });
-			});
-			return true; // async
+		if (!sender.tab?.id || !css) {
+			// rule: respond on every early-return path — otherwise the caller's
+			// promise hangs forever waiting for a response that never arrives.
+			sendResponse({ success: false, error: 'missing_tab_or_css' });
+			return false;
 		}
+		chrome.scripting.insertCSS({
+			target: { tabId: sender.tab.id },
+			css: css,
+		}).then(() => {
+			console.log(LOG_TAG, 'Injected dynamic CSS for tab', sender.tab?.id);
+			sendResponse({ success: true });
+		}).catch(e => {
+			console.warn(LOG_TAG, 'Failed to inject CSS:', e);
+			sendResponse({ success: false, error: e.message });
+		});
+		return true; // async
 	}
 
 	return false;

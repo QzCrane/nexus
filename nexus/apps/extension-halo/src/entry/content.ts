@@ -21,8 +21,12 @@ const activeTools = new Set<string>();
 
 const onCopy = () => {
 	setTimeout(() => {
+		// rule: skip password fields — copying the masked selection from a
+		// password input would leak the actual cleartext password into history.
+		const active = document.activeElement;
+		if (active instanceof HTMLInputElement && active.type === 'password') return;
 		const selection = document.getSelection()?.toString();
-		if (selection && selection.trim()) {
+		if (selection?.trim()) {
 			chrome.runtime.sendMessage({
 				type: 'HALO_CLIPBOARD_ADD',
 				text: selection,
@@ -49,14 +53,14 @@ function updateClipboardState(enabled: boolean) {
 
 // Initial check
 chrome.storage.local.get(['halo_tool_clipboard_settings'], (result) => {
-	const settings = result['halo_tool_clipboard_settings'] || { enabled: true };
+	const settings = result.halo_tool_clipboard_settings || { enabled: true };
 	updateClipboardState(settings.enabled);
 });
 
 // Dynamic toggle
 chrome.storage.onChanged.addListener((changes, area) => {
-	if (area === 'local' && changes['halo_tool_clipboard_settings']) {
-		const newState = changes['halo_tool_clipboard_settings'].newValue || { enabled: true };
+	if (area === 'local' && changes.halo_tool_clipboard_settings) {
+		const newState = changes.halo_tool_clipboard_settings.newValue || { enabled: true };
 		updateClipboardState(newState.enabled);
 	}
 });
@@ -71,7 +75,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 			});
 			break;
 
-		case 'HALO_TOOL_ACTIVATE':
+		case 'HALO_TOOL_ACTIVATE': {
 			const toolId = message.payload?.toolId;
 			if (toolId) {
 				console.log(LOG_TAG, 'Tool activation requested:', toolId);
@@ -81,14 +85,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 				sendResponse({ success: false, error: 'Missing toolId' });
 			}
 			break;
+		}
 
-		case 'HALO_TOOL_DEACTIVATE':
+		case 'HALO_TOOL_DEACTIVATE': {
 			const deactivateId = message.payload?.toolId;
 			if (deactivateId) {
 				activeTools.delete(deactivateId);
 				sendResponse({ success: true });
 			}
 			break;
+		}
 
 		case 'HALO_RULER_START':
 			Ruler.start();
@@ -122,7 +128,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 			sendResponse({ success: true });
 			break;
 
-		case 'HALO_SCROLL_TO_HEADING':
+		case 'HALO_SCROLL_TO_HEADING': {
 			const headingIndex = message.index;
 			if (typeof headingIndex === 'number') {
 				const headings = document.querySelectorAll('h1,h2,h3,h4,h5,h6');
@@ -139,6 +145,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 				sendResponse({ success: false, error: 'Missing index' });
 			}
 			break;
+		}
 
 		case 'HALO_SMOOTH_SCROLL_UPDATE':
 			if (message.settings) {
@@ -164,8 +171,24 @@ if (window === window.top) {
 }
 
 // LLM Enhancer Loader
-const LLM_SITES = /(chatgpt|openai|deepseek|gemini|aistudio|claude)/;
-if (LLM_SITES.test(window.location.hostname)) {
+// rule: precise hostname matching — the previous substring regex would match
+// notchatgpt.com or openai.example.org. Match either exact hosts or their
+// documented subdomain suffixes only.
+const LLM_HOSTS = new Set([
+	'chatgpt.com',
+	'chat.openai.com',
+	'openai.com',
+	'deepseek.com',
+	'gemini.google.com',
+	'aistudio.google.com',
+	'claude.ai',
+]);
+const llmHostname = window.location.hostname;
+const isLlmSite =
+	LLM_HOSTS.has(llmHostname) ||
+	llmHostname.endsWith('.chatgpt.com') ||
+	llmHostname.endsWith('.openai.com');
+if (isLlmSite) {
 	const toolUrl = chrome.runtime.getURL('tools/llm-enhancer/script.js');
 	import(toolUrl).then(() => {
 		console.log(LOG_TAG, 'LLM Enhancer loaded');

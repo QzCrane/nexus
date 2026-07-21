@@ -69,7 +69,7 @@ export class ModuleManager {
 
 	async update(id: string): Promise<void> {
 		const state = this.states.get(id);
-		if (!state || state.status !== 'installed') throw new Error(`Not installed: ${id}`);
+		if (state?.status !== 'installed') throw new Error(`Not installed: ${id}`);
 		state.status = 'updating';
 		this.states.set(id, { ...state });
 		await saveState(state);
@@ -90,5 +90,10 @@ export const getModuleManager = async (): Promise<ModuleManager> => {
 		initPromise = null;
 		return m;
 	})();
+	// rule: on rejection, clear the cached promise so the next caller can retry.
+	// Without this, a single initialize() failure permanently pinned initPromise
+	// to a rejected Promise, and every subsequent getModuleManager() returned
+	// the same rejection — the manager could never recover without a SW restart.
+	initPromise.catch(() => { initPromise = null; });
 	return initPromise;
 };

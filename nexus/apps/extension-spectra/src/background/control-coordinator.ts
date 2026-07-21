@@ -331,7 +331,13 @@ async function persistGeneration(tabId: number, generation: number): Promise<voi
 }
 
 async function getSnapshot(tabId: number): Promise<ControlSnapshot | null> {
-	await invalidations.get(tabId);
+	const invalidation = invalidations.get(tabId);
+	if (invalidation) {
+		await Promise.race([
+			invalidation,
+			new Promise<void>((resolve) => setTimeout(() => resolve(), 5_000)),
+		]);
+	}
 	const known = snapshots.get(tabId) ?? await readPersistedSnapshot(tabId);
 	if (!known) return null;
 	const identity = await currentIdentity(tabId).catch(() => null);

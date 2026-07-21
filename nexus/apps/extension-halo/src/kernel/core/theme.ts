@@ -115,7 +115,8 @@ export function applyTheme(colors: ThemeColors): void {
 export async function loadSettings(): Promise<HaloSettings> {
 	const result = await safeStorageGet<{ [SETTINGS_STORAGE_KEY]?: Partial<HaloSettings> }>(
 		[SETTINGS_STORAGE_KEY],
-		{}
+		{},
+		{ area: 'sync' }
 	);
 	return { ...DEFAULT_SETTINGS, ...result[SETTINGS_STORAGE_KEY] };
 }
@@ -126,6 +127,6 @@ export async function loadSettings(): Promise<HaloSettings> {
 export async function saveSettings(settings: Partial<HaloSettings>): Promise<HaloSettings> {
 	const current = await loadSettings();
 	const updated = { ...current, ...settings };
-	await safeStorageSet({ [SETTINGS_STORAGE_KEY]: updated });
+	await safeStorageSet({ [SETTINGS_STORAGE_KEY]: updated }, { area: 'sync' });
 	return updated;
 }

@@ -6,9 +6,9 @@
 
 import esbuild from 'esbuild';
 import { rmSync, mkdirSync, cpSync, existsSync, readdirSync, copyFileSync, statSync } from 'node:fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,7 +36,6 @@ const commonConfig = {
 	define: { 'process.env.NODE_ENV': isDev ? '"development"' : '"production"' },
 	loader: { '.ts': 'ts', '.tsx': 'tsx' },
 	alias: {
-		'@nexus/contracts': path.resolve(__dirname, '../../packages/contracts/dist/index.js'),
 		'@nexus/kernel': path.resolve(__dirname, '../../packages/nexus-kernel/dist/index.js'),
 		'@nexus/ui-kit': path.resolve(__dirname, '../../packages/ui-kit/dist/index.js')
 	}

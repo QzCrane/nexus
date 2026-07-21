@@ -13,7 +13,12 @@ export class ResourceManager {
 	private async ensureDB(): Promise<IDBDatabase> {
 		if (!this.db) {
 			this.db = await openDB();
+			// rule: handle unexpected connection close/error so the singleton is dropped
+			// and the next op re-opens. Without these listeners, a closed/error'd handle
+			// would be retained forever and every subsequent transaction would fail.
 			this.db.addEventListener('versionchange', () => this.close());
+			this.db.addEventListener('close', () => this.close());
+			this.db.addEventListener('error', () => this.close());
 		}
 		return this.db;
 	}

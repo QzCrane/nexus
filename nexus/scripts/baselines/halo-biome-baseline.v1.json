@@ -16,10 +16,10 @@
 	],
 	"summary": {
 		"checkedFiles": 925,
-		"diagnostics": 906,
-		"errors": 631,
-		"warnings": 173,
-		"infos": 102
+		"diagnostics": 872,
+		"errors": 616,
+		"warnings": 166,
+		"infos": 90
 	},
 	"categories": [
 		{
@@ -32,7 +32,7 @@
 		},
 		{
 			"category": "lint/a11y/noStaticElementInteractions",
-			"count": 64
+			"count": 63
 		},
 		{
 			"category": "lint/a11y/noSvgWithoutTitle",
@@ -40,11 +40,11 @@
 		},
 		{
 			"category": "lint/a11y/useButtonType",
-			"count": 315
+			"count": 309
 		},
 		{
 			"category": "lint/a11y/useKeyWithClickEvents",
-			"count": 58
+			"count": 57
 		},
 		{
 			"category": "lint/complexity/noImportantStyles",
@@ -64,19 +64,19 @@
 		},
 		{
 			"category": "lint/complexity/useArrowFunction",
-			"count": 2
+			"count": 1
 		},
 		{
 			"category": "lint/complexity/useLiteralKeys",
-			"count": 18
+			"count": 15
 		},
 		{
 			"category": "lint/complexity/useOptionalChain",
-			"count": 16
+			"count": 13
 		},
 		{
 			"category": "lint/correctness/noSwitchDeclarations",
-			"count": 7
+			"count": 2
 		},
 		{
 			"category": "lint/correctness/noUnusedFunctionParameters",
@@ -84,7 +84,7 @@
 		},
 		{
 			"category": "lint/correctness/noUnusedImports",
-			"count": 77
+			"count": 75
 		},
 		{
 			"category": "lint/correctness/noUnusedPrivateClassMembers",
@@ -96,15 +96,15 @@
 		},
 		{
 			"category": "lint/correctness/useExhaustiveDependencies",
-			"count": 123
+			"count": 122
 		},
 		{
 			"category": "lint/correctness/useParseIntRadix",
-			"count": 29
+			"count": 28
 		},
 		{
 			"category": "lint/security/noDangerouslySetInnerHtml",
-			"count": 4
+			"count": 3
 		},
 		{
 			"category": "lint/style/noDescendingSpecificity",
@@ -123,12 +123,8 @@
 			"count": 1
 		},
 		{
-			"category": "lint/style/useNodejsImportProtocol",
-			"count": 3
-		},
-		{
 			"category": "lint/style/useTemplate",
-			"count": 36
+			"count": 31
 		},
 		{
 			"category": "lint/suspicious/noArrayIndexKey",
@@ -152,7 +148,7 @@
 		},
 		{
 			"category": "lint/suspicious/noRedundantUseStrict",
-			"count": 2
+			"count": 1
 		},
 		{
 			"category": "lint/suspicious/noShadowRestrictedNames",
@@ -283,11 +279,11 @@
 		"apps/extension-halo/src/kernel/storage.ts",
 		"apps/extension-halo/src/kernel/theme.ts",
 		"apps/extension-halo/src/kernel/tool-prefs-storage.ts",
-		"apps/extension-halo/src/kernel/tool-registry.ts",
 		"apps/extension-halo/src/kernel/types.ts",
 		"apps/extension-halo/src/kernel/use-tool-manager.ts",
 		"apps/extension-halo/src/kernel/utils/pop-out-window.ts",
 		"apps/extension-halo/src/kernel/utils/resource-utils.ts",
+		"apps/extension-halo/src/kernel/utils/ssrf-guard.ts",
 		"apps/extension-halo/src/kernel/utils/tool-search-utils.ts",
 		"apps/extension-halo/src/kernel/utils/tool-storage-utils.ts",
 		"apps/extension-halo/src/kernel/utils/unified-search.ts",
@@ -1091,19 +1087,6 @@
 		"apps/extension-halo/src/tools/yaml/types.ts"
 	],
 	"diagnostics": [
-		{
-			"fingerprint": "0021926c5a910df584e329132097f080340dde468eedb328a3e13c2bc3b3c19a",
-			"severity": "error",
-			"path": "apps/extension-halo/src/components/SearchBar.tsx",
-			"category": "lint/a11y/noStaticElementInteractions",
-			"message": "Unexpected event handler on static element.",
-			"range": [
-				114,
-				15,
-				122,
-				16
-			]
-		},
 		{
 			"fingerprint": "00a1b138022452fa3cba2f1894de04992dffff54e631ab8eb1120fe98b193cc1",
 			"severity": "error",
@@ -1911,19 +1894,6 @@
 			]
 		},
 		{
-			"fingerprint": "0cce9c4b603d667f2da3cdcba3a24a5978db0e0d8d629f0aeeaf2848c43b6fc6",
-			"severity": "info",
-			"path": "apps/extension-halo/src/tools/reader-mode/panel.tsx",
-			"category": "lint/correctness/useParseIntRadix",
-			"message": "Missing radix parameter",
-			"range": [
-				65,
-				60,
-				65,
-				84
-			]
-		},
-		{
 			"fingerprint": "0cd6b721fbe8f25ba4249bf87bff8b1df492e9f096f7f081dd778d55bd2ca327",
 			"severity": "error",
 			"path": "apps/extension-halo/src/system/userscripts/components/ImportExportModal.tsx",
@@ -2249,19 +2219,6 @@
 			]
 		},
 		{
-			"fingerprint": "1452157eae3d72b41e932a394a244c3718bb29f74f04cdf4422a58deba8aa4a4",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/scripts/bilibili-enhancer/script.js",
-			"category": "lint/suspicious/noRedundantUseStrict",
-			"message": "Redundant use strict directive.",
-			"range": [
-				7,
-				2,
-				7,
-				15
-			]
-		},
-		{
 			"fingerprint": "14b93c1ab2f8dec48a8354b00dae4e823e77e8f2f5a82b23a663284732e8d13f",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/color-picker/panel.tsx",
@@ -2431,19 +2388,6 @@
 			]
 		},
 		{
-			"fingerprint": "18be811afc64bc2aebd00ce04f4a814ea05551c983ca375f64386938b8b09121",
-			"severity": "error",
-			"path": "apps/extension-halo/src/components/ToolManager.tsx",
-			"category": "lint/a11y/useButtonType",
-			"message": "Provide an explicit type prop for the button element.",
-			"range": [
-				64,
-				11,
-				64,
-				61
-			]
-		},
-		{
 			"fingerprint": "18ee5533399f81c5248b73ec7c05d884312a11172b03c78ab4aa8f2f4f2e4586",
 			"severity": "warning",
 			"path": "apps/extension-halo/src/tools/ssl-cert/panel.tsx",
@@ -2467,19 +2411,6 @@
 				8,
 				102,
 				56
-			]
-		},
-		{
-			"fingerprint": "194ceb5f5e9f1f0decca85b92d308e89e15e6822e12e73e5626744eea2f98bdd",
-			"severity": "error",
-			"path": "apps/extension-halo/src/tools/reader-mode/panel.tsx",
-			"category": "lint/a11y/useButtonType",
-			"message": "Provide an explicit type prop for the button element.",
-			"range": [
-				42,
-				7,
-				51,
-				8
 			]
 		},
 		{
@@ -2769,19 +2700,6 @@
 			]
 		},
 		{
-			"fingerprint": "203f4a7767c4b2c06c26f04761b44f59c4e9067eeda1c2ed45b22d53e8817bf4",
-			"severity": "info",
-			"path": "apps/extension-halo/build.mjs",
-			"category": "lint/style/useNodejsImportProtocol",
-			"message": "A Node.js builtin module should be imported with the node: protocol.",
-			"range": [
-				9,
-				18,
-				9,
-				24
-			]
-		},
-		{
 			"fingerprint": "21e7332782216cd0fa276516cd961bf73aa1c0e3aa399459de080594a83f3c9c",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/tabs/TabItem.tsx",
@@ -2844,19 +2762,6 @@
 				5,
 				60,
 				6
-			]
-		},
-		{
-			"fingerprint": "22f1a438e22dc03c4ae3e73c4c5e0abfa17eb7ccd7c0a089e5e66758bc4b7350",
-			"severity": "error",
-			"path": "apps/extension-halo/src/entry/background.ts",
-			"category": "lint/correctness/noSwitchDeclarations",
-			"message": "Other switch clauses can erroneously access this declaration.\nWrap the declaration in a block to restrict its access to the switch clause.",
-			"range": [
-				123,
-				4,
-				123,
-				31
 			]
 		},
 		{
@@ -3315,19 +3220,6 @@
 			]
 		},
 		{
-			"fingerprint": "2da7cb9809ef220f46a852ed97237b0330ddb388a6ed2e4688b9209698c92788",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/kernel/managers/module-manager.ts",
-			"category": "lint/complexity/useOptionalChain",
-			"message": "Change to an optional chain.",
-			"range": [
-				72,
-				7,
-				72,
-				45
-			]
-		},
-		{
 			"fingerprint": "2df491ff5c23adcc2fe7ca97ab653fe34d3de52bfd4c196e9b0a35c9949981ab",
 			"severity": "error",
 			"path": "apps/extension-halo/src/components/legacy/command-palette.tsx",
@@ -3533,19 +3425,6 @@
 				16,
 				95,
 				27
-			]
-		},
-		{
-			"fingerprint": "31502db47e58718d96f818a7c47ba70ebee1ab1f19895e765be7f83a65ea4bf6",
-			"severity": "error",
-			"path": "apps/extension-halo/src/entry/content.ts",
-			"category": "lint/correctness/noSwitchDeclarations",
-			"message": "Other switch clauses can erroneously access this declaration.\nWrap the declaration in a block to restrict its access to the switch clause.",
-			"range": [
-				126,
-				4,
-				126,
-				38
 			]
 		},
 		{
@@ -3832,19 +3711,6 @@
 				11,
 				87,
 				79
-			]
-		},
-		{
-			"fingerprint": "37dc1f5068ad91f85a76c40f1ec3dfd57b964cd0417611d6803c6b16f9625e64",
-			"severity": "info",
-			"path": "apps/extension-halo/src/entry/content.ts",
-			"category": "lint/complexity/useLiteralKeys",
-			"message": "The computed expression can be simplified without the use of a string literal.",
-			"range": [
-				52,
-				26,
-				52,
-				56
 			]
 		},
 		{
@@ -4183,19 +4049,6 @@
 				2,
 				85,
 				3
-			]
-		},
-		{
-			"fingerprint": "3ff50b57005314a06e0b2e80f9308781e791cba3ad98e818f8099a3d7d69e0f8",
-			"severity": "info",
-			"path": "apps/extension-halo/src/entry/content.ts",
-			"category": "lint/complexity/useLiteralKeys",
-			"message": "The computed expression can be simplified without the use of a string literal.",
-			"range": [
-				58,
-				34,
-				58,
-				64
 			]
 		},
 		{
@@ -4706,19 +4559,6 @@
 			]
 		},
 		{
-			"fingerprint": "48ec37a25e41a2172b59eafff918f756fa6c32084ec715f38ea4afecb1d29538",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/entry/content.ts",
-			"category": "lint/complexity/useOptionalChain",
-			"message": "Change to an optional chain.",
-			"range": [
-				25,
-				7,
-				25,
-				36
-			]
-		},
-		{
 			"fingerprint": "492d5258730507fd89b11394814653f4d7ad7c6fc2ccfb696ecb904cd9f654c9",
 			"severity": "info",
 			"path": "apps/extension-halo/src/tools/xml-formatter/core.ts",
@@ -4810,19 +4650,6 @@
 			]
 		},
 		{
-			"fingerprint": "4bcfb54a98d365e9a372c3edeb19c94a27f24f46ef3325a036f3e9f8c44b44d8",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/kernel/services/saat-service.ts",
-			"category": "lint/correctness/noUnusedImports",
-			"message": "Several of these imports are unused.",
-			"range": [
-				6,
-				15,
-				6,
-				25
-			]
-		},
-		{
 			"fingerprint": "4bd4881b94d47d2c88a0a7f987137d8916eae2b173421c50369853dbf771548d",
 			"severity": "info",
 			"path": "apps/extension-halo/src/tools/cron/core.ts",
@@ -4833,19 +4660,6 @@
 				9,
 				139,
 				24
-			]
-		},
-		{
-			"fingerprint": "4bdeac8a84bdd4f7132febd7b6c0a3dd097fb88d903184683b6c6feab8cf4e98",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/tools/reader-mode/panel.tsx",
-			"category": "lint/correctness/noUnusedImports",
-			"message": "Several of these imports are unused.",
-			"range": [
-				3,
-				27,
-				3,
-				36
 			]
 		},
 		{
@@ -4953,19 +4767,6 @@
 			]
 		},
 		{
-			"fingerprint": "4eb4227934f3765ead4d41de1bfcb346870f9409a635080f51022788d1a4af94",
-			"severity": "info",
-			"path": "apps/extension-halo/src/scripts/bilibili-enhancer/script.js",
-			"category": "lint/style/useTemplate",
-			"message": "Template literals are preferred over string concatenation.",
-			"range": [
-				115,
-				23,
-				115,
-				33
-			]
-		},
-		{
 			"fingerprint": "4eca8dd634200cbd73182d42e230241cb1777b3288f1fa8669d74dc3661259ea",
 			"severity": "warning",
 			"path": "apps/extension-halo/src/tools/uuid/core.ts",
@@ -5054,19 +4855,6 @@
 				21,
 				15,
 				31
-			]
-		},
-		{
-			"fingerprint": "50a20eaf66d15e2802012009af1fc326833cc8b626444477e89ec6d596e3fc74",
-			"severity": "info",
-			"path": "apps/extension-halo/src/entry/content.ts",
-			"category": "lint/complexity/useLiteralKeys",
-			"message": "The computed expression can be simplified without the use of a string literal.",
-			"range": [
-				59,
-				28,
-				59,
-				58
 			]
 		},
 		{
@@ -5161,19 +4949,6 @@
 			]
 		},
 		{
-			"fingerprint": "532678cd57546dac1c325ac7e788ab0b1bbc19c213f5148baaa0c50870e22cc1",
-			"severity": "error",
-			"path": "apps/extension-halo/src/tools/reader-mode/panel.tsx",
-			"category": "lint/correctness/useExhaustiveDependencies",
-			"message": "This hook does not specify its dependency on setArticle.",
-			"range": [
-				20,
-				24,
-				20,
-				35
-			]
-		},
-		{
 			"fingerprint": "53da0c1ae3a778d75388d646b62a5627f0b076f3bb3516291341cfdb0800dedb",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/qrcode/panel.tsx",
@@ -5262,19 +5037,6 @@
 				122,
 				98,
 				146
-			]
-		},
-		{
-			"fingerprint": "563e444a785f1fb1dfd7c6fcc263da0aefd011f053ec9672d2998fdbcc0ebba8",
-			"severity": "info",
-			"path": "apps/extension-halo/src/system/userscripts/engine.ts",
-			"category": "lint/style/useTemplate",
-			"message": "Template literals are preferred over string concatenation.",
-			"range": [
-				54,
-				4,
-				54,
-				17
 			]
 		},
 		{
@@ -5980,19 +5742,6 @@
 			]
 		},
 		{
-			"fingerprint": "6893e843ae0071503a1e2d8dd4d472b2697dca08e378abfd4ba9ff3c40ede0b1",
-			"severity": "error",
-			"path": "apps/extension-halo/src/components/ToolManager.tsx",
-			"category": "lint/a11y/useButtonType",
-			"message": "Provide an explicit type prop for the button element.",
-			"range": [
-				125,
-				19,
-				129,
-				20
-			]
-		},
-		{
 			"fingerprint": "68e7ad9413efeffb8aeeb5a620b660614c8572dee023c2eed690d1e68515b4d7",
 			"severity": "info",
 			"path": "apps/extension-halo/src/tools/network/core.ts",
@@ -6513,19 +6262,6 @@
 			]
 		},
 		{
-			"fingerprint": "752443f493189b0b70fba52d1ff81804b61fa3390581b89fac51c4d05656cbb5",
-			"severity": "info",
-			"path": "apps/extension-halo/src/scripts/bilibili-enhancer/script.js",
-			"category": "lint/style/useTemplate",
-			"message": "Template literals are preferred over string concatenation.",
-			"range": [
-				119,
-				23,
-				119,
-				33
-			]
-		},
-		{
 			"fingerprint": "75415f95122c763fba35f7b526f069334abad7d9e41ad074ed8edeec84af6d1e",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/random-gen/panel.tsx",
@@ -6955,19 +6691,6 @@
 			]
 		},
 		{
-			"fingerprint": "8028f2c1aeb7a20c6542126368571bbe26f6dc4139d9a18c258d1d7972116d56",
-			"severity": "error",
-			"path": "apps/extension-halo/src/tools/reader-mode/panel.tsx",
-			"category": "lint/a11y/useButtonType",
-			"message": "Provide an explicit type prop for the button element.",
-			"range": [
-				33,
-				4,
-				33,
-				74
-			]
-		},
-		{
 			"fingerprint": "8040507a76dc0572c906361dad9aced63bb7de3127cbe4db936075cb73831ae7",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/qrcode/panel.tsx",
@@ -7020,19 +6743,6 @@
 			]
 		},
 		{
-			"fingerprint": "8077a4ff2c8329de74ac5ceaf2cc04154177c8d17d8903b46ba12b0cfd771ca5",
-			"severity": "error",
-			"path": "apps/extension-halo/src/components/ToolManager.tsx",
-			"category": "lint/a11y/useButtonType",
-			"message": "Provide an explicit type prop for the button element.",
-			"range": [
-				80,
-				11,
-				87,
-				12
-			]
-		},
-		{
 			"fingerprint": "808c34c5c12c6a86bfff95d3c400b58f9c1d448ae8c362d6953d0e1cf6456a90",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/mock-data/panel.tsx",
@@ -7043,19 +6753,6 @@
 				7,
 				81,
 				64
-			]
-		},
-		{
-			"fingerprint": "81832528f8cab6ea15bf06b15557821479e7280158a1747297aa6116e1d1bbac",
-			"severity": "info",
-			"path": "apps/extension-halo/src/system/userscripts/engine.ts",
-			"category": "lint/style/useTemplate",
-			"message": "Template literals are preferred over string concatenation.",
-			"range": [
-				55,
-				4,
-				55,
-				65
 			]
 		},
 		{
@@ -7423,19 +7120,6 @@
 			]
 		},
 		{
-			"fingerprint": "8a510d0569e37ebb022e6c8e9bb70c46f1a328359bcdab5b4fd398470497d271",
-			"severity": "error",
-			"path": "apps/extension-halo/src/entry/content.ts",
-			"category": "lint/correctness/noSwitchDeclarations",
-			"message": "Other switch clauses can erroneously access this declaration.\nWrap the declaration in a block to restrict its access to the switch clause.",
-			"range": [
-				75,
-				4,
-				75,
-				42
-			]
-		},
-		{
 			"fingerprint": "8a551ec9bc02913fa0c8efebfc3931f2f3517a85a70556e43de07a42bd1df58d",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/timer/panel.tsx",
@@ -7615,19 +7299,6 @@
 				7,
 				66,
 				80
-			]
-		},
-		{
-			"fingerprint": "8f104a09385d8cdf5ad5f96396d85f04e8db21238e6da9dac265d6d72d70bc8b",
-			"severity": "info",
-			"path": "apps/extension-halo/src/system/userscripts/engine.ts",
-			"category": "lint/style/useTemplate",
-			"message": "Template literals are preferred over string concatenation.",
-			"range": [
-				57,
-				4,
-				57,
-				69
 			]
 		},
 		{
@@ -8681,19 +8352,6 @@
 				27,
 				3,
 				49
-			]
-		},
-		{
-			"fingerprint": "a1198a05e0d89d8df6890dc1bc7120e663ea1cb508396a0258501ca7f7937444",
-			"severity": "info",
-			"path": "apps/extension-halo/build.mjs",
-			"category": "lint/style/useNodejsImportProtocol",
-			"message": "A Node.js builtin module should be imported with the node: protocol.",
-			"range": [
-				10,
-				31,
-				10,
-				36
 			]
 		},
 		{
@@ -10296,19 +9954,6 @@
 			]
 		},
 		{
-			"fingerprint": "c52ba9fdb88c88f86081a9c8d684902e57ab4681448b5605a41ef9b6d6c437e8",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/kernel/services/saat-service.ts",
-			"category": "lint/complexity/useOptionalChain",
-			"message": "Change to an optional chain.",
-			"range": [
-				272,
-				8,
-				272,
-				32
-			]
-		},
-		{
 			"fingerprint": "c5657539dd42af84e69f366db7f43182d6bce540407c05253893901ebe127377",
 			"severity": "warning",
 			"path": "apps/extension-halo/src/tools/sticky-notes/panel.tsx",
@@ -11453,19 +11098,6 @@
 			]
 		},
 		{
-			"fingerprint": "e0b361edfbf85abbded7c9b5f313da751612b6b7e05d8e475dc8aae49200ce6d",
-			"severity": "info",
-			"path": "apps/extension-halo/build.mjs",
-			"category": "lint/style/useNodejsImportProtocol",
-			"message": "A Node.js builtin module should be imported with the node: protocol.",
-			"range": [
-				11,
-				26,
-				11,
-				41
-			]
-		},
-		{
 			"fingerprint": "e11529f18f33065a08be940fe2c346699bab12bcc295787183cd665163817c0a",
 			"severity": "error",
 			"path": "apps/extension-halo/src/system/extension-manager/ExtCard.tsx",
@@ -11570,19 +11202,6 @@
 			]
 		},
 		{
-			"fingerprint": "e5926cb126403bd238d00b4ef79a46ced9dfd16bb3fbd581d9bdb9c9a434a88e",
-			"severity": "error",
-			"path": "apps/extension-halo/src/entry/content.ts",
-			"category": "lint/correctness/noSwitchDeclarations",
-			"message": "Other switch clauses can erroneously access this declaration.\nWrap the declaration in a block to restrict its access to the switch clause.",
-			"range": [
-				86,
-				4,
-				86,
-				48
-			]
-		},
-		{
 			"fingerprint": "e5e29d81e584c0d4f8ee61383205f785b98cddd2b4eb07d8c232b5332e80f722",
 			"severity": "error",
 			"path": "apps/extension-halo/src/tools/csv-viewer/core.ts",
@@ -11644,19 +11263,6 @@
 				7,
 				8,
 				7,
-				16
-			]
-		},
-		{
-			"fingerprint": "e85b688b2015e7f134538e3eba41d95102466c294d71d3b072c01157df0ee260",
-			"severity": "error",
-			"path": "apps/extension-halo/src/components/SearchBar.tsx",
-			"category": "lint/a11y/useKeyWithClickEvents",
-			"message": "Enforce to have the onClick mouse event with the onKeyUp, the onKeyDown, or the onKeyPress keyboard event.",
-			"range": [
-				114,
-				15,
-				122,
 				16
 			]
 		},
@@ -11931,19 +11537,6 @@
 				10,
 				72,
 				80
-			]
-		},
-		{
-			"fingerprint": "ece770184c2a0d10f297380b9087300ce7bb7395d0dadf7fc93063787f63d553",
-			"severity": "warning",
-			"path": "apps/extension-halo/src/scripts/bilibili-enhancer/script.js",
-			"category": "lint/complexity/useArrowFunction",
-			"message": "This function expression can be turned into an arrow function.",
-			"range": [
-				6,
-				2,
-				178,
-				2
 			]
 		},
 		{
@@ -12350,19 +11943,6 @@
 			]
 		},
 		{
-			"fingerprint": "f5ef34a5769c0c1415e2615d5d28551be7d5d77101afa28f6fc863342613fcda",
-			"severity": "error",
-			"path": "apps/extension-halo/src/entry/background.ts",
-			"category": "lint/correctness/noSwitchDeclarations",
-			"message": "Other switch clauses can erroneously access this declaration.\nWrap the declaration in a block to restrict its access to the switch clause.",
-			"range": [
-				97,
-				4,
-				97,
-				57
-			]
-		},
-		{
 			"fingerprint": "f63eb22b847e0c37d0a8a4b4f2a72df326092e0385733555517018d60492355d",
 			"severity": "info",
 			"path": "apps/extension-halo/src/tools/network/core.ts",
@@ -12425,19 +12005,6 @@
 				17,
 				54,
 				46
-			]
-		},
-		{
-			"fingerprint": "f6ee81d1e70a752b808211fa56ded5da7c0f76cd4051a4d4dcdc860aa7cadda0",
-			"severity": "error",
-			"path": "apps/extension-halo/src/components/ToolManager.tsx",
-			"category": "lint/a11y/useButtonType",
-			"message": "Provide an explicit type prop for the button element.",
-			"range": [
-				61,
-				11,
-				61,
-				60
 			]
 		},
 		{
@@ -12736,19 +12303,6 @@
 				87,
 				23,
 				87,
-				34
-			]
-		},
-		{
-			"fingerprint": "fbf882302a685afec54f12e1a90ef7dbd9d522144a194ee820d17ae1d087bc28",
-			"severity": "error",
-			"path": "apps/extension-halo/src/tools/reader-mode/panel.tsx",
-			"category": "lint/security/noDangerouslySetInnerHtml",
-			"message": "Avoid passing content using the dangerouslySetInnerHTML prop.",
-			"range": [
-				100,
-				11,
-				100,
 				34
 			]
 		},

@@ -20,11 +20,21 @@ export function shouldAcceptAudioSessionPhase(
 	}
 
 	if (currentPhase === 'starting') {
-		return nextPhase === 'active' || nextPhase === 'error';
+		// A processor may stop or fail before reaching 'active'.
+		return nextPhase === 'active' || nextPhase === 'idle' || nextPhase === 'error';
 	}
 	if (currentPhase === 'stopping') {
-		return nextPhase === 'idle' || nextPhase === 'error';
+		// A user may re-enable audio before the processor finishes stopping.
+		return nextPhase === 'idle' || nextPhase === 'active' || nextPhase === 'error';
 	}
 
+	// Stable phases (idle, active) must not jump directly to another stable
+	// phase. They must go through a transitional phase (already gated above)
+	// or report an error. Error retains its original same-generation behavior:
+	// error→active/idle is allowed, while recovery to 'starting' requires a
+	// new generation (accepted by the generation check above).
+	if (currentPhase === 'idle' || currentPhase === 'active') {
+		return nextPhase === 'error';
+	}
 	return true;
 }

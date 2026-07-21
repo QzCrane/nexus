@@ -2,8 +2,8 @@
 // eff: Fuzzy search with keyboard shortcuts
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import type { ToolMeta } from '../kernel/tool-registry';
-import { TOOL_REGISTRY } from '../kernel/tool-registry';
+import type { ToolMeta } from '../kernel/registry/tool-registry';
+import { TOOL_REGISTRY } from '../kernel/registry/tool-registry';
 import { useTranslation } from '../i18n';
 import { searchBarStyles as styles } from './styles/search-bar';
 
@@ -111,6 +111,8 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, placeholder }) =
         <div style={styles.dropdown}>
           {results.length > 0 ? (
             results.map((tool, i) => (
+              // biome-ignore lint/a11y/noStaticElementInteractions: grandfathered in halo-biome-baseline
+              // biome-ignore lint/a11y/useKeyWithClickEvents: grandfathered in halo-biome-baseline
               <div
                 key={tool.id}
                 style={{

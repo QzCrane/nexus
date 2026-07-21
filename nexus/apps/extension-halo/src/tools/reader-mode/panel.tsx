@@ -1,10 +1,10 @@
 // goal: Reader Mode panel UI - extract and display readable content
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { ReaderConfig, ArticleContent } from './types';
-import { extractArticle, DEFAULT_CONFIG, THEMES, FONTS } from './core';
+import { extractArticle, DEFAULT_CONFIG, THEMES, FONTS, sanitizeHtml } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
 
@@ -22,7 +22,7 @@ export const ReaderModePanel: React.FC = () => {
 		const content = await extractArticle();
 		setArticle(content);
 		setLoading(false);
-	}, []);
+	}, [setArticle]);
 
 	// Get theme colors
 	const theme = THEMES[config.theme];
@@ -30,7 +30,7 @@ export const ReaderModePanel: React.FC = () => {
 	return (
 		<div style={styles.wrapper}>
 			{/* Extract Button */}
-			<button style={styles.btn} onClick={handleExtract} disabled={loading}>
+			<button type="button" style={styles.btn} onClick={handleExtract} disabled={loading}>
 				{loading ? '⏳' : '📖'} {t('readerMode.extract')}
 			</button>
 
@@ -40,6 +40,7 @@ export const ReaderModePanel: React.FC = () => {
 				<div style={styles.row}>
 					{Object.entries(THEMES).map(([key, th]) => (
 						<button
+							type="button"
 							key={key}
 							style={{
 								...styles.themeBtn,
@@ -62,7 +63,7 @@ export const ReaderModePanel: React.FC = () => {
 						min={14}
 						max={28}
 						value={config.fontSize}
-						onChange={(e) => setConfig((c) => ({ ...c, fontSize: parseInt(e.target.value) }))}
+						onChange={(e) => setConfig((c) => ({ ...c, fontSize: parseInt(e.target.value, 10) }))}
 						style={{ flex: 1 }}
 					/>
 					<span style={{ ...styles.label, width: '30px', textAlign: 'right' }}>{config.fontSize}</span>
@@ -96,8 +97,12 @@ export const ReaderModePanel: React.FC = () => {
 					}}
 				>
 					<div style={styles.previewTitle}>{article.title}</div>
-					{article.byline && <div style={styles.previewMeta}>{article.byline} • {article.siteName}</div>}
-					<div dangerouslySetInnerHTML={{ __html: article.content.slice(0, 2000) }} />
+				{article.byline && <div style={styles.previewMeta}>{article.byline} • {article.siteName}</div>}
+				{/* rule: sanitize after slicing — slice(0,2000) may split a tag mid-attribute
+			     and reintroduce an onX/javascript: fragment the core.ts cleanup already
+			     stripped. Re-run sanitizeHtml on the sliced string before injection. */}
+			{/* biome-ignore lint/security/noDangerouslySetInnerHtml: content is sanitized via sanitizeHtml() above */}
+			<div dangerouslySetInnerHTML={{ __html: sanitizeHtml(article.content.slice(0, 2000)) }} />
 					{article.content.length > 2000 && <div style={{ opacity: 0.5, marginTop: '12px' }}>...</div>}
 				</div>
 			)}

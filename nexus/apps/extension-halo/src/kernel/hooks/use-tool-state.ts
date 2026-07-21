@@ -68,8 +68,9 @@ export function useToolState<T>(
 		savePendingRef.current = true;
 
 		timerRef.current = setTimeout(() => {
-			savePendingRef.current = false;
-			safeStorageSet({ [storageKey]: newState }, { area });
+			safeStorageSet({ [storageKey]: newState }, { area })
+				.then(() => { savePendingRef.current = false; })
+				.catch(() => { savePendingRef.current = false; });
 		}, debounceMs);
 	}, [storageKey, debounceMs, area]);
 

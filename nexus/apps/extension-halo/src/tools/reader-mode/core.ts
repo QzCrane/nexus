@@ -2,6 +2,19 @@
 
 import type { ReaderConfig, ArticleContent } from './types';
 
+// rule: panel.tsx renders article.content via dangerouslySetInnerHTML in the
+// sidepanel context which has chrome.storage access, and additionally slices the
+// content to 2000 chars — slicing can split a tag mid-attribute and reintroduce
+// an unsafe fragment. Re-sanitize after slicing.
+export function sanitizeHtml(html: string): string {
+	return html
+		.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+		.replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
+		.replace(/\son\w+\s*=\s*'[^']*'/gi, '')
+		.replace(/\son\w+\s*=\s*[^\s>]+/gi, '')
+		.replace(/javascript:/gi, '');
+}
+
 // Extract article content from page (simplified readability algorithm)
 export async function extractArticle(): Promise<ArticleContent | null> {
 	try {

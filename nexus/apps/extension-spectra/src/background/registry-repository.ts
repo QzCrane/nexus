@@ -24,6 +24,7 @@ export interface RegistryStoragePort {
 		source: DomainSource,
 		route?: MediaRoute,
 		fingerprint?: string,
+		options?: { force?: boolean },
 	): Promise<RegistryResult>;
 	remove(fingerprint: string): Promise<RegistryResult>;
 	markProbed(
@@ -89,12 +90,17 @@ export class RegistryRepository {
 		return this.serialized(() => this.readSnapshot());
 	}
 
-	add(domain: string, source: DomainSource, route: MediaRoute): Promise<RegistryAddResult> {
+	add(
+		domain: string,
+		source: DomainSource,
+		route: MediaRoute,
+		options: { force?: boolean } = {},
+	): Promise<RegistryAddResult> {
 		return this.serialized(async () => {
 			const normalizedDomain = normalizeHostname(domain);
 			if (!normalizedDomain) throw new Error('Invalid registry domain');
 			const before = normalizeRegistryEntries(await this.registry.get());
-			const result = await this.registry.add(normalizedDomain, source, route);
+			const result = await this.registry.add(normalizedDomain, source, route, undefined, options);
 			if (!result.success) throw new Error(`Registry add failed: ${result.reason ?? 'unknown'}`);
 			const snapshot = await this.readSnapshot();
 			const entry = result.entry

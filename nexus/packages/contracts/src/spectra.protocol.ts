@@ -294,7 +294,7 @@ export interface SpectraRequestMap {
 		response: RegistrySnapshot;
 	};
 	'spectra.registry.add': {
-		payload: { domain: string; route: MediaRoute };
+		payload: { domain: string; route: MediaRoute; force?: boolean };
 		response: RegistryAddResult;
 	};
 	'spectra.registry.remove': {

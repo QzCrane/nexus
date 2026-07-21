@@ -132,7 +132,7 @@ export function useToolManager(): UseToolManagerResult {
 			list.sort((a, b) => getPrefs(b.id).usageCount - getPrefs(a.id).usageCount);
 		} else {
 			// By category, then by pinned
-			const catOrder: ToolCategory[] = ['general', 'dev', 'efficiency', 'visual', 'ai'];
+			const catOrder: ToolCategory[] = ['general', 'encode', 'format', 'network', 'data', 'dev', 'efficiency', 'browser', 'visual', 'media', 'security', 'ai', 'active', 'scripts', 'system'];
 			list.sort((a, b) => {
 				const pinnedA = getPrefs(a.id).pinned ? 0 : 1;
 				const pinnedB = getPrefs(b.id).pinned ? 0 : 1;

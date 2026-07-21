@@ -5,7 +5,7 @@ import React, { useCallback } from 'react';
 import { Card, Toggle } from '@nexus/ui-kit';
 import { useTranslation } from '../i18n';
 import type { ToolCategory } from '../i18n/types';
-import type { ToolMeta, ToolPrefs } from '../kernel/tool-registry';
+import type { ToolMeta, ToolPrefs } from '../kernel/registry/tool-registry';
 import type { SortMode } from '../kernel/use-tool-manager';
 import { toolManagerStyles as styles } from './styles/tool-manager';
 
@@ -58,10 +58,10 @@ export const ToolManagerPanel: React.FC<ToolManagerProps> = ({
       <div style={styles.header}>
         <span style={styles.title}>{t('toolManager.title')}</span>
         <div style={styles.actions}>
-          <button style={styles.btn} onClick={onEnableAll}>
+          <button type="button" style={styles.btn} onClick={onEnableAll}>
             {t('toolManager.enableAll')}
           </button>
-          <button style={styles.btn} onClick={onDisableAll}>
+          <button type="button" style={styles.btn} onClick={onDisableAll}>
             {t('toolManager.disableAll')}
           </button>
         </div>
@@ -78,6 +78,7 @@ export const ToolManagerPanel: React.FC<ToolManagerProps> = ({
       <div style={styles.filters}>
         {CATEGORY_OPTIONS.map((cat) => (
           <button
+            type="button"
             key={cat}
             style={{
               ...styles.filterChip,
@@ -123,6 +124,7 @@ export const ToolManagerPanel: React.FC<ToolManagerProps> = ({
                   </div>
 
                   <button
+                    type="button"
                     style={styles.pinBtn}
                     onClick={() => onTogglePinned(tool.id)}
                     title={toolPrefs.pinned ? t('toolManager.unpin') : t('toolManager.pin')}

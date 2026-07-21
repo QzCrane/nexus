@@ -51,6 +51,7 @@ function registerV2RegistryListener(): void {
 					message.payload.domain,
 					'user',
 					message.payload.route,
+					{ force: message.payload.force === true },
 				));
 			}
 			if (message.type === 'spectra.registry.remove') {

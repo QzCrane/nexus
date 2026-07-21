@@ -3,7 +3,7 @@
 
 import type { PluginMeta } from '../core/tool-registry-types';
 
-import type { PluginType, ScriptType } from '../registry/taxonomy';
+import type { ScriptType } from '../registry/taxonomy';
 
 const LOG_TAG = '[HALO:SaaT]';
 const SAAT_STORAGE_KEY = 'halo_saat_scripts';
@@ -262,14 +262,22 @@ export async function syncSaaTTools(tools: PluginMeta[]): Promise<void> {
 
 /**
  * Initialize SaaT Service: Watch Tool Prefs changes to update Script states
+ * rule: return a cleanup function and guard against double-registration.
+ * Previously the listener was attached on every call and never removed, so
+ * repeated init (e.g. SW restart, hot reload) stacked N identical listeners
+ * that each wrote back to storage, amplifying one change into N writes.
  */
-export function initSaaTService(): void {
-	chrome.storage.onChanged.addListener(async (changes, area) => {
+let saatInitialized = false;
+export function initSaaTService(): () => void {
+	if (saatInitialized) return () => {};
+	saatInitialized = true;
+
+	const listener = async (changes: { [key: string]: chrome.storage.StorageChange }, area: string) => {
 		if (area === 'local' && changes[TOOL_PREFS_KEY]) {
 			const newPrefs = changes[TOOL_PREFS_KEY].newValue || {};
 			const result = await chrome.storage.local.get(SAAT_STORAGE_KEY);
 			const state = result[SAAT_STORAGE_KEY];
-			if (!state || !state.scripts) return;
+			if (!state?.scripts) return;
 
 			let changed = false;
 			const scripts = state.scripts as SaaTScriptState[];
@@ -290,5 +298,12 @@ export function initSaaTService(): void {
 				await chrome.storage.local.set({ [SAAT_STORAGE_KEY]: state });
 			}
 		}
-	});
+	};
+
+	chrome.storage.onChanged.addListener(listener);
+
+	return () => {
+		chrome.storage.onChanged.removeListener(listener);
+		saatInitialized = false;
+	};
 }

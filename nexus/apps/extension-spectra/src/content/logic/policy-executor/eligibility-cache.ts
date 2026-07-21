@@ -82,6 +82,12 @@ export function createSiteEligibilityCache(
 		// `direct` route is wrong and must be corrected. Only Capture forces
 		// the overwrite; WebAudio success still respects a user-pinned Capture.
 		if (currentDecision.manualStatus && !options.force) return;
+		// Snapshot the in-memory decision so a failed persist can fully roll
+		// back. `cachedStatus`/`manualStatus` may have been advanced optimistically
+		// by the caller (recordActual); without rollback the in-memory view would
+		// diverge from the un-persisted storage state across SW restarts.
+		const savedCached = currentDecision.cachedStatus;
+		const savedManual = currentDecision.manualStatus;
 		currentDecision.lastPersistedStatus = status;
 		await port.mark(domain, fingerprint, statusToRoute(status), options).then((result) => {
 			if (result.entry.source === 'user') {
@@ -96,7 +102,12 @@ export function createSiteEligibilityCache(
 				currentDecision.cachedStatus = status;
 			}
 		}).catch(() => {
-			if (currentDecision.lastPersistedStatus === status) currentDecision.lastPersistedStatus = 'PENDING';
+			// Full rollback: persisting failed, so the in-memory decision must
+			// not pretend the new status is committed. Reverting to the snapshot
+			// keeps cached/manual/lastPersisted aligned with storage truth.
+			currentDecision.cachedStatus = savedCached;
+			currentDecision.manualStatus = savedManual;
+			currentDecision.lastPersistedStatus = 'PENDING';
 		});
 	};
 

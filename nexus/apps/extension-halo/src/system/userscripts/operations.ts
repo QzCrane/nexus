@@ -3,8 +3,9 @@ import { getUserScriptsState, saveState } from './storage';
 
 let opQueue: Promise<any> = Promise.resolve();
 function serialized<T>(fn: () => Promise<T>): Promise<T> {
-	opQueue = opQueue.then(() => fn(), (err) => { throw err; });
-	return opQueue;
+	const result = opQueue.then(() => fn());
+	opQueue = result.catch(() => undefined);
+	return result;
 }
 
 // Add new script

@@ -4,9 +4,6 @@
 export type {
   Result,
   Maybe,
-  TabId,
-  VolumeLevel,
-  DomainName,
   EventHandler,
   Unsubscribe
 } from './common.types.js';
@@ -27,10 +24,10 @@ export type {
   AudioRuntimeStatus,
   AudioCaptureState,
   TabSessionIdentity,
-  IAudioService,
   IPolicyEngine,
   PolicyContext,
   UrlInfo,
+  // @deprecated: moved to dynamic CORS detection; kept for audio-engine PolicyEngine.getRuleForDomain
   SiteRule
 } from './audio.contracts.js';
 
@@ -125,6 +122,7 @@ export {
 	CONTROL_ALGORITHM_ADJUDICATIONS,
 	compileEffectiveVolume,
 	splitEffectiveVolume,
+	// @deprecated: use splitEffectiveVolume; kept for spectra control-contracts.spec.ts
 	splitLegacyVolume,
 	classifyControlStrategy,
 	isControlStrategyAdmittedForCapability,
@@ -153,7 +151,7 @@ export type {
   NexusResponse,
   INexusMessenger,
   INexusRouter
-} from './messages.contracts.js';
+} from './messages/index.js';
 
 // Settings contracts
 export type {

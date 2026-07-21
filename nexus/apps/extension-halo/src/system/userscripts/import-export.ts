@@ -5,8 +5,9 @@ import { parseUserScriptHeader, createScriptFromHeader } from './parser';
 
 let ieQueue: Promise<any> = Promise.resolve();
 function serialized<T>(fn: () => Promise<T>): Promise<T> {
-	ieQueue = ieQueue.then(() => fn(), (err) => { throw err; });
-	return ieQueue;
+	const result = ieQueue.then(() => fn());
+	ieQueue = result.catch(() => undefined);
+	return result;
 }
 
 // Export scripts to JSON

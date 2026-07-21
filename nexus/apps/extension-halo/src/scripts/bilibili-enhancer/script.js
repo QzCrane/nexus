@@ -3,8 +3,8 @@
 // Features: Clean Home Mode, Hide Hot Search, Stepless Video Rate
 // Source: 0xlau/biliplus
 
-(function () {
-	'use strict';
+(() => {
+	
 
 	const LOG_TAG = '[HALO:Bilibili]';
 	const STORAGE_KEY = 'halo_bilibili_config';
@@ -79,7 +79,16 @@
 	// === Feature: Stepless Video Rate ===
 	function applySteplessRate() {
 		// Wait for player
+		// rule: cap retries so the interval is cleared if the player never appears
+		// (e.g. SPA navigation away from a video). Without the cap, the interval
+		// ran forever on non-video pages that hit this branch.
+		let attempts = 0;
 		const checkPlayer = setInterval(() => {
+			attempts++;
+			if (attempts > 30) {
+				clearInterval(checkPlayer);
+				return;
+			}
 			const video = document.querySelector('video');
 			const controlRight = document.querySelector('.bpx-player-ctrl-btn.bpx-player-ctrl-quality');
 
@@ -112,11 +121,11 @@
 		rates.forEach(rate => {
 			const item = document.createElement('div');
 			item.className = 'halo-speed-item';
-			item.textContent = rate + 'x';
+			item.textContent = `${rate}x`;
 			item.onclick = () => {
 				const v = document.querySelector('video');
 				if (v) v.playbackRate = rate;
-				btn.textContent = rate + 'x';
+				btn.textContent = `${rate}x`;
 				menu.style.display = 'none';
 			};
 			menu.appendChild(item);

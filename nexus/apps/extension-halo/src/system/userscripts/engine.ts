@@ -9,11 +9,19 @@ import { syncRegisteredScripts } from './registry';
 const LOG_TAG = '[HALO:UserScripts]';
 
 // Initialize engine - register message listeners
-export function initUserScriptsEngine(): void {
+// rule: return a cleanup function and guard against double-registration.
+// Previously the runtime.onMessage listener was attached on every call with
+// no way to remove it, so repeated init stacked N listeners that each
+// responded to the same message and each called sendResponse.
+let engineInitialized = false;
+export function initUserScriptsEngine(): () => void {
+	if (engineInitialized) return () => {};
+	engineInitialized = true;
+
 	console.log(LOG_TAG, 'Engine initialized');
 
 	// Listen for messages
-	chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+	const listener = (message: any, _sender: chrome.runtime.MessageSender, sendResponse: (response: any) => void) => {
 		// Run count updates from content script
 		if (message.type === 'HALO_USERSCRIPT_RAN' && message.scriptId) {
 			incrementRunCount(message.scriptId)
@@ -32,7 +40,14 @@ export function initUserScriptsEngine(): void {
 		}
 
 		return false;
-	});
+	};
+
+	chrome.runtime.onMessage.addListener(listener);
+
+	return () => {
+		chrome.runtime.onMessage.removeListener(listener);
+		engineInitialized = false;
+	};
 }
 
 // Wrapper function injected into page via inline <script> tag
@@ -51,9 +66,12 @@ function executeUserScript(code: string, name: string): void {
 			.replace(/\r/g, '\\r');
 		const scriptText = [
 			'try {',
+			// biome-ignore lint/style/useTemplate: concatenation required — see rule above (user code/safeName may contain backticks/`${}`)
 			'    ' + code,
+			// biome-ignore lint/style/useTemplate: concatenation required — see rule above (user code/safeName may contain backticks/`${}`)
 			'    console.log("[HALO Script] ' + safeName + ' executed");',
 			'} catch (e) {',
+			// biome-ignore lint/style/useTemplate: concatenation required — see rule above (user code/safeName may contain backticks/`${}`)
 			'    console.error("[HALO Script] ' + safeName + ' failed:", e);',
 			'}',
 		].join('\n');

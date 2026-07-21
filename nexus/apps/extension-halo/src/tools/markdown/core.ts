@@ -1,5 +1,18 @@
 // goal: Markdown core logic - simple markdown to HTML parser (no external deps)
 
+// rule: panel.tsx renders parseMarkdown output via dangerouslySetInnerHTML in the
+// sidepanel context which has chrome.storage access. Although parseMarkdown escapes
+// raw HTML up front, sanitize the final HTML to strip any <script>/on*/javascript:
+// sequences a future parser change or an edge case might reintroduce.
+function sanitizeHtml(html: string): string {
+	return html
+		.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+		.replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
+		.replace(/\son\w+\s*=\s*'[^']*'/gi, '')
+		.replace(/\son\w+\s*=\s*[^\s>]+/gi, '')
+		.replace(/javascript:/gi, '');
+}
+
 // Simple Markdown parser - handles common syntax
 export function parseMarkdown(md: string): string {
 	let html = md;
@@ -88,7 +101,9 @@ export function parseMarkdown(md: string): string {
 	// Clean up empty lines
 	html = html.replace(/\n{3,}/g, '\n\n');
 
-	return html;
+	// rule: defense-in-depth — strip <script>/on*/javascript: before returning HTML
+	// that is rendered via dangerouslySetInnerHTML in the sidepanel context.
+	return sanitizeHtml(html);
 }
 
 // Get preview styles

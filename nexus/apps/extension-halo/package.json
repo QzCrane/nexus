@@ -8,12 +8,12 @@
 		"dev": "bun build.mjs --watch",
 		"build": "bun build.mjs --dev",
 		"build:prod": "bun build.mjs",
+		"lint": "biome check src --max-diagnostics=100",
 		"typecheck": "bun tsc --noEmit",
 		"test:ui": "bun build ; bun test/ui-review.spec.ts",
 		"test:playwright": "bun build ; bun test/ui-playwright.spec.ts"
 	},
 	"dependencies": {
-		"@nexus/contracts": "workspace:*",
 		"@nexus/kernel": "workspace:*",
 		"@nexus/ui-kit": "workspace:*",
 		"@types/qrcode": "^1.5.6",
