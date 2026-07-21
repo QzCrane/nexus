@@ -832,7 +832,15 @@ export class NativeMediaExecutor {
 				if ((patch as Record<string, unknown>)[field] !== undefined) continue;
 				let actual: unknown;
 				switch (field) {
-					case 'volumeBase': actual = Math.round(element.volume * 10_000) / 100; break;
+					// volumeBase is SPECTRA's intended volume, not a measurement of
+					// element.volume. Sites like YouTube apply non-linear volume curves
+					// (element.volume = 0.6131 at their 100% slider), so reading
+					// element.volume here would report 61.31 instead of the user's
+					// expectation. The actual element.volume is only relevant for write
+					// verification (applyField) and baseline restoration
+					// (readRestorableMediaField); state reads return the coordinator's
+					// last-known desired value, which defaults to 100.
+					case 'volumeBase': break;
 					case 'mediaMuted': actual = element.muted; break;
 					case 'speed': actual = element.playbackRate; break;
 					case 'preservePitch':
@@ -1298,7 +1306,12 @@ export class NativeMediaExecutor {
 		const mediaId = target.mediaId;
 		const candidates: ControlPatch = {};
 		if (event === 'volumechange') {
-			candidates.volumeBase = Math.round(element.volume * 10_000) / 100;
+			// volumeBase is not reported from page observations. Sites with
+			// non-linear volume curves (e.g. YouTube: element.volume = 0.6131 at
+			// 100% slider) would leak their internal HTML5 volume into SPECTRA's
+			// intended-volume field. SPECTRA's volumeBase is set only by explicit
+			// writes (applyField) and defaults to 100; the page's volume changes
+			// are acknowledged only for mediaMuted.
 			candidates.mediaMuted = element.muted;
 		} else if (event === 'ratechange') {
 			candidates.speed = element.playbackRate;
@@ -1415,7 +1428,9 @@ export class NativeMediaExecutor {
 	private primeObserved(mediaId: string, element: HTMLMediaElement): void {
 		if (this.observed.has(mediaId)) return;
 		const values: Partial<ControlValues> = {
-			volumeBase: Math.round(element.volume * 10_000) / 100,
+			// volumeBase is intentionally not primed from element.volume. It is
+			// SPECTRA's intended volume (default 100), not a page measurement; see
+			// the read() and volumechange handler comments for the full rationale.
 			mediaMuted: element.muted,
 			speed: element.playbackRate,
 			playing: !element.paused,
