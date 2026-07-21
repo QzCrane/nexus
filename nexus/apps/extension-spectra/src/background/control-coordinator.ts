@@ -391,6 +391,24 @@ export async function getControlViewSnapshot(tabId: number): Promise<ControlSnap
 		...(mediaResponse?.ok ? nativeObservationFields(mediaResponse.data.patch, base.revision) : {}),
 		...(videoResponse?.ok ? nativeObservationFields(videoResponse.data.patch, base.revision) : {}),
 	};
+	// volumeBase is intentionally not read from element.volume in
+	// NativeMediaExecutor.read (sites like YouTube apply non-linear volume curves,
+	// so element.volume reports 61.31 at their 100% slider). Fill in the
+	// SPECTRA-intended default (100) when no prior observation exists, mirroring
+	// the actualField('volumeBase', 100) fallback used in executeFieldOperation.
+	// A prior applied value (e.g., user-adjusted 80) is preserved via base.fields.
+	if (!fields.volumeBase) {
+		fields.volumeBase = {
+			desired: 100,
+			actual: 100,
+			revision: base.revision,
+			phase: 'applied',
+			strategy: 'dom-native',
+			coverage: 'active-target',
+			controlled: false,
+			lastError: null,
+		};
+	}
 	const activeMedia = mediaResponse?.ok
 		? mediaResponse.data.target
 		: mediaResponse?.error.code === 'capability-unavailable'
