@@ -28,7 +28,7 @@ pre-push:
     - rebase
   commands:
     toolchain:
-      run: bun --cwd nexus run check:toolchain
+      run: bun --cwd nexus check:toolchain
     documentation-architecture:
       run: bun run docs:check
     hooks-smoke:
@@ -36,9 +36,9 @@ pre-push:
     verify-architecture:
       run: bun run verify:q
     typecheck:
-      run: bun --cwd nexus run typecheck:spectra
+      run: bun --cwd nexus typecheck:spectra
     ai-pitfalls:
-      run: bun --cwd nexus run lint:ai-pitfalls
+      run: bun --cwd nexus lint:ai-pitfalls
     sync-skills:
       run: bun run sync:skills
 

@@ -2,7 +2,7 @@
 type: explanation
 status: stable
 audience: contributor
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-22
 ---
 
 # AI-tool hooks
@@ -54,6 +54,10 @@ The maintained suite covers:
 3. host-config command resolution and referenced-script existence;
 4. shared checkpoint parity;
 5. protected and allowed path cases.
+
+It also rejects the invalid `bun --cwd <dir> run <script>` ordering in
+Lefthook commands. Bun prints help and exits successfully for that form, which
+would otherwise turn a required pre-push gate into a false green.
 
 Do not hard-code the assertion count or runtime in this README; both change as coverage grows. The current test output is the source for those values.
 

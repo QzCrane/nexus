@@ -717,6 +717,14 @@ for (const cfg of configPaths) {
 }
 ok('config validator: found at least one hook entry', configEntries > 0, 'no entries found');
 
+const lefthookPath = join(repoRoot, 'lefthook.yml');
+const lefthookConfig = readFileSync(lefthookPath, 'utf8');
+ok(
+	'lefthook: Bun workspace commands do not put run after --cwd',
+	!/^\s*run:\s*bun\s+--cwd\s+\S+\s+run(?:\s|$)/mu.test(lefthookConfig),
+	'`bun --cwd <dir> run <script>` prints help and exits successfully without running the script',
+);
+
 // =====================================================================
 // Summary
 // =====================================================================
