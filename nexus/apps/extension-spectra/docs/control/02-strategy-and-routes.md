@@ -81,7 +81,9 @@ into a second list of video rows.
 Eligibility is a routing hint, not activation. A cached `capture` route does not
 create an offscreen document, a processor, or a purple status. Capture is lazily
 activated only after a control transaction proves that direct/native coverage is
-insufficient and a full-output processor is explicitly needed. A cached route is
+insufficient, a full-output processor is explicitly needed, and Background has
+admitted that transaction from an extension invocation on the current active
+tab. A cached route is
 invalidated on document identity changes, runtime disposal, unsupported/terminal
 errors and a newer user decision. Actual mode and UI color still come only from
 the current `AudioSessionSnapshot` ACK.
@@ -98,13 +100,23 @@ escalates to Capture as the last-resort full-output path before falling back to
 CORS, so a site that was mistakenly pinned to `direct` can still be served when
 the user actually requests a processor-backed configuration.
 
-The escalation is activation-bound: it requires `hasUserGesture(state)` and
-follows SCTRL-011 — the processor handoff never double-applies DSP, never ACKs
-before actual readback, and a candidate failure leaves the prior stable
-configuration in `bypass+error` with the capture denial surfaced as `lastError`.
-A transparent configuration (no boost, no DSP) never escalates, because a
+The escalation is invocation-bound. Background mints a volatile
+`captureAdmission: 'extension-invocation'` only for a Popup transaction whose
+target is still the active tab, or for a `chrome.commands` transaction whose
+resolved target is that same active tab. The field exists only on the internal
+`ControlIntent`; `ControlSubmitRequest` rejects it, so page hotkeys, playback,
+`navigator.userActivation`, warm-update restore, navigation, authenticated
+remote control, and an alternate shortcut target cannot manufacture admission.
+Those page activation signals remain sufficient only for Media WebAudio. An
+already active Capture may be configured or stopped without a second admission.
+
+An admitted transition follows SCTRL-011 — the processor handoff never
+double-applies DSP, never ACKs before actual readback, and a candidate failure
+retains the browser denial in `lastError`. Without admission the executor returns
+`bypass+error` without calling `getMediaStreamId()`. A transparent configuration
+(no boost, no DSP) never escalates, because a
 coverage gap without a processor need is reported directly through the bypass
-path and does not justify the activation-bound Capture lease.
+path and does not justify the invocation-bound Capture lease.
 
 When Capture is acknowledged `active`, `recordActual` corrects the registry so
 the next document skips the futile native attempt. A user-pinned `direct` route
@@ -132,6 +144,12 @@ and only then submits its intent; opening Popup is not a prerequisite. READY is
 invalidated by navigation, extension update, context invalidation and dispose,
 and a timed-out handshake returns a structured error without an unhandled
 Promise rejection.
+
+Runtime readiness does not imply Capture authority. A page-configured hotkey can
+use native fields and Media WebAudio after its trusted page event, but only the
+Background `chrome.commands` entry is an extension invocation. If a configured
+shortcut targets a retained background tab instead of the active tab, it keeps
+ordinary control routing but receives no Capture admission.
 
 There is one feedback owner per hotkey. The owner starts a standard Toast only
 for a real shortcut/action intent, keeps the normal volume bar and timeout, and

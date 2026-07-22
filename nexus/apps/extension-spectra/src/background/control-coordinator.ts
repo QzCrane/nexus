@@ -16,6 +16,7 @@ import {
 	rpcSuccess,
 	splitEffectiveVolume,
 	type AudioConfig,
+	type CaptureAdmission,
 	type ControlActualContext,
 	type ControlApplyAck,
 	type ControlCapability,
@@ -57,11 +58,19 @@ const serialized = createKeyedSerializedQueue<number>();
 const invalidations = new Map<number, Promise<void>>();
 let initialized = false;
 
-type RoutedControlSubmitRequest = Omit<ControlSubmitRequest, 'tabId'> & { tabId: number };
+type RoutedControlSubmitRequest = Omit<ControlSubmitRequest, 'tabId'> & {
+	tabId: number;
+	captureAdmission?: CaptureAdmission;
+};
 type ResolvedControlSubmitRequest = Omit<RoutedControlSubmitRequest, 'patch' | 'mutations'> & {
 	patch: ControlPatch;
 };
-type RoutedControlOperationRequest = ControlOperationRequest & { tabId: number };
+type RoutedControlOperationRequest = ControlOperationRequest & {
+	tabId: number;
+	captureAdmission?: CaptureAdmission;
+};
+
+const EXTENSION_INVOCATION_ADMISSION: CaptureAdmission = 'extension-invocation';
 
 // Page-originated messages are observations emitted by the trusted content
 // runtime after a native event/getter readback. They must update the shared
@@ -396,6 +405,9 @@ function createIntent(
 		target: request.target,
 		actualContext,
 		patch: request.patch,
+		...(request.captureAdmission
+			? { captureAdmission: request.captureAdmission }
+			: {}),
 	};
 }
 
@@ -508,6 +520,9 @@ async function resolveSubmitRequest(
 		target: resolvedTarget,
 		...(request.baseRevision === undefined ? {} : { baseRevision: request.baseRevision }),
 		patch,
+		...(request.captureAdmission
+			? { captureAdmission: request.captureAdmission }
+			: {}),
 		...(request.observedStrategies === undefined
 			? {}
 			: { observedStrategies: request.observedStrategies }),
@@ -579,7 +594,7 @@ function applyPageObservation(
 	const patchKeys = Object.keys(intent.patch);
 	const strategyKeys = Object.keys(observedStrategies);
 	if (patchKeys.length !== strategyKeys.length
-		|| patchKeys.some((field) => !Object.prototype.hasOwnProperty.call(observedStrategies, field))) {
+		|| patchKeys.some((field) => !Object.hasOwn(observedStrategies, field))) {
 		throw new Error('Page observation strategy provenance must match every patch field');
 	}
 	const fields: ControlFieldStates = {};
@@ -1033,6 +1048,7 @@ async function compensateControlPatch(
 	targetPatch: ControlPatch,
 	processorPatch: ControlPatch,
 	order: readonly ('target' | 'processor')[] = ['target', 'processor'],
+	captureAdmission?: CaptureAdmission,
 ): Promise<CompensationResult> {
 	const fields: ControlFieldStates = {};
 	const failures: string[] = [];
@@ -1051,6 +1067,7 @@ async function compensateControlPatch(
 				requestedCoverage,
 				target,
 				patch,
+				...(captureAdmission ? { captureAdmission } : {}),
 			}, baseline);
 			Object.assign(fields, prepared.fields);
 			assertAppliedPatch(prepared.fields, patch, 'Compensating rollback');
@@ -1397,6 +1414,9 @@ async function executeFieldOperation(
 		tabId: request.tabId,
 		source: request.source,
 		target: request.target,
+		...(request.captureAdmission
+			? { captureAdmission: request.captureAdmission }
+			: {}),
 	} as const;
 	if (request.operation === 'effective-volume') {
 		const baseline = await getOrCreateSnapshot(request.tabId);
@@ -1524,6 +1544,7 @@ async function executeFieldOperation(
 				targetPatch.volumeBase === undefined ? {} : { volumeBase: current.volumeBase },
 				processorPatch.boost === undefined ? {} : { boost: current.boost },
 				[...stageOrder].reverse(),
+				request.captureAdmission,
 			);
 			if (!compensation.ok) {
 				await commitCompensationFailure(
@@ -1680,6 +1701,8 @@ async function executeFieldOperation(
 				target,
 				targetRollback,
 				processorRollback,
+				undefined,
+				request.captureAdmission,
 			);
 			if (!compensation.ok) {
 				await commitCompensationFailure(
@@ -1818,6 +1841,9 @@ async function executeControlOperation(
 				requestedCoverage: 'full',
 				target: released.target,
 				patch: RESET_AUDIO_PROCESSOR_PATCH,
+				...(request.captureAdmission
+					? { captureAdmission: request.captureAdmission }
+					: {}),
 			}, staged);
 			fields = { ...fields, ...processorPrepared.fields };
 			assertReleasedPatch(
@@ -1850,6 +1876,8 @@ async function executeControlOperation(
 				target,
 				targetRollback,
 				processorRollback,
+				undefined,
+				request.captureAdmission,
 			);
 			if (!compensation.ok) {
 				await commitCompensationFailure(
@@ -1866,9 +1894,25 @@ async function executeControlOperation(
 	return routeContentOperation(request, operationId);
 }
 
-function submitSerialized(request: RoutedControlSubmitRequest): Promise<ControlApplyAck> {
+async function captureAdmissionForCurrentTab(tabId: number): Promise<CaptureAdmission | undefined> {
+	const tabs = await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []);
+	return tabs[0]?.id === tabId ? EXTENSION_INVOCATION_ADMISSION : undefined;
+}
+
+function submitSerialized(
+	request: RoutedControlSubmitRequest,
+	extensionInvoked = false,
+): Promise<ControlApplyAck> {
 	return serialized(request.tabId, async () => {
-		const acknowledgement = await executeIntent(request);
+		const unadmittedRequest = { ...request };
+		Reflect.deleteProperty(unadmittedRequest, 'captureAdmission');
+		const captureAdmission = extensionInvoked
+			? await captureAdmissionForCurrentTab(request.tabId)
+			: undefined;
+		const acknowledgement = await executeIntent({
+			...unadmittedRequest,
+			...(captureAdmission ? { captureAdmission } : {}),
+		});
 		if (!isControlApplyAck(acknowledgement)) {
 			throw new Error('Control executor returned a strategy outside the capability policy');
 		}
@@ -1878,9 +1922,18 @@ function submitSerialized(request: RoutedControlSubmitRequest): Promise<ControlA
 
 function submitOperationSerialized(
 	request: RoutedControlOperationRequest,
+	extensionInvoked = false,
 ): Promise<ControlOperationAck> {
 	return serialized(request.tabId, async () => {
-		const acknowledgement = await executeControlOperation(request);
+		const unadmittedRequest = { ...request };
+		Reflect.deleteProperty(unadmittedRequest, 'captureAdmission');
+		const captureAdmission = extensionInvoked
+			? await captureAdmissionForCurrentTab(request.tabId)
+			: undefined;
+		const acknowledgement = await executeControlOperation({
+			...unadmittedRequest,
+			...(captureAdmission ? { captureAdmission } : {}),
+		});
 		if (!isControlOperationAck(acknowledgement)) {
 			throw new Error('Control operation returned a strategy outside the capability policy');
 		}
@@ -1896,6 +1949,23 @@ export function submitControlOperation(
 	request: RoutedControlOperationRequest,
 ): Promise<ControlOperationAck> {
 	return submitOperationSerialized(request);
+}
+
+export function submitExtensionInvokedControlRequest(
+	request: RoutedControlSubmitRequest & { source: 'popup' | 'hotkey' },
+): Promise<ControlApplyAck> {
+	return submitSerialized(request, true);
+}
+
+export function submitExtensionInvokedControlOperation(
+	request: RoutedControlOperationRequest & { source: 'popup' | 'hotkey' },
+): Promise<ControlOperationAck> {
+	return submitOperationSerialized(request, true);
+}
+
+function isExtensionPopupSender(sender: chrome.runtime.MessageSender): boolean {
+	return sender.tab === undefined
+		&& sender.url === chrome.runtime.getURL('popup.html');
 }
 
 async function removeTab(tabId: number): Promise<void> {
@@ -2030,9 +2100,14 @@ export function initializeControlCoordinator(): void {
 			sendResponse(rpcFailure('forbidden', 'Page intent tab does not match its sender'));
 			return false;
 		}
+		const extensionInvoked = message.payload.source === 'popup'
+			&& isExtensionPopupSender(sender);
 		const operation = message.type === 'spectra.control.operation.submit'
-			? submitOperationSerialized({ ...message.payload, tabId } as RoutedControlOperationRequest)
-			: submitSerialized({ ...message.payload, tabId });
+			? submitOperationSerialized(
+				{ ...message.payload, tabId } as RoutedControlOperationRequest,
+				extensionInvoked,
+			)
+			: submitSerialized({ ...message.payload, tabId }, extensionInvoked);
 		void operation.then(
 			(ack) => sendResponse(rpcSuccess(ack)),
 			(error) => sendResponse(rpcFailure(
@@ -2086,7 +2161,12 @@ export function initializeControlCoordinator(): void {
 // by the background entry and are removed from production bundles.
 export const controlCoordinatorTestApi = {
 	submit: submitSerialized,
+	submitInvoked: (request: RoutedControlSubmitRequest) => submitSerialized(request, true),
 	submitOperation: submitOperationSerialized,
+	submitOperationInvoked: (request: RoutedControlOperationRequest) => (
+		submitOperationSerialized(request, true)
+	),
+	isExtensionPopupSender,
 	getSnapshot,
 	getViewSnapshot: getControlViewSnapshot,
 	targetChanged: handleTargetChanged,

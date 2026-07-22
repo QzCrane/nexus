@@ -31,7 +31,11 @@ import {
 	setContentRuntimeOwnershipProvider,
 	setContentRuntimeReady,
 } from '../../shared/content-runtime';
-import { assembleInitialState, shouldApplyInitialPolicy } from './initial-state';
+import {
+	assembleInitialState,
+	shouldApplyInitialPolicy,
+	type InitialStateSource,
+} from './initial-state';
 import type { ContentDeps, PolicyExecutorState } from '../types';
 import type { SettingsManager } from './settings-manager';
 import {
@@ -128,8 +132,8 @@ interface InitContext {
   deps: ContentDeps;
 }
 
-// eff: tries to inherit state from a zero-refresh stub, or falls back to background fetch
-async function createInitialState(): Promise<{ state: PolicyExecutorState; recovered: boolean }> {
+// eff: assembles state from a same-document handoff, sender-bound session, or fresh config
+async function createInitialState(): Promise<{ state: PolicyExecutorState; source: InitialStateSource }> {
   const recoveredState = consumeStub();
   const sessionRequest = sendSpectraRequest('spectra.audio.session.current', {})
     .then((result) => result.ok ? result.data : null)
@@ -181,23 +185,24 @@ function bootstrapLifecycle(ctx: InitContext, runtime: ContentRuntime): void {
   });
 }
 
-// eff: applies the initial state -- either from a hot swap stub or a fresh background load
+// eff: hydrates restored ownership or applies one authoritative policy before READY
 async function applyInitialState(
 	ctx: InitContext,
-	recovered: boolean,
+	source: InitialStateSource,
 	runtime: ContentRuntime,
 ): Promise<void> {
 	if (!isCurrentRuntime(runtime)) return;
 	const { state, deps } = ctx;
 	const policyExecutor = deps.policyExecutor!;
 	try {
-		if (recovered) log.info('[Handoff] Runtime state recovered from an authenticated source.');
+		if (source !== 'fresh') {
+			log.info(`[Hydration] Runtime state restored from ${source}.`);
+		}
 		// createInitialState already resolved the authoritative audio session/config.
-		// An acknowledged Capture belongs to Background/offscreen. Merely loading
-		// this runtime for Popup/remote observation hydrates that owner and must not
-		// reinterpret the load as a bypass intent. All other initial states still
-		// get one authoritative application before READY.
-		if (shouldApplyInitialPolicy(state, recovered)) await policyExecutor.applyState();
+		// A same-document handoff preserves every page-owned mode; a session snapshot
+		// preserves an acknowledged Capture owner. Those paths hydrate before READY,
+		// while a fresh load or non-Capture session applies policy exactly once.
+		if (shouldApplyInitialPolicy(state, source)) await policyExecutor.applyState();
 		if (!isCurrentRuntime(runtime)) return;
 		reportMediaState(state);
   } catch (e) {
@@ -227,7 +232,7 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
 		await audioController.cleanup();
 	};
 
-	if (initial.recovered) {
+	if (initial.source !== 'fresh') {
 		// actualMode owns the processor. An error/stopping phase may still retain
 		// the offscreen graph and lease, so hydration must not claim it is inactive
 		// and allow a duplicate START or an unowned transition.
@@ -339,7 +344,7 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
 
 	await applyInitialState(
 		{ registry, policyEngine, audioController, settingsManager, captureManager, state, deps },
-		initial.recovered,
+		initial.source,
 		runtime,
 	);
 

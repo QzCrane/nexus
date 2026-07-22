@@ -19,6 +19,7 @@ import { controlCoordinatorTestApi } from '../src/background/control-coordinator
 interface Harness {
 	documentId: string;
 	url: string;
+	activeTabId: number;
 	storage: Map<string, unknown>;
 	storageWrites: number;
 	resolveContent?: (response: unknown) => void;
@@ -60,6 +61,7 @@ function installHarness(): Harness {
 	const harness: Harness = {
 		documentId: 'document-1',
 		url: 'https://media.example/one',
+		activeTabId: 7,
 		storage: new Map(),
 		storageWrites: 0,
 		contentMessages: [],
@@ -79,6 +81,7 @@ function installHarness(): Harness {
 		},
 		runtime: {
 			id: 'spectra-test',
+			getURL: (path: string) => `chrome-extension://spectra-test/${path}`,
 			openOptionsPage: async () => undefined,
 			sendMessage: async (message: { type?: unknown }) => {
 				if (message.type === 'spectra.control.snapshot.changed') harness.snapshotEvents += 1;
@@ -113,6 +116,7 @@ function installHarness(): Harness {
 			},
 		},
 		tabs: {
+			query: async () => [{ id: harness.activeTabId, active: true }],
 			create: async (properties: chrome.tabs.CreateProperties) => {
 				harness.createdTabs.push(properties);
 				return { id: 8, ...properties };
@@ -271,6 +275,106 @@ afterEach(async () => {
 });
 
 describe('authoritative control coordinator', () => {
+	test('mints volatile Capture admission only for an invoked current-tab Popup or Chrome command', async () => {
+		const harness = installHarness();
+		const intents: ControlIntent[] = [];
+		harness.contentResponder = ({ type, payload }) => {
+			expect(type).toBe('spectra.control.intent.execute');
+			const intent = payload as ControlIntent;
+			intents.push(intent);
+			return {
+				ok: true,
+				data: appliedPatchAck(intent, () => 'media-webaudio'),
+			};
+		};
+		const fullRequest = (source: 'popup' | 'hotkey' | 'remote' | 'restore', boost: number) => ({
+			tabId: 7,
+			source,
+			requestedCoverage: 'full' as const,
+			target: null,
+			patch: { boost },
+		});
+
+		await controlCoordinatorTestApi.submitInvoked(fullRequest('popup', 2));
+		await controlCoordinatorTestApi.submitInvoked(fullRequest('hotkey', 3));
+		await controlCoordinatorTestApi.submit({
+			...fullRequest('hotkey', 4),
+			captureAdmission: 'extension-invocation',
+		});
+		await controlCoordinatorTestApi.submit(fullRequest('remote', 5));
+		await controlCoordinatorTestApi.submit(fullRequest('restore', 6));
+		harness.activeTabId = 8;
+		await controlCoordinatorTestApi.submitInvoked(fullRequest('hotkey', 7));
+
+		expect(intents.map(({ captureAdmission }) => captureAdmission)).toEqual([
+			'extension-invocation',
+			'extension-invocation',
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+		]);
+	});
+
+	test('recognizes only the extension Popup document as a Popup invocation sender', () => {
+		installHarness();
+		expect(controlCoordinatorTestApi.isExtensionPopupSender({
+			id: 'spectra-test',
+			url: 'chrome-extension://spectra-test/popup.html',
+		})).toBe(true);
+		expect(controlCoordinatorTestApi.isExtensionPopupSender({
+			id: 'spectra-test',
+			url: 'chrome-extension://spectra-test/options.html',
+		})).toBe(false);
+		expect(controlCoordinatorTestApi.isExtensionPopupSender({
+			id: 'spectra-test',
+			url: 'https://media.example/one',
+			tab: { id: 7 } as chrome.tabs.Tab,
+		})).toBe(false);
+	});
+
+	test('carries the same admission through an invoked effective-volume transaction only', async () => {
+		const harness = installHarness();
+		const intents: ControlIntent[] = [];
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') {
+				return actualReadAck(payload as ControlReadRequest, null);
+			}
+			const intent = payload as ControlIntent;
+			intents.push(intent);
+			return {
+				ok: true,
+				data: appliedPatchAck(intent, () => (
+					intent.requestedCoverage === 'full' ? 'media-webaudio' : 'dom-native'
+				)),
+			};
+		};
+
+		await controlCoordinatorTestApi.submitOperationInvoked({
+			tabId: 7,
+			source: 'popup',
+			target: null,
+			operation: 'effective-volume',
+			payload: { operation: 'set', value: 150 },
+		});
+		expect(intents).toHaveLength(2);
+		expect(intents.every(({ captureAdmission }) => (
+			captureAdmission === 'extension-invocation'
+		))).toBe(true);
+
+		intents.length = 0;
+		harness.activeTabId = 8;
+		await controlCoordinatorTestApi.submitOperationInvoked({
+			tabId: 7,
+			source: 'hotkey',
+			target: null,
+			operation: 'effective-volume',
+			payload: { operation: 'set', value: 200 },
+		});
+		expect(intents).toHaveLength(1);
+		expect(intents[0]?.captureAdmission).toBeUndefined();
+	});
+
 	test('binds browser UI and URL operations to the source tab window', async () => {
 		const harness = installHarness();
 		const popup = await controlCoordinatorTestApi.submitOperation({

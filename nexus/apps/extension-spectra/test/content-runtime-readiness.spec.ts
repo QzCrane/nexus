@@ -11,7 +11,7 @@ describe('content runtime readiness boundary', () => {
 		const lifecycle = source.indexOf('bootstrapLifecycle(');
 		const ready = source.indexOf('setContentRuntimeReady(runtime.revision);', lifecycle);
 		const restore = source.indexOf('await applyInitialState(', lifecycle);
-		const captureHydration = source.indexOf('if (shouldApplyInitialPolicy(state, recovered))', lifecycle);
+		const captureHydration = source.indexOf('if (shouldApplyInitialPolicy(state, source))', lifecycle);
 		const presentation = source.indexOf('void settingsManager.load()', ready);
 		const audioConfigReads = source.match(/sendSpectraRequest\('spectra\.audio\.config\.get'/gu) ?? [];
 

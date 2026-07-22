@@ -10,7 +10,7 @@ import {
 import { logger } from '../../../shared/logger';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../../types';
 import { executeMode, hasUserGesture, initModeExecutorCallbacks } from '../mode-executor';
-import type { PolicyExecutor, InternalState } from './types';
+import type { PolicyApplicationOptions, PolicyExecutor, InternalState } from './types';
 import { updateBadge, broadcastUI } from './badge-sync';
 import { updateConfig } from './config-updater';
 import { getActiveMediaRegistry } from '../../core/media-registry';
@@ -57,8 +57,7 @@ export async function createPolicyExecutor(
 		fullUrl: window.location.href, domain: window.location.hostname, pathname: window.location.pathname, isIframe: window.self !== window.top
 	});
 
-	const applyState = async (options: { navigation?: boolean; modeIntent?: boolean } = {}): Promise<void> => {
-		const s = deps.settingsManager.get();
+	const applyState = async (options: PolicyApplicationOptions = {}): Promise<void> => {
 		const u = getUrlInfo();
 		istate.corsStatus = await eligibilityCache.resolve(evaluateSourceEligibility());
 		// Full-output DSP may claim Media WebAudio coverage only when every
@@ -101,7 +100,12 @@ export async function createPolicyExecutor(
 			state.activeMode = mode;
 		}
 
-		await executeMode(deps, state, modeChanged || options.navigation === true || options.modeIntent === true);
+		await executeMode(
+			deps,
+			state,
+			modeChanged || options.navigation === true || options.modeIntent === true,
+			options.captureAdmission,
+		);
 		await eligibilityCache.recordActual(state.actualMode, state.phase);
 		updateBadge(deps, state, istate);
 		broadcastUI(deps, state, istate);

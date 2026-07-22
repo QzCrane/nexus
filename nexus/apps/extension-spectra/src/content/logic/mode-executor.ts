@@ -8,7 +8,7 @@ import {
 	type AudioGraphSnapshot,
 } from '@nexus/audio-engine';
 import { DEFAULT_AUDIO_CONFIG, type AudioConfig } from '@nexus/kernel';
-import { resolveAudioVolume } from '@nexus/contracts';
+import { resolveAudioVolume, type CaptureAdmission } from '@nexus/contracts';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../types';
 import { isAnyMediaPlaying } from '../audio/media-detection';
 import { logger } from '../../shared/logger';
@@ -19,6 +19,7 @@ const log = logger.content;
 let currentUpdateBadge: (() => void) | null = null;
 let currentBroadcastUI: (() => void) | null = null;
 let executionRun = 0;
+const CAPTURE_ADMISSION_REQUIRED = 'Capture requires a current-tab extension invocation';
 
 export function initModeExecutorCallbacks(
 	_deps: PolicyExecutorDeps,
@@ -53,17 +54,19 @@ export function executeMode(
 	deps: PolicyExecutorDeps,
 	state: PolicyExecutorState,
 	advanceGeneration = false,
+	captureAdmission?: CaptureAdmission,
 ): Promise<void> {
 	const run = executionRun + 1;
 	executionRun = run;
 	if (advanceGeneration) state.generation += 1;
-	return executeModeTransition(deps, state, run, state.generation);
+	return executeModeTransition(deps, state, run, state.generation, captureAdmission);
 }
 async function executeModeTransition(
 	deps: PolicyExecutorDeps,
 	state: PolicyExecutorState,
 	run: number,
 	generation: number,
+	captureAdmission?: CaptureAdmission,
 ): Promise<void> {
 	const { audioController, captureManager } = deps;
 	const mode = state.activeMode;
@@ -93,9 +96,8 @@ async function executeModeTransition(
 			state.phase = synced ? 'active' : 'error';
 			if (synced) state.appliedConfig = cloneAudioConfig(synced);
 			state.lastError = synced ? undefined : captureManager.getLastError();
-		} else if (hasUserGesture(state)) {
-			// log: requesting capture upgrade due to user interaction in capture-eligible mode
-			log.capture('Strategy suggests CAPTURE and gesture detected, requesting...');
+		} else if (captureAdmission === 'extension-invocation') {
+			log.capture('Strategy suggests CAPTURE and current-tab invocation is admitted, requesting...');
 			state.phase = 'starting';
 			const result = await captureManager.request(true, config, generation);
 			if (run !== executionRun) return;
@@ -131,8 +133,9 @@ async function executeModeTransition(
 			}
 		} else {
 			state.actualMode = 'bypass';
-			state.phase = 'idle';
+			state.phase = 'error';
 			state.appliedConfig = toDomAppliedConfig(config);
+			state.lastError = CAPTURE_ADMISSION_REQUIRED;
 		}
 
 	} else if (mode === AudioMode.DISABLED) {
@@ -233,13 +236,14 @@ async function executeModeTransition(
 				state.lastError = restored
 					? undefined
 					: captureManager.getLastError() ?? 'Media WebAudio coverage is incomplete';
-			} else if (requiresAudioProcessor(config) && hasUserGesture(state)) {
+			} else if (requiresAudioProcessor(config)
+				&& captureAdmission === 'extension-invocation') {
 				// rule: Capture is the last-resort full-output path (SCTRL-011).
 				// When Media WebAudio coverage fails but a processor is explicitly
 				// needed (volume > 100, EQ, bass, etc.), capture can still serve
 				// the request because tabCapture is not blocked by page CORS.
-				// A user gesture is required because capture is an
-				// activation-bound full-output path. This also covers the case
+				// Background admission is required because Capture is bound to a
+				// current-tab extension invocation. This also covers the case
 				// where a site was mistakenly pinned to `direct` in the registry
 				// but the page's media sources are in fact cross-origin.
 				log.capture('WebAudio coverage failed with active processor need, falling back to Capture');
@@ -258,15 +262,17 @@ async function executeModeTransition(
 					state.actualMode = 'bypass';
 					state.phase = 'error';
 					state.appliedConfig = toDomAppliedConfig(config);
-					state.lastError = formatCaptureFallbackError(result.error);
+					state.lastError = result.error ?? 'Capture fallback failed after WebAudio coverage failure';
 				}
 			} else {
 				state.actualMode = 'bypass';
 				state.phase = 'error';
 				state.appliedConfig = toDomAppliedConfig(config);
-				state.lastError = prospectiveCoverage.eligibility === 'unknown'
-					? 'Media WebAudio coverage is not yet proven'
-					: 'Media WebAudio coverage is unsafe';
+				state.lastError = requiresAudioProcessor(config)
+					? CAPTURE_ADMISSION_REQUIRED
+					: prospectiveCoverage.eligibility === 'unknown'
+						? 'Media WebAudio coverage is not yet proven'
+						: 'Media WebAudio coverage is unsafe';
 			}
 			currentUpdateBadge?.();
 			currentBroadcastUI?.();
@@ -382,22 +388,6 @@ function transparentAudioConfig(): AudioConfig {
 
 function cloneAudioConfig(config: AudioConfig): AudioConfig {
 	return { ...config, eqValues: [...config.eqValues] };
-}
-
-// post: surfaces a actionable reason when the capture fallback fails because the
-// extension has not been invoked for the tab. Chrome's tabCapture API requires
-// activeTab permission, which is only granted after the user clicks the toolbar
-// icon, opens the popup, or triggers a command shortcut that invokes the
-// extension. Without that grant, every cross-origin site that needs capture as
-// the last-resort audio processor path receives a chrome.runtime.lastError
-// string that mentions activeTab; we translate it into a user-facing hint
-// rather than surfacing the raw Chrome wording.
-function formatCaptureFallbackError(error: string | undefined): string {
-	if (!error) return 'Capture fallback failed after WebAudio coverage failure';
-	if (error.includes('activeTab') || error.includes('has not been invoked')) {
-		return 'Click the extension icon to grant audio processing permission for this tab';
-	}
-	return error;
 }
 
 // post: describes only controls the native media-element path can implement.

@@ -1,4 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
 	runWithShortcutRuntime,
 	type ShortcutRuntimePort,
@@ -15,6 +17,14 @@ function runtimePort(): ShortcutRuntimePort & {
 }
 
 describe('cold-document Chrome shortcuts', () => {
+	test('uses the Background-invoked coordinator path instead of page-hotkey admission', () => {
+		const source = readFileSync(resolve(import.meta.dir, '../src/background/shortcuts.ts'), 'utf8');
+		expect(source).toContain('submitExtensionInvokedControlRequest');
+		expect(source).toContain('submitExtensionInvokedControlOperation');
+		expect(source).not.toMatch(/\bsubmitControlRequest\(/u);
+		expect(source).not.toMatch(/\bsubmitControlOperation\(/u);
+	});
+
 	test('acquires a document runtime before executing and releases it afterwards', async () => {
 		const port = runtimePort();
 		const order: string[] = [];

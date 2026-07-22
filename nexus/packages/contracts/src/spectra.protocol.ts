@@ -74,7 +74,7 @@ export {
 	SPECTRA_PROTOCOL_VERSION,
 } from './spectra.bootstrap.js';
 
-export const SPECTRA_CONTENT_RUNTIME_REVISION = '3.3.2' as const;
+export const SPECTRA_CONTENT_RUNTIME_REVISION = '3.3.3' as const;
 
 export type ContentRuntimeLeaseReason = 'control' | 'restore' | 'hotkey' | 'remote' | 'observation';
 

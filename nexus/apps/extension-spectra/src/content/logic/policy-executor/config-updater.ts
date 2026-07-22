@@ -6,6 +6,7 @@ import { resolveAudioVolume, rpcFailure, type SpectraResponse } from '@nexus/con
 import { showOSD, showSpeedOSD } from '../../ui/osd';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../../types';
 import type { InternalState } from './types';
+import type { PolicyApplicationOptions, PolicyUpdateOptions } from './types';
 import { updateBadge } from './badge-sync';
 import { sendSpectraRequest } from '../../../shared/spectra-client';
 
@@ -15,8 +16,8 @@ export function updateConfig(
 	state: PolicyExecutorState,
 	internalState: InternalState,
 	changes: Partial<AudioConfig>,
-	options: { showOSD?: boolean; isNativeSync?: boolean } = {},
-	applyStateFn: () => Promise<void>
+	options: PolicyUpdateOptions = {},
+	applyStateFn: (options?: PolicyApplicationOptions) => Promise<void>
 ): Promise<SpectraResponse<'spectra.audio.config.set'>> {
 	const { settingsManager } = deps;
 
@@ -52,7 +53,11 @@ export function updateConfig(
 	// reason: applying state writes the current config BACK to the DOM/Injector;
 	// if we do this during a native sync, we create a feedback loop that causes volume drift/jitter
 	return (async () => {
-		if (!options.isNativeSync) await applyStateFn();
+		if (!options.isNativeSync) {
+			await applyStateFn(options.captureAdmission
+				? { captureAdmission: options.captureAdmission }
+				: undefined);
+		}
 
 		updateBadge(deps, state, internalState);
 

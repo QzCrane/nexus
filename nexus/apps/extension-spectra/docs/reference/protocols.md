@@ -46,6 +46,7 @@ Each `chrome.runtime.onMessage` listener owns an exact request-type set. Prefix 
 ```text
 page observation / Popup / authenticated remote / hotkey intent
   → Background orders document generation and field revision
+  → Background optionally admits current-tab Capture for this invocation only
   → the least-invasive admitted writer executes once
   → event/getter/Chrome/processor readback proves actual state
   → Background commits ControlSnapshot
@@ -55,6 +56,16 @@ page observation / Popup / authenticated remote / hotkey intent
 A candidate returned by an executor is not an ACK. Only readback carrying current `tabId + documentId + origin + generation + revision` can commit. A failed field rolls back its optimistic projection without discarding unrelated successful fields.
 
 Verified page observations bypass the writer stage, commit `controlled:false`, and never echo a second write to Content. Reads do not acquire Media WebAudio, Capture, a generic MAIN runtime, or an offscreen lease. For `volumeBase`, `mediaMuted`, and `speed`, a read may synchronously use the already-installed exact-element page bridge before falling back to the ordinary DOM getter.
+
+`ControlSubmitRequest` never carries Capture authority. Background may add the
+literal `captureAdmission: 'extension-invocation'` only to the internal
+`ControlIntent` after confirming that a Popup or `chrome.commands` transaction
+still targets the active tab. The value is consumed by that policy application,
+is absent from snapshots/session/handoff state, and is not available to page
+hotkeys, restore, remote, navigation, media lifecycle, or alternate-tab routing.
+The canonical protocol guard and restricted Content runtime guard accept the same
+internal shape. Their `SPECTRA_CONTENT_RUNTIME_REVISION` values advance together,
+so an already-open page is re-injected before receiving a changed internal intent.
 
 ## Registry v2
 
@@ -110,6 +121,7 @@ Activation and bridge boundaries are defined in [control/02-strategy-and-routes.
 
 - page-native MAIN execution is limited to the exact event-target media element and one paired getter/setter with getter readback;
 - trusted page hotkeys invoke activation-bound native APIs within the trusted event stack;
+- starting Capture additionally requires Background's volatile current-tab extension-invocation admission; page activation alone is not admission;
 - user scripts require explicit permission and remain in the user-script sandbox;
 - URL opening accepts HTTP(S) only;
 - remote state and commands remain unavailable until HMAC authentication and stay bound to session, tab, generation, and monotonic sequence.

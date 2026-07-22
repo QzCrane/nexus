@@ -52,7 +52,7 @@ export {
 	resolveAudioVolume,
 };
 
-export const SPECTRA_CONTENT_RUNTIME_REVISION = '3.3.2' as const;
+export const SPECTRA_CONTENT_RUNTIME_REVISION = '3.3.3' as const;
 
 // One-release legacy capture event adapter. Keeping the single literal avoids
 // shipping the unrelated Nexus/Halo action table into every page runtime.
@@ -202,7 +202,7 @@ function isControlIntent(value: unknown): boolean {
 	if (!isRecord(value)
 		|| !hasOnly(value, new Set([
 			'intentId', 'tabId', 'documentId', 'generation', 'baseRevision', 'source',
-			'requestedCoverage', 'target', 'actualContext', 'patch',
+			'requestedCoverage', 'target', 'actualContext', 'patch', 'captureAdmission',
 		]))) return false;
 	return isBoundedString(value.intentId, 128)
 		&& isInteger(value.tabId, true)
@@ -213,7 +213,9 @@ function isControlIntent(value: unknown): boolean {
 		&& (value.requestedCoverage === 'active-target' || value.requestedCoverage === 'full')
 		&& (value.target === null || isMediaTarget(value.target))
 		&& isControlPatch(value.actualContext, true)
-		&& isControlPatch(value.patch);
+		&& isControlPatch(value.patch)
+		&& (value.captureAdmission === undefined
+			|| value.captureAdmission === 'extension-invocation');
 }
 
 function isControlReadRequest(value: unknown): boolean {

@@ -88,7 +88,7 @@ describe('mode executor applied configuration', () => {
 				() => undefined,
 			);
 
-			executeMode(deps, state);
+			executeMode(deps, state, false, 'extension-invocation');
 			await Promise.resolve();
 			expect(state.phase).toBe('starting');
 			expect(state.appliedConfig).toEqual(priorApplied);
@@ -119,6 +119,48 @@ describe('mode executor applied configuration', () => {
 			if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
 			else Reflect.deleteProperty(globalThis, 'window');
 		}
+	});
+
+	test('does not turn sticky page interaction into Capture invocation authority', async () => {
+		const state: PolicyExecutorState = {
+			config: cloneConfig({ ...DEFAULT_AUDIO_CONFIG, boost: 2, volume: 200 }),
+			appliedConfig: cloneConfig(DEFAULT_AUDIO_CONFIG),
+			activeMode: AudioMode.CAPTURE,
+			desiredMode: AudioMode.CAPTURE,
+			actualMode: 'bypass',
+			phase: 'idle',
+			generation: 4,
+			hasGesture: true,
+			userHasInteracted: true,
+			isPopupOpen: false,
+		};
+		const request = mock(async () => ({
+			status: 'processing' as const,
+			phase: 'active' as const,
+			active: true,
+			generation: 5,
+			actualConfig: state.config,
+		}));
+		const deps = {
+			audioController: { cleanup: mock(async () => undefined) },
+			captureManager: {
+				isActive: () => false,
+				isPending: () => false,
+				request,
+				getGeneration: () => 4,
+				getLastError: () => undefined,
+				getActualConfig: () => null,
+			},
+			settingsManager: {},
+			policyEngine: {},
+		} as unknown as PolicyExecutorDeps;
+
+		await executeMode(deps, state);
+
+		expect(request).not.toHaveBeenCalled();
+		expect(state.actualMode).toBe('bypass');
+		expect(state.phase).toBe('error');
+		expect(state.lastError).toBe('Capture requires a current-tab extension invocation');
 	});
 
 	test('activates Media WebAudio only after every safe registry source is attached', async () => {
@@ -199,13 +241,13 @@ describe('mode executor applied configuration', () => {
 		} as unknown as PolicyExecutorDeps;
 		try {
 			await executeMode(deps, state);
-			// rule: Coverage failure with an active processor need escalates to
-			// Capture (SCTRL-011). The processor is never left partially applied
-			// through WebAudio, but Capture denial still surfaces as bypass+error.
+			// A page/media lifecycle event may invalidate WebAudio coverage, but it
+			// cannot manufacture the browser invocation required to start Capture.
 			expect(initialize).not.toHaveBeenCalled();
+			expect(deps.captureManager.request).not.toHaveBeenCalled();
 			expect(state.actualMode).toBe('bypass');
 			expect(state.phase).toBe('error');
-			expect(state.lastError).toBe('capture permission denied');
+			expect(state.lastError).toBe('Capture requires a current-tab extension invocation');
 		} finally {
 			disposeRegistry();
 			globals.restore();
@@ -251,7 +293,7 @@ describe('mode executor applied configuration', () => {
 			policyEngine: {},
 		} as unknown as PolicyExecutorDeps;
 		try {
-			await executeMode(deps, state);
+			await executeMode(deps, state, false, 'extension-invocation');
 			// rule: when WebAudio coverage fails but a processor is explicitly
 			// needed (volume > 100, EQ, etc.), Capture becomes the last-resort
 			// full-output path because tabCapture is not blocked by page CORS.
@@ -267,14 +309,7 @@ describe('mode executor applied configuration', () => {
 		}
 	});
 
-	test('translates activeTab denial into an actionable user-facing hint', async () => {
-		// rule: Chrome's tabCapture API requires activeTab permission, which is
-		// only granted after the user invokes the extension. When a cross-origin
-		// site (e.g. bilibili) falls through WebAudio coverage failure into the
-		// capture fallback path without that grant, the raw lastError mentions
-		// "Extension has not been invoked for the current page" / "activeTab".
-		// mode-executor must surface an actionable hint rather than the raw
-		// Chrome wording, so users know to click the toolbar icon.
+	test('preserves Chrome denial details after an admitted Capture races browser state', async () => {
 		const globals = installCoverageGlobals();
 		const safe = media('https://media.example/first.mp3');
 		const unsafe = media('https://cdn.example/second.mp3');
@@ -311,10 +346,10 @@ describe('mode executor applied configuration', () => {
 			policyEngine: {},
 		} as unknown as PolicyExecutorDeps;
 		try {
-			await executeMode(deps, state);
+			await executeMode(deps, state, false, 'extension-invocation');
 			expect(state.actualMode).toBe('bypass');
 			expect(state.phase).toBe('error');
-			expect(state.lastError).toBe('Click the extension icon to grant audio processing permission for this tab');
+			expect(state.lastError).toBe('Extension has not been invoked for the current page (see activeTab permission). Chrome pages cannot be captured.');
 		} finally {
 			disposeRegistry();
 			globals.restore();
@@ -437,7 +472,7 @@ describe('mode executor applied configuration', () => {
 		} as unknown as PolicyExecutorDeps;
 
 		try {
-			await executeMode(deps, state);
+			await executeMode(deps, state, false, 'extension-invocation');
 
 			expect(order).toEqual([
 				'webaudio:unity',

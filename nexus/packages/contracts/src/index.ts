@@ -64,6 +64,7 @@ export type {
 	ControlRequestedCoverage,
 	ControlFieldPhase,
 	ControlIntentSource,
+	CaptureAdmission,
 	MediaKind,
 	MediaTarget,
 	VideoFilterState,

@@ -160,6 +160,9 @@ export function createAudioRuntimeControlDelegate(
 		// instead of displaying a misleading volume OSD and then a second toast.
 		const persisted = await policyExecutor.updateConfig(changes, {
 			showOSD: changes.boost !== undefined && intent.source === 'hotkey',
+			...(intent.captureAdmission
+				? { captureAdmission: intent.captureAdmission }
+				: {}),
 		});
 		if (!persisted.ok) throw new Error(persisted.error.message);
 

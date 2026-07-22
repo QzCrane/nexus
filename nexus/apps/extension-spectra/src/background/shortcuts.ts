@@ -20,8 +20,8 @@ import { settingsRepository } from './settings-repository';
 import { hotkeyTargetRepository } from './hotkey-target-repository';
 import {
 	getControlViewSnapshot,
-	submitControlOperation,
-	submitControlRequest,
+	submitExtensionInvokedControlOperation,
+	submitExtensionInvokedControlRequest,
 } from './control-coordinator';
 import { ensureContentRuntime, releaseContentRuntimeLease } from './runtime-loader';
 
@@ -226,7 +226,7 @@ async function submitMutations(tabId: number, mutations: ControlMutation[]): Pro
 		const selected = mutations.filter((mutation) =>
 			FULL_OUTPUT_FIELDS.has(mutation.field) === (requestedCoverage === 'full'));
 		if (selected.length === 0) continue;
-		const acknowledgement = await submitControlRequest({
+		const acknowledgement = await submitExtensionInvokedControlRequest({
 			tabId,
 			source: 'hotkey',
 			requestedCoverage,
@@ -243,15 +243,15 @@ async function submitMutations(tabId: number, mutations: ControlMutation[]): Pro
 // used by Popup, page hotkeys and authenticated remote controls.
 async function executeAction(action: HotkeyAction, tabId: number, _domain: string): Promise<void> {
 	const operation = async (
-			type: Parameters<typeof submitControlOperation>[0]['operation'],
-			payload: Parameters<typeof submitControlOperation>[0]['payload'] = {},
-		) => submitControlOperation({
+			type: Parameters<typeof submitExtensionInvokedControlOperation>[0]['operation'],
+			payload: Parameters<typeof submitExtensionInvokedControlOperation>[0]['payload'] = {},
+		) => submitExtensionInvokedControlOperation({
 			tabId,
 			source: 'hotkey',
 			target: null,
 			operation: type,
 			payload,
-		} as Parameters<typeof submitControlOperation>[0]);
+		} as Parameters<typeof submitExtensionInvokedControlOperation>[0]);
 		switch (action) {
 			case 'none':
 			case 'pitch_up':

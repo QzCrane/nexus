@@ -12,6 +12,7 @@ import {
 	CONTROL_STRATEGIES,
 	CONTROL_STRATEGY_RULES,
 	CONTROL_TERMINAL_STRATEGY_FAILURES,
+	SPECTRA_CONTENT_RUNTIME_REVISION,
 	classifyControlStrategy,
 	isControlIntent,
 	isControlOperationAck,
@@ -19,6 +20,7 @@ import {
 	isControlReadResult,
 	isControlSnapshot,
 	isControlSubmitRequest,
+	isSpectraRequestEnvelope,
 	shouldTryNextControlStrategy,
 	splitEffectiveVolume,
 	splitLegacyVolume,
@@ -35,7 +37,9 @@ import {
 	isContentActiveVideoOperation,
 } from '../src/content/logic/content-control-policy';
 import {
+	SPECTRA_CONTENT_RUNTIME_REVISION as CONTENT_FACADE_RUNTIME_REVISION,
 	isSpectraEventEnvelope as isContentSpectraEventEnvelope,
+	isSpectraRequestEnvelope as isContentSpectraRequestEnvelope,
 	isSpectraResponse as isContentSpectraResponse,
 } from '@nexus/contracts/content-runtime';
 
@@ -82,6 +86,24 @@ describe('per-field SPECTRA control contracts', () => {
 			patch: { volumeBase: 50, boost: 2, speed: 1 },
 		} as const;
 		expect(isControlIntent(intent)).toBe(true);
+		expect(isControlIntent({ ...intent, captureAdmission: 'extension-invocation' })).toBe(true);
+		expect(isControlIntent({ ...intent, captureAdmission: 'page-gesture' })).toBe(false);
+		const admittedEnvelope = {
+			protocolVersion: 2,
+			requestId: 'capture-admission-4',
+			tabId: intent.tabId,
+			documentId: intent.documentId,
+			generation: intent.generation,
+			type: 'spectra.control.intent.execute',
+			payload: { ...intent, captureAdmission: 'extension-invocation' },
+		} as const;
+		expect(CONTENT_FACADE_RUNTIME_REVISION).toBe(SPECTRA_CONTENT_RUNTIME_REVISION);
+		expect(isSpectraRequestEnvelope(admittedEnvelope)).toBe(true);
+		expect(isContentSpectraRequestEnvelope(admittedEnvelope)).toBe(true);
+		expect(isContentSpectraRequestEnvelope({
+			...admittedEnvelope,
+			payload: { ...intent, captureAdmission: 'page-gesture' },
+		})).toBe(false);
 		expect(isControlIntent({ ...intent, patch: {} })).toBe(false);
 		expect(isControlIntent({ ...intent, patch: { volumeBase: 101 } })).toBe(false);
 		expect(isControlIntent({ ...intent, generation: -1 })).toBe(false);
@@ -117,6 +139,14 @@ describe('per-field SPECTRA control contracts', () => {
 		expect(isControlSubmitRequest({
 			...pageObservation,
 			source: 'popup',
+		})).toBe(false);
+		expect(isControlSubmitRequest({
+			tabId: 42,
+			source: 'popup',
+			requestedCoverage: 'full',
+			target: null,
+			patch: { boost: 2 },
+			captureAdmission: 'extension-invocation',
 		})).toBe(false);
 		expect(isControlSubmitRequest({
 			...pageObservation,

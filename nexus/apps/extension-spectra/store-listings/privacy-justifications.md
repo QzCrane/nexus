@@ -44,7 +44,7 @@ Required for bounded lifecycle work that must survive Manifest V3 service-worker
 ### `tabCapture`
 
 ```text
-Required only when an admitted full-output audio feature needs to capture the user-selected tab and process its audio locally. SPECTRA does not record or upload captured audio.
+Required only when an admitted full-output audio feature needs to process the current active tab locally. A new Capture can start only from a Popup or browser command invocation for that same active tab; page activity, restore, remote control, warm update, and alternate background-tab shortcuts cannot start it. SPECTRA does not record or upload captured audio.
 ```
 
 ### `offscreen`

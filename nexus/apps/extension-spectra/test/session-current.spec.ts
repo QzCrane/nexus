@@ -145,7 +145,7 @@ describe('content session restore', () => {
 			config: config({ volume: 190 }),
 		});
 
-		expect(restored.recovered).toBe(true);
+		expect(restored.source).toBe('handoff');
 		expect(restored.state).toMatchObject({
 			config: expect.objectContaining({ volume: 180 }),
 			appliedConfig: expect.objectContaining({ volume: 175 }),
@@ -198,7 +198,8 @@ describe('content session restore', () => {
 				}),
 				config: config(),
 			});
-			expect(shouldApplyInitialPolicy(capture.state, capture.recovered)).toBe(false);
+			expect(capture.source).toBe('session');
+			expect(shouldApplyInitialPolicy(capture.state, capture.source)).toBe(false);
 		}
 
 		const bypass = assembleInitialState({
@@ -210,7 +211,32 @@ describe('content session restore', () => {
 			}),
 			config: config(),
 		});
-		expect(shouldApplyInitialPolicy(bypass.state, bypass.recovered)).toBe(true);
+		expect(bypass.source).toBe('session');
+		expect(shouldApplyInitialPolicy(bypass.state, bypass.source)).toBe(true);
+	});
+
+	test('hydrates every same-document handoff without replaying its audio policy', () => {
+		for (const actualMode of ['bypass', 'webaudio', 'capture'] as const) {
+			const handoff = assembleInitialState({
+				handoff: {
+					config: config({ volume: 180 }),
+					appliedConfig: config({ volume: 180 }),
+					actualMode,
+					phase: actualMode === 'bypass' ? 'idle' : 'active',
+					hasGesture: true,
+					userHasInteracted: true,
+				},
+				session: null,
+				config: null,
+			});
+
+			expect(handoff.source).toBe('handoff');
+			expect(shouldApplyInitialPolicy(handoff.state, handoff.source)).toBe(false);
+		}
+
+		const fresh = assembleInitialState({ handoff: null, session: null, config: config() });
+		expect(fresh.source).toBe('fresh');
+		expect(shouldApplyInitialPolicy(fresh.state, fresh.source)).toBe(true);
 	});
 });
 

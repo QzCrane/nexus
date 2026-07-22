@@ -15,15 +15,21 @@ export interface InitialStateSources {
 	config: AudioConfig | null;
 }
 
+export type InitialStateSource = 'handoff' | 'session' | 'fresh';
+
 // post: loading the document runtime to observe an acknowledged Capture never
 // becomes a new mode intent. Capture is owned by Background/offscreen and must
 // be hydrated first; a later explicit control, configuration or navigation
 // event may ask PolicyExecutor to transition it.
 export function shouldApplyInitialPolicy(
 	state: Pick<PolicyExecutorState, 'actualMode'>,
-	recovered: boolean,
+	source: InitialStateSource,
 ): boolean {
-	return !recovered || state.actualMode !== 'capture';
+	// Same-document handoff preserves the native DOM, page-lifetime WebAudio
+	// controller and Background/offscreen Capture owner. Re-running policy before
+	// READY would turn hydration into a new control intent. A sender-bound session
+	// still needs policy reconstruction unless Capture already owns the processor.
+	return source === 'fresh' || (source === 'session' && state.actualMode !== 'capture');
 }
 
 function cloneConfig(config: AudioConfig): AudioConfig {
@@ -46,8 +52,13 @@ function restorePolicyMode(
 // interaction flags, while a rejected/legacy DOM-only sentinel contributes no data.
 export function assembleInitialState(
 	sources: InitialStateSources,
-): { state: PolicyExecutorState; recovered: boolean } {
+): { state: PolicyExecutorState; source: InitialStateSource } {
 	const { handoff, session } = sources;
+	const source: InitialStateSource = handoff !== null
+		? 'handoff'
+		: session !== null
+			? 'session'
+			: 'fresh';
 	const config = cloneConfig(
 		handoff?.config
 			?? sources.config
@@ -63,7 +74,7 @@ export function assembleInitialState(
 	);
 
 	return {
-		recovered: handoff !== null || session !== null,
+		source,
 		state: {
 			config,
 			appliedConfig,

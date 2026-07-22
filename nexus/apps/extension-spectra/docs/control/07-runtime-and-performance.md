@@ -25,13 +25,21 @@ lease.
 
 Heavy document runtime leases are limited to explicit control, restored non-default settings, an observation subscription, authenticated remote use or configured site hotkeys. Status reads never acquire a processing lease. The last lease releases every observer/listener when no controlled field remains.
 
-Runtime initialization is also not a mode intent. When the sender-bound audio
-session says an actual Capture processor still exists, Content reconstructs its
-local Capture ownership (including error or stopping phases that may retain the
-offscreen graph) and reaches READY without running a policy transition. The next
-explicit control, configuration, navigation, or media lifecycle event may
-re-evaluate the route. Therefore Popup/status/remote observation cannot stop an
-acknowledged processor merely by loading the heavy runtime.
+Runtime initialization is also not a mode intent. Initial state records whether
+it came from `handoff`, sender-bound `session`, or `fresh` initialization. A
+same-document `handoff` only hydrates state and reaches READY: native DOM state
+is already live, the page-lifetime Media WebAudio controller remains on
+`window`, and Capture remains Background/offscreen-owned. Consequently bypass,
+WebAudio, and Capture handoffs all skip policy replay before READY, even when the
+handoff retains sticky page-interaction flags.
+
+A session-only recovery may reconstruct policy when required, except that an
+actual Capture processor is always hydrated without transition (including error
+or stopping phases that may retain the offscreen graph). The next explicit
+control, configuration, navigation, or media lifecycle event may re-evaluate the
+route, but starting Capture still requires a new current-tab extension-invocation
+admission. Therefore warm update and Popup/status/remote observation cannot stop,
+restart, or fan out Capture merely by loading the heavy runtime.
 
 Remote pairing creation does one passive actual projection through the same
 bootstrap/registry read path and caches it in the existing offscreen session.
@@ -88,9 +96,10 @@ These locations are architectural owners, not suggestions. A future implementati
 | Location | Target responsibility | Purpose of the migration |
 | --- | --- | --- |
 | `packages/contracts/src/control.contracts.ts` | exhaustive fields/operations, strategy classes, intent/snapshot/ACK guards | Keep Popup, remote, content, background and tests on one semantic vocabulary. |
+| `packages/contracts/src/spectra.protocol.ts`; `packages/contracts/src/spectra.content-runtime.ts` | canonical and restricted Content wire guards plus one shared runtime revision | Keep the production Content allowlist aligned with every internal intent field and force stale page runtimes through revisioned re-injection before they execute a changed boundary. |
 | `packages/contracts/src/spectra.bootstrap.ts`; `src/content/core/bootstrap.ts` | minimal always-on protocol constants, validators and passive read boundary | Prevent the complete v2 action/validator graph from becoming default-page parse cost while preserving strict runtime validation. |
 | `packages/features/audio-engine/src/CapabilityPlanner.ts` | pure least-invasive per-capability selection | Make native/augmentation admission deterministic and unit-testable without browser side effects. |
-| `src/background/control-coordinator.ts` | intent ordering, per-field revision, stable snapshot and rollback | Establish the only authority that commits actual state. |
+| `src/background/control-coordinator.ts` | intent ordering, per-field revision, stable snapshot, rollback and current-tab Capture admission | Establish the only authority that commits actual state or mints a volatile privileged transaction. |
 | `src/background/runtime-loader.ts` | document-scoped heavy-runtime lease and READY handshake | Preserve the zero-work default and remove fixed injection sleeps. |
 | `src/background/main-runtime-manager.ts` | idempotent injection of fullscreen V1 and exact-element page-media V2 | Delete generic MAIN dispatch and domain adapters; only the two manifest-registered bridge artifacts may be re-injected. |
 | `src/content/core/bootstrap.ts` | lightweight HELLO/message/pagehide boundary plus bounded passive native getter | Keep idle injection side-effect-free while allowing first-open UI/remote actual state without installing the heavy registry. |
@@ -131,13 +140,13 @@ change.
 | landed | `src/content/audio/media-detection.ts`; `content/core/lifecycle/media-observer.ts`; `content/utils/pause-tracker.ts`; `content/logic/native-media-executor.ts` | Make status/read paths pure registry projections: no listener installation, DOM fallback, synthetic registry event or read-triggered correlation state. Pause retention is updated only by registry events. |
 | landed | `src/content/video/video-effects-controller.ts`; `video-transform.ts` | Own reversible attributes/variables and a closed-shadow dim overlay without overwriting site inline transform/filter/layout values; a neutral value on a never-owned video is a DOM-free no-op. Keep `video-transform.ts` screenshot-only and remove the duplicate `video-filter.ts` facade. |
 | landed | `src/content/video/video-effects-controller.ts`; `test/video-effects-controller.spec.ts` | Scope CSS selectors with a runtime-random owner token, capture the site's attribute/custom-property values, keep neutral dim writes from deleting site state and separate stylesheet lifetime from generic effect state. |
-| landed | `packages/contracts/src/control.contracts.ts`; `src/background/control-coordinator.ts`; `src/content/core/media-registry.ts`; `src/popup/side-panel/video-controls.ts` | Keep `activeMedia` and `activeVideo` as separate actual identities. Audio/transport and video-only controls no longer steal or misroute one another's target, while all surfaces still submit typed mutations or operations to the serialized coordinator. |
+| landed | `packages/contracts/src/control.contracts.ts`; `src/background/control-coordinator.ts`; `src/content/core/media-registry.ts`; `src/popup/side-panel/video-controls.ts` | Keep `activeMedia` and `activeVideo` as separate actual identities. Audio/transport and video-only controls no longer steal or misroute one another's target, while all surfaces still submit typed mutations or operations to the serialized coordinator. Capture admission exists only on the coordinator-created internal intent and is rejected from submit payloads. |
 | landed | deleted `src/content/logic/media-control.ts`, `media-message-handler.ts`, `audio/dom-volume.ts`, `audio/volume-observer.ts`; `logic/mode-executor.ts` | Retire competing media writers. The remaining audio-topology compatibility layer delegates native fields to the canonical executor and cannot write volume, mute, speed, seek, pitch or loop. |
 | landed | `scripts/verify/check-spectra-control.js`; `src/content/logic/native-media-executor.ts` | Enforce one direct writer module, forbid indirect legacy writer imports/calls and fail when generic MAIN, raw cross-world messages or retired control modules return. |
 | landed | deleted legacy hostname bridge modules, retired generic `src/injector/*`, and removed the resident speed-UI bridge; `background/main-runtime-manager.ts`; `content/injector/page-media-bridge.ts` | Replace raw page messages, hostname adapters and resident player-UI synchronization with the fullscreen V1 handoff plus synchronous exact-element page-media V2 request/readback. |
 | landed | `src/content/video/ab-loop.ts`; `time-marker.ts` | Bind A/B and markers to `mediaId + sourceRevision`, use one bounded A/B scheduler, binary marker lookup and the unique acknowledged seek executor. |
-| landed | `src/content/input/hotkey-actions.ts`; `hotkey-helpers.ts`; `hotkey-listener.ts`; `background/shortcuts.ts` | Translate every enabled shortcut through its exhaustive descriptor into a typed coordinator intent/operation; preserve repeat/coalescing and activation rules without direct media writes. |
-| landed | `src/background/remote-commands.ts`; `remote-service.ts`; `offscreen-remote/remote-host.ts`; Popup card/side-panel modules | Remote and extension UI submit canonical coordinator mutations, consume snapshot pushes, reject stale generations/revisions and roll optimistic rendering back to the latest stable actual snapshot. Background uses a direct serialized coordinator gateway rather than unreliable worker self-RPC; create/restore privately seeds actual state so HMAC success can deliver the first projection immediately. Popup fields initialize from `ControlSnapshot` only; `AudioSessionSnapshot` owns processor lifecycle only. |
+| landed | `src/content/input/hotkey-actions.ts`; `hotkey-helpers.ts`; `hotkey-listener.ts`; `background/shortcuts.ts` | Translate every enabled shortcut through its exhaustive descriptor into a typed coordinator intent/operation; preserve repeat/coalescing and activation rules without direct media writes. Only a `chrome.commands` transaction whose resolved target is the active tab requests volatile Capture admission; page hotkeys and alternate targets do not. |
+| landed | `src/background/remote-commands.ts`; `remote-service.ts`; `offscreen-remote/remote-host.ts`; Popup card/side-panel modules | Remote and extension UI submit canonical coordinator mutations, consume snapshot pushes, reject stale generations/revisions and roll optimistic rendering back to the latest stable actual snapshot. Background uses a direct serialized coordinator gateway rather than unreliable worker self-RPC; create/restore privately seeds actual state so HMAC success can deliver the first projection immediately. Popup fields initialize from `ControlSnapshot` only; `AudioSessionSnapshot` owns processor lifecycle only. Popup may receive current-tab Capture admission; authenticated remote never does. |
 | landed | `src/background/visualizer-subscriber-registry.ts`; standard-media/offscreen subscription; Popup shared scheduler | Hold independent generation-aware analyser leases only while visible cards consume them, expire abnormal exits after 5 seconds, retain bounded anti-resurrection tombstones, reuse one analyser per active processor and keep sampling batched at 15 Hz. |
 | landed | `packages/contracts/src/hotkeys.contracts.ts`; `src/content/input/hotkey-listener.ts` | Assign every action exactly one feedback owner so acknowledged actual OSD, semantic handler results and generic labels never overlap. |
 | landed | `src/content/video/video-transform.ts`; `src/background/handlers/screenshot.ts`; `spectra.protocol.ts` | Bind screenshot capture to a random token and verify the same document/source/geometry before and after `captureVisibleTab`, then ACK only after download completion. |

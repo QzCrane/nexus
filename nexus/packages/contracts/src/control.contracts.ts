@@ -175,6 +175,7 @@ export type ControlCoverage = 'full' | 'active-target' | 'partial' | 'opaque';
 export type ControlRequestedCoverage = Extract<ControlCoverage, 'full' | 'active-target'>;
 export type ControlFieldPhase = 'idle' | 'applying' | 'applied' | 'error';
 export type ControlIntentSource = 'page' | 'popup' | 'remote' | 'hotkey' | 'restore' | 'system';
+export type CaptureAdmission = 'extension-invocation';
 export type MediaKind = 'audio' | 'video';
 
 export interface MediaTarget {
@@ -730,6 +731,10 @@ export interface ControlIntent {
 	target: MediaTarget | null;
 	actualContext: ControlActualContext;
 	patch: ControlPatch;
+	// Background mints this volatile admission only for one current-tab Popup or
+	// chrome.commands transaction. It is deliberately absent from
+	// ControlSubmitRequest so callers cannot claim browser invocation authority.
+	captureAdmission?: CaptureAdmission;
 }
 
 export interface ControlSubmitRequest {
@@ -933,6 +938,7 @@ const intentKeys = new Set<keyof ControlIntent>([
 	'target',
 	'actualContext',
 	'patch',
+	'captureAdmission',
 ]);
 const submitKeys = new Set<keyof ControlSubmitRequest>([
 	'tabId',
@@ -1287,10 +1293,10 @@ function isControlNativeObservationStrategies(
 	const strategyKeys = Object.keys(value);
 	if (requireExactPatchKeys && (
 		strategyKeys.length !== patchKeys.length
-		|| patchKeys.some((field) => !Object.prototype.hasOwnProperty.call(value, field))
+		|| patchKeys.some((field) => !Object.hasOwn(value, field))
 	)) return false;
 	return Object.entries(value).every(([rawField, rawStrategy]) => {
-		if (!Object.prototype.hasOwnProperty.call(patch, rawField)
+		if (!Object.hasOwn(patch, rawField)
 			|| typeof rawStrategy !== 'string'
 			|| !nativeObservationStrategies.has(rawStrategy)) return false;
 		return isControlStrategyAdmittedForCapability(
@@ -1358,7 +1364,9 @@ export function isControlIntent(value: unknown): value is ControlIntent {
 		&& (value.requestedCoverage === 'active-target' || value.requestedCoverage === 'full')
 		&& (value.target === null || isMediaTarget(value.target))
 		&& isControlActualContext(value.actualContext)
-		&& isControlPatch(value.patch);
+		&& isControlPatch(value.patch)
+		&& (value.captureAdmission === undefined
+			|| value.captureAdmission === 'extension-invocation');
 }
 
 export function isControlSubmitRequest(value: unknown): value is ControlSubmitRequest {
@@ -1521,6 +1529,6 @@ export function isControlReadResult(value: unknown): value is ControlReadResult 
 	}
 	return pageNativeObservationFields.every((field) => (
 		patch[field] === undefined
-		|| Object.prototype.hasOwnProperty.call(observedStrategies, field)
+		|| Object.hasOwn(observedStrategies, field)
 	));
 }

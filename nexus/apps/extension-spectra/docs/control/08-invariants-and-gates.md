@@ -22,7 +22,7 @@ audience: developer
 - `SCTRL-009`: extension CSS removal restores the site's current cascade; dim-target handoff releases only dim ownership and preserves independent effects on the previous video.
 - `SCTRL-010`: transport/video state is bound to media ID and source revision.
 - `SCTRL-011`: Capture is last-resort; processor handoff never double-applies DSP, never ACKs before actual readback and restores the last stable configuration after candidate failure.
-- `SCTRL-012`: status and observation reads do not write settings, badge, page state or activate processing; runtime hydration of an acknowledged Capture reconstructs ownership without replaying policy or changing its processor.
+- `SCTRL-012`: status and observation reads do not write settings, badge, page state or activate processing; same-document handoff hydration never replays policy for bypass, Media WebAudio or Capture, and session hydration of acknowledged Capture reconstructs ownership without changing its processor.
 - `SCTRL-013`: neutral DSP and unsubscribed analysis create no nodes.
 - `SCTRL-014`: page, Popup, remote, hotkeys and badge project one snapshot.
 - `SCTRL-015`: MAIN cannot bypass user activation, CORS, DRM or inaccessible media.
@@ -51,7 +51,7 @@ audience: developer
 - `SCTRL-038`: WebAudio/Capture transitions neutralize the old DSP, verify the candidate actual path and only then release; failure restores the previous stable route.
 - `SCTRL-039`: visible Popup and authenticated remote synchronization requires independent document observation tokens; ordinary status reads acquire none.
 - `SCTRL-040`: successful per-media desired replay is separate from page observation; a page event cannot become a document-global restore template.
-- `SCTRL-041`: user-activation-bound APIs execute only inside a trusted page event stack or return the native activation error; no cross-process gesture emulation exists.
+- `SCTRL-041`: trusted page activation admits only page-stack APIs and Media WebAudio; new Capture requires a volatile Background admission minted for one current-active-tab Popup or `chrome.commands` transaction, external submit payloads cannot carry it, and restore/remote/page/alternate-tab paths never call `getMediaStreamId()` without it.
 - `SCTRL-042`: video enhancement implementation is a lazy capability-owned module; native-only/default control does not load or instantiate it.
 - `SCTRL-043`: Popup, Options and remote use a restricted protocol validator and cannot import or execute the Background request router.
 - `SCTRL-044`: production property mangling stops at every external ABI. Browser/Chrome dictionaries, transport payloads, ESM exports and versioned singleton members retain their names; PeerJS is a separately isolated local vendor artifact with only private underscore members eligible for mangling.

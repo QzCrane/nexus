@@ -6,6 +6,43 @@ import type { PolicyExecutorState } from '../src/content/types';
 import { mergeControlFields } from '../src/popup/card/types';
 
 describe('audio runtime coverage boundary', () => {
+	test('forwards one intent-scoped Capture admission into policy application', async () => {
+		const state: PolicyExecutorState = {
+			config: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
+			appliedConfig: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
+			activeMode: 'NATIVE_LITE',
+			desiredMode: 'NATIVE_LITE',
+			actualMode: 'bypass',
+			phase: 'idle',
+			generation: 2,
+			hasGesture: false,
+			userHasInteracted: false,
+			isPopupOpen: false,
+		};
+		const updateConfig = mock(async () => ({ ok: true as const, data: { revision: 1 } }));
+		const delegate = createAudioRuntimeControlDelegate({ updateConfig } as unknown as PolicyExecutor, state);
+		const intent: ControlIntent = {
+			intentId: 'intent:admitted-popup',
+			tabId: 7,
+			documentId: 'document:dsp',
+			generation: 2,
+			baseRevision: 3,
+			source: 'popup',
+			requestedCoverage: 'full',
+			target: null,
+			actualContext: {},
+			patch: { boost: 2 },
+			captureAdmission: 'extension-invocation',
+		};
+
+		await delegate.apply(intent, intent.patch);
+
+		expect(updateConfig.mock.calls[0]?.[1]).toEqual({
+			showOSD: false,
+			captureAdmission: 'extension-invocation',
+		});
+	});
+
 	test('requests page OSD only for real hotkey-sourced boost changes', async () => {
 		for (const source of ['restore', 'remote', 'hotkey'] as const) {
 			const state: PolicyExecutorState = {

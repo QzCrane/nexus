@@ -374,6 +374,82 @@ function checkPolicyOwner(root) {
 		path.join(root, APP_PATH, 'src/background/control-coordinator.ts'),
 		'utf8',
 	);
+	const submitKeys = contracts.match(
+		/const submitKeys = new Set<keyof ControlSubmitRequest>\(\[(.*?)\]\);/su,
+	)?.[1] ?? '';
+	const contentRuntimeContracts = fs.readFileSync(
+		path.join(root, 'packages/contracts/src/spectra.content-runtime.ts'),
+		'utf8',
+	);
+	const protocolContracts = fs.readFileSync(
+		path.join(root, 'packages/contracts/src/spectra.protocol.ts'),
+		'utf8',
+	);
+	const contentRuntimeRevision = contentRuntimeContracts.match(
+		/SPECTRA_CONTENT_RUNTIME_REVISION = '([^']+)'/u,
+	)?.[1];
+	const protocolRuntimeRevision = protocolContracts.match(
+		/SPECTRA_CONTENT_RUNTIME_REVISION = '([^']+)'/u,
+	)?.[1];
+	if (!contracts.includes("export type CaptureAdmission = 'extension-invocation'")
+		|| !contracts.includes('captureAdmission?: CaptureAdmission')
+		|| !contracts.includes("|| value.captureAdmission === 'extension-invocation'")
+		|| submitKeys.length === 0
+		|| submitKeys.includes('captureAdmission')) {
+		error('SCTRL-041: Capture admission must exist only on validated internal intents, never ControlSubmitRequest');
+	}
+	if (!contentRuntimeRevision
+		|| contentRuntimeRevision !== protocolRuntimeRevision
+		|| !contentRuntimeContracts.includes("'patch', 'captureAdmission'")
+		|| !contentRuntimeContracts.includes("|| value.captureAdmission === 'extension-invocation'")) {
+		error('SCTRL-006/SCTRL-041: the revisioned Content runtime facade must accept the canonical internal Capture admission');
+	}
+	for (const required of [
+		'captureAdmissionForCurrentTab',
+		"chrome.tabs.query({ active: true, currentWindow: true })",
+		"Reflect.deleteProperty(unadmittedRequest, 'captureAdmission')",
+		'submitExtensionInvokedControlRequest',
+		'submitExtensionInvokedControlOperation',
+		'isExtensionPopupSender(sender)',
+		"message.payload.source === 'popup'",
+	]) {
+		if (!coordinator.includes(required)) {
+			error(`SCTRL-041: Background Capture admission boundary is missing (${required})`);
+		}
+	}
+	if ((coordinator.match(/Reflect\.deleteProperty\(unadmittedRequest, 'captureAdmission'\)/gu) ?? []).length !== 2
+		|| !shortcuts.includes('submitExtensionInvokedControlRequest')
+		|| !shortcuts.includes('submitExtensionInvokedControlOperation')) {
+		error('SCTRL-041: only Popup and current-tab chrome.commands transactions may request Capture admission');
+	}
+	const captureModeExecutor = fs.readFileSync(
+		path.join(root, APP_PATH, 'src/content/logic/mode-executor.ts'),
+		'utf8',
+	);
+	const captureManager = fs.readFileSync(
+		path.join(root, APP_PATH, 'src/content/audio/capture-manager.ts'),
+		'utf8',
+	);
+	if ((captureModeExecutor.match(/captureAdmission === 'extension-invocation'/gu) ?? []).length !== 2
+		|| !captureModeExecutor.includes('CAPTURE_ADMISSION_REQUIRED')
+		|| captureModeExecutor.includes('requiresAudioProcessor(config) && hasUserGesture(state)')
+		|| captureManager.includes('Capture transition blocked by missing activeTab permission')
+		|| !captureManager.includes("log.error('Capture transition failed:'")) {
+		error('SCTRL-041: page gestures must not admit a new Capture or hide an unexpected browser denial');
+	}
+	const hydrationInitialState = fs.readFileSync(
+		path.join(root, APP_PATH, 'src/content/core/initial-state.ts'),
+		'utf8',
+	);
+	const hydrationContentCore = fs.readFileSync(
+		path.join(root, APP_PATH, 'src/content/core/index.ts'),
+		'utf8',
+	);
+	if (!hydrationInitialState.includes("export type InitialStateSource = 'handoff' | 'session' | 'fresh'")
+		|| !hydrationInitialState.includes("return source === 'fresh' || (source === 'session' && state.actualMode !== 'capture')")
+		|| !hydrationContentCore.includes('if (shouldApplyInitialPolicy(state, source))')) {
+		error('SCTRL-012/SCTRL-041: same-document handoff must hydrate without replaying policy before READY');
+	}
 	if (!coordinator.includes('applyPageObservation(intent, resolvedRequest.observedStrategies)')
 		|| !coordinator.includes("source: pageObservation ? 'system' : intent.source")
 		|| !coordinator.includes('patch: routedPatch')) {
@@ -639,7 +715,7 @@ function checkProductionLoadingTopology(root) {
 		'const moduleEntryGroups = [',
 		"name: 'extension'",
 		"sharingDomain: 'extension-pages'",
-		'chunkNames: `chunks/${group.name}/[name]-[hash]`',
+		`chunkNames: \`chunks/\${group.name}/[name]-[hash]\``,
 		'plugins: [contractRuntimeFacadePlugin()]',
 		'const addEsmExportProperties = (source) => {',
 		'const addCrossContextSingletonProperties = (source) => {',
@@ -1011,7 +1087,7 @@ function checkRetiredPaths(root) {
 		'assertOwnerReadback(video, state, field)',
 		'!this.ownerBaselines.has(video) && !this.hasActiveCssEffect(predicted)',
 		'private readonly ownerToken = crypto.randomUUID()',
-		'video[${OWNER_ATTRIBUTE}="${ownerToken}"]',
+		`video[\${OWNER_ATTRIBUTE}="\${ownerToken}"]`,
 	]) {
 		if (!videoEffects.includes(required)) {
 			error(`SCTRL-003/SCTRL-005/SCTRL-026: disabled video effects must prove extension ownership was removed (${required})`);
