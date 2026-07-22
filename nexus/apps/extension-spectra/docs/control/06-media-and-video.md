@@ -90,7 +90,7 @@ silently route a video field to the wrong element.
 
 | Field | Preferred implementation | Escalation |
 | --- | --- | --- |
-| speed | `playbackRate` with `ratechange` readback | implemented YouTube official API only after proven DOM incompleteness; otherwise unsupported |
+| speed | exact-element page controller getter/setter, then standard `playbackRate` | page getter stable readback or DOM `ratechange` plus getter; unsupported only after both native candidates fail |
 | preserve pitch | `preservesPitch` capability/readback | unsupported when the standard property is absent |
 | play/pause | awaited `play()` / `pause` event | unsupported on native failure; never bypass autoplay |
 | seek | seekable `TimeRanges` + `seeked` readback | unsupported when the standard timeline is unavailable |
@@ -99,7 +99,13 @@ silently route a video field to the wrong element.
 | PiP | Picture-in-Picture API + enter/leave events | no MAIN workaround |
 | fullscreen | Fullscreen API on the active video | unsupported on native failure; no gesture workaround |
 
-PiP and fullscreen failures distinguish unsupported, disabled and user-activation-required. A Popup or remote command cannot manufacture page transient activation. Popup PiP converts only `user-activation-required` into an explicit page interaction: it arms a typed, bounded prompt, activates the already-bound tab, and waits for the user's real click. The click invokes the same native executor before the first asynchronous boundary; it does not admit MAIN, Capture or a site adapter.
+The same exact-element `page-native -> dom-native` order applies to page volume,
+media mute, and playback speed. Page-native discovery is bounded and
+domain-neutral; it retains no player object or site UI listener. Normal media
+events trigger semantic getter readback so page changes, Popup changes, and mute
+hotkeys converge on the one coordinator snapshot without a reassert loop.
+
+PiP and fullscreen failures distinguish unsupported, disabled and user-activation-required. A Popup or remote command cannot manufacture page transient activation. Popup PiP converts only `user-activation-required` into an explicit page interaction: it arms a typed, bounded prompt, activates the already-bound tab, and waits for the user's real click. The click invokes the same native executor before the first asynchronous boundary; it does not admit MAIN, Capture or a domain adapter.
 
 A/B state and markers are keyed by `mediaId + sourceRevision`. A/B uses one
 boundary timer, optionally switching to `requestVideoFrameCallback` near B;

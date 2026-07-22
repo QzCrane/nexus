@@ -117,6 +117,15 @@ describe('page hotkey trust boundary', () => {
 		expect(listener).toContain('if (!isTrustedHotkeyEvent(e)) return;');
 	});
 
+	test('reports trusted activation results as exact DOM-native page observations', () => {
+		const helper = readFileSync(
+			resolve(import.meta.dir, '../src/content/input/hotkey-helpers.ts'),
+			'utf8',
+		);
+		expect(helper).toContain("source: 'page'");
+		expect(helper).toContain("observedStrategies: { [field]: 'dom-native' }");
+	});
+
 	test('coalesces held shortcuts without repeat toasts and settles on physical keyup', () => {
 		const listener = readFileSync(
 			resolve(import.meta.dir, '../src/content/input/hotkey-listener.ts'),

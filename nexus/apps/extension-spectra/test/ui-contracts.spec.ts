@@ -322,6 +322,21 @@ describe('extension-page DOM and idle contracts', () => {
 		}
 	});
 
+	test('injects the selected locale before registry and preset first render', () => {
+		const settings = readFileSync(resolve(import.meta.dir, '../src/popup/views/settings.ts'), 'utf8');
+		const registry = readFileSync(resolve(import.meta.dir, '../src/popup/views/registry-ui.ts'), 'utf8');
+		const presets = readFileSync(resolve(import.meta.dir, '../src/popup/views/presets-ui.ts'), 'utf8');
+
+		expect(settings).toContain('initRegistryUI(registryEntries, dict)');
+		expect(settings).toContain('initPresetsUI(dict)');
+		expect(registry).toContain('export function initRegistryUI(entries: DomainEntry[], dict: I18NDict)');
+		expect(registry).not.toContain('currentDict: I18NDict | null');
+		expect(registry).not.toMatch(/currentDict\?\.|Capture when needed|No cached site routes|AUTO|USER/u);
+		expect(presets).toContain('export function initPresetsUI(\n\tdict: I18NDict,');
+		expect(presets).toContain('const refreshRevision = ++latestRefreshRevision');
+		expect(presets).not.toContain('currentDict: I18NDict | null');
+	});
+
 	test('keeps video-only Popup acknowledgements independent from active media', () => {
 		const mediaControls = readFileSync(resolve(import.meta.dir, '../src/popup/card/media-events.ts'), 'utf8');
 		const videoControls = readFileSync(resolve(import.meta.dir, '../src/popup/side-panel/video-controls.ts'), 'utf8');
@@ -351,10 +366,11 @@ describe('extension-page DOM and idle contracts', () => {
 			resolve(import.meta.dir, '../../../packages/contracts/src/spectra.protocol.ts'),
 			'utf8',
 		);
-		const pipHandler = popup.slice(
-			popup.indexOf('if (ui.btnPip)'),
-			popup.indexOf('// rule: speed controls'),
-		);
+		const pipHandlerStart = popup.indexOf('if (ui.btnPip)');
+		const pipHandlerEnd = popup.indexOf('const submitSpeed', pipHandlerStart);
+		expect(pipHandlerStart).toBeGreaterThanOrEqual(0);
+		expect(pipHandlerEnd).toBeGreaterThan(pipHandlerStart);
+		const pipHandler = popup.slice(pipHandlerStart, pipHandlerEnd);
 		expect(popup).toContain('chrome.scripting.executeScript');
 		expect(popup).toContain("world: 'ISOLATED'");
 		expect(popup).toContain('SPECTRA_TRUSTED_PIP_REQUEST_ATTRIBUTE');
@@ -413,25 +429,25 @@ describe('extension-page DOM and idle contracts', () => {
 			resolve(import.meta.dir, '../src/content/logic/control-operation-executor.ts'),
 			'utf8',
 		);
-		const playbackBridge = readFileSync(
-			resolve(import.meta.dir, '../src/content/injector/playback-rate-bridge.ts'),
+		const pageMediaBridge = readFileSync(
+			resolve(import.meta.dir, '../src/content/injector/page-media-bridge.ts'),
 			'utf8',
 		);
 		const handoff = readFileSync(resolve(import.meta.dir, '../src/content/core/fullscreen-audio-handoff.ts'), 'utf8');
-		// rule: MAIN-world fullscreen and playback-rate bridges are registered in
+		// rule: MAIN-world fullscreen and page-media bridges are registered in
 	// the manifest at document_start so Chrome injects them before any page
-	// script can call requestFullscreen or set playbackRate. This is the only
+	// script can call requestFullscreen or create a player controller. This is the only
 	// path that does not race with service-worker wake-up or page CSP.
 	// main-runtime-manager.ts remains the owner of the `world: 'MAIN'`
 	// re-injection literal used by warm-update and on-demand paths; the bridge
-	// modules' V1 guard makes a second injection a no-op, so the two paths
+	// modules' version guard makes a second injection a no-op, so the two paths
 	// coexist safely.
 	expect(manifest.content_scripts).toContainEqual(expect.objectContaining({
 		js: ['content-fullscreen-bridge.js'],
 		world: 'MAIN',
 	}));
 	expect(manifest.content_scripts).toContainEqual(expect.objectContaining({
-		js: ['content-playback-rate-bridge.js'],
+		js: ['content-page-media-bridge.js'],
 		world: 'MAIN',
 	}));
 	expect(manifest.content_scripts).toContainEqual(expect.objectContaining({
@@ -443,7 +459,7 @@ describe('extension-page DOM and idle contracts', () => {
 			'utf8',
 		);
 		expect(mainRuntime).toContain("'content-fullscreen-bridge.js'");
-		expect(mainRuntime).toContain("'content-playback-rate-bridge.js'");
+		expect(mainRuntime).toContain("'content-page-media-bridge.js'");
 		expect(mainRuntime).toContain('export async function injectMainBridges');
 		expect(mainRuntime).toContain('export async function injectMainBootstrap');
 		expect(mainRuntime).toContain("world: 'MAIN'");
@@ -469,18 +485,15 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(audioDelegate).toContain("intent.source === 'hotkey'");
 		expect(operations).toContain("if (intent.source === 'hotkey') {");
 		expect(operations).toContain("return ack(intent, 'observe', { shown: true }, {}, null)");
-		expect(playbackBridge).toContain('findPlayerRoot');
-		expect(playbackBridge).toContain('[data-spectra-player="v1"]');
-		expect(playbackBridge).toContain('[class*="player"]');
-		expect(playbackBridge).toContain('selected.click()');
-		expect(playbackBridge).toContain('document.querySelectorAll<HTMLElement>(RATE_CONTROL_SELECTOR)');
-		expect(playbackBridge).toContain('new MutationObserver');
-		expect(playbackBridge).toContain('synchronizeAttachedPlayerController');
-		expect(playbackBridge).toContain("'setPlaybackRate'");
-		// rule: SCTRL-003 — playbackRate writes must route through the
-		// executor-owned Reflect.set path; direct assignment is forbidden so
-		// page-side reassertions cannot bypass the architecture owner.
-		expect(playbackBridge).toContain("Reflect.set(element, 'playbackRate', request.speed)");
-		expect(playbackBridge).not.toMatch(/element\.playbackRate\s*=\s*request\.speed/);
+		expect(pageMediaBridge).toContain('collectControllerCandidates');
+		expect(pageMediaBridge).toContain('controllerAssociation');
+		expect(pageMediaBridge).toContain("boundMethod(controller, 'getVolume')");
+		expect(pageMediaBridge).toContain("boundMethod(controller, 'setVolume')");
+		expect(pageMediaBridge).toContain("boundMethod(controller, 'isMuted')");
+		expect(pageMediaBridge).toContain("boundMethod(controller, 'getPlaybackRate')");
+		expect(pageMediaBridge).toContain("boundMethod(controller, 'setPlaybackRate')");
+		expect(pageMediaBridge).toContain('capability.write(before)');
+		expect(pageMediaBridge).not.toMatch(/youtube|hostname|location\.host|setInterval|MutationObserver/iu);
+		expect(pageMediaBridge).not.toMatch(/HTMLMediaElement\.prototype|Object\.defineProperty\s*\(\s*HTMLMediaElement/iu);
 	});
 });

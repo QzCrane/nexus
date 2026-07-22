@@ -87,12 +87,12 @@ describe('MV3 warm update scheduling', () => {
 		))).toEqual([
 			{ probe: true },
 			{ files: ['content-fullscreen-bridge.js'], world: 'MAIN' },
-			{ files: ['content-playback-rate-bridge.js'], world: 'MAIN' },
+			{ files: ['content-page-media-bridge.js'], world: 'MAIN' },
 			{ files: ['content-bootstrap.js'], world: 'ISOLATED' },
 		]);
 	});
 
-	test('injects the playback-rate bridge on the popup on-demand recovery path', async () => {
+	test('injects both versioned MAIN bridges on the popup on-demand recovery path', async () => {
 		const executeScript = mock(async () => [{ frameId: 0 }]);
 		installChrome(executeScript);
 
@@ -102,7 +102,7 @@ describe('MV3 warm update scheduling', () => {
 			world: details.world,
 		}))).toEqual([
 			{ files: ['content-fullscreen-bridge.js'], world: 'MAIN' },
-			{ files: ['content-playback-rate-bridge.js'], world: 'MAIN' },
+			{ files: ['content-page-media-bridge.js'], world: 'MAIN' },
 			{ files: ['content-bootstrap.js'], world: 'ISOLATED' },
 		]);
 	});

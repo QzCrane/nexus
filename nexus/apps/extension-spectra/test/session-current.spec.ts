@@ -10,7 +10,10 @@ import {
 } from '@nexus/contracts';
 import { AudioMode } from '@nexus/audio-engine';
 import { registerAudioV2Listener } from '../src/background/handlers/audio';
-import { assembleInitialState } from '../src/content/core/initial-state';
+import {
+	assembleInitialState,
+	shouldApplyInitialPolicy,
+} from '../src/content/core/initial-state';
 import type { PolicyExecutorState } from '../src/content/types';
 
 function config(patch: Partial<AudioConfig> = {}): AudioConfig {
@@ -182,6 +185,32 @@ describe('content session restore', () => {
 			config: config({ volume: 80, volumeBase: 80 }),
 		});
 		expect(lite.state.desiredMode).toBe(AudioMode.NATIVE_LITE);
+	});
+
+	test('hydrates recovered Capture ownership without turning observation into a mode intent', () => {
+		for (const phase of ['active', 'error'] as const) {
+			const capture = assembleInitialState({
+				handoff: null,
+				session: snapshot(63, {
+					desiredMode: 'bypass',
+					actualMode: 'capture',
+					phase,
+				}),
+				config: config(),
+			});
+			expect(shouldApplyInitialPolicy(capture.state, capture.recovered)).toBe(false);
+		}
+
+		const bypass = assembleInitialState({
+			handoff: null,
+			session: snapshot(64, {
+				desiredMode: 'bypass',
+				actualMode: 'bypass',
+				phase: 'idle',
+			}),
+			config: config(),
+		});
+		expect(shouldApplyInitialPolicy(bypass.state, bypass.recovered)).toBe(true);
 	});
 });
 

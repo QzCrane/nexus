@@ -5,7 +5,6 @@ import {
 	SPECTRA_CONTENT_RUNTIME_REVISION,
 } from '@nexus/contracts';
 
-import { isExtensionContextValid } from './context-guard';
 import { createSettingsManager } from './settings-manager';
 import { createCaptureManager } from '../audio/capture-manager';
 import type { CaptureManager } from '../audio/capture-manager';
@@ -32,9 +31,8 @@ import {
 	setContentRuntimeOwnershipProvider,
 	setContentRuntimeReady,
 } from '../../shared/content-runtime';
-import { assembleInitialState } from './initial-state';
+import { assembleInitialState, shouldApplyInitialPolicy } from './initial-state';
 import type { ContentDeps, PolicyExecutorState } from '../types';
-import type { PolicyExecutor } from '../logic/policy-executor';
 import type { SettingsManager } from './settings-manager';
 import {
 	NativeMediaExecutor,
@@ -185,24 +183,23 @@ function bootstrapLifecycle(ctx: InitContext, runtime: ContentRuntime): void {
 
 // eff: applies the initial state -- either from a hot swap stub or a fresh background load
 async function applyInitialState(
-  ctx: InitContext,
-  recovered: boolean,
-  runtime: ContentRuntime,
+	ctx: InitContext,
+	recovered: boolean,
+	runtime: ContentRuntime,
 ): Promise<void> {
-  if (!isCurrentRuntime(runtime)) return;
-  const { state, settingsManager, deps } = ctx;
-  const policyExecutor = deps.policyExecutor!;
-  try {
-    if (recovered) {
-      await settingsManager.load();
-      if (!isCurrentRuntime(runtime)) return;
-      log.info('[Handoff] Runtime state recovered from an authenticated source.');
-      policyExecutor.applyState();
-    } else {
-      await loadConfigAndApply(state, settingsManager, policyExecutor, runtime);
-    }
-    if (!isCurrentRuntime(runtime)) return;
-    reportMediaState(state);
+	if (!isCurrentRuntime(runtime)) return;
+	const { state, deps } = ctx;
+	const policyExecutor = deps.policyExecutor!;
+	try {
+		if (recovered) log.info('[Handoff] Runtime state recovered from an authenticated source.');
+		// createInitialState already resolved the authoritative audio session/config.
+		// An acknowledged Capture belongs to Background/offscreen. Merely loading
+		// this runtime for Popup/remote observation hydrates that owner and must not
+		// reinterpret the load as a bypass intent. All other initial states still
+		// get one authoritative application before READY.
+		if (shouldApplyInitialPolicy(state, recovered)) await policyExecutor.applyState();
+		if (!isCurrentRuntime(runtime)) return;
+		reportMediaState(state);
   } catch (e) {
     log.error('Initialization failed:', e);
   }
@@ -231,7 +228,10 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
 	};
 
 	if (initial.recovered) {
-		const captureActive = state.actualMode === 'capture' && state.phase === 'active';
+		// actualMode owns the processor. An error/stopping phase may still retain
+		// the offscreen graph and lease, so hydration must not claim it is inactive
+		// and allow a duplicate START or an unowned transition.
+		const captureActive = state.actualMode === 'capture';
 		captureManager.restoreState({
 			active: captureActive,
 			phase: state.phase,
@@ -241,8 +241,6 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
 		});
 	}
 
-	let visualizerOwnsProcessor = false;
-	let visualizerOwnedGeneration: number | null = null;
 	const deps: ContentDeps = {
 		policyEngine,
 		audioController,
@@ -252,34 +250,9 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
 		getVisualizerData: () => audioController.getVisualizerData(),
 		setVisualizerSubscribed: async (subscribed) => {
 			state.visualizerSubscribed = subscribed;
-			// Record analyser demand before policy execution. A safe media source can
-			// then establish a neutral WebAudio graph; a restricted source can keep
-			// the same demand while Capture supplies samples from offscreen.
-			audioController.setVisualizerSubscribed(subscribed);
-			if (subscribed) {
-				// An analyser is an observer of an existing processor. Only ask policy
-				// to create a neutral route when neither WebAudio nor Capture already
-				// owns output; otherwise opening Popup must not replace that route.
-				visualizerOwnsProcessor = state.actualMode === 'bypass'
-					&& !captureManager.isActive()
-					&& !captureManager.isPending();
-				if (visualizerOwnsProcessor) {
-					await deps.policyExecutor?.applyState({ modeIntent: true });
-					visualizerOwnedGeneration = state.generation;
-				}
-			} else {
-				// A later user/full-output transition supersedes the analyser's neutral
-				// processor. Its higher generation must survive a delayed Popup close.
-				const shouldReleaseProcessor = visualizerOwnsProcessor
-					&& visualizerOwnedGeneration === state.generation;
-				visualizerOwnsProcessor = false;
-				visualizerOwnedGeneration = null;
-				if (shouldReleaseProcessor) {
-					await deps.policyExecutor?.applyState({ modeIntent: true });
-				}
-			}
-			// Attachment happens during the mode transition, so synchronize once more
-			// before acknowledging the live lease to the background.
+			// A visualizer lease is an observational tap only. It may attach to an
+			// already-owned Media WebAudio graph, but it never runs policy or creates
+			// Media WebAudio/Capture on an otherwise native page.
 			audioController.setVisualizerSubscribed(subscribed);
 			return subscribed;
 		},
@@ -359,60 +332,32 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
 	));
 	registry.track(() => nativeExecutor.setAudioRuntimeDelegate(null));
 
-  bootstrapLifecycle(
-    { registry, policyEngine, audioController, settingsManager, captureManager, state, deps },
-    runtime,
-  );
+	bootstrapLifecycle(
+		{ registry, policyEngine, audioController, settingsManager, captureManager, state, deps },
+		runtime,
+	);
 
-  // The runtime is controllable once the native executor, message boundary and
-  // lifecycle registry are installed. Settings restoration may still perform
-  // site work, but it must never hold the READY handshake (and therefore every
-  // volume/speed command) behind that asynchronous work.
+	await applyInitialState(
+		{ registry, policyEngine, audioController, settingsManager, captureManager, state, deps },
+		initial.recovered,
+		runtime,
+	);
+
+	// READY is a transaction boundary: executor registration and the initial
+	// audio state are both complete. Presentation-only Content settings can load
+	// afterward because they cannot overwrite control state.
 	if (!isCurrentRuntime(runtime)) return;
 	spectraWindow.__SPECTRA_LISTENERS_READY__ = true;
 	setContentRuntimeReady(runtime.revision);
 	void sendSpectraRequest('spectra.content.runtime.ready', {
 		runtimeRevision: runtime.revision,
 	}).catch(() => undefined);
-
-  await applyInitialState(
-    { registry, policyEngine, audioController, settingsManager, captureManager, state, deps },
-    initial.recovered,
-    runtime,
-  );
+	void settingsManager.load().catch((error) => {
+		log.warn('Content presentation settings load failed:', error);
+	});
 
 	if (!isCurrentRuntime(runtime)) return;
 	log.info('Content Script ready.');
-}
-
-// eff: retrieves initial configuration from storage and executes the first state application
-async function loadConfigAndApply(
-  state: PolicyExecutorState,
-  settingsManager: SettingsManager,
-  policyExecutor: PolicyExecutor,
-  runtime: ContentRuntime,
-): Promise<void> {
-  if (!isCurrentRuntime(runtime) || !isExtensionContextValid()) {
-    log.debug('Extension context invalidated, skipping config load.');
-    return;
-  }
-
-  try {
-    const result = await sendSpectraRequest('spectra.audio.config.get', {});
-    if (!isCurrentRuntime(runtime)) return;
-    if (result.ok) {
-      state.config = result.data;
-    }
-
-    await settingsManager.load();
-    if (!isCurrentRuntime(runtime)) return;
-
-    reportMediaState();
-
-    policyExecutor.applyState();
-  } catch {
-    // note: failure indicates background worker is likely offline or restarting
-  }
 }
 
 

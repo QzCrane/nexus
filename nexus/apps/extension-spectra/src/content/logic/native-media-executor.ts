@@ -12,6 +12,7 @@ import {
 	type ControlIntent,
 	type ControlOperationIntent,
 	type ControlFrameStepResult,
+	type ControlNativeObservationStrategies,
 	type ControlPatch,
 	type ControlReadRequest,
 	type ControlReadResult,
@@ -31,7 +32,11 @@ import type {
 	VideoEffectState,
 } from '../video/video-effects-controller';
 import { contentControlStrategy } from './content-control-policy';
-import { writePageSynchronizedPlaybackRate } from './page-playback-rate-bridge';
+import {
+	readPageMediaField,
+	writePageMediaField,
+} from './page-media-bridge';
+import type { SpectraPageMediaField } from '../../shared/page-media-bridge';
 
 interface PendingWrite {
 	intentId: string;
@@ -48,10 +53,12 @@ interface OwnedSeek {
 }
 
 type RestorableMediaField = 'volumeBase' | 'mediaMuted' | 'speed' | 'preservePitch' | 'loop';
+type RestorableMediaWriter = 'page-native' | 'dom-native';
 
 interface OwnedMediaField {
 	baseline: ControlValues[RestorableMediaField];
 	lastApplied: ControlValues[RestorableMediaField];
+	writer: RestorableMediaWriter;
 }
 
 interface NativeMediaOwnershipStore {
@@ -93,11 +100,11 @@ function loadVideoEffectsRuntime(): Promise<VideoEffectsRuntimeModule> {
 }
 
 const ownershipScope = globalThis as typeof globalThis & {
-	__nexusSpectraNativeMediaOwnershipV2?: NativeMediaOwnershipStore;
+	__nexusSpectraNativeMediaOwnershipV3?: NativeMediaOwnershipStore;
 };
-const nativeMediaOwnership = ownershipScope.__nexusSpectraNativeMediaOwnershipV2
+const nativeMediaOwnership = ownershipScope.__nexusSpectraNativeMediaOwnershipV3
 	?? { byElement: new WeakMap<HTMLMediaElement, Map<RestorableMediaField, OwnedMediaField>>() };
-ownershipScope.__nexusSpectraNativeMediaOwnershipV2 = nativeMediaOwnership;
+ownershipScope.__nexusSpectraNativeMediaOwnershipV3 = nativeMediaOwnership;
 
 const ownedSeeks = new WeakMap<HTMLMediaElement, OwnedSeek[]>();
 const videoCadence = new WeakMap<HTMLVideoElement, {
@@ -225,6 +232,14 @@ async function stableReadback<T>(read: () => T): Promise<T> {
 
 const NATIVE_EVENT_QUIET_MS = 64;
 
+async function stablePageReadback<T>(read: () => T): Promise<T> {
+	// Page controller getters are the ACK boundary. Give the player the same
+	// short quiet window used by native event ACKs, then cross two render
+	// boundaries so delayed UI/state rollback cannot be committed as success.
+	await new Promise<void>((resolve) => setTimeout(resolve, NATIVE_EVENT_QUIET_MS));
+	return stableReadback(read);
+}
+
 async function writeWithStableEventAck<T>(
 	target: EventTarget,
 	type: string,
@@ -345,7 +360,11 @@ function resolvePictureInPictureOwner(
 		: null;
 }
 
-function readRestorableMediaField(
+function isPageMediaField(field: RestorableMediaField): field is SpectraPageMediaField {
+	return field === 'volumeBase' || field === 'mediaMuted' || field === 'speed';
+}
+
+function readDomRestorableMediaField(
 	element: HTMLMediaElement,
 	field: RestorableMediaField,
 ): ControlValues[RestorableMediaField] {
@@ -361,11 +380,60 @@ function readRestorableMediaField(
 	}
 }
 
+function readRestorableMediaField(
+	element: HTMLMediaElement,
+	field: RestorableMediaField,
+	writer: RestorableMediaWriter,
+): ControlValues[RestorableMediaField] {
+	if (writer === 'page-native' && isPageMediaField(field)) {
+		const actual = readPageMediaField(element, field);
+		if (actual === null) throw new Error(`Page-media ${field} reader is no longer available`);
+		return actual;
+	}
+	return readDomRestorableMediaField(element, field);
+}
+
+function readRestorableMediaFieldWithWriter(
+	element: HTMLMediaElement,
+	field: RestorableMediaField,
+): { actual: ControlValues[RestorableMediaField]; writer: RestorableMediaWriter } {
+	if (isPageMediaField(field)) {
+		try {
+			const actual = readPageMediaField(element, field);
+			if (actual !== null) return { actual, writer: 'page-native' };
+		} catch {
+			// A broken or transient page controller does not suppress the standard
+			// media fallback. No page write has occurred during this read probe.
+		}
+	}
+	return { actual: readDomRestorableMediaField(element, field), writer: 'dom-native' };
+}
+
+function readRestorableMediaFieldForWrite(
+	element: HTMLMediaElement,
+	field: RestorableMediaField,
+): { actual: ControlValues[RestorableMediaField]; writer: RestorableMediaWriter } {
+	const owned = nativeMediaOwnership.byElement.get(element)?.get(field);
+	if (owned) {
+		return {
+			actual: readRestorableMediaField(element, field, owned.writer),
+			writer: owned.writer,
+		};
+	}
+	return readRestorableMediaFieldWithWriter(element, field);
+}
+
 function writeRestorableMediaField(
 	element: HTMLMediaElement,
 	field: RestorableMediaField,
 	value: ControlValues[RestorableMediaField],
+	writer: RestorableMediaWriter,
 ): ControlValues[RestorableMediaField] {
+	if (writer === 'page-native' && isPageMediaField(field)) {
+		const actual = writePageMediaField(element, field, value);
+		if (actual === null) throw new Error(`Page-media ${field} writer is no longer available`);
+		return actual;
+	}
 	switch (field) {
 		case 'volumeBase': return writeNativeVolumeBase(element, value as number);
 		case 'mediaMuted': return writeNativeMediaMuted(element, value as boolean);
@@ -391,8 +459,6 @@ export function writeNativeMediaMuted(element: HTMLMediaElement, muted: boolean)
 
 export function writeNativePlaybackRate(element: HTMLMediaElement, speed: number): number {
 	const next = Math.max(0.1, Math.min(16, speed));
-	const pageActual = writePageSynchronizedPlaybackRate(element, next);
-	if (pageActual !== null) return pageActual;
 	// Keep the standard default/current pair coherent when the page has not
 	// deliberately separated them. Player UIs commonly project the default while
 	// playback itself reads the current rate.
@@ -716,7 +782,7 @@ export class NativeMediaExecutor {
 		if (!resolved) throw new Error('No active media target');
 		return {
 			playing: !resolved.element.paused,
-			speed: resolved.element.playbackRate,
+			speed: readRestorableMediaFieldWithWriter(resolved.element, 'speed').actual as number,
 			currentTime: resolved.element.currentTime,
 		};
 	}
@@ -734,15 +800,17 @@ export class NativeMediaExecutor {
 			if (ownership) {
 				for (const [field, owned] of [...ownership.entries()]) {
 					const tolerance = field === 'volumeBase' || field === 'speed' ? 0.01 : 0;
-					const current = readRestorableMediaField(element, field);
+					const current = readRestorableMediaField(element, field, owned.writer);
 					if (!valuesMatch(current, owned.lastApplied, tolerance)) {
 						// The page/user changed the field after SPECTRA's last ACK. It is no
 						// longer our property to restore.
 						ownership.delete(field);
 						continue;
 					}
-					writeRestorableMediaField(element, field, owned.baseline);
-					const actual = await stableReadback(() => readRestorableMediaField(element, field));
+					writeRestorableMediaField(element, field, owned.baseline, owned.writer);
+					const actual = await (owned.writer === 'page-native' ? stablePageReadback : stableReadback)(
+						() => readRestorableMediaField(element, field, owned.writer),
+					);
 					if (!valuesMatch(actual, owned.baseline, tolerance)) {
 						throw new Error(`Page baseline readback failed for ${field}`);
 					}
@@ -754,7 +822,7 @@ export class NativeMediaExecutor {
 							actual: actual as ControlValues[ControlField],
 							revision: intent.baseRevision + 1,
 							phase: 'applied',
-							strategy: 'dom-native',
+							strategy: owned.writer,
 							coverage: 'active-target',
 							controlled: false,
 							intentId: intent.operationId,
@@ -795,6 +863,7 @@ export class NativeMediaExecutor {
 	read(request: ControlReadRequest): ControlReadResult {
 		if (this.disposed) throw new Error('Native media executor is disposed');
 		const patch: ControlPatch = {};
+		const observedStrategies: ControlNativeObservationStrategies = {};
 		const runtimeFields = request.fields.filter((field) => AUDIO_RUNTIME_FIELDS.has(field));
 		if (runtimeFields.length > 0 && this.audioRuntimeDelegate) {
 			Object.assign(patch, this.audioRuntimeDelegate.read(runtimeFields));
@@ -822,27 +891,25 @@ export class NativeMediaExecutor {
 				if ((patch as Record<string, unknown>)[field] !== undefined) continue;
 				let actual: unknown;
 				switch (field) {
-					// volumeBase is SPECTRA's intended volume, not a measurement of
-					// element.volume. Sites like YouTube apply non-linear volume curves
-					// (element.volume = 0.6131 at their 100% slider), so reading
-					// element.volume here would report 61.31 instead of the user's
-					// expectation. The actual element.volume is only relevant for write
-					// verification (applyField) and baseline restoration
-					// (readRestorableMediaField); state reads return the coordinator's
-					// last-known desired value, which defaults to 100.
-					case 'volumeBase': break;
-					case 'mediaMuted': actual = element.muted; break;
-					case 'speed': actual = element.playbackRate; break;
+					case 'volumeBase':
+					case 'mediaMuted':
+					case 'speed': {
+						const observed = readRestorableMediaFieldWithWriter(element, field);
+						actual = observed.actual;
+						observedStrategies[field] = observed.writer;
+						break;
+					}
 					case 'preservePitch':
 						if ('preservesPitch' in element) {
 							actual = (element as HTMLMediaElement & { preservesPitch: boolean }).preservesPitch;
+							observedStrategies.preservePitch = 'dom-native';
 						}
 						break;
-					case 'playing': actual = !element.paused; break;
-					case 'currentTime': actual = element.currentTime; break;
-					case 'loop': actual = element.loop; break;
-					case 'pip': actual = document.pictureInPictureElement === element; break;
-					case 'fullscreen': actual = fullscreenOwnsMedia(element); break;
+					case 'playing': actual = !element.paused; observedStrategies.playing = 'dom-native'; break;
+					case 'currentTime': actual = element.currentTime; observedStrategies.currentTime = 'dom-native'; break;
+					case 'loop': actual = element.loop; observedStrategies.loop = 'dom-native'; break;
+					case 'pip': actual = document.pictureInPictureElement === element; observedStrategies.pip = 'dom-native'; break;
+					case 'fullscreen': actual = fullscreenOwnsMedia(element); observedStrategies.fullscreen = 'dom-native'; break;
 					case 'rotation': actual = effectState?.rotation; break;
 					case 'mirrored': actual = effectState?.mirrored; break;
 					case 'fill': actual = effectState?.fill; break;
@@ -853,12 +920,12 @@ export class NativeMediaExecutor {
 				}
 				if (actual !== undefined) (patch as Record<string, unknown>)[field] = actual;
 			}
-			if (Object.keys(patch).length > 0) return { target, patch };
+			if (Object.keys(patch).length > 0) return { target, patch, observedStrategies };
 		}
 		if (Object.keys(patch).length === 0) {
 			throw new Error('No requested control field has an observable actual value');
 		}
-		return { target: request.target, patch };
+		return { target: request.target, patch, observedStrategies };
 	}
 
 	private async applyField(
@@ -906,9 +973,27 @@ export class NativeMediaExecutor {
 		const effectiveDesired = field === 'currentTime'
 			? clampNativeSeek(element, value as number)
 			: value;
-		const baseline = isRestorableMediaField(field)
-			? readRestorableMediaField(element, field)
-			: undefined;
+		let baseline: ControlValues[RestorableMediaField] | undefined;
+		let mediaWriter: RestorableMediaWriter = 'dom-native';
+		if (isRestorableMediaField(field)) {
+			try {
+				const baselineState = readRestorableMediaFieldForWrite(element, field);
+				baseline = baselineState.actual;
+				mediaWriter = baselineState.writer;
+			} catch (error) {
+				const failure = this.nativeFailure(field, error);
+				this.putError(
+					fields,
+					field,
+					effectiveDesired,
+					intent,
+					failure.code,
+					failure.message,
+					failure.retryable,
+				);
+				return;
+			}
+		}
 		this.markPending(target.mediaId, field, {
 			intentId: intent.intentId,
 			revision: intent.baseRevision + 1,
@@ -919,51 +1004,72 @@ export class NativeMediaExecutor {
 		let applied = false;
 		try {
 			switch (field) {
-			case 'volumeBase': {
-					const actual = await writeWithStableEventAck(
-						element,
-						'volumechange',
-						() => { writeNativeVolumeBase(element, value as number); },
-						() => Math.round(element.volume * 10_000) / 100,
-						effectiveDesired,
-						tolerance,
-					);
+				case 'volumeBase': {
+					const actual = mediaWriter === 'page-native'
+						? await (async () => {
+							writeRestorableMediaField(element, field, value as number, mediaWriter);
+							return stablePageReadback(
+								() => readRestorableMediaField(element, field, mediaWriter) as number,
+							);
+						})()
+						: await writeWithStableEventAck(
+							element,
+							'volumechange',
+							() => { writeNativeVolumeBase(element, value as number); },
+							() => Math.round(element.volume * 10_000) / 100,
+							effectiveDesired,
+							tolerance,
+						);
 					if (!valuesMatch(effectiveDesired, actual, tolerance)) {
 						throw new Error('Volume readback mismatch after the stable boundary');
 					}
-					this.putState(fields, field, effectiveDesired, actual, intent, 'dom-native');
+					this.putState(fields, field, effectiveDesired, actual, intent, mediaWriter);
 					this.observe(target.mediaId, field, actual);
 					break;
 				}
 				case 'mediaMuted': {
-					const actual = await writeWithStableEventAck(
-						element,
-						'volumechange',
-						() => { writeNativeMediaMuted(element, value as boolean); },
-						() => element.muted,
-						effectiveDesired,
-						tolerance,
-					);
+					const actual = mediaWriter === 'page-native'
+						? await (async () => {
+							writeRestorableMediaField(element, field, value as boolean, mediaWriter);
+							return stablePageReadback(
+								() => readRestorableMediaField(element, field, mediaWriter) as boolean,
+							);
+						})()
+						: await writeWithStableEventAck(
+							element,
+							'volumechange',
+							() => { writeNativeMediaMuted(element, value as boolean); },
+							() => element.muted,
+							effectiveDesired,
+							tolerance,
+						);
 					if (!valuesMatch(effectiveDesired, actual, tolerance)) {
 						throw new Error('Mute readback mismatch after the stable boundary');
 					}
-					this.putState(fields, field, effectiveDesired, actual, intent, 'dom-native');
+					this.putState(fields, field, effectiveDesired, actual, intent, mediaWriter);
 					this.observe(target.mediaId, field, actual);
 					break;
 				}
 				case 'speed': {
-					const actual = await writeWithStableEventAck(
-						element,
-						'ratechange',
-						() => { writeNativePlaybackRate(element, value as number); },
-						() => element.playbackRate,
-						effectiveDesired,
-						tolerance,
-					);
+					const actual = mediaWriter === 'page-native'
+						? await (async () => {
+							writeRestorableMediaField(element, field, value as number, mediaWriter);
+							return stablePageReadback(
+								() => readRestorableMediaField(element, field, mediaWriter) as number,
+							);
+						})()
+						: await writeWithStableEventAck(
+							element,
+							'ratechange',
+							() => { writeNativePlaybackRate(element, value as number); },
+							() => element.playbackRate,
+							effectiveDesired,
+							tolerance,
+						);
 					if (!valuesMatch(effectiveDesired, actual, tolerance)) {
 						throw new Error('Playback-rate readback mismatch after the stable boundary');
 					}
-					this.putState(fields, field, effectiveDesired, actual, intent, 'dom-native');
+					this.putState(fields, field, effectiveDesired, actual, intent, mediaWriter);
 					this.observe(target.mediaId, field, actual);
 					break;
 				}
@@ -1088,12 +1194,18 @@ export class NativeMediaExecutor {
 				&& baseline !== undefined
 				&& state?.phase === 'applied'
 				&& state.actual !== null) {
-				this.commitOwnership(element, field, baseline, state.actual);
+				this.commitOwnership(element, field, baseline, state.actual, mediaWriter);
 			}
 			applied = fields[field]?.phase === 'applied';
 		} catch (error) {
 			if (isRestorableMediaField(field) && baseline !== undefined) {
-				await this.rollbackFailedRestorableWrite(element, field, baseline, effectiveDesired)
+				await this.rollbackFailedRestorableWrite(
+					element,
+					field,
+					baseline,
+					effectiveDesired,
+					mediaWriter,
+				)
 					.catch(() => undefined);
 			}
 			const failure = this.nativeFailure(field, error);
@@ -1117,13 +1229,18 @@ export class NativeMediaExecutor {
 		field: RestorableMediaField,
 		baseline: ControlValues[RestorableMediaField],
 		actual: ControlValues[ControlField],
+		writer: RestorableMediaWriter,
 	): void {
 		const fields = nativeMediaOwnership.byElement.get(element)
 			?? new Map<RestorableMediaField, OwnedMediaField>();
 		const previous = fields.get(field);
+		if (previous && previous.writer !== writer) {
+			throw new Error(`Restorable ${field} writer changed while ownership was active`);
+		}
 		fields.set(field, {
 			baseline: previous?.baseline ?? baseline,
 			lastApplied: actual as ControlValues[RestorableMediaField],
+			writer,
 		});
 		nativeMediaOwnership.byElement.set(element, fields);
 	}
@@ -1133,12 +1250,15 @@ export class NativeMediaExecutor {
 		field: RestorableMediaField,
 		baseline: ControlValues[RestorableMediaField],
 		attempted: ControlValues[ControlField],
+		writer: RestorableMediaWriter,
 	): Promise<void> {
 		const tolerance = field === 'volumeBase' || field === 'speed' ? 0.01 : 0;
-		const current = readRestorableMediaField(element, field);
+		const current = readRestorableMediaField(element, field, writer);
 		if (!valuesMatch(current, attempted, tolerance)) return;
-		writeRestorableMediaField(element, field, baseline);
-		await stableReadback(() => readRestorableMediaField(element, field));
+		writeRestorableMediaField(element, field, baseline, writer);
+		await (writer === 'page-native' ? stablePageReadback : stableReadback)(
+			() => readRestorableMediaField(element, field, writer),
+		);
 	}
 
 	private putState(
@@ -1295,16 +1415,18 @@ export class NativeMediaExecutor {
 		if (!resolved || resolved.target.mediaId !== target.mediaId) return;
 		const mediaId = target.mediaId;
 		const candidates: ControlPatch = {};
+		const candidateStrategies: ControlNativeObservationStrategies = {};
 		if (event === 'volumechange') {
-			// volumeBase is not reported from page observations. Sites with
-			// non-linear volume curves (e.g. YouTube: element.volume = 0.6131 at
-			// 100% slider) would leak their internal HTML5 volume into SPECTRA's
-			// intended-volume field. SPECTRA's volumeBase is set only by explicit
-			// writes (applyField) and defaults to 100; the page's volume changes
-			// are acknowledged only for mediaMuted.
-			candidates.mediaMuted = element.muted;
+			const volume = readRestorableMediaFieldWithWriter(element, 'volumeBase');
+			const muted = readRestorableMediaFieldWithWriter(element, 'mediaMuted');
+			candidates.volumeBase = volume.actual as number;
+			candidates.mediaMuted = muted.actual as boolean;
+			candidateStrategies.volumeBase = volume.writer;
+			candidateStrategies.mediaMuted = muted.writer;
 		} else if (event === 'ratechange') {
-			candidates.speed = element.playbackRate;
+			const speed = readRestorableMediaFieldWithWriter(element, 'speed');
+			candidates.speed = speed.actual as number;
+			candidateStrategies.speed = speed.writer;
 			// preservesPitch has no standard change event. Reading it on the native
 			// rate event captures the common page-player transaction without adding
 			// polling or a prototype/descriptor interception.
@@ -1312,14 +1434,26 @@ export class NativeMediaExecutor {
 				candidates.preservePitch = (
 					element as HTMLMediaElement & { preservesPitch: boolean }
 				).preservesPitch;
+				candidateStrategies.preservePitch = 'dom-native';
 			}
-		} else if (event === 'play' || event === 'pause') candidates.playing = !element.paused;
-		else if (event === 'seeked') candidates.currentTime = element.currentTime;
-		else if (event === 'loopchange') candidates.loop = element.loop;
+		} else if (event === 'play' || event === 'pause') {
+			candidates.playing = !element.paused;
+			candidateStrategies.playing = 'dom-native';
+		}
+		else if (event === 'seeked') {
+			candidates.currentTime = element.currentTime;
+			candidateStrategies.currentTime = 'dom-native';
+		}
+		else if (event === 'loopchange') {
+			candidates.loop = element.loop;
+			candidateStrategies.loop = 'dom-native';
+		}
 		else if (event === 'enterpictureinpicture' || event === 'leavepictureinpicture') {
 			candidates.pip = document.pictureInPictureElement === element;
+			candidateStrategies.pip = 'dom-native';
 		} else if (event === 'fullscreenchange') {
 			candidates.fullscreen = fullscreenOwnsMedia(element);
+			candidateStrategies.fullscreen = 'dom-native';
 		}
 		else return;
 
@@ -1328,6 +1462,7 @@ export class NativeMediaExecutor {
 			&& consumeOwnedSeek(element, element.currentTime);
 		const observed = this.observed.get(mediaId) ?? {};
 		const patch: ControlPatch = {};
+		const observedStrategies: ControlNativeObservationStrategies = {};
 		for (const [rawField, actual] of Object.entries(candidates)) {
 			const field = rawField as ControlField;
 			const write = pending?.get(field);
@@ -1344,6 +1479,20 @@ export class NativeMediaExecutor {
 			if (this.matches(observed[field], actual, field === 'currentTime' ? 0.05 : 0.01)) continue;
 			this.observe(mediaId, field, actual as ControlValues[ControlField]);
 			(patch as Record<string, unknown>)[field] = actual;
+			const strategy = candidateStrategies[field as keyof ControlNativeObservationStrategies];
+			if (!strategy) throw new Error(`Native observation strategy is missing for ${field}`);
+			observedStrategies[field as keyof ControlNativeObservationStrategies] = strategy;
+		}
+		if (event === 'volumechange' && Object.keys(patch).length > 0) {
+			// Page volume and page mute are one semantic transaction even when only
+			// one value changed. Publishing the coherent pair prevents Popup state
+			// from combining a fresh slider value with stale mute state.
+			patch.volumeBase = candidates.volumeBase;
+			patch.mediaMuted = candidates.mediaMuted;
+			observedStrategies.volumeBase = candidateStrategies.volumeBase;
+			observedStrategies.mediaMuted = candidateStrategies.mediaMuted;
+			this.observe(mediaId, 'volumeBase', candidates.volumeBase as number);
+			this.observe(mediaId, 'mediaMuted', candidates.mediaMuted as boolean);
 		}
 		if (Object.keys(patch).length === 0) return;
 		this.audioRuntimeDelegate?.synchronizeNative(patch);
@@ -1363,6 +1512,7 @@ export class NativeMediaExecutor {
 			requestedCoverage: 'active-target',
 			target,
 			patch,
+			observedStrategies,
 		}).catch(() => undefined);
 	}
 
@@ -1378,10 +1528,12 @@ export class NativeMediaExecutor {
 		for (const [field, owned] of ownership) {
 			try {
 				const tolerance = field === 'volumeBase' || field === 'speed' ? 0.01 : 0;
-				const current = readRestorableMediaField(element, field);
+				const current = readRestorableMediaField(element, field, owned.writer);
 				if (!valuesMatch(current, owned.lastApplied, tolerance)) continue;
-				writeRestorableMediaField(element, field, owned.baseline);
-				await stableReadback(() => readRestorableMediaField(element, field));
+				writeRestorableMediaField(element, field, owned.baseline, owned.writer);
+				await (owned.writer === 'page-native' ? stablePageReadback : stableReadback)(
+					() => readRestorableMediaField(element, field, owned.writer),
+				);
 			} catch {
 				// Detached page objects are best-effort release targets. Ownership is
 				// still discarded so a later insertion cannot inherit a false baseline.
@@ -1418,11 +1570,9 @@ export class NativeMediaExecutor {
 	private primeObserved(mediaId: string, element: HTMLMediaElement): void {
 		if (this.observed.has(mediaId)) return;
 		const values: Partial<ControlValues> = {
-			// volumeBase is intentionally not primed from element.volume. It is
-			// SPECTRA's intended volume (default 100), not a page measurement; see
-			// the read() and volumechange handler comments for the full rationale.
-			mediaMuted: element.muted,
-			speed: element.playbackRate,
+			volumeBase: readRestorableMediaFieldWithWriter(element, 'volumeBase').actual as number,
+			mediaMuted: readRestorableMediaFieldWithWriter(element, 'mediaMuted').actual as boolean,
+			speed: readRestorableMediaFieldWithWriter(element, 'speed').actual as number,
 			playing: !element.paused,
 			currentTime: element.currentTime,
 			loop: element.loop,

@@ -33,6 +33,7 @@ export async function submitTrustedActivationControl(
 		requestedCoverage: 'active-target',
 		target: result.target,
 		patch: { [field]: result.actual },
+		observedStrategies: { [field]: 'dom-native' },
 	});
 	if (!response.ok) throw new Error(response.error.message);
 	return result;

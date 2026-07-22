@@ -63,11 +63,9 @@ export async function initSettings(): Promise<SettingsState> {
   bindSettingsEvents(ui, saveSettings);
   bindThemeButtonEvent(() => gSettings, (s) => { gSettings = s; });
 
-  initRegistryUI(registryEntries);
-  updateRegistryI18n(dict);
+  initRegistryUI(registryEntries, dict);
 
-  initPresetsUI();
-  updatePresetsI18n(dict);
+  initPresetsUI(dict);
 
   updateRemoteI18n(dict);
 
@@ -135,4 +133,3 @@ function bindThemeButtonEvent(
     if (selTheme) selTheme.value = nextMode;
   };
 }
-

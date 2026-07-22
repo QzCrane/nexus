@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: spectra-runtime-protocol
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-22
 ---
 
 # SPECTRA runtime protocols
@@ -16,7 +16,7 @@ This document owns cross-context envelopes, request/response validation, state f
 | --- | --- | --- |
 | Popup / Options | intent, immediate local rendering, accessibility | predict actual state, write badge/storage, or select an executor |
 | Content, isolated world | document/media identity, DOM/CSS writers, source-keyed state, admitted Media WebAudio | acknowledge stale work or claim Capture before actual ACK |
-| One-shot site adapter | one allowlisted official player call after a typed native failure | install a standing runtime, listener, patch, or cross-world bridge |
+| MAIN versioned bridges | fullscreen audio handoff and synchronous exact-element page-media read/write | generic dispatch, domain tables, periodic player synchronization, settings, or cross-tab state |
 | Background | serialization, settings repository, `ControlSnapshot`, `AudioSessionSnapshot`, badge, and leases | treat reads as activation or close offscreen outside its coordinator |
 | Unified offscreen host | actual Capture processors and authenticated remote sessions | create/close its own document or infer a Background lease |
 
@@ -54,7 +54,7 @@ page observation / Popup / authenticated remote / hotkey intent
 
 A candidate returned by an executor is not an ACK. Only readback carrying current `tabId + documentId + origin + generation + revision` can commit. A failed field rolls back its optimistic projection without discarding unrelated successful fields.
 
-Verified page observations bypass the writer stage, commit `controlled:false`, and never echo a second write to Content. Reads do not acquire Media WebAudio, Capture, a MAIN adapter, or an offscreen lease.
+Verified page observations bypass the writer stage, commit `controlled:false`, and never echo a second write to Content. Reads do not acquire Media WebAudio, Capture, a generic MAIN runtime, or an offscreen lease. For `volumeBase`, `mediaMuted`, and `speed`, a read may synchronously use the already-installed exact-element page bridge before falling back to the ordinary DOM getter.
 
 ## Registry v2
 
@@ -98,16 +98,17 @@ The wire request is `spectra.content.runtime.ensure` with document identity, rea
 
 Identity, invalidation, timeout, cold-document behavior, and feedback ownership are defined in [control/02-strategy-and-routes.md §5](../control/02-strategy-and-routes.md#5-runtime-shortcut-and-feedback-ownership).
 
-## Native PiP, fullscreen, and site playback rate
+## Exact-element page media, native PiP, and fullscreen
 
 - `spectra.media.pip.toggle` and `spectra.video.fullscreen.toggle` return observed native active state.
-- `spectra.media.speed.set` remains the normal control request; the planner may admit the bounded official adapter only after the standard DOM path fails with an allowed failure.
+- `volumeBase`, `mediaMuted`, and `speed` use `page-native -> dom-native`. The page-native request is synchronous, targets one exact media element, and accepts only paired controller getter/setter readback; it has no domain list, retained player object, observer, timer, or polling loop.
+- A page-originated native media event is re-read through the same semantic getter before its `controlled:false` observation commits, so web UI, Popup, remote, and hotkeys project one actual value.
 
-Activation and adapter boundaries are defined in [control/02-strategy-and-routes.md §6](../control/02-strategy-and-routes.md#6-site-adapters-pip-and-fullscreen).
+Activation and bridge boundaries are defined in [control/02-strategy-and-routes.md §6](../control/02-strategy-and-routes.md#6-exact-element-page-media-pip-and-fullscreen).
 
 ## Privileged boundaries
 
-- site-native MAIN execution is one allowlisted official API call with getter readback;
+- page-native MAIN execution is limited to the exact event-target media element and one paired getter/setter with getter readback;
 - trusted page hotkeys invoke activation-bound native APIs within the trusted event stack;
 - user scripts require explicit permission and remain in the user-script sandbox;
 - URL opening accepts HTTP(S) only;
@@ -115,7 +116,7 @@ Activation and adapter boundaries are defined in [control/02-strategy-and-routes
 
 ## Performance boundaries
 
-Default pages have no extension AudioContext, offscreen document, analyser, or periodic work. Continuous UI values are coalesced; persistence is trailing; visualizer consumers use generation-aware leases and bounded sampling from an already-active processor. Hidden or destroyed consumers release their own leases.
+Default pages have no extension AudioContext, offscreen document, analyser, or periodic work. The two versioned MAIN bridges add no polling: page-media performs work only during an explicit synchronous request, and fullscreen allocates its temporary listener/timer only during an active audio handoff. Continuous UI values are coalesced; persistence is trailing; visualizer consumers use generation-aware leases and bounded sampling from an already-active processor. Hidden or destroyed consumers release their own leases.
 
 ## Boundary payloads
 

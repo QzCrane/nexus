@@ -6,12 +6,15 @@ import {
 	seekNativeMedia,
 	writeNativePlaybackRate,
 } from '../src/content/logic/native-media-executor';
+import { writePageMediaField } from '../src/content/logic/page-media-bridge';
 import type { VideoEffectsController } from '../src/content/video/video-effects-controller';
 import {
-	SPECTRA_PLAYBACK_RATE_EVENT,
-	SPECTRA_PLAYBACK_RATE_REQUEST_ATTRIBUTE,
-	SPECTRA_PLAYBACK_RATE_RESULT_ATTRIBUTE,
-} from '../src/shared/playback-rate-bridge';
+	SPECTRA_PAGE_MEDIA_EVENT,
+	SPECTRA_PAGE_MEDIA_REQUEST_ATTRIBUTE,
+	SPECTRA_PAGE_MEDIA_RESULT_ATTRIBUTE,
+	type SpectraPageMediaRequest,
+	type SpectraPageMediaResult,
+} from '../src/shared/page-media-bridge';
 
 type RegistryListener = (
 	target: MediaTarget,
@@ -72,7 +75,7 @@ class FakeMediaElement extends EventTarget {
 
 class FakeRegistry {
 	listener: RegistryListener | null = null;
-	readonly element = new FakeMediaElement();
+	readonly element: FakeMediaElement;
 	readonly target: MediaTarget = {
 		frameId: 0,
 		documentId: 'document-seek',
@@ -80,6 +83,10 @@ class FakeRegistry {
 		sourceRevision: 0,
 		kind: 'audio',
 	};
+
+	constructor(element: FakeMediaElement = new FakeMediaElement()) {
+		this.element = element;
+	}
 
 	subscribe(listener: RegistryListener): () => void {
 		this.listener = listener;
@@ -108,6 +115,61 @@ class FakeRegistry {
 	}
 }
 
+class BridgedMediaElement extends FakeMediaElement {
+	private readonly attributes = new Map<string, string>();
+	setAttribute(name: string, value: string): void { this.attributes.set(name, value); }
+	getAttribute(name: string): string | null { return this.attributes.get(name) ?? null; }
+	removeAttribute(name: string): void { this.attributes.delete(name); }
+}
+
+interface PageMediaState {
+	volumeBase: number;
+	mediaMuted: boolean;
+	speed: number;
+	supported?: boolean;
+}
+
+function installPageMediaBridgeStub(
+	media: BridgedMediaElement,
+	state: PageMediaState,
+): void {
+	media.addEventListener(SPECTRA_PAGE_MEDIA_EVENT, () => {
+		const request = JSON.parse(
+			media.getAttribute(SPECTRA_PAGE_MEDIA_REQUEST_ATTRIBUTE) ?? '{}',
+		) as Partial<SpectraPageMediaRequest>;
+		if (!request.requestId || !request.field || !request.operation) return;
+		if (state.supported === false) {
+			const result: SpectraPageMediaResult = {
+				requestId: request.requestId,
+				field: request.field,
+				supported: false,
+				actual: null,
+			};
+			media.setAttribute(SPECTRA_PAGE_MEDIA_RESULT_ATTRIBUTE, JSON.stringify(result));
+			return;
+		}
+		if (request.operation === 'write') {
+			if (request.field === 'volumeBase' && typeof request.value === 'number') {
+				state.volumeBase = request.value;
+				media.volume = request.value / 100 * 0.6131;
+			} else if (request.field === 'mediaMuted' && typeof request.value === 'boolean') {
+				state.mediaMuted = request.value;
+				media.muted = request.value;
+			} else if (request.field === 'speed' && typeof request.value === 'number') {
+				state.speed = request.value;
+				media.playbackRate = request.value;
+			}
+		}
+		const result: SpectraPageMediaResult = {
+			requestId: request.requestId,
+			field: request.field,
+			supported: true,
+			actual: state[request.field],
+		};
+		media.setAttribute(SPECTRA_PAGE_MEDIA_RESULT_ATTRIBUTE, JSON.stringify(result));
+	});
+}
+
 const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 const originalMedia = Object.getOwnPropertyDescriptor(globalThis, 'HTMLMediaElement');
 const originalVideo = Object.getOwnPropertyDescriptor(globalThis, 'HTMLVideoElement');
@@ -134,35 +196,19 @@ describe('native media single-writer correlation', () => {
 		expect(media.defaultPlaybackRate).toBe(0.75);
 	});
 
-	test('routes an XGPlayer speed write through the exact-element MAIN bridge', () => {
-		class BridgedMediaElement extends FakeMediaElement {
-			private readonly attributes = new Map<string, string>();
-			closest(): object { return {}; }
-			setAttribute(name: string, value: string): void { this.attributes.set(name, value); }
-			getAttribute(name: string): string | null { return this.attributes.get(name) ?? null; }
-			removeAttribute(name: string): void { this.attributes.delete(name); }
-		}
+	test('routes playback speed through the exact-element page-media bridge', () => {
 		Object.defineProperty(globalThis, 'document', { configurable: true, value: {} });
 		const media = new BridgedMediaElement();
+		const state: PageMediaState = { volumeBase: 100, mediaMuted: false, speed: 1 };
+		installPageMediaBridgeStub(media, state);
 		let bridgedTarget: EventTarget | null = null;
-		media.addEventListener(SPECTRA_PLAYBACK_RATE_EVENT, (event) => {
-			bridgedTarget = event.target;
-			const request = JSON.parse(
-				media.getAttribute(SPECTRA_PLAYBACK_RATE_REQUEST_ATTRIBUTE) ?? '{}',
-			) as { requestId?: string; speed?: number };
-			media.defaultPlaybackRate = request.speed ?? 1;
-			media.playbackRate = request.speed ?? 1;
-			media.setAttribute(SPECTRA_PLAYBACK_RATE_RESULT_ATTRIBUTE, JSON.stringify({
-				requestId: request.requestId,
-				actual: media.playbackRate,
-			}));
-		});
+		media.addEventListener(SPECTRA_PAGE_MEDIA_EVENT, (event) => { bridgedTarget = event.target; });
 
-		expect(writeNativePlaybackRate(media as unknown as HTMLMediaElement, 1.75)).toBe(1.75);
+		expect(writePageMediaField(media as unknown as HTMLMediaElement, 'speed', 1.75)).toBe(1.75);
 		expect(bridgedTarget).toBe(media);
-		expect(media.defaultPlaybackRate).toBe(1.75);
-		expect(media.getAttribute(SPECTRA_PLAYBACK_RATE_REQUEST_ATTRIBUTE)).toBeNull();
-		expect(media.getAttribute(SPECTRA_PLAYBACK_RATE_RESULT_ATTRIBUTE)).toBeNull();
+		expect(state.speed).toBe(1.75);
+		expect(media.getAttribute(SPECTRA_PAGE_MEDIA_REQUEST_ATTRIBUTE)).toBeNull();
+		expect(media.getAttribute(SPECTRA_PAGE_MEDIA_RESULT_ATTRIBUTE)).toBeNull();
 	});
 
 	test('waits through microtask, rAF and 50ms page rollbacks before rejecting native ACKs', async () => {
@@ -629,6 +675,7 @@ describe('native media single-writer correlation', () => {
 			expect(executor.read({ fields: ['pip'], target: null })).toEqual({
 				target: ownerTarget,
 				patch: { pip: true },
+				observedStrategies: { pip: 'dom-native' },
 			});
 			const result = await executor.toggleTrustedActivation('pip');
 			expect(result).toEqual({ target: ownerTarget, actual: false });
@@ -826,14 +873,38 @@ describe('native media single-writer correlation', () => {
 		}
 	});
 
-	test('does not read element.volume into volumeBase on state reads', () => {
-		// Sites like YouTube apply a non-linear volume curve to element.volume
-		// (e.g. element.volume reads 0.6131 at their 100% slider). Reading
-		// element.volume into volumeBase would report 61.31% instead of the
-		// user-facing 100%. volumeBase is SPECTRA's intended volume (default
-		// 100), not a measurement; state reads must not populate volumeBase
-		// from element.volume. The coordinator falls back to
-		// actualField('volumeBase', 100) when the executor does not return it.
+	test('reads page-semantic volume, mute, and speed instead of a non-linear media element projection', () => {
+		Object.defineProperty(globalThis, 'HTMLMediaElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		Object.defineProperty(globalThis, 'HTMLVideoElement', {
+			configurable: true,
+			value: class FakeVideoElement extends FakeMediaElement { },
+		});
+		Object.defineProperty(globalThis, 'document', {
+			configurable: true,
+			value: { pictureInPictureElement: null, fullscreenElement: null },
+		});
+		const media = new BridgedMediaElement();
+		media.forceVolume(0.6131);
+		const state: PageMediaState = { volumeBase: 100, mediaMuted: false, speed: 1.25 };
+		installPageMediaBridgeStub(media, state);
+		const registry = new FakeRegistry(media);
+		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
+		try {
+			const result = executor.read({
+				target: registry.target,
+				fields: ['volumeBase', 'mediaMuted', 'speed'],
+			});
+			expect(result.patch).toMatchObject({ volumeBase: 100, mediaMuted: false, speed: 1.25 });
+		} finally {
+			executor.dispose();
+		}
+	});
+
+	test('falls back to the standard volume getter when no page-semantic controller exists', () => {
 		Object.defineProperty(globalThis, 'HTMLMediaElement', {
 			configurable: true,
 			value: FakeMediaElement,
@@ -847,29 +918,20 @@ describe('native media single-writer correlation', () => {
 			value: { pictureInPictureElement: null, fullscreenElement: null },
 		});
 		const registry = new FakeRegistry();
-		// Simulate YouTube's non-linear curve: element.volume = 0.6131
-		// corresponds to the user's 100% slider.
 		registry.element.forceVolume(0.6131);
 		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
 		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
 		try {
-			const result = executor.read({
+			expect(executor.read({
 				target: registry.target,
-				fields: ['volumeBase', 'mediaMuted'],
-			});
-			// volumeBase must NOT be populated from element.volume (0.6131
-			// would yield 61.31). Only mediaMuted should appear in the patch.
-			expect((result.patch as Record<string, unknown>).volumeBase).toBeUndefined();
-			expect((result.patch as Record<string, unknown>).mediaMuted).toBe(false);
+				fields: ['volumeBase'],
+			}).patch.volumeBase).toBe(61.31);
 		} finally {
 			executor.dispose();
 		}
 	});
 
-	test('does not report volumeBase on volumechange observations', async () => {
-		// volumechange must only update mediaMuted, not volumeBase. Sites with
-		// non-linear volume curves would otherwise leak their internal
-		// HTMLMediaElement.volume into SPECTRA's intended-volume field.
+	test('reports page-semantic volume changes back to the coordinator', async () => {
 		Object.defineProperty(globalThis, 'HTMLMediaElement', {
 			configurable: true,
 			value: FakeMediaElement,
@@ -886,27 +948,177 @@ describe('native media single-writer correlation', () => {
 			configurable: true,
 			value: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0),
 		});
-		const registry = new FakeRegistry();
+		const messages: Array<{ type?: string; payload?: {
+			patch?: Record<string, unknown>;
+			observedStrategies?: Record<string, unknown>;
+		} }> = [];
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: { runtime: { sendMessage: async (message: typeof messages[number]) => {
+				messages.push(message);
+				return undefined;
+			} } },
+		});
+		const media = new BridgedMediaElement();
+		media.forceVolume(0.6131);
+		const state: PageMediaState = { volumeBase: 100, mediaMuted: false, speed: 1 };
+		installPageMediaBridgeStub(media, state);
+		const registry = new FakeRegistry(media);
 		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
 		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
 		try {
-			// Prime observed state first so the observer can compare.
-			executor.read({
-				target: registry.target,
-				fields: ['mediaMuted'],
+			executor.bindRequestContext(7, registry.target.documentId);
+			state.volumeBase = 50;
+			media.forceVolume(0.30655);
+			registry.emit('volumechange');
+			await Promise.resolve();
+			const observation = messages.find((message) => message.type === 'spectra.control.intent.submit');
+			expect(observation?.payload?.patch).toMatchObject({ volumeBase: 50, mediaMuted: false });
+			expect(observation?.payload?.observedStrategies).toEqual({
+				volumeBase: 'page-native',
+				mediaMuted: 'page-native',
 			});
-			// Simulate a page volume change. YouTube would set element.volume
-			// to 0.3065 (50% slider), but volumeBase must not be reported.
-			registry.element.forceVolume(0.3065);
-			await new Promise((resolve) => setTimeout(resolve, 50));
-			// The observed patch must not include volumeBase. Only mediaMuted
-			// is an actionable page-side change for SPECTRA's volume field.
-			// (volumeBase is set only by explicit writes via applyField.)
-			const result = executor.read({
+		} finally {
+			executor.dispose();
+		}
+	}, 2_000);
+
+	test('uses the page-semantic writer for popup and mute-hotkey controls', async () => {
+		Object.defineProperty(globalThis, 'HTMLMediaElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		Object.defineProperty(globalThis, 'HTMLVideoElement', {
+			configurable: true,
+			value: class FakeVideoElement extends FakeMediaElement { },
+		});
+		Object.defineProperty(globalThis, 'document', {
+			configurable: true,
+			value: { pictureInPictureElement: null, fullscreenElement: null },
+		});
+		Object.defineProperty(globalThis, 'requestAnimationFrame', {
+			configurable: true,
+			value: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0),
+		});
+		const media = new BridgedMediaElement();
+		const state: PageMediaState = { volumeBase: 100, mediaMuted: false, speed: 1 };
+		installPageMediaBridgeStub(media, state);
+		const registry = new FakeRegistry(media);
+		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
+		try {
+			const popup = await executor.execute({
+				intentId: 'intent:page-media:popup',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 2,
+				source: 'popup',
+				requestedCoverage: 'active-target',
 				target: registry.target,
-				fields: ['volumeBase', 'mediaMuted'],
+				actualContext: {},
+				patch: { volumeBase: 40, speed: 1.5 },
 			});
-			expect((result.patch as Record<string, unknown>).volumeBase).toBeUndefined();
+			const hotkey = await executor.execute({
+				intentId: 'intent:page-media:hotkey',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 3,
+				source: 'hotkey',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { mediaMuted: true },
+			});
+
+			expect(popup.fields.volumeBase).toMatchObject({ phase: 'applied', strategy: 'page-native', actual: 40 });
+			expect(popup.fields.speed).toMatchObject({ phase: 'applied', strategy: 'page-native', actual: 1.5 });
+			expect(hotkey.fields.mediaMuted).toMatchObject({ phase: 'applied', strategy: 'page-native', actual: true });
+			expect(state).toEqual({ volumeBase: 40, mediaMuted: true, speed: 1.5 });
+
+			const released = await executor.releasePageSettings({
+				operationId: 'operation:page-media:restore',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 4,
+				source: 'popup',
+				target: registry.target,
+				operation: 'restore-page-settings',
+				payload: {},
+			});
+			expect(released.releasedFields).toEqual(expect.arrayContaining([
+				'volumeBase', 'mediaMuted', 'speed',
+			]));
+			expect(released.fields.volumeBase).toMatchObject({
+				actual: 100,
+				strategy: 'page-native',
+				controlled: false,
+			});
+			expect(state).toEqual({ volumeBase: 100, mediaMuted: false, speed: 1 });
+		} finally {
+			executor.dispose();
+		}
+	}, 2_000);
+
+	test('never switches an owned page field to the DOM writer when its controller disappears', async () => {
+		Object.defineProperty(globalThis, 'HTMLMediaElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		Object.defineProperty(globalThis, 'HTMLVideoElement', {
+			configurable: true,
+			value: class FakeVideoElement extends FakeMediaElement { },
+		});
+		Object.defineProperty(globalThis, 'document', {
+			configurable: true,
+			value: { pictureInPictureElement: null, fullscreenElement: null },
+		});
+		Object.defineProperty(globalThis, 'requestAnimationFrame', {
+			configurable: true,
+			value: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0),
+		});
+		const media = new BridgedMediaElement();
+		const state: PageMediaState = { volumeBase: 100, mediaMuted: false, speed: 1 };
+		installPageMediaBridgeStub(media, state);
+		const registry = new FakeRegistry(media);
+		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
+		try {
+			const first = await executor.execute({
+				intentId: 'intent:page-media:owned',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 2,
+				source: 'popup',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { volumeBase: 40 },
+			});
+			expect(first.fields.volumeBase).toMatchObject({
+				phase: 'applied',
+				strategy: 'page-native',
+			});
+			expect(media.volume).toBeCloseTo(0.24524, 5);
+
+			state.supported = false;
+			const second = await executor.execute({
+				intentId: 'intent:page-media:controller-gone',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 3,
+				source: 'popup',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { volumeBase: 30 },
+			});
+			expect(second.fields.volumeBase).toMatchObject({ phase: 'error', controlled: false });
+			expect(media.volume).toBeCloseTo(0.24524, 5);
 		} finally {
 			executor.dispose();
 		}

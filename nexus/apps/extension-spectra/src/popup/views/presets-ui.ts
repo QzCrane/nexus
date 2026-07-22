@@ -29,17 +29,20 @@ let listEl: HTMLElement | null = null;
 let emptyEl: HTMLElement | null = null;
 let clearBtn: HTMLButtonElement | null = null;
 let searchInput: HTMLInputElement | null = null;
-let currentDict: I18NDict | null = null;
+let currentDict: I18NDict;
 let currentDomain: string = '';
 let onApplyPreset: ((config: Partial<AudioConfig>) => void) | null = null;
 let closeActivePreview: ((restoreFocus?: boolean) => void) | null = null;
+let latestRefreshRevision = 0;
 
 // eff: initializes the presets UI with search, filters, and action handlers
 // note: domain and applyHandler are optional - when not provided, preset application is disabled
 export function initPresetsUI(
+	dict: I18NDict,
 	domain?: string,
 	applyHandler?: (config: Partial<AudioConfig>) => void
 ): void {
+	currentDict = dict;
 	listEl = document.getElementById('presets-list');
 	emptyEl = document.getElementById('presets-empty');
 	clearBtn = document.getElementById('btn-clear-presets') as HTMLButtonElement | null;
@@ -50,8 +53,8 @@ export function initPresetsUI(
 
 	if (clearBtn) clearBtn.onclick = handleClearAll;
 	if (searchInput) {
-		searchInput.oninput = () => refreshPresetsList();
-		searchInput.placeholder = currentDict?.presetSearchPlaceholder || 'Search presets...';
+		searchInput.oninput = () => { void refreshPresetsList(); };
+		searchInput.placeholder = currentDict.presetSearchPlaceholder;
 	}
 
 
@@ -63,14 +66,16 @@ export function initPresetsUI(
 		return false;
 	});
 
-	refreshPresetsList();
+	void refreshPresetsList();
 }
 
 // eff: refreshes the preset list with search filtering
 async function refreshPresetsList(): Promise<void> {
 	if (!listEl || !emptyEl) return;
 
+	const refreshRevision = ++latestRefreshRevision;
 	const { sitePresets, globalPresets, defaultId } = await loadAllPresets();
+	if (refreshRevision !== latestRefreshRevision) return;
 	const searchTerm = searchInput?.value.toLowerCase() || '';
 
 	// perf: filter presets by search term
@@ -98,7 +103,7 @@ async function refreshPresetsList(): Promise<void> {
 
 	// eff: render global presets section
 	if (filteredGlobals.length > 0) {
-		const globalHeader = createSectionHeader(currentDict?.presetGlobalSection || 'Global Presets');
+		const globalHeader = createSectionHeader(currentDict.presetGlobalSection);
 		listEl.appendChild(globalHeader);
 
 		filteredGlobals.forEach(([name, entry]) => {
@@ -109,7 +114,7 @@ async function refreshPresetsList(): Promise<void> {
 
 	// eff: render site-specific presets section
 	if (filteredSites.length > 0) {
-		const siteHeader = createSectionHeader(currentDict?.presetSiteSection || 'Site Presets');
+		const siteHeader = createSectionHeader(currentDict.presetSiteSection);
 		listEl!.appendChild(siteHeader);
 
 		filteredSites.forEach(([domain, config]) => {
@@ -153,14 +158,14 @@ function createPresetItem(
 	if (isDefault) {
 		const defaultBadge = document.createElement('span');
 		defaultBadge.className = 'preset-badge default';
-		defaultBadge.textContent = currentDict?.presetDefaultBadge || 'DEFAULT';
+		defaultBadge.textContent = currentDict.presetDefaultBadge;
 		nameEl.appendChild(defaultBadge);
 	}
 
 	if (isCurrentSite) {
 		const currentBadge = document.createElement('span');
 		currentBadge.className = 'preset-badge current';
-		currentBadge.textContent = currentDict?.presetCurrentBadge || 'CURRENT';
+		currentBadge.textContent = currentDict.presetCurrentBadge;
 		nameEl.appendChild(currentBadge);
 	}
 
@@ -179,7 +184,8 @@ function createPresetItem(
 	const applyBtn = document.createElement('button');
 	applyBtn.className = 'btn-preset-action apply';
 	applyBtn.textContent = '✓';
-	applyBtn.title = currentDict?.presetApplyTooltip || 'Apply';
+	applyBtn.title = currentDict.presetApplyTooltip;
+	applyBtn.setAttribute('aria-label', currentDict.presetApplyTooltip);
 	applyBtn.onclick = (e) => {
 		e.stopPropagation();
 		handleApplyPreset(id, type, config);
@@ -189,7 +195,8 @@ function createPresetItem(
 	const previewBtn = document.createElement('button');
 	previewBtn.className = 'btn-preset-action preview';
 	previewBtn.textContent = '👁';
-	previewBtn.title = currentDict?.presetPreviewTooltip || 'Preview';
+	previewBtn.title = currentDict.presetPreviewTooltip;
+	previewBtn.setAttribute('aria-label', currentDict.presetPreviewTooltip);
 	previewBtn.onclick = (e) => {
 		e.stopPropagation();
 		showPresetPreview(id, config);
@@ -200,8 +207,9 @@ function createPresetItem(
 	defaultBtn.className = `btn-preset-action default ${isDefault ? 'active' : ''}`;
 	defaultBtn.textContent = '★';
 	defaultBtn.title = isDefault
-		? (currentDict?.presetRemoveDefaultTooltip || 'Remove default')
-		: (currentDict?.presetSetDefaultTooltip || 'Set as default');
+		? currentDict.presetRemoveDefaultTooltip
+		: currentDict.presetSetDefaultTooltip;
+	defaultBtn.setAttribute('aria-label', defaultBtn.title);
 	defaultBtn.onclick = (e) => {
 		e.stopPropagation();
 		handleSetDefaultPreset(id, type, !isDefault);
@@ -211,7 +219,8 @@ function createPresetItem(
 	const deleteBtn = document.createElement('button');
 	deleteBtn.className = 'btn-preset-action delete';
 	deleteBtn.textContent = '✕';
-	deleteBtn.title = currentDict?.presetDeleteTooltip || 'Delete';
+	deleteBtn.title = currentDict.presetDeleteTooltip;
+	deleteBtn.setAttribute('aria-label', currentDict.presetDeleteTooltip);
 	deleteBtn.onclick = (e) => {
 		e.stopPropagation();
 		handleDeletePreset(id, type);
@@ -267,14 +276,14 @@ function createSummaryNodes(config: Partial<AudioConfig>): DocumentFragment {
 	// the summary respects the user's chosen language instead of leaking
 	// English strings ("Comp", "Bass", "Pan:R", "Default", ...).
 	const effects: string[] = [];
-	if (config.compressor) effects.push(currentDict?.presetEffectComp ?? 'Comp');
-	if (config.bass) effects.push(currentDict?.bass ?? 'Bass');
-	if (config.mono) effects.push(currentDict?.mono ?? 'Mono');
+	if (config.compressor) effects.push(currentDict.presetEffectComp);
+	if (config.bass) effects.push(currentDict.bass);
+	if (config.mono) effects.push(currentDict.mono);
 	if (config.pan !== undefined && config.pan !== 0) {
-		const panLabel = currentDict?.presetEffectPan ?? 'Pan';
+		const panLabel = currentDict.presetEffectPan;
 		const panSide = config.pan > 0
-			? (currentDict?.presetEffectPanRight ?? 'R')
-			: (currentDict?.presetEffectPanLeft ?? 'L');
+			? currentDict.presetEffectPanRight
+			: currentDict.presetEffectPanLeft;
 		effects.push(`${panLabel}:${panSide}`);
 	}
 
@@ -286,7 +295,7 @@ function createSummaryNodes(config: Partial<AudioConfig>): DocumentFragment {
 	}
 
 	if (fragment.childNodes.length === 0) {
-		fragment.appendChild(document.createTextNode(currentDict?.presetEffectDefault ?? 'Default'));
+		fragment.appendChild(document.createTextNode(currentDict.presetEffectDefault));
 	}
 
 	return fragment;
@@ -304,7 +313,7 @@ async function handleApplyPreset(id: string, type: PresetType, config: Partial<A
 	}
 
 	// feedback: visual confirmation
-	showPopupToast(currentDict?.presetAppliedToast?.(id) || `Applied: ${id}`);
+	showPopupToast(currentDict.presetAppliedToast(id));
 }
 
 // eff: shows preset details in a modal/preview panel
@@ -336,8 +345,8 @@ function showPresetPreview(id: string, config: Partial<AudioConfig>): void {
 
 	const closeBtn = document.createElement('button');
 	closeBtn.type = 'button';
-	closeBtn.textContent = currentDict?.btnClose || 'Close';
-	closeBtn.setAttribute('aria-label', currentDict?.btnClose || 'Close');
+	closeBtn.textContent = currentDict.btnClose;
+	closeBtn.setAttribute('aria-label', currentDict.btnClose);
 	const close = (restoreFocus = true) => {
 		if (!modal.isConnected) return;
 		modal.remove();
@@ -367,7 +376,7 @@ async function handleSetDefaultPreset(id: string, type: PresetType, setAsDefault
 
 	await patchSettings({ scope: 'default-preset', value: setAsDefault ? id : null });
 
-	refreshPresetsList();
+	void refreshPresetsList();
 }
 
 // eff: deletes a preset
@@ -378,7 +387,7 @@ async function handleDeletePreset(id: string, type: PresetType): Promise<void> {
 		await patchSettings({ scope: 'audio-preset', name: id, value: null });
 	}
 
-	refreshPresetsList();
+	void refreshPresetsList();
 }
 
 async function handleClearAll(): Promise<void> {
@@ -390,7 +399,7 @@ async function handleClearAll(): Promise<void> {
 		await patchSettings({ scope: 'audio-preset', name, value: null });
 	}
 	await patchSettings({ scope: 'default-preset', value: null });
-	refreshPresetsList();
+	void refreshPresetsList();
 }
 
 // eff: loads all presets from storage
@@ -425,7 +434,7 @@ export async function getDefaultPreset(): Promise<Partial<AudioConfig> | null> {
 // after the domain.
 export async function saveGlobalPreset(config: Partial<AudioConfig>): Promise<string> {
 	const { globalPresets } = await loadAllPresets();
-	const baseName = currentDict?.presetDefaultName || 'Preset';
+	const baseName = currentDict.presetDefaultName;
 	const stamp = formatPresetStamp(new Date());
 	const name = resolveUniquePresetName(baseName, stamp, globalPresets);
 	await patchSettings({
@@ -466,7 +475,7 @@ function resolveUniquePresetName(
 export function updatePresetsI18n(dict: I18NDict): void {
 	currentDict = dict;
 	if (searchInput) {
-		searchInput.placeholder = dict.presetSearchPlaceholder || 'Search presets...';
+		searchInput.placeholder = dict.presetSearchPlaceholder;
 	}
-	refreshPresetsList();
+	void refreshPresetsList();
 }

@@ -1,7 +1,5 @@
 // goal: preserve native fullscreen activation while enhanced audio briefly yields the media pipeline
 
-import './playback-rate-bridge';
-
 import {
 	SPECTRA_FULLSCREEN_BRIDGE_READY_ATTRIBUTE,
 	SPECTRA_FULLSCREEN_FINISH_EVENT,

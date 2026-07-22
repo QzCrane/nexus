@@ -15,6 +15,17 @@ export interface InitialStateSources {
 	config: AudioConfig | null;
 }
 
+// post: loading the document runtime to observe an acknowledged Capture never
+// becomes a new mode intent. Capture is owned by Background/offscreen and must
+// be hydrated first; a later explicit control, configuration or navigation
+// event may ask PolicyExecutor to transition it.
+export function shouldApplyInitialPolicy(
+	state: Pick<PolicyExecutorState, 'actualMode'>,
+	recovered: boolean,
+): boolean {
+	return !recovered || state.actualMode !== 'capture';
+}
+
 function cloneConfig(config: AudioConfig): AudioConfig {
 	return { ...config, eqValues: [...config.eqValues] };
 }

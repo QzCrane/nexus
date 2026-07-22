@@ -472,9 +472,10 @@ export function initializeContentRuntimeLoader(): void {
 				accepted: true as const,
 				runtimeRevision: known?.runtimeRevision ?? null,
 			}));
-			// rule: SCTRL-001/004 — the manifest only registers the ISOLATED
-			// bootstrap. The MAIN-world fullscreen and playback-rate bridges are
-			// injected here on every new document, delegated exclusively to
+			// rule: SCTRL-001/004 — the manifest registers the minimal ISOLATED
+			// bootstrap and the two closed MAIN-world bridges. This recovery path
+			// re-injects fullscreen V1 and exact-element page-media V2 idempotently on
+			// every new document, delegated exclusively to
 			// main-runtime-manager (sole owner of the MAIN-world injection literal).
 			// This ensures the bridges are present from the very first event the
 			// page dispatches.

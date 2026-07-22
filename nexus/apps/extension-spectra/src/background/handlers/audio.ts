@@ -23,7 +23,7 @@ import {
 import { sendOffscreenMessageIfPresent } from '../offscreen-coordinator';
 import { settingsRepository } from '../settings-repository';
 import { updateBadgeFromSession } from './badge';
-import { sendSpectraTabRequest } from '../../shared/spectra-client';
+import { sendSpectraTabRequest } from '../spectra-tab-client';
 import { swLog } from '../../shared/logger';
 import {
 	advanceVisualizerSubscriberLeases,
@@ -96,16 +96,14 @@ let visualizerQueue: Promise<void> = Promise.resolve();
 async function updateVisualizerSubscriptions(
 	pageTabIds: number[],
 	captureTabIds: number[],
-): Promise<boolean> {
-	// Content owns the analyser *intent* for every subscribed tab, including a
-	// tab currently sampled from offscreen Capture. Releasing that content lease
-	// merely because sampling moved to Capture would immediately tear Capture
-	// down and make the spectrum oscillate between null sources.
+): Promise<void> {
+	// Content retains analyser intent across a WebAudio -> Capture handoff so it
+	// can reattach if the existing processor returns to the page. That intent is
+	// observational only: it never creates, keeps alive, or tears down a processor.
 	const nextContentTabs = new Set(pageTabIds);
 	for (const tabId of captureTabIds) {
-		// A processor that was already captured before Popup opened is sampled
-		// entirely offscreen and needs no new content intent. Keep content demand
-		// only when that demand itself admitted the Capture transition.
+		// A processor already captured before Popup opened is sampled entirely
+		// offscreen and needs no new content analyser intent.
 		if (subscribedPageTabs.has(tabId)) nextContentTabs.add(tabId);
 	}
 	const removedPageTabs = [...subscribedPageTabs].filter((tabId) => !nextContentTabs.has(tabId));
@@ -117,7 +115,11 @@ async function updateVisualizerSubscriptions(
 			'spectra.audio.visualizer.subscription.set',
 			{ subscribed: false },
 			).catch(() => null);
-			return response === null || (response.ok === true && response.data.subscribed === false);
+			return {
+				tabId,
+				action: 'remove' as const,
+				accepted: response === null || (response.ok === true && response.data.subscribed === false),
+			};
 		}),
 		...addedPageTabs.map(async (tabId) => {
 			const response = await sendSpectraTabRequest(
@@ -125,10 +127,24 @@ async function updateVisualizerSubscriptions(
 			'spectra.audio.visualizer.subscription.set',
 			{ subscribed: true },
 			).catch(() => null);
-			return response?.ok === true && response.data.subscribed === true;
+			return {
+				tabId,
+				action: 'add' as const,
+				accepted: response?.ok === true && response.data.subscribed === true,
+			};
 		}),
 	]);
-	if (pageResults.some((accepted) => !accepted)) return false;
+	// Page subscriptions are independent observation targets. One restricted,
+	// navigating, or not-yet-ready tab must not suppress frames from every other
+	// card in the same Popup batch. Track only acknowledgements so failed adds or
+	// removals are retried on the next heartbeat without rolling back healthy tabs.
+	const reconciledPageTabs = new Set(subscribedPageTabs);
+	for (const result of pageResults) {
+		if (!result.accepted) continue;
+		if (result.action === 'add') reconciledPageTabs.add(result.tabId);
+		else reconciledPageTabs.delete(result.tabId);
+	}
+	subscribedPageTabs = reconciledPageTabs;
 
 	const captureKey = [...captureTabIds].sort((left, right) => left - right).join(',');
 	if (captureKey !== subscribedCaptureKey) {
@@ -138,12 +154,12 @@ async function updateVisualizerSubscriptions(
 		}).catch(() => null);
 		if (captureTabIds.length > 0 && (!response
 			|| [...response.subscribedTabIds].sort((left, right) => left - right).join(',') !== captureKey)) {
-			return false;
+			// Preserve the last acknowledged key so the next heartbeat retries the
+			// offscreen reconciliation. Page-backed frames remain independently usable.
+			return;
 		}
+		subscribedCaptureKey = captureKey;
 	}
-	subscribedPageTabs = nextContentTabs;
-	subscribedCaptureKey = captureKey;
-	return true;
 }
 
 // note: one-release adapter for old popup contexts. Current content publishes
@@ -222,24 +238,7 @@ async function getVisualizerBatchNow(payload: VisualizerBatchPayload): Promise<{
 	const unionTabIds = visualizerSubscriberUnion(candidateSubscribers);
 	const unionCaptureTabIds = unionTabIds.filter((tabId) => captureStates.get(tabId) === true);
 	const unionPageTabIds = unionTabIds.filter((tabId) => captureStates.get(tabId) !== true);
-	const admitted = await updateVisualizerSubscriptions(unionPageTabIds, unionCaptureTabIds);
-	if (!admitted) {
-		if (payload.tabIds.length === 0) {
-			// Explicit release is authoritative even when an already-disappearing
-			// processor cannot acknowledge teardown. Keep the tombstone so an older
-			// in-flight batch cannot revive it.
-			replaceVisualizerSubscribers(candidateSubscribers);
-			scheduleVisualizerLeaseExpiry();
-			return { subscriberId: payload.subscriberId, generation: payload.generation, frames: {} };
-		}
-		const previousUnion = visualizerSubscriberUnion(visualizerSubscribers);
-		void updateVisualizerSubscriptions(
-			previousUnion.filter((tabId) => captureStates.get(tabId) !== true),
-			previousUnion.filter((tabId) => captureStates.get(tabId) === true),
-		);
-		scheduleVisualizerLeaseExpiry();
-		return { subscriberId: payload.subscriberId, generation: payload.generation, frames: {} };
-	}
+	await updateVisualizerSubscriptions(unionPageTabIds, unionCaptureTabIds);
 	replaceVisualizerSubscribers(candidateSubscribers);
 	scheduleVisualizerLeaseExpiry();
 	if (!plan.accepted) {

@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: spectra-control-architecture
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-22
 ---
 
 # SPECTRA control architecture
@@ -17,7 +17,7 @@ Do not copy a topic's rules back into this file. Change the topic owner, executa
 | # | Owner | Scope |
 | --- | --- | --- |
 | 01 | [01-foundations.md](01-foundations.md) | product semantics, control flow, and state ownership |
-| 02 | [02-strategy-and-routes.md](02-strategy-and-routes.md) | strategy order, site routes, runtime READY, feedback, site adapters, PiP, fullscreen |
+| 02 | [02-strategy-and-routes.md](02-strategy-and-routes.md) | strategy order, site routes, runtime READY, feedback, exact-element page media, PiP, fullscreen |
 | 03 | [03-ui-and-boundaries.md](03-ui-and-boundaries.md) | UI, visualizer, privileged boundaries, loading topology, failure escalation |
 | 04 | [04-algorithm-matrix.md](04-algorithm-matrix.md) | capability and source-algorithm matrix entrypoint |
 | 05 | [05-control-state.md](05-control-state.md) | field state, echo correlation, processor handoff, volume, mute, DSP |
@@ -29,7 +29,7 @@ Do not copy a topic's rules back into this file. Change the topic owner, executa
 
 - **51 contract capabilities**: 17 native-only + 6 hybrid extension/native + 26 augmentation-only + 2 observation-only
 - **28 persistent snapshot fields + 23 momentary operations**
-- **49 audited source algorithms**: `ALG-001..ALG-049`
+- **50 audited source algorithms**: `ALG-001..ALG-050`
 - **44 static invariants**: `SCTRL-001..SCTRL-044`
 
 These totals mirror executable contracts and gates. A count changes only with contract rows, source catalog, tests, owner documentation, and verifier updates.

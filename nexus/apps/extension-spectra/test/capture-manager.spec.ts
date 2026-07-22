@@ -98,9 +98,17 @@ describe('capture manager acknowledged state', () => {
 			expect(manager.isActive()).toBe(true);
 			expect(manager.getGeneration()).toBe(11);
 
-			const stop = manager.request(false, CONFIG, 12);
+			// A caller can still hold the currently acknowledged generation. Changing
+			// processor ownership must allocate the next generation instead of trying
+			// to reuse the active generation for a contradictory stop transition.
+			const stop = manager.request(false, CONFIG, 11);
 			expect(manager.getPhase()).toBe('stopping');
 			expect(manager.isActive()).toBe(true);
+			expect(send).toHaveBeenLastCalledWith(expect.objectContaining({
+				type: 'spectra.audio.capture.set',
+				generation: 12,
+				payload: { enabled: false, config: CONFIG },
+			}));
 			expect(manager.handleMessage({
 				action: Actions.CAPTURE_STATE_CHANGE,
 				payload: { enabled: true, phase: 'stopping', generation: 12 },

@@ -60,9 +60,9 @@ const entries = [
 		sharingDomain: 'main-fullscreen-bridge',
 	},
 	{
-		entry: 'src/content/injector/playback-rate-bridge.ts',
-		out: 'content-playback-rate-bridge.js',
-		sharingDomain: 'main-playback-rate-bridge',
+		entry: 'src/content/injector/page-media-bridge.ts',
+		out: 'content-page-media-bridge.js',
+		sharingDomain: 'main-page-media-bridge',
 	},
 	{
 		entry: 'src/content/core/index.ts',

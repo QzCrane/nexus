@@ -232,6 +232,12 @@ function actualReadAck(payload: ControlReadRequest, target: ControlApplyAck['tar
 		data: {
 			target,
 			patch: Object.fromEntries(payload.fields.map((field) => [field, defaults[field]])),
+			observedStrategies: Object.fromEntries(payload.fields
+				.filter((field) => new Set<ControlField>([
+					'volumeBase', 'mediaMuted', 'speed', 'preservePitch', 'playing',
+					'currentTime', 'loop', 'pip', 'fullscreen',
+				]).has(field))
+				.map((field) => [field, 'dom-native'])),
 		},
 	};
 }
@@ -365,13 +371,14 @@ describe('authoritative control coordinator', () => {
 				kind: 'video',
 			},
 			patch: { volumeBase: 40, mediaMuted: false },
+			observedStrategies: { volumeBase: 'page-native', mediaMuted: 'page-native' },
 		});
 
 		expect(harness.contentIntent).toBeUndefined();
 		expect(ack.fields.volumeBase).toMatchObject({
 			desired: 40,
 			actual: 40,
-			strategy: 'dom-native',
+			strategy: 'page-native',
 			controlled: false,
 		});
 		expect((await controlCoordinatorTestApi.getSnapshot(7))?.fields.mediaMuted?.actual).toBe(false);
@@ -431,6 +438,7 @@ describe('authoritative control coordinator', () => {
 			requestedCoverage: 'active-target',
 			target,
 			patch: { volumeBase: 55 },
+			observedStrategies: { volumeBase: 'page-native' },
 		});
 
 		expect(routed).toHaveLength(2);
@@ -445,6 +453,65 @@ describe('authoritative control coordinator', () => {
 		expect((await controlCoordinatorTestApi.getSnapshot(7))?.fields.boost?.actual).toBe(1);
 		expect((await controlCoordinatorTestApi.getSnapshot(7))?.revision).toBe(2);
 		expect(harness.snapshotEvents).toBe(2);
+	});
+
+	test('releases Boost before returning an effective volume at or below 100 to the native writer', async () => {
+		const harness = installHarness();
+		const target = {
+			frameId: 0,
+			documentId: harness.documentId,
+			mediaId: 'media:effective-downshift',
+			sourceRevision: 0,
+			kind: 'audio' as const,
+		};
+		const intents: ControlIntent[] = [];
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') {
+				return actualReadAck(payload as ControlReadRequest, target);
+			}
+			const intent = payload as ControlIntent;
+			intents.push(intent);
+			return {
+				ok: true,
+				data: intent.requestedCoverage === 'full' && intent.patch.boost === 1
+					? releasedPatchAck(intent)
+					: appliedPatchAck(intent, (field) => field === 'boost' ? 'media-webaudio' : 'dom-native'),
+			};
+		};
+
+		await controlCoordinatorTestApi.submit({
+			tabId: 7,
+			source: 'popup',
+			requestedCoverage: 'active-target',
+			target,
+			patch: { volumeBase: 100 },
+		});
+		await controlCoordinatorTestApi.submit({
+			tabId: 7,
+			source: 'popup',
+			requestedCoverage: 'full',
+			target,
+			patch: { boost: 2 },
+		});
+		intents.length = 0;
+
+		const acknowledgement = await controlCoordinatorTestApi.submitOperation({
+			tabId: 7,
+			source: 'popup',
+			target,
+			operation: 'effective-volume',
+			payload: { operation: 'set', value: 80 },
+		});
+
+		expect(intents.map((intent) => intent.patch)).toEqual([
+			{ boost: 1 },
+			{ volumeBase: 80 },
+		]);
+		expect(acknowledgement.result).toEqual({
+			effectiveVolume: 80,
+			volumeBase: 80,
+			boost: 1,
+		});
 	});
 
 	test('turns an acknowledged repeated effective volume into zero Content IPC and zero storage writes', async () => {
@@ -562,6 +629,7 @@ describe('authoritative control coordinator', () => {
 			requestedCoverage: 'active-target',
 			target: audioTarget,
 			patch: { speed: 1.1 },
+			observedStrategies: { speed: 'dom-native' },
 		});
 		snapshot = await controlCoordinatorTestApi.getSnapshot(7);
 		expect(snapshot?.activeMedia).toEqual(audioTarget);
@@ -627,6 +695,7 @@ describe('authoritative control coordinator', () => {
 			requestedCoverage: 'active-target',
 			target: audioTarget,
 			patch: { speed: 1.1 },
+			observedStrategies: { speed: 'dom-native' },
 		});
 
 		await controlCoordinatorTestApi.submit({
@@ -698,6 +767,7 @@ describe('authoritative control coordinator', () => {
 			requestedCoverage: 'active-target',
 			target: audioTarget,
 			patch: { speed: 1.2 },
+			observedStrategies: { speed: 'dom-native' },
 		});
 
 		harness.contentResponder = ({ type, payload }) => {
@@ -755,9 +825,9 @@ describe('authoritative control coordinator', () => {
 		expect(snapshot?.activeVideo).toBeNull();
 	});
 
-	test('does not escalate a terminal native failure into the official site adapter', async () => {
+	test('does not retry a terminal content-native failure through a Background MAIN fallback', async () => {
 		const harness = installHarness();
-		harness.url = 'https://www.youtube.com/watch?v=test';
+		harness.url = 'https://media.example/watch/test';
 		const pending = controlCoordinatorTestApi.submit(request({ speed: 1.5 }));
 		while (!harness.contentIntent || !harness.resolveContent) await Promise.resolve();
 		harness.resolveContent({
@@ -774,9 +844,9 @@ describe('authoritative control coordinator', () => {
 		expect(harness.mainExecutions).toBe(0);
 	});
 
-	test('does not let a single-player site adapter claim full-output coverage', async () => {
+	test('does not widen a media-native failure into a Background MAIN full-output fallback', async () => {
 		const harness = installHarness();
-		harness.url = 'https://www.youtube.com/watch?v=test';
+		harness.url = 'https://media.example/watch/test';
 		const pending = controlCoordinatorTestApi.submit({
 			...request({ speed: 1.5 }),
 			requestedCoverage: 'full',

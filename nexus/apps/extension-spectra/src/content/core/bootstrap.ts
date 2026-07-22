@@ -18,6 +18,7 @@ import {
 	isExtensionContextValid,
 	runWithValidExtensionContext,
 } from './extension-context';
+import { readPageMediaField } from '../logic/page-media-bridge';
 
 const previous = getContentBootstrapState();
 if (previous?.bootstrapRevision !== SPECTRA_CONTENT_BOOTSTRAP_REVISION) previous?.dispose();
@@ -40,33 +41,50 @@ if (!getContentBootstrapState()) {
 			?? media[0];
 		if (!element) return null;
 		const patch: import('@nexus/contracts').ControlPatch = {};
+		const observedStrategies: import('@nexus/contracts').ControlNativeObservationStrategies = {};
+		const pageActual = (field: 'volumeBase' | 'mediaMuted' | 'speed'): number | boolean | null => {
+			try { return readPageMediaField(element, field); }
+			catch { return null; }
+		};
 		for (const field of request.fields) {
 			let actual: unknown;
 			switch (field) {
-				// volumeBase is SPECTRA's intended volume (default 100), not a
-				// measurement of element.volume. Sites like YouTube apply a
-				// non-linear volume curve (element.volume reads 0.6131 at their
-				// 100% slider), so reading element.volume here would report
-				// 61.31 instead of the user's expectation. The coordinator falls
-				// back to actualField('volumeBase', 100) when the bootstrap read
-				// does not populate this field; element.volume reads remain in
-				// NativeMediaExecutor's applyField and readRestorableMediaField.
-				case 'volumeBase': break;
-				case 'mediaMuted': actual = element.muted; break;
-				case 'speed': actual = element.playbackRate; break;
-				case 'preservePitch':
-					if ('preservesPitch' in element) actual = element.preservesPitch;
+				case 'volumeBase': {
+					const pageValue = pageActual(field);
+					actual = pageValue ?? Math.round(element.volume * 10_000) / 100;
+					observedStrategies.volumeBase = pageValue === null ? 'dom-native' : 'page-native';
 					break;
-				case 'playing': actual = !element.paused; break;
-				case 'currentTime': actual = element.currentTime; break;
-				case 'loop': actual = element.loop; break;
-				case 'pip': actual = document.pictureInPictureElement === element; break;
+				}
+				case 'mediaMuted': {
+					const pageValue = pageActual(field);
+					actual = pageValue ?? element.muted;
+					observedStrategies.mediaMuted = pageValue === null ? 'dom-native' : 'page-native';
+					break;
+				}
+				case 'speed': {
+					const pageValue = pageActual(field);
+					actual = pageValue ?? element.playbackRate;
+					observedStrategies.speed = pageValue === null ? 'dom-native' : 'page-native';
+					break;
+				}
+				case 'preservePitch':
+					if ('preservesPitch' in element) {
+						actual = element.preservesPitch;
+						observedStrategies.preservePitch = 'dom-native';
+					}
+					break;
+				case 'playing': actual = !element.paused; observedStrategies.playing = 'dom-native'; break;
+				case 'currentTime': actual = element.currentTime; observedStrategies.currentTime = 'dom-native'; break;
+				case 'loop': actual = element.loop; observedStrategies.loop = 'dom-native'; break;
+				case 'pip': actual = document.pictureInPictureElement === element; observedStrategies.pip = 'dom-native'; break;
 				case 'fullscreen': actual = fullscreen === element
-					|| fullscreen instanceof Element && fullscreen.contains(element); break;
+					|| fullscreen instanceof Element && fullscreen.contains(element);
+					observedStrategies.fullscreen = 'dom-native';
+					break;
 			}
 			if (actual !== undefined) (patch as Record<string, unknown>)[field] = actual;
 		}
-		return Object.keys(patch).length > 0 ? { target: null, patch } : null;
+		return Object.keys(patch).length > 0 ? { target: null, patch, observedStrategies } : null;
 	};
 
 	const state: ContentBootstrapState = {

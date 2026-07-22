@@ -18,17 +18,17 @@ This matrix is exhaustive for the persisted fields and momentary operations expo
 | Capability | Required scope | Selection order | Acknowledgement and fallback |
 | --- | --- | --- | --- |
 | Audio enabled | document | coordinator state expansion | Expands to per-field acquire/release intents; it is never a page-wide processing mode. |
-| Internal native component `volumeBase 0–100` | target or all requested media | `HTMLMediaElement.volume` only | DOM uses `volumechange` plus getter. A genuine page gesture also neutralizes a stale hidden Boost in the same commit. Capture is never this field's writer. |
+| Internal native component `volumeBase 0–100` | target or all requested media | exact page controller, then `HTMLMediaElement.volume` | Page-native requires paired getter/setter and stable getter ACK; otherwise DOM uses `volumechange` plus getter. A genuine page gesture also neutralizes a stale hidden Boost in the same commit. Capture is never this field's writer. |
 | Internal processor component `boost 1–8x` | explicit full audio output | safe shared Media WebAudio -> Capture | Gain-node/processor readback; native volume is never raised above 100%. This field has no independent UI and target-only requests fail rather than widening to the tab. |
-| Media mute | target or all requested media | `HTMLMediaElement.muted` only | DOM uses `volumechange`. Numeric volume is preserved and Capture is never this field's writer. |
+| Media mute | target or all requested media | exact page controller, then `HTMLMediaElement.muted` | Page-native requires paired getter/setter and stable getter ACK; otherwise DOM uses `volumechange` plus getter. Numeric volume is preserved and Capture is never this field's writer. |
 | Tab mute | tab | `chrome.tabs.update({muted})` | `tabs.onUpdated`/`tabs.get` readback; never aliases media mute. |
-| Playback speed | active target | `playbackRate` only | DOM uses `ratechange` plus getter. The MAIN playback-rate bridge keeps the page player's rate UI in sync but never becomes the writer. |
+| Playback speed | active target | exact page controller, then `playbackRate` | Page-native uses paired getter/setter and stable getter ACK; otherwise DOM uses `ratechange` plus getter. There is no resident player-UI synchronizer or domain adapter. |
 | Preserve pitch | active target | standard `preservesPitch` property only | Property/getter readback; unsupported when the property is absent. |
 | Playing | active target | awaited standard `play()`/`pause()` only | `playing`/`pause` event; autoplay rejection is returned, not bypassed. |
 | Current time | active target | seekable standard media timeline only | Clamp to `TimeRanges`; acknowledge `seeked` and getter, never setter return. |
 | Whole-media loop | active target | standard `HTMLMediaElement.loop` only | Getter/readback; does not share state with A/B. |
 | Picture-in-Picture | active video | standard Picture-in-Picture API only | A Popup click immediately runs one `scripting.executeScript` in the extension ISOLATED world and synchronously dispatches the lifecycle-bound Content trigger. Content admits it only while `navigator.userActivation.isActive`, then calls the same `NativeMediaExecutor`. Success requires the native enter/leave event and `pictureInPictureElement`; there is no second prompt, MAIN script, synthetic activation or Capture fallback. |
-| Fullscreen | active video | standard Fullscreen API only | `fullscreenchange` and `fullscreenElement`; no synthetic gesture or site-adapter claim. |
+| Fullscreen | active video | standard Fullscreen API only | `fullscreenchange` and `fullscreenElement`; no synthetic gesture or CSS theater-mode claim. |
 | Rotation | active video | extension CSS individual `rotate` | Computed-style readback; remove only extension owner state. |
 | Mirror | active video | extension CSS individual `scale` | Computed-style readback; never overwrite the site's `transform`. |
 | Fill/crop | active video | extension `object-fit:cover` owner rule | Computed `object-fit`; disabling removes the owner attribute. |
@@ -44,7 +44,7 @@ This matrix is exhaustive for the persisted fields and momentary operations expo
 | Operation | Native-first algorithm | Controlled augmentation or result |
 | --- | --- | --- |
 | Restore page settings | coordinator releases each owned field | Restores captured per-target baselines; does not translate 100%/1x into release. |
-| Effective volume `0–800` | compile current actual, split desired value, use DOM native volume first | Within `0–100`, write only native base; within `100–800`, write only hidden Boost; crossing 100 writes both in one rollback-capable coordinator transaction. An identical actual value performs zero Content IPC, revision and storage work. |
+| Effective volume `0–800` | compile current actual, split desired value, use page-native/DOM native volume first | Within `0–100`, set Boost to unity, release the unneeded processor, and write only native base; within `100–800`, write only hidden Boost; crossing 100 writes both in one rollback-capable coordinator transaction. An identical actual value performs zero Content IPC, revision and storage work. |
 | Play/pause toggle | read actual state, then execute the `playing` field plan | Commits only the resulting play/pause event. |
 | Relative seek | resolve target and seekable ranges, then execute `currentTime` | Structured unavailable/not-seekable result. |
 | Frame step | source-scoped cadence evidence followed by a standard DOM seek | Reuses a recent `requestVideoFrameCallback` cadence or measures bounded consecutive rendered frames while playing; always reports `approximate:true`. A paused source with no cached cadence is unsupported rather than guessed. |
@@ -56,7 +56,7 @@ This matrix is exhaustive for the persisted fields and momentary operations expo
 | Video effects toggle/reset | one atomic patch for extension-owned video fields | Never touches native playback/audio state or site-authored CSS. |
 | Show info | snapshot read | Side-effect-free OSD projection. |
 | Open Popup/Options | Chrome extension UI APIs | The operation itself only opens browser UI. A rendered foreground Popup may then acquire an observation-only document lease for live page-to-Popup synchronization; that lease never admits MAIN, AudioContext or offscreen processing. |
-| Run user script | explicit `userScripts` permission and sandbox | Not a media strategy and never promoted to MAIN adapter access. |
+| Run user script | explicit `userScripts` permission and sandbox | Not a media strategy and never promoted to generic MAIN access. |
 | Open URL | browser navigation with `http/https` allowlist | Not a media strategy; invalid schemes fail closed. |
 
 ### §8.3 Disabled legacy algorithms
@@ -113,23 +113,23 @@ algorithm anchor, the mirror below and the contract tests in the same commit.
 | Contract capability | Native adjudication | Controlled augmentation admission | Success proof and performance boundary |
 | --- | --- | --- | --- |
 | `audioEnabled` | augmentation-only; there is no page-wide native mode | coordinator-owned session gate only | gate ACK plus expanded actual state for every dependent DSP field; disabling marks retained DSP settings idle and releases all runtime work |
-| `volumeBase` | native-only: DOM `volume` first, then a complete official player API if DOM cannot write/read back | none; whole-tab output gain is a different capability and Capture cannot impersonate the page slider | DOM `volumechange` plus getter, or official quiet-window stable getter; no audio runtime for `0–100` native control |
+| `volumeBase` | native-only: exact-element page controller first, then DOM `volume` when no page capability is available | none; whole-tab output gain is a different capability and Capture cannot impersonate the page slider | page getter stable readback or DOM `volumechange` plus getter; writer identity remains fixed while owned and no audio runtime is needed for `0–100` native control |
 | `boost` | augmentation-only; native volume cannot exceed 100% | proven safe shared media graph, otherwise authorized full-tab Capture | normalized processor gain readback; graph/offscreen exists only while Boost is non-neutral |
-| `effective-volume` | hybrid-extension-native: one public value uses DOM/official native base first | hidden Boost is admitted only for the portion above 100 through safe Media WebAudio or acknowledged Capture | one compound ACK returns effective/base/Boost actuals; same-region changes touch one writer, threshold crossings compensate both, repeated actual values do no IPC or persistence |
-| `mediaMuted` | native-only: DOM `muted` first, then a complete official player API if DOM cannot write/read back | none; Media WebAudio and Capture are never mute writers or mirrors | official stable getter or `volumechange` getter; numeric volume remains unchanged |
+| `effective-volume` | hybrid-extension-native: one public value uses exact page/DOM native base first | hidden Boost is admitted only for the portion above 100 through safe Media WebAudio or acknowledged Capture | one compound ACK returns effective/base/Boost actuals; returning to 100 or below releases Boost/processor ownership, threshold crossings compensate both, and repeated actual values do no IPC or persistence |
+| `mediaMuted` | native-only: exact-element page controller first, then DOM `muted` when no page capability is available | none; Media WebAudio and Capture are never mute writers or mirrors | page getter stable readback or DOM `volumechange` getter; numeric volume remains unchanged and writer identity remains fixed while owned |
 | `tabMuted` | native-only through Chrome tab state | none | `tabs.get`/tab event readback; event-driven only |
-| `speed` | native-only: DOM `playbackRate` first, then an official player rate only after proven DOM incompleteness | none | `ratechange` getter or official quiet-window stable getter; no reassert loop |
+| `speed` | native-only: exact-element page controller first, then DOM `playbackRate` when no page capability is available | none | page getter stable readback or DOM `ratechange` getter; no domain table, player listener, or reassert loop |
 | `preservePitch` | native-only through standard DOM `preservesPitch` | none | property/getter readback; unsupported rather than echoed intent |
 | `playing` | native-only through awaited standard media `play`/`pause` | none | `playing`/`pause` event plus getter; activation rejection is terminal |
 | `currentTime` | native-only through a seekable standard media timeline | none | `seeked` plus getter on the same media/source revision |
 | `loop` | native-only through standard DOM `loop` | none | authoritative getter; no A/B state alias |
 | `pip` | native-only through the standard Picture-in-Picture API | none | enter/leave event and `pictureInPictureElement`; no gesture synthesis |
 | `fullscreen` | native-only through the standard Fullscreen API on the selected video | none | `fullscreenchange` and `fullscreenElement`; no CSS fullscreen claim |
-| `rotation` | augmentation-only; no implemented native or official adapter exists | reversible extension CSS individual `rotate` | computed style; a never-owned neutral write is DOM-free, while owner removal restores the captured cascade |
-| `mirrored` | augmentation-only; no implemented native or official adapter exists | reversible extension CSS individual `scale` | computed style; site `transform` is never replaced |
-| `fill` | augmentation-only; no implemented native or official adapter exists | extension-owned `object-fit` rule | computed style; disabling removes ownership rather than guessing a restore value |
-| `filterEnabled` | augmentation-only; no implemented native or official adapter exists | reversible composed CSS | computed style; no work while disabled |
-| `filter` | augmentation-only; no implemented native or official adapter exists | reversible composed CSS | captures the computed site baseline at acquisition and composes it with SPECTRA values; disabling removes ownership and reveals the site's current cascade |
+| `rotation` | augmentation-only; no implemented native page/browser primitive exists | reversible extension CSS individual `rotate` | computed style; a never-owned neutral write is DOM-free, while owner removal restores the captured cascade |
+| `mirrored` | augmentation-only; no implemented native page/browser primitive exists | reversible extension CSS individual `scale` | computed style; site `transform` is never replaced |
+| `fill` | augmentation-only; no implemented native page/browser primitive exists | extension-owned `object-fit` rule | computed style; disabling removes ownership rather than guessing a restore value |
+| `filterEnabled` | augmentation-only; no implemented native page/browser primitive exists | reversible composed CSS | computed style; no work while disabled |
+| `filter` | augmentation-only; no implemented native page/browser primitive exists | reversible composed CSS | captures the computed site baseline at acquisition and composes it with SPECTRA values; disabling removes ownership and reveals the site's current cascade |
 | `dimEnabled` | augmentation-only; no page/browser dim primitive | extension-owned closed-shadow four-region overlay | overlay geometry readback; one coalesced frame only while enabled; target handoff releases only the previous dim owner and preserves its independent CSS effects |
 | `dimOpacity` | augmentation-only; part of the owned dim layer | same owned overlay only | computed/owned opacity readback; no overlay while dim is disabled |
 | `abLoop` | augmentation-only metadata; boundary motion still uses native seek | media/source-keyed extension state | coordinator state plus native seek ACK; one scheduler only while enabled |
@@ -174,11 +174,11 @@ MAIN admission, ACK evidence or the lifetime of recurring work.
 | Capability | Native preference | Augmentation admission | Ordered strategies | MAIN policy | ACK evidence | Recurring work |
 | --- | --- | --- | --- | --- | --- | --- |
 | `audioEnabled` | `augmentation-only` | `extension-owned-capability` | `extension-state` | `forbidden` | `coordinator-snapshot` | `none` |
-| `volumeBase` | `native-only` | `none` | `dom-native` | `forbidden` | `dom-event-getter` | `none` |
+| `volumeBase` | `native-only` | `none` | `page-native -> dom-native` | `exact-element-page-bridge` | `page-controller-getter + dom-event-getter` | `none` |
 | `boost` | `augmentation-only` | `proven-safe-source-or-explicit-full-output` | `media-webaudio -> capture` | `forbidden` | `processor-readback` | `page-lifetime-after-media-binding` |
-| `mediaMuted` | `native-only` | `none` | `dom-native` | `forbidden` | `dom-event-getter` | `none` |
+| `mediaMuted` | `native-only` | `none` | `page-native -> dom-native` | `exact-element-page-bridge` | `page-controller-getter + dom-event-getter` | `none` |
 | `tabMuted` | `native-only` | `none` | `chrome-native` | `forbidden` | `chrome-event-getter` | `none` |
-| `speed` | `native-only` | `none` | `dom-native` | `forbidden` | `dom-event-getter` | `none` |
+| `speed` | `native-only` | `none` | `page-native -> dom-native` | `exact-element-page-bridge` | `page-controller-getter + dom-event-getter` | `none` |
 | `preservePitch` | `native-only` | `none` | `dom-native` | `forbidden` | `dom-stable-getter` | `none` |
 | `playing` | `native-only` | `none` | `dom-native` | `forbidden` | `dom-event-getter` | `none` |
 | `currentTime` | `native-only` | `none` | `dom-native` | `forbidden` | `dom-event-getter` | `none` |
@@ -202,7 +202,7 @@ MAIN admission, ACK evidence or the lifetime of recurring work.
 | `delay` | `augmentation-only` | `proven-safe-source-or-explicit-full-output` | `media-webaudio -> capture` | `forbidden` | `processor-readback` | `page-lifetime-after-media-binding` |
 | `visualizer` | `observation-only` | `existing-processor-only` | `observe` | `forbidden` | `subscription-state` | `while-subscribed` |
 | `restore-page-settings` | `augmentation-only` | `extension-owned-capability` | `extension-state` | `forbidden` | `coordinator-snapshot` | `none` |
-| `effective-volume` | `hybrid-extension-native` | `proven-safe-source-or-explicit-full-output` | `dom-native -> extension-state -> media-webaudio -> capture` | `forbidden` | `dom-event-getter + processor-readback` | `none` |
+| `effective-volume` | `hybrid-extension-native` | `proven-safe-source-or-explicit-full-output` | `page-native -> dom-native -> extension-state -> media-webaudio -> capture` | `exact-element-page-bridge` | `page-controller-getter + dom-event-getter + processor-readback` | `none` |
 | `playback-toggle` | `native-only` | `none` | `dom-native` | `forbidden` | `dom-event-getter` | `none` |
 | `seek-relative` | `native-only` | `none` | `dom-native` | `forbidden` | `dom-event-getter` | `none` |
 | `frame-step` | `hybrid-extension-native` | `extension-owned-capability` | `dom-native` | `forbidden` | `dom-event-getter` | `none` |
@@ -234,8 +234,8 @@ forbidden. It is normative together with `CONTROL_ALGORITHM_POLICIES`.
 
 The exhaustive totals are part of the review result, not a loose summary:
 
-- **17 native-only** capabilities may use only standard DOM, an allowlisted
-  official player API, or a Chrome/browser API. A failure never promotes them
+- **17 native-only** capabilities may use only an exact-element page controller,
+  standard DOM, or a Chrome/browser API. A failure never promotes them
   to CSS, WebAudio, Capture or generic MAIN interception.
 - **6 hybrid-extension-native** capabilities combine a native writer with
   bounded extension-owned coordination. Five source/timeline operations still
@@ -259,9 +259,10 @@ before compilation and architecture verification can pass.
 | Effective volume and media mute | one public `0–800` value compiles to native base plus hidden Boost; mute remains a separate native boolean | Boost above 100 uses proven safe shared Media WebAudio, otherwise acknowledged Capture; mute has no processor fallback | Capture inferred from value, simultaneous native writers, changing numeric volume to implement mute, page AudioContext destination interception |
 | EQ, Bass, Compressor, Mono, Pan, Delay | no complete browser-native primitive | proven safe shared Media WebAudio; otherwise authorized Capture when full/opaque scope is requested | binding unknown cross-origin media as a probe, generic MAIN DSP, silent-output CORS inference |
 | Tab mute and pin | Chrome API write plus `tabs.get`/event readback | none | content DOM emulation or optimistic Chrome ACK |
-| Speed and pitch preservation | standard DOM `playbackRate` and `preservesPitch` only | none | prototype/setter patching, default-speed reassert loops, echoing requested pitch as actual |
-| Play/pause, seek, whole-media loop | awaited standard media operation on the resolved media/source only | A/B and markers may own metadata, but their jumps still call the same native seek executor | nonexistent site-adapter promises, autoplay/activation bypass, direct timeline writers in helpers, hard-coded frame rate presented as exact |
-| PiP and fullscreen | standard browser API plus native event/getter only; Popup PiP may hand off to one bounded page-click prompt after the native activation error | one extension-owned prompt with no media-writing authority | nonexistent site-adapter promises, synthetic hover/focus, fabricated user activation, CSS theater mode reported as fullscreen, retaining the prompt/listener after click, timeout or runtime disposal |
+| Page volume, media mute and speed | paired exact-element page getter/setter first, then standard DOM property/event fallback | none; page-native is a native writer, not augmentation | hostname/controller tables, outer-player capture of an inner media field, prototype/setter patching, resident page-UI synchronization, reassert loops, or switching writer while owned |
+| Pitch preservation | standard DOM `preservesPitch` only | none | echoing requested pitch as actual or treating preserve-pitch as pitch shifting |
+| Play/pause, seek, whole-media loop | awaited standard media operation on the resolved media/source only | A/B and markers may own metadata, but their jumps still call the same native seek executor | autoplay/activation bypass, direct timeline writers in helpers, hard-coded frame rate presented as exact |
+| PiP and fullscreen | standard browser API plus native event/getter only; Popup PiP may hand off to one bounded page-click prompt after the native activation error | one extension-owned prompt with no media-writing authority | synthetic hover/focus, fabricated user activation, CSS theater mode reported as fullscreen, retaining the prompt/listener after click, timeout or runtime disposal |
 | Rotate, mirror, fill and filters | no implemented native candidate in this release | reversible extension-owned CSS attributes/variables with computed-style readback; Filter captures a baseline because CSS has no additive Filter primitive | inline-style replacement, guessed restoration, claiming dynamic site Filter composition while owned, MAIN style patching |
 | Dim background | no native primitive | four-region closed-shadow overlay while owned, with one coalesced geometry frame | mutating target `position`/`z-index`, permanent observer/rAF, fullscreen audio reapply |
 | A/B and markers | native media time/readback is used only for the final seek | extension state keyed by `mediaId + sourceRevision`, bounded scheduler only while A/B is enabled | document-global state, direct `currentTime` writes, timers/listeners after release |
@@ -297,6 +298,7 @@ moves responsibility must update this list, the executable matrices, tests and
 | --- | --- | --- |
 | `packages/contracts/src/control.contracts.ts::CONTROL_DIRECT_FIELDS` and validators | Which snapshot fields may use direct patch/read/mutation | Keeps A/B operations and Visualizer subscriptions out of generic field execution. |
 | `packages/features/audio-engine/src/CapabilityPlanner.ts::plan` | Per-capability ordered strategy and admission | Requires explicit full coverage for the current shared Media WebAudio graph; neither safe media nor Capture may widen an active-target DSP intent. |
+| `src/content/injector/page-media-bridge.ts::findCapability`; `src/content/logic/page-media-bridge.ts::transact` | Exact-element `page-native` discovery and synchronous cross-world readback | Keeps volume/mute/speed domain-neutral and request-local, ranks explicit media/root association before distance/capability count, and prevents an outer controller or stale player cache from becoming a second writer. |
 | `src/content/logic/audio-runtime-control-delegate.ts::createAudioRuntimeControlDelegate` | Full-output DSP intent compilation and actual field expansion | Defines `audioEnabled` as a coordinator session gate, exposes dependent startup errors, and reports dependent fields idle on disable without deleting saved values. |
 | `src/background/control-coordinator.ts::applyChromeTabObservation` | Browser-side tab mute/pin observation | Absorbs events reflected by the coordinator's own Chrome write and publishes genuine Chrome UI changes as `controlled:false`, so Popup/remote stay synchronized without polling. |
 | `src/content/logic/native-media-executor.ts::releasePageSettings` | DOM/CSS/overlay release | Removes only extension-owned presentation state. |

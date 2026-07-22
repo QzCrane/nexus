@@ -81,32 +81,36 @@ export function bindCardEvents(params: EventsParams): void {
   };
 
 	const submitToggle = async (field: 'mediaMuted'): Promise<void> => {
-		const response = await sendSpectraRequest(
-			'spectra.control.intent.submit',
-			{
-				tabId,
-				source: 'popup',
-				requestedCoverage: 'active-target',
-				target: state.controlSnapshot?.activeMedia ?? null,
-				baseRevision: state.controlRevision,
-				mutations: [{ field, operation: 'toggle' }],
-			},
-			{ tabId },
-		);
-		if (!response.ok) {
-			state.lastError = response.error;
-			throw new Error(response.error.message);
-		}
-		const fieldState = response.data.fields[field];
-		if (fieldState?.phase !== 'applied') {
-			const error = fieldState?.lastError ?? {
-				code: 'control_not_applied',
-				message: 'Mute state was not applied',
-				retryable: true,
-			};
-			state.lastError = error;
-			throw new Error(error.message);
-		}
+		await update.runControl(async () => {
+			const response = await sendSpectraRequest(
+				'spectra.control.intent.submit',
+				{
+					tabId,
+					source: 'popup',
+					requestedCoverage: 'active-target',
+					target: state.controlSnapshot?.activeMedia ?? null,
+					baseRevision: state.controlRevision,
+					mutations: [{ field, operation: 'toggle' }],
+				},
+				{ tabId },
+			);
+			if (!response.ok) {
+				state.lastError = response.error;
+				throw new Error(response.error.message);
+			}
+			state.controlRevision = Math.max(state.controlRevision, response.data.revision);
+			state.controlGeneration = Math.max(state.controlGeneration, response.data.generation);
+			const fieldState = response.data.fields[field];
+			if (fieldState?.phase !== 'applied') {
+				const error = fieldState?.lastError ?? {
+					code: 'control_not_applied',
+					message: 'Mute state was not applied',
+					retryable: true,
+				};
+				state.lastError = error;
+				throw new Error(error.message);
+			}
+		});
 	};
 
   const setDragging = (field: CardInternalState['draggingField']) => {
@@ -310,5 +314,5 @@ export function bindCardEvents(params: EventsParams): void {
 	});
   };
 
-  bindMediaControls(ui, tabId, state, (changes) => update(changes));
+  bindMediaControls(ui, tabId, state, update);
 }

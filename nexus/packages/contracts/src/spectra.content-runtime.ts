@@ -71,7 +71,7 @@ const CONTROL_FIELDS = new Set<ControlField>([
 ]);
 const DIRECT_FIELDS = new Set<ControlField>([...CONTROL_FIELDS].filter((field) => field !== 'visualizer'));
 const STRATEGIES = new Set<ControlStrategy>([
-	'observe', 'dom-native', 'chrome-native', 'extension-state',
+	'observe', 'page-native', 'dom-native', 'chrome-native', 'extension-state',
 	'extension-css', 'extension-overlay', 'media-webaudio', 'capture', 'unsupported',
 ]);
 const COVERAGES = new Set(['full', 'active-target', 'partial', 'opaque']);

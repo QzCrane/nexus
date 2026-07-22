@@ -3,7 +3,7 @@ type: explanation
 status: stable
 audience: developer
 owner: spectra-runtime-architecture
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-22
 ---
 
 # SPECTRA runtime architecture
@@ -16,7 +16,7 @@ SPECTRA is a Chrome Manifest V3 extension with explicit ownership across runtime
 | --- | --- | --- |
 | Popup / Options | user intent, immediate local rendering, accessible interaction | actual audio mode, badge state, direct storage writes, or executor choice |
 | Content, isolated world | document identity, media registry, DOM/CSS writers, admitted Media WebAudio graph | Capture-active claims before host ACK |
-| MAIN one-shot adapter | one allowlisted official page API call after a typed DOM failure | standing runtime, listener, patch, settings, or cross-tab state |
+| MAIN versioned bridges | fullscreen audio handoff and synchronous exact-element page-media getter/setter readback | generic dispatch, domain tables, periodic player synchronization, settings, or cross-tab state |
 | Background service worker | routing, settings repository, snapshots, badge projection, runtime/offscreen leases | WebAudio nodes or optimistic UI state |
 | Unified offscreen host | actual Capture processors and authenticated remote sessions | direct document creation/closure or inferred leases |
 
@@ -45,13 +45,27 @@ Capture becomes active only after the unified offscreen host creates a current-g
 - the host closes only after all leases are released and the one-shot grace alarm expires;
 - HELLO reconstructs processors, remote sessions, and leases after service-worker restart.
 
-## Site adapters
+## MAIN bridges and page-native media semantics
 
-There is no generic MAIN runtime. A known site adapter is one document-bound official API invocation selected only after the standard native path fails with an admitted failure. The default page retains native constructor and descriptor identity.
+There is no generic MAIN runtime and no domain-specific adapter table. Two
+manifest-registered, version-guarded bridges own the complete cross-world
+surface: fullscreen V1 temporarily yields an active audio pipeline around the
+page's real `requestFullscreen()` call, while page-media V2 synchronously reads
+or writes `volumeBase`, `mediaMuted`, or `speed` for the exact event-target media
+element.
+
+Page-media discovery runs only for an explicit read or write. It walks a bounded
+composed-ancestor chain, prefers an explicit media/root association and then the
+nearest host, requires a paired getter/setter for the requested field, and uses
+the same getter as the write ACK. A mismatch restores the same writer's
+baseline. The bridge retains no controller, has no hostname selector, player
+observer, timer, polling loop, or background UI synchronization. If no exact
+page controller exists, ordinary HTML5 media uses the standard `dom-native`
+getter/event path.
 
 Media WebAudio remains isolated-world ownership. A media element receives at most one page-lifetime `MediaElementSourceNode`. Leaving active processing returns an irreversibly bound source to the minimal unity route; it does not close and recreate the binding. Page volume and media mute never enter the processor contract.
 
-Strategy and adapter rules are owned by [control/02-strategy-and-routes.md](../control/02-strategy-and-routes.md).
+Strategy and bridge rules are owned by [control/02-strategy-and-routes.md](../control/02-strategy-and-routes.md).
 
 ## Settings and route registry
 
@@ -67,7 +81,14 @@ The passive bootstrap may perform a bounded top-level getter before the heavy ru
 
 ## Runtime loading and shortcuts
 
-The manifest loads a minimal isolated bootstrap. Heavy Content runtime ownership is acquired through identity-bound consumer tokens. The final consumer releases listeners and owned resources; a status read acquires none.
+The manifest loads a minimal isolated bootstrap alongside the two closed,
+versioned MAIN bridges. Heavy Content runtime ownership is acquired through
+identity-bound consumer tokens. The final consumer releases listeners and owned
+resources; a status read acquires none. If a runtime is reconstructed from an
+acknowledged Capture session, initialization hydrates the existing
+Background/offscreen processor ownership without replaying audio policy. Only a
+later explicit control, configuration, navigation, or media lifecycle intent may
+transition that processor, so Popup/remote observation cannot stop Capture.
 
 Cold-document hotkeys use the same READY ensure path as other runtime consumers. READY is invalidated by navigation, update, context invalidation, health failure, and disposal. Exact readiness and feedback rules are in [control/02-strategy-and-routes.md §5](../control/02-strategy-and-routes.md#5-runtime-shortcut-and-feedback-ownership).
 
@@ -83,7 +104,7 @@ Every message listener owns an exact request-type set. Prefix similarity is not 
 
 ## Boundary projections
 
-Favicon and QR rendering are UI/security boundaries, not media-runtime capabilities. PiP, fullscreen, and playback-rate bridge semantics belong to [control/02-strategy-and-routes.md §6](../control/02-strategy-and-routes.md#6-playback-rate-bridge-pip-and-fullscreen). Favicon, QR, and origin payload validation belongs to [runtime protocols](../reference/protocols.md#boundary-payloads) and [remote security](../security/remote-control.md).
+Favicon and QR rendering are UI/security boundaries, not media-runtime capabilities. Exact-element page media, PiP, and fullscreen bridge semantics belong to [control/02-strategy-and-routes.md §6](../control/02-strategy-and-routes.md#6-exact-element-page-media-pip-and-fullscreen). Favicon, QR, and origin payload validation belongs to [runtime protocols](../reference/protocols.md#boundary-payloads) and [remote security](../security/remote-control.md).
 
 ## Current implementation ownership
 
@@ -94,7 +115,7 @@ Favicon and QR rendering are UI/security boundaries, not media-runtime capabilit
 | Processor lifecycle | offscreen coordinator and audio delegate | actual host ACK drives status |
 | Shortcut readiness | runtime loader and shortcuts | first cold-document intent waits for READY |
 | Toast/OSD | Content feedback modules | one feedback owner; no bootstrap/snapshot toast |
-| Site playback UI | one-shot adapter manager | official getter/event readback, no standing bridge |
-| PiP/fullscreen | trusted activation bridge and native executor | actual native lifecycle and baseline preservation |
+| Page media semantics | page-media bridge and native executor | exact-element getter/setter readback, DOM fallback, no domain table or polling |
+| PiP/fullscreen | trusted activation path, fullscreen bridge and native executor | actual native lifecycle and audio-baseline preservation |
 | Visualizer | subscriber registry and Popup scheduler | existing active processor only, bounded lease |
 | Favicon/QR | Popup and remote renderers | validated payload, no undeclared capability |

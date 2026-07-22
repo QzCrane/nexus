@@ -106,6 +106,23 @@ describe('Popup latest-value config transport', () => {
 		expect(state.config.volumeBase).toBe(40);
 	});
 
+	test('serializes a discrete media command behind the pending slider ACK', async () => {
+		const harness = installHarness();
+		const state = createState();
+		const update = createUpdateFn(state, 14, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
+
+		update({ volume: 40 });
+		let commandRevision: number | null = null;
+		const command = update.runControl(async () => {
+			commandRevision = state.controlRevision;
+		});
+		await waitFor(() => harness.requests.length === 1);
+		expect(commandRevision).toBeNull();
+		harness.resolveRequest(0, runtimeResponse(40, 3));
+		await command;
+		expect(commandRevision).toBe(3);
+	});
+
 	test('maps an above-100 single-slider value to Boost without rewriting native volume or mute', async () => {
 		const harness = installHarness();
 		const state = createState();

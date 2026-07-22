@@ -71,6 +71,8 @@ export type {
 	ControlValues,
 	ControlField,
 	ControlDirectField,
+	ControlNativeObservationStrategy,
+	ControlNativeObservationStrategies,
 	ControlOperation,
 	ControlMarker,
 	ControlScreenshotResult,

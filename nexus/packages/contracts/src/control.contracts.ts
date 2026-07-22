@@ -2,6 +2,7 @@
 
 export const CONTROL_STRATEGIES = [
 	'observe',
+	'page-native',
 	'dom-native',
 	'chrome-native',
 	'extension-state',
@@ -22,6 +23,7 @@ export type ControlInterceptionKind =
 export type ControlAdmissionEvidence =
 	| 'none'
 	| 'existing-runtime-state'
+	| 'page-controller-readback'
 	| 'standard-api-readback'
 	| 'chrome-api-readback'
 	| 'extension-owner-readback'
@@ -31,6 +33,7 @@ export type ControlAdmissionEvidence =
 	| 'authorized-capture-readback';
 export type ControlWriterOwner =
 	| 'none'
+	| 'page-media-controller'
 	| 'standard-dom-api'
 	| 'chrome-api'
 	| 'extension-state'
@@ -39,6 +42,7 @@ export type ControlWriterOwner =
 	| 'media-processor'
 	| 'capture-processor';
 export type ControlAudioRuntimeCost = 'none' | 'existing-processor-only' | 'lazy-audio-context' | 'lazy-offscreen-capture';
+export type ControlMainWorldPolicy = 'forbidden' | 'exact-element-page-bridge';
 
 export interface ControlStrategyRule {
 	class: ControlStrategyClass;
@@ -48,6 +52,7 @@ export interface ControlStrategyRule {
 	requiresExplicitIntent: boolean;
 	requiresActualReadback: boolean;
 	requiresDisposer: boolean;
+	mainWorld: ControlMainWorldPolicy;
 	audioRuntimeCost: ControlAudioRuntimeCost;
 	canBypassUserActivation: false;
 	canBypassCorsOrDrm: false;
@@ -60,55 +65,61 @@ export const CONTROL_STRATEGY_RULES = {
 	observe: {
 		class: 'observe', writerOwner: 'none', requiresExplicitIntent: false,
 		interception: 'none', admissionEvidence: 'existing-runtime-state',
-		requiresActualReadback: true, requiresDisposer: true,
+		requiresActualReadback: true, requiresDisposer: true, mainWorld: 'forbidden',
 		audioRuntimeCost: 'existing-processor-only', canBypassUserActivation: false, canBypassCorsOrDrm: false,
+	},
+	'page-native': {
+		class: 'native', writerOwner: 'page-media-controller', requiresExplicitIntent: true,
+		interception: 'none', admissionEvidence: 'page-controller-readback',
+		requiresActualReadback: true, requiresDisposer: false, mainWorld: 'exact-element-page-bridge',
+		audioRuntimeCost: 'none', canBypassUserActivation: false, canBypassCorsOrDrm: false,
 	},
 	'dom-native': {
 		class: 'native', writerOwner: 'standard-dom-api', requiresExplicitIntent: true,
 		interception: 'none', admissionEvidence: 'standard-api-readback',
-		requiresActualReadback: true, requiresDisposer: false,
+		requiresActualReadback: true, requiresDisposer: false, mainWorld: 'forbidden',
 		audioRuntimeCost: 'none', canBypassUserActivation: false, canBypassCorsOrDrm: false,
 	},
 	'chrome-native': {
 		class: 'native', writerOwner: 'chrome-api', requiresExplicitIntent: true,
 		interception: 'none', admissionEvidence: 'chrome-api-readback',
-		requiresActualReadback: true, requiresDisposer: false,
+		requiresActualReadback: true, requiresDisposer: false, mainWorld: 'forbidden',
 		audioRuntimeCost: 'none', canBypassUserActivation: false, canBypassCorsOrDrm: false,
 	},
 	'extension-state': {
 		class: 'augmentation', writerOwner: 'extension-state', requiresExplicitIntent: true,
 		interception: 'reversible-extension-layer', admissionEvidence: 'extension-owner-readback',
-		requiresActualReadback: true, requiresDisposer: true,
+		requiresActualReadback: true, requiresDisposer: true, mainWorld: 'forbidden',
 		audioRuntimeCost: 'none', canBypassUserActivation: false, canBypassCorsOrDrm: false,
 	},
 	'extension-css': {
 		class: 'augmentation', writerOwner: 'extension-style', requiresExplicitIntent: true,
 		interception: 'reversible-extension-layer', admissionEvidence: 'computed-style-readback',
-		requiresActualReadback: true, requiresDisposer: true,
+		requiresActualReadback: true, requiresDisposer: true, mainWorld: 'forbidden',
 		audioRuntimeCost: 'none', canBypassUserActivation: false, canBypassCorsOrDrm: false,
 	},
 	'extension-overlay': {
 		class: 'augmentation', writerOwner: 'extension-overlay', requiresExplicitIntent: true,
 		interception: 'reversible-extension-layer', admissionEvidence: 'overlay-geometry-readback',
-		requiresActualReadback: true, requiresDisposer: true,
+		requiresActualReadback: true, requiresDisposer: true, mainWorld: 'forbidden',
 		audioRuntimeCost: 'none', canBypassUserActivation: false, canBypassCorsOrDrm: false,
 	},
 	'media-webaudio': {
 		class: 'augmentation', writerOwner: 'media-processor', requiresExplicitIntent: true,
 		interception: 'irreversible-media-source-binding', admissionEvidence: 'proven-media-source-eligibility',
-		requiresActualReadback: true, requiresDisposer: true,
+		requiresActualReadback: true, requiresDisposer: true, mainWorld: 'forbidden',
 		audioRuntimeCost: 'lazy-audio-context', canBypassUserActivation: false, canBypassCorsOrDrm: false,
 	},
 	capture: {
 		class: 'augmentation', writerOwner: 'capture-processor', requiresExplicitIntent: true,
 		interception: 'authorized-tab-stream', admissionEvidence: 'authorized-capture-readback',
-		requiresActualReadback: true, requiresDisposer: true,
+		requiresActualReadback: true, requiresDisposer: true, mainWorld: 'forbidden',
 		audioRuntimeCost: 'lazy-offscreen-capture', canBypassUserActivation: false, canBypassCorsOrDrm: false,
 	},
 	unsupported: {
 		class: 'unsupported', writerOwner: 'none', requiresExplicitIntent: false,
 		interception: 'none', admissionEvidence: 'none',
-		requiresActualReadback: false, requiresDisposer: false,
+		requiresActualReadback: false, requiresDisposer: false, mainWorld: 'forbidden',
 		audioRuntimeCost: 'none', canBypassUserActivation: false, canBypassCorsOrDrm: false,
 	},
 } as const satisfies Record<ControlStrategy, ControlStrategyRule>;
@@ -226,6 +237,10 @@ export type ControlField = keyof ControlValues;
 // "unsupported" ACK for an algorithm that has a different authoritative
 // entry point.
 export type ControlDirectField = Exclude<ControlField, 'abLoop' | 'visualizer'>;
+export type ControlNativeObservationStrategy = Extract<ControlStrategy, 'page-native' | 'dom-native'>;
+export type ControlNativeObservationStrategies = Partial<
+	Record<ControlDirectField, ControlNativeObservationStrategy>
+>;
 export type ControlPatch = Partial<Pick<ControlValues, ControlDirectField>>;
 
 // Read-only native facts required to compile related augmentation fields. They
@@ -354,6 +369,7 @@ export type ControlAlgorithmKind =
 
 export type ControlAcknowledgement =
 	| 'coordinator-snapshot'
+	| 'page-controller-getter'
 	| 'dom-event-getter'
 	| 'dom-stable-getter'
 	| 'chrome-event-getter'
@@ -408,8 +424,8 @@ export const CONTROL_ALGORITHM_POLICIES = {
 	},
 	volumeBase: {
 		scope: 'requested-audio-scope', kind: 'field',
-		orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'],
+		orderedStrategies: ['page-native', 'dom-native'],
+		acknowledgements: ['page-controller-getter', 'dom-event-getter'],
 		recurringWork: 'none',
 	},
 	boost: {
@@ -419,8 +435,8 @@ export const CONTROL_ALGORITHM_POLICIES = {
 	},
 	mediaMuted: {
 		scope: 'requested-audio-scope', kind: 'field',
-		orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'],
+		orderedStrategies: ['page-native', 'dom-native'],
+		acknowledgements: ['page-controller-getter', 'dom-event-getter'],
 		recurringWork: 'none',
 	},
 	tabMuted: {
@@ -428,8 +444,8 @@ export const CONTROL_ALGORITHM_POLICIES = {
 		acknowledgements: ['chrome-event-getter'], recurringWork: 'none',
 	},
 	speed: {
-		scope: 'active-media', kind: 'field', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'],
+		scope: 'active-media', kind: 'field', orderedStrategies: ['page-native', 'dom-native'],
+		acknowledgements: ['page-controller-getter', 'dom-event-getter'],
 		recurringWork: 'none',
 	},
 	preservePitch: {
@@ -527,8 +543,8 @@ export const CONTROL_ALGORITHM_POLICIES = {
 	},
 	'effective-volume': {
 		scope: 'requested-audio-scope', kind: 'compound',
-		orderedStrategies: ['dom-native', 'extension-state', 'media-webaudio', 'capture'],
-		acknowledgements: ['dom-event-getter', 'processor-readback'],
+		orderedStrategies: ['page-native', 'dom-native', 'extension-state', 'media-webaudio', 'capture'],
+		acknowledgements: ['page-controller-getter', 'dom-event-getter', 'processor-readback'],
 		recurringWork: 'none',
 	},
 	'playback-toggle': {
@@ -687,8 +703,8 @@ export interface ControlError {
 export interface ControlFieldState<T> {
 	desired: T | null;
 	actual: T | null;
-	// Captured before a failed standard writer attempt and consumed only when an
-	// allowlisted official adapter assumes ownership of the same field.
+	// Captured before a restorable writer attempt so a failed transaction can
+	// compensate through the same page-controller or standard-DOM writer.
 	restoreBaseline?: T;
 	revision: number;
 	phase: ControlFieldPhase;
@@ -726,6 +742,10 @@ export interface ControlSubmitRequest {
 	baseRevision?: number;
 	patch?: ControlPatch;
 	mutations?: readonly ControlMutation[];
+	// Required only for source=page. Every observed patch field carries the
+	// exact native getter/writer boundary that produced it; other sources must
+	// not claim observation provenance.
+	observedStrategies?: ControlNativeObservationStrategies;
 }
 
 export interface ControlMarker {
@@ -882,6 +902,10 @@ export interface ControlReadRequest {
 export interface ControlReadResult {
 	target: MediaTarget | null;
 	patch: ControlPatch;
+	// Native semantic fields may be read through a complete page controller or
+	// the standard DOM getter. Keep that provenance with the value instead of
+	// reconstructing it in Background.
+	observedStrategies: ControlNativeObservationStrategies;
 }
 
 const strategySet: ReadonlySet<string> = new Set(CONTROL_STRATEGIES);
@@ -893,6 +917,10 @@ const controlDirectFields: ReadonlySet<string> = new Set(CONTROL_DIRECT_FIELDS);
 const numericMutationFields: ReadonlySet<ControlField> = new Set([
 	'volumeBase', 'boost', 'speed', 'currentTime', 'rotation', 'dimOpacity', 'pan', 'delay',
 ]);
+const nativeObservationStrategies: ReadonlySet<string> = new Set(['page-native', 'dom-native']);
+const pageNativeObservationFields: readonly ControlDirectField[] = [
+	'volumeBase', 'mediaMuted', 'speed',
+];
 
 const intentKeys = new Set<keyof ControlIntent>([
 	'intentId',
@@ -914,6 +942,7 @@ const submitKeys = new Set<keyof ControlSubmitRequest>([
 	'baseRevision',
 	'patch',
 	'mutations',
+	'observedStrategies',
 ]);
 const mutationKeys = new Set<keyof ControlMutation>(['field', 'operation', 'value']);
 const operationRequestKeys = new Set([
@@ -937,7 +966,7 @@ const ackKeys = new Set<keyof ControlApplyAck>([
 	'fields',
 ]);
 const readRequestKeys = new Set<keyof ControlReadRequest>(['fields', 'target']);
-const readResultKeys = new Set<keyof ControlReadResult>(['target', 'patch']);
+const readResultKeys = new Set<keyof ControlReadResult>(['target', 'patch', 'observedStrategies']);
 const snapshotKeys = new Set<keyof ControlSnapshot>([
 	'tabId',
 	'documentId',
@@ -1248,6 +1277,29 @@ export function isControlPatch(value: unknown): value is ControlPatch {
 	return Object.entries(value).every(([field, item]) => isControlValue(field as ControlField, item));
 }
 
+function isControlNativeObservationStrategies(
+	value: unknown,
+	patch: ControlPatch,
+	requireExactPatchKeys: boolean,
+): value is ControlNativeObservationStrategies {
+	if (!isRecord(value) || !hasOnlyKeys(value, controlDirectFields)) return false;
+	const patchKeys = Object.keys(patch);
+	const strategyKeys = Object.keys(value);
+	if (requireExactPatchKeys && (
+		strategyKeys.length !== patchKeys.length
+		|| patchKeys.some((field) => !Object.prototype.hasOwnProperty.call(value, field))
+	)) return false;
+	return Object.entries(value).every(([rawField, rawStrategy]) => {
+		if (!Object.prototype.hasOwnProperty.call(patch, rawField)
+			|| typeof rawStrategy !== 'string'
+			|| !nativeObservationStrategies.has(rawStrategy)) return false;
+		return isControlStrategyAdmittedForCapability(
+			rawField as ControlDirectField,
+			rawStrategy as ControlNativeObservationStrategy,
+		);
+	});
+}
+
 function isControlActualContext(value: unknown): value is ControlActualContext {
 	return isRecord(value)
 		&& hasOnlyKeys(value, actualContextKeys)
@@ -1312,8 +1364,18 @@ export function isControlIntent(value: unknown): value is ControlIntent {
 export function isControlSubmitRequest(value: unknown): value is ControlSubmitRequest {
 	const hasPatch = isRecord(value) && value.patch !== undefined;
 	const hasMutations = isRecord(value) && value.mutations !== undefined;
-	return isRecord(value)
-		&& hasOnlyKeys(value, submitKeys)
+	if (!isRecord(value)) return false;
+	if (!hasOnlyKeys(value, submitKeys)) return false;
+	const sourceIsPage = value.source === 'page';
+	const observationShapeIsValid = sourceIsPage
+		? value.requestedCoverage === 'active-target'
+			&& value.target !== null
+			&& hasPatch
+			&& !hasMutations
+			&& isControlPatch(value.patch)
+			&& isControlNativeObservationStrategies(value.observedStrategies, value.patch, true)
+		: value.observedStrategies === undefined;
+	return observationShapeIsValid
 		&& (value.tabId === undefined || (Number.isInteger(value.tabId) && Number(value.tabId) > 0))
 		&& typeof value.source === 'string'
 		&& value.source !== 'system'
@@ -1448,8 +1510,17 @@ export function isControlReadRequest(value: unknown): value is ControlReadReques
 }
 
 export function isControlReadResult(value: unknown): value is ControlReadResult {
-	return isRecord(value)
-		&& hasOnlyKeys(value, readResultKeys)
-		&& (value.target === null || isMediaTarget(value.target))
-		&& isControlPatch(value.patch);
+	if (!isRecord(value)) return false;
+	const patch = value.patch;
+	const observedStrategies = value.observedStrategies;
+	if (!hasOnlyKeys(value, readResultKeys)
+		|| (value.target !== null && !isMediaTarget(value.target))
+		|| !isControlPatch(patch)
+		|| !isControlNativeObservationStrategies(observedStrategies, patch, false)) {
+		return false;
+	}
+	return pageNativeObservationFields.every((field) => (
+		patch[field] === undefined
+		|| Object.prototype.hasOwnProperty.call(observedStrategies, field)
+	));
 }

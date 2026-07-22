@@ -5,7 +5,6 @@ import { resolveAudioVolume, type AudioConfig } from '@nexus/contracts';
 export interface ColorContext {
 	config: AudioConfig;
 	isRestricted: boolean;
-	visualizerEnabled: boolean;
 }
 
 // One canonical answer for whether output processing is required. Visualizer

@@ -8,7 +8,7 @@ import {
 	type ScreenshotCapturePayload,
 	type ScreenshotResult,
 } from '@nexus/contracts';
-import { sendSpectraTabRequest } from '../../shared/spectra-client';
+import { sendSpectraTabRequest } from '../spectra-tab-client';
 
 function toPngDataUrl(blob: Blob): Promise<string> {
 	return blob.arrayBuffer().then((buffer) => {

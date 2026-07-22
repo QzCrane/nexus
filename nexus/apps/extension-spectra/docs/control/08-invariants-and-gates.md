@@ -11,10 +11,10 @@ audience: developer
 
 ## §20 Static invariants
 
-- `SCTRL-001`: untouched pages preserve native constructor and descriptor identity and have zero processing work.
+- `SCTRL-001`: untouched pages preserve native audio/media constructor and descriptor identity outside the explicitly allowlisted fullscreen method wrapper, and have zero processing or periodic work.
 - `SCTRL-002`: planning is per field; no page-wide mode owns unrelated controls.
 - `SCTRL-003`: one writer exists for each `{document, media, field}`.
-- `SCTRL-004`: generic MAIN monkey-patching is forbidden; the two V1-guarded MAIN bridges (`content-fullscreen-bridge.js`, `content-playback-rate-bridge.js`) are the only allowlisted manifest entries at `document_start`, and `main-runtime-manager.ts` remains the sole owner of the `world: 'MAIN'` re-injection literal for warm-update and on-demand paths.
+- `SCTRL-004`: generic MAIN monkey-patching is forbidden; fullscreen V1 (`content-fullscreen-bridge.js`) and exact-element page-media V2 (`content-page-media-bridge.js`) are the only allowlisted manifest entries at `document_start`, and `main-runtime-manager.ts` remains the sole owner of the `world: 'MAIN'` re-injection literal for warm-update and on-demand paths.
 - `SCTRL-005`: only readback actual state may be acknowledged.
 - `SCTRL-006`: intent and ACK identity includes document, generation, revision and intent ID.
 - `SCTRL-007`: 100% and 1x are literal controlled values.
@@ -22,7 +22,7 @@ audience: developer
 - `SCTRL-009`: extension CSS removal restores the site's current cascade; dim-target handoff releases only dim ownership and preserves independent effects on the previous video.
 - `SCTRL-010`: transport/video state is bound to media ID and source revision.
 - `SCTRL-011`: Capture is last-resort; processor handoff never double-applies DSP, never ACKs before actual readback and restores the last stable configuration after candidate failure.
-- `SCTRL-012`: status reads do not write settings, badge, page state or activate processing.
+- `SCTRL-012`: status and observation reads do not write settings, badge, page state or activate processing; runtime hydration of an acknowledged Capture reconstructs ownership without replaying policy or changing its processor.
 - `SCTRL-013`: neutral DSP and unsubscribed analysis create no nodes.
 - `SCTRL-014`: page, Popup, remote, hotkeys and badge project one snapshot.
 - `SCTRL-015`: MAIN cannot bypass user activation, CORS, DRM or inaccessible media.
@@ -37,7 +37,7 @@ audience: developer
 - `SCTRL-024`: document runtime ownership counts unique consumer tokens; only the last token may dispose it.
 - `SCTRL-025`: `activeMedia` and `activeVideo` are independent actual identities; every video-only surface routes to the latter.
 - `SCTRL-026`: a neutral CSS value on a never-owned target is a DOM-free no-op and cannot acquire or delete owner state.
-- `SCTRL-027`: a native ACK is one-shot and requires a bounded quiet window plus stable getter.
+- `SCTRL-027`: a native ACK is one-shot: DOM writers require their native event plus a bounded quiet window/stable getter, while page-native requires the exact controller getter to remain stable; requested setter return values are never ACKs.
 - `SCTRL-028`: default pages have zero audio work; after explicit irreversible Media WebAudio binding only the minimal unity route may survive until navigation.
 - `SCTRL-029`: an ACK target is projected only through its contract scope; video-only and tab/document operations cannot overwrite or clear the unrelated active identity.
 - `SCTRL-030`: runtime status/read is a pure projection: it installs no listener, performs no document scan, changes no selection/correlation/owner state and emits no synthetic event; only the bounded bootstrap getter may scan before runtime acquisition.
@@ -58,6 +58,12 @@ audience: developer
 
 ## §21 Migration and release gate
 
-The migration order is contracts/coordinator, runtime loaders, unique native writer, site adapters, per-field planner, safe audio graph, media/video executors, UI projection, then removal of old compatibility code. The static checker becomes mandatory before the old path is removed from the release branch.
+The migration order is contracts/coordinator, runtime loaders, unique native writer, exact-element page bridge, per-field planner, safe audio graph, media/video executors, UI projection, then removal of old compatibility code. The static checker becomes mandatory before the old path is removed from the release branch.
 
-Chrome integration must prove constructor/descriptor identity on untouched pages, side-effect-free reads, one writer per field, actual ACK ordering, page-to-Popup/remote synchronization, safe CORS decisions, source uniqueness, user-activation errors, CSS restoration, no hidden visualizer IPC and clean disposal after navigation/update.
+Chrome integration must prove constructor/descriptor identity outside the
+allowlisted fullscreen wrapper, exact-element page-controller selection,
+ordinary DOM fallback, side-effect-free reads, one writer per field, actual ACK
+ordering, page-to-Popup/remote/hotkey synchronization, automatic return from
+Boost to native control at or below 100, safe CORS decisions, source uniqueness,
+user-activation errors, CSS restoration, no hidden visualizer IPC and clean
+disposal after navigation/update.

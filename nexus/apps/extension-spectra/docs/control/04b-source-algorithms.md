@@ -51,8 +51,8 @@ files move.
 
 | Current source/symbol | Current algorithm | Decision and target algorithm |
 | --- | --- | --- |
-| `content-bootstrap.js` plus `injector/main-runtime-manager.ts` (legacy) | Content bootstrap loaded a generic MAIN bundle; site adapters shared one main bundle. | Manifest content entry is `content-bootstrap.js` only. `main-runtime-manager.ts` injects only versioned bridges (fullscreen, playback-rate) on demand; no generic MAIN bundle, adapter dispatch, bridge, wrapper, listener or descriptor patch remains. |
-| `site-adapter.ts` (legacy, removed) | Each adapter registered listeners and wrapper functions. | Removed entirely; `main-runtime-manager` now injects only versioned fullscreen and playback-rate bridges and no longer dispatches adapter calls. |
+| `content-bootstrap.js` plus `injector/main-runtime-manager.ts` (legacy) | Content bootstrap loaded a generic MAIN bundle shared by hostname dispatchers. | The manifest has one minimal ISOLATED bootstrap plus only fullscreen V1 and exact-element page-media V2 in MAIN. `main-runtime-manager.ts` may re-inject those guarded artifacts but owns no generic dispatcher. |
+| legacy hostname dispatch module (removed) | Each domain implementation registered listeners and wrapper functions. | Removed entirely. Page-native volume/mute/speed uses bounded request-time capability discovery on the exact media element; no hostname table, retained controller, or player-UI listener remains. |
 | retired `document-observers/site-sync.ts` | Long-lived MutationObserver that wrote from page to extension. | Event-driven: per-frame `media-registry` events plus `webNavigation`; no permanent page observer; same-document navigation only advances `generation`. |
 | `media-registry.ts::register` | Heuristic based on first `play` event; could latch on a wrong element. | Identity-bound Runtime ensure before any persistent action; selection criteria require user interaction or genuine page control; reused elements emit logical remove/register around `sourceRevision`. |
 | `remote-commands.ts::executeCommand` | Sent `chrome.runtime.sendMessage` to itself with `action:'control.request'`, accepting its own response. | Background now calls the serialized coordinator directly: `submit`, `submitOperation`, `getSnapshot`. Remote no longer self-RPCs. |
@@ -71,7 +71,8 @@ files move.
 | `src/injector/webaudio-hijack.ts` (retired) | Hijack `AudioContext`, redispatch to `destination` | controlled-augmentation | none | forbidden | none |
 | `packages/features/audio-engine/src/webaudio/node-factory.ts` (retired) | All-features graph per element | controlled-augmentation | proven-safe-source-or-explicit-full-output | forbidden | page-lifetime-after-media-binding |
 | `src/injector/youtube-adapter.ts` (retired, removed) | Allowlisted one-shot MAIN for speed/volume | hybrid-state-native | none (removed) | forbidden (removed) | none |
-| `src/background/main-runtime-manager.ts` | Versioned bridge injection (fullscreen, playback-rate) | intent-routing | extension-owned | forbidden | none |
+| `src/background/main-runtime-manager.ts` | Versioned bridge injection (fullscreen V1, exact-element page-media V2) | intent-routing | extension-owned | forbidden | none |
+| `src/content/injector/page-media-bridge.ts` | Synchronous exact-element page controller discovery, write and getter ACK | native-control | none | forbidden | none |
 | `src/content/audio/volume-observer.ts` (retired) | Reassert volume on `volumechange` | observation-only | not-applicable | forbidden | while-subscribed |
 | `src/content/core/lifecycle/media-observer.ts` | Lifecycle: identity, source, generation | lifecycle-orchestration | extension-owned | forbidden | page-lifetime-after-media-binding |
 | `src/content/logic/media-control.ts` (retired) | DOM audio property writes (volume, muted, rate, currentTime, loop) | native-control | none | forbidden | none |
@@ -99,7 +100,7 @@ The catalog boundary is every production unit reachable from a control surface
 strategy, calculates a target/value, mutates native or extension state, observes
 actual state, synchronizes a consumer, owns a lease/disposer, or gates a
 privileged boundary. Small value-formatting helpers outside those paths are not
-separate control algorithms. Under that definition the inventory contains 49
+separate control algorithms. Under that definition the inventory contains 50
 source algorithms, including the cross-cutting state, identity, observation,
 handoff and bundle-admission algorithms that the earlier 34-row implementation
 catalog did not name separately.
@@ -163,6 +164,7 @@ or page-AudioContext interception.
 | `ALG-046` | Lazy video enhancement module admission | lifecycle orchestration | Video CSS/overlay implementation loads only after an explicit non-native enhancement intent. | Native-only/default pages omit the module; neutral reads/writes remain DOM-free. |
 | `ALG-047` | Extension-UI protocol allowlist | pure computation | Popup/remote can send only the 23 exported request types and accept only six events; Options is further restricted to ten settings/registry requests and one settings event. Both successful and failed responses reject non-surface types. | Canonical focused validators own nested semantics and mutation parity tests prevent lightweight wire-shape drift; Options never loads control/audio/remote validators and privileged router code stays out of every UI bundle. |
 | `ALG-048` | Popup atomic Filter latest-value transport | intent routing | Filter value and its ownership bit are one typed intent; the UI merges only the coordinator's actual ACK and never predicts a partial filter state. | One request in flight plus one latest pending value, capped at 20 sends/second; no per-slider IPC stream. |
-| `ALG-049` | Atomic effective-volume transaction | hybrid native/controlled augmentation | One public `0–800` value uses native base first and hidden processor Boost only above 100; only actual Capture active may color it purple. | Same-region writes touch one owner, threshold crossings compensate both, and an identical actual value produces zero Content IPC/revision/storage work. |
+| `ALG-049` | Atomic effective-volume transaction | hybrid native/controlled augmentation | One public `0–800` value uses exact page/DOM native base first and hidden processor Boost only above 100; only actual Capture active may color it purple. | Same-region writes touch one owner, returning to 100 or below releases Boost/processor ownership, threshold crossings compensate both, and an identical actual value produces zero Content IPC/revision/storage work. |
+| `ALG-050` | Exact-element page-media controller bridge | native control | Only `volumeBase`, `mediaMuted`, and `speed` may call a paired page getter/setter discovered from the exact request media; this is a native candidate, not generic MAIN augmentation. | One synchronous request scans at most 12 ancestors and 96 attached properties per host, prefers explicit media/root association then distance, uses getter readback/rollback, and retains no controller, domain table, observer, timer, or polling loop. |
 
 The catalog is the contract surface used by `check-spectra-control.js` to confirm that every algorithm row is present in the matrices above, every source anchor still resolves, and the cross-reference between `CONTROL_ALGORITHM_POLICIES`, the mirror and this section does not drift.

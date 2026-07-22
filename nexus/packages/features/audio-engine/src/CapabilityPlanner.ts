@@ -22,6 +22,7 @@ export interface CapabilitySupport {
 export interface CapabilityPlannerContext {
 	explicitIntent: boolean;
 	requiredCoverage: 'active-target' | 'full';
+	pageNative?: Partial<Record<ControlCapability, CapabilitySupport>>;
 	domNative?: Partial<Record<ControlCapability, CapabilitySupport>>;
 	chromeNative?: Partial<Record<ControlCapability, CapabilitySupport>>;
 	extensionState?: Partial<Record<ControlCapability, CapabilitySupport>>;
@@ -47,6 +48,7 @@ export interface CapabilityPlan {
 	coverage: ControlCoverage;
 	reason:
 		| 'observe-only'
+		| 'page-controller-complete'
 		| 'dom-api-complete'
 		| 'chrome-api-complete'
 		| 'extension-state-complete'
@@ -76,6 +78,7 @@ function declaredSupport(
 	context: CapabilityPlannerContext,
 ): CapabilitySupport | undefined {
 	switch (strategy) {
+		case 'page-native': return context.pageNative?.[field];
 		case 'dom-native': return context.domNative?.[field];
 		case 'chrome-native': return context.chromeNative?.[field];
 		case 'extension-state': return context.extensionState?.[field];
@@ -103,6 +106,7 @@ function admitsCapture(admission: ControlAugmentationAdmission): boolean {
 function supportedPlan(
 	field: ControlCapability,
 	strategy: Extract<ControlStrategy,
+		| 'page-native'
 		| 'dom-native'
 		| 'chrome-native'
 		| 'extension-state'
@@ -114,15 +118,17 @@ function supportedPlan(
 		field,
 		strategy,
 		coverage: support.coverage,
-		reason: strategy === 'dom-native'
-				? 'dom-api-complete'
-				: strategy === 'chrome-native'
-					? 'chrome-api-complete'
-					: strategy === 'extension-state'
-						? 'extension-state-complete'
-						: strategy === 'extension-css'
-							? 'extension-css-complete'
-							: 'extension-overlay-complete',
+		reason: strategy === 'page-native'
+				? 'page-controller-complete'
+				: strategy === 'dom-native'
+					? 'dom-api-complete'
+					: strategy === 'chrome-native'
+						? 'chrome-api-complete'
+						: strategy === 'extension-state'
+							? 'extension-state-complete'
+							: strategy === 'extension-css'
+								? 'extension-css-complete'
+								: 'extension-overlay-complete',
 	};
 }
 

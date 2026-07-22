@@ -21,7 +21,6 @@ const BASE_CONTEXT: PolicyContext = {
 	userInteracted: true,
 	enabled: true,
 	volume: 100,
-	visualizerEnabled: false,
 	forceNative: false,
 	isRestricted: false,
 	config: audioConfig(),
@@ -65,12 +64,10 @@ describe('audio policy activation boundary', () => {
 			expect(needsAdvancedProcessing({
 				config,
 				isRestricted: true,
-				visualizerEnabled: false,
 			})).toBe(true);
 			expect(predictCapture({
 				config,
 				isRestricted: true,
-				visualizerEnabled: false,
 			})).toBe(true);
 		}
 
@@ -79,32 +76,34 @@ describe('audio policy activation boundary', () => {
 		expect(needsAdvancedProcessing({
 			config: neutral,
 			isRestricted: true,
-			visualizerEnabled: true,
 		})).toBe(false);
 		expect(predictCapture({
 			config: neutral,
 			isRestricted: true,
-			visualizerEnabled: true,
 		})).toBe(false);
 	});
 
-	test('admits a neutral processor only while a live visualizer lease has media', () => {
+	test('keeps a visualizer lease observational when no processor is otherwise required', () => {
 		const policy = new PolicyEngine();
 		const visualizerContext = {
 			...BASE_CONTEXT,
 			userInteracted: false,
-			visualizerEnabled: true,
 			config: audioConfig(),
 		};
-		expect(policy.calculateMode(visualizerContext)).toBe('NATIVE_WEBAUDIO');
+		expect(policy.calculateMode(visualizerContext)).toBe('DISABLED');
 		expect(policy.calculateMode({
 			...visualizerContext,
 			isRestricted: true,
-		})).toBe('CAPTURE');
+		})).toBe('DISABLED');
 		expect(policy.calculateMode({
 			...visualizerContext,
 			hasMediaElement: false,
 		})).toBe('DISABLED');
+		expect(policy.calculateMode({
+			...visualizerContext,
+			isRestricted: true,
+			config: audioConfig({ volume: 40, volumeBase: 40, boost: 1 }),
+		})).toBe('NATIVE_LITE');
 	});
 
 	test('requires every registered source to be prospectively safe for Media WebAudio', () => {

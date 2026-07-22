@@ -24,7 +24,7 @@ interface RegistryUIElements {
 
 let allEntries: DomainEntry[] = [];
 let filterText = '';
-let currentDict: I18NDict | null = null;
+let currentDict: I18NDict;
 let mutationQueue: Promise<void> = Promise.resolve();
 let storageListenerInstalled = false;
 
@@ -39,8 +39,7 @@ function getUIElements(): RegistryUIElements {
 }
 
 function routeLabel(route: MediaRoute): string {
-	if (route === 'capture') return currentDict?.tabRestricted ?? 'Capture when needed';
-	return currentDict?.tabSafe ?? 'Direct';
+	return route === 'capture' ? currentDict.tabRestricted : currentDict.tabSafe;
 }
 
 // post: every registry entry is normalized to a site:* fingerprint before it
@@ -62,13 +61,13 @@ function renderList(ui: RegistryUIElements): void {
 	if (filtered.length === 0) {
 		const empty = document.createElement('div');
 		empty.className = 'registry-empty';
-		empty.textContent = currentDict?.registryEmptyRestricted ?? 'No cached site routes';
+		empty.textContent = currentDict.registryEmptyRestricted;
 		ui.listContainer.replaceChildren(empty);
 		return;
 	}
 
 	const fragment = document.createDocumentFragment();
-	const deleteLabel = currentDict?.tipDelete || 'Delete';
+	const deleteLabel = currentDict.tipDelete;
 	for (const entry of filtered) {
 		const item = document.createElement('li');
 		item.className = 'registry-item';
@@ -88,8 +87,8 @@ function renderList(ui: RegistryUIElements): void {
 		const source = document.createElement('span');
 		source.className = 'registry-item-source';
 		source.textContent = entry.source === 'auto'
-			? (currentDict?.registrySourceAuto ?? 'AUTO')
-			: (currentDict?.registrySourceUser ?? 'USER');
+			? currentDict.registrySourceAuto
+			: currentDict.registrySourceUser;
 
 		const deleteButton = document.createElement('button');
 		deleteButton.type = 'button';
@@ -140,7 +139,8 @@ function addDomain(domain: string, route: MediaRoute, ui: RegistryUIElements): v
 		.catch(() => undefined);
 }
 
-export function initRegistryUI(entries: DomainEntry[]): void {
+export function initRegistryUI(entries: DomainEntry[], dict: I18NDict): void {
+	currentDict = dict;
 	allEntries = entries;
 	const ui = getUIElements();
 	renderList(ui);

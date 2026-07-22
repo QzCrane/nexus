@@ -1,12 +1,12 @@
 // goal: binds secondary media control UI elements to content script commands for playback and focus management
 
-import type { AudioConfig } from '@nexus/kernel';
 import type { CardUIElements } from '../types';
 import type { ControlMutation, ControlOperationAck, MediaTarget } from '@nexus/contracts';
 import { sendSpectraRequest } from '../../shared/ui-spectra-client';
 import { syncSidePanelSpeed } from '../side-panel/controls';
 import { getHotkeyTarget, setHotkeyTarget } from '../../shared/registry-client';
 import type { CardInternalState } from './types';
+import type { ConfigUpdateFn } from './state';
 import { showPopupToast } from '../toast';
 import { getCurrentDict } from '../views/i18n-apply';
 import {
@@ -164,6 +164,8 @@ async function submitMutation(tabId: number, state: CardInternalState, mutation:
 		{ tabId },
 	);
 	if (!response.ok) throw new ControlUiError(response.error);
+	state.controlRevision = Math.max(state.controlRevision, response.data.revision);
+	state.controlGeneration = Math.max(state.controlGeneration, response.data.generation);
 	const field = response.data.fields[mutation.field];
 	if (field?.phase !== 'applied') {
 		throw new ControlUiError(field?.lastError ?? {
@@ -176,16 +178,15 @@ async function submitMutation(tabId: number, state: CardInternalState, mutation:
 }
 
 // eff: attaches click and input handlers to playback buttons, speed controls, and tab-focus utilities
-// note: speed controls now use unified update flow through onSpeedChange callback
 export function bindMediaControls(
 	ui: CardUIElements,
 	tabId: number,
 	state: CardInternalState,
-	update?: (changes: Partial<AudioConfig>) => void,
+	update: ConfigUpdateFn,
 ): void {
 	if (ui.btnPause) {
 		ui.btnPause.onclick = () => {
-			void sendSpectraRequest(
+			void update.runControl(() => sendSpectraRequest(
 				'spectra.control.operation.submit',
 				{
 					tabId,
@@ -196,9 +197,12 @@ export function bindMediaControls(
 					payload: {},
 				},
 				{ tabId },
-			).then((response) => {
+			)).then((response) => {
 				if (!response.ok) throw new ControlUiError(response.error);
-				const playing = (response.data as ControlOperationAck<'playback-toggle'>).result.playing;
+				const acknowledgement = response.data as ControlOperationAck<'playback-toggle'>;
+				state.controlRevision = Math.max(state.controlRevision, acknowledgement.revision);
+				state.controlGeneration = Math.max(state.controlGeneration, acknowledgement.generation);
+				const playing = acknowledgement.result.playing;
 				if (typeof playing === 'boolean' && ui.btnPause) renderPlaybackButton(ui.btnPause, playing);
 			}).catch((error: unknown) => reportControlFailure(error, state));
 		};
@@ -231,39 +235,42 @@ export function bindMediaControls(
 		};
 	}
 
-	// rule: speed controls use unified update flow via update callback (same as volume)
+	const submitSpeed = (operation: 'set' | 'delta', value: number) => {
+		void update.runControl(() => submitMutation(tabId, state, {
+			field: 'speed', operation, value,
+		}))
+			.then((ack) => {
+				const actual = ack.fields.speed?.actual;
+				if (typeof actual !== 'number') return;
+				if (ui.speedInput) ui.speedInput.value = actual.toFixed(2);
+				syncSidePanelSpeed(actual);
+			})
+			.catch((error: unknown) => reportControlFailure(error, state));
+	};
+
 	ui.speedBtns.forEach(btn => {
 		btn.onclick = () => {
 			const delta = parseFloat(btn.dataset.delta || '0');
-			void submitMutation(tabId, state, { field: 'speed', operation: 'delta', value: delta })
-				.then((ack) => {
-					const actual = ack.fields.speed?.actual;
-					if (typeof actual !== 'number') return;
-					if (ui.speedInput) ui.speedInput.value = actual.toFixed(2);
-					syncSidePanelSpeed(actual);
-				})
-				.catch((error: unknown) => reportControlFailure(error, state));
+			submitSpeed('delta', delta);
 		};
 	});
 
 	if (ui.speedInput) {
-		const handleSpeedChange = (speed: number) => {
+		const submitClampedSpeed = (speed: number) => {
 			const clampedSpeed = Math.max(0.1, Math.min(16, speed));
-			if (ui.speedInput) ui.speedInput.value = clampedSpeed.toFixed(2);
-			syncSidePanelSpeed(clampedSpeed);
-			update?.({ speed: clampedSpeed });
+			submitSpeed('set', clampedSpeed);
 		};
 
 		ui.speedInput.onchange = (e) => {
 			const speed = parseFloat((e.target as HTMLInputElement).value) || 1;
-			handleSpeedChange(speed);
+			submitClampedSpeed(speed);
 		};
 
 		ui.speedInput.onwheel = (e) => {
 			e.preventDefault();
 			const current = parseFloat(ui.speedInput!.value) || 1;
 			const delta = e.deltaY < 0 ? 0.1 : -0.1;
-			handleSpeedChange(current + delta);
+			submitClampedSpeed(current + delta);
 		};
 	}
 

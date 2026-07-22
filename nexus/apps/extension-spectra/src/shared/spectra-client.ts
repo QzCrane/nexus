@@ -56,6 +56,33 @@ export async function sendSpectraRequest<T extends SpectraRequestType>(
 	return validateResponse(type, response);
 }
 
+async function deliverSpectraTabEnvelope<T extends SpectraRequestType>(
+	tabId: number,
+	message: SpectraRequestEnvelope<T>,
+	documentId?: string,
+): Promise<SpectraResponse<T>> {
+	const response: unknown = documentId
+		? await chrome.tabs.sendMessage(tabId, message, { documentId })
+		: await chrome.tabs.sendMessage(tabId, message);
+	return validateResponse(message.type, response);
+}
+
+// Background callers that own Content runtime lifecycle use this single-hop
+// primitive after acquiring a local runtime lease. UI callers use the
+// auto-acquiring client below because their lifecycle owner lives in Background.
+export function sendSpectraTabRequestOnce<T extends SpectraRequestType>(
+	tabId: number,
+	type: T,
+	payload: SpectraRequestPayload<T>,
+	context: Omit<SpectraRequestContext, 'tabId'> = {},
+): Promise<SpectraResponse<T>> {
+	return deliverSpectraTabEnvelope(
+		tabId,
+		createEnvelope(type, payload, { ...context, tabId }),
+		context.documentId,
+	);
+}
+
 export async function sendSpectraTabRequest<T extends SpectraRequestType>(
 	tabId: number,
 	type: T,
@@ -63,12 +90,8 @@ export async function sendSpectraTabRequest<T extends SpectraRequestType>(
 	context: Omit<SpectraRequestContext, 'tabId'> = {},
 ): Promise<SpectraResponse<T>> {
 	const message = createEnvelope(type, payload, { ...context, tabId });
-	const deliver = async (documentId?: string): Promise<SpectraResponse<T>> => {
-		const response: unknown = documentId
-			? await chrome.tabs.sendMessage(tabId, message, { documentId })
-			: await chrome.tabs.sendMessage(tabId, message);
-		return validateResponse(type, response);
-	};
+	const deliver = (documentId?: string): Promise<SpectraResponse<T>> =>
+		deliverSpectraTabEnvelope(tabId, message, documentId);
 
 	let firstResponse: SpectraResponse<T> | null = null;
 	try {

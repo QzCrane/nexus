@@ -24,6 +24,7 @@ interface ControlFieldState<T> {
   phase: 'idle' | 'applying' | 'applied' | 'error';
   strategy:
     | 'observe'
+    | 'page-native'
     | 'dom-native'
     | 'chrome-native'
     | 'extension-state'
@@ -56,6 +57,13 @@ DOM writes use per-target, per-field tokens:
 ```
 
 A matching event is the acknowledgement of the pending write. A non-matching page event is a new page intent and receives a new revision. Time-window booleans such as `settingByPlugin` are forbidden.
+
+For `volumeBase`, `mediaMuted`, and `speed`, a request-local `page-native`
+probe runs before the DOM fallback. Its exact page-controller getter is both the
+baseline source and ACK; a write mismatch is restored through that same writer.
+Once a field is owned, its writer identity is stable until release. Normal DOM
+events still drive page-to-extension observation, but the observer re-reads the
+page semantic getter before committing when that getter exists.
 
 ### §10.2 Processor handoff without double processing
 
@@ -101,12 +109,13 @@ AudioConfig.volume = clamp(volumeBase * boost, 0, 800)
 effective output ~= volumeBase / 100 * boost
 ```
 
-- DOM owns `volumeBase` and `mediaMuted`; only one selected native writer applies each field.
+- The exact page controller owns `volumeBase` or `mediaMuted` when its paired getter/setter proves semantic readback; otherwise standard DOM owns the field. Only one selected native writer applies or restores it.
 - Popup, remote and hotkeys submit only `effective-volume 0–800`; the coordinator performs the split and atomic rollback.
 - A page volume change updates the public effective volume and resets a non-neutral hidden Boost to 1 in the same commit.
 - Media mute preserves the numeric volume and is applied only through the selected media writer; processor state remains unchanged.
 - Tab mute is a separate Chrome-native field and never changes media mute.
 - `volume_up/down/set` and one-release `gain/boost` aliases all change the same effective-volume state.
+- At or below 100, the transaction sets `boost=1`, releases any no-longer-needed processor, and returns control to the selected native page/DOM writer. Above 100, `volumeBase=100` and only hidden Boost carries the excess.
 - Same-region changes touch one writer; only a crossing of the native 100% boundary touches both. Repeated acknowledged values do no Content IPC, revision or storage write.
 - No strategy inserts an implicit limiter. Compressor is an explicit user capability.
 

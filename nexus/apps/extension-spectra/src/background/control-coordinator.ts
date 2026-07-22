@@ -24,6 +24,7 @@ import {
 	type ControlFieldStates,
 	type ControlIntent,
 	type ControlMutation,
+	type ControlNativeObservationStrategies,
 	type ControlOperationAck,
 	type ControlOperationIntent,
 	type ControlOperationRequest,
@@ -36,7 +37,7 @@ import {
 	type SpectraEventEnvelope,
 } from '@nexus/contracts';
 import { createKeyedSerializedQueue } from '@nexus/kernel';
-import { sendSpectraTabRequest } from '../shared/spectra-client';
+import { sendSpectraTabRequest } from './spectra-tab-client';
 import { storage } from './state';
 import { updateBadgeFromControlProjection } from './handlers/badge';
 import { executeUserScriptInTab } from './handlers/user-scripts';
@@ -217,16 +218,17 @@ function sameMediaTarget(
 function nativeObservationFields(
 	patch: ControlPatch,
 	revision: number,
+	observedStrategies: ControlNativeObservationStrategies = {},
 ): ControlFieldStates {
 	const fields: ControlFieldStates = {};
 	for (const [rawField, actual] of Object.entries(patch)) {
-		const field = rawField as ControlField;
+		const field = rawField as ControlDirectField;
 		(fields as Record<string, unknown>)[field] = {
 			desired: actual,
 			actual,
 			revision,
 			phase: 'applied',
-			strategy: 'dom-native',
+			strategy: observedStrategies[field] ?? 'dom-native',
 			coverage: 'active-target',
 			controlled: false,
 			lastError: null,
@@ -312,27 +314,17 @@ export async function getControlViewSnapshot(tabId: number): Promise<ControlSnap
 	};
 	const fields = {
 		...base.fields,
-		...(mediaResponse?.ok ? nativeObservationFields(mediaResponse.data.patch, base.revision) : {}),
-		...(videoResponse?.ok ? nativeObservationFields(videoResponse.data.patch, base.revision) : {}),
+		...(mediaResponse?.ok ? nativeObservationFields(
+			mediaResponse.data.patch,
+			base.revision,
+			mediaResponse.data.observedStrategies,
+		) : {}),
+		...(videoResponse?.ok ? nativeObservationFields(
+			videoResponse.data.patch,
+			base.revision,
+			videoResponse.data.observedStrategies,
+		) : {}),
 	};
-	// volumeBase is intentionally not read from element.volume in
-	// NativeMediaExecutor.read (sites like YouTube apply non-linear volume curves,
-	// so element.volume reports 61.31 at their 100% slider). Fill in the
-	// SPECTRA-intended default (100) when no prior observation exists, mirroring
-	// the actualField('volumeBase', 100) fallback used in executeFieldOperation.
-	// A prior applied value (e.g., user-adjusted 80) is preserved via base.fields.
-	if (!fields.volumeBase) {
-		fields.volumeBase = {
-			desired: 100,
-			actual: 100,
-			revision: base.revision,
-			phase: 'applied',
-			strategy: 'dom-native',
-			coverage: 'active-target',
-			controlled: false,
-			lastError: null,
-		};
-	}
 	const activeMedia = mediaResponse?.ok
 		? mediaResponse.data.target
 		: mediaResponse?.error.code === 'capability-unavailable'
@@ -516,6 +508,9 @@ async function resolveSubmitRequest(
 		target: resolvedTarget,
 		...(request.baseRevision === undefined ? {} : { baseRevision: request.baseRevision }),
 		patch,
+		...(request.observedStrategies === undefined
+			? {}
+			: { observedStrategies: request.observedStrategies }),
 	};
 }
 
@@ -572,15 +567,25 @@ async function applyChromeFields(intent: ControlIntent): Promise<{
 	return { remaining, fields };
 }
 
-function applyPageObservation(intent: ControlIntent): ControlFieldStates {
+function applyPageObservation(
+	intent: ControlIntent,
+	observedStrategies: ControlNativeObservationStrategies | undefined,
+): ControlFieldStates {
 	if (intent.requestedCoverage !== 'active-target') {
 		throw new Error('A page observation cannot claim full-output coverage');
 	}
 	if (!intent.target) throw new Error('A page observation requires an identified media target');
+	if (!observedStrategies) throw new Error('A page observation requires native strategy provenance');
+	const patchKeys = Object.keys(intent.patch);
+	const strategyKeys = Object.keys(observedStrategies);
+	if (patchKeys.length !== strategyKeys.length
+		|| patchKeys.some((field) => !Object.prototype.hasOwnProperty.call(observedStrategies, field))) {
+		throw new Error('Page observation strategy provenance must match every patch field');
+	}
 	const fields: ControlFieldStates = {};
 	const revision = intent.baseRevision + 1;
 	for (const [rawField, rawValue] of Object.entries(intent.patch)) {
-		const field = rawField as ControlField;
+		const field = rawField as ControlDirectField;
 		if (!PAGE_OBSERVABLE_FIELDS.has(field)) {
 			throw new Error(`Page observation is not admitted for ${field}`);
 		}
@@ -589,7 +594,7 @@ function applyPageObservation(intent: ControlIntent): ControlFieldStates {
 			actual: rawValue,
 			revision,
 			phase: 'applied',
-			strategy: 'dom-native',
+			strategy: observedStrategies[field],
 			coverage: 'active-target',
 			controlled: false,
 			intentId: intent.intentId,
@@ -723,7 +728,7 @@ async function prepareIntent(
 	const intent = createIntent(snapshot, resolvedRequest);
 	const pageObservation = intent.source === 'page';
 	const chromeResult = pageObservation
-		? { remaining: {}, fields: applyPageObservation(intent) }
+		? { remaining: {}, fields: applyPageObservation(intent, resolvedRequest.observedStrategies) }
 		: await applyChromeFields(intent);
 	let fields: ControlFieldStates = { ...chromeResult.fields };
 	let ackTarget = intent.target;
@@ -1027,14 +1032,17 @@ async function compensateControlPatch(
 	target: ControlSnapshot['activeMedia'],
 	targetPatch: ControlPatch,
 	processorPatch: ControlPatch,
+	order: readonly ('target' | 'processor')[] = ['target', 'processor'],
 ): Promise<CompensationResult> {
 	const fields: ControlFieldStates = {};
 	const failures: string[] = [];
 	const isolatedTargetPatch: ControlPatch = { ...targetPatch };
-	for (const [patch, requestedCoverage] of [
-		[isolatedTargetPatch, 'active-target'],
-		[processorPatch, 'full'],
-	] as const) {
+	const stages = {
+		target: [isolatedTargetPatch, 'active-target'],
+		processor: [processorPatch, 'full'],
+	} as const;
+	for (const stage of order) {
+		const [patch, requestedCoverage] = stages[stage];
 		if (Object.keys(patch).length === 0) continue;
 		try {
 			const prepared = await prepareIntent({
@@ -1313,7 +1321,11 @@ async function handleTargetChanged(
 			? 'Active media readback resolved a different source'
 			: `${response.error.code}: ${response.error.message}`);
 	}
-	const fields = nativeObservationFields(response.data.patch, baseline.revision + 1);
+	const fields = nativeObservationFields(
+		response.data.patch,
+		baseline.revision + 1,
+		response.data.observedStrategies,
+	);
 	await commitControlFields(baseline, fields, target, 'page');
 }
 
@@ -1404,15 +1416,19 @@ async function executeFieldOperation(
 				{ documentId: baseline.documentId, generation: baseline.generation },
 			).catch(() => null)
 			: null;
-		const actualField = <K extends 'volumeBase' | 'boost'>(field: K, fallback: number): number => {
+		const actualField = <K extends 'volumeBase' | 'boost'>(field: K): number | null => {
 			const direct = readback?.ok ? readback.data.patch[field] : undefined;
 			if (typeof direct === 'number') return direct;
 			const known = field === 'volumeBase' ? knownVolumeBase : knownBoost;
-			return known ?? fallback;
+			return known;
 		};
+		const currentVolumeBase = actualField('volumeBase');
+		if (currentVolumeBase === null) {
+			throw new Error('Effective volume requires an observable page or standard native volume');
+		}
 		const current = {
-			volumeBase: actualField('volumeBase', 100),
-			boost: actualField('boost', 1),
+			volumeBase: currentVolumeBase,
+			boost: actualField('boost') ?? 1,
 		};
 		const currentEffective = compileEffectiveVolume(current.volumeBase, current.boost);
 		const desiredEffective = Math.max(0, Math.min(800,
@@ -1428,6 +1444,11 @@ async function executeFieldOperation(
 		const processorPatch: ControlPatch = current.boost === desired.boost
 			? {}
 			: { boost: desired.boost };
+		const stageOrder: readonly ('target' | 'processor')[] = current.boost !== 1
+			&& desired.boost === 1
+			&& Object.keys(targetPatch).length > 0
+			? ['processor', 'target']
+			: ['target', 'processor'];
 
 		// A repeated slider sample at the already acknowledged value is a true
 		// no-op: no content IPC, no storage write and no synthetic revision.
@@ -1450,32 +1471,25 @@ async function executeFieldOperation(
 		let fields: ControlFieldStates = {};
 		try {
 			let staged = baseline;
-			if (Object.keys(targetPatch).length > 0) {
+			for (const stage of stageOrder) {
+				const patch = stage === 'target' ? targetPatch : processorPatch;
+				if (Object.keys(patch).length === 0) continue;
 				const prepared = await prepareIntent({
 					...common,
 					target,
-					requestedCoverage: 'active-target',
-					patch: targetPatch,
+					requestedCoverage: stage === 'target' ? 'active-target' : 'full',
+					patch,
 				}, staged);
 				fields = { ...fields, ...prepared.fields };
-				assertAppliedPatch(prepared.fields, targetPatch, 'Effective volume native stage');
-				target = prepared.ackTarget;
-				staged = stageSnapshot(baseline, fields, target);
-			}
-			if (Object.keys(processorPatch).length > 0) {
-				const prepared = await prepareIntent({
-					...common,
-					target,
-					requestedCoverage: 'full',
-					patch: processorPatch,
-				}, staged);
-				fields = { ...fields, ...prepared.fields };
-				if (desired.boost === 1) {
-					assertReleasedPatch(prepared.fields, processorPatch, 'Effective volume processor release');
+				if (stage === 'target') {
+					assertAppliedPatch(prepared.fields, patch, 'Effective volume native stage');
+				} else if (desired.boost === 1) {
+					assertReleasedPatch(prepared.fields, patch, 'Effective volume processor release');
 				} else {
-					assertAppliedPatch(prepared.fields, processorPatch, 'Effective volume processor stage');
+					assertAppliedPatch(prepared.fields, patch, 'Effective volume processor stage');
 				}
 				target = prepared.ackTarget ?? target;
+				staged = stageSnapshot(baseline, fields, target);
 			}
 			const actualVolumeBase = typeof fields.volumeBase?.actual === 'number'
 				? fields.volumeBase.actual
@@ -1509,6 +1523,7 @@ async function executeFieldOperation(
 				target,
 				targetPatch.volumeBase === undefined ? {} : { volumeBase: current.volumeBase },
 				processorPatch.boost === undefined ? {} : { boost: current.boost },
+				[...stageOrder].reverse(),
 			);
 			if (!compensation.ok) {
 				await commitCompensationFailure(

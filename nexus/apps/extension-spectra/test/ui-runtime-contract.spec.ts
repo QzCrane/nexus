@@ -68,6 +68,33 @@ function createOperationAck(): ControlOperationAck {
 	};
 }
 
+function createPageNativeVolumeAck(): ControlOperationAck<'effective-volume'> {
+	return {
+		operationId: 'operation-page-native-volume',
+		tabId,
+		documentId,
+		generation,
+		revision: 6,
+		target: null,
+		operation: 'effective-volume',
+		strategy: 'extension-state',
+		coverage: 'active-target',
+		fields: {
+			volumeBase: {
+				desired: 40,
+				actual: 40,
+				revision: 6,
+				phase: 'applied',
+				strategy: 'page-native',
+				coverage: 'active-target',
+				controlled: false,
+				lastError: null,
+			},
+		},
+		result: { effectiveVolume: 40, volumeBase: 40, boost: 1 },
+	};
+}
+
 function createSettingsSnapshot(): SettingsSnapshot {
 	return {
 		schemaVersion: SPECTRA_SETTINGS_SCHEMA_VERSION,
@@ -280,6 +307,12 @@ describe('restricted extension UI protocol facade', () => {
 			expect(isSpectraResponse(type, mutated), `${type} canonical mutation`).toBe(false);
 			expect(isSpectraUiResponse(type, mutated), `${type} UI mutation`).toBe(false);
 		}
+	});
+
+	test('accepts page-native volume acknowledgements in the focused Popup guard', () => {
+		const response = rpcSuccess(createPageNativeVolumeAck());
+		expect(isSpectraResponse('spectra.control.operation.submit', response)).toBe(true);
+		expect(isSpectraUiResponse('spectra.control.operation.submit', response)).toBe(true);
 	});
 
 	test('keeps shared errors canonical but rejects errors for non-UI request types', () => {

@@ -479,7 +479,6 @@ export interface PolicyContext {
   userInteracted: boolean;
   enabled: boolean;
   volume: number;
-  visualizerEnabled: boolean;
   // rule: force native mode for specific self-healing scenarios
   forceNative: boolean;
   // rule: determined by CORS detection results

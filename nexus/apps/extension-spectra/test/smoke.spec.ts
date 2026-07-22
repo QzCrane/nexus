@@ -13,10 +13,10 @@ import puppeteer, {
 } from 'puppeteer';
 import { SPECTRA_CONTENT_RUNTIME_REVISION } from '@nexus/contracts';
 import {
-	SPECTRA_PLAYBACK_RATE_EVENT,
-	SPECTRA_PLAYBACK_RATE_REQUEST_ATTRIBUTE,
-	SPECTRA_PLAYBACK_RATE_RESULT_ATTRIBUTE,
-} from '../src/shared/playback-rate-bridge';
+	SPECTRA_PAGE_MEDIA_EVENT,
+	SPECTRA_PAGE_MEDIA_REQUEST_ATTRIBUTE,
+	SPECTRA_PAGE_MEDIA_RESULT_ATTRIBUTE,
+} from '../src/shared/page-media-bridge';
 
 const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
 const FIXTURE_PATH = join(import.meta.dir, 'fixtures', 'smoke-test.html');
@@ -44,6 +44,8 @@ const smokeRuntimeLeases = new Map<string, SmokeRuntimeLease>();
 interface ContentStatus {
 	config?: {
 		volume?: number;
+		volumeBase?: number;
+		boost?: number;
 		muted?: boolean;
 		speed?: number;
 	};
@@ -142,6 +144,15 @@ interface PopupVolumePresentation {
 	fillColor: string;
 	valueColor: string;
 	sliderAccent: string;
+}
+
+interface PageMediaControllerState {
+	volumeBase: number;
+	mediaMuted: boolean;
+	speed: number;
+	domVolume: number;
+	domMuted: boolean;
+	domSpeed: number;
 }
 
 const DEFAULT_AUDIO_CONFIG: AudioConfig = {
@@ -283,6 +294,11 @@ async function inspectExtensionAccessibility(page: Page): Promise<ExtensionAcces
 }
 
 async function readContentStatus(url = fixturePage.url()): Promise<ContentStatus> {
+	// A Service Worker restart intentionally loses its in-memory consumer map.
+	// Heavy-runtime reads must reacquire an explicit observation lease just like
+	// production Popup/remote clients do; direct tabs.sendMessage is not itself
+	// runtime ownership and may correctly arrive after the 250ms final release.
+	await acquireSmokeRuntime(url, 'smoke-status');
 	return evaluateServiceWorker(async (targetUrl) => {
 		const tabs = await chrome.tabs.query({});
 		const tab = tabs.find((candidate) => candidate.url === targetUrl);
@@ -505,6 +521,118 @@ async function getTabId(url: string, worker?: WebWorker): Promise<number> {
 		if (tab?.id === undefined) throw new Error(`Unable to find tab: ${targetUrl}`);
 		return tab.id;
 	}, url);
+}
+
+async function installPageMediaControllerHarness(
+	initial: Pick<PageMediaControllerState, 'volumeBase' | 'mediaMuted' | 'speed'> = {
+		volumeBase: 100,
+		mediaMuted: false,
+		speed: 1,
+	},
+): Promise<void> {
+	await fixturePage.evaluate((seed) => {
+		const video = document.querySelector<HTMLVideoElement>('#v');
+		const host = video?.parentElement as (HTMLElement & {
+			getVolume?: () => number;
+			setVolume?: (value: number) => void;
+			isMuted?: () => boolean;
+			setMuted?: (value: boolean) => void;
+			getPlaybackRate?: () => number;
+			setPlaybackRate?: (value: number) => void;
+		}) | null;
+		if (!video || !host) throw new Error('Page-media controller fixture is missing');
+		const scope = window as Window & {
+			__spectraPageMediaState?: {
+				volumeBase: number;
+				mediaMuted: boolean;
+				speed: number;
+			};
+		};
+		const state = { ...seed };
+		scope.__spectraPageMediaState = state;
+		host.getVolume = () => state.volumeBase;
+		host.setVolume = (value) => {
+			state.volumeBase = value;
+			video.volume = value / 100 * 0.6131;
+		};
+		host.isMuted = () => state.mediaMuted;
+		host.setMuted = (value) => {
+			state.mediaMuted = value;
+			// The fixture deliberately keeps the DOM muted projection false. This
+			// models page players whose semantic mute lives in their controller.
+			video.muted = false;
+		};
+		host.getPlaybackRate = () => state.speed;
+		host.setPlaybackRate = (value) => {
+			state.speed = value;
+			video.playbackRate = value;
+		};
+		host.setVolume(seed.volumeBase);
+		host.setMuted(seed.mediaMuted);
+		host.setPlaybackRate(seed.speed);
+		video.dispatchEvent(new Event('volumechange'));
+		video.dispatchEvent(new Event('ratechange'));
+	}, initial);
+}
+
+async function updatePageMediaControllerHarness(
+	patch: Partial<Pick<PageMediaControllerState, 'volumeBase' | 'mediaMuted' | 'speed'>>,
+): Promise<void> {
+	await fixturePage.evaluate((changes) => {
+		const video = document.querySelector<HTMLVideoElement>('#v');
+		const host = video?.parentElement as (HTMLElement & {
+			setVolume?: (value: number) => void;
+			setMuted?: (value: boolean) => void;
+			setPlaybackRate?: (value: number) => void;
+		}) | null;
+		if (!video || !host) throw new Error('Page-media controller fixture is missing');
+		if (changes.volumeBase !== undefined) host.setVolume?.(changes.volumeBase);
+		if (changes.mediaMuted !== undefined) host.setMuted?.(changes.mediaMuted);
+		if (changes.speed !== undefined) host.setPlaybackRate?.(changes.speed);
+		if (changes.volumeBase !== undefined || changes.mediaMuted !== undefined) {
+			video.dispatchEvent(new Event('volumechange'));
+		}
+		if (changes.speed !== undefined) video.dispatchEvent(new Event('ratechange'));
+	}, patch);
+}
+
+async function readPageMediaControllerHarness(): Promise<PageMediaControllerState> {
+	return fixturePage.evaluate(() => {
+		const video = document.querySelector<HTMLVideoElement>('#v');
+		const state = (window as Window & {
+			__spectraPageMediaState?: {
+				volumeBase: number;
+				mediaMuted: boolean;
+				speed: number;
+			};
+		}).__spectraPageMediaState;
+		if (!video || !state) throw new Error('Page-media controller fixture is not installed');
+		return {
+			...state,
+			domVolume: video.volume,
+			domMuted: video.muted,
+			domSpeed: video.playbackRate,
+		};
+	});
+}
+
+async function removePageMediaControllerHarness(): Promise<void> {
+	await fixturePage.evaluate(() => {
+		const video = document.querySelector<HTMLVideoElement>('#v');
+		const host = video?.parentElement;
+		if (host) {
+			for (const key of [
+				'getVolume', 'setVolume', 'isMuted', 'setMuted', 'getPlaybackRate', 'setPlaybackRate',
+			]) Reflect.deleteProperty(host, key);
+		}
+		Reflect.deleteProperty(window, '__spectraPageMediaState');
+		if (!video) return;
+		video.volume = 1;
+		video.muted = false;
+		video.playbackRate = 1;
+		video.dispatchEvent(new Event('volumechange'));
+		video.dispatchEvent(new Event('ratechange'));
+	}).catch(() => undefined);
 }
 
 async function readOffscreenSnapshot(worker?: WebWorker): Promise<OffscreenHostSnapshot> {
@@ -1576,58 +1704,226 @@ describe('SPECTRA built extension smoke', () => {
 		expect(await fixturePage.evaluate(() => location.hash)).toBe('#details');
 	});
 
-	test('synchronizes a deferred body-portal playback-rate menu with the controlled video', async () => {
-		const state = await fixturePage.evaluate(async ({ eventName, requestAttribute, resultAttribute }) => {
+	test('discovers one exact page-media controller for semantic volume, mute, and speed', async () => {
+		const state = await fixturePage.evaluate(({ eventName, requestAttribute, resultAttribute }) => {
 			const video = document.querySelector<HTMLVideoElement>('#v');
 			const player = video?.parentElement;
-			if (!video || !player) throw new Error('SPA video is missing');
-			player.setAttribute('data-spectra-player', 'v1');
-			const requestId = crypto.randomUUID();
-			video.setAttribute(requestAttribute, JSON.stringify({ requestId, speed: 1.5 }));
-			video.dispatchEvent(new Event(eventName));
-			const result = JSON.parse(video.getAttribute(resultAttribute) ?? '{}') as {
-				requestId?: string;
-				actual?: number;
+			const outerPlayer = player?.parentElement;
+			if (!video || !player || !outerPlayer) throw new Error('SPA video is missing');
+			let volumeBase = 100;
+			let mediaMuted = false;
+			let speed = 1;
+			const volumeController = { video } as {
+				video: HTMLVideoElement;
+				getVolume(): number;
+				setVolume(value: number): void;
 			};
+			const controller = player as HTMLElement & {
+				spectraExactController?: typeof volumeController;
+				isMuted(): boolean;
+				setMuted(value: boolean): void;
+				getPlaybackRate(): number;
+				setPlaybackRate(value: number): void;
+			};
+			volumeController.getVolume = () => volumeBase;
+			volumeController.setVolume = (value) => {
+				volumeBase = value;
+				video.volume = value / 100 * 0.6131;
+			};
+			controller.spectraExactController = volumeController;
+			controller.isMuted = () => mediaMuted;
+			controller.setMuted = (value) => {
+				mediaMuted = value;
+				video.muted = value;
+			};
+			controller.getPlaybackRate = () => speed;
+			controller.setPlaybackRate = (value) => {
+				speed = value;
+				video.playbackRate = value;
+			};
+			const decoyState = { volumeBase: 17, mediaMuted: true, speed: 2.5, writes: 0 };
+			const decoy = outerPlayer as HTMLElement & {
+				getVolume(): number;
+				setVolume(value: number): void;
+				isMuted(): boolean;
+				setMuted(value: boolean): void;
+				getPlaybackRate(): number;
+				setPlaybackRate(value: number): void;
+			};
+			decoy.getVolume = () => decoyState.volumeBase;
+			decoy.setVolume = (value) => { decoyState.volumeBase = value; decoyState.writes += 1; };
+			decoy.isMuted = () => decoyState.mediaMuted;
+			decoy.setMuted = (value) => { decoyState.mediaMuted = value; decoyState.writes += 1; };
+			decoy.getPlaybackRate = () => decoyState.speed;
+			decoy.setPlaybackRate = (value) => { decoyState.speed = value; decoyState.writes += 1; };
+			video.volume = 0.6131;
 
-			let selectedClicks = 0;
-			const portal = document.createElement('div');
-			portal.className = 'm_a7b';
-			for (const rate of [1, 1.5, 2]) {
-				const option = document.createElement('div');
-				option.className = `i_${String(rate).replace('.', '_')}`;
-				const label = document.createElement('span');
-				label.textContent = rate === 1 ? '正常' : `${rate}倍`;
-				option.append(label);
-				if (rate === 1) option.className = 'selected';
-				if (rate === 1.5) option.addEventListener('click', () => { selectedClicks += 1; });
-				portal.append(option);
-			}
-			document.body.append(portal);
-			await new Promise((resolveWait) => setTimeout(resolveWait, 50));
-			const options = [...portal.children] as HTMLElement[];
-			return {
-				requestMatches: result.requestId === requestId,
-				actual: result.actual,
-				playbackRate: video.playbackRate,
-				rootRate: player.getAttribute('data-spectra-playback-rate'),
-				selectedClicks,
-				selected: options.map((option) => option.getAttribute('aria-selected')),
+			const transact = (operation: 'read' | 'write', field: string, value?: number | boolean) => {
+				const requestId = crypto.randomUUID();
+				video.setAttribute(requestAttribute, JSON.stringify({ requestId, operation, field, value }));
+				video.dispatchEvent(new Event(eventName));
+				const result = JSON.parse(video.getAttribute(resultAttribute) ?? '{}');
+				video.removeAttribute(requestAttribute);
+				video.removeAttribute(resultAttribute);
+				return result;
 			};
+			const initialVolume = transact('read', 'volumeBase');
+			const writtenVolume = transact('write', 'volumeBase', 50);
+			const writtenMute = transact('write', 'mediaMuted', true);
+			const writtenSpeed = transact('write', 'speed', 1.5);
+			const result = {
+				initialVolume,
+				writtenVolume,
+				writtenMute,
+				writtenSpeed,
+				page: { volumeBase, mediaMuted, speed },
+				decoy: decoyState,
+				native: { volume: video.volume, muted: video.muted, speed: video.playbackRate },
+			};
+			Reflect.deleteProperty(controller, 'spectraExactController');
+			for (const key of ['isMuted', 'setMuted', 'getPlaybackRate', 'setPlaybackRate'] as const) {
+				Reflect.deleteProperty(controller, key);
+			}
+			for (const key of [
+				'getVolume', 'setVolume', 'isMuted', 'setMuted', 'getPlaybackRate', 'setPlaybackRate',
+			] as const) Reflect.deleteProperty(decoy, key);
+			video.volume = 1;
+			video.muted = false;
+			video.playbackRate = 1;
+			return result;
 		}, {
-			eventName: SPECTRA_PLAYBACK_RATE_EVENT,
-			requestAttribute: SPECTRA_PLAYBACK_RATE_REQUEST_ATTRIBUTE,
-			resultAttribute: SPECTRA_PLAYBACK_RATE_RESULT_ATTRIBUTE,
+			eventName: SPECTRA_PAGE_MEDIA_EVENT,
+			requestAttribute: SPECTRA_PAGE_MEDIA_REQUEST_ATTRIBUTE,
+			resultAttribute: SPECTRA_PAGE_MEDIA_RESULT_ATTRIBUTE,
 		});
-		expect(state).toEqual({
-			requestMatches: true,
-			actual: 1.5,
-			playbackRate: 1.5,
-			rootRate: '1.5',
-			selectedClicks: 1,
-			selected: ['false', 'true', 'false'],
-		});
+		expect(state.initialVolume).toMatchObject({ supported: true, actual: 100 });
+		expect(state.writtenVolume).toMatchObject({ supported: true, actual: 50 });
+		expect(state.writtenMute).toMatchObject({ supported: true, actual: true });
+		expect(state.writtenSpeed).toMatchObject({ supported: true, actual: 1.5 });
+		expect(state.page).toEqual({ volumeBase: 50, mediaMuted: true, speed: 1.5 });
+		expect(state.decoy).toEqual({ volumeBase: 17, mediaMuted: true, speed: 2.5, writes: 0 });
+		expect(state.native).toEqual({ volume: 0.30655, muted: true, speed: 1.5 });
 	});
+
+	test('synchronizes page-native media bidirectionally through Popup and the mute hotkey', async () => {
+		await installPageMediaControllerHarness();
+		await fixturePage.bringToFront();
+		const tabId = await getTabId(fixturePage.url());
+		const popupTarget = await openActionPopupTarget();
+		const popup = await popupTarget.asPage();
+		const popupErrors: string[] = [];
+		popup.on('pageerror', (error) => popupErrors.push(error.message));
+		const readSnapshot = () => popup.evaluate(async (targetTabId) => chrome.runtime.sendMessage({
+			protocolVersion: 2,
+			requestId: crypto.randomUUID(),
+			tabId: targetTabId,
+			type: 'spectra.control.snapshot.get',
+			payload: { tabId: targetTabId },
+		}), tabId) as Promise<{
+			ok: boolean;
+			data?: { fields: Record<string, { actual?: unknown; strategy?: string; controlled?: boolean }> };
+			error?: { message?: string };
+		}>;
+
+		try {
+			await popup.waitForSelector('.glass-card .vol-slider', { timeout: 8_000 });
+			await popup.waitForFunction(() => {
+				const volume = document.querySelector<HTMLInputElement>('.vol-slider');
+				const speed = document.querySelector<HTMLInputElement>('.speed-input');
+				return volume?.value === '100' && speed?.value === '1.00';
+			}, { timeout: 8_000 });
+			const initial = await readSnapshot();
+			expect(initial).toMatchObject({
+				ok: true,
+				data: {
+					fields: {
+						volumeBase: { actual: 100, strategy: 'page-native' },
+						mediaMuted: { actual: false, strategy: 'page-native' },
+						speed: { actual: 1, strategy: 'page-native' },
+					},
+				},
+			});
+
+			await popup.$eval('.vol-slider', (element) => {
+				const slider = element as HTMLInputElement;
+				slider.value = '40';
+				slider.dispatchEvent(new Event('input', { bubbles: true }));
+				slider.dispatchEvent(new Event('change', { bubbles: true }));
+			});
+			await eventually(
+				readPageMediaControllerHarness,
+				(state) => state.volumeBase === 40 && Math.abs(state.domVolume - 0.24524) < 0.00001,
+				'Popup page-native volume ACK',
+			);
+
+			await popup.$eval('.speed-input', (element) => {
+				const input = element as HTMLInputElement;
+				input.value = '1.50';
+				input.dispatchEvent(new Event('change', { bubbles: true }));
+			});
+			await eventually(
+				readPageMediaControllerHarness,
+				(state) => state.speed === 1.5 && state.domSpeed === 1.5,
+				'Popup page-native speed ACK',
+			);
+
+			await popup.click('.btn-mute');
+			await eventually(
+				readPageMediaControllerHarness,
+				(state) => state.mediaMuted && !state.domMuted,
+				'Popup controller-only mute ACK',
+			);
+
+			await updatePageMediaControllerHarness({
+				volumeBase: 70,
+				mediaMuted: false,
+				speed: 1.25,
+			});
+			await popup.waitForFunction(() => {
+				const volume = document.querySelector<HTMLInputElement>('.vol-slider');
+				const speed = document.querySelector<HTMLInputElement>('.speed-input');
+				const mute = document.querySelector<HTMLElement>('.btn-mute');
+				return volume?.value === '70'
+					&& speed?.value === '1.25'
+					&& mute?.getAttribute('aria-pressed') === 'false';
+			}, { timeout: 8_000 });
+
+			const hotkey = await evaluateServiceWorker(async (targetTabId) => chrome.tabs.sendMessage(
+				targetTabId,
+				{
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					tabId: targetTabId,
+					type: 'spectra.hotkey.trigger',
+					payload: { action: 'volume_mute' },
+				},
+			), tabId);
+			expect(hotkey).toMatchObject({ ok: true });
+			await eventually(
+				readPageMediaControllerHarness,
+				(state) => state.mediaMuted && !state.domMuted,
+				'controller-only mute hotkey ACK',
+			);
+			await popup.waitForFunction(() => (
+				document.querySelector('.btn-mute')?.getAttribute('aria-pressed') === 'true'
+			), { timeout: 8_000 });
+			const finalSnapshot = await readSnapshot();
+			expect(finalSnapshot).toMatchObject({
+				ok: true,
+				data: {
+					fields: {
+						volumeBase: { actual: 70, strategy: 'page-native' },
+						mediaMuted: { actual: true, strategy: 'page-native' },
+						speed: { actual: 1.25, strategy: 'page-native' },
+					},
+				},
+			});
+		} finally {
+			await closeActionPopup(popup);
+			await removePageMediaControllerHarness();
+		}
+		expect(popupErrors).toEqual([]);
+	}, 35_000);
 
 	test('fullscreen lifecycle preserves the site volume, mute, and playback rate', async () => {
 		const preserved = await fixturePage.evaluate(async () => {
@@ -1655,9 +1951,18 @@ describe('SPECTRA built extension smoke', () => {
 		});
 		const status = await readContentStatus();
 		expect(status).toMatchObject({
+			desiredMode: 'bypass',
+			actualMode: 'bypass',
 			mode: 'bypass',
 			phase: 'idle',
-			config: { volume: 100, muted: false, speed: 1 },
+			lastError: null,
+			config: {
+				volume: 37,
+				volumeBase: 37,
+				boost: 1,
+				muted: true,
+				speed: 0.75,
+			},
 		});
 	});
 
@@ -1751,6 +2056,176 @@ describe('SPECTRA built extension smoke', () => {
 		expect(optionsErrors).toEqual([]);
 		await options.close();
 	});
+
+	test('renders Registry and Presets from the selected locale on first paint and language refresh', async () => {
+		const routeDomain = 'i18n-route-smoke.example';
+		const siteDomain = 'i18n-site-smoke.example';
+		const presetName = 'i18n-preset-smoke';
+		const client = await openExtensionClient();
+		const seeded = await client.evaluate(async ({ routeDomain, siteDomain, presetName }) => {
+			const send = (type: string, payload: Record<string, unknown>) => chrome.runtime.sendMessage({
+				protocolVersion: 2,
+				requestId: crypto.randomUUID(),
+				type,
+				payload,
+			});
+			let snapshot = await send('spectra.settings.get', {});
+			if (!snapshot?.ok) throw new Error(snapshot?.error?.message ?? 'Unable to read settings');
+			const original = {
+				language: snapshot.data.globalSettings.lang,
+				defaultPresetId: snapshot.data.defaultPresetId,
+			};
+			const patch = async (value: Record<string, unknown>) => {
+				const response = await send('spectra.settings.patch', {
+					expectedRevision: snapshot.data.revision,
+					patch: value,
+				});
+				if (!response?.ok) throw new Error(response?.error?.message ?? 'Unable to seed settings');
+				snapshot = response;
+			};
+			await patch({ scope: 'global', changes: { lang: 'zh-CN' } });
+			await patch({
+				scope: 'audio-site',
+				domain: siteDomain,
+				mode: 'replace',
+				value: { volume: 125, volumeBase: 100, boost: 1.25, speed: 1.25, compressor: true, pan: 1 },
+			});
+			await patch({
+				scope: 'audio-preset',
+				name: presetName,
+				value: {
+					config: { volume: 125, volumeBase: 100, boost: 1.25, speed: 1.25, compressor: true, pan: 1 },
+					meta: { type: 'global', name: presetName, createdAt: Date.now() },
+				},
+			});
+			await patch({ scope: 'default-preset', value: presetName });
+			const registry = await send('spectra.registry.add', { domain: routeDomain, route: 'capture' });
+			if (!registry?.ok) throw new Error(registry?.error?.message ?? 'Unable to seed registry');
+			return original;
+		}, { routeDomain, siteDomain, presetName });
+
+		const popup = await browser.newPage();
+		await popup.evaluateOnNewDocument(({ routeDomain, presetName }) => {
+			const scope = window as Window & { __spectraI18nFirstDynamic?: Record<string, string> };
+			const first: Record<string, string> = {};
+			scope.__spectraI18nFirstDynamic = first;
+			const record = (key: string, value: string | null | undefined) => {
+				const normalized = value?.trim();
+				if (!first[key] && normalized) first[key] = normalized;
+			};
+			const scan = () => {
+				const registryItem = [...document.querySelectorAll<HTMLElement>('.registry-item')]
+					.find((item) => item.querySelector('.registry-item-domain')?.textContent === routeDomain);
+				const presetItem = [...document.querySelectorAll<HTMLElement>('.preset-item')]
+					.find((item) => item.querySelector('.preset-name span')?.textContent === presetName);
+				record('registryRoute', registryItem?.querySelector('.registry-item-route')?.textContent);
+				record('registrySource', registryItem?.querySelector('.registry-item-source')?.textContent);
+				record('registryDelete', registryItem?.querySelector('.registry-item-delete')?.getAttribute('title'));
+				record('presetHeader', document.querySelector('.preset-section-header')?.textContent);
+				record('presetDefault', presetItem?.querySelector('.preset-badge.default')?.textContent);
+				record('presetSummary', presetItem?.querySelector('.preset-summary')?.textContent);
+				record('presetApply', presetItem?.querySelector('.btn-preset-action.apply')?.getAttribute('title'));
+			};
+			new MutationObserver(scan).observe(document, {
+				attributes: true,
+				childList: true,
+				characterData: true,
+				subtree: true,
+			});
+			queueMicrotask(scan);
+		}, { routeDomain, presetName });
+
+		try {
+			await popup.goto(`chrome-extension://${extensionId}/popup.html`, { waitUntil: 'domcontentloaded' });
+			await popup.waitForSelector('#view-main:not([hidden])');
+			await popup.click('#btn-settings');
+			await popup.waitForFunction(({ routeDomain, presetName }) => {
+				const registryReady = [...document.querySelectorAll('.registry-item-domain')]
+					.some((element) => element.textContent === routeDomain);
+				const presetReady = [...document.querySelectorAll('.preset-name span')]
+					.some((element) => element.textContent === presetName);
+				return registryReady && presetReady;
+			}, {}, { routeDomain, presetName });
+
+			const firstDynamic = await popup.evaluate(() => (
+				(window as Window & { __spectraI18nFirstDynamic?: Record<string, string> })
+					.__spectraI18nFirstDynamic
+			));
+			expect(firstDynamic).toMatchObject({
+				registryRoute: '需要时劫持',
+				registrySource: '用户',
+				registryDelete: '删除',
+				presetHeader: '全局预设',
+				presetDefault: '默认',
+				presetApply: '应用预设',
+			});
+			expect(firstDynamic?.presetSummary).toContain('压缩');
+			expect(firstDynamic?.presetSummary).toContain('声相:右');
+
+			await popup.select('#set-lang', 'en-US');
+			await popup.waitForFunction(({ routeDomain, presetName }) => {
+				const registryItem = [...document.querySelectorAll<HTMLElement>('.registry-item')]
+					.find((item) => item.querySelector('.registry-item-domain')?.textContent === routeDomain);
+				const presetItem = [...document.querySelectorAll<HTMLElement>('.preset-item')]
+					.find((item) => item.querySelector('.preset-name span')?.textContent === presetName);
+				return document.documentElement.lang === 'en-US'
+					&& registryItem?.querySelector('.registry-item-route')?.textContent === 'Capture when needed'
+					&& registryItem?.querySelector('.registry-item-source')?.textContent === 'USER'
+					&& presetItem?.querySelector('.preset-badge.default')?.textContent === 'DEFAULT'
+					&& presetItem?.querySelector('.btn-preset-action.apply')?.getAttribute('title') === 'Apply preset';
+			}, { timeout: 8_000 }, { routeDomain, presetName });
+
+			await popup.select('#set-lang', 'zh-CN');
+			await popup.waitForFunction(({ routeDomain, presetName }) => {
+				const registryItem = [...document.querySelectorAll<HTMLElement>('.registry-item')]
+					.find((item) => item.querySelector('.registry-item-domain')?.textContent === routeDomain);
+				const presetItem = [...document.querySelectorAll<HTMLElement>('.preset-item')]
+					.find((item) => item.querySelector('.preset-name span')?.textContent === presetName);
+				return document.documentElement.lang === 'zh-CN'
+					&& registryItem?.querySelector('.registry-item-route')?.textContent === '需要时劫持'
+					&& registryItem?.querySelector('.registry-item-source')?.textContent === '用户'
+					&& presetItem?.querySelector('.preset-badge.default')?.textContent === '默认'
+					&& presetItem?.querySelector('.btn-preset-action.apply')?.getAttribute('title') === '应用预设';
+			}, { timeout: 8_000 }, { routeDomain, presetName });
+		} finally {
+			await popup.close().catch(() => undefined);
+			await client.evaluate(async ({
+				routeDomain,
+				siteDomain,
+				presetName,
+				originalLanguage,
+				originalDefaultPresetId,
+			}) => {
+				const send = (type: string, payload: Record<string, unknown>) => chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					type,
+					payload,
+				});
+				let snapshot = await send('spectra.settings.get', {});
+				const patch = async (value: Record<string, unknown>) => {
+					const response = await send('spectra.settings.patch', {
+						expectedRevision: snapshot.data.revision,
+						patch: value,
+					});
+					if (!response?.ok) throw new Error(response?.error?.message ?? 'Unable to clean i18n settings');
+					snapshot = response;
+				};
+				await patch({ scope: 'default-preset', value: originalDefaultPresetId });
+				await patch({ scope: 'audio-preset', name: presetName, value: null });
+				await patch({ scope: 'audio-site', domain: siteDomain, value: null });
+				await patch({ scope: 'global', changes: { lang: originalLanguage } });
+				await send('spectra.registry.remove', { fingerprint: `site:${routeDomain}` });
+			}, {
+				routeDomain,
+				siteDomain,
+				presetName,
+				originalLanguage: seeded.language,
+				originalDefaultPresetId: seeded.defaultPresetId,
+			}).catch(() => undefined);
+			await client.close().catch(() => undefined);
+		}
+	}, 35_000);
 
 	test('keeps English and Chinese extension layouts bounded and exposes dynamic controls in the AX tree', async () => {
 		const assertPageAudit = async (page: Page, label: string) => {
@@ -2039,7 +2514,7 @@ describe('SPECTRA built extension smoke', () => {
 		}
 	}, 20_000);
 
-	test('renders non-idle spectrum bars from a neutral playing media graph', async () => {
+	test('renders non-idle spectrum bars from an already-active media processor', async () => {
 		const visualizerErrors: string[] = [];
 		const visualizerPage = await browser.newPage();
 		collectPageErrors(visualizerPage, visualizerErrors);
@@ -2082,15 +2557,27 @@ describe('SPECTRA built extension smoke', () => {
 			media.src = URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
 			media.loop = true;
 			media.muted = false;
-			media.volume = 0.15;
-			await media.play();
+				media.volume = 0.15;
+				await media.play();
 			});
+			const processor = await configureRuntime(visualizerUrl, {
+				...DEFAULT_AUDIO_CONFIG,
+				eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
+				pan: 0.25,
+			});
+			expect(processor).toMatchObject({
+				actualMode: 'webaudio',
+				phase: 'active',
+			});
+			// acquireSmokeRuntime may open the long-lived Options lease client. Restore
+			// the media tab as the real action-Popup target before asserting its card.
+			await visualizerPage.bringToFront();
 
 			const popupTarget = await openActionPopupTarget();
 			popup = await popupTarget.asPage();
 			await popup.waitForSelector('.glass-card');
 			await popup.waitForFunction(() => {
-				const canvas = document.querySelector<HTMLCanvasElement>('.viz-canvas');
+				const canvas = document.querySelector<HTMLCanvasElement>('#main-stage .viz-canvas');
 				if (!canvas) return false;
 				const pixels = canvas.getContext('2d')?.getImageData(
 					0,
@@ -2464,6 +2951,7 @@ describe('SPECTRA built extension smoke', () => {
 	}, 35_000);
 
 	test('keeps the single 0-800 control and every color on acknowledged actual state', async () => {
+		await installPageMediaControllerHarness();
 		await installSyntheticCaptureHarness();
 		await installTabCaptureStreamIdStub();
 		await fixturePage.bringToFront();
@@ -2472,6 +2960,10 @@ describe('SPECTRA built extension smoke', () => {
 		let pendingStart: Promise<CaptureResponse> | null = null;
 		try {
 			await submitEffectiveVolume(tabId, 80);
+			expect(await readPageMediaControllerHarness()).toMatchObject({
+				volumeBase: 80,
+				domMuted: false,
+			});
 			const initial = await readContentStatus();
 			const captureGeneration = (initial.generation ?? 0) + 1;
 			const started = await sendCaptureRequest(
@@ -2520,7 +3012,7 @@ describe('SPECTRA built extension smoke', () => {
 			await markRegistryDomain(extensionClient, '127.0.0.1', false);
 			await selectSafeWebAudioFixture();
 			await submitEffectiveVolume(tabId, 350);
-			const webAudio = await waitForContentStatus(
+			let webAudio = await waitForContentStatus(
 				(status) => status.mode === 'webaudio' && status.phase === 'active'
 					&& status.config?.volume === 350,
 				15_000,
@@ -2536,6 +3028,56 @@ describe('SPECTRA built extension smoke', () => {
 				sliderAccent: '#2563eb',
 			});
 			expect(await readBadgeColor(tabId)).toEqual([37, 99, 235, 255]);
+			expect(await readPageMediaControllerHarness()).toMatchObject({ volumeBase: 100 });
+
+			await submitEffectiveVolume(tabId, 80);
+			const native80 = await waitForContentStatus(
+				(status) => status.mode === 'bypass' && status.phase === 'idle'
+					&& status.config?.volume === 80
+					&& status.config?.volumeBase === 80
+					&& status.config?.boost === 1,
+				15_000,
+			);
+			expect(native80).toMatchObject({
+				mode: 'bypass',
+				phase: 'idle',
+				config: { volume: 80, volumeBase: 80, boost: 1 },
+			});
+			const nativeSnapshot = await extensionClient.evaluate(async (targetTabId) => chrome.runtime.sendMessage({
+				protocolVersion: 2,
+				requestId: crypto.randomUUID(),
+				tabId: targetTabId,
+				type: 'spectra.control.snapshot.get',
+				payload: { tabId: targetTabId },
+			}), tabId);
+			expect(nativeSnapshot).toMatchObject({
+				ok: true,
+				data: {
+					fields: {
+						volumeBase: { actual: 80, strategy: 'page-native' },
+						boost: { actual: 1, strategy: 'observe', controlled: false },
+					},
+				},
+			});
+			expect(await readPageMediaControllerHarness()).toMatchObject({
+				volumeBase: 80,
+				domVolume: 0.49048,
+			});
+			const native80Presentation = await readPopupVolumePresentation('#2563eb');
+			expect(native80Presentation).toMatchObject({
+				value: '80',
+				fillColor: 'rgb(37, 99, 235)',
+				valueColor: 'rgb(37, 99, 235)',
+				sliderAccent: '#2563eb',
+			});
+
+			await submitEffectiveVolume(tabId, 350);
+			webAudio = await waitForContentStatus(
+				(status) => status.mode === 'webaudio' && status.phase === 'active'
+					&& status.config?.volume === 350,
+				15_000,
+			);
+			expect(await readPageMediaControllerHarness()).toMatchObject({ volumeBase: 100 });
 
 			await blockNextSyntheticCapture();
 			pendingStart = sendCaptureRequest(
@@ -2573,6 +3115,23 @@ describe('SPECTRA built extension smoke', () => {
 			expect(await readBadgeColor(tabId)).toEqual([124, 58, 237, 255]);
 
 			await submitEffectiveVolume(tabId, 0);
+			const nativeZero = await waitForContentStatus(
+				(status) => status.mode === 'bypass' && status.phase === 'idle'
+					&& status.config?.volume === 0
+					&& status.config?.volumeBase === 0
+					&& status.config?.boost === 1,
+				15_000,
+			);
+			expect(nativeZero).toMatchObject({
+				mode: 'bypass',
+				phase: 'idle',
+				config: { volume: 0, volumeBase: 0, boost: 1 },
+			});
+			expect(await readPageMediaControllerHarness()).toMatchObject({
+				volumeBase: 0,
+				domVolume: 0,
+			});
+			expect((await readOffscreenSnapshot()).audioTabs).toEqual([]);
 			const silent = await readPopupVolumePresentation();
 			expect(silent).toMatchObject({
 				value: '0',
@@ -2581,6 +3140,27 @@ describe('SPECTRA built extension smoke', () => {
 				sliderAccent: '#9ca3af',
 			});
 			expect(await readBadgeColor(tabId)).toEqual([156, 163, 175, 255]);
+
+			await submitEffectiveVolume(tabId, 100);
+			await waitForContentStatus(
+				(status) => status.mode === 'bypass' && status.phase === 'idle'
+					&& status.config?.volume === 100
+					&& status.config?.volumeBase === 100
+					&& status.config?.boost === 1,
+				15_000,
+			);
+			expect(await readPageMediaControllerHarness()).toMatchObject({
+				volumeBase: 100,
+				domVolume: 0.6131,
+			});
+			const native100Presentation = await readPopupVolumePresentation('#2563eb');
+			expect(native100Presentation).toMatchObject({
+				value: '100',
+				fillColor: 'rgb(37, 99, 235)',
+				valueColor: 'rgb(37, 99, 235)',
+				sliderAccent: '#2563eb',
+			});
+			expect(await readBadgeColor(tabId)).toEqual([37, 99, 235, 255]);
 		} finally {
 			await releaseSyntheticCapture();
 			await pendingStart?.catch(() => undefined);
@@ -2594,6 +3174,7 @@ describe('SPECTRA built extension smoke', () => {
 			).catch(() => undefined);
 			await submitEffectiveVolume(tabId, 100).catch(() => undefined);
 			await configureRuntime(fixturePage.url(), DEFAULT_AUDIO_CONFIG).catch(() => undefined);
+			await removePageMediaControllerHarness();
 			await extensionClient.close();
 		}
 	}, 60_000);
@@ -2851,7 +3432,38 @@ describe('SPECTRA built extension smoke', () => {
 			expect(await authenticatedRemote.$eval('[data-command="volume_up"]', (element) => (
 				(element as HTMLButtonElement).disabled
 			))).toBe(false);
-			await authenticatedRemote.waitForSelector('.volume-display.capture-active');
+			try {
+				await authenticatedRemote.waitForSelector('.volume-display.capture-active');
+			} catch (error) {
+				const [remotePresentation, audioSession, controlSnapshot, hostSnapshot, contentStatus] = await Promise.all([
+					authenticatedRemote.evaluate(() => {
+						const display = document.querySelector<HTMLElement>('#volume-display');
+						return {
+							className: display?.className ?? null,
+							value: document.querySelector('#vol-display')?.textContent ?? null,
+						};
+					}).catch(() => null),
+					extensionClient.evaluate(async (targetTabId) => chrome.runtime.sendMessage({
+						protocolVersion: 2,
+						requestId: crypto.randomUUID(),
+						type: 'spectra.audio.session.get',
+						payload: { tabId: targetTabId },
+					}), tabId).catch(() => null),
+					extensionClient.evaluate(async (targetTabId) => chrome.runtime.sendMessage({
+						protocolVersion: 2,
+						requestId: crypto.randomUUID(),
+						tabId: targetTabId,
+						type: 'spectra.control.snapshot.get',
+						payload: { tabId: targetTabId },
+					}), tabId).catch(() => null),
+					readOffscreenSnapshot().catch(() => null),
+					readContentStatus().catch(() => null),
+				]);
+				throw new Error(
+					`Authenticated remote did not render Capture state: ${JSON.stringify({ remotePresentation, audioSession, controlSnapshot, hostSnapshot, contentStatus })}`,
+					{ cause: error },
+				);
+			}
 			expect(await authenticatedRemote.$eval('#vol-display', (element) => (
 				getComputedStyle(element).color
 			))).toBe('rgb(124, 58, 237)');

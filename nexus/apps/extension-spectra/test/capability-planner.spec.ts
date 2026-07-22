@@ -19,6 +19,7 @@ function context(changes: Partial<CapabilityPlannerContext> = {}): CapabilityPla
 	return {
 		explicitIntent: true,
 		requiredCoverage: 'active-target',
+		pageNative: {},
 		domNative: {},
 		chromeNative: {},
 		extensionState: {},
@@ -40,8 +41,15 @@ describe('per-field capability planner', () => {
 		});
 	});
 
-	test('prefers a complete standard DOM writer before paying MAIN adapter cost', () => {
+	test('prefers an acknowledged page controller before the standard DOM fallback', () => {
 		const planner = new CapabilityPlanner();
+		expect(planner.plan('speed', context({
+			pageNative: { speed: active },
+			domNative: { speed: active },
+		}))).toMatchObject({
+			strategy: 'page-native',
+			reason: 'page-controller-complete',
+		});
 		expect(planner.plan('speed', context({
 			domNative: { speed: active },
 			mediaWebAudio: safeMedia(true),
@@ -127,6 +135,26 @@ describe('per-field capability planner', () => {
 		expect(planner.plan('speed', unavailable).strategy).toBe('unsupported');
 		expect(planner.plan('pip', unavailable).strategy).toBe('unsupported');
 		expect(planner.plan('fullscreen', unavailable).strategy).toBe('unsupported');
+	});
+
+	test('falls back only after a retryable page-controller failure and stops at terminal boundaries', () => {
+		const planner = new CapabilityPlanner();
+		const candidates = context({
+			pageNative: { speed: active },
+			domNative: { speed: active },
+		});
+		expect(planner.plan('speed', candidates, [{
+			strategy: 'page-native',
+			failure: 'readback-mismatch',
+		}])).toMatchObject({ strategy: 'dom-native', reason: 'dom-api-complete' });
+		expect(planner.plan('speed', candidates, [{
+			strategy: 'page-native',
+			failure: 'user-activation-required',
+		}])).toMatchObject({
+			strategy: 'unsupported',
+			reason: 'boundary-blocked',
+			terminalFailure: 'user-activation-required',
+		});
 	});
 
 	test('uses Chrome native state for tab mute and rejects native writers without readback', () => {

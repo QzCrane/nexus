@@ -4,9 +4,9 @@ status: stable
 audience: developer
 ---
 
-# 02. Strategy order & Routes (Capability order, registry, runtime, adapters)
+# 02. Strategy order & Routes (Capability order, registry, runtime, bridges)
 
-> 主题 owner 段: §3 Strategy order · §4 Site route registry · §5 Runtime ownership · §6 Playback-rate bridge, PiP & fullscreen
+> 主题 owner 段: §3 Strategy order · §4 Site route registry · §5 Runtime ownership · §6 Exact-element page media, PiP & fullscreen
 > 完整目录: [control-architecture.md](../control-architecture.md)
 
 ## §3 Strategy order
@@ -16,7 +16,7 @@ For each capability, the planner removes candidates that cannot cover the reques
 ```text
 OBSERVE
   -> CAPABILITY-SPECIFIC NATIVE CANDIDATES
-       (DOM_NATIVE / CHROME_NATIVE)
+       (PAGE_NATIVE / DOM_NATIVE / CHROME_NATIVE)
   -> CAPABILITY-AUDITED CONTROLLED AUGMENTATION
        (EXTENSION_STATE / CSS / OVERLAY / SAFE_MEDIA_WEBAUDIO / CAPTURE)
   -> UNSUPPORTED
@@ -33,7 +33,12 @@ Production code must not replace or redefine:
 - `HTMLMediaElement` prototype descriptors;
 - History API methods from an isolated-world runtime.
 
-MAIN execution is limited to the two V1-guarded bridges (`content-fullscreen-bridge.js`, `content-playback-rate-bridge.js`) registered in the manifest at `document_start`.
+MAIN execution is limited to the fullscreen V1 bridge
+(`content-fullscreen-bridge.js`) and exact-element page-media V2 bridge
+(`content-page-media-bridge.js`) registered in the manifest at
+`document_start`. The fullscreen bridge wraps only the native fullscreen entry
+to coordinate a bounded audio handoff. The page-media bridge handles only
+`volumeBase`, `mediaMuted`, and `speed` on the exact request target.
 
 ### §3.2 Native, augmentation and forbidden hijack
 
@@ -42,7 +47,7 @@ The implementation must not hide invasive behavior under the word "native". Ever
 | Class | Strategies | Meaning |
 | --- | --- | --- |
 | observe | `observe` | Read authoritative events/getters without acquiring control. |
-| native | `dom-native`, `chrome-native` | Use a browser-owned API/property with readback. |
+| native | `page-native`, `dom-native`, `chrome-native` | Use a page controller or browser-owned API/property with exact readback. `page-native` is admitted only through the bounded exact-element bridge. |
 | controlled augmentation | `extension-state`, `extension-css`, `extension-overlay`, `media-webaudio`, `capture` | Add a reversible extension-owned capability only when complete native control is unavailable. |
 | unsupported | `unsupported` | Preserve the page and return a structured capability error. |
 
@@ -135,24 +140,39 @@ targeting another tab may project the same Toast visual style in the current tab
 with an additional focus-tab label; refresh, bootstrap, Popup open and snapshot
 synchronization never create a Toast.
 
-## §6 Playback-rate bridge, PiP and fullscreen
+## §6 Exact-element page media, PiP and fullscreen
 
-Site playback-rate synchronization is a resident universal UI sync protocol.
-The manifest-registered `content-playback-rate-bridge.js` runs at `document_start`
-in the MAIN world with a V1 guard, and `findPlayerRoot()` detects the player
-container through the generic `[data-spectra-player="v1"], [class*="player"]`
-selector. The bridge keeps the page player's rate UI in sync with SPECTRA's
-acknowledged `speed` value; the actual write remains the standard DOM
-`playbackRate` setter with `ratechange` readback, and the bridge never installs
-a site-specific adapter, listener bundle, or descriptor patch.
+`volumeBase`, `mediaMuted`, and `speed` use the native order
+`page-native -> dom-native`. The manifest-registered
+`content-page-media-bridge.js` runs in MAIN with a V2 guard. An ISOLATED request
+is encoded on the exact `HTMLMediaElement`, synchronously dispatched as one DOM
+event, and synchronously answered on that same element. The bridge performs a
+bounded composed-ancestor/property discovery for the requested field only. An
+explicit media/root association outranks distance, distance outranks capability
+count, and an unrelated outer player therefore cannot steal an inner media
+field.
 
-PiP and fullscreen are native lifecycle operations bound to the current
-`activeVideo`. The trusted page-event bridge performs the browser API call inside
-the real activation stack, then commits only the observed native state. Leaving
-fullscreen uses the temporary audio handoff solely to preserve the page's
-volume/mute baseline while native fullscreen is entered; it restores that
-baseline immediately after the transition and never uses a volume mutation as a
-gesture substitute. PiP recovery targets the actual
-`document.pictureInPictureElement`/owner media, so a site that moves its PiP
-surface away from the visible page can still be returned through the native
-leave-PiP lifecycle when the browser exposes it.
+A page candidate is usable only when it exposes the paired getter/setter for the
+requested semantic field. The getter is the ACK; after a write it must return the
+requested value through a bounded stable readback or the same page writer
+restores its baseline and fails. Once SPECTRA owns a field through
+`page-native`, that field cannot silently switch to the DOM writer until
+ownership is released. When no page candidate exists before acquisition, the
+standard `HTMLMediaElement` property/event path remains the general fallback.
+Page-originated `volumechange`/`ratechange` events re-read the semantic page
+getter before committing the shared snapshot.
+
+Discovery is request-local: there is no hostname list, player selector,
+controller cache, page-controller event subscription, descriptor patch,
+reassert loop, timer, observer, or polling. The single document event listener
+does no work between explicit requests.
+
+PiP and fullscreen remain native lifecycle operations bound to the current
+`activeVideo`. Trusted page hotkeys and the immediate Popup PiP path call the
+same standard native executor while browser user activation is live; they do not
+use MAIN. The fullscreen V1 bridge wraps only the page's real
+`requestFullscreen()` entry so an already-active enhanced-audio path can yield
+and restore around that native transition. Its per-call listener/timer exists
+only during the bounded handoff. PiP recovery targets the actual
+`document.pictureInPictureElement`/owner media and commits only native
+enter/leave event plus getter readback.

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import {
 	compileEffectiveVolume,
 	CONTROL_ALGORITHM_ADJUDICATIONS,
@@ -15,10 +16,13 @@ import {
 	isControlIntent,
 	isControlOperationAck,
 	isControlPatch,
+	isControlReadResult,
 	isControlSnapshot,
+	isControlSubmitRequest,
 	shouldTryNextControlStrategy,
 	splitEffectiveVolume,
 	splitLegacyVolume,
+	type ControlField,
 	type ControlFieldState,
 } from '@nexus/contracts';
 import {
@@ -26,11 +30,13 @@ import {
 	CONTENT_DOM_NATIVE_FIELDS,
 	CONTENT_EXTENSION_CSS_FIELDS,
 	CONTENT_EXTENSION_OVERLAY_FIELDS,
+	CONTENT_PAGE_NATIVE_FIELDS,
 	contentControlStrategy,
 	isContentActiveVideoOperation,
 } from '../src/content/logic/content-control-policy';
 import {
 	isSpectraEventEnvelope as isContentSpectraEventEnvelope,
+	isSpectraResponse as isContentSpectraResponse,
 } from '@nexus/contracts/content-runtime';
 
 function field<T>(actual: T): ControlFieldState<T> {
@@ -80,6 +86,62 @@ describe('per-field SPECTRA control contracts', () => {
 		expect(isControlIntent({ ...intent, patch: { volumeBase: 101 } })).toBe(false);
 		expect(isControlIntent({ ...intent, generation: -1 })).toBe(false);
 		expect(isControlIntent({ ...intent, requestedCoverage: 'opaque' })).toBe(false);
+	});
+
+	test('requires exact native strategy provenance for page observations and semantic reads', () => {
+		const target = {
+			frameId: 0,
+			documentId: 'document-42',
+			mediaId: 'media:3:1',
+			sourceRevision: 2,
+			kind: 'video',
+		} as const;
+		const pageObservation = {
+			tabId: 42,
+			source: 'page',
+			requestedCoverage: 'active-target',
+			target,
+			patch: { volumeBase: 80, mediaMuted: false },
+			observedStrategies: { volumeBase: 'page-native', mediaMuted: 'dom-native' },
+		} as const;
+		expect(isControlSubmitRequest(pageObservation)).toBe(true);
+		expect(isControlSubmitRequest({ ...pageObservation, observedStrategies: undefined })).toBe(false);
+		expect(isControlSubmitRequest({
+			...pageObservation,
+			observedStrategies: { volumeBase: 'page-native' },
+		})).toBe(false);
+		expect(isControlSubmitRequest({
+			...pageObservation,
+			mutations: [{ field: 'volumeBase', operation: 'delta', value: 5 }],
+		})).toBe(false);
+		expect(isControlSubmitRequest({
+			...pageObservation,
+			source: 'popup',
+		})).toBe(false);
+		expect(isControlSubmitRequest({
+			...pageObservation,
+			patch: { preservePitch: true },
+			observedStrategies: { preservePitch: 'page-native' },
+		})).toBe(false);
+
+		const readResult = {
+			target,
+			patch: { volumeBase: 80, speed: 1.25, playing: true },
+			observedStrategies: {
+				volumeBase: 'page-native',
+				speed: 'dom-native',
+				playing: 'dom-native',
+			},
+		} as const;
+		expect(isControlReadResult(readResult)).toBe(true);
+		expect(isControlReadResult({
+			...readResult,
+			observedStrategies: { speed: 'dom-native', playing: 'dom-native' },
+		})).toBe(false);
+		expect(isControlReadResult({
+			...readResult,
+			observedStrategies: { ...readResult.observedStrategies, boost: 'page-native' },
+		})).toBe(false);
 	});
 
 	test('validates actual per-field strategy and ownership without inferring it from 100% or 1x', () => {
@@ -141,6 +203,33 @@ describe('per-field SPECTRA control contracts', () => {
 		})).toBe(false);
 	});
 
+	test('accepts page-native acknowledgements in the focused Content response guard', () => {
+		const acknowledgement = {
+			intentId: 'intent-page-native-mute',
+			tabId: 42,
+			documentId: 'document-42',
+			generation: 3,
+			revision: 11,
+			target: null,
+			fields: {
+				mediaMuted: {
+					desired: true,
+					actual: true,
+					revision: 11,
+					phase: 'applied',
+					strategy: 'page-native',
+					coverage: 'active-target',
+					controlled: false,
+					lastError: null,
+				},
+			},
+		};
+		expect(isContentSpectraResponse(
+			'spectra.control.intent.submit',
+			{ ok: true, data: acknowledgement },
+		)).toBe(true);
+	});
+
 	test('rejects operation success ACKs whose executor exceeds the declared algorithm policy', () => {
 		const target = {
 			frameId: 0,
@@ -182,6 +271,7 @@ describe('per-field SPECTRA control contracts', () => {
 		expect(new Set(CONTROL_CAPABILITIES).size).toBe(
 			CONTROL_FIELDS.length + CONTROL_OPERATIONS.length,
 		);
+		expect(classifyControlStrategy('page-native')).toBe('native');
 		expect(classifyControlStrategy('dom-native')).toBe('native');
 		expect(classifyControlStrategy('extension-css')).toBe('augmentation');
 		expect(classifyControlStrategy('media-webaudio')).toBe('augmentation');
@@ -201,7 +291,16 @@ describe('per-field SPECTRA control contracts', () => {
 				expect(rule.admissionEvidence).toBe('proven-media-source-eligibility');
 				expect(strategy).toBe('media-webaudio');
 			}
+			if (rule.mainWorld === 'exact-element-page-bridge') {
+				expect(strategy).toBe('page-native');
+			}
 		}
+		expect(CONTROL_STRATEGY_RULES['page-native']).toMatchObject({
+			writerOwner: 'page-media-controller',
+			admissionEvidence: 'page-controller-readback',
+			mainWorld: 'exact-element-page-bridge',
+			audioRuntimeCost: 'none',
+		});
 		expect(CONTROL_STRATEGY_RULES['dom-native'].audioRuntimeCost).toBe('none');
 		expect(CONTROL_STRATEGY_RULES['media-webaudio'].audioRuntimeCost).toBe('lazy-audio-context');
 		expect(CONTROL_STRATEGY_RULES.capture.audioRuntimeCost).toBe('lazy-offscreen-capture');
@@ -288,6 +387,32 @@ describe('per-field SPECTRA control contracts', () => {
 		});
 	});
 
+	test('keeps all 51 executable strategy orders, MAIN boundaries, ACKs, and lifetimes mirrored in the owner design', () => {
+		const architecture = readFileSync(
+			new URL('../docs/control/04a-algorithm-matrix.md', import.meta.url),
+			'utf8',
+		);
+		for (const capability of CONTROL_CAPABILITIES) {
+			const policy = CONTROL_ALGORITHM_POLICIES[capability];
+			const adjudication = CONTROL_ALGORITHM_ADJUDICATIONS[capability];
+			const mainWorld = policy.orderedStrategies.some(
+				(strategy) => CONTROL_STRATEGY_RULES[strategy].mainWorld === 'exact-element-page-bridge',
+			)
+				? 'exact-element-page-bridge'
+				: 'forbidden';
+			const exactRow = [
+				`| \`${capability}\``,
+				`\`${adjudication.nativePreference}\``,
+				`\`${adjudication.augmentationAdmission}\``,
+				`\`${policy.orderedStrategies.join(' -> ')}\``,
+				`\`${mainWorld}\``,
+				`\`${policy.acknowledgements.join(' + ')}\``,
+				`\`${policy.recurringWork}\` |`,
+			].join(' | ');
+			expect(architecture).toContain(exactRow);
+		}
+	});
+
 	test('records recurring work only for explicitly owned or subscribed algorithms', () => {
 		const recurring = Object.entries(CONTROL_ALGORITHM_POLICIES)
 			.filter(([, policy]) => policy.recurringWork !== 'none')
@@ -348,8 +473,13 @@ describe('per-field SPECTRA control contracts', () => {
 	});
 
 	test('release-gates the narrow Content strategy projection against the canonical policy', () => {
+		const pageNativeFields = new Set<ControlField>(CONTENT_PAGE_NATIVE_FIELDS);
 		for (const field of CONTENT_DOM_NATIVE_FIELDS) {
-			expect(CONTROL_ALGORITHM_POLICIES[field].orderedStrategies[0]).toBe('dom-native');
+			expect(CONTROL_ALGORITHM_POLICIES[field].orderedStrategies).toEqual(
+				pageNativeFields.has(field)
+					? ['page-native', 'dom-native']
+					: ['dom-native'],
+			);
 			expect(contentControlStrategy(field, 'active-target')).toBe('dom-native');
 			expect(contentControlStrategy(field, 'full')).toBeNull();
 		}

@@ -12,6 +12,7 @@ import { sendSpectraRequest } from '../../shared/ui-spectra-client';
 
 export type ConfigUpdateFn = ((changes: Partial<AudioConfig>) => void) & {
 	flush: () => Promise<void>;
+	runControl: <T>(command: () => Promise<T>) => Promise<T>;
 };
 
 export function createGetCapturing(
@@ -39,6 +40,13 @@ export function createUpdateFn(
 	let localRevision = 0;
 	let pendingPatch: ControlPatch = {};
 	let pendingEffectiveVolume: number | null = null;
+	let controlTail: Promise<void> = Promise.resolve();
+
+	const serializeControl = <T>(command: () => Promise<T>): Promise<T> => {
+		const result = controlTail.then(command, command);
+		controlTail = result.then(() => undefined, () => undefined);
+		return result;
+	};
 
 	const toControlPatch = (
 		changes: Partial<AudioConfig>,
@@ -98,7 +106,7 @@ export function createUpdateFn(
 		pendingPatch = {};
 		pendingEffectiveVolume = null;
 
-		inFlight = (async () => {
+		inFlight = serializeControl(async () => {
 			if (effectiveVolume !== null) {
 				const response = await sendSpectraRequest(
 					'spectra.control.operation.submit',
@@ -164,7 +172,7 @@ export function createUpdateFn(
 				});
 			}
 			state.lastError = null;
-		})().catch((error) => {
+		}).catch((error) => {
 			if (localRevision === sentRevision) {
 				state.config = mergeAudioConfig(state.stableConfig, {
 					eqValues: [...state.stableConfig.eqValues],
@@ -180,16 +188,25 @@ export function createUpdateFn(
 	};
 
 	const drain = async (): Promise<void> => {
-		while (pending || inFlight) {
-			if (inFlight) await inFlight;
-			else {
-				if (timer) {
-					clearTimeout(timer);
-					timer = null;
+		while (true) {
+			while (pending || inFlight) {
+				if (inFlight) await inFlight;
+				else {
+					if (timer) {
+						clearTimeout(timer);
+						timer = null;
+					}
+					await flush();
 				}
-				await flush();
 			}
+			await controlTail;
+			if (!pending && !inFlight) return;
 		}
+	};
+
+	const runControl = async <T>(command: () => Promise<T>): Promise<T> => {
+		await drain();
+		return serializeControl(command);
 	};
 
 	window.addEventListener('pagehide', () => {
@@ -228,6 +245,7 @@ export function createUpdateFn(
 		scheduleFlush();
 	}) as ConfigUpdateFn;
 	update.flush = drain;
+	update.runControl = runControl;
 	return update;
 }
 

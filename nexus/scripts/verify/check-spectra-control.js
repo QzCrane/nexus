@@ -13,7 +13,6 @@ const LEGACY_WRITERS = Object.freeze({
 		`${SOURCE_PATH}/content/audio/volume-observer.ts`,
 		`${SOURCE_PATH}/content/core/lifecycle/media-observer.ts`,
 		`${SOURCE_PATH}/content/logic/media-control.ts`,
-		`${SOURCE_PATH}/injector/youtube-adapter.ts`,
 	]),
 	currentTime: new Set([
 		`${SOURCE_PATH}/content/input/hotkey-helpers.ts`,
@@ -137,7 +136,7 @@ function checkSourceAlgorithmCatalog(root, contracts, architecture) {
 			error(`SCTRL-002/SCTRL-016: source algorithm catalog does not own ${capability}`);
 		}
 	}
-	if (SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS.length !== 49) {
+	if (SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS.length !== 50) {
 		error(`SCTRL-002/SCTRL-016: source algorithm inventory drifted (${SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS.length}/50)`);
 	}
 }
@@ -146,13 +145,14 @@ function checkDefaultRuntime(root) {
 	const app = path.join(root, APP_PATH);
 	const manifest = JSON.parse(fs.readFileSync(path.join(app, 'public/manifest.json'), 'utf8'));
 	// Allowlist: MAIN-world bridges that must be present at document_start so
-	// Chrome injects them before any page script can call requestFullscreen or
-	// set playbackRate. Each bridge module owns a V1 guard that makes a second
+	// Chrome injects them before any page script can call requestFullscreen and
+	// before an exact media controller is first queried. Each bridge module owns
+	// a versioned guard that makes a second
 	// injection (warm-update / on-demand via main-runtime-manager.ts) a no-op,
 	// so the manifest entry and the runtime re-injection path coexist safely.
 	const ALLOWED_MAIN_BRIDGES = Object.freeze({
 		'content-fullscreen-bridge.js': '__SPECTRA_FULLSCREEN_BRIDGE_V1__',
-		'content-playback-rate-bridge.js': '__SPECTRA_PLAYBACK_RATE_BRIDGE_V1__',
+		'content-page-media-bridge.js': '__SPECTRA_PAGE_MEDIA_BRIDGE_V2__',
 	});
 	const seenMainBridges = new Set();
 	const scripts = manifest.content_scripts ?? [];
@@ -175,20 +175,60 @@ function checkDefaultRuntime(root) {
 			error(`SCTRL-001/SCTRL-004: manifest must register the MAIN world bridge ${bridge} at document_start`);
 		}
 	}
-	// Verify each allowlisted bridge module actually owns its V1 guard so the
+	// Verify each allowlisted bridge module actually owns its versioned guard so the
 	// manifest entry cannot silently drift away from the no-op re-injection
 	// contract that main-runtime-manager.ts relies on.
 	const BRIDGE_SOURCE_NAME = {
 		'content-fullscreen-bridge.js': 'fullscreen-bridge.ts',
-		'content-playback-rate-bridge.js': 'playback-rate-bridge.ts',
+		'content-page-media-bridge.js': 'page-media-bridge.ts',
 	};
 	for (const [bridge, guard] of Object.entries(ALLOWED_MAIN_BRIDGES)) {
 		const bridgePath = path.join(app, 'src/content/injector', BRIDGE_SOURCE_NAME[bridge]);
 		if (!fs.existsSync(bridgePath)) {
 			error(`SCTRL-001/SCTRL-004: allowlisted MAIN bridge source is missing (${bridgePath})`);
 		} else if (!fs.readFileSync(bridgePath, 'utf8').includes(guard)) {
-			error(`SCTRL-001/SCTRL-004: MAIN bridge ${bridge} lost its V1 guard ${guard}`);
+			error(`SCTRL-001/SCTRL-004: MAIN bridge ${bridge} lost its versioned guard ${guard}`);
 		}
+	}
+
+	const pageMediaBridge = fs.readFileSync(
+		path.join(app, 'src/content/injector/page-media-bridge.ts'),
+		'utf8',
+	);
+	for (const required of [
+		'const MAX_ANCESTOR_DEPTH = 12',
+		'const MAX_ATTACHED_PROPERTIES = 96',
+		'function controllerAssociation(',
+		"dataProperty(controller, key) === element",
+		'function findCapability(',
+		'associationRank(right.association) - associationRank(left.association)',
+		'left.distance - right.distance',
+		'if (!(element instanceof HTMLMediaElement)) return;',
+		'capability.write(request.value!);',
+		'const actual = capability.read();',
+		'capability.write(before);',
+		'document.addEventListener(SPECTRA_PAGE_MEDIA_EVENT, onPageMediaRequest, true);',
+	]) {
+		if (!pageMediaBridge.includes(required)) {
+			error(`SCTRL-004/SCTRL-005/SCTRL-017: exact-element page-media bridge boundary drifted (${required})`);
+		}
+	}
+	for (const forbidden of [
+		/\b(?:async|await|Promise|setTimeout|setInterval|requestAnimationFrame|requestIdleCallback|MutationObserver|ResizeObserver)\b/u,
+		/\b(?:hostname|youtube)\b/iu,
+		/\[class\*=/u,
+		/window\.postMessage/u,
+	]) {
+		if (forbidden.test(pageMediaBridge)) {
+			error(`SCTRL-004/SCTRL-013: page-media bridge must stay synchronous, domain-neutral and observer-free (${forbidden})`);
+		}
+	}
+	const pageMediaContract = fs.readFileSync(
+		path.join(app, 'src/shared/page-media-bridge.ts'),
+		'utf8',
+	);
+	if (!/SPECTRA_PAGE_MEDIA_FIELDS = \[\s*'volumeBase',\s*'mediaMuted',\s*'speed',\s*\] as const;/su.test(pageMediaContract)) {
+		error('SCTRL-002/SCTRL-004: exact-element MAIN admission must stay limited to volumeBase, mediaMuted and speed');
 	}
 
 	const build = fs.readFileSync(path.join(app, 'build.mjs'), 'utf8');
@@ -334,7 +374,7 @@ function checkPolicyOwner(root) {
 		path.join(root, APP_PATH, 'src/background/control-coordinator.ts'),
 		'utf8',
 	);
-	if (!coordinator.includes('applyPageObservation(intent)')
+	if (!coordinator.includes('applyPageObservation(intent, resolvedRequest.observedStrategies)')
 		|| !coordinator.includes("source: pageObservation ? 'system' : intent.source")
 		|| !coordinator.includes('patch: routedPatch')) {
 		error('SCTRL-017: page observations must commit without routing a second content write');
@@ -495,7 +535,8 @@ function checkPolicyOwner(root) {
 			'utf8',
 		);
 		if (!runtimeProtocols.includes('`ControlSnapshot` is the sole actual source')
-			|| !runtimeProtocols.includes('one allowlisted official API call')
+			|| !runtimeProtocols.includes('`page-native -> dom-native`')
+			|| !runtimeProtocols.includes('no domain list, retained player object, observer, timer, or polling loop')
 			|| !runtimeProtocols.includes('`boostGain: 1–8`')
 			|| runtimeProtocols.includes('MAIN WebAudio')) {
 			error('SCTRL-014/SCTRL-016/SCTRL-032: runtime protocol narrative drifted from control ownership');
@@ -693,7 +734,7 @@ function writerMatches(content) {
 		volume: /\b(?:element|media|video|audio|v)\.volume\s*=(?!=)/u.test(content),
 		muted: /\b(?:element|media|video|audio|v)\.muted\s*=(?!=)/u.test(content),
 		playbackRate: /\.playbackRate\s*=(?!=)/u.test(content),
-		currentTime: /\.currentTime\s*=(?!=)/u.test(content),
+		currentTime: /\b(?:element|media|video|audio|v)\.currentTime\s*=(?!=)/u.test(content),
 		preservesPitch: /\.preservesPitch\s*=(?!=)/u.test(content),
 		loop: /\b(?:element|media|video|audio|v)\.loop\s*=(?!=)/u.test(content),
 		inlineVideoStyle: /\.style\.(?:transform|filter|objectFit|position|zIndex)\s*=(?!=)/u.test(content),

@@ -111,9 +111,13 @@ async function request(enabled: boolean, config: AudioConfig, requestedGeneratio
 	}
 
 	const previousActive = active;
+	// Starting/stopping changes processor ownership. It cannot reuse the stable
+	// generation even when a caller still holds that acknowledged generation;
+	// otherwise Background sees active -> idle in one generation and correctly
+	// rejects the terminal session update as a stale phase regression.
 	const requestGeneration = requestedGeneration === undefined
 		? generation + 1
-		: Math.max(generation, requestedGeneration);
+		: Math.max(generation + 1, requestedGeneration);
 	generation = requestGeneration;
 	phase = enabled ? 'starting' : 'stopping';
 	lastError = undefined;
