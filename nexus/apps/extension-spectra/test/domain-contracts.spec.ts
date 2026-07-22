@@ -3,7 +3,6 @@ import {
 	findBestHostnameMatch,
 	hostnameMatchesRule,
 	isSpectraRequestEnvelope,
-	matchSiteNativeAdapter,
 	normalizeHostname,
 } from '@nexus/contracts';
 
@@ -23,15 +22,6 @@ describe('canonical domain contracts', () => {
 	test('selects the most-specific matching rule', () => {
 		const rules = ['example.com', 'video.example.com'];
 		expect(findBestHostnameMatch('cdn.video.example.com', rules, (rule) => rule)).toBe('video.example.com');
-	});
-
-	test('does not activate site adapters on substring lookalikes', () => {
-		expect(matchSiteNativeAdapter('youtube.com', 'speed')).toBe('youtube');
-		expect(matchSiteNativeAdapter('music.youtube.com.', 'volumeBase')).toBe('youtube');
-		expect(matchSiteNativeAdapter('youtu.be', 'speed')).toBeNull();
-		expect(matchSiteNativeAdapter('evil-youtube.com', 'speed')).toBeNull();
-		expect(matchSiteNativeAdapter('youtube.com.evil.example', 'speed')).toBeNull();
-		expect(matchSiteNativeAdapter('youtube.com', 'pip')).toBeNull();
 	});
 });
 

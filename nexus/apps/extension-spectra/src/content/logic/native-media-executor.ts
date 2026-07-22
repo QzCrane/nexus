@@ -728,21 +728,11 @@ export class NativeMediaExecutor {
 		const activeKey = active ? this.targetKey(active.target) : null;
 		const fields: ControlFieldStates = {};
 		const released = new Set<ControlField>();
-		const excludedNativeFields = new Set<ControlField>(
-			intent.payload.excludedNativeFields ?? [],
-		);
 		for (const { element, target } of this.registry.list()) {
 			const key = this.targetKey(target);
 			const ownership = nativeMediaOwnership.byElement.get(element);
 			if (ownership) {
 				for (const [field, owned] of [...ownership.entries()]) {
-					// An allowlisted official API that successfully took ownership must
-					// also restore its own captured baseline. Background performs that
-					// readback before this operation and excludes the losing DOM writer.
-					if (excludedNativeFields.has(field)) {
-						ownership.delete(field);
-						continue;
-					}
 					const tolerance = field === 'volumeBase' || field === 'speed' ? 0.01 : 0;
 					const current = readRestorableMediaField(element, field);
 					if (!valuesMatch(current, owned.lastApplied, tolerance)) {

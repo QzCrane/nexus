@@ -22,7 +22,6 @@ export interface CapabilitySupport {
 export interface CapabilityPlannerContext {
 	explicitIntent: boolean;
 	requiredCoverage: 'active-target' | 'full';
-	siteNative?: Partial<Record<ControlCapability, CapabilitySupport>>;
 	domNative?: Partial<Record<ControlCapability, CapabilitySupport>>;
 	chromeNative?: Partial<Record<ControlCapability, CapabilitySupport>>;
 	extensionState?: Partial<Record<ControlCapability, CapabilitySupport>>;
@@ -48,7 +47,6 @@ export interface CapabilityPlan {
 	coverage: ControlCoverage;
 	reason:
 		| 'observe-only'
-		| 'site-api-complete'
 		| 'dom-api-complete'
 		| 'chrome-api-complete'
 		| 'extension-state-complete'
@@ -78,7 +76,6 @@ function declaredSupport(
 	context: CapabilityPlannerContext,
 ): CapabilitySupport | undefined {
 	switch (strategy) {
-		case 'site-native': return context.siteNative?.[field];
 		case 'dom-native': return context.domNative?.[field];
 		case 'chrome-native': return context.chromeNative?.[field];
 		case 'extension-state': return context.extensionState?.[field];
@@ -106,7 +103,6 @@ function admitsCapture(admission: ControlAugmentationAdmission): boolean {
 function supportedPlan(
 	field: ControlCapability,
 	strategy: Extract<ControlStrategy,
-		| 'site-native'
 		| 'dom-native'
 		| 'chrome-native'
 		| 'extension-state'
@@ -118,9 +114,7 @@ function supportedPlan(
 		field,
 		strategy,
 		coverage: support.coverage,
-		reason: strategy === 'site-native'
-			? 'site-api-complete'
-			: strategy === 'dom-native'
+		reason: strategy === 'dom-native'
 				? 'dom-api-complete'
 				: strategy === 'chrome-native'
 					? 'chrome-api-complete'

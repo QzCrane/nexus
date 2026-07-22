@@ -4,19 +4,16 @@ import {
 	DEFAULT_AUDIO_CONFIG,
 	audioSessionMatchesControlDocument,
 	CONTROL_ALGORITHM_POLICIES,
-	SITE_NATIVE_ADAPTER_DESCRIPTORS,
 	SPECTRA_PROTOCOL_VERSION,
 	isControlApplyAck,
 	isControlOperationAck,
 	isControlSnapshot,
-	isControlStrategyFailure,
 	isSpectraRequestEnvelope,
 	compileEffectiveVolume,
 	isActiveCaptureLifecycle,
 	resolveAudioVolume,
 	rpcFailure,
 	rpcSuccess,
-	shouldTryNextControlStrategy,
 	splitEffectiveVolume,
 	type AudioConfig,
 	type ControlActualContext,
@@ -36,7 +33,6 @@ import {
 	type ControlSubmitRequest,
 	type ControlValues,
 	type MediaTarget,
-	type SiteNativeControlField,
 	type SpectraEventEnvelope,
 } from '@nexus/contracts';
 import { createKeyedSerializedQueue } from '@nexus/kernel';
@@ -44,7 +40,6 @@ import { sendSpectraTabRequest } from '../shared/spectra-client';
 import { storage } from './state';
 import { updateBadgeFromControlProjection } from './handlers/badge';
 import { executeUserScriptInTab } from './handlers/user-scripts';
-import { applyMainSiteControl } from './main-runtime-manager';
 import { getAudioSession } from './audio-session-store';
 import {
 	ensureContentRuntime,
@@ -56,7 +51,6 @@ import { swLog } from '../shared/logger';
 
 const STORAGE_PREFIX = 'spectra.control.tab.';
 const GENERATION_PREFIX = 'spectra.control.generation.';
-const SITE_NATIVE_BASELINE_PREFIX = 'spectra.control.site-native-baseline.';
 const snapshots = new Map<number, ControlSnapshot>();
 const serialized = createKeyedSerializedQueue<number>();
 const invalidations = new Map<number, Promise<void>>();
@@ -97,11 +91,6 @@ const AUDIO_PROJECTION_FIELDS = new Set<ControlField>([
 	'pan',
 	'delay',
 ]);
-
-const SITE_NATIVE_FIELDS = new Set<ControlField>(
-	Object.values(SITE_NATIVE_ADAPTER_DESCRIPTORS)
-		.flatMap((descriptor) => [...descriptor.fields]),
-);
 
 interface ControlTargetProjection {
 	activeMedia: ControlSnapshot['activeMedia'];
@@ -172,7 +161,7 @@ function hasRuntimeOwnedState(snapshot: ControlSnapshot): boolean {
 		if (!state?.controlled || (state.phase !== 'applied' && state.phase !== 'error')) return false;
 		const field = rawField as ControlField;
 		if (field === 'audioEnabled') return false;
-		if (state.strategy === 'chrome-native' || state.strategy === 'site-native'
+		if (state.strategy === 'chrome-native'
 			|| state.strategy === 'observe' || state.strategy === 'unsupported') return false;
 		if (state.strategy === 'dom-native') return RUNTIME_RESIDENT_NATIVE_FIELDS.has(field);
 		return true;
@@ -197,77 +186,12 @@ async function reconcileRuntimeOwnership(snapshot: ControlSnapshot): Promise<voi
 	);
 }
 
-function isSiteNativeControlField(field: ControlField): field is SiteNativeControlField {
-	return SITE_NATIVE_FIELDS.has(field);
-}
-
 function storageKey(tabId: number): string {
 	return `${STORAGE_PREFIX}${tabId}`;
 }
 
 function generationKey(tabId: number): string {
 	return `${GENERATION_PREFIX}${tabId}`;
-}
-
-function siteNativeBaselineKey(tabId: number): string {
-	return `${SITE_NATIVE_BASELINE_PREFIX}${tabId}`;
-}
-
-interface SiteNativeBaselineRecord {
-	documentId: string;
-	generation: number;
-	values: Partial<Record<SiteNativeControlField, number | boolean>>;
-}
-
-function isSiteNativeBaselineValue(field: SiteNativeControlField, value: unknown): boolean {
-	if (field === 'mediaMuted') return typeof value === 'boolean';
-	if (typeof value !== 'number' || !Number.isFinite(value)) return false;
-	return field === 'volumeBase'
-		? value >= 0 && value <= 100
-		: value >= 0.1 && value <= 16;
-}
-
-async function readSiteNativeBaseline(
-	tabId: number,
-	documentId: string,
-	generation: number,
-): Promise<SiteNativeBaselineRecord | null> {
-	const key = siteNativeBaselineKey(tabId);
-	const stored = await chrome.storage.session.get(key).catch(() => ({})) as Record<string, unknown>;
-	const candidate = stored[key];
-	if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null;
-	const record = candidate as Partial<SiteNativeBaselineRecord>;
-	if (record.documentId !== documentId || record.generation !== generation
-		|| !record.values || typeof record.values !== 'object' || Array.isArray(record.values)) {
-		return null;
-	}
-	const values: SiteNativeBaselineRecord['values'] = {};
-	for (const field of SITE_NATIVE_FIELDS) {
-		if (!isSiteNativeControlField(field)) continue;
-		const value = record.values[field];
-		if (value !== undefined && isSiteNativeBaselineValue(field, value)) values[field] = value;
-	}
-	return { documentId, generation, values };
-}
-
-async function rememberSiteNativeBaseline(
-	intent: ControlIntent,
-	field: SiteNativeControlField,
-	value: number | boolean,
-): Promise<void> {
-	const existing = await readSiteNativeBaseline(
-		intent.tabId,
-		intent.documentId,
-		intent.generation,
-	) ?? { documentId: intent.documentId, generation: intent.generation, values: {} };
-	if (existing.values[field] !== undefined) return;
-	existing.values[field] = value;
-	await chrome.storage.session.set({ [siteNativeBaselineKey(intent.tabId)]: existing })
-		.catch((error) => swLog.warn('setSiteNativeBaselineField persist failed', error));
-}
-
-async function clearSiteNativeBaseline(tabId: number): Promise<void> {
-	await chrome.storage.session.remove(siteNativeBaselineKey(tabId)).catch(() => undefined);
 }
 
 async function currentIdentity(tabId: number): Promise<{ documentId: string; origin: string }> {
@@ -675,86 +599,6 @@ function applyPageObservation(intent: ControlIntent): ControlFieldStates {
 	return fields;
 }
 
-function isSiteNativeReflection(
-	snapshot: ControlSnapshot,
-	request: RoutedControlSubmitRequest,
-): boolean {
-	if (request.source !== 'page' || !request.patch || Object.keys(request.patch).length === 0
-		|| !request.target || !snapshot.activeMedia
-		|| request.target.documentId !== snapshot.activeMedia.documentId
-		|| request.target.mediaId !== snapshot.activeMedia.mediaId
-		|| request.target.sourceRevision !== snapshot.activeMedia.sourceRevision) return false;
-	return Object.entries(request.patch).every(([rawField, actual]) => {
-		const field = rawField as ControlField;
-		const current = snapshot.fields[field];
-		return current?.strategy === 'site-native'
-			&& current.phase === 'applied'
-			&& JSON.stringify(current.actual) === JSON.stringify(actual);
-	});
-}
-
-async function applySiteNativeFallback(
-	intent: ControlIntent,
-	contentFields: ControlFieldStates,
-): Promise<ControlFieldStates> {
-	const fields = { ...contentFields };
-	for (const [rawField, state] of Object.entries(contentFields)) {
-		const field = rawField as ControlField;
-		if (intent.requestedCoverage !== 'active-target'
-			|| state?.phase !== 'error' || !state.lastError
-			|| !isControlStrategyFailure(state.lastError.code)
-			|| !shouldTryNextControlStrategy(state.lastError.code)
-			|| !isSiteNativeControlField(field)
-			|| !(CONTROL_ALGORITHM_POLICIES[field].orderedStrategies as readonly string[])
-				.includes('site-native')) continue;
-		const desired = intent.patch[field];
-		if (desired === undefined) continue;
-		try {
-			const result = await applyMainSiteControl({
-				tabId: intent.tabId,
-				documentId: intent.documentId,
-				generation: intent.generation,
-				intentId: intent.intentId,
-				field,
-				value: desired as ControlValues[SiteNativeControlField],
-			});
-			const originalBaseline = state.restoreBaseline;
-			await rememberSiteNativeBaseline(
-				intent,
-				field,
-				isSiteNativeBaselineValue(field, originalBaseline)
-					? originalBaseline as number | boolean
-					: result.before,
-			);
-			(fields as Record<string, unknown>)[field] = {
-				desired,
-				actual: result.actual,
-				revision: intent.baseRevision + 1,
-				phase: 'applied',
-				strategy: 'site-native',
-				coverage: 'active-target',
-				controlled: true,
-				intentId: intent.intentId,
-				lastError: null,
-			};
-		} catch (error) {
-			const siteMessage = error instanceof Error ? error.message : String(error);
-			(fields as Record<string, unknown>)[field] = {
-				...state,
-				strategy: 'unsupported',
-				coverage: 'partial',
-				controlled: false,
-				lastError: {
-					code: 'strategy-runtime-failed',
-					message: `${state.lastError.message}; official site API: ${siteMessage}`,
-					retryable: true,
-				},
-			};
-		}
-	}
-	return fields;
-}
-
 async function publishSnapshot(snapshot: ControlSnapshot): Promise<void> {
 	const previous = snapshots.get(snapshot.tabId);
 	snapshots.set(snapshot.tabId, snapshot);
@@ -989,7 +833,7 @@ async function prepareIntent(
 		));
 		fields = {
 			...fields,
-			...await applySiteNativeFallback(routedIntent, response.data.fields),
+			...response.data.fields,
 		};
 	}
 
@@ -1071,20 +915,6 @@ function observeChromeTabState(
 
 async function executeIntent(request: RoutedControlSubmitRequest): Promise<ControlApplyAck> {
 	const current = await getOrCreateSnapshot(request.tabId);
-	if (isSiteNativeReflection(current, request)) {
-		const fields = Object.fromEntries(
-			Object.keys(request.patch ?? {}).map((field) => [field, current.fields[field as ControlField]]),
-		) as ControlFieldStates;
-		return {
-			intentId: crypto.randomUUID(),
-			tabId: current.tabId,
-			documentId: current.documentId,
-			generation: current.generation,
-			revision: current.revision,
-			target: current.activeMedia,
-			fields,
-		};
-	}
 	const prepared = await prepareIntent(request, current);
 	const { intent, baseline, ackTarget, activeMedia, activeVideo, fields } = prepared;
 	const committed = await commitControlFields(
@@ -1186,18 +1016,6 @@ async function captureActualPatch(
 	return patch;
 }
 
-async function restoreSiteBaselineRecord(
-	tabId: number,
-	record: SiteNativeBaselineRecord | null,
-): Promise<void> {
-	if (record) {
-		await chrome.storage.session.set({ [siteNativeBaselineKey(tabId)]: record })
-			.catch((error) => swLog.warn('restoreSiteBaselineRecord persist failed', error));
-	} else {
-		await clearSiteNativeBaseline(tabId);
-	}
-}
-
 interface CompensationResult {
 	ok: boolean;
 	fields: ControlFieldStates;
@@ -1209,33 +1027,10 @@ async function compensateControlPatch(
 	target: ControlSnapshot['activeMedia'],
 	targetPatch: ControlPatch,
 	processorPatch: ControlPatch,
-	writerFields: ControlFieldStates,
-	previousSiteBaseline: SiteNativeBaselineRecord | null,
 ): Promise<CompensationResult> {
 	const fields: ControlFieldStates = {};
 	const failures: string[] = [];
 	const isolatedTargetPatch: ControlPatch = { ...targetPatch };
-	for (const [rawField, value] of Object.entries(targetPatch)) {
-		const field = rawField as ControlField;
-		const writer = writerFields[field]?.strategy ?? baseline.fields[field]?.strategy;
-		if (writer !== 'site-native' || !isSiteNativeControlField(field)) continue;
-		delete (isolatedTargetPatch as Record<string, unknown>)[field];
-		try {
-			const result = await applyMainSiteControl({
-				tabId: baseline.tabId,
-				documentId: baseline.documentId,
-				generation: baseline.generation,
-				intentId: crypto.randomUUID(),
-				field,
-				value: value as ControlValues[SiteNativeControlField],
-			});
-			if (JSON.stringify(result.actual) !== JSON.stringify(value)) {
-				throw new Error(`official readback mismatch for ${field}`);
-			}
-		} catch (error) {
-			failures.push(`${field}: ${error instanceof Error ? error.message : String(error)}`);
-		}
-	}
 	for (const [patch, requestedCoverage] of [
 		[isolatedTargetPatch, 'active-target'],
 		[processorPatch, 'full'],
@@ -1254,11 +1049,6 @@ async function compensateControlPatch(
 		} catch (error) {
 			failures.push(error instanceof Error ? error.message : String(error));
 		}
-	}
-	try {
-		await restoreSiteBaselineRecord(baseline.tabId, previousSiteBaseline);
-	} catch (error) {
-		failures.push(`site baseline: ${error instanceof Error ? error.message : String(error)}`);
 	}
 	return {
 		ok: failures.length === 0,
@@ -1323,77 +1113,6 @@ interface PreparedContentOperation {
 	intent: ControlOperationIntent;
 	baseline: ControlSnapshot;
 	acknowledgement: ControlOperationAck;
-}
-
-async function restoreSiteNativeFields(
-	snapshot: ControlSnapshot,
-	operationId: string,
-): Promise<{
-	fields: ControlFieldStates;
-	excludedNativeFields: SiteNativeControlField[];
-	restoredFields: SiteNativeControlField[];
-	failedFields: SiteNativeControlField[];
-}> {
-	const baseline = await readSiteNativeBaseline(
-		snapshot.tabId,
-		snapshot.documentId,
-		snapshot.generation,
-	);
-	const fields: ControlFieldStates = {};
-	const excludedNativeFields = Object.keys(baseline?.values ?? {}) as SiteNativeControlField[];
-	const restoredFields: SiteNativeControlField[] = [];
-	const failedFields: SiteNativeControlField[] = [];
-	for (const field of excludedNativeFields) {
-		const desired = baseline?.values[field];
-		if (desired === undefined) continue;
-		try {
-			const result = await applyMainSiteControl({
-				tabId: snapshot.tabId,
-				documentId: snapshot.documentId,
-				generation: snapshot.generation,
-				intentId: operationId,
-				field,
-				value: desired as ControlValues[SiteNativeControlField],
-			});
-			(fields as Record<string, unknown>)[field] = {
-				desired: null,
-				actual: result.actual,
-				revision: snapshot.revision + 1,
-				phase: 'applied',
-				strategy: 'site-native',
-				coverage: 'active-target',
-				controlled: false,
-				intentId: operationId,
-				lastError: null,
-			};
-			restoredFields.push(field);
-		} catch (error) {
-			failedFields.push(field);
-			(fields as Record<string, unknown>)[field] = {
-				desired: null,
-				actual: snapshot.fields[field]?.actual ?? null,
-				revision: snapshot.revision + 1,
-				phase: 'error',
-				strategy: 'site-native',
-				coverage: 'active-target',
-				controlled: true,
-				intentId: operationId,
-				lastError: {
-					code: 'strategy-runtime-failed',
-					message: error instanceof Error ? error.message : String(error),
-					retryable: true,
-				},
-			};
-		}
-	}
-	if (baseline && failedFields.length > 0) {
-		const values: SiteNativeBaselineRecord['values'] = {};
-		for (const field of failedFields) values[field] = baseline.values[field];
-		await chrome.storage.session.set({
-			[siteNativeBaselineKey(snapshot.tabId)]: { ...baseline, values },
-		}).catch((error) => swLog.warn('baseline restore persist failed', error));
-	}
-	return { fields, excludedNativeFields, restoredFields, failedFields };
 }
 
 function stageSnapshot(
@@ -1728,11 +1447,6 @@ async function executeFieldOperation(
 			};
 		}
 
-		const previousSiteBaseline = await readSiteNativeBaseline(
-			baseline.tabId,
-			baseline.documentId,
-			baseline.generation,
-		);
 		let fields: ControlFieldStates = {};
 		try {
 			let staged = baseline;
@@ -1795,8 +1509,6 @@ async function executeFieldOperation(
 				target,
 				targetPatch.volumeBase === undefined ? {} : { volumeBase: current.volumeBase },
 				processorPatch.boost === undefined ? {} : { boost: current.boost },
-				fields,
-				previousSiteBaseline,
 			);
 			if (!compensation.ok) {
 				await commitCompensationFailure(
@@ -1871,11 +1583,6 @@ async function executeFieldOperation(
 			).catch(() => null);
 			if (observed?.ok) target = observed.data.target;
 		}
-		const previousSiteBaseline = await readSiteNativeBaseline(
-			baseline.tabId,
-			baseline.documentId,
-			baseline.generation,
-		);
 		const targetActual = await captureActualPatch(
 			baseline,
 			target,
@@ -1958,8 +1665,6 @@ async function executeFieldOperation(
 				target,
 				targetRollback,
 				processorRollback,
-				fields,
-				previousSiteBaseline,
 			);
 			if (!compensation.ok) {
 				await commitCompensationFailure(
@@ -2071,11 +1776,6 @@ async function executeControlOperation(
 	if (request.operation === 'restore-page-settings') {
 		const baseline = await getOrCreateSnapshot(request.tabId);
 		const target = request.target ?? baseline.activeMedia;
-		const previousSiteBaseline = await readSiteNativeBaseline(
-			baseline.tabId,
-			baseline.documentId,
-			baseline.generation,
-		);
 		const targetRollback = await captureActualPatch(
 			baseline,
 			target,
@@ -2089,14 +1789,9 @@ async function executeControlOperation(
 		);
 		let fields: ControlFieldStates = {};
 		try {
-			const siteRelease = await restoreSiteNativeFields(baseline, operationId);
-			fields = { ...fields, ...siteRelease.fields };
-			if (siteRelease.failedFields.length > 0) {
-				throw new Error(`Official site release failed for ${siteRelease.failedFields.join(', ')}`);
-			}
 			const contentRequest = {
 				...request,
-				payload: { excludedNativeFields: siteRelease.excludedNativeFields },
+				payload: {},
 			} as RoutedControlOperationRequest;
 			const preparedRelease = await prepareContentOperation(contentRequest, operationId, baseline);
 			const released = preparedRelease.acknowledgement as ControlOperationAck<'restore-page-settings'>;
@@ -2121,7 +1816,6 @@ async function executeControlOperation(
 				released.target,
 				request.source,
 			);
-			await clearSiteNativeBaseline(request.tabId);
 			return {
 				...released,
 				revision: committed.revision,
@@ -2130,7 +1824,6 @@ async function executeControlOperation(
 					releasedFields: [
 						...new Set([
 							...released.result.releasedFields,
-							...siteRelease.restoredFields,
 							...Object.keys(processorPrepared.fields) as ControlField[],
 						]),
 					],
@@ -2142,8 +1835,6 @@ async function executeControlOperation(
 				target,
 				targetRollback,
 				processorRollback,
-				fields,
-				previousSiteBaseline,
 			);
 			if (!compensation.ok) {
 				await commitCompensationFailure(
@@ -2198,7 +1889,6 @@ async function removeTab(tabId: number): Promise<void> {
 	await chrome.storage.session.remove([
 		storageKey(tabId),
 		generationKey(tabId),
-		siteNativeBaselineKey(tabId),
 	]).catch(() => undefined);
 }
 
@@ -2227,17 +1917,7 @@ function invalidateNavigation(tabId: number, preserveDocumentState = false): Pro
 					state ? { ...state, revision } : state,
 				])) as ControlFieldStates,
 			};
-			const siteBaseline = await readSiteNativeBaseline(
-				tabId,
-				previousSnapshot.documentId,
-				previousSnapshot.generation,
-			);
 			await persistGeneration(tabId, generation);
-			if (siteBaseline) {
-				await chrome.storage.session.set({
-					[siteNativeBaselineKey(tabId)]: { ...siteBaseline, generation },
-				}).catch((error) => swLog.warn('generation carry siteBaseline persist failed', error));
-			}
 			await publishSnapshot(carried);
 			await reconcileRuntimeOwnership(carried);
 			return;
@@ -2247,7 +1927,6 @@ function invalidateNavigation(tabId: number, preserveDocumentState = false): Pro
 			persistGeneration(tabId, generation),
 			chrome.storage.session.remove([
 				storageKey(tabId),
-				siteNativeBaselineKey(tabId),
 			]),
 		]);
 	}).finally(() => {

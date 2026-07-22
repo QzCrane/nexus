@@ -19,7 +19,6 @@ function context(changes: Partial<CapabilityPlannerContext> = {}): CapabilityPla
 	return {
 		explicitIntent: true,
 		requiredCoverage: 'active-target',
-		siteNative: {},
 		domNative: {},
 		chromeNative: {},
 		extensionState: {},
@@ -44,7 +43,6 @@ describe('per-field capability planner', () => {
 	test('prefers a complete standard DOM writer before paying MAIN adapter cost', () => {
 		const planner = new CapabilityPlanner();
 		expect(planner.plan('speed', context({
-			siteNative: { speed: complete },
 			domNative: { speed: active },
 			mediaWebAudio: safeMedia(true),
 			capture: captureReady,
@@ -54,11 +52,9 @@ describe('per-field capability planner', () => {
 	test('uses the declared per-capability order instead of one global strategy order', () => {
 		const planner = new CapabilityPlanner();
 		expect(planner.plan('preservePitch', context({
-			siteNative: { preservePitch: complete },
 			domNative: { preservePitch: active },
 		})).strategy).toBe('dom-native');
 		expect(planner.plan('rotation', context({
-			siteNative: { rotation: complete },
 			extensionCss: { rotation: active },
 		})).strategy).toBe('extension-css');
 	});
@@ -156,29 +152,8 @@ describe('per-field capability planner', () => {
 			extensionState: { abLoop: active },
 		})).strategy).toBe('extension-state');
 		expect(planner.plan('rotation', context({
-			siteNative: { rotation: complete },
 			extensionCss: { rotation: active },
 		})).strategy).toBe('extension-css');
-	});
-
-	test('falls through after a proven native capability failure but never crosses a browser boundary', () => {
-		const planner = new CapabilityPlanner();
-		const candidates = context({
-			siteNative: { speed: complete },
-			domNative: { speed: active },
-		});
-		expect(planner.plan('speed', candidates, [{
-			strategy: 'dom-native',
-			failure: 'readback-mismatch',
-		}])).toMatchObject({ strategy: 'site-native', reason: 'site-api-complete' });
-		expect(planner.plan('speed', candidates, [{
-			strategy: 'dom-native',
-			failure: 'user-activation-required',
-		}])).toMatchObject({
-			strategy: 'unsupported',
-			reason: 'boundary-blocked',
-			terminalFailure: 'user-activation-required',
-		});
 	});
 
 	test('plans momentary algorithms without pretending they are persistent snapshot fields', () => {
@@ -199,7 +174,6 @@ describe('per-field capability planner', () => {
 	test('keeps frame-step on the implemented acknowledged DOM algorithm', () => {
 		const planner = new CapabilityPlanner();
 		const candidates = context({
-			siteNative: { 'frame-step': active },
 			domNative: { 'frame-step': active },
 		});
 		expect(planner.plan('frame-step', candidates)).toMatchObject({

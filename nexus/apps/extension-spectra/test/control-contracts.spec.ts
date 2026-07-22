@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import {
 	compileEffectiveVolume,
 	CONTROL_ALGORITHM_ADJUDICATIONS,
@@ -12,7 +11,6 @@ import {
 	CONTROL_STRATEGIES,
 	CONTROL_STRATEGY_RULES,
 	CONTROL_TERMINAL_STRATEGY_FAILURES,
-	SITE_NATIVE_ADAPTER_DESCRIPTORS,
 	classifyControlStrategy,
 	isControlIntent,
 	isControlOperationAck,
@@ -184,7 +182,6 @@ describe('per-field SPECTRA control contracts', () => {
 		expect(new Set(CONTROL_CAPABILITIES).size).toBe(
 			CONTROL_FIELDS.length + CONTROL_OPERATIONS.length,
 		);
-		expect(classifyControlStrategy('site-native')).toBe('native');
 		expect(classifyControlStrategy('dom-native')).toBe('native');
 		expect(classifyControlStrategy('extension-css')).toBe('augmentation');
 		expect(classifyControlStrategy('media-webaudio')).toBe('augmentation');
@@ -200,16 +197,12 @@ describe('per-field SPECTRA control contracts', () => {
 			if (rule.class === 'native' || rule.class === 'augmentation') {
 				expect(rule.requiresActualReadback).toBe(true);
 			}
-			if (rule.mainWorld === 'allowlisted-site-api-only') {
-				expect(strategy).toBe('site-native');
-			}
 			if (rule.interception === 'irreversible-media-source-binding') {
 				expect(rule.admissionEvidence).toBe('proven-media-source-eligibility');
 				expect(strategy).toBe('media-webaudio');
 			}
 		}
 		expect(CONTROL_STRATEGY_RULES['dom-native'].audioRuntimeCost).toBe('none');
-		expect(CONTROL_STRATEGY_RULES['site-native'].requiresDisposer).toBe(false);
 		expect(CONTROL_STRATEGY_RULES['media-webaudio'].audioRuntimeCost).toBe('lazy-audio-context');
 		expect(CONTROL_STRATEGY_RULES.capture.audioRuntimeCost).toBe('lazy-offscreen-capture');
 		expect(CONTROL_STRATEGY_RULES.capture.interception).toBe('authorized-tab-stream');
@@ -244,9 +237,6 @@ describe('per-field SPECTRA control contracts', () => {
 			}
 			if (nativeIndexes.length > 0 && augmentationIndexes.length > 0) {
 				expect(Math.max(...nativeIndexes)).toBeLessThan(Math.min(...augmentationIndexes));
-			}
-			if (policy.mainWorld === 'site-adapter-only') {
-				expect(policy.orderedStrategies).toContain('site-native');
 			}
 		}
 	});
@@ -298,27 +288,6 @@ describe('per-field SPECTRA control contracts', () => {
 		});
 	});
 
-	test('keeps all 51 executable strategy orders, MAIN boundaries, ACKs, and lifetimes mirrored in the owner design', () => {
-		const architecture = readFileSync(
-			new URL('../docs/control-architecture.md', import.meta.url),
-			'utf8',
-		);
-		for (const capability of CONTROL_CAPABILITIES) {
-			const policy = CONTROL_ALGORITHM_POLICIES[capability];
-			const adjudication = CONTROL_ALGORITHM_ADJUDICATIONS[capability];
-			const exactRow = [
-				`| \`${capability}\``,
-				`\`${adjudication.nativePreference}\``,
-				`\`${adjudication.augmentationAdmission}\``,
-				`\`${policy.orderedStrategies.join(' -> ')}\``,
-				`\`${policy.mainWorld}\``,
-				`\`${policy.acknowledgements.join(' + ')}\``,
-				`\`${policy.recurringWork}\` |`,
-			].join(' | ');
-			expect(architecture).toContain(exactRow);
-		}
-	});
-
 	test('records recurring work only for explicitly owned or subscribed algorithms', () => {
 		const recurring = Object.entries(CONTROL_ALGORITHM_POLICIES)
 			.filter(([, policy]) => policy.recurringWork !== 'none')
@@ -358,17 +327,11 @@ describe('per-field SPECTRA control contracts', () => {
 		expect(capabilitiesFor('chrome-native')).toEqual([
 			'tabMuted', 'tabPinned', 'screenshot', 'open-popup', 'open-options', 'open-url',
 		]);
-		const declaredSiteNative = Object.values(SITE_NATIVE_ADAPTER_DESCRIPTORS)
-			.flatMap((descriptor) => [...descriptor.fields]);
-		expect(capabilitiesFor('site-native')).toEqual([...declaredSiteNative, 'effective-volume']);
 
 		for (const activationBound of ['playing', 'pip', 'fullscreen'] as const) {
 			const strategies = CONTROL_ALGORITHM_POLICIES[activationBound].orderedStrategies;
 			expect(strategies).not.toContain('media-webaudio');
 			expect(strategies).not.toContain('capture');
-		}
-		for (const protectedBoundary of ['screenshot', 'run-user-script'] as const) {
-			expect(CONTROL_ALGORITHM_POLICIES[protectedBoundary].mainWorld).toBe('forbidden');
 		}
 	});
 

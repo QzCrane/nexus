@@ -71,7 +71,7 @@ const CONTROL_FIELDS = new Set<ControlField>([
 ]);
 const DIRECT_FIELDS = new Set<ControlField>([...CONTROL_FIELDS].filter((field) => field !== 'visualizer'));
 const STRATEGIES = new Set<ControlStrategy>([
-	'observe', 'site-native', 'dom-native', 'chrome-native', 'extension-state',
+	'observe', 'dom-native', 'chrome-native', 'extension-state',
 	'extension-css', 'extension-overlay', 'media-webaudio', 'capture', 'unsupported',
 ]);
 const COVERAGES = new Set(['full', 'active-target', 'partial', 'opaque']);
@@ -230,8 +230,7 @@ function isControlReadRequest(value: unknown): boolean {
 function isOperationPayload(operation: ControlOperation, value: unknown): boolean {
 	if (!isRecord(value)) return false;
 	switch (operation) {
-		case 'restore-page-settings': return hasOnly(value, new Set(['excludedNativeFields']))
-			&& (value.excludedNativeFields === undefined || Array.isArray(value.excludedNativeFields));
+		case 'restore-page-settings': return hasOnly(value, new Set());
 		case 'frame-step': return hasOnly(value, new Set(['direction']))
 			&& (value.direction === -1 || value.direction === 1);
 		case 'marker-add': return hasOnly(value, new Set(['label']))

@@ -519,54 +519,6 @@ describe('native media single-writer correlation', () => {
 		}
 	});
 
-	test('does not let the losing DOM writer restore a site-native-owned baseline', async () => {
-		Object.defineProperty(globalThis, 'HTMLMediaElement', {
-			configurable: true,
-			value: FakeMediaElement,
-		});
-		Object.defineProperty(globalThis, 'HTMLVideoElement', {
-			configurable: true,
-			value: class FakeVideoElement extends FakeMediaElement { },
-		});
-		Object.defineProperty(globalThis, 'document', {
-			configurable: true,
-			value: { pictureInPictureElement: null, fullscreenElement: null },
-		});
-		const registry = new FakeRegistry();
-		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
-		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
-		try {
-			await executor.execute({
-				intentId: 'intent:site-owner',
-				tabId: 7,
-				documentId: registry.target.documentId,
-				generation: 1,
-				baseRevision: 2,
-				source: 'popup',
-				requestedCoverage: 'active-target',
-				target: registry.target,
-				actualContext: {},
-				patch: { speed: 1.5 },
-			});
-			expect(registry.element.playbackRate).toBe(1.5);
-			const released = await executor.releasePageSettings({
-				operationId: 'operation:restore',
-				tabId: 7,
-				documentId: registry.target.documentId,
-				generation: 1,
-				baseRevision: 3,
-				source: 'popup',
-				target: registry.target,
-				operation: 'restore-page-settings',
-				payload: { excludedNativeFields: ['speed'] },
-			});
-			expect(registry.element.playbackRate).toBe(1.5);
-			expect(released.releasedFields).not.toContain('speed');
-		} finally {
-			executor.dispose();
-		}
-	});
-
 	test('does not exit another element\'s PiP or fullscreen session', async () => {
 		Object.defineProperty(globalThis, 'HTMLMediaElement', {
 			configurable: true,

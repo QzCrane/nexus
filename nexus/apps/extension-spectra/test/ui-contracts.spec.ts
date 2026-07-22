@@ -322,17 +322,6 @@ describe('extension-page DOM and idle contracts', () => {
 		}
 	});
 
-	test('uses one-shot site-native execution and no recurring remote UI polling', () => {
-		const siteNative = readFileSync(resolve(import.meta.dir, '../src/background/main-runtime-manager.ts'), 'utf8');
-		const remoteBindings = readFileSync(resolve(import.meta.dir, '../src/remote/ui-bindings.ts'), 'utf8');
-		const remoteModal = readFileSync(resolve(import.meta.dir, '../src/remote/modal-renderer.ts'), 'utf8');
-		expect(siteNative).toContain("world: 'MAIN'");
-		expect(siteNative).not.toContain('addEventListener(');
-		expect(`${siteNative}\n${remoteBindings}\n${remoteModal}`).not.toContain('setInterval(');
-		expect(remoteBindings).toContain('spectra.remote.session.changed');
-		expect(remoteModal).toContain('spectra.remote.session.closed');
-	});
-
 	test('keeps video-only Popup acknowledgements independent from active media', () => {
 		const mediaControls = readFileSync(resolve(import.meta.dir, '../src/popup/card/media-events.ts'), 'utf8');
 		const videoControls = readFileSync(resolve(import.meta.dir, '../src/popup/side-panel/video-controls.ts'), 'utf8');
@@ -480,9 +469,10 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(audioDelegate).toContain("intent.source === 'hotkey'");
 		expect(operations).toContain("if (intent.source === 'hotkey') {");
 		expect(operations).toContain("return ack(intent, 'observe', { shown: true }, {}, null)");
-		expect(playbackBridge).toContain("element.closest('.xgplayer, xg-video-container')");
+		expect(playbackBridge).toContain('findPlayerRoot');
+		expect(playbackBridge).toContain('[data-spectra-player="v1"]');
+		expect(playbackBridge).toContain('[class*="player"]');
 		expect(playbackBridge).toContain('selected.click()');
-		expect(playbackBridge).toContain("'xg-playbackrate li'");
 		expect(playbackBridge).toContain('document.querySelectorAll<HTMLElement>(RATE_CONTROL_SELECTOR)');
 		expect(playbackBridge).toContain('new MutationObserver');
 		expect(playbackBridge).toContain('synchronizeAttachedPlayerController');

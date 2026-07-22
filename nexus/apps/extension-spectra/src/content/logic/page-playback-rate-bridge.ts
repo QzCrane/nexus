@@ -28,7 +28,7 @@ export function writePageSynchronizedPlaybackRate(
 ): number | null {
 	if (typeof document === 'undefined'
 		|| typeof element.closest !== 'function'
-		|| !element.closest('.xgplayer, xg-video-container')) return null;
+		|| !element.closest('[data-spectra-player="v1"], [class*="player"]')) return null;
 	const requestId = crypto.randomUUID();
 	const request: SpectraPlaybackRateRequest = { requestId, speed };
 	try {

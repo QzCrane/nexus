@@ -33,7 +33,6 @@ remain structured boundary errors.
 | Strategy | Required proof before selection | Idle/runtime cost | Disallowed escalation |
 | --- | --- | --- | --- |
 | `observe` | authoritative getter/event, or an explicit subscription to an already-active processor | zero; subscription uses the existing processor only | must not create a content runtime, AudioContext, offscreen lease or MAIN code on a read |
-| `site-native` | allowlisted official player API, single capability writer and privileged one-shot `executeScript` getter result | one invocation per failed DOM intent; no listener, disposer or audio graph | cannot repeat the same DOM setter in MAIN, install a standing bundle or trust page-authored message payloads as ACK |
 | `dom-native` | standard per-element property/method, target identity, bounded event/getter readback | write/event only | no prototype/descriptor patch and no user-activation workaround |
 | `chrome-native` | Chrome API supports the exact scope and a Chrome getter/event confirms actual state | command/event only | no optimistic response before `tabs.get`, native event or operation result |
 | `extension-state` | data belongs to SPECTRA and is keyed to document/media/source as required | zero while unowned; event/timer only while owned | cannot masquerade as page-native state |
@@ -101,9 +100,8 @@ The executable owner is `CONTROL_RETRYABLE_STRATEGY_FAILURES` /
 | browser/security boundary | `user-activation-required`, `permission-denied`, `cors-or-drm-protected`, `protected-content`, `closed-shadow-inaccessible`, `stale-document`, `stale-media-source`, `policy-denied` | Stop. Return a structured error and preserve the stable path. MAIN or Capture must not disguise the boundary. |
 
 The retryable flag in a wire error is descriptive; it cannot grant a strategy
-that the capability policy does not list. In particular, `site-native` is not a
-generic MAIN fallback, and Capture is not a fallback for activation, permission,
-DRM or stale-target failures.
+that the capability policy does not list. Capture is not a fallback for
+activation, permission, DRM or stale-target failures.
 
 No strategy may bypass transient user activation, CORS, DRM or inaccessible closed-shadow media. `CONTROL_STRATEGY_RULES` fixes both flags to `false` for every current and future strategy.
 

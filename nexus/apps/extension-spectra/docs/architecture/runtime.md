@@ -83,7 +83,7 @@ Every message listener owns an exact request-type set. Prefix similarity is not 
 
 ## Boundary projections
 
-Favicon and QR rendering are UI/security boundaries, not media-runtime capabilities. PiP, fullscreen, and playback-rate adapter semantics belong to [control/02-strategy-and-routes.md §6](../control/02-strategy-and-routes.md#6-site-adapters-pip-and-fullscreen). Favicon, QR, and origin payload validation belongs to [runtime protocols](../reference/protocols.md#boundary-payloads) and [remote security](../security/remote-control.md).
+Favicon and QR rendering are UI/security boundaries, not media-runtime capabilities. PiP, fullscreen, and playback-rate bridge semantics belong to [control/02-strategy-and-routes.md §6](../control/02-strategy-and-routes.md#6-playback-rate-bridge-pip-and-fullscreen). Favicon, QR, and origin payload validation belongs to [runtime protocols](../reference/protocols.md#boundary-payloads) and [remote security](../security/remote-control.md).
 
 ## Current implementation ownership
 

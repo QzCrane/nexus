@@ -6,23 +6,21 @@ audience: developer
 
 # 02. Strategy order & Routes (Capability order, registry, runtime, adapters)
 
-> 主题 owner 段: §3 Strategy order · §4 Site route registry · §5 Runtime ownership · §6 Site adapters, PiP & fullscreen
+> 主题 owner 段: §3 Strategy order · §4 Site route registry · §5 Runtime ownership · §6 Playback-rate bridge, PiP & fullscreen
 > 完整目录: [control-architecture.md](../control-architecture.md)
 
 ## §3 Strategy order
 
-For each capability, the planner removes candidates that cannot cover the requested scope or cannot return actual readback, then follows that capability's own order. In this release the only official page-world adapter covers YouTube `volumeBase`, `mediaMuted` and `speed`, and it runs only after the corresponding standard DOM write/readback fails. No other capability may claim site-native support until its adapter and readback tests land with the contract entry.
+For each capability, the planner removes candidates that cannot cover the requested scope or cannot return actual readback, then follows that capability's own order.
 
 ```text
 OBSERVE
   -> CAPABILITY-SPECIFIC NATIVE CANDIDATES
-       (SITE_NATIVE / DOM_NATIVE / CHROME_NATIVE)
+       (DOM_NATIVE / CHROME_NATIVE)
   -> CAPABILITY-AUDITED CONTROLLED AUGMENTATION
        (EXTENSION_STATE / CSS / OVERLAY / SAFE_MEDIA_WEBAUDIO / CAPTURE)
   -> UNSUPPORTED
 ```
-
-`SITE_NATIVE` can use a document-scoped MAIN adapter when an official player object exists only in the page world and standard DOM control is incomplete. Current adapters are single-player `active-target` strategies and are never admitted for a `full` request. This is API adaptation, not permission for generic monkey-patching. There is no generic MAIN fallback.
 
 ### §3.1 Forbidden generic MAIN behavior
 
@@ -35,7 +33,7 @@ Production code must not replace or redefine:
 - `HTMLMediaElement` prototype descriptors;
 - History API methods from an isolated-world runtime.
 
-MAIN execution is limited to allowlisted site adapters loaded on demand by the background `MainRuntimeManager`.
+MAIN execution is limited to the two V1-guarded bridges (`content-fullscreen-bridge.js`, `content-playback-rate-bridge.js`) registered in the manifest at `document_start`.
 
 ### §3.2 Native, augmentation and forbidden hijack
 
@@ -44,7 +42,7 @@ The implementation must not hide invasive behavior under the word "native". Ever
 | Class | Strategies | Meaning |
 | --- | --- | --- |
 | observe | `observe` | Read authoritative events/getters without acquiring control. |
-| native | `site-native`, `dom-native`, `chrome-native` | Use an official site API or a browser-owned API/property with readback. |
+| native | `dom-native`, `chrome-native` | Use a browser-owned API/property with readback. |
 | controlled augmentation | `extension-state`, `extension-css`, `extension-overlay`, `media-webaudio`, `capture` | Add a reversible extension-owned capability only when complete native control is unavailable. |
 | unsupported | `unsupported` | Preserve the page and return a structured capability error. |
 
@@ -137,14 +135,16 @@ targeting another tab may project the same Toast visual style in the current tab
 with an additional focus-tab label; refresh, bootstrap, Popup open and snapshot
 synchronization never create a Toast.
 
-## §6 Site adapters, PiP and fullscreen
+## §6 Playback-rate bridge, PiP and fullscreen
 
-Site playback-rate synchronization is a one-shot, site-scoped official API
-adapter. The adapter is attempted only after the standard DOM writer/readback
-fails, validates the current document and media identity, and accepts success
-only from the site's getter or authoritative event. A page that exposes no
-stable official API remains `unsupported`; the extension does not install a
-generic page bridge or claim that every site's player UI can be synchronized.
+Site playback-rate synchronization is a resident universal UI sync protocol.
+The manifest-registered `content-playback-rate-bridge.js` runs at `document_start`
+in the MAIN world with a V1 guard, and `findPlayerRoot()` detects the player
+container through the generic `[data-spectra-player="v1"], [class*="player"]`
+selector. The bridge keeps the page player's rate UI in sync with SPECTRA's
+acknowledged `speed` value; the actual write remains the standard DOM
+`playbackRate` setter with `ratechange` readback, and the bridge never installs
+a site-specific adapter, listener bundle, or descriptor patch.
 
 PiP and fullscreen are native lifecycle operations bound to the current
 `activeVideo`. The trusted page-event bridge performs the browser API call inside

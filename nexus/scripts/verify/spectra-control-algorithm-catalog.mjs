@@ -61,19 +61,6 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 	},
 	{
 		id: 'ALG-004',
-		name: 'allowlisted official player fallback',
-		capabilities: ['volumeBase', 'mediaMuted', 'speed'],
-		source: 'apps/extension-spectra/src/background/main-runtime-manager.ts',
-		anchor: 'async function applyYouTubeOfficialControl(',
-		decision: 'native-control',
-		augmentationAdmission: 'allowlisted-site-api-after-dom-failure',
-		interceptionPolicy: 'site-adapter-only',
-		successProof: 'same one-shot invocation returns official before and stable actual getters',
-		recurringWork: 'none',
-		performanceBoundary: 'one executeScript invocation after a retryable DOM failure; no installed bridge',
-	},
-	{
-		id: 'ALG-005',
 		name: 'Chrome tab mute and pin',
 		capabilities: ['tabMuted', 'tabPinned'],
 		source: 'apps/extension-spectra/src/background/control-coordinator.ts',
@@ -86,7 +73,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'one Chrome write/get pair; shared browser events provide later observation',
 	},
 	{
-		id: 'ALG-006',
+		id: 'ALG-005',
 		name: 'audio session gate transaction',
 		capabilities: ['audioEnabled'],
 		source: 'apps/extension-spectra/src/content/logic/audio-runtime-control-delegate.ts',
@@ -99,7 +86,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'does not allocate a processor for a neutral configuration',
 	},
 	{
-		id: 'ALG-007',
+		id: 'ALG-006',
 		name: 'canonical processor-needs classification',
 		capabilities: [],
 		source: 'packages/features/audio-engine/src/color-predictor.ts',
@@ -112,7 +99,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'one bounded configuration predicate; Visualizer is excluded',
 	},
 	{
-		id: 'ALG-008',
+		id: 'ALG-007',
 		name: 'DSP strategy selection',
 		capabilities: dsp,
 		source: 'packages/features/audio-engine/src/PolicyEngine.ts',
@@ -125,7 +112,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'stateless calculation; runtime acquisition occurs only after the selected strategy is admitted',
 	},
 	{
-		id: 'ALG-009',
+		id: 'ALG-008',
 		name: 'prospective media source eligibility',
 		capabilities: [],
 		source: 'packages/features/audio-engine/src/webaudio/controller.ts',
@@ -138,7 +125,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'one registry-sized pass before irreversible source binding; no silence probe',
 	},
 	{
-		id: 'ALG-010',
+		id: 'ALG-009',
 		name: 'page-lifetime MediaElementSource ownership',
 		capabilities: [],
 		source: 'packages/features/audio-engine/src/webaudio/controller.ts',
@@ -151,7 +138,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'one source node per element; detached routes disconnect without rebinding',
 	},
 	{
-		id: 'ALG-011',
+		id: 'ALG-010',
 		name: 'sparse shared DSP topology',
 		capabilities: [],
 		source: 'packages/features/audio-engine/src/AudioGraphRouter.ts',
@@ -164,7 +151,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'only enabled Bass/EQ/Compressor/Mono/Pan/Delay nodes exist',
 	},
 	{
-		id: 'ALG-012',
+		id: 'ALG-011',
 		name: 'latest-value DSP parameter update and topology crossfade',
 		capabilities: [],
 		source: 'packages/features/audio-engine/src/AudioGraphRouter.ts',
@@ -177,7 +164,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'EQ/Pan/Delay/Boost ramp in place; topology changes alone build one crossfaded candidate lane',
 	},
 	{
-		id: 'ALG-013',
+		id: 'ALG-012',
 		name: 'atomic full-tab Capture processor handoff',
 		capabilities: [],
 		source: 'apps/extension-spectra/src/offscreen/audio-host.ts',
@@ -190,7 +177,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'candidate starts behind a zero gate; old processor closes only after the commit boundary',
 	},
 	{
-		id: 'ALG-014',
+		id: 'ALG-013',
 		name: 'existing-processor Visualizer sampling',
 		capabilities: ['visualizer'],
 		source: 'apps/extension-spectra/src/offscreen/audio-host.ts',
@@ -203,7 +190,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'one analyser per processor and at most 15 Hz cached sampling',
 	},
 	{
-		id: 'ALG-015',
+		id: 'ALG-014',
 		name: 'event-driven media identity and target selection',
 		capabilities: [],
 		source: 'apps/extension-spectra/src/content/core/media-registry.ts',
@@ -216,7 +203,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'Mutation/Intersection/native events only; no command-time layout scan or poll',
 	},
 	{
-		id: 'ALG-016',
+		id: 'ALG-015',
 		name: 'page-originated native state synchronization',
 		capabilities: [],
 		source: 'apps/extension-spectra/src/content/logic/native-media-executor.ts',
@@ -229,7 +216,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'reuses registry events and the existing loop attribute observer; fullscreen never triggers a second applyState lifecycle, descriptor patch or poll',
 	},
 	{
-		id: 'ALG-017',
+		id: 'ALG-016',
 		name: 'measured approximate frame stepping',
 		capabilities: ['frame-step'],
 		source: 'apps/extension-spectra/src/content/logic/native-media-executor.ts',
@@ -242,7 +229,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'maximum eight frame samples and 750 ms; source-revision cache afterward',
 	},
 	{
-		id: 'ALG-018',
+		id: 'ALG-017',
 		name: 'reversible video rotation mirror and fill',
 		capabilities: ['rotation', 'mirrored', 'fill'],
 		source: 'apps/extension-spectra/src/content/video/video-effects-controller.ts',
@@ -255,7 +242,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'ResizeObserver exists only for a 90/270-degree owned rotation',
 	},
 	{
-		id: 'ALG-019',
+		id: 'ALG-018',
 		name: 'baseline-composed video filter',
 		capabilities: ['filterEnabled', 'filter'],
 		source: 'apps/extension-spectra/src/content/video/video-effects-controller.ts',
@@ -268,7 +255,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'style ownership exists only while enabled; no observer or MAIN patch',
 	},
 	{
-		id: 'ALG-020',
+		id: 'ALG-019',
 		name: 'four-region dim overlay geometry',
 		capabilities: ['dimEnabled', 'dimOpacity'],
 		source: 'apps/extension-spectra/src/content/video/video-effects-controller.ts',
@@ -281,7 +268,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'resize/scroll updates coalesce into one rAF only while enabled',
 	},
 	{
-		id: 'ALG-021',
+		id: 'ALG-020',
 		name: 'source-scoped A/B scheduler',
 		capabilities: ['abLoop', 'ab-set-a', 'ab-set-b', 'ab-clear', 'ab-skip'],
 		source: 'apps/extension-spectra/src/content/video/ab-loop.ts',
@@ -294,7 +281,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'one boundary timer plus one near-boundary rVFC with a hidden-tab timer backup only while a complete loop is playing',
 	},
 	{
-		id: 'ALG-022',
+		id: 'ALG-021',
 		name: 'bounded sorted time markers',
 		capabilities: ['marker-add', 'marker-remove', 'marker-jump', 'marker-jump-previous', 'marker-jump-next'],
 		source: 'apps/extension-spectra/src/content/video/time-marker.ts',
@@ -307,7 +294,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: '1,000-marker bound and binary insertion/adjacent lookup',
 	},
 	{
-		id: 'ALG-023',
+		id: 'ALG-022',
 		name: 'verified visible-video screenshot crop',
 		capabilities: ['screenshot'],
 		source: 'apps/extension-spectra/src/background/handlers/screenshot.ts',
@@ -320,7 +307,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'one capture, crop and download per explicit operation; image bytes never cross content IPC',
 	},
 	{
-		id: 'ALG-024',
+		id: 'ALG-023',
 		name: 'page settings release and baseline restoration',
 		capabilities: ['restore-page-settings'],
 		source: 'apps/extension-spectra/src/content/logic/native-media-executor.ts',
@@ -333,7 +320,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'one pass over currently registered media only on explicit release',
 	},
 	{
-		id: 'ALG-025',
+		id: 'ALG-024',
 		name: 'atomic compound control transactions',
 		capabilities: ['audio-reset', 'video-effects-toggle', 'video-effects-reset'],
 		source: 'apps/extension-spectra/src/background/control-coordinator.ts',
@@ -346,7 +333,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'serialized per tab and limited to the operation field set',
 	},
 	{
-		id: 'ALG-026',
+		id: 'ALG-025',
 		name: 'snapshot-only info projection',
 		capabilities: ['show-info'],
 		source: 'apps/extension-spectra/src/content/logic/control-operation-executor.ts',
@@ -359,7 +346,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'one projection per explicit operation; may temporarily acquire Content runtime but never MAIN, AudioContext or Capture',
 	},
 	{
-		id: 'ALG-027',
+		id: 'ALG-026',
 		name: 'Chrome UI and HTTP(S) navigation actions',
 		capabilities: ['open-popup', 'open-options', 'open-url'],
 		source: 'apps/extension-spectra/src/background/control-coordinator.ts',
@@ -372,7 +359,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'one browser operation per explicit intent',
 	},
 	{
-		id: 'ALG-028',
+		id: 'ALG-027',
 		name: 'explicit userScripts sandbox execution',
 		capabilities: ['run-user-script'],
 		source: 'apps/extension-spectra/src/background/handlers/user-scripts.ts',
@@ -385,7 +372,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'one sandbox execution per explicit configured action',
 	},
 	{
-		id: 'ALG-029',
+		id: 'ALG-028',
 		name: 'hotkey intent normalization',
 		capabilities: [],
 		source: 'apps/extension-spectra/src/content/input/hotkey-listener.ts',
@@ -398,7 +385,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'O(1) compiled key lookup; listener exists only for a configured site',
 	},
 	{
-		id: 'ALG-030',
+		id: 'ALG-029',
 		name: 'Popup latest-value field patching',
 		capabilities: [],
 		source: 'apps/extension-spectra/src/popup/card/state.ts',
@@ -411,7 +398,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'continuous field sends coalesce to 20 Hz, identical samples produce zero IPC, and storage trails at 250 ms',
 	},
 	{
-		id: 'ALG-031',
+		id: 'ALG-030',
 		name: 'authenticated remote intent routing',
 		capabilities: [],
 		source: 'apps/extension-spectra/src/background/remote-commands.ts',
@@ -424,7 +411,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'event-driven state push; no post-command multi-source polling',
 	},
 	{
-		id: 'ALG-032',
+		id: 'ALG-031',
 		name: 'remote challenge, replay and fixed-tab boundary',
 		capabilities: [],
 		source: 'apps/extension-spectra/src/offscreen-remote/remote-host.ts',
@@ -437,7 +424,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'one authenticated controller; bounded pairing and reconnect timers only',
 	},
 	{
-		id: 'ALG-033',
+		id: 'ALG-032',
 		name: 'single offscreen host lease lifecycle',
 		capabilities: [],
 		source: 'apps/extension-spectra/src/background/offscreen-coordinator.ts',
@@ -450,7 +437,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'one document; closes 30 seconds after the final lease release',
 	},
 	{
-		id: 'ALG-034',
+		id: 'ALG-033',
 		name: 'single Popup Visualizer scheduler',
 		capabilities: [],
 		source: 'apps/extension-spectra/src/popup/visualizer/loop.ts',
@@ -463,7 +450,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'one rAF scheduler and one in-flight batch; stops when hidden or unsubscribed',
 	},
 	{
-		id: 'ALG-035',
+		id: 'ALG-034',
 		name: 'authoritative per-tab control transaction',
 		capabilities: [],
 		source: 'apps/extension-spectra/src/background/control-coordinator.ts',
@@ -476,7 +463,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'one bounded per-tab queue task per intent or observed event; no polling',
 	},
 	{
-		id: 'ALG-036',
+		id: 'ALG-035',
 		name: 'document generation and target lifecycle invalidation',
 		capabilities: [],
 		source: 'apps/extension-spectra/src/background/control-coordinator.ts',
@@ -489,7 +476,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'Chrome navigation and typed target/source events only; no URL or media polling',
 	},
 	{
-		id: 'ALG-037',
+		id: 'ALG-036',
 		name: 'multi-consumer content runtime lease lifecycle',
 		capabilities: [],
 		source: 'apps/extension-spectra/src/background/runtime-loader.ts',
@@ -502,7 +489,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'bootstrap stays minimal; heavy observers/listeners exist only while at least one explicit owner remains',
 	},
 	{
-		id: 'ALG-038',
+		id: 'ALG-037',
 		name: 'native field baseline ownership and warm handoff',
 		capabilities: [],
 		source: 'apps/extension-spectra/src/content/logic/native-media-executor.ts',
@@ -515,7 +502,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'O(owned fields) data only; no listener, timer, AudioContext or duplicate native writer',
 	},
 	{
-		id: 'ALG-039',
+		id: 'ALG-038',
 		name: 'trusted user-activation native fast path',
 		capabilities: ['playing', 'pip', 'fullscreen'],
 		source: 'apps/extension-spectra/src/content/logic/native-media-executor.ts',
@@ -528,7 +515,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'one native call and bounded event/getter readback per trusted action; one listener only with the Content lease, no second prompt, MAIN script, activation synthesis or polling',
 	},
 	{
-		id: 'ALG-040',
+		id: 'ALG-039',
 		name: 'cross-mode WebAudio and Capture handoff',
 		capabilities: dsp,
 		source: 'apps/extension-spectra/src/content/logic/mode-executor.ts',
@@ -541,7 +528,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'one serialized transition; no full-gain overlap, stale generation commit or duplicate source binding',
 	},
 	{
-		id: 'ALG-041',
+		id: 'ALG-040',
 		name: 'Popup live page observation lease',
 		capabilities: [],
 		source: 'apps/extension-spectra/src/popup/card/init.ts',
@@ -554,7 +541,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'loads only the event registry; never admits MAIN, AudioContext, Capture or status-read side effects',
 	},
 	{
-		id: 'ALG-042',
+		id: 'ALG-041',
 		name: 'single UI actual projection with dual clocks',
 		capabilities: [],
 		source: 'apps/extension-spectra/src/popup/card/messaging.ts',
@@ -567,7 +554,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'one event projection and render per accepted revision; no post-command state polling',
 	},
 	{
-		id: 'ALG-043',
+		id: 'ALG-042',
 		name: 'authenticated remote page observation lease',
 		capabilities: [],
 		source: 'apps/extension-spectra/src/background/remote-service.ts',
@@ -580,7 +567,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'event-driven observation for one authenticated controller; released on close, replacement or reconnect expiry',
 	},
 	{
-		id: 'ALG-044',
+		id: 'ALG-043',
 		name: 'multi-consumer Visualizer subscriber registry',
 		capabilities: ['visualizer'],
 		source: 'apps/extension-spectra/src/background/visualizer-subscriber-registry.ts',
@@ -593,7 +580,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'one bounded lease map; the final subscriber release removes analyser work and periodic IPC',
 	},
 	{
-		id: 'ALG-045',
+		id: 'ALG-044',
 		name: 'configured-site hotkey runtime admission',
 		capabilities: [],
 		source: 'apps/extension-spectra/src/background/runtime-loader.ts',
@@ -606,7 +593,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'one listener and O(1) compiled chord lookup only on configured sites; default sites keep bootstrap only',
 	},
 	{
-		id: 'ALG-046',
+		id: 'ALG-045',
 		name: 'source-scoped marker and A/B runtime ownership',
 		capabilities: ['marker-add', 'marker-remove', 'abLoop', 'ab-set-a', 'ab-set-b', 'ab-clear'],
 		source: 'apps/extension-spectra/src/background/runtime-loader.ts',
@@ -619,7 +606,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'one token per owned source feature; no runtime retention after the final marker/A-B owner disappears',
 	},
 	{
-		id: 'ALG-047',
+		id: 'ALG-046',
 		name: 'lazy video enhancement module admission',
 		capabilities: ['rotation', 'mirrored', 'fill', 'filterEnabled', 'filter', 'dimEnabled', 'dimOpacity'],
 		source: 'apps/extension-spectra/src/content/logic/native-media-executor.ts',
@@ -632,7 +619,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'default/native-only pages do not load video enhancement bytes; failed imports are retryable and neutral reads remain state-only',
 	},
 	{
-		id: 'ALG-048',
+		id: 'ALG-047',
 		name: 'extension-UI protocol allowlist validation',
 		capabilities: [],
 		source: 'packages/contracts/src/spectra.ui-runtime.ts',
@@ -645,7 +632,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'surface-specific constant-size tuple lookups; Options never loads control ACK/snapshot or audio/remote validators and Background-only router code stays out of every UI bundle',
 	},
 	{
-		id: 'ALG-049',
+		id: 'ALG-048',
 		name: 'Popup atomic Filter latest-value transport',
 		capabilities: ['filterEnabled', 'filter'],
 		source: 'apps/extension-spectra/src/popup/side-panel/video-controls.ts',
@@ -658,7 +645,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		performanceBoundary: 'at most 20 sends per second with one in-flight request and one latest pending value',
 	},
 	{
-		id: 'ALG-050',
+		id: 'ALG-049',
 		name: 'atomic effective-volume transaction',
 		capabilities: ['effective-volume'],
 		source: 'apps/extension-spectra/src/background/control-coordinator.ts',

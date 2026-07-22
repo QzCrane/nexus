@@ -13,7 +13,6 @@ interface MainPlaybackRateWindow extends Window {
 }
 
 const RATE_OPTION_SELECTOR = [
-	'xg-playbackrate li',
 	'.xgplayer-playbackrate li',
 	'xg-playbackrate [role="menuitem"]',
 	'.xgplayer-playbackrate [role="menuitem"]',
@@ -57,6 +56,8 @@ const RATE_CLICK_TARGET_SELECTOR = [
 	'[role="option"]',
 ].join(',');
 
+const PLAYER_ROOT_SELECTOR = '[data-spectra-player="v1"], [class*="player"]';
+
 const RATE_TEXT_SCAN_LIMIT = 512;
 const RATE_TEXT_LENGTH_LIMIT = 24;
 
@@ -65,6 +66,10 @@ const deferredTextRateOptions = new Set<HTMLElement>();
 let latestRateRequest: { element: HTMLMediaElement; speed: number } | null = null;
 let rateMenuObserver: MutationObserver | null = null;
 let rateMenuSyncQueued = false;
+
+function findPlayerRoot(element: Element): Element | null {
+	return element.closest(PLAYER_ROOT_SELECTOR);
+}
 
 function parseRateOption(option: HTMLElement): number | null {
 	for (const name of ['rate', 'data-rate', 'data-speed', 'data-playback-rate', 'data-value']) {
@@ -151,7 +156,7 @@ function rememberTextRateOptions(roots: Iterable<Element>): boolean {
 }
 
 function collectRateOptions(element: HTMLMediaElement): HTMLElement[] {
-	const player = element.closest('.xgplayer') ?? element.closest('xg-video-container');
+	const player = findPlayerRoot(element);
 	if (!player) return [];
 	const options = new Set<HTMLElement>(player.querySelectorAll<HTMLElement>(RATE_OPTION_SELECTOR));
 
@@ -239,7 +244,7 @@ function synchronizePlayerRateUI(
 	speed: number,
 	useAttachedController = false,
 ): void {
-	const player = element.closest('.xgplayer') ?? element.closest('xg-video-container');
+	const player = findPlayerRoot(element);
 	if (!player) return;
 	player.setAttribute('data-spectra-playback-rate', String(speed));
 	if (useAttachedController) synchronizeAttachedPlayerController(element, player, speed);
@@ -254,7 +259,7 @@ function synchronizePlayerRateUI(
 		clickedRateOptions.set(selected, speed);
 		selected.click();
 	}
-	const activeClasses = ['selected', 'active', 'xgplayer-active']
+	const activeClasses = ['selected', 'active']
 		.filter((name) => options.some((option) => option.classList.contains(name)));
 	for (const option of options) {
 		const rate = parseRateOption(option);
@@ -330,7 +335,7 @@ function decodeRequest(element: HTMLMediaElement): SpectraPlaybackRateRequest | 
 function onPlaybackRateRequest(event: Event): void {
 	const element = event.target;
 	if (!(element instanceof HTMLMediaElement)
-		|| !element.closest('.xgplayer, xg-video-container')) return;
+		|| !findPlayerRoot(element)) return;
 	const request = decodeRequest(element);
 	if (!request) return;
 	let result: SpectraPlaybackRateResult;
@@ -365,7 +370,7 @@ if (!mainWindow.__SPECTRA_PLAYBACK_RATE_BRIDGE_V1__) {
 	document.addEventListener('ratechange', (event) => {
 		const element = event.target;
 		if (!(element instanceof HTMLMediaElement)
-			|| !element.closest('.xgplayer, xg-video-container')) return;
+			|| !findPlayerRoot(element)) return;
 		latestRateRequest = { element, speed: element.playbackRate };
 		ensureDeferredRateMenuSync();
 		synchronizePlayerRateUI(element, element.playbackRate);

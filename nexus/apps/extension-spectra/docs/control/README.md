@@ -29,7 +29,7 @@ Do not copy a topic's rules back into this file. Change the topic owner, executa
 
 - **51 contract capabilities**: 17 native-only + 6 hybrid extension/native + 26 augmentation-only + 2 observation-only
 - **28 persistent snapshot fields + 23 momentary operations**
-- **50 audited source algorithms**: `ALG-001..ALG-050`
+- **49 audited source algorithms**: `ALG-001..ALG-049`
 - **44 static invariants**: `SCTRL-001..SCTRL-044`
 
 These totals mirror executable contracts and gates. A count changes only with contract rows, source catalog, tests, owner documentation, and verifier updates.

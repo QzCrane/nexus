@@ -29,7 +29,7 @@ Implementation status and release evidence are read from source, tests, static g
 
 ## P0: release truth and regression resistance
 
-- keep the 51 capability policies, 50 audited source algorithms, and 44 SCTRL invariants synchronized with contracts and tests;
+- keep the 51 capability policies, 49 audited source algorithms, and 44 SCTRL invariants synchronized with contracts and tests;
 - close remaining Chrome integration and production-package evidence gaps;
 - keep README, privacy policy, store listings, remote-site disclosure, and permission justifications aligned with the release package;
 - reject a release when a public claim is broader than browser activation, permission, origin, frame, source, or protected-content boundaries;
@@ -39,8 +39,7 @@ Implementation status and release evidence are read from source, tests, static g
 
 - complete only capabilities represented in the canonical matrix;
 - improve target selection and failure explanation without adding a second state owner;
-- add manual media selection only through typed intent and explicit product design;
-- extend site-native support only with an allowlisted official API, deterministic identity binding, actual readback, and tests.
+- add manual media selection only through typed intent and explicit product design.
 
 ## P2: local AI research
 

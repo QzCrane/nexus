@@ -18,7 +18,7 @@ const CONTROL_FIELDS = new Set<ControlField>([
 	'mono', 'pan', 'delay', 'visualizer',
 ]);
 const STRATEGIES = new Set<ControlStrategy>([
-	'observe', 'site-native', 'dom-native', 'chrome-native', 'extension-state',
+	'observe', 'dom-native', 'chrome-native', 'extension-state',
 	'extension-css', 'extension-overlay', 'media-webaudio', 'capture', 'unsupported',
 ]);
 const COVERAGES = new Set(['full', 'active-target', 'partial', 'opaque']);
@@ -35,11 +35,11 @@ const PROCESSOR_FIELDS = new Set<ControlField>([
 ]);
 const FIELD_STRATEGIES = {
 	audioEnabled: ['extension-state'],
-	volumeBase: ['dom-native', 'site-native'],
+	volumeBase: ['dom-native'],
 	boost: ['media-webaudio', 'capture'],
-	mediaMuted: ['dom-native', 'site-native'],
+	mediaMuted: ['dom-native'],
 	tabMuted: ['chrome-native'],
-	speed: ['dom-native', 'site-native'],
+	speed: ['dom-native'],
 	preservePitch: ['dom-native'],
 	playing: ['dom-native'],
 	currentTime: ['dom-native'],

@@ -18,13 +18,13 @@ audience: developer
 | § | 文件 | 主题 |
 |---|------|------|
 | §8 | [04a-algorithm-matrix.md](04a-algorithm-matrix.md) | 51 capabilities 完整矩阵:persistent + momentary + adjudication mirror + hotkey mapping |
-| §9 | [04b-source-algorithms.md](04b-source-algorithms.md) | 50 audited source algorithms (ALG-001..050) and dispositions |
+| §9 | [04b-source-algorithms.md](04b-source-algorithms.md) | 49 audited source algorithms (ALG-001..049) and dispositions |
 
 ## 数字
 
 - **51 contract capabilities** = 17 native-only + 6 hybrid-extension-native + 26 augmentation-only + 2 observation-only
 - **28 persistent snapshot fields + 23 momentary operations**
-- **50 source algorithms** (`ALG-001..ALG-050`)
+- **49 source algorithms** (`ALG-001..ALG-049`)
 - **44 static invariants** (`SCTRL-001..SCTRL-044`,见 [08-invariants-and-gates.md](08-invariants-and-gates.md))
 
 ## 上下游
@@ -36,4 +36,4 @@ audience: developer
   - [`05-control-state.md`](05-control-state.md) — FieldState, echo correlation, volume/mute
   - [`07-runtime-and-performance.md`](07-runtime-and-performance.md) — Implementation status ledger
 - **下级实现**: `packages/contracts/src/control.contracts.ts` · `src/background/control-coordinator.ts` · `src/content/logic/native-media-executor.ts`
-- **静态校验**: `scripts/verify/check-spectra-control.js` (强制 44 invariants + 51 capabilities + 50 algorithms 全部存在)
+- **静态校验**: `scripts/verify/check-spectra-control.js` (强制 44 invariants + 51 capabilities + 49 algorithms 全部存在)

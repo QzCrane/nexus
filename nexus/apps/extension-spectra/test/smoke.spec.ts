@@ -1581,7 +1581,7 @@ describe('SPECTRA built extension smoke', () => {
 			const video = document.querySelector<HTMLVideoElement>('#v');
 			const player = video?.parentElement;
 			if (!video || !player) throw new Error('SPA video is missing');
-			player.classList.add('xgplayer');
+			player.setAttribute('data-spectra-player', 'v1');
 			const requestId = crypto.randomUUID();
 			video.setAttribute(requestAttribute, JSON.stringify({ requestId, speed: 1.5 }));
 			video.dispatchEvent(new Event(eventName));

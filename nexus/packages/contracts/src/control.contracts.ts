@@ -2,7 +2,6 @@
 
 export const CONTROL_STRATEGIES = [
 	'observe',
-	'site-native',
 	'dom-native',
 	'chrome-native',
 	'extension-state',
@@ -17,14 +16,12 @@ export type ControlStrategy = (typeof CONTROL_STRATEGIES)[number];
 export type ControlStrategyClass = 'observe' | 'native' | 'augmentation' | 'unsupported';
 export type ControlInterceptionKind =
 	| 'none'
-	| 'allowlisted-site-adapter'
 	| 'reversible-extension-layer'
 	| 'irreversible-media-source-binding'
 	| 'authorized-tab-stream';
 export type ControlAdmissionEvidence =
 	| 'none'
 	| 'existing-runtime-state'
-	| 'allowlisted-site-api-readback'
 	| 'standard-api-readback'
 	| 'chrome-api-readback'
 	| 'extension-owner-readback'
@@ -34,7 +31,6 @@ export type ControlAdmissionEvidence =
 	| 'authorized-capture-readback';
 export type ControlWriterOwner =
 	| 'none'
-	| 'official-site-api'
 	| 'standard-dom-api'
 	| 'chrome-api'
 	| 'extension-state'
@@ -52,7 +48,6 @@ export interface ControlStrategyRule {
 	requiresExplicitIntent: boolean;
 	requiresActualReadback: boolean;
 	requiresDisposer: boolean;
-	mainWorld: 'forbidden' | 'allowlisted-site-api-only';
 	audioRuntimeCost: ControlAudioRuntimeCost;
 	canBypassUserActivation: false;
 	canBypassCorsOrDrm: false;
@@ -65,61 +60,55 @@ export const CONTROL_STRATEGY_RULES = {
 	observe: {
 		class: 'observe', writerOwner: 'none', requiresExplicitIntent: false,
 		interception: 'none', admissionEvidence: 'existing-runtime-state',
-		requiresActualReadback: true, requiresDisposer: true, mainWorld: 'forbidden',
+		requiresActualReadback: true, requiresDisposer: true,
 		audioRuntimeCost: 'existing-processor-only', canBypassUserActivation: false, canBypassCorsOrDrm: false,
-	},
-	'site-native': {
-		class: 'native', writerOwner: 'official-site-api', requiresExplicitIntent: true,
-		interception: 'allowlisted-site-adapter', admissionEvidence: 'allowlisted-site-api-readback',
-		requiresActualReadback: true, requiresDisposer: false, mainWorld: 'allowlisted-site-api-only',
-		audioRuntimeCost: 'none', canBypassUserActivation: false, canBypassCorsOrDrm: false,
 	},
 	'dom-native': {
 		class: 'native', writerOwner: 'standard-dom-api', requiresExplicitIntent: true,
 		interception: 'none', admissionEvidence: 'standard-api-readback',
-		requiresActualReadback: true, requiresDisposer: false, mainWorld: 'forbidden',
+		requiresActualReadback: true, requiresDisposer: false,
 		audioRuntimeCost: 'none', canBypassUserActivation: false, canBypassCorsOrDrm: false,
 	},
 	'chrome-native': {
 		class: 'native', writerOwner: 'chrome-api', requiresExplicitIntent: true,
 		interception: 'none', admissionEvidence: 'chrome-api-readback',
-		requiresActualReadback: true, requiresDisposer: false, mainWorld: 'forbidden',
+		requiresActualReadback: true, requiresDisposer: false,
 		audioRuntimeCost: 'none', canBypassUserActivation: false, canBypassCorsOrDrm: false,
 	},
 	'extension-state': {
 		class: 'augmentation', writerOwner: 'extension-state', requiresExplicitIntent: true,
 		interception: 'reversible-extension-layer', admissionEvidence: 'extension-owner-readback',
-		requiresActualReadback: true, requiresDisposer: true, mainWorld: 'forbidden',
+		requiresActualReadback: true, requiresDisposer: true,
 		audioRuntimeCost: 'none', canBypassUserActivation: false, canBypassCorsOrDrm: false,
 	},
 	'extension-css': {
 		class: 'augmentation', writerOwner: 'extension-style', requiresExplicitIntent: true,
 		interception: 'reversible-extension-layer', admissionEvidence: 'computed-style-readback',
-		requiresActualReadback: true, requiresDisposer: true, mainWorld: 'forbidden',
+		requiresActualReadback: true, requiresDisposer: true,
 		audioRuntimeCost: 'none', canBypassUserActivation: false, canBypassCorsOrDrm: false,
 	},
 	'extension-overlay': {
 		class: 'augmentation', writerOwner: 'extension-overlay', requiresExplicitIntent: true,
 		interception: 'reversible-extension-layer', admissionEvidence: 'overlay-geometry-readback',
-		requiresActualReadback: true, requiresDisposer: true, mainWorld: 'forbidden',
+		requiresActualReadback: true, requiresDisposer: true,
 		audioRuntimeCost: 'none', canBypassUserActivation: false, canBypassCorsOrDrm: false,
 	},
 	'media-webaudio': {
 		class: 'augmentation', writerOwner: 'media-processor', requiresExplicitIntent: true,
 		interception: 'irreversible-media-source-binding', admissionEvidence: 'proven-media-source-eligibility',
-		requiresActualReadback: true, requiresDisposer: true, mainWorld: 'forbidden',
+		requiresActualReadback: true, requiresDisposer: true,
 		audioRuntimeCost: 'lazy-audio-context', canBypassUserActivation: false, canBypassCorsOrDrm: false,
 	},
 	capture: {
 		class: 'augmentation', writerOwner: 'capture-processor', requiresExplicitIntent: true,
 		interception: 'authorized-tab-stream', admissionEvidence: 'authorized-capture-readback',
-		requiresActualReadback: true, requiresDisposer: true, mainWorld: 'forbidden',
+		requiresActualReadback: true, requiresDisposer: true,
 		audioRuntimeCost: 'lazy-offscreen-capture', canBypassUserActivation: false, canBypassCorsOrDrm: false,
 	},
 	unsupported: {
 		class: 'unsupported', writerOwner: 'none', requiresExplicitIntent: false,
 		interception: 'none', admissionEvidence: 'none',
-		requiresActualReadback: false, requiresDisposer: false, mainWorld: 'forbidden',
+		requiresActualReadback: false, requiresDisposer: false,
 		audioRuntimeCost: 'none', canBypassUserActivation: false, canBypassCorsOrDrm: false,
 	},
 } as const satisfies Record<ControlStrategy, ControlStrategyRule>;
@@ -241,7 +230,7 @@ export type ControlPatch = Partial<Pick<ControlValues, ControlDirectField>>;
 
 // Read-only native facts required to compile related augmentation fields. They
 // travel with an intent so a lazy audio runtime never derives Boost/DSP from a
-// stale legacy config after page, Popup, remote or site-native control.
+// stale legacy config after page, Popup or remote control.
 export interface ControlActualContext {
 	volumeBase?: number;
 	mediaMuted?: boolean;
@@ -309,40 +298,6 @@ export const CONTROL_DIRECT_FIELDS = [
 	'delay',
 ] as const satisfies readonly ControlDirectField[];
 
-// MAIN is not a generic fallback surface. These descriptors are the complete
-// allowlist for official page-world APIs that provide a capability the
-// isolated DOM attempt could not apply and read back. Runtime code consumes
-// this table instead of duplicating host or field checks.
-export const SITE_NATIVE_ADAPTER_DESCRIPTORS = {
-	youtube: {
-		hosts: ['youtube.com'],
-		fields: ['volumeBase', 'mediaMuted', 'speed'],
-	},
-} as const satisfies Record<string, {
-	hosts: readonly string[];
-	fields: readonly ControlField[];
-}>;
-
-export type SiteNativeAdapterId = keyof typeof SITE_NATIVE_ADAPTER_DESCRIPTORS;
-export type SiteNativeControlField =
-	(typeof SITE_NATIVE_ADAPTER_DESCRIPTORS)[SiteNativeAdapterId]['fields'][number];
-
-export function matchSiteNativeAdapter(
-	hostname: string,
-	field: ControlField,
-): SiteNativeAdapterId | null {
-	const host = hostname.toLowerCase().replace(/\.+$/u, '');
-	for (const [adapterId, descriptor] of Object.entries(SITE_NATIVE_ADAPTER_DESCRIPTORS)) {
-		const hostMatches = descriptor.hosts.some(
-			(domain) => host === domain || host.endsWith(`.${domain}`),
-		);
-		if (hostMatches && (descriptor.fields as readonly ControlField[]).includes(field)) {
-			return adapterId as SiteNativeAdapterId;
-		}
-	}
-	return null;
-}
-
 // Operations are momentary algorithms. They are planned like fields but do not
 // pretend to be persistent desired values in ControlSnapshot.
 export const CONTROL_OPERATIONS = [
@@ -399,7 +354,6 @@ export type ControlAlgorithmKind =
 
 export type ControlAcknowledgement =
 	| 'coordinator-snapshot'
-	| 'official-stable-getter'
 	| 'dom-event-getter'
 	| 'dom-stable-getter'
 	| 'chrome-event-getter'
@@ -409,7 +363,6 @@ export type ControlAcknowledgement =
 	| 'subscription-state'
 	| 'operation-result';
 
-export type ControlMainWorldPolicy = 'forbidden' | 'site-adapter-only';
 export type ControlRecurringWork =
 	| 'none'
 	| 'while-owned'
@@ -421,7 +374,6 @@ export interface ControlAlgorithmPolicy {
 	kind: ControlAlgorithmKind;
 	orderedStrategies: readonly Exclude<ControlStrategy, 'unsupported'>[];
 	acknowledgements: readonly ControlAcknowledgement[];
-	mainWorld: ControlMainWorldPolicy;
 	recurringWork: ControlRecurringWork;
 }
 
@@ -452,219 +404,219 @@ export interface ControlAlgorithmAdjudication {
 export const CONTROL_ALGORITHM_POLICIES = {
 	audioEnabled: {
 		scope: 'document', kind: 'compound', orderedStrategies: ['extension-state'],
-		acknowledgements: ['coordinator-snapshot'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['coordinator-snapshot'], recurringWork: 'none',
 	},
 	volumeBase: {
 		scope: 'requested-audio-scope', kind: 'field',
-		orderedStrategies: ['dom-native', 'site-native'],
-		acknowledgements: ['dom-event-getter', 'official-stable-getter'],
-		mainWorld: 'site-adapter-only', recurringWork: 'none',
+		orderedStrategies: ['dom-native'],
+		acknowledgements: ['dom-event-getter'],
+		recurringWork: 'none',
 	},
 	boost: {
 		scope: 'requested-audio-scope', kind: 'field',
 		orderedStrategies: ['media-webaudio', 'capture'],
-		acknowledgements: ['processor-readback'], mainWorld: 'forbidden', recurringWork: 'page-lifetime-after-media-binding',
+		acknowledgements: ['processor-readback'], recurringWork: 'page-lifetime-after-media-binding',
 	},
 	mediaMuted: {
 		scope: 'requested-audio-scope', kind: 'field',
-		orderedStrategies: ['dom-native', 'site-native'],
-		acknowledgements: ['dom-event-getter', 'official-stable-getter'],
-		mainWorld: 'site-adapter-only', recurringWork: 'none',
+		orderedStrategies: ['dom-native'],
+		acknowledgements: ['dom-event-getter'],
+		recurringWork: 'none',
 	},
 	tabMuted: {
 		scope: 'tab', kind: 'field', orderedStrategies: ['chrome-native'],
-		acknowledgements: ['chrome-event-getter'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['chrome-event-getter'], recurringWork: 'none',
 	},
 	speed: {
-		scope: 'active-media', kind: 'field', orderedStrategies: ['dom-native', 'site-native'],
-		acknowledgements: ['dom-event-getter', 'official-stable-getter'],
-		mainWorld: 'site-adapter-only', recurringWork: 'none',
+		scope: 'active-media', kind: 'field', orderedStrategies: ['dom-native'],
+		acknowledgements: ['dom-event-getter'],
+		recurringWork: 'none',
 	},
 	preservePitch: {
 		scope: 'active-media', kind: 'field', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-stable-getter'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['dom-stable-getter'], recurringWork: 'none',
 	},
 	playing: {
 		scope: 'active-media', kind: 'field', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
 	},
 	currentTime: {
 		scope: 'active-media', kind: 'field', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
 	},
 	loop: {
 		scope: 'active-media', kind: 'field', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-stable-getter'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['dom-stable-getter'], recurringWork: 'none',
 	},
 	pip: {
 		scope: 'active-video', kind: 'field', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
 	},
 	fullscreen: {
 		scope: 'active-video', kind: 'field', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
 	},
 	rotation: {
 		scope: 'active-video', kind: 'field', orderedStrategies: ['extension-css'],
-		acknowledgements: ['computed-style'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['computed-style'], recurringWork: 'none',
 	},
 	mirrored: {
 		scope: 'active-video', kind: 'field', orderedStrategies: ['extension-css'],
-		acknowledgements: ['computed-style'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['computed-style'], recurringWork: 'none',
 	},
 	fill: {
 		scope: 'active-video', kind: 'field', orderedStrategies: ['extension-css'],
-		acknowledgements: ['computed-style'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['computed-style'], recurringWork: 'none',
 	},
 	filterEnabled: {
 		scope: 'active-video', kind: 'field', orderedStrategies: ['extension-css'],
-		acknowledgements: ['computed-style'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['computed-style'], recurringWork: 'none',
 	},
 	filter: {
 		scope: 'active-video', kind: 'field', orderedStrategies: ['extension-css'],
-		acknowledgements: ['computed-style'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['computed-style'], recurringWork: 'none',
 	},
 	dimEnabled: {
 		scope: 'active-video', kind: 'field', orderedStrategies: ['extension-overlay'],
-		acknowledgements: ['overlay-readback'], mainWorld: 'forbidden', recurringWork: 'while-owned',
+		acknowledgements: ['overlay-readback'], recurringWork: 'while-owned',
 	},
 	dimOpacity: {
 		scope: 'active-video', kind: 'field', orderedStrategies: ['extension-overlay'],
-		acknowledgements: ['overlay-readback'], mainWorld: 'forbidden', recurringWork: 'while-owned',
+		acknowledgements: ['overlay-readback'], recurringWork: 'while-owned',
 	},
 	abLoop: {
 		scope: 'media-source', kind: 'compound', orderedStrategies: ['extension-state'],
 		acknowledgements: ['coordinator-snapshot', 'dom-event-getter'],
-		mainWorld: 'forbidden', recurringWork: 'while-owned',
+		recurringWork: 'while-owned',
 	},
 	tabPinned: {
 		scope: 'tab', kind: 'field', orderedStrategies: ['chrome-native'],
-		acknowledgements: ['chrome-event-getter'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['chrome-event-getter'], recurringWork: 'none',
 	},
 	eqValues: {
 		scope: 'requested-audio-scope', kind: 'field', orderedStrategies: ['media-webaudio', 'capture'],
-		acknowledgements: ['processor-readback'], mainWorld: 'forbidden', recurringWork: 'page-lifetime-after-media-binding',
+		acknowledgements: ['processor-readback'], recurringWork: 'page-lifetime-after-media-binding',
 	},
 	bass: {
 		scope: 'requested-audio-scope', kind: 'field', orderedStrategies: ['media-webaudio', 'capture'],
-		acknowledgements: ['processor-readback'], mainWorld: 'forbidden', recurringWork: 'page-lifetime-after-media-binding',
+		acknowledgements: ['processor-readback'], recurringWork: 'page-lifetime-after-media-binding',
 	},
 	compressor: {
 		scope: 'requested-audio-scope', kind: 'field', orderedStrategies: ['media-webaudio', 'capture'],
-		acknowledgements: ['processor-readback'], mainWorld: 'forbidden', recurringWork: 'page-lifetime-after-media-binding',
+		acknowledgements: ['processor-readback'], recurringWork: 'page-lifetime-after-media-binding',
 	},
 	mono: {
 		scope: 'requested-audio-scope', kind: 'field', orderedStrategies: ['media-webaudio', 'capture'],
-		acknowledgements: ['processor-readback'], mainWorld: 'forbidden', recurringWork: 'page-lifetime-after-media-binding',
+		acknowledgements: ['processor-readback'], recurringWork: 'page-lifetime-after-media-binding',
 	},
 	pan: {
 		scope: 'requested-audio-scope', kind: 'field', orderedStrategies: ['media-webaudio', 'capture'],
-		acknowledgements: ['processor-readback'], mainWorld: 'forbidden', recurringWork: 'page-lifetime-after-media-binding',
+		acknowledgements: ['processor-readback'], recurringWork: 'page-lifetime-after-media-binding',
 	},
 	delay: {
 		scope: 'requested-audio-scope', kind: 'field', orderedStrategies: ['media-webaudio', 'capture'],
-		acknowledgements: ['processor-readback'], mainWorld: 'forbidden', recurringWork: 'page-lifetime-after-media-binding',
+		acknowledgements: ['processor-readback'], recurringWork: 'page-lifetime-after-media-binding',
 	},
 	visualizer: {
 		scope: 'requested-audio-scope', kind: 'subscription', orderedStrategies: ['observe'],
-		acknowledgements: ['subscription-state'], mainWorld: 'forbidden', recurringWork: 'while-subscribed',
+		acknowledgements: ['subscription-state'], recurringWork: 'while-subscribed',
 	},
 	'restore-page-settings': {
 		scope: 'document', kind: 'compound', orderedStrategies: ['extension-state'],
-		acknowledgements: ['coordinator-snapshot'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['coordinator-snapshot'], recurringWork: 'none',
 	},
 	'effective-volume': {
 		scope: 'requested-audio-scope', kind: 'compound',
-		orderedStrategies: ['dom-native', 'site-native', 'extension-state', 'media-webaudio', 'capture'],
-		acknowledgements: ['dom-event-getter', 'official-stable-getter', 'processor-readback'],
-		mainWorld: 'site-adapter-only', recurringWork: 'none',
+		orderedStrategies: ['dom-native', 'extension-state', 'media-webaudio', 'capture'],
+		acknowledgements: ['dom-event-getter', 'processor-readback'],
+		recurringWork: 'none',
 	},
 	'playback-toggle': {
 		scope: 'active-media', kind: 'compound', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
 	},
 	'seek-relative': {
 		scope: 'active-media', kind: 'compound', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
 	},
 	'frame-step': {
-		// No currently implemented official adapter exposes exact frame stepping.
+		// No native media API exposes exact frame stepping.
 		// Extension-owned cadence estimation selects the delta, then the DOM executor
 		// performs one measured, explicitly approximate native seek.
 		scope: 'active-video', kind: 'state-then-native', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
 	},
 	screenshot: {
 		scope: 'active-video', kind: 'compound', orderedStrategies: ['chrome-native'],
-		acknowledgements: ['operation-result'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['operation-result'], recurringWork: 'none',
 	},
 	'marker-add': {
 		scope: 'media-source', kind: 'compound', orderedStrategies: ['extension-state'],
-		acknowledgements: ['coordinator-snapshot'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['coordinator-snapshot'], recurringWork: 'none',
 	},
 	'marker-remove': {
 		scope: 'media-source', kind: 'compound', orderedStrategies: ['extension-state'],
-		acknowledgements: ['coordinator-snapshot'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['coordinator-snapshot'], recurringWork: 'none',
 	},
 	'marker-jump': {
 		scope: 'media-source', kind: 'state-then-native', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
 	},
 	'marker-jump-previous': {
 		scope: 'media-source', kind: 'state-then-native', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
 	},
 	'marker-jump-next': {
 		scope: 'media-source', kind: 'state-then-native', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
 	},
 	'ab-set-a': {
 		scope: 'media-source', kind: 'compound', orderedStrategies: ['extension-state'],
-		acknowledgements: ['operation-result'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['operation-result'], recurringWork: 'none',
 	},
 	'ab-set-b': {
 		scope: 'media-source', kind: 'compound', orderedStrategies: ['extension-state'],
-		acknowledgements: ['operation-result'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['operation-result'], recurringWork: 'none',
 	},
 	'ab-clear': {
 		scope: 'media-source', kind: 'compound', orderedStrategies: ['extension-state'],
-		acknowledgements: ['operation-result'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['operation-result'], recurringWork: 'none',
 	},
 	'ab-skip': {
 		scope: 'media-source', kind: 'state-then-native', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
 	},
 	'audio-reset': {
 		scope: 'requested-audio-scope', kind: 'compound', orderedStrategies: ['extension-state'],
-		acknowledgements: ['coordinator-snapshot'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['coordinator-snapshot'], recurringWork: 'none',
 	},
 	'video-effects-toggle': {
 		scope: 'active-video', kind: 'compound', orderedStrategies: ['extension-state'],
-		acknowledgements: ['coordinator-snapshot'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['coordinator-snapshot'], recurringWork: 'none',
 	},
 	'video-effects-reset': {
 		scope: 'active-video', kind: 'compound', orderedStrategies: ['extension-state'],
-		acknowledgements: ['coordinator-snapshot'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['coordinator-snapshot'], recurringWork: 'none',
 	},
 	'show-info': {
 		scope: 'document', kind: 'observation', orderedStrategies: ['observe'],
-		acknowledgements: ['coordinator-snapshot'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['coordinator-snapshot'], recurringWork: 'none',
 	},
 	'open-popup': {
 		scope: 'extension-ui', kind: 'browser-action', orderedStrategies: ['chrome-native'],
-		acknowledgements: ['operation-result'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['operation-result'], recurringWork: 'none',
 	},
 	'open-options': {
 		scope: 'extension-ui', kind: 'browser-action', orderedStrategies: ['chrome-native'],
-		acknowledgements: ['operation-result'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['operation-result'], recurringWork: 'none',
 	},
 	'run-user-script': {
 		scope: 'sandbox', kind: 'sandbox', orderedStrategies: ['extension-state'],
-		acknowledgements: ['operation-result'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['operation-result'], recurringWork: 'none',
 	},
 	'open-url': {
 		scope: 'tab', kind: 'browser-action', orderedStrategies: ['chrome-native'],
-		acknowledgements: ['operation-result'], mainWorld: 'forbidden', recurringWork: 'none',
+		acknowledgements: ['operation-result'], recurringWork: 'none',
 	},
 } as const satisfies Record<ControlCapability, ControlAlgorithmPolicy>;
 
@@ -796,9 +748,7 @@ export interface ControlFrameStepResult {
 }
 
 export interface ControlOperationPayloadMap {
-	// Background replaces this internal exclusion list from its persisted
-	// site-native baseline record. User-facing callers still send `{}`.
-	'restore-page-settings': { excludedNativeFields?: SiteNativeControlField[] };
+	'restore-page-settings': Record<string, never>;
 	'effective-volume': { operation: 'set' | 'delta'; value: number };
 	'playback-toggle': Record<string, never>;
 	'seek-relative': { delta: number };
@@ -1155,17 +1105,7 @@ function isControlMarker(value: unknown): value is ControlMarker {
 
 function isOperationPayload(operation: ControlOperation, value: unknown): boolean {
 	if (operation === 'restore-page-settings') {
-		return isRecord(value)
-			&& hasOnlyKeys(value, new Set(['excludedNativeFields']))
-			&& (value.excludedNativeFields === undefined || (
-				Array.isArray(value.excludedNativeFields)
-				&& value.excludedNativeFields.length <= 3
-				&& new Set(value.excludedNativeFields).size === value.excludedNativeFields.length
-				&& value.excludedNativeFields.every((field) =>
-					typeof field === 'string' && SITE_NATIVE_ADAPTER_DESCRIPTORS.youtube.fields.includes(
-						field as SiteNativeControlField,
-					))
-			));
+		return isRecord(value) && hasOnlyKeys(value, new Set());
 	}
 	if (operation === 'seek-relative') {
 		return isRecord(value) && hasOnlyKeys(value, new Set(['delta']))

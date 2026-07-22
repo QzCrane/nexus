@@ -62,7 +62,6 @@ function checkSourceAlgorithmCatalog(root, contracts, architecture) {
 	const covered = new Set();
 	const ids = new Set();
 	const sourceAnchors = new Set();
-	let mainWorldAdmissions = 0;
 	const decisions = new Set([
 		'native-control',
 		'hybrid-state-native',
@@ -74,7 +73,6 @@ function checkSourceAlgorithmCatalog(root, contracts, architecture) {
 	]);
 	const admissions = new Set([
 		'none',
-		'allowlisted-site-api-after-dom-failure',
 		'extension-owned',
 		'proven-safe-media-or-explicit-full-output',
 		'existing-processor-only',
@@ -102,23 +100,12 @@ function checkSourceAlgorithmCatalog(root, contracts, architecture) {
 		if (!decisions.has(algorithm.decision)
 			|| !admissions.has(algorithm.augmentationAdmission)
 			|| !recurring.has(algorithm.recurringWork)
-			|| !['forbidden', 'site-adapter-only'].includes(algorithm.interceptionPolicy)) {
+			|| algorithm.interceptionPolicy !== 'forbidden') {
 			error(`SCTRL-002: invalid source algorithm adjudication for ${algorithm.id}`);
 		}
 		if (algorithm.decision === 'native-control'
-			&& !['none', 'allowlisted-site-api-after-dom-failure'].includes(
-				algorithm.augmentationAdmission,
-			)) {
+			&& algorithm.augmentationAdmission !== 'none') {
 			error(`SCTRL-002: native algorithm ${algorithm.id} cannot admit generic augmentation`);
-		}
-		if (algorithm.interceptionPolicy === 'site-adapter-only'
-			&& algorithm.augmentationAdmission !== 'allowlisted-site-api-after-dom-failure') {
-			error(`SCTRL-004: ${algorithm.id} grants MAIN without the exact site-adapter admission`);
-		}
-		if (algorithm.interceptionPolicy === 'site-adapter-only') mainWorldAdmissions += 1;
-		if (algorithm.decision !== 'native-control'
-			&& algorithm.interceptionPolicy === 'site-adapter-only') {
-			error(`SCTRL-004: non-native algorithm ${algorithm.id} cannot acquire MAIN authority`);
 		}
 		if (algorithm.recurringWork !== 'none'
 			&& ['controlled-augmentation', 'lifecycle-orchestration'].includes(algorithm.decision)
@@ -150,10 +137,7 @@ function checkSourceAlgorithmCatalog(root, contracts, architecture) {
 			error(`SCTRL-002/SCTRL-016: source algorithm catalog does not own ${capability}`);
 		}
 	}
-	if (mainWorldAdmissions !== 1) {
-		error(`SCTRL-004: exactly one source algorithm may admit the one-shot site adapter (${mainWorldAdmissions}/1)`);
-	}
-	if (SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS.length !== 50) {
+	if (SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS.length !== 49) {
 		error(`SCTRL-002/SCTRL-016: source algorithm inventory drifted (${SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS.length}/50)`);
 	}
 }
@@ -213,28 +197,8 @@ function checkDefaultRuntime(root) {
 		"out: 'injector.js'",
 		"out: \"injector.js\"",
 		'src/injector/',
-		'site-youtube-adapter.js',
 	]) {
 		if (build.includes(forbidden)) error(`SCTRL-004: generic MAIN bundle entry is forbidden (${forbidden})`);
-	}
-	const mainManager = fs.readFileSync(
-		path.join(app, 'src/background/main-runtime-manager.ts'),
-		'utf8',
-	);
-	for (const required of [
-		'matchSiteNativeAdapter(hostname, request.field)',
-		"world: 'MAIN'",
-		'func: SITE_NATIVE_EXECUTORS[adapter]',
-		'satisfies Record<SiteNativeAdapterId, SerializedMainExecutor>',
-		'before: result.before',
-		"field === 'volumeBase'",
-		"field === 'mediaMuted'",
-		"field === 'speed'",
-		'await new Promise<void>((resolve) => setTimeout(resolve, 64))',
-	]) {
-		if (!mainManager.includes(required)) {
-			error(`SCTRL-004/SCTRL-027: one-shot allowlisted site-native readback is missing (${required})`);
-		}
 	}
 }
 
@@ -285,32 +249,8 @@ function checkPolicyOwner(root) {
 	const policyBlock = contracts.match(
 		/export const CONTROL_ALGORITHM_POLICIES = \{(.*?)\}\s+as const satisfies Record<ControlCapability, ControlAlgorithmPolicy>/su,
 	);
-	const adapterBlock = contracts.match(
-		/export const SITE_NATIVE_ADAPTER_DESCRIPTORS = \{(.*?)\}\s+as const satisfies Record/su,
-	);
-	if (!policyBlock || !adapterBlock) {
-		error('SCTRL-002/SCTRL-004: unable to parse policy and site-native adapter owners');
-	} else {
-		const controlFieldBlock = contracts.match(/export const CONTROL_FIELDS = \[(.*?)\] as const/su);
-		const controlFields = new Set(
-			controlFieldBlock
-				? [...controlFieldBlock[1].matchAll(/'([^']+)'/gu)].map((entry) => entry[1])
-				: [],
-		);
-		const policyEntries = [...policyBlock[1].matchAll(
-			/^\s*(?:'([^']+)'|([A-Za-z][A-Za-z0-9]*)):\s*\{(.*?\n\s*\},)/gmsu,
-		)];
-		const policySiteNative = policyEntries
-			.filter((entry) => entry[3].includes("'site-native'")
-				&& controlFields.has(entry[1] ?? entry[2]))
-			.map((entry) => entry[1] ?? entry[2])
-			.sort();
-		const declaredSiteNative = [...adapterBlock[1].matchAll(/fields:\s*\[([^\]]*)\]/gsu)]
-			.flatMap((entry) => [...entry[1].matchAll(/'([^']+)'/gu)].map((field) => field[1]))
-			.sort();
-		if (JSON.stringify(policySiteNative) !== JSON.stringify(declaredSiteNative)) {
-			error(`SCTRL-002/SCTRL-004: site-native policies must exactly match implemented adapter fields (${policySiteNative.join(',')} != ${declaredSiteNative.join(',')})`);
-		}
+	if (!policyBlock) {
+		error('SCTRL-002: unable to parse policy owner');
 	}
 	const planner = fs.readFileSync(
 		path.join(root, 'packages/features/audio-engine/src/CapabilityPlanner.ts'),
@@ -401,16 +341,11 @@ function checkPolicyOwner(root) {
 	}
 	for (const required of [
 		"intent.requestedCoverage !== 'active-target'",
-		'await rememberSiteNativeBaseline(',
-		': result.before,',
-		'restoreSiteNativeFields(',
-		'isSiteNativeReflection(',
-		"payload: { excludedNativeFields: siteRelease.excludedNativeFields }",
 		'applyChromeTabObservation(',
 		'changeInfo.mutedInfo?.muted',
 	]) {
 		if (!coordinator.includes(required)) {
-			error(`SCTRL-003/SCTRL-004/SCTRL-017: site-native writer restore/correlation is missing (${required})`);
+			error(`SCTRL-017: required coordinator invariant is missing (${required})`);
 		}
 	}
 	const document = path.join(root, APP_PATH, 'docs/control-architecture.md');
@@ -870,9 +805,6 @@ function checkRetiredPaths(root) {
 	);
 	if (!nativeExecutor.includes('target: resolved?.target ?? null')) {
 		error('SCTRL-005/SCTRL-006: field ACK must report the actually resolved media target');
-	}
-	if (!nativeExecutor.includes('intent.payload.excludedNativeFields ?? []')) {
-		error('SCTRL-003/SCTRL-004: the losing DOM writer must be excluded from site-native restore');
 	}
 	if (!nativeExecutor.includes("if (event === 'removed')")
 		|| !nativeExecutor.includes('this.pending.delete(target.mediaId)')
@@ -1433,9 +1365,6 @@ function checkRetiredPaths(root) {
 	);
 	if (webAudio.includes('querySelectorAll')) {
 		error('SCTRL-013: WebAudio command paths must consume the event registry, not scan the document');
-	}
-	if (webAudio.includes("kind: 'preload-cors' | 'allowlisted-site-adapter'")) {
-		error('SCTRL-008/SCTRL-015: a site control adapter cannot be source-binding evidence');
 	}
 	if (!webAudio.includes('private readonly ownedSources = new Set<HTMLMediaElement>()')
 		|| !webAudio.includes('if (!this.ownedSources.delete(element)) return;')) {

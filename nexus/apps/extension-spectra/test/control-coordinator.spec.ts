@@ -755,21 +755,6 @@ describe('authoritative control coordinator', () => {
 		expect(snapshot?.activeVideo).toBeNull();
 	});
 
-	test('uses one allowlisted official API invocation only after a retryable DOM failure', async () => {
-		const harness = installHarness();
-		harness.url = 'https://www.youtube.com/watch?v=test';
-		const pending = controlCoordinatorTestApi.submit(request({ speed: 1.5 }));
-		while (!harness.contentIntent || !harness.resolveContent) await Promise.resolve();
-		harness.resolveContent({
-			ok: true,
-			data: speedErrorAck(harness.contentIntent, 'write-unsupported'),
-		});
-
-		const ack = await pending;
-		expect(ack.fields.speed).toMatchObject({ strategy: 'site-native', actual: 1.5 });
-		expect(harness.mainExecutions).toBe(1);
-	});
-
 	test('does not escalate a terminal native failure into the official site adapter', async () => {
 		const harness = installHarness();
 		harness.url = 'https://www.youtube.com/watch?v=test';
@@ -805,90 +790,6 @@ describe('authoritative control coordinator', () => {
 		const ack = await pending;
 		expect(ack.fields.speed).toMatchObject({ phase: 'error', strategy: 'unsupported' });
 		expect(harness.mainExecutions).toBe(0);
-	});
-
-	test('restores a site-native field through the same official writer and absorbs its reflected event', async () => {
-		const harness = installHarness();
-		harness.url = 'https://www.youtube.com/watch?v=test';
-		const target = {
-			frameId: 0,
-			documentId: harness.documentId,
-			mediaId: 'media:youtube',
-			sourceRevision: 0,
-			kind: 'video' as const,
-		};
-		let restoreIntent: ControlOperationIntent<'restore-page-settings'> | null = null;
-		harness.contentResponder = ({ type, payload }) => {
-			if (type === 'spectra.control.actual.read') {
-				return actualReadAck(payload as ControlReadRequest, target);
-			}
-			if (type === 'spectra.control.operation.execute') {
-				restoreIntent = payload as ControlOperationIntent<'restore-page-settings'>;
-				return {
-					ok: true,
-					data: {
-						operationId: restoreIntent.operationId,
-						tabId: restoreIntent.tabId,
-						documentId: restoreIntent.documentId,
-						generation: restoreIntent.generation,
-						revision: restoreIntent.baseRevision + 1,
-						target,
-						operation: 'restore-page-settings',
-						strategy: 'extension-state',
-						coverage: 'active-target',
-						fields: {},
-						result: { releasedFields: [] },
-					},
-				};
-			}
-			const intent = payload as ControlIntent;
-			if (intent.patch.speed === 1.5) {
-				return { ok: true, data: { ...speedErrorAck(intent, 'write-unsupported'), target } };
-			}
-			return {
-				ok: true,
-				data: appliedPatchAck(intent, (field) => (
-					field === 'audioEnabled' ? 'extension-state' : 'observe'
-				)),
-			};
-		};
-
-		const applied = await controlCoordinatorTestApi.submit({
-			tabId: 7,
-			source: 'popup',
-			requestedCoverage: 'active-target',
-			target,
-			patch: { speed: 1.5 },
-		});
-		expect(applied.fields.speed).toMatchObject({ strategy: 'site-native', actual: 1.5 });
-		expect(harness.storage.has('spectra.control.site-native-baseline.7')).toBe(true);
-
-		const reflected = await controlCoordinatorTestApi.submit({
-			tabId: 7,
-			source: 'page',
-			requestedCoverage: 'active-target',
-			target,
-			patch: { speed: 1.5 },
-		});
-		expect(reflected.revision).toBe(applied.revision);
-		expect(harness.snapshotEvents).toBe(1);
-
-		harness.mainResult = { ok: true, before: 1.5, actual: 1 };
-		const restored = await controlCoordinatorTestApi.submitOperation({
-			tabId: 7,
-			source: 'popup',
-			target,
-			operation: 'restore-page-settings',
-			payload: {},
-		});
-		expect(restoreIntent?.payload).toEqual({ excludedNativeFields: ['speed'] });
-		expect(restored.fields.speed).toMatchObject({
-			strategy: 'site-native',
-			actual: 1,
-			controlled: false,
-		});
-		expect(harness.mainExecutions).toBe(2);
-		expect(harness.storage.has('spectra.control.site-native-baseline.7')).toBe(false);
 	});
 
 	test('commits audio reset as one revision after target and processor ACKs', async () => {
