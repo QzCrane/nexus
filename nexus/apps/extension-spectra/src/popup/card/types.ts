@@ -17,6 +17,7 @@ export interface CardInternalState {
   stableConfig: AudioConfig;
   controlSnapshot: ControlSnapshot | null;
   isCaptureActive: boolean;
+  processorTransitionPending?: boolean;
   userInteracted: boolean;
   isRestrictedSite: boolean;
   actualMode: SpectraAudioMode;

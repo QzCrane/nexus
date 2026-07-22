@@ -2,6 +2,7 @@
 type: reference
 status: stable
 audience: developer
+last_reviewed: 2026-07-22
 ---
 
 # 01. Foundations (Product semantics & Control flow)
@@ -60,6 +61,15 @@ and never echo a second DOM write. A page-side volume gesture owns the new
 public effective-volume value, so any non-neutral hidden Boost is reset to 1 in
 the same coordinator transaction; otherwise a page move to 50% would be
 misreported as `50 × previous Boost`.
+
+The tab-session record is a persistence projection of the last acknowledged
+audio control fields, not another actual-state authority. A same-origin full
+document replacement may rebind that projection to the new `documentId`; a
+cross-origin replacement retires it. Document initialization chooses this
+same-tab projection before site/global presets, then restores through the same
+coordinator. Explicit Popup, remote and shortcut intents wait for that one
+document-scoped decision, so a late preset replay cannot overwrite the user's
+first control on the new document.
 
 Color is also actual state, not a value threshold. Muted/zero is gray; native
 or Media WebAudio is blue; purple is permitted only when the matching

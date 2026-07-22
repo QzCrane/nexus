@@ -56,7 +56,9 @@ export function createRenderFn(params: RenderParams): () => void {
 
     // Color reports the acknowledged runtime, never a guessed threshold:
     // >100% can remain blue when Media WebAudio is the actual safe strategy.
-    const fillColor = actualVolumeColor(
+		const fillColor = state.processorTransitionPending
+			? COLORS.PENDING
+			: actualVolumeColor(
       muted,
       volume.effectiveVolume,
       state.actualMode,

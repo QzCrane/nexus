@@ -26,6 +26,10 @@ interface CaptureStateEvent {
 	error?: string;
 }
 
+export interface CaptureContinuation {
+	resume(config: AudioConfig, requestedGeneration?: number): Promise<CaptureReply>;
+}
+
 const log = logger.content;
 let active = false;
 let phase: CaptureReply['phase'] = 'idle';
@@ -89,6 +93,38 @@ export function createCaptureManager() {
 		handleMessage,
 		request,
 		syncConfig,
+		suspendForContinuation,
+	};
+}
+
+// post: yields an already-authorized processor and returns one document-local,
+// single-use continuation. Only an actually active Capture can mint it, and any
+// intervening generation/state change invalidates it before a new start request.
+async function suspendForContinuation(
+	config: AudioConfig,
+	requestedGeneration?: number,
+): Promise<CaptureContinuation | null> {
+	if (pending) await pending.catch(() => undefined);
+	if (!active) return null;
+	const stopped = await request(false, config, requestedGeneration);
+	if (stopped.active || stopped.phase === 'error') {
+		throw new Error(stopped.error ?? 'Capture did not yield for continuation');
+	}
+	const suspendedGeneration = generation;
+	let consumed = false;
+	return {
+		async resume(nextConfig, nextGeneration) {
+			if (consumed) throw new Error('Capture continuation was already consumed');
+			consumed = true;
+			if (active || phase !== 'idle' || generation !== suspendedGeneration) {
+				throw new Error('Capture continuation no longer owns the suspended processor');
+			}
+			const resumed = await request(true, nextConfig, nextGeneration);
+			if (!resumed.active || resumed.phase !== 'active') {
+				throw new Error(resumed.error ?? 'Capture continuation did not resume');
+			}
+			return resumed;
+		},
 	};
 }
 
@@ -252,3 +288,12 @@ async function syncConfig(config: AudioConfig, requestedGeneration = generation)
 }
 
 export type CaptureManager = ReturnType<typeof createCaptureManager>;
+
+export function resetCaptureManagerForTests(): void {
+	active = false;
+	phase = 'idle';
+	generation = 0;
+	lastError = undefined;
+	actualConfig = null;
+	pending = null;
+}

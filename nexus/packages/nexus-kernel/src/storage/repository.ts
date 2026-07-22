@@ -22,6 +22,7 @@ export class StorageRepository {
   tabSession = {
     get: tabSessionModule.getTabSessionConfig,
     set: tabSessionModule.setTabSessionConfig,
+	rebind: tabSessionModule.rebindTabSessionConfig,
     remove: tabSessionModule.removeTabSessionConfig,
 	flush: tabSessionModule.flushTabSessionConfig,
     has: tabSessionModule.hasTabSessionConfig,

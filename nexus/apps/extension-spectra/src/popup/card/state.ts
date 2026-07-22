@@ -5,6 +5,7 @@ import {
 	isActiveCaptureLifecycle,
 	resolveAudioVolume,
 	type ControlOperationAck,
+	type ControlFieldStates,
 	type ControlPatch,
 } from '@nexus/contracts';
 import { mergeAudioConfig, mergeControlFields, type CardInternalState } from './types';
@@ -14,6 +15,24 @@ export type ConfigUpdateFn = ((changes: Partial<AudioConfig>) => void) & {
 	flush: () => Promise<void>;
 	runControl: <T>(command: () => Promise<T>) => Promise<T>;
 };
+
+// A field ACK using Capture proves the processor is already active. Project it
+// immediately so Popup rendering cannot lag behind that ACK while the matching
+// lifecycle event is still crossing the extension event queue.
+export function projectAcknowledgedProcessorLifecycle(
+	state: CardInternalState,
+	fields: ControlFieldStates,
+): void {
+	const captureApplied = Object.values(fields).some((field) => (
+		field?.phase === 'applied' && field.strategy === 'capture'
+	));
+	if (!captureApplied) return;
+	state.actualMode = 'capture';
+	state.desiredMode = 'capture';
+	state.phase = 'active';
+	state.isCaptureActive = true;
+	state.processorTransitionPending = false;
+}
 
 export function createGetCapturing(
   state: CardInternalState,
@@ -40,6 +59,7 @@ export function createUpdateFn(
 	let localRevision = 0;
 	let pendingPatch: ControlPatch = {};
 	let pendingEffectiveVolume: number | null = null;
+	let desiredConfig = state.config;
 	let controlTail: Promise<void> = Promise.resolve();
 
 	const serializeControl = <T>(command: () => Promise<T>): Promise<T> => {
@@ -128,6 +148,7 @@ export function createUpdateFn(
 				state.controlRevision = Math.max(state.controlRevision, acknowledgement.revision);
 				state.controlGeneration = Math.max(state.controlGeneration, acknowledgement.generation);
 				state.stableConfig = mergeControlFields(state.stableConfig, acknowledgement.fields);
+				projectAcknowledgedProcessorLifecycle(state, acknowledgement.fields);
 				state.stableConfig = mergeAudioConfig(state.stableConfig, {
 					volume: acknowledgement.result.effectiveVolume,
 					volumeBase: acknowledgement.result.volumeBase,
@@ -163,6 +184,7 @@ export function createUpdateFn(
 					throw new Error(failed.message);
 				}
 				state.stableConfig = mergeControlFields(state.stableConfig, response.data.fields);
+				projectAcknowledgedProcessorLifecycle(state, response.data.fields);
 			}
 			// A response for an earlier drag sample must not overwrite a newer
 			// optimistic value that is waiting to be coalesced and sent.
@@ -170,6 +192,8 @@ export function createUpdateFn(
 				state.config = mergeAudioConfig(state.stableConfig, {
 					eqValues: [...state.stableConfig.eqValues],
 				});
+				desiredConfig = state.config;
+				state.processorTransitionPending = false;
 			}
 			state.lastError = null;
 		}).catch((error) => {
@@ -177,6 +201,8 @@ export function createUpdateFn(
 				state.config = mergeAudioConfig(state.stableConfig, {
 					eqValues: [...state.stableConfig.eqValues],
 				});
+				desiredConfig = state.config;
+				state.processorTransitionPending = false;
 			}
 			throw error;
 		}).finally(() => {
@@ -221,8 +247,9 @@ export function createUpdateFn(
 
 	const update = ((changes: Partial<AudioConfig>) => {
 		// This function is only invoked by explicit controls/preset actions; reads never call it.
-		const previous = state.config;
+		const previous = pending || inFlight ? desiredConfig : state.config;
 		const next = mergeAudioConfig(previous, changes);
+		desiredConfig = next;
 		const hasVolumeChange = changes.volume !== undefined
 			|| changes.volumeBase !== undefined
 			|| changes.boost !== undefined;
@@ -235,7 +262,14 @@ export function createUpdateFn(
 		if (!volumeChanged && Object.keys(patch).length === 0) return;
 		state.userInteracted = true;
 
-		// eff: apply changes immediately to local state for responsive UI feedback
+		// An amber pending projection separates desired from actual while crossing
+		// the native/processor boundary. Publishing desired 110% as native blue is
+		// the blue-before-purple flash; purple remains reserved for the compound
+		// Capture ACK. Same-region drags remain optimistic.
+		const stableVolume = resolveAudioVolume(state.stableConfig).effectiveVolume;
+		const crossesProcessorBoundary = volumeChanged
+			&& (stableVolume > 100) !== (nextVolume > 100);
+		state.processorTransitionPending = crossesProcessorBoundary;
 		state.config = next;
 		if (volumeChanged) pendingEffectiveVolume = nextVolume;
 		pendingPatch = { ...pendingPatch, ...patch };

@@ -47,6 +47,26 @@ function normalize(root, fullPath) {
 	return path.relative(root, fullPath).replaceAll('\\', '/');
 }
 
+export function hasNamedImports(source, moduleSpecifier, requiredNames) {
+	const escapedSpecifier = moduleSpecifier.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+	const importPattern = new RegExp(
+		`\\bimport\\s*\\{([^}]*)\\}\\s*from\\s*['"]${escapedSpecifier}['"]`,
+		'gu',
+	);
+	const importedNames = new Set();
+	for (const match of source.matchAll(importPattern)) {
+		for (const binding of match[1].split(',')) {
+			const importedName = binding
+				.trim()
+				.replace(/^type\s+/u, '')
+				.split(/\s+as\s+/u)[0]
+				?.trim();
+			if (importedName) importedNames.add(importedName);
+		}
+	}
+	return requiredNames.every((name) => importedNames.has(name));
+}
+
 function checkSourceAlgorithmCatalog(root, contracts, architecture) {
 	const extractCapabilities = (name) => {
 		const match = contracts.match(new RegExp(`export const ${name} = \\[(.*?)\\] as const`, 'su'));
@@ -719,7 +739,6 @@ function checkProductionLoadingTopology(root) {
 		'plugins: [contractRuntimeFacadePlugin()]',
 		'const addEsmExportProperties = (source) => {',
 		'const addCrossContextSingletonProperties = (source) => {',
-		"import { collectExternalBoundaryProperties } from './scripts/external-boundary-properties.mjs'",
 		"import { checkProductionArtifacts } from './scripts/check-production-artifacts.mjs'",
 		"out: 'peerjs-vendor.js'",
 		"format: 'iife'",
@@ -731,6 +750,16 @@ function checkProductionLoadingTopology(root) {
 		if (!build.includes(required)) {
 			error(`SCTRL-001/SCTRL-034: production loading topology drifted (${required})`);
 		}
+	}
+	if (!hasNamedImports(build, './scripts/external-boundary-properties.mjs', [
+		'collectExternalBoundaryProperties',
+		'collectExternalJsonProperties',
+		'collectRuntimeStringProperties',
+	]) || !hasNamedImports(build, './scripts/i18n-assets.ts', [
+		'collectLocaleCatalogPropertyNames',
+		'writeI18nAssets',
+	])) {
+		error('SCTRL-001/SCTRL-034: production property-boundary imports drifted');
 	}
 	if (!popup.includes('<script type="module" src="popup.js"></script>')) {
 		error('SCTRL-034: Popup must remain an extension-origin module before sharing private chunks');

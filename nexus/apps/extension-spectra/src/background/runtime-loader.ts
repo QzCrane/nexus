@@ -16,11 +16,14 @@ import {
 	type ContentRuntimeSourceOwnership,
 	type MediaTarget,
 	type HotkeySettings,
+	type AudioConfig,
 } from '@nexus/contracts';
 import { sendSpectraTabRequest } from '../shared/spectra-client';
 import { swLog } from '../shared/logger';
 import { injectMainBridges } from './main-runtime-manager';
 import { settingsRepository } from './settings-repository';
+import { storage } from './state';
+import { markBadgeUsedForTab } from './handlers/badge';
 
 // Heavy SPA startup can legitimately spend several seconds restoring settings
 // and discovering media before the runtime publishes READY. Keep the handshake
@@ -40,6 +43,7 @@ const waiters = new Map<string, RuntimeWaiter>();
 const leases = new Map<string, Set<string>>();
 const disposeTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const hotkeyLeases = new Map<string, string>();
+const documentInitializations = new Map<string, Promise<void>>();
 let initialized = false;
 
 const RUNTIME_HANDOFF_GRACE_MS = 250;
@@ -226,16 +230,61 @@ function senderIdentity(sender: chrome.runtime.MessageSender): { tabId: number; 
 	return { tabId, documentId: sender.documentId };
 }
 
-async function currentTopDocumentId(tabId: number): Promise<string> {
+async function currentTopDocument(tabId: number): Promise<{ documentId: string; url: string }> {
 	const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
 	if (!frame?.documentId) throw new Error('The tab has no current top-level document');
-	return frame.documentId;
+	if (!frame.url) throw new Error('The tab has no current top-level URL');
+	return { documentId: frame.documentId, url: frame.url };
+}
+
+async function currentTopDocumentId(tabId: number): Promise<string> {
+	return (await currentTopDocument(tabId)).documentId;
 }
 
 async function resolveDocumentId(tabId: number, requested?: string): Promise<string> {
 	const current = await currentTopDocumentId(tabId);
 	if (requested && requested !== current) throw new Error('The requested document is stale');
 	return current;
+}
+
+type DocumentRestore = (tabId: number, documentId: string, url: string | undefined) => Promise<void>;
+let restoreDocumentForInitialization: DocumentRestore = (...args) => restoreIfConfigured(...args);
+
+function beginDocumentInitialization(
+	tabId: number,
+	documentId: string,
+	url: string | undefined,
+): Promise<void> {
+	const key = runtimeKey(tabId, documentId);
+	const existing = documentInitializations.get(key);
+	if (existing) return existing;
+	const operation = Promise.resolve()
+		.then(() => restoreDocumentForInitialization(tabId, documentId, url))
+		.catch((error) => {
+			// Initialization is an ordering barrier, not a permanent availability
+			// gate. A failed restore is reported once and explicit user control may
+			// proceed against the current document afterwards.
+			swLog.warn(`[Runtime] document restore failed: ${String(error)}`);
+		});
+	documentInitializations.set(key, operation);
+	return operation;
+}
+
+// post: explicit control and initial snapshot reads observe one completed
+// restore decision for the current document. Restore-originated writes bypass
+// this function in the coordinator, preventing a self-wait cycle.
+export async function awaitDocumentInitialization(
+	tabId: number,
+	documentId?: string,
+): Promise<void> {
+	// Direct unit consumers of the coordinator do not initialize the MV3 loader.
+	// Production does so first in background/index.ts.
+	if (!initialized) return;
+	const current = await currentTopDocument(tabId);
+	if (documentId && documentId !== current.documentId) {
+		throw new Error('The requested initialization document is stale');
+	}
+	await beginDocumentInitialization(tabId, current.documentId, current.url);
 }
 
 async function probeRuntime(tabId: number, documentId: string): Promise<ContentRuntimeReadyResult | null> {
@@ -317,6 +366,11 @@ function forgetDocument(tabId: number, documentId?: string): void {
 			hotkeyLeases.delete(key);
 		}
 	}
+	for (const key of [...documentInitializations.keys()]) {
+		if (key.startsWith(prefix) && (!documentId || key === runtimeKey(tabId, documentId))) {
+			documentInitializations.delete(key);
+		}
+	}
 }
 
 async function loadRuntime(tabId: number, documentId: string): Promise<ContentRuntimeReadyResult> {
@@ -390,9 +444,21 @@ export async function ensureContentRuntime(
 async function restoreIfConfigured(tabId: number, documentId: string, url: string | undefined): Promise<void> {
 	if (!url) return;
 	let hostname = '';
-	try { hostname = new URL(url).hostname; } catch { return; }
-	const config = await settingsRepository.resolveAudioConfig(hostname);
+	let origin = '';
+	try {
+		const parsed = new URL(url);
+		hostname = parsed.hostname;
+		origin = parsed.origin;
+	} catch { return; }
+	if (origin === 'null') return;
+	const restore = await resolveDocumentRestoreConfig(tabId, documentId, hostname, origin);
+	const { config } = restore;
 	if (isDefaultAudioConfig(config)) return;
+	// Replaying a same-origin tab session must preserve its existing usage fact:
+	// native-only page interaction stays badge-free, while an earlier SPECTRA
+	// action is already sticky in badge-usage storage. A configured site/global
+	// preset is itself active extension behavior and therefore starts usage.
+	if (restore.source === 'preset') await markBadgeUsedForTab(tabId);
 	const capability = `settings:${hostname}`;
 	await ensureContentRuntime(tabId, documentId, 'restore', capability);
 	try {
@@ -486,7 +552,11 @@ export function initializeContentRuntimeLoader(): void {
 				);
 			});
 			void Promise.allSettled([
-				restoreIfConfigured(identity.tabId, identity.documentId, sender.url ?? sender.tab?.url),
+				beginDocumentInitialization(
+					identity.tabId,
+					identity.documentId,
+					sender.url ?? sender.tab?.url,
+				),
 				reconcileHotkeyRuntimeLease(identity.tabId, identity.documentId, sender.url ?? sender.tab?.url),
 			]).then((results) => {
 				for (const result of results) {
@@ -603,5 +673,28 @@ export function resetContentRuntimeLoaderForTests(): void {
 	for (const timer of disposeTimers.values()) clearTimeout(timer);
 	disposeTimers.clear();
 	hotkeyLeases.clear();
+	documentInitializations.clear();
+	restoreDocumentForInitialization = (...args) => restoreIfConfigured(...args);
 	initialized = false;
 }
+
+async function resolveDocumentRestoreConfig(
+	tabId: number,
+	documentId: string,
+	hostname: string,
+	origin: string,
+): Promise<{ config: AudioConfig; source: 'session' | 'preset' }> {
+	const sessionConfig = await storage.tabSession.rebind(tabId, { tabId, documentId, origin });
+	if (sessionConfig) return { config: sessionConfig, source: 'session' };
+	return {
+		config: await settingsRepository.resolveAudioConfig(hostname),
+		source: 'preset',
+	};
+}
+
+export const runtimeLoaderTestApi = {
+	setDocumentRestore(restore: DocumentRestore): void {
+		restoreDocumentForInitialization = restore;
+	},
+	resolveDocumentRestoreConfig,
+};

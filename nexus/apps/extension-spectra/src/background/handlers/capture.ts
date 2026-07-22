@@ -289,7 +289,7 @@ async function startCapture(
 	const wasActive = state.active;
 	// A STOP/CANCEL tombstone is intentionally permanent in the offscreen host.
 	// Retrying a failed or idle same-generation START must advance beyond it.
-	const generation = requestedGeneration === undefined || requestedGeneration === state.generation
+	let generation = requestedGeneration === undefined || requestedGeneration === state.generation
 		? state.generation + 1
 		: requestedGeneration;
 	const controlRevision = state.controlRevision + 1;
@@ -302,18 +302,30 @@ async function startCapture(
 	try {
 		acquiredLease = await acquireOffscreenLease(`audio:${tabId}`);
 		const streamId = await getMediaStreamId(tabId);
-		const result = await withTimeout(
+		const startHost = (startGeneration: number) => withTimeout(
 			sendOffscreenMessage({
 				type: 'OFFSCREEN_AUDIO_START',
 				tabId,
 				streamId,
 				config,
-				generation,
+				generation: startGeneration,
 				controlRevision,
 			}),
 			OFFSCREEN_ACK_TIMEOUT_MS,
 			'Offscreen audio processor did not acknowledge startup',
 		);
+		let result = await startHost(generation);
+		if (!result?.ok
+			&& result?.error?.code === 'stale_capture_intent'
+			&& result.generation >= generation) {
+			// An idle offscreen document can outlive the worker/document that minted
+			// its STOP tombstone. Adopt that authoritative generation and retry once
+			// inside this serialized transaction; repeated user input must never be
+			// required to count up to an otherwise invisible tombstone.
+			generation = result.generation + 1;
+			state.generation = generation;
+			result = await startHost(generation);
+		}
 
 		if (state.generation !== generation) {
 			return { status: 'processing' as const, phase: state.phase, generation: state.generation };

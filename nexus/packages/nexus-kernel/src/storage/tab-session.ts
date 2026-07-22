@@ -86,6 +86,10 @@ function identitiesMatch(left: TabSessionIdentity, right: TabSessionIdentity): b
 		&& left.origin === right.origin;
 }
 
+function originsMatch(left: TabSessionIdentity, right: TabSessionIdentity): boolean {
+	return left.tabId === right.tabId && left.origin === right.origin;
+}
+
 function canonicalizeAudioConfig(value: Partial<AudioConfig>): AudioConfig {
 	const volume = resolveAudioVolume({
 		volume: value.volume ?? DEFAULT_AUDIO_CONFIG.volume,
@@ -166,6 +170,38 @@ export async function setTabSessionConfig(
 			updatedAt: Date.now(),
 		});
 		scheduleWrite(tabId);
+	});
+}
+
+// post: carries a tab's acknowledged config across a same-origin document
+// replacement, while deleting it at a cross-origin boundary. Rebinding is
+// explicit so ordinary reads remain side-effect free and stale documents can
+// never claim a newer identity by merely querying storage.
+export async function rebindTabSessionConfig(
+	tabId: number,
+	identity: TabSessionIdentity,
+): Promise<AudioConfig | null> {
+	return serialized(tabId, async () => {
+		const stored = await readStoredValue(tabId);
+		if (!stored) return null;
+		if (!isStoredTabSession(stored) || !originsMatch(stored.identity, identity)) {
+			clearWriteTimer(tabId);
+			pendingWrites.delete(tabId);
+			writeRetries.delete(tabId);
+			await chrome.storage.session.remove(keyFor(tabId));
+			return null;
+		}
+
+		const config = canonicalizeAudioConfig(stored.config);
+		if (!identitiesMatch(stored.identity, identity)) {
+			pendingWrites.set(tabId, {
+				identity,
+				config,
+				updatedAt: Date.now(),
+			});
+			scheduleWrite(tabId);
+		}
+		return config;
 	});
 }
 

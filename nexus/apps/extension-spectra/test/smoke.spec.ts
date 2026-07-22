@@ -2118,13 +2118,21 @@ describe('SPECTRA built extension smoke', () => {
 					.find((item) => item.querySelector('.registry-item-domain')?.textContent === routeDomain);
 				const presetItem = [...document.querySelectorAll<HTMLElement>('.preset-item')]
 					.find((item) => item.querySelector('.preset-name span')?.textContent === presetName);
-				record('registryRoute', registryItem?.querySelector('.registry-item-route')?.textContent);
-				record('registrySource', registryItem?.querySelector('.registry-item-source')?.textContent);
+				const registryRoute = registryItem?.querySelector<HTMLElement>('.registry-item-route');
+				const registrySource = registryItem?.querySelector<HTMLElement>('.registry-item-source');
+				const presetHeaders = [...document.querySelectorAll<HTMLElement>('.preset-section-header')];
+				record('registryRoute', registryRoute?.textContent);
+				record('registrySource', registrySource?.textContent);
 				record('registryDelete', registryItem?.querySelector('.registry-item-delete')?.getAttribute('title'));
-				record('presetHeader', document.querySelector('.preset-section-header')?.textContent);
+				record('registryPlaceholder', document.querySelector<HTMLInputElement>('#registry-filter')?.placeholder);
+				record('presetHeader', presetHeaders[0]?.textContent);
+				record('presetSiteHeader', presetHeaders[1]?.textContent);
 				record('presetDefault', presetItem?.querySelector('.preset-badge.default')?.textContent);
 				record('presetSummary', presetItem?.querySelector('.preset-summary')?.textContent);
 				record('presetApply', presetItem?.querySelector('.btn-preset-action.apply')?.getAttribute('title'));
+				if (registryRoute) record('registryRouteFontSize', getComputedStyle(registryRoute).fontSize);
+				if (registrySource) record('registrySourceFontSize', getComputedStyle(registrySource).fontSize);
+				if (presetHeaders[0]) record('presetHeaderFontSize', getComputedStyle(presetHeaders[0]).fontSize);
 			};
 			new MutationObserver(scan).observe(document, {
 				attributes: true,
@@ -2151,14 +2159,22 @@ describe('SPECTRA built extension smoke', () => {
 				(window as Window & { __spectraI18nFirstDynamic?: Record<string, string> })
 					.__spectraI18nFirstDynamic
 			));
-			expect(firstDynamic).toMatchObject({
-				registryRoute: '需要时劫持',
-				registrySource: '用户',
-				registryDelete: '删除',
-				presetHeader: '全局预设',
-				presetDefault: '默认',
-				presetApply: '应用预设',
-			});
+				expect(firstDynamic).toMatchObject({
+					registryRoute: '需要时劫持',
+					registrySource: '用户',
+					registryDelete: '删除',
+					registryPlaceholder: '🔍 Filter...',
+					presetHeader: '全局预设',
+					presetSiteHeader: '网站预设',
+					presetDefault: '默认',
+					presetApply: '应用预设',
+				});
+			expect(Number.parseFloat(firstDynamic?.registryRouteFontSize ?? '0')).toBeGreaterThanOrEqual(11);
+			expect(Number.parseFloat(firstDynamic?.registrySourceFontSize ?? '0')).toBeGreaterThanOrEqual(11);
+			expect(Number.parseFloat(firstDynamic?.presetHeaderFontSize ?? '0')).toBeGreaterThanOrEqual(13);
+			await popup.waitForFunction(() => (
+				document.querySelector<HTMLInputElement>('#registry-filter')?.placeholder === '🔍 过滤...'
+			), { timeout: 8_000 });
 			expect(firstDynamic?.presetSummary).toContain('压缩');
 			expect(firstDynamic?.presetSummary).toContain('声相:右');
 
@@ -2171,6 +2187,9 @@ describe('SPECTRA built extension smoke', () => {
 				return document.documentElement.lang === 'en-US'
 					&& registryItem?.querySelector('.registry-item-route')?.textContent === 'Capture when needed'
 					&& registryItem?.querySelector('.registry-item-source')?.textContent === 'USER'
+					&& document.querySelector<HTMLInputElement>('#registry-filter')?.placeholder === '🔍 Filter...'
+					&& [...document.querySelectorAll('.preset-section-header')]
+						.map((element) => element.textContent).join('|') === 'Global Presets|Site Presets'
 					&& presetItem?.querySelector('.preset-badge.default')?.textContent === 'DEFAULT'
 					&& presetItem?.querySelector('.btn-preset-action.apply')?.getAttribute('title') === 'Apply preset';
 			}, { timeout: 8_000 }, { routeDomain, presetName });
@@ -2184,6 +2203,9 @@ describe('SPECTRA built extension smoke', () => {
 				return document.documentElement.lang === 'zh-CN'
 					&& registryItem?.querySelector('.registry-item-route')?.textContent === '需要时劫持'
 					&& registryItem?.querySelector('.registry-item-source')?.textContent === '用户'
+					&& document.querySelector<HTMLInputElement>('#registry-filter')?.placeholder === '🔍 过滤...'
+					&& [...document.querySelectorAll('.preset-section-header')]
+						.map((element) => element.textContent).join('|') === '全局预设|网站预设'
 					&& presetItem?.querySelector('.preset-badge.default')?.textContent === '默认'
 					&& presetItem?.querySelector('.btn-preset-action.apply')?.getAttribute('title') === '应用预设';
 			}, { timeout: 8_000 }, { routeDomain, presetName });
@@ -2330,12 +2352,12 @@ describe('SPECTRA built extension smoke', () => {
 			}
 			await popup.$eval('.vol-slider', (element) => {
 				const slider = element as HTMLInputElement;
-				slider.value = '180';
+				slider.value = '80';
 				slider.dispatchEvent(new Event('input', { bubbles: true }));
 				slider.dispatchEvent(new Event('change', { bubbles: true }));
 			});
 			await popup.waitForFunction(() => (
-				(document.querySelector('.vol-slider') as HTMLInputElement | null)?.value === '180'
+				(document.querySelector('.vol-slider') as HTMLInputElement | null)?.value === '80'
 			));
 			await popup.click('.btn-reset');
 			await popup.waitForFunction(() => {
@@ -2949,6 +2971,124 @@ describe('SPECTRA built extension smoke', () => {
 			await extensionClient.close();
 		}
 	}, 35_000);
+
+	test('resumes acknowledged Capture after the fullscreen boundary succeeds', async () => {
+		await installSyntheticCaptureHarness();
+		await installTabCaptureStreamIdStub();
+		const extensionClient = await openExtensionClient();
+		const tabId = await getTabId(fixturePage.url());
+		// Headless Chrome rejects the browser fullscreen endpoint even when CDP
+		// supplies a user gesture. Replace only that endpoint before document_start;
+		// the production MAIN bridge and Capture/offscreen lifecycle stay intact.
+		const fullscreenStub = await fixturePage.evaluateOnNewDocument(() => {
+			Object.defineProperty(Element.prototype, 'requestFullscreen', {
+				configurable: true,
+				enumerable: false,
+				writable: true,
+				value: function syntheticFullscreenSuccess(this: Element): Promise<void> {
+					document.documentElement.dataset.fullscreenNativeBoundary = this.id || 'anonymous';
+					return Promise.resolve();
+				},
+			});
+		});
+		let latestGeneration = 0;
+		let stage = 'capture route setup';
+		try {
+			await markRegistryDomain(extensionClient, '127.0.0.1', true);
+			stage = 'fresh document bootstrap';
+			await fixturePage.reload({ waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(fixturePage.url());
+			await fixturePage.bringToFront();
+			stage = 'Popup Capture activation';
+			await submitEffectiveVolume(tabId, 180);
+			const captured = await waitForContentStatus(
+				(status) => status.mode === 'capture'
+					&& status.phase === 'active'
+					&& status.config?.volume === 180,
+				15_000,
+			);
+			latestGeneration = captured.generation ?? 0;
+
+			stage = 'native fullscreen request';
+			const fullscreenClient = await fixturePage.createCDPSession();
+			try {
+				const evaluation = await fullscreenClient.send('Runtime.evaluate', {
+					expression: `(() => {
+						const video = document.querySelector('#v');
+						if (!video) throw new Error('Fullscreen fixture video is missing');
+						document.documentElement.dataset.fullscreenHandoffResult = 'pending';
+						void video.requestFullscreen().then(
+							() => { document.documentElement.dataset.fullscreenHandoffResult = 'success'; },
+							(error) => {
+								document.documentElement.dataset.fullscreenHandoffResult = 'error:' + String(error);
+							},
+						);
+					})()`,
+					awaitPromise: false,
+					returnByValue: true,
+					userGesture: true,
+				});
+				if (evaluation.exceptionDetails) {
+					throw new Error(evaluation.exceptionDetails.exception?.description
+						?? evaluation.exceptionDetails.text);
+				}
+			} finally {
+				await fullscreenClient.detach().catch(() => undefined);
+			}
+			const fullscreenResult = await eventually(
+				() => fixturePage.evaluate(() => ({
+					result: document.documentElement.dataset.fullscreenHandoffResult ?? 'missing',
+					nativeBoundary: document.documentElement.dataset.fullscreenNativeBoundary ?? null,
+				})),
+				(value) => value.result !== 'pending',
+				'native fullscreen completion',
+				10_000,
+			);
+			expect(fullscreenResult).toEqual({ result: 'success', nativeBoundary: 'v' });
+
+			stage = 'Capture continuation resume';
+			const resumed = await waitForContentStatus(
+				(status) => status.mode === 'capture'
+					&& status.phase === 'active'
+					&& (status.generation ?? 0) > latestGeneration,
+				15_000,
+			);
+			latestGeneration = resumed.generation ?? latestGeneration;
+			expect((await readOffscreenSnapshot()).audioTabs).toEqual(expect.arrayContaining([
+				expect.objectContaining({ tabId, generation: latestGeneration }),
+			]));
+		} catch (error) {
+			throw new Error(`Fullscreen Capture smoke failed during ${stage}`, { cause: error });
+		} finally {
+			await withDiagnosticTimeout('leave fullscreen during handoff cleanup', () => fixturePage.evaluate(async () => {
+				delete document.documentElement.dataset.fullscreenHandoffResult;
+				if (document.fullscreenElement) await document.exitFullscreen();
+			}), 3_000).catch(() => undefined);
+			await withDiagnosticTimeout(
+				'restore native volume during handoff cleanup',
+				() => submitEffectiveVolume(tabId, 100),
+				8_000,
+			).catch(() => undefined);
+			await withDiagnosticTimeout(
+				'restore direct route during handoff cleanup',
+				() => markRegistryDomain(extensionClient, '127.0.0.1', false),
+				3_000,
+			).catch(() => undefined);
+			await withDiagnosticTimeout(
+				'restore runtime during handoff cleanup',
+				() => configureRuntime(fixturePage.url(), DEFAULT_AUDIO_CONFIG),
+				5_000,
+			).catch(() => undefined);
+			await fixturePage.removeScriptToEvaluateOnNewDocument(fullscreenStub.identifier)
+				.catch(() => undefined);
+			await withDiagnosticTimeout(
+				'reload native fullscreen boundary after handoff cleanup',
+				() => fixturePage.reload({ waitUntil: 'domcontentloaded' }),
+				8_000,
+			).catch(() => undefined);
+			await extensionClient.close().catch(() => undefined);
+		}
+	}, 60_000);
 
 	test('keeps the single 0-800 control and every color on acknowledged actual state', async () => {
 		await installPageMediaControllerHarness();

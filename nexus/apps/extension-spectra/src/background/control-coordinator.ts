@@ -40,11 +40,15 @@ import {
 import { createKeyedSerializedQueue } from '@nexus/kernel';
 import { sendSpectraTabRequest } from './spectra-tab-client';
 import { storage } from './state';
-import { updateBadgeFromControlProjection } from './handlers/badge';
+import {
+	markBadgeUsedForTab,
+	updateBadgeFromControlProjection,
+} from './handlers/badge';
 import { executeUserScriptInTab } from './handlers/user-scripts';
 import { getAudioSession } from './audio-session-store';
 import {
 	ensureContentRuntime,
+	awaitDocumentInitialization,
 	releaseContentRuntimeLease,
 	releaseSourceRuntimeLease,
 	retainSourceRuntimeLease,
@@ -894,6 +898,9 @@ async function commitControlFields(
 		fields,
 		source !== 'page' && source !== 'restore' && source !== 'system',
 	);
+	if (source !== 'page' && source !== 'restore' && source !== 'system') {
+		await markBadgeUsedForTab(committed.tabId);
+	}
 	await publishSnapshot(committed);
 	await reconcileRuntimeOwnership(committed);
 	return committed;
@@ -1903,7 +1910,10 @@ function submitSerialized(
 	request: RoutedControlSubmitRequest,
 	extensionInvoked = false,
 ): Promise<ControlApplyAck> {
-	return serialized(request.tabId, async () => {
+	const initialize = request.source === 'restore' || request.source === 'page'
+		? Promise.resolve()
+		: awaitDocumentInitialization(request.tabId);
+	return initialize.then(() => serialized(request.tabId, async () => {
 		const unadmittedRequest = { ...request };
 		Reflect.deleteProperty(unadmittedRequest, 'captureAdmission');
 		const captureAdmission = extensionInvoked
@@ -1917,14 +1927,17 @@ function submitSerialized(
 			throw new Error('Control executor returned a strategy outside the capability policy');
 		}
 		return acknowledgement;
-	});
+	}));
 }
 
 function submitOperationSerialized(
 	request: RoutedControlOperationRequest,
 	extensionInvoked = false,
 ): Promise<ControlOperationAck> {
-	return serialized(request.tabId, async () => {
+	const initialize = request.source === 'restore'
+		? Promise.resolve()
+		: awaitDocumentInitialization(request.tabId);
+	return initialize.then(() => serialized(request.tabId, async () => {
 		const unadmittedRequest = { ...request };
 		Reflect.deleteProperty(unadmittedRequest, 'captureAdmission');
 		const captureAdmission = extensionInvoked
@@ -1937,8 +1950,9 @@ function submitOperationSerialized(
 		if (!isControlOperationAck(acknowledgement)) {
 			throw new Error('Control operation returned a strategy outside the capability policy');
 		}
+		await markBadgeUsedForTab(request.tabId);
 		return acknowledgement;
-	});
+	}));
 }
 
 export function submitControlRequest(request: RoutedControlSubmitRequest): Promise<ControlApplyAck> {
@@ -2082,7 +2096,8 @@ export function initializeControlCoordinator(): void {
 		}
 
 		if (message.type === 'spectra.control.snapshot.get') {
-			void getControlViewSnapshot(message.payload.tabId).then(
+			void awaitDocumentInitialization(message.payload.tabId)
+				.then(() => getControlViewSnapshot(message.payload.tabId)).then(
 				(snapshot) => sendResponse(rpcSuccess(snapshot)),
 				(error) => sendResponse(rpcFailure('snapshot_unavailable', String(error), true)),
 			);

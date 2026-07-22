@@ -3,18 +3,22 @@ import {
 	SPECTRA_CONTENT_BOOTSTRAP_REVISION,
 	SPECTRA_CONTENT_RUNTIME_REVISION,
 	SPECTRA_PROTOCOL_VERSION,
+	DEFAULT_AUDIO_CONFIG,
 	type ContentRuntimeSourceOwnership,
 	type HotkeySettings,
 } from '@nexus/contracts';
 import {
 	ensureContentRuntime,
+	awaitDocumentInitialization,
 	initializeContentRuntimeLoader,
 	reconcileHotkeyRuntimeLease,
 	releaseContentRuntimeLease,
 	releaseSourceRuntimeLease,
 	resetContentRuntimeLoaderForTests,
+	runtimeLoaderTestApi,
 } from '../src/background/runtime-loader';
 import { settingsRepository } from '../src/background/settings-repository';
+import { storage } from '../src/background/state';
 
 type Listener = (...args: never[]) => unknown;
 
@@ -34,6 +38,8 @@ interface RuntimeHarness {
 }
 
 const originalGetSnapshot = settingsRepository.getSnapshot;
+const originalResolveAudioConfig = settingsRepository.resolveAudioConfig;
+const originalRebindTabSession = storage.tabSession.rebind;
 
 function installChromeHarness(
 	runtimeAlreadyReady = false,
@@ -137,10 +143,89 @@ function installChromeHarness(
 afterEach(() => {
 	resetContentRuntimeLoaderForTests();
 	settingsRepository.getSnapshot = originalGetSnapshot;
+	settingsRepository.resolveAudioConfig = originalResolveAudioConfig;
+	storage.tabSession.rebind = originalRebindTabSession;
 	Reflect.deleteProperty(globalThis, 'chrome');
 });
 
 describe('document-scoped content runtime loader', () => {
+	test('restores a same-origin tab session before consulting site or global presets', async () => {
+		const sessionConfig = { ...DEFAULT_AUDIO_CONFIG, volume: 275, muted: true };
+		const presetConfig = { ...DEFAULT_AUDIO_CONFIG, volume: 140 };
+		let presetReads = 0;
+		storage.tabSession.rebind = async (tabId, identity) => {
+			expect(tabId).toBe(7);
+			expect(identity).toEqual({
+				tabId: 7,
+				documentId: 'document-7',
+				origin: 'https://media.example',
+			});
+			return sessionConfig;
+		};
+		settingsRepository.resolveAudioConfig = async () => {
+			presetReads += 1;
+			return presetConfig;
+		};
+
+		expect(await runtimeLoaderTestApi.resolveDocumentRestoreConfig(
+			7,
+			'document-7',
+			'media.example',
+			'https://media.example',
+		)).toEqual({ config: sessionConfig, source: 'session' });
+		expect(presetReads).toBe(0);
+
+		storage.tabSession.rebind = async () => null;
+		expect(await runtimeLoaderTestApi.resolveDocumentRestoreConfig(
+			7,
+			'document-8',
+			'other.example',
+			'https://other.example',
+		)).toEqual({ config: presetConfig, source: 'preset' });
+		expect(presetReads).toBe(1);
+	});
+
+	test('shares one restore barrier between bootstrap and first explicit control', async () => {
+		const harness = installChromeHarness(true);
+		let restoreCount = 0;
+		let releaseRestore!: () => void;
+		const restorePending = new Promise<void>((resolve) => { releaseRestore = resolve; });
+		runtimeLoaderTestApi.setDocumentRestore(async () => {
+			restoreCount += 1;
+			await restorePending;
+		});
+
+		for (const listener of harness.runtimeMessages.listeners) {
+			(listener as (
+				message: unknown,
+				sender: chrome.runtime.MessageSender,
+				sendResponse: (response: unknown) => void,
+			) => unknown)({
+				protocolVersion: SPECTRA_PROTOCOL_VERSION,
+				requestId: 'bootstrap-restore-barrier',
+				type: 'spectra.content.bootstrap.hello',
+				payload: { bootstrapRevision: SPECTRA_CONTENT_BOOTSTRAP_REVISION },
+			}, {
+				id: 'spectra-test',
+				tab: { id: 7, url: 'https://media.example/watch' } as chrome.tabs.Tab,
+				documentId: 'document-7',
+				url: 'https://media.example/watch',
+			}, () => undefined);
+		}
+		const firstControl = awaitDocumentInitialization(7, 'document-7');
+		const secondControl = awaitDocumentInitialization(7, 'document-7');
+		await Promise.resolve();
+		expect(restoreCount).toBe(1);
+		let settled = false;
+		void firstControl.then(() => { settled = true; });
+		await Promise.resolve();
+		expect(settled).toBe(false);
+
+		releaseRestore();
+		await Promise.all([firstControl, secondControl]);
+		expect(restoreCount).toBe(1);
+	});
+
 	test('coalesces concurrent ensure calls into one probe, injection and READY handshake', async () => {
 		const harness = installChromeHarness(false);
 		const [first, second] = await Promise.all([

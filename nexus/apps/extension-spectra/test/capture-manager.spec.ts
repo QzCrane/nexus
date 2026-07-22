@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import {
 	Actions,
 	rpcSuccess,
@@ -7,7 +7,10 @@ import {
 	type RpcResult,
 } from '@nexus/contracts';
 import type { NexusMessenger } from '@nexus/kernel';
-import { createCaptureManager } from '../src/content/audio/capture-manager';
+import {
+	createCaptureManager,
+	resetCaptureManagerForTests,
+} from '../src/content/audio/capture-manager';
 
 const CONFIG: AudioConfig = {
 	enabled: true,
@@ -29,7 +32,52 @@ function deferred<T>() {
 	return { promise, resolve };
 }
 
+beforeEach(() => resetCaptureManagerForTests());
+
 describe('capture manager acknowledged state', () => {
+	test('mints a one-shot continuation only from an acknowledged active Capture', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		try {
+			const replies = [
+				rpcSuccess({
+					tabId: 9, phase: 'active', active: true, actualMode: 'capture',
+					generation: 20, lastError: null, actualConfig: CONFIG,
+				} satisfies AudioCaptureState),
+				rpcSuccess({
+					tabId: 9, phase: 'idle', active: false, actualMode: 'bypass',
+					generation: 21, lastError: null,
+				} satisfies AudioCaptureState),
+				rpcSuccess({
+					tabId: 9, phase: 'active', active: true, actualMode: 'capture',
+					generation: 22, lastError: null, actualConfig: CONFIG,
+				} satisfies AudioCaptureState),
+				rpcSuccess({
+					tabId: 9, phase: 'idle', active: false, actualMode: 'bypass',
+					generation: 23, lastError: null,
+				} satisfies AudioCaptureState),
+			];
+			const send = mock(async () => replies.shift()!);
+			Object.defineProperty(globalThis, 'chrome', {
+				configurable: true,
+				value: { runtime: { id: 'spectra-test', sendMessage: send } },
+			});
+			const manager = createCaptureManager({ send } as unknown as NexusMessenger);
+			await manager.request(true, CONFIG, 20);
+			const continuation = await manager.suspendForContinuation(CONFIG, 21);
+			expect(manager.isActive()).toBe(false);
+			expect(continuation).not.toBeNull();
+			await continuation!.resume(CONFIG, 22);
+			expect(manager.isActive()).toBe(true);
+			await expect(continuation!.resume(CONFIG, 23)).rejects.toThrow('already consumed');
+			expect(send).toHaveBeenCalledTimes(3);
+			await manager.request(false, CONFIG, 23);
+			expect(manager.isActive()).toBe(false);
+		} finally {
+			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
+			else delete (globalThis as { chrome?: unknown }).chrome;
+		}
+	});
+
 	test('waits for ACKs, ignores stale generations, and exposes failures', async () => {
 		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 

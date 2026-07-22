@@ -11,6 +11,7 @@ import type {
 import {
 	compileEffectiveVolume,
 	DEFAULT_HOTKEY_SETTINGS,
+	DEFAULT_SLOTS,
 	HOTKEY_ACTION_DESCRIPTORS,
 	SPECTRA_PROTOCOL_VERSION,
 	isSlotHotkeyAction,
@@ -207,14 +208,8 @@ async function clearRemovedShortcutTarget(tabId: number): Promise<void> {
 }
 
 // goal: maps literal manifest command names to unified HotkeyActions
-function resolveDirectCommand(command: string): HotkeyAction | undefined {
-	const map: Record<string, HotkeyAction> = {
-		volume_up: 'volume_up',
-		volume_down: 'volume_down',
-		toggle_mute: 'volume_mute',
-		speed_up: 'speed_up',
-	};
-	return map[command];
+export function resolveDirectCommand(command: string): HotkeyAction | undefined {
+	return DEFAULT_SLOTS[command];
 }
 
 const FULL_OUTPUT_FIELDS = new Set<ControlMutation['field']>([

@@ -14,6 +14,7 @@ import {
 import { teardownCaptureState } from './handlers/capture';
 import { flushAudioSessions, forgetAudioSession, removeAudioSession } from './audio-session-store';
 import { settingsRepository } from './settings-repository';
+import { clearBadgeUsage } from './badge-usage';
 
 async function clearTabDocumentState(tabId: number, tabClosed = false): Promise<void> {
 	// Queue capture teardown before awaiting storage. Otherwise a newly loaded
@@ -31,8 +32,10 @@ async function clearTabDocumentState(tabId: number, tabClosed = false): Promise<
 	);
 	await Promise.all([
 		captureTeardown,
-		storage.tabSession.remove(tabId).catch(() => undefined),
+		(tabClosed ? storage.tabSession.remove(tabId) : storage.tabSession.flush(tabId))
+			.catch(() => undefined),
 		(tabClosed ? forgetAudioSession(tabId) : removeAudioSession(tabId)).catch(() => undefined),
+		...(tabClosed ? [clearBadgeUsage(tabId)] : []),
 	]);
 }
 
@@ -81,6 +84,17 @@ export function setupLifecycleListeners(): void {
 
 	chrome.webNavigation.onBeforeNavigate.addListener((details) => {
 		if (isTopLevelDocumentNavigation(details)) void clearTabDocumentState(details.tabId);
+	});
+	chrome.webNavigation.onCommitted.addListener((details) => {
+		if (!isTopLevelDocumentNavigation(details) || !details.documentId) return;
+		let origin = '';
+		try { origin = new URL(details.url).origin; } catch { return; }
+		if (origin === 'null') return;
+		void storage.tabSession.rebind(details.tabId, {
+			tabId: details.tabId,
+			documentId: details.documentId,
+			origin,
+		}).catch(() => undefined);
 	});
 	chrome.webNavigation.onHistoryStateUpdated.addListener(notifySameDocumentNavigation);
 	chrome.webNavigation.onReferenceFragmentUpdated.addListener(notifySameDocumentNavigation);

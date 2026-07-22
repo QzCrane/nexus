@@ -2,6 +2,7 @@
 type: reference
 status: stable
 audience: developer
+last_reviewed: 2026-07-22
 ---
 
 # 05. Control state (Field states, volume/mute, audio processing)
@@ -95,7 +96,14 @@ offscreen gates; both gates receive the same near-future wall-clock cutoff and
 the old processor is disposed only after that boundary. This is a best-effort
 hard handoff, not a sample-synchronous crossfade claim.
 
-Capture follows the existing generation tombstone and offscreen lease rules. A processor is never active before the current-generation host ACK.
+Capture follows the existing generation tombstone and offscreen lease rules. A
+processor is never active before the current-generation host ACK. The offscreen
+document is the generation authority while it survives a Background or Content
+replacement: an idle host rejects a START at or behind its STOP tombstone with
+`stale_capture_intent` and the authoritative generation. Background adopts that
+value and retries exactly once inside the same per-tab serialized transaction.
+This bounded reconciliation cannot require repeated user input, cannot erase
+the tombstone, and cannot displace a newer active processor.
 
 ## §11 Volume and mute
 
@@ -118,6 +126,14 @@ effective output ~= volumeBase / 100 * boost
 - At or below 100, the transaction sets `boost=1`, releases any no-longer-needed processor, and returns control to the selected native page/DOM writer. Above 100, `volumeBase=100` and only hidden Boost carries the excess.
 - Same-region changes touch one writer; only a crossing of the native 100% boundary touches both. Repeated acknowledged values do no Content IPC, revision or storage write.
 - No strategy inserts an implicit limiter. Compressor is an explicit user capability.
+
+The Popup may render the requested numeric value immediately, but a boundary
+crossing is an explicit desired/actual pending state until both writer stages
+ACK. Capture strategy in the compound field ACK projects the matching active
+lifecycle immediately, without waiting for a later event-loop delivery; a
+transition back to `<=100` releases the processor before committing the native
+writer. UI color therefore cannot claim native blue or Capture purple during
+the handoff.
 
 Legacy values migrate idempotently:
 

@@ -179,7 +179,7 @@ describe('capture restart reconciliation barrier', () => {
 		}
 	});
 
-	test('advances generation when retrying a START rejected behind its cancellation tombstone', async () => {
+	test('adopts an idle host tombstone and retries START in the same transaction', async () => {
 		const chromeDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 		const timerHarness = installFastTimerHarness();
 		const listeners: RuntimeMessageListener[] = [];
@@ -201,9 +201,13 @@ describe('capture restart reconciliation barrier', () => {
 							return {
 								ok: false,
 								tabId: 72,
-								generation: message.generation,
+								generation: 300,
 								controlRevision: Number(message.controlRevision ?? 0),
-								error: { code: 'denied', message: 'temporary denial', retryable: true },
+								error: {
+									code: 'stale_capture_intent',
+									message: 'Capture configuration belongs to a stopped generation',
+									retryable: true,
+								},
 							};
 						}
 						return activeAck(72, message.generation, message.controlRevision);
@@ -226,20 +230,13 @@ describe('capture restart reconciliation barrier', () => {
 				tabId: 72,
 				generation: 7,
 			} as const;
-			const failed = await invokeRuntimeRequest(listeners, {
+			const started = await invokeRuntimeRequest(listeners, {
 				...baseRequest,
 				requestId: 'capture-first-attempt',
 			}) as { ok: boolean; data: { phase: string; generation: number } };
-			expect(failed.ok).toBe(true);
-			expect(failed.data).toEqual(expect.objectContaining({ phase: 'error', generation: 7 }));
-
-			const retried = await invokeRuntimeRequest(listeners, {
-				...baseRequest,
-				requestId: 'capture-retry',
-			}) as { ok: boolean; data: { phase: string; generation: number } };
-			expect(retried.ok).toBe(true);
-			expect(retried.data).toEqual(expect.objectContaining({ phase: 'active', generation: 8 }));
-			expect(starts.map(({ generation }) => generation)).toEqual([7, 8]);
+			expect(started.ok).toBe(true);
+			expect(started.data).toEqual(expect.objectContaining({ phase: 'active', generation: 301 }));
+			expect(starts.map(({ generation }) => generation)).toEqual([7, 301]);
 			expect(await teardownCaptureState(72)).toBe(true);
 		} finally {
 			timerHarness.restore();

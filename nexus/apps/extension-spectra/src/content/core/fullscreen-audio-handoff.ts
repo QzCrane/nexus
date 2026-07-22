@@ -29,6 +29,14 @@ interface FullscreenAudioHandoffDeps {
 	captureManager: CaptureManager;
 }
 
+type AudioSuspension = {
+	kind: 'capture';
+	continuation: NonNullable<Awaited<ReturnType<CaptureManager['suspendForContinuation']>>>;
+	mode: PolicyExecutorState['activeMode'];
+} | {
+	kind: 'webaudio';
+};
+
 function decodeRequest(): SpectraFullscreenBridgeMessage | null {
 	const encoded = document.documentElement?.getAttribute(SPECTRA_FULLSCREEN_REQUEST_ATTRIBUTE);
 	if (!encoded) return null;
@@ -45,42 +53,58 @@ function decodeRequest(): SpectraFullscreenBridgeMessage | null {
 export function createFullscreenAudioHandoff(
 	deps: FullscreenAudioHandoffDeps,
 ): FullscreenAudioHandoff {
-	let suspension: Promise<boolean> | null = null;
+	let suspension: Promise<AudioSuspension | null> | null = null;
 	let suspensionUsers = 0;
 	let disposed = false;
 	const pending = new Map<string, Promise<() => Promise<void>>>();
 	const finishedBeforeReady = new Set<string>();
 
-	const suspend = async (): Promise<boolean> => {
+	const suspend = async (): Promise<AudioSuspension | null> => {
 		const captureActive = deps.captureManager.isActive()
 			|| deps.state.actualMode === 'capture';
 		const webAudioActive = deps.state.actualMode === 'webaudio';
-		if (!captureActive && !webAudioActive) return false;
+		if (!captureActive && !webAudioActive) return null;
 
 		if (captureActive) {
 			await deps.captureManager.waitForSettled();
-			if (deps.captureManager.isActive()) {
-				const result = await deps.captureManager.request(
-					false,
-					deps.state.config,
-					deps.state.generation + 1,
-				);
-				deps.state.generation = Math.max(deps.state.generation, result.generation ?? 0);
-				if (result.active || result.phase === 'error') {
-					throw new Error(result.error ?? 'Capture did not yield the fullscreen pipeline');
-				}
+			if (!deps.captureManager.isActive()) {
+				throw new Error('Capture lifecycle had no active processor to hand off');
 			}
+			const continuation = await deps.captureManager.suspendForContinuation(
+				deps.state.config,
+				deps.state.generation + 1,
+			);
+			if (!continuation) throw new Error('Capture did not create a fullscreen continuation');
+			deps.state.generation = Math.max(
+				deps.state.generation,
+				deps.captureManager.getGeneration(),
+			);
+			deps.state.actualMode = 'bypass';
+			deps.state.phase = 'idle';
+			return { kind: 'capture', continuation, mode: deps.state.activeMode };
 		} else {
 			await deps.audioController.cleanup();
 		}
 		deps.state.actualMode = 'bypass';
 		deps.state.phase = 'idle';
-		return true;
+		return { kind: 'webaudio' };
 	};
 
-	const restore = async (wasSuspended: boolean): Promise<void> => {
-		if (!wasSuspended || disposed) return;
+	const restore = async (suspended: AudioSuspension | null): Promise<void> => {
+		if (!suspended || disposed) return;
 		deps.state.userHasInteracted = true;
+		if (suspended.kind === 'capture' && deps.state.activeMode === suspended.mode) {
+			const result = await suspended.continuation.resume(
+				deps.state.config,
+				deps.state.generation + 1,
+			);
+			deps.state.generation = Math.max(deps.state.generation, result.generation ?? 0);
+			deps.state.actualMode = 'capture';
+			deps.state.phase = 'active';
+			deps.state.lastError = undefined;
+			const actual = result.actualConfig ?? deps.captureManager.getActualConfig();
+			if (actual) deps.state.appliedConfig = { ...actual, eqValues: [...actual.eqValues] };
+		}
 		await deps.policyExecutor.applyState({ modeIntent: true });
 	};
 
@@ -89,7 +113,7 @@ export function createFullscreenAudioHandoff(
 		if (!suspension) {
 			suspension = suspend().catch((error) => {
 				log.warn('[Fullscreen] Audio handoff failed; continuing with native fullscreen', error);
-				return false;
+				return null;
 			});
 		}
 		const currentSuspension = suspension;

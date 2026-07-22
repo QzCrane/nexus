@@ -262,7 +262,17 @@ describe('offscreen audio host', () => {
 		});
 		expect(context.gains[0]!.gain.writes).toHaveLength(gainWrites);
 
-		expectIdle(await start(18, 6, config({ volume: 250 })), 18, 6, 1);
+		expect(await start(18, 6, config({ volume: 250 }))).toEqual({
+			ok: false,
+			tabId: 18,
+			generation: 6,
+			controlRevision: 1,
+			error: {
+				code: 'stale_capture_intent',
+				message: 'Capture configuration belongs to a stopped generation',
+				retryable: true,
+			},
+		});
 		expect(audioHarness.contexts).toHaveLength(1);
 
 		expectActive(await start(18, 7, config({ volume: 250 }), 2), 18, 7, 2);

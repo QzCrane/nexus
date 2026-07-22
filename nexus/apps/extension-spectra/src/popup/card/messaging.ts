@@ -8,6 +8,7 @@ import {
 import type { CardInternalState } from './types';
 import { applyLegacyCardMessage } from './legacy-message-adapter';
 import { mergeControlSnapshot } from './types';
+import { projectAcknowledgedProcessorLifecycle } from './state';
 
 export interface MessagingParams {
   tabId: number;
@@ -45,6 +46,7 @@ export function setupCardMessaging(params: MessagingParams): () => void {
 			state.audioConfigRevision = 0;
 		}
 		state.stableConfig = mergeControlSnapshot(state.stableConfig, snapshot);
+		projectAcknowledgedProcessorLifecycle(state, snapshot.fields);
 		const incoming = state.stableConfig;
 		if (state.draggingField === 'volume') {
 			const {

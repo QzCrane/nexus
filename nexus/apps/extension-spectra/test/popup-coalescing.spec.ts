@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { DEFAULT_AUDIO_CONFIG, DEFAULT_GLOBAL_SETTINGS } from '@nexus/contracts';
+import {
+	DEFAULT_AUDIO_CONFIG,
+	DEFAULT_GLOBAL_SETTINGS,
+	resolveAudioVolume,
+} from '@nexus/contracts';
 import { createUpdateFn } from '../src/popup/card/state';
+import { actualVolumeColor } from '../src/popup/card/render';
+import { COLORS } from '../src/popup/constants';
 import type { CardInternalState } from '../src/popup/card/types';
 
 const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
@@ -161,6 +167,32 @@ describe('Popup latest-value config transport', () => {
 		expect(state.config.volume).toBe(250);
 		expect(harness.requests).toHaveLength(1);
 	});
+
+	test('never publishes an above-100 native-blue frame before the Capture ACK', async () => {
+		const harness = installHarness();
+		const state = createState();
+		const frames: Array<{ volume: number; color: string }> = [];
+		const render = () => {
+			const volume = resolveAudioVolume(state.config).effectiveVolume;
+			frames.push({
+				volume,
+				color: state.processorTransitionPending
+					? COLORS.PENDING
+					: actualVolumeColor(false, volume, state.actualMode, state.phase),
+			});
+		};
+		const update = createUpdateFn(state, 15, () => false, render, () => DEFAULT_GLOBAL_SETTINGS);
+
+		update({ volume: 110 });
+		expect(frames.at(-1)).toEqual({ volume: 110, color: COLORS.PENDING });
+		const drained = update.flush();
+		await waitFor(() => harness.requests.length === 1);
+		harness.resolveRequest(0, runtimeResponse(110, 1, 'capture'));
+		await drained;
+
+		expect(frames.at(-1)).toEqual({ volume: 110, color: COLORS.CAPTURE });
+		expect(frames).not.toContainEqual({ volume: 110, color: COLORS.NATIVE });
+	});
 });
 
 function createState(): CardInternalState {
@@ -186,7 +218,11 @@ function createState(): CardInternalState {
 	};
 }
 
-function runtimeResponse(effectiveVolume: number, generation: number): Record<string, unknown> {
+function runtimeResponse(
+	effectiveVolume: number,
+	generation: number,
+	strategy?: 'capture' | 'media-webaudio',
+): Record<string, unknown> {
 	const volumeBase = effectiveVolume <= 100 ? effectiveVolume : 100;
 	const boost = effectiveVolume <= 100 ? 1 : effectiveVolume / 100;
 	return {
@@ -201,7 +237,19 @@ function runtimeResponse(effectiveVolume: number, generation: number): Record<st
 			operation: 'effective-volume',
 			strategy: 'extension-state',
 			coverage: boost > 1 ? 'full' : 'active-target',
-			fields: {},
+			fields: strategy ? {
+				boost: {
+					desired: boost,
+					actual: boost,
+					revision: generation,
+					phase: 'applied',
+					strategy,
+					coverage: 'full',
+					controlled: true,
+					intentId: `intent-${generation}`,
+					lastError: null,
+				},
+			} : {},
 			result: { effectiveVolume, volumeBase, boost },
 		},
 	};

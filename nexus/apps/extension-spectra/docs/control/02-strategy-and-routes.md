@@ -2,6 +2,7 @@
 type: reference
 status: stable
 audience: developer
+last_reviewed: 2026-07-22
 ---
 
 # 02. Strategy order & Routes (Capability order, registry, runtime, bridges)
@@ -145,6 +146,16 @@ invalidated by navigation, extension update, context invalidation and dispose,
 and a timed-out handshake returns a structured error without an unhandled
 Promise rejection.
 
+Bootstrap restore, the first Popup snapshot, Popup/remote control and Chrome
+commands also share one single-flight initialization barrier keyed by
+`tabId + documentId`. Its restore decision first rebinds an acknowledged
+same-origin tab session; only when none exists does it resolve the site/global
+preset. A cross-origin identity removes the prior tab session. Restore-origin
+coordinator writes bypass the barrier itself, preventing self-wait, while every
+external control waits until restore has either completed or reported its one
+structured failure. This prevents a cold preset replay from racing and
+reverting the first explicit value above 100.
+
 Runtime readiness does not imply Capture authority. A page-configured hotkey can
 use native fields and Media WebAudio after its trusted page event, but only the
 Background `chrome.commands` entry is an extension invocation. If a configured
@@ -194,3 +205,12 @@ and restore around that native transition. Its per-call listener/timer exists
 only during the bounded handoff. PiP recovery targets the actual
 `document.pictureInPictureElement`/owner media and commits only native
 enter/leave event plus getter readback.
+
+An acknowledged active Capture yields only through a document-local, one-shot
+continuation: the stop ACK completes before fullscreen READY, the continuation
+is invalidated by any intervening Capture generation/state change, and FINISH
+may resume only when the same desired route still owns the handoff. Resumption
+restores the acknowledged actual configuration before normal policy
+reconciliation. It continues an already-authorized Capture; it is not a new
+route admission and cannot be minted from bypass, starting, error or stale
+state.

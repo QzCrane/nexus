@@ -45,6 +45,35 @@ function propertyNameText(name) {
 	return null;
 }
 
+function isMangleablePropertyName(value) {
+	return /^[A-Za-z_$][\w$]*$/u.test(value);
+}
+
+// Terser cannot relate a value selected from a string union/array to the
+// unquoted property it later indexes (for example `stages[stage]`). Reserve
+// every identifier-shaped runtime string before property mangling so computed
+// access and its object literal can never diverge. Non-identifier strings are
+// outside Terser's property-mangling namespace and remain irrelevant here.
+export function collectRuntimeStringProperties(source, fileName = 'bundle.js') {
+	const names = new Set();
+	const sourceFile = ts.createSourceFile(
+		fileName,
+		source,
+		ts.ScriptTarget.ESNext,
+		true,
+		ts.ScriptKind.JS,
+	);
+	const visit = (node) => {
+		if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))
+			&& isMangleablePropertyName(node.text)) {
+			names.add(node.text);
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(sourceFile);
+	return names;
+}
+
 function collectLiteralProperties(node, names) {
 	if (ts.isObjectLiteralExpression(node)) {
 		for (const property of node.properties) {
@@ -69,6 +98,22 @@ function collectLiteralProperties(node, names) {
 	}
 }
 
+// JSON assets are interpreted outside the minified JavaScript property graph
+// (Manifest V3, locale catalogs, remote payload fixtures, and similar browser
+// resources). Their object keys are ABI names, not implementation properties.
+export function collectExternalJsonProperties(value, names = new Set()) {
+	if (Array.isArray(value)) {
+		for (const item of value) collectExternalJsonProperties(item, names);
+		return names;
+	}
+	if (!value || typeof value !== 'object') return names;
+	for (const [name, item] of Object.entries(value)) {
+		names.add(name);
+		collectExternalJsonProperties(item, names);
+	}
+	return names;
+}
+
 // Browser and extension APIs validate dictionary/member names at runtime.
 // Terser cannot infer those external boundaries, so reserve direct members and
 // every nested literal key passed to the known browser/API entry points.
@@ -85,6 +130,13 @@ export function collectExternalBoundaryProperties(source, fileName = 'bundle.js'
 		if (ts.isPropertyAccessExpression(node)) {
 			const root = expressionRootName(node);
 			if (root && EXTERNAL_MEMBER_ROOTS.has(root)) names.add(node.name.text);
+			// DOMStringMap keys are derived from data-* attributes in external HTML.
+			// The receiver is commonly a local variable (`element.dataset.foo`), so
+			// root-name detection alone cannot identify this browser boundary.
+			if (ts.isPropertyAccessExpression(node.expression)
+				&& node.expression.name.text === 'dataset') {
+				names.add(node.name.text);
+			}
 		}
 		if (ts.isCallExpression(node)) {
 			const root = expressionRootName(node.expression);

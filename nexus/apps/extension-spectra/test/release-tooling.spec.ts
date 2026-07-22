@@ -47,7 +47,13 @@ import {
 	bundleFootprint,
 	checkProductionArtifacts,
 } from '../scripts/check-production-artifacts.mjs';
-import { collectExternalBoundaryProperties } from '../scripts/external-boundary-properties.mjs';
+import {
+	collectExternalBoundaryProperties,
+	collectExternalJsonProperties,
+	collectRuntimeStringProperties,
+} from '../scripts/external-boundary-properties.mjs';
+import { collectLocaleCatalogPropertyNames } from '../scripts/i18n-assets';
+import { hasNamedImports } from '../../../scripts/verify/check-spectra-control.js';
 
 const temporaryDirectories: string[] = [];
 
@@ -153,6 +159,65 @@ describe('production artifact integrity', () => {
 			'video',
 			'world',
 		]);
+	});
+
+	test('reserves DOM dataset names and every externally loaded JSON/catalog key', () => {
+		const source = `
+			const key = element.dataset.i18nPlaceholder;
+			document.documentElement.dataset.spectraContentLoaded = 'true';
+		`;
+		expect(collectExternalBoundaryProperties(source)).toEqual(new Set([
+			'dataset',
+			'i18nPlaceholder',
+			'documentElement',
+			'spectraContentLoaded',
+		]));
+		expect(collectExternalJsonProperties({
+			commands: { toggle_mute: { suggested_key: { default: 'Alt+M' } } },
+		})).toEqual(new Set(['commands', 'toggle_mute', 'suggested_key', 'default']));
+
+		const localeProperties = collectLocaleCatalogPropertyNames();
+		for (const property of [
+			'popup',
+			'options',
+			'actions',
+			'filterPlaceholder',
+			'presetGlobalSection',
+			'presetSiteSection',
+		]) expect(localeProperties.has(property), property).toBe(true);
+	});
+
+	test('reserves computed runtime keys before property mangling', () => {
+		const source = `
+			const stages = { target: [{}, 'active-target'], processor: [{}, 'full'] };
+			for (const stage of ['target', 'processor']) {
+				const [patch, coverage] = stages[stage];
+				consume(patch, coverage);
+			}
+		`;
+		expect(collectRuntimeStringProperties(source)).toEqual(new Set([
+			'full',
+			'target',
+			'processor',
+		]));
+	});
+
+	test('verifies named production-boundary imports independently from formatting', () => {
+		const source = `
+			import {
+				collectExternalBoundaryProperties,
+				collectExternalJsonProperties as collectJson,
+				collectRuntimeStringProperties,
+			} from './scripts/external-boundary-properties.mjs';
+		`;
+		expect(hasNamedImports(source, './scripts/external-boundary-properties.mjs', [
+			'collectExternalBoundaryProperties',
+			'collectExternalJsonProperties',
+			'collectRuntimeStringProperties',
+		])).toBe(true);
+		expect(hasNamedImports(source, './scripts/external-boundary-properties.mjs', [
+			'collectLocaleCatalogPropertyNames',
+		])).toBe(false);
 	});
 
 	test('accepts a fully reachable production graph without a historical byte ceiling', () => {

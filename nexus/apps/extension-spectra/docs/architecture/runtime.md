@@ -71,6 +71,14 @@ Strategy and bridge rules are owned by [control/02-strategy-and-routes.md](../co
 
 Background owns the revisioned settings repository in `chrome.storage.local`. UI contexts submit typed field patches; session storage contains only current mirrors. Canonical fields replace legacy aliases through bounded read-only migration.
 
+The acknowledged per-tab audio configuration is stored separately in
+`chrome.storage.session` with `tabId + documentId + origin`. Before a top-level
+replacement, Background flushes its coalesced write; after commit it rebinds the
+record only when the origin is unchanged and otherwise deletes it. Runtime
+initialization restores that same-tab record before resolving site/global
+presets. A separate monotonic per-tab usage record owns Action-badge stickiness;
+it survives document and worker replacement but is deleted when the tab closes.
+
 The media route registry is a separate Background-owned repository. Popup and Options render the same v2 snapshot. One normalized site has one `direct | capture` route; a cached route is a planning hint, not processing activation. Exact precedence and migration rules are in [control/02-strategy-and-routes.md §4](../control/02-strategy-and-routes.md#4-site-route-registry-and-eligibility-cache).
 
 ## Media discovery and identity
@@ -91,6 +99,12 @@ later explicit control, configuration, navigation, or media lifecycle intent may
 transition that processor, so Popup/remote observation cannot stop Capture.
 
 Cold-document hotkeys use the same READY ensure path as other runtime consumers. READY is invalidated by navigation, update, context invalidation, health failure, and disposal. Exact readiness and feedback rules are in [control/02-strategy-and-routes.md §5](../control/02-strategy-and-routes.md#5-runtime-shortcut-and-feedback-ownership).
+
+One `tabId + documentId` initialization promise orders bootstrap restore,
+initial snapshot reads and explicit control. Restore-origin writes bypass their
+own barrier, and a failed restore is logged once before later explicit control
+is allowed to proceed. This is an ordering boundary, not a second runtime or
+settings authority.
 
 ## Remote control
 

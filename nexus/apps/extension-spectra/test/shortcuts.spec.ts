@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
 	runWithShortcutRuntime,
+	resolveDirectCommand,
 	type ShortcutRuntimePort,
 } from '../src/background/shortcuts';
 
@@ -17,6 +18,9 @@ function runtimePort(): ShortcutRuntimePort & {
 }
 
 describe('cold-document Chrome shortcuts', () => {
+	test('maps the Manifest mute command through the shared command contract', () => {
+		expect(resolveDirectCommand('toggle_mute')).toBe('volume_mute');
+	});
 	test('uses the Background-invoked coordinator path instead of page-hotkey admission', () => {
 		const source = readFileSync(resolve(import.meta.dir, '../src/background/shortcuts.ts'), 'utf8');
 		expect(source).toContain('submitExtensionInvokedControlRequest');

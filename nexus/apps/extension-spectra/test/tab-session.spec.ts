@@ -26,6 +26,7 @@ Object.assign(globalThis, {
 const {
 	flushTabSessionConfig,
 	getTabSessionConfig,
+	rebindTabSessionConfig,
 	removeTabSessionConfig,
 	setTabSessionConfig,
 } = await import('../../../packages/nexus-kernel/src/storage/tab-session');
@@ -38,6 +39,11 @@ const firstDocument: TabSessionIdentity = {
 const secondDocument: TabSessionIdentity = {
 	...firstDocument,
 	documentId: 'document-b',
+};
+const otherOriginDocument: TabSessionIdentity = {
+	...secondDocument,
+	documentId: 'document-c',
+	origin: 'https://other.example',
 };
 
 beforeEach(async () => {
@@ -87,5 +93,24 @@ describe('document-bound tab sessions', () => {
 			identity: firstDocument,
 			config: { volume: 175, muted: true },
 		});
+	});
+
+	test('rebinds the acknowledged config across same-origin refreshes', async () => {
+		await setTabSessionConfig(7, { volume: 275, muted: true }, firstDocument);
+		expect(await rebindTabSessionConfig(7, secondDocument)).toMatchObject({
+			volume: 275,
+			muted: true,
+		});
+		expect(await getTabSessionConfig(7, firstDocument)).toBeNull();
+		expect(await getTabSessionConfig(7, secondDocument)).toMatchObject({
+			volume: 275,
+			muted: true,
+		});
+	});
+
+	test('retires a tab session when navigation crosses origins', async () => {
+		await setTabSessionConfig(7, { volume: 275 }, firstDocument);
+		expect(await rebindTabSessionConfig(7, otherOriginDocument)).toBeNull();
+		expect(await getTabSessionConfig(7)).toBeNull();
 	});
 });

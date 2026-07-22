@@ -2,6 +2,7 @@
 type: reference
 status: stable
 audience: developer
+last_reviewed: 2026-07-22
 ---
 
 # 03. UI & Boundaries (Visualizer, favicon, remote, UX)
@@ -87,6 +88,21 @@ files. Internal names may still shrink, but a caller chunk, Chrome API, injected
 script or upgrade probe can never observe a renamed boundary key. The extracted
 ZIP smoke is the executable proof for this post-bundle invariant.
 
+The reserved set is derived from the complete emitted boundary rather than a
+feature-specific repair list: every key in browser-loaded JSON (including
+Manifest command identifiers), every generated locale-catalog section/key and
+every statically accessed `dataset.*` name is preserved automatically. Thus a
+new command, `data-i18n-*` binding or locale field cannot become `undefined`
+only in the production bundle merely because its JavaScript property spelling
+was mangled.
+
+Computed runtime access is covered by the same derived rule. Every
+identifier-shaped string literal emitted into a bundle is reserved before
+property mangling, so an object key and a later access such as `stages[stage]`
+cannot be renamed independently. Non-identifier strings are outside Terser's
+property-mangling namespace. Release-tooling tests own both derivations; adding
+a new dynamic key must not require another handwritten allowlist.
+
 ### §7.3 Failure-directed escalation
 
 Escalation is decided from the failure of the attempted capability, never from
@@ -113,3 +129,6 @@ No strategy may bypass transient user activation, CORS, DRM or inaccessible clos
 - Actual state updates every open Popup and authenticated remote controller through snapshot push; remote commands do not immediately pull potentially stale state.
 - Capture selection is automatic. Legacy `capture_toggle` bindings move to disabled diagnostics rather than exposing a transport implementation as a product feature.
 - Errors rollback optimistic UI to the last stable snapshot and explain the missing capability without technical mode choices.
+- Route/source pills remain readable at a minimum computed `11px`; Global and Site preset section titles remain high-contrast headings at a minimum computed `13px`. Their visible text and search placeholders always come from the validated locale catalog.
+- Crossing the native/processor volume boundary renders amber pending while desired and actual differ. Purple appears directly from the matching Capture ACK, blue remains native/Media WebAudio actual state, and the fill has no color interpolation that can fabricate a blue-before-purple frame.
+- Badge visibility owns a separate per-tab sticky usage fact in `chrome.storage.session`. A new tab with only page-native `0–100` observations remains blank. A successful Popup, Chrome-command, remote or non-audio extension action—and application of a configured site/global preset—starts the badge for that tab; navigation and service-worker restart preserve it, and tab close is the sole retirement boundary. Until an audio ACK exists, a neutral dot reports usage without inventing volume or Capture state.

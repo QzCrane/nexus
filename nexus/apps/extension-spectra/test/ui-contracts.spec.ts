@@ -56,6 +56,13 @@ describe('options translations', () => {
 			expect(Object.keys(dictionary.popup).sort(), `${locale} popup`).toEqual(popupKeys);
 			expect(Object.keys(dictionary.options).sort(), `${locale} options`).toEqual(optionsKeys);
 			expect(Object.keys(dictionary.actions).sort(), `${locale} actions`).toEqual(actionKeys);
+			for (const [section, values] of Object.entries(dictionary)) {
+				for (const [key, value] of Object.entries(values)) {
+					expect(typeof value, `${locale}.${section}.${key}`).toBe('string');
+				expect(value.trim(), `${locale}.${section}.${key}`).not.toBe('');
+				expect(value.trim().toLowerCase(), `${locale}.${section}.${key}`).not.toBe('undefined');
+				}
+			}
 		}
 	});
 
@@ -463,7 +470,7 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(mainRuntime).toContain('export async function injectMainBridges');
 		expect(mainRuntime).toContain('export async function injectMainBootstrap');
 		expect(mainRuntime).toContain("world: 'MAIN'");
-		expect(handoff).toContain("captureManager.request(");
+		expect(handoff).toContain('captureManager.suspendForContinuation(');
 		expect(handoff).toContain('await currentSuspension');
 		expect(handoff).toContain('policyExecutor.applyState({ modeIntent: true })');
 		expect(mediaControls).toContain('setHotkeyTarget(clearing ? null : tabId)');

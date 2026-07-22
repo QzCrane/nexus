@@ -20,8 +20,15 @@ import { execFileSync } from 'node:child_process';
 import sharp from 'sharp';
 import { minify } from 'terser';
 import { checkProductionArtifacts } from './scripts/check-production-artifacts.mjs';
-import { collectExternalBoundaryProperties } from './scripts/external-boundary-properties.mjs';
-import { writeI18nAssets } from './scripts/i18n-assets.ts';
+import {
+	collectExternalBoundaryProperties,
+	collectExternalJsonProperties,
+	collectRuntimeStringProperties,
+} from './scripts/external-boundary-properties.mjs';
+import {
+	collectLocaleCatalogPropertyNames,
+	writeI18nAssets,
+} from './scripts/i18n-assets.ts';
 
 const projectDir = dirname(fileURLToPath(import.meta.url));
 const distDir = resolve(projectDir, 'dist');
@@ -339,10 +346,8 @@ function collectReservedProperties(paths) {
 		'bootstrapRevision', 'context', 'dispose', 'disposed', 'isReady',
 		'revision', 'runtime', 'sources',
 	]);
-	const addStringProperties = (source) => {
-		for (const match of source.matchAll(/(["'`])([A-Za-z_$][\w$]*)\1/gu)) {
-			if (match[2]) reserved.add(match[2]);
-		}
+	const addStringProperties = (source, path = 'bundle.js') => {
+		for (const property of collectRuntimeStringProperties(source, path)) reserved.add(property);
 		for (const match of source.matchAll(/\bchrome((?:\??\.[A-Za-z_$][\w$]*)+)/gu)) {
 			for (const property of match[1].split(/\??\./u)) {
 				if (property) reserved.add(property);
@@ -374,6 +379,7 @@ function collectReservedProperties(paths) {
 	};
 	for (const path of paths) {
 		const source = readFileSync(path, 'utf8');
+		addStringProperties(source, path);
 		addEsmExportProperties(source);
 		addCrossContextSingletonProperties(source);
 		for (const property of collectExternalBoundaryProperties(source, path)) {
@@ -385,9 +391,18 @@ function collectReservedProperties(paths) {
 			}
 		}
 	}
+	// Browser-loaded JSON is an external property namespace. This includes
+	// Manifest command identifiers such as `toggle_mute`, which Chromium passes
+	// back as strings and therefore cannot follow a Terser-renamed object key.
+	for (const path of walkFiles(distDir).filter((entry) => entry.endsWith('.json')).sort()) {
+		let value;
+		try { value = JSON.parse(readFileSync(path, 'utf8')); } catch { continue; }
+		for (const property of collectExternalJsonProperties(value)) reserved.add(property);
+	}
+	for (const property of collectLocaleCatalogPropertyNames()) reserved.add(property);
 	const contractsDir = resolve(projectDir, '../../packages/contracts/src');
 	for (const path of walkFiles(contractsDir).filter((entry) => entry.endsWith('.ts')).sort()) {
-		addStringProperties(readFileSync(path, 'utf8'));
+		addStringProperties(readFileSync(path, 'utf8'), path);
 	}
 
 	// Remote control messages cross into a separately deployed bundle. Reserve
@@ -395,7 +410,7 @@ function collectReservedProperties(paths) {
 	const remoteSite = resolve(projectDir, '../../../remote-site/app.js');
 	if (existsSync(remoteSite)) {
 		const source = readFileSync(remoteSite, 'utf8');
-		addStringProperties(source);
+		addStringProperties(source, remoteSite);
 		for (const property of collectExternalBoundaryProperties(source, remoteSite)) {
 			reserved.add(property);
 		}

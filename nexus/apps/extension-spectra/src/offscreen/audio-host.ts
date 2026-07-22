@@ -240,7 +240,10 @@ async function startCapture(
 ): Promise<AudioHostResult> {
 	const intent = recordIntent(tabId, generation, 'start');
 	if (intent.generation !== generation || intent.kind !== 'start') {
-		return describeCurrentState(tabId, generation);
+		const current = processors.get(tabId);
+		return current
+			? activeResult(current)
+			: staleIntentResult(tabId, intent.generation, controlRevision);
 	}
 	const existing = processors.get(tabId);
 	if (existing) {
