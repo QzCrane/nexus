@@ -2,11 +2,15 @@
 
 export { StorageRepository } from './repository.js';
 export {
-	getTabSessionConfig,
-	setTabSessionConfig,
-	removeTabSessionConfig,
-	flushTabSessionConfig,
-	hasTabSessionConfig,
+	audioConfigPatchToControlSessionPatch,
+	audioConfigToControlSessionPatch,
+	controlSessionPatchToAudioConfig,
+	getTabControlSession,
+	mergeTabControlSession,
+	rebindTabControlSession,
+	removeTabControlSession,
+	flushTabControlSession,
+	hasTabControlSession,
 } from './tab-session.js';
 export { safeStorageGet, safeStorageSet, safeStorageRemove } from './safe-storage.js';
 export type { StorageArea } from './safe-storage.js';

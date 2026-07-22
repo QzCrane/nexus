@@ -783,6 +783,13 @@ async function readBadgeColor(tabId: number): Promise<number[]> {
 	) as Promise<number[]>;
 }
 
+async function readBadgeText(tabId: number): Promise<string> {
+	return evaluateServiceWorker(
+		async (targetTabId) => chrome.action.getBadgeText({ tabId: targetTabId }),
+		tabId,
+	) as Promise<string>;
+}
+
 async function sendFromActionPopup<T>(message: Record<string, unknown>): Promise<T> {
 	let popupClient: CDPSession | null = null;
 	try {
@@ -1665,6 +1672,72 @@ describe('SPECTRA built extension smoke', () => {
 		expect(await fixturePage.evaluate(() => '__SPECTRA_MAIN_RUNTIME__' in window)).toBe(false);
 	});
 
+	test('restores cold page-native volume and speed across refresh without showing a badge', async () => {
+		const coldUrl = `${fixtureUrl}?cold-native-refresh=1`;
+		const coldPage = await browser.newPage();
+		const coldErrors: string[] = [];
+		collectPageErrors(coldPage, coldErrors);
+		try {
+			await coldPage.goto(coldUrl, { waitUntil: 'domcontentloaded' });
+			const initialBootstrap = await waitForContentBootstrapStatus(coldUrl);
+			const tabId = await getTabId(coldUrl);
+			expect(initialBootstrap).toMatchObject({ ready: false, runtimeRevision: null });
+			expect(await readBadgeText(tabId)).toBe('');
+
+			await coldPage.evaluate(() => {
+				const media = document.querySelector<HTMLMediaElement>('#v');
+				if (!media) throw new Error('Cold native fixture media is missing');
+				media.volume = 0.64;
+				media.playbackRate = 1.5;
+				media.preservesPitch = false;
+				media.dispatchEvent(new Event('volumechange'));
+				media.dispatchEvent(new Event('ratechange'));
+			});
+
+			await eventually(
+				() => evaluateServiceWorker(async (targetTabId) => {
+					const key = `tab_session_${targetTabId}`;
+					const stored = (await chrome.storage.session.get(key))[key] as {
+						patch?: Record<string, unknown>;
+					} | undefined;
+					return stored?.patch ?? null;
+				}, tabId),
+				(patch) => patch?.volumeBase === 64
+					&& patch.mediaMuted === false
+					&& patch.speed === 1.5
+					&& patch.preservePitch === false,
+				'cold native session projection',
+			);
+			expect(await readContentBootstrapStatus(coldUrl)).toMatchObject({
+				ready: false,
+				runtimeRevision: null,
+			});
+			expect(await readBadgeText(tabId)).toBe('');
+
+			await coldPage.reload({ waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(coldUrl);
+			await eventually(
+				() => coldPage.evaluate(() => {
+					const media = document.querySelector<HTMLMediaElement>('#v');
+					return {
+						volume: media?.volume ?? null,
+						speed: media?.playbackRate ?? null,
+						preservePitch: media?.preservesPitch ?? null,
+					};
+				}),
+				(state) => state.volume !== null
+					&& Math.abs(state.volume - 0.64) < 0.000_001
+					&& state.speed === 1.5
+					&& state.preservePitch === false,
+				'cold native refresh restoration',
+			);
+			expect(await readBadgeText(tabId)).toBe('');
+		} finally {
+			await coldPage.close().catch(() => undefined);
+		}
+		expect(coldErrors).toEqual([]);
+	}, 35_000);
+
 	test('tracks SPA media additions and removals without activating WebAudio', async () => {
 		await acquireSmokeRuntime();
 		await fixturePage.evaluate(() => {
@@ -1923,6 +1996,88 @@ describe('SPECTRA built extension smoke', () => {
 			await removePageMediaControllerHarness();
 		}
 		expect(popupErrors).toEqual([]);
+	}, 35_000);
+
+	test('restores acknowledged volume, speed, and sticky badge across a same-origin refresh', async () => {
+		await fixturePage.bringToFront();
+		const tabId = await getTabId(fixturePage.url());
+		try {
+			await submitEffectiveVolume(tabId, 63);
+			const speedResponse = await sendFromActionPopup<{
+				ok: boolean;
+				error?: { message?: string };
+			}>({
+				protocolVersion: 2,
+				tabId,
+				type: 'spectra.control.intent.submit',
+				payload: {
+					tabId,
+					source: 'popup',
+					requestedCoverage: 'active-target',
+					target: null,
+					patch: { speed: 1.75 },
+				},
+			});
+			if (!speedResponse.ok) throw new Error(speedResponse.error?.message ?? 'Unable to set refresh speed');
+			await eventually(
+				() => fixturePage.evaluate(() => {
+					const media = document.querySelector<HTMLMediaElement>('#v');
+					return { volume: media?.volume ?? null, speed: media?.playbackRate ?? null };
+				}),
+				(state) => state.volume !== null
+					&& Math.abs(state.volume - 0.63) < 0.000_001
+					&& state.speed === 1.75,
+				'pre-refresh acknowledged media state',
+			);
+			expect(await readBadgeText(tabId)).toBe('63');
+
+			await fixturePage.reload({ waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(fixturePage.url());
+			await eventually(
+				() => fixturePage.evaluate(() => {
+					const media = document.querySelector<HTMLMediaElement>('#v');
+					return { volume: media?.volume ?? null, speed: media?.playbackRate ?? null };
+				}),
+				(state) => state.volume !== null
+					&& Math.abs(state.volume - 0.63) < 0.000_001
+					&& state.speed === 1.75,
+				'post-refresh restored media state',
+				10_000,
+			);
+			expect(await readBadgeText(tabId)).toBe('63');
+			const snapshot = await sendFromActionPopup<{
+				ok: boolean;
+				data?: { fields?: Record<string, { actual?: unknown }> };
+			}>({
+				protocolVersion: 2,
+				tabId,
+				type: 'spectra.control.snapshot.get',
+				payload: { tabId },
+			});
+			expect(snapshot).toMatchObject({
+				ok: true,
+				data: {
+					fields: {
+						volumeBase: { actual: 63 },
+						speed: { actual: 1.75 },
+					},
+				},
+			});
+		} finally {
+			await submitEffectiveVolume(tabId, 100).catch(() => undefined);
+			await sendFromActionPopup({
+				protocolVersion: 2,
+				tabId,
+				type: 'spectra.control.intent.submit',
+				payload: {
+					tabId,
+					source: 'popup',
+					requestedCoverage: 'active-target',
+					target: null,
+					patch: { speed: 1 },
+				},
+			}).catch(() => undefined);
+		}
 	}, 35_000);
 
 	test('fullscreen lifecycle preserves the site volume, mute, and playback rate', async () => {

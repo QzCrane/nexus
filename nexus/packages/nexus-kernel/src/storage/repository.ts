@@ -1,5 +1,5 @@
 // goal: type-safe storage repository providing unified access to split storage modules
-// note: acts as a compatibility layer for the site route registry and tab session config
+// note: exposes background-owned registry and acknowledged tab-session projections
 
 import * as restrictedRegistry from './restricted-registry.js';
 import * as tabSessionModule from './tab-session.js';
@@ -18,14 +18,14 @@ export class StorageRepository {
     set: restrictedRegistry.setRegistry,
   };
 
-  // Tab session config (persists across refresh, isolated per tab)
+  // Acknowledged control session (persists across same-origin refresh, isolated per tab)
   tabSession = {
-    get: tabSessionModule.getTabSessionConfig,
-    set: tabSessionModule.setTabSessionConfig,
-	rebind: tabSessionModule.rebindTabSessionConfig,
-    remove: tabSessionModule.removeTabSessionConfig,
-	flush: tabSessionModule.flushTabSessionConfig,
-    has: tabSessionModule.hasTabSessionConfig,
+    get: tabSessionModule.getTabControlSession,
+    merge: tabSessionModule.mergeTabControlSession,
+	rebind: tabSessionModule.rebindTabControlSession,
+    remove: tabSessionModule.removeTabControlSession,
+	flush: tabSessionModule.flushTabControlSession,
+    has: tabSessionModule.hasTabControlSession,
   };
 
   // eff: subscribes to 'local' storage area changes

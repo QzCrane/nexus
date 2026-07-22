@@ -244,6 +244,14 @@ export type ControlNativeObservationStrategies = Partial<
 >;
 export type ControlPatch = Partial<Pick<ControlValues, ControlDirectField>>;
 
+// The always-on bootstrap has no MediaRegistry identity. It may therefore
+// report only the two complete native field groups whose values are scoped to
+// the current top-level document and are safe to restore after refresh.
+export const CONTROL_BOOTSTRAP_OBSERVATION_GROUPS = [
+	['volumeBase', 'mediaMuted'],
+	['speed', 'preservePitch'],
+] as const satisfies readonly (readonly ControlDirectField[])[];
+
 // Read-only native facts required to compile related augmentation fields. They
 // travel with an intent so a lazy audio runtime never derives Boost/DSP from a
 // stale legacy config after page, Popup or remote control.
@@ -313,6 +321,38 @@ export const CONTROL_DIRECT_FIELDS = [
 	'pan',
 	'delay',
 ] as const satisfies readonly ControlDirectField[];
+
+// A document replacement may replay only durable configuration. Momentary
+// media facts (playing/currentTime/PiP/fullscreen), source-bound A/B state and
+// visualizer subscriptions belong to the old document; tab mute/pin are
+// already browser-owned across a refresh. The remaining fields form the exact
+// acknowledged same-tab session projection and deliberately carry no media
+// target identity.
+export const CONTROL_SESSION_FIELDS = [
+	'audioEnabled',
+	'volumeBase',
+	'boost',
+	'mediaMuted',
+	'speed',
+	'preservePitch',
+	'loop',
+	'rotation',
+	'mirrored',
+	'fill',
+	'filterEnabled',
+	'filter',
+	'dimEnabled',
+	'dimOpacity',
+	'eqValues',
+	'bass',
+	'compressor',
+	'mono',
+	'pan',
+	'delay',
+] as const satisfies readonly ControlDirectField[];
+
+export type ControlSessionField = (typeof CONTROL_SESSION_FIELDS)[number];
+export type ControlSessionPatch = Partial<Pick<ControlValues, ControlSessionField>>;
 
 // Operations are momentary algorithms. They are planned like fields but do not
 // pretend to be persistent desired values in ControlSnapshot.
@@ -919,6 +959,7 @@ const phaseSet: ReadonlySet<string> = new Set(['idle', 'applying', 'applied', 'e
 const sourceSet: ReadonlySet<string> = new Set(['page', 'popup', 'remote', 'hotkey', 'restore', 'system']);
 const controlFields: ReadonlySet<string> = new Set(CONTROL_FIELDS);
 const controlDirectFields: ReadonlySet<string> = new Set(CONTROL_DIRECT_FIELDS);
+const controlSessionFields: ReadonlySet<string> = new Set(CONTROL_SESSION_FIELDS);
 const numericMutationFields: ReadonlySet<ControlField> = new Set([
 	'volumeBase', 'boost', 'speed', 'currentTime', 'rotation', 'dimOpacity', 'pan', 'delay',
 ]);
@@ -926,6 +967,9 @@ const nativeObservationStrategies: ReadonlySet<string> = new Set(['page-native',
 const pageNativeObservationFields: readonly ControlDirectField[] = [
 	'volumeBase', 'mediaMuted', 'speed',
 ];
+const bootstrapObservationFields: ReadonlySet<ControlDirectField> = new Set(
+	CONTROL_BOOTSTRAP_OBSERVATION_GROUPS.flat(),
+);
 
 const intentKeys = new Set<keyof ControlIntent>([
 	'intentId',
@@ -1283,6 +1327,11 @@ export function isControlPatch(value: unknown): value is ControlPatch {
 	return Object.entries(value).every(([field, item]) => isControlValue(field as ControlField, item));
 }
 
+export function isControlSessionPatch(value: unknown): value is ControlSessionPatch {
+	return isControlPatch(value)
+		&& Object.keys(value).every((field) => controlSessionFields.has(field));
+}
+
 function isControlNativeObservationStrategies(
 	value: unknown,
 	patch: ControlPatch,
@@ -1303,6 +1352,17 @@ function isControlNativeObservationStrategies(
 			rawField as ControlDirectField,
 			rawStrategy as ControlNativeObservationStrategy,
 		);
+	});
+}
+
+function isBootstrapNativeObservationPatch(patch: ControlPatch): boolean {
+	const patchKeys = Object.keys(patch) as ControlDirectField[];
+	if (patchKeys.length === 0 || patchKeys.some((field) => !bootstrapObservationFields.has(field))) {
+		return false;
+	}
+	return CONTROL_BOOTSTRAP_OBSERVATION_GROUPS.every((group) => {
+		const present = group.filter((field) => Object.hasOwn(patch, field)).length;
+		return present === 0 || present === group.length;
 	});
 }
 
@@ -1377,10 +1437,10 @@ export function isControlSubmitRequest(value: unknown): value is ControlSubmitRe
 	const sourceIsPage = value.source === 'page';
 	const observationShapeIsValid = sourceIsPage
 		? value.requestedCoverage === 'active-target'
-			&& value.target !== null
 			&& hasPatch
 			&& !hasMutations
 			&& isControlPatch(value.patch)
+			&& (value.target !== null || isBootstrapNativeObservationPatch(value.patch))
 			&& isControlNativeObservationStrategies(value.observedStrategies, value.patch, true)
 		: value.observedStrategies === undefined;
 	return observationShapeIsValid

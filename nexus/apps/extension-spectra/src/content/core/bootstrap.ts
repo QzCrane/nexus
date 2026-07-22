@@ -25,6 +25,51 @@ if (previous?.bootstrapRevision !== SPECTRA_CONTENT_BOOTSTRAP_REVISION) previous
 
 if (!getContentBootstrapState()) {
 	let disposed = false;
+	let observationsReady = false;
+	let observationInFlight = false;
+	type BootstrapNativeObservation = {
+		patch: import('@nexus/contracts').ControlPatch;
+		observedStrategies: import('@nexus/contracts').ControlNativeObservationStrategies;
+	};
+	let pendingObservation: BootstrapNativeObservation | null = null;
+
+	const readBootstrapObservation = (
+		element: HTMLMediaElement,
+		eventType: 'volumechange' | 'ratechange',
+	): BootstrapNativeObservation | null => {
+		const pageActual = (field: 'volumeBase' | 'mediaMuted' | 'speed'): number | boolean | null => {
+			try { return readPageMediaField(element, field); }
+			catch { return null; }
+		};
+		if (eventType === 'volumechange') {
+			const pageVolume = pageActual('volumeBase');
+			const pageMuted = pageActual('mediaMuted');
+			return {
+				patch: {
+					volumeBase: typeof pageVolume === 'number'
+						? pageVolume
+						: Math.round(element.volume * 10_000) / 100,
+					mediaMuted: typeof pageMuted === 'boolean' ? pageMuted : element.muted,
+				},
+				observedStrategies: {
+					volumeBase: pageVolume === null ? 'dom-native' : 'page-native',
+					mediaMuted: pageMuted === null ? 'dom-native' : 'page-native',
+				},
+			};
+		}
+		if (!('preservesPitch' in element)) return null;
+		const pageSpeed = pageActual('speed');
+		return {
+			patch: {
+				speed: typeof pageSpeed === 'number' ? pageSpeed : element.playbackRate,
+				preservePitch: element.preservesPitch,
+			},
+			observedStrategies: {
+				speed: pageSpeed === null ? 'dom-native' : 'page-native',
+				preservePitch: 'dom-native',
+			},
+		};
+	};
 
 	const readNativeActual = (
 		request: import('@nexus/contracts').ControlReadRequest,
@@ -94,11 +139,56 @@ if (!getContentBootstrapState()) {
 		dispose() {
 			if (disposed) return;
 			disposed = true;
+			pendingObservation = null;
 			try { chrome.runtime.onMessage.removeListener(onMessage); } catch { /* invalidated context */ }
+			document.removeEventListener('volumechange', onNativeMediaChange, true);
+			document.removeEventListener('ratechange', onNativeMediaChange, true);
 			window.removeEventListener('pagehide', onPageHide);
 			delete state.disposeRuntime;
 			if (getContentBootstrapState() === state) setContentBootstrapState(undefined);
 		},
+	};
+
+	const drainObservation = (): void => {
+		if (disposed || observationInFlight || !pendingObservation) return;
+		if (!observationsReady || state.ready || state.disposeRuntime) {
+			if (state.ready || state.disposeRuntime) pendingObservation = null;
+			return;
+		}
+		const observation = pendingObservation;
+		pendingObservation = null;
+		observationInFlight = true;
+		void sendBootstrapRequest('spectra.control.intent.submit', {
+			source: 'page',
+			requestedCoverage: 'active-target',
+			target: null,
+			patch: observation.patch,
+			observedStrategies: observation.observedStrategies,
+		}, state.dispose).catch(() => undefined).finally(() => {
+			observationInFlight = false;
+			drainObservation();
+		});
+	};
+
+	const onNativeMediaChange = (event: Event): void => {
+		if (disposed || !observationsReady || state.ready || state.disposeRuntime) return;
+		const element = event.composedPath().find(
+			(candidate): candidate is HTMLMediaElement => candidate instanceof HTMLMediaElement,
+		);
+		if (!element?.isConnected
+			|| (event.type !== 'volumechange' && event.type !== 'ratechange')) return;
+		const observation = readBootstrapObservation(element, event.type);
+		if (!observation) return;
+		pendingObservation = pendingObservation
+			? {
+				patch: { ...pendingObservation.patch, ...observation.patch },
+				observedStrategies: {
+					...pendingObservation.observedStrategies,
+					...observation.observedStrategies,
+				},
+			}
+			: observation;
+		drainObservation();
 	};
 
 	const onMessage = (
@@ -198,20 +288,27 @@ if (!getContentBootstrapState()) {
 
 	setContentBootstrapState(state);
 	chrome.runtime.onMessage.addListener(onMessage);
+	document.addEventListener('volumechange', onNativeMediaChange, true);
+	document.addEventListener('ratechange', onNativeMediaChange, true);
 	window.addEventListener('pagehide', onPageHide, { once: true });
 
 	void sendBootstrapRequest('spectra.content.bootstrap.hello', {
 		bootstrapRevision: SPECTRA_CONTENT_BOOTSTRAP_REVISION,
 	}, state.dispose).then((response) => {
-		if (!isBootstrapHelloResponse(response) || disposed || response.data.runtimeRevision === null) return;
+		if (!isBootstrapHelloResponse(response) || disposed) return;
 		state.runtimeRevision = response.data.runtimeRevision;
-		state.ready = true;
+		state.ready = response.data.runtimeRevision !== null;
+		observationsReady = true;
 	}).catch(() => undefined);
 }
 
 function sendBootstrapRequest(
-	type: 'spectra.content.bootstrap.hello' | 'spectra.content.runtime.release',
-	payload: { bootstrapRevision: string } | { runtimeRevision: string },
+	type: 'spectra.content.bootstrap.hello'
+		| 'spectra.content.runtime.release'
+		| 'spectra.control.intent.submit',
+	payload: { bootstrapRevision: string }
+		| { runtimeRevision: string }
+		| import('@nexus/contracts').ControlSubmitRequest,
 	onInvalidated?: () => void,
 ): Promise<unknown | undefined> {
 	return runWithValidExtensionContext(() => chrome.runtime.sendMessage({

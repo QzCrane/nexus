@@ -3,7 +3,7 @@ type: explanation
 status: stable
 audience: developer
 owner: spectra-runtime-architecture
-last_reviewed: 2026-07-22
+last_reviewed: 2026-07-23
 ---
 
 # SPECTRA runtime architecture
@@ -71,13 +71,21 @@ Strategy and bridge rules are owned by [control/02-strategy-and-routes.md](../co
 
 Background owns the revisioned settings repository in `chrome.storage.local`. UI contexts submit typed field patches; session storage contains only current mirrors. Canonical fields replace legacy aliases through bounded read-only migration.
 
-The acknowledged per-tab audio configuration is stored separately in
-`chrome.storage.session` with `tabId + documentId + origin`. Before a top-level
-replacement, Background flushes its coalesced write; after commit it rebinds the
-record only when the origin is unchanged and otherwise deletes it. Runtime
-initialization restores that same-tab record before resolving site/global
-presets. A separate monotonic per-tab usage record owns Action-badge stickiness;
-it survives document and worker replacement but is deleted when the tab closes.
+The acknowledged per-tab control session is stored separately in
+`chrome.storage.session` with `tabId + documentId + origin`. Its field-level
+patch contains exactly the 20 refresh-restorable configuration fields declared
+by `CONTROL_SESSION_FIELDS`; it contains neither default-filled guesses nor
+media/source identities. Before a top-level replacement, Background flushes its
+coalesced write; after commit it rebinds the record only when the origin is
+unchanged and otherwise deletes it. Runtime initialization restores media,
+video and processor groups through the coordinator before consulting
+site/global presets. A default-valued session still suppresses presets because
+its existence records the current tab's acknowledged decision.
+
+A separate monotonic per-tab usage record owns Action-badge stickiness. It and
+the last truthful Action projection survive document and worker replacement;
+the restored control ACK refreshes the numeric/color projection, while tab
+close is the sole retirement boundary.
 
 The media route registry is a separate Background-owned repository. Popup and Options render the same v2 snapshot. One normalized site has one `direct | capture` route; a cached route is a planning hint, not processing activation. Exact precedence and migration rules are in [control/02-strategy-and-routes.md §4](../control/02-strategy-and-routes.md#4-site-route-registry-and-eligibility-cache).
 
@@ -85,7 +93,7 @@ The media route registry is a separate Background-owned repository. Popup and Op
 
 Content maintains media through one event-driven registry plus media, visibility, and SPA-navigation events. Same-document navigation arrives through Chrome navigation events and is deduplicated before generation advances. Every element has one registration/disposer and independently receives current desired configuration.
 
-The passive bootstrap may perform a bounded top-level getter before the heavy runtime exists. Once the runtime is acquired, reads resolve through the registry without rescanning the document or changing selection.
+The passive bootstrap may perform a bounded top-level getter before the heavy runtime exists. After Background completes the document initialization decision, it also captures native `volumechange` and `ratechange` events and submits only the complete `volumeBase + mediaMuted` or `speed + preservePitch` actual pair. One request may be in flight and one latest patch may wait; the observation has no media identity, never marks badge usage, and still commits through the coordinator and tab-session owner. Installing the heavy runtime disposer transfers event ownership immediately, so restore writes cannot be reflected back as cold-page gestures. Once the runtime is acquired, reads and target-bound observations resolve through the registry without rescanning the document or changing selection.
 
 ## Runtime loading and shortcuts
 
@@ -101,10 +109,12 @@ transition that processor, so Popup/remote observation cannot stop Capture.
 Cold-document hotkeys use the same READY ensure path as other runtime consumers. READY is invalidated by navigation, update, context invalidation, health failure, and disposal. Exact readiness and feedback rules are in [control/02-strategy-and-routes.md §5](../control/02-strategy-and-routes.md#5-runtime-shortcut-and-feedback-ownership).
 
 One `tabId + documentId` initialization promise orders bootstrap restore,
-initial snapshot reads and explicit control. Restore-origin writes bypass their
-own barrier, and a failed restore is logged once before later explicit control
-is allowed to proceed. This is an ordering boundary, not a second runtime or
-settings authority.
+cold native observations, initial snapshot reads and explicit control. The
+bootstrap HELLO response opens its observation boundary only after that promise
+settles. Restore-origin writes and target-bound heavy-runtime observations bypass
+their own barrier, and a failed restore is logged once before later explicit
+control is allowed to proceed. This is an ordering boundary, not a second runtime
+or settings authority.
 
 ## Remote control
 
@@ -127,6 +137,7 @@ Favicon and QR rendering are UI/security boundaries, not media-runtime capabilit
 | Route persistence and migration | `background/registry-repository.ts` | one normalized site route; UI never writes storage |
 | Route resolution | Content policy executor | cache is not activation |
 | Processor lifecycle | offscreen coordinator and audio delegate | actual host ACK drives status |
+| Cold native refresh state | bootstrap, runtime loader and control coordinator | initialization-first, targetless four-field observation; no badge-use fact |
 | Shortcut readiness | runtime loader and shortcuts | first cold-document intent waits for READY |
 | Toast/OSD | Content feedback modules | one feedback owner; no bootstrap/snapshot toast |
 | Page media semantics | page-media bridge and native executor | exact-element getter/setter readback, DOM fallback, no domain table or polling |

@@ -13,6 +13,11 @@ import {
 	type TabSessionIdentity,
 	type VisualizerBatchPayload,
 } from '@nexus/contracts';
+import {
+	audioConfigPatchToControlSessionPatch,
+	audioConfigToControlSessionPatch,
+	controlSessionPatchToAudioConfig,
+} from '@nexus/kernel';
 import { router, storage, captureStates } from '../state';
 import {
 	flushAudioSessions,
@@ -42,7 +47,10 @@ async function resolveAudioConfigForSender(sender: chrome.runtime.MessageSender)
 	const domain = normalizeHostname(sender.url ?? sender.tab?.url ?? '') ?? '';
 	let config: AudioConfig | null = null;
 	if (tabId && identity) {
-		try { config = await storage.tabSession.get(tabId, identity); } catch { }
+		try {
+			const session = await storage.tabSession.get(tabId, identity);
+			if (session) config = controlSessionPatchToAudioConfig(session);
+		} catch { }
 	}
 	return config ?? settingsRepository.resolveAudioConfig(domain);
 }
@@ -362,7 +370,11 @@ export function registerAudioV2Listener(): void {
 			if (message.type === 'spectra.audio.config.set') {
 				const identity = sessionIdentityFromSender(sender);
 				if (!identity) throw new Error('Audio configuration requires a document identity');
-				await storage.tabSession.set(identity.tabId, message.payload.config, identity);
+				await storage.tabSession.merge(
+					identity.tabId,
+					audioConfigToControlSessionPatch(message.payload.config),
+					identity,
+				);
 				return { saved: true as const };
 			}
 			if (message.type === 'spectra.audio.session.get') {
@@ -476,9 +488,13 @@ export function registerAudioHandlers(): void {
 			// quota/unavailable errors while the handler returned success:true, so the user's
 			// audio config silently reverted to the prior value on next content script load.
 			try {
-				await storage.tabSession.set(tabId, persistentConfig, identity);
+				await storage.tabSession.merge(
+					tabId,
+					audioConfigPatchToControlSessionPatch(persistentConfig),
+					identity,
+				);
 			} catch (error) {
-				swLog.warn('audio: tabSession.set failed; config not persisted', {
+				swLog.warn('audio: tabSession.merge failed; config not persisted', {
 					tabId,
 					error: error instanceof Error ? error.message : String(error),
 				});

@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: spectra-runtime-protocol
-last_reviewed: 2026-07-22
+last_reviewed: 2026-07-23
 ---
 
 # SPECTRA runtime protocols
@@ -55,7 +55,7 @@ page observation / Popup / authenticated remote / hotkey intent
 
 A candidate returned by an executor is not an ACK. Only readback carrying current `tabId + documentId + origin + generation + revision` can commit. A failed field rolls back its optimistic projection without discarding unrelated successful fields.
 
-Verified page observations bypass the writer stage, commit `controlled:false`, and never echo a second write to Content. Reads do not acquire Media WebAudio, Capture, a generic MAIN runtime, or an offscreen lease. For `volumeBase`, `mediaMuted`, and `speed`, a read may synchronously use the already-installed exact-element page bridge before falling back to the ordinary DOM getter.
+Verified page observations bypass the writer stage, commit `controlled:false`, and never echo a second write to Content. A heavy-runtime observation carries its exact `MediaTarget`. Before that runtime exists, the top-level bootstrap may instead send `target:null`, but only for a complete `volumeBase + mediaMuted` and/or `speed + preservePitch` group, with exact native strategy provenance and the browser sender's current document identity. Background waits for the initialization barrier before accepting that targetless form, so page-load defaults cannot overwrite a same-origin session before it is rebound. Reads do not acquire Media WebAudio, Capture, a generic MAIN runtime, or an offscreen lease. For `volumeBase`, `mediaMuted`, and `speed`, a read may synchronously use the already-installed exact-element page bridge before falling back to the ordinary DOM getter.
 
 `ControlSubmitRequest` never carries Capture authority. Background may add the
 literal `captureAdmission: 'extension-invocation'` only to the internal
@@ -99,7 +99,7 @@ Media WebAudio and `tabCapture` have no shared sample clock. The protocol promis
 
 ## Runtime and offscreen leases
 
-The passive bootstrap performs only bounded one-shot getters. Heavy Content ownership is tokenized by document and consumer. The final control, restore, hotkey, Popup, remote, or source token releases owned work; a status read creates no token.
+The passive bootstrap performs bounded one-shot getters plus two capture-phase native media listeners. Those listeners are enabled only after the HELLO initialization barrier, hold one in-flight request plus one latest pending patch, and stop producing observations as soon as a heavy-runtime disposer exists. Heavy Content ownership is tokenized by document and consumer. The final control, restore, hotkey, Popup, remote, or source token releases owned work; a status read or bootstrap native observation creates no token.
 
 One `offscreen.html` hosts Capture processors and remote sessions. Background serializes creation, reconstructs actual host state through HELLO after worker restart, and owns `audio:<tabId>` / `remote:<sessionId>` leases. A one-shot Chrome alarm closes the host after the final-lease grace period. Feature modules never call `createDocument()` or `closeDocument()` directly.
 

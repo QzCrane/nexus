@@ -5,11 +5,11 @@ import { router, badgeState, BADGE_COLORS } from '../state';
 import { isTabExists } from '../helpers';
 import {
 	audioSessionMatchesControlDocument,
+	compileEffectiveVolume,
 	isActiveCaptureLifecycle,
-	resolveAudioVolume,
 	resolveAudioVolumeState,
-	type AudioConfig,
 	type AudioSessionSnapshot,
+	type ControlSessionPatch,
 	type ControlSnapshot,
 } from '@nexus/contracts';
 import { hasBadgeUsage, markBadgeUsed } from '../badge-usage';
@@ -104,6 +104,11 @@ export async function markBadgeUsedForTab(tabId: number): Promise<void> {
 	await markBadgeUsed(tabId);
 	if (badgeState.get(tabId)?.userInteracted || !await isTabExists(tabId)) return;
 	try {
+		// Chrome retains the last per-tab projection across document and worker
+		// replacement. Do not replace a truthful numeric ACK with the placeholder
+		// merely because this worker has not reconstructed its volatile mirror yet.
+		const currentText = await chrome.action.getBadgeText?.({ tabId }).catch(() => '');
+		if (currentText) return;
 		await chrome.action.setBadgeText({ tabId, text: USED_BADGE_PLACEHOLDER });
 		await chrome.action.setBadgeBackgroundColor({ tabId, color: USED_BADGE_PLACEHOLDER_COLOR });
 		await chrome.action.setBadgeTextColor({ tabId, color: BADGE_COLORS.WHITE });
@@ -121,17 +126,28 @@ export async function updateBadgeForTab(tabId: number, update: BadgeUpdate): Pro
 
 export async function updateBadgeFromControlProjection(
 	snapshot: Pick<ControlSnapshot, 'tabId' | 'documentId' | 'origin' | 'generation'>,
-	config: AudioConfig,
+	projection: ControlSessionPatch,
 	isCaptureActive: boolean,
 	userInteracted: boolean,
 ): Promise<void> {
-	const volume = resolveAudioVolume(config);
 	const stickyInteraction = badgeState.get(snapshot.tabId)?.userInteracted === true
 		|| await resolveStickyUsage(snapshot.tabId, userInteracted);
+	if (typeof projection.volumeBase !== 'number' || typeof projection.boost !== 'number') {
+		if (stickyInteraction) {
+			await markBadgeUsedForTab(snapshot.tabId);
+			return;
+		}
+		return applyBadgeForTab(snapshot.tabId, {
+			volume: 0,
+			muted: false,
+			isCapture: false,
+			userInteracted: false,
+		}, 'control', snapshot);
+	}
 	return applyBadgeForTab(snapshot.tabId, {
-		volume: volume.effectiveVolume,
-		muted: config.muted,
-		enabled: config.enabled,
+		volume: compileEffectiveVolume(projection.volumeBase, projection.boost),
+		muted: projection.mediaMuted === true,
+		enabled: projection.audioEnabled ?? true,
 		isCapture: isCaptureActive,
 		userInteracted: stickyInteraction,
 	}, 'control', snapshot);

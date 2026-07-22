@@ -40,9 +40,14 @@ integration evidence before the manifest may enable `all_frames`.
 Once the optional runtime is leased, control commands resolve only through the
 event-driven registry and never rescan the document or force layout. Before that
 runtime exists, a passive Popup/remote snapshot read may perform one bounded
-top-level `video,audio` lookup in the lightweight bootstrap. That one-shot getter
-creates no observer, stable media ID, mutation, timer or processing path; all
-writes and subscriptions acquire the registry runtime first. Audio-only pages
+top-level `video,audio` lookup in the lightweight bootstrap. After the document
+initialization barrier, two capture-phase native event listeners may also report
+the complete volume/mute or speed/pitch actual pair without inventing a media ID.
+They retain only one latest patch behind one in-flight coordinator request and
+yield immediately when the registry runtime starts. Neither path creates a
+MutationObserver, stable media ID, timer, processing path or direct storage
+writer; all writes and target-bound subscriptions acquire the registry runtime
+first. Audio-only pages
 support speed, pitch preservation, play/pause, seek, loop, markers and A/B.
 Video-only features are disabled only when no independent `activeVideo` exists;
 an audio `activeMedia` does not hide or receive video controls.
@@ -103,7 +108,10 @@ The same exact-element `page-native -> dom-native` order applies to page volume,
 media mute, and playback speed. Page-native discovery is bounded and
 domain-neutral; it retains no player object or site UI listener. Normal media
 events trigger semantic getter readback so page changes, Popup changes, and mute
-hotkeys converge on the one coordinator snapshot without a reassert loop.
+hotkeys converge on the one coordinator snapshot without a reassert loop. A
+cold bootstrap event is document-scoped rather than media-scoped: it can preserve
+only volume/mute and speed/pitch across a same-origin refresh, never select a
+target or claim plugin badge usage.
 
 PiP and fullscreen failures distinguish unsupported, disabled and user-activation-required. A Popup or remote command cannot manufacture page transient activation. Popup PiP converts only `user-activation-required` into an explicit page interaction: it arms a typed, bounded prompt, activates the already-bound tab, and waits for the user's real click. The click invokes the same native executor before the first asynchronous boundary; it does not admit MAIN, Capture or a domain adapter.
 

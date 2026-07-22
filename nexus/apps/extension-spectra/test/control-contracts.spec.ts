@@ -7,6 +7,7 @@ import {
 	CONTROL_CAPABILITIES,
 	CONTROL_DIRECT_FIELDS,
 	CONTROL_FIELDS,
+	CONTROL_SESSION_FIELDS,
 	CONTROL_OPERATIONS,
 	CONTROL_RETRYABLE_STRATEGY_FAILURES,
 	CONTROL_STRATEGIES,
@@ -127,6 +128,28 @@ describe('per-field SPECTRA control contracts', () => {
 			observedStrategies: { volumeBase: 'page-native', mediaMuted: 'dom-native' },
 		} as const;
 		expect(isControlSubmitRequest(pageObservation)).toBe(true);
+		const bootstrapVolumeObservation = {
+			...pageObservation,
+			target: null,
+			patch: { volumeBase: 64, mediaMuted: true },
+			observedStrategies: { volumeBase: 'dom-native', mediaMuted: 'page-native' },
+		} as const;
+		expect(isControlSubmitRequest(bootstrapVolumeObservation)).toBe(true);
+		expect(isControlSubmitRequest({
+			...bootstrapVolumeObservation,
+			patch: { volumeBase: 64 },
+			observedStrategies: { volumeBase: 'dom-native' },
+		})).toBe(false);
+		expect(isControlSubmitRequest({
+			...bootstrapVolumeObservation,
+			patch: { speed: 1.5, preservePitch: false },
+			observedStrategies: { speed: 'page-native', preservePitch: 'dom-native' },
+		})).toBe(true);
+		expect(isControlSubmitRequest({
+			...bootstrapVolumeObservation,
+			patch: { playing: true },
+			observedStrategies: { playing: 'dom-native' },
+		})).toBe(false);
 		expect(isControlSubmitRequest({ ...pageObservation, observedStrategies: undefined })).toBe(false);
 		expect(isControlSubmitRequest({
 			...pageObservation,
@@ -415,6 +438,19 @@ describe('per-field SPECTRA control contracts', () => {
 			'native-only': 17,
 			'observation-only': 2,
 		});
+	});
+
+	test('classifies exactly the durable fields that may cross a document refresh', () => {
+		expect(CONTROL_SESSION_FIELDS).toEqual([
+			'audioEnabled', 'volumeBase', 'boost', 'mediaMuted', 'speed', 'preservePitch', 'loop',
+			'rotation', 'mirrored', 'fill', 'filterEnabled', 'filter', 'dimEnabled', 'dimOpacity',
+			'eqValues', 'bass', 'compressor', 'mono', 'pan', 'delay',
+		]);
+		for (const transient of [
+			'tabMuted', 'tabPinned', 'playing', 'currentTime', 'pip', 'fullscreen', 'abLoop', 'visualizer',
+		]) {
+			expect(CONTROL_SESSION_FIELDS).not.toContain(transient as never);
+		}
 	});
 
 	test('keeps all 51 executable strategy orders, MAIN boundaries, ACKs, and lifetimes mirrored in the owner design', () => {

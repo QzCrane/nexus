@@ -28,7 +28,7 @@ audience: developer
 - `SCTRL-015`: MAIN cannot bypass user activation, CORS, DRM or inaccessible media.
 - `SCTRL-016`: product UX exposes outcomes, not implementation modes.
 - `SCTRL-017`: a page-native observation commits actual state once and never echoes a second write.
-- `SCTRL-018`: top-level-only scope is explicit; passive bootstrap readback is bounded and cannot become a mutation/subscription path.
+- `SCTRL-018`: top-level-only scope is explicit; passive bootstrap readback is bounded, while its only subscriptions are capture-phase volume/rate events with one in-flight plus one latest patch, initialization-first ordering and immediate heavy-runtime handoff.
 - `SCTRL-019`: one visualizer IPC owns the next schedule; a slow request cannot create an empty 15 Hz wake-up loop.
 - `SCTRL-020`: Popup fields project only `ControlSnapshot`; audio session data owns lifecycle only.
 - `SCTRL-021`: visualizer ownership is per subscriber, expires abnormal exits and retains a bounded generation tombstone.
@@ -40,7 +40,7 @@ audience: developer
 - `SCTRL-027`: a native ACK is one-shot: DOM writers require their native event plus a bounded quiet window/stable getter, while page-native requires the exact controller getter to remain stable; requested setter return values are never ACKs.
 - `SCTRL-028`: default pages have zero audio work; after explicit irreversible Media WebAudio binding only the minimal unity route may survive until navigation.
 - `SCTRL-029`: an ACK target is projected only through its contract scope; video-only and tab/document operations cannot overwrite or clear the unrelated active identity.
-- `SCTRL-030`: runtime status/read is a pure projection: it installs no listener, performs no document scan, changes no selection/correlation/owner state and emits no synthetic event; only the bounded bootstrap getter may scan before runtime acquisition.
+- `SCTRL-030`: runtime status/read is a pure projection: it installs no listener, performs no document scan, changes no selection/correlation/owner state and emits no synthetic event; only the bounded bootstrap getter may scan before runtime acquisition, and bootstrap event observation never selects a target or writes storage directly.
 - `SCTRL-031`: extension-UI, tab, sandbox and document-scoped operations that execute no media writer acknowledge `target:null`; they cannot borrow the currently active media identity.
 - `SCTRL-032`: processor configuration exposes only `boostGain: 1–8`; page volume, media mute and a zero-gain mute substitute cannot cross the WebAudio/Capture boundary.
 - `SCTRL-033`: Background control consumers invoke the serialized coordinator directly; MV3 worker self-RPC is forbidden, and remote state is cached privately before authentication then exposed only after HMAC success.
@@ -50,7 +50,7 @@ audience: developer
 - `SCTRL-037`: processor actual state comes only from normalized graph/host readback (`graphSignature`, actual config, source count and context state), never from desired input echo.
 - `SCTRL-038`: WebAudio/Capture transitions neutralize the old DSP, verify the candidate actual path and only then release; failure restores the previous stable route.
 - `SCTRL-039`: visible Popup and authenticated remote synchronization requires independent document observation tokens; ordinary status reads acquire none.
-- `SCTRL-040`: successful per-media desired replay is separate from page observation; a page event cannot become a document-global restore template.
+- `SCTRL-040`: successful per-media desired replay is separate from page observation; target-bound events never become per-media desired templates, while the targetless bootstrap may project only the four declared native configuration fields into the same-tab refresh session.
 - `SCTRL-041`: trusted page activation admits only page-stack APIs and Media WebAudio; new Capture requires a volatile Background admission minted for one current-active-tab Popup or `chrome.commands` transaction, external submit payloads cannot carry it, and restore/remote/page/alternate-tab paths never call `getMediaStreamId()` without it.
 - `SCTRL-042`: video enhancement implementation is a lazy capability-owned module; native-only/default control does not load or instantiate it.
 - `SCTRL-043`: Popup, Options and remote use a restricted protocol validator and cannot import or execute the Background request router.

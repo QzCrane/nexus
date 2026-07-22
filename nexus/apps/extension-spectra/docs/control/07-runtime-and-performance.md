@@ -12,16 +12,23 @@ audience: developer
 ## §16 Runtime loading and performance
 
 The manifest contains one lightweight ISOLATED bootstrap plus the two closed,
-versioned MAIN bridges. While idle the ISOLATED bootstrap installs only a
-versioned HELLO/message boundary and pagehide cleanup; it does not read settings,
-scan media, create observers or write DOM markers. Page-media V2 retains one
+versioned MAIN bridges. While idle the ISOLATED bootstrap installs a versioned
+HELLO/message boundary, pagehide cleanup, and capture-phase `volumechange` /
+`ratechange` listeners; it does not read settings, scan media, create a
+MutationObserver or write DOM markers. The native listeners remain disabled
+until the HELLO initialization barrier settles, then do work only for an actual
+event. They submit one complete volume/mute or speed/pitch actual group through
+the coordinator with a single in-flight request and one latest pending patch.
+They yield as soon as the heavy-runtime disposer exists. Page-media V2 retains one
 request listener but performs no discovery between explicit requests; fullscreen
 V1 retains only its native method wrapper and creates temporary handoff work only
 when enhanced audio is active. A passive
 `spectra.control.actual.read` may run one bounded top-level media getter and one
 bounded top-level video getter so first-open state does not collapse the two
 targets, but it still does not persist state or acquire a runtime/processing
-lease.
+lease. The bootstrap observation also creates no runtime lease or badge-use fact;
+its tab-session persistence is a coordinator projection, not a bootstrap storage
+write.
 
 Heavy document runtime leases are limited to explicit control, restored non-default settings, an observation subscription, authenticated remote use or configured site hotkeys. Status reads never acquire a processing lease. The last lease releases every observer/listener when no controlled field remains.
 
@@ -56,7 +63,9 @@ not scan the document, install listeners, initialize an observed baseline, creat
 default video-owner state or change target selection. Event-correlation baselines
 are initialized when the runtime acquires the existing registry and whenever a
 new media/source is registered. The bounded bootstrap getter described above is
-the sole scan exception and still has no write, subscription or persistent state.
+the sole scan exception. The two native listeners are the sole cold-page
+subscription exception; they hold no media registry or persistent state and can
+mutate only by submitting an actual observation to the authoritative coordinator.
 
 `runtime-loader.ts` represents the document reference count as the size of a
 `Set<reason:capability>`. Re-acquiring the same consumer token is idempotent;
@@ -97,12 +106,12 @@ These locations are architectural owners, not suggestions. A future implementati
 | --- | --- | --- |
 | `packages/contracts/src/control.contracts.ts` | exhaustive fields/operations, strategy classes, intent/snapshot/ACK guards | Keep Popup, remote, content, background and tests on one semantic vocabulary. |
 | `packages/contracts/src/spectra.protocol.ts`; `packages/contracts/src/spectra.content-runtime.ts` | canonical and restricted Content wire guards plus one shared runtime revision | Keep the production Content allowlist aligned with every internal intent field and force stale page runtimes through revisioned re-injection before they execute a changed boundary. |
-| `packages/contracts/src/spectra.bootstrap.ts`; `src/content/core/bootstrap.ts` | minimal always-on protocol constants, validators and passive read boundary | Prevent the complete v2 action/validator graph from becoming default-page parse cost while preserving strict runtime validation. |
+| `packages/contracts/src/spectra.bootstrap.ts`; `src/content/core/bootstrap.ts` | minimal always-on protocol constants, validators, passive read and bounded cold native-observation boundary | Prevent the complete v2 action/validator graph from becoming default-page parse cost while preserving strict runtime validation and refresh state. |
 | `packages/features/audio-engine/src/CapabilityPlanner.ts` | pure least-invasive per-capability selection | Make native/augmentation admission deterministic and unit-testable without browser side effects. |
 | `src/background/control-coordinator.ts` | intent ordering, per-field revision, stable snapshot, rollback and current-tab Capture admission | Establish the only authority that commits actual state or mints a volatile privileged transaction. |
 | `src/background/runtime-loader.ts` | document-scoped heavy-runtime lease and READY handshake | Preserve the zero-work default and remove fixed injection sleeps. |
 | `src/background/main-runtime-manager.ts` | idempotent injection of fullscreen V1 and exact-element page-media V2 | Delete generic MAIN dispatch and domain adapters; only the two manifest-registered bridge artifacts may be re-injected. |
-| `src/content/core/bootstrap.ts` | lightweight HELLO/message/pagehide boundary plus bounded passive native getter | Keep idle injection side-effect-free while allowing first-open UI/remote actual state without installing the heavy registry. |
+| `src/content/core/bootstrap.ts` | lightweight HELLO/message/pagehide boundary, bounded passive getter and latest-value volume/rate observer | Keep idle injection processing-free while allowing first-open UI/remote actual state and refresh persistence without installing the heavy registry. |
 | `src/content/core/media-registry.ts` | `mediaId`, `sourceRevision`, cached visibility and sticky active target | Remove document scans/layout reads from command hot paths. |
 | `src/content/logic/native-media-executor.ts` | sole DOM writer, registration-time event baseline and pure registry-backed readback | Replace concurrent `media-control.ts`, `dom-volume.ts` and bridge writes while preventing status reads from initializing mutable correlation state. |
 | `src/content/core/media-registry.ts`; `src/background/control-coordinator.ts::handleTargetChanged` | explicit media/source selection synchronization | Commit a new active target only after a sender-bound one-shot actual readback confirms the same `mediaId + sourceRevision`. |
@@ -132,7 +141,7 @@ change.
 | --- | --- | --- |
 | landed | retired generic `src/injector/*`; manifest/build; `src/background/main-runtime-manager.ts`; `src/content/injector/*-bridge.ts` | Remove generic constructor/audio/element interception and adapter dispatch. Only fullscreen V1 and exact-element page-media V2 remain: the former wraps native fullscreen for bounded audio handoff, and the latter owns one idle request listener with no polling or retained controller. |
 | landed | `packages/features/audio-engine/src/AudioGraphRouter.ts`; `packages/features/audio-engine/src/webaudio/controller.ts`; `src/offscreen/audio-host.ts` | Share one sparse graph, require prospective and actual full-registry coverage before Media WebAudio ACK, reconnect rather than recreate page-lifetime sources, provide normalized graph/Capture readback and preserve the stable processor during candidate failure. The contract records the minimal unity route that must remain after an irreversible media binding. |
-| landed | `src/content/core/bootstrap.ts`, `background/runtime-loader.ts`, `content/core/media-registry.ts` | Keep default pages bootstrap-only and make the optional runtime/document target identity explicit. |
+| landed | `src/content/core/bootstrap.ts`, `background/runtime-loader.ts`, `background/control-coordinator.ts`, `content/core/media-registry.ts` | Keep default pages bootstrap-only, order cold native observations after session/preset initialization, preserve volume/speed across refresh without a badge-use fact, and make optional runtime/document target identity explicit. |
 | landed | `packages/contracts/src/spectra.bootstrap.ts`; `build.mjs`; `scripts/check-production-artifacts.mjs` | Reduce the always-on content boundary to the four required message families, share production code only between extension-origin module contexts, measure every real closure and reject all avoidable production redundancy. |
 | landed | `build.mjs`; `scripts/external-boundary-properties.mjs`; `src/offscreen-remote/peerjs-vendor.ts`; `test/release-tooling.spec.ts`; production Chrome smoke | Preserve Chrome/browser dictionaries, transport payload keys, dynamic ESM exports and versioned singleton members before property mangling. Build PeerJS as an opaque local vendor artifact whose public/signaling/WebRTC ABI is never application-mangled; only its underscore-prefixed private members may be shortened. This prevents production-only loss of `currentWindow`, Capture constraints, remote HMAC proof and cross-injection runtime methods while keeping SPECTRA-owned properties optimized. |
 | landed | `src/content/logic/native-media-executor.ts`; `scripts/verify/check-spectra-control.js` | Centralize the only direct standard-media property assignments, including volume, mute, speed, pitch preservation, seek and loop; make a second direct property writer a release error. |

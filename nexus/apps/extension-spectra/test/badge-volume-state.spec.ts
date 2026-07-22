@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { DEFAULT_AUDIO_CONFIG, type AudioSessionSnapshot } from '@nexus/contracts';
+import {
+	DEFAULT_AUDIO_CONFIG,
+	type AudioSessionSnapshot,
+	type ControlSessionPatch,
+} from '@nexus/contracts';
 import {
 	updateBadgeFromControlProjection,
 	updateBadgeFromSession,
@@ -33,12 +37,10 @@ describe('actual volume badge state', () => {
 			},
 		});
 
-		await updateBadgeFromControlProjection(identity(), {
-			...DEFAULT_AUDIO_CONFIG,
-			volume: 350,
+		await updateBadgeFromControlProjection(identity(), projection({
 			volumeBase: 100,
 			boost: 3.5,
-		}, false, true);
+		}), false, true);
 		expect(badgeState.get(TAB_ID)?.volume).toBe(350);
 		expect(colors.at(-1)).toBe(BADGE_COLORS.NATIVE);
 
@@ -69,12 +71,10 @@ describe('actual volume badge state', () => {
 			},
 		});
 
-		await updateBadgeFromControlProjection(identity(), {
-			...DEFAULT_AUDIO_CONFIG,
-			volume: 0,
+		await updateBadgeFromControlProjection(identity(), projection({
 			volumeBase: 0,
 			boost: 1,
-		}, true, true);
+		}), true, true);
 		expect(colors.at(-1)).toBe(BADGE_COLORS.MUTED);
 	});
 
@@ -92,7 +92,7 @@ describe('actual volume badge state', () => {
 			},
 		});
 
-		await updateBadgeFromControlProjection(identity(), DEFAULT_AUDIO_CONFIG, false, true);
+		await updateBadgeFromControlProjection(identity(), projection(), false, true);
 		await updateBadgeFromSession({
 			...session('active'),
 			documentId: 'document-new',
@@ -123,14 +123,14 @@ describe('actual volume badge state', () => {
 			},
 		});
 
-		await updateBadgeFromControlProjection(identity(), DEFAULT_AUDIO_CONFIG, false, false);
+		await updateBadgeFromControlProjection(identity(), projection(), false, false);
 		expect(texts.at(-1)).toBe('');
-		await updateBadgeFromControlProjection(identity(), DEFAULT_AUDIO_CONFIG, false, true);
+		await updateBadgeFromControlProjection(identity(), projection(), false, true);
 		expect(texts.at(-1)).toBe('100');
 
 		badgeState.clear();
 		resetBadgeUsageForTests();
-		await updateBadgeFromControlProjection(identity(), DEFAULT_AUDIO_CONFIG, false, false);
+		await updateBadgeFromControlProjection(identity(), projection(), false, false);
 		expect(texts.at(-1)).toBe('100');
 		expect(badgeState.get(TAB_ID)?.userInteracted).toBe(true);
 	});
@@ -163,7 +163,52 @@ describe('actual volume badge state', () => {
 		await markBadgeUsedForTab(TAB_ID);
 		expect(texts.at(-1)).toBe('•');
 	});
+
+	test('keeps a sparse non-volume ACK neutral instead of inventing 100 percent', async () => {
+		const values: Record<string, unknown> = {};
+		let badgeText = '';
+		const texts: string[] = [];
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				tabs: { get: async () => ({ id: TAB_ID }) },
+				storage: { session: {
+					get: async (key: string) => key in values ? { [key]: values[key] } : {},
+					set: async (items: Record<string, unknown>) => { Object.assign(values, items); },
+					remove: async (key: string) => { delete values[key]; },
+				} },
+				action: {
+					getBadgeText: async () => badgeText,
+					setBadgeText: async ({ text }: { text: string }) => {
+						badgeText = text;
+						texts.push(text);
+					},
+					setBadgeBackgroundColor: async () => undefined,
+					setBadgeTextColor: async () => undefined,
+				},
+			},
+		});
+
+		await updateBadgeFromControlProjection(identity(), { speed: 1.75 }, false, true);
+		expect(texts.at(-1)).toBe('•');
+		expect(texts).not.toContain('100');
+
+		badgeState.clear();
+		resetBadgeUsageForTests();
+		await updateBadgeFromControlProjection(identity(), { speed: 1.75 }, false, false);
+		expect(texts.at(-1)).toBe('•');
+	});
 });
+
+function projection(overrides: ControlSessionPatch = {}): ControlSessionPatch {
+	return {
+		audioEnabled: true,
+		volumeBase: 100,
+		boost: 1,
+		mediaMuted: false,
+		...overrides,
+	};
+}
 
 function identity() {
 	return {

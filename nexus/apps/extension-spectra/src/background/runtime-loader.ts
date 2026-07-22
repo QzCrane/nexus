@@ -3,6 +3,7 @@
 import {
 	SPECTRA_CONTENT_RUNTIME_REVISION,
 	SPECTRA_PROTOCOL_VERSION,
+	CONTROL_ALGORITHM_POLICIES,
 	HOTKEY_ACTION_DESCRIPTORS,
 	findBestHostnameMatch,
 	isDefaultAudioConfig,
@@ -14,6 +15,9 @@ import {
 	type ContentRuntimeLeaseReason,
 	type ContentRuntimeReadyResult,
 	type ContentRuntimeSourceOwnership,
+	type ControlField,
+	type ControlPatch,
+	type ControlSessionPatch,
 	type MediaTarget,
 	type HotkeySettings,
 	type AudioConfig,
@@ -451,9 +455,8 @@ async function restoreIfConfigured(tabId: number, documentId: string, url: strin
 		origin = parsed.origin;
 	} catch { return; }
 	if (origin === 'null') return;
-	const restore = await resolveDocumentRestoreConfig(tabId, documentId, hostname, origin);
-	const { config } = restore;
-	if (isDefaultAudioConfig(config)) return;
+	const restore = await resolveDocumentRestorePlan(tabId, documentId, hostname, origin);
+	if (Object.keys(restore.patch).length === 0) return;
 	// Replaying a same-origin tab session must preserve its existing usage fact:
 	// native-only page interaction stays badge-free, while an earlier SPECTRA
 	// action is already sticky in badge-usage storage. A configured site/global
@@ -463,37 +466,15 @@ async function restoreIfConfigured(tabId: number, documentId: string, url: strin
 	await ensureContentRuntime(tabId, documentId, 'restore', capability);
 	try {
 		const { submitControlRequest } = await import('./control-coordinator');
-		const volume = resolveAudioVolume(config);
-		if (config.enabled) {
+		for (const group of splitDocumentRestorePatch(restore.patch)) {
 			await submitControlRequest({
 				tabId,
 				source: 'restore',
-				requestedCoverage: 'active-target',
+				requestedCoverage: group.requestedCoverage,
 				target: null,
-				patch: {
-					volumeBase: volume.volumeBase,
-					mediaMuted: config.muted,
-					speed: config.speed,
-					preservePitch: config.preservePitch,
-				},
+				patch: group.patch,
 			});
 		}
-		await submitControlRequest({
-			tabId,
-			source: 'restore',
-			requestedCoverage: 'full',
-			target: null,
-			patch: {
-				audioEnabled: config.enabled,
-				boost: config.enabled ? volume.boost : 1,
-				eqValues: config.enabled ? [...config.eqValues] : [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-				bass: config.enabled && config.bass,
-				compressor: config.enabled && config.compressor,
-				mono: config.enabled && config.mono,
-				pan: config.enabled ? config.pan : 0,
-				delay: config.enabled ? config.delay : 0,
-			},
-		});
 	} finally {
 		releaseContentRuntimeLease(tabId, documentId, 'restore', capability);
 	}
@@ -533,11 +514,6 @@ export function initializeContentRuntimeLoader(): void {
 				sendResponse(rpcFailure('forbidden', 'Bootstrap HELLO requires a document identity'));
 				return false;
 			}
-			const known = readyDocuments.get(runtimeKey(identity.tabId, identity.documentId));
-			sendResponse(rpcSuccess({
-				accepted: true as const,
-				runtimeRevision: known?.runtimeRevision ?? null,
-			}));
 			// rule: SCTRL-001/004 — the manifest registers the minimal ISOLATED
 			// bootstrap and the two closed MAIN-world bridges. This recovery path
 			// re-injects fullscreen V1 and exact-element page-media V2 idempotently on
@@ -551,19 +527,33 @@ export function initializeContentRuntimeLoader(): void {
 					+ `${error instanceof Error ? error.message : String(error)}`,
 				);
 			});
-			void Promise.allSettled([
-				beginDocumentInitialization(
-					identity.tabId,
-					identity.documentId,
-					sender.url ?? sender.tab?.url,
-				),
-				reconcileHotkeyRuntimeLease(identity.tabId, identity.documentId, sender.url ?? sender.tab?.url),
-			]).then((results) => {
+			const initialization = beginDocumentInitialization(
+				identity.tabId,
+				identity.documentId,
+				sender.url ?? sender.tab?.url,
+			);
+			const hotkeyProjection = reconcileHotkeyRuntimeLease(
+				identity.tabId,
+				identity.documentId,
+				sender.url ?? sender.tab?.url,
+			);
+			void Promise.allSettled([initialization, hotkeyProjection]).then((results) => {
 				for (const result of results) {
 					if (result.status === 'rejected') swLog.warn(`[Runtime] bootstrap projection failed: ${String(result.reason)}`);
 				}
 			});
-			return false;
+			void initialization.then(() => {
+				const known = readyDocuments.get(runtimeKey(identity.tabId, identity.documentId));
+				sendResponse(rpcSuccess({
+					accepted: true as const,
+					runtimeRevision: known?.runtimeRevision ?? null,
+				}));
+			}, (error) => sendResponse(rpcFailure(
+				'content_initialization_failed',
+				error instanceof Error ? error.message : String(error),
+				true,
+			)));
+			return true;
 		}
 
 		if (message.type === 'spectra.content.runtime.ensure') {
@@ -678,16 +668,70 @@ export function resetContentRuntimeLoaderForTests(): void {
 	initialized = false;
 }
 
-async function resolveDocumentRestoreConfig(
+function presetRestorePatch(config: AudioConfig): ControlSessionPatch {
+	if (isDefaultAudioConfig(config)) return {};
+	const volume = resolveAudioVolume(config);
+	return {
+		...(config.enabled ? {
+			volumeBase: volume.volumeBase,
+			mediaMuted: config.muted,
+			speed: config.speed,
+			preservePitch: config.preservePitch,
+		} : {}),
+		audioEnabled: config.enabled,
+		boost: config.enabled ? volume.boost : 1,
+		eqValues: config.enabled ? [...config.eqValues] : [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+		bass: config.enabled && config.bass,
+		compressor: config.enabled && config.compressor,
+		mono: config.enabled && config.mono,
+		pan: config.enabled ? config.pan : 0,
+		delay: config.enabled ? config.delay : 0,
+	};
+}
+
+function splitDocumentRestorePatch(patch: ControlSessionPatch): Array<{
+	requestedCoverage: 'active-target' | 'full';
+	patch: ControlPatch;
+}> {
+	const media: ControlPatch = {};
+	const video: ControlPatch = {};
+	const full: ControlPatch = {};
+	for (const [rawField, value] of Object.entries(patch)) {
+		const field = rawField as ControlField;
+		const policy = CONTROL_ALGORITHM_POLICIES[field];
+		const target = policy.scope === 'active-video'
+			? video
+			: policy.scope === 'document'
+				|| policy.orderedStrategies.some((strategy) => (
+					strategy === 'media-webaudio' || strategy === 'capture'
+				))
+				? full
+				: media;
+		(target as Record<string, unknown>)[field] = structuredClone(value);
+	}
+	return [
+		...(Object.keys(media).length > 0
+			? [{ requestedCoverage: 'active-target' as const, patch: media }]
+			: []),
+		...(Object.keys(video).length > 0
+			? [{ requestedCoverage: 'active-target' as const, patch: video }]
+			: []),
+		...(Object.keys(full).length > 0
+			? [{ requestedCoverage: 'full' as const, patch: full }]
+			: []),
+	];
+}
+
+async function resolveDocumentRestorePlan(
 	tabId: number,
 	documentId: string,
 	hostname: string,
 	origin: string,
-): Promise<{ config: AudioConfig; source: 'session' | 'preset' }> {
-	const sessionConfig = await storage.tabSession.rebind(tabId, { tabId, documentId, origin });
-	if (sessionConfig) return { config: sessionConfig, source: 'session' };
+): Promise<{ patch: ControlSessionPatch; source: 'session' | 'preset' }> {
+	const sessionPatch = await storage.tabSession.rebind(tabId, { tabId, documentId, origin });
+	if (sessionPatch) return { patch: sessionPatch, source: 'session' };
 	return {
-		config: await settingsRepository.resolveAudioConfig(hostname),
+		patch: presetRestorePatch(await settingsRepository.resolveAudioConfig(hostname)),
 		source: 'preset',
 	};
 }
@@ -696,5 +740,6 @@ export const runtimeLoaderTestApi = {
 	setDocumentRestore(restore: DocumentRestore): void {
 		restoreDocumentForInitialization = restore;
 	},
-	resolveDocumentRestoreConfig,
+	resolveDocumentRestorePlan,
+	splitDocumentRestorePatch,
 };

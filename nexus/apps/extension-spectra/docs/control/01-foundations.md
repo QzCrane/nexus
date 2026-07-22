@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-07-22
+last_reviewed: 2026-07-23
 ---
 
 # 01. Foundations (Product semantics & Control flow)
@@ -63,13 +63,24 @@ the same coordinator transaction; otherwise a page move to 50% would be
 misreported as `50 × previous Boost`.
 
 The tab-session record is a persistence projection of the last acknowledged
-audio control fields, not another actual-state authority. A same-origin full
-document replacement may rebind that projection to the new `documentId`; a
-cross-origin replacement retires it. Document initialization chooses this
-same-tab projection before site/global presets, then restores through the same
-coordinator. Explicit Popup, remote and shortcut intents wait for that one
-document-scoped decision, so a late preset replay cannot overwrite the user's
-first control on the new document.
+refresh-restorable fields, not another actual-state authority.
+`CONTROL_SESSION_FIELDS` exhaustively owns those 20 configuration fields:
+volume/mute/speed, processor settings, whole-media loop and reversible video
+effects. It stores actual values only and never fills an unknown field from a
+default. Because effective volume is one public value, its successful operation
+projects the complete acknowledged `volumeBase + boost` pair even when one
+component already matched and required no writer stage. Playing/current time, PiP/fullscreen, A/B source identity and
+visualizer subscriptions belong to the old document; tab mute/pin remain under
+Chrome's tab-lifetime ownership.
+
+A same-origin full document replacement rebinds that projection to the new
+`documentId`; a cross-origin replacement retires it. Document initialization
+chooses the same-tab projection before site/global presets and restores it
+through the coordinator without carrying an old media target. The existence of
+the session is authoritative even when every stored value is neutral/default;
+presets run only when no same-tab session exists. Explicit Popup, remote and
+shortcut intents wait for that one document-scoped decision, so a late preset
+replay cannot overwrite the user's first control on the new document.
 
 Color is also actual state, not a value threshold. Muted/zero is gray; native
 or Media WebAudio is blue; purple is permitted only when the matching

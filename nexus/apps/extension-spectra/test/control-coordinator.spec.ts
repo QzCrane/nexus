@@ -488,6 +488,44 @@ describe('authoritative control coordinator', () => {
 		expect((await controlCoordinatorTestApi.getSnapshot(7))?.fields.mediaMuted?.actual).toBe(false);
 	});
 
+	test('binds a targetless bootstrap observation to its sending document', async () => {
+		const harness = installHarness();
+		const ack = await controlCoordinatorTestApi.submit({
+			tabId: 7,
+			observationDocumentId: harness.documentId,
+			source: 'page',
+			requestedCoverage: 'active-target',
+			target: null,
+			patch: {
+				volumeBase: 64,
+				mediaMuted: false,
+				speed: 1.5,
+				preservePitch: false,
+			},
+			observedStrategies: {
+				volumeBase: 'dom-native',
+				mediaMuted: 'dom-native',
+				speed: 'dom-native',
+				preservePitch: 'dom-native',
+			},
+		});
+
+		expect(harness.contentIntent).toBeUndefined();
+		expect(ack.target).toBeNull();
+		expect(ack.fields.speed).toMatchObject({ actual: 1.5, controlled: false });
+		expect((await controlCoordinatorTestApi.getSnapshot(7))?.activeMedia).toBeNull();
+
+		await expect(controlCoordinatorTestApi.submit({
+			tabId: 7,
+			observationDocumentId: 'document-stale',
+			source: 'page',
+			requestedCoverage: 'active-target',
+			target: null,
+			patch: { volumeBase: 50, mediaMuted: false },
+			observedStrategies: { volumeBase: 'dom-native', mediaMuted: 'dom-native' },
+		})).rejects.toThrow('stale document');
+	});
+
 	test('absorbs reflected Chrome tab writes and publishes genuine browser-side changes', async () => {
 		const harness = installHarness();
 		const applied = await controlCoordinatorTestApi.submit(request({ tabPinned: true }));
@@ -615,6 +653,52 @@ describe('authoritative control coordinator', () => {
 			effectiveVolume: 80,
 			volumeBase: 80,
 			boost: 1,
+		});
+	});
+
+	test('persists the complete effective-volume pair when only Boost needs a writer', async () => {
+		const harness = installHarness();
+		const target = {
+			frameId: 0,
+			documentId: harness.documentId,
+			mediaId: 'media:effective-persistence',
+			sourceRevision: 0,
+			kind: 'audio' as const,
+		};
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') {
+				const acknowledgement = actualReadAck(
+					payload as ControlReadRequest,
+					target,
+				) as { ok: true; data: { patch: Record<string, unknown> } };
+				acknowledgement.data.patch.volumeBase = 100;
+				acknowledgement.data.patch.boost = 1;
+				return acknowledgement;
+			}
+			const intent = payload as ControlIntent;
+			return {
+				ok: true,
+				data: appliedPatchAck(intent, () => 'media-webaudio'),
+			};
+		};
+
+		const acknowledgement = await controlCoordinatorTestApi.submitOperation({
+			tabId: 7,
+			source: 'popup',
+			target,
+			operation: 'effective-volume',
+			payload: { operation: 'set', value: 110 },
+		});
+		expect(acknowledgement.result).toEqual({
+			effectiveVolume: 110,
+			volumeBase: 100,
+			boost: 1.1,
+		});
+
+		await controlCoordinatorTestApi.reset();
+		expect(harness.storage.get('tab_session_7')).toMatchObject({
+			version: 2,
+			patch: { volumeBase: 100, boost: 1.1 },
 		});
 	});
 

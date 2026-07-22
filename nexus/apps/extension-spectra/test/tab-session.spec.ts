@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import type { TabSessionIdentity } from '@nexus/contracts';
+import {
+	DEFAULT_AUDIO_CONFIG,
+	type ControlSessionPatch,
+	type TabSessionIdentity,
+} from '@nexus/contracts';
 
 const values: Record<string, unknown> = {};
 const setCalls: Array<Record<string, unknown>> = [];
@@ -24,11 +28,13 @@ Object.assign(globalThis, {
 });
 
 const {
-	flushTabSessionConfig,
-	getTabSessionConfig,
-	rebindTabSessionConfig,
-	removeTabSessionConfig,
-	setTabSessionConfig,
+	audioConfigToControlSessionPatch,
+	controlSessionPatchToAudioConfig,
+	flushTabControlSession,
+	getTabControlSession,
+	mergeTabControlSession,
+	rebindTabControlSession,
+	removeTabControlSession,
 } = await import('../../../packages/nexus-kernel/src/storage/tab-session');
 
 const firstDocument: TabSessionIdentity = {
@@ -46,71 +52,140 @@ const otherOriginDocument: TabSessionIdentity = {
 	origin: 'https://other.example',
 };
 
+const completeSession: ControlSessionPatch = {
+	audioEnabled: true,
+	volumeBase: 100,
+	boost: 2.4,
+	mediaMuted: true,
+	speed: 1.75,
+	preservePitch: false,
+	loop: true,
+	rotation: 90,
+	mirrored: true,
+	fill: true,
+	filterEnabled: true,
+	filter: {
+		brightness: 115,
+		contrast: 92,
+		saturate: 108,
+		grayscale: false,
+		invert: true,
+	},
+	dimEnabled: true,
+	dimOpacity: 0.55,
+	eqValues: [1, 0, -1, 2, -2, 3, -3, 4, -4, 5],
+	bass: true,
+	compressor: true,
+	mono: false,
+	pan: -0.25,
+	delay: 80,
+};
+
 beforeEach(async () => {
-	await removeTabSessionConfig(7);
+	await removeTabControlSession(7);
 	for (const key of Object.keys(values)) delete values[key];
 	setCalls.length = 0;
 });
 
-describe('document-bound tab sessions', () => {
+describe('document-bound acknowledged control sessions', () => {
 	test('does not leak settings into a different document', async () => {
-		await setTabSessionConfig(7, { volume: 250 }, firstDocument);
-		expect(await getTabSessionConfig(7, firstDocument)).toMatchObject({
-			volume: 250,
+		await mergeTabControlSession(7, { volumeBase: 100, boost: 2.5 }, firstDocument);
+		expect(await getTabControlSession(7, firstDocument)).toEqual({
 			volumeBase: 100,
 			boost: 2.5,
 		});
-		expect(await getTabSessionConfig(7, secondDocument)).toBeNull();
+		expect(await getTabControlSession(7, secondDocument)).toBeNull();
 
-		await setTabSessionConfig(7, { muted: true }, secondDocument);
-		const second = await getTabSessionConfig(7, secondDocument);
-		expect(second?.volume).toBe(100);
-		expect(second?.muted).toBe(true);
-		expect(await getTabSessionConfig(7, firstDocument)).toBeNull();
+		await mergeTabControlSession(7, { mediaMuted: true }, secondDocument);
+		expect(await getTabControlSession(7, secondDocument)).toEqual({ mediaMuted: true });
+		expect(await getTabControlSession(7, firstDocument)).toBeNull();
 	});
 
 	test('discards unidentifiable legacy tabId-only entries', async () => {
 		values.tab_session_7 = { volume: 400 };
-		expect(await getTabSessionConfig(7, firstDocument)).toBeNull();
+		expect(await getTabControlSession(7, firstDocument)).toBeNull();
 		expect(values.tab_session_7).toBeUndefined();
 	});
 
-	test('coalesces rapid session updates and exposes a lifecycle flush', async () => {
-		await setTabSessionConfig(7, { volume: 150 }, firstDocument);
-		await setTabSessionConfig(7, { volume: 175, muted: true }, firstDocument);
+	test('coalesces field updates and flushes one versioned projection', async () => {
+		await mergeTabControlSession(7, { volumeBase: 100, boost: 1.5 }, firstDocument);
+		await mergeTabControlSession(7, { boost: 1.75, mediaMuted: true, speed: 1.5 }, firstDocument);
 
 		expect(setCalls).toHaveLength(0);
-		expect(await getTabSessionConfig(7, firstDocument)).toMatchObject({
-			volume: 175,
+		expect(await getTabControlSession(7, firstDocument)).toEqual({
 			volumeBase: 100,
 			boost: 1.75,
-			muted: true,
+			mediaMuted: true,
+			speed: 1.5,
 		});
 
-		await flushTabSessionConfig(7);
+		await flushTabControlSession(7);
 		expect(setCalls).toHaveLength(1);
 		expect(values.tab_session_7).toMatchObject({
+			version: 2,
 			identity: firstDocument,
-			config: { volume: 175, muted: true },
+			patch: {
+				volumeBase: 100,
+				boost: 1.75,
+				mediaMuted: true,
+				speed: 1.5,
+			},
 		});
 	});
 
-	test('rebinds the acknowledged config across same-origin refreshes', async () => {
-		await setTabSessionConfig(7, { volume: 275, muted: true }, firstDocument);
-		expect(await rebindTabSessionConfig(7, secondDocument)).toMatchObject({
-			volume: 275,
-			muted: true,
-		});
-		expect(await getTabSessionConfig(7, firstDocument)).toBeNull();
-		expect(await getTabSessionConfig(7, secondDocument)).toMatchObject({
-			volume: 275,
-			muted: true,
-		});
+	test('rebinds every durable acknowledged field across a same-origin refresh', async () => {
+		await mergeTabControlSession(7, completeSession, firstDocument);
+		expect(await rebindTabControlSession(7, secondDocument)).toEqual(completeSession);
+		expect(await getTabControlSession(7, firstDocument)).toBeNull();
+		expect(await getTabControlSession(7, secondDocument)).toEqual(completeSession);
+	});
+
+	test('keeps an all-default acknowledged session instead of falling through to presets', async () => {
+		const defaults: ControlSessionPatch = {
+			volumeBase: 100,
+			boost: 1,
+			mediaMuted: false,
+			speed: 1,
+		};
+		await mergeTabControlSession(7, defaults, firstDocument);
+		expect(await rebindTabControlSession(7, secondDocument)).toEqual(defaults);
 	});
 
 	test('retires a tab session when navigation crosses origins', async () => {
-		await setTabSessionConfig(7, { volume: 275 }, firstDocument);
-		expect(await rebindTabSessionConfig(7, otherOriginDocument)).toBeNull();
-		expect(await getTabSessionConfig(7)).toBeNull();
+		await mergeTabControlSession(7, completeSession, firstDocument);
+		expect(await rebindTabControlSession(7, otherOriginDocument)).toBeNull();
+		expect(await getTabControlSession(7)).toBeNull();
+	});
+
+	test('migrates the previous acknowledged AudioConfig without losing volume or speed', async () => {
+		const legacyConfig = {
+			...DEFAULT_AUDIO_CONFIG,
+			volume: 275,
+			volumeBase: 100,
+			boost: 2.75,
+			muted: true,
+			speed: 1.8,
+		};
+		values.tab_session_7 = {
+			identity: firstDocument,
+			config: legacyConfig,
+			updatedAt: 123,
+		};
+
+		const migrated = await getTabControlSession(7, firstDocument);
+		expect(migrated).toEqual(audioConfigToControlSessionPatch(legacyConfig));
+		expect(controlSessionPatchToAudioConfig(migrated!)).toMatchObject({
+			volume: 275,
+			volumeBase: 100,
+			boost: 2.75,
+			muted: true,
+			speed: 1.8,
+		});
+		await flushTabControlSession(7);
+		expect(values.tab_session_7).toMatchObject({
+			version: 2,
+			identity: firstDocument,
+			patch: { volumeBase: 100, boost: 2.75, mediaMuted: true, speed: 1.8 },
+		});
 	});
 });

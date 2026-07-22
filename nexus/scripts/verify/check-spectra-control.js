@@ -1318,8 +1318,13 @@ function checkRetiredPaths(root) {
 	if (!controlArchitecture.includes('top-level document only (`frameId: 0`)')
 		|| !bootstrap.includes("document.querySelectorAll<HTMLMediaElement>('video,audio')")
 		|| !bootstrap.includes("request.fields.every((field) => field === 'pip' || field === 'fullscreen')")
+		|| !bootstrap.includes("document.addEventListener('volumechange', onNativeMediaChange, true)")
+		|| !bootstrap.includes("document.addEventListener('ratechange', onNativeMediaChange, true)")
+		|| !bootstrap.includes('observationInFlight')
+		|| !bootstrap.includes('pendingObservation')
+		|| !bootstrap.includes('state.disposeRuntime')
 		|| bootstrap.includes('new MutationObserver(')) {
-		error('SCTRL-001/SCTRL-018: top-level passive bootstrap readback must stay bounded and observer-free');
+		error('SCTRL-001/SCTRL-018: top-level bootstrap readback/observation must stay bounded and yield to the heavy runtime');
 	}
 
 	const shortcuts = fs.readFileSync(

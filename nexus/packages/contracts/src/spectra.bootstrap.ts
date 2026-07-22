@@ -3,7 +3,7 @@
 import type { ControlDirectField, MediaTarget } from './control.contracts.js';
 
 export const SPECTRA_PROTOCOL_VERSION = 2 as const;
-export const SPECTRA_CONTENT_BOOTSTRAP_REVISION = '1.0.0' as const;
+export const SPECTRA_CONTENT_BOOTSTRAP_REVISION = '1.1.0' as const;
 
 const REQUEST_KEYS = new Set([
 	'protocolVersion',

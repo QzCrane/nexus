@@ -1,9 +1,10 @@
 // goal: authoritative per-field intent ordering, actual ACK commit, and snapshot projection
 
 import {
-	DEFAULT_AUDIO_CONFIG,
 	audioSessionMatchesControlDocument,
 	CONTROL_ALGORITHM_POLICIES,
+	CONTROL_BOOTSTRAP_OBSERVATION_GROUPS,
+	CONTROL_SESSION_FIELDS,
 	SPECTRA_PROTOCOL_VERSION,
 	isControlApplyAck,
 	isControlOperationAck,
@@ -15,7 +16,6 @@ import {
 	rpcFailure,
 	rpcSuccess,
 	splitEffectiveVolume,
-	type AudioConfig,
 	type CaptureAdmission,
 	type ControlActualContext,
 	type ControlApplyAck,
@@ -31,6 +31,7 @@ import {
 	type ControlOperationRequest,
 	type ControlOperationResult,
 	type ControlPatch,
+	type ControlSessionPatch,
 	type ControlSnapshot,
 	type ControlSubmitRequest,
 	type ControlValues,
@@ -65,6 +66,7 @@ let initialized = false;
 type RoutedControlSubmitRequest = Omit<ControlSubmitRequest, 'tabId'> & {
 	tabId: number;
 	captureAdmission?: CaptureAdmission;
+	observationDocumentId?: string;
 };
 type ResolvedControlSubmitRequest = Omit<RoutedControlSubmitRequest, 'patch' | 'mutations'> & {
 	patch: ControlPatch;
@@ -90,6 +92,9 @@ const PAGE_OBSERVABLE_FIELDS = new Set<ControlField>([
 	'pip',
 	'fullscreen',
 ]);
+const BOOTSTRAP_PAGE_OBSERVABLE_FIELDS = new Set<ControlField>(
+	CONTROL_BOOTSTRAP_OBSERVATION_GROUPS.flat(),
+);
 
 const AUDIO_PROJECTION_FIELDS = new Set<ControlField>([
 	'audioEnabled',
@@ -593,9 +598,12 @@ function applyPageObservation(
 	if (intent.requestedCoverage !== 'active-target') {
 		throw new Error('A page observation cannot claim full-output coverage');
 	}
-	if (!intent.target) throw new Error('A page observation requires an identified media target');
 	if (!observedStrategies) throw new Error('A page observation requires native strategy provenance');
 	const patchKeys = Object.keys(intent.patch);
+	if (!intent.target
+		&& patchKeys.some((field) => !BOOTSTRAP_PAGE_OBSERVABLE_FIELDS.has(field as ControlField))) {
+		throw new Error('A targetless bootstrap observation contains a target-bound field');
+	}
 	const strategyKeys = Object.keys(observedStrategies);
 	if (patchKeys.length !== strategyKeys.length
 		|| patchKeys.some((field) => !Object.hasOwn(observedStrategies, field))) {
@@ -644,79 +652,42 @@ async function publishSnapshot(snapshot: ControlSnapshot): Promise<void> {
 	await chrome.runtime.sendMessage(event).catch(() => undefined);
 }
 
-function projectAudioConfig(
-	current: AudioConfig,
-	fields: ControlFieldStates,
-): AudioConfig {
-	const next: AudioConfig = {
-		...current,
-		eqValues: [...current.eqValues],
-	};
-	const actual = <K extends ControlField>(field: K): ControlValues[K] | undefined => {
+function projectControlSessionPatch(fields: ControlFieldStates): ControlSessionPatch {
+	const patch: ControlSessionPatch = {};
+	for (const field of CONTROL_SESSION_FIELDS) {
 		const state = fields[field];
-		return state?.phase === 'applied' && state.actual !== null
-			? state.actual as ControlValues[K]
-			: undefined;
-	};
-	const enabled = actual('audioEnabled');
-	const volumeBase = actual('volumeBase');
-	const boost = actual('boost');
-	const muted = actual('mediaMuted');
-	const speed = actual('speed');
-	const preservePitch = actual('preservePitch');
-	const eqValues = actual('eqValues');
-	const bass = actual('bass');
-	const compressor = actual('compressor');
-	const mono = actual('mono');
-	const pan = actual('pan');
-	const delay = actual('delay');
-	if (typeof enabled === 'boolean') next.enabled = enabled;
-	if (typeof volumeBase === 'number') next.volumeBase = volumeBase;
-	if (typeof boost === 'number') next.boost = boost;
-	if (typeof muted === 'boolean') next.muted = muted;
-	if (typeof speed === 'number') next.speed = speed;
-	if (typeof preservePitch === 'boolean') next.preservePitch = preservePitch;
-	if (Array.isArray(eqValues)) next.eqValues = [...eqValues];
-	if (typeof bass === 'boolean') next.bass = bass;
-	if (typeof compressor === 'boolean') next.compressor = compressor;
-	if (typeof mono === 'boolean') next.mono = mono;
-	if (typeof pan === 'number') next.pan = pan;
-	if (typeof delay === 'number') next.delay = delay;
-	const volume = resolveAudioVolume({
-		volume: next.volume,
-		volumeBase: next.volumeBase,
-		boost: next.boost,
-	});
-	next.volumeBase = volume.volumeBase;
-	next.boost = volume.boost;
-	next.volume = volume.effectiveVolume;
-	return next;
+		if (state?.phase !== 'applied' || state.actual === null) continue;
+		(patch as Record<string, unknown>)[field] = structuredClone(state.actual);
+	}
+	return patch;
 }
 
 async function persistControlProjection(
 	snapshot: ControlSnapshot,
 	changedFields: ControlFieldStates,
 	userInteracted: boolean,
+	acknowledgedSessionPatch: ControlSessionPatch = {},
 ): Promise<void> {
-	const projectedFields = Object.fromEntries(
-		Object.entries(changedFields).filter(([field]) => AUDIO_PROJECTION_FIELDS.has(field as ControlField)),
-	) as ControlFieldStates;
-	if (Object.keys(projectedFields).length === 0) return;
+	const sessionPatch = {
+		...projectControlSessionPatch(changedFields),
+		...structuredClone(acknowledgedSessionPatch),
+	};
+	if (Object.keys(sessionPatch).length === 0) return;
 	const identity = {
 		tabId: snapshot.tabId,
 		documentId: snapshot.documentId,
 		origin: snapshot.origin,
 	};
-	const current = await storage.tabSession.get(snapshot.tabId, identity)
-		.catch(() => null) ?? { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] };
-	const projected = projectAudioConfig(current, projectedFields);
-	await storage.tabSession.set(snapshot.tabId, projected, identity);
+	await storage.tabSession.merge(snapshot.tabId, sessionPatch, identity);
+	if (!Object.keys(sessionPatch).some((field) => AUDIO_PROJECTION_FIELDS.has(field as ControlField))) return;
+	const completeSession = await storage.tabSession.get(snapshot.tabId, identity)
+		.catch(() => null) ?? sessionPatch;
 	const session = await getAudioSession(snapshot.tabId).catch(() => null);
 	const isCaptureActive = audioSessionMatchesControlDocument(session, snapshot)
 		&& isActiveCaptureLifecycle(session);
 	await updateBadgeFromControlProjection(
 		snapshot,
-		projected,
+		completeSession,
 		isCaptureActive,
 		userInteracted,
 	);
@@ -731,6 +702,11 @@ interface PreparedControlIntent {
 	fields: ControlFieldStates;
 }
 
+interface CommitControlProjection {
+	activeVideo?: ControlSnapshot['activeVideo'];
+	acknowledgedSessionPatch?: ControlSessionPatch;
+}
+
 async function prepareIntent(
 	request: RoutedControlSubmitRequest,
 	contextSnapshot?: ControlSnapshot,
@@ -741,6 +717,10 @@ async function prepareIntent(
 	}
 	if (request.target && request.target.documentId !== snapshot.documentId) {
 		throw new Error('The selected media target belongs to a stale document');
+	}
+	if (request.source === 'page' && request.target === null
+		&& request.observationDocumentId !== snapshot.documentId) {
+		throw new Error('The bootstrap observation belongs to a stale document');
 	}
 
 	const resolvedRequest = await resolveSubmitRequest(snapshot, request);
@@ -875,9 +855,7 @@ async function commitControlFields(
 	fields: ControlFieldStates,
 	activeMedia: ControlSnapshot['activeMedia'],
 	source: ControlIntent['source'],
-	activeVideo: ControlSnapshot['activeVideo'] = activeMedia?.kind === 'video'
-		? activeMedia
-		: baseline.activeVideo,
+	projection: CommitControlProjection = {},
 ): Promise<ControlSnapshot> {
 	const current = await getOrCreateSnapshot(baseline.tabId);
 	if (current.documentId !== baseline.documentId
@@ -886,6 +864,11 @@ async function commitControlFields(
 		throw new Error('Control transaction lost its document or revision before commit');
 	}
 	const revision = baseline.revision + 1;
+	const activeVideo = Object.hasOwn(projection, 'activeVideo')
+		? projection.activeVideo ?? null
+		: activeMedia?.kind === 'video'
+			? activeMedia
+			: baseline.activeVideo;
 	const committed: ControlSnapshot = {
 		...current,
 		revision,
@@ -897,6 +880,7 @@ async function commitControlFields(
 		committed,
 		fields,
 		source !== 'page' && source !== 'restore' && source !== 'system',
+		projection.acknowledgedSessionPatch,
 	);
 	if (source !== 'page' && source !== 'restore' && source !== 'system') {
 		await markBadgeUsedForTab(committed.tabId);
@@ -949,7 +933,7 @@ async function executeIntent(request: RoutedControlSubmitRequest): Promise<Contr
 		fields,
 		activeMedia,
 		intent.source,
-		activeVideo,
+		{ activeVideo },
 	);
 	return {
 		intentId: intent.intentId,
@@ -1246,7 +1230,7 @@ async function commitContentOperation(
 		acknowledgement.fields,
 		projection.activeMedia,
 		source,
-		projection.activeVideo,
+		{ activeVideo: projection.activeVideo },
 	);
 	if (committed.revision !== intent.baseRevision + 1) {
 		throw new Error('Control operation committed an unexpected revision');
@@ -1317,7 +1301,7 @@ async function handleSourceReleased(tabId: number, target: import('@nexus/contra
 		fields,
 		ownsActiveSource ? null : snapshot.activeMedia,
 		'system',
-		ownsActiveVideo ? null : snapshot.activeVideo,
+		{ activeVideo: ownsActiveVideo ? null : snapshot.activeVideo },
 	);
 }
 
@@ -1530,6 +1514,15 @@ async function executeFieldOperation(
 				fields,
 				target,
 				request.source,
+				{
+					// Effective volume is one public value backed by two actual
+					// fields. Persist the complete read-back pair even when one
+					// component was already correct and needed no writer stage.
+					acknowledgedSessionPatch: {
+						volumeBase: actualVolumeBase,
+						boost: actualBoost,
+					},
+				},
 			);
 			return {
 				operationId,
@@ -1910,9 +1903,10 @@ function submitSerialized(
 	request: RoutedControlSubmitRequest,
 	extensionInvoked = false,
 ): Promise<ControlApplyAck> {
-	const initialize = request.source === 'restore' || request.source === 'page'
+	const initialize = request.source === 'restore'
+		|| request.source === 'page' && request.target !== null
 		? Promise.resolve()
-		: awaitDocumentInitialization(request.tabId);
+		: awaitDocumentInitialization(request.tabId, request.observationDocumentId);
 	return initialize.then(() => serialized(request.tabId, async () => {
 		const unadmittedRequest = { ...request };
 		Reflect.deleteProperty(unadmittedRequest, 'captureAdmission');
@@ -2109,10 +2103,19 @@ export function initializeControlCoordinator(): void {
 			sendResponse(rpcFailure('invalid_request', 'Control intent requires a target tab'));
 			return false;
 		}
-		if (message.type === 'spectra.control.intent.submit'
-			&& message.payload.source === 'page'
-			&& sender.tab?.id !== tabId) {
-			sendResponse(rpcFailure('forbidden', 'Page intent tab does not match its sender'));
+		const pageObservation = message.type === 'spectra.control.intent.submit'
+			&& message.payload.source === 'page';
+		if (pageObservation && (
+			sender.tab?.id !== tabId
+			|| sender.frameId !== 0
+			|| !sender.documentId
+			|| message.payload.target !== null
+				&& message.payload.target.documentId !== sender.documentId
+		)) {
+			sendResponse(rpcFailure(
+				'forbidden',
+				'Page observation identity does not match its top-level sender',
+			));
 			return false;
 		}
 		const extensionInvoked = message.payload.source === 'popup'
@@ -2122,7 +2125,13 @@ export function initializeControlCoordinator(): void {
 				{ ...message.payload, tabId } as RoutedControlOperationRequest,
 				extensionInvoked,
 			)
-			: submitSerialized({ ...message.payload, tabId }, extensionInvoked);
+			: submitSerialized({
+				...message.payload,
+				tabId,
+				...(pageObservation && message.payload.target === null
+					? { observationDocumentId: sender.documentId }
+					: {}),
+			}, extensionInvoked);
 		void operation.then(
 			(ack) => sendResponse(rpcSuccess(ack)),
 			(error) => sendResponse(rpcFailure(

@@ -4,6 +4,7 @@ import {
 	SPECTRA_CONTENT_RUNTIME_REVISION,
 	SPECTRA_PROTOCOL_VERSION,
 	DEFAULT_AUDIO_CONFIG,
+	DEFAULT_HOTKEY_SETTINGS,
 	type ContentRuntimeSourceOwnership,
 	type HotkeySettings,
 } from '@nexus/contracts';
@@ -62,15 +63,33 @@ function installChromeHarness(
 	};
 	const historyUpdated = new ChromeEvent();
 	const fragmentUpdated = new ChromeEvent();
+	const storageChanged = new ChromeEvent();
 	const documentId = 'document-7';
-	if (hotkeySettings) {
-		settingsRepository.getSnapshot = async () => ({ hotkeySettings } as never);
-	}
+	settingsRepository.getSnapshot = async () => ({
+		hotkeySettings: hotkeySettings ?? DEFAULT_HOTKEY_SETTINGS,
+	} as never);
+	settingsRepository.resolveAudioConfig = async () => ({
+		...DEFAULT_AUDIO_CONFIG,
+		eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
+	});
 
 	const chromeMock = {
 		runtime: {
 			id: 'spectra-test',
 			onMessage: runtimeMessages,
+		},
+		storage: {
+			local: {
+				get: async () => ({}),
+				set: async () => undefined,
+				remove: async () => undefined,
+			},
+			session: {
+				get: async () => ({}),
+				set: async () => undefined,
+				remove: async () => undefined,
+			},
+			onChanged: storageChanged,
 		},
 		webNavigation: {
 			getFrame: async () => ({ documentId, url: 'https://media.example/watch' }),
@@ -150,8 +169,19 @@ afterEach(() => {
 
 describe('document-scoped content runtime loader', () => {
 	test('restores a same-origin tab session before consulting site or global presets', async () => {
-		const sessionConfig = { ...DEFAULT_AUDIO_CONFIG, volume: 275, muted: true };
-		const presetConfig = { ...DEFAULT_AUDIO_CONFIG, volume: 140 };
+		const sessionPatch = {
+			volumeBase: 100,
+			boost: 2.75,
+			mediaMuted: true,
+			speed: 1.75,
+			rotation: 90 as const,
+		};
+		const presetConfig = {
+			...DEFAULT_AUDIO_CONFIG,
+			volume: 140,
+			volumeBase: 100,
+			boost: 1.4,
+		};
 		let presetReads = 0;
 		storage.tabSession.rebind = async (tabId, identity) => {
 			expect(tabId).toBe(7);
@@ -160,29 +190,92 @@ describe('document-scoped content runtime loader', () => {
 				documentId: 'document-7',
 				origin: 'https://media.example',
 			});
-			return sessionConfig;
+			return sessionPatch;
 		};
 		settingsRepository.resolveAudioConfig = async () => {
 			presetReads += 1;
 			return presetConfig;
 		};
 
-		expect(await runtimeLoaderTestApi.resolveDocumentRestoreConfig(
+		expect(await runtimeLoaderTestApi.resolveDocumentRestorePlan(
 			7,
 			'document-7',
 			'media.example',
 			'https://media.example',
-		)).toEqual({ config: sessionConfig, source: 'session' });
+		)).toEqual({ patch: sessionPatch, source: 'session' });
 		expect(presetReads).toBe(0);
 
 		storage.tabSession.rebind = async () => null;
-		expect(await runtimeLoaderTestApi.resolveDocumentRestoreConfig(
+		expect(await runtimeLoaderTestApi.resolveDocumentRestorePlan(
 			7,
 			'document-8',
 			'other.example',
 			'https://other.example',
-		)).toEqual({ config: presetConfig, source: 'preset' });
+		)).toEqual({
+			source: 'preset',
+			patch: {
+				volumeBase: 100,
+				mediaMuted: false,
+				speed: 1,
+				preservePitch: true,
+				audioEnabled: true,
+				boost: 1.4,
+				eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+				bass: false,
+				compressor: false,
+				mono: false,
+				pan: 0,
+				delay: 0,
+			},
+		});
 		expect(presetReads).toBe(1);
+	});
+
+	test('treats an acknowledged default-valued session as authoritative over presets', async () => {
+		const sessionPatch = {
+			volumeBase: 100,
+			boost: 1,
+			mediaMuted: false,
+			speed: 1,
+		};
+		let presetReads = 0;
+		storage.tabSession.rebind = async () => sessionPatch;
+		settingsRepository.resolveAudioConfig = async () => {
+			presetReads += 1;
+			return { ...DEFAULT_AUDIO_CONFIG, speed: 2 };
+		};
+
+		expect(await runtimeLoaderTestApi.resolveDocumentRestorePlan(
+			7,
+			'document-7',
+			'media.example',
+			'https://media.example',
+		)).toEqual({ patch: sessionPatch, source: 'session' });
+		expect(presetReads).toBe(0);
+	});
+
+	test('splits media, video, and processor restores so no stale target is reused', () => {
+		expect(runtimeLoaderTestApi.splitDocumentRestorePatch({
+			volumeBase: 64,
+			speed: 1.5,
+			rotation: 90,
+			filterEnabled: true,
+			boost: 2,
+			bass: true,
+		})).toEqual([
+			{
+				requestedCoverage: 'active-target',
+				patch: { volumeBase: 64, speed: 1.5 },
+			},
+			{
+				requestedCoverage: 'active-target',
+				patch: { rotation: 90, filterEnabled: true },
+			},
+			{
+				requestedCoverage: 'full',
+				patch: { boost: 2, bass: true },
+			},
+		]);
 	});
 
 	test('shares one restore barrier between bootstrap and first explicit control', async () => {
@@ -195,8 +288,10 @@ describe('document-scoped content runtime loader', () => {
 			await restorePending;
 		});
 
+		let helloResponse: unknown;
+		let helloReturn: unknown;
 		for (const listener of harness.runtimeMessages.listeners) {
-			(listener as (
+			helloReturn = (listener as (
 				message: unknown,
 				sender: chrome.runtime.MessageSender,
 				sendResponse: (response: unknown) => void,
@@ -210,8 +305,9 @@ describe('document-scoped content runtime loader', () => {
 				tab: { id: 7, url: 'https://media.example/watch' } as chrome.tabs.Tab,
 				documentId: 'document-7',
 				url: 'https://media.example/watch',
-			}, () => undefined);
+			}, (response) => { helloResponse = response; });
 		}
+		expect(helloReturn).toBe(true);
 		const firstControl = awaitDocumentInitialization(7, 'document-7');
 		const secondControl = awaitDocumentInitialization(7, 'document-7');
 		await Promise.resolve();
@@ -220,10 +316,16 @@ describe('document-scoped content runtime loader', () => {
 		void firstControl.then(() => { settled = true; });
 		await Promise.resolve();
 		expect(settled).toBe(false);
+		expect(helloResponse).toBeUndefined();
 
 		releaseRestore();
 		await Promise.all([firstControl, secondControl]);
+		await Promise.resolve();
 		expect(restoreCount).toBe(1);
+		expect(helloResponse).toMatchObject({
+			ok: true,
+			data: { accepted: true, runtimeRevision: SPECTRA_CONTENT_RUNTIME_REVISION },
+		});
 	});
 
 	test('coalesces concurrent ensure calls into one probe, injection and READY handshake', async () => {
