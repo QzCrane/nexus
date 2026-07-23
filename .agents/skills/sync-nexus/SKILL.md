@@ -19,7 +19,7 @@ Use when generating the approved SPECTRA or HALO public repository from the priv
 
 ## Critical behavior
 
-`nexus/scripts/sync-public.cjs` is destructive to the destination working tree: it removes everything except the destination's `.git` and `node_modules`, copies only committed files from the private source `HEAD`, projects the application README/privacy files, applies explicit root/application script and build-module allowlists, normalizes package metadata to `bun@1.3.14`, installs, builds, removes generated artifacts, and creates at most one generated commit. Ignored, untracked, staged, and unstaged files are never public inputs. Repository-root automation and application test/release scripts are excluded while application-local build modules remain available to the generated application.
+`nexus/scripts/sync-public.cjs` is destructive to the destination working tree: it removes everything except the destination's `.git` and `node_modules`, copies only committed files from the private source `HEAD`, projects the application README/privacy files, applies explicit root/application script and build-module allowlists, normalizes package metadata to `bun@1.3.14`, installs, builds, removes generated outputs together with their incremental `.tsbuildinfo` state, and creates at most one generated commit. Ignored, untracked, staged, and unstaged files are never public inputs. Repository-root automation and application test/release scripts are excluded while application-local build modules remain available to the generated application.
 
 It preserves the destination repository's existing Git history. It does **not** transplant the private repository's commit graph. It never pushes.
 

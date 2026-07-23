@@ -6,6 +6,7 @@ const require = createRequire(import.meta.url);
 const {
 	APP_CONFIGS,
 	BASE_EXCLUDES,
+	isIncrementalBuildState,
 	matchesPattern,
 	parseArguments,
 	parseDivergence,
@@ -19,6 +20,7 @@ const {
 		publicApplicationScriptFiles: string[];
 	}>;
 	BASE_EXCLUDES: string[];
+	isIncrementalBuildState(filePath: string): boolean;
 	matchesPattern(relativePath: string, pattern: string): boolean;
 	parseArguments(args: string[]): { targetApp: string; amend: boolean };
 	parseDivergence(output: string): { behind: number; ahead: number };
@@ -94,6 +96,9 @@ describe('public repository source projection', () => {
 		]) {
 			expect(shouldExcludeWithPatterns(relativePath, patterns), relativePath).toBe(true);
 		}
+		expect(isIncrementalBuildState('packages/contracts/tsconfig.tsbuildinfo')).toBe(true);
+		expect(isIncrementalBuildState('packages/contracts/typecheck.tsbuildinfo')).toBe(true);
+		expect(isIncrementalBuildState('packages/contracts/tsconfig.json')).toBe(false);
 	});
 
 	test('projects only executable public package scripts', () => {

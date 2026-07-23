@@ -399,6 +399,22 @@ function patchPublicPackage() {
   writeJson(applicationPackagePath, applicationPackageJson);
 }
 
+function isIncrementalBuildState(filePath) {
+  return path.basename(filePath).endsWith('.tsbuildinfo');
+}
+
+function cleanIncrementalBuildState(directory) {
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    if (entry.name === '.git' || entry.name === 'node_modules') continue;
+    const target = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      cleanIncrementalBuildState(target);
+    } else if (entry.isFile() && isIncrementalBuildState(target)) {
+      fs.rmSync(target, { force: true });
+    }
+  }
+}
+
 function cleanGeneratedArtifacts() {
   runOptional('bunx', ['turbo', 'daemon', 'stop'], {
     cwd: destinationRoot,
@@ -409,6 +425,7 @@ function cleanGeneratedArtifacts() {
     const target = path.join(destinationRoot, relativePath);
     if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
   }
+  cleanIncrementalBuildState(destinationRoot);
 }
 
 function parseDivergence(output) {
@@ -526,6 +543,7 @@ module.exports = {
   APP_CONFIGS,
   BASE_EXCLUDES,
   matchesPattern,
+  isIncrementalBuildState,
   parseArguments,
   parseDivergence,
   selectObjectKeys,
