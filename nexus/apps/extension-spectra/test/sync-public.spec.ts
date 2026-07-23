@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -120,5 +121,33 @@ describe('public repository source projection', () => {
 		expect(() => validateDestinationDivergence({ behind: 0, ahead: 0 }, true)).toThrow();
 		expect(() => validateDestinationDivergence({ behind: 0, ahead: 1 }, false)).toThrow();
 		expect(() => validateDestinationDivergence({ behind: 1, ahead: 1 }, true)).toThrow();
+	});
+
+	test('isolates composite typecheck state from parallel dependency builds', () => {
+		const turbo = JSON.parse(
+			readFileSync(new URL('../../../turbo.json', import.meta.url), 'utf8'),
+		) as {
+			tasks: {
+				typecheck: {
+					dependsOn: string[];
+				};
+			};
+		};
+		expect(turbo.tasks.typecheck.dependsOn).toEqual(['^build', '^typecheck']);
+		for (const relativePath of [
+			'../../../packages/contracts/package.json',
+			'../../../packages/nexus-kernel/package.json',
+		]) {
+			const packageJson = JSON.parse(
+				readFileSync(new URL(relativePath, import.meta.url), 'utf8'),
+			) as {
+				scripts: {
+					typecheck: string;
+				};
+			};
+			expect(packageJson.scripts.typecheck).toContain(
+				'--tsBuildInfoFile typecheck.tsbuildinfo',
+			);
+		}
 	});
 });
