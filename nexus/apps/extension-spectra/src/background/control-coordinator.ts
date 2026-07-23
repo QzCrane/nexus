@@ -43,6 +43,7 @@ import { sendSpectraTabRequest } from './spectra-tab-client';
 import { storage } from './state';
 import {
 	markBadgeUsedForTab,
+	restoreBadgeUsageForTab,
 	updateBadgeFromControlProjection,
 } from './handlers/badge';
 import { executeUserScriptInTab } from './handlers/user-scripts';
@@ -690,6 +691,33 @@ async function persistControlProjection(
 		completeSession,
 		isCaptureActive,
 		userInteracted,
+	);
+}
+
+// Chrome clears a tab-scoped Action projection during full navigation. Rebuild
+// it only after the document initialization barrier has restored the current
+// acknowledged session; the badge remains a projection, never another owner.
+async function reprojectBadgeForCurrentDocument(tabId: number): Promise<void> {
+	const snapshot = await getSnapshot(tabId);
+	if (!snapshot) {
+		await restoreBadgeUsageForTab(tabId);
+		return;
+	}
+	const identity = {
+		tabId: snapshot.tabId,
+		documentId: snapshot.documentId,
+		origin: snapshot.origin,
+	};
+	const completeSession = await storage.tabSession.get(tabId, identity)
+		.catch(() => null) ?? projectControlSessionPatch(snapshot.fields);
+	const session = await getAudioSession(tabId).catch(() => null);
+	const isCaptureActive = audioSessionMatchesControlDocument(session, snapshot)
+		&& isActiveCaptureLifecycle(session);
+	await updateBadgeFromControlProjection(
+		snapshot,
+		completeSession,
+		isCaptureActive,
+		false,
 	);
 }
 
@@ -2157,6 +2185,13 @@ export function initializeControlCoordinator(): void {
 				swLog.debug(`[Control] Ignored tab-state observation without a controllable document: ${String(error)}`);
 			});
 		}
+		if (changeInfo.status === 'complete') {
+			void awaitDocumentInitialization(tabId)
+				.then(() => serialized(tabId, () => reprojectBadgeForCurrentDocument(tabId)))
+				.catch((error: unknown) => {
+					swLog.debug(`[Control] Badge navigation projection settled at browser boundary: ${String(error)}`);
+				});
+		}
 	});
 	chrome.webNavigation.onCommitted.addListener((details) => {
 		if (details.frameId === 0) {
@@ -2197,6 +2232,7 @@ export const controlCoordinatorTestApi = {
 	sourceReleased: handleSourceReleased,
 	observeChromeTabState,
 	invalidateNavigation,
+	reprojectBadgeForCurrentDocument,
 	async reset(): Promise<void> {
 		await Promise.allSettled([...invalidations.values()]);
 		await serialized.drain();

@@ -702,6 +702,42 @@ describe('authoritative control coordinator', () => {
 		});
 	});
 
+	test('reprojects sticky acknowledged volume after Chrome clears the badge on navigation', async () => {
+		const harness = installHarness();
+		let badgeText = '';
+		Object.assign(chrome.action, {
+			getBadgeText: async () => badgeText,
+			setBadgeText: async ({ text }: { text: string }) => { badgeText = text; },
+			setBadgeBackgroundColor: async () => undefined,
+			setBadgeTextColor: async () => undefined,
+		});
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') {
+				return actualReadAck(payload as ControlReadRequest, null);
+			}
+			if (type !== 'spectra.control.intent.execute') throw new Error(`Unexpected ${type}`);
+			const intent = payload as ControlIntent;
+			return {
+				ok: true,
+				data: appliedPatchAck(intent, (field) => field === 'boost' ? 'media-webaudio' : 'dom-native'),
+			};
+		};
+
+		await controlCoordinatorTestApi.submit(request({ volumeBase: 63 }));
+		await controlCoordinatorTestApi.submit({
+			tabId: 7,
+			source: 'popup',
+			requestedCoverage: 'full',
+			target: null,
+			patch: { boost: 1 },
+		});
+		expect(badgeText).toBe('63');
+
+		badgeText = '';
+		await controlCoordinatorTestApi.reprojectBadgeForCurrentDocument(7);
+		expect(badgeText).toBe('63');
+	});
+
 	test('turns an acknowledged repeated effective volume into zero Content IPC and zero storage writes', async () => {
 		const harness = installHarness();
 		const target = {

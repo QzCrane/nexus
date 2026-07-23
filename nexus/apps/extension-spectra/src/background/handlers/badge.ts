@@ -117,6 +117,13 @@ export async function markBadgeUsedForTab(tabId: number): Promise<void> {
 	}
 }
 
+// Chrome may clear the visible per-tab Action projection on navigation even
+// though the monotonic usage fact remains valid. Restore only an existing fact;
+// this function never turns a passive page observation into extension usage.
+export async function restoreBadgeUsageForTab(tabId: number): Promise<void> {
+	if (await hasBadgeUsage(tabId)) await markBadgeUsedForTab(tabId);
+}
+
 export async function updateBadgeForTab(tabId: number, update: BadgeUpdate): Promise<void> {
 	return applyBadgeForTab(tabId, {
 		...update,

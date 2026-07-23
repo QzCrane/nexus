@@ -171,7 +171,8 @@ const DEFAULT_AUDIO_CONFIG: AudioConfig = {
 	preservePitch: true,
 };
 
-const SILENT_WAV_DATA_URL = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+const SILENT_WAV_DATA_URL =
+	'data:audio/wav;base64,UklGRiwAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQgAAACAgICAgICAgA==';
 
 function collectPageErrors(page: Page, errors: string[]): void {
 	page.on('pageerror', (error) => errors.push(error.stack ?? error.message));
@@ -755,6 +756,13 @@ async function closeActionPopup(popup: Page): Promise<void> {
 		1_000,
 	).catch(() => undefined);
 	if (!popup.isClosed()) await popup.close().catch(() => undefined);
+	const popupUrl = `chrome-extension://${extensionId}/popup.html`;
+	await eventually(
+		async () => browser.targets().some((target) => target.url() === popupUrl),
+		(present) => !present,
+		'action popup target retirement',
+		2_000,
+	).catch(() => undefined);
 }
 
 async function submitEffectiveVolume(tabId: number, value: number): Promise<void> {
@@ -943,6 +951,9 @@ async function configureRuntime(
 }
 
 async function selectSafeWebAudioFixture(): Promise<void> {
+	// Chromium may defer a background <video> resource selection indefinitely.
+	// Make the fixture active before waiting for the exact admission evidence.
+	await fixturePage.bringToFront();
 	await fixturePage.evaluate((source) => {
 		const media = document.querySelector<HTMLMediaElement>('#v');
 		if (!media) throw new Error('WebAudio smoke fixture media is missing');
@@ -950,13 +961,24 @@ async function selectSafeWebAudioFixture(): Promise<void> {
 		media.src = source;
 		media.load();
 	}, SILENT_WAV_DATA_URL);
-	await fixturePage.waitForFunction(
-		(source) => {
+	await eventually(
+		() => fixturePage.evaluate((source) => {
 			const media = document.querySelector<HTMLMediaElement>('#v');
-			return media?.src === source || media?.currentSrc === source;
-		},
-		{ timeout: 5_000 },
-		SILENT_WAV_DATA_URL,
+			return {
+				selected: media?.src === source || media?.currentSrc === source,
+				currentSrc: media?.currentSrc ?? null,
+				readyState: media?.readyState ?? -1,
+				networkState: media?.networkState ?? -1,
+				error: media?.error
+					? { code: media.error.code, message: media.error.message }
+					: null,
+			};
+		}, SILENT_WAV_DATA_URL),
+		(state) => state.selected
+			&& state.readyState >= 1
+			&& state.error === null,
+		'safe WebAudio fixture resource selection',
+		5_000,
 	);
 }
 
@@ -1597,7 +1619,10 @@ describe('SPECTRA built extension smoke', () => {
 	});
 
 	test('routes the visible-tab v2 request to its sole background owner', async () => {
-		const client = await openExtensionClient();
+		// This is a background routing probe, not a Popup lifecycle test. Using
+		// Options avoids acquiring a transient active-tab runtime before the next
+		// test verifies that an untouched page remains bootstrap-only.
+		const client = await openExtensionClient('options.html');
 		try {
 			const response = await client.evaluate(() => chrome.runtime.sendMessage({
 				protocolVersion: 2,
@@ -1999,6 +2024,11 @@ describe('SPECTRA built extension smoke', () => {
 	}, 35_000);
 
 	test('restores acknowledged volume, speed, and sticky badge across a same-origin refresh', async () => {
+		// The preceding SPA test intentionally leaves a history-only /spa/media
+		// URL that this fixture server does not serve on a real reload. Establish
+		// the canonical document explicitly so this test owns its navigation.
+		await fixturePage.goto(fixtureUrl, { waitUntil: 'domcontentloaded' });
+		await waitForContentBootstrapStatus(fixtureUrl);
 		await fixturePage.bringToFront();
 		const tabId = await getTabId(fixturePage.url());
 		try {
@@ -2044,7 +2074,12 @@ describe('SPECTRA built extension smoke', () => {
 				'post-refresh restored media state',
 				10_000,
 			);
-			expect(await readBadgeText(tabId)).toBe('63');
+			await eventually(
+				() => readBadgeText(tabId),
+				(text) => text === '63',
+				'post-refresh sticky badge projection',
+				5_000,
+			);
 			const snapshot = await sendFromActionPopup<{
 				ok: boolean;
 				data?: { fields?: Record<string, { actual?: unknown }> };

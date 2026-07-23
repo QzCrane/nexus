@@ -83,7 +83,10 @@ site/global presets. A default-valued session still suppresses presets because
 its existence records the current tab's acknowledged decision.
 
 A separate monotonic per-tab usage record owns Action-badge stickiness. It and
-the last truthful Action projection survive document and worker replacement;
+the last acknowledged control state survive document and worker replacement;
+after Chrome clears the tab-scoped visible badge during full navigation,
+Background waits for current-document initialization and reprojects it at the
+completed-tab lifecycle boundary;
 the restored control ACK refreshes the numeric/color projection, while tab
 close is the sole retirement boundary.
 
