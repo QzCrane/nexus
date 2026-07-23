@@ -19,7 +19,7 @@ Use when generating the approved SPECTRA or HALO public repository from the priv
 
 ## Critical behavior
 
-`nexus/scripts/sync-public.cjs` is destructive to the destination working tree: it removes everything except the destination's `.git` and `node_modules`, copies the filtered private workspace, projects the application README/privacy files, normalizes package metadata to `bun@1.3.14`, installs, builds, removes generated artifacts, and creates at most one generated commit.
+`nexus/scripts/sync-public.cjs` is destructive to the destination working tree: it removes everything except the destination's `.git` and `node_modules`, copies only committed files from the private source `HEAD`, projects the application README/privacy files, applies explicit root/application script and build-module allowlists, normalizes package metadata to `bun@1.3.14`, installs, builds, removes generated artifacts, and creates at most one generated commit. Ignored, untracked, staged, and unstaged files are never public inputs. Repository-root automation and application test/release scripts are excluded while application-local build modules remain available to the generated application.
 
 It preserves the destination repository's existing Git history. It does **not** transplant the private repository's commit graph. It never pushes.
 
@@ -57,6 +57,14 @@ bun run sync-halo
 ```
 
 The script fails when the source workspace does not declare `packageManager: bun@1.3.14`, when the generated repository lacks `package.json`, when install/build fails, or when the final generated package manager drifts from Bun 1.3.14.
+
+If and only if the destination is clean and exactly `0 behind / 1 ahead` of its configured upstream, amend the single unpushed generated candidate instead of creating another commit:
+
+```bash
+bun run sync-spectra -- --amend
+```
+
+Normal synchronization requires `0 behind / 0 ahead`. `--amend` refuses missing upstreams, diverged branches, and any state other than the one unpushed candidate.
 
 Do not manually copy around the generator. Fix source projections or exclusions as a reviewed code change.
 

@@ -4,7 +4,7 @@
  * Generate an application-specific public repository from the private NEXUS
  * workspace while preserving the destination repository's own Git history.
  *
- * Usage: bun scripts/sync-public.cjs <spectra|halo>
+ * Usage: bun scripts/sync-public.cjs <spectra|halo> [--amend]
  */
 
 const fs = require('node:fs');
@@ -15,12 +15,23 @@ const { execFileSync } = require('node:child_process');
 const BUN_VERSION = '1.3.14';
 const PACKAGE_MANAGER = `bun@${BUN_VERSION}`;
 const SUPPORTED_APPS = new Set(['spectra', 'halo']);
-const targetApp = process.argv[2];
 
-if (!SUPPORTED_APPS.has(targetApp)) {
-  console.error('Usage: bun scripts/sync-public.cjs <spectra|halo>');
-  process.exit(1);
+function parseArguments(args) {
+  const [target, ...options] = args;
+  const unknownOptions = options.filter((option) => option !== '--amend');
+  if (!SUPPORTED_APPS.has(target) || unknownOptions.length > 0) {
+    throw new Error('Usage: bun scripts/sync-public.cjs <spectra|halo> [--amend]');
+  }
+  return {
+    targetApp: target,
+    amend: options.includes('--amend'),
+  };
 }
+
+const invocation = require.main === module
+  ? parseArguments(process.argv.slice(2))
+  : { targetApp: undefined, amend: false };
+const { targetApp, amend } = invocation;
 
 const sourceRoot = path.resolve(__dirname, '..');
 const destinationRoot = path.resolve(__dirname, `../../${targetApp}-public`);
@@ -33,16 +44,18 @@ const BASE_EXCLUDES = [
   '.git',
   '.github',
   '.gitnexus',
+  '.graph-it',
   '.idea',
   '.turbo',
   '.vscode',
   'AGENTS.md',
   'CLAUDE.md',
   'docs',
-  'scripts',
+  '/scripts',
   'store-assets',
   'store-listings',
   'test',
+  'plan.md',
   'node_modules',
   'dist',
   'build',
@@ -51,13 +64,50 @@ const BASE_EXCLUDES = [
   '*.zip',
 ];
 
-const APP_CONFIG = {
+const APP_CONFIGS = {
   spectra: {
+    applicationPath: 'apps/extension-spectra',
     excludes: [
       'apps/extension-halo',
       'apps/extension-cortex',
+      'apps/extension-spectra/assets',
+      'apps/extension-spectra/assets-backup',
+      'apps/extension-spectra/debug_run.mjs',
+      'apps/extension-spectra/plan.md',
+      'apps/extension-spectra/release',
       'packages/features/ai-engine',
       'packages/ui-kit',
+    ],
+    publicName: 'spectra',
+    publicRootScripts: ['dev', 'build', 'typecheck'],
+    publicRootScriptOverrides: {
+      lint: 'turbo run lint',
+    },
+    publicApplicationScripts: [
+      'dev',
+      'build',
+      'build:prod',
+      'build:dev',
+      'build:sourcemap',
+      'build:analyze',
+      'integrity',
+      'typecheck',
+    ],
+    publicApplicationScriptOverrides: {
+      lint: 'biome check src public build.mjs scripts --max-diagnostics=100',
+    },
+    publicApplicationScriptFiles: [
+      'apps/extension-spectra/scripts/check-production-artifacts.mjs',
+      'apps/extension-spectra/scripts/chrome120-webrtc-adapter.mjs',
+      'apps/extension-spectra/scripts/external-boundary-properties.mjs',
+      'apps/extension-spectra/scripts/i18n-assets.ts',
+    ],
+    publicApplicationDevDependencies: [
+      'chrome-types',
+      'esbuild',
+      'sharp',
+      'terser',
+      'typescript',
     ],
     readme: 'apps/extension-spectra/README.md',
     privacy: 'apps/extension-spectra/PRIVACY.md',
@@ -74,11 +124,33 @@ const APP_CONFIG = {
     ],
   },
   halo: {
+    applicationPath: 'apps/extension-halo',
     excludes: [
       'apps/extension-spectra',
       'apps/extension-cortex',
       'packages/features/ai-engine',
       'packages/features/audio-engine',
+    ],
+    publicName: 'halo',
+    publicRootScripts: ['dev', 'build', 'typecheck'],
+    publicRootScriptOverrides: {
+      lint: 'turbo run lint',
+    },
+    publicApplicationScripts: ['dev', 'build', 'build:prod', 'lint', 'typecheck'],
+    publicApplicationScriptOverrides: {},
+    publicApplicationScriptFiles: [],
+    publicApplicationDevDependencies: [
+      '@playwright/test',
+      '@types/file-saver',
+      '@types/node',
+      '@types/react',
+      '@types/react-dom',
+      'chrome-types',
+      'esbuild',
+      'playwright',
+      'puppeteer',
+      'tsx',
+      'typescript',
     ],
     readme: 'apps/extension-halo/README.md',
     privacy: 'apps/extension-halo/PRIVACY.md',
@@ -94,15 +166,30 @@ const APP_CONFIG = {
       '.turbo',
     ],
   },
-}[targetApp];
+};
+const APP_CONFIG = APP_CONFIGS[targetApp] ?? {
+  applicationPath: '',
+  excludes: [],
+  publicName: '',
+  publicRootScripts: [],
+  publicRootScriptOverrides: {},
+  publicApplicationScripts: [],
+  publicApplicationScriptOverrides: {},
+  publicApplicationScriptFiles: [],
+  publicApplicationDevDependencies: [],
+  readme: '',
+  privacy: '',
+  artifacts: [],
+};
 
 const excludes = [...BASE_EXCLUDES, ...APP_CONFIG.excludes];
 
 function run(command, args, options = {}) {
   return execFileSync(command, args, {
     cwd: options.cwd,
-    encoding: options.encoding ?? 'utf8',
+    encoding: Object.hasOwn(options, 'encoding') ? options.encoding : 'utf8',
     stdio: options.stdio ?? 'inherit',
+    maxBuffer: options.maxBuffer,
   });
 }
 
@@ -120,6 +207,10 @@ function matchesPattern(relativePath, pattern) {
   const normalized = relativePath.replaceAll('\\', '/');
   const fileName = path.posix.basename(normalized);
 
+  if (pattern.startsWith('/')) {
+    const rootPath = pattern.slice(1);
+    return normalized === rootPath || normalized.startsWith(`${rootPath}/`);
+  }
   if (pattern.startsWith('*.')) return fileName.endsWith(pattern.slice(1));
   if (pattern.includes('*')) {
     const escaped = pattern
@@ -138,29 +229,55 @@ function matchesPattern(relativePath, pattern) {
   );
 }
 
-function shouldExclude(relativePath) {
-  return excludes.some((pattern) => matchesPattern(relativePath, pattern));
+function shouldExcludeWithPatterns(relativePath, patterns) {
+  return patterns.some((pattern) => matchesPattern(relativePath, pattern));
 }
 
-function copyDirectory(source, destination, basePath = '') {
-  fs.mkdirSync(destination, { recursive: true });
+function shouldExcludeForConfig(relativePath, patterns, config) {
+  const normalized = relativePath.replaceAll('\\', '/');
+  const applicationScriptsPrefix = config.applicationPath
+    ? `${config.applicationPath}/scripts/`
+    : '';
+  if (
+    applicationScriptsPrefix &&
+    normalized.startsWith(applicationScriptsPrefix) &&
+    !config.publicApplicationScriptFiles.includes(normalized)
+  ) {
+    return true;
+  }
+  return shouldExcludeWithPatterns(normalized, patterns);
+}
 
-  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
-    const sourcePath = path.join(source, entry.name);
-    const destinationPath = path.join(destination, entry.name);
-    const relativePath = basePath ? `${basePath}/${entry.name}` : entry.name;
+function shouldExclude(relativePath) {
+  return shouldExcludeForConfig(relativePath, excludes, APP_CONFIG);
+}
 
+let sourceRepositoryPrefix;
+
+function readCommittedFile(relativePath) {
+  sourceRepositoryPrefix ??= run('git', ['rev-parse', '--show-prefix'], {
+    cwd: sourceRoot,
+    stdio: ['ignore', 'pipe', 'inherit'],
+  }).trim();
+  return run('git', ['show', `HEAD:${sourceRepositoryPrefix}${relativePath}`], {
+    cwd: sourceRoot,
+    encoding: null,
+    stdio: ['ignore', 'pipe', 'inherit'],
+    maxBuffer: 64 * 1024 * 1024,
+  });
+}
+
+function copyCommittedFiles() {
+  const output = run('git', ['ls-tree', '-r', '-z', '--name-only', 'HEAD', '--', '.'], {
+    cwd: sourceRoot,
+    stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  for (const relativePath of output.split('\0').filter(Boolean)) {
     if (shouldExclude(relativePath)) continue;
-
-    if (entry.isDirectory()) {
-      copyDirectory(sourcePath, destinationPath, relativePath);
-      continue;
-    }
-
-    if (entry.isFile()) {
-      fs.copyFileSync(sourcePath, destinationPath);
-      console.log(`  [copy] ${relativePath}`);
-    }
+    const destinationPath = path.join(destinationRoot, relativePath);
+    fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+    fs.writeFileSync(destinationPath, readCommittedFile(relativePath));
+    console.log(`  [copy] ${relativePath}`);
   }
 }
 
@@ -218,24 +335,31 @@ function verifySourceToolchain() {
   }
 }
 
-function copyPublicEntrypoints() {
-  const readmePath = path.join(sourceRoot, APP_CONFIG.readme);
-  if (!fs.existsSync(readmePath)) {
-    throw new Error(`Public README source is missing: ${APP_CONFIG.readme}`);
+function copyCommittedEntrypoint(relativePath, destinationName, label) {
+  try {
+    fs.writeFileSync(path.join(destinationRoot, destinationName), readCommittedFile(relativePath));
+  } catch (error) {
+    throw new Error(`Public ${label} source is missing or unreadable: ${relativePath}`, {
+      cause: error,
+    });
   }
-  fs.copyFileSync(readmePath, path.join(destinationRoot, 'README.md'));
+}
 
-  const licensePath = path.join(sourceRoot, 'LICENSE');
-  if (fs.existsSync(licensePath)) {
-    fs.copyFileSync(licensePath, path.join(destinationRoot, 'LICENSE'));
-  }
+function copyPublicEntrypoints() {
+  copyCommittedEntrypoint(APP_CONFIG.readme, 'README.md', 'README');
+  copyCommittedEntrypoint('LICENSE', 'LICENSE', 'license');
 
   if (APP_CONFIG.privacy) {
-    const privacyPath = path.join(sourceRoot, APP_CONFIG.privacy);
-    if (fs.existsSync(privacyPath)) {
-      fs.copyFileSync(privacyPath, path.join(destinationRoot, 'PRIVACY.md'));
-    }
+    copyCommittedEntrypoint(APP_CONFIG.privacy, 'PRIVACY.md', 'privacy policy');
   }
+}
+
+function selectObjectKeys(source, allowedKeys, overrides = {}) {
+  const selected = {};
+  for (const key of allowedKeys) {
+    if (Object.hasOwn(source, key)) selected[key] = source[key];
+  }
+  return { ...selected, ...overrides };
 }
 
 function patchPublicPackage() {
@@ -245,11 +369,34 @@ function patchPublicPackage() {
   }
 
   const packageJson = readJson(packagePath);
-  for (const script of ['verify', 'verify:q', 'verify:v', 'prebuild', 'sync:skills', 'sync-halo', 'sync-spectra']) {
-    if (packageJson.scripts) delete packageJson.scripts[script];
+  const applicationPackagePath = path.join(destinationRoot, APP_CONFIG.applicationPath, 'package.json');
+  if (!fs.existsSync(applicationPackagePath)) {
+    throw new Error(`Generated public application has no package.json: ${applicationPackagePath}`);
   }
+  const applicationPackageJson = readJson(applicationPackagePath);
+
+  packageJson.name = APP_CONFIG.publicName;
+  packageJson.version = applicationPackageJson.version;
+  packageJson.description = applicationPackageJson.description;
+  packageJson.scripts = selectObjectKeys(
+    packageJson.scripts ?? {},
+    APP_CONFIG.publicRootScripts,
+    APP_CONFIG.publicRootScriptOverrides,
+  );
   packageJson.packageManager = PACKAGE_MANAGER;
+
+  applicationPackageJson.scripts = selectObjectKeys(
+    applicationPackageJson.scripts ?? {},
+    APP_CONFIG.publicApplicationScripts,
+    APP_CONFIG.publicApplicationScriptOverrides,
+  );
+  applicationPackageJson.devDependencies = selectObjectKeys(
+    applicationPackageJson.devDependencies ?? {},
+    APP_CONFIG.publicApplicationDevDependencies,
+  );
+
   writeJson(packagePath, packageJson);
+  writeJson(applicationPackagePath, applicationPackageJson);
 }
 
 function cleanGeneratedArtifacts() {
@@ -264,6 +411,59 @@ function cleanGeneratedArtifacts() {
   }
 }
 
+function parseDivergence(output) {
+  const [behindText, aheadText] = output.trim().split(/\s+/);
+  const behind = Number.parseInt(behindText, 10);
+  const ahead = Number.parseInt(aheadText, 10);
+  if (!Number.isInteger(behind) || !Number.isInteger(ahead)) {
+    throw new Error(`Unable to parse Git divergence: ${output.trim()}`);
+  }
+  return { behind, ahead };
+}
+
+function validateDestinationDivergence(divergence, shouldAmend) {
+  const expectedAhead = shouldAmend ? 1 : 0;
+  if (divergence.behind !== 0 || divergence.ahead !== expectedAhead) {
+    const mode = shouldAmend ? '--amend requires' : 'normal sync requires';
+    throw new Error(
+      `${mode} destination divergence 0 behind / ${expectedAhead} ahead; ` +
+      `found ${divergence.behind} behind / ${divergence.ahead} ahead`,
+    );
+  }
+}
+
+function verifyDestinationState() {
+  if (!fs.existsSync(path.join(destinationRoot, '.git'))) {
+    if (amend) throw new Error('--amend requires an existing destination Git repository');
+    return;
+  }
+
+  const status = run('git', ['status', '--porcelain'], {
+    cwd: destinationRoot,
+    stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  if (status.trim()) {
+    throw new Error('Destination working tree must be clean before public synchronization');
+  }
+
+  const upstream = runOptional(
+    'git',
+    ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'],
+    { cwd: destinationRoot, stdio: ['ignore', 'pipe', 'ignore'] },
+  )?.trim();
+  if (!upstream) {
+    if (amend) throw new Error('--amend requires a configured destination upstream');
+    return;
+  }
+
+  const divergence = parseDivergence(run(
+    'git',
+    ['rev-list', '--left-right', '--count', `${upstream}...HEAD`],
+    { cwd: destinationRoot, stdio: ['ignore', 'pipe', 'inherit'] },
+  ));
+  validateDestinationDivergence(divergence, amend);
+}
+
 function createGeneratedCommit() {
   run('git', ['add', '-A'], { cwd: destinationRoot, stdio: 'ignore' });
   const status = run('git', ['status', '--porcelain'], {
@@ -272,6 +472,11 @@ function createGeneratedCommit() {
   });
   if (!status.trim()) {
     console.log('[sync-public] no generated changes');
+    return;
+  }
+
+  if (amend) {
+    run('git', ['commit', '--amend', '--no-edit'], { cwd: destinationRoot });
     return;
   }
 
@@ -288,6 +493,7 @@ function main() {
   console.log(`Toolchain: ${PACKAGE_MANAGER}`);
 
   verifySourceToolchain();
+  verifyDestinationState();
 
   if (!fs.existsSync(destinationRoot)) {
     fs.mkdirSync(destinationRoot, { recursive: true });
@@ -295,7 +501,7 @@ function main() {
   }
 
   cleanDestination();
-  copyDirectory(sourceRoot, destinationRoot);
+  copyCommittedFiles();
   copyPublicEntrypoints();
   patchPublicPackage();
 
@@ -314,4 +520,16 @@ function main() {
   console.log('[sync-public] inspect the generated diff before any push');
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = {
+  APP_CONFIGS,
+  BASE_EXCLUDES,
+  matchesPattern,
+  parseArguments,
+  parseDivergence,
+  selectObjectKeys,
+  shouldExcludeForConfig,
+  shouldExcludeWithPatterns,
+  validateDestinationDivergence,
+};

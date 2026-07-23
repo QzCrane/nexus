@@ -2,7 +2,7 @@
 
 SPECTRA is a Chrome Manifest V3 extension for audio, video, playback, hotkey, and optional authenticated mobile-remote control.
 
-This README is a product and developer entrypoint. Current behavior is defined by executable contracts/source/tests and the [SPECTRA documentation owners](docs/README.md).
+This README is the product and public developer entrypoint. Current behavior is defined by the executable contracts, source, tests, and production artifact maintained in the NEXUS workspace.
 
 ## Capability overview
 
@@ -46,22 +46,13 @@ bun install
 bun run build
 bun run lint
 bun run typecheck
-bun run verify
-bun run docs:check
 ```
 
 Load the generated unpacked extension through Chrome's extension-development page for local testing. Use the production release workflow for store artifacts.
 
 ## Documentation
 
-- [Documentation map](docs/README.md)
-- [Control architecture](docs/control/README.md)
-- [Runtime protocols](docs/reference/protocols.md)
-- [Runtime architecture](docs/architecture/runtime.md)
-- [Remote security](docs/security/remote-control.md)
-- [Media WebAudio admission](docs/architecture/media-source-admission.md)
-- [Roadmap](docs/roadmap.md)
-- [Historical archive](docs/_archive/2026-Q3/README.md)
+The private NEXUS workspace maintains the normative control, runtime, protocol, security, and release documentation. This public source projection intentionally contains only the buildable SPECTRA application, its shared runtime packages, this product entrypoint, and the privacy and license surfaces.
 
 ## Privacy
 
@@ -73,8 +64,8 @@ Add the canonical product listing URL after publication. The Chrome Web Store ho
 
 ## Contribution boundary
 
-Change a capability through its contract, implementation, tests, owner documentation, and release evidence in one closure. Follow the [repository documentation architecture](../../docs/README.md) and [`rules.md`](../../../rules.md).
+Change a capability through its contract, implementation, tests, owner documentation, and release evidence in one closure. Public pull requests should keep the application and shared package boundaries intact and avoid committing generated build or release artifacts.
 
 ## License
 
-MIT License. See [`../../LICENSE`](../../LICENSE).
+MIT License. See the `LICENSE` file at the repository root.
