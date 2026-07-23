@@ -75,6 +75,7 @@ Before push, inspect:
 - `git status`, the single generated commit when changes exist, and the complete diff against the destination's previous commit;
 - public README, privacy policy, license, package metadata, scripts, and lockfile;
 - exact `packageManager: bun@1.3.14` and successful clean install/build;
+- retained public `lint` and `typecheck` commands from the artifact-cleaned generated state;
 - absence of private docs, secrets, internal assets, tests, build artifacts, local agent configuration, and excluded applications;
 - whether destination cleanup removed a public file still required by users or release automation.
 
