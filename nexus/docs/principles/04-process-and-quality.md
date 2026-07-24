@@ -2,7 +2,7 @@
 type: explanation
 status: stable
 audience: contributor
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-24
 ---
 
 # 04. Process and quality gates (EPR-026..029)
@@ -22,6 +22,8 @@ A coherent change includes the necessary contract, implementation, focused tests
 
 A commit should be independently understandable and reversible. Historical reports state their date, commit, evidence scope, and remaining risks; their measurements do not become present-tense facts.
 
+The delivery order is **implement → focused evidence → one final local gate batch → verify every generated/public projection → push**. A push is not the first validation run. When a gate finds a root cause, fix that cause, rerun the narrow failing evidence, and run one final applicable batch after the candidate stabilizes instead of repeatedly replaying the full matrix. Keep at most one unpushed candidate per affected repository, amend it while it is private when necessary, and push each remote once after the entire closure is green.
+
 ## EPR-028: public copy never exceeds verified capability
 
 Statements such as “all websites,” “zero CPU,” “any protected media,” “completely no data transmission,” guaranteed screenshots, or hearing-protection outcomes require a defined release gate that actually proves their scope. Browser permissions, user activation, origin/frame restrictions, CORS, protected content, closed component boundaries, and unsupported page APIs remain legitimate structured failures.
@@ -34,7 +36,7 @@ The deployed local Git gate is [`../../../lefthook.yml`](../../../lefthook.yml).
 
 - **pre-commit** runs the Markdown structure linter and Biome on the configured staged-file sets;
 - **commit-msg** runs commitlint with the repository Conventional Commit configuration;
-- **pre-push** runs the AI-hook smoke suite, `verify:q`, and `sync:skills`;
+- **pre-push** runs toolchain, documentation, AI-hook smoke, `verify:q`, SPECTRA typecheck, AI-pitfall, and read-only `sync:skills --check` gates in parallel;
 - **post-merge** runs `sync:skills`, which refreshes the generated Project Skills table in `AGENTS.md`;
 - **post-analyze** is a separate workspace script that restores the `CLAUDE.md` → `AGENTS.md` hardlink after GitNexus regeneration.
 
@@ -60,6 +62,7 @@ Active internal Markdown under the configured documentation roots uses the requi
 - verify there is no second writer, unbound runtime, stale ACK, guessed actual state, or missing disposer;
 - run applicable unit/contract, typecheck, lint, architecture, build, browser, production-artifact, privacy, and localization checks;
 - inspect `git diff --check`, the complete changed-file list, generated output, and dependency/permission/network changes;
+- run the applicable gates as one stable-candidate batch before the first push; do not multiply the same pre-push cost across incremental fix commits;
 - report every omitted gate or unresolved failure instead of describing the change as complete.
 
 ### Before release

@@ -47,6 +47,8 @@ bun run build
 
 Run `verify:v`, application release checks, production-artifact inspection, Chrome tests, remote-site checks, localization checks, or generated-registry checks when the scope requires them. Do not run every expensive command blindly for an isolated change; do not omit a required gate because it is slow.
 
+Run the applicable repository gates as one stable-candidate batch before the first push. If that batch exposes a concrete cause, fix it, rerun the narrow failing evidence while iterating, then run one final applicable batch. Do not replay the entire matrix after every small edit.
+
 ### 4. Reconcile documentation and release truth
 
 - Update exactly one normative owner for changed behavior.
@@ -70,6 +72,8 @@ Check for:
 ### 6. Commit and push only within authorization
 
 Prepare a Conventional Commit describing the actual closure. Commit or push only when the user or invoking workflow authorized that mutation. Never force-push a shared or release branch by default.
+
+Keep at most one unpushed candidate in each affected repository and amend it while it is still private when necessary. Verify private and generated/public repositories together, then push each authorized remote once. Merge and delete the short-lived task branch/worktree after the remote target is confirmed.
 
 ## Prohibited shortcuts
 

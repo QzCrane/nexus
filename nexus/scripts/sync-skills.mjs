@@ -83,23 +83,16 @@ function buildIndexRow(name, fm) {
 }
 
 /**
- * Inject (or replace) the § Project Skills table in AGENTS.md between the
+ * Render the § Project Skills table in AGENTS.md between the
  * `<!-- nexus:skills-start -->` and `<!-- nexus:skills-end -->` markers.
- * Idempotent: re-running updates the table in place.
  */
-function injectSkillsIndex(rows) {
-  if (!existsSync(agentsMd)) {
-    console.warn(`[sync-skills] ${agentsMd} not found — skipping AGENTS.md injection`);
-    return;
-  }
-  const raw = readFileSync(agentsMd, 'utf-8');
+function renderSkillsIndex(raw, rows) {
   const start = '<!-- nexus:skills-start -->';
   const end = '<!-- nexus:skills-end -->';
   const startIdx = raw.indexOf(start);
   const endIdx = raw.indexOf(end);
   if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
-    console.warn(`[sync-skills] AGENTS.md missing nexus:skills markers — skipping injection`);
-    return;
+    throw new Error('AGENTS.md is missing ordered nexus:skills markers');
   }
   const table = [
     '| Skill | Description | Triggers |',
@@ -108,11 +101,39 @@ function injectSkillsIndex(rows) {
   ].join('\n');
   const before = raw.slice(0, startIdx + start.length);
   const after = raw.slice(endIdx);
-  const next = `${before}\n${table}\n${after}`;
-  writeFileSync(agentsMd, next);
+  return `${before}\n${table}\n${after}`;
+}
+
+/**
+ * Update one generated index or, in check mode, fail without writing when it
+ * has drifted. The file path is injectable so the no-write behavior can be
+ * covered without touching the repository copy.
+ */
+function syncIndexFile(filePath, rows, checkOnly = false) {
+  if (!existsSync(filePath)) {
+    throw new Error(`AGENTS.md not found: ${filePath}`);
+  }
+
+  const raw = readFileSync(filePath, 'utf-8');
+  const next = renderSkillsIndex(raw, rows);
+  if (next === raw) return 'current';
+  if (checkOnly) {
+    throw new Error('Project Skills index drifted; run `bun run sync:skills` and commit the result');
+  }
+
+  writeFileSync(filePath, next);
+  return 'updated';
 }
 
 // --- Main ------------------------------------------------------------------
+
+function parseArguments(args) {
+  const unknown = args.filter((argument) => argument !== '--check');
+  if (unknown.length > 0 || args.filter((argument) => argument === '--check').length > 1) {
+    throw new Error('Usage: bun scripts/sync-skills.mjs [--check]');
+  }
+  return { checkOnly: args.includes('--check') };
+}
 
 function listSkillNames() {
   if (!existsSync(skillsSrc)) {
@@ -125,13 +146,11 @@ function listSkillNames() {
 }
 
 function main() {
+  const { checkOnly } = parseArguments(process.argv.slice(2));
   const names = listSkillNames();
   if (names.length === 0) {
-    console.warn(`[sync-skills] No skills found in ${skillsSrc}`);
-    return;
+    throw new Error(`No skills found in ${skillsSrc}`);
   }
-  console.log(`[sync-skills] Found ${names.length} skill(s) from ${skillsSrc}:`);
-  for (const n of names) console.log(`  - ${n}`);
 
   const indexRows = [];
   for (const name of names) {
@@ -140,11 +159,16 @@ function main() {
     indexRows.push(buildIndexRow(name, frontmatter));
   }
 
-  injectSkillsIndex(indexRows);
-
-  console.log(`[sync-skills] Done. ${names.length} skill(s) indexed into AGENTS.md.`);
-  console.log(`  source: ${skillsSrc}  (native loader for Cursor / Codex / Copilot / Gemini / Cline / OpenCode / Amp / Kimi / Replit)`);
-  console.log(`  inject: ${agentsMd} (§ Project Skills table)`);
+  const state = syncIndexFile(agentsMd, indexRows, checkOnly);
+  console.log(`[sync-skills] ${names.length} skill(s); AGENTS.md index ${state}`);
 }
 
-main();
+if (import.meta.main) main();
+
+export {
+  buildIndexRow,
+  parseArguments,
+  renderSkillsIndex,
+  splitFrontmatter,
+  syncIndexFile,
+};

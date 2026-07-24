@@ -56,13 +56,13 @@ Use application-specific tests and production-artifact checks before release. Th
 
 The private monorepo may generate public SPECTRA or HALO repositories through the maintained synchronization script. Generated output is a release artifact:
 
-1. run the appropriate sync command;
-2. inspect exclusions and the generated repository diff;
-3. verify the generated package remains pinned to Bun 1.3.14;
-4. run its validation suite;
+1. finish the applicable private-source gates without pushing;
+2. run the appropriate sync command, which batch-reads committed `HEAD`, installs, and runs the retained public lint, typecheck, and build commands before creating a candidate;
+3. inspect exclusions, validation output, and the single generated repository diff;
+4. verify the generated package remains pinned to Bun 1.3.14;
 5. push only through an authorized release workflow.
 
-The script preserves the destination repository's existing `.git` directory; it does not transplant private-repository history. Force-push is not the default.
+The script preserves the destination repository's existing `.git` directory and an ignored Turbo cache under `node_modules`; it does not transplant private-repository history. A failed public gate cannot create a candidate commit. Force-push is not the default.
 
 ## Repository constraints
 

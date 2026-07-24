@@ -6,9 +6,13 @@ const require = createRequire(import.meta.url);
 const {
 	APP_CONFIGS,
 	BASE_EXCLUDES,
+	PUBLIC_TURBO_CACHE_DIR,
+	PUBLIC_VALIDATION_SCRIPTS,
 	isIncrementalBuildState,
 	matchesPattern,
+	parseBatchBlobOutput,
 	parseArguments,
+	parseCommittedTree,
 	parseDivergence,
 	selectObjectKeys,
 	shouldExcludeForConfig,
@@ -20,9 +24,17 @@ const {
 		publicApplicationScriptFiles: string[];
 	}>;
 	BASE_EXCLUDES: string[];
+	PUBLIC_TURBO_CACHE_DIR: string;
+	PUBLIC_VALIDATION_SCRIPTS: string[];
 	isIncrementalBuildState(filePath: string): boolean;
 	matchesPattern(relativePath: string, pattern: string): boolean;
+	parseBatchBlobOutput(output: Buffer, expectedObjectIds: string[]): Buffer[];
 	parseArguments(args: string[]): { targetApp: string; amend: boolean };
+	parseCommittedTree(output: Buffer): Array<{
+		objectId: string;
+		objectType: string;
+		relativePath: string;
+	}>;
 	parseDivergence(output: string): { behind: number; ahead: number };
 	selectObjectKeys(
 		source: Record<string, string>,
@@ -126,6 +138,41 @@ describe('public repository source projection', () => {
 		expect(() => validateDestinationDivergence({ behind: 0, ahead: 0 }, true)).toThrow();
 		expect(() => validateDestinationDivergence({ behind: 0, ahead: 1 }, false)).toThrow();
 		expect(() => validateDestinationDivergence({ behind: 1, ahead: 1 }, true)).toThrow();
+	});
+
+	test('reads committed blobs in one binary-safe Git batch', () => {
+		const firstObjectId = 'a'.repeat(40);
+		const secondObjectId = 'b'.repeat(40);
+		const firstBlob = Buffer.from([0x61, 0x0a, 0x00, 0x62]);
+		const secondBlob = Buffer.from('second');
+		const output = Buffer.concat([
+			Buffer.from(`${firstObjectId} blob ${firstBlob.length}\n`),
+			firstBlob,
+			Buffer.from('\n'),
+			Buffer.from(`${secondObjectId} blob ${secondBlob.length}\n`),
+			secondBlob,
+			Buffer.from('\n'),
+		]);
+
+		expect(parseBatchBlobOutput(output, [firstObjectId, secondObjectId]).map(
+			(blob) => [...blob],
+		)).toEqual([[...firstBlob], [...secondBlob]]);
+		expect(() => parseBatchBlobOutput(output, [secondObjectId, firstObjectId])).toThrow();
+	});
+
+	test('parses source-relative committed tree records', () => {
+		const objectId = 'c'.repeat(40);
+		expect(parseCommittedTree(Buffer.from(
+			`${objectId}\tblob\tpackage.json\0${objectId}\tblob\tapps/example.ts\0`,
+		))).toEqual([
+			{ objectId, objectType: 'blob', relativePath: 'package.json' },
+			{ objectId, objectType: 'blob', relativePath: 'apps/example.ts' },
+		]);
+	});
+
+	test('validates every retained public gate with a persistent ignored cache', () => {
+		expect(PUBLIC_VALIDATION_SCRIPTS).toEqual(['lint', 'typecheck', 'build']);
+		expect(PUBLIC_TURBO_CACHE_DIR).toMatch(/^node_modules\/\.cache\//);
 	});
 
 	test('isolates composite typecheck state from parallel dependency builds', () => {

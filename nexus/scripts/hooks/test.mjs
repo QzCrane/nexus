@@ -20,8 +20,14 @@
 //   NEXUS_HOOK_DEBUG=1 bun scripts/hooks/test.mjs
 
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { readFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -37,6 +43,10 @@ import {
 import { frontmatterProblem } from './ai-pre-write-guard.mjs';
 import { splitCommands } from './codex-bash-guard.mjs';
 import { scanFileContent } from './ai-pitfall-detector.mjs';
+import {
+	parseArguments as parseSyncSkillsArguments,
+	syncIndexFile,
+} from '../sync-skills.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hooksDir = here;
@@ -724,6 +734,65 @@ ok(
 	!/^\s*run:\s*bun\s+--cwd\s+\S+\s+run(?:\s|$)/mu.test(lefthookConfig),
 	'`bun --cwd <dir> run <script>` prints help and exits successfully without running the script',
 );
+ok(
+	'lefthook: pre-push gates run in parallel',
+	/pre-push:\s*\r?\n\s+parallel:\s+true/mu.test(lefthookConfig),
+	'pre-push commands are independent and read-only',
+);
+ok(
+	'lefthook: pre-push checks skill-index drift without writing',
+	/sync-skills:\s*\r?\n\s+run:\s+bun run sync:skills -- --check/mu.test(lefthookConfig),
+	'pre-push must not rewrite AGENTS.md while gates run in parallel',
+);
+
+eq('sync-skills: default mode writes', parseSyncSkillsArguments([]), { checkOnly: false });
+eq('sync-skills: --check is read-only', parseSyncSkillsArguments(['--check']), {
+	checkOnly: true,
+});
+let rejectedUnknownSyncSkillsArgument = false;
+try {
+	parseSyncSkillsArguments(['--write']);
+} catch {
+	rejectedUnknownSyncSkillsArgument = true;
+}
+ok('sync-skills: rejects unknown arguments', rejectedUnknownSyncSkillsArgument);
+
+const syncSkillsTempRoot = mkdtempSync(join(tmpdir(), 'nexus-sync-skills-'));
+const syncSkillsTempFile = join(syncSkillsTempRoot, 'AGENTS.md');
+const syncSkillsFixture = [
+	'# Fixture',
+	'<!-- nexus:skills-start -->',
+	'stale',
+	'<!-- nexus:skills-end -->',
+	'',
+].join('\n');
+const syncSkillsRows = ['| `fixture` | Fixture skill | fixture |'];
+try {
+	writeFileSync(syncSkillsTempFile, syncSkillsFixture);
+	let checkRejectedDrift = false;
+	try {
+		syncIndexFile(syncSkillsTempFile, syncSkillsRows, true);
+	} catch {
+		checkRejectedDrift = true;
+	}
+	ok('sync-skills: --check rejects index drift', checkRejectedDrift);
+	eq(
+		'sync-skills: --check leaves a drifted file byte-identical',
+		readFileSync(syncSkillsTempFile, 'utf8'),
+		syncSkillsFixture,
+	);
+	eq(
+		'sync-skills: write mode updates a drifted index',
+		syncIndexFile(syncSkillsTempFile, syncSkillsRows),
+		'updated',
+	);
+	ok(
+		'sync-skills: updated index contains the generated row',
+		readFileSync(syncSkillsTempFile, 'utf8').includes(syncSkillsRows[0]),
+	);
+} finally {
+	rmSync(syncSkillsTempRoot, { recursive: true, force: true });
+}
 
 // =====================================================================
 // Summary

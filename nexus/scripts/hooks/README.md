@@ -2,7 +2,7 @@
 type: explanation
 status: stable
 audience: contributor
-last_reviewed: 2026-07-22
+last_reviewed: 2026-07-24
 ---
 
 # AI-tool hooks
@@ -58,6 +58,12 @@ The maintained suite covers:
 It also rejects the invalid `bun --cwd <dir> run <script>` ordering in
 Lefthook commands. Bun prints help and exits successfully for that form, which
 would otherwise turn a required pre-push gate into a false green.
+
+The pre-push commands are independent read-only gates and therefore run in
+parallel. Skill-index validation uses `bun run sync:skills -- --check`; it
+fails on drift without rewriting `AGENTS.md`, so it cannot race with the other
+checks. The mutating `bun run sync:skills` remains a deliberate authoring or
+post-merge action.
 
 Do not hard-code the assertion count or runtime in this README; both change as coverage grows. The current test output is the source for those values.
 

@@ -10,11 +10,14 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { performance } = require('node:perf_hooks');
 
 // Keep in sync with scripts/toolchain-versions.mjs (CJS cannot import ESM statically).
 const BUN_VERSION = '1.3.14';
 const PACKAGE_MANAGER = `bun@${BUN_VERSION}`;
 const SUPPORTED_APPS = new Set(['spectra', 'halo']);
+const PUBLIC_TURBO_CACHE_DIR = 'node_modules/.cache/turbo-public-sync';
+const PUBLIC_VALIDATION_SCRIPTS = ['lint', 'typecheck', 'build'];
 
 function parseArguments(args) {
   const [target, ...options] = args;
@@ -188,6 +191,8 @@ function run(command, args, options = {}) {
   return execFileSync(command, args, {
     cwd: options.cwd,
     encoding: Object.hasOwn(options, 'encoding') ? options.encoding : 'utf8',
+    env: options.env,
+    input: options.input,
     stdio: options.stdio ?? 'inherit',
     maxBuffer: options.maxBuffer,
   });
@@ -252,33 +257,107 @@ function shouldExclude(relativePath) {
   return shouldExcludeForConfig(relativePath, excludes, APP_CONFIG);
 }
 
-let sourceRepositoryPrefix;
+function parseCommittedTree(output) {
+  return output
+    .toString('utf8')
+    .split('\0')
+    .filter(Boolean)
+    .map((record) => {
+      const firstTab = record.indexOf('\t');
+      const secondTab = record.indexOf('\t', firstTab + 1);
+      if (firstTab === -1 || secondTab === -1) {
+        throw new Error(`Unable to parse committed tree record: ${record}`);
+      }
+      return {
+        objectId: record.slice(0, firstTab),
+        objectType: record.slice(firstTab + 1, secondTab),
+        relativePath: record.slice(secondTab + 1),
+      };
+    });
+}
 
-function readCommittedFile(relativePath) {
-  sourceRepositoryPrefix ??= run('git', ['rev-parse', '--show-prefix'], {
-    cwd: sourceRoot,
-    stdio: ['ignore', 'pipe', 'inherit'],
-  }).trim();
-  return run('git', ['show', `HEAD:${sourceRepositoryPrefix}${relativePath}`], {
+function parseBatchBlobOutput(output, expectedObjectIds) {
+  const blobs = [];
+  let offset = 0;
+
+  for (const expectedObjectId of expectedObjectIds) {
+    const headerEnd = output.indexOf(0x0a, offset);
+    if (headerEnd === -1) {
+      throw new Error(`Missing git cat-file header for ${expectedObjectId}`);
+    }
+
+    const header = output.subarray(offset, headerEnd).toString('utf8');
+    const match = /^([0-9a-f]+) ([a-z]+) ([0-9]+)$/u.exec(header);
+    if (!match) throw new Error(`Unable to parse git cat-file header: ${header}`);
+
+    const [, objectId, objectType, sizeText] = match;
+    if (objectId !== expectedObjectId || objectType !== 'blob') {
+      throw new Error(
+        `Unexpected git object for ${expectedObjectId}: ${objectId} ${objectType}`,
+      );
+    }
+
+    const size = Number.parseInt(sizeText, 10);
+    const contentStart = headerEnd + 1;
+    const contentEnd = contentStart + size;
+    if (contentEnd >= output.length || output[contentEnd] !== 0x0a) {
+      throw new Error(`Truncated git blob output for ${expectedObjectId}`);
+    }
+
+    blobs.push(output.subarray(contentStart, contentEnd));
+    offset = contentEnd + 1;
+  }
+
+  if (offset !== output.length) {
+    throw new Error(`Unexpected trailing git cat-file output (${output.length - offset} byte(s))`);
+  }
+  return blobs;
+}
+
+function readCommittedFiles(entries) {
+  if (entries.length === 0) return [];
+  const objectIds = entries.map(({ objectId }) => objectId);
+  const output = run('git', ['cat-file', '--batch'], {
     cwd: sourceRoot,
     encoding: null,
-    stdio: ['ignore', 'pipe', 'inherit'],
-    maxBuffer: 64 * 1024 * 1024,
+    input: `${objectIds.join('\n')}\n`,
+    stdio: ['pipe', 'pipe', 'inherit'],
+    maxBuffer: 512 * 1024 * 1024,
   });
+  return parseBatchBlobOutput(output, objectIds);
 }
 
 function copyCommittedFiles() {
-  const output = run('git', ['ls-tree', '-r', '-z', '--name-only', 'HEAD', '--', '.'], {
-    cwd: sourceRoot,
-    stdio: ['ignore', 'pipe', 'inherit'],
-  });
-  for (const relativePath of output.split('\0').filter(Boolean)) {
-    if (shouldExclude(relativePath)) continue;
+  const tree = parseCommittedTree(run(
+    'git',
+    ['ls-tree', '-r', '-z', '--format=%(objectname)%x09%(objecttype)%x09%(path)', 'HEAD', '--', '.'],
+    {
+      cwd: sourceRoot,
+      encoding: null,
+      stdio: ['ignore', 'pipe', 'inherit'],
+    },
+  ));
+  const entries = tree.filter(({ relativePath }) => !shouldExclude(relativePath));
+  const unsupported = entries.find(({ objectType }) => objectType !== 'blob');
+  if (unsupported) {
+    throw new Error(
+      `Public projection does not support committed ${unsupported.objectType}: ${unsupported.relativePath}`,
+    );
+  }
+
+  const blobs = readCommittedFiles(entries);
+  const filesByPath = new Map();
+  let totalBytes = 0;
+  for (let index = 0; index < entries.length; index += 1) {
+    const { relativePath } = entries[index];
+    const contents = blobs[index];
     const destinationPath = path.join(destinationRoot, relativePath);
     fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
-    fs.writeFileSync(destinationPath, readCommittedFile(relativePath));
-    console.log(`  [copy] ${relativePath}`);
+    fs.writeFileSync(destinationPath, contents);
+    filesByPath.set(relativePath, contents);
+    totalBytes += contents.length;
   }
+  return { count: entries.length, filesByPath, totalBytes };
 }
 
 function sleep(milliseconds) {
@@ -335,22 +414,25 @@ function verifySourceToolchain() {
   }
 }
 
-function copyCommittedEntrypoint(relativePath, destinationName, label) {
-  try {
-    fs.writeFileSync(path.join(destinationRoot, destinationName), readCommittedFile(relativePath));
-  } catch (error) {
-    throw new Error(`Public ${label} source is missing or unreadable: ${relativePath}`, {
-      cause: error,
-    });
+function copyCommittedEntrypoint(filesByPath, relativePath, destinationName, label) {
+  const contents = filesByPath.get(relativePath);
+  if (!contents) {
+    throw new Error(`Public ${label} source is missing or excluded: ${relativePath}`);
   }
+  fs.writeFileSync(path.join(destinationRoot, destinationName), contents);
 }
 
-function copyPublicEntrypoints() {
-  copyCommittedEntrypoint(APP_CONFIG.readme, 'README.md', 'README');
-  copyCommittedEntrypoint('LICENSE', 'LICENSE', 'license');
+function copyPublicEntrypoints(filesByPath) {
+  copyCommittedEntrypoint(filesByPath, APP_CONFIG.readme, 'README.md', 'README');
+  copyCommittedEntrypoint(filesByPath, 'LICENSE', 'LICENSE', 'license');
 
   if (APP_CONFIG.privacy) {
-    copyCommittedEntrypoint(APP_CONFIG.privacy, 'PRIVACY.md', 'privacy policy');
+    copyCommittedEntrypoint(
+      filesByPath,
+      APP_CONFIG.privacy,
+      'PRIVACY.md',
+      'privacy policy',
+    );
   }
 }
 
@@ -426,6 +508,31 @@ function cleanGeneratedArtifacts() {
     if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
   }
   cleanIncrementalBuildState(destinationRoot);
+}
+
+function runPublicValidationScript(script) {
+  run('bun', ['run', script, `--cache-dir=${PUBLIC_TURBO_CACHE_DIR}`], {
+    cwd: destinationRoot,
+  });
+}
+
+function formatDuration(milliseconds) {
+  return `${(milliseconds / 1000).toFixed(2)}s`;
+}
+
+function runStage(label, action) {
+  const startedAt = performance.now();
+  console.log(`[sync-public] ${label}...`);
+  try {
+    const result = action();
+    console.log(`[sync-public] ${label}: ${formatDuration(performance.now() - startedAt)}`);
+    return result;
+  } catch (error) {
+    console.error(
+      `[sync-public] ${label} failed after ${formatDuration(performance.now() - startedAt)}`,
+    );
+    throw error;
+  }
 }
 
 function parseDivergence(output) {
@@ -506,34 +613,45 @@ function createGeneratedCommit() {
 }
 
 function main() {
+  const startedAt = performance.now();
   console.log(`NEXUS → ${targetApp.toUpperCase()} public repository`);
   console.log(`Toolchain: ${PACKAGE_MANAGER}`);
 
-  verifySourceToolchain();
-  verifyDestinationState();
+  runStage('verify source and destination', () => {
+    verifySourceToolchain();
+    verifyDestinationState();
+  });
 
   if (!fs.existsSync(destinationRoot)) {
     fs.mkdirSync(destinationRoot, { recursive: true });
     run('git', ['init'], { cwd: destinationRoot });
   }
 
-  cleanDestination();
-  copyCommittedFiles();
-  copyPublicEntrypoints();
-  patchPublicPackage();
+  runStage('clean destination', cleanDestination);
+  const projection = runStage('read and project committed source', copyCommittedFiles);
+  console.log(
+    `[sync-public] projected ${projection.count} file(s), ${projection.totalBytes} byte(s)`,
+  );
+  runStage('project public metadata', () => {
+    copyPublicEntrypoints(projection.filesByPath);
+    patchPublicPackage();
+  });
 
-  run('bun', ['install'], { cwd: destinationRoot });
-  run('bun', ['run', 'build'], { cwd: destinationRoot });
-
-  cleanGeneratedArtifacts();
-  createGeneratedCommit();
+  runStage('install dependencies', () => run('bun', ['install'], { cwd: destinationRoot }));
+  for (const script of PUBLIC_VALIDATION_SCRIPTS) {
+    runStage(`validate public ${script}`, () => runPublicValidationScript(script));
+  }
+  runStage('remove generated artifacts', cleanGeneratedArtifacts);
 
   const generatedPackage = readJson(path.join(destinationRoot, 'package.json'));
   if (generatedPackage.packageManager !== PACKAGE_MANAGER) {
     throw new Error(`Generated packageManager drifted from ${PACKAGE_MANAGER}`);
   }
 
+  runStage('create generated candidate', createGeneratedCommit);
+
   console.log(`[sync-public] complete: ${destinationRoot}`);
+  console.log(`[sync-public] total: ${formatDuration(performance.now() - startedAt)}`);
   console.log('[sync-public] inspect the generated diff before any push');
 }
 
@@ -542,9 +660,13 @@ if (require.main === module) main();
 module.exports = {
   APP_CONFIGS,
   BASE_EXCLUDES,
+  PUBLIC_TURBO_CACHE_DIR,
+  PUBLIC_VALIDATION_SCRIPTS,
   matchesPattern,
   isIncrementalBuildState,
+  parseBatchBlobOutput,
   parseArguments,
+  parseCommittedTree,
   parseDivergence,
   selectObjectKeys,
   shouldExcludeForConfig,

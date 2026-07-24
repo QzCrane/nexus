@@ -19,9 +19,9 @@ Use when generating the approved SPECTRA or HALO public repository from the priv
 
 ## Critical behavior
 
-`nexus/scripts/sync-public.cjs` is destructive to the destination working tree: it removes everything except the destination's `.git` and `node_modules`, copies only committed files from the private source `HEAD`, projects the application README/privacy files, applies explicit root/application script and build-module allowlists, normalizes package metadata to `bun@1.3.14`, installs, builds, removes generated outputs together with their incremental `.tsbuildinfo` state, and creates at most one generated commit. Ignored, untracked, staged, and unstaged files are never public inputs. Repository-root automation and application test/release scripts are excluded while application-local build modules remain available to the generated application.
+`nexus/scripts/sync-public.cjs` is destructive to the destination working tree: it removes everything except the destination's `.git` and `node_modules`, batch-reads only committed files from the private source `HEAD`, projects the application README/privacy files, applies explicit root/application script and build-module allowlists, normalizes package metadata to `bun@1.3.14`, installs, runs the retained public `lint`, `typecheck`, and `build` commands, removes generated outputs together with their incremental `.tsbuildinfo` state, and creates at most one generated commit. Ignored, untracked, staged, and unstaged files are never public inputs. Repository-root automation and application test/release scripts are excluded while application-local build modules remain available to the generated application.
 
-It preserves the destination repository's existing Git history. It does **not** transplant the private repository's commit graph. It never pushes.
+The validation starts from an artifact-clean projection and uses an ignored persistent Turbo cache under `node_modules`; this preserves correctness while avoiding a cold build on every synchronization. A failed gate cannot create a candidate commit. The script preserves the destination repository's existing Git history. It does **not** transplant the private repository's commit graph. It never pushes.
 
 ## Process
 
@@ -56,7 +56,7 @@ bun run sync-spectra
 bun run sync-halo
 ```
 
-The script fails when the source workspace does not declare `packageManager: bun@1.3.14`, when the generated repository lacks `package.json`, when install/build fails, or when the final generated package manager drifts from Bun 1.3.14.
+The script fails when the source workspace does not declare `packageManager: bun@1.3.14`, when the generated repository lacks `package.json`, when install/lint/typecheck/build fails, or when the final generated package manager drifts from Bun 1.3.14. It prints stage timings and a projected-file count instead of one log line per copied file.
 
 If and only if the destination is clean and exactly `0 behind / 1 ahead` of its configured upstream, amend the single unpushed generated candidate instead of creating another commit:
 
@@ -68,14 +68,16 @@ Normal synchronization requires `0 behind / 0 ahead`. `--amend` refuses missing 
 
 Do not manually copy around the generator. Fix source projections or exclusions as a reviewed code change.
 
+Do not push either repository while discovering projection failures. Keep one unpushed private candidate, amend it when source changes, use `--amend` for the one unpushed public candidate when applicable, and push each authorized remote once only after the private and public closure is green.
+
 ### 4. Audit the generated repository
 
 Before push, inspect:
 
 - `git status`, the single generated commit when changes exist, and the complete diff against the destination's previous commit;
 - public README, privacy policy, license, package metadata, scripts, and lockfile;
-- exact `packageManager: bun@1.3.14` and successful clean install/build;
-- retained public `lint` and `typecheck` commands from the artifact-cleaned generated state;
+- exact `packageManager: bun@1.3.14` and successful clean install/lint/typecheck/build;
+- retained public `lint`, `typecheck`, and `build` commands and their generator-recorded results from the artifact-clean generated state;
 - absence of private docs, secrets, internal assets, tests, build artifacts, local agent configuration, and excluded applications;
 - whether destination cleanup removed a public file still required by users or release automation.
 

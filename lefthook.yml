@@ -22,7 +22,7 @@ commit-msg:
       run: bunx commitlint --edit {1}
 
 pre-push:
-  parallel: false
+  parallel: true
   skip:
     - merge
     - rebase
@@ -40,7 +40,7 @@ pre-push:
     ai-pitfalls:
       run: bun --cwd nexus lint:ai-pitfalls
     sync-skills:
-      run: bun run sync:skills
+      run: bun run sync:skills -- --check
 
 post-merge:
   commands:
