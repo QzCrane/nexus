@@ -146,21 +146,28 @@ invalidated by navigation, extension update, context invalidation and dispose,
 and a timed-out handshake returns a structured error without an unhandled
 Promise rejection.
 
-`Alt+ArrowLeft` and `Alt+ArrowRight` are built-in speed controls with a literal
-`-0.1/+0.1` delta. Chromium reserves those combinations for history navigation,
-so they cannot be truthfully supplied as manifest `suggested_key` values. The
-minimal bootstrap instead captures only trusted exact-modifier key events
-outside editable controls, prevents the browser navigation, and sends the
-closed `spectra.content.default-hotkey.trigger` request. Background accepts it
-only from the current top-level HTTP(S) document, rechecks `documentId` before
-execution, resolves the same session-scoped Hotkey Target used by manifest
-volume/speed commands, and routes the selected tab through the shared
-coordinator/actual-readback/alternate-target-feedback path. The foreground
-document remains the trusted event identity and feedback surface; selecting
-another target does not convert the page event into extension invocation or
-grant Capture admission. The heavy page-hotkey listener excludes these two
-built-ins, preventing a site binding from executing the same physical event
-twice.
+All four holdable defaults have one page gesture owner:
+`Alt+ArrowLeft/Right` applies literal `-0.1/+0.1` speed deltas and
+`Alt+ArrowDown/Up` applies `-10/+10` effective-volume deltas. Neither speed nor
+volume deltas are also registered as manifest commands, eliminating the
+competing `chrome.commands` repeat stream that cannot expose physical keyup.
+The same contract excludes every `coalesce-20hz` action from configurable
+Chrome command slots; continuous actions remain available through page bindings
+with real keydown/keyup ownership. The minimal bootstrap captures only trusted
+exact-modifier events outside editable controls,
+prevents Chromium navigation/default handling, assigns a monotonic gesture
+identity, and sends the closed `spectra.content.default-hotkey.trigger` request.
+Background accepts it only from the current top-level HTTP(S) document, keys
+work by `tabId + documentId + action + gesture`, rechecks identity immediately
+before the writer, and waits for that gesture's sole in-flight operation before
+acknowledging release. The foreground document remains the trusted event and
+feedback surface; selecting another Hotkey Target does not create Capture
+admission. The isolated-world gesture channel carries only visual phases to the
+full runtime, owns a cross-bundle monotonic sequence, retains a bounded
+cold-start signal queue until the lifecycle-bound subscriber mounts, and drains
+each queued phase once. Page script therefore cannot forge control or feedback
+input, the first cold-page Toast is not lost, and an old release cannot collide
+with a newer gesture.
 
 Bootstrap restore, the first Popup snapshot, Popup/remote control and Chrome
 commands also share one single-flight initialization barrier keyed by

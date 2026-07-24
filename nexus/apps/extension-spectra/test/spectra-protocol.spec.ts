@@ -84,7 +84,7 @@ function createSettingsSnapshot(): SettingsSnapshot {
 		revision: 7,
 		globalSettings: { ...DEFAULT_GLOBAL_SETTINGS, lang: 'zh-CN', themeMode: 'dark' },
 		hotkeySettings: {
-			slots: { volume_up: 'volume_up' },
+			slots: { toggle_mute: 'volume_mute' },
 			sites: {
 				'example.com': {
 					enabled: true,
@@ -158,6 +158,13 @@ describe('SPECTRA settings runtime guards', () => {
 		expect(isSettingsSnapshot({
 			...snapshot,
 			globalSettings: { ...snapshot.globalSettings, language: 'en-US' },
+		})).toBe(false);
+		expect(isSettingsSnapshot({
+			...snapshot,
+			hotkeySettings: {
+				...snapshot.hotkeySettings,
+				slots: { slot_01: 'volume_up' },
+			},
 		})).toBe(false);
 	});
 
@@ -342,14 +349,19 @@ describe('SPECTRA settings runtime guards', () => {
 });
 
 describe('SPECTRA mapped v2 envelopes', () => {
-	test('accepts only sender-bound symmetric default speed hotkeys', () => {
-		for (const action of ['speed_down', 'speed_up'] as const) {
+	test('accepts only sender-bound, identity-bound default scalar gestures', () => {
+		for (const action of ['speed_down', 'speed_up', 'volume_down', 'volume_up'] as const) {
 			for (const phase of ['press', 'release'] as const) {
 				const request = {
 					protocolVersion: SPECTRA_PROTOCOL_VERSION,
 					requestId: `${action}:${phase}`,
 					type: 'spectra.content.default-hotkey.trigger',
-					payload: { action, phase },
+					payload: {
+						action,
+						phase,
+						gesture: `default:${action}`,
+						repeated: phase === 'release',
+					},
 				} as const;
 				expect(isSpectraRequestEnvelope(request)).toBe(true);
 				expect(isSpectraResponse(request.type, rpcSuccess({ accepted: true }))).toBe(true);
@@ -359,14 +371,24 @@ describe('SPECTRA mapped v2 envelopes', () => {
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			requestId: 'wrong-action',
 			type: 'spectra.content.default-hotkey.trigger',
-			payload: { action: 'volume_up', phase: 'press' },
+			payload: {
+				action: 'gain_up',
+				phase: 'press',
+				gesture: 'default:wrong',
+				repeated: false,
+			},
 		})).toBe(false);
 		expect(isSpectraRequestEnvelope({
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			requestId: 'self-routed',
 			tabId: 42,
 			type: 'spectra.content.default-hotkey.trigger',
-			payload: { action: 'speed_up', phase: 'press' },
+			payload: {
+				action: 'speed_up',
+				phase: 'press',
+				gesture: 'default:self-routed',
+				repeated: false,
+			},
 		})).toBe(false);
 	});
 

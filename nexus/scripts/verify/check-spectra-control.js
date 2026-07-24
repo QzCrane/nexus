@@ -1346,8 +1346,16 @@ function checkRetiredPaths(root) {
 		path.join(root, 'packages/contracts/src/spectra.bootstrap.ts'),
 		'utf8',
 	);
+	const hotkeyContracts = fs.readFileSync(
+		path.join(root, 'packages/contracts/src/hotkeys.contracts.ts'),
+		'utf8',
+	);
 	const pageHotkeyListener = fs.readFileSync(
 		path.join(root, SOURCE_PATH, 'content/input/hotkey-listener.ts'),
+		'utf8',
+	);
+	const defaultScalarGesture = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'content/input/default-scalar-gesture.ts'),
 		'utf8',
 	);
 	const feedbackSurface = fs.readFileSync(
@@ -1379,38 +1387,59 @@ function checkRetiredPaths(root) {
 		'if (activeChromeCommands.has(command)) return false',
 		'activeChromeCommands.add(command)',
 		'activeChromeCommands.delete(command)',
-		'const repeatBursts = new Map<string, {',
+		'const pageGestureBursts = new Map<string, {',
 		'const MAX_REPEAT_BURST_PULSES = 160',
 		'state.pendingPulses = Math.min(MAX_REPEAT_BURST_PULSES',
 		'state.expiry = setTimeout(() => {',
-		'export function cancelChromeCommandRepeatBurst(',
+		'export function releasePageGestureBurst(',
+		'export function waitForPageGestureBurst(',
 		'state.released = true',
-		'? runChromeCommandRepeatBurst(action, execute)',
-		': runChromeCommandSingleFlight(command, () => execute(1))',
+		'isReleased: () => state.released',
+		'const execution = runChromeCommandSingleFlight(command, execute)',
 		'void execution.catch((error: unknown) => {',
 	]) {
 		if (!shortcuts.includes(required)) {
-			error(`SCTRL-022: Chrome command repeat gate is missing (${required})`);
+			error(`SCTRL-022: shortcut repeat/release gate is missing (${required})`);
 		}
 	}
-	const reservedManifestKeys = ['Alt+Left', 'Alt+Right'];
+	const reservedManifestKeys = ['Alt+Left', 'Alt+Right', 'Alt+Down', 'Alt+Up'];
 	const suggestedKeys = Object.values(shortcutManifest.commands ?? {})
 		.flatMap(command => Object.values(command.suggested_key ?? {}));
-	if (!bootstrapContract.includes("SPECTRA_DEFAULT_HOTKEY_ACTIONS = ['speed_down', 'speed_up']")
+	if (!bootstrapContract.includes("\t'speed_down',")
+		|| !bootstrapContract.includes("\t'speed_up',")
+		|| !bootstrapContract.includes("\t'volume_down',")
+		|| !bootstrapContract.includes("\t'volume_up',")
 		|| !bootstrap.includes("if (event.code === 'ArrowLeft') return 'speed_down'")
 		|| !bootstrap.includes("if (event.code === 'ArrowRight') return 'speed_up'")
+		|| !bootstrap.includes("if (event.code === 'ArrowDown') return 'volume_down'")
+		|| !bootstrap.includes("if (event.code === 'ArrowUp') return 'volume_up'")
 		|| !bootstrap.includes('if (!event.isTrusted')
 		|| !bootstrap.includes('event.preventDefault()')
 		|| !bootstrap.includes('event.stopImmediatePropagation()')
-		|| !bootstrap.includes("sendDefaultSpeedPhase(action, 'release')")
+		|| !bootstrap.includes("sendDefaultScalarPhase(active, 'release')")
+		|| !bootstrap.includes("publishDefaultScalarGesture({ ...active, phase: 'release' })")
+		|| !defaultScalarGesture.includes('listeners: Set<DefaultScalarGestureListener>')
+		|| !defaultScalarGesture.includes('pending: DefaultScalarGestureSignal[]')
+		|| !defaultScalarGesture.includes("export function nextScalarGestureId(namespace: 'default' | 'site')")
+		|| !defaultScalarGesture.includes('const pending = owner.pending.splice(0)')
+		|| !defaultScalarGesture.includes('return () => owner.listeners.delete(listener)')
 		|| !pageHotkeyListener.includes('isBuiltInSpeedShortcut(e)')
+		|| !pageHotkeyListener.includes('subscribeDefaultScalarGesture(handleDefaultScalarGesture)')
+		|| !pageHotkeyListener.includes('lastDefaultScalarFeedbackTarget')
 		|| !shortcuts.includes("candidate.type !== 'spectra.content.default-hotkey.trigger'")
 		|| !shortcuts.includes('sender.frameId !== 0')
 		|| !shortcuts.includes('current?.documentId !== expectedDocumentId')
+		|| !shortcuts.includes('if (isCancelled()) return')
+		|| !shortcuts.includes('message.payload.gesture')
+		|| !hotkeyContracts.includes("descriptor.repeatPolicy !== 'coalesce-20hz'")
+		|| shortcutManifest.commands?.speed_down
+		|| shortcutManifest.commands?.speed_up
+		|| shortcutManifest.commands?.volume_down
+		|| shortcutManifest.commands?.volume_up
 		|| !shortcuts.includes('resolveShortcutTargetFromActive(identity.tab)')
 		|| !shortcuts.includes('await executeShortcutRoute(')
 		|| reservedManifestKeys.some(key => suggestedKeys.includes(key))) {
-		error('SCTRL-006/SCTRL-022: built-in Alt+Arrow speed shortcuts must be trusted, sender-bound, target-routed, navigation-blocking and outside manifest reserved keys');
+		error('SCTRL-006/SCTRL-022: built-in Alt+Arrow scalar gestures must be trusted, identity-bound, target-routed, navigation-blocking and outside manifest commands');
 	}
 	if (!feedbackSurface.includes("host.popover = 'manual'")
 		|| !feedbackSurface.includes("document.addEventListener('fullscreenchange'")
@@ -1423,12 +1452,17 @@ function checkRetiredPaths(root) {
 		|| !scalarFeedback.includes("{ value: 1, label: '1×', lane: 'lower' }")
 		|| !scalarFeedback.includes("{ value: 2, label: '2×', lane: 'upper' }")
 		|| !osd.includes('paintScalarValue(root, payload, value, s)')
+		|| !osd.includes('paintScalarValue(root, payload, from, s)')
+		|| !osd.includes('scalarFeedbackMaxFrameDelta(payload.type)')
+		|| !scalarFeedback.includes('const MAX_SHORTCUT_STEP_PER_FRAME = 0.6')
 		|| !osd.includes('animateScalarValue(')
 		|| !osd.includes('const target = payload.value')
 		|| !osd.includes('export function showHotkeyTargetOSD(')
 		|| !osd.includes('export function suspendHotkeyTargetOSD(')
 		|| !osd.includes('export function releaseHotkeyTargetOSD(')
 		|| !osd.includes('if (state.shortcutTargetGesture !== null) return')
+		|| !osd.includes('targetAt - state.lastTargetAt')
+		|| !scalarFeedback.includes('Math.min(FEEDBACK_STEP_DURATION_MS, targetIntervalMs)')
 		|| !pageHotkeyListener.includes('advanceScalarFeedbackTarget(held)')
 		|| !pageHotkeyListener.includes('suspendHotkeyTargetOSD(held.feedbackGesture)')
 		|| !pageHotkeyListener.includes('releaseHotkeyTargetOSD(held.feedbackGesture)')
@@ -1597,10 +1631,6 @@ function checkRetiredPaths(root) {
 		error('SCTRL-005/SCTRL-013/SCTRL-016: Filter must use one 20 Hz latest-value intent for value plus ownership');
 	}
 
-	const hotkeyContracts = fs.readFileSync(
-		path.join(root, 'packages/contracts/src/hotkeys.contracts.ts'),
-		'utf8',
-	);
 	const hotkeyListener = fs.readFileSync(
 		path.join(root, SOURCE_PATH, 'content/input/hotkey-listener.ts'),
 		'utf8',

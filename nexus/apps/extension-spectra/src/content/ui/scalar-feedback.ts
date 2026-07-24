@@ -37,6 +37,8 @@ const SCALAR_FEEDBACK_SCALES = {
 
 const FEEDBACK_STEP_DURATION_MS = 50;
 const MAX_FEEDBACK_ANIMATION_MS = 300;
+const MIN_FEEDBACK_ANIMATION_MS = 16;
+const MAX_SHORTCUT_STEP_PER_FRAME = 0.6;
 
 function scaleFor(kind: ScalarFeedbackKind): ScalarFeedbackScale {
 	return SCALAR_FEEDBACK_SCALES[kind];
@@ -73,11 +75,24 @@ export function scalarFeedbackAnimationDuration(
 	kind: ScalarFeedbackKind,
 	from: number,
 	to: number,
+	targetIntervalMs?: number,
 ): number {
+	if (targetIntervalMs !== undefined && Number.isFinite(targetIntervalMs)) {
+		return Math.max(
+			MIN_FEEDBACK_ANIMATION_MS,
+			Math.min(FEEDBACK_STEP_DURATION_MS, targetIntervalMs),
+		);
+	}
 	const scale = scaleFor(kind);
 	const steps = Math.abs(to - from) / scale.step;
 	return Math.min(
 		MAX_FEEDBACK_ANIMATION_MS,
 		Math.max(FEEDBACK_STEP_DURATION_MS, steps * FEEDBACK_STEP_DURATION_MS),
 	);
+}
+
+// A delayed browser frame must not turn one discrete shortcut step into one
+// visible jump. Both scalar kinds use the same fraction of their semantic step.
+export function scalarFeedbackMaxFrameDelta(kind: ScalarFeedbackKind): number {
+	return scaleFor(kind).step * MAX_SHORTCUT_STEP_PER_FRAME;
 }

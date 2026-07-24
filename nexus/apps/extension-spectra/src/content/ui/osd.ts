@@ -6,6 +6,7 @@ import type { ContentGlobalSettings } from '../core/settings-manager';
 import { activateFeedbackSurface, createFeedbackSurface } from './feedback-surface';
 import {
 	scalarFeedbackAnimationDuration,
+	scalarFeedbackMaxFrameDelta,
 	scalarFeedbackMarkers,
 	scalarFeedbackProgress,
 	type ScalarFeedbackKind,
@@ -17,7 +18,8 @@ interface OSDState {
 	timer: ReturnType<typeof setTimeout> | null;
 	animationFrame: number | null;
 	displayedValue: number | null;
-	shortcutTargetGesture: number | null;
+	shortcutTargetGesture: string | null;
+	lastTargetAt: number | null;
 	lastType: 'volume' | 'speed' | null;
 }
 const state: OSDState = {
@@ -27,6 +29,7 @@ const state: OSDState = {
 	animationFrame: null,
 	displayedValue: null,
 	shortcutTargetGesture: null,
+	lastTargetAt: null,
 	lastType: null,
 };
 
@@ -93,7 +96,7 @@ export function showHotkeyActualOSD(
 export function showHotkeyTargetOSD(
 	feedback: SpectraHotkeyActualFeedback,
 	s: ContentGlobalSettings,
-	gesture: number,
+	gesture: string,
 ): void {
 	if (!s.osdEnabled) return;
 	state.shortcutTargetGesture = gesture;
@@ -165,6 +168,13 @@ function animateScalarValue(
 	s: ContentGlobalSettings,
 ): void {
 	cancelValueAnimation();
+	const targetAt = performance.now();
+	const targetIntervalMs = state.shortcutTargetGesture !== null
+		&& state.lastType === payload.type
+		&& state.lastTargetAt !== null
+		? targetAt - state.lastTargetAt
+		: undefined;
+	state.lastTargetAt = targetAt;
 	const from = state.lastType === payload.type && state.displayedValue !== null
 		? state.displayedValue
 		: payload.value;
@@ -175,15 +185,27 @@ function animateScalarValue(
 		paintScalarValue(root, payload, to, s);
 		return;
 	}
-	const duration = scalarFeedbackAnimationDuration(payload.type, from, to);
+	const duration = scalarFeedbackAnimationDuration(payload.type, from, to, targetIntervalMs);
+	// Commit the discrete shortcut target in the input task while preserving the
+	// current interpolated fill. A busy frame cannot swallow a physical step's
+	// integer label merely because the next keydown arrives before rAF.
+	paintScalarValue(root, payload, from, s);
 	let startedAt: number | null = null;
 	const step = (now: number): void => {
 		startedAt ??= now;
 		const progress = Math.min(1, (now - startedAt) / duration);
-		const value = from + (to - from) * progress;
+		const desired = from + (to - from) * progress;
+		const current = state.displayedValue ?? from;
+		const remaining = desired - current;
+		const maxFrameDelta = state.shortcutTargetGesture === null
+			? Math.abs(remaining)
+			: scalarFeedbackMaxFrameDelta(payload.type);
+		const value = Math.abs(remaining) <= maxFrameDelta
+			? desired
+			: current + Math.sign(remaining) * maxFrameDelta;
 		state.displayedValue = value;
 		paintScalarValue(root, payload, value, s);
-		if (progress < 1) {
+		if (progress < 1 || Math.abs(to - value) > Number.EPSILON) {
 			state.animationFrame = requestAnimationFrame(step);
 		} else {
 			state.animationFrame = null;
@@ -198,19 +220,20 @@ function concealOSD(): void {
 	state.root?.getElementById('o')?.classList.remove('v');
 	state.timer = null;
 	state.displayedValue = null;
+	state.lastTargetAt = null;
 	state.lastType = null;
 }
 
 // A held gesture disappears on keyup but keeps its identity until its one
 // in-flight ACK settles. During that boundary, late actual feedback stays
 // suppressed and cannot resurrect visual motion after release.
-export function suspendHotkeyTargetOSD(gesture: number): void {
+export function suspendHotkeyTargetOSD(gesture: string): void {
 	if (state.shortcutTargetGesture !== gesture) return;
 	if (state.timer) clearTimeout(state.timer);
 	concealOSD();
 }
 
-export function releaseHotkeyTargetOSD(gesture: number): void {
+export function releaseHotkeyTargetOSD(gesture: string): void {
 	if (state.shortcutTargetGesture === gesture) state.shortcutTargetGesture = null;
 }
 

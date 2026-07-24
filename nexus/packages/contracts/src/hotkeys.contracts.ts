@@ -167,13 +167,16 @@ export const HOTKEY_ACTION_DESCRIPTORS = {
 
 const HOTKEY_ACTION_SET: ReadonlySet<string> = new Set(HOTKEY_ACTIONS);
 
-// Chrome command slots cannot persist action parameters. Keep this runtime
-// predicate beside the exhaustive descriptor table so storage normalization,
-// settings patches and command dispatch enforce exactly one boundary.
+// Chrome command slots expose neither physical keyup nor action parameters.
+// Keep this runtime predicate beside the exhaustive descriptor table so
+// storage normalization, settings patches and command dispatch enforce one
+// capability boundary: held/coalesced actions belong to page KeyboardEvents.
 export function isSlotHotkeyAction(action: unknown): action is HotkeyAction {
 	if (typeof action !== 'string' || !HOTKEY_ACTION_SET.has(action)) return false;
 	const descriptor = HOTKEY_ACTION_DESCRIPTORS[action as HotkeyAction];
-	return descriptor.availability !== 'disabled-legacy' && descriptor.parameter === 'none';
+	return descriptor.availability !== 'disabled-legacy'
+		&& descriptor.parameter === 'none'
+		&& descriptor.repeatPolicy !== 'coalesce-20hz';
 }
 
 export interface KeyModifiers {
@@ -283,11 +286,7 @@ export const DEFAULT_MODIFIERS: Readonly<KeyModifiers> = {
 
 // DEFAULT_SLOTS: maps manifest.json command names to actions
 export const DEFAULT_SLOTS: SlotMapping = {
-	volume_up: 'volume_up',
-	volume_down: 'volume_down',
 	toggle_mute: 'volume_mute',
-	speed_down: 'speed_down',
-	speed_up: 'speed_up',
 };
 
 export const DEFAULT_HOTKEY_SETTINGS: Readonly<HotkeySettings> = {

@@ -3,14 +3,21 @@
 import type { ControlDirectField, MediaTarget } from './control.contracts.js';
 
 export const SPECTRA_PROTOCOL_VERSION = 2 as const;
-export const SPECTRA_CONTENT_BOOTSTRAP_REVISION = '1.2.0' as const;
+export const SPECTRA_CONTENT_BOOTSTRAP_REVISION = '1.3.0' as const;
 
-export const SPECTRA_DEFAULT_HOTKEY_ACTIONS = ['speed_down', 'speed_up'] as const;
+export const SPECTRA_DEFAULT_HOTKEY_ACTIONS = [
+	'speed_down',
+	'speed_up',
+	'volume_down',
+	'volume_up',
+] as const;
 export type SpectraDefaultHotkeyAction = typeof SPECTRA_DEFAULT_HOTKEY_ACTIONS[number];
 export type SpectraDefaultHotkeyPhase = 'press' | 'release';
 export interface SpectraDefaultHotkeyTriggerPayload {
 	action: SpectraDefaultHotkeyAction;
 	phase: SpectraDefaultHotkeyPhase;
+	gesture: string;
+	repeated: boolean;
 }
 
 const REQUEST_KEYS = new Set([
@@ -73,9 +80,11 @@ export function isSpectraDefaultHotkeyTriggerPayload(
 	value: unknown,
 ): value is SpectraDefaultHotkeyTriggerPayload {
 	return isRecord(value)
-		&& hasOnlyKeys(value, new Set(['action', 'phase']))
+		&& hasOnlyKeys(value, new Set(['action', 'phase', 'gesture', 'repeated']))
 		&& SPECTRA_DEFAULT_HOTKEY_ACTIONS.some((action) => action === value.action)
-		&& (value.phase === 'press' || value.phase === 'release');
+		&& (value.phase === 'press' || value.phase === 'release')
+		&& isBoundedString(value.gesture, 128)
+		&& typeof value.repeated === 'boolean';
 }
 
 function hasValidEnvelope(value: Record<string, unknown>): boolean {

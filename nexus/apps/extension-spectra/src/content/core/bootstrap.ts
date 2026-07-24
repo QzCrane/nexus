@@ -20,6 +20,10 @@ import {
 	runWithValidExtensionContext,
 } from './extension-context';
 import { readPageMediaField } from '../logic/page-media-bridge';
+import {
+	nextScalarGestureId,
+	publishDefaultScalarGesture,
+} from '../input/default-scalar-gesture';
 
 const previous = getContentBootstrapState();
 if (previous?.bootstrapRevision !== SPECTRA_CONTENT_BOOTSTRAP_REVISION) previous?.dispose();
@@ -28,14 +32,18 @@ if (!getContentBootstrapState()) {
 	let disposed = false;
 	let observationsReady = false;
 	let observationInFlight = false;
-	const activeDefaultSpeedKeys = new Map<string, SpectraDefaultHotkeyAction>();
+	const activeDefaultScalarKeys = new Map<string, {
+		action: SpectraDefaultHotkeyAction;
+		gesture: string;
+		repeated: boolean;
+	}>();
 	type BootstrapNativeObservation = {
 		patch: import('@nexus/contracts').ControlPatch;
 		observedStrategies: import('@nexus/contracts').ControlNativeObservationStrategies;
 	};
 	let pendingObservation: BootstrapNativeObservation | null = null;
 
-	const defaultSpeedAction = (event: KeyboardEvent): SpectraDefaultHotkeyAction | null => {
+	const defaultScalarAction = (event: KeyboardEvent): SpectraDefaultHotkeyAction | null => {
 		if (!event.isTrusted
 			|| !event.altKey
 			|| event.ctrlKey
@@ -48,54 +56,79 @@ if (!getContentBootstrapState()) {
 				|| target.tagName === 'SELECT'))) return null;
 		if (event.code === 'ArrowLeft') return 'speed_down';
 		if (event.code === 'ArrowRight') return 'speed_up';
+		if (event.code === 'ArrowDown') return 'volume_down';
+		if (event.code === 'ArrowUp') return 'volume_up';
 		return null;
 	};
 
-	const sendDefaultSpeedPhase = (
-		action: SpectraDefaultHotkeyAction,
+	const sendDefaultScalarPhase = (
+		active: { action: SpectraDefaultHotkeyAction; gesture: string; repeated: boolean },
 		phase: 'press' | 'release',
-	): void => {
-		void sendBootstrapRequest(
+	): Promise<void> => sendBootstrapRequest(
 			'spectra.content.default-hotkey.trigger',
-			{ action, phase },
+			{
+				action: active.action,
+				gesture: active.gesture,
+				phase,
+				repeated: active.repeated,
+			},
 			state.dispose,
-		).catch(() => undefined);
-	};
+		).then(() => undefined);
 
-	const onDefaultSpeedKeydown = (event: KeyboardEvent): void => {
+	const onDefaultScalarKeydown = (event: KeyboardEvent): void => {
 		if (disposed) return;
-		const action = defaultSpeedAction(event);
+		const action = defaultScalarAction(event);
 		if (!action) return;
 		event.preventDefault();
 		event.stopImmediatePropagation();
-		activeDefaultSpeedKeys.set(event.code, action);
-		sendDefaultSpeedPhase(action, 'press');
-	};
-
-	const releaseDefaultSpeedKeys = (): void => {
-		for (const action of activeDefaultSpeedKeys.values()) {
-			sendDefaultSpeedPhase(action, 'release');
+		let active = activeDefaultScalarKeys.get(event.code);
+		if (!active) {
+			active = {
+				action,
+				gesture: nextScalarGestureId('default'),
+				repeated: false,
+			};
+			activeDefaultScalarKeys.set(event.code, active);
+		} else {
+			active.repeated = true;
 		}
-		activeDefaultSpeedKeys.clear();
+		publishDefaultScalarGesture({ ...active, phase: 'press' });
+		void sendDefaultScalarPhase(active, 'press').catch(() => undefined);
 	};
 
-	const onDefaultSpeedKeyup = (event: KeyboardEvent): void => {
-		const action = activeDefaultSpeedKeys.get(event.code);
-		if (action) {
+	const releaseDefaultScalarGesture = (
+		active: { action: SpectraDefaultHotkeyAction; gesture: string; repeated: boolean },
+	): void => {
+		publishDefaultScalarGesture({ ...active, phase: 'release' });
+		void sendDefaultScalarPhase(active, 'release')
+			.catch(() => undefined)
+			.finally(() => publishDefaultScalarGesture({ ...active, phase: 'settled' }));
+	};
+
+	const releaseDefaultScalarKeys = (): void => {
+		for (const active of activeDefaultScalarKeys.values()) {
+			releaseDefaultScalarGesture(active);
+		}
+		activeDefaultScalarKeys.clear();
+	};
+
+	const onDefaultScalarKeyup = (event: KeyboardEvent): void => {
+		const active = activeDefaultScalarKeys.get(event.code);
+		if (active) {
 			event.preventDefault();
 			event.stopImmediatePropagation();
-			activeDefaultSpeedKeys.delete(event.code);
-			sendDefaultSpeedPhase(action, 'release');
+			activeDefaultScalarKeys.delete(event.code);
+			releaseDefaultScalarGesture(active);
 			return;
 		}
-		if (!event.code.startsWith('Alt') || activeDefaultSpeedKeys.size === 0) return;
+		if (!event.code.startsWith('Alt') || activeDefaultScalarKeys.size === 0) return;
 		event.preventDefault();
 		event.stopImmediatePropagation();
-		releaseDefaultSpeedKeys();
+		releaseDefaultScalarKeys();
 	};
 
 	const onVisibilityChange = (): void => {
-		if (document.hidden) releaseDefaultSpeedKeys();
+		if (document.hidden) releaseDefaultScalarKeys();
 	};
 
 	const readBootstrapObservation = (
@@ -204,15 +237,15 @@ if (!getContentBootstrapState()) {
 		dispose() {
 			if (disposed) return;
 			disposed = true;
-			releaseDefaultSpeedKeys();
+			releaseDefaultScalarKeys();
 			pendingObservation = null;
 			try { chrome.runtime.onMessage.removeListener(onMessage); } catch { /* invalidated context */ }
 			document.removeEventListener('volumechange', onNativeMediaChange, true);
 			document.removeEventListener('ratechange', onNativeMediaChange, true);
-			document.removeEventListener('keydown', onDefaultSpeedKeydown, true);
-			document.removeEventListener('keyup', onDefaultSpeedKeyup, true);
+			document.removeEventListener('keydown', onDefaultScalarKeydown, true);
+			document.removeEventListener('keyup', onDefaultScalarKeyup, true);
 			document.removeEventListener('visibilitychange', onVisibilityChange);
-			window.removeEventListener('blur', releaseDefaultSpeedKeys);
+			window.removeEventListener('blur', releaseDefaultScalarKeys);
 			window.removeEventListener('pagehide', onPageHide);
 			delete state.disposeRuntime;
 			if (getContentBootstrapState() === state) setContentBootstrapState(undefined);
@@ -350,7 +383,7 @@ if (!getContentBootstrapState()) {
 	};
 
 	const onPageHide = (): void => {
-		releaseDefaultSpeedKeys();
+		releaseDefaultScalarKeys();
 		if (!state.runtimeRevision) return;
 		void sendBootstrapRequest('spectra.content.runtime.release', {
 			runtimeRevision: state.runtimeRevision,
@@ -361,10 +394,10 @@ if (!getContentBootstrapState()) {
 	chrome.runtime.onMessage.addListener(onMessage);
 	document.addEventListener('volumechange', onNativeMediaChange, true);
 	document.addEventListener('ratechange', onNativeMediaChange, true);
-	document.addEventListener('keydown', onDefaultSpeedKeydown, true);
-	document.addEventListener('keyup', onDefaultSpeedKeyup, true);
+	document.addEventListener('keydown', onDefaultScalarKeydown, true);
+	document.addEventListener('keyup', onDefaultScalarKeyup, true);
 	document.addEventListener('visibilitychange', onVisibilityChange);
-	window.addEventListener('blur', releaseDefaultSpeedKeys);
+	window.addEventListener('blur', releaseDefaultScalarKeys);
 	window.addEventListener('pagehide', onPageHide, { once: true });
 
 	void sendBootstrapRequest('spectra.content.bootstrap.hello', {
@@ -384,7 +417,12 @@ function sendBootstrapRequest(
 		| 'spectra.control.intent.submit',
 	payload: { bootstrapRevision: string }
 		| { runtimeRevision: string }
-		| { action: SpectraDefaultHotkeyAction; phase: 'press' | 'release' }
+		| {
+			action: SpectraDefaultHotkeyAction;
+			phase: 'press' | 'release';
+			gesture: string;
+			repeated: boolean;
+		}
 		| import('@nexus/contracts').ControlSubmitRequest,
 	onInvalidated?: () => void,
 ): Promise<unknown | undefined> {

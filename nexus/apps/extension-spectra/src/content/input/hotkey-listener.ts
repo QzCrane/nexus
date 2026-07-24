@@ -15,6 +15,11 @@ import { sendSpectraRequest } from '../../shared/spectra-client';
 import { createEventListener, createCleanupManager } from '../utils/timing';
 import { executeHotkeyAction } from './hotkey-actions';
 import { isTrustedHotkeyEvent } from './hotkey-event';
+import {
+	nextScalarGestureId,
+	subscribeDefaultScalarGesture,
+	type DefaultScalarGestureSignal,
+} from './default-scalar-gesture';
 import { hideToast, showToast } from '../ui/toast';
 import {
 	hideOSD,
@@ -34,18 +39,22 @@ let cachedSite: SiteHotkeyConfig | null | undefined;
 let cachedBindings: Map<string, HotkeyBinding> | undefined;
 let lastHostname = '';
 const coalesced = new Map<string, ReturnType<typeof setTimeout>>();
-const inFlightBindings = new Map<string, number>();
-const releasedFeedbackGestures = new Set<number>();
+const inFlightBindings = new Map<string, string>();
+const releasedFeedbackGestures = new Set<string>();
 const pendingRepeatPulses = new Map<string, number>();
 interface ActiveHotkeyBinding {
 	binding: HotkeyBinding;
 	repeated: boolean;
 	feedbackTarget?: number;
-	feedbackGesture: number;
+	feedbackGesture: string;
 }
 const activeBindingsByCode = new Map<string, ActiveHotkeyBinding>();
+const defaultScalarFeedbackTargets = new Map<string, {
+	action: DefaultScalarGestureSignal['action'];
+	target: number;
+}>();
+const lastDefaultScalarFeedbackTarget = new Map<'speed' | 'volume', number>();
 const MAX_REPEAT_BURST_PULSES = 160;
-let feedbackGestureSequence = 0;
 let keydownDisposer: (() => void) | null = null;
 let keyupDisposer: (() => void) | null = null;
 let contentSettings: Pick<SettingsManager, 'get'> | undefined;
@@ -75,6 +84,14 @@ function cancelActiveBindings(): void {
 	hideOSD(true);
 }
 
+function cancelDefaultScalarFeedback(): void {
+	for (const gesture of defaultScalarFeedbackTargets.keys()) {
+		releaseHotkeyTargetOSD(gesture);
+	}
+	defaultScalarFeedbackTargets.clear();
+	lastDefaultScalarFeedbackTarget.clear();
+}
+
 function synchronizeKeydownListener(): void {
 	const shouldListen = getSiteConfig() !== null;
 	if (shouldListen && !keydownDisposer) {
@@ -101,6 +118,7 @@ export async function initHotkeyListener(
 	const cleanup = createCleanupManager();
 
 	synchronizeKeydownListener();
+	cleanup.add(subscribeDefaultScalarGesture(handleDefaultScalarGesture));
 	cleanup.add(createEventListener(window, 'blur', cancelActiveBindings));
 	cleanup.add(createEventListener(window, 'pagehide', cancelActiveBindings));
 	cleanup.add(createEventListener(document, 'visibilitychange', () => {
@@ -117,6 +135,7 @@ export async function initHotkeyListener(
 			keyupDisposer = null;
 		}
 		cancelActiveBindings();
+		cancelDefaultScalarFeedback();
 		if (contentSettings === settingsManager) contentSettings = undefined;
 		if (feedbackState === state) feedbackState = undefined;
 	});
@@ -133,6 +152,7 @@ function handleSettingsEvent(message: unknown): false {
 			targetHostname: message.payload.targetHostname,
 		} as const;
 		if (message.payload.feedback && contentSettings) {
+			lastDefaultScalarFeedbackTarget.delete(message.payload.feedback.kind);
 			showHotkeyActualOSD(message.payload.feedback, contentSettings.get(), options);
 		} else {
 			showToast(formatLabel(message.payload.action), options);
@@ -222,11 +242,53 @@ function activeBinding(bindingId: string): ActiveHotkeyBinding | undefined {
 	return [...activeBindingsByCode.values()].find(({ binding }) => binding.id === bindingId);
 }
 
-function nextFeedbackGesture(): number {
-	feedbackGestureSequence = feedbackGestureSequence >= Number.MAX_SAFE_INTEGER
-		? 1
-		: feedbackGestureSequence + 1;
-	return feedbackGestureSequence;
+function nextFeedbackGesture(): string {
+	return nextScalarGestureId('site');
+}
+
+function handleDefaultScalarGesture(signal: DefaultScalarGestureSignal): void {
+	if (signal.phase === 'release') {
+		if (signal.repeated && defaultScalarFeedbackTargets.has(signal.gesture)) {
+			suspendHotkeyTargetOSD(signal.gesture);
+		}
+		return;
+	}
+	if (signal.phase === 'settled') {
+		defaultScalarFeedbackTargets.delete(signal.gesture);
+		releaseHotkeyTargetOSD(signal.gesture);
+		return;
+	}
+	if (!contentSettings || !feedbackState) return;
+	const kind = signal.action.startsWith('speed_') ? 'speed' : 'volume';
+	const direction = signal.action.endsWith('_up') ? 1 : -1;
+	const previous = defaultScalarFeedbackTargets.get(signal.gesture);
+	const step = kind === 'speed' ? 0.1 : 10;
+	const actual = kind === 'speed'
+		? feedbackState.config.speed
+		: resolveAudioVolume(feedbackState.config).effectiveVolume;
+	const recentTarget = lastDefaultScalarFeedbackTarget.get(kind);
+	const base = previous?.action === signal.action
+		? previous.target
+		: recentTarget !== undefined && Math.abs(recentTarget - actual) <= step + 0.001
+			? recentTarget
+			: actual;
+	const target = clampScalarFeedbackValue(
+		kind,
+		Math.round((base + direction * step) * 100) / 100,
+	);
+	defaultScalarFeedbackTargets.set(signal.gesture, {
+		action: signal.action,
+		target,
+	});
+	lastDefaultScalarFeedbackTarget.set(kind, target);
+	showHotkeyTargetOSD(kind === 'speed'
+		? { kind, value: target }
+		: {
+			kind,
+			value: target,
+			muted: feedbackState.config.muted,
+			capture: feedbackState.actualMode === 'capture' && feedbackState.phase === 'active',
+		}, contentSettings.get(), signal.gesture);
 }
 
 function addRepeatPulse(bindingId: string): void {
@@ -315,7 +377,7 @@ function advanceScalarFeedbackTarget(
 function executeBinding(
 	binding: HotkeyBinding,
 	withOSD: boolean,
-	feedbackGesture: number,
+	feedbackGesture: string,
 ): void {
 	if (inFlightBindings.has(binding.id)) return;
 	inFlightBindings.set(binding.id, feedbackGesture);

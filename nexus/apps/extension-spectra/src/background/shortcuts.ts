@@ -47,12 +47,13 @@ const shortcutRuntimePort: ShortcutRuntimePort = {
 };
 
 const activeChromeCommands = new Set<string>();
-const repeatBursts = new Map<string, {
+const pageGestureBursts = new Map<string, {
 	active: boolean;
 	pendingPulses: number;
 	expiry: ReturnType<typeof setTimeout> | null;
 	released: boolean;
 	lastPulseAt: number;
+	settleWaiters: Set<() => void>;
 }>();
 const MAX_REPEAT_BURST_PULSES = 160;
 const REPEAT_BURST_IDLE_MS = 250;
@@ -74,22 +75,26 @@ export async function runChromeCommandSingleFlight(
 	}
 }
 
-// Scalar command repeats may arrive faster than a page-native writer can
+// Page KeyboardEvent repeats may arrive faster than a page-native writer can
 // complete its event/stable-getter ACK. Retain only a bounded pulse count and
-// consume it when a later physical command event arrives. Completion never
-// self-drains pending work, so key release cannot leave a trailing transaction.
-export async function runChromeCommandRepeatBurst(
-	command: string,
-	operation: (pulses: number) => Promise<void>,
+// consume it when a later physical repeat arrives. Completion never self-drains
+// pending work, and exact keyup can cancel the gesture before any delayed writer.
+export async function runPageGestureBurst(
+	gesture: string,
+	operation: (
+		pulses: number,
+		context: { isReleased: () => boolean },
+	) => Promise<void>,
 ): Promise<boolean> {
-	const state = repeatBursts.get(command) ?? {
+	const state = pageGestureBursts.get(gesture) ?? {
 		active: false,
 		pendingPulses: 0,
 		expiry: null,
 		released: false,
 		lastPulseAt: 0,
+		settleWaiters: new Set(),
 	};
-	repeatBursts.set(command, state);
+	pageGestureBursts.set(gesture, state);
 	const pulseAt = Date.now();
 	state.released = false;
 	if (state.active) {
@@ -108,23 +113,27 @@ export async function runChromeCommandRepeatBurst(
 	state.active = true;
 	let succeeded = false;
 	try {
-		await operation(pulses);
+		await operation(pulses, {
+			isReleased: () => state.released || pageGestureBursts.get(gesture) !== state,
+		});
 		succeeded = true;
 		return true;
 	} finally {
 		state.active = false;
+		for (const settle of state.settleWaiters) settle();
+		state.settleWaiters.clear();
 		if (!succeeded) {
-			repeatBursts.delete(command);
+			pageGestureBursts.delete(gesture);
 		} else if (state.released || state.pendingPulses === 0) {
-			repeatBursts.delete(command);
+			pageGestureBursts.delete(gesture);
 		} else {
 			const remainingIdleMs = REPEAT_BURST_IDLE_MS - (Date.now() - state.lastPulseAt);
 			if (remainingIdleMs <= 0) {
-				repeatBursts.delete(command);
+				pageGestureBursts.delete(gesture);
 			} else {
 				state.expiry = setTimeout(() => {
-					if (!state.active && repeatBursts.get(command) === state) {
-						repeatBursts.delete(command);
+					if (!state.active && pageGestureBursts.get(gesture) === state) {
+						pageGestureBursts.delete(gesture);
 					}
 				}, remainingIdleMs);
 			}
@@ -132,14 +141,20 @@ export async function runChromeCommandRepeatBurst(
 	}
 }
 
-export function cancelChromeCommandRepeatBurst(command: string): void {
-	const state = repeatBursts.get(command);
+export function waitForPageGestureBurst(gesture: string): Promise<void> {
+	const state = pageGestureBursts.get(gesture);
+	if (!state?.active) return Promise.resolve();
+	return new Promise((resolve) => state.settleWaiters.add(resolve));
+}
+
+export function releasePageGestureBurst(gesture: string): void {
+	const state = pageGestureBursts.get(gesture);
 	if (!state) return;
 	state.pendingPulses = 0;
 	state.released = true;
 	if (state.expiry) clearTimeout(state.expiry);
 	state.expiry = null;
-	if (!state.active) repeatBursts.delete(command);
+	if (!state.active) pageGestureBursts.delete(gesture);
 }
 
 // Every Chrome command is valid on a fresh document, independently from Popup
@@ -181,20 +196,18 @@ export function setupShortcutListeners(): void {
 			? slotMapping[command]
 			: resolveDirectCommand(command);
 		if (!action || action === 'none') return;
-		const execute = async (repeatPulses: number): Promise<void> => {
+		const execute = async (): Promise<void> => {
 			swLog.debug(`Shortcut command: ${command}`);
 
 			const route = await resolveShortcutTarget();
 			if (!route) return;
 			try {
-				await executeShortcutRoute(action, route, repeatPulses, true);
+				await executeShortcutRoute(action, route, 1, true);
 			} catch (error) {
 				swLog.warn(`Shortcut ${action} failed`, error);
 			}
 		};
-		const execution = isBatchableChromeAction(action)
-			? runChromeCommandRepeatBurst(action, execute)
-			: runChromeCommandSingleFlight(command, () => execute(1));
+		const execution = runChromeCommandSingleFlight(command, execute);
 		void execution.catch((error: unknown) => {
 			swLog.warn(`Shortcut command ${command} failed before execution`, error);
 		});
@@ -222,13 +235,21 @@ export function setupShortcutListeners(): void {
 			identity.tabId,
 			identity.documentId,
 			message.payload.action,
+			message.payload.gesture,
 		);
 		if (message.payload.phase === 'release') {
-			cancelChromeCommandRepeatBurst(burstKey);
-			sendResponse(rpcSuccess({ accepted: true as const }));
-			return false;
+			if (message.payload.repeated) releasePageGestureBurst(burstKey);
+			void waitForPageGestureBurst(burstKey).then(
+				() => sendResponse(rpcSuccess({ accepted: true as const })),
+				(error) => sendResponse(rpcFailure(
+					'default_hotkey_release_failed',
+					error instanceof Error ? error.message : String(error),
+					true,
+				)),
+			);
+			return true;
 		}
-		void runDefaultPageSpeedShortcut(identity, message.payload.action, burstKey).then(
+		void runDefaultPageScalarShortcut(identity, message.payload.action, burstKey).then(
 			() => sendResponse(rpcSuccess({ accepted: true as const })),
 			(error) => sendResponse(rpcFailure(
 				'default_hotkey_failed',
@@ -274,16 +295,18 @@ function defaultHotkeyBurstKey(
 	tabId: number,
 	documentId: string,
 	action: SpectraDefaultHotkeyAction,
+	gesture: string,
 ): string {
-	return `page:${tabId}:${documentId}:${action}`;
+	return `page:${tabId}:${documentId}:${action}:${gesture}`;
 }
 
-async function runDefaultPageSpeedShortcut(
+async function runDefaultPageScalarShortcut(
 	identity: DefaultHotkeyIdentity,
 	action: SpectraDefaultHotkeyAction,
 	burstKey: string,
 ): Promise<void> {
-	await runChromeCommandRepeatBurst(burstKey, async (repeatPulses) => {
+	await runPageGestureBurst(burstKey, async (repeatPulses, context) => {
+		if (context.isReleased()) return;
 		const before = await chrome.webNavigation.getFrame({
 			tabId: identity.tabId,
 			frameId: 0,
@@ -292,13 +315,14 @@ async function runDefaultPageSpeedShortcut(
 			throw new Error('Default hotkey belongs to a stale document');
 		}
 		const route = await resolveShortcutTargetFromActive(identity.tab);
-		if (!route) return;
+		if (!route || context.isReleased()) return;
 		await executeShortcutRoute(
 			action,
 			route,
 			repeatPulses,
 			false,
 			route.target.id === identity.tabId ? identity.documentId : undefined,
+			context.isReleased,
 		);
 	});
 }
@@ -337,7 +361,9 @@ async function executeShortcutRoute(
 	repeatPulses: number,
 	extensionInvoked: boolean,
 	expectedDocumentId?: string,
+	isCancelled: () => boolean = () => false,
 ): Promise<void> {
+	if (isCancelled()) return;
 	const tab = route.target;
 	if (!tab.id || !tab.url) return;
 	const tabId = tab.id;
@@ -361,6 +387,7 @@ async function executeShortcutRoute(
 				|| current?.documentId !== expectedDocumentId) {
 				throw new Error('Default hotkey document changed before execution');
 			}
+			if (isCancelled()) return;
 			await executeAction(action, tabId, domain, repeatPulses, extensionInvoked);
 		} finally {
 			releaseContentRuntimeLease(tabId, ready.documentId, 'hotkey', capability);
@@ -368,7 +395,9 @@ async function executeShortcutRoute(
 	} else {
 		await runWithShortcutRuntime(
 			tabId,
-			() => executeAction(action, tabId, domain, repeatPulses, extensionInvoked),
+			() => isCancelled()
+				? Promise.resolve()
+				: executeAction(action, tabId, domain, repeatPulses, extensionInvoked),
 		);
 	}
 	if (route.active?.id !== undefined && route.active.id !== tabId) {
@@ -446,25 +475,13 @@ async function clearRemovedShortcutTarget(tabId: number): Promise<void> {
 
 // goal: maps literal manifest command names to unified HotkeyActions
 export function resolveDirectCommand(command: string): HotkeyAction | undefined {
-	return DEFAULT_SLOTS[command];
+	const action = DEFAULT_SLOTS[command];
+	return isSlotHotkeyAction(action) ? action : undefined;
 }
 
 const FULL_OUTPUT_FIELDS = new Set<ControlMutation['field']>([
 	'boost', 'eqValues', 'bass', 'compressor', 'mono', 'pan', 'delay', 'tabMuted', 'tabPinned',
 ]);
-const BATCHABLE_CHROME_ACTIONS: ReadonlySet<HotkeyAction> = new Set([
-	'speed_up',
-	'speed_down',
-	'volume_up',
-	'volume_down',
-	'gain_up',
-	'gain_down',
-]);
-
-function isBatchableChromeAction(action: HotkeyAction): boolean {
-	return BATCHABLE_CHROME_ACTIONS.has(action);
-}
-
 async function submitMutations(
 	tabId: number,
 	mutations: ControlMutation[],

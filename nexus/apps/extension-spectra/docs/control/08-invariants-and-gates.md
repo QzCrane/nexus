@@ -32,7 +32,7 @@ audience: developer
 - `SCTRL-019`: one visualizer IPC owns the next schedule; a slow request cannot create an empty 15 Hz wake-up loop.
 - `SCTRL-020`: Popup fields project only `ControlSnapshot`; audio session data owns lifecycle only.
 - `SCTRL-021`: visualizer ownership is per subscriber, expires abnormal exits and retains a bounded generation tombstone.
-- `SCTRL-022`: every hotkey has exactly one feedback owner on a fullscreen-safe browser top-layer surface; scalar repeat bursts are bounded, only a new physical event consumes accumulated pulses, and key release/lifecycle disposal cannot leave a trailing invocation.
+- `SCTRL-022`: every hotkey has exactly one feedback owner on a fullscreen-safe browser top-layer surface; all four holdable scalar defaults have one page gesture identity, discrete per-pulse labels, cadence-bounded fill interpolation, exact release cancellation, and no delayed writer or ACK may create post-release motion. Chrome commands and configurable command slots reject coalescing actions because their API has no physical keyup.
 - `SCTRL-023`: screenshot source and geometry are token-verified on both sides of browser capture.
 - `SCTRL-024`: document runtime ownership counts unique consumer tokens; only the last token may dispose it.
 - `SCTRL-025`: `activeMedia` and `activeVideo` are independent actual identities; every video-only surface routes to the latter.
@@ -70,7 +70,9 @@ disposal after navigation/update.
 
 The gate must also stop/reacquire the MV3 worker before a same-origin refresh,
 verify all `CONTROL_SESSION_FIELDS` remain in the durable projection, prove
-built-in `Alt+ArrowLeft/Right` speed deltas without history navigation,
+built-in `Alt+ArrowLeft/Right` speed and `Alt+ArrowDown/Up` volume deltas without
+history navigation or a competing manifest command, rejection of every
+coalescing action from configurable Chrome command slots,
 preset precedence and global fallback on new tabs, assert an empty Badge for
 sparse/non-volume state, and exercise bounded scalar repeats plus release
 cancellation. The same `smoke.spec.ts` source runs against the development

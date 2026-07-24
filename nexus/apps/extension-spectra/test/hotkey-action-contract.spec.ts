@@ -54,9 +54,11 @@ describe('editable hotkey action contract', () => {
 		expect(listener).not.toContain("action !== 'open_popup'");
 	});
 
-	test('ships symmetric Alt+Arrow speed defaults through the bootstrap boundary', () => {
-		expect(DEFAULT_SLOTS.speed_down).toBe('speed_down');
-		expect(DEFAULT_SLOTS.speed_up).toBe('speed_up');
+	test('ships every holdable Alt+Arrow scalar default through one bootstrap gesture boundary', () => {
+		expect(DEFAULT_SLOTS.speed_down).toBeUndefined();
+		expect(DEFAULT_SLOTS.speed_up).toBeUndefined();
+		expect(DEFAULT_SLOTS.volume_down).toBeUndefined();
+		expect(DEFAULT_SLOTS.volume_up).toBeUndefined();
 		expect(PRESET_BINDINGS.some((binding) =>
 			binding.key.modifiers.alt
 			&& (binding.key.code === 'ArrowLeft' || binding.key.code === 'ArrowRight'))).toBe(false);
@@ -66,14 +68,25 @@ describe('editable hotkey action contract', () => {
 		);
 		expect(bootstrap).toContain("if (event.code === 'ArrowLeft') return 'speed_down'");
 		expect(bootstrap).toContain("if (event.code === 'ArrowRight') return 'speed_up'");
+		expect(bootstrap).toContain("if (event.code === 'ArrowDown') return 'volume_down'");
+		expect(bootstrap).toContain("if (event.code === 'ArrowUp') return 'volume_up'");
 		expect(bootstrap).toContain("'spectra.content.default-hotkey.trigger'");
 		expect(bootstrap).toContain('event.stopImmediatePropagation()');
-		expect(bootstrap).toContain('releaseDefaultSpeedKeys');
+		expect(bootstrap).toContain('releaseDefaultScalarKeys');
+		expect(bootstrap).toContain('publishDefaultScalarGesture');
 		const listener = readFileSync(
 			resolve(import.meta.dir, '../src/content/input/hotkey-listener.ts'),
 			'utf8',
 		);
-		expect(listener).toContain('isBuiltInSpeedShortcut(e)');
+		expect(listener).toContain('subscribeDefaultScalarGesture(handleDefaultScalarGesture)');
+		expect(listener).toContain('lastDefaultScalarFeedbackTarget');
+	});
+
+	test('keeps every direct manifest action inside the discrete command-slot boundary', () => {
+		for (const action of Object.values(DEFAULT_SLOTS)) {
+			expect(isSlotHotkeyAction(action), action).toBe(true);
+			expect(HOTKEY_ACTION_DESCRIPTORS[action].repeatPolicy, action).not.toBe('coalesce-20hz');
+		}
 	});
 
 	test('unsupported pitch actions remain outside the editable registry', () => {
@@ -82,10 +95,11 @@ describe('editable hotkey action contract', () => {
 		}
 	});
 
-	test('command slots expose only executable actions that need no persisted parameters', () => {
+	test('command slots expose only discrete executable actions that need no persisted parameters', () => {
 		for (const action of SLOT_HOTKEY_ACTIONS) {
 			expect(HANDLED_HOTKEY_ACTIONS.has(action), action).toBe(true);
 			expect(PARAMETER_REQUIRED_HOTKEY_ACTIONS.has(action), action).toBe(false);
+			expect(HOTKEY_ACTION_DESCRIPTORS[action].repeatPolicy, action).not.toBe('coalesce-20hz');
 		}
 		for (const action of ['speed_set', 'volume_set', 'run_js', 'open_url'] as const) {
 			expect(EDITABLE_HOTKEY_ACTIONS.has(action), action).toBe(true);
@@ -93,7 +107,8 @@ describe('editable hotkey action contract', () => {
 			expect(isSlotHotkeyAction(action), action).toBe(false);
 		}
 		expect(isSlotHotkeyAction('pitch_up')).toBe(false);
-		expect(isSlotHotkeyAction('volume_up')).toBe(true);
+		expect(isSlotHotkeyAction('volume_up')).toBe(false);
+		expect(isSlotHotkeyAction('seek_forward_5s')).toBe(false);
 		expect(isSlotHotkeyAction('future_action')).toBe(false);
 	});
 

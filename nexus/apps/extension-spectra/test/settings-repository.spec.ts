@@ -47,7 +47,7 @@ describe('background settings repository', () => {
 		const storage = new FakeStorageArea({
 			globalSettings: { lang: 'en-US', language: 'es-ES', extensionOwned: 'keep-me' },
 			hotkeySettings: {
-				slots: { slot_01: 'volume_up' },
+				slots: { slot_01: 'toggle_mute' },
 				sites: { 'EXAMPLE.COM.': { enabled: true, bindings: [legacyPitchBinding] } },
 				futureField: { retained: true },
 			},
@@ -512,7 +512,7 @@ describe('background settings repository', () => {
 		const repository = new SettingsRepository(new FakeStorageArea());
 		const initial = await repository.initialize();
 		const slots = await repository.applyPatch(
-			{ scope: 'hotkey-slots', changes: { slot_01: 'volume_down' } },
+			{ scope: 'hotkey-slots', changes: { slot_01: 'play_pause' } },
 			initial.revision,
 		);
 
@@ -525,15 +525,15 @@ describe('background settings repository', () => {
 			{ scope: 'hotkey-site', domain: 'music.example.com', value: { enabled: true, bindings: [] } },
 			slots.revision,
 		);
-		expect(site.hotkeySettings.slots.slot_01).toBe('volume_down');
+		expect(site.hotkeySettings.slots.slot_01).toBe('play_pause');
 		expect(site.hotkeySettings.sites['music.example.com']?.enabled).toBe(true);
 		await repository.flush();
 	});
 
-	test('rejects parameterized and disabled legacy actions from Chrome command slots', async () => {
+	test('rejects parameterized, disabled and holdable actions from Chrome command slots', async () => {
 		const repository = new SettingsRepository(new FakeStorageArea());
 		const initial = await repository.initialize();
-		for (const action of ['speed_set', 'pitch_up'] as const) {
+		for (const action of ['speed_set', 'pitch_up', 'volume_down', 'seek_forward_5s'] as const) {
 			await expect(repository.applyPatch(
 				{ scope: 'hotkey-slots', changes: { slot_01: action } },
 				initial.revision,
@@ -551,7 +551,7 @@ describe('background settings repository', () => {
 		const snapshot = await repository.initialize();
 		expect(snapshot.hotkeySettings.slots.slot_01).toBeUndefined();
 		expect(snapshot.hotkeySettings.slots.slot_02).toBeUndefined();
-		expect(snapshot.hotkeySettings.slots.slot_03).toBe('volume_down');
+		expect(snapshot.hotkeySettings.slots.slot_03).toBeUndefined();
 	});
 
 	test('removes legacy site bindings whose required parameters are missing or unsafe', async () => {

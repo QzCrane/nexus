@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
 	scalarFeedbackAnimationDuration,
+	scalarFeedbackMaxFrameDelta,
 	scalarFeedbackMarkers,
 	scalarFeedbackProgress,
 } from '../src/content/ui/scalar-feedback';
@@ -35,5 +36,14 @@ describe('scalar feedback bars', () => {
 		expect(scalarFeedbackAnimationDuration('speed', 1, 0.7)).toBeCloseTo(150, 10);
 		expect(scalarFeedbackAnimationDuration('volume', 800, 0)).toBe(300);
 		expect(scalarFeedbackAnimationDuration('speed', 16, 0.1)).toBe(300);
+		expect(scalarFeedbackAnimationDuration('volume', 80, 70, 35)).toBe(35);
+		expect(scalarFeedbackAnimationDuration('speed', 1.1, 1.2, 35)).toBe(35);
+		expect(scalarFeedbackAnimationDuration('volume', 80, 70, 0)).toBe(16);
+		expect(scalarFeedbackAnimationDuration('speed', 1.1, 1.2, 200)).toBe(50);
+	});
+
+	test('caps delayed frames by the same fraction of one semantic step', () => {
+		expect(scalarFeedbackMaxFrameDelta('volume') / 10).toBeCloseTo(0.6);
+		expect(scalarFeedbackMaxFrameDelta('speed') / 0.1).toBeCloseTo(0.6);
 	});
 });

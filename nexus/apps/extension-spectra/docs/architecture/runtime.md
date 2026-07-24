@@ -134,20 +134,28 @@ response channel open until Background restoration, authorization, READY, and
 state synchronization settle. A restarted MV3 worker therefore cannot be
 suspended between receipt and completion of the first authenticated event.
 
-The bootstrap also owns the only built-in reserved-key boundary:
-trusted `Alt+ArrowLeft/Right` outside editable controls becomes a sender-bound
-`speed_down/up` trigger instead of Chromium history navigation. It performs no
-polling and owns no control state; Background validates the top-level
-`tabId + documentId`, acquires the existing hotkey runtime lease, and submits a
-literal `0.1` coordinator mutation without Capture admission.
+The bootstrap also owns the only built-in holdable scalar-key boundary:
+trusted `Alt+ArrowLeft/Right` becomes sender-bound `speed_down/up`, while
+`Alt+ArrowDown/Up` becomes `volume_down/up`. Keeping all four gestures on the
+page input boundary provides exact physical repeat and keyup identity; the
+volume pair is therefore not duplicated in manifest commands. The bootstrap
+performs no polling and owns no control state. Background validates the
+top-level `tabId + documentId + gesture`, acquires the existing hotkey runtime
+lease, and submits literal `0.1×` or `10`-point coordinator mutations without
+Capture admission. The isolated-world gesture channel owns one monotonic
+sequence across bootstrap/runtime reinjection and a bounded cold-start signal
+queue, so the first key event is replayed once when feedback mounts and an old
+release cannot settle a newer gesture.
 
-Scalar `chrome.commands` and page-defined repeats share a bounded pulse-burst
-algorithm. While actual readback is active, new physical repeats accumulate up
-to the fixed bound; only another physical repeat may consume that batch.
-Transaction completion never self-drains pending work; command pulses expire
-from the last physical event rather than from transaction completion, and page
-keyup, blur/pagehide, or disposal clears pending pulses. Non-scalar commands
-retain the single-flight gate.
+Built-in scalar gestures and page-defined repeats use exact page
+`KeyboardEvent` lifecycles. While actual readback is active, new physical
+repeats accumulate up to the fixed bound; only another physical repeat may
+consume that batch. Transaction completion never self-drains pending work.
+Keyup cancels pending pulses and passes a live release token through runtime
+ensure so a delayed writer cannot start after release. `chrome.commands`
+provides no physical keyup, so its manifest registry and configurable slots
+admit only non-coalescing actions through the contract predicate; those
+discrete commands retain the single-flight gate.
 
 One `tabId + documentId` initialization promise orders bootstrap restore,
 cold native observations, initial snapshot reads and explicit control. The

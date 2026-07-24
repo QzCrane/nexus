@@ -1699,13 +1699,10 @@ describe('SPECTRA built extension smoke', () => {
 			(await chrome.commands.getAll()).map(({ name, shortcut }) => [name, shortcut]),
 		));
 		expect(commandShortcuts.toggle_mute).toBe('Alt+M');
-		expect(commandShortcuts.speed_down).toBe('');
-		expect(commandShortcuts.speed_up).toBe('Alt+S');
-		// Chromium renders directional keys with or without the " Arrow"
-		// suffix depending on host platform/build. Both values prove the same
-		// registered command; the manifest contract separately fixes the key.
-		expect(commandShortcuts.volume_up).toMatch(/^Alt\+Up(?: Arrow)?$/u);
-		expect(commandShortcuts.volume_down).toMatch(/^Alt\+Down(?: Arrow)?$/u);
+		expect(commandShortcuts).not.toHaveProperty('speed_down');
+		expect(commandShortcuts).not.toHaveProperty('speed_up');
+		expect(commandShortcuts).not.toHaveProperty('volume_up');
+		expect(commandShortcuts).not.toHaveProperty('volume_down');
 		expect(await readContentBootstrapStatus()).toMatchObject({
 			ready: false,
 			runtimeRevision: null,
@@ -3631,30 +3628,8 @@ describe('SPECTRA built extension smoke', () => {
 					patch: { scope: 'global', changes: { lang: 'zh-CN' } },
 				});
 				if (!changed?.ok) throw new Error('Unable to select zh-CN for OSD smoke test');
-				const hotkeys = await request('spectra.settings.patch', {
-					expectedRevision: changed.data.revision,
-					patch: {
-						scope: 'hotkey-site',
-						domain: '127.0.0.1',
-						value: {
-							enabled: true,
-							bindings: [{
-								id: 'smoke-volume-down',
-								enabled: true,
-								key: {
-									code: 'ArrowDown',
-									modifiers: { ctrl: false, alt: true, shift: false, meta: false },
-								},
-								action: 'volume_down',
-								params: { step: 10 },
-							}],
-						},
-					},
-				});
-				if (!hotkeys?.ok) throw new Error('Unable to configure the held-volume smoke shortcut');
 				return {
 					originalLanguage: current.data.globalSettings.lang,
-					originalHotkeySite: current.data.hotkeySettings.sites['127.0.0.1'] ?? null,
 				};
 			})
 		), 5_000);
@@ -3907,6 +3882,81 @@ describe('SPECTRA built extension smoke', () => {
 			await shortcutTargetPage.close();
 			shortcutTargetPage = null;
 			await fixturePage.bringToFront();
+			await fixturePage.evaluate(() => {
+				const root = document.querySelector<HTMLElement>('#spectra-osd-host')?.shadowRoot;
+				const text = root?.getElementById('t');
+				const fill = root?.getElementById('f');
+				if (!root || !text || !fill) throw new Error('Speed feedback surface is unavailable');
+				const scope = window as Window & {
+					__spectraHeldSpeedFrames?: Array<{ at: number; label: string; width: number }>;
+					__spectraHeldSpeedObserver?: MutationObserver;
+				};
+				scope.__spectraHeldSpeedFrames = [];
+				scope.__spectraHeldSpeedObserver?.disconnect();
+				const record = () => {
+					const label = text.textContent ?? '';
+					const width = Number.parseFloat(fill.style.width);
+					if (label.endsWith('×') && Number.isFinite(width)) {
+						scope.__spectraHeldSpeedFrames!.push({
+							at: performance.now(),
+							label,
+							width,
+						});
+					}
+				};
+				scope.__spectraHeldSpeedObserver = new MutationObserver(record);
+				scope.__spectraHeldSpeedObserver.observe(root, {
+					attributes: true,
+					attributeFilter: ['style'],
+					childList: true,
+					characterData: true,
+					subtree: true,
+				});
+			});
+			await withDiagnosticTimeout('hold the page-owned speed-up gesture', async () => {
+				await fixturePage.keyboard.down('Alt');
+				await fixturePage.keyboard.down('ArrowRight');
+				for (let index = 0; index < 11; index += 1) {
+					await new Promise((resolveWait) => setTimeout(resolveWait, 35));
+					await fixturePage.keyboard.down('ArrowRight');
+				}
+				await new Promise((resolveWait) => setTimeout(resolveWait, 35));
+				await fixturePage.keyboard.up('ArrowRight');
+				await fixturePage.keyboard.up('Alt');
+			}, 5_000);
+			const speedAtRelease = await fixturePage.evaluate(() => (
+				document.querySelector<HTMLMediaElement>('video,audio')?.playbackRate ?? -1
+			));
+			await new Promise((resolveWait) => setTimeout(resolveWait, 400));
+			const heldSpeedFeedback = await fixturePage.evaluate(() => {
+				const scope = window as Window & {
+					__spectraHeldSpeedFrames?: Array<{ at: number; label: string; width: number }>;
+					__spectraHeldSpeedObserver?: MutationObserver;
+				};
+				scope.__spectraHeldSpeedObserver?.disconnect();
+				const host = document.querySelector<HTMLElement>('#spectra-osd-host');
+				return {
+					frames: scope.__spectraHeldSpeedFrames ?? [],
+					rate: document.querySelector<HTMLMediaElement>('video,audio')?.playbackRate ?? -1,
+					visible: host?.shadowRoot?.getElementById('o')?.classList.contains('v') ?? false,
+				};
+			});
+			expect(heldSpeedFeedback.rate).toBe(speedAtRelease);
+			expect(heldSpeedFeedback.visible).toBe(false);
+			const heldSpeedLabels = [...new Set(
+				heldSpeedFeedback.frames.map(({ label }) => label),
+			)];
+			expect(heldSpeedLabels).toEqual([
+				'1.1×', '1.2×', '1.3×', '1.4×', '1.5×', '1.6×',
+				'1.7×', '1.8×', '1.9×', '2.0×', '2.1×', '2.2×',
+			]);
+			const heldSpeedWidths = heldSpeedFeedback.frames.map(({ width }) => width);
+			expect(heldSpeedWidths.every((width, index) => (
+				index === 0 || width >= heldSpeedWidths[index - 1]! - 0.001
+			))).toBe(true);
+			expect(heldSpeedWidths.every((width, index) => (
+				index === 0 || width - heldSpeedWidths[index - 1]! <= 0.55
+			))).toBe(true);
 			await submitEffectiveVolume(tabId, 90);
 			await withDiagnosticTimeout('observe the below-100 volume baseline', () => (
 				fixturePage.waitForFunction(() => (
@@ -3920,7 +3970,7 @@ describe('SPECTRA built extension smoke', () => {
 				const fill = root?.getElementById('f');
 				if (!root || !text || !fill) throw new Error('OSD feedback surface is unavailable');
 				const scope = window as Window & {
-					__spectraScalarFrames?: Array<{ label: string; width: number }>;
+					__spectraScalarFrames?: Array<{ at: number; label: string; width: number }>;
 					__spectraScalarObserver?: MutationObserver;
 				};
 				scope.__spectraScalarFrames = [];
@@ -3929,7 +3979,7 @@ describe('SPECTRA built extension smoke', () => {
 					const label = text.textContent ?? '';
 					const width = Number.parseFloat(fill.style.width);
 					if (label.endsWith('%') && Number.isFinite(width)) {
-						scope.__spectraScalarFrames!.push({ label, width });
+						scope.__spectraScalarFrames!.push({ at: performance.now(), label, width });
 					}
 				};
 				scope.__spectraScalarObserver = new MutationObserver(record);
@@ -3970,21 +4020,26 @@ describe('SPECTRA built extension smoke', () => {
 			expect(releasedState).toEqual({ volume: volumeAtRelease, visible: false });
 			const scalarFrames = await fixturePage.evaluate(() => {
 				const scope = window as Window & {
-					__spectraScalarFrames?: Array<{ label: string; width: number }>;
+					__spectraScalarFrames?: Array<{ at: number; label: string; width: number }>;
 					__spectraScalarObserver?: MutationObserver;
 				};
 				scope.__spectraScalarObserver?.disconnect();
 				return scope.__spectraScalarFrames ?? [];
 			});
 			const scalarLabels = [...new Set(scalarFrames.map(({ label }) => label))];
-			const scalarWidths = [...new Set(scalarFrames.map(({ width }) => width))];
-			expect(scalarLabels.length).toBeGreaterThan(5);
-			expect(scalarLabels.every((label) => {
-				const value = Number.parseFloat(label);
-				return !label.includes('.') && Number.isInteger(value) && value % 10 === 0;
-			})).toBe(true);
-			expect(scalarWidths.length).toBeGreaterThan(5);
-			expect(scalarWidths.some((width) => Math.abs((width * 8) % 10) > 0.05)).toBe(true);
+			expect(scalarLabels).toEqual([
+				'80%', '70%', '60%', '50%', '40%', '30%', '20%', '10%',
+			]);
+			const scalarWidths = scalarFrames.map(({ width }) => width);
+			expect(scalarWidths.every((width, index) => (
+				index === 0 || width <= scalarWidths[index - 1]! + 0.001
+			))).toBe(true);
+			expect(scalarWidths.every((width, index) => (
+				index === 0 || scalarWidths[index - 1]! - width <= 1
+			))).toBe(true);
+			for (const label of scalarLabels.slice(1)) {
+				expect(scalarFrames.filter((frame) => frame.label === label).length).toBeGreaterThan(2);
+			}
 		} finally {
 			await extensionClient.evaluate(async () => {
 				await chrome.runtime.sendMessage({
@@ -3995,7 +4050,7 @@ describe('SPECTRA built extension smoke', () => {
 				});
 			}).catch(() => undefined);
 			await shortcutTargetPage?.close().catch(() => undefined);
-			await extensionClient.evaluate(async ({ hotkeySite, language }) => {
+			await extensionClient.evaluate(async (language) => {
 				const current = await chrome.runtime.sendMessage({
 					protocolVersion: 2,
 					requestId: crypto.randomUUID(),
@@ -4003,29 +4058,16 @@ describe('SPECTRA built extension smoke', () => {
 					payload: {},
 				});
 				if (!current?.ok) throw new Error('Unable to read settings during OSD smoke cleanup');
-				const restoredHotkeys = await chrome.runtime.sendMessage({
-					protocolVersion: 2,
-					requestId: crypto.randomUUID(),
-					type: 'spectra.settings.patch',
-					payload: {
-						expectedRevision: current.data.revision,
-						patch: { scope: 'hotkey-site', domain: '127.0.0.1', value: hotkeySite },
-					},
-				});
-				if (!restoredHotkeys?.ok) throw new Error('Unable to restore OSD smoke hotkeys');
 				await chrome.runtime.sendMessage({
 					protocolVersion: 2,
 					requestId: crypto.randomUUID(),
 					type: 'spectra.settings.patch',
 					payload: {
-						expectedRevision: restoredHotkeys.data.revision,
+						expectedRevision: current.data.revision,
 						patch: { scope: 'global', changes: { lang: language } },
 					},
 				});
-			}, {
-				hotkeySite: settings.originalHotkeySite,
-				language: settings.originalLanguage,
-			});
+			}, settings.originalLanguage);
 			await submitEffectiveVolume(tabId, 100).catch(() => undefined);
 			await extensionClient.close().catch(() => undefined);
 		}
