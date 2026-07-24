@@ -4,14 +4,31 @@ import type { AudioConfig } from '@nexus/kernel';
 import { resolveAudioVolume, type SpectraHotkeyActualFeedback } from '@nexus/contracts';
 import type { ContentGlobalSettings } from '../core/settings-manager';
 import { activateFeedbackSurface, createFeedbackSurface } from './feedback-surface';
+import {
+	scalarFeedbackAnimationDuration,
+	scalarFeedbackMarkers,
+	scalarFeedbackProgress,
+	type ScalarFeedbackKind,
+} from './scalar-feedback';
 
 interface OSDState {
 	host: HTMLElement | null;
 	root: ShadowRoot | null;
 	timer: ReturnType<typeof setTimeout> | null;
+	animationFrame: number | null;
+	displayedValue: number | null;
+	shortcutTargetActive: boolean;
 	lastType: 'volume' | 'speed' | null;
 }
-const state: OSDState = { host: null, root: null, timer: null, lastType: null };
+const state: OSDState = {
+	host: null,
+	root: null,
+	timer: null,
+	animationFrame: null,
+	displayedValue: null,
+	shortcutTargetActive: false,
+	lastType: null,
+};
 
 export interface OSDOptions {
 	variant?: 'alternate-target';
@@ -30,6 +47,7 @@ export function showOSD(
 	options: OSDOptions = {},
 ): void {
 	if (pop || !s.osdEnabled || !c.enabled) return;
+	if (state.shortcutTargetActive) return;
 	const volume = resolveAudioVolume(c);
 	renderOSD({
 		type: 'volume',
@@ -47,6 +65,7 @@ export function showSpeedOSD(
 	options: OSDOptions = {},
 ): void {
 	if (pop || !s.osdEnabled) return;
+	if (state.shortcutTargetActive) return;
 	renderOSD({ type: 'speed', value: speed }, s, options);
 }
 
@@ -68,22 +87,117 @@ export function showHotkeyActualOSD(
 		: { type: 'speed', value: feedback.value }, s, options);
 }
 
+// eff: projects every physical scalar repeat immediately while the acknowledged
+// writer remains single-flight; native ACK feedback is suppressed until keyup
+// so a slower value cannot visually rewind the held shortcut target.
+export function showHotkeyTargetOSD(
+	feedback: SpectraHotkeyActualFeedback,
+	s: ContentGlobalSettings,
+): void {
+	if (!s.osdEnabled) return;
+	state.shortcutTargetActive = true;
+	renderOSD(feedback.kind === 'volume'
+		? {
+			type: 'volume',
+			value: feedback.value,
+			muted: feedback.muted || feedback.value === 0,
+			capture: feedback.capture,
+		}
+		: { type: 'speed', value: feedback.value }, s, {});
+}
+
 type OSDPayload =
 	| { type: 'volume'; value: number; muted: boolean; capture: boolean }
 	| { type: 'speed'; value: number };
-
-function speedProgress(speed: number): number {
-	const normalized = Math.max(0.1, Math.min(16, speed));
-	return normalized <= 1
-		? Math.log10(normalized / 0.1) * 50
-		: 50 + (Math.log(normalized) / Math.log(16)) * 50;
-}
 
 function formatSpeed(speed: number): string {
 	const rounded = Math.round(speed * 100) / 100;
 	return Number.isInteger(rounded * 10)
 		? rounded.toFixed(1)
 		: rounded.toFixed(2).replace(/0$/u, '');
+}
+
+function cancelValueAnimation(): void {
+	if (state.animationFrame !== null) cancelAnimationFrame(state.animationFrame);
+	state.animationFrame = null;
+}
+
+function renderMarkers(root: ShadowRoot, type: ScalarFeedbackKind): void {
+	const markerLayer = root.getElementById('marks');
+	if (!markerLayer) return;
+	const markers = scalarFeedbackMarkers(type).map((marker) => {
+		const element = document.createElement('span');
+		element.className = `mk ${marker.lane}`;
+		element.dataset.label = marker.label;
+		element.style.left = `${scalarFeedbackProgress(type, marker.value)}%`;
+		return element;
+	});
+	markerLayer.replaceChildren(...markers);
+}
+
+function paintScalarValue(
+	root: ShadowRoot,
+	payload: OSDPayload,
+	value: number,
+	s: ContentGlobalSettings,
+): void {
+	const fill = root.getElementById('f');
+	const text = root.getElementById('t');
+	const icon = root.getElementById('i');
+	if (!fill || !text || !icon) return;
+	fill.style.width = `${scalarFeedbackProgress(payload.type, value)}%`;
+	if (payload.type === 'speed') {
+		text.textContent = `${formatSpeed(value)}×`;
+		icon.textContent = value > 1 ? '⚡' : (value < 1 ? '🐢' : '⏱️');
+		return;
+	}
+	text.textContent = payload.muted
+		? s.osdMessages.muted
+		: `${Number.isInteger(value) ? value : value.toFixed(1)}%`;
+	icon.textContent = payload.muted ? '🔇' : (value > 100 ? '🚀' : '🔊');
+}
+
+function animateScalarValue(
+	root: ShadowRoot,
+	payload: OSDPayload,
+	s: ContentGlobalSettings,
+): void {
+	cancelValueAnimation();
+	const from = state.lastType === payload.type && state.displayedValue !== null
+		? state.displayedValue
+		: payload.value;
+	const to = payload.value;
+	if (payload.type === 'volume' && payload.muted
+		|| from === to) {
+		state.displayedValue = to;
+		paintScalarValue(root, payload, to, s);
+		return;
+	}
+	const duration = scalarFeedbackAnimationDuration(payload.type, from, to);
+	let startedAt: number | null = null;
+	const step = (now: number): void => {
+		startedAt ??= now;
+		const progress = Math.min(1, (now - startedAt) / duration);
+		const value = from + (to - from) * progress;
+		state.displayedValue = value;
+		paintScalarValue(root, payload, value, s);
+		if (progress < 1) {
+			state.animationFrame = requestAnimationFrame(step);
+		} else {
+			state.animationFrame = null;
+			state.displayedValue = to;
+		}
+	};
+	state.animationFrame = requestAnimationFrame(step);
+}
+
+function concealOSD(): void {
+	cancelValueAnimation();
+	state.root?.getElementById('o')?.classList.remove('v');
+	state.timer = null;
+	state.displayedValue = null;
+	state.shortcutTargetActive = false;
+	state.lastType = null;
 }
 
 // eff: core OSD rendering logic, handles both volume and speed display modes
@@ -96,19 +210,21 @@ function renderOSD(payload: OSDPayload, s: ContentGlobalSettings, options: OSDOp
 		const h = surface.host;
 		const ws = surface.root;
 		const css = document.createElement('style');
-		css.textContent = `.o{background:rgba(20,20,30,0.85);backdrop-filter:blur(8px);padding:12px 20px;border-radius:30px;color:#fff;display:grid;gap:4px;font-family:system-ui;transition:0.2s;opacity:0;transform:translateY(-10px)}.v{opacity:1;transform:translateY(0)}.r{display:flex;align-items:center;gap:12px}.b{width:120px;height:6px;background:rgba(255,255,255,0.2);border-radius:3px;overflow:hidden;position:relative}.f{height:100%;width:0%;transition:width 0.05s linear;background:#3b82f6}.c .f{background:#8b5cf6}.m .f{background:#9ca3af}.mr{position:absolute;left:12.5%;top:0;bottom:0;width:2px;background:rgba(255,255,255,0.6);z-index:5}.s .mr{left:50%}.t{font-weight:600;font-size:14px;min-width:50px;text-align:right}.s .f{background:#10b981}.meta{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;font-size:11px;opacity:.78}.meta[hidden]{display:none}`;
+		css.textContent = `.o{background:rgba(20,20,30,0.85);backdrop-filter:blur(8px);padding:12px 20px;border-radius:30px;color:#fff;display:grid;gap:4px;font-family:system-ui;transition:0.2s;opacity:0;transform:translateY(-10px)}.v{opacity:1;transform:translateY(0)}.r{display:flex;align-items:center;gap:12px}.g{width:160px;height:26px;position:relative;flex:none}.b{position:absolute;left:0;right:0;top:10px;height:6px;background:rgba(255,255,255,0.2);border-radius:3px;overflow:hidden}.f{height:100%;width:0%;background:#3b82f6}.c .f{background:#8b5cf6}.m .f{background:#9ca3af}.marks{position:absolute;inset:0;pointer-events:none}.mk{position:absolute;top:9px;width:1px;height:8px;background:rgba(255,255,255,0.72);transform:translateX(-.5px);z-index:5}.mk::after{content:attr(data-label);position:absolute;left:50%;transform:translateX(-50%);font-size:8px;line-height:9px;font-weight:600;white-space:nowrap;color:rgba(255,255,255,0.76)}.mk.upper::after{bottom:9px}.mk.lower::after{top:9px}.t{font-weight:600;font-size:14px;min-width:58px;text-align:right;font-variant-numeric:tabular-nums}.s .f{background:#10b981}.meta{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;font-size:11px;opacity:.78}.meta[hidden]{display:none}`;
 
 		const o = document.createElement('div'); o.className = 'o'; o.id = 'o';
 		const r = document.createElement('div'); r.className = 'r';
 		const i = document.createElement('span'); i.id = 'i';
+		const g = document.createElement('div'); g.className = 'g';
 		const b = document.createElement('div'); b.className = 'b';
-		const m = document.createElement('div'); m.className = 'mr';
 		const f = document.createElement('div'); f.className = 'f'; f.id = 'f';
+		const marks = document.createElement('div'); marks.className = 'marks'; marks.id = 'marks';
 		const t = document.createElement('span'); t.className = 't'; t.id = 't';
 		const meta = document.createElement('div'); meta.className = 'meta'; meta.id = 'meta'; meta.hidden = true;
 
-		b.append(m, f);
-		r.append(i, b, t);
+		b.append(f);
+		g.append(b, marks);
+		r.append(i, g, t);
 		o.append(r, meta);
 		ws.append(css, o);
 		state.host = h;
@@ -117,52 +233,28 @@ function renderOSD(payload: OSDPayload, s: ContentGlobalSettings, options: OSDOp
 	activateFeedbackSurface(state.host);
 
 	const o = state.root.getElementById('o');
-	const f = state.root.getElementById('f');
-	const t = state.root.getElementById('t');
-	const i = state.root.getElementById('i');
 	const meta = state.root.getElementById('meta');
-	if (!o || !f || !t || !i || !meta) return;
+	if (!o || !meta) return;
 
 	o.classList.add('v');
 	o.classList.toggle('c', payload.type === 'volume' && payload.capture);
 	o.classList.toggle('s', payload.type === 'speed');
+	o.classList.toggle('m', payload.type === 'volume' && payload.muted);
 	const alternate = options.variant === 'alternate-target';
 	meta.toggleAttribute('hidden', !alternate);
 	meta.textContent = alternate
 		? `↗ ${options.targetTitle || options.targetHostname || ''}${options.targetTitle && options.targetHostname ? ` · ${options.targetHostname}` : ''}`
 		: '';
 
-	if (payload.type === 'speed') {
-		// speed display mode
-		const speed = payload.value;
-		o.classList.remove('m');
-		// Give the common 0.1x-1x and 1x-16x ranges equal visual space. The
-		// center marker is the semantic 1x baseline rather than a linear 16x cap.
-		f.style.width = `${speedProgress(speed)}%`;
-		t.textContent = `${formatSpeed(speed)}×`;
-		i.textContent = speed > 1 ? '⚡' : (speed < 1 ? '🐢' : '⏱️');
-	} else {
-		// volume display mode
-		const volume = payload.value;
-		const muted = payload.muted;
-		o.classList.toggle('m', muted);
-		f.style.width = `${Math.max(0, Math.min(100, volume / 8))}%`;
-		t.textContent = muted
-			? s.osdMessages.muted
-			: `${Number.isInteger(volume) ? volume : volume.toFixed(1)}%`;
-		i.textContent = muted ? '🔇' : (volume > 100 ? '🚀' : '🔊');
-	}
-
+	if (state.lastType !== payload.type) renderMarkers(state.root, payload.type);
+	animateScalarValue(state.root, payload, s);
 	state.lastType = payload.type;
 	if (state.timer) clearTimeout(state.timer);
-	state.timer = setTimeout(() => o.classList.remove('v'), OSD_HIDE_DELAY_MS);
+	state.timer = setTimeout(concealOSD, OSD_HIDE_DELAY_MS);
 }
 
 // eff: removes the real value OSD immediately when a held shortcut is released.
 export function hideOSD(): void {
-	if (state.timer) {
-		clearTimeout(state.timer);
-		state.timer = null;
-	}
-	state.root?.getElementById('o')?.classList.remove('v');
+	if (state.timer) clearTimeout(state.timer);
+	concealOSD();
 }

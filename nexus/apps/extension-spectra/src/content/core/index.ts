@@ -179,7 +179,7 @@ function bootstrapLifecycle(ctx: InitContext, runtime: ContentRuntime): void {
     onNavigate: () => policyExecutor.applyState({ navigation: true }),
   }));
 
-  void initHotkeyListener(ctx.settingsManager).then((cleanup) => {
+  void initHotkeyListener(ctx.settingsManager, state).then((cleanup) => {
     if (isCurrentRuntime(runtime)) registry.track(cleanup);
     else cleanup();
   });

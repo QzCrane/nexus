@@ -129,6 +129,7 @@ interface PageMediaState {
 	supported?: boolean;
 	maximumSpeed?: number;
 	delayedMaximumSpeed?: number;
+	speedWriteCount?: number;
 }
 
 function installPageMediaBridgeStub(
@@ -149,6 +150,11 @@ function installPageMediaBridgeStub(
 			};
 			media.setAttribute(SPECTRA_PAGE_MEDIA_RESULT_ATTRIBUTE, JSON.stringify(result));
 			return;
+		}
+		if (request.operation === 'write'
+			&& request.field === 'speed'
+			&& state.speedWriteCount !== undefined) {
+			state.speedWriteCount += 1;
 		}
 		if (request.operation === 'write'
 			&& request.field === 'speed'
@@ -1090,6 +1096,194 @@ describe('native media single-writer correlation', () => {
 			executor.dispose();
 		}
 	}, 2_000);
+
+	test('upgrades a DOM-owned restore when a page controller appears later in the same document', async () => {
+		Object.defineProperty(globalThis, 'HTMLMediaElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		Object.defineProperty(globalThis, 'HTMLVideoElement', {
+			configurable: true,
+			value: class FakeVideoElement extends FakeMediaElement { },
+		});
+		Object.defineProperty(globalThis, 'document', {
+			configurable: true,
+			value: { pictureInPictureElement: null, fullscreenElement: null },
+		});
+		Object.defineProperty(globalThis, 'requestAnimationFrame', {
+			configurable: true,
+			value: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0),
+		});
+		const media = new BridgedMediaElement();
+		const state: PageMediaState = {
+			volumeBase: 100,
+			mediaMuted: false,
+			speed: 1,
+			supported: false,
+			speedWriteCount: 0,
+		};
+		installPageMediaBridgeStub(media, state);
+		const registry = new FakeRegistry(media);
+		media.addEventListener('ratechange', () => registry.emit('ratechange'));
+		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
+		try {
+			const restored = await executor.execute({
+				intentId: 'intent:page-media:late-controller-restore',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 2,
+				source: 'restore',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { speed: 2 },
+			});
+			expect(restored.fields.speed).toMatchObject({
+				phase: 'applied',
+				strategy: 'dom-native',
+				actual: 2,
+			});
+			expect(state.speed).toBe(1);
+			expect(media.playbackRate).toBe(2);
+
+			state.supported = true;
+			const adjusted = await executor.execute({
+				intentId: 'intent:page-media:late-controller-adjust',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 3,
+				source: 'hotkey',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { speed: 2.5 },
+			});
+			expect(adjusted.fields.speed).toMatchObject({
+				phase: 'applied',
+				strategy: 'page-native',
+				actual: 2.5,
+			});
+			expect(state.speedWriteCount).toBe(1);
+			expect(state.speed).toBe(2.5);
+			expect(media.playbackRate).toBe(2.5);
+
+			const released = await executor.releasePageSettings({
+				operationId: 'operation:page-media:late-controller-release',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 4,
+				source: 'popup',
+				target: registry.target,
+				operation: 'restore-page-settings',
+				payload: {},
+			});
+			expect(released.fields.speed).toMatchObject({
+				actual: 1,
+				strategy: 'page-native',
+				controlled: false,
+			});
+			expect(state.speed).toBe(1);
+			expect(media.playbackRate).toBe(1);
+		} finally {
+			executor.dispose();
+		}
+	}, 2_000);
+
+	test('keeps DOM ownership after a late page controller rejects one value and upgrades on a later accepted value', async () => {
+		Object.defineProperty(globalThis, 'HTMLMediaElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		Object.defineProperty(globalThis, 'HTMLVideoElement', {
+			configurable: true,
+			value: class FakeVideoElement extends FakeMediaElement { },
+		});
+		Object.defineProperty(globalThis, 'document', {
+			configurable: true,
+			value: { pictureInPictureElement: null, fullscreenElement: null },
+		});
+		Object.defineProperty(globalThis, 'requestAnimationFrame', {
+			configurable: true,
+			value: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0),
+		});
+		const media = new BridgedMediaElement();
+		const state: PageMediaState = {
+			volumeBase: 100,
+			mediaMuted: false,
+			speed: 1,
+			supported: false,
+			maximumSpeed: 2,
+			speedWriteCount: 0,
+		};
+		installPageMediaBridgeStub(media, state);
+		const registry = new FakeRegistry(media);
+		media.addEventListener('ratechange', () => registry.emit('ratechange'));
+		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
+		try {
+			await executor.execute({
+				intentId: 'intent:page-media:late-capped-restore',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 5,
+				source: 'restore',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { speed: 1.5 },
+			});
+			state.supported = true;
+
+			const rejectedUpgrade = await executor.execute({
+				intentId: 'intent:page-media:late-capped-fallback',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 6,
+				source: 'hotkey',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { speed: 2.5 },
+			});
+			expect(rejectedUpgrade.fields.speed).toMatchObject({
+				phase: 'applied',
+				strategy: 'dom-native',
+				actual: 2.5,
+			});
+			expect(state.speedWriteCount).toBe(1);
+			expect(state.speed).toBe(1);
+			expect(media.playbackRate).toBe(2.5);
+
+			const acceptedUpgrade = await executor.execute({
+				intentId: 'intent:page-media:late-capped-upgrade',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 7,
+				source: 'hotkey',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { speed: 1.75 },
+			});
+			expect(acceptedUpgrade.fields.speed).toMatchObject({
+				phase: 'applied',
+				strategy: 'page-native',
+				actual: 1.75,
+			});
+			expect(state.speedWriteCount).toBe(2);
+			expect(state.speed).toBe(1.75);
+			expect(media.playbackRate).toBe(1.75);
+		} finally {
+			executor.dispose();
+		}
+	}, 3_000);
 
 	test('falls through to standard playbackRate when an unowned page controller rejects a higher speed', async () => {
 		Object.defineProperty(globalThis, 'HTMLMediaElement', {

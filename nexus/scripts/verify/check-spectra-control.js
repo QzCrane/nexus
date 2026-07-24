@@ -982,10 +982,16 @@ function checkRetiredPaths(root) {
 		path.join(root, SOURCE_PATH, 'content/core/media-registry.ts'),
 		'utf8',
 	);
+	const mediaRegistryTest = fs.readFileSync(
+		path.join(root, APP_PATH, 'test/media-registry.spec.ts'),
+		'utf8',
+	);
 	if (!mediaRegistry.includes("this.emit(record.target, 'removed', element, 'source-change')")
 		|| !mediaRegistry.includes("this.emit(record.target, 'registered', element)")
 		|| !mediaRegistry.includes('this.fullscreenMediaId')
-		|| !mediaRegistry.includes("this.emit(record.target, 'selected', record.element)")) {
+		|| !mediaRegistry.includes("this.emit(record.target, 'selected', record.element)")
+		|| !mediaRegistry.includes('visibleArea: initialVisibleArea(element)')
+		|| !mediaRegistryTest.includes('seeds initial selection from visible geometry before IntersectionObserver delivery')) {
 		error('SCTRL-006/SCTRL-007: source revisions and fullscreen events must retain exact media ownership');
 	}
 	const mediaDetection = fs.readFileSync(
@@ -1348,6 +1354,14 @@ function checkRetiredPaths(root) {
 		path.join(root, SOURCE_PATH, 'content/ui/feedback-surface.ts'),
 		'utf8',
 	);
+	const osd = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'content/ui/osd.ts'),
+		'utf8',
+	);
+	const scalarFeedback = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'content/ui/scalar-feedback.ts'),
+		'utf8',
+	);
 	const optionsSlots = fs.readFileSync(
 		path.join(root, SOURCE_PATH, 'options/slots-editor.ts'),
 		'utf8',
@@ -1392,15 +1406,30 @@ function checkRetiredPaths(root) {
 		|| !pageHotkeyListener.includes('isBuiltInSpeedShortcut(e)')
 		|| !shortcuts.includes("candidate.type !== 'spectra.content.default-hotkey.trigger'")
 		|| !shortcuts.includes('sender.frameId !== 0')
-		|| !shortcuts.includes('current?.documentId !== identity.documentId')
+		|| !shortcuts.includes('current?.documentId !== expectedDocumentId')
+		|| !shortcuts.includes('resolveShortcutTargetFromActive(identity.tab)')
+		|| !shortcuts.includes('await executeShortcutRoute(')
 		|| reservedManifestKeys.some(key => suggestedKeys.includes(key))) {
-		error('SCTRL-006/SCTRL-022: built-in Alt+Arrow speed shortcuts must be trusted, sender-bound, navigation-blocking and outside manifest reserved keys');
+		error('SCTRL-006/SCTRL-022: built-in Alt+Arrow speed shortcuts must be trusted, sender-bound, target-routed, navigation-blocking and outside manifest reserved keys');
 	}
 	if (!feedbackSurface.includes("host.popover = 'manual'")
 		|| !feedbackSurface.includes("document.addEventListener('fullscreenchange'")
 		|| !feedbackSurface.includes("host.matches(':popover-open')")
 		|| !feedbackSurface.includes('host.showPopover()')) {
 		error('SCTRL-016/SCTRL-022: Toast and OSD feedback must use a fullscreen-safe browser top-layer host');
+	}
+	if (!scalarFeedback.includes('return ((clamped - scale.min) / (scale.max - scale.min)) * 100')
+		|| !scalarFeedback.includes("{ value: 100, label: '100%', lane: 'lower' }")
+		|| !scalarFeedback.includes("{ value: 1, label: '1×', lane: 'lower' }")
+		|| !scalarFeedback.includes("{ value: 2, label: '2×', lane: 'upper' }")
+		|| !osd.includes('paintScalarValue(root, payload, value, s)')
+		|| !osd.includes('animateScalarValue(')
+		|| !osd.includes('export function showHotkeyTargetOSD(')
+		|| !osd.includes('if (state.shortcutTargetActive) return')
+		|| !pageHotkeyListener.includes('advanceScalarFeedbackTarget(held)')
+		|| osd.includes('transition:width')
+		|| scalarFeedback.includes('Math.log')) {
+		error('SCTRL-022: scalar Toast values, fills, markers and animation must share one linear owner');
 	}
 	if (!optionsSlots.includes('chrome.runtime.getManifest().commands')
 		|| optionsSlots.includes('const PRESET_COMMANDS')
@@ -1621,13 +1650,18 @@ function checkRetiredPaths(root) {
 		|| !nativeAckFunction.includes('if (!await acknowledgement)')
 		|| !nativeExecutor.includes("value ? 'playing' : 'pause'")
 		|| !nativeExecutor.includes('pageCandidateRestoredBaseline(')
+		|| !nativeExecutor.includes('previous === upgradeFrom')
 		|| !nativeExecutor.includes("The executor's event/getter transaction owns every event")
 		|| !nativeAckTest.includes('waits through microtask, rAF and 50ms page rollbacks before rejecting native ACKs')
 		|| !nativeAckTest.includes('rejects a getter match when no native event acknowledges the setter')
+		|| !nativeAckTest.includes('upgrades a DOM-owned restore when a page controller appears later in the same document')
+		|| !nativeAckTest.includes('keeps DOM ownership after a late page controller rejects one value and upgrades on a later accepted value')
 		|| !nativeAckTest.includes('falls through to standard playbackRate when an unowned page controller rejects a higher speed')
 		|| !nativeAckTest.includes('restores a high speed through DOM fallback when a page controller clamps asynchronously')
-		|| !smoke.includes('falls through a capped page controller and acknowledges high DOM playback speed once')) {
-		error('SCTRL-005/SCTRL-017: native event listeners and rollback regression coverage must precede actual ACK');
+		|| !smoke.includes('falls through a capped page controller and acknowledges high DOM playback speed once')
+		|| !smoke.includes('upgrades restored DOM speed when a same-document SPA modal controller mounts later')
+		|| !smoke.includes('replays speed when a pre-rendered same-document SPA modal becomes active')) {
+		error('SCTRL-005/SCTRL-017/SCTRL-027/SCTRL-040: native ACK, rollback, writer maturation, and SPA activation replay must remain covered');
 	}
 	if (!nativeExecutor.includes('requestVideoFrameCallback')
 		|| !nativeExecutor.includes('sourceRevision')

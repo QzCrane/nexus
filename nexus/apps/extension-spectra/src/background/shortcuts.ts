@@ -186,29 +186,10 @@ export function setupShortcutListeners(): void {
 
 			const route = await resolveShortcutTarget();
 			if (!route) return;
-			const tab = route.target;
-			if (!tab?.id || !tab.url) return;
-			const tabId = tab.id;
-
-			let domain = '';
 			try {
-				domain = new URL(tab.url).hostname;
-			} catch {
-				return;
-			}
-
-			try {
-				await runWithShortcutRuntime(
-					tabId,
-					() => executeAction(action, tabId, domain, repeatPulses),
-				);
+				await executeShortcutRoute(action, route, repeatPulses, true);
 			} catch (error) {
 				swLog.warn(`Shortcut ${action} failed`, error);
-				return;
-			}
-			if (route.active?.id !== undefined && route.active.id !== tabId) {
-				const feedback = await readShortcutActualFeedback(action, tabId);
-				await notifyAlternateShortcutTarget(route.active, tab, action, domain, feedback);
 			}
 		};
 		const execution = isBatchableChromeAction(action)
@@ -267,19 +248,26 @@ interface DefaultHotkeyIdentity {
 	tabId: number;
 	documentId: string;
 	url: string;
+	tab: chrome.tabs.Tab;
 }
 
 function defaultHotkeySenderIdentity(
 	sender: chrome.runtime.MessageSender,
 ): DefaultHotkeyIdentity | null {
-	const tabId = sender.tab?.id;
+	const tab = sender.tab;
+	const tabId = tab?.id;
 	if (sender.id !== chrome.runtime.id
 		|| sender.frameId !== 0
 		|| !tabId
 		|| !sender.documentId
 		|| !sender.url
 		|| !/^https?:/u.test(sender.url)) return null;
-	return { tabId, documentId: sender.documentId, url: sender.url };
+	return {
+		tabId,
+		documentId: sender.documentId,
+		url: sender.url,
+		tab: { ...tab, id: tabId, url: sender.url },
+	};
 }
 
 function defaultHotkeyBurstKey(
@@ -303,38 +291,15 @@ async function runDefaultPageSpeedShortcut(
 		if (before?.documentId !== identity.documentId || before.url !== identity.url) {
 			throw new Error('Default hotkey belongs to a stale document');
 		}
-		const capability = `default-hotkey:${crypto.randomUUID()}`;
-		const ready = await ensureContentRuntime(
-			identity.tabId,
-			identity.documentId,
-			'hotkey',
-			capability,
+		const route = await resolveShortcutTargetFromActive(identity.tab);
+		if (!route) return;
+		await executeShortcutRoute(
+			action,
+			route,
+			repeatPulses,
+			false,
+			route.target.id === identity.tabId ? identity.documentId : undefined,
 		);
-		try {
-			const current = await chrome.webNavigation.getFrame({
-				tabId: identity.tabId,
-				frameId: 0,
-			});
-			if (ready.documentId !== identity.documentId
-				|| current?.documentId !== identity.documentId
-				|| current.url !== identity.url) {
-				throw new Error('Default hotkey document changed before execution');
-			}
-			await executeAction(
-				action,
-				identity.tabId,
-				new URL(identity.url).hostname,
-				repeatPulses,
-				false,
-			);
-		} finally {
-			releaseContentRuntimeLease(
-				identity.tabId,
-				identity.documentId,
-				'hotkey',
-				capability,
-			);
-		}
 	});
 }
 
@@ -348,6 +313,12 @@ async function resolveShortcutTarget(): Promise<ShortcutRoute | undefined> {
 	const active = tabs[0];
 	// rule: only chrome:// and http(s):// origins receive coordinated shortcuts
 	const activeTab = active?.url && /^https?:/u.test(active.url) ? active : undefined;
+	return resolveShortcutTargetFromActive(activeTab);
+}
+
+async function resolveShortcutTargetFromActive(
+	activeTab: chrome.tabs.Tab | undefined,
+): Promise<ShortcutRoute | undefined> {
 	const { tabId: targetId } = await hotkeyTargetRepository.get();
 	if (targetId !== null) {
 		try {
@@ -358,6 +329,52 @@ async function resolveShortcutTarget(): Promise<ShortcutRoute | undefined> {
 		}
 	}
 	return activeTab ? { target: activeTab, active: activeTab } : undefined;
+}
+
+async function executeShortcutRoute(
+	action: HotkeyAction,
+	route: ShortcutRoute,
+	repeatPulses: number,
+	extensionInvoked: boolean,
+	expectedDocumentId?: string,
+): Promise<void> {
+	const tab = route.target;
+	if (!tab.id || !tab.url) return;
+	const tabId = tab.id;
+	let domain: string;
+	try {
+		domain = new URL(tab.url).hostname;
+	} catch {
+		return;
+	}
+	if (expectedDocumentId) {
+		const capability = `default-hotkey:${crypto.randomUUID()}`;
+		const ready = await ensureContentRuntime(
+			tabId,
+			expectedDocumentId,
+			'hotkey',
+			capability,
+		);
+		try {
+			const current = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
+			if (ready.documentId !== expectedDocumentId
+				|| current?.documentId !== expectedDocumentId) {
+				throw new Error('Default hotkey document changed before execution');
+			}
+			await executeAction(action, tabId, domain, repeatPulses, extensionInvoked);
+		} finally {
+			releaseContentRuntimeLease(tabId, ready.documentId, 'hotkey', capability);
+		}
+	} else {
+		await runWithShortcutRuntime(
+			tabId,
+			() => executeAction(action, tabId, domain, repeatPulses, extensionInvoked),
+		);
+	}
+	if (route.active?.id !== undefined && route.active.id !== tabId) {
+		const feedback = await readShortcutActualFeedback(action, tabId);
+		await notifyAlternateShortcutTarget(route.active, tab, action, domain, feedback);
+	}
 }
 
 async function notifyAlternateShortcutTarget(

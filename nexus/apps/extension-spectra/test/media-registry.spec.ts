@@ -31,9 +31,21 @@ type MutationCallback = (records: MutationRecord[]) => void;
 class FakeElement extends EventTarget {
 	readonly descendants: FakeMediaElement[] = [];
 	isConnected = true;
+	rect = {
+		left: 0,
+		top: 0,
+		right: 0,
+		bottom: 0,
+		width: 0,
+		height: 0,
+	};
 
 	querySelectorAll(): FakeMediaElement[] {
 		return [...this.descendants];
+	}
+
+	getBoundingClientRect(): DOMRect {
+		return this.rect as DOMRect;
 	}
 
 	contains(node: unknown): boolean {
@@ -140,6 +152,52 @@ class FakeIntersectionObserver {
 }
 
 describe('event-driven media registry', () => {
+	test('seeds initial selection from visible geometry before IntersectionObserver delivery', () => {
+		const descriptors = captureGlobalDescriptors([
+			'document',
+			'Node',
+			'Element',
+			'HTMLMediaElement',
+			'HTMLVideoElement',
+			'MutationObserver',
+			'IntersectionObserver',
+		]);
+		const document = new FakeDocument();
+		const feed = new FakeVideoElement(1);
+		const modal = new FakeVideoElement(1);
+		const hiddenPreload = new FakeVideoElement(1);
+		feed.paused = false;
+		modal.paused = false;
+		hiddenPreload.paused = false;
+		feed.rect = { left: 0, top: 0, right: 320, bottom: 180, width: 320, height: 180 };
+		modal.rect = { left: 0, top: 0, right: 1_280, bottom: 720, width: 1_280, height: 720 };
+		hiddenPreload.rect = { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+		document.documentElement.descendants.push(feed, modal, hiddenPreload);
+
+		installGlobal('document', document);
+		installGlobal('Node', EventTarget);
+		installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement);
+		installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver);
+		installGlobal('IntersectionObserver', FakeIntersectionObserver);
+
+		const events: Array<{ target: MediaTarget; event: string }> = [];
+		let registry: MediaRegistry | null = null;
+		try {
+			registry = new MediaRegistry((target, event) => events.push({ target, event }));
+			registry.setDocumentId('document:initial-visibility');
+			const modalTarget = registry.list().find(({ element }) => element === modal)?.target;
+			expect(modalTarget).toBeDefined();
+			expect(registry.resolve(null)?.target).toEqual(modalTarget);
+			expect(events.filter(({ event }) => event === 'selected')).toEqual([]);
+		} finally {
+			registry?.dispose();
+			restoreGlobalDescriptors(descriptors);
+			FakeMutationObserver.latest = null;
+		}
+	});
+
 	test('keeps reads pure, separates active media/video, and versions every logical source epoch', async () => {
 		const descriptors = captureGlobalDescriptors([
 			'document',

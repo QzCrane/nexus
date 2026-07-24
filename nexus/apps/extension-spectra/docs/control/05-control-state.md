@@ -70,9 +70,16 @@ baseline source and ACK. An unowned candidate that rejects or later clamps the
 requested value may fall through only after the same page writer proves its
 baseline was restored; the DOM candidate then captures its own baseline and
 must produce native event/getter ACK. Once a field is owned, its writer identity
-is stable until release. Normal DOM events still drive page-to-extension
-observation, but the observer re-reads the selected owned writer rather than
-allowing a lower-capability page getter to overwrite a DOM-owned value.
+is stable until release except for the compare-and-swap
+`dom-native -> page-native` maturation transaction owned by
+[§6](02-strategy-and-routes.md#6-exact-element-page-media-pip-and-fullscreen);
+that transaction retains the original release baseline and rolls a rejected
+candidate back to the prior acknowledged DOM state. It is admitted only by an
+explicit exact-source intent or one bounded desired replay at a media lifecycle
+boundary, never by polling or an unowned page observation. Normal DOM events
+still drive page-to-extension observation, but the observer re-reads the
+selected owned writer rather than allowing a lower-capability page getter to
+overwrite a DOM-owned value.
 
 ### §10.2 Processor handoff without double processing
 

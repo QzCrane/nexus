@@ -36,7 +36,10 @@ import {
 	readPageMediaField,
 	writePageMediaField,
 } from './page-media-bridge';
-import type { SpectraPageMediaField } from '../../shared/page-media-bridge';
+import {
+	SPECTRA_PAGE_MEDIA_FIELDS,
+	type SpectraPageMediaField,
+} from '../../shared/page-media-bridge';
 
 interface PendingWrite {
 	intentId: string;
@@ -66,6 +69,12 @@ interface OwnedMediaField {
 	baseline: ControlValues[RestorableMediaField];
 	lastApplied: ControlValues[RestorableMediaField];
 	writer: RestorableMediaWriter;
+}
+
+interface RestorableMediaWriteState {
+	actual: ControlValues[RestorableMediaField];
+	writer: RestorableMediaWriter;
+	upgradeFrom?: OwnedMediaField;
 }
 
 interface NativeMediaOwnershipStore {
@@ -434,9 +443,25 @@ function readRestorableMediaFieldWithWriter(
 function readRestorableMediaFieldForWrite(
 	element: HTMLMediaElement,
 	field: RestorableMediaField,
-): { actual: ControlValues[RestorableMediaField]; writer: RestorableMediaWriter } {
+): RestorableMediaWriteState {
 	const owned = nativeMediaOwnership.byElement.get(element)?.get(field);
 	if (owned) {
+		if (owned.writer === 'dom-native' && isPageMediaField(field)) {
+			try {
+				const actual = readPageMediaField(element, field);
+				if (actual !== null) {
+					return {
+						actual,
+						writer: 'page-native',
+						upgradeFrom: owned,
+					};
+				}
+			} catch {
+				// Capability discovery is a read-only probe. A controller that is
+				// incomplete while a SPA player is mounting leaves the acknowledged
+				// DOM writer untouched until a later exact-source intent can prove it.
+			}
+		}
 		return {
 			actual: readRestorableMediaField(element, field, owned.writer),
 			writer: owned.writer,
@@ -638,6 +663,11 @@ export class NativeMediaExecutor {
 	private readonly desiredMedia: ControlPatch = {};
 	private readonly appliedDesiredRevision = new Map<string, number>();
 	private readonly replayPending = new Set<string>();
+	private readonly automaticPageMaturationRevision = new Map<string, number>();
+	private readonly pageMaturationRequested = new Map<string, {
+		target: MediaTarget;
+		element: HTMLMediaElement;
+	}>();
 	private effects: VideoEffectsControllerPort | null;
 	private readonly ownsEffects: boolean;
 	private readonly registry: MediaRegistry;
@@ -936,6 +966,8 @@ export class NativeMediaExecutor {
 		}
 		for (const key of Object.keys(this.desiredMedia)) delete (this.desiredMedia as Record<string, unknown>)[key];
 		this.desiredRevision += 1;
+		this.automaticPageMaturationRevision.clear();
+		this.pageMaturationRequested.clear();
 		return { releasedFields: [...released], fields };
 	}
 
@@ -1054,11 +1086,13 @@ export class NativeMediaExecutor {
 			: value;
 		let baseline: ControlValues[RestorableMediaField] | undefined;
 		let mediaWriter: RestorableMediaWriter = 'dom-native';
+		let writerUpgrade: OwnedMediaField | undefined;
 		if (isRestorableMediaField(field)) {
 			try {
 				const baselineState = readRestorableMediaFieldForWrite(element, field);
 				baseline = baselineState.actual;
 				mediaWriter = baselineState.writer;
+				writerUpgrade = baselineState.upgradeFrom;
 			} catch (error) {
 				const failure = this.nativeFailure(field, error);
 				this.putError(
@@ -1105,7 +1139,19 @@ export class NativeMediaExecutor {
 							tolerance,
 						);
 					if (!mayFallThrough) throw pageError;
-					baseline = readDomRestorableMediaField(element, field);
+					if (writerUpgrade) {
+						await writeRestorableMediaFieldWithStableAck(
+							element,
+							field,
+							writerUpgrade.lastApplied as ControlValues[typeof field],
+							'dom-native',
+							tolerance,
+						);
+						baseline = writerUpgrade.lastApplied;
+						writerUpgrade = undefined;
+					} else {
+						baseline = readDomRestorableMediaField(element, field);
+					}
 					mediaWriter = 'dom-native';
 					actual = await writeRestorableMediaFieldWithStableAck(
 						element,
@@ -1239,7 +1285,14 @@ export class NativeMediaExecutor {
 				&& baseline !== undefined
 				&& state?.phase === 'applied'
 				&& state.actual !== null) {
-				this.commitOwnership(element, field, baseline, state.actual, mediaWriter);
+				this.commitOwnership(
+					element,
+					field,
+					baseline,
+					state.actual,
+					mediaWriter,
+					writerUpgrade,
+				);
 			}
 		} catch (error) {
 			if (isRestorableMediaField(field) && baseline !== undefined) {
@@ -1274,12 +1327,21 @@ export class NativeMediaExecutor {
 		baseline: ControlValues[RestorableMediaField],
 		actual: ControlValues[ControlField],
 		writer: RestorableMediaWriter,
+		upgradeFrom?: OwnedMediaField,
 	): void {
 		const fields = nativeMediaOwnership.byElement.get(element)
 			?? new Map<RestorableMediaField, OwnedMediaField>();
 		const previous = fields.get(field);
+		if (upgradeFrom && previous !== upgradeFrom) {
+			throw new Error(`Restorable ${field} ownership changed during writer upgrade`);
+		}
 		if (previous && previous.writer !== writer) {
-			throw new Error(`Restorable ${field} writer changed while ownership was active`);
+			const validUpgrade = previous === upgradeFrom
+				&& previous.writer === 'dom-native'
+				&& writer === 'page-native';
+			if (!validUpgrade) {
+				throw new Error(`Restorable ${field} writer changed while ownership was active`);
+			}
 		}
 		fields.set(field, {
 			baseline: previous?.baseline ?? baseline,
@@ -1438,6 +1500,12 @@ export class NativeMediaExecutor {
 			this.observed.delete(target.mediaId);
 			this.appliedDesiredRevision.delete(key);
 			this.replayPending.delete(key);
+			this.pageMaturationRequested.delete(key);
+			for (const attemptKey of this.automaticPageMaturationRevision.keys()) {
+				if (attemptKey.startsWith(`${key}:`)) {
+					this.automaticPageMaturationRevision.delete(attemptKey);
+				}
+			}
 			if (removalReason === 'detached') {
 				void this.releaseDetachedOwnership(element);
 				if (element instanceof HTMLVideoElement) this.effects?.release(element);
@@ -1446,6 +1514,7 @@ export class NativeMediaExecutor {
 		}
 		if (event === 'selected') {
 			this.primeObserved(target.mediaId, element);
+			this.replayDesired(target, element, true);
 			void sendSpectraRequest(
 				'spectra.content.target.changed',
 				{ target },
@@ -1454,7 +1523,10 @@ export class NativeMediaExecutor {
 			return;
 		}
 		if (event === 'registered') this.primeObserved(target.mediaId, element);
-		if (event === 'registered' || event === 'loadedmetadata') this.replayDesired(target);
+		if (event === 'registered') this.replayDesired(target);
+		else if (event === 'loadedmetadata' || event === 'play') {
+			this.replayDesired(target, element, true);
+		}
 		const resolved = this.registry.resolve(null);
 		if (!resolved || resolved.target.mediaId !== target.mediaId) return;
 		const mediaId = target.mediaId;
@@ -1593,25 +1665,68 @@ export class NativeMediaExecutor {
 		return `${target.documentId}:${target.mediaId}:${target.sourceRevision}`;
 	}
 
-	private replayDesired(target: import('@nexus/contracts').MediaTarget): void {
+	private replayDesired(
+		target: MediaTarget,
+		element?: HTMLMediaElement,
+		allowPageMaturation = false,
+	): void {
 		if (this.tabId === null || Object.keys(this.desiredMedia).length === 0) return;
 		const key = this.targetKey(target);
-		if (this.replayPending.has(key)
-			|| (this.appliedDesiredRevision.get(key) ?? -1) >= this.desiredRevision) return;
-		this.replayPending.add(key);
+		if (this.replayPending.has(key)) {
+			if (allowPageMaturation && element) {
+				this.pageMaturationRequested.set(key, { target, element });
+			}
+			return;
+		}
 		const revision = this.desiredRevision;
+		const alreadyApplied = (this.appliedDesiredRevision.get(key) ?? -1) >= revision;
+		let patch: ControlPatch = { ...this.desiredMedia };
+		const automaticFields: SpectraPageMediaField[] = [];
+		if (alreadyApplied) {
+			if (!allowPageMaturation || !element) return;
+			patch = {};
+			const ownership = nativeMediaOwnership.byElement.get(element);
+			for (const field of SPECTRA_PAGE_MEDIA_FIELDS) {
+				const attemptKey = `${key}:${field}`;
+				const desired = this.desiredMedia[field];
+				if (desired === undefined
+					|| ownership?.get(field)?.writer !== 'dom-native'
+					|| this.pending.get(target.mediaId)?.has(field)
+					|| (this.automaticPageMaturationRevision.get(attemptKey) ?? -1) >= revision) {
+					continue;
+				}
+				try {
+					if (readPageMediaField(element, field) === null) continue;
+				} catch {
+					continue;
+				}
+				(patch as Record<string, unknown>)[field] = desired;
+				automaticFields.push(field);
+			}
+			if (automaticFields.length === 0) return;
+		}
+		this.replayPending.add(key);
 		void sendSpectraRequest('spectra.control.intent.submit', {
 			tabId: this.tabId,
 			source: 'restore',
 			requestedCoverage: 'active-target',
 			target,
-			patch: { ...this.desiredMedia },
+			patch,
 		}).then((response) => {
 			if (!response.ok) return;
 			const applied = Object.values(response.data.fields)
 				.every((field) => field?.phase === 'applied');
 			if (applied) this.appliedDesiredRevision.set(key, revision);
-		}).catch(() => undefined).finally(() => this.replayPending.delete(key));
+			for (const field of automaticFields) {
+				this.automaticPageMaturationRevision.set(`${key}:${field}`, revision);
+			}
+		}).catch(() => undefined).finally(() => {
+			this.replayPending.delete(key);
+			const requested = this.pageMaturationRequested.get(key);
+			if (!requested) return;
+			this.pageMaturationRequested.delete(key);
+			this.replayDesired(requested.target, requested.element, true);
+		});
 	}
 
 	private primeObserved(mediaId: string, element: HTMLMediaElement): void {
@@ -1659,6 +1774,8 @@ export class NativeMediaExecutor {
 		this.observed.clear();
 		this.appliedDesiredRevision.clear();
 		this.replayPending.clear();
+		this.automaticPageMaturationRevision.clear();
+		this.pageMaturationRequested.clear();
 		this.unsubscribeRegistry();
 		if (this.ownsRegistry) this.registry.dispose();
 		if (this.ownsEffects) this.effects?.dispose();

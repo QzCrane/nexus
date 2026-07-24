@@ -8,6 +8,7 @@ import {
 	findBestHostnameMatch,
 	isSpectraEventEnvelope,
 	normalizeHostname,
+	resolveAudioVolume,
 } from '@nexus/contracts';
 import { createLogger } from '../../shared/logger';
 import { sendSpectraRequest } from '../../shared/spectra-client';
@@ -15,8 +16,10 @@ import { createEventListener, createCleanupManager } from '../utils/timing';
 import { executeHotkeyAction } from './hotkey-actions';
 import { isTrustedHotkeyEvent } from './hotkey-event';
 import { hideToast, showToast } from '../ui/toast';
-import { hideOSD, showHotkeyActualOSD } from '../ui/osd';
+import { hideOSD, showHotkeyActualOSD, showHotkeyTargetOSD } from '../ui/osd';
+import { clampScalarFeedbackValue } from '../ui/scalar-feedback';
 import type { SettingsManager } from '../core/settings-manager';
+import type { PolicyExecutorState } from '../types';
 
 const log = createLogger('Hotkeys');
 
@@ -28,11 +31,16 @@ const coalesced = new Map<string, ReturnType<typeof setTimeout>>();
 const inFlightBindings = new Set<string>();
 const releasedRepeatedBindings = new Set<string>();
 const pendingRepeatPulses = new Map<string, number>();
-const activeBindingsByCode = new Map<string, { binding: HotkeyBinding; repeated: boolean }>();
+const activeBindingsByCode = new Map<string, {
+	binding: HotkeyBinding;
+	repeated: boolean;
+	feedbackTarget?: number;
+}>();
 const MAX_REPEAT_BURST_PULSES = 160;
 let keydownDisposer: (() => void) | null = null;
 let keyupDisposer: (() => void) | null = null;
 let contentSettings: Pick<SettingsManager, 'get'> | undefined;
+let feedbackState: Pick<PolicyExecutorState, 'config' | 'actualMode' | 'phase'> | undefined;
 
 function cancelCoalesced(bindingId: string): void {
 	const timer = coalesced.get(bindingId);
@@ -69,8 +77,10 @@ function synchronizeKeydownListener(): void {
 
 export async function initHotkeyListener(
 	settingsManager?: Pick<SettingsManager, 'get'>,
+	state?: Pick<PolicyExecutorState, 'config' | 'actualMode' | 'phase'>,
 ): Promise<() => void> {
 	contentSettings = settingsManager;
+	feedbackState = state;
 	await loadSettings();
 	const cleanup = createCleanupManager();
 
@@ -91,6 +101,8 @@ export async function initHotkeyListener(
 			keyupDisposer = null;
 		}
 		cancelActiveBindings();
+		if (contentSettings === settingsManager) contentSettings = undefined;
+		if (feedbackState === state) feedbackState = undefined;
 	});
 
 	log.info('Hotkey listener initialized');
@@ -232,6 +244,51 @@ function coalescedBinding(binding: HotkeyBinding, pulses: number): HotkeyBinding
 	return binding;
 }
 
+function scalarFeedbackDelta(binding: HotkeyBinding): number | null {
+	const step = Number.isFinite(binding.params?.step)
+		? Math.abs(binding.params!.step!)
+		: binding.action.startsWith('speed_') ? 0.1 : 10;
+	switch (binding.action) {
+		case 'speed_up':
+		case 'volume_up': return step;
+		case 'speed_down':
+		case 'volume_down': return -step;
+		default: return null;
+	}
+}
+
+function seedScalarFeedbackTarget(binding: HotkeyBinding): number | undefined {
+	if (!feedbackState) return undefined;
+	const delta = scalarFeedbackDelta(binding);
+	if (delta === null) return undefined;
+	const kind = binding.action.startsWith('speed_') ? 'speed' : 'volume';
+	const current = kind === 'speed'
+		? feedbackState.config.speed
+		: resolveAudioVolume(feedbackState.config).effectiveVolume;
+	return clampScalarFeedbackValue(kind, current + delta);
+}
+
+function advanceScalarFeedbackTarget(
+	active: { binding: HotkeyBinding; feedbackTarget?: number },
+): void {
+	if (!contentSettings || !feedbackState) return;
+	const delta = scalarFeedbackDelta(active.binding);
+	if (delta === null) return;
+	const kind = active.binding.action.startsWith('speed_') ? 'speed' : 'volume';
+	const baseline = active.feedbackTarget ?? seedScalarFeedbackTarget(active.binding);
+	if (baseline === undefined) return;
+	const value = clampScalarFeedbackValue(kind, baseline + delta);
+	active.feedbackTarget = value;
+	showHotkeyTargetOSD(kind === 'speed'
+		? { kind, value }
+		: {
+			kind,
+			value,
+			muted: feedbackState.config.muted,
+			capture: feedbackState.actualMode === 'capture' && feedbackState.phase === 'active',
+		}, contentSettings.get());
+}
+
 function executeBinding(binding: HotkeyBinding, withOSD: boolean): void {
 	if (inFlightBindings.has(binding.id)) return;
 	inFlightBindings.add(binding.id);
@@ -270,10 +327,15 @@ function handleKeydown(e: KeyboardEvent): void {
 	e.preventDefault();
 	e.stopPropagation();
 	const active = activeBindingsByCode.get(e.code);
-	activeBindingsByCode.set(e.code, {
+	const held = {
 		binding,
 		repeated: e.repeat || active?.repeated === true,
-	});
+		feedbackTarget: active?.feedbackTarget,
+	};
+	if (!e.repeat && descriptor.repeatPolicy === 'coalesce-20hz') {
+		held.feedbackTarget = seedScalarFeedbackTarget(binding);
+	}
+	activeBindingsByCode.set(e.code, held);
 	if (descriptor.repeatPolicy !== 'coalesce-20hz' || !e.repeat) {
 		// First press (non-repeat) OR a non-coalesce action: execute immediately
 		// WITH the OSD toast. The toast is the once-per-press signal that the
@@ -282,6 +344,7 @@ function handleKeydown(e: KeyboardEvent): void {
 		executeBinding(binding, true);
 		return;
 	}
+	advanceScalarFeedbackTarget(held);
 	// Repeat keydown under coalesce-20hz: throttle the action to ~20 Hz (50 ms)
 	// and execute it WITHOUT the toast. The initial press already showed the
 	// OSD; re-showing it on every repeat floods the toast and creates phantom

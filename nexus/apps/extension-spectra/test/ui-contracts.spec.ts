@@ -442,6 +442,10 @@ describe('extension-page DOM and idle contracts', () => {
 		const hotkeys = readFileSync(resolve(import.meta.dir, '../src/content/input/hotkey-listener.ts'), 'utf8');
 		const toast = readFileSync(resolve(import.meta.dir, '../src/content/ui/toast.ts'), 'utf8');
 		const osd = readFileSync(resolve(import.meta.dir, '../src/content/ui/osd.ts'), 'utf8');
+		const scalarFeedback = readFileSync(
+			resolve(import.meta.dir, '../src/content/ui/scalar-feedback.ts'),
+			'utf8',
+		);
 		const feedbackSurface = readFileSync(
 			resolve(import.meta.dir, '../src/content/ui/feedback-surface.ts'),
 			'utf8',
@@ -496,8 +500,12 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(shortcuts).toContain('initialFrame.documentId');
 		expect(shortcuts).toContain('currentFrame?.documentId !== ready.documentId');
 		expect(shortcuts).toContain('readShortcutActualFeedback(action, tabId)');
+		expect(shortcuts).toContain('resolveShortcutTargetFromActive(identity.tab)');
+		expect(shortcuts).toContain('await executeShortcutRoute(');
 		expect(hotkeys).toContain("variant: 'alternate-target'");
 		expect(hotkeys).toContain('showHotkeyActualOSD(message.payload.feedback');
+		expect(hotkeys).toContain('showHotkeyTargetOSD(');
+		expect(hotkeys).toContain('advanceScalarFeedbackTarget(held)');
 		expect(hotkeys).toContain("feedbackOwner === 'listener-label'");
 		expect(hotkeys).not.toContain("feedbackOwner === 'listener-label' || feedbackOwner === 'actual-osd'");
 		expect(toast).not.toContain('.t.alternate');
@@ -510,8 +518,15 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(feedbackSurface).toContain('host.showPopover()');
 		expect(toast).toContain("setTimeout(() => t.classList.add('hide'), 1_800)");
 		expect(osd).toContain('const OSD_HIDE_DELAY_MS = 2_000');
-		expect(osd).toContain('speedProgress');
-		expect(osd).toMatch(/t\.textContent = `\$\{formatSpeed\(speed\)\}×`/u);
+		expect(osd).toContain('animateScalarValue(');
+		expect(osd).toContain('paintScalarValue(root, payload, value, s)');
+		expect(osd).toContain('if (state.shortcutTargetActive) return');
+		expect(osd).toContain('export function showHotkeyTargetOSD(');
+		expect(osd).toContain('scalarFeedbackProgress(payload.type, value)');
+		expect(osd).not.toContain('transition:width');
+		expect(scalarFeedback).toContain('return ((clamped - scale.min) / (scale.max - scale.min)) * 100');
+		expect(scalarFeedback).toContain("{ value: 1, label: '1×', lane: 'lower' }");
+		expect(scalarFeedback).toContain("{ value: 2, label: '2×', lane: 'upper' }");
 		expect(osd).toContain('export function hideOSD()');
 		expect(osd).toContain("variant?: 'alternate-target'");
 		expect(audioDelegate).toContain("source !== 'hotkey'");

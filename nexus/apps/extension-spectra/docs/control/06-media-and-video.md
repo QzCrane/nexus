@@ -29,7 +29,7 @@ interface MediaTarget {
 2. most recent trusted interaction;
 3. most recent play;
 4. currently playing media;
-5. cached IntersectionObserver visibility/area;
+5. registration-time viewport geometry, then cached IntersectionObserver visibility/area;
 6. registration order.
 
 The current product scope is the top-level document only (`frameId: 0`). Same-origin
@@ -60,6 +60,7 @@ implementation trivia:
 | Repeated `load()` with the same URL | The first `emptied`/`loadstart` opens one logical load epoch and increments `sourceRevision`; the paired event does not increment again, and `loadedmetadata` closes the epoch. | `MediaRegistry::refreshSource`; prevents source-scoped Marker/A-B/CSS/DSP state from leaking into a restarted resource while avoiding a double revision for one browser load. |
 | `srcObject` replacement | Object identity participates in the source key, so each distinct stream increments `sourceRevision` even when URL getters stay empty. | `MediaRegistry::sourceIdentity`; gives MediaStream playback the same stale-ACK protection as URL media. |
 | Framework reparent | Removal is finalized in a microtask only when `isConnected` remains false; remove+add in one mutation turn preserves `mediaId` and `sourceRevision`. | `MediaRegistry::queueRemovalTree`; avoids tearing down listeners/graph ownership during a layout-only move. |
+| Pre-rendered SPA modal | Registration seeds visible area synchronously because the first `IntersectionObserver` delivery is asynchronous. Registration, metadata, play and trusted selection each admit one exact-target desired replay; a `pushState` URL change alone does not guess a media identity. | `MediaRegistry::register` and `NativeMediaExecutor::replayDesired`; prevents an immediate restore from choosing an older hidden feed source and lets an already-registered modal inherit current configuration when it becomes active. |
 | Snapshot/target read | `peek`, `resolve` and `resolveVideo` are pure. Only `select` or a stronger native event changes sticky selection. | `MediaRegistry::selectRecord`; opening UI or reading status cannot retarget playback. |
 | Fullscreen player container | Exact media ownership wins; otherwise a contained sticky video wins, then the best contained video, before any contained audio fallback. Exit is attributed to the remembered entry target. | `MediaRegistry::fullscreenRecord`; page-owned container fullscreen updates `activeVideo` without letting an audio element steal the video ACK. |
 
@@ -113,7 +114,10 @@ to the standard DOM writer. Events emitted by either candidate during that
 transaction are correlated with the pending field instead of racing a new
 revision. Later normal media events read the stable selected writer so page
 changes, Popup changes, restore, and hotkeys converge on the one coordinator
-snapshot without a reassert loop. A
+snapshot without a reassert loop. Standard speed writes keep
+`defaultPlaybackRate` and `playbackRate` coherent when the page has not already
+separated them, allowing a player UI that projects the standard default to
+update from the same native `ratechange` ACK. A
 cold bootstrap event is document-scoped rather than media-scoped: it can preserve
 only volume/mute and speed/pitch across a same-origin refresh, never select a
 target or claim plugin badge usage.

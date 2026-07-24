@@ -153,8 +153,12 @@ minimal bootstrap instead captures only trusted exact-modifier key events
 outside editable controls, prevents the browser navigation, and sends the
 closed `spectra.content.default-hotkey.trigger` request. Background accepts it
 only from the current top-level HTTP(S) document, rechecks `documentId` before
-execution, and routes it through the same coordinator/actual-readback path as
-every other speed mutation. The heavy page-hotkey listener excludes these two
+execution, resolves the same session-scoped Hotkey Target used by manifest
+volume/speed commands, and routes the selected tab through the shared
+coordinator/actual-readback/alternate-target-feedback path. The foreground
+document remains the trusted event identity and feedback surface; selecting
+another target does not convert the page event into extension invocation or
+grant Capture admission. The heavy page-hotkey listener excludes these two
 built-ins, preventing a site binding from executing the same physical event
 twice.
 
@@ -185,9 +189,19 @@ Toast and acknowledged volume/speed OSD hosts use a manual Popover top-layer
 surface rather than competing with site `z-index`. A `fullscreenchange`
 reopens the connected host after the fullscreen element enters the top layer,
 so fullscreen video cannot cover shortcut feedback. Speed feedback renders the
-actual ACK (`0.9×`, `1.0×`, and so on), places the semantic `1×` baseline at the
-center of the bar, and gives the `0.1–1×` and `1–16×` ranges equal logarithmic
-space.
+actual ACK (`0.9×`, `1.0×`, and so on). Every scalar bar uses one linear
+normalization owner, so equal numeric deltas always occupy equal visual
+distances and marker placement cannot drift from the fill. Volume marks `100%`;
+speed marks both `1×` and `2×` on staggered label lanes. When a slow native ACK
+coalesces several shortcut pulses, a held page binding advances a transient
+feedback target once per trusted physical repeat from the latest acknowledged
+baseline. The displayed number and fill interpolate from that same scalar value
+at the shared one-step-per-50-ms cadence. Slower intermediate ACKs synchronize
+the control owner but cannot rewind the active held-key projection; keyup, hide
+and disposal cancel the projection and its animation together. The projection
+never mutates configuration or survives release, so acknowledged state remains
+the sole business owner while native `0–100` feedback stays continuous without
+post-release inertia.
 
 ## §6 Exact-element page media, PiP and fullscreen
 
@@ -209,12 +223,25 @@ delayed mismatch may fall through to the standard `HTMLMediaElement`
 property/event candidate only after the same page writer proves that its
 baseline is stable again. This capability admission is value-specific, so a
 player UI capped at 2× or 3× cannot prevent standard `playbackRate` from
-applying a higher supported value. Once either `page-native` or `dom-native`
-owns the field, that writer identity cannot silently switch until ownership is
-released. If an owned page getter later disappears, a passive event/startup
-observation may fall back to the DOM getter so Content can still report actual
-state and reach READY; this does not migrate ownership, and the next write
-remains bound to the missing page writer and fails explicitly.
+applying a higher supported value. An owned `page-native` writer never falls
+back to DOM. A `dom-native` writer may mature to `page-native` only during a
+later exact-source intent when a SPA player attached its controller after the
+initial restore. The intent may be an explicit control or the one bounded
+desired-state replay admitted by registration, metadata, play, or trusted
+selection for that target/field/revision. That request-local transaction
+captures the page baseline, proves the requested value through the page setter
+and stable getter, then compare-and-swaps the exact prior DOM owner while
+retaining the original release baseline. If page admission fails, the candidate
+must first restore its page baseline and the executor must re-acknowledge the
+prior DOM `lastApplied` value before DOM fallback continues; ownership remains
+DOM and a later desired revision or unconsumed lifecycle boundary may retry
+maturation. There is no timer, mutation-driven controller scan, reassert loop,
+or `page-native -> dom-native` migration.
+
+If an owned page getter later disappears, a passive event/startup observation
+may fall back to the DOM getter so Content can still report actual state and
+reach READY; this does not migrate ownership, and the next write remains bound
+to the missing page writer and fails explicitly.
 
 Native `volumechange`/`ratechange` events emitted while a SPECTRA write is
 pending belong to that event/getter transaction. Matching events are ACK

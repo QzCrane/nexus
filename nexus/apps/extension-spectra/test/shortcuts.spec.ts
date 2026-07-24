@@ -55,7 +55,8 @@ describe('cold-document Chrome shortcuts', () => {
 		expect(source).toContain('submitExtensionInvokedControlOperation');
 		expect(source).toContain('submitControlRequest');
 		expect(source).toContain('defaultHotkeySenderIdentity');
-		expect(source).toContain('current?.documentId !== identity.documentId');
+		expect(source).toContain('current?.documentId !== expectedDocumentId');
+		expect(source).toContain('resolveShortcutTargetFromActive(identity.tab)');
 		expect(source).toContain('activeChromeCommands.has(command)');
 		expect(source).toContain('activeChromeCommands.delete(command)');
 		expect(source).not.toMatch(/\bsubmitControlOperation\(/u);

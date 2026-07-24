@@ -1918,10 +1918,13 @@ describe('SPECTRA built extension smoke', () => {
 			};
 			const controller = player as HTMLElement & {
 				spectraExactController?: typeof volumeController;
+				spectraRateController?: {
+					video: HTMLVideoElement;
+					playbackRate: number;
+					setPlaybackRateByUser(value: number): void;
+				};
 				isMuted(): boolean;
 				setMuted(value: boolean): void;
-				getPlaybackRate(): number;
-				setPlaybackRate(value: number): void;
 			};
 			volumeController.getVolume = () => volumeBase;
 			volumeController.setVolume = (value) => {
@@ -1934,11 +1937,16 @@ describe('SPECTRA built extension smoke', () => {
 				mediaMuted = value;
 				video.muted = value;
 			};
-			controller.getPlaybackRate = () => speed;
-			controller.setPlaybackRate = (value) => {
-				speed = value;
-				video.playbackRate = value;
+			const rateController = {
+				video,
+				playbackRate: speed,
+				setPlaybackRateByUser(value: number) {
+					this.playbackRate = value;
+					speed = value;
+					video.playbackRate = value;
+				},
 			};
+			controller.spectraRateController = rateController;
 			const decoyState = { volumeBase: 17, mediaMuted: true, speed: 2.5, writes: 0 };
 			const decoy = outerPlayer as HTMLElement & {
 				getVolume(): number;
@@ -1979,7 +1987,8 @@ describe('SPECTRA built extension smoke', () => {
 				native: { volume: video.volume, muted: video.muted, speed: video.playbackRate },
 			};
 			Reflect.deleteProperty(controller, 'spectraExactController');
-			for (const key of ['isMuted', 'setMuted', 'getPlaybackRate', 'setPlaybackRate'] as const) {
+			Reflect.deleteProperty(controller, 'spectraRateController');
+			for (const key of ['isMuted', 'setMuted'] as const) {
 				Reflect.deleteProperty(controller, key);
 			}
 			for (const key of [
@@ -2076,6 +2085,353 @@ describe('SPECTRA built extension smoke', () => {
 		} finally {
 			await extensionClient.close();
 			await cappedPage.close().catch(() => undefined);
+		}
+	}, 35_000);
+
+	test('automatically restores speed through a controller-backed same-document SPA modal', async () => {
+		const spaUrl = `${fixtureUrl}?spa-controller-shell=1`;
+		const spaPage = await browser.newPage();
+		const extensionClient = await openExtensionClient();
+		try {
+			await spaPage.goto(spaUrl, { waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(spaUrl);
+			await spaPage.bringToFront();
+			const tabId = await getTabId(spaUrl);
+			const seeded = await extensionClient.evaluate(async (targetTabId) => (
+				chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					tabId: targetTabId,
+					type: 'spectra.control.intent.submit',
+					payload: {
+						tabId: targetTabId,
+						source: 'popup',
+						requestedCoverage: 'active-target',
+						target: null,
+						patch: { speed: 2 },
+					},
+				})
+			), tabId);
+			expect(seeded).toMatchObject({
+				ok: true,
+				data: { fields: { speed: { phase: 'applied', actual: 2 } } },
+			});
+
+			const documentToken = await spaPage.evaluate(() => {
+				const previous = document.querySelector<HTMLVideoElement>('#v');
+				if (!previous) throw new Error('SPA shell video is missing');
+				const source = previous.currentSrc || previous.src;
+				previous.remove();
+				const container = document.createElement('div') as HTMLDivElement & {
+					xgplayer?: {
+						video: HTMLVideoElement;
+						playbackRate: number;
+						setPlaybackRateByUser(value: number): void;
+					};
+				};
+				container.style.width = '640px';
+				container.style.height = '360px';
+				const video = document.createElement('video');
+				video.id = 'v';
+				video.muted = true;
+				video.src = source;
+				video.style.width = '640px';
+				video.style.height = '360px';
+				const state = { speed: 1, writes: 0 };
+				container.xgplayer = {
+					video,
+					playbackRate: 1,
+					setPlaybackRateByUser(value) {
+						this.playbackRate = value;
+						state.speed = value;
+						state.writes += 1;
+						video.playbackRate = value;
+					},
+				};
+				container.append(video);
+				document.body.append(container);
+				const token = crypto.randomUUID();
+				(window as Window & {
+					__spectraPageMediaState?: typeof state;
+					__spectraSpaDocumentToken?: string;
+				}).__spectraPageMediaState = state;
+				(window as Window & {
+					__spectraSpaDocumentToken?: string;
+				}).__spectraSpaDocumentToken = token;
+				history.pushState({}, '', '/spa-modal?modal_id=spectra-fixture');
+				return token;
+			});
+			await eventually(
+				() => spaPage.evaluate(() => {
+					const video = document.querySelector<HTMLVideoElement>('#v');
+					const scope = window as Window & {
+						__spectraPageMediaState?: { speed: number; writes: number };
+						__spectraSpaDocumentToken?: string;
+					};
+					return {
+						documentToken: scope.__spectraSpaDocumentToken ?? null,
+						pageSpeed: scope.__spectraPageMediaState?.speed ?? null,
+						writes: scope.__spectraPageMediaState?.writes ?? null,
+						domSpeed: video?.playbackRate ?? null,
+						url: location.href,
+					};
+				}),
+				(state) => state.documentToken === documentToken
+					&& state.pageSpeed === 2
+					&& state.writes === 1
+					&& state.domSpeed === 2
+					&& state.url.includes('/spa-modal?modal_id='),
+				'automatic same-document SPA speed restore through the page controller',
+				8_000,
+			);
+			const snapshot = await extensionClient.evaluate(async (targetTabId) => (
+				chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					tabId: targetTabId,
+					type: 'spectra.control.snapshot.get',
+					payload: { tabId: targetTabId },
+				})
+			), tabId);
+			expect(snapshot).toMatchObject({
+				ok: true,
+				data: {
+					fields: {
+						speed: {
+							phase: 'applied',
+							strategy: 'page-native',
+							actual: 2,
+						},
+					},
+				},
+			});
+		} finally {
+			await extensionClient.close();
+			await spaPage.close().catch(() => undefined);
+		}
+	}, 35_000);
+
+	test('replays speed when a pre-rendered same-document SPA modal becomes active', async () => {
+		const spaUrl = `${fixtureUrl}?spa-prerendered-modal=1`;
+		const spaPage = await browser.newPage();
+		const extensionClient = await openExtensionClient();
+		try {
+			await spaPage.goto(spaUrl, { waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(spaUrl);
+			await spaPage.bringToFront();
+			const tabId = await getTabId(spaUrl);
+			await spaPage.evaluate(() => {
+				const feed = document.querySelector<HTMLVideoElement>('#v');
+				if (!feed) throw new Error('SPA feed video is missing');
+				feed.style.width = '320px';
+				feed.style.height = '180px';
+				const modal = document.createElement('video');
+				modal.id = 'modal-video';
+				modal.style.display = 'none';
+				modal.style.width = '1280px';
+				modal.style.height = '720px';
+				const rateLabel = document.createElement('span');
+				rateLabel.id = 'modal-rate-label';
+				rateLabel.textContent = '1.0x';
+				modal.addEventListener('ratechange', () => {
+					rateLabel.textContent = `${modal.defaultPlaybackRate.toFixed(1)}x`;
+				});
+				document.body.append(modal, rateLabel);
+			});
+
+			const restored = await extensionClient.evaluate(async (targetTabId) => (
+				chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					tabId: targetTabId,
+					type: 'spectra.control.intent.submit',
+					payload: {
+						tabId: targetTabId,
+						source: 'popup',
+						requestedCoverage: 'active-target',
+						target: null,
+						patch: { speed: 2 },
+					},
+				})
+			), tabId);
+			expect(restored).toMatchObject({
+				ok: true,
+				data: { fields: { speed: { phase: 'applied', actual: 2 } } },
+			});
+			expect(await spaPage.evaluate(() => {
+				const feed = document.querySelector<HTMLVideoElement>('#v');
+				const modal = document.querySelector<HTMLVideoElement>('#modal-video');
+				return {
+					feedRate: feed?.playbackRate ?? null,
+					modalRate: modal?.playbackRate ?? null,
+					label: document.querySelector('#modal-rate-label')?.textContent ?? null,
+				};
+			})).toEqual({ feedRate: 2, modalRate: 1, label: '1.0x' });
+
+			await spaPage.evaluate(() => {
+				const modal = document.querySelector<HTMLVideoElement>('#modal-video');
+				if (!modal) throw new Error('SPA modal video is missing');
+				modal.style.display = 'block';
+				history.pushState({}, '', '/spa-modal?modal_id=spectra-fixture');
+				// A pre-rendered player can become the active source without adding a
+				// new <video>. Its native play lifecycle is therefore the exact media
+				// identity boundary for desired-state replay.
+				modal.dispatchEvent(new Event('play'));
+			});
+			await eventually(
+				() => spaPage.evaluate(() => {
+					const modal = document.querySelector<HTMLVideoElement>('#modal-video');
+					return {
+						currentRate: modal?.playbackRate ?? null,
+						defaultRate: modal?.defaultPlaybackRate ?? null,
+						label: document.querySelector('#modal-rate-label')?.textContent ?? null,
+						url: location.href,
+					};
+				}),
+				(state) => state.currentRate === 2
+					&& state.defaultRate === 2
+					&& state.label === '2.0x'
+					&& state.url.includes('/spa-modal?modal_id='),
+				'pre-rendered SPA modal speed and page-UI projection',
+				8_000,
+			);
+		} finally {
+			await extensionClient.close();
+			await spaPage.close().catch(() => undefined);
+		}
+	}, 35_000);
+
+	test('upgrades restored DOM speed when a same-document SPA modal controller mounts later', async () => {
+		const spaUrl = `${fixtureUrl}?spa-speed-shell=1`;
+		const spaPage = await browser.newPage();
+		const extensionClient = await openExtensionClient();
+		try {
+			await spaPage.goto(spaUrl, { waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(spaUrl);
+			await spaPage.bringToFront();
+			const tabId = await getTabId(spaUrl);
+			const documentToken = await spaPage.evaluate(() => {
+				const token = crypto.randomUUID();
+				(window as Window & { __spectraSpaDocumentToken?: string })
+					.__spectraSpaDocumentToken = token;
+				return token;
+			});
+			const restored = await extensionClient.evaluate(async (targetTabId) => (
+				chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					tabId: targetTabId,
+					type: 'spectra.control.intent.submit',
+					payload: {
+						tabId: targetTabId,
+						source: 'popup',
+						requestedCoverage: 'active-target',
+						target: null,
+						patch: { speed: 2 },
+					},
+				})
+			), tabId);
+			expect(restored).toMatchObject({
+				ok: true,
+				data: {
+					fields: {
+						speed: {
+							phase: 'applied',
+							strategy: 'dom-native',
+							actual: 2,
+						},
+					},
+				},
+			});
+
+			const mounted = await spaPage.evaluate((expectedDocumentToken) => {
+				const video = document.querySelector<HTMLVideoElement>('#v');
+				const host = video?.parentElement as (HTMLElement & {
+					getPlaybackRate?: () => number;
+					setPlaybackRate?: (value: number) => void;
+				}) | null;
+				if (!video || !host) throw new Error('SPA modal speed fixture is missing');
+				const state = { speed: 1, writes: 0 };
+				(window as Window & {
+					__spectraPageMediaState?: typeof state;
+				}).__spectraPageMediaState = state;
+				host.getPlaybackRate = () => state.speed;
+				host.setPlaybackRate = (value) => {
+					state.speed = value;
+					state.writes += 1;
+					video.playbackRate = value;
+				};
+				history.pushState({}, '', '/spa-modal?modal_id=spectra-fixture');
+				return {
+					documentToken: (window as Window & {
+						__spectraSpaDocumentToken?: string;
+					}).__spectraSpaDocumentToken,
+					expectedDocumentToken,
+					pageSpeed: state.speed,
+					domSpeed: video.playbackRate,
+					url: location.href,
+				};
+			}, documentToken);
+			expect(mounted).toMatchObject({
+				documentToken,
+				expectedDocumentToken: documentToken,
+				pageSpeed: 1,
+				domSpeed: 2,
+			});
+			expect(mounted.url).toContain('/spa-modal?modal_id=');
+
+			const adjusted = await extensionClient.evaluate(async (targetTabId) => (
+				chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					tabId: targetTabId,
+					type: 'spectra.control.intent.submit',
+					payload: {
+						tabId: targetTabId,
+						source: 'popup',
+						requestedCoverage: 'active-target',
+						target: null,
+						patch: { speed: 2.5 },
+					},
+				})
+			), tabId);
+			expect(adjusted).toMatchObject({
+				ok: true,
+				data: {
+					fields: {
+						speed: {
+							phase: 'applied',
+							strategy: 'page-native',
+							actual: 2.5,
+						},
+					},
+				},
+			});
+			await eventually(
+				() => spaPage.evaluate(() => {
+					const video = document.querySelector<HTMLVideoElement>('#v');
+					const state = (window as Window & {
+						__spectraPageMediaState?: { speed: number; writes: number };
+						__spectraSpaDocumentToken?: string;
+					}).__spectraPageMediaState;
+					return {
+						documentToken: (window as Window & {
+							__spectraSpaDocumentToken?: string;
+						}).__spectraSpaDocumentToken,
+						pageSpeed: state?.speed ?? null,
+						writes: state?.writes ?? null,
+						domSpeed: video?.playbackRate ?? null,
+					};
+				}),
+				(state) => state.documentToken === documentToken
+					&& state.pageSpeed === 2.5
+					&& state.writes === 1
+					&& state.domSpeed === 2.5,
+				'same-document SPA page-controller writer upgrade',
+			);
+		} finally {
+			await extensionClient.close();
+			await spaPage.close().catch(() => undefined);
 		}
 	}, 35_000);
 
@@ -3207,6 +3563,7 @@ describe('SPECTRA built extension smoke', () => {
 		await installVisualizerBatchProbe();
 		let popup: Page | null = null;
 		let popupClient: CDPSession | null = null;
+		let cleanupError: Error | null = null;
 		try {
 			const popupTarget = await openActionPopupTarget(5_000);
 			popup = await popupTarget.asPage();
@@ -3228,12 +3585,37 @@ describe('SPECTRA built extension smoke', () => {
 			if (popup) await closeActionPopup(popup).catch(() => undefined);
 			await popupClient?.detach().catch(() => undefined);
 			await removeVisualizerBatchProbe();
+			const restored = await sendFromActionPopup<{
+				ok: boolean;
+				data?: { fields?: { audioEnabled?: { actual?: boolean } } };
+				error?: { message?: string };
+			}>({
+				protocolVersion: 2,
+				tabId,
+				type: 'spectra.control.intent.submit',
+				payload: {
+					tabId,
+					source: 'popup',
+					requestedCoverage: 'full',
+					target: null,
+					patch: { audioEnabled: true },
+				},
+			});
+			if (!restored.ok
+				|| restored.data?.fields?.audioEnabled?.actual !== true) {
+				cleanupError = new Error(
+					restored.error?.message ?? 'Unable to restore the visualizer audio baseline',
+				);
+			}
 		}
+		if (cleanupError) throw cleanupError;
 	}, 10_000);
 
 	test('renders localized volume and speed feedback in the browser top layer', async () => {
 		const targetUrl = fixturePage.url();
 		const extensionClient = await openExtensionClient('options.html');
+		const tabId = await getTabId(targetUrl);
+		let shortcutTargetPage: Page | null = null;
 		const settings = await withDiagnosticTimeout('select zh-CN for the OSD smoke test', () => (
 			extensionClient.evaluate(async () => {
 				const request = (type: string, payload: Record<string, unknown>) => chrome.runtime.sendMessage({
@@ -3282,7 +3664,6 @@ describe('SPECTRA built extension smoke', () => {
 				...DEFAULT_AUDIO_CONFIG,
 				muted: false,
 			});
-			const tabId = await getTabId(targetUrl);
 			const nativeBaseline = await extensionClient.evaluate(async (targetTabId) => (
 				chrome.runtime.sendMessage({
 					protocolVersion: 2,
@@ -3374,12 +3755,163 @@ describe('SPECTRA built extension smoke', () => {
 				), { timeout: 5_000 })
 			), 6_000);
 			expect(fixturePage.url()).toBe(speedShortcutUrl);
+			const speedMarkers = await fixturePage.evaluate(() => {
+				const host = document.querySelector<HTMLElement>('#spectra-osd-host');
+				const markers = [...host?.shadowRoot?.querySelectorAll<HTMLElement>('#marks .mk') ?? []];
+				return markers.map((marker) => ({
+					label: marker.dataset.label,
+					lane: marker.classList.contains('upper') ? 'upper' : 'lower',
+					left: Number.parseFloat(marker.style.left),
+				}));
+			});
+			expect(speedMarkers.map(({ label, lane }) => ({ label, lane }))).toEqual([
+				{ label: '1×', lane: 'lower' },
+				{ label: '2×', lane: 'upper' },
+			]);
+			expect(speedMarkers[0]?.left).toBeCloseTo((1 - 0.1) / (16 - 0.1) * 100, 4);
+			expect(speedMarkers[1]?.left).toBeCloseTo((2 - 0.1) / (16 - 0.1) * 100, 4);
+
+			const shortcutTargetUrl = `${fixtureUrl}?shortcut-speed-target=1`;
+			shortcutTargetPage = await browser.newPage();
+			await shortcutTargetPage.goto(shortcutTargetUrl, { waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(shortcutTargetUrl);
+			const shortcutTargetTabId = await getTabId(shortcutTargetUrl);
+			const targetBaseline = await extensionClient.evaluate(async (targetTabId) => {
+				const baseline = await chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					type: 'spectra.control.intent.submit',
+					payload: {
+						tabId: targetTabId,
+						source: 'popup',
+						requestedCoverage: 'active-target',
+						target: null,
+						mutations: [{ field: 'speed', operation: 'set', value: 1 }],
+					},
+				});
+				if (!baseline?.ok || baseline.data.fields.speed?.actual !== 1) {
+					throw new Error(baseline?.error?.message ?? 'Unable to initialize shortcut target speed');
+				}
+				const selected = await chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					type: 'spectra.hotkey-target.set',
+					payload: { tabId: targetTabId },
+				});
+				if (!selected?.ok || selected.data.tabId !== targetTabId) {
+					throw new Error(selected?.error?.message ?? 'Unable to select shortcut target');
+				}
+				return true;
+			}, shortcutTargetTabId);
+			expect(targetBaseline).toBe(true);
+			await fixturePage.bringToFront();
+			await withDiagnosticTimeout('route built-in speed shortcut to the selected target', async () => {
+				await fixturePage.keyboard.down('Alt');
+				await fixturePage.keyboard.press('ArrowRight');
+				await fixturePage.keyboard.up('Alt');
+			}, 5_000);
+			await withDiagnosticTimeout(
+				'observe selected-target speed and foreground Toast',
+				() => eventually(
+					async () => {
+						const [targetRate, foreground, background] = await Promise.all([
+							shortcutTargetPage!.evaluate(() => (
+								document.querySelector<HTMLMediaElement>('video,audio')?.playbackRate ?? null
+							)),
+							fixturePage.evaluate(() => {
+								const host = document.querySelector<HTMLElement>('#spectra-osd-host');
+								return {
+									rate: document.querySelector<HTMLMediaElement>('video,audio')?.playbackRate ?? null,
+									open: host?.matches(':popover-open') === true,
+									text: host?.shadowRoot?.getElementById('t')?.textContent ?? null,
+									metaHidden: host?.shadowRoot?.getElementById('meta')?.hasAttribute('hidden') ?? null,
+									meta: host?.shadowRoot?.getElementById('meta')?.textContent ?? null,
+								};
+							}),
+							extensionClient.evaluate(async (targetTabId) => {
+								const request = (type: string, payload: Record<string, unknown>) => (
+									chrome.runtime.sendMessage({
+										protocolVersion: 2,
+										requestId: crypto.randomUUID(),
+										type,
+										payload,
+									})
+								);
+								const [selected, snapshot] = await Promise.all([
+									request('spectra.hotkey-target.get', {}),
+									request('spectra.control.snapshot.get', { tabId: targetTabId }),
+								]);
+								return {
+									selected: selected?.data ?? null,
+									speed: snapshot?.data?.fields?.speed ?? null,
+								};
+							}, shortcutTargetTabId),
+						]);
+						return { targetRate, foreground, background };
+					},
+					(state) => state.targetRate === 1.1
+						&& state.foreground.rate === 1
+						&& state.foreground.open
+						&& state.foreground.text === '1.1×'
+						&& state.foreground.metaHidden === false
+						&& state.foreground.meta?.includes('127.0.0.1') === true,
+					'selected-target speed and foreground Toast',
+					5_000,
+				),
+				6_000,
+			);
+			expect(await shortcutTargetPage.evaluate(() => (
+				document.querySelector<HTMLMediaElement>('video,audio')?.playbackRate
+			))).toBe(1.1);
+			await extensionClient.evaluate(async () => {
+				const cleared = await chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					type: 'spectra.hotkey-target.set',
+					payload: { tabId: null },
+				});
+				if (!cleared?.ok || cleared.data.tabId !== null) {
+					throw new Error(cleared?.error?.message ?? 'Unable to clear shortcut target');
+				}
+			});
+			await shortcutTargetPage.close();
+			shortcutTargetPage = null;
+			await fixturePage.bringToFront();
 			await submitEffectiveVolume(tabId, 90);
 			await withDiagnosticTimeout('observe the below-100 volume baseline', () => (
 				fixturePage.waitForFunction(() => (
 					Math.round((document.querySelector<HTMLMediaElement>('video,audio')?.volume ?? -1) * 100) === 90
 				), { timeout: 5_000 })
 			), 6_000);
+			await fixturePage.evaluate(() => {
+				const host = document.querySelector<HTMLElement>('#spectra-osd-host');
+				const root = host?.shadowRoot;
+				const text = root?.getElementById('t');
+				const fill = root?.getElementById('f');
+				if (!root || !text || !fill) throw new Error('OSD feedback surface is unavailable');
+				const scope = window as Window & {
+					__spectraScalarFrames?: Array<{ value: number; width: number }>;
+					__spectraScalarObserver?: MutationObserver;
+				};
+				scope.__spectraScalarFrames = [];
+				scope.__spectraScalarObserver?.disconnect();
+				const record = () => {
+					const value = Number.parseFloat(text.textContent ?? '');
+					const width = Number.parseFloat(fill.style.width);
+					if (Number.isFinite(value) && text.textContent?.endsWith('%') && Number.isFinite(width)) {
+						scope.__spectraScalarFrames!.push({ value, width });
+					}
+				};
+				scope.__spectraScalarObserver = new MutationObserver(record);
+				scope.__spectraScalarObserver.observe(root, {
+					attributes: true,
+					attributeFilter: ['style'],
+					childList: true,
+					characterData: true,
+					subtree: true,
+				});
+				record();
+			});
 			await withDiagnosticTimeout('hold the below-100 volume-down command', async () => {
 				await fixturePage.keyboard.down('Alt');
 				await fixturePage.keyboard.down('ArrowDown');
@@ -3406,7 +3938,28 @@ describe('SPECTRA built extension smoke', () => {
 			expect(await fixturePage.evaluate(() => Math.round(
 				(document.querySelector<HTMLMediaElement>('video,audio')?.volume ?? -1) * 100,
 			))).toBe(volumeAtRelease);
+			const scalarFrames = await fixturePage.evaluate(() => {
+				const scope = window as Window & {
+					__spectraScalarFrames?: Array<{ value: number; width: number }>;
+					__spectraScalarObserver?: MutationObserver;
+				};
+				scope.__spectraScalarObserver?.disconnect();
+				return scope.__spectraScalarFrames ?? [];
+			});
+			const scalarValues = [...new Set(scalarFrames.map(({ value }) => value))];
+			expect(scalarValues.length).toBeGreaterThan(5);
+			expect(scalarValues.some((value) => Math.abs(value % 10) > 0.05)).toBe(true);
+			expect(scalarFrames.every(({ value, width }) => Math.abs(width - value / 8) < 0.05)).toBe(true);
 		} finally {
+			await extensionClient.evaluate(async () => {
+				await chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					type: 'spectra.hotkey-target.set',
+					payload: { tabId: null },
+				});
+			}).catch(() => undefined);
+			await shortcutTargetPage?.close().catch(() => undefined);
 			await extensionClient.evaluate(async ({ hotkeySite, language }) => {
 				const current = await chrome.runtime.sendMessage({
 					protocolVersion: 2,
@@ -3438,7 +3991,7 @@ describe('SPECTRA built extension smoke', () => {
 				hotkeySite: settings.originalHotkeySite,
 				language: settings.originalLanguage,
 			});
-			await configureRuntime(targetUrl, { ...DEFAULT_AUDIO_CONFIG, muted: false }).catch(() => undefined);
+			await submitEffectiveVolume(tabId, 100).catch(() => undefined);
 			await extensionClient.close().catch(() => undefined);
 		}
 	}, 25_000);
@@ -3585,10 +4138,18 @@ describe('SPECTRA built extension smoke', () => {
 		await fixturePage.bringToFront();
 		await fixturePage.click('body');
 		const tabId = await getTabId(fixturePage.url());
-		await configureRuntime(fixturePage.url(), {
-			...DEFAULT_AUDIO_CONFIG,
-			volume: 130,
-			boost: 1.3,
+		await submitEffectiveVolume(tabId, 130);
+		const configured = await waitForContentStatus(
+			(status) => status.config?.volume === 130
+				&& status.mode === 'webaudio'
+				&& status.phase === 'active',
+			10_000,
+		);
+		expect(configured).toMatchObject({
+			config: { volume: 130, volumeBase: 100, boost: 1.3 },
+			actualMode: 'webaudio',
+			phase: 'active',
+			lastError: null,
 		});
 		await waitForContentStatus(
 			(status) => status.mode === 'webaudio' && status.phase === 'active',
@@ -3623,7 +4184,7 @@ describe('SPECTRA built extension smoke', () => {
 			oldRuntimeDisposed: true,
 		});
 
-		await configureRuntime(fixturePage.url(), DEFAULT_AUDIO_CONFIG);
+		await submitEffectiveVolume(tabId, 100);
 		await waitForContentStatus((status) => status.mode === 'bypass' && status.phase === 'idle');
 	}, 35_000);
 
