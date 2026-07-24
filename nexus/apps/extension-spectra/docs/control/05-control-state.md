@@ -57,14 +57,22 @@ DOM writes use per-target, per-field tokens:
 { intentId, fieldRevision, expectedValue, tolerance }
 ```
 
-A matching event is the acknowledgement of the pending write. A non-matching page event is a new page intent and receives a new revision. Time-window booleans such as `settingByPlugin` are forbidden.
+A matching event is acknowledgement evidence for the pending write. Until the
+event/getter transaction reaches its bounded stable boundary, a non-matching
+event is also correlated evidence for that same write and cannot create a
+competing page revision. Once no write token exists, a changed native readback
+is a new page intent and receives a new revision. Time-window booleans such as
+`settingByPlugin` are forbidden.
 
 For `volumeBase`, `mediaMuted`, and `speed`, a request-local `page-native`
 probe runs before the DOM fallback. Its exact page-controller getter is both the
-baseline source and ACK; a write mismatch is restored through that same writer.
-Once a field is owned, its writer identity is stable until release. Normal DOM
-events still drive page-to-extension observation, but the observer re-reads the
-page semantic getter before committing when that getter exists.
+baseline source and ACK. An unowned candidate that rejects or later clamps the
+requested value may fall through only after the same page writer proves its
+baseline was restored; the DOM candidate then captures its own baseline and
+must produce native event/getter ACK. Once a field is owned, its writer identity
+is stable until release. Normal DOM events still drive page-to-extension
+observation, but the observer re-reads the selected owned writer rather than
+allowing a lower-capability page getter to overwrite a DOM-owned value.
 
 ### §10.2 Processor handoff without double processing
 

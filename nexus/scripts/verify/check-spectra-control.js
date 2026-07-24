@@ -1620,8 +1620,13 @@ function checkRetiredPaths(root) {
 			> nativeAckFunction.indexOf('await write()')
 		|| !nativeAckFunction.includes('if (!await acknowledgement)')
 		|| !nativeExecutor.includes("value ? 'playing' : 'pause'")
+		|| !nativeExecutor.includes('pageCandidateRestoredBaseline(')
+		|| !nativeExecutor.includes("The executor's event/getter transaction owns every event")
 		|| !nativeAckTest.includes('waits through microtask, rAF and 50ms page rollbacks before rejecting native ACKs')
-		|| !nativeAckTest.includes('rejects a getter match when no native event acknowledges the setter')) {
+		|| !nativeAckTest.includes('rejects a getter match when no native event acknowledges the setter')
+		|| !nativeAckTest.includes('falls through to standard playbackRate when an unowned page controller rejects a higher speed')
+		|| !nativeAckTest.includes('restores a high speed through DOM fallback when a page controller clamps asynchronously')
+		|| !smoke.includes('falls through a capped page controller and acknowledges high DOM playback speed once')) {
 		error('SCTRL-005/SCTRL-017: native event listeners and rollback regression coverage must precede actual ACK');
 	}
 	if (!nativeExecutor.includes('requestVideoFrameCallback')

@@ -95,7 +95,7 @@ silently route a video field to the wrong element.
 
 | Field | Preferred implementation | Escalation |
 | --- | --- | --- |
-| speed | exact-element page controller getter/setter, then standard `playbackRate` | page getter stable readback or DOM `ratechange` plus getter; unsupported only after both native candidates fail |
+| speed | exact-element page controller getter/setter, then standard `playbackRate` | an unowned page candidate that synchronously or asynchronously caps the requested value restores its baseline before DOM admission; DOM requires correlated `ratechange` plus getter, and the field is unsupported only after both native candidates fail |
 | preserve pitch | `preservesPitch` capability/readback | unsupported when the standard property is absent |
 | play/pause | awaited `play()` / `pause` event | unsupported on native failure; never bypass autoplay |
 | seek | seekable `TimeRanges` + `seeked` readback | unsupported when the standard timeline is unavailable |
@@ -106,9 +106,14 @@ silently route a video field to the wrong element.
 
 The same exact-element `page-native -> dom-native` order applies to page volume,
 media mute, and playback speed. Page-native discovery is bounded and
-domain-neutral; it retains no player object or site UI listener. Normal media
-events trigger semantic getter readback so page changes, Popup changes, and mute
-hotkeys converge on the one coordinator snapshot without a reassert loop. A
+domain-neutral; it retains no player object or site UI listener. A page
+controller's mere presence is not admission for a value it cannot truthfully
+read back: before ownership, a baseline-restored rejection falls through once
+to the standard DOM writer. Events emitted by either candidate during that
+transaction are correlated with the pending field instead of racing a new
+revision. Later normal media events read the stable selected writer so page
+changes, Popup changes, restore, and hotkeys converge on the one coordinator
+snapshot without a reassert loop. A
 cold bootstrap event is document-scoped rather than media-scoped: it can preserve
 only volume/mute and speed/pitch across a same-origin refresh, never select a
 target or claim plugin badge usage.

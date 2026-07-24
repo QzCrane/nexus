@@ -55,6 +55,13 @@ interface OwnedSeek {
 type RestorableMediaField = 'volumeBase' | 'mediaMuted' | 'speed' | 'preservePitch' | 'loop';
 type RestorableMediaWriter = 'page-native' | 'dom-native';
 
+class PageMediaCapabilityUnavailableError extends Error {
+	constructor(field: SpectraPageMediaField) {
+		super(`Page-media ${field} writer is no longer available`);
+		this.name = 'PageMediaCapabilityUnavailableError';
+	}
+}
+
 interface OwnedMediaField {
 	baseline: ControlValues[RestorableMediaField];
 	lastApplied: ControlValues[RestorableMediaField];
@@ -397,6 +404,21 @@ function readRestorableMediaFieldWithWriter(
 	element: HTMLMediaElement,
 	field: RestorableMediaField,
 ): { actual: ControlValues[RestorableMediaField]; writer: RestorableMediaWriter } {
+	const owned = nativeMediaOwnership.byElement.get(element)?.get(field);
+	// A DOM-owned high speed may intentionally exceed the page controller's UI
+	// range, so its later reads must stay on playbackRate until an actual DOM
+	// ratechange releases ownership. Volume/mute retain semantic page-gesture
+	// discovery because their controller values can intentionally differ from
+	// the media element projection.
+	if (owned && (
+		!isPageMediaField(field)
+		|| (owned.writer === 'dom-native' && field === 'speed')
+	)) {
+		return {
+			actual: readRestorableMediaField(element, field, owned.writer),
+			writer: owned.writer,
+		};
+	}
 	if (isPageMediaField(field)) {
 		try {
 			const actual = readPageMediaField(element, field);
@@ -431,7 +453,7 @@ function writeRestorableMediaField(
 ): ControlValues[RestorableMediaField] {
 	if (writer === 'page-native' && isPageMediaField(field)) {
 		const actual = writePageMediaField(element, field, value);
-		if (actual === null) throw new Error(`Page-media ${field} writer is no longer available`);
+		if (actual === null) throw new PageMediaCapabilityUnavailableError(field);
 		return actual;
 	}
 	switch (field) {
@@ -484,6 +506,63 @@ export function writeNativeCurrentTime(element: HTMLMediaElement, currentTime: n
 export function writeNativeLoop(element: HTMLMediaElement, loop: boolean): boolean {
 	element.loop = loop;
 	return element.loop;
+}
+
+async function writeRestorableMediaFieldWithStableAck(
+	element: HTMLMediaElement,
+	field: SpectraPageMediaField,
+	desired: ControlValues[SpectraPageMediaField],
+	writer: RestorableMediaWriter,
+	tolerance: number,
+): Promise<ControlValues[SpectraPageMediaField]> {
+	const read = (): ControlValues[SpectraPageMediaField] => (
+		writer === 'page-native'
+			? readRestorableMediaField(element, field, writer)
+			: readDomRestorableMediaField(element, field)
+	) as ControlValues[SpectraPageMediaField];
+	let actual: ControlValues[SpectraPageMediaField];
+	if (writer === 'page-native') {
+		writeRestorableMediaField(element, field, desired, writer);
+		actual = await stablePageReadback(read);
+	} else {
+		actual = await writeWithStableEventAck(
+			element,
+			field === 'speed' ? 'ratechange' : 'volumechange',
+			() => { writeRestorableMediaField(element, field, desired, writer); },
+			read,
+			desired,
+			tolerance,
+		);
+	}
+	if (!valuesMatch(desired, actual, tolerance)) {
+		throw new Error(`${field} readback mismatch after the stable boundary`);
+	}
+	return actual;
+}
+
+async function pageCandidateRestoredBaseline(
+	element: HTMLMediaElement,
+	field: SpectraPageMediaField,
+	baseline: ControlValues[SpectraPageMediaField],
+	error: unknown,
+	tolerance: number,
+): Promise<boolean> {
+	// An explicitly unavailable request never called a page setter. Every other
+	// page failure may fall through only after the same candidate proves that its
+	// baseline is stable again.
+	if (error instanceof PageMediaCapabilityUnavailableError) return true;
+	try {
+		const current = readRestorableMediaField(element, field, 'page-native');
+		if (!valuesMatch(current, baseline, tolerance)) {
+			writeRestorableMediaField(element, field, baseline, 'page-native');
+		}
+		const restored = await stablePageReadback(
+			() => readRestorableMediaField(element, field, 'page-native'),
+		);
+		return valuesMatch(restored, baseline, tolerance);
+	} catch {
+		return false;
+	}
 }
 
 export function clampNativeSeek(element: HTMLMediaElement, desired: number): number {
@@ -1001,78 +1080,44 @@ export class NativeMediaExecutor {
 			tolerance,
 			timeoutId: setTimeout(() => this.clearPending(target.mediaId, field, intent.intentId), 1_000),
 		});
-		let applied = false;
 		try {
-			switch (field) {
-				case 'volumeBase': {
-					const actual = mediaWriter === 'page-native'
-						? await (async () => {
-							writeRestorableMediaField(element, field, value as number, mediaWriter);
-							return stablePageReadback(
-								() => readRestorableMediaField(element, field, mediaWriter) as number,
-							);
-						})()
-						: await writeWithStableEventAck(
+			if (field === 'volumeBase' || field === 'mediaMuted' || field === 'speed') {
+				if (baseline === undefined) throw new Error(`Missing ${field} baseline`);
+				const pageWriterAlreadyOwned = nativeMediaOwnership.byElement.get(element)?.get(field)?.writer
+					=== 'page-native';
+				let actual: ControlValues[typeof field];
+				try {
+					actual = await writeRestorableMediaFieldWithStableAck(
+						element,
+						field,
+						effectiveDesired as ControlValues[typeof field],
+						mediaWriter,
+						tolerance,
+					) as ControlValues[typeof field];
+				} catch (pageError) {
+					const mayFallThrough = mediaWriter === 'page-native'
+						&& !pageWriterAlreadyOwned
+						&& await pageCandidateRestoredBaseline(
 							element,
-							'volumechange',
-							() => { writeNativeVolumeBase(element, value as number); },
-							() => Math.round(element.volume * 10_000) / 100,
-							effectiveDesired,
+							field,
+							baseline as ControlValues[typeof field],
+							pageError,
 							tolerance,
 						);
-					if (!valuesMatch(effectiveDesired, actual, tolerance)) {
-						throw new Error('Volume readback mismatch after the stable boundary');
-					}
-					this.putState(fields, field, effectiveDesired, actual, intent, mediaWriter);
-					this.observe(target.mediaId, field, actual);
-					break;
+					if (!mayFallThrough) throw pageError;
+					baseline = readDomRestorableMediaField(element, field);
+					mediaWriter = 'dom-native';
+					actual = await writeRestorableMediaFieldWithStableAck(
+						element,
+						field,
+						effectiveDesired as ControlValues[typeof field],
+						mediaWriter,
+						tolerance,
+					) as ControlValues[typeof field];
 				}
-				case 'mediaMuted': {
-					const actual = mediaWriter === 'page-native'
-						? await (async () => {
-							writeRestorableMediaField(element, field, value as boolean, mediaWriter);
-							return stablePageReadback(
-								() => readRestorableMediaField(element, field, mediaWriter) as boolean,
-							);
-						})()
-						: await writeWithStableEventAck(
-							element,
-							'volumechange',
-							() => { writeNativeMediaMuted(element, value as boolean); },
-							() => element.muted,
-							effectiveDesired,
-							tolerance,
-						);
-					if (!valuesMatch(effectiveDesired, actual, tolerance)) {
-						throw new Error('Mute readback mismatch after the stable boundary');
-					}
-					this.putState(fields, field, effectiveDesired, actual, intent, mediaWriter);
-					this.observe(target.mediaId, field, actual);
-					break;
-				}
-				case 'speed': {
-					const actual = mediaWriter === 'page-native'
-						? await (async () => {
-							writeRestorableMediaField(element, field, value as number, mediaWriter);
-							return stablePageReadback(
-								() => readRestorableMediaField(element, field, mediaWriter) as number,
-							);
-						})()
-						: await writeWithStableEventAck(
-							element,
-							'ratechange',
-							() => { writeNativePlaybackRate(element, value as number); },
-							() => element.playbackRate,
-							effectiveDesired,
-							tolerance,
-						);
-					if (!valuesMatch(effectiveDesired, actual, tolerance)) {
-						throw new Error('Playback-rate readback mismatch after the stable boundary');
-					}
-					this.putState(fields, field, effectiveDesired, actual, intent, mediaWriter);
-					this.observe(target.mediaId, field, actual);
-					break;
-				}
+				this.putState(fields, field, effectiveDesired, actual, intent, mediaWriter);
+				this.observe(target.mediaId, field, actual);
+			} else switch (field) {
 				case 'preservePitch': {
 					writeNativePreservesPitch(element, value as boolean);
 					const actual = await stableReadback(() => (
@@ -1196,7 +1241,6 @@ export class NativeMediaExecutor {
 				&& state.actual !== null) {
 				this.commitOwnership(element, field, baseline, state.actual, mediaWriter);
 			}
-			applied = fields[field]?.phase === 'applied';
 		} catch (error) {
 			if (isRestorableMediaField(field) && baseline !== undefined) {
 				await this.rollbackFailedRestorableWrite(
@@ -1220,7 +1264,7 @@ export class NativeMediaExecutor {
 				baseline,
 			);
 		} finally {
-			if (!applied) this.clearPending(target.mediaId, field, intent.intentId);
+			this.clearPending(target.mediaId, field, intent.intentId);
 		}
 	}
 
@@ -1466,12 +1510,15 @@ export class NativeMediaExecutor {
 		for (const [rawField, actual] of Object.entries(candidates)) {
 			const field = rawField as ControlField;
 			const write = pending?.get(field);
-			if (write && this.matches(write.expected, actual, write.tolerance)) {
-				this.observe(mediaId, field, actual as ControlValues[ControlField]);
-				this.clearPending(mediaId, field, write.intentId);
+			if (write) {
+				if (this.matches(write.expected, actual, write.tolerance)) {
+					this.observe(mediaId, field, actual as ControlValues[ControlField]);
+				}
+				// The executor's event/getter transaction owns every event for this
+				// field until its stable boundary settles. A transient mismatch is
+				// evidence for that transaction, not a competing page revision.
 				continue;
 			}
-			if (write) this.clearPending(mediaId, field, write.intentId);
 			if (field === 'currentTime' && ownedSeek) {
 				this.observe(mediaId, field, actual as ControlValues[ControlField]);
 				continue;

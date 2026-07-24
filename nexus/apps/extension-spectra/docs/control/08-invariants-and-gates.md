@@ -37,7 +37,7 @@ audience: developer
 - `SCTRL-024`: document runtime ownership counts unique consumer tokens; only the last token may dispose it.
 - `SCTRL-025`: `activeMedia` and `activeVideo` are independent actual identities; every video-only surface routes to the latter.
 - `SCTRL-026`: a neutral CSS value on a never-owned target is a DOM-free no-op and cannot acquire or delete owner state.
-- `SCTRL-027`: a native ACK is one-shot: DOM writers require their native event plus a bounded quiet window/stable getter, while page-native requires the exact controller getter to remain stable; requested setter return values are never ACKs.
+- `SCTRL-027`: native candidate admission and ACK are one-shot: before ownership a failed page candidate may admit DOM only after proving its own stable baseline restoration; DOM writers require their native event plus a bounded quiet window/stable getter, in-flight native events cannot create a competing revision, writer identity remains fixed after acquisition, and requested setter return values are never ACKs.
 - `SCTRL-028`: default pages have zero audio work; after explicit irreversible Media WebAudio binding only the minimal unity route may survive until navigation.
 - `SCTRL-029`: an ACK target is projected only through its contract scope; video-only and tab/document operations cannot overwrite or clear the unrelated active identity.
 - `SCTRL-030`: runtime status/read is a pure projection: it installs no listener, performs no document scan, changes no selection/correlation/owner state and emits no synthetic event; only the bounded bootstrap getter may scan before runtime acquisition, and bootstrap event observation never selects a target or writes storage directly.

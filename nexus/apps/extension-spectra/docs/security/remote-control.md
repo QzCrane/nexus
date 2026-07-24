@@ -45,7 +45,7 @@ Call `remoteHost.destroy()` during `pagehide`. Background owns the remote offscr
 | `REMOTE_HOST_SEND_STATE` | `tabId`, `sessionId`, validated state | sends only to an authenticated connection |
 | `REMOTE_HOST_DESCRIBE` | none | sessions for service-worker recovery |
 
-The host emits capability-bound execute, sync, status, and closed events so Background can validate command ownership and clean leases.
+The host emits capability-bound execute, sync, status, and closed events so Background can validate command ownership and clean leases. Execute, sync, and status events retain an internal Chrome response channel until restoration, authorization, Content READY, and handling settle; this channel is a worker-lifetime barrier, not a remote command success ACK.
 
 ## Network disclosure
 

@@ -127,6 +127,8 @@ interface PageMediaState {
 	mediaMuted: boolean;
 	speed: number;
 	supported?: boolean;
+	maximumSpeed?: number;
+	delayedMaximumSpeed?: number;
 }
 
 function installPageMediaBridgeStub(
@@ -148,6 +150,26 @@ function installPageMediaBridgeStub(
 			media.setAttribute(SPECTRA_PAGE_MEDIA_RESULT_ATTRIBUTE, JSON.stringify(result));
 			return;
 		}
+		if (request.operation === 'write'
+			&& request.field === 'speed'
+			&& typeof request.value === 'number'
+			&& state.maximumSpeed !== undefined
+			&& request.value > state.maximumSpeed) {
+			const before = state.speed;
+			state.speed = state.maximumSpeed;
+			media.playbackRate = state.maximumSpeed;
+			state.speed = before;
+			media.playbackRate = before;
+			const result: SpectraPageMediaResult = {
+				requestId: request.requestId,
+				field: request.field,
+				supported: true,
+				actual: null,
+				error: 'Page speed readback mismatch; baseline restored',
+			};
+			media.setAttribute(SPECTRA_PAGE_MEDIA_RESULT_ATTRIBUTE, JSON.stringify(result));
+			return;
+		}
 		if (request.operation === 'write') {
 			if (request.field === 'volumeBase' && typeof request.value === 'number') {
 				state.volumeBase = request.value;
@@ -158,6 +180,13 @@ function installPageMediaBridgeStub(
 			} else if (request.field === 'speed' && typeof request.value === 'number') {
 				state.speed = request.value;
 				media.playbackRate = request.value;
+				if (state.delayedMaximumSpeed !== undefined
+					&& request.value > state.delayedMaximumSpeed) {
+					setTimeout(() => {
+						state.speed = state.delayedMaximumSpeed!;
+						media.playbackRate = state.delayedMaximumSpeed!;
+					}, 0);
+				}
 			}
 		}
 		const result: SpectraPageMediaResult = {
@@ -1062,6 +1091,149 @@ describe('native media single-writer correlation', () => {
 		}
 	}, 2_000);
 
+	test('falls through to standard playbackRate when an unowned page controller rejects a higher speed', async () => {
+		Object.defineProperty(globalThis, 'HTMLMediaElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		Object.defineProperty(globalThis, 'HTMLVideoElement', {
+			configurable: true,
+			value: class FakeVideoElement extends FakeMediaElement { },
+		});
+		Object.defineProperty(globalThis, 'document', {
+			configurable: true,
+			value: { pictureInPictureElement: null, fullscreenElement: null },
+		});
+		Object.defineProperty(globalThis, 'requestAnimationFrame', {
+			configurable: true,
+			value: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0),
+		});
+		const observations: unknown[] = [];
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				runtime: {
+					sendMessage: async (message: unknown) => {
+						observations.push(message);
+						return undefined;
+					},
+				},
+			},
+		});
+		const media = new BridgedMediaElement();
+		const state: PageMediaState = {
+			volumeBase: 100,
+			mediaMuted: false,
+			speed: 1,
+			maximumSpeed: 2,
+		};
+		installPageMediaBridgeStub(media, state);
+		const registry = new FakeRegistry(media);
+		media.addEventListener('ratechange', () => registry.emit('ratechange'));
+		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
+		try {
+			const acknowledgement = await executor.execute({
+				intentId: 'intent:page-media:capped-speed',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 13,
+				source: 'hotkey',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { speed: 4 },
+			});
+
+			expect(acknowledgement.fields.speed).toMatchObject({
+				phase: 'applied',
+				strategy: 'dom-native',
+				actual: 4,
+			});
+			expect(state.speed).toBe(1);
+			expect(media.playbackRate).toBe(4);
+			expect(executor.read({
+				target: registry.target,
+				fields: ['speed'],
+			})).toMatchObject({
+				patch: { speed: 4 },
+				observedStrategies: { speed: 'dom-native' },
+			});
+			expect(observations).toEqual([]);
+		} finally {
+			executor.dispose();
+		}
+	}, 2_000);
+
+	test('restores a high speed through DOM fallback when a page controller clamps asynchronously', async () => {
+		Object.defineProperty(globalThis, 'HTMLMediaElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		Object.defineProperty(globalThis, 'HTMLVideoElement', {
+			configurable: true,
+			value: class FakeVideoElement extends FakeMediaElement { },
+		});
+		Object.defineProperty(globalThis, 'document', {
+			configurable: true,
+			value: { pictureInPictureElement: null, fullscreenElement: null },
+		});
+		Object.defineProperty(globalThis, 'requestAnimationFrame', {
+			configurable: true,
+			value: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0),
+		});
+		const observations: unknown[] = [];
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				runtime: {
+					sendMessage: async (message: unknown) => {
+						observations.push(message);
+						return undefined;
+					},
+				},
+			},
+		});
+		const media = new BridgedMediaElement();
+		const state: PageMediaState = {
+			volumeBase: 100,
+			mediaMuted: false,
+			speed: 1,
+			delayedMaximumSpeed: 3,
+		};
+		installPageMediaBridgeStub(media, state);
+		const registry = new FakeRegistry(media);
+		media.addEventListener('ratechange', () => registry.emit('ratechange'));
+		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
+		try {
+			const acknowledgement = await executor.execute({
+				intentId: 'intent:page-media:delayed-cap-restore',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 21,
+				source: 'restore',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { speed: 4 },
+			});
+
+			expect(acknowledgement.fields.speed).toMatchObject({
+				phase: 'applied',
+				strategy: 'dom-native',
+				actual: 4,
+			});
+			expect(state.speed).toBe(1);
+			expect(media.playbackRate).toBe(4);
+			expect(observations).toEqual([]);
+		} finally {
+			executor.dispose();
+		}
+	}, 2_000);
+
 	test('never switches an owned page field to the DOM writer when its controller disappears', async () => {
 		Object.defineProperty(globalThis, 'HTMLMediaElement', {
 			configurable: true,
@@ -1105,6 +1277,13 @@ describe('native media single-writer correlation', () => {
 			expect(media.volume).toBeCloseTo(0.24524, 5);
 
 			state.supported = false;
+			expect(executor.read({
+				target: registry.target,
+				fields: ['volumeBase'],
+			})).toMatchObject({
+				patch: { volumeBase: 24.52 },
+				observedStrategies: { volumeBase: 'dom-native' },
+			});
 			const second = await executor.execute({
 				intentId: 'intent:page-media:controller-gone',
 				tabId: 7,

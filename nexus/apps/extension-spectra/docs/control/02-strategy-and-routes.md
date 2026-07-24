@@ -202,14 +202,26 @@ count, and an unrelated outer player therefore cannot steal an inner media
 field.
 
 A page candidate is usable only when it exposes the paired getter/setter for the
-requested semantic field. The getter is the ACK; after a write it must return the
-requested value through a bounded stable readback or the same page writer
-restores its baseline and fails. Once SPECTRA owns a field through
-`page-native`, that field cannot silently switch to the DOM writer until
-ownership is released. When no page candidate exists before acquisition, the
-standard `HTMLMediaElement` property/event path remains the general fallback.
-Page-originated `volumechange`/`ratechange` events re-read the semantic page
-getter before committing the shared snapshot.
+requested semantic field and can truthfully apply the requested value. The
+getter is the ACK; after a write it must return the requested value through a
+bounded stable readback. Before field ownership is acquired, a synchronous or
+delayed mismatch may fall through to the standard `HTMLMediaElement`
+property/event candidate only after the same page writer proves that its
+baseline is stable again. This capability admission is value-specific, so a
+player UI capped at 2× or 3× cannot prevent standard `playbackRate` from
+applying a higher supported value. Once either `page-native` or `dom-native`
+owns the field, that writer identity cannot silently switch until ownership is
+released. If an owned page getter later disappears, a passive event/startup
+observation may fall back to the DOM getter so Content can still report actual
+state and reach READY; this does not migrate ownership, and the next write
+remains bound to the missing page writer and fails explicitly.
+
+Native `volumechange`/`ratechange` events emitted while a SPECTRA write is
+pending belong to that event/getter transaction. Matching events are ACK
+evidence and transient mismatches remain transaction evidence; neither can
+submit a competing page revision. After the transaction settles, ordinary page
+events re-read the field's selected writer before committing the shared
+snapshot.
 
 Discovery is request-local: there is no hostname list, player selector,
 controller cache, page-controller event subscription, descriptor patch,

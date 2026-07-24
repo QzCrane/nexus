@@ -20,6 +20,7 @@ import {
 
 const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
 const FIXTURE_PATH = join(import.meta.dir, 'fixtures', 'smoke-test.html');
+const FIXTURE_HTML = readFileSync(FIXTURE_PATH, 'utf8');
 const REMOTE_SITE_DIR = resolve(import.meta.dir, '..', '..', '..', '..', 'remote-site');
 
 if (!existsSync(join(EXTENSION_DIR, 'manifest.json'))) {
@@ -432,7 +433,16 @@ async function acquireSmokeRuntime(
 			},
 		});
 	}, { targetTabId: tabId, leaseCapability: capability });
-	if (!response?.ok) throw new Error(response?.error?.message ?? 'Unable to acquire smoke runtime');
+	if (!response?.ok) {
+		const bootstrap = await readContentBootstrapStatus(url).catch(() => null);
+		throw new Error(
+			`${response?.error?.message ?? 'Unable to acquire smoke runtime'}: ${JSON.stringify({
+				response,
+				bootstrap,
+				fixtureErrors,
+			})}`,
+		);
+	}
 	const lease: SmokeRuntimeLease = {
 		tabId,
 		documentId: response.data.documentId,
@@ -579,6 +589,25 @@ async function installPageMediaControllerHarness(
 		video.dispatchEvent(new Event('volumechange'));
 		video.dispatchEvent(new Event('ratechange'));
 	}, initial);
+}
+
+function cappedPageMediaFixture(maximumSpeed: number): string {
+	const script = `<script>
+		(() => {
+			const video = document.querySelector('#v');
+			const host = video && video.parentElement;
+			if (!video || !host) throw new Error('Capped page-media fixture is missing');
+			const state = { speed: 1 };
+			window.__spectraPageMediaState = state;
+			host.getPlaybackRate = () => state.speed;
+			host.setPlaybackRate = (value) => {
+				state.speed = Math.min(value, ${JSON.stringify(maximumSpeed)});
+				video.playbackRate = state.speed;
+			};
+			host.setPlaybackRate(1);
+		})();
+	</script>`;
+	return FIXTURE_HTML.replace('</body>', `${script}\n</body>`);
 }
 
 async function updatePageMediaControllerHarness(
@@ -1557,7 +1586,8 @@ beforeAll(async () => {
 		port: 0,
 		hostname: '127.0.0.1',
 		fetch(request) {
-			const pathname = new URL(request.url).pathname;
+			const requestUrl = new URL(request.url);
+			const pathname = requestUrl.pathname;
 			const remoteFiles: Record<string, { file: string; type: string }> = {
 				'/remote/': { file: 'index.html', type: 'text/html; charset=utf-8' },
 				'/remote/index.html': { file: 'index.html', type: 'text/html; charset=utf-8' },
@@ -1581,6 +1611,12 @@ beforeAll(async () => {
 			}
 			if (pathname !== '/' && pathname !== '/smoke-test.html') {
 				return new Response('Not found', { status: 404 });
+			}
+			const pageSpeedCap = Number(requestUrl.searchParams.get('page-speed-cap'));
+			if (Number.isFinite(pageSpeedCap) && pageSpeedCap > 0) {
+				return new Response(cappedPageMediaFixture(pageSpeedCap), {
+					headers: { 'content-type': 'text/html; charset=utf-8' },
+				});
 			}
 			return new Response(Bun.file(FIXTURE_PATH), {
 				headers: { 'content-type': 'text/html; charset=utf-8' },
@@ -1967,6 +2003,82 @@ describe('SPECTRA built extension smoke', () => {
 		expect(state.native).toEqual({ volume: 0.30655, muted: true, speed: 1.5 });
 	});
 
+	test('falls through a capped page controller and acknowledges high DOM playback speed once', async () => {
+		const cappedUrl = `${fixtureUrl}?page-speed-cap=2`;
+		const cappedPage = await browser.newPage();
+		const extensionClient = await openExtensionClient();
+		try {
+			await cappedPage.goto(cappedUrl, { waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(cappedUrl);
+			await cappedPage.bringToFront();
+			const tabId = await getTabId(cappedUrl);
+			const acknowledgement = await extensionClient.evaluate(async (targetTabId) => (
+				chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					tabId: targetTabId,
+					type: 'spectra.control.intent.submit',
+					payload: {
+						tabId: targetTabId,
+						source: 'popup',
+						requestedCoverage: 'active-target',
+						target: null,
+						patch: { speed: 4 },
+					},
+				})
+			), tabId);
+			expect(acknowledgement).toMatchObject({
+				ok: true,
+				data: {
+					fields: {
+						speed: {
+							phase: 'applied',
+							strategy: 'dom-native',
+							actual: 4,
+						},
+					},
+				},
+			});
+			await eventually(
+				() => cappedPage.evaluate(() => {
+					const video = document.querySelector<HTMLVideoElement>('#v');
+					const state = (window as Window & {
+						__spectraPageMediaState?: { speed: number };
+					}).__spectraPageMediaState;
+					return {
+						pageSpeed: state?.speed ?? null,
+						domSpeed: video?.playbackRate ?? null,
+					};
+				}),
+				(state) => state.pageSpeed === 1 && state.domSpeed === 4,
+				'high-speed DOM fallback beyond the page controller range',
+			);
+			const snapshot = await extensionClient.evaluate(async (targetTabId) => (
+				chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					tabId: targetTabId,
+					type: 'spectra.control.snapshot.get',
+					payload: { tabId: targetTabId },
+				})
+			), tabId);
+			expect(snapshot).toMatchObject({
+				ok: true,
+				data: {
+					fields: {
+						speed: {
+							strategy: 'dom-native',
+							actual: 4,
+						},
+					},
+				},
+			});
+		} finally {
+			await extensionClient.close();
+			await cappedPage.close().catch(() => undefined);
+		}
+	}, 35_000);
+
 	test('synchronizes page-native media bidirectionally through Popup and the mute hotkey', async () => {
 		await installPageMediaControllerHarness();
 		await fixturePage.bringToFront();
@@ -2035,6 +2147,14 @@ describe('SPECTRA built extension smoke', () => {
 				(state) => state.mediaMuted && !state.domMuted,
 				'Popup controller-only mute ACK',
 			);
+			await eventually(
+				readSnapshot,
+				(snapshot) => snapshot.ok
+					&& snapshot.data?.fields.volumeBase?.actual === 40
+					&& snapshot.data.fields.speed?.actual === 1.5
+					&& snapshot.data.fields.mediaMuted?.actual === true,
+				'committed page-native Popup transaction',
+			);
 
 			await updatePageMediaControllerHarness({
 				volumeBase: 70,
@@ -2049,6 +2169,21 @@ describe('SPECTRA built extension smoke', () => {
 					&& speed?.value === '1.25'
 					&& mute?.getAttribute('aria-pressed') === 'false';
 			}, { timeout: 8_000 });
+			const pageObservationSnapshot = await readSnapshot();
+			expect(pageObservationSnapshot).toMatchObject({
+				ok: true,
+				data: {
+					fields: {
+						volumeBase: { actual: 70, strategy: 'page-native' },
+						mediaMuted: { actual: false, strategy: 'page-native' },
+						speed: { actual: 1.25, strategy: 'page-native' },
+					},
+				},
+			});
+			// The first page event may have been the correlated tail of the preceding
+			// Popup transaction. Re-emit the stable page value after its ACK so this
+			// assertion exercises a genuine post-transaction page gesture.
+			await updatePageMediaControllerHarness({ mediaMuted: false });
 
 			const hotkey = await evaluateServiceWorker(async (targetTabId) => chrome.tabs.sendMessage(
 				targetTabId,
@@ -4177,12 +4312,42 @@ describe('SPECTRA built extension smoke', () => {
 				),
 				5_000,
 			);
-			await eventually(
-				() => readContentStatus(),
-				(status) => status.config?.volume === 110 && status.config?.boost === 1.1,
-				'first remote command after service-worker recovery',
-				10_000,
-			);
+			try {
+				await eventually(
+					() => readContentStatus(),
+					(status) => status.config?.volume === 110 && status.config?.boost === 1.1,
+					'first remote command after service-worker recovery',
+					10_000,
+				);
+			} catch (error) {
+				const [hostStatus, controlSnapshot, remotePresentation] = await Promise.all([
+					evaluateServiceWorker(async (targetTabId) => chrome.runtime.sendMessage({
+						target: 'offscreen',
+						type: 'REMOTE_HOST_GET_STATUS',
+						tabId: targetTabId,
+					}), tabId).catch(() => null),
+					extensionClient.evaluate(async (targetTabId) => chrome.runtime.sendMessage({
+						protocolVersion: 2,
+						requestId: crypto.randomUUID(),
+						tabId: targetTabId,
+						type: 'spectra.control.snapshot.get',
+						payload: { tabId: targetTabId },
+					}), tabId).catch(() => null),
+					authenticatedRemote.evaluate(() => ({
+						status: document.querySelector('#status-text')?.textContent ?? null,
+						volume: document.querySelector('#vol-display')?.textContent ?? null,
+						speed: document.querySelector('#speed-display')?.textContent ?? null,
+					})).catch(() => null),
+				]);
+				throw new Error(
+					`First remote command was not applied after worker recovery: ${JSON.stringify({
+						hostStatus,
+						controlSnapshot,
+						remotePresentation,
+					})}`,
+					{ cause: error },
+				);
+			}
 			const secondaryTabId = await getTabId(secondaryUrl);
 			const secondarySnapshot = await extensionClient.evaluate(async (targetTabId) => chrome.runtime.sendMessage({
 				protocolVersion: 2,

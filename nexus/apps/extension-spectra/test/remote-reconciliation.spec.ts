@@ -159,6 +159,18 @@ describe('remote service-worker reconciliation', () => {
 				},
 			});
 
+			const command = invokeRuntimeEvent(listeners, {
+				type: 'REMOTE_HOST_EXECUTE_COMMAND',
+				tabId: 71,
+				sessionId,
+				capability: hostSession.capability,
+				sequence: 1,
+				generation: hostSession.generation,
+				command: 'play_pause',
+			});
+			expect(command.handled).toBe(true);
+			expect(await command.response).toEqual({ settled: true });
+
 			hasDocument = false;
 			await reconcileOffscreenHost();
 			await timers.fireLongTimers();
@@ -184,6 +196,22 @@ async function invokeRuntimeRequest(
 		if (handled === true) return response;
 	}
 	throw new Error('No runtime listener handled the remote request');
+}
+
+function invokeRuntimeEvent(
+	listeners: RuntimeListener[],
+	message: unknown,
+): { handled: boolean; response: Promise<unknown> } {
+	for (const listener of listeners) {
+		let resolveResponse!: (response: unknown) => void;
+		const response = new Promise<unknown>((resolve) => { resolveResponse = resolve; });
+		const handled = listener(message, {
+			id: 'spectra-test',
+			url: 'chrome-extension://spectra-test/offscreen.html',
+		}, resolveResponse);
+		if (handled === true) return { handled, response };
+	}
+	return { handled: false, response: Promise.resolve(undefined) };
 }
 
 function installFastTimerHarness(): {

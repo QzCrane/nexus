@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: spectra-runtime-protocol
-last_reviewed: 2026-07-23
+last_reviewed: 2026-07-24
 ---
 
 # SPECTRA runtime protocols
@@ -101,7 +101,7 @@ Media WebAudio and `tabCapture` have no shared sample clock. The protocol promis
 
 The passive bootstrap performs bounded one-shot getters plus two capture-phase native media listeners. Those listeners are enabled only after the HELLO initialization barrier, hold one in-flight request plus one latest pending patch, and stop producing observations as soon as a heavy-runtime disposer exists. Heavy Content ownership is tokenized by document and consumer. The final control, restore, hotkey, Popup, remote, or source token releases owned work; a status read or bootstrap native observation creates no token.
 
-One `offscreen.html` hosts Capture processors and remote sessions. Background serializes creation, reconstructs actual host state through HELLO after worker restart, and owns `audio:<tabId>` / `remote:<sessionId>` leases. A one-shot Chrome alarm closes the host after the final-lease grace period. Feature modules never call `createDocument()` or `closeDocument()` directly.
+One `offscreen.html` hosts Capture processors and remote sessions. Background serializes creation, reconstructs actual host state through HELLO after worker restart, and owns `audio:<tabId>` / `remote:<sessionId>` leases. Content READY consumers wait for the shared Capture reconciliation barrier before hydrating or reusing the runtime. Offscreen execute, sync, and connection-status events retain their Chrome response channel until Background restoration and handling settle, so the first post-restart event cannot outlive its worker. A one-shot Chrome alarm closes the host after the final-lease grace period. Feature modules never call `createDocument()` or `closeDocument()` directly.
 
 ## READY and cold-document shortcuts
 
@@ -112,8 +112,8 @@ Identity, invalidation, timeout, cold-document behavior, and feedback ownership 
 ## Exact-element page media, native PiP, and fullscreen
 
 - `spectra.media.pip.toggle` and `spectra.video.fullscreen.toggle` return observed native active state.
-- `volumeBase`, `mediaMuted`, and `speed` use `page-native -> dom-native`. The page-native request is synchronous, targets one exact media element, and accepts only paired controller getter/setter readback; it has no domain list, retained player object, observer, timer, or polling loop.
-- A page-originated native media event is re-read through the same semantic getter before its `controlled:false` observation commits, so web UI, Popup, remote, and hotkeys project one actual value.
+- `volumeBase`, `mediaMuted`, and `speed` use `page-native -> dom-native`. The page-native request is synchronous, targets one exact media element, and accepts only paired controller getter/setter readback. Before ownership, a rejected or delayed-clamped value may admit the DOM candidate only after the page baseline is stable again; it has no domain list, retained player object, observer, timer, or polling loop.
+- Native media events raised while that field's write is pending are correlated ACK/mismatch evidence and cannot submit a competing revision. Later page-originated events are re-read through the selected writer before their `controlled:false` observation commits, so web UI, Popup, remote, restore, and hotkeys project one actual value.
 
 Activation and bridge boundaries are defined in [control/02-strategy-and-routes.md §6](../control/02-strategy-and-routes.md#6-exact-element-page-media-pip-and-fullscreen).
 

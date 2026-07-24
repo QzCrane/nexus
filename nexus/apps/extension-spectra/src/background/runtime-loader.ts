@@ -28,6 +28,7 @@ import { injectMainBridges } from './main-runtime-manager';
 import { settingsRepository } from './settings-repository';
 import { storage } from './state';
 import { markBadgeUsedForTab } from './handlers/badge';
+import { ensureCaptureStatesReconciled } from './handlers/capture';
 
 // Heavy SPA startup can legitimately spend several seconds restoring settings
 // and discovering media before the runtime publishes READY. Keep the handshake
@@ -430,6 +431,11 @@ export async function ensureContentRuntime(
 	reason: ContentRuntimeLeaseReason,
 	capability: string,
 ): Promise<ContentRuntimeReadyResult> {
+	// A restarted worker must reconcile the surviving offscreen Capture owner
+	// before Content hydrates or reuses READY. Otherwise a remote/hotkey/restore
+	// intent can observe a temporary bypass and misclassify an update to the
+	// existing processor as a forbidden new Capture request.
+	await ensureCaptureStatesReconciled();
 	const currentDocumentId = await resolveDocumentId(tabId, documentId);
 	const key = runtimeKey(tabId, currentDocumentId);
 	acquireRuntimeLease(key, reason, capability);

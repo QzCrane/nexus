@@ -43,7 +43,10 @@ Capture becomes active only after the unified offscreen host creates a current-g
 - remote lease: `remote:<sessionId>`
 - concurrent creation is serialized;
 - the host closes only after all leases are released and the one-shot grace alarm expires;
-- HELLO reconstructs processors, remote sessions, and leases after service-worker restart.
+- HELLO reconstructs processors, remote sessions, and leases after service-worker restart;
+- Content READY acquisition waits for that Capture reconciliation barrier, so
+  restore, hotkeys, Popup, and authenticated remote commands cannot mistake a
+  surviving processor for bypass and request a second Capture.
 
 ## MAIN bridges and page-native media semantics
 
@@ -58,10 +61,13 @@ Page-media discovery runs only for an explicit read or write. It walks a bounded
 composed-ancestor chain, prefers an explicit media/root association and then the
 nearest host, requires a paired getter/setter for the requested field, and uses
 the same getter as the write ACK. A mismatch restores the same writer's
-baseline. The bridge retains no controller, has no hostname selector, player
-observer, timer, polling loop, or background UI synchronization. If no exact
-page controller exists, ordinary HTML5 media uses the standard `dom-native`
-getter/event path.
+baseline. Before ownership, that stable restoration admits one standard
+`dom-native` attempt, so a page UI's narrower value range is not mistaken for
+the browser media element's capability. Events raised during either attempt
+remain correlated with the one pending transaction; after success, observation
+continues through the selected writer. The bridge retains no controller, has no
+hostname selector, player observer, timer, polling loop, or background UI
+synchronization.
 
 Media WebAudio remains isolated-world ownership. A media element receives at most one page-lifetime `MediaElementSourceNode`. Leaving active processing returns an irreversibly bound source to the minimal unity route; it does not close and recreate the binding. Page volume and media mute never enter the processor contract.
 
@@ -122,6 +128,11 @@ later explicit control, configuration, navigation, or media lifecycle intent may
 transition that processor, so Popup/remote observation cannot stop Capture.
 
 Cold-document hotkeys use the same READY ensure path as other runtime consumers. READY is invalidated by navigation, update, context invalidation, health failure, and disposal. Exact readiness and feedback rules are in [control/02-strategy-and-routes.md §5](../control/02-strategy-and-routes.md#5-runtime-shortcut-and-feedback-ownership).
+
+Offscreen execute, sync, and connection-status events keep their Chrome message
+response channel open until Background restoration, authorization, READY, and
+state synchronization settle. A restarted MV3 worker therefore cannot be
+suspended between receipt and completion of the first authenticated event.
 
 The bootstrap also owns the only built-in reserved-key boundary:
 trusted `Alt+ArrowLeft/Right` outside editable controls becomes a sender-bound
