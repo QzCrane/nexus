@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import {
+	CONTROL_SESSION_FIELDS,
 	DEFAULT_AUDIO_CONFIG,
 	type ControlSessionPatch,
 	type TabSessionIdentity,
@@ -7,6 +8,7 @@ import {
 
 const values: Record<string, unknown> = {};
 const setCalls: Array<Record<string, unknown>> = [];
+let setFailuresRemaining = 0;
 
 Object.assign(globalThis, {
 	chrome: {
@@ -17,6 +19,10 @@ Object.assign(globalThis, {
 				},
 				async set(items: Record<string, unknown>) {
 					setCalls.push(structuredClone(items));
+					if (setFailuresRemaining > 0) {
+						setFailuresRemaining -= 1;
+						throw new Error('session storage unavailable');
+					}
 					Object.assign(values, structuredClone(items));
 				},
 				async remove(key: string) {
@@ -85,6 +91,7 @@ beforeEach(async () => {
 	await removeTabControlSession(7);
 	for (const key of Object.keys(values)) delete values[key];
 	setCalls.length = 0;
+	setFailuresRemaining = 0;
 });
 
 describe('document-bound acknowledged control sessions', () => {
@@ -107,11 +114,11 @@ describe('document-bound acknowledged control sessions', () => {
 		expect(values.tab_session_7).toBeUndefined();
 	});
 
-	test('coalesces field updates and flushes one versioned projection', async () => {
+	test('persists every acknowledged field update as a complete versioned projection', async () => {
 		await mergeTabControlSession(7, { volumeBase: 100, boost: 1.5 }, firstDocument);
 		await mergeTabControlSession(7, { boost: 1.75, mediaMuted: true, speed: 1.5 }, firstDocument);
 
-		expect(setCalls).toHaveLength(0);
+		expect(setCalls).toHaveLength(2);
 		expect(await getTabControlSession(7, firstDocument)).toEqual({
 			volumeBase: 100,
 			boost: 1.75,
@@ -120,7 +127,7 @@ describe('document-bound acknowledged control sessions', () => {
 		});
 
 		await flushTabControlSession(7);
-		expect(setCalls).toHaveLength(1);
+		expect(setCalls).toHaveLength(2);
 		expect(values.tab_session_7).toMatchObject({
 			version: 2,
 			identity: firstDocument,
@@ -131,6 +138,35 @@ describe('document-bound acknowledged control sessions', () => {
 				speed: 1.5,
 			},
 		});
+	});
+
+	test('does not acknowledge a control session before a replacement worker can read it', async () => {
+		expect(Object.keys(completeSession).sort()).toEqual([...CONTROL_SESSION_FIELDS].sort());
+		await mergeTabControlSession(7, completeSession, firstDocument);
+
+		expect(values.tab_session_7).toMatchObject({
+			version: 2,
+			identity: firstDocument,
+			patch: completeSession,
+		});
+	});
+
+	test('retries bounded transient writes and propagates an undurable ACK', async () => {
+		setFailuresRemaining = 2;
+		await mergeTabControlSession(7, { speed: 1.25 }, firstDocument);
+		expect(setCalls).toHaveLength(3);
+		expect(values.tab_session_7).toMatchObject({ patch: { speed: 1.25 } });
+
+		await removeTabControlSession(7);
+		setCalls.length = 0;
+		setFailuresRemaining = 3;
+		await expect(mergeTabControlSession(
+			7,
+			{ speed: 1.5 },
+			firstDocument,
+		)).rejects.toThrow('session storage unavailable');
+		expect(setCalls).toHaveLength(3);
+		expect(values.tab_session_7).toBeUndefined();
 	});
 
 	test('rebinds every durable acknowledged field across a same-origin refresh', async () => {

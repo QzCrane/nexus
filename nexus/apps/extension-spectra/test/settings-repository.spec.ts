@@ -3,7 +3,6 @@ import { SPECTRA_SETTINGS_SCHEMA_VERSION } from '@nexus/contracts';
 import type { SettingsStorageArea } from '../src/background/settings-repository';
 import {
 	InvalidSettingsPatchError,
-	SETTINGS_WRITE_DEBOUNCE_MS,
 	SettingsRepository,
 	SettingsRevisionConflictError,
 } from '../src/background/settings-repository';
@@ -11,6 +10,7 @@ import {
 class FakeStorageArea implements SettingsStorageArea {
 	readonly values: Record<string, unknown>;
 	readonly writes: Array<Record<string, unknown>> = [];
+	setFailuresRemaining = 0;
 
 	constructor(initial: Record<string, unknown> = {}) {
 		this.values = structuredClone(initial);
@@ -27,6 +27,10 @@ class FakeStorageArea implements SettingsStorageArea {
 	async set(items: Record<string, unknown>): Promise<void> {
 		const copy = structuredClone(items);
 		this.writes.push(copy);
+		if (this.setFailuresRemaining > 0) {
+			this.setFailuresRemaining -= 1;
+			throw new Error('local storage unavailable');
+		}
 		Object.assign(this.values, copy);
 	}
 }
@@ -259,7 +263,7 @@ describe('background settings repository', () => {
 		});
 	});
 
-	test('serializes concurrent audio patches by revision and flushes them as one write', async () => {
+	test('serializes concurrent audio patches and durably commits each accepted revision', async () => {
 		const storage = new FakeStorageArea();
 		const repository = new SettingsRepository(storage);
 		const initial = await repository.initialize();
@@ -318,10 +322,10 @@ describe('background settings repository', () => {
 		expect(defaultAttempt.value.revision).toBe(3);
 		expect(defaultAttempt.value.defaultPresetId).toBe('Voice');
 		expect((staleSiteAttempt.reason as SettingsRevisionConflictError).currentRevision).toBe(3);
-		expect(storage.writes).toHaveLength(migrationWrites);
+		expect(storage.writes).toHaveLength(migrationWrites + 3);
 
 		await repository.flush();
-		expect(storage.writes).toHaveLength(migrationWrites + 1);
+		expect(storage.writes).toHaveLength(migrationWrites + 3);
 		expect((storage.values.spectraSettingsMeta as Record<string, unknown>).revision).toBe(3);
 		expect(storage.values.defaultPresetId).toBe('Voice');
 		expect((storage.values.siteSettings as Record<string, Record<string, unknown>>)['music.example.com']?.volume).toBe(160);
@@ -431,55 +435,77 @@ describe('background settings repository', () => {
 		expect(voiceMeta.isDefault).toBe(true);
 	});
 
-	test('uses one 250ms trailing storage write and exposes lifecycle flush', async () => {
-		const originalSetTimeout = Object.getOwnPropertyDescriptor(globalThis, 'setTimeout');
-		const originalClearTimeout = Object.getOwnPropertyDescriptor(globalThis, 'clearTimeout');
-		const timers = new Map<number, { callback: () => void; delay: number }>();
-		let nextTimerId = 0;
-		Object.defineProperty(globalThis, 'setTimeout', {
-			configurable: true,
-			value: (callback: () => void, delay: number) => {
-				const timerId = ++nextTimerId;
-				timers.set(timerId, { callback, delay });
-				return timerId;
-			},
-		});
-		Object.defineProperty(globalThis, 'clearTimeout', {
-			configurable: true,
-			value: (timerId: number) => timers.delete(timerId),
-		});
-
+	test('persists every successful settings revision before returning it', async () => {
 		const storage = new FakeStorageArea();
 		const repository = new SettingsRepository(storage);
-		try {
-			const initial = await repository.initialize();
-			const migrationWrites = storage.writes.length;
-			const first = await repository.applyPatch({ scope: 'global', changes: { osdEnabled: false } }, initial.revision);
-			expect([...timers.values()].map(({ delay }) => delay)).toEqual([SETTINGS_WRITE_DEBOUNCE_MS]);
-			await repository.applyPatch({ scope: 'global', changes: { visualizerEnabled: false } }, first.revision);
-			expect(timers).toHaveLength(1);
-			expect([...timers.values()].map(({ delay }) => delay)).toEqual([250]);
-			expect(storage.writes).toHaveLength(migrationWrites);
+		const initial = await repository.initialize();
+		const migrationWrites = storage.writes.length;
+		const first = await repository.applyPatch(
+			{ scope: 'global', changes: { osdEnabled: false } },
+			initial.revision,
+		);
+		expect(storage.writes).toHaveLength(migrationWrites + 1);
+		expect((storage.values.spectraSettingsMeta as Record<string, unknown>).revision).toBe(1);
+		expect((storage.values.globalSettings as Record<string, unknown>).osdEnabled).toBe(false);
 
-			const [timerId, timer] = [...timers.entries()][0] ?? [];
-			if (timerId === undefined || !timer) throw new Error('Trailing write timer was not scheduled');
-			timers.delete(timerId);
-			timer.callback();
-			await waitFor(() => storage.writes.length === migrationWrites + 1);
-			expect((storage.values.spectraSettingsMeta as Record<string, unknown>).revision).toBe(2);
-			expect((storage.values.globalSettings as Record<string, unknown>).osdEnabled).toBe(false);
-			expect((storage.values.globalSettings as Record<string, unknown>).visualizerEnabled).toBe(false);
+		await repository.applyPatch(
+			{ scope: 'global', changes: { visualizerEnabled: false } },
+			first.revision,
+		);
+		expect(storage.writes).toHaveLength(migrationWrites + 2);
+		expect((storage.values.spectraSettingsMeta as Record<string, unknown>).revision).toBe(2);
+		expect((storage.values.globalSettings as Record<string, unknown>).visualizerEnabled).toBe(false);
 
-			await repository.applyPatch({ scope: 'global', changes: { osdEnabled: true } }, 2);
-			expect(timers).toHaveLength(1);
-			await repository.flush();
-			expect(timers).toHaveLength(0);
-			expect((storage.values.spectraSettingsMeta as Record<string, unknown>).revision).toBe(3);
-		} finally {
-			await repository.flush();
-			restoreProperty('setTimeout', originalSetTimeout);
-			restoreProperty('clearTimeout', originalClearTimeout);
-		}
+		await repository.flush();
+		expect(storage.writes).toHaveLength(migrationWrites + 2);
+	});
+
+	test('does not acknowledge site and global presets before a replacement worker can read them', async () => {
+		const storage = new FakeStorageArea({
+			globalSettings: {},
+			hotkeySettings: {},
+			siteSettings: {},
+			globalPresets: {
+				Default: presetEntry('Default', 1, { volume: 135, speed: 1.25 }),
+			},
+			defaultPresetId: 'Default',
+			spectraSettingsMeta: validMeta(0),
+		});
+		const repository = new SettingsRepository(storage);
+		const site = await repository.applyPatch({
+			scope: 'audio-site',
+			domain: 'MEDIA.EXAMPLE.COM.',
+			value: { volume: 175, speed: 1.75 },
+			mode: 'replace',
+		}, 0);
+		expect(site.revision).toBe(1);
+
+		const replacementWorkerRepository = new SettingsRepository(storage);
+		expect(await replacementWorkerRepository.resolveAudioConfig('media.example.com')).toMatchObject({
+			volume: 175,
+			speed: 1.75,
+		});
+		expect(await replacementWorkerRepository.resolveAudioConfig('other.example.com')).toMatchObject({
+			volume: 135,
+			speed: 1.25,
+		});
+	});
+
+	test('does not publish a settings revision whose physical write failed', async () => {
+		const storage = new FakeStorageArea();
+		const repository = new SettingsRepository(storage);
+		const initial = await repository.initialize();
+		storage.setFailuresRemaining = 1;
+
+		await expect(repository.applyPatch(
+			{ scope: 'global', changes: { osdEnabled: false } },
+			initial.revision,
+		)).rejects.toThrow('local storage unavailable');
+		const replacementWorkerRepository = new SettingsRepository(storage);
+		expect(await replacementWorkerRepository.getSnapshot()).toMatchObject({
+			revision: initial.revision,
+			globalSettings: { osdEnabled: true },
+		});
 	});
 
 	test('applies hotkey field patches without clobbering another editor', async () => {
@@ -650,17 +676,4 @@ function requireRecord(value: unknown): Record<string, unknown> {
 		throw new Error('Expected a settings record');
 	}
 	return value as Record<string, unknown>;
-}
-
-async function waitFor(condition: () => boolean): Promise<void> {
-	for (let attempt = 0; attempt < 20; attempt += 1) {
-		if (condition()) return;
-		await Promise.resolve();
-	}
-	throw new Error('Condition was not reached after flushing microtasks');
-}
-
-function restoreProperty(key: 'setTimeout' | 'clearTimeout', descriptor?: PropertyDescriptor): void {
-	if (descriptor) Object.defineProperty(globalThis, key, descriptor);
-	else Reflect.deleteProperty(globalThis, key);
 }

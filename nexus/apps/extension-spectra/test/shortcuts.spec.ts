@@ -2,8 +2,9 @@ import { describe, expect, mock, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
-	runWithShortcutRuntime,
 	resolveDirectCommand,
+	runChromeCommandSingleFlight,
+	runWithShortcutRuntime,
 	type ShortcutRuntimePort,
 } from '../src/background/shortcuts';
 
@@ -25,6 +26,8 @@ describe('cold-document Chrome shortcuts', () => {
 		const source = readFileSync(resolve(import.meta.dir, '../src/background/shortcuts.ts'), 'utf8');
 		expect(source).toContain('submitExtensionInvokedControlRequest');
 		expect(source).toContain('submitExtensionInvokedControlOperation');
+		expect(source).toContain('activeChromeCommands.has(command)');
+		expect(source).toContain('activeChromeCommands.delete(command)');
 		expect(source).not.toMatch(/\bsubmitControlRequest\(/u);
 		expect(source).not.toMatch(/\bsubmitControlOperation\(/u);
 	});
@@ -56,5 +59,40 @@ describe('cold-document Chrome shortcuts', () => {
 			throw new Error('mute readback mismatch');
 		}, port)).rejects.toThrow('mute readback mismatch');
 		expect(port.release).toHaveBeenCalledTimes(1);
+	});
+
+	test('drops held-command repeats without retaining a trailing invocation', async () => {
+		let releaseFirst!: () => void;
+		const firstBlocked = new Promise<void>((resolveFirst) => {
+			releaseFirst = resolveFirst;
+		});
+		let executions = 0;
+		const first = runChromeCommandSingleFlight('volume_up', async () => {
+			executions += 1;
+			await firstBlocked;
+		});
+
+		const repeats = await Promise.all([
+			runChromeCommandSingleFlight('volume_up', async () => { executions += 1; }),
+			runChromeCommandSingleFlight('volume_up', async () => { executions += 1; }),
+		]);
+		expect(repeats).toEqual([false, false]);
+		expect(executions).toBe(1);
+
+		releaseFirst();
+		expect(await first).toBe(true);
+		expect(executions).toBe(1);
+		expect(await runChromeCommandSingleFlight(
+			'volume_up',
+			async () => { executions += 1; },
+		)).toBe(true);
+		expect(executions).toBe(2);
+	});
+
+	test('releases the held-command gate after failure', async () => {
+		await expect(runChromeCommandSingleFlight('speed_up', async () => {
+			throw new Error('failed');
+		})).rejects.toThrow('failed');
+		expect(await runChromeCommandSingleFlight('speed_up', async () => undefined)).toBe(true);
 	});
 });

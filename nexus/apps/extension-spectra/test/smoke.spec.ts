@@ -1331,49 +1331,62 @@ async function refreshServiceWorkerHandle(
 	// launch connection keeps pointing at the destroyed execution context. A
 	// fresh browser connection gives this harness a fresh WorkerTarget/session
 	// without relaunching Chrome or disturbing the extension pages.
-	const connection = await withDiagnosticTimeout(
-		'connect a fresh service-worker target session',
-		() => puppeteer.connect({ browserWSEndpoint: browser.wsEndpoint() }),
-		timeoutMs,
-	);
-	try {
-		const target = await withDiagnosticTimeout(
-			'discover replacement service-worker target',
-			() => connection.waitForTarget(
+	const deadline = Date.now() + timeoutMs;
+	let lastError: unknown;
+	for (let attempt = 1; attempt <= 3 && Date.now() < deadline; attempt += 1) {
+		let connection: Browser | null = null;
+		const stageTimeout = () => Math.max(250, Math.min(5_000, deadline - Date.now()));
+		try {
+			connection = await withDiagnosticTimeout(
+				`connect replacement service-worker session (attempt ${attempt})`,
+				() => puppeteer.connect({ browserWSEndpoint: browser.wsEndpoint() }),
+				stageTimeout(),
+			);
+			const existing = connection.targets().find(
 				(candidate) => candidate.type() === 'service_worker' && candidate.url() === expectedUrl,
-				{ timeout: timeoutMs },
-			),
-			timeoutMs,
-		);
-		const worker = await withDiagnosticTimeout(
-			'resolve replacement service-worker target',
-			() => target.worker(),
-			timeoutMs,
-		);
-		if (!worker) throw new Error('Replacement service-worker target has no execution context');
-		const identity = await withDiagnosticTimeout(
-			'probe replacement service-worker identity',
-			() => worker.evaluate(() => ({
-				runtimeId: chrome.runtime.id,
-				marker: (globalThis as typeof globalThis & {
-					__spectraSmokeWorkerMarker?: string;
-				}).__spectraSmokeWorkerMarker,
-			})),
-			timeoutMs,
-		);
-		if (identity.runtimeId !== extensionId) {
-			throw new Error(`Replacement worker belongs to unexpected extension ${identity.runtimeId}`);
+			);
+			const target = existing ?? await withDiagnosticTimeout(
+				`discover replacement service-worker target (attempt ${attempt})`,
+				() => connection!.waitForTarget(
+					(candidate) => candidate.type() === 'service_worker' && candidate.url() === expectedUrl,
+					{ timeout: stageTimeout() },
+				),
+				stageTimeout(),
+			);
+			const worker = await withDiagnosticTimeout(
+				`resolve replacement service-worker target (attempt ${attempt})`,
+				() => target.worker(),
+				stageTimeout(),
+			);
+			if (!worker) throw new Error('Replacement service-worker target has no execution context');
+			const identity = await withDiagnosticTimeout(
+				`probe replacement service-worker identity (attempt ${attempt})`,
+				() => worker.evaluate(() => ({
+					runtimeId: chrome.runtime.id,
+					marker: (globalThis as typeof globalThis & {
+						__spectraSmokeWorkerMarker?: string;
+					}).__spectraSmokeWorkerMarker,
+				})),
+				stageTimeout(),
+			);
+			if (identity.runtimeId !== extensionId) {
+				throw new Error(`Replacement worker belongs to unexpected extension ${identity.runtimeId}`);
+			}
+			if (previousMarker !== undefined && identity.marker === previousMarker) {
+				throw new Error('Replacement worker retained the stopped execution-context marker');
+			}
+			serviceWorkerConnection = connection;
+			serviceWorkerTarget = target;
+			serviceWorker = worker;
+			return;
+		} catch (error) {
+			lastError = error;
+			await connection?.disconnect().catch(() => undefined);
 		}
-		if (previousMarker !== undefined && identity.marker === previousMarker) {
-			throw new Error('Replacement worker retained the stopped execution-context marker');
-		}
-		serviceWorkerConnection = connection;
-		serviceWorkerTarget = target;
-		serviceWorker = worker;
-	} catch (error) {
-		await connection.disconnect().catch(() => undefined);
-		throw error;
 	}
+	throw new Error('Unable to acquire a fresh replacement service-worker execution context', {
+		cause: lastError,
+	});
 }
 
 async function waitForServiceWorkerMarkerToDisappear(marker: string, timeoutMs = 10_000): Promise<void> {
@@ -1454,11 +1467,16 @@ async function restartServiceWorker(): Promise<void> {
 		await withDiagnosticTimeout(stage, () => client!.send('ServiceWorker.startWorker', {
 			scopeURL: `chrome-extension://${extensionId}/`,
 		}));
-		stage = 'reacquire replacement worker through the suspend-safe helper';
-		const replacementRuntimeId = await withDiagnosticTimeout(
+		stage = 'reacquire replacement worker through a fresh target session';
+		await withDiagnosticTimeout(
 			stage,
-			() => evaluateServiceWorker(() => chrome.runtime.id),
+			() => refreshServiceWorkerHandle(previousMarker, 15_000),
 			17_000,
+		);
+		const replacementRuntimeId = await withDiagnosticTimeout(
+			'probe reacquired replacement worker',
+			() => serviceWorker.evaluate(() => chrome.runtime.id),
+			5_000,
 		);
 		if (replacementRuntimeId !== extensionId) {
 			throw new Error(`Replacement worker belongs to unexpected extension ${replacementRuntimeId}`);
@@ -2053,7 +2071,7 @@ describe('SPECTRA built extension smoke', () => {
 		expect(popupErrors).toEqual([]);
 	}, 35_000);
 
-	test('restores acknowledged volume, speed, and sticky badge across a same-origin refresh', async () => {
+	test('restores durable acknowledged state and sticky badge after worker replacement plus refresh', async () => {
 		// The preceding SPA test intentionally leaves a history-only /spa/media
 		// URL that this fixture server does not serve on a real reload. Establish
 		// the canonical document explicitly so this test owns its navigation.
@@ -2061,24 +2079,33 @@ describe('SPECTRA built extension smoke', () => {
 		await waitForContentBootstrapStatus(fixtureUrl);
 		await fixturePage.bringToFront();
 		const tabId = await getTabId(fixturePage.url());
+		const extensionClient = await openExtensionClient();
 		try {
-			await submitEffectiveVolume(tabId, 63);
-			const speedResponse = await sendFromActionPopup<{
-				ok: boolean;
-				error?: { message?: string };
-			}>({
-				protocolVersion: 2,
-				tabId,
-				type: 'spectra.control.intent.submit',
-				payload: {
-					tabId,
+			await extensionClient.evaluate(async (targetTabId) => {
+				const send = (type: string, payload: Record<string, unknown>) => chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					tabId: targetTabId,
+					type,
+					payload,
+				});
+				const volume = await send('spectra.control.operation.submit', {
+					tabId: targetTabId,
+					source: 'popup',
+					target: null,
+					operation: 'effective-volume',
+					payload: { operation: 'set', value: 63 },
+				});
+				if (!volume?.ok) throw new Error(volume?.error?.message ?? 'Unable to set refresh volume');
+				const speed = await send('spectra.control.intent.submit', {
+					tabId: targetTabId,
 					source: 'popup',
 					requestedCoverage: 'active-target',
 					target: null,
 					patch: { speed: 1.75 },
-				},
-			});
-			if (!speedResponse.ok) throw new Error(speedResponse.error?.message ?? 'Unable to set refresh speed');
+				});
+				if (!speed?.ok) throw new Error(speed?.error?.message ?? 'Unable to set refresh speed');
+			}, tabId);
 			await eventually(
 				() => fixturePage.evaluate(() => {
 					const media = document.querySelector<HTMLMediaElement>('#v');
@@ -2090,6 +2117,20 @@ describe('SPECTRA built extension smoke', () => {
 				'pre-refresh acknowledged media state',
 			);
 			expect(await readBadgeText(tabId)).toBe('63');
+
+			await restartServiceWorker();
+			const durableProjection = await evaluateServiceWorker(async (targetTabId) => {
+				const key = `tab_session_${targetTabId}`;
+				const stored = (await chrome.storage.session.get(key))[key] as {
+					patch?: Record<string, unknown>;
+				} | undefined;
+				return stored?.patch ?? null;
+			}, tabId);
+			expect(durableProjection).toMatchObject({
+				volumeBase: 63,
+				boost: 1,
+				speed: 1.75,
+			});
 
 			await fixturePage.reload({ waitUntil: 'domcontentloaded' });
 			await waitForContentBootstrapStatus(fixturePage.url());
@@ -2129,21 +2170,169 @@ describe('SPECTRA built extension smoke', () => {
 				},
 			});
 		} finally {
-			await submitEffectiveVolume(tabId, 100).catch(() => undefined);
-			await sendFromActionPopup({
-				protocolVersion: 2,
-				tabId,
-				type: 'spectra.control.intent.submit',
-				payload: {
-					tabId,
+			await extensionClient.evaluate(async (targetTabId) => {
+				const send = (type: string, payload: Record<string, unknown>) => chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					tabId: targetTabId,
+					type,
+					payload,
+				});
+				await send('spectra.control.operation.submit', {
+					tabId: targetTabId,
+					source: 'popup',
+					target: null,
+					operation: 'effective-volume',
+					payload: { operation: 'set', value: 100 },
+				});
+				await send('spectra.control.intent.submit', {
+					tabId: targetTabId,
 					source: 'popup',
 					requestedCoverage: 'active-target',
 					target: null,
 					patch: { speed: 1 },
-				},
-			}).catch(() => undefined);
+				});
+			}, tabId).catch(() => undefined);
+			await extensionClient.close().catch(() => undefined);
 		}
 	}, 35_000);
+
+	test('applies a site preset before the default global preset after worker replacement', async () => {
+		const presetName = 'smoke-initialization-default';
+		const siteUrl = new URL(fixtureUrl);
+		siteUrl.hostname = 'localhost';
+		siteUrl.search = '?site-preset=1';
+		const globalUrl = new URL(fixtureUrl);
+		globalUrl.search = '?global-preset=1';
+		const client = await openExtensionClient();
+		const original = await client.evaluate(async ({ presetName }) => {
+			const send = (type: string, payload: Record<string, unknown>) => chrome.runtime.sendMessage({
+				protocolVersion: 2,
+				requestId: crypto.randomUUID(),
+				type,
+				payload,
+			});
+			let snapshot = await send('spectra.settings.get', {});
+			if (!snapshot?.ok) throw new Error(snapshot?.error?.message ?? 'Unable to read preset baseline');
+			const baseline = {
+				defaultPresetId: snapshot.data.defaultPresetId,
+				localSite: snapshot.data.audioSites.localhost ?? null,
+				globalSite: snapshot.data.audioSites['127.0.0.1'] ?? null,
+				preset: snapshot.data.audioPresets[presetName] ?? null,
+			};
+			const patch = async (value: Record<string, unknown>) => {
+				const response = await send('spectra.settings.patch', {
+					expectedRevision: snapshot.data.revision,
+					patch: value,
+				});
+				if (!response?.ok) throw new Error(response?.error?.message ?? 'Unable to seed preset');
+				snapshot = response;
+			};
+			await patch({ scope: 'audio-site', domain: '127.0.0.1', value: null });
+			await patch({
+				scope: 'audio-preset',
+				name: presetName,
+				value: {
+					config: { volume: 54, volumeBase: 54, boost: 1, speed: 1.25 },
+					meta: { type: 'global', name: presetName, createdAt: Date.now() },
+				},
+			});
+			await patch({ scope: 'default-preset', value: presetName });
+			await patch({
+				scope: 'audio-site',
+				domain: 'localhost',
+				mode: 'replace',
+				value: { volume: 73, volumeBase: 73, boost: 1, speed: 1.5 },
+			});
+			return baseline;
+		}, { presetName });
+		let sitePage: Page | null = null;
+		let globalPage: Page | null = null;
+		const presetErrors: string[] = [];
+		try {
+			await restartServiceWorker();
+			sitePage = await browser.newPage();
+			globalPage = await browser.newPage();
+			collectPageErrors(sitePage, presetErrors);
+			collectPageErrors(globalPage, presetErrors);
+			await sitePage.goto(siteUrl.href, { waitUntil: 'domcontentloaded' });
+			await globalPage.goto(globalUrl.href, { waitUntil: 'domcontentloaded' });
+			await Promise.all([
+				waitForContentBootstrapStatus(siteUrl.href),
+				waitForContentBootstrapStatus(globalUrl.href),
+			]);
+
+			const readMediaState = (page: Page) => page.evaluate(() => {
+				const media = document.querySelector<HTMLMediaElement>('#v');
+				return {
+					volume: media?.volume ?? null,
+					speed: media?.playbackRate ?? null,
+				};
+			});
+			await eventually(
+				() => readMediaState(sitePage!),
+				(state) => state.volume !== null
+					&& Math.abs(state.volume - 0.73) < 0.000_001
+					&& state.speed === 1.5,
+				'site preset initialization',
+			);
+			await eventually(
+				() => readMediaState(globalPage!),
+				(state) => state.volume !== null
+					&& Math.abs(state.volume - 0.54) < 0.000_001
+					&& state.speed === 1.25,
+				'default global preset initialization',
+			);
+			const [siteTabId, globalTabId] = await Promise.all([
+				getTabId(siteUrl.href),
+				getTabId(globalUrl.href),
+			]);
+			await eventually(() => readBadgeText(siteTabId), (text) => text === '73', 'site preset badge');
+			await eventually(() => readBadgeText(globalTabId), (text) => text === '54', 'global preset badge');
+		} finally {
+			await sitePage?.close().catch(() => undefined);
+			await globalPage?.close().catch(() => undefined);
+			await client.evaluate(async ({
+				presetName,
+				defaultPresetId,
+				localSite,
+				globalSite,
+				originalPreset,
+			}) => {
+				const send = (type: string, payload: Record<string, unknown>) => chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					type,
+					payload,
+				});
+				let snapshot = await send('spectra.settings.get', {});
+				const patch = async (value: Record<string, unknown>) => {
+					const response = await send('spectra.settings.patch', {
+						expectedRevision: snapshot.data.revision,
+						patch: value,
+					});
+					if (!response?.ok) throw new Error(response?.error?.message ?? 'Unable to restore preset baseline');
+					snapshot = response;
+				};
+				await patch({ scope: 'default-preset', value: defaultPresetId });
+				await patch({ scope: 'audio-preset', name: presetName, value: originalPreset });
+				await patch(localSite
+					? { scope: 'audio-site', domain: 'localhost', value: localSite, mode: 'replace' }
+					: { scope: 'audio-site', domain: 'localhost', value: null });
+				await patch(globalSite
+					? { scope: 'audio-site', domain: '127.0.0.1', value: globalSite, mode: 'replace' }
+					: { scope: 'audio-site', domain: '127.0.0.1', value: null });
+			}, {
+				presetName,
+				defaultPresetId: original.defaultPresetId,
+				localSite: original.localSite,
+				globalSite: original.globalSite,
+				originalPreset: original.preset,
+			}).catch(() => undefined);
+			await client.close().catch(() => undefined);
+		}
+		expect(presetErrors).toEqual([]);
+	}, 45_000);
 
 	test('fullscreen lifecycle preserves the site volume, mute, and playback rate', async () => {
 		const preserved = await fixturePage.evaluate(async () => {

@@ -31,7 +31,6 @@ const SITE_SETTINGS_KEY = 'siteSettings';
 const GLOBAL_PRESETS_KEY = 'globalPresets';
 const DEFAULT_PRESET_KEY = 'defaultPresetId';
 const META_KEY = 'spectraSettingsMeta';
-export const SETTINGS_WRITE_DEBOUNCE_MS = 250;
 const MAX_PAUSE_RETENTION_SECONDS = 86_400;
 const UNSUPPORTED_ACTIONS = new Set<HotkeyAction>(
 	HOTKEY_ACTIONS.filter((action) => HOTKEY_ACTION_DESCRIPTORS[action].availability === 'disabled-legacy'),
@@ -564,8 +563,6 @@ function parseMeta(raw: unknown): SettingsMeta | null {
 
 export class SettingsRepository {
 	private operationQueue: Promise<void> = Promise.resolve();
-	private pendingWrite: Record<string, unknown> | null = null;
-	private writeTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(private readonly storageArea?: SettingsStorageArea) {}
 
@@ -609,7 +606,7 @@ export class SettingsRepository {
 	}
 
 	flush(): Promise<void> {
-		return this.serialized(() => this.flushPendingWrite());
+		return this.serialized(async () => undefined);
 	}
 
 	applyPatch(patch: SettingsPatch, expectedRevision?: number): Promise<SettingsSnapshot> {
@@ -742,7 +739,7 @@ export class SettingsRepository {
 					? false
 					: previousMeta?.legacyThemeModeMissing,
 			};
-			this.scheduleWrite({
+			await this.local.set({
 				[GLOBAL_KEY]: { ...rawGlobal, ...globalSettings },
 				[HOTKEY_KEY]: { ...rawHotkeys, ...hotkeySettings },
 				[SITE_SETTINGS_KEY]: siteSettings,
@@ -774,7 +771,7 @@ export class SettingsRepository {
 		const previousMeta = parseMeta(result[META_KEY]);
 		if (!previousMeta?.legacyThemeModeMissing) return current;
 		if (candidate === null) {
-			this.scheduleWrite({
+			await this.local.set({
 				[META_KEY]: { ...previousMeta, legacyThemeModeMissing: false },
 			});
 			return current;
@@ -783,7 +780,7 @@ export class SettingsRepository {
 		const rawGlobal = isRecord(result[GLOBAL_KEY]) ? result[GLOBAL_KEY] : {};
 		const globalSettings = this.applyGlobalPatch(current.globalSettings, { themeMode: candidate });
 		const revision = current.revision + 1;
-		this.scheduleWrite({
+		await this.local.set({
 			[GLOBAL_KEY]: { ...rawGlobal, ...globalSettings },
 			[META_KEY]: {
 				...previousMeta,
@@ -892,44 +889,7 @@ export class SettingsRepository {
 	}
 
 	private async readValues(keys: string[]): Promise<Record<string, unknown>> {
-		const result = await this.local.get(keys);
-		if (!this.pendingWrite) return result;
-		for (const storageKey of keys) {
-			if (Object.hasOwn(this.pendingWrite, storageKey)) {
-				result[storageKey] = this.pendingWrite[storageKey];
-			}
-		}
-		return result;
-	}
-
-	private scheduleWrite(values: Record<string, unknown>): void {
-		this.pendingWrite = { ...(this.pendingWrite ?? {}), ...values };
-		this.armWriteTimer();
-	}
-
-	private armWriteTimer(): void {
-		if (this.writeTimer !== null) clearTimeout(this.writeTimer);
-		this.writeTimer = setTimeout(() => {
-			this.writeTimer = null;
-			void this.flush().catch(() => undefined);
-		}, SETTINGS_WRITE_DEBOUNCE_MS);
-	}
-
-	private async flushPendingWrite(): Promise<void> {
-		if (this.writeTimer !== null) {
-			clearTimeout(this.writeTimer);
-			this.writeTimer = null;
-		}
-		const pending = this.pendingWrite;
-		if (!pending) return;
-		this.pendingWrite = null;
-		try {
-			await this.local.set(pending);
-		} catch (error) {
-			this.pendingWrite = { ...pending, ...(this.pendingWrite ?? {}) };
-			this.armWriteTimer();
-			throw error;
-		}
+		return this.local.get(keys);
 	}
 
 	private serialized<T>(operation: () => Promise<T>): Promise<T> {

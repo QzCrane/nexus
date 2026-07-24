@@ -41,6 +41,25 @@ const shortcutRuntimePort: ShortcutRuntimePort = {
 	},
 };
 
+const activeChromeCommands = new Set<string>();
+
+// Chrome can emit repeated command events while a physical key is held. Keep at
+// most one asynchronous execution per command and never retain a trailing task,
+// so releasing the key cannot leave queued coordinator work behind.
+export async function runChromeCommandSingleFlight(
+	command: string,
+	operation: () => Promise<void>,
+): Promise<boolean> {
+	if (activeChromeCommands.has(command)) return false;
+	activeChromeCommands.add(command);
+	try {
+		await operation();
+		return true;
+	} finally {
+		activeChromeCommands.delete(command);
+	}
+}
+
 // Every Chrome command is valid on a fresh document, independently from Popup
 // observation and from whether that site also has a custom page binding.
 export async function runWithShortcutRuntime<T>(
@@ -75,42 +94,46 @@ export function updateShortcutSettings(settings: HotkeySettings): void {
 export function setupShortcutListeners(): void {
 	void loadSlotMapping();
 
-	chrome.commands.onCommand.addListener(async (command) => {
-		swLog.debug(`Shortcut command: ${command}`);
+	chrome.commands.onCommand.addListener((command) => {
+		void runChromeCommandSingleFlight(command, async () => {
+			swLog.debug(`Shortcut command: ${command}`);
 
-		const route = await resolveShortcutTarget();
-		if (!route) return;
-		const tab = route.target;
-		if (!tab?.id || !tab.url) return;
-		const tabId = tab.id;
+			const route = await resolveShortcutTarget();
+			if (!route) return;
+			const tab = route.target;
+			if (!tab?.id || !tab.url) return;
+			const tabId = tab.id;
 
-		let domain = '';
-		try {
-			domain = new URL(tab.url).hostname;
-		} catch {
-			return;
-		}
+			let domain = '';
+			try {
+				domain = new URL(tab.url).hostname;
+			} catch {
+				return;
+			}
 
-		let action: HotkeyAction | undefined;
-		if (command.startsWith('slot_')) {
-			action = slotMapping[command];
-			if (!action || action === 'none') return;
-		} else {
-			action = resolveDirectCommand(command);
-		}
+			let action: HotkeyAction | undefined;
+			if (command.startsWith('slot_')) {
+				action = slotMapping[command];
+				if (!action || action === 'none') return;
+			} else {
+				action = resolveDirectCommand(command);
+			}
 
-		if (!action) return;
+			if (!action) return;
 
-		try {
-			await runWithShortcutRuntime(tabId, () => executeAction(action, tabId, domain));
-		} catch (error) {
-			swLog.warn(`Shortcut ${action} failed`, error);
-			return;
-		}
-		if (route.active?.id !== undefined && route.active.id !== tabId) {
-			const feedback = await readShortcutActualFeedback(action, tabId);
-			await notifyAlternateShortcutTarget(route.active, tab, action, domain, feedback);
-		}
+			try {
+				await runWithShortcutRuntime(tabId, () => executeAction(action, tabId, domain));
+			} catch (error) {
+				swLog.warn(`Shortcut ${action} failed`, error);
+				return;
+			}
+			if (route.active?.id !== undefined && route.active.id !== tabId) {
+				const feedback = await readShortcutActualFeedback(action, tabId);
+				await notifyAlternateShortcutTarget(route.active, tab, action, domain, feedback);
+			}
+		}).catch((error: unknown) => {
+			swLog.warn(`Shortcut command ${command} failed before execution`, error);
+		});
 	});
 
 	chrome.tabs.onRemoved.addListener((tabId) => {

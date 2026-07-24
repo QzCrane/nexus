@@ -14,8 +14,7 @@ import { createKeyedSerializedQueue } from './serialized-queue.js';
 
 const TAB_SESSION_PREFIX = 'tab_session_';
 const TAB_SESSION_VERSION = 2 as const;
-const STORAGE_WRITE_DEBOUNCE_MS = 250;
-const MAX_WRITE_RETRIES = 5;
+const MAX_WRITE_ATTEMPTS = 3;
 
 interface StoredTabControlSession {
 	version: typeof TAB_SESSION_VERSION;
@@ -35,9 +34,6 @@ interface NormalizedStoredSession {
 	migrated: boolean;
 }
 
-const pendingWrites = new Map<number, StoredTabControlSession>();
-const writeTimers = new Map<number, ReturnType<typeof setTimeout>>();
-const writeRetries = new Map<number, number>();
 const serialized = createKeyedSerializedQueue<number>();
 
 function keyFor(tabId: number): string {
@@ -48,46 +44,23 @@ function clonePatch(patch: ControlSessionPatch): ControlSessionPatch {
 	return structuredClone(patch);
 }
 
-function clearWriteTimer(tabId: number): void {
-	const timer = writeTimers.get(tabId);
-	if (timer !== undefined) clearTimeout(timer);
-	writeTimers.delete(tabId);
-}
-
-function scheduleWrite(tabId: number): void {
-	clearWriteTimer(tabId);
-	writeTimers.set(tabId, setTimeout(() => {
-		writeTimers.delete(tabId);
-		void flushTabControlSession(tabId).catch(() => undefined);
-	}, STORAGE_WRITE_DEBOUNCE_MS));
-}
-
 async function readStoredValue(tabId: number): Promise<unknown> {
-	if (pendingWrites.has(tabId)) return pendingWrites.get(tabId);
 	const key = keyFor(tabId);
 	return (await chrome.storage.session.get(key))[key] as unknown;
 }
 
-async function flushTabControlSessionInternal(tabId: number): Promise<void> {
-	clearWriteTimer(tabId);
-	const pending = pendingWrites.get(tabId);
-	if (!pending) return;
-	try {
-		await chrome.storage.session.set({ [keyFor(tabId)]: pending });
-		if (pendingWrites.get(tabId) === pending) pendingWrites.delete(tabId);
-		writeRetries.delete(tabId);
-	} catch (error) {
-		const retries = (writeRetries.get(tabId) ?? 0) + 1;
-		if (retries > MAX_WRITE_RETRIES) {
-			writeRetries.delete(tabId);
-			pendingWrites.delete(tabId);
-			console.warn(`[tab-session] giving up on tab ${tabId} after ${MAX_WRITE_RETRIES} failed writes`);
-			throw error;
+async function writeStoredSession(tabId: number, session: StoredTabControlSession): Promise<void> {
+	let lastError: unknown;
+	for (let attempt = 1; attempt <= MAX_WRITE_ATTEMPTS; attempt += 1) {
+		try {
+			await chrome.storage.session.set({ [keyFor(tabId)]: session });
+			return;
+		} catch (error) {
+			lastError = error;
 		}
-		writeRetries.set(tabId, retries);
-		scheduleWrite(tabId);
-		throw error;
 	}
+	console.warn(`[tab-session] failed to persist tab ${tabId} after ${MAX_WRITE_ATTEMPTS} attempts`);
+	throw lastError;
 }
 
 function isTabSessionIdentity(value: unknown): value is TabSessionIdentity {
@@ -147,9 +120,6 @@ function originsMatch(left: TabSessionIdentity, right: TabSessionIdentity): bool
 }
 
 async function clearStoredSession(tabId: number): Promise<void> {
-	clearWriteTimer(tabId);
-	pendingWrites.delete(tabId);
-	writeRetries.delete(tabId);
 	await chrome.storage.session.remove(keyFor(tabId));
 }
 
@@ -230,8 +200,7 @@ export async function getTabControlSession(
 		}
 		if (identity && !identitiesMatch(normalized.session.identity, identity)) return null;
 		if (normalized.migrated) {
-			pendingWrites.set(tabId, normalized.session);
-			scheduleWrite(tabId);
+			await writeStoredSession(tabId, normalized.session);
 		}
 		return clonePatch(normalized.session.patch);
 	});
@@ -256,13 +225,12 @@ export async function mergeTabControlSession(
 			: {};
 		const merged = { ...clonePatch(current), ...clonePatch(patch) };
 		if (!isControlSessionPatch(merged)) throw new Error('Invalid merged tab control session');
-		pendingWrites.set(tabId, {
+		await writeStoredSession(tabId, {
 			version: TAB_SESSION_VERSION,
 			identity,
 			patch: merged,
 			updatedAt: Date.now(),
 		});
-		scheduleWrite(tabId);
 	});
 }
 
@@ -284,12 +252,11 @@ export async function rebindTabControlSession(
 
 		const session = normalized.session;
 		if (normalized.migrated || !identitiesMatch(session.identity, identity)) {
-			pendingWrites.set(tabId, {
+			await writeStoredSession(tabId, {
 				...session,
 				identity,
 				updatedAt: Date.now(),
 			});
-			scheduleWrite(tabId);
 		}
 		return clonePatch(session.patch);
 	});
@@ -300,13 +267,8 @@ export async function removeTabControlSession(tabId: number): Promise<void> {
 }
 
 export async function flushTabControlSession(tabId?: number): Promise<void> {
-	if (tabId !== undefined) {
-		await serialized(tabId, () => flushTabControlSessionInternal(tabId));
-		return;
-	}
-	await Promise.all([...pendingWrites.keys()].map((pendingTabId) => (
-		serialized(pendingTabId, () => flushTabControlSessionInternal(pendingTabId))
-	)));
+	if (tabId !== undefined) await serialized(tabId, async () => undefined);
+	else await serialized.drain();
 }
 
 export async function hasTabControlSession(

@@ -3,7 +3,7 @@ type: explanation
 status: stable
 audience: developer
 owner: spectra-runtime-architecture
-last_reviewed: 2026-07-23
+last_reviewed: 2026-07-24
 ---
 
 # SPECTRA runtime architecture
@@ -69,18 +69,28 @@ Strategy and bridge rules are owned by [control/02-strategy-and-routes.md](../co
 
 ## Settings and route registry
 
-Background owns the revisioned settings repository in `chrome.storage.local`. UI contexts submit typed field patches; session storage contains only current mirrors. Canonical fields replace legacy aliases through bounded read-only migration.
+Background owns the revisioned settings repository in `chrome.storage.local`.
+UI contexts submit typed field patches; an accepted revision is written to
+physical Chrome storage before Background broadcasts or returns it. A
+service-worker timer or in-memory pending map is never a successful settings
+ACK. Canonical fields replace legacy aliases through bounded read-only
+migration.
 
 The acknowledged per-tab control session is stored separately in
 `chrome.storage.session` with `tabId + documentId + origin`. Its field-level
 patch contains exactly the 20 refresh-restorable configuration fields declared
 by `CONTROL_SESSION_FIELDS`; it contains neither default-filled guesses nor
-media/source identities. Before a top-level replacement, Background flushes its
-coalesced write; after commit it rebinds the record only when the origin is
-unchanged and otherwise deletes it. Runtime initialization restores media,
-video and processor groups through the coordinator before consulting
-site/global presets. A default-valued session still suppresses presets because
-its existence records the current tab's acknowledged decision.
+media/source identities. Every merge and same-origin rebind resolves only after
+the complete versioned projection is physically present in
+`chrome.storage.session`; bounded write failure is propagated instead of
+delegated to a timer that an MV3 worker may never run. After a top-level commit
+Background rebinds the record only when the origin is unchanged and otherwise
+deletes it. Runtime initialization restores media, video and processor groups
+through the coordinator before consulting settings. When no same-tab session
+exists, the most-specific site preset wins; only a missing site preset falls
+back to the selected default global preset. A default-valued session still
+suppresses both because its existence records the current tab's acknowledged
+decision.
 
 A separate monotonic per-tab usage record owns Action-badge stickiness. It and
 the last acknowledged control state survive document and worker replacement;
@@ -88,7 +98,9 @@ after Chrome clears the tab-scoped visible badge during full navigation,
 Background waits for current-document initialization and reprojects it at the
 completed-tab lifecycle boundary;
 the restored control ACK refreshes the numeric/color projection, while tab
-close is the sole retirement boundary.
+close is the sole retirement boundary. Usage without a complete acknowledged
+`volumeBase + boost` pair has no visual projection: no dot, background color or
+text placeholder is permitted.
 
 The media route registry is a separate Background-owned repository. Popup and Options render the same v2 snapshot. One normalized site has one `direct | capture` route; a cached route is a planning hint, not processing activation. Exact precedence and migration rules are in [control/02-strategy-and-routes.md §4](../control/02-strategy-and-routes.md#4-site-route-registry-and-eligibility-cache).
 
@@ -110,6 +122,12 @@ later explicit control, configuration, navigation, or media lifecycle intent may
 transition that processor, so Popup/remote observation cannot stop Capture.
 
 Cold-document hotkeys use the same READY ensure path as other runtime consumers. READY is invalidated by navigation, update, context invalidation, health failure, and disposal. Exact readiness and feedback rules are in [control/02-strategy-and-routes.md §5](../control/02-strategy-and-routes.md#5-runtime-shortcut-and-feedback-ownership).
+
+The `chrome.commands` entry admits at most one asynchronous transaction per
+manifest command. Repeat events received while that command is active are
+dropped and no trailing invocation is retained; success and failure both
+release the gate. Page-defined shortcuts retain their separate physical-keyup
+and lifecycle cancellation boundary.
 
 One `tabId + documentId` initialization promise orders bootstrap restore,
 cold native observations, initial snapshot reads and explicit control. The

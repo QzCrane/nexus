@@ -135,7 +135,7 @@ describe('actual volume badge state', () => {
 		expect(badgeState.get(TAB_ID)?.userInteracted).toBe(true);
 	});
 
-	test('shows a neutral persistent usage badge for a successful non-audio plugin action', async () => {
+	test('persists usage without rendering a placeholder before any volume ACK exists', async () => {
 		const values: Record<string, unknown> = {};
 		const texts: string[] = [];
 		const colors: string[] = [];
@@ -157,11 +157,11 @@ describe('actual volume badge state', () => {
 		});
 
 		await markBadgeUsedForTab(TAB_ID);
-		expect(texts.at(-1)).toBe('•');
-		expect(colors.at(-1)).toBe('#94a3b8');
+		expect(texts.at(-1) ?? '').toBe('');
+		expect(colors).toHaveLength(0);
 		resetBadgeUsageForTests();
 		await markBadgeUsedForTab(TAB_ID);
-		expect(texts.at(-1)).toBe('•');
+		expect(texts.at(-1) ?? '').toBe('');
 	});
 
 	test('keeps a sparse non-volume ACK neutral instead of inventing 100 percent', async () => {
@@ -190,13 +190,13 @@ describe('actual volume badge state', () => {
 		});
 
 		await updateBadgeFromControlProjection(identity(), { speed: 1.75 }, false, true);
-		expect(texts.at(-1)).toBe('•');
+		expect(texts.at(-1) ?? '').toBe('');
 		expect(texts).not.toContain('100');
 
 		badgeState.clear();
 		resetBadgeUsageForTests();
 		await updateBadgeFromControlProjection(identity(), { speed: 1.75 }, false, false);
-		expect(texts.at(-1)).toBe('•');
+		expect(texts.at(-1) ?? '').toBe('');
 	});
 });
 

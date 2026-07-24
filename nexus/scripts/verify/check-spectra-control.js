@@ -1340,6 +1340,71 @@ function checkRetiredPaths(root) {
 		|| !shortcuts.includes("active?.url && /^https?:/u.test(active.url) ? active : undefined")) {
 		error('SCTRL-006/SCTRL-015: Chrome shortcut targets must match the coordinator HTTP(S) origin boundary');
 	}
+	for (const required of [
+		'const activeChromeCommands = new Set<string>()',
+		'if (activeChromeCommands.has(command)) return false',
+		'activeChromeCommands.add(command)',
+		'activeChromeCommands.delete(command)',
+		'void runChromeCommandSingleFlight(command',
+		'}).catch((error: unknown) => {',
+	]) {
+		if (!shortcuts.includes(required)) {
+			error(`SCTRL-022: Chrome command repeat gate is missing (${required})`);
+		}
+	}
+
+	const tabSession = fs.readFileSync(
+		path.join(root, 'packages/nexus-kernel/src/storage/tab-session.ts'),
+		'utf8',
+	);
+	if ((tabSession.match(/await writeStoredSession\(tabId,/gu) ?? []).length < 3
+		|| tabSession.includes('scheduleWrite(')
+		|| tabSession.includes('pendingWrites')
+		|| tabSession.includes('STORAGE_WRITE_DEBOUNCE_MS')) {
+		error('SCTRL-005/SCTRL-040: acknowledged tab sessions must be physically durable before merge/rebind returns');
+	}
+	const tabSessionTest = fs.readFileSync(
+		path.join(root, APP_PATH, 'test/tab-session.spec.ts'),
+		'utf8',
+	);
+	if (!tabSessionTest.includes('Object.keys(completeSession).sort()')
+		|| !tabSessionTest.includes('[...CONTROL_SESSION_FIELDS].sort()')
+		|| !tabSessionTest.includes('propagates an undurable ACK')) {
+		error('SCTRL-005/SCTRL-040: exhaustive durable tab-session regression coverage is missing');
+	}
+	const settingsRepository = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'background/settings-repository.ts'),
+		'utf8',
+	);
+	const settingsApply = settingsRepository.slice(
+		settingsRepository.indexOf('\tapplyPatch('),
+		settingsRepository.indexOf('\n\t// post: atomically consumes'),
+	);
+	if (!settingsApply.includes('await this.local.set({')
+		|| settingsRepository.includes('scheduleWrite(')
+		|| settingsRepository.includes('SETTINGS_WRITE_DEBOUNCE_MS')) {
+		error('SCTRL-005/SCTRL-040: settings revisions must be physically durable before response and broadcast');
+	}
+	const badge = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'background/handlers/badge.ts'),
+		'utf8',
+	);
+	if (badge.includes('USED_BADGE_PLACEHOLDER') || badge.includes("text: '•'")) {
+		error('SCTRL-014: Badge usage without a complete acknowledged volume pair must remain completely blank');
+	}
+	const smoke = fs.readFileSync(
+		path.join(root, APP_PATH, 'test/smoke.spec.ts'),
+		'utf8',
+	);
+	for (const required of [
+		'restores durable acknowledged state and sticky badge after worker replacement plus refresh',
+		'applies a site preset before the default global preset after worker replacement',
+		'const durableProjection = await evaluateServiceWorker',
+	]) {
+		if (!smoke.includes(required)) {
+			error(`SCTRL-034/SCTRL-040: development/production Chrome lifecycle evidence is missing (${required})`);
+		}
+	}
 
 	const visualizerLoop = fs.readFileSync(
 		path.join(root, SOURCE_PATH, 'popup/visualizer/loop.ts'),
