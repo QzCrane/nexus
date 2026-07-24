@@ -7,6 +7,7 @@ import {
 	HOTKEY_ACTIONS,
 	HOTKEY_ACTION_DESCRIPTORS,
 	isHotkeyParamsForAction,
+	isSpectraDefaultHotkeyKeyCombo,
 	isSlotHotkeyAction,
 	SPECTRA_SETTINGS_SCHEMA_VERSION,
 	findBestHostnameMatch,
@@ -105,6 +106,11 @@ function applyHotkeySiteMutation(
 		}
 		case 'upsert-binding': {
 			const site = requireSite(sites, domain);
+			if (isSpectraDefaultHotkeyKeyCombo(mutation.binding.key)) {
+				throw new InvalidSettingsPatchError(
+					'Built-in SPECTRA shortcut chords cannot be assigned to site hotkeys',
+				);
+			}
 			disabledLegacyBindings = disabledLegacyBindings.filter(({ id }) => id !== mutation.binding.id);
 			const sanitized = sanitizeSite(
 				{ enabled: site.enabled, bindings: [mutation.binding] },
@@ -208,22 +214,75 @@ function sanitizeBinding(value: unknown): HotkeyBinding | null {
 	if (!isHotkeyParamsForAction(binding.action, value.params)) return null;
 	if (value.params) binding.params = { ...value.params };
 	if (isRecord(value.conditions)) binding.conditions = { ...value.conditions };
-	if (value.disabledReason === 'unsupported_action') binding.disabledReason = value.disabledReason;
+	if (value.disabledReason === 'unsupported_action'
+		|| value.disabledReason === 'reserved_default_chord') {
+		binding.disabledReason = value.disabledReason;
+	}
 	return binding;
 }
 
-function sanitizeSite(value: unknown, disabledLegacy: HotkeyBinding[]): SiteHotkeyConfig {
+function upsertDisabledLegacyBinding(
+	disabledLegacy: HotkeyBinding[],
+	binding: HotkeyBinding,
+): 'inserted' | 'updated' | 'unchanged' {
+	const candidate = structuredClone(binding);
+	const index = disabledLegacy.findIndex(({ id }) => id === candidate.id);
+	if (index < 0) {
+		disabledLegacy.push(candidate);
+		return 'inserted';
+	}
+	if (JSON.stringify(disabledLegacy[index]) === JSON.stringify(candidate)) return 'unchanged';
+	disabledLegacy[index] = candidate;
+	return 'updated';
+}
+
+function canonicalizeBindingDisability(binding: HotkeyBinding): {
+	reason: HotkeyBinding['disabledReason'];
+	changed: boolean;
+} {
+	const previousEnabled = binding.enabled;
+	const previousReason = binding.disabledReason;
+	if (isSpectraDefaultHotkeyKeyCombo(binding.key)) {
+		binding.enabled = false;
+		binding.disabledReason = 'reserved_default_chord';
+		return {
+			reason: binding.disabledReason,
+			changed: previousEnabled !== binding.enabled || previousReason !== binding.disabledReason,
+		};
+	}
+	if (UNSUPPORTED_ACTIONS.has(binding.action) || binding.disabledReason === 'unsupported_action') {
+		binding.enabled = false;
+		binding.disabledReason = 'unsupported_action';
+		return {
+			reason: binding.disabledReason,
+			changed: previousEnabled !== binding.enabled || previousReason !== binding.disabledReason,
+		};
+	}
+	if (binding.disabledReason === 'reserved_default_chord') delete binding.disabledReason;
+	return {
+		reason: undefined,
+		changed: previousReason !== binding.disabledReason,
+	};
+}
+
+function sanitizeSite(
+	value: unknown,
+	disabledLegacy: HotkeyBinding[],
+	onRepair?: () => void,
+): SiteHotkeyConfig {
 	const source = isRecord(value) ? value : {};
 	const bindings = Array.isArray(source.bindings)
 		? source.bindings.map(sanitizeBinding).filter((binding): binding is HotkeyBinding => !!binding)
 		: [];
 	for (const binding of bindings) {
-		if (UNSUPPORTED_ACTIONS.has(binding.action) || binding.disabledReason === 'unsupported_action') {
-			binding.enabled = false;
-			binding.disabledReason = 'unsupported_action';
-			if (!disabledLegacy.some((legacy) => legacy.id === binding.id)) {
-				disabledLegacy.push({ ...binding, key: { ...binding.key, modifiers: { ...binding.key.modifiers } } });
-			}
+		const result = canonicalizeBindingDisability(binding);
+		if (!result.reason) {
+			if (result.changed) onRepair?.();
+			continue;
+		}
+		const legacyResult = upsertDisabledLegacyBinding(disabledLegacy, binding);
+		if (result.changed || legacyResult !== 'unchanged') {
+			onRepair?.();
 		}
 	}
 	return { enabled: source.enabled === true, bindings };
@@ -241,30 +300,50 @@ function mergeHotkeySites(left: SiteHotkeyConfig | undefined, right: SiteHotkeyC
 	};
 }
 
-function normalizeHotkeySettings(raw: unknown): HotkeySettings {
+function normalizeHotkeySettings(raw: unknown): {
+	settings: HotkeySettings;
+	requiresPersistence: boolean;
+} {
 	const source = isRecord(raw) ? raw : {};
 	const normalized = cloneDefaultHotkeys();
+	let requiresPersistence = false;
 	if (isRecord(source.slots)) {
 		for (const [command, action] of Object.entries(source.slots)) {
 			if (isSlotHotkeyAction(action)) normalized.slots[command] = action;
 		}
 	}
 
-	const disabledLegacy = Array.isArray(source.disabledLegacyBindings)
-		? source.disabledLegacyBindings.map(sanitizeBinding).filter((binding): binding is HotkeyBinding => !!binding)
-		: [];
+	const disabledLegacy: HotkeyBinding[] = [];
+	if (Array.isArray(source.disabledLegacyBindings)) {
+		for (const candidate of source.disabledLegacyBindings) {
+			const binding = sanitizeBinding(candidate);
+			if (!binding) continue;
+			const result = canonicalizeBindingDisability(binding);
+			if (!result.reason) {
+				if (result.changed) requiresPersistence = true;
+				continue;
+			}
+			const duplicate = disabledLegacy.some(({ id }) => id === binding.id);
+			const legacyResult = upsertDisabledLegacyBinding(disabledLegacy, binding);
+			if (duplicate || result.changed || legacyResult === 'updated') {
+				requiresPersistence = true;
+			}
+		}
+	}
 	if (isRecord(source.sites)) {
 		for (const [rawDomain, site] of Object.entries(source.sites)) {
 			const domain = normalizeHostname(rawDomain);
 			if (!domain) continue;
 			normalized.sites[domain] = mergeHotkeySites(
 				normalized.sites[domain],
-				sanitizeSite(site, disabledLegacy),
+				sanitizeSite(site, disabledLegacy, () => {
+					requiresPersistence = true;
+				}),
 			);
 		}
 	}
 	normalized.disabledLegacyBindings = disabledLegacy;
-	return normalized;
+	return { settings: normalized, requiresPersistence };
 }
 
 function normalizeSiteSettings(raw: unknown): Record<string, unknown> | null {
@@ -830,7 +909,8 @@ export class SettingsRepository {
 		let meta = parseMeta(result[META_KEY]);
 		const requiresMigration = meta === null;
 		const globalSettings = normalizeGlobalSettings(result[GLOBAL_KEY], requiresMigration);
-		const hotkeySettings = normalizeHotkeySettings(result[HOTKEY_KEY]);
+		const hotkeyNormalization = normalizeHotkeySettings(result[HOTKEY_KEY]);
+		const hotkeySettings = hotkeyNormalization.settings;
 		const normalizedSiteSettings = normalizeSiteSettings(result[SITE_SETTINGS_KEY]) ?? {};
 		const normalizedPresets = normalizePresetState(
 			result[GLOBAL_PRESETS_KEY],
@@ -875,6 +955,11 @@ export class SettingsRepository {
 				legacyThemeModeMissing: !Object.hasOwn(rawGlobal, 'themeMode'),
 			};
 			await this.local.set({ [META_KEY]: meta });
+		} else if (hotkeyNormalization.requiresPersistence) {
+			const rawHotkeys = isRecord(result[HOTKEY_KEY]) ? result[HOTKEY_KEY] : {};
+			await this.local.set({
+				[HOTKEY_KEY]: { ...rawHotkeys, ...hotkeySettings },
+			});
 		}
 		if (!meta) throw new Error('Settings metadata was not initialized');
 

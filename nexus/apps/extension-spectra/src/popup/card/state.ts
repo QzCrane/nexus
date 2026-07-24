@@ -5,22 +5,14 @@ import {
 	isActiveCaptureLifecycle,
 	resolveAudioVolume,
 	resolveAudioVolumeState,
+	crossesAudioVolumeProcessorBoundary,
+	resolveAcknowledgedProcessorLifecycle,
 	type ControlOperationAck,
 	type ControlFieldStates,
 	type ControlPatch,
 } from '@nexus/contracts';
 import { mergeAudioConfig, mergeControlFields, type CardInternalState } from './types';
 import { sendSpectraRequest } from '../../shared/ui-spectra-client';
-
-const PROCESSOR_FIELDS = [
-	'boost',
-	'eqValues',
-	'bass',
-	'compressor',
-	'mono',
-	'pan',
-	'delay',
-] as const satisfies readonly (keyof ControlFieldStates)[];
 
 export type ConfigUpdateFn = ((changes: Partial<AudioConfig>) => void) & {
 	flush: () => Promise<void>;
@@ -34,32 +26,12 @@ export function projectAcknowledgedProcessorLifecycle(
 	state: CardInternalState,
 	fields: ControlFieldStates,
 ): void {
-	const processorStates = PROCESSOR_FIELDS
-		.map((field) => fields[field])
-		.filter((field) => field !== undefined);
-	const captureApplied = processorStates.some((field) => (
-		field.phase === 'applied' && field.strategy === 'capture'
-	));
-	const webAudioApplied = processorStates.some((field) => (
-		field.phase === 'applied' && field.strategy === 'media-webaudio'
-	));
-	const processorReleased = processorStates.some((field) => (
-		(field.phase === 'applied' || field.phase === 'idle')
-		&& field.strategy === 'observe'
-		&& !field.controlled
-	));
-	const mode = captureApplied
-		? 'capture'
-		: webAudioApplied
-			? 'webaudio'
-			: processorReleased
-				? 'bypass'
-				: null;
-	if (!mode) return;
-	state.actualMode = mode;
-	state.desiredMode = mode;
-	state.phase = mode === 'bypass' ? 'idle' : 'active';
-	state.isCaptureActive = mode === 'capture';
+	const lifecycle = resolveAcknowledgedProcessorLifecycle(fields);
+	if (!lifecycle) return;
+	state.actualMode = lifecycle.actualMode;
+	state.desiredMode = lifecycle.actualMode;
+	state.phase = lifecycle.phase;
+	state.isCaptureActive = lifecycle.actualMode === 'capture';
 }
 
 export function createGetCapturing(
@@ -295,7 +267,7 @@ export function createUpdateFn(
 		// one frame. Same-region drags remain optimistic.
 		const stableVolume = resolveAudioVolume(state.stableConfig).effectiveVolume;
 		const crossesProcessorBoundary = volumeChanged
-			&& (stableVolume > 100) !== (nextVolume > 100);
+			&& crossesAudioVolumeProcessorBoundary(stableVolume, nextVolume);
 		if (crossesProcessorBoundary && !state.volumeTransitionPresentation) {
 			const effectiveVolume = resolveAudioVolume(state.config).effectiveVolume;
 			state.volumeTransitionPresentation = {

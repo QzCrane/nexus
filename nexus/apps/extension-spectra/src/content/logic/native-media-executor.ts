@@ -168,7 +168,6 @@ export interface AudioRuntimeControlDelegate {
 	apply(intent: ControlIntent, patch: ControlPatch): Promise<ControlFieldStates>;
 	read(fields: readonly ControlField[]): ControlPatch;
 	synchronizeNative(context: ControlActualContext): void;
-	showNativeFeedback?(context: ControlActualContext, source: ControlIntent['source']): void;
 	runFullscreenTransition?<T>(operation: () => Promise<T>): Promise<T>;
 }
 
@@ -748,7 +747,7 @@ export class NativeMediaExecutor {
 				this.rememberDesired(field, state.desired);
 			}
 		}
-		this.synchronizeAppliedNative(fields, intent.source);
+		this.synchronizeAppliedNative(fields);
 		if (Object.keys(runtimePatch).length > 0) {
 			if (this.audioRuntimeDelegate) {
 				Object.assign(fields, await this.audioRuntimeDelegate.apply(intent, runtimePatch));
@@ -1390,10 +1389,7 @@ export class NativeMediaExecutor {
 		};
 	}
 
-	private synchronizeAppliedNative(
-		fields: ControlFieldStates,
-		source: ControlIntent['source'],
-	): void {
+	private synchronizeAppliedNative(fields: ControlFieldStates): void {
 		if (!this.audioRuntimeDelegate) return;
 		const context: ControlActualContext = {};
 		for (const field of ['volumeBase', 'mediaMuted', 'speed', 'preservePitch'] as const) {
@@ -1403,10 +1399,6 @@ export class NativeMediaExecutor {
 			}
 		}
 		this.audioRuntimeDelegate.synchronizeNative(context);
-		if ((source === 'popup' || source === 'hotkey' || source === 'remote')
-			&& Object.keys(context).length > 0) {
-			this.audioRuntimeDelegate.showNativeFeedback?.(context, source);
-		}
 	}
 
 	private putError(

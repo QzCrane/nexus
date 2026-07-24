@@ -329,8 +329,11 @@ function checkPolicyOwner(root) {
 		error('SCTRL-002/SCTRL-011: Capture must not widen an active-target request to the whole tab');
 	}
 	const hotkeys = fs.readFileSync(path.join(root, 'packages/contracts/src/hotkeys.contracts.ts'), 'utf8');
-	if (!hotkeys.includes('HOTKEY_ACTION_DESCRIPTORS')
-		|| !hotkeys.includes('satisfies Record<HotkeyAction, HotkeyActionDescriptor>')
+	if (!hotkeys.includes('export const HOTKEY_ACTION_DESCRIPTORS = {')
+		|| !hotkeys.includes('satisfies Record<string, HotkeyActionDescriptor>')
+		|| !hotkeys.includes('export type HotkeyAction = keyof typeof HOTKEY_ACTION_DESCRIPTORS')
+		|| !hotkeys.includes('Object.keys(HOTKEY_ACTION_DESCRIPTORS) as HotkeyAction[]')
+		|| /export const HOTKEY_ACTIONS[^=]*=\s*\[/u.test(hotkeys)
 		|| !hotkeys.includes('export function isSlotHotkeyAction(')
 		|| !hotkeys.includes('export function isHotkeyParamsForAction(')) {
 		error('SCTRL-002: hotkey actions must map exhaustively to control capabilities');
@@ -351,6 +354,10 @@ function checkPolicyOwner(root) {
 		path.join(root, APP_PATH, 'src/content/input/hotkey-actions.ts'),
 		'utf8',
 	);
+	const hotkeyOptionsModal = fs.readFileSync(
+		path.join(root, APP_PATH, 'src/options/modal.ts'),
+		'utf8',
+	);
 	if (!settingsContracts.includes('isSlotHotkeyAction(action)')
 		|| !settingsContracts.includes('isHotkeyParamsForAction(action, value.params)')
 		|| !settingsRepository.includes('isSlotHotkeyAction(action)')
@@ -358,6 +365,19 @@ function checkPolicyOwner(root) {
 		|| !shortcuts.includes('filter(([, action]) => isSlotHotkeyAction(action))')
 		|| !hotkeyActions.includes('isHotkeyParamsForAction(action, params)')) {
 		error('SCTRL-002/SCTRL-016: hotkey slots and parameters must share one contract at storage, runtime and execution boundaries');
+	}
+	if (!hotkeys.includes('export function isSpectraDefaultHotkeyKeyCombo(')
+		|| !hotkeys.includes('return resolveSpectraDefaultHotkeyAction({')
+		|| !settingsContracts.includes('!isSpectraDefaultHotkeyKeyCombo(value.key)')
+		|| !settingsContracts.includes("value.disabledReason === 'reserved_default_chord'")
+		|| !settingsRepository.includes(
+			'if (isSpectraDefaultHotkeyKeyCombo(mutation.binding.key))',
+		)
+		|| !settingsRepository.includes("binding.disabledReason = 'reserved_default_chord'")
+		|| !settingsRepository.includes('hotkeyNormalization.requiresPersistence')
+		|| !hotkeyOptionsModal.includes('if (renderReservedHotkeyWarning()) return;')
+		|| !hotkeyOptionsModal.includes('delete currentBinding.disabledReason;')) {
+		error('SCTRL-022: built-in chords must be rejected by new site bindings and durably disable recoverable legacy collisions through the one bootstrap resolver');
 	}
 	const supportedHotkeys = fs.readFileSync(
 		path.join(root, APP_PATH, 'src/options/supported-hotkey-actions.ts'),
@@ -405,12 +425,21 @@ function checkPolicyOwner(root) {
 		path.join(root, 'packages/contracts/src/spectra.protocol.ts'),
 		'utf8',
 	);
-	const contentRuntimeRevision = contentRuntimeContracts.match(
+	const bootstrapContracts = fs.readFileSync(
+		path.join(root, 'packages/contracts/src/spectra.bootstrap.ts'),
+		'utf8',
+	);
+	const canonicalRuntimeRevision = bootstrapContracts.match(
 		/SPECTRA_CONTENT_RUNTIME_REVISION = '([^']+)'/u,
 	)?.[1];
-	const protocolRuntimeRevision = protocolContracts.match(
-		/SPECTRA_CONTENT_RUNTIME_REVISION = '([^']+)'/u,
-	)?.[1];
+	const protocolReexportsRuntimeRevision =
+		/export\s*\{[^}]*\bSPECTRA_CONTENT_RUNTIME_REVISION\b[^}]*\}\s*from\s*['"]\.\/spectra\.bootstrap\.js['"]/u
+			.test(protocolContracts);
+	const contentReexportsRuntimeRevision =
+		/export\s*\{[^}]*\bSPECTRA_CONTENT_RUNTIME_REVISION\b[^}]*\}/u
+			.test(contentRuntimeContracts);
+	const duplicateRuntimeRevision =
+		/export const SPECTRA_CONTENT_RUNTIME_REVISION\s*=\s*'/u;
 	if (!contracts.includes("export type CaptureAdmission = 'extension-invocation'")
 		|| !contracts.includes('captureAdmission?: CaptureAdmission')
 		|| !contracts.includes("|| value.captureAdmission === 'extension-invocation'")
@@ -418,20 +447,33 @@ function checkPolicyOwner(root) {
 		|| submitKeys.includes('captureAdmission')) {
 		error('SCTRL-041: Capture admission must exist only on validated internal intents, never ControlSubmitRequest');
 	}
-	if (!contentRuntimeRevision
-		|| contentRuntimeRevision !== protocolRuntimeRevision
+	if (!canonicalRuntimeRevision
+		|| duplicateRuntimeRevision.test(contentRuntimeContracts)
+		|| duplicateRuntimeRevision.test(protocolContracts)
+		|| !protocolReexportsRuntimeRevision
+		|| !hasNamedImports(
+			contentRuntimeContracts,
+			'./spectra.bootstrap.js',
+			['SPECTRA_CONTENT_RUNTIME_REVISION'],
+		)
+		|| !contentReexportsRuntimeRevision
 		|| !contentRuntimeContracts.includes("'patch', 'captureAdmission'")
 		|| !contentRuntimeContracts.includes("|| value.captureAdmission === 'extension-invocation'")) {
-		error('SCTRL-006/SCTRL-041: the revisioned Content runtime facade must accept the canonical internal Capture admission');
+		error('SCTRL-006/SCTRL-041: Bootstrap must solely own the runtime revision while both protocol facades preserve the canonical Capture boundary');
 	}
 	for (const required of [
-		'captureAdmissionForCurrentTab',
+		'captureAdmissionForInvocation',
 		"chrome.tabs.query({ active: true, currentWindow: true })",
 		"Reflect.deleteProperty(unadmittedRequest, 'captureAdmission')",
 		'submitExtensionInvokedControlRequest',
 		'submitExtensionInvokedControlOperation',
 		'isExtensionPopupSender(sender)',
+		'trustedContentHotkeyInvocation(sender, tabId)',
+		"typeof sender.documentId === 'string'",
+		'const document = { tabId, documentId: sender.documentId }',
+		'assertInvocationTargetCurrent',
 		"message.payload.source === 'popup'",
+		"message.payload.source === 'hotkey'",
 	]) {
 		if (!coordinator.includes(required)) {
 			error(`SCTRL-041: Background Capture admission boundary is missing (${required})`);
@@ -439,8 +481,10 @@ function checkPolicyOwner(root) {
 	}
 	if ((coordinator.match(/Reflect\.deleteProperty\(unadmittedRequest, 'captureAdmission'\)/gu) ?? []).length !== 2
 		|| !shortcuts.includes('submitExtensionInvokedControlRequest')
-		|| !shortcuts.includes('submitExtensionInvokedControlOperation')) {
-		error('SCTRL-041: only Popup and current-tab chrome.commands transactions may request Capture admission');
+		|| !shortcuts.includes('submitExtensionInvokedControlOperation')
+		|| shortcuts.includes('submitControlRequest')
+		|| shortcuts.includes('extensionInvoked')) {
+		error('SCTRL-041: Popup and validated current-document shortcut transactions must use one invocation-bound Capture admission path');
 	}
 	const captureModeExecutor = fs.readFileSync(
 		path.join(root, APP_PATH, 'src/content/logic/mode-executor.ts'),
@@ -455,7 +499,7 @@ function checkPolicyOwner(root) {
 		|| captureModeExecutor.includes('requiresAudioProcessor(config) && hasUserGesture(state)')
 		|| captureManager.includes('Capture transition blocked by missing activeTab permission')
 		|| !captureManager.includes("log.error('Capture transition failed:'")) {
-		error('SCTRL-041: page gestures must not admit a new Capture or hide an unexpected browser denial');
+		error('SCTRL-041: unvalidated page state must not admit a new Capture or hide an unexpected browser denial');
 	}
 	const hydrationInitialState = fs.readFileSync(
 		path.join(root, APP_PATH, 'src/content/core/initial-state.ts'),
@@ -1354,16 +1398,16 @@ function checkRetiredPaths(root) {
 		path.join(root, SOURCE_PATH, 'content/input/hotkey-listener.ts'),
 		'utf8',
 	);
+	const hotkeyEvent = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'content/input/hotkey-event.ts'),
+		'utf8',
+	);
 	const defaultScalarGesture = fs.readFileSync(
 		path.join(root, SOURCE_PATH, 'content/input/default-scalar-gesture.ts'),
 		'utf8',
 	);
 	const feedbackSurface = fs.readFileSync(
 		path.join(root, SOURCE_PATH, 'content/ui/feedback-surface.ts'),
-		'utf8',
-	);
-	const toast = fs.readFileSync(
-		path.join(root, SOURCE_PATH, 'content/ui/toast.ts'),
 		'utf8',
 	);
 	const osd = fs.readFileSync(
@@ -1397,8 +1441,6 @@ function checkRetiredPaths(root) {
 		'state.expiry = setTimeout(() => {',
 		'export function releasePageGestureBurst(',
 		'export function waitForPageGestureBurst(',
-		'state.released = true',
-		'isReleased: () => state.released',
 		'const execution = runChromeCommandSingleFlight(command, execute)',
 		'void execution.catch((error: unknown) => {',
 	]) {
@@ -1406,44 +1448,197 @@ function checkRetiredPaths(root) {
 			error(`SCTRL-022: shortcut repeat/release gate is missing (${required})`);
 		}
 	}
-	const reservedManifestKeys = ['Alt+Left', 'Alt+Right', 'Alt+Down', 'Alt+Up'];
+	const defaultHotkeyMapSource = bootstrapContract.match(
+		/export const SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE = \{(.*?)\} as const/su,
+	)?.[1] ?? '';
+	const defaultHotkeyMappings = new Map(
+		[...defaultHotkeyMapSource.matchAll(
+			/\b([A-Za-z][A-Za-z0-9]*): '([^']+)'/gu,
+		)].map((match) => [match[1], match[2]]),
+	);
+	const defaultHotkeyActions = [...defaultHotkeyMappings.values()];
+	const reservedManifestKeys = [...defaultHotkeyMappings.keys()].map((code) => {
+		const key = code.startsWith('Arrow')
+			? code.slice('Arrow'.length)
+			: code.startsWith('Key')
+				? code.slice('Key'.length)
+				: code;
+		return `Alt+${key}`;
+	});
 	const suggestedKeys = Object.values(shortcutManifest.commands ?? {})
 		.flatMap(command => Object.values(command.suggested_key ?? {}));
-	if (!bootstrapContract.includes("\t'speed_down',")
-		|| !bootstrapContract.includes("\t'speed_up',")
-		|| !bootstrapContract.includes("\t'volume_down',")
-		|| !bootstrapContract.includes("\t'volume_up',")
-		|| !bootstrap.includes("if (event.code === 'ArrowLeft') return 'speed_down'")
-		|| !bootstrap.includes("if (event.code === 'ArrowRight') return 'speed_up'")
-		|| !bootstrap.includes("if (event.code === 'ArrowDown') return 'volume_down'")
-		|| !bootstrap.includes("if (event.code === 'ArrowUp') return 'volume_up'")
+	const bootstrapDefaultResolver = bootstrap.match(
+		/const defaultHotkeyAction =[\s\S]*?(?=\n\tconst sendDefaultScalarPhase)/u,
+	)?.[0] ?? '';
+	const bootstrapAcceptedKeydown = bootstrap.match(
+		/const acceptDefaultHotkeyKeydown =[\s\S]*?(?=\n\tconst releaseDefaultScalarGesture)/u,
+	)?.[0] ?? '';
+	const siteHotkeyResolver = pageHotkeyListener.match(
+		/function resolveSiteHotkeyBinding\([\s\S]*?(?=\nfunction handleKeydown)/u,
+	)?.[0] ?? '';
+	const siteHotkeyHandler = pageHotkeyListener.match(
+		/function handleKeydown\([\s\S]*?(?=\nfunction modifierForCode)/u,
+	)?.[0] ?? '';
+	const physicalReleasePublisher = defaultScalarGesture.match(
+		/export function publishPhysicalHotkeyRelease\([\s\S]*?(?=\nexport function subscribePhysicalHotkeyRelease)/u,
+	)?.[0] ?? '';
+	const siteHotkeyInitialization = pageHotkeyListener.match(
+		/export async function initHotkeyListener\([\s\S]*?(?=\nfunction handleSettingsEvent)/u,
+	)?.[0] ?? '';
+	const siteHotkeySettingsChange = pageHotkeyListener.match(
+		/if \(isSpectraEventEnvelope\(message\) && message\.type === 'spectra\.hotkeys\.changed'\) \{[\s\S]*?\n\t\}/u,
+	)?.[0] ?? '';
+	const propagationStop = /\.stop(?:Immediate)?Propagation\s*\(/u;
+	const directKeyboardRegistration =
+		/(?:window|document)\.(?:add|remove)EventListener\(\s*['"]key(?:down|up)['"]/u;
+	const arbiterUsageCount = (source) => (
+		source.match(/createWebsiteFirstKeyboardArbiter\(\{/gu) ?? []
+	).length;
+	const hasPropagationFallback = /const cleanupTimer = setTimeout\(\(\) => \{[\s\S]*?options\.onSettled\(event, owned\.candidate, true\);[\s\S]*?\}, 0\);/u
+		.test(hotkeyEvent);
+	if (defaultHotkeyMappings.size !== 5
+		|| new Set(defaultHotkeyActions).size !== defaultHotkeyMappings.size
+		|| !bootstrapContract.includes(
+			'typeof SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE[',
+		)
+		|| !bootstrapContract.includes(
+			'keyof typeof SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE',
+		)
+		|| !/Object\.freeze\(Object\.values\(SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE\)\)/u
+			.test(bootstrapContract)
+		|| !bootstrapContract.includes(
+			'Object.hasOwn(SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE, chord.code)',
+		)
+		|| bootstrapContract.includes("if (chord.code === '")
+		|| !bootstrapContract.includes(
+			'if (!chord.altKey || chord.ctrlKey || chord.shiftKey || chord.metaKey) return null',
+		)
+		|| !hasNamedImports(
+			bootstrap,
+			'@nexus/contracts/bootstrap',
+			['resolveSpectraDefaultHotkeyAction'],
+		)
+		|| !hasNamedImports(
+			pageHotkeyListener,
+			'@nexus/contracts',
+			['resolveSpectraDefaultHotkeyAction'],
+		)
+		|| !hasNamedImports(
+			bootstrap,
+			'../input/hotkey-event',
+			[
+				'createWebsiteFirstKeyboardArbiter',
+				'isEditableHotkeyEvent',
+				'subscribeDocumentStartPhysicalHotkeyRelease',
+			],
+		)
+		|| !hasNamedImports(
+			pageHotkeyListener,
+			'./hotkey-event',
+			['createWebsiteFirstKeyboardArbiter', 'isEditableHotkeyEvent'],
+		)
+		|| arbiterUsageCount(bootstrap) !== 2
+		|| arbiterUsageCount(pageHotkeyListener) !== 1
+		|| !hotkeyEvent.includes('const pending = new Map<KeyboardEvent')
+		|| !hotkeyEvent.includes('const candidate = options.resolveCandidate(event)')
+		|| !hotkeyEvent.includes('pending.set(event, { candidate, tail, cleanupTimer })')
+		|| !hotkeyEvent.includes('if (tailEvent !== event) return;')
+		|| !hotkeyEvent.includes('const owned = clearPending(event)')
+		|| !hotkeyEvent.includes('window.addEventListener(options.type, capture, true)')
+		|| !hotkeyEvent.includes('window.addEventListener(options.type, tail)')
+		|| !hotkeyEvent.includes('owned.candidate')
+		|| !hotkeyEvent.includes('event.defaultPrevented || event.cancelBubble')
+		|| !hasPropagationFallback
+		|| hotkeyEvent.includes('queueMicrotask')
+		|| !hotkeyEvent.includes('window.removeEventListener(options.type, owned.tail)')
+		|| !hotkeyEvent.includes('clearTimeout(owned.cleanupTimer)')
+		|| !hotkeyEvent.includes('window.removeEventListener(options.type, capture, true)')
+		|| !hotkeyEvent.includes('for (const [event] of pending) clearPending(event)')
+		|| !hotkeyEvent.includes("const PHYSICAL_RELEASE_OWNER_KEY = '__spectraPhysicalHotkeyReleaseV1'")
+		|| !hotkeyEvent.includes("window.addEventListener('keyup'")
+		|| !hotkeyEvent.includes('for (const subscriber of current.listeners) subscriber(event)')
+		|| hotkeyEvent.includes("window.removeEventListener('keyup'")
+		|| directKeyboardRegistration.test(bootstrap)
+		|| directKeyboardRegistration.test(pageHotkeyListener)
 		|| !bootstrap.includes('if (!event.isTrusted')
-		|| !bootstrap.includes('event.preventDefault()')
-		|| !bootstrap.includes('event.stopImmediatePropagation()')
+		|| !(/event\.defaultPrevented[\s\S]*resolveSpectraDefaultHotkeyAction/u
+			.test(bootstrapDefaultResolver)
+			|| /event\.defaultPrevented[\s\S]*defaultHotkeyAction\(event\)/u
+				.test(bootstrapAcceptedKeydown))
+		|| !bootstrapAcceptedKeydown.includes('event.preventDefault()')
+		|| !bootstrap.includes('resolveCandidate: defaultHotkeyAction')
+		|| !bootstrap.includes('if (!websiteClaimed) acceptDefaultHotkeyKeydown(event, action)')
+		|| !bootstrap.includes('resolveCandidate: (event) => event.isTrusted')
+		|| !pageHotkeyListener.includes('resolveCandidate: resolveSiteHotkeyBinding')
+		|| !pageHotkeyListener.includes('if (!websiteClaimed) handleKeydown(event, binding)')
+		|| siteHotkeyHandler.includes('resolveSiteHotkeyBinding(')
+		|| !bootstrap.includes('if (isEditableHotkeyEvent(event)) return null')
+		|| !pageHotkeyListener.includes('if (isEditableHotkeyEvent(e)) return null')
+		|| propagationStop.test(bootstrap)
+		|| propagationStop.test(pageHotkeyListener)
+		|| propagationStop.test(hotkeyEvent)
+		|| !/if \(resolveSpectraDefaultHotkeyAction\(e\) !== null\) return null;[\s\S]*const site = getSiteConfig\(\)/u
+			.test(siteHotkeyResolver)
+		|| !bootstrap.includes("if (active.action === 'volume_mute') return")
+		|| !shortcuts.includes(
+			"if (message.payload.action === 'volume_mute' && message.payload.repeated)",
+		)
 		|| !bootstrap.includes("sendDefaultScalarPhase(active, 'release')")
 		|| !bootstrap.includes("publishDefaultScalarGesture({ ...active, phase: 'release' })")
 		|| !defaultScalarGesture.includes('listeners: Set<DefaultScalarGestureListener>')
 		|| !defaultScalarGesture.includes('pending: DefaultScalarGestureSignal[]')
+		|| !defaultScalarGesture.includes('releaseListeners: Set<PhysicalHotkeyReleaseListener>')
+		|| !defaultScalarGesture.includes("const CHANNEL_KEY = '__spectraHotkeyGestureV3'")
 		|| !defaultScalarGesture.includes("export function nextScalarGestureId(namespace: 'default' | 'site')")
 		|| !defaultScalarGesture.includes('const pending = owner.pending.splice(0)')
 		|| !defaultScalarGesture.includes('return () => owner.listeners.delete(listener)')
-		|| !pageHotkeyListener.includes('isBuiltInSpeedShortcut(e)')
+		|| !physicalReleasePublisher.includes('channel().releaseListeners')
+		|| physicalReleasePublisher.includes('pending')
 		|| !pageHotkeyListener.includes('subscribeDefaultScalarGesture(handleDefaultScalarGesture)')
-		|| !pageHotkeyListener.includes('lastDefaultScalarFeedbackTarget')
+		|| !pageHotkeyListener.includes('subscribePhysicalHotkeyRelease(releaseSiteHotkeys)')
+		|| siteHotkeyInitialization.indexOf(
+			'subscribePhysicalHotkeyRelease(releaseSiteHotkeys)',
+		) >= siteHotkeyInitialization.indexOf('synchronizeKeydownListener()')
+		|| siteHotkeySettingsChange.indexOf('cancelActiveBindings()')
+			>= siteHotkeySettingsChange.indexOf('settings = message.payload')
+		|| !pageHotkeyListener.includes('if (!e.repeat) releaseSiteHotkeys({ code: e.code })')
+		|| !pageHotkeyListener.includes('addRepeatPulse(held.feedbackGesture)')
+		|| !pageHotkeyListener.includes(
+			'lastRepeatExecutionAt.set(held.feedbackGesture, e.timeStamp)',
+		)
+		|| !pageHotkeyListener.includes('inFlightGestures.has(held.feedbackGesture)')
+		|| pageHotkeyListener.includes('const coalesced = new Map')
+		|| pageHotkeyListener.includes('cancelCoalesced')
+		|| !pageHotkeyListener.includes('advanceHotkeyTargetOSD(')
+		|| pageHotkeyListener.includes('defaultScalarFeedbackTargets')
+		|| pageHotkeyListener.includes('feedbackTarget')
 		|| !shortcuts.includes("candidate.type !== 'spectra.content.default-hotkey.trigger'")
 		|| !shortcuts.includes('sender.frameId !== 0')
-		|| !shortcuts.includes('current?.documentId !== expectedDocumentId')
-		|| !shortcuts.includes('if (isCancelled()) return')
+		|| !shortcuts.includes('const identity = defaultHotkeySenderIdentity(sender)')
+		|| !shortcuts.includes('if (before?.documentId !== identity.documentId)')
+		|| shortcuts.includes('before.url !== identity.url')
+		|| !shortcuts.includes('{ ...identity.tab, url: before.url }')
+		|| !shortcuts.includes("'builtin-page'")
+		|| !shortcuts.includes('{ tabId: identity.tabId, documentId: identity.documentId }')
 		|| !shortcuts.includes('message.payload.gesture')
+		|| shortcuts.includes('isCancelled')
+		|| shortcuts.includes('isReleased')
 		|| !hotkeyContracts.includes("descriptor.repeatPolicy !== 'coalesce-20hz'")
-		|| shortcutManifest.commands?.speed_down
-		|| shortcutManifest.commands?.speed_up
-		|| shortcutManifest.commands?.volume_down
-		|| shortcutManifest.commands?.volume_up
-		|| !shortcuts.includes('resolveShortcutTargetFromActive(identity.tab)')
+		|| !hotkeyContracts.includes(
+			'const DEFAULT_HOTKEY_ACTION_SET: ReadonlySet<string> = new Set(SPECTRA_DEFAULT_HOTKEY_ACTIONS)',
+		)
+		|| !hotkeyContracts.includes('&& !DEFAULT_HOTKEY_ACTION_SET.has(action)')
+		|| !/export const DEFAULT_HOTKEY_SETTINGS:[\s\S]*?slots:\s*\{\s*\}/u
+			.test(hotkeyContracts)
+		|| hotkeyContracts.includes('DEFAULT_SLOTS')
+		|| hotkeyContracts.includes('PRESET_BINDINGS')
+		|| fs.existsSync(path.join(root, 'packages/contracts/src/hotkeys.presets.ts'))
+		|| [...defaultHotkeyActions, 'toggle_mute'].some(
+			(command) => Object.hasOwn(shortcutManifest.commands ?? {}, command),
+		)
 		|| !shortcuts.includes('await executeShortcutRoute(')
 		|| reservedManifestKeys.some(key => suggestedKeys.includes(key))) {
-		error('SCTRL-006/SCTRL-022: built-in Alt+Arrow scalar gestures must be trusted, identity-bound, target-routed, navigation-blocking and outside manifest commands');
+		error('SCTRL-006/SCTRL-022: hotkeys require one website-first admission arbiter, stable document-start release, and timer-free gesture cleanup');
 	}
 	if (!feedbackSurface.includes("host.popover = 'manual'")
 		|| !feedbackSurface.includes("document.addEventListener('fullscreenchange'")
@@ -1455,27 +1650,15 @@ function checkRetiredPaths(root) {
 		|| !scalarFeedback.includes("{ value: 100, label: '100%', lane: 'lower' }")
 		|| !scalarFeedback.includes("{ value: 1, label: '1×', lane: 'lower' }")
 		|| !scalarFeedback.includes("{ value: 2, label: '2×', lane: 'upper' }")
-		|| !osd.includes('paintScalarValue(root, payload, value, s)')
-		|| !osd.includes('paintScalarValue(root, payload, from, s)')
-		|| !osd.includes('scalarFeedbackMaxFrameDelta(payload.type)')
-		|| !scalarFeedback.includes('const MAX_SHORTCUT_STEP_PER_FRAME = 0.6')
-		|| !osd.includes('animateScalarValue(')
-		|| !osd.includes('const target = payload.value')
-		|| !osd.includes('export function showHotkeyTargetOSD(')
-		|| !osd.includes('export function freezeHotkeyTargetOSD(')
-		|| !osd.includes('export function releaseHotkeyTargetOSD(')
-		|| !osd.includes('scheduleOSDHide()')
-		|| !toast.includes('export function freezeHotkeyToast(')
-		|| !toast.includes('export function releaseHotkeyToast(')
-		|| !osd.includes('if (state.shortcutTargetGesture !== null) return')
-		|| !osd.includes('targetAt - state.lastTargetAt')
-		|| !scalarFeedback.includes('Math.min(FEEDBACK_STEP_DURATION_MS, targetIntervalMs)')
-		|| !pageHotkeyListener.includes('advanceScalarFeedbackTarget(held)')
-		|| !pageHotkeyListener.includes('freezeHotkeyToast(held.feedbackGesture)')
-		|| !pageHotkeyListener.includes('freezeHotkeyTargetOSD(held.feedbackGesture)')
-		|| !pageHotkeyListener.includes('releaseHotkeyToast(held.feedbackGesture)')
-		|| !pageHotkeyListener.includes('releaseHotkeyTargetOSD(held.feedbackGesture)')
-		|| !pageHotkeyListener.includes('releasedFeedbackGestures')
+		|| !osd.includes('volumeState: feedback.volumeState')
+		|| !osd.includes('advanceHotkeyTargetOSD(')
+		|| !osd.includes('pendingVolumeBoundary(')
+		|| !osd.includes('UIColors.CAPTURE')
+		|| !osd.includes('UIColors.NATIVE')
+		|| osd.includes('resolveAudioVolumeState')
+		|| osd.includes('#3b82f6')
+		|| osd.includes('#8b5cf6')
+		|| osd.includes('payload.capture')
 		|| osd.includes('transition:width')
 		|| scalarFeedback.includes('Math.log')) {
 		error('SCTRL-022: scalar Toast labels, linear fills, markers and gesture-release barriers must share one owner');
@@ -1532,6 +1715,7 @@ function checkRetiredPaths(root) {
 	for (const required of [
 		'restores durable acknowledged state and sticky badge after worker replacement plus refresh',
 		'applies a site preset before the default global preset after worker replacement',
+		'arbitrates configured site hotkeys website-first and releases a truncated keyup',
 		'const durableProjection = await evaluateServiceWorker',
 	]) {
 		if (!smoke.includes(required)) {

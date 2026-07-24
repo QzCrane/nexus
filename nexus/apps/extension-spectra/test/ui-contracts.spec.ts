@@ -41,6 +41,31 @@ describe('hotkey editor contract', () => {
 		})).toBe('Ctrl + Shift + K');
 	});
 
+	test('rejects built-in chords through the shared contract and revives reassigned bindings', () => {
+		const modal = readFileSync(resolve(import.meta.dir, '../src/options/modal.ts'), 'utf8');
+		const siteEditor = readFileSync(resolve(import.meta.dir, '../src/options/site-editor.ts'), 'utf8');
+		const optionsHtml = readFileSync(resolve(import.meta.dir, '../public/options.html'), 'utf8');
+		const contentFacade = readFileSync(
+			resolve(import.meta.dir, '../../../packages/contracts/src/spectra.content-runtime.ts'),
+			'utf8',
+		);
+
+		expect(modal).toContain('isSpectraDefaultHotkeyKeyCombo');
+		expect(modal).toMatch(
+			/function handleKeyRecord[\s\S]*renderReservedHotkeyWarning\(\);[\s\S]*updateSaveAvailability\(\);/u,
+		);
+		expect(modal).toContain('if (renderReservedHotkeyWarning()) return;');
+		expect(modal).toContain("t('modal_reserved_default_hotkey')");
+		expect(modal).toContain('currentBinding.enabled = true;');
+		expect(modal).toContain('delete currentBinding.disabledReason;');
+		expect(optionsHtml).toContain('id="reserved-hotkey-warning"');
+		expect(optionsHtml).toContain('role="alert"');
+		expect(siteEditor).toContain("t('legacy_disabled_one')");
+		expect(siteEditor).toContain("tf('legacy_disabled_many'");
+		expect(siteEditor).not.toContain('legacy_pitch_');
+		expect(contentFacade).toContain('isSpectraDefaultHotkeyKeyCombo');
+	});
+
 	test('derives Chrome command rows from the manifest-backed browser registry', () => {
 		const source = readFileSync(
 			resolve(import.meta.dir, '../src/options/slots-editor.ts'),
@@ -56,6 +81,18 @@ describe('hotkey editor contract', () => {
 });
 
 describe('options translations', () => {
+	test('localizes reserved chords and describes every disabled shortcut truthfully', () => {
+		const catalogs = createLocaleCatalogs();
+		for (const locale of ['en-US', 'zh-CN', 'zh-TW', 'ja-JP'] as const) {
+			const options = catalogs[locale]?.options;
+			expect(options?.modal_reserved_default_hotkey.trim(), locale).not.toBe('');
+			expect(options?.legacy_disabled_one.trim(), locale).not.toBe('');
+			expect(options?.legacy_disabled_many.trim(), locale).not.toBe('');
+		}
+		expect(catalogs['en-US']?.options.legacy_disabled_one).not.toMatch(/Pitch/iu);
+		expect(catalogs['en-US']?.options.legacy_pitch_one).toBeUndefined();
+	});
+
 	test('every supported locale resolves the complete shared schema', () => {
 		const catalogs = createLocaleCatalogs();
 		const english = catalogs['en-US'];
@@ -440,12 +477,7 @@ describe('extension-page DOM and idle contracts', () => {
 		const mediaControls = readFileSync(resolve(import.meta.dir, '../src/popup/card/media-events.ts'), 'utf8');
 		const shortcuts = readFileSync(resolve(import.meta.dir, '../src/background/shortcuts.ts'), 'utf8');
 		const hotkeys = readFileSync(resolve(import.meta.dir, '../src/content/input/hotkey-listener.ts'), 'utf8');
-		const toast = readFileSync(resolve(import.meta.dir, '../src/content/ui/toast.ts'), 'utf8');
 		const osd = readFileSync(resolve(import.meta.dir, '../src/content/ui/osd.ts'), 'utf8');
-		const scalarFeedback = readFileSync(
-			resolve(import.meta.dir, '../src/content/ui/scalar-feedback.ts'),
-			'utf8',
-		);
 		const feedbackSurface = readFileSync(
 			resolve(import.meta.dir, '../src/content/ui/feedback-surface.ts'),
 			'utf8',
@@ -499,50 +531,41 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(shortcuts).toContain("type: 'spectra.hotkey.target.feedback'");
 		expect(shortcuts).toContain('initialFrame.documentId');
 		expect(shortcuts).toContain('currentFrame?.documentId !== ready.documentId');
-		expect(shortcuts).toContain('readShortcutActualFeedback(action, tabId)');
-		expect(shortcuts).toContain('resolveShortcutTargetFromActive(identity.tab)');
+		expect(shortcuts).toContain(
+			'resolveSpectraHotkeyActualFeedback(action, acknowledgement)',
+		);
+		expect(shortcuts).not.toContain('function shortcutActualFeedback');
+		expect(shortcuts).not.toContain('getControlViewSnapshot');
+		expect(shortcuts).not.toContain('getAudioSession');
+		expect(shortcuts).toContain('const route = await resolveShortcutTargetFromActive(');
 		expect(shortcuts).toContain('await executeShortcutRoute(');
 		expect(hotkeys).toContain("variant: 'alternate-target'");
-		expect(hotkeys).toContain('showHotkeyActualOSD(message.payload.feedback');
-		expect(hotkeys).toContain('showHotkeyTargetOSD(');
-		expect(hotkeys).toContain('advanceScalarFeedbackTarget(held)');
-		expect(hotkeys).toContain('freezeHotkeyToast(held.feedbackGesture)');
-		expect(hotkeys).toContain('freezeHotkeyTargetOSD(held.feedbackGesture)');
-		expect(hotkeys).toContain('releaseHotkeyToast(held.feedbackGesture)');
-		expect(hotkeys).toContain('releaseHotkeyTargetOSD(held.feedbackGesture)');
+		expect(hotkeys).toContain('feedbackState.appliedConfig');
+		expect(hotkeys).toContain('commitHotkeyActualFeedback(');
+		expect(hotkeys).toContain(
+			'resolveSpectraHotkeyActualFeedback(binding.action, result)',
+		);
 		expect(hotkeys).toContain("feedbackOwner === 'listener-label'");
 		expect(hotkeys).not.toContain("feedbackOwner === 'listener-label' || feedbackOwner === 'actual-osd'");
-		expect(toast).not.toContain('.t.alternate');
-		expect(toast).not.toContain("classList.toggle('alternate'");
-		expect(toast).toContain('createFeedbackSurface(');
 		expect(osd).toContain('createFeedbackSurface(');
 		expect(feedbackSurface).toContain("host.popover = 'manual'");
 		expect(feedbackSurface).toContain("document.addEventListener('fullscreenchange'");
 		expect(feedbackSurface).toContain("host.matches(':popover-open')");
 		expect(feedbackSurface).toContain('host.showPopover()');
-		expect(toast).toContain('scheduleToastHide(t)');
 		expect(osd).toContain('const OSD_HIDE_DELAY_MS = 2_000');
-		expect(osd).toContain('animateScalarValue(');
-		expect(osd).toContain('paintScalarValue(root, payload, value, s)');
-		expect(osd).toContain('const target = payload.value');
-		expect(osd).toContain('if (state.shortcutTargetGesture !== null) return');
-		expect(osd).toContain('export function showHotkeyTargetOSD(');
-		expect(osd).toContain('export function freezeHotkeyTargetOSD(');
-		expect(osd).toContain('export function releaseHotkeyTargetOSD(');
-		expect(osd).toContain('scheduleOSDHide()');
-		expect(toast).toContain('export function freezeHotkeyToast(');
-		expect(toast).toContain('export function releaseHotkeyToast(');
-		expect(toast).toContain('const TOAST_HIDE_DELAY_MS = 1_800');
-		expect(osd).toContain('scalarFeedbackProgress(payload.type, value)');
+		expect(osd).toContain("phase: 'active'");
+		expect(osd).toContain("state.hotkey.phase = 'settled'");
+		expect(osd).not.toContain('export function showOSD(');
+		expect(osd).not.toContain('export function showSpeedOSD(');
+		expect(osd).toContain('UIColors.CAPTURE');
+		expect(osd).toContain('UIColors.NATIVE');
+		expect(osd).not.toContain('#3b82f6');
+		expect(osd).not.toContain('#8b5cf6');
+		expect(osd).not.toContain('payload.capture');
 		expect(osd).not.toContain('transition:width');
-		expect(scalarFeedback).toContain('return ((clamped - scale.min) / (scale.max - scale.min)) * 100');
-		expect(scalarFeedback).toContain("{ value: 1, label: '1×', lane: 'lower' }");
-		expect(scalarFeedback).toContain("{ value: 2, label: '2×', lane: 'upper' }");
-		expect(osd).toContain('export function hideOSD(preserveShortcutTarget = false)');
-		expect(osd).toContain('if (!preserveShortcutTarget) state.shortcutTargetGesture = null');
 		expect(osd).toContain("variant?: 'alternate-target'");
-		expect(audioDelegate).toContain("source !== 'hotkey'");
-		expect(audioDelegate).toContain("intent.source === 'hotkey'");
+		expect(audioDelegate).not.toContain("source !== 'hotkey'");
+		expect(audioDelegate).not.toContain("intent.source === 'hotkey'");
 		expect(operations).toContain("if (intent.source === 'hotkey') {");
 		expect(operations).toContain("return ack(intent, 'observe', { shown: true }, {}, null)");
 		expect(pageMediaBridge).toContain('collectControllerCandidates');

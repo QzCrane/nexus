@@ -59,10 +59,13 @@ Verified page observations bypass the writer stage, commit `controlled:false`, a
 
 `ControlSubmitRequest` never carries Capture authority. Background may add the
 literal `captureAdmission: 'extension-invocation'` only to the internal
-`ControlIntent` after confirming that a Popup or `chrome.commands` transaction
-still targets the active tab. The value is consumed by that policy application,
-is absent from snapshots/session/handoff state, and is not available to page
-hotkeys, restore, remote, navigation, media lifecycle, or alternate-tab routing.
+`ControlIntent` after confirming that a Popup or identity-validated shortcut
+transaction still targets the active tab. A page shortcut must come from the
+current top-level HTTP(S) document, and Background rechecks its exact
+`documentId` before admission. The value is consumed by that policy application,
+is absent from snapshots/session/handoff state, and is not available to
+arbitrary page state, restore, remote, navigation, media lifecycle, or
+alternate-tab routing.
 The canonical protocol guard and restricted Content runtime guard accept the same
 internal shape. Their `SPECTRA_CONTENT_RUNTIME_REVISION` values advance together,
 so an already-open page is re-injected before receiving a changed internal intent.
@@ -107,6 +110,29 @@ One `offscreen.html` hosts Capture processors and remote sessions. Background se
 
 The wire request is `spectra.content.runtime.ensure` with document identity, reason, and optional capability. Content acknowledges with its `runtimeRevision`. READY means the complete initialization barrier passed, not merely that a script answered.
 
+The closed `spectra.content.default-hotkey.trigger` request carries one of five
+shared-resolver actions (`speed_down`, `speed_up`, `volume_down`, `volume_up`,
+`volume_mute`) plus `press | release`, a bounded gesture identity, and the repeat
+fact. The `document_start` Bootstrap is the sole producer for
+`Alt+Left/Right`, `Alt+Down/Up`, and `Alt+M`; the heavy site listener excludes
+the same resolver result. The producer emits only after the shared website-first
+arbiter's `window` capture recognizer admits its same-event bubble tail; claimed
+or propagation-truncated events produce no request, and admission never stops
+propagation. Listener ordering, timer-versus-microtask cleanup, and the
+closed-shadow/dynamic-listener platform limits are defined only in
+[§5](../control/02-strategy-and-routes.md#5-runtime-shortcut-and-feedback-ownership).
+Repeated mute presses are suppressed. The five defaults have no
+Manifest/default Chrome command slot representation. Background validates the current top-level
+`tabId + documentId + gesture` before ensuring runtime or executing the action.
+
+Accepted configured-site gestures are released through the first Bootstrap's
+stable trusted-keyup capture observer, not a late heavy-runtime keyup listener.
+Bootstrap replacement preserves that raw listener and swaps only a live
+isolated-world subscriber. Release signals contain only physical `code`, are
+never queued or sent to Background, and never mutate page events. Site repeat
+batches have no delayed writer: another physical repeat must consume them, and
+keyup or any runtime lifecycle exit discards the remainder.
+
 Identity, invalidation, timeout, cold-document behavior, and feedback ownership are defined in [control/02-strategy-and-routes.md §5](../control/02-strategy-and-routes.md#5-runtime-shortcut-and-feedback-ownership).
 
 ## Exact-element page media, native PiP, and fullscreen
@@ -121,7 +147,7 @@ Activation and bridge boundaries are defined in [control/02-strategy-and-routes.
 
 - page-native MAIN execution is limited to the exact event-target media element and one paired getter/setter with getter readback;
 - trusted page hotkeys invoke activation-bound native APIs within the trusted event stack;
-- starting Capture additionally requires Background's volatile current-tab extension-invocation admission; page activation alone is not admission;
+- starting Capture additionally requires Background's volatile current-tab extension-invocation admission; Popup and shortcuts reach it only through their validated invocation boundaries, while page activation alone is not admission;
 - user scripts require explicit permission and remain in the user-script sandbox;
 - URL opening accepts HTTP(S) only;
 - remote state and commands remain unavailable until HMAC authentication and stay bound to session, tab, generation, and monotonic sequence.

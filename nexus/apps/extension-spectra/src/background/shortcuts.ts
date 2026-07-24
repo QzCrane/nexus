@@ -1,8 +1,10 @@
-// goal: handles global chrome keyboard shortcuts (manifest commands and custom slots)
-// rule: standard commands are mapped directly; custom slots (slot_1-16) use user-defined mappings
+// goal: handles browser command slots and the five page-owned default shortcuts
+// rule: configurable slots and page gestures converge only after immutable document routing
 
 import type {
+	ControlApplyAck,
 	ControlMutation,
+	ControlOperationAck,
 	HotkeySettings,
 	HotkeyAction,
 	SpectraDefaultHotkeyAction,
@@ -10,13 +12,11 @@ import type {
 	SpectraHotkeyActualFeedback,
 } from '@nexus/contracts';
 import {
-	compileEffectiveVolume,
 	DEFAULT_HOTKEY_SETTINGS,
-	DEFAULT_SLOTS,
-	HOTKEY_ACTION_DESCRIPTORS,
 	SPECTRA_PROTOCOL_VERSION,
 	isSpectraRequestEnvelope,
 	isSlotHotkeyAction,
+	resolveSpectraHotkeyActualFeedback,
 	rpcFailure,
 	rpcSuccess,
 } from '@nexus/contracts';
@@ -24,10 +24,9 @@ import { swLog } from '../shared/logger';
 import { settingsRepository } from './settings-repository';
 import { hotkeyTargetRepository } from './hotkey-target-repository';
 import {
-	getControlViewSnapshot,
-	submitControlRequest,
 	submitExtensionInvokedControlOperation,
 	submitExtensionInvokedControlRequest,
+	type ExtensionInvocationContext,
 } from './control-coordinator';
 import { ensureContentRuntime, releaseContentRuntimeLease } from './runtime-loader';
 
@@ -35,12 +34,14 @@ import { ensureContentRuntime, releaseContentRuntimeLease } from './runtime-load
 let slotMapping: Record<string, HotkeyAction> = { ...DEFAULT_HOTKEY_SETTINGS.slots };
 
 export interface ShortcutRuntimePort {
-	ensure(tabId: number, capability: string): Promise<{ documentId: string }>;
+	ensure(tabId: number, documentId: string, capability: string): Promise<{ documentId: string }>;
 	release(tabId: number, documentId: string, capability: string): void;
 }
 
 const shortcutRuntimePort: ShortcutRuntimePort = {
-	ensure: (tabId, capability) => ensureContentRuntime(tabId, undefined, 'hotkey', capability),
+	ensure: (tabId, documentId, capability) => (
+		ensureContentRuntime(tabId, documentId, 'hotkey', capability)
+	),
 	release: (tabId, documentId, capability) => {
 		releaseContentRuntimeLease(tabId, documentId, 'hotkey', capability);
 	},
@@ -51,7 +52,6 @@ const pageGestureBursts = new Map<string, {
 	active: boolean;
 	pendingPulses: number;
 	expiry: ReturnType<typeof setTimeout> | null;
-	released: boolean;
 	lastPulseAt: number;
 	settleWaiters: Set<() => void>;
 }>();
@@ -78,25 +78,21 @@ export async function runChromeCommandSingleFlight(
 // Page KeyboardEvent repeats may arrive faster than a page-native writer can
 // complete its event/stable-getter ACK. Retain only a bounded pulse count and
 // consume it when a later physical repeat arrives. Completion never self-drains
-// pending work, and exact keyup can cancel the gesture before any delayed writer.
+// pending work. Keyup clears unconsumed repeats without cancelling the admitted
+// physical press that may still be waiting for a cold Content runtime.
 export async function runPageGestureBurst(
 	gesture: string,
-	operation: (
-		pulses: number,
-		context: { isReleased: () => boolean },
-	) => Promise<void>,
+	operation: (pulses: number) => Promise<void>,
 ): Promise<boolean> {
 	const state = pageGestureBursts.get(gesture) ?? {
 		active: false,
 		pendingPulses: 0,
 		expiry: null,
-		released: false,
 		lastPulseAt: 0,
 		settleWaiters: new Set(),
 	};
 	pageGestureBursts.set(gesture, state);
 	const pulseAt = Date.now();
-	state.released = false;
 	if (state.active) {
 		state.pendingPulses = Math.min(MAX_REPEAT_BURST_PULSES, state.pendingPulses + 1);
 		state.lastPulseAt = pulseAt;
@@ -113,9 +109,7 @@ export async function runPageGestureBurst(
 	state.active = true;
 	let succeeded = false;
 	try {
-		await operation(pulses, {
-			isReleased: () => state.released || pageGestureBursts.get(gesture) !== state,
-		});
+		await operation(pulses);
 		succeeded = true;
 		return true;
 	} finally {
@@ -124,7 +118,7 @@ export async function runPageGestureBurst(
 		state.settleWaiters.clear();
 		if (!succeeded) {
 			pageGestureBursts.delete(gesture);
-		} else if (state.released || state.pendingPulses === 0) {
+		} else if (state.pendingPulses === 0) {
 			pageGestureBursts.delete(gesture);
 		} else {
 			const remainingIdleMs = REPEAT_BURST_IDLE_MS - (Date.now() - state.lastPulseAt);
@@ -151,7 +145,6 @@ export function releasePageGestureBurst(gesture: string): void {
 	const state = pageGestureBursts.get(gesture);
 	if (!state) return;
 	state.pendingPulses = 0;
-	state.released = true;
 	if (state.expiry) clearTimeout(state.expiry);
 	state.expiry = null;
 	if (!state.active) pageGestureBursts.delete(gesture);
@@ -161,24 +154,28 @@ export function releasePageGestureBurst(gesture: string): void {
 // observation and from whether that site also has a custom page binding.
 export async function runWithShortcutRuntime<T>(
 	tabId: number,
-	operation: () => Promise<T>,
+	documentId: string,
+	operation: (readyDocumentId: string) => Promise<T>,
 	port: ShortcutRuntimePort = shortcutRuntimePort,
 ): Promise<T> {
 	const capability = `command:${crypto.randomUUID()}`;
-	const ready = await port.ensure(tabId, capability);
+	const ready = await port.ensure(tabId, documentId, capability);
 	try {
-		return await operation();
+		if (ready.documentId !== documentId) {
+			throw new Error('Shortcut runtime READY belongs to a stale target document');
+		}
+		return await operation(ready.documentId);
 	} finally {
 		port.release(tabId, ready.documentId, capability);
 	}
 }
-
-
 // eff: synchronizes slotMapping from the background-owned settings repository
 async function loadSlotMapping(): Promise<void> {
 	try {
 		updateShortcutSettings((await settingsRepository.getSnapshot()).hotkeySettings);
-	} catch { }
+	} catch (error) {
+		swLog.warn('Unable to load browser shortcut slots', error);
+	}
 }
 
 export function updateShortcutSettings(settings: HotkeySettings): void {
@@ -192,9 +189,7 @@ export function setupShortcutListeners(): void {
 	void loadSlotMapping();
 
 	chrome.commands.onCommand.addListener((command) => {
-		const action = command.startsWith('slot_')
-			? slotMapping[command]
-			: resolveDirectCommand(command);
+		const action = slotMapping[command];
 		if (!action || action === 'none') return;
 		const execute = async (): Promise<void> => {
 			swLog.debug(`Shortcut command: ${command}`);
@@ -202,7 +197,7 @@ export function setupShortcutListeners(): void {
 			const route = await resolveShortcutTarget();
 			if (!route) return;
 			try {
-				await executeShortcutRoute(action, route, 1, true);
+				await executeShortcutRoute(action, route, 1);
 			} catch (error) {
 				swLog.warn(`Shortcut ${action} failed`, error);
 			}
@@ -249,7 +244,16 @@ export function setupShortcutListeners(): void {
 			);
 			return true;
 		}
-		void runDefaultPageScalarShortcut(identity, message.payload.action, burstKey).then(
+		if (message.payload.action === 'volume_mute' && message.payload.repeated) {
+			sendResponse(rpcSuccess({ accepted: true as const }));
+			return false;
+		}
+		void runDefaultPageHotkey(
+			identity,
+			message.payload.action,
+			message.payload.gesture,
+			burstKey,
+		).then(
 			() => sendResponse(rpcSuccess({ accepted: true as const })),
 			(error) => sendResponse(rpcFailure(
 				'default_hotkey_failed',
@@ -268,7 +272,6 @@ export function setupShortcutListeners(): void {
 interface DefaultHotkeyIdentity {
 	tabId: number;
 	documentId: string;
-	url: string;
 	tab: chrome.tabs.Tab;
 }
 
@@ -286,7 +289,6 @@ function defaultHotkeySenderIdentity(
 	return {
 		tabId,
 		documentId: sender.documentId,
-		url: sender.url,
 		tab: { ...tab, id: tabId, url: sender.url },
 	};
 }
@@ -300,29 +302,31 @@ function defaultHotkeyBurstKey(
 	return `page:${tabId}:${documentId}:${action}:${gesture}`;
 }
 
-async function runDefaultPageScalarShortcut(
+async function runDefaultPageHotkey(
 	identity: DefaultHotkeyIdentity,
 	action: SpectraDefaultHotkeyAction,
+	gesture: string,
 	burstKey: string,
 ): Promise<void> {
-	await runPageGestureBurst(burstKey, async (repeatPulses, context) => {
-		if (context.isReleased()) return;
+	await runPageGestureBurst(burstKey, async (repeatPulses) => {
 		const before = await chrome.webNavigation.getFrame({
 			tabId: identity.tabId,
 			frameId: 0,
 		});
-		if (before?.documentId !== identity.documentId || before.url !== identity.url) {
+		if (before?.documentId !== identity.documentId) {
 			throw new Error('Default hotkey belongs to a stale document');
 		}
-		const route = await resolveShortcutTargetFromActive(identity.tab);
-		if (!route || context.isReleased()) return;
+		const route = await resolveShortcutTargetFromActive(
+			{ ...identity.tab, url: before.url },
+			'builtin-page',
+			{ tabId: identity.tabId, documentId: identity.documentId },
+		);
+		if (!route) return;
 		await executeShortcutRoute(
 			action,
 			route,
 			repeatPulses,
-			false,
-			route.target.id === identity.tabId ? identity.documentId : undefined,
-			context.isReleased,
+			gesture,
 		);
 	});
 }
@@ -330,6 +334,7 @@ async function runDefaultPageScalarShortcut(
 interface ShortcutRoute {
 	target: chrome.tabs.Tab;
 	active: chrome.tabs.Tab | undefined;
+	invocation: ExtensionInvocationContext;
 }
 
 async function resolveShortcutTarget(): Promise<ShortcutRoute | undefined> {
@@ -337,33 +342,59 @@ async function resolveShortcutTarget(): Promise<ShortcutRoute | undefined> {
 	const active = tabs[0];
 	// rule: only chrome:// and http(s):// origins receive coordinated shortcuts
 	const activeTab = active?.url && /^https?:/u.test(active.url) ? active : undefined;
-	return resolveShortcutTargetFromActive(activeTab);
+	const foreground = activeTab ? await resolveShortcutDocument(activeTab) : null;
+	return resolveShortcutTargetFromActive(activeTab, 'chrome-command', foreground);
 }
 
 async function resolveShortcutTargetFromActive(
 	activeTab: chrome.tabs.Tab | undefined,
+	origin: 'builtin-page' | 'chrome-command',
+	foreground: ExtensionInvocationContext['foreground'],
 ): Promise<ShortcutRoute | undefined> {
 	const { tabId: targetId } = await hotkeyTargetRepository.get();
 	if (targetId !== null) {
 		try {
 			const target = await chrome.tabs.get(targetId);
-			if (target.url && /^https?:/u.test(target.url)) return { target, active: activeTab };
+			if (target.url && /^https?:/u.test(target.url)) {
+				const targetDocument = foreground?.tabId === targetId
+					? foreground
+					: await resolveShortcutDocument(target);
+				if (!targetDocument) return undefined;
+				return {
+					target,
+					active: activeTab,
+					invocation: { origin, foreground, target: targetDocument },
+				};
+			}
 		} catch {
 			await hotkeyTargetRepository.clearIfMatches(targetId);
 		}
 	}
-	return activeTab ? { target: activeTab, active: activeTab } : undefined;
+	if (!activeTab || !foreground) return undefined;
+	return {
+		target: activeTab,
+		active: activeTab,
+		invocation: { origin, foreground, target: foreground },
+	};
+}
+
+async function resolveShortcutDocument(
+	tab: chrome.tabs.Tab,
+): Promise<ExtensionInvocationContext['target'] | null> {
+	if (tab.id === undefined) return null;
+	const frame = await chrome.webNavigation.getFrame({
+		tabId: tab.id,
+		frameId: 0,
+	}).catch(() => null);
+	return frame?.documentId ? { tabId: tab.id, documentId: frame.documentId } : null;
 }
 
 async function executeShortcutRoute(
 	action: HotkeyAction,
 	route: ShortcutRoute,
 	repeatPulses: number,
-	extensionInvoked: boolean,
-	expectedDocumentId?: string,
-	isCancelled: () => boolean = () => false,
+	feedbackGesture?: string,
 ): Promise<void> {
-	if (isCancelled()) return;
 	const tab = route.target;
 	if (!tab.id || !tab.url) return;
 	const tabId = tab.id;
@@ -373,53 +404,46 @@ async function executeShortcutRoute(
 	} catch {
 		return;
 	}
-	if (expectedDocumentId) {
-		const capability = `default-hotkey:${crypto.randomUUID()}`;
-		const ready = await ensureContentRuntime(
-			tabId,
-			expectedDocumentId,
-			'hotkey',
-			capability,
+	const feedback = await runWithShortcutRuntime(
+		tabId,
+		route.invocation.target.documentId,
+		() => executeAction(action, tabId, route.invocation, repeatPulses),
+	);
+	if (route.active?.id !== undefined) {
+		await notifyShortcutFeedback(
+			route.active,
+			tab,
+			action,
+			domain,
+			feedback,
+			feedbackGesture,
+			route.invocation.foreground?.documentId,
 		);
-		try {
-			const current = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
-			if (ready.documentId !== expectedDocumentId
-				|| current?.documentId !== expectedDocumentId) {
-				throw new Error('Default hotkey document changed before execution');
-			}
-			if (isCancelled()) return;
-			await executeAction(action, tabId, domain, repeatPulses, extensionInvoked);
-		} finally {
-			releaseContentRuntimeLease(tabId, ready.documentId, 'hotkey', capability);
-		}
-	} else {
-		await runWithShortcutRuntime(
-			tabId,
-			() => isCancelled()
-				? Promise.resolve()
-				: executeAction(action, tabId, domain, repeatPulses, extensionInvoked),
-		);
-	}
-	if (route.active?.id !== undefined && route.active.id !== tabId) {
-		const feedback = await readShortcutActualFeedback(action, tabId);
-		await notifyAlternateShortcutTarget(route.active, tab, action, domain, feedback);
 	}
 }
 
-async function notifyAlternateShortcutTarget(
+async function notifyShortcutFeedback(
 	active: chrome.tabs.Tab,
 	target: chrome.tabs.Tab,
 	action: HotkeyAction,
 	targetHostname: string,
 	feedback?: SpectraHotkeyActualFeedback,
+	gesture?: string,
+	expectedDocumentId?: string,
 ): Promise<void> {
 	if (active.id === undefined || target.id === undefined) return;
-	const capability = 'alternate-target-feedback';
+	const capability = 'hotkey-actual-feedback';
 	let documentId: string | null = null;
 	try {
 		const initialFrame = await chrome.webNavigation.getFrame({ tabId: active.id, frameId: 0 });
-		if (!initialFrame?.documentId) return;
-		const ready = await ensureContentRuntime(active.id, initialFrame.documentId, 'hotkey', capability);
+		if (!initialFrame?.documentId
+			|| expectedDocumentId && initialFrame.documentId !== expectedDocumentId) return;
+		const ready = await ensureContentRuntime(
+			active.id,
+			expectedDocumentId ?? initialFrame.documentId,
+			'hotkey',
+			capability,
+		);
 		documentId = ready.documentId;
 		const currentFrame = await chrome.webNavigation.getFrame({ tabId: active.id, frameId: 0 });
 		if (currentFrame?.documentId !== ready.documentId) return;
@@ -433,12 +457,13 @@ async function notifyAlternateShortcutTarget(
 				targetTabId: target.id,
 				targetTitle: target.title?.trim() || targetHostname,
 				targetHostname,
+				...(gesture ? { gesture } : {}),
 				...(feedback ? { feedback } : {}),
 			},
 		};
 		await chrome.tabs.sendMessage(active.id, event, { documentId: ready.documentId });
 	} catch (error) {
-		swLog.debug(`Alternate shortcut feedback was unavailable: ${error instanceof Error ? error.message : String(error)}`);
+		swLog.debug(`Shortcut feedback was unavailable: ${error instanceof Error ? error.message : String(error)}`);
 	} finally {
 		if (documentId) {
 			releaseContentRuntimeLease(active.id, documentId, 'hotkey', capability);
@@ -446,37 +471,8 @@ async function notifyAlternateShortcutTarget(
 	}
 }
 
-async function readShortcutActualFeedback(
-	action: HotkeyAction,
-	tabId: number,
-): Promise<SpectraHotkeyActualFeedback | undefined> {
-	if (HOTKEY_ACTION_DESCRIPTORS[action].feedbackOwner !== 'actual-osd') return undefined;
-	const snapshot = await getControlViewSnapshot(tabId).catch(() => null);
-	if (!snapshot) return undefined;
-	if (action.startsWith('speed_')) {
-		const speed = snapshot.fields.speed?.actual;
-		return typeof speed === 'number' ? { kind: 'speed', value: speed } : undefined;
-	}
-	const volumeBase = snapshot.fields.volumeBase?.actual;
-	const boost = snapshot.fields.boost?.actual;
-	if (typeof volumeBase !== 'number' || typeof boost !== 'number') return undefined;
-	return {
-		kind: 'volume',
-		value: compileEffectiveVolume(volumeBase, boost),
-		muted: snapshot.fields.mediaMuted?.actual === true,
-		capture: snapshot.fields.volumeBase?.strategy === 'capture'
-			|| snapshot.fields.boost?.strategy === 'capture',
-	};
-}
-
 async function clearRemovedShortcutTarget(tabId: number): Promise<void> {
 	await hotkeyTargetRepository.clearIfMatches(tabId);
-}
-
-// goal: maps literal manifest command names to unified HotkeyActions
-export function resolveDirectCommand(command: string): HotkeyAction | undefined {
-	const action = DEFAULT_SLOTS[command];
-	return isSlotHotkeyAction(action) ? action : undefined;
 }
 
 const FULL_OUTPUT_FIELDS = new Set<ControlMutation['field']>([
@@ -484,9 +480,10 @@ const FULL_OUTPUT_FIELDS = new Set<ControlMutation['field']>([
 ]);
 async function submitMutations(
 	tabId: number,
+	invocation: ExtensionInvocationContext,
 	mutations: ControlMutation[],
-	extensionInvoked = true,
-): Promise<void> {
+): Promise<ControlApplyAck | undefined> {
+	let acknowledgement: ControlApplyAck | undefined;
 	for (const requestedCoverage of ['active-target', 'full'] as const) {
 		const selected = mutations.filter((mutation) =>
 			FULL_OUTPUT_FIELDS.has(mutation.field) === (requestedCoverage === 'full'));
@@ -498,13 +495,12 @@ async function submitMutations(
 			target: null,
 			mutations: selected,
 		} as const;
-		const acknowledgement = extensionInvoked
-			? await submitExtensionInvokedControlRequest(request)
-			: await submitControlRequest(request);
+		acknowledgement = await submitExtensionInvokedControlRequest(request, invocation);
 		const failure = Object.values(acknowledgement.fields)
 			.find((field) => field?.phase !== 'applied');
 		if (failure) throw new Error(failure.lastError?.message ?? 'Shortcut control was not applied');
 	}
+	return acknowledgement;
 }
 
 // eff: translates Chrome commands directly into the same coordinator protocol
@@ -512,23 +508,26 @@ async function submitMutations(
 async function executeAction(
 	action: HotkeyAction,
 	tabId: number,
-	_domain: string,
+	invocation: ExtensionInvocationContext,
 	repeatPulses = 1,
-	extensionInvoked = true,
-): Promise<void> {
+): Promise<SpectraHotkeyActualFeedback | undefined> {
 	const speedDelta = Math.round(0.1 * repeatPulses * 100) / 100;
 	const volumeDelta = Math.min(800, 10 * repeatPulses);
 	const operation = async (
 			type: Parameters<typeof submitExtensionInvokedControlOperation>[0]['operation'],
 			payload: Parameters<typeof submitExtensionInvokedControlOperation>[0]['payload'] = {},
-		) => submitExtensionInvokedControlOperation({
-			tabId,
-			source: 'hotkey',
-			target: null,
-			operation: type,
-			payload,
-		} as Parameters<typeof submitExtensionInvokedControlOperation>[0]);
-		switch (action) {
+		) => submitExtensionInvokedControlOperation(
+			{
+				tabId,
+				source: 'hotkey',
+				target: null,
+				operation: type,
+				payload,
+			} as Parameters<typeof submitExtensionInvokedControlOperation>[0],
+			invocation,
+		);
+	let acknowledgement: ControlApplyAck | ControlOperationAck | undefined;
+	switch (action) {
 			case 'none':
 			case 'pitch_up':
 			case 'pitch_down':
@@ -536,54 +535,55 @@ async function executeAction(
 			case 'capture_toggle':
 			case 'run_js':
 			case 'open_url': return;
-			case 'play_pause': await operation('playback-toggle'); return;
-			case 'seek_forward_5s': await operation('seek-relative', { delta: 5 }); return;
-			case 'seek_forward_10s': await operation('seek-relative', { delta: 10 }); return;
-			case 'seek_forward_30s': await operation('seek-relative', { delta: 30 }); return;
-			case 'seek_backward_5s': await operation('seek-relative', { delta: -5 }); return;
-			case 'seek_backward_10s': await operation('seek-relative', { delta: -10 }); return;
-			case 'seek_backward_30s': await operation('seek-relative', { delta: -30 }); return;
-			case 'seek_frame_forward': await operation('frame-step', { direction: 1 }); return;
-			case 'seek_frame_backward': await operation('frame-step', { direction: -1 }); return;
-			case 'audio_reset': await operation('audio-reset'); return;
-			case 'screenshot': await operation('screenshot'); return;
-			case 'marker_add': await operation('marker-add'); return;
-			case 'marker_jump_prev': await operation('marker-jump-previous'); return;
-			case 'marker_jump_next': await operation('marker-jump-next'); return;
-			case 'ab_set_a': await operation('ab-set-a'); return;
-			case 'ab_set_b': await operation('ab-set-b'); return;
-			case 'ab_clear': await operation('ab-clear'); return;
-			case 'ab_skip': await operation('ab-skip'); return;
-			case 'fx_toggle': await operation('video-effects-toggle'); return;
-			case 'fx_reset': await operation('video-effects-reset'); return;
-			case 'show_info': await operation('show-info'); return;
-			case 'open_popup': await operation('open-popup'); return;
-			case 'open_options': await operation('open-options'); return;
-			case 'speed_up': await submitMutations(tabId, [{ field: 'speed', operation: 'delta', value: speedDelta }], extensionInvoked); return;
-			case 'speed_down': await submitMutations(tabId, [{ field: 'speed', operation: 'delta', value: -speedDelta }], extensionInvoked); return;
-			case 'speed_reset': await submitMutations(tabId, [{ field: 'speed', operation: 'set', value: 1 }], extensionInvoked); return;
+			case 'play_pause': acknowledgement = await operation('playback-toggle'); break;
+			case 'seek_forward_5s': acknowledgement = await operation('seek-relative', { delta: 5 }); break;
+			case 'seek_forward_10s': acknowledgement = await operation('seek-relative', { delta: 10 }); break;
+			case 'seek_forward_30s': acknowledgement = await operation('seek-relative', { delta: 30 }); break;
+			case 'seek_backward_5s': acknowledgement = await operation('seek-relative', { delta: -5 }); break;
+			case 'seek_backward_10s': acknowledgement = await operation('seek-relative', { delta: -10 }); break;
+			case 'seek_backward_30s': acknowledgement = await operation('seek-relative', { delta: -30 }); break;
+			case 'seek_frame_forward': acknowledgement = await operation('frame-step', { direction: 1 }); break;
+			case 'seek_frame_backward': acknowledgement = await operation('frame-step', { direction: -1 }); break;
+			case 'audio_reset': acknowledgement = await operation('audio-reset'); break;
+			case 'screenshot': acknowledgement = await operation('screenshot'); break;
+			case 'marker_add': acknowledgement = await operation('marker-add'); break;
+			case 'marker_jump_prev': acknowledgement = await operation('marker-jump-previous'); break;
+			case 'marker_jump_next': acknowledgement = await operation('marker-jump-next'); break;
+			case 'ab_set_a': acknowledgement = await operation('ab-set-a'); break;
+			case 'ab_set_b': acknowledgement = await operation('ab-set-b'); break;
+			case 'ab_clear': acknowledgement = await operation('ab-clear'); break;
+			case 'ab_skip': acknowledgement = await operation('ab-skip'); break;
+			case 'fx_toggle': acknowledgement = await operation('video-effects-toggle'); break;
+			case 'fx_reset': acknowledgement = await operation('video-effects-reset'); break;
+			case 'show_info': acknowledgement = await operation('show-info'); break;
+			case 'open_popup': acknowledgement = await operation('open-popup'); break;
+			case 'open_options': acknowledgement = await operation('open-options'); break;
+			case 'speed_up': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'speed', operation: 'delta', value: speedDelta }]); break;
+			case 'speed_down': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'speed', operation: 'delta', value: -speedDelta }]); break;
+			case 'speed_reset': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'speed', operation: 'set', value: 1 }]); break;
 			case 'speed_set': return;
-			case 'volume_up': await operation('effective-volume', { operation: 'delta', value: volumeDelta }); return;
-			case 'volume_down': await operation('effective-volume', { operation: 'delta', value: -volumeDelta }); return;
-			case 'volume_mute': await submitMutations(tabId, [{ field: 'mediaMuted', operation: 'toggle' }]); return;
+			case 'volume_up': acknowledgement = await operation('effective-volume', { operation: 'delta', value: volumeDelta }); break;
+			case 'volume_down': acknowledgement = await operation('effective-volume', { operation: 'delta', value: -volumeDelta }); break;
+			case 'volume_mute': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'mediaMuted', operation: 'toggle' }]); break;
 			case 'volume_set': return;
-			case 'gain_up': await operation('effective-volume', { operation: 'delta', value: volumeDelta }); return;
-			case 'gain_down': await operation('effective-volume', { operation: 'delta', value: -volumeDelta }); return;
-			case 'delay_up': await submitMutations(tabId, [{ field: 'delay', operation: 'delta', value: 10 }]); return;
-			case 'delay_down': await submitMutations(tabId, [{ field: 'delay', operation: 'delta', value: -10 }]); return;
-			case 'delay_reset': await submitMutations(tabId, [{ field: 'delay', operation: 'set', value: 0 }]); return;
-			case 'pan_left': await submitMutations(tabId, [{ field: 'pan', operation: 'delta', value: -0.1 }]); return;
-			case 'pan_right': await submitMutations(tabId, [{ field: 'pan', operation: 'delta', value: 0.1 }]); return;
-			case 'pan_reset': await submitMutations(tabId, [{ field: 'pan', operation: 'set', value: 0 }]); return;
-			case 'mono_toggle': await submitMutations(tabId, [{ field: 'mono', operation: 'toggle' }]); return;
-			case 'fullscreen_toggle': await submitMutations(tabId, [{ field: 'fullscreen', operation: 'toggle' }]); return;
-			case 'pip_toggle': await submitMutations(tabId, [{ field: 'pip', operation: 'toggle' }]); return;
-			case 'rotate_cw': await submitMutations(tabId, [{ field: 'rotation', operation: 'delta', value: 90 }]); return;
-			case 'rotate_ccw': await submitMutations(tabId, [{ field: 'rotation', operation: 'delta', value: -90 }]); return;
-			case 'mirror_toggle': await submitMutations(tabId, [{ field: 'mirrored', operation: 'toggle' }]); return;
-			case 'dim_background': await submitMutations(tabId, [{ field: 'dimEnabled', operation: 'toggle' }]); return;
-			case 'loop_toggle': await submitMutations(tabId, [{ field: 'loop', operation: 'toggle' }]); return;
-			case 'tab_pin': await submitMutations(tabId, [{ field: 'tabPinned', operation: 'toggle' }]); return;
-			case 'tab_mute': await submitMutations(tabId, [{ field: 'tabMuted', operation: 'toggle' }]); return;
+			case 'gain_up': acknowledgement = await operation('effective-volume', { operation: 'delta', value: volumeDelta }); break;
+			case 'gain_down': acknowledgement = await operation('effective-volume', { operation: 'delta', value: -volumeDelta }); break;
+			case 'delay_up': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'delay', operation: 'delta', value: 10 }]); break;
+			case 'delay_down': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'delay', operation: 'delta', value: -10 }]); break;
+			case 'delay_reset': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'delay', operation: 'set', value: 0 }]); break;
+			case 'pan_left': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'pan', operation: 'delta', value: -0.1 }]); break;
+			case 'pan_right': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'pan', operation: 'delta', value: 0.1 }]); break;
+			case 'pan_reset': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'pan', operation: 'set', value: 0 }]); break;
+			case 'mono_toggle': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'mono', operation: 'toggle' }]); break;
+			case 'fullscreen_toggle': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'fullscreen', operation: 'toggle' }]); break;
+			case 'pip_toggle': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'pip', operation: 'toggle' }]); break;
+			case 'rotate_cw': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'rotation', operation: 'delta', value: 90 }]); break;
+			case 'rotate_ccw': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'rotation', operation: 'delta', value: -90 }]); break;
+			case 'mirror_toggle': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'mirrored', operation: 'toggle' }]); break;
+			case 'dim_background': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'dimEnabled', operation: 'toggle' }]); break;
+			case 'loop_toggle': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'loop', operation: 'toggle' }]); break;
+			case 'tab_pin': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'tabPinned', operation: 'toggle' }]); break;
+			case 'tab_mute': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'tabMuted', operation: 'toggle' }]); break;
 	}
+	return resolveSpectraHotkeyActualFeedback(action, acknowledgement);
 }

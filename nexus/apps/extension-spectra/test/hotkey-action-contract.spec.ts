@@ -2,15 +2,18 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
-	DEFAULT_SLOTS,
+	DEFAULT_HOTKEY_SETTINGS,
 	HOTKEY_ACTIONS,
 	HOTKEY_ACTION_DESCRIPTORS,
-	PRESET_BINDINGS,
+	SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE,
+	SPECTRA_DEFAULT_HOTKEY_ACTIONS,
 	isHotkeyParamsForAction,
 	isHotkeySettings,
+	isSpectraDefaultHotkeyKeyCombo,
 	isSlotHotkeyAction,
+	resolveSpectraDefaultHotkeyAction,
 } from '@nexus/contracts';
-import { HANDLED_HOTKEY_ACTIONS } from '../src/content/input/hotkey-actions';
+import { HOTKEY_ACTION_HANDLERS } from '../src/content/input/hotkey-actions';
 import { isTrustedHotkeyEvent } from '../src/content/input/hotkey-event';
 import {
 	EDITABLE_HOTKEY_ACTIONS,
@@ -22,12 +25,13 @@ import {
 describe('editable hotkey action contract', () => {
 	test('every action exposed by Options has a concrete runtime handler', () => {
 		for (const action of EDITABLE_HOTKEY_ACTIONS) {
-			expect(HANDLED_HOTKEY_ACTIONS.has(action), action).toBe(true);
+			expect(Object.hasOwn(HOTKEY_ACTION_HANDLERS, action), action).toBe(true);
 		}
 	});
 
 	test('maps every persisted hotkey to one canonical capability or an explicit disabled disposition', () => {
-		expect(Object.keys(HOTKEY_ACTION_DESCRIPTORS).sort()).toEqual([...HOTKEY_ACTIONS].sort());
+		expect(Object.isFrozen(HOTKEY_ACTIONS)).toBe(true);
+		expect(HOTKEY_ACTIONS).toEqual(Object.keys(HOTKEY_ACTION_DESCRIPTORS));
 		for (const action of HOTKEY_ACTIONS) {
 			const descriptor = HOTKEY_ACTION_DESCRIPTORS[action];
 			if (descriptor.availability === 'enabled') expect(descriptor.capability, action).not.toBeNull();
@@ -54,39 +58,114 @@ describe('editable hotkey action contract', () => {
 		expect(listener).not.toContain("action !== 'open_popup'");
 	});
 
-	test('ships every holdable Alt+Arrow scalar default through one bootstrap gesture boundary', () => {
-		expect(DEFAULT_SLOTS.speed_down).toBeUndefined();
-		expect(DEFAULT_SLOTS.speed_up).toBeUndefined();
-		expect(DEFAULT_SLOTS.volume_down).toBeUndefined();
-		expect(DEFAULT_SLOTS.volume_up).toBeUndefined();
-		expect(PRESET_BINDINGS.some((binding) =>
-			binding.key.modifiers.alt
-			&& (binding.key.code === 'ArrowLeft' || binding.key.code === 'ArrowRight'))).toBe(false);
+	test('ships all five defaults through one website-safe bootstrap gesture boundary', () => {
+		expect(DEFAULT_HOTKEY_SETTINGS.slots).toEqual({});
+		expect(Object.keys(SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE)).toHaveLength(5);
+		expect(SPECTRA_DEFAULT_HOTKEY_ACTIONS).toEqual(
+			Object.values(SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE),
+		);
+		for (const action of SPECTRA_DEFAULT_HOTKEY_ACTIONS) {
+			expect(isSlotHotkeyAction(action), action).toBe(false);
+		}
+		const chord = (code: string, modifiers: Partial<{
+			altKey: boolean;
+			ctrlKey: boolean;
+			shiftKey: boolean;
+			metaKey: boolean;
+		}> = {}) => ({
+			code,
+			altKey: true,
+			ctrlKey: false,
+			shiftKey: false,
+			metaKey: false,
+			...modifiers,
+		});
+		for (const [code, action] of Object.entries(SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE)) {
+			expect(resolveSpectraDefaultHotkeyAction(chord(code))).toBe(action);
+			expect(isSpectraDefaultHotkeyKeyCombo({
+				code,
+				modifiers: { ctrl: false, alt: true, shift: false, meta: false },
+			})).toBe(true);
+		}
+		expect(isSpectraDefaultHotkeyKeyCombo({
+			code: 'ArrowUp',
+			modifiers: { ctrl: true, alt: true, shift: false, meta: false },
+		})).toBe(false);
+		expect(isSpectraDefaultHotkeyKeyCombo({
+			code: 'ArrowUp',
+			modifiers: { ctrl: false, alt: false, shift: false, meta: false },
+		})).toBe(false);
+		expect(resolveSpectraDefaultHotkeyAction(chord('ArrowUp', { ctrlKey: true }))).toBeNull();
+		expect(resolveSpectraDefaultHotkeyAction(chord('KeyU'))).toBeNull();
 		const bootstrap = readFileSync(
 			resolve(import.meta.dir, '../src/content/core/bootstrap.ts'),
 			'utf8',
 		);
-		expect(bootstrap).toContain("if (event.code === 'ArrowLeft') return 'speed_down'");
-		expect(bootstrap).toContain("if (event.code === 'ArrowRight') return 'speed_up'");
-		expect(bootstrap).toContain("if (event.code === 'ArrowDown') return 'volume_down'");
-		expect(bootstrap).toContain("if (event.code === 'ArrowUp') return 'volume_up'");
+		expect(bootstrap).toContain('resolveSpectraDefaultHotkeyAction(event)');
 		expect(bootstrap).toContain("'spectra.content.default-hotkey.trigger'");
-		expect(bootstrap).toContain('event.stopImmediatePropagation()');
+		expect(bootstrap).toContain('event.defaultPrevented');
+		expect(bootstrap).toContain('isEditableHotkeyEvent(event)');
+		expect(bootstrap).toContain('createWebsiteFirstKeyboardArbiter({');
+		expect(bootstrap).toContain("type: 'keydown'");
+		expect(bootstrap).toContain("type: 'keyup'");
+		expect(bootstrap).toContain('resolveCandidate: (event) => event.isTrusted');
+		expect(bootstrap).toContain('resolveCandidate: defaultHotkeyAction');
+		expect(bootstrap).toContain('acceptDefaultHotkeyKeydown(event, action)');
+		expect((bootstrap.match(/createWebsiteFirstKeyboardArbiter\(\{/gu) ?? [])).toHaveLength(2);
+		expect(bootstrap).not.toMatch(/\.stop(?:Immediate)?Propagation\(/u);
 		expect(bootstrap).toContain('releaseDefaultScalarKeys');
 		expect(bootstrap).toContain('publishDefaultScalarGesture');
+		const eventArbiter = readFileSync(
+			resolve(import.meta.dir, '../src/content/input/hotkey-event.ts'),
+			'utf8',
+		);
+		expect(eventArbiter).toContain('const pending = new Map<KeyboardEvent');
+		expect(eventArbiter).toContain('window.addEventListener(options.type, capture, true)');
+		expect(eventArbiter).toContain('window.addEventListener(options.type, tail)');
+		expect(eventArbiter).toContain('const candidate = options.resolveCandidate(event)');
+		expect(eventArbiter).toContain('pending.set(event, { candidate, tail, cleanupTimer })');
+		expect(eventArbiter).toContain('if (tailEvent !== event) return;');
+		expect(eventArbiter).toContain('const owned = clearPending(event)');
+		expect(eventArbiter).toContain('owned.candidate');
+		expect(eventArbiter).toContain('event.defaultPrevented || event.cancelBubble');
+		expect(eventArbiter).toMatch(
+			/const cleanupTimer = setTimeout\(\(\) => \{[\s\S]*options\.onSettled\(event, owned\.candidate, true\);[\s\S]*\}, 0\);/u,
+		);
+		expect(eventArbiter).toContain('window.removeEventListener(options.type, owned.tail)');
+		expect(eventArbiter).toContain('clearTimeout(owned.cleanupTimer)');
+		expect(eventArbiter).toContain('window.removeEventListener(options.type, capture, true)');
+		expect(eventArbiter).toContain('for (const [event] of pending) clearPending(event)');
+		expect(eventArbiter).not.toContain('queueMicrotask');
 		const listener = readFileSync(
 			resolve(import.meta.dir, '../src/content/input/hotkey-listener.ts'),
 			'utf8',
 		);
+		expect((listener.match(/createWebsiteFirstKeyboardArbiter\(\{/gu) ?? [])).toHaveLength(1);
+		const directKeyboardRegistration =
+			/(?:window|document)\.(?:add|remove)EventListener\(\s*['"]key(?:down|up)['"]/u;
+		expect(bootstrap).not.toMatch(directKeyboardRegistration);
+		expect(listener).not.toMatch(directKeyboardRegistration);
+		expect(listener).not.toMatch(/\.stop(?:Immediate)?Propagation\(/u);
 		expect(listener).toContain('subscribeDefaultScalarGesture(handleDefaultScalarGesture)');
-		expect(listener).toContain('lastDefaultScalarFeedbackTarget');
-	});
-
-	test('keeps every direct manifest action inside the discrete command-slot boundary', () => {
-		for (const action of Object.values(DEFAULT_SLOTS)) {
-			expect(isSlotHotkeyAction(action), action).toBe(true);
-			expect(HOTKEY_ACTION_DESCRIPTORS[action].repeatPolicy, action).not.toBe('coalesce-20hz');
-		}
+		expect(listener).toContain('subscribePhysicalHotkeyRelease(releaseSiteHotkeys)');
+		expect(listener).toContain('resolveSpectraDefaultHotkeyAction(e) !== null');
+		expect(listener).toContain('isEditableHotkeyEvent(e)');
+		expect(listener).toContain('resolveCandidate: resolveSiteHotkeyBinding');
+		expect(listener).toContain('handleKeydown(event, binding)');
+		expect(eventArbiter).toContain('subscribeDocumentStartPhysicalHotkeyRelease');
+		expect(eventArbiter).toContain("const PHYSICAL_RELEASE_OWNER_KEY = '__spectraPhysicalHotkeyReleaseV1'");
+		const initialization = listener.slice(
+			listener.indexOf('export async function initHotkeyListener'),
+			listener.indexOf('function handleSettingsEvent'),
+		);
+		expect(initialization.indexOf('subscribePhysicalHotkeyRelease(releaseSiteHotkeys)'))
+			.toBeLessThan(initialization.indexOf('synchronizeKeydownListener()'));
+		const settingsChange = listener.slice(
+			listener.indexOf("message.type === 'spectra.hotkeys.changed'"),
+			listener.indexOf('async function loadSettings'),
+		);
+		expect(settingsChange.indexOf('cancelActiveBindings()'))
+			.toBeLessThan(settingsChange.indexOf('settings = message.payload'));
 	});
 
 	test('unsupported pitch actions remain outside the editable registry', () => {
@@ -97,7 +176,7 @@ describe('editable hotkey action contract', () => {
 
 	test('command slots expose only discrete executable actions that need no persisted parameters', () => {
 		for (const action of SLOT_HOTKEY_ACTIONS) {
-			expect(HANDLED_HOTKEY_ACTIONS.has(action), action).toBe(true);
+			expect(Object.hasOwn(HOTKEY_ACTION_HANDLERS, action), action).toBe(true);
 			expect(PARAMETER_REQUIRED_HOTKEY_ACTIONS.has(action), action).toBe(false);
 			expect(HOTKEY_ACTION_DESCRIPTORS[action].repeatPolicy, action).not.toBe('coalesce-20hz');
 		}
@@ -107,7 +186,6 @@ describe('editable hotkey action contract', () => {
 			expect(isSlotHotkeyAction(action), action).toBe(false);
 		}
 		expect(isSlotHotkeyAction('pitch_up')).toBe(false);
-		expect(isSlotHotkeyAction('volume_up')).toBe(false);
 		expect(isSlotHotkeyAction('seek_forward_5s')).toBe(false);
 		expect(isSlotHotkeyAction('future_action')).toBe(false);
 	});
@@ -153,7 +231,7 @@ describe('page hotkey trust boundary', () => {
 			resolve(import.meta.dir, '../src/content/input/hotkey-listener.ts'),
 			'utf8',
 		);
-		expect(listener).toContain('if (!isTrustedHotkeyEvent(e)) return;');
+		expect(listener).toContain('if (!isTrustedHotkeyEvent(e)) return null;');
 	});
 
 	test('reports trusted activation results as exact DOM-native page observations', () => {
@@ -171,21 +249,22 @@ describe('page hotkey trust boundary', () => {
 			'utf8',
 		);
 		const repeatBranch = listener.slice(
-			listener.indexOf('// Repeat keydown under coalesce-20hz'),
-			listener.indexOf('function handleKeyup'),
+			listener.indexOf('// Only a new physical repeat'),
+			listener.indexOf('function releaseSiteHotkeys'),
 		);
 		const completionBranch = listener.slice(
 			listener.indexOf('function executeBinding'),
 			listener.indexOf('function handleKeydown'),
 		);
-		expect(repeatBranch).toContain('coalescedBinding(binding, takeRepeatPulses(binding.id))');
-		expect(repeatBranch).toContain('active.feedbackGesture');
+		expect(repeatBranch).toContain('coalescedBinding(binding, takeRepeatPulses(held.feedbackGesture))');
+		expect(repeatBranch).toContain('held.feedbackGesture');
+		expect(repeatBranch).not.toContain('setTimeout(');
 		expect(repeatBranch).not.toContain('executeWithOSD(binding)');
 		expect(completionBranch).not.toContain('executeBinding(coalescedBinding');
 		expect(listener).toContain('activeBindingsByCode.get(e.code)');
-		expect(listener).toContain('cancelCoalesced(active.binding.id)');
-		expect(listener).toContain('inFlightBindings.has(binding.id)');
-		expect(listener).toContain('const active = activeBinding(binding.id)');
+		expect(listener).toContain('releaseSiteHotkeys({ code: e.code })');
+		expect(listener).toContain('inFlightGestures.has(held.feedbackGesture)');
+		expect(listener).toContain('lastRepeatExecutionAt.set(held.feedbackGesture, e.timeStamp)');
 		expect(listener).toContain('freezeHotkeyToast(held.feedbackGesture)');
 		expect(listener).toContain('freezeHotkeyTargetOSD(held.feedbackGesture)');
 		expect(listener).toContain('releaseHotkeyToast(held.feedbackGesture)');
@@ -193,6 +272,8 @@ describe('page hotkey trust boundary', () => {
 		expect(listener).toContain('releasedFeedbackGestures');
 		expect(listener).toContain('pendingRepeatPulses');
 		expect(listener).toContain('coalescedBinding');
+		expect(listener).not.toContain('const coalesced = new Map');
+		expect(listener).not.toContain('cancelCoalesced');
 		expect(listener).toContain("feedbackOwner === 'listener-label'");
 		expect(listener).toContain("e.code === 'F5'");
 		expect(listener).toContain("e.code === 'KeyR'");

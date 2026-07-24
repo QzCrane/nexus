@@ -332,7 +332,6 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
 	nativeExecutor.setAudioRuntimeDelegate(createAudioRuntimeControlDelegate(
 		policyExecutor,
 		state,
-		settingsManager,
 		fullscreenHandoff,
 	));
 	registry.track(() => nativeExecutor.setAudioRuntimeDelegate(null));
@@ -364,5 +363,4 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
 	if (!isCurrentRuntime(runtime)) return;
 	log.info('Content Script ready.');
 }
-
 

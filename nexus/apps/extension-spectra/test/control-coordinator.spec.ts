@@ -14,7 +14,12 @@ import {
 	SPECTRA_CONTENT_BOOTSTRAP_REVISION,
 	SPECTRA_CONTENT_RUNTIME_REVISION,
 } from '@nexus/contracts';
-import { controlCoordinatorTestApi } from '../src/background/control-coordinator';
+import {
+	controlCoordinatorTestApi,
+	type ExtensionInvocationContext,
+} from '../src/background/control-coordinator';
+import { resetBadgeUsageForTests } from '../src/background/badge-usage';
+import { badgeState } from '../src/background/state';
 
 interface Harness {
 	documentId: string;
@@ -250,6 +255,26 @@ function request(patch: ControlSubmitRequest['patch']): ControlSubmitRequest {
 	return { tabId: 7, source: 'popup', requestedCoverage: 'active-target', target: null, patch };
 }
 
+function invocation(
+	harness: Harness,
+	origin: ExtensionInvocationContext['origin'] = 'popup',
+	foregroundTabId: number | null = 7,
+): ExtensionInvocationContext {
+	const target = { tabId: 7, documentId: harness.documentId };
+	return {
+		origin,
+		foreground: foregroundTabId === null
+			? null
+			: {
+				tabId: foregroundTabId,
+				documentId: foregroundTabId === target.tabId
+					? target.documentId
+					: 'document-foreground',
+			},
+		target,
+	};
+}
+
 function speedErrorAck(intent: ControlIntent, code: string): ControlApplyAck {
 	return {
 		...appliedSpeedAck(intent),
@@ -271,11 +296,13 @@ function speedErrorAck(intent: ControlIntent, code: string): ControlApplyAck {
 
 afterEach(async () => {
 	await controlCoordinatorTestApi.reset();
+	badgeState.clear();
+	resetBadgeUsageForTests();
 	Reflect.deleteProperty(globalThis, 'chrome');
 });
 
 describe('authoritative control coordinator', () => {
-	test('mints volatile Capture admission only for an invoked current-tab Popup or Chrome command', async () => {
+	test('mints volatile Capture admission only for an invoked current-tab UI or validated shortcut', async () => {
 		const harness = installHarness();
 		const intents: ControlIntent[] = [];
 		harness.contentResponder = ({ type, payload }) => {
@@ -295,16 +322,26 @@ describe('authoritative control coordinator', () => {
 			patch: { boost },
 		});
 
-		await controlCoordinatorTestApi.submitInvoked(fullRequest('popup', 2));
-		await controlCoordinatorTestApi.submitInvoked(fullRequest('hotkey', 3));
+		await controlCoordinatorTestApi.submitInvoked(
+			fullRequest('popup', 2),
+			invocation(harness, 'popup'),
+		);
+		await controlCoordinatorTestApi.submitInvoked(
+			fullRequest('hotkey', 3),
+			invocation(harness, 'site-page'),
+		);
 		await controlCoordinatorTestApi.submit({
 			...fullRequest('hotkey', 4),
 			captureAdmission: 'extension-invocation',
 		});
 		await controlCoordinatorTestApi.submit(fullRequest('remote', 5));
 		await controlCoordinatorTestApi.submit(fullRequest('restore', 6));
-		harness.activeTabId = 8;
-		await controlCoordinatorTestApi.submitInvoked(fullRequest('hotkey', 7));
+		const alternateTarget = invocation(harness, 'chrome-command', 8);
+		harness.activeTabId = 7;
+		await controlCoordinatorTestApi.submitInvoked(
+			fullRequest('hotkey', 7),
+			alternateTarget,
+		);
 
 		expect(intents.map(({ captureAdmission }) => captureAdmission)).toEqual([
 			'extension-invocation',
@@ -333,6 +370,34 @@ describe('authoritative control coordinator', () => {
 		})).toBe(false);
 	});
 
+	test('binds page-hotkey invocation to the exact top-level extension document sender', () => {
+		installHarness();
+		const sender = {
+			id: 'spectra-test',
+			url: 'https://media.example/one',
+			tab: { id: 7 } as chrome.tabs.Tab,
+			frameId: 0,
+			documentId: 'document:hotkey',
+		};
+		expect(controlCoordinatorTestApi.trustedContentHotkeyInvocation(sender, 7)).toEqual({
+			origin: 'site-page',
+			foreground: { tabId: 7, documentId: 'document:hotkey' },
+			target: { tabId: 7, documentId: 'document:hotkey' },
+		});
+		expect(controlCoordinatorTestApi.trustedContentHotkeyInvocation({
+			...sender,
+			frameId: 1,
+		}, 7)).toBeUndefined();
+		expect(controlCoordinatorTestApi.trustedContentHotkeyInvocation({
+			...sender,
+			url: 'chrome-extension://spectra-test/options.html',
+		}, 7)).toBeUndefined();
+		expect(controlCoordinatorTestApi.trustedContentHotkeyInvocation({
+			...sender,
+			tab: { id: 8 } as chrome.tabs.Tab,
+		}, 7)).toBeUndefined();
+	});
+
 	test('carries the same admission through an invoked effective-volume transaction only', async () => {
 		const harness = installHarness();
 		const intents: ControlIntent[] = [];
@@ -356,21 +421,22 @@ describe('authoritative control coordinator', () => {
 			target: null,
 			operation: 'effective-volume',
 			payload: { operation: 'set', value: 150 },
-		});
+		}, invocation(harness, 'popup'));
 		expect(intents).toHaveLength(2);
 		expect(intents.every(({ captureAdmission }) => (
 			captureAdmission === 'extension-invocation'
 		))).toBe(true);
 
 		intents.length = 0;
-		harness.activeTabId = 8;
+		const alternateTarget = invocation(harness, 'chrome-command', 8);
+		harness.activeTabId = 7;
 		await controlCoordinatorTestApi.submitOperationInvoked({
 			tabId: 7,
 			source: 'hotkey',
 			target: null,
 			operation: 'effective-volume',
 			payload: { operation: 'set', value: 200 },
-		});
+		}, alternateTarget);
 		expect(intents).toHaveLength(1);
 		expect(intents[0]?.captureAdmission).toBeUndefined();
 	});
@@ -442,6 +508,32 @@ describe('authoritative control coordinator', () => {
 
 		await expect(pending).rejects.toThrow('after the document or revision changed');
 		expect(await controlCoordinatorTestApi.getSnapshot(7)).toBeNull();
+	});
+
+	test('rejects a queued shortcut when its frozen target document navigates before execution', async () => {
+		const harness = installHarness();
+		const blocker = controlCoordinatorTestApi.submit({
+			...request({ speed: 1.25 }),
+			source: 'system',
+		});
+		while (!harness.contentIntent || !harness.resolveContent) await Promise.resolve();
+		const blockedIntent = harness.contentIntent;
+		const queued = controlCoordinatorTestApi.submitInvoked({
+			...request({ speed: 1.5 }),
+			source: 'hotkey',
+		}, invocation(harness, 'site-page'));
+		const blockerResult = blocker.catch((error: unknown) => error);
+		const queuedResult = queued.catch((error: unknown) => error);
+		await Promise.resolve();
+
+		harness.documentId = 'document-2';
+		harness.resolveContent({ ok: true, data: appliedSpeedAck(blockedIntent) });
+		const [blockerError, queuedError] = await Promise.all([blockerResult, queuedResult]);
+		expect(String(blockerError)).toContain('after the document or revision changed');
+		expect(String(queuedError)).toContain('stale target document');
+		expect(harness.contentMessages.filter(({ type }) => (
+			type === 'spectra.control.intent.execute'
+		))).toHaveLength(1);
 	});
 
 	test('increments same-document generation without discarding stable controlled state', async () => {
@@ -702,6 +794,59 @@ describe('authoritative control coordinator', () => {
 		});
 	});
 
+	test('establishes a cold Boost owner so the next mute ACK keeps complete volume feedback', async () => {
+		const harness = installHarness();
+		const target = {
+			frameId: 0,
+			documentId: harness.documentId,
+			mediaId: 'media:cold-volume-mute',
+			sourceRevision: 0,
+			kind: 'audio' as const,
+		};
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') {
+				return actualReadAck(payload as ControlReadRequest, target);
+			}
+			const intent = payload as ControlIntent;
+			return {
+				ok: true,
+				data: intent.patch.boost === 1
+					? releasedPatchAck(intent)
+					: appliedPatchAck(intent, () => 'dom-native'),
+			};
+		};
+
+		const volumeAck = await controlCoordinatorTestApi.submitOperation({
+			tabId: 7,
+			source: 'hotkey',
+			target,
+			operation: 'effective-volume',
+			payload: { operation: 'set', value: 90 },
+		});
+		expect(volumeAck.audioVolume).toEqual({
+			effectiveVolume: 90,
+			volumeState: 'native',
+		});
+		expect((await controlCoordinatorTestApi.getSnapshot(7))?.fields.boost).toMatchObject({
+			actual: 1,
+			phase: 'idle',
+			strategy: 'observe',
+			controlled: false,
+		});
+
+		const muteAck = await controlCoordinatorTestApi.submit({
+			tabId: 7,
+			source: 'hotkey',
+			requestedCoverage: 'active-target',
+			target,
+			mutations: [{ field: 'mediaMuted', operation: 'toggle' }],
+		});
+		expect(muteAck.audioVolume).toEqual({
+			effectiveVolume: 90,
+			volumeState: 'silent',
+		});
+	});
+
 	test('reprojects sticky acknowledged volume after Chrome clears the badge on navigation', async () => {
 		const harness = installHarness();
 		let badgeText = '';
@@ -738,6 +883,70 @@ describe('authoritative control coordinator', () => {
 		expect(badgeText).toBe('63');
 	});
 
+	test.each([
+		['speed', { speed: 1.1 }, '42'],
+		['mute', { mediaMuted: true }, 'M'],
+	] as const)(
+		'treats the first acknowledged %s shortcut as plugin use and projects the existing volume',
+		async (_action, patch, expectedBadge) => {
+			const harness = installHarness();
+			let badgeText = '';
+			Object.assign(chrome.action, {
+				setBadgeText: async ({ text }: { text: string }) => { badgeText = text; },
+				setBadgeBackgroundColor: async () => undefined,
+				setBadgeTextColor: async () => undefined,
+			});
+			harness.contentResponder = ({ type, payload }) => {
+				if (type === 'spectra.control.actual.read') {
+					return actualReadAck(payload as ControlReadRequest, null);
+				}
+				const intent = payload as ControlIntent;
+				return {
+					ok: true,
+					data: appliedPatchAck(
+						intent,
+						(field) => field === 'boost' ? 'media-webaudio' : 'dom-native',
+					),
+				};
+			};
+			await controlCoordinatorTestApi.submit({
+				tabId: 7,
+				source: 'restore',
+				requestedCoverage: 'full',
+				target: null,
+				patch: { volumeBase: 42, boost: 1, mediaMuted: false },
+			});
+			expect(badgeText).toBe('');
+
+			await controlCoordinatorTestApi.submitInvoked({
+				...request(patch),
+				source: 'hotkey',
+			}, invocation(harness, 'site-page'));
+			expect(badgeText).toBe(expectedBadge);
+		},
+	);
+
+	test('keeps a first shortcut effective but hides its badge until audio projection is complete', async () => {
+		const harness = installHarness();
+		let badgeText = '';
+		Object.assign(chrome.action, {
+			setBadgeText: async ({ text }: { text: string }) => { badgeText = text; },
+			setBadgeBackgroundColor: async () => undefined,
+			setBadgeTextColor: async () => undefined,
+		});
+		harness.contentResponder = ({ payload }) => {
+			const intent = payload as ControlIntent;
+			return { ok: true, data: appliedSpeedAck(intent) };
+		};
+
+		await controlCoordinatorTestApi.submitInvoked({
+			...request({ speed: 1.1 }),
+			source: 'hotkey',
+		}, invocation(harness, 'site-page'));
+		expect((await controlCoordinatorTestApi.getSnapshot(7))?.fields.speed?.actual).toBe(1.1);
+		expect(badgeText).toBe('');
+	});
+
 	test('turns an acknowledged repeated effective volume into zero Content IPC and zero storage writes', async () => {
 		const harness = installHarness();
 		const target = {
@@ -769,7 +978,7 @@ describe('authoritative control coordinator', () => {
 
 		const ack = await controlCoordinatorTestApi.submitOperation({
 			tabId: 7,
-			source: 'popup',
+			source: 'system',
 			target,
 			operation: 'effective-volume',
 			payload: { operation: 'set', value: 72 },

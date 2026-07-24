@@ -102,14 +102,17 @@ CORS, so a site that was mistakenly pinned to `direct` can still be served when
 the user actually requests a processor-backed configuration.
 
 The escalation is invocation-bound. Background mints a volatile
-`captureAdmission: 'extension-invocation'` only for a Popup transaction whose
-target is still the active tab, or for a `chrome.commands` transaction whose
-resolved target is that same active tab. The field exists only on the internal
-`ControlIntent`; `ControlSubmitRequest` rejects it, so page hotkeys, playback,
+`captureAdmission: 'extension-invocation'` only for a Popup transaction or
+validated shortcut whose resolved target is still the active tab. A page
+shortcut qualifies only when the sender is the current top-level HTTP(S)
+document, carries its exact `documentId`, and originated in the trusted
+isolated-world keyboard boundary; Background rechecks that document immediately
+before minting admission. The field exists only on the internal `ControlIntent`;
+`ControlSubmitRequest` rejects it, so playback, arbitrary page state,
 `navigator.userActivation`, warm-update restore, navigation, authenticated
 remote control, and an alternate shortcut target cannot manufacture admission.
-Those page activation signals remain sufficient only for Media WebAudio. An
-already active Capture may be configured or stopped without a second admission.
+An already active Capture may be configured or stopped without a second
+admission.
 
 An admitted transition follows SCTRL-011 — the processor handoff never
 double-applies DSP, never ACKs before actual readback, and a candidate failure
@@ -146,28 +149,88 @@ invalidated by navigation, extension update, context invalidation and dispose,
 and a timed-out handshake returns a structured error without an unhandled
 Promise rejection.
 
-All four holdable defaults have one page gesture owner:
-`Alt+ArrowLeft/Right` applies literal `-0.1/+0.1` speed deltas and
-`Alt+ArrowDown/Up` applies `-10/+10` effective-volume deltas. Neither speed nor
-volume deltas are also registered as manifest commands, eliminating the
-competing `chrome.commands` repeat stream that cannot expose physical keyup.
-The same contract excludes every `coalesce-20hz` action from configurable
-Chrome command slots; continuous actions remain available through page bindings
-with real keydown/keyup ownership. The minimal bootstrap captures only trusted
-exact-modifier events outside editable controls,
-prevents Chromium navigation/default handling, assigns a monotonic gesture
-identity, and sends the closed `spectra.content.default-hotkey.trigger` request.
+All five shipped defaults have one page gesture owner in the
+`document_start` bootstrap: `Alt+ArrowLeft/Right` applies literal
+`-0.1/+0.1` speed deltas, `Alt+ArrowDown/Up` applies `-10/+10`
+effective-volume deltas, and `Alt+M` toggles media mute once per physical
+press. The shared bootstrap resolver is also the heavy site-hotkey listener's
+exclusion boundary, so that listener cannot consume any of these five chords a
+second time. None is registered as a manifest command or default Chrome command
+slot, eliminating the competing `chrome.commands` stream that cannot expose
+physical keyup. The same contract excludes every `coalesce-20hz` action from
+configurable Chrome command slots; continuous actions remain available through
+page bindings with real keydown/keyup ownership.
+
+The five built-in chords are also reserved at the settings boundary. Options,
+wire validation and the Background settings repository project `KeyCombo`
+through the same bootstrap resolver instead of maintaining another reserved-key
+list. A new site binding on one of those chords is rejected. A previously
+persisted collision is retained only as `enabled: false` migration evidence with
+`disabledReason: 'reserved_default_chord'`, is repaired durably without changing
+the user-visible settings revision, and can be reassigned to a non-reserved
+combination that clears the disabled reason. The UI must explain that conflict;
+it cannot report a successful binding that the runtime will never execute.
+
+The minimal bootstrap accepts only trusted exact-modifier events outside
+editable controls. One shared website-first arbiter owns shortcut admission:
+its permanent `window` capture listener only recognizes a candidate and, for
+that exact `KeyboardEvent`, appends a temporary `window` bubble tail. Website
+target and document handlers plus every `window` listener that already existed
+when capture ran therefore execute before the tail. The tail treats
+`event.defaultPrevented` or `event.cancelBubble` as a website claim; a
+`stopPropagation()`/`stopImmediatePropagation()` path that prevents the tail
+from running is also a claim. A `setTimeout(0)` task is cleanup only: it removes
+an unreachable tail and rejects the candidate. A microtask is forbidden because
+it can run before window bubble and prematurely remove the same-event tail.
+
+Only an otherwise unclaimed tail accepts the chord, calls `preventDefault()` to
+suppress the browser/page default action, assigns a monotonic gesture identity,
+and sends the closed `spectra.content.default-hotkey.trigger` request. Neither
+the arbiter nor the heavy listener calls `stopPropagation()` or
+`stopImmediatePropagation()`, so admission does not hide the event from later
+website listeners. The candidate action or site binding is resolved once during
+capture and carried unchanged to that tail; settings or listener work during the
+same dispatch cannot remap one physical event between recognition and admission.
+Two browser boundaries remain explicit: an isolated-world
+listener cannot identify an editable control hidden inside a closed shadow root
+when the retargeted composed path omits it, and a website `window` listener
+dynamically added during the same dispatch after the capture tail was appended
+may run after that tail. Those cases are not represented as a stronger
+website-first guarantee; the website must claim the chord through the observable
+event contract. Repeated `Alt+M` keydown events are ignored until keyup rather
+than toggling mute repeatedly.
+
+Accepted site gestures use a separate release boundary because cleanup must not
+depend on website propagation. The first `document_start` Bootstrap installs one
+stable trusted-keyup capture observer; Bootstrap revision replacement hands off
+only its mutable subscriber and never removes/re-appends that raw listener behind
+website listeners registered meanwhile. It publishes only a live `{ code }`
+signal inside the isolated world, never queues an old release and never mutates
+the website event. The heavy site runtime subscribes before enabling its keydown
+arbiter. Repeat pulses and in-flight work are keyed by gesture. Pulses can be
+consumed only when another physical repeat arrives after the cadence boundary;
+there is no delayed action timer and transaction completion cannot self-drain.
+Keyup, blur, pagehide, settings invalidation and disposal discard unconsumed
+pulses. A new non-repeat press retires a same-code stale gesture defensively, so
+its old completion cannot block or release the new press.
+
 Background accepts it only from the current top-level HTTP(S) document, keys
 work by `tabId + documentId + action + gesture`, rechecks identity immediately
-before the writer, and waits for that gesture's sole in-flight operation before
-acknowledging release. The foreground document remains the trusted event and
-feedback surface; selecting another Hotkey Target does not create Capture
-admission. The isolated-world gesture channel carries only visual phases to the
-full runtime, owns a cross-bundle monotonic sequence, retains a bounded
-cold-start signal queue until the lifecycle-bound subscriber mounts, and drains
-each queued phase once. Page script therefore cannot forge control or feedback
-input, the first cold-page Toast is not lost, and an old release cannot collide
-with a newer gesture.
+before the writer, and treats the first accepted press as a committed
+transaction even when keyup arrives during cold runtime acquisition. Keyup
+clears only unconsumed repeats and waits for that sole in-flight operation
+before acknowledging release. A same-document history/hash/modal URL change
+retains `documentId` and cannot be rejected by URL-string equality; the current
+frame URL is used only for route/domain projection. A full navigation changes
+`documentId` and rejects queued work. The foreground document remains the
+trusted event and feedback surface; selecting another Hotkey Target does not
+create Capture admission. The isolated-world gesture channel carries default
+visual phases plus live-only physical site-release identity to the full runtime.
+It owns a cross-bundle monotonic sequence, retains only the bounded cold-start
+default-phase queue until the lifecycle-bound subscriber mounts, and drains each
+queued phase once. Page script therefore cannot forge control or feedback input,
+the first cold-page Toast is not lost, a historical keyup cannot clear a new
+site gesture, and an old completion cannot collide with a newer gesture.
 
 Bootstrap restore, the first Popup snapshot, Popup/remote control and Chrome
 commands also share one single-flight initialization barrier keyed by
@@ -179,15 +242,16 @@ external control waits until restore has either completed or reported its one
 structured failure. This prevents a cold preset replay from racing and
 reverting the first explicit value above 100.
 
-Runtime readiness does not imply Capture authority. A page-configured hotkey can
-use native fields and Media WebAudio after its trusted page event, but only the
-Background `chrome.commands` entry is an extension invocation. If a configured
-shortcut targets a retained background tab instead of the active tab, it keeps
-ordinary control routing but receives no Capture admission.
+Runtime readiness does not imply Capture authority. Popup, `chrome.commands`,
+the five built-in Bootstrap gestures, and configured page hotkeys share the
+same Background invocation boundary only after their current top-level document
+and active target are verified. If a shortcut targets a retained background
+tab instead of the active tab, it keeps ordinary control routing but receives
+no Capture admission.
 
 There is one feedback owner per hotkey. The owner starts a standard Toast only
 for a real shortcut/action intent, keeps the normal volume bar and timeout, and
-cancels repeat work, pending timers, and Toast inertia on keyup. A shortcut
+cancels repeat work, unconsumed pulses, and Toast inertia on keyup. A shortcut
 targeting another tab may project the same Toast visual style in the current tab
 with an additional focus-tab label; refresh, bootstrap, Popup open and snapshot
 synchronization never create a Toast.
@@ -204,11 +268,16 @@ coalesces several shortcut pulses, a held page binding advances a transient
 feedback target once per trusted physical repeat from the latest acknowledged
 baseline. The displayed number and fill interpolate from that same scalar value
 at the shared one-step-per-50-ms cadence. Slower intermediate ACKs synchronize
-the control owner but cannot rewind the active held-key projection; keyup, hide
-and disposal cancel the projection and its animation together. The projection
+the control owner but cannot rewind a same-region held-key projection. At the
+`100↔>100` processor boundary, OSD retains the prior complete acknowledged
+value and `AudioVolumeState`. Only the gesture-bound aggregate coordinator ACK,
+never an internal target/processor stage callback, may commit the new value and
+the shared `UIColors` blue/purple/gray tone atomically, exactly like Popup.
+Same-tab and selected-target feedback carry the originating gesture identity;
+an older or different gesture cannot repaint the foreground. Keyup freezes the
+final frame, while hide and disposal conceal it immediately. The projection
 never mutates configuration or survives release, so acknowledged state remains
-the sole business owner while native `0–100` feedback stays continuous without
-post-release inertia.
+the sole business owner without post-release inertia or color drift.
 
 ## §6 Exact-element page media, PiP and fullscreen
 

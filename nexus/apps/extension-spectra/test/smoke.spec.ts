@@ -11,7 +11,11 @@ import puppeteer, {
 	type Target,
 	type WebWorker,
 } from 'puppeteer';
-import { SPECTRA_CONTENT_RUNTIME_REVISION } from '@nexus/contracts';
+import {
+	SPECTRA_CONTENT_RUNTIME_REVISION,
+	type SettingsPatch,
+	type SettingsSnapshot,
+} from '@nexus/contracts';
 import {
 	SPECTRA_PAGE_MEDIA_EVENT,
 	SPECTRA_PAGE_MEDIA_REQUEST_ATTRIBUTE,
@@ -69,6 +73,28 @@ interface ContentBootstrapStatus {
 		mediaId: string;
 		sourceRevision: number;
 	}>;
+}
+
+type BootstrapListenerKey = readonly [
+	target: 'document' | 'window',
+	type: string,
+	capture: boolean,
+];
+
+interface BootstrapListenerProbe {
+	added: BootstrapListenerKey[];
+	removed: BootstrapListenerKey[];
+	originalAdd: typeof EventTarget.prototype.addEventListener;
+	originalRemove: typeof EventTarget.prototype.removeEventListener;
+}
+
+interface BootstrapReinjectionResult {
+	same: boolean;
+	revision: string | undefined;
+	listenerChanges?: {
+		added: BootstrapListenerKey[];
+		removed: BootstrapListenerKey[];
+	};
 }
 
 interface SmokeRuntimeLease {
@@ -152,6 +178,12 @@ interface PopupVolumePresentation {
 	sliderAccent: string;
 }
 
+interface SmokeRpcResult<T> {
+	ok: boolean;
+	data: T;
+	error?: { message?: string };
+}
+
 interface PageMediaControllerState {
 	volumeBase: number;
 	mediaMuted: boolean;
@@ -159,6 +191,23 @@ interface PageMediaControllerState {
 	domVolume: number;
 	domMuted: boolean;
 	domSpeed: number;
+}
+
+interface OsdFeedbackFrame {
+	at: number;
+	label: string;
+	width: number;
+	color: string;
+}
+
+interface OsdFeedbackSnapshot {
+	actual: number;
+	visible: boolean;
+	label: string;
+	width: number;
+	tone: string;
+	color: string;
+	frames: OsdFeedbackFrame[];
 }
 
 const DEFAULT_AUDIO_CONFIG: AudioConfig = {
@@ -182,6 +231,97 @@ const SILENT_WAV_DATA_URL =
 
 function collectPageErrors(page: Page, errors: string[]): void {
 	page.on('pageerror', (error) => errors.push(error.stack ?? error.message));
+}
+
+type DefaultShortcutKey = 'ArrowDown' | 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'KeyM';
+
+async function tapDefaultShortcut(page: Page, key: DefaultShortcutKey): Promise<void> {
+	await page.keyboard.down('Alt');
+	await page.keyboard.press(key);
+	await page.keyboard.up('Alt');
+}
+
+async function holdDefaultShortcut(
+	page: Page,
+	key: 'ArrowDown' | 'ArrowLeft' | 'ArrowRight' | 'ArrowUp',
+	repeats: number,
+	releaseDelayMs = 0,
+): Promise<void> {
+	await page.keyboard.down('Alt');
+	await page.keyboard.down(key);
+	for (let index = 0; index < repeats; index += 1) {
+		await new Promise((resolveWait) => setTimeout(resolveWait, 35));
+		await page.keyboard.down(key);
+	}
+	if (releaseDelayMs > 0) await new Promise((resolveWait) => setTimeout(resolveWait, releaseDelayMs));
+	await page.keyboard.up(key);
+	await page.keyboard.up('Alt');
+}
+
+async function startOsdFeedbackProbe(
+	page: Page,
+	labelSuffix: '%' | '×',
+	includeCurrent = false,
+): Promise<void> {
+	await page.evaluate(({ suffix, recordCurrent }) => {
+		const root = document.querySelector<HTMLElement>('#spectra-osd-host')?.shadowRoot;
+		const text = root?.getElementById('t');
+		const fill = root?.getElementById('f');
+		if (!root || !text || !fill) throw new Error('OSD feedback surface is unavailable');
+		const scope = window as Window & {
+			__spectraOsdFeedbackProbe?: { frames: OsdFeedbackFrame[]; observer: MutationObserver };
+		};
+		scope.__spectraOsdFeedbackProbe?.observer.disconnect();
+		const frames: OsdFeedbackFrame[] = [];
+		const record = () => {
+			const label = text.textContent ?? '';
+			const width = Number.parseFloat(fill.style.width);
+			if (label.endsWith(suffix) && Number.isFinite(width)) frames.push({
+				at: performance.now(),
+				label,
+				width,
+				color: getComputedStyle(fill).backgroundColor,
+			});
+		};
+		const observer = new MutationObserver(record);
+		scope.__spectraOsdFeedbackProbe = { frames, observer };
+		observer.observe(root, {
+			attributes: true,
+			attributeFilter: ['style'],
+			childList: true,
+			characterData: true,
+			subtree: true,
+		});
+		if (recordCurrent) record();
+	}, { suffix: labelSuffix, recordCurrent: includeCurrent });
+}
+
+async function readOsdFeedback(
+	page: Page,
+	metric: 'speed' | 'volume',
+	stopProbe = false,
+): Promise<OsdFeedbackSnapshot> {
+	return page.evaluate(({ actualMetric, stop }) => {
+		const scope = window as Window & {
+			__spectraOsdFeedbackProbe?: { frames: OsdFeedbackFrame[]; observer: MutationObserver };
+		};
+		if (stop) scope.__spectraOsdFeedbackProbe?.observer.disconnect();
+		const media = document.querySelector<HTMLMediaElement>('video,audio');
+		const root = document.querySelector<HTMLElement>('#spectra-osd-host')?.shadowRoot;
+		const osd = root?.getElementById('o');
+		const fill = root?.getElementById('f');
+		return {
+			actual: actualMetric === 'volume'
+				? Math.round((media?.volume ?? -1) * 100)
+				: media?.playbackRate ?? -1,
+			visible: osd?.classList.contains('v') ?? false,
+			label: root?.getElementById('t')?.textContent ?? '',
+			width: fill ? Number.parseFloat(fill.style.width) : -1,
+			tone: osd?.className ?? '',
+			color: fill ? getComputedStyle(fill).backgroundColor : '',
+			frames: [...scope.__spectraOsdFeedbackProbe?.frames ?? []],
+		};
+	}, { actualMetric: metric, stop: stopProbe });
 }
 
 interface ExtensionLayoutAudit {
@@ -413,6 +553,120 @@ async function evaluateServiceWorker<
 		await refreshSuspendedServiceWorker();
 		return evaluate();
 	}
+}
+
+async function reinjectContentBootstrap(
+	url: string,
+	replaceCurrentRevision = false,
+): Promise<BootstrapReinjectionResult> {
+	return evaluateServiceWorker(async ({ targetUrl, replace }) => {
+		const tabs = await chrome.tabs.query({});
+		const tab = tabs.find((candidate) => candidate.url === targetUrl);
+		if (tab?.id === undefined) throw new Error(`Unable to find fixture tab: ${targetUrl}`);
+		await chrome.scripting.executeScript({
+			target: { tabId: tab.id },
+			world: 'ISOLATED',
+			func: (forceReplacement) => {
+				const scope = window as Window & {
+					__SPECTRA_CONTENT_BOOTSTRAP__?: { bootstrapRevision: string };
+					__spectraBootstrapBefore?: object;
+					__spectraBootstrapListenerProbe?: BootstrapListenerProbe;
+				};
+				scope.__spectraBootstrapBefore = scope.__SPECTRA_CONTENT_BOOTSTRAP__;
+				if (forceReplacement && scope.__SPECTRA_CONTENT_BOOTSTRAP__) {
+					const originalAdd = EventTarget.prototype.addEventListener;
+					const originalRemove = EventTarget.prototype.removeEventListener;
+					const probe = {
+						added: [] as BootstrapListenerKey[],
+						removed: [] as BootstrapListenerKey[],
+						originalAdd,
+						originalRemove,
+					};
+					const listenerKey = (
+						target: EventTarget,
+						type: string,
+						options?: boolean | EventListenerOptions,
+					): BootstrapListenerKey | null => {
+						const owner = target === window
+							? 'window'
+							: target === document ? 'document' : null;
+						if (!owner) return null;
+						const capture = typeof options === 'boolean'
+							? options
+							: options?.capture === true;
+						return [owner, type, capture];
+					};
+					scope.__spectraBootstrapListenerProbe = probe;
+					EventTarget.prototype.addEventListener = function (
+						this: EventTarget,
+						type: string,
+						listener: EventListenerOrEventListenerObject | null,
+						options?: boolean | AddEventListenerOptions,
+					): void {
+						const key = listenerKey(this, type, options);
+						if (key) probe.added.push(key);
+						originalAdd.call(this, type, listener, options);
+					};
+					EventTarget.prototype.removeEventListener = function (
+						this: EventTarget,
+						type: string,
+						listener: EventListenerOrEventListenerObject | null,
+						options?: boolean | EventListenerOptions,
+					): void {
+						const key = listenerKey(this, type, options);
+						if (key) probe.removed.push(key);
+						originalRemove.call(this, type, listener, options);
+					};
+					scope.__SPECTRA_CONTENT_BOOTSTRAP__.bootstrapRevision = 'stale-test';
+				}
+			},
+			args: [replace],
+		});
+		let injectionError: unknown;
+		try {
+			await chrome.scripting.executeScript({
+				target: { tabId: tab.id },
+				files: ['content-bootstrap.js'],
+				world: 'ISOLATED',
+			});
+		} catch (error) {
+			injectionError = error;
+		}
+		const [inspection] = await chrome.scripting.executeScript({
+			target: { tabId: tab.id },
+			world: 'ISOLATED',
+			func: () => {
+				const scope = window as Window & {
+					__SPECTRA_CONTENT_BOOTSTRAP__?: { bootstrapRevision?: string };
+					__spectraBootstrapBefore?: object;
+					__spectraBootstrapListenerProbe?: BootstrapListenerProbe;
+				};
+				const probe = scope.__spectraBootstrapListenerProbe;
+				if (probe) {
+					EventTarget.prototype.addEventListener = probe.originalAdd;
+					EventTarget.prototype.removeEventListener = probe.originalRemove;
+				}
+				const sorted = (keys: BootstrapListenerKey[]): BootstrapListenerKey[] => (
+					[...keys].sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
+				);
+				const result = {
+					same: scope.__SPECTRA_CONTENT_BOOTSTRAP__ === scope.__spectraBootstrapBefore,
+					revision: scope.__SPECTRA_CONTENT_BOOTSTRAP__?.bootstrapRevision,
+					...(probe ? {
+						listenerChanges: {
+							added: sorted(probe.added),
+							removed: sorted(probe.removed),
+						},
+					} : {}),
+				};
+				delete scope.__spectraBootstrapBefore;
+				delete scope.__spectraBootstrapListenerProbe;
+				return result;
+			},
+		});
+		if (injectionError) throw injectionError;
+		return inspection?.result ?? { same: false, revision: undefined };
+	}, { targetUrl: url, replace: replaceCurrentRevision });
 }
 
 async function acquireSmokeRuntime(
@@ -700,6 +954,56 @@ async function openExtensionClient(path = 'popup.html'): Promise<Page> {
 	return page;
 }
 
+async function sendExtensionMessage<T>(
+	client: Page,
+	message: Record<string, unknown>,
+): Promise<T> {
+	return client.evaluate(async (request) => chrome.runtime.sendMessage(
+		{ ...request, requestId: crypto.randomUUID() },
+	), message) as Promise<T>;
+}
+
+async function readExtensionSettings(client: Page): Promise<SettingsSnapshot> {
+	const response = await sendExtensionMessage<SmokeRpcResult<SettingsSnapshot>>(client, {
+		protocolVersion: 2,
+		type: 'spectra.settings.get',
+		payload: {},
+	});
+	if (!response.ok) throw new Error(response.error?.message ?? 'Unable to read settings');
+	return response.data;
+}
+
+async function patchExtensionSettings(
+	client: Page,
+	patch: SettingsPatch,
+): Promise<{ previous: SettingsSnapshot; current: SettingsSnapshot }> {
+	const previous = await readExtensionSettings(client);
+	const response = await sendExtensionMessage<SmokeRpcResult<SettingsSnapshot>>(client, {
+		protocolVersion: 2,
+		type: 'spectra.settings.patch',
+		payload: { expectedRevision: previous.revision, patch },
+	});
+	if (!response.ok) throw new Error(response.error?.message ?? 'Unable to update settings');
+	return { previous, current: response.data };
+}
+
+async function setGlobalLanguage(client: Page, language: string): Promise<string> {
+	const { previous } = await patchExtensionSettings(
+		client,
+		{ scope: 'global', changes: { lang: language } },
+	);
+	return previous.globalSettings.lang;
+}
+
+async function setHotkeyTarget(client: Page, tabId: number | null): Promise<void> {
+	const selected = await sendExtensionMessage<SmokeRpcResult<{ tabId: number | null }>>(client, {
+		protocolVersion: 2, type: 'spectra.hotkey-target.set', payload: { tabId },
+	});
+	if (!selected?.ok || selected.data.tabId !== tabId) {
+		throw new Error(selected?.error?.message ?? 'Unable to update the shortcut target');
+	}
+}
+
 async function openActionPopupTarget(timeoutMs = 10_000): Promise<Target> {
 	const knownTargets = new Set(browser.targets());
 	const popupUrl = `chrome-extension://${extensionId}/popup.html`;
@@ -817,6 +1121,26 @@ async function submitEffectiveVolume(tabId: number, value: number): Promise<void
 		},
 	});
 	if (!response.ok) throw new Error(response.error?.message ?? `Unable to set effective volume to ${value}`);
+}
+
+async function submitPopupControlIntent(
+	tabId: number,
+	intent: Record<string, unknown>,
+): Promise<SmokeRpcResult<{
+	fields: Record<string, { actual?: unknown; phase?: string; strategy?: string }>;
+}>> {
+	return sendFromActionPopup({
+		protocolVersion: 2,
+		tabId,
+		type: 'spectra.control.intent.submit',
+		payload: {
+			tabId,
+			source: 'popup',
+			requestedCoverage: 'active-target',
+			target: null,
+			...intent,
+		},
+	});
 }
 
 async function readBadgeColor(tabId: number): Promise<number[]> {
@@ -1698,7 +2022,7 @@ describe('SPECTRA built extension smoke', () => {
 		const commandShortcuts = await evaluateServiceWorker(async () => Object.fromEntries(
 			(await chrome.commands.getAll()).map(({ name, shortcut }) => [name, shortcut]),
 		));
-		expect(commandShortcuts.toggle_mute).toBe('Alt+M');
+		expect(commandShortcuts).not.toHaveProperty('toggle_mute');
 		expect(commandShortcuts).not.toHaveProperty('speed_down');
 		expect(commandShortcuts).not.toHaveProperty('speed_up');
 		expect(commandShortcuts).not.toHaveProperty('volume_up');
@@ -1753,46 +2077,586 @@ describe('SPECTRA built extension smoke', () => {
 	});
 
 	test('keeps one versioned isolated bootstrap across repeated injection', async () => {
-		const result = await evaluateServiceWorker(async ({ url }) => {
-			const tabs = await chrome.tabs.query({});
-			const tab = tabs.find((candidate) => candidate.url === url);
-			if (tab?.id === undefined) throw new Error(`Unable to find fixture tab: ${url}`);
-			await chrome.scripting.executeScript({
-				target: { tabId: tab.id },
-				world: 'ISOLATED',
-				func: () => {
-					const scope = window as Window & {
-						__SPECTRA_CONTENT_BOOTSTRAP__?: object;
-						__spectraBootstrapBefore?: object;
-					};
-					scope.__spectraBootstrapBefore = scope.__SPECTRA_CONTENT_BOOTSTRAP__;
-				},
-			});
-			await chrome.scripting.executeScript({
-				target: { tabId: tab.id },
-				files: ['content-bootstrap.js'],
-				world: 'ISOLATED',
-			});
-			const [inspection] = await chrome.scripting.executeScript({
-				target: { tabId: tab.id },
-				world: 'ISOLATED',
-				func: () => {
-					const scope = window as Window & {
-						__SPECTRA_CONTENT_BOOTSTRAP__?: { bootstrapRevision?: string };
-						__spectraBootstrapBefore?: object;
-					};
-					return {
-						same: scope.__SPECTRA_CONTENT_BOOTSTRAP__ === scope.__spectraBootstrapBefore,
-						revision: scope.__SPECTRA_CONTENT_BOOTSTRAP__?.bootstrapRevision,
-					};
-				},
-			});
-			return inspection?.result;
-		}, { url: fixtureUrl });
+		const result = await reinjectContentBootstrap(fixtureUrl);
 		expect(result).toMatchObject({ same: true });
 		expect(typeof result?.revision).toBe('string');
 		expect(await fixturePage.evaluate(() => '__SPECTRA_MAIN_RUNTIME__' in window)).toBe(false);
 	});
+
+	test('owns all five cold defaults once while preserving website shortcut propagation', async () => {
+		const coldUrl = `${fixtureUrl}?cold-shortcut-tap=1`;
+		const coldPage = await browser.newPage();
+		try {
+			await coldPage.goto(coldUrl, { waitUntil: 'domcontentloaded' });
+			const bootstrap = await waitForContentBootstrapStatus(coldUrl);
+			const tabId = await getTabId(coldUrl);
+			expect(bootstrap).toMatchObject({ ready: false, runtimeRevision: null });
+			expect(await readBadgeText(tabId)).toBe('');
+			await coldPage.evaluate(() => {
+				const scope = window as Window & {
+					__spectraWebsiteHotkeys?: { codes: string[]; reserveMute: boolean };
+				};
+				scope.__spectraWebsiteHotkeys = { codes: [], reserveMute: false };
+				document.addEventListener('keydown', (event) => {
+					if (!event.altKey
+						|| !['ArrowLeft', 'ArrowRight', 'ArrowDown', 'ArrowUp', 'KeyM']
+							.includes(event.code)) return;
+					scope.__spectraWebsiteHotkeys!.codes.push(event.code);
+					if (event.code === 'KeyM' && scope.__spectraWebsiteHotkeys!.reserveMute) {
+						event.preventDefault();
+					}
+				});
+			});
+			// A changed bootstrap revision must dispose the old capture arbiters.
+			// The following physical keys therefore still execute exactly once.
+			const replacement = await reinjectContentBootstrap(coldUrl, true);
+			const expectedListenerOwnership: BootstrapListenerKey[] = [
+				['document', 'ratechange', true],
+				['document', 'visibilitychange', false],
+				['document', 'volumechange', true],
+				['window', 'blur', false],
+				['window', 'keydown', true],
+				['window', 'keyup', true],
+				['window', 'pagehide', false],
+			];
+			expect(replacement).toMatchObject({ same: false });
+			expect(replacement.listenerChanges).toEqual({
+				added: expectedListenerOwnership,
+				removed: expectedListenerOwnership,
+			});
+			await waitForContentBootstrapStatus(coldUrl);
+
+			await coldPage.bringToFront();
+			// Keyup is sent immediately, without waiting for the heavy runtime.
+			// It may cancel queued repeats, but cannot revoke this accepted tap.
+			await tapDefaultShortcut(coldPage, 'ArrowDown');
+
+			const applied = await eventually(
+				async () => ({
+					volume: await coldPage.evaluate(() => (
+						Math.round((document.querySelector<HTMLMediaElement>('video,audio')?.volume ?? -1) * 100)
+					)),
+					badge: await readBadgeText(tabId),
+					bootstrap: await readContentBootstrapStatus(coldUrl),
+				}),
+				(state) => state.volume === 90 && state.badge === '90' && state.bootstrap.ready,
+				'cold first-tap effect and badge acknowledgement',
+				10_000,
+			);
+			expect(applied).toMatchObject({
+				volume: 90,
+				badge: '90',
+				bootstrap: { ready: true, runtimeRevision: SPECTRA_CONTENT_RUNTIME_REVISION },
+			});
+			await tapDefaultShortcut(coldPage, 'ArrowUp');
+			await eventually(
+				async () => ({
+					volume: await coldPage.evaluate(() => Math.round(
+						(document.querySelector<HTMLMediaElement>('video,audio')?.volume ?? -1) * 100,
+					)),
+					badge: await readBadgeText(tabId),
+				}),
+				(state) => state.volume === 100 && state.badge === '100',
+				'cold volume-up acknowledgement',
+			);
+			await tapDefaultShortcut(coldPage, 'ArrowLeft');
+			await eventually(
+				() => coldPage.evaluate(() => (
+					document.querySelector<HTMLMediaElement>('video,audio')?.playbackRate
+				)),
+				(rate) => rate === 0.9,
+				'cold speed-down acknowledgement',
+			);
+			await tapDefaultShortcut(coldPage, 'ArrowRight');
+			await eventually(
+				() => coldPage.evaluate(() => (
+					document.querySelector<HTMLMediaElement>('video,audio')?.playbackRate
+				)),
+				(rate) => rate === 1,
+				'cold speed-up acknowledgement',
+			);
+			await tapDefaultShortcut(coldPage, 'KeyM');
+			await eventually(
+				async () => ({
+					muted: await coldPage.evaluate(() => (
+						document.querySelector<HTMLMediaElement>('video,audio')?.muted
+					)),
+					osd: await coldPage.evaluate(() => (
+						document.querySelector<HTMLElement>('#spectra-osd-host')
+							?.shadowRoot?.getElementById('t')?.textContent
+					)),
+					badge: await readBadgeText(tabId),
+				}),
+				(state) => state.muted === true && state.osd === 'MUTE' && state.badge === 'M',
+				'cold mute acknowledgement, OSD, and badge projection',
+			);
+			expect(await coldPage.evaluate(() => (
+				(window as Window & {
+					__spectraWebsiteHotkeys?: { codes: string[] };
+				}).__spectraWebsiteHotkeys?.codes
+			))).toEqual(['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'KeyM']);
+			await coldPage.evaluate(() => {
+				(window as Window & {
+					__spectraWebsiteHotkeys?: { reserveMute: boolean };
+				}).__spectraWebsiteHotkeys!.reserveMute = true;
+			});
+			await tapDefaultShortcut(coldPage, 'KeyM');
+			await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+			expect(await coldPage.evaluate(() => ({
+				muted: document.querySelector<HTMLMediaElement>('video,audio')?.muted,
+				codes: (window as Window & {
+					__spectraWebsiteHotkeys?: { codes: string[] };
+				}).__spectraWebsiteHotkeys?.codes,
+			}))).toEqual({
+				muted: true,
+				codes: ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'KeyM', 'KeyM'],
+			});
+			expect(coldPage.url()).toBe(coldUrl);
+		} finally {
+			await coldPage.close();
+		}
+	}, 30_000);
+
+	test('arbitrates default hotkeys website-first without editable takeover or release tails', async () => {
+		type ArbiterMode = 'document-stop' | 'observe' | 'repeat-stop' | 'window-prevent';
+		interface ArbiterProbe {
+			mode: ArbiterMode;
+			documentStops: number;
+			repeatStops: number;
+			keyupStops: number;
+			popstates: number;
+			windowEvents: Array<{
+				mode: ArbiterMode;
+				code: string;
+				defaultPrevented: boolean;
+				repeat: boolean;
+				target: string;
+			}>;
+		}
+		const arbiterUrl = `${fixtureUrl}?hotkey-arbiter=1`;
+		const arbiterPage = await browser.newPage();
+		const readMedia = () => arbiterPage.evaluate(() => {
+			const media = document.querySelector<HTMLMediaElement>('video,audio');
+			const osd = document.querySelector<HTMLElement>('#spectra-osd-host')
+				?.shadowRoot?.getElementById('o');
+			return {
+				href: location.href,
+				popstates: (window as Window & { __spectraArbiterProbe?: ArbiterProbe })
+					.__spectraArbiterProbe?.popstates ?? 0,
+				speed: media?.playbackRate ?? -1,
+				volume: Math.round((media?.volume ?? -1) * 100),
+				osd: osd?.querySelector<HTMLElement>('#t')?.textContent ?? '',
+				osdVisible: osd?.classList.contains('v') ?? false,
+			};
+		});
+		const setMode = (mode: ArbiterMode) => arbiterPage.evaluate((nextMode) => {
+			(window as Window & { __spectraArbiterProbe?: ArbiterProbe })
+				.__spectraArbiterProbe!.mode = nextMode;
+		}, mode);
+		const focusBody = () => arbiterPage.evaluate(() => {
+			document.body.tabIndex = -1;
+			document.body.focus();
+		});
+		const waitForOsdToSettle = () => arbiterPage.waitForFunction(() => {
+			const osd = document.querySelector<HTMLElement>('#spectra-osd-host')
+				?.shadowRoot?.getElementById('o');
+			return osd !== null && osd !== undefined && !osd.classList.contains('v');
+		}, { timeout: 3_500 });
+
+		try {
+			await arbiterPage.goto(arbiterUrl, { waitUntil: 'domcontentloaded' });
+			expect(await waitForContentBootstrapStatus(arbiterUrl)).toMatchObject({
+				ready: false,
+				runtimeRevision: null,
+			});
+			expect(await readMedia()).toMatchObject({ speed: 1, volume: 100 });
+			await arbiterPage.evaluate(() => {
+				const scope = window as Window & { __spectraArbiterProbe?: ArbiterProbe };
+				const probe: ArbiterProbe = {
+					mode: 'observe',
+					documentStops: 0,
+					repeatStops: 0,
+					keyupStops: 0,
+					popstates: 0,
+					windowEvents: [],
+				};
+				scope.__spectraArbiterProbe = probe;
+				const isDefault = (event: KeyboardEvent) => event.altKey
+					&& ['ArrowLeft', 'ArrowRight', 'ArrowDown', 'ArrowUp', 'KeyM']
+						.includes(event.code);
+				document.addEventListener('keydown', (event) => {
+					if (!isDefault(event)) return;
+					if (probe.mode === 'document-stop' && event.code === 'ArrowRight') {
+						probe.documentStops += 1;
+						event.stopPropagation();
+					} else if (probe.mode === 'repeat-stop'
+						&& event.code === 'ArrowDown'
+						&& event.repeat) {
+						probe.repeatStops += 1;
+						event.stopPropagation();
+					}
+				});
+				document.addEventListener('keyup', (event) => {
+					if (probe.mode !== 'repeat-stop' || event.code !== 'ArrowDown') return;
+					probe.keyupStops += 1;
+					event.stopPropagation();
+				});
+				window.addEventListener('keydown', (event) => {
+					if (!isDefault(event)) return;
+					const origin = event.composedPath()[0];
+					probe.windowEvents.push({
+						mode: probe.mode,
+						code: event.code,
+						defaultPrevented: event.defaultPrevented,
+						repeat: event.repeat,
+						target: origin instanceof Element ? origin.id || origin.tagName : '',
+					});
+					if (probe.mode === 'window-prevent') event.preventDefault();
+				});
+				window.addEventListener('popstate', () => {
+					probe.popstates += 1;
+				});
+
+				const container = document.createElement('div');
+				container.style.cssText = 'position:fixed;left:-10000px;top:0';
+				const input = document.createElement('input');
+				input.id = 'arbiter-input';
+				const textarea = document.createElement('textarea');
+				textarea.id = 'arbiter-textarea';
+				const select = document.createElement('select');
+				select.id = 'arbiter-select';
+				select.append(new Option('one', 'one'));
+				const editable = document.createElement('div');
+				editable.id = 'arbiter-contenteditable';
+				editable.contentEditable = 'true';
+				editable.tabIndex = 0;
+				const shadowHost = document.createElement('div');
+				shadowHost.id = 'arbiter-shadow-host';
+				const shadowInput = document.createElement('input');
+				shadowInput.id = 'arbiter-shadow-input';
+				shadowHost.attachShadow({ mode: 'open' }).append(shadowInput);
+				container.append(input, textarea, select, editable, shadowHost);
+				document.body.append(container);
+			});
+
+			await focusBody();
+			await setMode('window-prevent');
+			await tapDefaultShortcut(arbiterPage, 'ArrowRight');
+			await setMode('document-stop');
+			await tapDefaultShortcut(arbiterPage, 'ArrowRight');
+			await setMode('observe');
+			const editableTargets = [
+				'arbiter-input',
+				'arbiter-textarea',
+				'arbiter-select',
+				'arbiter-contenteditable',
+				'arbiter-shadow-input',
+			];
+			for (const target of editableTargets) {
+				expect(await arbiterPage.evaluate((targetId) => {
+					const shadow = document.getElementById('arbiter-shadow-host')?.shadowRoot;
+					const element = targetId === 'arbiter-shadow-input'
+						? shadow?.getElementById(targetId)
+						: document.getElementById(targetId);
+					if (!(element instanceof HTMLElement)) return false;
+					element.focus();
+					return targetId === 'arbiter-shadow-input'
+						? shadow?.activeElement === element
+						: document.activeElement === element;
+				}, target)).toBe(true);
+				await tapDefaultShortcut(arbiterPage, 'ArrowRight');
+			}
+			await focusBody();
+			await tapDefaultShortcut(arbiterPage, 'ArrowRight');
+			await eventually(
+				readMedia,
+				(state) => state.speed === 1.1 && state.osd === '1.1×' && state.osdVisible,
+				'one accepted speed key after website and editable exclusions',
+			);
+			await waitForOsdToSettle();
+			expect(await readMedia()).toMatchObject({ speed: 1.1, volume: 100 });
+
+			const exclusionProbe = await arbiterPage.evaluate(() => (
+				(window as Window & { __spectraArbiterProbe?: ArbiterProbe })
+					.__spectraArbiterProbe!
+			));
+			expect(exclusionProbe.documentStops).toBe(1);
+			expect(exclusionProbe.windowEvents.some(({ mode }) => mode === 'document-stop')).toBe(false);
+			expect(exclusionProbe.windowEvents).toContainEqual(expect.objectContaining({
+				mode: 'window-prevent',
+				code: 'ArrowRight',
+				defaultPrevented: false,
+			}));
+			expect(exclusionProbe.windowEvents
+				.filter(({ target }) => editableTargets.includes(target))
+				.map(({ target }) => target)).toEqual(editableTargets);
+
+			const historyUrl = await arbiterPage.evaluate(() => {
+				history.pushState({ spectraArbiter: true }, '', `${location.pathname}${location.search}#entry`);
+				return location.href;
+			});
+			await focusBody();
+			await tapDefaultShortcut(arbiterPage, 'ArrowLeft');
+			await eventually(
+				readMedia,
+				(state) => state.speed === 1 && state.osd === '1.0×' && state.osdVisible,
+				'accepted Alt+Left speed without history traversal',
+			);
+			await waitForOsdToSettle();
+			expect(arbiterPage.url()).toBe(historyUrl);
+			expect(await arbiterPage.evaluate(() => (
+				(window as Window & { __spectraArbiterProbe?: ArbiterProbe })
+					.__spectraArbiterProbe!.popstates
+			))).toBe(0);
+
+			await setMode('repeat-stop');
+			await focusBody();
+			await arbiterPage.keyboard.down('Alt');
+			try {
+				await arbiterPage.keyboard.down('ArrowDown');
+				try {
+					for (let index = 0; index < 3; index += 1) {
+						await arbiterPage.keyboard.down('ArrowDown');
+					}
+				} finally {
+					await arbiterPage.keyboard.up('ArrowDown');
+				}
+				// Cross the arbiter's documented macrotask cleanup boundary before Alt keyup.
+				await arbiterPage.evaluate(() => new Promise<void>((resolveWait) => {
+					setTimeout(resolveWait, 0);
+				}));
+			} finally {
+				await arbiterPage.keyboard.up('Alt');
+			}
+			await eventually(
+				readMedia,
+				(state) => state.volume === 90 && state.osd === '90%' && state.osdVisible,
+				'accepted first volume key with website-truncated repeat and keyup',
+			);
+			await waitForOsdToSettle();
+			expect(await readMedia()).toMatchObject({ speed: 1, volume: 90 });
+			expect(await arbiterPage.evaluate(() => {
+				const probe = (window as Window & { __spectraArbiterProbe?: ArbiterProbe })
+					.__spectraArbiterProbe!;
+				return {
+					repeatStops: probe.repeatStops,
+					keyupStops: probe.keyupStops,
+				};
+			})).toEqual({ repeatStops: 3, keyupStops: 1 });
+
+			await setMode('observe');
+			await tapDefaultShortcut(arbiterPage, 'ArrowUp');
+			await eventually(
+				readMedia,
+				(state) => state.volume === 100 && state.osd === '100%' && state.osdVisible,
+				'next volume key after truncated release',
+			);
+			await waitForOsdToSettle();
+			expect(await readMedia()).toMatchObject({ speed: 1, volume: 100 });
+		} finally {
+			await arbiterPage.keyboard.up('ArrowDown').catch(() => undefined);
+			await arbiterPage.keyboard.up('Alt').catch(() => undefined);
+			await arbiterPage.close();
+		}
+	}, 35_000);
+
+	test('arbitrates configured site hotkeys website-first and releases a truncated keyup', async () => {
+		type SiteArbiterMode =
+			| 'document-stop'
+			| 'observe'
+			| 'window-keyup-stop'
+			| 'window-prevent';
+		interface SiteArbiterProbe {
+			mode: SiteArbiterMode;
+			documentStops: number;
+			keyupStops: number;
+			unclaimedWindowEvents: string[];
+		}
+		const siteDomain = 'localhost';
+		const siteUrl = new URL(fixtureUrl);
+		siteUrl.hostname = siteDomain;
+		siteUrl.search = '?configured-site-hotkey-arbiter=1';
+		const targetUrl = siteUrl.toString();
+		const client = await openExtensionClient('options.html');
+		let hotkeyPage: Page | null = null;
+		let originalSite: SettingsSnapshot['hotkeySettings']['sites'][string] | null = null;
+		let originalSiteCaptured = false;
+		try {
+			const configured = await patchExtensionSettings(client, {
+				scope: 'hotkey-site',
+				domain: siteDomain,
+				value: {
+					enabled: true,
+					bindings: [{
+						id: 'smoke-configured-site-speed',
+						enabled: true,
+						key: {
+							code: 'KeyK',
+							modifiers: {
+								ctrl: false, alt: false, shift: false, meta: false,
+							},
+						},
+						action: 'speed_up',
+						params: { step: 0.1 },
+					}],
+				},
+			});
+			originalSite = configured.previous.hotkeySettings.sites[siteDomain] ?? null;
+			originalSiteCaptured = true;
+
+			const page = await browser.newPage();
+			hotkeyPage = page;
+			await page.evaluateOnNewDocument(() => {
+				const scope = window as Window & { __spectraSiteArbiterProbe?: SiteArbiterProbe };
+				const probe: SiteArbiterProbe = {
+					mode: 'observe',
+					documentStops: 0,
+					keyupStops: 0,
+					unclaimedWindowEvents: [],
+				};
+				scope.__spectraSiteArbiterProbe = probe;
+				const isCandidate = (event: KeyboardEvent) => (
+					event.code === 'KeyK'
+					&& !event.ctrlKey
+					&& !event.altKey
+					&& !event.shiftKey
+					&& !event.metaKey
+				) || event.altKey
+					&& event.code === 'ArrowRight';
+				document.addEventListener('keydown', (event) => {
+					if (!isCandidate(event)
+						|| probe.mode !== 'document-stop'
+						|| event.code !== 'KeyK') return;
+					probe.documentStops += 1;
+					event.stopPropagation();
+				});
+				window.addEventListener('keyup', (event) => {
+					if (probe.mode !== 'window-keyup-stop' || event.code !== 'KeyK') return;
+					probe.keyupStops += 1;
+					event.stopImmediatePropagation();
+				}, true);
+				window.addEventListener('keydown', (event) => {
+					if (!isCandidate(event)) return;
+					if (!event.defaultPrevented) {
+						probe.unclaimedWindowEvents.push(
+							`${probe.mode}:${event.code}:${event.repeat}`,
+						);
+					}
+					if (probe.mode === 'window-prevent' && event.code === 'KeyK') {
+						event.preventDefault();
+					}
+				});
+			});
+			await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+			await eventually(
+				() => readContentBootstrapStatus(targetUrl),
+				(status) => status.ready
+					&& status.runtimeRevision === SPECTRA_CONTENT_RUNTIME_REVISION,
+				'configured site hotkey runtime',
+				15_000,
+			);
+			await page.bringToFront();
+
+			const focusBody = () => page.evaluate(() => {
+				document.body.tabIndex = -1;
+				document.body.focus();
+			});
+			const setMode = (mode: SiteArbiterMode) => page.evaluate((nextMode) => {
+				(window as Window & { __spectraSiteArbiterProbe?: SiteArbiterProbe })
+					.__spectraSiteArbiterProbe!.mode = nextMode;
+			}, mode);
+			const readState = () => page.evaluate(() => ({
+				speed: document.querySelector<HTMLMediaElement>('video,audio')?.playbackRate ?? -1,
+				probe: (window as Window & { __spectraSiteArbiterProbe?: SiteArbiterProbe })
+					.__spectraSiteArbiterProbe!,
+			}));
+			const tapSiteHotkey = async () => {
+				await page.keyboard.press('KeyK');
+			};
+
+			expect(await readState()).toMatchObject({ speed: 1 });
+			await focusBody();
+			for (const mode of ['window-prevent', 'document-stop'] as const) {
+				await setMode(mode);
+				await tapSiteHotkey();
+				await new Promise((resolveWait) => setTimeout(resolveWait, 125));
+				expect(await readState()).toMatchObject({ speed: 1 });
+			}
+
+			await setMode('observe');
+			await tapSiteHotkey();
+			await eventually(
+				readState,
+				(state) => state.speed === 1.1,
+				'one accepted configured site hotkey',
+			);
+			await new Promise((resolveWait) => setTimeout(resolveWait, 125));
+			expect(await readState()).toMatchObject({ speed: 1.1 });
+
+			// Enabling a site-specific listener must not duplicate ownership of
+			// the five shipped chords that remain bootstrap-owned.
+			await tapDefaultShortcut(page, 'ArrowRight');
+			await eventually(
+				readState,
+				(state) => state.speed === 1.2,
+				'one default hotkey despite a colliding site binding',
+			);
+			await new Promise((resolveWait) => setTimeout(resolveWait, 125));
+			expect(await readState()).toMatchObject({ speed: 1.2 });
+
+			await setMode('window-keyup-stop');
+			await page.keyboard.down('KeyK');
+			await eventually(
+				readState,
+				(state) => state.speed === 1.3,
+				'configured site hotkey initial held press',
+			);
+			await new Promise((resolveWait) => setTimeout(resolveWait, 75));
+			await page.keyboard.down('KeyK');
+			await eventually(
+				readState,
+				(state) => state.speed === 1.4,
+				'one physical configured repeat before truncated release',
+			);
+			await page.keyboard.up('KeyK');
+			await new Promise((resolveWait) => setTimeout(resolveWait, 125));
+			expect(await readState()).toMatchObject({ speed: 1.4 });
+
+			await setMode('observe');
+			await tapSiteHotkey();
+			await eventually(
+				readState,
+				(state) => state.speed === 1.5,
+				'next configured site hotkey after truncated release',
+			);
+			await new Promise((resolveWait) => setTimeout(resolveWait, 125));
+			const final = await readState();
+			expect(final.speed).toBe(1.5);
+			expect(final.probe.documentStops).toBe(1);
+			expect(final.probe.keyupStops).toBe(1);
+			expect(final.probe.unclaimedWindowEvents.some(
+				(event) => event.startsWith('document-stop:'),
+			)).toBe(false);
+			expect(final.probe.unclaimedWindowEvents).toContain('window-prevent:KeyK:false');
+			expect(final.probe.unclaimedWindowEvents).toContain('observe:KeyK:false');
+			expect(final.probe.unclaimedWindowEvents).toContain('observe:ArrowRight:false');
+		} finally {
+			await hotkeyPage?.keyboard.up('KeyK').catch(() => undefined);
+			await hotkeyPage?.keyboard.up('Alt').catch(() => undefined);
+			await hotkeyPage?.close().catch(() => undefined);
+			try {
+				if (originalSiteCaptured) {
+					await patchExtensionSettings(client, {
+						scope: 'hotkey-site',
+						domain: siteDomain,
+						value: originalSite,
+					});
+				}
+			} finally {
+				await client.close().catch(() => undefined);
+			}
+		}
+	}, 30_000);
 
 	test('restores cold page-native volume and speed across refresh without showing a badge', async () => {
 		const coldUrl = `${fixtureUrl}?cold-native-refresh=1`;
@@ -2018,21 +2882,10 @@ describe('SPECTRA built extension smoke', () => {
 			await waitForContentBootstrapStatus(cappedUrl);
 			await cappedPage.bringToFront();
 			const tabId = await getTabId(cappedUrl);
-			const acknowledgement = await extensionClient.evaluate(async (targetTabId) => (
-				chrome.runtime.sendMessage({
-					protocolVersion: 2,
-					requestId: crypto.randomUUID(),
-					tabId: targetTabId,
-					type: 'spectra.control.intent.submit',
-					payload: {
-						tabId: targetTabId,
-						source: 'popup',
-						requestedCoverage: 'active-target',
-						target: null,
-						patch: { speed: 4 },
-					},
-				})
-			), tabId);
+			const acknowledgement = await submitPopupControlIntent(
+				tabId,
+				{ patch: { speed: 4 } },
+			);
 			expect(acknowledgement).toMatchObject({
 				ok: true,
 				data: {
@@ -2094,21 +2947,10 @@ describe('SPECTRA built extension smoke', () => {
 			await waitForContentBootstrapStatus(spaUrl);
 			await spaPage.bringToFront();
 			const tabId = await getTabId(spaUrl);
-			const seeded = await extensionClient.evaluate(async (targetTabId) => (
-				chrome.runtime.sendMessage({
-					protocolVersion: 2,
-					requestId: crypto.randomUUID(),
-					tabId: targetTabId,
-					type: 'spectra.control.intent.submit',
-					payload: {
-						tabId: targetTabId,
-						source: 'popup',
-						requestedCoverage: 'active-target',
-						target: null,
-						patch: { speed: 2 },
-					},
-				})
-			), tabId);
+			const seeded = await submitPopupControlIntent(
+				tabId,
+				{ patch: { speed: 2 } },
+			);
 			expect(seeded).toMatchObject({
 				ok: true,
 				data: { fields: { speed: { phase: 'applied', actual: 2 } } },
@@ -2211,7 +3053,6 @@ describe('SPECTRA built extension smoke', () => {
 	test('replays speed when a pre-rendered same-document SPA modal becomes active', async () => {
 		const spaUrl = `${fixtureUrl}?spa-prerendered-modal=1`;
 		const spaPage = await browser.newPage();
-		const extensionClient = await openExtensionClient();
 		try {
 			await spaPage.goto(spaUrl, { waitUntil: 'domcontentloaded' });
 			await waitForContentBootstrapStatus(spaUrl);
@@ -2236,21 +3077,10 @@ describe('SPECTRA built extension smoke', () => {
 				document.body.append(modal, rateLabel);
 			});
 
-			const restored = await extensionClient.evaluate(async (targetTabId) => (
-				chrome.runtime.sendMessage({
-					protocolVersion: 2,
-					requestId: crypto.randomUUID(),
-					tabId: targetTabId,
-					type: 'spectra.control.intent.submit',
-					payload: {
-						tabId: targetTabId,
-						source: 'popup',
-						requestedCoverage: 'active-target',
-						target: null,
-						patch: { speed: 2 },
-					},
-				})
-			), tabId);
+			const restored = await submitPopupControlIntent(
+				tabId,
+				{ patch: { speed: 2 } },
+			);
 			expect(restored).toMatchObject({
 				ok: true,
 				data: { fields: { speed: { phase: 'applied', actual: 2 } } },
@@ -2293,7 +3123,6 @@ describe('SPECTRA built extension smoke', () => {
 				8_000,
 			);
 		} finally {
-			await extensionClient.close();
 			await spaPage.close().catch(() => undefined);
 		}
 	}, 35_000);
@@ -2301,7 +3130,6 @@ describe('SPECTRA built extension smoke', () => {
 	test('upgrades restored DOM speed when a same-document SPA modal controller mounts later', async () => {
 		const spaUrl = `${fixtureUrl}?spa-speed-shell=1`;
 		const spaPage = await browser.newPage();
-		const extensionClient = await openExtensionClient();
 		try {
 			await spaPage.goto(spaUrl, { waitUntil: 'domcontentloaded' });
 			await waitForContentBootstrapStatus(spaUrl);
@@ -2313,21 +3141,10 @@ describe('SPECTRA built extension smoke', () => {
 					.__spectraSpaDocumentToken = token;
 				return token;
 			});
-			const restored = await extensionClient.evaluate(async (targetTabId) => (
-				chrome.runtime.sendMessage({
-					protocolVersion: 2,
-					requestId: crypto.randomUUID(),
-					tabId: targetTabId,
-					type: 'spectra.control.intent.submit',
-					payload: {
-						tabId: targetTabId,
-						source: 'popup',
-						requestedCoverage: 'active-target',
-						target: null,
-						patch: { speed: 2 },
-					},
-				})
-			), tabId);
+			const restored = await submitPopupControlIntent(
+				tabId,
+				{ patch: { speed: 2 } },
+			);
 			expect(restored).toMatchObject({
 				ok: true,
 				data: {
@@ -2377,21 +3194,10 @@ describe('SPECTRA built extension smoke', () => {
 			});
 			expect(mounted.url).toContain('/spa-modal?modal_id=');
 
-			const adjusted = await extensionClient.evaluate(async (targetTabId) => (
-				chrome.runtime.sendMessage({
-					protocolVersion: 2,
-					requestId: crypto.randomUUID(),
-					tabId: targetTabId,
-					type: 'spectra.control.intent.submit',
-					payload: {
-						tabId: targetTabId,
-						source: 'popup',
-						requestedCoverage: 'active-target',
-						target: null,
-						patch: { speed: 2.5 },
-					},
-				})
-			), tabId);
+			const adjusted = await submitPopupControlIntent(
+				tabId,
+				{ patch: { speed: 2.5 } },
+			);
 			expect(adjusted).toMatchObject({
 				ok: true,
 				data: {
@@ -2427,7 +3233,6 @@ describe('SPECTRA built extension smoke', () => {
 				'same-document SPA page-controller writer upgrade',
 			);
 		} finally {
-			await extensionClient.close();
 			await spaPage.close().catch(() => undefined);
 		}
 	}, 35_000);
@@ -2583,33 +3388,15 @@ describe('SPECTRA built extension smoke', () => {
 		await waitForContentBootstrapStatus(fixtureUrl);
 		await fixturePage.bringToFront();
 		const tabId = await getTabId(fixturePage.url());
-		const extensionClient = await openExtensionClient();
 		try {
-			await extensionClient.evaluate(async (targetTabId) => {
-				const send = (type: string, payload: Record<string, unknown>) => chrome.runtime.sendMessage({
-					protocolVersion: 2,
-					requestId: crypto.randomUUID(),
-					tabId: targetTabId,
-					type,
-					payload,
-				});
-				const volume = await send('spectra.control.operation.submit', {
-					tabId: targetTabId,
-					source: 'popup',
-					target: null,
-					operation: 'effective-volume',
-					payload: { operation: 'set', value: 63 },
-				});
-				if (!volume?.ok) throw new Error(volume?.error?.message ?? 'Unable to set refresh volume');
-				const speed = await send('spectra.control.intent.submit', {
-					tabId: targetTabId,
-					source: 'popup',
-					requestedCoverage: 'active-target',
-					target: null,
-					patch: { mediaMuted: false, speed: 1.75 },
-				});
-				if (!speed?.ok) throw new Error(speed?.error?.message ?? 'Unable to set refresh mute and speed');
-			}, tabId);
+			await submitEffectiveVolume(tabId, 63);
+			const speed = await submitPopupControlIntent(
+				tabId,
+				{ patch: { mediaMuted: false, speed: 1.75 } },
+			);
+			if (!speed.ok) {
+				throw new Error(speed.error?.message ?? 'Unable to set refresh mute and speed');
+			}
 			await eventually(
 				() => fixturePage.evaluate(() => {
 					const media = document.querySelector<HTMLMediaElement>('#v');
@@ -2676,30 +3463,11 @@ describe('SPECTRA built extension smoke', () => {
 				},
 			});
 		} finally {
-			await extensionClient.evaluate(async (targetTabId) => {
-				const send = (type: string, payload: Record<string, unknown>) => chrome.runtime.sendMessage({
-					protocolVersion: 2,
-					requestId: crypto.randomUUID(),
-					tabId: targetTabId,
-					type,
-					payload,
-				});
-				await send('spectra.control.operation.submit', {
-					tabId: targetTabId,
-					source: 'popup',
-					target: null,
-					operation: 'effective-volume',
-					payload: { operation: 'set', value: 100 },
-				});
-				await send('spectra.control.intent.submit', {
-					tabId: targetTabId,
-					source: 'popup',
-					requestedCoverage: 'active-target',
-					target: null,
-					patch: { mediaMuted: false, speed: 1 },
-				});
-			}, tabId).catch(() => undefined);
-			await extensionClient.close().catch(() => undefined);
+			await submitEffectiveVolume(tabId, 100).catch(() => undefined);
+			await submitPopupControlIntent(
+				tabId,
+				{ patch: { mediaMuted: false, speed: 1 } },
+			).catch(() => undefined);
 		}
 	}, 35_000);
 
@@ -3613,100 +4381,39 @@ describe('SPECTRA built extension smoke', () => {
 		const extensionClient = await openExtensionClient('options.html');
 		const tabId = await getTabId(targetUrl);
 		let shortcutTargetPage: Page | null = null;
-		const settings = await withDiagnosticTimeout('select zh-CN for the OSD smoke test', () => (
-			extensionClient.evaluate(async () => {
-				const request = (type: string, payload: Record<string, unknown>) => chrome.runtime.sendMessage({
-					protocolVersion: 2,
-					requestId: crypto.randomUUID(),
-					type,
-					payload,
-				});
-				const current = await request('spectra.settings.get', {});
-				if (!current?.ok) throw new Error('Unable to read settings before OSD smoke test');
-				const changed = await request('spectra.settings.patch', {
-					expectedRevision: current.data.revision,
-					patch: { scope: 'global', changes: { lang: 'zh-CN' } },
-				});
-				if (!changed?.ok) throw new Error('Unable to select zh-CN for OSD smoke test');
-				return {
-					originalLanguage: current.data.globalSettings.lang,
-				};
-			})
-		), 5_000);
+		const originalLanguage = await withDiagnosticTimeout(
+			'select zh-CN for the OSD smoke test',
+			() => setGlobalLanguage(extensionClient, 'zh-CN'),
+			5_000,
+		);
 
 		try {
 			await configureRuntime(targetUrl, {
 				...DEFAULT_AUDIO_CONFIG,
 				muted: false,
 			});
-			const nativeBaseline = await extensionClient.evaluate(async (targetTabId) => (
-				chrome.runtime.sendMessage({
-					protocolVersion: 2,
-					requestId: crypto.randomUUID(),
-					type: 'spectra.control.intent.submit',
-					payload: {
-						tabId: targetTabId,
-						source: 'popup',
-						requestedCoverage: 'active-target',
-						target: null,
-						mutations: [
-							{ field: 'mediaMuted', operation: 'set', value: false },
-							{ field: 'speed', operation: 'set', value: 1 },
-						],
-					},
-				})
-			), tabId);
-			if (!nativeBaseline?.ok
-				|| nativeBaseline.data.fields.mediaMuted?.actual !== false
-				|| nativeBaseline.data.fields.speed?.actual !== 1) {
-				throw new Error(nativeBaseline?.error?.message ?? 'Unable to establish the native mute baseline');
-			}
-			const hotkey = await withDiagnosticTimeout('trigger the mute OSD', () => (
-				evaluateServiceWorker(async (targetTabId) => chrome.tabs.sendMessage(targetTabId, {
-					protocolVersion: 2,
-					requestId: crypto.randomUUID(),
-					tabId: targetTabId,
-					type: 'spectra.hotkey.trigger',
-					payload: { action: 'volume_mute' },
-				}), tabId)
-			), 5_000);
-			if (!hotkey?.ok) throw new Error(hotkey?.error?.message ?? 'Unable to trigger mute OSD');
-			await withDiagnosticTimeout('observe the actual media mute', () => fixturePage.waitForFunction(() => (
-				document.querySelector<HTMLMediaElement>('video,audio')?.muted === true
-			), { timeout: 5_000 }), 6_000);
-			await withDiagnosticTimeout('observe the localized mute OSD', () => fixturePage.waitForFunction(() => {
-				const host = document.querySelector<HTMLElement>('#spectra-osd-host');
-				return host?.matches(':popover-open') === true
-					&& host.popover === 'manual'
-					&& host.shadowRoot?.getElementById('t')?.textContent === '静音';
-			}, { timeout: 5_000 }), 6_000);
-			expect(await fixturePage.evaluate(() => {
-				const host = document.querySelector<HTMLElement>('#spectra-osd-host');
-				if (!host?.matches(':popover-open')) return false;
-				host.hidePopover();
-				document.dispatchEvent(new Event('fullscreenchange'));
-				return host.matches(':popover-open');
-			})).toBe(true);
-			const unmuted = await withDiagnosticTimeout('trigger the unmute ACK', () => (
-				evaluateServiceWorker(async (targetTabId) => chrome.tabs.sendMessage(targetTabId, {
-					protocolVersion: 2,
-					requestId: crypto.randomUUID(),
-					tabId: targetTabId,
-					type: 'spectra.hotkey.trigger',
-					payload: { action: 'volume_mute' },
-				}), tabId)
-			), 5_000);
-			if (!unmuted?.ok) throw new Error(unmuted?.error?.message ?? 'Unable to trigger unmute');
-			await withDiagnosticTimeout('observe the actual media unmute', () => fixturePage.waitForFunction(() => (
-				document.querySelector<HTMLMediaElement>('video,audio')?.muted === false
-			), { timeout: 5_000 }), 6_000);
 			await fixturePage.bringToFront();
+			await tapDefaultShortcut(fixturePage, 'KeyM');
+			await fixturePage.waitForFunction(() => (
+				document.querySelector<HTMLMediaElement>('video,audio')?.muted === true
+				&& document.querySelector<HTMLElement>('#spectra-osd-host')
+					?.shadowRoot?.getElementById('t')?.textContent === '静音'
+			), { timeout: 5_000 });
+			await tapDefaultShortcut(fixturePage, 'KeyM');
+			await fixturePage.waitForFunction(() => (
+				document.querySelector<HTMLMediaElement>('video,audio')?.muted === false
+			), { timeout: 5_000 });
+			const nativeBaseline = await submitPopupControlIntent(tabId, {
+				mutations: [
+					{ field: 'speed', operation: 'set', value: 1 },
+				],
+			});
+			if (!nativeBaseline?.ok
+				|| nativeBaseline.data.fields.speed?.actual !== 1) {
+				throw new Error(nativeBaseline?.error?.message ?? 'Unable to establish the native speed baseline');
+			}
 			const speedShortcutUrl = fixturePage.url();
-			await withDiagnosticTimeout('press the built-in Alt+Left speed shortcut', async () => {
-				await fixturePage.keyboard.down('Alt');
-				await fixturePage.keyboard.press('ArrowLeft');
-				await fixturePage.keyboard.up('Alt');
-			}, 5_000);
+			await tapDefaultShortcut(fixturePage, 'ArrowLeft');
 			await withDiagnosticTimeout('observe the acknowledged 0.9x top-layer OSD', () => (
 				fixturePage.waitForFunction(() => {
 					const media = document.querySelector<HTMLMediaElement>('video,audio');
@@ -3716,31 +4423,16 @@ describe('SPECTRA built extension smoke', () => {
 						&& host.shadowRoot?.getElementById('t')?.textContent === '0.9×';
 				}, { timeout: 5_000 })
 			), 6_000);
+			expect(await fixturePage.evaluate(() => {
+				const host = document.querySelector<HTMLElement>('#spectra-osd-host');
+				if (!host?.matches(':popover-open')) return false;
+				host.hidePopover();
+				document.dispatchEvent(new Event('fullscreenchange'));
+				return host.matches(':popover-open');
+			})).toBe(true);
 			expect(fixturePage.url()).toBe(speedShortcutUrl);
-			await fixturePage.evaluate(() => {
-				const text = document.querySelector<HTMLElement>('#spectra-osd-host')
-					?.shadowRoot?.getElementById('t');
-				if (!text) throw new Error('Speed OSD label is unavailable');
-				const scope = window as Window & {
-					__spectraSpeedLabels?: string[];
-					__spectraSpeedLabelObserver?: MutationObserver;
-				};
-				scope.__spectraSpeedLabels = [text.textContent ?? ''];
-				scope.__spectraSpeedLabelObserver?.disconnect();
-				scope.__spectraSpeedLabelObserver = new MutationObserver(() => {
-					scope.__spectraSpeedLabels!.push(text.textContent ?? '');
-				});
-				scope.__spectraSpeedLabelObserver.observe(text, {
-					childList: true,
-					characterData: true,
-					subtree: true,
-				});
-			});
-			await withDiagnosticTimeout('press the built-in Alt+Right speed shortcut', async () => {
-				await fixturePage.keyboard.down('Alt');
-				await fixturePage.keyboard.press('ArrowRight');
-				await fixturePage.keyboard.up('Alt');
-			}, 5_000);
+			await startOsdFeedbackProbe(fixturePage, '×', true);
+			await tapDefaultShortcut(fixturePage, 'ArrowRight');
 			await withDiagnosticTimeout('observe the acknowledged 1.0x OSD', () => (
 				fixturePage.waitForFunction(() => (
 					document.querySelector<HTMLMediaElement>('video,audio')?.playbackRate === 1
@@ -3748,14 +4440,9 @@ describe('SPECTRA built extension smoke', () => {
 						?.shadowRoot?.getElementById('t')?.textContent === '1.0×'
 				), { timeout: 5_000 })
 			), 6_000);
-			const speedLabels = await fixturePage.evaluate(() => {
-				const scope = window as Window & {
-					__spectraSpeedLabels?: string[];
-					__spectraSpeedLabelObserver?: MutationObserver;
-				};
-				scope.__spectraSpeedLabelObserver?.disconnect();
-				return [...new Set(scope.__spectraSpeedLabels ?? [])];
-			});
+			const speedLabels = [
+				...new Set((await readOsdFeedback(fixturePage, 'speed', true)).frames.map(({ label }) => label)),
+			];
 			expect(speedLabels).toContain('0.9×');
 			expect(speedLabels).toContain('1.0×');
 			expect(speedLabels.every((label) => label === '0.9×' || label === '1.0×')).toBe(true);
@@ -3781,45 +4468,20 @@ describe('SPECTRA built extension smoke', () => {
 			await shortcutTargetPage.goto(shortcutTargetUrl, { waitUntil: 'domcontentloaded' });
 			await waitForContentBootstrapStatus(shortcutTargetUrl);
 			const shortcutTargetTabId = await getTabId(shortcutTargetUrl);
-			const targetBaseline = await extensionClient.evaluate(async (targetTabId) => {
-				const baseline = await chrome.runtime.sendMessage({
-					protocolVersion: 2,
-					requestId: crypto.randomUUID(),
-					type: 'spectra.control.intent.submit',
-					payload: {
-						tabId: targetTabId,
-						source: 'popup',
-						requestedCoverage: 'active-target',
-						target: null,
-						mutations: [{ field: 'speed', operation: 'set', value: 1 }],
-					},
-				});
-				if (!baseline?.ok || baseline.data.fields.speed?.actual !== 1) {
-					throw new Error(baseline?.error?.message ?? 'Unable to initialize shortcut target speed');
-				}
-				const selected = await chrome.runtime.sendMessage({
-					protocolVersion: 2,
-					requestId: crypto.randomUUID(),
-					type: 'spectra.hotkey-target.set',
-					payload: { tabId: targetTabId },
-				});
-				if (!selected?.ok || selected.data.tabId !== targetTabId) {
-					throw new Error(selected?.error?.message ?? 'Unable to select shortcut target');
-				}
-				return true;
-			}, shortcutTargetTabId);
-			expect(targetBaseline).toBe(true);
+			const targetBaseline = await submitPopupControlIntent(shortcutTargetTabId, {
+				mutations: [{ field: 'speed', operation: 'set', value: 1 }],
+			});
+			if (!targetBaseline.ok || targetBaseline.data.fields.speed?.actual !== 1) {
+				throw new Error(targetBaseline.error?.message ?? 'Unable to initialize shortcut target speed');
+			}
+			await setHotkeyTarget(extensionClient, shortcutTargetTabId);
 			await fixturePage.bringToFront();
-			await withDiagnosticTimeout('route built-in speed shortcut to the selected target', async () => {
-				await fixturePage.keyboard.down('Alt');
-				await fixturePage.keyboard.press('ArrowRight');
-				await fixturePage.keyboard.up('Alt');
-			}, 5_000);
+			await tapDefaultShortcut(fixturePage, 'ArrowRight');
 			await withDiagnosticTimeout(
 				'observe selected-target speed and foreground Toast',
 				() => eventually(
 					async () => {
-						const [targetRate, foreground, background] = await Promise.all([
+						const [targetRate, foreground] = await Promise.all([
 							shortcutTargetPage!.evaluate(() => (
 								document.querySelector<HTMLMediaElement>('video,audio')?.playbackRate ?? null
 							)),
@@ -3833,26 +4495,8 @@ describe('SPECTRA built extension smoke', () => {
 									meta: host?.shadowRoot?.getElementById('meta')?.textContent ?? null,
 								};
 							}),
-							extensionClient.evaluate(async (targetTabId) => {
-								const request = (type: string, payload: Record<string, unknown>) => (
-									chrome.runtime.sendMessage({
-										protocolVersion: 2,
-										requestId: crypto.randomUUID(),
-										type,
-										payload,
-									})
-								);
-								const [selected, snapshot] = await Promise.all([
-									request('spectra.hotkey-target.get', {}),
-									request('spectra.control.snapshot.get', { tabId: targetTabId }),
-								]);
-								return {
-									selected: selected?.data ?? null,
-									speed: snapshot?.data?.fields?.speed ?? null,
-								};
-							}, shortcutTargetTabId),
 						]);
-						return { targetRate, foreground, background };
+						return { targetRate, foreground };
 					},
 					(state) => state.targetRate === 1.1
 						&& state.foreground.rate === 1
@@ -3868,114 +4512,29 @@ describe('SPECTRA built extension smoke', () => {
 			expect(await shortcutTargetPage.evaluate(() => (
 				document.querySelector<HTMLMediaElement>('video,audio')?.playbackRate
 			))).toBe(1.1);
-			await extensionClient.evaluate(async () => {
-				const cleared = await chrome.runtime.sendMessage({
-					protocolVersion: 2,
-					requestId: crypto.randomUUID(),
-					type: 'spectra.hotkey-target.set',
-					payload: { tabId: null },
-				});
-				if (!cleared?.ok || cleared.data.tabId !== null) {
-					throw new Error(cleared?.error?.message ?? 'Unable to clear shortcut target');
-				}
-			});
+			await setHotkeyTarget(extensionClient, null);
 			await shortcutTargetPage.close();
 			shortcutTargetPage = null;
 			await fixturePage.bringToFront();
-			await fixturePage.evaluate(() => {
-				const root = document.querySelector<HTMLElement>('#spectra-osd-host')?.shadowRoot;
-				const text = root?.getElementById('t');
-				const fill = root?.getElementById('f');
-				if (!root || !text || !fill) throw new Error('Speed feedback surface is unavailable');
-				const scope = window as Window & {
-					__spectraHeldSpeedFrames?: Array<{ at: number; label: string; width: number }>;
-					__spectraHeldSpeedObserver?: MutationObserver;
-				};
-				scope.__spectraHeldSpeedFrames = [];
-				scope.__spectraHeldSpeedObserver?.disconnect();
-				const record = () => {
-					const label = text.textContent ?? '';
-					const width = Number.parseFloat(fill.style.width);
-					if (label.endsWith('×') && Number.isFinite(width)) {
-						scope.__spectraHeldSpeedFrames!.push({
-							at: performance.now(),
-							label,
-							width,
-						});
-					}
-				};
-				scope.__spectraHeldSpeedObserver = new MutationObserver(record);
-				scope.__spectraHeldSpeedObserver.observe(root, {
-					attributes: true,
-					attributeFilter: ['style'],
-					childList: true,
-					characterData: true,
-					subtree: true,
-				});
-			});
-			await withDiagnosticTimeout('hold the page-owned speed-up gesture', async () => {
-				await fixturePage.keyboard.down('Alt');
-				await fixturePage.keyboard.down('ArrowRight');
-				for (let index = 0; index < 11; index += 1) {
-					await new Promise((resolveWait) => setTimeout(resolveWait, 35));
-					await fixturePage.keyboard.down('ArrowRight');
-				}
-				await new Promise((resolveWait) => setTimeout(resolveWait, 35));
-				await fixturePage.keyboard.up('ArrowRight');
-				await fixturePage.keyboard.up('Alt');
-			}, 5_000);
-			const speedAtRelease = await fixturePage.evaluate(() => {
-				const scope = window as Window & {
-					__spectraHeldSpeedFrames?: Array<{ at: number; label: string; width: number }>;
-				};
-				const root = document.querySelector<HTMLElement>('#spectra-osd-host')?.shadowRoot;
-				const osd = root?.getElementById('o');
-				const fill = root?.getElementById('f');
-				return {
-					rate: document.querySelector<HTMLMediaElement>('video,audio')?.playbackRate ?? -1,
-					visible: osd?.classList.contains('v') ?? false,
-					label: root?.getElementById('t')?.textContent ?? '',
-					width: fill ? Number.parseFloat(fill.style.width) : -1,
-					tone: osd?.className ?? '',
-					color: fill ? getComputedStyle(fill).backgroundColor : '',
-					frameCount: scope.__spectraHeldSpeedFrames?.length ?? 0,
-				};
-			});
+			await startOsdFeedbackProbe(fixturePage, '×');
+			await holdDefaultShortcut(fixturePage, 'ArrowRight', 11, 35);
+			const speedAtRelease = await readOsdFeedback(fixturePage, 'speed');
 			await new Promise((resolveWait) => setTimeout(resolveWait, 400));
-			const heldSpeedFeedback = await fixturePage.evaluate(() => {
-				const scope = window as Window & {
-					__spectraHeldSpeedFrames?: Array<{ at: number; label: string; width: number }>;
-					__spectraHeldSpeedObserver?: MutationObserver;
-				};
-				scope.__spectraHeldSpeedObserver?.disconnect();
-				const host = document.querySelector<HTMLElement>('#spectra-osd-host');
-				const root = host?.shadowRoot;
-				const osd = root?.getElementById('o');
-				const fill = root?.getElementById('f');
-				return {
-					frames: scope.__spectraHeldSpeedFrames ?? [],
-					rate: document.querySelector<HTMLMediaElement>('video,audio')?.playbackRate ?? -1,
-					visible: osd?.classList.contains('v') ?? false,
-					label: root?.getElementById('t')?.textContent ?? '',
-					width: fill ? Number.parseFloat(fill.style.width) : -1,
-					tone: osd?.className ?? '',
-					color: fill ? getComputedStyle(fill).backgroundColor : '',
-				};
-			});
+			const heldSpeedFeedback = await readOsdFeedback(fixturePage, 'speed', true);
 			expect(speedAtRelease).toMatchObject({
 				visible: true,
 				label: '2.2×',
 				color: 'rgb(16, 185, 129)',
 			});
 			expect(heldSpeedFeedback).toMatchObject({
-				rate: speedAtRelease.rate,
+				actual: speedAtRelease.actual,
 				visible: true,
 				label: speedAtRelease.label,
 				width: speedAtRelease.width,
 				tone: speedAtRelease.tone,
 				color: speedAtRelease.color,
 			});
-			expect(heldSpeedFeedback.frames).toHaveLength(speedAtRelease.frameCount);
+			expect(heldSpeedFeedback.frames).toHaveLength(speedAtRelease.frames.length);
 			const heldSpeedLabels = [...new Set(
 				heldSpeedFeedback.frames.map(({ label }) => label),
 			)];
@@ -4002,104 +4561,20 @@ describe('SPECTRA built extension smoke', () => {
 					Math.round((document.querySelector<HTMLMediaElement>('video,audio')?.volume ?? -1) * 100) === 90
 				), { timeout: 5_000 })
 			), 6_000);
-			await fixturePage.evaluate(() => {
-				const host = document.querySelector<HTMLElement>('#spectra-osd-host');
-				const root = host?.shadowRoot;
-				const text = root?.getElementById('t');
-				const fill = root?.getElementById('f');
-				if (!root || !text || !fill) throw new Error('OSD feedback surface is unavailable');
-				const scope = window as Window & {
-					__spectraScalarFrames?: Array<{ at: number; label: string; width: number }>;
-					__spectraScalarObserver?: MutationObserver;
-				};
-				scope.__spectraScalarFrames = [];
-				scope.__spectraScalarObserver?.disconnect();
-				const record = () => {
-					const label = text.textContent ?? '';
-					const width = Number.parseFloat(fill.style.width);
-					if (label.endsWith('%') && Number.isFinite(width)) {
-						scope.__spectraScalarFrames!.push({ at: performance.now(), label, width });
-					}
-				};
-				scope.__spectraScalarObserver = new MutationObserver(record);
-				scope.__spectraScalarObserver.observe(root, {
-					attributes: true,
-					attributeFilter: ['style'],
-					childList: true,
-					characterData: true,
-					subtree: true,
-				});
-				record();
-			});
-			await withDiagnosticTimeout('hold the below-100 volume-down command', async () => {
-				await fixturePage.keyboard.down('Alt');
-				await fixturePage.keyboard.down('ArrowDown');
-				for (let index = 0; index < 18; index += 1) {
-					await new Promise((resolveWait) => setTimeout(resolveWait, 35));
-					await fixturePage.keyboard.down('ArrowDown');
-				}
-				await fixturePage.keyboard.up('ArrowDown');
-				await fixturePage.keyboard.up('Alt');
-			}, 5_000);
-			const volumeAtRelease = await fixturePage.evaluate(() => {
-				const scope = window as Window & {
-					__spectraScalarFrames?: Array<{ at: number; label: string; width: number }>;
-				};
-				const root = document.querySelector<HTMLElement>('#spectra-osd-host')?.shadowRoot;
-				const osd = root?.getElementById('o');
-				const fill = root?.getElementById('f');
-				return {
-					volume: Math.round(
-						(document.querySelector<HTMLMediaElement>('video,audio')?.volume ?? -1) * 100,
-					),
-					visible: osd?.classList.contains('v') ?? false,
-					label: root?.getElementById('t')?.textContent ?? '',
-					width: fill ? Number.parseFloat(fill.style.width) : -1,
-					tone: osd?.className ?? '',
-					color: fill ? getComputedStyle(fill).backgroundColor : '',
-					frameCount: scope.__spectraScalarFrames?.length ?? 0,
-				};
-			});
-			expect(volumeAtRelease.volume).toBeGreaterThanOrEqual(0);
-			expect(volumeAtRelease.volume).toBeLessThanOrEqual(30);
+			await startOsdFeedbackProbe(fixturePage, '%', true);
+			await holdDefaultShortcut(fixturePage, 'ArrowDown', 18);
+			const volumeAtRelease = await readOsdFeedback(fixturePage, 'volume');
+			expect(volumeAtRelease.actual).toBeGreaterThanOrEqual(0);
+			expect(volumeAtRelease.actual).toBeLessThanOrEqual(30);
 			expect(volumeAtRelease).toMatchObject({
 				visible: true,
 				label: '静音',
 				color: 'rgb(156, 163, 175)',
 			});
 			await new Promise((resolveWait) => setTimeout(resolveWait, 400));
-			const releasedState = await fixturePage.evaluate(() => {
-				const scope = window as Window & {
-					__spectraScalarFrames?: Array<{ at: number; label: string; width: number }>;
-				};
-				const host = document.querySelector<HTMLElement>('#spectra-osd-host');
-				const root = host?.shadowRoot;
-				const osd = root?.getElementById('o');
-				const fill = root?.getElementById('f');
-				return {
-					volume: Math.round(
-						(document.querySelector<HTMLMediaElement>('video,audio')?.volume ?? -1) * 100,
-					),
-					visible: osd?.classList.contains('v') ?? false,
-					label: root?.getElementById('t')?.textContent ?? '',
-					width: fill ? Number.parseFloat(fill.style.width) : -1,
-					tone: osd?.className ?? '',
-					color: fill ? getComputedStyle(fill).backgroundColor : '',
-					frameCount: scope.__spectraScalarFrames?.length ?? 0,
-				};
-			});
-			expect(releasedState).toEqual({
-				...volumeAtRelease,
-				frameCount: volumeAtRelease.frameCount,
-			});
-			const scalarFrames = await fixturePage.evaluate(() => {
-				const scope = window as Window & {
-					__spectraScalarFrames?: Array<{ at: number; label: string; width: number }>;
-					__spectraScalarObserver?: MutationObserver;
-				};
-				scope.__spectraScalarObserver?.disconnect();
-				return scope.__spectraScalarFrames ?? [];
-			});
+			const releasedState = await readOsdFeedback(fixturePage, 'volume', true);
+			expect(releasedState).toEqual(volumeAtRelease);
+			const scalarFrames = releasedState.frames;
 			const scalarLabels = [...new Set(scalarFrames.map(({ label }) => label))];
 			expect(scalarLabels).toEqual([
 				'80%', '70%', '60%', '50%', '40%', '30%', '20%', '10%',
@@ -4115,33 +4590,9 @@ describe('SPECTRA built extension smoke', () => {
 				expect(scalarFrames.filter((frame) => frame.label === label).length).toBeGreaterThan(2);
 			}
 		} finally {
-			await extensionClient.evaluate(async () => {
-				await chrome.runtime.sendMessage({
-					protocolVersion: 2,
-					requestId: crypto.randomUUID(),
-					type: 'spectra.hotkey-target.set',
-					payload: { tabId: null },
-				});
-			}).catch(() => undefined);
+			await setHotkeyTarget(extensionClient, null).catch(() => undefined);
 			await shortcutTargetPage?.close().catch(() => undefined);
-			await extensionClient.evaluate(async (language) => {
-				const current = await chrome.runtime.sendMessage({
-					protocolVersion: 2,
-					requestId: crypto.randomUUID(),
-					type: 'spectra.settings.get',
-					payload: {},
-				});
-				if (!current?.ok) throw new Error('Unable to read settings during OSD smoke cleanup');
-				await chrome.runtime.sendMessage({
-					protocolVersion: 2,
-					requestId: crypto.randomUUID(),
-					type: 'spectra.settings.patch',
-					payload: {
-						expectedRevision: current.data.revision,
-						patch: { scope: 'global', changes: { lang: language } },
-					},
-				});
-			}, settings.originalLanguage);
+			await setGlobalLanguage(extensionClient, originalLanguage);
 			await submitEffectiveVolume(tabId, 100).catch(() => undefined);
 			await extensionClient.close().catch(() => undefined);
 		}
@@ -4701,7 +5152,72 @@ describe('SPECTRA built extension smoke', () => {
 				sliderAccent: '#2563eb',
 			});
 			expect(await readBadgeColor(tabId)).toEqual([37, 99, 235, 255]);
+
+			// Route ownership is document-scoped. Reload the same tab after the
+			// registry change, then recreate its exact page controller at 100.
+			await markRegistryDomain(extensionClient, '127.0.0.1', true);
+			await fixturePage.reload({ waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(fixturePage.url());
+			await installPageMediaControllerHarness();
+			await submitEffectiveVolume(tabId, 100);
+			await waitForContentStatus(
+				(status) => status.mode === 'bypass' && status.phase === 'idle'
+					&& status.config?.volume === 100,
+				15_000,
+			);
+			await fixturePage.bringToFront();
+			// Create the feedback surface at that acknowledged native baseline,
+			// then let physical shortcuts cross the real direct/Capture boundary.
+			await tapDefaultShortcut(fixturePage, 'ArrowDown');
+			await waitForContentStatus(
+				(status) => status.mode === 'bypass' && status.phase === 'idle'
+					&& status.config?.volume === 90,
+				15_000,
+			);
+			await tapDefaultShortcut(fixturePage, 'ArrowUp');
+			await waitForContentStatus(
+				(status) => status.mode === 'bypass' && status.phase === 'idle'
+					&& status.config?.volume === 100,
+				15_000,
+			);
+			await startOsdFeedbackProbe(fixturePage, '%', true);
+			await tapDefaultShortcut(fixturePage, 'ArrowUp');
+			await waitForContentStatus(
+				(status) => status.mode === 'capture' && status.phase === 'active'
+					&& status.config?.volume === 110,
+				15_000,
+			);
+			const capture110Presentation = await readPopupVolumePresentation('#7c3aed');
+			expect(capture110Presentation).toMatchObject({
+				value: '110',
+				fillColor: 'rgb(124, 58, 237)',
+				valueColor: 'rgb(124, 58, 237)',
+				sliderAccent: '#7c3aed',
+			});
+
+			await tapDefaultShortcut(fixturePage, 'ArrowDown');
+			await waitForContentStatus(
+				(status) => status.mode === 'bypass' && status.phase === 'idle'
+					&& status.config?.volume === 100,
+				15_000,
+			);
+			await eventually(
+				() => readOsdFeedback(fixturePage, 'volume'),
+				(feedback) => feedback.label === '100%'
+					&& feedback.color === native100Presentation.fillColor,
+				'acknowledged native OSD after the reverse boundary',
+			);
+			const boundaryFrames = (await readOsdFeedback(fixturePage, 'volume', true)).frames;
+			const compactPairs = boundaryFrames
+				.map(({ label, color }) => `${label}|${color}`)
+				.filter((pair, index, pairs) => index === 0 || pair !== pairs[index - 1]);
+			expect(compactPairs).toEqual([
+				`100%|${native100Presentation.fillColor}`,
+				`110%|${capture110Presentation.fillColor}`,
+				`100%|${native100Presentation.fillColor}`,
+			]);
 		} finally {
+			await readOsdFeedback(fixturePage, 'volume', true).catch(() => undefined);
 			await releaseSyntheticCapture();
 			await pendingStart?.catch(() => undefined);
 			const status = await readContentStatus().catch(() => ({ generation: 0 } as ContentStatus));
@@ -4712,6 +5228,7 @@ describe('SPECTRA built extension smoke', () => {
 				(status.generation ?? 0) + 1,
 				DEFAULT_AUDIO_CONFIG,
 			).catch(() => undefined);
+			await markRegistryDomain(extensionClient, '127.0.0.1', false).catch(() => undefined);
 			await submitEffectiveVolume(tabId, 100).catch(() => undefined);
 			await configureRuntime(fixturePage.url(), DEFAULT_AUDIO_CONFIG).catch(() => undefined);
 			await removePageMediaControllerHarness();

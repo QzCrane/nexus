@@ -38,12 +38,11 @@ describe('audio runtime coverage boundary', () => {
 		await delegate.apply(intent, intent.patch);
 
 		expect(updateConfig.mock.calls[0]?.[1]).toEqual({
-			showOSD: false,
 			captureAdmission: 'extension-invocation',
 		});
 	});
 
-	test('requests page OSD only for real hotkey-sourced boost changes', async () => {
+	test('leaves every shortcut OSD side effect to the aggregate ACK feedback owner', async () => {
 		for (const source of ['restore', 'remote', 'hotkey'] as const) {
 			const state: PolicyExecutorState = {
 				config: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
@@ -72,7 +71,7 @@ describe('audio runtime coverage boundary', () => {
 				patch: { boost: 2 },
 			};
 			await delegate.apply(intent, intent.patch);
-			expect(updateConfig.mock.calls[0]?.[1]).toEqual({ showOSD: source === 'hotkey' });
+			expect(updateConfig.mock.calls[0]?.[1]).toEqual({});
 		}
 	});
 

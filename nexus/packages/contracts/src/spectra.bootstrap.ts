@@ -3,15 +3,44 @@
 import type { ControlDirectField, MediaTarget } from './control.contracts.js';
 
 export const SPECTRA_PROTOCOL_VERSION = 2 as const;
-export const SPECTRA_CONTENT_BOOTSTRAP_REVISION = '1.3.0' as const;
+export const SPECTRA_CONTENT_BOOTSTRAP_REVISION = '1.3.1' as const;
+export const SPECTRA_CONTENT_RUNTIME_REVISION = '3.3.6' as const;
 
-export const SPECTRA_DEFAULT_HOTKEY_ACTIONS = [
-	'speed_down',
-	'speed_up',
-	'volume_down',
-	'volume_up',
-] as const;
-export type SpectraDefaultHotkeyAction = typeof SPECTRA_DEFAULT_HOTKEY_ACTIONS[number];
+export const SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE = {
+	ArrowLeft: 'speed_down',
+	ArrowRight: 'speed_up',
+	ArrowDown: 'volume_down',
+	ArrowUp: 'volume_up',
+	KeyM: 'volume_mute',
+} as const;
+export type SpectraDefaultHotkeyAction =
+	typeof SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE[
+		keyof typeof SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE
+	];
+export const SPECTRA_DEFAULT_HOTKEY_ACTIONS: readonly SpectraDefaultHotkeyAction[] =
+	Object.freeze(Object.values(SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE));
+export interface SpectraDefaultHotkeyChord {
+	code: string;
+	altKey: boolean;
+	ctrlKey: boolean;
+	shiftKey: boolean;
+	metaKey: boolean;
+}
+
+// One resolver owns both the always-on bootstrap mapping and the heavy
+// site-hotkey exclusion. A built-in scalar chord can therefore have only one
+// physical KeyboardEvent owner, even when an old site binding uses the same key.
+export function resolveSpectraDefaultHotkeyAction(
+	chord: SpectraDefaultHotkeyChord,
+): SpectraDefaultHotkeyAction | null {
+	if (!chord.altKey || chord.ctrlKey || chord.shiftKey || chord.metaKey) return null;
+	return Object.hasOwn(SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE, chord.code)
+		? SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE[
+			chord.code as keyof typeof SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE
+		]
+		: null;
+}
+
 export type SpectraDefaultHotkeyPhase = 'press' | 'release';
 export interface SpectraDefaultHotkeyTriggerPayload {
 	action: SpectraDefaultHotkeyAction;

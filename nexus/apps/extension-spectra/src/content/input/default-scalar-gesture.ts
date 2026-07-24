@@ -1,5 +1,5 @@
-// goal: share exact default-scalar key gesture phases between the lightweight
-// bootstrap input owner and the lazily mounted full Content feedback runtime
+// goal: share exact hotkey gesture lifecycle between the document-start
+// bootstrap input owner and the lazily mounted full Content runtime
 
 import type { SpectraDefaultHotkeyAction } from '@nexus/contracts/bootstrap';
 
@@ -12,29 +12,37 @@ export interface DefaultScalarGestureSignal {
 
 type DefaultScalarGestureListener = (signal: DefaultScalarGestureSignal) => void;
 
-interface DefaultScalarGestureChannel {
-	version: 2;
+export interface PhysicalHotkeyReleaseSignal {
+	code: string;
+}
+
+type PhysicalHotkeyReleaseListener = (signal: PhysicalHotkeyReleaseSignal) => void;
+
+interface HotkeyGestureChannel {
+	version: 3;
 	sequence: number;
 	listeners: Set<DefaultScalarGestureListener>;
 	pending: DefaultScalarGestureSignal[];
+	releaseListeners: Set<PhysicalHotkeyReleaseListener>;
 }
 
-const CHANNEL_KEY = '__spectraDefaultScalarGestureV2';
+const CHANNEL_KEY = '__spectraHotkeyGestureV3';
 const MAX_PENDING_SIGNALS = 160;
 
 type GestureGlobal = typeof globalThis & {
-	[CHANNEL_KEY]?: DefaultScalarGestureChannel;
+	[CHANNEL_KEY]?: HotkeyGestureChannel;
 };
 
-function channel(): DefaultScalarGestureChannel {
+function channel(): HotkeyGestureChannel {
 	const owner = globalThis as GestureGlobal;
 	const current = owner[CHANNEL_KEY];
-	if (current?.version === 2) return current;
-	const created: DefaultScalarGestureChannel = {
-		version: 2,
+	if (current?.version === 3) return current;
+	const created: HotkeyGestureChannel = {
+		version: 3,
 		sequence: 0,
 		listeners: new Set(),
 		pending: [],
+		releaseListeners: new Set(),
 	};
 	owner[CHANNEL_KEY] = created;
 	return created;
@@ -66,4 +74,19 @@ export function subscribeDefaultScalarGesture(
 	const pending = owner.pending.splice(0);
 	for (const signal of pending) listener(signal);
 	return () => owner.listeners.delete(listener);
+}
+
+// Site bindings can only become active after the full runtime subscribes, so
+// releases need no replay queue. Bootstrap publishes them synchronously from
+// its document-start capture observer before website propagation can hide them.
+export function publishPhysicalHotkeyRelease(signal: PhysicalHotkeyReleaseSignal): void {
+	for (const listener of channel().releaseListeners) listener(signal);
+}
+
+export function subscribePhysicalHotkeyRelease(
+	listener: PhysicalHotkeyReleaseListener,
+): () => void {
+	const owner = channel();
+	owner.releaseListeners.add(listener);
+	return () => owner.releaseListeners.delete(listener);
 }

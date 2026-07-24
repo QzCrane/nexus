@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
 	releasePageGestureBurst,
-	resolveDirectCommand,
 	runPageGestureBurst,
 	runChromeCommandSingleFlight,
 	runWithShortcutRuntime,
@@ -21,15 +20,9 @@ function runtimePort(): ShortcutRuntimePort & {
 	};
 }
 
-describe('cold-document Chrome shortcuts', () => {
-	test('maps the Manifest mute command through the shared command contract', () => {
-		expect(resolveDirectCommand('toggle_mute')).toBe('volume_mute');
-	});
-	test('keeps every holdable scalar default page-owned and discrete Chrome commands manifest-owned', () => {
-		expect(resolveDirectCommand('speed_down')).toBeUndefined();
-		expect(resolveDirectCommand('speed_up')).toBeUndefined();
-		expect(resolveDirectCommand('volume_down')).toBeUndefined();
-		expect(resolveDirectCommand('volume_up')).toBeUndefined();
+describe('cold-document shortcuts', () => {
+	test('keeps all five shipped defaults page-owned instead of Manifest command-owned', () => {
+		const commands = ['speed_down', 'speed_up', 'volume_down', 'volume_up', 'volume_mute', 'toggle_mute'];
 		const manifest = JSON.parse(readFileSync(
 			resolve(import.meta.dir, '../public/manifest.json'),
 			'utf8',
@@ -39,24 +32,22 @@ describe('cold-document Chrome shortcuts', () => {
 				description?: string;
 			}>;
 		};
-		expect(manifest.commands.speed_down).toBeUndefined();
-		expect(manifest.commands.speed_up).toBeUndefined();
-		expect(manifest.commands.toggle_mute).toEqual({
-			suggested_key: { default: 'Alt+M', mac: 'Alt+M' },
-			description: 'Mute/Unmute',
-		});
-		expect(manifest.commands.volume_down).toBeUndefined();
-		expect(manifest.commands.volume_up).toBeUndefined();
-		expect(Object.values(manifest.commands).filter(({ suggested_key }) => suggested_key)).toHaveLength(1);
+		for (const command of commands) expect(manifest.commands[command]).toBeUndefined();
+		expect(Object.values(manifest.commands).filter(({ suggested_key }) => suggested_key)).toHaveLength(0);
 	});
-	test('separates Chrome command admission from sender-bound page defaults', () => {
+	test('admits only identity-bound extension shortcut routes', () => {
 		const source = readFileSync(resolve(import.meta.dir, '../src/background/shortcuts.ts'), 'utf8');
 		expect(source).toContain('submitExtensionInvokedControlRequest');
 		expect(source).toContain('submitExtensionInvokedControlOperation');
-		expect(source).toContain('submitControlRequest');
+		expect(source).not.toContain('submitControlRequest');
+		expect(source).not.toContain('extensionInvoked');
 		expect(source).toContain('defaultHotkeySenderIdentity');
-		expect(source).toContain('current?.documentId !== expectedDocumentId');
-		expect(source).toContain('resolveShortcutTargetFromActive(identity.tab)');
+		expect(source).toContain('route.invocation.target.documentId');
+		expect(source).toContain('if (before?.documentId !== identity.documentId)');
+		expect(source).not.toContain('before.url !== identity.url');
+		expect(source).toContain('{ ...identity.tab, url: before.url }');
+		expect(source).toContain("'builtin-page'");
+		expect(source).toContain("'chrome-command'");
 		expect(source).toContain('activeChromeCommands.has(command)');
 		expect(source).toContain('activeChromeCommands.delete(command)');
 		expect(source).not.toMatch(/\bsubmitControlOperation\(/u);
@@ -71,7 +62,8 @@ describe('cold-document Chrome shortcuts', () => {
 		});
 		port.release.mockImplementation(() => { order.push('release'); });
 
-		const result = await runWithShortcutRuntime(17, async () => {
+		const result = await runWithShortcutRuntime(17, 'document-cold', async (documentId) => {
+			expect(documentId).toBe('document-cold');
 			order.push('execute');
 			return 'applied';
 		}, port);
@@ -80,14 +72,26 @@ describe('cold-document Chrome shortcuts', () => {
 		expect(order).toEqual(['ensure', 'execute', 'release']);
 		expect(port.ensure.mock.calls[0]?.[0]).toBe(17);
 		expect(port.release.mock.calls[0]?.slice(0, 2)).toEqual([17, 'document-cold']);
-		expect(port.release.mock.calls[0]?.[2]).toBe(port.ensure.mock.calls[0]?.[1]);
+		expect(port.ensure.mock.calls[0]?.slice(0, 2)).toEqual([17, 'document-cold']);
+		expect(port.release.mock.calls[0]?.[2]).toBe(port.ensure.mock.calls[0]?.[2]);
 	});
 
 	test('releases the transient runtime when the shortcut action fails', async () => {
 		const port = runtimePort();
-		await expect(runWithShortcutRuntime(17, async () => {
+		await expect(runWithShortcutRuntime(17, 'document-cold', async () => {
 			throw new Error('mute readback mismatch');
 		}, port)).rejects.toThrow('mute readback mismatch');
+		expect(port.release).toHaveBeenCalledTimes(1);
+	});
+
+	test('rejects a READY handshake for another document before invoking the writer', async () => {
+		const port = runtimePort();
+		port.ensure.mockResolvedValue({ documentId: 'document-new' });
+		let executed = false;
+		await expect(runWithShortcutRuntime(17, 'document-old', async () => {
+			executed = true;
+		}, port)).rejects.toThrow('stale target document');
+		expect(executed).toBe(false);
 		expect(port.release).toHaveBeenCalledTimes(1);
 	});
 
@@ -97,14 +101,14 @@ describe('cold-document Chrome shortcuts', () => {
 			releaseFirst = resolveFirst;
 		});
 		let executions = 0;
-		const first = runChromeCommandSingleFlight('volume_up', async () => {
+		const first = runChromeCommandSingleFlight('play_pause', async () => {
 			executions += 1;
 			await firstBlocked;
 		});
 
 		const repeats = await Promise.all([
-			runChromeCommandSingleFlight('volume_up', async () => { executions += 1; }),
-			runChromeCommandSingleFlight('volume_up', async () => { executions += 1; }),
+			runChromeCommandSingleFlight('play_pause', async () => { executions += 1; }),
+			runChromeCommandSingleFlight('play_pause', async () => { executions += 1; }),
 		]);
 		expect(repeats).toEqual([false, false]);
 		expect(executions).toBe(1);
@@ -113,17 +117,17 @@ describe('cold-document Chrome shortcuts', () => {
 		expect(await first).toBe(true);
 		expect(executions).toBe(1);
 		expect(await runChromeCommandSingleFlight(
-			'volume_up',
+			'play_pause',
 			async () => { executions += 1; },
 		)).toBe(true);
 		expect(executions).toBe(2);
 	});
 
 	test('releases the held-command gate after failure', async () => {
-		await expect(runChromeCommandSingleFlight('speed_up', async () => {
+		await expect(runChromeCommandSingleFlight('open_options', async () => {
 			throw new Error('failed');
 		})).rejects.toThrow('failed');
-		expect(await runChromeCommandSingleFlight('speed_up', async () => undefined)).toBe(true);
+		expect(await runChromeCommandSingleFlight('open_options', async () => undefined)).toBe(true);
 	});
 
 	test('coalesces slow page repeats only when a new physical pulse arrives', async () => {
@@ -182,26 +186,36 @@ describe('cold-document Chrome shortcuts', () => {
 		expect(batches).toEqual([1, 1]);
 	});
 
-	test('waits for the exact released gesture and cancels work before its writer starts', async () => {
-		let releasePreparation!: () => void;
-		const preparation = new Promise<void>((resolvePreparation) => {
-			releasePreparation = resolvePreparation;
+	test('keeps the admitted first press through cold runtime startup while release drops repeats', async () => {
+		let releaseRuntime!: () => void;
+		const runtimeReady = new Promise<void>((resolveRuntime) => {
+			releaseRuntime = resolveRuntime;
+		});
+		const port = runtimePort();
+		port.ensure.mockImplementation(async () => {
+			await runtimeReady;
+			return { documentId: 'document-cold' };
 		});
 		const key = 'page:17:document:speed_up:default:7';
 		let writerCalls = 0;
-		const execution = runPageGestureBurst(key, async (_pulses, context) => {
-			await preparation;
-			if (!context.isReleased()) writerCalls += 1;
+		const execution = runPageGestureBurst(key, async () => {
+			await runWithShortcutRuntime(17, 'document-cold', async () => {
+				writerCalls += 1;
+			}, port);
 		});
+		expect(await runPageGestureBurst(key, async () => {
+			writerCalls += 1;
+		})).toBe(false);
 		releasePageGestureBurst(key);
 		let settled = false;
 		const waiting = waitForPageGestureBurst(key).then(() => { settled = true; });
 		await Promise.resolve();
 		expect(settled).toBe(false);
-		releasePreparation();
+		releaseRuntime();
 		expect(await execution).toBe(true);
 		await waiting;
 		expect(settled).toBe(true);
-		expect(writerCalls).toBe(0);
+		expect(writerCalls).toBe(1);
+		expect(port.release).toHaveBeenCalledTimes(1);
 	});
 });

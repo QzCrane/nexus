@@ -134,28 +134,57 @@ response channel open until Background restoration, authorization, READY, and
 state synchronization settle. A restarted MV3 worker therefore cannot be
 suspended between receipt and completion of the first authenticated event.
 
-The bootstrap also owns the only built-in holdable scalar-key boundary:
-trusted `Alt+ArrowLeft/Right` becomes sender-bound `speed_down/up`, while
-`Alt+ArrowDown/Up` becomes `volume_down/up`. Keeping all four gestures on the
-page input boundary provides exact physical repeat and keyup identity; the
-volume pair is therefore not duplicated in manifest commands. The bootstrap
-performs no polling and owns no control state. Background validates the
-top-level `tabId + documentId + gesture`, acquires the existing hotkey runtime
-lease, and submits literal `0.1×` or `10`-point coordinator mutations without
-Capture admission. The isolated-world gesture channel owns one monotonic
-sequence across bootstrap/runtime reinjection and a bounded cold-start signal
-queue, so the first key event is replayed once when feedback mounts and an old
-release cannot settle a newer gesture.
+The bootstrap also owns the only built-in default-key boundary: trusted
+`Alt+ArrowLeft/Right` becomes sender-bound `speed_down/up`,
+`Alt+ArrowDown/Up` becomes `volume_down/up`, and `Alt+M` becomes
+`volume_mute`. Keeping all five gestures on the page input boundary provides
+exact physical press/release identity; mute ignores repeated keydown, while the
+four scalar gestures retain exact repeat cadence. None is duplicated in
+Manifest commands or default Chrome command slots. The shared resolver also
+excludes all five before the heavy site-hotkey listener performs binding lookup,
+so one physical event has only one extension owner.
+
+Bootstrap uses the shared website-first keyboard arbiter rather than a permanent
+`window` bubble listener. Its permanent `window` capture listener only
+recognizes a candidate and appends a bubble tail for that same `KeyboardEvent`,
+behind the website target/document handlers and every `window` listener that
+already existed when capture ran. The tail yields when the website has set
+`defaultPrevented` or `cancelBubble`; if propagation never reaches it, a
+`setTimeout(0)` task only removes the pending tail and treats the event as
+claimed. Cleanup cannot use a microtask because that can run before the event
+reaches window bubble. An admitted tail calls only `preventDefault()` to
+suppress the browser/page default and never stops propagation. Exact arbitration
+semantics and its closed-shadow/dynamic-listener platform limits are owned by
+[control/02-strategy-and-routes.md §5](../control/02-strategy-and-routes.md#5-runtime-shortcut-and-feedback-ownership).
+The bootstrap performs no polling and owns no control state.
+
+The first Bootstrap also installs one stable trusted-keyup capture observer for
+accepted site gestures. Revision replacement swaps only its isolated-world
+subscriber, preserving the raw listener's original document-start ordering. The
+observer publishes live `{ code }` cleanup identity, does not queue releases and
+does not mutate the website event. Site repeats have no trailing action timer:
+only a subsequent physical repeat may consume a bounded pulse batch, while every
+release and lifecycle exit drops the remainder.
+Background validates the top-level `tabId + documentId + gesture`, acquires the
+existing hotkey runtime lease, and submits literal `0.1×`, `10`-point, or mute
+toggle coordinator mutations without
+accepting admission from the payload. Only after Background rechecks that the
+same document is still the active top-level tab does it mint the volatile
+invocation-bound Capture admission. The isolated-world gesture channel owns one
+monotonic sequence across bootstrap/runtime reinjection and a bounded cold-start
+signal queue, so the first key event is replayed once when feedback mounts and
+an old release cannot settle a newer gesture.
 
 Built-in scalar gestures and page-defined repeats use exact page
 `KeyboardEvent` lifecycles. While actual readback is active, new physical
 repeats accumulate up to the fixed bound; only another physical repeat may
 consume that batch. Transaction completion never self-drains pending work.
-Keyup cancels pending pulses and passes a live release token through runtime
-ensure so a delayed writer cannot start after release. `chrome.commands`
-provides no physical keyup, so its manifest registry and configurable slots
-admit only non-coalescing actions through the contract predicate; those
-discrete commands retain the single-flight gate.
+Keyup clears unconsumed repeat pulses but cannot revoke the already admitted
+physical press: that one transaction crosses cold runtime ensure and reaches
+one coordinator ACK, while release waits for it and cannot start a trailing
+writer. `chrome.commands` provides no physical keyup, so its manifest registry
+and configurable slots admit only non-coalescing actions through the contract
+predicate; those discrete commands retain the single-flight gate.
 
 One `tabId + documentId` initialization promise orders bootstrap restore,
 cold native observations, initial snapshot reads and explicit control. The
@@ -187,7 +216,7 @@ Favicon and QR rendering are UI/security boundaries, not media-runtime capabilit
 | Route resolution | Content policy executor | cache is not activation |
 | Processor lifecycle | offscreen coordinator and audio delegate | actual host ACK drives status |
 | Cold native refresh state | bootstrap, runtime loader and control coordinator | initialization-first, targetless four-field observation; no badge-use fact |
-| Shortcut readiness | bootstrap, runtime loader and shortcuts | trusted built-in/default and configured cold-document intents wait for READY and reject stale identity |
+| Shortcut readiness | bootstrap, shared keyboard arbiter, runtime loader and shortcuts | one shared resolver gives the capture-recognized/same-event bubble-tail Bootstrap sole ownership of five defaults; the site listener excludes them, website claims or propagation truncation win, propagation remains open after admission, and the stable document-start keyup observer releases accepted site gestures without an action timer while trusted cold-document intents wait for READY and reject stale identity |
 | Toast/OSD | Content feedback modules | one feedback owner on a fullscreen-safe Popover top-layer host; no bootstrap/snapshot toast |
 | Page media semantics | page-media bridge and native executor | exact-element getter/setter readback, DOM fallback, no domain table or polling |
 | PiP/fullscreen | trusted activation path, fullscreen bridge and native executor | actual native lifecycle and audio-baseline preservation |

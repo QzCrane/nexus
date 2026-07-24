@@ -2,8 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import {
 	nextScalarGestureId,
 	publishDefaultScalarGesture,
+	publishPhysicalHotkeyRelease,
 	subscribeDefaultScalarGesture,
+	subscribePhysicalHotkeyRelease,
 	type DefaultScalarGestureSignal,
+	type PhysicalHotkeyReleaseSignal,
 } from '../src/content/input/default-scalar-gesture';
 
 describe('default scalar gesture channel', () => {
@@ -39,5 +42,19 @@ describe('default scalar gesture channel', () => {
 		publishDefaultScalarGesture(release);
 		expect(secondSubscriber).toEqual([release]);
 		unsubscribeSecond();
+	});
+
+	test('keeps physical releases live-only', () => {
+		const release = { code: 'KeyK' };
+		publishPhysicalHotkeyRelease(release);
+
+		const received: PhysicalHotkeyReleaseSignal[] = [];
+		const unsubscribe = subscribePhysicalHotkeyRelease((value) => received.push(value));
+		expect(received).toEqual([]);
+		publishPhysicalHotkeyRelease(release);
+		expect(received).toEqual([release]);
+		unsubscribe();
+		publishPhysicalHotkeyRelease({ code: 'AltLeft' });
+		expect(received).toEqual([release]);
 	});
 });

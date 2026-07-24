@@ -77,13 +77,6 @@
     }
   ],
   "commands": {
-    "toggle_mute": {
-      "suggested_key": {
-        "default": "Alt+M",
-        "mac": "Alt+M"
-      },
-      "description": "Mute/Unmute"
-    },
     "slot_01": {
       "description": "Custom Slot 1"
     },

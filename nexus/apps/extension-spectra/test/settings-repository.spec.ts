@@ -47,7 +47,7 @@ describe('background settings repository', () => {
 		const storage = new FakeStorageArea({
 			globalSettings: { lang: 'en-US', language: 'es-ES', extensionOwned: 'keep-me' },
 			hotkeySettings: {
-				slots: { slot_01: 'toggle_mute' },
+				slots: { toggle_mute: 'volume_mute' },
 				sites: { 'EXAMPLE.COM.': { enabled: true, bindings: [legacyPitchBinding] } },
 				futureField: { retained: true },
 			},
@@ -75,6 +75,8 @@ describe('background settings repository', () => {
 		expect(first.revision).toBe(0);
 		expect(second.revision).toBe(0);
 		expect(first.globalSettings.lang).toBe('es-ES');
+		expect(first.hotkeySettings.slots).toEqual({});
+		expect(second.hotkeySettings.slots).toEqual({});
 		expect(first.hotkeySettings.sites['example.com']?.bindings[0]?.enabled).toBe(false);
 		expect(first.hotkeySettings.disabledLegacyBindings?.[0]?.disabledReason).toBe('unsupported_action');
 		expect(first.audioSites['example.com']).toEqual({
@@ -93,6 +95,7 @@ describe('background settings repository', () => {
 		expect((storage.values.globalSettings as Record<string, unknown>).extensionOwned).toBe('keep-me');
 		expect((storage.values.spectraSettingsMeta as Record<string, unknown>).legacyThemeModeMissing).toBe(true);
 		expect((storage.values.hotkeySettings as Record<string, unknown>).futureField).toEqual({ retained: true });
+		expect((storage.values.hotkeySettings as Record<string, unknown>).slots).toEqual({});
 		expect((storage.values.siteSettings as Record<string, Record<string, unknown>>)['example.com']?.delay).toBe(0);
 		expect((storage.values.siteSettings as Record<string, Record<string, unknown>>)['example.com']?.futureAudioField).toBe(true);
 		expect(storage.values.defaultPresetId).toBe('Alpha');
@@ -587,6 +590,96 @@ describe('background settings repository', () => {
 		expect(snapshot.hotkeySettings.disabledLegacyBindings?.map(({ id }) => id) ?? []).not.toContain('D');
 	});
 
+	test('repairs stored built-in chord collisions once and keeps reassignment recoverable', async () => {
+		const reservedBinding = {
+			id: 'reserved-default',
+			enabled: true,
+			key: {
+				code: 'ArrowRight',
+				modifiers: { ctrl: false, alt: true, shift: false, meta: false },
+			},
+			action: 'volume_up',
+		};
+		const staleReservedBinding = {
+			id: 'stale-reserved-reason',
+			enabled: false,
+			key: {
+				code: 'KeyV',
+				modifiers: { ctrl: true, alt: false, shift: false, meta: false },
+			},
+			action: 'volume_up',
+			disabledReason: 'reserved_default_chord',
+		};
+		const storage = new FakeStorageArea({
+			hotkeySettings: {
+				slots: {},
+				sites: {
+					'example.com': {
+						enabled: true,
+						bindings: [reservedBinding, staleReservedBinding],
+					},
+				},
+				disabledLegacyBindings: [
+					reservedBinding,
+					structuredClone(reservedBinding),
+					staleReservedBinding,
+				],
+				futureField: 'keep-hotkey',
+			},
+			spectraSettingsMeta: validMeta(4),
+		});
+		const repository = new SettingsRepository(storage);
+
+		const first = await repository.initialize();
+		expect(first.revision).toBe(4);
+		expect(first.hotkeySettings.sites['example.com']?.bindings[0]).toMatchObject({
+			id: reservedBinding.id,
+			enabled: false,
+			disabledReason: 'reserved_default_chord',
+		});
+		expect(first.hotkeySettings.sites['example.com']?.bindings[1]).toMatchObject({
+			id: staleReservedBinding.id,
+			enabled: false,
+		});
+		expect(first.hotkeySettings.sites['example.com']?.bindings[1]?.disabledReason).toBeUndefined();
+		expect(first.hotkeySettings.disabledLegacyBindings).toHaveLength(1);
+		expect(first.hotkeySettings.disabledLegacyBindings?.[0]).toMatchObject({
+			id: reservedBinding.id,
+			enabled: false,
+			disabledReason: 'reserved_default_chord',
+		});
+		expect(storage.writes).toHaveLength(1);
+		expect(Object.keys(storage.writes[0] ?? {})).toEqual(['hotkeySettings']);
+		expect((storage.values.hotkeySettings as Record<string, unknown>).futureField).toBe('keep-hotkey');
+
+		const second = await repository.initialize();
+		expect(second.hotkeySettings).toEqual(first.hotkeySettings);
+		expect(storage.writes).toHaveLength(1);
+
+		const reassigned = await repository.applyPatch({
+			scope: 'hotkey-site-mutation',
+			domain: 'example.com',
+			mutation: {
+				type: 'upsert-binding',
+				binding: {
+					id: reservedBinding.id,
+					enabled: true,
+					key: {
+						code: 'KeyV',
+						modifiers: { ctrl: true, alt: false, shift: false, meta: false },
+					},
+					action: 'volume_up',
+				},
+			},
+		}, second.revision);
+		expect(reassigned.hotkeySettings.sites['example.com']?.bindings[0]).toMatchObject({
+			id: reservedBinding.id,
+			enabled: true,
+		});
+		expect(reassigned.hotkeySettings.sites['example.com']?.bindings[0]?.disabledReason).toBeUndefined();
+		expect(reassigned.hotkeySettings.disabledLegacyBindings).toEqual([]);
+	});
+
 	test('applies binding-level site mutations against the latest repository state', async () => {
 		const repository = new SettingsRepository(new FakeStorageArea());
 		const initial = await repository.initialize();
@@ -595,6 +688,22 @@ describe('background settings repository', () => {
 			domain: 'MUSIC.EXAMPLE.COM.',
 			mutation: { type: 'ensure-site', enabled: true },
 		}, initial.revision);
+		await expect(repository.applyPatch({
+			scope: 'hotkey-site-mutation',
+			domain: 'music.example.com',
+			mutation: {
+				type: 'upsert-binding',
+				binding: {
+					id: 'reserved',
+					enabled: true,
+					key: {
+						code: 'KeyM',
+						modifiers: { ctrl: false, alt: true, shift: false, meta: false },
+					},
+					action: 'play_pause',
+				},
+			},
+		}, site.revision)).rejects.toBeInstanceOf(InvalidSettingsPatchError);
 		const first = await repository.applyPatch({
 			scope: 'hotkey-site-mutation',
 			domain: 'music.example.com',

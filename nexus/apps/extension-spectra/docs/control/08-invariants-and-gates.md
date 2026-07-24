@@ -32,7 +32,7 @@ audience: developer
 - `SCTRL-019`: one visualizer IPC owns the next schedule; a slow request cannot create an empty 15 Hz wake-up loop.
 - `SCTRL-020`: Popup fields project only `ControlSnapshot`; audio session data owns lifecycle only.
 - `SCTRL-021`: visualizer ownership is per subscriber, expires abnormal exits and retains a bounded generation tombstone.
-- `SCTRL-022`: every hotkey has exactly one feedback owner on a fullscreen-safe browser top-layer surface; all four holdable scalar defaults have one page gesture identity, discrete per-pulse labels, cadence-bounded fill interpolation, exact release cancellation, and no delayed writer or ACK may create post-release motion. Chrome commands and configurable command slots reject coalescing actions because their API has no physical keyup.
+- `SCTRL-022`: every hotkey has exactly one feedback owner on a fullscreen-safe browser top-layer surface. The `document_start` Bootstrap uniquely owns all five shipped defaults (`Alt+Left/Right`, `Alt+Down/Up`, `Alt+M`); the heavy site listener excludes the same resolver result. Its shared arbiter uses permanent `window` capture only to recognize a candidate and append a temporary bubble tail for that same event. Website target/document/pre-existing `window` listeners run first; `defaultPrevented`, `cancelBubble`, and any propagation truncation that makes the tail unreachable yield to the website. Admission calls only `preventDefault()` and never stops propagation. `setTimeout(0)` may only remove an unreachable tail and reject it; microtask cleanup is forbidden. Closed-shadow editable identity hidden by retargeting and a same-dispatch `window` listener added after the tail are explicit platform limits. Mute repeat cannot toggle twice. The five defaults are absent from Manifest/default Chrome command slots. The four holdable scalar defaults have one page gesture identity, discrete per-pulse labels and cadence-bounded fill interpolation. The first Bootstrap's stable trusted-keyup observer survives revision subscriber handoff, emits only live site-release identity and never mutates the website event. Repeat state and in-flight work are gesture-keyed; only a new physical repeat consumes a bounded pulse batch, while keyup and lifecycle exits clear the remainder. No action timer or completion may self-drain a trailing writer or create post-release motion, and a new non-repeat press retires any same-code stale gesture without being blocked by its old completion. Only the matching aggregate shortcut result may release an OSD processor-boundary barrier; Popup, OSD and Badge share acknowledged `AudioVolumeState` color semantics. Chrome commands and configurable command slots reject coalescing actions because their API has no physical keyup.
 - `SCTRL-023`: screenshot source and geometry are token-verified on both sides of browser capture.
 - `SCTRL-024`: document runtime ownership counts unique consumer tokens; only the last token may dispose it.
 - `SCTRL-025`: `activeMedia` and `activeVideo` are independent actual identities; every video-only surface routes to the latter.
@@ -51,7 +51,7 @@ audience: developer
 - `SCTRL-038`: WebAudio/Capture transitions neutralize the old DSP, verify the candidate actual path and only then release; failure restores the previous stable route.
 - `SCTRL-039`: visible Popup and authenticated remote synchronization requires independent document observation tokens; ordinary status reads acquire none.
 - `SCTRL-040`: successful per-media desired replay is separate from page observation; target-bound events never become per-media desired templates. Registration seeds viewport geometry before asynchronous visibility delivery, and registration/metadata/play/trusted selection may each reconcile only their exact source from the current extension-desired revision. The targetless bootstrap may project only the four declared native configuration fields into the same-tab refresh session. The durable same-tab session wins first, then the most-specific site preset, then the selected default global preset.
-- `SCTRL-041`: trusted page activation admits only page-stack APIs and Media WebAudio; new Capture requires a volatile Background admission minted for one current-active-tab Popup or `chrome.commands` transaction, external submit payloads cannot carry it, and restore/remote/page/alternate-tab paths never call `getMediaStreamId()` without it.
+- `SCTRL-041`: new Capture requires a volatile Background admission minted for one current-active-tab Popup or identity-validated shortcut transaction. A page shortcut must match the current top-level HTTP(S) sender and exact document; external submit payloads cannot carry admission, and restore/remote/arbitrary page state/alternate-tab paths never call `getMediaStreamId()` without it.
 - `SCTRL-042`: video enhancement implementation is a lazy capability-owned module; native-only/default control does not load or instantiate it.
 - `SCTRL-043`: Popup, Options and remote use a restricted protocol validator and cannot import or execute the Background request router.
 - `SCTRL-044`: production application bundles have one esbuild optimization pass because storage, protocol, Chrome, DOM, JSON, computed and cross-world ABI behavior cannot be proven across a second minifier. Only the isolated PeerJS vendor artifact enters Terser, where private underscore-prefixed properties alone may be property-mangled.
@@ -69,10 +69,18 @@ user-activation errors, CSS restoration, no hidden visualizer IPC and clean
 disposal after navigation/update.
 
 The gate must also stop/reacquire the MV3 worker before a same-origin refresh,
-verify all `CONTROL_SESSION_FIELDS` remain in the durable projection, prove
-built-in `Alt+ArrowLeft/Right` speed and `Alt+ArrowDown/Up` volume deltas without
-history navigation or a competing manifest command, rejection of every
-coalescing action from configurable Chrome command slots,
+verify all `CONTROL_SESSION_FIELDS` remain in the durable projection, prove the
+five Bootstrap-owned defaults (`Alt+ArrowLeft/Right` speed,
+`Alt+ArrowDown/Up` volume, and one-toggle-per-press `Alt+M` mute) without history
+navigation, duplicate site-listener consumption, propagation suppression, or a
+competing Manifest/default Chrome command slot. It must also prove the
+shared arbiter's capture recognizer creates only a same-event bubble tail,
+yields on `defaultPrevented`, `cancelBubble`, or an unreachable propagation path,
+uses `setTimeout(0)` only for rejecting cleanup without a microtask, and calls
+only `preventDefault()` after accepting an unclaimed chord. The gate records
+closed-shadow editable retargeting and same-dispatch dynamically added `window`
+listeners as platform boundaries rather than promises. It also proves rejection
+of every coalescing action from configurable Chrome command slots,
 preset precedence and global fallback on new tabs, assert an empty Badge for
 sparse/non-volume state, and exercise bounded scalar repeats plus release
 cancellation. The same `smoke.spec.ts` source runs against the development

@@ -1,10 +1,21 @@
 import { describe, expect, test } from 'bun:test';
+import { crossesAudioVolumeProcessorBoundary } from '@nexus/contracts';
+import {
+	resolveHotkeyVolumeBaseline,
+	resolveHotkeyVolumeTarget,
+} from '../src/content/ui/osd';
 import {
 	scalarFeedbackAnimationDuration,
 	scalarFeedbackMaxFrameDelta,
 	scalarFeedbackMarkers,
 	scalarFeedbackProgress,
 } from '../src/content/ui/scalar-feedback';
+
+const volume = (value: number, volumeState: 'native' | 'capture') => ({
+	type: 'volume' as const,
+	value,
+	volumeState,
+});
 
 describe('scalar feedback bars', () => {
 	test('maps equal numeric deltas to equal visual distances', () => {
@@ -19,6 +30,8 @@ describe('scalar feedback bars', () => {
 		expect(firstSpeedDelta).toBeCloseTo(secondSpeedDelta, 10);
 		expect(scalarFeedbackProgress('speed', 0.1)).toBe(0);
 		expect(scalarFeedbackProgress('speed', 16)).toBe(100);
+		expect(crossesAudioVolumeProcessorBoundary(100, 110)).toBe(true);
+		expect(crossesAudioVolumeProcessorBoundary(110, 120)).toBe(false);
 	});
 
 	test('owns the semantic markers for both scalar kinds', () => {
@@ -46,4 +59,38 @@ describe('scalar feedback bars', () => {
 		expect(scalarFeedbackMaxFrameDelta('volume') / 10).toBeCloseTo(0.6);
 		expect(scalarFeedbackMaxFrameDelta('speed') / 0.1).toBeCloseTo(0.6);
 	});
+
+	test('retains one complete blue or purple presentation throughout a boundary gesture', () => {
+		const project = (
+			start: ReturnType<typeof volume>,
+			targets: ReturnType<typeof volume>[],
+		) => {
+			let presentation = start;
+			return targets.map((target) => {
+				presentation = resolveHotkeyVolumeTarget(presentation, target);
+				return [presentation.value, presentation.volumeState];
+			});
+		};
+		const cases = [
+			['held-up', volume(100, 'native'), [volume(110, 'capture'), volume(120, 'capture')],
+				[[100, 'native'], [100, 'native']]],
+			['held-down', volume(110, 'capture'), [volume(100, 'native'), volume(90, 'native')],
+				[[110, 'capture'], [110, 'capture']]],
+			['reverse-up', volume(100, 'native'), [volume(110, 'capture'), volume(100, 'native')],
+				[[100, 'native'], [100, 'native']]],
+			['reverse-down', volume(110, 'capture'), [volume(100, 'native'), volume(110, 'capture')],
+				[[110, 'capture'], [110, 'capture']]],
+		] as const;
+		for (const [name, start, targets, expected] of cases) {
+			expect(project(start, [...targets]), name).toEqual(expected);
+		}
+	});
+
+	test('starts a new gesture from the lifecycle-correct complete pair', () => {
+		const visible = volume(110, 'capture');
+		const baseline = volume(100, 'native');
+		expect(resolveHotkeyVolumeBaseline(visible, baseline, 'settled')).toEqual(baseline);
+		expect(resolveHotkeyVolumeBaseline(visible, baseline, 'active')).toEqual(visible);
+	});
+
 });

@@ -4,6 +4,7 @@ import {
 	DEFAULT_GLOBAL_SETTINGS,
 	SPECTRA_CONTENT_BOOTSTRAP_REVISION,
 	SPECTRA_CONTENT_RUNTIME_REVISION,
+	SPECTRA_DEFAULT_HOTKEY_ACTIONS,
 	SPECTRA_PROTOCOL_VERSION,
 	SPECTRA_SETTINGS_SCHEMA_VERSION,
 	isAudioConfig,
@@ -84,7 +85,7 @@ function createSettingsSnapshot(): SettingsSnapshot {
 		revision: 7,
 		globalSettings: { ...DEFAULT_GLOBAL_SETTINGS, lang: 'zh-CN', themeMode: 'dark' },
 		hotkeySettings: {
-			slots: { toggle_mute: 'volume_mute' },
+			slots: { slot_01: 'play_pause' },
 			sites: {
 				'example.com': {
 					enabled: true,
@@ -164,6 +165,58 @@ describe('SPECTRA settings runtime guards', () => {
 			hotkeySettings: {
 				...snapshot.hotkeySettings,
 				slots: { slot_01: 'volume_up' },
+			},
+		})).toBe(false);
+	});
+
+	test('represents built-in chord collisions only as disabled snapshot evidence', () => {
+		const reservedBinding = {
+			id: 'reserved-default',
+			enabled: false,
+			key: {
+				code: 'ArrowLeft',
+				modifiers: { ctrl: false, alt: true, shift: false, meta: false },
+			},
+			action: 'play_pause',
+			disabledReason: 'reserved_default_chord',
+		} as const;
+		const snapshot = createSettingsSnapshot();
+		const withReserved = {
+			...snapshot,
+			hotkeySettings: {
+				...snapshot.hotkeySettings,
+				sites: {
+					...snapshot.hotkeySettings.sites,
+					'reserved.example': { enabled: true, bindings: [reservedBinding] },
+				},
+				disabledLegacyBindings: [reservedBinding],
+			},
+		};
+		expect(isSettingsSnapshot(withReserved)).toBe(true);
+		expect(isSettingsSnapshot({
+			...withReserved,
+			hotkeySettings: {
+				...withReserved.hotkeySettings,
+				sites: {
+					...withReserved.hotkeySettings.sites,
+					'reserved.example': {
+						enabled: true,
+						bindings: [{ ...reservedBinding, enabled: true }],
+					},
+				},
+			},
+		})).toBe(false);
+		expect(isSettingsSnapshot({
+			...withReserved,
+			hotkeySettings: {
+				...withReserved.hotkeySettings,
+				disabledLegacyBindings: [{
+					...reservedBinding,
+					key: {
+						...reservedBinding.key,
+						code: 'KeyL',
+					},
+				}],
 			},
 		})).toBe(false);
 	});
@@ -275,6 +328,33 @@ describe('SPECTRA settings runtime guards', () => {
 				},
 			},
 		})).toBe(true);
+		for (const binding of [{
+			id: 'reserved-enabled',
+			enabled: true,
+			key: {
+				code: 'ArrowUp',
+				modifiers: { ctrl: false, alt: true, shift: false, meta: false },
+			},
+			action: 'play_pause',
+		}, {
+			id: 'reserved-disabled',
+			enabled: false,
+			key: {
+				code: 'KeyM',
+				modifiers: { ctrl: false, alt: true, shift: false, meta: false },
+			},
+			action: 'play_pause',
+			disabledReason: 'reserved_default_chord',
+		}] as const) {
+			expect(isSettingsPatchRequest({
+				expectedRevision: 7,
+				patch: {
+					scope: 'hotkey-site-mutation',
+					domain: 'music.example.com',
+					mutation: { type: 'upsert-binding', binding },
+				},
+			})).toBe(false);
+		}
 		expect(isSettingsPatchRequest({
 			expectedRevision: 7,
 			patch: {
@@ -349,8 +429,8 @@ describe('SPECTRA settings runtime guards', () => {
 });
 
 describe('SPECTRA mapped v2 envelopes', () => {
-	test('accepts only sender-bound, identity-bound default scalar gestures', () => {
-		for (const action of ['speed_down', 'speed_up', 'volume_down', 'volume_up'] as const) {
+	test('accepts only sender-bound, identity-bound default hotkey gestures', () => {
+		for (const action of SPECTRA_DEFAULT_HOTKEY_ACTIONS) {
 			for (const phase of ['press', 'release'] as const) {
 				const request = {
 					protocolVersion: SPECTRA_PROTOCOL_VERSION,
@@ -719,7 +799,7 @@ describe('SPECTRA mapped v2 envelopes', () => {
 			tabId: 7,
 			payload: { tabId: 42, sessionId: 'A'.repeat(22) },
 		})).toBe(false);
-		expect(isSpectraEventEnvelope({
+		const hotkeyFeedbackEvent = {
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			type: 'spectra.hotkey.target.feedback',
 			tabId: 42,
@@ -728,9 +808,18 @@ describe('SPECTRA mapped v2 envelopes', () => {
 				targetTabId: 7,
 				targetTitle: 'Media',
 				targetHostname: 'media.example',
+				gesture: 'default:7',
+				feedback: { kind: 'volume', value: 125, volumeState: 'capture' },
+			},
+		} as const;
+		expect(isSpectraEventEnvelope(hotkeyFeedbackEvent)).toBe(true);
+		expect(isSpectraEventEnvelope({
+			...hotkeyFeedbackEvent,
+			payload: {
+				...hotkeyFeedbackEvent.payload,
 				feedback: { kind: 'volume', value: 125, muted: false, capture: true },
 			},
-		})).toBe(true);
+		})).toBe(false);
 		expect(isSpectraEventEnvelope({
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			type: 'spectra.hotkey.target.feedback',

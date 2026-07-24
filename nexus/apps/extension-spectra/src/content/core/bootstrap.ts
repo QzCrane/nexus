@@ -1,4 +1,4 @@
-// goal: zero-work manifest entry that exposes only a versioned document message boundary
+// goal: minimal document-start boundary for messages, native observations, and five defaults
 
 import {
 	SPECTRA_CONTENT_BOOTSTRAP_REVISION,
@@ -7,6 +7,7 @@ import {
 	bootstrapRpcSuccess,
 	isBootstrapHelloResponse,
 	isBootstrapInboundRequest,
+	resolveSpectraDefaultHotkeyAction,
 	type SpectraDefaultHotkeyAction,
 } from '@nexus/contracts/bootstrap';
 import {
@@ -23,7 +24,13 @@ import { readPageMediaField } from '../logic/page-media-bridge';
 import {
 	nextScalarGestureId,
 	publishDefaultScalarGesture,
+	publishPhysicalHotkeyRelease,
 } from '../input/default-scalar-gesture';
+import {
+	createWebsiteFirstKeyboardArbiter,
+	isEditableHotkeyEvent,
+	subscribeDocumentStartPhysicalHotkeyRelease,
+} from '../input/hotkey-event';
 
 const previous = getContentBootstrapState();
 if (previous?.bootstrapRevision !== SPECTRA_CONTENT_BOOTSTRAP_REVISION) previous?.dispose();
@@ -43,22 +50,12 @@ if (!getContentBootstrapState()) {
 	};
 	let pendingObservation: BootstrapNativeObservation | null = null;
 
-	const defaultScalarAction = (event: KeyboardEvent): SpectraDefaultHotkeyAction | null => {
-		if (!event.isTrusted
-			|| !event.altKey
-			|| event.ctrlKey
-			|| event.shiftKey
-			|| event.metaKey) return null;
-		if (event.composedPath().some((target) => target instanceof HTMLElement
-			&& (target.isContentEditable
-				|| target.tagName === 'INPUT'
-				|| target.tagName === 'TEXTAREA'
-				|| target.tagName === 'SELECT'))) return null;
-		if (event.code === 'ArrowLeft') return 'speed_down';
-		if (event.code === 'ArrowRight') return 'speed_up';
-		if (event.code === 'ArrowDown') return 'volume_down';
-		if (event.code === 'ArrowUp') return 'volume_up';
-		return null;
+	const defaultHotkeyAction = (event: KeyboardEvent): SpectraDefaultHotkeyAction | null => {
+		if (!event.isTrusted || event.defaultPrevented) return null;
+		const action = resolveSpectraDefaultHotkeyAction(event);
+		if (action === null) return null;
+		if (isEditableHotkeyEvent(event)) return null;
+		return action;
 	};
 
 	const sendDefaultScalarPhase = (
@@ -75,12 +72,12 @@ if (!getContentBootstrapState()) {
 			state.dispose,
 		).then(() => undefined);
 
-	const onDefaultScalarKeydown = (event: KeyboardEvent): void => {
+	const acceptDefaultHotkeyKeydown = (
+		event: KeyboardEvent,
+		action: SpectraDefaultHotkeyAction,
+	): void => {
 		if (disposed) return;
-		const action = defaultScalarAction(event);
-		if (!action) return;
 		event.preventDefault();
-		event.stopImmediatePropagation();
 		let active = activeDefaultScalarKeys.get(event.code);
 		if (!active) {
 			active = {
@@ -91,6 +88,7 @@ if (!getContentBootstrapState()) {
 			activeDefaultScalarKeys.set(event.code, active);
 		} else {
 			active.repeated = true;
+			if (active.action === 'volume_mute') return;
 		}
 		publishDefaultScalarGesture({ ...active, phase: 'press' });
 		void sendDefaultScalarPhase(active, 'press').catch(() => undefined);
@@ -112,18 +110,19 @@ if (!getContentBootstrapState()) {
 		activeDefaultScalarKeys.clear();
 	};
 
-	const onDefaultScalarKeyup = (event: KeyboardEvent): void => {
+	const releaseDefaultHotkeyKeyup = (
+		event: KeyboardEvent,
+		websiteClaimed: boolean,
+	): void => {
 		const active = activeDefaultScalarKeys.get(event.code);
 		if (active) {
-			event.preventDefault();
-			event.stopImmediatePropagation();
+			if (!websiteClaimed) event.preventDefault();
 			activeDefaultScalarKeys.delete(event.code);
 			releaseDefaultScalarGesture(active);
 			return;
 		}
 		if (!event.code.startsWith('Alt') || activeDefaultScalarKeys.size === 0) return;
-		event.preventDefault();
-		event.stopImmediatePropagation();
+		if (!websiteClaimed) event.preventDefault();
 		releaseDefaultScalarKeys();
 	};
 
@@ -230,6 +229,9 @@ if (!getContentBootstrapState()) {
 		return Object.keys(patch).length > 0 ? { target: null, patch, observedStrategies } : null;
 	};
 
+	let disposeDefaultKeydownArbiter = (): void => undefined;
+	let disposeDefaultKeyupArbiter = (): void => undefined;
+	let unsubscribePhysicalHotkeyRelease = (): void => undefined;
 	const state: ContentBootstrapState = {
 		bootstrapRevision: SPECTRA_CONTENT_BOOTSTRAP_REVISION,
 		runtimeRevision: null as string | null,
@@ -242,8 +244,9 @@ if (!getContentBootstrapState()) {
 			try { chrome.runtime.onMessage.removeListener(onMessage); } catch { /* invalidated context */ }
 			document.removeEventListener('volumechange', onNativeMediaChange, true);
 			document.removeEventListener('ratechange', onNativeMediaChange, true);
-			document.removeEventListener('keydown', onDefaultScalarKeydown, true);
-			document.removeEventListener('keyup', onDefaultScalarKeyup, true);
+			unsubscribePhysicalHotkeyRelease();
+			disposeDefaultKeydownArbiter();
+			disposeDefaultKeyupArbiter();
 			document.removeEventListener('visibilitychange', onVisibilityChange);
 			window.removeEventListener('blur', releaseDefaultScalarKeys);
 			window.removeEventListener('pagehide', onPageHide);
@@ -394,8 +397,33 @@ if (!getContentBootstrapState()) {
 	chrome.runtime.onMessage.addListener(onMessage);
 	document.addEventListener('volumechange', onNativeMediaChange, true);
 	document.addEventListener('ratechange', onNativeMediaChange, true);
-	document.addEventListener('keydown', onDefaultScalarKeydown, true);
-	document.addEventListener('keyup', onDefaultScalarKeyup, true);
+	// This document-start observer is the release authority for lazily mounted
+	// site hotkeys. It publishes only isolated-world cleanup identity and does
+	// not claim, cancel, or otherwise mutate the website's keyup event.
+	unsubscribePhysicalHotkeyRelease = subscribeDocumentStartPhysicalHotkeyRelease(
+		(event) => publishPhysicalHotkeyRelease({ code: event.code }),
+	);
+	// Capture installs only a same-event window-bubble tail. Existing website
+	// target/document/window handlers therefore run before SPECTRA, while the
+	// tail can still synchronously prevent the browser's Alt+Arrow default.
+	disposeDefaultKeydownArbiter = createWebsiteFirstKeyboardArbiter({
+		type: 'keydown',
+		resolveCandidate: defaultHotkeyAction,
+		onSettled: (event, action, websiteClaimed) => {
+			if (!websiteClaimed) acceptDefaultHotkeyKeydown(event, action);
+		},
+	});
+	disposeDefaultKeyupArbiter = createWebsiteFirstKeyboardArbiter({
+		type: 'keyup',
+		resolveCandidate: (event) => event.isTrusted
+			&& (activeDefaultScalarKeys.has(event.code)
+				|| event.code.startsWith('Alt') && activeDefaultScalarKeys.size > 0)
+			? true
+			: null,
+		onSettled: (event, _candidate, websiteClaimed) => {
+			releaseDefaultHotkeyKeyup(event, websiteClaimed);
+		},
+	});
 	document.addEventListener('visibilitychange', onVisibilityChange);
 	window.addEventListener('blur', releaseDefaultScalarKeys);
 	window.addEventListener('pagehide', onPageHide, { once: true });

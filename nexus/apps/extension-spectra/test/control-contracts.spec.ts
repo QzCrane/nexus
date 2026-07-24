@@ -22,10 +22,12 @@ import {
 	isControlSnapshot,
 	isControlSubmitRequest,
 	isSpectraRequestEnvelope,
+	resolveAcknowledgedProcessorLifecycle,
+	resolveControlAudioVolume,
 	shouldTryNextControlStrategy,
 	splitEffectiveVolume,
-	splitLegacyVolume,
 	type ControlField,
+	type ControlFieldStates,
 	type ControlFieldState,
 } from '@nexus/contracts';
 import {
@@ -64,7 +66,6 @@ describe('per-field SPECTRA control contracts', () => {
 		expect(compileEffectiveVolume(100, 8)).toBe(800);
 		expect(splitEffectiveVolume(75)).toEqual({ volumeBase: 75, boost: 1 });
 		expect(splitEffectiveVolume(250)).toEqual({ volumeBase: 100, boost: 2.5 });
-		expect(splitLegacyVolume(250)).toEqual(splitEffectiveVolume(250));
 	});
 
 	test('accepts a routed, revisioned intent and rejects empty or out-of-range patches', () => {
@@ -590,5 +591,81 @@ describe('per-field SPECTRA control contracts', () => {
 			...event,
 			payload: { ...event.payload, themeMode: 'auto' },
 		})).toBe(false);
+		const feedback = {
+			protocolVersion: 2,
+			type: 'spectra.hotkey.target.feedback',
+			tabId: 42,
+			payload: {
+				action: 'volume_up',
+				targetTabId: 7,
+				targetTitle: 'Media',
+				targetHostname: 'media.example',
+				gesture: 'default:7',
+				feedback: { kind: 'volume', value: 110, volumeState: 'capture' },
+			},
+		};
+		expect(isContentSpectraEventEnvelope(feedback)).toBe(true);
+		expect(isContentSpectraEventEnvelope({
+			...feedback,
+			payload: { ...feedback.payload, gesture: '' },
+		})).toBe(false);
+	});
+
+	test('projects one immutable Popup-compatible volume pair from the latest acknowledged revision', () => {
+		const captureFields: ControlFieldStates = {
+			volumeBase: field(100),
+			boost: {
+				...field(1.1),
+				strategy: 'capture',
+				coverage: 'opaque',
+			},
+			mediaMuted: field(false),
+		};
+		expect(resolveAcknowledgedProcessorLifecycle(captureFields)).toEqual({
+			actualMode: 'capture',
+			phase: 'active',
+		});
+		const captured = resolveControlAudioVolume(captureFields);
+		expect(captured).toEqual({ effectiveVolume: 110, volumeState: 'capture' });
+
+		const newerRelease: ControlFieldStates = {
+			...captureFields,
+			compressor: {
+				...field(false),
+				revision: 5,
+				phase: 'idle',
+				strategy: 'observe',
+				controlled: false,
+			},
+		};
+		expect(resolveAcknowledgedProcessorLifecycle(newerRelease)).toEqual({
+			actualMode: 'bypass',
+			phase: 'idle',
+		});
+		expect(resolveControlAudioVolume(newerRelease)).toEqual({
+			effectiveVolume: 110,
+			volumeState: 'native',
+		});
+
+		captureFields.boost = {
+			...field(1),
+			phase: 'idle',
+			strategy: 'observe',
+			coverage: 'full',
+			controlled: false,
+		};
+		expect(captured).toEqual({ effectiveVolume: 110, volumeState: 'capture' });
+		expect(resolveControlAudioVolume(captureFields)).toEqual({
+			effectiveVolume: 100,
+			volumeState: 'native',
+		});
+		expect(resolveControlAudioVolume({
+			...captureFields,
+			mediaMuted: field(true),
+		})).toEqual({ effectiveVolume: 100, volumeState: 'silent' });
+		expect(resolveControlAudioVolume({
+			volumeBase: field(100),
+			boost: field(1),
+		})).toBeNull();
 	});
 });

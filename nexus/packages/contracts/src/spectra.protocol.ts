@@ -25,6 +25,7 @@ import {
 	HOTKEY_ACTIONS,
 	type HotkeyAction,
 	type HotkeySettings,
+	type SpectraHotkeyActualFeedback,
 } from './hotkeys.contracts.js';
 import {
 	isRemotePublicSession,
@@ -75,10 +76,9 @@ import {
 
 export {
 	SPECTRA_CONTENT_BOOTSTRAP_REVISION,
+	SPECTRA_CONTENT_RUNTIME_REVISION,
 	SPECTRA_PROTOCOL_VERSION,
 } from './spectra.bootstrap.js';
-
-export const SPECTRA_CONTENT_RUNTIME_REVISION = '3.3.3' as const;
 
 export type ContentRuntimeLeaseReason = 'control' | 'restore' | 'hotkey' | 'remote' | 'observation';
 
@@ -511,10 +511,6 @@ export interface SpectraRequestMap {
 	};
 }
 
-export type SpectraHotkeyActualFeedback =
-	| { kind: 'volume'; value: number; muted: boolean; capture: boolean }
-	| { kind: 'speed'; value: number };
-
 export interface SpectraEventMap {
 	'spectra.control.snapshot.changed': ControlSnapshot;
 	'spectra.content.settings.changed': SpectraContentSettings;
@@ -525,6 +521,7 @@ export interface SpectraEventMap {
 		targetTabId: number;
 		targetTitle: string;
 		targetHostname: string;
+		gesture?: string;
 		feedback?: SpectraHotkeyActualFeedback;
 	};
 	'spectra.navigation.changed': NavigationChangedEvent;
@@ -654,9 +651,9 @@ const OSD_MESSAGES_KEYS = new Set([
 ]);
 const HOTKEY_TRIGGER_PAYLOAD_KEYS = new Set(['action']);
 const HOTKEY_TARGET_FEEDBACK_KEYS = new Set([
-	'action', 'targetTabId', 'targetTitle', 'targetHostname', 'feedback',
+	'action', 'targetTabId', 'targetTitle', 'targetHostname', 'gesture', 'feedback',
 ]);
-const HOTKEY_VOLUME_FEEDBACK_KEYS = new Set(['kind', 'value', 'muted', 'capture']);
+const HOTKEY_VOLUME_FEEDBACK_KEYS = new Set(['kind', 'value', 'volumeState']);
 const HOTKEY_SPEED_FEEDBACK_KEYS = new Set(['kind', 'value']);
 const MEDIA_SPEED_PAYLOAD_KEYS = new Set(['speed', 'delta', 'preservePitch']);
 const VIDEO_ROTATE_PAYLOAD_KEYS = new Set(['delta']);
@@ -917,13 +914,18 @@ function isHotkeyTargetFeedback(
 		&& typeof value.targetHostname === 'string'
 		&& value.targetHostname.length > 0
 		&& value.targetHostname.length <= 253
+		&& (value.gesture === undefined
+			|| typeof value.gesture === 'string'
+				&& value.gesture.length > 0
+				&& value.gesture.length <= 128)
 		&& (value.feedback === undefined || (
 			isRecord(value.feedback)
 			&& (value.feedback.kind === 'volume'
 				? hasOnlyKeys(value.feedback, HOTKEY_VOLUME_FEEDBACK_KEYS)
 					&& isFiniteInRange(value.feedback.value, 0, 800)
-					&& typeof value.feedback.muted === 'boolean'
-					&& typeof value.feedback.capture === 'boolean'
+					&& (value.feedback.volumeState === 'silent'
+						|| value.feedback.volumeState === 'native'
+						|| value.feedback.volumeState === 'capture')
 				: value.feedback.kind === 'speed'
 					&& hasOnlyKeys(value.feedback, HOTKEY_SPEED_FEEDBACK_KEYS)
 					&& isFiniteInRange(value.feedback.value, 0.1, 16))

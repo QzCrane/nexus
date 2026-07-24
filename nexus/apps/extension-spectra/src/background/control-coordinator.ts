@@ -13,6 +13,8 @@ import {
 	compileEffectiveVolume,
 	isActiveCaptureLifecycle,
 	resolveAudioVolume,
+	resolveAcknowledgedAudioVolumeState,
+	resolveControlAudioVolume,
 	rpcFailure,
 	rpcSuccess,
 	splitEffectiveVolume,
@@ -76,6 +78,16 @@ type RoutedControlOperationRequest = ControlOperationRequest & {
 	tabId: number;
 	captureAdmission?: CaptureAdmission;
 };
+interface ExtensionDocumentIdentity {
+	tabId: number;
+	documentId: string;
+}
+
+export interface ExtensionInvocationContext {
+	origin: 'popup' | 'builtin-page' | 'site-page' | 'chrome-command';
+	foreground: ExtensionDocumentIdentity | null;
+	target: ExtensionDocumentIdentity;
+}
 
 const EXTENSION_INVOCATION_ADMISSION: CaptureAdmission = 'extension-invocation';
 
@@ -666,7 +678,6 @@ function projectControlSessionPatch(fields: ControlFieldStates): ControlSessionP
 async function persistControlProjection(
 	snapshot: ControlSnapshot,
 	changedFields: ControlFieldStates,
-	userInteracted: boolean,
 	acknowledgedSessionPatch: ControlSessionPatch = {},
 ): Promise<void> {
 	const sessionPatch = {
@@ -690,7 +701,7 @@ async function persistControlProjection(
 		snapshot,
 		completeSession,
 		isCaptureActive,
-		userInteracted,
+		false,
 	);
 }
 
@@ -882,7 +893,6 @@ async function commitControlFields(
 	baseline: ControlSnapshot,
 	fields: ControlFieldStates,
 	activeMedia: ControlSnapshot['activeMedia'],
-	source: ControlIntent['source'],
 	projection: CommitControlProjection = {},
 ): Promise<ControlSnapshot> {
 	const current = await getOrCreateSnapshot(baseline.tabId);
@@ -907,12 +917,8 @@ async function commitControlFields(
 	await persistControlProjection(
 		committed,
 		fields,
-		source !== 'page' && source !== 'restore' && source !== 'system',
 		projection.acknowledgedSessionPatch,
 	);
-	if (source !== 'page' && source !== 'restore' && source !== 'system') {
-		await markBadgeUsedForTab(committed.tabId);
-	}
 	await publishSnapshot(committed);
 	await reconcileRuntimeOwnership(committed);
 	return committed;
@@ -942,7 +948,7 @@ async function applyChromeTabObservation(
 		};
 	}
 	if (Object.keys(fields).length === 0) return baseline;
-	return commitControlFields(baseline, fields, baseline.activeMedia, 'page');
+	return commitControlFields(baseline, fields, baseline.activeMedia);
 }
 
 function observeChromeTabState(
@@ -960,9 +966,9 @@ async function executeIntent(request: RoutedControlSubmitRequest): Promise<Contr
 		baseline,
 		fields,
 		activeMedia,
-		intent.source,
 		{ activeVideo },
 	);
+	const audioVolume = resolveControlAudioVolume(committed.fields);
 	return {
 		intentId: intent.intentId,
 		tabId: intent.tabId,
@@ -971,6 +977,7 @@ async function executeIntent(request: RoutedControlSubmitRequest): Promise<Contr
 		revision: committed.revision,
 		target: ackTarget,
 		fields,
+		...(audioVolume ? { audioVolume } : {}),
 	};
 }
 
@@ -1131,7 +1138,7 @@ async function commitCompensationFailure(
 			},
 		};
 	}
-	await commitControlFields(baseline, fields, target, 'system');
+	await commitControlFields(baseline, fields, target);
 }
 
 function operationIntent(
@@ -1257,7 +1264,6 @@ async function commitContentOperation(
 		baseline,
 		acknowledgement.fields,
 		projection.activeMedia,
-		source,
 		{ activeVideo: projection.activeVideo },
 	);
 	if (committed.revision !== intent.baseRevision + 1) {
@@ -1328,7 +1334,6 @@ async function handleSourceReleased(tabId: number, target: import('@nexus/contra
 		snapshot,
 		fields,
 		ownsActiveSource ? null : snapshot.activeMedia,
-		'system',
 		{ activeVideo: ownsActiveVideo ? null : snapshot.activeVideo },
 	);
 }
@@ -1362,7 +1367,7 @@ async function handleTargetChanged(
 		baseline.revision + 1,
 		response.data.observedStrategies,
 	);
-	await commitControlFields(baseline, fields, target, 'page');
+	await commitControlFields(baseline, fields, target);
 }
 
 async function commitBackgroundOperation<O extends Extract<
@@ -1445,13 +1450,20 @@ async function executeFieldOperation(
 		};
 		const knownVolumeBase = snapshotActual('volumeBase');
 		const knownBoost = snapshotActual('boost');
+		const knownMuted = baseline.fields.mediaMuted?.actual;
+		const missingActualFields = [
+			...(knownVolumeBase === null ? ['volumeBase' as const] : []),
+			...(knownBoost === null ? ['boost' as const] : []),
+			...(typeof knownMuted === 'boolean' ? [] : ['mediaMuted' as const]),
+		];
 		// ControlSnapshot is the actual-value owner. Only a cold snapshot needs one
-		// Content readback; established and repeated slider samples avoid that IPC.
-		const readback = knownVolumeBase === null || knownBoost === null
+		// Content readback for its unknown fields; established fields never regress
+		// to an unrelated getter sample merely because mute still needs observation.
+		const readback = missingActualFields.length > 0
 			? await sendSpectraTabRequest(
 				request.tabId,
 				'spectra.control.actual.read',
-				{ fields: ['volumeBase', 'boost'], target: request.target },
+				{ fields: missingActualFields, target: request.target },
 				{ documentId: baseline.documentId, generation: baseline.generation },
 			).catch(() => null)
 			: null;
@@ -1469,6 +1481,12 @@ async function executeFieldOperation(
 			volumeBase: currentVolumeBase,
 			boost: actualField('boost') ?? 1,
 		};
+		const observedMuted = readback?.ok ? readback.data.patch.mediaMuted : undefined;
+		const currentMuted = typeof observedMuted === 'boolean'
+			? observedMuted
+			: typeof knownMuted === 'boolean'
+				? knownMuted
+				: null;
 		const currentEffective = compileEffectiveVolume(current.volumeBase, current.boost);
 		const desiredEffective = Math.max(0, Math.min(800,
 			request.payload.operation === 'delta'
@@ -1480,7 +1498,12 @@ async function executeFieldOperation(
 		const targetPatch: ControlPatch = current.volumeBase === desired.volumeBase
 			? {}
 			: { volumeBase: desired.volumeBase };
+		// A cold processor read proves the scalar value but not the processor
+		// lifecycle strategy required by ControlSnapshot. Route one exact no-op
+		// intent through the processor owner so later volume/mute ACKs can project
+		// a complete value + lifecycle pair without consulting session storage.
 		const processorPatch: ControlPatch = current.boost === desired.boost
+			&& knownBoost !== null
 			? {}
 			: { boost: desired.boost };
 		const stageOrder: readonly ('target' | 'processor')[] = current.boost !== 1
@@ -1503,11 +1526,34 @@ async function executeFieldOperation(
 				strategy: 'extension-state',
 				coverage: desired.boost === 1 ? 'active-target' : 'full',
 				fields: {},
+				...(currentMuted === null ? {} : {
+					audioVolume: {
+						effectiveVolume: currentEffective,
+						volumeState: resolveAcknowledgedAudioVolumeState(
+							baseline.fields,
+							currentEffective,
+							currentMuted,
+						),
+					},
+				}),
 				result: { effectiveVolume: currentEffective, ...current },
 			};
 		}
 
-		let fields: ControlFieldStates = {};
+		const nativeReadbackPatch: ControlPatch = {};
+		if (readback?.ok) {
+			for (const field of ['volumeBase', 'mediaMuted'] as const) {
+				const actual = readback.data.patch[field];
+				if (actual !== undefined) Object.assign(nativeReadbackPatch, { [field]: actual });
+			}
+		}
+		let fields: ControlFieldStates = readback?.ok
+			? nativeObservationFields(
+				nativeReadbackPatch,
+				baseline.revision + 1,
+				readback.data.observedStrategies,
+			)
+			: {};
 		try {
 			let staged = baseline;
 			for (const stage of stageOrder) {
@@ -1541,7 +1587,6 @@ async function executeFieldOperation(
 				baseline,
 				fields,
 				target,
-				request.source,
 				{
 					// Effective volume is one public value backed by two actual
 					// fields. Persist the complete read-back pair even when one
@@ -1552,6 +1597,14 @@ async function executeFieldOperation(
 					},
 				},
 			);
+			const audioVolume = currentMuted === null ? null : {
+				effectiveVolume,
+				volumeState: resolveAcknowledgedAudioVolumeState(
+					committed.fields,
+					effectiveVolume,
+					currentMuted,
+				),
+			};
 			return {
 				operationId,
 				tabId: request.tabId,
@@ -1563,6 +1616,7 @@ async function executeFieldOperation(
 				strategy: 'extension-state',
 				coverage: Object.keys(processorPatch).length > 0 ? 'full' : 'active-target',
 				fields,
+				...(audioVolume ? { audioVolume } : {}),
 				result: { effectiveVolume, volumeBase: actualVolumeBase, boost: actualBoost },
 			};
 		} catch (error) {
@@ -1708,8 +1762,8 @@ async function executeFieldOperation(
 				baseline,
 				fields,
 				target,
-				request.source,
 			);
+			const audioVolume = resolveControlAudioVolume(committed.fields);
 			return {
 				operationId,
 				tabId: request.tabId,
@@ -1721,6 +1775,7 @@ async function executeFieldOperation(
 				strategy: 'extension-state',
 				coverage: 'full',
 				fields,
+				...(audioVolume ? { audioVolume } : {}),
 				result: { reset: true },
 			};
 		} catch (error) {
@@ -1883,7 +1938,6 @@ async function executeControlOperation(
 				baseline,
 				fields,
 				released.target,
-				request.source,
 			);
 			return {
 				...released,
@@ -1922,24 +1976,65 @@ async function executeControlOperation(
 	return routeContentOperation(request, operationId);
 }
 
-async function captureAdmissionForCurrentTab(tabId: number): Promise<CaptureAdmission | undefined> {
+function sameExtensionDocument(
+	left: ExtensionDocumentIdentity | null,
+	right: ExtensionDocumentIdentity,
+): boolean {
+	return left?.tabId === right.tabId && left.documentId === right.documentId;
+}
+
+async function assertInvocationTargetCurrent(
+	tabId: number,
+	invocation: ExtensionInvocationContext,
+): Promise<void> {
+	if (invocation.target.tabId !== tabId) {
+		throw new Error('Extension invocation target tab does not match the control request');
+	}
+	const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 }).catch(() => null);
+	if (frame?.documentId !== invocation.target.documentId) {
+		throw new Error('Extension invocation belongs to a stale target document');
+	}
+}
+
+async function captureAdmissionForInvocation(
+	tabId: number,
+	invocation: ExtensionInvocationContext,
+): Promise<CaptureAdmission | undefined> {
+	// Eligibility is frozen at physical invocation time. An alternate target
+	// cannot gain Capture merely because focus moves while its writer is queued.
+	if (!sameExtensionDocument(invocation.foreground, invocation.target)) return undefined;
 	const tabs = await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []);
-	return tabs[0]?.id === tabId ? EXTENSION_INVOCATION_ADMISSION : undefined;
+	if (tabs[0]?.id !== tabId) return undefined;
+	await assertInvocationTargetCurrent(tabId, invocation);
+	return EXTENSION_INVOCATION_ADMISSION;
+}
+
+async function recordSuccessfulExtensionUse(
+	tabId: number,
+	source: ControlIntent['source'],
+): Promise<void> {
+	if (source === 'page' || source === 'restore' || source === 'system') return;
+	await markBadgeUsedForTab(tabId);
+	await reprojectBadgeForCurrentDocument(tabId);
 }
 
 function submitSerialized(
 	request: RoutedControlSubmitRequest,
-	extensionInvoked = false,
+	invocation?: ExtensionInvocationContext,
 ): Promise<ControlApplyAck> {
 	const initialize = request.source === 'restore'
 		|| request.source === 'page' && request.target !== null
 		? Promise.resolve()
-		: awaitDocumentInitialization(request.tabId, request.observationDocumentId);
+		: awaitDocumentInitialization(
+			request.tabId,
+			invocation?.target.documentId ?? request.observationDocumentId,
+		);
 	return initialize.then(() => serialized(request.tabId, async () => {
+		if (invocation) await assertInvocationTargetCurrent(request.tabId, invocation);
 		const unadmittedRequest = { ...request };
 		Reflect.deleteProperty(unadmittedRequest, 'captureAdmission');
-		const captureAdmission = extensionInvoked
-			? await captureAdmissionForCurrentTab(request.tabId)
+		const captureAdmission = invocation
+			? await captureAdmissionForInvocation(request.tabId, invocation)
 			: undefined;
 		const acknowledgement = await executeIntent({
 			...unadmittedRequest,
@@ -1948,22 +2043,24 @@ function submitSerialized(
 		if (!isControlApplyAck(acknowledgement)) {
 			throw new Error('Control executor returned a strategy outside the capability policy');
 		}
+		await recordSuccessfulExtensionUse(request.tabId, request.source);
 		return acknowledgement;
 	}));
 }
 
 function submitOperationSerialized(
 	request: RoutedControlOperationRequest,
-	extensionInvoked = false,
+	invocation?: ExtensionInvocationContext,
 ): Promise<ControlOperationAck> {
 	const initialize = request.source === 'restore'
 		? Promise.resolve()
-		: awaitDocumentInitialization(request.tabId);
+		: awaitDocumentInitialization(request.tabId, invocation?.target.documentId);
 	return initialize.then(() => serialized(request.tabId, async () => {
+		if (invocation) await assertInvocationTargetCurrent(request.tabId, invocation);
 		const unadmittedRequest = { ...request };
 		Reflect.deleteProperty(unadmittedRequest, 'captureAdmission');
-		const captureAdmission = extensionInvoked
-			? await captureAdmissionForCurrentTab(request.tabId)
+		const captureAdmission = invocation
+			? await captureAdmissionForInvocation(request.tabId, invocation)
 			: undefined;
 		const acknowledgement = await executeControlOperation({
 			...unadmittedRequest,
@@ -1972,7 +2069,7 @@ function submitOperationSerialized(
 		if (!isControlOperationAck(acknowledgement)) {
 			throw new Error('Control operation returned a strategy outside the capability policy');
 		}
-		await markBadgeUsedForTab(request.tabId);
+		await recordSuccessfulExtensionUse(request.tabId, request.source);
 		return acknowledgement;
 	}));
 }
@@ -1989,19 +2086,53 @@ export function submitControlOperation(
 
 export function submitExtensionInvokedControlRequest(
 	request: RoutedControlSubmitRequest & { source: 'popup' | 'hotkey' },
+	invocation: ExtensionInvocationContext,
 ): Promise<ControlApplyAck> {
-	return submitSerialized(request, true);
+	return submitSerialized(request, invocation);
 }
 
 export function submitExtensionInvokedControlOperation(
 	request: RoutedControlOperationRequest & { source: 'popup' | 'hotkey' },
+	invocation: ExtensionInvocationContext,
 ): Promise<ControlOperationAck> {
-	return submitOperationSerialized(request, true);
+	return submitOperationSerialized(request, invocation);
 }
 
 function isExtensionPopupSender(sender: chrome.runtime.MessageSender): boolean {
 	return sender.tab === undefined
 		&& sender.url === chrome.runtime.getURL('popup.html');
+}
+
+function trustedContentHotkeyInvocation(
+	sender: chrome.runtime.MessageSender,
+	tabId: number,
+): ExtensionInvocationContext | undefined {
+	if (!(sender.id === chrome.runtime.id
+		&& sender.tab?.id === tabId
+		&& sender.frameId === 0
+		&& typeof sender.documentId === 'string'
+		&& typeof sender.url === 'string'
+		&& /^https?:/u.test(sender.url))) return undefined;
+	const document = { tabId, documentId: sender.documentId };
+	return {
+		origin: 'site-page',
+		foreground: document,
+		target: document,
+	};
+}
+
+async function popupInvocation(tabId: number): Promise<ExtensionInvocationContext> {
+	const [frame, tabs] = await Promise.all([
+		chrome.webNavigation.getFrame({ tabId, frameId: 0 }),
+		chrome.tabs.query({ active: true, currentWindow: true }),
+	]);
+	if (!frame?.documentId) throw new Error('Popup target has no current document');
+	const target = { tabId, documentId: frame.documentId };
+	return {
+		origin: 'popup',
+		foreground: tabs[0]?.id === tabId ? target : null,
+		target,
+	};
 }
 
 async function removeTab(tabId: number): Promise<void> {
@@ -2146,20 +2277,34 @@ export function initializeControlCoordinator(): void {
 			));
 			return false;
 		}
-		const extensionInvoked = message.payload.source === 'popup'
-			&& isExtensionPopupSender(sender);
-		const operation = message.type === 'spectra.control.operation.submit'
-			? submitOperationSerialized(
-				{ ...message.payload, tabId } as RoutedControlOperationRequest,
-				extensionInvoked,
-			)
-			: submitSerialized({
-				...message.payload,
-				tabId,
-				...(pageObservation && message.payload.target === null
-					? { observationDocumentId: sender.documentId }
-					: {}),
-			}, extensionInvoked);
+		const siteHotkeyInvocation = message.payload.source === 'hotkey'
+			? trustedContentHotkeyInvocation(sender, tabId)
+			: undefined;
+		if ((message.payload.source === 'popup' && !isExtensionPopupSender(sender))
+			|| (message.payload.source === 'hotkey' && !siteHotkeyInvocation)) {
+			sendResponse(rpcFailure(
+				'forbidden',
+				'Extension-invoked control requires a trusted Popup or top-level hotkey document',
+			));
+			return false;
+		}
+		const operation = (async () => {
+			const invocation = message.payload.source === 'popup'
+				? await popupInvocation(tabId)
+				: siteHotkeyInvocation;
+			return message.type === 'spectra.control.operation.submit'
+				? submitOperationSerialized(
+					{ ...message.payload, tabId } as RoutedControlOperationRequest,
+					invocation,
+				)
+				: submitSerialized({
+					...message.payload,
+					tabId,
+					...(pageObservation && message.payload.target === null
+						? { observationDocumentId: sender.documentId }
+						: {}),
+				}, invocation);
+		})();
 		void operation.then(
 			(ack) => sendResponse(rpcSuccess(ack)),
 			(error) => sendResponse(rpcFailure(
@@ -2220,12 +2365,20 @@ export function initializeControlCoordinator(): void {
 // by the background entry and are removed from production bundles.
 export const controlCoordinatorTestApi = {
 	submit: submitSerialized,
-	submitInvoked: (request: RoutedControlSubmitRequest) => submitSerialized(request, true),
+	submitInvoked: (
+		request: RoutedControlSubmitRequest,
+		invocation: ExtensionInvocationContext,
+	) => submitSerialized(request, invocation),
 	submitOperation: submitOperationSerialized,
-	submitOperationInvoked: (request: RoutedControlOperationRequest) => (
-		submitOperationSerialized(request, true)
+	submitOperationInvoked: (
+		request: RoutedControlOperationRequest,
+		invocation: ExtensionInvocationContext,
+	) => (
+		submitOperationSerialized(request, invocation)
 	),
 	isExtensionPopupSender,
+	trustedContentHotkeyInvocation,
+	popupInvocation,
 	getSnapshot,
 	getViewSnapshot: getControlViewSnapshot,
 	targetChanged: handleTargetChanged,
