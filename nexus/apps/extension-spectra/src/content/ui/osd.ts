@@ -126,6 +126,11 @@ function cancelValueAnimation(): void {
 	state.animationFrame = null;
 }
 
+function scheduleOSDHide(): void {
+	if (state.timer) clearTimeout(state.timer);
+	state.timer = setTimeout(concealOSD, OSD_HIDE_DELAY_MS);
+}
+
 function renderMarkers(root: ShadowRoot, type: ScalarFeedbackKind): void {
 	const markerLayer = root.getElementById('marks');
 	if (!markerLayer) return;
@@ -224,13 +229,16 @@ function concealOSD(): void {
 	state.lastType = null;
 }
 
-// A held gesture disappears on keyup but keeps its identity until its one
-// in-flight ACK settles. During that boundary, late actual feedback stays
-// suppressed and cannot resurrect visual motion after release.
-export function suspendHotkeyTargetOSD(gesture: string): void {
+// Keyup terminates motion but not readability. Preserve the exact final
+// number/width/tone frame synchronously, then give it a fresh display window.
+// The gesture identity remains until the in-flight ACK settles so late actual
+// feedback cannot repaint or restart the released surface.
+export function freezeHotkeyTargetOSD(gesture: string): void {
 	if (state.shortcutTargetGesture !== gesture) return;
-	if (state.timer) clearTimeout(state.timer);
-	concealOSD();
+	cancelValueAnimation();
+	state.root?.getElementById('o')?.classList.add('v');
+	state.lastTargetAt = null;
+	scheduleOSDHide();
 }
 
 export function releaseHotkeyTargetOSD(gesture: string): void {
@@ -286,11 +294,10 @@ function renderOSD(payload: OSDPayload, s: ContentGlobalSettings, options: OSDOp
 	if (state.lastType !== payload.type) renderMarkers(state.root, payload.type);
 	animateScalarValue(state.root, payload, s);
 	state.lastType = payload.type;
-	if (state.timer) clearTimeout(state.timer);
-	state.timer = setTimeout(concealOSD, OSD_HIDE_DELAY_MS);
+	scheduleOSDHide();
 }
 
-// eff: removes the real value OSD immediately when a held shortcut is released.
+// eff: removes feedback immediately only at a real lifecycle boundary.
 export function hideOSD(preserveShortcutTarget = false): void {
 	if (state.timer) clearTimeout(state.timer);
 	concealOSD();

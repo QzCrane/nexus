@@ -3924,9 +3924,23 @@ describe('SPECTRA built extension smoke', () => {
 				await fixturePage.keyboard.up('ArrowRight');
 				await fixturePage.keyboard.up('Alt');
 			}, 5_000);
-			const speedAtRelease = await fixturePage.evaluate(() => (
-				document.querySelector<HTMLMediaElement>('video,audio')?.playbackRate ?? -1
-			));
+			const speedAtRelease = await fixturePage.evaluate(() => {
+				const scope = window as Window & {
+					__spectraHeldSpeedFrames?: Array<{ at: number; label: string; width: number }>;
+				};
+				const root = document.querySelector<HTMLElement>('#spectra-osd-host')?.shadowRoot;
+				const osd = root?.getElementById('o');
+				const fill = root?.getElementById('f');
+				return {
+					rate: document.querySelector<HTMLMediaElement>('video,audio')?.playbackRate ?? -1,
+					visible: osd?.classList.contains('v') ?? false,
+					label: root?.getElementById('t')?.textContent ?? '',
+					width: fill ? Number.parseFloat(fill.style.width) : -1,
+					tone: osd?.className ?? '',
+					color: fill ? getComputedStyle(fill).backgroundColor : '',
+					frameCount: scope.__spectraHeldSpeedFrames?.length ?? 0,
+				};
+			});
 			await new Promise((resolveWait) => setTimeout(resolveWait, 400));
 			const heldSpeedFeedback = await fixturePage.evaluate(() => {
 				const scope = window as Window & {
@@ -3935,14 +3949,33 @@ describe('SPECTRA built extension smoke', () => {
 				};
 				scope.__spectraHeldSpeedObserver?.disconnect();
 				const host = document.querySelector<HTMLElement>('#spectra-osd-host');
+				const root = host?.shadowRoot;
+				const osd = root?.getElementById('o');
+				const fill = root?.getElementById('f');
 				return {
 					frames: scope.__spectraHeldSpeedFrames ?? [],
 					rate: document.querySelector<HTMLMediaElement>('video,audio')?.playbackRate ?? -1,
-					visible: host?.shadowRoot?.getElementById('o')?.classList.contains('v') ?? false,
+					visible: osd?.classList.contains('v') ?? false,
+					label: root?.getElementById('t')?.textContent ?? '',
+					width: fill ? Number.parseFloat(fill.style.width) : -1,
+					tone: osd?.className ?? '',
+					color: fill ? getComputedStyle(fill).backgroundColor : '',
 				};
 			});
-			expect(heldSpeedFeedback.rate).toBe(speedAtRelease);
-			expect(heldSpeedFeedback.visible).toBe(false);
+			expect(speedAtRelease).toMatchObject({
+				visible: true,
+				label: '2.2×',
+				color: 'rgb(16, 185, 129)',
+			});
+			expect(heldSpeedFeedback).toMatchObject({
+				rate: speedAtRelease.rate,
+				visible: true,
+				label: speedAtRelease.label,
+				width: speedAtRelease.width,
+				tone: speedAtRelease.tone,
+				color: speedAtRelease.color,
+			});
+			expect(heldSpeedFeedback.frames).toHaveLength(speedAtRelease.frameCount);
 			const heldSpeedLabels = [...new Set(
 				heldSpeedFeedback.frames.map(({ label }) => label),
 			)];
@@ -3957,6 +3990,12 @@ describe('SPECTRA built extension smoke', () => {
 			expect(heldSpeedWidths.every((width, index) => (
 				index === 0 || width - heldSpeedWidths[index - 1]! <= 0.55
 			))).toBe(true);
+			await withDiagnosticTimeout('wait for the released speed OSD display window', () => (
+				fixturePage.waitForFunction(() => (
+					document.querySelector<HTMLElement>('#spectra-osd-host')
+						?.shadowRoot?.getElementById('o')?.classList.contains('v') === false
+				), { timeout: 2_500 })
+			), 3_000);
 			await submitEffectiveVolume(tabId, 90);
 			await withDiagnosticTimeout('observe the below-100 volume baseline', () => (
 				fixturePage.waitForFunction(() => (
@@ -4002,22 +4041,57 @@ describe('SPECTRA built extension smoke', () => {
 				await fixturePage.keyboard.up('ArrowDown');
 				await fixturePage.keyboard.up('Alt');
 			}, 5_000);
-			const volumeAtRelease = await fixturePage.evaluate(() => Math.round(
-				(document.querySelector<HTMLMediaElement>('video,audio')?.volume ?? -1) * 100,
-			));
-			expect(volumeAtRelease).toBeGreaterThanOrEqual(0);
-			expect(volumeAtRelease).toBeLessThanOrEqual(30);
-			await new Promise((resolveWait) => setTimeout(resolveWait, 400));
-			const releasedState = await fixturePage.evaluate(() => {
-				const host = document.querySelector<HTMLElement>('#spectra-osd-host');
+			const volumeAtRelease = await fixturePage.evaluate(() => {
+				const scope = window as Window & {
+					__spectraScalarFrames?: Array<{ at: number; label: string; width: number }>;
+				};
+				const root = document.querySelector<HTMLElement>('#spectra-osd-host')?.shadowRoot;
+				const osd = root?.getElementById('o');
+				const fill = root?.getElementById('f');
 				return {
 					volume: Math.round(
 						(document.querySelector<HTMLMediaElement>('video,audio')?.volume ?? -1) * 100,
 					),
-					visible: host?.shadowRoot?.getElementById('o')?.classList.contains('v') ?? false,
+					visible: osd?.classList.contains('v') ?? false,
+					label: root?.getElementById('t')?.textContent ?? '',
+					width: fill ? Number.parseFloat(fill.style.width) : -1,
+					tone: osd?.className ?? '',
+					color: fill ? getComputedStyle(fill).backgroundColor : '',
+					frameCount: scope.__spectraScalarFrames?.length ?? 0,
 				};
 			});
-			expect(releasedState).toEqual({ volume: volumeAtRelease, visible: false });
+			expect(volumeAtRelease.volume).toBeGreaterThanOrEqual(0);
+			expect(volumeAtRelease.volume).toBeLessThanOrEqual(30);
+			expect(volumeAtRelease).toMatchObject({
+				visible: true,
+				label: '静音',
+				color: 'rgb(156, 163, 175)',
+			});
+			await new Promise((resolveWait) => setTimeout(resolveWait, 400));
+			const releasedState = await fixturePage.evaluate(() => {
+				const scope = window as Window & {
+					__spectraScalarFrames?: Array<{ at: number; label: string; width: number }>;
+				};
+				const host = document.querySelector<HTMLElement>('#spectra-osd-host');
+				const root = host?.shadowRoot;
+				const osd = root?.getElementById('o');
+				const fill = root?.getElementById('f');
+				return {
+					volume: Math.round(
+						(document.querySelector<HTMLMediaElement>('video,audio')?.volume ?? -1) * 100,
+					),
+					visible: osd?.classList.contains('v') ?? false,
+					label: root?.getElementById('t')?.textContent ?? '',
+					width: fill ? Number.parseFloat(fill.style.width) : -1,
+					tone: osd?.className ?? '',
+					color: fill ? getComputedStyle(fill).backgroundColor : '',
+					frameCount: scope.__spectraScalarFrames?.length ?? 0,
+				};
+			});
+			expect(releasedState).toEqual({
+				...volumeAtRelease,
+				frameCount: volumeAtRelease.frameCount,
+			});
 			const scalarFrames = await fixturePage.evaluate(() => {
 				const scope = window as Window & {
 					__spectraScalarFrames?: Array<{ at: number; label: string; width: number }>;
@@ -4071,7 +4145,7 @@ describe('SPECTRA built extension smoke', () => {
 			await submitEffectiveVolume(tabId, 100).catch(() => undefined);
 			await extensionClient.close().catch(() => undefined);
 		}
-	}, 25_000);
+	}, 30_000);
 
 	test('serializes denied capture attempts through one offscreen host and rolls back', async () => {
 		const secondaryUrl = `${fixtureUrl}?secondary=1`;

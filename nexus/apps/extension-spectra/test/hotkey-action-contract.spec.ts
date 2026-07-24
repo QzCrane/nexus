@@ -186,8 +186,9 @@ describe('page hotkey trust boundary', () => {
 		expect(listener).toContain('cancelCoalesced(active.binding.id)');
 		expect(listener).toContain('inFlightBindings.has(binding.id)');
 		expect(listener).toContain('const active = activeBinding(binding.id)');
-		expect(listener).toContain('hideToast()');
-		expect(listener).toContain('suspendHotkeyTargetOSD(held.feedbackGesture)');
+		expect(listener).toContain('freezeHotkeyToast(held.feedbackGesture)');
+		expect(listener).toContain('freezeHotkeyTargetOSD(held.feedbackGesture)');
+		expect(listener).toContain('releaseHotkeyToast(held.feedbackGesture)');
 		expect(listener).toContain('releaseHotkeyTargetOSD(held.feedbackGesture)');
 		expect(listener).toContain('releasedFeedbackGestures');
 		expect(listener).toContain('pendingRepeatPulses');

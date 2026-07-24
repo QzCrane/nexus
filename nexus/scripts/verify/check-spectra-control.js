@@ -1362,6 +1362,10 @@ function checkRetiredPaths(root) {
 		path.join(root, SOURCE_PATH, 'content/ui/feedback-surface.ts'),
 		'utf8',
 	);
+	const toast = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'content/ui/toast.ts'),
+		'utf8',
+	);
 	const osd = fs.readFileSync(
 		path.join(root, SOURCE_PATH, 'content/ui/osd.ts'),
 		'utf8',
@@ -1458,13 +1462,18 @@ function checkRetiredPaths(root) {
 		|| !osd.includes('animateScalarValue(')
 		|| !osd.includes('const target = payload.value')
 		|| !osd.includes('export function showHotkeyTargetOSD(')
-		|| !osd.includes('export function suspendHotkeyTargetOSD(')
+		|| !osd.includes('export function freezeHotkeyTargetOSD(')
 		|| !osd.includes('export function releaseHotkeyTargetOSD(')
+		|| !osd.includes('scheduleOSDHide()')
+		|| !toast.includes('export function freezeHotkeyToast(')
+		|| !toast.includes('export function releaseHotkeyToast(')
 		|| !osd.includes('if (state.shortcutTargetGesture !== null) return')
 		|| !osd.includes('targetAt - state.lastTargetAt')
 		|| !scalarFeedback.includes('Math.min(FEEDBACK_STEP_DURATION_MS, targetIntervalMs)')
 		|| !pageHotkeyListener.includes('advanceScalarFeedbackTarget(held)')
-		|| !pageHotkeyListener.includes('suspendHotkeyTargetOSD(held.feedbackGesture)')
+		|| !pageHotkeyListener.includes('freezeHotkeyToast(held.feedbackGesture)')
+		|| !pageHotkeyListener.includes('freezeHotkeyTargetOSD(held.feedbackGesture)')
+		|| !pageHotkeyListener.includes('releaseHotkeyToast(held.feedbackGesture)')
 		|| !pageHotkeyListener.includes('releaseHotkeyTargetOSD(held.feedbackGesture)')
 		|| !pageHotkeyListener.includes('releasedFeedbackGestures')
 		|| osd.includes('transition:width')
