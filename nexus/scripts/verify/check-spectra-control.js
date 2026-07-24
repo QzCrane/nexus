@@ -1424,12 +1424,18 @@ function checkRetiredPaths(root) {
 		|| !scalarFeedback.includes("{ value: 2, label: '2×', lane: 'upper' }")
 		|| !osd.includes('paintScalarValue(root, payload, value, s)')
 		|| !osd.includes('animateScalarValue(')
+		|| !osd.includes('const target = payload.value')
 		|| !osd.includes('export function showHotkeyTargetOSD(')
-		|| !osd.includes('if (state.shortcutTargetActive) return')
+		|| !osd.includes('export function suspendHotkeyTargetOSD(')
+		|| !osd.includes('export function releaseHotkeyTargetOSD(')
+		|| !osd.includes('if (state.shortcutTargetGesture !== null) return')
 		|| !pageHotkeyListener.includes('advanceScalarFeedbackTarget(held)')
+		|| !pageHotkeyListener.includes('suspendHotkeyTargetOSD(held.feedbackGesture)')
+		|| !pageHotkeyListener.includes('releaseHotkeyTargetOSD(held.feedbackGesture)')
+		|| !pageHotkeyListener.includes('releasedFeedbackGestures')
 		|| osd.includes('transition:width')
 		|| scalarFeedback.includes('Math.log')) {
-		error('SCTRL-022: scalar Toast values, fills, markers and animation must share one linear owner');
+		error('SCTRL-022: scalar Toast labels, linear fills, markers and gesture-release barriers must share one owner');
 	}
 	if (!optionsSlots.includes('chrome.runtime.getManifest().commands')
 		|| optionsSlots.includes('const PRESET_COMMANDS')

@@ -17,7 +17,7 @@ interface OSDState {
 	timer: ReturnType<typeof setTimeout> | null;
 	animationFrame: number | null;
 	displayedValue: number | null;
-	shortcutTargetActive: boolean;
+	shortcutTargetGesture: number | null;
 	lastType: 'volume' | 'speed' | null;
 }
 const state: OSDState = {
@@ -26,7 +26,7 @@ const state: OSDState = {
 	timer: null,
 	animationFrame: null,
 	displayedValue: null,
-	shortcutTargetActive: false,
+	shortcutTargetGesture: null,
 	lastType: null,
 };
 
@@ -47,7 +47,7 @@ export function showOSD(
 	options: OSDOptions = {},
 ): void {
 	if (pop || !s.osdEnabled || !c.enabled) return;
-	if (state.shortcutTargetActive) return;
+	if (state.shortcutTargetGesture !== null) return;
 	const volume = resolveAudioVolume(c);
 	renderOSD({
 		type: 'volume',
@@ -65,7 +65,7 @@ export function showSpeedOSD(
 	options: OSDOptions = {},
 ): void {
 	if (pop || !s.osdEnabled) return;
-	if (state.shortcutTargetActive) return;
+	if (state.shortcutTargetGesture !== null) return;
 	renderOSD({ type: 'speed', value: speed }, s, options);
 }
 
@@ -93,9 +93,10 @@ export function showHotkeyActualOSD(
 export function showHotkeyTargetOSD(
 	feedback: SpectraHotkeyActualFeedback,
 	s: ContentGlobalSettings,
+	gesture: number,
 ): void {
 	if (!s.osdEnabled) return;
-	state.shortcutTargetActive = true;
+	state.shortcutTargetGesture = gesture;
 	renderOSD(feedback.kind === 'volume'
 		? {
 			type: 'volume',
@@ -146,15 +147,16 @@ function paintScalarValue(
 	const icon = root.getElementById('i');
 	if (!fill || !text || !icon) return;
 	fill.style.width = `${scalarFeedbackProgress(payload.type, value)}%`;
+	const target = payload.value;
 	if (payload.type === 'speed') {
-		text.textContent = `${formatSpeed(value)}×`;
-		icon.textContent = value > 1 ? '⚡' : (value < 1 ? '🐢' : '⏱️');
+		text.textContent = `${formatSpeed(target)}×`;
+		icon.textContent = target > 1 ? '⚡' : (target < 1 ? '🐢' : '⏱️');
 		return;
 	}
 	text.textContent = payload.muted
 		? s.osdMessages.muted
-		: `${Number.isInteger(value) ? value : value.toFixed(1)}%`;
-	icon.textContent = payload.muted ? '🔇' : (value > 100 ? '🚀' : '🔊');
+		: `${Number.isInteger(target) ? target : target.toFixed(1)}%`;
+	icon.textContent = payload.muted ? '🔇' : (target > 100 ? '🚀' : '🔊');
 }
 
 function animateScalarValue(
@@ -196,8 +198,20 @@ function concealOSD(): void {
 	state.root?.getElementById('o')?.classList.remove('v');
 	state.timer = null;
 	state.displayedValue = null;
-	state.shortcutTargetActive = false;
 	state.lastType = null;
+}
+
+// A held gesture disappears on keyup but keeps its identity until its one
+// in-flight ACK settles. During that boundary, late actual feedback stays
+// suppressed and cannot resurrect visual motion after release.
+export function suspendHotkeyTargetOSD(gesture: number): void {
+	if (state.shortcutTargetGesture !== gesture) return;
+	if (state.timer) clearTimeout(state.timer);
+	concealOSD();
+}
+
+export function releaseHotkeyTargetOSD(gesture: number): void {
+	if (state.shortcutTargetGesture === gesture) state.shortcutTargetGesture = null;
 }
 
 // eff: core OSD rendering logic, handles both volume and speed display modes
@@ -254,7 +268,8 @@ function renderOSD(payload: OSDPayload, s: ContentGlobalSettings, options: OSDOp
 }
 
 // eff: removes the real value OSD immediately when a held shortcut is released.
-export function hideOSD(): void {
+export function hideOSD(preserveShortcutTarget = false): void {
 	if (state.timer) clearTimeout(state.timer);
 	concealOSD();
+	if (!preserveShortcutTarget) state.shortcutTargetGesture = null;
 }

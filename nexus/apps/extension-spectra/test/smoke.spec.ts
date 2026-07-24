@@ -3742,6 +3742,25 @@ describe('SPECTRA built extension smoke', () => {
 				}, { timeout: 5_000 })
 			), 6_000);
 			expect(fixturePage.url()).toBe(speedShortcutUrl);
+			await fixturePage.evaluate(() => {
+				const text = document.querySelector<HTMLElement>('#spectra-osd-host')
+					?.shadowRoot?.getElementById('t');
+				if (!text) throw new Error('Speed OSD label is unavailable');
+				const scope = window as Window & {
+					__spectraSpeedLabels?: string[];
+					__spectraSpeedLabelObserver?: MutationObserver;
+				};
+				scope.__spectraSpeedLabels = [text.textContent ?? ''];
+				scope.__spectraSpeedLabelObserver?.disconnect();
+				scope.__spectraSpeedLabelObserver = new MutationObserver(() => {
+					scope.__spectraSpeedLabels!.push(text.textContent ?? '');
+				});
+				scope.__spectraSpeedLabelObserver.observe(text, {
+					childList: true,
+					characterData: true,
+					subtree: true,
+				});
+			});
 			await withDiagnosticTimeout('press the built-in Alt+Right speed shortcut', async () => {
 				await fixturePage.keyboard.down('Alt');
 				await fixturePage.keyboard.press('ArrowRight');
@@ -3754,6 +3773,17 @@ describe('SPECTRA built extension smoke', () => {
 						?.shadowRoot?.getElementById('t')?.textContent === '1.0×'
 				), { timeout: 5_000 })
 			), 6_000);
+			const speedLabels = await fixturePage.evaluate(() => {
+				const scope = window as Window & {
+					__spectraSpeedLabels?: string[];
+					__spectraSpeedLabelObserver?: MutationObserver;
+				};
+				scope.__spectraSpeedLabelObserver?.disconnect();
+				return [...new Set(scope.__spectraSpeedLabels ?? [])];
+			});
+			expect(speedLabels).toContain('0.9×');
+			expect(speedLabels).toContain('1.0×');
+			expect(speedLabels.every((label) => label === '0.9×' || label === '1.0×')).toBe(true);
 			expect(fixturePage.url()).toBe(speedShortcutUrl);
 			const speedMarkers = await fixturePage.evaluate(() => {
 				const host = document.querySelector<HTMLElement>('#spectra-osd-host');
@@ -3890,16 +3920,16 @@ describe('SPECTRA built extension smoke', () => {
 				const fill = root?.getElementById('f');
 				if (!root || !text || !fill) throw new Error('OSD feedback surface is unavailable');
 				const scope = window as Window & {
-					__spectraScalarFrames?: Array<{ value: number; width: number }>;
+					__spectraScalarFrames?: Array<{ label: string; width: number }>;
 					__spectraScalarObserver?: MutationObserver;
 				};
 				scope.__spectraScalarFrames = [];
 				scope.__spectraScalarObserver?.disconnect();
 				const record = () => {
-					const value = Number.parseFloat(text.textContent ?? '');
+					const label = text.textContent ?? '';
 					const width = Number.parseFloat(fill.style.width);
-					if (Number.isFinite(value) && text.textContent?.endsWith('%') && Number.isFinite(width)) {
-						scope.__spectraScalarFrames!.push({ value, width });
+					if (label.endsWith('%') && Number.isFinite(width)) {
+						scope.__spectraScalarFrames!.push({ label, width });
 					}
 				};
 				scope.__spectraScalarObserver = new MutationObserver(record);
@@ -3922,34 +3952,39 @@ describe('SPECTRA built extension smoke', () => {
 				await fixturePage.keyboard.up('ArrowDown');
 				await fixturePage.keyboard.up('Alt');
 			}, 5_000);
-			const volumeAtRelease = await withDiagnosticTimeout(
-				'observe coalesced below-100 volume progress',
-				() => eventually(
-					() => fixturePage.evaluate(() => Math.round(
-						(document.querySelector<HTMLMediaElement>('video,audio')?.volume ?? -1) * 100,
-					)),
-					(volume) => volume >= 0 && volume <= 30,
-					'below-100 held volume',
-					5_000,
-				),
-				6_000,
-			);
-			await new Promise((resolveWait) => setTimeout(resolveWait, 400));
-			expect(await fixturePage.evaluate(() => Math.round(
+			const volumeAtRelease = await fixturePage.evaluate(() => Math.round(
 				(document.querySelector<HTMLMediaElement>('video,audio')?.volume ?? -1) * 100,
-			))).toBe(volumeAtRelease);
+			));
+			expect(volumeAtRelease).toBeGreaterThanOrEqual(0);
+			expect(volumeAtRelease).toBeLessThanOrEqual(30);
+			await new Promise((resolveWait) => setTimeout(resolveWait, 400));
+			const releasedState = await fixturePage.evaluate(() => {
+				const host = document.querySelector<HTMLElement>('#spectra-osd-host');
+				return {
+					volume: Math.round(
+						(document.querySelector<HTMLMediaElement>('video,audio')?.volume ?? -1) * 100,
+					),
+					visible: host?.shadowRoot?.getElementById('o')?.classList.contains('v') ?? false,
+				};
+			});
+			expect(releasedState).toEqual({ volume: volumeAtRelease, visible: false });
 			const scalarFrames = await fixturePage.evaluate(() => {
 				const scope = window as Window & {
-					__spectraScalarFrames?: Array<{ value: number; width: number }>;
+					__spectraScalarFrames?: Array<{ label: string; width: number }>;
 					__spectraScalarObserver?: MutationObserver;
 				};
 				scope.__spectraScalarObserver?.disconnect();
 				return scope.__spectraScalarFrames ?? [];
 			});
-			const scalarValues = [...new Set(scalarFrames.map(({ value }) => value))];
-			expect(scalarValues.length).toBeGreaterThan(5);
-			expect(scalarValues.some((value) => Math.abs(value % 10) > 0.05)).toBe(true);
-			expect(scalarFrames.every(({ value, width }) => Math.abs(width - value / 8) < 0.05)).toBe(true);
+			const scalarLabels = [...new Set(scalarFrames.map(({ label }) => label))];
+			const scalarWidths = [...new Set(scalarFrames.map(({ width }) => width))];
+			expect(scalarLabels.length).toBeGreaterThan(5);
+			expect(scalarLabels.every((label) => {
+				const value = Number.parseFloat(label);
+				return !label.includes('.') && Number.isInteger(value) && value % 10 === 0;
+			})).toBe(true);
+			expect(scalarWidths.length).toBeGreaterThan(5);
+			expect(scalarWidths.some((width) => Math.abs((width * 8) % 10) > 0.05)).toBe(true);
 		} finally {
 			await extensionClient.evaluate(async () => {
 				await chrome.runtime.sendMessage({

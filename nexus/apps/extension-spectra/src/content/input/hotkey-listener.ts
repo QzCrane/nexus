@@ -16,7 +16,13 @@ import { createEventListener, createCleanupManager } from '../utils/timing';
 import { executeHotkeyAction } from './hotkey-actions';
 import { isTrustedHotkeyEvent } from './hotkey-event';
 import { hideToast, showToast } from '../ui/toast';
-import { hideOSD, showHotkeyActualOSD, showHotkeyTargetOSD } from '../ui/osd';
+import {
+	hideOSD,
+	releaseHotkeyTargetOSD,
+	showHotkeyActualOSD,
+	showHotkeyTargetOSD,
+	suspendHotkeyTargetOSD,
+} from '../ui/osd';
 import { clampScalarFeedbackValue } from '../ui/scalar-feedback';
 import type { SettingsManager } from '../core/settings-manager';
 import type { PolicyExecutorState } from '../types';
@@ -28,15 +34,18 @@ let cachedSite: SiteHotkeyConfig | null | undefined;
 let cachedBindings: Map<string, HotkeyBinding> | undefined;
 let lastHostname = '';
 const coalesced = new Map<string, ReturnType<typeof setTimeout>>();
-const inFlightBindings = new Set<string>();
-const releasedRepeatedBindings = new Set<string>();
+const inFlightBindings = new Map<string, number>();
+const releasedFeedbackGestures = new Set<number>();
 const pendingRepeatPulses = new Map<string, number>();
-const activeBindingsByCode = new Map<string, {
+interface ActiveHotkeyBinding {
 	binding: HotkeyBinding;
 	repeated: boolean;
 	feedbackTarget?: number;
-}>();
+	feedbackGesture: number;
+}
+const activeBindingsByCode = new Map<string, ActiveHotkeyBinding>();
 const MAX_REPEAT_BURST_PULSES = 160;
+let feedbackGestureSequence = 0;
 let keydownDisposer: (() => void) | null = null;
 let keyupDisposer: (() => void) | null = null;
 let contentSettings: Pick<SettingsManager, 'get'> | undefined;
@@ -52,11 +61,18 @@ function cancelCoalesced(bindingId: string): void {
 function cancelActiveBindings(): void {
 	for (const timer of coalesced.values()) clearTimeout(timer);
 	coalesced.clear();
+	for (const held of activeBindingsByCode.values()) {
+		suspendHotkeyTargetOSD(held.feedbackGesture);
+		if (inFlightBindings.get(held.binding.id) === held.feedbackGesture) {
+			releasedFeedbackGestures.add(held.feedbackGesture);
+		} else {
+			releaseHotkeyTargetOSD(held.feedbackGesture);
+		}
+	}
 	activeBindingsByCode.clear();
-	releasedRepeatedBindings.clear();
 	pendingRepeatPulses.clear();
 	hideToast();
-	hideOSD();
+	hideOSD(true);
 }
 
 function synchronizeKeydownListener(): void {
@@ -202,8 +218,15 @@ function isBuiltInSpeedShortcut(e: KeyboardEvent): boolean {
 		&& (e.code === 'ArrowLeft' || e.code === 'ArrowRight');
 }
 
-function isBindingActive(bindingId: string): boolean {
-	return [...activeBindingsByCode.values()].some(({ binding }) => binding.id === bindingId);
+function activeBinding(bindingId: string): ActiveHotkeyBinding | undefined {
+	return [...activeBindingsByCode.values()].find(({ binding }) => binding.id === bindingId);
+}
+
+function nextFeedbackGesture(): number {
+	feedbackGestureSequence = feedbackGestureSequence >= Number.MAX_SAFE_INTEGER
+		? 1
+		: feedbackGestureSequence + 1;
+	return feedbackGestureSequence;
 }
 
 function addRepeatPulse(bindingId: string): void {
@@ -269,7 +292,7 @@ function seedScalarFeedbackTarget(binding: HotkeyBinding): number | undefined {
 }
 
 function advanceScalarFeedbackTarget(
-	active: { binding: HotkeyBinding; feedbackTarget?: number },
+	active: ActiveHotkeyBinding,
 ): void {
 	if (!contentSettings || !feedbackState) return;
 	const delta = scalarFeedbackDelta(active.binding);
@@ -286,22 +309,28 @@ function advanceScalarFeedbackTarget(
 			value,
 			muted: feedbackState.config.muted,
 			capture: feedbackState.actualMode === 'capture' && feedbackState.phase === 'active',
-		}, contentSettings.get());
+		}, contentSettings.get(), active.feedbackGesture);
 }
 
-function executeBinding(binding: HotkeyBinding, withOSD: boolean): void {
+function executeBinding(
+	binding: HotkeyBinding,
+	withOSD: boolean,
+	feedbackGesture: number,
+): void {
 	if (inFlightBindings.has(binding.id)) return;
-	inFlightBindings.add(binding.id);
+	inFlightBindings.set(binding.id, feedbackGesture);
 	const execution = withOSD
 		? executeWithOSD(binding)
 		: executeHotkeyAction(binding.action, binding.params).catch((error) => {
 			log.warn(`Hotkey ${binding.action} repeat failed`, error);
 		});
 	void execution.finally(() => {
-		inFlightBindings.delete(binding.id);
-		if (releasedRepeatedBindings.delete(binding.id)) {
+		if (inFlightBindings.get(binding.id) === feedbackGesture) {
+			inFlightBindings.delete(binding.id);
+		}
+		if (releasedFeedbackGestures.delete(feedbackGesture)) {
 			hideToast();
-			hideOSD();
+			releaseHotkeyTargetOSD(feedbackGesture);
 		}
 	});
 }
@@ -327,10 +356,11 @@ function handleKeydown(e: KeyboardEvent): void {
 	e.preventDefault();
 	e.stopPropagation();
 	const active = activeBindingsByCode.get(e.code);
-	const held = {
+	const held: ActiveHotkeyBinding = {
 		binding,
 		repeated: e.repeat || active?.repeated === true,
 		feedbackTarget: active?.feedbackTarget,
+		feedbackGesture: active?.feedbackGesture ?? nextFeedbackGesture(),
 	};
 	if (!e.repeat && descriptor.repeatPolicy === 'coalesce-20hz') {
 		held.feedbackTarget = seedScalarFeedbackTarget(binding);
@@ -341,7 +371,7 @@ function handleKeydown(e: KeyboardEvent): void {
 		// WITH the OSD toast. The toast is the once-per-press signal that the
 		// hotkey fired — it must not be re-shown on every keydown repeat, or the
 		// OSD floods and appears "stuck on" while the user holds the key.
-		executeBinding(binding, true);
+		executeBinding(binding, true, held.feedbackGesture);
 		return;
 	}
 	advanceScalarFeedbackTarget(held);
@@ -355,23 +385,27 @@ function handleKeydown(e: KeyboardEvent): void {
 	if (coalesced.has(binding.id) || inFlightBindings.has(binding.id)) return;
 	coalesced.set(binding.id, setTimeout(() => {
 		coalesced.delete(binding.id);
-		if (!isBindingActive(binding.id)) return;
-		executeBinding(coalescedBinding(binding, takeRepeatPulses(binding.id)), false);
+		const active = activeBinding(binding.id);
+		if (!active) return;
+		executeBinding(
+			coalescedBinding(binding, takeRepeatPulses(binding.id)),
+			false,
+			active.feedbackGesture,
+		);
 	}, 50));
 }
 
 function handleKeyup(e: KeyboardEvent): void {
 	if (!isTrustedHotkeyEvent(e)) return;
 	let releasedRepeated = false;
+	const released: ActiveHotkeyBinding[] = [];
 	const active = activeBindingsByCode.get(e.code);
 	if (active) {
 		activeBindingsByCode.delete(e.code);
 		cancelCoalesced(active.binding.id);
 		pendingRepeatPulses.delete(active.binding.id);
 		releasedRepeated = active.repeated;
-		if (active.repeated && inFlightBindings.has(active.binding.id)) {
-			releasedRepeatedBindings.add(active.binding.id);
-		}
+		if (active.repeated) released.push(active);
 	}
 
 	const modifier = e.code.startsWith('Control') ? 'ctrl'
@@ -386,16 +420,21 @@ function handleKeyup(e: KeyboardEvent): void {
 			cancelCoalesced(held.binding.id);
 			pendingRepeatPulses.delete(held.binding.id);
 			releasedRepeated ||= held.repeated;
-			if (held.repeated && inFlightBindings.has(held.binding.id)) {
-				releasedRepeatedBindings.add(held.binding.id);
-			}
+			if (held.repeated) released.push(held);
 		}
 	}
 
 	// A tap keeps its short feedback window; a held shortcut disappears at keyup.
 	if (releasedRepeated && ![...activeBindingsByCode.values()].some((held) => held.repeated)) {
 		hideToast();
-		hideOSD();
+		for (const held of released) suspendHotkeyTargetOSD(held.feedbackGesture);
+	}
+	for (const held of released) {
+		if (inFlightBindings.get(held.binding.id) === held.feedbackGesture) {
+			releasedFeedbackGestures.add(held.feedbackGesture);
+		} else {
+			releaseHotkeyTargetOSD(held.feedbackGesture);
+		}
 	}
 }
 

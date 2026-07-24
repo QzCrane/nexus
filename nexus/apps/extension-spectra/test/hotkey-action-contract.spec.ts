@@ -163,18 +163,18 @@ describe('page hotkey trust boundary', () => {
 			listener.indexOf('function executeBinding'),
 			listener.indexOf('function handleKeydown'),
 		);
-		expect(repeatBranch).toContain(
-			'executeBinding(coalescedBinding(binding, takeRepeatPulses(binding.id)), false)',
-		);
+		expect(repeatBranch).toContain('coalescedBinding(binding, takeRepeatPulses(binding.id))');
+		expect(repeatBranch).toContain('active.feedbackGesture');
 		expect(repeatBranch).not.toContain('executeWithOSD(binding)');
 		expect(completionBranch).not.toContain('executeBinding(coalescedBinding');
 		expect(listener).toContain('activeBindingsByCode.get(e.code)');
 		expect(listener).toContain('cancelCoalesced(active.binding.id)');
 		expect(listener).toContain('inFlightBindings.has(binding.id)');
-		expect(listener).toContain('if (!isBindingActive(binding.id)) return;');
+		expect(listener).toContain('const active = activeBinding(binding.id)');
 		expect(listener).toContain('hideToast()');
-		expect(listener).toContain('hideOSD()');
-		expect(listener).toContain('releasedRepeatedBindings');
+		expect(listener).toContain('suspendHotkeyTargetOSD(held.feedbackGesture)');
+		expect(listener).toContain('releaseHotkeyTargetOSD(held.feedbackGesture)');
+		expect(listener).toContain('releasedFeedbackGestures');
 		expect(listener).toContain('pendingRepeatPulses');
 		expect(listener).toContain('coalescedBinding');
 		expect(listener).toContain("feedbackOwner === 'listener-label'");
