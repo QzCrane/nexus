@@ -2,8 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
+	DEFAULT_SLOTS,
 	HOTKEY_ACTIONS,
 	HOTKEY_ACTION_DESCRIPTORS,
+	PRESET_BINDINGS,
 	isHotkeyParamsForAction,
 	isHotkeySettings,
 	isSlotHotkeyAction,
@@ -50,6 +52,28 @@ describe('editable hotkey action contract', () => {
 		);
 		expect(listener).toContain("feedbackOwner === 'listener-label'");
 		expect(listener).not.toContain("action !== 'open_popup'");
+	});
+
+	test('ships symmetric Alt+Arrow speed defaults through the bootstrap boundary', () => {
+		expect(DEFAULT_SLOTS.speed_down).toBe('speed_down');
+		expect(DEFAULT_SLOTS.speed_up).toBe('speed_up');
+		expect(PRESET_BINDINGS.some((binding) =>
+			binding.key.modifiers.alt
+			&& (binding.key.code === 'ArrowLeft' || binding.key.code === 'ArrowRight'))).toBe(false);
+		const bootstrap = readFileSync(
+			resolve(import.meta.dir, '../src/content/core/bootstrap.ts'),
+			'utf8',
+		);
+		expect(bootstrap).toContain("if (event.code === 'ArrowLeft') return 'speed_down'");
+		expect(bootstrap).toContain("if (event.code === 'ArrowRight') return 'speed_up'");
+		expect(bootstrap).toContain("'spectra.content.default-hotkey.trigger'");
+		expect(bootstrap).toContain('event.stopImmediatePropagation()');
+		expect(bootstrap).toContain('releaseDefaultSpeedKeys');
+		const listener = readFileSync(
+			resolve(import.meta.dir, '../src/content/input/hotkey-listener.ts'),
+			'utf8',
+		);
+		expect(listener).toContain('isBuiltInSpeedShortcut(e)');
 	});
 
 	test('unsupported pitch actions remain outside the editable registry', () => {
@@ -135,8 +159,15 @@ describe('page hotkey trust boundary', () => {
 			listener.indexOf('// Repeat keydown under coalesce-20hz'),
 			listener.indexOf('function handleKeyup'),
 		);
-		expect(repeatBranch).toContain('executeBinding(binding, false)');
+		const completionBranch = listener.slice(
+			listener.indexOf('function executeBinding'),
+			listener.indexOf('function handleKeydown'),
+		);
+		expect(repeatBranch).toContain(
+			'executeBinding(coalescedBinding(binding, takeRepeatPulses(binding.id)), false)',
+		);
 		expect(repeatBranch).not.toContain('executeWithOSD(binding)');
+		expect(completionBranch).not.toContain('executeBinding(coalescedBinding');
 		expect(listener).toContain('activeBindingsByCode.get(e.code)');
 		expect(listener).toContain('cancelCoalesced(active.binding.id)');
 		expect(listener).toContain('inFlightBindings.has(binding.id)');
@@ -144,6 +175,8 @@ describe('page hotkey trust boundary', () => {
 		expect(listener).toContain('hideToast()');
 		expect(listener).toContain('hideOSD()');
 		expect(listener).toContain('releasedRepeatedBindings');
+		expect(listener).toContain('pendingRepeatPulses');
+		expect(listener).toContain('coalescedBinding');
 		expect(listener).toContain("feedbackOwner === 'listener-label'");
 		expect(listener).toContain("e.code === 'F5'");
 		expect(listener).toContain("e.code === 'KeyR'");
@@ -153,7 +186,12 @@ describe('page hotkey trust boundary', () => {
 			resolve(import.meta.dir, '../src/content/ui/toast.ts'),
 			'utf8',
 		);
-		expect(toast).toContain('document.documentElement.appendChild(h)');
+		const feedbackSurface = readFileSync(
+			resolve(import.meta.dir, '../src/content/ui/feedback-surface.ts'),
+			'utf8',
+		);
+		expect(toast).toContain('createFeedbackSurface(');
+		expect(feedbackSurface).toContain('document.documentElement.appendChild(host)');
 		expect(toast).toContain('!s.host?.isConnected');
 		expect(toast).not.toContain('if (!document.body) return');
 	});

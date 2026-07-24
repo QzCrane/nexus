@@ -3,9 +3,15 @@
 import type { AudioConfig } from '@nexus/kernel';
 import { resolveAudioVolume, type SpectraHotkeyActualFeedback } from '@nexus/contracts';
 import type { ContentGlobalSettings } from '../core/settings-manager';
+import { activateFeedbackSurface, createFeedbackSurface } from './feedback-surface';
 
-interface OSDState { root: ShadowRoot | null; timer: ReturnType<typeof setTimeout> | null; lastType: 'volume' | 'speed' | null }
-const state: OSDState = { root: null, timer: null, lastType: null };
+interface OSDState {
+	host: HTMLElement | null;
+	root: ShadowRoot | null;
+	timer: ReturnType<typeof setTimeout> | null;
+	lastType: 'volume' | 'speed' | null;
+}
+const state: OSDState = { host: null, root: null, timer: null, lastType: null };
 
 export interface OSDOptions {
 	variant?: 'alternate-target';
@@ -66,16 +72,31 @@ type OSDPayload =
 	| { type: 'volume'; value: number; muted: boolean; capture: boolean }
 	| { type: 'speed'; value: number };
 
+function speedProgress(speed: number): number {
+	const normalized = Math.max(0.1, Math.min(16, speed));
+	return normalized <= 1
+		? Math.log10(normalized / 0.1) * 50
+		: 50 + (Math.log(normalized) / Math.log(16)) * 50;
+}
+
+function formatSpeed(speed: number): string {
+	const rounded = Math.round(speed * 100) / 100;
+	return Number.isInteger(rounded * 10)
+		? rounded.toFixed(1)
+		: rounded.toFixed(2).replace(/0$/u, '');
+}
+
 // eff: core OSD rendering logic, handles both volume and speed display modes
 function renderOSD(payload: OSDPayload, s: ContentGlobalSettings, options: OSDOptions): void {
-	if (!state.root) {
-		const h = document.createElement('div');
-		h.style.cssText = 'position:fixed;top:15%;left:50%;transform:translateX(-50%);z-index:2147483647;pointer-events:none';
-		document.body.appendChild(h);
-
-		const ws = h.attachShadow({ mode: 'open' });
+	if (!state.host?.isConnected || !state.root) {
+		const surface = createFeedbackSurface(
+			'spectra-osd-host',
+			'position:fixed;top:15%;left:50%;transform:translateX(-50%);z-index:2147483647',
+		);
+		const h = surface.host;
+		const ws = surface.root;
 		const css = document.createElement('style');
-		css.textContent = `.o{background:rgba(20,20,30,0.85);backdrop-filter:blur(8px);padding:12px 20px;border-radius:30px;color:#fff;display:grid;gap:4px;font-family:system-ui;transition:0.2s;opacity:0;transform:translateY(-10px)}.v{opacity:1;transform:translateY(0)}.r{display:flex;align-items:center;gap:12px}.b{width:120px;height:6px;background:rgba(255,255,255,0.2);border-radius:3px;overflow:hidden;position:relative}.f{height:100%;width:0%;transition:width 0.05s linear;background:#3b82f6}.c .f{background:#8b5cf6}.m .f{background:#9ca3af}.mr{position:absolute;left:12.5%;top:0;bottom:0;width:2px;background:rgba(255,255,255,0.6);z-index:5}.t{font-weight:600;font-size:14px;min-width:50px;text-align:right}.s .f{background:#10b981}.meta{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;font-size:11px;opacity:.78}.meta[hidden]{display:none}`;
+		css.textContent = `.o{background:rgba(20,20,30,0.85);backdrop-filter:blur(8px);padding:12px 20px;border-radius:30px;color:#fff;display:grid;gap:4px;font-family:system-ui;transition:0.2s;opacity:0;transform:translateY(-10px)}.v{opacity:1;transform:translateY(0)}.r{display:flex;align-items:center;gap:12px}.b{width:120px;height:6px;background:rgba(255,255,255,0.2);border-radius:3px;overflow:hidden;position:relative}.f{height:100%;width:0%;transition:width 0.05s linear;background:#3b82f6}.c .f{background:#8b5cf6}.m .f{background:#9ca3af}.mr{position:absolute;left:12.5%;top:0;bottom:0;width:2px;background:rgba(255,255,255,0.6);z-index:5}.s .mr{left:50%}.t{font-weight:600;font-size:14px;min-width:50px;text-align:right}.s .f{background:#10b981}.meta{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;font-size:11px;opacity:.78}.meta[hidden]{display:none}`;
 
 		const o = document.createElement('div'); o.className = 'o'; o.id = 'o';
 		const r = document.createElement('div'); r.className = 'r';
@@ -90,8 +111,10 @@ function renderOSD(payload: OSDPayload, s: ContentGlobalSettings, options: OSDOp
 		r.append(i, b, t);
 		o.append(r, meta);
 		ws.append(css, o);
+		state.host = h;
 		state.root = ws;
 	}
+	activateFeedbackSurface(state.host);
 
 	const o = state.root.getElementById('o');
 	const f = state.root.getElementById('f');
@@ -113,10 +136,10 @@ function renderOSD(payload: OSDPayload, s: ContentGlobalSettings, options: OSDOp
 		// speed display mode
 		const speed = payload.value;
 		o.classList.remove('m');
-		// map speed 0.1-16 to percentage for bar display
-		const pct = Math.min(100, Math.max(0, (speed / 16) * 100));
-		f.style.width = `${pct}%`;
-		t.textContent = `${speed.toFixed(2)}x`;
+		// Give the common 0.1x-1x and 1x-16x ranges equal visual space. The
+		// center marker is the semantic 1x baseline rather than a linear 16x cap.
+		f.style.width = `${speedProgress(speed)}%`;
+		t.textContent = `${formatSpeed(speed)}×`;
 		i.textContent = speed > 1 ? '⚡' : (speed < 1 ? '🐢' : '⏱️');
 	} else {
 		// volume display mode

@@ -87,7 +87,7 @@ success notifications.
 | `mute` | `mediaMuted`: toggle; numeric effective volume is preserved |
 | `play_pause` | `playback-toggle` |
 | `seek_forward/backward*` | `seek-relative`: signed `10s/30s` delta |
-| `speed_up/down/reset` | `speed`: `+0.25/-0.25/set 1` |
+| `speed_up/down/reset` | `speed`: `+0.1/-0.1/set 1`; built-in trusted `Alt+ArrowRight/Left` uses the same sender-bound mutation and prevents Chromium history navigation |
 | `fullscreen`, `pip` | native-only `fullscreen` / `pip` toggle |
 
 Every surface must submit the descriptor's canonical intent. A surface may
@@ -324,8 +324,8 @@ the failing DSP field; no desired value is copied into actual state.
 | Shortcut family | Exact mappings | Repeat/activation decision |
 | --- | --- | --- |
 | Playback | `play_pause -> playback-toggle`; each `seek_*_5s/10s/30s -> seek-relative`; each `seek_frame_* -> frame-step` | seek/frame deltas coalesce at 20 Hz; play toggle ignores repeat and preserves the trusted key event for native `play()` |
-| Speed | `speed_up/down/reset/set -> speed` | up/down coalesce at 20 Hz; reset/set ignore repeat; `speed_set` requires validated parameter |
-| Volume | `volume_up/down/set -> effective-volume`; `volume_mute -> mediaMuted` | up/down/set accept `0–800`, coalesce at 20 Hz and use the same atomic split as Popup/remote; identical values are dropped before IPC; mute ignores repeat |
+| Speed | `speed_up/down/reset/set -> speed` | up/down coalesce bounded physical pulses at `0.1` per pulse; built-in `Alt+ArrowLeft/Right` is bootstrap-owned and sender-bound; reset/set ignore repeat; `speed_set` requires validated parameter |
+| Volume | `volume_up/down/set -> effective-volume`; `volume_mute -> mediaMuted` | up/down use bounded physical pulse batches and the same atomic split as Popup/remote; set accepts `0–800`; identical values are dropped before IPC; mute ignores repeat |
 | Audio DSP | `audio_reset -> audio-reset`; legacy `gain_up/down/reset -> effective-volume`; `delay_* -> delay`; `pan_* -> pan`; `mono_toggle -> mono` | gain aliases no longer own product state; continuous deltas coalesce at 20 Hz; resets/toggles ignore repeat |
 | Video | `fullscreen_toggle -> fullscreen`; `pip_toggle -> pip`; `rotate_cw/ccw -> rotation`; `mirror_toggle -> mirrored`; `screenshot -> screenshot`; `dim_background -> dimEnabled` | PiP/fullscreen/screenshot require a real user-activation-capable entry and never escalate around rejection; screenshot is single-fire |
 | Timeline | `marker_add -> marker-add`; `marker_jump_prev/next -> marker-jump-previous/next`; `ab_set_a/b/clear -> abLoop`; `ab_skip -> ab-skip`; `loop_toggle -> loop` | jumps/skips coalesce; state mutations and loop toggle ignore repeat and remain bound to media/source identity |

@@ -5,6 +5,7 @@ import type {
 	ControlMutation,
 	HotkeySettings,
 	HotkeyAction,
+	SpectraDefaultHotkeyAction,
 	SpectraEventEnvelope,
 	SpectraHotkeyActualFeedback,
 } from '@nexus/contracts';
@@ -14,13 +15,17 @@ import {
 	DEFAULT_SLOTS,
 	HOTKEY_ACTION_DESCRIPTORS,
 	SPECTRA_PROTOCOL_VERSION,
+	isSpectraRequestEnvelope,
 	isSlotHotkeyAction,
+	rpcFailure,
+	rpcSuccess,
 } from '@nexus/contracts';
 import { swLog } from '../shared/logger';
 import { settingsRepository } from './settings-repository';
 import { hotkeyTargetRepository } from './hotkey-target-repository';
 import {
 	getControlViewSnapshot,
+	submitControlRequest,
 	submitExtensionInvokedControlOperation,
 	submitExtensionInvokedControlRequest,
 } from './control-coordinator';
@@ -42,6 +47,15 @@ const shortcutRuntimePort: ShortcutRuntimePort = {
 };
 
 const activeChromeCommands = new Set<string>();
+const repeatBursts = new Map<string, {
+	active: boolean;
+	pendingPulses: number;
+	expiry: ReturnType<typeof setTimeout> | null;
+	released: boolean;
+	lastPulseAt: number;
+}>();
+const MAX_REPEAT_BURST_PULSES = 160;
+const REPEAT_BURST_IDLE_MS = 250;
 
 // Chrome can emit repeated command events while a physical key is held. Keep at
 // most one asynchronous execution per command and never retain a trailing task,
@@ -58,6 +72,74 @@ export async function runChromeCommandSingleFlight(
 	} finally {
 		activeChromeCommands.delete(command);
 	}
+}
+
+// Scalar command repeats may arrive faster than a page-native writer can
+// complete its event/stable-getter ACK. Retain only a bounded pulse count and
+// consume it when a later physical command event arrives. Completion never
+// self-drains pending work, so key release cannot leave a trailing transaction.
+export async function runChromeCommandRepeatBurst(
+	command: string,
+	operation: (pulses: number) => Promise<void>,
+): Promise<boolean> {
+	const state = repeatBursts.get(command) ?? {
+		active: false,
+		pendingPulses: 0,
+		expiry: null,
+		released: false,
+		lastPulseAt: 0,
+	};
+	repeatBursts.set(command, state);
+	const pulseAt = Date.now();
+	state.released = false;
+	if (state.active) {
+		state.pendingPulses = Math.min(MAX_REPEAT_BURST_PULSES, state.pendingPulses + 1);
+		state.lastPulseAt = pulseAt;
+		return false;
+	}
+	if (state.expiry) clearTimeout(state.expiry);
+	state.expiry = null;
+	if (pulseAt - state.lastPulseAt >= REPEAT_BURST_IDLE_MS) {
+		state.pendingPulses = 0;
+	}
+	const pulses = Math.min(MAX_REPEAT_BURST_PULSES, state.pendingPulses + 1);
+	state.pendingPulses = 0;
+	state.lastPulseAt = pulseAt;
+	state.active = true;
+	let succeeded = false;
+	try {
+		await operation(pulses);
+		succeeded = true;
+		return true;
+	} finally {
+		state.active = false;
+		if (!succeeded) {
+			repeatBursts.delete(command);
+		} else if (state.released || state.pendingPulses === 0) {
+			repeatBursts.delete(command);
+		} else {
+			const remainingIdleMs = REPEAT_BURST_IDLE_MS - (Date.now() - state.lastPulseAt);
+			if (remainingIdleMs <= 0) {
+				repeatBursts.delete(command);
+			} else {
+				state.expiry = setTimeout(() => {
+					if (!state.active && repeatBursts.get(command) === state) {
+						repeatBursts.delete(command);
+					}
+				}, remainingIdleMs);
+			}
+		}
+	}
+}
+
+export function cancelChromeCommandRepeatBurst(command: string): void {
+	const state = repeatBursts.get(command);
+	if (!state) return;
+	state.pendingPulses = 0;
+	state.released = true;
+	if (state.expiry) clearTimeout(state.expiry);
+	state.expiry = null;
+	if (!state.active) repeatBursts.delete(command);
 }
 
 // Every Chrome command is valid on a fresh document, independently from Popup
@@ -95,7 +177,11 @@ export function setupShortcutListeners(): void {
 	void loadSlotMapping();
 
 	chrome.commands.onCommand.addListener((command) => {
-		void runChromeCommandSingleFlight(command, async () => {
+		const action = command.startsWith('slot_')
+			? slotMapping[command]
+			: resolveDirectCommand(command);
+		if (!action || action === 'none') return;
+		const execute = async (repeatPulses: number): Promise<void> => {
 			swLog.debug(`Shortcut command: ${command}`);
 
 			const route = await resolveShortcutTarget();
@@ -111,18 +197,11 @@ export function setupShortcutListeners(): void {
 				return;
 			}
 
-			let action: HotkeyAction | undefined;
-			if (command.startsWith('slot_')) {
-				action = slotMapping[command];
-				if (!action || action === 'none') return;
-			} else {
-				action = resolveDirectCommand(command);
-			}
-
-			if (!action) return;
-
 			try {
-				await runWithShortcutRuntime(tabId, () => executeAction(action, tabId, domain));
+				await runWithShortcutRuntime(
+					tabId,
+					() => executeAction(action, tabId, domain, repeatPulses),
+				);
 			} catch (error) {
 				swLog.warn(`Shortcut ${action} failed`, error);
 				return;
@@ -131,13 +210,131 @@ export function setupShortcutListeners(): void {
 				const feedback = await readShortcutActualFeedback(action, tabId);
 				await notifyAlternateShortcutTarget(route.active, tab, action, domain, feedback);
 			}
-		}).catch((error: unknown) => {
+		};
+		const execution = isBatchableChromeAction(action)
+			? runChromeCommandRepeatBurst(action, execute)
+			: runChromeCommandSingleFlight(command, () => execute(1));
+		void execution.catch((error: unknown) => {
 			swLog.warn(`Shortcut command ${command} failed before execution`, error);
 		});
 	});
 
+	chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+		if (!message || typeof message !== 'object') return false;
+		const candidate = message as { protocolVersion?: unknown; type?: unknown };
+		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION
+			|| candidate.type !== 'spectra.content.default-hotkey.trigger') return false;
+		if (!isSpectraRequestEnvelope(message)
+			|| message.type !== 'spectra.content.default-hotkey.trigger') {
+			sendResponse(rpcFailure('invalid_request', 'Malformed default hotkey trigger'));
+			return false;
+		}
+		const identity = defaultHotkeySenderIdentity(sender);
+		if (!identity) {
+			sendResponse(rpcFailure(
+				'forbidden',
+				'Default hotkeys require the current top-level HTTP document',
+			));
+			return false;
+		}
+		const burstKey = defaultHotkeyBurstKey(
+			identity.tabId,
+			identity.documentId,
+			message.payload.action,
+		);
+		if (message.payload.phase === 'release') {
+			cancelChromeCommandRepeatBurst(burstKey);
+			sendResponse(rpcSuccess({ accepted: true as const }));
+			return false;
+		}
+		void runDefaultPageSpeedShortcut(identity, message.payload.action, burstKey).then(
+			() => sendResponse(rpcSuccess({ accepted: true as const })),
+			(error) => sendResponse(rpcFailure(
+				'default_hotkey_failed',
+				error instanceof Error ? error.message : String(error),
+				true,
+			)),
+		);
+		return true;
+	});
+
 	chrome.tabs.onRemoved.addListener((tabId) => {
 		void clearRemovedShortcutTarget(tabId);
+	});
+}
+
+interface DefaultHotkeyIdentity {
+	tabId: number;
+	documentId: string;
+	url: string;
+}
+
+function defaultHotkeySenderIdentity(
+	sender: chrome.runtime.MessageSender,
+): DefaultHotkeyIdentity | null {
+	const tabId = sender.tab?.id;
+	if (sender.id !== chrome.runtime.id
+		|| sender.frameId !== 0
+		|| !tabId
+		|| !sender.documentId
+		|| !sender.url
+		|| !/^https?:/u.test(sender.url)) return null;
+	return { tabId, documentId: sender.documentId, url: sender.url };
+}
+
+function defaultHotkeyBurstKey(
+	tabId: number,
+	documentId: string,
+	action: SpectraDefaultHotkeyAction,
+): string {
+	return `page:${tabId}:${documentId}:${action}`;
+}
+
+async function runDefaultPageSpeedShortcut(
+	identity: DefaultHotkeyIdentity,
+	action: SpectraDefaultHotkeyAction,
+	burstKey: string,
+): Promise<void> {
+	await runChromeCommandRepeatBurst(burstKey, async (repeatPulses) => {
+		const before = await chrome.webNavigation.getFrame({
+			tabId: identity.tabId,
+			frameId: 0,
+		});
+		if (before?.documentId !== identity.documentId || before.url !== identity.url) {
+			throw new Error('Default hotkey belongs to a stale document');
+		}
+		const capability = `default-hotkey:${crypto.randomUUID()}`;
+		const ready = await ensureContentRuntime(
+			identity.tabId,
+			identity.documentId,
+			'hotkey',
+			capability,
+		);
+		try {
+			const current = await chrome.webNavigation.getFrame({
+				tabId: identity.tabId,
+				frameId: 0,
+			});
+			if (ready.documentId !== identity.documentId
+				|| current?.documentId !== identity.documentId
+				|| current.url !== identity.url) {
+				throw new Error('Default hotkey document changed before execution');
+			}
+			await executeAction(
+				action,
+				identity.tabId,
+				new URL(identity.url).hostname,
+				repeatPulses,
+				false,
+			);
+		} finally {
+			releaseContentRuntimeLease(
+				identity.tabId,
+				identity.documentId,
+				'hotkey',
+				capability,
+			);
+		}
 	});
 }
 
@@ -238,19 +435,38 @@ export function resolveDirectCommand(command: string): HotkeyAction | undefined 
 const FULL_OUTPUT_FIELDS = new Set<ControlMutation['field']>([
 	'boost', 'eqValues', 'bass', 'compressor', 'mono', 'pan', 'delay', 'tabMuted', 'tabPinned',
 ]);
+const BATCHABLE_CHROME_ACTIONS: ReadonlySet<HotkeyAction> = new Set([
+	'speed_up',
+	'speed_down',
+	'volume_up',
+	'volume_down',
+	'gain_up',
+	'gain_down',
+]);
 
-async function submitMutations(tabId: number, mutations: ControlMutation[]): Promise<void> {
+function isBatchableChromeAction(action: HotkeyAction): boolean {
+	return BATCHABLE_CHROME_ACTIONS.has(action);
+}
+
+async function submitMutations(
+	tabId: number,
+	mutations: ControlMutation[],
+	extensionInvoked = true,
+): Promise<void> {
 	for (const requestedCoverage of ['active-target', 'full'] as const) {
 		const selected = mutations.filter((mutation) =>
 			FULL_OUTPUT_FIELDS.has(mutation.field) === (requestedCoverage === 'full'));
 		if (selected.length === 0) continue;
-		const acknowledgement = await submitExtensionInvokedControlRequest({
+		const request = {
 			tabId,
 			source: 'hotkey',
 			requestedCoverage,
 			target: null,
 			mutations: selected,
-		});
+		} as const;
+		const acknowledgement = extensionInvoked
+			? await submitExtensionInvokedControlRequest(request)
+			: await submitControlRequest(request);
 		const failure = Object.values(acknowledgement.fields)
 			.find((field) => field?.phase !== 'applied');
 		if (failure) throw new Error(failure.lastError?.message ?? 'Shortcut control was not applied');
@@ -259,7 +475,15 @@ async function submitMutations(tabId: number, mutations: ControlMutation[]): Pro
 
 // eff: translates Chrome commands directly into the same coordinator protocol
 // used by Popup, page hotkeys and authenticated remote controls.
-async function executeAction(action: HotkeyAction, tabId: number, _domain: string): Promise<void> {
+async function executeAction(
+	action: HotkeyAction,
+	tabId: number,
+	_domain: string,
+	repeatPulses = 1,
+	extensionInvoked = true,
+): Promise<void> {
+	const speedDelta = Math.round(0.1 * repeatPulses * 100) / 100;
+	const volumeDelta = Math.min(800, 10 * repeatPulses);
 	const operation = async (
 			type: Parameters<typeof submitExtensionInvokedControlOperation>[0]['operation'],
 			payload: Parameters<typeof submitExtensionInvokedControlOperation>[0]['payload'] = {},
@@ -301,16 +525,16 @@ async function executeAction(action: HotkeyAction, tabId: number, _domain: strin
 			case 'show_info': await operation('show-info'); return;
 			case 'open_popup': await operation('open-popup'); return;
 			case 'open_options': await operation('open-options'); return;
-			case 'speed_up': await submitMutations(tabId, [{ field: 'speed', operation: 'delta', value: 0.1 }]); return;
-			case 'speed_down': await submitMutations(tabId, [{ field: 'speed', operation: 'delta', value: -0.1 }]); return;
-			case 'speed_reset': await submitMutations(tabId, [{ field: 'speed', operation: 'set', value: 1 }]); return;
+			case 'speed_up': await submitMutations(tabId, [{ field: 'speed', operation: 'delta', value: speedDelta }], extensionInvoked); return;
+			case 'speed_down': await submitMutations(tabId, [{ field: 'speed', operation: 'delta', value: -speedDelta }], extensionInvoked); return;
+			case 'speed_reset': await submitMutations(tabId, [{ field: 'speed', operation: 'set', value: 1 }], extensionInvoked); return;
 			case 'speed_set': return;
-			case 'volume_up': await operation('effective-volume', { operation: 'delta', value: 10 }); return;
-			case 'volume_down': await operation('effective-volume', { operation: 'delta', value: -10 }); return;
+			case 'volume_up': await operation('effective-volume', { operation: 'delta', value: volumeDelta }); return;
+			case 'volume_down': await operation('effective-volume', { operation: 'delta', value: -volumeDelta }); return;
 			case 'volume_mute': await submitMutations(tabId, [{ field: 'mediaMuted', operation: 'toggle' }]); return;
 			case 'volume_set': return;
-			case 'gain_up': await operation('effective-volume', { operation: 'delta', value: 10 }); return;
-			case 'gain_down': await operation('effective-volume', { operation: 'delta', value: -10 }); return;
+			case 'gain_up': await operation('effective-volume', { operation: 'delta', value: volumeDelta }); return;
+			case 'gain_down': await operation('effective-volume', { operation: 'delta', value: -volumeDelta }); return;
 			case 'delay_up': await submitMutations(tabId, [{ field: 'delay', operation: 'delta', value: 10 }]); return;
 			case 'delay_down': await submitMutations(tabId, [{ field: 'delay', operation: 'delta', value: -10 }]); return;
 			case 'delay_reset': await submitMutations(tabId, [{ field: 'delay', operation: 'set', value: 0 }]); return;

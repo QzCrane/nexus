@@ -1336,6 +1336,22 @@ function checkRetiredPaths(root) {
 		path.join(root, SOURCE_PATH, 'background/shortcuts.ts'),
 		'utf8',
 	);
+	const bootstrapContract = fs.readFileSync(
+		path.join(root, 'packages/contracts/src/spectra.bootstrap.ts'),
+		'utf8',
+	);
+	const pageHotkeyListener = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'content/input/hotkey-listener.ts'),
+		'utf8',
+	);
+	const feedbackSurface = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'content/ui/feedback-surface.ts'),
+		'utf8',
+	);
+	const shortcutManifest = JSON.parse(fs.readFileSync(
+		path.join(root, APP_PATH, 'public/manifest.json'),
+		'utf8',
+	));
 	if (shortcuts.includes('^file:')
 		|| !shortcuts.includes("active?.url && /^https?:/u.test(active.url) ? active : undefined")) {
 		error('SCTRL-006/SCTRL-015: Chrome shortcut targets must match the coordinator HTTP(S) origin boundary');
@@ -1345,12 +1361,42 @@ function checkRetiredPaths(root) {
 		'if (activeChromeCommands.has(command)) return false',
 		'activeChromeCommands.add(command)',
 		'activeChromeCommands.delete(command)',
-		'void runChromeCommandSingleFlight(command',
-		'}).catch((error: unknown) => {',
+		'const repeatBursts = new Map<string, {',
+		'const MAX_REPEAT_BURST_PULSES = 160',
+		'state.pendingPulses = Math.min(MAX_REPEAT_BURST_PULSES',
+		'state.expiry = setTimeout(() => {',
+		'export function cancelChromeCommandRepeatBurst(',
+		'state.released = true',
+		'? runChromeCommandRepeatBurst(action, execute)',
+		': runChromeCommandSingleFlight(command, () => execute(1))',
+		'void execution.catch((error: unknown) => {',
 	]) {
 		if (!shortcuts.includes(required)) {
 			error(`SCTRL-022: Chrome command repeat gate is missing (${required})`);
 		}
+	}
+	const reservedManifestKeys = ['Alt+Left', 'Alt+Right'];
+	const suggestedKeys = Object.values(shortcutManifest.commands ?? {})
+		.flatMap(command => Object.values(command.suggested_key ?? {}));
+	if (!bootstrapContract.includes("SPECTRA_DEFAULT_HOTKEY_ACTIONS = ['speed_down', 'speed_up']")
+		|| !bootstrap.includes("if (event.code === 'ArrowLeft') return 'speed_down'")
+		|| !bootstrap.includes("if (event.code === 'ArrowRight') return 'speed_up'")
+		|| !bootstrap.includes('if (!event.isTrusted')
+		|| !bootstrap.includes('event.preventDefault()')
+		|| !bootstrap.includes('event.stopImmediatePropagation()')
+		|| !bootstrap.includes("sendDefaultSpeedPhase(action, 'release')")
+		|| !pageHotkeyListener.includes('isBuiltInSpeedShortcut(e)')
+		|| !shortcuts.includes("candidate.type !== 'spectra.content.default-hotkey.trigger'")
+		|| !shortcuts.includes('sender.frameId !== 0')
+		|| !shortcuts.includes('current?.documentId !== identity.documentId')
+		|| reservedManifestKeys.some(key => suggestedKeys.includes(key))) {
+		error('SCTRL-006/SCTRL-022: built-in Alt+Arrow speed shortcuts must be trusted, sender-bound, navigation-blocking and outside manifest reserved keys');
+	}
+	if (!feedbackSurface.includes("host.popover = 'manual'")
+		|| !feedbackSurface.includes("document.addEventListener('fullscreenchange'")
+		|| !feedbackSurface.includes("host.matches(':popover-open')")
+		|| !feedbackSurface.includes('host.showPopover()')) {
+		error('SCTRL-016/SCTRL-022: Toast and OSD feedback must use a fullscreen-safe browser top-layer host');
 	}
 
 	const tabSession = fs.readFileSync(

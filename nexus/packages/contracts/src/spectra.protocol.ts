@@ -67,7 +67,11 @@ import {
 	type ControlReadResult,
 	type MediaTarget,
 } from './control.contracts.js';
-import { SPECTRA_PROTOCOL_VERSION } from './spectra.bootstrap.js';
+import {
+	SPECTRA_PROTOCOL_VERSION,
+	isSpectraDefaultHotkeyTriggerPayload,
+	type SpectraDefaultHotkeyTriggerPayload,
+} from './spectra.bootstrap.js';
 
 export {
 	SPECTRA_CONTENT_BOOTSTRAP_REVISION,
@@ -231,6 +235,10 @@ export interface SpectraRequestMap {
 			reason?: ContentRuntimeLeaseReason;
 			capability?: string;
 		};
+		response: { accepted: true };
+	};
+	'spectra.content.default-hotkey.trigger': {
+		payload: SpectraDefaultHotkeyTriggerPayload;
 		response: { accepted: true };
 	};
 	'spectra.content.source.released': {
@@ -1281,6 +1289,7 @@ const REQUEST_PAYLOAD_GUARDS = {
 	'spectra.content.runtime.ensure': isContentRuntimeEnsurePayload,
 	'spectra.content.runtime.ready': isContentRuntimeRevisionPayload,
 	'spectra.content.runtime.release': isContentRuntimeReleasePayload,
+	'spectra.content.default-hotkey.trigger': isSpectraDefaultHotkeyTriggerPayload,
 	'spectra.content.source.released': isContentSourceReleasedPayload,
 	'spectra.content.target.changed': isContentTargetChangedPayload,
 	'spectra.control.snapshot.get': isTabIdPayload,
@@ -1485,7 +1494,11 @@ function isContentRuntimeReadyResult(
 
 function isAcceptedResult(
 	value: unknown,
-): value is SpectraResponseData<'spectra.content.runtime.ready' | 'spectra.content.runtime.release'> {
+): value is SpectraResponseData<
+	| 'spectra.content.runtime.ready'
+	| 'spectra.content.runtime.release'
+	| 'spectra.content.default-hotkey.trigger'
+> {
 	return isRecord(value)
 		&& hasOnlyKeys(value, ACCEPTED_RESULT_KEYS)
 		&& value.accepted === true;
@@ -1497,6 +1510,7 @@ const RESPONSE_DATA_GUARDS = {
 	'spectra.content.runtime.ensure': isContentRuntimeReadyResult,
 	'spectra.content.runtime.ready': isAcceptedResult,
 	'spectra.content.runtime.release': isAcceptedResult,
+	'spectra.content.default-hotkey.trigger': isAcceptedResult,
 	'spectra.content.source.released': isAcceptedResult,
 	'spectra.content.target.changed': isAcceptedResult,
 	'spectra.control.snapshot.get': (
@@ -1787,6 +1801,12 @@ export function isSpectraRequestEnvelope(value: unknown): value is SpectraReques
 	}
 	if (value.type === 'spectra.content.inject') {
 		return isTabIdPayload(value.payload) && value.tabId === value.payload.tabId;
+	}
+	if (value.type === 'spectra.content.default-hotkey.trigger') {
+		// The browser sender identity is authoritative for this page event.
+		return value.tabId === undefined
+			&& value.documentId === undefined
+			&& value.generation === undefined;
 	}
 	if (value.type === 'spectra.control.intent.execute'
 		|| value.type === 'spectra.control.operation.execute') {

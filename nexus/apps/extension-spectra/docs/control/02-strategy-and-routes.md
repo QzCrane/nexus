@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-07-22
+last_reviewed: 2026-07-24
 ---
 
 # 02. Strategy order & Routes (Capability order, registry, runtime, bridges)
@@ -146,6 +146,18 @@ invalidated by navigation, extension update, context invalidation and dispose,
 and a timed-out handshake returns a structured error without an unhandled
 Promise rejection.
 
+`Alt+ArrowLeft` and `Alt+ArrowRight` are built-in speed controls with a literal
+`-0.1/+0.1` delta. Chromium reserves those combinations for history navigation,
+so they cannot be truthfully supplied as manifest `suggested_key` values. The
+minimal bootstrap instead captures only trusted exact-modifier key events
+outside editable controls, prevents the browser navigation, and sends the
+closed `spectra.content.default-hotkey.trigger` request. Background accepts it
+only from the current top-level HTTP(S) document, rechecks `documentId` before
+execution, and routes it through the same coordinator/actual-readback path as
+every other speed mutation. The heavy page-hotkey listener excludes these two
+built-ins, preventing a site binding from executing the same physical event
+twice.
+
 Bootstrap restore, the first Popup snapshot, Popup/remote control and Chrome
 commands also share one single-flight initialization barrier keyed by
 `tabId + documentId`. Its restore decision first rebinds an acknowledged
@@ -168,6 +180,14 @@ cancels repeat work, pending timers, and Toast inertia on keyup. A shortcut
 targeting another tab may project the same Toast visual style in the current tab
 with an additional focus-tab label; refresh, bootstrap, Popup open and snapshot
 synchronization never create a Toast.
+
+Toast and acknowledged volume/speed OSD hosts use a manual Popover top-layer
+surface rather than competing with site `z-index`. A `fullscreenchange`
+reopens the connected host after the fullscreen element enters the top layer,
+so fullscreen video cannot cover shortcut feedback. Speed feedback renders the
+actual ACK (`0.9×`, `1.0×`, and so on), places the semantic `1×` baseline at the
+center of the bar, and gives the `0.1–1×` and `1–16×` ranges equal logarithmic
+space.
 
 ## §6 Exact-element page media, PiP and fullscreen
 

@@ -98,6 +98,9 @@
       },
       "description": "Mute/Unmute"
     },
+    "speed_down": {
+      "description": "Speed -0.1x"
+    },
     "speed_up": {
       "suggested_key": {
         "default": "Alt+S"

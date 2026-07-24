@@ -1654,6 +1654,17 @@ afterAll(async () => {
 describe('SPECTRA built extension smoke', () => {
 	test('loads the MV3 worker and isolated zero-work bootstrap without MAIN', async () => {
 		expect(serviceWorkerTarget.url()).toBe(`chrome-extension://${extensionId}/background.js`);
+		const commandShortcuts = await evaluateServiceWorker(async () => Object.fromEntries(
+			(await chrome.commands.getAll()).map(({ name, shortcut }) => [name, shortcut]),
+		));
+		expect(commandShortcuts.toggle_mute).toBe('Alt+M');
+		expect(commandShortcuts.speed_down).toBe('');
+		expect(commandShortcuts.speed_up).toBe('Alt+S');
+		// Chromium renders directional keys with or without the " Arrow"
+		// suffix depending on host platform/build. Both values prove the same
+		// registered command; the manifest contract separately fixes the key.
+		expect(commandShortcuts.volume_up).toMatch(/^Alt\+Up(?: Arrow)?$/u);
+		expect(commandShortcuts.volume_down).toMatch(/^Alt\+Down(?: Arrow)?$/u);
 		expect(await readContentBootstrapStatus()).toMatchObject({
 			ready: false,
 			runtimeRevision: null,
@@ -2102,9 +2113,9 @@ describe('SPECTRA built extension smoke', () => {
 					source: 'popup',
 					requestedCoverage: 'active-target',
 					target: null,
-					patch: { speed: 1.75 },
+					patch: { mediaMuted: false, speed: 1.75 },
 				});
-				if (!speed?.ok) throw new Error(speed?.error?.message ?? 'Unable to set refresh speed');
+				if (!speed?.ok) throw new Error(speed?.error?.message ?? 'Unable to set refresh mute and speed');
 			}, tabId);
 			await eventually(
 				() => fixturePage.evaluate(() => {
@@ -2129,6 +2140,7 @@ describe('SPECTRA built extension smoke', () => {
 			expect(durableProjection).toMatchObject({
 				volumeBase: 63,
 				boost: 1,
+				mediaMuted: false,
 				speed: 1.75,
 			});
 
@@ -2165,6 +2177,7 @@ describe('SPECTRA built extension smoke', () => {
 				data: {
 					fields: {
 						volumeBase: { actual: 63 },
+						mediaMuted: { actual: false },
 						speed: { actual: 1.75 },
 					},
 				},
@@ -2190,7 +2203,7 @@ describe('SPECTRA built extension smoke', () => {
 					source: 'popup',
 					requestedCoverage: 'active-target',
 					target: null,
-					patch: { speed: 1 },
+					patch: { mediaMuted: false, speed: 1 },
 				});
 			}, tabId).catch(() => undefined);
 			await extensionClient.close().catch(() => undefined);
@@ -2420,7 +2433,7 @@ describe('SPECTRA built extension smoke', () => {
 		const options = await browser.newPage();
 		collectPageErrors(options, optionsErrors);
 		await options.goto(`chrome-extension://${extensionId}/options.html`, { waitUntil: 'domcontentloaded' });
-		await options.waitForFunction(() => document.querySelectorAll('#slots-list .slot-row').length === 20);
+		await options.waitForFunction(() => document.querySelectorAll('#slots-list .slot-row').length === 21);
 		expect(await options.evaluate(() => document.documentElement.dataset.theme)).toMatch(/^(light|dark)$/);
 
 		const accessibilityTestDomain = 'a11y-smoke.example';
@@ -2804,7 +2817,7 @@ describe('SPECTRA built extension smoke', () => {
 		const options = await browser.newPage();
 		await options.setViewport({ width: 390, height: 800, deviceScaleFactor: 1 });
 		await options.goto(`chrome-extension://${extensionId}/options.html`, { waitUntil: 'domcontentloaded' });
-		await options.waitForFunction(() => document.querySelectorAll('#slots-list .slot-row').length === 20);
+		await options.waitForFunction(() => document.querySelectorAll('#slots-list .slot-row').length === 21);
 		try {
 			for (const language of ['en-US', 'zh-CN']) {
 				await options.select('#lang-select', language);
@@ -3074,7 +3087,7 @@ describe('SPECTRA built extension smoke', () => {
 		}
 	}, 10_000);
 
-	test('delivers only the selected locale strings to the Content OSD', async () => {
+	test('renders localized volume and speed feedback in the browser top layer', async () => {
 		const targetUrl = fixturePage.url();
 		const extensionClient = await openExtensionClient('options.html');
 		const settings = await withDiagnosticTimeout('select zh-CN for the OSD smoke test', () => (
@@ -3092,9 +3105,30 @@ describe('SPECTRA built extension smoke', () => {
 					patch: { scope: 'global', changes: { lang: 'zh-CN' } },
 				});
 				if (!changed?.ok) throw new Error('Unable to select zh-CN for OSD smoke test');
+				const hotkeys = await request('spectra.settings.patch', {
+					expectedRevision: changed.data.revision,
+					patch: {
+						scope: 'hotkey-site',
+						domain: '127.0.0.1',
+						value: {
+							enabled: true,
+							bindings: [{
+								id: 'smoke-volume-down',
+								enabled: true,
+								key: {
+									code: 'ArrowDown',
+									modifiers: { ctrl: false, alt: true, shift: false, meta: false },
+								},
+								action: 'volume_down',
+								params: { step: 10 },
+							}],
+						},
+					},
+				});
+				if (!hotkeys?.ok) throw new Error('Unable to configure the held-volume smoke shortcut');
 				return {
 					originalLanguage: current.data.globalSettings.lang,
-					revision: changed.data.revision,
+					originalHotkeySite: current.data.hotkeySettings.sites['127.0.0.1'] ?? null,
 				};
 			})
 		), 5_000);
@@ -3115,11 +3149,16 @@ describe('SPECTRA built extension smoke', () => {
 						source: 'popup',
 						requestedCoverage: 'active-target',
 						target: null,
-						mutations: [{ field: 'mediaMuted', operation: 'set', value: false }],
+						mutations: [
+							{ field: 'mediaMuted', operation: 'set', value: false },
+							{ field: 'speed', operation: 'set', value: 1 },
+						],
 					},
 				})
 			), tabId);
-			if (!nativeBaseline?.ok || nativeBaseline.data.fields.mediaMuted?.actual !== false) {
+			if (!nativeBaseline?.ok
+				|| nativeBaseline.data.fields.mediaMuted?.actual !== false
+				|| nativeBaseline.data.fields.speed?.actual !== 1) {
 				throw new Error(nativeBaseline?.error?.message ?? 'Unable to establish the native mute baseline');
 			}
 			const hotkey = await withDiagnosticTimeout('trigger the mute OSD', () => (
@@ -3136,11 +3175,18 @@ describe('SPECTRA built extension smoke', () => {
 				document.querySelector<HTMLMediaElement>('video,audio')?.muted === true
 			), { timeout: 5_000 }), 6_000);
 			await withDiagnosticTimeout('observe the localized mute OSD', () => fixturePage.waitForFunction(() => {
-				for (const host of document.body.querySelectorAll('div')) {
-					if (host.shadowRoot?.getElementById('t')?.textContent === '静音') return true;
-				}
-				return false;
+				const host = document.querySelector<HTMLElement>('#spectra-osd-host');
+				return host?.matches(':popover-open') === true
+					&& host.popover === 'manual'
+					&& host.shadowRoot?.getElementById('t')?.textContent === '静音';
 			}, { timeout: 5_000 }), 6_000);
+			expect(await fixturePage.evaluate(() => {
+				const host = document.querySelector<HTMLElement>('#spectra-osd-host');
+				if (!host?.matches(':popover-open')) return false;
+				host.hidePopover();
+				document.dispatchEvent(new Event('fullscreenchange'));
+				return host.matches(':popover-open');
+			})).toBe(true);
 			const unmuted = await withDiagnosticTimeout('trigger the unmute ACK', () => (
 				evaluateServiceWorker(async (targetTabId) => chrome.tabs.sendMessage(targetTabId, {
 					protocolVersion: 2,
@@ -3154,25 +3200,104 @@ describe('SPECTRA built extension smoke', () => {
 			await withDiagnosticTimeout('observe the actual media unmute', () => fixturePage.waitForFunction(() => (
 				document.querySelector<HTMLMediaElement>('video,audio')?.muted === false
 			), { timeout: 5_000 }), 6_000);
+			await fixturePage.bringToFront();
+			const speedShortcutUrl = fixturePage.url();
+			await withDiagnosticTimeout('press the built-in Alt+Left speed shortcut', async () => {
+				await fixturePage.keyboard.down('Alt');
+				await fixturePage.keyboard.press('ArrowLeft');
+				await fixturePage.keyboard.up('Alt');
+			}, 5_000);
+			await withDiagnosticTimeout('observe the acknowledged 0.9x top-layer OSD', () => (
+				fixturePage.waitForFunction(() => {
+					const media = document.querySelector<HTMLMediaElement>('video,audio');
+					const host = document.querySelector<HTMLElement>('#spectra-osd-host');
+					return media?.playbackRate === 0.9
+						&& host?.matches(':popover-open') === true
+						&& host.shadowRoot?.getElementById('t')?.textContent === '0.9×';
+				}, { timeout: 5_000 })
+			), 6_000);
+			expect(fixturePage.url()).toBe(speedShortcutUrl);
+			await withDiagnosticTimeout('press the built-in Alt+Right speed shortcut', async () => {
+				await fixturePage.keyboard.down('Alt');
+				await fixturePage.keyboard.press('ArrowRight');
+				await fixturePage.keyboard.up('Alt');
+			}, 5_000);
+			await withDiagnosticTimeout('observe the acknowledged 1.0x OSD', () => (
+				fixturePage.waitForFunction(() => (
+					document.querySelector<HTMLMediaElement>('video,audio')?.playbackRate === 1
+					&& document.querySelector<HTMLElement>('#spectra-osd-host')
+						?.shadowRoot?.getElementById('t')?.textContent === '1.0×'
+				), { timeout: 5_000 })
+			), 6_000);
+			expect(fixturePage.url()).toBe(speedShortcutUrl);
+			await submitEffectiveVolume(tabId, 90);
+			await withDiagnosticTimeout('observe the below-100 volume baseline', () => (
+				fixturePage.waitForFunction(() => (
+					Math.round((document.querySelector<HTMLMediaElement>('video,audio')?.volume ?? -1) * 100) === 90
+				), { timeout: 5_000 })
+			), 6_000);
+			await withDiagnosticTimeout('hold the below-100 volume-down command', async () => {
+				await fixturePage.keyboard.down('Alt');
+				await fixturePage.keyboard.down('ArrowDown');
+				for (let index = 0; index < 18; index += 1) {
+					await new Promise((resolveWait) => setTimeout(resolveWait, 35));
+					await fixturePage.keyboard.down('ArrowDown');
+				}
+				await fixturePage.keyboard.up('ArrowDown');
+				await fixturePage.keyboard.up('Alt');
+			}, 5_000);
+			const volumeAtRelease = await withDiagnosticTimeout(
+				'observe coalesced below-100 volume progress',
+				() => eventually(
+					() => fixturePage.evaluate(() => Math.round(
+						(document.querySelector<HTMLMediaElement>('video,audio')?.volume ?? -1) * 100,
+					)),
+					(volume) => volume >= 0 && volume <= 30,
+					'below-100 held volume',
+					5_000,
+				),
+				6_000,
+			);
+			await new Promise((resolveWait) => setTimeout(resolveWait, 400));
+			expect(await fixturePage.evaluate(() => Math.round(
+				(document.querySelector<HTMLMediaElement>('video,audio')?.volume ?? -1) * 100,
+			))).toBe(volumeAtRelease);
 		} finally {
-			await evaluateServiceWorker(async ({ language, revision }) => {
+			await extensionClient.evaluate(async ({ hotkeySite, language }) => {
+				const current = await chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					type: 'spectra.settings.get',
+					payload: {},
+				});
+				if (!current?.ok) throw new Error('Unable to read settings during OSD smoke cleanup');
+				const restoredHotkeys = await chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					type: 'spectra.settings.patch',
+					payload: {
+						expectedRevision: current.data.revision,
+						patch: { scope: 'hotkey-site', domain: '127.0.0.1', value: hotkeySite },
+					},
+				});
+				if (!restoredHotkeys?.ok) throw new Error('Unable to restore OSD smoke hotkeys');
 				await chrome.runtime.sendMessage({
 					protocolVersion: 2,
 					requestId: crypto.randomUUID(),
 					type: 'spectra.settings.patch',
 					payload: {
-						expectedRevision: revision,
+						expectedRevision: restoredHotkeys.data.revision,
 						patch: { scope: 'global', changes: { lang: language } },
 					},
 				});
 			}, {
+				hotkeySite: settings.originalHotkeySite,
 				language: settings.originalLanguage,
-				revision: settings.revision,
 			});
 			await configureRuntime(targetUrl, { ...DEFAULT_AUDIO_CONFIG, muted: false }).catch(() => undefined);
 			await extensionClient.close().catch(() => undefined);
 		}
-	}, 20_000);
+	}, 25_000);
 
 	test('serializes denied capture attempts through one offscreen host and rolls back', async () => {
 		const secondaryUrl = `${fixtureUrl}?secondary=1`;

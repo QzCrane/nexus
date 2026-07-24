@@ -1,4 +1,6 @@
 // goal: transient visual notifications
+import { activateFeedbackSurface, createFeedbackSurface } from './feedback-surface';
+
 const s: {
 	host: HTMLElement | null;
 	root: ShadowRoot | null;
@@ -14,12 +16,12 @@ export interface ToastOptions {
 export function showToast(msg: string, options: ToastOptions = {}): void {
 	if (!document.documentElement) return;
 	if (!s.host?.isConnected || !s.root) {
-		const h = document.createElement('div');
-		h.id = 'spectra-toast-host';
-		h.style.cssText = 'position:fixed;top:20%;left:50%;transform:translateX(-50%);z-index:2147483647;pointer-events:none';
-		document.documentElement.appendChild(h);
-
-		const ws = h.attachShadow({ mode: 'open' });
+		const surface = createFeedbackSurface(
+			'spectra-toast-host',
+			'position:fixed;top:20%;left:50%;transform:translateX(-50%);z-index:2147483647',
+		);
+		const h = surface.host;
+		const ws = surface.root;
 		const st = document.createElement('style');
 		// note: toast must appear INSTANTLY (no fade-in delay). Only fade OUT when hiding.
 		// The previous `transition:0.3s;opacity:0` initial state caused a 300ms perceived delay.
@@ -39,6 +41,7 @@ export function showToast(msg: string, options: ToastOptions = {}): void {
 		s.host = h;
 		s.root = ws;
 	}
+	activateFeedbackSurface(s.host);
 
 	const t = s.root.getElementById('t');
 	const txt = s.root.getElementById('txt');

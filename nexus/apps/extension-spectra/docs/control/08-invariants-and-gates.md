@@ -32,7 +32,7 @@ audience: developer
 - `SCTRL-019`: one visualizer IPC owns the next schedule; a slow request cannot create an empty 15 Hz wake-up loop.
 - `SCTRL-020`: Popup fields project only `ControlSnapshot`; audio session data owns lifecycle only.
 - `SCTRL-021`: visualizer ownership is per subscriber, expires abnormal exits and retains a bounded generation tombstone.
-- `SCTRL-022`: every hotkey has exactly one feedback owner; generic listener feedback is contract-gated, and each manifest command is single-flight with repeat drops and no trailing invocation.
+- `SCTRL-022`: every hotkey has exactly one feedback owner on a fullscreen-safe browser top-layer surface; scalar repeat bursts are bounded, only a new physical event consumes accumulated pulses, and key release/lifecycle disposal cannot leave a trailing invocation.
 - `SCTRL-023`: screenshot source and geometry are token-verified on both sides of browser capture.
 - `SCTRL-024`: document runtime ownership counts unique consumer tokens; only the last token may dispose it.
 - `SCTRL-025`: `activeMedia` and `activeVideo` are independent actual identities; every video-only surface routes to the latter.
@@ -69,9 +69,10 @@ user-activation errors, CSS restoration, no hidden visualizer IPC and clean
 disposal after navigation/update.
 
 The gate must also stop/reacquire the MV3 worker before a same-origin refresh,
-verify all `CONTROL_SESSION_FIELDS` remain in the durable projection, prove site
+verify all `CONTROL_SESSION_FIELDS` remain in the durable projection, prove
+built-in `Alt+ArrowLeft/Right` speed deltas without history navigation,
 preset precedence and global fallback on new tabs, assert an empty Badge for
-sparse/non-volume state, and exercise manifest-command single-flight success
-and failure. The same `smoke.spec.ts` source runs against the development
+sparse/non-volume state, and exercise bounded scalar repeats plus release
+cancellation. The same `smoke.spec.ts` source runs against the development
 directory and the extracted production ZIP; changing build mode cannot silently
 remove a lifecycle scenario.

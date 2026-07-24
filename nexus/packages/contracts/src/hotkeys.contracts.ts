@@ -286,6 +286,7 @@ export const DEFAULT_SLOTS: SlotMapping = {
 	volume_up: 'volume_up',
 	volume_down: 'volume_down',
 	toggle_mute: 'volume_mute',
+	speed_down: 'speed_down',
 	speed_up: 'speed_up',
 };
 

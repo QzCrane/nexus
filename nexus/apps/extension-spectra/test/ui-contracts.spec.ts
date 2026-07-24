@@ -419,7 +419,7 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(events).toContain('speed: 1');
 	});
 
-	test('keeps fullscreen handoff and alternate-target feedback lifecycle-bound', () => {
+	test('keeps fullscreen handoff and top-layer feedback lifecycle-bound', () => {
 		const manifest = JSON.parse(readFileSync(
 			resolve(import.meta.dir, '../public/manifest.json'),
 			'utf8',
@@ -429,6 +429,10 @@ describe('extension-page DOM and idle contracts', () => {
 		const hotkeys = readFileSync(resolve(import.meta.dir, '../src/content/input/hotkey-listener.ts'), 'utf8');
 		const toast = readFileSync(resolve(import.meta.dir, '../src/content/ui/toast.ts'), 'utf8');
 		const osd = readFileSync(resolve(import.meta.dir, '../src/content/ui/osd.ts'), 'utf8');
+		const feedbackSurface = readFileSync(
+			resolve(import.meta.dir, '../src/content/ui/feedback-surface.ts'),
+			'utf8',
+		);
 		const audioDelegate = readFileSync(
 			resolve(import.meta.dir, '../src/content/logic/audio-runtime-control-delegate.ts'),
 			'utf8',
@@ -485,8 +489,16 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(hotkeys).not.toContain("feedbackOwner === 'listener-label' || feedbackOwner === 'actual-osd'");
 		expect(toast).not.toContain('.t.alternate');
 		expect(toast).not.toContain("classList.toggle('alternate'");
+		expect(toast).toContain('createFeedbackSurface(');
+		expect(osd).toContain('createFeedbackSurface(');
+		expect(feedbackSurface).toContain("host.popover = 'manual'");
+		expect(feedbackSurface).toContain("document.addEventListener('fullscreenchange'");
+		expect(feedbackSurface).toContain("host.matches(':popover-open')");
+		expect(feedbackSurface).toContain('host.showPopover()');
 		expect(toast).toContain("setTimeout(() => t.classList.add('hide'), 1_800)");
 		expect(osd).toContain('const OSD_HIDE_DELAY_MS = 2_000');
+		expect(osd).toContain('speedProgress');
+		expect(osd).toMatch(/t\.textContent = `\$\{formatSpeed\(speed\)\}×`/u);
 		expect(osd).toContain('export function hideOSD()');
 		expect(osd).toContain("variant?: 'alternate-target'");
 		expect(audioDelegate).toContain("source !== 'hotkey'");

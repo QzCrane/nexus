@@ -7,7 +7,7 @@ import { getSettingsSnapshot, patchSettings } from '../shared/settings-client';
 import { isSlotHotkeyAction } from './supported-hotkey-actions';
 
 // note: PRESET_COMMANDS must match the specific shortcut keys defined in the manifest; they cannot be renamed but their actions can be changed
-const PRESET_COMMANDS = ['volume_up', 'volume_down', 'toggle_mute', 'speed_up'];
+const PRESET_COMMANDS = ['volume_up', 'volume_down', 'toggle_mute', 'speed_down', 'speed_up'];
 const SLOT_COMMANDS = Array.from({ length: 16 }, (_, i) => `slot_${String(i + 1).padStart(2, '0')}`);
 
 let settings: HotkeySettings = { ...DEFAULT_HOTKEY_SETTINGS };

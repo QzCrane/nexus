@@ -123,11 +123,20 @@ transition that processor, so Popup/remote observation cannot stop Capture.
 
 Cold-document hotkeys use the same READY ensure path as other runtime consumers. READY is invalidated by navigation, update, context invalidation, health failure, and disposal. Exact readiness and feedback rules are in [control/02-strategy-and-routes.md §5](../control/02-strategy-and-routes.md#5-runtime-shortcut-and-feedback-ownership).
 
-The `chrome.commands` entry admits at most one asynchronous transaction per
-manifest command. Repeat events received while that command is active are
-dropped and no trailing invocation is retained; success and failure both
-release the gate. Page-defined shortcuts retain their separate physical-keyup
-and lifecycle cancellation boundary.
+The bootstrap also owns the only built-in reserved-key boundary:
+trusted `Alt+ArrowLeft/Right` outside editable controls becomes a sender-bound
+`speed_down/up` trigger instead of Chromium history navigation. It performs no
+polling and owns no control state; Background validates the top-level
+`tabId + documentId`, acquires the existing hotkey runtime lease, and submits a
+literal `0.1` coordinator mutation without Capture admission.
+
+Scalar `chrome.commands` and page-defined repeats share a bounded pulse-burst
+algorithm. While actual readback is active, new physical repeats accumulate up
+to the fixed bound; only another physical repeat may consume that batch.
+Transaction completion never self-drains pending work; command pulses expire
+from the last physical event rather than from transaction completion, and page
+keyup, blur/pagehide, or disposal clears pending pulses. Non-scalar commands
+retain the single-flight gate.
 
 One `tabId + documentId` initialization promise orders bootstrap restore,
 cold native observations, initial snapshot reads and explicit control. The
@@ -159,8 +168,8 @@ Favicon and QR rendering are UI/security boundaries, not media-runtime capabilit
 | Route resolution | Content policy executor | cache is not activation |
 | Processor lifecycle | offscreen coordinator and audio delegate | actual host ACK drives status |
 | Cold native refresh state | bootstrap, runtime loader and control coordinator | initialization-first, targetless four-field observation; no badge-use fact |
-| Shortcut readiness | runtime loader and shortcuts | first cold-document intent waits for READY |
-| Toast/OSD | Content feedback modules | one feedback owner; no bootstrap/snapshot toast |
+| Shortcut readiness | bootstrap, runtime loader and shortcuts | trusted built-in/default and configured cold-document intents wait for READY and reject stale identity |
+| Toast/OSD | Content feedback modules | one feedback owner on a fullscreen-safe Popover top-layer host; no bootstrap/snapshot toast |
 | Page media semantics | page-media bridge and native executor | exact-element getter/setter readback, DOM fallback, no domain table or polling |
 | PiP/fullscreen | trusted activation path, fullscreen bridge and native executor | actual native lifecycle and audio-baseline preservation |
 | Visualizer | subscriber registry and Popup scheduler | existing active processor only, bounded lease |

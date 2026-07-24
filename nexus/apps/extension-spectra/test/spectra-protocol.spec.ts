@@ -342,6 +342,34 @@ describe('SPECTRA settings runtime guards', () => {
 });
 
 describe('SPECTRA mapped v2 envelopes', () => {
+	test('accepts only sender-bound symmetric default speed hotkeys', () => {
+		for (const action of ['speed_down', 'speed_up'] as const) {
+			for (const phase of ['press', 'release'] as const) {
+				const request = {
+					protocolVersion: SPECTRA_PROTOCOL_VERSION,
+					requestId: `${action}:${phase}`,
+					type: 'spectra.content.default-hotkey.trigger',
+					payload: { action, phase },
+				} as const;
+				expect(isSpectraRequestEnvelope(request)).toBe(true);
+				expect(isSpectraResponse(request.type, rpcSuccess({ accepted: true }))).toBe(true);
+			}
+		}
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'wrong-action',
+			type: 'spectra.content.default-hotkey.trigger',
+			payload: { action: 'volume_up', phase: 'press' },
+		})).toBe(false);
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'self-routed',
+			tabId: 42,
+			type: 'spectra.content.default-hotkey.trigger',
+			payload: { action: 'speed_up', phase: 'press' },
+		})).toBe(false);
+	});
+
 	test('keeps request type and payload correlated at runtime', () => {
 		const request: SpectraRequestEnvelope<'spectra.audio.session.get'> = {
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,

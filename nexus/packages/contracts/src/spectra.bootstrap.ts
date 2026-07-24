@@ -3,7 +3,15 @@
 import type { ControlDirectField, MediaTarget } from './control.contracts.js';
 
 export const SPECTRA_PROTOCOL_VERSION = 2 as const;
-export const SPECTRA_CONTENT_BOOTSTRAP_REVISION = '1.1.0' as const;
+export const SPECTRA_CONTENT_BOOTSTRAP_REVISION = '1.2.0' as const;
+
+export const SPECTRA_DEFAULT_HOTKEY_ACTIONS = ['speed_down', 'speed_up'] as const;
+export type SpectraDefaultHotkeyAction = typeof SPECTRA_DEFAULT_HOTKEY_ACTIONS[number];
+export type SpectraDefaultHotkeyPhase = 'press' | 'release';
+export interface SpectraDefaultHotkeyTriggerPayload {
+	action: SpectraDefaultHotkeyAction;
+	phase: SpectraDefaultHotkeyPhase;
+}
 
 const REQUEST_KEYS = new Set([
 	'protocolVersion',
@@ -59,6 +67,15 @@ function isSafeNonNegativeInteger(value: unknown): boolean {
 
 function isBoundedString(value: unknown, max: number): value is string {
 	return typeof value === 'string' && value.length > 0 && value.length <= max;
+}
+
+export function isSpectraDefaultHotkeyTriggerPayload(
+	value: unknown,
+): value is SpectraDefaultHotkeyTriggerPayload {
+	return isRecord(value)
+		&& hasOnlyKeys(value, new Set(['action', 'phase']))
+		&& SPECTRA_DEFAULT_HOTKEY_ACTIONS.some((action) => action === value.action)
+		&& (value.phase === 'press' || value.phase === 'release');
 }
 
 function hasValidEnvelope(value: Record<string, unknown>): boolean {

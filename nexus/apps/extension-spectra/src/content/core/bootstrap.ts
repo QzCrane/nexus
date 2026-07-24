@@ -7,6 +7,7 @@ import {
 	bootstrapRpcSuccess,
 	isBootstrapHelloResponse,
 	isBootstrapInboundRequest,
+	type SpectraDefaultHotkeyAction,
 } from '@nexus/contracts/bootstrap';
 import {
 	getContentBootstrapState,
@@ -27,11 +28,75 @@ if (!getContentBootstrapState()) {
 	let disposed = false;
 	let observationsReady = false;
 	let observationInFlight = false;
+	const activeDefaultSpeedKeys = new Map<string, SpectraDefaultHotkeyAction>();
 	type BootstrapNativeObservation = {
 		patch: import('@nexus/contracts').ControlPatch;
 		observedStrategies: import('@nexus/contracts').ControlNativeObservationStrategies;
 	};
 	let pendingObservation: BootstrapNativeObservation | null = null;
+
+	const defaultSpeedAction = (event: KeyboardEvent): SpectraDefaultHotkeyAction | null => {
+		if (!event.isTrusted
+			|| !event.altKey
+			|| event.ctrlKey
+			|| event.shiftKey
+			|| event.metaKey) return null;
+		if (event.composedPath().some((target) => target instanceof HTMLElement
+			&& (target.isContentEditable
+				|| target.tagName === 'INPUT'
+				|| target.tagName === 'TEXTAREA'
+				|| target.tagName === 'SELECT'))) return null;
+		if (event.code === 'ArrowLeft') return 'speed_down';
+		if (event.code === 'ArrowRight') return 'speed_up';
+		return null;
+	};
+
+	const sendDefaultSpeedPhase = (
+		action: SpectraDefaultHotkeyAction,
+		phase: 'press' | 'release',
+	): void => {
+		void sendBootstrapRequest(
+			'spectra.content.default-hotkey.trigger',
+			{ action, phase },
+			state.dispose,
+		).catch(() => undefined);
+	};
+
+	const onDefaultSpeedKeydown = (event: KeyboardEvent): void => {
+		if (disposed) return;
+		const action = defaultSpeedAction(event);
+		if (!action) return;
+		event.preventDefault();
+		event.stopImmediatePropagation();
+		activeDefaultSpeedKeys.set(event.code, action);
+		sendDefaultSpeedPhase(action, 'press');
+	};
+
+	const releaseDefaultSpeedKeys = (): void => {
+		for (const action of activeDefaultSpeedKeys.values()) {
+			sendDefaultSpeedPhase(action, 'release');
+		}
+		activeDefaultSpeedKeys.clear();
+	};
+
+	const onDefaultSpeedKeyup = (event: KeyboardEvent): void => {
+		const action = activeDefaultSpeedKeys.get(event.code);
+		if (action) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			activeDefaultSpeedKeys.delete(event.code);
+			sendDefaultSpeedPhase(action, 'release');
+			return;
+		}
+		if (!event.code.startsWith('Alt') || activeDefaultSpeedKeys.size === 0) return;
+		event.preventDefault();
+		event.stopImmediatePropagation();
+		releaseDefaultSpeedKeys();
+	};
+
+	const onVisibilityChange = (): void => {
+		if (document.hidden) releaseDefaultSpeedKeys();
+	};
 
 	const readBootstrapObservation = (
 		element: HTMLMediaElement,
@@ -139,10 +204,15 @@ if (!getContentBootstrapState()) {
 		dispose() {
 			if (disposed) return;
 			disposed = true;
+			releaseDefaultSpeedKeys();
 			pendingObservation = null;
 			try { chrome.runtime.onMessage.removeListener(onMessage); } catch { /* invalidated context */ }
 			document.removeEventListener('volumechange', onNativeMediaChange, true);
 			document.removeEventListener('ratechange', onNativeMediaChange, true);
+			document.removeEventListener('keydown', onDefaultSpeedKeydown, true);
+			document.removeEventListener('keyup', onDefaultSpeedKeyup, true);
+			document.removeEventListener('visibilitychange', onVisibilityChange);
+			window.removeEventListener('blur', releaseDefaultSpeedKeys);
 			window.removeEventListener('pagehide', onPageHide);
 			delete state.disposeRuntime;
 			if (getContentBootstrapState() === state) setContentBootstrapState(undefined);
@@ -280,6 +350,7 @@ if (!getContentBootstrapState()) {
 	};
 
 	const onPageHide = (): void => {
+		releaseDefaultSpeedKeys();
 		if (!state.runtimeRevision) return;
 		void sendBootstrapRequest('spectra.content.runtime.release', {
 			runtimeRevision: state.runtimeRevision,
@@ -290,6 +361,10 @@ if (!getContentBootstrapState()) {
 	chrome.runtime.onMessage.addListener(onMessage);
 	document.addEventListener('volumechange', onNativeMediaChange, true);
 	document.addEventListener('ratechange', onNativeMediaChange, true);
+	document.addEventListener('keydown', onDefaultSpeedKeydown, true);
+	document.addEventListener('keyup', onDefaultSpeedKeyup, true);
+	document.addEventListener('visibilitychange', onVisibilityChange);
+	window.addEventListener('blur', releaseDefaultSpeedKeys);
 	window.addEventListener('pagehide', onPageHide, { once: true });
 
 	void sendBootstrapRequest('spectra.content.bootstrap.hello', {
@@ -305,9 +380,11 @@ if (!getContentBootstrapState()) {
 function sendBootstrapRequest(
 	type: 'spectra.content.bootstrap.hello'
 		| 'spectra.content.runtime.release'
+		| 'spectra.content.default-hotkey.trigger'
 		| 'spectra.control.intent.submit',
 	payload: { bootstrapRevision: string }
 		| { runtimeRevision: string }
+		| { action: SpectraDefaultHotkeyAction; phase: 'press' | 'release' }
 		| import('@nexus/contracts').ControlSubmitRequest,
 	onInvalidated?: () => void,
 ): Promise<unknown | undefined> {

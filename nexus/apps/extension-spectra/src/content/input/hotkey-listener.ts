@@ -27,7 +27,9 @@ let lastHostname = '';
 const coalesced = new Map<string, ReturnType<typeof setTimeout>>();
 const inFlightBindings = new Set<string>();
 const releasedRepeatedBindings = new Set<string>();
+const pendingRepeatPulses = new Map<string, number>();
 const activeBindingsByCode = new Map<string, { binding: HotkeyBinding; repeated: boolean }>();
+const MAX_REPEAT_BURST_PULSES = 160;
 let keydownDisposer: (() => void) | null = null;
 let keyupDisposer: (() => void) | null = null;
 let contentSettings: Pick<SettingsManager, 'get'> | undefined;
@@ -44,6 +46,7 @@ function cancelActiveBindings(): void {
 	coalesced.clear();
 	activeBindingsByCode.clear();
 	releasedRepeatedBindings.clear();
+	pendingRepeatPulses.clear();
 	hideToast();
 	hideOSD();
 }
@@ -179,8 +182,54 @@ function isBrowserRefreshShortcut(e: KeyboardEvent): boolean {
 		|| (e.code === 'KeyR' && !e.altKey && (e.ctrlKey || e.metaKey));
 }
 
+function isBuiltInSpeedShortcut(e: KeyboardEvent): boolean {
+	return e.altKey
+		&& !e.ctrlKey
+		&& !e.shiftKey
+		&& !e.metaKey
+		&& (e.code === 'ArrowLeft' || e.code === 'ArrowRight');
+}
+
 function isBindingActive(bindingId: string): boolean {
 	return [...activeBindingsByCode.values()].some(({ binding }) => binding.id === bindingId);
+}
+
+function addRepeatPulse(bindingId: string): void {
+	pendingRepeatPulses.set(
+		bindingId,
+		Math.min(MAX_REPEAT_BURST_PULSES, (pendingRepeatPulses.get(bindingId) ?? 0) + 1),
+	);
+}
+
+function takeRepeatPulses(bindingId: string): number {
+	const pulses = pendingRepeatPulses.get(bindingId) ?? 0;
+	pendingRepeatPulses.delete(bindingId);
+	return pulses;
+}
+
+function coalescedBinding(binding: HotkeyBinding, pulses: number): HotkeyBinding {
+	if (pulses <= 1) return binding;
+	const step = Number.isFinite(binding.params?.step)
+		? Math.abs(binding.params!.step!)
+		: binding.action.startsWith('speed_') ? 0.1 : 10;
+	if (binding.action === 'speed_up' || binding.action === 'speed_down') {
+		return {
+			...binding,
+			params: {
+				...binding.params,
+				step: Math.min(16, Math.round(step * pulses * 1000) / 1000),
+			},
+		};
+	}
+	if (binding.action === 'volume_up' || binding.action === 'volume_down') {
+		return {
+			...binding,
+			params: { ...binding.params, step: Math.min(800, step * pulses) },
+		};
+	}
+	// Discrete repeatable operations coalesce to one execution; they cannot be
+	// converted into a larger scalar without changing their semantics.
+	return binding;
 }
 
 function executeBinding(binding: HotkeyBinding, withOSD: boolean): void {
@@ -203,6 +252,7 @@ function executeBinding(binding: HotkeyBinding, withOSD: boolean): void {
 function handleKeydown(e: KeyboardEvent): void {
 	if (!isTrustedHotkeyEvent(e)) return;
 	if (isBrowserRefreshShortcut(e)) return;
+	if (isBuiltInSpeedShortcut(e)) return;
 	const site = getSiteConfig();
 	if (!site) return;
 	if (e.composedPath().some((target) => isInputElement(target))) return;
@@ -238,11 +288,12 @@ function handleKeydown(e: KeyboardEvent): void {
 	// "drift" toasts after keyup because pending executeWithOSD promises keep
 	// resolving. The 50 ms timer is cleared on keyup so no queued action fires
 	// after the user releases the key.
+	addRepeatPulse(binding.id);
 	if (coalesced.has(binding.id) || inFlightBindings.has(binding.id)) return;
 	coalesced.set(binding.id, setTimeout(() => {
 		coalesced.delete(binding.id);
 		if (!isBindingActive(binding.id)) return;
-		executeBinding(binding, false);
+		executeBinding(coalescedBinding(binding, takeRepeatPulses(binding.id)), false);
 	}, 50));
 }
 
@@ -253,6 +304,7 @@ function handleKeyup(e: KeyboardEvent): void {
 	if (active) {
 		activeBindingsByCode.delete(e.code);
 		cancelCoalesced(active.binding.id);
+		pendingRepeatPulses.delete(active.binding.id);
 		releasedRepeated = active.repeated;
 		if (active.repeated && inFlightBindings.has(active.binding.id)) {
 			releasedRepeatedBindings.add(active.binding.id);
@@ -269,6 +321,7 @@ function handleKeyup(e: KeyboardEvent): void {
 			if (!held.binding.key.modifiers[modifier]) continue;
 			activeBindingsByCode.delete(code);
 			cancelCoalesced(held.binding.id);
+			pendingRepeatPulses.delete(held.binding.id);
 			releasedRepeated ||= held.repeated;
 			if (held.repeated && inFlightBindings.has(held.binding.id)) {
 				releasedRepeatedBindings.add(held.binding.id);

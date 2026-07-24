@@ -223,6 +223,15 @@ export {
 	rpcSuccess,
 	rpcFailure,
 } from './spectra.protocol.js';
+export {
+	SPECTRA_DEFAULT_HOTKEY_ACTIONS,
+	isSpectraDefaultHotkeyTriggerPayload,
+} from './spectra.bootstrap.js';
+export type {
+	SpectraDefaultHotkeyAction,
+	SpectraDefaultHotkeyPhase,
+	SpectraDefaultHotkeyTriggerPayload,
+} from './spectra.bootstrap.js';
 
 // Canonical domain utilities
 export {
