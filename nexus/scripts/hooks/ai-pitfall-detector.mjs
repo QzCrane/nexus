@@ -18,7 +18,7 @@
 //
 // Rule owner: AGENTS.md EPR-029 (硬化质量门到 Git/CI/AI 钩子)
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -450,7 +450,7 @@ export function scanFiles(files) {
  */
 function getChangedFiles() {
 	try {
-		const out = execSync('git diff --name-only HEAD~1 HEAD', {
+		const out = execFileSync('git', ['diff', '--name-only', 'HEAD~1', 'HEAD'], {
 			encoding: 'utf8',
 			cwd: process.cwd(),
 		});

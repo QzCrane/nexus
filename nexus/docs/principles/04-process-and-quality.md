@@ -36,13 +36,13 @@ The deployed local Git gate is [`../../../lefthook.yml`](../../../lefthook.yml).
 
 - **pre-commit** runs the Markdown structure linter and Biome on the configured staged-file sets;
 - **commit-msg** runs commitlint with the repository Conventional Commit configuration;
-- **pre-push** runs toolchain, documentation, AI-hook smoke, `verify:q`, SPECTRA typecheck, AI-pitfall, and read-only `sync:skills --check` gates in parallel;
+- **pre-push** runs the repository [cross-platform contract](../../../rules.md#cross-platform-contract), toolchain, documentation, AI-hook smoke, `verify:q`, SPECTRA typecheck, AI-pitfall, and read-only `sync:skills --check` gates in parallel;
 - **post-merge** runs `sync:skills`, which refreshes the generated Project Skills table in `AGENTS.md`;
 - **post-analyze** is a separate workspace script that restores the `CLAUDE.md` → `AGENTS.md` hardlink after GitNexus regeneration.
 
 The host-specific AI hooks documented in [`../../scripts/hooks/README.md`](../../scripts/hooks/README.md) provide earlier feedback where the host exposes the required interception point. They are not a security boundary and do not replace Git, tests, review, or CI.
 
-The repository must not claim that CI is deployed merely because local scripts are CI-ready. A PR or release checks the actual GitHub workflow/check status. When CI workflows exist, they should invoke the same maintained lint, typecheck, verification, test, build, and release scripts rather than reimplementing their logic.
+The repository must not claim that CI is deployed merely because local scripts are CI-ready. A PR or release checks the actual GitHub workflow/check status. [Cross-platform quality](../../../.github/workflows/cross-platform.yml) runs the maintained platform, documentation, hook, architecture, unit/browser, type, lint, and build commands on both Ubuntu and Windows rather than reimplementing their logic.
 
 Active internal Markdown under the configured documentation roots uses the required Diátaxis frontmatter and passes `nexus/scripts/lint-docs.mjs`. That linter checks structure; link validity, dynamic facts, technical semantics, and public-claim truth still require review and executable evidence.
 

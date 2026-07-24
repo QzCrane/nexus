@@ -368,7 +368,7 @@ function sleep(milliseconds) {
 function cleanDestination() {
   if (!fs.existsSync(destinationRoot)) return;
 
-  runOptional('bunx', ['turbo', 'daemon', 'stop'], {
+  runOptional(process.execPath, ['x', '--bun', 'turbo', 'daemon', 'stop'], {
     cwd: destinationRoot,
     stdio: 'ignore',
   });
@@ -381,7 +381,12 @@ function cleanDestination() {
 
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       try {
-        fs.rmSync(target, { recursive: true, force: true });
+        fs.rmSync(target, {
+          recursive: true,
+          force: true,
+          maxRetries: 5,
+          retryDelay: 100,
+        });
         lastError = null;
         break;
       } catch (error) {
@@ -498,20 +503,27 @@ function cleanIncrementalBuildState(directory) {
 }
 
 function cleanGeneratedArtifacts() {
-  runOptional('bunx', ['turbo', 'daemon', 'stop'], {
+  runOptional(process.execPath, ['x', '--bun', 'turbo', 'daemon', 'stop'], {
     cwd: destinationRoot,
     stdio: 'ignore',
   });
 
   for (const relativePath of APP_CONFIG.artifacts) {
     const target = path.join(destinationRoot, relativePath);
-    if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
+    if (fs.existsSync(target)) {
+      fs.rmSync(target, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 100,
+      });
+    }
   }
   cleanIncrementalBuildState(destinationRoot);
 }
 
 function runPublicValidationScript(script) {
-  run('bun', ['run', script, `--cache-dir=${PUBLIC_TURBO_CACHE_DIR}`], {
+  run(process.execPath, ['run', script, `--cache-dir=${PUBLIC_TURBO_CACHE_DIR}`], {
     cwd: destinationRoot,
   });
 }
@@ -637,7 +649,7 @@ function main() {
     patchPublicPackage();
   });
 
-  runStage('install dependencies', () => run('bun', ['install'], { cwd: destinationRoot }));
+  runStage('install dependencies', () => run(process.execPath, ['install'], { cwd: destinationRoot }));
   for (const script of PUBLIC_VALIDATION_SCRIPTS) {
     runStage(`validate public ${script}`, () => runPublicValidationScript(script));
   }

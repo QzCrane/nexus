@@ -17,7 +17,7 @@
 //
 // Rule owner: AGENTS.md EPR-029 (硬化质量门到 Git/CI/AI 钩子)
 
-import { execSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { join, normalize, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -171,8 +171,8 @@ export function blockMessage(opts) {
  */
 export function gitStatusShort() {
 	try {
-		const out = execSync('git status --short', { encoding: 'utf8' });
-		const lines = out.split('\n').filter(Boolean);
+		const out = execFileSync('git', ['status', '--short'], { encoding: 'utf8' });
+		const lines = out.split(/\r?\n/u).filter(Boolean);
 		return { dirty: lines.length > 0, count: lines.length };
 	} catch {
 		return { dirty: null, count: 0 };

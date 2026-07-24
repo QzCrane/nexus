@@ -58,11 +58,13 @@ getter.
 `build.mjs` keeps the bootstrap, main Content runtime and video-enhancement
 Content artifacts isolated because Chrome injects them into page-specific
 isolated worlds. The video artifact is a dynamic-URL web-accessible module but
-is imported only after an explicit video enhancement intent. Background,
-Popup, Options and offscreen are extension-origin ES modules and may share
-deterministic production chunks; those private chunks are not web-accessible
-resources. Development builds stay standalone for readable Chrome smoke
-diagnostics.
+is imported only after an explicit video enhancement intent. The Background
+service worker is one self-contained ESM because it owns durable restore and
+its runtime-loader/coordinator cycle must initialize atomically on every MV3
+worker start. Popup, Options and offscreen are independent extension pages and
+may share deterministic production chunks; those private chunks are not
+web-accessible resources. Development builds stay standalone for readable
+Chrome smoke diagnostics.
 
 The contracts, audio-engine and kernel packages declare `sideEffects:false`.
 They are pure runtime libraries: this lets production tree shaking remove
@@ -72,7 +74,8 @@ flags so a metadata edit cannot silently reintroduce duplicated control code.
 
 `scripts/check-production-artifacts.mjs` computes each entry's complete static
 and dynamic dependency closure and the Background + bootstrap startup closure,
-but it does not freeze historical byte ceilings. Its invariant is zero
+requires the Background closure to contain only its own bundle, but does not
+freeze historical byte ceilings. Its invariant is zero
 avoidable production redundancy: every artifact must be reachable from the
 manifest/HTML/CSS/module graph; byte-identical files, repeated modules within a
 shareable build domain, bare or escaping imports, source/test/debug artifacts,
@@ -81,27 +84,21 @@ reported but allowed only across Chrome runtime domains that cannot share a
 module instance. Current bytes and top module contributions remain measured
 release evidence rather than an arbitrary product baseline.
 
-Production property mangling is restricted by external ownership. Chrome API
-dictionary keys, every emitted ESM export name and every versioned `__SPECTRA_*__`
-cross-context singleton key are reserved before Terser processes the separate
-files. Internal names may still shrink, but a caller chunk, Chrome API, injected
-script or upgrade probe can never observe a renamed boundary key. The extracted
-ZIP smoke is the executable proof for this post-bundle invariant.
+Application bundles never enter a second Terser pass. SPECTRA values cross
+storage, extension IPC, Chrome dictionaries, DOM, generated JSON, dynamic
+imports and independently emitted execution worlds; neither a static allowlist
+nor a second optimizer can prove that complete post-esbuild ABI. The single
+esbuild production pass still performs syntax, whitespace and local-identifier
+minification, while storage fields, protocol keys, computed access, ESM
+namespace members and cross-context singleton properties retain one optimizer's
+semantics without a feature-specific reserve list.
 
-The reserved set is derived from the complete emitted boundary rather than a
-feature-specific repair list: every key in browser-loaded JSON (including
-Manifest command identifiers), every generated locale-catalog section/key and
-every statically accessed `dataset.*` name is preserved automatically. Thus a
-new command, `data-i18n-*` binding or locale field cannot become `undefined`
-only in the production bundle merely because its JavaScript property spelling
-was mangled.
-
-Computed runtime access is covered by the same derived rule. Every
-identifier-shaped string literal emitted into a bundle is reserved before
-property mangling, so an object key and a later access such as `stages[stage]`
-cannot be renamed independently. Non-identifier strings are outside Terser's
-property-mangling namespace. Release-tooling tests own both derivations; adding
-a new dynamic key must not require another handwritten allowlist.
+The only property-mangling boundary is the separately emitted opaque PeerJS
+vendor IIFE, where the upstream library marks physically private properties
+with `_`. Its public, signaling and WebRTC property names are never eligible.
+The minification-policy unit test and extracted-ZIP Chrome smoke jointly prove
+this post-bundle invariant, including refresh restoration from persisted
+session fields.
 
 ### §7.3 Failure-directed escalation
 

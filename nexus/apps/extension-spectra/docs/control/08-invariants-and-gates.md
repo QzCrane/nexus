@@ -44,7 +44,7 @@ audience: developer
 - `SCTRL-031`: extension-UI, tab, sandbox and document-scoped operations that execute no media writer acknowledge `target:null`; they cannot borrow the currently active media identity.
 - `SCTRL-032`: processor configuration exposes only `boostGain: 1–8`; page volume, media mute and a zero-gain mute substitute cannot cross the WebAudio/Capture boundary.
 - `SCTRL-033`: Background control consumers invoke the serialized coordinator directly; MV3 worker self-RPC is forbidden, and remote state is cached privately before authentication then exposed only after HMAC success.
-- `SCTRL-034`: the default content bootstrap uses only the minimal bootstrap contract; production extension pages may share private ESM chunks, and artifact integrity measures transitive entry/default-startup closures while rejecting unreachable or avoidably duplicated output.
+- `SCTRL-034`: the default content bootstrap uses only the minimal bootstrap contract; the MV3 Background worker is one self-contained ESM, production extension pages may share private ESM chunks, and artifact integrity measures transitive entry/default-startup closures while rejecting unreachable or avoidably duplicated output.
 - `SCTRL-035`: native event-driven writes install their bounded listener before the setter and cannot ACK until the event/quiet/stabilized getter boundary completes.
 - `SCTRL-036`: strategy escalation consumes only canonical typed failure codes; activation, permission, stale identity, CORS and protected-content failures are terminal.
 - `SCTRL-037`: processor actual state comes only from normalized graph/host readback (`graphSignature`, actual config, source count and context state), never from desired input echo.
@@ -54,7 +54,7 @@ audience: developer
 - `SCTRL-041`: trusted page activation admits only page-stack APIs and Media WebAudio; new Capture requires a volatile Background admission minted for one current-active-tab Popup or `chrome.commands` transaction, external submit payloads cannot carry it, and restore/remote/page/alternate-tab paths never call `getMediaStreamId()` without it.
 - `SCTRL-042`: video enhancement implementation is a lazy capability-owned module; native-only/default control does not load or instantiate it.
 - `SCTRL-043`: Popup, Options and remote use a restricted protocol validator and cannot import or execute the Background request router.
-- `SCTRL-044`: production property mangling stops at every external ABI. Browser/Chrome dictionaries, transport payloads, ESM exports and versioned singleton members retain their names; PeerJS is a separately isolated local vendor artifact with only private underscore members eligible for mangling.
+- `SCTRL-044`: production application bundles have one esbuild optimization pass because storage, protocol, Chrome, DOM, JSON, computed and cross-world ABI behavior cannot be proven across a second minifier. Only the isolated PeerJS vendor artifact enters Terser, where private underscore-prefixed properties alone may be property-mangled.
 
 ## §21 Migration and release gate
 

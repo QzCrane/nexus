@@ -8,7 +8,7 @@ import esbuild from 'esbuild';
 import { rmSync, mkdirSync, cpSync, existsSync, readdirSync, copyFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,13 +16,19 @@ const __dirname = path.dirname(__filename);
 const isWatch = process.argv.includes('--watch');
 const isDev = process.argv.includes('--dev') || isWatch;
 
-// Helper: run command with compressed output
-function run(label, cmd, opts = {}) {
+// Helper: run the pinned Bun directly with an argument array. This avoids
+// cmd.exe/PowerShell/sh parsing and keeps quoting identical on every host.
+function run(label, args, opts = {}) {
+	const { silent = false, ...processOptions } = opts;
 	try {
-		execSync(cmd, { stdio: 'pipe', cwd: __dirname, ...opts });
+		execFileSync(process.execPath, args, {
+			stdio: 'pipe',
+			cwd: __dirname,
+			...processOptions,
+		});
 		return true;
 	} catch (e) {
-		if (opts.silent) return false;
+		if (silent) return false;
 		console.error(`❌ ${label}: ${e.stderr?.toString().trim() || e.message}`);
 		return false;
 	}
@@ -51,26 +57,33 @@ if (!isWatch) {
 	// or failing architecture verify would not fail the build. Now we exit on
 	// non-zero return.
 	if (existsSync(registryPath)) {
-		if (!run('registry', 'bun ../../scripts/generate-tool-registry.mjs', { silent: true })) {
+		if (!run('registry', ['../../scripts/generate-tool-registry.mjs'], { silent: true })) {
 			console.error('❌ registry generation failed');
 			process.exit(1);
 		}
 	}
 	if (existsSync(verifyPath)) {
-		if (!run('verify', 'bun ../../scripts/verify-architecture.js', { silent: true })) {
+		if (!run('verify', ['../../scripts/verify-architecture.js'], { silent: true })) {
 			console.error('❌ verify failed');
 			process.exit(1);
 		}
 	}
 
-	if (!run('tsc', 'bun tsc --noEmit --skipLibCheck')) {
+	if (!run('tsc', ['tsc', '--noEmit', '--skipLibCheck'])) {
 		process.exit(1);
 	}
 	console.log('✓ Pre-flight: tsc OK');
 }
 
 // Prepare dist
-if (existsSync('dist')) rmSync('dist', { recursive: true, force: true });
+if (existsSync('dist')) {
+	rmSync('dist', {
+		recursive: true,
+		force: true,
+		maxRetries: 5,
+		retryDelay: 100,
+	});
+}
 mkdirSync('dist', { recursive: true });
 cpSync('public', 'dist', { recursive: true });
 

@@ -487,7 +487,12 @@ export function runReleaseSmoke({ stage = false, promote = false, archivePath: r
 		}
 		return { archivePath, digest, ...extracted };
 	} finally {
-		rmSync(extractionDir, { recursive: true, force: true });
+		rmSync(extractionDir, {
+			recursive: true,
+			force: true,
+			maxRetries: 5,
+			retryDelay: 100,
+		});
 	}
 }
 

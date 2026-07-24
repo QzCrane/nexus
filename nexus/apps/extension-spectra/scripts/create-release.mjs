@@ -133,7 +133,12 @@ export function createRelease({ stage = true } = {}) {
 	const outputDir = resolve(releaseDir, '.staging');
 	const archivePath = resolve(outputDir, `spectra-v${pkg.version}.zip`);
 	const checksumPath = `${archivePath}.sha256`;
-	rmSync(outputDir, { recursive: true, force: true });
+	rmSync(outputDir, {
+		recursive: true,
+		force: true,
+		maxRetries: 5,
+		retryDelay: 100,
+	});
 	mkdirSync(outputDir, { recursive: true });
 	rmSync(archivePath, { force: true });
 	rmSync(checksumPath, { force: true });

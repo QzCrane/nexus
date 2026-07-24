@@ -39,7 +39,7 @@ async function main(payload) {
 	const warnings = [];
 
 	if (mdFiles.length > 0) {
-		const r = run('bun', ['--cwd', 'nexus', 'scripts', 'lint-docs.mjs', ...mdFiles]);
+		const r = run(process.execPath, ['--cwd', 'nexus', 'scripts', 'lint-docs.mjs', ...mdFiles]);
 		if (r.status !== 0) {
 			warnings.push(
 				`[lint-docs] ${mdFiles.map(relPath).join(', ')} failed:\n` +
@@ -49,7 +49,9 @@ async function main(payload) {
 	}
 
 	if (jsFiles.length > 0) {
-		const r = run('bunx', [
+		const r = run(process.execPath, [
+			'x',
+			'--bun',
 			'@biomejs/biome',
 			'format',
 			'--write',

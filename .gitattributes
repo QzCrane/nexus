@@ -1,3 +1,22 @@
+# One checkout contract for Windows, Linux, and macOS. Git stores and checks out
+# repository text as UTF-8-compatible LF; editor behavior is aligned by
+# .editorconfig and verified by nexus/scripts/check-platform-contract.mjs.
+* text=auto eol=lf
+
+# Binary assets are never eligible for text conversion.
+*.png -text
+*.jpg -text
+*.jpeg -text
+*.gif -text
+*.webp -text
+*.ico -text
+*.woff -text
+*.woff2 -text
+*.ttf -text
+*.zip -text
+*.pdf -text
+*.wasm -text
+
 # Vendored supply-chain artifacts are byte-verified and must never receive EOL conversion.
 remote-site/vendor/peerjs.min.js -text
 

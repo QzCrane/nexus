@@ -35,6 +35,7 @@ bun run dev
 bun run build
 bun run lint
 bun run typecheck
+bun run check:platform
 bun run verify
 bun run docs:check
 bun run generate-registry

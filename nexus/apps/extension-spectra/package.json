@@ -11,7 +11,6 @@
 		"build:dev": "bun build.mjs --dev",
 		"build:sourcemap": "bun build.mjs --sourcemap",
 		"build:analyze": "bun build.mjs --analyze",
-		"build:copy": "powershell -Command \"Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue; Copy-Item -Recurse public dist\"",
 		"lint": "biome check src test public build.mjs scripts --max-diagnostics=100",
 		"integrity": "bun scripts/check-production-artifacts.mjs",
 		"package": "bun run --cwd ../.. release:spectra",

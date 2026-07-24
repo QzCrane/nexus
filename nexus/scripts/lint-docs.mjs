@@ -82,7 +82,7 @@ function normalizePath(filePath) {
 }
 
 function normalizeEol(text) {
-	return text.replace(/\r\n/gu, '\n');
+	return text.replace(/\r\n?/gu, '\n');
 }
 
 function parseArguments(argv) {

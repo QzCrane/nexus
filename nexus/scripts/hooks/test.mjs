@@ -101,7 +101,7 @@ function eq(name, actual, expected) {
 
 function runHook(hookName, payload) {
 	const script = join(hooksDir, hookName);
-	const proc = spawnSync('bun', [script], {
+	const proc = spawnSync(process.execPath, [script], {
 		input: JSON.stringify(payload),
 		encoding: 'utf8',
 		stdio: ['pipe', 'pipe', 'pipe'],
@@ -791,7 +791,12 @@ try {
 		readFileSync(syncSkillsTempFile, 'utf8').includes(syncSkillsRows[0]),
 	);
 } finally {
-	rmSync(syncSkillsTempRoot, { recursive: true, force: true });
+	rmSync(syncSkillsTempRoot, {
+		recursive: true,
+		force: true,
+		maxRetries: 5,
+		retryDelay: 100,
+	});
 }
 
 // =====================================================================

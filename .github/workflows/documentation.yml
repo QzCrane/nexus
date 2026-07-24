@@ -10,6 +10,9 @@ on:
       - "nexus/package.json"
       - "nexus/scripts/lint-docs.mjs"
       - "nexus/scripts/check-toolchain.mjs"
+      - "nexus/scripts/check-platform-contract.mjs"
+      - "nexus/scripts/platform-contract.mjs"
+      - "nexus/scripts/platform-contract.test.mjs"
       - "nexus/scripts/sync-public.cjs"
   push:
     branches:
@@ -22,6 +25,9 @@ on:
       - "nexus/package.json"
       - "nexus/scripts/lint-docs.mjs"
       - "nexus/scripts/check-toolchain.mjs"
+      - "nexus/scripts/check-platform-contract.mjs"
+      - "nexus/scripts/platform-contract.mjs"
+      - "nexus/scripts/platform-contract.test.mjs"
       - "nexus/scripts/sync-public.cjs"
 
 permissions:
@@ -53,10 +59,16 @@ jobs:
       - name: Check pinned toolchain
         run: bun --cwd nexus run check:toolchain
 
+      - name: Check cross-platform contract
+        run: bun run check:platform
+
       - name: Check documentation tooling format
         run: >-
           bun --cwd nexus x biome check
           scripts/lint-docs.mjs
+          scripts/check-platform-contract.mjs
+          scripts/platform-contract.mjs
+          scripts/platform-contract.test.mjs
           scripts/check-toolchain.mjs
           scripts/sync-public.cjs
           --max-diagnostics=100

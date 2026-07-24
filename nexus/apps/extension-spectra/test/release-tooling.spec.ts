@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
+import { minify } from 'terser';
 import {
 	existsSync,
 	mkdirSync,
@@ -47,19 +48,18 @@ import {
 	bundleFootprint,
 	checkProductionArtifacts,
 } from '../scripts/check-production-artifacts.mjs';
-import {
-	collectExternalBoundaryProperties,
-	collectExternalJsonProperties,
-	collectRuntimeStringProperties,
-} from '../scripts/external-boundary-properties.mjs';
-import { collectLocaleCatalogPropertyNames } from '../scripts/i18n-assets';
-import { hasNamedImports } from '../../../scripts/verify/check-spectra-control.js';
+import { productionMangleOptions } from '../scripts/minification-policy.mjs';
 
 const temporaryDirectories: string[] = [];
 
 afterEach(() => {
 	for (const directory of temporaryDirectories.splice(0)) {
-		rmSync(directory, { recursive: true, force: true });
+		rmSync(directory, {
+			recursive: true,
+			force: true,
+			maxRetries: 5,
+			retryDelay: 100,
+		});
 	}
 });
 
@@ -119,105 +119,20 @@ describe('release ZIP tooling', () => {
 });
 
 describe('production artifact integrity', () => {
-	test('reserves browser API members and nested dictionaries without disabling internal property mangling', () => {
-		const source = `
-			const internal = { mayMangle: true };
-			chrome.tabs.query({ active: true, currentWindow: true });
-			chrome.scripting.executeScript({
-				target: { tabId: 1, documentIds: ['doc'] },
-				world: 'MAIN',
-				func() {},
-				args: [{ requestId: 'request' }],
-			});
-			navigator.mediaDevices.getUserMedia({
-				audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: 'stream' } },
-				video: false,
-			});
-			connection.send({ type: 'authenticate', proof });
-		`;
-		expect([...collectExternalBoundaryProperties(source)].sort()).toEqual([
-			'active',
-			'args',
-			'audio',
-			'chromeMediaSource',
-			'chromeMediaSourceId',
-			'currentWindow',
-			'documentIds',
-			'executeScript',
-			'func',
-			'getUserMedia',
-			'mandatory',
-			'mediaDevices',
-			'proof',
-			'query',
-			'requestId',
-			'scripting',
-			'tabId',
-			'tabs',
-			'target',
-			'type',
-			'video',
-			'world',
-		]);
-	});
+	test('keeps application bundles out of Terser and limits vendor mangling to private names', async () => {
+		expect(() => productionMangleOptions(false)).toThrow(
+			'Application bundles must not enter the secondary Terser pass',
+		);
 
-	test('reserves DOM dataset names and every externally loaded JSON/catalog key', () => {
-		const source = `
-			const key = element.dataset.i18nPlaceholder;
-			document.documentElement.dataset.spectraContentLoaded = 'true';
-		`;
-		expect(collectExternalBoundaryProperties(source)).toEqual(new Set([
-			'dataset',
-			'i18nPlaceholder',
-			'documentElement',
-			'spectraContentLoaded',
-		]));
-		expect(collectExternalJsonProperties({
-			commands: { toggle_mute: { suggested_key: { default: 'Alt+M' } } },
-		})).toEqual(new Set(['commands', 'toggle_mute', 'suggested_key', 'default']));
-
-		const localeProperties = collectLocaleCatalogPropertyNames();
-		for (const property of [
-			'popup',
-			'options',
-			'actions',
-			'filterPlaceholder',
-			'presetGlobalSection',
-			'presetSiteSection',
-		]) expect(localeProperties.has(property), property).toBe(true);
-	});
-
-	test('reserves computed runtime keys before property mangling', () => {
-		const source = `
-			const stages = { target: [{}, 'active-target'], processor: [{}, 'full'] };
-			for (const stage of ['target', 'processor']) {
-				const [patch, coverage] = stages[stage];
-				consume(patch, coverage);
-			}
-		`;
-		expect(collectRuntimeStringProperties(source)).toEqual(new Set([
-			'full',
-			'target',
-			'processor',
-		]));
-	});
-
-	test('verifies named production-boundary imports independently from formatting', () => {
-		const source = `
-			import {
-				collectExternalBoundaryProperties,
-				collectExternalJsonProperties as collectJson,
-				collectRuntimeStringProperties,
-			} from './scripts/external-boundary-properties.mjs';
-		`;
-		expect(hasNamedImports(source, './scripts/external-boundary-properties.mjs', [
-			'collectExternalBoundaryProperties',
-			'collectExternalJsonProperties',
-			'collectRuntimeStringProperties',
-		])).toBe(true);
-		expect(hasNamedImports(source, './scripts/external-boundary-properties.mjs', [
-			'collectLocaleCatalogPropertyNames',
-		])).toBe(false);
+		const vendor = await minify(
+			'globalThis.vendor = { publicMethod() { return this._privateState; }, _privateState: 1 };',
+			{
+				compress: false,
+				mangle: productionMangleOptions(true),
+			},
+		);
+		expect(vendor.code).toContain('publicMethod');
+		expect(vendor.code).not.toContain('_privateState');
 	});
 
 	test('accepts a fully reachable production graph without a historical byte ceiling', () => {
@@ -254,6 +169,22 @@ describe('production artifact integrity', () => {
 		expect(footprint.bytes).toBe(
 			readFileSync(resolve(directory, 'popup.js')).byteLength
 			+ readFileSync(resolve(directory, 'chunks/shared.js')).byteLength,
+		);
+	});
+
+	test('rejects an MV3 service worker that depends on a separately initialized chunk', () => {
+		const directory = temporaryDirectory();
+		mkdirSync(resolve(directory, 'chunks'));
+		writeFileSync(resolve(directory, 'manifest.json'), JSON.stringify({
+			manifest_version: 3,
+			background: { service_worker: 'background.js', type: 'module' },
+		}));
+		writeFileSync(resolve(directory, 'background.js'), 'import "./chunks/shared.js";\n');
+		writeFileSync(resolve(directory, 'chunks/shared.js'), 'export const shared = true;\n');
+
+		const report = analyzeProductionArtifacts({ distDir: directory });
+		expect(report.failures).toContain(
+			'background.js: MV3 service worker must be one self-contained bundle',
 		);
 	});
 

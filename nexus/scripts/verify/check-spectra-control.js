@@ -656,9 +656,14 @@ function checkProductionLoadingTopology(root) {
 		'utf8',
 	);
 	const build = fs.readFileSync(path.join(root, APP_PATH, 'build.mjs'), 'utf8');
-	const externalBoundary = fs.readFileSync(
-		path.join(root, APP_PATH, 'scripts/external-boundary-properties.mjs'),
+	const minificationPolicy = fs.readFileSync(
+		path.join(root, APP_PATH, 'scripts/minification-policy.mjs'),
 		'utf8',
+	);
+	const retiredPropertyAllowlist = path.join(
+		root,
+		APP_PATH,
+		'scripts/external-boundary-properties.mjs',
 	);
 	const remoteHost = fs.readFileSync(
 		path.join(root, SOURCE_PATH, 'offscreen-remote/remote-host.ts'),
@@ -731,50 +736,49 @@ function checkProductionLoadingTopology(root) {
 	}
 	for (const required of [
 		"const isolatedEntries = entries.filter(({ out }) => out.startsWith('content-'))",
-		"const moduleEntries = entries.filter(({ out }) => !out.startsWith('content-'))",
+		"sharingDomain: 'background-service-worker'",
+		'const backgroundEntries = entries.filter(',
 		'const moduleEntryGroups = [',
 		"name: 'extension'",
 		"sharingDomain: 'extension-pages'",
 		`chunkNames: \`chunks/\${group.name}/[name]-[hash]\``,
 		'plugins: [contractRuntimeFacadePlugin()]',
-		'const addEsmExportProperties = (source) => {',
-		'const addCrossContextSingletonProperties = (source) => {',
 		"import { checkProductionArtifacts } from './scripts/check-production-artifacts.mjs'",
+		"import { productionMangleOptions } from './scripts/minification-policy.mjs'",
+		'if (!opaqueVendor) continue',
+		'mangle: productionMangleOptions(true)',
 		"out: 'peerjs-vendor.js'",
 		"format: 'iife'",
 		"path.endsWith('peerjs-vendor.js')",
-		"'target', 'documentIds', 'frameIds', 'allFrames', 'world', 'func', 'args'",
-		"keep_quoted: true",
+		'for (const entry of backgroundEntries) await buildOne(entry)',
 		'splitting: true',
 	]) {
 		if (!build.includes(required)) {
 			error(`SCTRL-001/SCTRL-034: production loading topology drifted (${required})`);
 		}
 	}
-	if (!hasNamedImports(build, './scripts/external-boundary-properties.mjs', [
-		'collectExternalBoundaryProperties',
-		'collectExternalJsonProperties',
-		'collectRuntimeStringProperties',
+	if (!hasNamedImports(build, './scripts/minification-policy.mjs', [
+		'productionMangleOptions',
 	]) || !hasNamedImports(build, './scripts/i18n-assets.ts', [
-		'collectLocaleCatalogPropertyNames',
 		'writeI18nAssets',
 	])) {
-		error('SCTRL-001/SCTRL-034: production property-boundary imports drifted');
+		error('SCTRL-001/SCTRL-034: production minification policy imports drifted');
 	}
 	if (!popup.includes('<script type="module" src="popup.js"></script>')) {
 		error('SCTRL-034: Popup must remain an extension-origin module before sharing private chunks');
 	}
 	const offscreen = fs.readFileSync(path.join(root, APP_PATH, 'public/offscreen.html'), 'utf8');
-	if (!externalBoundary.includes("const EXTERNAL_TRANSPORT_METHODS = new Set(['postMessage', 'send', 'sendMessage'])")
-		|| !externalBoundary.includes('export function collectExternalBoundaryProperties(')
-		|| !externalBoundary.includes('collectLiteralProperties(argument, names)')
+	if (!minificationPolicy.includes("if (!opaqueVendor) throw new Error('Application bundles must not enter the secondary Terser pass')")
+		|| !minificationPolicy.includes('regex: /^_/u')
+		|| build.includes('collectReservedProperties')
+		|| fs.existsSync(retiredPropertyAllowlist)
 		|| !offscreen.includes('<script src="peerjs-vendor.js"></script>')
 		|| !remoteHost.includes("import type Peer from 'peerjs'")
 		|| !remoteHost.includes("import type { DataConnection } from 'peerjs'")
 		|| /(?:^|\n)import\s+(?!type\b)[^;\n]*\bfrom\s+['"]peerjs['"]/u.test(remoteHost)
 		|| !remoteHost.includes("throw new Error('Local PeerJS vendor runtime is unavailable')")
 		|| !build.includes("sharingDomain: 'offscreen-vendor'")) {
-		error('SCTRL-004/SCTRL-014/SCTRL-034/SCTRL-044: production external ABI and opaque PeerJS vendor boundary drifted');
+		error('SCTRL-004/SCTRL-014/SCTRL-034/SCTRL-044: application property stability or opaque PeerJS vendor boundary drifted');
 	}
 	const videoEffectsResource = (manifest.web_accessible_resources ?? [])
 		.find((item) => item.resources?.includes('content-video-effects.js'));
@@ -827,6 +831,7 @@ function checkProductionLoadingTopology(root) {
 		'repeated in shareable build domain',
 		'source map reference is forbidden',
 		'diagnostic console call is forbidden',
+		'MV3 service worker must be one self-contained bundle',
 	]) {
 		if (!artifactIntegrity.includes(required)) {
 			error(`SCTRL-013/SCTRL-034: production artifact integrity drifted (${required})`);

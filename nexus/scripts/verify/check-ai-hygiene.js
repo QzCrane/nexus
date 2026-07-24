@@ -225,7 +225,7 @@ function isTestFile(name) {
 
 /** 读取文件并按行切分 */
 function readLines(fullPath) {
-	return fs.readFileSync(fullPath, 'utf-8').split('\n');
+	return fs.readFileSync(fullPath, 'utf-8').split(/\r?\n/u);
 }
 
 /** 计算相对仓库根的 Unix 风格路径 */

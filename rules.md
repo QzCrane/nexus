@@ -21,6 +21,14 @@ When prose conflicts with executable contracts, source, tests, or a release gate
 - `nexus/scripts/check-toolchain.mjs` is the executable toolchain-drift gate. A global installation, README example, or generated public package is not an independent authority.
 - Generated files are updated through their generator, not by manual edits the next build will erase.
 
+### Cross-platform contract
+
+- Repository text is UTF-8-compatible LF in both the Git index and checkout. Root [`.gitattributes`](.gitattributes) owns Git classification; root [`.editorconfig`](.editorconfig) aligns editors. Byte-verified or binary assets are explicit `-text` exceptions.
+- Repository automation uses Bun or Node filesystem/path APIs and argument-array child processes. OS shell executables, command-string `exec`/`execSync`, `shell: true`, and host-specific package scripts are prohibited.
+- Temporary files derive from `os.tmpdir()`. Recursive cleanup has bounded retries for transient Windows locks. Archive and deployment paths use `/` only at their external format boundary and native `node:path` operations on disk.
+- Tracked paths must be Unicode NFC, case-fold unique, legal on Windows, and free of symlinks. A script with a shebang is executable in the Git index; other files are not.
+- [`nexus/scripts/check-platform-contract.mjs`](nexus/scripts/check-platform-contract.mjs) is the executable drift gate. It runs locally before push and in both Windows and Ubuntu CI; fixing a consumer-specific CRLF/path assertion does not replace this repository contract.
+
 ## 2. Change preparation
 
 Before modifying behavior:

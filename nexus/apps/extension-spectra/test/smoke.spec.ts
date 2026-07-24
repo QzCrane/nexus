@@ -745,24 +745,25 @@ async function readPopupVolumePresentation(expectedAccent?: string): Promise<Pop
 }
 
 async function closeActionPopup(popup: Page): Promise<void> {
-	if (popup.isClosed()) return;
-	// Let the real action-popup lifecycle dispatch blur/pagehide so analyser
-	// leases reach the worker before CDP destroys the target.
-	await popup.evaluate(() => window.close()).catch(() => undefined);
+	const popupTarget = popup.target();
+	if (!popup.isClosed()) {
+		// Let the real action-popup lifecycle dispatch blur/pagehide so analyser
+		// leases reach the worker before CDP destroys the target.
+		await popup.evaluate(() => window.close()).catch(() => undefined);
+		await eventually(
+			async () => popup.isClosed(),
+			(closed) => closed,
+			'action popup close',
+			1_000,
+		).catch(() => undefined);
+		if (!popup.isClosed()) await popup.close();
+	}
 	await eventually(
-		async () => popup.isClosed(),
-		(closed) => closed,
-		'action popup close',
-		1_000,
-	).catch(() => undefined);
-	if (!popup.isClosed()) await popup.close().catch(() => undefined);
-	const popupUrl = `chrome-extension://${extensionId}/popup.html`;
-	await eventually(
-		async () => browser.targets().some((target) => target.url() === popupUrl),
+		async () => browser.targets().includes(popupTarget),
 		(present) => !present,
 		'action popup target retirement',
 		2_000,
-	).catch(() => undefined);
+	);
 }
 
 async function submitEffectiveVolume(tabId: number, value: number): Promise<void> {
@@ -799,12 +800,15 @@ async function readBadgeText(tabId: number): Promise<string> {
 }
 
 async function sendFromActionPopup<T>(message: Record<string, unknown>): Promise<T> {
+	let popup: Page | null = null;
 	let popupClient: CDPSession | null = null;
 	try {
 		const target = await openActionPopupTarget();
+		popup = await target.asPage();
+		if (!popup) throw new Error('Unable to attach to the real extension action popup page');
 		popupClient = await withDiagnosticTimeout(
 			'attach to the real extension action popup',
-			() => target.createCDPSession(),
+			() => popup!.createCDPSession(),
 			10_000,
 		);
 		await popupClient.send('Runtime.enable');
@@ -831,24 +835,40 @@ async function sendFromActionPopup<T>(message: Record<string, unknown>): Promise
 		}
 		return evaluation.result.value as T;
 	} finally {
-		await popupClient?.send('Runtime.evaluate', { expression: 'close()' }).catch(() => undefined);
+		if (popup) await closeActionPopup(popup);
+		else await popupClient?.send('Runtime.evaluate', { expression: 'close()' }).catch(() => undefined);
 		await popupClient?.detach().catch(() => undefined);
 	}
 }
 
 async function installVisualizerBatchProbe(): Promise<void> {
 	await evaluateServiceWorker(() => {
-		type Probe = { count: number; listener: (message: unknown) => void };
+		type ProbeEvent = {
+			payload: unknown;
+			senderTabId: number | null;
+			senderUrl: string | null;
+		};
+		type Probe = {
+			count: number;
+			events: ProbeEvent[];
+			listener: (message: unknown, sender: chrome.runtime.MessageSender) => void;
+		};
 		const scope = globalThis as typeof globalThis & { __spectraVisualizerProbe?: Probe };
 		if (scope.__spectraVisualizerProbe) {
 			chrome.runtime.onMessage.removeListener(scope.__spectraVisualizerProbe.listener);
 		}
 		const probe: Probe = {
 			count: 0,
-			listener(message: unknown) {
+			events: [],
+			listener(message: unknown, sender: chrome.runtime.MessageSender) {
 				if (message && typeof message === 'object'
 					&& (message as { type?: unknown }).type === 'spectra.audio.visualizer.batch') {
 					probe.count++;
+					probe.events.push({
+						payload: (message as { payload?: unknown }).payload,
+						senderTabId: sender.tab?.id ?? null,
+						senderUrl: sender.url ?? null,
+					});
 				}
 			},
 		};
@@ -857,12 +877,22 @@ async function installVisualizerBatchProbe(): Promise<void> {
 	});
 }
 
-async function readVisualizerBatchCount(): Promise<number> {
+async function readVisualizerBatchProbe(): Promise<{
+	count: number;
+	events: Array<{ payload: unknown; senderTabId: number | null; senderUrl: string | null }>;
+}> {
 	return evaluateServiceWorker(() => {
 		return (globalThis as typeof globalThis & {
-			__spectraVisualizerProbe?: { count: number };
-		}).__spectraVisualizerProbe?.count ?? 0;
+			__spectraVisualizerProbe?: {
+				count: number;
+				events: Array<{ payload: unknown; senderTabId: number | null; senderUrl: string | null }>;
+			};
+		}).__spectraVisualizerProbe ?? { count: 0, events: [] };
 	});
+}
+
+async function readVisualizerBatchCount(): Promise<number> {
+	return (await readVisualizerBatchProbe()).count;
 }
 
 async function removeVisualizerBatchProbe(): Promise<void> {
@@ -2829,22 +2859,27 @@ describe('SPECTRA built extension smoke', () => {
 			throw new Error(disabled.error?.message ?? 'Unable to establish the bypass visualizer baseline');
 		}
 		await installVisualizerBatchProbe();
+		let popup: Page | null = null;
 		let popupClient: CDPSession | null = null;
 		try {
 			const popupTarget = await openActionPopupTarget(5_000);
-			popupClient = await popupTarget.createCDPSession();
+			popup = await popupTarget.asPage();
+			if (!popup) throw new Error('Unable to attach to the visualizer action popup page');
+			popupClient = await popup.createCDPSession();
 			await popupClient.send('Runtime.enable');
 
 			await new Promise((resolveWait) => setTimeout(resolveWait, 500));
-			expect(await readVisualizerBatchCount()).toBe(0);
+			const initialProbe = await readVisualizerBatchProbe();
+			expect(initialProbe.count, JSON.stringify(initialProbe.events)).toBe(0);
 
-			await popupClient.send('Runtime.evaluate', { expression: 'close()' });
+			await closeActionPopup(popup);
+			popup = null;
 			await new Promise((resolveWait) => setTimeout(resolveWait, 100));
 			const countAfterClose = await readVisualizerBatchCount();
 			await new Promise((resolveWait) => setTimeout(resolveWait, 250));
 			expect(await readVisualizerBatchCount()).toBe(countAfterClose);
 		} finally {
-			await popupClient?.send('Runtime.evaluate', { expression: 'close()' }).catch(() => undefined);
+			if (popup) await closeActionPopup(popup).catch(() => undefined);
 			await popupClient?.detach().catch(() => undefined);
 			await removeVisualizerBatchProbe();
 		}

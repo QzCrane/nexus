@@ -27,6 +27,8 @@ pre-push:
     - merge
     - rebase
   commands:
+    platform-contract:
+      run: bun run check:platform
     toolchain:
       run: bun --cwd nexus check:toolchain
     documentation-architecture:

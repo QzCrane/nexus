@@ -192,13 +192,23 @@ export function createPromotionReceipt(
 		writeFileSync(receiptPath, `${JSON.stringify(receipt)}\n`, { flag: 'wx', mode: 0o600 });
 		return { directory, receiptPath, capability, receipt };
 	} catch (error) {
-		rmSync(directory, { recursive: true, force: true });
+		rmSync(directory, {
+			recursive: true,
+			force: true,
+			maxRetries: 5,
+			retryDelay: 100,
+		});
 		throw error;
 	}
 }
 
 export function cleanupReleaseStaging(directory = stagingDir) {
-	rmSync(directory, { recursive: true, force: true });
+	rmSync(directory, {
+		recursive: true,
+		force: true,
+		maxRetries: 5,
+		retryDelay: 100,
+	});
 }
 
 export function runRelease({
@@ -240,7 +250,14 @@ export function runRelease({
 			completedSteps.push(step.label);
 		}
 	} finally {
-		if (receipt) rmSync(receipt.directory, { recursive: true, force: true });
+		if (receipt) {
+			rmSync(receipt.directory, {
+				recursive: true,
+				force: true,
+				maxRetries: 5,
+				retryDelay: 100,
+			});
+		}
 		cleanupStaging();
 	}
 	console.log('\n✓ SPECTRA release candidate passed every gate and was promoted');
