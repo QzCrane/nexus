@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-07-22
+last_reviewed: 2026-07-24
 ---
 
 # 05. Control state (Field states, volume/mute, audio processing)
@@ -127,13 +127,12 @@ effective output ~= volumeBase / 100 * boost
 - Same-region changes touch one writer; only a crossing of the native 100% boundary touches both. Repeated acknowledged values do no Content IPC, revision or storage write.
 - No strategy inserts an implicit limiter. Compressor is an explicit user capability.
 
-The Popup may render the requested numeric value immediately, but a boundary
-crossing is an explicit desired/actual pending state until both writer stages
-ACK. Capture strategy in the compound field ACK projects the matching active
-lifecycle immediately, without waiting for a later event-loop delivery; a
-transition back to `<=100` releases the processor before committing the native
-writer. UI color therefore cannot claim native blue or Capture purple during
-the handoff.
+The desired/actual transaction remains pending until both writer stages ACK.
+Capture, Media WebAudio and neutral processor-release strategies in the compound
+field ACK project their matching lifecycle immediately, without waiting for a
+later event-loop delivery. A transition back to `<=100` releases the processor
+before committing the native writer. Popup presentation follows the atomic
+value-and-color rule owned by [§19 User experience](03-ui-and-boundaries.md#19-user-experience).
 
 Legacy values migrate idempotently:
 

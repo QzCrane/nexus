@@ -333,13 +333,14 @@ describe('extension-page DOM and idle contracts', () => {
 		const settings = readFileSync(resolve(import.meta.dir, '../src/popup/views/settings.ts'), 'utf8');
 		const registry = readFileSync(resolve(import.meta.dir, '../src/popup/views/registry-ui.ts'), 'utf8');
 		const presets = readFileSync(resolve(import.meta.dir, '../src/popup/views/presets-ui.ts'), 'utf8');
+		const normalizedPresets = presets.replaceAll('\r\n', '\n');
 
 		expect(settings).toContain('initRegistryUI(registryEntries, dict)');
 		expect(settings).toContain('initPresetsUI(dict)');
 		expect(registry).toContain('export function initRegistryUI(entries: DomainEntry[], dict: I18NDict)');
 		expect(registry).not.toContain('currentDict: I18NDict | null');
 		expect(registry).not.toMatch(/currentDict\?\.|Capture when needed|No cached site routes|AUTO|USER/u);
-		expect(presets).toContain('export function initPresetsUI(\n\tdict: I18NDict,');
+		expect(normalizedPresets).toContain('export function initPresetsUI(\n\tdict: I18NDict,');
 		expect(presets).toContain('const refreshRevision = ++latestRefreshRevision');
 		expect(presets).not.toContain('currentDict: I18NDict | null');
 	});

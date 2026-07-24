@@ -4,6 +4,7 @@ import type { AudioConfig, GlobalSettings } from '@nexus/kernel';
 import {
 	isActiveCaptureLifecycle,
 	resolveAudioVolume,
+	resolveAudioVolumeState,
 	type ControlOperationAck,
 	type ControlFieldStates,
 	type ControlPatch,
@@ -11,27 +12,54 @@ import {
 import { mergeAudioConfig, mergeControlFields, type CardInternalState } from './types';
 import { sendSpectraRequest } from '../../shared/ui-spectra-client';
 
+const PROCESSOR_FIELDS = [
+	'boost',
+	'eqValues',
+	'bass',
+	'compressor',
+	'mono',
+	'pan',
+	'delay',
+] as const satisfies readonly (keyof ControlFieldStates)[];
+
 export type ConfigUpdateFn = ((changes: Partial<AudioConfig>) => void) & {
 	flush: () => Promise<void>;
 	runControl: <T>(command: () => Promise<T>) => Promise<T>;
 };
 
-// A field ACK using Capture proves the processor is already active. Project it
-// immediately so Popup rendering cannot lag behind that ACK while the matching
-// lifecycle event is still crossing the extension event queue.
+// Processor field ACKs prove the lifecycle that produced their readback.
+// Project active Capture/Media WebAudio and neutral release symmetrically so
+// Popup rendering cannot lag behind the compound ACK's actual result.
 export function projectAcknowledgedProcessorLifecycle(
 	state: CardInternalState,
 	fields: ControlFieldStates,
 ): void {
-	const captureApplied = Object.values(fields).some((field) => (
-		field?.phase === 'applied' && field.strategy === 'capture'
+	const processorStates = PROCESSOR_FIELDS
+		.map((field) => fields[field])
+		.filter((field) => field !== undefined);
+	const captureApplied = processorStates.some((field) => (
+		field.phase === 'applied' && field.strategy === 'capture'
 	));
-	if (!captureApplied) return;
-	state.actualMode = 'capture';
-	state.desiredMode = 'capture';
-	state.phase = 'active';
-	state.isCaptureActive = true;
-	state.processorTransitionPending = false;
+	const webAudioApplied = processorStates.some((field) => (
+		field.phase === 'applied' && field.strategy === 'media-webaudio'
+	));
+	const processorReleased = processorStates.some((field) => (
+		(field.phase === 'applied' || field.phase === 'idle')
+		&& field.strategy === 'observe'
+		&& !field.controlled
+	));
+	const mode = captureApplied
+		? 'capture'
+		: webAudioApplied
+			? 'webaudio'
+			: processorReleased
+				? 'bypass'
+				: null;
+	if (!mode) return;
+	state.actualMode = mode;
+	state.desiredMode = mode;
+	state.phase = mode === 'bypass' ? 'idle' : 'active';
+	state.isCaptureActive = mode === 'capture';
 }
 
 export function createGetCapturing(
@@ -193,7 +221,7 @@ export function createUpdateFn(
 					eqValues: [...state.stableConfig.eqValues],
 				});
 				desiredConfig = state.config;
-				state.processorTransitionPending = false;
+				state.volumeTransitionPresentation = undefined;
 			}
 			state.lastError = null;
 		}).catch((error) => {
@@ -202,7 +230,7 @@ export function createUpdateFn(
 					eqValues: [...state.stableConfig.eqValues],
 				});
 				desiredConfig = state.config;
-				state.processorTransitionPending = false;
+				state.volumeTransitionPresentation = undefined;
 			}
 			throw error;
 		}).finally(() => {
@@ -262,14 +290,24 @@ export function createUpdateFn(
 		if (!volumeChanged && Object.keys(patch).length === 0) return;
 		state.userInteracted = true;
 
-		// An amber pending projection separates desired from actual while crossing
-		// the native/processor boundary. Publishing desired 110% as native blue is
-		// the blue-before-purple flash; purple remains reserved for the compound
-		// Capture ACK. Same-region drags remain optimistic.
+		// A boundary crossing keeps the last complete acknowledged presentation
+		// until the compound operation ACK can commit value and processor mode in
+		// one frame. Same-region drags remain optimistic.
 		const stableVolume = resolveAudioVolume(state.stableConfig).effectiveVolume;
 		const crossesProcessorBoundary = volumeChanged
 			&& (stableVolume > 100) !== (nextVolume > 100);
-		state.processorTransitionPending = crossesProcessorBoundary;
+		if (crossesProcessorBoundary && !state.volumeTransitionPresentation) {
+			const effectiveVolume = resolveAudioVolume(state.config).effectiveVolume;
+			state.volumeTransitionPresentation = {
+				effectiveVolume,
+				volumeState: resolveAudioVolumeState({
+					volume: effectiveVolume,
+					muted: state.config.muted,
+					actualMode: state.actualMode,
+					phase: state.phase,
+				}),
+			};
+		}
 		state.config = next;
 		if (volumeChanged) pendingEffectiveVolume = nextVolume;
 		pendingPatch = { ...pendingPatch, ...patch };

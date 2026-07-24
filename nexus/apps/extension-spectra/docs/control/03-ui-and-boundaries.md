@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-07-23
+last_reviewed: 2026-07-24
 ---
 
 # 03. UI & Boundaries (Visualizer, favicon, remote, UX)
@@ -130,5 +130,5 @@ No strategy may bypass transient user activation, CORS, DRM or inaccessible clos
 - Capture selection is automatic. Legacy `capture_toggle` bindings move to disabled diagnostics rather than exposing a transport implementation as a product feature.
 - Errors rollback optimistic UI to the last stable snapshot and explain the missing capability without technical mode choices.
 - Route/source pills remain readable at a minimum computed `11px`; Global and Site preset section titles remain high-contrast headings at a minimum computed `13px`. Their visible text and search placeholders always come from the validated locale catalog.
-- Crossing the native/processor volume boundary renders amber only while desired and actual differ; amber never means “volume is above 100” and cannot be a stable mode. Purple appears directly from the matching Capture ACK, blue remains native/Media WebAudio actual state, and the fill has no color interpolation that can fabricate a blue-before-purple frame.
+- Crossing the native/processor volume boundary keeps the last complete acknowledged value-and-color pair visible until the compound operation ACK. The Popup then commits the new numeric value and processor color in one render: blue remains native/Media WebAudio actual state, purple still requires the matching active Capture ACK, and no third transition color or mismatched `110%`-blue frame is rendered. Same-region slider movement remains optimistic because it does not change processor ownership.
 - Badge visibility owns a separate per-tab sticky usage fact in `chrome.storage.session`. A new tab with only page-native `0–100` observations remains blank. A successful Popup, Chrome-command, remote or non-audio extension action—and application of a configured site/global preset—starts the badge for that tab. Navigation and service-worker restart preserve the usage fact and last acknowledged state; because Chrome clears a tab-scoped Action projection during full navigation, Background waits for the new document initialization barrier and then reprojects the badge from the current `ControlSnapshot` plus acknowledged tab session after `tabs.onUpdated(status=complete)`. Tab close is the sole retirement boundary. A numeric badge requires the complete acknowledged `volumeBase + boost` pair; until that pair exists, a neutral dot reports usage without filling an unknown volume from defaults or inventing Capture state.
