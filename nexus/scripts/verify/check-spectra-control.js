@@ -1348,6 +1348,10 @@ function checkRetiredPaths(root) {
 		path.join(root, SOURCE_PATH, 'content/ui/feedback-surface.ts'),
 		'utf8',
 	);
+	const optionsSlots = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'options/slots-editor.ts'),
+		'utf8',
+	);
 	const shortcutManifest = JSON.parse(fs.readFileSync(
 		path.join(root, APP_PATH, 'public/manifest.json'),
 		'utf8',
@@ -1397,6 +1401,11 @@ function checkRetiredPaths(root) {
 		|| !feedbackSurface.includes("host.matches(':popover-open')")
 		|| !feedbackSurface.includes('host.showPopover()')) {
 		error('SCTRL-016/SCTRL-022: Toast and OSD feedback must use a fullscreen-safe browser top-layer host');
+	}
+	if (!optionsSlots.includes('chrome.runtime.getManifest().commands')
+		|| optionsSlots.includes('const PRESET_COMMANDS')
+		|| optionsSlots.includes('const SLOT_COMMANDS')) {
+		error('SCTRL-022: Options command rows must derive from the explicit extension manifest registry');
 	}
 
 	const tabSession = fs.readFileSync(

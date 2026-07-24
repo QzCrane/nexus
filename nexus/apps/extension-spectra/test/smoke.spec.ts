@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -25,6 +25,11 @@ const REMOTE_SITE_DIR = resolve(import.meta.dir, '..', '..', '..', '..', 'remote
 if (!existsSync(join(EXTENSION_DIR, 'manifest.json'))) {
 	throw new Error(`SPECTRA extension directory is missing manifest.json: ${EXTENSION_DIR}`);
 }
+const EXTENSION_COMMAND_COUNT = Object.keys((
+	JSON.parse(readFileSync(join(EXTENSION_DIR, 'manifest.json'), 'utf8')) as {
+		commands?: Record<string, unknown>;
+	}
+).commands ?? {}).length;
 
 let browser: Browser;
 let serviceWorkerConnection: Browser | null = null;
@@ -2433,7 +2438,9 @@ describe('SPECTRA built extension smoke', () => {
 		const options = await browser.newPage();
 		collectPageErrors(options, optionsErrors);
 		await options.goto(`chrome-extension://${extensionId}/options.html`, { waitUntil: 'domcontentloaded' });
-		await options.waitForFunction(() => document.querySelectorAll('#slots-list .slot-row').length === 21);
+		await options.waitForSelector('#slots-list .slot-row');
+		expect(await options.$$eval('#slots-list .slot-row', (rows) => rows.length))
+			.toBe(EXTENSION_COMMAND_COUNT);
 		expect(await options.evaluate(() => document.documentElement.dataset.theme)).toMatch(/^(light|dark)$/);
 
 		const accessibilityTestDomain = 'a11y-smoke.example';
@@ -2817,7 +2824,9 @@ describe('SPECTRA built extension smoke', () => {
 		const options = await browser.newPage();
 		await options.setViewport({ width: 390, height: 800, deviceScaleFactor: 1 });
 		await options.goto(`chrome-extension://${extensionId}/options.html`, { waitUntil: 'domcontentloaded' });
-		await options.waitForFunction(() => document.querySelectorAll('#slots-list .slot-row').length === 21);
+		await options.waitForSelector('#slots-list .slot-row');
+		expect(await options.$$eval('#slots-list .slot-row', (rows) => rows.length))
+			.toBe(EXTENSION_COMMAND_COUNT);
 		try {
 			for (const language of ['en-US', 'zh-CN']) {
 				await options.select('#lang-select', language);
@@ -3630,6 +3639,11 @@ describe('SPECTRA built extension smoke', () => {
 	}, 60_000);
 
 	test('keeps the single 0-800 control and every color on acknowledged actual state', async () => {
+		// The preceding fullscreen fixture ends with a real reload. Own the new
+		// document READY boundary before installing its page controller; under a
+		// slow production bundle, DOMContentLoaded alone can precede bootstrap
+		// HELLO and would let this test exercise the DOM fallback instead.
+		await waitForContentBootstrapStatus(fixturePage.url());
 		await installPageMediaControllerHarness();
 		await installSyntheticCaptureHarness();
 		await installTabCaptureStreamIdStub();

@@ -40,6 +40,19 @@ describe('hotkey editor contract', () => {
 			modifiers: { ctrl: true, alt: false, shift: true, meta: false },
 		})).toBe('Ctrl + Shift + K');
 	});
+
+	test('derives Chrome command rows from the manifest-backed browser registry', () => {
+		const source = readFileSync(
+			resolve(import.meta.dir, '../src/options/slots-editor.ts'),
+			'utf8',
+		);
+		expect(source).toContain('chrome.runtime.getManifest().commands');
+		expect(source).not.toContain('await chrome.commands.getAll()');
+		expect(source).toContain("names.filter((name) => !name.startsWith('slot_'))");
+		expect(source).toContain("names.filter((name) => name.startsWith('slot_'))");
+		expect(source).not.toContain('PRESET_COMMANDS');
+		expect(source).not.toContain('SLOT_COMMANDS');
+	});
 });
 
 describe('options translations', () => {
