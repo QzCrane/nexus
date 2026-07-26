@@ -77,6 +77,12 @@
     }
   ],
   "commands": {
+    "volume_up": {
+      "suggested_key": {
+        "default": "Alt+Up"
+      },
+      "description": "Increase volume"
+    },
     "slot_01": {
       "description": "Custom Slot 1"
     },

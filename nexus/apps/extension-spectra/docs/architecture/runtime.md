@@ -149,25 +149,24 @@ suspended between receipt and completion of the first authenticated event.
 The bootstrap also owns the only built-in default-key boundary: trusted
 `Alt+ArrowLeft/Right` becomes sender-bound `speed_down/up`,
 `Alt+ArrowDown/Up` becomes `volume_down/up`, and `Alt+M` becomes
-`volume_mute`. Keeping all five gestures on the page input boundary provides
-exact physical press/release identity; mute ignores repeated keydown, while the
-four scalar gestures retain exact repeat cadence. None is duplicated in
-Manifest commands or default Chrome command slots. The shared resolver also
-excludes all five before the heavy site-hotkey listener performs binding lookup,
-so one physical event has only one extension owner.
+`volume_mute`. Bootstrap recognizes all five at the page input boundary, where
+exact physical press/release identity makes mute ignore repeated keydown and
+preserves scalar repeat cadence. `Alt+Up` is additionally the one built-in
+Manifest accelerator: when Chrome consumes it, the browser command is the sole
+writer and grants current-tab extension invocation for a first-use Capture
+fallback; Bootstrap handles only an unassigned or otherwise unconsumed dispatch.
+The other four chords have no Manifest/default Chrome command. The shared
+resolver excludes all five before the heavy site-hotkey listener performs
+binding lookup, so one physical event has only one extension writer.
 
-Bootstrap uses the shared website-first keyboard arbiter rather than a permanent
-`window` bubble listener. Its permanent `window` capture listener only
-recognizes a candidate and appends a bubble tail for that same `KeyboardEvent`,
-behind the website target/document handlers and every `window` listener that
-already existed when capture ran. The tail yields when the website has set
-`defaultPrevented` or `cancelBubble`; if propagation never reaches it, a
-`setTimeout(0)` task only removes the pending tail and treats the event as
-claimed. Cleanup cannot use a microtask because that can run before the event
-reaches window bubble. An admitted tail calls only `preventDefault()` to
-suppress the browser/page default and never stops propagation. Exact arbitration
-semantics and its closed-shadow/dynamic-listener platform limits are owned by
-[control/02-strategy-and-routes.md §5](../control/02-strategy-and-routes.md#5-runtime-shortcut-and-feedback-ownership).
+The five shipped chords are reserved extension commands. Bootstrap claims their
+trusted non-editable keydown and matching keyup at `window` capture during
+`document_start`, calling `preventDefault()` and `stopImmediatePropagation()`
+before page handlers can clamp volume to a native-only range or perform a
+competing write. Configured site bindings remain website-first through the
+shared same-event bubble-tail arbiter; claimed or propagation-truncated events
+still yield to the website. Exact ownership and arbitration semantics are owned
+by [control/02-strategy-and-routes.md §5](../control/02-strategy-and-routes.md#5-runtime-shortcut-and-feedback-ownership).
 The bootstrap performs no polling and owns no control state.
 
 The first Bootstrap also installs one stable trusted-keyup capture observer for
@@ -228,7 +227,7 @@ Favicon and QR rendering are UI/security boundaries, not media-runtime capabilit
 | Route resolution | Content policy executor | cache is not activation |
 | Processor lifecycle | offscreen coordinator and audio delegate | actual host ACK drives status |
 | Cold native refresh state | bootstrap, runtime loader and control coordinator | initialization-first, targetless four-field observation; no badge-use fact |
-| Shortcut readiness | bootstrap, shared keyboard arbiter, runtime loader and shortcuts | one shared resolver gives the capture-recognized/same-event bubble-tail Bootstrap sole ownership of five defaults; the site listener excludes them, website claims or propagation truncation win, propagation remains open after admission, and the stable document-start keyup observer releases accepted site gestures without an action timer while trusted cold-document intents wait for READY and reject stale identity |
+| Shortcut readiness | bootstrap, shared keyboard arbiter, runtime loader and shortcuts | one shared resolver gives the document-start capture Bootstrap exclusive ownership of five reserved defaults; the site listener excludes them and independently yields configured bindings to website claims, while the stable keyup observer releases accepted site gestures without an action timer and trusted cold-document intents wait for READY and reject stale identity |
 | Toast/OSD | Content feedback modules | one feedback owner on a fullscreen-safe Popover top-layer host; no bootstrap/snapshot toast |
 | Page media semantics | page-media bridge and native executor | exact-element getter/setter readback, DOM fallback, no domain table or polling |
 | PiP/fullscreen | trusted activation path, fullscreen bridge and native executor | actual native lifecycle and audio-baseline preservation |

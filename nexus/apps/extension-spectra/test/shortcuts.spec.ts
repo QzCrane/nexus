@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
 	releasePageGestureBurst,
+	resolveChromeCommandAction,
 	runPageGestureBurst,
 	runChromeCommandSingleFlight,
 	runWithShortcutRuntime,
@@ -21,8 +22,8 @@ function runtimePort(): ShortcutRuntimePort & {
 }
 
 describe('cold-document shortcuts', () => {
-	test('keeps all five shipped defaults page-owned instead of Manifest command-owned', () => {
-		const commands = ['speed_down', 'speed_up', 'volume_down', 'volume_up', 'volume_mute', 'toggle_mute'];
+	test('reserves one browser-invoked volume-up command and keeps the other defaults page-owned', () => {
+		const pageCommands = ['speed_down', 'speed_up', 'volume_down', 'volume_mute', 'toggle_mute'];
 		const manifest = JSON.parse(readFileSync(
 			resolve(import.meta.dir, '../public/manifest.json'),
 			'utf8',
@@ -32,8 +33,12 @@ describe('cold-document shortcuts', () => {
 				description?: string;
 			}>;
 		};
-		for (const command of commands) expect(manifest.commands[command]).toBeUndefined();
-		expect(Object.values(manifest.commands).filter(({ suggested_key }) => suggested_key)).toHaveLength(0);
+		for (const command of pageCommands) expect(manifest.commands[command]).toBeUndefined();
+		expect(manifest.commands.volume_up).toMatchObject({
+			suggested_key: { default: 'Alt+Up' },
+		});
+		expect(Object.values(manifest.commands).filter(({ suggested_key }) => suggested_key)).toHaveLength(1);
+		expect(resolveChromeCommandAction('volume_up')).toBe('volume_up');
 	});
 	test('admits only identity-bound extension shortcut routes', () => {
 		const source = readFileSync(resolve(import.meta.dir, '../src/background/shortcuts.ts'), 'utf8');

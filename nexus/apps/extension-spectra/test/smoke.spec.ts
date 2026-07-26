@@ -2025,7 +2025,7 @@ describe('SPECTRA built extension smoke', () => {
 		expect(commandShortcuts).not.toHaveProperty('toggle_mute');
 		expect(commandShortcuts).not.toHaveProperty('speed_down');
 		expect(commandShortcuts).not.toHaveProperty('speed_up');
-		expect(commandShortcuts).not.toHaveProperty('volume_up');
+		expect(commandShortcuts).toHaveProperty('volume_up', 'Alt+Up Arrow');
 		expect(commandShortcuts).not.toHaveProperty('volume_down');
 		expect(await readContentBootstrapStatus()).toMatchObject({
 			ready: false,
@@ -2083,7 +2083,7 @@ describe('SPECTRA built extension smoke', () => {
 		expect(await fixturePage.evaluate(() => '__SPECTRA_MAIN_RUNTIME__' in window)).toBe(false);
 	});
 
-	test('owns all five cold defaults once while preserving website shortcut propagation', async () => {
+	test('owns all five cold defaults once without exposing them to website handlers', async () => {
 		const coldUrl = `${fixtureUrl}?cold-shortcut-tap=1`;
 		const coldPage = await browser.newPage();
 		try {
@@ -2127,37 +2127,54 @@ describe('SPECTRA built extension smoke', () => {
 			await waitForContentBootstrapStatus(coldUrl);
 
 			await coldPage.bringToFront();
+			await coldPage.evaluate(() => {
+				const media = document.querySelector<HTMLMediaElement>('video,audio');
+				if (media) {
+					media.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+				}
+			});
 			// Keyup is sent immediately, without waiting for the heavy runtime.
 			// It may cancel queued repeats, but cannot revoke this accepted tap.
-			await tapDefaultShortcut(coldPage, 'ArrowDown');
+			await tapDefaultShortcut(coldPage, 'ArrowUp');
 
 			const applied = await eventually(
 				async () => ({
-					volume: await coldPage.evaluate(() => (
+					nativeVolume: await coldPage.evaluate(() => (
 						Math.round((document.querySelector<HTMLMediaElement>('video,audio')?.volume ?? -1) * 100)
 					)),
 					badge: await readBadgeText(tabId),
 					bootstrap: await readContentBootstrapStatus(coldUrl),
+					status: await readContentStatus(coldUrl),
 				}),
-				(state) => state.volume === 90 && state.badge === '90' && state.bootstrap.ready,
-				'cold first-tap effect and badge acknowledgement',
+				(state) => state.nativeVolume === 100
+					&& state.badge === '110'
+					&& state.bootstrap.ready
+					&& state.status.config?.volume === 110
+					&& state.status.config.volumeBase === 100
+					&& state.status.config.boost === 1.1
+					&& state.status.actualMode === 'webaudio',
+				'cold first reserved volume key crosses the native 100 percent boundary',
 				10_000,
 			);
 			expect(applied).toMatchObject({
-				volume: 90,
-				badge: '90',
+				nativeVolume: 100,
+				badge: '110',
 				bootstrap: { ready: true, runtimeRevision: SPECTRA_CONTENT_RUNTIME_REVISION },
+				status: {
+					config: { volume: 110, volumeBase: 100, boost: 1.1 },
+					actualMode: 'webaudio',
+				},
 			});
-			await tapDefaultShortcut(coldPage, 'ArrowUp');
+			await tapDefaultShortcut(coldPage, 'ArrowDown');
 			await eventually(
 				async () => ({
-					volume: await coldPage.evaluate(() => Math.round(
-						(document.querySelector<HTMLMediaElement>('video,audio')?.volume ?? -1) * 100,
-					)),
 					badge: await readBadgeText(tabId),
+					status: await readContentStatus(coldUrl),
 				}),
-				(state) => state.volume === 100 && state.badge === '100',
-				'cold volume-up acknowledgement',
+				(state) => state.status.config?.volume === 100
+					&& state.status.config.boost === 1
+					&& state.badge === '100',
+				'cold volume-down acknowledgement after WebAudio activation',
 			);
 			await tapDefaultShortcut(coldPage, 'ArrowLeft');
 			await eventually(
@@ -2194,30 +2211,30 @@ describe('SPECTRA built extension smoke', () => {
 				(window as Window & {
 					__spectraWebsiteHotkeys?: { codes: string[] };
 				}).__spectraWebsiteHotkeys?.codes
-			))).toEqual(['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'KeyM']);
+			))).toEqual([]);
 			await coldPage.evaluate(() => {
 				(window as Window & {
 					__spectraWebsiteHotkeys?: { reserveMute: boolean };
 				}).__spectraWebsiteHotkeys!.reserveMute = true;
 			});
 			await tapDefaultShortcut(coldPage, 'KeyM');
-			await new Promise((resolveWait) => setTimeout(resolveWait, 250));
-			expect(await coldPage.evaluate(() => ({
-				muted: document.querySelector<HTMLMediaElement>('video,audio')?.muted,
-				codes: (window as Window & {
-					__spectraWebsiteHotkeys?: { codes: string[] };
-				}).__spectraWebsiteHotkeys?.codes,
-			}))).toEqual({
-				muted: true,
-				codes: ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'KeyM', 'KeyM'],
-			});
+			await eventually(
+				() => coldPage.evaluate(() => ({
+					muted: document.querySelector<HTMLMediaElement>('video,audio')?.muted,
+					codes: (window as Window & {
+						__spectraWebsiteHotkeys?: { codes: string[] };
+					}).__spectraWebsiteHotkeys?.codes,
+				})),
+				(state) => state.muted === false && state.codes?.length === 0,
+				'reserved mute remains extension-owned despite a website preventDefault handler',
+			);
 			expect(coldPage.url()).toBe(coldUrl);
 		} finally {
 			await coldPage.close();
 		}
 	}, 30_000);
 
-	test('arbitrates default hotkeys website-first without editable takeover or release tails', async () => {
+	test('owns reserved default hotkeys before website handlers without editable takeover or release tails', async () => {
 		type ArbiterMode = 'document-stop' | 'observe' | 'repeat-stop' | 'window-prevent';
 		interface ArbiterProbe {
 			mode: ArbiterMode;
@@ -2265,6 +2282,12 @@ describe('SPECTRA built extension smoke', () => {
 
 		try {
 			await arbiterPage.goto(arbiterUrl, { waitUntil: 'domcontentloaded' });
+			await arbiterPage.evaluate(() => {
+				const media = document.querySelector<HTMLMediaElement>('video,audio');
+				if (media) {
+					media.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+				}
+			});
 			expect(await waitForContentBootstrapStatus(arbiterUrl)).toMatchObject({
 				ready: false,
 				runtimeRevision: null,
@@ -2342,8 +2365,20 @@ describe('SPECTRA built extension smoke', () => {
 			await focusBody();
 			await setMode('window-prevent');
 			await tapDefaultShortcut(arbiterPage, 'ArrowRight');
+			await eventually(
+				readMedia,
+				(state) => state.speed === 1.1 && state.osd === '1.1×' && state.osdVisible,
+				'reserved speed key before a website preventDefault handler',
+			);
+			await waitForOsdToSettle();
 			await setMode('document-stop');
 			await tapDefaultShortcut(arbiterPage, 'ArrowRight');
+			await eventually(
+				readMedia,
+				(state) => state.speed === 1.2 && state.osd === '1.2×' && state.osdVisible,
+				'reserved speed key before a website propagation stop',
+			);
+			await waitForOsdToSettle();
 			await setMode('observe');
 			const editableTargets = [
 				'arbiter-input',
@@ -2370,26 +2405,21 @@ describe('SPECTRA built extension smoke', () => {
 			await tapDefaultShortcut(arbiterPage, 'ArrowRight');
 			await eventually(
 				readMedia,
-				(state) => state.speed === 1.1 && state.osd === '1.1×' && state.osdVisible,
-				'one accepted speed key after website and editable exclusions',
+				(state) => state.speed === 1.3 && state.osd === '1.3×' && state.osdVisible,
+				'three reserved speed keys before website handlers and editable exclusions',
 			);
 			await waitForOsdToSettle();
-			expect(await readMedia()).toMatchObject({ speed: 1.1, volume: 100 });
+			expect(await readMedia()).toMatchObject({ speed: 1.3, volume: 100 });
 
 			const exclusionProbe = await arbiterPage.evaluate(() => (
 				(window as Window & { __spectraArbiterProbe?: ArbiterProbe })
 					.__spectraArbiterProbe!
 			));
-			expect(exclusionProbe.documentStops).toBe(1);
-			expect(exclusionProbe.windowEvents.some(({ mode }) => mode === 'document-stop')).toBe(false);
-			expect(exclusionProbe.windowEvents).toContainEqual(expect.objectContaining({
-				mode: 'window-prevent',
-				code: 'ArrowRight',
-				defaultPrevented: false,
-			}));
+			expect(exclusionProbe.documentStops).toBe(0);
 			expect(exclusionProbe.windowEvents
 				.filter(({ target }) => editableTargets.includes(target))
 				.map(({ target }) => target)).toEqual(editableTargets);
+			expect(exclusionProbe.windowEvents).toHaveLength(editableTargets.length);
 
 			const historyUrl = await arbiterPage.evaluate(() => {
 				history.pushState({ spectraArbiter: true }, '', `${location.pathname}${location.search}#entry`);
@@ -2399,7 +2429,7 @@ describe('SPECTRA built extension smoke', () => {
 			await tapDefaultShortcut(arbiterPage, 'ArrowLeft');
 			await eventually(
 				readMedia,
-				(state) => state.speed === 1 && state.osd === '1.0×' && state.osdVisible,
+				(state) => state.speed === 1.2 && state.osd === '1.2×' && state.osdVisible,
 				'accepted Alt+Left speed without history traversal',
 			);
 			await waitForOsdToSettle();
@@ -2411,30 +2441,14 @@ describe('SPECTRA built extension smoke', () => {
 
 			await setMode('repeat-stop');
 			await focusBody();
-			await arbiterPage.keyboard.down('Alt');
-			try {
-				await arbiterPage.keyboard.down('ArrowDown');
-				try {
-					for (let index = 0; index < 3; index += 1) {
-						await arbiterPage.keyboard.down('ArrowDown');
-					}
-				} finally {
-					await arbiterPage.keyboard.up('ArrowDown');
-				}
-				// Cross the arbiter's documented macrotask cleanup boundary before Alt keyup.
-				await arbiterPage.evaluate(() => new Promise<void>((resolveWait) => {
-					setTimeout(resolveWait, 0);
-				}));
-			} finally {
-				await arbiterPage.keyboard.up('Alt');
-			}
+			await tapDefaultShortcut(arbiterPage, 'ArrowDown');
 			await eventually(
 				readMedia,
 				(state) => state.volume === 90 && state.osd === '90%' && state.osdVisible,
-				'accepted first volume key with website-truncated repeat and keyup',
+				'reserved volume key before website handlers',
 			);
 			await waitForOsdToSettle();
-			expect(await readMedia()).toMatchObject({ speed: 1, volume: 90 });
+			expect(await readMedia()).toMatchObject({ speed: 1.2, volume: 90 });
 			expect(await arbiterPage.evaluate(() => {
 				const probe = (window as Window & { __spectraArbiterProbe?: ArbiterProbe })
 					.__spectraArbiterProbe!;
@@ -2442,7 +2456,7 @@ describe('SPECTRA built extension smoke', () => {
 					repeatStops: probe.repeatStops,
 					keyupStops: probe.keyupStops,
 				};
-			})).toEqual({ repeatStops: 3, keyupStops: 1 });
+			})).toEqual({ repeatStops: 0, keyupStops: 0 });
 
 			await setMode('observe');
 			await tapDefaultShortcut(arbiterPage, 'ArrowUp');
@@ -2452,7 +2466,20 @@ describe('SPECTRA built extension smoke', () => {
 				'next volume key after truncated release',
 			);
 			await waitForOsdToSettle();
-			expect(await readMedia()).toMatchObject({ speed: 1, volume: 100 });
+			expect(await readMedia()).toMatchObject({ speed: 1.2, volume: 100 });
+			await tapDefaultShortcut(arbiterPage, 'ArrowUp');
+			await eventually(
+				async () => ({
+					status: await readContentStatus(historyUrl),
+					media: await readMedia(),
+				}),
+				(state) => state.status.config?.volume === 110
+					&& state.status.config.boost === 1.1
+					&& state.media.volume === 100
+					&& state.media.osd === '110%'
+					&& state.media.osdVisible,
+				'first reserved volume key crosses the native 100 percent boundary',
+			);
 		} finally {
 			await arbiterPage.keyboard.up('ArrowDown').catch(() => undefined);
 			await arbiterPage.keyboard.up('Alt').catch(() => undefined);
@@ -2639,7 +2666,9 @@ describe('SPECTRA built extension smoke', () => {
 			)).toBe(false);
 			expect(final.probe.unclaimedWindowEvents).toContain('window-prevent:KeyK:false');
 			expect(final.probe.unclaimedWindowEvents).toContain('observe:KeyK:false');
-			expect(final.probe.unclaimedWindowEvents).toContain('observe:ArrowRight:false');
+			expect(final.probe.unclaimedWindowEvents.some(
+				(event) => event.includes(':ArrowRight:'),
+			)).toBe(false);
 		} finally {
 			await hotkeyPage?.keyboard.up('KeyK').catch(() => undefined);
 			await hotkeyPage?.keyboard.up('Alt').catch(() => undefined);
@@ -3609,6 +3638,17 @@ describe('SPECTRA built extension smoke', () => {
 			await restartServiceWorker();
 			sitePage = await browser.newPage();
 			globalPage = await browser.newPage();
+			await sitePage.evaluateOnNewDocument(() => {
+				const removeFixtureMedia = (): void => {
+					document.querySelector('#v')?.remove();
+				};
+				const observer = new MutationObserver(removeFixtureMedia);
+				observer.observe(document, { childList: true, subtree: true });
+				document.addEventListener('DOMContentLoaded', () => {
+					removeFixtureMedia();
+					observer.disconnect();
+				}, { once: true });
+			});
 			collectPageErrors(sitePage, presetErrors);
 			collectPageErrors(globalPage, presetErrors);
 			await sitePage.goto(siteUrl.href, { waitUntil: 'domcontentloaded' });
@@ -3617,6 +3657,13 @@ describe('SPECTRA built extension smoke', () => {
 				waitForContentBootstrapStatus(siteUrl.href),
 				waitForContentBootstrapStatus(globalUrl.href),
 			]);
+			expect(await sitePage.evaluate(() => document.querySelector('#v'))).toBeNull();
+			await sitePage.evaluate(() => {
+				const media = document.createElement('video');
+				media.id = 'v';
+				media.controls = true;
+				document.body.append(media);
+			});
 
 			const readMediaState = (page: Page) => page.evaluate(() => {
 				const media = document.querySelector<HTMLMediaElement>('#v');

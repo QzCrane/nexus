@@ -32,6 +32,15 @@ import { ensureContentRuntime, releaseContentRuntimeLease } from './runtime-load
 
 // slotMapping: active mapping of manifest slot IDs to functional hotkey actions
 let slotMapping: Record<string, HotkeyAction> = { ...DEFAULT_HOTKEY_SETTINGS.slots };
+const BUILTIN_CHROME_COMMAND_ACTIONS = {
+	volume_up: 'volume_up',
+} as const satisfies Record<string, HotkeyAction>;
+
+export function resolveChromeCommandAction(command: string): HotkeyAction | undefined {
+	return BUILTIN_CHROME_COMMAND_ACTIONS[
+		command as keyof typeof BUILTIN_CHROME_COMMAND_ACTIONS
+	] ?? slotMapping[command];
+}
 
 export interface ShortcutRuntimePort {
 	ensure(tabId: number, documentId: string, capability: string): Promise<{ documentId: string }>;
@@ -189,7 +198,7 @@ export function setupShortcutListeners(): void {
 	void loadSlotMapping();
 
 	chrome.commands.onCommand.addListener((command) => {
-		const action = slotMapping[command];
+		const action = resolveChromeCommandAction(command);
 		if (!action || action === 'none') return;
 		const execute = async (): Promise<void> => {
 			swLog.debug(`Shortcut command: ${command}`);

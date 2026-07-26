@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-07-24
+last_reviewed: 2026-07-26
 ---
 
 # 02. Strategy order & Routes (Capability order, registry, runtime, bridges)
@@ -172,33 +172,26 @@ combination that clears the disabled reason. The UI must explain that conflict;
 it cannot report a successful binding that the runtime will never execute.
 
 The minimal bootstrap accepts only trusted exact-modifier events outside
-editable controls. One shared website-first arbiter owns shortcut admission:
-its permanent `window` capture listener only recognizes a candidate and, for
-that exact `KeyboardEvent`, appends a temporary `window` bubble tail. Website
-target and document handlers plus every `window` listener that already existed
-when capture ran therefore execute before the tail. The tail treats
-`event.defaultPrevented` or `event.cancelBubble` as a website claim; a
-`stopPropagation()`/`stopImmediatePropagation()` path that prevents the tail
-from running is also a claim. A `setTimeout(0)` task is cleanup only: it removes
-an unreachable tail and rejects the candidate. A microtask is forbidden because
-it can run before window bubble and prematurely remove the same-event tail.
+editable controls. The five shipped chords are reserved extension commands:
+their `document_start` `window` capture boundary calls `preventDefault()` and
+`stopImmediatePropagation()` on accepted keydown and matching keyup before page
+handlers can apply a competing native-only write. This exclusive boundary is
+limited to the five centrally declared defaults; it assigns the monotonic
+gesture identity and sends the closed
+`spectra.content.default-hotkey.trigger` request. Repeated `Alt+M` keydown events
+are ignored until keyup rather than toggling mute repeatedly.
 
-Only an otherwise unclaimed tail accepts the chord, calls `preventDefault()` to
-suppress the browser/page default action, assigns a monotonic gesture identity,
-and sends the closed `spectra.content.default-hotkey.trigger` request. Neither
-the arbiter nor the heavy listener calls `stopPropagation()` or
-`stopImmediatePropagation()`, so admission does not hide the event from later
-website listeners. The candidate action or site binding is resolved once during
-capture and carried unchanged to that tail; settings or listener work during the
-same dispatch cannot remap one physical event between recognition and admission.
-Two browser boundaries remain explicit: an isolated-world
-listener cannot identify an editable control hidden inside a closed shadow root
-when the retargeted composed path omits it, and a website `window` listener
-dynamically added during the same dispatch after the capture tail was appended
-may run after that tail. Those cases are not represented as a stronger
-website-first guarantee; the website must claim the chord through the observable
-event contract. Repeated `Alt+M` keydown events are ignored until keyup rather
-than toggling mute repeatedly.
+Configured site bindings use the separate shared website-first arbiter. Its
+permanent `window` capture listener recognizes a candidate and appends a
+temporary `window` bubble tail for that exact `KeyboardEvent`. Website target
+and document handlers plus pre-existing `window` listeners therefore run first.
+`defaultPrevented`, `cancelBubble`, or propagation that never reaches the tail
+withdraws the configured binding. `setTimeout(0)` only rejects and cleans an
+unreachable tail; a microtask is forbidden. An accepted configured binding calls
+only `preventDefault()` and leaves propagation open. Candidate resolution is
+frozen during capture so settings work in the same dispatch cannot remap it.
+Closed-shadow editable retargeting and a same-dispatch dynamically added
+`window` listener remain explicit website-first platform limits.
 
 Accepted site gestures use a separate release boundary because cleanup must not
 depend on website propagation. The first `document_start` Bootstrap installs one
@@ -241,6 +234,14 @@ coordinator writes bypass the barrier itself, preventing self-wait, while every
 external control waits until restore has either completed or reported its one
 structured failure. This prevents a cold preset replay from racing and
 reverting the first explicit value above 100.
+
+A non-empty session or preset restore retains one document-scoped settings
+runtime lease. Restorable media fields are recorded as desired state even when
+the document has not created a media element yet. Registration, metadata, play
+and trusted selection then replay that same revision to the exact new source.
+Navigation retires the lease. This makes SPA-delayed video creation part of the
+restore lifecycle instead of treating an initial `No active media target` as
+successful completion.
 
 Runtime readiness does not imply Capture authority. Popup, `chrome.commands`,
 the five built-in Bootstrap gestures, and configured page hotkeys share the

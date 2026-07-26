@@ -27,7 +27,6 @@ import {
 	publishPhysicalHotkeyRelease,
 } from '../input/default-scalar-gesture';
 import {
-	createWebsiteFirstKeyboardArbiter,
 	isEditableHotkeyEvent,
 	subscribeDocumentStartPhysicalHotkeyRelease,
 } from '../input/hotkey-event';
@@ -78,6 +77,7 @@ if (!getContentBootstrapState()) {
 	): void => {
 		if (disposed) return;
 		event.preventDefault();
+		event.stopImmediatePropagation();
 		let active = activeDefaultScalarKeys.get(event.code);
 		if (!active) {
 			active = {
@@ -112,18 +112,31 @@ if (!getContentBootstrapState()) {
 
 	const releaseDefaultHotkeyKeyup = (
 		event: KeyboardEvent,
-		websiteClaimed: boolean,
 	): void => {
 		const active = activeDefaultScalarKeys.get(event.code);
 		if (active) {
-			if (!websiteClaimed) event.preventDefault();
+			event.preventDefault();
+			event.stopImmediatePropagation();
 			activeDefaultScalarKeys.delete(event.code);
 			releaseDefaultScalarGesture(active);
 			return;
 		}
 		if (!event.code.startsWith('Alt') || activeDefaultScalarKeys.size === 0) return;
-		if (!websiteClaimed) event.preventDefault();
+		event.preventDefault();
+		event.stopImmediatePropagation();
 		releaseDefaultScalarKeys();
+	};
+
+	const onDefaultHotkeyKeydown = (event: KeyboardEvent): void => {
+		const action = defaultHotkeyAction(event);
+		if (action !== null) acceptDefaultHotkeyKeydown(event, action);
+	};
+
+	const onDefaultHotkeyKeyup = (event: KeyboardEvent): void => {
+		if (!event.isTrusted
+			|| !(activeDefaultScalarKeys.has(event.code)
+				|| event.code.startsWith('Alt') && activeDefaultScalarKeys.size > 0)) return;
+		releaseDefaultHotkeyKeyup(event);
 	};
 
 	const onVisibilityChange = (): void => {
@@ -229,8 +242,6 @@ if (!getContentBootstrapState()) {
 		return Object.keys(patch).length > 0 ? { target: null, patch, observedStrategies } : null;
 	};
 
-	let disposeDefaultKeydownArbiter = (): void => undefined;
-	let disposeDefaultKeyupArbiter = (): void => undefined;
 	let unsubscribePhysicalHotkeyRelease = (): void => undefined;
 	const state: ContentBootstrapState = {
 		bootstrapRevision: SPECTRA_CONTENT_BOOTSTRAP_REVISION,
@@ -245,8 +256,8 @@ if (!getContentBootstrapState()) {
 			document.removeEventListener('volumechange', onNativeMediaChange, true);
 			document.removeEventListener('ratechange', onNativeMediaChange, true);
 			unsubscribePhysicalHotkeyRelease();
-			disposeDefaultKeydownArbiter();
-			disposeDefaultKeyupArbiter();
+			window.removeEventListener('keydown', onDefaultHotkeyKeydown, true);
+			window.removeEventListener('keyup', onDefaultHotkeyKeyup, true);
 			document.removeEventListener('visibilitychange', onVisibilityChange);
 			window.removeEventListener('blur', releaseDefaultScalarKeys);
 			window.removeEventListener('pagehide', onPageHide);
@@ -403,27 +414,12 @@ if (!getContentBootstrapState()) {
 	unsubscribePhysicalHotkeyRelease = subscribeDocumentStartPhysicalHotkeyRelease(
 		(event) => publishPhysicalHotkeyRelease({ code: event.code }),
 	);
-	// Capture installs only a same-event window-bubble tail. Existing website
-	// target/document/window handlers therefore run before SPECTRA, while the
-	// tail can still synchronously prevent the browser's Alt+Arrow default.
-	disposeDefaultKeydownArbiter = createWebsiteFirstKeyboardArbiter({
-		type: 'keydown',
-		resolveCandidate: defaultHotkeyAction,
-		onSettled: (event, action, websiteClaimed) => {
-			if (!websiteClaimed) acceptDefaultHotkeyKeydown(event, action);
-		},
-	});
-	disposeDefaultKeyupArbiter = createWebsiteFirstKeyboardArbiter({
-		type: 'keyup',
-		resolveCandidate: (event) => event.isTrusted
-			&& (activeDefaultScalarKeys.has(event.code)
-				|| event.code.startsWith('Alt') && activeDefaultScalarKeys.size > 0)
-			? true
-			: null,
-		onSettled: (event, _candidate, websiteClaimed) => {
-			releaseDefaultHotkeyKeyup(event, websiteClaimed);
-		},
-	});
+	// The five shipped chords are reserved extension commands. Claiming them at
+	// document_start keeps the first physical press out of page handlers that
+	// would otherwise clamp volume to their native 0-100 range. Configured site
+	// bindings remain website-first in the heavy hotkey listener.
+	window.addEventListener('keydown', onDefaultHotkeyKeydown, true);
+	window.addEventListener('keyup', onDefaultHotkeyKeyup, true);
 	document.addEventListener('visibilitychange', onVisibilityChange);
 	window.addEventListener('blur', releaseDefaultScalarKeys);
 	window.addEventListener('pagehide', onPageHide, { once: true });

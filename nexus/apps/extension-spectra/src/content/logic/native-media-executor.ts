@@ -738,6 +738,11 @@ export class NativeMediaExecutor {
 		const resolved = onlyVideoFields && typeof videoResolver.resolveVideo === 'function'
 			? videoResolver.resolveVideo(intent.target)
 			: this.registry.resolve(intent.target);
+		if (intent.source === 'restore') {
+			for (const [field, value] of directEntries) {
+				if (isRestorableMediaField(field)) this.rememberDesired(field, value);
+			}
+		}
 		for (const [field, value] of directEntries) {
 			await this.applyField(intent, resolved, field, value, fields);
 			const state = fields[field];

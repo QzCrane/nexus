@@ -504,6 +504,91 @@ describe('native media single-writer correlation', () => {
 		}
 	});
 
+	test('retains a targetless restore until the first media registration', async () => {
+		const sent: unknown[] = [];
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				runtime: {
+					id: 'spectra-test',
+					sendMessage: async (message: unknown) => {
+						sent.push(message);
+						return {
+							ok: false,
+							error: { code: 'test-stop', message: 'captured', retryable: false },
+						};
+					},
+				},
+			},
+		});
+		Object.defineProperty(globalThis, 'HTMLMediaElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		Object.defineProperty(globalThis, 'HTMLVideoElement', {
+			configurable: true,
+			value: class FakeVideoElement extends FakeMediaElement { },
+		});
+		Object.defineProperty(globalThis, 'document', {
+			configurable: true,
+			value: { pictureInPictureElement: null, fullscreenElement: null },
+		});
+
+		const element = new FakeMediaElement();
+		const target: MediaTarget = {
+			frameId: 0,
+			documentId: 'document:delayed-preset',
+			mediaId: 'media:delayed-preset',
+			sourceRevision: 0,
+			kind: 'audio',
+		};
+		let available = false;
+		let listener: RegistryListener | null = null;
+		const registry = {
+			subscribe: (next: RegistryListener) => {
+				listener = next;
+				return () => { listener = null; };
+			},
+			setDocumentId: () => undefined,
+			resolve: () => available
+				? { element: element as unknown as HTMLMediaElement, target }
+				: null,
+			list: () => [],
+		} as unknown as MediaRegistry;
+		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
+		const executor = new NativeMediaExecutor(registry, effects);
+		try {
+			const initial = await executor.execute({
+				intentId: 'intent:delayed-preset',
+				tabId: 7,
+				documentId: target.documentId,
+				generation: 1,
+				baseRevision: 2,
+				source: 'restore',
+				requestedCoverage: 'active-target',
+				target: null,
+				actualContext: {},
+				patch: { volumeBase: 40, speed: 1.5 },
+			});
+			expect(initial.fields.volumeBase?.phase).toBe('error');
+			expect(initial.fields.speed?.phase).toBe('error');
+
+			available = true;
+			listener?.({ ...target }, 'registered', element as unknown as HTMLMediaElement);
+			await Promise.resolve();
+			expect(sent).toContainEqual(expect.objectContaining({
+				type: 'spectra.control.intent.submit',
+				payload: expect.objectContaining({
+					source: 'restore',
+					target,
+					patch: { volumeBase: 40, speed: 1.5 },
+				}),
+			}));
+		} finally {
+			executor.dispose();
+		}
+	});
+
 	test('consumes a late owned seek event without publishing a duplicate page revision', async () => {
 		const sent: unknown[] = [];
 		Object.defineProperty(globalThis, 'chrome', {

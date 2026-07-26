@@ -1527,7 +1527,6 @@ function checkRetiredPaths(root) {
 			bootstrap,
 			'../input/hotkey-event',
 			[
-				'createWebsiteFirstKeyboardArbiter',
 				'isEditableHotkeyEvent',
 				'subscribeDocumentStartPhysicalHotkeyRelease',
 			],
@@ -1537,7 +1536,7 @@ function checkRetiredPaths(root) {
 			'./hotkey-event',
 			['createWebsiteFirstKeyboardArbiter', 'isEditableHotkeyEvent'],
 		)
-		|| arbiterUsageCount(bootstrap) !== 2
+		|| arbiterUsageCount(bootstrap) !== 0
 		|| arbiterUsageCount(pageHotkeyListener) !== 1
 		|| !hotkeyEvent.includes('const pending = new Map<KeyboardEvent')
 		|| !hotkeyEvent.includes('const candidate = options.resolveCandidate(event)')
@@ -1558,7 +1557,6 @@ function checkRetiredPaths(root) {
 		|| !hotkeyEvent.includes("window.addEventListener('keyup'")
 		|| !hotkeyEvent.includes('for (const subscriber of current.listeners) subscriber(event)')
 		|| hotkeyEvent.includes("window.removeEventListener('keyup'")
-		|| directKeyboardRegistration.test(bootstrap)
 		|| directKeyboardRegistration.test(pageHotkeyListener)
 		|| !bootstrap.includes('if (!event.isTrusted')
 		|| !(/event\.defaultPrevented[\s\S]*resolveSpectraDefaultHotkeyAction/u
@@ -1566,15 +1564,14 @@ function checkRetiredPaths(root) {
 			|| /event\.defaultPrevented[\s\S]*defaultHotkeyAction\(event\)/u
 				.test(bootstrapAcceptedKeydown))
 		|| !bootstrapAcceptedKeydown.includes('event.preventDefault()')
-		|| !bootstrap.includes('resolveCandidate: defaultHotkeyAction')
-		|| !bootstrap.includes('if (!websiteClaimed) acceptDefaultHotkeyKeydown(event, action)')
-		|| !bootstrap.includes('resolveCandidate: (event) => event.isTrusted')
+		|| !bootstrapAcceptedKeydown.includes('event.stopImmediatePropagation()')
+		|| !bootstrap.includes("window.addEventListener('keydown', onDefaultHotkeyKeydown, true)")
+		|| !bootstrap.includes("window.addEventListener('keyup', onDefaultHotkeyKeyup, true)")
 		|| !pageHotkeyListener.includes('resolveCandidate: resolveSiteHotkeyBinding')
 		|| !pageHotkeyListener.includes('if (!websiteClaimed) handleKeydown(event, binding)')
 		|| siteHotkeyHandler.includes('resolveSiteHotkeyBinding(')
 		|| !bootstrap.includes('if (isEditableHotkeyEvent(event)) return null')
 		|| !pageHotkeyListener.includes('if (isEditableHotkeyEvent(e)) return null')
-		|| propagationStop.test(bootstrap)
 		|| propagationStop.test(pageHotkeyListener)
 		|| propagationStop.test(hotkeyEvent)
 		|| !/if \(resolveSpectraDefaultHotkeyAction\(e\) !== null\) return null;[\s\S]*const site = getSiteConfig\(\)/u
@@ -1633,12 +1630,17 @@ function checkRetiredPaths(root) {
 		|| hotkeyContracts.includes('DEFAULT_SLOTS')
 		|| hotkeyContracts.includes('PRESET_BINDINGS')
 		|| fs.existsSync(path.join(root, 'packages/contracts/src/hotkeys.presets.ts'))
-		|| [...defaultHotkeyActions, 'toggle_mute'].some(
+		|| [...defaultHotkeyActions.filter(action => action !== 'volume_up'), 'toggle_mute'].some(
 			(command) => Object.hasOwn(shortcutManifest.commands ?? {}, command),
 		)
+		|| shortcutManifest.commands?.volume_up?.suggested_key?.default !== 'Alt+Up'
+		|| !shortcuts.includes("volume_up: 'volume_up'")
+		|| !shortcuts.includes('const action = resolveChromeCommandAction(command)')
 		|| !shortcuts.includes('await executeShortcutRoute(')
-		|| reservedManifestKeys.some(key => suggestedKeys.includes(key))) {
-		error('SCTRL-006/SCTRL-022: hotkeys require one website-first admission arbiter, stable document-start release, and timer-free gesture cleanup');
+		|| reservedManifestKeys.some(
+			key => key !== 'Alt+Up' && suggestedKeys.includes(key),
+		)) {
+		error('SCTRL-006/SCTRL-022: reserved defaults require exclusive Bootstrap or browser-command ownership; configured site hotkeys require website-first admission and timer-free cleanup');
 	}
 	if (!feedbackSurface.includes("host.popover = 'manual'")
 		|| !feedbackSurface.includes("document.addEventListener('fullscreenchange'")

@@ -103,16 +103,16 @@ describe('editable hotkey action contract', () => {
 		);
 		expect(bootstrap).toContain('resolveSpectraDefaultHotkeyAction(event)');
 		expect(bootstrap).toContain("'spectra.content.default-hotkey.trigger'");
-		expect(bootstrap).toContain('event.defaultPrevented');
 		expect(bootstrap).toContain('isEditableHotkeyEvent(event)');
-		expect(bootstrap).toContain('createWebsiteFirstKeyboardArbiter({');
-		expect(bootstrap).toContain("type: 'keydown'");
-		expect(bootstrap).toContain("type: 'keyup'");
-		expect(bootstrap).toContain('resolveCandidate: (event) => event.isTrusted');
-		expect(bootstrap).toContain('resolveCandidate: defaultHotkeyAction');
 		expect(bootstrap).toContain('acceptDefaultHotkeyKeydown(event, action)');
-		expect((bootstrap.match(/createWebsiteFirstKeyboardArbiter\(\{/gu) ?? [])).toHaveLength(2);
-		expect(bootstrap).not.toMatch(/\.stop(?:Immediate)?Propagation\(/u);
+		expect(bootstrap).not.toContain('createWebsiteFirstKeyboardArbiter({');
+		expect(bootstrap).toContain('event.stopImmediatePropagation()');
+		expect(bootstrap).toContain(
+			"window.addEventListener('keydown', onDefaultHotkeyKeydown, true)",
+		);
+		expect(bootstrap).toContain(
+			"window.addEventListener('keyup', onDefaultHotkeyKeyup, true)",
+		);
 		expect(bootstrap).toContain('releaseDefaultScalarKeys');
 		expect(bootstrap).toContain('publishDefaultScalarGesture');
 		const eventArbiter = readFileSync(
@@ -143,7 +143,7 @@ describe('editable hotkey action contract', () => {
 		expect((listener.match(/createWebsiteFirstKeyboardArbiter\(\{/gu) ?? [])).toHaveLength(1);
 		const directKeyboardRegistration =
 			/(?:window|document)\.(?:add|remove)EventListener\(\s*['"]key(?:down|up)['"]/u;
-		expect(bootstrap).not.toMatch(directKeyboardRegistration);
+		expect(bootstrap).toMatch(directKeyboardRegistration);
 		expect(listener).not.toMatch(directKeyboardRegistration);
 		expect(listener).not.toMatch(/\.stop(?:Immediate)?Propagation\(/u);
 		expect(listener).toContain('subscribeDefaultScalarGesture(handleDefaultScalarGesture)');

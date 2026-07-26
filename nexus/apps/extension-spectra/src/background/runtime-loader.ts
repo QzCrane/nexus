@@ -471,6 +471,7 @@ async function restoreIfConfigured(tabId: number, documentId: string, url: strin
 	if (restore.source === 'preset') await markBadgeUsedForTab(tabId);
 	const capability = `settings:${hostname}`;
 	await ensureContentRuntime(tabId, documentId, 'restore', capability);
+	let retained = false;
 	try {
 		const { submitControlRequest } = await import('./control-coordinator');
 		for (const group of splitDocumentRestorePatch(restore.patch)) {
@@ -482,8 +483,14 @@ async function restoreIfConfigured(tabId: number, documentId: string, url: strin
 				patch: group.patch,
 			});
 		}
+		// A non-empty document restore is a live desired-state owner, not a
+		// one-shot write. Retain the event-driven runtime so media created later
+		// by an SPA can consume the same revision on registration/metadata/play.
+		retained = true;
 	} finally {
-		releaseContentRuntimeLease(tabId, documentId, 'restore', capability);
+		if (!retained) {
+			releaseContentRuntimeLease(tabId, documentId, 'restore', capability);
+		}
 	}
 }
 
