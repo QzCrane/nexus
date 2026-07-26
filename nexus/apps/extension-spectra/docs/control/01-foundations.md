@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-07-23
+last_reviewed: 2026-07-26
 ---
 
 # 01. Foundations (Product semantics & Control flow)
@@ -73,22 +73,29 @@ component already matched and required no writer stage. Playing/current time, Pi
 visualizer subscriptions belong to the old document; tab mute/pin remain under
 Chrome's tab-lifetime ownership.
 
-Projection durability is part of the ACK boundary: `merge` and same-origin
-`rebind` return only after the complete record is present in
+Projection durability is part of the ACK boundary: `merge` and
+resource-aware `rebind` return only after the complete record is present in
 `chrome.storage.session`. Likewise, a settings revision is returned and
 broadcast only after `chrome.storage.local.set` succeeds. Pending memory,
 debounce timers and `onSuspend` are cleanup aids, never durable success.
 
-A same-origin full document replacement rebinds that projection to the new
-`documentId`; a cross-origin replacement retires it. Document initialization
-chooses the same-tab projection before site/global presets and restores it
-through the coordinator without carrying an old media target. The existence of
-the session is authoritative even when every stored value is neutral/default;
-presets run only when no same-tab session exists. Explicit Popup, remote and
-shortcut intents wait for that one document-scoped decision, so a late preset
-replay cannot overwrite the user's first control on the new document.
-Without a session, the most-specific normalized site preset is resolved first;
-the selected default global preset is used only when no site match exists.
+The record separates current-resource actual fields from origin-portable
+extension intent. Page observations are resource-scoped; explicit Popup, remote
+and shortcut ACKs are origin-scoped. If the page later changes one of those
+fields, that field leaves the portable patch rather than preserving a stale
+extension value. An exact-resource full document replacement rebinds the
+complete projection to the new `documentId`; a different same-origin URL keeps
+only the portable fields, and a cross-origin replacement retires all of it.
+Same-document SPA state remains valid because its `documentId` did not change.
+Document initialization chooses the retained projection before site/global
+presets and restores it through the coordinator without carrying an old media
+target. Its existence is authoritative even when every stored value is
+neutral/default; presets run only when no retained projection exists. Explicit
+Popup, remote and shortcut intents wait for that one document-scoped decision,
+so a late preset replay cannot overwrite the user's first control on the new
+document. Without a retained projection, the most-specific normalized site
+preset is resolved first; the selected default global preset is used only when
+no site match exists.
 
 Color is also actual state, not a value threshold. Muted/zero is gray; native
 or Media WebAudio is blue; purple is permitted only when the matching

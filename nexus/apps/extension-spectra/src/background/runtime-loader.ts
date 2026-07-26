@@ -453,17 +453,18 @@ export async function ensureContentRuntime(
 
 async function restoreIfConfigured(tabId: number, documentId: string, url: string | undefined): Promise<void> {
 	if (!url) return;
-	let hostname = '';
-	let origin = '';
+	let identity: ReturnType<typeof storage.tabSession.identity>;
 	try {
-		const parsed = new URL(url);
-		hostname = parsed.hostname;
-		origin = parsed.origin;
+		identity = storage.tabSession.identity(tabId, documentId, url);
 	} catch { return; }
-	if (origin === 'null') return;
-	const restore = await resolveDocumentRestorePlan(tabId, documentId, hostname, origin);
+	const hostname = new URL(identity.resourceUrl).hostname;
+	const restore = await resolveDocumentRestorePlan(
+		tabId,
+		documentId,
+		identity.resourceUrl,
+	);
 	if (Object.keys(restore.patch).length === 0) return;
-	// Replaying a same-origin tab session must preserve its existing usage fact:
+	// Replaying an exact-resource tab session must preserve its existing usage fact:
 	// native-only page interaction stays badge-free, while an earlier SPECTRA
 	// action is already sticky in badge-usage storage. A configured site/global
 	// preset is itself active extension behavior and therefore starts usage.
@@ -731,13 +732,15 @@ function splitDocumentRestorePatch(patch: ControlSessionPatch): Array<{
 async function resolveDocumentRestorePlan(
 	tabId: number,
 	documentId: string,
-	hostname: string,
-	origin: string,
+	resourceUrl: string,
 ): Promise<{ patch: ControlSessionPatch; source: 'session' | 'preset' }> {
-	const sessionPatch = await storage.tabSession.rebind(tabId, { tabId, documentId, origin });
+	const identity = storage.tabSession.identity(tabId, documentId, resourceUrl);
+	const sessionPatch = await storage.tabSession.rebind(tabId, identity);
 	if (sessionPatch) return { patch: sessionPatch, source: 'session' };
 	return {
-		patch: presetRestorePatch(await settingsRepository.resolveAudioConfig(hostname)),
+		patch: presetRestorePatch(await settingsRepository.resolveAudioConfig(
+			new URL(identity.resourceUrl).hostname,
+		)),
 		source: 'preset',
 	};
 }

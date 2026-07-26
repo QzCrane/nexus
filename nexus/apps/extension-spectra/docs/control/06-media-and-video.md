@@ -117,10 +117,13 @@ changes, Popup changes, restore, and hotkeys converge on the one coordinator
 snapshot without a reassert loop. Standard speed writes keep
 `defaultPlaybackRate` and `playbackRate` coherent when the page has not already
 separated them, allowing a player UI that projects the standard default to
-update from the same native `ratechange` ACK. A
-cold bootstrap event is document-scoped rather than media-scoped: it can preserve
-only volume/mute and speed/pitch across a same-origin refresh, never select a
-target or claim plugin badge usage.
+update from the same native `ratechange` ACK. A cold bootstrap event is
+document-scoped rather than media-scoped: it can preserve only volume/mute and
+speed/pitch across an exact-URL full-document reload, never carry a
+recommendation/list-page observation into another same-origin resource, select
+a target or claim plugin badge usage. This resource boundary does not narrow
+explicit extension intent, which remains origin-portable until the page changes
+the same field.
 
 PiP and fullscreen failures distinguish unsupported, disabled and user-activation-required. A Popup or remote command cannot manufacture page transient activation. Popup PiP converts only `user-activation-required` into an explicit page interaction: it arms a typed, bounded prompt, activates the already-bound tab, and waits for the user's real click. The click invokes the same native executor before the first asynchronous boundary; it does not admit MAIN, Capture or a domain adapter.
 

@@ -168,7 +168,7 @@ afterEach(() => {
 });
 
 describe('document-scoped content runtime loader', () => {
-	test('restores a same-origin tab session before consulting site or global presets', async () => {
+	test('restores an exact-resource tab session before consulting site or global presets', async () => {
 		const sessionPatch = {
 			volumeBase: 100,
 			boost: 2.75,
@@ -189,6 +189,7 @@ describe('document-scoped content runtime loader', () => {
 				tabId: 7,
 				documentId: 'document-7',
 				origin: 'https://media.example',
+				resourceUrl: 'https://media.example/watch',
 			});
 			return sessionPatch;
 		};
@@ -200,8 +201,7 @@ describe('document-scoped content runtime loader', () => {
 		expect(await runtimeLoaderTestApi.resolveDocumentRestorePlan(
 			7,
 			'document-7',
-			'media.example',
-			'https://media.example',
+			'https://media.example/watch',
 		)).toEqual({ patch: sessionPatch, source: 'session' });
 		expect(presetReads).toBe(0);
 
@@ -209,8 +209,7 @@ describe('document-scoped content runtime loader', () => {
 		expect(await runtimeLoaderTestApi.resolveDocumentRestorePlan(
 			7,
 			'document-8',
-			'other.example',
-			'https://other.example',
+			'https://other.example/watch',
 		)).toEqual({
 			source: 'preset',
 			patch: {
@@ -248,8 +247,7 @@ describe('document-scoped content runtime loader', () => {
 		expect(await runtimeLoaderTestApi.resolveDocumentRestorePlan(
 			7,
 			'document-7',
-			'media.example',
-			'https://media.example',
+			'https://media.example/watch',
 		)).toEqual({ patch: sessionPatch, source: 'session' });
 		expect(presetReads).toBe(0);
 	});

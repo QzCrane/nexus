@@ -40,7 +40,11 @@ import {
 	type MediaTarget,
 	type SpectraEventEnvelope,
 } from '@nexus/contracts';
-import { createKeyedSerializedQueue } from '@nexus/kernel';
+import {
+	createKeyedSerializedQueue,
+	type TabControlSessionIdentity,
+	type TabControlSessionScope,
+} from '@nexus/kernel';
 import { sendSpectraTabRequest } from './spectra-tab-client';
 import { storage } from './state';
 import {
@@ -226,12 +230,10 @@ function generationKey(tabId: number): string {
 	return `${GENERATION_PREFIX}${tabId}`;
 }
 
-async function currentIdentity(tabId: number): Promise<{ documentId: string; origin: string }> {
+async function currentIdentity(tabId: number): Promise<TabControlSessionIdentity> {
 	const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
 	if (!frame?.documentId) throw new Error('The tab has no current document');
-	const url = new URL(frame.url);
-	if (url.origin === 'null') throw new Error('The current document has no controllable origin');
-	return { documentId: frame.documentId, origin: url.origin };
+	return storage.tabSession.identity(tabId, frame.documentId, frame.url);
 }
 
 function sameMediaTarget(
@@ -675,22 +677,41 @@ function projectControlSessionPatch(fields: ControlFieldStates): ControlSessionP
 	return patch;
 }
 
+function controlSessionScopeForSource(
+	source: ControlIntent['source'],
+): TabControlSessionScope | 'none' {
+	if (source === 'restore') return 'none';
+	if (source === 'page' || source === 'system') return 'resource';
+	return 'origin';
+}
+
 async function persistControlProjection(
 	snapshot: ControlSnapshot,
 	changedFields: ControlFieldStates,
 	acknowledgedSessionPatch: ControlSessionPatch = {},
+	scope: TabControlSessionScope | 'none' = 'none',
 ): Promise<void> {
+	if (scope === 'none') return;
 	const sessionPatch = {
 		...projectControlSessionPatch(changedFields),
 		...structuredClone(acknowledgedSessionPatch),
 	};
 	if (Object.keys(sessionPatch).length === 0) return;
-	const identity = {
-		tabId: snapshot.tabId,
-		documentId: snapshot.documentId,
-		origin: snapshot.origin,
+	const identity = await currentIdentity(snapshot.tabId);
+	if (identity.documentId !== snapshot.documentId || identity.origin !== snapshot.origin) {
+		throw new Error('Control projection belongs to a stale document resource');
+	}
+	const currentResourcePatch = {
+		...projectControlSessionPatch(snapshot.fields),
+		...structuredClone(acknowledgedSessionPatch),
 	};
-	await storage.tabSession.merge(snapshot.tabId, sessionPatch, identity);
+	await storage.tabSession.merge(
+		snapshot.tabId,
+		sessionPatch,
+		identity,
+		scope,
+		currentResourcePatch,
+	);
 	if (!Object.keys(sessionPatch).some((field) => AUDIO_PROJECTION_FIELDS.has(field as ControlField))) return;
 	const completeSession = await storage.tabSession.get(snapshot.tabId, identity)
 		.catch(() => null) ?? sessionPatch;
@@ -714,11 +735,13 @@ async function reprojectBadgeForCurrentDocument(tabId: number): Promise<void> {
 		await restoreBadgeUsageForTab(tabId);
 		return;
 	}
-	const identity = {
-		tabId: snapshot.tabId,
-		documentId: snapshot.documentId,
-		origin: snapshot.origin,
-	};
+	const identity = await currentIdentity(tabId).catch(() => null);
+	if (!identity
+		|| identity.documentId !== snapshot.documentId
+		|| identity.origin !== snapshot.origin) {
+		await restoreBadgeUsageForTab(tabId);
+		return;
+	}
 	const completeSession = await storage.tabSession.get(tabId, identity)
 		.catch(() => null) ?? projectControlSessionPatch(snapshot.fields);
 	const session = await getAudioSession(tabId).catch(() => null);
@@ -744,6 +767,7 @@ interface PreparedControlIntent {
 interface CommitControlProjection {
 	activeVideo?: ControlSnapshot['activeVideo'];
 	acknowledgedSessionPatch?: ControlSessionPatch;
+	sessionScope?: TabControlSessionScope | 'none';
 }
 
 async function prepareIntent(
@@ -918,6 +942,7 @@ async function commitControlFields(
 		committed,
 		fields,
 		projection.acknowledgedSessionPatch,
+		projection.sessionScope,
 	);
 	await publishSnapshot(committed);
 	await reconcileRuntimeOwnership(committed);
@@ -966,7 +991,10 @@ async function executeIntent(request: RoutedControlSubmitRequest): Promise<Contr
 		baseline,
 		fields,
 		activeMedia,
-		{ activeVideo },
+		{
+			activeVideo,
+			sessionScope: controlSessionScopeForSource(intent.source),
+		},
 	);
 	const audioVolume = resolveControlAudioVolume(committed.fields);
 	return {
@@ -1264,7 +1292,10 @@ async function commitContentOperation(
 		baseline,
 		acknowledgement.fields,
 		projection.activeMedia,
-		{ activeVideo: projection.activeVideo },
+		{
+			activeVideo: projection.activeVideo,
+			sessionScope: controlSessionScopeForSource(source),
+		},
 	);
 	if (committed.revision !== intent.baseRevision + 1) {
 		throw new Error('Control operation committed an unexpected revision');
@@ -1334,7 +1365,10 @@ async function handleSourceReleased(tabId: number, target: import('@nexus/contra
 		snapshot,
 		fields,
 		ownsActiveSource ? null : snapshot.activeMedia,
-		{ activeVideo: ownsActiveVideo ? null : snapshot.activeVideo },
+		{
+			activeVideo: ownsActiveVideo ? null : snapshot.activeVideo,
+			sessionScope: 'resource',
+		},
 	);
 }
 
@@ -1367,7 +1401,12 @@ async function handleTargetChanged(
 		baseline.revision + 1,
 		response.data.observedStrategies,
 	);
-	await commitControlFields(baseline, fields, target);
+	await commitControlFields(
+		baseline,
+		fields,
+		target,
+		{ sessionScope: 'resource' },
+	);
 }
 
 async function commitBackgroundOperation<O extends Extract<
@@ -1595,6 +1634,7 @@ async function executeFieldOperation(
 						volumeBase: actualVolumeBase,
 						boost: actualBoost,
 					},
+					sessionScope: controlSessionScopeForSource(request.source),
 				},
 			);
 			const audioVolume = currentMuted === null ? null : {
@@ -1762,6 +1802,7 @@ async function executeFieldOperation(
 				baseline,
 				fields,
 				target,
+				{ sessionScope: controlSessionScopeForSource(request.source) },
 			);
 			const audioVolume = resolveControlAudioVolume(committed.fields);
 			return {
@@ -1938,6 +1979,7 @@ async function executeControlOperation(
 				baseline,
 				fields,
 				released.target,
+				{ sessionScope: controlSessionScopeForSource(request.source) },
 			);
 			return {
 				...released,

@@ -3,7 +3,7 @@ type: explanation
 status: stable
 audience: developer
 owner: spectra-runtime-architecture
-last_reviewed: 2026-07-24
+last_reviewed: 2026-07-26
 ---
 
 # SPECTRA runtime architecture
@@ -83,20 +83,28 @@ ACK. Canonical fields replace legacy aliases through bounded read-only
 migration.
 
 The acknowledged per-tab control session is stored separately in
-`chrome.storage.session` with `tabId + documentId + origin`. Its field-level
+`chrome.storage.session` with `tabId + documentId + origin + resourceUrl`. Its field-level
 patch contains exactly the 20 refresh-restorable configuration fields declared
 by `CONTROL_SESSION_FIELDS`; it contains neither default-filled guesses nor
-media/source identities. Every merge and same-origin rebind resolves only after
-the complete versioned projection is physically present in
+media/source identities. Its v3 record separates the complete current-resource
+patch from an origin-portable patch. Page observations update the former and
+remove those fields from the latter; explicit Popup, remote and shortcut ACKs
+update both. A later page observation therefore cannot leave an older extension
+value waiting to reappear on the next video. Every merge or rebind resolves only
+after the complete versioned projection is physically present in
 `chrome.storage.session`; bounded write failure is propagated instead of
-delegated to a timer that an MV3 worker may never run. After a top-level commit
-Background rebinds the record only when the origin is unchanged and otherwise
-deletes it. Runtime initialization restores media, video and processor groups
-through the coordinator before consulting settings. When no same-tab session
+delegated to a timer that an MV3 worker may never run. The resource URL is
+canonicalized by the storage owner. A new `documentId` at the exact URL inherits
+the complete patch, another same-origin URL inherits only the portable patch,
+and a cross-origin navigation retires both. This keeps a muted recommendation
+preview from becoming restore intent for a detail video without discarding the
+user's explicit enhancement settings. Same-document History API and fragment
+changes keep their document state and update the resource key on the next
+durable merge. Runtime initialization restores media, video and processor groups
+through the coordinator before consulting settings. When no retained projection
 exists, the most-specific site preset wins; only a missing site preset falls
-back to the selected default global preset. A default-valued session still
-suppresses both because its existence records the current tab's acknowledged
-decision.
+back to the selected default global preset. A default-valued retained projection
+still suppresses both because its existence records an acknowledged decision.
 
 A separate monotonic per-tab usage record owns Action-badge stickiness. It and
 the last acknowledged control state survive document and worker replacement;

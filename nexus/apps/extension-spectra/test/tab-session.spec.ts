@@ -3,8 +3,8 @@ import {
 	CONTROL_SESSION_FIELDS,
 	DEFAULT_AUDIO_CONFIG,
 	type ControlSessionPatch,
-	type TabSessionIdentity,
 } from '@nexus/contracts';
+import type { TabControlSessionIdentity } from '@nexus/kernel';
 
 const values: Record<string, unknown> = {};
 const setCalls: Array<Record<string, unknown>> = [];
@@ -43,19 +43,26 @@ const {
 	removeTabControlSession,
 } = await import('../../../packages/nexus-kernel/src/storage/tab-session');
 
-const firstDocument: TabSessionIdentity = {
+const firstDocument: TabControlSessionIdentity = {
 	tabId: 7,
 	documentId: 'document-a',
 	origin: 'https://example.com',
+	resourceUrl: 'https://example.com/recommend',
 };
-const secondDocument: TabSessionIdentity = {
+const secondDocument: TabControlSessionIdentity = {
 	...firstDocument,
 	documentId: 'document-b',
 };
-const otherOriginDocument: TabSessionIdentity = {
+const detailDocument: TabControlSessionIdentity = {
+	...secondDocument,
+	documentId: 'document-detail',
+	resourceUrl: 'https://example.com/watch/42',
+};
+const otherOriginDocument: TabControlSessionIdentity = {
 	...secondDocument,
 	documentId: 'document-c',
 	origin: 'https://other.example',
+	resourceUrl: 'https://other.example/recommend',
 };
 
 const completeSession: ControlSessionPatch = {
@@ -129,9 +136,15 @@ describe('document-bound acknowledged control sessions', () => {
 		await flushTabControlSession(7);
 		expect(setCalls).toHaveLength(2);
 		expect(values.tab_session_7).toMatchObject({
-			version: 2,
+			version: 3,
 			identity: firstDocument,
 			patch: {
+				volumeBase: 100,
+				boost: 1.75,
+				mediaMuted: true,
+				speed: 1.5,
+			},
+			portablePatch: {
 				volumeBase: 100,
 				boost: 1.75,
 				mediaMuted: true,
@@ -145,9 +158,10 @@ describe('document-bound acknowledged control sessions', () => {
 		await mergeTabControlSession(7, completeSession, firstDocument);
 
 		expect(values.tab_session_7).toMatchObject({
-			version: 2,
+			version: 3,
 			identity: firstDocument,
 			patch: completeSession,
+			portablePatch: completeSession,
 		});
 	});
 
@@ -169,11 +183,86 @@ describe('document-bound acknowledged control sessions', () => {
 		expect(values.tab_session_7).toBeUndefined();
 	});
 
-	test('rebinds every durable acknowledged field across a same-origin refresh', async () => {
-		await mergeTabControlSession(7, completeSession, firstDocument);
+	test('rebinds every durable acknowledged field across an exact-resource reload', async () => {
+		await mergeTabControlSession(7, completeSession, firstDocument, 'resource');
 		expect(await rebindTabControlSession(7, secondDocument)).toEqual(completeSession);
 		expect(await getTabControlSession(7, firstDocument)).toBeNull();
 		expect(await getTabControlSession(7, secondDocument)).toEqual(completeSession);
+	});
+
+	test('keeps the same document across a History API resource change', async () => {
+		await mergeTabControlSession(7, { speed: 1.5 }, firstDocument);
+		const sameDocumentRoute = {
+			...firstDocument,
+			resourceUrl: detailDocument.resourceUrl,
+		};
+
+		expect(await rebindTabControlSession(7, sameDocumentRoute)).toEqual({ speed: 1.5 });
+		expect(values.tab_session_7).toMatchObject({ identity: sameDocumentRoute });
+	});
+
+	test('retires page observations instead of replaying them into another same-origin resource', async () => {
+		await mergeTabControlSession(7, {
+			volumeBase: 100,
+			mediaMuted: true,
+		}, firstDocument, 'resource');
+
+		expect(await rebindTabControlSession(7, detailDocument)).toBeNull();
+		expect(await getTabControlSession(7)).toBeNull();
+	});
+
+	test('carries explicit extension fields but drops page-owned fields on a new resource', async () => {
+		await mergeTabControlSession(7, { boost: 2, speed: 1.5 }, firstDocument);
+		await mergeTabControlSession(7, {
+			mediaMuted: true,
+			speed: 1.25,
+		}, firstDocument, 'resource');
+
+		expect(await rebindTabControlSession(7, detailDocument)).toEqual({ boost: 2 });
+		expect(values.tab_session_7).toMatchObject({
+			identity: detailDocument,
+			patch: { boost: 2 },
+			portablePatch: { boost: 2 },
+		});
+	});
+
+	test('atomically preserves the complete resource projection while promoting only the explicit delta', async () => {
+		const currentResourcePatch: ControlSessionPatch = {
+			volumeBase: 42,
+			boost: 1,
+			mediaMuted: false,
+			speed: 1.1,
+		};
+		await mergeTabControlSession(
+			7,
+			{ speed: 1.1 },
+			firstDocument,
+			'origin',
+			currentResourcePatch,
+		);
+
+		expect(await getTabControlSession(7, firstDocument)).toEqual(currentResourcePatch);
+		expect(values.tab_session_7).toMatchObject({
+			patch: currentResourcePatch,
+			portablePatch: { speed: 1.1 },
+		});
+		expect(await rebindTabControlSession(7, detailDocument)).toEqual({ speed: 1.1 });
+	});
+
+	test('does not guess an exact-resource reload for a v2 session without a resource URL', async () => {
+		values.tab_session_7 = {
+			version: 2,
+			identity: {
+				tabId: firstDocument.tabId,
+				documentId: firstDocument.documentId,
+				origin: firstDocument.origin,
+			},
+			patch: { mediaMuted: true },
+			updatedAt: 123,
+		};
+
+		expect(await rebindTabControlSession(7, secondDocument)).toBeNull();
+		expect(values.tab_session_7).toBeUndefined();
 	});
 
 	test('keeps an all-default acknowledged session instead of falling through to presets', async () => {
@@ -219,9 +308,10 @@ describe('document-bound acknowledged control sessions', () => {
 		});
 		await flushTabControlSession(7);
 		expect(values.tab_session_7).toMatchObject({
-			version: 2,
+			version: 3,
 			identity: firstDocument,
 			patch: { volumeBase: 100, boost: 2.75, mediaMuted: true, speed: 1.8 },
+			portablePatch: {},
 		});
 	});
 });

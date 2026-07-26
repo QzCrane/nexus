@@ -50,7 +50,7 @@ audience: developer
 - `SCTRL-037`: processor actual state comes only from normalized graph/host readback (`graphSignature`, actual config, source count and context state), never from desired input echo.
 - `SCTRL-038`: WebAudio/Capture transitions neutralize the old DSP, verify the candidate actual path and only then release; failure restores the previous stable route.
 - `SCTRL-039`: visible Popup and authenticated remote synchronization requires independent document observation tokens; ordinary status reads acquire none.
-- `SCTRL-040`: successful per-media desired replay is separate from page observation; target-bound events never become per-media desired templates. Registration seeds viewport geometry before asynchronous visibility delivery, and registration/metadata/play/trusted selection may each reconcile only their exact source from the current extension-desired revision. The targetless bootstrap may project only the four declared native configuration fields into the same-tab refresh session. The durable same-tab session wins first, then the most-specific site preset, then the selected default global preset.
+- `SCTRL-040`: successful per-media desired replay is separate from page observation; target-bound events never become per-media desired templates. Registration seeds viewport geometry before asynchronous visibility delivery, and registration/metadata/play/trusted selection may each reconcile only their exact source from the current extension-desired revision. The targetless bootstrap may project only the four declared native configuration fields into the current-resource part of the same-tab refresh session. A new document at the exact canonical URL may inherit that complete patch; another same-origin resource inherits only fields last acknowledged from explicit extension intent. A page observation removes its fields from that portable patch so an older extension value cannot reappear. The durable retained projection wins first, then the most-specific site preset, then the selected default global preset.
 - `SCTRL-041`: new Capture requires a volatile Background admission minted for one current-active-tab Popup or identity-validated shortcut transaction. A page shortcut must match the current top-level HTTP(S) sender and exact document; external submit payloads cannot carry admission, and restore/remote/arbitrary page state/alternate-tab paths never call `getMediaStreamId()` without it.
 - `SCTRL-042`: video enhancement implementation is a lazy capability-owned module; native-only/default control does not load or instantiate it.
 - `SCTRL-043`: Popup, Options and remote use a restricted protocol validator and cannot import or execute the Background request router.
@@ -68,8 +68,11 @@ Boost to native control at or below 100, safe CORS decisions, source uniqueness,
 user-activation errors, CSS restoration, no hidden visualizer IPC and clean
 disposal after navigation/update.
 
-The gate must also stop/reacquire the MV3 worker before a same-origin refresh,
-verify all `CONTROL_SESSION_FIELDS` remain in the durable projection, prove the
+The gate must also stop/reacquire the MV3 worker before an exact-resource
+same-origin refresh, verify all `CONTROL_SESSION_FIELDS` remain in the durable
+projection, prove that a muted recommendation/list resource is not replayed
+into a different same-origin detail resource while explicit extension intent
+is preserved, and prove the
 five Bootstrap-owned defaults (`Alt+ArrowLeft/Right` speed,
 `Alt+ArrowDown/Up` volume, and one-toggle-per-press `Alt+M` mute) without history
 navigation, duplicate site-listener consumption, propagation suppression, or a

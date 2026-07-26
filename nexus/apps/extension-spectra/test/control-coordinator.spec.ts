@@ -578,6 +578,10 @@ describe('authoritative control coordinator', () => {
 			controlled: false,
 		});
 		expect((await controlCoordinatorTestApi.getSnapshot(7))?.fields.mediaMuted?.actual).toBe(false);
+		expect(harness.storage.get('tab_session_7')).toMatchObject({
+			patch: { volumeBase: 40, mediaMuted: false },
+			portablePatch: {},
+		});
 	});
 
 	test('binds a targetless bootstrap observation to its sending document', async () => {
@@ -789,8 +793,10 @@ describe('authoritative control coordinator', () => {
 
 		await controlCoordinatorTestApi.reset();
 		expect(harness.storage.get('tab_session_7')).toMatchObject({
-			version: 2,
+			version: 3,
+			identity: { resourceUrl: 'https://media.example/one' },
 			patch: { volumeBase: 100, boost: 1.1 },
+			portablePatch: { volumeBase: 100, boost: 1.1 },
 		});
 	});
 
@@ -1046,6 +1052,9 @@ describe('authoritative control coordinator', () => {
 			controlled: false,
 			strategy: 'dom-native',
 		});
+		expect((harness.storage.get('tab_session_7') as {
+			portablePatch?: Record<string, unknown>;
+		} | undefined)?.portablePatch).toEqual({});
 		const popupAck = await controlCoordinatorTestApi.submitOperation({
 			tabId: 7,
 			source: 'hotkey',

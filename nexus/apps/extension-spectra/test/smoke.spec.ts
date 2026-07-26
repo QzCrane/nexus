@@ -1933,7 +1933,7 @@ beforeAll(async () => {
 					headers: { 'content-type': 'text/vtt; charset=utf-8' },
 				});
 			}
-			if (pathname !== '/' && pathname !== '/smoke-test.html') {
+			if (!['/', '/smoke-test.html', '/recommend.html', '/watch/42'].includes(pathname)) {
 				return new Response('Not found', { status: 404 });
 			}
 			const pageSpeedCap = Number(requestUrl.searchParams.get('page-speed-cap'));
@@ -2722,6 +2722,88 @@ describe('SPECTRA built extension smoke', () => {
 			await coldPage.close().catch(() => undefined);
 		}
 		expect(coldErrors).toEqual([]);
+	}, 35_000);
+
+	test('drops a muted recommendation preview but preserves explicit intent for a same-origin detail', async () => {
+		const origin = new URL(fixtureUrl).origin;
+		const recommendationUrl = `${origin}/recommend.html`;
+		const detailUrl = `${origin}/watch/42`;
+		const page = await browser.newPage();
+		const pageErrors: string[] = [];
+		collectPageErrors(page, pageErrors);
+		try {
+			await page.goto(recommendationUrl, { waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(recommendationUrl);
+			const tabId = await getTabId(recommendationUrl);
+			await page.evaluate(() => {
+				const media = document.querySelector<HTMLMediaElement>('#v');
+				if (!media) throw new Error('Recommendation preview media is missing');
+				media.muted = true;
+				media.dispatchEvent(new Event('volumechange'));
+			});
+			await eventually(
+				() => evaluateServiceWorker(async (targetTabId) => {
+					const key = `tab_session_${targetTabId}`;
+					const stored = (await chrome.storage.session.get(key))[key] as {
+						identity?: { resourceUrl?: string };
+						patch?: Record<string, unknown>;
+					} | undefined;
+					return stored ?? null;
+				}, tabId),
+				(stored) => stored?.identity?.resourceUrl === recommendationUrl
+					&& stored.patch?.mediaMuted === true,
+				'recommendation mute session projection',
+			);
+			await page.bringToFront();
+			const explicit = await submitPopupControlIntent(tabId, {
+				patch: { speed: 1.5 },
+			});
+			if (!explicit.ok) {
+				throw new Error(explicit.error?.message ?? 'Unable to set explicit recommendation speed');
+			}
+			await eventually(
+				() => evaluateServiceWorker(async (targetTabId) => {
+					const key = `tab_session_${targetTabId}`;
+					const stored = (await chrome.storage.session.get(key))[key] as {
+						portablePatch?: Record<string, unknown>;
+					} | undefined;
+					return stored?.portablePatch ?? null;
+				}, tabId),
+				(patch) => patch?.speed === 1.5,
+				'explicit cross-resource session projection',
+			);
+
+			await page.goto(detailUrl, { waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(detailUrl);
+			await eventually(
+				() => page.evaluate(() => {
+					const media = document.querySelector<HTMLMediaElement>('#v');
+					return {
+						muted: media?.muted ?? null,
+						speed: media?.playbackRate ?? null,
+					};
+				}),
+				(state) => state.muted === false && state.speed === 1.5,
+				'detail document keeps native mute and explicit speed',
+			);
+			const detailProjection = await evaluateServiceWorker(async (targetTabId) => {
+				const key = `tab_session_${targetTabId}`;
+				return (await chrome.storage.session.get(key))[key] as {
+					identity?: { resourceUrl?: string };
+					patch?: Record<string, unknown>;
+					portablePatch?: Record<string, unknown>;
+				} | undefined;
+			}, tabId);
+			expect(detailProjection).toMatchObject({
+				identity: { resourceUrl: detailUrl },
+				patch: { speed: 1.5 },
+				portablePatch: { speed: 1.5 },
+			});
+			expect(detailProjection?.patch).toEqual({ speed: 1.5 });
+		} finally {
+			await page.close().catch(() => undefined);
+		}
+		expect(pageErrors).toEqual([]);
 	}, 35_000);
 
 	test('tracks SPA media additions and removals without activating WebAudio', async () => {
