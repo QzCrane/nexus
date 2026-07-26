@@ -251,9 +251,10 @@ export function showHotkeyActualOSD(
 		return;
 	}
 	if (hotkey.phase === 'frozen') {
-		hotkey.target = actual;
 		if (actual.type === 'volume') updateAcknowledgedVolumeState(hotkey, actual);
-		renderOSD(actual, s, options, false, false);
+		// Keyup owns the frozen visual frame. A late ACK may refresh the
+		// internal volume truth, but it must not repaint the released target or
+		// restart its interpolation window.
 		return;
 	}
 	if (feedback.kind !== 'volume' || hotkey.target.type !== 'volume') return;
