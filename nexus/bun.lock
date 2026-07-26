@@ -46,7 +46,7 @@
     },
     "apps/extension-spectra": {
       "name": "@nexus/extension-spectra",
-      "version": "1.4.0",
+      "version": "1.4.1",
       "dependencies": {
         "@nexus/audio-engine": "workspace:*",
         "@nexus/kernel": "workspace:*",
