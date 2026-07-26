@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: spectra-remote-security
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-26
 ---
 
 # SPECTRA authenticated remote protocol v2
@@ -27,7 +27,7 @@ Each session has independent Web Crypto values: 128-bit session ID, 128-bit Peer
 4. Host verifies the proof and sends `spectra.remote.auth-result`.
 5. Only then may the host send `spectra.remote.state` or accept `spectra.remote.command`.
 
-Commands carry the exact session ID, a strictly increasing sequence, and current audio generation. Unknown commands, replays, stale generations, a second controller, and unauthenticated data are rejected. A disconnected authenticated controller has two minutes to reconnect.
+Commands carry the exact session ID, a strictly increasing safe-integer sequence, and current audio generation. Unknown commands, replays, stale generations, a second controller, and unauthenticated data are rejected. A disconnected authenticated controller has two minutes to reconnect. Connection exclusivity is evaluated when a transport actually opens and again when its proof commits: a candidate signaled while the old controller is connected may use the reconnect window if the old transport closes before the candidate opens, but it cannot displace a controller that is still authenticated at either check.
 
 ## Unified offscreen integration
 

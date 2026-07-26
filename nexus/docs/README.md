@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: contributor
 owner: repository-documentation
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-26
 ---
 
 # NEXUS documentation
@@ -106,7 +106,7 @@ A lower layer may summarize or link upward. It must not copy a complete policy m
 - `archived`: immutable historical evidence.
 - `deprecated`: compatibility alias with `redirect_to` and a removal date.
 
-A document move is complete only when the canonical index, inbound links, executable consumers, and compatibility projections are updated together. Deprecated redirects contain no normative content and are removed after their announced migration window. A generated compatibility mirror exists only when an executable consumer still requires the former path; the documentation gate verifies byte equality with the canonical owner and rejects independent edits.
+A document move is complete only when the canonical index, inbound links, executable consumers, and compatibility projections are updated together. Deprecated redirects contain no normative content and are removed after their announced migration window. In strict mode, the documentation gate fails on and after the UTC `remove_after` date, so extending a redirect requires a new bounded migration decision rather than silent drift. A generated compatibility mirror exists only when an executable consumer still requires the former path; the documentation gate verifies byte equality with the canonical owner and rejects independent edits.
 
 ## Structural quality gates
 
@@ -115,7 +115,7 @@ The documentation checker must enforce:
 - required frontmatter for active internal docs;
 - one H1 per document;
 - exact-case valid local relative links;
-- valid deprecated redirects;
+- valid deprecated redirects with enforced strict-mode removal deadlines;
 - byte-identical registered compatibility mirrors;
 - no duplicate stable owner for one domain;
 - Bun toolchain references pinned to `1.3.14`;

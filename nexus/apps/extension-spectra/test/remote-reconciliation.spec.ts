@@ -21,7 +21,7 @@ type RuntimeListener = (
 ) => boolean | undefined;
 
 describe('remote service-worker reconciliation', () => {
-	test('keeps a failed live host fail-closed and retries HELLO on the next GET', async () => {
+	test('quarantines an unowned failed host and recovers its session on the next GET', async () => {
 		const chromeDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 		const timers = installFastTimerHarness();
 		const listeners: RuntimeListener[] = [];
@@ -121,7 +121,13 @@ describe('remote service-worker reconciliation', () => {
 
 		try {
 			initRemoteService();
-			await waitFor(() => helloCalls === 3 && isOffscreenHostStateUnknown());
+			await waitFor(() => (
+				helloCalls === 3
+				&& !isOffscreenHostStateUnknown()
+				&& timers.pendingLongCount() === 1
+			));
+			expect(isOffscreenHostStateUnknown()).toBe(false);
+			expect(timers.pendingLongCount()).toBe(1);
 			expect(removedListeners.length).toBeGreaterThan(0);
 			for (const listener of removedListeners) listener(72);
 			await waitFor(() => closeTabMessages.length === 1);
@@ -130,7 +136,7 @@ describe('remote service-worker reconciliation', () => {
 
 			await acquireOffscreenLease('audio:71');
 			releaseOffscreenLease('audio:71');
-			expect(timers.pendingLongCount()).toBe(0);
+			expect(timers.pendingLongCount()).toBe(1);
 
 			const response = await invokeRuntimeRequest(listeners, {
 				protocolVersion: SPECTRA_PROTOCOL_VERSION,
@@ -142,6 +148,7 @@ describe('remote service-worker reconciliation', () => {
 			expect(helloCalls).toBe(4);
 			expect(isOffscreenHostStateUnknown()).toBe(false);
 			expect(getOffscreenLeaseCount()).toBe(1);
+			expect(timers.pendingLongCount()).toBe(0);
 			expect(response).toEqual({
 				ok: true,
 				data: {

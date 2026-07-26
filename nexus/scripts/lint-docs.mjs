@@ -5,7 +5,7 @@
  *
  * Validates frontmatter, lifecycle redirects, generated compatibility mirrors,
  * exact-case local links, canonical entrypoints, H1 structure, owner uniqueness,
- * and documentation reachability.
+ * strict migration deadlines, and documentation reachability.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -250,7 +250,7 @@ function lintFrontmatter(relativePath, parsed) {
 	return issues;
 }
 
-function lintRedirect(filePath, relativePath, parsed) {
+function lintRedirect(filePath, relativePath, parsed, strict, currentUtcDate) {
 	if (parsed.fields.status !== 'deprecated') return [];
 	const issues = [];
 	const redirect = parsed.fields.redirect_to;
@@ -263,8 +263,13 @@ function lintRedirect(filePath, relativePath, parsed) {
 			issues.push('redirect_to points to itself');
 		}
 	}
-	if (!/^\d{4}-\d{2}-\d{2}$/u.test(parsed.fields.remove_after ?? '')) {
+	const removeAfter = parsed.fields.remove_after ?? '';
+	if (!/^\d{4}-\d{2}-\d{2}$/u.test(removeAfter)) {
 		issues.push('deprecated document requires remove_after: YYYY-MM-DD');
+	} else if (strict && removeAfter <= currentUtcDate) {
+		issues.push(
+			`deprecated document reached remove_after (${removeAfter}); remove it or record a new bounded migration decision`,
+		);
 	}
 	const words = parsed.body.trim().split(/\s+/u).filter(Boolean).length;
 	if (words > 220) issues.push(`deprecated alias is too large (${words} words; maximum 220)`);
@@ -284,7 +289,7 @@ function lintRegisteredMirror(filePath, relativePath) {
 	return [];
 }
 
-function lintFile(filePath) {
+function lintFile(filePath, strict, currentUtcDate) {
 	const relativePath = normalizePath(filePath);
 	if (isRegisteredMirror(relativePath)) {
 		return {
@@ -299,7 +304,7 @@ function lintFile(filePath) {
 	const parsed = parseFrontmatter(readFileSync(filePath, 'utf8'));
 	const issues = [
 		...lintFrontmatter(relativePath, parsed),
-		...lintRedirect(filePath, relativePath, parsed),
+		...lintRedirect(filePath, relativePath, parsed, strict, currentUtcDate),
 	];
 	if (!isDetailedArchive(relativePath)) {
 		const h1Count = countH1(parsed.body);
@@ -373,6 +378,7 @@ function main() {
 	const globalScan = args.paths.length === 0;
 	const failures = [];
 	const resultsByPath = new Map();
+	const currentUtcDate = new Date().toISOString().slice(0, 10);
 
 	if (globalScan) {
 		for (const entrypoint of REQUIRED_ENTRYPOINTS) {
@@ -383,7 +389,7 @@ function main() {
 	}
 
 	for (const filePath of markdownFiles) {
-		const result = lintFile(filePath);
+		const result = lintFile(filePath, args.strict, currentUtcDate);
 		resultsByPath.set(result.relativePath, result);
 		for (const issue of result.issues) failures.push({ path: result.relativePath, issue });
 	}
@@ -410,7 +416,7 @@ function main() {
 
 	console.log(`[docs:check] ${markdownFiles.length} Markdown file(s) passed`);
 	console.log(
-		`[docs:check] entrypoints=${REQUIRED_ENTRYPOINTS.length} mirrors=${REGISTERED_MARKDOWN_MIRRORS.size} strict=${args.strict}`,
+		`[docs:check] entrypoints=${REQUIRED_ENTRYPOINTS.length} mirrors=${REGISTERED_MARKDOWN_MIRRORS.size} strict=${args.strict} utcDate=${currentUtcDate}`,
 	);
 }
 

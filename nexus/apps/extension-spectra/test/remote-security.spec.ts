@@ -8,6 +8,7 @@ import { generateRemoteQR } from '../src/remote/qr-generator';
 import { isSafeRemoteQrDataUrl } from '../src/remote/modal-renderer';
 import {
 	REMOTE_PAIRING_TTL_MS,
+	REMOTE_RECONNECT_TTL_MS,
 	createRemotePairing,
 	createRemoteProof,
 	isRemoteCommandMessage,
@@ -73,6 +74,13 @@ describe('remote protocol v2', () => {
 		expect(isRemoteCommandMessage({ ...base, command: 'run_javascript' })).toBe(false);
 		expect(isRemoteCommandMessage({ ...base, sequence: 0 })).toBe(false);
 		expect(isRemoteCommandMessage({ ...base, generation: -1 })).toBe(false);
+		expect(isRemoteCommandMessage({
+			...base,
+			sequence: Number.MAX_SAFE_INTEGER,
+			generation: Number.MAX_SAFE_INTEGER,
+		})).toBe(true);
+		expect(isRemoteCommandMessage({ ...base, sequence: Number.MAX_SAFE_INTEGER + 1 })).toBe(false);
+		expect(isRemoteCommandMessage({ ...base, generation: Number.MAX_SAFE_INTEGER + 1 })).toBe(false);
 	});
 });
 
@@ -227,6 +235,92 @@ describe('authenticated remote host', () => {
 		});
 	});
 
+	test('re-evaluates exclusivity when a queued peer opens at the reconnect deadline', async () => {
+		let currentTime = 20_000;
+		const harness = createHarness({ now: () => currentTime });
+		const sessionPromise = harness.controller.createSession(37);
+		harness.peer.emit('open', harness.peer.id);
+		const session = await sessionPromise;
+
+		const primary = new FakeConnection();
+		harness.peer.emit('connection', primary);
+		primary.emit('open');
+		const primaryChallenge = primary.sent.find((message) => message.type === 'spectra.remote.challenge');
+		if (!primaryChallenge || typeof primaryChallenge.nonce !== 'string') {
+			throw new Error('Primary remote challenge was not sent');
+		}
+		const primaryProof = await createRemoteProof(session.secret, session.sessionId, primaryChallenge.nonce);
+		primary.emit('data', {
+			type: 'spectra.remote.authenticate',
+			protocolVersion: 2,
+			sessionId: session.sessionId,
+			proof: primaryProof,
+		});
+		await waitFor(() => primary.sent.some(
+			(message) => message.type === 'spectra.remote.auth-result' && message.ok,
+		));
+
+		// Both peers arrive while the primary is authenticated. A peer that opens
+		// now is rejected, but a queued peer must be re-evaluated if the primary
+		// disconnects before that queued transport reaches open.
+		const queued = new FakeConnection();
+		harness.peer.emit('connection', queued);
+		const overlapping = new FakeConnection();
+		harness.peer.emit('connection', overlapping);
+		overlapping.emit('open');
+		expect(overlapping.sent).toContainEqual({
+			type: 'spectra.remote.auth-result',
+			protocolVersion: 2,
+			sessionId: session.sessionId,
+			ok: false,
+			error: 'ALREADY_CONNECTED',
+		});
+		expect(overlapping.closed).toBe(true);
+
+		primary.close();
+		const reconnectUntil = harness.controller.getStatus(37)?.reconnectUntil;
+		expect(reconnectUntil).toBe(currentTime + REMOTE_RECONNECT_TTL_MS);
+		if (reconnectUntil === null || reconnectUntil === undefined) {
+			throw new Error('Reconnect deadline was not installed');
+		}
+
+		currentTime = reconnectUntil;
+		queued.emit('open');
+		const queuedChallenge = queued.sent.find((message) => message.type === 'spectra.remote.challenge');
+		if (!queuedChallenge || typeof queuedChallenge.nonce !== 'string') {
+			throw new Error('Queued remote challenge was not sent');
+		}
+		const queuedProof = await createRemoteProof(session.secret, session.sessionId, queuedChallenge.nonce);
+		queued.emit('data', {
+			type: 'spectra.remote.authenticate',
+			protocolVersion: 2,
+			sessionId: session.sessionId,
+			proof: queuedProof,
+		});
+		await waitFor(() => queued.sent.some(
+			(message) => message.type === 'spectra.remote.auth-result' && message.ok,
+		));
+
+		expect(harness.controller.getStatus(37)).toMatchObject({
+			connected: true,
+			reconnectUntil: null,
+		});
+		const statusChanges = harness.runtimeMessages.filter(
+			(message) => message.type === 'REMOTE_HOST_STATUS_CHANGE',
+		);
+		expect(statusChanges.at(-2)).toMatchObject({
+			tabId: 37,
+			sessionId: session.sessionId,
+			connected: false,
+			reconnectUntil,
+		});
+		expect(statusChanges.at(-1)).toMatchObject({
+			tabId: 37,
+			sessionId: session.sessionId,
+			connected: true,
+		});
+	});
+
 	test('destroys an active tab session and its peer through CLOSE_TAB semantics', async () => {
 		const harness = createHarness();
 		const sessionPromise = harness.controller.createSession(31);
@@ -299,7 +393,7 @@ describe('remote-site supply chain and metadata privacy', () => {
 	});
 });
 
-function createHarness() {
+function createHarness(options: { now?: () => number } = {}) {
 	const runtimeMessages: Array<Record<string, unknown>> = [];
 	const peer = new FakePeer('spectra-test');
 	let timerId = 0;
@@ -308,6 +402,7 @@ function createHarness() {
 		sendRuntimeMessage: (message) => {
 			runtimeMessages.push(message as Record<string, unknown>);
 		},
+		now: options.now,
 		setTimer: () => ++timerId,
 		clearTimer: () => undefined,
 	});

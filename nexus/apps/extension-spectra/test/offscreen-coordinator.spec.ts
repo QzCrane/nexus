@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
 	acquireOffscreenLease,
 	getOffscreenLeaseCount,
+	isOffscreenHostStateUnknown,
 	reconcileOffscreenHost,
 	releaseOffscreenLease,
 	retireLegacyOffscreenDocument,
@@ -169,6 +170,7 @@ describe('unified offscreen coordinator', () => {
 			// A live-but-unresponsive host is unknown, not empty. Its recovered
 			// leases must survive so an idle close cannot race its processors.
 			expect(getOffscreenLeaseCount()).toBe(2);
+			expect(isOffscreenHostStateUnknown()).toBe(true);
 			expect(timers.size).toBe(0);
 			helloError = null;
 
@@ -180,6 +182,28 @@ describe('unified offscreen coordinator', () => {
 			await waitFor(() => closeCalls === 2);
 			expect(getOffscreenLeaseCount()).toBe(0);
 			expect(timers.size).toBe(0);
+
+			// A live host with no known lease must not retain unknown state forever.
+			// Reconciliation enters the idle grace period; close performs one final
+			// HELLO and reclaims the host only while it remains unresponsive.
+			hasDocument = true;
+			helloError = new Error('persistent HELLO failure');
+			const callsBeforeUnownedFailure = helloCalls;
+			let unownedReconcileFailure: unknown;
+			void reconcileOffscreenHost().catch((error) => { unownedReconcileFailure = error; });
+			for (let retry = 0; retry < 2; retry += 1) {
+				await waitFor(() => timers.size === 1);
+				await fireOnlyTimer(timers);
+			}
+			await waitFor(() => unownedReconcileFailure !== undefined);
+			expect(isOffscreenHostStateUnknown()).toBe(false);
+			expect(getOffscreenLeaseCount()).toBe(0);
+			expect(alarms.size).toBe(1);
+			await fireOnlyAlarm(alarms, alarmListener);
+			await waitFor(() => closeCalls === 3);
+			expect(helloCalls - callsBeforeUnownedFailure).toBe(4);
+			expect(hasDocument).toBe(false);
+			helloError = null;
 
 			hasDocument = true;
 			await acquireOffscreenLease('audio:77');

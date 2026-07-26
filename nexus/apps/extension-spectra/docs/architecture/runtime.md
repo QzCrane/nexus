@@ -41,9 +41,13 @@ Capture becomes active only after the unified offscreen host creates a current-g
 
 - audio lease: `audio:<tabId>`
 - remote lease: `remote:<sessionId>`
-- concurrent creation is serialized;
+- creation, reconciliation, and close decisions are serialized;
 - the host closes only after all leases are released and the one-shot grace alarm expires;
 - HELLO reconstructs processors, remote sessions, and leases after service-worker restart;
+- a live host that exhausts HELLO retries remains quarantined while any known
+  lease exists; without a known lease it enters the 30-second idle grace, and
+  close performs one final HELLO that either recovers authoritative leases or
+  reclaims the still-unresponsive stale document;
 - Content READY acquisition waits for that Capture reconciliation barrier, so
   restore, hotkeys, Popup, and authenticated remote commands cannot mistake a
   surviving processor for bypass and request a second Capture.
