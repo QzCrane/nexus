@@ -767,7 +767,7 @@ async function waitForContentStatus(
 			// Content initialization and service-worker startup are eventually consistent.
 			lastReadError = error;
 		}
-		await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+		await new Promise((resolveWait) => setTimeout(resolveWait, 10));
 	}
 	const readFailure = lastReadError === undefined
 		? ''
@@ -803,7 +803,7 @@ async function eventually<T>(
 		} catch (error) {
 			lastError = error;
 		}
-		await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+		await new Promise((resolveWait) => setTimeout(resolveWait, 10));
 	}
 	throw new Error(
 		`Timed out waiting for ${label}: ${JSON.stringify(lastValue)}${lastError ? ` (${String(lastError)})` : ''}`,
@@ -970,7 +970,7 @@ async function readOffscreenSnapshot(worker?: WebWorker): Promise<OffscreenHostS
 				&& Array.isArray((response as { remoteTabs?: unknown }).remoteTabs)) {
 				return response;
 			}
-			await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+			await new Promise((resolveWait) => setTimeout(resolveWait, 10));
 		}
 		throw new Error(`Invalid offscreen host snapshot: ${JSON.stringify(response)}`);
 	}) as Promise<OffscreenHostSnapshot>;
@@ -1892,7 +1892,7 @@ async function waitForServiceWorkerMarkerToDisappear(marker: string, timeoutMs =
 			}
 		}
 		if (!oldContextAlive) return;
-		await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+		await new Promise((resolveWait) => setTimeout(resolveWait, 10));
 	}
 	throw new Error('Timed out waiting for the old SPECTRA service-worker context to stop');
 }
@@ -2762,7 +2762,7 @@ describe('SPECTRA built extension smoke', () => {
 			for (const mode of ['window-prevent', 'document-stop'] as const) {
 				await setMode(mode);
 				await tapSiteHotkey();
-				await new Promise((resolveWait) => setTimeout(resolveWait, 125));
+				await new Promise((resolveWait) => setTimeout(resolveWait, 25));
 				expect(await readState()).toMatchObject({ speed: 1 });
 			}
 
@@ -2773,7 +2773,7 @@ describe('SPECTRA built extension smoke', () => {
 				(state) => state.speed === 1.1,
 				'one accepted configured site hotkey',
 			);
-			await new Promise((resolveWait) => setTimeout(resolveWait, 125));
+			await new Promise((resolveWait) => setTimeout(resolveWait, 25));
 			expect(await readState()).toMatchObject({ speed: 1.1 });
 
 			// Enabling a site-specific listener must not duplicate ownership of
@@ -2784,7 +2784,7 @@ describe('SPECTRA built extension smoke', () => {
 				(state) => state.speed === 1.2,
 				'one default hotkey despite a colliding site binding',
 			);
-			await new Promise((resolveWait) => setTimeout(resolveWait, 125));
+			await new Promise((resolveWait) => setTimeout(resolveWait, 25));
 			expect(await readState()).toMatchObject({ speed: 1.2 });
 
 			await setMode('window-keyup-stop');
@@ -2812,7 +2812,7 @@ describe('SPECTRA built extension smoke', () => {
 				'one physical configured repeat before truncated release',
 			);
 			await page.keyboard.up('KeyK');
-			await new Promise((resolveWait) => setTimeout(resolveWait, 125));
+			await new Promise((resolveWait) => setTimeout(resolveWait, 25));
 			expect(await readState()).toMatchObject({ speed: 1.4 });
 
 			await setMode('observe');
@@ -2822,7 +2822,7 @@ describe('SPECTRA built extension smoke', () => {
 				(state) => state.speed === 1.5,
 				'next configured site hotkey after truncated release',
 			);
-			await new Promise((resolveWait) => setTimeout(resolveWait, 125));
+			await new Promise((resolveWait) => setTimeout(resolveWait, 25));
 			const final = await readState();
 			expect(final.speed).toBe(1.5);
 			expect(final.probe.documentStops).toBe(1);
@@ -3920,7 +3920,7 @@ describe('SPECTRA built extension smoke', () => {
 			video.playbackRate = 0.75;
 			document.dispatchEvent(new Event('fullscreenchange'));
 			document.dispatchEvent(new Event('webkitfullscreenchange'));
-			await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+			await new Promise((resolveWait) => setTimeout(resolveWait, 50));
 			return {
 				volume: video.volume,
 				muted: video.muted,
@@ -4476,7 +4476,10 @@ describe('SPECTRA built extension smoke', () => {
 		try {
 			await popup.waitForSelector('.glass-card');
 			await popup.$eval('.btn-pip', (element) => (element as HTMLButtonElement).click());
-			await new Promise((resolveWait) => setTimeout(resolveWait, 1_000));
+			await popup.waitForFunction(
+				() => document.querySelector('.btn-pip')?.getAttribute('aria-pressed') === 'true',
+				{ timeout: 3_000 },
+			);
 			const popupState = await popup.evaluate(() => ({
 				pressed: document.querySelector('.btn-pip')?.getAttribute('aria-pressed'),
 				busy: document.querySelector('.btn-pip')?.getAttribute('aria-busy'),
@@ -4640,7 +4643,7 @@ describe('SPECTRA built extension smoke', () => {
 				'visualizer subscription release',
 			);
 			const settledCount = release.count;
-			await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+			await new Promise((resolveWait) => setTimeout(resolveWait, 50));
 			expect(await readVisualizerBatchCount()).toBe(settledCount);
 		} finally {
 			if (popup) await closeActionPopup(popup);
@@ -4667,15 +4670,15 @@ describe('SPECTRA built extension smoke', () => {
 			popupClient = await popup.createCDPSession();
 			await popupClient.send('Runtime.enable');
 
-			await new Promise((resolveWait) => setTimeout(resolveWait, 500));
+			await new Promise((resolveWait) => setTimeout(resolveWait, 100));
 			const initialProbe = await readVisualizerBatchProbe();
 			expect(initialProbe.count, JSON.stringify(initialProbe.events)).toBe(0);
 
 			await closeActionPopup(popup);
 			popup = null;
-			await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+			await new Promise((resolveWait) => setTimeout(resolveWait, 50));
 			const countAfterClose = await readVisualizerBatchCount();
-			await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+			await new Promise((resolveWait) => setTimeout(resolveWait, 50));
 			expect(await readVisualizerBatchCount()).toBe(countAfterClose);
 		} finally {
 			if (popup) await closeActionPopup(popup).catch(() => undefined);
@@ -4831,7 +4834,7 @@ describe('SPECTRA built extension smoke', () => {
 			await startOsdFeedbackProbe(fixturePage, '×');
 			await holdDefaultShortcut(fixturePage, 'ArrowRight', 11, 35);
 			const speedAtRelease = await readOsdFeedback(fixturePage, 'speed');
-			await new Promise((resolveWait) => setTimeout(resolveWait, 400));
+			await new Promise((resolveWait) => setTimeout(resolveWait, 50));
 			const heldSpeedFeedback = await readOsdFeedback(fixturePage, 'speed', true);
 			expect(speedAtRelease).toMatchObject({
 				visible: true,
@@ -4889,7 +4892,7 @@ describe('SPECTRA built extension smoke', () => {
 				label: '静音',
 				color: 'rgb(156, 163, 175)',
 			});
-			await new Promise((resolveWait) => setTimeout(resolveWait, 400));
+			await new Promise((resolveWait) => setTimeout(resolveWait, 50));
 			const releasedState = await readOsdFeedback(fixturePage, 'volume', true);
 			expect(releasedState).toEqual(volumeAtRelease);
 			const scalarFrames = releasedState.frames;
@@ -4957,7 +4960,7 @@ describe('SPECTRA built extension smoke', () => {
 				), { timeout: 5_000 });
 				expect(await readHostCounts()).toEqual({ osd: 1, toast: 0 });
 				await waitForReinjectedRuntime(cycle);
-				await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+				await new Promise((resolveWait) => setTimeout(resolveWait, 50));
 				expect(await fixturePage.evaluate(() => {
 					document.dispatchEvent(new Event('fullscreenchange'));
 					return {
@@ -5248,7 +5251,7 @@ describe('SPECTRA built extension smoke', () => {
 						if (!response?.ok) throw new Error(response?.error?.message ?? 'Unable to read capture fixture runtime');
 						status = { ...response.data, mode: response.data.actualMode };
 						if (predicate(status)) return status;
-						await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+						await new Promise((resolveWait) => setTimeout(resolveWait, 10));
 					}
 					throw new Error(`Timed out waiting for tab ${tabId} status: ${JSON.stringify(status)}`);
 				};
@@ -6453,11 +6456,11 @@ describe('SPECTRA built extension smoke', () => {
 				chrome.runtime.reload();
 			}).catch(() => undefined);
 			await extensionClient.close().catch(() => undefined);
-			await new Promise((resolveWait) => setTimeout(resolveWait, 500));
+			await new Promise((resolveWait) => setTimeout(resolveWait, 200));
 			await fixturePage.goto(`${fixtureUrl}?after-extension-reload=1`, {
 				waitUntil: 'domcontentloaded',
 			});
-			await new Promise((resolveWait) => setTimeout(resolveWait, 500));
+			await new Promise((resolveWait) => setTimeout(resolveWait, 200));
 			expect(fixtureErrors.slice(errorsBefore)).toEqual([]);
 			expect(reloadDiagnostics).toEqual([]);
 		} finally {

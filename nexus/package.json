@@ -7,7 +7,7 @@
 	"scripts": {
 		"dev": "turbo run dev",
 		"build": "turbo run build --output-logs=new-only",
-		"lint": "bun run lint:workspace-coverage && turbo run lint --output-logs=new-only && bun run lint:repository-surfaces",
+		"lint": "bun scripts/run-lint-parallel.mjs",
 		"lint:workspace-coverage": "bun test scripts/check-workspace-lint.spec.mjs scripts/run-strict-biome.spec.mjs && bun scripts/check-workspace-lint.mjs",
 		"lint:repository-surfaces": "bun scripts/run-strict-biome.mjs scripts package.json biome.json tsconfig.base.json turbo.json ../package.json ../commitlint.config.cjs ../.claude/settings.json ../.codex/hooks.json ../remote-site",
 		"lint:ai-pitfalls": "bun scripts/hooks/ai-pitfall-detector.mjs",
@@ -24,7 +24,7 @@
 		"verify:q": "bun scripts/verify-architecture.js -q",
 		"verify:v": "bun scripts/verify-architecture.js -v",
 		"docs:check": "bun scripts/lint-docs.mjs --strict",
-		"prebuild": "bun run sync:skills && bun run docs:check && bun scripts/verify-architecture.js -q",
+		"prebuild": "bun scripts/run-prebuild-parallel.mjs",
 		"sync-spectra": "bun scripts/sync-public.cjs spectra",
 		"sync-halo": "bun scripts/sync-public.cjs halo",
 		"generate-registry": "bun scripts/generate-tool-registry.mjs",

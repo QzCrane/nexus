@@ -17,9 +17,9 @@ const workspaceDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const repositoryDir = dirname(workspaceDir);
 const require = createRequire(import.meta.url);
 const PRIVATE_ROOT_LINT =
-	'bun run lint:workspace-coverage && turbo run lint --output-logs=new-only && bun run lint:repository-surfaces';
+	'bun scripts/run-lint-parallel.mjs';
 const PUBLIC_ROOT_LINT =
-	'bun scripts/check-workspace-lint.mjs --public && bun scripts/run-strict-biome.mjs scripts package.json biome.json tsconfig.base.json turbo.json && turbo run lint';
+	'bun scripts/run-lint-parallel.mjs --public';
 const REPOSITORY_LINT_TARGETS = [
 	'scripts',
 	'package.json',
@@ -365,7 +365,7 @@ function validatePrivateProjections() {
 		if (
 			!config ||
 			JSON.stringify(config.publicRootFiles) !==
-				'["scripts/check-workspace-lint.mjs","scripts/run-strict-biome.mjs"]' ||
+				'["scripts/check-workspace-lint.mjs","scripts/run-lint-parallel.mjs","scripts/run-strict-biome.mjs"]' ||
 			config.publicRootScriptOverrides?.lint !== PUBLIC_ROOT_LINT
 		) {
 			throw new Error(

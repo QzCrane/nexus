@@ -298,6 +298,15 @@ async function wheelAt(page: Page, selector: string, deltaY: number): Promise<vo
 	await page.mouse.wheel(0, deltaY);
 }
 
+// Wait for the next animation frame so layout settled by a synchronous reset
+// (e.g. scrollTop = 0) is observable before the next wheel event is dispatched.
+// Replaces fixed waitForTimeout(50/100) with an event-driven wait.
+async function nextFrame(page: Page): Promise<void> {
+	await page.evaluate(
+		() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+	);
+}
+
 async function waitForFinalPosition(
 	page: Page,
 	scrollerId: 'fine-scroller' | 'media-scroller' | 'shadow-scroller' | 'viewport',
@@ -495,7 +504,7 @@ test.describe('HALO smooth scroll in Chromium', () => {
 					isTrusted: event.isTrusted,
 				};
 			});
-			await page.waitForTimeout(100);
+			await nextFrame(page);
 			const syntheticSnapshot = await page.evaluate(
 				() => window.__haloFixture.snapshot(),
 			);
@@ -532,7 +541,7 @@ test.describe('HALO smooth scroll in Chromium', () => {
 			expect(stalledSnapshot.outerTop).toBeCloseTo(COARSE_WHEEL_DISTANCE, 1);
 
 			await page.evaluate(() => window.__haloFixture.reset('fine-scroller'));
-			await page.waitForTimeout(100);
+			await nextFrame(page);
 			await wheelAt(page, '#fine-target', MICRO_WHEEL_DELTA);
 			await waitForFinalPosition(page, 'fine-scroller', MICRO_WHEEL_DELTA);
 
@@ -544,7 +553,7 @@ test.describe('HALO smooth scroll in Chromium', () => {
 			expect(firstVisibleMicroFrame).toBeLessThanOrEqual(4);
 
 			await page.evaluate(() => window.__haloFixture.reset('fine-scroller'));
-			await page.waitForTimeout(50);
+			await nextFrame(page);
 			await wheelAt(page, '#fine-target', FINE_WHEEL_DELTA);
 			await waitForFinalPosition(page, 'fine-scroller', FINE_WHEEL_DELTA);
 
@@ -561,7 +570,7 @@ test.describe('HALO smooth scroll in Chromium', () => {
 			expectGradualMovement(fineSnapshot);
 
 			await page.evaluate(() => window.__haloFixture.reset('shadow-scroller'));
-			await page.waitForTimeout(50);
+			await nextFrame(page);
 			await wheelAt(page, '#shadow-target', SHADOW_WHEEL_DELTA);
 			await waitForFinalPosition(page, 'shadow-scroller', SHADOW_WHEEL_DELTA);
 
@@ -579,7 +588,7 @@ test.describe('HALO smooth scroll in Chromium', () => {
 			expectGradualMovement(shadowSnapshot);
 
 			await page.evaluate(() => window.__haloFixture.reset('shadow-scroller'));
-			await page.waitForTimeout(50);
+			await nextFrame(page);
 			await wheelAt(page, '#slotted-target', SLOT_WHEEL_DELTA);
 			await waitForFinalPosition(page, 'shadow-scroller', SLOT_WHEEL_DELTA);
 
@@ -597,7 +606,7 @@ test.describe('HALO smooth scroll in Chromium', () => {
 			expectGradualMovement(slotSnapshot);
 
 			await page.evaluate(() => window.__haloFixture.reset('media-scroller'));
-			await page.waitForTimeout(50);
+			await nextFrame(page);
 			await wheelAt(page, '#video-target', MEDIA_WHEEL_DELTA);
 			await waitForFinalPosition(page, 'media-scroller', MEDIA_WHEEL_DELTA);
 
@@ -635,8 +644,8 @@ test.describe('HALO smooth scroll in Chromium', () => {
 				filler.className = 'filler';
 				document.body.append(target, filler);
 				window.__haloFixture.reset('viewport');
-			});
-			await page.waitForTimeout(50);
+	});
+			await nextFrame(page);
 			await wheelAt(page, '#viewport-target', VIEWPORT_WHEEL_DELTA);
 			await waitForFinalPosition(page, 'viewport', VIEWPORT_WHEEL_DELTA);
 

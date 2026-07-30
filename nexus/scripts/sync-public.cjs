@@ -83,11 +83,12 @@ const APP_CONFIGS = {
     publicName: 'spectra',
     publicRootFiles: [
       'scripts/check-workspace-lint.mjs',
+      'scripts/run-lint-parallel.mjs',
       'scripts/run-strict-biome.mjs',
     ],
     publicRootScripts: ['dev', 'build', 'typecheck'],
     publicRootScriptOverrides: {
-      lint: 'bun scripts/check-workspace-lint.mjs --public && bun scripts/run-strict-biome.mjs scripts package.json biome.json tsconfig.base.json turbo.json && turbo run lint',
+      lint: 'bun scripts/run-lint-parallel.mjs --public',
     },
     publicApplicationScripts: [
       'dev',
@@ -140,11 +141,12 @@ const APP_CONFIGS = {
     publicName: 'halo',
     publicRootFiles: [
       'scripts/check-workspace-lint.mjs',
+      'scripts/run-lint-parallel.mjs',
       'scripts/run-strict-biome.mjs',
     ],
     publicRootScripts: ['dev', 'build', 'typecheck'],
     publicRootScriptOverrides: {
-      lint: 'bun scripts/check-workspace-lint.mjs --public && bun scripts/run-strict-biome.mjs scripts package.json biome.json tsconfig.base.json turbo.json && turbo run lint',
+      lint: 'bun scripts/run-lint-parallel.mjs --public',
     },
     publicApplicationScripts: ['dev', 'build', 'build:prod', 'lint', 'typecheck'],
     publicApplicationScriptOverrides: {

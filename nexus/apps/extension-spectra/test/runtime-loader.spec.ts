@@ -38,6 +38,19 @@ interface RuntimeHarness {
 	runtimeMessages: ChromeEvent;
 }
 
+// Wait until harness.releaseCount reaches the expected value, polling every 5ms
+// (max 500ms total). Returns as soon as the condition is met.
+// Pass `settleWindowMs > 0` to first let any pending teardown macrotask run before
+// checking — this preserves the "no release should happen" semantics for expected=0.
+async function expectRelease(harness: RuntimeHarness, expected: number, settleWindowMs = 0): Promise<void> {
+	if (settleWindowMs > 0) await Bun.sleep(settleWindowMs);
+	for (let attempt = 0; attempt < 100; attempt += 1) {
+		if (harness.releaseCount === expected) break;
+		await Bun.sleep(5);
+	}
+	expect(harness.releaseCount).toBe(expected);
+}
+
 const originalGetSnapshot = settingsRepository.getSnapshot;
 const originalResolveAudioConfig = settingsRepository.resolveAudioConfig;
 const originalRebindTabSession = storage.tabSession.rebind;
@@ -376,12 +389,10 @@ describe('document-scoped content runtime loader', () => {
 		}]);
 		await ensureContentRuntime(7, 'document-7', 'control', 'transient');
 		releaseContentRuntimeLease(7, 'document-7', 'control', 'transient');
-		await Bun.sleep(300);
-		expect(harness.releaseCount).toBe(0);
+		await expectRelease(harness, 0, 50);
 
 		releaseSourceRuntimeLease(7, target, 'marker');
-		await Bun.sleep(300);
-		expect(harness.releaseCount).toBe(1);
+		await expectRelease(harness, 1);
 	});
 
 	test('keeps a shared runtime until its final independent consumer releases', async () => {
@@ -392,12 +403,10 @@ describe('document-scoped content runtime loader', () => {
 		]);
 
 		releaseContentRuntimeLease(7, 'document-7', 'observation', 'popup-a');
-		await Bun.sleep(300);
-		expect(harness.releaseCount).toBe(0);
+		await expectRelease(harness, 0, 50);
 
 		releaseContentRuntimeLease(7, 'document-7', 'remote', 'remote-a');
-		await Bun.sleep(300);
-		expect(harness.releaseCount).toBe(1);
+		await expectRelease(harness, 1);
 	});
 
 	test('treats duplicate acquisition by the same consumer token as idempotent', async () => {
@@ -408,8 +417,7 @@ describe('document-scoped content runtime loader', () => {
 		]);
 
 		releaseContentRuntimeLease(7, 'document-7', 'observation', 'popup-a');
-		await Bun.sleep(300);
-		expect(harness.releaseCount).toBe(1);
+		await expectRelease(harness, 1);
 	});
 
 	test('allows tab-hosted extension UI release while rejecting content documents', async () => {
@@ -446,8 +454,7 @@ describe('document-scoped content runtime loader', () => {
 			tab: { id: 99 } as chrome.tabs.Tab,
 			url: 'chrome-extension://spectra-test/options.html',
 		}, 'options-tab')).toMatchObject({ ok: true, data: { accepted: true } });
-		await Bun.sleep(300);
-		expect(harness.releaseCount).toBe(1);
+		await expectRelease(harness, 1);
 
 		await ensureContentRuntime(7, 'document-7', 'observation', 'content-page');
 		expect(dispatchRelease({
@@ -456,8 +463,7 @@ describe('document-scoped content runtime loader', () => {
 			documentId: 'document-7',
 			url: 'https://media.example/watch',
 		}, 'content-page')).toMatchObject({ ok: false, error: { code: 'forbidden' } });
-		await Bun.sleep(300);
-		expect(harness.releaseCount).toBe(1);
+		await expectRelease(harness, 1);
 	});
 
 	test('cancels a scheduled teardown when a handoff consumer acquires in the grace window', async () => {
@@ -466,16 +472,14 @@ describe('document-scoped content runtime loader', () => {
 		releaseContentRuntimeLease(7, 'document-7', 'control', 'request-a');
 		await Bun.sleep(25);
 		await ensureContentRuntime(7, 'document-7', 'control', 'owned-state');
-		await Bun.sleep(300);
-		expect(harness.releaseCount).toBe(0);
+		await expectRelease(harness, 0, 50);
 	});
 
 	test('invalidates an ambiguous READY cache after a lost release response', async () => {
 		const harness = installChromeHarness(true, [], true);
 		await ensureContentRuntime(7, 'document-7', 'control', 'request-a');
 		releaseContentRuntimeLease(7, 'document-7', 'control', 'request-a');
-		await Bun.sleep(300);
-		expect(harness.releaseCount).toBe(1);
+		await expectRelease(harness, 1);
 		expect(harness.statusCount).toBe(1);
 
 		await ensureContentRuntime(7, 'document-7', 'control', 'request-b');
@@ -506,8 +510,7 @@ describe('document-scoped content runtime loader', () => {
 			'https://media.example/watch',
 			enabled,
 		);
-		await Bun.sleep(300);
-		expect(harness.releaseCount).toBe(0);
+		await expectRelease(harness, 0, 50);
 
 		await reconcileHotkeyRuntimeLease(
 			7,
@@ -515,8 +518,7 @@ describe('document-scoped content runtime loader', () => {
 			'https://other.example/watch',
 			enabled,
 		);
-		await Bun.sleep(300);
-		expect(harness.releaseCount).toBe(1);
+		await expectRelease(harness, 1);
 	});
 
 	test('acquires a configured hotkey runtime from a new document HELLO without opening Popup', async () => {

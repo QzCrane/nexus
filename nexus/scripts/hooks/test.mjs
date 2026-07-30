@@ -19,7 +19,7 @@
 // failing case:
 //   NEXUS_HOOK_DEBUG=1 bun scripts/hooks/test.mjs
 
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
 	existsSync,
 	mkdtempSync,
@@ -114,6 +114,30 @@ function runHook(hookName, payload) {
 		stdout: proc.stdout ?? '',
 		stderr: proc.stderr ?? '',
 	};
+}
+
+/**
+ * Async variant of runHook — spawns the hook without blocking the event loop,
+ * so multiple hooks can run in parallel via Promise.all.
+ * Same stdin/stdout/stdexit contract as runHook.
+ */
+function runHookAsync(hookName, payload) {
+	const script = join(hooksDir, hookName);
+	return new Promise((resolve) => {
+		const proc = spawn(process.execPath, [script], {
+			stdio: ['pipe', 'pipe', 'pipe'],
+			// biome-ignore lint/suspicious/noUndeclaredEnvVars: forward the debug env var so spawned hooks can trace their payload
+			env: { ...process.env, NEXUS_HOOK_DEBUG: process.env.NEXUS_HOOK_DEBUG ?? '' },
+		});
+		let stdout = '';
+		let stderr = '';
+		proc.stdout.on('data', (chunk) => { stdout += chunk; });
+		proc.stderr.on('data', (chunk) => { stderr += chunk; });
+		proc.on('error', () => resolve({ status: -1, stdout, stderr }));
+		proc.on('close', (status) => resolve({ status: status ?? -1, stdout, stderr }));
+		proc.stdin.write(JSON.stringify(payload));
+		proc.stdin.end();
+	});
 }
 
 // =====================================================================
@@ -515,8 +539,14 @@ const cases = [
 	},
 ];
 
-for (const c of cases) {
-	const r = runHook(c.hook, c.payload);
+// Run every smoke case in parallel — each hook is an independent child process,
+// so spawning them concurrently collapses ~33 sequential process launches into
+// a single fan-out. Results are collected in input order so the ok/FAIL output
+// stays deterministic regardless of completion order.
+const smokeResults = await Promise.all(cases.map((c) => runHookAsync(c.hook, c.payload)));
+for (let i = 0; i < cases.length; i++) {
+	const c = cases[i];
+	const r = smokeResults[i];
 	const exitOk = r.status === c.expectExit;
 	const textOk = c.expectText ? new RegExp(c.expectText).test(r.stdout + r.stderr) : true;
 	if (exitOk && textOk) {

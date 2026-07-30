@@ -98,6 +98,7 @@ describe('public repository source projection', () => {
 			const patterns = [...BASE_EXCLUDES, ...config.excludes];
 			expect(config.publicRootFiles).toEqual([
 				'scripts/check-workspace-lint.mjs',
+				'scripts/run-lint-parallel.mjs',
 				'scripts/run-strict-biome.mjs',
 			]);
 			for (const rootFile of config.publicRootFiles) {
@@ -106,7 +107,7 @@ describe('public repository source projection', () => {
 				).toBe(false);
 			}
 			expect(config.publicRootScriptOverrides.lint).toBe(
-				'bun scripts/check-workspace-lint.mjs --public && bun scripts/run-strict-biome.mjs scripts package.json biome.json tsconfig.base.json turbo.json && turbo run lint',
+				'bun scripts/run-lint-parallel.mjs --public',
 			);
 			expect(config.publicApplicationScriptOverrides.lint).toContain(
 				'../../scripts/run-strict-biome.mjs',
@@ -255,7 +256,7 @@ describe('public repository source projection', () => {
 		expect(PUBLIC_TURBO_CACHE_DIR).toMatch(/^node_modules\/\.cache\//);
 	});
 
-	test('isolates composite typecheck state from parallel dependency builds', () => {
+	test('isolates typecheck state from build artifacts via src-only resolution', () => {
 		const turbo = JSON.parse(
 			readFileSync(new URL('../../../turbo.json', import.meta.url), 'utf8'),
 		) as {
@@ -265,7 +266,7 @@ describe('public repository source projection', () => {
 				};
 			};
 		};
-		expect(turbo.tasks.typecheck.dependsOn).toEqual(['^build', '^typecheck']);
+		expect(turbo.tasks.typecheck.dependsOn).toEqual(['^typecheck']);
 		for (const relativePath of [
 			'../../../packages/contracts/package.json',
 			'../../../packages/nexus-kernel/package.json',
