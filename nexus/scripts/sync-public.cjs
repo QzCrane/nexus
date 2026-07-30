@@ -42,7 +42,6 @@ const destinationRoot = path.resolve(__dirname, `../../${targetApp}-public`);
 const BASE_EXCLUDES = [
   '.agent',
   '.agents',
-  '.claude',
   '.codex',
   '.git',
   '.github',
@@ -52,7 +51,6 @@ const BASE_EXCLUDES = [
   '.turbo',
   '.vscode',
   'AGENTS.md',
-  'CLAUDE.md',
   'docs',
   '/scripts',
   'store-assets',

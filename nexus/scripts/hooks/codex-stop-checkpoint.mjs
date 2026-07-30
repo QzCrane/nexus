@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 // codex-stop-checkpoint.mjs
 //
-// Codex CLI Stop hook. Fires when the agent turn ends (equivalent
-// of Claude Code's Stop hook). Surfaces a short reminder of what
-// to run before declaring done. The message itself lives in
+// Codex CLI Stop hook. Fires when the agent turn ends. Surfaces
+// a short reminder of what to run before declaring done. The
+// message itself lives in
 // `_hook-helpers.formatCheckpointMessage` so the AI-stop and
 // codex-stop reminders stay in lockstep.
 //

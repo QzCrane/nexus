@@ -81,7 +81,7 @@ Create a dated report when an exact commit, benchmark, regression, or release re
 
 ### 7. Update skills correctly
 
-Edit `.agents/skills/<name>/SKILL.md`, then run `bun run sync:skills` so `AGENTS.md` is regenerated. Keep `CLAUDE.md` identical/hardlinked through the maintained post-analyze flow.
+Edit `.agents/skills/<name>/SKILL.md`, then run `bun run sync:skills` so `AGENTS.md` is regenerated.
 
 ### 8. Validate
 

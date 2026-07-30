@@ -28,7 +28,6 @@ const REPOSITORY_LINT_TARGETS = [
 	'turbo.json',
 	'../package.json',
 	'../commitlint.config.cjs',
-	'../.claude/settings.json',
 	'../.codex/hooks.json',
 	'../remote-site',
 ];

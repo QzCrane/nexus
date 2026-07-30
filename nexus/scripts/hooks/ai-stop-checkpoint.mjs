@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // ai-stop-checkpoint.mjs
 //
-// Claude Code / Antigravity Stop hook. Fires when the AI turn ends.
+// Antigravity Stop hook. Fires when the AI turn ends.
 // Surfaces a short reminder of what to run before declaring done.
 // The message itself lives in `_hook-helpers.formatCheckpointMessage`
 // so the AI-stop and codex-stop reminders stay in lockstep.

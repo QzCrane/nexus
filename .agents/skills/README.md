@@ -5,9 +5,8 @@
 ## Ownership
 
 - Edit the `SKILL.md` in this directory.
-- Do not create a second `.skills/`, `.claude/skills/`, `.codex/skills/`, or repository workflow mirror.
+- Do not create a second `.skills/`, `.codex/skills/`, or repository workflow mirror.
 - `nexus/scripts/sync-skills.mjs` validates source directories and refreshes the Project Skills table in [`../../AGENTS.md`](../../AGENTS.md).
-- [`../../CLAUDE.md`](../../CLAUDE.md) mirrors `AGENTS.md`; the post-analyze hook restores their hardlink after GitNexus regeneration.
 - Repository documentation ownership is defined by [`../../nexus/docs/README.md`](../../nexus/docs/README.md).
 
 ## Toolchain
@@ -55,7 +54,6 @@ bun run hooks:test
 Then inspect:
 
 - the generated `AGENTS.md` table;
-- `AGENTS.md` / `CLAUDE.md` content equality;
 - commands and paths against current package scripts;
 - Bun 1.3.14 references;
 - documentation ownership and release authorization boundaries.

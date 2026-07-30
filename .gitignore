@@ -22,6 +22,5 @@ release/
 # NEXUS skills: only `<repo>/.agents/skills/<name>/SKILL.md` is tracked.
 # This is the Anthropic cross-tool standard path (per https://agentskills.io/),
 # read natively by Cursor / Codex / Copilot / Gemini CLI / Cline / OpenCode /
-# Amp / Kimi / Replit. No mirrors are generated — Claude Code and
-# Antigravity/TRAE users maintain their skills in their own global config
-# (`~/.claude/skills/`, `~/.agent/skills/`) instead.
+# Amp / Kimi / Replit. No mirrors are generated — Antigravity/TRAE users
+# maintain their skills in their own global config (`~/.agent/skills/`) instead.

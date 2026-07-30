@@ -15,19 +15,17 @@
  * Outputs (idempotent; safe to re-run any time):
  *   - `<repo>/AGENTS.md` § Project Skills index
  *     (table injected between `<!-- nexus:skills-start -->` and
- *      `<!-- nexus:skills-end -->`; CLAUDE.md is a hardlink to
- *      AGENTS.md, so both stay in sync automatically)
+ *      `<!-- nexus:skills-end -->`)
  *
  * History:
  *   - 2026-05: original mirror to `.skills/` source.
  *   - 2026-06: source moved to `.agents/skills/`; mirrored to
- *              `.claude/skills/`, `.codex/skills/`, `.agent/workflows/`.
- *   - 2026-07: dropped all three mirrors. `.agents/skills/` is the
- *              native loader for 6+ modern tools; Claude Code /
- *              Antigravity / TRAE users maintain their own global
- *              skills in `~/.claude/skills/` and `~/.agent/skills/`
- *              respectively. The script now only refreshes the
- *              AGENTS.md index table.
+ *              `.codex/skills/`, `.agent/workflows/`.
+ *   - 2026-07: dropped all mirrors. `.agents/skills/` is the
+ *              native loader for 6+ modern tools; Antigravity / TRAE
+ *              users maintain their own global skills in
+ *              `~/.agent/skills/` respectively. The script now only
+ *              refreshes the AGENTS.md index table.
  */
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';

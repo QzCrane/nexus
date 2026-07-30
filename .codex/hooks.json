@@ -9,7 +9,7 @@
 					{
 						"type": "command",
 						"command": "bun --cwd nexus scripts/hooks/codex-bash-guard.mjs",
-						"_doc": "Block bash commands that would rm/mv/redirect into docs/_archive/, AGENTS.md, CLAUDE.md, or the progressive-disclosure index files. Exit 2 = block."
+						"_doc": "Block bash commands that would rm/mv/redirect into docs/_archive/, AGENTS.md, or the progressive-disclosure index files. Exit 2 = block."
 					}
 				]
 			}

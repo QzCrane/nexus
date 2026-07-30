@@ -58,7 +58,7 @@ Run the applicable repository gates as one stable-candidate batch before the fir
 - Update README, privacy, permission justification, store copy, or archive evidence only when their projection changed.
 - Verify relative links and release-gated counts against executable owners.
 - Use deprecated redirects only during an explicit migration window.
-- Run `bun run sync:skills` when a project skill changed and inspect `AGENTS.md` / `CLAUDE.md` consistency.
+- Run `bun run sync:skills` when a project skill changed and inspect `AGENTS.md` consistency.
 
 ### 5. Review the final diff
 

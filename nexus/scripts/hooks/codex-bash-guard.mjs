@@ -8,10 +8,10 @@
 // to forbidden zones.
 //
 // Forbidden operations (any match blocks the command):
-//   - rm / mv / cp targeting docs/_archive/, AGENTS.md, CLAUDE.md,
+//   - rm / mv / cp targeting docs/_archive/, AGENTS.md,
 //     control-architecture.md, control/NN-*.md, principles/NN-*.md
 //   - redirection (>, >>) into any of the above
-//   - sed -i on AGENTS.md / CLAUDE.md / control-architecture.md
+//   - sed -i on AGENTS.md / control-architecture.md
 //   - git checkout / restore / reset that would clobber safety files
 //   - bulk chmod / chown / rm -rf on the workspace root
 //
@@ -24,7 +24,7 @@ import {
 } from './_hook-helpers.mjs';
 
 const PROTECTED_BASENAME =
-	'(?:docs\\/_archive|AGENTS\\.md|CLAUDE\\.md|control-architecture\\.md|control\\/\\d{2}-[a-z-]+\\.md|principles\\/0[1-5]-[a-z-]+\\.md)';
+	'(?:docs\\/_archive|AGENTS\\.md|control-architecture\\.md|control\\/\\d{2}-[a-z-]+\\.md|principles\\/0[1-5]-[a-z-]+\\.md)';
 
 const FORBIDDEN_PATTERNS = [
 	{
@@ -36,8 +36,7 @@ const FORBIDDEN_PATTERNS = [
 		reason:
 			'Forbidden shell op on protected file/zone. Use git mv / git rm for tracked files; ' +
 			'for docs/_archive/, treat as read-only historical snapshot. ' +
-			'AGENTS.md / CLAUDE.md are owned by humans (NTFS hardlink) and must be edited ' +
-			'inline or replaced via postanalyze.mjs.',
+			'AGENTS.md is owned by humans and must be edited inline.',
 	},
 	{
 		// redirection into forbidden zones
@@ -51,15 +50,15 @@ const FORBIDDEN_PATTERNS = [
 	},
 	{
 		// sed -i in-place edit on protected files
-		pattern: /\bsed\s+-i[^\s]*\s+[^|;&]*\b(?:AGENTS\.md|CLAUDE\.md|control-architecture\.md)\b/i,
+		pattern: /\bsed\s+-i[^\s]*\s+[^|;&]*\b(?:AGENTS\.md|control-architecture\.md)\b/i,
 		reason:
-			'sed -i on AGENTS.md / CLAUDE.md is forbidden because the hardlink relationship ' +
-			'must be preserved (or rebuilt by postanalyze.mjs).',
+			'sed -i on AGENTS.md is forbidden because it is a ' +
+			'human-owned rule file that must be edited inline.',
 	},
 	{
 		// git checkout / restore / reset that clobbers staged safety files
 		pattern:
-			/\bgit\s+(?:checkout|restore|reset)\b[^|;&]*--(?:[^|;&]*\s)?(?:AGENTS\.md|CLAUDE\.md|nexus\/scripts\/(?:hooks|lint-docs|verify)[^\s]*)/i,
+			/\bgit\s+(?:checkout|restore|reset)\b[^|;&]*--(?:[^|;&]*\s)?(?:AGENTS\.md|nexus\/scripts\/(?:hooks|lint-docs|verify)[^\s]*)/i,
 		reason:
 			'Discarding changes to protected rule/hook files. If the change is bad, revert it ' +
 			'with `git revert` (which preserves audit trail); do not silently restore.',

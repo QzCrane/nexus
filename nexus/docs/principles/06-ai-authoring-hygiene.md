@@ -121,7 +121,7 @@ const resp = await fetch(url);
 
 ### 2.3 不得写入禁止路径
 
-- **原则**: 不得写入 `docs/_archive/`、`AGENTS.md`、`CLAUDE.md`、`principles/0[1-5]-*.md` 等等。
+- **原则**: 不得写入 `docs/_archive/`、`AGENTS.md`、`principles/0[1-5]-*.md` 等等。
 - **守门**: `ai-pre-write-guard.mjs`(写时阻断)
 
 ## 3. 契约卫生 (Contract Hygiene)

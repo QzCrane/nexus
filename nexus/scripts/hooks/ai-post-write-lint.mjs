@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // ai-post-write-lint.mjs
 //
-// Claude Code / Antigravity PostToolUse hook for Write|Edit|MultiEdit.
+// Antigravity PostToolUse hook for Write|Edit|MultiEdit.
 // Runs the repository's strict Biome owner on JS/TS and lint-docs on
 // changed .md. The hook never rewrites files. It is non-blocking:
 // diagnostics are surfaced in chat; the agent decides whether to fix.

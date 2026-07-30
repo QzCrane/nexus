@@ -150,7 +150,7 @@ export function formatBlockMessage({ reason, target, tool, rule }) {
 
 /**
  * Print a uniform BLOCKED log line. Returns nothing; just writes to
- * stdout (which is what Claude Code / Codex display in the chat).
+ * stdout (which is what Antigravity / Codex display in the chat).
  *
  *   `reason`  — short, single-line human explanation
  *   `target`  — file path or command that was blocked
@@ -184,7 +184,7 @@ export function gitStatusShort() {
  * `name` parameter is the hook label printed at the top of the block
  * (e.g. "ai-stop-checkpoint" or "codex-stop-checkpoint"). Shared by
  * every AI-tool Stop hook so the message stays in lockstep across
- * Claude Code / Antigravity / Codex CLI.
+ * Antigravity / Codex CLI.
  */
 export function formatCheckpointMessage(name) {
 	const status = gitStatusShort();

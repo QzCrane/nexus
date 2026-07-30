@@ -6,9 +6,8 @@
 //
 //   A. helper unit tests     — test _hook-helpers.mjs pure functions
 //   B. hook smoke tests      — spawn each hook with synthetic stdin
-//   C. config validator      — verify .claude/settings.json and
-//                              .codex/hooks.json reference files
-//                              that actually exist
+//   C. config validator      — verify .codex/hooks.json references
+//                              files that actually exist
 //
 // Run via:   bun scripts/hooks/test.mjs
 // Or:        bun --cwd nexus scripts/hooks/test.mjs
@@ -211,7 +210,7 @@ const r = relPath('AGENTS.md');
 ok('relPath: returns forward-slash path', !r.includes('\\'));
 ok('relPath: AGENTS.md resolves within repo', r === 'AGENTS.md' || r.endsWith('AGENTS.md'));
 
-// WRITE_TOOLS: shared set covers Claude + Codex tool names
+// WRITE_TOOLS: shared set covers Antigravity + Codex tool names
 ok('WRITE_TOOLS: has Write', WRITE_TOOLS.has('Write'));
 ok('WRITE_TOOLS: has Edit', WRITE_TOOLS.has('Edit'));
 ok('WRITE_TOOLS: has MultiEdit', WRITE_TOOLS.has('MultiEdit'));
@@ -325,13 +324,6 @@ const cases = [
 		expectText: 'AGENTS\\.md',
 	},
 	{
-		name: 'pre-write: blocks CLAUDE.md',
-		hook: 'ai-pre-write-guard.mjs',
-		payload: { tool_name: 'Write', tool_input: { file_path: 'CLAUDE.md', content: FRONTMATTER } },
-		expectExit: 2,
-		expectText: 'CLAUDE\\.md',
-	},
-	{
 		name: 'pre-write: blocks control-architecture index',
 		hook: 'ai-pre-write-guard.mjs',
 		payload: { tool_name: 'Write', tool_input: { file_path: 'nexus/apps/extension-spectra/docs/control-architecture.md', content: FRONTMATTER } },
@@ -419,13 +411,6 @@ const cases = [
 		payload: { tool_name: 'Bash', tool_input: { command: 'mv AGENTS.md AGENTS.bak' } },
 		expectExit: 2,
 		expectText: 'AGENTS\\.md',
-	},
-	{
-		name: 'bash: blocks redirect into CLAUDE.md',
-		hook: 'codex-bash-guard.mjs',
-		payload: { tool_name: 'Bash', tool_input: { command: 'echo pwned > CLAUDE.md' } },
-		expectExit: 2,
-		expectText: 'CLAUDE\\.md',
 	},
 	{
 		name: 'bash: blocks sed -i on AGENTS.md',
@@ -681,7 +666,7 @@ ok('pitfall/missing-js-extension: package import not flagged',
 }
 
 // =====================================================================
-// C. config validator — verify .claude/.codex hook commands resolve
+// C. config validator — verify .codex hook commands resolve
 // =====================================================================
 
 console.log('\n=== C. config validator ===');
@@ -751,7 +736,6 @@ function scriptPathFromCommand(command) {
 }
 
 const configPaths = [
-	join(repoRoot, '.claude', 'settings.json'),
 	join(repoRoot, '.codex', 'hooks.json'),
 ];
 

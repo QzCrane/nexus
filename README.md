@@ -21,8 +21,7 @@ This repository contains the primary Bun monorepo in [`nexus/`](nexus/) plus the
 ├── .agents/skills/        project workflow sources
 ├── .github/workflows/     repository quality gates
 ├── rules.md               repository-wide constraints
-├── AGENTS.md              agent entrypoint and generated skill index
-└── CLAUDE.md               hardlinked/mirrored agent entrypoint
+└── AGENTS.md              agent entrypoint and generated skill index
 ```
 
 The legacy root [`spectra.md`](spectra.md) is a temporary deprecated alias for historical links and contains no current specification.

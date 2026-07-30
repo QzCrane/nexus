@@ -47,7 +47,6 @@ const REGISTERED_MARKDOWN_MIRRORS = new Map([
 const REQUIRED_ENTRYPOINTS = [
 	'README.md',
 	'AGENTS.md',
-	'CLAUDE.md',
 	'nexus/README.md',
 	'nexus/docs/README.md',
 	'nexus/docs/engineering/README.md',

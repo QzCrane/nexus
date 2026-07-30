@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
 // ai-pre-write-guard.mjs
 //
-// Claude Code / Antigravity PreToolUse hook for Write|Edit|MultiEdit.
+// Antigravity PreToolUse hook for Write|Edit|MultiEdit.
 // Blocks AI from writing into forbidden zones. Exit code 2 = block.
 //
 // Forbidden zones:
 //   1. docs/_archive/         historical snapshots; must not be edited
-//   2. AGENTS.md / CLAUDE.md  root rule files; managed by humans + postanalyze
+//   2. AGENTS.md              root rule file; managed by humans
 //   3. control-architecture.md / control/<NN>-*.md / principles/<NN>-*.md
 //                             progressive-disclosure index files; humans
 //                             own them; the topic sub-files are the owner
@@ -30,10 +30,9 @@ const FORBIDDEN_PATTERNS = [
 			'Edit the live owner doc instead and link the archive.',
 	},
 	{
-		pattern: /(^|\/)(AGENTS|CLAUDE)\.md$/,
+		pattern: /(^|\/)AGENTS\.md$/,
 		reason:
-			'AGENTS.md and CLAUDE.md are owned by humans and synced via ' +
-			'postanalyze.mjs (NTFS hardlink). Edit rules inline or ' +
+			'AGENTS.md is owned by humans. Edit rules inline or ' +
 			'add a new SKILL.md / .agents/skills/<name>/SKILL.md.',
 	},
 	{
