@@ -13,6 +13,7 @@
 		"lint:ai-pitfalls": "bun scripts/hooks/ai-pitfall-detector.mjs",
 		"typecheck": "turbo run typecheck",
 		"typecheck:spectra": "turbo run typecheck --filter=@nexus/contracts --filter=@nexus/kernel --filter=@nexus/audio-engine --filter=@nexus/extension-spectra",
+		"typecheck:halo": "turbo run typecheck --filter=@nexus/contracts --filter=@nexus/kernel --filter=@nexus/ui-kit --filter=@nexus/extension-halo",
 		"build:spectra-deps": "turbo run build --filter=@nexus/contracts --filter=@nexus/kernel --filter=@nexus/audio-engine",
 		"test:spectra": "bun run --cwd apps/extension-spectra test",
 		"check:toolchain": "bun scripts/check-toolchain.mjs",

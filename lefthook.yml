@@ -22,9 +22,6 @@ commit-msg:
 
 pre-push:
   parallel: true
-  skip:
-    - merge
-    - rebase
   commands:
     repository-lint:
       run: bun run lint
@@ -39,7 +36,7 @@ pre-push:
     verify-architecture:
       run: bun run verify:q
     typecheck:
-      run: bun --cwd nexus typecheck:spectra
+      run: bun --cwd nexus typecheck
     ai-pitfalls:
       run: bun --cwd nexus lint:ai-pitfalls
     sync-skills:

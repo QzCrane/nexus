@@ -16,7 +16,8 @@
 	"scripts": {
 		"build": "bun tsc",
 		"dev": "bun tsc --watch",
-		"lint": "bun ../../scripts/run-strict-biome.mjs ."
+		"lint": "bun ../../scripts/run-strict-biome.mjs .",
+		"typecheck": "bun tsc --noEmit"
 	},
 	"dependencies": {
 		"@nexus/contracts": "workspace:*"
