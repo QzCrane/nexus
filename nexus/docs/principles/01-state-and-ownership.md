@@ -7,7 +7,7 @@ audience: contributor
 # 01. State & ownership (EPR-001..009)
 
 > 主题 owner: 工程原则中的状态、所有权、ready 屏障、唯一写者、策略顺序与路由。
-> 完整目录: [engineering-principles.md](../engineering-principles.md)
+> 完整目录: [engineering/README.md](../engineering/README.md)
 
 ## EPR-001: 单一事实源 (SSOT)
 

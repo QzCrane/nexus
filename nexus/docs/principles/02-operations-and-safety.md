@@ -7,7 +7,7 @@ audience: contributor
 # 02. Operations & safety (EPR-010..018)
 
 > 主题 owner: 不可逆操作准入、观察投影、控制事务串行、媒体语义、事件归因、生命周期、快捷键反馈、UI 契约、动态频谱。
-> 完整目录: [engineering-principles.md](../engineering-principles.md)
+> 完整目录: [engineering/README.md](../engineering/README.md)
 
 ## EPR-010: 不可逆操作先证明准入
 

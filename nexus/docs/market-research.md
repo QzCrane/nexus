@@ -1,6 +1,6 @@
 ---
 type: explanation
-status: stable
+status: archived
 audience: contributor
 ---
 

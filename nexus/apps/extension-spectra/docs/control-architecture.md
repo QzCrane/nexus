@@ -292,7 +292,7 @@ snapshot.
 
 The following locations are normative implementation anchors. A change that
 moves responsibility must update this list, the executable matrices, tests and
-`check-spectra-control.js` in the same commit.
+`check-spectra-control.ts` in the same commit.
 
 | Location and symbol | Owned decision | Purpose / drift prevented |
 | --- | --- | --- |

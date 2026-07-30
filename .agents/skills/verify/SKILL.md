@@ -32,7 +32,7 @@ bun run verify
 bun run verify:v
 ```
 
-`nexus/scripts/verify-architecture.js` is the executable owner of the current rule set and mode behavior. Read its output and source when the skill text and script differ.
+`nexus/scripts/verify-architecture.ts` is the executable owner of the current rule set and mode behavior. Read its output and source when the skill text and script differ.
 
 ## Failure handling
 

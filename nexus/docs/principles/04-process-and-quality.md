@@ -8,7 +8,7 @@ last_reviewed: 2026-07-29
 # 04. Process and quality gates (EPR-026..029)
 
 > Owner: testing evidence, reversible delivery, truthful public copy, and Git/AI quality gates.
-> Index: [engineering-principles.md](../engineering-principles.md)
+> Index: [engineering/README.md](../engineering/README.md)
 
 ## EPR-026: tests cover ordering and real browser semantics
 

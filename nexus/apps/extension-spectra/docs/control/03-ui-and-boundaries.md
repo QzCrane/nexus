@@ -60,7 +60,7 @@ executor. A target-bound or augmentation read returns
 through the document lease/READY transaction instead of widening a passive
 getter.
 
-`build.mjs` keeps the bootstrap, main Content runtime and video-enhancement
+`build.ts` keeps the bootstrap, main Content runtime and video-enhancement
 Content artifacts isolated because Chrome injects them into page-specific
 isolated worlds. The video artifact is a dynamic-URL web-accessible module but
 is imported only after an explicit video enhancement intent. The Background

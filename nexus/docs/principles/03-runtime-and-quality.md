@@ -7,7 +7,7 @@ audience: contributor
 # 03. Runtime & quality (EPR-019..025)
 
 > 主题 owner: 热更新与导航恢复、错误结构化、外部边界校验、远程控制最小披露、隐私承诺、性能边界、模块依赖。
-> 完整目录: [engineering-principles.md](../engineering-principles.md)
+> 完整目录: [engineering/README.md](../engineering/README.md)
 
 ## EPR-019: 热更新、SPA 导航和 service-worker 重启必须可恢复
 

@@ -7,7 +7,7 @@ audience: contributor
 # 05. Problem-to-principle map (历史问题 -> 长期判定标准)
 
 > 主题 owner: 历史回归、用户反馈、待解决问题到 EPR 的可审计映射;每一行 = 一个曾经出现的问题 + 引用原则 + 长期判定标准。
-> 完整目录: [engineering-principles.md](../engineering-principles.md)
+> 完整目录: [engineering/README.md](../engineering/README.md)
 
 | 历史现象 | 应用原则 | 长期判定标准 |
 | --- | --- | --- |

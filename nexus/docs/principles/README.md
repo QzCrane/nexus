@@ -7,7 +7,7 @@ last_reviewed: 2026-07-20
 
 # NEXUS engineering principles (full definitions)
 
-This directory owns the complete EPR-001..029 definitions referenced by the compact index in [`../engineering-principles.md`](../engineering-principles.md). The compact index is the entry point; [`../engineering/README.md`](../engineering/README.md) owns the EPR authority record, and the documents below are the authority for each principle group.
+This directory owns the complete EPR-001..029 definitions referenced by the compact index in [`../engineering/README.md`](../engineering/README.md). The compact index is the entry point and EPR authority record; the documents below are the authority for each principle group.
 
 ## Principle groups
 

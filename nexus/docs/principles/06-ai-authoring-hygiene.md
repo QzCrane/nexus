@@ -7,7 +7,7 @@ audience: developer
 # AI 编写代码卫生原则
 
 > 主题 owner: AI 与人类协作者在 NEXUS 仓库中编写代码时必须遵守的卫生规则。
-> 完整目录: [engineering-principles.md](../engineering-principles.md)
+> 完整目录: [engineering/README.md](../engineering/README.md)
 
 本文档汇总 NEXUS 历史上已修复的 bug 所沉淀的具体规则,每条规则包含:原则、存在原因、反例、正例(若适用),以及强制执行它的守门。目标是让 AI agent 在生成代码时主动避开这些陷阱,而不是依赖 review 兜底。规则按主题分组,与 EPR-001..029 的工程原则互补: EPR 描述架构意图,本文档描述具体的代码卫生。
 
@@ -36,7 +36,7 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
 });
 ```
 
-- **守门**: `ai-pitfall-detector.mjs` 规则 `onmessage-async-no-return`
+- **守门**: `ai-pitfall-detector.ts` 规则 `onmessage-async-no-return`
 
 ### 1.2 init() 必须返回 cleanup 函数
 
@@ -65,7 +65,7 @@ export function initService(): () => void {
 }
 ```
 
-- **守门**: code review; `ai-pitfall-detector.mjs` 规则 `listener-leak`
+- **守门**: code review; `ai-pitfall-detector.ts` 规则 `listener-leak`
 
 ### 1.3 setInterval 必须有上限
 
@@ -111,7 +111,7 @@ if (isPrivateHost(url.hostname)) throw new Error('blocked by SSRF guard');
 const resp = await fetch(url);
 ```
 
-- **守门**: `ai-pitfall-detector.mjs` 规则 `ssrf-fetch`
+- **守门**: `ai-pitfall-detector.ts` 规则 `ssrf-fetch`
 
 ### 2.2 用户 HTML 必须经过 sanitizeHtml
 
@@ -122,7 +122,7 @@ const resp = await fetch(url);
 ### 2.3 不得写入禁止路径
 
 - **原则**: 不得写入 `docs/_archive/`、`AGENTS.md`、`principles/0[1-5]-*.md` 等等。
-- **守门**: `ai-pre-write-guard.mjs`(写时阻断)
+- **守门**: `ai-pre-write-guard.ts`(写时阻断)
 
 ## 3. 契约卫生 (Contract Hygiene)
 
@@ -130,7 +130,7 @@ const resp = await fetch(url);
 
 - **原则**: 不得重新引入 `TabId`、`VolumeLevel`、`DomainName` 等 branded 类型。使用 `number`/`string` 直接类型。
 - **原因**: branded types 在运行时无意义,且导致跨包导入复杂化;已在 Batch G 中删除。
-- **守门**: `ai-pitfall-detector.mjs` 规则 `branded-type-reuse`; `verify-architecture` 规则 `checkNoBrandedTypes`
+- **守门**: `ai-pitfall-detector.ts` 规则 `branded-type-reuse`; `verify-architecture` 规则 `checkNoBrandedTypes`
 
 ### 3.2 相对路径 TS 导入必须有 .js 扩展名
 
@@ -156,7 +156,7 @@ import { bar } from '../utils.js';   // ✅
 
 - **原则**: 不得 `from '@nexus/contracts/src/...'`;只能使用包根导出或子路径导出(如 `@nexus/kernel/storage`)。
 - **原因**: 深路径绕过包的 `exports` 字段,破坏封装;重构内部路径会无声破坏调用方。
-- **守门**: `ai-pitfall-detector.mjs` 规则 `deep-path-import`; `verify-architecture` 规则 `checkNoDeepPathImports`
+- **守门**: `ai-pitfall-detector.ts` 规则 `deep-path-import`; `verify-architecture` 规则 `checkNoDeepPathImports`
 
 ### 3.4 messages.contracts.ts 已删除
 
@@ -184,7 +184,7 @@ catch (e) { console.warn('storage write failed', e); }
 await chrome.storage.local.set({ key: value }).catch(() => undefined);
 ```
 
-- **守门**: `ai-pitfall-detector.mjs` 规则 `storage-write-uncaught`
+- **守门**: `ai-pitfall-detector.ts` 规则 `storage-write-uncaught`
 
 ### 4.2 SerializedQueue 必须恢复错误
 
@@ -205,7 +205,7 @@ opQueue = result.catch(() => undefined); // ✅ 错误被吞掉,链继续
 return result;
 ```
 
-- **守门**: `ai-pitfall-detector.mjs` 规则 `serialized-queue-broken-chain`
+- **守门**: `ai-pitfall-detector.ts` 规则 `serialized-queue-broken-chain`
 - **现成实现**: `@nexus/kernel` 的 `createSerializedQueue` / `createKeyedSerializedQueue`
 
 ## 5. 资源生命周期 (Resource Lifecycle)
@@ -214,7 +214,7 @@ return result;
 
 - **原则**: 每个文件内的 `addEventListener(type, fn)` 必须有对应的 `removeEventListener(type, fn)`。
 - **原因**: 监听器泄漏导致内存增长、重复触发、跨页面状态污染。
-- **守门**: `ai-pitfall-detector.mjs` 规则 `listener-leak`
+- **守门**: `ai-pitfall-detector.ts` 规则 `listener-leak`
 
 ### 5.2 Promise.race 必须有超时
 

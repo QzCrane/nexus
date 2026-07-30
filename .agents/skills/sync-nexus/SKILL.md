@@ -23,7 +23,7 @@ Use when generating the approved SPECTRA or HALO public repository from the priv
 
 The validation starts from an artifact-clean projection and uses an ignored persistent Turbo cache under `node_modules`; this preserves correctness while avoiding a cold build on every synchronization. A failed gate cannot create a candidate commit. The script preserves the destination repository's existing Git history. It does **not** transplant the private repository's commit graph. It never pushes.
 
-The destination defaults to `../../${target}-public` relative to the script. Override with the `SYNC_PUBLIC_DEST` environment variable for CI or non-standard checkout layouts. The `.changeset`, `.agents`, `.codex`, `.github`, and `.gitnexus` directories are always excluded; the public repository never receives internal tooling or version-management state.
+The destination defaults to `../../${target}-public` relative to the script. Override with the `SYNC_PUBLIC_DEST` environment variable for CI or non-standard checkout layouts. The `.agents`, `.codex`, `.github`, and `.gitnexus` directories are always excluded; the public repository never receives internal tooling or version-management state.
 
 ## Process
 
@@ -41,7 +41,7 @@ From the repository root:
 
 ```bash
 bun run docs:check
-bun --cwd nexuscheck:toolchain
+bun --cwd nexus check:toolchain
 bun run lint
 bun run typecheck
 bun run verify:v
