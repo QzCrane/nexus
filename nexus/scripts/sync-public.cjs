@@ -102,8 +102,8 @@ const APP_CONFIGS = {
     publicApplicationScriptFiles: [
       'apps/extension-spectra/scripts/check-production-artifacts.mjs',
       'apps/extension-spectra/scripts/chrome120-webrtc-adapter.mjs',
-      'apps/extension-spectra/scripts/external-boundary-properties.mjs',
       'apps/extension-spectra/scripts/i18n-assets.ts',
+      'apps/extension-spectra/scripts/minification-policy.mjs',
     ],
     publicApplicationDevDependencies: [
       'chrome-types',
@@ -255,6 +255,71 @@ function shouldExcludeForConfig(relativePath, patterns, config) {
 
 function shouldExclude(relativePath) {
   return shouldExcludeForConfig(relativePath, excludes, APP_CONFIG);
+}
+
+function applicationScriptDependencies(importerPath, source, config) {
+  const loader = importerPath.endsWith('.ts') ? 'ts' : 'js';
+  const scriptsRoot = `${config.applicationPath}/scripts`;
+  const imports = new Bun.Transpiler({ loader }).scan(source).imports;
+  return [...new Set(imports
+    .map(({ path: specifier }) => specifier)
+    .filter((specifier) => specifier.startsWith('.'))
+    .map((specifier) => path.posix.normalize(
+      path.posix.join(path.posix.dirname(importerPath), specifier),
+    ))
+    .filter((relativePath) => (
+      relativePath === scriptsRoot || relativePath.startsWith(`${scriptsRoot}/`)
+    )))]
+    .sort();
+}
+
+function assertApplicationScriptDependencies(importerPath, source, config) {
+  const allowed = new Set(config.publicApplicationScriptFiles);
+  const missing = applicationScriptDependencies(importerPath, source, config)
+    .filter((relativePath) => !allowed.has(relativePath));
+  if (missing.length > 0) {
+    throw new Error(
+      `${importerPath} imports public build script(s) outside the audited allowlist: ` +
+      missing.join(', '),
+    );
+  }
+}
+
+function readCommittedTextFile(relativePath) {
+  try {
+    return run('git', ['show', `HEAD:./${relativePath}`], {
+      cwd: sourceRoot,
+      stdio: ['ignore', 'pipe', 'inherit'],
+    });
+  } catch (error) {
+    throw new Error(`Committed public build module is missing: ${relativePath}`, {
+      cause: error,
+    });
+  }
+}
+
+function verifyPublicApplicationScriptClosure() {
+  const queue = [
+    `${APP_CONFIG.applicationPath}/build.mjs`,
+    ...APP_CONFIG.publicApplicationScriptFiles,
+  ];
+  const visited = new Set();
+
+  while (queue.length > 0) {
+    const importerPath = queue.shift();
+    if (visited.has(importerPath)) continue;
+    visited.add(importerPath);
+
+    const source = readCommittedTextFile(importerPath);
+    assertApplicationScriptDependencies(importerPath, source, APP_CONFIG);
+    for (const dependency of applicationScriptDependencies(
+      importerPath,
+      source,
+      APP_CONFIG,
+    )) {
+      if (!visited.has(dependency)) queue.push(dependency);
+    }
+  }
 }
 
 function parseCommittedTree(output) {
@@ -631,6 +696,7 @@ function main() {
 
   runStage('verify source and destination', () => {
     verifySourceToolchain();
+    verifyPublicApplicationScriptClosure();
     verifyDestinationState();
   });
 
@@ -674,12 +740,15 @@ module.exports = {
   BASE_EXCLUDES,
   PUBLIC_TURBO_CACHE_DIR,
   PUBLIC_VALIDATION_SCRIPTS,
+  applicationScriptDependencies,
+  assertApplicationScriptDependencies,
   matchesPattern,
   isIncrementalBuildState,
   parseBatchBlobOutput,
   parseArguments,
   parseCommittedTree,
   parseDivergence,
+  readCommittedTextFile,
   selectObjectKeys,
   shouldExcludeForConfig,
   shouldExcludeWithPatterns,

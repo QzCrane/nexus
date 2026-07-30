@@ -8,12 +8,15 @@ const {
 	BASE_EXCLUDES,
 	PUBLIC_TURBO_CACHE_DIR,
 	PUBLIC_VALIDATION_SCRIPTS,
+	applicationScriptDependencies,
+	assertApplicationScriptDependencies,
 	isIncrementalBuildState,
 	matchesPattern,
 	parseBatchBlobOutput,
 	parseArguments,
 	parseCommittedTree,
 	parseDivergence,
+	readCommittedTextFile,
 	selectObjectKeys,
 	shouldExcludeForConfig,
 	shouldExcludeWithPatterns,
@@ -26,6 +29,22 @@ const {
 	BASE_EXCLUDES: string[];
 	PUBLIC_TURBO_CACHE_DIR: string;
 	PUBLIC_VALIDATION_SCRIPTS: string[];
+	applicationScriptDependencies(
+		importerPath: string,
+		source: string,
+		config: {
+			applicationPath: string;
+			publicApplicationScriptFiles: string[];
+		},
+	): string[];
+	assertApplicationScriptDependencies(
+		importerPath: string,
+		source: string,
+		config: {
+			applicationPath: string;
+			publicApplicationScriptFiles: string[];
+		},
+	): void;
 	isIncrementalBuildState(filePath: string): boolean;
 	matchesPattern(relativePath: string, pattern: string): boolean;
 	parseBatchBlobOutput(output: Buffer, expectedObjectIds: string[]): Buffer[];
@@ -36,6 +55,7 @@ const {
 		relativePath: string;
 	}>;
 	parseDivergence(output: string): { behind: number; ahead: number };
+	readCommittedTextFile(relativePath: string): string;
 	selectObjectKeys(
 		source: Record<string, string>,
 		allowedKeys: string[],
@@ -74,8 +94,8 @@ describe('public repository source projection', () => {
 		expect(APP_CONFIGS.spectra.publicApplicationScriptFiles).toEqual([
 			'apps/extension-spectra/scripts/check-production-artifacts.mjs',
 			'apps/extension-spectra/scripts/chrome120-webrtc-adapter.mjs',
-			'apps/extension-spectra/scripts/external-boundary-properties.mjs',
 			'apps/extension-spectra/scripts/i18n-assets.ts',
+			'apps/extension-spectra/scripts/minification-policy.mjs',
 		]);
 		expect(shouldExcludeForConfig(
 			'apps/extension-spectra/scripts/i18n-assets.ts',
@@ -93,6 +113,33 @@ describe('public repository source projection', () => {
 				relativePath,
 			).toBe(true);
 		}
+	});
+
+	test('rejects a build-script dependency outside the audited public allowlist', () => {
+		const buildPath = 'apps/extension-spectra/build.mjs';
+		const buildSource = readFileSync(new URL('../build.mjs', import.meta.url), 'utf8');
+		expect(applicationScriptDependencies(
+			buildPath,
+			buildSource,
+			APP_CONFIGS.spectra,
+		)).toEqual([
+			'apps/extension-spectra/scripts/check-production-artifacts.mjs',
+			'apps/extension-spectra/scripts/i18n-assets.ts',
+			'apps/extension-spectra/scripts/minification-policy.mjs',
+		]);
+		expect(() => assertApplicationScriptDependencies(
+			buildPath,
+			buildSource,
+			{
+				...APP_CONFIGS.spectra,
+				publicApplicationScriptFiles: [],
+			},
+		)).toThrow('outside the audited allowlist');
+		expect(() => assertApplicationScriptDependencies(
+			buildPath,
+			buildSource,
+			APP_CONFIGS.spectra,
+		)).not.toThrow();
 	});
 
 	test('excludes internal plans, local caches, backup assets, and release output', () => {
@@ -158,6 +205,12 @@ describe('public repository source projection', () => {
 			(blob) => [...blob],
 		)).toEqual([[...firstBlob], [...secondBlob]]);
 		expect(() => parseBatchBlobOutput(output, [secondObjectId, firstObjectId])).toThrow();
+	});
+
+	test('reads committed public modules relative to the source workspace', () => {
+		expect(readCommittedTextFile('apps/extension-spectra/build.mjs')).toContain(
+			'SPECTRA esbuild pipeline',
+		);
 	});
 
 	test('parses source-relative committed tree records', () => {
