@@ -1,0 +1,99 @@
+name: Sync public repository
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which public repository to sync
+        required: true
+        type: choice
+        options:
+          - spectra
+          - halo
+      amend:
+        description: Amend the single unpushed candidate instead of creating a new commit
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-public-${{ github.event.inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: sync (${{ github.event.inputs.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.repository == 'QzCrane/nexus'
+    env:
+      SYNC_PUBLIC_DEST: ${{ github.workspace }}/public
+    steps:
+      - name: Checkout private source
+        uses: actions/checkout@v4
+        with:
+          path: private
+          fetch-depth: 0
+
+      - name: Checkout public destination
+        uses: actions/checkout@v4
+        with:
+          repository: QzCrane/${{ github.event.inputs.target }}
+          token: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          path: public
+          fetch-depth: 0
+
+      - name: Set up Bun 1.3.14
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Configure Git identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Install private dependencies
+        run: bun install --cwd private/nexus --frozen-lockfile
+
+      - name: Validate private source
+        run: |
+          cd private
+          bun run docs:check
+          bun --cwd nexus check:toolchain
+          bun run lint
+          bun run typecheck
+          bun run verify:q
+          bun run build
+
+      - name: Run sync generator
+        run: |
+          cd private
+          if [ "${{ github.event.inputs.amend }}" = "true" ]; then
+            bun --cwd nexus sync-${{ github.event.inputs.target }} -- --amend
+          else
+            bun --cwd nexus sync-${{ github.event.inputs.target }}
+          fi
+
+      - name: Inspect generated diff
+        run: |
+          cd public
+          echo "::group::git status"
+          git status
+          echo "::endgroup::"
+          echo "::group::recent commits"
+          git log --oneline -5
+          echo "::endgroup::"
+          echo "::group::latest diff stat"
+          git diff --stat HEAD~1..HEAD || true
+          echo "::endgroup::"
+
+      - name: Push public repository
+        run: |
+          cd public
+          git push origin HEAD
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}

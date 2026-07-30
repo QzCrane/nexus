@@ -47,40 +47,49 @@ If these do not exist, stop at a release-readiness report or create them as an e
 
 Do not maintain a static current version, tool count, or dependency list in this skill.
 
-### 3. Run repository and HALO gates
+### 3. Read the canonical owners and executable release plan
 
-Run from `nexus/`:
+- [HALO documentation](../../../nexus/apps/extension-halo/docs/README.md)
+- [architecture](../../../nexus/apps/extension-halo/docs/architecture.md)
+- [roadmap](../../../nexus/apps/extension-halo/docs/roadmap.md)
+
+From `nexus/`:
 
 ```bash
-bun run docs:check
-bun run check:toolchain
-bun run --cwd apps/extension-halo typecheck
-bun run lint
-bun run verify:v
-bun run generate-registry
-bun run --cwd apps/extension-halo test:ui
-bun run --cwd apps/extension-halo test:playwright
-bun run --cwd apps/extension-halo build:prod
+bun run release:halo:plan
 ```
 
-Confirm SidePanel launch, service-worker recovery, permissions, restricted pages, import/export, local persistence, i18n, and cleanup.
+The maintained release script owns exact Bun 1.3.14 execution, production build, artifact integrity, staging, ZIP creation, and output naming. If this skill differs, update the skill rather than creating a parallel process.
 
-“Local first” does not require every optional capability to work offline. Test and disclose each network-backed feature separately; inactive features create no hidden network or recurring work.
+### 4. Run the maintained release gate
 
-### 4. Inspect the production output
+From the repository root:
 
-Review `apps/extension-halo/dist/` for:
+```bash
+bun --cwd nexus release:halo
+```
+
+This runs architecture verify, frozen dependency install, toolchain verify, Biome lint, workspace dependency build, TypeScript check, unit tests, production build, dependency audit, and deterministic staging ZIP as a single ordered gate. A failure stops the release; the staging directory is cleaned before every run.
+
+Confirm SidePanel launch, service-worker recovery, permissions, restricted pages, import/export, local persistence, i18n, and cleanup separately. UI and Playwright tests are not yet part of the automated gate; run them explicitly when applicable.
+
+"Local first" does not require every optional capability to work offline. Test and disclose each network-backed feature separately; inactive features create no hidden network or recurring work.
+
+### 5. Inspect the production output
+
+Review `apps/extension-halo/dist/` and `apps/extension-halo/release/.staging/` for:
 
 - correct manifest, version, and permissions;
 - complete required locales and assets;
 - no source maps, tests, source files, private docs, secrets, or debug code;
 - no undeclared remote code or network destination;
 - no duplicate or unreachable bundles;
-- correct package root when loaded unpacked.
+- correct package root when loaded unpacked;
+- the staged ZIP matches the recorded SHA-256 and is byte-reproducible across two consecutive generations.
 
-The repository currently has no dedicated `release:halo` packager. Until one is added, create a candidate ZIP reproducibly from `dist/` contents and record SHA-256. Do not use a fixed size threshold as proof; explain artifact-graph changes.
+Do not use a fixed size threshold as proof; explain artifact-graph changes.
 
-### 5. Reconcile public truth
+### 6. Reconcile public truth
 
 - permission declarations match exact manifest and plugin registry;
 - privacy copy distinguishes local defaults from optional network capabilities;
@@ -89,7 +98,7 @@ The repository currently has no dedicated `release:halo` packager. Until one is 
 - cross-browser claims cover only browsers in the release test matrix;
 - public sync output remains pinned to `bun@1.3.14`.
 
-### 6. Publish and synchronize within authorization
+### 7. Publish and synchronize within authorization
 
 - Upload or submit only with explicit authorization.
 - Record exact ZIP checksum and store submission status.
