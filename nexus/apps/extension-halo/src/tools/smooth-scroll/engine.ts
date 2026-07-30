@@ -47,29 +47,24 @@ const OBSERVED_WRITE_TOLERANCE = 0.5;
 const WRITE_OBSERVATION_TIMEOUT_MS = 50;
 const FINE_TIME_RATIO = 0.03;
 const MIN_FINE_TIME_CONSTANT_MS = 8;
-const MAX_FINE_TIME_CONSTANT_MS = 20;
 const MAX_FINE_FRAME_RESPONSE = 0.8;
 const MAX_COARSE_FRAME_RESPONSE = 0.25;
 const COARSE_SPRING_SCALE = 12;
 const COARSE_RESPONSE_TRANSITION_MS = 48;
 const MAX_COARSE_RESPONSE_MULTIPLIER = 10;
+// 按帧约束（与 animationTime 无关，不可放宽，否则会破坏帧率性能）
 const MAX_COARSE_SPEED_PX_PER_MS = 6;
 const MAX_COARSE_FRAME_DISPLACEMENT_PX = 100;
-const MAX_COARSE_TAIL_MS = 280;
+// 按时长约束的下限（防极端短动画导致 tail planner 失效）
+const MIN_COARSE_TAIL_MS = 280;
 const COARSE_WRITE_SETTLE_RESERVE_MS = 32;
 const COARSE_DROPPED_FRAME_BUDGET_MS = 50;
-const COARSE_ACTIVE_DRAIN_BUDGET_MS =
-	MAX_COARSE_TAIL_MS - COARSE_WRITE_SETTLE_RESERVE_MS;
 const COARSE_DROPPED_FRAME_LOSS_PX = Math.max(
 	0,
 	MAX_COARSE_SPEED_PX_PER_MS *
 		COARSE_DROPPED_FRAME_BUDGET_MS -
 		MAX_COARSE_FRAME_DISPLACEMENT_PX,
 );
-const MAX_COARSE_BACKLOG_PX =
-	MAX_COARSE_SPEED_PX_PER_MS *
-		COARSE_ACTIVE_DRAIN_BUDGET_MS -
-	COARSE_DROPPED_FRAME_LOSS_PX;
 const ANIMATABLE_OVERFLOW = new Set(['auto', 'scroll', 'overlay']);
 const windowVerticalWriteOptions: ScrollToOptions = {
 	behavior: 'instant',
@@ -83,13 +78,32 @@ const targetMetrics: ScrollTargetMetricsBuffer = {
 	capacityY: 0,
 };
 
+// 按时长约束派生自 state.time，让 animationTime 字段真正控制动画总时长。
+// 下限保留 MIN_COARSE_TAIL_MS，确保短动画下 tail planner 仍有足够预算收敛。
+export function tailBudgetMs(): number {
+	return Math.max(
+		MIN_COARSE_TAIL_MS,
+		state.time + COARSE_WRITE_SETTLE_RESERVE_MS,
+	);
+}
+
+export function maxBacklogPx(): number {
+	const activeDrainBudget = tailBudgetMs() - COARSE_WRITE_SETTLE_RESERVE_MS;
+	return (
+		MAX_COARSE_SPEED_PX_PER_MS * activeDrainBudget -
+		COARSE_DROPPED_FRAME_LOSS_PX
+	);
+}
+
+// SCROLL_LIMITS 只保留按帧约束和静态派生量（与 animationTime 无关）。
+// 按时长约束通过 tailBudgetMs()/maxBacklogPx() 函数访问，跟随 state.time 动态变化。
 export const SCROLL_LIMITS = Object.freeze({
 	maxSpeedPxPerMs: MAX_COARSE_SPEED_PX_PER_MS,
 	maxFrameDisplacementPx: MAX_COARSE_FRAME_DISPLACEMENT_PX,
-	tailBudgetMs: MAX_COARSE_TAIL_MS,
+	minTailBudgetMs: MIN_COARSE_TAIL_MS,
 	writeSettleReserveMs: COARSE_WRITE_SETTLE_RESERVE_MS,
 	droppedFrameBudgetMs: COARSE_DROPPED_FRAME_BUDGET_MS,
-	maxBacklogPx: MAX_COARSE_BACKLOG_PX,
+	droppedFrameLossPx: COARSE_DROPPED_FRAME_LOSS_PX,
 });
 export const COARSE_SCROLL_LIMITS = SCROLL_LIMITS;
 
@@ -191,10 +205,9 @@ function physicalResidualY(): number {
 }
 
 function fineTimeConstant(): number {
-	return Math.min(
-		MAX_FINE_TIME_CONSTANT_MS,
-		Math.max(MIN_FINE_TIME_CONSTANT_MS, state.time * FINE_TIME_RATIO),
-	);
+	// 移除 MAX_FINE_TIME_CONSTANT_MS 上限，让触控板动画时长跟随 animationTime。
+	// MAX_FINE_FRAME_RESPONSE=0.8 仍约束单帧响应，按帧性能不受影响。
+	return Math.max(MIN_FINE_TIME_CONSTANT_MS, state.time * FINE_TIME_RATIO);
 }
 
 function coarseSpringOmega(): number {
@@ -610,7 +623,7 @@ export function scrollTo(
 		const currentResidual = physicalResidualY();
 		const requestedResidual = currentResidual + y;
 		const maximumResidual =
-			Math.min(capacityY, SCROLL_LIMITS.maxBacklogPx);
+			Math.min(capacityY, maxBacklogPx());
 		const boundedResidual = directionY * Math.min(
 			Math.abs(requestedResidual),
 			maximumResidual,
@@ -619,7 +632,7 @@ export function scrollTo(
 		state.remainingY += acceptedDelta;
 		state.coarseTailDeadline =
 			inputMode === 'coarse'
-				? timestamp + SCROLL_LIMITS.tailBudgetMs
+				? timestamp + tailBudgetMs()
 				: null;
 		if (inputMode === 'coarse') clampCoarseVelocity();
 	}
@@ -664,7 +677,7 @@ export function queueOwnedVerticalScroll(
 		directionY *
 		Math.min(
 			Math.abs(requestedResidual),
-			SCROLL_LIMITS.maxBacklogPx,
+			maxBacklogPx(),
 		);
 	state.remainingY += boundedResidual - currentResidual;
 	state.coarseTailDeadline = null;

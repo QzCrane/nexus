@@ -11,8 +11,10 @@ import {
 	clearQueue,
 	COARSE_SCROLL_LIMITS,
 	configure,
-	SCROLL_LIMITS,
+	maxBacklogPx,
 	scrollTo,
+	SCROLL_LIMITS,
+	tailBudgetMs,
 } from '../src/tools/smooth-scroll/engine';
 import {
 	acceleration,
@@ -1202,9 +1204,9 @@ describe('smooth scroll animation ownership', () => {
 				) + 0.01,
 			);
 			expect(result.settleTailMs).toBeLessThanOrEqual(
-				SCROLL_LIMITS.tailBudgetMs,
-			);
-		}
+			tailBudgetMs(),
+		);
+	}
 
 		const droppedFrame = runFineOverload([
 			16, 16, 16, 16, 16, 16, 16, 16, 50, 16,
@@ -1213,7 +1215,7 @@ describe('smooth scroll animation ownership', () => {
 			SCROLL_LIMITS.maxFrameDisplacementPx,
 		);
 		expect(droppedFrame.settleTailMs).toBeLessThanOrEqual(
-			SCROLL_LIMITS.tailBudgetMs,
+			tailBudgetMs(),
 		);
 	});
 
@@ -1239,9 +1241,9 @@ describe('smooth scroll animation ownership', () => {
 		const settledAt = runUntilIdleAtInterval(fakeNow, 16, 500);
 
 		expect(allInputsAdmitted).toBe(true);
-		expect(target.scrollTop).toBeCloseTo(SCROLL_LIMITS.maxBacklogPx, 5);
+		expect(target.scrollTop).toBeCloseTo(maxBacklogPx(), 5);
 		expect(settledAt - fakeNow).toBeLessThanOrEqual(
-			SCROLL_LIMITS.tailBudgetMs,
+			tailBudgetMs(),
 		);
 	});
 
@@ -1261,7 +1263,7 @@ describe('smooth scroll animation ownership', () => {
 		expect(firstFramePosition).toBeGreaterThanOrEqual(20);
 		expect(firstFramePosition).toBeLessThanOrEqual(35);
 		expect(target.scrollTop).toBeCloseTo(300, 5);
-		expect(settledAt - 4_000).toBeLessThanOrEqual(280);
+		expect(settledAt - 4_000).toBeLessThanOrEqual(tailBudgetMs());
 	});
 
 	test('applies coarse response gain to non-spring easing without changing distance', () => {
@@ -1483,7 +1485,7 @@ describe('smooth scroll animation ownership', () => {
 			expect(result.preventedEvents).toBe(11);
 			expect(result.finalPosition).toBeCloseTo(11 * DEFAULT_SETTINGS.stepSize, 5);
 			expect(result.settleTailMs).toBeLessThanOrEqual(
-				COARSE_SCROLL_LIMITS.tailBudgetMs,
+				tailBudgetMs(),
 			);
 			expect(result.maxFrameMovement).toBeLessThanOrEqual(
 				Math.min(
@@ -1541,7 +1543,7 @@ describe('smooth scroll animation ownership', () => {
 			COARSE_SCROLL_LIMITS.maxFrameDisplacementPx + 0.01,
 		);
 		expect(result.settleTailMs).toBeLessThanOrEqual(
-			COARSE_SCROLL_LIMITS.tailBudgetMs,
+			tailBudgetMs(),
 		);
 		expect(result.maxFrameOwners).toBeLessThanOrEqual(1);
 		expect(result.maxWritesPerFrame).toBeLessThanOrEqual(1);
@@ -1563,11 +1565,11 @@ describe('smooth scroll animation ownership', () => {
 		const settledAt = runUntilIdleAtInterval(fakeNow, 16, 500);
 
 		expect(target.scrollTop).toBeCloseTo(
-			COARSE_SCROLL_LIMITS.maxBacklogPx,
+			maxBacklogPx(),
 			5,
 		);
 		expect(settledAt - fakeNow).toBeLessThanOrEqual(
-			COARSE_SCROLL_LIMITS.tailBudgetMs,
+			tailBudgetMs(),
 		);
 		expect(frameCallbacks.size).toBe(0);
 	});
@@ -2557,7 +2559,7 @@ describe('sidepanel smooth scroll', () => {
 				5,
 			);
 			expect(settledAt - 15_070).toBeLessThanOrEqual(
-				COARSE_SCROLL_LIMITS.tailBudgetMs,
+				tailBudgetMs(),
 			);
 		} finally {
 			dispose();
