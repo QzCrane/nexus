@@ -9,6 +9,8 @@ last_reviewed: 2026-07-26
 
 > 主题 owner 段: §3 Strategy order · §4 Site route registry · §5 Runtime ownership · §6 Exact-element page media, PiP & fullscreen
 > 完整目录: [control-architecture.md](../control-architecture.md)
+>
+> **TL;DR**: planner 按 observe→native→controlled-augmentation→unsupported 顺序选策略；site route 是路由提示非激活；五个内置快捷键在 document_start 独占；Capture 仅在 invocation-bound admission 下激活。
 
 ## §3 Strategy order
 
@@ -150,10 +152,17 @@ and a timed-out handshake returns a structured error without an unhandled
 Promise rejection.
 
 All five shipped defaults have one page gesture owner in the
-`document_start` bootstrap: `Alt+ArrowLeft/Right` applies literal
-`-0.1/+0.1` speed deltas, `Alt+ArrowDown/Up` applies `-10/+10`
-effective-volume deltas, and `Alt+M` toggles media mute once per physical
-press. The shared bootstrap resolver is also the heavy site-hotkey listener's
+`document_start` bootstrap:
+
+| Chord | Action | Delta |
+| --- | --- | --- |
+| `Alt+ArrowLeft` | speed down | `-0.1` |
+| `Alt+ArrowRight` | speed up | `+0.1` |
+| `Alt+ArrowDown` | volume down | `-10` |
+| `Alt+ArrowUp` | volume up | `+10` |
+| `Alt+M` | toggle mute | once per physical press |
+
+The shared bootstrap resolver is also the heavy site-hotkey listener's
 exclusion boundary, so that listener cannot consume any of these five chords a
 second time. None is registered as a manifest command or default Chrome command
 slot, eliminating the competing `chrome.commands` stream that cannot expose

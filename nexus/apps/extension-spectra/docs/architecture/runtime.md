@@ -96,16 +96,27 @@ The acknowledged per-tab control session is stored separately in
 patch contains exactly the 20 refresh-restorable configuration fields declared
 by `CONTROL_SESSION_FIELDS`; it contains neither default-filled guesses nor
 media/source identities. Its v3 record separates the complete current-resource
-patch from an origin-portable patch. Page observations update the former and
-remove those fields from the latter; explicit Popup, remote and shortcut ACKs
-update both. A later page observation therefore cannot leave an older extension
+patch from an origin-portable patch:
+
+| Patch source | Updates current-resource | Updates origin-portable |
+| --- | --- | --- |
+| Page observation | yes | removes those fields |
+| Popup / remote / shortcut ACK | yes | yes |
+
+A later page observation therefore cannot leave an older extension
 value waiting to reappear on the next video. Every merge or rebind resolves only
 after the complete versioned projection is physically present in
 `chrome.storage.session`; bounded write failure is propagated instead of
 delegated to a timer that an MV3 worker may never run. The resource URL is
-canonicalized by the storage owner. A new `documentId` at the exact URL inherits
-the complete patch, another same-origin URL inherits only the portable patch,
-and a cross-origin navigation retires both. This keeps a muted recommendation
+canonicalized by the storage owner:
+
+| Navigation type | documentId | Patch inheritance |
+| --- | --- | --- |
+| Same URL, new `documentId` | same | complete patch |
+| Same-origin, different URL | same | origin-portable patch only |
+| Cross-origin | new | both retired |
+
+This keeps a muted recommendation
 preview from becoming restore intent for a detail video without discarding the
 user's explicit enhancement settings. Same-document History API and fragment
 changes keep their document state and update the resource key on the next

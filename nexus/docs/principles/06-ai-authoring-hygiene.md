@@ -9,6 +9,8 @@ last_reviewed: 2026-07-30
 
 > 主题 owner: AI 与人类协作者在 NEXUS 仓库中编写代码时必须遵守的卫生规则。
 > 完整目录: [engineering/README.md](../engineering/README.md)
+>
+> **TL;DR**: 共 14 条代码卫生规则，分 6 组（异步生命周期/安全/契约/存储/资源/注册表强制传播）；每条配反例+正例+守门，守门汇总见文末表格。
 
 本文档汇总 NEXUS 历史上已修复的 bug 所沉淀的具体规则,每条规则包含:原则、存在原因、反例、正例(若适用),以及强制执行它的守门。目标是让 AI agent 在生成代码时主动避开这些陷阱,而不是依赖 review 兜底。规则按主题分组,与 EPR-001..029 的工程原则互补: EPR 描述架构意图,本文档描述具体的代码卫生。
 
@@ -237,7 +239,7 @@ await Promise.race([
 ]);
 ```
 
-## 6. Registry Force Propagation
+## 6. 注册表强制传播 (Registry Force Propagation)
 
 ### 6.1 force 选项必须贯穿全链路
 
