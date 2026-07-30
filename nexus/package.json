@@ -16,6 +16,7 @@
 		"typecheck:halo": "turbo run typecheck --filter=@nexus/contracts --filter=@nexus/kernel --filter=@nexus/ui-kit --filter=@nexus/extension-halo",
 		"build:spectra-deps": "turbo run build --filter=@nexus/contracts --filter=@nexus/kernel --filter=@nexus/audio-engine",
 		"test:spectra": "bun run --cwd apps/extension-spectra test",
+		"test:halo": "bun run --cwd apps/extension-halo test:unit",
 		"check:toolchain": "bun scripts/check-toolchain.mjs",
 		"check:platform": "bun test scripts/platform-contract.test.mjs && bun scripts/check-platform-contract.mjs",
 		"check:spectra-remote-live": "bun scripts/check-spectra-remote-live.mjs",

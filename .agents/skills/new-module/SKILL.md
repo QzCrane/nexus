@@ -74,7 +74,7 @@ For HALO plugins, follow [`apps/extension-halo/docs/architecture.md`](../../../n
 ```bash
 bun install
 bun run docs:check
-bun --cwd nexus run check:toolchain
+bun --cwd nexuscheck:toolchain
 bun run typecheck
 bun run lint
 bun run verify:q

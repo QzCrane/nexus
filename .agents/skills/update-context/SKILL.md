@@ -87,7 +87,7 @@ Edit `.agents/skills/<name>/SKILL.md`, then run `bun run sync:skills` so `AGENTS
 
 ```bash
 bun run docs:check
-bun --cwd nexus run check:toolchain
+bun --cwd nexuscheck:toolchain
 ```
 
 Also:

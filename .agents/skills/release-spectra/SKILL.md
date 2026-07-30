@@ -51,12 +51,12 @@ From the repository root:
 
 ```bash
 bun run docs:check
-bun --cwd nexus run check:toolchain
-bun --cwd nexus run typecheck:spectra
+bun --cwd nexuscheck:toolchain
+bun --cwd nexustypecheck:spectra
 bun run lint
-bun --cwd nexus run verify:v
-bun --cwd nexus run test:spectra
-bun --cwd nexus run check:spectra-remote-live
+bun --cwd nexusverify:v
+bun --cwd nexustest:spectra
+bun --cwd nexuscheck:spectra-remote-live
 ```
 
 Also inspect required Chrome integration, production-artifact, localization, permission, and remote-security results. A smoke test alone does not prove routing, activation, navigation, update recovery, or authentication.
@@ -64,7 +64,7 @@ Also inspect required Chrome integration, production-artifact, localization, per
 ### 4. Build and inspect the release artifact
 
 ```bash
-bun --cwd nexus run release:spectra
+bun --cwd nexusrelease:spectra
 ```
 
 Inspect the ZIP instead of enforcing an undocumented fixed size. Reject source maps, tests, source files, private docs, debug assets, undeclared remote code, duplicate bundles, stale locales, or unreachable artifacts. Record the exact checksum and candidate commit.

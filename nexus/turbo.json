@@ -8,6 +8,10 @@
 			"dependsOn": [
 				"^build"
 			],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/tsconfig.base.json"
+			],
 			"outputs": [
 				"dist/**"
 			]
@@ -24,11 +28,23 @@
 			]
 		},
 		"test": {
-			"outputs": ["coverage/**"]
+			"inputs": [
+				"$TURBO_DEFAULT$"
+			],
+			"outputs": [
+				"coverage/**"
+			]
 		},
 		"typecheck": {
 			"dependsOn": [
 				"^typecheck"
+			],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/tsconfig.base.json"
+			],
+			"outputs": [
+				"**/*.tsbuildinfo"
 			]
 		}
 	}

@@ -50,7 +50,7 @@ The documentation gate checks canonical entrypoints, frontmatter, one-H1 structu
 From the repository root:
 
 ```bash
-bun --cwd nexus run check:toolchain
+bun --cwd nexuscheck:toolchain
 ```
 
 This requires runtime Bun 1.3.14, matching root/workspace package metadata, pinned Biome/Turbo versions, and no recognized stale Bun-version reference in repository text or configuration.

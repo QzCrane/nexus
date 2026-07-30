@@ -57,7 +57,7 @@ jobs:
         run: bun run docs:check
 
       - name: Check pinned toolchain
-        run: bun --cwd nexus run check:toolchain
+        run: bun --cwd nexus check:toolchain
 
       - name: Check cross-platform contract
         run: bun run check:platform

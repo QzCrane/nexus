@@ -39,7 +39,7 @@ From the repository root:
 
 ```bash
 bun run docs:check
-bun --cwd nexus run check:toolchain
+bun --cwd nexuscheck:toolchain
 bun run lint
 bun run typecheck
 bun run verify:v
