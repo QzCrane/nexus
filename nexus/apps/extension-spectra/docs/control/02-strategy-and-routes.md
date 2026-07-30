@@ -8,7 +8,7 @@ last_reviewed: 2026-07-26
 # 02. Strategy order & Routes (Capability order, registry, runtime, bridges)
 
 > 主题 owner 段: §3 Strategy order · §4 Site route registry · §5 Runtime ownership · §6 Exact-element page media, PiP & fullscreen
-> 完整目录: [control-architecture.md](../control-architecture.md)
+> 完整目录: [README.md](README.md)
 >
 > **TL;DR**: planner 按 observe→native→controlled-augmentation→unsupported 顺序选策略；site route 是路由提示非激活；五个内置快捷键在 document_start 独占；Capture 仅在 invocation-bound admission 下激活。
 
@@ -54,7 +54,7 @@ The implementation must not hide invasive behavior under the word "native". Ever
 | controlled augmentation | `extension-state`, `extension-css`, `extension-overlay`, `media-webaudio`, `capture` | Add a reversible extension-owned capability only when complete native control is unavailable. |
 | unsupported | `unsupported` | Preserve the page and return a structured capability error. |
 
-Generic constructor, prototype, descriptor, setter, `createElement`, History API and page-AudioContext interception are forbidden hijacks. They are not planner candidates. A controlled augmentation must have a bounded owner, actual readback, a disposer and a restore rule; otherwise it is unsupported.
+The §3.1 list defines forbidden hijacks that are not planner candidates. A controlled augmentation must have a bounded owner, actual readback, a disposer and a restore rule; otherwise it is unsupported.
 
 ## §4 Site route registry and eligibility cache
 
@@ -116,8 +116,7 @@ remote control, and an alternate shortcut target cannot manufacture admission.
 An already active Capture may be configured or stopped without a second
 admission.
 
-An admitted transition follows SCTRL-011 — the processor handoff never
-double-applies DSP, never ACKs before actual readback, and a candidate failure
+An admitted transition follows SCTRL-011; a candidate failure
 retains the browser denial in `lastError`. Without admission the executor returns
 `bypass+error` without calling `getMediaStreamId()`. A transparent configuration
 (no boost, no DSP) never escalates, because a
@@ -164,11 +163,14 @@ All five shipped defaults have one page gesture owner in the
 
 The shared bootstrap resolver is also the heavy site-hotkey listener's
 exclusion boundary, so that listener cannot consume any of these five chords a
-second time. None is registered as a manifest command or default Chrome command
-slot, eliminating the competing `chrome.commands` stream that cannot expose
-physical keyup. The same contract excludes every `coalesce-20hz` action from
-configurable Chrome command slots; continuous actions remain available through
-page bindings with real keydown/keyup ownership.
+second time. Only `Alt+Up` is registered as a Manifest command (`volume_up`):
+an assigned Chrome-command dispatch is the sole writer for that one chord and
+grants current-tab extension invocation for a first-use Capture fallback, while
+Bootstrap handles only an unassigned or otherwise unconsumed dispatch. The
+other four shipped defaults have no Manifest/default Chrome command slot, and
+every `coalesce-20hz` action is excluded from configurable Chrome command
+slots because that API has no physical keyup; continuous actions remain
+available through page bindings with real keydown/keyup ownership.
 
 The five built-in chords are also reserved at the settings boundary. Options,
 wire validation and the Background settings repository project `KeyCombo`

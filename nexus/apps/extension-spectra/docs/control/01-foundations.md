@@ -8,7 +8,7 @@ last_reviewed: 2026-07-26
 # 01. Foundations (Product semantics & Control flow)
 
 > 主题 owner 段: §1 Product semantics · §2 Control flow and state ownership
-> 完整目录: [control-architecture.md](../control-architecture.md)
+> 完整目录: [README.md](README.md)
 
 ## §1 Product semantics
 
@@ -47,11 +47,10 @@ flowchart LR
 
 `ControlSnapshot` is the only field-level actual authority. It owns the
 acknowledged `volumeBase + boost` components that compile to effective volume,
-plus mute, speed, transport, DSP parameters and video fields.
-It carries separate `activeMedia` and `activeVideo` identities. Audio/transport
-controls follow the former; screenshot, PiP, fullscreen and presentation
-effects follow the latter. A playing audio element therefore cannot steal the
-video side panel's target, and merely reading either target never changes the
+plus mute, speed, transport, DSP parameters and video fields. It carries
+separate `activeMedia` (audio/transport) and `activeVideo` (screenshot, PiP,
+fullscreen, presentation effects) identities, so a playing audio element cannot
+steal the video side panel's target and reading either target never changes the
 other selection.
 `AudioSessionSnapshot` contributes only processor lifecycle
 (`desiredMode/actualMode/phase/generation/error`); Popup initialization and

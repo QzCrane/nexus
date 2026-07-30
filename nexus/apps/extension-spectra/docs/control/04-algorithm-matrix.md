@@ -30,7 +30,7 @@ last_reviewed: 2026-07-30
 
 ## 上下游
 
-- **上级 owner**: [`control-architecture.md`](../control-architecture.md)
+- **上级 owner**: [`README.md`](README.md)
 - **同级 owner** (本应用内):
   - [`02-strategy-and-routes.md`](02-strategy-and-routes.md) — Strategy order & site route registry
   - [`03-ui-and-boundaries.md`](03-ui-and-boundaries.md) — UI / surface action normalization

@@ -8,7 +8,7 @@ last_reviewed: 2026-07-24
 # 05. Control state (Field states, volume/mute, audio processing)
 
 > 主题 owner 段: §10 Control state · §11 Volume and mute · §12 Audio processing
-> 完整目录: [control-architecture.md](../control-architecture.md)
+> 完整目录: [README.md](README.md)
 
 ## §10 Control state
 

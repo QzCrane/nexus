@@ -12,7 +12,7 @@ The locale files in this directory are public projections of one verified produc
 
 ## Sources of truth
 
-- capability semantics: [`../docs/control-architecture.md`](../docs/control-architecture.md)
+- capability semantics: [`../docs/control/README.md`](../docs/control/README.md)
 - privacy and network behavior: [`../PRIVACY.md`](../PRIVACY.md)
 - permission/data declarations: [`privacy-justifications.md`](privacy-justifications.md)
 - release evidence: contracts, tests, production package, and current release-gate output

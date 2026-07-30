@@ -8,7 +8,7 @@ last_reviewed: 2026-07-30
 # 04a. Algorithm Matrix (§8 Complete control algorithm matrix)
 
 > 主题 owner 段: §8 Complete control algorithm matrix
-> 完整目录: [04-algorithm-matrix.md](04-algorithm-matrix.md) · [control-architecture.md](../control-architecture.md)
+> 完整目录: [04-algorithm-matrix.md](04-algorithm-matrix.md)
 
 ## §8 Complete control algorithm matrix
 
@@ -235,19 +235,10 @@ forbidden. It is normative together with `CONTROL_ALGORITHM_POLICIES`.
 
 The exhaustive totals are part of the review result, not a loose summary:
 
-- **17 native-only** capabilities may use only an exact-element page controller,
-  standard DOM, or a Chrome/browser API. A failure never promotes them
-  to CSS, WebAudio, Capture or generic MAIN interception.
-- **6 hybrid-extension-native** capabilities combine a native writer with
-  bounded extension-owned coordination. Five source/timeline operations still
-  end in standard DOM seek; effective volume adds hidden processor gain only
-  above the native ceiling and never exposes the implementation split.
-- **26 augmentation-only** capabilities have no implemented equivalent native primitive.
-  They are admitted only to their named extension-state, overlay, safe media
-  processor, authorized full-output Capture or sandbox owner; this category is
-  not permission for generic page interception.
-- **2 observation-only** capabilities may read a snapshot or an already-owned
-  analyser subscription and must never acquire a writer or processing lease.
+- **17 native-only** capabilities may use only an exact-element page controller, standard DOM, or a Chrome/browser API; a failure never promotes them to CSS, WebAudio, Capture or generic MAIN interception.
+- **6 hybrid-extension-native** capabilities combine a native writer with bounded extension-owned coordination: source/timeline operations end in standard DOM seek, and effective volume adds hidden processor gain above the native ceiling without exposing the implementation split.
+- **26 augmentation-only** capabilities have no implemented native primitive and are admitted only to their named extension-state, overlay, safe media processor, authorized Capture or sandbox owner; this category is not permission for generic page interception.
+- **2 observation-only** capabilities may read a snapshot or analyser subscription and must never acquire a writer or processing lease.
 
 These four sets total all 51 contract capabilities. Any future capability must
 enter exactly one set through `CONTROL_ALGORITHM_ADJUDICATIONS`, receive its own

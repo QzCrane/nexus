@@ -42,6 +42,12 @@ Required to save volume, equalizer, playback, appearance, hotkey, and per-site p
 Required for bounded lifecycle work that must survive Manifest V3 service-worker suspension, including the one-shot offscreen shutdown grace period. It is not used for analytics or an unbounded polling loop.
 ```
 
+### `downloads`
+
+```text
+Required only to save user-initiated screenshot captures of the current visible tab as PNG files in the user's Downloads directory under a spectra/ subfolder. SPECTRA listens for the download completion event solely to acknowledge the screenshot operation; it does not read, upload, or modify any other downloaded file, history, or path.
+```
+
 ### `tabCapture`
 
 ```text
@@ -70,6 +76,12 @@ Required only for user-authored custom hotkey scripts that the user explicitly c
 
 ```text
 Required to install locally bundled media-control code in the active page and to execute bounded browser-supported operations. It is not used to download or execute remote extension code.
+```
+
+### `favicon`
+
+```text
+Required to resolve website icons in the Popup through Chromium's extension-owned _favicon endpoint so that page CSP, remote icon hosts, or chrome://favicon URLs cannot erase or spoof tab identity. SPECTRA requests only the page URL and a rendered size; no other favicon data, history, or visit evidence is read or transmitted.
 ```
 
 ## Remote code declaration

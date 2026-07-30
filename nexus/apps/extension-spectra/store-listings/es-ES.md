@@ -41,7 +41,7 @@ El mando está desactivado de forma predeterminada. Al activarlo, utiliza Cloudf
 - Preferencias locales globales y por sitio
 - Atajos multimedia configurables
 - Interfaz traducida
-- Estado real confirmado compartido por el popup y el mando autenticado
+- Estado real confirmado compartido por el Popup y el mando autenticado
 
 ### Privacidad
 

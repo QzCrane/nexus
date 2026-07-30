@@ -8,7 +8,7 @@ last_reviewed: 2026-07-30
 # 04b. Source Algorithms (§9 Audited source algorithms and dispositions)
 
 > 主题 owner 段: §9 Audited source algorithms and dispositions
-> 完整目录: [04-algorithm-matrix.md](04-algorithm-matrix.md) · [control-architecture.md](../control-architecture.md)
+> 完整目录: [04-algorithm-matrix.md](04-algorithm-matrix.md)
 
 ## §9 Audited source algorithms and dispositions
 
@@ -112,8 +112,7 @@ catalog did not name separately.
 `hybrid-state-native` may calculate or store a target, but the final page write
 still uses the canonical native executor. `controlled-augmentation` and
 `lifecycle-orchestration` may own only the explicitly named extension resource;
-neither class admits a constructor/prototype/descriptor/createElement/History
-or page-AudioContext interception.
+the §3.1 forbidden-hijack list applies to both.
 
 | Algorithm ID | Source algorithm | Decision | Native / controlled-augmentation judgment | Success and performance boundary |
 | --- | --- | --- | --- | --- |

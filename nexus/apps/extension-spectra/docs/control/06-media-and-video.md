@@ -8,7 +8,7 @@ last_reviewed: 2026-07-30
 # 06. Media & Video (Active media, media controls, video effects)
 
 > 主题 owner 段: §13 Active media · §14 Media controls · §15 Video effects and screenshot
-> 完整目录: [control-architecture.md](../control-architecture.md)
+> 完整目录: [README.md](README.md)
 
 ## §13 Active media
 
@@ -106,16 +106,9 @@ silently route a video field to the wrong element.
 | PiP | Picture-in-Picture API + enter/leave events | no MAIN workaround |
 | fullscreen | Fullscreen API on the active video | unsupported on native failure; no gesture workaround |
 
-The same exact-element `page-native -> dom-native` order applies to page volume,
-media mute, and playback speed. Page-native discovery is bounded and
-domain-neutral; it retains no player object or site UI listener. A page
-controller's mere presence is not admission for a value it cannot truthfully
-read back: before ownership, a baseline-restored rejection falls through once
-to the standard DOM writer. Events emitted by either candidate during that
-transaction are correlated with the pending field instead of racing a new
-revision. Later normal media events read the stable selected writer so page
-changes, Popup changes, restore, and hotkeys converge on the one coordinator
-snapshot without a reassert loop. Standard speed writes keep
+The same exact-element `page-native -> dom-native` order, bounded domain-neutral discovery, baseline-restored fallback, event correlation and no-reassert-loop convergence are owned by [§6](02-strategy-and-routes.md#6-exact-element-page-media-pip-and-fullscreen).
+
+Standard speed writes keep
 `defaultPlaybackRate` and `playbackRate` coherent when the page has not already
 separated them, allowing a player UI that projects the standard default to
 update from the same native `ratechange` ACK. A cold bootstrap event is
