@@ -2,6 +2,7 @@
 type: reference
 status: stable
 audience: contributor
+owner: spectra-remote-site
 last_reviewed: 2026-07-20
 ---
 
@@ -32,4 +33,4 @@ When PeerJS changes:
 3. verify its public/signaling/WebRTC ABI remains compatible with both extension and remote builds;
 4. run `node --check app.js`;
 5. run the extension remote-security tests and the live deployment gate;
-6. reconcile [`../nexus/apps/extension-spectra/PRIVACY.md`](../nexus/apps/extension-spectra/PRIVACY.md), [`../nexus/apps/extension-spectra/docs/remote-security.md`](../nexus/apps/extension-spectra/docs/remote-security.md), and store disclosures before release.
+6. reconcile [`../nexus/apps/extension-spectra/PRIVACY.md`](../nexus/apps/extension-spectra/PRIVACY.md), [`../nexus/apps/extension-spectra/docs/security/remote-control.md`](../nexus/apps/extension-spectra/docs/security/remote-control.md), and store disclosures before release.

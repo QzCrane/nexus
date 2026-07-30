@@ -2,6 +2,7 @@
 type: reference
 status: stable
 audience: developer
+last_reviewed: 2026-07-30
 ---
 
 # 07. Runtime & Performance (Loading, ownership map, cross-world bridges)

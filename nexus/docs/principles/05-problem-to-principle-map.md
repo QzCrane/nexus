@@ -2,6 +2,7 @@
 type: explanation
 status: stable
 audience: contributor
+last_reviewed: 2026-07-30
 ---
 
 # 05. Problem-to-principle map (历史问题 -> 长期判定标准)

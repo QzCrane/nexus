@@ -2,6 +2,7 @@
 type: reference
 status: stable
 audience: developer
+last_reviewed: 2026-07-30
 ---
 
 # 06. Media & Video (Active media, media controls, video effects)

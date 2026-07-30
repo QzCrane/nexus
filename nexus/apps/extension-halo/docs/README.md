@@ -19,14 +19,10 @@ docs/
 │   ├── README.md
 │   ├── market-landscape-2025.md
 │   └── feature-gap-analysis.md
-├── proposals/
-│   ├── README.md
-│   ├── hover-zoom-v2.md
-│   └── bilibili-danmaku.md
-├── research.md                    # deprecated migration alias
-├── feature-gap-analysis.md        # deprecated migration alias
-├── plan-hover-zoom-v2.md          # deprecated migration alias
-└── plan-danmaku.md                # deprecated migration alias
+└── proposals/
+    ├── README.md
+    ├── hover-zoom-v2.md
+    └── bilibili-danmaku.md
 ```
 
 ## Authority

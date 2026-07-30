@@ -2,6 +2,7 @@
 type: reference
 status: stable
 audience: user
+owner: spectra-privacy
 last_reviewed: 2026-07-20
 ---
 

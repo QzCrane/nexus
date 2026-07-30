@@ -2,6 +2,7 @@
 type: explanation
 status: stable
 audience: contributor
+last_reviewed: 2026-07-30
 ---
 
 # 01. State & ownership (EPR-001..009)

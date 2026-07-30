@@ -2,6 +2,7 @@
 type: explanation
 status: stable
 audience: contributor
+last_reviewed: 2026-07-30
 ---
 
 # 03. Runtime & quality (EPR-019..025)

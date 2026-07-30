@@ -2,6 +2,7 @@
 type: explanation
 status: stable
 audience: contributor
+last_reviewed: 2026-07-30
 ---
 
 # 02. Operations & safety (EPR-010..018)

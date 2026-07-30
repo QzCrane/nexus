@@ -2,6 +2,7 @@
 type: explanation
 status: stable
 audience: contributor
+owner: ai-tool-hooks
 last_reviewed: 2026-07-29
 ---
 

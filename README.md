@@ -24,7 +24,7 @@ This repository contains the primary Bun monorepo in [`nexus/`](nexus/) plus the
 └── AGENTS.md              agent entrypoint and generated skill index
 ```
 
-The legacy root [`spectra.md`](spectra.md) is a temporary deprecated alias for historical links and contains no current specification.
+The legacy root `spectra.md` was a deprecated alias removed after its migration window closed; SPECTRA specification now lives in [`nexus/apps/extension-spectra/docs/README.md`](nexus/apps/extension-spectra/docs/README.md).
 
 ## Toolchain
 

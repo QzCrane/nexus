@@ -2,6 +2,7 @@
 type: reference
 status: stable
 audience: developer
+last_reviewed: 2026-07-30
 ---
 
 # 04. Algorithm Matrix (index)

@@ -2,6 +2,8 @@
 type: explanation
 status: archived
 audience: contributor
+owner: product-research
+last_reviewed: 2026-07-30
 ---
 
 # HALO 市场调研 (2024-2025)

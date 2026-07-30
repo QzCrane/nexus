@@ -2,6 +2,7 @@
 type: explanation
 status: stable
 audience: developer
+last_reviewed: 2026-07-30
 ---
 
 # AI 编写代码卫生原则

@@ -23,8 +23,8 @@ docs/
 │   └── business-model.md             # commercial hypotheses and constraints
 ├── research/
 │   └── README.md                     # dated evidence and revalidation rules
-├── market-research.md                # legacy long-form evidence; not current truth
-└── documentation-index.md            # deprecated path alias during migration
+└── _archive/
+    └── market-research.md            # legacy long-form evidence; not current truth
 ```
 
 Application documentation remains collocated with the application:

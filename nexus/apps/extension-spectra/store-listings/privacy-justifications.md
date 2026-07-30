@@ -2,6 +2,7 @@
 type: reference
 status: stable
 audience: contributor
+owner: spectra-store-copy
 last_reviewed: 2026-07-20
 ---
 
