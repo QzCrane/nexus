@@ -7,49 +7,44 @@ last_reviewed: 2026-07-20
 
 # NEXUS repository rules
 
-This file owns repository-wide workflow, security, dependency, architecture, quality, documentation, toolchain, and Git constraints. Domain contracts may impose stricter rules, but a README, roadmap, proposal, research note, archived report, or store listing cannot relax this floor.
-
-When prose conflicts with executable contracts, source, tests, or a release gate, stop and reconcile the sources. Do not silently choose the convenient interpretation.
+This file owns repository-wide workflow, security, dependency, architecture, quality, documentation, toolchain, and Git constraints. Domain contracts may impose stricter rules, but a README, roadmap, proposal, research note, archived report, or store listing cannot relax this floor. When prose conflicts with executable contracts, source, tests, or a release gate, stop and reconcile the sources.
 
 ## 1. Working directory and toolchain
 
-- The primary workspace is `nexus/`.
-- Repository-root scripts proxy into the workspace; do not invent another working directory or parallel command surface.
-- **Bun 1.3.14** is the repository runtime and package manager.
-- Root, workspace, release, public-sync, CI, skills, and documentation references must remain aligned to `bun@1.3.14`.
+- Primary workspace is `nexus/`. Root scripts proxy into workspace; do not invent parallel command surfaces.
+- **Bun 1.3.14** is the repository runtime and package manager. Root, workspace, release, public-sync, CI, skills, and documentation references must align to `bun@1.3.14`.
 - Do not introduce npm, pnpm, Yarn, another Bun version, or another package-manager lockfile without an explicit repository-wide migration decision.
-- `nexus/scripts/check-toolchain.ts` is the executable toolchain-drift gate. A global installation, README example, or generated public package is not an independent authority.
-- Generated files are updated through their generator, not by manual edits the next build will erase.
+- `nexus/scripts/check-toolchain.ts` is the executable toolchain-drift gate. Global installs, README examples, or generated public packages are not independent authorities.
+- Generated files update through their generator, not by manual edits that the build erases.
 
 ### Cross-platform contract
 
-- Repository text is UTF-8-compatible LF in both the Git index and checkout. Root [`.gitattributes`](.gitattributes) owns Git classification; root [`.editorconfig`](.editorconfig) aligns editors. Byte-verified or binary assets are explicit `-text` exceptions.
-- Repository automation uses Bun or Node filesystem/path APIs and argument-array child processes. OS shell executables, command-string `exec`/`execSync`, `shell: true`, and host-specific package scripts are prohibited.
-- Temporary files derive from `os.tmpdir()`. Recursive cleanup has bounded retries for transient Windows locks. Archive and deployment paths use `/` only at their external format boundary and native `node:path` operations on disk.
+- Repository text is UTF-8-compatible LF in both Git index and checkout (`.gitattributes`, `.editorconfig`). Binary assets require explicit `-text` exceptions.
+- Automation uses Bun or Node filesystem/path APIs and argument-array child processes. OS shell executables, `exec`/`execSync`, `shell: true`, and host-specific scripts are prohibited.
+- Temporary files derive from `os.tmpdir()`. Recursive cleanup has bounded retries for transient Windows locks. Archive and deployment paths use `/` at external boundaries and `node:path` on disk.
 - Tracked paths must be Unicode NFC, case-fold unique, legal on Windows, and free of symlinks. A script with a shebang is executable in the Git index; other files are not.
-- [`nexus/scripts/check-platform-contract.ts`](nexus/scripts/check-platform-contract.ts) is the executable drift gate. It runs locally before push and in both Windows and Ubuntu CI; fixing a consumer-specific CRLF/path assertion does not replace this repository contract.
+- [`nexus/scripts/check-platform-contract.ts`](nexus/scripts/check-platform-contract.ts) is the executable drift gate (runs locally before push, and in Windows + Ubuntu CI).
 
 ## 2. Change preparation
 
 Before modifying behavior:
+1. Identify domain authority and public contract.
+2. Inspect callers, consumers, lifecycle owners, tests, and release gates.
+3. Distinguish implemented behavior, compatibility code, historical evidence, and proposed work.
+4. State identity, revision/generation, owner, disposer, and failure handler affected by the change.
+5. Check whether a smaller owner-level fix eliminates multiple symptoms.
 
-1. identify the domain authority and public contract;
-2. inspect callers, consumers, lifecycle owners, tests, and release gates;
-3. distinguish implemented behavior, compatibility code, historical evidence, and proposed work;
-4. state the identity, revision/generation, owner, disposer, and failure handler affected by the change;
-5. check whether a smaller owner-level fix eliminates multiple symptoms.
+Do not preserve a known-wrong structure merely to minimize the diff. Do not replace a large file merely to avoid understanding it. Scope must be the smallest coherent change that restores correct ownership.
 
-Do not preserve a known-wrong structure merely to minimize the diff. Do not replace a large file merely to avoid understanding it. The required scope is the smallest coherent change that restores one correct ownership model.
-
-## 3. Single source of truth
+## 3. Single source of truth (SSOT)
 
 - Each domain has one authoritative model.
-- Projections, caches, UI state, adapters, generated indexes, and compatibility fields do not become second authorities.
-- The same identifier, status, permission, route, capability, lifecycle, toolchain version, or document owner must not be manually enumerated in competing sources.
+- Projections, caches, UI state, adapters, generated indexes, and compatibility fields are not secondary authorities.
+- Identifiers, status, permissions, routes, capabilities, lifecycles, toolchain versions, and doc owners must not be manually enumerated in competing sources.
 - Legacy aliases are bounded migrations with an owner, exact target, and removal date or condition.
-- A generated compatibility mirror may preserve an executable path only when it is byte-identical to the canonical physical owner and the documentation gate validates that equality. It has no independent edit authority.
+- Generated compatibility mirrors must be byte-identical to the canonical physical owner and verified by the documentation gate (`docs:check`), possessing no independent edit authority.
 - Plans and checklists do not prove implementation.
-- Historical reports keep their original date, commit, and evidence; they do not overwrite current state.
+- Historical reports keep original date, commit, and evidence; they do not overwrite current state.
 
 ## 4. Module and dependency direction
 
@@ -57,15 +52,15 @@ Do not preserve a known-wrong structure merely to minimize the diff. Do not repl
 - Shared packages expose public facades; applications do not deep-import another domain's internals.
 - Dependency direction remains acyclic and explicit.
 - A module owns one cohesive responsibility and a complete lifecycle.
-- File size, directory depth, and import count are review signals, not mechanical architecture rules. Split only at a real boundary.
+- File size, directory depth, and import count are review signals, not mechanical rules; split only at real boundaries.
 - Do not create wrapper layers that only rename calls or duplicate an existing contract.
 
 ## 5. State, identity, and lifecycle
 
 - Mutable state has one owner and an explicit persistence boundary.
-- Work that survives UI closure belongs to a background/runtime owner, not a mounted component.
-- Every document-, tab-, media-, session-, or source-scoped operation carries enough identity to reject stale results.
-- Subscriptions, observers, timers, animation frames, object URLs, audio nodes, streams, ports, and network requests require a disposer or cancellation path.
+- Work surviving UI closure belongs to a Background/runtime owner, not a mounted component.
+- Every document-, tab-, media-, session-, or source-scoped operation carries identity (`tabId`, `documentId`, `generation`, `revision`) to reject stale results.
+- Subscriptions, observers, timers, animation frames, object URLs, WebAudio nodes, streams, ports, and network requests require a disposer or cancellation path.
 - Start, active, stopping, error, recovery, and terminal states are observable where they affect user behavior.
 - A read does not acquire mutation or processing resources unless the contract explicitly defines that side effect.
 
@@ -80,7 +75,7 @@ Do not preserve a known-wrong structure merely to minimize the diff. Do not repl
 
 ## 7. Security and privacy
 
-- Secrets, credentials, private keys, session tokens, personal data, and environment-specific sensitive configuration do not enter Git.
+- Secrets, credentials, private keys, session tokens, personal data, and sensitive configuration do not enter Git.
 - Validate messages, senders, URLs, origins, file paths, network responses, and untrusted bytes before execution or allocation.
 - Privileged operations are allowlisted by capability and user action.
 - Do not download or execute remote extension code.
@@ -92,12 +87,11 @@ Do not preserve a known-wrong structure merely to minimize the diff. Do not repl
 ## 8. Dependencies
 
 Before adding or upgrading a dependency:
-
-- confirm the current official package, stable version, license, maintenance state, security advisories, browser/runtime compatibility, bundle contribution, and transitive dependencies;
-- verify that the platform or existing code cannot provide the capability with lower lifecycle and maintenance cost;
-- pin or range versions according to repository policy and update the lockfile with Bun 1.3.14;
-- add only the dependency needed by the owning package;
-- document any external ABI, network, worker, or asset implications.
+1. Confirm official package, stable version, license, maintenance state, security advisories, browser/runtime compatibility, bundle contribution, and transitive dependencies.
+2. Verify platform or existing code cannot provide capability with lower lifecycle and maintenance cost.
+3. Pin or range versions according to repository policy and update lockfile with Bun 1.3.14.
+4. Add only the dependency needed by the owning package.
+5. Document any external ABI, network, worker, or asset implications.
 
 A dependency is not justified only because it reduces initial implementation time.
 
@@ -109,7 +103,7 @@ A dependency is not justified only because it reduces initial implementation tim
 - Pause optional rendering, sampling, and expensive work when hidden or unowned.
 - Bound concurrency, retries, queues, caches, input size, IPC rate, storage writes, and memory growth.
 - Avoid repeated allocation, parsing, layout reads, serialization, and I/O in hot loops.
-- Claims such as “zero CPU,” “zero allocation,” “10× faster,” or fixed memory limits require a reproducible workload and production-build measurement.
+- Claims such as "zero CPU", "zero allocation", "10x faster", or fixed memory limits require a reproducible workload and production-build measurement.
 - Performance optimization must not replace an actual read with a cached guess or remove required validation.
 
 ## 10. TypeScript
@@ -123,68 +117,59 @@ A dependency is not justified only because it reduces initial implementation tim
 
 ## 11. Testing and verification
 
-A change runs the smallest focused checks during development and the complete applicable gate before merge.
+A change runs the smallest focused checks during development and the complete applicable gate before merge. The verification set includes:
+- Pure logic: unit and property tests
+- Contracts and runtime guards: contract tests
+- State machines: lifecycle tests
+- Toolchain: Bun 1.3.14 verification
+- Docs: architecture, links, redirects, generated compatibility mirrors, and owner reachability
+- Code: TypeScript, lint, formatting, and architecture checks (`verify`)
+- Build: production build and artifact inspection
+- Integration: Chrome integration and user-activation behavior
+- Scenarios: navigation, service-worker restart, update, hidden-state, cancellation, and disposal cases
+- Reconciliation: privacy, permissions, localization, remote-site, store-copy, and generated public repository
 
-The verification set may include:
-
-- unit and property tests for pure logic;
-- contract and runtime-guard tests;
-- state-machine and lifecycle tests;
-- Bun 1.3.14 toolchain verification;
-- documentation architecture, links, redirects, generated compatibility mirrors, and owner reachability;
-- TypeScript, lint, formatting, and architecture checks;
-- production build and artifact inspection;
-- Chrome integration and user-activation behavior;
-- navigation, service-worker restart, update, hidden-state, cancellation, and disposal cases;
-- privacy, permissions, localization, remote-site, store-copy, and generated-public-repository reconciliation.
-
-A green typecheck, unit suite, docs check, or workflow registration alone does not prove browser behavior or release readiness. A CI workflow that never starts a runner is infrastructure failure, not a passing or failing project check.
+A green typecheck, unit suite, docs check, or workflow registration alone does not prove browser behavior or release readiness. A CI workflow that never starts a runner is infrastructure failure.
 
 ## 12. Documentation architecture
 
-- The canonical documentation map is [`nexus/docs/README.md`](nexus/docs/README.md).
-- Repository documentation is organized by authority and lifecycle: engineering, product, research, application architecture, roadmap, proposal, public projection, and archive.
-- Active internal documentation uses one Diátaxis type, lifecycle status, audience, and where applicable an explicit owner.
+- Canonical map: [`nexus/docs/README.md`](nexus/docs/README.md).
+- Organized by authority and lifecycle: engineering, product, research, application architecture, roadmap, proposal, public projection, and archive.
+- Active internal documentation uses one Diátaxis type, lifecycle status, audience, and explicit owner.
 - Put normative behavior in one owner; link to it elsewhere.
 - Roadmaps sequence work, proposals describe unresolved designs, research records dated evidence, public documents project verified behavior, and archives preserve historical state. None substitutes for implementation.
-- A document move creates the canonical destination, updates indexes and executable consumers, supplies a bounded deprecated redirect or a generated byte-identical compatibility mirror when needed, and declares removal timing.
-- Use tables when they reduce ambiguity in a matrix, mapping, comparison, or ledger. Do not use tables merely for visual compression.
-- Code examples are executable or clearly marked as pseudocode.
-- Relative links are interfaces and remain valid after a move or rename.
+- Document moves: create canonical destination, update indexes and executable consumers, supply bounded deprecated redirect or byte-identical mirror, and declare removal timing.
+- Tables: use when reducing ambiguity in a matrix, mapping, comparison, or ledger (not merely for visual compression).
+- Code examples are executable or clearly marked as pseudocode. Relative links remain valid after a move or rename.
 - Research, plans, audits, and verification snapshots state date and evidence scope.
-- Dynamic facts such as versions, prices, policies, counts, APIs, and market data are revalidated before current use.
-- Public documentation does not promise more than the current production artifact and browser tests prove.
-- `bun run docs:check` is the executable structural gate; weakening it to hide a duplicate owner, orphan, invalid redirect, compatibility-mirror drift, or dead link is prohibited.
+- Dynamic facts (versions, prices, policies, counts, APIs, market data) revalidated before current use.
+- Public documentation does not promise more than production artifact and browser tests prove.
+- Structural gate: `bun run docs:check` (weakening to hide a duplicate owner, orphan, invalid redirect, compatibility-mirror drift, or dead link is prohibited).
 
 ## 13. Git and review
 
-- Use Conventional Commits: `feat`, `fix`, `docs`, `refactor`, `test`, `perf`, `build`, `ci`, or `chore` with an accurate scope and message.
-- One commit should form a coherent and reversible closure.
-- Do not mix unrelated cleanup into a behavioral fix.
-- Review the final diff for accidental generated output, secrets, debug code, stale links, toolchain drift, and deleted evidence.
-- Do not force-push a shared or release branch by default.
-- Do not merge with failing required checks or unresolved review findings.
-- A generated public-repository sync is inspected and validated as a release artifact before push.
+- Use Conventional Commits (`feat`, `fix`, `docs`, `refactor`, `test`, `perf`, `build`, `ci`, `chore`) with accurate scope and message.
+- One commit forms a coherent and reversible closure. Do not mix unrelated cleanup into a behavioral fix.
+- Review final diff for accidental generated output, secrets, debug code, stale links, toolchain drift, and deleted evidence.
+- Do not force-push a shared or release branch by default. Do not merge with failing required checks or unresolved review findings.
+- Generated public-repository sync is inspected and validated as a release artifact before push.
 
 ## 14. Current external facts
 
-Use current primary sources when a decision depends on package versions, browser APIs, build-tool syntax, store policy, remote provider behavior, CVEs, deprecations, or migration guides.
-
-Search summaries, copied articles, and old repository notes are discovery aids, not final authority. Record the version, date, platform, and source the implementation targets.
-
-When the same failure survives two attempted fixes, return to the root model: inspect upstream issues, actual runtime evidence, identity/lifecycle assumptions, and competing owners instead of adding another workaround.
+- Use current primary sources when a decision depends on package versions, browser APIs, build-tool syntax, store policy, remote provider behavior, CVEs, deprecations, or migration guides. Search summaries, copied articles, and old repository notes are discovery aids, not final authority. Record target version, date, platform, and source.
+- Root cause model: when the same failure survives two attempted fixes, return to the root model (upstream issues, actual runtime evidence, identity/lifecycle assumptions, and competing owners) instead of adding another workaround.
 
 ## 15. Absolute prohibitions
 
-- committed secrets or sensitive production configuration;
-- circular dependencies or unowned cross-layer mutation;
-- silent exception swallowing or unhandled asynchronous work;
-- unbounded concurrency, retry, polling, queue, cache, or allocation;
-- duplicated authorities or direct writes around an owning repository/coordinator;
-- remote code execution inside the extension;
-- permission, activation, origin, protected-content, or sandbox bypass claims;
-- public claims known to exceed the production artifact;
-- modifying generated files instead of their source;
-- introducing a Bun version other than 1.3.14 or an alternate package-manager lockfile without a repository migration;
-- moving documentation without updating its authority graph and executable validation;
-- changing behavior without corresponding verification and owner documentation.
+1. Committed secrets or sensitive production configuration.
+2. Circular dependencies or unowned cross-layer mutation.
+3. Silent exception swallowing or unhandled asynchronous work.
+4. Unbounded concurrency, retry, polling, queue, cache, or allocation.
+5. Duplicated authorities or direct writes around an owning repository/coordinator.
+6. Remote code execution inside the extension.
+7. Permission, activation, origin, protected-content, or sandbox bypass claims.
+8. Public claims known to exceed the production artifact.
+9. Modifying generated files instead of their source.
+10. Introducing a Bun version other than 1.3.14 or an alternate package-manager lockfile without a repository migration.
+11. Moving documentation without updating its authority graph and executable validation.
+12. Changing behavior without corresponding verification and owner documentation.

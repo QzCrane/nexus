@@ -12,20 +12,16 @@ last_reviewed: 2026-07-26
 
 ## §1 Product semantics
 
-- The webpage, Popup, authenticated remote controller and hotkeys are peers that submit intents to one coordinator.
-- Every control field is planned independently. There is no page-wide native/WebAudio/Capture mode that may silently determine unrelated controls.
-- The user interface never asks users to choose native, WebAudio, MAIN or Capture.
-- `100%` volume and `1x` speed are literal values. They do not mean "release control". Releasing a field is a separate restore-page-settings intent.
-- Every user surface exposes exactly one effective-volume value, `0–800%`. The
-  coordinator alone splits it into page-native `volumeBase 0–100` and hidden
-  processor `boost 1–8`; those implementation fields are never separate UX.
-- A successful response describes read-back actual state. Storage acceptance, setter completion or a requested value echoed by the executor is not an application acknowledgement.
+- Webpage, Popup, remote controller, and hotkeys are peers submitting intents to one coordinator.
+- Control fields are planned independently. No page-wide mode silently determines unrelated controls.
+- UI never asks users to choose native, WebAudio, MAIN, or Capture.
+- `100%` volume and `1x` speed are literal values, not "release control". (Releasing uses restore-page-settings).
+- UI exposes one effective-volume (`0–800%`). Coordinator splits it into `volumeBase 0–100` and hidden `boost 1–8`.
+- Successful responses describe read-back actual state, not storage acceptance or echoed intent.
 
 ## §2 Control flow and state ownership
 
-Volume and speed use the same bidirectional transaction. The page is a peer,
-not a lower-priority source, and no surface writes another surface's local
-prediction:
+Volume and speed use a bidirectional transaction. No surface writes another's prediction.
 
 ```mermaid
 flowchart LR
@@ -45,77 +41,34 @@ flowchart LR
   Snapshot --> Badge["badge and page feedback"]
 ```
 
-`ControlSnapshot` is the only field-level actual authority. It owns the
-acknowledged `volumeBase + boost` components that compile to effective volume,
-plus mute, speed, transport, DSP parameters and video fields. It carries
-separate `activeMedia` (audio/transport) and `activeVideo` (screenshot, PiP,
-fullscreen, presentation effects) identities, so a playing audio element cannot
-steal the video side panel's target and reading either target never changes the
-other selection.
-`AudioSessionSnapshot` contributes only processor lifecycle
-(`desiredMode/actualMode/phase/generation/error`); Popup initialization and
-session events must never use `actualConfig` to overwrite or fill control
-fields. Page `volumechange` and `ratechange` observations commit exactly once
-and never echo a second DOM write. A page-side volume gesture owns the new
-public effective-volume value, so any non-neutral hidden Boost is reset to 1 in
-the same coordinator transaction; otherwise a page move to 50% would be
-misreported as `50 × previous Boost`.
+`ControlSnapshot` is the only field-level actual authority. It owns acknowledged `volumeBase + boost` components, mute, speed, transport, DSP, and video fields. It carries separate `activeMedia` (audio) and `activeVideo` (visual) identities.
+`AudioSessionSnapshot` contributes processor lifecycle (`desiredMode/actualMode/phase/generation/error`). It never overwrites control fields.
 
-The tab-session record is a persistence projection of the last acknowledged
-refresh-restorable fields, not another actual-state authority.
-`CONTROL_SESSION_FIELDS` exhaustively owns those 20 configuration fields:
-volume/mute/speed, processor settings, whole-media loop and reversible video
-effects. It stores actual values only and never fills an unknown field from a
-default. Because effective volume is one public value, its successful operation
-projects the complete acknowledged `volumeBase + boost` pair even when one
-component already matched and required no writer stage. Playing/current time, PiP/fullscreen, A/B source identity and
-visualizer subscriptions belong to the old document; tab mute/pin remain under
-Chrome's tab-lifetime ownership.
+Page `volumechange`/`ratechange` observations commit once and never echo DOM writes. Page volume gestures reset non-neutral Boost to 1 to avoid misreporting.
 
-Projection durability is part of the ACK boundary: `merge` and
-resource-aware `rebind` return only after the complete record is present in
-`chrome.storage.session`. Likewise, a settings revision is returned and
-broadcast only after `chrome.storage.local.set` succeeds. Pending memory,
-debounce timers and `onSuspend` are cleanup aids, never durable success.
+Tab-session record is a persistence projection of the last acknowledged refresh-restorable fields (`CONTROL_SESSION_FIELDS` owns exactly 20 fields). It stores actual values only, never defaults.
+Effective-volume projects the complete acknowledged pair (`volumeBase + boost`). Non-restorable fields (time, A/B, visualizer) belong to the old document. Tab mute/pin are Chrome-owned.
 
-The record separates current-resource actual fields from origin-portable
-extension intent. Page observations are resource-scoped; explicit Popup, remote
-and shortcut ACKs are origin-scoped. If the page later changes one of those
-fields, that field leaves the portable patch rather than preserving a stale
-extension value. An exact-resource full document replacement rebinds the
-complete projection to the new `documentId`; a different same-origin URL keeps
-only the portable fields, and a cross-origin replacement retires all of it.
-Same-document SPA state remains valid because its `documentId` did not change.
-Document initialization chooses the retained projection before site/global
-presets and restores it through the coordinator without carrying an old media
-target. Its existence is authoritative even when every stored value is
-neutral/default; presets run only when no retained projection exists. Explicit
-Popup, remote and shortcut intents wait for that one document-scoped decision,
-so a late preset replay cannot overwrite the user's first control on the new
-document. Without a retained projection, the most-specific normalized site
-preset is resolved first; the selected default global preset is used only when
-no site match exists.
+Projection durability: `merge` and `rebind` return only after `chrome.storage.session` confirms. Settings revisions broadcast only after `chrome.storage.local.set`. Memory/timers are cleanup aids, not durability.
 
-Color is also actual state, not a value threshold. Muted/zero is gray; native
-or Media WebAudio is blue; purple is permitted only when the matching
-`AudioSessionSnapshot` has `actualMode:'capture'` and `phase:'active'` for the
-same tab, document and origin. Its processor generation and the
-`ControlSnapshot` field/document generation are independent monotonic clocks;
-each stream rejects its own stale revisions instead of comparing unrelated
-generation numbers. Starting, stopping, error and stale Capture sessions remain
-blue. Popup, badge and authenticated remote consume the shared
-`AudioVolumeState = silent | native | capture` projection, so numeric volume
-thresholds cannot drift into color policy.
+The record separates current-resource actual fields from origin-portable extension intent. Page observations are resource-scoped; explicit Popup/remote/shortcut ACKs are origin-scoped.
+Full exact-resource replacement rebinds projection; same-origin different URL keeps portable fields; cross-origin retires all. Same-document SPA state remains valid.
+Initialization chooses retained projection, then site preset, then global preset.
 
-The concrete projection points are:
+Color is actual state:
+- Gray = muted/zero
+- Blue = native/Media WebAudio, or starting/stopping/error Capture
+- Purple = active Capture (`actualMode:'capture'`, `phase:'active'`) for the same tab/document/origin.
+
+Concrete projection points:
 
 | Location | Ownership and purpose |
 | --- | --- |
-| `src/background/control-coordinator.ts` | serialize intents and commit the single actual snapshot |
-| `src/content/logic/native-media-executor.ts` | sole standard-media writer; event/quiet/stable getter ACK and page observation |
-| `src/content/core/media-registry.ts` | pure, independent active-media/active-video selection and source revision ownership |
-| `src/popup/card/types.ts::initialControlConfig` | initialize fields from neutral defaults plus `ControlSnapshot` only |
-| `src/popup/card/messaging.ts` | apply control revisions independently from audio lifecycle generations |
-| `packages/contracts/src/audio.contracts.ts::resolveAudioVolumeState` | own the constant-time gray/blue/purple truth table and tab/document/origin lifecycle join |
-| `src/popup/side-panel/video-controls.ts` | route every video operation to `activeVideo`, never to an audio-only `activeMedia` |
-| `src/background/remote-commands.ts`; `remote-service.ts` | call the same serialized coordinator directly inside Background, cache a side-effect-free actual projection before authentication, then push only after HMAC succeeds; never self-RPC or predict a result |
+| `control-coordinator.ts` | serialize intents, commit actual snapshot |
+| `native-media-executor.ts` | sole standard-media writer; getter ACK/page observation |
+| `media-registry.ts` | pure active-media/video selection, source revision |
+| `popup/card/types.ts` | initialize fields from neutral defaults + `ControlSnapshot` |
+| `popup/card/messaging.ts` | apply control revisions independently from audio generations |
+| `audio.contracts.ts::resolveAudioVolumeState` | constant-time gray/blue/purple truth table |
+| `side-panel/video-controls.ts` | route video operations to `activeVideo` |
+| `remote-commands.ts` / `remote-service.ts` | call coordinator inside Background, cache projection, push after HMAC |

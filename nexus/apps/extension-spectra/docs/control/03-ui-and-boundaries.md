@@ -12,131 +12,46 @@ last_reviewed: 2026-07-26
 
 ## §7 UI, visualizer, favicon and remote boundaries
 
-All Popup/Options/remote labels, tooltips, state transitions and reset actions
-use the canonical locale key table. Missing keys produce an observable fallback
-and a contract-test failure, never `undefined`. Reset writes literal `volume=1`
-and `rate=1`; restoring page-owned values is a separate explicit operation.
-
-The visualizer is a subscriber of an already active processor. It owns one
-generation-aware lease, one in-flight sample batch and a bounded sampling loop;
-it does not create an analyser or processor merely because a Popup is visible.
-The card schedules sampling only while its document-matched
-`AudioSessionSnapshot` acknowledges `phase: active` with Media WebAudio or
-Capture ownership. Bypass, idle, stale-identity and unmatched cards paint one
-flat frame and issue no periodic IPC; a matching lifecycle event explicitly
-wakes the scheduler.
-
-Favicon lookup uses a browser-supported URL/service or a page-declared icon and
-handles failure as a normal projection error. `_favicon` is not a manifest
-permission. Remote QR images are generated and validated as complete local
-`data:`/SVG URLs before rendering; invalid URLs and missing controllable origins
-remain structured boundary errors.
+- 所有 UI 文本/Tooltip/状态/Reset 行为统一使用 canonical locale key 映射（缺失走可观测英文 fallback）。
+- Reset 写入字面 `volume=1` 与 `rate=1`；恢复网页原始值为单独的 restore 操作。
+- **Visualizer 订阅**: 依附于已激活的处理器，拥有代际感知 lease。采样仅在 `AudioSessionSnapshot` ACK 为 `phase: active` (WebAudio/Capture) 时以最高 15 Hz 允许，无激活处理器时保持平坦并不发 IPC。
+- Favicon 走标准 URL/service 机制，禁止未知 `_favicon` 权限。远程 QR 图显式生成本地 `data:`/SVG URL。
 
 ### §7.1 Strategy admission and performance gates
 
-`CONTROL_STRATEGY_RULES` is the executable owner of these gates. A strategy is not admitted merely because a setter exists.
+由 `CONTROL_STRATEGY_RULES` 执行准入校验:
 
 | Strategy | Required proof before selection | Idle/runtime cost | Disallowed escalation |
 | --- | --- | --- | --- |
-| `observe` | authoritative getter/event, or an explicit subscription to an already-active processor | zero; subscription uses the existing processor only | must not create a content runtime, AudioContext, offscreen lease or MAIN code on a read |
-| `dom-native` | standard per-element property/method, target identity, bounded event/getter readback | write/event only | no prototype/descriptor patch and no user-activation workaround |
-| `chrome-native` | Chrome API supports the exact scope and a Chrome getter/event confirms actual state | command/event only | no optimistic response before `tabs.get`, native event or operation result |
-| `extension-state` | data belongs to SPECTRA and is keyed to document/media/source as required | zero while unowned; event/timer only while owned | cannot masquerade as page-native state |
-| `extension-css` | extension-owned attribute/variable, computed-style readback and removal disposer | zero while neutral | cannot overwrite or restore guessed site inline styles |
-| `extension-overlay` | extension-owned shadow host, geometry readback and complete disposer | one coalesced rAF only while visible/owned | cannot change the target's position/z-index or synthesize focus/hover |
-| `media-webaudio` | every required source is proven eligible before irreversible binding, requested coverage is complete and graph actual state is readable | one lazy document context; only active DSP nodes | unknown CORS, silence, DRM or inaccessible media are not probeable fallbacks |
-| `capture` | explicit intent, permission/activation, current-generation offscreen candidate and normalized processor ACK | one lazy offscreen processor while leased | cannot activate from a status read or replace a stable path before candidate commit |
-| `unsupported` | every less-invasive complete strategy failed its admission gate | zero | preserve the page and return a structured error |
+| `observe` | 权威 getter/事件，或已激活处理器的订阅 | 0 | 读操作不建 runtime/AudioContext/offscreen/MAIN |
+| `dom-native` | 标准单元素 API，目标身份与读回 | 写/事件 | 不 patch 原型描述符，不绕过 user activation |
+| `chrome-native` | Chrome API 匹配且 Chrome getter/事件确认 | 命令/事件 | 在 `tabs.get`/事件确认前不乐观响应 |
+| `extension-state` | 属于 SPECTRA 且绑定文档/媒体/源码 | 0 (未拥有) | 不伪装为原生状态 |
+| `extension-css` | 扩展属性/变量，计算样式读回 | 0 (中性) | 不覆盖或恢复猜测的内联样式 |
+| `extension-overlay` | 扩展 shadow host，几何读回 | 合并 rAF (仅可见) | 不改变目标 `position`/`z-index` 或伪造焦点 |
+| `media-webaudio` | 绑定前证明资源合规，完全覆盖与图可读 | 1 惰性文档上下文 | 未知 CORS/静音/DRM/受阻媒体不可作为 probe |
+| `capture` | 显式意图、权限/激活、offscreen 候选与归一化 ACK | 1 惰性 offscreen 处理器 | 不由 status 读激活，提交前不替代稳定路径 |
+| `unsupported` | 较低侵入策略全部失败 | 0 | 保持页面原状并返回结构化错误 |
 
 ### §7.2 Production loading topology and bundle ownership
 
-Control completeness must not turn into default-page cost. The manifest loads
-only `content-bootstrap.js`; its runtime imports come exclusively from
-`@nexus/contracts/bootstrap`, a minimal protocol boundary that validates HELLO,
-status, passive native read and release messages. It must not import the full
-request map, the generic RPC client, the media registry or any control/DSP
-executor. A target-bound or augmentation read returns
-`content_runtime_not_loaded`, so Background acquires `content-runtime.js`
-through the document lease/READY transaction instead of widening a passive
-getter.
-
-`build.ts` keeps the bootstrap, main Content runtime and video-enhancement
-Content artifacts isolated because Chrome injects them into page-specific
-isolated worlds. The video artifact is a dynamic-URL web-accessible module but
-is imported only after an explicit video enhancement intent. The Background
-service worker is one self-contained ESM because it owns durable restore and
-its runtime-loader/coordinator cycle must initialize atomically on every MV3
-worker start. Popup, Options and offscreen are independent extension pages and
-may share deterministic production chunks; those private chunks are not
-web-accessible resources. Development builds stay standalone for readable
-Chrome smoke diagnostics.
-
-The contracts, audio-engine and kernel packages declare `sideEffects:false`.
-They are pure runtime libraries: this lets production tree shaking remove
-unused barrel exports instead of charging every extension context for protocol
-families it cannot execute. The architecture checker requires those package
-flags so a metadata edit cannot silently reintroduce duplicated control code.
-
-`scripts/check-production-artifacts.ts` computes each entry's complete static
-and dynamic dependency closure and the Background + bootstrap startup closure,
-requires the Background closure to contain only its own bundle, but does not
-freeze historical byte ceilings. Its invariant is zero
-avoidable production redundancy: every artifact must be reachable from the
-manifest/HTML/CSS/module graph; byte-identical files, repeated modules within a
-shareable build domain, bare or escaping imports, source/test/debug artifacts,
-diagnostic calls and source-map references fail the build. Replication is
-reported but allowed only across Chrome runtime domains that cannot share a
-module instance. Current bytes and top module contributions remain measured
-release evidence rather than an arbitrary product baseline.
-
-Application bundles never enter a second Terser pass. SPECTRA values cross
-storage, extension IPC, Chrome dictionaries, DOM, generated JSON, dynamic
-imports and independently emitted execution worlds; neither a static allowlist
-nor a second optimizer can prove that complete post-esbuild ABI. The single
-esbuild production pass still performs syntax, whitespace and local-identifier
-minification, while storage fields, protocol keys, computed access, ESM
-namespace members and cross-context singleton properties retain one optimizer's
-semantics without a feature-specific reserve list.
-
-The only property-mangling boundary is the separately emitted opaque PeerJS
-vendor IIFE, where the upstream library marks physically private properties
-with `_`. Its public, signaling and WebRTC property names are never eligible.
-The minification-policy unit test and extracted-ZIP Chrome smoke jointly prove
-this post-bundle invariant, including refresh restoration from persisted
-session fields.
+- Manifest 仅注入 `content-bootstrap.js`（基于轻量 `@nexus/contracts/bootstrap`）。
+- 完整 `content-runtime.js` 通过 READY 事务惰性加载。
+- `sideEffects: false` 在 `@nexus/contracts`、`audio-engine` 与 `kernel` 启用，确保构建 Tree-Shaking。
+- 所有产物打包禁止二次 Terser Pass；单一 esbuild 生产构建负责压缩与命名混淆。
 
 ### §7.3 Failure-directed escalation
 
-Escalation is decided from the failure of the attempted capability, never from
-the hostname, a silent analyser, a timeout alone, or the page-wide audio mode.
-The executable owner is `CONTROL_RETRYABLE_STRATEGY_FAILURES` /
-`CONTROL_TERMINAL_STRATEGY_FAILURES` in `control.contracts.ts`.
+由 `CONTROL_RETRYABLE_STRATEGY_FAILURES` / `CONTROL_TERMINAL_STRATEGY_FAILURES` 控制:
 
 | Failure class | Codes | Decision |
 | --- | --- | --- |
-| capability gap | `capability-unavailable`, `write-unsupported`, `readback-mismatch`, `coverage-incomplete`, `source-binding-ineligible`, `strategy-runtime-failed` | Dispose or bypass the failed candidate and try only the next strategy listed for that capability. |
-| browser/security boundary | `user-activation-required`, `permission-denied`, `cors-or-drm-protected`, `protected-content`, `closed-shadow-inaccessible`, `stale-document`, `stale-media-source`, `policy-denied` | Stop. Return a structured error and preserve the stable path. MAIN or Capture must not disguise the boundary. |
-
-The retryable flag in a wire error is descriptive; it cannot grant a strategy
-that the capability policy does not list. Capture is not a fallback for
-activation, permission, DRM or stale-target failures.
-
-No strategy may bypass transient user activation, CORS, DRM or inaccessible closed-shadow media. `CONTROL_STRATEGY_RULES` fixes both flags to `false` for every current and future strategy.
+| capability gap | `capability-unavailable`, `write-unsupported`, `readback-mismatch`, `coverage-incomplete`, `source-binding-ineligible`, `strategy-runtime-failed` | 释放/绕过失败候选，尝试下一个可用策略 |
+| browser/security boundary | `user-activation-required`, `permission-denied`, `cors-or-drm-protected`, `protected-content`, `closed-shadow-inaccessible`, `stale-document`, `stale-media-source`, `policy-denied` | 终止。返回结构化错误并保持稳定路径（严禁用 MAIN/Capture 伪装） |
 
 ## §19 User experience
 
-- Main controls show page volume, media mute, speed, playback and target media.
-- Boost and advanced DSP are separate controls.
-- Multiple-media pages use independent sticky media and video targets based on trusted interaction, playback and cached visibility. The current release does not claim a manual target selector; an active audio element no longer disables or receives video-only controls when an eligible video remains selected.
-- Actual state updates every open Popup and authenticated remote controller through snapshot push; remote commands do not immediately pull potentially stale state.
-- Capture selection is automatic. Legacy `capture_toggle` bindings move to disabled diagnostics rather than exposing a transport implementation as a product feature.
-- Errors rollback optimistic UI to the last stable snapshot and explain the missing capability without technical mode choices.
-- Route/source pills remain readable at a minimum computed `11px`; Global and Site preset section titles remain high-contrast headings at a minimum computed `13px`. Their visible text and search placeholders always come from the validated locale catalog.
-- Crossing the native/processor volume boundary keeps the last complete acknowledged value-and-color pair visible until the compound operation ACK. Popup and OSD both derive tone from `resolveAudioVolumeState()` and the shared `UIColors`, then commit the new numeric value and processor color in one render: blue remains native/Media WebAudio actual state, purple still requires the matching active Capture ACK, and no third transition color or value/tone pair that contradicts that ACK is rendered. OSD accepts this commit only from the aggregate shortcut result carrying its current gesture identity; internal target/processor callbacks update runtime state but cannot release the visual barrier. Same-region slider/shortcut movement remains optimistic because it does not change processor ownership; slower same-region ACKs cannot rewind a held shortcut projection.
-- Badge visibility owns a separate per-tab sticky usage fact in `chrome.storage.session`. A new tab with only page-native `0–100` observations remains blank. A successful Popup, Chrome-command, remote or non-audio extension action—and application of a configured site/global preset—starts the usage fact for that tab. Navigation and service-worker restart preserve the fact and last acknowledged state; because Chrome clears a tab-scoped Action projection during full navigation, Background waits for the new document initialization barrier and then reprojects the badge from the current `ControlSnapshot` plus acknowledged tab session after `tabs.onUpdated(status=complete)`. Tab close is the sole retirement boundary. Rendering requires the complete acknowledged `volumeBase + boost` pair. Until it exists the Badge is completely empty: no dot, gray background, text or other placeholder may reveal the internal usage fact.
-- Toast and actual-value OSD share one manual-Popover top-layer host per feedback kind. Fullscreen changes re-promote connected hosts after the video enters the browser top layer; no site `z-index`, stacking context, or fullscreen element may cover shortcut feedback. The owning Content runtime registry disposes both hosts, the one fullscreen listener, hide timers and OSD animation frame together. A released generation rejects late shortcut completion, so same-document reinjection cannot recreate obsolete feedback or accumulate retained closures.
-- The five shipped defaults (`Alt+ArrowLeft/Right` speed, `Alt+ArrowDown/Up` volume, and `Alt+M` mute) are claimed at `document_start` `window` capture before page handlers, so a site cannot clamp the first SPECTRA volume step to 0–100. `Alt+Up` is the single built-in Manifest accelerator; the other four have no Manifest command. Listener ordering, the website-first bubble-tail arbiter and `Alt+M` once-per-press toggle are owned by [§5](02-strategy-and-routes.md#5-runtime-shortcut-and-feedback-ownership).
-- Scalar page repeats retain only a bounded pulse count while an actual-readback transaction is active. For page-dispatched forms of the four holdable scalar defaults (`Alt+ArrowLeft/Right/Down/Up`), every trusted physical repeat advances one transient feedback target. Exact keyup clears unconsumed repeats and visual motion, but never revokes the first accepted press: a cold-page tap still crosses runtime initialization and commits exactly once through the coordinator, which also records plugin usage for Badge projection. The label is the discrete target—volume remains integer `10`-point steps and speed remains exact `0.1×` steps—and commits in the input task so a busy animation frame cannot swallow an intermediate number; the fill alone interpolates in display frames. A held gesture retargets over the measured physical-repeat interval (bounded to `16–50 ms`) instead of restarting a duration multiplied by missed ACK steps, while every delivered frame is capped to the same `0.6` fraction of one semantic step for both scalar kinds. A skipped browser frame can therefore delay progress but cannot create a full-step visual jump or animation debt. Each gesture has a namespaced monotonic identity shared by local prediction and the aggregate actual result; selected-target feedback with another identity is rejected, and its first matching result disables foreground prediction for the remaining gesture. Keyup freezes the exact last number, width and blue/purple/gray tone without another animation frame, then starts a fresh readable window (`2,000 ms` for actual-value OSD and `1,800 ms` for label Toast). The gesture barrier remains until the sole in-flight operation settles; only a matching pending processor-boundary ACK may atomically replace the retained value/tone pair before settlement releases the barrier, never restart motion or hide the surface. Blur, pagehide and disposal remain immediate-conceal lifecycle boundaries. A zero-volume target is gray in the same input task instead of waiting for a stale config echo. Because configurable Chrome command slots expose no keyup, they reject every `coalesce-20hz` action instead of approximating release with an idle timeout; the dedicated `volume_up` accelerator uses one single-flight tap per browser command dispatch, and an unbound Chrome feedback event cannot overwrite a live page gesture. This keeps native `0–100`, Boost and speed feedback on the same exact input timeline without post-release inertia or color drift.
-- Configured site gestures' keyup, live-only release, gesture-keyed repeat batches and stale-gesture isolation are owned by [§5](02-strategy-and-routes.md#5-runtime-shortcut-and-feedback-ownership).
-- Scalar Toast ranges are linear rather than capability-specific visual guesses: volume is `0–800%` with a `100%` marker, and speed is `0.1–16×` with staggered `1×` and `2×` markers. The marker and fill percentages come from the same scale owner.
-- Options derives command rows from the explicit `chrome.runtime.getManifest().commands` registry. It owns no parallel command-name list or row count, and Chromium's implicit `_execute_action` never becomes a configurable row.
+- 主面板展示音量/静音/倍速/播放与目标媒体。Boost 与 DSP 为高级控制。
+- 颜色与实际状态一比一对应: `blue` 表示 Native / WebAudio ACK，`purple` 表示明确的 Capture active ACK，`gray` 表示静音/0。
+- Badge 在 `chrome.storage.session` 中记录 per-tab 插件使用事实；完全无控制的空白标签页保持 Badge 为空。
+- Toast 与 OSD 在全屏模式下自动挂载到 Popover top-layer 避免被全屏覆盖。

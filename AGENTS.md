@@ -31,6 +31,7 @@ The source of truth is [`.agents/skills/`](.agents/skills/). `bun run sync:skill
 | Skill | Description | Triggers |
 |---|---|---|
 | `add-dependency` | 引入或升级依赖的标准流程：查重、当前版本/许可/CVE 核验、最窄 workspace 安装、验证与边界记录。 | add dependency, install package, upgrade package, 加依赖 |
+| `compress-docs` | 压缩工程内的 Markdown 文档，分为自动化无损去空行和深度语义精简两步。 | compress docs, 文档压缩, 压缩md, 无损压缩 |
 | `finish-feature` | 完成功能或修复时执行交付闭环：范围审计、聚焦测试、Bun 1.3.14 与文档/架构门禁、隐私和发布投影同步，并按用户授权提交或推送。 | finish feature, ship it, end task, 完工, 交付 |
 | `lint` | 运行 NEXUS 的 Biome、workspace fallback、SPECTRA release、Markdown 权威图和 Bun 1.3.14 检查，并区分检查与自动修复。 | lint, biome, 代码风格, 文档检查 |
 | `new-module` | 创建新的 workspace 包、应用或有明确边界的模块：先定义 owner/依赖方向，再脚手架、接入构建与验证。 | new module, create app, scaffold, 建模块, 新应用 |

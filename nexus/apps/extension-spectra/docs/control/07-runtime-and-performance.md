@@ -12,80 +12,12 @@ last_reviewed: 2026-07-30
 
 ## §16 Runtime loading and performance
 
-The manifest contains one lightweight ISOLATED bootstrap plus the two closed,
-versioned MAIN bridges. While idle the ISOLATED bootstrap installs a versioned
-HELLO/message boundary, pagehide cleanup, and capture-phase `volumechange` /
-`ratechange` listeners; it does not read settings, scan media, create a
-MutationObserver or write DOM markers. The native listeners remain disabled
-until the HELLO initialization barrier settles, then do work only for an actual
-event. They submit one complete volume/mute or speed/pitch actual group through
-the coordinator with a single in-flight request and one latest pending patch.
-They yield as soon as the heavy-runtime disposer exists. Page-media V2 retains one
-request listener but performs no discovery between explicit requests; fullscreen
-V1 retains only its native method wrapper and creates temporary handoff work only
-when enhanced audio is active. A passive
-`spectra.control.actual.read` may run one bounded top-level media getter and one
-bounded top-level video getter so first-open state does not collapse the two
-targets, but it still does not persist state or acquire a runtime/processing
-lease. The bootstrap observation also creates no runtime lease or badge-use fact;
-its tab-session persistence is a coordinator projection, not a bootstrap storage
-write.
-
-Heavy document runtime leases are limited to explicit control, restored non-default settings, an observation subscription, authenticated remote use or configured site hotkeys. Status reads never acquire a processing lease. The last lease releases every observer/listener when no controlled field remains.
-
-Runtime initialization is also not a mode intent. Initial state records whether
-it came from `handoff`, sender-bound `session`, or `fresh` initialization. A
-same-document `handoff` only hydrates state and reaches READY: native DOM state
-is already live, the page-lifetime Media WebAudio controller remains on
-`window`, and Capture remains Background/offscreen-owned. Consequently bypass,
-WebAudio, and Capture handoffs all skip policy replay before READY, even when the
-handoff retains sticky page-interaction flags.
-
-A session-only recovery may reconstruct policy when required, except that an
-actual Capture processor is always hydrated without transition (including error
-or stopping phases that may retain the offscreen graph). The next explicit
-control, configuration, navigation, or media lifecycle event may re-evaluate the
-route, but starting Capture still requires a new current-tab extension-invocation
-admission. Therefore warm update and Popup/status/remote observation cannot stop,
-restart, or fan out Capture merely by loading the heavy runtime.
-
-Remote pairing creation does one passive actual projection through the same
-bootstrap/registry read path and caches it in the existing offscreen session.
-Caching does not acquire a processing lease and does not expose state before
-authentication. After authentication, a remote observation lease keeps later
-page events synchronized; disconnect or session destruction releases only that
-consumer. Background modules call the coordinator's serialized functions
-directly and must not route work back through `chrome.runtime.sendMessage` to
-the originating service worker.
-
-Once the heavy runtime already exists, `spectra.control.actual.read` resolves only
-through the event-maintained `MediaRegistry` and pure controller getters. It does
-not scan the document, install listeners, initialize an observed baseline, create
-default video-owner state or change target selection. Event-correlation baselines
-are initialized when the runtime acquires the existing registry and whenever a
-new media/source is registered. The bounded bootstrap getter described above is
-the sole scan exception. The two native listeners are the sole cold-page
-subscription exception; they hold no media registry or persistent state and can
-mutate only by submitting an actual observation to the authoritative coordinator.
-
-`runtime-loader.ts` represents the document reference count as the size of a
-`Set<reason:capability>`. Re-acquiring the same consumer token is idempotent;
-releasing any one token cannot affect another; only deletion of the final
-unique token schedules the acknowledged runtime disposer. The 250ms handoff
-window permits Popup/remote/control ownership transfer without unload/reload
-churn and is cancelled immediately by a new lease. An extension-owned UI page
-retains release authority even when Chrome hosts it in a normal tab; a web
-document cannot release another consumer's token.
-
-The bridges are also registered at `document_start`; warm-update and on-demand
-recovery re-inject the same files through the Background manager, and their V1/V2
-guards make that operation idempotent. There is no capability lease, generic
-dispatcher, or page-controller cache. The Background manager is the only
-production source allowed to contain the `world: 'MAIN'` injection literal.
-
-Default invariant:
+Manifest 仅包含轻量 ISOLATED bootstrap 与两个闭合版本化 MAIN bridge（Fullscreen V1 与 Page-Media V2）。
+- 空闲时仅安装 HELLO/消息边界与 `volumechange`/`ratechange` 事件监听；不读取设置、不扫描媒体、不创建 MutationObserver 或 DOM 标记。
+- 重级 Runtime Lease 仅限定于显式控制、恢复非默认设置、观察订阅、已认证远程或配置站点快捷键。`runtime-loader.ts` 以 `Set<reason:capability>` 管理引用计数。
 
 ```text
+默认静态不变式 (无显式 WebAudio 申请前):
 0 extension AudioContext
 0 offscreen lease
 0 generic MAIN runtime or recurring MAIN work
@@ -93,104 +25,28 @@ Default invariant:
 0 recurring timer/rAF/IPC
 ```
 
-The invariant above applies before the user explicitly acquires Media WebAudio.
-After `createMediaElementSource()` succeeds, the browser owns an irreversible
-page-lifetime binding: closing that context would make the element impossible to
-rebind without risking silence. Release therefore switches the shared router to
-a unity lane, removes every optional DSP/analyser node and stops extension IPC,
-but retains the smallest source -> gain -> destination route until navigation.
-Capture does not have this exception and releases its offscreen lease normally.
-
 ## §17 Implementation ownership and migration map
 
-These locations are architectural owners, not suggestions. A future implementation must update this section before moving a responsibility.
+| Location | Target responsibility |
+| --- | --- |
+| `packages/contracts/src/control.contracts.ts` | 完整字段/操作、策略类别、意图/快照/ACK guards 统一词汇表 |
+| `packages/contracts/src/spectra.bootstrap.ts` | 最小常驻协议常量、极简读回与 5 组默认快捷键映射 |
+| `packages/features/audio-engine/src/CapabilityPlanner.ts` | 纯净无侧作用按能力策略选择器 |
+| `src/background/control-coordinator.ts` | 意图串行、代际 Revision、稳定快照与 Capture 准入门禁 |
+| `src/background/runtime-loader.ts` | 文档级重级 Runtime Lease 与 READY 握手 |
+| `src/background/main-runtime-manager.ts` | 幂等注入 Fullscreen V1 与 Page-Media V2 bridges |
+| `src/content/core/media-registry.ts` | `mediaId`、`sourceRevision`、缓存可见性与 Sticky Active Target 追踪 |
+| `src/content/logic/native-media-executor.ts` | 唯一 DOM 标准媒体属性写者 |
+| `src/content/video/video-effects-controller.ts` | 媒体 Keyed CSS / Overlay 归属与属性恢复 |
+| `src/content/video/ab-loop.ts`, `time-marker.ts` | 媒体 Keyed A/B 循环与 Marker 算法及 disposer |
+| `src/background/handlers/screenshot.ts` | 令牌校验、可见标签页截屏、裁剪与下载确认编排 |
 
-| Location | Target responsibility | Purpose of the migration |
-| --- | --- | --- |
-| `packages/contracts/src/control.contracts.ts` | exhaustive fields/operations, strategy classes, intent/snapshot/ACK guards | Keep Popup, remote, content, background and tests on one semantic vocabulary. |
-| `packages/contracts/src/spectra.protocol.ts`; `packages/contracts/src/spectra.content-runtime.ts` | canonical and restricted Content wire guards that re-export the Bootstrap-owned runtime revision | Keep the production Content allowlist aligned with every internal intent field without creating a second revision authority. |
-| `packages/contracts/src/spectra.bootstrap.ts`; `src/content/core/bootstrap.ts` | minimal always-on protocol constants including the sole Content runtime revision, validators, passive read, bounded cold native-observation boundary, and the unique five-default-key map owner | Force stale page runtimes through revisioned re-injection and prevent the complete v2 action/validator graph from becoming default-page parse cost while preserving strict runtime validation, refresh state, and cold-page shortcut use without a competing site listener or Chrome command. |
-| `packages/features/audio-engine/src/CapabilityPlanner.ts` | pure least-invasive per-capability selection | Make native/augmentation admission deterministic and unit-testable without browser side effects. |
-| `src/background/control-coordinator.ts` | intent ordering, per-field revision, stable snapshot, rollback and current-tab Capture admission | Establish the only authority that commits actual state or mints a volatile privileged transaction. |
-| `src/background/runtime-loader.ts` | document-scoped heavy-runtime lease and READY handshake | Preserve the zero-work default and remove fixed injection sleeps. |
-| `src/background/main-runtime-manager.ts` | idempotent injection of fullscreen V1 and exact-element page-media V2 | Delete generic MAIN dispatch and domain adapters; only the two manifest-registered bridge artifacts may be re-injected. |
-| `src/content/core/bootstrap.ts` | lightweight HELLO/message/pagehide boundary, bounded passive getter and latest-value volume/rate observer | Keep idle injection processing-free while allowing first-open UI/remote actual state and refresh persistence without installing the heavy registry. |
-| `src/content/core/media-registry.ts` | `mediaId`, `sourceRevision`, cached visibility and sticky active target | Remove document scans/layout reads from command hot paths. |
-| `src/content/logic/native-media-executor.ts` | sole DOM writer, registration-time event baseline and pure registry-backed readback | Replace concurrent `media-control.ts`, `dom-volume.ts` and bridge writes while preventing status reads from initializing mutable correlation state. |
-| `src/content/core/media-registry.ts`; `src/background/control-coordinator.ts::handleTargetChanged` | explicit media/source selection synchronization | Commit a new active target only after a sender-bound one-shot actual readback confirms the same `mediaId + sourceRevision`. |
-| `src/background/control-coordinator.ts::projectControlTarget`; Popup card/side-panel target selection | ACK target projection into independent active identities | Use the exhaustive contract scope to stop video, tab and document operations from stealing or clearing the unrelated media/video target. |
-| `packages/contracts/src/control.contracts.ts`; `src/shared/page-media-bridge.ts`; `src/content/injector/page-media-bridge.ts` | `page-native` admission and the exact-element volume/mute/speed protocol | Keep the three semantic fields on one synchronous request/readback surface with bounded discovery, exact-source one-way DOM-to-page maturation, DOM fallback, and no domain table or controller retention. |
-| `src/content/injector/fullscreen-bridge.ts`; `src/background/main-runtime-manager.ts` | fullscreen V1 and page-media V2 bridge artifact ownership | Ensure only the two implemented versioned bridges can be injected and no generic MAIN dispatch can drift back in. |
-| `packages/features/audio-engine/src/webaudio/*` | page-lifetime source registry and one lazy shared graph | Prove eligibility before irreversible binding and create only active nodes. |
-| `src/content/video/video-effects-controller.ts` | media-keyed CSS/overlay owner with runtime-random selector token and pure snapshot | Restore the site's exact pre-existing attributes/custom properties, make a neutral never-owned write DOM-free, and prevent a site-authored `data-spectra-*` name from matching extension CSS. |
-| `src/content/video/ab-loop.ts`; `time-marker.ts` | media/source-keyed A/B and marker algorithms with disposers | Prevent state leaking across source revisions, suppress skip re-entry, use a hidden-tab boundary timer and return actual seek readback for every marker jump. |
-| `src/background/handlers/screenshot.ts`; `src/content/video/video-transform.ts` | token-bound target verification, visible-tab capture, crop and download-complete orchestration | Keep one Chrome-native writer, verify source/geometry on both sides of capture, avoid image IPC and expose structured capability failures. |
-| `src/content/input/*`; `packages/contracts/src/hotkeys.contracts.ts` | translate hotkeys into typed coordinator intents and assign one feedback owner | Remove direct media writes, transport-specific capture toggles and duplicate success OSD/toasts. |
-| `src/background/visualizer-subscriber-registry.ts`; `src/background/handlers/audio.ts` | generation-aware per-consumer analyser leases, heartbeat expiry and bounded tombstones | Preserve independent Popup consumers, reclaim abnormal exits and prevent delayed batches from reviving released analysers. |
-| `src/popup/card/types.ts`; `src/popup/card/init.ts`; `src/popup/card/messaging.ts` | field projection from `ControlSnapshot`; lifecycle projection from `AudioSessionSnapshot` | Prevent two actual authorities and keep control/audio generation domains independent. |
-| `src/background/control-coordinator.ts`; `src/background/handlers/user-scripts.ts` | source-window browser operations and document-bound sandbox execution | Prevent multi-window commands or navigation races from acknowledging work against another tab/document. |
-| `packages/contracts/src/spectra.protocol.ts` | v2 control apply/get/subscribe wire definitions | Make all surfaces receive one snapshot and actual ACK shape. |
-| `packages/contracts/src/spectra.ui-runtime.ts`; `spectra.ui-settings-runtime.ts`; `src/shared/ui-*-spectra-client.ts` | surface-specific UI protocol allowlists and runtime guards | Keep canonical validation while preventing the Options settings editor from loading Popup control ACK/snapshot and audio/remote validator code. |
-| `scripts/verify-architecture.ts` | `SCTRL-*` static enforcement | Turn this owner document into a release gate instead of advisory prose. |
-| `build.ts`; `scripts/check-production-artifacts.ts` | isolated Content artifacts, a self-contained Background ESM, extension-page shared ESM chunks and zero-redundancy production graph | Keep MV3 restore initialization atomic while measuring real entry/startup closures and rejecting unreachable, duplicate, debug, source/test or shareable repeated artifacts without freezing historical byte ceilings. |
+### §17.1 Implementation status ledger (All landed)
 
-### §17.1 Implementation status ledger
-
-Every row is release-gated as landed. Reintroducing `partial` or `pending` is a
-build failure; changing a status requires source and test evidence in the same
-change.
-
-| Status | Location | Concrete change and purpose |
-| --- | --- | --- |
-| landed | retired generic `src/injector/*`; manifest/build; `src/background/main-runtime-manager.ts`; `src/content/injector/*-bridge.ts` | Remove generic constructor/audio/element interception and adapter dispatch. Only fullscreen V1 and exact-element page-media V2 remain: the former wraps native fullscreen for bounded audio handoff, and the latter owns one idle request listener with no polling or retained controller. |
-| landed | `packages/features/audio-engine/src/AudioGraphRouter.ts`; `packages/features/audio-engine/src/webaudio/controller.ts`; `src/offscreen/audio-host.ts` | Share one sparse graph, require prospective and actual full-registry coverage before Media WebAudio ACK, reconnect rather than recreate page-lifetime sources, provide normalized graph/Capture readback and preserve the stable processor during candidate failure. The contract records the minimal unity route that must remain after an irreversible media binding. |
-| landed | `src/content/core/bootstrap.ts`, `background/runtime-loader.ts`, `background/control-coordinator.ts`, `content/core/media-registry.ts` | Keep pages without retained settings bootstrap-only, order cold native observations after session/preset initialization, retain one event-driven document runtime for a non-empty restore, seed desired state before media exists, preserve volume/speed across refresh without a badge-use fact, and make runtime/document target identity explicit. |
-| landed | `packages/contracts/src/spectra.bootstrap.ts`; `build.ts`; `scripts/check-production-artifacts.ts` | Reduce the always-on content boundary to the four required message families, share production code only between extension-origin module contexts, measure every real closure and reject all avoidable production redundancy. |
-| landed | `build.ts`; `scripts/minification-policy.ts`; `src/offscreen-remote/peerjs-vendor.ts`; `src/offscreen-remote/peerjs-loader.ts`; `test/release-tooling.spec.ts`; extracted-ZIP Chrome smoke | Keep application bundles on one esbuild production optimizer: their storage, protocol, Chrome, DOM, generated-JSON, computed and cross-world ABI cannot be completely proven to a second minifier. Build PeerJS as an opaque local vendor artifact whose public/signaling/WebRTC ABI remains stable while its isolated secondary Terser pass may shorten only underscore-prefixed private members. Capture-only offscreen startup excludes both the deferred Remote controller and PeerJS; the first explicit Remote create performs one verified local script single flight with no CDN fallback or automatic retry. |
-| landed | `src/content/logic/native-media-executor.ts`; `scripts/verify/check-spectra-control.ts` | Centralize the only direct standard-media property assignments, including volume, mute, speed, pitch preservation, seek and loop; make a second direct property writer a release error. |
-| landed | `src/content/core/media-registry.ts`; `src/content/logic/native-media-executor.ts`; exact-element page-media bridge; `src/background/control-coordinator.ts` page-observation path | Commit verified page-side volume, mute, speed, pitch, transport, seek, loop, PiP and fullscreen facts to the shared snapshot without echoing a second write. Volume/mute/speed re-read page semantics first, ordinary HTML5 media falls back to DOM, and neither path polls. |
-| landed | `src/content/audio/media-detection.ts`; `content/core/lifecycle/media-observer.ts`; `content/utils/pause-tracker.ts`; `content/logic/native-media-executor.ts` | Make status/read paths pure registry projections: no listener installation, DOM fallback, synthetic registry event or read-triggered correlation state. Pause retention is updated only by registry events. |
-| landed | `src/content/video/video-effects-controller.ts`; `video-transform.ts` | Own reversible attributes/variables and a closed-shadow dim overlay without overwriting site inline transform/filter/layout values; a neutral value on a never-owned video is a DOM-free no-op. Keep `video-transform.ts` screenshot-only and remove the duplicate `video-filter.ts` facade. |
-| landed | `src/content/video/video-effects-controller.ts`; `test/video-effects-controller.spec.ts` | Scope CSS selectors with a runtime-random owner token, capture the site's attribute/custom-property values, keep neutral dim writes from deleting site state and separate stylesheet lifetime from generic effect state. |
-| landed | `packages/contracts/src/control.contracts.ts`; `src/background/control-coordinator.ts`; `src/content/core/media-registry.ts`; `src/popup/side-panel/video-controls.ts` | Keep `activeMedia` and `activeVideo` as separate actual identities. Audio/transport and video-only controls no longer steal or misroute one another's target, while all surfaces still submit typed mutations or operations to the serialized coordinator. Capture admission exists only on the coordinator-created internal intent and is rejected from submit payloads. |
-| landed | deleted `src/content/logic/media-control.ts`, `media-message-handler.ts`, `audio/dom-volume.ts`, `audio/volume-observer.ts`; `logic/mode-executor.ts` | Retire competing media writers. The remaining audio-topology compatibility layer delegates native fields to the canonical executor and cannot write volume, mute, speed, seek, pitch or loop. |
-| landed | `scripts/verify/check-spectra-control.ts`; `src/content/logic/native-media-executor.ts` | Enforce one direct writer module, forbid indirect legacy writer imports/calls and fail when generic MAIN, raw cross-world messages or retired control modules return. |
-| landed | deleted legacy hostname bridge modules, retired generic `src/injector/*`, and removed the resident speed-UI bridge; `background/main-runtime-manager.ts`; `content/injector/page-media-bridge.ts` | Replace raw page messages, hostname adapters and resident player-UI synchronization with the fullscreen V1 handoff plus synchronous exact-element page-media V2 request/readback. |
-| landed | `src/content/video/ab-loop.ts`; `time-marker.ts` | Bind A/B and markers to `mediaId + sourceRevision`, use one bounded A/B scheduler, binary marker lookup and the unique acknowledged seek executor. |
-| landed | `packages/contracts/src/spectra.bootstrap.ts`; `public/manifest.json`; `src/content/core/bootstrap.ts`; `src/content/input/hotkey-event.ts`; `hotkey-actions.ts`; `hotkey-helpers.ts`; `hotkey-listener.ts`; `background/shortcuts.ts` | Translate every enabled shortcut through its exhaustive descriptor into a typed coordinator intent/operation; preserve repeat/coalescing and activation rules without direct media writes. One shared resolver gives the `document_start` Bootstrap exclusive capture ownership of reserved `Alt+ArrowLeft/Right`, `Alt+ArrowDown/Up`, and `Alt+M`; the heavy site listener excludes them. `Alt+Up` is additionally the one built-in Manifest command so Chrome grants current-tab extension invocation before a first-use boost needs Capture; when the browser consumes the accelerator it is the sole writer, while Bootstrap remains the unassigned/conflict fallback. `hotkey-event.ts` retains website-first capture-recognizer/same-event-tail admission only for configured site bindings plus the stable physical-release observer. Release is live-only, repeat consumption requires a new physical event, and no delayed action timer survives keyup. Mute repeat cannot toggle twice. Popup, `chrome.commands`, built-in Bootstrap gestures and configured page hotkeys share one volatile admission path only after Background verifies the current top-level document and active target; alternate targets receive none. |
-| landed | `src/background/remote-commands.ts`; `remote-service.ts`; `offscreen-remote/remote-host.ts`; Popup card/side-panel modules | Remote and extension UI submit canonical coordinator mutations, consume snapshot pushes, reject stale generations/revisions and roll optimistic rendering back to the latest stable actual snapshot. Background uses a direct serialized coordinator gateway rather than unreliable worker self-RPC; create/restore privately seeds actual state so HMAC success can deliver the first projection immediately. Popup fields initialize from `ControlSnapshot` only; `AudioSessionSnapshot` owns processor lifecycle only. Popup may receive current-tab Capture admission; authenticated remote never does. |
-| landed | `src/background/visualizer-subscriber-registry.ts`; standard-media/offscreen subscription; Popup shared scheduler | Hold independent generation-aware analyser leases only while visible cards consume them, expire abnormal exits after 5 seconds, retain bounded anti-resurrection tombstones, reuse one analyser per active processor and keep sampling batched at 15 Hz. |
-| landed | `packages/contracts/src/hotkeys.contracts.ts`; `src/content/input/hotkey-listener.ts`; `src/background/shortcuts.ts`; `public/manifest.json` | Assign every action exactly one feedback owner so acknowledged actual OSD, semantic handler results and generic labels never overlap; reserve only `Alt+Up` as the built-in browser-invoked first-boost command and keep the other four shipped defaults out of Manifest commands. Configurable slots still reject holdable/coalescing actions. |
-| landed | `src/content/video/video-transform.ts`; `src/background/handlers/screenshot.ts`; `spectra.protocol.ts` | Bind screenshot capture to a random token and verify the same document/source/geometry before and after `captureVisibleTab`, then ACK only after download completion. |
-| landed | `packages/contracts/src/audio.contracts.ts`; `packages/features/audio-engine/src/AudioGraphRouter.ts`; Capture/WebAudio readback adapters | Encode processor level only as `boostGain: 1–8` and remove processor mute. This makes the native page volume/mute writer boundary structural rather than relying on callers to force an unused DSP mute field off. |
-
-The static checker enforces direct and indirect writer ownership, forbidden
-generic MAIN behavior, the versioned bridge boundary, exact-element/domain-free
-page-media discovery, 51-row strategy parity, the 50-entry source catalog and a
-fully landed ledger. Release promotion also runs integration coverage for the
-cross-surface synchronization and native-threshold paths.
+- **ALL 16 Architecture Items LANDED**: Generic MAIN dispatch deleted; sparse WebAudio graph shared; cold-document bootstrap isolated; single-pass esbuild optimizer enforced (PeerJS IIFE opaque vendor excepted); single direct media writer enforced; activeMedia & activeVideo targets separated; A/B & Markers bound to `mediaId + sourceRevision`; hotkeys mapped via exhaustive descriptors; remote HMAC gating active; visualizer leases generation-aware.
 
 ## §18 Cross-world bridges
 
-The two bridge protocols report per request:
-
-```text
-inject / acknowledge / dispose
-```
-
-Both artifacts are manifest-registered at `document_start` and may be re-injected
-only by `main-runtime-manager.ts`; `__SPECTRA_FULLSCREEN_BRIDGE_V1__` and
-`__SPECTRA_PAGE_MEDIA_BRIDGE_V2__` make recovery idempotent. There is no page
-`postMessage` channel, domain dispatch, generic callable MAIN service, or
-cross-tab state.
-
-Fullscreen V1 wraps only the native fullscreen entry. If the isolated runtime
-marks an audio handoff ready, one request ID coordinates prepare/ready/finish
-with a bounded 1.2-second per-call timeout; otherwise it immediately invokes the
-original method. Page-media V2 never wraps a media prototype. It receives one
-synchronous event on the exact media element, discovers only a bounded local
-controller candidate for the requested field, calls the paired getter/setter,
-and returns getter readback on the same element. Failure restores through the
-same writer. Its sole document listener is idle between requests and it owns no
-timer, observer, controller reference, site selector, or UI synchronization
-loop.
+两个 Bridge 均为 manifest `document_start` 注册，由 `main-runtime-manager.ts` 幂等重注入:
+- `__SPECTRA_FULLSCREEN_BRIDGE_V1__`: 仅包装原生 `requestFullscreen()` 入口以在 1.2s 内协调增强音频交接。
+- `__SPECTRA_PAGE_MEDIA_BRIDGE_V2__`: 仅对 `volumeBase`、`mediaMuted` 与 `speed` 发起同步 DOM 事件并在请求元素上读回，不维持轮询与全局拦截。
