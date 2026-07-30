@@ -1,7 +1,7 @@
 // goal: Sticky Notes core logic - CRUD operations for notes
 
 import type { Note } from './types';
-import { NOTE_COLORS } from './types';
+import { DEFAULT_NOTE_COLOR, NOTE_COLORS } from './types';
 
 const STORAGE_KEY = 'halo-sticky-notes';
 
@@ -25,7 +25,7 @@ export async function saveNotes(notes: Note[]): Promise<void> {
 }
 
 // Create new note
-export function createNote(content = '', color = NOTE_COLORS[0]!.id): Note {
+export function createNote(content = '', color = DEFAULT_NOTE_COLOR.id): Note {
 	const now = Date.now();
 	return {
 		id: generateId(),
@@ -40,8 +40,9 @@ export function createNote(content = '', color = NOTE_COLORS[0]!.id): Note {
 export async function updateNote(id: string, updates: Partial<Note>): Promise<Note[]> {
 	const notes = await getNotes();
 	const index = notes.findIndex((n) => n.id === id);
-	if (index >= 0) {
-		notes[index] = { ...notes[index]!, ...updates, updatedAt: Date.now() };
+	const note = index >= 0 ? notes[index] : undefined;
+	if (note) {
+		notes[index] = { ...note, ...updates, updatedAt: Date.now() };
 		await saveNotes(notes);
 	}
 	return notes;
@@ -57,5 +58,5 @@ export async function deleteNote(id: string): Promise<Note[]> {
 
 // Get color config
 export function getColorConfig(colorId: string) {
-	return NOTE_COLORS.find((c) => c.id === colorId) || NOTE_COLORS[0]!;
+	return NOTE_COLORS.find((c) => c.id === colorId) ?? DEFAULT_NOTE_COLOR;
 }

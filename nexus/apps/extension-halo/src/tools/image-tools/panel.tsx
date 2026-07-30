@@ -1,6 +1,7 @@
 // goal: Image Tools panel UI - compress, convert, and base64 encode images
 
-import React, { useState, useCallback, useRef } from 'react';
+import type React from 'react';
+import { useState, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { ImageFormat, ImageConfig, ImageInfo } from './types';
@@ -13,8 +14,7 @@ const FORMATS: ImageFormat[] = ['png', 'jpeg', 'webp'];
 
 export const ImageToolsPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const fileRef = useRef<HTMLInputElement>(null);
-	const [config, setConfig] = useToolState<ImageConfig>('image-tools' as any, DEFAULT_CONFIG);
+	const [config, setConfig] = useToolState<ImageConfig>('image-tools', DEFAULT_CONFIG);
 
 	const [file, setFile] = useState<File | null>(null);
 	const [img, setImg] = useState<HTMLImageElement | null>(null);
@@ -60,15 +60,14 @@ export const ImageToolsPanel: React.FC = () => {
 	return (
 		<div style={styles.wrapper}>
 			{/* Dropzone */}
-			<div
+			<label
 				style={styles.dropzone}
-				onClick={() => fileRef.current?.click()}
 				onDragOver={(e) => e.preventDefault()}
 				onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
 			>
-				<input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+				<input type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
 				📷 {t('imageTools.dropHint')}
-			</div>
+			</label>
 
 			{/* Preview */}
 			{img && info && (
@@ -103,7 +102,7 @@ export const ImageToolsPanel: React.FC = () => {
 			{/* Actions */}
 			{img && (
 				<div style={styles.row}>
-					<button style={styles.btn} onClick={handleProcess} disabled={processing}>
+					<button type="button" style={styles.btn} onClick={handleProcess} disabled={processing}>
 						{processing ? '⏳' : '✨'} {t('imageTools.process')}
 					</button>
 				</div>
@@ -119,8 +118,8 @@ export const ImageToolsPanel: React.FC = () => {
 						</span>
 					</div>
 					<div style={{ ...styles.row, marginTop: '12px' }}>
-						<button style={styles.btn} onClick={handleDownload}>💾 {t('imageTools.download')}</button>
-						<button style={styles.btnSecondary} onClick={handleCopyBase64}>📋 Base64</button>
+						<button type="button" style={styles.btn} onClick={handleDownload}>💾 {t('imageTools.download')}</button>
+						<button type="button" style={styles.btnSecondary} onClick={handleCopyBase64}>📋 Base64</button>
 					</div>
 				</div>
 			)}

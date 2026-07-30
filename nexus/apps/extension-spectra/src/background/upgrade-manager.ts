@@ -75,7 +75,10 @@ async function injectWithTransition(tabId: number): Promise<void> {
 				},
 			});
 			hasOldInstance = r?.[0]?.result === true;
-		} catch { /* page may block script execution */ }
+		} catch (error) {
+			hasOldInstance = false;
+			swLog.debug(`[Upgrade] Tab ${tabId}: unable to probe previous content instance`, error);
+		}
 
 		if (hasOldInstance) {
 			swLog.debug(`[Upgrade] Tab ${tabId}: tearing down old instance`);

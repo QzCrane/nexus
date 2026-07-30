@@ -1,7 +1,8 @@
 // goal: Global search bar component
 // eff: Fuzzy search with keyboard shortcuts
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import type React from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import type { ToolMeta } from '../kernel/registry/tool-registry';
 import { TOOL_REGISTRY } from '../kernel/registry/tool-registry';
 import { useTranslation } from '../i18n';
@@ -111,13 +112,16 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, placeholder }) =
         <div style={styles.dropdown}>
           {results.length > 0 ? (
             results.map((tool, i) => (
-              // biome-ignore lint/a11y/noStaticElementInteractions: grandfathered in halo-biome-baseline
-              // biome-ignore lint/a11y/useKeyWithClickEvents: grandfathered in halo-biome-baseline
-              <div
+              <button
+                type="button"
                 key={tool.id}
                 style={{
                   ...styles.item,
                   ...(i === activeIndex ? styles.itemActive : {}),
+                  width: '100%',
+                  border: 'none',
+                  color: 'inherit',
+                  textAlign: 'left',
                 }}
                 onMouseEnter={() => setActiveIndex(i)}
                 onClick={() => handleSelect(tool)}
@@ -136,7 +140,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, placeholder }) =
                     {t('common.comingSoon')}
                   </span>
                 )}
-              </div>
+              </button>
             ))
           ) : (
             <div style={styles.noResults}>{t('common.noResults')}</div>

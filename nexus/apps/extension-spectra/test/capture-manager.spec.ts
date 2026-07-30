@@ -11,6 +11,7 @@ import {
 	createCaptureManager,
 	resetCaptureManagerForTests,
 } from '../src/content/audio/capture-manager';
+import { requireValue } from './helpers/require-value';
 
 const CONFIG: AudioConfig = {
 	enabled: true,
@@ -56,7 +57,10 @@ describe('capture manager acknowledged state', () => {
 					generation: 23, lastError: null,
 				} satisfies AudioCaptureState),
 			];
-			const send = mock(async () => replies.shift()!);
+			const send = mock(async () => requireValue(
+				replies.shift(),
+				'Capture manager sent more requests than the fixture provides',
+			));
 			Object.defineProperty(globalThis, 'chrome', {
 				configurable: true,
 				value: { runtime: { id: 'spectra-test', sendMessage: send } },
@@ -66,9 +70,13 @@ describe('capture manager acknowledged state', () => {
 			const continuation = await manager.suspendForContinuation(CONFIG, 21);
 			expect(manager.isActive()).toBe(false);
 			expect(continuation).not.toBeNull();
-			await continuation!.resume(CONFIG, 22);
+			const resumable = requireValue(
+				continuation,
+				'Expected acknowledged capture suspension to mint a continuation',
+			);
+			await resumable.resume(CONFIG, 22);
 			expect(manager.isActive()).toBe(true);
-			await expect(continuation!.resume(CONFIG, 23)).rejects.toThrow('already consumed');
+			await expect(resumable.resume(CONFIG, 23)).rejects.toThrow('already consumed');
 			expect(send).toHaveBeenCalledTimes(3);
 			await manager.request(false, CONFIG, 23);
 			expect(manager.isActive()).toBe(false);
@@ -87,7 +95,10 @@ describe('capture manager acknowledged state', () => {
 			const stopReply = deferred<RpcResult<AudioCaptureState>>();
 			const errorReply = deferred<RpcResult<AudioCaptureState>>();
 			const replies = [startReply, updateReply, stopReply, errorReply];
-			const send = mock(() => replies.shift()!.promise);
+			const send = mock(() => requireValue(
+				replies.shift(),
+				'Capture manager sent more requests than the deferred fixture provides',
+			).promise);
 			Object.defineProperty(globalThis, 'chrome', {
 				configurable: true,
 				value: { runtime: { id: 'spectra-test', sendMessage: send } },

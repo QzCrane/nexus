@@ -1,7 +1,7 @@
 import type { UserScript, UserScriptState } from './types';
 import { getUserScriptsState, saveState } from './storage';
 
-let opQueue: Promise<any> = Promise.resolve();
+let opQueue: Promise<unknown> = Promise.resolve();
 function serialized<T>(fn: () => Promise<T>): Promise<T> {
 	const result = opQueue.then(() => fn());
 	opQueue = result.catch(() => undefined);
@@ -35,8 +35,9 @@ export async function updateUserScript(id: string, updates: Partial<UserScript>)
 	return serialized(async () => {
 		const state = await getUserScriptsState();
 		const index = state.scripts.findIndex((s) => s.id === id);
-		if (index !== -1) {
-			state.scripts[index] = { ...state.scripts[index]!, ...updates, updatedAt: Date.now() };
+		const current = state.scripts[index];
+		if (current) {
+			state.scripts[index] = { ...current, ...updates, updatedAt: Date.now() };
 			await saveState(state);
 		}
 	});
@@ -84,7 +85,11 @@ export async function reorderScript(id: string, direction: 'up' | 'down'): Promi
 		const newIndex = direction === 'up' ? index - 1 : index + 1;
 		if (newIndex < 0 || newIndex >= state.scripts.length) return;
 
-		[state.scripts[index], state.scripts[newIndex]] = [state.scripts[newIndex]!, state.scripts[index]!];
+		const current = state.scripts[index];
+		const target = state.scripts[newIndex];
+		if (!current || !target) return;
+		state.scripts[index] = target;
+		state.scripts[newIndex] = current;
 
 		state.scripts.forEach((s, i) => { s.order = i; });
 		await saveState(state);

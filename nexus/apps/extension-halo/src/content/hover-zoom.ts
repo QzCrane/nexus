@@ -1,7 +1,7 @@
 // goal: Hover Zoom content module entry
 // eff: Orchestrates initialization and event binding
 
-import { DEFAULT_SETTINGS, STORAGE_KEY, HoverZoomSettings } from '../tools/hover-zoom/types';
+import { DEFAULT_SETTINGS, STORAGE_KEY, type HoverZoomSettings } from '../tools/hover-zoom/types';
 import { initRulesForHost } from '../tools/hover-zoom/content/resolvers/rule-resolver';
 import { createInitialState, createPreloadState } from './hover-zoom-state';
 import { createOnOver, createOnOut, createOnMove, createOnClick } from './hover-zoom-events';
@@ -94,7 +94,6 @@ export async function init(): Promise<void> {
 		if (a === 'local' && c[STORAGE_KEY]) {
 			state.settings = mergeSettings(c[STORAGE_KEY].newValue);
 			state.viewer?.updateSettings(state.settings);
-			state.hotkeys?.updateSettings(state.settings);
 			console.log(LOG_TAG, 'Settings updated:', {
 				enabled: state.settings.enabled,
 				resourceKeys: state.settings.resourceKeys

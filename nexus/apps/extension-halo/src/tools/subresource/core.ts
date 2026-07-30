@@ -10,7 +10,7 @@ export async function calculateSri(content: string, alg: Algo = 'sha384'): Promi
 	const hashArray = Array.from(new Uint8Array(hashBuffer));
 	// Convert to base64
 	let binary = '';
-	for (let i = 0; i < hashArray.length; i++) binary += String.fromCharCode(hashArray[i]!);
+	for (const byte of hashArray) binary += String.fromCharCode(byte);
 	const base64 = btoa(binary);
 
 	return `${alg}-${base64}`;

@@ -1,6 +1,7 @@
 // goal: SSL Cert panel UI
 
-import React, { useState, useMemo } from 'react';
+import type React from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { parseCertificate } from './core';
 import { styles } from './panel.styles';
@@ -9,7 +10,7 @@ import { useToolState } from '../../kernel';
 
 export const SslCertPanel: React.FC = () => {
     const { t } = useTranslation();
-    const [input, setInput] = useToolState<string>('ssl-cert-input' as any, '');
+    const [input, setInput] = useToolState<string>('ssl-cert-input', '');
 
 
     const info = useMemo(() => {

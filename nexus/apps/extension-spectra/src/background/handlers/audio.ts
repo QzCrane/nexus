@@ -61,7 +61,9 @@ async function resolveAudioConfigForSender(sender: chrome.runtime.MessageSender)
 		try {
 			const session = await storage.tabSession.get(tabId, identity);
 			if (session) config = controlSessionPatchToAudioConfig(session);
-		} catch { }
+		} catch (error) {
+			swLog.warn(`[Audio] Failed to restore tab ${tabId} session config; using settings fallback`, error);
+		}
 	}
 	return config ?? settingsRepository.resolveAudioConfig(domain);
 }
@@ -183,6 +185,12 @@ async function updateVisualizerSubscriptions(
 
 // note: one-release adapter for old popup contexts. Current content publishes
 // acknowledged v2 session snapshots and current popup contexts consume them.
+function isExpectedMissingLegacyReceiver(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	return message.includes('Receiving end does not exist')
+		|| message.includes('message port closed before a response was received');
+}
+
 function broadcastLegacyUiSyncForOneRelease(
 	tabId: number,
 	payload: Record<string, unknown>,
@@ -190,7 +198,11 @@ function broadcastLegacyUiSyncForOneRelease(
 	chrome.runtime.sendMessage({
 		action: Actions.UI_SYNC,
 		payload: { ...payload, tabId },
-	}).catch(() => { });
+	}).catch((error: unknown) => {
+		if (!isExpectedMissingLegacyReceiver(error)) {
+			swLog.warn(`[Audio] Legacy UI sync broadcast failed for tab ${tabId}`, error);
+		}
+	});
 }
 
 function replaceVisualizerSubscribers(candidate: VisualizerSubscriberLeases): void {
@@ -509,6 +521,7 @@ export function registerAudioHandlers(): void {
 					tabId,
 					error: error instanceof Error ? error.message : String(error),
 				});
+				return { success: false };
 			}
 		}
 		return { success: true };

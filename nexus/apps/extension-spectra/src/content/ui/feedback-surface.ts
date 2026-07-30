@@ -7,7 +7,7 @@ export interface FeedbackSurface {
 }
 
 const feedbackHosts = new Set<HTMLElement>();
-let fullscreenListenerInstalled = false;
+let fullscreenListener: (() => void) | null = null;
 
 function fallbackParent(): HTMLElement {
 	const fullscreen = document.fullscreenElement;
@@ -28,9 +28,8 @@ function showInTopLayer(host: HTMLElement, reorder = false): void {
 }
 
 function installFullscreenListener(): void {
-	if (fullscreenListenerInstalled) return;
-	fullscreenListenerInstalled = true;
-	document.addEventListener('fullscreenchange', () => {
+	if (fullscreenListener) return;
+	fullscreenListener = () => {
 		for (const host of [...feedbackHosts]) {
 			if (!host.isConnected) {
 				feedbackHosts.delete(host);
@@ -40,7 +39,8 @@ function installFullscreenListener(): void {
 			// Reopen feedback after that boundary so it remains above the video.
 			showInTopLayer(host, true);
 		}
-	}, true);
+	};
+	document.addEventListener('fullscreenchange', fullscreenListener, true);
 }
 
 export function createFeedbackSurface(id: string, layout: string): FeedbackSurface {
@@ -73,4 +73,23 @@ export function activateFeedbackSurface(host: HTMLElement): void {
 	}
 	installFullscreenListener();
 	showInTopLayer(host);
+}
+
+// eff: releases every surface side effect owned by this Content generation.
+export function disposeFeedbackSurfaces(): void {
+	if (fullscreenListener) {
+		document.removeEventListener('fullscreenchange', fullscreenListener, true);
+		fullscreenListener = null;
+	}
+	for (const host of feedbackHosts) {
+		try {
+			if (host.matches(':popover-open')) host.hidePopover();
+		} catch {
+			// Removing the host still releases a non-conforming fallback surface.
+			host.remove();
+			continue;
+		}
+		host.remove();
+	}
+	feedbackHosts.clear();
 }

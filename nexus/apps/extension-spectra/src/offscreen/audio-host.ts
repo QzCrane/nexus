@@ -5,14 +5,14 @@ import {
 	audioConfigToGraphConfig,
 	type AudioGraphSnapshot,
 } from '@nexus/audio-engine';
-import {
-	type AudioConfig,
-	type AudioProcessorConfig,
-	type OffscreenAudioEvent,
-	type OffscreenAudioRequest,
-	type OffscreenAudioRequestType,
-	type OffscreenAudioResult,
-	type OffscreenHostResponse,
+import type {
+	AudioConfig,
+	AudioProcessorConfig,
+	OffscreenAudioEvent,
+	OffscreenAudioRequest,
+	OffscreenAudioRequestType,
+	OffscreenAudioResult,
+	OffscreenHostResponse,
 } from '@nexus/contracts';
 
 export interface AudioHostDescription {
@@ -37,7 +37,7 @@ interface AudioProcessor {
 	lastVizAt: number;
 	lastVizFrame: number[] | null;
 	trackEndedDisposers: Array<() => void>;
-	disposing: boolean;
+	disposePromise: Promise<void> | null;
 }
 
 type AudioIntentKind = 'start' | 'update' | 'stop';
@@ -189,19 +189,72 @@ async function applyProcessorConfig(
 	lastControlRevisions.set(processor.tabId, controlRevision);
 }
 
-async function disposeProcessor(processor: AudioProcessor): Promise<void> {
-	if (processor.disposing) return;
-	processor.disposing = true;
+async function disposeProcessorResources(processor: AudioProcessor): Promise<void> {
+	const failures: unknown[] = [];
 	if (processors.get(processor.tabId) === processor) processors.delete(processor.tabId);
-	releaseVisualizerSubscription(processor);
-	for (const dispose of processor.trackEndedDisposers) dispose();
+	try {
+		releaseVisualizerSubscription(processor);
+	} catch (error) {
+		failures.push(error);
+	}
+	for (const dispose of processor.trackEndedDisposers) {
+		try {
+			dispose();
+		} catch (error) {
+			failures.push(error);
+		}
+	}
 	processor.trackEndedDisposers.length = 0;
-	setImmediate(processor.commitGate.gain, 0, processor.ctx.currentTime);
-	for (const track of processor.stream.getTracks()) track.stop();
-	await processor.router.dispose(true);
-	try { processor.source.disconnect(); } catch { /* already disconnected */ }
-	try { processor.commitGate.disconnect(); } catch { /* already disconnected */ }
-	try { await processor.ctx.close(); } catch { /* document teardown may have closed it */ }
+	try {
+		setImmediate(processor.commitGate.gain, 0, processor.ctx.currentTime);
+	} catch (error) {
+		failures.push(error);
+	}
+	for (const track of processor.stream.getTracks()) {
+		try {
+			track.stop();
+		} catch (error) {
+			failures.push(error);
+		}
+	}
+	try {
+		await processor.router.dispose(true);
+	} catch (error) {
+		failures.push(error);
+	}
+	try {
+		processor.source.disconnect();
+	} catch (error) {
+		failures.push(error);
+	}
+	try {
+		processor.commitGate.disconnect();
+	} catch (error) {
+		failures.push(error);
+	}
+	if (processor.ctx.state !== 'closed') {
+		try {
+			await processor.ctx.close();
+		} catch (error) {
+			failures.push(error);
+		}
+	}
+	if (failures.length > 0) {
+		// The processor has already been retired from the host and every shutdown
+		// operation has been attempted. Rejecting here would make Background keep
+		// projecting an active processor and lease even though the host can no
+		// longer address it. Report cleanup diagnostics without falsifying the
+		// authoritative idle transition.
+		console.error(
+			'[SPECTRA] Audio processor disposal completed with cleanup failures',
+			new AggregateError(failures),
+		);
+	}
+}
+
+function disposeProcessor(processor: AudioProcessor): Promise<void> {
+	processor.disposePromise ??= disposeProcessorResources(processor);
+	return processor.disposePromise;
 }
 
 function notifyProcessorEnded(processor: AudioProcessor): void {
@@ -212,17 +265,21 @@ function notifyProcessorEnded(processor: AudioProcessor): void {
 		tabId: processor.tabId,
 		generation: processor.generation,
 	};
-	void runtime.sendMessage(event).catch(() => undefined);
+	void runtime.sendMessage(event).catch((error: unknown) => {
+		console.warn('[SPECTRA] Failed to report ended capture processor', error);
+	});
 }
 
 function observeTrackEnd(processor: AudioProcessor): void {
 	for (const track of processor.stream.getTracks()) {
 		if (typeof track.addEventListener !== 'function') continue;
 		const handleEnded = () => {
-			if (processor.disposing) return;
+			if (processor.disposePromise) return;
 			const wasCurrent = processors.get(processor.tabId) === processor;
 			recordIntent(processor.tabId, processor.generation, 'stop');
-			void disposeProcessor(processor).finally(() => {
+			void disposeProcessor(processor).catch((error: unknown) => {
+				console.error('[SPECTRA] Failed to dispose ended capture processor', error);
+			}).finally(() => {
 				if (wasCurrent) notifyProcessorEnded(processor);
 			});
 		};
@@ -294,7 +351,7 @@ async function startCapture(
 			lastVizAt: 0,
 			lastVizFrame: null,
 			trackEndedDisposers: [],
-			disposing: false,
+			disposePromise: null,
 		};
 		observeTrackEnd(candidate);
 		if (!isCurrentStartIntent(tabId, generation)) {
@@ -338,12 +395,31 @@ async function startCapture(
 		}
 		return activeResult(candidate);
 	} catch (error) {
-		if (candidate) await disposeProcessor(candidate);
+		let failure: unknown = error;
+		if (candidate) {
+			try {
+				await disposeProcessor(candidate);
+			} catch (disposeError) {
+				failure = new AggregateError(
+					[error, disposeError],
+					'Capture startup and processor cleanup both failed',
+				);
+			}
+		}
 		else {
 			if (stream) for (const track of stream.getTracks()) track.stop();
-			if (ctx) try { await ctx.close(); } catch { /* ignore */ }
+			if (ctx && ctx.state !== 'closed') {
+				try {
+					await ctx.close();
+				} catch (closeError) {
+					failure = new AggregateError(
+						[error, closeError],
+						'Capture startup and AudioContext cleanup both failed',
+					);
+				}
+			}
 		}
-		return errorResult(tabId, generation, controlRevision, error);
+		return errorResult(tabId, generation, controlRevision, failure);
 	}
 }
 

@@ -1,5 +1,4 @@
 import type { ViewerDOM } from '../viewer-dom';
-import { MIN_SIZE, RESIZE_HANDLE_SIZE } from './pin-constants';
 import { detectCorner, calculateResize, getCursorStyle } from './pin-utils';
 
 interface PinState {

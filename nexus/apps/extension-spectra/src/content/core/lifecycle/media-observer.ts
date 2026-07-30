@@ -1,6 +1,6 @@
 // goal: project the single MediaRegistry into DOM-volume and shared-WebAudio ownership
 
-import { AudioMode, WebAudioController } from '@nexus/audio-engine';
+import { AudioMode, type WebAudioController } from '@nexus/audio-engine';
 import type { PolicyExecutor } from '../../logic/policy-executor';
 import type { PolicyExecutorState } from '../../types';
 import { debounce } from '../../utils/timing';

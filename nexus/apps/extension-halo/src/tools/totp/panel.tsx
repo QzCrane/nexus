@@ -1,69 +1,70 @@
 // goal: TOTP panel UI - 2FA code generator
 
-import React, { useState, useEffect, useCallback } from 'react';
+import type React from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { TotpEntry, TotpCode } from './types';
 import { generateTotp, parseOtpAuthUri, generateId } from './core';
 import { styles } from './panel.styles';
-import { useToolState } from '../../kernel';
+import {
+	createSerializedAsyncPoller,
+	useOwnedClipboardCopy,
+	useToolState,
+} from '../../kernel';
 
-
-const STORAGE_KEY = 'halo-totp-entries';
 
 export const TotpPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [entries, setEntries] = useToolState<TotpEntry[]>('totp' as any, []);
+	const [entries, setEntries] = useToolState<TotpEntry[]>('totp', []);
 	const [codes, setCodes] = useState<Record<string, TotpCode>>({});
+	const [codeErrors, setCodeErrors] = useState<Record<string, string>>({});
+	const [pollFailed, setPollFailed] = useState(false);
 	const [showAdd, setShowAdd] = useState(false);
-	const [secretInput, setSecretInput] = useToolState<string>('totp-secret' as any, '');
-	const [nameInput, setNameInput] = useToolState<string>('totp-name' as any, '');
-
-
-
+	const [secretInput, setSecretInput] = useToolState<string>('totp-secret', '');
+	const [nameInput, setNameInput] = useToolState<string>('totp-name', '');
+	const { copy, copyFailed } = useOwnedClipboardCopy<string>();
 
 	// Update codes every second (with visibility pause optimization)
 	useEffect(() => {
-		let interval: ReturnType<typeof setInterval> | null = null;
-		
-		const updateCodes = async () => {
+		const poller = createSerializedAsyncPoller(
+			async () => {
 			const newCodes: Record<string, TotpCode> = {};
+			const newErrors: Record<string, string> = {};
 			for (const entry of entries) {
 				try {
 					newCodes[entry.id] = await generateTotp(entry.secret, entry.digits, entry.period);
-				} catch { /* ignore */ }
+				} catch {
+					newErrors[entry.id] = t('totp.generationFailed', {
+						defaultValue: 'Invalid secret or TOTP parameters',
+					});
+				}
 			}
-			setCodes(newCodes);
-		};
-		
-		const startTimer = () => {
-			if (!interval) {
-				updateCodes();
-				interval = setInterval(updateCodes, 1000);
-			}
-		};
-		
-		const stopTimer = () => {
-			if (interval) {
-				clearInterval(interval);
-				interval = null;
-			}
-		};
-		
+				return { codes: newCodes, errors: newErrors };
+			},
+			(result) => {
+				setCodes(result.codes);
+				setCodeErrors(result.errors);
+				setPollFailed(false);
+			},
+			() => setPollFailed(true),
+			1000,
+		);
+
 		// Visibility-based optimization: pause when tab not visible
 		const onVisibility = () => {
-			if (document.visibilityState === 'visible') startTimer();
-			else stopTimer();
+			if (document.visibilityState === 'visible') poller.start();
+			else poller.stop();
 		};
-		
+
 		document.addEventListener('visibilitychange', onVisibility);
-		if (document.visibilityState === 'visible') startTimer();
-		
+		if (document.visibilityState === 'visible') poller.start();
+
 		return () => {
-			stopTimer();
 			document.removeEventListener('visibilitychange', onVisibility);
+			poller.dispose();
 		};
-	}, [entries]);
+	}, [entries, t]);
 
 	// Add entry
 	const handleAdd = useCallback(() => {
@@ -81,22 +82,22 @@ export const TotpPanel: React.FC = () => {
 		setSecretInput('');
 		setNameInput('');
 		setShowAdd(false);
-	}, [secretInput, nameInput]);
+	}, [secretInput, nameInput, setEntries, setSecretInput, setNameInput]);
 
 	// Delete entry
 	const handleDelete = useCallback((id: string) => {
 		setEntries((e) => e.filter((x) => x.id !== id));
-	}, []);
+	}, [setEntries]);
 
 	// Copy code
-	const handleCopy = useCallback((code: string) => {
-		navigator.clipboard.writeText(code);
-	}, []);
+	const handleCopy = useCallback((entryId: string, code: string) => {
+		void copy(entryId, code);
+	}, [copy]);
 
 	return (
 		<div style={styles.wrapper}>
 			{/* Add Button */}
-			<button style={styles.btn} onClick={() => setShowAdd(!showAdd)}>
+			<button type="button" style={styles.btn} onClick={() => setShowAdd(!showAdd)}>
 				{showAdd ? '✕' : '＋'} {showAdd ? t('totp.cancel') : t('totp.addAccount')}
 			</button>
 
@@ -106,18 +107,26 @@ export const TotpPanel: React.FC = () => {
 					<div style={styles.addForm}>
 						<input style={styles.input} value={nameInput} onChange={(e) => setNameInput(e.target.value)} placeholder={t('totp.name')} />
 						<input style={styles.input} value={secretInput} onChange={(e) => setSecretInput(e.target.value)} placeholder={t('totp.secretOrUri')} />
-						<button style={styles.btn} onClick={handleAdd} disabled={!secretInput}>{t('totp.add')}</button>
+						<button type="button" style={styles.btn} onClick={handleAdd} disabled={!secretInput}>{t('totp.add')}</button>
 					</div>
 				</Card>
 			)}
 
 			{/* Entries */}
 			<div style={styles.list}>
+				{(pollFailed || copyFailed) && (
+					<div style={styles.error} role="status">
+						{t('totp.operationFailed', {
+							defaultValue: 'TOTP update or clipboard access failed.',
+						})}
+					</div>
+				)}
 				{entries.length === 0 ? (
 					<div style={styles.empty}>🔐 {t('totp.noAccounts')}</div>
 				) : (
 					entries.map((entry) => {
 						const code = codes[entry.id];
+						const codeError = codeErrors[entry.id];
 						return (
 							<div key={entry.id} style={styles.item}>
 								<div style={styles.itemHeader}>
@@ -126,11 +135,21 @@ export const TotpPanel: React.FC = () => {
 										{entry.issuer && <div style={styles.issuer}>{entry.issuer}</div>}
 									</div>
 									<div style={styles.row}>
-										<button style={styles.btnSecondary} onClick={() => code && handleCopy(code.code)}>📋</button>
-										<button style={{ ...styles.btnSecondary, color: '#ef4444' }} onClick={() => handleDelete(entry.id)}>🗑️</button>
+										<button type="button" style={styles.btnSecondary} onClick={() => code && handleCopy(entry.id, code.code)}>📋</button>
+										<button type="button" style={{ ...styles.btnSecondary, color: '#ef4444' }} onClick={() => handleDelete(entry.id)}>🗑️</button>
 									</div>
 								</div>
-								<div style={styles.code} onClick={() => code && handleCopy(code.code)}>{code?.code || '------'}</div>
+								<button
+									type="button"
+									disabled={!code}
+									style={{ ...styles.code, width: '100%', padding: 0, border: 'none', background: 'transparent' }}
+									onClick={() => code && handleCopy(entry.id, code.code)}
+								>
+									{code?.code || '------'}
+								</button>
+								{codeError && (
+									<div style={styles.error} role="status">{codeError}</div>
+								)}
 								{code && (
 									<div style={styles.timer}>
 										<div style={styles.progress}>

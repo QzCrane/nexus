@@ -28,7 +28,7 @@ export function parseCertificate(pem: string): CertificateInfo | null {
 
 		const binary = atob(cleanPem);
 		const buffer = new Uint8Array(binary.length);
-		for (let i = 0; i < binary.length; i++) buffer[i]! = binary.charCodeAt(i);
+		for (let i = 0; i < binary.length; i++) buffer[i] = binary.charCodeAt(i);
 
 		// Minimal ASN.1 scan (looking for familiar patterns) is risky.
 		// Let's degrade to a "Viewer" mode where we just show format validtion and basic details 
@@ -42,7 +42,7 @@ export function parseCertificate(pem: string): CertificateInfo | null {
 		// Pivot 2: Implement a TINY ASN.1 parser.
 		return parseAsn1(buffer);
 
-	} catch (e) {
+	} catch (_e) {
 		return null;
 	}
 }
@@ -54,8 +54,7 @@ function parseAsn1(buffer: Uint8Array): CertificateInfo {
 
 	// Simple heuristic: Search for dates
 	let content = '';
-	for (let i = 0; i < buffer.length; i++) {
-		const c = buffer[i]!;
+	for (const c of buffer) {
 		if (c >= 32 && c <= 126) content += String.fromCharCode(c);
 		else content += '.';
 	}

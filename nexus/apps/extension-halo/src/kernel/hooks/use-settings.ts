@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { HaloSettings, DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY } from '../core/settings';
+import { type HaloSettings, DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY } from '../core/settings';
 
 export function useSettings() {
 	const [settings, setSettings] = useState<HaloSettings>(DEFAULT_SETTINGS);

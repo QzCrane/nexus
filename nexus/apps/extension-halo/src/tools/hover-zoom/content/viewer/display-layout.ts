@@ -2,8 +2,8 @@
 // goal: Layout application logic for Media Display
 // eff: Applies positioning, size, and animations to the viewer
 
-import { ViewerDOM } from '../viewer-dom';
-import { ViewMode } from '../../types';
+import type { ViewerDOM } from '../viewer-dom';
+import type { ViewMode } from '../../types';
 import { calculateLayout } from './layout';
 
 /**

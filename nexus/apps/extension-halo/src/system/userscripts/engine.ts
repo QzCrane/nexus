@@ -8,6 +8,24 @@ import { syncRegisteredScripts } from './registry';
 
 const LOG_TAG = '[HALO:UserScripts]';
 
+type UserScriptsMessage =
+	| { type: 'HALO_USERSCRIPT_RAN'; scriptId: string }
+	| { type: 'HALO_USERSCRIPTS_SYNC' };
+
+type UserScriptsResponse =
+	| { success: true }
+	| { success: false; error: string };
+
+function isUserScriptsMessage(message: unknown): message is UserScriptsMessage {
+	if (typeof message !== 'object' || message === null) return false;
+	if (!('type' in message)) return false;
+	if (message.type === 'HALO_USERSCRIPTS_SYNC') return true;
+	return message.type === 'HALO_USERSCRIPT_RAN'
+		&& 'scriptId' in message
+		&& typeof message.scriptId === 'string'
+		&& message.scriptId.length > 0;
+}
+
 // Initialize engine - register message listeners
 // rule: return a cleanup function and guard against double-registration.
 // Previously the runtime.onMessage listener was attached on every call with
@@ -21,9 +39,14 @@ export function initUserScriptsEngine(): () => void {
 	console.log(LOG_TAG, 'Engine initialized');
 
 	// Listen for messages
-	const listener = (message: any, _sender: chrome.runtime.MessageSender, sendResponse: (response: any) => void) => {
+	const listener = (
+		message: unknown,
+		_sender: chrome.runtime.MessageSender,
+		sendResponse: (response: UserScriptsResponse) => void,
+	) => {
+		if (!isUserScriptsMessage(message)) return false;
 		// Run count updates from content script
-		if (message.type === 'HALO_USERSCRIPT_RAN' && message.scriptId) {
+		if (message.type === 'HALO_USERSCRIPT_RAN') {
 			incrementRunCount(message.scriptId)
 				.then(() => sendResponse({ success: true }))
 				.catch((e) => sendResponse({ success: false, error: String(e) }));

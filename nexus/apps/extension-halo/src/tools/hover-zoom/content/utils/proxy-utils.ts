@@ -27,12 +27,16 @@ export async function fetchWithProxy<T = unknown>(
 		if (!response?.success) {
 			throw new Error(response?.error || 'Proxy request failed');
 		}
-
-		if (responseType === 'text') {
-			return response.data as T;
+		const data = response.data;
+		if (data === undefined) {
+			throw new Error('Proxy response data is missing');
 		}
 
-		return JSON.parse(response.data!) as T;
+		if (responseType === 'text') {
+			return data as T;
+		}
+
+		return JSON.parse(data) as T;
 	} catch (e) {
 		throw new Error(`Proxy fetch failed: ${e instanceof Error ? e.message : String(e)}`);
 	}
@@ -42,7 +46,7 @@ export async function fetchWithProxy<T = unknown>(
  * Get cookie value by name from document.cookie
  */
 export function getCookie(name: string): string {
-	const prefix = name + '=';
+	const prefix = `${name}=`;
 	const cookies = document.cookie.split(';');
 	for (const cookie of cookies) {
 		const c = cookie.trim();

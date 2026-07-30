@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { requireValue } from './helpers/require-value';
 import {
 	DEFAULT_AUDIO_CONFIG,
 	DEFAULT_GLOBAL_SETTINGS,
@@ -356,7 +357,10 @@ function installHarness() {
 		runtimeRequests,
 		fireOnlyTimer() {
 			expect(timers.size).toBe(1);
-			const [id, callback] = [...timers.entries()][0]!;
+			const [id, callback] = requireValue(
+				[...timers.entries()][0],
+				'Expected exactly one pending popup coalescing timer',
+			);
 			timers.delete(id);
 			now += 50;
 			callback();

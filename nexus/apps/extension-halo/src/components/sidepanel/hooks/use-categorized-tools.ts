@@ -48,9 +48,8 @@ export function useCategorizedTools({
 			// Script plugins: show in their functional category AND scripts aggregation
 			if (tool.pluginType === 'script') {
 				// Add to functional category
-				if (cats[tool.category]) {
-					cats[tool.category]!.push(tool);
-				}
+				const category = cats[tool.category];
+				if (category) category.push(tool);
 				// Also add to scripts aggregation category
 				cats.scripts?.push(tool);
 				// Also show in Active Services if enabled
@@ -62,14 +61,15 @@ export function useCategorizedTools({
 
 			// Regular tool plugins
 			if (backgroundToolIds.includes(tool.id) || activeServices.has(tool.id)) cats.active?.push(tool);
-			if (cats[tool.category]) cats[tool.category]!.push(tool);
+			const category = cats[tool.category];
+			if (category) category.push(tool);
 			else cats.general?.push(tool);
 		});
 
 		// 2. Process user scripts (non-SaaT)
 		scripts.forEach(script => {
 			// Skip SaaT wrappers (already in registry)
-			if ((script as any).saatToolId) return;
+			if (script.saatToolId) return;
 
 			const meta: PluginMeta = {
 				id: script.id,
@@ -86,8 +86,8 @@ export function useCategorizedTools({
 					matches: script.matches,
 					runAt: script.runAt || 'document_idle',
 				},
+				isUserScript: true,
 			};
-			(meta as any).isUserScript = true;
 
 			// Add to functional category (dev)
 			cats.dev?.push(meta);
@@ -101,9 +101,9 @@ export function useCategorizedTools({
 		});
 
 		// 3. Sort each category
-		Object.keys(cats).forEach(cat => {
+		Object.entries(cats).forEach(([cat, tools]) => {
 			const pinned = settings?.pinnedTools || [], order = settings?.toolOrder?.[cat] || [];
-			cats[cat]!.sort((a, b) => {
+			tools.sort((a, b) => {
 				const ap = pinned.includes(a.id), bp = pinned.includes(b.id);
 				if (ap !== bp) return ap ? -1 : 1;
 				const ai = order.indexOf(a.id), bi = order.indexOf(b.id);

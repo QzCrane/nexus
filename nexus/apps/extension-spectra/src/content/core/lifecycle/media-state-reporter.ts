@@ -7,6 +7,9 @@ import { debounce, createCleanupManager, createEventListener } from '../../utils
 import { sendSpectraRequest } from '../../../shared/spectra-client';
 import { getActiveMediaRegistry } from '../media-registry';
 import { updatePausedAt } from '../../utils/pause-tracker';
+import { logger } from '../../../shared/logger';
+
+const log = logger.content;
 
 function updatePauseState(): void {
 	const registry = getActiveMediaRegistry();
@@ -26,8 +29,8 @@ export function reportMediaState(state?: PolicyExecutorState): void {
 	safeSend(() => sendSpectraRequest('spectra.tab.media.report', {
 		hasMediaElement: hasMedia,
 		userInteracted: interacted,
-	})).catch(() => {
-		// note: failures usually indicate a closing tab session
+	})).catch((error: unknown) => {
+		log.warn('Media-state report failed outside the known context-invalidation boundary', error);
 	});
 }
 

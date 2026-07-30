@@ -1,8 +1,24 @@
 // goal: SidePanel smooth scroll logic - separated for line limit compliance
 // inv: Always active in sidepanel, ignores the 'enabled' setting (only for web pages)
 
-import { scrollTo, configure } from '../tools/smooth-scroll/engine';
+import { clearQueue, scrollTo, configure } from '../tools/smooth-scroll/engine';
+import { normalizeScrollSettings, STORAGE_KEY } from '../tools/smooth-scroll/types';
 import type { EasingType } from '../tools/smooth-scroll/types';
+import type { ScrollTarget } from '../tools/smooth-scroll/utils';
+import {
+	resolveMainScrollRoute,
+	resolveScrollRoute,
+	shouldIgnoreInput,
+} from '../tools/smooth-scroll/utils';
+import {
+	classifyWheelGesture,
+	createWheelGestureState,
+	normalizeWheelDeltaY,
+	resetWheelGestureState,
+	wheelEventTarget,
+	wheelEventTimestamp,
+	wheelNeedsComposedPath,
+} from '../tools/smooth-scroll/wheel-input';
 
 interface ScrollCfg {
 	enabled: boolean;
@@ -10,6 +26,8 @@ interface ScrollCfg {
 	animationTime: number;
 	accelerationMax: number;
 	accelerationDelta: number;
+	pulseScale: number;
+	respectReducedMotion: boolean;
 	easing: EasingType;
 }
 
@@ -19,101 +37,136 @@ let cfg: ScrollCfg = {
 	animationTime: 400,
 	accelerationMax: 3,
 	accelerationDelta: 50,
+	pulseScale: 4,
+	respectReducedMotion: false,
 	easing: 'spring',
 };
 
-let lastTime = 0;
+let lastTime: number | null = null;
 let accel = 1;
+let accelTarget: ScrollTarget | null = null;
+let accelDirection = 0;
+const wheelGesture = createWheelGestureState();
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+const SCROLL_KEYS = new Set(['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp']);
 
-function findScrollable(el: HTMLElement | null): HTMLElement {
-	while (el && el !== document.body) {
-		const s = getComputedStyle(el);
-		if ((s.overflowY === 'auto' || s.overflowY === 'scroll') && el.scrollHeight > el.clientHeight) {
-			return el;
-		}
-		el = el.parentElement;
-	}
-	return document.documentElement;
+function resetScrollRuntime(): void {
+	clearQueue();
+	lastTime = null;
+	accel = 1;
+	accelTarget = null;
+	accelDirection = 0;
+	resetWheelGestureState(wheelGesture);
 }
 
-const hotTarget: { el: HTMLElement, ts: number, ref: EventTarget | null } = {
-	el: document.documentElement, ts: 0, ref: null
-};
+function onVisibilityChange(): void {
+	if (document.hidden) resetScrollRuntime();
+}
 
 function onWheel(e: WheelEvent): void {
-	const now = Date.now();
-	let target: HTMLElement;
-
-	// eff: Hot cache check (150ms TTL) to avoid expensive DOM traversal
-	if (now - hotTarget.ts < 150 && hotTarget.ref === e.target) {
-		target = hotTarget.el;
-		hotTarget.ts = now;
-	} else {
-		target = findScrollable(e.target as HTMLElement);
-		hotTarget.el = target;
-		hotTarget.ts = now;
-		hotTarget.ref = e.target;
+	if (!e.isTrusted) return;
+	if (e.defaultPrevented || !e.cancelable || !e.deltaY) {
+		resetScrollRuntime();
+		return;
 	}
-
-	const max = target.scrollHeight - target.clientHeight;
-	if (max <= 0) return;
-
-	const isDown = e.deltaY > 0, isUp = e.deltaY < 0;
-	const atTop = target.scrollTop <= 0, atBot = target.scrollTop >= max - 1;
-
-	// Boundary bubbling check
-	if (target !== document.documentElement && ((atTop && isUp) || (atBot && isDown))) {
-		// If hit boundary, force re-scan parent next time or bubble now?
-		// Bubbling logic requires traversing up.
-		// For simplicity/perf in sidepanel, let's just let browser bubble or stop.
-		// But original logic bubbled. Let's start bubble search from current target's parent.
-		let bubble = target.parentElement;
-		while (bubble && bubble !== document.body) {
-			target = findScrollable(bubble);
-			const bMax = target.scrollHeight - target.clientHeight;
-			if (bMax > 0 && !((target.scrollTop <= 0 && isUp) || (target.scrollTop >= bMax - 1 && isDown))) {
+	if (cfg.respectReducedMotion && reducedMotion.matches) {
+		resetScrollRuntime();
+		return;
+	}
+	let eventTarget = wheelEventTarget(e);
+	let composedPath: readonly EventTarget[] | undefined;
+	if (!eventTarget || wheelNeedsComposedPath(eventTarget)) {
+		composedPath = e.composedPath();
+	}
+	if (!eventTarget && composedPath) {
+		for (const target of composedPath) {
+			if (target instanceof Element) {
+				eventTarget = target;
 				break;
 			}
-			if (target === document.documentElement) break;
-			bubble = target.parentElement;
 		}
-		// Update cache with the bubbled target to stick to it
-		hotTarget.el = target;
+	}
+	if (!eventTarget) {
+		resetScrollRuntime();
+		return;
+	}
+	const now = wheelEventTimestamp(e);
+	let deltaY = normalizeWheelDeltaY(e);
+	const gesture = classifyWheelGesture(e, now, wheelGesture);
+	if (gesture === 'horizontal') {
+		resetScrollRuntime();
+		return;
+	}
+	const inputMode = gesture;
+	const route = resolveScrollRoute(eventTarget, deltaY, composedPath);
+	if (route.kind === 'native') {
+		resetScrollRuntime();
+		return;
+	}
+	if (route.kind === 'blocked') {
+		e.preventDefault();
+		e.stopPropagation();
+		resetScrollRuntime();
+		return;
+	}
+	const target = route.target;
+	const direction = Math.sign(deltaY);
+
+	let nextAccel = 1;
+	if (inputMode === 'fine') {
+		lastTime = null;
+		accel = 1;
+		accelTarget = null;
+		accelDirection = 0;
+	} else {
+		const continuingStream =
+			accelTarget === target &&
+			accelDirection === direction &&
+			lastTime !== null &&
+			now - lastTime < cfg.accelerationDelta;
+		nextAccel = continuingStream
+			? Math.min(accel + 0.5, cfg.accelerationMax)
+			: 1;
+		if (Math.abs(deltaY) > 1.2) {
+			deltaY = direction * cfg.stepSize;
+		}
 	}
 
-	if (target.scrollHeight - target.clientHeight <= 0) return;
+	if (
+		!scrollTo(
+			target,
+			0,
+			deltaY,
+			route.admission,
+			inputMode,
+			performance.now(),
+			nextAccel,
+		)
+	) {
+		resetScrollRuntime();
+		return;
+	}
 
+	if (inputMode === 'coarse') {
+		accel = nextAccel;
+		lastTime = now;
+		accelTarget = target;
+		accelDirection = direction;
+	}
 	e.preventDefault();
-
-	accel = now - lastTime < cfg.accelerationDelta ? Math.min(accel + 0.5, cfg.accelerationMax) : 1;
-	lastTime = now;
-
-	scrollTo(target, 0, (e.deltaY > 0 ? 1 : -1) * cfg.stepSize * accel);
-}
-
-function shouldIgnore(el: Element | null): boolean {
-	if (!el) return false;
-	const tag = el.tagName;
-	return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (el as HTMLElement).isContentEditable;
 }
 
 function onKeydown(e: KeyboardEvent): void {
-	if (e.ctrlKey || e.altKey || e.metaKey || shouldIgnore(document.activeElement)) return;
-
-	// rule: For keyboard, find scrollable from focused element or fallback to main scroll area
-	let target = findScrollable(document.activeElement as HTMLElement);
-	if (target === document.documentElement) {
-		// Fallback: find main scrollable container (React renders .halo-scrollbar for scroll areas)
-		const scrollAreas = document.querySelectorAll('.halo-scrollbar, [style*="overflow"]');
-		for (const area of scrollAreas) {
-			const el = area as HTMLElement;
-			if (el.scrollHeight > el.clientHeight + 10) {
-				target = el;
-				break;
-			}
-		}
+	if (!e.isTrusted) return;
+	if (!SCROLL_KEYS.has(e.key)) return;
+	if (e.ctrlKey || e.altKey || e.metaKey || shouldIgnoreInput(document.activeElement)) {
+		resetScrollRuntime();
+		return;
 	}
-	if (target.scrollHeight - target.clientHeight <= 0) return;
+	if (cfg.respectReducedMotion && reducedMotion.matches) {
+		resetScrollRuntime();
+		return;
+	}
 
 	const pageH = window.innerHeight * 0.9;
 	let deltaY = 0;
@@ -126,8 +179,25 @@ function onKeydown(e: KeyboardEvent): void {
 		default: return;
 	}
 
-	e.preventDefault();
-	scrollTo(target, 0, deltaY);
+	const active = document.activeElement;
+	const isGeneric =
+		!active ||
+		active === document.body ||
+		active === document.documentElement;
+	resetScrollRuntime();
+	const route = isGeneric
+		? resolveMainScrollRoute(deltaY)
+		: resolveScrollRoute(active, deltaY, e.composedPath());
+	if (route.kind === 'blocked') {
+		e.preventDefault();
+	} else if (
+		route.kind === 'animate' &&
+		scrollTo(route.target, 0, deltaY, route.admission)
+	) {
+		e.preventDefault();
+	} else {
+		resetScrollRuntime();
+	}
 }
 
 // rule: guard against double-init and return a cleanup function so callers (e.g.
@@ -139,21 +209,23 @@ export function initScroll(): () => void {
 	if (scrollInitStarted) return () => {};
 	scrollInitStarted = true;
 
-	configure(cfg.animationTime, cfg.easing);
+	configure(cfg.animationTime, cfg.easing, cfg.pulseScale);
 	window.addEventListener('wheel', onWheel, { passive: false });
 	window.addEventListener('keydown', onKeydown);
+	window.addEventListener('pagehide', resetScrollRuntime);
+	document.addEventListener('visibilitychange', onVisibilityChange);
 
-	chrome.storage.sync.get(['HALO_SMOOTH_SCROLL_SETTINGS'], (r) => {
-		if (r.HALO_SMOOTH_SCROLL_SETTINGS) {
-			cfg = { ...cfg, ...r.HALO_SMOOTH_SCROLL_SETTINGS };
-			configure(cfg.animationTime, cfg.easing);
+	chrome.storage.sync.get([STORAGE_KEY], (r) => {
+		if (r[STORAGE_KEY]) {
+			cfg = { ...cfg, ...normalizeScrollSettings(r[STORAGE_KEY]) };
+			configure(cfg.animationTime, cfg.easing, cfg.pulseScale);
 		}
 	});
 
 	const listener = (changes: { [key: string]: chrome.storage.StorageChange }, area: string) => {
-		if (area === 'sync' && changes.HALO_SMOOTH_SCROLL_SETTINGS) {
-			cfg = { ...cfg, ...changes.HALO_SMOOTH_SCROLL_SETTINGS.newValue };
-			configure(cfg.animationTime, cfg.easing);
+		if (area === 'sync' && changes[STORAGE_KEY]) {
+			cfg = { ...cfg, ...normalizeScrollSettings(changes[STORAGE_KEY].newValue) };
+			configure(cfg.animationTime, cfg.easing, cfg.pulseScale);
 		}
 	};
 	chrome.storage.onChanged.addListener(listener);
@@ -161,7 +233,10 @@ export function initScroll(): () => void {
 	return () => {
 		window.removeEventListener('wheel', onWheel);
 		window.removeEventListener('keydown', onKeydown);
+		window.removeEventListener('pagehide', resetScrollRuntime);
+		document.removeEventListener('visibilitychange', onVisibilityChange);
 		chrome.storage.onChanged.removeListener(listener);
+		resetScrollRuntime();
 		scrollInitStarted = false;
 	};
 }

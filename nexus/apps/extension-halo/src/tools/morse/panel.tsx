@@ -1,6 +1,7 @@
 // goal: Morse Code panel UI - encode/decode/play
 
-import React, { useState, useCallback, useMemo } from 'react';
+import type React from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { encode, decode, playMorse } from './core';
 import { styles } from './panel.styles';
@@ -9,8 +10,8 @@ import { useToolState } from '../../kernel';
 
 export const MorsePanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [mode, setMode] = useToolState<'encode' | 'decode'>('morse-mode' as any, 'encode');
-	const [input, setInput] = useToolState<string>('morse-input' as any, '');
+	const [mode, setMode] = useToolState<'encode' | 'decode'>('morse-mode', 'encode');
+	const [input, setInput] = useToolState<string>('morse-input', '');
 
 
 	const output = useMemo(() => {
@@ -33,10 +34,10 @@ export const MorsePanel: React.FC = () => {
 		<div style={styles.wrapper}>
 			{/* Mode tabs */}
 			<div style={styles.tabs}>
-				<button style={{ ...styles.tab, background: mode === 'encode' ? 'var(--halo-accent)' : 'var(--halo-bg-tertiary)', color: mode === 'encode' ? '#fff' : 'var(--halo-text)' }} onClick={() => setMode('encode')}>
+				<button type="button" style={{ ...styles.tab, background: mode === 'encode' ? 'var(--halo-accent)' : 'var(--halo-bg-tertiary)', color: mode === 'encode' ? '#fff' : 'var(--halo-text)' }} onClick={() => setMode('encode')}>
 					📝 {t('morse.encode')}
 				</button>
-				<button style={{ ...styles.tab, background: mode === 'decode' ? 'var(--halo-accent)' : 'var(--halo-bg-tertiary)', color: mode === 'decode' ? '#fff' : 'var(--halo-text)' }} onClick={() => setMode('decode')}>
+				<button type="button" style={{ ...styles.tab, background: mode === 'decode' ? 'var(--halo-accent)' : 'var(--halo-bg-tertiary)', color: mode === 'decode' ? '#fff' : 'var(--halo-text)' }} onClick={() => setMode('decode')}>
 					🔤 {t('morse.decode')}
 				</button>
 			</div>
@@ -55,8 +56,8 @@ export const MorsePanel: React.FC = () => {
 
 			{/* Actions */}
 			<div style={styles.row}>
-				<button style={styles.btn} onClick={handleCopy}>📋 {t('morse.copy')}</button>
-				<button style={styles.btnSecondary} onClick={handlePlay}>🔊</button>
+				<button type="button" style={styles.btn} onClick={handleCopy}>📋 {t('morse.copy')}</button>
+				<button type="button" style={styles.btnSecondary} onClick={handlePlay}>🔊</button>
 			</div>
 		</div>
 	);

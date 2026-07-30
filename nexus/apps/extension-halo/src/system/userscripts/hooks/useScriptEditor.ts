@@ -63,7 +63,7 @@ export function useScriptEditor(loadScripts: () => Promise<void>) {
 			showToast(`💾 ${t('userscripts.scriptUpdated')}`);
 		} else {
 			await addUserScript(scriptData);
-			if (editingId && editingId.startsWith('saat-')) {
+			if (editingId?.startsWith('saat-')) {
 				showToast(`📋 ${t('userscripts.scriptForked', { defaultValue: 'Script forked as new' })}`);
 			} else {
 				showToast(`✅ ${t('userscripts.scriptAdded')}`);

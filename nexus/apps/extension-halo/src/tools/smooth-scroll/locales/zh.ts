@@ -9,9 +9,9 @@ export const zh = {
 		stepSizeDesc: '每次滚动的像素值',
 		animationTime: '动画时长',
 		animationTimeDesc: '毫秒为单位',
-		accelerationMax: '最大加速度',
+		accelerationMax: '最大响应增益',
 		accelerationDelta: '加速间隔',
-		pulseScale: '脉冲比例',
+		pulseScale: '响应强度',
 		arrowKeyStep: '方向键步进',
 		easing: '缓动曲线',
 		inputSources: '输入源',
@@ -20,7 +20,7 @@ export const zh = {
 		touchpad: '触控板手势',
 		features: '功能',
 		middleClickAutoScroll: '中键自动滚动',
-		fixedBackground: '固定背景支持',
+		respectReducedMotion: '遵循系统“减少动态效果”',
 		profiles: '预设配置',
 		loadProfile: '加载配置',
 		configMgmt: '配置管理',
@@ -39,7 +39,7 @@ export const zh = {
 			linear: '线性 (Linear)',
 			ease: '渐入 (Ease In)',
 			easeOut: '渐出 (Ease Out)',
-			spring: '弹性 (Spring)'
+			spring: '弹性 (快速响应)'
 		},
 		toasts: {
 			loaded: '已加载',

@@ -11,7 +11,9 @@ export class ModuleManager {
 
 	async initialize(): Promise<void> {
 		const stored = await getAllStates();
-		stored.forEach((s) => this.states.set(s.id, s));
+		for (const state of stored) {
+			this.states.set(state.id, state);
+		}
 
 		for (const mod of ALL_MODULES) {
 			if (!this.states.has(mod.id)) {
@@ -27,7 +29,11 @@ export class ModuleManager {
 		return () => this.listeners.delete(listener);
 	}
 
-	private notify(): void { this.listeners.forEach((l) => l()); }
+	private notify(): void {
+		this.listeners.forEach((listener) => {
+			listener();
+		});
+	}
 
 	getState(id: string): ModuleState | undefined { return this.states.get(id); }
 	getAllStates(): ModuleState[] { return Array.from(this.states.values()); }

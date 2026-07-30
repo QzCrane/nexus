@@ -3,7 +3,7 @@
 
 export type { LayoutCandidate, LayoutResult } from './layout-types';
 export { LAYOUT_CONFIG } from './layout-types';
-import { LayoutResult, LAYOUT_CONFIG as CONFIG } from './layout-types';
+import { type LayoutResult, LAYOUT_CONFIG as CONFIG } from './layout-types';
 import type { ViewMode } from '../../types';
 import {
 	calcSize,

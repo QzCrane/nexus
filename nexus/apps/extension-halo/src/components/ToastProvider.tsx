@@ -1,4 +1,5 @@
-import React from 'react';
+import type React from 'react';
+import { useCallback } from 'react';
 import { useOverlay } from './ui/overlay';
 
 /**
@@ -9,10 +10,12 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 };
 
 export const useToast = () => {
-	const { showToast } = useOverlay();
+	const { showToast: showOverlayToast } = useOverlay();
+	const showToast = useCallback((message: string, duration = 2000) => {
+		showOverlayToast({ message, duration, type: 'info' });
+	}, [showOverlayToast]);
+
 	return {
-		showToast: (message: string, duration = 2000) => {
-			showToast({ message, duration, type: 'info' });
-		}
+		showToast,
 	};
 };

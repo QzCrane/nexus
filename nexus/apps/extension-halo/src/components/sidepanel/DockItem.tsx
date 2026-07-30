@@ -1,14 +1,15 @@
 // goal: Individual dock item component for DockTabBar
 // eff: Handles single icon rendering, hover, close button
 
-import React from 'react';
+import type React from 'react';
 import type { ToolMeta } from '../../kernel';
 import { StatusIndicators } from './LauncherToolItemParts';
 
 interface DockItemProps {
 	tool: ToolMeta;
+	label: string;
+	closeLabel: string;
 	isActive: boolean;
-	isHovered: boolean;
 	scale: number;
 	baseSize: number;
 	onMouseEnter: (e: React.MouseEvent) => void;
@@ -52,17 +53,16 @@ const closeButtonStyle: React.CSSProperties = {
 };
 
 export const DockItem: React.FC<DockItemProps> = ({
-	tool, isActive, isHovered, scale, baseSize,
+	tool, label, closeLabel, isActive, scale, baseSize,
 	onMouseEnter, onMouseLeave, onClick, onClose, serviceState
 }) => (
+	// biome-ignore lint/a11y/noStaticElementInteractions: This neutral wrapper only tracks pointer hover for dock magnification; activation belongs to the sibling native buttons.
 	<div
 		data-dock-item
 		onMouseEnter={onMouseEnter}
 		onMouseLeave={onMouseLeave}
-		onClick={onClick}
 		style={{
 			position: 'relative',
-			cursor: 'pointer',
 			flexShrink: 0,
 			width: `${baseSize}px`,
 			height: `${baseSize}px`,
@@ -80,14 +80,30 @@ export const DockItem: React.FC<DockItemProps> = ({
 			transform: `scale(${scale})`,
 			transformOrigin: 'center bottom',
 		}}>
-			<div style={getIconStyle(isActive)}>
-				{tool.icon}
+			<button
+				type="button"
+				aria-label={label}
+				onClick={onClick}
+				style={{
+					...getIconStyle(isActive),
+					padding: 0,
+					color: 'inherit',
+					cursor: 'pointer',
+				}}
+			>
+				<span aria-hidden="true">{tool.icon}</span>
 				{/* Indicators overlay - positioned relative to icon */}
 				<StatusIndicators isRunning={false} engineEnabled={false} serviceState={serviceState} />
-			</div>
-			{isHovered && (
-				<button onClick={(e) => { e.stopPropagation(); onClose(); }} style={closeButtonStyle}>×</button>
-			)}
+			</button>
+			<button
+				type="button"
+				className="halo-dock-close-button"
+				aria-label={`${closeLabel}: ${label}`}
+				onClick={onClose}
+				style={closeButtonStyle}
+			>
+				<span aria-hidden="true">×</span>
+			</button>
 		</div>
 	</div>
 );

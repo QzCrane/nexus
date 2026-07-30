@@ -2,6 +2,22 @@
 
 import type { DiffResult, DiffStats } from './types';
 
+function requireItem<T>(items: readonly T[], index: number, label: string): T {
+	const item = items[index];
+	if (item === undefined) {
+		throw new RangeError(`${label} index ${index} is out of bounds`);
+	}
+	return item;
+}
+
+function requireRow(matrix: number[][], index: number): number[] {
+	return requireItem(matrix, index, 'LCS row');
+}
+
+function getCell(matrix: number[][], row: number, column: number): number {
+	return requireItem(requireRow(matrix, row), column, 'LCS column');
+}
+
 // Simple line-based diff using LCS (Longest Common Subsequence)
 export function diffLines(text1: string, text2: string): DiffResult[] {
 	const lines1 = text1.split('\n');
@@ -16,10 +32,17 @@ export function diffLines(text1: string, text2: string): DiffResult[] {
 	// Build LCS table
 	for (let i = 1; i <= m; i++) {
 		for (let j = 1; j <= n; j++) {
-			if (lines1[i - 1]! === lines2[j - 1]!) {
-				dp[i]![j] = dp[i - 1]![j - 1]! + 1;
+			const row = requireRow(dp, i);
+			if (
+				requireItem(lines1, i - 1, 'left line')
+				=== requireItem(lines2, j - 1, 'right line')
+			) {
+				row[j] = getCell(dp, i - 1, j - 1) + 1;
 			} else {
-				dp[i]![j] = Math.max(dp[i - 1]![j]!, dp[i]![j - 1]!);
+				row[j] = Math.max(
+					getCell(dp, i - 1, j),
+					getCell(dp, i, j - 1),
+				);
 			}
 		}
 	}
@@ -29,22 +52,40 @@ export function diffLines(text1: string, text2: string): DiffResult[] {
 	const stack: DiffResult[] = [];
 
 	while (i > 0 || j > 0) {
-		if (i > 0 && j > 0 && lines1[i - 1]! === lines2[j - 1]!) {
-			stack.push({ type: 'equal', value: lines1[i - 1]! });
+		if (
+			i > 0
+			&& j > 0
+			&& requireItem(lines1, i - 1, 'left line')
+				=== requireItem(lines2, j - 1, 'right line')
+		) {
+			stack.push({
+				type: 'equal',
+				value: requireItem(lines1, i - 1, 'left line'),
+			});
 			i--;
 			j--;
-		} else if (j > 0 && (i === 0 || dp[i]![j - 1]! >= dp[i - 1]![j]!)) {
-			stack.push({ type: 'insert', value: lines2[j - 1]! });
+		} else if (
+			j > 0
+			&& (i === 0 || getCell(dp, i, j - 1) >= getCell(dp, i - 1, j))
+		) {
+			stack.push({
+				type: 'insert',
+				value: requireItem(lines2, j - 1, 'right line'),
+			});
 			j--;
 		} else {
-			stack.push({ type: 'delete', value: lines1[i - 1]! });
+			stack.push({
+				type: 'delete',
+				value: requireItem(lines1, i - 1, 'left line'),
+			});
 			i--;
 		}
 	}
 
 	// Reverse to get correct order
 	while (stack.length) {
-		result.push(stack.pop()!);
+		const item = stack.pop();
+		if (item) result.push(item);
 	}
 
 	return result;
@@ -73,25 +114,47 @@ export function diffWords(text1: string, text2: string): DiffResult[] {
 
 	let i = 0, j = 0;
 	while (i < words1.length || j < words2.length) {
-		if (i < words1.length && j < words2.length && words1[i]! === words2[j]!) {
-			result.push({ type: 'equal', value: words1[i]! });
+		if (
+			i < words1.length
+			&& j < words2.length
+			&& requireItem(words1, i, 'left word')
+				=== requireItem(words2, j, 'right word')
+		) {
+			result.push({
+				type: 'equal',
+				value: requireItem(words1, i, 'left word'),
+			});
 			i++;
 			j++;
-		} else if (j < words2.length && (i >= words1.length || words2[j]! !== words1[i]!)) {
+		} else if (
+			j < words2.length
+			&& (
+				i >= words1.length
+				|| requireItem(words2, j, 'right word')
+					!== requireItem(words1, i, 'left word')
+			)
+		) {
 			// Try to find in remaining
-			const foundIn1 = words1.slice(i).indexOf(words2[j]!);
+			const rightWord = requireItem(words2, j, 'right word');
+			const foundIn1 = words1.slice(i).indexOf(rightWord);
 			if (foundIn1 > 0 && foundIn1 < 3) {
 				// Delete the ones before
 				for (let k = 0; k < foundIn1; k++) {
-					result.push({ type: 'delete', value: words1[i + k]! });
+					result.push({
+						type: 'delete',
+						value: requireItem(words1, i + k, 'left word'),
+					});
 				}
 				i += foundIn1;
 			} else {
-				result.push({ type: 'insert', value: words2[j]! });
+				result.push({ type: 'insert', value: rightWord });
 				j++;
 			}
 		} else {
-			result.push({ type: 'delete', value: words1[i]! });
+			result.push({
+				type: 'delete',
+				value: requireItem(words1, i, 'left word'),
+			});
 			i++;
 		}
 	}

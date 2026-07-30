@@ -1,6 +1,7 @@
 // goal: Network utility panel UI - UA Parser & Curl Converter
 
-import React, { useState, useCallback } from 'react';
+import type React from 'react';
+import { useState, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { NetworkMode, UAResult, CurlParseResult } from './types';
@@ -18,7 +19,7 @@ const MODES: { id: NetworkMode; label: string }[] = [
 // UA Parser Sub-panel
 const UAParserPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [ua, setUA] = useToolState<string>('network-ua-input' as any, navigator.userAgent);
+	const [ua, setUA] = useToolState<string>('network-ua-input', navigator.userAgent);
 
 	const [result, setResult] = useState<UAResult | null>(null);
 
@@ -29,10 +30,10 @@ const UAParserPanel: React.FC = () => {
 		<div style={styles.wrapper}>
 			<div style={styles.row}>
 				<span style={styles.label}>{t('network.ua.input')}</span>
-				<button style={styles.btnSecondary} onClick={useCurrent}>{t('network.ua.current')}</button>
+				<button type="button" style={styles.btnSecondary} onClick={useCurrent}>{t('network.ua.current')}</button>
 			</div>
 			<textarea style={styles.textarea} value={ua} onChange={(e) => setUA(e.target.value)} placeholder="Mozilla/5.0..." />
-			<button style={styles.btn} onClick={handleParse}>{t('network.ua.parse')}</button>
+			<button type="button" style={styles.btn} onClick={handleParse}>{t('network.ua.parse')}</button>
 			{result && (
 				<Card variant="default" padding="sm">
 					<div style={styles.infoRow}><span style={styles.infoLabel}>{t('network.ua.browser')}</span><span style={styles.infoValue}>{result.browser.name} {result.browser.version}</span></div>
@@ -48,9 +49,9 @@ const UAParserPanel: React.FC = () => {
 // Curl Converter Sub-panel
 const CurlConverterPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [curl, setCurl] = useToolState<string>('network-curl-input' as any, '');
+	const [curl, setCurl] = useToolState<string>('network-curl-input', '');
 	const [parsed, setParsed] = useState<CurlParseResult | null>(null);
-	const [lang, setLang] = useToolState<'js' | 'python'>('network-curl-lang' as any, 'js');
+	const [lang, setLang] = useToolState<'js' | 'python'>('network-curl-lang', 'js');
 
 
 	const handleParse = useCallback(() => setParsed(parseCurl(curl)), [curl]);
@@ -64,13 +65,13 @@ const CurlConverterPanel: React.FC = () => {
 		<div style={styles.wrapper}>
 			<span style={styles.label}>{t('network.curl.input')}</span>
 			<textarea style={styles.textarea} value={curl} onChange={(e) => setCurl(e.target.value)} placeholder="curl 'https://example.com' -H 'Authorization: Bearer token'" />
-			<button style={styles.btn} onClick={handleParse}>{t('network.curl.convert')}</button>
+			<button type="button" style={styles.btn} onClick={handleParse}>{t('network.curl.convert')}</button>
 			{parsed && (
 				<Card variant="default" padding="sm">
 					<div style={styles.row}>
-						<button style={{ ...styles.btnSecondary, ...(lang === 'js' ? styles.active : {}) }} onClick={() => setLang('js')}>{t('network.langJs', {defaultValue: 'JavaScript'})}</button>
-						<button style={{ ...styles.btnSecondary, ...(lang === 'python' ? styles.active : {}) }} onClick={() => setLang('python')}>{t('network.langPy', {defaultValue: 'Python'})}</button>
-						<button style={{ ...styles.btnSecondary, marginLeft: 'auto' }} onClick={copyCode}>📋 {t('common.copy')}</button>
+						<button type="button" style={{ ...styles.btnSecondary, ...(lang === 'js' ? styles.active : {}) }} onClick={() => setLang('js')}>{t('network.langJs', {defaultValue: 'JavaScript'})}</button>
+						<button type="button" style={{ ...styles.btnSecondary, ...(lang === 'python' ? styles.active : {}) }} onClick={() => setLang('python')}>{t('network.langPy', {defaultValue: 'Python'})}</button>
+						<button type="button" style={{ ...styles.btnSecondary, marginLeft: 'auto' }} onClick={copyCode}>📋 {t('common.copy')}</button>
 					</div>
 					<pre style={styles.resultBox}>{lang === 'js' ? generateJS(parsed) : generatePython(parsed)}</pre>
 				</Card>
@@ -82,7 +83,7 @@ const CurlConverterPanel: React.FC = () => {
 // Main Network Panel
 export const NetworkPanel: React.FC = () => {
     const { t } = useTranslation();
-	const [mode, setMode] = useToolState<NetworkMode>('network-mode' as any, 'ua-parser');
+	const [mode, setMode] = useToolState<NetworkMode>('network-mode', 'ua-parser');
 
 
 	return (
@@ -90,7 +91,7 @@ export const NetworkPanel: React.FC = () => {
 			<Card variant="default" padding="sm">
 				<div style={styles.tabs}>
 					{MODES.map((m) => (
-						<button key={m.id} style={{ ...styles.tab, ...(mode === m.id ? styles.active : styles.inactive) }} onClick={() => setMode(m.id)}>
+						<button type="button" key={m.id} style={{ ...styles.tab, ...(mode === m.id ? styles.active : styles.inactive) }} onClick={() => setMode(m.id)}>
 							{m.id === 'ua-parser' ? t('network.modes.ua', {defaultValue: 'UA Parser'}) : t('network.modes.curl', {defaultValue: 'Curl → Code'})}
 						</button>
 					))}

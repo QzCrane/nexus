@@ -19,14 +19,20 @@ export async function initI18n(): Promise<void> {
 	if (select) {
 		select.value = currentLang;
 		select.addEventListener('change', async () => {
+			const previousLang = currentLang;
 			currentLang = select.value as SupportedLanguage;
 			try {
 				const snapshot = await patchSettings({ scope: 'global', changes: { lang: currentLang } });
 				currentLang = snapshot.globalSettings.lang;
-			} catch { }
+			} catch {
+				currentLang = previousLang;
+				select.value = previousLang;
+			}
 			await loadLocaleCatalog(currentLang);
 			applyI18n();
-			onLangChangeCallbacks.forEach(cb => cb());
+			onLangChangeCallbacks.forEach((cb) => {
+				cb();
+			});
 		});
 	}
 

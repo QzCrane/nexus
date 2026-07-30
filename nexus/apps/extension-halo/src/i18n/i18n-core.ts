@@ -1,7 +1,12 @@
 // goal: i18n core logic (initialization + locale management)
 // eff: Separated from hook for better modularity
 
-import type { Locale, LocaleSetting, TranslationKeys } from './types';
+import type {
+	Locale,
+	LocaleSetting,
+	TranslationKeys,
+	TranslationParams,
+} from './types';
 import { en } from './locales/en';
 import { zh } from './locales/zh';
 import { safeStorageGet } from '../kernel/core/safe-storage';
@@ -29,6 +34,10 @@ function resolve(setting: LocaleSetting): Locale {
 	return setting;
 }
 
+function isLocaleSetting(value: unknown): value is LocaleSetting {
+	return value === 'en' || value === 'zh' || value === 'system';
+}
+
 export function setGlobalLocale(setting: LocaleSetting) {
 	currentSetting = setting;
 	resolvedLocale = resolve(setting);
@@ -40,7 +49,9 @@ export function setI18nReady(ready: boolean) {
 }
 
 // Notify all listeners
-export const notify = () => listeners.forEach((l) => l());
+export const notify = () => listeners.forEach((listener) => {
+	listener();
+});
 
 // Register new translations (e.g. from downloaded modules)
 export function registerTranslations(locale: Locale, data: Partial<TranslationKeys>) {
@@ -49,7 +60,7 @@ export function registerTranslations(locale: Locale, data: Partial<TranslationKe
 }
 
 // Get nested value by dot-path and interpolate
-export function getByPath(obj: unknown, path: string, params?: Record<string, any>): string {
+export function getByPath(obj: unknown, path: string, params?: TranslationParams): string {
 	const parts = path.split('.');
 	let current: unknown = obj;
 	for (const part of parts) {
@@ -89,14 +100,12 @@ export const i18nPromise = new Promise<void>((resolve) => {
 export const initI18n = async () => {
 	if (typeof chrome !== 'undefined' && chrome.storage) {
 		try {
-			const result = await safeStorageGet([STORAGE_KEY], { [STORAGE_KEY]: 'system' } as Partial<Record<string, unknown>>);
-			const saved = result[STORAGE_KEY] as LocaleSetting | undefined;
-
-			if (saved) {
-				currentSetting = saved;
-			} else {
-				currentSetting = 'system';
-			}
+			const result = await safeStorageGet(
+				[STORAGE_KEY],
+				{ [STORAGE_KEY]: 'system' },
+			);
+			const saved: unknown = result[STORAGE_KEY];
+			currentSetting = isLocaleSetting(saved) ? saved : 'system';
 		} catch {
 			currentSetting = 'system';
 		}
@@ -127,7 +136,8 @@ initI18n().catch((e) => console.error('i18n init failed', e));
 if (typeof chrome !== 'undefined' && chrome.storage) {
 	chrome.storage.onChanged.addListener((changes, area) => {
 		if (area === 'sync' && changes[STORAGE_KEY]) {
-			const newSetting = changes[STORAGE_KEY].newValue as LocaleSetting;
+			const newSetting: unknown = changes[STORAGE_KEY].newValue;
+			if (!isLocaleSetting(newSetting)) return;
 			currentSetting = newSetting;
 			resolvedLocale = resolve(newSetting);
 			i18nReady = true;

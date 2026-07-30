@@ -49,6 +49,8 @@ Run `verify:v`, application release checks, production-artifact inspection, Chro
 
 Run the applicable repository gates as one stable-candidate batch before the first push. If that batch exposes a concrete cause, fix it, rerun the narrow failing evidence while iterating, then run one final applicable batch. Do not replay the entire matrix after every small edit.
 
+`check:platform` validates Git-index bytes, modes, and attributes. When the candidate adds files, stage the exact intended candidate before its final platform run; a clean pass while those files are still untracked is not evidence for them.
+
 ### 4. Reconcile documentation and release truth
 
 - Update exactly one normative owner for changed behavior.

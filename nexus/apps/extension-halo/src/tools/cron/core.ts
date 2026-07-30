@@ -6,12 +6,22 @@ import type { CronParts, CronPreset } from './types';
 export function parseCron(cron: string): CronParts | null {
 	const parts = cron.trim().split(/\s+/);
 	if (parts.length !== 5) return null;
+	const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
+	if (
+		minute === undefined
+		|| hour === undefined
+		|| dayOfMonth === undefined
+		|| month === undefined
+		|| dayOfWeek === undefined
+	) {
+		return null;
+	}
 	return {
-		minute: parts[0]!,
-		hour: parts[1]!,
-		dayOfMonth: parts[2]!,
-		month: parts[3]!,
-		dayOfWeek: parts[4]!,
+		minute,
+		hour,
+		dayOfMonth,
+		month,
+		dayOfWeek,
 	};
 }
 
@@ -79,18 +89,18 @@ const MONTHS = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'Jul
 
 function describeMonth(field: string): string {
 	if (field.includes(',')) {
-		return field.split(',').map((m) => MONTHS[parseInt(m)] || m).join(', ');
+		return field.split(',').map((m) => MONTHS[parseInt(m, 10)] || m).join(', ');
 	}
-	return MONTHS[parseInt(field)] || field;
+	return MONTHS[parseInt(field, 10)] || field;
 }
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 function describeDayOfWeek(field: string): string {
 	if (field.includes(',')) {
-		return field.split(',').map((d) => DAYS[parseInt(d)] || d).join(', ');
+		return field.split(',').map((d) => DAYS[parseInt(d, 10)] || d).join(', ');
 	}
-	return DAYS[parseInt(field)] || field;
+	return DAYS[parseInt(field, 10)] || field;
 }
 
 // Get next N run times
@@ -126,17 +136,27 @@ function matchField(value: number, field: string): boolean {
 	if (field === '*') return true;
 	if (field.includes('/')) {
 		const [range, step] = field.split('/');
-		const stepNum = parseInt(step!);
+		if (step === undefined) return false;
+		const stepNum = parseInt(step, 10);
+		if (!Number.isInteger(stepNum) || stepNum <= 0) return false;
 		if (range === '*') return value % stepNum === 0;
 	}
 	if (field.includes('-')) {
 		const [start, end] = field.split('-').map(Number);
-		return value >= start! && value <= end!;
+		if (
+			start === undefined
+			|| end === undefined
+			|| !Number.isFinite(start)
+			|| !Number.isFinite(end)
+		) {
+			return false;
+		}
+		return value >= start && value <= end;
 	}
 	if (field.includes(',')) {
 		return field.split(',').map(Number).includes(value);
 	}
-	return parseInt(field) === value;
+	return parseInt(field, 10) === value;
 }
 
 // Common presets

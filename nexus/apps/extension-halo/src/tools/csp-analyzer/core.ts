@@ -8,13 +8,13 @@ export interface CspDirective {
 }
 
 // Security risk dictionary
-const UNSAFE_KEYWORDS: Record<string, string> = {
-	"'unsafe-inline'": "Allows execution of inline scripts/styles (High Risk)",
-	"'unsafe-eval'": "Allows use of eval() (High Risk)",
-	"*": "Wildcard allows loading from anywhere (Medium Risk)",
-	"http:": "Allows insecure HTTP connections (Medium Risk)",
-	"data:": "Allows data URI schemes (Low Risk)",
-};
+const UNSAFE_KEYWORDS = new Set([
+	"'unsafe-inline'",
+	"'unsafe-eval'",
+	'*',
+	'http:',
+	'data:',
+]);
 
 const DIRECTIVE_DESCRIPTIONS: Record<string, string> = {
 	"default-src": "Fallback for other fetch directives",
@@ -40,18 +40,9 @@ export function parseCsp(csp: string): CspDirective[] {
 		const [name, ...values] = part.split(/\s+/);
 		if (!name) continue;
 
-		let riskFound = false;
-		let riskDesc = '';
-
-		values.forEach(val => {
-			if (UNSAFE_KEYWORDS[val]) {
-				riskFound = true;
-				riskDesc = UNSAFE_KEYWORDS[val];
-			} else if (val.startsWith('*') || val === 'http:') {
-				// Heuristic check
-				riskFound = true;
-			}
-		});
+		const riskFound = values.some(
+			(value) => UNSAFE_KEYWORDS.has(value) || value.startsWith('*'),
+		);
 
 		directives.push({
 			name,

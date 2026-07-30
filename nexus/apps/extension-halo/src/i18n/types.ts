@@ -1,10 +1,18 @@
 // goal: i18n type definitions (aggregated)
 // eff: Type-safe translation keys composed of smaller interfaces
 
-import { BaseTranslations, SettingsTranslations, ModuleTranslations } from './types-defs-1';
+import type { BaseTranslations, SettingsTranslations, ModuleTranslations } from './types-defs-1';
 
 export type Locale = 'en' | 'zh';
 export type LocaleSetting = Locale | 'system';
+export type TranslationParams = Record<string, unknown>;
+export type TranslationOptions = TranslationParams & {
+	defaultValue?: string;
+};
+export type TranslationFunction = (
+	path: string,
+	options?: TranslationOptions
+) => string;
 // 'active' is a virtual runtime category, 'system' is for internal filtering only
 // Refined developer categories: encode, format, network, data, dev
 // 'scripts' is aggregation view for all script plugins
@@ -18,7 +26,7 @@ export interface TranslationKeys extends
 	BaseTranslations,
 	SettingsTranslations,
 	ModuleTranslations {
-	[key: string]: any;
+	[key: string]: unknown;
 }
 
 export type TranslationPath =

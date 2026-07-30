@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from '../../../i18n';
 import type { UserScript } from '../types';
 import {
@@ -13,21 +13,21 @@ export function useImportExport(loadScripts: () => Promise<void>) {
 	const [modalMode, setModalMode] = useState<'import' | 'export' | null>(null);
 	const [exportData, setExportData] = useState('');
 
-	const handleExport = async (scripts: UserScript[]) => {
+	const handleExport = useCallback((scripts: UserScript[]) => {
 		setExportData(exportScripts(scripts));
 		setModalMode('export');
-	};
+	}, []);
 
-	const handleImport = async (json: string) => {
+	const handleImport = useCallback(async (json: string) => {
 		try {
 			const result = await importScripts(json);
 			showToast(`✅ ${t('userscripts.importSuccess', { defaultValue: `Imported ${result.imported} scripts` })}`);
 			await loadScripts();
 			setModalMode(null);
-		} catch (e) {
+		} catch (_e) {
 			showToast(`❌ ${t('userscripts.importFailed')}`);
 		}
-	};
+	}, [loadScripts, showToast, t]);
 
 	return {
 		modalMode,

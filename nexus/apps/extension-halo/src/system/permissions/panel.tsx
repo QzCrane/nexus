@@ -1,6 +1,7 @@
 // goal: Permission manager panel UI
 
-import React, { useState, useEffect, useCallback } from 'react';
+import type React from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { useToolState, getToolMeta } from '../../kernel';
@@ -17,63 +18,75 @@ import { styles } from './panel.styles';
 const groupByCategory = (perms: PermissionDef[]): Record<string, PermissionDef[]> => {
 	const grouped: Record<string, PermissionDef[]> = { basic: [], advanced: [], privacy: [] };
 	for (const p of perms) {
-		grouped[p.category]!.push(p);
+		const category = grouped[p.category];
+		if (category) category.push(p);
 	}
 	return grouped;
 };
 
 export const PermissionsPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [states, setStates] = useToolState<Record<string, boolean>>('permissions-states' as any, {});
+	const [states, setStates] = useToolState<Record<string, boolean>>('permissions-states', {});
 	const [loading, setLoading] = useState<string | null>(null);
 	const pm = getPermissionManager();
 	const meta = getToolMeta('permissions');
 
-	// Load permission states
-	useEffect(() => {
-		loadStates();
-		// Subscribe to external changes
-		const unsubscribe = pm.subscribe(loadStates);
-		return unsubscribe;
-	}, []);
-
-	const loadStates = async () => {
+	const loadStates = useCallback(async () => {
 		const allStates = await pm.getAllStates();
 		const stateMap: Record<string, boolean> = {};
 		for (const s of allStates) {
 			stateMap[s.id] = s.granted;
 		}
 		setStates(stateMap);
-	};
+	}, [pm, setStates]);
+
+	const refreshStates = useCallback(() => {
+		void loadStates().catch((error: unknown) => {
+			console.error('[HALO:Permissions] Failed to load permission states', error);
+		});
+	}, [loadStates]);
+
+	// Load permission states and subscribe through one stable lifecycle owner.
+	useEffect(() => {
+		refreshStates();
+		return pm.subscribe(refreshStates);
+	}, [pm, refreshStates]);
 
 	// Toggle permission
 	const handleToggle = useCallback(async (perm: PermissionDef, isHost = false) => {
 		setLoading(perm.id);
-		const isGranted = states[perm.id];
-		
-		let success: boolean;
-		if (isGranted) {
-			success = isHost ? await pm.revokeHost(perm.id) : await pm.revoke(perm.id);
-			// Verify actual state after revoke (some permissions can't be revoked due to content_scripts)
-			if (success) {
-				const stillGranted = isHost ? await pm.checkHost(perm.id) : await pm.check(perm.id);
-				if (stillGranted) {
-					// Permission couldn't actually be revoked (likely due to manifest dependencies)
-					alert(t('permissions.cannotRevoke', { defaultValue: 'This permission is required by HALO and cannot be revoked.' }));
-					success = false;
+		try {
+			const isGranted = states[perm.id];
+
+			let success: boolean;
+			if (isGranted) {
+				success = isHost ? await pm.revokeHost(perm.id) : await pm.revoke(perm.id);
+				// Verify actual state after revoke (some permissions can't be revoked due to content_scripts)
+				if (success) {
+					const stillGranted = isHost ? await pm.checkHost(perm.id) : await pm.check(perm.id);
+					if (stillGranted) {
+						// Permission couldn't actually be revoked (likely due to manifest dependencies)
+						alert(t('permissions.cannotRevoke', { defaultValue: 'This permission is required by HALO and cannot be revoked.' }));
+						success = false;
+					}
 				}
+			} else {
+				success = isHost ? await pm.requestHost(perm.id) : await pm.request(perm.id);
 			}
-		} else {
-			success = isHost ? await pm.requestHost(perm.id) : await pm.request(perm.id);
+
+			if (success) {
+				await loadStates();
+			}
+		} catch (error: unknown) {
+			console.error(`[HALO:Permissions] Failed to update ${perm.id}`, error);
+		} finally {
+			setLoading(null);
 		}
-		
-		if (success) {
-			await loadStates();
-		}
-		setLoading(null);
-	}, [states, t]);
+	}, [loadStates, pm, states, t]);
 
 	const grouped = groupByCategory(OPTIONAL_PERMISSIONS);
+	const basicPermissions = grouped.basic ?? [];
+	const privacyPermissions = grouped.privacy ?? [];
 	const categoryLabels: Record<string, string> = {
 		basic: t('permissions.categoryBasic'),
 		advanced: t('permissions.categoryAdvanced'),
@@ -99,7 +112,7 @@ export const PermissionsPanel: React.FC = () => {
 					)}
 				</div>
 				{isGranted ? (
-					<button
+					<button type="button"
 						style={{ ...styles.btn, ...styles.btnRevoke }}
 						onClick={() => handleToggle(perm, isHost)}
 						disabled={isLoading}
@@ -107,7 +120,7 @@ export const PermissionsPanel: React.FC = () => {
 						{isLoading ? '...' : t('permissions.revoke')}
 					</button>
 				) : (
-					<button
+					<button type="button"
 						style={{ ...styles.btn, ...styles.btnGrant }}
 						onClick={() => handleToggle(perm, isHost)}
 						disabled={isLoading}
@@ -144,13 +157,13 @@ export const PermissionsPanel: React.FC = () => {
 
 			{/* Basic Permissions */}
 			<div style={styles.category}>{categoryLabels.basic}</div>
-			{grouped.basic!.map((p) => renderPermCard(p))}
+			{basicPermissions.map((p) => renderPermCard(p))}
 
 			{/* Privacy Permissions */}
-				{grouped.privacy!.length > 0 && (
+				{privacyPermissions.length > 0 && (
 				<>
 					<div style={styles.category}>{categoryLabels.privacy}</div>
-					{grouped.privacy!.map((p) => renderPermCard(p))}
+					{privacyPermissions.map((p) => renderPermCard(p))}
 				</>
 			)}
 		</div>

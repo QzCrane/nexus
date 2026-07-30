@@ -1,6 +1,7 @@
 // goal: User-Agent Switcher panel UI - view and copy UA strings
 
-import React, { useMemo, useCallback } from 'react';
+import type React from 'react';
+import { useMemo, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import { UA_PRESETS, getCurrentUserAgent, parseUserAgent } from './core';
 import { styles } from './panel.styles';
@@ -38,31 +39,31 @@ export const UserAgentPanel: React.FC = () => {
 				{/* Desktop */}
 				<div style={styles.section}>💻 Desktop</div>
 				{desktopPresets.map((preset) => (
-					<div key={preset.name} style={styles.item} onClick={() => handleCopy(preset.ua)}>
+					<button type="button" key={preset.name} style={{ ...styles.item, width: '100%', border: 'none', textAlign: 'left' }} onClick={() => handleCopy(preset.ua)}>
 						<span style={styles.icon}>{preset.icon}</span>
 						<span style={styles.name}>{preset.name}</span>
-						<button style={styles.copyBtn}>📋</button>
-					</div>
+						<span style={styles.copyBtn}>📋</span>
+					</button>
 				))}
 
 				{/* Mobile */}
 				<div style={styles.section}>📱 Mobile</div>
 				{mobilePresets.map((preset) => (
-					<div key={preset.name} style={styles.item} onClick={() => handleCopy(preset.ua)}>
+					<button type="button" key={preset.name} style={{ ...styles.item, width: '100%', border: 'none', textAlign: 'left' }} onClick={() => handleCopy(preset.ua)}>
 						<span style={styles.icon}>{preset.icon}</span>
 						<span style={styles.name}>{preset.name}</span>
-						<button style={styles.copyBtn}>📋</button>
-					</div>
+						<span style={styles.copyBtn}>📋</span>
+					</button>
 				))}
 
 				{/* Bots */}
 				<div style={styles.section}>🤖 Bots</div>
 				{botPresets.map((preset) => (
-					<div key={preset.name} style={styles.item} onClick={() => handleCopy(preset.ua)}>
+					<button type="button" key={preset.name} style={{ ...styles.item, width: '100%', border: 'none', textAlign: 'left' }} onClick={() => handleCopy(preset.ua)}>
 						<span style={styles.icon}>{preset.icon}</span>
 						<span style={styles.name}>{preset.name}</span>
-						<button style={styles.copyBtn}>📋</button>
-					</div>
+						<span style={styles.copyBtn}>📋</span>
+					</button>
 				))}
 			</div>
 		</div>

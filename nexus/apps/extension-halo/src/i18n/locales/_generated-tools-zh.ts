@@ -37,7 +37,6 @@ import { zh as json_formatter } from '../../tools/json-formatter/locales/zh';
 import { zh as json_path } from '../../tools/json-path/locales/zh';
 import { zh as json_to_csv } from '../../tools/json-to-csv/locales/zh';
 import { zh as jwt_decoder } from '../../tools/jwt-decoder/locales/zh';
-import { zh as llm_enhancer } from '../../tools/llm-enhancer/locales/zh';
 import { zh as lorem_ipsum } from '../../tools/lorem-ipsum/locales/zh';
 import { zh as markdown } from '../../tools/markdown/locales/zh';
 import { zh as media_sniffer } from '../../tools/media-sniffer/locales/zh';
@@ -129,7 +128,6 @@ export const TOOLS_ZH = {
 	...json_path,
 	...json_to_csv,
 	...jwt_decoder,
-	...llm_enhancer,
 	...lorem_ipsum,
 	...markdown,
 	...media_sniffer,

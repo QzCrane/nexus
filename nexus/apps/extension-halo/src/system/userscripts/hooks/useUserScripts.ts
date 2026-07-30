@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from '../../../i18n';
 import type { UserScript, UserScriptState } from '../types';
 import {
@@ -10,6 +10,10 @@ import {
 } from '../core';
 import { injectScriptToCurrentTab } from '../engine';
 import { useToast } from '../../../components/ToastProvider';
+import {
+	createUserScriptsStateLoader,
+	type UserScriptsStateLoader,
+} from './user-scripts-state-loader';
 
 export function useUserScripts() {
 	const { t } = useTranslation();
@@ -22,17 +26,31 @@ export function useUserScripts() {
 	// Toolbar config
 	const [toolbarConfig, setToolbarConfig] = useState<UserScriptState['toolbarConfig']>();
 
-	const loadScripts = useCallback(async () => {
-		const state = await getUserScriptsState();
-		setScripts(state.scripts);
-		setGlobalEnabled(state.globalEnabled);
-		setToolbarConfig(state.toolbarConfig || {
-			order: ['add', 'export', 'import'],
-			hideOnOverflow: false
-		});
-	}, []);
+	const stateLoaderRef = useRef<UserScriptsStateLoader | null>(null);
+	if (stateLoaderRef.current === null) {
+		stateLoaderRef.current = createUserScriptsStateLoader(
+			getUserScriptsState,
+			(state) => {
+				setScripts(state.scripts);
+				setGlobalEnabled(state.globalEnabled);
+				setToolbarConfig(state.toolbarConfig || {
+					order: ['add', 'export', 'import'],
+					hideOnOverflow: false,
+				});
+			},
+			(error) => {
+				console.error('[HALO:UserScripts] Failed to load scripts', error);
+			},
+		);
+	}
+	const stateLoader = stateLoaderRef.current;
+	const loadScripts = useCallback(() => stateLoader.load(), [stateLoader]);
 
-	useEffect(() => { loadScripts(); }, [loadScripts]);
+	useEffect(() => {
+		stateLoader.activate();
+		void loadScripts();
+		return () => stateLoader.dispose();
+	}, [loadScripts, stateLoader]);
 
 	// Permissions and URL tracking
 	useEffect(() => {
@@ -45,14 +63,22 @@ export function useUserScripts() {
 			const hasWebNav = await chrome.permissions.contains({ permissions: ['webNavigation'] });
 			setHasPermission(hasUserScripts || (hasWebNav && hasHosts));
 		};
-		checkStatus();
-
-		const onActive = () => checkStatus();
-		const onUpdate = (_: number, change: any, tab: chrome.tabs.Tab) => {
-			if (tab.active && change.url) checkStatus();
+		const refreshStatus = () => {
+			void checkStatus().catch((error: unknown) => {
+				console.error('[HALO:UserScripts] Failed to refresh permission status', error);
+			});
 		};
-		// @ts-ignore
-		const onPermChange = () => checkStatus();
+		refreshStatus();
+
+		const onActive = () => refreshStatus();
+		const onUpdate: Parameters<typeof chrome.tabs.onUpdated.addListener>[0] = (
+			_tabId,
+			change,
+			tab,
+		) => {
+			if (tab.active && change.url) refreshStatus();
+		};
+		const onPermChange = () => refreshStatus();
 		if (chrome.permissions.onAdded) chrome.permissions.onAdded.addListener(onPermChange);
 		if (chrome.permissions.onRemoved) chrome.permissions.onRemoved.addListener(onPermChange);
 		chrome.tabs.onActivated.addListener(onActive);
@@ -67,13 +93,33 @@ export function useUserScripts() {
 
 	const handleRequestPermission = async () => {
 		let granted = false;
-		try { granted = await chrome.permissions.request({ permissions: ['userScripts'], origins: ['*://*/*'] }); } catch { }
-		if (!granted) granted = await chrome.permissions.request({ permissions: ['webNavigation'], origins: ['*://*/*'] });
+		try {
+			granted = await chrome.permissions.request({
+				permissions: ['userScripts'],
+				origins: ['*://*/*'],
+			});
+			if (!granted) {
+				granted = await chrome.permissions.request({
+					permissions: ['webNavigation'],
+					origins: ['*://*/*'],
+				});
+			}
+		} catch (error: unknown) {
+			console.error('[HALO:UserScripts] Permission request failed', error);
+			showToast(`❌ ${t('userscripts.permsFailed', {
+				defaultValue: 'Permission request failed',
+			})}`);
+			return;
+		}
 
 		if (granted) {
 			setHasPermission(true);
 			showToast(`✅ ${t('userscripts.permsGranted', { defaultValue: 'Permissions granted' })}`);
-			chrome.runtime.sendMessage({ type: 'HALO_USERSCRIPTS_SYNC' }).catch(() => { });
+			void chrome.runtime
+				.sendMessage({ type: 'HALO_USERSCRIPTS_SYNC' })
+				.catch((error: unknown) => {
+					console.warn('[HALO:UserScripts] Background sync notification failed', error);
+				});
 		}
 	};
 

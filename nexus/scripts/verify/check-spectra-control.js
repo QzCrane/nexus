@@ -224,7 +224,8 @@ function checkDefaultRuntime(root) {
 		'associationRank(right.association) - associationRank(left.association)',
 		'left.distance - right.distance',
 		'if (!(element instanceof HTMLMediaElement)) return;',
-		'capability.write(request.value!);',
+		"if (requestedValue === undefined) throw new Error('Page media write request has no value');",
+		'capability.write(requestedValue);',
 		'const actual = capability.read();',
 		'capability.write(before);',
 		'document.addEventListener(SPECTRA_PAGE_MEDIA_EVENT, onPageMediaRequest, true);',
@@ -713,6 +714,18 @@ function checkProductionLoadingTopology(root) {
 		path.join(root, SOURCE_PATH, 'offscreen-remote/remote-host.ts'),
 		'utf8',
 	);
+	const offscreenEntry = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'offscreen/index.ts'),
+		'utf8',
+	);
+	const offscreenRemoteRuntime = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'offscreen-remote/runtime.ts'),
+		'utf8',
+	);
+	const peerRuntimeLoader = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'offscreen-remote/peerjs-loader.ts'),
+		'utf8',
+	);
 	const manifest = JSON.parse(fs.readFileSync(
 		path.join(root, APP_PATH, 'public/manifest.json'),
 		'utf8',
@@ -816,13 +829,19 @@ function checkProductionLoadingTopology(root) {
 		|| !minificationPolicy.includes('regex: /^_/u')
 		|| build.includes('collectReservedProperties')
 		|| fs.existsSync(retiredPropertyAllowlist)
-		|| !offscreen.includes('<script src="peerjs-vendor.js"></script>')
+		|| offscreen.includes('<script src="peerjs-vendor.js"></script>')
+		|| !offscreen.includes('<script type="module" src="offscreen.js"></script>')
+		|| !offscreenEntry.includes("import('../offscreen-remote/runtime')")
+		|| !offscreenEntry.includes("message.type !== 'REMOTE_HOST_CREATE_SESSION'")
+		|| !offscreenRemoteRuntime.includes('ensurePeerRuntime: peerRuntime.ensure')
+		|| !peerRuntimeLoader.includes("chrome.runtime.getURL('peerjs-vendor.js')")
+		|| peerRuntimeLoader.includes('PEER_VENDOR_FILE')
 		|| !remoteHost.includes("import type Peer from 'peerjs'")
 		|| !remoteHost.includes("import type { DataConnection } from 'peerjs'")
 		|| /(?:^|\n)import\s+(?!type\b)[^;\n]*\bfrom\s+['"]peerjs['"]/u.test(remoteHost)
 		|| !remoteHost.includes("throw new Error('Local PeerJS vendor runtime is unavailable')")
 		|| !build.includes("sharingDomain: 'offscreen-vendor'")) {
-		error('SCTRL-004/SCTRL-014/SCTRL-034/SCTRL-044: application property stability or opaque PeerJS vendor boundary drifted');
+		error('SCTRL-004/SCTRL-014/SCTRL-034/SCTRL-044: application property stability or Remote-only lazy PeerJS vendor boundary drifted');
 	}
 	const videoEffectsResource = (manifest.web_accessible_resources ?? [])
 		.find((item) => item.resources?.includes('content-video-effects.js'));
@@ -1207,7 +1226,9 @@ function checkRetiredPaths(root) {
 		'chrome.tabs.captureVisibleTab',
 		'waitForDownloadComplete(downloadId)',
 		"method: 'capture-visible-tab'",
-		'sender.documentId !== message.documentId',
+		'const documentId = message.documentId;',
+		'sender.documentId !== documentId',
+		'{ documentId, generation }',
 	]) {
 		if (!screenshot.includes(required)) {
 			error(`SCTRL-005: screenshot cannot ACK before verified Chrome capture/save (${required})`);
@@ -1410,10 +1431,27 @@ function checkRetiredPaths(root) {
 		path.join(root, SOURCE_PATH, 'content/ui/feedback-surface.ts'),
 		'utf8',
 	);
+	const toast = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'content/ui/toast.ts'),
+		'utf8',
+	);
 	const osd = fs.readFileSync(
 		path.join(root, SOURCE_PATH, 'content/ui/osd.ts'),
 		'utf8',
 	);
+	const contentRuntime = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'content/core/index.ts'),
+		'utf8',
+	);
+	const contentRuntimeDisposeStart = contentRuntime.indexOf('dispose(handoff = false)');
+	const contentRuntimeDisposeEnd = contentRuntime.indexOf(
+		'function isCurrentRuntime(',
+		contentRuntimeDisposeStart,
+	);
+	const contentRuntimeDispose = contentRuntimeDisposeStart >= 0
+		&& contentRuntimeDisposeEnd > contentRuntimeDisposeStart
+		? contentRuntime.slice(contentRuntimeDisposeStart, contentRuntimeDisposeEnd)
+		: '';
 	const scalarFeedback = fs.readFileSync(
 		path.join(root, SOURCE_PATH, 'content/ui/scalar-feedback.ts'),
 		'utf8',
@@ -1607,6 +1645,9 @@ function checkRetiredPaths(root) {
 		|| pageHotkeyListener.includes('const coalesced = new Map')
 		|| pageHotkeyListener.includes('cancelCoalesced')
 		|| !pageHotkeyListener.includes('advanceHotkeyTargetOSD(')
+		|| !pageHotkeyListener.includes(
+			'!ownsHotkeyActualOSDGesture(message.payload.gesture)',
+		)
 		|| pageHotkeyListener.includes('defaultScalarFeedbackTargets')
 		|| pageHotkeyListener.includes('feedbackTarget')
 		|| !shortcuts.includes("candidate.type !== 'spectra.content.default-hotkey.trigger'")
@@ -1644,9 +1685,20 @@ function checkRetiredPaths(root) {
 	}
 	if (!feedbackSurface.includes("host.popover = 'manual'")
 		|| !feedbackSurface.includes("document.addEventListener('fullscreenchange'")
+		|| !feedbackSurface.includes("document.removeEventListener('fullscreenchange'")
 		|| !feedbackSurface.includes("host.matches(':popover-open')")
-		|| !feedbackSurface.includes('host.showPopover()')) {
-		error('SCTRL-016/SCTRL-022: Toast and OSD feedback must use a fullscreen-safe browser top-layer host');
+		|| !feedbackSurface.includes('host.showPopover()')
+		|| !feedbackSurface.includes('feedbackHosts.clear()')
+		|| !contentRuntime.includes('disposeOSD();')
+		|| !contentRuntime.includes('disposeToast();')
+		|| !contentRuntime.includes('disposeFeedbackSurfaces();')
+		|| !contentRuntime.includes('contentRuntime.registry.track(disposeFeedbackUI)')
+		|| contentRuntimeDispose.indexOf('disposeFeedbackUI();') < 0
+		|| contentRuntimeDispose.indexOf('disposeFeedbackUI();')
+			>= contentRuntimeDispose.indexOf('await runtime.release?.();')
+		|| !osd.includes('if (state.disposed) return;')
+		|| !toast.includes('if (s.disposed || !document.documentElement) return;')) {
+		error('SCTRL-016/SCTRL-022: Toast and OSD require one fullscreen-safe top-layer host whose complete generation lifecycle is runtime-owned');
 	}
 	if (!scalarFeedback.includes('return ((clamped - scale.min) / (scale.max - scale.min)) * 100')
 		|| !scalarFeedback.includes("{ value: 100, label: '100%', lane: 'lower' }")
@@ -1724,6 +1776,10 @@ function checkRetiredPaths(root) {
 			error(`SCTRL-034/SCTRL-040: development/production Chrome lifecycle evidence is missing (${required})`);
 		}
 	}
+	if (!smoke.includes('retires feedback on the final runtime lease and reacquires one new generation')
+		|| !smoke.includes('reacquired final runtime lease retirement')) {
+		error('SCTRL-022/SCTRL-024: final Content runtime release/reacquire Chrome evidence is missing');
+	}
 
 	const visualizerLoop = fs.readFileSync(
 		path.join(root, SOURCE_PATH, 'popup/visualizer/loop.ts'),
@@ -1737,6 +1793,7 @@ function checkRetiredPaths(root) {
 		/function runFrame\(\): void \{(.*?)\n\}/su,
 	)?.[1] ?? '';
 	if (!visualizerLoop.includes('document.addEventListener(VISUALIZER_STATE_CHANGED_EVENT, reconcileScheduler)')
+		|| !visualizerLoop.includes('subscription.params.isProcessorActive()')
 		|| !visualizerRunFrame.includes('releaseSubscriptions()')
 		|| visualizerRunFrame.includes('scheduleFrame()')) {
 		error('SCTRL-013/SCTRL-019/SCTRL-021: visualizer scheduling requires an actual processor, explicit wake and zero-ready stop');
@@ -1807,6 +1864,14 @@ function checkRetiredPaths(root) {
 		path.join(root, SOURCE_PATH, 'content/input/hotkey-helpers.ts'),
 		'utf8',
 	);
+	const popupPipDispatchStart = popupMediaControls.indexOf('async function dispatchPictureInPicture(');
+	const popupPipDispatchEnd = popupMediaControls.indexOf(
+		'function asControlUiFailure(',
+		popupPipDispatchStart,
+	);
+	const popupPipDispatch = popupPipDispatchStart >= 0 && popupPipDispatchEnd > popupPipDispatchStart
+		? popupMediaControls.slice(popupPipDispatchStart, popupPipDispatchEnd)
+		: '';
 	if ((videoControls.match(/target: currentSnapshot\?\.activeVideo \?\? null/gu) ?? []).length !== 3
 		|| videoControls.includes('target: currentSnapshot?.activeMedia ?? null')
 		|| !videoControls.includes('activeMedia: currentSnapshot.activeMedia')
@@ -1818,6 +1883,13 @@ function checkRetiredPaths(root) {
 		|| !hotkeyHelpers.includes('executor.toggleTrustedActivation(field)')
 		|| !nativeExecutor.includes('this.registry.resolveVideo(intent.target)')) {
 		error('SCTRL-005/SCTRL-014/SCTRL-025: video controls must target the independent active-video identity');
+	}
+	if ((popupPipDispatch.match(/chrome\.scripting\.executeScript/gu) ?? []).length !== 1
+		|| !popupPipDispatch.includes('return new Promise<SpectraTrustedPipOutcome | null>')
+		|| !popupPipDispatch.includes('new MutationObserver(readOutcome)')
+		|| popupPipDispatch.includes('while (performance.now() < deadline)')
+	) {
+		error('ALG-038: Popup PiP must settle through one event-driven ISOLATED execution without polling');
 	}
 	if (!videoControls.includes('const FILTER_SEND_INTERVAL_MS = 50')
 		|| !videoControls.includes('await submitPatch({ filter, filterEnabled: true })')
@@ -1861,7 +1933,10 @@ function checkRetiredPaths(root) {
 	);
 	if (!runtimeLoader.includes('const leases = new Map<string, Set<string>>()')
 		|| !runtimeLoader.includes('active.add(runtimeLeaseKey(reason, capability))')
+		|| !runtimeLoader.includes('function canReleaseRuntimeConsumer(')
+		|| !runtimeLoader.includes("sender.url.startsWith(chrome.runtime.getURL(''))")
 		|| !runtimeLeaseTest.includes('same consumer token as idempotent')
+		|| !runtimeLeaseTest.includes('tab-hosted extension UI release while rejecting content documents')
 		|| !runtimeLeaseTest.includes('final independent consumer releases')) {
 		error('SCTRL-013/SCTRL-024: runtime reference count must use unique consumer tokens');
 	}

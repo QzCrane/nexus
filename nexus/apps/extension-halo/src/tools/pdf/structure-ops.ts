@@ -16,7 +16,9 @@ export const mergePDFs = async (options: MergeOptions): Promise<PDFProcessResult
 		for (const docData of options.documents) {
 			const doc = await PDFDocument.load(docData);
 			const pages = await merged.copyPages(doc, doc.getPageIndices());
-			pages.forEach((page) => merged.addPage(page));
+			pages.forEach((page) => {
+				merged.addPage(page);
+			});
 		}
 		const data = await merged.save();
 		return { success: true, data: data.buffer.slice(0) as ArrayBuffer, pageCount: merged.getPageCount() };
@@ -38,7 +40,9 @@ export const splitPDF = async (options: SplitOptions): Promise<PDFProcessResult<
 				pageIndices.push(i);
 			}
 			const pages = await newDoc.copyPages(source, pageIndices);
-			pages.forEach((page) => newDoc.addPage(page));
+			pages.forEach((page) => {
+				newDoc.addPage(page);
+			});
 			const data = await newDoc.save();
 			results.push(data.buffer.slice(0) as ArrayBuffer);
 		}
@@ -55,7 +59,9 @@ export const extractPages = async (options: ExtractOptions): Promise<PDFProcessR
 		const newDoc = await PDFDocument.create();
 		const validPages = options.pages.filter((p) => p >= 0 && p < source.getPageCount());
 		const pages = await newDoc.copyPages(source, validPages);
-		pages.forEach((page) => newDoc.addPage(page));
+		pages.forEach((page) => {
+			newDoc.addPage(page);
+		});
 		const data = await newDoc.save();
 		return { success: true, data: data.buffer.slice(0) as ArrayBuffer, pageCount: newDoc.getPageCount() };
 	} catch (err) {

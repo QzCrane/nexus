@@ -1,6 +1,7 @@
 // goal: Text Tools panel UI - case conversion, stats, dedupe, sort
 
-import React, { useState, useCallback, useMemo } from 'react';
+import type React from 'react';
+import { useCallback, useMemo } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { CaseType, TextToolMode } from './types';
@@ -29,9 +30,9 @@ const CASE_OPTIONS: { id: CaseType; label: string }[] = [
 
 export const TextToolsPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [mode, setMode] = useToolState<TextToolMode>('text-tools-mode' as any, 'case');
-	const [input, setInput] = useToolState<string>('text-tools-input' as any, '');
-	const [caseType, setCaseType] = useToolState<CaseType>('text-tools-case' as any, 'lower');
+	const [mode, setMode] = useToolState<TextToolMode>('text-tools-mode', 'case');
+	const [input, setInput] = useToolState<string>('text-tools-input', '');
+	const [caseType, setCaseType] = useToolState<CaseType>('text-tools-case', 'lower');
 
 
 	// Compute stats in real-time
@@ -40,19 +41,19 @@ export const TextToolsPanel: React.FC = () => {
 	// Handle case conversion
 	const handleCaseConvert = useCallback(() => {
 		setInput(convertCase(input, caseType));
-	}, [input, caseType]);
+	}, [input, caseType, setInput]);
 
 	// Handle dedupe
-	const handleDedupe = useCallback(() => setInput(dedupeLines(input)), [input]);
+	const handleDedupe = useCallback(() => setInput(dedupeLines(input)), [input, setInput]);
 
 	// Handle sort
-	const handleSort = useCallback((asc: boolean) => setInput(sortLines(input, asc)), [input]);
+	const handleSort = useCallback((asc: boolean) => setInput(sortLines(input, asc)), [input, setInput]);
 
 	// Handle trim
-	const handleTrim = useCallback(() => setInput(trimLines(input)), [input]);
+	const handleTrim = useCallback(() => setInput(trimLines(input)), [input, setInput]);
 
 	// Handle reverse
-	const handleReverse = useCallback(() => setInput(reverseLines(input)), [input]);
+	const handleReverse = useCallback(() => setInput(reverseLines(input)), [input, setInput]);
 
 	// Copy to clipboard
 	const handleCopy = useCallback(() => navigator.clipboard.writeText(input), [input]);
@@ -63,7 +64,7 @@ export const TextToolsPanel: React.FC = () => {
 			<Card variant="default" padding="sm">
 				<div style={styles.tabs}>
 					{MODES.map((m) => (
-						<button
+						<button type="button"
 							key={m.id}
 							style={{ ...styles.tab, ...(mode === m.id ? styles.active : styles.inactive) }}
 							onClick={() => setMode(m.id)}
@@ -91,8 +92,8 @@ export const TextToolsPanel: React.FC = () => {
 								<option key={opt.id} value={opt.id}>{opt.label}</option>
 							))}
 						</select>
-						<button style={styles.btn} onClick={handleCaseConvert}>{t('textTools.convert')}</button>
-						<button style={styles.btnSecondary} onClick={handleCopy}>📋 {t('common.copy')}</button>
+						<button type="button" style={styles.btn} onClick={handleCaseConvert}>{t('textTools.convert')}</button>
+						<button type="button" style={styles.btnSecondary} onClick={handleCopy}>📋 {t('common.copy')}</button>
 					</div>
 				</Card>
 			)}
@@ -112,9 +113,9 @@ export const TextToolsPanel: React.FC = () => {
 			{mode === 'dedupe' && (
 				<Card variant="default" padding="sm">
 					<div style={styles.row}>
-						<button style={styles.btn} onClick={handleDedupe}>{t('textTools.dedupe')}</button>
-						<button style={styles.btnSecondary} onClick={handleTrim}>{t('textTools.trim')}</button>
-						<button style={styles.btnSecondary} onClick={handleCopy}>📋 {t('common.copy')}</button>
+						<button type="button" style={styles.btn} onClick={handleDedupe}>{t('textTools.dedupe')}</button>
+						<button type="button" style={styles.btnSecondary} onClick={handleTrim}>{t('textTools.trim')}</button>
+						<button type="button" style={styles.btnSecondary} onClick={handleCopy}>📋 {t('common.copy')}</button>
 					</div>
 				</Card>
 			)}
@@ -122,10 +123,10 @@ export const TextToolsPanel: React.FC = () => {
 			{mode === 'sort' && (
 				<Card variant="default" padding="sm">
 					<div style={styles.row}>
-						<button style={styles.btn} onClick={() => handleSort(true)}>↑ {t('textTools.sortAsc')}</button>
-						<button style={styles.btn} onClick={() => handleSort(false)}>↓ {t('textTools.sortDesc')}</button>
-						<button style={styles.btnSecondary} onClick={handleReverse}>{t('textTools.reverse')}</button>
-						<button style={styles.btnSecondary} onClick={handleCopy}>📋 {t('common.copy')}</button>
+						<button type="button" style={styles.btn} onClick={() => handleSort(true)}>↑ {t('textTools.sortAsc')}</button>
+						<button type="button" style={styles.btn} onClick={() => handleSort(false)}>↓ {t('textTools.sortDesc')}</button>
+						<button type="button" style={styles.btnSecondary} onClick={handleReverse}>{t('textTools.reverse')}</button>
+						<button type="button" style={styles.btnSecondary} onClick={handleCopy}>📋 {t('common.copy')}</button>
 					</div>
 				</Card>
 			)}

@@ -1,6 +1,7 @@
 // goal: XOR panel UI
 
-import React, { useState, useMemo } from 'react';
+import type React from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { xor, toHex, fromHex } from './core';
 import { styles } from './panel.styles';
@@ -9,10 +10,10 @@ import { useToolState } from '../../kernel';
 
 export const XorPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [input, setInput] = useToolState<string>('xor-input' as any, '');
-    const [key, setKey] = useToolState<string>('xor-key' as any, '');
-    const [isHexInput, setIsHexInput] = useToolState<boolean>('xor-is-hex-input' as any, false);
-    const [isHexOutput, setIsHexOutput] = useToolState<boolean>('xor-is-hex-output' as any, false);
+	const [input, setInput] = useToolState<string>('xor-input', '');
+    const [key, setKey] = useToolState<string>('xor-key', '');
+    const [isHexInput, setIsHexInput] = useToolState<boolean>('xor-is-hex-input', false);
+    const [isHexOutput, setIsHexOutput] = useToolState<boolean>('xor-is-hex-output', false);
 
 
     const result = useMemo(() => {
@@ -24,7 +25,7 @@ export const XorPanel: React.FC = () => {
         } catch {
             return t('xor.error', { defaultValue: 'Error' });
         }
-    }, [input, key, isHexInput, isHexOutput]);
+    }, [input, key, isHexInput, isHexOutput, t]);
 
 	return (
 		<div style={styles.wrapper}>

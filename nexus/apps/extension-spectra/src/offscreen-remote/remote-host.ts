@@ -33,6 +33,7 @@ export type RemoteHostSessionStatus = RemoteHostSession;
 
 export interface RemoteHostControllerDependencies {
 	createPeer?: (peerId: string) => Peer;
+	ensurePeerRuntime?: () => Promise<void>;
 	sendRuntimeMessage?: (message: unknown) => unknown;
 	now?: () => number;
 	setTimer?: (callback: () => void, delayMs: number) => number;
@@ -72,7 +73,6 @@ interface HostSession {
 
 interface PendingSessionCreation {
 	promise: Promise<RemoteHostSessionStatus>;
-	peer: Peer;
 	pairing: RemotePairing;
 	cancel(): void;
 }
@@ -90,6 +90,7 @@ export function createRemoteHostController(
 			referrerPolicy: 'no-referrer',
 		});
 	});
+	const ensurePeerRuntime = dependencies.ensurePeerRuntime;
 	const sendRuntimeMessage = dependencies.sendRuntimeMessage ?? ((message: unknown) => chrome.runtime.sendMessage(message));
 	const now = dependencies.now ?? Date.now;
 	const setTimer = dependencies.setTimer ?? ((callback, delayMs) => window.setTimeout(callback, delayMs));
@@ -286,71 +287,89 @@ export function createRemoteHostController(
 		if (pending) return pending.promise;
 
 		const pairing = createRemotePairing(now());
-		const capability = generateRandomToken(16);
-		const peer = createPeer(pairing.peerId);
-		const session: HostSession = {
-			pairing,
-			capability,
-			tabId,
-			peer,
-			connection: null,
-			authenticated: false,
-			everAuthenticated: false,
-			lastSequence: 0,
-			lastGeneration: 0,
-			lastState: null,
-			reconnectUntil: null,
-			expiryTimer: null,
-		};
-
+		let capability = generateRandomToken(16);
 		let creation!: PendingSessionCreation;
 		const promise = new Promise<RemoteHostSessionStatus>((resolve, reject) => {
 			let settled = false;
-			const openTimer = setTimer(() => {
+			let peer: Peer | null = null;
+			let session: HostSession | null = null;
+			let openTimer: number | null = null;
+			const scrub = (): void => {
+				pairing.secret = '';
+				capability = '';
+				if (session) session.capability = '';
+			};
+			const fail = (error: Error): void => {
 				if (settled) return;
 				settled = true;
-				peer.destroy();
-				pairing.secret = '';
-				session.capability = '';
-				reject(new Error('Peer signaling connection timed out'));
-			}, REMOTE_AUTH_TIMEOUT_MS);
+				if (openTimer !== null) clearTimer(openTimer);
+				peer?.destroy();
+				scrub();
+				reject(error);
+			};
 			creation = {
 				promise: Promise.resolve(null as never),
-				peer,
 				pairing,
 				cancel() {
-					if (settled) return;
-					settled = true;
-					clearTimer(openTimer);
-					peer.destroy();
-					pairing.secret = '';
-					session.capability = '';
-					reject(new Error('Remote session creation was cancelled'));
+					fail(new Error('Remote session creation was cancelled'));
 				},
 			};
 
-			peer.on('open', () => {
-				if (settled || pendingCreations.get(tabId) !== creation) {
-					peer.destroy();
+			const startPeer = (): void => {
+				if (settled) return;
+				try {
+					peer = createPeer(pairing.peerId);
+				} catch (error) {
+					fail(error instanceof Error ? error : new Error(String(error)));
 					return;
 				}
-				settled = true;
-				clearTimer(openTimer);
-				sessions.set(tabId, session);
-				scheduleExpiry(session, pairing.pairingExpiresAt, 'pairing-expired');
-				resolve(publicStatus(session));
-			});
-			peer.on('connection', (connection) => acceptConnection(session, connection));
-			peer.on('error', (error) => {
-				console.warn(LOG, 'Peer error', error.type, error.message);
-				if (settled) return;
-				settled = true;
-				clearTimer(openTimer);
-				peer.destroy();
-				pairing.secret = '';
-				session.capability = '';
-				reject(new Error(`Peer signaling failed: ${error.type}`));
-			});
+				session = {
+					pairing,
+					capability,
+					tabId,
+					peer,
+					connection: null,
+					authenticated: false,
+					everAuthenticated: false,
+					lastSequence: 0,
+					lastGeneration: 0,
+					lastState: null,
+					reconnectUntil: null,
+					expiryTimer: null,
+				};
+				const currentPeer = peer;
+				const currentSession = session;
+				openTimer = setTimer(
+					() => fail(new Error('Peer signaling connection timed out')),
+					REMOTE_AUTH_TIMEOUT_MS,
+				);
+				currentPeer.on('open', () => {
+					if (settled || pendingCreations.get(tabId) !== creation) {
+						currentPeer.destroy();
+						return;
+					}
+					settled = true;
+					if (openTimer !== null) clearTimer(openTimer);
+					sessions.set(tabId, currentSession);
+					scheduleExpiry(currentSession, pairing.pairingExpiresAt, 'pairing-expired');
+					resolve(publicStatus(currentSession));
+				});
+				currentPeer.on('connection', (connection) => acceptConnection(currentSession, connection));
+				currentPeer.on('error', (error) => {
+					console.warn(LOG, 'Peer error', error.type, error.message);
+					fail(new Error(`Peer signaling failed: ${error.type}`));
+				});
+			};
+			if (ensurePeerRuntime) {
+				void Promise.resolve()
+					.then(ensurePeerRuntime)
+					.then(startPeer)
+					.catch((error) => fail(
+						error instanceof Error ? error : new Error(String(error)),
+					));
+			} else {
+				startPeer();
+			}
 		});
 		creation.promise = promise;
 		pendingCreations.set(tabId, creation);
@@ -368,21 +387,48 @@ export function createRemoteHostController(
 	async function closeSession(tabId: number, sessionId: string, reason: RemoteCloseReason = 'manual'): Promise<boolean> {
 		const session = sessions.get(tabId);
 		if (!session || session.pairing.sessionId !== sessionId) return false;
-		if (session.expiryTimer !== null) clearTimer(session.expiryTimer);
-		if (session.authenticated && session.connection?.open) {
-			session.connection.send({
-				type: 'spectra.remote.closed',
-				protocolVersion: REMOTE_PROTOCOL_VERSION,
-				sessionId,
-				reason,
-			});
+		const connection = session.connection;
+		const shouldNotify = session.authenticated && connection?.open === true;
+		const failures: unknown[] = [];
+		if (session.expiryTimer !== null) {
+			clearTimer(session.expiryTimer);
+			session.expiryTimer = null;
 		}
-		session.connection?.close();
-		session.peer.destroy();
+		// Retire logical ownership before closing the transport. PeerJS emits
+		// `close` synchronously in some runtimes; leaving the connection current
+		// would misclassify an explicit close as a reconnectable network loss.
+		session.authenticated = false;
+		session.connection = null;
+		session.reconnectUntil = null;
+		if (shouldNotify) {
+			try {
+				connection.send({
+					type: 'spectra.remote.closed',
+					protocolVersion: REMOTE_PROTOCOL_VERSION,
+					sessionId,
+					reason,
+				});
+			} catch (error) {
+				failures.push(error);
+			}
+		}
+		try {
+			connection?.close();
+		} catch (error) {
+			failures.push(error);
+		}
+		try {
+			session.peer.destroy();
+		} catch (error) {
+			failures.push(error);
+		}
 		session.pairing.secret = '';
 		session.capability = '';
 		sessions.delete(tabId);
 		emit({ type: 'REMOTE_HOST_SESSION_CLOSED', tabId, sessionId, reason });
+		if (failures.length > 0) {
+			console.warn(LOG, 'Session transport disposal failed', new AggregateError(failures));
+		}
 		return true;
 	}
 

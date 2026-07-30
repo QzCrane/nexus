@@ -46,7 +46,7 @@ export function autoParse(input: string): Date | null {
 	if (/^\d{13}$/.test(trimmed)) return new Date(parseInt(trimmed, 10));
 
 	const parsed = new Date(trimmed);
-	return isNaN(parsed.getTime()) ? null : parsed;
+	return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 export const TIMEZONES = [

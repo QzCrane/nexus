@@ -1,7 +1,7 @@
 // goal: Module item component for store list with enhanced script visuals
 // eff: Render individual module status and actions with rich color coding
 
-import React from 'react';
+import type React from 'react';
 import { useTranslation } from '../../i18n';
 import { formatModuleSize, type ModuleMeta } from '../../kernel';
 
@@ -166,15 +166,15 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, i
 				) : isCore ? (
 					<span style={styles.btnCore}>{t('moduleStorePanel.builtIn')}</span>
 				) : isDownloading ? (
-					<button style={{ ...styles.btn, ...styles.btnDownloading }} disabled>
+					<button type="button" style={{ ...styles.btn, ...styles.btnDownloading }} disabled>
 						⏳ {status === 'updating' ? t('moduleStorePanel.updating') : t('moduleStorePanel.installing')}
 					</button>
 				) : isInstalled ? (
-					<button style={{ ...styles.btn, ...styles.btnUninstall }} onClick={onUninstall}>
+					<button type="button" style={{ ...styles.btn, ...styles.btnUninstall }} onClick={onUninstall}>
 						{t('moduleStorePanel.uninstall')}
 					</button>
 				) : (
-					<button style={{ ...styles.btn, ...styles.btnInstall }} onClick={onInstall}>
+					<button type="button" style={{ ...styles.btn, ...styles.btnInstall }} onClick={onInstall}>
 						{t('moduleStorePanel.install')}
 					</button>
 				)}

@@ -1,10 +1,10 @@
 // goal: XML Formatter panel - shows BOTH formatted AND minified simultaneously
 // eff: No button clicks needed, display all results at once
 
-import React, { useState, useMemo, useCallback } from 'react';
+import type React from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
-import type { XmlResult } from './types';
 import { formatXml, minifyXml } from './core';
 import { useToolState } from '../../kernel';
 
@@ -61,7 +61,7 @@ const styles: Record<string, React.CSSProperties> = {
 export const XmlFormatterPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [input, setInput] = useToolState<string>('xml-formatter', '');
-	const [indent, setIndent] = useToolState<number>('xml-formatter-indent' as any, 2);
+	const [indent, setIndent] = useToolState<number>('xml-formatter-indent', 2);
 
 	const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -114,7 +114,7 @@ export const XmlFormatterPanel: React.FC = () => {
 								</button>
 							))}
 						</div>
-						<button style={styles.copyBtn} onClick={() => setInput('')}>
+						<button type="button" style={styles.copyBtn} onClick={() => setInput('')}>
 							🗑️ {t('common.clear') || 'Clear'}
 						</button>
 					</div>
@@ -158,9 +158,12 @@ export const XmlFormatterPanel: React.FC = () => {
 								<span style={styles.resultLabel}>
 									✨ {t('xmlFormatter.formatted') || 'Formatted'} ({results.formatted.length} chars)
 								</span>
-								<button
+								<button type="button"
 									style={{ ...styles.copyBtn, ...(copiedKey === 'formatted' ? styles.copyBtnSuccess : {}) }}
-									onClick={() => copyValue('formatted', results.formatted!)}
+									onClick={() => {
+										const value = results.formatted;
+										if (value) copyValue('formatted', value);
+									}}
 								>
 									{copiedKey === 'formatted' ? '✓' : '📋'}
 								</button>
@@ -176,9 +179,12 @@ export const XmlFormatterPanel: React.FC = () => {
 								<span style={{ ...styles.resultLabel, color: '#f59e0b' }}>
 									📦 {t('xmlFormatter.minified') || 'Minified'} ({results.minified.length} chars)
 								</span>
-								<button
+								<button type="button"
 									style={{ ...styles.copyBtn, ...(copiedKey === 'minified' ? styles.copyBtnSuccess : {}) }}
-									onClick={() => copyValue('minified', results.minified!)}
+									onClick={() => {
+										const value = results.minified;
+										if (value) copyValue('minified', value);
+									}}
 								>
 									{copiedKey === 'minified' ? '✓' : '📋'}
 								</button>

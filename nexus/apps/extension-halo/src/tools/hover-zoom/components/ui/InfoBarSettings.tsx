@@ -1,6 +1,6 @@
-import React from 'react';
+import type React from 'react';
 import { Card, Toggle } from '@nexus/ui-kit';
-import { HoverZoomSettings } from '../../types';
+import type { HoverZoomSettings } from '../../types';
 import { styles } from './panel.styles';
 
 interface InfoBarSettingsProps {

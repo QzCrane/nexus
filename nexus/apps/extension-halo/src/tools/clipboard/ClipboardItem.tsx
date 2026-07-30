@@ -1,7 +1,7 @@
 // goal: Clipboard item component
 // eff: Renders single history item
 
-import React from 'react';
+import type React from 'react';
 import { useTranslation } from '../../i18n';
 import type { ClipboardItem as ClipboardItemType } from './types';
 import { styles } from './panel.styles';
@@ -52,21 +52,21 @@ export const ClipboardItem: React.FC<ClipboardItemProps> = ({
 					{item.sourceTitle || item.sourceUrl || t('clipboardPanel.unknownSource')}
 				</div>
 				<div style={styles.actions}>
-					<button 
+					<button type="button"
 						style={styles.actionBtn} 
 						onClick={() => onPin(item.id)}
 						title={item.pinned ? t('clipboardPanel.unpin') : t('clipboardPanel.pin')}
 					>
 						{item.pinned ? '📍' : '📌'}
 					</button>
-					<button 
+					<button type="button"
 						style={styles.actionBtn} 
 						onClick={() => onDelete(item.id)}
 						title={t('clipboardPanel.delete')}
 					>
 						🗑️
 					</button>
-					<button 
+					<button type="button"
 						style={{ ...styles.actionBtn, ...styles.copyBtn }} 
 						onClick={() => onCopy(item.text)}
 					>

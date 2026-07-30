@@ -61,6 +61,13 @@ function runtimeLeaseKey(reason: ContentRuntimeLeaseReason, capability: string):
 	return `${reason}:${capability}`;
 }
 
+function canReleaseRuntimeConsumer(sender: chrome.runtime.MessageSender): boolean {
+	if (!sender.tab) return true;
+	return sender.id === chrome.runtime.id
+		&& typeof sender.url === 'string'
+		&& sender.url.startsWith(chrome.runtime.getURL(''));
+}
+
 function enabledSiteHotkeyCapability(
 	url: string | undefined,
 	settings: HotkeySettings,
@@ -592,7 +599,7 @@ export function initializeContentRuntimeLoader(): void {
 			&& message.payload.documentId !== undefined
 			&& message.payload.reason !== undefined
 			&& message.payload.capability !== undefined) {
-			if (sender.tab) {
+			if (!canReleaseRuntimeConsumer(sender)) {
 				sendResponse(rpcFailure('forbidden', 'A document cannot release another runtime consumer'));
 				return false;
 			}

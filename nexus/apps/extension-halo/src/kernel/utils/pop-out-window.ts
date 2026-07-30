@@ -111,19 +111,26 @@ export async function popOutWindow(): Promise<void> {
 		if (activeSaveTimeout) clearTimeout(activeSaveTimeout);
 		activeSaveTimeout = setTimeout(async () => {
 			activeSaveTimeout = null;
+			let currentWindow: chrome.windows.Window;
 			try {
-				const w = await chrome.windows.get(windowId);
-				if (w.width && w.height) {
-					const newBounds: WindowBounds = {
-						width: w.width,
-						height: w.height,
-						left: w.left,
-						top: w.top,
-					};
+				currentWindow = await chrome.windows.get(windowId);
+			} catch (error: unknown) {
+				logger.info('Stopped saving bounds for a closed HALO window', error);
+				detachBoundsListener();
+				return;
+			}
+			if (currentWindow.width && currentWindow.height) {
+				const newBounds: WindowBounds = {
+					width: currentWindow.width,
+					height: currentWindow.height,
+					left: currentWindow.left,
+					top: currentWindow.top,
+				};
+				try {
 					await chrome.storage.local.set({ [STORAGE_KEY]: newBounds });
+				} catch (error: unknown) {
+					logger.warn('Failed to persist HALO window bounds', error);
 				}
-			} catch {
-				// Window might be closed
 			}
 		}, 500);
 	};

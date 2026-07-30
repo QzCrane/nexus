@@ -12,11 +12,17 @@ export interface ResolveContext {
 	host: string;
 	match: RegExpMatchArray | null;
 	fetchHtml: (url: string) => Promise<string>;
-	fetchJson: <T = any>(url: string, headers?: Record<string, string>) => Promise<T>;
+	fetchJson: <T = unknown>(url: string, headers?: Record<string, string>) => Promise<T>;
 	getCookie: (name: string) => string;
 	// Target display resolution for adaptive quality selection
 	targetWidth?: number;
 	targetHeight?: number;
+}
+
+export interface RuleMetadata {
+	videoCodec?: string;
+	audioCodec?: string;
+	[key: string]: unknown;
 }
 
 export interface RuleResult {
@@ -26,7 +32,7 @@ export interface RuleResult {
 	fallbackUrl?: string;
 	type?: 'image' | 'video' | 'audio';
 	caption?: string;
-	metadata?: Record<string, any>;
+	metadata?: RuleMetadata;
 }
 
 export type Resolver = (ctx: ResolveContext) => Promise<string | RuleResult | null>;
@@ -35,7 +41,7 @@ export type RuleConfig =
 	| Resolver
 	| { replace: [RegExp | string, string] }
 	| { selector: string; attr?: string }
-	| { api: string; type?: 'json' | 'html'; parse?: string | ((data: any) => string) };
+	| { api: string; type?: 'json' | 'html'; parse?: string | ((data: unknown) => string) };
 
 export interface SiteRule {
 	id: string;

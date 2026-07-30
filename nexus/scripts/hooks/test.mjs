@@ -41,6 +41,7 @@ import {
 	WRITE_TOOLS,
 } from './_hook-helpers.mjs';
 import { frontmatterProblem } from './ai-pre-write-guard.mjs';
+import { strictLintTargets } from './ai-post-write-lint.mjs';
 import { splitCommands } from './codex-bash-guard.mjs';
 import { scanFileContent } from './ai-pitfall-detector.mjs';
 import {
@@ -191,6 +192,25 @@ ok('WRITE_TOOLS: has Write', WRITE_TOOLS.has('Write'));
 ok('WRITE_TOOLS: has Edit', WRITE_TOOLS.has('Edit'));
 ok('WRITE_TOOLS: has MultiEdit', WRITE_TOOLS.has('MultiEdit'));
 ok('WRITE_TOOLS: missing Read', !WRITE_TOOLS.has('Read'));
+
+// strictLintTargets: the post-write hook delegates to the workspace's
+// non-mutating strict owner and refuses paths outside this repository.
+eq(
+	'strictLintTargets: maps workspace and root files from repository cwd',
+	strictLintTargets(
+		[
+			'nexus/scripts/hooks/ai-post-write-lint.mjs',
+			'commitlint.config.mjs',
+		],
+		repoRoot,
+	),
+	['scripts/hooks/ai-post-write-lint.mjs', '../commitlint.config.mjs'],
+);
+eq(
+	'strictLintTargets: rejects files outside the repository',
+	strictLintTargets([join(repoRoot, '..', 'outside.ts')], repoRoot),
+	[],
+);
 
 // formatBlockMessage: produces the standard BLOCKED layout
 eq(
@@ -726,6 +746,21 @@ for (const cfg of configPaths) {
 	}
 }
 ok('config validator: found at least one hook entry', configEntries > 0, 'no entries found');
+
+const postWriteHookSource = readFileSync(
+	join(hooksDir, 'ai-post-write-lint.mjs'),
+	'utf8',
+);
+ok(
+	'post-write: delegates JavaScript checks to the strict Biome owner',
+	postWriteHookSource.includes("['scripts/run-strict-biome.mjs', ...lintTargets]"),
+	'post-write JavaScript feedback must not create a second Biome command',
+);
+ok(
+	'post-write: never rewrites JavaScript files',
+	!postWriteHookSource.includes("'--write'") && !postWriteHookSource.includes('"--write"'),
+	'post-write feedback must remain non-mutating',
+);
 
 const lefthookPath = join(repoRoot, 'lefthook.yml');
 const lefthookConfig = readFileSync(lefthookPath, 'utf8');

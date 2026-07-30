@@ -7,7 +7,7 @@ export function convertBase(input: string, fromBase: Base): BaseConvertResult | 
 	try {
 		// Parse to decimal first
 		const decimal = parseInt(input, fromBase);
-		if (isNaN(decimal)) return null;
+		if (Number.isNaN(decimal)) return null;
 
 		return {
 			binary: decimal.toString(2),

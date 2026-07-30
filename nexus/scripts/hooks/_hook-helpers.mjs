@@ -192,8 +192,8 @@ export function formatCheckpointMessage(name) {
 	if (status.dirty) {
 		lines.push(
 			`  working tree: ${status.count} modified/new file(s). ` +
-				'lefthook pre-commit will run `lint-docs` + `biome check`; ' +
-				'pre-push will run `verify:q`.',
+				'lefthook pre-commit will run docs + strict Biome; ' +
+				'pre-push will run the complete repository lint and verification gates.',
 		);
 	} else if (status.dirty === false) {
 		lines.push(

@@ -1,11 +1,11 @@
 // goal: Global search bar component
 // eff: Fuzzy search with keyboard shortcuts. Logic extracted to search-utils.ts and styles to SearchBar.styles.ts
 
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import type React from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useClipboardIntent } from '../../kernel/hooks/use-clipboard-intent';
 
 import type { ToolMeta } from '../../kernel';
-import { TOOL_REGISTRY } from '../../kernel';
 import { useTranslation } from '../../i18n';
 import { matchTool } from './search-utils';
 import { styles } from './SearchBar.styles';
@@ -109,7 +109,8 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, visibleTools, pl
         />
         {!focused && !suggestedTool && <span style={styles.shortcut}>⌘K</span>}
         {suggestedTool && !focused && !query && (
-          <div 
+          <button
+            type="button"
             onClick={() => onSelect(suggestedTool.id)}
             style={{ 
               position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
@@ -119,7 +120,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, visibleTools, pl
             }}
           >
             {suggestedTool.icon} {t('common.open')}
-          </div>
+          </button>
         )}
       </div>
 
@@ -127,11 +128,16 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, visibleTools, pl
         <div style={styles.dropdown}>
           {results.length > 0 ? (
             results.map((tool, i) => (
-              <div
+              <button
+                type="button"
                 key={tool.id}
                 style={{
                   ...styles.item,
                   ...(i === activeIndex ? styles.itemActive : {}),
+                  width: '100%',
+                  border: 'none',
+                  color: 'inherit',
+                  textAlign: 'left',
                 }}
                 onMouseEnter={() => setActiveIndex(i)}
                 onClick={() => handleSelect(tool)}
@@ -150,7 +156,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, visibleTools, pl
                     {t('common.comingSoon')}
                   </span>
                 )}
-              </div>
+              </button>
             ))
           ) : (
             <div style={styles.noResults}>{t('common.noResults')}</div>

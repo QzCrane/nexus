@@ -1,9 +1,10 @@
 // goal: Tab Manager UI
 // eff: Styles and Item component extracted
 
-import React, { useState, useEffect, useMemo } from 'react';
+import type React from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from '../../i18n';
-import { TabItem as TabItemType, TabFilter } from './types';
+import type { TabItem as TabItemType, TabFilter } from './types';
 import { getTabs, activateTab, closeTab, setupTabListeners } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
@@ -13,25 +14,35 @@ import { TabItem } from './TabItem';
 export const TabsPanel: React.FC = () => {
     const { t } = useTranslation();
     const [tabs, setTabs] = useState<TabItemType[]>([]);
-    const [search, setSearch] = useToolState<string>('tabs-search' as any, '');
-    const [filter, setFilter] = useToolState<TabFilter>('tabs-filter' as any, 'all');
+    const [search, setSearch] = useToolState<string>('tabs-search', '');
+    const [filter, setFilter] = useToolState<TabFilter>('tabs-filter', 'all');
 
     const [loading, setLoading] = useState(true);
 
-    const refreshTabs = async () => {
-        try {
-            const list = await getTabs();
-            setTabs(list);
-            setLoading(false);
-        } catch (err) {
-            console.error('Failed to get tabs', err);
-        }
-    };
-
     useEffect(() => {
+        let disposed = false;
+        let requestRevision = 0;
+        const refreshTabs = (): void => {
+            const revision = ++requestRevision;
+            void getTabs()
+                .then((list) => {
+                    if (!disposed && revision === requestRevision) setTabs(list);
+                })
+                .catch((error: unknown) => {
+                    console.error('[HALO:Tabs] Failed to get tabs', error);
+                })
+                .finally(() => {
+                    if (!disposed && revision === requestRevision) setLoading(false);
+                });
+        };
+
         refreshTabs();
         const cleanup = setupTabListeners(refreshTabs);
-        return cleanup;
+        return () => {
+            disposed = true;
+            requestRevision++;
+            cleanup();
+        };
     }, []);
 
     const filteredTabs = useMemo(() => {
@@ -49,13 +60,21 @@ export const TabsPanel: React.FC = () => {
 
     const handleClose = async (e: React.MouseEvent, id: number) => {
         e.stopPropagation();
-        await closeTab(id);
-        // Optimistic update
-        setTabs(prev => prev.filter(t => t.id !== id));
+        try {
+            await closeTab(id);
+            // Optimistic update
+            setTabs(prev => prev.filter(t => t.id !== id));
+        } catch (error: unknown) {
+            console.error(`[HALO:Tabs] Failed to close tab ${id}`, error);
+        }
     };
 
     const handleActivate = async (id: number) => {
-        await activateTab(id);
+        try {
+            await activateTab(id);
+        } catch (error: unknown) {
+            console.error(`[HALO:Tabs] Failed to activate tab ${id}`, error);
+        }
     };
 
     return (
@@ -68,7 +87,8 @@ export const TabsPanel: React.FC = () => {
             />
 
             <div style={styles.filterBar}>
-                <div 
+                <button
+					type="button"
                     style={{
                         ...styles.filterChip,
                         ...(filter === 'all' ? styles.filterChipActive : {})
@@ -76,8 +96,9 @@ export const TabsPanel: React.FC = () => {
                     onClick={() => setFilter('all')}
                 >
                     {t('tabsPanel.filterAll')} ({tabs.length})
-                </div>
-                <div 
+                </button>
+                <button
+					type="button"
                     style={{
                         ...styles.filterChip,
                         ...(filter === 'audible' ? styles.filterChipActive : {})
@@ -85,8 +106,9 @@ export const TabsPanel: React.FC = () => {
                     onClick={() => setFilter('audible')}
                 >
                     {t('tabsPanel.filterAudible')}
-                </div>
-                <div 
+                </button>
+                <button
+					type="button"
                     style={{
                         ...styles.filterChip,
                         ...(filter === 'pinned' ? styles.filterChipActive : {})
@@ -94,7 +116,7 @@ export const TabsPanel: React.FC = () => {
                     onClick={() => setFilter('pinned')}
                 >
                     {t('tabsPanel.filterPinned')}
-                </div>
+                </button>
             </div>
 
             <div style={styles.list}>

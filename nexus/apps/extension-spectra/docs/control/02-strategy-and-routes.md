@@ -335,7 +335,11 @@ does no work between explicit requests.
 PiP and fullscreen remain native lifecycle operations bound to the current
 `activeVideo`. Trusted page hotkeys and the immediate Popup PiP path call the
 same standard native executor while browser user activation is live; they do not
-use MAIN. The fullscreen V1 bridge wraps only the page's real
+use MAIN. Popup PiP installs one request-local result-attribute observer before
+synchronously dispatching the trusted trigger, and the same
+`chrome.scripting.executeScript()` Promise returns that getter ACK. The
+observer and timeout are disposed together; there is no follow-up injection or
+Popup-side polling. The fullscreen V1 bridge wraps only the page's real
 `requestFullscreen()` entry so an already-active enhanced-audio path can yield
 and restore around that native transition. Its per-call listener/timer exists
 only during the bounded handoff. PiP recovery targets the actual

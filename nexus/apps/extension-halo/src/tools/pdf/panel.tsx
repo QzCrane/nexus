@@ -1,7 +1,8 @@
 // goal: PDF Panel UI (main component)
 // eff: Styles extracted to reduce file size
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import type React from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
@@ -24,9 +25,9 @@ const OPERATIONS: { id: PDFOperation; icon: string; label: string; minFiles: num
 
 export const PDFPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [selectedOperation, setSelectedOperation] = useToolState<PDFOperation | null>('pdf-op' as any, null);
+	const [selectedOperation, setSelectedOperation] = useToolState<PDFOperation | null>('pdf-op', null);
 	const [state, setState] = useState<PDFToolState>({ files: [], selectedOperation: null, processing: false, error: null });
-	const [config, setConfig] = useToolState<OperationConfig>('pdf-config' as any, DEFAULT_CONFIG);
+	const [config, setConfig] = useToolState<OperationConfig>('pdf-config', DEFAULT_CONFIG);
 
 	// Sync selectedOperation to state for backward compatibility with component logic if needed,
 	// but better to use it directly.
@@ -37,27 +38,34 @@ export const PDFPanel: React.FC = () => {
 	const [dragActive, setDragActive] = useState(false);
 	const [result, setResult] = useState<{ blob: Blob; name: string } | null>(null);
 
-	const processFiles = async (files: File[]) => {
-		const validFiles: PDFDoc[] = [];
-		for (const file of files) {
-			const buffer = await file.arrayBuffer();
-			const isPDF = file.type === 'application/pdf' || file.name.endsWith('.pdf');
-			const isImage = file.type.startsWith('image/');
-			if (isPDF) {
-				const valid = await validatePDF(buffer);
-				if (valid) {
-					const pages = await getPageCount(buffer);
-					validFiles.push({ id: crypto.randomUUID(), name: file.name, pageCount: pages, size: file.size, createdAt: Date.now(), data: buffer });
+	const processFiles = useCallback(async (files: File[]) => {
+		try {
+			const validFiles: PDFDoc[] = [];
+			for (const file of files) {
+				const buffer = await file.arrayBuffer();
+				const isPDF = file.type === 'application/pdf' || file.name.endsWith('.pdf');
+				const isImage = file.type.startsWith('image/');
+				if (isPDF) {
+					const valid = await validatePDF(buffer);
+					if (valid) {
+						const pages = await getPageCount(buffer);
+						validFiles.push({ id: crypto.randomUUID(), name: file.name, pageCount: pages, size: file.size, createdAt: Date.now(), data: buffer });
+					}
+				} else if (isImage) {
+					validFiles.push({ id: crypto.randomUUID(), name: file.name, pageCount: 1, size: file.size, createdAt: Date.now(), data: buffer });
 				}
-			} else if (isImage) {
-				validFiles.push({ id: crypto.randomUUID(), name: file.name, pageCount: 1, size: file.size, createdAt: Date.now(), data: buffer });
 			}
+			if (validFiles.length > 0) {
+				setState((prev) => ({ ...prev, files: [...prev.files, ...validFiles], error: null }));
+			}
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : 'Failed to read the selected file';
+			setState((prev) => ({ ...prev, error: message }));
 		}
-		if (validFiles.length > 0) setState((prev) => ({ ...prev, files: [...prev.files, ...validFiles], error: null }));
-	};
+	}, []);
 
-	const handleDrop = useCallback(async (e: React.DragEvent) => { e.preventDefault(); setDragActive(false); await processFiles(Array.from(e.dataTransfer.files)); }, []);
-	const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => { await processFiles(Array.from(e.target.files || [])); e.target.value = ''; }, []);
+	const handleDrop = useCallback(async (e: React.DragEvent) => { e.preventDefault(); setDragActive(false); await processFiles(Array.from(e.dataTransfer.files)); }, [processFiles]);
+	const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => { await processFiles(Array.from(e.target.files || [])); e.target.value = ''; }, [processFiles]);
 	const handleRemoveFile = useCallback((id: string) => setState((prev) => ({ ...prev, files: prev.files.filter((f) => f.id !== id) })), []);
 	const handleSelectOp = useCallback((op: PDFOperation) => { 
 		setSelectedOperation(op);
@@ -78,6 +86,10 @@ export const PDFPanel: React.FC = () => {
 		setResult(null);
 		try {
 			const { selectedOperation, files } = state;
+			const firstFile = files[0];
+			if (!selectedOperation || !firstFile) {
+				throw new Error('Select an operation and at least one file');
+			}
 			let output: ArrayBuffer | null = null;
 			let outputName = 'output.pdf';
 
@@ -87,18 +99,22 @@ export const PDFPanel: React.FC = () => {
 			} else if (selectedOperation === 'split') {
 				const ranges = parseRanges(config.splitRanges);
 				if (ranges.length === 0) throw new Error('Invalid page ranges');
-				const res = await splitPDF({ document: files[0]!.data, ranges });
-				if (res.success) { output = res.data![0]!; outputName = 'split.pdf'; } else throw new Error(res.error);
+				const res = await splitPDF({ document: firstFile.data, ranges });
+				if (!res.success) throw new Error(res.error);
+				const firstSplit = res.data[0];
+				if (!firstSplit) throw new Error('The selected ranges produced no PDF output');
+				output = firstSplit;
+				outputName = 'split.pdf';
 			} else if (selectedOperation === 'extract') {
 				const pages = parsePages(config.extractPages);
 				if (pages.length === 0) throw new Error('Invalid page numbers');
-				const res = await extractPages({ document: files[0]!.data, pages });
+				const res = await extractPages({ document: firstFile.data, pages });
 				if (res.success) { output = res.data; outputName = 'extracted.pdf'; } else throw new Error(res.error);
 			} else if (selectedOperation === 'rotate') {
-				const res = await rotatePages({ document: files[0]!.data, pages: [], degrees: config.rotateDegrees });
+				const res = await rotatePages({ document: firstFile.data, pages: [], degrees: config.rotateDegrees });
 				if (res.success) { output = res.data; outputName = 'rotated.pdf'; } else throw new Error(res.error);
 			} else if (selectedOperation === 'watermark') {
-				const res = await addWatermark({ document: files[0]!.data, text: config.watermarkText, opacity: config.watermarkOpacity });
+				const res = await addWatermark({ document: firstFile.data, text: config.watermarkText, opacity: config.watermarkOpacity });
 				if (res.success) { output = res.data; outputName = 'watermarked.pdf'; } else throw new Error(res.error);
 			} else if (selectedOperation === 'images-to-pdf') {
 				const res = await imagesToPDF({ images: files.map((f) => f.data), pageSize: config.pageSize });
@@ -121,14 +137,28 @@ export const PDFPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
-			<div style={{ ...styles.dropZone, ...(dragActive ? styles.dropZoneActive : {}) }} onDrop={handleDrop} onDragOver={(e) => { e.preventDefault(); setDragActive(true); }} onDragLeave={() => setDragActive(false)}>
+			<fieldset
+				aria-label={t('pdfPanel.dropHint')}
+				style={{
+					...styles.dropZone,
+					...(dragActive ? styles.dropZoneActive : {}),
+					margin: 0,
+					minWidth: 0,
+				}}
+				onDrop={handleDrop}
+				onDragOver={(e) => {
+					e.preventDefault();
+					setDragActive(true);
+				}}
+				onDragLeave={() => setDragActive(false)}
+			>
 				<input type="file" accept=".pdf,image/*" multiple style={{ display: 'none' }} id="pdf-file-input" onChange={handleFileSelect} />
 				<label htmlFor="pdf-file-input" style={{ cursor: 'pointer' }}>
 					<div style={{ fontSize: '32px', marginBottom: '8px' }}>📁</div>
 					<div>{t('pdfPanel.dropHint')}</div>
 					<div style={{ fontSize: '11px', marginTop: '4px', opacity: 0.7 }}>{t('pdfPanel.clickToSelect')}</div>
 				</label>
-			</div>
+			</fieldset>
 
 			{state.files.length > 0 && (
 				<Card variant="default" padding="sm">
@@ -140,7 +170,7 @@ export const PDFPanel: React.FC = () => {
 									<div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--halo-text)' }}>📄 {file.name}</div>
 									<div style={{ fontSize: '10px', color: 'var(--halo-text-muted)' }}>{file.pageCount} {t('pdfPanel.pages')} • {formatSize(file.size)}</div>
 								</div>
-								<button onClick={() => handleRemoveFile(file.id)} style={{ padding: '4px 8px', background: 'transparent', border: 'none', fontSize: '14px', cursor: 'pointer', opacity: 0.6 }}>✕</button>
+								<button type="button" onClick={() => handleRemoveFile(file.id)} style={{ padding: '4px 8px', background: 'transparent', border: 'none', fontSize: '14px', cursor: 'pointer', opacity: 0.6 }}>✕</button>
 							</div>
 						))}
 					</div>
@@ -152,7 +182,7 @@ export const PDFPanel: React.FC = () => {
 					<div style={styles.label}>{t('pdfPanel.operation')}</div>
 					<div style={styles.opGrid}>
 						{OPERATIONS.map((op) => (
-							<button key={op.id} style={{ ...styles.opBtn, ...(state.selectedOperation === op.id ? styles.opActive : {}) }} onClick={() => handleSelectOp(op.id)}>
+							<button type="button" key={op.id} style={{ ...styles.opBtn, ...(state.selectedOperation === op.id ? styles.opActive : {}) }} onClick={() => handleSelectOp(op.id)}>
 								<span style={{ fontSize: '20px' }}>{op.icon}</span><span>{t(`pdfPanel.ops.${op.id}`)}</span>
 							</button>
 						))}
@@ -167,9 +197,9 @@ export const PDFPanel: React.FC = () => {
 
 			<div style={{ display: 'flex', gap: '8px' }}>
 				{result ? (
-					<button style={styles.actionBtn} onClick={handleDownload}>⬇️ {t('pdfPanel.buttons.download')}</button>
+					<button type="button" style={styles.actionBtn} onClick={handleDownload}>⬇️ {t('pdfPanel.buttons.download')}</button>
 				) : (
-					<button style={{ ...styles.actionBtn, ...(canExecute ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }} onClick={handleExecute} disabled={!canExecute}>
+					<button type="button" style={{ ...styles.actionBtn, ...(canExecute ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }} onClick={handleExecute} disabled={!canExecute}>
 						{state.processing ? `⏳ ${t('pdfPanel.buttons.processing')}` : `▶️ ${t('pdfPanel.process')}`}
 					</button>
 				)}

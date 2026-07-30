@@ -1,7 +1,7 @@
 // goal: PDF operation config panel
 // eff: Dynamic config UI based on selected operation
 
-import React from 'react';
+import type React from 'react';
 import { Card } from '@nexus/ui-kit';
 import type { PDFOperation } from './types';
 
@@ -36,7 +36,6 @@ const inputStyle: React.CSSProperties = {
 	color: 'var(--halo-text)', fontSize: '12px',
 };
 
-const selectStyle: React.CSSProperties = { ...inputStyle, cursor: 'pointer' };
 const labelStyle: React.CSSProperties = { fontSize: '11px', color: 'var(--halo-text-muted)', marginBottom: '4px', display: 'block' };
 
 export const ConfigPanel: React.FC<ConfigPanelProps> = ({ operation, config, setConfig, t }) => {
@@ -51,21 +50,21 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({ operation, config, set
 
 				{operation === 'split' && (
 					<div>
-						<label style={labelStyle}>{t('pdfPanel.splitRanges')}</label>
-						<input style={inputStyle} value={config.splitRanges} onChange={(e) => setConfig((c) => ({ ...c, splitRanges: e.target.value }))} placeholder={t('pdfPanel.placeholders.splitRange')} />
+						<label htmlFor="pdf-split-ranges" style={labelStyle}>{t('pdfPanel.splitRanges')}</label>
+						<input id="pdf-split-ranges" style={inputStyle} value={config.splitRanges} onChange={(e) => setConfig((c) => ({ ...c, splitRanges: e.target.value }))} placeholder={t('pdfPanel.placeholders.splitRange')} />
 					</div>
 				)}
 
 				{operation === 'extract' && (
 					<div>
-						<label style={labelStyle}>{t('pdfPanel.extractPages')}</label>
-						<input style={inputStyle} value={config.extractPages} onChange={(e) => setConfig((c) => ({ ...c, extractPages: e.target.value }))} placeholder={t('pdfPanel.placeholders.extractPages')} />
+						<label htmlFor="pdf-extract-pages" style={labelStyle}>{t('pdfPanel.extractPages')}</label>
+						<input id="pdf-extract-pages" style={inputStyle} value={config.extractPages} onChange={(e) => setConfig((c) => ({ ...c, extractPages: e.target.value }))} placeholder={t('pdfPanel.placeholders.extractPages')} />
 					</div>
 				)}
 
 			{operation === 'rotate' && (
 					<div>
-						<label style={labelStyle}>{t('pdfPanel.rotateAngle')}</label>
+						<div style={labelStyle}>{t('pdfPanel.rotateAngle')}</div>
 						<div style={{ display: 'inline-flex', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--halo-border)', background: 'var(--halo-bg-tertiary)' }}>
 							{[90, 180, 270].map((deg) => (
 								<button
@@ -89,19 +88,19 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({ operation, config, set
 				{operation === 'watermark' && (
 					<>
 						<div>
-							<label style={labelStyle}>{t('pdfPanel.watermarkText')}</label>
-							<input style={inputStyle} value={config.watermarkText} onChange={(e) => setConfig((c) => ({ ...c, watermarkText: e.target.value }))} />
+							<label htmlFor="pdf-watermark-text" style={labelStyle}>{t('pdfPanel.watermarkText')}</label>
+							<input id="pdf-watermark-text" style={inputStyle} value={config.watermarkText} onChange={(e) => setConfig((c) => ({ ...c, watermarkText: e.target.value }))} />
 						</div>
 						<div>
-							<label style={labelStyle}>{t('pdfPanel.watermarkOpacity')} ({Math.round(config.watermarkOpacity * 100)}%)</label>
-							<input type="range" min="0.1" max="1" step="0.1" value={config.watermarkOpacity} onChange={(e) => setConfig((c) => ({ ...c, watermarkOpacity: Number(e.target.value) }))} style={{ width: '100%' }} />
+							<label htmlFor="pdf-watermark-opacity" style={labelStyle}>{t('pdfPanel.watermarkOpacity')} ({Math.round(config.watermarkOpacity * 100)}%)</label>
+							<input id="pdf-watermark-opacity" type="range" min="0.1" max="1" step="0.1" value={config.watermarkOpacity} onChange={(e) => setConfig((c) => ({ ...c, watermarkOpacity: Number(e.target.value) }))} style={{ width: '100%' }} />
 						</div>
 					</>
 				)}
 
 				{operation === 'images-to-pdf' && (
 					<div>
-						<label style={labelStyle}>{t('pdfPanel.pageSize')}</label>
+						<div style={labelStyle}>{t('pdfPanel.pageSize')}</div>
 						<div style={{ display: 'inline-flex', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--halo-border)', background: 'var(--halo-bg-tertiary)' }}>
 							{(['A4', 'Letter', 'fit'] as const).map((size) => (
 								<button

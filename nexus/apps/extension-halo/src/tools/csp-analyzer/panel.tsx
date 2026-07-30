@@ -1,6 +1,7 @@
 // goal: CSP Analyzer panel UI
 
-import React, { useState, useMemo } from 'react';
+import type React from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { parseCsp, calculateScore } from './core';
 import { styles } from './panel.styles';
@@ -32,19 +33,21 @@ export const CspAnalyzerPanel: React.FC = () => {
 
 
             <div style={styles.list}>
-                {directives.map((d, i) => (
-                    <div key={i} style={d.isUnsafe ? styles.cardUnsafe : styles.card}>
+                {directives.map((d, i) => {
+                    // biome-ignore lint/suspicious/noArrayIndexKey: Parsed CSP directive order is the immutable source position for this stateless projection.
+                    return <div key={i} style={d.isUnsafe ? styles.cardUnsafe : styles.card}>
                         <div style={styles.name}>{d.name}</div>
                         <div style={styles.desc}>{d.description}</div>
                         <div style={styles.values}>
-                            {d.values.map((v, j) => (
-                                <span key={j} style={(v.includes('unsafe') || v === '*') ? styles.tagUnsafe : styles.tag}>
+                            {d.values.map((v, j) => {
+                                // biome-ignore lint/suspicious/noArrayIndexKey: Repeated CSP tokens are distinguished only by their immutable source position.
+                                return <span key={j} style={(v.includes('unsafe') || v === '*') ? styles.tagUnsafe : styles.tag}>
                                     {v}
-                                </span>
-                            ))}
+                                </span>;
+                            })}
                         </div>
-                    </div>
-                ))}
+                    </div>;
+                })}
             </div>
         </div>
     );

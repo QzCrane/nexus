@@ -46,14 +46,19 @@ function traverse(data: unknown, tokens: string[], index: number, results: unkno
 		return;
 	}
 
-	const token = tokens[index]!;
+	const token = tokens[index];
+	if (token === undefined) return;
 
 	if (token === '*') {
 		// Wildcard
 		if (Array.isArray(data)) {
-			data.forEach((item) => traverse(item, tokens, index + 1, results));
+			data.forEach((item) => {
+				traverse(item, tokens, index + 1, results);
+			});
 		} else if (typeof data === 'object' && data !== null) {
-			Object.values(data).forEach((val) => traverse(val, tokens, index + 1, results));
+			Object.values(data).forEach((value) => {
+				traverse(value, tokens, index + 1, results);
+			});
 		}
 	} else if (/^\d+$/.test(token)) {
 		// Array index

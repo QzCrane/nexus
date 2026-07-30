@@ -51,28 +51,29 @@ function formatNode(node: Element, level: number, indent: number): string {
 
 	// Self-closing if no children
 	if (!node.childNodes.length) {
-		return result + '/>';
+		return `${result}/>`;
 	}
 
 	result += '>';
 
 	// Check if only text content
-	const hasOnlyText = node.childNodes.length === 1 && node.childNodes[0]!.nodeType === Node.TEXT_NODE;
+	const onlyChild = node.firstChild;
+	const hasOnlyText = node.childNodes.length === 1 && onlyChild?.nodeType === Node.TEXT_NODE;
 	if (hasOnlyText) {
 		const text = node.textContent?.trim() || '';
-		return result + text + `</${node.tagName}>`;
+		return `${result + text}</${node.tagName}>`;
 	}
 
 	// Process children
 	result += '\n';
 	for (const child of Array.from(node.childNodes)) {
 		if (child.nodeType === Node.ELEMENT_NODE) {
-			result += formatNode(child as Element, level + 1, indent) + '\n';
+			result += `${formatNode(child as Element, level + 1, indent)}\n`;
 		} else if (child.nodeType === Node.TEXT_NODE) {
 			const text = child.textContent?.trim();
-			if (text) result += childPad + text + '\n';
+			if (text) result += `${childPad + text}\n`;
 		} else if (child.nodeType === Node.COMMENT_NODE) {
-			result += childPad + `<!--${child.textContent}-->` + '\n';
+			result += `${childPad}<!--${child.textContent}-->\n`;
 		}
 	}
 

@@ -53,7 +53,9 @@ export function scanPageMedia(): MediaItem[] {
 		const srcset = source.getAttribute('srcset');
 		if (srcset) {
 			// Parse srcset (take first URL)
-			const firstUrl = srcset.split(',')[0]!.trim().split(' ')[0]!;
+			const firstCandidate = srcset.split(',')[0];
+			if (!firstCandidate) return;
+			const firstUrl = firstCandidate.trim().split(/\s+/)[0];
 			if (firstUrl) {
 				const item = createMediaItem(firstUrl, 'picture');
 				if (item) items.push(item);
@@ -71,19 +73,14 @@ export function scanPageMedia(): MediaItem[] {
 function scanBackgroundImages(items: MediaItem[]): void {
 	const elements = document.querySelectorAll('*');
 	elements.forEach((el) => {
-		try {
-			const style = getComputedStyle(el);
-			const bg = style.backgroundImage;
-			if (bg && bg !== 'none') {
-				// Extract URL from url("...")
-				const match = bg.match(/url\(["']?([^"')]+)["']?\)/);
-				if (match && match[1] && !match[1].startsWith('data:')) {
-					const item = createMediaItem(match[1], 'background');
-					if (item) items.push(item);
-				}
+		const backgroundImage = getComputedStyle(el).backgroundImage;
+		if (backgroundImage && backgroundImage !== 'none') {
+			// Extract URL from url("...")
+			const match = backgroundImage.match(/url\(["']?([^"')]+)["']?\)/);
+			if (match?.[1] && !match[1].startsWith('data:')) {
+				const item = createMediaItem(match[1], 'background');
+				if (item) items.push(item);
 			}
-		} catch {
-			// Skip elements with access errors
 		}
 	});
 }

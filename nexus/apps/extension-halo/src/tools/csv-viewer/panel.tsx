@@ -1,18 +1,19 @@
 // goal: CSV Viewer panel UI - parse and display CSV
 
-import React, { useState, useMemo, useCallback } from 'react';
+import type React from 'react';
+import { useMemo, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { ParsedCsv } from './types';
-import { parseCsv, toCsv, detectDelimiter } from './core';
+import { parseCsv, detectDelimiter } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
 
 
 export const CsvViewerPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [input, setInput] = useToolState<string>('csv-viewer-input' as any, '');
-	const [delimiter, setDelimiter] = useToolState<string>('csv-viewer-delim' as any, ',');
+	const [input, setInput] = useToolState<string>('csv-viewer-input', '');
+	const [delimiter, setDelimiter] = useToolState<string>('csv-viewer-delim', ',');
 
 
 	// Parse CSV
@@ -26,7 +27,7 @@ export const CsvViewerPanel: React.FC = () => {
 		if (input) {
 			setDelimiter(detectDelimiter(input));
 		}
-	}, [input]);
+	}, [input, setDelimiter]);
 
 	// Copy as JSON
 	const handleCopyJson = useCallback(() => {
@@ -57,12 +58,12 @@ export const CsvViewerPanel: React.FC = () => {
 					<option value="	">{t('csvViewer.tab', { defaultValue: 'Tab' })}</option>
 					<option value="|">| ({t('csvViewer.pipe', { defaultValue: 'Pipe' })})</option>
 				</select>
-				<button style={{ ...styles.btn, background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text)' }} onClick={handleAutoDetect}>
+				<button type="button" style={{ ...styles.btn, background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text)' }} onClick={handleAutoDetect}>
 					🔍 {t('csvViewer.auto', { defaultValue: 'Auto' })}
 				</button>
 				{parsed && (
 					<>
-						<button style={styles.btn} onClick={handleCopyJson}>📋 {t('csvViewer.copyJson', { defaultValue: 'Copy JSON' })}</button>
+						<button type="button" style={styles.btn} onClick={handleCopyJson}>📋 {t('csvViewer.copyJson', { defaultValue: 'Copy JSON' })}</button>
 						<span style={styles.stats}>{parsed.rowCount} {t('csvViewer.rowsCols', { defaultValue: 'rows × cols' }).split('×')[0]} × {parsed.colCount} {t('csvViewer.rowsCols', { defaultValue: 'rows × cols' }).split('×')[1]}</span>
 					</>
 				)}
@@ -75,15 +76,22 @@ export const CsvViewerPanel: React.FC = () => {
 						<table style={styles.table}>
 							<thead>
 								<tr>
-									{parsed.headers.map((h, i) => <th key={i} style={styles.th}>{h || `Col ${i + 1}`}</th>)}
+									{parsed.headers.map((h, i) => {
+										// biome-ignore lint/suspicious/noArrayIndexKey: CSV columns have no identity beyond their fixed source coordinate.
+										return <th key={i} style={styles.th}>{h || `Col ${i + 1}`}</th>;
+									})}
 								</tr>
 							</thead>
 							<tbody>
-								{parsed.rows.slice(0, 100).map((row, i) => (
-									<tr key={i}>
-										{row.map((cell, j) => <td key={j} style={styles.td}>{cell}</td>)}
-									</tr>
-								))}
+								{parsed.rows.slice(0, 100).map((row, i) => {
+									// biome-ignore lint/suspicious/noArrayIndexKey: CSV rows are an immutable preview whose source row coordinate is the identity.
+									return <tr key={i}>
+										{row.map((cell, j) => {
+											// biome-ignore lint/suspicious/noArrayIndexKey: CSV cells are identified by their fixed column coordinate within this row.
+											return <td key={j} style={styles.td}>{cell}</td>;
+										})}
+									</tr>;
+								})}
 							</tbody>
 						</table>
 						{parsed.rowCount > 100 && (

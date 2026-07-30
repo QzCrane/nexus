@@ -1,7 +1,7 @@
 // goal: Premium styles for ToolManager component
 // eff: Implements glassmorphism, smooth transitions, and vibrancy
 
-import React from 'react';
+import type React from 'react';
 
 export const styles: Record<string, React.CSSProperties> = {
 	wrapper: {

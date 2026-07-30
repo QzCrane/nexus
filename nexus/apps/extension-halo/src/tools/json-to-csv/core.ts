@@ -8,7 +8,9 @@ export function jsonToCsv(json: unknown[], delimiter = ','): string {
 	const keys = new Set<string>();
 	json.forEach((item) => {
 		if (typeof item === 'object' && item !== null) {
-			Object.keys(item).forEach((k) => keys.add(k));
+			Object.keys(item).forEach((key) => {
+				keys.add(key);
+			});
 		}
 	});
 
@@ -48,7 +50,7 @@ export function parseJson(input: string): { data: unknown[] | null; error: strin
 			return { data: null, error: 'Input must be a JSON array' };
 		}
 		return { data: parsed, error: null };
-	} catch (e) {
+	} catch (_e) {
 		return { data: null, error: 'Invalid JSON' };
 	}
 }

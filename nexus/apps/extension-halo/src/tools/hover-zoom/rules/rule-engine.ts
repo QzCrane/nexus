@@ -10,10 +10,9 @@ export class RuleEngine {
 	/** Register a rule */
 	register(rule: SiteRule) {
 		for (const host of rule.hosts) {
-			if (!this.rules.has(host)) {
-				this.rules.set(host, []);
-			}
-			this.rules.get(host)!.push(rule);
+			const hostRules = this.rules.get(host) ?? [];
+			hostRules.push(rule);
+			this.rules.set(host, hostRules);
 		}
 	}
 

@@ -53,22 +53,22 @@ export const ClassicHeader: React.FC<ClassicHeaderProps> = ({
 			<h1 style={commonStyles.title}>HALO</h1>
 		</div>
 		<div style={commonStyles.headerActions}>
-			<button
+			<button type="button"
 				style={{ ...commonStyles.iconBtn, fontSize: '12px', width: 'auto', padding: '0 6px' }}
 				onClick={onToggleLabels}
 				title={showLabels ? t('layout.hideLabels') : t('layout.showLabels')}
 			>
 				{showLabels ? '📝' : '✖️'}
 			</button>
-			<button style={commonStyles.iconBtn} onClick={onToggleMode} title={t('layout.mode') + ': ' + t('layout.classic')}>
+			<button type="button" style={commonStyles.iconBtn} onClick={onToggleMode} title={`${t('layout.mode')}: ${t('layout.classic')}`}>
 				📑
 			</button>
 			{moduleStoreIcon && (
-				<button style={commonStyles.iconBtn} onClick={() => onSelectTool('module-store')} title={t('tools.module-store.name')}>
+				<button type="button" style={commonStyles.iconBtn} onClick={() => onSelectTool('module-store')} title={t('tools.module-store.name')}>
 					{moduleStoreIcon}
 				</button>
 			)}
-			<button style={commonStyles.iconBtn} onClick={() => onSelectTool('settings')} title={t('common.settings')}>
+			<button type="button" style={commonStyles.iconBtn} onClick={() => onSelectTool('settings')} title={t('common.settings')}>
 				⚙️
 			</button>
 		</div>
@@ -132,7 +132,7 @@ export const OverlayPanel: React.FC<OverlayPanelProps> = ({
 		>
 			<header style={commonStyles.header}>
 				<div style={commonStyles.headerContent}>
-					<button 
+					<button type="button"
 						style={{ ...commonStyles.iconBtn, width: 'auto', padding: '0 8px', gap: '4px' }}
 						onClick={onBack}
 						title={t('common.back')}

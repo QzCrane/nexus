@@ -10,6 +10,7 @@ import {
 	audioGraphSignature,
 	audioConfigToGraphConfig,
 } from '@nexus/audio-engine';
+import { requireValue } from './helpers/require-value';
 
 describe('shared sparse audio graph router', () => {
 	test('keeps page volume and media mute out of processor graphs', () => {
@@ -98,10 +99,22 @@ describe('shared sparse audio graph router', () => {
 		});
 		expect(updated.graphSignature).toBe(first.graphSignature);
 		expect(context.created.biquad).toBe(filterCount);
-		const master = context.nodes.filter((node) => node.kind === 'gain')[1]!;
-		const eq = context.nodes.find((node) => node.kind === 'biquad' && node.type === 'peaking')!;
-		const panner = context.nodes.find((node) => node.kind === 'panner')!;
-		const delay = context.nodes.find((node) => node.kind === 'delay')!;
+		const master = requireValue(
+			context.nodes.filter((node) => node.kind === 'gain')[1],
+			'Expected the processor graph to contain a master gain node',
+		);
+		const eq = requireValue(
+			context.nodes.find((node) => node.kind === 'biquad' && node.type === 'peaking'),
+			'Expected the processor graph to contain a peaking EQ node',
+		);
+		const panner = requireValue(
+			context.nodes.find((node) => node.kind === 'panner'),
+			'Expected the processor graph to contain a stereo panner',
+		);
+		const delay = requireValue(
+			context.nodes.find((node) => node.kind === 'delay'),
+			'Expected the processor graph to contain a delay node',
+		);
 		expect(master.gain.ramps.at(-1)).toMatchObject({ value: 2 });
 		expect(eq.gain.ramps).toContainEqual({ value: 6, endTime: 1.015 });
 		expect(panner.pan.ramps).toContainEqual({ value: -0.5, endTime: 1.015 });
@@ -161,7 +174,10 @@ describe('shared sparse audio graph router', () => {
 		expect(newerSnapshot.normalizedActualConfig.delay).toBe(80);
 		expect(latestSnapshot.normalizedActualConfig.delay).toBe(80);
 		expect(context.created.delay).toBe(1);
-		const delay = context.nodes.find((node) => node.kind === 'delay')!;
+		const delay = requireValue(
+			context.nodes.find((node) => node.kind === 'delay'),
+			'Expected the coalesced graph to contain a delay node',
+		);
 		expect(delay.delayTime.ramps.map(({ value }) => value)).toEqual([0.08]);
 	});
 });

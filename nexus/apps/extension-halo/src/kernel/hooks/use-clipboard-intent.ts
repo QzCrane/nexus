@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react';
 import type { ToolId } from '../core/types';
 
+function isValidJson(value: string): boolean {
+	try {
+		JSON.parse(value);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 /**
  * goal: Detect high-intent content in clipboard and suggest a matching tool
  * logic: URL -> url-tools/devtools, Color -> color-picker, JSON -> json-formatter, etc.
@@ -15,12 +24,13 @@ export function useClipboardIntent() {
 				if (!text) return;
 
 				// 1. JSON
-				if ((text.startsWith('{') && text.endsWith('}')) || (text.startsWith('[') && text.endsWith(']'))) {
-					try {
-						JSON.parse(text);
-						setIntent('json-formatter' as ToolId);
-						return;
-					} catch { /* not valid json */ }
+				if (
+					((text.startsWith('{') && text.endsWith('}')) ||
+						(text.startsWith('[') && text.endsWith(']'))) &&
+					isValidJson(text)
+				) {
+					setIntent('json-formatter' as ToolId);
+					return;
 				}
 
 				// 2. URL
@@ -47,8 +57,9 @@ export function useClipboardIntent() {
 					return;
 				}
 
-			} catch (err) {
-				// Clipboard access might be denied
+			} catch {
+				// Permission denial means there is no actionable clipboard intent.
+				setIntent(null);
 			}
 		};
 

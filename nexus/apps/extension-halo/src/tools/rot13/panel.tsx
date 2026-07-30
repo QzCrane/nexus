@@ -1,6 +1,7 @@
 // goal: ROT13 panel UI
 
-import React, { useState, useMemo, useCallback } from 'react';
+import type React from 'react';
+import { useMemo, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import { rot13, rot47, rotN } from './core';
 import { styles } from './panel.styles';
@@ -11,9 +12,9 @@ type Mode = 'ROT13' | 'ROT47' | 'Custom';
 
 export const Rot13Panel: React.FC = () => {
 	const { t } = useTranslation();
-	const [input, setInput] = useToolState<string>('rot13-input' as any, '');
-    const [mode, setMode] = useToolState<Mode>('rot13-mode' as any, 'ROT13');
-    const [shift, setShift] = useToolState<number>('rot13-shift' as any, 13);
+	const [input, setInput] = useToolState<string>('rot13-input', '');
+    const [mode, setMode] = useToolState<Mode>('rot13-mode', 'ROT13');
+    const [shift, setShift] = useToolState<number>('rot13-shift', 13);
 
 
     const output = useMemo(() => {
@@ -34,7 +35,7 @@ export const Rot13Panel: React.FC = () => {
 		<div style={styles.wrapper}>
             <div style={styles.toolbar}>
                 {(['ROT13', 'ROT47', 'Custom'] as Mode[]).map(m => (
-                    <button 
+                    <button type="button"
                         key={m} 
                         style={mode === m ? styles.activeBtn : styles.btn} 
                         onClick={() => setMode(m)}
@@ -51,7 +52,7 @@ export const Rot13Panel: React.FC = () => {
                         type="range" 
                         min="1" max="25" 
                         value={shift} 
-                        onChange={(e) => setShift(parseInt(e.target.value))} 
+                        onChange={(e) => setShift(parseInt(e.target.value, 10))}
                         style={styles.slider} 
                     />
                 </div>
@@ -74,7 +75,7 @@ export const Rot13Panel: React.FC = () => {
 				<textarea style={styles.textarea} value={output} readOnly />
 			</div>
 
-            <button style={styles.btn} onClick={handleCopy}>📋 {t('rot13.copy', { defaultValue: 'Copy Result' })}</button>
+            <button type="button" style={styles.btn} onClick={handleCopy}>📋 {t('rot13.copy', { defaultValue: 'Copy Result' })}</button>
 		</div>
 	);
 };

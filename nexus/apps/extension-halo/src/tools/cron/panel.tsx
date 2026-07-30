@@ -1,6 +1,7 @@
 // goal: Cron panel UI - cron expression parser and next run times
 
-import React, { useState, useMemo } from 'react';
+import type React from 'react';
+import { useMemo } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { parseCron, describeCron, getNextRuns, CRON_PRESETS } from './core';
@@ -66,7 +67,7 @@ export const CronPanel: React.FC = () => {
 				<div style={styles.label}>{t('cron.presets')}</div>
 				<div style={styles.presets}>
 					{CRON_PRESETS.map((preset) => (
-						<button key={preset.id} style={styles.preset} onClick={() => setCron(preset.cron)}>
+						<button type="button" key={preset.id} style={styles.preset} onClick={() => setCron(preset.cron)}>
 							{preset.name}
 						</button>
 					))}
@@ -78,8 +79,8 @@ export const CronPanel: React.FC = () => {
 				<Card variant="default" padding="sm">
 					<div style={styles.label}>{t('cron.nextRuns')}</div>
 					<div style={styles.nextRuns}>
-						{nextRuns.map((run, i) => (
-							<div key={i} style={styles.runItem}>
+						{nextRuns.map((run) => (
+							<div key={run.toISOString()} style={styles.runItem}>
 								{run.toLocaleString()}
 							</div>
 						))}

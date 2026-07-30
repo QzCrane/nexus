@@ -2,25 +2,26 @@
 
 export interface ScrollSettings {
 	enabled: boolean;
-	// Core parameters (matching SmoothScroll extension)
-	stepSize: number; // px, default 100
+	// Core parameters
+	stepSize: number; // px, default 300
 	animationTime: number; // ms, default 400
-	accelerationMax: number; // multiplier, default 3
+	accelerationMax: number; // response-gain multiplier, never distance, default 3
 	accelerationDelta: number; // ms between events, default 50
-	pulseScale: number; // tail ratio, default 4
-	arrowKeyStep: number; // px, default 50
+	pulseScale: number; // bounded coarse-response intensity, default 4
+	arrowKeyStep: number; // px, default 200
 	// Input sources
 	mouseWheel: boolean;
 	keyboard: boolean;
 	touchpad: boolean;
 	// Features
 	middleClickAutoScroll: boolean;
-	fixedBackground: boolean;
+	respectReducedMotion: boolean;
 	// Easing
 	easing: EasingType;
 }
 
 export type EasingType = 'linear' | 'ease' | 'ease-out' | 'spring';
+export type ScrollInputMode = 'fine' | 'coarse';
 
 export const DEFAULT_SETTINGS: ScrollSettings = {
 	enabled: true,
@@ -28,13 +29,13 @@ export const DEFAULT_SETTINGS: ScrollSettings = {
 	animationTime: 400,
 	accelerationMax: 3,
 	accelerationDelta: 50,
-	pulseScale: 1,
+	pulseScale: 4,
 	arrowKeyStep: 200,
 	mouseWheel: true,
 	keyboard: true,
 	touchpad: true,
 	middleClickAutoScroll: true,
-	fixedBackground: false,
+	respectReducedMotion: false,
 	easing: 'spring',
 };
 
@@ -57,3 +58,56 @@ export const PROFILES = {
 
 // Custom profile storage key
 export const CUSTOM_PROFILE_KEY = 'HALO_SMOOTH_SCROLL_CUSTOM';
+
+const EASING_VALUES = new Set<EasingType>(['linear', 'ease', 'ease-out', 'spring']);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function booleanValue(
+	value: unknown,
+	fallback: boolean,
+): boolean {
+	return typeof value === 'boolean' ? value : fallback;
+}
+
+function numberValue(
+	value: unknown,
+	fallback: number,
+	min: number,
+	max: number,
+): number {
+	return typeof value === 'number' && Number.isFinite(value)
+		? Math.min(max, Math.max(min, value))
+		: fallback;
+}
+
+export function normalizeScrollSettings(value: unknown): ScrollSettings {
+	const input = isRecord(value) ? value : {};
+	const easing = typeof input.easing === 'string' && EASING_VALUES.has(input.easing as EasingType)
+		? input.easing as EasingType
+		: DEFAULT_SETTINGS.easing;
+
+	return {
+		enabled: booleanValue(input.enabled, DEFAULT_SETTINGS.enabled),
+		stepSize: numberValue(input.stepSize, DEFAULT_SETTINGS.stepSize, 10, 500),
+		animationTime: numberValue(input.animationTime, DEFAULT_SETTINGS.animationTime, 50, 2000),
+		accelerationMax: numberValue(input.accelerationMax, DEFAULT_SETTINGS.accelerationMax, 1, 10),
+		accelerationDelta: numberValue(input.accelerationDelta, DEFAULT_SETTINGS.accelerationDelta, 10, 300),
+		pulseScale: numberValue(input.pulseScale, DEFAULT_SETTINGS.pulseScale, 1, 10),
+		arrowKeyStep: numberValue(input.arrowKeyStep, DEFAULT_SETTINGS.arrowKeyStep, 10, 200),
+		mouseWheel: booleanValue(input.mouseWheel, DEFAULT_SETTINGS.mouseWheel),
+		keyboard: booleanValue(input.keyboard, DEFAULT_SETTINGS.keyboard),
+		touchpad: booleanValue(input.touchpad, DEFAULT_SETTINGS.touchpad),
+		middleClickAutoScroll: booleanValue(
+			input.middleClickAutoScroll,
+			DEFAULT_SETTINGS.middleClickAutoScroll,
+		),
+		respectReducedMotion: booleanValue(
+			input.respectReducedMotion,
+			DEFAULT_SETTINGS.respectReducedMotion,
+		),
+		easing,
+	};
+}

@@ -1,6 +1,7 @@
 // goal: Table Extractor panel UI - extract and export tables
 
-import React, { useState, useCallback } from 'react';
+import type React from 'react';
+import { useState, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import type { TableData } from './types';
 import { extractTables, tableToCsv, tableToJson } from './core';
@@ -10,9 +11,9 @@ import { useToolState } from '../../kernel';
 
 export const TableExtractorPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [tables, setTables] = useToolState<TableData[]>('table-extractor-data' as any, []);
+	const [tables, setTables] = useToolState<TableData[]>('table-extractor-data', []);
 	const [loading, setLoading] = useState(false);
-	const [scanned, setScanned] = useToolState<boolean>('table-extractor-scanned' as any, false);
+	const [scanned, setScanned] = useToolState<boolean>('table-extractor-scanned', false);
 
 
 	// Extract tables
@@ -22,7 +23,7 @@ export const TableExtractorPanel: React.FC = () => {
 		setTables(result);
 		setLoading(false);
 		setScanned(true);
-	}, []);
+	}, [setTables, setScanned]);
 
 	// Copy as CSV
 	const handleCopyCsv = useCallback((table: TableData) => {
@@ -49,7 +50,7 @@ export const TableExtractorPanel: React.FC = () => {
 	return (
 		<div style={styles.wrapper}>
 			{/* Extract Button */}
-			<button style={styles.btn} onClick={handleExtract} disabled={loading}>
+			<button type="button" style={styles.btn} onClick={handleExtract} disabled={loading}>
 				{loading ? '⏳' : '📋'} {t('tableExtractor.extract')}
 			</button>
 
@@ -61,28 +62,36 @@ export const TableExtractorPanel: React.FC = () => {
 				tables.length === 0 ? (
 					<div style={styles.empty}>📊 {t('tableExtractor.noTables')}</div>
 				) : (
-					tables.map((table, i) => (
-						<div key={i} style={styles.tableCard}>
+					tables.map((table, i) => {
+						// biome-ignore lint/suspicious/noArrayIndexKey: Extracted tables are an immutable DOM-order snapshot, so source position is the table identity.
+						return <div key={i} style={styles.tableCard}>
 							<div style={styles.tableHeader}>
 								<div>
 									<div style={styles.tableTitle}>{table.caption || `Table ${i + 1}`}</div>
 									<div style={styles.tableInfo}>{table.rows.length} rows × {table.headers.length || table.rows[0]?.length || 0} cols</div>
 								</div>
 								<div style={styles.actions}>
-									<button style={styles.actionBtn} onClick={() => handleCopyCsv(table)}>CSV</button>
-									<button style={styles.actionBtn} onClick={() => handleCopyJson(table)}>JSON</button>
-									<button style={styles.actionBtn} onClick={() => handleDownload(table, i)}>⬇️</button>
+									<button type="button" style={styles.actionBtn} onClick={() => handleCopyCsv(table)}>CSV</button>
+									<button type="button" style={styles.actionBtn} onClick={() => handleCopyJson(table)}>JSON</button>
+									<button type="button" style={styles.actionBtn} onClick={() => handleDownload(table, i)}>⬇️</button>
 								</div>
 							</div>
 							<div style={styles.preview}>
 								<table style={styles.table}>
 									{table.headers.length > 0 && (
-										<thead><tr>{table.headers.map((h, j) => <th key={j} style={styles.th}>{h}</th>)}</tr></thead>
+										<thead><tr>{table.headers.map((h, j) => {
+											// biome-ignore lint/suspicious/noArrayIndexKey: Header cells are identified by their fixed source column coordinate.
+											return <th key={j} style={styles.th}>{h}</th>;
+										})}</tr></thead>
 									)}
 									<tbody>
-										{table.rows.slice(0, 5).map((row, j) => (
-											<tr key={j}>{row.map((cell, k) => <td key={k} style={styles.td}>{cell}</td>)}</tr>
-										))}
+										{table.rows.slice(0, 5).map((row, j) => {
+											// biome-ignore lint/suspicious/noArrayIndexKey: Preview rows are identified by their fixed source row coordinate.
+											return <tr key={j}>{row.map((cell, k) => {
+												// biome-ignore lint/suspicious/noArrayIndexKey: Preview cells are identified by their fixed column coordinate within this row.
+												return <td key={k} style={styles.td}>{cell}</td>;
+											})}</tr>;
+										})}
 									</tbody>
 								</table>
 								{table.rows.length > 5 && (
@@ -91,8 +100,8 @@ export const TableExtractorPanel: React.FC = () => {
 									</div>
 								)}
 							</div>
-						</div>
-					))
+						</div>;
+					})
 				)
 			)}
 

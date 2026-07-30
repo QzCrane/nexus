@@ -1,7 +1,7 @@
 // goal: Scroll Parameters sub-component
 // eff: Extracted to separate file
 
-import React from 'react';
+import type React from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { ScrollSettings } from './types';
@@ -23,12 +23,12 @@ export const ScrollParameters: React.FC<ScrollParametersProps> = ({ settings, up
 
 				<div style={styles.row}>
 					<div><div style={styles.label}>{t('smoothScroll.stepSize')}</div><div style={styles.sublabel}>{t('smoothScroll.units.px')}</div></div>
-					<input type="number" value={settings.stepSize} onChange={(e) => updateSetting('stepSize', parseInt(e.target.value) || 100)} style={styles.input} disabled={!settings.enabled} min={10} max={500} />
+					<input type="number" value={settings.stepSize} onChange={(e) => updateSetting('stepSize', parseInt(e.target.value, 10) || 100)} style={styles.input} disabled={!settings.enabled} min={10} max={500} />
 				</div>
 
 				<div style={styles.row}>
 					<div><div style={styles.label}>{t('smoothScroll.animationTime')}</div><div style={styles.sublabel}>{t('smoothScroll.units.ms')}</div></div>
-					<input type="number" value={settings.animationTime} onChange={(e) => updateSetting('animationTime', parseInt(e.target.value) || 400)} style={styles.input} disabled={!settings.enabled} min={50} max={2000} />
+					<input type="number" value={settings.animationTime} onChange={(e) => updateSetting('animationTime', parseInt(e.target.value, 10) || 400)} style={styles.input} disabled={!settings.enabled} min={50} max={2000} />
 				</div>
 
 				<div style={styles.row}>
@@ -38,7 +38,7 @@ export const ScrollParameters: React.FC<ScrollParametersProps> = ({ settings, up
 
 				<div style={styles.row}>
 					<div><div style={styles.label}>{t('smoothScroll.accelerationDelta')}</div><div style={styles.sublabel}>{t('smoothScroll.units.ms')}</div></div>
-					<input type="number" value={settings.accelerationDelta} onChange={(e) => updateSetting('accelerationDelta', parseInt(e.target.value) || 50)} style={styles.input} disabled={!settings.enabled} min={10} max={300} />
+					<input type="number" value={settings.accelerationDelta} onChange={(e) => updateSetting('accelerationDelta', parseInt(e.target.value, 10) || 50)} style={styles.input} disabled={!settings.enabled} min={10} max={300} />
 				</div>
 
 				<div style={styles.row}>
@@ -48,7 +48,7 @@ export const ScrollParameters: React.FC<ScrollParametersProps> = ({ settings, up
 
 				<div style={styles.row}>
 					<div><div style={styles.label}>{t('smoothScroll.arrowKeyStep')}</div><div style={styles.sublabel}>{t('smoothScroll.units.px')}</div></div>
-					<input type="number" value={settings.arrowKeyStep} onChange={(e) => updateSetting('arrowKeyStep', parseInt(e.target.value) || 50)} style={styles.input} disabled={!settings.enabled} min={10} max={200} />
+					<input type="number" value={settings.arrowKeyStep} onChange={(e) => updateSetting('arrowKeyStep', parseInt(e.target.value, 10) || 50)} style={styles.input} disabled={!settings.enabled} min={10} max={200} />
 				</div>
 
 				<div style={styles.row}>
@@ -68,7 +68,7 @@ export const ScrollParameters: React.FC<ScrollParametersProps> = ({ settings, up
 								}}
 								onClick={() => settings.enabled && updateSetting('easing', opt.value)}
 							>
-								{t(`smoothScroll.easingOptions.${opt.i18nKey}` as any)}
+								{t(`smoothScroll.easingOptions.${opt.i18nKey}`)}
 							</button>
 						))}
 					</div>

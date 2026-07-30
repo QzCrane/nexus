@@ -1,8 +1,8 @@
 // goal: Enhanced floating image/video viewer (main entry)
 // eff: Orchestrates layout, transform, info, and media display
 
-import { HoverZoomSettings } from '../../types';
-import { injectStyles, createViewerDOM, ViewerDOM } from '../viewer-dom';
+import type { HoverZoomSettings } from '../../types';
+import { injectStyles, createViewerDOM, type ViewerDOM } from '../viewer-dom';
 import type { EnhancedResult } from '../resolvers/rule-resolver';
 import { TransformController } from './transform';
 import { LoadingOverlay } from './loading-overlay';
@@ -156,6 +156,7 @@ export class HoverZoomViewer {
 		}
 		fallbackToThumbnail(
 			this.dom,
+			this.settings,
 			source,
 			mouseX,
 			mouseY,

@@ -35,7 +35,9 @@ export async function updateSnippet(id: string, data: Partial<Omit<Snippet, 'id'
 	const snippets = await getSnippets();
 	const idx = snippets.findIndex((s) => s.id === id);
 	if (idx === -1) return null;
-	snippets[idx] = { ...snippets[idx]!, ...data, updatedAt: Date.now() };
+	const current = snippets[idx];
+	if (!current) return null;
+	snippets[idx] = { ...current, ...data, updatedAt: Date.now() };
 	await saveSnippets(snippets);
 	return snippets[idx] ?? null;
 }
@@ -69,7 +71,11 @@ export function filterSnippets(snippets: Snippet[], filter: SnippetFilter): Snip
 /** Get all unique tags from snippets */
 export function getAllTags(snippets: Snippet[]): string[] {
 	const tags = new Set<string>();
-	snippets.forEach((s) => s.tags.forEach((t) => tags.add(t)));
+	for (const snippet of snippets) {
+		for (const tag of snippet.tags) {
+			tags.add(tag);
+		}
+	}
 	return Array.from(tags).sort();
 }
 

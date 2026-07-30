@@ -7,6 +7,7 @@ export const en = {
 		add: 'Add',
 		name: 'Account Name',
 		secretOrUri: 'Secret Key or otpauth:// URI',
-		noAccounts: 'No 2FA accounts added'
+		noAccounts: 'No 2FA accounts added',
+		generationFailed: 'Invalid secret or TOTP parameters'
 	}
 };

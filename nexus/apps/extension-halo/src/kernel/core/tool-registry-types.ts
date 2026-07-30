@@ -42,6 +42,7 @@ export interface PluginMeta {
 	name?: string;
 	description?: string;
 	version?: string;
+	isUserScript?: boolean;
 }
 
 // Legacy aliases for backward compatibility

@@ -74,6 +74,7 @@ export function getWebsiteIconUrl(
     }
   } catch {
     // Invalid/missing page URLs may still carry a browser-provided HTTP icon.
+    return direct || fallback;
   }
 
   return direct || fallback;

@@ -1,6 +1,7 @@
 // goal: JWT sub-panel component
 
-import React, { useState, useCallback } from 'react';
+import type React from 'react';
+import { useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { decodeJWT, verifyJWTHS, createJWTHS } from './core';
@@ -10,23 +11,23 @@ import { useToolState } from '../../kernel';
 
 export const JWTPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [token, setToken] = useToolState<string>('crypto-jwt-token' as any, '');
-	const [secret, setSecret] = useToolState<string>('crypto-jwt-secret' as any, '');
-	const [result, setResult] = useToolState<{ header?: object; payload?: object; isValid?: boolean; error?: string } | null>('crypto-jwt-res' as any, null);
-	const [createMode, setCreateMode] = useToolState<boolean>('crypto-jwt-mode' as any, false);
-	const [payloadInput, setPayloadInput] = useToolState<string>('crypto-jwt-payload' as any, '{\n  "sub": "1234567890",\n  "name": "John Doe"\n}');
+	const [token, setToken] = useToolState<string>('crypto-jwt-token', '');
+	const [secret, setSecret] = useToolState<string>('crypto-jwt-secret', '');
+	const [result, setResult] = useToolState<{ header?: object; payload?: object; isValid?: boolean; error?: string } | null>('crypto-jwt-res', null);
+	const [createMode, setCreateMode] = useToolState<boolean>('crypto-jwt-mode', false);
+	const [payloadInput, setPayloadInput] = useToolState<string>('crypto-jwt-payload', '{\n  "sub": "1234567890",\n  "name": "John Doe"\n}');
 
 
 	const handleDecode = useCallback(() => {
 		const decoded = decodeJWT(token);
 		setResult({ header: decoded.header, payload: decoded.payload, error: decoded.error });
-	}, [token]);
+	}, [token, setResult]);
 
 	const handleVerify = useCallback(async () => {
 		if (!secret) return;
 		const verified = await verifyJWTHS(token, secret);
 		setResult({ header: verified.header, payload: verified.payload, isValid: verified.isValid, error: verified.error });
-	}, [token, secret]);
+	}, [token, secret, setResult]);
 
 	const handleCreate = useCallback(async () => {
 		try {
@@ -37,15 +38,15 @@ export const JWTPanel: React.FC = () => {
 		} catch (e) {
 			setResult({ error: e instanceof Error ? e.message : 'Invalid payload JSON' });
 		}
-	}, [payloadInput, secret]);
+	}, [payloadInput, secret, setToken, setResult]);
 
 	return (
 		<div style={styles.wrapper}>
 			<div style={styles.row}>
-				<button style={{ ...styles.btnSecondary, ...(createMode ? {} : { background: 'var(--halo-accent)', color: '#fff' }) }} onClick={() => setCreateMode(false)}>
+				<button type="button" style={{ ...styles.btnSecondary, ...(createMode ? {} : { background: 'var(--halo-accent)', color: '#fff' }) }} onClick={() => setCreateMode(false)}>
 					{t('crypto.jwt.decode')}
 				</button>
-				<button style={{ ...styles.btnSecondary, ...(createMode ? { background: 'var(--halo-accent)', color: '#fff' } : {}) }} onClick={() => setCreateMode(true)}>
+				<button type="button" style={{ ...styles.btnSecondary, ...(createMode ? { background: 'var(--halo-accent)', color: '#fff' } : {}) }} onClick={() => setCreateMode(true)}>
 					{t('crypto.jwt.create')}
 				</button>
 			</div>
@@ -60,7 +61,7 @@ export const JWTPanel: React.FC = () => {
 						<span style={styles.label}>{t('crypto.jwt.secret')}</span>
 						<input style={styles.input} value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={t('crypto.jwt.secretPlaceholder')} />
 					</div>
-					<button style={styles.btn} onClick={handleCreate}>{t('crypto.jwt.generate')}</button>
+					<button type="button" style={styles.btn} onClick={handleCreate}>{t('crypto.jwt.generate')}</button>
 				</>
 			) : (
 				<>
@@ -69,9 +70,9 @@ export const JWTPanel: React.FC = () => {
 						<textarea style={styles.textarea} value={token} onChange={(e) => setToken(e.target.value)} placeholder={t('crypto.jwt.placeholderToken', { defaultValue: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' })} />
 					</div>
 					<div style={styles.row}>
-						<button style={styles.btn} onClick={handleDecode}>{t('crypto.jwt.decode')}</button>
+						<button type="button" style={styles.btn} onClick={handleDecode}>{t('crypto.jwt.decode')}</button>
 						<input style={{ ...styles.input, flex: 1 }} value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={t('crypto.jwt.secretPlaceholder')} />
-						<button style={styles.btnSecondary} onClick={handleVerify}>{t('crypto.jwt.verify')}</button>
+						<button type="button" style={styles.btnSecondary} onClick={handleVerify}>{t('crypto.jwt.verify')}</button>
 					</div>
 				</>
 			)}
@@ -80,7 +81,7 @@ export const JWTPanel: React.FC = () => {
 				<Card variant="default" padding="sm">
 					{result.isValid !== undefined && (
 						<div style={result.isValid ? styles.success : styles.error}>
-							{result.isValid ? '✓ ' + t('crypto.jwt.valid') : '✗ ' + t('crypto.jwt.invalid')}
+							{result.isValid ? `✓ ${t('crypto.jwt.valid')}` : `✗ ${t('crypto.jwt.invalid')}`}
 						</div>
 					)}
 					{result.error && <div style={styles.error}>{result.error}</div>}

@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { TEXT, TEXT_MUTED } from './shared';
+import { TEXT_MUTED } from './shared';
 
 export const layoutStyles: Record<string, CSSProperties> = {
 	wrapper: {

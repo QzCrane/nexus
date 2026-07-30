@@ -27,7 +27,7 @@ export function getExtFromUrl(url: string): string {
 	try {
 		const pathname = new URL(url).pathname;
 		const match = pathname.match(/\.([a-zA-Z0-9]+)(?:\?|$)/);
-		return match ? match[1]!.toLowerCase() : '';
+		return match?.[1]?.toLowerCase() ?? '';
 	} catch {
 		return '';
 	}
@@ -85,7 +85,7 @@ export function filterMedia(items: MediaItem[], config: FilterConfig): MediaItem
 		if (seen.has(item.url)) return false;
 		seen.add(item.url);
 		// Type filter
-		if (!config.types.has(item.type)) return false;
+		if (!config.types.includes(item.type)) return false;
 		// Size filter
 		if (item.size > 0 && item.size < config.minSize) return false;
 		// Data URL filter

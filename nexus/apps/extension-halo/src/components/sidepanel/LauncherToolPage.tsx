@@ -1,7 +1,7 @@
 // goal: Launcher tool page with taskbar (via Portal) and panel renderer
 // eff: Pure content-area renderer for the second page slide
 
-import React from 'react';
+import type React from 'react';
 import { useTranslation } from '../../i18n';
 import type { ToolId, HaloSettings } from '../../kernel';
 import { ToolPanelRenderer } from '../core/tool-panel-renderer';

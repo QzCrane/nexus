@@ -44,6 +44,7 @@ import {
 	claimHotkeyActualOSDGesture,
 	freezeHotkeyTargetOSD,
 	hideOSD,
+	ownsHotkeyActualOSDGesture,
 	releaseHotkeyTargetOSD,
 	showHotkeyActualOSD,
 } from '../ui/osd';
@@ -70,10 +71,11 @@ const MAX_REPEAT_BURST_PULSES = 160;
 const REPEAT_EXECUTION_INTERVAL_MS = 50;
 let keydownDisposer: (() => void) | null = null;
 let contentSettings: Pick<SettingsManager, 'get'> | undefined;
-let feedbackState: Pick<
+type FeedbackState = Pick<
 	PolicyExecutorState,
 	'appliedConfig' | 'actualMode' | 'phase'
-> | undefined;
+>;
+let feedbackState: FeedbackState | undefined;
 
 function cancelActiveBindings(): void {
 	for (const held of activeBindingsByCode.values()) {
@@ -142,6 +144,8 @@ export async function initHotkeyListener(
 
 function handleSettingsEvent(message: unknown): false {
 	if (isSpectraEventEnvelope(message) && message.type === 'spectra.hotkey.target.feedback') {
+		if (message.payload.gesture
+			&& !ownsHotkeyActualOSDGesture(message.payload.gesture)) return false;
 		const options = message.payload.targetTabId === message.tabId
 			? {}
 			: {
@@ -176,7 +180,10 @@ async function loadSettings(): Promise<void> {
 	try {
 		const result = await sendSpectraRequest('spectra.hotkeys.get', {});
 		if (result.ok) settings = result.data;
-	} catch { }
+	} catch (error) {
+		settings = DEFAULT_HOTKEY_SETTINGS;
+		log.warn('Unable to load hotkey settings; using defaults', error);
+	}
 }
 
 function getSiteConfig(): SiteHotkeyConfig | null {
@@ -229,8 +236,7 @@ function nextFeedbackGesture(): string {
 	return nextScalarGestureId('site');
 }
 
-function volumeFeedback(value: number) {
-	const current = feedbackState!;
+function volumeFeedback(value: number, current: FeedbackState) {
 	return {
 		kind: 'volume' as const,
 		value,
@@ -251,7 +257,7 @@ function advanceScalarFeedbackTarget(
 	if (!contentSettings || !feedbackState) return;
 	const baseline = kind === 'speed'
 		? { kind, value: feedbackState.appliedConfig.speed } as const
-		: volumeFeedback(resolveAudioVolume(feedbackState.appliedConfig).effectiveVolume);
+		: volumeFeedback(resolveAudioVolume(feedbackState.appliedConfig).effectiveVolume, feedbackState);
 	advanceHotkeyTargetOSD(
 		baseline,
 		delta,
@@ -291,11 +297,16 @@ function takeRepeatPulses(gesture: string): number {
 	return pulses;
 }
 
+function scalarBindingStep(binding: HotkeyBinding): number {
+	const configuredStep = binding.params?.step;
+	return typeof configuredStep === 'number' && Number.isFinite(configuredStep)
+		? Math.abs(configuredStep)
+		: binding.action.startsWith('speed_') ? 0.1 : 10;
+}
+
 function coalescedBinding(binding: HotkeyBinding, pulses: number): HotkeyBinding {
 	if (pulses <= 1) return binding;
-	const step = Number.isFinite(binding.params?.step)
-		? Math.abs(binding.params!.step!)
-		: binding.action.startsWith('speed_') ? 0.1 : 10;
+	const step = scalarBindingStep(binding);
 	if (binding.action === 'speed_up' || binding.action === 'speed_down') {
 		return {
 			...binding,
@@ -317,9 +328,7 @@ function coalescedBinding(binding: HotkeyBinding, pulses: number): HotkeyBinding
 }
 
 function scalarFeedbackDelta(binding: HotkeyBinding): number | null {
-	const step = Number.isFinite(binding.params?.step)
-		? Math.abs(binding.params!.step!)
-		: binding.action.startsWith('speed_') ? 0.1 : 10;
+	const step = scalarBindingStep(binding);
 	switch (binding.action) {
 		case 'speed_up':
 		case 'volume_up': return step;

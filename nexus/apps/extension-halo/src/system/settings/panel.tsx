@@ -1,7 +1,8 @@
 // goal: Settings panel UI component with i18n support
 // eff: Split into sub-components for better maintainability
 
-import React, { useState, useCallback, useEffect } from 'react';
+import type React from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { createLogger } from '@nexus/kernel';
 import { useTranslation, type Locale, detectLocale, LOCALES } from '../../i18n';
@@ -12,8 +13,6 @@ import { styles } from './panel.styles';
 import { useOverlay } from '../../components/ui/overlay';
 import { AppearanceSettings } from './AppearanceSettings';
 import { InterfaceSettings } from './InterfaceSettings';
-import { DarkModePanel } from '../../components/settings/internal/dark-mode/panel';
-import { toggleDarkMode, enableDarkMode, disableDarkMode } from '../../components/settings/internal/dark-mode/core';
 
 const logger = createLogger('Settings', 'HALO');
 
@@ -59,7 +58,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsChange }
 		const colors = getThemeColors(updated.theme, updated.accentColor);
 		applyTheme(colors);
 		onSettingsChange?.(updated);
-		showToast({ message: t('settings.resetAll') + ' ✓', type: 'success' });
+		showToast({ message: `${t('settings.resetAll')} ✓`, type: 'success' });
 	}, [onSettingsChange, showToast, t]);
 
 	return (
@@ -100,7 +99,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsChange }
 				<div style={styles.section}>
 					<span style={styles.sectionTitle}>🔧 {t('settings.actions')}</span>
 					
-					<button style={styles.resetBtn} onClick={handleReset}>
+					<button type="button" style={styles.resetBtn} onClick={handleReset}>
 						↻ {t('settings.resetAll')}
 					</button>
 				</div>

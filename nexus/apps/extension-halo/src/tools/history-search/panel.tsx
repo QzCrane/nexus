@@ -1,6 +1,7 @@
 // goal: History Search panel UI - search and browse history
 
-import React, { useState, useEffect, useCallback } from 'react';
+import type React from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { HistoryItem } from './types';
@@ -12,7 +13,7 @@ import { useToolState, usePermission } from '../../kernel';
 export const HistorySearchPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const { hasPermission, request } = usePermission('history');
-	const [query, setQuery] = useToolState<string>('history-search' as any, '');
+	const [query, setQuery] = useToolState<string>('history-search', '');
 
 	const [results, setResults] = useState<HistoryItem[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -73,7 +74,7 @@ export const HistorySearchPanel: React.FC = () => {
 								<h3 style={{ margin: '0 0 8px 0', color: 'var(--halo-text)' }}>{t('common.permissionRequired')}</h3>
 								<p style={{ margin: 0, fontSize: '13px', color: 'var(--halo-text-secondary)' }}>{t('common.permissionDesc')}</p>
 							</div>
-							<button 
+							<button type="button"
 								onClick={request}
 								style={{ 
 									padding: '8px 24px', 
@@ -103,7 +104,6 @@ export const HistorySearchPanel: React.FC = () => {
 				value={query}
 				onChange={(e) => setQuery(e.target.value)}
 				placeholder={t('historySearch.placeholder')}
-				autoFocus
 			/>
 
 			{/* Results */}
@@ -114,16 +114,22 @@ export const HistorySearchPanel: React.FC = () => {
 					<div style={styles.empty}>📜 {t('historySearch.noResults')}</div>
 				) : (
 					results.map((item) => (
-						<div key={item.id} style={styles.item} onClick={(e) => handleClick(item.url, e)}>
-							<img src={getFaviconUrl(item.url)} alt="" style={styles.favicon} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-							<div style={styles.info}>
-								<div style={styles.title}>{item.title || item.url}</div>
-								<div style={styles.url}>{item.url}</div>
-							</div>
+						<div key={item.id} style={{ ...styles.item, cursor: 'default' }}>
+							<button
+								type="button"
+								onClick={(e) => handleClick(item.url, e)}
+								style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0, padding: 0, border: 'none', background: 'transparent', color: 'inherit', textAlign: 'left', cursor: 'pointer' }}
+							>
+								<img src={getFaviconUrl(item.url)} alt="" style={styles.favicon} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+								<span style={styles.info}>
+									<span style={{ ...styles.title, display: 'block' }}>{item.title || item.url}</span>
+									<span style={{ ...styles.url, display: 'block' }}>{item.url}</span>
+								</span>
+							</button>
 							<div style={styles.meta}>
 								<span style={styles.visits}>{item.visitCount}×</span>
 								<span style={styles.time}>{formatTimeAgo(item.lastVisitTime)}</span>
-								<button style={styles.btn} onClick={(e) => handleDelete(item.url, e)}>🗑️</button>
+								<button type="button" style={styles.btn} onClick={(e) => handleDelete(item.url, e)}>🗑️</button>
 							</div>
 						</div>
 					))

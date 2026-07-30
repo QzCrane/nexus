@@ -1,6 +1,7 @@
 // goal: Text-to-Speech panel UI - TTS with controls
 
-import React, { useState, useEffect, useCallback } from 'react';
+import type React from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import type { TtsSettings } from './types';
 import { getVoices, speak, stop, pause, resume, isSpeaking, isPaused, getSelectedText, DEFAULT_SETTINGS } from './core';
@@ -10,8 +11,8 @@ import { useToolState } from '../../kernel';
 
 export const TextToSpeechPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [text, setText] = useToolState<string>('text-to-speech' as any, '');
-	const [settings, setSettings] = useToolState<TtsSettings>('text-to-speech-settings' as any, DEFAULT_SETTINGS);
+	const [text, setText] = useToolState<string>('text-to-speech', '');
+	const [settings, setSettings] = useToolState<TtsSettings>('text-to-speech-settings', DEFAULT_SETTINGS);
 
 	const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
 	const [speaking, setSpeaking] = useState(false);
@@ -22,20 +23,24 @@ export const TextToSpeechPanel: React.FC = () => {
 		const loadVoices = () => {
 			const v = getVoices();
 			setVoices(v);
-			if (v.length > 0 && !settings.voiceUri) {
-				setSettings((s) => ({ ...s, voiceUri: v[0]!.voiceURI }));
+			const firstVoice = v[0];
+			if (firstVoice && !settings.voiceUri) {
+				setSettings((s) => ({ ...s, voiceUri: firstVoice.voiceURI }));
 			}
 		};
 
 		loadVoices();
-		speechSynthesis.onvoiceschanged = loadVoices;
-	}, []);
+		speechSynthesis.addEventListener('voiceschanged', loadVoices);
+		return () => {
+			speechSynthesis.removeEventListener('voiceschanged', loadVoices);
+		};
+	}, [setSettings, settings.voiceUri]);
 
 	// Load selected text
 	const handleLoadSelected = useCallback(async () => {
 		const selected = await getSelectedText();
 		if (selected) setText(selected);
-	}, []);
+	}, [setText]);
 
 	// Speak
 	const handleSpeak = useCallback(() => {
@@ -83,20 +88,20 @@ export const TextToSpeechPanel: React.FC = () => {
 			/>
 
 			{/* Load selected */}
-			<button style={styles.btnSecondary} onClick={handleLoadSelected}>
+			<button type="button" style={styles.btnSecondary} onClick={handleLoadSelected}>
 				📋 {t('tts.loadSelected')}
 			</button>
 
 			{/* Controls */}
 			<div style={styles.controls}>
 				{!speaking ? (
-					<button style={styles.btn} onClick={handleSpeak}>▶️ {t('tts.play')}</button>
+					<button type="button" style={styles.btn} onClick={handleSpeak}>▶️ {t('tts.play')}</button>
 				) : (
 					<>
-						<button style={styles.btnSecondary} onClick={handlePauseResume}>
+						<button type="button" style={styles.btnSecondary} onClick={handlePauseResume}>
 							{paused ? '▶️' : '⏸️'}
 						</button>
-						<button style={styles.btnSecondary} onClick={handleStop}>⏹️</button>
+						<button type="button" style={styles.btnSecondary} onClick={handleStop}>⏹️</button>
 					</>
 				)}
 			</div>

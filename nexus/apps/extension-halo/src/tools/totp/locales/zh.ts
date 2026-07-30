@@ -7,6 +7,7 @@ export const zh = {
 		add: '添加',
 		name: '账户名称',
 		secretOrUri: '密钥或 otpauth:// URI',
-		noAccounts: '未添加 2FA 账户'
+		noAccounts: '未添加 2FA 账户',
+		generationFailed: '密钥或 TOTP 参数无效'
 	}
 };

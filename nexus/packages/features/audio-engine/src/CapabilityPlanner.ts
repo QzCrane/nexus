@@ -7,9 +7,9 @@ import {
 	shouldTryNextControlStrategy,
 	type ControlAlgorithmPolicy,
 	type ControlAugmentationAdmission,
-	ControlCapability,
-	ControlCoverage,
-	ControlStrategy,
+	type ControlCapability,
+	type ControlCoverage,
+	type ControlStrategy,
 	type ControlStrategyFailure,
 } from '@nexus/contracts';
 

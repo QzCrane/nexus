@@ -28,6 +28,7 @@ export const styles: Record<string, React.CSSProperties> = {
 	name: { fontSize: '13px', fontWeight: 600, color: 'var(--halo-text)' },
 	issuer: { fontSize: '11px', color: 'var(--halo-text-muted)' },
 	code: { fontSize: '32px', fontWeight: 700, fontFamily: 'monospace', letterSpacing: '4px', color: 'var(--halo-text)' },
+	error: { marginTop: '6px', fontSize: '11px', color: '#ef4444' },
 	timer: {
 		display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px',
 		fontSize: '12px', color: 'var(--halo-text-muted)',

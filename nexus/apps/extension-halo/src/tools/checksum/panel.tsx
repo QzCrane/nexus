@@ -1,6 +1,7 @@
 // goal: Checksum panel UI
 
-import React, { useState, useCallback, useRef } from 'react';
+import type React from 'react';
+import { useState, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import type { HashAlgorithm } from './core';
 import { calculateChecksum, verifyChecksum, formatFileSize } from './core';
@@ -11,12 +12,11 @@ import { useToolState } from '../../kernel';
 export const ChecksumPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [file, setFile] = useState<File | null>(null);
-	const [algorithm, setAlgorithm] = useToolState<HashAlgorithm>('checksum-alg' as any, 'SHA-256');
+	const [algorithm, setAlgorithm] = useToolState<HashAlgorithm>('checksum-alg', 'SHA-256');
 	const [hash, setHash] = useState('');
-	const [expected, setExpected] = useToolState<string>('checksum-verify' as any, '');
+	const [expected, setExpected] = useToolState<string>('checksum-verify', '');
 
 	const [loading, setLoading] = useState(false);
-	const inputRef = useRef<HTMLInputElement>(null);
 
 	// Handle file select
 	const handleFile = useCallback(async (f: File) => {
@@ -43,7 +43,7 @@ export const ChecksumPanel: React.FC = () => {
 			setHash(result.hash);
 			setLoading(false);
 		}
-	}, [file]);
+	}, [file, setAlgorithm]);
 
 	// Copy hash
 	const handleCopy = useCallback(() => {
@@ -55,7 +55,7 @@ export const ChecksumPanel: React.FC = () => {
 	return (
 		<div style={styles.wrapper}>
 			{/* Dropzone */}
-			<div style={styles.dropzone} onDragOver={(e) => e.preventDefault()} onDrop={handleDrop} onClick={() => inputRef.current?.click()}>
+			<label style={styles.dropzone} onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
 				{file ? (
 					<div style={styles.file}>
 						<div style={styles.fileName}>{file.name}</div>
@@ -64,8 +64,8 @@ export const ChecksumPanel: React.FC = () => {
 				) : (
 					<div style={{ color: 'var(--halo-text-muted)' }}>📁 {t('checksum.dropFile')}</div>
 				)}
-				<input ref={inputRef} type="file" style={{ display: 'none' }} onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
-			</div>
+				<input type="file" style={{ display: 'none' }} onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
+			</label>
 
 			{/* Algorithm */}
 			<div style={styles.row}>
@@ -91,7 +91,9 @@ export const ChecksumPanel: React.FC = () => {
 
 			{/* Hash result */}
 			{hash && (
-				<div style={styles.hash} onClick={handleCopy}>{loading ? '⏳ Calculating...' : hash}</div>
+				<button type="button" style={{ ...styles.hash, textAlign: 'left', cursor: 'pointer' }} onClick={handleCopy}>
+					{loading ? '⏳ Calculating...' : hash}
+				</button>
 			)}
 
 			{/* Verify */}

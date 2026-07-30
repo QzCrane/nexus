@@ -1,6 +1,7 @@
 // goal: Random Gen panel UI
 
-import React, { useState, useCallback } from 'react';
+import type React from 'react';
+import { useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import { generateHex, generateBase64, generateUUID, generateULID } from './core';
 import { styles } from './panel.styles';
@@ -11,9 +12,9 @@ type Type = 'UUID' | 'Heterogenous' | 'Hex' | 'Base64' | 'ULID';
 
 export const RandomGenPanel: React.FC = () => {
 	const { t } = useTranslation();
-    const [type, setType] = useToolState<Type>('random-gen-type' as any, 'UUID');
-    const [length, setLength] = useToolState<number>('random-gen-len' as any, 32);
-    const [count, setCount] = useToolState<number>('random-gen-count' as any, 1);
+    const [type, setType] = useToolState<Type>('random-gen-type', 'UUID');
+    const [length, setLength] = useToolState<number>('random-gen-len', 32);
+    const [count, setCount] = useToolState<number>('random-gen-count', 1);
     const [output, setOutput] = useToolState<string>('random-gen', '');
 
 
@@ -29,7 +30,7 @@ export const RandomGenPanel: React.FC = () => {
             }
         }
         setOutput(results.join('\n'));
-    }, [type, length, count]);
+    }, [type, length, count, setOutput]);
 
 	const handleCopy = useCallback(() => {
 		navigator.clipboard.writeText(output);
@@ -76,13 +77,13 @@ export const RandomGenPanel: React.FC = () => {
                     <input type="number" style={styles.input} value={count} min="1" max="1000" onChange={(e) => setCount(Number(e.target.value))} />
                  </div>
 
-                 <button style={{...styles.btn, marginTop: 'auto'}} onClick={handleGenerate}>⚡ {t('randomGen.generate', { defaultValue: 'Generate' })}</button>
+                 <button type="button" style={{...styles.btn, marginTop: 'auto'}} onClick={handleGenerate}>⚡ {t('randomGen.generate', { defaultValue: 'Generate' })}</button>
             </div>
 
 			<div>
 				<div style={styles.label}>{t('randomGen.result', { defaultValue: 'Result' })}</div>
 				<textarea style={styles.textarea} value={output} readOnly />
-                <button style={{...styles.btn, marginTop: '8px', width: '100%'}} onClick={handleCopy}>📋 {t('randomGen.copy', { defaultValue: 'Copy' })}</button>
+                <button type="button" style={{...styles.btn, marginTop: '8px', width: '100%'}} onClick={handleCopy}>📋 {t('randomGen.copy', { defaultValue: 'Copy' })}</button>
 			</div>
 		</div>
 	);

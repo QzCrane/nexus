@@ -1,7 +1,8 @@
 // goal: YAML panel - shows BOTH conversions simultaneously
 // eff: No mode selection, auto-detect input type, display both results
 
-import React, { useState, useMemo, useCallback } from 'react';
+import type React from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { parseYaml, jsonToYaml, detectInputType } from './core';
@@ -65,8 +66,7 @@ export const YamlPanel: React.FC = () => {
 			const result = jsonToYaml(input);
 			if (result.success) {
 				yaml = result.output;
-				json = input; // Original is already JSON (format it)
-				try { json = JSON.stringify(JSON.parse(input), null, 2); } catch { /* keep as is */ }
+				json = result.normalizedInput ?? input;
 			} else {
 				error = result.error || 'Invalid JSON';
 			}
@@ -90,7 +90,7 @@ export const YamlPanel: React.FC = () => {
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
 					<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
 						<span style={styles.label}>{t('yaml.input') || 'Input (YAML or JSON)'}</span>
-						<button style={resultStyles.copyBtn} onClick={() => setInput('')}>
+						<button type="button" style={resultStyles.copyBtn} onClick={() => setInput('')}>
 							🗑️ {t('common.clear') || 'Clear'}
 						</button>
 					</div>
@@ -119,9 +119,12 @@ export const YamlPanel: React.FC = () => {
 						<div style={resultStyles.resultSection}>
 							<div style={resultStyles.resultHeader}>
 								<span style={resultStyles.resultLabel}>📋 JSON</span>
-								<button
+								<button type="button"
 									style={{ ...resultStyles.copyBtn, ...(copiedKey === 'json' ? resultStyles.copyBtnSuccess : {}) }}
-									onClick={() => copyValue('json', results.json!)}
+									onClick={() => {
+										const value = results.json;
+										if (value) copyValue('json', value);
+									}}
 								>
 									{copiedKey === 'json' ? '✓' : '📋'}
 								</button>
@@ -135,9 +138,12 @@ export const YamlPanel: React.FC = () => {
 						<div style={resultStyles.resultSection}>
 							<div style={resultStyles.resultHeader}>
 								<span style={{ ...resultStyles.resultLabel, color: '#22c55e' }}>📄 YAML</span>
-								<button
+								<button type="button"
 									style={{ ...resultStyles.copyBtn, ...(copiedKey === 'yaml' ? resultStyles.copyBtnSuccess : {}) }}
-									onClick={() => copyValue('yaml', results.yaml!)}
+									onClick={() => {
+										const value = results.yaml;
+										if (value) copyValue('yaml', value);
+									}}
 								>
 									{copiedKey === 'yaml' ? '✓' : '📋'}
 								</button>

@@ -28,13 +28,20 @@ export class Registry {
 	 * Resets the registry to an empty state
 	 */
 	dispose(): void {
+		const failures: unknown[] = [];
 		while (this.stack.length > 0) {
 			const cleanup = this.stack.pop();
 			try {
 				cleanup?.();
-			} catch {
-				// note: silent fail-fast to ensure all cleanups are attempted
+			} catch (error) {
+				failures.push(error);
 			}
+		}
+		if (failures.length > 0) {
+			console.error(
+				'[SPECTRA Registry] One or more disposers failed',
+				new AggregateError(failures, 'SPECTRA disposer failures'),
+			);
 		}
 	}
 

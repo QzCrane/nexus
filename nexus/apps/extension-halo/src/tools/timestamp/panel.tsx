@@ -1,10 +1,11 @@
 // goal: Timestamp converter - shows ALL formats and timezones simultaneously
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import type React from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { autoParse, formatWithTZ, getRelativeTime, TIMEZONES } from './core';
-import { useToolState } from '../../kernel';
+import { useOwnedClipboardCopy, useToolState } from '../../kernel';
 
 
 const styles: Record<string, React.CSSProperties> = {
@@ -22,7 +23,7 @@ export const TimestampPanel: React.FC = () => {
 	const [now, setNow] = useState(Date.now());
 	const [input, setInput] = useToolState<string>('timestamp', '');
 
-	const [copiedKey, setCopiedKey] = useState<string | null>(null);
+	const { copiedKey, copy, copyFailed } = useOwnedClipboardCopy<string>();
 
 	useEffect(() => {
 		let timer: ReturnType<typeof setInterval> | null = null;
@@ -44,10 +45,8 @@ export const TimestampPanel: React.FC = () => {
 	const parsedDate = useMemo(() => autoParse(input) || new Date(now), [input, now]);
 
 	const copyValue = useCallback((key: string, value: string) => {
-		navigator.clipboard.writeText(value);
-		setCopiedKey(key);
-		setTimeout(() => setCopiedKey(null), 1500);
-	}, []);
+		void copy(key, value);
+	}, [copy]);
 
 	const results = useMemo(() => [
 		{ k: 'unix_s', l: t('timestamp.unixS', { defaultValue: 'Unix (s)' }), v: Math.floor(parsedDate.getTime() / 1000).toString() },
@@ -61,7 +60,13 @@ export const TimestampPanel: React.FC = () => {
 		<div style={styles.wrapper}>
 			<Card variant="default" padding="sm">
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-					<div style={styles.clock} onClick={() => copyValue('now', Math.floor(now/1000).toString())}>{Math.floor(now/1000)}</div>
+					<button
+						type="button"
+						style={{ ...styles.clock, padding: 0, border: 'none', background: 'transparent' }}
+						onClick={() => copyValue('now', Math.floor(now/1000).toString())}
+					>
+						{Math.floor(now/1000)}
+					</button>
 					<div style={{ textAlign: 'center', color: 'var(--halo-text-muted)', fontSize: '10px' }}>{new Date(now).toLocaleString()}</div>
 				</div>
 			</Card>
@@ -70,18 +75,25 @@ export const TimestampPanel: React.FC = () => {
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
 					<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
 						<span style={{ fontSize: '11px', fontWeight: 600 }}>{t('timestamp.inputLabel', { defaultValue: 'INPUT' })}</span>
-						<button style={styles.btn} onClick={() => setInput('')}>{t('timestamp.clear', { defaultValue: 'Clear' })}</button>
+						<button type="button" style={styles.btn} onClick={() => setInput('')}>{t('timestamp.clear', { defaultValue: 'Clear' })}</button>
 					</div>
 					<input style={styles.input} value={input} onChange={(e) => setInput(e.target.value)} placeholder={t('timestamp.placeholder', { defaultValue: 'Unix timestamp or ISO string...' })} />
 				</div>
 			</Card>
+			{copyFailed && (
+				<div role="status" style={{ color: 'var(--halo-error, #ef4444)', fontSize: '12px' }}>
+					{t('timestamp.copyFailed', {
+						defaultValue: 'Clipboard access failed.',
+					})}
+				</div>
+			)}
 
 			<div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
 				{results.map(r => (
 					<div key={r.k} style={styles.resultRow}>
 						<span style={styles.label}>{r.l}</span>
 						<span style={styles.val}>{r.v}</span>
-						<button style={{ ...styles.btn, ...(copiedKey === r.k ? { background: 'var(--halo-accent)', color: '#fff' } : {}) }} onClick={() => copyValue(r.k, r.v)}>
+						<button type="button" style={{ ...styles.btn, ...(copiedKey === r.k ? { background: 'var(--halo-accent)', color: '#fff' } : {}) }} onClick={() => copyValue(r.k, r.v)}>
 							{copiedKey === r.k ? '✓' : t('timestamp.copy', { defaultValue: 'Copy' })}
 						</button>
 					</div>

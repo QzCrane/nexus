@@ -1,6 +1,7 @@
 // goal: IP Lookup panel UI - query and display IP information
 
-import React, { useState, useEffect, useCallback } from 'react';
+import type React from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import type { IpInfo } from './types';
 import { getMyIpInfo, lookupIp, isValidIp, formatLocation } from './core';
@@ -10,8 +11,8 @@ import { useToolState } from '../../kernel';
 
 export const IpLookupPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [query, setQuery] = useToolState<string>('ip-lookup-query' as any, '');
-	const [info, setInfo] = useToolState<IpInfo | null>('ip-lookup-info' as any, null);
+	const [query, setQuery] = useToolState<string>('ip-lookup-query', '');
+	const [info, setInfo] = useToolState<IpInfo | null>('ip-lookup-info', null);
 
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState('');
@@ -22,7 +23,7 @@ export const IpLookupPanel: React.FC = () => {
 			setInfo(data);
 			setLoading(false);
 		});
-	}, []);
+	}, [setInfo]);
 
 	// Lookup IP
 	const handleLookup = useCallback(async () => {
@@ -49,7 +50,7 @@ export const IpLookupPanel: React.FC = () => {
 			setError(t('ipLookup.notFound'));
 		}
 		setLoading(false);
-	}, [query, t]);
+	}, [query, t, setInfo]);
 
 	// Copy IP
 	const handleCopy = useCallback(() => {
@@ -67,7 +68,7 @@ export const IpLookupPanel: React.FC = () => {
 					placeholder={t('ipLookup.placeholder')}
 					onKeyDown={(e) => e.key === 'Enter' && handleLookup()}
 				/>
-				<button style={styles.btn} onClick={handleLookup}>🔍</button>
+				<button type="button" style={styles.btn} onClick={handleLookup}>🔍</button>
 			</div>
 
 			{/* Error */}
@@ -79,7 +80,13 @@ export const IpLookupPanel: React.FC = () => {
 			{/* Result */}
 			{!loading && info && (
 				<div style={styles.card}>
-					<div style={styles.ip} onClick={handleCopy}>{info.ip} 📋</div>
+					<button
+						type="button"
+						style={{ ...styles.ip, width: '100%', padding: 0, border: 'none', background: 'transparent', textAlign: 'left', cursor: 'pointer' }}
+						onClick={handleCopy}
+					>
+						{info.ip} 📋
+					</button>
 					<div style={styles.grid}>
 						<div style={styles.item}>
 							<span style={styles.label}>{t('ipLookup.location')}</span>

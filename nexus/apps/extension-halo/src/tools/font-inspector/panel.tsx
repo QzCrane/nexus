@@ -1,6 +1,7 @@
 // goal: Font Inspector panel UI - display page fonts
 
-import React, { useState, useCallback } from 'react';
+import type React from 'react';
+import { useState, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import type { FontInfo } from './types';
 import { getPageFonts, groupByFamily, getGoogleFontsUrl } from './core';
@@ -10,9 +11,9 @@ import { useToolState } from '../../kernel';
 
 export const FontInspectorPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [fonts, setFonts] = useToolState<FontInfo[]>('font-inspector-data' as any, []);
+	const [fonts, setFonts] = useToolState<FontInfo[]>('font-inspector-data', []);
 	const [loading, setLoading] = useState(false);
-	const [scanned, setScanned] = useToolState<boolean>('font-inspector-scanned' as any, false);
+	const [scanned, setScanned] = useToolState<boolean>('font-inspector-scanned', false);
 
 
 	// Scan page
@@ -22,7 +23,7 @@ export const FontInspectorPanel: React.FC = () => {
 		setFonts(result);
 		setLoading(false);
 		setScanned(true);
-	}, []);
+	}, [setScanned, setFonts]);
 
 	// Copy font name
 	const handleCopy = useCallback((family: string) => {
@@ -39,7 +40,7 @@ export const FontInspectorPanel: React.FC = () => {
 	return (
 		<div style={styles.wrapper}>
 			{/* Scan Button */}
-			<button style={styles.btn} onClick={handleScan} disabled={loading}>
+			<button type="button" style={styles.btn} onClick={handleScan} disabled={loading}>
 				{loading ? '⏳' : '🔍'} {t('fontInspector.scan')}
 			</button>
 
@@ -56,15 +57,15 @@ export const FontInspectorPanel: React.FC = () => {
 									The quick brown fox jumps over the lazy dog
 								</div>
 								<div style={styles.variants}>
-									{variants.map((v, i) => (
-										<span key={i} style={styles.variant}>
+									{variants.map((v) => (
+										<span key={`${v.weight}:${v.size}`} style={styles.variant}>
 											{v.weight} • {v.size} • &lt;{v.element}&gt;
 										</span>
 									))}
 								</div>
 								<div style={styles.actions}>
-									<button style={styles.actionBtn} onClick={() => handleCopy(family)}>📋 Copy</button>
-									<button style={styles.actionBtn} onClick={() => handleGoogleFonts(family)}>🔗 Google Fonts</button>
+									<button type="button" style={styles.actionBtn} onClick={() => handleCopy(family)}>📋 Copy</button>
+									<button type="button" style={styles.actionBtn} onClick={() => handleGoogleFonts(family)}>🔗 Google Fonts</button>
 								</div>
 							</div>
 						))

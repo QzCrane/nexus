@@ -1,6 +1,7 @@
 // goal: Code Formatter panel UI - format and minify multiple languages
 
-import React, { useState, useCallback } from 'react';
+import type React from 'react';
+import { useState, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { CodeLanguage } from './types';
@@ -20,9 +21,9 @@ const LANGUAGES: { id: CodeLanguage; label: string }[] = [
 
 export const CodeFormatterPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [language, setLanguage] = useToolState<CodeLanguage>('code-formatter-lang' as any, 'json');
-	const [code, setCode] = useToolState<string>('code-formatter-code' as any, '');
-	const [indentSize, setIndentSize] = useToolState<number>('code-formatter-indent' as any, 2);
+	const [language, setLanguage] = useToolState<CodeLanguage>('code-formatter-lang', 'json');
+	const [code, setCode] = useToolState<string>('code-formatter-code', '');
+	const [indentSize, setIndentSize] = useToolState<number>('code-formatter-indent', 2);
 	const [error, setError] = useState('');
 
 
@@ -35,7 +36,7 @@ export const CodeFormatterPanel: React.FC = () => {
 		} catch (e) {
 			setError((e as Error).message);
 		}
-	}, [code, language, indentSize]);
+	}, [code, language, indentSize, setCode]);
 
 	// Minify
 	const handleMinify = useCallback(() => {
@@ -46,7 +47,7 @@ export const CodeFormatterPanel: React.FC = () => {
 		} catch (e) {
 			setError((e as Error).message);
 		}
-	}, [code, language]);
+	}, [code, language, setCode]);
 
 	// Copy
 	const handleCopy = useCallback(() => {
@@ -58,7 +59,7 @@ export const CodeFormatterPanel: React.FC = () => {
 			{/* Language Tabs */}
 			<div style={styles.langTabs}>
 				{LANGUAGES.map((lang) => (
-					<button
+					<button type="button"
 						key={lang.id}
 						style={{ ...styles.langTab, ...(language === lang.id ? styles.active : styles.inactive) }}
 						onClick={() => setLanguage(lang.id)}
@@ -84,7 +85,7 @@ export const CodeFormatterPanel: React.FC = () => {
 						type="number"
 						style={styles.input}
 						value={indentSize}
-						onChange={(e) => setIndentSize(Math.max(1, Math.min(8, parseInt(e.target.value) || 2)))}
+						onChange={(e) => setIndentSize(Math.max(1, Math.min(8, parseInt(e.target.value, 10) || 2)))}
 						min={1}
 						max={8}
 					/>
@@ -96,9 +97,9 @@ export const CodeFormatterPanel: React.FC = () => {
 
 			{/* Actions */}
 			<div style={styles.row}>
-				<button style={styles.btn} onClick={handleFormat}>✨ {t('codeFormatter.format')}</button>
-				<button style={styles.btnSecondary} onClick={handleMinify}>📦 {t('codeFormatter.minify')}</button>
-				{code && <button style={styles.btnSecondary} onClick={handleCopy}>📋 {t('common.copy')}</button>}
+				<button type="button" style={styles.btn} onClick={handleFormat}>✨ {t('codeFormatter.format')}</button>
+				<button type="button" style={styles.btnSecondary} onClick={handleMinify}>📦 {t('codeFormatter.minify')}</button>
+				{code && <button type="button" style={styles.btnSecondary} onClick={handleCopy}>📋 {t('common.copy')}</button>}
 			</div>
 		</div>
 	);

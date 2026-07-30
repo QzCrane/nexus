@@ -3,13 +3,37 @@
 // NOTE: UserScripts injection is now handled by chrome.userScripts API (registry.ts)
 
 import * as Ruler from '../content/ruler';
-import * as SmoothScroll from '../content/smooth-scroll';
+import { init as initSmoothScroll } from '../content/smooth-scroll';
 import * as DomSelector from '../content/dom-selector';
 import * as PageAnnotate from '../content/page-annotate';
 // HoverZoom is loaded dynamically only in top frame to avoid loading in iframes
 
 const LOG_TAG = '[HALO]';
 const t0 = performance.now();
+
+function isExpectedRuntimeDisconnect(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	return message.includes('Extension context invalidated') ||
+		message.includes('Receiving end does not exist') ||
+		message.includes('message port closed');
+}
+
+function sendRuntimeMessageBestEffort(
+	message: unknown,
+	phase: string,
+): void {
+	try {
+		void chrome.runtime.sendMessage(message).catch((error: unknown) => {
+			if (!isExpectedRuntimeDisconnect(error)) {
+				console.warn(LOG_TAG, `${phase} notification failed`, error);
+			}
+		});
+	} catch (error: unknown) {
+		if (!isExpectedRuntimeDisconnect(error)) {
+			console.warn(LOG_TAG, `${phase} notification failed`, error);
+		}
+	}
+}
 
 console.log(LOG_TAG, 'Content script loaded at', t0.toFixed(2), 'ms');
 
@@ -27,19 +51,15 @@ const onCopy = () => {
 		if (active instanceof HTMLInputElement && active.type === 'password') return;
 		const selection = document.getSelection()?.toString();
 		if (selection?.trim()) {
-			// rule: wrap sendMessage — when the SW is restarting or the extension is
-			// being unloaded, this throws "Extension context invalidated" and would
-			// surface as an unhandled rejection in the page console on every copy.
-			try {
-				void chrome.runtime.sendMessage({
+			sendRuntimeMessageBestEffort(
+				{
 					type: 'HALO_CLIPBOARD_ADD',
 					text: selection,
 					sourceUrl: window.location.href,
 					sourceTitle: document.title,
-				});
-			} catch {
-				// best-effort notification; ignore SW-restart races
-			}
+				},
+				'Clipboard history',
+			);
 		}
 	}, 50);
 };
@@ -126,13 +146,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 		case 'HALO_DOM_SELECTOR_START':
 			DomSelector.start((data) => {
-				// rule: best-effort notification — wrap to avoid unhandled rejection
-				// when the SW is restarting or the extension is being unloaded.
-				try {
-					void chrome.runtime.sendMessage({ type: 'HALO_DOM_SELECTED', payload: data });
-				} catch {
-					// ignore SW-restart races
-				}
+				sendRuntimeMessageBestEffort(
+					{ type: 'HALO_DOM_SELECTED', payload: data },
+					'DOM selection',
+				);
 			});
 			sendResponse({ success: true });
 			break;
@@ -171,13 +188,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 			break;
 		}
 
-		case 'HALO_SMOOTH_SCROLL_UPDATE':
-			if (message.settings) {
-				SmoothScroll.updateSettings(message.settings);
-			}
-			sendResponse({ success: true });
-			break;
-
 		default:
 			sendResponse({ success: false, error: 'Unknown message type' });
 	}
@@ -185,39 +195,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 // ===== INITIALIZE MODULES =====
-SmoothScroll.init();
+void initSmoothScroll().catch((error: unknown) => {
+	console.error(LOG_TAG, 'Smooth Scroll init failed:', error);
+});
 
 // HoverZoom: Dynamic import only in top frame (avoid loading ~50KB in each iframe)
 if (window === window.top) {
 	import('../content/hover-zoom').then(m => m.init()).catch(e => {
 		console.warn(LOG_TAG, 'HoverZoom init failed:', e);
-	});
-}
-
-// LLM Enhancer Loader
-// rule: precise hostname matching — the previous substring regex would match
-// notchatgpt.com or openai.example.org. Match either exact hosts or their
-// documented subdomain suffixes only.
-const LLM_HOSTS = new Set([
-	'chatgpt.com',
-	'chat.openai.com',
-	'openai.com',
-	'deepseek.com',
-	'gemini.google.com',
-	'aistudio.google.com',
-	'claude.ai',
-]);
-const llmHostname = window.location.hostname;
-const isLlmSite =
-	LLM_HOSTS.has(llmHostname) ||
-	llmHostname.endsWith('.chatgpt.com') ||
-	llmHostname.endsWith('.openai.com');
-if (isLlmSite) {
-	const toolUrl = chrome.runtime.getURL('tools/llm-enhancer/script.js');
-	import(toolUrl).then(() => {
-		console.log(LOG_TAG, 'LLM Enhancer loaded');
-	}).catch(e => {
-		console.error(LOG_TAG, 'LLM Enhancer load failed:', e);
 	});
 }
 

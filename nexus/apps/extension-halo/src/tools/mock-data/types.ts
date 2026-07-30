@@ -3,6 +3,7 @@
 export type MockDataType = 'name' | 'email' | 'phone' | 'uuid' | 'address' | 'lorem' | 'number' | 'date';
 
 export interface MockField {
+	id: string;
 	name: string;
 	type: MockDataType;
 }

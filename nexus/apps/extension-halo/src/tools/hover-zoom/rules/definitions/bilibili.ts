@@ -1,5 +1,5 @@
-import { SiteRule, ResolveContext, RuleResult } from '../core';
-import { parseEmbeddedJson, extractJsonFromVar, sortByBandwidth } from '../utils/parse';
+import type { SiteRule, ResolveContext, RuleResult } from '../core';
+import { extractJsonFromVar, sortByBandwidth } from '../utils/parse';
 
 // ==========================================
 // Bilibili API Types

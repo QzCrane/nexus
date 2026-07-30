@@ -90,7 +90,7 @@ export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({
 	};
 
 	// Active tool with animation
-	if (activeTool) {
+	if (activeTool && renderedTool) {
 		return (
 			<div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
 				<style>{`
@@ -102,7 +102,7 @@ export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({
 				<div key={renderedTool} style={slideStyle}>
 					<ScrollContainer>
 						<LazyToolRenderer 
-							toolId={renderedTool!} 
+							toolId={renderedTool}
 							onSettingsChange={renderedTool === 'settings' ? onSettingsChange : undefined} 
 						/>
 					</ScrollContainer>

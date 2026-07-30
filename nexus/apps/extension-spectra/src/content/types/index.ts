@@ -1,7 +1,7 @@
 // goal: centralizes core type definitions for the content script ecosystem
 
 import type { AudioConfig } from '@nexus/kernel';
-import { PolicyEngine, WebAudioController } from '@nexus/audio-engine';
+import type { PolicyEngine, WebAudioController } from '@nexus/audio-engine';
 import type { AudioModeType } from '@nexus/audio-engine';
 import type { CaptureManager } from '../audio/capture-manager';
 import type { SettingsManager } from '../core/settings-manager';

@@ -2,7 +2,7 @@
 type: explanation
 status: stable
 audience: contributor
-last_reviewed: 2026-07-24
+last_reviewed: 2026-07-29
 ---
 
 # AI-tool hooks
@@ -30,7 +30,7 @@ Shared helpers own stdin parsing, path normalization, command extraction, protec
 | Hook | Phase | Purpose |
 | --- | --- | --- |
 | `ai-pre-write-guard.mjs` | before supported write/edit actions | block writes to protected/generated zones |
-| `ai-post-write-lint.mjs` | after supported write/edit actions | run focused documentation/format feedback on the written file |
+| `ai-post-write-lint.mjs` | after supported write/edit actions | run focused documentation, strict Biome, and AI-pitfall feedback without rewriting the written file |
 | `ai-stop-checkpoint.mjs` | turn stop | report working-tree and verification reminders |
 | `codex-bash-guard.mjs` | before supported shell actions | block commands targeting protected zones |
 | `codex-stop-checkpoint.mjs` | turn stop | reuse the shared checkpoint output |

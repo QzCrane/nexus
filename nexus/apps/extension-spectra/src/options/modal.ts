@@ -10,15 +10,31 @@ let currentBinding: HotkeyBinding | null = null;
 let onSaveCallback: ((binding: HotkeyBinding) => void) | null = null;
 let recordedKey: KeyCombo = { code: '', modifiers: { ...DEFAULT_MODIFIERS } };
 
-const modal = document.getElementById('edit-modal')!;
-const keyInput = document.getElementById('edit-key') as HTMLInputElement;
-const actionSelect = document.getElementById('edit-action') as HTMLSelectElement;
-const paramsContainer = document.getElementById('params-container')!;
-const paramsInput = document.getElementById('edit-params') as HTMLInputElement;
-const cancelBtn = document.getElementById('modal-cancel')!;
-const saveBtn = document.getElementById('modal-save')!;
-const closeBtn = modal.querySelector('.modal-close')!;
-const backdrop = modal.querySelector('.modal-backdrop')!;
+interface ElementConstructor<T extends HTMLElement> {
+	new(...args: never[]): T;
+}
+
+function requireElement<T extends HTMLElement>(
+	selector: string,
+	elementType: ElementConstructor<T>,
+	root: ParentNode = document,
+): T {
+	const element = root.querySelector(selector);
+	if (!(element instanceof elementType)) {
+		throw new Error(`Required options element is unavailable: ${selector}`);
+	}
+	return element;
+}
+
+const modal = requireElement('#edit-modal', HTMLElement);
+const keyInput = requireElement('#edit-key', HTMLInputElement);
+const actionSelect = requireElement('#edit-action', HTMLSelectElement);
+const paramsContainer = requireElement('#params-container', HTMLElement);
+const paramsInput = requireElement('#edit-params', HTMLInputElement);
+const cancelBtn = requireElement('#modal-cancel', HTMLButtonElement);
+const saveBtn = requireElement('#modal-save', HTMLButtonElement);
+const closeBtn = requireElement('.modal-close', HTMLButtonElement, modal);
+const backdrop = requireElement('.modal-backdrop', HTMLElement, modal);
 const reservedHotkeyWarning = document.getElementById('reserved-hotkey-warning');
 const legacyWarning = document.getElementById('legacy-action-warning');
 let previouslyFocused: HTMLElement | null = null;
@@ -98,9 +114,9 @@ function handleModalKeydown(event: KeyboardEvent): void {
 	const focusable = Array.from(modal.querySelectorAll<HTMLElement>(
 		'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
 	)).filter(element => !element.hidden && element.getClientRects().length > 0);
-	if (focusable.length === 0) return;
-	const first = focusable[0]!;
-	const last = focusable[focusable.length - 1]!;
+	const first = focusable.at(0);
+	const last = focusable.at(-1);
+	if (!first || !last) return;
 	if (event.shiftKey && document.activeElement === first) {
 		event.preventDefault();
 		last.focus();
@@ -140,7 +156,7 @@ function handleActionChange(): void {
 			: t('modal_legacy_warning');
 	}
 	if (needsParams) {
-		const label = document.getElementById('params-label')!;
+		const label = requireElement('#params-label', HTMLElement);
 		switch (action) {
 			case 'speed_set': label.textContent = t('modal_param_speed'); break;
 			case 'volume_set': label.textContent = t('modal_param_volume'); break;
@@ -188,7 +204,7 @@ function renderReservedHotkeyWarning(): boolean {
 
 function updateSaveAvailability(): void {
 	const action = actionSelect.value as HotkeyAction;
-	(saveBtn as HTMLButtonElement).disabled = !isEditableHotkeyAction(action)
+	saveBtn.disabled = !isEditableHotkeyAction(action)
 		|| isSpectraDefaultHotkeyKeyCombo(recordedKey);
 }
 

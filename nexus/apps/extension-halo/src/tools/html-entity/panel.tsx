@@ -1,6 +1,7 @@
 // goal: HTML Entity panel UI - encode and decode HTML entities
 
-import React, { useState, useCallback, useMemo } from 'react';
+import type React from 'react';
+import { useCallback, useMemo } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { EntityMode } from './types';
@@ -11,10 +12,10 @@ import { useToolState } from '../../kernel';
 
 export const HtmlEntityPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [mode, setMode] = useToolState<EntityMode>('html-entity-mode' as any, 'encode');
-	const [input, setInput] = useToolState<string>('html-entity-input' as any, '');
-	const [output, setOutput] = useToolState<string>('html-entity-output' as any, '');
-	const [showTable, setShowTable] = useToolState<boolean>('html-entity-table' as any, false);
+	const [mode, setMode] = useToolState<EntityMode>('html-entity-mode', 'encode');
+	const [input, setInput] = useToolState<string>('html-entity-input', '');
+	const [output, setOutput] = useToolState<string>('html-entity-output', '');
+	const [showTable, setShowTable] = useToolState<boolean>('html-entity-table', false);
 
 
 	const entityTable = useMemo(() => getEntityTable(), []);
@@ -22,22 +23,22 @@ export const HtmlEntityPanel: React.FC = () => {
 	// Encode special characters only
 	const handleEncodeSpecial = useCallback(() => {
 		setOutput(encodeHtmlSpecial(input));
-	}, [input]);
+	}, [input, setOutput]);
 
 	// Encode to named entities
 	const handleEncodeNamed = useCallback(() => {
 		setOutput(encodeHtmlNamed(input));
-	}, [input]);
+	}, [input, setOutput]);
 
 	// Encode all to numeric
 	const handleEncodeAll = useCallback(() => {
 		setOutput(encodeHtmlAll(input));
-	}, [input]);
+	}, [input, setOutput]);
 
 	// Decode
 	const handleDecode = useCallback(() => {
 		setOutput(decodeHtml(input));
-	}, [input]);
+	}, [input, setOutput]);
 
 	// Copy output
 	const handleCopy = useCallback(() => {
@@ -48,13 +49,13 @@ export const HtmlEntityPanel: React.FC = () => {
 		<div style={styles.wrapper}>
 			{/* Mode Tabs */}
 			<div style={styles.tabs}>
-				<button
+				<button type="button"
 					style={{ ...styles.tab, ...(mode === 'encode' ? styles.active : styles.inactive) }}
 					onClick={() => setMode('encode')}
 				>
 					{t('htmlEntity.encode')}
 				</button>
-				<button
+				<button type="button"
 					style={{ ...styles.tab, ...(mode === 'decode' ? styles.active : styles.inactive) }}
 					onClick={() => setMode('decode')}
 				>
@@ -77,14 +78,14 @@ export const HtmlEntityPanel: React.FC = () => {
 			<div style={styles.row}>
 				{mode === 'encode' ? (
 					<>
-						<button style={styles.btn} onClick={handleEncodeSpecial}>{t('htmlEntity.encodeSpecial')}</button>
-						<button style={styles.btnSecondary} onClick={handleEncodeNamed}>{t('htmlEntity.encodeNamed')}</button>
-						<button style={styles.btnSecondary} onClick={handleEncodeAll}>{t('htmlEntity.encodeAll')}</button>
+						<button type="button" style={styles.btn} onClick={handleEncodeSpecial}>{t('htmlEntity.encodeSpecial')}</button>
+						<button type="button" style={styles.btnSecondary} onClick={handleEncodeNamed}>{t('htmlEntity.encodeNamed')}</button>
+						<button type="button" style={styles.btnSecondary} onClick={handleEncodeAll}>{t('htmlEntity.encodeAll')}</button>
 					</>
 				) : (
-					<button style={styles.btn} onClick={handleDecode}>{t('htmlEntity.decodeBtn')}</button>
+					<button type="button" style={styles.btn} onClick={handleDecode}>{t('htmlEntity.decodeBtn')}</button>
 				)}
-				{output && <button style={styles.btnSecondary} onClick={handleCopy}>📋 {t('common.copy')}</button>}
+				{output && <button type="button" style={styles.btnSecondary} onClick={handleCopy}>📋 {t('common.copy')}</button>}
 			</div>
 
 			{/* Output */}
@@ -99,7 +100,7 @@ export const HtmlEntityPanel: React.FC = () => {
 			<Card variant="default" padding="sm">
 				<div style={styles.row}>
 					<span style={styles.label}>{t('htmlEntity.reference')}</span>
-					<button style={styles.btnSecondary} onClick={() => setShowTable(!showTable)}>
+					<button type="button" style={styles.btnSecondary} onClick={() => setShowTable(!showTable)}>
 						{showTable ? '▲' : '▼'}
 					</button>
 				</div>

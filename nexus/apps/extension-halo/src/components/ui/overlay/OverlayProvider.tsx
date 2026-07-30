@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
-import { ModalConfig, ToastConfig, OverlayContextType } from './types';
+import type React from 'react';
+import { createContext, useContext, useState, useCallback, useRef } from 'react';
+import type { ModalConfig, ToastConfig, OverlayContextType } from './types';
 import { useTranslation } from '../../../i18n';
 import { styles } from './OverlayProvider.styles';
 
@@ -58,8 +59,14 @@ export const OverlayProvider: React.FC<{ children: React.ReactNode }> = ({ child
 			
 			{/* Global Modal Overlay */}
 			{modal && (
-				<div style={styles.overlay} onClick={handleCancel}>
-					<div style={styles.modalContent} onClick={e => e.stopPropagation()}>
+				<div style={styles.overlay}>
+					<button
+						type="button"
+						aria-label={modal.cancelText || t('common.cancel')}
+						onClick={handleCancel}
+						style={{ position: 'absolute', inset: 0, border: 0, padding: 0, background: 'transparent' }}
+					/>
+					<div style={{ ...styles.modalContent, position: 'relative' }} role="dialog" aria-modal="true">
 						{modal.title && <div style={styles.title}>{modal.title}</div>}
 						<div style={styles.message}>{modal.message}</div>
 						{/* If custom content provided, render it */}
@@ -67,14 +74,14 @@ export const OverlayProvider: React.FC<{ children: React.ReactNode }> = ({ child
 						
 						{!modal.hideFooter && (
 							<div style={styles.actions}>
-								<button 
+								<button type="button"
 									style={{...styles.btn, ...styles.btnCancel}}
 									onClick={handleCancel}
 								>
 									{modal.cancelText || t('common.cancel')}
 								</button>
 								{modal.type === 'confirm' && (
-									<button 
+									<button type="button"
 										style={{...styles.btn, ...styles.btnConfirm}}
 										onClick={handleConfirm}
 									>

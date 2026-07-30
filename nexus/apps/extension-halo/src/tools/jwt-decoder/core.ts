@@ -15,10 +15,11 @@ export function decodeJwt(token: string): JwtParts | null {
 	try {
 		const parts = token.trim().split('.');
 		if (parts.length !== 3) return null;
+		const [headerPart, payloadPart, signature = ''] = parts;
+		if (headerPart === undefined || payloadPart === undefined) return null;
 
-		const header = JSON.parse(base64UrlDecode(parts[0]!));
-		const payload = JSON.parse(base64UrlDecode(parts[1]!));
-		const signature = parts[2] || '';
+		const header = JSON.parse(base64UrlDecode(headerPart));
+		const payload = JSON.parse(base64UrlDecode(payloadPart));
 
 		// Check expiration
 		let isExpired = false;

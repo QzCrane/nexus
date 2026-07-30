@@ -1,6 +1,7 @@
 // goal: Color Palette panel UI - extract colors from images
 
-import React, { useState, useCallback, useRef } from 'react';
+import type React from 'react';
+import { useState, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import type { ColorInfo } from './types';
 import { extractColorsFromImage, loadImageFromFile, getContrastColor } from './core';
@@ -10,10 +11,9 @@ import { useToolState } from '../../kernel';
 
 export const ColorPalettePanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [colors, setColors] = useToolState<ColorInfo[]>('color-palette' as any, []);
+	const [colors, setColors] = useToolState<ColorInfo[]>('color-palette', []);
 	const [preview, setPreview] = useState<string>('');
 	const [isDragging, setIsDragging] = useState(false);
-	const inputRef = useRef<HTMLInputElement>(null);
 
 
 	// Process image
@@ -24,7 +24,7 @@ export const ColorPalettePanel: React.FC = () => {
 		const img = await loadImageFromFile(file);
 		const extracted = extractColorsFromImage(img, 8);
 		setColors(extracted);
-	}, []);
+	}, [setColors]);
 
 	// Handle drop
 	const handleDrop = useCallback((e: React.DragEvent) => {
@@ -48,37 +48,41 @@ export const ColorPalettePanel: React.FC = () => {
 	return (
 		<div style={styles.wrapper}>
 			{/* Dropzone */}
-			<div
+			<label
 				style={{ ...styles.dropzone, ...(isDragging ? styles.dropzoneActive : {}) }}
 				onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
 				onDragLeave={() => setIsDragging(false)}
 				onDrop={handleDrop}
-				onClick={() => inputRef.current?.click()}
 			>
 				{preview ? (
 					<img src={preview} alt="Preview" style={styles.preview} />
 				) : (
 					<div style={styles.empty}>🎨 {t('colorPalette.dropHere')}</div>
 				)}
-				<input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleSelect} />
-			</div>
+				<input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleSelect} />
+			</label>
 
 			{/* Palette */}
 			{colors.length > 0 && (
 				<div style={styles.palette}>
-					{colors.map((color, i) => (
-						<div key={i} style={styles.colorRow} onClick={() => handleCopy(color.hex)}>
-							<div style={{ ...styles.colorSwatch, background: color.hex, color: getContrastColor(color.hex) }}>
+					{colors.map((color) => (
+						<button
+							type="button"
+							key={color.hex}
+							style={{ ...styles.colorRow, padding: 0, border: 'none', background: 'transparent', textAlign: 'left' }}
+							onClick={() => handleCopy(color.hex)}
+						>
+							<span style={{ ...styles.colorSwatch, background: color.hex, color: getContrastColor(color.hex) }}>
 								{color.percentage}%
-							</div>
-							<div style={styles.colorInfo}>
-								<div style={styles.hex}>{color.hex.toUpperCase()}</div>
-								<div style={styles.rgb}>{color.rgb}</div>
-								<div style={styles.bar}>
-									<div style={{ ...styles.barFill, width: `${color.percentage}%`, background: color.hex }} />
-								</div>
-							</div>
-						</div>
+							</span>
+							<span style={styles.colorInfo}>
+								<span style={{ ...styles.hex, display: 'block' }}>{color.hex.toUpperCase()}</span>
+								<span style={{ ...styles.rgb, display: 'block' }}>{color.rgb}</span>
+								<span style={{ ...styles.bar, display: 'block' }}>
+									<span style={{ ...styles.barFill, width: `${color.percentage}%`, background: color.hex, display: 'block' }} />
+								</span>
+							</span>
+						</button>
 					))}
 				</div>
 			)}

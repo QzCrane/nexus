@@ -138,46 +138,10 @@ async function buildScriptFiles(sourceDir, destBaseDir) {
 	return results.reduce((a, b) => a + b, 0);
 }
 
-// Helper to build timeline assets (compile TS -> JS, copy CSS)
-async function buildTimelineAssets() {
-	const src = path.join(__dirname, 'src/tools/llm-enhancer/timeline');
-	const dst = path.join(__dirname, 'dist/tools/llm-enhancer/timeline');
-	if (!existsSync(src)) return;
-	mkdirSync(dst, { recursive: true });
-
-	// Copy CSS
-	const files = readdirSync(src);
-	for (const f of files) {
-		if (f.endsWith('.css')) {
-			copyFileSync(path.join(src, f), path.join(dst, f));
-		}
-	}
-
-	// Build TS
-	try {
-		await esbuild.build({
-			...commonConfig,
-			entryPoints: [
-				path.join(src, 'content-chatgpt.ts'),
-				path.join(src, 'content-deepseek.ts'),
-				path.join(src, 'content-gemini.ts')
-			],
-			outdir: dst,
-			format: 'esm', // Must be ESM for dynamic import
-			target: ['chrome100'],
-			logLevel: 'warning'
-		});
-		console.log('✓ Built timeline assets');
-	} catch (e) {
-		console.error('❌ Failed to build timeline assets:', e.message);
-	}
-}
-
 const [toolScriptsCount, officialScriptsCount] = await Promise.all([
 	buildScriptFiles(toolsDir, distToolsDir),
 	buildScriptFiles(scriptsDir, distScriptsDir)
 ]);
-await buildTimelineAssets();
 
 
 

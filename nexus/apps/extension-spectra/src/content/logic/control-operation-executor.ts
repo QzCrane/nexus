@@ -24,7 +24,7 @@ import {
 	jumpToMarker,
 	removeMarker,
 } from '../video/time-marker';
-import { NativeMediaExecutor } from './native-media-executor';
+import type { NativeMediaExecutor } from './native-media-executor';
 import { isContentActiveVideoOperation } from './content-control-policy';
 
 function abLoopState(target: ControlOperationIntent['target']): ABLoopState {

@@ -1,7 +1,7 @@
 // goal: Key combo editor component for Hover Zoom settings
 // eff: Reusable checkbox combo for modifier keys
 
-import React from 'react';
+import type React from 'react';
 import type { KeyCombo } from '../../types';
 import { comboToString } from '../../content/utils/resource-key-helper';
 

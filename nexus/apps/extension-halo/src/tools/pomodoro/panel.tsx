@@ -1,19 +1,20 @@
 // goal: Pomodoro panel UI - timer with phases
 
-import React, { useEffect, useCallback, useRef } from 'react';
+import type React from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { PomodoroConfig, PomodoroState } from './types';
 import { DEFAULT_CONFIG } from './types';
 import { formatTime, getPhaseDuration, getNextPhase, createInitialState, PHASE_COLORS } from './core';
 import { styles } from './panel.styles';
-import { useToolState } from '../../kernel';
+import { playCompletionTone, useToolState } from '../../kernel';
 
 
 export const PomodoroPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [config, setConfig] = useToolState<PomodoroConfig>('pomodoro-config' as any, DEFAULT_CONFIG);
-	const [state, setState] = useToolState<PomodoroState>('pomodoro-state' as any, () => createInitialState(config));
+	const [config, setConfig] = useToolState<PomodoroConfig>('pomodoro-config', DEFAULT_CONFIG);
+	const [state, setState] = useToolState<PomodoroState>('pomodoro-state', () => createInitialState(config));
 
 	const intervalRef = useRef<number | null>(null);
 	// rule: hold latest remaining in a ref so the timer effect doesn't re-run every
@@ -37,7 +38,9 @@ export const PomodoroPanel: React.FC = () => {
 					intervalRef.current = null;
 					// rule: play sound outside the setState updater to avoid side
 					// effects in the reducer (StrictMode double-invokes updaters).
-					try { new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10').play(); } catch { /* ignore */ }
+					void playCompletionTone().catch((error: unknown) => {
+						console.warn('[HALO:Pomodoro] Completion tone failed', error);
+					});
 				}
 				// rule: use functional setState so phase/sessionsCompleted are read
 				// from the latest state — this lets us keep them OUT of the effect

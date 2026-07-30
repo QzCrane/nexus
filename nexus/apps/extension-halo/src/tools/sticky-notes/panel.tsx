@@ -1,17 +1,18 @@
 // goal: Sticky Notes panel UI - create and manage notes
 
-import React, { useState, useEffect, useCallback } from 'react';
+import type React from 'react';
+import { useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import type { Note } from './types';
 import { NOTE_COLORS } from './types';
-import { getNotes, saveNotes, createNote, deleteNote, getColorConfig } from './core';
+import { createNote, getColorConfig } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
 
 
 export const StickyNotesPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [notes, setNotes] = useToolState<Note[]>('sticky-notes' as any, []);
+	const [notes, setNotes] = useToolState<Note[]>('sticky-notes', []);
 
 
 	// Add new note
@@ -44,7 +45,7 @@ export const StickyNotesPanel: React.FC = () => {
 			{/* Header */}
 			<div style={styles.header}>
 				<span style={styles.title}>📝 {t('stickyNotes.title')}</span>
-				<button style={styles.btn} onClick={handleAdd}>+ {t('stickyNotes.add')}</button>
+				<button type="button" style={styles.btn} onClick={handleAdd}>+ {t('stickyNotes.add')}</button>
 			</div>
 
 			{/* Notes Grid */}
@@ -58,8 +59,6 @@ export const StickyNotesPanel: React.FC = () => {
 							<div
 								key={note.id}
 								style={{ ...styles.note, background: color.bg, color: color.text }}
-								onMouseEnter={(e) => { const actions = e.currentTarget.querySelector('.note-actions') as HTMLElement; if (actions) actions.style.opacity = '1'; }}
-								onMouseLeave={(e) => { const actions = e.currentTarget.querySelector('.note-actions') as HTMLElement; if (actions) actions.style.opacity = '0'; }}
 							>
 								<textarea
 									style={{ ...styles.textarea, color: color.text }}
@@ -67,14 +66,17 @@ export const StickyNotesPanel: React.FC = () => {
 									onChange={(e) => handleUpdate(note.id, e.target.value)}
 									placeholder={t('stickyNotes.placeholder')}
 								/>
-								<div className="note-actions" style={styles.noteActions}>
-									<button style={styles.actionBtn} onClick={() => handleDelete(note.id)}>🗑️</button>
+								<div className="note-actions" style={{ ...styles.noteActions, opacity: 1 }}>
+									<button type="button" style={styles.actionBtn} onClick={() => handleDelete(note.id)}>🗑️</button>
 								</div>
 								<div style={styles.colors}>
 									{NOTE_COLORS.map((c) => (
-										<div
+										<button
+											type="button"
 											key={c.id}
-											style={{ ...styles.colorDot, background: c.bg, borderColor: note.color === c.id ? c.text : 'transparent' }}
+											aria-label={c.id}
+											aria-pressed={note.color === c.id}
+											style={{ ...styles.colorDot, background: c.bg, borderColor: note.color === c.id ? c.text : 'transparent', padding: 0 }}
 											onClick={() => handleColor(note.id, c.id)}
 										/>
 									))}

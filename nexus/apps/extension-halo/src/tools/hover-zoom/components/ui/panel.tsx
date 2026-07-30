@@ -1,8 +1,9 @@
 // Hover Zoom settings panel - aligned with smooth-scroll style
-import React, { useState, useEffect, useCallback } from 'react';
+import type React from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, Toggle } from '@nexus/ui-kit';
 import { useTranslation } from '../../../../i18n';
-import { HoverZoomSettings, DEFAULT_SETTINGS, STORAGE_KEY, KeyCombo, AltKeyMode } from '../../types';
+import { type HoverZoomSettings, DEFAULT_SETTINGS, STORAGE_KEY, type KeyCombo, type AltKeyMode } from '../../types';
 import { enableAntiHotlink, disableAntiHotlink, isAntiHotlinkEnabled } from '../../logic/engine';
 import { styles } from './panel.styles';
 import { KeyComboEditor } from './KeyComboEditor';
@@ -82,7 +83,7 @@ export const HoverZoomPanel: React.FC = () => {
                                 <span style={styles.label}>{t('hoverZoom.altKeyMode.label') || 'Alt key handling'}</span>
                                 <div style={styles.segmented}>
                                     {(['compat', 'block'] as AltKeyMode[]).map(m => (
-                                        <button key={m} style={settings.altKeyMode === m ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ altKeyMode: m })}>
+                                        <button type="button" key={m} style={settings.altKeyMode === m ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ altKeyMode: m })}>
                                             {m === 'compat' ? (t('hoverZoom.altKeyMode.compat') || 'Compatible') : (t('hoverZoom.altKeyMode.block') || 'Block Menu')}
                                         </button>
                                     ))}
@@ -139,10 +140,10 @@ export const HoverZoomPanel: React.FC = () => {
                                 </span>
                             </div>
                             <div style={styles.segmented}>
-                                <button style={settings.pinKey === ' ' ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ pinKey: ' ' })}>
+                                <button type="button" style={settings.pinKey === ' ' ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ pinKey: ' ' })}>
                                     {t('hoverZoom.pinMode.space') || 'Space'}
                                 </button>
-                                <button style={settings.pinKey === '' ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ pinKey: '' })}>
+                                <button type="button" style={settings.pinKey === '' ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ pinKey: '' })}>
                                     {t('hoverZoom.pinMode.none') || 'Disabled'}
                                 </button>
                             </div>

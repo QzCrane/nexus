@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import type React from 'react';
+import { useState } from 'react';
 import { styles } from '../styles';
-import { UserScriptState } from '../types';
+import type { UserScriptState } from '../types';
 
 interface SettingsModalProps {
 	config: UserScriptState['toolbarConfig'];
@@ -23,7 +24,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ config, onSave, on
 		const newOrder = [...order];
 		const targetIndex = index + dir;
 		if (targetIndex >= 0 && targetIndex < newOrder.length) {
-			[newOrder[index], newOrder[targetIndex]] = [newOrder[targetIndex]!, newOrder[index]!];
+			const current = newOrder[index];
+			const target = newOrder[targetIndex];
+			if (current === undefined || target === undefined) return;
+			newOrder[index] = target;
+			newOrder[targetIndex] = current;
 			setOrder(newOrder);
 		}
 	};
@@ -37,9 +42,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ config, onSave, on
 	return (
 		<div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 			<div>
-				<label style={{ fontSize: '13px', fontWeight: 600, display: 'block', marginBottom: '8px' }}>
+				<div style={{ fontSize: '13px', fontWeight: 600, display: 'block', marginBottom: '8px' }}>
 					{t('userscripts.toolbarOrder') || 'Toolbar Order'}
-				</label>
+				</div>
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
 					{order.map((item, i) => (
 						<div key={item} style={{
@@ -48,8 +53,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ config, onSave, on
 						}}>
 							<span style={{ fontSize: '13px' }}>{/* TRANSLATE ME LATER IF NEEDED */ ITEMS_MAP[item]}</span>
 							<div style={{ display: 'flex', gap: '4px' }}>
-								<button onClick={() => move(i, -1)} disabled={i === 0} style={{ cursor: 'pointer', opacity: i === 0 ? 0.3 : 1, border: 'none', background: 'transparent' }}>⬆️</button>
-								<button onClick={() => move(i, 1)} disabled={i === order.length - 1} style={{ cursor: 'pointer', opacity: i === order.length - 1 ? 0.3 : 1, border: 'none', background: 'transparent' }}>⬇️</button>
+								<button type="button" onClick={() => move(i, -1)} disabled={i === 0} style={{ cursor: 'pointer', opacity: i === 0 ? 0.3 : 1, border: 'none', background: 'transparent' }}>⬆️</button>
+								<button type="button" onClick={() => move(i, 1)} disabled={i === order.length - 1} style={{ cursor: 'pointer', opacity: i === order.length - 1 ? 0.3 : 1, border: 'none', background: 'transparent' }}>⬇️</button>
 							</div>
 						</div>
 					))}
@@ -69,8 +74,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ config, onSave, on
 			</div>
 
 			<div style={styles.btnGroup}>
-				<button style={styles.btn} onClick={handleSave}>{t('common.save') || 'Save'}</button>
-				<button style={styles.btnSecondary} onClick={onClose}>{t('common.cancel') || 'Cancel'}</button>
+				<button type="button" style={styles.btn} onClick={handleSave}>{t('common.save') || 'Save'}</button>
+				<button type="button" style={styles.btnSecondary} onClick={onClose}>{t('common.cancel') || 'Cancel'}</button>
 			</div>
 		</div>
 	);

@@ -1,4 +1,4 @@
-import React from 'react';
+import type React from 'react';
 
 /** Constant category color map for premium aesthetics */
 export const CATEGORY_COLORS: Record<string, string> = {
@@ -62,7 +62,9 @@ export const PinOverlay: React.FC<{
 	onMouseEnter: () => void;
 	onMouseLeave: () => void;
 }> = ({ isPinned, isPinHovered, isCompact, onToggle, onMouseEnter, onMouseLeave }) => (
-	<div 
+	<button
+		type="button"
+		aria-label={isPinned ? 'Unpin tool' : 'Pin tool'}
 		onClick={onToggle}
 		onMouseEnter={onMouseEnter}
 		onMouseLeave={onMouseLeave}
@@ -89,16 +91,16 @@ export const PinOverlay: React.FC<{
 			transition: 'transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
 			display: 'inline-block'
 		}}>📌</span>
-	</div>
+	</button>
 );
 
 /** Shared animations for the tool items */
 export const ToolAnimations = () => (
-	<style dangerouslySetInnerHTML={{ __html: `
+	<style>{`
 		@keyframes halo-pulse {
 			0% { transform: scale(0.85); opacity: 0.5; }
 			50% { transform: scale(1.15); opacity: 1; }
 			100% { transform: scale(0.85); opacity: 0.5; }
 		}
-	`}} />
+	`}</style>
 );

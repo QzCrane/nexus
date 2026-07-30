@@ -1,6 +1,7 @@
 // goal: Unit Converter panel UI - length/weight/temp/time/data conversion
 
-import React, { useState, useMemo, useCallback } from 'react';
+import type React from 'react';
+import { useMemo, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { UnitCategory } from './types';
@@ -13,22 +14,22 @@ const CATEGORIES: UnitCategory[] = ['length', 'weight', 'temperature', 'time', '
 
 export const UnitConverterPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [category, setCategory] = useToolState<UnitCategory>('unit-category' as any, 'length');
-	const [inputValue, setInputValue] = useToolState<string>('unit-input' as any, '1');
-	const [fromUnit, setFromUnit] = useToolState<string>('unit-from' as any, 'm');
-	const [toUnit, setToUnit] = useToolState<string>('unit-to' as any, 'km');
+	const [category, setCategory] = useToolState<UnitCategory>('unit-category', 'length');
+	const [inputValue, setInputValue] = useToolState<string>('unit-input', '1');
+	const [fromUnit, setFromUnit] = useToolState<string>('unit-from', 'm');
+	const [toUnit, setToUnit] = useToolState<string>('unit-to', 'km');
 
 
 	const units = useMemo(() => UNITS[category], [category]);
 
 	// Get unit objects
-	const fromUnitObj = useMemo(() => units.find((u) => u.id === fromUnit) || units[0]!, [units, fromUnit]);
-	const toUnitObj = useMemo(() => units.find((u) => u.id === toUnit) || units[1]!, [units, toUnit]);
+	const fromUnitObj = useMemo(() => units.find((u) => u.id === fromUnit) ?? units[0], [units, fromUnit]);
+	const toUnitObj = useMemo(() => units.find((u) => u.id === toUnit) ?? units[1], [units, toUnit]);
 
 	// Calculate result
 	const result = useMemo(() => {
 		const value = parseFloat(inputValue);
-		if (isNaN(value)) return '';
+		if (Number.isNaN(value)) return '';
 		return formatResult(convertUnit(value, fromUnitObj, toUnitObj));
 	}, [inputValue, fromUnitObj, toUnitObj]);
 
@@ -36,22 +37,22 @@ export const UnitConverterPanel: React.FC = () => {
 	const handleCategoryChange = useCallback((cat: UnitCategory) => {
 		setCategory(cat);
 		const catUnits = UNITS[cat];
-		setFromUnit(catUnits[0]?.id || '');
-		setToUnit(catUnits[1]?.id || catUnits[0]?.id || '');
-	}, []);
+		setFromUnit(catUnits[0].id);
+		setToUnit(catUnits[1].id);
+	}, [setFromUnit, setCategory, setToUnit]);
 
 	// Swap units
 	const handleSwap = useCallback(() => {
 		setFromUnit(toUnit);
 		setToUnit(fromUnit);
-	}, [fromUnit, toUnit]);
+	}, [fromUnit, toUnit, setToUnit, setFromUnit]);
 
 	return (
 		<div style={styles.wrapper}>
 			{/* Category Tabs */}
 			<div style={styles.tabs}>
 				{CATEGORIES.map((cat) => (
-					<button
+					<button type="button"
 						key={cat}
 						style={{ ...styles.tab, ...(category === cat ? styles.active : styles.inactive) }}
 						onClick={() => handleCategoryChange(cat)}
@@ -79,7 +80,7 @@ export const UnitConverterPanel: React.FC = () => {
 							))}
 						</select>
 					</div>
-					<button style={styles.swapBtn} onClick={handleSwap} title={t('unitConverter.swap')}>⇄</button>
+					<button type="button" style={styles.swapBtn} onClick={handleSwap} title={t('unitConverter.swap')}>⇄</button>
 					<div style={styles.inputGroup}>
 						<span style={styles.label}>{t('unitConverter.to')}</span>
 						<div style={{ ...styles.input, background: 'var(--halo-bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

@@ -29,7 +29,11 @@ export const SUPPORTED_LANGS = Object.keys(I18N) as Array<keyof typeof I18N>;
 
 // post: returns the dictionary for the requested language or falls back to the default (en-US)
 export function getDict(lang: string): I18NDict {
-  return I18N[lang] || I18N[DEFAULT_LANG]!;
+  const selected = I18N[lang];
+  if (selected) return selected;
+  const fallback = I18N[DEFAULT_LANG];
+  if (!fallback) throw new Error(`Default dictionary is unavailable: ${DEFAULT_LANG}`);
+  return fallback;
 }
 
 export { EN_US } from './en';

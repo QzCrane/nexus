@@ -4,30 +4,50 @@
 import { configure, clearQueue } from '../tools/smooth-scroll/engine';
 import { STORAGE_KEY } from '../tools/smooth-scroll/types';
 import { settings, updateStateSettings } from './smooth-scroll-state';
-import type { ScrollSettings } from './smooth-scroll-state';
-import { onWheel, onKeydown, onMouseDown } from './smooth-scroll-handlers';
+import { resetRuntimeState } from './smooth-scroll-state';
+import { onWheel, onKeydown, onMouseDown, resetInputHandlers } from './smooth-scroll-handlers';
 
-export const updateSettings = (n: ScrollSettings): void => {
+const updateSettings = (value: unknown): void => {
 	const was = settings.enabled;
-	updateStateSettings(n);
-	configure(settings.animationTime, settings.easing);
+	const next = updateStateSettings(value);
+	configure(next.animationTime, next.easing, next.pulseScale);
 
-	if (n.enabled && !was) attachListeners();
-	else if (!n.enabled && was) { detachListeners(); clearQueue(); }
-
-	console.log('[HALO:Scroll] Updated:', n.enabled ? 'ON' : 'OFF');
+	if (next.enabled && !was) attachListeners();
+	else if (!next.enabled && was) detachListeners();
 }
 
-export const attachListeners = () => {
-	window.addEventListener('wheel', onWheel, { passive: false, capture: true });
+let listenersAttached = false;
+
+const resetDocumentRuntime = (): void => {
+	clearQueue();
+	resetInputHandlers();
+	resetRuntimeState();
+};
+
+const onVisibilityChange = (): void => {
+	if (document.hidden) resetDocumentRuntime();
+};
+
+const attachListeners = (): void => {
+	if (listenersAttached) return;
+	listenersAttached = true;
+	// Bubble phase gives page-owned controls and virtual scrollers first refusal.
+	window.addEventListener('wheel', onWheel, { passive: false });
 	window.addEventListener('keydown', onKeydown);
 	window.addEventListener('mousedown', onMouseDown);
+	window.addEventListener('pagehide', resetDocumentRuntime);
+	document.addEventListener('visibilitychange', onVisibilityChange);
 }
 
-export const detachListeners = () => {
-	window.removeEventListener('wheel', onWheel, { capture: true });
+const detachListeners = (): void => {
+	if (!listenersAttached) return;
+	listenersAttached = false;
+	window.removeEventListener('wheel', onWheel);
 	window.removeEventListener('keydown', onKeydown);
 	window.removeEventListener('mousedown', onMouseDown);
+	window.removeEventListener('pagehide', resetDocumentRuntime);
+	document.removeEventListener('visibilitychange', onVisibilityChange);
+	resetDocumentRuntime();
 }
 
 // rule: guard against double-init and return a cleanup function so callers (e.g.
@@ -39,22 +59,35 @@ export async function init(): Promise<() => void> {
 	if (initStarted) return () => {};
 	initStarted = true;
 
-	if (location.protocol === 'chrome-extension:') return () => {};
+	if (window !== window.top || location.protocol === 'chrome-extension:') {
+		initStarted = false;
+		return () => {};
+	}
 
 	try {
 		const res = await chrome.storage.sync.get([STORAGE_KEY]);
-		if (res[STORAGE_KEY]) updateStateSettings(res[STORAGE_KEY]);
-	} catch { console.log('[HALO:Scroll] Defaults'); }
+		updateStateSettings(res[STORAGE_KEY]);
+	} catch (error: unknown) {
+		console.warn('[HALO:Scroll] Failed to restore settings; using defaults', error);
+	}
 
-	configure(settings.animationTime, settings.easing);
+	configure(settings.animationTime, settings.easing, settings.pulseScale);
 
+	let bootTimer = 0;
+	let bootPending = false;
+	let disposed = false;
 	const boot = () => {
+		bootPending = false;
+		if (disposed) return;
 		if (settings.enabled) attachListeners();
-		console.log('[HALO:Scroll] Init');
 	};
 
-	if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
-	else setTimeout(boot, 100);
+	if (document.readyState === 'loading') {
+		bootPending = true;
+		document.addEventListener('DOMContentLoaded', boot, { once: true });
+	} else {
+		bootTimer = window.setTimeout(boot, 100);
+	}
 
 	const listener = (c: { [key: string]: chrome.storage.StorageChange }, a: string) => {
 		if (a === 'sync' && c[STORAGE_KEY]) updateSettings(c[STORAGE_KEY].newValue);
@@ -62,6 +95,10 @@ export async function init(): Promise<() => void> {
 	chrome.storage.onChanged.addListener(listener);
 
 	return () => {
+		disposed = true;
+		if (bootPending) document.removeEventListener('DOMContentLoaded', boot);
+		if (bootTimer) window.clearTimeout(bootTimer);
+		detachListeners();
 		chrome.storage.onChanged.removeListener(listener);
 		initStarted = false;
 	};

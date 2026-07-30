@@ -3,17 +3,19 @@ import type { EnhancedResult } from '../resolvers/rule-resolver';
 
 export function downloadMedia(source: EnhancedResult | null) {
 	if (source) {
-		// rule: swallow rejection — the background may not have a HALO_DOWNLOAD
-		// handler (e.g. optional downloads permission not granted), in which case
-		// chrome.runtime.sendMessage rejects. The user already clicked download,
-		// so an unhandled rejection would surface as a confusing console error.
-		chrome.runtime.sendMessage({ type: 'HALO_DOWNLOAD', url: source.url }).catch(() => {});
+		void chrome.runtime
+			.sendMessage({ type: 'HALO_DOWNLOAD', url: source.url })
+			.catch((error: unknown) => {
+				console.warn('[HALO:HoverZoom] Download request failed', error);
+			});
 	}
 }
 
 export function copyUrl(source: EnhancedResult | null) {
 	if (source) {
-		navigator.clipboard.writeText(source.url);
+		void navigator.clipboard.writeText(source.url).catch((error: unknown) => {
+			console.warn('[HALO:HoverZoom] Copy URL failed', error);
+		});
 	}
 }
 

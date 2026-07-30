@@ -6,7 +6,7 @@ import { createLogger } from '@nexus/kernel';
 import { useToolState } from '../../kernel';
 import { useTranslation } from '../../i18n';
 import type { ScrollSettings } from './types';
-import { DEFAULT_SETTINGS, PROFILES, CUSTOM_PROFILE_KEY, STORAGE_KEY } from './types';
+import { DEFAULT_SETTINGS, PROFILES, CUSTOM_PROFILE_KEY, STORAGE_KEY, normalizeScrollSettings } from './types';
 import { useToast } from '../../components/ToastProvider';
 
 const logger = createLogger('SmoothScroll', 'HALO');
@@ -18,20 +18,20 @@ export function useSmoothScrollSettings() {
 	const [settings, setSettings] = useToolState<ScrollSettings>(
 		'smooth-scroll',
 		DEFAULT_SETTINGS,
-		{ area: 'sync', storageKey: STORAGE_KEY }
+		{
+			area: 'sync',
+			storageKey: STORAGE_KEY,
+			debounceMs: 0,
+			normalize: normalizeScrollSettings,
+		}
 	);
-	// const [toast, setToast] = useState<string | null>(null); // Removed locally
 	const [hasCustomProfile, setHasCustomProfile] = useState(false);
-
-	// useEffect(() => { loadSettings().then(setSettings); }, []); // useToolState handles parsing
 
 	useEffect(() => {
 		chrome.storage.sync.get([CUSTOM_PROFILE_KEY], (r) => {
 			setHasCustomProfile(!!r[CUSTOM_PROFILE_KEY]);
 		});
 	}, []);
-
-	// const showToast = ... // Removed local implementation
 
 	const updateSetting = useCallback(<K extends keyof ScrollSettings>(key: K, value: ScrollSettings[K]) => {
 		setSettings(prev => ({ ...prev, [key]: value }));
@@ -49,7 +49,7 @@ export function useSmoothScrollSettings() {
 	const loadCustomProfile = useCallback(async () => {
 		const r = await chrome.storage.sync.get([CUSTOM_PROFILE_KEY]);
 		if (r[CUSTOM_PROFILE_KEY]) {
-			setSettings(prev => ({ ...prev, ...r[CUSTOM_PROFILE_KEY] }));
+			setSettings(normalizeScrollSettings(r[CUSTOM_PROFILE_KEY]));
 			showToast(`${t('smoothScroll.profilesList.custom')} ${t('smoothScroll.toasts.loaded')}`);
 		}
 	}, [showToast, t, setSettings]);

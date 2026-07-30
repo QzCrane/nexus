@@ -62,16 +62,15 @@ jobs:
       - name: Check cross-platform contract
         run: bun run check:platform
 
-      - name: Check documentation tooling format
+      - name: Check documentation tooling lint
         run: >-
-          bun --cwd nexus x biome check
+          bun --cwd nexus scripts/run-strict-biome.mjs
           scripts/lint-docs.mjs
           scripts/check-platform-contract.mjs
           scripts/platform-contract.mjs
           scripts/platform-contract.test.mjs
           scripts/check-toolchain.mjs
           scripts/sync-public.cjs
-          --max-diagnostics=100
 
       - name: Test AI-tool hooks
         run: bun --cwd nexus scripts/hooks/test.mjs

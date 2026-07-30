@@ -1,7 +1,8 @@
 // goal: Enhanced toolbar with smooth transitions and hover preload
 // eff: Animated tool buttons + keyboard shortcuts + preload on hover
 
-import React, { useCallback, memo } from 'react';
+import type React from 'react';
+import { useCallback, memo } from 'react';
 import type { ToolId } from '../../kernel';
 import { useToolPreload } from '../core/lazy-tool-loader';
 
@@ -33,7 +34,7 @@ const ToolButton: React.FC<ToolButtonProps> = memo(({ id, icon, label, isActive,
 	};
 
 	return (
-		<button
+		<button type="button"
 			style={style}
 			onClick={handleClick}
 			onMouseEnter={handleMouseEnter}
@@ -118,7 +119,7 @@ export const EnhancedToolbar: React.FC<EnhancedToolbarProps> = ({
 			))}
 
 			{/* Search/Palette button */}
-			<button style={styles.searchBtn} onClick={onOpenPalette}>
+			<button type="button" style={styles.searchBtn} onClick={onOpenPalette}>
 				🔍 <span style={{ fontSize: '10px', opacity: 0.7 }}>⌘K</span>
 			</button>
 		</div>

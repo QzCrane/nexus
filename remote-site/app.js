@@ -239,8 +239,20 @@
       this.connection = null;
       this.peer = null;
       this.attempt += 1;
-      try { oldConnection?.close(); } catch { /* already closed */ }
-      try { oldPeer?.destroy(); } catch { /* already destroyed */ }
+      const failures = [];
+      try {
+        oldConnection?.close();
+      } catch (error) {
+        failures.push(error);
+      }
+      try {
+        oldPeer?.destroy();
+      } catch (error) {
+        failures.push(error);
+      }
+      if (failures.length > 0) {
+        console.error('Remote transport disposal failed', new AggregateError(failures));
+      }
     }
 
     destroy() {

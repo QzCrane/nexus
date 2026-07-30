@@ -25,7 +25,7 @@
 	"scripts": {
 		"build": "bun tsc -b",
 		"dev": "bun tsc -b --watch",
-		"lint": "biome check src --max-diagnostics=100",
+		"lint": "bun ../../scripts/run-strict-biome.mjs .",
 		"typecheck": "bun tsc --noEmit --tsBuildInfoFile typecheck.tsbuildinfo"
 	},
 	"dependencies": {

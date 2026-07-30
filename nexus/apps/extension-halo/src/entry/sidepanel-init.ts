@@ -23,20 +23,32 @@ const LIGHT = {
 };
 
 function initTheme(): void {
+	const applyTheme = (mode: unknown): void => {
+		const isDark =
+			mode === 'dark' ||
+			(mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+		const colors = isDark ? DARK : LIGHT;
+		for (const [key, value] of Object.entries(colors)) {
+			document.documentElement.style.setProperty(key, value);
+		}
+	};
+
+	applyTheme('dark');
 	try {
-		chrome.storage.sync.get(['HALO_SETTINGS'], (result) => {
-			const s = result.HALO_SETTINGS || {};
-			const mode = s.theme || 'dark';
-			const isDark =
-				mode === 'dark' ||
-				(mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-			const colors = isDark ? DARK : LIGHT;
-			for (const [k, v] of Object.entries(colors)) {
-				document.documentElement.style.setProperty(k, v);
-			}
-		});
-	} catch {
-		// Extension context only
+		void chrome.storage.sync.get(['HALO_SETTINGS'])
+			.then((result) => {
+				const settings = result.HALO_SETTINGS;
+				applyTheme(
+					typeof settings === 'object' && settings !== null
+						? (settings as { theme?: unknown }).theme
+						: 'dark',
+				);
+			})
+			.catch((error: unknown) => {
+				console.warn('[HALO:Theme] Failed to load persisted theme', error);
+			});
+	} catch (error: unknown) {
+		console.warn('[HALO:Theme] Storage context unavailable', error);
 	}
 }
 

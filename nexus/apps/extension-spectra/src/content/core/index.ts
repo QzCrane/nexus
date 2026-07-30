@@ -49,6 +49,9 @@ import { disposeABLoops, listABOwnership, observeABLoopSources } from '../video/
 import { disposeMarkers, listMarkerOwnership, observeMarkerSources } from '../video/time-marker';
 import { registerTrustedActivationBridge } from '../input/trusted-activation-bridge';
 import { createFullscreenAudioHandoff } from './fullscreen-audio-handoff';
+import { disposeFeedbackSurfaces } from '../ui/feedback-surface';
+import { disposeOSD } from '../ui/osd';
+import { disposeToast } from '../ui/toast';
 
 const log = logger.content;
 
@@ -73,6 +76,12 @@ interface ContentRuntime {
   dispose(handoff?: boolean): Promise<void>;
 }
 
+function disposeFeedbackUI(): void {
+	disposeOSD();
+	disposeToast();
+	disposeFeedbackSurfaces();
+}
+
 function createContentRuntime(): ContentRuntime {
   const registry = new Registry();
   const runtime: ContentRuntime = {
@@ -82,6 +91,10 @@ function createContentRuntime(): ContentRuntime {
     dispose(handoff = false) {
       if (runtime.disposing) return runtime.disposing;
 			runtime.disposed = true;
+			// Retire presentation synchronously before audio cleanup can yield.
+			// Late work from this generation must never recreate feedback while
+			// the final runtime release is still awaiting its processor teardown.
+			disposeFeedbackUI();
 			runtime.disposing = (async () => {
 				if (!handoff) await runtime.release?.();
 				registry.dispose();
@@ -109,6 +122,7 @@ void spectraWindow.__SPECTRA_CONTENT_RUNTIME__?.dispose(true);
 void spectraWindow.__SPECTRA_TEARDOWN__?.();
 
 const contentRuntime = createContentRuntime();
+contentRuntime.registry.track(disposeFeedbackUI);
 spectraWindow.__SPECTRA_CONTENT_RUNTIME__ = contentRuntime;
 spectraWindow.__SPECTRA_TEARDOWN__ = () => contentRuntime.dispose(true);
 setContentRuntimeDisposer(() => contentRuntime.dispose(false));
@@ -160,7 +174,8 @@ function bootstrapMessaging(ctx: InitContext): void {
 // eff: registers all lifecycle listeners (popup, media, gestures, fullscreen, navigation, hotkeys)
 function bootstrapLifecycle(ctx: InitContext, runtime: ContentRuntime): void {
   const { state, audioController, registry, deps } = ctx;
-  const policyExecutor = deps.policyExecutor!;
+  const { policyExecutor } = deps;
+  if (!policyExecutor) throw new Error('SPECTRA content policy executor was not initialized');
 
   registry.track(setupPopupConnectionListener(state));
 
@@ -193,7 +208,8 @@ async function applyInitialState(
 ): Promise<void> {
 	if (!isCurrentRuntime(runtime)) return;
 	const { state, deps } = ctx;
-	const policyExecutor = deps.policyExecutor!;
+	const { policyExecutor } = deps;
+	if (!policyExecutor) throw new Error('SPECTRA content policy executor was not initialized');
 	try {
 		if (source !== 'fresh') {
 			log.info(`[Hydration] Runtime state restored from ${source}.`);
@@ -363,4 +379,3 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
 	if (!isCurrentRuntime(runtime)) return;
 	log.info('Content Script ready.');
 }
-

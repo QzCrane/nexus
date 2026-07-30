@@ -1,6 +1,7 @@
 // goal: Number Base panel UI - base conversion (2/8/10/16)
 
-import React, { useState, useCallback, useMemo } from 'react';
+import type React from 'react';
+import { useCallback, useMemo } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { Base, BaseConvertResult } from './types';
@@ -14,7 +15,7 @@ const BASES: Base[] = [2, 8, 10, 16];
 export const NumberBasePanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [input, setInput] = useToolState<string>('number-base', '');
-	const [fromBase, setFromBase] = useToolState<Base>('number-base-from' as any, 10);
+	const [fromBase, setFromBase] = useToolState<Base>('number-base-from', 10);
 
 
 	// Compute result in real-time
@@ -63,28 +64,28 @@ export const NumberBasePanel: React.FC = () => {
 							<div style={styles.resultLabel}>Binary (2)</div>
 							<div style={styles.resultValue}>{formatWithGrouping(result.binary, 4)}</div>
 						</div>
-						<button style={styles.btnCopy} onClick={() => handleCopy(result.binary)}>📋</button>
+						<button type="button" style={styles.btnCopy} onClick={() => handleCopy(result.binary)}>📋</button>
 					</div>
 					<div style={styles.resultCard}>
 						<div>
 							<div style={styles.resultLabel}>Octal (8)</div>
 							<div style={styles.resultValue}>{result.octal}</div>
 						</div>
-						<button style={styles.btnCopy} onClick={() => handleCopy(result.octal)}>📋</button>
+						<button type="button" style={styles.btnCopy} onClick={() => handleCopy(result.octal)}>📋</button>
 					</div>
 					<div style={styles.resultCard}>
 						<div>
 							<div style={styles.resultLabel}>Decimal (10)</div>
 							<div style={styles.resultValue}>{Number(result.decimal).toLocaleString()}</div>
 						</div>
-						<button style={styles.btnCopy} onClick={() => handleCopy(result.decimal)}>📋</button>
+						<button type="button" style={styles.btnCopy} onClick={() => handleCopy(result.decimal)}>📋</button>
 					</div>
 					<div style={styles.resultCard}>
 						<div>
 							<div style={styles.resultLabel}>Hexadecimal (16)</div>
 							<div style={styles.resultValue}>0x{result.hex}</div>
 						</div>
-						<button style={styles.btnCopy} onClick={() => handleCopy(result.hex)}>📋</button>
+						<button type="button" style={styles.btnCopy} onClick={() => handleCopy(result.hex)}>📋</button>
 					</div>
 				</>
 			)}

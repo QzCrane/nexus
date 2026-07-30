@@ -31,6 +31,7 @@ export async function initTheme(): Promise<void> {
 		currentMode = await consumeLegacyThemeForOneRelease();
 	} catch {
 		// Keep the candidate for the next Options visit if the background is restarting.
+		currentMode = snapshot.globalSettings.themeMode;
 	}
 	applyTheme(currentMode);
 

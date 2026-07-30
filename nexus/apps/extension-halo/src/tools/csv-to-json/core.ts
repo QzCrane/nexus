@@ -8,38 +8,42 @@ export interface CsvOptions {
 // Convert CSV to JSON array
 export function csvToJson(csv: string, options: CsvOptions = { delimiter: ',', hasHeader: true }): Record<string, unknown>[] {
 	const lines = csv.trim().split(/\r?\n/);
-	if (lines.length === 0) return [];
+	const firstLine = lines[0];
+	if (firstLine === undefined) return [];
 
 	let headers: string[] = [];
 	let startRow = 0;
 
 	if (options.hasHeader) {
-		headers = parseCsvLine(lines[0]!, options.delimiter);
+		headers = parseCsvLine(firstLine, options.delimiter);
 		startRow = 1;
 	} else {
 		// Generate headers: col1, col2, ...
-		const firstRow = parseCsvLine(lines[0]!, options.delimiter);
+		const firstRow = parseCsvLine(firstLine, options.delimiter);
 		headers = firstRow.map((_, i) => `col${i + 1}`);
 	}
 
 	const result: Record<string, unknown>[] = [];
 
 	for (let i = startRow; i < lines.length; i++) {
-		const line = lines[i]!.trim();
+		const sourceLine = lines[i];
+		if (sourceLine === undefined) continue;
+		const line = sourceLine.trim();
 		if (!line) continue;
 
 		const values = parseCsvLine(line, options.delimiter);
 		const obj: Record<string, unknown> = {};
 
 		headers.forEach((header, index) => {
-			let val = values[index];
+			const rawValue = values[index];
+			let value: unknown = rawValue;
 			// Try to convert numbers/booleans? For now keep strings to be safe or simple conversion
-			if (val === 'true') val = true as any;
-			else if (val === 'false') val = false as any;
-			else if (val === 'null') val = null as any;
-			else if (val !== undefined && !isNaN(Number(val)) && val.trim() !== '') val = Number(val) as any;
+			if (rawValue === 'true') value = true;
+			else if (rawValue === 'false') value = false;
+			else if (rawValue === 'null') value = null;
+			else if (rawValue !== undefined && !Number.isNaN(Number(rawValue)) && rawValue.trim() !== '') value = Number(rawValue);
 
-			obj[header] = val;
+			obj[header] = value;
 		});
 
 		result.push(obj);

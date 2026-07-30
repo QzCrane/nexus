@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: halo-architecture
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-29
 ---
 
 # HALO architecture
@@ -75,6 +75,7 @@ Entry routes may include the browser action, context menus, and configured comma
 
 - shared design tokens own color, spacing, surface, focus, and motion vocabulary;
 - user-visible text and accessible names use canonical locale keys;
+- native controls own ordinary activation; composite widgets keep primary and secondary actions separate, editable collections persist stable row identities, and only immutable coordinate projections may justify a narrow positional-key lint exception;
 - animations respect user settings and reduced-motion preferences;
 - a tool failure is isolated by the shared error boundary and does not destroy the shell;
 - theme or dark-mode behavior embedded in Settings is an internal feature unless it satisfies the complete plugin contract.
@@ -84,6 +85,29 @@ Entry routes may include the browser action, context menus, and configured comma
 Panel-local state may remain in the panel. Work that must continue after panel closure requires an explicit Background owner, persisted state model, wake/recovery behavior, and tests for service-worker suspension.
 
 Do not keep a feature alive through unbounded intervals, hidden panels, or duplicated storage listeners. Prefer browser events, alarms, and narrowly owned lifecycle tokens.
+
+`useToolState` keeps the existing raw Chrome-storage value ABI, but each
+`(area, storageKey)` hook epoch owns one bounded write coordinator. The
+coordinator permits one active write, one replaceable latest desired value, and
+one debounce timer; it is state persistence rather than an event log, so
+intermediate values never form an unbounded Promise queue. A structurally equal
+owned write echo acknowledges that write without cancelling a newer local
+intent. A different storage event becomes the new authority, cancels work that
+has not started, and causes an already-active stale write to repair only the
+latest winner after it settles. Key or area changes create a new epoch. Cleanup
+seals captured setters before removing the listener and drains at most the
+existing active write plus one frozen final desired value.
+
+Hover Zoom's MediaSource path has one generation-scoped session owner for the
+shared viewer. Session creation returns `{ ready, dispose }` synchronously, so
+replacement, hide, and failure can retire source-open waits, append listeners,
+interaction timers, SourceBuffers, and the object URL before the first segment
+finishes. Promise, metadata, and timer callbacks must prove that their session
+is still current before mutating the viewer, and a retired session cannot clear
+a newer session's video source. The current Background proxy request protocol
+does not transport an `AbortSignal`; an already-dispatched proxy request may
+therefore finish physically, but its retired result is consumed without
+recovering MSE or UI ownership.
 
 ## Permissions
 
@@ -113,6 +137,33 @@ A plugin is incomplete when its name, description, primary actions, errors, or a
 - performance claims require measured startup, interaction, memory, and background-wake evidence.
 
 “Zero allocation,” “zero CPU,” and fixed speedup factors are not documentation guarantees unless a release benchmark defines the workload and proves the claim.
+
+### Smooth-scroll ownership
+
+The page content module owns input admission and the shared animation engine owns only admitted displacement. The routing contract is structural:
+
+- page input admission runs only in the top-level browsing context. Child frames remain browser-owned so a non-scrollable media or application frame can chain wheel input to its parent viewport;
+- descendant page handlers get first refusal before HALO's bubble-phase window listener; a prevented or propagation-stopped event remains page-owned;
+- embedded application surfaces, editable controls, fullscreen content, and explicitly marked virtual scrollers stay native. Audio and video elements are routing leaves rather than scroll owners: page handlers still get first refusal, then HALO may animate the nearest eligible ancestor without mutating a media layout;
+- HALO animates only vertical overflow exposed by the browser as `auto`, `scroll`, or `overlay`; `hidden` and `clip` are layout boundaries and are never mutated as user scroll containers;
+- the viewport has one canonical target, `Window`. Its effective overflow follows root/body propagation rules; a locked viewport yields to native behavior instead of being cancelled, while `blocked` is reserved for explicit containment boundaries;
+- nested containers chain outward only after reaching their directional boundary. Only explicit `overscroll-behavior: contain|none` creates a containment barrier; position, size, class names, and child counts do not imply one;
+- every admitted input re-resolves the current ancestor path. Target caching requires an explicit DOM/style generation contract; a time-to-live alone cannot prove that a nearer scroller or containment boundary did not appear;
+- ordinary light-DOM wheel input follows `target.parentElement` without allocating a composed-path array. An event whose retargeted host, assigned slot, or non-document root requires shadow ancestry reads `composedPath()` at most once, so open shadow trees and slots retain their real ancestor order. Middle-click admission follows the same conditional composed ancestry. `MAX_SCROLL_ROUTE_ELEMENTS` bounds the structural preflight at 65 elements; an over-deep path yields natively before any computed-style read. Ordinary complete light-DOM paths use the browser's `closest` fast path, while composed paths use element matching. Only after that marker pass may routing read styles, and the nearest scroll or containment decision returns immediately; audio and video routing leaves are skipped before their own computed style is read, and root/body styles are reused only within that call and never cached across events;
+- `respectReducedMotion` controls the system motion-policy boundary. When enabled, `prefers-reduced-motion: reduce` yields to native scrolling; otherwise the explicitly enabled Smooth Scroll tool keeps its requested animation behavior;
+- coarse wheel ticks and fine-grained touchpad or high-resolution wheel streams share the same rAF animation owner. Page content and the SidePanel use the same allocation-free classifier while retaining separate per-surface gesture state. A strong coarse sample contributes exactly the configured base step; fine and ambiguous sub-threshold integer input preserve their physical delta. Repeated ambiguous integers remain on one fine trajectory instead of changing distance and dynamics on the second sample; a later strong coarse sample may promote the gesture without discarding already accepted distance. Acceleration changes response gain, never spatial distance. Classification controls source settings and response only; it never authorizes a synchronous `scrollTop` or `scrollBy` mutation;
+- callers cancel native input only after the engine synchronously admits a live target with directional capacity;
+- pending displacement has exactly one target. A target or direction change cancels old momentum, and idle, hidden, disabled, detached, or disposed states release the target and animation frame.
+
+`HALO_SMOOTH_SCROLL_SETTINGS` in `storage.sync` is the only settings-distribution source; imported and persisted values pass through the same runtime normalizer. Runtime control changes use ordered zero-delay writes, and the shared state hook flushes any pending final value during unmount instead of discarding a visible toggle. Each directional route returns a same-call-stack admission snapshot so the engine does not repeat the route's style and capacity reads; the snapshot is never cached across input events. The SidePanel follows this same dynamic route rather than keeping a time-to-live or `WeakRef` target guess. Coarse-wheel acceleration is scoped to the canonical target and direction and cannot cross a routing boundary. `accelerationMax` remains storage-compatible but now caps response gain in both page content and the SidePanel; it does not multiply the configured step. A finite `WheelEvent.timeStamp` is used only for gesture ordering, axis lock, device evidence, and acceleration cadence. Animation dynamics start from `performance.now()` after synchronous admission, so time spent in the browser event queue or page handlers cannot be converted into a first-frame catch-up jump.
+
+The engine coalesces all input received between display frames into one remaining-displacement state. Logical easing progress and browser-write carry are separate: subpixel quantization cannot freeze easing progress, and the next frame observes the previous write before issuing at most one new vertical write. Coarse input adds displacement without injecting a discrete velocity kick. Response gain converges toward its new target instead of changing spring stiffness instantaneously, and the tail planner intervenes only when the remaining displacement exceeds future physical drain capacity; ordinary motion therefore remains on one continuous critically damped trajectory. A vertical frame does not read or integrate the horizontal axis and does not read the vertical position after writing it. It overwrites one engine-private metrics scratch object rather than allocating a new metrics object per frame, then clears its DOM reference when ownership ends. Dynamic overflow, extent, position, and connectivity are still revalidated each frame rather than replaced by a time-based guess. Viewport writes explicitly use instant browser behavior so page CSS cannot create a competing smooth-scroll animation owner.
+
+`SCROLL_LIMITS` in the engine is the sole executable owner of the physical envelope for both input modes; `COARSE_SCROLL_LIMITS` remains a source/test compatibility alias to that same frozen object, not a second authority. The derivation uses three independent bounds: maximum physical speed is `6 CSS px/ms`, maximum displacement in one display frame is `100 CSS px`, and the tested post-input ownership budget is `280 ms`. Neither frame bound depends on queued displacement. The shared backlog limit is derived rather than self-growing: reserve `32 ms` for final browser-write observation and the lost drain capacity of one `50 ms` frame capped at `100 px`, yielding `6 × (280 − 32) − (6 × 50 − 100) = 1288 px`. Non-overloaded input preserves every physical fine delta or coarse base-step displacement; input beyond that outstanding capacity saturates at the bound so an unbounded device stream cannot create an unbounded latency tail.
+
+The `280 ms` result is guaranteed only for the executable workload covered by the regression suite: supported common refresh intervals, no more than one `50 ms` frame gap during the tail, and resumed display frames afterward. A longer or repeated main-thread stall provides no animation opportunity and therefore cannot have an unconditional wall-clock completion guarantee. Under the covered workload, common refresh rates follow the same wall-clock trajectory and a delayed frame carries undispatched work forward instead of jumping farther than the independent frame cap.
+
+Completion follows the observed physical residual rather than a restartable timeout. Each observable-sized write has one bounded confirmation lease: while it is unacknowledged, no replacement write is issued and new input cannot reset the lease. A page that rejects or reverts the write therefore releases animation ownership instead of keeping a permanent rAF alive, while subpixel writes remain free to accumulate across browser quantization. Per-frame work remains constant with respect to wheel frequency and animation duration. Performance claims beyond these countable invariants require a release benchmark.
 
 ## Architecture invariants
 

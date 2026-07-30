@@ -1,6 +1,7 @@
 // goal: Markdown panel UI - split view editor with live preview
 
-import React, { useState, useMemo, useCallback } from 'react';
+import type React from 'react';
+import { useMemo, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import { parseMarkdown, getPreviewStyles } from './core';
 import { styles } from './panel.styles';
@@ -39,7 +40,7 @@ function hello() {
 export const MarkdownPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [input, setInput] = useToolState<string>('markdown', SAMPLE_MD);
-	const [viewMode, setViewMode] = useToolState<ViewMode>('markdown-view' as any, 'split');
+	const [viewMode, setViewMode] = useToolState<ViewMode>('markdown-view', 'split');
 
 
 	// Parse markdown to HTML
@@ -61,7 +62,7 @@ export const MarkdownPanel: React.FC = () => {
 			{/* View Mode Tabs */}
 			<div style={styles.tabs}>
 				{(['edit', 'split', 'preview'] as ViewMode[]).map((mode) => (
-					<button
+					<button type="button"
 						key={mode}
 						style={{ ...styles.tab, ...(viewMode === mode ? styles.active : styles.inactive) }}
 						onClick={() => setViewMode(mode)}
@@ -87,6 +88,7 @@ export const MarkdownPanel: React.FC = () => {
 				{viewMode !== 'edit' && (
 					<div style={styles.preview}>
 						<style>{previewStyles}</style>
+						{/* biome-ignore lint/security/noDangerouslySetInnerHtml: parseMarkdown escapes all source text and emits only validated, attribute-escaped markup; test/markdown.spec.ts owns the hostile-input boundary. */}
 						<div dangerouslySetInnerHTML={{ __html: html }} />
 					</div>
 				)}
@@ -94,8 +96,8 @@ export const MarkdownPanel: React.FC = () => {
 
 			{/* Actions */}
 			<div style={styles.row}>
-				<button style={styles.btn} onClick={handleCopyMd}>📋 {t('markdown.copyMd')}</button>
-				<button style={styles.btn} onClick={handleCopyHtml}>🔗 {t('markdown.copyHtml')}</button>
+				<button type="button" style={styles.btn} onClick={handleCopyMd}>📋 {t('markdown.copyMd')}</button>
+				<button type="button" style={styles.btn} onClick={handleCopyHtml}>🔗 {t('markdown.copyHtml')}</button>
 			</div>
 		</div>
 	);

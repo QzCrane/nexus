@@ -1,6 +1,7 @@
 // goal: Gzip panel UI - compress/decompress
 
-import React, { useState, useCallback } from 'react';
+import type React from 'react';
+import { useState, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import { compress, decompress, getCompressionRatio } from './core';
 import { styles } from './panel.styles';
@@ -9,9 +10,9 @@ import { useToolState } from '../../kernel';
 
 export const GzipPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [mode, setMode] = useToolState<'compress' | 'decompress'>('gzip-mode' as any, 'compress');
-	const [input, setInput] = useToolState<string>('gzip-input' as any, '');
-	const [output, setOutput] = useToolState<string>('gzip-output' as any, '');
+	const [mode, setMode] = useToolState<'compress' | 'decompress'>('gzip-mode', 'compress');
+	const [input, setInput] = useToolState<string>('gzip-input', '');
+	const [output, setOutput] = useToolState<string>('gzip-output', '');
 
 	const [stats, setStats] = useState({ original: 0, result: 0, ratio: 0 });
 	const [error, setError] = useState('');
@@ -37,10 +38,10 @@ export const GzipPanel: React.FC = () => {
 					ratio: 0,
 				});
 			}
-		} catch (e) {
+		} catch (_e) {
 			setError(t('gzip.error'));
 		}
-	}, [mode, input, t]);
+	}, [mode, input, t, setOutput]);
 
 	// Copy
 	const handleCopy = useCallback(() => {
@@ -52,7 +53,7 @@ export const GzipPanel: React.FC = () => {
 			{/* Mode tabs */}
 			<div style={styles.tabs}>
 				{(['compress', 'decompress'] as const).map((m) => (
-					<button key={m} style={{ ...styles.tab, background: mode === m ? 'var(--halo-accent)' : 'var(--halo-bg-tertiary)', color: mode === m ? '#fff' : 'var(--halo-text)' }} onClick={() => setMode(m)}>
+					<button type="button" key={m} style={{ ...styles.tab, background: mode === m ? 'var(--halo-accent)' : 'var(--halo-bg-tertiary)', color: mode === m ? '#fff' : 'var(--halo-text)' }} onClick={() => setMode(m)}>
 						{m === 'compress' ? '🗜️' : '📦'} {t(`gzip.${m}`)}
 					</button>
 				))}
@@ -65,7 +66,7 @@ export const GzipPanel: React.FC = () => {
 			</div>
 
 			{/* Process button */}
-			<button style={styles.btn} onClick={handleProcess}>
+			<button type="button" style={styles.btn} onClick={handleProcess}>
 				{mode === 'compress' ? '🗜️' : '📦'} {t(`gzip.${mode}`)}
 			</button>
 

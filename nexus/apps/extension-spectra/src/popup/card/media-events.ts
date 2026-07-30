@@ -18,6 +18,7 @@ import {
 } from '../../shared/trusted-activation';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+const TRUSTED_PIP_ACK_TIMEOUT_MS = 2_000;
 
 interface ControlUiFailure {
 	code: string;
@@ -60,7 +61,7 @@ async function dispatchPictureInPicture(
 		throw new Error('The selected video target is unavailable');
 	}
 	const requestId = crypto.randomUUID();
-	const injections = await chrome.scripting.executeScript({
+	const [injection] = await chrome.scripting.executeScript({
 		target: { tabId },
 		world: 'ISOLATED',
 		args: [
@@ -70,6 +71,7 @@ async function dispatchPictureInPicture(
 			requestId,
 			documentId,
 			target,
+			TRUSTED_PIP_ACK_TIMEOUT_MS,
 		],
 		func: ((
 			requestEvent: string,
@@ -78,58 +80,82 @@ async function dispatchPictureInPicture(
 			currentRequestId: string,
 			currentDocumentId: string,
 			currentTarget: MediaTarget,
+			timeoutMs: number,
 		) => {
-			document.documentElement.removeAttribute(resultAttribute);
-			document.documentElement.setAttribute(
-				requestAttribute,
-				JSON.stringify({
-					requestId: currentRequestId,
-					documentId: currentDocumentId,
-					target: currentTarget,
-				}),
-			);
-			document.dispatchEvent(new Event(requestEvent));
-			return { requestId: currentRequestId };
+			return new Promise<SpectraTrustedPipOutcome | null>((resolve) => {
+				const root = document.documentElement;
+				let timeoutId: number | null = null;
+				let observer: MutationObserver | null = null;
+				let settled = false;
+
+				const removeMatchingAttribute = (attribute: string): void => {
+					const encoded = root.getAttribute(attribute);
+					if (!encoded) return;
+					try {
+						const candidate = JSON.parse(encoded) as { requestId?: unknown };
+						if (candidate?.requestId === currentRequestId) root.removeAttribute(attribute);
+					} catch {
+						// A malformed or foreign value is not owned by this request.
+						return;
+					}
+				};
+				const cleanup = (): void => {
+					observer?.disconnect();
+					if (timeoutId !== null) window.clearTimeout(timeoutId);
+					removeMatchingAttribute(requestAttribute);
+					removeMatchingAttribute(resultAttribute);
+				};
+				const finish = (outcome: SpectraTrustedPipOutcome | null): void => {
+					if (settled) return;
+					settled = true;
+					cleanup();
+					resolve(outcome);
+				};
+				const readOutcome = (): void => {
+					const encoded = root.getAttribute(resultAttribute);
+					if (!encoded) return;
+					try {
+						const outcome = JSON.parse(encoded) as SpectraTrustedPipOutcome;
+						if (!outcome || outcome.requestId !== currentRequestId) return;
+						finish(outcome);
+					} catch {
+						// The lifecycle-bound bridge owns valid result encoding.
+						root.removeAttribute(resultAttribute);
+					}
+				};
+
+				observer = new MutationObserver(readOutcome);
+				observer.observe(root, { attributes: true, attributeFilter: [resultAttribute] });
+				timeoutId = window.setTimeout(() => finish(null), timeoutMs);
+				root.removeAttribute(resultAttribute);
+				root.setAttribute(
+					requestAttribute,
+					JSON.stringify({
+						requestId: currentRequestId,
+						documentId: currentDocumentId,
+						target: currentTarget,
+					}),
+				);
+				// The Promise executor runs synchronously, so the native writer still
+				// receives the same live user activation as the original click.
+				document.dispatchEvent(new Event(requestEvent));
+				// Cover synchronous rejection before the observer's microtask runs.
+				readOutcome();
+			});
 		}) as unknown as () => void,
 	}) as unknown as Array<{
-		result?: { requestId: string };
+		result?: SpectraTrustedPipOutcome | null;
 		error?: { message?: string } | string;
 	}>;
-	const [injection] = injections;
-	if (injection?.result?.requestId !== requestId) {
+	const outcome = injection?.result;
+	if (!outcome || outcome.requestId !== requestId) {
 		const injectionError = typeof injection?.error === 'string'
 			? injection.error
 			: injection?.error?.message;
-		throw new Error(injectionError ?? 'The native PiP bridge did not accept the request');
+		throw new Error(injectionError ?? 'Native Picture-in-Picture bridge did not acknowledge the click');
 	}
-
-	const deadline = performance.now() + 2_000;
-	while (performance.now() < deadline) {
-		await new Promise((resolve) => setTimeout(resolve, 25));
-		const [readback] = await chrome.scripting.executeScript({
-			target: { tabId },
-			world: 'ISOLATED',
-			args: [SPECTRA_TRUSTED_PIP_REQUEST_ATTRIBUTE, SPECTRA_TRUSTED_PIP_RESULT_ATTRIBUTE, requestId],
-			func: ((requestAttribute: string, resultAttribute: string, currentRequestId: string) => {
-				const encoded = document.documentElement.getAttribute(resultAttribute);
-				if (!encoded) return null;
-				try {
-					const outcome = JSON.parse(encoded) as SpectraTrustedPipOutcome;
-					if (!outcome || outcome.requestId !== currentRequestId) return null;
-					document.documentElement.removeAttribute(requestAttribute);
-					document.documentElement.removeAttribute(resultAttribute);
-					return outcome;
-				} catch {
-					return null;
-				}
-			}) as unknown as () => void,
-		}) as unknown as Array<{ result?: SpectraTrustedPipOutcome | null }>;
-		const outcome = readback?.result;
-		if (!outcome) continue;
-		if (!outcome.ok) throw new Error(outcome.error);
-		return { active: outcome.active };
-	}
-	throw new Error('Native Picture-in-Picture bridge did not acknowledge the click');
+	if (!outcome.ok) throw new Error(outcome.error);
+	return { active: outcome.active };
 }
 
 function asControlUiFailure(error: unknown): ControlUiFailure {
@@ -255,20 +281,21 @@ export function bindMediaControls(
 		};
 	});
 
-	if (ui.speedInput) {
+	const speedInput = ui.speedInput;
+	if (speedInput) {
 		const submitClampedSpeed = (speed: number) => {
 			const clampedSpeed = Math.max(0.1, Math.min(16, speed));
 			submitSpeed('set', clampedSpeed);
 		};
 
-		ui.speedInput.onchange = (e) => {
+		speedInput.onchange = (e) => {
 			const speed = parseFloat((e.target as HTMLInputElement).value) || 1;
 			submitClampedSpeed(speed);
 		};
 
-		ui.speedInput.onwheel = (e) => {
+		speedInput.onwheel = (e) => {
 			e.preventDefault();
-			const current = parseFloat(ui.speedInput!.value) || 1;
+			const current = parseFloat(speedInput.value) || 1;
 			const delta = e.deltaY < 0 ? 0.1 : -0.1;
 			submitClampedSpeed(current + delta);
 		};
@@ -344,4 +371,3 @@ function createPlaybackIcon(playing: boolean): SVGSVGElement {
 
 	return svg;
 }
-

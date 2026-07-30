@@ -60,7 +60,9 @@ export function initNavigation(): NavigationState {
 
       // note: trigger rerender of all cards on return to main view to ensure UI state (sliders, toggles) is perfectly synced
       requestAnimationFrame(() => {
-        cardRenderCallbacks.forEach((cb) => cb());
+        cardRenderCallbacks.forEach((cb) => {
+          cb();
+        });
       });
     };
   }

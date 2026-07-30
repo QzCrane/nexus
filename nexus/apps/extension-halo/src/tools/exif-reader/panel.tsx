@@ -1,6 +1,7 @@
 // goal: EXIF Reader panel UI - display image metadata
 
-import React, { useState, useCallback, useRef } from 'react';
+import type React from 'react';
+import { useState, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import type { ExifData } from './types';
 import { parseExif, readFileAsArrayBuffer, formatFileSize } from './core';
@@ -16,7 +17,6 @@ export const ExifReaderPanel: React.FC = () => {
 
 	const [fileSize, setFileSize] = useState(0);
 	const [isDragging, setIsDragging] = useState(false);
-	const inputRef = useRef<HTMLInputElement>(null);
 
 	// Process file
 	const processFile = useCallback(async (file: File) => {
@@ -29,7 +29,7 @@ export const ExifReaderPanel: React.FC = () => {
 		const buffer = await readFileAsArrayBuffer(file);
 		const data = parseExif(buffer);
 		setExif(data);
-	}, []);
+	}, [setFileName]);
 
 	// Handle drop
 	const handleDrop = useCallback((e: React.DragEvent) => {
@@ -47,31 +47,30 @@ export const ExifReaderPanel: React.FC = () => {
 
 	// Data fields
 	const fields = exif ? [
-		{ label: t('exifReader.make'), value: exif.make },
-		{ label: t('exifReader.model'), value: exif.model },
-		{ label: t('exifReader.dateTime'), value: exif.dateTime },
-		{ label: t('exifReader.software'), value: exif.software },
-		{ label: t('exifReader.dimensions'), value: exif.width && exif.height ? `${exif.width} × ${exif.height}` : undefined },
-		{ label: t('exifReader.fileSize'), value: formatFileSize(fileSize) },
+		{ id: 'make', label: t('exifReader.make'), value: exif.make },
+		{ id: 'model', label: t('exifReader.model'), value: exif.model },
+		{ id: 'date-time', label: t('exifReader.dateTime'), value: exif.dateTime },
+		{ id: 'software', label: t('exifReader.software'), value: exif.software },
+		{ id: 'dimensions', label: t('exifReader.dimensions'), value: exif.width && exif.height ? `${exif.width} × ${exif.height}` : undefined },
+		{ id: 'file-size', label: t('exifReader.fileSize'), value: formatFileSize(fileSize) },
 	].filter((f) => f.value) : [];
 
 	return (
 		<div style={styles.wrapper}>
 			{/* Dropzone */}
-			<div
+			<label
 				style={{ ...styles.dropzone, ...(isDragging ? styles.dropzoneActive : {}) }}
 				onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
 				onDragLeave={() => setIsDragging(false)}
 				onDrop={handleDrop}
-				onClick={() => inputRef.current?.click()}
 			>
 				{preview ? (
 					<img src={preview} alt="Preview" style={styles.preview} />
 				) : (
 					<div style={styles.empty}>📷 {t('exifReader.dropHere')}</div>
 				)}
-				<input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleSelect} />
-			</div>
+				<input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleSelect} />
+			</label>
 
 			{/* File Name */}
 			{fileName && <div style={{ fontSize: '12px', color: 'var(--halo-text-muted)' }}>{fileName}</div>}
@@ -79,8 +78,8 @@ export const ExifReaderPanel: React.FC = () => {
 			{/* EXIF Data */}
 			{fields.length > 0 ? (
 				<div style={styles.grid}>
-					{fields.map((f, i) => (
-						<div key={i} style={styles.item}>
+					{fields.map((f) => (
+						<div key={f.id} style={styles.item}>
 							<span style={styles.label}>{f.label}</span>
 							<span style={styles.value}>{f.value}</span>
 						</div>

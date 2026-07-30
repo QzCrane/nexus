@@ -24,7 +24,7 @@ const openDB = async (): Promise<IDBDatabase | null> => {
 	if (dbOpenPromise) return dbOpenPromise;
 
 	dbOpenPromise = (async () => {
-		let lastError: any;
+		let lastError: unknown;
 
 		for (let i = 0; i < MAX_RETRIES; i++) {
 			// rule: capture the timeout timer so it can be cleared on success — previously

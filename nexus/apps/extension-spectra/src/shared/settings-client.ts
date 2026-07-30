@@ -1,10 +1,10 @@
 // goal: revision-aware client for the background-owned settings repository
 
-import {
-	type RpcResult,
-	type SettingsPatch,
-	type SettingsPatchRequest,
-	type SettingsSnapshot,
+import type {
+	RpcResult,
+	SettingsPatch,
+	SettingsPatchRequest,
+	SettingsSnapshot,
 } from '@nexus/contracts';
 import { isSpectraSettingsUiEventEnvelope } from '@nexus/contracts/ui-settings-runtime';
 import { sendSettingsUiRequest } from './ui-settings-spectra-client';

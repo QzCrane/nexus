@@ -17,6 +17,10 @@ const FULL_OUTPUT_FIELDS = new Set<ControlMutation['field']>([
 ]);
 const TAB_FIELDS = new Set<ControlMutation['field']>(['tabMuted', 'tabPinned']);
 
+function finiteParam(value: unknown): number | undefined {
+	return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
 export async function submitTrustedActivationControl(
 	field: 'playing' | 'pip' | 'fullscreen',
 	documentId?: string,
@@ -82,7 +86,8 @@ export async function submitHotkeyOperation<O extends ControlOperation>(
 }
 
 export function sendVolumeAction(action: HotkeyAction, params?: HotkeyParams): Promise<unknown> {
-	const step = Number.isFinite(params?.step) ? Math.abs(params!.step!) : 10;
+	const configuredStep = finiteParam(params?.step);
+	const step = configuredStep === undefined ? 10 : Math.abs(configuredStep);
 	switch (action) {
 		case 'volume_up':
 			return submitHotkeyOperation('effective-volume', { operation: 'delta', value: step });
@@ -91,12 +96,15 @@ export function sendVolumeAction(action: HotkeyAction, params?: HotkeyParams): P
 		case 'volume_mute':
 			return submitHotkeyMutations([{ field: 'mediaMuted', operation: 'toggle' }]);
 		case 'volume_set':
-			return Number.isFinite(params?.volume)
+			{
+				const volume = finiteParam(params?.volume);
+				return volume !== undefined
 				? submitHotkeyOperation('effective-volume', {
 					operation: 'set',
-					value: Math.max(0, Math.min(800, params!.volume!)),
+					value: Math.max(0, Math.min(800, volume)),
 				})
 				: Promise.resolve();
+			}
 		default:
 			return Promise.resolve();
 	}
@@ -104,21 +112,26 @@ export function sendVolumeAction(action: HotkeyAction, params?: HotkeyParams): P
 
 // eff: handles speed adjustment hotkeys through unified config flow
 export function sendSpeedAction(action: HotkeyAction, params?: HotkeyParams): Promise<unknown> {
-	const step = Number.isFinite(params?.step) ? Math.abs(params!.step!) : 0.1;
+	const configuredStep = finiteParam(params?.step);
+	const step = configuredStep === undefined ? 0.1 : Math.abs(configuredStep);
 	switch (action) {
 		case 'speed_up': return submitHotkeyMutations([{ field: 'speed', operation: 'delta', value: step }]);
 		case 'speed_down': return submitHotkeyMutations([{ field: 'speed', operation: 'delta', value: -step }]);
 		case 'speed_reset': return submitHotkeyMutations([{ field: 'speed', operation: 'set', value: 1 }]);
 		case 'speed_set':
-			return Number.isFinite(params?.speed)
-				? submitHotkeyMutations([{ field: 'speed', operation: 'set', value: Math.max(0.1, Math.min(16, params!.speed!)) }])
+			{
+				const speed = finiteParam(params?.speed);
+				return speed !== undefined
+				? submitHotkeyMutations([{ field: 'speed', operation: 'set', value: Math.max(0.1, Math.min(16, speed)) }])
 				: Promise.resolve();
+			}
 		default: return Promise.resolve();
 	}
 }
 
 export function sendAudioAdjustment(action: HotkeyAction, params?: HotkeyParams): Promise<unknown> {
-	const step = Number.isFinite(params?.step) ? Math.abs(params!.step!) : undefined;
+	const configuredStep = finiteParam(params?.step);
+	const step = configuredStep === undefined ? undefined : Math.abs(configuredStep);
 	let mutation: ControlMutation | null = null;
 	switch (action) {
 		case 'gain_up':

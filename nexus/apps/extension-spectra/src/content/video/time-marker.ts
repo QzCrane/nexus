@@ -66,7 +66,9 @@ function insertionIndex(markers: readonly TimeMarker[], time: number): number {
 	let high = markers.length;
 	while (low < high) {
 		const middle = (low + high) >>> 1;
-		if (markers[middle]!.time < time) low = middle + 1;
+		const marker = markers[middle];
+		if (!marker) throw new Error('Marker insertion search exceeded its bounded range');
+		if (marker.time < time) low = middle + 1;
 		else high = middle;
 	}
 	return low;

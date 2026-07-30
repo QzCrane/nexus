@@ -1,12 +1,11 @@
 // goal: Smooth Scroll settings panel with full feature parity
 // eff: Components extracted to separate files
 
-import React, { useCallback, useRef } from 'react';
+import type React from 'react';
+import { useCallback, useRef } from 'react';
 import { Card, Toggle } from '@nexus/ui-kit';
 import { createLogger } from '@nexus/kernel';
-import type { ScrollSettings } from './types';
-import { DEFAULT_SETTINGS, PROFILES, STORAGE_KEY } from './types';
-import { broadcastSettings } from './core';
+import { normalizeScrollSettings, PROFILES, STORAGE_KEY } from './types';
 import { styles } from './panel.styles';
 import { useSmoothScrollSettings } from './hooks';
 import { ScrollParameters } from './ScrollParameters';
@@ -50,11 +49,10 @@ export const SmoothScrollPanel: React.FC = () => {
 		if (!file) return;
 		try {
 			const text = await file.text();
-			const imported = JSON.parse(text) as Partial<ScrollSettings>;
-			const validated: ScrollSettings = { ...DEFAULT_SETTINGS, ...imported };
+			const imported: unknown = JSON.parse(text);
+			const validated = normalizeScrollSettings(imported);
 			await chrome.storage.sync.set({ [STORAGE_KEY]: validated });
 			setSettings(validated);
-			await broadcastSettings(validated);
 			showToast(t('smoothScroll.toasts.imported'));
 			logger.info('Config imported from file');
 		} catch (err) {
@@ -101,25 +99,25 @@ export const SmoothScrollPanel: React.FC = () => {
 					<span style={styles.sectionTitle}>📋 {t('smoothScroll.profiles')}</span>
 					<div style={styles.profileRow}>
 						{Object.keys(PROFILES).map((name) => (
-							<button key={name} style={styles.profileBtn} onClick={() => loadProfile(name as keyof typeof PROFILES)}>
+							<button type="button" key={name} style={styles.profileBtn} onClick={() => loadProfile(name as keyof typeof PROFILES)}>
 								{t(`smoothScroll.profilesList.${name}`, { defaultValue: name })}
 							</button>
 						))}
 
 						{hasCustomProfile && (
-							<button style={{ ...styles.profileBtn, borderColor: 'var(--halo-accent)', color: 'var(--halo-accent)' }} onClick={loadCustomProfile}>
+							<button type="button" style={{ ...styles.profileBtn, borderColor: 'var(--halo-accent)', color: 'var(--halo-accent)' }} onClick={loadCustomProfile}>
 								⭐ {t('smoothScroll.profilesList.custom')}
 							</button>
 						)}
 					</div>
 					<div style={styles.mgmtRow}>
-						<button style={{ ...styles.mgmtBtn, borderColor: 'var(--halo-accent)', color: 'var(--halo-accent)' }} onClick={saveAsCustom} title={t('smoothScroll.saveCustomTitle')}>
+						<button type="button" style={{ ...styles.mgmtBtn, borderColor: 'var(--halo-accent)', color: 'var(--halo-accent)' }} onClick={saveAsCustom} title={t('smoothScroll.saveCustomTitle')}>
 							💾 {t('smoothScroll.saveCustom')}
 						</button>
-						<button style={styles.mgmtBtn} onClick={handleExport} title={t('smoothScroll.exportTitle')}>
+						<button type="button" style={styles.mgmtBtn} onClick={handleExport} title={t('smoothScroll.exportTitle')}>
 							📤 {t('smoothScroll.export')}
 						</button>
-						<button style={styles.mgmtBtn} onClick={handleImport} title={t('smoothScroll.importTitle')}>
+						<button type="button" style={styles.mgmtBtn} onClick={handleImport} title={t('smoothScroll.importTitle')}>
 							📥 {t('smoothScroll.import')}
 						</button>
 					</div>
@@ -144,7 +142,7 @@ export const SmoothScrollPanel: React.FC = () => {
 				<div style={styles.section}>
 					<span style={styles.sectionTitle}>✨ {t('smoothScroll.features')}</span>
 					<div style={styles.row}><div style={styles.label}>{t('smoothScroll.middleClickAutoScroll')}</div><Toggle checked={settings.middleClickAutoScroll} onChange={(checked) => updateSetting('middleClickAutoScroll', checked)} disabled={!settings.enabled} /></div>
-					<div style={styles.row}><div style={styles.label}>{t('smoothScroll.fixedBackground')}</div><Toggle checked={settings.fixedBackground} onChange={(checked) => updateSetting('fixedBackground', checked)} disabled={!settings.enabled} /></div>
+					<div style={styles.row}><div style={styles.label}>{t('smoothScroll.respectReducedMotion')}</div><Toggle checked={settings.respectReducedMotion} onChange={(checked) => updateSetting('respectReducedMotion', checked)} disabled={!settings.enabled} /></div>
 				</div>
 			</Card>
 

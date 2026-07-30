@@ -1,9 +1,10 @@
 // goal: Base64 panel - shows BOTH encode AND decode with image preview
 
-import React, { useState, useCallback, useMemo } from 'react';
+import type React from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
-import { encode, decode, fileToDataURL, getBase64Size, decodeToBinary, downloadContent } from './core';
+import { encode, decode, decodeToBinary, downloadContent } from './core';
 import { useToolState } from '../../kernel';
 
 
@@ -29,7 +30,7 @@ const styles: Record<string, React.CSSProperties> = {
 export const Base64Panel: React.FC = () => {
 	const { t } = useTranslation();
 	const [input, setInput] = useToolState<string>('base64', '');
-	const [urlSafe, setUrlSafe] = useToolState<boolean>('base64-urlsafe' as any, false);
+	const [urlSafe, setUrlSafe] = useToolState<boolean>('base64-urlsafe', false);
 
 	const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -72,7 +73,7 @@ export const Base64Panel: React.FC = () => {
 							<input type="checkbox" checked={urlSafe} onChange={(e) => setUrlSafe(e.target.checked)} />
 							{t('base64.urlSafe', { defaultValue: 'URL-safe' })}
 						</label>
-						<button style={styles.btn} onClick={() => setInput('')}>{t('base64.clear', { defaultValue: 'Clear' })}</button>
+						<button type="button" style={styles.btn} onClick={() => setInput('')}>{t('base64.clear', { defaultValue: 'Clear' })}</button>
 						<div style={{ flex: 1 }} />
 						<span style={{ fontSize: '10px', color: 'var(--halo-text-muted)' }}>{input.length} {t('base64.chars', { defaultValue: 'chars' })}</span>
 					</div>
@@ -93,7 +94,7 @@ export const Base64Panel: React.FC = () => {
 						<div style={styles.resultRow}>
 							<div style={styles.resultHeader}>
 								<span style={styles.resultLabel}>{t('base64.encoded', { defaultValue: 'Encoded' })}</span>
-								<button style={{ ...styles.btn, ...(copiedKey === 'enc' ? { background: 'var(--halo-accent)', color: '#fff' } : {}) }} onClick={() => handleCopy('enc', results.encoded)}>
+								<button type="button" style={{ ...styles.btn, ...(copiedKey === 'enc' ? { background: 'var(--halo-accent)', color: '#fff' } : {}) }} onClick={() => handleCopy('enc', results.encoded)}>
 									{copiedKey === 'enc' ? '✓' : t('base64.copy', { defaultValue: 'Copy' })}
 								</button>
 							</div>
@@ -107,8 +108,8 @@ export const Base64Panel: React.FC = () => {
 							<div style={styles.resultHeader}>
 								<span style={{ ...styles.resultLabel, color: '#22c55e' }}>{t('base64.decoded', { defaultValue: 'Decoded' })}</span>
 								<div style={{ display: 'flex', gap: '4px' }}>
-									<button style={styles.btn} onClick={handleDownload}>{t('base64.saveAsFile', { defaultValue: 'Save as File' })}</button>
-									<button style={{ ...styles.btn, ...(copiedKey === 'dec' ? { background: 'var(--halo-accent)', color: '#fff' } : {}) }} onClick={() => handleCopy('dec', results.decoded)}>
+									<button type="button" style={styles.btn} onClick={handleDownload}>{t('base64.saveAsFile', { defaultValue: 'Save as File' })}</button>
+									<button type="button" style={{ ...styles.btn, ...(copiedKey === 'dec' ? { background: 'var(--halo-accent)', color: '#fff' } : {}) }} onClick={() => handleCopy('dec', results.decoded)}>
 										{copiedKey === 'dec' ? '✓' : t('base64.copy', { defaultValue: 'Copy' })}
 									</button>
 								</div>

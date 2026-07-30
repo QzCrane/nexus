@@ -1,14 +1,13 @@
 import React from 'react';
+import type { TranslationFunction } from '../../../i18n';
 import { styles } from '../styles';
-
-type TFunc = (key: string, opts?: { defaultValue?: string } & Record<string, any>) => string;
 
 interface ImportExportModalProps {
 	mode: 'import' | 'export';
 	exportData?: string;
 	onImport: (json: string) => void;
 	onClose: () => void;
-	t: TFunc;
+	t: TranslationFunction;
 }
 
 export const ImportExportModal: React.FC<ImportExportModalProps> = ({
@@ -43,7 +42,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
 						value={exportData || ''}
 						readOnly
 					/>
-					<button style={styles.btn} onClick={handleCopy}>
+					<button type="button" style={styles.btn} onClick={handleCopy}>
 						{copied
 							? `✅ ${t('common.copied', { defaultValue: 'Copied!' })}`
 							: `📋 ${t('common.copy', { defaultValue: 'Copy to Clipboard' })}`}
@@ -58,10 +57,10 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
 						placeholder={t('userscripts.importPlaceholder', { defaultValue: 'Paste exported JSON here...' })}
 					/>
 					<div style={styles.btnGroup}>
-						<button style={styles.btn} onClick={handleImport}>
+						<button type="button" style={styles.btn} onClick={handleImport}>
 							📥 {t('userscripts.import', { defaultValue: 'Import' })}
 						</button>
-						<button style={styles.btnSecondary} onClick={onClose}>
+						<button type="button" style={styles.btnSecondary} onClick={onClose}>
 							{t('common.close', { defaultValue: 'Close' })}
 						</button>
 					</div>
@@ -69,7 +68,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
 			)}
 			
 			{mode === 'export' && (
-				<button style={styles.btnSecondary} onClick={onClose}>
+				<button type="button" style={styles.btnSecondary} onClick={onClose}>
 					{t('common.close', { defaultValue: 'Close' })}
 				</button>
 			)}

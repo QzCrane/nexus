@@ -16,7 +16,13 @@
 			"cache": false,
 			"persistent": true
 		},
-		"lint": {},
+		"lint": {
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/biome.json",
+				"$TURBO_ROOT$/scripts/run-strict-biome.mjs"
+			]
+		},
 		"test": {
 			"dependsOn": ["^build"],
 			"outputs": ["coverage/**"]

@@ -1,7 +1,7 @@
 // goal: Extension manager panel
 // eff: Main UI with filtering, grouping, and batch actions
 
-import React from 'react';
+import type React from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { getToolMeta } from '../../kernel';
@@ -55,7 +55,7 @@ export const ExtensionManagerPanel: React.FC = () => {
 				<div style={{ fontSize: '48px' }}>{meta?.icon || '🔌'}</div>
 				<h2 style={{ margin: 0 }}>{t('extMgr.permissionRequired')}</h2>
 				<p style={{ margin: 0, opacity: 0.8, maxWidth: '300px' }}>{t('extMgr.permissionDesc')}</p>
-				<button onClick={state.requestAccess} style={{ ...styles.batchBtn, background: 'var(--halo-accent)', color: '#fff', fontSize: '14px', padding: '8px 16px' }}>
+				<button type="button" onClick={state.requestAccess} style={{ ...styles.batchBtn, background: 'var(--halo-accent)', color: '#fff', fontSize: '14px', padding: '8px 16px' }}>
 					{t('extMgr.grantPermission')}
 				</button>
 			</Card>
@@ -73,7 +73,7 @@ export const ExtensionManagerPanel: React.FC = () => {
 
 				<div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
 					{filters.map(f => (
-						<button key={f.key} style={{ ...styles.filterBtn, ...(state.filter === f.key ? styles.filterBtnActive : {}) }} onClick={() => state.setFilter(f.key)}>
+						<button type="button" key={f.key} style={{ ...styles.filterBtn, ...(state.filter === f.key ? styles.filterBtnActive : {}) }} onClick={() => state.setFilter(f.key)}>
 							{f.label}
 						</button>
 					))}
@@ -94,8 +94,8 @@ export const ExtensionManagerPanel: React.FC = () => {
 
 				{state.filtered.length > 0 && (
 					<div style={styles.batchActions}>
-						<button style={styles.batchBtn} onClick={handleBatchEnable}>{t('extMgr.enableAll')}</button>
-						<button style={{ ...styles.batchBtn, background: '#ef4444' }} onClick={handleBatchDisable}>{t('extMgr.disableAll')}</button>
+						<button type="button" style={styles.batchBtn} onClick={handleBatchEnable}>{t('extMgr.enableAll')}</button>
+						<button type="button" style={{ ...styles.batchBtn, background: '#ef4444' }} onClick={handleBatchDisable}>{t('extMgr.disableAll')}</button>
 						<span style={{ flex: 1 }} />
 						<span style={{ fontSize: '12px', color: 'var(--halo-text-muted)' }}>{state.filtered.length} {t('common.tools')}</span>
 					</div>

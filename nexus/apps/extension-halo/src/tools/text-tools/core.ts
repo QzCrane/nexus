@@ -38,7 +38,7 @@ function toCamelCase(text: string): string {
 function toSnakeCase(text: string): string {
 	return text
 		.replace(/([A-Z])/g, '_$1')
-		.replace(/[\s\-]+/g, '_')
+		.replace(/[\s-]+/g, '_')
 		.replace(/^_/, '')
 		.replace(/_+/g, '_')
 		.toLowerCase();

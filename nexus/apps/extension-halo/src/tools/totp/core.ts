@@ -62,12 +62,22 @@ export async function generateTotp(secret: string, digits = 6, period = 30): Pro
 	const hmac = await hmacSha1(secretBytes, counterBytes);
 
 	// Dynamic truncation
-	const offset = hmac[hmac.length - 1]! & 0x0f;
-	const binary = ((hmac[offset]! & 0x7f) << 24) | ((hmac[offset + 1]! & 0xff) << 16) |
-		((hmac[offset + 2]! & 0xff) << 8) | (hmac[offset + 3]! & 0xff);
+	const finalByte = hmac.at(-1);
+	if (hmac.length < 20 || finalByte === undefined) {
+		throw new Error('Invalid HMAC-SHA1 output length');
+	}
+	const offset = finalByte & 0x0f;
+	const chunk = hmac.slice(offset, offset + 4);
+	if (chunk.length !== 4) throw new Error('Invalid HMAC-SHA1 truncation offset');
+	const [first, second, third, fourth] = chunk;
+	if (first === undefined || second === undefined || third === undefined || fourth === undefined) {
+		throw new Error('Invalid HMAC-SHA1 truncation bytes');
+	}
+	const binary = ((first & 0x7f) << 24) | ((second & 0xff) << 16)
+		| ((third & 0xff) << 8) | (fourth & 0xff);
 
 	// Generate code
-	const otp = binary % Math.pow(10, digits);
+	const otp = binary % 10 ** digits;
 	const code = otp.toString().padStart(digits, '0');
 
 	return { code, remaining, period };
@@ -81,15 +91,15 @@ export function parseOtpAuthUri(uri: string): Partial<TotpEntry> | null {
 
 		const label = decodeURIComponent(url.pathname.slice(2)); // Remove //totp/
 		const parts = label.split(':');
-		const issuer = parts.length > 1 ? parts[0]! : '';
-		const name = parts.length > 1 ? parts[1]! : label;
+		const issuer = parts.length > 1 ? (parts[0] ?? '') : '';
+		const name = parts.length > 1 ? (parts[1] ?? '') : label;
 
 		return {
 			name: name.trim(),
 			issuer: url.searchParams.get('issuer') || issuer.trim(),
 			secret: url.searchParams.get('secret') || '',
-			digits: parseInt(url.searchParams.get('digits') || '6'),
-			period: parseInt(url.searchParams.get('period') || '30'),
+			digits: parseInt(url.searchParams.get('digits') || '6', 10),
+			period: parseInt(url.searchParams.get('period') || '30', 10),
 		};
 	} catch {
 		return null;

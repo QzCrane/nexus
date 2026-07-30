@@ -1,7 +1,7 @@
 // goal: Reddit image resolution rules
 // eff: Convert preview/thumbnail URLs to full-size images
 
-import { SiteRule } from '../core';
+import type { SiteRule } from '../core';
 
 /**
  * Reddit Rules

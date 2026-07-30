@@ -1,33 +1,60 @@
-// goal: Shared state for Smooth Scroll
-// eff: Central source of truth
+// goal: Per-document runtime state for Smooth Scroll
+// inv: Persisted setting shape is owned by tools/smooth-scroll/types.ts
 
-import type { EasingType } from '../tools/smooth-scroll/types';
+import type { ScrollSettings } from '../tools/smooth-scroll/types';
+import { DEFAULT_SETTINGS, normalizeScrollSettings } from '../tools/smooth-scroll/types';
+import {
+	createWheelGestureState,
+	resetWheelGestureState,
+} from '../tools/smooth-scroll/wheel-input';
+export type { ScrollSettings } from '../tools/smooth-scroll/types';
 
-export interface ScrollSettings {
-	enabled: boolean; stepSize: number; animationTime: number;
-	accelerationMax: number; accelerationDelta: number; pulseScale: number;
-	arrowKeyStep: number; mouseWheel: boolean; keyboard: boolean;
-	touchpad: boolean; middleClickAutoScroll: boolean; easing: EasingType;
-}
-
-export const defaultSettings: ScrollSettings = {
-	enabled: true, stepSize: 300, animationTime: 400,
-	accelerationMax: 3, accelerationDelta: 50, pulseScale: 4,
-	arrowKeyStep: 200, mouseWheel: true, keyboard: true,
-	touchpad: true, middleClickAutoScroll: true, easing: 'spring',
-};
-
-// Runtime state (Direct export)
-export let settings: ScrollSettings = { ...defaultSettings };
-export let lastScrollTime = 0;
+export let settings: ScrollSettings = { ...DEFAULT_SETTINGS };
+export let lastScrollTime: number | null = null;
 export let acceleration = 1;
+export let accelerationTarget: Element | Window | null = null;
+export let accelerationDirection = 0;
 
 export const state = {
 	isMiddleScrolling: false,
 	middleScrollStartY: 0,
 	middleScrollTarget: null as Element | Window | null,
-	deltaBuffer: [] as number[],
+	middleScrollPreviousCursor: '',
+	wheelGesture: createWheelGestureState(),
 };
 
-export const updateStateSettings = (v: ScrollSettings) => (settings = v);
-export const updateAcceleration = (acc: number, time: number) => { acceleration = acc; lastScrollTime = time; };
+export const updateStateSettings = (value: unknown): ScrollSettings => {
+	settings = normalizeScrollSettings(value);
+	return settings;
+};
+export const updateAcceleration = (
+	acc: number,
+	time: number,
+	target: Element | Window,
+	direction: number,
+): void => {
+	acceleration = acc;
+	lastScrollTime = time;
+	accelerationTarget = target;
+	accelerationDirection = direction;
+};
+
+export const resetAcceleration = (): void => {
+	lastScrollTime = null;
+	acceleration = 1;
+	accelerationTarget = null;
+	accelerationDirection = 0;
+};
+
+export const resetWheelRuntimeState = (): void => {
+	resetAcceleration();
+	resetWheelGestureState(state.wheelGesture);
+};
+
+export const resetRuntimeState = (): void => {
+	resetWheelRuntimeState();
+	state.isMiddleScrolling = false;
+	state.middleScrollStartY = 0;
+	state.middleScrollTarget = null;
+	state.middleScrollPreviousCursor = '';
+};

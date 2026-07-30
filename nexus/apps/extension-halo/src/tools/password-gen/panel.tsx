@@ -1,6 +1,7 @@
 // goal: Password Generator panel UI with Bulk Generation and Strength analysis
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import type React from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { PasswordConfig } from './types';
@@ -11,14 +12,18 @@ import { useToolState } from '../../kernel';
 
 import { useToast } from '../../components/ToastProvider';
 
+interface GeneratedPassword {
+	id: string;
+	value: string;
+}
 
 export const PasswordGenPanel: React.FC = () => {
 	const { t } = useTranslation();
     const { showToast } = useToast();
-	const [config, setConfig] = useToolState<PasswordConfig>('password-gen-opts' as any, DEFAULT_CONFIG);
+	const [config, setConfig] = useToolState<PasswordConfig>('password-gen-opts', DEFAULT_CONFIG);
 
 	const [password, setPassword] = useState(() => generatePassword(DEFAULT_CONFIG));
-	const [bulkPasswords, setBulkPasswords] = useState<string[]>([]);
+	const [bulkPasswords, setBulkPasswords] = useState<GeneratedPassword[]>([]);
 	const [showBulk, setShowBulk] = useState(false);
 	// const [toast, setToast] = useState<string | null>(null); // Removed
 
@@ -28,38 +33,48 @@ export const PasswordGenPanel: React.FC = () => {
 
 	const handleGenerate = useCallback(() => {
 		if (showBulk) {
-			setBulkPasswords(generatePasswords(config, 10));
+			setBulkPasswords(
+				generatePasswords(config, 10).map((value) => ({
+					id: crypto.randomUUID(),
+					value,
+				})),
+			);
 		} else {
 			const newPwd = generatePassword(config);
 			setPassword(newPwd);
 		}
 	}, [config, showBulk]);
 
-	const handleCopy = useCallback((pwd: string) => {
-		navigator.clipboard.writeText(pwd);
-		showToast(t('passwordGen.copied', { defaultValue: 'Copied!' }));
+	const handleCopy = useCallback(async (pwd: string) => {
+		try {
+			await navigator.clipboard.writeText(pwd);
+			showToast(t('passwordGen.copied', { defaultValue: 'Copied!' }));
+		} catch (error: unknown) {
+			console.error('[HALO:PasswordGen] Failed to copy password', error);
+			showToast(t('passwordGen.copyFailed', { defaultValue: 'Copy failed' }));
+		}
 	}, [showToast, t]);
 
 	const updateConfig = useCallback((key: keyof PasswordConfig, value: unknown) => {
 		setConfig((c) => ({ ...c, [key]: value }));
-	}, []);
+	}, [setConfig]);
 
 	// Auto-regenerate on config change
 	useEffect(() => {
 		handleGenerate();
-	}, [config, showBulk]);
+	}, [handleGenerate]);
 
 	return (
 		<div style={styles.wrapper}>
 			{/* Mode Toggle */}
 			<div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
-				<button 
+				<button type="button"
 					style={{ ...styles.btn, flex: 1, ...(showBulk ? styles.btnSecondary : {}) }}
 					onClick={() => setShowBulk(false)}
 				>
 					{t('passwordGen.single', { defaultValue: 'Single' })}
 				</button>
-				<button 
+				<button type="button"
 					style={{ ...styles.btn, flex: 1, ...(!showBulk ? styles.btnSecondary : {}) }}
 					onClick={() => setShowBulk(true)}
 				>
@@ -70,25 +85,25 @@ export const PasswordGenPanel: React.FC = () => {
 			{!showBulk ? (
 				<>
 					<div style={styles.password}>{password}</div>
-					<div style={{ ...styles.strength, background: strength.color + '20', color: strength.color }}>
+					<div style={{ ...styles.strength, background: `${strength.color}20`, color: strength.color }}>
 						🔐 {strength.label} — {strength.feedback[0]}
 					</div>
 					<div style={styles.row}>
-						<button style={{ ...styles.btn, flex: 2 }} onClick={handleGenerate}>🎲 {t('passwordGen.regenerate', { defaultValue: 'Regenerate' })}</button>
-						<button style={{ ...styles.btnSecondary, flex: 1 }} onClick={() => handleCopy(password)}>📋 {t('passwordGen.copy', { defaultValue: 'Copy' })}</button>
+						<button type="button" style={{ ...styles.btn, flex: 2 }} onClick={handleGenerate}>🎲 {t('passwordGen.regenerate', { defaultValue: 'Regenerate' })}</button>
+						<button type="button" style={{ ...styles.btnSecondary, flex: 1 }} onClick={() => handleCopy(password)}>📋 {t('passwordGen.copy', { defaultValue: 'Copy' })}</button>
 					</div>
 				</>
 			) : (
 				<Card variant="default" padding="sm">
 					<div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '200px', overflowY: 'auto' }}>
-						{bulkPasswords.map((pwd, i) => (
-							<div key={i} style={{ ...styles.listItem, padding: '6px 8px' }}>
-								<span style={{ fontSize: '11px', fontFamily: 'monospace' }}>{pwd}</span>
-								<button style={{ ...styles.btnSecondary, padding: '2px 8px' }} onClick={() => handleCopy(pwd)}>📋</button>
+						{bulkPasswords.map(({ id, value }) => (
+							<div key={id} style={{ ...styles.listItem, padding: '6px 8px' }}>
+								<span style={{ fontSize: '11px', fontFamily: 'monospace' }}>{value}</span>
+								<button type="button" style={{ ...styles.btnSecondary, padding: '2px 8px' }} onClick={() => handleCopy(value)}>📋</button>
 							</div>
 						))}
 					</div>
-					<button style={{ ...styles.btn, width: '100%', marginTop: '8px' }} onClick={handleGenerate}>🔄 {t('passwordGen.refreshAll', { defaultValue: 'Refresh All' })}</button>
+					<button type="button" style={{ ...styles.btn, width: '100%', marginTop: '8px' }} onClick={handleGenerate}>🔄 {t('passwordGen.refreshAll', { defaultValue: 'Refresh All' })}</button>
 				</Card>
 			)}
 

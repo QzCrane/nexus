@@ -1,7 +1,7 @@
 // goal: Crypto tool panel - orchestrates JWT/AES/RSA sub-panels
 import { useTranslation } from '../../i18n';
 
-import React, { useState } from 'react';
+import type React from 'react';
 import { Card } from '@nexus/ui-kit';
 import type { CryptoMode } from './types';
 import { styles } from './panel.styles';
@@ -19,7 +19,7 @@ const MODES: { id: CryptoMode; label: string }[] = [
 
 export const CryptoPanel: React.FC = () => {
     const { t } = useTranslation(); // Use global translation
-	const [mode, setMode] = useToolState<CryptoMode>('crypto' as any, 'jwt');
+	const [mode, setMode] = useToolState<CryptoMode>('crypto', 'jwt');
 
 
 	return (
@@ -27,7 +27,7 @@ export const CryptoPanel: React.FC = () => {
 			<Card variant="default" padding="sm">
 				<div style={styles.tabs}>
 					{MODES.map((m) => (
-						<button
+						<button type="button"
 							key={m.id}
 							style={{ ...styles.tab, ...(mode === m.id ? styles.active : styles.inactive) }}
 							onClick={() => setMode(m.id)}

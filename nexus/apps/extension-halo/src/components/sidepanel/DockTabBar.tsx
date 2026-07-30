@@ -2,7 +2,8 @@
 // eff: Horizontal scroll + upward magnification without clipping
 // note: Centering items when few, scrolling when many. Tooltip at bottom.
 
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import type React from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from '../../i18n';
 import type { ToolId, ToolMeta } from '../../kernel';
@@ -103,8 +104,19 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 					flex-shrink: 0;
 					width: 16px; 
 				}
+				.halo-dock-close-button {
+					opacity: 0;
+					pointer-events: none;
+					transition: opacity 0.12s ease;
+				}
+				[data-dock-item]:hover .halo-dock-close-button,
+				[data-dock-item]:focus-within .halo-dock-close-button {
+					opacity: 1;
+					pointer-events: auto;
+				}
 			`}</style>
 			
+			{/* biome-ignore lint/a11y/noStaticElementInteractions: This surface only tracks pointer proximity for dock magnification; activation belongs to child buttons. */}
 			<div
 				ref={scrollRef}
 				className="halo-thin-scrollbar dock-scroll-container"
@@ -146,16 +158,18 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 					const isActiveService = activeServices.has(toolId);
 					const isBackgroundCapable = bgToolIds.includes(toolId);
 					const serviceState = isActiveService ? 'active' : (isBackgroundCapable ? 'inactive' : undefined);
+					const toolName = t(`tools.${tool.id}.name`);
 
 					return (
 						<DockItem
 							key={toolId}
 							tool={tool}
+							label={toolName}
+							closeLabel={t('common.close')}
 							isActive={activeTool === toolId}
-							isHovered={hoveredId === toolId}
 							scale={getScale(index)}
 							baseSize={BASE_SIZE}
-							onMouseEnter={(e) => handleItemEnter(toolId, t(`tools.${tool.id}.name`), e.currentTarget.getBoundingClientRect())}
+							onMouseEnter={(e) => handleItemEnter(toolId, toolName, e.currentTarget.getBoundingClientRect())}
 							onMouseLeave={handleItemLeave}
 							onClick={() => onSelectTool(toolId)}
 							onClose={() => onCloseTool(toolId)}

@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
+import { requireValue } from './helpers/require-value';
 import { AudioMode, type WebAudioController } from '@nexus/audio-engine';
 import type { MediaTarget } from '@nexus/contracts';
 import type { PolicyExecutor } from '../src/content/logic/policy-executor';
@@ -230,17 +231,23 @@ describe('event-driven media registry', () => {
 				events.push({ target: eventTarget, event });
 			});
 			registry.setDocumentId('document:registry');
-			const audioTarget = registry.list().find(({ element }) => element === audio)?.target;
-			const videoTarget = registry.list().find(({ element }) => element === video)?.target;
+			const audioTarget = requireValue(
+				registry.list().find(({ element }) => element === audio)?.target,
+				'Expected the registry to assign an identity to the audio fixture',
+			);
+			const videoTarget = requireValue(
+				registry.list().find(({ element }) => element === video)?.target,
+				'Expected the registry to assign an identity to the video fixture',
+			);
 			expect(audioTarget).toBeDefined();
 			expect(videoTarget).toBeDefined();
 
 			// Explicit selection is the only selection write. Reads of either identity
 			// cannot steal the other target or emit a selected event.
-			expect(registry.select(videoTarget!)).toBe(true);
-			expect(registry.select(audioTarget!)).toBe(true);
+			expect(registry.select(videoTarget)).toBe(true);
+			expect(registry.select(audioTarget)).toBe(true);
 			const selectedBeforeReads = events.filter(({ event }) => event === 'selected').length;
-			expect(registry.peek(videoTarget!)?.target).toEqual(videoTarget);
+			expect(registry.peek(videoTarget)?.target).toEqual(videoTarget);
 			expect(registry.resolve(null)?.target).toEqual(audioTarget);
 			expect(registry.resolveVideo(null)?.target).toEqual(videoTarget);
 			expect(events.filter(({ event }) => event === 'selected')).toHaveLength(selectedBeforeReads);
@@ -273,10 +280,10 @@ describe('event-driven media registry', () => {
 			audio.dispatchEvent(new Event('loadedmetadata'));
 			currentAudioTarget = registry.list().find(({ element }) => element === audio)?.target;
 			expect(currentAudioTarget).toMatchObject({
-				mediaId: audioTarget?.mediaId,
+				mediaId: audioTarget.mediaId,
 				sourceRevision: 3,
 			});
-			expect(registry.resolve(audioTarget!)).toBeNull();
+			expect(registry.resolve(audioTarget)).toBeNull();
 
 			// A framework reparent commonly appears as remove+add in one observer
 			// batch. Deferring detach to a microtask preserves identity and revision.

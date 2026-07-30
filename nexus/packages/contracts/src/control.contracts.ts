@@ -779,12 +779,13 @@ export function resolveAcknowledgedProcessorLifecycle(
 	fields: ControlFieldStates,
 ): { actualMode: SpectraAudioMode; phase: AudioSessionPhase } | null {
 	const processorStates = Object.entries(fields)
-		.filter(([field, state]) => state !== undefined
-			&& (CONTROL_ALGORITHM_POLICIES[
+		.flatMap(([field, state]) => {
+			if (state === undefined) return [];
+			const acknowledgements = CONTROL_ALGORITHM_POLICIES[
 				field as keyof typeof CONTROL_ALGORITHM_POLICIES
-			].acknowledgements as readonly ControlAcknowledgement[])
-				.includes('processor-readback'))
-		.map(([, state]) => state!);
+			].acknowledgements as readonly ControlAcknowledgement[];
+			return acknowledgements.includes('processor-readback') ? [state] : [];
+		});
 	const revision = processorStates.reduce(
 		(latest, field) => Math.max(latest, field.revision),
 		-1,

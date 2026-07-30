@@ -83,7 +83,17 @@ export function getBase64Size(base64: string): number {
  * Download content as file
  */
 export function downloadContent(data: Uint8Array | string, filename: string, type: string) {
-	const blob = new Blob([data as any], { type });
+	let blobPart: BlobPart;
+	if (typeof data === 'string') {
+		blobPart = data;
+	} else {
+		// BlobPart accepts ArrayBuffer-backed views, but Uint8Array may legally wrap
+		// SharedArrayBuffer. Copy that ABI boundary into an owned ArrayBuffer.
+		blobPart = data.buffer instanceof ArrayBuffer
+			? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+			: Uint8Array.from(data).buffer;
+	}
+	const blob = new Blob([blobPart], { type });
 	const url = URL.createObjectURL(blob);
 	const a = document.createElement('a');
 	a.href = url;

@@ -128,21 +128,33 @@ export function registerScreenshotHandler(): void {
 			return false;
 		}
 		if (!isSpectraRequestEnvelope(message)
-			|| message.type !== 'spectra.screenshot.capture-visible'
-			|| !sender.tab
-			|| !message.documentId
-			|| !Number.isSafeInteger(message.generation)
-			|| message.generation! < 0
-			|| sender.documentId !== message.documentId) {
+			|| message.type !== 'spectra.screenshot.capture-visible') {
+			sendResponse(rpcFailure('invalid_request', 'Screenshot capture requires a valid sender tab'));
+			return false;
+		}
+		const tab = sender.tab;
+		const tabId = tab?.id;
+		const documentId = message.documentId;
+		const generation = message.generation;
+		if (!tab
+			|| typeof tabId !== 'number'
+			|| !Number.isSafeInteger(tabId)
+			|| tabId < 0
+			|| typeof documentId !== 'string'
+			|| documentId.length === 0
+			|| typeof generation !== 'number'
+			|| !Number.isSafeInteger(generation)
+			|| generation < 0
+			|| sender.documentId !== documentId) {
 			sendResponse(rpcFailure('invalid_request', 'Screenshot capture requires a valid sender tab'));
 			return false;
 		}
 		const verifyTarget = async (): Promise<void> => {
 			const response = await sendSpectraTabRequest(
-				sender.tab!.id!,
+				tabId,
 				'spectra.screenshot.target.verify',
 				{ captureToken: message.payload.captureToken },
-				{ documentId: message.documentId, generation: message.generation },
+				{ documentId, generation },
 			);
 			if (!response.ok || response.data.valid !== true) {
 				throw new Error(response.ok
@@ -150,7 +162,7 @@ export function registerScreenshotHandler(): void {
 					: response.error.message);
 			}
 		};
-		void captureAndSave(sender.tab, message.payload, verifyTarget).then(
+		void captureAndSave(tab, message.payload, verifyTarget).then(
 			(result) => sendResponse(rpcSuccess(result)),
 			(error) => sendResponse(rpcFailure(
 				'screenshot_capture_failed',

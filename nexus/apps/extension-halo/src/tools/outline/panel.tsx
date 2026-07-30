@@ -1,7 +1,8 @@
 // goal: Outline tool panel UI with i18n support
 // eff: Styles and component extracted
 
-import React, { useState, useCallback, useEffect } from 'react';
+import type React from 'react';
+import { useState, useCallback, } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { createLogger } from '@nexus/kernel';
 import { useTranslation } from '../../i18n';
@@ -25,7 +26,7 @@ export const OutlinePanel: React.FC = () => {
 	const { t } = useTranslation();
 	const { showToast } = useToast();
 	const [headings, setHeadings] = useState<HeadingItemType[]>([]);
-	const [storedSettings, setSettings] = useToolState<OutlineSettings>('outline-settings' as any, DEFAULT_SETTINGS);
+	const [storedSettings, setSettings] = useToolState<OutlineSettings>('outline-settings', DEFAULT_SETTINGS);
 	const settings = storedSettings || DEFAULT_SETTINGS;
 	const [loading, setLoading] = useState(false);
 
@@ -58,7 +59,7 @@ export const OutlinePanel: React.FC = () => {
 		value: OutlineSettings[K]
 	) => {
 		setSettings(prev => ({ ...(prev || DEFAULT_SETTINGS), [key]: value }));
-	}, []);
+	}, [setSettings]);
 
 
 	// Calculate level distribution
@@ -74,7 +75,7 @@ export const OutlinePanel: React.FC = () => {
 					<span>{t('outlinePanel.levels')}</span>
 					<select
 						value={settings.minLevel}
-						onChange={(e) => handleSettingChange('minLevel', parseInt(e.target.value))}
+						onChange={(e) => handleSettingChange('minLevel', parseInt(e.target.value, 10))}
 						style={styles.select}
 					>
 						{[1, 2, 3, 4, 5, 6].map((n) => (
@@ -84,7 +85,7 @@ export const OutlinePanel: React.FC = () => {
 					<span>{t('outlinePanel.to')}</span>
 					<select
 						value={settings.maxLevel}
-						onChange={(e) => handleSettingChange('maxLevel', parseInt(e.target.value))}
+						onChange={(e) => handleSettingChange('maxLevel', parseInt(e.target.value, 10))}
 						style={styles.select}
 					>
 						{[1, 2, 3, 4, 5, 6].map((n) => (
@@ -103,7 +104,7 @@ export const OutlinePanel: React.FC = () => {
 			</Card>
 
 			<div style={styles.actionRow}>
-				<button
+				<button type="button"
 					style={{ ...styles.btn, ...styles.primaryBtn }}
 					onClick={handleExtract}
 					disabled={loading}
@@ -111,7 +112,7 @@ export const OutlinePanel: React.FC = () => {
 					{loading ? t('outlinePanel.extracting') : `🔄 ${t('outlinePanel.refresh')}`}
 				</button>
 				{headings.length > 0 && (
-					<button style={styles.btn} onClick={handleCopyMarkdown}>
+					<button type="button" style={styles.btn} onClick={handleCopyMarkdown}>
 						📝 {t('outlinePanel.exportMd')}
 					</button>
 				)}

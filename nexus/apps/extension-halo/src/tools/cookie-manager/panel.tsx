@@ -1,6 +1,7 @@
 // goal: Cookie Manager panel UI - view and manage cookies
 
-import React, { useState, useEffect, useCallback } from 'react';
+import type React from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { CookieInfo } from './types';
@@ -12,7 +13,7 @@ import { useToolState } from '../../kernel';
 export const CookieManagerPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [cookies, setCookies] = useState<CookieInfo[]>([]);
-	const [search, setSearch] = useToolState<string>('cookie-manager' as any, '');
+	const [search, setSearch] = useToolState<string>('cookie-manager', '');
 
 	const [loading, setLoading] = useState(true);
 
@@ -69,8 +70,8 @@ export const CookieManagerPanel: React.FC = () => {
 					onChange={(e) => setSearch(e.target.value)}
 					placeholder={t('cookieManager.search')}
 				/>
-				<button style={styles.btn} onClick={loadCookies}>🔄</button>
-				<button style={styles.btn} onClick={handleExport}>📋 {t('cookieManager.export', { defaultValue: 'Export JSON' })}</button>
+				<button type="button" style={styles.btn} onClick={loadCookies}>🔄</button>
+				<button type="button" style={styles.btn} onClick={handleExport}>📋 {t('cookieManager.export', { defaultValue: 'Export JSON' })}</button>
 			</div>
 
 			{/* Cookie List */}
@@ -79,13 +80,13 @@ export const CookieManagerPanel: React.FC = () => {
 					{filtered.length === 0 ? (
 						<div style={styles.empty}>{t('cookieManager.noCookies')}</div>
 					) : (
-						filtered.map((cookie, i) => (
-							<div key={`${cookie.name}-${i}`} style={styles.item}>
+						filtered.map((cookie) => (
+							<div key={JSON.stringify([cookie.domain, cookie.path, cookie.name])} style={styles.item}>
 								<div style={styles.itemHeader}>
 									<span style={styles.name}>{cookie.name}</span>
 									<div style={styles.row}>
-										<button style={styles.btn} onClick={() => handleCopy(cookie.value)}>📋</button>
-										<button style={{ ...styles.btn, ...styles.btnDanger }} onClick={() => handleDelete(cookie)}>🗑️</button>
+										<button type="button" style={styles.btn} onClick={() => handleCopy(cookie.value)}>📋</button>
+										<button type="button" style={{ ...styles.btn, ...styles.btnDanger }} onClick={() => handleDelete(cookie)}>🗑️</button>
 									</div>
 								</div>
 								<div style={styles.value}>{cookie.value.slice(0, 100)}{cookie.value.length > 100 ? '...' : ''}</div>

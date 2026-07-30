@@ -1,4 +1,5 @@
-import React, { useCallback, useMemo } from 'react';
+import type React from 'react';
+import { useCallback, useMemo } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { ToolCategory } from '../../i18n/types';
@@ -68,10 +69,10 @@ export const ToolManagerPanel: React.FC<ToolManagerProps> = ({
       <div style={styles.header}>
         <span style={styles.title}>{t('toolManager.title')}</span>
         <div style={styles.actions}>
-          <button style={styles.btn} onClick={onEnableAll}>
+          <button type="button" style={styles.btn} onClick={onEnableAll}>
             {t('toolManager.enableAll')}
           </button>
-          <button style={styles.btn} onClick={onDisableAll}>
+          <button type="button" style={styles.btn} onClick={onDisableAll}>
             {t('toolManager.disableAll')}
           </button>
         </div>
@@ -92,7 +93,7 @@ export const ToolManagerPanel: React.FC<ToolManagerProps> = ({
       {/* Category Filters */}
       <div style={styles.filters}>
         {categories.map((cat) => (
-          <button
+          <button type="button"
             key={cat}
             style={{
               ...styles.filterChip,

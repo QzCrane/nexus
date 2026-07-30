@@ -1,7 +1,7 @@
 // goal: handles the per-site hotkey configuration interface, allowing domain-specific overrides for global shortcuts
 
 import type { HotkeyBinding, HotkeySettings, HotkeySiteMutation } from '@nexus/contracts';
-import { DEFAULT_HOTKEY_SETTINGS, DEFAULT_MODIFIERS, normalizeHostname } from '@nexus/contracts';
+import { DEFAULT_HOTKEY_SETTINGS, type DEFAULT_MODIFIERS, normalizeHostname } from '@nexus/contracts';
 import { openModal } from './modal';
 import { getSettingsSnapshot, patchSettings } from '../shared/settings-client';
 import { getActionName, getCurrentLang, onLangChange, t, tf } from './i18n';
@@ -39,7 +39,9 @@ async function loadSettings(forceRefresh = false): Promise<void> {
 			slots: { ...snapshot.hotkeySettings.slots },
 			sites: { ...snapshot.hotkeySettings.sites },
 		};
-	} catch { }
+	} catch {
+		settings = { ...DEFAULT_HOTKEY_SETTINGS };
+	}
 }
 
 async function mutateSite(domain: string, mutation: HotkeySiteMutation): Promise<void> {

@@ -1,5 +1,5 @@
 
-import React from 'react';
+import type React from 'react';
 import { useTranslation } from '../../../i18n';
 import { styles } from '../styles';
 
@@ -17,17 +17,17 @@ export const UserscriptsToolbar: React.FC<UserscriptsToolbarProps> = ({ config, 
 
     const items: Record<string, React.ReactNode> = {
         'add': (
-            <button key="add" style={styles.btn} onClick={onAdd}>
+            <button type="button" key="add" style={styles.btn} onClick={onAdd}>
                 ➕ {t('userscripts.addNew', { defaultValue: 'Add Script' })}
             </button>
         ),
         'export': (
-            <button key="export" style={styles.btnSecondary} onClick={onExport}>
+            <button type="button" key="export" style={styles.btnSecondary} onClick={onExport}>
                 📤 {t('userscripts.export', { defaultValue: 'Export' })}
             </button>
         ),
         'import': (
-            <button key="import" style={styles.btnSecondary} onClick={onImport}>
+            <button type="button" key="import" style={styles.btnSecondary} onClick={onImport}>
                 📥 {t('userscripts.import', { defaultValue: 'Import' })}
             </button>
         )

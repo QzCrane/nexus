@@ -285,13 +285,11 @@ export function createRouter() {
       const payload = args[0] as NexusRequest<A>;
       const tabs = await chrome.tabs.query({});
 
-      for (const tab of tabs) {
-        if (tab.id) {
-          chrome.tabs.sendMessage(tab.id, { action, payload }).catch(() => {
-            // ignore: expected if content script is not loaded in specific tab
-          });
-        }
-      }
+      await Promise.allSettled(tabs.flatMap((tab) => (
+        tab.id
+          ? [chrome.tabs.sendMessage(tab.id, { action, payload })]
+          : []
+      )));
     },
   };
 }

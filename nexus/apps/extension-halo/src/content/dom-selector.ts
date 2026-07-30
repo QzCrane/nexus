@@ -1,6 +1,8 @@
 // goal: DOM Selector Content Script Module
 // Handles hover highlighting and click-to-select logic
 
+import type { DomSelection } from '../tools/dom-selector/types';
+
 let isActive = false;
 let overlay: HTMLElement | null = null;
 let targetElement: Element | null = null;
@@ -18,7 +20,7 @@ const OVERLAY_STYLE = `
     box-sizing: border-box;
 `;
 
-export function start(onSelect: (data: { css: string; xpath: string }) => void) {
+export function start(onSelect: (data: DomSelection) => void) {
 	if (isActive) return;
 	isActive = true;
 	createOverlay();
@@ -70,7 +72,7 @@ function handleHover(e: MouseEvent) {
 	overlay.style.height = `${rect.height}px`;
 }
 
-function handleClick(e: MouseEvent, callback: (data: any) => void) {
+function handleClick(e: MouseEvent, callback: (data: DomSelection) => void) {
 	if (!isActive) return;
 
 	e.preventDefault();
@@ -92,14 +94,15 @@ function getCssPath(el: Element): string {
 	while (el.nodeType === Node.ELEMENT_NODE) {
 		let selector = el.nodeName.toLowerCase();
 		if (el.id) {
-			selector += '#' + el.id;
+			selector += `#${el.id}`;
 			path.unshift(selector);
 			break;
 		} else {
-			let sib: Element | null = el;
+			let sib: Element | null = el.previousElementSibling;
 			let nth = 1;
-			while ((sib = sib.previousElementSibling) !== null) {
+			while (sib !== null) {
 				if (sib.nodeName.toLowerCase() === selector) nth++;
+				sib = sib.previousElementSibling;
 			}
 			if (nth !== 1) selector += `:nth-of-type(${nth})`;
 		}
@@ -119,9 +122,10 @@ function getXPath(element: Element): string {
 	if (!siblings) return '';
 
 	for (let i = 0; i < siblings.length; i++) {
-		const sibling = siblings[i]!;
+		const sibling = siblings.item(i);
+		if (!sibling) continue;
 		if (sibling === element) {
-			return getXPath(element.parentNode as Element) + '/' + element.tagName.toLowerCase() + '[' + (ix + 1) + ']';
+			return `${getXPath(element.parentNode as Element)}/${element.tagName.toLowerCase()}[${ix + 1}]`;
 		}
 		if (sibling.nodeType === 1 && (sibling as Element).tagName === element.tagName) {
 			ix++;

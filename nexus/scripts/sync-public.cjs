@@ -75,16 +75,19 @@ const APP_CONFIGS = {
       'apps/extension-cortex',
       'apps/extension-spectra/assets',
       'apps/extension-spectra/assets-backup',
-      'apps/extension-spectra/debug_run.mjs',
       'apps/extension-spectra/plan.md',
       'apps/extension-spectra/release',
       'packages/features/ai-engine',
       'packages/ui-kit',
     ],
     publicName: 'spectra',
+    publicRootFiles: [
+      'scripts/check-workspace-lint.mjs',
+      'scripts/run-strict-biome.mjs',
+    ],
     publicRootScripts: ['dev', 'build', 'typecheck'],
     publicRootScriptOverrides: {
-      lint: 'turbo run lint',
+      lint: 'bun scripts/check-workspace-lint.mjs --public && bun scripts/run-strict-biome.mjs scripts package.json biome.json tsconfig.base.json turbo.json && turbo run lint',
     },
     publicApplicationScripts: [
       'dev',
@@ -97,7 +100,7 @@ const APP_CONFIGS = {
       'typecheck',
     ],
     publicApplicationScriptOverrides: {
-      lint: 'biome check src public build.mjs scripts --max-diagnostics=100',
+      lint: 'bun ../../scripts/run-strict-biome.mjs .',
     },
     publicApplicationScriptFiles: [
       'apps/extension-spectra/scripts/check-production-artifacts.mjs',
@@ -135,12 +138,18 @@ const APP_CONFIGS = {
       'packages/features/audio-engine',
     ],
     publicName: 'halo',
+    publicRootFiles: [
+      'scripts/check-workspace-lint.mjs',
+      'scripts/run-strict-biome.mjs',
+    ],
     publicRootScripts: ['dev', 'build', 'typecheck'],
     publicRootScriptOverrides: {
-      lint: 'turbo run lint',
+      lint: 'bun scripts/check-workspace-lint.mjs --public && bun scripts/run-strict-biome.mjs scripts package.json biome.json tsconfig.base.json turbo.json && turbo run lint',
     },
     publicApplicationScripts: ['dev', 'build', 'build:prod', 'lint', 'typecheck'],
-    publicApplicationScriptOverrides: {},
+    publicApplicationScriptOverrides: {
+      lint: 'bun ../../scripts/run-strict-biome.mjs .',
+    },
     publicApplicationScriptFiles: [],
     publicApplicationDevDependencies: [
       '@playwright/test',
@@ -174,6 +183,7 @@ const APP_CONFIG = APP_CONFIGS[targetApp] ?? {
   applicationPath: '',
   excludes: [],
   publicName: '',
+  publicRootFiles: [],
   publicRootScripts: [],
   publicRootScriptOverrides: {},
   publicApplicationScripts: [],
@@ -240,6 +250,7 @@ function shouldExcludeWithPatterns(relativePath, patterns) {
 
 function shouldExcludeForConfig(relativePath, patterns, config) {
   const normalized = relativePath.replaceAll('\\', '/');
+  if (config.publicRootFiles.includes(normalized)) return false;
   const applicationScriptsPrefix = config.applicationPath
     ? `${config.applicationPath}/scripts/`
     : '';

@@ -32,7 +32,9 @@ export class PermissionManager {
 	}
 
 	private notify = () => {
-		this.listeners.forEach((l) => l());
+		this.listeners.forEach((listener) => {
+			listener();
+		});
 	};
 
 	// Check if a permission is granted
@@ -120,7 +122,7 @@ export class PermissionManager {
 	// Get permissions required for a specific feature
 	getRequiredPermissions(featureId: string): PermissionDef[] {
 		const tool = getToolMeta(featureId);
-		if (!tool || !tool.permissions) return [];
+		if (!tool?.permissions) return [];
 
 		const required: PermissionDef[] = [];
 

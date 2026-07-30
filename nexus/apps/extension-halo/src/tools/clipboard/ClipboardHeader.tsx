@@ -1,4 +1,4 @@
-import React from 'react';
+import type React from 'react';
 import { Card, Toggle } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { styles } from './panel.styles';
@@ -47,7 +47,7 @@ export const ClipboardHeader: React.FC<ClipboardHeaderProps> = ({
 					value={search}
 					onChange={(e) => onSearchChange(e.target.value)}
 				/>
-				<button 
+				<button type="button"
 					style={styles.clearBtn}
 					onClick={onClear}
 					title={t('clipboardPanel.clearUnpinned')}

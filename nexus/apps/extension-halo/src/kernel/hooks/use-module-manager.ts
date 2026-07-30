@@ -2,7 +2,7 @@
 // eff: Reactive module state access in components
 
 import { useState, useEffect, useCallback } from 'react';
-import { ModuleManager, getModuleManager } from '../managers/module-manager';
+import { type ModuleManager, getModuleManager } from '../managers/module-manager';
 import { ALL_MODULES, type ModuleStatus } from '../registry/module-registry';
 import type { ModuleMeta } from '../core/tool-registry-types';
 

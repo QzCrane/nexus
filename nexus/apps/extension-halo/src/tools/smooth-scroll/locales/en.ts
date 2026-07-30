@@ -9,9 +9,9 @@ export const en = {
 		stepSizeDesc: 'Pixels per scroll tick',
 		animationTime: 'Animation Time',
 		animationTimeDesc: 'Duration in milliseconds',
-		accelerationMax: 'Acceleration Max',
+		accelerationMax: 'Maximum Response Gain',
 		accelerationDelta: 'Acceleration Delta',
-		pulseScale: 'Pulse Scale',
+		pulseScale: 'Response Intensity',
 		arrowKeyStep: 'Arrow Key Step',
 		easing: 'Easing Curve',
 		inputSources: 'Input Sources',
@@ -20,7 +20,7 @@ export const en = {
 		touchpad: 'Touchpad Gestures',
 		features: 'Features',
 		middleClickAutoScroll: 'Middle Click Auto-Scroll',
-		fixedBackground: 'Fixed Background Support',
+		respectReducedMotion: 'Respect system reduced motion',
 		profiles: 'Profiles',
 		loadProfile: 'Load Profile',
 		configMgmt: 'Config Management',
@@ -39,7 +39,7 @@ export const en = {
 			linear: 'Linear',
 			ease: 'Ease In',
 			easeOut: 'Ease Out',
-			spring: 'Spring (Bouncy)'
+			spring: 'Spring (Responsive)'
 		},
 		toasts: {
 			loaded: 'loaded',

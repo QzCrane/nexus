@@ -1,10 +1,9 @@
 import React from 'react';
-import type { UserScript, ScriptType, UserScriptRunAt, EditForm } from '../types';
+import type { TranslationFunction } from '../../../i18n';
+import type { EditForm } from '../types';
 import { styles } from '../styles';
 
 import { ScriptMetaEditor } from './script-meta-editor';
-
-type TFunc = (key: string, opts?: { defaultValue?: string } & Record<string, any>) => string;
 
 interface ScriptEditorProps {
 	form: EditForm;
@@ -12,7 +11,7 @@ interface ScriptEditorProps {
 	onSave: () => void;
 	onCancel: () => void;
 	isEdit: boolean;
-	t: TFunc;
+	t: TranslationFunction;
 }
 
 export const ScriptEditor: React.FC<ScriptEditorProps> = ({
@@ -39,6 +38,10 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
 
 	// Count lines
 	const lineCount = React.useMemo(() => form.code.split('\n').length, [form.code]);
+	const lineNumbers = React.useMemo(
+		() => Array.from({ length: lineCount }, (_, index) => index + 1),
+		[lineCount],
+	);
 
 	return (
 		<div style={styles.editorCard}>
@@ -52,8 +55,8 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
 			{/* Code editor with line numbers */}
 			<div style={styles.editorContainer}>
 				<div style={styles.lineNumbers} ref={lineNumbersRef}>
-					{Array.from({ length: lineCount }, (_, i) => (
-						<div key={i} style={{ height: '18px' }}>{i + 1}</div>
+					{lineNumbers.map((lineNumber) => (
+						<div key={lineNumber} style={{ height: '18px' }}>{lineNumber}</div>
 					))}
 				</div>
 				<textarea
@@ -69,10 +72,10 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
 			
 			{/* Action buttons */}
 			<div style={styles.btnGroup}>
-				<button style={styles.btn} onClick={onSave}>
+				<button type="button" style={styles.btn} onClick={onSave}>
 					{isEdit ? `💾 ${t('userscripts.saveChanges', { defaultValue: 'Save Changes' })}` : `➕ ${t('userscripts.addNew', { defaultValue: 'Add Script' })}`}
 				</button>
-				<button style={styles.btnSecondary} onClick={onCancel}>
+				<button type="button" style={styles.btnSecondary} onClick={onCancel}>
 					{t('common.cancel', { defaultValue: 'Cancel' })}
 				</button>
 			</div>

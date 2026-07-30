@@ -7,9 +7,9 @@
 	"scripts": {
 		"dev": "turbo run dev",
 		"build": "turbo run build --output-logs=new-only",
-		"lint": "turbo run lint --filter=@nexus/contracts --filter=@nexus/kernel --filter=@nexus/audio-engine --filter=@nexus/extension-spectra && bun run lint:workspace-fallbacks && bun run lint:spectra-release",
-		"lint:workspace-fallbacks": "bun scripts/check-workspace-lint.mjs",
-		"lint:spectra-release": "biome check scripts/check-platform-contract.mjs scripts/platform-contract.mjs scripts/platform-contract.test.mjs scripts/check-spectra-remote-live.mjs scripts/check-toolchain.mjs scripts/check-workspace-lint.mjs scripts/baselines/halo-biome-baseline.v1.json scripts/release-spectra.mjs ../remote-site/app.js ../remote-site/index.html ../remote-site/styles.css --max-diagnostics=100",
+		"lint": "bun run lint:workspace-coverage && turbo run lint --output-logs=new-only && bun run lint:repository-surfaces",
+		"lint:workspace-coverage": "bun test scripts/check-workspace-lint.spec.mjs scripts/run-strict-biome.spec.mjs && bun scripts/check-workspace-lint.mjs",
+		"lint:repository-surfaces": "bun scripts/run-strict-biome.mjs scripts package.json biome.json tsconfig.base.json turbo.json ../package.json ../commitlint.config.cjs ../.claude/settings.json ../.codex/hooks.json ../remote-site",
 		"lint:ai-pitfalls": "bun scripts/hooks/ai-pitfall-detector.mjs",
 		"typecheck": "turbo run typecheck",
 		"typecheck:spectra": "turbo run typecheck --filter=@nexus/contracts --filter=@nexus/kernel --filter=@nexus/audio-engine --filter=@nexus/extension-spectra",

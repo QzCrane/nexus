@@ -1,7 +1,7 @@
 // goal: Background Helper Section - main UI component
 // eff: Display all global background services with status and controls
 
-import React from 'react';
+import type React from 'react';
 import { useTranslation } from '../../../i18n';
 import { useBackgroundHelpers } from '../hooks/use-background-helpers';
 import { BackgroundHelperItemComponent } from './BackgroundHelperItem';

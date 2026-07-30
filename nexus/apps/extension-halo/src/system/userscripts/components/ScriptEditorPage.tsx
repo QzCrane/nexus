@@ -2,11 +2,10 @@
 // eff: Replaces inline expand with dedicated page for better UX
 
 import React from 'react';
+import type { TranslationFunction } from '../../../i18n';
 import type { EditForm } from '../types';
 import { ScriptMetaEditor } from './script-meta-editor';
 import { pageStyles } from '../styles/editor-page';
-
-type TFunc = (key: string, opts?: { defaultValue?: string } & Record<string, any>) => string;
 
 interface ScriptEditorPageProps {
 	form: EditForm;
@@ -14,7 +13,7 @@ interface ScriptEditorPageProps {
 	onSave: () => void;
 	onCancel: () => void;
 	isEdit: boolean;
-	t: TFunc;
+	t: TranslationFunction;
 }
 
 export const ScriptEditorPage: React.FC<ScriptEditorPageProps> = ({
@@ -34,6 +33,10 @@ export const ScriptEditorPage: React.FC<ScriptEditorPageProps> = ({
 	};
 
 	const lineCount = React.useMemo(() => form.code.split('\n').length, [form.code]);
+	const lineNumbers = React.useMemo(
+		() => Array.from({ length: lineCount }, (_, index) => index + 1),
+		[lineCount],
+	);
 	const getTypeIcon = () => form.type === 'css' ? '🎨' : '⚡';
 	const getTypeGradient = () => form.type === 'css' 
 		? 'linear-gradient(135deg, #2196F3, #1976D2)' 
@@ -43,7 +46,7 @@ export const ScriptEditorPage: React.FC<ScriptEditorPageProps> = ({
 		<div style={pageStyles.container}>
 			{/* Header */}
 			<div style={pageStyles.header}>
-				<button style={pageStyles.backBtn} onClick={onCancel} title={t('common.back', { defaultValue: 'Back' })}>←</button>
+				<button type="button" style={pageStyles.backBtn} onClick={onCancel} title={t('common.back', { defaultValue: 'Back' })}>←</button>
 				<div style={pageStyles.title}>
 					<span style={{ ...pageStyles.titleIcon, background: getTypeGradient() }}>{getTypeIcon()}</span>
 					{isEdit ? t('userscripts.editScript', { defaultValue: 'Edit Script' }) : t('userscripts.newScript', { defaultValue: 'New Script' })}
@@ -71,7 +74,7 @@ export const ScriptEditorPage: React.FC<ScriptEditorPageProps> = ({
 						</div>
 						<div style={pageStyles.codeContainer}>
 							<div style={pageStyles.lineNumbers} ref={lineNumbersRef}>
-								{Array.from({ length: lineCount }, (_, i) => <div key={i}>{i + 1}</div>)}
+								{lineNumbers.map((lineNumber) => <div key={lineNumber}>{lineNumber}</div>)}
 							</div>
 							<textarea
 								ref={textareaRef}
@@ -89,8 +92,8 @@ export const ScriptEditorPage: React.FC<ScriptEditorPageProps> = ({
 
 			{/* Footer */}
 			<div style={pageStyles.footer}>
-				<button style={{ ...pageStyles.btn, ...pageStyles.btnSecondary }} onClick={onCancel}>{t('common.cancel', { defaultValue: 'Cancel' })}</button>
-				<button style={{ ...pageStyles.btn, ...pageStyles.btnPrimary }} onClick={onSave}>
+				<button type="button" style={{ ...pageStyles.btn, ...pageStyles.btnSecondary }} onClick={onCancel}>{t('common.cancel', { defaultValue: 'Cancel' })}</button>
+				<button type="button" style={{ ...pageStyles.btn, ...pageStyles.btnPrimary }} onClick={onSave}>
 					{isEdit ? '💾' : '➕'} {isEdit ? t('userscripts.saveChanges', { defaultValue: 'Save Changes' }) : t('userscripts.addNew', { defaultValue: 'Add Script' })}
 				</button>
 			</div>

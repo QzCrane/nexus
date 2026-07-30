@@ -1,7 +1,7 @@
 // goal: Hex Dump panel UI
 
-import React, { useState, useCallback, useRef } from 'react';
-import { useTranslation } from '../../i18n';
+import type React from 'react';
+import { useState, useCallback } from 'react';
 import { createHexDump, type HexChunk } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
@@ -10,10 +10,8 @@ import { useToolState } from '../../kernel';
 
 
 export const HexDumpPanel: React.FC = () => {
-	const { t } = useTranslation();
     const [loading, setLoading] = useState(false);
-    const [chunks, setChunks] = useToolState<HexChunk[]>('hex-dump-chunks' as any, []);
-	const inputRef = useRef<HTMLInputElement>(null);
+    const [chunks, setChunks] = useToolState<HexChunk[]>('hex-dump-chunks', []);
 
 
 	const handleFile = useCallback(async (file: File) => {
@@ -31,21 +29,21 @@ export const HexDumpPanel: React.FC = () => {
         const dump = createHexDump(buffer);
         setChunks(dump);
         setLoading(false);
-	}, []);
+	}, [setChunks]);
 
 	return (
 		<div style={styles.wrapper}>
-			<div style={styles.dropzone} onClick={() => inputRef.current?.click()}>
+			<label style={styles.dropzone}>
 				<div>📁 {chunks.length > 0 ? 'Open another file' : 'Open file to dump'}</div>
-				<input ref={inputRef} type="file" style={{ display: 'none' }} onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
-			</div>
+				<input type="file" style={{ display: 'none' }} onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
+			</label>
 
             {loading && <div style={styles.loading}>⏳ Processing...</div>}
 
             {chunks.length > 0 && (
                 <div style={styles.viewer}>
-                    {chunks.map((chunk, i) => (
-                        <div key={i} style={styles.line}>
+                    {chunks.map((chunk) => (
+                        <div key={chunk.offset} style={styles.line}>
                             <span style={styles.offset}>{chunk.offset}</span>
                             <span style={styles.hex}>{chunk.hex}</span>
                             <span style={styles.ascii}>{chunk.ascii}</span>

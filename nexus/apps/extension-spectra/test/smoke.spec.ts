@@ -13,6 +13,7 @@ import puppeteer, {
 } from 'puppeteer';
 import {
 	SPECTRA_CONTENT_RUNTIME_REVISION,
+	type ControlSnapshot,
 	type SettingsPatch,
 	type SettingsSnapshot,
 } from '@nexus/contracts';
@@ -21,6 +22,7 @@ import {
 	SPECTRA_PAGE_MEDIA_REQUEST_ATTRIBUTE,
 	SPECTRA_PAGE_MEDIA_RESULT_ATTRIBUTE,
 } from '../src/shared/page-media-bridge';
+import { requireValue } from './helpers/require-value';
 
 const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
 const FIXTURE_PATH = join(import.meta.dir, 'fixtures', 'smoke-test.html');
@@ -140,6 +142,13 @@ interface OffscreenHostSnapshot {
 	remoteTabs: Array<{ tabId: number; sessionId: string }>;
 }
 
+interface PeerRuntimeProbe {
+	peerType: string;
+	vendorAssignments: number;
+	peerConstructions: number;
+	peerDestructions: number;
+}
+
 interface RemotePublicSession {
 	protocolVersion: 2;
 	sessionId: string;
@@ -165,6 +174,7 @@ interface WebAudioProbe {
 	runtimeRevision: string | null;
 	sameController: boolean | null;
 	sameSource: boolean | null;
+	sameRuntime: boolean | null;
 	oldRuntimeDisposed: boolean | null;
 }
 
@@ -707,24 +717,37 @@ async function acquireSmokeRuntime(
 	return lease;
 }
 
+async function releaseSmokeRuntime(lease: SmokeRuntimeLease): Promise<void> {
+	if (!runtimeLeaseClient || runtimeLeaseClient.isClosed()) {
+		throw new Error('The smoke runtime lease client is unavailable');
+	}
+	// Release from the same tab-hosted extension UI that acquired the token.
+	// Background admits this extension origin while still rejecting web Content
+	// documents, and the checked ACK prevents smoke cleanup from hiding a leak.
+	const response = await runtimeLeaseClient.evaluate(async (owned) => (
+		chrome.runtime.sendMessage({
+			protocolVersion: 2,
+			requestId: crypto.randomUUID(),
+			type: 'spectra.content.runtime.release',
+			payload: {
+				runtimeRevision: owned.runtimeRevision,
+				tabId: owned.tabId,
+				documentId: owned.documentId,
+				reason: 'observation',
+				capability: owned.capability,
+			},
+		})
+	), lease);
+	if (!response?.ok) {
+		throw new Error(response?.error?.message ?? 'Unable to release smoke runtime');
+	}
+	smokeRuntimeLeases.delete(`${lease.tabId}:${lease.documentId}:${lease.capability}`);
+}
+
 async function releaseSmokeRuntimes(): Promise<void> {
-	if (smokeRuntimeLeases.size === 0 || !runtimeLeaseClient || runtimeLeaseClient.isClosed()) return;
-	const client = runtimeLeaseClient;
-	for (const lease of smokeRuntimeLeases.values()) {
-		await client.evaluate(async (owned) => {
-			await chrome.runtime.sendMessage({
-				protocolVersion: 2,
-				requestId: crypto.randomUUID(),
-				type: 'spectra.content.runtime.release',
-				payload: {
-					runtimeRevision: owned.runtimeRevision,
-					tabId: owned.tabId,
-					documentId: owned.documentId,
-					reason: 'observation',
-					capability: owned.capability,
-				},
-			});
-		}, lease).catch(() => undefined);
+	if (smokeRuntimeLeases.size === 0) return;
+	for (const lease of [...smokeRuntimeLeases.values()]) {
+		await releaseSmokeRuntime(lease).catch(() => undefined);
 	}
 	smokeRuntimeLeases.clear();
 }
@@ -735,16 +758,21 @@ async function waitForContentStatus(
 ): Promise<ContentStatus> {
 	const deadline = Date.now() + timeoutMs;
 	let lastStatus: ContentStatus | undefined;
+	let lastReadError: unknown;
 	while (Date.now() < deadline) {
 		try {
 			lastStatus = await readContentStatus();
 			if (predicate(lastStatus)) return lastStatus;
-		} catch {
+		} catch (error) {
 			// Content initialization and service-worker startup are eventually consistent.
+			lastReadError = error;
 		}
 		await new Promise((resolveWait) => setTimeout(resolveWait, 50));
 	}
-	throw new Error(`Timed out waiting for content status: ${JSON.stringify(lastStatus)}`);
+	const readFailure = lastReadError === undefined
+		? ''
+		: `; last read failed: ${lastReadError instanceof Error ? lastReadError.message : String(lastReadError)}`;
+	throw new Error(`Timed out waiting for content status: ${JSON.stringify(lastStatus)}${readFailure}`);
 }
 
 async function getOffscreenContextCount(worker?: WebWorker): Promise<number> {
@@ -1042,6 +1070,8 @@ async function readPopupVolumePresentation(expectedAccent?: string): Promise<Pop
 			}, { timeout: 8_000 }, expectedAccent).catch(async (error) => {
 				const diagnostic = await popup.evaluate(async () => {
 					const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+					const slider = document.querySelector<HTMLElement>('.vol-slider');
+					if (!slider) throw new Error('Popup volume slider is missing');
 					const request = (type: string, payload: Record<string, unknown>) => chrome.runtime.sendMessage({
 						protocolVersion: 2,
 						requestId: crypto.randomUUID(),
@@ -1050,7 +1080,7 @@ async function readPopupVolumePresentation(expectedAccent?: string): Promise<Pop
 						payload,
 					});
 					return {
-						accent: getComputedStyle(document.querySelector<HTMLElement>('.vol-slider')!)
+						accent: getComputedStyle(slider)
 							.getPropertyValue('--slider-accent').trim(),
 						session: tab?.id ? await request('spectra.audio.session.get', { tabId: tab.id }) : null,
 						control: tab?.id ? await request('spectra.control.snapshot.get', { tabId: tab.id }) : null,
@@ -1162,18 +1192,20 @@ async function sendFromActionPopup<T>(message: Record<string, unknown>): Promise
 	let popupClient: CDPSession | null = null;
 	try {
 		const target = await openActionPopupTarget();
-		popup = await target.asPage();
-		if (!popup) throw new Error('Unable to attach to the real extension action popup page');
-		popupClient = await withDiagnosticTimeout(
+		const popupPage = await target.asPage();
+		if (!popupPage) throw new Error('Unable to attach to the real extension action popup page');
+		popup = popupPage;
+		const attachedClient = await withDiagnosticTimeout(
 			'attach to the real extension action popup',
-			() => popup!.createCDPSession(),
+			() => popupPage.createCDPSession(),
 			10_000,
 		);
-		await popupClient.send('Runtime.enable');
+		popupClient = attachedClient;
+		await attachedClient.send('Runtime.enable');
 		const serializedMessage = JSON.stringify(message);
 		const evaluation = await withDiagnosticTimeout(
 			'send remote request from the real extension action popup',
-			() => popupClient!.send('Runtime.evaluate', {
+			() => attachedClient.send('Runtime.evaluate', {
 				expression: `(async () => {
 					const request = ${serializedMessage};
 					request.requestId = crypto.randomUUID();
@@ -1412,6 +1444,88 @@ async function evaluateOffscreen<T>(expression: string): Promise<T> {
 	}
 }
 
+async function readOffscreenPeerRuntimeProbe(): Promise<PeerRuntimeProbe> {
+	return evaluateOffscreen<PeerRuntimeProbe>(`(() => {
+		const scope = globalThis;
+		const probe = scope.__spectraSmokePeerRuntimeProbe;
+		return {
+			peerType: typeof scope.Peer,
+			vendorAssignments: probe?.vendorAssignments ?? 0,
+			peerConstructions: probe?.peerConstructions ?? 0,
+			peerDestructions: probe?.peerDestructions ?? 0,
+		};
+	})()`);
+}
+
+async function installOffscreenPeerRuntimeProbe(): Promise<void> {
+	const installed = await evaluateOffscreen<boolean>(`(() => {
+		const scope = globalThis;
+		if (scope.__spectraSmokePeerRuntimeProbe || typeof scope.Peer !== 'undefined') return false;
+		const probe = {
+			vendorAssignments: 0,
+			peerConstructions: 0,
+			peerDestructions: 0,
+			realPeer: null,
+		};
+		let exposedPeer;
+		class FakePeer {
+			constructor(id) {
+				this.id = id;
+				this.listeners = new Map();
+				probe.peerConstructions += 1;
+				queueMicrotask(() => {
+					for (const listener of this.listeners.get('open') ?? []) listener(this.id);
+				});
+			}
+			on(type, listener) {
+				const listeners = this.listeners.get(type) ?? [];
+				listeners.push(listener);
+				this.listeners.set(type, listeners);
+				return this;
+			}
+			destroy() {
+				probe.peerDestructions += 1;
+			}
+		}
+		Object.defineProperty(scope, 'Peer', {
+			configurable: true,
+			get() {
+				return exposedPeer;
+			},
+			set(value) {
+				probe.vendorAssignments += 1;
+				probe.realPeer = value;
+				exposedPeer = FakePeer;
+			},
+		});
+		scope.__spectraSmokePeerRuntimeProbe = probe;
+		return typeof scope.Peer === 'undefined';
+	})()`);
+	if (!installed) throw new Error('Unable to install the offscreen Peer runtime probe');
+}
+
+async function restoreOffscreenPeerRuntimeProbe(): Promise<void> {
+	if (!browser?.targets().some((target) => (
+		target.url() === `chrome-extension://${extensionId}/offscreen.html`
+	))) return;
+	await evaluateOffscreen<boolean>(`(() => {
+		const scope = globalThis;
+		const probe = scope.__spectraSmokePeerRuntimeProbe;
+		if (!probe) return false;
+		if (typeof probe.realPeer === 'function') {
+			Object.defineProperty(scope, 'Peer', {
+				configurable: true,
+				writable: true,
+				value: probe.realPeer,
+			});
+		} else {
+			delete scope.Peer;
+		}
+		delete scope.__spectraSmokePeerRuntimeProbe;
+		return true;
+	})()`);
+}
+
 async function installTabCaptureStreamIdStub(worker?: WebWorker): Promise<void> {
 	const evaluate = worker
 		? worker.evaluate.bind(worker)
@@ -1601,6 +1715,9 @@ async function inspectWebAudio(tabId: number, saveMarkers = false): Promise<WebA
 						? scope.__spectraSmokeController === controller
 						: null,
 					sameSource: scope.__spectraSmokeSource ? scope.__spectraSmokeSource === source : null,
+					sameRuntime: scope.__spectraSmokeRuntime
+						? scope.__spectraSmokeRuntime === runtime
+						: null,
 					oldRuntimeDisposed: scope.__spectraSmokeRuntime
 						? scope.__spectraSmokeRuntime.disposed === true
 						: null,
@@ -1695,17 +1812,18 @@ async function refreshServiceWorkerHandle(
 		let connection: Browser | null = null;
 		const stageTimeout = () => Math.max(250, Math.min(5_000, deadline - Date.now()));
 		try {
-			connection = await withDiagnosticTimeout(
+			const freshConnection = await withDiagnosticTimeout(
 				`connect replacement service-worker session (attempt ${attempt})`,
 				() => puppeteer.connect({ browserWSEndpoint: browser.wsEndpoint() }),
 				stageTimeout(),
 			);
-			const existing = connection.targets().find(
+			connection = freshConnection;
+			const existing = freshConnection.targets().find(
 				(candidate) => candidate.type() === 'service_worker' && candidate.url() === expectedUrl,
 			);
 			const target = existing ?? await withDiagnosticTimeout(
 				`discover replacement service-worker target (attempt ${attempt})`,
-				() => connection!.waitForTarget(
+				() => freshConnection.waitForTarget(
 					(candidate) => candidate.type() === 'service_worker' && candidate.url() === expectedUrl,
 					{ timeout: stageTimeout() },
 				),
@@ -1793,15 +1911,16 @@ async function restartServiceWorker(): Promise<void> {
 		}));
 
 		stage = 'create page CDP session';
-		client = await withDiagnosticTimeout(stage, () => fixturePage.createCDPSession());
+		const activeClient = await withDiagnosticTimeout(stage, () => fixturePage.createCDPSession());
+		client = activeClient;
 		stage = 'enable service-worker domain';
 		const initialVersion = await withDiagnosticTimeout(stage, async () => {
 			const initialVersionPromise = waitForWorkerVersion(
-				client!,
+				activeClient,
 				(version) => version.scriptURL === workerScriptUrl && version.runningStatus === 'running',
 			);
 			const [, version] = await Promise.all([
-				client!.send('ServiceWorker.enable'),
+				activeClient.send('ServiceWorker.enable'),
 				initialVersionPromise,
 			]);
 			return version;
@@ -1810,11 +1929,11 @@ async function restartServiceWorker(): Promise<void> {
 		stage = 'stop service worker';
 		await withDiagnosticTimeout(stage, async () => {
 			const stoppedPromise = waitForWorkerVersion(
-				client!,
+				activeClient,
 				(version) => version.versionId === initialVersion.versionId && version.runningStatus === 'stopped',
 			);
 			await Promise.all([
-				client!.send('ServiceWorker.stopWorker', { versionId: initialVersion.versionId }),
+				activeClient.send('ServiceWorker.stopWorker', { versionId: initialVersion.versionId }),
 				stoppedPromise,
 			]);
 		}, 12_000);
@@ -1822,7 +1941,7 @@ async function restartServiceWorker(): Promise<void> {
 		await withDiagnosticTimeout(stage, () => waitForServiceWorkerMarkerToDisappear(previousMarker), 12_000);
 
 		stage = 'start service worker';
-		await withDiagnosticTimeout(stage, () => client!.send('ServiceWorker.startWorker', {
+		await withDiagnosticTimeout(stage, () => activeClient.send('ServiceWorker.startWorker', {
 			scopeURL: `chrome-extension://${extensionId}/`,
 		}));
 		stage = 'reacquire replacement worker through a fresh target session';
@@ -1843,15 +1962,16 @@ async function restartServiceWorker(): Promise<void> {
 		const detail = error instanceof Error ? error.message : String(error);
 		throw new Error(`Service-worker restart failed during ${stage}: ${detail}`, { cause: error });
 	} finally {
-		if (client) {
+		const clientToClose = client;
+		if (clientToClose) {
 			await withDiagnosticTimeout(
 				'disable service-worker CDP domain',
-				() => client!.send('ServiceWorker.disable'),
+				() => clientToClose.send('ServiceWorker.disable'),
 				2_000,
 			).catch(() => undefined);
 			await withDiagnosticTimeout(
 				'detach service-worker CDP session',
-				() => client!.detach(),
+				() => clientToClose.detach(),
 				2_000,
 			).catch(() => undefined);
 		}
@@ -2097,12 +2217,13 @@ describe('SPECTRA built extension smoke', () => {
 					__spectraWebsiteHotkeys?: { codes: string[]; reserveMute: boolean };
 				};
 				scope.__spectraWebsiteHotkeys = { codes: [], reserveMute: false };
+				const websiteHotkeys = scope.__spectraWebsiteHotkeys;
 				document.addEventListener('keydown', (event) => {
 					if (!event.altKey
 						|| !['ArrowLeft', 'ArrowRight', 'ArrowDown', 'ArrowUp', 'KeyM']
 							.includes(event.code)) return;
-					scope.__spectraWebsiteHotkeys!.codes.push(event.code);
-					if (event.code === 'KeyM' && scope.__spectraWebsiteHotkeys!.reserveMute) {
+					websiteHotkeys.codes.push(event.code);
+					if (event.code === 'KeyM' && websiteHotkeys.reserveMute) {
 						event.preventDefault();
 					}
 				});
@@ -2213,9 +2334,11 @@ describe('SPECTRA built extension smoke', () => {
 				}).__spectraWebsiteHotkeys?.codes
 			))).toEqual([]);
 			await coldPage.evaluate(() => {
-				(window as Window & {
+				const websiteHotkeys = (window as Window & {
 					__spectraWebsiteHotkeys?: { reserveMute: boolean };
-				}).__spectraWebsiteHotkeys!.reserveMute = true;
+				}).__spectraWebsiteHotkeys;
+				if (!websiteHotkeys) throw new Error('Website hotkey probe is missing');
+				websiteHotkeys.reserveMute = true;
 			});
 			await tapDefaultShortcut(coldPage, 'KeyM');
 			await eventually(
@@ -2267,8 +2390,10 @@ describe('SPECTRA built extension smoke', () => {
 			};
 		});
 		const setMode = (mode: ArbiterMode) => arbiterPage.evaluate((nextMode) => {
-			(window as Window & { __spectraArbiterProbe?: ArbiterProbe })
-				.__spectraArbiterProbe!.mode = nextMode;
+			const probe = (window as Window & { __spectraArbiterProbe?: ArbiterProbe })
+				.__spectraArbiterProbe;
+			if (!probe) throw new Error('Default hotkey arbiter probe is missing');
+			probe.mode = nextMode;
 		}, mode);
 		const focusBody = () => arbiterPage.evaluate(() => {
 			document.body.tabIndex = -1;
@@ -2411,10 +2536,12 @@ describe('SPECTRA built extension smoke', () => {
 			await waitForOsdToSettle();
 			expect(await readMedia()).toMatchObject({ speed: 1.3, volume: 100 });
 
-			const exclusionProbe = await arbiterPage.evaluate(() => (
-				(window as Window & { __spectraArbiterProbe?: ArbiterProbe })
-					.__spectraArbiterProbe!
-			));
+			const exclusionProbe = await arbiterPage.evaluate(() => {
+				const probe = (window as Window & { __spectraArbiterProbe?: ArbiterProbe })
+					.__spectraArbiterProbe;
+				if (!probe) throw new Error('Default hotkey arbiter probe is missing');
+				return probe;
+			});
 			expect(exclusionProbe.documentStops).toBe(0);
 			expect(exclusionProbe.windowEvents
 				.filter(({ target }) => editableTargets.includes(target))
@@ -2434,10 +2561,12 @@ describe('SPECTRA built extension smoke', () => {
 			);
 			await waitForOsdToSettle();
 			expect(arbiterPage.url()).toBe(historyUrl);
-			expect(await arbiterPage.evaluate(() => (
-				(window as Window & { __spectraArbiterProbe?: ArbiterProbe })
-					.__spectraArbiterProbe!.popstates
-			))).toBe(0);
+			expect(await arbiterPage.evaluate(() => {
+				const probe = (window as Window & { __spectraArbiterProbe?: ArbiterProbe })
+					.__spectraArbiterProbe;
+				if (!probe) throw new Error('Default hotkey arbiter probe is missing');
+				return probe.popstates;
+			})).toBe(0);
 
 			await setMode('repeat-stop');
 			await focusBody();
@@ -2451,7 +2580,8 @@ describe('SPECTRA built extension smoke', () => {
 			expect(await readMedia()).toMatchObject({ speed: 1.2, volume: 90 });
 			expect(await arbiterPage.evaluate(() => {
 				const probe = (window as Window & { __spectraArbiterProbe?: ArbiterProbe })
-					.__spectraArbiterProbe!;
+					.__spectraArbiterProbe;
+				if (!probe) throw new Error('Default hotkey arbiter probe is missing');
 				return {
 					repeatStops: probe.repeatStops,
 					keyupStops: probe.keyupStops,
@@ -2582,6 +2712,7 @@ describe('SPECTRA built extension smoke', () => {
 				'configured site hotkey runtime',
 				15_000,
 			);
+			const tabId = await getTabId(targetUrl);
 			await page.bringToFront();
 
 			const focusBody = () => page.evaluate(() => {
@@ -2589,14 +2720,39 @@ describe('SPECTRA built extension smoke', () => {
 				document.body.focus();
 			});
 			const setMode = (mode: SiteArbiterMode) => page.evaluate((nextMode) => {
-				(window as Window & { __spectraSiteArbiterProbe?: SiteArbiterProbe })
-					.__spectraSiteArbiterProbe!.mode = nextMode;
+				const probe = (window as Window & { __spectraSiteArbiterProbe?: SiteArbiterProbe })
+					.__spectraSiteArbiterProbe;
+				if (!probe) throw new Error('Configured site hotkey arbiter probe is missing');
+				probe.mode = nextMode;
 			}, mode);
-			const readState = () => page.evaluate(() => ({
-				speed: document.querySelector<HTMLMediaElement>('video,audio')?.playbackRate ?? -1,
-				probe: (window as Window & { __spectraSiteArbiterProbe?: SiteArbiterProbe })
-					.__spectraSiteArbiterProbe!,
-			}));
+			const readState = () => page.evaluate(() => {
+				const probe = (window as Window & { __spectraSiteArbiterProbe?: SiteArbiterProbe })
+					.__spectraSiteArbiterProbe;
+				if (!probe) throw new Error('Configured site hotkey arbiter probe is missing');
+				return {
+					speed: document.querySelector<HTMLMediaElement>('video,audio')?.playbackRate ?? -1,
+					probe,
+				};
+			});
+			const readControlSnapshot = () => client.evaluate(
+				async (targetTabId) => chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					tabId: targetTabId,
+					type: 'spectra.control.snapshot.get',
+					payload: { tabId: targetTabId },
+				}),
+				tabId,
+			) as Promise<{
+				ok: boolean;
+				data?: ControlSnapshot;
+				error?: { message?: string };
+			}>;
+			const waitForHotkeyFeedbackWindow = () => page.waitForFunction(() => {
+				const osd = document.querySelector<HTMLElement>('#spectra-osd-host')
+					?.shadowRoot?.getElementById('o');
+				return osd !== null && osd !== undefined && !osd.classList.contains('v');
+			}, { timeout: 3_500 });
 			const tapSiteHotkey = async () => {
 				await page.keyboard.press('KeyK');
 			};
@@ -2634,11 +2790,21 @@ describe('SPECTRA built extension smoke', () => {
 			await setMode('window-keyup-stop');
 			await page.keyboard.down('KeyK');
 			await eventually(
-				readState,
-				(state) => state.speed === 1.3,
-				'configured site hotkey initial held press',
+				async () => ({
+					page: await readState(),
+					snapshot: await readControlSnapshot(),
+				}),
+				(state) => state.page.speed === 1.3
+					&& state.snapshot.ok
+					&& state.snapshot.data?.fields.speed?.phase === 'applied'
+					&& state.snapshot.data.fields.speed.actual === 1.3,
+				'acknowledged configured site hotkey initial held press',
 			);
-			await new Promise((resolveWait) => setTimeout(resolveWait, 75));
+			// The canonical snapshot can become observable before the original
+			// Content-side sendMessage promise runs its settlement microtask.
+			// Wait for that gesture's owned feedback window instead of assuming
+			// a fixed delay means its sole in-flight transaction has retired.
+			await waitForHotkeyFeedbackWindow();
 			await page.keyboard.down('KeyK');
 			await eventually(
 				readState,
@@ -3672,15 +3838,23 @@ describe('SPECTRA built extension smoke', () => {
 					speed: media?.playbackRate ?? null,
 				};
 			});
+			const initializedSitePage = requireValue(
+				sitePage,
+				'Expected the site preset page to be initialized',
+			);
+			const initializedGlobalPage = requireValue(
+				globalPage,
+				'Expected the global preset page to be initialized',
+			);
 			await eventually(
-				() => readMediaState(sitePage!),
+				() => readMediaState(initializedSitePage),
 				(state) => state.volume !== null
 					&& Math.abs(state.volume - 0.73) < 0.000_001
 					&& state.speed === 1.5,
 				'site preset initialization',
 			);
 			await eventually(
-				() => readMediaState(globalPage!),
+				() => readMediaState(initializedGlobalPage),
 				(state) => state.volume !== null
 					&& Math.abs(state.volume - 0.54) < 0.000_001
 					&& state.speed === 1.25,
@@ -4352,7 +4526,7 @@ describe('SPECTRA built extension smoke', () => {
 		}
 	}, 20_000);
 
-	test('renders non-idle spectrum bars from an already-active media processor', async () => {
+	test('renders an active spectrum, then clears synchronously and stops IPC on bypass', async () => {
 		const visualizerErrors: string[] = [];
 		const visualizerPage = await browser.newPage();
 		collectPageErrors(visualizerPage, visualizerErrors);
@@ -4407,6 +4581,7 @@ describe('SPECTRA built extension smoke', () => {
 				actualMode: 'webaudio',
 				phase: 'active',
 			});
+			await installVisualizerBatchProbe();
 			// acquireSmokeRuntime may open the long-lived Options lease client. Restore
 			// the media tab as the real action-Popup target before asserting its card.
 			await visualizerPage.bringToFront();
@@ -4425,39 +4600,66 @@ describe('SPECTRA built extension smoke', () => {
 				).data;
 				return Boolean(pixels?.some((value, index) => index % 4 === 3 && value > 0));
 			}, { timeout: 15_000 });
+			await eventually(
+				readVisualizerBatchProbe,
+				(probe) => probe.count > 0,
+				'active visualizer sampling',
+			);
+
+			const bypass = await configureRuntime(visualizerUrl, {
+				...DEFAULT_AUDIO_CONFIG,
+				eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
+			});
+			expect(bypass).toMatchObject({ actualMode: 'bypass', phase: 'idle' });
+			await popup.waitForFunction(() => {
+				const canvas = document.querySelector<HTMLCanvasElement>('#main-stage .viz-canvas');
+				const context = canvas?.getContext('2d');
+				if (!canvas || !context || canvas.height < 5) return false;
+				const activePixels = context.getImageData(
+					0,
+					0,
+					canvas.width,
+					canvas.height - 4,
+				).data;
+				const idlePixels = context.getImageData(
+					0,
+					canvas.height - 4,
+					canvas.width,
+					4,
+				).data;
+				return !activePixels.some((value, index) => index % 4 === 3 && value > 0)
+					&& idlePixels.some((value, index) => index % 4 === 3 && value > 0);
+			}, { timeout: 5_000 });
+
+			const release = await eventually(
+				readVisualizerBatchProbe,
+				(probe) => probe.events.some((event) => {
+					const payload = event.payload as { tabIds?: unknown };
+					return Array.isArray(payload.tabIds) && payload.tabIds.length === 0;
+				}),
+				'visualizer subscription release',
+			);
+			const settledCount = release.count;
+			await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+			expect(await readVisualizerBatchCount()).toBe(settledCount);
 		} finally {
 			if (popup) await closeActionPopup(popup);
+			await removeVisualizerBatchProbe();
 			await visualizerPage.close().catch(() => undefined);
 		}
 		expect(visualizerErrors).toEqual([]);
 	}, 25_000);
 
-	test('keeps visualizer IPC at zero without an active processor and after popup close', async () => {
+	test('keeps visualizer IPC at zero in the default bypass lifecycle and after popup close', async () => {
 		await fixturePage.bringToFront();
-		const tabId = await getTabId(fixturePage.url());
-		const disabled = await sendFromActionPopup<{
-			ok: boolean;
-			data?: { fields?: { audioEnabled?: { actual?: boolean } } };
-			error?: { message?: string };
-		}>({
-			protocolVersion: 2,
-			tabId,
-			type: 'spectra.control.intent.submit',
-			payload: {
-				tabId,
-				source: 'popup',
-				requestedCoverage: 'full',
-				target: null,
-				patch: { audioEnabled: false },
-			},
+		const bypass = await configureRuntime(fixturePage.url(), {
+			...DEFAULT_AUDIO_CONFIG,
+			eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
 		});
-		if (!disabled.ok || disabled.data?.fields?.audioEnabled?.actual !== false) {
-			throw new Error(disabled.error?.message ?? 'Unable to establish the bypass visualizer baseline');
-		}
+		expect(bypass).toMatchObject({ actualMode: 'bypass', phase: 'idle' });
 		await installVisualizerBatchProbe();
 		let popup: Page | null = null;
 		let popupClient: CDPSession | null = null;
-		let cleanupError: Error | null = null;
 		try {
 			const popupTarget = await openActionPopupTarget(5_000);
 			popup = await popupTarget.asPage();
@@ -4479,30 +4681,7 @@ describe('SPECTRA built extension smoke', () => {
 			if (popup) await closeActionPopup(popup).catch(() => undefined);
 			await popupClient?.detach().catch(() => undefined);
 			await removeVisualizerBatchProbe();
-			const restored = await sendFromActionPopup<{
-				ok: boolean;
-				data?: { fields?: { audioEnabled?: { actual?: boolean } } };
-				error?: { message?: string };
-			}>({
-				protocolVersion: 2,
-				tabId,
-				type: 'spectra.control.intent.submit',
-				payload: {
-					tabId,
-					source: 'popup',
-					requestedCoverage: 'full',
-					target: null,
-					patch: { audioEnabled: true },
-				},
-			});
-			if (!restored.ok
-				|| restored.data?.fields?.audioEnabled?.actual !== true) {
-				cleanupError = new Error(
-					restored.error?.message ?? 'Unable to restore the visualizer audio baseline',
-				);
-			}
 		}
-		if (cleanupError) throw cleanupError;
 	}, 10_000);
 
 	test('renders localized volume and speed feedback in the browser top layer', async () => {
@@ -4606,12 +4785,16 @@ describe('SPECTRA built extension smoke', () => {
 			await setHotkeyTarget(extensionClient, shortcutTargetTabId);
 			await fixturePage.bringToFront();
 			await tapDefaultShortcut(fixturePage, 'ArrowRight');
+			const activeShortcutTargetPage = requireValue(
+				shortcutTargetPage,
+				'Expected the selected shortcut target page to be initialized',
+			);
 			await withDiagnosticTimeout(
 				'observe selected-target speed and foreground Toast',
 				() => eventually(
 					async () => {
 						const [targetRate, foreground] = await Promise.all([
-							shortcutTargetPage!.evaluate(() => (
+							activeShortcutTargetPage.evaluate(() => (
 								document.querySelector<HTMLMediaElement>('video,audio')?.playbackRate ?? null
 							)),
 							fixturePage.evaluate(() => {
@@ -4673,10 +4856,16 @@ describe('SPECTRA built extension smoke', () => {
 			]);
 			const heldSpeedWidths = heldSpeedFeedback.frames.map(({ width }) => width);
 			expect(heldSpeedWidths.every((width, index) => (
-				index === 0 || width >= heldSpeedWidths[index - 1]! - 0.001
+				index === 0 || width >= requireValue(
+					heldSpeedWidths[index - 1],
+					'Expected a previous held-speed frame width',
+				) - 0.001
 			))).toBe(true);
 			expect(heldSpeedWidths.every((width, index) => (
-				index === 0 || width - heldSpeedWidths[index - 1]! <= 0.55
+				index === 0 || width - requireValue(
+					heldSpeedWidths[index - 1],
+					'Expected a previous held-speed frame width',
+				) <= 0.55
 			))).toBe(true);
 			await withDiagnosticTimeout('wait for the released speed OSD display window', () => (
 				fixturePage.waitForFunction(() => (
@@ -4710,10 +4899,16 @@ describe('SPECTRA built extension smoke', () => {
 			]);
 			const scalarWidths = scalarFrames.map(({ width }) => width);
 			expect(scalarWidths.every((width, index) => (
-				index === 0 || width <= scalarWidths[index - 1]! + 0.001
+				index === 0 || width <= requireValue(
+					scalarWidths[index - 1],
+					'Expected a previous scalar feedback frame width',
+				) + 0.001
 			))).toBe(true);
 			expect(scalarWidths.every((width, index) => (
-				index === 0 || scalarWidths[index - 1]! - width <= 1
+				index === 0 || requireValue(
+					scalarWidths[index - 1],
+					'Expected a previous scalar feedback frame width',
+				) - width <= 1
 			))).toBe(true);
 			for (const label of scalarLabels.slice(1)) {
 				expect(scalarFrames.filter((frame) => frame.label === label).length).toBeGreaterThan(2);
@@ -4726,6 +4921,246 @@ describe('SPECTRA built extension smoke', () => {
 			await extensionClient.close().catch(() => undefined);
 		}
 	}, 30_000);
+
+	test('releases feedback hosts and fullscreen promotion across content reinjection', async () => {
+		const targetUrl = fixturePage.url();
+		const tabId = await getTabId(targetUrl);
+		await configureRuntime(targetUrl, {
+			...DEFAULT_AUDIO_CONFIG,
+			eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
+		});
+		await fixturePage.bringToFront();
+
+		const waitForReinjectedRuntime = async (cycle: number): Promise<void> => {
+			await reinjectContent(tabId);
+			await eventually(
+				() => inspectWebAudio(tabId),
+				(probe) => probe.listenersReady,
+				`feedback runtime reinjection ${cycle}`,
+				10_000,
+			);
+		};
+		const readHostCounts = () => fixturePage.evaluate(() => ({
+			osd: document.querySelectorAll('#spectra-osd-host').length,
+			toast: document.querySelectorAll('#spectra-toast-host').length,
+		}));
+
+		try {
+			// Establish a clean generation before measuring repeated handoff.
+			await waitForReinjectedRuntime(0);
+			expect(await readHostCounts()).toEqual({ osd: 0, toast: 0 });
+
+			for (let cycle = 1; cycle <= 3; cycle += 1) {
+				await tapDefaultShortcut(fixturePage, 'ArrowRight');
+				await fixturePage.waitForFunction(() => (
+					document.querySelectorAll('#spectra-osd-host').length === 1
+				), { timeout: 5_000 });
+				expect(await readHostCounts()).toEqual({ osd: 1, toast: 0 });
+				await waitForReinjectedRuntime(cycle);
+				await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+				expect(await fixturePage.evaluate(() => {
+					document.dispatchEvent(new Event('fullscreenchange'));
+					return {
+						osd: document.querySelectorAll('#spectra-osd-host').length,
+						toast: document.querySelectorAll('#spectra-toast-host').length,
+					};
+				})).toEqual({ osd: 0, toast: 0 });
+			}
+
+			await tapDefaultShortcut(fixturePage, 'ArrowLeft');
+			await fixturePage.waitForFunction(() => (
+				document.querySelectorAll('#spectra-osd-host').length === 1
+				&& document.querySelector<HTMLElement>('#spectra-osd-host')
+					?.matches(':popover-open') === true
+			), { timeout: 5_000 });
+			expect(await fixturePage.evaluate(() => {
+				const host = document.querySelector<HTMLElement>('#spectra-osd-host');
+				if (!host?.matches(':popover-open')) return null;
+				host.hidePopover();
+				document.dispatchEvent(new Event('fullscreenchange'));
+				return {
+					count: document.querySelectorAll('#spectra-osd-host').length,
+					open: host.matches(':popover-open'),
+				};
+			})).toEqual({ count: 1, open: true });
+		} finally {
+			await submitPopupControlIntent(tabId, {
+				mutations: [{ field: 'speed', operation: 'set', value: 1 }],
+			}).catch(() => undefined);
+			await reinjectContent(tabId).catch(() => undefined);
+		}
+	}, 35_000);
+
+	test('retires feedback on the final runtime lease and reacquires one new generation', async () => {
+		const targetUrl = `${fixtureUrl}?final-runtime-lease=1`;
+		const page = await browser.newPage();
+		const pageErrors: string[] = [];
+		collectPageErrors(page, pageErrors);
+		let lease: SmokeRuntimeLease | null = null;
+		let reacquiredLease: SmokeRuntimeLease | null = null;
+		try {
+			await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+			expect(await waitForContentBootstrapStatus(targetUrl)).toMatchObject({
+				ready: false,
+				runtimeRevision: null,
+				ownedSources: [],
+			});
+			const tabId = await getTabId(targetUrl);
+			const publishFeedback = (
+				owned: SmokeRuntimeLease,
+				feedback?: { kind: 'speed'; value: number },
+			): Promise<void> => evaluateServiceWorker(async ({ runtime, actualFeedback }) => {
+				await chrome.tabs.sendMessage(runtime.tabId, {
+					protocolVersion: 2,
+					type: 'spectra.hotkey.target.feedback',
+					tabId: runtime.tabId,
+					payload: {
+						action: 'speed_up',
+						targetTabId: runtime.tabId,
+						targetTitle: 'Final runtime lease',
+						targetHostname: '127.0.0.1',
+						...(actualFeedback ? { feedback: actualFeedback } : {}),
+					},
+				}, { documentId: runtime.documentId });
+			}, { runtime: owned, actualFeedback: feedback });
+			lease = await acquireSmokeRuntime(targetUrl, 'final-feedback-generation');
+			await eventually(
+				() => readContentBootstrapStatus(targetUrl),
+				(status) => status.ready
+					&& status.runtimeRevision === SPECTRA_CONTENT_RUNTIME_REVISION,
+				'final-lease Content runtime',
+				15_000,
+			);
+			expect(await inspectWebAudio(tabId, true)).toMatchObject({
+				listenersReady: true,
+				runtimeRevision: SPECTRA_CONTENT_RUNTIME_REVISION,
+				sameRuntime: true,
+				oldRuntimeDisposed: false,
+			});
+
+			await publishFeedback(lease);
+			await publishFeedback(lease, { kind: 'speed', value: 1 });
+			await page.waitForFunction(() => (
+				document.querySelectorAll('#spectra-osd-host').length === 1
+				&& document.querySelectorAll('#spectra-toast-host').length === 1
+				&& document.querySelector<HTMLElement>('#spectra-osd-host')
+					?.matches(':popover-open') === true
+			), { timeout: 5_000 });
+			expect(await page.evaluate(() => {
+				const scope = window as Window & {
+					__spectraFinalFeedbackHosts?: {
+						osd?: HTMLElement;
+						toast?: HTMLElement;
+					};
+				};
+				scope.__spectraFinalFeedbackHosts = {
+					osd: document.querySelector<HTMLElement>('#spectra-osd-host') ?? undefined,
+					toast: document.querySelector<HTMLElement>('#spectra-toast-host') ?? undefined,
+				};
+				return {
+					osd: document.querySelectorAll('#spectra-osd-host').length,
+					toast: document.querySelectorAll('#spectra-toast-host').length,
+				};
+			})).toEqual({ osd: 1, toast: 1 });
+
+			await releaseSmokeRuntime(lease);
+			lease = null;
+			const retired = await eventually(
+				async () => ({
+					bootstrap: await readContentBootstrapStatus(targetUrl),
+					runtime: await inspectWebAudio(tabId),
+					hosts: await page.evaluate(() => ({
+						osd: document.querySelectorAll('#spectra-osd-host').length,
+						toast: document.querySelectorAll('#spectra-toast-host').length,
+					})),
+				}),
+				(state) => !state.bootstrap.ready
+					&& state.bootstrap.runtimeRevision === null
+					&& !state.runtime.listenersReady
+					&& state.runtime.sameRuntime === true
+					&& state.runtime.oldRuntimeDisposed === true
+					&& state.hosts.osd === 0
+					&& state.hosts.toast === 0,
+				'final runtime lease retirement',
+				5_000,
+			);
+			expect(retired.bootstrap).toMatchObject({
+				ready: false,
+				runtimeRevision: null,
+				ownedSources: [],
+			});
+			expect(retired.hosts).toEqual({ osd: 0, toast: 0 });
+			expect(await page.evaluate(() => {
+				document.dispatchEvent(new Event('fullscreenchange'));
+				return {
+					osd: document.querySelectorAll('#spectra-osd-host').length,
+					toast: document.querySelectorAll('#spectra-toast-host').length,
+				};
+			})).toEqual({ osd: 0, toast: 0 });
+
+			reacquiredLease = await acquireSmokeRuntime(targetUrl, 'final-feedback-generation');
+			await eventually(
+				() => inspectWebAudio(tabId),
+				(state) => state.listenersReady
+					&& state.runtimeRevision === SPECTRA_CONTENT_RUNTIME_REVISION
+					&& state.sameRuntime === false
+					&& state.oldRuntimeDisposed === true,
+				'reacquired Content runtime generation',
+				15_000,
+			);
+			await publishFeedback(reacquiredLease);
+			await publishFeedback(reacquiredLease, { kind: 'speed', value: 1 });
+			await page.waitForFunction(() => (
+				document.querySelectorAll('#spectra-osd-host').length === 1
+				&& document.querySelectorAll('#spectra-toast-host').length === 1
+				&& document.querySelector<HTMLElement>('#spectra-osd-host')
+					?.matches(':popover-open') === true
+			), { timeout: 5_000 });
+			expect(await page.evaluate(() => {
+				const scope = window as Window & {
+					__spectraFinalFeedbackHosts?: {
+						osd?: HTMLElement;
+						toast?: HTMLElement;
+					};
+				};
+				const currentOsd = document.querySelector<HTMLElement>('#spectra-osd-host');
+				const currentToast = document.querySelector<HTMLElement>('#spectra-toast-host');
+				return {
+					osd: document.querySelectorAll('#spectra-osd-host').length,
+					toast: document.querySelectorAll('#spectra-toast-host').length,
+					reusedOsd: currentOsd === scope.__spectraFinalFeedbackHosts?.osd,
+					reusedToast: currentToast === scope.__spectraFinalFeedbackHosts?.toast,
+				};
+			})).toEqual({
+				osd: 1,
+				toast: 1,
+				reusedOsd: false,
+				reusedToast: false,
+			});
+			await releaseSmokeRuntime(reacquiredLease);
+			reacquiredLease = null;
+			await eventually(
+				async () => ({
+					bootstrap: await readContentBootstrapStatus(targetUrl),
+					hosts: await page.evaluate(() => ({
+						osd: document.querySelectorAll('#spectra-osd-host').length,
+						toast: document.querySelectorAll('#spectra-toast-host').length,
+					})),
+				}),
+				(state) => !state.bootstrap.ready
+					&& state.bootstrap.runtimeRevision === null
+					&& state.hosts.osd === 0
+					&& state.hosts.toast === 0,
+				'reacquired final runtime lease retirement',
+				5_000,
+			);
+			expect(pageErrors).toEqual([]);
+		} finally {
+			if (reacquiredLease) await releaseSmokeRuntime(reacquiredLease).catch(() => undefined);
+			if (lease) await releaseSmokeRuntime(lease).catch(() => undefined);
+			await page.close().catch(() => undefined);
+		}
+	}, 35_000);
 
 	test('serializes denied capture attempts through one offscreen host and rolls back', async () => {
 		const secondaryUrl = `${fixtureUrl}?secondary=1`;
@@ -4854,6 +5289,158 @@ describe('SPECTRA built extension smoke', () => {
 			await secondary.close();
 		}
 	}, 35_000);
+
+	test('loads PeerJS once only after explicit Remote create on a Capture-only host', async () => {
+		const captureOnly = await browser.newPage();
+		const extensionClient = await openExtensionClient();
+		const captureOnlyUrl = `${fixtureUrl}?peer-lazy-capture=1`;
+		let networkClient: CDPSession | null = null;
+		let session: RemotePublicSession | null = null;
+		let vendorRequests = 0;
+		let tabId = 0;
+		let latestCaptureGeneration = 0;
+		try {
+			await captureOnly.goto(captureOnlyUrl, { waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(captureOnlyUrl);
+			tabId = await getTabId(captureOnlyUrl);
+			await installTabCaptureStreamIdStub();
+
+			const denied = await sendCaptureRequest(extensionClient, tabId, true, 1);
+			expect(denied).toMatchObject({
+				ok: true,
+				data: { tabId, phase: 'error', active: false, actualMode: 'bypass' },
+			});
+			const deniedState = requireValue(
+				denied.data,
+				'Expected the denied Capture attempt to return authoritative state',
+			);
+			latestCaptureGeneration = deniedState.generation;
+			expect(await getOffscreenContextCount()).toBe(1);
+			expect((await readOffscreenSnapshot()).remoteTabs).toEqual([]);
+			expect(await readOffscreenPeerRuntimeProbe()).toEqual({
+				peerType: 'undefined',
+				vendorAssignments: 0,
+				peerConstructions: 0,
+				peerDestructions: 0,
+			});
+
+			await installSyntheticCaptureHarness();
+			// A live host may already own the navigation STOP tombstone for this tab.
+			// The denied ACK, not a fixture constant, owns the next monotonic generation.
+			const startGeneration = latestCaptureGeneration + 1;
+			const started = await sendCaptureRequest(
+				extensionClient,
+				tabId,
+				true,
+				startGeneration,
+			);
+			expect(started).toMatchObject({
+				ok: true,
+				data: {
+					tabId,
+					generation: startGeneration,
+					phase: 'active',
+					active: true,
+					actualMode: 'capture',
+				},
+			});
+			latestCaptureGeneration = startGeneration;
+			expect((await readOffscreenSnapshot()).audioTabs).toEqual(expect.arrayContaining([
+				expect.objectContaining({ tabId, generation: startGeneration }),
+			]));
+			expect(await readOffscreenPeerRuntimeProbe()).toMatchObject({
+				peerType: 'undefined',
+			});
+
+			const vendorUrl = `chrome-extension://${extensionId}/peerjs-vendor.js`;
+			networkClient = await (await getOffscreenTarget()).createCDPSession();
+			await networkClient.send('Network.enable');
+			networkClient.on('Network.requestWillBeSent', (event) => {
+				if (event.request.url === vendorUrl) vendorRequests += 1;
+			});
+			await installOffscreenPeerRuntimeProbe();
+
+			const creation = await sendFromActionPopup<{
+				ok: boolean;
+				data?: RemotePublicSession;
+				error?: { message?: string };
+			}>({
+				protocolVersion: 2,
+				tabId,
+				type: 'spectra.remote.session.create',
+				payload: { tabId },
+			});
+			if (!creation.ok || !creation.data) {
+				throw new Error(creation.error?.message ?? 'PeerJS lazy-load session creation failed');
+			}
+			session = creation.data;
+			const loaded = await eventually(
+				readOffscreenPeerRuntimeProbe,
+				(probe) => probe.vendorAssignments === 1
+					&& probe.peerConstructions === 1,
+				'one explicit PeerJS vendor load',
+				5_000,
+			);
+			expect(loaded).toMatchObject({
+				peerType: 'function',
+				vendorAssignments: 1,
+				peerConstructions: 1,
+				peerDestructions: 0,
+			});
+			// Chrome omits extension-internal classic scripts from this offscreen
+			// document's Resource Timing buffer. CDP observes the exact request;
+			// the setter and constructor counters independently prove execution.
+			expect(vendorRequests).toBe(1);
+			expect(await getOffscreenContextCount()).toBe(1);
+			expect(await readOffscreenSnapshot()).toEqual({
+				audioTabs: expect.arrayContaining([
+					expect.objectContaining({ tabId, generation: startGeneration }),
+				]),
+				remoteTabs: [{ tabId, sessionId: session.sessionId }],
+			});
+
+			const repeated = await sendFromActionPopup<{
+				ok: boolean;
+				data?: RemotePublicSession;
+			}>({
+				protocolVersion: 2,
+				tabId,
+				type: 'spectra.remote.session.create',
+				payload: { tabId },
+			});
+			expect(repeated).toMatchObject({
+				ok: true,
+				data: { sessionId: session.sessionId, tabId },
+			});
+			expect(await readOffscreenPeerRuntimeProbe()).toMatchObject({
+				vendorAssignments: loaded.vendorAssignments,
+				peerConstructions: loaded.peerConstructions,
+				peerDestructions: loaded.peerDestructions,
+			});
+			expect(vendorRequests).toBe(1);
+		} finally {
+			if (session) {
+				await sendFromActionPopup({
+					protocolVersion: 2,
+					tabId,
+					type: 'spectra.remote.session.close',
+					payload: { tabId, sessionId: session.sessionId },
+				}).catch(() => undefined);
+			}
+			await restoreOffscreenPeerRuntimeProbe().catch(() => undefined);
+			if (tabId > 0) {
+				await sendCaptureRequest(
+					extensionClient,
+					tabId,
+					false,
+					latestCaptureGeneration + 1,
+				).catch(() => undefined);
+			}
+			await networkClient?.detach().catch(() => undefined);
+			await extensionClient.close().catch(() => undefined);
+			await captureOnly.close().catch(() => undefined);
+		}
+	}, 45_000);
 
 	test('keeps one real WebAudio controller, graph, and source across content reinjection', async () => {
 		const extensionClient = await openExtensionClient();

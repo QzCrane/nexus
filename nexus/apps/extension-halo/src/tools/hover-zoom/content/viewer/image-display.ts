@@ -2,8 +2,8 @@
 // goal: Image display logic for Hover Zoom
 // eff: Handles image loading, display, and layout application
 
-import { ViewerDOM } from '../viewer-dom';
-import { HoverZoomSettings } from '../../types';
+import type { ViewerDOM } from '../viewer-dom';
+import type { HoverZoomSettings } from '../../types';
 import type { EnhancedResult } from '../resolvers/rule-resolver';
 import { updateInfoBar } from './info';
 import { applyLayout } from './display-layout';

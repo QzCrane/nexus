@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { requireValue } from './helpers/require-value';
 import type {
 	ControlApplyAck,
 	ControlField,
@@ -1606,8 +1607,12 @@ describe('authoritative control coordinator', () => {
 			intents.push(intent);
 			if (intent.requestedCoverage === 'full' && intent.patch.boost === 1 && intents.length === 2) {
 				const failed = releasedPatchAck(intent);
+				const failedBoost = requireValue(
+					failed.fields.boost,
+					'Expected the released full-coverage ACK to include boost state',
+				);
 				failed.fields.boost = {
-					...failed.fields.boost!,
+					...failedBoost,
 					actual: 2,
 					phase: 'error',
 					strategy: 'media-webaudio',

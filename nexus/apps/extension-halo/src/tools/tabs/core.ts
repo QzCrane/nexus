@@ -2,7 +2,7 @@
 // goal: Core logic for Tab Manager (chrome.tabs wrapper)
 // scope: module
 
-import { TabItem } from './types';
+import type { TabItem } from './types';
 
 // Convert chrome.tabs.Tab to our TabItem
 function toTabItem(tab: chrome.tabs.Tab): TabItem {
@@ -54,9 +54,13 @@ export function setupTabListeners(onChange: () => void): () => void {
 	const handler = () => onChange();
 
 	// Debounce checking could be added here if needed, but for now simple callback
-	events.forEach(event => event.addListener(handler));
+	events.forEach((event) => {
+		event.addListener(handler);
+	});
 
 	return () => {
-		events.forEach(event => event.removeListener(handler));
+		events.forEach((event) => {
+			event.removeListener(handler);
+		});
 	};
 }

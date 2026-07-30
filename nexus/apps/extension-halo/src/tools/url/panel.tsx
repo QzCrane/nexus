@@ -1,7 +1,8 @@
 // goal: URL tool panel - shows ALL results simultaneously
 // eff: No mode selection, display encode/decode/parse all at once
 
-import React, { useState, useMemo, useCallback } from 'react';
+import type React from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { encode, decode, parseURL } from './core';
@@ -104,7 +105,7 @@ export const URLPanel: React.FC = () => {
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
 					<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
 						<span style={styles.label}>{t('url.input') || 'Input'}</span>
-						<button style={styles.btn} onClick={() => setInput('')}>
+						<button type="button" style={styles.btn} onClick={() => setInput('')}>
 							🗑️ {t('common.clear') || 'Clear'}
 						</button>
 					</div>
@@ -125,9 +126,12 @@ export const URLPanel: React.FC = () => {
 						<div style={styles.resultSection}>
 							<div style={styles.resultHeader}>
 								<span style={styles.resultLabel}>📤 {t('url.encoded') || 'URL Encoded'}</span>
-								<button
+								<button type="button"
 									style={{ ...styles.copyBtn, ...(copiedKey === 'encoded' ? styles.copyBtnSuccess : {}) }}
-									onClick={() => copyValue('encoded', results.encoded!)}
+									onClick={() => {
+										const value = results.encoded;
+										if (value) copyValue('encoded', value);
+									}}
 								>
 									{copiedKey === 'encoded' ? '✓' : '📋'}
 								</button>
@@ -141,9 +145,12 @@ export const URLPanel: React.FC = () => {
 						<div style={styles.resultSection}>
 							<div style={styles.resultHeader}>
 								<span style={{ ...styles.resultLabel, color: '#22c55e' }}>📥 {t('url.decoded') || 'URL Decoded'}</span>
-								<button
+								<button type="button"
 									style={{ ...styles.copyBtn, ...(copiedKey === 'decoded' ? styles.copyBtnSuccess : {}) }}
-									onClick={() => copyValue('decoded', results.decoded!)}
+									onClick={() => {
+										const value = results.decoded;
+										if (value) copyValue('decoded', value);
+									}}
 								>
 									{copiedKey === 'decoded' ? '✓' : '📋'}
 								</button>
@@ -157,7 +164,7 @@ export const URLPanel: React.FC = () => {
 						<div style={styles.resultSection}>
 							<div style={styles.resultHeader}>
 								<span style={{ ...styles.resultLabel, color: '#f59e0b' }}>🔗 {t('url.parsed') || 'URL Components'}</span>
-								<button
+								<button type="button"
 									style={{ ...styles.copyBtn, ...(copiedKey === 'parsed' ? styles.copyBtnSuccess : {}) }}
 									onClick={() => copyValue('parsed', JSON.stringify(results.parsed, null, 2))}
 								>

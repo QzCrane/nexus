@@ -33,14 +33,12 @@ export function calculateFolderSize(dir) {
  * Detect panel export name from panel.tsx content
  */
 export function detectPanelExport(panelPath) {
-	try {
-		const content = fs.readFileSync(panelPath, 'utf-8');
-		// Match: export const XxxPanel or export function XxxPanel
-		const match = content.match(/export\s+(?:const|function)\s+(\w+Panel)/);
-		if (match) return match[1];
-		// Fallback: named export
-		const namedMatch = content.match(/export\s*{\s*(\w+Panel)\s*}/);
-		if (namedMatch) return namedMatch[1];
-	} catch { /* ignore */ }
+	const content = fs.readFileSync(panelPath, 'utf-8');
+	// Match: export const XxxPanel or export function XxxPanel
+	const match = content.match(/export\s+(?:const|function)\s+(\w+Panel)/);
+	if (match) return match[1];
+	// Fallback: named export
+	const namedMatch = content.match(/export\s*{\s*(\w+Panel)\s*}/);
+	if (namedMatch) return namedMatch[1];
 	return null;
 }

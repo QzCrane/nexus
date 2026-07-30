@@ -1,40 +1,50 @@
 
-export const hydrateTranslations = (source: Record<string, any>): Record<string, any> => {
-	const out: Record<string, any> = {};
+type TranslationRecord = Record<string, unknown>;
+
+function isTranslationRecord(value: unknown): value is TranslationRecord {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export const hydrateTranslations = (source: TranslationRecord): TranslationRecord => {
+	const out: TranslationRecord = {};
 
 	Object.keys(source).forEach(key => {
 		const value = source[key];
 
 		if (key.includes('.')) {
 			const parts = key.split('.');
-			let current = out;
+			let current: TranslationRecord = out;
 
-			for (let i = 0; i < parts.length; i++) {
-				const part = parts[i]!;
+			for (const [i, part] of parts.entries()) {
 
 				if (i === parts.length - 1) {
 					// Leaf node
 					current[part] = value;
 				} else {
 					// branches
-					if (!current[part] || typeof current[part] !== 'object') {
-						current[part] = {};
+					const branch = current[part];
+					if (isTranslationRecord(branch)) {
+						current = branch;
+					} else {
+						const next: TranslationRecord = {};
+						current[part] = next;
+						current = next;
 					}
-					current = current[part];
 				}
 			}
 		} else {
 			// Top-level key
-			if (out[key] && typeof out[key] === 'object' && typeof value === 'object') {
+			const existing = out[key];
+			if (isTranslationRecord(existing) && isTranslationRecord(value)) {
 				// Merge existing object with new object
 				// This handles cases where we unflattened 'a.b' -> {a:{b}} and now encounter 'a': {c}
-				Object.assign(out[key], value);
+				Object.assign(existing, value);
 			} else {
 				// Simple assignment (or overwrite if collision)
-				if (!out[key]) {
+				if (!existing) {
 					out[key] = value;
-				} else if (typeof out[key] === 'object' && typeof value === 'object') {
-					Object.assign(out[key], value);
+				} else if (isTranslationRecord(existing) && isTranslationRecord(value)) {
+					Object.assign(existing, value);
 				} else {
 					// Overwrite (last wins strategy usually, but here we prioritize existing structure)
 					out[key] = value;

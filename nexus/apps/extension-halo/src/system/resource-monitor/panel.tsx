@@ -1,7 +1,8 @@
 // goal: Resource Monitor panel UI - FULL monitoring with source annotations
 // inv: Display tools, scripts, AND system core consumers with source file:line
 
-import React, { useMemo, useState } from 'react';
+import type React from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from '../../i18n';
 import { useActiveServices } from '../../components/sidepanel/ActiveServicesContext';
 import { BACKGROUND_PROFILES_MAP, BACKGROUND_PLUGIN_IDS, PLUGIN_REGISTRY } from '../../kernel/registry/_generated';
@@ -77,14 +78,16 @@ export const ResourceMonitorPanel: React.FC = () => {
 	const activeTools = useMemo(() => toolServices.filter(s => s.active), [toolServices]);
 	const inactiveTools = useMemo(() => toolServices.filter(s => !s.active), [toolServices]);
 
-	const renderProfile = (p: BackgroundProfile, i: number) => {
-		const levelStyle = LEVEL_CONFIG[p.level as ImpactLevel];
+	const getProfileKey = (profile: BackgroundProfile) =>
+		`${profile.mechanism}:${profile.frequency}:${profile.sourceFile}:${profile.sourceLine}:${profile.sourceDetail ?? ''}`;
+
+	const renderProfile = (p: BackgroundProfile) => {
 		const mechIcon = MECHANISM_ICONS[p.mechanism as ConsumptionMechanism] || '❓';
 		// Use generic mechanism i18n key, frequency comes from manifest
 		const mechKey = `impact.mechanism.${p.mechanism}`;
 		
 		return (
-			<div key={i} style={styles.detailRow}>
+			<div style={styles.detailRow}>
 				<span>{mechIcon} {t(mechKey, { defaultValue: p.mechanism })}</span>
 				<span style={{ fontFamily: 'monospace' }}>{p.frequency}</span>
 			</div>
@@ -101,39 +104,53 @@ export const ResourceMonitorPanel: React.FC = () => {
 			<div 
 				key={item.id} 
 				style={{ ...styles.card, ...(isExpanded ? styles.cardExpanded : {}) }}
-				onClick={() => setExpanded(isExpanded ? null : item.id)}
 			>
-				<div style={styles.toolRow}>
-					<div style={styles.icon}>{item.icon}</div>
-					<div style={styles.meta}>
-						<div style={styles.name}>{item.name}</div>
-						<div style={styles.mechanisms}>
+				<button
+					type="button"
+					aria-expanded={isExpanded}
+					aria-controls={`resource-monitor-detail-${item.id}`}
+					onClick={() => setExpanded(isExpanded ? null : item.id)}
+					style={{
+						...styles.toolRow,
+						width: '100%',
+						padding: 0,
+						border: 'none',
+						background: 'transparent',
+						color: 'inherit',
+						textAlign: 'left',
+						cursor: 'pointer',
+					}}
+				>
+					<span style={styles.icon}>{item.icon}</span>
+					<span style={styles.meta}>
+						<span style={styles.name}>{item.name}</span>
+						<span style={styles.mechanisms}>
 							{item.profiles.map((p, i) => (
-								<span key={i}>
+								<span key={getProfileKey(p)}>
 									{MECHANISM_ICONS[p.mechanism as ConsumptionMechanism] || '❓'}
 									<span style={{ marginLeft: 2, fontFamily: 'monospace' }}>{p.frequency}</span>
 									{i < item.profiles.length - 1 && <span style={{ opacity: 0.4 }}> | </span>}
 								</span>
 							))}
-						</div>
-					</div>
+						</span>
+					</span>
 					{/* Category badge (hidden for core since it has its own section) */}
-					{item.category !== 'core' && (
-						<div style={{ ...styles.badge, background: catStyle!.bg, color: catStyle!.color, marginRight: 4 }}>
-							{catStyle!.label}
-						</div>
+					{item.category !== 'core' && catStyle && (
+						<span style={{ ...styles.badge, background: catStyle.bg, color: catStyle.color, marginRight: 4 }}>
+							{catStyle.label}
+						</span>
 					)}
-				<div style={{ ...styles.badge, background: levelStyle.bg, color: levelStyle.color }}>
+					<span style={{ ...styles.badge, background: levelStyle.bg, color: levelStyle.color }}>
 						{t(levelStyle.labelKey, { defaultValue: mainProfile?.level?.toUpperCase() })}
-					</div>
-				</div>
+					</span>
+				</button>
 
 				{/* Expanded detail with source annotation */}
 				{isExpanded && (
-					<div style={styles.detail}>
+					<div id={`resource-monitor-detail-${item.id}`} style={styles.detail}>
 						{item.profiles.map((p, i) => (
-							<div key={i} style={{ marginBottom: i < item.profiles.length - 1 ? 8 : 0 }}>
-								{renderProfile(p, i)}
+							<div key={getProfileKey(p)} style={{ marginBottom: i < item.profiles.length - 1 ? 8 : 0 }}>
+								{renderProfile(p)}
 								<div style={{ opacity: 0.6, marginTop: 2 }}>
 									📄 {p.sourceFile}:{p.sourceLine}
 									{p.sourceDetail && <><br/>💡 {p.sourceDetail}</>}

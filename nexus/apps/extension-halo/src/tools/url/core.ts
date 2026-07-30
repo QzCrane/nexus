@@ -33,7 +33,7 @@ export function parseURL(input: string): Record<string, string> {
 			Hash: url.hash,
 			Params: JSON.stringify(params, null, 2),
 		};
-	} catch (e) {
+	} catch (_e) {
 		throw new Error('Invalid URL');
 	}
 }

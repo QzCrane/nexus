@@ -1,6 +1,6 @@
-import React from 'react';
+import type React from 'react';
 import { Card, Toggle } from '@nexus/ui-kit';
-import { HoverZoomSettings, HighlightMode, ViewMode } from '../../types';
+import type { HoverZoomSettings, HighlightMode, ViewMode } from '../../types';
 import { styles } from './panel.styles';
 
 interface ViewSettingsProps {
@@ -19,7 +19,7 @@ export const ViewSettings: React.FC<ViewSettingsProps> = ({ settings, update, t,
                     <span style={styles.label}>{t('hoverZoom.view.highlight') || 'Trigger highlight'}</span>
                     <div style={styles.segmented}>
                         {(['always', 'hotkey', 'off'] as HighlightMode[]).map(m => (
-                            <button key={m} style={settings.highlightMode === m ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ highlightMode: m })}>
+                            <button type="button" key={m} style={settings.highlightMode === m ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ highlightMode: m })}>
                                 {m === 'always' ? (t('hoverZoom.highlight.always') || 'Always') : m === 'hotkey' ? (t('hoverZoom.highlight.hotkey') || 'Hotkey') : (t('hoverZoom.highlight.off') || 'Off')}
                             </button>
                         ))}
@@ -29,7 +29,7 @@ export const ViewSettings: React.FC<ViewSettingsProps> = ({ settings, update, t,
                     <span style={styles.label}>{t('hoverZoom.view.viewMode') || 'Size mode'}</span>
                     <div style={styles.segmented}>
                         {(['original', 'fit'] as ViewMode[]).map(m => (
-                            <button key={m} style={settings.viewMode === m ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ viewMode: m })}>
+                            <button type="button" key={m} style={settings.viewMode === m ? styles.segmentBtnActive : styles.segmentBtn} onClick={() => update({ viewMode: m })}>
                                 {m === 'original' ? (t('hoverZoom.viewMode.original') || 'Original') : (t('hoverZoom.viewMode.fit') || 'Fit')}
                             </button>
                         ))}

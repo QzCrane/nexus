@@ -1,9 +1,11 @@
-import { ViewerDOM } from '../viewer-dom';
-import { HoverZoomSettings } from '../../types';
+import type { ViewerDOM } from '../viewer-dom';
+import type { HoverZoomSettings } from '../../types';
 import type { EnhancedResult } from '../resolvers/rule-resolver';
 import { updateInfoBar } from './info';
 import { isDashSegment, isPlayableVideoUrl, findThumbnailUrl } from './media-loader';
-import { needsMSE, isMSESupported, playDashStreams } from './mse-player';
+import { needsMSE, isMSESupported, startDashStreams } from './mse-player';
+import type { OwnedMSESession } from './mse-session-owner';
+import { MSESessionOwner } from './mse-session-owner';
 import { applyLayout } from './display-layout';
 import { showImage } from './image-display';
 
@@ -11,15 +13,17 @@ export { showImage };
 
 const LOG_TAG = '[HALO:HoverZoom:MediaDisplay]';
 
-// Track MSE cleanup function
-let mseCleanup: (() => void) | null = null;
+const mseSessionOwner = new MSESessionOwner();
+
+function requestPlayback(video: HTMLVideoElement, phase: string): void {
+	void video.play().catch((error: unknown) => {
+		console.debug(LOG_TAG, `${phase} autoplay was unavailable`, error);
+	});
+}
 
 /** Cleanup previous MSE session */
-export function cleanupMSE() {
-	if (mseCleanup) {
-		mseCleanup();
-		mseCleanup = null;
-	}
+export function cleanupMSE(): void {
+	mseSessionOwner.retire();
 }
 
 export function showVideo(
@@ -37,10 +41,10 @@ export function showVideo(
 ): void {
 	if (!dom) return;
 
-	console.log(LOG_TAG, 'Loading video:', source.url.slice(0, 100), 'audioUrl:', source.audioUrl?.slice(0, 50));
-
 	// Cleanup previous MSE session
 	cleanupMSE();
+	dom.video.onloadedmetadata = null;
+	dom.video.onerror = null;
 
 	// Check if this is a DASH stream needing MSE
 	if (needsMSE(source.url) || source.audioUrl) {
@@ -50,46 +54,79 @@ export function showVideo(
 			return;
 		}
 
-		// Use MSE player for DASH streams
-		console.log(LOG_TAG, 'Using MSE for DASH playback');
 		dom.video.style.display = 'block';
 		// Audio enabled - Chrome autoplay policy may require user interaction
 
-		playDashStreams(
-			dom.video,
-			source.url,
-			source.audioUrl,
-			source.headers,
-			source.metadata as { videoCodec?: string; audioCodec?: string } | undefined
-		).then(cleanup => {
-			mseCleanup = cleanup;
-
-			// Wait for metadata
-			const onMeta = () => {
-				console.log(LOG_TAG, 'MSE video loaded', dom?.video.videoWidth, dom?.video.videoHeight);
-				if (!isVisible() || !dom) return;
-
-				onLoaded();
-				applyLayout(dom, triggerRect, currentType, mouseX, mouseY, dom.video.videoWidth, dom.video.videoHeight, settings.viewMode, settings.borderRadius);
-				dom.viewer.classList.add('visible');
-
-				// Delay interactivity to prevent underlying element from receiving mouseout during fade-in
-				setTimeout(() => {
-					if (isVisible() && dom) dom.viewer.classList.add('interactive');
-				}, 200);
-
-				updateInfoBar(dom, settings, source, 'video', dom.video, dom.video.videoWidth, dom.video.videoHeight);
-				dom.video.play().catch(() => { });
-			};
-
-			if (dom.video.readyState >= 1) {
-				onMeta();
-			} else {
-				dom.video.onloadedmetadata = onMeta;
-			}
-		}).catch(e => {
-			console.error(LOG_TAG, 'MSE playback failed:', e);
+		let playerSession: OwnedMSESession;
+		try {
+			playerSession = startDashStreams(
+				dom.video,
+				source.url,
+				source.audioUrl,
+				source.headers,
+				source.metadata,
+			);
+		} catch (error: unknown) {
+			console.error(LOG_TAG, 'MSE playback could not start', error);
 			fallback(source, mouseX, mouseY);
+			return;
+		}
+
+		let metadataHandler: (() => void) | null = null;
+		let interactionTimer: ReturnType<typeof setTimeout> | null = null;
+		const viewerSession: OwnedMSESession = {
+			ready: playerSession.ready,
+			dispose: () => {
+				if (
+					metadataHandler
+					&& dom.video.onloadedmetadata === metadataHandler
+				) {
+					dom.video.onloadedmetadata = null;
+				}
+				metadataHandler = null;
+				if (interactionTimer !== null) {
+					clearTimeout(interactionTimer);
+					interactionTimer = null;
+				}
+				playerSession.dispose();
+			},
+		};
+
+		mseSessionOwner.replace(viewerSession, {
+			onReady: (isCurrent) => {
+				metadataHandler = () => {
+					if (dom.video.onloadedmetadata === metadataHandler) {
+						dom.video.onloadedmetadata = null;
+					}
+					metadataHandler = null;
+					if (!isCurrent() || !isVisible()) return;
+
+					onLoaded();
+					applyLayout(dom, triggerRect, currentType, mouseX, mouseY, dom.video.videoWidth, dom.video.videoHeight, settings.viewMode, settings.borderRadius);
+					dom.viewer.classList.add('visible');
+
+					// Delay interactivity to prevent underlying element from receiving mouseout during fade-in.
+					interactionTimer = setTimeout(() => {
+						interactionTimer = null;
+						if (isCurrent() && isVisible()) {
+							dom.viewer.classList.add('interactive');
+						}
+					}, 200);
+
+					updateInfoBar(dom, settings, source, 'video', dom.video, dom.video.videoWidth, dom.video.videoHeight);
+					requestPlayback(dom.video, 'MSE');
+				};
+
+				if (dom.video.readyState >= 1) {
+					metadataHandler();
+				} else {
+					dom.video.onloadedmetadata = metadataHandler;
+				}
+			},
+			onFailure: (error: unknown) => {
+				console.error(LOG_TAG, 'MSE playback failed', error);
+				fallback(source, mouseX, mouseY);
+			},
 		});
 
 		return;
@@ -115,8 +152,7 @@ export function showVideo(
 	// Audio enabled - Chrome autoplay policy may require user interaction
 
 	dom.video.onloadedmetadata = () => {
-		console.log(LOG_TAG, 'Video loaded', dom?.video.videoWidth, dom?.video.videoHeight);
-		if (!isVisible() || !dom) return;
+		if (!isVisible()) return;
 
 		onLoaded();
 		applyLayout(dom, triggerRect, currentType, mouseX, mouseY, dom.video.videoWidth, dom.video.videoHeight, settings.viewMode, settings.borderRadius);
@@ -136,11 +172,12 @@ export function showVideo(
 		fallback(source, mouseX, mouseY);
 	};
 
-	dom.video.play().catch(() => { });
+	requestPlayback(dom.video, 'Standard video');
 }
 
 export function fallbackToThumbnail(
 	dom: ViewerDOM,
+	settings: HoverZoomSettings,
 	source: EnhancedResult,
 	mouseX: number,
 	mouseY: number,
@@ -159,9 +196,8 @@ export function fallbackToThumbnail(
 
 	const thumbUrl = findThumbnailUrl(source.element);
 	if (thumbUrl) {
-		console.log(LOG_TAG, 'Using thumbnail fallback:', thumbUrl.slice(0, 80));
 		setCurrentType('image');
-		showImage(dom, {} as any, { ...source, type: 'image', url: thumbUrl }, mouseX, mouseY, triggerRect, 'image', isVisible, onLoaded, onError);
+		showImage(dom, settings, { ...source, type: 'image', url: thumbUrl }, mouseX, mouseY, triggerRect, 'image', isVisible, onLoaded, onError);
 	} else {
 		console.warn(LOG_TAG, 'No thumbnail fallback available');
 		onError();

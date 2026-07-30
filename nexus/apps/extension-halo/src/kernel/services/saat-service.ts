@@ -87,6 +87,7 @@ async function resolveScript(toolId: string, type: ScriptType): Promise<{ code: 
 		`tools/${toolId}/script.${ext}`
 	];
 
+	let lastFailure: unknown = null;
 	for (const p of paths) {
 		try {
 			const url = chrome.runtime.getURL(p);
@@ -97,7 +98,16 @@ async function resolveScript(toolId: string, type: ScriptType): Promise<{ code: 
 					path: p
 				};
 			}
-		} catch { }
+		} catch (error: unknown) {
+			lastFailure = error;
+		}
+	}
+	if (lastFailure !== null) {
+		console.warn(
+			LOG_TAG,
+			`Failed to resolve bundled script ${toolId} from ${paths.join(', ')}`,
+			lastFailure,
+		);
 	}
 	return null;
 }
@@ -238,8 +248,7 @@ export async function syncSaaTTools(tools: PluginMeta[]): Promise<void> {
 			}
 		}
 
-		// Cleanup: Remove any script from UserScripts that has `saatToolId` but is NOT in `builtInScripts`
-		// This effectively removes `llm-enhancer` (type=tool) from UserScripts if it was there.
+		// Cleanup: remove managed entries that are no longer built-in scripts.
 		const originalUserCount = userState.scripts.length;
 		userState.scripts = userState.scripts.filter((s: SaaTScriptState) => {
 			if (!s.saatToolId) return true; // Keep user-created scripts (no saatToolId)

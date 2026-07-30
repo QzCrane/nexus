@@ -69,33 +69,31 @@ export function checkChineseComments(root) {
       // Skip non-public apps (e.g., extension-halo)
       if (SKIP_NON_PUBLIC.some(d => relativePath.includes(d))) return;
       
-      try {
-        const content = fs.readFileSync(filePath, 'utf-8');
-        const comments = extractComments(content);
+      const content = fs.readFileSync(filePath, 'utf-8');
+      const comments = extractComments(content);
         
-        let fileChineseCount = 0;
-        for (const comment of comments) {
-          if (CHINESE_REGEX.test(comment)) {
-            fileChineseCount++;
-          }
+      let fileChineseCount = 0;
+      for (const comment of comments) {
+        if (CHINESE_REGEX.test(comment)) {
+          fileChineseCount++;
         }
+      }
         
-        if (fileChineseCount > 0) {
-          filesWithChinese++;
-          totalChineseComments += fileChineseCount;
-          if (affectedFiles.length < 5) {
-            affectedFiles.push(relativePath);
-          }
+      if (fileChineseCount > 0) {
+        filesWithChinese++;
+        totalChineseComments += fileChineseCount;
+        if (affectedFiles.length < 5) {
+          affectedFiles.push(relativePath);
         }
-      } catch (_e) {
-        // Ignore read errors
       }
     });
   }
   
   if (filesWithChinese > 0) {
     error(`${filesWithChinese} files contain Chinese comments (${totalChineseComments} total)`);
-    affectedFiles.forEach(f => log(`   → ${f}`));
+    affectedFiles.forEach((file) => {
+      log(`   → ${file}`);
+    });
     if (filesWithChinese > 5) {
       log(`   → ... and ${filesWithChinese - 5} more files`);
     }

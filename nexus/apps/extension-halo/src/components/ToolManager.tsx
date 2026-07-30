@@ -1,12 +1,13 @@
 // goal: Tool manager panel UI
 // eff: Enable/disable, pin/unpin, category filter, search
 
-import React, { useCallback } from 'react';
+import type React from 'react';
+import { useCallback } from 'react';
 import { Card, Toggle } from '@nexus/ui-kit';
 import { useTranslation } from '../i18n';
 import type { ToolCategory } from '../i18n/types';
 import type { ToolMeta, ToolPrefs } from '../kernel/registry/tool-registry';
-import type { SortMode } from '../kernel/use-tool-manager';
+import type { SortMode } from '../kernel/hooks/use-tool-manager';
 import { toolManagerStyles as styles } from './styles/tool-manager';
 
 interface ToolManagerProps {

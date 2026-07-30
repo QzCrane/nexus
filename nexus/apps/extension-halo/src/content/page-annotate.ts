@@ -15,7 +15,7 @@ interface ToolState {
 	mode: 'pen' | 'highlighter' | 'eraser';
 }
 
-let state: ToolState = {
+const state: ToolState = {
 	color: '#ef4444',
 	size: 3,
 	mode: 'pen'
@@ -74,8 +74,9 @@ function removeCanvas() {
 }
 
 function createToolbar() {
-	toolbar = document.createElement('div');
-	toolbar.style.cssText = `
+	const nextToolbar = document.createElement('div');
+	toolbar = nextToolbar;
+	nextToolbar.style.cssText = `
         position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
         background: #1e1e1e; padding: 8px 16px; border-radius: 8px;
         display: flex; gap: 12px; align-items: center; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
@@ -93,23 +94,23 @@ function createToolbar() {
 			state.mode = 'pen';
 			updateToolbarUI();
 		};
-		toolbar!.appendChild(btn);
+		nextToolbar.appendChild(btn);
 	});
 
 	// Highlighter
 	const highlightBtn = createBtn('🖊️', () => { state.mode = 'highlighter'; state.color = 'rgba(255, 255, 0, 0.4)'; updateToolbarUI(); });
-	toolbar!.appendChild(highlightBtn);
+	nextToolbar.appendChild(highlightBtn);
 
 	// Eraser
 	const eraserBtn = createBtn('🧹', () => { state.mode = 'eraser'; updateToolbarUI(); });
-	toolbar!.appendChild(eraserBtn);
+	nextToolbar.appendChild(eraserBtn);
 
 	// Close
 	const closeBtn = createBtn('❌', () => { stop(); });
 	closeBtn.style.marginLeft = '12px';
-	toolbar!.appendChild(closeBtn);
+	nextToolbar.appendChild(closeBtn);
 
-	document.body.appendChild(toolbar);
+	document.body.appendChild(nextToolbar);
 }
 
 function createBtn(text: string, onClick: () => void) {

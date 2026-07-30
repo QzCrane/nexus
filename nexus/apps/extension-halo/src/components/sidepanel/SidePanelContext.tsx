@@ -1,7 +1,7 @@
 // goal: SidePanel context for centralized state management
 // eff: Eliminates prop drilling through component hierarchy
 
-import React, { createContext, useContext } from 'react';
+import { createContext, useContext } from 'react';
 import type { ToolId, HaloSettings, ToolMeta } from '../../kernel';
 
 export interface SidePanelContextValue {

@@ -1,5 +1,5 @@
 
-import React from 'react';
+import type React from 'react';
 import { useTranslation } from '../../../i18n';
 import { styles } from '../styles';
 import { SCRIPT_TEMPLATES } from '../templates';
@@ -23,7 +23,7 @@ export const UserscriptsTemplates: React.FC<UserscriptsTemplatesProps> = ({ onLo
                         : 'tplBlockSpace';
                     const tplIcon = key === 'adblock' ? '🚫' : key === 'darkForce' ? '🌙' : key === 'removeOverlay' ? '🪟' : key === 'customCSS' ? '🎨' : '⌨️';
                     return (
-                        <button key={key} style={styles.templateBtn} onClick={() => onLoad(key as keyof typeof SCRIPT_TEMPLATES)}>
+                        <button type="button" key={key} style={styles.templateBtn} onClick={() => onLoad(key as keyof typeof SCRIPT_TEMPLATES)}>
                             <span style={styles.templateIcon}>{tplIcon}</span>
                             <span style={{ fontSize: '11px' }}>{t(`userscripts.${tplNameKey}`, { defaultValue: tpl.name.split(' ')[0] })}</span>
                         </button>

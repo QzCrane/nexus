@@ -1,10 +1,9 @@
-import React from 'react';
+import type React from 'react';
+import type { TranslationFunction } from '../../../i18n';
 import { styles } from '../styles';
 
-type TFunc = (key: string, opts?: { defaultValue?: string } & Record<string, any>) => string;
-
 interface EmptyStateProps {
-	t: TFunc;
+	t: TranslationFunction;
 }
 
 export const EmptyState: React.FC<EmptyStateProps> = ({ t }) => (

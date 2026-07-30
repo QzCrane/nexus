@@ -1,7 +1,8 @@
 // goal: dark mode control panel with full parameter exposure
 // inv: all darkreader config options must be visible and adjustable
 
-import React, { useState, useCallback } from 'react';
+import type React from 'react';
+import { useState, useCallback } from 'react';
 import { useTranslation } from '../../../../i18n';
 import { Card } from '@nexus/ui-kit';
 import type { DarkModeConfig, DarkModeFixes } from './core';
@@ -108,7 +109,7 @@ export const DarkModePanel: React.FC<Props> = ({
 									   mergedConfig.sepia === DARK_MODE_PRESETS[key].sepia;
 
 					return (
-					<button
+					<button type="button"
 						key={key}
 						onClick={() => onPresetSelect(key)}
 						style={{
@@ -138,7 +139,7 @@ export const DarkModePanel: React.FC<Props> = ({
 				onChange={(v) => updateConfig('grayscale', v)} />
 
 			{/* Advanced Toggle */}
-			<button
+			<button type="button"
 				onClick={() => setShowAdvanced(!showAdvanced)}
 				style={{
 					width: '100%', padding: '10px', marginTop: '12px',

@@ -108,7 +108,9 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
       { tabId },
     );
     if (response.ok) acknowledgedSession = response.data;
-  } catch { /* session reads stay side-effect free while the worker restarts */ }
+  } catch {
+    acknowledgedSession = null;
+  }
 
 	// Processor color is valid only when lifecycle and field-level actual state
 	// identify the same document. A direct runtime read may fill this role only
@@ -135,7 +137,9 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
       { tabId },
     );
     isRemoteActive = remoteStatus.ok && remoteStatus.data.connected;
-  } catch { /* silent fail */ }
+  } catch {
+    isRemoteActive = false;
+  }
 
   const hasActiveMedia = tab.audible || isCaptureActive || status?.isPlaying === true;
 

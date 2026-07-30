@@ -1,5 +1,6 @@
 
-import React from 'react';
+import type React from 'react';
+import type { TranslationFunction } from '../../../i18n';
 import type { EditForm, ScriptType, UserScriptRunAt } from '../types';
 import { styles } from '../styles';
 
@@ -29,12 +30,10 @@ const segmentedStyles: Record<string, React.CSSProperties> = {
 	},
 };
 
-type TFunc = (key: string, opts?: { defaultValue?: string } & Record<string, any>) => string;
-
 interface ScriptMetaEditorProps {
 	form: EditForm;
 	onUpdate: <K extends keyof EditForm>(key: K, value: EditForm[K]) => void;
-	t: TFunc;
+	t: TranslationFunction;
 }
 
 export const ScriptMetaEditor: React.FC<ScriptMetaEditorProps> = ({ form, onUpdate, t }) => {

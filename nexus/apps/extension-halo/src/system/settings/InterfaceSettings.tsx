@@ -1,11 +1,10 @@
 // goal: Interface settings section with Drag-and-Drop
 // eff: Split from SettingsPanel
 
-import React, { useState } from 'react';
+import type React from 'react';
 import { Card, Toggle } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
-import type { HaloSettings, IconSize } from '../../kernel';
-import { getToolMeta } from '../../kernel';
+import type { HaloSettings, } from '../../kernel';
 import { styles } from './panel.styles';
 import { HeaderLayoutConfig } from './components/header-layout-config';
 

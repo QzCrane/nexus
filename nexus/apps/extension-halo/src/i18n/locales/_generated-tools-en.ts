@@ -37,7 +37,6 @@ import { en as json_formatter } from '../../tools/json-formatter/locales/en';
 import { en as json_path } from '../../tools/json-path/locales/en';
 import { en as json_to_csv } from '../../tools/json-to-csv/locales/en';
 import { en as jwt_decoder } from '../../tools/jwt-decoder/locales/en';
-import { en as llm_enhancer } from '../../tools/llm-enhancer/locales/en';
 import { en as lorem_ipsum } from '../../tools/lorem-ipsum/locales/en';
 import { en as markdown } from '../../tools/markdown/locales/en';
 import { en as media_sniffer } from '../../tools/media-sniffer/locales/en';
@@ -129,7 +128,6 @@ export const TOOLS_EN = {
 	...json_path,
 	...json_to_csv,
 	...jwt_decoder,
-	...llm_enhancer,
 	...lorem_ipsum,
 	...markdown,
 	...media_sniffer,

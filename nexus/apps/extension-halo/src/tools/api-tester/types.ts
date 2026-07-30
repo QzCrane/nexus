@@ -3,6 +3,7 @@
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
 export interface Header {
+	id: string;
 	key: string;
 	value: string;
 	enabled: boolean;

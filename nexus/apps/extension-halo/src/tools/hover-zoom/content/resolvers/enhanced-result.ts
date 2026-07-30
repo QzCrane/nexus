@@ -1,5 +1,7 @@
 // Enhanced resolution result type
 
+import type { RuleMetadata } from '../../rules/types';
+
 export interface EnhancedResult {
 	type: 'image' | 'video' | 'svg';
 	url: string;
@@ -10,5 +12,5 @@ export interface EnhancedResult {
 	originalUrl?: string;
 	fromRule: string | null;
 	fileSize?: number;  // File size in bytes (if available)
-	metadata?: Record<string, any>;
+	metadata?: RuleMetadata;
 }

@@ -1,21 +1,22 @@
 // goal: Tab Group panel UI
 
-import React, { useState, useEffect, useCallback } from 'react';
+import type React from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import { checkPermission, requestPermission, getGroups, createGroup, ungroup, updateGroup, type TabGroupInfo } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
 
 
-const COLORS = ['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'];
+const COLORS = ['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'] as const satisfies readonly chrome.tabGroups.Color[];
 
 export const TabGroupPanel: React.FC = () => {
     const { t } = useTranslation();
     const [hasPerm, setHasPerm] = useState(false);
     const [groups, setGroups] = useState<TabGroupInfo[]>([]);
-    const [showCreate, setShowCreate] = useToolState<boolean>('tab-group-show-create' as any, false);
-    const [newTitle, setNewTitle] = useToolState<string>('tab-group-title' as any, '');
-    const [newColor, setNewColor] = useToolState<any>('tab-group-color' as any, 'blue');
+    const [showCreate, setShowCreate] = useToolState<boolean>('tab-group-show-create', false);
+    const [newTitle, setNewTitle] = useToolState<string>('tab-group-title', '');
+    const [newColor, setNewColor] = useToolState<chrome.tabGroups.Color>('tab-group-color', 'blue');
 
 
 
@@ -71,7 +72,7 @@ export const TabGroupPanel: React.FC = () => {
                 <div style={styles.permission}>
                     <div style={{fontSize: '40px'}}>📑</div>
                     <div>{t('tabGroup.permTitle', { defaultValue: 'Tab Groups requires permission' })}</div>
-                    <button style={styles.permBtn} onClick={handleRequestPerm}>{t('tabGroup.permBtn', { defaultValue: 'Enable Tab Groups' })}</button>
+                    <button type="button" style={styles.permBtn} onClick={handleRequestPerm}>{t('tabGroup.permBtn', { defaultValue: 'Enable Tab Groups' })}</button>
                 </div>
 
             </div>
@@ -82,7 +83,7 @@ export const TabGroupPanel: React.FC = () => {
         <div style={styles.wrapper}>
             <div style={styles.header}>
                 <div style={{fontWeight: 600}}>{t('tabGroup.title', { defaultValue: 'Tab Groups' })} ({groups.length})</div>
-                <button style={styles.createBtn} onClick={() => setShowCreate(!showCreate)}>{t('tabGroup.newGroup', { defaultValue: '+ New Group' })}</button>
+                <button type="button" style={styles.createBtn} onClick={() => setShowCreate(!showCreate)}>{t('tabGroup.newGroup', { defaultValue: '+ New Group' })}</button>
             </div>
 
             {showCreate && (
@@ -96,18 +97,22 @@ export const TabGroupPanel: React.FC = () => {
 
                     <div style={styles.colors}>
                         {COLORS.map(c => (
-                            <div 
+                            <button
+                                type="button"
                                 key={c} 
+                                aria-label={c}
+                                aria-pressed={newColor === c}
                                 style={{
                                     ...styles.colorOption, 
                                     background: c, 
-                                    borderColor: newColor === c ? 'var(--halo-text)' : 'transparent'
+                                    borderColor: newColor === c ? 'var(--halo-text)' : 'transparent',
+                                    padding: 0,
                                 }}
                                 onClick={() => setNewColor(c)}
                             />
                         ))}
                     </div>
-                    <button style={styles.createBtn} onClick={handleCreate}>{t('tabGroup.create', { defaultValue: 'Create from Selected Tabs' })}</button>
+                    <button type="button" style={styles.createBtn} onClick={handleCreate}>{t('tabGroup.create', { defaultValue: 'Create from Selected Tabs' })}</button>
                 </div>
 
             )}
@@ -121,10 +126,10 @@ export const TabGroupPanel: React.FC = () => {
                                 {g.title || t('tabGroup.untitled', { defaultValue: 'Untitled' })}
                             </div>
                             <div style={styles.controls}>
-                                <button style={styles.iconBtn} onClick={() => updateGroup(g.id, { collapsed: !g.collapsed })}>
+                                <button type="button" style={styles.iconBtn} onClick={() => updateGroup(g.id, { collapsed: !g.collapsed })}>
                                     {g.collapsed ? t('tabGroup.expand', { defaultValue: 'Expand' }) : t('tabGroup.collapse', { defaultValue: 'Collapse' })}
                                 </button>
-                                <button style={{...styles.iconBtn, color: '#ef4444'}} onClick={() => ungroup(g.id)}>
+                                <button type="button" style={{...styles.iconBtn, color: '#ef4444'}} onClick={() => ungroup(g.id)}>
                                     {t('tabGroup.ungroup', { defaultValue: 'Ungroup' })}
                                 </button>
                             </div>

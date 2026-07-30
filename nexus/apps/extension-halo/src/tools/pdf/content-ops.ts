@@ -1,7 +1,7 @@
 // goal: PDF Content Operations (Rotate, Watermark, Images)
 // eff: Extracted from core.ts
 
-import { PDFDocument, degrees as pdfDegrees, rgb, StandardFonts } from 'pdf-lib';
+import { PDFDocument, degrees as pdfDegrees, rgb, StandardFonts, type PDFImage } from 'pdf-lib';
 import type {
 	RotateOptions,
 	WatermarkOptions,
@@ -81,7 +81,7 @@ export const imagesToPDF = async (options: ImagesToPDFOptions): Promise<PDFProce
 			const isPng = bytes[0] === 0x89 && bytes[1] === 0x50;
 			const isJpg = bytes[0] === 0xff && bytes[1] === 0xd8;
 
-			let image;
+			let image: PDFImage;
 			if (isPng) {
 				image = await doc.embedPng(imgData);
 			} else if (isJpg) {

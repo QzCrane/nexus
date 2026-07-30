@@ -1,7 +1,8 @@
 // goal: Single sliding page wrapper with CSS transition animations
 // eff: Standalone component for horizontal slide enter/exit transitions
 
-import React, { useRef, useEffect, useState } from 'react';
+import type React from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { ANIMATION_CONSTANTS } from '../../../kernel/core/animations';
 
 interface SlidePageProps {

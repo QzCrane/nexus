@@ -1,7 +1,7 @@
 // goal: Twitter/X image resolution rules
 // eff: Convert thumbnail URLs to full-size images
 
-import { SiteRule } from '../core';
+import type { SiteRule } from '../core';
 
 /**
  * Twitter/X Rules

@@ -1,7 +1,7 @@
 // goal: Styles for PDFPanel
 // eff: Extracted to separate file
 
-import React from 'react';
+import type React from 'react';
 
 export const styles: Record<string, React.CSSProperties> = {
 	wrapper: { display: 'flex', flexDirection: 'column', gap: '12px' },

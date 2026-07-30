@@ -1,7 +1,7 @@
 // goal: Sub-component for ToolManager list items
 // eff: Extracted to reduce ToolManager.tsx size
 
-import React from 'react';
+import type React from 'react';
 import { Toggle } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { ToolMeta, ToolPrefs } from '../../kernel';
@@ -46,7 +46,7 @@ export const ToolManagerItem: React.FC<ToolManagerItemProps> = ({
       </div>
 
       {/* Pin button */}
-      <button
+      <button type="button"
         style={{
           ...styles.pinBtn,
           color: prefs.pinned ? 'var(--halo-accent)' : 'var(--halo-text-muted)',

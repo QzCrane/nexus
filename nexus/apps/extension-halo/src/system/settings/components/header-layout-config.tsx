@@ -1,9 +1,14 @@
 
-import React, { useState } from 'react';
+import type React from 'react';
+import { useState } from 'react';
 import { Toggle } from '@nexus/ui-kit';
 import { useTranslation } from '../../../i18n';
 import { getToolMeta } from '../../../kernel';
 import { styles } from '../panel.styles';
+import {
+	type HeaderLayoutMove,
+	moveHeaderLayoutItem,
+} from './header-layout-order';
 
 interface HeaderLayoutConfigProps {
 	activeTools: string[];
@@ -14,6 +19,7 @@ interface HeaderLayoutConfigProps {
 export const HeaderLayoutConfig: React.FC<HeaderLayoutConfigProps> = ({ activeTools, inactiveTools, onChange }) => {
 	const { t } = useTranslation();
 	const [draggedItem, setDraggedItem] = useState<string | null>(null);
+	const [reorderAnnouncement, setReorderAnnouncement] = useState('');
 
 	const handleDragStart = (e: React.DragEvent, id: string) => {
 		setDraggedItem(id);
@@ -50,16 +56,42 @@ export const HeaderLayoutConfig: React.FC<HeaderLayoutConfigProps> = ({ activeTo
 		}
 	};
 
+	const handleReorderKeyDown = (
+		event: React.KeyboardEvent<HTMLButtonElement>,
+		id: string,
+		label: string,
+	): void => {
+		const move: HeaderLayoutMove | null = event.key === 'ArrowUp'
+			? -1
+			: event.key === 'ArrowDown'
+				? 1
+				: event.key === 'Home'
+					? 'first'
+					: event.key === 'End'
+						? 'last'
+						: null;
+		if (move === null) return;
+		event.preventDefault();
+		const next = moveHeaderLayoutItem(activeTools, id, move);
+		if (!next) return;
+		onChange(next);
+		setReorderAnnouncement(t('settings.headerShortcutMoved', {
+			defaultValue: `Moved ${label} to position ${next.indexOf(id) + 1}`,
+		}));
+	};
+
 	const renderItem = (id: string, isActive: boolean) => {
 		const meta = getToolMeta(id);
 		const icon = meta?.icon || (id === 'userscripts' ? '📜' : '🧩');
 		const isSettings = id === 'settings';
+		const label = meta ? t(`tools.${id}.name`) : id;
 
 		return (
-			<div
+			<li
 				key={id}
 				style={{
 					...styles.row,
+					listStyle: 'none',
 					cursor: isActive ? 'grab' : 'default',
 					opacity: draggedItem === id ? 0.5 : 1,
 					border: draggedItem === id ? '1px dashed var(--halo-accent)' : 'none',
@@ -68,16 +100,39 @@ export const HeaderLayoutConfig: React.FC<HeaderLayoutConfigProps> = ({ activeTo
 					background: isActive ? 'var(--halo-bg-secondary)' : 'transparent',
 					marginBottom: '4px'
 				}}
-				draggable={isActive}
-				onDragStart={(e) => isActive && handleDragStart(e, id)}
-				onDragOver={(e) => isActive && handleDragOver(e, id)}
-				onDragEnd={() => setDraggedItem(null)}
 			>
 				<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-					{isActive && <span style={{ cursor: 'grab', color: 'var(--halo-text-muted)' }}>⋮⋮</span>}
+					{isActive && (
+						<button
+							type="button"
+							draggable
+							aria-keyshortcuts="ArrowUp ArrowDown Home End"
+							aria-label={t('settings.reorderHeaderShortcut', {
+								defaultValue: `Reorder ${label}`,
+							})}
+							title={t('settings.reorderHeaderShortcutHint', {
+								defaultValue: 'Drag, or use Arrow Up/Down, Home, and End',
+							})}
+							onDragStart={(event) => handleDragStart(event, id)}
+							onDragOver={(event) => handleDragOver(event, id)}
+							onDragEnd={() => setDraggedItem(null)}
+							onKeyDown={(event) => handleReorderKeyDown(event, id, label)}
+							style={{
+								appearance: 'none',
+								background: 'transparent',
+								border: 0,
+								color: 'var(--halo-text-muted)',
+								cursor: 'grab',
+								font: 'inherit',
+								padding: '2px 4px',
+							}}
+						>
+							⋮⋮
+						</button>
+					)}
 					<div style={styles.label}>
 						<span style={{ marginRight: 8, fontSize: '16px' }}>{icon}</span>
-						{meta ? t(`tools.${id}.name`) : id}
+						{label}
 					</div>
 				</div>
 				<Toggle
@@ -85,7 +140,7 @@ export const HeaderLayoutConfig: React.FC<HeaderLayoutConfigProps> = ({ activeTo
 					disabled={isSettings}
 					onChange={(checked) => !isSettings && handleToggle(id, checked)}
 				/>
-			</div>
+			</li>
 		);
 	};
 
@@ -98,10 +153,31 @@ export const HeaderLayoutConfig: React.FC<HeaderLayoutConfigProps> = ({ activeTo
 				</span>
 			</div>
 			
-			<div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+			<ul style={{ display: 'flex', flexDirection: 'column', gap: '2px', listStyle: 'none', margin: 0, padding: 0 }}>
 				{activeTools.map(id => renderItem(id, true))}
-				{inactiveTools.length > 0 && <div style={{ height: '1px', background: 'var(--halo-border)', margin: '8px 0' }} />}
+				{inactiveTools.length > 0 && (
+					<li
+						aria-hidden="true"
+						style={{ height: '1px', background: 'var(--halo-border)', margin: '8px 0' }}
+					/>
+				)}
 				{inactiveTools.map(id => renderItem(id, false))}
+			</ul>
+			<div
+				aria-live="polite"
+				style={{
+					border: 0,
+					clip: 'rect(0 0 0 0)',
+					height: 1,
+					margin: -1,
+					overflow: 'hidden',
+					padding: 0,
+					position: 'absolute',
+					whiteSpace: 'nowrap',
+					width: 1,
+				}}
+			>
+				{reorderAnnouncement}
 			</div>
 		</div>
 	);

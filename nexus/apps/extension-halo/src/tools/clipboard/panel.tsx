@@ -4,7 +4,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useToolState } from '../../kernel';
 
-import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { 
 	getClipboardHistory, 
@@ -18,7 +17,6 @@ import {
 import type { ClipboardItem as ClipboardItemType } from './types';
 import { styles } from './panel.styles';
 import { ClipboardItem } from './ClipboardItem';
-import { Toggle } from '@nexus/ui-kit';
 import { useActiveServices } from '../../components/sidepanel/ActiveServicesContext';
 
 import { ClipboardHeader } from './ClipboardHeader';
@@ -30,7 +28,7 @@ export const ClipboardPanel: React.FC = () => {
 	const { showToast } = useToast();
 	const { setServiceState } = useActiveServices();
 	const [history, setHistory] = useState<ClipboardItemType[]>([]);
-	const [search, setSearch] = useToolState<string>('clipboard-search' as any, '');
+	const [search, setSearch] = useToolState<string>('clipboard-search', '');
 	const [enabled, setEnabled] = useState(true);
 
 	// const [toast, setToast] = useState<string | null>(null); // Removed
@@ -41,29 +39,55 @@ export const ClipboardPanel: React.FC = () => {
 
 	// Initial load should not highlight anything
 	const firstLoadRef = React.useRef(true);
+	const highlightTimersRef = React.useRef<Set<number>>(new Set());
 
 	useEffect(() => {
-		loadHistory();
-		getClipboardSettings().then(s => {
-			setEnabled(s.enabled);
-			setServiceState('clipboard', s.enabled);
-		});
-		
-		const listener = (changes: any, area: string) => {
+		let disposed = false;
+		let historyAuthorityChanged = false;
+		let settingsAuthorityChanged = false;
+
+		const listener = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
 			if (area === 'local') {
-				if (changes['halo_tool_clipboard_history']) {
-					setHistory(changes['halo_tool_clipboard_history'].newValue || []);
+				if (changes.halo_tool_clipboard_history) {
+					historyAuthorityChanged = true;
+					setHistory(changes.halo_tool_clipboard_history.newValue || []);
 				}
-				if (changes['halo_tool_clipboard_settings']) {
-					const newState = changes['halo_tool_clipboard_settings'].newValue?.enabled ?? true;
+				if (changes.halo_tool_clipboard_settings) {
+					settingsAuthorityChanged = true;
+					const newState = changes.halo_tool_clipboard_settings.newValue?.enabled ?? true;
 					setEnabled(newState);
 					setServiceState('clipboard', newState);
 				}
 			}
 		};
 		chrome.storage.onChanged.addListener(listener);
-		return () => chrome.storage.onChanged.removeListener(listener);
-	}, []);
+
+		void getClipboardHistory()
+			.then((loadedHistory) => {
+				if (!disposed && !historyAuthorityChanged) setHistory(loadedHistory);
+			})
+			.catch((error: unknown) => {
+				console.error('[HALO:Clipboard] Failed to load clipboard history', error);
+			});
+		void getClipboardSettings()
+			.then((loadedSettings) => {
+				if (disposed || settingsAuthorityChanged) return;
+				setEnabled(loadedSettings.enabled);
+				setServiceState('clipboard', loadedSettings.enabled);
+			})
+			.catch((error: unknown) => {
+				console.error('[HALO:Clipboard] Failed to load clipboard settings', error);
+			});
+
+		return () => {
+			disposed = true;
+			chrome.storage.onChanged.removeListener(listener);
+			for (const timerId of highlightTimersRef.current) {
+				window.clearTimeout(timerId);
+			}
+			highlightTimersRef.current.clear();
+		};
+	}, [setServiceState]);
 
 	// Unify history change handling for highlighting
 	useEffect(() => {
@@ -74,7 +98,6 @@ export const ClipboardPanel: React.FC = () => {
 		}
 
 		if (history.length > 0) {
-			const currentIds = new Set(history.map(h => h.id));
 			const prevIds = new Set(prevHistoryRef.current.map(h => h.id));
 			
 			const addedIds = history
@@ -84,28 +107,29 @@ export const ClipboardPanel: React.FC = () => {
 			if (addedIds.length > 0) {
 				setNewIds(prev => {
 					const next = new Set(prev);
-					addedIds.forEach(id => next.add(id));
+					addedIds.forEach((id) => {
+						next.add(id);
+					});
 					return next;
 				});
 
 				// Auto-remove highlight after animation
-				setTimeout(() => {
+				const timerId = window.setTimeout(() => {
+					highlightTimersRef.current.delete(timerId);
 					setNewIds(prev => {
 						const next = new Set(prev);
-						addedIds.forEach(id => next.delete(id));
+						addedIds.forEach((id) => {
+							next.delete(id);
+						});
 						return next;
 					});
 				}, 2000);
+				highlightTimersRef.current.add(timerId);
 			}
 		}
 		
 		prevHistoryRef.current = history;
 	}, [history]);
-
-	const loadHistory = async () => {
-		const h = await getClipboardHistory();
-		setHistory(h);
-	};
 
 	const handleToggle = async (checked: boolean) => {
 		await updateClipboardSettings(checked);

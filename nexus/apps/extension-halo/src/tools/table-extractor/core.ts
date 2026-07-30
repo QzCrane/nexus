@@ -20,7 +20,9 @@ export async function extractTables(): Promise<TableData[]> {
 
 					// Extract headers
 					const headerCells = table.querySelectorAll('thead th, thead td, tr:first-child th');
-					headerCells.forEach((cell) => headers.push(cell.textContent?.trim() || ''));
+					headerCells.forEach((cell) => {
+						headers.push(cell.textContent?.trim() || '');
+					});
 
 					// Extract rows
 					const dataRows = table.querySelectorAll('tbody tr, tr');
@@ -52,7 +54,7 @@ export async function extractTables(): Promise<TableData[]> {
 
 // Convert table to CSV
 export function tableToCsv(table: TableData): string {
-	const escape = (val: string): string => {
+	const escapeCsvValue = (val: string): string => {
 		if (val.includes(',') || val.includes('"') || val.includes('\n')) {
 			return `"${val.replace(/"/g, '""')}"`;
 		}
@@ -61,10 +63,10 @@ export function tableToCsv(table: TableData): string {
 
 	const lines: string[] = [];
 	if (table.headers.length > 0) {
-		lines.push(table.headers.map(escape).join(','));
+		lines.push(table.headers.map(escapeCsvValue).join(','));
 	}
 	table.rows.forEach((row) => {
-		lines.push(row.map(escape).join(','));
+		lines.push(row.map(escapeCsvValue).join(','));
 	});
 
 	return lines.join('\n');

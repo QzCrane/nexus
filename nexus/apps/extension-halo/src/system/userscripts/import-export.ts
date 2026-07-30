@@ -3,7 +3,7 @@ import { getUserScriptsState, saveState } from './storage';
 import { addUserScript } from './operations';
 import { parseUserScriptHeader, createScriptFromHeader } from './parser';
 
-let ieQueue: Promise<any> = Promise.resolve();
+let ieQueue: Promise<unknown> = Promise.resolve();
 function serialized<T>(fn: () => Promise<T>): Promise<T> {
 	const result = ieQueue.then(() => fn());
 	ieQueue = result.catch(() => undefined);

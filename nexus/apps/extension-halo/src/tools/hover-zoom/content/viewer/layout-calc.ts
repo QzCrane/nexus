@@ -3,10 +3,8 @@
 // inv: All calculations include full viewer footprint (content + border + infoBar)
 
 import {
-	LayoutCandidate,
-	LayoutResult,
-	AvailableSpace,
-	SpaceEvaluation,
+	type LayoutCandidate,
+	type SpaceEvaluation,
 	LAYOUT_CONFIG
 } from './layout-types';
 import type { ViewMode } from '../../types';

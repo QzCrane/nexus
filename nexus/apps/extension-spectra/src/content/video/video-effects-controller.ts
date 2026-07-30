@@ -250,7 +250,8 @@ export class VideoEffectsController {
 					|| this.dimTarget !== video
 					|| this.dimRegions.length !== 4
 					|| this.dimRegions.some((region, index) => {
-						const expected = boxes[index]!;
+						const expected = boxes[index];
+						if (!expected) return true;
 						const actual = [
 							Number.parseFloat(region.style.left),
 							Number.parseFloat(region.style.top),
@@ -258,8 +259,12 @@ export class VideoEffectsController {
 							Number.parseFloat(region.style.height),
 						];
 						return Math.abs(Number(region.style.opacity) - state.dimOpacity) > 0.001
-							|| actual.some((value, coordinate) =>
-								!Number.isFinite(value) || Math.abs(value - expected[coordinate]!) > 0.5);
+							|| actual.some((value, coordinate) => {
+								const expectedCoordinate = expected[coordinate];
+								return expectedCoordinate === undefined
+									|| !Number.isFinite(value)
+									|| Math.abs(value - expectedCoordinate) > 0.5;
+							});
 					})) {
 					reject(new Error('Dim overlay geometry/opacity readback failed'));
 					return;
@@ -451,8 +456,13 @@ export class VideoEffectsController {
 			if (this.dimHost.parentElement !== root) root.appendChild(this.dimHost);
 			const boxes = this.dimBoxes(video);
 			for (let index = 0; index < boxes.length; index += 1) {
-				const [x, y, w, h] = boxes[index]!;
-				const region = this.dimRegions[index]!;
+				const box = boxes[index];
+				const region = this.dimRegions[index];
+				if (!box || !region) {
+					this.disposeDim();
+					return;
+				}
+				const [x, y, w, h] = box;
 				region.style.left = `${x}px`;
 				region.style.top = `${y}px`;
 				region.style.width = `${w}px`;

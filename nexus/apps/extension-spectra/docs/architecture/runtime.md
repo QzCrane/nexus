@@ -43,6 +43,11 @@ Capture becomes active only after the unified offscreen host creates a current-g
 - remote lease: `remote:<sessionId>`
 - creation, reconciliation, and close decisions are serialized;
 - the host closes only after all leases are released and the one-shot grace alarm expires;
+- Capture audio messages and HELLO do not load Remote code. The Remote
+  controller is one deferred module, and its local opaque PeerJS vendor is one
+  retryable single-flight script load admitted only by
+  `REMOTE_HOST_CREATE_SESSION`; status/describe/close/state requests with no
+  Remote runtime return their empty exact result without waking that boundary;
 - HELLO reconstructs processors, remote sessions, and leases after service-worker restart;
 - a live host that exhausts HELLO retries remains quarantined while any known
   lease exists; without a known lease it enters the 30-second idle grace, and

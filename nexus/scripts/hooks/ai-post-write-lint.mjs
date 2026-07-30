@@ -2,13 +2,15 @@
 // ai-post-write-lint.mjs
 //
 // Claude Code / Antigravity PostToolUse hook for Write|Edit|MultiEdit.
-// Runs biome format on JS/TS and lint-docs on changed .md. Non-blocking:
-// warnings are surfaced in chat; the agent decides whether to fix.
+// Runs the repository's strict Biome owner on JS/TS and lint-docs on
+// changed .md. The hook never rewrites files. It is non-blocking:
+// diagnostics are surfaced in chat; the agent decides whether to fix.
 //
 // Rule owner: AGENTS.md EPR-029 (硬化质量门到 Git/CI/AI 钩子)
 
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
 	extractWriteTargets,
 	relPath,
@@ -19,6 +21,24 @@ import {
 import { scanFileContent, formatIssue } from './ai-pitfall-detector.mjs';
 
 const JS_EXT = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
+const workspaceDir = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+const repositoryDir = dirname(workspaceDir);
+
+function strictLintTargets(paths, cwd = process.cwd()) {
+	return paths.flatMap((path) => {
+		const absolute = resolve(cwd, path);
+		const repositoryRelative = relative(repositoryDir, absolute);
+		if (
+			!repositoryRelative ||
+			isAbsolute(repositoryRelative) ||
+			repositoryRelative === '..' ||
+			repositoryRelative.startsWith(`..${sep}`)
+		) {
+			return [];
+		}
+		return [relative(workspaceDir, absolute).replaceAll('\\', '/')];
+	});
+}
 
 async function main(payload) {
 	const tool = payload.tool_name ?? '';
@@ -30,7 +50,7 @@ async function main(payload) {
 	const mdFiles = [];
 	const jsFiles = [];
 	for (const p of targets) {
-		const abs = join(process.cwd(), p);
+		const abs = resolve(process.cwd(), p);
 		if (!existsSync(abs)) continue;
 		if (p.endsWith('.md')) mdFiles.push(p);
 		else if (JS_EXT.test(p)) jsFiles.push(p);
@@ -49,23 +69,19 @@ async function main(payload) {
 	}
 
 	if (jsFiles.length > 0) {
-		const r = run(process.execPath, [
-			'x',
-			'--bun',
-			'@biomejs/biome',
-			'format',
-			'--write',
-			'--no-errors-on-unmatched',
-			...jsFiles,
-		]);
-		if (r.status !== 0) {
-			warnings.push(
-				`[biome format] ${jsFiles.map(relPath).join(', ')} failed:\n` +
-					(r.stdout || r.stderr || '').trim(),
+		const lintTargets = strictLintTargets(jsFiles);
+		if (lintTargets.length > 0) {
+			const r = run(
+				process.execPath,
+				['scripts/run-strict-biome.mjs', ...lintTargets],
+				{ cwd: workspaceDir },
 			);
-		} else {
-			const note = (r.stdout || '').trim();
-			if (note) warnings.push(`[biome format] reformatted: ${note}`);
+			if (r.status !== 0) {
+				warnings.push(
+					`[strict-biome] ${jsFiles.map(relPath).join(', ')} failed:\n` +
+						(r.stdout || r.stderr || '').trim(),
+				);
+			}
 		}
 
 		// Static heuristic scan for common AI authoring pitfalls.
@@ -73,7 +89,7 @@ async function main(payload) {
 		// whether to fix. Errors would still be caught by lefthook
 		// pre-push (lint:ai-pitfalls).
 		for (const p of jsFiles) {
-			const abs = join(process.cwd(), p);
+			const abs = resolve(process.cwd(), p);
 			let content;
 			try {
 				content = readFileSync(abs, 'utf8');
@@ -101,3 +117,5 @@ async function main(payload) {
 if (import.meta.main) {
 	await runHook('ai-post-write-lint', main);
 }
+
+export { strictLintTargets };

@@ -1,12 +1,13 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useTranslation } from '../../i18n';
 import { useModuleManager, useRemoteRegistry, ALL_MODULES } from '../../kernel';
+import type { PluginMeta } from '../../kernel';
 import { ModuleList } from './module-list';
 import { StoreHeader } from './store-header';
 import { useOverlay } from '../../components/ui/overlay';
 import { useUserScripts } from '../../system/userscripts/hooks';
 import { styles } from './panel.styles';
-import { FilterType } from './type-filter';
+import type { FilterType } from './type-filter';
 import { filterBySearch, MODULE_SEARCH_OPTIONS } from '../../kernel/utils/unified-search';
 import { convertScriptsToModules } from './utils';
 
@@ -44,7 +45,7 @@ export const ModuleStorePanel: React.FC = () => {
 		try { await install(id); } finally { setInstalling(null); }
 	}, [install]);
 
-	const handleUninstall = useCallback(async (m: typeof ALL_MODULES[0]) => {
+	const handleUninstall = useCallback(async (m: PluginMeta) => {
 		// System components cannot be uninstalled
 		if (m.pluginType === 'system') {
 			showModal({
@@ -56,7 +57,7 @@ export const ModuleStorePanel: React.FC = () => {
 		}
 
 		// User Scripts (custom) are managed in UserScripts panel
-		if ((m as any).isUserScript) {
+		if (m.isUserScript) {
 			showModal({
 				title: t('common.readOnly') || '只读',
 				message: t('moduleStorePanel.scriptUninstallWarning'),
@@ -85,7 +86,7 @@ export const ModuleStorePanel: React.FC = () => {
 	const searchModules = (modules: typeof ALL_MODULES) => 
 		filterBySearch(modules, searchQuery, MODULE_SEARCH_OPTIONS);
 
-	const filterByType = (m: typeof ALL_MODULES[0] & { isUserScript?: boolean }) => {
+	const filterByType = (m: PluginMeta) => {
 		if (filterType === 'system') return m.pluginType === 'system';
 		if (filterType === 'script') {
 			const isScript = m.pluginType === 'script' || m.isUserScript;
@@ -152,7 +153,7 @@ export const ModuleStorePanel: React.FC = () => {
 				updatesCount={updates.length} totalInstalled={totalInstalled} totalSize={totalSize}
 			/>
 			<ModuleList
-				updates={updates} displayModules={displayModules}
+				displayModules={displayModules}
 				installedModules={allInstalledModules} installingId={installing}
 				view={view} filterType={filterType}
 				handleInstall={handleInstall} handleUninstall={handleUninstall}

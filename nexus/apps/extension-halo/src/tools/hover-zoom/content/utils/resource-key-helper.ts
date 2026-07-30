@@ -19,31 +19,6 @@ function comboMatches(combo: KeyCombo, e: MouseEvent | KeyboardEvent): boolean {
 }
 
 /**
- * Check if current event state is a superset of a combo
- * (all required keys are pressed, possibly more)
- */
-function comboIsSubset(combo: KeyCombo, e: MouseEvent | KeyboardEvent): boolean {
-	if (combo.disabled) return false;
-	// combo keys that are true must also be true in event
-	if (combo.shift && !e.shiftKey) return false;
-	if (combo.ctrl && !e.ctrlKey) return false;
-	if (combo.alt && !e.altKey) return false;
-	return true;
-}
-
-/**
- * Count how many modifiers are required by a combo
- */
-function comboModifierCount(combo: KeyCombo): number {
-	if (combo.disabled) return -1;
-	let count = 0;
-	if (combo.shift) count++;
-	if (combo.ctrl) count++;
-	if (combo.alt) count++;
-	return count;
-}
-
-/**
  * Check if a combo is "none" (no modifiers required)
  */
 function isComboNone(combo: KeyCombo): boolean {

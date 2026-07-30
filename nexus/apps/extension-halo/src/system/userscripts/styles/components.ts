@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { ACCENT, BG_CARD, BORDER, TEXT, TEXT_MUTED, DANGER } from './shared';
+import { ACCENT, BG_CARD, BORDER, TEXT, TEXT_MUTED, } from './shared';
 
 export const componentStyles: Record<string, CSSProperties> = {
 	masterCard: {

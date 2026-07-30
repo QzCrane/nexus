@@ -6,4 +6,5 @@ export interface YamlConvertResult {
 	success: boolean;
 	output: string;
 	error?: string;
+	normalizedInput?: string;
 }

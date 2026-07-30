@@ -38,7 +38,8 @@ export function isValidTrigger(target: HTMLElement): boolean {
 	if (!target) return false;
 
 	// Check cache first (significant performance boost)
-	if (validTriggerCache.has(target)) return validTriggerCache.get(target)!;
+	const cached = validTriggerCache.get(target);
+	if (cached !== undefined) return cached;
 
 	let valid = false;
 

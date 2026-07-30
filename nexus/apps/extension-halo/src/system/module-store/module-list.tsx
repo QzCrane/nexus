@@ -1,30 +1,29 @@
-import React from 'react';
+import type React from 'react';
 import { useTranslation } from '../../i18n';
-import { ALL_MODULES } from '../../kernel';
+import type { PluginMeta } from '../../kernel';
 import { ModuleItem } from './module-item';
 import { styles } from './panel.styles';
 
 interface ModuleListProps {
-	updates: any[];
-	displayModules: typeof ALL_MODULES;
-	installedModules: typeof ALL_MODULES;
+	displayModules: PluginMeta[];
+	installedModules: PluginMeta[];
 	installingId: string | null;
 	view: 'installed' | 'available' | 'all' | 'updates';
 	filterType?: 'all' | 'app' | 'script' | 'system';
 	handleInstall: (id: string) => void;
-	handleUninstall: (m: typeof ALL_MODULES[0]) => void;
+	handleUninstall: (module: PluginMeta) => void;
 }
 
 export const ModuleList: React.FC<ModuleListProps> = ({
-	updates, displayModules, installedModules, installingId, view, filterType = 'all', handleInstall, handleUninstall
+	displayModules, installedModules, installingId, view, filterType = 'all', handleInstall, handleUninstall
 }) => {
 	const { t } = useTranslation();
 
-	const renderModuleItem = (mod: typeof ALL_MODULES[0], index: number) => {
+	const renderModuleItem = (mod: PluginMeta, index: number) => {
 		const isInstalled = installedModules.some(m => m.id === mod.id);
 		const loadingId = installingId;
 		// Determine if this is a user script (read-only)
-		const isUserScript = (mod as any).isUserScript === true;
+		const isUserScript = mod.isUserScript === true;
 
 		return (
 			<ModuleItem

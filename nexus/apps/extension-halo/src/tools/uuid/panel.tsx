@@ -1,6 +1,7 @@
 // goal: UUID generator panel UI
 
-import React, { useState, useCallback } from 'react';
+import type React from 'react';
+import { useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { generateV1, generateV4, generateV7, generateULID, formatUUID } from './core';
@@ -39,10 +40,10 @@ const styles: Record<string, React.CSSProperties> = {
 export const UUIDPanel: React.FC = () => {
     const { t } = useTranslation();
     const { showToast } = useToast();
-	const [version, setVersion] = useToolState<UUIDVersion>('uuid-version' as any, 'v4');
-	const [count, setCount] = useToolState<number>('uuid-count' as any, 1);
-	const [uppercase, setUppercase] = useToolState<boolean>('uuid-upper' as any, false);
-	const [hyphens, setHyphens] = useToolState<boolean>('uuid-hyphens' as any, true);
+	const [version, setVersion] = useToolState<UUIDVersion>('uuid-version', 'v4');
+	const [count, setCount] = useToolState<number>('uuid-count', 1);
+	const [uppercase, setUppercase] = useToolState<boolean>('uuid-upper', false);
+	const [hyphens, setHyphens] = useToolState<boolean>('uuid-hyphens', true);
 	const [result, setResult] = useToolState<string>('uuid', '');
 
 	// const [toast, setToast] = useState<string | null>(null); // Removed
@@ -65,7 +66,7 @@ export const UUIDPanel: React.FC = () => {
 			generated.push(formatted);
 		}
 		setResult(generated.join('\n'));
-	}, [version, count, uppercase, hyphens]);
+	}, [version, count, uppercase, hyphens, setResult]);
 
 	return (
 		<div style={styles.wrapper}>
@@ -75,7 +76,7 @@ export const UUIDPanel: React.FC = () => {
 					<div style={styles.row}>
 						<span style={styles.label}>{t('uuid.type')}</span>
 						{UUID_VERSIONS.map(v => (
-							<button
+							<button type="button"
 								key={v}
 								style={{ ...styles.optionBtn, ...(version === v ? styles.active : styles.inactive) }}
 								onClick={() => setVersion(v)}
@@ -93,7 +94,7 @@ export const UUIDPanel: React.FC = () => {
 							max="100"
 							style={styles.input}
 							value={count}
-							onChange={(e) => setCount(Math.min(100, Math.max(1, parseInt(e.target.value) || 1)))}
+							onChange={(e) => setCount(Math.min(100, Math.max(1, parseInt(e.target.value, 10) || 1)))}
 						/>
 					</div>
 
@@ -110,7 +111,7 @@ export const UUIDPanel: React.FC = () => {
 						)}
 					</div>
 
-					<button style={styles.generateBtn} onClick={handleGenerate}>
+					<button type="button" style={styles.generateBtn} onClick={handleGenerate}>
 						⚡ {t('uuid.generate')}
 					</button>
 				</div>
@@ -121,7 +122,7 @@ export const UUIDPanel: React.FC = () => {
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
 					<div style={styles.row}>
 						<span style={styles.label}>{t('common.result') || 'Result'}</span>
-						<button
+						<button type="button"
 							style={{ ...styles.optionBtn, marginLeft: 'auto' }}
 							onClick={() => { if (result) { navigator.clipboard.writeText(result); showToast(t('common.copied') || 'Copied!'); } }}
 							disabled={!result}

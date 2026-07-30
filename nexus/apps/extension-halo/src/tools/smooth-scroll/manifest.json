@@ -6,13 +6,13 @@
 	"builtIn": false,
 	"keywords": [],
 	"background": {
-		"mechanism": "raf_active",
-		"frequency": "16ms",
-		"activeOnly": false,
-		"level": "medium",
-		"descriptionKey": "impact.raf_scroll",
-		"sourceFile": "tools/smooth-scroll/engine.ts",
-		"sourceLine": 119,
-		"sourceDetail": "requestAnimationFrame(scrollStep)"
+		"mechanism": "wheel_listener",
+		"frequency": "on-wheel",
+		"activeOnly": true,
+		"level": "low",
+		"descriptionKey": "impact.mechanism.wheel_listener",
+		"sourceFile": "content/smooth-scroll.ts",
+		"sourceLine": 34,
+		"sourceDetail": "window.addEventListener('wheel', onWheel)"
 	}
 }

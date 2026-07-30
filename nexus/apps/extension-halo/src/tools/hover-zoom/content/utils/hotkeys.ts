@@ -1,23 +1,18 @@
 // goal: Comprehensive hotkey handler for Hover Zoom
 // eff: S=Save, C=Copy, T=Tab, R=Rotate, Esc=Close, Arrow=Pan
 
-import { HoverZoomSettings } from '../../types';
-import { HoverZoomViewer } from '../viewer';
+import type { HoverZoomViewer } from '../viewer';
 
 export class HotkeyManager {
-	private settings: HoverZoomSettings;
 	private viewer: HoverZoomViewer;
 	private boundHandler: (e: KeyboardEvent) => void;
-	private pauseKey = 'x'; // Hold to pause
 
-	constructor(settings: HoverZoomSettings, viewer: HoverZoomViewer) {
-		this.settings = settings;
+	constructor(viewer: HoverZoomViewer) {
 		this.viewer = viewer;
 		this.boundHandler = this.handleKey.bind(this);
 		this.attach();
 	}
 
-	updateSettings(s: HoverZoomSettings) { this.settings = s; }
 	attach() { window.addEventListener('keydown', this.boundHandler, true); }
 	detach() { window.removeEventListener('keydown', this.boundHandler, true); }
 

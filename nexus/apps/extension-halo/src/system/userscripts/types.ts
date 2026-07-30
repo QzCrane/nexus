@@ -2,7 +2,7 @@
 // eff: Unified types for script management
 
 import type { ScriptType } from '../../kernel/registry/taxonomy';
-export { ScriptType };
+export type { ScriptType };
 export type UserScriptRunAt = 'document_start' | 'document_end' | 'document_idle';
 
 export interface UserScript {
@@ -31,6 +31,8 @@ export interface UserScript {
 	// Timestamps
 	createdAt: number;
 	updatedAt: number;
+	// Present for registry-managed built-in scripts. User-authored scripts omit it.
+	saatToolId?: string;
 }
 
 export interface UserScriptState {
@@ -55,6 +57,7 @@ export interface ParsedHeader {
 	homepage?: string;
 	updateURL?: string;
 	grant?: string[];
+	[key: string]: string | string[] | undefined;
 }
 
 // Export/Import format

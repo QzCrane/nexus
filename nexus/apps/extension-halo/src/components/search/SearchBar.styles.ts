@@ -1,7 +1,7 @@
 // goal: Premium styles for SearchBar component
 // eff: Upgraded to match standard Glassmorphism system
 
-import React from 'react';
+import type React from 'react';
 
 export const styles: Record<string, React.CSSProperties> = {
 	wrapper: {

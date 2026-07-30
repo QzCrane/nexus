@@ -1,20 +1,17 @@
 // goal: Color Picker tool panel UI with i18n support
 // eff: Logic and styles extracted
 
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import type React from 'react';
+import { useCallback, useMemo } from 'react';
 
 import { Card } from '@nexus/ui-kit';
 import { createLogger } from '@nexus/kernel';
 import { useTranslation } from '../../i18n';
-import type { ColorInfo } from './types';
 import {
 	parseColor,
 	getColorInfo,
 	copyToClipboard,
-	saveToHistory,
-	loadHistory,
 	getContrast,
-	hexToRgb,
 } from './core';
 import { styles } from './panel.styles';
 import { getContrastColor } from './utils';
@@ -29,7 +26,7 @@ export const ColorPickerPanel: React.FC = () => {
 	const { showToast } = useToast();
 	const [inputValue, setInputValue] = useToolState<string>('color-picker', '#7c3aed');
 	const color = useMemo(() => getColorInfo(inputValue), [inputValue]);
-	const [history, setHistory] = useToolState<string[]>('color-history' as any, []);
+	const [history, setHistory] = useToolState<string[]>('color-history', []);
 
 	const handleColorChange = useCallback(async (hex: string) => {
 		setInputValue(hex);
@@ -53,7 +50,7 @@ export const ColorPickerPanel: React.FC = () => {
 	}, [inputValue, history, setHistory]);
 
 
-	const handleCopyValue = useCallback(async (value: string, label: string) => {
+	const handleCopyValue = useCallback(async (value: string, _label: string) => {
 		const ok = await copyToClipboard(value);
 		showToast(ok ? t('colorPanel.copied') : t('colorPanel.copyFailed'));
 	}, [showToast, t]);
@@ -104,38 +101,42 @@ export const ColorPickerPanel: React.FC = () => {
 			</div>
 
 			<div style={styles.valuesGrid}>
-				<div
-					style={styles.valueBox}
+				<button
+					type="button"
+					style={{ ...styles.valueBox, color: 'inherit' }}
 					onClick={() => handleCopyValue(color.hex, 'HEX')}
 					title={t('colorPanel.clickToCopy')}
 				>
-					<div style={styles.valueLabel}>{t('colorPanel.hex')}</div>
-					<div style={styles.valueText}>{color.hex.toUpperCase()}</div>
-				</div>
-				<div
-					style={styles.valueBox}
+					<span style={{ ...styles.valueLabel, display: 'block' }}>{t('colorPanel.hex')}</span>
+					<span style={{ ...styles.valueText, display: 'block' }}>{color.hex.toUpperCase()}</span>
+				</button>
+				<button
+					type="button"
+					style={{ ...styles.valueBox, color: 'inherit' }}
 					onClick={() => handleCopyValue(rgbStr, 'RGB')}
 					title={t('colorPanel.clickToCopy')}
 				>
-					<div style={styles.valueLabel}>{t('colorPanel.rgb')}</div>
-					<div style={styles.valueText}>{color.rgb.r}, {color.rgb.g}, {color.rgb.b}</div>
-				</div>
-				<div
-					style={styles.valueBox}
+					<span style={{ ...styles.valueLabel, display: 'block' }}>{t('colorPanel.rgb')}</span>
+					<span style={{ ...styles.valueText, display: 'block' }}>{color.rgb.r}, {color.rgb.g}, {color.rgb.b}</span>
+				</button>
+				<button
+					type="button"
+					style={{ ...styles.valueBox, color: 'inherit' }}
 					onClick={() => handleCopyValue(hslStr, 'HSL')}
 					title={t('colorPanel.clickToCopy')}
 				>
-					<div style={styles.valueLabel}>{t('colorPanel.hsl')}</div>
-					<div style={styles.valueText}>{color.hsl.h}, {color.hsl.s}%, {color.hsl.l}%</div>
-				</div>
-				<div
-					style={styles.valueBox}
+					<span style={{ ...styles.valueLabel, display: 'block' }}>{t('colorPanel.hsl')}</span>
+					<span style={{ ...styles.valueText, display: 'block' }}>{color.hsl.h}, {color.hsl.s}%, {color.hsl.l}%</span>
+				</button>
+				<button
+					type="button"
+					style={{ ...styles.valueBox, color: 'inherit' }}
 					onClick={() => handleCopyValue(cmykStr, 'CMYK')}
 					title={t('colorPanel.clickToCopy')}
 				>
-					<div style={styles.valueLabel}>CMYK</div>
-					<div style={styles.valueText}>{color.cmyk.c}, {color.cmyk.m}, {color.cmyk.y}, {color.cmyk.k}</div>
-				</div>
+					<span style={{ ...styles.valueLabel, display: 'block' }}>CMYK</span>
+					<span style={{ ...styles.valueText, display: 'block' }}>{color.cmyk.c}, {color.cmyk.m}, {color.cmyk.y}, {color.cmyk.k}</span>
+				</button>
 			</div>
 
 			{/* WCAG Contrast Section */}
@@ -168,10 +169,12 @@ export const ColorPickerPanel: React.FC = () => {
 				<div style={styles.historyTitle}>{t('colorPanel.history')}</div>
 				{history.length > 0 ? (
 					<div style={styles.historyGrid}>
-						{history.slice(0, 20).map((hex, i) => (
-							<div
-								key={i}
-								style={{ ...styles.historySwatch, background: hex }}
+						{history.slice(0, 20).map((hex) => (
+							<button
+								type="button"
+								key={hex}
+								aria-label={hex}
+								style={{ ...styles.historySwatch, background: hex, padding: 0 }}
 								onClick={() => handleHistoryClick(hex)}
 								title={hex}
 							/>

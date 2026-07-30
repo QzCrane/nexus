@@ -81,7 +81,9 @@ export function createCleanupManager(): {
 		add: (fn) => fns.add(fn),
 		remove: (fn) => fns.delete(fn),
 		dispose: () => {
-			fns.forEach(fn => fn());
+			fns.forEach((fn) => {
+				fn();
+			});
 			fns.clear();
 		}
 	};

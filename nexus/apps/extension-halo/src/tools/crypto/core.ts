@@ -6,16 +6,28 @@ import type { JWTDecodeResult, AESMode, AESKeySize, RSAKeyPair } from './types';
 
 // === JWT Operations ===
 
+function splitJWT(token: string): [string, string, string] {
+	const [header, payload, signature, extra] = token.split('.');
+	if (
+		header === undefined
+		|| payload === undefined
+		|| signature === undefined
+		|| extra !== undefined
+	) {
+		throw new Error('Invalid JWT format');
+	}
+	return [header, payload, signature];
+}
+
 // Decode JWT without verification (base64 parsing only)
 export function decodeJWT(token: string): JWTDecodeResult {
 	try {
-		const parts = token.split('.');
-		if (parts.length !== 3) throw new Error('Invalid JWT format');
+		const [headerPart, payloadPart, signature] = splitJWT(token);
 
-		const header = JSON.parse(atob(parts[0]!.replace(/-/g, '+').replace(/_/g, '/')));
-		const payload = JSON.parse(atob(parts[1]!.replace(/-/g, '+').replace(/_/g, '/')));
+		const header = JSON.parse(atob(headerPart.replace(/-/g, '+').replace(/_/g, '/')));
+		const payload = JSON.parse(atob(payloadPart.replace(/-/g, '+').replace(/_/g, '/')));
 
-		return { header, payload, signature: parts[2]! };
+		return { header, payload, signature };
 	} catch (error) {
 		return {
 			header: { alg: 'unknown' },
@@ -31,10 +43,11 @@ export async function verifyJWTHS(token: string, secret: string): Promise<JWTDec
 	try {
 		const secretKey = new TextEncoder().encode(secret);
 		const { protectedHeader, payload } = await jose.jwtVerify(token, secretKey);
+		const [, , signature] = splitJWT(token);
 		return {
 			header: protectedHeader as JWTDecodeResult['header'],
 			payload: payload as JWTDecodeResult['payload'],
-			signature: token.split('.')[2]!,
+			signature,
 			isValid: true,
 		};
 	} catch (error) {

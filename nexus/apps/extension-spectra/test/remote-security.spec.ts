@@ -105,6 +105,99 @@ describe('authenticated remote host', () => {
 		expect(cancelHarness.controller.describeSessions()).toEqual([]);
 	});
 
+	test('loads the Peer runtime once before constructing a coalesced session', async () => {
+		let releasePeerRuntime!: () => void;
+		let ensureCalls = 0;
+		let peerCreations = 0;
+		const peer = new FakePeer('spectra-lazy');
+		const controller = createRemoteHostController({
+			ensurePeerRuntime: () => {
+				ensureCalls += 1;
+				return new Promise<void>((resolveRuntime) => {
+					releasePeerRuntime = resolveRuntime;
+				});
+			},
+			createPeer: () => {
+				peerCreations += 1;
+				return peer as never;
+			},
+			setTimer: () => 1,
+			clearTimer: () => undefined,
+		});
+
+		const first = controller.createSession(13);
+		const second = controller.createSession(13);
+		expect(second).toBe(first);
+		await waitFor(() => ensureCalls === 1);
+		expect(peerCreations).toBe(0);
+
+		releasePeerRuntime();
+		await waitFor(() => peerCreations === 1);
+		peer.emit('open', peer.id);
+		await first;
+	});
+
+	test('cancels a vendor-waiting create and retries only after an explicit request', async () => {
+		let releaseFirstRuntime!: () => void;
+		let ensureCalls = 0;
+		let peerCreations = 0;
+		const peer = new FakePeer('spectra-retry');
+		const controller = createRemoteHostController({
+			ensurePeerRuntime: () => {
+				ensureCalls += 1;
+				if (ensureCalls === 1) {
+					return new Promise<void>((resolveRuntime) => {
+						releaseFirstRuntime = resolveRuntime;
+					});
+				}
+				return Promise.resolve();
+			},
+			createPeer: () => {
+				peerCreations += 1;
+				return peer as never;
+			},
+			setTimer: () => 1,
+			clearTimer: () => undefined,
+		});
+
+		const cancelled = controller.createSession(14);
+		await waitFor(() => ensureCalls === 1);
+		expect(await controller.closeTab(14)).toBe(true);
+		await expect(cancelled).rejects.toThrow('cancelled');
+		releaseFirstRuntime();
+		await new Promise((resolveWait) => setTimeout(resolveWait, 0));
+		expect(peerCreations).toBe(0);
+
+		const retried = controller.createSession(14);
+		await waitFor(() => peerCreations === 1);
+		peer.emit('open', peer.id);
+		await expect(retried).resolves.toMatchObject({ tabId: 14 });
+		expect(ensureCalls).toBe(2);
+	});
+
+	test('clears a failed vendor wait so a later create can recover', async () => {
+		let ensureCalls = 0;
+		const peer = new FakePeer('spectra-recovered');
+		const controller = createRemoteHostController({
+			ensurePeerRuntime: () => {
+				ensureCalls += 1;
+				return ensureCalls === 1
+					? Promise.reject(new Error('Peer vendor unavailable'))
+					: Promise.resolve();
+			},
+			createPeer: () => peer as never,
+			setTimer: () => 1,
+			clearTimer: () => undefined,
+		});
+
+		await expect(controller.createSession(15)).rejects.toThrow('Peer vendor unavailable');
+		expect(controller.describeSessions()).toEqual([]);
+		const recovered = controller.createSession(15);
+		await waitFor(() => ensureCalls === 2);
+		peer.emit('open', peer.id);
+		await expect(recovered).resolves.toMatchObject({ tabId: 15 });
+	});
+
 	test('sends no state and executes no command before authentication', async () => {
 		const harness = createHarness();
 		const sessionPromise = harness.controller.createSession(17);
@@ -355,6 +448,10 @@ describe('authenticated remote host', () => {
 			(message) => message.type === 'spectra.remote.auth-result' && message.ok,
 		));
 
+		const disconnectedBeforeClose = harness.runtimeMessages.filter(
+			(message) => message.type === 'REMOTE_HOST_STATUS_CHANGE'
+				&& message.connected === false,
+		).length;
 		expect(await harness.controller.closeSession(29, session.sessionId, 'manual')).toBe(true);
 		expect(connection.sent).toContainEqual({
 			type: 'spectra.remote.closed',
@@ -365,6 +462,10 @@ describe('authenticated remote host', () => {
 		expect(connection.closed).toBe(true);
 		expect(harness.peer.destroyed).toBe(true);
 		expect(harness.controller.describeSessions()).toEqual([]);
+		expect(harness.runtimeMessages.filter(
+			(message) => message.type === 'REMOTE_HOST_STATUS_CHANGE'
+				&& message.connected === false,
+		)).toHaveLength(disconnectedBeforeClose);
 	});
 });
 
@@ -388,6 +489,8 @@ describe('remote-site supply chain and metadata privacy', () => {
 		expect(remoteApp).toMatch(/spectra-remote-v2\\n\$\{sessionId\}\\n\$\{nonce\}\\n\$\{PROTOCOL_VERSION\}/u);
 		expect(remoteApp).toContain("data.type === 'spectra.remote.closed'");
 		expect(remoteApp).toContain("element.toggleAttribute('inert', !visible)");
+		expect(remoteApp).not.toContain("throw new AggregateError(failures, 'Remote transport disposal failed')");
+		expect(remoteApp).toContain("console.error('Remote transport disposal failed'");
 		expect(remoteApp).not.toContain("'Pairing host is unavailable' : 'Signaling connection failed', unavailable");
 		expect(remoteApp).not.toMatch(/favicon|unpkg|google\.com\/s2/iu);
 	});
@@ -410,37 +513,37 @@ function createHarness(options: { now?: () => number } = {}) {
 }
 
 class FakePeer {
-	readonly handlers = new Map<string, Array<(...args: any[]) => void>>();
+	readonly handlers = new Map<string, Array<(...args: unknown[]) => void>>();
 	destroyed = false;
 	constructor(readonly id: string) {}
-	on(event: string, handler: (...args: any[]) => void): this {
+	on(event: string, handler: (...args: unknown[]) => void): this {
 		const handlers = this.handlers.get(event) ?? [];
 		handlers.push(handler);
 		this.handlers.set(event, handlers);
 		return this;
 	}
-	emit(event: string, ...args: any[]): void {
+	emit(event: string, ...args: unknown[]): void {
 		for (const handler of this.handlers.get(event) ?? []) handler(...args);
 	}
 	destroy(): void { this.destroyed = true; }
 }
 
 class FakeConnection {
-	readonly handlers = new Map<string, Array<(...args: any[]) => void>>();
-	readonly sent: Array<Record<string, any>> = [];
+	readonly handlers = new Map<string, Array<(...args: unknown[]) => void>>();
+	readonly sent: Array<Record<string, unknown>> = [];
 	open = true;
 	closed = false;
 	peer = 'controller-test';
-	on(event: string, handler: (...args: any[]) => void): this {
+	on(event: string, handler: (...args: unknown[]) => void): this {
 		const handlers = this.handlers.get(event) ?? [];
 		handlers.push(handler);
 		this.handlers.set(event, handlers);
 		return this;
 	}
-	emit(event: string, ...args: any[]): void {
+	emit(event: string, ...args: unknown[]): void {
 		for (const handler of this.handlers.get(event) ?? []) handler(...args);
 	}
-	send(message: Record<string, any>): void { this.sent.push(message); }
+	send(message: Record<string, unknown>): void { this.sent.push(message); }
 	close(): void {
 		if (this.closed) return;
 		this.closed = true;

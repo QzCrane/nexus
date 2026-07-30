@@ -1,6 +1,7 @@
 // goal: Diff panel UI - text comparison with highlighted differences
 
-import React, { useState, useCallback } from 'react';
+import type React from 'react';
+import { useState, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { DiffResult, DiffStats } from './types';
@@ -58,9 +59,9 @@ export const DiffPanel: React.FC = () => {
 
 			{/* Actions */}
 			<div style={styles.row}>
-				<button style={styles.btn} onClick={handleCompare}>{t('diff.compare')}</button>
-				<button style={{ ...styles.btn, background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text)' }} onClick={handleSwap}>⇄ {t('diff.swap')}</button>
-				<button style={{ ...styles.btn, background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text)' }} onClick={handleClear}>{t('diff.clear')}</button>
+				<button type="button" style={styles.btn} onClick={handleCompare}>{t('diff.compare')}</button>
+				<button type="button" style={{ ...styles.btn, background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text)' }} onClick={handleSwap}>⇄ {t('diff.swap')}</button>
+				<button type="button" style={{ ...styles.btn, background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text)' }} onClick={handleClear}>{t('diff.clear')}</button>
 			</div>
 
 			{/* Stats */}
@@ -86,6 +87,7 @@ export const DiffPanel: React.FC = () => {
 								prefix = '- ';
 							}
 							return (
+								// biome-ignore lint/suspicious/noArrayIndexKey: Diff segments are a stateless ordered projection; sequence position is their identity.
 								<div key={i} style={lineStyle}>
 									{prefix}{diff.value}
 								</div>

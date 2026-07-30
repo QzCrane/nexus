@@ -91,7 +91,7 @@ export function rgbToCmyk(rgb: RGBColor): CMYKColor {
 export function getLuminance(rgb: RGBColor): number {
 	const [r, g, b] = [rgb.r, rgb.g, rgb.b].map(v => {
 		const s = v / 255;
-		return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+		return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
 	});
 	return 0.2126 * (r || 0) + 0.7152 * (g || 0) + 0.0722 * (b || 0);
 }
@@ -129,7 +129,9 @@ export function parseColor(input: string): ColorInfo | null {
 	// RGB format: rgb(r, g, b)
 	const rgbMatch = trimmed.match(/rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/);
 	if (rgbMatch) {
-		const rgb = { r: +rgbMatch[1]!, g: +rgbMatch[2]!, b: +rgbMatch[3]! };
+		const [, red, green, blue] = rgbMatch;
+		if (red === undefined || green === undefined || blue === undefined) return null;
+		const rgb = { r: +red, g: +green, b: +blue };
 		return { hex: rgbToHex(rgb), rgb, hsl: rgbToHsl(rgb), cmyk: rgbToCmyk(rgb) };
 	}
 

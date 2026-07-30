@@ -149,6 +149,8 @@ async function copyPairingLink(code: HTMLElement, remoteUrl: string): Promise<vo
 		}, 1000);
 	} catch {
 		// Clipboard permission may be unavailable; the visible link remains usable.
+		code.focus();
+		code.scrollIntoView({ block: 'nearest' });
 	}
 }
 

@@ -1,9 +1,11 @@
 // goal: Command Palette for quick tool access (Ctrl+K)
 // eff: Elegant fuzzy search with keyboard navigation
 
-import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import type React from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import type { ToolId } from '../../kernel';
+import { resolveCommandPaletteKeyAction } from './command-palette-keyboard';
 
 interface CommandPaletteProps {
 	isOpen: boolean;
@@ -82,25 +84,43 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
 
 	// Keyboard navigation
 	const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-		if (e.key === 'Escape') { onClose(); return; }
-		if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex((i) => Math.min(i + 1, filtered.length - 1)); return; }
-		if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex((i) => Math.max(i - 1, 0)); return; }
-		if (e.key === 'Enter' && filtered[activeIndex]) {
-			onSelectTool(filtered[activeIndex].id);
+		const action = resolveCommandPaletteKeyAction(
+			e.key,
+			e.target === inputRef.current,
+		);
+		if (action === 'close') {
+			onClose();
+			return;
+		}
+		if (action === 'next') {
+			e.preventDefault();
+			setActiveIndex((i) => Math.min(i + 1, Math.max(filtered.length - 1, 0)));
+			return;
+		}
+		if (action === 'previous') {
+			e.preventDefault();
+			setActiveIndex((i) => Math.max(i - 1, 0));
+			return;
+		}
+		const activeTool = filtered[activeIndex];
+		if (action === 'select-active' && activeTool) {
+			e.preventDefault();
+			onSelectTool(activeTool.id);
 			onClose();
 		}
 	}, [filtered, activeIndex, onClose, onSelectTool]);
 
-	// Click outside to close
-	const handleOverlayClick = useCallback((e: React.MouseEvent) => {
-		if (e.target === e.currentTarget) onClose();
-	}, [onClose]);
-
 	if (!isOpen) return null;
 
 	return (
-		<div style={styles.overlay} onClick={handleOverlayClick}>
-			<div style={styles.container} onKeyDown={handleKeyDown} role="dialog">
+		<div style={styles.overlay}>
+			<button
+				type="button"
+				aria-label={t('common.close')}
+				onClick={onClose}
+				style={{ position: 'absolute', inset: 0, border: 0, padding: 0, background: 'transparent' }}
+			/>
+			<div style={{ ...styles.container, position: 'relative' }} onKeyDown={handleKeyDown} role="dialog" aria-modal="true">
 				<input
 					ref={inputRef}
 					style={styles.input}
@@ -112,9 +132,17 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
 				<div style={styles.list} ref={listRef}>
 					{filtered.length > 0 ? (
 						filtered.map((tool, i) => (
-							<div
+							<button
+								type="button"
 								key={tool.id}
-								style={{ ...styles.item, ...(i === activeIndex ? styles.itemActive : {}) }}
+								style={{
+									...styles.item,
+									...(i === activeIndex ? styles.itemActive : {}),
+									width: '100%',
+									border: 'none',
+									color: 'inherit',
+									textAlign: 'left',
+								}}
 								onClick={() => { onSelectTool(tool.id); onClose(); }}
 								onMouseEnter={() => setActiveIndex(i)}
 							>
@@ -123,7 +151,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
 									<div style={styles.name}>{tool.name}</div>
 									<div style={styles.desc}>{tool.desc}</div>
 								</div>
-							</div>
+							</button>
 						))
 					) : (
 						<div style={styles.empty}>{t('common.noResults')}</div>

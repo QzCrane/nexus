@@ -1,6 +1,7 @@
 // goal: JSON to CSV panel UI
 
-import React, { useState, useCallback, useMemo } from 'react';
+import type React from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { jsonToCsv, parseJson } from './core';
 import { styles } from './panel.styles';
@@ -9,15 +10,18 @@ import { useToolState } from '../../kernel';
 
 export const JsonToCsvPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [input, setInput] = useToolState<string>('json-to-csv-input' as any, '');
-	const [delimiter, setDelimiter] = useToolState<string>('json-to-csv-delim' as any, ',');
+	const [input, setInput] = useToolState<string>('json-to-csv-input', '');
+	const [delimiter, setDelimiter] = useToolState<string>('json-to-csv-delim', ',');
 
 
 	const { output, error } = useMemo(() => {
 		if (!input.trim()) return { output: '', error: null };
 		const { data, error: parseError } = parseJson(input);
 		if (parseError) return { output: '', error: parseError };
-		return { output: jsonToCsv(data!, delimiter), error: null };
+		if (data === undefined || data === null) {
+			return { output: '', error: 'JSON input produced no data' };
+		}
+		return { output: jsonToCsv(data, delimiter), error: null };
 	}, [input, delimiter]);
 
 	const handleCopy = useCallback(() => {
@@ -55,8 +59,8 @@ export const JsonToCsvPanel: React.FC = () => {
 					<div style={styles.label}>{t('jsonToCsv.output')}</div>
 					<textarea style={styles.textarea} value={output} readOnly />
 					<div style={styles.row}>
-						<button style={styles.btn} onClick={handleCopy}>📋 {t('jsonToCsv.copy')}</button>
-						<button style={styles.btn} onClick={handleDownload}>⬇️ {t('jsonToCsv.download')}</button>
+						<button type="button" style={styles.btn} onClick={handleCopy}>📋 {t('jsonToCsv.copy')}</button>
+						<button type="button" style={styles.btn} onClick={handleDownload}>⬇️ {t('jsonToCsv.download')}</button>
 					</div>
 				</>
 			)}

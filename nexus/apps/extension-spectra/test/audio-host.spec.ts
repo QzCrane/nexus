@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import type { AudioConfig } from '@nexus/contracts';
 import {
 	describeAudioHost,
 	destroyAudioHost,
 	handleAudioHostMessage,
 } from '../src/offscreen/audio-host';
+import { requireValue } from './helpers/require-value';
 
 const DEFAULT_CONFIG: AudioConfig = {
 	enabled: true,
@@ -39,8 +40,14 @@ describe('offscreen audio host', () => {
 		expect(audioHarness.getUserMediaCalls).toHaveLength(1);
 		expect(audioHarness.contexts).toHaveLength(1);
 
-		const firstContext = audioHarness.contexts[0]!;
-		const firstStream = audioHarness.streams[0]!;
+		const firstContext = requireValue(
+			audioHarness.contexts[0],
+			'Expected the first capture to create an audio context',
+		);
+		const firstStream = requireValue(
+			audioHarness.streams[0],
+			'Expected the first capture to create a media stream',
+		);
 		expect(firstContext.resumeCalls).toBe(1);
 		expect(firstContext.compressors).toHaveLength(0);
 		expect(firstContext.delays).toHaveLength(0);
@@ -59,7 +66,11 @@ describe('offscreen audio host', () => {
 			normalizedActualConfig: { boostGain: 2.5, pan: 1, delay: 0, compressor: true },
 		});
 		expect(firstContext.compressors).toHaveLength(1);
-		expect(firstContext.panners[0]!.pan.value).toBe(1);
+		const firstPanner = requireValue(
+			firstContext.panners[0],
+			'Expected the updated graph to contain a stereo panner',
+		);
+		expect(firstPanner.pan.value).toBe(1);
 		expect(firstContext.delays).toHaveLength(0);
 
 		const gainCreationsBeforeStaleUpdate = firstContext.gains.length;
@@ -140,8 +151,14 @@ describe('offscreen audio host', () => {
 
 	test('keeps the acknowledged processor when a newer replacement cannot be created', async () => {
 		await start(13, 4, DEFAULT_CONFIG);
-		const originalContext = audioHarness.contexts[0]!;
-		const originalStream = audioHarness.streams[0]!;
+		const originalContext = requireValue(
+			audioHarness.contexts[0],
+			'Expected the original capture to create an audio context',
+		);
+		const originalStream = requireValue(
+			audioHarness.streams[0],
+			'Expected the original capture to create a media stream',
+		);
 		audioHarness.getUserMediaError = new Error('replacement denied');
 
 		const result = await start(13, 5, config({ volume: 240 }));
@@ -160,11 +177,23 @@ describe('offscreen audio host', () => {
 
 	test('switches replacement capture gates at one boundary without a full-gain overlap', async () => {
 		await start(19, 1, DEFAULT_CONFIG);
-		const originalContext = audioHarness.contexts[0]!;
+		const originalContext = requireValue(
+			audioHarness.contexts[0],
+			'Expected the original capture to create an audio context',
+		);
 		await start(19, 2, config({ volume: 240 }), 2);
-		const replacementContext = audioHarness.contexts[1]!;
-		const originalGate = originalContext.gains[0]!.gain;
-		const replacementGate = replacementContext.gains[0]!.gain;
+		const replacementContext = requireValue(
+			audioHarness.contexts[1],
+			'Expected replacement capture to create a second audio context',
+		);
+		const originalGate = requireValue(
+			originalContext.gains[0],
+			'Expected the original graph to expose its capture gate',
+		).gain;
+		const replacementGate = requireValue(
+			replacementContext.gains[0],
+			'Expected the replacement graph to expose its capture gate',
+		).gain;
 		const switchDown = originalGate.writes.find((write) => (
 			write.value === 0 && write.startTime > originalContext.currentTime
 		));
@@ -235,14 +264,21 @@ describe('offscreen audio host', () => {
 
 	test('rejects updates and same-generation restarts behind a stop tombstone', async () => {
 		await start(18, 6, DEFAULT_CONFIG);
-		const context = audioHarness.contexts[0]!;
+		const context = requireValue(
+			audioHarness.contexts[0],
+			'Expected the capture to create an audio context',
+		);
 		await handleAudioHostMessage({
 			type: 'OFFSCREEN_AUDIO_STOP',
 			tabId: 18,
 			generation: 6,
 		});
 
-		const gainWrites = context.gains[0]!.gain.writes.length;
+		const captureGate = requireValue(
+			context.gains[0],
+			'Expected the capture graph to expose its gate',
+		).gain;
+		const gainWrites = captureGate.writes.length;
 		expect(await handleAudioHostMessage({
 			type: 'OFFSCREEN_AUDIO_UPDATE',
 			tabId: 18,
@@ -260,7 +296,7 @@ describe('offscreen audio host', () => {
 				retryable: true,
 			},
 		});
-		expect(context.gains[0]!.gain.writes).toHaveLength(gainWrites);
+		expect(captureGate.writes).toHaveLength(gainWrites);
 
 		expect(await start(18, 6, config({ volume: 250 }))).toEqual({
 			ok: false,
@@ -283,32 +319,88 @@ describe('offscreen audio host', () => {
 		await start(17, 3, DEFAULT_CONFIG);
 		expectHost(17, 3, 1, { boostGain: 1 });
 
-		audioHarness.streams[0]!.track.end();
+		const stream = requireValue(
+			audioHarness.streams[0],
+			'Expected the capture to create a media stream',
+		);
+		const context = requireValue(
+			audioHarness.contexts[0],
+			'Expected the capture to create an audio context',
+		);
+		stream.track.end();
 		await waitFor(() => describeAudioHost().length === 0
-			&& audioHarness.contexts[0]!.closeCalls === 1);
-		expect(audioHarness.contexts[0]!.closeCalls).toBe(1);
+			&& context.closeCalls === 1);
+		expect(context.closeCalls).toBe(1);
+	});
+
+	test('acknowledges idle after exhausting best-effort processor cleanup', async () => {
+		await start(20, 1, DEFAULT_CONFIG);
+		const context = requireValue(
+			audioHarness.contexts[0],
+			'Expected the capture to create an audio context',
+		);
+		const commitGate = requireValue(
+			context.gains[0],
+			'Expected the capture graph to expose its commit gate',
+		);
+		commitGate.disconnect = () => {
+			throw new Error('synthetic disconnect failure');
+		};
+		const report = spyOn(console, 'error').mockImplementation(() => undefined);
+		try {
+			const stopped = await handleAudioHostMessage({
+				type: 'OFFSCREEN_AUDIO_STOP',
+				tabId: 20,
+				generation: 2,
+			});
+			expectIdle(stopped, 20, 2, 1);
+			expect(describeAudioHost()).toEqual([]);
+			expect(context.closeCalls).toBe(1);
+			expect(report).toHaveBeenCalledWith(
+				'[SPECTRA] Audio processor disposal completed with cleanup failures',
+				expect.any(AggregateError),
+			);
+		} finally {
+			report.mockRestore();
+		}
 	});
 
 	test('returns one throttled visualizer batch keyed by every requested tab', async () => {
 		await start(21, 1, DEFAULT_CONFIG);
 		await start(22, 1, DEFAULT_CONFIG);
-		expect(audioHarness.contexts[0]!.analysers).toHaveLength(0);
-		expect(audioHarness.contexts[1]!.analysers).toHaveLength(0);
+		const firstContext = requireValue(
+			audioHarness.contexts[0],
+			'Expected tab 21 to create an audio context',
+		);
+		const secondContext = requireValue(
+			audioHarness.contexts[1],
+			'Expected tab 22 to create an audio context',
+		);
+		expect(firstContext.analysers).toHaveLength(0);
+		expect(secondContext.analysers).toHaveLength(0);
 		await handleAudioHostMessage({
 			type: 'OFFSCREEN_AUDIO_SET_VIZ_SUBSCRIPTIONS',
 			tabIds: [21, 22],
 		});
+		const firstAnalyser = requireValue(
+			firstContext.analysers[0],
+			'Expected tab 21 visualizer subscription to create an analyser',
+		);
+		const secondAnalyser = requireValue(
+			secondContext.analysers[0],
+			'Expected tab 22 visualizer subscription to create an analyser',
+		);
 
 		const firstBatch = await handleAudioHostMessage({
 			type: 'OFFSCREEN_AUDIO_GET_VIZ_BATCH',
 			tabIds: [21, 22, 404],
 		}) as { frames: Record<string, number[] | null> };
 		expect(Object.keys(firstBatch.frames)).toEqual(['21', '22', '404']);
-		expect(firstBatch.frames['21']).toHaveLength(audioHarness.contexts[0]!.analysers[0]!.frequencyBinCount);
-		expect(firstBatch.frames['22']).toHaveLength(audioHarness.contexts[1]!.analysers[0]!.frequencyBinCount);
+		expect(firstBatch.frames['21']).toHaveLength(firstAnalyser.frequencyBinCount);
+		expect(firstBatch.frames['22']).toHaveLength(secondAnalyser.frequencyBinCount);
 		expect(firstBatch.frames['404']).toBeNull();
-		expect(audioHarness.contexts[0]!.analysers[0]!.readCalls).toBe(1);
-		expect(audioHarness.contexts[1]!.analysers[0]!.readCalls).toBe(1);
+		expect(firstAnalyser.readCalls).toBe(1);
+		expect(secondAnalyser.readCalls).toBe(1);
 
 		const secondBatch = await handleAudioHostMessage({
 			type: 'OFFSCREEN_AUDIO_GET_VIZ_BATCH',
@@ -316,8 +408,8 @@ describe('offscreen audio host', () => {
 		}) as { frames: Record<string, number[] | null> };
 		expect(secondBatch.frames['21']).toBe(firstBatch.frames['21']);
 		expect(secondBatch.frames['22']).toBe(firstBatch.frames['22']);
-		expect(audioHarness.contexts[0]!.analysers[0]!.readCalls).toBe(1);
-		expect(audioHarness.contexts[1]!.analysers[0]!.readCalls).toBe(1);
+		expect(firstAnalyser.readCalls).toBe(1);
+		expect(secondAnalyser.readCalls).toBe(1);
 		await handleAudioHostMessage({
 			type: 'OFFSCREEN_AUDIO_SET_VIZ_SUBSCRIPTIONS',
 			tabIds: [],

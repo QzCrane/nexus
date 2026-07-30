@@ -1,7 +1,7 @@
 // goal: Segmented control component for button-style options
 // eff: Replaces dropdowns with <= 5 options for better UX
 
-import React from 'react';
+import type React from 'react';
 
 export interface SegmentOption<T extends string | number> {
 	value: T;

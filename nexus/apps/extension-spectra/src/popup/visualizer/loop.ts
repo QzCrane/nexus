@@ -84,19 +84,14 @@ function stopScheduledFrame(): void {
 function isRunnable(subscription: VizSubscription): boolean {
 	if (!subscription.active || !subscription.visible) return false;
 	const config = subscription.params.getConfig();
-	// rule: sample whenever enhancement is on and not muted. Do NOT gate on
-	// isProcessorActive()/state.phase — that gate only updates on a matching
-	// spectra.audio.session.changed event, and when the handshake is stale or
-	// unmatched the popup's state.phase stays 'idle', freezing the visualizer
-	// even while real audio is playing. The background returns null frames
-	// when no audio is actually active, and runFrame's silent flag handles
-	// that case by drawing a flat canvas — so the gate is both redundant
-	// and harmful here. CPU is still bounded because the second visualizer
-	// test (audioEnabled: false) puts config.enabled=false and the runnable
-	// short-circuit fires before any IPC is issued.
+	// AudioSessionSnapshot is the processor-lifecycle authority. A matching
+	// active lifecycle wakes this scheduler through VISUALIZER_STATE_CHANGED_EVENT;
+	// an idle, stale or unmatched lifecycle stays flat without polling Background
+	// at 15 Hz merely to rediscover that no analyser exists.
 	return config.enabled
 		&& !config.muted
-		&& subscription.params.getGlobalSettings().visualizerEnabled !== false;
+		&& subscription.params.getGlobalSettings().visualizerEnabled !== false
+		&& subscription.params.isProcessorActive();
 }
 
 function hasRunnableSubscriptions(): boolean {
@@ -106,8 +101,29 @@ function hasRunnableSubscriptions(): boolean {
   return false;
 }
 
+function paintIdleSubscription(subscription: VizSubscription): void {
+  if (!subscription.active || !subscription.visible || subscription.silent) return;
+  drawViz(
+    subscription.params.canvas,
+    null,
+    true,
+    subscription.params.getCapturing(),
+  );
+  subscription.silent = true;
+}
+
 function reconcileScheduler(): void {
-  if (document.hidden || !hasRunnableSubscriptions()) {
+  if (document.hidden) {
+    stopScheduledFrame();
+    releaseSubscriptions();
+    return;
+  }
+  let hasRunnable = false;
+  for (const subscription of subscriptions) {
+    if (isRunnable(subscription)) hasRunnable = true;
+    else paintIdleSubscription(subscription);
+  }
+  if (!hasRunnable) {
     stopScheduledFrame();
     releaseSubscriptions();
     return;
@@ -131,10 +147,8 @@ function runFrame(): void {
   const ready: VizSubscription[] = [];
   for (const subscription of subscriptions) {
     if (!subscription.active || !subscription.visible || subscription.requesting) continue;
-    const { params } = subscription;
     if (!isRunnable(subscription)) {
-      if (!subscription.silent) drawViz(params.canvas, null, true, params.getCapturing());
-      subscription.silent = true;
+      paintIdleSubscription(subscription);
       continue;
     }
     subscription.silent = false;
@@ -166,6 +180,7 @@ async function sampleBatch(ready: VizSubscription[]): Promise<void> {
         && subscriberGeneration === generation
         && subscription.active
         && subscription.visible
+        && isRunnable(subscription)
         ? (response.data.frames[String(subscription.params.tabId)] ?? null)
         : null;
       drawViz(

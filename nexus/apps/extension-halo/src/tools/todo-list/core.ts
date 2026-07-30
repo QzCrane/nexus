@@ -34,8 +34,9 @@ export async function addTodo(text: string, priority: TodoItem['priority'] = 'me
 export async function updateTodo(id: string, updates: Partial<TodoItem>): Promise<void> {
 	const todos = await getTodos();
 	const index = todos.findIndex((t) => t.id === id);
-	if (index >= 0) {
-		todos[index] = { ...todos[index]!, ...updates };
+	const todo = index >= 0 ? todos[index] : undefined;
+	if (todo) {
+		todos[index] = { ...todo, ...updates };
 		await saveTodos(todos);
 	}
 }

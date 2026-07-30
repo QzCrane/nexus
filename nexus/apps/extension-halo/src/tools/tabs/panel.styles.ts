@@ -1,7 +1,7 @@
 // goal: Styles for TabsPanel
 // eff: Extracted to separate file
 
-import React from 'react';
+import type React from 'react';
 
 export const styles: Record<string, React.CSSProperties> = {
 	container: {

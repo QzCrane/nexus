@@ -22,14 +22,14 @@ export function handleDialogKeydown(
 	if (event.key !== 'Tab') return;
 
 	const focusable = focusableElements(dialog);
-	if (focusable.length === 0) {
+	const first = focusable.at(0);
+	const last = focusable.at(-1);
+	if (!first || !last) {
 		event.preventDefault();
 		dialog.focus();
 		return;
 	}
 
-	const first = focusable[0]!;
-	const last = focusable[focusable.length - 1]!;
 	if (event.shiftKey && document.activeElement === first) {
 		event.preventDefault();
 		last.focus();

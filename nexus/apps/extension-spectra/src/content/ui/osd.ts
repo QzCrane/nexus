@@ -43,6 +43,7 @@ interface OSDState {
 	claimedGesture: string | null;
 	lastTargetAt: number | null;
 	lastType: 'volume' | 'speed' | null;
+	disposed: boolean;
 }
 const state: OSDState = {
 	host: null,
@@ -55,6 +56,7 @@ const state: OSDState = {
 	claimedGesture: null,
 	lastTargetAt: null,
 	lastType: null,
+	disposed: false,
 };
 
 export interface OSDOptions {
@@ -93,7 +95,7 @@ export function advanceHotkeyTargetOSD(
 	s: ContentGlobalSettings,
 	gesture: string,
 ): void {
-	if (!s.osdEnabled) return;
+	if (state.disposed || !s.osdEnabled) return;
 	state.claimedGesture = gesture;
 	const priorHotkey = state.hotkey;
 	const sameKind = priorHotkey?.target.type === baseline.kind;
@@ -123,8 +125,9 @@ export function advanceHotkeyTargetOSD(
 		started ? priorHotkey?.phase : 'active',
 	);
 	const predictedState = feedback.kind === 'volume' ? feedback.volumeState : 'native';
-	const hotkey: HotkeyOSDTransaction = started
-		? {
+	const hotkey: HotkeyOSDTransaction = !started && priorHotkey
+		? priorHotkey
+		: {
 			gesture,
 			phase: 'active',
 			alternate: false,
@@ -132,8 +135,7 @@ export function advanceHotkeyTargetOSD(
 			volumeState: previous !== null && previous.value > 0
 				? previous.volumeState
 				: predictedState,
-		}
-		: priorHotkey!;
+		};
 	state.hotkey = hotkey;
 	if (hotkey.phase !== 'active' || hotkey.alternate) return;
 	if (feedback.kind === 'speed') {
@@ -160,7 +162,13 @@ export function advanceHotkeyTargetOSD(
 // physical gesture before its ACK arrives. This lets it supersede an older
 // visible transaction while rejecting a late ACK from that older gesture.
 export function claimHotkeyActualOSDGesture(gesture: string): void {
+	if (state.disposed) return;
 	state.claimedGesture = gesture;
+}
+
+export function ownsHotkeyActualOSDGesture(gesture: string): boolean {
+	return !state.disposed
+		&& (state.claimedGesture === gesture || state.hotkey?.gesture === gesture);
 }
 
 function feedbackPayload(feedback: SpectraHotkeyActualFeedback): OSDPayload {
@@ -207,7 +215,7 @@ export function showHotkeyActualOSD(
 	options: OSDOptions = {},
 	gesture?: string,
 ): void {
-	if (!s.osdEnabled) return;
+	if (state.disposed || !s.osdEnabled) return;
 	const alternate = options.variant === 'alternate-target';
 	let hotkey = state.hotkey;
 	if (!gesture) {
@@ -406,7 +414,7 @@ function concealOSD(): void {
 // The gesture identity remains until the in-flight ACK settles so late actual
 // feedback cannot repaint or restart the released surface.
 export function freezeHotkeyTargetOSD(gesture: string): void {
-	if (state.hotkey?.gesture !== gesture) return;
+	if (state.disposed || state.hotkey?.gesture !== gesture) return;
 	if (state.hotkey.phase === 'active') state.hotkey.phase = 'frozen';
 	cancelValueAnimation();
 	state.root?.getElementById('o')?.classList.add('v');
@@ -415,7 +423,7 @@ export function freezeHotkeyTargetOSD(gesture: string): void {
 }
 
 export function releaseHotkeyTargetOSD(gesture: string): void {
-	if (state.hotkey?.gesture !== gesture) return;
+	if (state.disposed || state.hotkey?.gesture !== gesture) return;
 	if (state.timer === null) {
 		state.hotkey = null;
 		return;
@@ -431,6 +439,7 @@ function renderOSD(
 	animate = true,
 	refreshHide = true,
 ): void {
+	if (state.disposed) return;
 	if (!state.host?.isConnected || !state.root) {
 		const surface = createFeedbackSurface(
 			'spectra-osd-host',
@@ -494,4 +503,21 @@ export function hideOSD(preserveShortcutTarget = false): void {
 		state.hotkey = null;
 		state.claimedGesture = null;
 	}
+}
+
+// eff: cancels all retained presentation work and rejects late generation ACKs.
+export function disposeOSD(): void {
+	state.disposed = true;
+	if (state.timer) clearTimeout(state.timer);
+	state.timer = null;
+	cancelValueAnimation();
+	state.host?.remove();
+	state.host = null;
+	state.root = null;
+	state.displayedValue = null;
+	state.presentation = null;
+	state.hotkey = null;
+	state.claimedGesture = null;
+	state.lastTargetAt = null;
+	state.lastType = null;
 }

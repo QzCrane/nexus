@@ -2,11 +2,13 @@
  * 检查 AI 卫生规则 (AI hygiene)
  *
  * 捕获 AI 在重构过程中倾向于重新引入的架构违规：
- *  1. HALO 缺少 lint script
- *  2. 通过 @nexus/<pkg>/src/... 深路径导入包内部
- *  3. 残留已删除的 branded type (TabId / VolumeLevel / DomainName)
- *  4. 相对 TS 导入缺少 .js 扩展名 (ESM 运行时要求)
- *  5. 引用已删除的 messages.contracts.ts 文件
+ *  1. 通过 @nexus/<pkg>/src/... 深路径导入包内部
+ *  2. 残留已删除的 branded type (TabId / VolumeLevel / DomainName)
+ *  3. 相对 TS 导入缺少 .js 扩展名 (ESM 运行时要求)
+ *  4. 引用已删除的 messages.contracts.ts 文件
+ *
+ * Workspace lint 覆盖由 scripts/check-workspace-lint.mjs 唯一拥有，
+ * 此架构检查不维护第二份 package 或 baseline 清单。
  */
 
 import fs from 'node:fs';
@@ -25,7 +27,6 @@ const ALLOWED_ASSET_EXTENSIONS = ['.js', '.json', '.css', '.svg'];
  */
 export function checkAiHygiene(ROOT) {
 	section('检查 AI 卫生规则 (AI hygiene)...');
-	checkHaloLintScript(ROOT);
 	checkNoDeepPathImports(ROOT);
 	checkNoBrandedTypes(ROOT);
 	checkRelativeImportsHaveJsExtension(ROOT);
@@ -33,28 +34,7 @@ export function checkAiHygiene(ROOT) {
 }
 
 /**
- * Rule 1: HALO 必须存在 lint script。
- * 仅校验脚本存在；不把 HALO 接入根级 turbo lint 链路（保留既有 631 条 biome 错误的 baseline）。
- */
-function checkHaloLintScript(ROOT) {
-	const haloPkgPath = path.join(ROOT, 'apps/extension-halo/package.json');
-	if (!fs.existsSync(haloPkgPath)) {
-		error('HALO package.json 不存在，无法校验 lint script');
-		return;
-	}
-
-	const pkg = JSON.parse(fs.readFileSync(haloPkgPath, 'utf-8'));
-	const lintScript = pkg?.scripts?.lint;
-	if (!lintScript || typeof lintScript !== 'string' || lintScript.trim() === '') {
-		error('HALO 缺少 lint script');
-		return;
-	}
-
-	ok('HALO lint script 存在');
-}
-
-/**
- * Rule 2: 禁止 @nexus/<pkg>/src/... 深路径导入。
+ * Rule 1: 禁止 @nexus/<pkg>/src/... 深路径导入。
  * 应使用包根导出或 package.json exports 字段声明的子路径。
  */
 function checkNoDeepPathImports(ROOT) {

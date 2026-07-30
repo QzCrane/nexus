@@ -40,7 +40,7 @@ export function formatEntry(e: DomainEntry): string {
 
 // eff: strips UI-only decorators (emojis) and returns a clean DomainEntry object for persistence
 export function parseEntry(line: string): DomainEntry {
-	const cleaned = line.replace(/^[📋✏️🔍]\s*/, '').trim();
+	const cleaned = line.replace(/^(?:📋|✏️|🔍)\s*/, '').trim();
 	const fingerprint = createSiteRouteFingerprint(cleaned);
 	if (!fingerprint) throw new Error('Invalid registry domain');
 	return {

@@ -1,7 +1,7 @@
 // goal: Appearance settings section
 // eff: Split from SettingsPanel
 
-import React from 'react';
+import type React from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { HaloSettings, ThemeMode } from '../../kernel';
@@ -28,7 +28,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ settings
 					</div>
 					<div style={styles.themeGrid}>
 						{(['dark', 'light', 'system'] as ThemeMode[]).map((mode) => (
-							<button
+							<button type="button"
 								key={mode}
 								onClick={() => onUpdate('theme', mode)}
 								style={{
@@ -52,9 +52,12 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ settings
 					</div>
 					<div style={styles.colorGrid}>
 						{ACCENT_COLORS.map((color) => (
-							<div
+							<button
+								type="button"
 								key={color.value}
 								onClick={() => onUpdate('accentColor', color.value)}
+								aria-label={color.name}
+								aria-pressed={settings.accentColor === color.value}
 								style={{
 									...styles.colorSwatch,
 									background: color.value,

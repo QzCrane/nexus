@@ -5,21 +5,29 @@ export function parseUserScriptHeader(code: string): ParsedHeader | null {
 	const headerMatch = code.match(/\/\/\s*==UserScript==([\s\S]*?)\/\/\s*==\/UserScript==/);
 	if (!headerMatch) return null;
 
-	const lines = headerMatch[1]!.split('\n');
+	const headerSource = headerMatch[1];
+	if (headerSource === undefined) return null;
+	const lines = headerSource.split('\n');
 	const header: ParsedHeader = {};
 
 	for (const line of lines) {
 		const match = line.match(/\/\/\s*@([\w-]+)\s+(.*)/);
 		if (match) {
-			const [, key, value] = match;
-			const trimmedValue = value!.trim();
+			const key = match[1];
+			const value = match[2];
+			if (key === undefined || value === undefined) continue;
+			const trimmedValue = value.trim();
 
 			// Handle array fields
 			if (key === 'match' || key === 'exclude' || key === 'grant') {
-				if (!header[key]) header[key] = [];
-				(header[key] as string[]).push(trimmedValue);
+				const values = header[key];
+				if (Array.isArray(values)) {
+					values.push(trimmedValue);
+				} else {
+					header[key] = [trimmedValue];
+				}
 			} else {
-				(header as any)[key!] = trimmedValue;
+				header[key] = trimmedValue;
 			}
 		}
 	}

@@ -73,7 +73,7 @@ function evaluateAndTrigger(
 }
 
 /** Handle mouseover - only for highlight in 'always' mode */
-export function createOnOver(state: HoverZoomState, preload: PreloadState) {
+export function createOnOver(state: HoverZoomState, _preload: PreloadState) {
 	return (e: MouseEvent) => {
 		if (!state.settings.enabled) return;
 		state.lastX = e.clientX;
@@ -99,7 +99,7 @@ export function createOnOut(state: HoverZoomState) {
 
 		if (state.currentTarget) {
 			if (related && state.currentTarget.contains(related)) return;
-			if (related && related.contains(state.currentTarget)) return;
+			if (related?.contains(state.currentTarget)) return;
 			clearTriggerTimer();
 			cancel(state);
 		}
@@ -131,7 +131,7 @@ export function createOnMove(state: HoverZoomState, preload: PreloadState) {
 		const resourcePref = detectResourcePreference(state.settings.resourceKeys, e);
 		const hotkeysActive = resourcePref !== null;
 
-		if (hotkeysActive) state.currentResourcePref = resourcePref!;
+		if (resourcePref !== null) state.currentResourcePref = resourcePref;
 
 		clearTriggerTimer();
 

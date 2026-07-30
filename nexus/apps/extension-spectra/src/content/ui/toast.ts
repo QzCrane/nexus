@@ -6,7 +6,8 @@ const s: {
 	root: ShadowRoot | null;
 	timer: ReturnType<typeof setTimeout> | null;
 	shortcutGesture: string | null;
-} = { host: null, root: null, timer: null, shortcutGesture: null };
+	disposed: boolean;
+} = { host: null, root: null, timer: null, shortcutGesture: null, disposed: false };
 
 export interface ToastOptions {
 	variant?: 'alternate-target';
@@ -26,7 +27,7 @@ function scheduleToastHide(toast: HTMLElement): void {
 }
 
 export function showToast(msg: string, options: ToastOptions = {}): void {
-	if (!document.documentElement) return;
+	if (s.disposed || !document.documentElement) return;
 	if (!s.host?.isConnected || !s.root) {
 		const surface = createFeedbackSurface(
 			'spectra-toast-host',
@@ -77,7 +78,7 @@ export function showToast(msg: string, options: ToastOptions = {}): void {
 // Keyup freezes a held label and restarts its readable display window. It does
 // not share ownership with cancellation of the underlying shortcut writer.
 export function freezeHotkeyToast(gesture: string): void {
-	if (s.shortcutGesture !== gesture) return;
+	if (s.disposed || s.shortcutGesture !== gesture) return;
 	const toast = s.root?.getElementById('t');
 	if (!toast) return;
 	toast.classList.remove('hide');
@@ -97,4 +98,15 @@ export function hideToast(): void {
 	}
 	s.shortcutGesture = null;
 	s.root?.getElementById('t')?.classList.add('hide');
+}
+
+// eff: prevents late work from an obsolete Content generation from recreating UI.
+export function disposeToast(): void {
+	s.disposed = true;
+	if (s.timer) clearTimeout(s.timer);
+	s.timer = null;
+	s.shortcutGesture = null;
+	s.host?.remove();
+	s.host = null;
+	s.root = null;
 }

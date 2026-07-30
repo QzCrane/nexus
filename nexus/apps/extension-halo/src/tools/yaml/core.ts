@@ -2,19 +2,24 @@
 
 import type { YamlConvertResult } from './types';
 
+function isJson(value: string): boolean {
+	try {
+		JSON.parse(value);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 // Detect if input is JSON or YAML
 export function detectInputType(input: string): 'json' | 'yaml' | 'unknown' {
 	const trimmed = input.trim();
 	// JSON starts with { or [ 
-	if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
-		(trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-		try {
-			JSON.parse(trimmed);
-			return 'json';
-		} catch {
-			// Might be YAML object/array syntax
-		}
-	}
+	if (
+		((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+			(trimmed.startsWith('[') && trimmed.endsWith(']'))) &&
+		isJson(trimmed)
+	) return 'json';
 	// YAML indicators: starts with key: or - or has no braces
 	if (/^[a-zA-Z_][a-zA-Z0-9_]*\s*:/m.test(trimmed) || trimmed.startsWith('-')) {
 		return 'yaml';
@@ -45,7 +50,8 @@ function getIndent(line: string): number {
 function parseLines(lines: string[], startIdx: number, baseIndent: number): ParseResult {
 	if (startIdx >= lines.length) return { value: null, consumed: 0 };
 
-	const firstLine = lines[startIdx]!;
+	const firstLine = lines[startIdx];
+	if (firstLine === undefined) return { value: null, consumed: 0 };
 	const indent = getIndent(firstLine);
 	if (indent < baseIndent) return { value: null, consumed: 0 };
 
@@ -63,7 +69,8 @@ function parseArray(lines: string[], startIdx: number, baseIndent: number): Pars
 	let i = startIdx;
 
 	while (i < lines.length) {
-		const line = lines[i]!;
+		const line = lines[i];
+		if (line === undefined) break;
 		const indent = getIndent(line);
 		if (indent < baseIndent || !line.trim().startsWith('-')) break;
 
@@ -87,7 +94,8 @@ function parseObject(lines: string[], startIdx: number, baseIndent: number): Par
 	let i = startIdx;
 
 	while (i < lines.length) {
-		const line = lines[i]!;
+		const line = lines[i];
+		if (line === undefined) break;
 		const indent = getIndent(line);
 		if (indent < baseIndent) break;
 		if (indent > baseIndent) { i++; continue; }
@@ -127,9 +135,13 @@ function parseValue(str: string): unknown {
 // JSON to YAML converter
 export function jsonToYaml(json: string): YamlConvertResult {
 	try {
-		const obj = JSON.parse(json);
+		const obj: unknown = JSON.parse(json);
 		const yaml = toYamlString(obj, 0);
-		return { success: true, output: yaml };
+		return {
+			success: true,
+			output: yaml,
+			normalizedInput: JSON.stringify(obj, null, 2),
+		};
 	} catch (e) {
 		return { success: false, output: '', error: (e as Error).message };
 	}
@@ -153,7 +165,7 @@ function toYamlString(value: unknown, indent: number): string {
 		return value.map((item) => {
 			const itemStr = toYamlString(item, indent + 1);
 			if (typeof item === 'object' && item !== null) {
-				return `${prefix}- \n${itemStr.split('\n').map((l) => prefix + '  ' + l.trim()).join('\n')}`;
+				return `${prefix}- \n${itemStr.split('\n').map((l) => `${prefix}  ${l.trim()}`).join('\n')}`;
 			}
 			return `${prefix}- ${itemStr}`;
 		}).join('\n');

@@ -95,9 +95,15 @@ async function calculateMD5(file: File): Promise<string> {
 			else if (j < 48) { F = B ^ C ^ D; g = (3 * j + 5) % 16; }
 			else { F = C ^ (B | ~D); g = (7 * j) % 16; }
 
-			F = (F + A + K[j]! + M[g]!) >>> 0;
+			const constant = K[j];
+			const word = M[g];
+			const shift = S[j];
+			if (constant === undefined || word === undefined || shift === undefined) {
+				throw new RangeError(`Invalid MD5 round index ${j}`);
+			}
+			F = (F + A + constant + word) >>> 0;
 			A = D; D = C; C = B;
-			B = (B + ((F << S[j]!) | (F >>> (32 - S[j]!)))) >>> 0;
+			B = (B + ((F << shift) | (F >>> (32 - shift)))) >>> 0;
 		}
 
 		a0 = (a0 + A) >>> 0; b0 = (b0 + B) >>> 0;

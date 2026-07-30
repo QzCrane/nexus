@@ -1,7 +1,8 @@
 // goal: Ruler tool panel UI with i18n support
 // eff: Styles and component extracted
 
-import React, { useState, useCallback, useEffect } from 'react';
+import type React from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { createLogger } from '@nexus/kernel';
 import { useTranslation } from '../../i18n';
@@ -20,8 +21,8 @@ export const RulerPanel: React.FC = () => {
 	const { showToast } = useToast();
 	const [isActive, setIsActive] = useState(false);
 	const [measurement, setMeasurement] = useState<RulerMeasurement | null>(null);
-	const [unit, setUnit] = useToolState<'px' | 'rem'>('ruler-unit' as any, 'px');
-	const [remBase, setRemBase] = useToolState<number>('ruler-rem-base' as any, 16);
+	const [unit, setUnit] = useToolState<'px' | 'rem'>('ruler-unit', 'px');
+	const [remBase, setRemBase] = useToolState<number>('ruler-rem-base', 16);
 
 	useEffect(() => {
 		// Listen for measurement results from content script
@@ -39,29 +40,27 @@ export const RulerPanel: React.FC = () => {
 	}, []);
 
 	const handleToggle = useCallback(async () => {
-		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-		if (!tab?.id) return;
+		try {
+			const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+			if (!tab?.id) return;
 
-		if (isActive) {
-			await chrome.tabs.sendMessage(tab.id, { type: 'HALO_RULER_CANCEL' });
-			setIsActive(false);
-		} else {
-			await chrome.tabs.sendMessage(tab.id, { type: 'HALO_RULER_START' });
-			setIsActive(true);
-			logger.info('Ruler started');
+			if (isActive) {
+				await chrome.tabs.sendMessage(tab.id, { type: 'HALO_RULER_CANCEL' });
+				setIsActive(false);
+			} else {
+				await chrome.tabs.sendMessage(tab.id, { type: 'HALO_RULER_START' });
+				setIsActive(true);
+				logger.info('Ruler started');
+			}
+		} catch (error: unknown) {
+			logger.error('Failed to update ruler state', error);
 		}
 	}, [isActive]);
 
-	const handleUnitChange = useCallback(async (e: React.ChangeEvent<HTMLSelectElement>) => {
-		const newUnit = e.target.value as 'px' | 'rem';
-		setUnit(newUnit);
-	}, [remBase]);
-
-
-	const handleRemBaseChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+	const handleRemBaseChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
 		const val = parseInt(e.target.value, 10) || 16;
 		setRemBase(val);
-	}, [unit]);
+	}, [setRemBase]);
 
 
 	const handleCopyValue = useCallback(async (value: string) => {
@@ -71,7 +70,7 @@ export const RulerPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
-			<button
+			<button type="button"
 				style={{ ...styles.startBtn, ...(isActive ? styles.activeBtn : {}) }}
 				onClick={handleToggle}
 			>

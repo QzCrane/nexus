@@ -46,6 +46,9 @@ export async function scanQRCodeFromClipboard(): Promise<ScanResult | null> {
 				return scanQRCodeFromFile(new File([blob], 'clip.png', { type: imageType }));
 			}
 		}
-	} catch { }
+	} catch (error: unknown) {
+		console.warn('[HALO:QRCode] Clipboard image read failed', error);
+		return null;
+	}
 	return null;
 }

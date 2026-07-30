@@ -31,9 +31,9 @@ Commands carry the exact session ID, a strictly increasing safe-integer sequence
 
 ## Unified offscreen integration
 
-`src/offscreen-remote/remote-host.ts` exports `createRemoteHostController()` and does not register global listeners. Unified `src/offscreen/index.ts` owns integration and delegates exact message families.
+`src/offscreen-remote/remote-host.ts` exports `createRemoteHostController()` and does not register global listeners. Unified `src/offscreen/index.ts` owns integration and delegates exact message families. Capture/HELLO and empty Remote queries do not load the controller or PeerJS. The first explicit `REMOTE_HOST_CREATE_SESSION` dynamically loads the Remote module, whose offscreen-local single-flight loader inserts only `peerjs-vendor.js`, verifies `globalThis.Peer`, and exposes failure only to that request; there is no CDN fallback, polling, background retry, or second session owner.
 
-Call `remoteHost.destroy()` during `pagehide`. Background owns the remote offscreen lease for the entire session and releases it only after explicit close, tab close, pairing expiry, or reconnect expiry.
+The unified runtime calls the lazy Remote disposer during `pagehide`, aborting an in-flight vendor load before destroying pending/active sessions. Background owns the remote offscreen lease for the entire session and releases it only after explicit close, tab close, pairing expiry, or reconnect expiry.
 
 ## Internal host messages
 

@@ -1,6 +1,7 @@
 // goal: Todo List panel UI - task management
 
-import React, { useState, useEffect, useCallback } from 'react';
+import type React from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import type { TodoItem } from './types';
 import { getTodos, addTodo, toggleTodo, deleteTodo, clearCompleted, PRIORITY_COLORS } from './core';
@@ -11,8 +12,8 @@ import { useToolState } from '../../kernel';
 export const TodoListPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [todos, setTodos] = useState<TodoItem[]>([]);
-	const [input, setInput] = useToolState<string>('todo-input' as any, '');
-	const [filter, setFilter] = useToolState<'all' | 'active' | 'completed'>('todo-filter' as any, 'all');
+	const [input, setInput] = useToolState<string>('todo-input', '');
+	const [filter, setFilter] = useToolState<'all' | 'active' | 'completed'>('todo-filter', 'all');
 
 
 	// Load todos
@@ -26,7 +27,7 @@ export const TodoListPanel: React.FC = () => {
 		await addTodo(input);
 		setInput('');
 		setTodos(await getTodos());
-	}, [input]);
+	}, [input, setInput]);
 
 	// Toggle
 	const handleToggle = useCallback(async (id: string) => {
@@ -66,13 +67,13 @@ export const TodoListPanel: React.FC = () => {
 					placeholder={t('todoList.placeholder')}
 					onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
 				/>
-				<button style={styles.btn} onClick={handleAdd}>+</button>
+				<button type="button" style={styles.btn} onClick={handleAdd}>+</button>
 			</div>
 
 			{/* Filter tabs */}
 			<div style={{ display: 'flex', gap: '8px' }}>
 				{(['all', 'active', 'completed'] as const).map((f) => (
-					<button
+					<button type="button"
 						key={f}
 						style={{ ...styles.deleteBtn, fontWeight: filter === f ? 600 : 400, color: filter === f ? 'var(--halo-accent)' : 'var(--halo-text-muted)' }}
 						onClick={() => setFilter(f)}
@@ -97,7 +98,7 @@ export const TodoListPanel: React.FC = () => {
 								onChange={() => handleToggle(todo.id)}
 							/>
 							<span style={{ ...styles.text, ...(todo.completed ? styles.textCompleted : {}) }}>{todo.text}</span>
-							<button style={styles.deleteBtn} onClick={() => handleDelete(todo.id)}>🗑️</button>
+							<button type="button" style={styles.deleteBtn} onClick={() => handleDelete(todo.id)}>🗑️</button>
 						</div>
 					))
 				)}
@@ -108,7 +109,7 @@ export const TodoListPanel: React.FC = () => {
 				<div style={styles.footer}>
 					<span>{activeCount} {t('todoList.remaining')}</span>
 					{todos.some((t) => t.completed) && (
-						<button style={styles.deleteBtn} onClick={handleClearCompleted}>{t('todoList.clearCompleted')}</button>
+						<button type="button" style={styles.deleteBtn} onClick={handleClearCompleted}>{t('todoList.clearCompleted')}</button>
 					)}
 				</div>
 			)}

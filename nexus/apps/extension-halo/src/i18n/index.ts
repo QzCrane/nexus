@@ -2,7 +2,13 @@
 // eff: Delegates core logic to i18n-core.ts
 
 import { useState, useEffect, useCallback, createContext, useContext } from 'react';
-import type { Locale, TranslationKeys, LocaleSetting } from './types';
+import type {
+	Locale,
+	TranslationFunction,
+	TranslationKeys,
+	TranslationOptions,
+	LocaleSetting,
+} from './types';
 import {
 	STORAGE_KEY,
 	REGISTRY,
@@ -27,7 +33,7 @@ interface I18nContextValue {
 	locale: Locale;
 	setting: LocaleSetting;
 	setLocale: (setting: LocaleSetting) => void;
-	t: (path: string, options?: { defaultValue?: string } & Record<string, any>) => string;
+	t: TranslationFunction;
 	translations: TranslationKeys;
 }
 
@@ -44,14 +50,16 @@ export function useTranslation() {
 	const [locale, setLocale] = useState<Locale>(resolvedLocale);
 	const [setting, setSetting] = useState<LocaleSetting>(currentSetting);
 	const [ready, setReady] = useState(i18nReady);
-	const [tick, setTick] = useState(0);
+	const [translations, setTranslations] = useState<TranslationKeys>(
+		() => REGISTRY[resolvedLocale],
+	);
 
 	useEffect(() => {
 		const onUpdate = () => {
 			setLocale(resolvedLocale);
 			setSetting(currentSetting);
 			setReady(i18nReady);
-			setTick((t) => t + 1);
+			setTranslations(REGISTRY[resolvedLocale]);
 		};
 		listeners.add(onUpdate);
 		return () => {
@@ -71,9 +79,9 @@ export function useTranslation() {
 		notify();
 	}, []);
 
-	const t = useCallback((path: string, options?: { defaultValue?: string } & Record<string, any>): string => {
+	const t = useCallback((path: string, options?: TranslationOptions): string => {
 		const { defaultValue, ...params } = options || {};
-		const val = getByPath(REGISTRY[resolvedLocale], path, params);
+		const val = getByPath(translations, path, params);
 
 		if (val === path && defaultValue) {
 			// If key not found (val === path), return defaultValue
@@ -84,15 +92,20 @@ export function useTranslation() {
 			return result;
 		}
 		return val;
-	}, [tick]);
-
-	const translations = REGISTRY[resolvedLocale];
+	}, [translations]);
 
 	return { locale, setting, setLocale: updateLocale, t, translations, ready };
 }
 
 // Provider exports
 export { I18nContext };
-export type { Locale, LocaleSetting, TranslationKeys };
+export type {
+	Locale,
+	LocaleSetting,
+	TranslationFunction,
+	TranslationKeys,
+	TranslationOptions,
+	TranslationParams,
+} from './types';
 export { REGISTRY as LOCALES };
 

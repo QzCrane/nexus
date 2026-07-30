@@ -1,6 +1,7 @@
 // goal: Protobuf panel UI
 
-import React, { useState, useMemo } from 'react';
+import type React from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { decodeProto, parseInput, type ProtoField } from './core';
 import { styles } from './panel.styles';
@@ -16,7 +17,7 @@ const FieldNode: React.FC<{ field: ProtoField }> = ({ field }) => {
             {!field.subMessage && <span style={styles.value}>: {String(field.value)}</span>}
             {field.subMessage && (
                 <div>
-                    {field.subMessage.map((sub, i) => <FieldNode key={i} field={sub} />)}
+                    {field.subMessage.map((sub) => <FieldNode key={sub.offset} field={sub} />)}
                 </div>
             )}
         </div>
@@ -25,7 +26,7 @@ const FieldNode: React.FC<{ field: ProtoField }> = ({ field }) => {
 
 export const ProtobufPanel: React.FC = () => {
     const { t } = useTranslation();
-    const [input, setInput] = useToolState<string>('protobuf-input' as any, '');
+    const [input, setInput] = useToolState<string>('protobuf-input', '');
 
 
     const decoded = useMemo(() => {
@@ -47,7 +48,7 @@ export const ProtobufPanel: React.FC = () => {
             <div style={styles.viewer}>
                 {decoded ? (
                     decoded.length > 0 ? (
-                        decoded.map((f, i) => <FieldNode key={i} field={f} />)
+                        decoded.map((f) => <FieldNode key={f.offset} field={f} />)
                     ) : (
                         <div style={{color: 'var(--halo-text-muted)'}}>{t('protobuf.noFields', { defaultValue: 'No fields found or invalid format' })}</div>
                     )

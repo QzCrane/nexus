@@ -37,7 +37,7 @@ export async function extractArticle(): Promise<ArticleContent | null> {
 
 				// Get title
 				const title = document.querySelector('h1')?.textContent?.trim() ||
-					document.title.split(/[|\-–]/)[0]!.trim();
+					document.title.split(/[|\-–]/)[0]?.trim() || '';
 
 				// Get site name
 				const siteName = document.querySelector('meta[property="og:site_name"]')?.getAttribute('content') ||
@@ -48,13 +48,17 @@ export async function extractArticle(): Promise<ArticleContent | null> {
 
 				// Clean content
 				const clone = content.cloneNode(true) as Element;
-				clone.querySelectorAll('script, style, nav, header, footer, aside, .ad, .advertisement, .social-share').forEach((el) => el.remove());
+				clone.querySelectorAll('script, style, nav, header, footer, aside, .ad, .advertisement, .social-share').forEach((el) => {
+					el.remove();
+				});
 
 				// rule: sanitize before returning innerHTML — page DOM is attacker-controlled
 				// and panel.tsx renders via dangerouslySetInnerHTML in the sidepanel context
 				// which has chrome.storage access. Inline <script>/on*/javascript: URLs would
 				// otherwise execute in the extension privileged context (XSS → RCE-equivalent).
-				clone.querySelectorAll('script, iframe, object, embed, link, meta, base, form, svg, math').forEach((el) => el.remove());
+				clone.querySelectorAll('script, iframe, object, embed, link, meta, base, form, svg, math').forEach((el) => {
+					el.remove();
+				});
 				clone.querySelectorAll('*').forEach((el) => {
 					for (const attr of Array.from(el.attributes)) {
 						const name = attr.name.toLowerCase();
@@ -97,7 +101,7 @@ export const DEFAULT_CONFIG: ReaderConfig = {
 };
 
 // Theme styles
-export const THEMES: Record<string, { bg: string; text: string; accent: string }> = {
+export const THEMES: Record<ReaderConfig['theme'], { bg: string; text: string; accent: string }> = {
 	light: { bg: '#ffffff', text: '#1a1a1a', accent: '#6366f1' },
 	sepia: { bg: '#f4ecd8', text: '#5b4636', accent: '#8b6914' },
 	dark: { bg: '#1a1a1a', text: '#e0e0e0', accent: '#818cf8' },

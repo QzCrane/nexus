@@ -85,10 +85,10 @@ export async function getActiveBackgroundServices(): Promise<string[]> {
 	}
 
 	// Add active user scripts (if global userscripts is enabled)
-	const isUserscriptsEnabled = prefs['userscripts']?.enabled ?? true;
+	const isUserscriptsEnabled = prefs.userscripts?.enabled ?? true;
 	if (isUserscriptsEnabled) {
-		const scriptData = local['halo_userscripts'];
-		if (scriptData && scriptData.scripts) {
+		const scriptData = local.halo_userscripts;
+		if (scriptData?.scripts) {
 			const scripts = scriptData.scripts as Array<{ id: string; enabled: boolean; saatToolId?: string }>;
 			scripts.forEach(script => {
 				if (script.enabled) {

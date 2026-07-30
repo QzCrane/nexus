@@ -21,7 +21,7 @@ const WORDS = [
 
 // Get random word
 function randomWord(): string {
-	return WORDS[Math.floor(Math.random() * WORDS.length)]!;
+	return WORDS[Math.floor(Math.random() * WORDS.length)] ?? 'lorem';
 }
 
 // Generate words
@@ -42,7 +42,7 @@ function generateSentence(startWithLorem: boolean): string {
 	const wordCount = 8 + Math.floor(Math.random() * 8);
 	let sentence = generateWords(wordCount, startWithLorem);
 	sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
-	return sentence + '.';
+	return `${sentence}.`;
 }
 
 // Generate sentences

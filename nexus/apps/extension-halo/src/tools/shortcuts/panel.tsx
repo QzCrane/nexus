@@ -1,6 +1,7 @@
 // goal: Shortcuts panel UI - keyboard shortcuts reference
 
-import React, { useState, useMemo } from 'react';
+import type React from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { searchShortcuts } from './core';
 import { styles } from './panel.styles';
@@ -9,7 +10,7 @@ import { useToolState } from '../../kernel';
 
 export const ShortcutsPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [query, setQuery] = useToolState<string>('shortcuts-query' as any, '');
+	const [query, setQuery] = useToolState<string>('shortcuts-query', '');
 
 
 	const groups = useMemo(() => searchShortcuts(query), [query]);
@@ -41,11 +42,11 @@ export const ShortcutsPanel: React.FC = () => {
 								<span>{group.name}</span>
 							</div>
 							<div style={styles.list}>
-								{group.shortcuts.map((shortcut, i) => (
-									<div key={i} style={styles.item}>
+								{group.shortcuts.map((shortcut) => (
+									<div key={`${shortcut.keys}:${shortcut.description}`} style={styles.item}>
 										<div style={styles.keys}>
-											{parseKeys(shortcut.keys).map((key, j) => (
-												<span key={j} style={styles.key}>{key}</span>
+											{parseKeys(shortcut.keys).map((key) => (
+												<span key={`${shortcut.keys}:${key}`} style={styles.key}>{key}</span>
 											))}
 										</div>
 										<span style={styles.desc}>{shortcut.description}</span>

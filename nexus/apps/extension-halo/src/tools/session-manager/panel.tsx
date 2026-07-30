@@ -1,6 +1,7 @@
 // goal: Session Manager panel UI
 
-import React, { useState, useEffect, useCallback } from 'react';
+import type React from 'react';
+import { useState, } from 'react';
 import { useTranslation } from '../../i18n';
 import { saveSession, getSessions, deleteSession, restoreSession, type Session } from './core';
 import { styles } from './panel.styles';
@@ -9,8 +10,8 @@ import { useToolState } from '../../kernel';
 
 export const SessionManagerPanel: React.FC = () => {
     const { t } = useTranslation();
-    const [name, setName] = useToolState<string>('session-name' as any, '');
-    const [sessions, setSessions] = useToolState<Session[]>('session-manager' as any, []);
+    const [name, setName] = useToolState<string>('session-name', '');
+    const [sessions, setSessions] = useToolState<Session[]>('session-manager', []);
 
     const [loading, setLoading] = useState(false);
 
@@ -46,7 +47,7 @@ export const SessionManagerPanel: React.FC = () => {
                     onChange={(e) => setName(e.target.value)} 
                     placeholder={t('sessionManager.placeholder', { defaultValue: 'Session Name (Optional)...' })} 
                 />
-                <button style={styles.btn} onClick={handleSave} disabled={loading}>
+                <button type="button" style={styles.btn} onClick={handleSave} disabled={loading}>
                     💾 {t('sessionManager.save', { defaultValue: 'Save' })}
                 </button>
             </div>
@@ -65,18 +66,19 @@ export const SessionManagerPanel: React.FC = () => {
                             </div>
                             
                             <div style={styles.tabList}>
-                                {s.tabs.slice(0, 5).map((tItem, i) => (
-                                    <div key={i} style={styles.tabItem} title={tItem.title}>
+                                {s.tabs.slice(0, 5).map((tItem, i) => {
+                                    // biome-ignore lint/suspicious/noArrayIndexKey: A saved session is an immutable tab-order snapshot, so the tab position is its identity.
+                                    return <div key={i} style={styles.tabItem} title={tItem.title}>
                                         {tItem.pinned ? '📌 ' : ''}{tItem.title || tItem.url}
-                                    </div>
-                                ))}
+                                    </div>;
+                                })}
                                 {s.tabs.length > 5 && <div style={styles.tabItem}>{t('sessionManager.more', { defaultValue: '...' })}</div>}
                             </div>
 
                             <div style={styles.actions}>
-                                <button style={styles.primaryBtn} onClick={() => handleRestore(s, false)}>{t('sessionManager.openHere', { defaultValue: 'Open Here' })}</button>
-                                <button style={styles.actionBtn} onClick={() => handleRestore(s, true)}>{t('sessionManager.newWindow', { defaultValue: 'New Window' })}</button>
-                                <button style={styles.deleteBtn} onClick={() => handleDelete(s.id)} title={t('sessionManager.deleteConfirm', { defaultValue: 'Delete?' })}>🗑️</button>
+                                <button type="button" style={styles.primaryBtn} onClick={() => handleRestore(s, false)}>{t('sessionManager.openHere', { defaultValue: 'Open Here' })}</button>
+                                <button type="button" style={styles.actionBtn} onClick={() => handleRestore(s, true)}>{t('sessionManager.newWindow', { defaultValue: 'New Window' })}</button>
+                                <button type="button" style={styles.deleteBtn} onClick={() => handleDelete(s.id)} title={t('sessionManager.deleteConfirm', { defaultValue: 'Delete?' })}>🗑️</button>
                             </div>
                         </div>
                     ))

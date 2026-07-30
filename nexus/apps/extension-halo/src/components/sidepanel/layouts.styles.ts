@@ -1,5 +1,5 @@
 
-import { CSSProperties } from 'react';
+import type { CSSProperties } from 'react';
 
 export const commonStyles: Record<string, CSSProperties> = {
 	container: {

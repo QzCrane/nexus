@@ -19,6 +19,7 @@ async function main(): Promise<void> {
     activeTab = tabs[0] || null;
   } catch {
     // note: failure to query tabs usually indicates the popup was opened in a non-browser context (e.g. devtools)
+    activeTab = null;
   }
 
   try {
@@ -82,15 +83,17 @@ async function main(): Promise<void> {
   }
 
   // rule: main-stage is reserved for the current active tab only
-  if (activeTab && !isRestrictedUrl(activeTab.url)) {
+  const activeTabId = activeTab?.id;
+  if (activeTab && typeof activeTabId === 'number' && !isRestrictedUrl(activeTab.url)) {
     try {
       // eff: establish a persistent port to the active tab's content script to keep the session alive
-      const port = chrome.tabs.connect(activeTab.id!, { name: 'popup-connection' });
+      const port = chrome.tabs.connect(activeTabId, { name: 'popup-connection' });
       port.onDisconnect.addListener(() => {
         void chrome.runtime.lastError;
       });
-    } catch {
+    } catch (error) {
       // note: fail silently if the content script is not yet injected or compatible
+      console.debug('[SPECTRA Popup] Active-tab connection unavailable:', error);
     }
 
     // eff: lazy load visualizer only when needed

@@ -151,12 +151,27 @@ function getMediaStreamId(tabId: number): Promise<string> {
 
 // note: one-release adapter for extension pages and content contexts that were
 // already loaded with the v1 capture envelope during an extension update.
+function isExpectedMissingReceiver(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	return message.includes('Receiving end does not exist') ||
+		message.includes('message port closed before a response was received');
+}
+
+function reportBroadcastFailure(scope: string, tabId: number, error: unknown): void {
+	if (isExpectedMissingReceiver(error)) return;
+	swLog.warn(`[Capture] ${scope} broadcast failed for tab ${tabId}`, error);
+}
+
 function broadcastLegacyCaptureStateForOneRelease(
 	tabId: number,
 	payload: Record<string, unknown>,
 ): void {
-	chrome.tabs.sendMessage(tabId, { action: Actions.CAPTURE_STATE_CHANGE, payload }).catch(() => { });
-	chrome.runtime.sendMessage({ action: Actions.CAPTURE_STATE_CHANGE, payload }).catch(() => { });
+	chrome.tabs.sendMessage(tabId, { action: Actions.CAPTURE_STATE_CHANGE, payload }).catch((error: unknown) => {
+		reportBroadcastFailure('legacy tab', tabId, error);
+	});
+	chrome.runtime.sendMessage({ action: Actions.CAPTURE_STATE_CHANGE, payload }).catch((error: unknown) => {
+		reportBroadcastFailure('legacy extension', tabId, error);
+	});
 }
 
 function publishCaptureState(tabId: number, state: CaptureRuntimeState): void {
@@ -177,8 +192,12 @@ function publishCaptureState(tabId: number, state: CaptureRuntimeState): void {
 		generation: state.generation,
 		payload: toCaptureState(tabId, state),
 	};
-	chrome.tabs.sendMessage(tabId, event).catch(() => { });
-	chrome.runtime.sendMessage(event).catch(() => { });
+	chrome.tabs.sendMessage(tabId, event).catch((error: unknown) => {
+		reportBroadcastFailure('tab state', tabId, error);
+	});
+	chrome.runtime.sendMessage(event).catch((error: unknown) => {
+		reportBroadcastFailure('extension state', tabId, error);
+	});
 }
 
 async function commitCaptureSnapshot(
@@ -237,9 +256,10 @@ function serializeTransition<T>(tabId: number, operation: () => Promise<T>): Pro
 		return operation();
 	});
 	transitions.set(tabId, next);
-	void next.finally(() => {
+	const releaseTransition = (): void => {
 		if (transitions.get(tabId) === next) transitions.delete(tabId);
-	});
+	};
+	void next.then(releaseTransition, releaseTransition);
 	return next;
 }
 
@@ -656,6 +676,8 @@ function registerOffscreenAudioLifecycleListener(): void {
 			} finally {
 				releaseOffscreenLease(`audio:${tabId}`);
 			}
+		}).catch((error) => {
+			swLog.warn(`Tab ${tabId}: unable to process capture-ended lifecycle event`, error);
 		});
 		return false;
 	});
@@ -760,9 +782,10 @@ export async function reconcileCaptureStates(): Promise<void> {
 		openTabs = new Set((await chrome.tabs.query({})).flatMap((tab) => (
 			tab.id === undefined ? [] : [tab.id]
 		)));
-	} catch {
+	} catch (error) {
 		// If tab enumeration is unavailable, preserve host processors rather than
 		// destroying a valid capture based on an unverifiable assumption.
+		swLog.warn('[Capture] Unable to enumerate tabs during host reconciliation; preserving processors', error);
 	}
 	const recoveredTabs = new Set(host.audioTabs.map(({ tabId }) => tabId));
 	for (const audio of host.audioTabs) {

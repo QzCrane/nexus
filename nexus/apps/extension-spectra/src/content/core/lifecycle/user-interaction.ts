@@ -1,7 +1,7 @@
 // goal: manages environmental triggers that affect audio processing
 // note: many browsers prohibit WebAudio initialization until a trust-building user gesture occurs
 
-import { AudioMode, WebAudioController } from '@nexus/audio-engine';
+import { AudioMode, type WebAudioController } from '@nexus/audio-engine';
 import { logger } from '../../../shared/logger';
 import type { PolicyExecutorState } from '../../types';
 import type { PolicyExecutor } from '../../logic/policy-executor';

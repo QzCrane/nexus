@@ -4,7 +4,13 @@ import { dirname, extname, posix, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const KiB = 1024;
+const REMOTE_RUNTIME_ASSET = 'peerjs-vendor.js';
 const IMPORT_PATTERN = /(?:\bimport\s*(?:[^"'()]*?from\s*)?|\bimport\s*\()\s*["']([^"']+)["']/gu;
+const STATIC_MODULE_REFERENCE_PATTERN = /\b(?:import\s*(?:[^"'()]*?\bfrom\s*)?|export\s+(?:[^"']*?\bfrom\s*))["']([^"']+)["']/gu;
+const DYNAMIC_IMPORT_PATTERN = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/gu;
+const RUNTIME_MODULE_IMPORT_PATTERN = /\bimport\s*\(\s*chrome\.runtime\.getURL\(\s*["']([^"']+)["']\s*\)\s*\)/gu;
+const HTML_SCRIPT_PATTERN = /<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/giu;
+const RUNTIME_ASSET_PATTERN = /\bchrome\.runtime\.getURL\(\s*["']([^"']+)["']\s*\)/gu;
 const HTML_REFERENCE_PATTERN = /\b(?:href|poster|src)\s*=\s*["']([^"']+)["']/giu;
 const CSS_REFERENCE_PATTERN = /(?:@import\s+(?:url\()?|url\()\s*["']?([^"')\s]+)["']?\s*\)?/giu;
 const STRING_LITERAL_PATTERN = /(["'`])((?:\\.|(?!\1)[\s\S])*)\1/gu;
@@ -157,29 +163,87 @@ function fileReferences(name, source, index) {
 	return [...new Set(references)];
 }
 
-export function bundleFootprint(distDir, bundleName) {
-	const root = resolve(distDir);
-	const files = new Set();
-	const visit = (path) => {
-		const normalized = resolve(path);
-		const localPath = relative(root, normalized);
-		if (localPath.startsWith('..') || resolve(root, localPath) !== normalized) {
-			throw new Error(`${bundleName}: import escapes production dist (${localPath})`);
-		}
-		if (files.has(normalized)) return;
-		files.add(normalized);
-		const source = readFileSync(normalized, 'utf8');
-		for (const match of source.matchAll(IMPORT_PATTERN)) {
-			const specifier = match[1];
-			if (!specifier?.startsWith('.')) continue;
-			visit(resolve(dirname(normalized), cleanSpecifier(specifier)));
+function loadingReferences(name, source, index) {
+	const references = [];
+	const add = (specifier, kind, required = true) => {
+		for (const target of resolveReference(index, name, specifier, { required })) {
+			references.push({ kind, target });
 		}
 	};
-	visit(resolve(root, bundleName));
+	const extension = extname(name).toLowerCase();
+	if (extension === '.html') {
+		for (const match of source.matchAll(HTML_SCRIPT_PATTERN)) add(match[1], 'html-script');
+	} else if (extension === '.js') {
+		for (const match of source.matchAll(STATIC_MODULE_REFERENCE_PATTERN)) {
+			add(match[1], 'js-static');
+		}
+		for (const match of source.matchAll(DYNAMIC_IMPORT_PATTERN)) add(match[1], 'js-deferred');
+		for (const match of source.matchAll(RUNTIME_MODULE_IMPORT_PATTERN)) {
+			add(match[1], 'js-deferred');
+		}
+		for (const match of source.matchAll(RUNTIME_ASSET_PATTERN)) {
+			if (match[1] === REMOTE_RUNTIME_ASSET) add(match[1], 'runtime-asset');
+		}
+	}
+	return references;
+}
+
+function artifactClosureFromIndex(index, roots, options) {
+	const names = new Set();
+	const queue = [...roots];
+	while (queue.length > 0) {
+		const name = queue.shift();
+		if (!name || names.has(name)) continue;
+		const path = index.get(name);
+		if (!path) throw new Error(`${name}: production loading root is missing`);
+		names.add(name);
+		const extension = extname(name).toLowerCase();
+		if (!['.html', '.js'].includes(extension)) continue;
+		const source = readFileSync(path, 'utf8');
+		for (const reference of loadingReferences(name, source, index)) {
+			const admitted = reference.kind === 'html-script'
+				|| reference.kind === 'js-static'
+				|| reference.kind === 'js-deferred' && options.includeDeferred
+				|| reference.kind === 'runtime-asset' && options.includeRuntimeAssets;
+			if (admitted && !names.has(reference.target)) queue.push(reference.target);
+		}
+	}
+	const sortedNames = [...names].sort();
+	const files = sortedNames.map((name) => index.get(name));
+	const scriptNames = sortedNames.filter((name) => extname(name).toLowerCase() === '.js');
+	const scriptFiles = scriptNames.map((name) => index.get(name));
 	return {
-		bytes: [...files].reduce((sum, path) => sum + statSync(path).size, 0),
-		files: [...files].sort(),
+		bytes: files.reduce((sum, path) => sum + statSync(path).size, 0),
+		files,
+		names: sortedNames,
+		scriptBytes: scriptFiles.reduce((sum, path) => sum + statSync(path).size, 0),
+		scriptFiles,
+		scriptNames,
 	};
+}
+
+function artifactIndex(distDir) {
+	const root = resolve(distDir);
+	const failures = [];
+	const files = walkArtifacts(root, root, failures);
+	if (failures.length > 0) throw new Error(failures.join('\n'));
+	return new Map(files.map((path) => [artifactName(root, path), path]));
+}
+
+export function artifactClosure(
+	distDir,
+	bundleName,
+	options = { includeDeferred: false, includeRuntimeAssets: false },
+) {
+	return artifactClosureFromIndex(artifactIndex(distDir), [bundleName], options);
+}
+
+export function bundleFootprint(distDir, bundleName) {
+	const closure = artifactClosure(distDir, bundleName, {
+		includeDeferred: true,
+		includeRuntimeAssets: false,
+	});
+	return { bytes: closure.bytes, files: closure.files };
 }
 
 function productionGraph(index, manifest) {
@@ -254,6 +318,12 @@ export function analyzeProductionArtifacts({ distDir, metafiles = [] }) {
 	const failures = [];
 	const files = walkArtifacts(root, root, failures);
 	const index = new Map(files.map((path) => [artifactName(root, path), path]));
+	const staticOptions = { includeDeferred: false, includeRuntimeAssets: false };
+	const eventualOptions = { includeDeferred: true, includeRuntimeAssets: true };
+	let serviceWorkerWake = artifactClosureFromIndex(index, [], staticOptions);
+	let documentStart = artifactClosureFromIndex(index, [], staticOptions);
+	let offscreenAudioOnly = null;
+	let offscreenRemote = null;
 	const manifestPath = index.get('manifest.json');
 	if (!manifestPath) failures.push('manifest.json: required production root is missing');
 
@@ -276,11 +346,56 @@ export function analyzeProductionArtifacts({ distDir, metafiles = [] }) {
 			graph = productionGraph(index, manifest);
 			const serviceWorker = manifest.background?.service_worker;
 			if (typeof serviceWorker === 'string') {
-				const workerClosure = bundleFootprint(root, serviceWorker);
-				if (workerClosure.files.length !== 1) {
+				serviceWorkerWake = artifactClosureFromIndex(index, [serviceWorker], staticOptions);
+				if (serviceWorkerWake.scriptFiles.length !== 1) {
 					failures.push(
 						`${serviceWorker}: MV3 service worker must be one self-contained bundle`,
 					);
+				}
+			}
+			const documentStartNames = (manifest.content_scripts ?? [])
+				.flatMap((script) => script.js ?? [])
+				.filter((name) => typeof name === 'string');
+			documentStart = artifactClosureFromIndex(index, documentStartNames, staticOptions);
+		} catch (error) {
+			failures.push(error instanceof Error ? error.message : String(error));
+		}
+	}
+	if (index.has('offscreen.html')) {
+		try {
+			offscreenAudioOnly = artifactClosureFromIndex(index, ['offscreen.html'], staticOptions);
+			offscreenRemote = artifactClosureFromIndex(index, ['offscreen.html'], eventualOptions);
+			if (index.has(REMOTE_RUNTIME_ASSET)) {
+				if (offscreenAudioOnly.names.includes(REMOTE_RUNTIME_ASSET)) {
+					failures.push('offscreen.html: Capture-only static closure must exclude peerjs-vendor.js');
+				}
+				if (!offscreenRemote.names.includes(REMOTE_RUNTIME_ASSET)) {
+					failures.push('offscreen.html: Remote eventual closure must include peerjs-vendor.js');
+				}
+				const offscreenSource = readFileSync(index.get('offscreen.html'), 'utf8');
+				if (/<script\b[^>]*\bsrc\s*=\s*["']peerjs-vendor\.js["']/iu.test(offscreenSource)) {
+					failures.push('offscreen.html: peerjs-vendor.js must not be a static script');
+				}
+				const offscreenEntry = index.get('offscreen.js');
+				const deferredRoutes = offscreenEntry
+					? loadingReferences('offscreen.js', readFileSync(offscreenEntry, 'utf8'), index)
+						.filter((reference) => reference.kind === 'js-deferred')
+					: [];
+				if (deferredRoutes.length !== 1) {
+					failures.push('offscreen.js: exactly one deferred Remote route is required');
+				}
+				const peerParents = [];
+				for (const [name, path] of index) {
+					if (extname(name).toLowerCase() !== '.js') continue;
+					for (const reference of loadingReferences(name, readFileSync(path, 'utf8'), index)) {
+						if (reference.kind === 'runtime-asset'
+							&& reference.target === REMOTE_RUNTIME_ASSET) peerParents.push(name);
+					}
+				}
+				if (peerParents.length !== 1) {
+					failures.push('peerjs-vendor.js: exactly one Remote runtime-asset owner is required');
+				} else if (offscreenAudioOnly.names.includes(peerParents[0])) {
+					failures.push('peerjs-vendor.js: runtime loader must stay outside the Capture-only closure');
 				}
 			}
 		} catch (error) {
@@ -307,34 +422,31 @@ export function analyzeProductionArtifacts({ distDir, metafiles = [] }) {
 	const javascript = files.filter((path) => extname(path) === '.js')
 		.reduce((sum, path) => sum + statSync(path).size, 0);
 	const total = files.reduce((sum, path) => sum + statSync(path).size, 0);
-	let defaultStartup = 0;
-	if (manifestPath) {
-		try {
-			const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-			const startupNames = [
-				manifest.background?.service_worker,
-				...(manifest.content_scripts ?? []).flatMap((script) => script.js ?? []),
-			].filter((name) => typeof name === 'string');
-			const startupFiles = new Set(startupNames.flatMap((name) => bundleFootprint(root, name).files));
-			defaultStartup = [...startupFiles].reduce((sum, path) => sum + statSync(path).size, 0);
-		} catch (error) {
-			failures.push(error instanceof Error ? error.message : String(error));
-		}
-	}
 	const entrypoints = [...index.keys()]
 		.filter((name) => extname(name) === '.js' && !name.includes('/'))
-		.map((name) => ({ name, ...bundleFootprint(root, name) }))
+		.map((name) => {
+			const staticClosure = artifactClosureFromIndex(index, [name], staticOptions);
+			const eventualClosure = artifactClosureFromIndex(index, [name], eventualOptions);
+			return {
+				name,
+				eventualBytes: eventualClosure.bytes,
+				staticBytes: staticClosure.bytes,
+			};
+		})
 		.sort((left, right) => left.name.localeCompare(right.name));
 
 	return {
 		boundaryReplications: evidence.boundaryReplications,
-		defaultStartup,
+		documentStart,
 		duplicates,
 		entrypoints,
 		failures: [...new Set(failures)].sort(),
 		files: files.length,
 		javascript,
+		offscreenAudioOnly,
+		offscreenRemote,
 		reachable: graph.reachable.size,
+		serviceWorkerWake,
 		topContributors: evidence.topContributors,
 		total,
 	};
@@ -347,9 +459,19 @@ export function checkProductionArtifacts(options) {
 	}
 	console.log(
 		`✓ Production artifacts: ${report.reachable}/${report.files} reachable, 0 duplicate; `
-		+ `startup ${format(report.defaultStartup)}, JS ${format(report.javascript)}, dist ${format(report.total)}`,
+		+ `service-worker wake ${format(report.serviceWorkerWake.scriptBytes)}, `
+		+ `document_start ${format(report.documentStart.scriptBytes)}, `
+		+ `JS ${format(report.javascript)}, dist ${format(report.total)}`,
 	);
-	console.log(`✓ Entrypoint closures: ${report.entrypoints.map((item) => `${item.name}:${format(item.bytes)}`).join(' | ')}`);
+	if (report.offscreenAudioOnly && report.offscreenRemote) {
+		console.log(
+			`✓ Offscreen closures: Capture-only ${format(report.offscreenAudioOnly.scriptBytes)}`
+			+ ` | Remote eventual ${format(report.offscreenRemote.scriptBytes)}`,
+		);
+	}
+	console.log(`✓ Entrypoint closures: ${report.entrypoints
+		.map((item) => `${item.name}:${format(item.staticBytes)}→${format(item.eventualBytes)}`)
+		.join(' | ')}`);
 	if (report.topContributors.length > 0) {
 		console.log(`✓ Largest module contributions: ${report.topContributors
 			.map((item) => `${item.path}:${format(item.bytes)}`)

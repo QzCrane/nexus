@@ -1,4 +1,4 @@
-import type { HoverZoomSettings } from '../tools/hover-zoom/types';
+
 import type { HoverZoomState, PreloadState } from './hover-zoom-state';
 import { isValidTrigger } from '../tools/hover-zoom/content/resolvers/trigger-validator';
 import { resolveEnhanced, detectQuick, needsAsyncResolve } from '../tools/hover-zoom/content/resolvers/rule-resolver';
@@ -12,7 +12,7 @@ import { HotkeyManager } from '../tools/hover-zoom/content/utils/hotkeys';
 export function ensureViewer(state: HoverZoomState): HoverZoomViewer {
 	if (!state.viewer) {
 		state.viewer = new HoverZoomViewer(state.settings);
-		state.hotkeys = new HotkeyManager(state.settings, state.viewer);
+		state.hotkeys = new HotkeyManager(state.viewer);
 	}
 	return state.viewer;
 }

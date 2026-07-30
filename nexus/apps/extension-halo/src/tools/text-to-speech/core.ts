@@ -2,8 +2,6 @@
 
 import type { TtsSettings } from './types';
 
-let currentUtterance: SpeechSynthesisUtterance | null = null;
-
 // Get available voices
 export function getVoices(): SpeechSynthesisVoice[] {
 	return speechSynthesis.getVoices();
@@ -22,14 +20,12 @@ export function speak(text: string, settings: TtsSettings): void {
 	const voice = voices.find((v) => v.voiceURI === settings.voiceUri);
 	if (voice) utterance.voice = voice;
 
-	currentUtterance = utterance;
 	speechSynthesis.speak(utterance);
 }
 
 // Stop speaking
 export function stop(): void {
 	speechSynthesis.cancel();
-	currentUtterance = null;
 }
 
 // Pause

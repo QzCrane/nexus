@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, mock } from 'bun:test';
+import { describe, it, expect, beforeEach, mock, spyOn } from 'bun:test';
 import { Registry } from '../src/shared/registry';
 
 describe('Registry', () => {
@@ -32,11 +32,15 @@ describe('Registry', () => {
   });
 
   it('calls all cleanups even if one throws', () => {
+    const report = spyOn(console, 'error').mockImplementation(() => undefined);
     let secondCalled = false;
     registry.track(() => { throw new Error('cleanup failed'); });
     registry.track(() => { secondCalled = true; });
     registry.dispose();
     expect(secondCalled).toBe(true);
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls[0]?.[1]).toBeInstanceOf(AggregateError);
+    report.mockRestore();
   });
 
   it('adds and removes DOM event listener', () => {

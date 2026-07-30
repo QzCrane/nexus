@@ -26,7 +26,7 @@ export interface SearchOptions {
 }
 
 interface LocaleRegistry {
-	[locale: string]: Record<string, any>;
+	[locale: string]: Record<string, unknown>;
 }
 
 // ==============================
@@ -39,7 +39,7 @@ const localeRegistry: LocaleRegistry = {};
  * Register a locale for search indexing
  * Call this when adding new languages - search auto-supports them
  */
-export function registerSearchLocale(locale: Locale, data: Record<string, any>) {
+export function registerSearchLocale(locale: Locale, data: Record<string, unknown>) {
 	localeRegistry[locale] = data;
 }
 
@@ -62,8 +62,8 @@ function hasCJK(text: string): boolean {
 function getPinyinVariants(text: string): string[] {
 	if (!hasCJK(text)) return [];
 
-	const variants: string[] = [];
 	try {
+		const variants: string[] = [];
 		// Full Pinyin (e.g., "erweima")
 		const full = pinyin(text, { toneType: 'none', type: 'array' }).join('');
 		if (full) variants.push(full);
@@ -71,10 +71,11 @@ function getPinyinVariants(text: string): string[] {
 		// Initial Pinyin (e.g., "ewm")
 		const initial = pinyin(text, { pattern: 'initial', toneType: 'none', type: 'array' }).join('');
 		if (initial) variants.push(initial);
-	} catch {
-		// Pinyin library may fail on edge cases
+		return variants;
+	} catch (error: unknown) {
+		console.warn('[HALO:Search] Pinyin conversion failed', error);
+		return [];
 	}
-	return variants;
 }
 
 // ==============================
@@ -84,6 +85,14 @@ function getPinyinVariants(text: string): string[] {
 function normalizeQuery(str: string): string {
 	if (!str) return '';
 	return str.toLowerCase().replace(/\s+/g, '').trim();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+	return isRecord(value) ? value : null;
 }
 
 /**
@@ -98,7 +107,8 @@ function getSearchableTexts(
 
 	// Iterate all registered locales
 	for (const [_locale, localeData] of Object.entries(localeRegistry)) {
-		const itemData = localeData[i18nPrefix]?.[item.id];
+		const prefixData = asRecord(localeData[i18nPrefix]);
+		const itemData = asRecord(prefixData?.[item.id]);
 		if (!itemData) continue;
 
 		for (const field of fields) {

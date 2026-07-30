@@ -17,7 +17,9 @@ export async function getPageFonts(): Promise<FontInfo[]> {
 				const elements = document.querySelectorAll('h1, h2, h3, h4, h5, h6, p, a, span, div, li, button, input, label');
 				for (const el of Array.from(elements).slice(0, 100)) {
 					const style = window.getComputedStyle(el);
-					const family = style.fontFamily.split(',')[0]!.replace(/["']/g, '').trim();
+					const family = (style.fontFamily.split(',')[0] ?? style.fontFamily)
+						.replace(/["']/g, '')
+						.trim();
 					const key = `${family}|${style.fontWeight}|${style.fontSize}`;
 
 					if (!seen.has(key) && family) {

@@ -1,7 +1,8 @@
 // goal: Regex tester panel UI
 // eff: Styles extracted to reduce file size
 
-import React, { useState, useMemo, useCallback } from 'react';
+import type React from 'react';
+import { useMemo, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { executeRegex, validatePattern, replaceMatches, buildFlagsString } from './core';
@@ -14,10 +15,10 @@ import { useToolState } from '../../kernel';
 export const RegexPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [pattern, setPattern] = useToolState<string>('regex', '');
-	const [testString, setTestString] = useToolState<string>('regex-test' as any, '');
-	const [replacement, setReplacement] = useToolState<string>('regex-replace' as any, '');
-	const [flags, setFlags] = useToolState<RegexFlags>('regex-flags' as any, DEFAULT_FLAGS);
-	const [showReplace, setShowReplace] = useToolState<boolean>('regex-show-replace' as any, false);
+	const [testString, setTestString] = useToolState<string>('regex-test', '');
+	const [replacement, setReplacement] = useToolState<string>('regex-replace', '');
+	const [flags, setFlags] = useToolState<RegexFlags>('regex-flags', DEFAULT_FLAGS);
+	const [showReplace, setShowReplace] = useToolState<boolean>('regex-show-replace', false);
 
 
 	const validation = useMemo(() => validatePattern(pattern), [pattern]);
@@ -32,7 +33,7 @@ export const RegexPanel: React.FC = () => {
 
 	const toggleFlag = useCallback((key: keyof RegexFlags) => {
 		setFlags((prev) => ({ ...prev, [key]: !prev[key] }));
-	}, []);
+	}, [setFlags]);
 
 	const loadPreset = useCallback((preset: typeof PRESETS[0]) => {
 		setPattern(preset.pattern);
@@ -43,7 +44,7 @@ export const RegexPanel: React.FC = () => {
 			dotAll: preset.flags.includes('s'),
 			unicode: preset.flags.includes('u'),
 		});
-	}, []);
+	}, [setPattern, setFlags]);
 
 	return (
 		<div style={styles.wrapper}>
@@ -65,14 +66,14 @@ export const RegexPanel: React.FC = () => {
 					{/* Flags */}
 					<div style={styles.row}>
 						{(['global', 'ignoreCase', 'multiline', 'dotAll', 'unicode'] as const).map((key) => (
-							<button
+							<button type="button"
 								key={key}
 								style={{ ...styles.flagBtn, ...(flags[key] ? styles.flagActive : styles.flagInactive) }}
 								onClick={() => toggleFlag(key)}
-								title={key}
-							>
-								{key[0]!.toUpperCase()}
-							</button>
+							title={key}
+						>
+							{key.charAt(0).toUpperCase()}
+						</button>
 						))}
 					</div>
 
@@ -80,7 +81,7 @@ export const RegexPanel: React.FC = () => {
 					<div style={{ ...styles.row, flexWrap: 'wrap', gap: '6px' }}>
 						<span style={styles.label}>Presets:</span>
 						{PRESETS.map((p) => (
-							<button key={p.name} style={styles.presetBtn} onClick={() => loadPreset(p)}>
+							<button type="button" key={p.name} style={styles.presetBtn} onClick={() => loadPreset(p)}>
 								{p.name}
 							</button>
 						))}
@@ -141,8 +142,8 @@ export const RegexPanel: React.FC = () => {
 						{matches.length === 0 && pattern && validation.valid && (
 							<div style={{ color: 'var(--halo-text-muted)', fontSize: '11px' }}>{t('regex.noMatches')}</div>
 						)}
-						{matches.map((m, i) => (
-							<div key={i} style={styles.matchItem}>
+						{matches.map((m) => (
+							<div key={`${m.index}:${m.text}`} style={styles.matchItem}>
 								<span style={styles.matchText}>"{m.text}"</span>
 								<div style={styles.matchMeta}>
 									{t('regex.matchInfo').replace('{{line}}', String(m.line)).replace('{{col}}', String(m.column)).replace('{{index}}', String(m.index))}

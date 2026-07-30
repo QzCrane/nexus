@@ -344,8 +344,14 @@ async function measureVideoFrameDuration(
 					return;
 				}
 				const ordered = [...deltas].sort((left, right) => left - right);
-				const median = ordered[Math.floor(ordered.length / 2)]!;
-				const stable = ordered.at(-1)! - ordered[0]! <= median * 0.35;
+				const median = ordered.at(Math.floor(ordered.length / 2));
+				const first = ordered.at(0);
+				const last = ordered.at(-1);
+				if (median === undefined || first === undefined || last === undefined) {
+					finish(null);
+					return;
+				}
+				const stable = last - first <= median * 0.35;
 				if (stable || samples >= 8) finish(median);
 				else callbackId = video.requestVideoFrameCallback(sample);
 				return;
@@ -434,6 +440,7 @@ function readRestorableMediaFieldWithWriter(
 		} catch {
 			// A broken or transient page controller does not suppress the standard
 			// media fallback. No page write has occurred during this read probe.
+			return { actual: readDomRestorableMediaField(element, field), writer: 'dom-native' };
 		}
 	}
 	return { actual: readDomRestorableMediaField(element, field), writer: 'dom-native' };
@@ -459,6 +466,10 @@ function readRestorableMediaFieldForWrite(
 				// Capability discovery is a read-only probe. A controller that is
 				// incomplete while a SPA player is mounting leaves the acknowledged
 				// DOM writer untouched until a later exact-source intent can prove it.
+				return {
+					actual: readRestorableMediaField(element, field, owned.writer),
+					writer: owned.writer,
+				};
 			}
 		}
 		return {
@@ -1653,6 +1664,7 @@ export class NativeMediaExecutor {
 			} catch {
 				// Detached page objects are best-effort release targets. Ownership is
 				// still discarded so a later insertion cannot inherit a false baseline.
+				nativeMediaOwnership.byElement.delete(element);
 			}
 		}
 		nativeMediaOwnership.byElement.delete(element);

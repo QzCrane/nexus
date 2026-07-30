@@ -2,8 +2,10 @@
 
 import type { UnitCategory, UnitDef } from './types';
 
+type UnitList = [UnitDef, UnitDef, ...UnitDef[]];
+
 // Unit definitions by category
-export const UNITS: Record<UnitCategory, UnitDef[]> = {
+export const UNITS: Record<UnitCategory, UnitList> = {
 	length: [
 		{ id: 'mm', name: 'Millimeter', symbol: 'mm', toBase: (v) => v / 1000, fromBase: (v) => v * 1000 },
 		{ id: 'cm', name: 'Centimeter', symbol: 'cm', toBase: (v) => v / 100, fromBase: (v) => v * 100 },
@@ -51,8 +53,8 @@ export function convertUnit(value: number, fromUnit: UnitDef, toUnit: UnitDef): 
 }
 
 // Get all units in a category
-export function getUnits(category: UnitCategory): UnitDef[] {
-	return UNITS[category] || [];
+export function getUnits(category: UnitCategory): UnitList {
+	return UNITS[category];
 }
 
 // Format result with appropriate precision

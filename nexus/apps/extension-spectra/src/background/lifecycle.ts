@@ -15,6 +15,7 @@ import { teardownCaptureState } from './handlers/capture';
 import { flushAudioSessions, forgetAudioSession, removeAudioSession } from './audio-session-store';
 import { settingsRepository } from './settings-repository';
 import { clearBadgeUsage } from './badge-usage';
+import { swLog } from '../shared/logger';
 
 async function clearTabDocumentState(tabId: number, tabClosed = false): Promise<void> {
 	// Queue capture teardown before awaiting storage. Otherwise a newly loaded
@@ -115,7 +116,9 @@ export function setupLifecycleListeners(): void {
 			// task: if a tab is refreshed and active, refresh its bounded visibility timestamp
 			chrome.tabs.get(tabId).then(tab => {
 				if (tab.active) markTabActivated(tabId);
-			}).catch(() => { });
+			}).catch((error: unknown) => {
+				swLog.debug(`[Lifecycle] Tab ${tabId} disappeared before activation refresh`, error);
+			});
 		}
 	});
 
@@ -134,7 +137,9 @@ export function setupLifecycleListeners(): void {
 			if (tab.windowId !== undefined) activeTabsByWindow.set(tab.windowId, tab.id);
 			markTabActivated(tab.id, now);
 		}
-	}).catch(() => { });
+	}).catch((error: unknown) => {
+		swLog.warn('[Lifecycle] Unable to seed active-tab ownership after worker start', error);
+	});
 
 	// Restore current audible ownership after a service-worker restart. This is a
 	// lifecycle seed, not a read-path side effect.
@@ -143,5 +148,7 @@ export function setupLifecycleListeners(): void {
 		for (const tab of tabs) {
 			if (tab.id) markTabAudible(tab.id, true, now);
 		}
-	}).catch(() => { });
+	}).catch((error: unknown) => {
+		swLog.warn('[Lifecycle] Unable to seed audible-tab ownership after worker start', error);
+	});
 }

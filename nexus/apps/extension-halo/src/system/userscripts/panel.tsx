@@ -1,7 +1,8 @@
 // goal: UserScripts panel - full Tampermonkey feature parity
 // eff: Master toggle, script list, editor page, import/export, templates, unified horizontal slide
 
-import React, { useEffect } from 'react';
+import type React from 'react';
+import { useEffect } from 'react';
 import { useOverlay } from '../../components/ui/overlay';
 import { SlidePage } from '../../components/ui/animated-transition';
 import { useTranslation } from '../../i18n';
@@ -50,7 +51,11 @@ export const UserScriptsPanel: React.FC = () => {
 					<ImportExportModal 
 						mode={modalMode} 
 						exportData={exportData} 
-						onImport={(json) => { handleImport(json); overlay.closeModal(); setModalMode(null); }}
+						onImport={(json) => {
+							void handleImport(json);
+							overlay.closeModal();
+							setModalMode(null);
+						}}
 						onClose={() => { overlay.closeModal(); setModalMode(null); }} 
 						t={t}
 					/>
@@ -58,7 +63,7 @@ export const UserScriptsPanel: React.FC = () => {
 				onCancel: () => setModalMode(null)
 			});
 		}
-	}, [modalMode, exportData]);
+	}, [modalMode, exportData, overlay.closeModal, t, setModalMode, overlay.showModal, handleImport]);
 
 	// Check if we were redirected here to edit a specific script
 	useEffect(() => {
@@ -70,7 +75,7 @@ export const UserScriptsPanel: React.FC = () => {
 		const targetScript = scripts.find(s => 
 			s.id === scriptId || 
 			s.name === scriptId || 
-			(s as any).saatToolId === scriptId
+			s.saatToolId === scriptId
 		);
 		
 		if (targetScript) {
@@ -108,24 +113,29 @@ export const UserScriptsPanel: React.FC = () => {
 					{/* Master Toggle & Settings */}
 					<div style={{ ...styles.masterCard, ...(globalEnabled ? styles.masterCardActive : {}), flexDirection: 'row', justifyContent: 'space-between', paddingRight: '12px' }}>
 						<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-							<div onClick={handleGlobalToggle} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
-								<div style={{ ...styles.toggle, ...(globalEnabled ? styles.toggleActive : {}) }}>
-									<div style={{ ...styles.toggleKnob, left: globalEnabled ? '18px' : '2px' }} />
-								</div>
-								<div>
-									<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+							<button
+								type="button"
+								onClick={handleGlobalToggle}
+								aria-pressed={globalEnabled}
+								style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', padding: 0, border: 'none', background: 'transparent', color: 'inherit', textAlign: 'left' }}
+							>
+								<span style={{ ...styles.toggle, ...(globalEnabled ? styles.toggleActive : {}) }}>
+									<span style={{ ...styles.toggleKnob, left: globalEnabled ? '18px' : '2px' }} />
+								</span>
+								<span>
+									<span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
 										<span style={{ fontSize: '15px', fontWeight: 600 }}>⚡ {t('userscripts.title', { defaultValue: 'User Scripts' })}</span>
 										{/* globalEnabled && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4CAF50', boxShadow: '0 0 6px #4CAF50' }} /> */}
-									</div>
-									<div style={{ fontSize: '12px', color: 'var(--halo-text-secondary)', marginTop: '2px' }}>
+									</span>
+									<span style={{ display: 'block', fontSize: '12px', color: 'var(--halo-text-secondary)', marginTop: '2px' }}>
 										{scripts.length} {t('userscripts.scripts', { defaultValue: 'scripts' })} • {scripts.filter(s => s.enabled).length} {t('userscripts.active', { defaultValue: 'active' })}
-									</div>
-								</div>
-							</div>
+									</span>
+								</span>
+							</button>
 						</div>
 						
 						{/* Settings Icon */}
-						<button 
+						<button type="button"
 							style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px', padding: '4px', opacity: 0.7 }}
 							onClick={() => {
 								overlay.showModal({
@@ -173,7 +183,7 @@ export const UserScriptsPanel: React.FC = () => {
 								<span>⚠️</span>
 								<span>{t('userscripts.permsMissing', { defaultValue: 'Permissions needed for auto-injection' })}</span>
 							</div>
-							<button 
+							<button type="button"
 								style={{ ...styles.btn, fontSize: '12px', padding: '6px' }}
 								onClick={handleRequestPermission}
 							>

@@ -2,7 +2,7 @@
 // eff: First tries site rules, falls back to generic image-resolver
 
 import { ruleEngine } from '../../rules/engine';
-import { resolveImageSource, ImageSource } from './image-resolver';
+import { resolveImageSource, type ImageSource } from './image-resolver';
 import { buildContext } from './context-builder';
 import type { HoverZoomSettings } from '../../types';
 import type { ResourcePreference } from '../utils/resource-key-helper';

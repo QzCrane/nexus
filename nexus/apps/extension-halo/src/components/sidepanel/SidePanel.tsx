@@ -1,7 +1,8 @@
 // goal: SidePanel container and state manager
 // eff: Handles global state via SidePanelContext (Launcher Mode Only)
 
-import React, { useMemo } from 'react';
+import type React from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { LauncherHeader } from './LauncherHeader';
 import { DockTabBar } from './DockTabBar';

@@ -50,18 +50,19 @@ export function bindSpeedControls(c: SpeedControls, updateFn: (changes: Partial<
 		addWheelSupport(c.speedSlider, 0.05, 0.25, 16, updateSpeed);
 	}
 
-	if (c.speedInput) {
-		c.speedInput.value = initialSpeed.toFixed(2);
-		c.speedInput.onchange = (e) => {
+	const speedInput = c.speedInput;
+	if (speedInput) {
+		speedInput.value = initialSpeed.toFixed(2);
+		speedInput.onchange = (e) => {
 			const speed = parseFloat((e.target as HTMLInputElement).value) || 1;
 			updateSpeed(speed);
 		};
-		c.speedInput.onwheel = (e) => {
+		speedInput.onwheel = (e) => {
 			e.preventDefault();
-			const current = parseFloat(c.speedInput!.value) || 1;
+			const current = parseFloat(speedInput.value) || 1;
 			const delta = e.deltaY < 0 ? 0.1 : -0.1;
 			const newSpeed = Math.max(0.25, Math.min(16, current + delta));
-			c.speedInput!.value = newSpeed.toFixed(2);
+			speedInput.value = newSpeed.toFixed(2);
 			if (c.speedSlider) c.speedSlider.value = String(newSpeed);
 			updateSpeed(newSpeed);
 		};
@@ -71,7 +72,9 @@ export function bindSpeedControls(c: SpeedControls, updateFn: (changes: Partial<
 // note: propagates speed changes from the advanced panel back to the main card UI for visual consistency
 function syncCardSpeedInput(speed: number): void {
 	const cardInputs = document.querySelectorAll('.speed-input') as NodeListOf<HTMLInputElement>;
-	cardInputs.forEach(inp => inp.value = speed.toFixed(2));
+	cardInputs.forEach((input) => {
+		input.value = speed.toFixed(2);
+	});
 }
 
 // eff: updates the side panel speed UI elements when the value is changed elsewhere (e.g. from the main card or content script sync)

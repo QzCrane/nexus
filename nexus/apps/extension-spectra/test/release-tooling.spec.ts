@@ -45,6 +45,7 @@ import {
 } from '../../../scripts/check-spectra-remote-live.mjs';
 import {
 	analyzeProductionArtifacts,
+	artifactClosure,
 	bundleFootprint,
 	checkProductionArtifacts,
 } from '../scripts/check-production-artifacts.mjs';
@@ -170,6 +171,99 @@ describe('production artifact integrity', () => {
 			readFileSync(resolve(directory, 'popup.js')).byteLength
 			+ readFileSync(resolve(directory, 'chunks/shared.js')).byteLength,
 		);
+	});
+
+	test('distinguishes executable loading from URL-only identity references', () => {
+		const directory = temporaryDirectory();
+		writeFileSync(
+			resolve(directory, 'entry.js'),
+			'import "./static.js"; void import("./lazy.js");\n',
+		);
+		writeFileSync(resolve(directory, 'static.js'), 'export const eager = true;\n');
+		writeFileSync(
+			resolve(directory, 'lazy.js'),
+			'chrome.runtime.getURL("peerjs-vendor.js");'
+			+ 'void import(chrome.runtime.getURL("runtime-module.js"));'
+			+ 'sender.url===chrome.runtime.getURL("background.js");\n',
+		);
+		writeFileSync(resolve(directory, 'peerjs-vendor.js'), 'globalThis.Peer = class Peer {};\n');
+		writeFileSync(resolve(directory, 'runtime-module.js'), 'globalThis.RuntimeModule = true;\n');
+		writeFileSync(resolve(directory, 'background.js'), 'globalThis.Background = true;\n');
+
+		const startup = artifactClosure(directory, 'entry.js');
+		const eventual = artifactClosure(directory, 'entry.js', {
+			includeDeferred: true,
+			includeRuntimeAssets: true,
+		});
+		expect(startup.names).toEqual(['entry.js', 'static.js']);
+		expect(eventual.names).toEqual([
+			'entry.js',
+			'lazy.js',
+			'peerjs-vendor.js',
+			'runtime-module.js',
+			'static.js',
+		]);
+	});
+
+	test('separates worker, document-start, and Remote-only offscreen closures', () => {
+		const directory = temporaryDirectory();
+		mkdirSync(resolve(directory, 'chunks'));
+		writeFileSync(resolve(directory, 'manifest.json'), JSON.stringify({
+			manifest_version: 3,
+			background: { service_worker: 'background.js', type: 'module' },
+			content_scripts: [{ matches: ['<all_urls>'], js: ['content-a.js', 'content-b.js'] }],
+		}));
+		writeFileSync(
+			resolve(directory, 'background.js'),
+			'chrome.offscreen.createDocument({url:"offscreen.html"});\n',
+		);
+		writeFileSync(resolve(directory, 'content-a.js'), 'import "./shared.js"; globalThis.ContentA = true;\n');
+		writeFileSync(resolve(directory, 'content-b.js'), 'import "./shared.js"; globalThis.ContentB = true;\n');
+		writeFileSync(resolve(directory, 'shared.js'), 'export const shared = true;\n');
+		writeFileSync(
+			resolve(directory, 'offscreen.html'),
+			'<script type="module" src="offscreen.js"></script>\n',
+		);
+		writeFileSync(
+			resolve(directory, 'offscreen.js'),
+			'sender.url===chrome.runtime.getURL("background.js");'
+			+ 'void import("./chunks/remote.js");\n',
+		);
+		writeFileSync(
+			resolve(directory, 'chunks/remote.js'),
+			'chrome.runtime.getURL("peerjs-vendor.js");\n',
+		);
+		writeFileSync(resolve(directory, 'peerjs-vendor.js'), 'globalThis.Peer = class Peer {};\n');
+
+		const report = analyzeProductionArtifacts({ distDir: directory });
+		expect(report.failures).toEqual([]);
+		expect(report.serviceWorkerWake.scriptNames).toEqual(['background.js']);
+		expect(report.documentStart.scriptNames).toEqual([
+			'content-a.js',
+			'content-b.js',
+			'shared.js',
+		]);
+		expect(report.offscreenAudioOnly?.scriptNames).toEqual(['offscreen.js']);
+		expect(report.offscreenRemote?.scriptNames).toEqual([
+			'chunks/remote.js',
+			'offscreen.js',
+			'peerjs-vendor.js',
+		]);
+	});
+
+	test('does not infer runtime loading from a compressed URL-only string binding', () => {
+		const directory = temporaryDirectory();
+		writeFileSync(
+			resolve(directory, 'entry.js'),
+			'var asset="peerjs-vendor.js";chrome.runtime.getURL(asset);\n',
+		);
+		writeFileSync(resolve(directory, 'peerjs-vendor.js'), 'globalThis.Peer = class Peer {};\n');
+
+		const eventual = artifactClosure(directory, 'entry.js', {
+			includeDeferred: true,
+			includeRuntimeAssets: true,
+		});
+		expect(eventual.names).toEqual(['entry.js']);
 	});
 
 	test('rejects an MV3 service worker that depends on a separately initialized chunk', () => {

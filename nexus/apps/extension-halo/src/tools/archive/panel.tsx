@@ -1,6 +1,7 @@
 // goal: Archive panel UI - save and manage page snapshots
 
-import React, { useState, useEffect, useCallback } from 'react';
+import type React from 'react';
+import { useState, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { ArchiveEntry } from './types';
@@ -19,9 +20,9 @@ const formatDate = (ts: number): string => new Date(ts).toLocaleString();
 
 export const ArchivePanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [entries, setEntries] = useToolState<ArchiveEntry[]>('archive' as any, []);
+	const [entries, setEntries] = useToolState<ArchiveEntry[]>('archive', []);
 	const [isCapturing, setIsCapturing] = useState(false);
-	const [lastCaptured, setLastCaptured] = useToolState<ArchiveEntry | null>('archive-last' as any, null);
+	const [lastCaptured, setLastCaptured] = useToolState<ArchiveEntry | null>('archive-last', null);
 
 
 	const handleCapture = useCallback(async () => {
@@ -33,7 +34,7 @@ export const ArchivePanel: React.FC = () => {
 			setEntries(await getStoredEntries());
 		}
 		setIsCapturing(false);
-	}, []);
+	}, [setEntries, setLastCaptured]);
 
 	const handleDownload = useCallback(async () => {
 		if (lastCaptured) await downloadArchive(lastCaptured);
@@ -47,11 +48,11 @@ export const ArchivePanel: React.FC = () => {
 		await deleteEntry(id);
 		setEntries(await getStoredEntries());
 		if (lastCaptured?.id === id) setLastCaptured(null);
-	}, [lastCaptured]);
+	}, [lastCaptured, setLastCaptured, setEntries]);
 
 	return (
 		<div style={styles.wrapper}>
-			<button style={styles.btn} onClick={handleCapture} disabled={isCapturing}>
+			<button type="button" style={styles.btn} onClick={handleCapture} disabled={isCapturing}>
 				{isCapturing ? '⏳' : '📥'} {isCapturing ? t('archive.capturing') : t('archive.capture')}
 			</button>
 
@@ -63,8 +64,8 @@ export const ArchivePanel: React.FC = () => {
 							<div style={styles.entryTitle}>{lastCaptured.title}</div>
 							<div style={styles.entryMeta}>{formatSize(lastCaptured.size)}</div>
 						</div>
-						<button style={styles.btnSecondary} onClick={() => handleOpen(lastCaptured)}>👁️ {t('archive.view')}</button>
-						<button style={styles.btn} onClick={handleDownload}>💾 {t('archive.download')}</button>
+						<button type="button" style={styles.btnSecondary} onClick={() => handleOpen(lastCaptured)}>👁️ {t('archive.view')}</button>
+						<button type="button" style={styles.btn} onClick={handleDownload}>💾 {t('archive.download')}</button>
 					</div>
 				</Card>
 			)}
@@ -85,9 +86,9 @@ export const ArchivePanel: React.FC = () => {
 						<div style={styles.entryMeta}>{formatDate(entry.savedAt)} • {formatSize(entry.size)}</div>
 						<div style={styles.entryMeta} title={entry.url}>{entry.url.slice(0, 60)}{entry.url.length > 60 ? '...' : ''}</div>
 						<div style={styles.entryActions}>
-							<button style={styles.btnSecondary} onClick={() => handleOpen(entry)}>👁️ {t('archive.view')}</button>
-							<button style={styles.btnSecondary} onClick={async () => await downloadArchive(entry)}>💾</button>
-							<button style={styles.btnDanger} onClick={() => handleDelete(entry.id)}>🗑️</button>
+							<button type="button" style={styles.btnSecondary} onClick={() => handleOpen(entry)}>👁️ {t('archive.view')}</button>
+							<button type="button" style={styles.btnSecondary} onClick={async () => await downloadArchive(entry)}>💾</button>
+							<button type="button" style={styles.btnDanger} onClick={() => handleDelete(entry.id)}>🗑️</button>
 						</div>
 					</div>
 				))

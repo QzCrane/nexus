@@ -144,6 +144,7 @@ export async function syncState(
 		if (snapshot) await publishRemoteState(snapshot, session);
 	} catch {
 		// The tab may have navigated or closed between authentication and sync.
+		stableRemoteStates.delete(tabId);
 	}
 }
 
@@ -174,6 +175,7 @@ async function publishRemoteState(
 			if (parsed.protocol === 'http:' || parsed.protocol === 'https:') tabDomain = parsed.hostname;
 		} catch {
 			// Non-web tabs intentionally expose no domain.
+			tabDomain = '';
 		}
 	}
 	const baseline = sameDocument ? previous.state : {
@@ -207,8 +209,8 @@ async function publishRemoteState(
 		volume: volume.effectiveVolume,
 		volumeBase: volume.volumeBase,
 		boost: volume.boost,
-		actualMode: sessionMatches ? session!.actualMode : baseline.actualMode,
-		phase: sessionMatches ? session!.phase : baseline.phase,
+		actualMode: sessionMatches && session ? session.actualMode : baseline.actualMode,
+		phase: sessionMatches && session ? session.phase : baseline.phase,
 		muted: actual('mediaMuted', baseline.muted),
 		playing: actual('playing', baseline.playing),
 		speed: actual('speed', baseline.speed),

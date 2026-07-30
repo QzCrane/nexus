@@ -48,7 +48,6 @@
 			"resources": [
 				"tools/*",
 				"scripts/*",
-				"tools/llm-enhancer/timeline/*",
 				"assets/*"
 			],
 			"matches": [

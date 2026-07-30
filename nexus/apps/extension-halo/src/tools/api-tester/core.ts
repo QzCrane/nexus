@@ -120,7 +120,25 @@ export function formatSize(bytes: number): string {
 
 /** Create empty header */
 export function createHeader(): Header {
-	return { key: '', value: '', enabled: true };
+	return { id: crypto.randomUUID(), key: '', value: '', enabled: true };
+}
+
+/** Upgrade persisted header rows to stable identities without rewriting already-valid rows. */
+export function normalizeHeaders(headers: Header[]): Header[] {
+	const seen = new Set<string>();
+	let changed = false;
+	const normalized = headers.map((header) => {
+		if (header.id && !seen.has(header.id)) {
+			seen.add(header.id);
+			return header;
+		}
+
+		changed = true;
+		const id = crypto.randomUUID();
+		seen.add(id);
+		return { ...header, id };
+	});
+	return changed ? normalized : headers;
 }
 
 /** Default request config */

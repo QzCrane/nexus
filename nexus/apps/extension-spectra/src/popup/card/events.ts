@@ -230,8 +230,9 @@ export function bindCardEvents(params: EventsParams): void {
 
   // eff: save as global preset — zero-interaction save. The preset name is
   // auto-generated inside saveGlobalPreset so the user is never prompted.
-  if (ui.btnSaveGlobal) {
-    ui.btnSaveGlobal.onclick = async () => {
+  const saveGlobalButton = ui.btnSaveGlobal;
+  if (saveGlobalButton) {
+    saveGlobalButton.onclick = async () => {
       // eff: capture current playback speed
       try {
         const speed = await readActualSpeed();
@@ -248,12 +249,12 @@ export function bindCardEvents(params: EventsParams): void {
         const { saveGlobalPreset } = await import('../views/presets-ui');
         await saveGlobalPreset(state.config);
         // feedback: shared i18n success indicator — same style as btnSave
-        if (dict) showSaveFeedback(ui.btnSaveGlobal!, true, dict);
+        if (dict) showSaveFeedback(saveGlobalButton, true, dict);
       } catch (error) {
         console.error('Failed to save global preset:', error);
         // feedback: previously btnSaveGlobal had no failure feedback at all;
         // share the same failure indicator as btnSave for consistency.
-        if (dict) showSaveFeedback(ui.btnSaveGlobal!, false, dict);
+        if (dict) showSaveFeedback(saveGlobalButton, false, dict);
       }
     };
   }

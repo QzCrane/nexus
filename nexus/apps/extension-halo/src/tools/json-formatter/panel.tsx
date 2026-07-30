@@ -1,15 +1,14 @@
 // goal: JSON Formatter tool panel UI with Tree View and JSONPath support
 
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import type React from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Card } from '@nexus/ui-kit';
-import { createLogger } from '@nexus/kernel';
 import { useTranslation } from '../../i18n';
 import type { FormatOptions } from './types';
 import { DEFAULT_OPTIONS } from './types';
 import {
 	formatJSON,
 	minifyJSON,
-	validateJSON,
 	copyToClipboard,
 } from './core';
 import { useToolState } from '../../kernel';
@@ -17,13 +16,20 @@ import { useToast } from '../../components/ToastProvider';
 
 import { styles } from './panel.styles';
 
-const logger = createLogger('JSONFormatter', 'HALO');
+function isUnknownArray(value: unknown): value is unknown[] {
+	return Array.isArray(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 // Lightweight Recursive Tree View Component
-const JsonTree: React.FC<{ data: any; label?: string; depth?: number }> = ({ data, label, depth = 0 }) => {
+const JsonTree: React.FC<{ data: unknown; label?: string; depth?: number }> = ({ data, label, depth = 0 }) => {
 	const [collapsed, setCollapsed] = useState(depth > 1);
-	const isObject = data !== null && typeof data === 'object';
-	const type = Array.isArray(data) ? 'array' : typeof data;
+	const isArray = isUnknownArray(data);
+	const isObject = isArray || isRecord(data);
+	const type = isArray ? 'array' : typeof data;
 
 	if (!isObject) {
 		return (
@@ -36,25 +42,30 @@ const JsonTree: React.FC<{ data: any; label?: string; depth?: number }> = ({ dat
 		);
 	}
 
-	const keys = Object.keys(data);
-	const isEmpty = keys.length === 0;
+	const entries: Array<[string, unknown]> = isArray
+		? data.map((value, index) => [String(index), value])
+		: Object.entries(data);
+	const isEmpty = entries.length === 0;
 
 	return (
 		<div style={{ marginLeft: depth > 0 ? '16px' : '0', fontSize: '12px' }}>
-			<div 
-				onClick={() => !isEmpty && setCollapsed(!collapsed)} 
-				style={{ cursor: isEmpty ? 'default' : 'pointer', padding: '2px 0', display: 'flex', alignItems: 'center', gap: '4px' }}
+			<button
+				type="button"
+				disabled={isEmpty}
+				aria-expanded={isEmpty ? undefined : !collapsed}
+				onClick={() => setCollapsed(!collapsed)}
+				style={{ width: '100%', cursor: isEmpty ? 'default' : 'pointer', padding: '2px 0', display: 'flex', alignItems: 'center', gap: '4px', border: 'none', background: 'transparent', color: 'inherit', textAlign: 'left' }}
 			>
 				{!isEmpty && <span style={{ fontSize: '10px', opacity: 0.6 }}>{collapsed ? '▶' : '▼'}</span>}
 				{label && <span style={{ color: 'var(--halo-accent)' }}>{label}</span>}
 				<span style={{ color: 'var(--halo-text-muted)', fontSize: '11px' }}>
-					{Array.isArray(data) ? `[ ${keys.length} ]` : `{ ${keys.length} }`}
+					{isArray ? `[ ${entries.length} ]` : `{ ${entries.length} }`}
 				</span>
-			</div>
+			</button>
 			{!collapsed && !isEmpty && (
 				<div style={{ borderLeft: '1px solid var(--halo-border)', marginLeft: '4px' }}>
-					{keys.map(key => (
-						<JsonTree key={key} data={data[key]} label={key} depth={depth + 1} />
+					{entries.map(([key, value]) => (
+						<JsonTree key={key} data={value} label={key} depth={depth + 1} />
 					))}
 				</div>
 			)}
@@ -67,19 +78,19 @@ export const JSONFormatterPanel: React.FC = () => {
 	const { showToast } = useToast();
 	const [input, setInput] = useToolState<string>('json-formatter', '');
 	const [error, setError] = useState<string | null>(null);
-	const [options, setOptions] = useToolState<FormatOptions>('json-formatter-opts' as any, DEFAULT_OPTIONS);
+	const [options, setOptions] = useToolState<FormatOptions>('json-formatter-opts', DEFAULT_OPTIONS);
 
 	const handleFormat = useCallback(() => {
 		const result = formatJSON(input, options);
 		if (result.success) { setInput(result.output); setError(null); showToast(t('jsonPanel.formatted')); }
 		else { setError(result.error || t('jsonPanel.invalidJson')); }
-	}, [input, options, showToast, t]);
+	}, [input, options, showToast, t, setInput]);
 
 	const handleMinify = useCallback(() => {
 		const result = minifyJSON(input);
 		if (result.success) { setInput(result.output); setError(null); showToast(t('jsonPanel.minified')); }
 		else { setError(result.error || t('jsonPanel.invalidJson')); }
-	}, [input, showToast, t]);
+	}, [input, showToast, t, setInput]);
 
 	const handleDownload = useCallback(() => {
 		const blob = new Blob([input], { type: 'application/json' });
@@ -93,7 +104,12 @@ export const JSONFormatterPanel: React.FC = () => {
 
 	const parsedData = useMemo(() => {
 		if (!options.showTree || !input.trim()) return null;
-		try { return JSON.parse(input); } catch { return null; }
+		try {
+			const parsed: unknown = JSON.parse(input);
+			return parsed;
+		} catch {
+			return null;
+		}
 	}, [input, options.showTree]);
 
 	return (
@@ -143,11 +159,11 @@ export const JSONFormatterPanel: React.FC = () => {
 			)}
 
 			<div style={styles.actionRow}>
-				<button style={{ ...styles.btn, ...styles.primaryBtn }} onClick={handleFormat}>✨ Format</button>
-				<button style={styles.btn} onClick={handleMinify}>📦 Minify</button>
-				<button style={styles.btn} onClick={() => copyToClipboard(input).then(ok => showToast(ok ? 'Copied' : 'Failed'))}>📋 Copy</button>
-				<button style={styles.btn} onClick={handleDownload}>💾 Save</button>
-				<button style={styles.btn} onClick={() => setInput('')}>🗑️ Clear</button>
+				<button type="button" style={{ ...styles.btn, ...styles.primaryBtn }} onClick={handleFormat}>✨ Format</button>
+				<button type="button" style={styles.btn} onClick={handleMinify}>📦 Minify</button>
+				<button type="button" style={styles.btn} onClick={() => copyToClipboard(input).then(ok => showToast(ok ? 'Copied' : 'Failed'))}>📋 Copy</button>
+				<button type="button" style={styles.btn} onClick={handleDownload}>💾 Save</button>
+				<button type="button" style={styles.btn} onClick={() => setInput('')}>🗑️ Clear</button>
 			</div>
 
 			<div style={styles.statusBar}>

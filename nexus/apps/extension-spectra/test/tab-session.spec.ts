@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
+import { requireValue } from './helpers/require-value';
 import {
 	CONTROL_SESSION_FIELDS,
 	DEFAULT_AUDIO_CONFIG,
@@ -299,7 +300,11 @@ describe('document-bound acknowledged control sessions', () => {
 
 		const migrated = await getTabControlSession(7, firstDocument);
 		expect(migrated).toEqual(audioConfigToControlSessionPatch(legacyConfig));
-		expect(controlSessionPatchToAudioConfig(migrated!)).toMatchObject({
+		const migratedSession = requireValue(
+			migrated,
+			'Expected the legacy tab session to migrate to a control-session patch',
+		);
+		expect(controlSessionPatchToAudioConfig(migratedSession)).toMatchObject({
 			volume: 275,
 			volumeBase: 100,
 			boost: 2.75,

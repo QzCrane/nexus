@@ -2,6 +2,18 @@
 
 import type { StorageItem } from './types';
 
+interface ScriptInjectionWithArgs<Args extends unknown[]> {
+	target: chrome.scripting.InjectionTarget;
+	func: (...args: Args) => void;
+	args: Args;
+}
+
+async function executeScriptWithArgs<Args extends unknown[]>(injection: ScriptInjectionWithArgs<Args>): Promise<void> {
+	// chrome-types 0.1.327 models `func` as zero-argument even though Chrome's
+	// documented `args` ABI invokes it with the supplied tuple.
+	await chrome.scripting.executeScript(injection as unknown as chrome.scripting.ScriptInjection);
+}
+
 // Get all storage items from page
 export async function getStorageItems(): Promise<StorageItem[]> {
 	try {
@@ -47,12 +59,12 @@ export async function setStorageItem(key: string, value: string, type: 'localSto
 		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 		if (!tab?.id) return false;
 
-		await chrome.scripting.executeScript({
+		await executeScriptWithArgs({
 			target: { tabId: tab.id },
-			func: ((k: string, v: string, t: string) => {
+			func: (k: string, v: string, t: StorageItem['type']) => {
 				if (t === 'localStorage') localStorage.setItem(k, v);
 				else sessionStorage.setItem(k, v);
-			}) as any,
+			},
 			args: [key, value, type],
 		});
 
@@ -68,12 +80,12 @@ export async function deleteStorageItem(key: string, type: 'localStorage' | 'ses
 		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 		if (!tab?.id) return false;
 
-		await chrome.scripting.executeScript({
+		await executeScriptWithArgs({
 			target: { tabId: tab.id },
-			func: ((k: string, t: string) => {
+			func: (k: string, t: StorageItem['type']) => {
 				if (t === 'localStorage') localStorage.removeItem(k);
 				else sessionStorage.removeItem(k);
-			}) as any,
+			},
 			args: [key, type],
 		});
 

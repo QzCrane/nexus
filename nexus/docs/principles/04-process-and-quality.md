@@ -2,7 +2,7 @@
 type: explanation
 status: stable
 audience: contributor
-last_reviewed: 2026-07-24
+last_reviewed: 2026-07-29
 ---
 
 # 04. Process and quality gates (EPR-026..029)
@@ -34,11 +34,13 @@ README, privacy policy, store copy, permission declarations, and remote-site dis
 
 The deployed local Git gate is [`../../../lefthook.yml`](../../../lefthook.yml). Root [`../../../package.json`](../../../package.json) installs Lefthook through `postinstall` and `prepare`.
 
-- **pre-commit** runs the Markdown structure linter and Biome on the configured staged-file sets;
+- **pre-commit** runs the Markdown structure linter and the repository-owned strict Biome runner on the configured staged-file sets;
 - **commit-msg** runs commitlint with the repository Conventional Commit configuration;
-- **pre-push** runs the repository [cross-platform contract](../../../rules.md#cross-platform-contract), toolchain, documentation, AI-hook smoke, `verify:q`, SPECTRA typecheck, AI-pitfall, and read-only `sync:skills --check` gates in parallel;
+- **pre-push** runs the complete repository lint owner, [cross-platform contract](../../../rules.md#cross-platform-contract), toolchain, documentation, AI-hook smoke, `verify:q`, SPECTRA typecheck, AI-pitfall, and read-only `sync:skills --check` gates in parallel;
 - **post-merge** runs `sync:skills`, which refreshes the generated Project Skills table in `AGENTS.md`;
 - **post-analyze** is a separate workspace script that restores the `CLAUDE.md` → `AGENTS.md` hardlink after GitNexus regeneration.
+
+Every Turbo workspace exposes a real lint task and sends its package root to the same strict runner, so new package-level configuration, tests, public assets, and source files enter the lint surface without another allowlist edit. The runner independently enumerates every supported file contributed by every declared target, rejects overlapping or realpath-escaping scope, requires Biome's processed-file count to match that inventory exactly, accepts only zero errors, warnings, infos, skipped files, or omitted diagnostics, and rejects structurally empty synchronous and Promise rejection handlers. Biome scope comes from those complete package roots, explicit non-workspace repository targets, and the checked root configuration rather than a mutable VCS ignore file. A historical baseline, static workspace allowlist, truncated diagnostic cap, or cached report cannot become a second quality floor.
 
 The host-specific AI hooks documented in [`../../scripts/hooks/README.md`](../../scripts/hooks/README.md) provide earlier feedback where the host exposes the required interception point. They are not a security boundary and do not replace Git, tests, review, or CI.
 

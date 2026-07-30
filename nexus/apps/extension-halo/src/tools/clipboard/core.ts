@@ -1,6 +1,6 @@
 // goal: Clipboard tool core logic
 
-import { ClipboardItem, STORAGE_KEY, SETTINGS_STORAGE_KEY, MAX_HISTORY } from './types';
+import { type ClipboardItem, STORAGE_KEY, SETTINGS_STORAGE_KEY, MAX_HISTORY } from './types';
 
 /**
  * Get clipboard settings
@@ -25,13 +25,13 @@ export async function saveToClipboardHistory(
 	sourceUrl?: string,
 	sourceTitle?: string
 ): Promise<ClipboardItem[]> {
-	if (!text || !text.trim()) return await getClipboardHistory();
+	if (!text?.trim()) return await getClipboardHistory();
 
 	const result = await chrome.storage.local.get([STORAGE_KEY]);
 	const history: ClipboardItem[] = result[STORAGE_KEY] || [];
 
 	// Deduplicate: if the top item is exactly the same, skip
-	if (history.length > 0 && history[0]!.text === text) {
+	if (history[0]?.text === text) {
 		return history;
 	}
 

@@ -1,6 +1,7 @@
 // goal: Bookmark Manager panel UI - search and manage bookmarks
 
-import React, { useState, useEffect, useCallback } from 'react';
+import type React from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { BookmarkSearchResult } from './types';
@@ -14,8 +15,8 @@ type ViewMode = 'search' | 'recent';
 export const BookmarkManagerPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const { hasPermission, request } = usePermission('bookmarks');
-	const [mode, setMode] = useToolState<ViewMode>('bookmark-mode' as any, 'recent');
-	const [query, setQuery] = useToolState<string>('bookmark-query' as any, '');
+	const [mode, setMode] = useToolState<ViewMode>('bookmark-mode', 'recent');
+	const [query, setQuery] = useToolState<string>('bookmark-query', '');
 
 	const [results, setResults] = useState<BookmarkSearchResult[]>([]);
 	const [loading, setLoading] = useState(false);
@@ -70,7 +71,7 @@ export const BookmarkManagerPanel: React.FC = () => {
 								<h3 style={{ margin: '0 0 8px 0', color: 'var(--halo-text)' }}>{t('common.permissionRequired')}</h3>
 								<p style={{ margin: 0, fontSize: '13px', color: 'var(--halo-text-secondary)' }}>{t('common.permissionDesc')}</p>
 							</div>
-							<button 
+							<button type="button"
 								onClick={request}
 								style={{ 
 									padding: '8px 24px', 
@@ -96,10 +97,10 @@ export const BookmarkManagerPanel: React.FC = () => {
 		<div style={styles.wrapper}>
 			{/* Mode Tabs */}
 			<div style={styles.tabs}>
-				<button style={{ ...styles.tab, ...(mode === 'recent' ? styles.active : styles.inactive) }} onClick={() => setMode('recent')}>
+				<button type="button" style={{ ...styles.tab, ...(mode === 'recent' ? styles.active : styles.inactive) }} onClick={() => setMode('recent')}>
 					⏱️ {t('bookmarkManager.recent')}
 				</button>
-				<button style={{ ...styles.tab, ...(mode === 'search' ? styles.active : styles.inactive) }} onClick={() => setMode('search')}>
+				<button type="button" style={{ ...styles.tab, ...(mode === 'search' ? styles.active : styles.inactive) }} onClick={() => setMode('search')}>
 					🔍 {t('bookmarkManager.search')}
 				</button>
 			</div>
@@ -111,7 +112,6 @@ export const BookmarkManagerPanel: React.FC = () => {
 					value={query}
 					onChange={(e) => setQuery(e.target.value)}
 					placeholder={t('bookmarkManager.searchPlaceholder')}
-					autoFocus
 				/>
 			)}
 
@@ -123,14 +123,20 @@ export const BookmarkManagerPanel: React.FC = () => {
 					<div style={styles.empty}>📚 {mode === 'search' ? t('bookmarkManager.noResults') : t('bookmarkManager.noRecent')}</div>
 				) : (
 					results.map((item) => (
-						<div key={item.id} style={styles.item} onClick={(e) => handleClick(item.url, e)}>
-							<img src={getFaviconUrl(item.url)} alt="" style={styles.favicon} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-							<div style={styles.info}>
-								<div style={styles.title}>{item.title || item.url}</div>
-								<div style={styles.url}>{item.url}</div>
-							</div>
-							{item.parentTitle && <span style={styles.folder}>{item.parentTitle}</span>}
-							<button style={styles.btn} onClick={(e) => handleDelete(item.id, e)}>🗑️</button>
+						<div key={item.id} style={{ ...styles.item, cursor: 'default' }}>
+							<button
+								type="button"
+								onClick={(e) => handleClick(item.url, e)}
+								style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0, padding: 0, border: 'none', background: 'transparent', color: 'inherit', textAlign: 'left', cursor: 'pointer' }}
+							>
+								<img src={getFaviconUrl(item.url)} alt="" style={styles.favicon} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+								<span style={styles.info}>
+									<span style={{ ...styles.title, display: 'block' }}>{item.title || item.url}</span>
+									<span style={{ ...styles.url, display: 'block' }}>{item.url}</span>
+								</span>
+								{item.parentTitle && <span style={styles.folder}>{item.parentTitle}</span>}
+							</button>
+							<button type="button" style={styles.btn} onClick={(e) => handleDelete(item.id, e)}>🗑️</button>
 						</div>
 					))
 				)}

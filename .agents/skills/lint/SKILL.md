@@ -27,7 +27,13 @@ From `nexus/`:
 bun run lint
 ```
 
-This command is the script authority for the current code-lint set. It runs configured Turbo filters, workspace fallbacks, and SPECTRA release-surface lint. Do not copy a permanent package list into this skill.
+This command is the script authority for the current code-lint set. It dynamically verifies that every Turbo workspace sends its complete package root to the strict runner, runs all workspace tasks without a static filter list, and checks configuration, hooks, scripts, and remote-site surfaces outside those workspaces.
+
+Workspace lint tasks use `scripts/run-strict-biome.mjs`. The runner independently inventories every supported file contributed by every declared target and requires Biome's processed-file count to match exactly. Errors, warnings, infos, skipped files, omitted diagnostics, empty targets, missing targets, overlapping targets, duplicate targets, and lexical or realpath escapes all fail. It parses eligible JavaScript/TypeScript sources under the same inventory and rejects empty or no-op `catch` bodies, empty Promise `.catch(...)` callbacks, and empty second-argument rejection handlers passed to `.then(...)`, including comment-only bodies. The repository's error-handling contract therefore cannot be bypassed by Biome's comment exception or by switching to an equally silent Promise form. Historical diagnostic baselines, mutable VCS-ignore scope, and package-specific rule overrides are not acceptable substitutes for a clean owner.
+
+The repository uses Biome's complete recommended preset without global rule-off overrides. A genuine compatibility exception belongs at the narrow checked boundary with an exact reason; it does not justify disabling the rule for unrelated packages.
+
+`lint:workspace-coverage` runs the path-boundary and strict-report contract tests before discovery. The staged-file hook and generated HALO/SPECTRA public candidates consume the same strict runner, and pre-push runs the complete repository lint owner. Do not reintroduce a direct truncated `biome check` command at those projections.
 
 ### Documentation architecture
 
@@ -72,6 +78,7 @@ Biome alone does not prove behavior, browser lifecycle, privacy truth, architect
 ## Prohibited shortcuts
 
 - Adding a blanket suppression without documenting the exact false positive and boundary.
+- Adding or refreshing a diagnostic baseline to grandfather known findings.
 - Formatting unrelated files to hide the meaningful diff.
 - Treating clean lint or docs checks as behavior verification.
 - Editing generated output or a compatibility mirror rather than its canonical source.
@@ -82,6 +89,7 @@ Biome alone does not prove behavior, browser lifecycle, privacy truth, architect
 
 - focused lint passes during iteration;
 - repository code lint passes where applicable;
+- every applicable Biome surface reports zero errors, warnings, and infos;
 - `docs:check` passes for the final tree;
 - Bun 1.3.14 toolchain check passes;
 - suppressions are narrow and justified;

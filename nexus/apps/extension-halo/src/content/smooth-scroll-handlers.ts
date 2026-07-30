@@ -1,125 +1,230 @@
-// goal: Event handlers for Smooth Scroll
-// eff: Loosely coupled handlers using shared state
+// goal: Input admission for Smooth Scroll
+// inv: Site-owned and native surfaces receive first refusal
 
-import { scheduleClearCache, findScrollTargetChained, canScrollBy, isVirtualList, isSuspiciousList } from '../tools/smooth-scroll/utils';
-import { scrollTo } from '../tools/smooth-scroll/engine';
-import { settings, state, lastScrollTime, acceleration, updateAcceleration } from './smooth-scroll-state';
+import { canScrollBy, canonicalizeScrollTarget, prefersReducedMotion, resolveDirectScrollRoute, resolveScrollRoute } from '../tools/smooth-scroll/utils';
+import {
+	clearQueue,
+	queueOwnedVerticalScroll,
+	scrollTo,
+} from '../tools/smooth-scroll/engine';
+import {
+	classifyWheelGesture,
+	normalizeWheelDeltaY,
+	wheelEventTarget,
+	wheelEventTimestamp,
+	wheelNeedsComposedPath,
+} from '../tools/smooth-scroll/wheel-input';
+import {
+	acceleration,
+	accelerationDirection,
+	accelerationTarget,
+	lastScrollTime,
+	resetAcceleration,
+	resetWheelRuntimeState,
+	settings,
+	state,
+	updateAcceleration,
+} from './smooth-scroll-state';
 
-// Static Cache & Config
-const NATIVE_TAGS = new Set(['CANVAS', 'EMBED', 'OBJECT', 'MAP']);
-const hotTarget: { el: Element | Window, ts: number, targetRef: EventTarget | null } = { el: window, ts: 0, targetRef: null };
-
-function isTouchpad(deltaY: number): boolean {
-	if (!deltaY) return false;
-	const absDelta = Math.abs(deltaY);
-	state.deltaBuffer.push(absDelta);
-	if (state.deltaBuffer.length > 3) state.deltaBuffer.shift();
-
-	// rule: Touchpads produce precise small floats rarely divisible by integer steps
-	const isMouseLike = absDelta >= 120 || state.deltaBuffer.every(d => d % 120 === 0 || d % 100 === 0);
-	return !isMouseLike;
+function yieldWheelToNative(): void {
+	clearQueue();
+	resetWheelRuntimeState();
 }
 
 export function onWheel(e: WheelEvent): void {
-	if (!settings.enabled || !settings.mouseWheel || e.ctrlKey) return;
-
-	// rule: Guard Pass-through (Maps/Canvas/Embeds)
-	const t = e.target as HTMLElement;
-	if (NATIVE_TAGS.has(t.tagName) || t.getAttribute('role') === 'img' || t.classList.contains('gm-style')) return;
-
-	const touchpad = isTouchpad(e.deltaY);
-	if (touchpad && !settings.touchpad) return;
-
-	let deltaY = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
-
-	// perf: Hot cache check (150ms TTL)
-	let target: Element | Window;
-	const now = Date.now();
-	if (now - hotTarget.ts < 150 && hotTarget.targetRef === e.target) {
-		target = hotTarget.el;
-		hotTarget.ts = now;
-	} else {
-		target = findScrollTargetChained(e.target as Element, deltaY);
-		hotTarget.el = target;
-		hotTarget.ts = now;
-		hotTarget.targetRef = e.target;
+	if (!e.isTrusted) return;
+	if (state.isMiddleScrolling) cancelMiddleScroll();
+	if (!settings.enabled) {
+		yieldWheelToNative();
+		return;
 	}
-
-	// rule: Bypass "Suspicious Lists" (Virtual/Custom/Bilibili) to support custom scrollbars
-	// We preventDefault to stop Body chaining, but return to allow Site JS to handle the scroll
-	if (target !== window && isSuspiciousList(target as Element)) {
-		// rule: For suspicious/virtual lists, we MUST yield completely.
-		// DO NOT set scroll-behavior: smooth here, as it breaks site-side virtual list logic (e.g. Bilibili)
+	if (
+		e.defaultPrevented ||
+		!e.cancelable ||
+		e.ctrlKey ||
+		!e.deltaY
+	) {
+		yieldWheelToNative();
 		return;
 	}
 
-	if (!canScrollBy(target, deltaY)) {
-		// rule: if we found a specific trapped target (Fixed/Contain) that can't scroll, kill the event to prevent native bleeding
-		if (target !== window) {
-			e.preventDefault();
-			e.stopPropagation();
-			e.stopImmediatePropagation();
+	let eventTarget = wheelEventTarget(e);
+	let composedPath: readonly EventTarget[] | undefined;
+	if (!eventTarget || wheelNeedsComposedPath(eventTarget)) {
+		composedPath = e.composedPath();
+	}
+	if (!eventTarget && composedPath) {
+		for (const target of composedPath) {
+			if (target instanceof Element) {
+				eventTarget = target;
+				break;
+			}
 		}
+	}
+	if (
+		!eventTarget ||
+		(settings.respectReducedMotion && prefersReducedMotion())
+	) {
+		yieldWheelToNative();
 		return;
 	}
 
+	const timestamp = wheelEventTimestamp(e);
+	let deltaY = normalizeWheelDeltaY(e);
+	const gesture = classifyWheelGesture(e, timestamp, state.wheelGesture);
+	if (gesture === 'horizontal') {
+		yieldWheelToNative();
+		return;
+	}
+	const inputMode = gesture;
+	if (
+		(inputMode === 'fine' && !settings.touchpad) ||
+		(inputMode === 'coarse' && !settings.mouseWheel)
+	) {
+		yieldWheelToNative();
+		return;
+	}
+
+	const route = resolveScrollRoute(eventTarget, deltaY, composedPath);
+	if (route.kind === 'native') {
+		yieldWheelToNative();
+		return;
+	}
+	if (route.kind === 'blocked') {
+		e.preventDefault();
+		e.stopPropagation();
+		yieldWheelToNative();
+		return;
+	}
+	// The route already canonicalizes viewport ownership in this call stack.
+	// The engine performs the final admission canonicalization, so repeating it
+	// here would allocate another style reader on every admitted wheel.
+	const target = route.target;
+	// WheelEvent does not expose a trustworthy hardware identity. Fine-grained
+	// streams keep their physical delta. Coarse wheel ticks add one configured
+	// step while acceleration changes only the engine response; both retain the
+	// same rAF owner.
+	let newAcc = 1;
+	if (inputMode === 'fine') {
+		if (accelerationTarget) resetAcceleration();
+	} else {
+		const direction = Math.sign(deltaY);
+		const continuingStream =
+			accelerationTarget === target &&
+			accelerationDirection === direction &&
+			lastScrollTime !== null &&
+			timestamp - lastScrollTime < settings.accelerationDelta;
+		newAcc = continuingStream
+			? Math.min(acceleration + 0.5, settings.accelerationMax)
+			: 1;
+	}
+
+	if (inputMode === 'coarse' && Math.abs(deltaY) > 1.2) {
+		deltaY = Math.sign(deltaY) * settings.stepSize;
+	}
+
+	if (
+		!scrollTo(
+			target,
+			0,
+			deltaY,
+			route.admission,
+			inputMode,
+			performance.now(),
+			newAcc,
+		)
+	) {
+		yieldWheelToNative();
+		return;
+	}
+
+	if (inputMode === 'coarse') {
+		updateAcceleration(newAcc, timestamp, target, Math.sign(deltaY));
+	}
 	e.preventDefault();
-	scheduleClearCache();
-
-	if (touchpad) {
-		target instanceof Window ? window.scrollBy(0, deltaY) : target.scrollTop += deltaY;
-		return;
-	}
-
-	// Queue-based Animation with Acceleration
-	const scrollNow = Date.now();
-	const newAcc = scrollNow - lastScrollTime < settings.accelerationDelta
-		? Math.min(acceleration + 0.5, settings.accelerationMax)
-		: 1;
-
-	updateAcceleration(newAcc, scrollNow);
-
-	if (Math.abs(deltaY) > 1.2) {
-		deltaY = Math.sign(deltaY) * settings.stepSize * newAcc;
-	}
-
-	scrollTo(target, 0, deltaY);
 }
 
 export { onKeydown } from './smooth-scroll-keyboard';
 
 export function onMouseDown(e: MouseEvent): void {
-	if (!settings.enabled || !settings.middleClickAutoScroll || e.button !== 1) return;
+	if (!e.isTrusted) return;
+	if (
+		!settings.enabled ||
+		!settings.middleClickAutoScroll ||
+		e.defaultPrevented ||
+		e.button !== 1
+	) return;
 
-	const target = findScrollTargetChained(e.target as Element, 1);
-	if (!canScrollBy(target, 1)) return;
+	const eventTarget = e.target instanceof Element ? e.target : null;
+	if (!eventTarget) return;
+	const composedPath = wheelNeedsComposedPath(eventTarget)
+		? e.composedPath()
+		: undefined;
+	const route = resolveDirectScrollRoute(eventTarget, composedPath);
+	const target = route.kind === 'animate'
+		? canonicalizeScrollTarget(route.target)
+		: null;
+	if (
+		!target ||
+		(!canScrollBy(target, 1) && !canScrollBy(target, -1))
+	) return;
 
 	e.preventDefault();
+	clearQueue();
+	resetWheelRuntimeState();
 	state.isMiddleScrolling = true;
 	state.middleScrollStartY = e.clientY;
 	state.middleScrollTarget = target;
+	state.middleScrollPreviousCursor = document.body.style.cursor;
 	document.body.style.cursor = 'ns-resize';
 
 	window.addEventListener('mousemove', onMouseMove);
 	window.addEventListener('mouseup', onMouseUp);
+	window.addEventListener('blur', cancelMiddleScroll);
 }
 
 export function onMouseMove(e: MouseEvent): void {
+	if (!e.isTrusted) return;
 	if (!state.isMiddleScrolling || !state.middleScrollTarget) return;
 	const deltaY = (e.clientY - state.middleScrollStartY) * 2;
 	state.middleScrollStartY = e.clientY;
+	if (!deltaY) return;
 
-	state.middleScrollTarget instanceof Window
-		? window.scrollBy(0, deltaY)
-		: state.middleScrollTarget.scrollTop += deltaY;
+	if (
+		!queueOwnedVerticalScroll(
+			state.middleScrollTarget,
+			deltaY,
+			performance.now(),
+			cancelMiddleScroll,
+		)
+	) {
+		cancelMiddleScroll();
+	}
 }
 
 export function onMouseUp(e: MouseEvent): void {
+	if (!e.isTrusted) return;
 	if (e.button === 1 && state.isMiddleScrolling) {
-		state.isMiddleScrolling = false;
-		state.middleScrollTarget = null;
-		document.body.style.cursor = '';
-		window.removeEventListener('mousemove', onMouseMove);
-		window.removeEventListener('mouseup', onMouseUp);
+		releaseMiddleScroll(false);
 	}
+}
+
+function releaseMiddleScroll(cancelAnimation: boolean): void {
+	const wasActive = state.isMiddleScrolling;
+	state.isMiddleScrolling = false;
+	state.middleScrollTarget = null;
+	if (document.body) document.body.style.cursor = state.middleScrollPreviousCursor;
+	state.middleScrollPreviousCursor = '';
+	window.removeEventListener('mousemove', onMouseMove);
+	window.removeEventListener('mouseup', onMouseUp);
+	window.removeEventListener('blur', cancelMiddleScroll);
+	if (cancelAnimation && wasActive) clearQueue();
+}
+
+export function cancelMiddleScroll(): void {
+	releaseMiddleScroll(true);
+}
+
+export function resetInputHandlers(): void {
+	cancelMiddleScroll();
 }

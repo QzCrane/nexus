@@ -6,21 +6,21 @@ import type { UAResult, CurlParseResult } from './types';
 
 const UA_PATTERNS = {
 	browser: [
-		{ name: 'Chrome', pattern: /Chrome\/(\d+[\.\d]*)/ },
-		{ name: 'Firefox', pattern: /Firefox\/(\d+[\.\d]*)/ },
-		{ name: 'Safari', pattern: /Version\/(\d+[\.\d]*).*Safari/ },
-		{ name: 'Edge', pattern: /Edg\/(\d+[\.\d]*)/ },
-		{ name: 'Opera', pattern: /OPR\/(\d+[\.\d]*)/ },
-		{ name: 'IE', pattern: /MSIE (\d+[\.\d]*)/ },
+		{ name: 'Chrome', pattern: /Chrome\/(\d+[.\d]*)/ },
+		{ name: 'Firefox', pattern: /Firefox\/(\d+[.\d]*)/ },
+		{ name: 'Safari', pattern: /Version\/(\d+[.\d]*).*Safari/ },
+		{ name: 'Edge', pattern: /Edg\/(\d+[.\d]*)/ },
+		{ name: 'Opera', pattern: /OPR\/(\d+[.\d]*)/ },
+		{ name: 'IE', pattern: /MSIE (\d+[.\d]*)/ },
 	],
 	os: [
 		{ name: 'Windows 11', pattern: /Windows NT 10\.0.*Win64/ },
 		{ name: 'Windows 10', pattern: /Windows NT 10\.0/ },
 		{ name: 'Windows 8.1', pattern: /Windows NT 6\.3/ },
 		{ name: 'Windows 7', pattern: /Windows NT 6\.1/ },
-		{ name: 'macOS', pattern: /Mac OS X (\d+[_\.\d]*)/ },
-		{ name: 'iOS', pattern: /iPhone OS (\d+[_\.\d]*)/ },
-		{ name: 'Android', pattern: /Android (\d+[\.\d]*)/ },
+		{ name: 'macOS', pattern: /Mac OS X (\d+[_.\d]*)/ },
+		{ name: 'iOS', pattern: /iPhone OS (\d+[_.\d]*)/ },
+		{ name: 'Android', pattern: /Android (\d+[.\d]*)/ },
 		{ name: 'Linux', pattern: /Linux/ },
 	],
 	device: [
@@ -65,10 +65,10 @@ export function parseUserAgent(ua: string): UAResult {
 	}
 
 	// Parse engine
-	const webkitMatch = ua.match(/AppleWebKit\/(\d+[\.\d]*)/);
+	const webkitMatch = ua.match(/AppleWebKit\/(\d+[.\d]*)/);
 	const geckoMatch = ua.match(/Gecko\/(\d+)/);
-	if (webkitMatch) result.engine = { name: 'WebKit', version: webkitMatch[1]! };
-	else if (geckoMatch) result.engine = { name: 'Gecko', version: geckoMatch[1]! };
+	if (webkitMatch) result.engine = { name: 'WebKit', version: webkitMatch[1] ?? '' };
+	else if (geckoMatch) result.engine = { name: 'Gecko', version: geckoMatch[1] ?? '' };
 
 	return result;
 }
@@ -84,12 +84,14 @@ export function parseCurl(curlCommand: string): CurlParseResult {
 
 	// Extract method
 	const methodMatch = curlCommand.match(/-X\s+['"]?(\w+)['"]?/);
-	if (methodMatch) result.method = methodMatch[1]!.toUpperCase();
+	if (methodMatch?.[1]) result.method = methodMatch[1].toUpperCase();
 
 	// Extract headers
 	const headerMatches = curlCommand.matchAll(/-H\s+['"]([^'"]+)['"]/g);
 	for (const match of headerMatches) {
-		const [key, ...valueParts] = match[1]!.split(':');
+		const header = match[1];
+		if (!header) continue;
+		const [key, ...valueParts] = header.split(':');
 		if (key) result.headers[key.trim()] = valueParts.join(':').trim();
 	}
 

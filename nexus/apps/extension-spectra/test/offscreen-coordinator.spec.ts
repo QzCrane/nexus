@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { requireValue } from './helpers/require-value';
 import {
 	acquireOffscreenLease,
 	getOffscreenLeaseCount,
@@ -251,7 +252,10 @@ async function fireOnlyAlarm(
 ): Promise<void> {
 	expect(alarms.size).toBe(1);
 	expect(listener).not.toBeNull();
-	const [name, info] = [...alarms.entries()][0]!;
+	const [name, info] = requireValue(
+		[...alarms.entries()][0],
+		'Expected exactly one pending offscreen alarm',
+	);
 	alarms.delete(name);
 	listener?.({ name, scheduledTime: Date.now() + info.delayInMinutes * 60_000 });
 	await Promise.resolve();
@@ -259,7 +263,10 @@ async function fireOnlyAlarm(
 
 async function fireOnlyTimer(timers: Map<number, { callback: TimerCallback }>): Promise<void> {
 	expect(timers.size).toBe(1);
-	const [id, timer] = [...timers.entries()][0]!;
+	const [id, timer] = requireValue(
+		[...timers.entries()][0],
+		'Expected exactly one pending offscreen timer',
+	);
 	timers.delete(id);
 	timer.callback();
 	await Promise.resolve();

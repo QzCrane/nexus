@@ -2,17 +2,23 @@
 	"$schema": "https://biomejs.dev/schemas/2.5.3/schema.json",
 	"root": true,
 	"vcs": {
-		"enabled": true,
-		"clientKind": "git",
-		"useIgnoreFile": true
+		"enabled": false
 	},
 	"files": {
 		"includes": [
 			"**",
+			"!**/.cache",
+			"!**/.playwright-user-data",
 			"!**/dist",
 			"!**/node_modules",
 			"!**/.turbo",
-			"!apps/extension-spectra/assets-backup"
+			"!**/assets-backup",
+			"!**/build",
+			"!**/coverage",
+			"!**/playwright-report",
+			"!**/release",
+			"!**/test-results",
+			"!**/vendor"
 		]
 	},
 	"formatter": {
@@ -24,16 +30,7 @@
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"preset": "recommended",
-			"suspicious": {
-				"noExplicitAny": "off",
-				"noMisleadingCharacterClass": "off",
-				"useIterableCallbackReturn": "off"
-			},
-			"style": {
-				"noNonNullAssertion": "off",
-				"useImportType": "off"
-			}
+			"preset": "recommended"
 		}
 	}
 }

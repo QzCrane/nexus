@@ -22,7 +22,7 @@ function getLineAndColumn(text: string, index: number): { line: number; column: 
 	const lines = text.substring(0, index).split('\n');
 	return {
 		line: lines.length,
-		column: lines[lines.length - 1]!.length + 1,
+		column: (lines.at(-1)?.length ?? 0) + 1,
 	};
 }
 
@@ -38,8 +38,8 @@ export function executeRegex(pattern: string, testString: string, flags: RegexFl
 		const matches: RegexMatch[] = [];
 
 		if (flags.global) {
-			let match: RegExpExecArray | null;
-			while ((match = regex.exec(testString)) !== null) {
+			let match = regex.exec(testString);
+			while (match !== null) {
 				const pos = getLineAndColumn(testString, match.index);
 				matches.push({
 					index: match.index,
@@ -50,6 +50,7 @@ export function executeRegex(pattern: string, testString: string, flags: RegexFl
 				});
 				// Prevent infinite loop for zero-length matches
 				if (match[0].length === 0) regex.lastIndex++;
+				match = regex.exec(testString);
 			}
 		} else {
 			const match = regex.exec(testString);

@@ -1,6 +1,7 @@
 // goal: SQL Formatter panel UI
 
-import React, { useState, useCallback, useMemo } from 'react';
+import type React from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { formatSql, minifySql, validateSql } from './core';
 import { styles } from './panel.styles';
@@ -16,11 +17,11 @@ export const SqlFormatterPanel: React.FC = () => {
 
 	const handleFormat = useCallback(() => {
 		setInput(formatSql(input));
-	}, [input]);
+	}, [input, setInput]);
 
 	const handleMinify = useCallback(() => {
 		setInput(minifySql(input));
-	}, [input]);
+	}, [input, setInput]);
 
 	const handleCopy = useCallback(() => {
 		navigator.clipboard.writeText(input);
@@ -44,11 +45,11 @@ export const SqlFormatterPanel: React.FC = () => {
 
 			{/* Actions */}
 			<div style={styles.row}>
-				<button style={styles.btn} onClick={handleFormat}>✨ {t('sql.format')}</button>
-				<button style={styles.btnSecondary} onClick={handleMinify}>📦 {t('sql.minify')}</button>
+				<button type="button" style={styles.btn} onClick={handleFormat}>✨ {t('sql.format')}</button>
+				<button type="button" style={styles.btnSecondary} onClick={handleMinify}>📦 {t('sql.minify')}</button>
 			</div>
 
-			<button style={styles.btnSecondary} onClick={handleCopy}>📋 {t('sql.copy')}</button>
+			<button type="button" style={styles.btnSecondary} onClick={handleCopy}>📋 {t('sql.copy')}</button>
 		</div>
 	);
 };

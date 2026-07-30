@@ -70,13 +70,13 @@ export function evaluateStrength(password: string): PasswordStrength {
 	// Normalize score
 	score = Math.min(4, Math.max(0, score));
 
-	const labels = ['Very Weak', 'Weak', 'Fair', 'Strong', 'Very Strong'];
-	const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#10b981'];
+	const labels = ['Very Weak', 'Weak', 'Fair', 'Strong', 'Very Strong'] as const;
+	const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#10b981'] as const;
 
 	return {
 		score,
-		label: labels[score]!,
-		color: colors[score]!,
+		label: labels[score] ?? labels[0],
+		color: colors[score] ?? colors[0],
 		feedback: feedback.length ? feedback : ['Good password!'],
 	};
 }

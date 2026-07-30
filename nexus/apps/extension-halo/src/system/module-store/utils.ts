@@ -23,7 +23,7 @@ export function convertScriptsToModules(scripts: UserScript[]): PluginMeta[] {
 			if (builtInScriptIds.includes(s.name)) return false;
 			return true;
 		})
-		.map(s => ({
+		.map((s): PluginMeta => ({
 			id: s.id,
 			name: s.name,
 			description: s.description,
@@ -40,5 +40,5 @@ export function convertScriptsToModules(scripts: UserScript[]): PluginMeta[] {
 				runAt: s.runAt || 'document_idle',
 			},
 			isUserScript: true
-		})) as any[] as PluginMeta[];
+		}));
 }

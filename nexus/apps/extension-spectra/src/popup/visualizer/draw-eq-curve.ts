@@ -27,21 +27,28 @@ export function drawEqCurve(
   while (safeValues.length < 10) safeValues.push(0);
 
   // note: extend points beyond the canvas edges to ensure the curve appears continuous at the boundaries
+  const firstValue = safeValues.at(0);
+  if (firstValue === undefined) return;
   points.push({
     x: -20,
-    y: cache.midY - (safeValues[0]! * cache.scaleFactor),
+    y: cache.midY - (firstValue * cache.scaleFactor),
   });
 
   for (let i = 0; i < 10; i++) {
+    const x = cache.xCoords.at(i);
+    const value = safeValues.at(i);
+    if (x === undefined || value === undefined) return;
     points.push({
-      x: cache.xCoords[i]!,
-      y: cache.midY - (safeValues[i]! * cache.scaleFactor),
+      x,
+      y: cache.midY - (value * cache.scaleFactor),
     });
   }
 
+  const lastValue = safeValues.at(9);
+  if (lastValue === undefined) return;
   points.push({
     x: w + 20,
-    y: cache.midY - (safeValues[9]! * cache.scaleFactor),
+    y: cache.midY - (lastValue * cache.scaleFactor),
   });
 
   // rule: always reset transform and apply DPR scaling to maintain sharpness on high-density displays
@@ -53,13 +60,15 @@ export function drawEqCurve(
 
   // goal: implement a centripetal Catmull-Rom spline via cubic Bezier segments for a smooth "liquid" curve appearance
   const path = new Path2D();
-  const firstPoint = points[0]!;
+  const firstPoint = points.at(0);
+  if (!firstPoint) return;
   path.moveTo(firstPoint.x, firstPoint.y);
 
   for (let i = 0; i < points.length - 1; i++) {
-    const p0 = points[i === 0 ? 0 : i - 1]!;
-    const p1 = points[i]!;
-    const p2 = points[i + 1]!;
+    const p0 = points.at(i === 0 ? 0 : i - 1);
+    const p1 = points.at(i);
+    const p2 = points.at(i + 1);
+    if (!p0 || !p1 || !p2) return;
     const p3 = points[i + 2] ?? p2;
 
     const tension = 0.5;

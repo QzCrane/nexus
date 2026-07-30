@@ -13,6 +13,8 @@ reference
 .turbo/
 .cache/
 coverage/
+playwright-report/
+test-results/
 .vscode/
 .idea/
 release/

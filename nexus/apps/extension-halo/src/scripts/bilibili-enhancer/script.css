@@ -2,6 +2,7 @@
 
 /* Clean Home Mode */
 body[halo-clean-mode] .recommended-swipe {
+	/* biome-ignore lint/complexity/noImportantStyles: this injected user-selected rule must override Bilibili's author display declarations. */
 	display: none !important;
 }
 body[halo-clean-mode] .bili-feed4 .feed-card:nth-child(n+8) {
@@ -12,9 +13,11 @@ body[halo-clean-mode] .bili-feed4 .feed-card:nth-child(n+8) {
 
 /* Hide Hot Search */
 .halo-hide-hot-search .nav-search-content .nav-search-input {
+	/* biome-ignore lint/complexity/noImportantStyles: this injected user-selected rule must override Bilibili's author radius declarations. */
 	border-radius: 8px !important;
 }
 .halo-hide-hot-search .search-panel .hot-search {
+	/* biome-ignore lint/complexity/noImportantStyles: this injected user-selected rule must override Bilibili's author display declarations. */
 	display: none !important;
 }
 

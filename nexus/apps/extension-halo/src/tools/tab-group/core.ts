@@ -3,7 +3,7 @@
 export interface TabGroupInfo {
 	id: number;
 	title?: string;
-	color: string;
+	color: chrome.tabGroups.Color;
 	collapsed: boolean;
 	tabs: chrome.tabs.Tab[];
 }
@@ -46,18 +46,20 @@ export async function createGroup(title: string, color: chrome.tabGroups.Color):
 	// The non-null assertion would silently pass undefined into chrome.tabs.group,
 	// causing a runtime error inside the API. Filter first.
 	const tabIds = tabs.map(t => t.id).filter((id): id is number => id != null);
-	if (tabIds.length === 0) return;
+	const [firstTabId, ...remainingTabIds] = tabIds;
+	if (firstTabId === undefined) return;
 
-	const groupId = await chrome.tabs.group({ tabIds: [tabIds[0]!, ...tabIds.slice(1)] });
+	const groupId = await chrome.tabs.group({ tabIds: [firstTabId, ...remainingTabIds] });
 	await chrome.tabGroups.update(groupId, { title, color });
 }
 
 export async function ungroup(groupId: number): Promise<void> {
 	const tabs = await chrome.tabs.query({ groupId });
 	const tabIds = tabs.map(t => t.id).filter((id): id is number => id != null);
-	if (tabIds.length === 0) return;
+	const [firstTabId, ...remainingTabIds] = tabIds;
+	if (firstTabId === undefined) return;
 
-	await chrome.tabs.ungroup([tabIds[0]!, ...tabIds.slice(1)]);
+	await chrome.tabs.ungroup([firstTabId, ...remainingTabIds]);
 }
 
 export async function updateGroup(groupId: number, update: { collapsed?: boolean; color?: chrome.tabGroups.Color; title?: string }): Promise<void> {

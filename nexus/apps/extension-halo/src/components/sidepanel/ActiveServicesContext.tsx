@@ -1,12 +1,32 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import type React from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { BACKGROUND_PLUGIN_IDS, BACKGROUND_PROFILES_MAP } from '../../kernel/registry/_generated';
 
-// Tools with storage keys for state tracking (hardcoded ones that need special handling)
-const TRACKED_STORAGE_KEYS: Record<string, { storageArea: 'local' | 'sync'; key: string; enabledPath: string }> = {
-	'smooth-scroll': { storageArea: 'sync', key: 'HALO_SMOOTH_SCROLL_SETTINGS', enabledPath: 'enabled' },
-	'clipboard': { storageArea: 'local', key: 'halo_tool_clipboard_settings', enabledPath: 'enabled' },
-	'hover-zoom': { storageArea: 'local', key: 'halo_hover_zoom_settings', enabledPath: 'enabled' },
-};
+interface ActiveServiceScript {
+	id: string;
+	enabled: boolean;
+	saatToolId?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isActiveServiceScript(value: unknown): value is ActiveServiceScript {
+	if (!isRecord(value)) return false;
+	return typeof value.id === 'string'
+		&& typeof value.enabled === 'boolean'
+		&& (value.saatToolId === undefined || typeof value.saatToolId === 'string');
+}
+
+function readScripts(value: unknown): ActiveServiceScript[] {
+	if (!isRecord(value) || !Array.isArray(value.scripts)) return [];
+	return value.scripts.filter(isActiveServiceScript);
+}
+
+function readEnabled(value: unknown): boolean {
+	return isRecord(value) && value.enabled === true;
+}
 
 interface ActiveServicesContextType {
 	activeServices: Set<string>;
@@ -40,15 +60,19 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 					HALO_SMOOTH_SCROLL_SETTINGS: { enabled: true }
 				});
 
-				if (localData.halo_tool_clipboard_settings.enabled) active.add('clipboard');
-				if (localData.halo_hover_zoom_settings.enabled) active.add('hover-zoom');
-				if (localData.halo_userscripts.globalEnabled) active.add('userscripts');
-				if (syncData.HALO_SMOOTH_SCROLL_SETTINGS.enabled) active.add('smooth-scroll');
+				const userScriptsState: unknown = localData.halo_userscripts;
+				const userScriptsEnabled = isRecord(userScriptsState)
+					&& userScriptsState.globalEnabled === true;
+
+				if (readEnabled(localData.halo_tool_clipboard_settings)) active.add('clipboard');
+				if (readEnabled(localData.halo_hover_zoom_settings)) active.add('hover-zoom');
+				if (userScriptsEnabled) active.add('userscripts');
+				if (readEnabled(syncData.HALO_SMOOTH_SCROLL_SETTINGS)) active.add('smooth-scroll');
 
 				// Process User Scripts
-				const scripts = localData.halo_userscripts.scripts || [];
-				if (localData.halo_userscripts.globalEnabled) {
-					scripts.forEach((script: any) => {
+				const scripts = readScripts(userScriptsState);
+				if (userScriptsEnabled) {
+					scripts.forEach((script) => {
 						currentScriptIds.push(script.id);
 						if (script.saatToolId) currentScriptIds.push(script.saatToolId);
 						
@@ -59,15 +83,15 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 					});
 				} else {
 					// Even if global disabled, we track IDs, but none are active
-					scripts.forEach((script: any) => {
+					scripts.forEach((script) => {
 						currentScriptIds.push(script.id);
 						if (script.saatToolId) currentScriptIds.push(script.saatToolId);
 					});
 				}
 
 				// Process SaaT Tools (Hidden Scripts)
-				const saatScripts = localData.halo_saat_scripts.scripts || [];
-				saatScripts.forEach((script: any) => {
+				const saatScripts = readScripts(localData.halo_saat_scripts);
+				saatScripts.forEach((script) => {
 					if (script.saatToolId) {
 						// For SaaT, we track the tool ID as an "active service" if the script is enabled
 						if (script.enabled) {
@@ -90,7 +114,10 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 		checkState();
 	
 	// Event-driven only - no polling needed, storage.onChanged is sufficient
-	const listener = (changes: any, area: string) => {
+	const listener = (
+		changes: Record<string, chrome.storage.StorageChange>,
+		area: string,
+	) => {
 		let changed = false;
 		if (area === 'local' && (changes.halo_tool_clipboard_settings || changes.halo_hover_zoom_settings || changes.halo_userscripts || changes.halo_saat_scripts)) changed = true;
 		if (area === 'sync' && changes.HALO_SMOOTH_SCROLL_SETTINGS) changed = true;
@@ -122,7 +149,7 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 
 	// Combine registry background plugins (only true background: activeOnly=false) with dynamic script IDs
 	const trueBackgroundIds = BACKGROUND_PLUGIN_IDS.filter(id => {
-		const profile = (BACKGROUND_PROFILES_MAP as any)[id];
+		const profile = BACKGROUND_PROFILES_MAP[id];
 		return profile && profile.activeOnly === false;
 	});
 	const allBgToolIds = [...trueBackgroundIds, ...scriptIds];

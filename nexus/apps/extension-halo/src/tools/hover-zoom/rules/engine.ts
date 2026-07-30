@@ -25,7 +25,9 @@ let rulesRegistered = false;
 function registerAllRules() {
 	if (rulesRegistered) return;
 	rulesRegistered = true;
-	ALL_RULES.forEach(rule => ruleEngine.register(rule));
+	for (const rule of ALL_RULES) {
+		ruleEngine.register(rule);
+	}
 	console.log(`[HoverZoom:Engine] Registered ${ALL_RULES.length} rules from 4 sites`);
 }
 

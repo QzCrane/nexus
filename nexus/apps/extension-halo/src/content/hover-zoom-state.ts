@@ -5,6 +5,7 @@ import type { HoverZoomSettings } from '../tools/hover-zoom/types';
 import type { HoverZoomViewer } from '../tools/hover-zoom/content/viewer/index';
 import type { HotkeyManager } from '../tools/hover-zoom/content/utils/hotkeys';
 import type { ResourcePreference } from '../tools/hover-zoom/content/utils/resource-key-helper';
+import type { EnhancedResult } from '../tools/hover-zoom/content/resolvers/enhanced-result';
 
 /**
  * Hover zoom state - all mutable state in one place
@@ -28,7 +29,7 @@ export interface HoverZoomState {
  * Preload cache state
  */
 export interface PreloadState {
-	cache: WeakMap<HTMLElement, { result: any; url: string; pref: ResourcePreference }>;
+	cache: WeakMap<HTMLElement, { result: EnhancedResult; url: string; pref: ResourcePreference }>;
 	pending: HTMLElement | null;
 	preloadImage: HTMLImageElement | null;
 }

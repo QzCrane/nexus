@@ -76,6 +76,7 @@ function installChromeHarness(
 	const chromeMock = {
 		runtime: {
 			id: 'spectra-test',
+			getURL: (path: string) => `chrome-extension://spectra-test/${path}`,
 			onMessage: runtimeMessages,
 		},
 		storage: {
@@ -407,6 +408,54 @@ describe('document-scoped content runtime loader', () => {
 		]);
 
 		releaseContentRuntimeLease(7, 'document-7', 'observation', 'popup-a');
+		await Bun.sleep(300);
+		expect(harness.releaseCount).toBe(1);
+	});
+
+	test('allows tab-hosted extension UI release while rejecting content documents', async () => {
+		const harness = installChromeHarness(true);
+		const dispatchRelease = (
+			sender: chrome.runtime.MessageSender,
+			capability: string,
+		): unknown => {
+			let response: unknown;
+			for (const listener of harness.runtimeMessages.listeners) {
+				(listener as (
+					message: unknown,
+					sender: chrome.runtime.MessageSender,
+					sendResponse: (response: unknown) => void,
+				) => unknown)({
+					protocolVersion: SPECTRA_PROTOCOL_VERSION,
+					requestId: `release-${capability}`,
+					type: 'spectra.content.runtime.release',
+					payload: {
+						runtimeRevision: SPECTRA_CONTENT_RUNTIME_REVISION,
+						tabId: 7,
+						documentId: 'document-7',
+						reason: 'observation',
+						capability,
+					},
+				}, sender, (result) => { response = result; });
+			}
+			return response;
+		};
+
+		await ensureContentRuntime(7, 'document-7', 'observation', 'options-tab');
+		expect(dispatchRelease({
+			id: 'spectra-test',
+			tab: { id: 99 } as chrome.tabs.Tab,
+			url: 'chrome-extension://spectra-test/options.html',
+		}, 'options-tab')).toMatchObject({ ok: true, data: { accepted: true } });
+		await Bun.sleep(300);
+		expect(harness.releaseCount).toBe(1);
+
+		await ensureContentRuntime(7, 'document-7', 'observation', 'content-page');
+		expect(dispatchRelease({
+			id: 'spectra-test',
+			tab: { id: 7 } as chrome.tabs.Tab,
+			documentId: 'document-7',
+			url: 'https://media.example/watch',
+		}, 'content-page')).toMatchObject({ ok: false, error: { code: 'forbidden' } });
 		await Bun.sleep(300);
 		expect(harness.releaseCount).toBe(1);
 	});

@@ -186,11 +186,12 @@ function installPageMediaBridgeStub(
 			} else if (request.field === 'speed' && typeof request.value === 'number') {
 				state.speed = request.value;
 				media.playbackRate = request.value;
-				if (state.delayedMaximumSpeed !== undefined
-					&& request.value > state.delayedMaximumSpeed) {
+				const delayedMaximumSpeed = state.delayedMaximumSpeed;
+				if (delayedMaximumSpeed !== undefined
+					&& request.value > delayedMaximumSpeed) {
 					setTimeout(() => {
-						state.speed = state.delayedMaximumSpeed!;
-						media.playbackRate = state.delayedMaximumSpeed!;
+						state.speed = delayedMaximumSpeed;
+						media.playbackRate = delayedMaximumSpeed;
 					}, 0);
 				}
 			}

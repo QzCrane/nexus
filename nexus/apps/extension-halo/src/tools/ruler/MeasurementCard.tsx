@@ -1,7 +1,7 @@
 // goal: Measurement display logic
 // eff: Extracted to separate file
 
-import React from 'react';
+import type React from 'react';
 import type { RulerMeasurement } from './types';
 import { formatValue } from './core';
 import { useTranslation } from '../../i18n';
@@ -30,34 +30,37 @@ export const MeasurementCard: React.FC<MeasurementCardProps> = ({
 			<div style={styles.measureGrid}>
 				<div style={styles.measureItem}>
 					<span style={styles.measureLabel}>{t('rulerPanel.width')}</span>
-					<span
-						style={styles.measureValue}
+					<button
+						type="button"
+						style={{ ...styles.measureValue, padding: 0, border: 'none', background: 'transparent', textAlign: 'left' }}
 						onClick={() => onCopy(widthStr)}
 						title={t('rulerPanel.clickToCopy')}
 					>
 						{widthStr}
-					</span>
+					</button>
 				</div>
 				<div style={styles.measureItem}>
 					<span style={styles.measureLabel}>{t('rulerPanel.height')}</span>
-					<span
-						style={styles.measureValue}
+					<button
+						type="button"
+						style={{ ...styles.measureValue, padding: 0, border: 'none', background: 'transparent', textAlign: 'left' }}
 						onClick={() => onCopy(heightStr)}
 						title={t('rulerPanel.clickToCopy')}
 					>
 						{heightStr}
-					</span>
+					</button>
 				</div>
 			</div>
 			<div style={styles.diagonalRow}>
 				<span style={{ ...styles.measureLabel, margin: 0 }}>{t('rulerPanel.diagonal')}</span>
-				<span
-					style={{ ...styles.measureValue, fontSize: '14px' }}
+				<button
+					type="button"
+					style={{ ...styles.measureValue, fontSize: '14px', padding: 0, border: 'none', background: 'transparent' }}
 					onClick={() => onCopy(diagStr)}
 					title={t('rulerPanel.clickToCopy')}
 				>
 					{diagStr}
-				</span>
+				</button>
 			</div>
 		</div>
 	);

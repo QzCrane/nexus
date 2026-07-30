@@ -14,4 +14,6 @@ export const NOTE_COLORS = [
 	{ id: 'blue', bg: '#dbeafe', text: '#1e40af' },
 	{ id: 'pink', bg: '#fce7f3', text: '#9d174d' },
 	{ id: 'purple', bg: '#ede9fe', text: '#5b21b6' },
-];
+] as const;
+
+export const DEFAULT_NOTE_COLOR = NOTE_COLORS[0];

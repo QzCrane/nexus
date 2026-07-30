@@ -1,6 +1,7 @@
 // goal: SRI panel UI
 
-import React, { useState, useCallback, useEffect } from 'react';
+import type React from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useTranslation } from '../../i18n';
 import { calculateSri, generateTag, type Algo } from './core';
 import { styles } from './panel.styles';
@@ -9,11 +10,11 @@ import { useToolState } from '../../kernel';
 
 export const SriPanel: React.FC = () => {
     const { t } = useTranslation();
-    const [url, setUrl] = useToolState<string>('subresource-url' as any, '');
-    const [content, setContent] = useToolState<string>('subresource-content' as any, '');
+    const [url, setUrl] = useToolState<string>('subresource-url', '');
+    const [content, setContent] = useToolState<string>('subresource-content', '');
     const [hashOnly, setHashOnly] = useState(''); 
     const [tag, setTag] = useState('');
-    const [alg, setAlg] = useToolState<Algo>('subresource-alg' as any, 'sha384');
+    const [alg, setAlg] = useToolState<Algo>('subresource-alg', 'sha384');
 
     const [loading, setLoading] = useState(false);
 
@@ -31,7 +32,7 @@ export const SriPanel: React.FC = () => {
             alert('Failed to fetch URL (CORS error?)');
         }
         setLoading(false);
-    }, [url]);
+    }, [url, setContent]);
 
     // Recalculate when content or alg changes
     useEffect(() => {
@@ -58,7 +59,7 @@ export const SriPanel: React.FC = () => {
                 <div style={styles.label}>{t('subresource.url', { defaultValue: 'Resource URL' })} ({t('subresource.optional', { defaultValue: 'Optional' })})</div>
                 <div style={{display: 'flex', gap: '8px'}}>
                     <input style={styles.input} value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t('subresource.placeholderUrl', { defaultValue: 'https://cdn.example.com/lib.js' })} />
-                    <button style={styles.btn} onClick={handleFetch} disabled={!url || loading}>
+                    <button type="button" style={styles.btn} onClick={handleFetch} disabled={!url || loading}>
                         {loading ? '⏳' : `📥 ${t('subresource.fetch', { defaultValue: 'Fetch' })}`}
                     </button>
                 </div>
@@ -98,18 +99,26 @@ export const SriPanel: React.FC = () => {
             {hashOnly && (
                 <div>
                     <div style={styles.label}>{t('subresource.hash', { defaultValue: 'Integrity Hash' })}</div>
-                    <div style={styles.resultBox} onClick={() => navigator.clipboard.writeText(hashOnly)}>
+                    <button
+                        type="button"
+                        style={{ ...styles.resultBox, width: '100%', textAlign: 'left', cursor: 'pointer' }}
+                        onClick={() => navigator.clipboard.writeText(hashOnly)}
+                    >
                         {hashOnly}
-                    </div>
+                    </button>
                 </div>
             )}
 
             {tag && (
                 <div>
                     <div style={styles.label}>{t('subresource.tag', { defaultValue: 'HTML Tag' })}</div>
-                    <div style={styles.resultBox} onClick={() => navigator.clipboard.writeText(tag)}>
+                    <button
+                        type="button"
+                        style={{ ...styles.resultBox, width: '100%', textAlign: 'left', cursor: 'pointer' }}
+                        onClick={() => navigator.clipboard.writeText(tag)}
+                    >
                         {tag}
-                    </div>
+                    </button>
                 </div>
             )}
 		</div>

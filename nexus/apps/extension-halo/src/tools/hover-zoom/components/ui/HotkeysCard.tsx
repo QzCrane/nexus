@@ -1,8 +1,8 @@
 // Hotkeys card component for Hover Zoom panel
-import React from 'react';
+import type React from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../../../i18n';
-import { HoverZoomSettings } from '../../types';
+import type { HoverZoomSettings } from '../../types';
 import { styles } from './panel.styles';
 
 interface HotkeysCardProps {
@@ -31,13 +31,13 @@ export const HotkeysCard: React.FC<HotkeysCardProps> = ({ settings, onUpdate }) 
 							</span>
 						</div>
 						<div style={styles.segmented}>
-							<button
+							<button type="button"
 								style={settings.pinKey === ' ' ? styles.segmentBtnActive : styles.segmentBtn}
 								onClick={() => onUpdate({ pinKey: ' ' })}
 							>
 								{t('hoverZoom.pinMode.space') || 'Space'}
 							</button>
-							<button
+							<button type="button"
 								style={settings.pinKey === '' ? styles.segmentBtnActive : styles.segmentBtn}
 								onClick={() => onUpdate({ pinKey: '' })}
 							>

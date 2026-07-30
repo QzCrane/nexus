@@ -1,7 +1,7 @@
 
 import {
-	AvailableSpace,
-	SpaceEvaluation,
+	type AvailableSpace,
+	type SpaceEvaluation,
 	LAYOUT_CONFIG
 } from './layout-types';
 

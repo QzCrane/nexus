@@ -43,7 +43,6 @@
         background: var(--halo-bg);
         color: var(--halo-text);
         overflow: hidden; /* Prevent body scroll */
-        scroll-behavior: smooth;
         transition: background 0.2s, color 0.2s;
       }
       @keyframes fadeInUp {
@@ -116,12 +115,6 @@
       .halo-thin-scrollbar::-webkit-scrollbar-thumb {
         background: var(--halo-border);
         border-radius: 3px;
-      }
-      /* Universal smooth scroll for sidepanel - always enabled */
-      *,
-      *::before,
-      *::after {
-        scroll-behavior: smooth;
       }
     </style>
     <!-- CSP-compliant: Early init (theme + smooth scroll) -->

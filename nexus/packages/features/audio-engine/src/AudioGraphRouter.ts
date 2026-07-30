@@ -125,7 +125,7 @@ function rampParam(
 }
 
 function disconnect(node: AudioNode): void {
-	try { node.disconnect(); } catch { /* already disconnected */ }
+	node.disconnect();
 }
 
 export class AudioGraphRouter {
@@ -243,7 +243,7 @@ export class AudioGraphRouter {
 			this.analyserSubscribers = Math.max(0, this.analyserSubscribers - 1);
 			if (this.analyserSubscribers === 0 && this.analyser) {
 				disconnect(this.analyser);
-				try { this.output.disconnect(this.analyser); } catch { /* already disconnected */ }
+				this.output.disconnect(this.analyser);
 				this.analyser = null;
 			}
 		};
@@ -423,7 +423,7 @@ export class AudioGraphRouter {
 	}
 
 	private destroyLane(lane: GraphLane): void {
-		try { this.master.disconnect(lane.fade); } catch { /* already disconnected */ }
+		this.master.disconnect(lane.fade);
 		for (const node of lane.nodes) disconnect(node);
 	}
 

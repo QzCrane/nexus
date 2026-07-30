@@ -40,7 +40,6 @@ export const generatedToolPanels = {
 	'json-path': lazy(() => import('../tools/json-path/panel').then(m => ({ default: m.JsonPathPanel }))),
 	'json-to-csv': lazy(() => import('../tools/json-to-csv/panel').then(m => ({ default: m.JsonToCsvPanel }))),
 	'jwt-decoder': lazy(() => import('../tools/jwt-decoder/panel').then(m => ({ default: m.JwtDecoderPanel }))),
-	'llm-enhancer': lazy(() => import('../tools/llm-enhancer/panel').then(m => ({ default: m.LLMEnhancerPanel }))),
 	'lorem-ipsum': lazy(() => import('../tools/lorem-ipsum/panel').then(m => ({ default: m.LoremIpsumPanel }))),
 	'markdown': lazy(() => import('../tools/markdown/panel').then(m => ({ default: m.MarkdownPanel }))),
 	'media-sniffer': lazy(() => import('../tools/media-sniffer/panel').then(m => ({ default: m.MediaSnifferPanel }))),

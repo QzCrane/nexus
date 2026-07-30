@@ -1,6 +1,7 @@
 // goal: JWT Decoder panel UI - parse and display JWT
 
-import React, { useState, useMemo } from 'react';
+import type React from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { decodeJwt, formatClaim, KNOWN_CLAIMS } from './core';
 import { styles } from './panel.styles';

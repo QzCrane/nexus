@@ -48,7 +48,7 @@ function formatHtml(code: string, indent: string): string {
 		// Decrease level for closing tags
 		if (line.startsWith('</')) level = Math.max(0, level - 1);
 
-		result += indent.repeat(level) + line + '\n';
+		result += `${indent.repeat(level) + line}\n`;
 
 		// Increase level for opening tags (not self-closing)
 		if (line.match(/^<[^/!][^>]*[^/]>$/) && !line.match(/^<(br|hr|img|input|meta|link)/i)) {
@@ -72,7 +72,7 @@ function formatCss(code: string, indent: string): string {
 
 	for (const line of lines) {
 		if (line === '}') level = Math.max(0, level - 1);
-		result += indent.repeat(level) + line + '\n';
+		result += `${indent.repeat(level) + line}\n`;
 		if (line.endsWith('{')) level++;
 	}
 
@@ -119,9 +119,9 @@ function formatJs(code: string, indent: string): string {
 		if (token === '}') level = Math.max(0, level - 1);
 
 		if (token === '{' || token === '}' || token === ';') {
-			result = result.trimEnd() + token + '\n';
+			result = `${result.trimEnd() + token}\n`;
 		} else {
-			result += indent.repeat(level) + token + ' ';
+			result += `${indent.repeat(level) + token} `;
 		}
 
 		if (token === '{') level++;
@@ -152,7 +152,7 @@ function formatSql(code: string, indent: string): string {
 		}
 
 		const prefix = line.match(/^(AND|OR)\b/) ? indent.repeat(level + 1) : indent.repeat(level);
-		result += prefix + line + '\n';
+		result += `${prefix + line}\n`;
 	}
 
 	return result.trim();

@@ -8,10 +8,10 @@ export const parseRanges = (input: string): { start: number; end: number }[] => 
 	for (const part of parts) {
 		if (part.includes('-')) {
 			const [a, b] = part.split('-').map((n) => parseInt(n.trim(), 10) - 1);
-			if (a !== undefined && b !== undefined && !isNaN(a) && !isNaN(b) && a >= 0 && b >= a) ranges.push({ start: a, end: b });
+			if (a !== undefined && b !== undefined && !Number.isNaN(a) && !Number.isNaN(b) && a >= 0 && b >= a) ranges.push({ start: a, end: b });
 		} else {
 			const n = parseInt(part, 10) - 1;
-			if (!isNaN(n) && n >= 0) ranges.push({ start: n, end: n });
+			if (!Number.isNaN(n) && n >= 0) ranges.push({ start: n, end: n });
 		}
 	}
 	return ranges;

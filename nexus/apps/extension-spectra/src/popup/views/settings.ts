@@ -57,7 +57,9 @@ export async function initSettings(): Promise<SettingsState> {
     updateRegistryI18n(dict);
     updatePresetsI18n(dict);
     updateRemoteI18n(dict);
-    cardRenderCallbacks.forEach((cb) => cb());
+    cardRenderCallbacks.forEach((cb) => {
+      cb();
+    });
   };
 
   bindSettingsEvents(ui, saveSettings);

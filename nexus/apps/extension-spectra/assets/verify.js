@@ -1,4 +1,4 @@
-import fs from 'fs';
+import fs from 'node:fs';
 
 const files = [
   { path: './store/small-tile-440x280.png', expected: '440x280' },

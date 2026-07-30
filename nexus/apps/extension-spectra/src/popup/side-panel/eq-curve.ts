@@ -15,7 +15,9 @@ function internalDraw(): void {
 	if (!ctx) return;
 
 	const values: number[] = [];
-	cachedInputs.forEach((inp) => values.push(parseFloat(inp.value) || 0));
+	cachedInputs.forEach((inp) => {
+		values.push(parseFloat(inp.value) || 0);
+	});
 	drawEqCurve(ctx, values, metricsCache, '#2563eb');
 }
 
@@ -46,7 +48,9 @@ export function drawSidePanelEqCurve(
 	if (!ctx) return;
 
 	const values: number[] = [];
-	inputs.forEach((inp) => values.push(parseFloat(inp.value) || 0));
+	inputs.forEach((inp) => {
+		values.push(parseFloat(inp.value) || 0);
+	});
 
 	if (metricsCache?.isValid) {
 		drawEqCurve(ctx, values, metricsCache, '#2563eb');

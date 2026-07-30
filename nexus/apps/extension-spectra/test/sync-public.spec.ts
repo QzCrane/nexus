@@ -25,6 +25,9 @@ const {
 	APP_CONFIGS: Record<string, {
 		excludes: string[];
 		publicApplicationScriptFiles: string[];
+		publicApplicationScriptOverrides: Record<string, string>;
+		publicRootFiles: string[];
+		publicRootScriptOverrides: Record<string, string>;
 	}>;
 	BASE_EXCLUDES: string[];
 	PUBLIC_TURBO_CACHE_DIR: string;
@@ -35,6 +38,7 @@ const {
 		config: {
 			applicationPath: string;
 			publicApplicationScriptFiles: string[];
+			publicRootFiles: string[];
 		},
 	): string[];
 	assertApplicationScriptDependencies(
@@ -87,6 +91,30 @@ describe('public repository source projection', () => {
 			'apps/extension-spectra/scripts/check-production-artifacts.mjs',
 			[...BASE_EXCLUDES, ...APP_CONFIGS.spectra.excludes],
 		)).toBe(false);
+	});
+
+	test('projects the strict lint authority into every public repository', () => {
+		for (const config of [APP_CONFIGS.spectra, APP_CONFIGS.halo]) {
+			const patterns = [...BASE_EXCLUDES, ...config.excludes];
+			expect(config.publicRootFiles).toEqual([
+				'scripts/check-workspace-lint.mjs',
+				'scripts/run-strict-biome.mjs',
+			]);
+			for (const rootFile of config.publicRootFiles) {
+				expect(
+					shouldExcludeForConfig(rootFile, patterns, config),
+				).toBe(false);
+			}
+			expect(config.publicRootScriptOverrides.lint).toBe(
+				'bun scripts/check-workspace-lint.mjs --public && bun scripts/run-strict-biome.mjs scripts package.json biome.json tsconfig.base.json turbo.json && turbo run lint',
+			);
+			expect(config.publicApplicationScriptOverrides.lint).toContain(
+				'../../scripts/run-strict-biome.mjs',
+			);
+			expect(config.publicApplicationScriptOverrides.lint).not.toContain(
+				'max-diagnostics=100',
+			);
+		}
 	});
 
 	test('keeps an explicit allowlist of application build scripts', () => {
@@ -150,7 +178,6 @@ describe('public repository source projection', () => {
 			'apps/extension-spectra/plan.md',
 			'apps/extension-spectra/assets/store/icon128.png',
 			'apps/extension-spectra/assets-backup/icon.svg',
-			'apps/extension-spectra/debug_run.mjs',
 			'apps/extension-spectra/release/spectra-v1.4.0.zip.sha256',
 		]) {
 			expect(shouldExcludeWithPatterns(relativePath, patterns), relativePath).toBe(true);

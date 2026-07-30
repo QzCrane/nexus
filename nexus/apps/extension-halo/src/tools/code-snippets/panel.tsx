@@ -1,6 +1,7 @@
 // goal: Code Snippets panel UI - create, edit, and manage code snippets
 
-import React, { useState, useEffect, useCallback } from 'react';
+import type React from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import type { Snippet, Language, SnippetFilter } from './types';
 import { getSnippets, createSnippet, updateSnippet, deleteSnippet, filterSnippets, copyToClipboard, LANGUAGES } from './core';
@@ -11,7 +12,7 @@ import { useToolState } from '../../kernel';
 export const CodeSnippetsPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [snippets, setSnippets] = useState<Snippet[]>([]);
-	const [filter, setFilter] = useToolState<SnippetFilter>('code-snippets-filter' as any, { search: '', language: 'all', tag: '' });
+	const [filter, setFilter] = useToolState<SnippetFilter>('code-snippets-filter', { search: '', language: 'all', tag: '' });
 	const [editing, setEditing] = useState<Snippet | null>(null);
 	const [isNew, setIsNew] = useState(false);
 
@@ -37,7 +38,7 @@ export const CodeSnippetsPanel: React.FC = () => {
 
 	// Save snippet (create or update)
 	const handleSave = async () => {
-		if (!editing || !editing.title.trim() || !editing.code.trim()) return;
+		if (!editing?.title.trim() || !editing.code.trim()) return;
 		if (isNew) {
 			await createSnippet({ title: editing.title, code: editing.code, language: editing.language, tags: editing.tags });
 		} else {
@@ -72,7 +73,7 @@ export const CodeSnippetsPanel: React.FC = () => {
 					value={filter.search}
 					onChange={(e) => setFilter((f) => ({ ...f, search: e.target.value }))}
 				/>
-				<button style={styles.btn} onClick={handleNew}>+ {t('codeSnippets.new')}</button>
+				<button type="button" style={styles.btn} onClick={handleNew}>+ {t('codeSnippets.new')}</button>
 			</div>
 
 			{/* Filter */}
@@ -120,9 +121,9 @@ const SnippetCard: React.FC<{
 		</div>
 		<pre style={styles.codeBlock}>{snippet.code.slice(0, 300)}{snippet.code.length > 300 ? '...' : ''}</pre>
 		<div style={styles.actions}>
-			<button style={styles.btnSecondary} onClick={() => onCopy(snippet.code)}>📋 {t('codeSnippets.copy')}</button>
-			<button style={styles.btnSecondary} onClick={() => onEdit(snippet)}>✏️ {t('codeSnippets.edit')}</button>
-			<button style={styles.btnSecondary} onClick={() => onDelete(snippet.id)}>🗑️</button>
+			<button type="button" style={styles.btnSecondary} onClick={() => onCopy(snippet.code)}>📋 {t('codeSnippets.copy')}</button>
+			<button type="button" style={styles.btnSecondary} onClick={() => onEdit(snippet)}>✏️ {t('codeSnippets.edit')}</button>
+			<button type="button" style={styles.btnSecondary} onClick={() => onDelete(snippet.id)}>🗑️</button>
 		</div>
 	</div>
 );
@@ -136,8 +137,19 @@ const SnippetEditor: React.FC<{
 	isNew: boolean;
 	t: (key: string) => string;
 }> = ({ editing, setEditing, onSave, onClose, isNew, t }) => (
-	<div style={styles.modal} onClick={onClose}>
-		<div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+	<div style={styles.modal}>
+		<button
+			type="button"
+			aria-label={t('common.close')}
+			onClick={onClose}
+			style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', padding: 0, border: 'none', background: 'transparent' }}
+		/>
+		<div
+			role="dialog"
+			aria-modal="true"
+			aria-label={isNew ? t('codeSnippets.create') : t('codeSnippets.edit')}
+			style={{ ...styles.modalContent, position: 'relative', zIndex: 1 }}
+		>
 			<input
 				style={styles.input}
 				placeholder={t('codeSnippets.titlePlaceholder')}
@@ -160,8 +172,8 @@ const SnippetEditor: React.FC<{
 				onChange={(e) => setEditing((s) => s ? { ...s, tags: e.target.value.split(',').map((t) => t.trim()).filter(Boolean) } : null)}
 			/>
 			<div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-				<button style={styles.btnSecondary} onClick={onClose}>{t('common.cancel')}</button>
-				<button style={styles.btn} onClick={onSave}>{isNew ? t('codeSnippets.create') : t('codeSnippets.save')}</button>
+				<button type="button" style={styles.btnSecondary} onClick={onClose}>{t('common.cancel')}</button>
+				<button type="button" style={styles.btn} onClick={onSave}>{isNew ? t('codeSnippets.create') : t('codeSnippets.save')}</button>
 			</div>
 		</div>
 	</div>

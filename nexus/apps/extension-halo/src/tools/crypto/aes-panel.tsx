@@ -1,6 +1,7 @@
 // goal: AES sub-panel component
 
-import React, { useState, useCallback } from 'react';
+import type React from 'react';
+import { useState, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import { generateAESKey, exportAESKey, importAESKey, encryptAES, decryptAES } from './core';
 import { styles } from './panel.styles';
@@ -9,16 +10,16 @@ import { useToolState } from '../../kernel';
 
 export const AESPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [plaintext, setPlaintext] = useToolState<string>('crypto-aes-plain' as any, '');
-	const [ciphertext, setCiphertext] = useToolState<string>('crypto-aes-cipher' as any, '');
-	const [keyBase64, setKeyBase64] = useToolState<string>('crypto-aes-key' as any, '');
+	const [plaintext, setPlaintext] = useToolState<string>('crypto-aes-plain', '');
+	const [ciphertext, setCiphertext] = useToolState<string>('crypto-aes-cipher', '');
+	const [keyBase64, setKeyBase64] = useToolState<string>('crypto-aes-key', '');
 
 	const [error, setError] = useState('');
 
 	const handleGenerateKey = useCallback(async () => {
 		const key = await generateAESKey(256);
 		setKeyBase64(await exportAESKey(key));
-	}, []);
+	}, [setKeyBase64]);
 
 	const handleEncrypt = useCallback(async () => {
 		try {
@@ -29,7 +30,7 @@ export const AESPanel: React.FC = () => {
 		} catch (e) {
 			setError(e instanceof Error ? e.message : t('crypto.aes.encryptFailed', { defaultValue: 'Encrypt failed' }));
 		}
-	}, [plaintext, keyBase64, t]);
+	}, [plaintext, keyBase64, t, setCiphertext]);
 
 	const handleDecrypt = useCallback(async () => {
 		try {
@@ -40,19 +41,19 @@ export const AESPanel: React.FC = () => {
 		} catch (e) {
 			setError(e instanceof Error ? e.message : t('crypto.aes.decryptFailed', { defaultValue: 'Decrypt failed' }));
 		}
-	}, [ciphertext, keyBase64, t]);
+	}, [ciphertext, keyBase64, t, setPlaintext]);
 
 	return (
 		<div style={styles.wrapper}>
 			<div style={styles.row}>
 				<span style={styles.label}>{t('crypto.aes.key')}</span>
-				<button style={styles.btnSecondary} onClick={handleGenerateKey}>{t('crypto.aes.generateKey')}</button>
+				<button type="button" style={styles.btnSecondary} onClick={handleGenerateKey}>{t('crypto.aes.generateKey')}</button>
 			</div>
 			<input style={styles.input} value={keyBase64} onChange={(e) => setKeyBase64(e.target.value)} placeholder={t('crypto.aes.keyPlaceholder')} />
 			<textarea style={styles.textarea} value={plaintext} onChange={(e) => setPlaintext(e.target.value)} placeholder={t('crypto.aes.plaintext')} />
 			<div style={styles.row}>
-				<button style={styles.btn} onClick={handleEncrypt}>{t('crypto.aes.encrypt')}</button>
-				<button style={styles.btnSecondary} onClick={handleDecrypt}>{t('crypto.aes.decrypt')}</button>
+				<button type="button" style={styles.btn} onClick={handleEncrypt}>{t('crypto.aes.encrypt')}</button>
+				<button type="button" style={styles.btnSecondary} onClick={handleDecrypt}>{t('crypto.aes.decrypt')}</button>
 			</div>
 			<textarea style={styles.textarea} value={ciphertext} onChange={(e) => setCiphertext(e.target.value)} placeholder={t('crypto.aes.ciphertext')} />
 			{error && <div style={styles.error}>{error}</div>}

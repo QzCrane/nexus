@@ -2,6 +2,17 @@
 
 import type { BookmarkNode, BookmarkSearchResult } from './types';
 
+async function resolveParentTitle(parentId: string | undefined): Promise<string> {
+	if (!parentId) return '';
+	try {
+		const [parent] = await chrome.bookmarks.get(parentId);
+		return parent?.title ?? '';
+	} catch (error: unknown) {
+		console.debug('[HALO:Bookmarks] Parent disappeared during lookup', parentId, error);
+		return '';
+	}
+}
+
 // Get all bookmarks
 export async function getAllBookmarks(): Promise<BookmarkNode[]> {
 	if (!chrome.bookmarks) return [];
@@ -22,13 +33,7 @@ export async function searchBookmarks(query: string): Promise<BookmarkSearchResu
 				if (!item.url) continue;
 
 				// Get parent folder name
-				let parentTitle = '';
-				if (item.parentId) {
-					try {
-						const [parent] = await chrome.bookmarks.get(item.parentId);
-						parentTitle = parent?.title || '';
-					} catch { /* ignore */ }
-				}
+				const parentTitle = await resolveParentTitle(item.parentId);
 
 				items.push({
 					id: item.id,
@@ -68,13 +73,7 @@ export async function getRecentBookmarks(limit = 20): Promise<BookmarkSearchResu
 			for (const item of results) {
 				if (!item.url) continue;
 
-				let parentTitle = '';
-				if (item.parentId) {
-					try {
-						const [parent] = await chrome.bookmarks.get(item.parentId);
-						parentTitle = parent?.title || '';
-					} catch { /* ignore */ }
-				}
+				const parentTitle = await resolveParentTitle(item.parentId);
 
 				items.push({
 					id: item.id,

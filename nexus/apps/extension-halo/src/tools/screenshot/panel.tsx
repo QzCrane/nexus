@@ -2,10 +2,11 @@
 // goal: Screenshot Panel UI
 // scope: module
 
-import React, { useState, useCallback } from 'react';
+import type React from 'react';
+import { useState, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
-import { captureVisible, captureWithDelay, downloadScreenshot, copyToClipboard } from './core';
+import { captureVisible, downloadScreenshot, copyToClipboard } from './core';
 import { useToolState } from '../../kernel';
 import { useToast } from '../../components/ToastProvider';
 
@@ -55,7 +56,7 @@ export const ScreenshotPanel: React.FC = () => {
     const { showToast } = useToast();
     const [image, setImage] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
-    const [delay, setDelay] = useToolState<number>('screenshot-delay' as any, 0);
+    const [delay, setDelay] = useToolState<number>('screenshot-delay', 0);
     const [countdown, setCountdown] = useState<number | null>(null);
 
     const handleCapture = useCallback(async () => {
@@ -105,7 +106,7 @@ export const ScreenshotPanel: React.FC = () => {
                 <div style={styles.row}>
                     <span style={styles.label}>{t('screenshotPanel.delay') || 'Delay'}:</span>
                     {DELAY_OPTIONS.map((d) => (
-                        <button
+                        <button type="button"
                             key={d}
                             style={{ ...styles.delayBtn, ...(delay === d ? styles.delayActive : {}) }}
                             onClick={() => setDelay(d)}
@@ -117,7 +118,7 @@ export const ScreenshotPanel: React.FC = () => {
             </Card>
 
             {/* Capture Button */}
-            <button 
+            <button type="button"
                 style={{...styles.btn, ...styles.btnPrimary, ...(loading ? styles.btnDisabled : {})}} 
                 onClick={handleCapture}
                 disabled={loading}
@@ -141,10 +142,10 @@ export const ScreenshotPanel: React.FC = () => {
                         <img src={image} style={styles.previewImg} alt="Screenshot" />
                     </div>
                     <div style={styles.toolbar}>
-                        <button style={styles.toolBtn} onClick={handleCopy}>
+                        <button type="button" style={styles.toolBtn} onClick={handleCopy}>
                             📋 {t('screenshotPanel.copy')}
                         </button>
-                        <button style={styles.toolBtn} onClick={handleDownload}>
+                        <button type="button" style={styles.toolBtn} onClick={handleDownload}>
                             💾 {t('screenshotPanel.save')}
                         </button>
                     </div>

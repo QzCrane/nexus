@@ -9,7 +9,8 @@ export async function loadToolPrefs(): Promise<Record<string, ToolPrefs>> {
 	try {
 		const result = await chrome.storage.local.get(TOOL_PREFS_KEY);
 		return (result[TOOL_PREFS_KEY] as Record<string, ToolPrefs>) || {};
-	} catch {
+	} catch (error: unknown) {
+		console.error('[HALO:ToolPrefs] Failed to load preferences', error);
 		return {};
 	}
 }
@@ -18,7 +19,7 @@ export async function loadToolPrefs(): Promise<Record<string, ToolPrefs>> {
 export async function saveToolPrefs(prefs: Record<string, ToolPrefs>): Promise<void> {
 	try {
 		await chrome.storage.local.set({ [TOOL_PREFS_KEY]: prefs });
-	} catch {
-		// Ignore errors
+	} catch (error: unknown) {
+		console.error('[HALO:ToolPrefs] Failed to persist preferences', error);
 	}
 }

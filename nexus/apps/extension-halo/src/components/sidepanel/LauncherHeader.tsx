@@ -1,4 +1,4 @@
-import React from 'react';
+import type React from 'react';
 import { useTranslation } from '../../i18n';
 import type { ToolId, ToolMeta } from '../../kernel';
 import { popOutWindow, getToolMeta, useSettings } from '../../kernel';
@@ -46,7 +46,7 @@ export const LauncherHeader: React.FC<LauncherHeaderProps> = ({
 			<div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
 				{activeTool ? (
 					<>
-						<button 
+						<button type="button"
 							style={{ 
 								background: 'var(--halo-bg-tertiary)', border: 'none', color: 'var(--halo-text)',
 								width: '30px', height: '30px', borderRadius: '50%', cursor: 'pointer',
@@ -82,7 +82,7 @@ export const LauncherHeader: React.FC<LauncherHeaderProps> = ({
 			</div>
 
 			<div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginLeft: '8px', flexShrink: 0 }}>
-				<button 
+				<button type="button"
 					style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px', fontSize: '18px', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} 
 					onClick={popOutWindow}
 					title={t('layout.popOut')}
@@ -94,7 +94,7 @@ export const LauncherHeader: React.FC<LauncherHeaderProps> = ({
 					// For tooltips, try to get name from meta or use key fallbacks if standard
 					// Usually t(`tools.${id}.name`) works if keys exist
 					return (
-						<button
+						<button type="button"
 							key={id}
 							style={{
 								background: isActive ? 'var(--halo-bg-tertiary)' : 'transparent',

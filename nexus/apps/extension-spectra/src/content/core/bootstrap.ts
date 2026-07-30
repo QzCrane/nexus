@@ -252,7 +252,6 @@ if (!getContentBootstrapState()) {
 			disposed = true;
 			releaseDefaultScalarKeys();
 			pendingObservation = null;
-			try { chrome.runtime.onMessage.removeListener(onMessage); } catch { /* invalidated context */ }
 			document.removeEventListener('volumechange', onNativeMediaChange, true);
 			document.removeEventListener('ratechange', onNativeMediaChange, true);
 			unsubscribePhysicalHotkeyRelease();
@@ -263,6 +262,14 @@ if (!getContentBootstrapState()) {
 			window.removeEventListener('pagehide', onPageHide);
 			delete state.disposeRuntime;
 			if (getContentBootstrapState() === state) setContentBootstrapState(undefined);
+			try {
+				if (isExtensionContextValid()) chrome.runtime.onMessage.removeListener(onMessage);
+			} catch (error) {
+				console.debug(
+					'[SPECTRA] Runtime listener unavailable during bootstrap disposal',
+					error,
+				);
+			}
 		},
 	};
 

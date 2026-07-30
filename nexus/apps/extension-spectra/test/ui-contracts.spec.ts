@@ -78,6 +78,17 @@ describe('hotkey editor contract', () => {
 		expect(source).not.toContain('PRESET_COMMANDS');
 		expect(source).not.toContain('SLOT_COMMANDS');
 	});
+
+	test('isolates mutable slot edits from the shared settings snapshot cache', () => {
+		const source = readFileSync(
+			resolve(import.meta.dir, '../src/options/slots-editor.ts'),
+			'utf8',
+		);
+		expect(source).toContain('disabledLegacyBindings: [...(source.disabledLegacyBindings ?? [])]');
+		expect(source.match(/settings = cloneHotkeySettings\(snapshot\.hotkeySettings\);/gu))
+			.toHaveLength(2);
+		expect(source).not.toContain('settings = snapshot.hotkeySettings;');
+	});
 });
 
 describe('options translations', () => {
@@ -429,12 +440,19 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(pipHandlerStart).toBeGreaterThanOrEqual(0);
 		expect(pipHandlerEnd).toBeGreaterThan(pipHandlerStart);
 		const pipHandler = popup.slice(pipHandlerStart, pipHandlerEnd);
-		expect(popup).toContain('chrome.scripting.executeScript');
-		expect(popup).toContain("world: 'ISOLATED'");
-		expect(popup).toContain('SPECTRA_TRUSTED_PIP_REQUEST_ATTRIBUTE');
-		expect(popup).toContain('documentId: currentDocumentId');
-		expect(popup).toContain('target: currentTarget');
-		expect(popup).toContain('while (performance.now() < deadline)');
+		const pipDispatchStart = popup.indexOf('async function dispatchPictureInPicture(');
+		const pipDispatchEnd = popup.indexOf('function asControlUiFailure(', pipDispatchStart);
+		expect(pipDispatchStart).toBeGreaterThanOrEqual(0);
+		expect(pipDispatchEnd).toBeGreaterThan(pipDispatchStart);
+		const pipDispatch = popup.slice(pipDispatchStart, pipDispatchEnd);
+		expect(pipDispatch.match(/chrome\.scripting\.executeScript/gu)?.length).toBe(1);
+		expect(pipDispatch).toContain("world: 'ISOLATED'");
+		expect(pipDispatch).toContain('SPECTRA_TRUSTED_PIP_REQUEST_ATTRIBUTE');
+		expect(pipDispatch).toContain('documentId: currentDocumentId');
+		expect(pipDispatch).toContain('target: currentTarget');
+		expect(pipDispatch).toContain('return new Promise<SpectraTrustedPipOutcome | null>');
+		expect(pipDispatch).toContain('new MutationObserver(readOutcome)');
+		expect(pipDispatch).not.toContain('while (performance.now() < deadline)');
 		expect(pipHandler).not.toContain('chrome.tabs.update');
 		expect(bridge).toContain('navigator.userActivation.isActive');
 		// rule: SCTRL-014/025 — the ISOLATED bridge invokes the canonical
@@ -478,6 +496,11 @@ describe('extension-page DOM and idle contracts', () => {
 		const shortcuts = readFileSync(resolve(import.meta.dir, '../src/background/shortcuts.ts'), 'utf8');
 		const hotkeys = readFileSync(resolve(import.meta.dir, '../src/content/input/hotkey-listener.ts'), 'utf8');
 		const osd = readFileSync(resolve(import.meta.dir, '../src/content/ui/osd.ts'), 'utf8');
+		const toast = readFileSync(resolve(import.meta.dir, '../src/content/ui/toast.ts'), 'utf8');
+		const contentRuntime = readFileSync(
+			resolve(import.meta.dir, '../src/content/core/index.ts'),
+			'utf8',
+		);
 		const feedbackSurface = readFileSync(
 			resolve(import.meta.dir, '../src/content/ui/feedback-surface.ts'),
 			'utf8',
@@ -543,6 +566,9 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(hotkeys).toContain('feedbackState.appliedConfig');
 		expect(hotkeys).toContain('commitHotkeyActualFeedback(');
 		expect(hotkeys).toContain(
+			'!ownsHotkeyActualOSDGesture(message.payload.gesture)',
+		);
+		expect(hotkeys).toContain(
 			'resolveSpectraHotkeyActualFeedback(binding.action, result)',
 		);
 		expect(hotkeys).toContain("feedbackOwner === 'listener-label'");
@@ -550,8 +576,24 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(osd).toContain('createFeedbackSurface(');
 		expect(feedbackSurface).toContain("host.popover = 'manual'");
 		expect(feedbackSurface).toContain("document.addEventListener('fullscreenchange'");
+		expect(feedbackSurface).toContain("document.removeEventListener('fullscreenchange'");
 		expect(feedbackSurface).toContain("host.matches(':popover-open')");
 		expect(feedbackSurface).toContain('host.showPopover()');
+		expect(feedbackSurface).toContain('feedbackHosts.clear()');
+		expect(contentRuntime).toContain('disposeOSD();');
+		expect(contentRuntime).toContain('disposeToast();');
+		expect(contentRuntime).toContain('disposeFeedbackSurfaces();');
+		const runtimeDispose = contentRuntime.slice(
+			contentRuntime.indexOf('dispose(handoff = false)'),
+			contentRuntime.indexOf('function isCurrentRuntime('),
+		);
+		expect(runtimeDispose.indexOf('disposeFeedbackUI();')).toBeGreaterThanOrEqual(0);
+		expect(runtimeDispose.indexOf('disposeFeedbackUI();')).toBeLessThan(
+			runtimeDispose.indexOf('await runtime.release?.();'),
+		);
+		expect(contentRuntime).toContain('contentRuntime.registry.track(disposeFeedbackUI)');
+		expect(osd).toContain('if (state.disposed) return;');
+		expect(toast).toContain('if (s.disposed || !document.documentElement) return;');
 		expect(osd).toContain('const OSD_HIDE_DELAY_MS = 2_000');
 		expect(osd).toContain("phase: 'active'");
 		expect(osd).toContain("state.hotkey.phase = 'settled'");

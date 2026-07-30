@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { requireValue } from './helpers/require-value';
 import type { ControlSnapshot, MediaTarget, VideoFilterState } from '@nexus/contracts';
 import {
 	bindVideoControls,
@@ -183,7 +184,10 @@ function installHarness(panel: FakePanel) {
 		requests,
 		fireOnlyTimer() {
 			expect(timers.size).toBe(1);
-			const [id, callback] = [...timers.entries()][0]!;
+			const [id, callback] = requireValue(
+				[...timers.entries()][0],
+				'Expected exactly one pending video-control timer',
+			);
 			timers.delete(id);
 			now += 50;
 			callback();

@@ -1,6 +1,6 @@
 // goal: HTTP Status panel UI - status code reference
 
-import React, { useState, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { searchStatuses, CATEGORY_INFO } from './core';
 import { styles } from './panel.styles';
@@ -18,8 +18,9 @@ export const HttpStatusPanel: React.FC = () => {
 	const grouped = useMemo(() => {
 		const groups: Record<string, typeof results> = {};
 		for (const status of results) {
-			if (!groups[status.category]) groups[status.category] = [];
-			groups[status.category]!.push(status);
+			const category = groups[status.category] ?? [];
+			category.push(status);
+			groups[status.category] = category;
 		}
 		return groups;
 	}, [results]);
@@ -49,13 +50,18 @@ export const HttpStatusPanel: React.FC = () => {
 								{info.icon} {info.label}
 							</div>
 							{statuses.map((status) => (
-								<div key={status.code} style={styles.item} onClick={() => handleCopy(status.code, status.name)}>
+								<button
+									type="button"
+									key={status.code}
+									style={{ ...styles.item, width: '100%', border: 'none', color: 'inherit', textAlign: 'left' }}
+									onClick={() => handleCopy(status.code, status.name)}
+								>
 									<span style={{ ...styles.code, color: info.color }}>{status.code}</span>
-									<div style={styles.info}>
-										<div style={styles.name}>{status.name}</div>
-										<div style={styles.desc}>{status.description}</div>
-									</div>
-								</div>
+									<span style={styles.info}>
+										<span style={{ ...styles.name, display: 'block' }}>{status.name}</span>
+										<span style={{ ...styles.desc, display: 'block' }}>{status.description}</span>
+									</span>
+								</button>
 							))}
 						</React.Fragment>
 					);

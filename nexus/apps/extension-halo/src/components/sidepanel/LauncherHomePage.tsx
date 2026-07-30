@@ -1,12 +1,11 @@
-import React, { useState, useRef, useMemo } from 'react';
+import type React from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import type { ToolId, ToolMeta, HaloSettings } from '../../kernel';
-import type { ToolCategory } from '../../i18n/types';
 import { useSmoothWheel } from '../../kernel/hooks/use-smooth-wheel';
 import { SearchBar } from '../search/SearchBar';
 import { LauncherToolItem } from './LauncherToolItem';
 import { commonStyles } from './layouts.styles';
-import { useEngineStatus } from './EngineStatusProvider';
 import { useActiveServices } from './ActiveServicesContext';
 import { useUserScripts } from '../../kernel/hooks/use-user-scripts';
 import { useCategorizedTools } from './hooks/use-categorized-tools';
@@ -21,16 +20,14 @@ interface LauncherHomePageProps {
 	onReorderTools: (category: string, ids: string[]) => void;
 	onReorderCategories: (ids: string[]) => void;
 	openTools: ToolId[];
-	onToggleScript?: (tool: ToolMeta) => void;
 	onEditScript?: (scriptId: string) => void;
 }
 
 export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 	visibleTools, settings, onSelectTool, collapsedCategories, toggleCategory,
-	onTogglePin, onReorderTools, onReorderCategories, openTools, onToggleScript, onEditScript
+	onTogglePin, onReorderTools, onReorderCategories, openTools, onEditScript
 }) => {
 	const { t } = useTranslation();
-	const engineStatus = useEngineStatus();
 	const { activeServices, bgToolIds: BACKGROUND_TOOL_IDS } = useActiveServices();
 	const { scripts } = useUserScripts();
 	const scrollRef = useRef<HTMLDivElement>(null);
@@ -45,9 +42,14 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 	// Legacy handling: verify types in case local storage has old data
 	const SAFE_DEFAULTS = { spacing: 12, iconSize: 24 };
 	const rawSpacing = settings?.spacing;
-	const spacing = typeof rawSpacing === 'number' ? rawSpacing : (settings as any)?.compactMode ? 4 : SAFE_DEFAULTS.spacing;
+	const legacyCompactMode = settings !== null
+		&& 'compactMode' in settings
+		&& settings.compactMode === true;
+	const spacing = typeof rawSpacing === 'number'
+		? rawSpacing
+		: legacyCompactMode ? 4 : SAFE_DEFAULTS.spacing;
 	
-	const rawIconSize = settings?.iconSize;
+	const rawIconSize: unknown = settings?.iconSize;
 	let iconSize = typeof rawIconSize === 'number' ? rawIconSize : SAFE_DEFAULTS.iconSize;
 	// Handle legacy strings
 	if (typeof rawIconSize === 'string') {
@@ -72,7 +74,10 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 		const current = categorizedTools[cat] || [];
 		const oldIdx = current.findIndex(t => t.id === draggingId), newIdx = current.findIndex(t => t.id === targetId);
 		if (oldIdx !== -1 && newIdx !== -1) {
-			const newList = [...current]; const [item] = newList.splice(oldIdx, 1); newList.splice(newIdx, 0, item!);
+			const newList = [...current];
+			const [item] = newList.splice(oldIdx, 1);
+			if (!item) return;
+			newList.splice(newIdx, 0, item);
 			setTempCats({ ...categorizedTools, [cat]: newList });
 		}
 	};
@@ -81,14 +86,18 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 		if (!draggingCat || draggingCat === targetCat) return;
 		const oldIdx = catOrder.indexOf(draggingCat), newIdx = catOrder.indexOf(targetCat);
 		if (oldIdx !== -1 && newIdx !== -1) {
-			const newOrder = [...catOrder]; const [item] = newOrder.splice(oldIdx, 1); newOrder.splice(newIdx, 0, item!);
+			const newOrder = [...catOrder];
+			const [item] = newOrder.splice(oldIdx, 1);
+			if (item === undefined) return;
+			newOrder.splice(newIdx, 0, item);
 			setTempCatOrder(newOrder);
 		}
 	};
 
 	const onDrop = (e: React.DragEvent, cat: string) => {
 		e.preventDefault();
-		if (tempCats) onReorderTools(cat, tempCats[cat]!.map(t => t.id));
+		const tools = tempCats?.[cat];
+		if (tools) onReorderTools(cat, tools.map(t => t.id));
 		setDraggingId(null); setTempCats(null);
 	};
 
@@ -105,7 +114,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 			<div style={{ margin: `${spacing}px 0`, padding: '0 12px', flexShrink: 0 }}>
 				<SearchBar onSelect={(id) => onSelectTool(id as ToolId)} visibleTools={userTools.filter(t => t.pluginType !== 'system')} />
 			</div>
-			<div ref={scrollRef} className="halo-scrollbar" style={{ ...commonStyles.toolbar as any, flex: 1, overflowY: 'auto', gap: `${spacing}px`, padding: `0 ${Math.max(8, spacing)}px ${Math.max(8, spacing)}px`, minHeight: 0 }}>
+			<div ref={scrollRef} className="halo-scrollbar" style={{ ...commonStyles.toolbar, flex: 1, overflowY: 'auto', gap: `${spacing}px`, padding: `0 ${Math.max(8, spacing)}px ${Math.max(8, spacing)}px`, minHeight: 0 }}>
 				{catOrder.map(cat => {
 					const tools = categorizedTools[cat];
 					if (!tools || tools.length === 0) return null;
@@ -123,31 +132,39 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 						system: { border: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.08)', text: '#8b5cf6' },
 					};
 					const colors = catColors[cat as keyof typeof catColors];
+					const dotColor = colors && 'dot' in colors ? colors.dot : undefined;
 					
 					return (
-						<div key={cat} style={{ ...commonStyles.categorySection as any, gap: `${Math.max(4, spacing / 2)}px` }}>
-						<div 
+						<div key={cat} style={{ ...commonStyles.categorySection, gap: `${Math.max(4, spacing / 2)}px` }}>
+						<button
+							type="button"
 							draggable onDragStart={(e) => onCatDragStart(e, cat)} onDragEnter={() => onCatDragEnter(cat)} onDragOver={(e) => e.preventDefault()} onDrop={onCatDrop}
 							style={{ 
-								...commonStyles.categoryTitle as any, 
+								...commonStyles.categoryTitle,
 								display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
 								cursor: 'pointer', padding: '4px', 
 								borderLeft: isSpecialCat && colors ? `3px solid ${colors.border}` : 'none', 
-								background: isSpecialCat && colors ? colors.bg : 'transparent' 
+								background: isSpecialCat && colors ? colors.bg : 'transparent',
+								width: '100%',
+								borderTop: 'none',
+								borderRight: 'none',
+								borderBottom: 'none',
+								color: 'inherit',
+								textAlign: 'left',
 							}}
 							onClick={() => toggleCategory(cat)}
 						>
-							<div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+							<span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
 								<span style={{ transform: collapsedCategories[cat] ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.2s', fontSize: '10px', opacity: 0.6 }}>▼</span>
-								<div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-									{isSpecialCat && (colors as any).dot && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: (colors as any).dot, boxShadow: `0 0 6px ${(colors as any).dot}` }}></span>}
+								<span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+									{isSpecialCat && dotColor && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: dotColor, boxShadow: `0 0 6px ${dotColor}` }}></span>}
 									<span style={{ color: isSpecialCat && colors ? colors.text : 'inherit', fontWeight: isSpecialCat ? 700 : 600 }}>{t(`categories.${cat}`)}</span>
-								</div>
-							</div>
+								</span>
+							</span>
 							<span style={{ fontSize: '10px', opacity: 0.6 }}>{tools.length}</span>
-						</div>
+						</button>
 							{!collapsedCategories[cat] && (
-								<div onDragOver={(e) => e.preventDefault()} onDrop={(e) => onDrop(e, cat)} style={{ ...commonStyles.toolGrid as any, gap: `${spacing}px`, gridTemplateColumns: `repeat(auto-fill, minmax(${minColWidth}px, 1fr))` }}>
+								<div style={{ ...commonStyles.toolGrid, gap: `${spacing}px`, gridTemplateColumns: `repeat(auto-fill, minmax(${minColWidth}px, 1fr))` }}>
 									{tools.map(tool => {
 										const isActiveService = activeServices.has(tool.id);
 										const isBackgroundCapable = BACKGROUND_TOOL_IDS.includes(tool.id);
@@ -166,10 +183,9 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 												onTogglePin={onTogglePin} 
 												onDragStart={onDragStart} 
 												onDragOver={(e) => { e.preventDefault(); onDragEnter(cat, tool.id); }} 
-												onDrop={(e) => e.preventDefault()} 
+												onDrop={(e) => onDrop(e, cat)}
 												isRunning={tool.pluginType !== 'system' && openTools.includes(tool.id as ToolId)} 
 												serviceState={serviceState}
-												onToggleScript={onToggleScript}
 												onEditScript={onEditScript}
 											/>
 										);
@@ -179,7 +195,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 						</div>
 					);
 				})}
-				<div style={{ ...commonStyles.footer as any, marginTop: '20px' }}><span>🔒 {t('footer.zeroTracking')}</span><span>•</span><span>💾 {t('footer.localOnly')}</span><span>•</span><span>🛠️ {visibleTools.filter(t => t.pluginType !== 'system').length} {t('common.tools')}</span></div>
+				<div style={{ ...commonStyles.footer, marginTop: '20px' }}><span>🔒 {t('footer.zeroTracking')}</span><span>•</span><span>💾 {t('footer.localOnly')}</span><span>•</span><span>🛠️ {visibleTools.filter(t => t.pluginType !== 'system').length} {t('common.tools')}</span></div>
 			</div>
 		</div>
 	);

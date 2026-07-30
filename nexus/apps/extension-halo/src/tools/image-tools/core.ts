@@ -1,6 +1,6 @@
 // goal: Image Tools core logic - compress and convert images using canvas
 
-import type { ImageFormat, ImageConfig, ImageInfo } from './types';
+import type { ImageConfig, ImageInfo } from './types';
 
 // Load image from file
 export function loadImage(file: File): Promise<HTMLImageElement> {
@@ -25,7 +25,8 @@ export function getImageInfo(file: File, img: HTMLImageElement): ImageInfo {
 // Compress/convert image
 export async function processImage(img: HTMLImageElement, config: ImageConfig): Promise<Blob> {
 	const canvas = document.createElement('canvas');
-	const ctx = canvas.getContext('2d')!;
+	const ctx = canvas.getContext('2d');
+	if (!ctx) throw new Error('Canvas 2D context is unavailable');
 
 	// Calculate new dimensions
 	let { width, height } = img;
@@ -72,8 +73,11 @@ export function imageToBase64(blob: Blob): Promise<string> {
 // Base64 to Blob
 export function base64ToBlob(base64: string): Blob {
 	const [header, data] = base64.split(',');
-	const mime = header!.match(/:(.*?);/)?.[1] || 'image/png';
-	const binary = atob(data!);
+	if (header === undefined || data === undefined) {
+		throw new Error('Invalid base64 data URL');
+	}
+	const mime = header.match(/:(.*?);/)?.[1] || 'image/png';
+	const binary = atob(data);
 	const array = new Uint8Array(binary.length);
 	for (let i = 0; i < binary.length; i++) {
 		array[i] = binary.charCodeAt(i);

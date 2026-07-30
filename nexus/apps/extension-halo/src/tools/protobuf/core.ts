@@ -2,10 +2,13 @@
 // Decodes a raw protobuf binary (wire format) without a proto file.
 // Displays fields, wire types, and values.
 
+export type ProtoValue = number | string | Uint8Array;
+
 export interface ProtoField {
+	offset: number;
 	fieldNumber: number;
 	wireType: number;
-	value: unknown;
+	value: ProtoValue;
 	subMessage?: ProtoField[];
 	raw?: Uint8Array;
 }
@@ -23,15 +26,21 @@ class BufferReader {
 	private offset = 0;
 	constructor(private buffer: Uint8Array) { }
 
+	get position(): number {
+		return this.offset;
+	}
+
 	readVarint(): number {
 		let result = 0;
 		let shift = 0;
 		while (true) {
 			if (this.offset >= this.buffer.length) throw new Error("Index out of bounds");
-			const byte = this.buffer[this.offset++];
-			result |= (byte! & 0x7f) << shift;
+			const byte = this.buffer[this.offset];
+			if (byte === undefined) throw new Error("Index out of bounds");
+			this.offset++;
+			result |= (byte & 0x7f) << shift;
 			shift += 7;
-			if ((byte! & 0x80) === 0) break;
+			if ((byte & 0x80) === 0) break;
 			if (shift > 35) throw new Error("Varint too large"); // JS bitwise limit
 		}
 		return result >>> 0; // Unsigned
@@ -66,11 +75,12 @@ export function decodeProto(buffer: Uint8Array): ProtoField[] {
 
 	while (!reader.eof()) {
 		try {
+			const offset = reader.position;
 			const tag = reader.readVarint();
 			const fieldNumber = tag >>> 3;
 			const wireType = tag & 0x07;
 
-			let value: any;
+			let value: ProtoValue;
 			let subMessage: ProtoField[] | undefined;
 
 			switch (wireType) {
@@ -80,7 +90,7 @@ export function decodeProto(buffer: Uint8Array): ProtoField[] {
 				case WIRE_TYPE_64BIT:
 					value = reader.readFixed64().toString();
 					break;
-				case WIRE_TYPE_LENGTH_DELIMITED:
+				case WIRE_TYPE_LENGTH_DELIMITED: {
 					const length = reader.readVarint();
 					const bytes = reader.readBytes(length);
 					value = bytes; // Raw bytes
@@ -89,17 +99,11 @@ export function decodeProto(buffer: Uint8Array): ProtoField[] {
 						value = new TextDecoder().decode(bytes);
 					} else {
 						// Heuristic: Try to recursively decode as sub-message
-						try {
-							subMessage = decodeProto(bytes);
-							// Simple check: if valid sub-message, use it? 
-							// Only if it doesn't look like garbage. 
-							if (subMessage.length > 0) value = "(Sub-message)";
-						} catch {
-							// Ignore, keep as bytes
-						}
+						subMessage = tryDecodeSubMessage(bytes) ?? undefined;
+						if (subMessage) value = "(Sub-message)";
 					}
-					if (subMessage && subMessage.length === 0) subMessage = undefined;
 					break;
+				}
 				case WIRE_TYPE_32BIT:
 					value = reader.readFixed32();
 					break;
@@ -108,19 +112,28 @@ export function decodeProto(buffer: Uint8Array): ProtoField[] {
 					value = "Group (Deprecated)";
 					break;
 				default:
-					value = "Unknown WireType " + wireType;
+					value = `Unknown WireType ${wireType}`;
 					// Likely garbage or parsing error, stop
 					return fields;
 			}
 
-			fields.push({ fieldNumber, wireType, value, subMessage });
+			fields.push({ offset, fieldNumber, wireType, value, subMessage });
 
-		} catch (e) {
+		} catch (_e) {
 			break; // Stop parsing on error
 		}
 	}
 
 	return fields;
+}
+
+function tryDecodeSubMessage(bytes: Uint8Array): ProtoField[] | null {
+	try {
+		const fields = decodeProto(bytes);
+		return fields.length > 0 ? fields : null;
+	} catch {
+		return null;
+	}
 }
 
 function isPrintableString(bytes: Uint8Array): boolean {

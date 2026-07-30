@@ -1,6 +1,7 @@
 // goal: Reader Mode panel UI - extract and display readable content
 
-import React, { useState, useCallback } from 'react';
+import type React from 'react';
+import { useState, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { ReaderConfig, ArticleContent } from './types';
@@ -11,8 +12,8 @@ import { useToolState } from '../../kernel';
 
 export const ReaderModePanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [config, setConfig] = useToolState<ReaderConfig>('reader-mode-config' as any, DEFAULT_CONFIG);
-	const [article, setArticle] = useToolState<ArticleContent | null>('reader-mode-article' as any, null);
+	const [config, setConfig] = useToolState<ReaderConfig>('reader-mode-config', DEFAULT_CONFIG);
+	const [article, setArticle] = useToolState<ArticleContent | null>('reader-mode-article', null);
 
 	const [loading, setLoading] = useState(false);
 
@@ -89,8 +90,8 @@ export const ReaderModePanel: React.FC = () => {
 				<div
 					style={{
 						...styles.preview,
-						background: theme!.bg,
-						color: theme!.text,
+						background: theme.bg,
+						color: theme.text,
 						fontSize: `${config.fontSize}px`,
 						lineHeight: config.lineHeight,
 						fontFamily: config.fontFamily,

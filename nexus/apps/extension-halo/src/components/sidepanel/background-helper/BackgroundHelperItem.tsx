@@ -1,7 +1,7 @@
 // goal: Background Helper Item - individual tool card with status indicator
 // eff: Clean, compact display with toggle control
 
-import React from 'react';
+import type React from 'react';
 import type { BackgroundHelperItem } from '../hooks/use-background-helpers';
 
 interface BackgroundHelperItemProps {
@@ -107,12 +107,12 @@ export const BackgroundHelperItemComponent: React.FC<BackgroundHelperItemProps> 
 				</span>
 			</label>
 
-			<style dangerouslySetInnerHTML={{ __html: `
+			<style>{`
 				@keyframes pulse {
 					0%, 100% { opacity: 1; transform: scale(1); }
 					50% { opacity: 0.7; transform: scale(1.2); }
 				}
-			`}} />
+			`}</style>
 		</div>
 	);
 };

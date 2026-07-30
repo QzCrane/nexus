@@ -3,16 +3,38 @@
 import type { MockDataType, MockField, MockConfig } from './types';
 
 // Predefined data pools
-const FIRST_NAMES = ['James', 'Mary', 'John', 'Patricia', 'Robert', 'Jennifer', 'Michael', 'Linda', 'William', 'Elizabeth', 'David', 'Susan', 'Richard', 'Jessica', 'Joseph', 'Sarah'];
-const LAST_NAMES = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Gonzalez', 'Wilson', 'Anderson', 'Thomas'];
-const EMAIL_DOMAINS = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'example.com', 'test.org'];
-const LOREM_WORDS = ['lorem', 'ipsum', 'dolor', 'sit', 'amet', 'consectetur', 'adipiscing', 'elit', 'sed', 'do', 'eiusmod', 'tempor', 'incididunt', 'ut', 'labore', 'et', 'dolore', 'magna', 'aliqua'];
-const STREETS = ['Main St', 'Oak Ave', 'Pine Rd', 'Maple Dr', 'Cedar Ln', 'Elm Blvd', 'Park Way', 'River Rd'];
-const CITIES = ['New York', 'Los Angeles', 'Chicago', 'Houston', 'Phoenix', 'Philadelphia', 'San Antonio', 'San Diego'];
+const FIRST_NAMES = ['James', 'Mary', 'John', 'Patricia', 'Robert', 'Jennifer', 'Michael', 'Linda', 'William', 'Elizabeth', 'David', 'Susan', 'Richard', 'Jessica', 'Joseph', 'Sarah'] as const;
+const LAST_NAMES = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Gonzalez', 'Wilson', 'Anderson', 'Thomas'] as const;
+const EMAIL_DOMAINS = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'example.com', 'test.org'] as const;
+const LOREM_WORDS = ['lorem', 'ipsum', 'dolor', 'sit', 'amet', 'consectetur', 'adipiscing', 'elit', 'sed', 'do', 'eiusmod', 'tempor', 'incididunt', 'ut', 'labore', 'et', 'dolore', 'magna', 'aliqua'] as const;
+const STREETS = ['Main St', 'Oak Ave', 'Pine Rd', 'Maple Dr', 'Cedar Ln', 'Elm Blvd', 'Park Way', 'River Rd'] as const;
+const CITIES = ['New York', 'Los Angeles', 'Chicago', 'Houston', 'Phoenix', 'Philadelphia', 'San Antonio', 'San Diego'] as const;
 
 // Random utilities
-const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)]!;
+const pick = <T>(arr: readonly [T, ...T[]]): T => arr[Math.floor(Math.random() * arr.length)] ?? arr[0];
 const randInt = (min: number, max: number): number => Math.floor(Math.random() * (max - min + 1)) + min;
+
+export function createMockField(name: string, type: MockDataType): MockField {
+	return { id: crypto.randomUUID(), name, type };
+}
+
+/** Upgrade persisted editable rows to stable identities while preserving valid IDs. */
+export function normalizeMockFields(fields: MockField[]): MockField[] {
+	const seen = new Set<string>();
+	let changed = false;
+	const normalized = fields.map((field) => {
+		if (field.id && !seen.has(field.id)) {
+			seen.add(field.id);
+			return field;
+		}
+
+		changed = true;
+		const id = crypto.randomUUID();
+		seen.add(id);
+		return { ...field, id };
+	});
+	return changed ? normalized : fields;
+}
 
 // Generate single value by type
 export function generateValue(type: MockDataType): string | number {
@@ -38,7 +60,7 @@ export function generateValue(type: MockDataType): string | number {
 		case 'date': {
 			const start = new Date(2020, 0, 1).getTime();
 			const end = Date.now();
-			return new Date(randInt(start, end)).toISOString().split('T')[0]!;
+			return new Date(randInt(start, end)).toISOString().split('T')[0] ?? '';
 		}
 		default:
 			return '';
@@ -66,16 +88,18 @@ export function formatJSON(data: Record<string, string | number>[]): string {
 
 // Format as CSV
 export function formatCSV(data: Record<string, string | number>[]): string {
-	if (data.length === 0) return '';
-	const headers = Object.keys(data[0]!);
+	const firstRow = data[0];
+	if (!firstRow) return '';
+	const headers = Object.keys(firstRow);
 	const rows = data.map((row) => headers.map((h) => `"${String(row[h]).replace(/"/g, '""')}"`).join(','));
 	return [headers.join(','), ...rows].join('\n');
 }
 
 // Format as SQL INSERT
 export function formatSQL(data: Record<string, string | number>[], tableName = 'mock_data'): string {
-	if (data.length === 0) return '';
-	const headers = Object.keys(data[0]!);
+	const firstRow = data[0];
+	if (!firstRow) return '';
+	const headers = Object.keys(firstRow);
 	const values = data.map((row) => {
 		const vals = headers.map((h) => {
 			const v = row[h];

@@ -7,6 +7,11 @@ import { loadSettings, getThemeColors, applyTheme, TOOL_REGISTRY, saveSettings }
 import { useModuleManager } from '../../kernel';
 import { useOpenTools } from './hooks/use-open-tools';
 
+function isToolId(value: unknown): value is ToolId {
+	return typeof value === 'string'
+		&& TOOL_REGISTRY.some(tool => tool.id === value);
+}
+
 export const useSidePanelState = () => {
 	const { isInstalled, loading: modulesLoading } = useModuleManager();
 	const [settings, setSettings] = useState<HaloSettings | null>(null);
@@ -27,7 +32,7 @@ export const useSidePanelState = () => {
 			.filter((tool) => isInstalled(tool.id))
 			.map(tool => ({
 				...tool,
-				status: tool.status === 'available' ? 'ready' : (tool.status as any)
+				status: tool.status === 'available' ? 'ready' : tool.status
 			}));
 	}, [modulesLoading, isInstalled]);
 
@@ -65,11 +70,20 @@ export const useSidePanelState = () => {
 		await baseToolSelect(toolId);
 	}, [baseToolSelect]);
 
-	const listener = useCallback((message: any) => {
-		if (message.type === 'HALO_ACTIVATE_TOOL' && message.toolId) {
-			handleToolSelect(message.toolId);
+	const listener = useCallback((message: unknown) => {
+		if (
+			typeof message === 'object'
+			&& message !== null
+			&& 'type' in message
+			&& message.type === 'HALO_ACTIVATE_TOOL'
+			&& 'toolId' in message
+			&& isToolId(message.toolId)
+		) {
+			void handleToolSelect(message.toolId).catch((error: unknown) => {
+				console.error('[HALO:SidePanel] Failed to activate tool', error);
+			});
 		}
-		return true;
+		return false;
 	}, [handleToolSelect]);
 
 	useEffect(() => {

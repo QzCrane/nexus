@@ -1,6 +1,6 @@
-import React, { useState, memo, useCallback } from 'react';
+import type React from 'react';
+import { useState, memo } from 'react';
 import type { ToolId, ToolMeta, HaloSettings } from '../../kernel';
-import { toggleScriptTool } from '../../kernel';
 import { useTranslation } from '../../i18n';
 import { commonStyles } from './layouts.styles';
 import { useToolEngineStatus } from './hooks/use-tool-engine-status';
@@ -20,8 +20,6 @@ interface LauncherToolItemProps {
 	onDrop: (e: React.DragEvent, targetId: string) => void;
 	isRunning: boolean;
 	serviceState?: 'active' | 'inactive';
-	/** SaaT: callback for script tools toggle (instead of onSelect) */
-	onToggleScript?: (tool: ToolMeta) => void;
 	/** Callback when clicking a script tool to edit it */
 	onEditScript?: (scriptId: string) => void;
 }
@@ -29,7 +27,7 @@ interface LauncherToolItemProps {
 export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 	tool, settings, iconSize, spacing, showLabels, draggingId,
 	onSelect, onTogglePin, onDragStart, onDragOver, onDrop, isRunning, serviceState,
-	onToggleScript, onEditScript
+	onEditScript
 }) => {
 	const { t } = useTranslation();
 	const [isHovered, setIsHovered] = useState(false);
@@ -48,42 +46,34 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 		onTogglePin(tool.id);
 	};
 
-	// SaaT: Default script toggle handler
-	const handleScriptToggle = useCallback(async () => {
-		if (!isScriptTool) return;
-		if (onToggleScript) {
-			onToggleScript(tool);
-		} else {
-			await toggleScriptTool(tool);
-		}
-	}, [isScriptTool, onToggleScript, tool]);
-
 	const fontSize = `${iconSize}px`;
-	const padding = Math.max(4, spacing / 2) + 'px';
+	const padding = `${Math.max(4, spacing / 2)}px`;
 	
 	// Dynamic pin overlay logic needed since isCompact prop is gone
 	// We can infer compactness if padding/spacing is small, but PinOverlay mainly just needs size info?
 	// Actually PinOverlay uses isCompact to select size.
 	// Let's pass `isCompact` as (iconSize < 24) or (spacing < 8) to PinOverlay for now as fallback
-	const _inferredCompact = iconSize < 24;
+	const isCompact = iconSize < 24;
 
 	return (
-		<div
-			draggable={isReady}
-			onDragStart={(e) => onDragStart(e, tool.id)}
-			onDragOver={onDragOver}
-			onDrop={(e) => onDrop(e, tool.id)}
+		<fieldset
+			aria-label={t(`tools.${tool.id}.name`, { defaultValue: tool.name })}
 			onMouseEnter={() => setIsHovered(true)}
 			onMouseLeave={() => { setIsHovered(false); setIsPinHovered(false); }}
 			style={{ 
 				position: 'relative', opacity: isDragging ? 0.4 : 1, width: '100%',
+				border: 0, margin: 0, padding: 0, minInlineSize: 0,
 				transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
 				zIndex: isHovered ? 10 : 1,
 				transform: isHovered && isReady ? 'translateY(-2px)' : 'translateY(0)',
 				willChange: 'transform', // Keep on GPU layer
 			}}
 		>
-			<button
+			<button type="button"
+				draggable={isReady}
+				onDragStart={(e) => onDragStart(e, tool.id)}
+				onDragOver={onDragOver}
+				onDrop={(e) => onDrop(e, tool.id)}
 				data-tool-id={tool.id}
 				data-tool-type={isScriptTool ? 'script' : 'panel'}
 				onClick={() => {
@@ -140,14 +130,14 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 					fontWeight: isPinned ? 600 : 400
 				}}>{t(`tools.${tool.id}.name`, { defaultValue: tool.name })}</span>}
 				
-				{(isPinned || (isHovered && isReady)) && (
-					<PinOverlay 
-						isPinned={!!isPinned} isPinHovered={isPinHovered} isCompact={_inferredCompact} 
-						onToggle={handleTogglePin} onMouseEnter={() => setIsPinHovered(true)} onMouseLeave={() => setIsPinHovered(false)} 
-					/>
-				)}
 			</button>
+			{(isPinned || (isHovered && isReady)) && (
+				<PinOverlay
+					isPinned={!!isPinned} isPinHovered={isPinHovered} isCompact={isCompact}
+					onToggle={handleTogglePin} onMouseEnter={() => setIsPinHovered(true)} onMouseLeave={() => setIsPinHovered(false)}
+				/>
+			)}
 			<ToolAnimations />
-		</div>
+		</fieldset>
 	);
 });

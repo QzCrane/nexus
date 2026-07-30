@@ -64,10 +64,12 @@ function accessorCapability(
 	property: 'muted' | 'playbackRate',
 ): PageMediaCapability | null {
 	const descriptor = propertyDescriptor(target, property);
-	if (!descriptor?.get || !descriptor.set) return null;
+	const getter = descriptor?.get;
+	const setter = descriptor?.set;
+	if (!getter || !setter) return null;
 	return {
-		read: () => Reflect.apply(descriptor.get!, target, []),
-		write: (value) => { Reflect.apply(descriptor.set!, target, [value]); },
+		read: () => Reflect.apply(getter, target, []),
+		write: (value) => { Reflect.apply(setter, target, [value]); },
 	};
 }
 
@@ -117,14 +119,22 @@ function capabilityFor(
 		const setMuted = boundMethod(controller, 'setMuted');
 		const mute = boundMethod(controller, 'mute');
 		const unMute = boundMethod(controller, 'unMute') ?? boundMethod(controller, 'unmute');
-		if (isMuted && (setMuted || mute && unMute)) {
+		if (isMuted && setMuted) {
 			return {
 				read: () => booleanValue(isMuted(), 'Page mute'),
 				write: (value) => {
 					const muted = booleanValue(value, 'Requested mute');
-					if (setMuted) setMuted(muted);
-					else if (muted) mute!();
-					else unMute!();
+					setMuted(muted);
+				},
+			};
+		}
+		if (isMuted && mute && unMute) {
+			return {
+				read: () => booleanValue(isMuted(), 'Page mute'),
+				write: (value) => {
+					const muted = booleanValue(value, 'Requested mute');
+					if (muted) mute();
+					else unMute();
 				},
 			};
 		}
@@ -266,14 +276,17 @@ function onPageMediaRequest(event: Event): void {
 	}
 
 	let before: SpectraPageMediaValue | null = null;
+	let requestedValue: SpectraPageMediaValue | undefined;
 	let result: SpectraPageMediaResult;
 	try {
 		before = capability.read();
 		if (request.operation === 'write') {
-			capability.write(request.value!);
+			requestedValue = request.value;
+			if (requestedValue === undefined) throw new Error('Page media write request has no value');
+			capability.write(requestedValue);
 		}
 		const actual = capability.read();
-		if (request.operation === 'write' && !valuesMatch(request.field, request.value!, actual)) {
+		if (requestedValue !== undefined && !valuesMatch(request.field, requestedValue, actual)) {
 			capability.write(before);
 			const restored = capability.read();
 			throw new Error(
@@ -287,20 +300,27 @@ function onPageMediaRequest(event: Event): void {
 			actual,
 		};
 	} catch (error) {
+		let rollbackError: unknown = null;
 		if (request.operation === 'write' && before !== null) {
 			try {
 				const current = capability.read();
 				if (!valuesMatch(request.field, current, before)) capability.write(before);
-			} catch {
+			} catch (caughtRollbackError) {
 				// The returned failure remains authoritative; executor ownership is not committed.
+				rollbackError = caughtRollbackError;
 			}
 		}
+		const primaryMessage = error instanceof Error ? error.message : String(error);
 		result = {
 			requestId: request.requestId,
 			field: request.field,
 			supported: true,
 			actual: null,
-			error: error instanceof Error ? error.message : String(error),
+			error: rollbackError === null
+				? primaryMessage
+				: `${primaryMessage}; baseline rollback failed: ${
+					rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
+				}`,
 		};
 	}
 	element.setAttribute(SPECTRA_PAGE_MEDIA_RESULT_ATTRIBUTE, JSON.stringify(result));

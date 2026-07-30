@@ -1,7 +1,7 @@
 // goal: Extension card component
 // eff: Single extension display with toggle and actions
 
-import React from 'react';
+import type React from 'react';
 import { Toggle } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { ExtensionInfo, ExtensionGroup } from './types';
@@ -84,11 +84,11 @@ export const ExtCard: React.FC<ExtCardProps> = ({ ext, group, onToggle, onAssign
 				</select>
 				
 				{hasOptions && (
-					<button style={styles.actionBtn} onClick={() => openOptionsPage(ext)} title={t('extMgr.openOptions')}>
+					<button type="button" style={styles.actionBtn} onClick={() => openOptionsPage(ext)} title={t('extMgr.openOptions')}>
 						⚙️
 					</button>
 				)}
-				<button style={styles.actionBtn} onClick={() => openDetailsPage(ext.id)} title={t('extMgr.details')}>
+				<button type="button" style={styles.actionBtn} onClick={() => openDetailsPage(ext.id)} title={t('extMgr.details')}>
 					🔗
 				</button>
 				

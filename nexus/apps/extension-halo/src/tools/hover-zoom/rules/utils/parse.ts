@@ -21,7 +21,7 @@ export function parseEmbeddedJson<T>(html: string, token: string): T | null {
 export function extractJsonFromIndex<T>(html: string, startIndex: number): T | null {
 	let depth = 0;
 	let inString = false;
-	let escape = false;
+	let escaped = false;
 	let end = startIndex;
 	const len = html.length;
 
@@ -32,13 +32,13 @@ export function extractJsonFromIndex<T>(html: string, startIndex: number): T | n
 	for (let i = startIndex; i < len; i++) {
 		const char = html[i];
 
-		if (escape) {
-			escape = false;
+		if (escaped) {
+			escaped = false;
 			continue;
 		}
 
 		if (char === '\\') {
-			escape = true;
+			escaped = true;
 			continue;
 		}
 

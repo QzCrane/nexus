@@ -72,6 +72,8 @@ export function initPresetsUI(
 // eff: refreshes the preset list with search filtering
 async function refreshPresetsList(): Promise<void> {
 	if (!listEl || !emptyEl) return;
+	const list = listEl;
+	const empty = emptyEl;
 
 	const refreshRevision = ++latestRefreshRevision;
 	const { sitePresets, globalPresets, defaultId } = await loadAllPresets();
@@ -88,39 +90,39 @@ async function refreshPresetsList(): Promise<void> {
 
 	const hasPresets = filteredSites.length > 0 || filteredGlobals.length > 0;
 
-	listEl.replaceChildren();
+	list.replaceChildren();
 
 	if (!hasPresets) {
-		listEl.style.display = 'none';
-		emptyEl.style.display = 'block';
+		list.style.display = 'none';
+		empty.style.display = 'block';
 		if (clearBtn) clearBtn.style.display = 'none';
 		return;
 	}
 
-	listEl.style.display = 'block';
-	emptyEl.style.display = 'none';
+	list.style.display = 'block';
+	empty.style.display = 'none';
 	if (clearBtn) clearBtn.style.display = 'inline-block';
 
 	// eff: render global presets section
 	if (filteredGlobals.length > 0) {
 		const globalHeader = createSectionHeader(currentDict.presetGlobalSection);
-		listEl.appendChild(globalHeader);
+		list.appendChild(globalHeader);
 
 		filteredGlobals.forEach(([name, entry]) => {
 			const item = createPresetItem(name, entry.config, 'global', entry.meta.isDefault === true || defaultId === name);
-			listEl!.appendChild(item);
+			list.appendChild(item);
 		});
 	}
 
 	// eff: render site-specific presets section
 	if (filteredSites.length > 0) {
 		const siteHeader = createSectionHeader(currentDict.presetSiteSection);
-		listEl!.appendChild(siteHeader);
+		list.appendChild(siteHeader);
 
 		filteredSites.forEach(([domain, config]) => {
 			const isCurrentSite = domain === currentDomain;
 			const item = createPresetItem(domain, config, 'site', false, isCurrentSite);
-			listEl!.appendChild(item);
+			list.appendChild(item);
 		});
 	}
 }

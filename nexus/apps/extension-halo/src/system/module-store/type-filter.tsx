@@ -1,5 +1,5 @@
 
-import React from 'react';
+import type React from 'react';
 import { useTranslation } from '../../i18n';
 
 export type FilterType = 'all' | 'app' | 'script' | 'system';
@@ -22,7 +22,7 @@ export const TypeFilter: React.FC<TypeFilterProps> = ({ value, onChange }) => {
 	return (
 		<div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
 			{typeFilters.map(f => (
-				<button
+				<button type="button"
 					key={f.key}
 					style={{
 						padding: '4px 12px',

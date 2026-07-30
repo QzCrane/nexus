@@ -1,6 +1,7 @@
 // goal: Storage Editor panel UI - edit localStorage/sessionStorage
 
-import React, { useState, useCallback } from 'react';
+import type React from 'react';
+import { useState, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import type { StorageItem } from './types';
 import { getStorageItems, setStorageItem, deleteStorageItem, formatSize } from './core';
@@ -11,7 +12,7 @@ import { useToolState } from '../../kernel';
 export const StorageEditorPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [items, setItems] = useState<StorageItem[]>([]);
-	const [filter, setFilter] = useToolState<'all' | 'localStorage' | 'sessionStorage'>('storage-editor-filter' as any, 'all');
+	const [filter, setFilter] = useToolState<'all' | 'localStorage' | 'sessionStorage'>('storage-editor-filter', 'all');
 
 	const [loading, setLoading] = useState(false);
 	const [scanned, setScanned] = useState(false);
@@ -43,7 +44,7 @@ export const StorageEditorPanel: React.FC = () => {
 	return (
 		<div style={styles.wrapper}>
 			{/* Scan Button */}
-			<button style={styles.btn} onClick={handleScan} disabled={loading}>
+			<button type="button" style={styles.btn} onClick={handleScan} disabled={loading}>
 				{loading ? '⏳' : '🔍'} {t('storageEditor.scan')}
 			</button>
 
@@ -51,7 +52,7 @@ export const StorageEditorPanel: React.FC = () => {
 			{scanned && (
 				<div style={styles.filter}>
 					{(['all', 'localStorage', 'sessionStorage'] as const).map((f) => (
-						<button
+						<button type="button"
 							key={f}
 							style={{ ...styles.filterBtn, background: filter === f ? 'var(--halo-accent)' : 'var(--halo-bg-tertiary)', color: filter === f ? '#fff' : 'var(--halo-text)' }}
 							onClick={() => setFilter(f)}
@@ -83,7 +84,7 @@ export const StorageEditorPanel: React.FC = () => {
 								/>
 								<div style={styles.meta}>
 									<span>{formatSize(item.size)}</span>
-									<button style={styles.btnSecondary} onClick={() => handleDelete(item)}>🗑️</button>
+									<button type="button" style={styles.btnSecondary} onClick={() => handleDelete(item)}>🗑️</button>
 								</div>
 							</div>
 						))

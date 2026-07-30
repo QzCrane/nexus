@@ -1,9 +1,10 @@
 // goal: API Tester panel UI - send HTTP requests and view responses
 
-import React, { useState, useCallback } from 'react';
+import type React from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useTranslation } from '../../i18n';
 import type { HttpMethod, RequestConfig, ResponseData, Header } from './types';
-import { executeRequest, formatBody, formatSize, createHeader, DEFAULT_CONFIG } from './core';
+import { executeRequest, formatBody, formatSize, createHeader, normalizeHeaders, DEFAULT_CONFIG } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
 
@@ -12,12 +13,16 @@ const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 
 
 export const ApiTesterPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [config, setConfig] = useToolState<RequestConfig>('api-tester-config' as any, { ...DEFAULT_CONFIG });
-	const [response, setResponse] = useToolState<ResponseData | null>('api-tester-res' as any, null);
+	const [config, setConfig] = useToolState<RequestConfig>('api-tester-config', { ...DEFAULT_CONFIG });
+	const [response, setResponse] = useToolState<ResponseData | null>('api-tester-res', null);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string>('');
-	const [activeTab, setActiveTab] = useToolState<'headers' | 'body'>('api-tester-tab' as any, 'headers');
+	const [activeTab, setActiveTab] = useToolState<'headers' | 'body'>('api-tester-tab', 'headers');
 
+	useEffect(() => {
+		const headers = normalizeHeaders(config.headers);
+		if (headers !== config.headers) setConfig({ ...config, headers });
+	}, [config, setConfig]);
 
 	// Send request
 	const handleSend = useCallback(async () => {
@@ -34,15 +39,17 @@ export const ApiTesterPanel: React.FC = () => {
 		} finally {
 			setLoading(false);
 		}
-	}, [config]);
+	}, [config, t, setResponse]);
 
 	// Update header
-	const updateHeader = (idx: number, field: keyof Header, value: string | boolean) => {
+	const updateHeader = (idx: number, field: keyof Omit<Header, 'id'>, value: string | boolean) => {
 		setConfig((c) => {
 			const headers = [...c.headers];
-			headers[idx] = { ...headers[idx]!, [field]: value };
+			const current = headers[idx];
+			if (!current) return c;
+			headers[idx] = { ...current, [field]: value };
 			// Auto-add new row if last row filled
-			if (idx === headers.length - 1 && headers[idx]!.key) headers.push(createHeader());
+			if (idx === headers.length - 1 && headers[idx]?.key) headers.push(createHeader());
 			return { ...c, headers };
 		});
 	};
@@ -66,17 +73,17 @@ export const ApiTesterPanel: React.FC = () => {
 					onChange={(e) => setConfig((c) => ({ ...c, url: e.target.value }))}
 					onKeyDown={(e) => e.key === 'Enter' && handleSend()}
 				/>
-				<button style={styles.btn} onClick={handleSend} disabled={loading}>
+				<button type="button" style={styles.btn} onClick={handleSend} disabled={loading}>
 					{loading ? '⏳' : '🚀'} {t('apiTester.send', { defaultValue: 'Send' })}
 				</button>
 			</div>
 
 			{/* Tabs */}
 			<div style={styles.tabs}>
-				<button style={{ ...styles.tab, ...(activeTab === 'headers' ? styles.tabActive : {}) }} onClick={() => setActiveTab('headers')}>
+				<button type="button" style={{ ...styles.tab, ...(activeTab === 'headers' ? styles.tabActive : {}) }} onClick={() => setActiveTab('headers')}>
 					{t('apiTester.headers', { defaultValue: 'Headers' })}
 				</button>
-				<button style={{ ...styles.tab, ...(activeTab === 'body' ? styles.tabActive : {}) }} onClick={() => setActiveTab('body')}>
+				<button type="button" style={{ ...styles.tab, ...(activeTab === 'body' ? styles.tabActive : {}) }} onClick={() => setActiveTab('body')}>
 					{t('apiTester.body', { defaultValue: 'Body' })}
 				</button>
 			</div>
@@ -85,11 +92,11 @@ export const ApiTesterPanel: React.FC = () => {
 			{activeTab === 'headers' && (
 				<div style={styles.section}>
 					{config.headers.map((h, idx) => (
-						<div key={idx} style={{ ...styles.headerRow, marginBottom: '6px' }}>
+						<div key={h.id} style={{ ...styles.headerRow, marginBottom: '6px' }}>
 							<input type="checkbox" checked={h.enabled} onChange={(e) => updateHeader(idx, 'enabled', e.target.checked)} />
 							<input style={styles.headerInput} placeholder={t('apiTester.key', { defaultValue: 'Key' })} value={h.key} onChange={(e) => updateHeader(idx, 'key', e.target.value)} />
 							<input style={styles.headerInput} placeholder={t('apiTester.value', { defaultValue: 'Value' })} value={h.value} onChange={(e) => updateHeader(idx, 'value', e.target.value)} />
-							{config.headers.length > 1 && <button style={styles.btnSecondary} onClick={() => removeHeader(idx)}>×</button>}
+							{config.headers.length > 1 && <button type="button" style={styles.btnSecondary} onClick={() => removeHeader(idx)}>×</button>}
 						</div>
 					))}
 				</div>

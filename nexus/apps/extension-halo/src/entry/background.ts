@@ -50,7 +50,7 @@ async function sendPrefillMessage(message: unknown, maxRetries = 5): Promise<voi
 chrome.runtime.onInstalled.addListener(async (details) => {
 	console.log(LOG_TAG, 'Extension installed/updated:', details.reason);
 
-	// Sync built-in SaaT tools (like llm-enhancer) to storage
+	// Sync registry-owned script tools to storage
 	await syncSaaTTools(TOOL_REGISTRY);
 
 	// Set defaults if not already set

@@ -20,7 +20,7 @@ function resolveUrl(url: string): string {
 	if (!url) return '';
 	let resolved = url;
 
-	if (resolved.startsWith('//')) resolved = 'https:' + resolved;
+	if (resolved.startsWith('//')) resolved = `https:${resolved}`;
 	else if (resolved.startsWith('/')) resolved = window.location.origin + resolved;
 
 	// Bilibili logic moved to RuleEngine
@@ -33,7 +33,7 @@ function getLargestSrcset(srcset: string): string | null {
 	if (!srcset) return null;
 	const sources = srcset.split(',').map(s => {
 		const [url, desc] = s.trim().split(/\s+/);
-		const w = desc?.endsWith('w') ? parseInt(desc) : desc?.endsWith('x') ? parseFloat(desc) * 1000 : 0;
+		const w = desc?.endsWith('w') ? parseInt(desc, 10) : desc?.endsWith('x') ? parseFloat(desc) * 1000 : 0;
 		return { url, w };
 	}).sort((a, b) => b.w - a.w);
 	return sources[0]?.url || null;

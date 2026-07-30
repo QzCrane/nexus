@@ -13,8 +13,7 @@ pre-commit:
     biome-check:
       glob: "**/*.{ts,tsx,js,jsx,mjs,cjs,json}"
       root: "nexus/"
-      run: bunx @biomejs/biome check --no-errors-on-unmatched --max-diagnostics=50 {staged_files}
-      stage_fixed: true
+      run: bun scripts/run-strict-biome.mjs {staged_files}
 
 commit-msg:
   commands:
@@ -27,6 +26,8 @@ pre-push:
     - merge
     - rebase
   commands:
+    repository-lint:
+      run: bun run lint
     platform-contract:
       run: bun run check:platform
     toolchain:

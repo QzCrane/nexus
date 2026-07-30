@@ -10,7 +10,9 @@ export function initTabs(): void {
 			const tabId = btn.dataset.tab;
 			if (!tabId) return;
 
-			navBtns.forEach(b => b.classList.remove('active'));
+			navBtns.forEach((b) => {
+				b.classList.remove('active');
+			});
 			btn.classList.add('active');
 
 			tabContents.forEach(content => {

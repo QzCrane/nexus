@@ -133,6 +133,39 @@ describe('capture restart reconciliation barrier', () => {
 		}
 	});
 
+	test('does not detach a rejecting transition-cleanup promise', async () => {
+		const chromeDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const timerHarness = installFastTimerHarness();
+		const unhandled: unknown[] = [];
+		const rejectionListener = (reason: unknown) => unhandled.push(reason);
+
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: createChromeHarness({
+				queryTabs: [{ id: 52 }],
+				sendOffscreen: async (message) => {
+					if (message.type === 'OFFSCREEN_HOST_HELLO') {
+						throw new Error('persistent HELLO failure');
+					}
+					return undefined;
+				},
+			}),
+		});
+
+		process.on('unhandledRejection', rejectionListener);
+		try {
+			registerCaptureHandlers();
+			await expect(teardownCaptureState(52)).rejects.toThrow('persistent HELLO failure');
+			await Bun.sleep(0);
+			expect(unhandled).toHaveLength(0);
+		} finally {
+			process.off('unhandledRejection', rejectionListener);
+			cleanupCaptureState(52);
+			timerHarness.restore();
+			restore('chrome', chromeDescriptor);
+		}
+	});
+
 	test('retains an orphan lease through failed STOPs and releases only after idle ACK', async () => {
 		const chromeDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 		const timerHarness = installFastTimerHarness();

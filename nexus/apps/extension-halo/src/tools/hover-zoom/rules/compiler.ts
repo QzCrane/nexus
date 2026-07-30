@@ -2,6 +2,27 @@
 
 import type { Resolver, RuleConfig } from './types';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readJsonPath(source: unknown, path: string): unknown {
+	let current = source;
+
+	for (const key of path.split('.')) {
+		if (Array.isArray(current)) {
+			if (!/^\d+$/.test(key)) return undefined;
+			current = current[Number(key)];
+		} else if (isRecord(current)) {
+			current = current[key];
+		} else {
+			return undefined;
+		}
+	}
+
+	return current;
+}
+
 /**
  * Compile declarative RuleConfig to executable Resolver function
  * Uses lazy compile strategy for minimal overhead
@@ -38,8 +59,9 @@ export function compileRule(config: RuleConfig): Resolver {
 
 				// Interpolate $1, $2... from ctx.match
 				if (ctx.match) {
+					const match = ctx.match;
 					apiUrl = apiUrl.replace(/\$(\d+)/g, (_, index) => {
-						return ctx.match![parseInt(index)] || '';
+						return match[parseInt(index, 10)] || '';
 					});
 				}
 
@@ -57,10 +79,11 @@ export function compileRule(config: RuleConfig): Resolver {
 						return config.parse(data);
 					}
 
-					if (typeof config.parse === 'string') {
-						// Simple JSONPath: "data.items.0.url"
-						return config.parse.split('.').reduce((obj, key) => obj?.[key], data) as string;
-					}
+				if (typeof config.parse === 'string') {
+					// Simple JSONPath: "data.items.0.url"
+					const parsed = readJsonPath(data, config.parse);
+					return typeof parsed === 'string' ? parsed : null;
+				}
 
 					return null;
 				}

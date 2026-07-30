@@ -1,6 +1,7 @@
 // goal: Tech Stack panel UI - detect and display website technologies
 
-import React, { useState, useCallback } from 'react';
+import type React from 'react';
+import { useState, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { TechDetection, TechCategory } from './types';
@@ -11,9 +12,9 @@ import { useToolState } from '../../kernel';
 
 export const TechStackPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [techs, setTechs] = useToolState<TechDetection[]>('tech-stack' as any, []);
+	const [techs, setTechs] = useToolState<TechDetection[]>('tech-stack', []);
 	const [loading, setLoading] = useState(false);
-	const [scanned, setScanned] = useToolState<boolean>('tech-stack-scanned' as any, false);
+	const [scanned, setScanned] = useToolState<boolean>('tech-stack-scanned', false);
 
 
 	// Scan page
@@ -23,7 +24,7 @@ export const TechStackPanel: React.FC = () => {
 		setTechs(results);
 		setLoading(false);
 		setScanned(true);
-	}, []);
+	}, [setTechs, setScanned]);
 
 	// Group by category
 	const grouped = techs.reduce<Record<TechCategory, TechDetection[]>>((acc, tech) => {
@@ -37,7 +38,7 @@ export const TechStackPanel: React.FC = () => {
 	return (
 		<div style={styles.wrapper}>
 			{/* Scan Button */}
-			<button style={styles.btn} onClick={handleScan} disabled={loading}>
+			<button type="button" style={styles.btn} onClick={handleScan} disabled={loading}>
 				{loading ? '⏳' : '🔍'} {t('techStack.scan')}
 			</button>
 

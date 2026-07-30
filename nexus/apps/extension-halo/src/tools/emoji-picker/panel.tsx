@@ -1,6 +1,7 @@
 // goal: Emoji Picker panel UI - browse and copy emojis
 
-import React, { useState, useCallback, useMemo } from 'react';
+import type React from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from '../../i18n';
 import { EMOJI_CATEGORIES } from './core';
 import { styles } from './panel.styles';
@@ -13,9 +14,9 @@ const CATEGORY_ICONS: Record<string, string> = {
 
 export const EmojiPickerPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [search, setSearch] = useToolState<string>('emoji-search' as any, '');
-	const [category, setCategory] = useToolState<keyof typeof EMOJI_CATEGORIES>('emoji-category' as any, 'smileys');
-	const [recent, setRecent] = useToolState<string[]>('emoji-recent' as any, []);
+	const [search, setSearch] = useToolState<string>('emoji-search', '');
+	const [category, setCategory] = useToolState<keyof typeof EMOJI_CATEGORIES>('emoji-category', 'smileys');
+	const [recent, setRecent] = useToolState<string[]>('emoji-recent', []);
 
 
 	// Filter emojis
@@ -29,7 +30,7 @@ export const EmojiPickerPanel: React.FC = () => {
 	const handleCopy = useCallback((emoji: string) => {
 		navigator.clipboard.writeText(emoji);
 		setRecent((r) => [emoji, ...r.filter((e) => e !== emoji)].slice(0, 16));
-	}, []);
+	}, [setRecent]);
 
 	return (
 		<div style={styles.wrapper}>
@@ -46,8 +47,8 @@ export const EmojiPickerPanel: React.FC = () => {
 				<div style={styles.recent}>
 					<div style={styles.recentLabel}>{t('emoji.recent')}</div>
 					<div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-						{recent.map((e, i) => (
-							<button key={i} style={styles.emoji} onClick={() => handleCopy(e)}>{e}</button>
+						{recent.map((e) => (
+							<button type="button" key={e} style={styles.emoji} onClick={() => handleCopy(e)}>{e}</button>
 						))}
 					</div>
 				</div>
@@ -56,7 +57,7 @@ export const EmojiPickerPanel: React.FC = () => {
 			{/* Category tabs */}
 			<div style={styles.tabs}>
 				{Object.keys(EMOJI_CATEGORIES).map((cat) => (
-					<button
+					<button type="button"
 						key={cat}
 						style={{ ...styles.tab, background: category === cat ? 'var(--halo-bg-secondary)' : 'transparent' }}
 						onClick={() => setCategory(cat as keyof typeof EMOJI_CATEGORIES)}
@@ -68,8 +69,8 @@ export const EmojiPickerPanel: React.FC = () => {
 
 			{/* Emoji grid */}
 			<div style={styles.grid}>
-				{emojis.map((e, i) => (
-					<button key={i} style={styles.emoji} onClick={() => handleCopy(e)}>{e}</button>
+				{emojis.map((e) => (
+					<button type="button" key={e} style={styles.emoji} onClick={() => handleCopy(e)}>{e}</button>
 				))}
 			</div>
 		</div>

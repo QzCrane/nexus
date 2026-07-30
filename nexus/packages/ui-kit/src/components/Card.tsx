@@ -1,6 +1,6 @@
 // goal: reusable card container component for consistent UI layout (theme-aware)
 
-import React from 'react';
+import type React from 'react';
 
 export interface CardProps {
 	children: React.ReactNode;

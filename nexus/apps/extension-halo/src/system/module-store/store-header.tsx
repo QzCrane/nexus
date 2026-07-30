@@ -1,9 +1,9 @@
 
-import React from 'react';
+import type React from 'react';
 import { styles } from './panel.styles';
 import { styles as searchStyles } from '../../components/search/SearchBar.styles';
-import { formatModuleSize, ALL_MODULES } from '../../kernel';
-import { TypeFilter, FilterType } from './type-filter';
+import { formatModuleSize, } from '../../kernel';
+import { TypeFilter, type FilterType } from './type-filter';
 import { useTranslation } from '../../i18n';
 
 type ViewMode = 'installed' | 'available' | 'all' | 'updates';
@@ -43,7 +43,7 @@ export const StoreHeader: React.FC<StoreHeaderProps> = ({
 		<div style={styles.header}>
 			{/* Top Row: Search + Refresh */}
 			<div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%', marginBottom: '8px' }}>
-				<div style={{
+				<label htmlFor="module-store-search" style={{
 					...searchStyles.inputWrapper,
 					...(isSearchFocused ? searchStyles.inputWrapperFocus : {}),
 					flex: 1,
@@ -54,10 +54,10 @@ export const StoreHeader: React.FC<StoreHeaderProps> = ({
 					alignItems: 'center',
 					cursor: 'text'
 				}}
-				onClick={() => searchInputRef.current?.focus()}
 				>
 				<span style={{ fontSize: '14px', opacity: 0.5, marginRight: '8px' }}>🔍</span>
 					<input
+						id="module-store-search"
 						ref={searchInputRef}
 						style={{ ...searchStyles.input as React.CSSProperties, fontSize: '14px', width: '100%' }}
 						type="text"
@@ -68,8 +68,8 @@ export const StoreHeader: React.FC<StoreHeaderProps> = ({
 						placeholder={t('moduleStorePanel.searchPlaceholder') || t('common.search')}
 					/>
 					{!isSearchFocused && !searchQuery && <span style={searchStyles.shortcut as React.CSSProperties}>⌘K</span>}
-				</div>
-				<button style={{ ...styles.btnRefresh, height: '36px', width: '36px' }} onClick={handleRefresh} disabled={remoteLoading} title={t('moduleStorePanel.checkUpdates')}>
+				</label>
+				<button type="button" style={{ ...styles.btnRefresh, height: '36px', width: '36px' }} onClick={handleRefresh} disabled={remoteLoading} title={t('moduleStorePanel.checkUpdates')}>
 					{remoteLoading ? '⏳' : '🔄'}
 				</button>
 			</div>
@@ -84,7 +84,7 @@ export const StoreHeader: React.FC<StoreHeaderProps> = ({
 						{/* Status Group */}
 						<div style={styles.tabs}>
 							{(['all', 'installed', 'available'] as const).map((v) => (
-								<button
+								<button type="button"
 									key={v}
 									style={{ ...styles.tab, ...(scriptStatus === v ? styles.tabActive : {}) }}
 									onClick={() => setScriptStatus(v)}
@@ -96,7 +96,7 @@ export const StoreHeader: React.FC<StoreHeaderProps> = ({
 						{/* Source Group */}
 						<div style={styles.tabs}>
 							{(['all', 'official', 'user'] as const).map((v) => (
-								<button
+								<button type="button"
 									key={v}
 									style={{ ...styles.tab, ...(scriptSource === v ? styles.tabActive : {}) }}
 									onClick={() => setScriptSource(v)}
@@ -109,7 +109,7 @@ export const StoreHeader: React.FC<StoreHeaderProps> = ({
 				) : (
 					<div style={styles.tabs}>
 						{(['all', 'installed', 'available'] as ViewMode[]).map((v) => (
-							<button
+							<button type="button"
 								key={v}
 								style={{ ...styles.tab, ...(view === v ? styles.tabActive : {}) }}
 								onClick={() => setView(v)}
@@ -118,7 +118,7 @@ export const StoreHeader: React.FC<StoreHeaderProps> = ({
 							</button>
 						))}
 						{hasUpdates && (
-							<button
+							<button type="button"
 								style={{ ...styles.tab, ...(view === 'updates' ? styles.tabActive : styles.tabUpdate) }}
 								onClick={() => setView('updates')}
 							>
