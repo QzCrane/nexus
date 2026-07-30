@@ -46,7 +46,7 @@
 		"chrome-types": "^0.1.327",
 		"graceful-fs": "^4.2.11",
 		"sharp": "0.35.3",
-		"turbo": "2.10.5",
+		"turbo": "2.10.7",
 		"typescript": "^5.3.0"
 	},
 	"overrides": {
