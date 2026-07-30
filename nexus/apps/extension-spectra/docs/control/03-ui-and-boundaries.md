@@ -77,7 +77,7 @@ unused barrel exports instead of charging every extension context for protocol
 families it cannot execute. The architecture checker requires those package
 flags so a metadata edit cannot silently reintroduce duplicated control code.
 
-`scripts/check-production-artifacts.mjs` computes each entry's complete static
+`scripts/check-production-artifacts.ts` computes each entry's complete static
 and dynamic dependency closure and the Background + bootstrap startup closure,
 requires the Background closure to contain only its own bundle, but does not
 freeze historical byte ceilings. Its invariant is zero

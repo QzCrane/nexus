@@ -12,7 +12,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { createRelease, createStoredArchive } from '../scripts/create-release.mjs';
+import { createRelease, createStoredArchive } from '../scripts/create-release.ts';
 import {
 	consumePromotionReceipt,
 	extractStoredZip,
@@ -20,7 +20,7 @@ import {
 	runReleaseSmoke,
 	validatePromotionReceipt,
 	verifyChecksum,
-} from '../scripts/smoke-release.mjs';
+} from '../scripts/smoke-release.ts';
 import {
 	assertReleaseRuntime,
 	computeReleaseSourceDigest,
@@ -33,7 +33,7 @@ import {
 	RELEASE_SOURCE_DIGEST_ENV,
 	RELEASE_STEPS,
 	runRelease,
-} from '../../../scripts/release-spectra.mjs';
+} from '../../../scripts/release-spectra.ts';
 import {
 	extractExpectedContentSecurityPolicy,
 	extractExpectedSecurityHeaders,
@@ -42,14 +42,14 @@ import {
 	REMOTE_SITE_BASE_URL_ENV,
 	REMOTE_SITE_SECURITY_HEADER_NAMES,
 	verifyRemoteSiteDeployment,
-} from '../../../scripts/check-spectra-remote-live.mjs';
+} from '../../../scripts/check-spectra-remote-live.ts';
 import {
 	analyzeProductionArtifacts,
 	artifactClosure,
 	bundleFootprint,
 	checkProductionArtifacts,
-} from '../scripts/check-production-artifacts.mjs';
-import { productionMangleOptions } from '../scripts/minification-policy.mjs';
+} from '../scripts/check-production-artifacts.ts';
+import { productionMangleOptions } from '../scripts/minification-policy.ts';
 
 const temporaryDirectories: string[] = [];
 
@@ -477,12 +477,12 @@ describe('release gate orchestration', () => {
 		expect(RELEASE_REQUIRED_GATE_LABELS).toEqual(RELEASE_STEPS.slice(0, -1).map((step) => step.label));
 		expect(RELEASE_STEPS.at(-1)?.requiresReceipt).toBe(true);
 		expect(RELEASE_STEPS.find((step) => step.label === 'remote-site live deployment')?.args).toEqual([
-			'scripts/check-spectra-remote-live.mjs',
+			'scripts/check-spectra-remote-live.ts',
 			'--base-url',
 			PRODUCTION_REMOTE_SITE_BASE_URL,
 		]);
 		expect(RELEASE_STEPS.at(-1)?.args).toEqual([
-			'apps/extension-spectra/scripts/smoke-release.mjs',
+			'apps/extension-spectra/scripts/smoke-release.ts',
 			'--stage',
 			'--promote',
 		]);
@@ -528,8 +528,8 @@ describe('release gate orchestration', () => {
 				readSourceDigest: () => 'a'.repeat(64),
 				spawnProcess(_executable: string, args: string[], options: { env?: NodeJS.ProcessEnv }) {
 					invoked.push(args);
-					if (args[0] === 'scripts/check-spectra-remote-live.mjs') remoteEnvironment = options.env;
-					return { status: args[0] === 'scripts/check-spectra-remote-live.mjs' ? 1 : 0 };
+					if (args[0] === 'scripts/check-spectra-remote-live.ts') remoteEnvironment = options.env;
+					return { status: args[0] === 'scripts/check-spectra-remote-live.ts' ? 1 : 0 };
 				},
 				cleanupStaging() {
 					cleanupCalls += 1;
@@ -540,7 +540,7 @@ describe('release gate orchestration', () => {
 			else process.env[REMOTE_SITE_BASE_URL_ENV] = previousOverride;
 		}
 		expect(invoked.at(-1)).toEqual([
-			'scripts/check-spectra-remote-live.mjs',
+			'scripts/check-spectra-remote-live.ts',
 			'--base-url',
 			PRODUCTION_REMOTE_SITE_BASE_URL,
 		]);

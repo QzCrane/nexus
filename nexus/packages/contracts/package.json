@@ -32,7 +32,7 @@
 	"scripts": {
 		"build": "bun tsc",
 		"dev": "bun tsc --watch",
-		"lint": "bun ../../scripts/run-strict-biome.mjs .",
+		"lint": "bun ../../scripts/run-strict-biome.ts .",
 		"typecheck": "bun tsc --noEmit --tsBuildInfoFile typecheck.tsbuildinfo"
 	},
 	"devDependencies": {

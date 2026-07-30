@@ -1,6 +1,6 @@
 # One checkout contract for Windows, Linux, and macOS. Git stores and checks out
 # repository text as UTF-8-compatible LF; editor behavior is aligned by
-# .editorconfig and verified by nexus/scripts/check-platform-contract.mjs.
+# .editorconfig and verified by nexus/scripts/check-platform-contract.ts.
 * text=auto eol=lf
 
 # Binary assets are never eligible for text conversion.

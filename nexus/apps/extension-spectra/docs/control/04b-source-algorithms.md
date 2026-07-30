@@ -88,8 +88,8 @@ files move.
 Capability policy answers what a user may control; the source algorithm catalog
 answers how the implementation may calculate, route, observe or mutate it. The
 executable owner is
-`scripts/verify/spectra-control-algorithm-catalog.mjs`, deliberately outside all
-extension bundles. `check-spectra-control.js` verifies every source/symbol
+`scripts/verify/spectra-control-algorithm-catalog.ts`, deliberately outside all
+extension bundles. `check-spectra-control.ts` verifies every source/symbol
 anchor, the decision/admission/lifetime vocabulary, sequential IDs and complete
 coverage of all 51 capabilities. A source move, new algorithm or changed owner
 therefore requires the catalog, this table and the implementation to change in

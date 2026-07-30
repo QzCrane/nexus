@@ -13,7 +13,7 @@ pre-commit:
     biome-check:
       glob: "**/*.{ts,tsx,js,jsx,mjs,cjs,json}"
       root: "nexus/"
-      run: bun scripts/run-strict-biome.mjs {staged_files}
+      run: bun scripts/run-strict-biome.ts {staged_files}
 
 commit-msg:
   commands:
@@ -32,7 +32,7 @@ pre-push:
     documentation-architecture:
       run: bun run docs:check
     hooks-smoke:
-      run: bun --cwd nexus scripts/hooks/test.mjs
+      run: bun --cwd nexus scripts/hooks/test.ts
     verify-architecture:
       run: bun run verify:q
     typecheck:

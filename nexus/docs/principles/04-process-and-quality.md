@@ -45,7 +45,7 @@ The host-specific AI hooks documented in [`../../scripts/hooks/README.md`](../..
 
 The repository must not claim that CI is deployed merely because local scripts are CI-ready. A PR or release checks the actual GitHub workflow/check status. [Cross-platform quality](../../../.github/workflows/cross-platform.yml) runs the maintained platform, documentation, hook, architecture, unit/browser, type, lint, and build commands on both Ubuntu and Windows rather than reimplementing their logic.
 
-Active internal Markdown under the configured documentation roots uses the required Diátaxis frontmatter and passes `nexus/scripts/lint-docs.mjs`. That linter checks structure; link validity, dynamic facts, technical semantics, and public-claim truth still require review and executable evidence.
+Active internal Markdown under the configured documentation roots uses the required Diátaxis frontmatter and passes `nexus/scripts/lint-docs.ts`. That linter checks structure; link validity, dynamic facts, technical semantics, and public-claim truth still require review and executable evidence.
 
 ## Change checklist
 

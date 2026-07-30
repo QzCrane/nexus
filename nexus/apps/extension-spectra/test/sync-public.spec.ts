@@ -1,9 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-
-const require = createRequire(import.meta.url);
-const {
+import {
 	APP_CONFIGS,
 	BASE_EXCLUDES,
 	PUBLIC_TURBO_CACHE_DIR,
@@ -21,74 +18,17 @@ const {
 	shouldExcludeForConfig,
 	shouldExcludeWithPatterns,
 	validateDestinationDivergence,
-} = require('../../../scripts/sync-public.cjs') as {
-	APP_CONFIGS: Record<string, {
-		excludes: string[];
-		publicApplicationScriptFiles: string[];
-		publicApplicationScriptOverrides: Record<string, string>;
-		publicRootFiles: string[];
-		publicRootScriptOverrides: Record<string, string>;
-	}>;
-	BASE_EXCLUDES: string[];
-	PUBLIC_TURBO_CACHE_DIR: string;
-	PUBLIC_VALIDATION_SCRIPTS: string[];
-	applicationScriptDependencies(
-		importerPath: string,
-		source: string,
-		config: {
-			applicationPath: string;
-			publicApplicationScriptFiles: string[];
-			publicRootFiles: string[];
-		},
-	): string[];
-	assertApplicationScriptDependencies(
-		importerPath: string,
-		source: string,
-		config: {
-			applicationPath: string;
-			publicApplicationScriptFiles: string[];
-		},
-	): void;
-	isIncrementalBuildState(filePath: string): boolean;
-	matchesPattern(relativePath: string, pattern: string): boolean;
-	parseBatchBlobOutput(output: Buffer, expectedObjectIds: string[]): Buffer[];
-	parseArguments(args: string[]): { targetApp: string; amend: boolean };
-	parseCommittedTree(output: Buffer): Array<{
-		objectId: string;
-		objectType: string;
-		relativePath: string;
-	}>;
-	parseDivergence(output: string): { behind: number; ahead: number };
-	readCommittedTextFile(relativePath: string): string;
-	selectObjectKeys(
-		source: Record<string, string>,
-		allowedKeys: string[],
-		overrides?: Record<string, string>,
-	): Record<string, string>;
-	shouldExcludeForConfig(
-		relativePath: string,
-		patterns: string[],
-		config: {
-			applicationPath: string;
-			publicApplicationScriptFiles: string[];
-		},
-	): boolean;
-	shouldExcludeWithPatterns(relativePath: string, patterns: string[]): boolean;
-	validateDestinationDivergence(
-		divergence: { behind: number; ahead: number },
-		shouldAmend: boolean,
-	): void;
-};
+} from '../../../scripts/sync-public.ts';
 
 describe('public repository source projection', () => {
 	test('excludes only repository-root scripts while retaining application build scripts', () => {
-		expect(matchesPattern('scripts/sync-public.cjs', '/scripts')).toBe(true);
+		expect(matchesPattern('scripts/sync-public.ts', '/scripts')).toBe(true);
 		expect(matchesPattern(
-			'apps/extension-spectra/scripts/check-production-artifacts.mjs',
+			'apps/extension-spectra/scripts/check-production-artifacts.ts',
 			'/scripts',
 		)).toBe(false);
 		expect(shouldExcludeWithPatterns(
-			'apps/extension-spectra/scripts/check-production-artifacts.mjs',
+			'apps/extension-spectra/scripts/check-production-artifacts.ts',
 			[...BASE_EXCLUDES, ...APP_CONFIGS.spectra.excludes],
 		)).toBe(false);
 	});
@@ -97,9 +37,9 @@ describe('public repository source projection', () => {
 		for (const config of [APP_CONFIGS.spectra, APP_CONFIGS.halo]) {
 			const patterns = [...BASE_EXCLUDES, ...config.excludes];
 			expect(config.publicRootFiles).toEqual([
-				'scripts/check-workspace-lint.mjs',
-				'scripts/run-lint-parallel.mjs',
-				'scripts/run-strict-biome.mjs',
+				'scripts/check-workspace-lint.ts',
+				'scripts/run-lint-parallel.ts',
+				'scripts/run-strict-biome.ts',
 			]);
 			for (const rootFile of config.publicRootFiles) {
 				expect(
@@ -107,10 +47,10 @@ describe('public repository source projection', () => {
 				).toBe(false);
 			}
 			expect(config.publicRootScriptOverrides.lint).toBe(
-				'bun scripts/run-lint-parallel.mjs --public',
+				'bun scripts/run-lint-parallel.ts --public',
 			);
 			expect(config.publicApplicationScriptOverrides.lint).toContain(
-				'../../scripts/run-strict-biome.mjs',
+				'../../scripts/run-strict-biome.ts',
 			);
 			expect(config.publicApplicationScriptOverrides.lint).not.toContain(
 				'max-diagnostics=100',
@@ -121,10 +61,10 @@ describe('public repository source projection', () => {
 	test('keeps an explicit allowlist of application build scripts', () => {
 		const patterns = [...BASE_EXCLUDES, ...APP_CONFIGS.spectra.excludes];
 		expect(APP_CONFIGS.spectra.publicApplicationScriptFiles).toEqual([
-			'apps/extension-spectra/scripts/check-production-artifacts.mjs',
-			'apps/extension-spectra/scripts/chrome120-webrtc-adapter.mjs',
+			'apps/extension-spectra/scripts/check-production-artifacts.ts',
+			'apps/extension-spectra/scripts/chrome120-webrtc-adapter.ts',
 			'apps/extension-spectra/scripts/i18n-assets.ts',
-			'apps/extension-spectra/scripts/minification-policy.mjs',
+			'apps/extension-spectra/scripts/minification-policy.ts',
 		]);
 		expect(shouldExcludeForConfig(
 			'apps/extension-spectra/scripts/i18n-assets.ts',
@@ -132,10 +72,10 @@ describe('public repository source projection', () => {
 			APP_CONFIGS.spectra,
 		)).toBe(false);
 		for (const relativePath of [
-			'apps/extension-spectra/scripts/create-release.mjs',
-			'apps/extension-spectra/scripts/run-tests.mjs',
-			'apps/extension-spectra/scripts/smoke-release.mjs',
-			'apps/extension-spectra/scripts/future-internal-tool.mjs',
+			'apps/extension-spectra/scripts/create-release.ts',
+			'apps/extension-spectra/scripts/run-tests.ts',
+			'apps/extension-spectra/scripts/smoke-release.ts',
+			'apps/extension-spectra/scripts/future-internal-tool.ts',
 		]) {
 			expect(
 				shouldExcludeForConfig(relativePath, patterns, APP_CONFIGS.spectra),
@@ -145,16 +85,16 @@ describe('public repository source projection', () => {
 	});
 
 	test('rejects a build-script dependency outside the audited public allowlist', () => {
-		const buildPath = 'apps/extension-spectra/build.mjs';
-		const buildSource = readFileSync(new URL('../build.mjs', import.meta.url), 'utf8');
+		const buildPath = 'apps/extension-spectra/build.ts';
+		const buildSource = readFileSync(new URL('../build.ts', import.meta.url), 'utf8');
 		expect(applicationScriptDependencies(
 			buildPath,
 			buildSource,
 			APP_CONFIGS.spectra,
 		)).toEqual([
-			'apps/extension-spectra/scripts/check-production-artifacts.mjs',
+			'apps/extension-spectra/scripts/check-production-artifacts.ts',
 			'apps/extension-spectra/scripts/i18n-assets.ts',
-			'apps/extension-spectra/scripts/minification-policy.mjs',
+			'apps/extension-spectra/scripts/minification-policy.ts',
 		]);
 		expect(() => assertApplicationScriptDependencies(
 			buildPath,
@@ -191,16 +131,16 @@ describe('public repository source projection', () => {
 	test('projects only executable public package scripts', () => {
 		const scripts = selectObjectKeys(
 			{
-				build: 'bun build.mjs',
+				build: 'bun build.ts',
 				lint: 'biome check src test',
 				test: 'bun test',
-				package: 'bun release.mjs',
+				package: 'bun release.ts',
 			},
 			['build'],
 			{ lint: 'biome check src' },
 		);
 		expect(scripts).toEqual({
-			build: 'bun build.mjs',
+			build: 'bun build.ts',
 			lint: 'biome check src',
 		});
 	});
@@ -236,7 +176,7 @@ describe('public repository source projection', () => {
 	});
 
 	test('reads committed public modules relative to the source workspace', () => {
-		expect(readCommittedTextFile('apps/extension-spectra/build.mjs')).toContain(
+		expect(readCommittedTextFile('apps/extension-spectra/build.ts')).toContain(
 			'SPECTRA esbuild pipeline',
 		);
 	});

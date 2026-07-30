@@ -36,4 +36,4 @@ audience: developer
   - [`05-control-state.md`](05-control-state.md) — FieldState, echo correlation, volume/mute
   - [`07-runtime-and-performance.md`](07-runtime-and-performance.md) — Implementation status ledger
 - **下级实现**: `packages/contracts/src/control.contracts.ts` · `src/background/control-coordinator.ts` · `src/content/logic/native-media-executor.ts`
-- **静态校验**: `scripts/verify/check-spectra-control.js` (强制 44 invariants + 51 capabilities + 50 algorithms 全部存在)
+- **静态校验**: `scripts/verify/check-spectra-control.ts` (强制 44 invariants + 51 capabilities + 50 algorithms 全部存在)

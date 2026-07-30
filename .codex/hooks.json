@@ -8,7 +8,7 @@
 				"hooks": [
 					{
 						"type": "command",
-						"command": "bun --cwd nexus scripts/hooks/codex-bash-guard.mjs",
+						"command": "bun --cwd nexus scripts/hooks/codex-bash-guard.ts",
 						"_doc": "Block bash commands that would rm/mv/redirect into docs/_archive/, AGENTS.md, or the progressive-disclosure index files. Exit 2 = block."
 					}
 				]
@@ -20,7 +20,7 @@
 				"hooks": [
 					{
 						"type": "command",
-						"command": "bun --cwd nexus scripts/hooks/codex-stop-checkpoint.mjs",
+						"command": "bun --cwd nexus scripts/hooks/codex-stop-checkpoint.ts",
 						"_doc": "At AI turn end, remind the operator whether pre-commit / pre-push gates are still ahead. Informational only."
 					}
 				]

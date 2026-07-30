@@ -18,7 +18,7 @@ When prose conflicts with executable contracts, source, tests, or a release gate
 - **Bun 1.3.14** is the repository runtime and package manager.
 - Root, workspace, release, public-sync, CI, skills, and documentation references must remain aligned to `bun@1.3.14`.
 - Do not introduce npm, pnpm, Yarn, another Bun version, or another package-manager lockfile without an explicit repository-wide migration decision.
-- `nexus/scripts/check-toolchain.mjs` is the executable toolchain-drift gate. A global installation, README example, or generated public package is not an independent authority.
+- `nexus/scripts/check-toolchain.ts` is the executable toolchain-drift gate. A global installation, README example, or generated public package is not an independent authority.
 - Generated files are updated through their generator, not by manual edits the next build will erase.
 
 ### Cross-platform contract
@@ -27,7 +27,7 @@ When prose conflicts with executable contracts, source, tests, or a release gate
 - Repository automation uses Bun or Node filesystem/path APIs and argument-array child processes. OS shell executables, command-string `exec`/`execSync`, `shell: true`, and host-specific package scripts are prohibited.
 - Temporary files derive from `os.tmpdir()`. Recursive cleanup has bounded retries for transient Windows locks. Archive and deployment paths use `/` only at their external format boundary and native `node:path` operations on disk.
 - Tracked paths must be Unicode NFC, case-fold unique, legal on Windows, and free of symlinks. A script with a shebang is executable in the Git index; other files are not.
-- [`nexus/scripts/check-platform-contract.mjs`](nexus/scripts/check-platform-contract.mjs) is the executable drift gate. It runs locally before push and in both Windows and Ubuntu CI; fixing a consumer-specific CRLF/path assertion does not replace this repository contract.
+- [`nexus/scripts/check-platform-contract.ts`](nexus/scripts/check-platform-contract.ts) is the executable drift gate. It runs locally before push and in both Windows and Ubuntu CI; fixing a consumer-specific CRLF/path assertion does not replace this repository contract.
 
 ## 2. Change preparation
 

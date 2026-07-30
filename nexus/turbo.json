@@ -3,6 +3,9 @@
 	"globalDependencies": [
 		"**/.env.*local"
 	],
+	"globalPassThroughEnv": [
+		"SYNC_PUBLIC_DEST"
+	],
 	"tasks": {
 		"build": {
 			"dependsOn": [
@@ -24,7 +27,7 @@
 			"inputs": [
 				"$TURBO_DEFAULT$",
 				"$TURBO_ROOT$/biome.json",
-				"$TURBO_ROOT$/scripts/run-strict-biome.mjs"
+				"$TURBO_ROOT$/scripts/run-strict-biome.ts"
 			]
 		},
 		"test": {

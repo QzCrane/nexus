@@ -19,7 +19,7 @@ The hook layer gives supported coding tools early feedback before Git and CI run
 ```text
 host configuration
   → thin host-specific hook
-    → _hook-helpers.mjs
+    → _hook-helpers.ts
       → allow / block / report
 ```
 
@@ -29,11 +29,11 @@ Shared helpers own stdin parsing, path normalization, command extraction, protec
 
 | Hook | Phase | Purpose |
 | --- | --- | --- |
-| `ai-pre-write-guard.mjs` | before supported write/edit actions | block writes to protected/generated zones |
-| `ai-post-write-lint.mjs` | after supported write/edit actions | run focused documentation, strict Biome, and AI-pitfall feedback without rewriting the written file |
-| `ai-stop-checkpoint.mjs` | turn stop | report working-tree and verification reminders |
-| `codex-bash-guard.mjs` | before supported shell actions | block commands targeting protected zones |
-| `codex-stop-checkpoint.mjs` | turn stop | reuse the shared checkpoint output |
+| `ai-pre-write-guard.ts` | before supported write/edit actions | block writes to protected/generated zones |
+| `ai-post-write-lint.ts` | after supported write/edit actions | run focused documentation, strict Biome, and AI-pitfall feedback without rewriting the written file |
+| `ai-stop-checkpoint.ts` | turn stop | report working-tree and verification reminders |
+| `codex-bash-guard.ts` | before supported shell actions | block commands targeting protected zones |
+| `codex-stop-checkpoint.ts` | turn stop | reuse the shared checkpoint output |
 
 Actual host capabilities are version-dependent. Revalidate the current official host documentation before adding a matcher or claiming that direct writes, shell commands, Windows, or another platform are intercepted.
 
@@ -72,7 +72,7 @@ Do not hard-code the assertion count or runtime in this README; both change as c
 Set `NEXUS_HOOK_DEBUG=1` for local diagnostic tracing:
 
 ```bash
-NEXUS_HOOK_DEBUG=1 bun --cwd nexus scripts/hooks/ai-pre-write-guard.mjs < payload.json
+NEXUS_HOOK_DEBUG=1 bun --cwd nexus scripts/hooks/ai-pre-write-guard.ts < payload.json
 ```
 
 Debug output may include the synthetic or real host payload. Do not enable it in a context that can expose secrets or private source content to an untrusted log sink.

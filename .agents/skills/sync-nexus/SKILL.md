@@ -19,9 +19,11 @@ Use when generating the approved SPECTRA or HALO public repository from the priv
 
 ## Critical behavior
 
-`nexus/scripts/sync-public.cjs` is destructive to the destination working tree: it removes everything except the destination's `.git` and `node_modules`, batch-reads only committed files from the private source `HEAD`, projects the application README/privacy files, applies explicit root/application script and build-module allowlists, normalizes package metadata to `bun@1.3.14`, installs, runs the retained public `lint`, `typecheck`, and `build` commands, removes generated outputs together with their incremental `.tsbuildinfo` state, and creates at most one generated commit. Ignored, untracked, staged, and unstaged files are never public inputs. Repository-root automation and application test/release scripts are excluded while application-local build modules remain available to the generated application.
+`nexus/scripts/sync-public.ts` is destructive to the destination working tree: it removes everything except the destination's `.git` and `node_modules`, batch-reads only committed files from the private source `HEAD`, projects the application README/privacy files, applies explicit root/application script and build-module allowlists, normalizes package metadata to `bun@1.3.14`, installs, runs the retained public `lint`, `typecheck`, and `build` commands, removes generated outputs together with their incremental `.tsbuildinfo` state, and creates at most one generated commit. Ignored, untracked, staged, and unstaged files are never public inputs. Repository-root automation and application test/release scripts are excluded while application-local build modules remain available to the generated application.
 
 The validation starts from an artifact-clean projection and uses an ignored persistent Turbo cache under `node_modules`; this preserves correctness while avoiding a cold build on every synchronization. A failed gate cannot create a candidate commit. The script preserves the destination repository's existing Git history. It does **not** transplant the private repository's commit graph. It never pushes.
+
+The destination defaults to `../../${target}-public` relative to the script. Override with the `SYNC_PUBLIC_DEST` environment variable for CI or non-standard checkout layouts. The `.changeset`, `.agents`, `.codex`, `.github`, and `.gitnexus` directories are always excluded; the public repository never receives internal tooling or version-management state.
 
 ## Process
 
@@ -30,7 +32,7 @@ The validation starts from an artifact-clean projection and uses an ignored pers
 - Choose exactly one target: `spectra` or `halo`.
 - Confirm the sibling checkout is the intended public repository and its branch/remote are correct.
 - Save or discard unrelated destination changes before running the destructive generator.
-- Read the current configuration in `nexus/scripts/sync-public.cjs`; the script owns source paths, exclusions, copied entrypoints, artifact cleanup, and package rewriting.
+- Read the current configuration in `nexus/scripts/sync-public.ts`; the script owns source paths, exclusions, copied entrypoints, artifact cleanup, and package rewriting.
 - Verify the target application's public README and required privacy surface exist.
 
 ### 2. Validate the private source

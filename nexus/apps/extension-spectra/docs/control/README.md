@@ -49,7 +49,7 @@ These totals mirror executable contracts and gates. A count changes only with co
 - contracts: `packages/contracts/src/control.contracts.ts`
 - coordinator: `src/background/control-coordinator.ts`
 - native writer: `src/content/logic/native-media-executor.ts`
-- static verification: `scripts/verify/check-spectra-control.js`
+- static verification: `scripts/verify/check-spectra-control.ts`
 
 ## Historical evidence
 

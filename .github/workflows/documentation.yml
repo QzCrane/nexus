@@ -8,12 +8,12 @@ on:
       - "lefthook.yml"
       - "package.json"
       - "nexus/package.json"
-      - "nexus/scripts/lint-docs.mjs"
-      - "nexus/scripts/check-toolchain.mjs"
-      - "nexus/scripts/check-platform-contract.mjs"
-      - "nexus/scripts/platform-contract.mjs"
-      - "nexus/scripts/platform-contract.test.mjs"
-      - "nexus/scripts/sync-public.cjs"
+      - "nexus/scripts/lint-docs.ts"
+      - "nexus/scripts/check-toolchain.ts"
+      - "nexus/scripts/check-platform-contract.ts"
+      - "nexus/scripts/platform-contract.ts"
+      - "nexus/scripts/platform-contract.test.ts"
+      - "nexus/scripts/sync-public.ts"
   push:
     branches:
       - "**"
@@ -23,12 +23,12 @@ on:
       - "lefthook.yml"
       - "package.json"
       - "nexus/package.json"
-      - "nexus/scripts/lint-docs.mjs"
-      - "nexus/scripts/check-toolchain.mjs"
-      - "nexus/scripts/check-platform-contract.mjs"
-      - "nexus/scripts/platform-contract.mjs"
-      - "nexus/scripts/platform-contract.test.mjs"
-      - "nexus/scripts/sync-public.cjs"
+      - "nexus/scripts/lint-docs.ts"
+      - "nexus/scripts/check-toolchain.ts"
+      - "nexus/scripts/check-platform-contract.ts"
+      - "nexus/scripts/platform-contract.ts"
+      - "nexus/scripts/platform-contract.test.ts"
+      - "nexus/scripts/sync-public.ts"
 
 permissions:
   contents: read
@@ -64,16 +64,16 @@ jobs:
 
       - name: Check documentation tooling lint
         run: >-
-          bun --cwd nexus scripts/run-strict-biome.mjs
-          scripts/lint-docs.mjs
-          scripts/check-platform-contract.mjs
-          scripts/platform-contract.mjs
-          scripts/platform-contract.test.mjs
-          scripts/check-toolchain.mjs
-          scripts/sync-public.cjs
+          bun --cwd nexus scripts/run-strict-biome.ts
+          scripts/lint-docs.ts
+          scripts/check-platform-contract.ts
+          scripts/platform-contract.ts
+          scripts/platform-contract.test.ts
+          scripts/check-toolchain.ts
+          scripts/sync-public.ts
 
       - name: Test AI-tool hooks
-        run: bun --cwd nexus scripts/hooks/test.mjs
+        run: bun --cwd nexus scripts/hooks/test.ts
 
       - name: Verify repository architecture
         run: bun run verify:q

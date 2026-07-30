@@ -1,12 +1,12 @@
 # NEXUS project skills
 
-`.agents/skills/` is the repository source of truth for project-specific agent workflows. Each skill lives in `<name>/SKILL.md` and follows the frontmatter shape consumed by `nexus/scripts/sync-skills.mjs`.
+`.agents/skills/` is the repository source of truth for project-specific agent workflows. Each skill lives in `<name>/SKILL.md` and follows the frontmatter shape consumed by `nexus/scripts/sync-skills.ts`.
 
 ## Ownership
 
 - Edit the `SKILL.md` in this directory.
 - Do not create a second `.skills/`, `.codex/skills/`, or repository workflow mirror.
-- `nexus/scripts/sync-skills.mjs` validates source directories and refreshes the Project Skills table in [`../../AGENTS.md`](../../AGENTS.md).
+- `nexus/scripts/sync-skills.ts` validates source directories and refreshes the Project Skills table in [`../../AGENTS.md`](../../AGENTS.md).
 - Repository documentation ownership is defined by [`../../nexus/docs/README.md`](../../nexus/docs/README.md).
 
 ## Toolchain
