@@ -36,8 +36,8 @@
 		"typecheck": "bun tsc --noEmit --tsBuildInfoFile typecheck.tsbuildinfo"
 	},
 	"devDependencies": {
-		"typescript": "^5.3.0",
-		"chrome-types": "^0.1.327"
+		"typescript": "^7.0.2",
+		"chrome-types": "^0.1.436"
 	},
 	"files": [
 		"dist"
