@@ -20,8 +20,6 @@
 		"test:halo": "bun run --cwd apps/extension-halo test:unit",
 		"test:watch:spectra": "bun --cwd apps/extension-spectra test:watch",
 		"test:watch:halo": "bun --cwd apps/extension-halo test:watch",
-		"changeset": "changeset",
-		"changeset:version": "changeset version",
 		"check:toolchain": "bun scripts/check-toolchain.ts",
 		"check:platform": "bun test scripts/platform-contract.test.ts && bun scripts/check-platform-contract.ts",
 		"check:spectra-remote-live": "bun scripts/check-spectra-remote-live.ts",
@@ -41,8 +39,6 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.3",
-		"@changesets/changelog-github": "^0.5.1",
-		"@changesets/cli": "^2.29.6",
 		"chrome-types": "^0.1.327",
 		"graceful-fs": "^4.2.11",
 		"sharp": "0.35.3",

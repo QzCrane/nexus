@@ -16,8 +16,6 @@
 		"hooks:test": "bun --cwd nexus scripts/hooks/test.ts",
 		"test:watch:spectra": "bun --cwd nexus test:watch:spectra",
 		"test:watch:halo": "bun --cwd nexus test:watch:halo",
-		"changeset": "bun --cwd nexus changeset",
-		"changeset:version": "bun --cwd nexus changeset:version",
 		"postinstall": "bun run sync:skills && bunx lefthook install",
 		"prepare": "bunx lefthook install"
 	},
