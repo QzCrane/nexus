@@ -221,13 +221,6 @@ let onMouseDown: typeof import('../src/content/smooth-scroll-handlers').onMouseD
 let onMouseMove: typeof import('../src/content/smooth-scroll-handlers').onMouseMove;
 let resetInputHandlers: typeof import('../src/content/smooth-scroll-handlers').resetInputHandlers;
 
-// eff: Injectable video fixtures for hasVisibleVideo() so keyboard tests can
-// simulate a visible, hidden, or video-free page without touching FakeElement.
-interface FakeVideo {
-	getBoundingClientRect(): { width: number; height: number; top: number; bottom: number };
-}
-let fakeVideos: FakeVideo[] = [];
-
 function replaceGlobal(name: string, value: unknown): void {
 	if (!originalDescriptors.has(name)) {
 		originalDescriptors.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
@@ -759,8 +752,7 @@ beforeAll(async () => {
 		scrollingElement: root,
 		fullscreenElement: null,
 		elementsFromPoint: () => [],
-		querySelectorAll: (selector: string) =>
-			selector === 'video' ? fakeVideos : [],
+		querySelectorAll: () => [],
 		addEventListener: () => {},
 		removeEventListener: () => {},
 	});
@@ -785,7 +777,6 @@ beforeEach(() => {
 	closestCalls = 0;
 	matchesCalls = 0;
 	reducedMotionMediaQuery.matches = false;
-	fakeVideos = [];
 	fakeWindow = new FakeWindow();
 	root = element('HTML', null, { scrollHeight: 3000, clientHeight: 900 });
 	body = element('BODY', root, { scrollHeight: 3000, clientHeight: 900 });
@@ -796,8 +787,7 @@ beforeEach(() => {
 		scrollingElement: root,
 		fullscreenElement: null,
 		elementsFromPoint: () => [],
-		querySelectorAll: (selector: string) =>
-			selector === 'video' ? fakeVideos : [],
+		querySelectorAll: () => [],
 		addEventListener: () => {},
 		removeEventListener: () => {},
 	});
@@ -2477,7 +2467,7 @@ describe('smooth scroll input admission', () => {
 	});
 });
 
-describe('smooth scroll keyboard spacebar yield', () => {
+describe('smooth scroll keyboard spacebar', () => {
 	// eff: Builds a trusted KeyboardEvent fixture for the given key. preventDefault
 	// flips defaultPrevented so the handler's admission decision is observable.
 	function keyEvent(key: string, extras: Partial<{
@@ -2500,34 +2490,7 @@ describe('smooth scroll keyboard spacebar yield', () => {
 		return event as unknown as KeyboardEvent;
 	}
 
-	test('prevents scroll but does not toggle playback on spacebar with visible video', () => {
-		root.styleState.overflowY = 'auto';
-		body.styleState.overflowY = 'hidden';
-		let paused = false;
-		let playCalled = false;
-		let pauseCalled = false;
-		fakeVideos = [{
-			getBoundingClientRect: () => ({
-				width: 640, height: 360, top: 100, bottom: 460,
-			}),
-			get paused() { return paused; },
-			play() { playCalled = true; paused = false; return Promise.resolve(); },
-			pause() { pauseCalled = true; paused = true; },
-		}];
-		const event = keyEvent(' ');
-
-		onKeydown(event);
-
-		// HALO must preventDefault to stop the browser's native page scroll, but
-		// must NOT call video.play()/pause() — the site's own keydown handler
-		// owns playback control. Double-toggle would break play/pause.
-		expect(event.defaultPrevented).toBe(true);
-		expect(playCalled).toBe(false);
-		expect(pauseCalled).toBe(false);
-		expect(frameCallbacks.size).toBe(0);
-	});
-
-	test('scrolls the page on spacebar when no video is present', () => {
+	test('scrolls page smoothly on spacebar when site does not preventDefault', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		const event = keyEvent(' ');
@@ -2541,50 +2504,21 @@ describe('smooth scroll keyboard spacebar yield', () => {
 		expect(fakeWindow.scrollY).toBeCloseTo(window.innerHeight * 0.9, 5);
 	});
 
-	test('scrolls the page on spacebar when the video is too small to be a media target', () => {
+	test('yields to site when site already preventDefault on spacebar', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
-		fakeVideos = [{
-			getBoundingClientRect: () => ({
-				width: 40, height: 30, top: 100, bottom: 130,
-			}),
-		}];
 		const event = keyEvent(' ');
-		const start = performance.now();
+		event.preventDefault(); // site already handled (e.g. video play/pause)
 
 		onKeydown(event);
 
-		expect(event.defaultPrevented).toBe(true);
-		expect(frameCallbacks.size).toBe(1);
-		runUntilIdle(start + 16);
+		// HALO must not scroll or stack animation when the site refused first.
+		expect(frameCallbacks.size).toBe(0);
 	});
 
-	test('scrolls the page on spacebar when the video is scrolled out of the viewport', () => {
+	test('keeps arrow-key scrolling active', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
-		fakeVideos = [{
-			getBoundingClientRect: () => ({
-				width: 640, height: 360, top: -400, bottom: -40,
-			}),
-		}];
-		const event = keyEvent(' ');
-		const start = performance.now();
-
-		onKeydown(event);
-
-		expect(event.defaultPrevented).toBe(true);
-		expect(frameCallbacks.size).toBe(1);
-		runUntilIdle(start + 16);
-	});
-
-	test('keeps arrow-key scrolling active on a page with a visible video', () => {
-		root.styleState.overflowY = 'auto';
-		body.styleState.overflowY = 'hidden';
-		fakeVideos = [{
-			getBoundingClientRect: () => ({
-				width: 640, height: 360, top: 100, bottom: 460,
-			}),
-		}];
 		const event = keyEvent('ArrowDown');
 		const start = performance.now();
 
