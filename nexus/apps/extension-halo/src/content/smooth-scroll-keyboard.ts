@@ -2,61 +2,38 @@ import { prefersReducedMotion, resolveMainScrollRoute, resolveScrollRoute, shoul
 import { clearQueue, scrollTo } from '../tools/smooth-scroll/engine';
 import { resetWheelRuntimeState, settings } from './smooth-scroll-state';
 
-// eff: HALO registers keydown in CAPTURE phase (see smooth-scroll.ts), so it
-// runs BEFORE site listeners. This lets HALO stopPropagation on arrow keys
-// to prevent site volume shortcuts (YouTube/Bilibili) when the user wants to
-// scroll, while spacebar never stopPropagation so site play/pause still works.
+// eff: HALO registers keydown in BUBBLE phase on window (see smooth-scroll.ts),
+// the LAST stop in event propagation. Site listeners (YouTube on document,
+// Bilibili on window) run before HALO and call preventDefault when they handle
+// the key (play/pause, volume, feed pagination). HALO checks e.defaultPrevented:
+//   - true  → site claimed it; HALO yields (no scroll, no preventDefault,
+//             no stopPropagation — do nothing).
+//   - false → site did not claim it; HALO smooth-scrolls and preventDefault
+//             to suppress native instant scroll.
 //
-// Video page detection: a page counts as a "video page" when a <video>
-// element exists in the DOM (regardless of viewport visibility). This is
-// reliable even after the user scrolls and the player leaves the viewport —
-// the <video> element stays in the DOM. YouTube/Bilibili home feeds use
-// <img> thumbnails (no <video> until hover-preview), so arrows/spacebar
-// scroll normally there.
-//
-// Yield strategy (per key):
-// - Spacebar: yield on video pages (user wants play/pause). preventDefault
-//   suppresses native scroll; no stopPropagation so site listeners fire.
-// - Arrow keys: yield ONLY when <video> is the active element (native HTML5
-//   volume control). When video is NOT focused, arrows scroll — even on
-//   video pages — so the user can scroll comments/feed. stopPropagation
-//   prevents site volume shortcuts from double-firing.
-// - PageUp/PageDown: never yield (don't control video; needed for paging).
+// This is a single, uniform rule for ALL keys (spacebar, arrows, PageUp/Down).
+// No video detection, no focus detection, no viewport-ratio heuristics — those
+// were all unreliable (video tabIndex=-1 never focuses; hover-preview <video>
+// on home feeds triggers false positives). defaultPrevented is the only
+// signal that accurately reflects the site's actual handling of the event.
 const KEYS: Record<string, number> = {
 	'ArrowDown': 1, 'ArrowUp': -1,
 	'PageDown': 0, 'PageUp': 0,
 	' ': 0,
 };
 
-function hasPlayerVideo(): boolean {
-	// querySelector is O(1) short-circuit on first match and cheaper than
-	// getElementsByTagName+getBoundingClientRect. No TTL cache needed: DOM
-	// mutations between key repeats are rare and querySelector is fast.
-	return document.querySelector('video') !== null;
-}
-
 // Reset keyboard module runtime state. Called by resetInputHandlers() in
 // smooth-scroll-handlers.ts so tests and page lifecycle events
 // (pagehide/visibilitychange) clear any module-level state together.
 export function resetKeyboardRuntime(): void {
-	// No-op placeholder: hasPlayerVideo() is stateless, but keeping this
-	// export preserves the resetInputHandlers() contract for future
-	// module-level state additions.
-}
-
-function isVideoFocused(): boolean {
-	const active = document.activeElement;
-	return active !== null && active.tagName === 'VIDEO';
+	// Stateless module — no-op placeholder preserves the
+	// resetInputHandlers() contract for future state additions.
 }
 
 export function onKeydown(e: KeyboardEvent): void {
 	if (!e.isTrusted) return;
 	const keyFactor = KEYS[e.key];
 	if (keyFactor === undefined) return;
-
-	const isSpacebar = e.key === ' ';
-	const isArrowKey = e.key === 'ArrowDown' || e.key === 'ArrowUp';
-	const onVideoPage = hasPlayerVideo();
 
 	if (
 		!settings.enabled ||
@@ -69,46 +46,13 @@ export function onKeydown(e: KeyboardEvent): void {
 		document.fullscreenElement ||
 		(settings.respectReducedMotion && prefersReducedMotion())
 	) {
+		// e.defaultPrevented: a site listener (YouTube/Bilibili) already
+		// claimed this event for play/pause/volume/shortcuts. HALO yields.
 		if (!e.repeat) {
 			clearQueue();
 			resetWheelRuntimeState();
 		}
 		return;
-	}
-
-	// Arrow keys + video focused: yield to native HTML5 media keyboard
-	// (volume control). No preventDefault (let native volume work), no
-	// stopPropagation (let site listeners work). HALO does nothing.
-	if (isArrowKey && isVideoFocused()) {
-		if (!e.repeat) {
-			clearQueue();
-			resetWheelRuntimeState();
-		}
-		return;
-	}
-
-	// Spacebar on a video page: yield to site play/pause. preventDefault
-	// suppresses browser native scroll (some sites like YouTube don't
-	// preventDefault themselves). No stopPropagation — site listeners must
-	// fire to toggle playback.
-	if (isSpacebar && onVideoPage) {
-		e.preventDefault();
-		if (!e.repeat) {
-			clearQueue();
-			resetWheelRuntimeState();
-		}
-		return;
-	}
-
-	// Arrow keys on a video page (video NOT focused): the user wants to
-	// scroll the page (comments, feed), not control volume. stopPropagation
-	// prevents site volume shortcuts (YouTube/Bilibili document-level
-	// listeners) from firing, so only HALO's scroll happens. Capture phase:
-	// HALO runs first, so stopPropagation actually blocks site bubble
-	// listeners. This also covers the case where the player has scrolled
-	// out of viewport — the <video> element is still in the DOM.
-	if (isArrowKey && onVideoPage) {
-		e.stopPropagation();
 	}
 
 	const active = document.activeElement;
@@ -141,7 +85,9 @@ export function onKeydown(e: KeyboardEvent): void {
 		route.kind === 'animate' &&
 		scrollTo(route.target, 0, dy, route.admission)
 	) {
-		// HALO scrolls: preventDefault to suppress native instant scroll.
+		// Site did not claim the event (defaultPrevented is false). HALO
+		// smooth-scrolls. preventDefault suppresses native instant scroll.
+		// No stopPropagation — other bubble listeners may still need it.
 		e.preventDefault();
 	} else if (!e.repeat) {
 		clearQueue();
