@@ -2663,8 +2663,9 @@ describe('smooth scroll keyboard', () => {
 	test('long-press reaches high velocity through repeat accumulation', () => {
 		// Simulate 1 second of long-press: 30 repeat events at ~33ms intervals
 		// with rAF frames between. The scroll position should advance
-		// significantly more than a single press (arrowKeyStep=300, plus
-		// keyboard acceleration ramps responseMultiplier up to accelerationMax).
+		// significantly more than a single press (arrowKeyStep=300). No
+		// responseMultiplier acceleration — speed-up comes from engine backlog
+		// accumulation, keeping single-press feel identical to a wheel tick.
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		root.scrollHeight = 50_000;
@@ -2678,9 +2679,9 @@ describe('smooth scroll keyboard', () => {
 		}
 		runUntilIdle(time + 500);
 
-		// Single press moves ~300px; 30 repeats with acceleration must move
-		// substantially more — matching accelerated mouse wheel feel.
-		expect(fakeWindow.scrollY).toBeGreaterThan(3_000);
+		// Single press moves ~300px; 30 repeats must move substantially more
+		// via natural backlog accumulation (capped by maxBacklogPx).
+		expect(fakeWindow.scrollY).toBeGreaterThan(2_000);
 	});
 
 	test('first press clears stale queue, repeat does not', () => {

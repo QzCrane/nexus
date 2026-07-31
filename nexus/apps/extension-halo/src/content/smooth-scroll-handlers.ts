@@ -25,6 +25,8 @@ import {
 	state,
 	updateAcceleration,
 } from './smooth-scroll-state';
+import { onKeydown, resetKeyboardRuntime } from './smooth-scroll-keyboard';
+export { onKeydown };
 
 function yieldWheelToNative(): void {
 	clearQueue();
@@ -147,8 +149,6 @@ export function onWheel(e: WheelEvent): void {
 	e.preventDefault();
 }
 
-export { onKeydown } from './smooth-scroll-keyboard';
-
 export function onMouseDown(e: MouseEvent): void {
 	if (!e.isTrusted) return;
 	if (
@@ -230,4 +230,5 @@ export function cancelMiddleScroll(): void {
 
 export function resetInputHandlers(): void {
 	cancelMiddleScroll();
+	resetKeyboardRuntime();
 }
