@@ -13,19 +13,17 @@ import {
 // the LAST stop in event propagation. Site listeners run before HALO.
 //
 // Key handling policy:
-// - Video pages (page has a visible <video> element): spacebar and arrow keys
-//   belong to the site (play/pause, volume, seek). HALO yields completely —
-//   no preventDefault, no stopPropagation. The site owns these keys.
-// - Non-video pages: HALO checks e.defaultPrevented. If a site listener
-//   already claimed the event, HALO yields. Otherwise HALO smooth-scrolls.
+// - Spacebar on video pages (visible main player): HALO yields completely.
+//   Spacebar is always play/pause on video pages. Determined by DOM-state
+//   video check (viewport ratio), NOT defaultPrevented, because sites may
+//   handle spacebar without preventDefault.
+// - Arrow keys: HALO checks e.defaultPrevented ONLY. YouTube preventDefaults
+//   arrows for volume control → HALO yields. Bilibili does NOT preventDefault
+//   arrows (JS changes volume without preventDefault) → HALO smooth-scrolls.
+//   This is the desired behavior: YouTube arrows = volume, Bilibili arrows =
+//   scroll (when focus is not on the player; shouldIgnoreInput handles the
+//   player-focus case via VIDEO tag in IGNORE_TAGS).
 // - PageUp/PageDown: never handled by sites. HALO always smooth-scrolls.
-//
-// This replaces the previous e.defaultPrevented-only policy which was
-// unreliable: site listeners in window-bubble phase have indeterminate
-// registration order vs. HALO's content-script listener, and some sites
-// (e.g. Bilibili) change volume via JS without calling preventDefault.
-// The video-presence check is a deterministic DOM-state signal that does
-// not depend on event propagation order or preventDefault behavior.
 const KEYS: Record<string, number> = {
 	'ArrowDown': 1, 'ArrowUp': -1,
 	'PageDown': 0, 'PageUp': 0,
@@ -101,11 +99,11 @@ export function onKeydown(e: KeyboardEvent): void {
 		return;
 	}
 
-	// Video pages: spacebar and arrow keys belong to the site (play/pause,
-	// volume, seek). HALO yields completely. PageUp/PageDown are never
-	// handled by video sites, so HALO always processes them.
-	const isVideoShortcutKey = e.key === ' ' || e.key === 'ArrowDown' || e.key === 'ArrowUp';
-	if (isVideoShortcutKey && hasMainVideoPlayer()) {
+	// Spacebar on video pages: always play/pause. Determined by DOM-state
+	// video check, not defaultPrevented (sites may handle space without
+	// preventDefault). Arrow keys are NOT gated here — they rely on
+	// defaultPrevented (YouTube preventDefaults, Bilibili does not).
+	if (e.key === ' ' && hasMainVideoPlayer()) {
 		if (!e.repeat) {
 			clearQueue();
 			resetWheelRuntimeState();

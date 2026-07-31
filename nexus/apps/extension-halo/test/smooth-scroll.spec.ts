@@ -2577,17 +2577,30 @@ describe('smooth scroll keyboard', () => {
 		expect(frameCallbacks.size).toBe(1);
 	});
 
-	test('arrow keys yield on video pages (YouTube/Bilibili player)', () => {
-		// Page has a visible <video> → spacebar/arrows belong to site.
-		// HALO does not scroll, does not preventDefault, does not stopPropagation.
+	test('arrow keys scroll on video pages when site did not preventDefault (Bilibili)', () => {
+		// B站 does NOT preventDefault arrows → HALO scrolls.
+		// Arrow keys are NOT gated by video check — only spacebar is.
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 
 		withVisibleVideo(() => {
 			const event = keyEvent('ArrowDown');
 			onKeydown(event);
+			expect(event.defaultPrevented).toBe(true);
+			expect(frameCallbacks.size).toBe(1);
+		});
+	});
+
+	test('arrow keys yield on video pages when site preventDefault (YouTube)', () => {
+		// YouTube preventDefaults arrows for volume → HALO yields.
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+
+		withVisibleVideo(() => {
+			const event = keyEvent('ArrowDown');
+			event.preventDefault();
+			onKeydown(event);
 			expect(frameCallbacks.size).toBe(0);
-			expect(event.defaultPrevented).toBe(false);
 		});
 	});
 

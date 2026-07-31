@@ -394,33 +394,15 @@ function processHorizontalStep(
 	state.remainingX = consumeApplied(state.remainingX, target.scrollLeft - beforeX);
 }
 
-// When the target is within this many pixels of its scroll boundary, skip
-// the spring's exponential tail and finish immediately. Spring's last
-// 10-20px of convergence is disproportionately slow (ln(10)/omega ≈ 77ms
-// at acc=1), which feels like a sluggish delay at the end of a long
-// keyboard scroll. Wheel scrolls have short backlogs so the tail is
-// imperceptible; keyboard long-press and PageUp accumulate larger
-// backlogs, making the tail noticeable. This cutoff lets both feel crisp.
-const NEAR_BOUNDARY_FINISH_PX = 20;
-
 function finishIfWithinPixel(
 	target: Element | Window,
 	metrics: ScrollTargetMetrics | null,
 	timestamp: number,
 ): boolean {
 	const residualY = physicalResidualY();
-	// Near a scroll boundary, the spring tail is perceptible because the
-	// remaining displacement is bounded by capacityY. If capacityY itself
-	// is small (< NEAR_BOUNDARY_FINISH_PX), finish immediately and write
-	// the remaining scrollable distance in one step.
-	const nearBoundary =
-		metrics !== null && metrics.capacityY <= NEAR_BOUNDARY_FINISH_PX;
-	const finishThreshold = nearBoundary && metrics !== null
-		? Math.max(COMPLETION_RESIDUAL_EPSILON, metrics.capacityY)
-		: COMPLETION_RESIDUAL_EPSILON;
 	const verticalDone =
 		state.directionY === 0 ||
-		Math.abs(residualY) <= finishThreshold;
+		Math.abs(residualY) <= COMPLETION_RESIDUAL_EPSILON;
 	const horizontalDone =
 		state.directionX === 0 ||
 		Math.abs(state.remainingX) <= COMPLETION_RESIDUAL_EPSILON;
