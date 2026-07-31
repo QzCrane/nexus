@@ -58,7 +58,7 @@ body {
 	},
 	blockSpace: {
 		name: 'Block Space Scroll',
-		description: 'Manually toggles video play/pause on spacebar (scroll blocking is now HALO default)',
+		description: 'Capture-phase spacebar video toggle (fallback when HALO smooth-scroll is disabled)',
 		type: 'javascript' as ScriptType,
 		code: `// Block space scroll + manually control video play/pause
 (function() {

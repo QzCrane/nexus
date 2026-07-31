@@ -8,24 +8,30 @@ const KEYS: Record<string, number> = {
 	'PageDown': 0, 'PageUp': 0, ' ': 0
 };
 
-// eff: Detects whether the viewport currently shows a video large enough to be a
-// media target. When true, the spacebar is yielded to the browser/site so its
-// native play/pause handling runs instead of HALO scrolling the page.
-function hasVisibleVideo(): boolean {
+// eff: Finds the most visible video intersecting the viewport. Used to route
+// the spacebar to play/pause instead of page scroll on video pages. Returns
+// null when no video larger than 50x50px is visible.
+function findActiveVideo(): HTMLVideoElement | null {
 	const videos = document.querySelectorAll('video');
-	if (videos.length === 0) return false;
+	let best: HTMLVideoElement | null = null;
+	let bestArea = 0;
 	for (let i = 0; i < videos.length; i++) {
-		const rect = (videos[i] as HTMLElement).getBoundingClientRect();
+		const v = videos[i] as HTMLVideoElement;
+		const rect = v.getBoundingClientRect();
 		if (
 			rect.width > 50 &&
 			rect.height > 50 &&
 			rect.top < window.innerHeight &&
 			rect.bottom > 0
 		) {
-			return true;
+			const area = rect.width * rect.height;
+			if (area > bestArea) {
+				bestArea = area;
+				best = v;
+			}
 		}
 	}
-	return false;
+	return best;
 }
 
 export function onKeydown(e: KeyboardEvent): void {
@@ -48,13 +54,27 @@ export function onKeydown(e: KeyboardEvent): void {
 		return;
 	}
 
-	// Yield spacebar to the page's video play/pause handling when a visible
-	// video is on screen. Browser default and site keydown handlers will toggle
-	// playback; HALO must not preventDefault or scroll in this case.
-	if (e.key === ' ' && hasVisibleVideo()) {
-		clearQueue();
-		resetWheelRuntimeState();
-		return;
+	// On video pages the spacebar should toggle play/pause, not scroll. The
+	// browser default scrolls the page when focus is on body; site keydown
+	// handlers may or may not handle it. Since we reached here the site has not
+	// preventDefault'd, so HALO prevents the scroll and toggles the most
+	// visible video. Focus on a <video> element was already yielded above via
+	// shouldIgnoreInput, so there is no double-toggle with native handling.
+	if (e.key === ' ') {
+		const video = findActiveVideo();
+		if (video) {
+			e.preventDefault();
+			if (video.paused) {
+				void video.play().catch((error: unknown) => {
+					console.debug('[HALO:Scroll] spacebar autoplay was unavailable', error);
+				});
+			} else {
+				video.pause();
+			}
+			clearQueue();
+			resetWheelRuntimeState();
+			return;
+		}
 	}
 
 	const active = document.activeElement;
