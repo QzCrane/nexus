@@ -215,12 +215,12 @@ test.describe('HALO keyboard ownership in Chromium', () => {
 				],
 			});
 			const page = context.pages()[0] ?? await context.newPage();
-			const contentReady = page.waitForEvent('console', {
-				predicate: (message) => message.text().includes('[HALO] Content script ready in'),
+			const scrollReady = page.waitForEvent('console', {
+				predicate: (message) => message.text().includes('[HALO:Scroll] Ready'),
 				timeout: 10_000,
 			});
 			await page.goto(fixture.url, { waitUntil: 'load' });
-			await contentReady;
+			await scrollReady;
 			await resetFixture(page);
 
 			// A large, connected but offscreen video is not ownership evidence.
