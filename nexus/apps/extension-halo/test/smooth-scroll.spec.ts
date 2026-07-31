@@ -2498,12 +2498,14 @@ describe('smooth scroll keyboard', () => {
 		return event as unknown as KeyboardEvent;
 	}
 
-	// eff: HALO keydown uses a single uniform rule: check e.defaultPrevented.
-	// Site listeners (YouTube/Bilibili) run in bubble phase before HALO and
-	// call preventDefault when they handle the key. HALO yields when
-	// defaultPrevented is true; scrolls when false. No video/focus detection.
+	// eff: HALO keydown registers in CAPTURE phase. Arrows/PageUp/Down
+	// stopPropagation to block site bubble listeners (Bilibili volume JS
+	// changes volume WITHOUT preventDefault, causing tangling). Spacebar
+	// does NOT stopPropagation so site play/pause still fires.
 
-	test('spacebar scrolls page smoothly', () => {
+	test('spacebar scrolls page smoothly, no stopPropagation', () => {
+		// Spacebar: HALO scrolls + preventDefault (suppress native scroll),
+		// but does NOT stopPropagation (site play/pause must fire on video pages).
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		const event = keyEvent(' ');
@@ -2512,48 +2514,36 @@ describe('smooth scroll keyboard', () => {
 		onKeydown(event);
 
 		expect(event.defaultPrevented).toBe(true);
+		expect((event as unknown as { propagationStopped: boolean }).propagationStopped).toBe(false);
 		expect(frameCallbacks.size).toBe(1);
 		runUntilIdle(start + 16);
 		expect(fakeWindow.scrollY).toBeCloseTo(window.innerHeight * 0.9, 5);
 	});
 
-	test('spacebar yields when site already preventDefault', () => {
-		// Bubble phase: site listener (YouTube/Bilibili) ran first and
-		// preventDefault'd for play/pause. HALO respects it: no scroll,
-		// no preventDefault (already done), no stopPropagation.
-		root.styleState.overflowY = 'auto';
-		body.styleState.overflowY = 'hidden';
-		const event = keyEvent(' ');
-		event.preventDefault(); // site claimed it
-
-		onKeydown(event);
-
-		expect(frameCallbacks.size).toBe(0);
-		expect((event as unknown as { propagationStopped: boolean }).propagationStopped).toBe(false);
-	});
-
-	test('arrow keys yield when site already preventDefault', () => {
-		// Site listener (YouTube/Bilibili) preventDefault'd for volume control.
-		// HALO respects it: no scroll.
+	test('arrow keys stopPropagation to block site volume', () => {
+		// Capture phase: HALO runs first, stopPropagation blocks ALL site
+		// bubble listeners (Bilibili/YouTube volume JS). preventDefault
+		// suppresses native scroll. HALO smooth-scrolls.
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		const event = keyEvent('ArrowDown');
-		event.preventDefault();
 
 		onKeydown(event);
 
-		expect(frameCallbacks.size).toBe(0);
-		expect((event as unknown as { propagationStopped: boolean }).propagationStopped).toBe(false);
+		expect(event.defaultPrevented).toBe(true);
+		expect((event as unknown as { propagationStopped: boolean }).propagationStopped).toBe(true);
+		expect(frameCallbacks.size).toBe(1);
 	});
 
-	test('PageUp/PageDown scroll when site did not preventDefault', () => {
-		// Page keys: site typically doesn't handle them. HALO scrolls.
+	test('PageUp/PageDown stopPropagation and scroll', () => {
+		// Page keys: HALO owns them. stopPropagation + preventDefault + scroll.
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 
 		const pd = keyEvent('PageDown');
 		onKeydown(pd);
 		expect(pd.defaultPrevented).toBe(true);
+		expect((pd as unknown as { propagationStopped: boolean }).propagationStopped).toBe(true);
 		expect(frameCallbacks.size).toBe(1);
 	});
 
@@ -2580,12 +2570,13 @@ describe('smooth scroll keyboard', () => {
 		expect(frameCallbacks.size).toBe(1);
 	});
 
-	test('long-press reaches high velocity through repeat accumulation', () => {
+	test('long-press reaches high velocity through acceleration and accumulation', () => {
 		// Simulate 1 second of long-press: 30 repeat events at ~33ms intervals
 		// with rAF frames between. The scroll position should advance
-		// significantly more than a single press (arrowKeyStep=300). No
-		// responseMultiplier acceleration — speed-up comes from engine backlog
-		// accumulation, keeping single-press feel identical to a wheel tick.
+		// significantly more than a single press (arrowKeyStep=300). Velocity
+		// ramps up via the same acceleration curve as mouse wheel (+0.5/event,
+		// capped at accelerationMax), so long-press feels like continuous
+		// wheel scrolling — gradually faster, not instantly maxed.
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		root.scrollHeight = 50_000;
@@ -2600,7 +2591,7 @@ describe('smooth scroll keyboard', () => {
 		runUntilIdle(time + 500);
 
 		// Single press moves ~300px; 30 repeats must move substantially more
-		// via natural backlog accumulation (capped by maxBacklogPx).
+		// via acceleration + backlog accumulation (capped by maxBacklogPx).
 		expect(fakeWindow.scrollY).toBeGreaterThan(2_000);
 	});
 
@@ -2619,33 +2610,6 @@ describe('smooth scroll keyboard', () => {
 		// A fresh (non-repeat) PageDown clears the arrow animation and starts new.
 		onKeydown(keyEvent('PageDown'));
 		expect(frameCallbacks.size).toBe(1);
-	});
-
-	test('spacebar preventDefault when HALO scrolls, no stopPropagation', () => {
-		// Site did not preventDefault (defaultPrevented is false). HALO
-		// smooth-scrolls and preventDefault to suppress native instant scroll.
-		// No stopPropagation — other bubble listeners may still need it.
-		root.styleState.overflowY = 'auto';
-		body.styleState.overflowY = 'hidden';
-		const event = keyEvent(' ');
-
-		onKeydown(event);
-
-		expect(event.defaultPrevented).toBe(true);
-		expect((event as unknown as { propagationStopped: boolean }).propagationStopped).toBe(false);
-	});
-
-	test('arrow key preventDefault when HALO scrolls, no stopPropagation', () => {
-		// Site did not preventDefault. HALO scrolls, preventDefault.
-		// No stopPropagation.
-		root.styleState.overflowY = 'auto';
-		body.styleState.overflowY = 'hidden';
-		const event = keyEvent('ArrowDown');
-
-		onKeydown(event);
-
-		expect(event.defaultPrevented).toBe(true);
-		expect((event as unknown as { propagationStopped: boolean }).propagationStopped).toBe(false);
 	});
 
 	test('does not preventDefault when no animatable target', () => {

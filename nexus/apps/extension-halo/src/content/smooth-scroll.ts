@@ -31,19 +31,15 @@ const onVisibilityChange = (): void => {
 const attachListeners = (): void => {
 	if (listenersAttached) return;
 	listenersAttached = true;
-	// Wheel + keydown: BUBBLE phase on window (the last stop in event
-	// propagation). This ensures site listeners (which register on document
-	// or window in bubble phase) run BEFORE HALO. HALO checks
-	// e.defaultPrevented to detect whether the site claimed the event:
-	//   - YouTube: registers on document, preventDefaults in document-bubble
-	//     (runs before window-bubble where HALO lives).
-	//   - Bilibili: registers on window, preventDefaults in window-bubble.
-	//     Content scripts load after page scripts, so HALO's window-bubble
-	//     listener is registered after Bilibili's and runs after it.
-	// When defaultPrevented is true, HALO yields (no scroll, no
-	// preventDefault, no stopPropagation). When false, HALO scrolls.
+	// Wheel: bubble phase — site-owned scroll containers and native overscroll
+	// get first refusal via e.defaultPrevented.
+	// Keydown: CAPTURE phase — HALO runs BEFORE site bubble listeners. This
+	// lets HALO stopPropagation on arrows/PageUp/Down to block site volume
+	// shortcuts (Bilibili changes volume WITHOUT preventDefault, so
+	// defaultPrevented detection cannot work). Spacebar does NOT
+	// stopPropagation so site play/pause still fires.
 	window.addEventListener('wheel', onWheel, { passive: false });
-	window.addEventListener('keydown', onKeydown);
+	window.addEventListener('keydown', onKeydown, true);
 	window.addEventListener('mousedown', onMouseDown);
 	window.addEventListener('pagehide', resetDocumentRuntime);
 	document.addEventListener('visibilitychange', onVisibilityChange);
@@ -53,7 +49,7 @@ const detachListeners = (): void => {
 	if (!listenersAttached) return;
 	listenersAttached = false;
 	window.removeEventListener('wheel', onWheel);
-	window.removeEventListener('keydown', onKeydown);
+	window.removeEventListener('keydown', onKeydown, true);
 	window.removeEventListener('mousedown', onMouseDown);
 	window.removeEventListener('pagehide', resetDocumentRuntime);
 	document.removeEventListener('visibilitychange', onVisibilityChange);
