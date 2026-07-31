@@ -8,30 +8,26 @@ const KEYS: Record<string, number> = {
 	'PageDown': 0, 'PageUp': 0, ' ': 0
 };
 
-// eff: Finds the most visible video intersecting the viewport. Used to route
-// the spacebar to play/pause instead of page scroll on video pages. Returns
-// null when no video larger than 50x50px is visible.
-function findActiveVideo(): HTMLVideoElement | null {
+// eff: Detects whether the viewport currently shows a video large enough to be
+// a media target. When true, HALO only prevents the browser's default spacebar
+// scroll and yields to the site's own play/pause keydown handler (which runs
+// later in bubble phase or already ran in capture phase). HALO must NOT call
+// video.play()/pause() itself — that would double-toggle with the site's
+// player and break playback control.
+function hasVisibleVideo(): boolean {
 	const videos = document.querySelectorAll('video');
-	let best: HTMLVideoElement | null = null;
-	let bestArea = 0;
 	for (let i = 0; i < videos.length; i++) {
-		const v = videos[i] as HTMLVideoElement;
-		const rect = v.getBoundingClientRect();
+		const rect = (videos[i] as HTMLElement).getBoundingClientRect();
 		if (
 			rect.width > 50 &&
 			rect.height > 50 &&
 			rect.top < window.innerHeight &&
 			rect.bottom > 0
 		) {
-			const area = rect.width * rect.height;
-			if (area > bestArea) {
-				bestArea = area;
-				best = v;
-			}
+			return true;
 		}
 	}
-	return best;
+	return false;
 }
 
 export function onKeydown(e: KeyboardEvent): void {
@@ -54,27 +50,17 @@ export function onKeydown(e: KeyboardEvent): void {
 		return;
 	}
 
-	// On video pages the spacebar should toggle play/pause, not scroll. The
-	// browser default scrolls the page when focus is on body; site keydown
-	// handlers may or may not handle it. Since we reached here the site has not
-	// preventDefault'd, so HALO prevents the scroll and toggles the most
-	// visible video. Focus on a <video> element was already yielded above via
-	// shouldIgnoreInput, so there is no double-toggle with native handling.
-	if (e.key === ' ') {
-		const video = findActiveVideo();
-		if (video) {
-			e.preventDefault();
-			if (video.paused) {
-				void video.play().catch((error: unknown) => {
-					console.debug('[HALO:Scroll] spacebar autoplay was unavailable', error);
-				});
-			} else {
-				video.pause();
-			}
-			clearQueue();
-			resetWheelRuntimeState();
-			return;
-		}
+	// On video pages the spacebar should toggle play/pause, not scroll. HALO
+	// only preventsDefault to stop the browser's native page scroll; it does
+	// NOT toggle playback itself. The site's own keydown handler (Bilibili,
+	// YouTube, etc.) runs in capture or bubble phase and performs the actual
+	// play/pause. Without this preventDefault the browser scrolls the page
+	// when focus is on body, which is the original user complaint.
+	if (e.key === ' ' && hasVisibleVideo()) {
+		e.preventDefault();
+		clearQueue();
+		resetWheelRuntimeState();
+		return;
 	}
 
 	const active = document.activeElement;

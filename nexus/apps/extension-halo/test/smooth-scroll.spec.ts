@@ -221,13 +221,10 @@ let onMouseDown: typeof import('../src/content/smooth-scroll-handlers').onMouseD
 let onMouseMove: typeof import('../src/content/smooth-scroll-handlers').onMouseMove;
 let resetInputHandlers: typeof import('../src/content/smooth-scroll-handlers').resetInputHandlers;
 
-// eff: Injectable video fixtures for findActiveVideo() so keyboard tests can
+// eff: Injectable video fixtures for hasVisibleVideo() so keyboard tests can
 // simulate a visible, hidden, or video-free page without touching FakeElement.
 interface FakeVideo {
 	getBoundingClientRect(): { width: number; height: number; top: number; bottom: number };
-	paused: boolean;
-	play(): Promise<void>;
-	pause(): void;
 }
 let fakeVideos: FakeVideo[] = [];
 
@@ -2503,47 +2500,30 @@ describe('smooth scroll keyboard spacebar yield', () => {
 		return event as unknown as KeyboardEvent;
 	}
 
-	test('prevents scroll and pauses the playing video on spacebar', () => {
+	test('prevents scroll but does not toggle playback on spacebar with visible video', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		let paused = false;
+		let playCalled = false;
 		let pauseCalled = false;
 		fakeVideos = [{
 			getBoundingClientRect: () => ({
 				width: 640, height: 360, top: 100, bottom: 460,
 			}),
 			get paused() { return paused; },
-			play() { paused = false; return Promise.resolve(); },
-			pause() { paused = true; pauseCalled = true; },
+			play() { playCalled = true; paused = false; return Promise.resolve(); },
+			pause() { pauseCalled = true; paused = true; },
 		}];
 		const event = keyEvent(' ');
 
 		onKeydown(event);
 
+		// HALO must preventDefault to stop the browser's native page scroll, but
+		// must NOT call video.play()/pause() — the site's own keydown handler
+		// owns playback control. Double-toggle would break play/pause.
 		expect(event.defaultPrevented).toBe(true);
-		expect(pauseCalled).toBe(true);
-		expect(frameCallbacks.size).toBe(0);
-	});
-
-	test('prevents scroll and plays the paused video on spacebar', () => {
-		root.styleState.overflowY = 'auto';
-		body.styleState.overflowY = 'hidden';
-		let paused = true;
-		let playCalled = false;
-		fakeVideos = [{
-			getBoundingClientRect: () => ({
-				width: 640, height: 360, top: 100, bottom: 460,
-			}),
-			get paused() { return paused; },
-			play() { paused = false; playCalled = true; return Promise.resolve(); },
-			pause() { paused = true; },
-		}];
-		const event = keyEvent(' ');
-
-		onKeydown(event);
-
-		expect(event.defaultPrevented).toBe(true);
-		expect(playCalled).toBe(true);
+		expect(playCalled).toBe(false);
+		expect(pauseCalled).toBe(false);
 		expect(frameCallbacks.size).toBe(0);
 	});
 
