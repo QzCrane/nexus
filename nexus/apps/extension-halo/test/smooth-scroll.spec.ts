@@ -2578,6 +2578,37 @@ describe('smooth scroll keyboard', () => {
 		expect(frameCallbacks.size).toBe(1);
 	});
 
+	test('arrow keys yield to visible player-sized video', () => {
+		// Native HTML5 media keyboard: arrows control volume on focused video.
+		// HALO must yield so site/native volume control works.
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+		setVideos([{ width: 720, height: 405, top: 100, left: 360 }]);
+
+		const down = keyEvent('ArrowDown');
+		onKeydown(down);
+		expect(down.defaultPrevented).toBe(false);
+		expect((down as unknown as { propagationStopped: boolean }).propagationStopped).toBe(false);
+		expect(frameCallbacks.size).toBe(0);
+
+		const up = keyEvent('ArrowUp');
+		onKeydown(up);
+		expect(up.defaultPrevented).toBe(false);
+		expect(frameCallbacks.size).toBe(0);
+	});
+
+	test('PageUp/PageDown do not yield to video', () => {
+		// Page keys don't control video and are needed for long-document paging.
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+		setVideos([{ width: 720, height: 405, top: 100, left: 360 }]);
+
+		const pd = keyEvent('PageDown');
+		onKeydown(pd);
+		expect(pd.defaultPrevented).toBe(true);
+		expect(frameCallbacks.size).toBe(1);
+	});
+
 	test('spacebar scrolls even when site already preventDefault', () => {
 		// In capture phase HALO runs BEFORE site listeners, so site-level
 		// preventDefault is not yet set. This test now verifies that an

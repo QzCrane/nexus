@@ -61,10 +61,13 @@ export function onKeydown(e: KeyboardEvent): void {
 		return;
 	}
 
-	// Spacebar yields when a visible player-sized video is on screen: the user
-	// most likely wants play/pause, not page scroll. Arrow/Page keys do NOT
-	// yield — they never control video playback.
-	if (isSpacebar && hasVisiblePlayerVideo()) {
+	// Spacebar and arrow keys yield when a visible player-sized video is on
+	// screen: the user most likely wants play/pause (space) or volume control
+	// (arrows — native HTML5 media keyboard behavior), not page scroll.
+	// PageUp/PageDown do NOT yield — they don't control video and long-document
+	// pagination needs them.
+	const isArrowKey = e.key === 'ArrowDown' || e.key === 'ArrowUp';
+	if ((isSpacebar || isArrowKey) && hasVisiblePlayerVideo()) {
 		if (!e.repeat) {
 			clearQueue();
 			resetWheelRuntimeState();
