@@ -753,6 +753,7 @@ beforeAll(async () => {
 		activeElement: body,
 		fullscreenElement: null,
 		elementsFromPoint: () => [],
+		querySelector: () => null,
 		querySelectorAll: () => [],
 		getElementsByTagName: () => [],
 		addEventListener: () => {},
@@ -790,6 +791,7 @@ beforeEach(() => {
 		activeElement: body,
 		fullscreenElement: null,
 		elementsFromPoint: () => [],
+		querySelector: () => null,
 		querySelectorAll: () => [],
 		getElementsByTagName: () => [],
 		addEventListener: () => {},
@@ -2498,29 +2500,17 @@ describe('smooth scroll keyboard', () => {
 		return event as unknown as KeyboardEvent;
 	}
 
-	// eff: Injects fake videos so hasVisiblePlayerVideo() can be tested.
-	// Each video is defined by its bounding rect; the DOM mock returns them
-	// via document.getElementsByTagName('video').
-	function setVideos(videos: Array<{
-		width: number;
-		height: number;
-		top?: number;
-		left?: number;
-	}>): void {
-		const fakes = videos.map((v) => ({
-			getBoundingClientRect: () => ({
-				width: v.width,
-				height: v.height,
-				top: v.top ?? 0,
-				left: v.left ?? 0,
-				right: (v.left ?? 0) + v.width,
-				bottom: (v.top ?? 0) + v.height,
-			}),
-		}));
+	// eff: Injects fake video presence so hasPlayerVideo() can be tested.
+	// setVideos(true) makes document.querySelector('video') return a fake
+	// element; setVideos(false) returns null (no video on page).
+	function setVideos(present: boolean): void {
 		const doc = globalThis.document as unknown as {
-			getElementsByTagName: (tag: string) => unknown[];
+			querySelector: (selector: string) => Element | null;
 		};
-		doc.getElementsByTagName = (tag: string) => (tag === 'video' ? fakes : []);
+		doc.querySelector = (selector: string) =>
+			selector === 'video' && present
+				? ({} as Element)
+				: null;
 	}
 
 	test('spacebar scrolls page smoothly', () => {
@@ -2537,15 +2527,14 @@ describe('smooth scroll keyboard', () => {
 		expect(fakeWindow.scrollY).toBeCloseTo(window.innerHeight * 0.9, 5);
 	});
 
-	test('spacebar yields to visible player-sized video', () => {
-		// A large video (covering >20% of viewport) means the user likely
-		// wants play/pause. HALO must not smooth-scroll, but MUST
-		// preventDefault to suppress browser native scroll. No stopPropagation
-		// — site listeners must fire to toggle playback.
+	test('spacebar yields on video page (DOM has <video>)', () => {
+		// A <video> element in the DOM means the user likely wants play/pause.
+		// HALO must not smooth-scroll, but MUST preventDefault to suppress
+		// browser native scroll. No stopPropagation — site listeners must fire
+		// to toggle playback.
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
-		// Viewport is 1440x900 = 1,296,000 px². 720x405 = 291,600 ≈ 22.5%.
-		setVideos([{ width: 720, height: 405, top: 100, left: 360 }]);
+		setVideos(true);
 		const event = keyEvent(' ');
 
 		onKeydown(event);
@@ -2555,24 +2544,10 @@ describe('smooth scroll keyboard', () => {
 		expect(frameCallbacks.size).toBe(0);
 	});
 
-	test('spacebar scrolls when video is thumbnail-sized', () => {
-		// Small preview thumbnails (<20% viewport) should not block scroll.
-		root.styleState.overflowY = 'auto';
-		body.styleState.overflowY = 'hidden';
-		// 200x120 = 24,000 ≈ 1.85% of viewport.
-		setVideos([{ width: 200, height: 120, top: 50, left: 50 }]);
-		const event = keyEvent(' ');
-
-		onKeydown(event);
-
-		expect(event.defaultPrevented).toBe(true);
-		expect(frameCallbacks.size).toBe(1);
-	});
-
 	test('spacebar scrolls when no video on page', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
-		setVideos([]);
+		setVideos(false);
 		const event = keyEvent(' ');
 
 		onKeydown(event);
@@ -2589,7 +2564,7 @@ describe('smooth scroll keyboard', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		root.scrollHeight = 20_000;
-		setVideos([{ width: 720, height: 405, top: 100, left: 360 }]);
+		setVideos(true);
 		// activeElement is body (not VIDEO) by default
 
 		const down = keyEvent('ArrowDown');
@@ -2604,7 +2579,7 @@ describe('smooth scroll keyboard', () => {
 		// HALO does nothing — no preventDefault, no stopPropagation, no scroll.
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
-		setVideos([{ width: 720, height: 405, top: 100, left: 360 }]);
+		setVideos(true);
 		const videoEl = element('VIDEO', body);
 		(globalThis.document as unknown as { activeElement: FakeElement }).activeElement = videoEl;
 
@@ -2622,7 +2597,7 @@ describe('smooth scroll keyboard', () => {
 		// Page keys don't control video and are needed for long-document paging.
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
-		setVideos([{ width: 720, height: 405, top: 100, left: 360 }]);
+		setVideos(true);
 
 		const pd = keyEvent('PageDown');
 		onKeydown(pd);
@@ -2724,7 +2699,7 @@ describe('smooth scroll keyboard', () => {
 		// listeners must fire (e.g. for non-video pages with custom handlers).
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
-		setVideos([]);
+		setVideos(false);
 		const event = keyEvent(' ');
 
 		onKeydown(event);
@@ -2738,7 +2713,7 @@ describe('smooth scroll keyboard', () => {
 		// (no site volume shortcut to block; let other listeners run).
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
-		setVideos([]);
+		setVideos(false);
 		const event = keyEvent('ArrowDown');
 
 		onKeydown(event);

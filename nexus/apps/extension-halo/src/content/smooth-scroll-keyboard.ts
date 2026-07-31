@@ -7,15 +7,20 @@ import { resetWheelRuntimeState, settings } from './smooth-scroll-state';
 // to prevent site volume shortcuts (YouTube/Bilibili) when the user wants to
 // scroll, while spacebar never stopPropagation so site play/pause still works.
 //
+// Video page detection: a page counts as a "video page" when a <video>
+// element exists in the DOM (regardless of viewport visibility). This is
+// reliable even after the user scrolls and the player leaves the viewport —
+// the <video> element stays in the DOM. YouTube/Bilibili home feeds use
+// <img> thumbnails (no <video> until hover-preview), so arrows/spacebar
+// scroll normally there.
+//
 // Yield strategy (per key):
-// - Spacebar: yield when a player-sized video is visible (user wants
-//   play/pause). preventDefault suppresses native scroll; no stopPropagation
-//   so site listeners still fire.
-// - Arrow keys: yield ONLY when <video> is the active element (user wants
-//   volume control via native HTML5 media keyboard). When video is NOT
-//   focused, arrows always scroll — even on video pages — so the user can
-//   scroll comments/feed. stopPropagation prevents site volume shortcuts
-//   from double-firing.
+// - Spacebar: yield on video pages (user wants play/pause). preventDefault
+//   suppresses native scroll; no stopPropagation so site listeners fire.
+// - Arrow keys: yield ONLY when <video> is the active element (native HTML5
+//   volume control). When video is NOT focused, arrows scroll — even on
+//   video pages — so the user can scroll comments/feed. stopPropagation
+//   prevents site volume shortcuts from double-firing.
 // - PageUp/PageDown: never yield (don't control video; needed for paging).
 const KEYS: Record<string, number> = {
 	'ArrowDown': 1, 'ArrowUp': -1,
@@ -23,46 +28,20 @@ const KEYS: Record<string, number> = {
 	' ': 0,
 };
 
-// Threshold: a video counts as a "player" (spacebar should yield to
-// play/pause) when its visible area covers at least 20% of the viewport.
-// This excludes preview thumbnails on home feeds.
-const VIDEO_VIEWPORT_RATIO = 0.2;
-
-// TTL cache for hasVisiblePlayerVideo: long-press key repeat fires at ~30Hz,
-// and re-running getElementsByTagName+getBoundingClientRect on every repeat
-// is wasteful. 500ms TTL is short enough to react to video load/unload and
-// long enough to cover a typical key repeat burst.
-const VIDEO_CACHE_TTL_MS = 500;
-let videoCacheResult = false;
-let videoCacheExpiry = 0;
-
-function hasVisiblePlayerVideo(): boolean {
-	const now = performance.now();
-	if (now < videoCacheExpiry) return videoCacheResult;
-	const videos = document.getElementsByTagName('video');
-	const viewportArea = window.innerWidth * window.innerHeight;
-	let result = false;
-	for (const video of videos) {
-		const rect = video.getBoundingClientRect();
-		const visibleWidth = Math.max(0, Math.min(rect.right, window.innerWidth) - Math.max(0, rect.left));
-		const visibleHeight = Math.max(0, Math.min(rect.bottom, window.innerHeight) - Math.max(0, rect.top));
-		const visibleArea = visibleWidth * visibleHeight;
-		if (visibleArea / viewportArea >= VIDEO_VIEWPORT_RATIO) {
-			result = true;
-			break;
-		}
-	}
-	videoCacheResult = result;
-	videoCacheExpiry = now + VIDEO_CACHE_TTL_MS;
-	return result;
+function hasPlayerVideo(): boolean {
+	// querySelector is O(1) short-circuit on first match and cheaper than
+	// getElementsByTagName+getBoundingClientRect. No TTL cache needed: DOM
+	// mutations between key repeats are rare and querySelector is fast.
+	return document.querySelector('video') !== null;
 }
 
-// Reset keyboard module runtime state (video cache). Called by
-// resetInputHandlers() in smooth-scroll-handlers.ts so tests and page
-// lifecycle events (pagehide/visibilitychange) clear the cache together.
+// Reset keyboard module runtime state. Called by resetInputHandlers() in
+// smooth-scroll-handlers.ts so tests and page lifecycle events
+// (pagehide/visibilitychange) clear any module-level state together.
 export function resetKeyboardRuntime(): void {
-	videoCacheResult = false;
-	videoCacheExpiry = 0;
+	// No-op placeholder: hasPlayerVideo() is stateless, but keeping this
+	// export preserves the resetInputHandlers() contract for future
+	// module-level state additions.
 }
 
 function isVideoFocused(): boolean {
@@ -77,6 +56,7 @@ export function onKeydown(e: KeyboardEvent): void {
 
 	const isSpacebar = e.key === ' ';
 	const isArrowKey = e.key === 'ArrowDown' || e.key === 'ArrowUp';
+	const onVideoPage = hasPlayerVideo();
 
 	if (
 		!settings.enabled ||
@@ -107,11 +87,11 @@ export function onKeydown(e: KeyboardEvent): void {
 		return;
 	}
 
-	// Spacebar + player-sized video visible: yield to site play/pause.
-	// preventDefault suppresses browser native scroll (some sites like
-	// YouTube don't preventDefault themselves). No stopPropagation — site
-	// listeners must fire to toggle playback.
-	if (isSpacebar && hasVisiblePlayerVideo()) {
+	// Spacebar on a video page: yield to site play/pause. preventDefault
+	// suppresses browser native scroll (some sites like YouTube don't
+	// preventDefault themselves). No stopPropagation — site listeners must
+	// fire to toggle playback.
+	if (isSpacebar && onVideoPage) {
 		e.preventDefault();
 		if (!e.repeat) {
 			clearQueue();
@@ -120,13 +100,14 @@ export function onKeydown(e: KeyboardEvent): void {
 		return;
 	}
 
-	// Arrow keys scrolling on a video page (video NOT focused): the user
-	// wants to scroll the page (comments, feed), not control volume.
-	// stopPropagation prevents site volume shortcuts (YouTube/Bilibili
-	// document-level listeners) from firing, so only HALO's scroll happens.
-	// Capture phase: HALO runs first, so stopPropagation actually blocks
-	// site bubble listeners.
-	if (isArrowKey && hasVisiblePlayerVideo()) {
+	// Arrow keys on a video page (video NOT focused): the user wants to
+	// scroll the page (comments, feed), not control volume. stopPropagation
+	// prevents site volume shortcuts (YouTube/Bilibili document-level
+	// listeners) from firing, so only HALO's scroll happens. Capture phase:
+	// HALO runs first, so stopPropagation actually blocks site bubble
+	// listeners. This also covers the case where the player has scrolled
+	// out of viewport — the <video> element is still in the DOM.
+	if (isArrowKey && onVideoPage) {
 		e.stopPropagation();
 	}
 
