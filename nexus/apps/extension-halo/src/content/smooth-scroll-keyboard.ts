@@ -10,9 +10,9 @@ import {
 //
 // A permanent window-bubble listener cannot remain last: an SPA can register
 // another listener after HALO. The permanent capture listener below therefore
-// appends one per-event window-bubble finalizer. That finalizer is newer than
-// every listener that existed when capture ran, so ordinary page handlers run
-// before HALO regardless of their original registration time.
+// appends per-event finalizers after all handlers that already exist. Ordinary
+// propagation finishes at window; a document fallback handles a site that
+// deliberately stops propagation before the event reaches window.
 const KEYS: Record<string, number> = {
 	'ArrowDown': 1, 'ArrowUp': -1,
 	'PageDown': 0, 'PageUp': 0,
@@ -171,15 +171,31 @@ export function onKeydownCapture(e: KeyboardEvent): void {
 
 	const capture = captureKeyboardState(e);
 	let finalized = false;
+
+	const cleanup = (): void => {
+		document.removeEventListener('keydown', finalizeAtDocument);
+		window.removeEventListener('keydown', finalizeAtWindow);
+	};
 	const finalize = (candidate: KeyboardEvent): void => {
-		if (candidate !== e) return;
+		if (finalized || candidate !== e) return;
 		finalized = true;
-		window.removeEventListener('keydown', finalize);
+		cleanup();
 		onKeydown(candidate, capture);
 	};
-	window.addEventListener('keydown', finalize);
+	const finalizeAtDocument = (candidate: KeyboardEvent): void => {
+		// stopPropagation still permits later listeners on the same target. If a
+		// site intentionally prevents the event from reaching window, document is
+		// the last safe point where HALO can suppress the browser default action.
+		if (candidate === e && candidate.cancelBubble) finalize(candidate);
+	};
+	const finalizeAtWindow = (candidate: KeyboardEvent): void => {
+		finalize(candidate);
+	};
+
+	document.addEventListener('keydown', finalizeAtDocument);
+	window.addEventListener('keydown', finalizeAtWindow);
 	queueMicrotask(() => {
-		if (!finalized) window.removeEventListener('keydown', finalize);
+		if (!finalized) cleanup();
 	});
 }
 
