@@ -16,7 +16,8 @@
 				"$TURBO_ROOT$/tsconfig.base.json"
 			],
 			"outputs": [
-				"dist/**"
+				"dist/**",
+				"*.tsbuildinfo"
 			]
 		},
 		"dev": {
