@@ -216,9 +216,17 @@ let root: FakeElement;
 let fakeWindow: FakeWindow;
 let computedStyleReads = 0;
 let onWheel: typeof import('../src/content/smooth-scroll-handlers').onWheel;
+let onKeydown: typeof import('../src/content/smooth-scroll-handlers').onKeydown;
 let onMouseDown: typeof import('../src/content/smooth-scroll-handlers').onMouseDown;
 let onMouseMove: typeof import('../src/content/smooth-scroll-handlers').onMouseMove;
 let resetInputHandlers: typeof import('../src/content/smooth-scroll-handlers').resetInputHandlers;
+
+// eff: Injectable video fixtures for hasVisibleVideo() so keyboard tests can
+// simulate a visible, hidden, or video-free page without touching FakeElement.
+interface FakeVideo {
+	getBoundingClientRect(): { width: number; height: number; top: number; bottom: number };
+}
+let fakeVideos: FakeVideo[] = [];
 
 function replaceGlobal(name: string, value: unknown): void {
 	if (!originalDescriptors.has(name)) {
@@ -751,11 +759,13 @@ beforeAll(async () => {
 		scrollingElement: root,
 		fullscreenElement: null,
 		elementsFromPoint: () => [],
+		querySelectorAll: (selector: string) =>
+			selector === 'video' ? fakeVideos : [],
 		addEventListener: () => {},
 		removeEventListener: () => {},
 	});
 
-	({ onMouseDown, onMouseMove, onWheel, resetInputHandlers } =
+	({ onMouseDown, onMouseMove, onWheel, onKeydown, resetInputHandlers } =
 		await import('../src/content/smooth-scroll-handlers'));
 });
 
@@ -775,6 +785,7 @@ beforeEach(() => {
 	closestCalls = 0;
 	matchesCalls = 0;
 	reducedMotionMediaQuery.matches = false;
+	fakeVideos = [];
 	fakeWindow = new FakeWindow();
 	root = element('HTML', null, { scrollHeight: 3000, clientHeight: 900 });
 	body = element('BODY', root, { scrollHeight: 3000, clientHeight: 900 });
@@ -785,6 +796,8 @@ beforeEach(() => {
 		scrollingElement: root,
 		fullscreenElement: null,
 		elementsFromPoint: () => [],
+		querySelectorAll: (selector: string) =>
+			selector === 'video' ? fakeVideos : [],
 		addEventListener: () => {},
 		removeEventListener: () => {},
 	});
@@ -2461,6 +2474,114 @@ describe('smooth scroll input admission', () => {
 		expect(frameCallbacks.size).toBe(0);
 		expect(maxWritesPerFrame).toBeLessThanOrEqual(1);
 		expect(scrollTop).toBeCloseTo(200, 5);
+	});
+});
+
+describe('smooth scroll keyboard spacebar yield', () => {
+	// eff: Builds a trusted KeyboardEvent fixture for the given key. preventDefault
+	// flips defaultPrevented so the handler's admission decision is observable.
+	function keyEvent(key: string, extras: Partial<{
+		shiftKey: boolean;
+		ctrlKey: boolean;
+		altKey: boolean;
+		metaKey: boolean;
+	}> = {}): KeyboardEvent {
+		const event = {
+			key,
+			isTrusted: true,
+			defaultPrevented: false,
+			shiftKey: false,
+			ctrlKey: false,
+			altKey: false,
+			metaKey: false,
+			...extras,
+			preventDefault() { (this as { defaultPrevented: boolean }).defaultPrevented = true; },
+		};
+		return event as unknown as KeyboardEvent;
+	}
+
+	test('yields the spacebar to a visible video instead of scrolling', () => {
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+		fakeVideos = [{
+			getBoundingClientRect: () => ({
+				width: 640, height: 360, top: 100, bottom: 460,
+			}),
+		}];
+		const event = keyEvent(' ');
+
+		onKeydown(event);
+
+		expect(event.defaultPrevented).toBe(false);
+		expect(frameCallbacks.size).toBe(0);
+	});
+
+	test('scrolls the page on spacebar when no video is present', () => {
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+		const event = keyEvent(' ');
+		const start = performance.now();
+
+		onKeydown(event);
+
+		expect(event.defaultPrevented).toBe(true);
+		expect(frameCallbacks.size).toBe(1);
+		runUntilIdle(start + 16);
+		expect(fakeWindow.scrollY).toBeCloseTo(window.innerHeight * 0.9, 5);
+	});
+
+	test('scrolls the page on spacebar when the video is too small to be a media target', () => {
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+		fakeVideos = [{
+			getBoundingClientRect: () => ({
+				width: 40, height: 30, top: 100, bottom: 130,
+			}),
+		}];
+		const event = keyEvent(' ');
+		const start = performance.now();
+
+		onKeydown(event);
+
+		expect(event.defaultPrevented).toBe(true);
+		expect(frameCallbacks.size).toBe(1);
+		runUntilIdle(start + 16);
+	});
+
+	test('scrolls the page on spacebar when the video is scrolled out of the viewport', () => {
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+		fakeVideos = [{
+			getBoundingClientRect: () => ({
+				width: 640, height: 360, top: -400, bottom: -40,
+			}),
+		}];
+		const event = keyEvent(' ');
+		const start = performance.now();
+
+		onKeydown(event);
+
+		expect(event.defaultPrevented).toBe(true);
+		expect(frameCallbacks.size).toBe(1);
+		runUntilIdle(start + 16);
+	});
+
+	test('keeps arrow-key scrolling active on a page with a visible video', () => {
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+		fakeVideos = [{
+			getBoundingClientRect: () => ({
+				width: 640, height: 360, top: 100, bottom: 460,
+			}),
+		}];
+		const event = keyEvent('ArrowDown');
+		const start = performance.now();
+
+		onKeydown(event);
+
+		expect(event.defaultPrevented).toBe(true);
+		expect(frameCallbacks.size).toBe(1);
+		runUntilIdle(start + 16);
 	});
 });
 

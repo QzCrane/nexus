@@ -8,6 +8,26 @@ const KEYS: Record<string, number> = {
 	'PageDown': 0, 'PageUp': 0, ' ': 0
 };
 
+// eff: Detects whether the viewport currently shows a video large enough to be a
+// media target. When true, the spacebar is yielded to the browser/site so its
+// native play/pause handling runs instead of HALO scrolling the page.
+function hasVisibleVideo(): boolean {
+	const videos = document.querySelectorAll('video');
+	if (videos.length === 0) return false;
+	for (let i = 0; i < videos.length; i++) {
+		const rect = (videos[i] as HTMLElement).getBoundingClientRect();
+		if (
+			rect.width > 50 &&
+			rect.height > 50 &&
+			rect.top < window.innerHeight &&
+			rect.bottom > 0
+		) {
+			return true;
+		}
+	}
+	return false;
+}
+
 export function onKeydown(e: KeyboardEvent): void {
 	if (!e.isTrusted) return;
 	const keyFactor = KEYS[e.key];
@@ -23,6 +43,15 @@ export function onKeydown(e: KeyboardEvent): void {
 		document.fullscreenElement ||
 		(settings.respectReducedMotion && prefersReducedMotion())
 	) {
+		clearQueue();
+		resetWheelRuntimeState();
+		return;
+	}
+
+	// Yield spacebar to the page's video play/pause handling when a visible
+	// video is on screen. Browser default and site keydown handlers will toggle
+	// playback; HALO must not preventDefault or scroll in this case.
+	if (e.key === ' ' && hasVisibleVideo()) {
 		clearQueue();
 		resetWheelRuntimeState();
 		return;

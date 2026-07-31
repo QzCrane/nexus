@@ -58,7 +58,7 @@ body {
 	},
 	blockSpace: {
 		name: 'Block Space Scroll',
-		description: 'Prevent spacebar from scrolling (video control works)',
+		description: 'Manually toggles video play/pause on spacebar (scroll blocking is now HALO default)',
 		type: 'javascript' as ScriptType,
 		code: `// Block space scroll + manually control video play/pause
 (function() {
