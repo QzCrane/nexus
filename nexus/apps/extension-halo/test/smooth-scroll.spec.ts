@@ -2502,14 +2502,17 @@ describe('smooth scroll keyboard', () => {
 	// Video pages: spacebar/arrows yield to site via DOM-state video check.
 	// Non-video pages: e.defaultPrevented gates admission. No stopPropagation.
 
-	function withVisibleVideo(fn: () => void): void {
+	function withVisibleVideo(fn: () => void, opts: { width?: number; height?: number } = {}): void {
 		const doc = document as unknown as {
 			getElementsByTagName: (tag: string) => unknown[];
 		};
 		const original = doc.getElementsByTagName;
 		const videoEl = element('VIDEO');
-		videoEl.clientWidth = 640;
-		videoEl.clientHeight = 360;
+		// Default: main player (640x360 on 1440x900 viewport → 44% width,
+		// 40% height → below 50% threshold). For player tests use large
+		// dimensions that exceed the 50% viewport ratio.
+		videoEl.clientWidth = opts.width ?? 800;
+		videoEl.clientHeight = opts.height ?? 500;
 		doc.getElementsByTagName = (tag: string) =>
 			tag === 'video' ? [videoEl] : original(tag);
 		try {
@@ -2611,6 +2614,32 @@ describe('smooth scroll keyboard', () => {
 			expect(pd.defaultPrevented).toBe(true);
 			expect(frameCallbacks.size).toBe(1);
 		});
+	});
+
+	test('small preview video does NOT yield (YouTube homepage hover preview)', () => {
+		// Preview video (320x180) on 1440x900 viewport → 22% width, 20% height
+		// → below 50% threshold → HALO scrolls normally.
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+
+		withVisibleVideo(() => {
+			const event = keyEvent(' ');
+			onKeydown(event);
+			expect(event.defaultPrevented).toBe(true);
+			expect(frameCallbacks.size).toBe(1);
+		}, { width: 320, height: 180 });
+	});
+
+	test('arrow keys scroll when small preview video is present', () => {
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+
+		withVisibleVideo(() => {
+			const event = keyEvent('ArrowDown');
+			onKeydown(event);
+			expect(event.defaultPrevented).toBe(true);
+			expect(frameCallbacks.size).toBe(1);
+		}, { width: 320, height: 180 });
 	});
 
 	test('PageUp/PageDown scroll when site did not preventDefault', () => {

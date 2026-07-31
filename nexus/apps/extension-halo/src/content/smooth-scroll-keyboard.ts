@@ -42,17 +42,26 @@ const KEY_REPEAT_MIN_INTERVAL_MS = 80;
 let lastKeyScrollTime = 0;
 let lastKeyScrollDirection = 0;
 
-// Visible-size threshold: excludes tiny embedded videos (ads, previews)
-// while catching real video players (YouTube, Bilibili, etc.).
-const VIDEO_MIN_WIDTH = 200;
-const VIDEO_MIN_HEIGHT = 100;
+// A video counts as a "main player" when it occupies a significant fraction
+// of the viewport. This distinguishes real video pages (YouTube/Bilibili
+// watch pages, where space/arrows belong to the player) from thumbnail
+// preview videos that appear on hover (YouTube homepage previews, which
+// should NOT steal keyboard scrolling).
+// 50% viewport coverage catches player videos (typically 60-100% of
+// viewport) while excluding preview videos (typically <25% of viewport).
+const VIDEO_VIEWPORT_RATIO = 0.5;
 
-function hasVisibleVideo(): boolean {
+function hasMainVideoPlayer(): boolean {
 	if (typeof document === 'undefined') return false;
 	const videos = document.getElementsByTagName('video');
+	const vw = window.innerWidth;
+	const vh = window.innerHeight;
 	for (let i = 0; i < videos.length; i++) {
 		const v = videos[i] as HTMLElement;
-		if (v.clientWidth >= VIDEO_MIN_WIDTH && v.clientHeight >= VIDEO_MIN_HEIGHT) {
+		if (
+			v.clientWidth >= vw * VIDEO_VIEWPORT_RATIO ||
+			v.clientHeight >= vh * VIDEO_VIEWPORT_RATIO
+		) {
 			return true;
 		}
 	}
@@ -96,7 +105,7 @@ export function onKeydown(e: KeyboardEvent): void {
 	// volume, seek). HALO yields completely. PageUp/PageDown are never
 	// handled by video sites, so HALO always processes them.
 	const isVideoShortcutKey = e.key === ' ' || e.key === 'ArrowDown' || e.key === 'ArrowUp';
-	if (isVideoShortcutKey && hasVisibleVideo()) {
+	if (isVideoShortcutKey && hasMainVideoPlayer()) {
 		if (!e.repeat) {
 			clearQueue();
 			resetWheelRuntimeState();
