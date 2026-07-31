@@ -20,7 +20,9 @@ const KEYS: Record<string, number> = {
 };
 
 // Keyboard repeat frequency is an OS preference, not user scroll intent.
-// Admit one canonical stream independent of 20/30/60 Hz repeat rates.
+// The first repeat preserves the operating system's initial hold delay; later
+// repeats advance on one canonical clock, compensating both dense and sparse
+// repeat delivery without manufacturing input before the OS declares a hold.
 const ARROW_REPEAT_INTERVAL_MS = 80;
 const PAGE_REPEAT_MIN_INTERVAL_MS = 180;
 const PAGE_REPEAT_MAX_INTERVAL_MS = 320;
@@ -43,7 +45,7 @@ interface KeyboardStream {
 	direction: number;
 	key: string;
 	lastAcceptedAt: number;
-	startedAt: number;
+	repeatStartedAt: number | null;
 	target: Element | Window;
 }
 
@@ -120,8 +122,9 @@ function yieldKeyboard(e: KeyboardEvent, siteChangedMedia = false): void {
 }
 
 function repeatResponse(timestamp: number): number {
-	if (!keyboardStream) return 1;
-	const heldFor = Math.max(0, timestamp - keyboardStream.startedAt);
+	const repeatStartedAt = keyboardStream?.repeatStartedAt;
+	if (repeatStartedAt === null || repeatStartedAt === undefined) return 1;
+	const heldFor = Math.max(0, timestamp - repeatStartedAt);
 	return Math.min(
 		settings.accelerationMax,
 		1 + Math.floor(heldFor / KEYBOARD_ACCELERATION_STEP_MS) *
@@ -133,17 +136,22 @@ function admitRepeat(
 	e: KeyboardEvent,
 	timestamp: number,
 	interval: number,
-): boolean {
-	if (!e.repeat || !keyboardStream) return true;
+): number {
+	if (!e.repeat || !keyboardStream) return 1;
+	if (keyboardStream.repeatStartedAt === null) {
+		keyboardStream.repeatStartedAt = timestamp;
+		keyboardStream.lastAcceptedAt = timestamp;
+		return 1;
+	}
+
 	const elapsed = timestamp - keyboardStream.lastAcceptedAt;
 	if (elapsed < interval) {
 		e.preventDefault();
-		return false;
+		return 0;
 	}
-	// Advance on the canonical cadence rather than assigning timestamp. This
-	// preserves the long-run rate across different OS repeat frequencies.
-	keyboardStream.lastAcceptedAt += Math.floor(elapsed / interval) * interval;
-	return true;
+	const canonicalSteps = Math.floor(elapsed / interval);
+	keyboardStream.lastAcceptedAt += canonicalSteps * interval;
+	return canonicalSteps;
 }
 
 function shouldAlwaysYield(): boolean {
@@ -262,6 +270,7 @@ export function onKeydown(
 		keyboardStream.key === e.key &&
 		keyboardStream.target === route.target &&
 		keyboardStream.direction === direction;
+	let admittedSteps = 1;
 
 	if (!sameStream) {
 		// A fresh keyboard command owns a new physical stream. Clear wheel or
@@ -272,16 +281,20 @@ export function onKeydown(
 			direction,
 			key: e.key,
 			lastAcceptedAt: timestamp,
-			startedAt: timestamp,
+			repeatStartedAt: e.repeat ? timestamp : null,
 			target: route.target,
 		};
 		resetWheelRuntimeState();
-	} else if (!admitRepeat(
-		e,
-		timestamp,
-		isDiscreteJump ? pageRepeatInterval() : ARROW_REPEAT_INTERVAL_MS,
-	)) {
-		return;
+	} else {
+		const canonicalSteps = admitRepeat(
+			e,
+			timestamp,
+			isDiscreteJump ? pageRepeatInterval() : ARROW_REPEAT_INTERVAL_MS,
+		);
+		if (!canonicalSteps) return;
+		// Page-sized keys remain one discrete command per admitted browser event;
+		// arrow holds compensate sparse delivery to preserve their physical rate.
+		admittedSteps = isDiscreteJump ? 1 : canonicalSteps;
 	}
 
 	const responseMultiplier = isDiscreteJump || !e.repeat
@@ -290,7 +303,7 @@ export function onKeydown(
 	const accepted = scrollTo(
 		route.target,
 		0,
-		dy,
+		dy * admittedSteps,
 		route.admission,
 		'coarse',
 		timestamp,
