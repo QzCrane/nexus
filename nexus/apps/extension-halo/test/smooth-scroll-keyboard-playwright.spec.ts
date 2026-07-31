@@ -82,6 +82,7 @@ const FIXTURE_HTML = `<!doctype html>
 						if (event.key !== ' ') return;
 						spaceClaims++;
 						event.preventDefault();
+						event.stopPropagation();
 						queueMicrotask(() => {
 							lastSpaceDefaultPrevented = event.defaultPrevented;
 						});
