@@ -750,6 +750,7 @@ beforeAll(async () => {
 		body,
 		documentElement: root,
 		scrollingElement: root,
+		activeElement: body,
 		fullscreenElement: null,
 		elementsFromPoint: () => [],
 		querySelectorAll: () => [],
@@ -786,6 +787,7 @@ beforeEach(() => {
 		body,
 		documentElement: root,
 		scrollingElement: root,
+		activeElement: body,
 		fullscreenElement: null,
 		elementsFromPoint: () => [],
 		querySelectorAll: () => [],
@@ -2538,10 +2540,8 @@ describe('smooth scroll keyboard', () => {
 	test('spacebar yields to visible player-sized video', () => {
 		// A large video (covering >20% of viewport) means the user likely
 		// wants play/pause. HALO must not smooth-scroll, but MUST
-		// preventDefault to suppress browser native scroll — some sites
-		// (e.g. YouTube) handle shortcuts without preventDefault, so without
-		// HALO's preventDefault the browser would also natively scroll,
-		// causing double-action (play/pause + scroll).
+		// preventDefault to suppress browser native scroll. No stopPropagation
+		// — site listeners must fire to toggle playback.
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		// Viewport is 1440x900 = 1,296,000 px². 720x405 = 291,600 ≈ 22.5%.
@@ -2581,24 +2581,41 @@ describe('smooth scroll keyboard', () => {
 		expect(frameCallbacks.size).toBe(1);
 	});
 
-	test('arrow keys yield to visible player-sized video', () => {
-		// Native HTML5 media keyboard: arrows control volume on focused video.
-		// HALO must not smooth-scroll, but MUST preventDefault to suppress
-		// browser native scroll (same rationale as spacebar yield above).
+	test('arrow keys scroll on video page when video NOT focused', () => {
+		// User wants to scroll comments/feed on a video page. HALO scrolls
+		// and stopPropagation to prevent site volume shortcuts (YouTube/
+		// Bilibili document listeners) from firing. Capture phase: HALO
+		// runs first, so stopPropagation actually blocks site listeners.
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
+		root.scrollHeight = 20_000;
 		setVideos([{ width: 720, height: 405, top: 100, left: 360 }]);
+		// activeElement is body (not VIDEO) by default
 
 		const down = keyEvent('ArrowDown');
 		onKeydown(down);
 		expect(down.defaultPrevented).toBe(true);
+		expect((down as unknown as { propagationStopped: boolean }).propagationStopped).toBe(true);
+		expect(frameCallbacks.size).toBe(1);
+	});
+
+	test('arrow keys yield when video IS focused', () => {
+		// Native HTML5 media keyboard: arrows control volume on focused video.
+		// HALO does nothing — no preventDefault, no stopPropagation, no scroll.
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+		setVideos([{ width: 720, height: 405, top: 100, left: 360 }]);
+		const videoEl = element('VIDEO', body);
+		(globalThis.document as unknown as { activeElement: FakeElement }).activeElement = videoEl;
+
+		const down = keyEvent('ArrowDown');
+		onKeydown(down);
+		expect(down.defaultPrevented).toBe(false);
 		expect((down as unknown as { propagationStopped: boolean }).propagationStopped).toBe(false);
 		expect(frameCallbacks.size).toBe(0);
 
-		const up = keyEvent('ArrowUp');
-		onKeydown(up);
-		expect(up.defaultPrevented).toBe(true);
-		expect(frameCallbacks.size).toBe(0);
+		// Restore activeElement for subsequent tests
+		(globalThis.document as unknown as { activeElement: FakeElement }).activeElement = body;
 	});
 
 	test('PageUp/PageDown do not yield to video', () => {
@@ -2702,11 +2719,12 @@ describe('smooth scroll keyboard', () => {
 	});
 
 	test('spacebar preventDefault when HALO scrolls, no stopPropagation', () => {
-		// Bubble phase: site listeners already ran. HALO only preventDefault
-		// to suppress native instant scroll. No stopPropagation (not needed,
-		// and would block other bubble listeners).
+		// Capture phase: HALO runs before site listeners. preventDefault
+		// suppresses native instant scroll. No stopPropagation — site
+		// listeners must fire (e.g. for non-video pages with custom handlers).
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
+		setVideos([]);
 		const event = keyEvent(' ');
 
 		onKeydown(event);
@@ -2715,9 +2733,12 @@ describe('smooth scroll keyboard', () => {
 		expect((event as unknown as { propagationStopped: boolean }).propagationStopped).toBe(false);
 	});
 
-	test('arrow key preventDefault when HALO scrolls, no stopPropagation', () => {
+	test('arrow key preventDefault when HALO scrolls, no stopPropagation on non-video page', () => {
+		// No video on page: HALO scrolls, preventDefault. No stopPropagation
+		// (no site volume shortcut to block; let other listeners run).
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
+		setVideos([]);
 		const event = keyEvent('ArrowDown');
 
 		onKeydown(event);

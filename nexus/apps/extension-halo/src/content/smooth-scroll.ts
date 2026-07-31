@@ -31,12 +31,16 @@ const onVisibilityChange = (): void => {
 const attachListeners = (): void => {
 	if (listenersAttached) return;
 	listenersAttached = true;
-	// Bubble phase for all input: site-owned controls and media keyboard
-	// handlers (YouTube shortcuts, Bilibili player) run first. HALO only
-	// acts when the site did not claim the event (e.defaultPrevented is false).
-	// This preserves site shortcuts without stopPropagation side effects.
+	// Wheel: bubble phase — site-owned scroll containers and native overscroll
+	// get first refusal via e.defaultPrevented.
+	// Keydown: CAPTURE phase — HALO runs BEFORE site listeners. This lets HALO
+	// stopPropagation on arrow keys (when video is NOT focused) to prevent
+	// site volume shortcuts (YouTube/Bilibili) from firing, so arrows only
+	// scroll. Spacebar does NOT stopPropagation, so site play/pause still works.
+	// Arrow keys when video IS focused: HALO returns early (no stopPropagation,
+	// no preventDefault), letting site/native volume control work.
 	window.addEventListener('wheel', onWheel, { passive: false });
-	window.addEventListener('keydown', onKeydown);
+	window.addEventListener('keydown', onKeydown, true);
 	window.addEventListener('mousedown', onMouseDown);
 	window.addEventListener('pagehide', resetDocumentRuntime);
 	document.addEventListener('visibilitychange', onVisibilityChange);
@@ -46,7 +50,7 @@ const detachListeners = (): void => {
 	if (!listenersAttached) return;
 	listenersAttached = false;
 	window.removeEventListener('wheel', onWheel);
-	window.removeEventListener('keydown', onKeydown);
+	window.removeEventListener('keydown', onKeydown, true);
 	window.removeEventListener('mousedown', onMouseDown);
 	window.removeEventListener('pagehide', resetDocumentRuntime);
 	document.removeEventListener('visibilitychange', onVisibilityChange);
