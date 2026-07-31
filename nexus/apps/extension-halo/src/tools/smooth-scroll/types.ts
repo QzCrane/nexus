@@ -8,7 +8,7 @@ export interface ScrollSettings {
 	accelerationMax: number; // response-gain multiplier, never distance, default 3
 	accelerationDelta: number; // ms between events, default 50
 	pulseScale: number; // bounded coarse-response intensity, default 4
-	arrowKeyStep: number; // px, default 200
+	arrowKeyStep: number; // px, default 300 (matches stepSize for parity with mouse wheel)
 	// Input sources
 	mouseWheel: boolean;
 	keyboard: boolean;
@@ -30,7 +30,7 @@ export const DEFAULT_SETTINGS: ScrollSettings = {
 	accelerationMax: 3,
 	accelerationDelta: 50,
 	pulseScale: 4,
-	arrowKeyStep: 200,
+	arrowKeyStep: 300,
 	mouseWheel: true,
 	keyboard: true,
 	touchpad: true,
@@ -96,7 +96,7 @@ export function normalizeScrollSettings(value: unknown): ScrollSettings {
 		accelerationMax: numberValue(input.accelerationMax, DEFAULT_SETTINGS.accelerationMax, 1, 10),
 		accelerationDelta: numberValue(input.accelerationDelta, DEFAULT_SETTINGS.accelerationDelta, 10, 300),
 		pulseScale: numberValue(input.pulseScale, DEFAULT_SETTINGS.pulseScale, 1, 10),
-		arrowKeyStep: numberValue(input.arrowKeyStep, DEFAULT_SETTINGS.arrowKeyStep, 10, 200),
+		arrowKeyStep: numberValue(input.arrowKeyStep, DEFAULT_SETTINGS.arrowKeyStep, 10, 500),
 		mouseWheel: booleanValue(input.mouseWheel, DEFAULT_SETTINGS.mouseWheel),
 		keyboard: booleanValue(input.keyboard, DEFAULT_SETTINGS.keyboard),
 		touchpad: booleanValue(input.touchpad, DEFAULT_SETTINGS.touchpad),

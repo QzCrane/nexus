@@ -2537,8 +2537,11 @@ describe('smooth scroll keyboard', () => {
 
 	test('spacebar yields to visible player-sized video', () => {
 		// A large video (covering >20% of viewport) means the user likely
-		// wants play/pause. HALO must not scroll, preventDefault, or
-		// stopPropagation — let the site handle it.
+		// wants play/pause. HALO must not smooth-scroll, but MUST
+		// preventDefault to suppress browser native scroll — some sites
+		// (e.g. YouTube) handle shortcuts without preventDefault, so without
+		// HALO's preventDefault the browser would also natively scroll,
+		// causing double-action (play/pause + scroll).
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		// Viewport is 1440x900 = 1,296,000 px². 720x405 = 291,600 ≈ 22.5%.
@@ -2547,7 +2550,7 @@ describe('smooth scroll keyboard', () => {
 
 		onKeydown(event);
 
-		expect(event.defaultPrevented).toBe(false);
+		expect(event.defaultPrevented).toBe(true);
 		expect((event as unknown as { propagationStopped: boolean }).propagationStopped).toBe(false);
 		expect(frameCallbacks.size).toBe(0);
 	});
@@ -2580,20 +2583,21 @@ describe('smooth scroll keyboard', () => {
 
 	test('arrow keys yield to visible player-sized video', () => {
 		// Native HTML5 media keyboard: arrows control volume on focused video.
-		// HALO must yield so site/native volume control works.
+		// HALO must not smooth-scroll, but MUST preventDefault to suppress
+		// browser native scroll (same rationale as spacebar yield above).
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		setVideos([{ width: 720, height: 405, top: 100, left: 360 }]);
 
 		const down = keyEvent('ArrowDown');
 		onKeydown(down);
-		expect(down.defaultPrevented).toBe(false);
+		expect(down.defaultPrevented).toBe(true);
 		expect((down as unknown as { propagationStopped: boolean }).propagationStopped).toBe(false);
 		expect(frameCallbacks.size).toBe(0);
 
 		const up = keyEvent('ArrowUp');
 		onKeydown(up);
-		expect(up.defaultPrevented).toBe(false);
+		expect(up.defaultPrevented).toBe(true);
 		expect(frameCallbacks.size).toBe(0);
 	});
 
@@ -2609,19 +2613,16 @@ describe('smooth scroll keyboard', () => {
 		expect(frameCallbacks.size).toBe(1);
 	});
 
-	test('spacebar scrolls even when site already preventDefault', () => {
-		// In capture phase HALO runs BEFORE site listeners, so site-level
-		// preventDefault is not yet set. This test now verifies that an
-		// earlier capture listener's preventDefault (e.g. another extension)
-		// is respected: HALO yields.
+	test('spacebar yields when site already preventDefault', () => {
+		// Bubble phase: site listener ran first and preventDefault'd (e.g.
+		// YouTube shortcut, feed pagination). HALO respects it: no scroll.
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		const event = keyEvent(' ');
-		event.preventDefault(); // earlier capture listener claimed it
+		event.preventDefault(); // site claimed it
 
 		onKeydown(event);
 
-		// HALO respects defaultPrevented in capture phase: no scroll animation.
 		expect(frameCallbacks.size).toBe(0);
 	});
 
@@ -2662,7 +2663,8 @@ describe('smooth scroll keyboard', () => {
 	test('long-press reaches high velocity through repeat accumulation', () => {
 		// Simulate 1 second of long-press: 30 repeat events at ~33ms intervals
 		// with rAF frames between. The scroll position should advance
-		// significantly more than a single press (arrowKeyStep=200).
+		// significantly more than a single press (arrowKeyStep=300, plus
+		// keyboard acceleration ramps responseMultiplier up to accelerationMax).
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		root.scrollHeight = 50_000;
@@ -2676,8 +2678,9 @@ describe('smooth scroll keyboard', () => {
 		}
 		runUntilIdle(time + 500);
 
-		// Single press moves ~200px; 30 repeats must move substantially more.
-		expect(fakeWindow.scrollY).toBeGreaterThan(2_000);
+		// Single press moves ~300px; 30 repeats with acceleration must move
+		// substantially more — matching accelerated mouse wheel feel.
+		expect(fakeWindow.scrollY).toBeGreaterThan(3_000);
 	});
 
 	test('first press clears stale queue, repeat does not', () => {
@@ -2697,9 +2700,10 @@ describe('smooth scroll keyboard', () => {
 		expect(frameCallbacks.size).toBe(1);
 	});
 
-	test('spacebar stops propagation when HALO scrolls', () => {
-		// HALO scrolls on spacebar in capture phase: stopPropagation prevents
-		// site listeners (e.g. video play/pause) from seeing the event.
+	test('spacebar preventDefault when HALO scrolls, no stopPropagation', () => {
+		// Bubble phase: site listeners already ran. HALO only preventDefault
+		// to suppress native instant scroll. No stopPropagation (not needed,
+		// and would block other bubble listeners).
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		const event = keyEvent(' ');
@@ -2707,11 +2711,10 @@ describe('smooth scroll keyboard', () => {
 		onKeydown(event);
 
 		expect(event.defaultPrevented).toBe(true);
-		// propagationStopped is set by stopPropagation() in the fake event.
-		expect((event as unknown as { propagationStopped?: boolean }).propagationStopped).toBe(true);
+		expect((event as unknown as { propagationStopped: boolean }).propagationStopped).toBe(false);
 	});
 
-	test('arrow key stops propagation when HALO scrolls', () => {
+	test('arrow key preventDefault when HALO scrolls, no stopPropagation', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		const event = keyEvent('ArrowDown');
@@ -2719,10 +2722,10 @@ describe('smooth scroll keyboard', () => {
 		onKeydown(event);
 
 		expect(event.defaultPrevented).toBe(true);
-		expect((event as unknown as { propagationStopped?: boolean }).propagationStopped).toBe(true);
+		expect((event as unknown as { propagationStopped: boolean }).propagationStopped).toBe(false);
 	});
 
-	test('does not stopPropagation when no animatable target', () => {
+	test('does not preventDefault when no animatable target', () => {
 		// No scrollable target: HALO leaves the event alone for site/native.
 		root.styleState.overflowY = 'hidden';
 		body.styleState.overflowY = 'hidden';

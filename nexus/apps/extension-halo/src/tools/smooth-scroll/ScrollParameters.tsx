@@ -48,7 +48,7 @@ export const ScrollParameters: React.FC<ScrollParametersProps> = ({ settings, up
 
 				<div style={styles.row}>
 					<div><div style={styles.label}>{t('smoothScroll.arrowKeyStep')}</div><div style={styles.sublabel}>{t('smoothScroll.units.px')}</div></div>
-					<input type="number" value={settings.arrowKeyStep} onChange={(e) => updateSetting('arrowKeyStep', parseInt(e.target.value, 10) || 50)} style={styles.input} disabled={!settings.enabled} min={10} max={200} />
+					<input type="number" value={settings.arrowKeyStep} onChange={(e) => updateSetting('arrowKeyStep', parseInt(e.target.value, 10) || 50)} style={styles.input} disabled={!settings.enabled} min={10} max={500} />
 				</div>
 
 				<div style={styles.row}>
