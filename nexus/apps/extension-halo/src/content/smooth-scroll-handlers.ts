@@ -91,9 +91,12 @@ export function onWheel(e: WheelEvent): void {
 		return;
 	}
 	if (route.kind === 'blocked') {
+		// Containment boundary: prevent native scroll bleed but do NOT
+		// clearQueue — a live animation on an outer target (e.g. window)
+		// should continue smoothly. Only reset wheel input state.
 		e.preventDefault();
 		e.stopPropagation();
-		yieldWheelToNative();
+		resetWheelRuntimeState();
 		return;
 	}
 	// The route already canonicalizes viewport ownership in this call stack.

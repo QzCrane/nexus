@@ -2467,7 +2467,7 @@ describe('smooth scroll input admission', () => {
 	});
 });
 
-describe('smooth scroll keyboard spacebar', () => {
+describe('smooth scroll keyboard', () => {
 	// eff: Builds a trusted KeyboardEvent fixture for the given key. preventDefault
 	// flips defaultPrevented so the handler's admission decision is observable.
 	function keyEvent(key: string, extras: Partial<{
@@ -2475,6 +2475,7 @@ describe('smooth scroll keyboard spacebar', () => {
 		ctrlKey: boolean;
 		altKey: boolean;
 		metaKey: boolean;
+		repeat: boolean;
 	}> = {}): KeyboardEvent {
 		const event = {
 			key,
@@ -2484,13 +2485,14 @@ describe('smooth scroll keyboard spacebar', () => {
 			ctrlKey: false,
 			altKey: false,
 			metaKey: false,
+			repeat: false,
 			...extras,
 			preventDefault() { (this as { defaultPrevented: boolean }).defaultPrevented = true; },
 		};
 		return event as unknown as KeyboardEvent;
 	}
 
-	test('scrolls page smoothly on spacebar when site does not preventDefault', () => {
+	test('spacebar scrolls page smoothly', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		const event = keyEvent(' ');
@@ -2504,29 +2506,72 @@ describe('smooth scroll keyboard spacebar', () => {
 		expect(fakeWindow.scrollY).toBeCloseTo(window.innerHeight * 0.9, 5);
 	});
 
-	test('yields to site when site already preventDefault on spacebar', () => {
+	test('spacebar scrolls even when site already preventDefault', () => {
+		// Sites commonly preventDefault spacebar to suppress native instant jump
+		// or bind shortcuts. HALO must still animate — programmatic scrollTo is
+		// unaffected by preventDefault. Without this, spacebar never scrolls.
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		const event = keyEvent(' ');
-		event.preventDefault(); // site already handled (e.g. video play/pause)
-
-		onKeydown(event);
-
-		// HALO must not scroll or stack animation when the site refused first.
-		expect(frameCallbacks.size).toBe(0);
-	});
-
-	test('keeps arrow-key scrolling active', () => {
-		root.styleState.overflowY = 'auto';
-		body.styleState.overflowY = 'hidden';
-		const event = keyEvent('ArrowDown');
+		event.preventDefault();
 		const start = performance.now();
 
 		onKeydown(event);
 
-		expect(event.defaultPrevented).toBe(true);
 		expect(frameCallbacks.size).toBe(1);
 		runUntilIdle(start + 16);
+		expect(fakeWindow.scrollY).toBeCloseTo(window.innerHeight * 0.9, 5);
+	});
+
+	test('arrow keys still yield when site already preventDefault', () => {
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+		const event = keyEvent('ArrowDown');
+		event.preventDefault();
+
+		onKeydown(event);
+
+		expect(frameCallbacks.size).toBe(0);
+	});
+
+	test('long-press arrow key accumulates without clearing the queue', () => {
+		// e.repeat must NOT clearQueue — otherwise each repeat resets animation
+		// to frame zero, making long-press feel frozen and slow.
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+		root.scrollHeight = 20_000;
+
+		const first = keyEvent('ArrowDown');
+		onKeydown(first);
+		expect(frameCallbacks.size).toBe(1);
+
+		// Advance a few frames so the engine has a live animation.
+		runFrame(1_016);
+		runFrame(1_032);
+		expect(frameCallbacks.size).toBe(1);
+
+		// A repeat event arrives — engine should accumulate, not reset.
+		const repeat = keyEvent('ArrowDown', { repeat: true });
+		onKeydown(repeat);
+
+		expect(frameCallbacks.size).toBe(1);
+	});
+
+	test('first press clears stale queue, repeat does not', () => {
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+		root.scrollHeight = 20_000;
+
+		onKeydown(keyEvent('ArrowDown'));
+		expect(frameCallbacks.size).toBe(1);
+
+		// Repeat should not clear — verify a second repeat keeps the engine alive.
+		onKeydown(keyEvent('ArrowDown', { repeat: true }));
+		expect(frameCallbacks.size).toBe(1);
+
+		// A fresh (non-repeat) PageDown clears the arrow animation and starts new.
+		onKeydown(keyEvent('PageDown'));
+		expect(frameCallbacks.size).toBe(1);
 	});
 });
 
