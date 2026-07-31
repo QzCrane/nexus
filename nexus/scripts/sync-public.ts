@@ -167,7 +167,6 @@ const APP_CONFIGS = {
       'chrome-types',
       'esbuild',
       'playwright',
-      'puppeteer',
       'tsx',
       'typescript',
     ],
