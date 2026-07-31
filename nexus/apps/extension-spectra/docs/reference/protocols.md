@@ -56,7 +56,7 @@ Identity is `site:*`. Legacy `media:v1:*` collapses into site record. Route is `
 
 ## Processor lifecycle
 
-Only Boost/EQ/Bass/Compressor/Mono/Pan/Delay can request processor (full-output intent).
+Only Boost/EQ/Bass/Compressor/Mono/Pan/Delay can request processor (full-output intent). `boostGain: 1–8` is the sole admitted range; no 0-gain substitution or implicit limiting.
 Transition binds document identity, generation, and revision:
 1. ACK stable old route at unity.
 2. Build candidate behind closed gate.
@@ -81,7 +81,7 @@ Accepted configured-site gestures release through Bootstrap's stable keyup captu
 ## Exact-element page media, native PiP, and fullscreen
 
 - PiP/fullscreen toggle return observed native state.
-- `volumeBase`, `mediaMuted`, `speed` use synchronous `page-native -> dom-native` execution targeting one exact media element with paired getter/setter. No domain lists or polling.
+- `volumeBase`, `mediaMuted`, `speed` use synchronous `page-native -> dom-native` execution targeting one exact media element with paired getter/setter; no domain list, retained player object, observer, timer, or polling loop.
 - Native events during pending write are correlated ACK evidence. Later page events read through selected writer before committing.
 
 ## Privileged boundaries
