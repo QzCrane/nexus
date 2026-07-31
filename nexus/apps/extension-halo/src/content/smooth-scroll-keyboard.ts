@@ -15,10 +15,30 @@ const KEYS: Record<string, number> = {
 	' ': 0,
 };
 
+// Threshold: a video counts as a "player" (spacebar should yield to play/pause)
+// when its visible area covers at least 20% of the viewport. This excludes
+// preview thumbnails on home feeds while catching real players.
+const VIDEO_VIEWPORT_RATIO = 0.2;
+
+function hasVisiblePlayerVideo(): boolean {
+	const videos = document.getElementsByTagName('video');
+	const viewportArea = window.innerWidth * window.innerHeight;
+	for (const video of videos) {
+		const rect = video.getBoundingClientRect();
+		const visibleWidth = Math.max(0, Math.min(rect.right, window.innerWidth) - Math.max(0, rect.left));
+		const visibleHeight = Math.max(0, Math.min(rect.bottom, window.innerHeight) - Math.max(0, rect.top));
+		const visibleArea = visibleWidth * visibleHeight;
+		if (visibleArea / viewportArea >= VIDEO_VIEWPORT_RATIO) return true;
+	}
+	return false;
+}
+
 export function onKeydown(e: KeyboardEvent): void {
 	if (!e.isTrusted) return;
 	const keyFactor = KEYS[e.key];
 	if (keyFactor === undefined) return;
+
+	const isSpacebar = e.key === ' ';
 
 	if (
 		!settings.enabled ||
@@ -34,6 +54,17 @@ export function onKeydown(e: KeyboardEvent): void {
 		// In capture phase, e.defaultPrevented means an earlier capture
 		// listener (e.g. another extension) already claimed this event.
 		// Respect it: do not scroll, let propagation continue.
+		if (!e.repeat) {
+			clearQueue();
+			resetWheelRuntimeState();
+		}
+		return;
+	}
+
+	// Spacebar yields when a visible player-sized video is on screen: the user
+	// most likely wants play/pause, not page scroll. Arrow/Page keys do NOT
+	// yield — they never control video playback.
+	if (isSpacebar && hasVisiblePlayerVideo()) {
 		if (!e.repeat) {
 			clearQueue();
 			resetWheelRuntimeState();

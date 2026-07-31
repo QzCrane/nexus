@@ -753,6 +753,7 @@ beforeAll(async () => {
 		fullscreenElement: null,
 		elementsFromPoint: () => [],
 		querySelectorAll: () => [],
+		getElementsByTagName: () => [],
 		addEventListener: () => {},
 		removeEventListener: () => {},
 	});
@@ -788,6 +789,7 @@ beforeEach(() => {
 		fullscreenElement: null,
 		elementsFromPoint: () => [],
 		querySelectorAll: () => [],
+		getElementsByTagName: () => [],
 		addEventListener: () => {},
 		removeEventListener: () => {},
 	});
@@ -2494,6 +2496,31 @@ describe('smooth scroll keyboard', () => {
 		return event as unknown as KeyboardEvent;
 	}
 
+	// eff: Injects fake videos so hasVisiblePlayerVideo() can be tested.
+	// Each video is defined by its bounding rect; the DOM mock returns them
+	// via document.getElementsByTagName('video').
+	function setVideos(videos: Array<{
+		width: number;
+		height: number;
+		top?: number;
+		left?: number;
+	}>): void {
+		const fakes = videos.map((v) => ({
+			getBoundingClientRect: () => ({
+				width: v.width,
+				height: v.height,
+				top: v.top ?? 0,
+				left: v.left ?? 0,
+				right: (v.left ?? 0) + v.width,
+				bottom: (v.top ?? 0) + v.height,
+			}),
+		}));
+		const doc = globalThis.document as unknown as {
+			getElementsByTagName: (tag: string) => unknown[];
+		};
+		doc.getElementsByTagName = (tag: string) => (tag === 'video' ? fakes : []);
+	}
+
 	test('spacebar scrolls page smoothly', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
@@ -2506,6 +2533,49 @@ describe('smooth scroll keyboard', () => {
 		expect(frameCallbacks.size).toBe(1);
 		runUntilIdle(start + 16);
 		expect(fakeWindow.scrollY).toBeCloseTo(window.innerHeight * 0.9, 5);
+	});
+
+	test('spacebar yields to visible player-sized video', () => {
+		// A large video (covering >20% of viewport) means the user likely
+		// wants play/pause. HALO must not scroll, preventDefault, or
+		// stopPropagation — let the site handle it.
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+		// Viewport is 1440x900 = 1,296,000 px². 720x405 = 291,600 ≈ 22.5%.
+		setVideos([{ width: 720, height: 405, top: 100, left: 360 }]);
+		const event = keyEvent(' ');
+
+		onKeydown(event);
+
+		expect(event.defaultPrevented).toBe(false);
+		expect((event as unknown as { propagationStopped: boolean }).propagationStopped).toBe(false);
+		expect(frameCallbacks.size).toBe(0);
+	});
+
+	test('spacebar scrolls when video is thumbnail-sized', () => {
+		// Small preview thumbnails (<20% viewport) should not block scroll.
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+		// 200x120 = 24,000 ≈ 1.85% of viewport.
+		setVideos([{ width: 200, height: 120, top: 50, left: 50 }]);
+		const event = keyEvent(' ');
+
+		onKeydown(event);
+
+		expect(event.defaultPrevented).toBe(true);
+		expect(frameCallbacks.size).toBe(1);
+	});
+
+	test('spacebar scrolls when no video on page', () => {
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+		setVideos([]);
+		const event = keyEvent(' ');
+
+		onKeydown(event);
+
+		expect(event.defaultPrevented).toBe(true);
+		expect(frameCallbacks.size).toBe(1);
 	});
 
 	test('spacebar scrolls even when site already preventDefault', () => {
