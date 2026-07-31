@@ -172,25 +172,28 @@ export function onKeydownCapture(e: KeyboardEvent): void {
 	const capture = captureKeyboardState(e);
 	let finalized = false;
 
-	const cleanup = (): void => {
+	function cleanup(): void {
 		document.removeEventListener('keydown', finalizeAtDocument);
 		window.removeEventListener('keydown', finalizeAtWindow);
-	};
-	const finalize = (candidate: KeyboardEvent): void => {
+	}
+
+	function finalize(candidate: KeyboardEvent): void {
 		if (finalized || candidate !== e) return;
 		finalized = true;
 		cleanup();
 		onKeydown(candidate, capture);
-	};
-	const finalizeAtDocument = (candidate: KeyboardEvent): void => {
+	}
+
+	function finalizeAtDocument(candidate: KeyboardEvent): void {
 		// stopPropagation still permits later listeners on the same target. If a
 		// site intentionally prevents the event from reaching window, document is
 		// the last safe point where HALO can suppress the browser default action.
 		if (candidate === e && candidate.cancelBubble) finalize(candidate);
-	};
-	const finalizeAtWindow = (candidate: KeyboardEvent): void => {
+	}
+
+	function finalizeAtWindow(candidate: KeyboardEvent): void {
 		finalize(candidate);
-	};
+	}
 
 	document.addEventListener('keydown', finalizeAtDocument);
 	window.addEventListener('keydown', finalizeAtWindow);
@@ -245,9 +248,13 @@ export function onKeydown(
 		: resolveScrollRoute(active, dy);
 	if (route.kind === 'blocked') {
 		e.preventDefault();
+		yieldKeyboard(e);
 		return;
 	}
-	if (route.kind !== 'animate') return;
+	if (route.kind !== 'animate') {
+		yieldKeyboard(e);
+		return;
+	}
 
 	const sameStream =
 		e.repeat &&
@@ -280,20 +287,20 @@ export function onKeydown(
 	const responseMultiplier = isDiscreteJump || !e.repeat
 		? 1
 		: repeatResponse(timestamp);
-
-	if (
-		scrollTo(
-			route.target,
-			0,
-			dy,
-			route.admission,
-			'coarse',
-			timestamp,
-			responseMultiplier,
-		)
-	) {
-		e.preventDefault();
+	const accepted = scrollTo(
+		route.target,
+		0,
+		dy,
+		route.admission,
+		'coarse',
+		timestamp,
+		responseMultiplier,
+	);
+	if (!accepted) {
+		yieldKeyboard(e);
+		return;
 	}
+	e.preventDefault();
 }
 
 // Called by resetInputHandlers() for page lifecycle and settings transitions.
