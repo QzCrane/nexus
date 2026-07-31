@@ -9,7 +9,7 @@ export interface BadgeInfo {
 	enabled: boolean;
 	isCapture: boolean;
 	userInteracted: boolean;
-	authority: 'control' | 'session' | 'legacy';
+	authority: 'control' | 'session';
 	text: string;
 	documentId: string | null;
 	origin: string | null;

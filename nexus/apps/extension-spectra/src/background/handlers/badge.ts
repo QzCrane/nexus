@@ -1,7 +1,7 @@
 // goal: projects per-tab extension usage plus acknowledged audio state onto the Action badge
 // rule: untouched page-native 0-100 observations stay hidden; every successful extension action is sticky until tab close
 
-import { router, badgeState, BADGE_COLORS } from '../state';
+import { badgeState, BADGE_COLORS, type BadgeInfo } from '../state';
 import { isTabExists } from '../helpers';
 import {
 	audioSessionMatchesControlDocument,
@@ -14,20 +14,12 @@ import {
 } from '@nexus/contracts';
 import { hasBadgeUsage, markBadgeUsed } from '../badge-usage';
 
-interface BadgeUpdate {
-	volume: number;
-	muted: boolean;
-	enabled?: boolean;
-	isCapture: boolean;
-	userInteracted?: boolean;
-}
-
-type BadgeAuthority = 'control' | 'session' | 'legacy';
+type BadgeAuthority = 'control' | 'session';
 type BadgeIdentity = Pick<ControlSnapshot, 'documentId' | 'origin' | 'generation'>;
 
 async function applyBadgeForTab(
 	tabId: number,
-	update: BadgeUpdate,
+	update: Pick<BadgeInfo, 'volume' | 'muted' | 'enabled' | 'isCapture' | 'userInteracted'>,
 	authority: BadgeAuthority,
 	identity: BadgeIdentity | null = null,
 ): Promise<void> {
@@ -62,7 +54,7 @@ async function applyBadgeForTab(
 			: BADGE_COLORS.NATIVE;
 	if (!enabled) {
 		badgeText = volume.toString();
-		badgeColor = '#94a3b8';
+		badgeColor = BADGE_COLORS.DISABLED;
 	} else if (volumeState === 'silent') {
 		badgeText = 'M';
 		badgeColor = BADGE_COLORS.MUTED;
@@ -108,13 +100,6 @@ export async function restoreBadgeUsageForTab(tabId: number): Promise<void> {
 	if (await hasBadgeUsage(tabId)) await markBadgeUsedForTab(tabId);
 }
 
-export async function updateBadgeForTab(tabId: number, update: BadgeUpdate): Promise<void> {
-	return applyBadgeForTab(tabId, {
-		...update,
-		userInteracted: await resolveStickyUsage(tabId, update.userInteracted),
-	}, 'legacy');
-}
-
 export async function updateBadgeFromControlProjection(
 	snapshot: Pick<ControlSnapshot, 'tabId' | 'documentId' | 'origin' | 'generation'>,
 	projection: ControlSessionPatch,
@@ -131,6 +116,7 @@ export async function updateBadgeFromControlProjection(
 		return applyBadgeForTab(snapshot.tabId, {
 			volume: 0,
 			muted: false,
+			enabled: true,
 			isCapture: false,
 			userInteracted: false,
 		}, 'control', snapshot);
@@ -179,25 +165,4 @@ export async function updateBadgeFromSession(
 		isCapture: isActiveCaptureLifecycle(snapshot),
 		userInteracted: stickyInteraction,
 	}, 'control', snapshot);
-}
-
-// eff: registers listeners for BADGE_UPDATE and BADGE_CLEAR actions
-export function registerBadgeHandlers(): void {
-	router.on('BADGE_UPDATE', async (req, sender) => {
-		const tabId = req.tabId ?? sender.tab?.id;
-		if (!tabId) return;
-		await updateBadgeForTab(tabId, req);
-	});
-
-	router.on('BADGE_CLEAR', async (req, sender) => {
-		const tabId = req.tabId ?? sender.tab?.id;
-		if (!tabId) return;
-
-		badgeState.delete(tabId);
-		if (await hasBadgeUsage(tabId)) {
-			await markBadgeUsedForTab(tabId);
-			return;
-		}
-		await chrome.action.setBadgeText({ tabId, text: '' }).catch(() => undefined);
-	});
 }

@@ -18,6 +18,7 @@ import { checkChineseComments } from './verify/check-chinese.ts';
 import { checkPermissionUsage } from './verify/check-permissions.ts';
 import { checkSpectraControlArchitecture } from './verify/check-spectra-control.ts';
 import { checkAiHygiene } from './verify/check-ai-hygiene.ts';
+import { checkSourcePurity } from './verify/check-source-purity.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -44,6 +45,7 @@ function main() {
 	checkSpectraControlArchitecture(ROOT);
 	checkChineseComments(ROOT);
 	checkAiHygiene(ROOT);
+	checkSourcePurity(ROOT);
 
 	if (counters.errors > 0) {
 		console.log(`${RED}❌ verify: ${counters.errors} errors, ${counters.warnings} warnings${RESET}`);

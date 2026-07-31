@@ -6,6 +6,7 @@ import {
 	CONTROL_ALGORITHM_POLICIES,
 	HOTKEY_ACTION_DESCRIPTORS,
 	findBestHostnameMatch,
+	hasExtensionOnlyContribution,
 	isDefaultAudioConfig,
 	normalizeHostname,
 	resolveAudioVolume,
@@ -471,11 +472,13 @@ async function restoreIfConfigured(tabId: number, documentId: string, url: strin
 		identity.resourceUrl,
 	);
 	if (Object.keys(restore.patch).length === 0) return;
-	// Replaying an exact-resource tab session must preserve its existing usage fact:
-	// native-only page interaction stays badge-free, while an earlier SPECTRA
-	// action is already sticky in badge-usage storage. A configured site/global
-	// preset is itself active extension behavior and therefore starts usage.
-	if (restore.source === 'preset') await markBadgeUsedForTab(tabId);
+	// Badge usage starts when any extension-only contribution is applied,
+	// regardless of whether it comes from a site/global preset or a replayed
+	// tab session. A patch that only touches native-owned fields (volume, mute,
+	// speed) does not constitute extension usage; only boost, audio DSP, or
+	// video CSS/overlay augmentation proves the extension is actively reshaping
+	// output. An earlier SPECTRA action is already sticky in badge-usage storage.
+	if (hasExtensionOnlyContribution(restore.patch)) await markBadgeUsedForTab(tabId);
 	const capability = `settings:${hostname}`;
 	await ensureContentRuntime(tabId, documentId, 'restore', capability);
 	let retained = false;

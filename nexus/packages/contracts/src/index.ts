@@ -138,6 +138,7 @@ export {
 	isMediaTarget,
 	isControlPatch,
 	isControlSessionPatch,
+	hasExtensionOnlyContribution,
 	isControlIntent,
 	isControlSubmitRequest,
 	isControlOperationRequest,

@@ -1425,6 +1425,43 @@ export function isControlSessionPatch(value: unknown): value is ControlSessionPa
 		&& Object.keys(value).every((field) => controlSessionFields.has(field));
 }
 
+// post: identifies whether a session patch carries any extension-only
+// contribution. Fields whose `nativePreference` is `'augmentation-only'` in
+// CONTROL_ALGORITHM_ADJUDICATIONS represent capabilities the page cannot
+// provide natively (boost, audio DSP, video CSS/overlay). A patch that only
+// touches native-owned fields (volume, mute, speed) does not constitute
+// extension usage. `audioEnabled` alone is the master switch, not a
+// contribution: only a non-default augmentation field proves the processor is
+// actively reshaping output.
+export function hasExtensionOnlyContribution(patch: ControlSessionPatch): boolean {
+	// Audio processor DSP (media-webaudio / capture strategies)
+	if (typeof patch.boost === 'number' && patch.boost > 1) return true;
+	if (Array.isArray(patch.eqValues) && patch.eqValues.some((v) => v !== 0)) return true;
+	if (patch.bass === true) return true;
+	if (patch.compressor === true) return true;
+	if (patch.mono === true) return true;
+	if (typeof patch.pan === 'number' && patch.pan !== 0) return true;
+	if (typeof patch.delay === 'number' && patch.delay > 0) return true;
+	// Video extension CSS (extension-css strategy)
+	if (typeof patch.rotation === 'number' && patch.rotation !== 0) return true;
+	if (patch.mirrored === true) return true;
+	if (patch.fill === true) return true;
+	if (patch.filterEnabled === true) return true;
+	if (isNonDefaultFilter(patch.filter)) return true;
+	// Video overlay (extension-overlay strategy)
+	if (patch.dimEnabled === true) return true;
+	return false;
+}
+
+function isNonDefaultFilter(filter: VideoFilterState | undefined): boolean {
+	if (!filter) return false;
+	return filter.brightness !== 100
+		|| filter.contrast !== 100
+		|| filter.saturate !== 100
+		|| filter.grayscale === true
+		|| filter.invert === true;
+}
+
 function isControlNativeObservationStrategies(
 	value: unknown,
 	patch: ControlPatch,
