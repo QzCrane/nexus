@@ -241,6 +241,10 @@ export function onKeydown(
 		keyboardStream.direction === direction;
 
 	if (!sameStream) {
+		// A fresh keyboard command owns a new physical stream. Clear wheel or
+		// prior-key backlog so its first response is deterministic; repeats are
+		// the only events allowed to accumulate into this keyboard stream.
+		clearQueue();
 		keyboardStream = {
 			direction,
 			key: e.key,
@@ -248,10 +252,7 @@ export function onKeydown(
 			startedAt: timestamp,
 			target: route.target,
 		};
-		// Keyboard and wheel are distinct physical streams. Never inherit wheel
-		// acceleration merely because both happen to address one target.
 		resetWheelRuntimeState();
-		if (isDiscreteJump) clearQueue();
 	} else if (!admitRepeat(
 		e,
 		timestamp,
