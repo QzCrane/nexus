@@ -4,6 +4,7 @@ import {
 	acceleration,
 	accelerationDirection,
 	accelerationTarget,
+	lastScrollTime,
 	resetWheelRuntimeState,
 	settings,
 	updateAcceleration,
@@ -13,32 +14,26 @@ import {
 // the LAST stop in event propagation. Site listeners run before HALO.
 //
 // Key handling policy:
-// - Spacebar on video pages (visible main player): HALO yields completely.
-//   Spacebar is always play/pause on video pages. Determined by DOM-state
-//   video check (viewport ratio), NOT defaultPrevented, because sites may
-//   handle spacebar without preventDefault.
-// - Arrow keys: HALO checks e.defaultPrevented ONLY. YouTube preventDefaults
-//   arrows for volume control → HALO yields. Bilibili does NOT preventDefault
-//   arrows (JS changes volume without preventDefault) → HALO smooth-scrolls.
-//   This is the desired behavior: YouTube arrows = volume, Bilibili arrows =
-//   scroll (when focus is not on the player; shouldIgnoreInput handles the
-//   player-focus case via VIDEO tag in IGNORE_TAGS).
-// - PageUp/PageDown: never handled by sites. HALO always smooth-scrolls.
+// - Video pages (visible main player): spacebar + arrow keys yield to site
+//   completely. HALO calls preventDefault to suppress native instant scroll
+//   (which feels like "paging"), then returns. The site owns these keys.
+//   Determined by DOM-state video check (viewport ratio), NOT defaultPrevented,
+//   because Bilibili changes volume via JS without preventDefault — relying on
+//   defaultPrevented would cause HALO to scroll AND Bilibili to change volume
+//   simultaneously (entanglement).
+// - Arrow keys (non-video pages): identical code path to mouse wheel. No
+//   throttling, no manual clearQueue, same acceleration logic (time-delta based).
+//   OS key-repeat (~33ms) < accelerationDelta (50ms) → continuing stream →
+//   acceleration builds up exactly like fast consecutive wheel ticks.
+//   Engine backlog limit (maxBacklogPx) naturally caps accumulation, same as
+//   wheel. This makes arrow keys feel identical to wheel.
+// - Spacebar/PageUp/PageDown (non-video pages): discrete large jumps. clearQueue
+//   ensures a clean animation per press. These are not continuous like wheel.
 const KEYS: Record<string, number> = {
 	'ArrowDown': 1, 'ArrowUp': -1,
 	'PageDown': 0, 'PageUp': 0,
 	' ': 0,
 };
-
-// Throttle long-press key repeats to match mouse-wheel tick frequency.
-// OS key-repeat fires every ~33ms; mouse-wheel ticks fire every ~80-120ms.
-// Without throttling, long-press accumulation is 3x faster than wheel,
-// making long-press feel "too fast" vs. wheel. Throttling to 80ms makes
-// per-tick accumulation cadence match wheel feel. Direction changes bypass
-// throttle so the first press in a new direction is always immediate.
-const KEY_REPEAT_MIN_INTERVAL_MS = 80;
-let lastKeyScrollTime = 0;
-let lastKeyScrollDirection = 0;
 
 // A video counts as a "main player" when it occupies a significant fraction
 // of the viewport. This distinguishes real video pages (YouTube/Bilibili
@@ -70,8 +65,8 @@ function hasMainVideoPlayer(): boolean {
 // smooth-scroll-handlers.ts so tests and page lifecycle events
 // (pagehide/visibilitychange) clear any module-level state together.
 export function resetKeyboardRuntime(): void {
-	lastKeyScrollTime = 0;
-	lastKeyScrollDirection = 0;
+	// Stateless module — no-op placeholder preserves the
+	// resetInputHandlers() contract for future state additions.
 }
 
 export function onKeydown(e: KeyboardEvent): void {
@@ -90,8 +85,6 @@ export function onKeydown(e: KeyboardEvent): void {
 		document.fullscreenElement ||
 		(settings.respectReducedMotion && prefersReducedMotion())
 	) {
-		// e.defaultPrevented: a site listener already claimed this event.
-		// HALO yields.
 		if (!e.repeat) {
 			clearQueue();
 			resetWheelRuntimeState();
@@ -99,11 +92,13 @@ export function onKeydown(e: KeyboardEvent): void {
 		return;
 	}
 
-	// Spacebar on video pages: always play/pause. Determined by DOM-state
-	// video check, not defaultPrevented (sites may handle space without
-	// preventDefault). Arrow keys are NOT gated here — they rely on
-	// defaultPrevented (YouTube preventDefaults, Bilibili does not).
-	if (e.key === ' ' && hasMainVideoPlayer()) {
+	// Video pages: spacebar + arrow keys belong to the site (play/pause,
+	// volume, seek). HALO yields completely. preventDefault suppresses
+	// native instant scroll (which feels like "paging"). PageUp/PageDown
+	// are never handled by video sites, so HALO always processes them.
+	const isVideoShortcutKey = e.key === ' ' || e.key === 'ArrowDown' || e.key === 'ArrowUp';
+	if (isVideoShortcutKey && hasMainVideoPlayer()) {
+		e.preventDefault();
 		if (!e.repeat) {
 			clearQueue();
 			resetWheelRuntimeState();
@@ -123,58 +118,48 @@ export function onKeydown(e: KeyboardEvent): void {
 	else if (e.key === ' ') dy = e.shiftKey ? -page : page;
 	else dy = keyFactor * step;
 
-	// Throttle same-direction long-press repeats to match wheel tick cadence.
 	const direction = Math.sign(dy);
 	const timestamp = performance.now();
-	if (
-		e.repeat &&
-		direction === lastKeyScrollDirection &&
-		timestamp - lastKeyScrollTime < KEY_REPEAT_MIN_INTERVAL_MS
-	) {
-		// Suppress native scroll but don't accumulate — wait for next throttle window.
-		e.preventDefault();
-		return;
-	}
-	lastKeyScrollTime = timestamp;
-	lastKeyScrollDirection = direction;
 
-	// First press clears stale state; repeats accumulate into the live queue.
-	if (!e.repeat) {
+	// Spacebar/PageUp/PageDown: discrete large jumps — clearQueue for a
+	// clean animation per press. Arrow keys: continuous like wheel — no
+	// clearQueue, let scrollTo handle direction changes internally.
+	const isDiscreteJump = e.key === ' ' || e.key === 'PageDown' || e.key === 'PageUp';
+	if (isDiscreteJump) {
 		clearQueue();
 		resetWheelRuntimeState();
 	}
+
 	const route = isGeneric
 		? resolveMainScrollRoute(dy)
 		: resolveScrollRoute(active, dy);
 	if (route.kind === 'blocked') {
 		e.preventDefault();
-		if (!e.repeat) clearQueue();
 		return;
 	}
 	if (route.kind !== 'animate') {
-		if (!e.repeat) clearQueue();
 		return;
 	}
 
-	// Acceleration: same mechanism as mouse wheel. Long-press repeats build
-	// up responseMultiplier so the spring tightens, matching wheel feel.
-	const continuingStream =
-		e.repeat &&
-		accelerationTarget === route.target &&
-		accelerationDirection === direction;
-	const newAcc = continuingStream
-		? Math.min(acceleration + 0.5, settings.accelerationMax)
-		: 1;
+	// Arrow keys: exact same acceleration logic as mouse wheel (time-delta
+	// based, not e.repeat based). This makes long-press feel identical to
+	// fast consecutive wheel ticks. Discrete jumps always use acc=1.
+	let newAcc = 1;
+	if (!isDiscreteJump) {
+		const continuingStream =
+			accelerationTarget === route.target &&
+			accelerationDirection === direction &&
+			lastScrollTime !== null &&
+			timestamp - lastScrollTime < settings.accelerationDelta;
+		newAcc = continuingStream
+			? Math.min(acceleration + 0.5, settings.accelerationMax)
+			: 1;
+	}
 
 	if (
 		scrollTo(route.target, 0, dy, route.admission, 'coarse', timestamp, newAcc)
 	) {
-		// Site did not claim the event. HALO smooth-scrolls. preventDefault
-		// suppresses native instant scroll. No stopPropagation — other
-		// bubble listeners may still need it.
 		e.preventDefault();
 		updateAcceleration(newAcc, timestamp, route.target, direction);
-	} else if (!e.repeat) {
-		clearQueue();
 	}
 }
