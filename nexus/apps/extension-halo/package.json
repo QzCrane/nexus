@@ -11,9 +11,9 @@
 		"lint": "bun ../../scripts/run-strict-biome.ts .",
 		"typecheck": "bun tsc --noEmit",
 		"test": "bun run test:unit",
-		"test:unit": "bun test test/exif-reader.spec.ts test/mse-player.spec.ts test/smooth-scroll.spec.ts test/markdown.spec.ts test/stable-ui-identities.spec.ts test/storage-boundaries.spec.ts test/ui-interaction-semantics.spec.ts",
+		"test:unit": "bun test test/exif-reader.spec.ts test/mse-player.spec.ts test/smooth-scroll.spec.ts test/smooth-scroll-keyboard-contract.spec.ts test/markdown.spec.ts test/stable-ui-identities.spec.ts test/storage-boundaries.spec.ts test/ui-interaction-semantics.spec.ts",
 		"test:watch": "bun test --watch test",
-		"test:smooth-scroll": "bun test test/smooth-scroll.spec.ts",
+		"test:smooth-scroll": "bun test test/smooth-scroll.spec.ts test/smooth-scroll-keyboard-contract.spec.ts",
 		"test:ui": "bun run test:playwright",
 		"test:playwright": "bun run build:prod && bunx playwright test test/*-playwright.spec.ts --workers=1"
 	},
