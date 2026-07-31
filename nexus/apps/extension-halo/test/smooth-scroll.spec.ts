@@ -2499,9 +2499,25 @@ describe('smooth scroll keyboard', () => {
 	}
 
 	// eff: HALO keydown registers in BUBBLE phase on window (last stop).
-	// Site listeners run first; HALO checks e.defaultPrevented. No
-	// stopPropagation anywhere — it breaks site listeners and cannot
-	// reliably block Bilibili (registration order not guaranteed).
+	// Video pages: spacebar/arrows yield to site via DOM-state video check.
+	// Non-video pages: e.defaultPrevented gates admission. No stopPropagation.
+
+	function withVisibleVideo(fn: () => void): void {
+		const doc = document as unknown as {
+			getElementsByTagName: (tag: string) => unknown[];
+		};
+		const original = doc.getElementsByTagName;
+		const videoEl = element('VIDEO');
+		videoEl.clientWidth = 640;
+		videoEl.clientHeight = 360;
+		doc.getElementsByTagName = (tag: string) =>
+			tag === 'video' ? [videoEl] : original(tag);
+		try {
+			fn();
+		} finally {
+			doc.getElementsByTagName = original;
+		}
+	}
 
 	test('spacebar scrolls page smoothly when site did not preventDefault', () => {
 		root.styleState.overflowY = 'auto';
@@ -2545,10 +2561,8 @@ describe('smooth scroll keyboard', () => {
 		expect((event as unknown as { propagationStopped: boolean }).propagationStopped).toBe(false);
 	});
 
-	test('arrow keys scroll when site did not preventDefault (Bilibili/normal)', () => {
-		// Bilibili does NOT preventDefault arrows → HALO scrolls.
-		// Known limitation: Bilibili JS may also change volume (no
-		// preventDefault to detect it). YouTube is the priority.
+	test('arrow keys scroll on non-video page when site did not preventDefault', () => {
+		// Non-video page, no site preventDefault → HALO scrolls.
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		const event = keyEvent('ArrowDown');
@@ -2558,6 +2572,45 @@ describe('smooth scroll keyboard', () => {
 		expect(event.defaultPrevented).toBe(true);
 		expect((event as unknown as { propagationStopped: boolean }).propagationStopped).toBe(false);
 		expect(frameCallbacks.size).toBe(1);
+	});
+
+	test('arrow keys yield on video pages (YouTube/Bilibili player)', () => {
+		// Page has a visible <video> → spacebar/arrows belong to site.
+		// HALO does not scroll, does not preventDefault, does not stopPropagation.
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+
+		withVisibleVideo(() => {
+			const event = keyEvent('ArrowDown');
+			onKeydown(event);
+			expect(frameCallbacks.size).toBe(0);
+			expect(event.defaultPrevented).toBe(false);
+		});
+	});
+
+	test('spacebar yields on video pages', () => {
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+
+		withVisibleVideo(() => {
+			const event = keyEvent(' ');
+			onKeydown(event);
+			expect(frameCallbacks.size).toBe(0);
+			expect(event.defaultPrevented).toBe(false);
+		});
+	});
+
+	test('PageUp/PageDown scroll even on video pages', () => {
+		// PageUp/PageDown are never handled by video sites → HALO always scrolls.
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+
+		withVisibleVideo(() => {
+			const pd = keyEvent('PageDown');
+			onKeydown(pd);
+			expect(pd.defaultPrevented).toBe(true);
+			expect(frameCallbacks.size).toBe(1);
+		});
 	});
 
 	test('PageUp/PageDown scroll when site did not preventDefault', () => {
@@ -2570,23 +2623,46 @@ describe('smooth scroll keyboard', () => {
 		expect(frameCallbacks.size).toBe(1);
 	});
 
-	test('long-press arrow key accumulates without clearing the queue', () => {
+	test('long-press repeat is throttled to match wheel cadence', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		root.scrollHeight = 20_000;
 
+		fakeNow = 1_000;
 		const first = keyEvent('ArrowDown');
 		onKeydown(first);
 		expect(frameCallbacks.size).toBe(1);
 
-		runFrame(1_016);
-		runFrame(1_032);
+		// Repeat 32ms later → throttled (within 80ms window)
+		fakeNow = 1_032;
+		const throttled = keyEvent('ArrowDown', { repeat: true });
+		onKeydown(throttled);
+		expect(throttled.defaultPrevented).toBe(true);
 		expect(frameCallbacks.size).toBe(1);
 
-		const repeat = keyEvent('ArrowDown', { repeat: true });
-		onKeydown(repeat);
-
+		// Repeat 80ms after first → passes throttle, accumulates
+		fakeNow = 1_080;
+		const pass = keyEvent('ArrowDown', { repeat: true });
+		onKeydown(pass);
 		expect(frameCallbacks.size).toBe(1);
+	});
+
+	test('long-press acceleration builds up like wheel', () => {
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+		root.scrollHeight = 20_000;
+
+		fakeNow = 1_000;
+		onKeydown(keyEvent('ArrowDown'));
+		expect(acceleration).toBe(1);
+
+		fakeNow = 1_080;
+		onKeydown(keyEvent('ArrowDown', { repeat: true }));
+		expect(acceleration).toBe(1.5);
+
+		fakeNow = 1_160;
+		onKeydown(keyEvent('ArrowDown', { repeat: true }));
+		expect(acceleration).toBe(2.0);
 	});
 
 	test('first press clears stale queue, repeat does not', () => {
