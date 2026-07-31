@@ -2481,6 +2481,7 @@ describe('smooth scroll keyboard', () => {
 			key,
 			isTrusted: true,
 			defaultPrevented: false,
+			propagationStopped: false,
 			shiftKey: false,
 			ctrlKey: false,
 			altKey: false,
@@ -2488,6 +2489,7 @@ describe('smooth scroll keyboard', () => {
 			repeat: false,
 			...extras,
 			preventDefault() { (this as { defaultPrevented: boolean }).defaultPrevented = true; },
+			stopPropagation() { (this as { propagationStopped: boolean }).propagationStopped = true; },
 		};
 		return event as unknown as KeyboardEvent;
 	}
@@ -2507,20 +2509,19 @@ describe('smooth scroll keyboard', () => {
 	});
 
 	test('spacebar scrolls even when site already preventDefault', () => {
-		// Sites commonly preventDefault spacebar to suppress native instant jump
-		// or bind shortcuts. HALO must still animate — programmatic scrollTo is
-		// unaffected by preventDefault. Without this, spacebar never scrolls.
+		// In capture phase HALO runs BEFORE site listeners, so site-level
+		// preventDefault is not yet set. This test now verifies that an
+		// earlier capture listener's preventDefault (e.g. another extension)
+		// is respected: HALO yields.
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		const event = keyEvent(' ');
-		event.preventDefault();
-		const start = performance.now();
+		event.preventDefault(); // earlier capture listener claimed it
 
 		onKeydown(event);
 
-		expect(frameCallbacks.size).toBe(1);
-		runUntilIdle(start + 16);
-		expect(fakeWindow.scrollY).toBeCloseTo(window.innerHeight * 0.9, 5);
+		// HALO respects defaultPrevented in capture phase: no scroll animation.
+		expect(frameCallbacks.size).toBe(0);
 	});
 
 	test('arrow keys still yield when site already preventDefault', () => {
@@ -2557,6 +2558,27 @@ describe('smooth scroll keyboard', () => {
 		expect(frameCallbacks.size).toBe(1);
 	});
 
+	test('long-press reaches high velocity through repeat accumulation', () => {
+		// Simulate 1 second of long-press: 30 repeat events at ~33ms intervals
+		// with rAF frames between. The scroll position should advance
+		// significantly more than a single press (arrowKeyStep=200).
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+		root.scrollHeight = 50_000;
+
+		onKeydown(keyEvent('ArrowDown'));
+		let time = 1_016;
+		for (let i = 0; i < 30; i++) {
+			runFrame(time);
+			onKeydown(keyEvent('ArrowDown', { repeat: true }));
+			time += 33;
+		}
+		runUntilIdle(time + 500);
+
+		// Single press moves ~200px; 30 repeats must move substantially more.
+		expect(fakeWindow.scrollY).toBeGreaterThan(2_000);
+	});
+
 	test('first press clears stale queue, repeat does not', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
@@ -2572,6 +2594,44 @@ describe('smooth scroll keyboard', () => {
 		// A fresh (non-repeat) PageDown clears the arrow animation and starts new.
 		onKeydown(keyEvent('PageDown'));
 		expect(frameCallbacks.size).toBe(1);
+	});
+
+	test('spacebar stops propagation when HALO scrolls', () => {
+		// HALO scrolls on spacebar in capture phase: stopPropagation prevents
+		// site listeners (e.g. video play/pause) from seeing the event.
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+		const event = keyEvent(' ');
+
+		onKeydown(event);
+
+		expect(event.defaultPrevented).toBe(true);
+		// propagationStopped is set by stopPropagation() in the fake event.
+		expect((event as unknown as { propagationStopped?: boolean }).propagationStopped).toBe(true);
+	});
+
+	test('arrow key stops propagation when HALO scrolls', () => {
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+		const event = keyEvent('ArrowDown');
+
+		onKeydown(event);
+
+		expect(event.defaultPrevented).toBe(true);
+		expect((event as unknown as { propagationStopped?: boolean }).propagationStopped).toBe(true);
+	});
+
+	test('does not stopPropagation when no animatable target', () => {
+		// No scrollable target: HALO leaves the event alone for site/native.
+		root.styleState.overflowY = 'hidden';
+		body.styleState.overflowY = 'hidden';
+		root.scrollHeight = 100;
+		const event = keyEvent(' ');
+
+		onKeydown(event);
+
+		expect(event.defaultPrevented).toBe(false);
+		expect((event as unknown as { propagationStopped: boolean }).propagationStopped).toBe(false);
 	});
 });
 

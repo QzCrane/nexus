@@ -630,9 +630,17 @@ export function scrollTo(
 		);
 		const acceptedDelta = boundedResidual - currentResidual;
 		state.remainingY += acceptedDelta;
+		// Tail deadline: use max(existing, new) so same-direction accumulation
+		// (e.g. long-press key repeat) does NOT reset the convergence schedule.
+		// Resetting deadline on every repeat makes spring never settle, keeping
+		// per-frame displacement low and feeling slow/stuttery. New events that
+		// arrive after the previous deadline expired just set a fresh deadline.
+		const proposedDeadline = timestamp + tailBudgetMs();
 		state.coarseTailDeadline =
 			inputMode === 'coarse'
-				? timestamp + tailBudgetMs()
+				? (state.coarseTailDeadline !== null
+					? Math.max(state.coarseTailDeadline, proposedDeadline)
+					: proposedDeadline)
 				: null;
 		if (inputMode === 'coarse') clampCoarseVelocity();
 	}

@@ -31,9 +31,17 @@ const onVisibilityChange = (): void => {
 const attachListeners = (): void => {
 	if (listenersAttached) return;
 	listenersAttached = true;
-	// Bubble phase gives page-owned controls and virtual scrollers first refusal.
+	// Wheel stays on bubble: route resolution needs the composed path which is
+	// only fully materialized in bubble phase, and page-owned scrollers must
+	// receive first refusal via e.defaultPrevented.
 	window.addEventListener('wheel', onWheel, { passive: false });
-	window.addEventListener('keydown', onKeydown);
+	// Keyboard uses CAPTURE phase: HALO decides scroll admission BEFORE site
+	// listeners run. Site players (YouTube, Bilibili) execute direct side
+	// effects (video.pause(), volume changes) in their keydown handlers, then
+	// call preventDefault. In bubble phase the side effects have already
+	// happened and cannot be undone. Capture lets HALO stopPropagation() to
+	// prevent the event from reaching site listeners when HALO scrolls.
+	window.addEventListener('keydown', onKeydown, true);
 	window.addEventListener('mousedown', onMouseDown);
 	window.addEventListener('pagehide', resetDocumentRuntime);
 	document.addEventListener('visibilitychange', onVisibilityChange);
@@ -43,7 +51,7 @@ const detachListeners = (): void => {
 	if (!listenersAttached) return;
 	listenersAttached = false;
 	window.removeEventListener('wheel', onWheel);
-	window.removeEventListener('keydown', onKeydown);
+	window.removeEventListener('keydown', onKeydown, true);
 	window.removeEventListener('mousedown', onMouseDown);
 	window.removeEventListener('pagehide', resetDocumentRuntime);
 	document.removeEventListener('visibilitychange', onVisibilityChange);

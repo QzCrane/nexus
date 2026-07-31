@@ -3,12 +3,12 @@ import { clearQueue, scrollTo } from '../tools/smooth-scroll/engine';
 import { resetWheelRuntimeState, settings } from './smooth-scroll-state';
 
 // eff: Static factors for key direction. Spacebar scrolls one page (shift
-// reverses), matching native behavior. Spacebar does NOT check
-// e.defaultPrevented: many sites preventDefault spacebar to suppress native
-// instant scroll or bind shortcuts, which would cause HALO to yield on every
-// page. Programmatic scrollTo is unaffected by preventDefault, so HALO can
-// still animate. Fullscreen video and input/video focus still yield.
-// Arrow/Page keys keep the defaultPrevented check (site-owned controls).
+// reverses), matching native behavior. HALO registers keydown in CAPTURE
+// phase (see smooth-scroll.ts), so it runs BEFORE site listeners. This lets
+// HALO stopPropagation() to prevent site players (YouTube, Bilibili) from
+// executing direct side effects (pause, volume) when HALO scrolls.
+// When HALO does NOT scroll, it leaves the event alone — site listeners and
+// native behavior (play/pause, volume, feed pagination) work unchanged.
 const KEYS: Record<string, number> = {
 	'ArrowDown': 1, 'ArrowUp': -1,
 	'PageDown': 0, 'PageUp': 0,
@@ -20,12 +20,10 @@ export function onKeydown(e: KeyboardEvent): void {
 	const keyFactor = KEYS[e.key];
 	if (keyFactor === undefined) return;
 
-	const isSpacebar = e.key === ' ';
-
 	if (
 		!settings.enabled ||
 		!settings.keyboard ||
-		(!isSpacebar && e.defaultPrevented) ||
+		e.defaultPrevented ||
 		e.ctrlKey ||
 		e.altKey ||
 		e.metaKey ||
@@ -33,6 +31,9 @@ export function onKeydown(e: KeyboardEvent): void {
 		document.fullscreenElement ||
 		(settings.respectReducedMotion && prefersReducedMotion())
 	) {
+		// In capture phase, e.defaultPrevented means an earlier capture
+		// listener (e.g. another extension) already claimed this event.
+		// Respect it: do not scroll, let propagation continue.
 		if (!e.repeat) {
 			clearQueue();
 			resetWheelRuntimeState();
@@ -64,14 +65,22 @@ export function onKeydown(e: KeyboardEvent): void {
 		? resolveMainScrollRoute(dy)
 		: resolveScrollRoute(active, dy);
 	if (route.kind === 'blocked') {
+		// Containment boundary: prevent native scroll bleed. Do not
+		// stopPropagation — the site may still want the key for other actions.
 		e.preventDefault();
 		if (!e.repeat) clearQueue();
 	} else if (
 		route.kind === 'animate' &&
 		scrollTo(route.target, 0, dy, route.admission)
 	) {
+		// HALO owns this key: prevent native scroll AND stop propagation so
+		// site listeners never see the event (no double action: no pause,
+		// no volume change, no feed pagination).
 		e.preventDefault();
+		e.stopPropagation();
 	} else if (!e.repeat) {
+		// No animatable target: HALO does not own the key. Leave the event
+		// alone so the site and native behavior can proceed.
 		clearQueue();
 	}
 }
