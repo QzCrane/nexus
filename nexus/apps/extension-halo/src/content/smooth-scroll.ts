@@ -5,7 +5,13 @@ import { configure, clearQueue } from '../tools/smooth-scroll/engine';
 import { STORAGE_KEY } from '../tools/smooth-scroll/types';
 import { settings, updateStateSettings } from './smooth-scroll-state';
 import { resetRuntimeState } from './smooth-scroll-state';
-import { onWheel, onKeydown, onMouseDown, resetInputHandlers } from './smooth-scroll-handlers';
+import {
+	onKeydownCapture,
+	onKeyup,
+	onMouseDown,
+	onWheel,
+	resetInputHandlers,
+} from './smooth-scroll-handlers';
 
 const updateSettings = (value: unknown): void => {
 	const was = settings.enabled;
@@ -31,13 +37,12 @@ const onVisibilityChange = (): void => {
 const attachListeners = (): void => {
 	if (listenersAttached) return;
 	listenersAttached = true;
-	// Wheel + keydown: BUBBLE phase on window (the last stop in event
-	// propagation). Site listeners (YouTube on document, Bilibili on window)
-	// run before HALO and call preventDefault when they handle the key.
-	// HALO checks e.defaultPrevented: true → yield; false → smooth-scroll.
-	// No stopPropagation anywhere — see smooth-scroll-keyboard.ts for rationale.
 	window.addEventListener('wheel', onWheel, { passive: false });
-	window.addEventListener('keydown', onKeydown);
+	// Capture observes the event before page handlers and appends a one-event
+	// bubble finalizer. That finalizer runs after ordinary document/window site
+	// handlers, including handlers registered after HALO in a long-lived SPA.
+	window.addEventListener('keydown', onKeydownCapture, true);
+	window.addEventListener('keyup', onKeyup, true);
 	window.addEventListener('mousedown', onMouseDown);
 	window.addEventListener('pagehide', resetDocumentRuntime);
 	document.addEventListener('visibilitychange', onVisibilityChange);
@@ -47,7 +52,8 @@ const detachListeners = (): void => {
 	if (!listenersAttached) return;
 	listenersAttached = false;
 	window.removeEventListener('wheel', onWheel);
-	window.removeEventListener('keydown', onKeydown);
+	window.removeEventListener('keydown', onKeydownCapture, true);
+	window.removeEventListener('keyup', onKeyup, true);
 	window.removeEventListener('mousedown', onMouseDown);
 	window.removeEventListener('pagehide', resetDocumentRuntime);
 	document.removeEventListener('visibilitychange', onVisibilityChange);
