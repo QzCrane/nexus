@@ -215,7 +215,7 @@ test.describe('HALO keyboard ownership in Chromium', () => {
 			});
 			const page = context.pages()[0] ?? await context.newPage();
 			const contentReady = page.waitForEvent('console', {
-				predicate: (message) => message.text().includes('[HALO] Content script loaded'),
+				predicate: (message) => message.text().includes('[HALO] Content script ready in'),
 				timeout: 10_000,
 			});
 			await page.goto(fixture.url, { waitUntil: 'load' });
