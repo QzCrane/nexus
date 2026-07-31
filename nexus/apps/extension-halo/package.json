@@ -15,7 +15,7 @@
 		"test:watch": "bun test --watch test",
 		"test:smooth-scroll": "bun test test/smooth-scroll.spec.ts",
 		"test:ui": "bun run test:playwright",
-		"test:playwright": "bun run build:prod && bunx playwright test test/ui-playwright.spec.ts --workers=1"
+		"test:playwright": "bun run build:prod && bunx playwright test test/*-playwright.spec.ts --workers=1"
 	},
 	"dependencies": {
 		"@nexus/kernel": "workspace:*",
