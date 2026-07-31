@@ -48,6 +48,7 @@ const attachListeners = (): void => {
 	window.addEventListener('keydown', onKeydownCapture, true);
 	window.addEventListener('keyup', onKeyup, true);
 	window.addEventListener('mousedown', onMouseDown);
+	window.addEventListener('blur', resetDocumentRuntime);
 	window.addEventListener('pagehide', resetDocumentRuntime);
 	document.addEventListener('visibilitychange', onVisibilityChange);
 };
@@ -59,6 +60,7 @@ const detachListeners = (): void => {
 	window.removeEventListener('keydown', onKeydownCapture, true);
 	window.removeEventListener('keyup', onKeyup, true);
 	window.removeEventListener('mousedown', onMouseDown);
+	window.removeEventListener('blur', resetDocumentRuntime);
 	window.removeEventListener('pagehide', resetDocumentRuntime);
 	document.removeEventListener('visibilitychange', onVisibilityChange);
 	resetDocumentRuntime();
