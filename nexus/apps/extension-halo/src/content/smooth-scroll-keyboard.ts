@@ -1,40 +1,34 @@
 import { prefersReducedMotion, resolveMainScrollRoute, resolveScrollRoute, shouldIgnoreInput } from '../tools/smooth-scroll/utils';
 import { clearQueue, scrollTo } from '../tools/smooth-scroll/engine';
-import {
-	acceleration,
-	accelerationDirection,
-	accelerationTarget,
-	lastScrollTime,
-	resetWheelRuntimeState,
-	settings,
-	updateAcceleration,
-} from './smooth-scroll-state';
+import { resetWheelRuntimeState, settings } from './smooth-scroll-state';
 
-// eff: HALO registers keydown in CAPTURE phase (see smooth-scroll.ts), running
-// BEFORE any site bubble listener. This gives HALO first-mover control:
+// eff: HALO registers keydown in BUBBLE phase on window (see smooth-scroll.ts),
+// the LAST stop in event propagation. Site listeners (YouTube on document,
+// Bilibili on window) run before HALO. HALO checks e.defaultPrevented:
+//   - true  → site claimed it (play/pause, volume, shortcuts); HALO yields.
+//   - false → site did not claim it; HALO smooth-scrolls + preventDefault.
 //
-// - Arrow keys: stopPropagation in capture → site bubble listeners (Bilibili
-//   volume, YouTube volume) NEVER fire. preventDefault → native HTML5 media
-//   keyboard volume also suppressed. HALO smooth-scrolls. Result: arrows only
-//   scroll, never tangle with volume.
+// Key handling policy (uniform defaultPrevented rule for ALL keys):
+// - Spacebar: YouTube/Bilibili both preventDefault → HALO yields (play/pause).
+//   Non-video pages: no site listener → HALO smooth-scrolls one page.
+// - Arrow keys: YouTube preventDefaults → HALO yields (volume control).
+//   Bilibili does NOT preventDefault (changes volume via JS without
+//   preventDefault) → HALO scrolls. Known limitation: on Bilibili, arrows
+//   may both scroll (HALO) and change volume (site JS). This is unavoidable
+//   without stopPropagation, which would break YouTube's volume control.
+//   YouTube is the priority since it correctly preventDefaults.
+// - PageUp/PageDown: sites never handle these. HALO always smooth-scrolls.
 //
-// - Spacebar: do NOT stopPropagation (let site play/pause fire). preventDefault
-//   in capture → suppresses native browser scroll (spacebar page-down). Site
-//   listeners still run because preventDefault does not stop propagation. On
-//   video pages the site toggles playback; on non-video pages HALO scrolls.
+// Browser-verified (capture→target→bubble propagation):
+//   - YouTube: document-bubble preventDefault for space+arrows.
+//   - Bilibili: window-bubble preventDefault for space ONLY; arrows NOT
+//     preventDefault'd (JS listener changes volume without preventDefault).
 //
-// - PageUp/PageDown: stopPropagation + preventDefault + smooth scroll.
-//
-// Acceleration: keyboard reuses the SAME acceleration state as mouse wheel
-// (acceleration/accelerationTarget/accelerationDirection/lastScrollTime in
-// smooth-scroll-state.ts). This makes single arrow press feel identical to a
-// single wheel tick (same dy, same responseMultiplier=1, same inputMode=coarse),
-// and long-press feel like continuous wheel scrolling (acceleration ramps up
-// with the same +0.5/step curve, capped at accelerationMax). The only
-// difference is the input interval: OS key repeat fires faster than physical
-// wheel ticks, so we use accelerationDelta as the stream-continuity threshold
-// — if two key events are farther apart than accelerationDelta, acceleration
-// resets to 1 (treated as a new gesture, just like lifting the wheel).
+// NO stopPropagation anywhere: stopPropagation in capture phase breaks
+// YouTube's document-bubble listeners (play/pause, volume). stopPropagation
+// in window-bubble cannot reliably block Bilibili's window-bubble listener
+// (registration order not guaranteed). defaultPrevented is the only signal
+// that works without breaking site functionality.
 const KEYS: Record<string, number> = {
 	'ArrowDown': 1, 'ArrowUp': -1,
 	'PageDown': 0, 'PageUp': 0,
@@ -57,6 +51,7 @@ export function onKeydown(e: KeyboardEvent): void {
 	if (
 		!settings.enabled ||
 		!settings.keyboard ||
+		e.defaultPrevented ||
 		e.ctrlKey ||
 		e.altKey ||
 		e.metaKey ||
@@ -64,21 +59,14 @@ export function onKeydown(e: KeyboardEvent): void {
 		document.fullscreenElement ||
 		(settings.respectReducedMotion && prefersReducedMotion())
 	) {
+		// e.defaultPrevented: a site listener (YouTube/Bilibili) already
+		// claimed this event for play/pause/volume/shortcuts. HALO yields.
 		if (!e.repeat) {
 			clearQueue();
 			resetWheelRuntimeState();
 		}
 		return;
 	}
-
-	const isSpacebar = e.key === ' ';
-	// Arrows and PageUp/Down: HALO claims the event in capture phase.
-	// stopPropagation prevents ALL site bubble listeners from firing (Bilibili
-	// volume JS, YouTube volume JS, feed pagination, etc.). This is the only
-	// reliable way to prevent tangling — Bilibili changes volume WITHOUT calling
-	// preventDefault, so defaultPrevented-based detection cannot work.
-	// Spacebar: do NOT stopPropagation — site play/pause must fire.
-	const shouldStopPropagation = !isSpacebar;
 
 	const active = document.activeElement;
 	const isGeneric = !active || active === document.body || active === document.documentElement;
@@ -92,27 +80,6 @@ export function onKeydown(e: KeyboardEvent): void {
 	else if (e.key === ' ') dy = e.shiftKey ? -page : page;
 	else dy = keyFactor * step;
 
-	const timestamp = performance.now();
-	const target = isGeneric ? null : active;
-
-	// Acceleration: same logic as mouse wheel (smooth-scroll-handlers.ts).
-	// A continuing stream (same target+direction, within accelerationDelta ms
-	// of the last event) ramps up responseMultiplier by 0.5 per event, capped
-	// at accelerationMax. A new gesture resets to 1. This makes long-press
-	// feel like continuous wheel scrolling — gradually faster, not instantly
-	// maxed — and single press identical to a single wheel tick.
-	const direction = Math.sign(dy);
-	const continuingStream =
-		(target === null
-			? accelerationTarget !== null
-			: accelerationTarget === target) &&
-		accelerationDirection === direction &&
-		lastScrollTime !== null &&
-		timestamp - lastScrollTime < settings.accelerationDelta;
-	const responseMultiplier = continuingStream
-		? Math.min(acceleration + 0.5, settings.accelerationMax)
-		: 1;
-
 	// Long-press repeats (e.repeat) must NOT clearQueue: each repeat would
 	// reset the animation to frame zero, making long-press feel frozen.
 	// Instead, let scrollTo accumulate into the live engine queue — engine
@@ -124,33 +91,17 @@ export function onKeydown(e: KeyboardEvent): void {
 	const route = isGeneric
 		? resolveMainScrollRoute(dy)
 		: resolveScrollRoute(active, dy);
-
-	if (shouldStopPropagation) {
-		// Arrows/PageUp/PageDown: block site bubble listeners (volume, etc.)
-		e.stopPropagation();
-	}
-
 	if (route.kind === 'blocked') {
 		e.preventDefault();
 		if (!e.repeat) clearQueue();
 	} else if (
 		route.kind === 'animate' &&
-		scrollTo(
-			route.target,
-			0,
-			dy,
-			route.admission,
-			'coarse',
-			timestamp,
-			responseMultiplier,
-		)
+		scrollTo(route.target, 0, dy, route.admission)
 	) {
-		// HALO smooth-scrolls. preventDefault suppresses native instant scroll
-		// (spacebar page-down, arrow scroll, HTML5 media keyboard volume).
+		// Site did not claim the event (defaultPrevented is false). HALO
+		// smooth-scrolls. preventDefault suppresses native instant scroll.
+		// No stopPropagation — other bubble listeners may still need it.
 		e.preventDefault();
-		// Update acceleration state so the next event can continue the stream.
-		// Use the resolved route target (may be window, not the active element).
-		updateAcceleration(responseMultiplier, timestamp, route.target, direction);
 	} else if (!e.repeat) {
 		clearQueue();
 	}

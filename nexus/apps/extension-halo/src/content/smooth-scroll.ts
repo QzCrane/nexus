@@ -31,15 +31,13 @@ const onVisibilityChange = (): void => {
 const attachListeners = (): void => {
 	if (listenersAttached) return;
 	listenersAttached = true;
-	// Wheel: bubble phase — site-owned scroll containers and native overscroll
-	// get first refusal via e.defaultPrevented.
-	// Keydown: CAPTURE phase — HALO runs BEFORE site bubble listeners. This
-	// lets HALO stopPropagation on arrows/PageUp/Down to block site volume
-	// shortcuts (Bilibili changes volume WITHOUT preventDefault, so
-	// defaultPrevented detection cannot work). Spacebar does NOT
-	// stopPropagation so site play/pause still fires.
+	// Wheel + keydown: BUBBLE phase on window (the last stop in event
+	// propagation). Site listeners (YouTube on document, Bilibili on window)
+	// run before HALO and call preventDefault when they handle the key.
+	// HALO checks e.defaultPrevented: true → yield; false → smooth-scroll.
+	// No stopPropagation anywhere — see smooth-scroll-keyboard.ts for rationale.
 	window.addEventListener('wheel', onWheel, { passive: false });
-	window.addEventListener('keydown', onKeydown, true);
+	window.addEventListener('keydown', onKeydown);
 	window.addEventListener('mousedown', onMouseDown);
 	window.addEventListener('pagehide', resetDocumentRuntime);
 	document.addEventListener('visibilitychange', onVisibilityChange);
@@ -49,7 +47,7 @@ const detachListeners = (): void => {
 	if (!listenersAttached) return;
 	listenersAttached = false;
 	window.removeEventListener('wheel', onWheel);
-	window.removeEventListener('keydown', onKeydown, true);
+	window.removeEventListener('keydown', onKeydown);
 	window.removeEventListener('mousedown', onMouseDown);
 	window.removeEventListener('pagehide', resetDocumentRuntime);
 	document.removeEventListener('visibilitychange', onVisibilityChange);
