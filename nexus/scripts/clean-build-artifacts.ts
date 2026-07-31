@@ -45,7 +45,7 @@ if (fs.existsSync(srcDir)) {
 
 // 清理 dist 目录
 if (fs.existsSync(distDir)) {
-	fs.rmSync(distDir, { recursive: true, force: true });
+	fs.rmSync(distDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 	cleaned++;
 }
 
