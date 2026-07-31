@@ -42,18 +42,23 @@ describe('smooth-scroll keyboard architecture contract', () => {
 		expect(keyboardSource).toContain('candidate.cancelBubble');
 	});
 
-	test('registers pre-site capture synchronously at document start', () => {
-		const attachIndex = hostSource.indexOf(
-			'if (settings.enabled) attachListeners();',
-		);
+	test('observes at document start but activates only after settings hydration', () => {
+		const observationIndex = hostSource.indexOf('attachObservationListeners();');
 		const storageAwaitIndex = hostSource.indexOf(
 			'await chrome.storage.sync.get([STORAGE_KEY])',
 		);
+		const activationIndex = hostSource.indexOf(
+			'if (settings.enabled) attachActiveInputListeners();',
+		);
 
-		expect(attachIndex).toBeGreaterThanOrEqual(0);
-		expect(storageAwaitIndex).toBeGreaterThan(attachIndex);
+		expect(observationIndex).toBeGreaterThanOrEqual(0);
+		expect(storageAwaitIndex).toBeGreaterThan(observationIndex);
+		expect(activationIndex).toBeGreaterThan(storageAwaitIndex);
 		expect(hostSource).toContain(
-			"window.addEventListener('keydown', onKeydownCapture, true)",
+			"window.addEventListener('keydown', onObservedKeydown, true)",
+		);
+		expect(hostSource).toContain(
+			'if (!settingsHydrated || !settings.enabled) return;',
 		);
 		expect(hostSource).toContain(
 			"window.addEventListener('blur', resetDocumentRuntime)",
