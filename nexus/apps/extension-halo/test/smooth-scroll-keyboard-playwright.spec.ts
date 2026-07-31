@@ -257,12 +257,21 @@ test.describe('HALO keyboard ownership in Chromium', () => {
 
 			await page.evaluate(() => window.__haloKeyboardProbe.setArrowOwner(false));
 			const fastRepeat = await repeatArrowStream(page, 20, 16);
-			const slowRepeat = await repeatArrowStream(page, 50, 6);
+			const mediumRepeat = await repeatArrowStream(page, 50, 6);
+			const sparseRepeat = await repeatArrowStream(page, 200, 2);
+			const delayedFirstRepeat = await repeatArrowStream(page, 500, 1);
+
 			expect(fastRepeat).toBeGreaterThanOrEqual(1_200);
-			expect(slowRepeat).toBeGreaterThanOrEqual(900);
+			expect(mediumRepeat).toBeGreaterThanOrEqual(900);
+			expect(sparseRepeat).toBeGreaterThanOrEqual(900);
 			expect(fastRepeat).toBeLessThanOrEqual(1_900);
-			expect(slowRepeat).toBeLessThanOrEqual(1_900);
-			expect(Math.abs(fastRepeat - slowRepeat)).toBeLessThanOrEqual(400);
+			expect(mediumRepeat).toBeLessThanOrEqual(1_900);
+			expect(sparseRepeat).toBeLessThanOrEqual(1_900);
+			expect(Math.abs(fastRepeat - mediumRepeat)).toBeLessThanOrEqual(400);
+			expect(Math.abs(fastRepeat - sparseRepeat)).toBeLessThanOrEqual(500);
+		// The operating system's first-repeat delay is preserved, not backfilled.
+			expect(delayedFirstRepeat).toBeGreaterThanOrEqual(500);
+			expect(delayedFirstRepeat).toBeLessThanOrEqual(800);
 		} finally {
 			await context?.close();
 			await closeFixtureServer(server);
