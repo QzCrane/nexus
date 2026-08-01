@@ -2,29 +2,25 @@
 
 HALO is a SidePanel-first local productivity and developer-tool application inside the NEXUS monorepo.
 
-## Start here
+It keeps ordinary processing and persistence on the user's device while exposing network-backed operations only as explicit, user-invoked capabilities. See the [privacy policy](PRIVACY.md) for exact storage, permission, and data-flow boundaries.
 
-- [Documentation map](docs/README.md)
-- [Architecture](docs/architecture.md)
-- [Roadmap](docs/roadmap.md)
-- [Privacy policy](PRIVACY.md)
-- [Research](docs/research/README.md)
-- [Proposals](docs/proposals/README.md)
-- [Repository documentation](../../docs/README.md)
+## Build from source
 
-## Development
-
-Run from the `nexus/` workspace:
+Use the repository-pinned Bun **1.3.14** toolchain from the repository root:
 
 ```bash
-bun install
-bun run --cwd apps/extension-halo typecheck
+bun install --frozen-lockfile
+bun run lint
+bun run typecheck
+bun run build
 bun run --cwd apps/extension-halo build:prod
-bun run --cwd apps/extension-halo test:ui
-bun run --cwd apps/extension-halo test:playwright
 ```
 
-The repository toolchain is pinned to **Bun 1.3.14**.
+The unpacked production extension is written to `apps/extension-halo/dist/`. Load that directory from `chrome://extensions` with Developer mode enabled.
+
+## Install a packaged release
+
+Download the versioned ZIP and matching SHA-256 file from the repository's Releases page, verify the checksum, extract the ZIP, and load the extracted directory through `chrome://extensions`. GitHub publication and Chrome Web Store publication are independent release states; the presence of a GitHub package does not claim a live store listing.
 
 ## Product boundaries
 
@@ -36,3 +32,5 @@ The repository toolchain is pinned to **Bun 1.3.14**.
 - Work that must survive SidePanel closure has an explicit Background owner and recovery model.
 
 Current behavior is defined by source, registry metadata, tests, and production artifacts. Roadmaps, research, and proposals do not prove completion.
+
+HALO is distributed under the MIT License.

@@ -523,6 +523,81 @@ function copyPublicEntrypoints(filesByPath) {
   }
 }
 
+function markdownLinkTargets(source) {
+  const targets = [];
+  const inlineLink = /!?\[[^\]\n]*\]\(\s*(?:<([^>\n]+)>|([^\s)]+))/gu;
+  const referenceLink = /^\s*\[[^\]\n]+\]:\s*(?:<([^>\n]+)>|(\S+))/gmu;
+
+  for (const match of source.matchAll(inlineLink)) targets.push(match[1] ?? match[2]);
+  for (const match of source.matchAll(referenceLink)) targets.push(match[1] ?? match[2]);
+  return targets;
+}
+
+function validatePublicMarkdownLinks(root = destinationRoot) {
+  const publicPaths = new Set(['']);
+  const markdownFiles = [];
+
+  function visit(relativeDirectory = '') {
+    const absoluteDirectory = path.join(root, relativeDirectory);
+    for (const entry of fs.readdirSync(absoluteDirectory, { withFileTypes: true })) {
+      if (entry.name === '.git' || entry.name === 'node_modules') continue;
+      const relativePath = path.posix.join(
+        relativeDirectory.replaceAll('\\', '/'),
+        entry.name,
+      );
+      publicPaths.add(relativePath);
+      if (entry.isDirectory()) {
+        visit(relativePath);
+      } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
+        markdownFiles.push(relativePath);
+      }
+    }
+  }
+
+  visit();
+
+  const broken = [];
+  for (const markdownFile of markdownFiles) {
+    const source = fs.readFileSync(path.join(root, markdownFile), 'utf8');
+    for (const rawTarget of markdownLinkTargets(source)) {
+      if (
+        !rawTarget ||
+        rawTarget.startsWith('#') ||
+        rawTarget.startsWith('/') ||
+        rawTarget.startsWith('//') ||
+        /^[a-z][a-z0-9+.-]*:/iu.test(rawTarget)
+      ) {
+        continue;
+      }
+
+      const targetWithoutSuffix = rawTarget.split(/[?#]/u, 1)[0];
+      let decodedTarget: string;
+      try {
+        decodedTarget = decodeURIComponent(targetWithoutSuffix);
+      } catch {
+        broken.push(`${markdownFile} -> ${rawTarget} (invalid URL encoding)`);
+        continue;
+      }
+
+      const resolved = path.posix.normalize(path.posix.join(
+        path.posix.dirname(markdownFile),
+        decodedTarget.replaceAll('\\', '/'),
+      ));
+      if (
+        resolved === '..' ||
+        resolved.startsWith('../') ||
+        !publicPaths.has(resolved)
+      ) {
+        broken.push(`${markdownFile} -> ${rawTarget}`);
+      }
+    }
+  }
+
+  if (broken.length > 0) {
+    throw new Error(`Generated public Markdown contains broken relative links:\n${broken.join('\n')}`);
+  }
+}
+
 function selectObjectKeys(source, allowedKeys, overrides = {}) {
   const selected = {};
   for (const key of allowedKeys) {
@@ -730,6 +805,7 @@ function main() {
   runStage('project public metadata', () => {
     copyPublicEntrypoints(projection.filesByPath);
     patchPublicPackage();
+    validatePublicMarkdownLinks();
   });
 
   runStage('install dependencies', () => run(process.execPath, ['install'], { cwd: destinationRoot }));
@@ -770,4 +846,5 @@ export {
   shouldExcludeForConfig,
   shouldExcludeWithPatterns,
   validateDestinationDivergence,
+  validatePublicMarkdownLinks,
 };

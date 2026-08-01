@@ -9,7 +9,6 @@ import {
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
-import { APP_CONFIGS } from './sync-public.ts';
 
 const MAX_BUFFER_BYTES = 8 * 1024 * 1024;
 const PUBLIC_MODE_OPTION = '--public';
@@ -348,7 +347,7 @@ function validateWorkspaceScripts(workspaces) {
 	}
 }
 
-function validatePrivateProjections() {
+function validatePrivateProjections(appConfigs) {
 	const baselineDirectory = resolve(workspaceDir, 'scripts', 'baselines');
 	if (
 		existsSync(baselineDirectory) &&
@@ -358,7 +357,7 @@ function validatePrivateProjections() {
 	}
 
 	for (const appName of ['halo', 'spectra']) {
-		const config = APP_CONFIGS?.[appName];
+		const config = appConfigs?.[appName];
 		if (
 			!config ||
 			JSON.stringify(config.publicRootFiles) !==
@@ -413,13 +412,19 @@ function validatePrivateProjections() {
 	}
 }
 
-function main() {
+async function main() {
 	const startedAt = performance.now();
 	const mode = parseMode(process.argv.slice(2));
 	validateRootCommand(mode);
 	const workspaces = discoverWorkspaces();
 	validateWorkspaceScripts(workspaces);
-	if (mode === 'private') validatePrivateProjections();
+	if (mode === 'private') {
+		// Public repositories intentionally exclude the destructive synchronization
+		// driver. Load its private configuration only in private mode so the public
+		// lint owner remains executable and self-contained.
+		const { APP_CONFIGS } = await import('./sync-public.ts');
+		validatePrivateProjections(APP_CONFIGS);
+	}
 	const elapsedMs = Math.round(performance.now() - startedAt);
 	console.log(
 		`✓ Workspace lint coverage: ${workspaces.length} packages (${workspaces
@@ -437,10 +442,8 @@ export {
 };
 
 if (import.meta.main) {
-	try {
-		main();
-	} catch (error) {
+	void main().catch((error: unknown) => {
 		console.error(`✗ Workspace lint coverage failed: ${error instanceof Error ? error.message : String(error)}`);
 		process.exitCode = 1;
-	}
+	});
 }

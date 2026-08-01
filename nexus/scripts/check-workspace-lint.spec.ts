@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
 	mkdtempSync,
 	mkdirSync,
+	readFileSync,
 	rmSync,
 	symlinkSync,
 } from 'node:fs';
@@ -19,6 +20,15 @@ import {
 const workspaceDir = dirname(dirname(fileURLToPath(import.meta.url)));
 
 describe('workspace lint path boundary', () => {
+	test('keeps the public coverage entrypoint free of static private-sync imports', () => {
+		const source = readFileSync(
+			resolve(workspaceDir, 'scripts', 'check-workspace-lint.ts'),
+			'utf8',
+		);
+		expect(source).not.toContain("from './sync-public.ts'");
+		expect(source).toContain("await import('./sync-public.ts')");
+	});
+
 	test('accepts only private or explicit public projection mode', () => {
 		expect(parseMode([])).toBe('private');
 		expect(parseMode(['--public'])).toBe('public');
