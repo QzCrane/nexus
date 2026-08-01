@@ -1165,7 +1165,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '🛡️',
 		pluginType: 'system',
 		category: 'security',
-		size: 11327,
+		size: 10785,
 		builtIn: true,
 		status: undefined,
 		keywords: ["security","access","权限","安全"],
@@ -1204,11 +1204,11 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '📜',
 		pluginType: 'system',
 		category: 'dev',
-		size: 98124,
+		size: 97868,
 		builtIn: false,
 		status: undefined,
 		keywords: ["script","inject","脚本","注入"],
-		permissions: ["webNavigation","*://*/*"],
+		permissions: ["userScripts","*://*/*"],
 		background: {"mechanism":"storage_listener","frequency":"on-change","activeOnly":false,"level":"low","descriptionKey":"impact.userscripts_registry","sourceFile":"system/userscripts/registry.ts","sourceLine":45,"sourceDetail":"chrome.storage.onChanged.addListener"},
 		script: undefined,
 	}
@@ -1245,13 +1245,11 @@ export const PERMISSION_USAGE_MAP: Record<string, string[]> = {
         "hover-zoom"
     ],
     "userScripts": [
-        "bilibili-plus"
+        "bilibili-plus",
+        "userscripts"
     ],
     "management": [
         "extension-manager"
-    ],
-    "webNavigation": [
-        "userscripts"
     ],
     "*://*/*": [
         "userscripts"

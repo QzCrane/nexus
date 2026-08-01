@@ -21,13 +21,6 @@ export const OPTIONAL_PERMISSIONS: PermissionDef[] = [
 		category: 'basic',
 	},
 	{
-		id: 'webNavigation',
-		name: 'Web Navigation',
-		description: 'Detect page navigation for UserScripts injection',
-		icon: '🧭',
-		category: 'basic',
-	},
-	{
 		id: 'clipboardRead',
 		name: 'Clipboard Read',
 		description: 'Read text from your clipboard',
@@ -61,20 +54,6 @@ export const OPTIONAL_PERMISSIONS: PermissionDef[] = [
 		description: 'Access and manage bookmarks',
 		icon: '⭐',
 		category: 'privacy',
-	},
-	{
-		id: 'topSites',
-		name: 'Top Sites',
-		description: 'Access most visited sites data',
-		icon: '📊',
-		category: 'privacy',
-	},
-	{
-		id: 'notifications',
-		name: 'Notifications',
-		description: 'Show system desktop notifications',
-		icon: '🔔',
-		category: 'basic',
 	},
 	{
 		id: 'tabGroups',

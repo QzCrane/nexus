@@ -60,8 +60,7 @@ export function useUserScripts() {
 
 			const hasHosts = await chrome.permissions.contains({ origins: ['*://*/*'] });
 			const hasUserScripts = await chrome.permissions.contains({ permissions: ['userScripts'] });
-			const hasWebNav = await chrome.permissions.contains({ permissions: ['webNavigation'] });
-			setHasPermission(hasUserScripts || (hasWebNav && hasHosts));
+			setHasPermission(hasUserScripts && hasHosts);
 		};
 		const refreshStatus = () => {
 			void checkStatus().catch((error: unknown) => {
@@ -98,12 +97,6 @@ export function useUserScripts() {
 				permissions: ['userScripts'],
 				origins: ['*://*/*'],
 			});
-			if (!granted) {
-				granted = await chrome.permissions.request({
-					permissions: ['webNavigation'],
-					origins: ['*://*/*'],
-				});
-			}
 		} catch (error: unknown) {
 			console.error('[HALO:UserScripts] Permission request failed', error);
 			showToast(`❌ ${t('userscripts.permsFailed', {

@@ -25,8 +25,19 @@ import {
 	state,
 	updateAcceleration,
 } from './smooth-scroll-state';
-import { onKeydown, resetKeyboardRuntime } from './smooth-scroll-keyboard';
-export { onKeydown };
+import {
+	onArrowKeydownCapture,
+	onKeyboardFocusIn,
+	onKeyboardPointerDown,
+	onKeydown,
+	resetKeyboardRuntime,
+} from './smooth-scroll-keyboard';
+export {
+	onArrowKeydownCapture,
+	onKeyboardFocusIn,
+	onKeyboardPointerDown,
+	onKeydown,
+};
 
 function yieldWheelToNative(): void {
 	clearQueue();

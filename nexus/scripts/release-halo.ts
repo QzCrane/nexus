@@ -12,7 +12,60 @@ const extensionDir = resolve(workspaceDir, 'apps/extension-halo');
 const distDir = resolve(extensionDir, 'dist');
 const stagingDir = resolve(extensionDir, 'release/.staging');
 const packageJson = JSON.parse(readFileSync(resolve(extensionDir, 'package.json'), 'utf8'));
-const stagedArchive = resolve(stagingDir, `halo-v${packageJson.version}.zip`);
+const packageVersion = packageJson.version;
+const sourceManifestPath = resolve(extensionDir, 'public/manifest.json');
+const builtManifestPath = resolve(distDir, 'manifest.json');
+const stagedArchive = resolve(stagingDir, `halo-v${packageVersion}.zip`);
+
+function readVersion(path) {
+	return JSON.parse(readFileSync(path, 'utf8')).version;
+}
+
+export function assertReleaseVersionParity(
+	packageCandidate,
+	sourceManifestCandidate,
+	builtManifestCandidate,
+) {
+	if (typeof packageCandidate !== 'string' || !/^\d+\.\d+\.\d+$/.test(packageCandidate)) {
+		throw new Error(`HALO package version must be SemVer x.y.z, found ${String(packageCandidate)}`);
+	}
+	if (sourceManifestCandidate !== packageCandidate) {
+		throw new Error(
+			`HALO version drift: package ${packageCandidate}, source manifest ${String(sourceManifestCandidate)}`,
+		);
+	}
+	if (
+		builtManifestCandidate !== undefined &&
+		builtManifestCandidate !== packageCandidate
+	) {
+		throw new Error(
+			`HALO version drift: package ${packageCandidate}, built manifest ${String(builtManifestCandidate)}`,
+		);
+	}
+}
+
+function assertSourceVersionParity() {
+	assertReleaseVersionParity(packageVersion, readVersion(sourceManifestPath));
+}
+
+const FORBIDDEN_RELEASE_ENTRY = [
+	/(^|\/)(?:\.git|node_modules|src|test|tests|docs|store-listings)(?:\/|$)/i,
+	/\.(?:map|md|ts|tsx|zip|sha256|log|tsbuildinfo)$/i,
+];
+
+export function assertReleaseEntryPaths(entryPaths) {
+	if (!entryPaths.includes('manifest.json')) {
+		throw new Error('HALO release must contain manifest.json at the archive root');
+	}
+	for (const entryPath of entryPaths) {
+		if (entryPath.startsWith('/') || entryPath.includes('\\') || entryPath.includes('../')) {
+			throw new Error(`Unsafe HALO release path: ${entryPath}`);
+		}
+		if (FORBIDDEN_RELEASE_ENTRY.some((pattern) => pattern.test(entryPath))) {
+			throw new Error(`Forbidden HALO release entry: ${entryPath}`);
+		}
+	}
+}
 
 // Deterministic ZIP implementation (STORED, no compression) shared with the
 // SPECTRA create-release staging tool. HALO has no separate staging script, so
@@ -106,14 +159,20 @@ function createStagingZip() {
 	if (Bun.version !== EXPECTED_BUN_VERSION) {
 		throw new Error(`HALO staging requires Bun ${EXPECTED_BUN_VERSION}, found ${Bun.version}`);
 	}
-	if (!existsSync(resolve(distDir, 'manifest.json'))) {
+	if (!existsSync(builtManifestPath)) {
 		throw new Error('Production dist is missing; run bun run --cwd apps/extension-halo build:prod first');
 	}
+	assertReleaseVersionParity(
+		packageVersion,
+		readVersion(sourceManifestPath),
+		readVersion(builtManifestPath),
+	);
 	const files = listDistFiles(distDir);
 	const entries = files.map((file) => ({
 		name: relative(distDir, file).replaceAll('\\', '/'),
 		data: readFileSync(file),
 	}));
+	assertReleaseEntryPaths(entries.map(({ name }) => name));
 	const first = createStoredArchive(entries);
 	const second = createStoredArchive(entries);
 	if (!first.equals(second)) throw new Error('ZIP generation is not deterministic');
@@ -134,6 +193,7 @@ function createStagingZip() {
 }
 
 export const RELEASE_STEPS = Object.freeze([
+	{ label: 'version parity', fn: assertSourceVersionParity },
 	{ label: 'architecture verify', args: ['run', 'verify:v'] },
 	{ label: 'frozen dependency install', args: ['install', '--frozen-lockfile'] },
 	{ label: 'toolchain verify', args: ['run', 'check:toolchain'] },

@@ -10,50 +10,121 @@ import {
 	updateAcceleration,
 } from './smooth-scroll-state';
 
-// eff: HALO registers keydown in BUBBLE phase on window (see smooth-scroll.ts),
-// the LAST stop in event propagation. Site listeners run before HALO.
+// Keyboard ownership is key-specific:
+// - ArrowUp/ArrowDown run in capture phase. HALO claims them only after it
+//   resolves and admits a page scroll target. A media surface that acquired
+//   interaction through pointer or focus keeps the arrows for volume/seek.
+// - Space/PageUp/PageDown run in bubble phase so page handlers get first
+//   refusal through defaultPrevented. Space keeps the existing visible-player
+//   play/pause policy; page keys remain discrete page jumps.
 //
-// Key handling policy:
-// - Video pages (visible main player): spacebar + arrow keys yield to site
-//   completely. HALO calls preventDefault to suppress native instant scroll
-//   (which feels like "paging"), then returns. The site owns these keys.
-//   Determined by DOM-state video check (viewport ratio), NOT defaultPrevented,
-//   because Bilibili changes volume via JS without preventDefault — relying on
-//   defaultPrevented would cause HALO to scroll AND Bilibili to change volume
-//   simultaneously (entanglement).
-// - Arrow keys (non-video pages): identical code path to mouse wheel. No
-//   throttling, no manual clearQueue, same acceleration logic (time-delta based).
-//   OS key-repeat (~33ms) < accelerationDelta (50ms) → continuing stream →
-//   acceleration builds up exactly like fast consecutive wheel ticks.
-//   Engine backlog limit (maxBacklogPx) naturally caps accumulation, same as
-//   wheel. This makes arrow keys feel identical to wheel.
-// - Spacebar/PageUp/PageDown (non-video pages): discrete large jumps. clearQueue
-//   ensures a clean animation per press. These are not continuous like wheel.
-const KEYS: Record<string, number> = {
-	'ArrowDown': 1, 'ArrowUp': -1,
-	'PageDown': 0, 'PageUp': 0,
+// This deliberately never treats "a video exists on the page" as arrow-key
+// ownership. Presence, playback, and viewport size are page state, not focus.
+const ARROW_FACTORS: Record<string, number> = {
+	ArrowDown: 1,
+	ArrowUp: -1,
+};
+
+const BUBBLE_KEYS: Record<string, number> = {
+	PageDown: 0,
+	PageUp: 0,
 	' ': 0,
 };
 
-// A video counts as a "main player" when it occupies a significant fraction
-// of the viewport. This distinguishes real video pages (YouTube/Bilibili
-// watch pages, where space/arrows belong to the player) from thumbnail
-// preview videos that appear on hover (YouTube homepage previews, which
-// should NOT steal keyboard scrolling).
-// 50% viewport coverage catches player videos (typically 60-100% of
-// viewport) while excluding preview videos (typically <25% of viewport).
 const VIDEO_VIEWPORT_RATIO = 0.5;
+const MEDIA_SELECTOR = 'video, audio';
+let activeMediaInteraction: Element | null = null;
+
+function isMediaElement(element: Element): boolean {
+	return element.tagName === 'VIDEO' || element.tagName === 'AUDIO';
+}
+
+function isGenericFocus(element: Element | null): boolean {
+	return !element || element === document.body || element === document.documentElement;
+}
+
+function mediaOwnedByFocus(element: Element | null): Element | null {
+	if (!element || element === document.body || element === document.documentElement) {
+		return null;
+	}
+	if (isMediaElement(element)) return element;
+	return element.querySelector(MEDIA_SELECTOR);
+}
+
+function pointedMedia(event: PointerEvent): Element | null {
+	for (const target of event.composedPath()) {
+		if (target instanceof Element && isMediaElement(target)) return target;
+	}
+
+	if (!Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) {
+		return null;
+	}
+
+	for (const tagName of ['video', 'audio']) {
+		const media = document.getElementsByTagName(tagName);
+		for (let index = 0; index < media.length; index++) {
+			const candidate = media[index];
+			if (!candidate) continue;
+			const rect = candidate.getBoundingClientRect();
+			if (
+				rect.width > 0 &&
+				rect.height > 0 &&
+				event.clientX >= rect.left &&
+				event.clientX <= rect.right &&
+				event.clientY >= rect.top &&
+				event.clientY <= rect.bottom
+			) {
+				return candidate;
+			}
+		}
+	}
+
+	return null;
+}
+
+function acquireMediaInteraction(media: Element | null): void {
+	if (media === activeMediaInteraction) return;
+	activeMediaInteraction = media;
+	if (media) {
+		clearQueue();
+		resetWheelRuntimeState();
+	}
+}
+
+export function onKeyboardPointerDown(event: PointerEvent): void {
+	if (!event.isTrusted) return;
+	acquireMediaInteraction(pointedMedia(event));
+}
+
+export function onKeyboardFocusIn(event: FocusEvent): void {
+	const target = event.composedPath().find(
+		(candidate): candidate is Element => candidate instanceof Element,
+	) ?? null;
+	acquireMediaInteraction(mediaOwnedByFocus(target));
+}
+
+function mediaOwnsArrowKeys(): boolean {
+	if (activeMediaInteraction && !activeMediaInteraction.isConnected) {
+		activeMediaInteraction = null;
+	}
+	if (activeMediaInteraction) return true;
+
+	const focusedMedia = mediaOwnedByFocus(document.activeElement);
+	if (!focusedMedia) return false;
+	activeMediaInteraction = focusedMedia;
+	return true;
+}
 
 function hasMainVideoPlayer(): boolean {
 	if (typeof document === 'undefined') return false;
 	const videos = document.getElementsByTagName('video');
-	const vw = window.innerWidth;
-	const vh = window.innerHeight;
-	for (let i = 0; i < videos.length; i++) {
-		const v = videos[i] as HTMLElement;
+	const viewportWidth = window.innerWidth;
+	const viewportHeight = window.innerHeight;
+	for (let index = 0; index < videos.length; index++) {
+		const video = videos[index] as HTMLElement;
 		if (
-			v.clientWidth >= vw * VIDEO_VIEWPORT_RATIO ||
-			v.clientHeight >= vh * VIDEO_VIEWPORT_RATIO
+			video.clientWidth >= viewportWidth * VIDEO_VIEWPORT_RATIO ||
+			video.clientHeight >= viewportHeight * VIDEO_VIEWPORT_RATIO
 		) {
 			return true;
 		}
@@ -61,105 +132,129 @@ function hasMainVideoPlayer(): boolean {
 	return false;
 }
 
-// Reset keyboard module runtime state. Called by resetInputHandlers() in
-// smooth-scroll-handlers.ts so tests and page lifecycle events
-// (pagehide/visibilitychange) clear any module-level state together.
-export function resetKeyboardRuntime(): void {
-	// Stateless module — no-op placeholder preserves the
-	// resetInputHandlers() contract for future state additions.
-}
-
-export function onKeydown(e: KeyboardEvent): void {
-	if (!e.isTrusted) return;
-	const keyFactor = KEYS[e.key];
-	if (keyFactor === undefined) return;
-
-	if (
+function shouldYieldKeyboardEvent(event: KeyboardEvent): boolean {
+	return (
 		!settings.enabled ||
 		!settings.keyboard ||
-		e.defaultPrevented ||
-		e.ctrlKey ||
-		e.altKey ||
-		e.metaKey ||
+		event.defaultPrevented ||
+		event.ctrlKey ||
+		event.altKey ||
+		event.metaKey ||
 		shouldIgnoreInput(document.activeElement) ||
-		document.fullscreenElement ||
+		document.fullscreenElement !== null ||
 		(settings.respectReducedMotion && prefersReducedMotion())
-	) {
-		if (!e.repeat) {
-			clearQueue();
-			resetWheelRuntimeState();
-		}
+	);
+}
+
+function resetInputStreamOnFirstPress(event: KeyboardEvent): void {
+	if (event.repeat) return;
+	clearQueue();
+	resetWheelRuntimeState();
+}
+
+// Capture-phase owner for continuous arrow scrolling. stopPropagation is
+// intentionally delayed until scrollTo accepts the target: HALO never blocks a
+// page shortcut when it cannot actually provide the requested scroll.
+export function onArrowKeydownCapture(event: KeyboardEvent): void {
+	if (!event.isTrusted) return;
+	const keyFactor = ARROW_FACTORS[event.key];
+	if (keyFactor === undefined) return;
+
+	if (shouldYieldKeyboardEvent(event) || mediaOwnsArrowKeys()) {
+		resetInputStreamOnFirstPress(event);
 		return;
 	}
 
-	// Video pages: spacebar + arrow keys belong to the site (play/pause,
-	// volume, seek). HALO yields completely. preventDefault suppresses
-	// native instant scroll (which feels like "paging"). PageUp/PageDown
-	// are never handled by video sites, so HALO always processes them.
-	const isVideoShortcutKey = e.key === ' ' || e.key === 'ArrowDown' || e.key === 'ArrowUp';
-	if (isVideoShortcutKey && hasMainVideoPlayer()) {
-		e.preventDefault();
-		if (!e.repeat) {
-			clearQueue();
-			resetWheelRuntimeState();
-		}
+	const dy = keyFactor * settings.arrowKeyStep;
+	const direction = Math.sign(dy);
+	const timestamp = performance.now();
+	const active = document.activeElement;
+	const route = isGenericFocus(active)
+		? resolveMainScrollRoute(dy)
+		: resolveScrollRoute(active, dy);
+
+	if (route.kind === 'blocked') {
+		event.preventDefault();
+		return;
+	}
+	if (route.kind !== 'animate') return;
+
+	const continuingStream =
+		accelerationTarget === route.target &&
+		accelerationDirection === direction &&
+		lastScrollTime !== null &&
+		timestamp - lastScrollTime < settings.accelerationDelta;
+	const newAcceleration = continuingStream
+		? Math.min(acceleration + 0.5, settings.accelerationMax)
+		: 1;
+
+	if (
+		!scrollTo(
+			route.target,
+			0,
+			dy,
+			route.admission,
+			'coarse',
+			timestamp,
+			newAcceleration,
+		)
+	) {
+		return;
+	}
+
+	event.preventDefault();
+	event.stopPropagation();
+	updateAcceleration(newAcceleration, timestamp, route.target, direction);
+}
+
+// Bubble-phase owner for discrete page keys. Arrow keys are excluded here so
+// the capture decision remains the only arrow-key authority.
+export function onKeydown(event: KeyboardEvent): void {
+	if (!event.isTrusted) return;
+	const keyFactor = BUBBLE_KEYS[event.key];
+	if (keyFactor === undefined) return;
+
+	if (shouldYieldKeyboardEvent(event)) {
+		resetInputStreamOnFirstPress(event);
+		return;
+	}
+
+	if (event.key === ' ' && hasMainVideoPlayer()) {
+		event.preventDefault();
+		resetInputStreamOnFirstPress(event);
 		return;
 	}
 
 	const active = document.activeElement;
-	const isGeneric = !active || active === document.body || active === document.documentElement;
-
-	const step = settings.arrowKeyStep;
 	const page = window.innerHeight * 0.9;
 	let dy = 0;
 
-	if (e.key === 'PageDown') dy = page;
-	else if (e.key === 'PageUp') dy = -page;
-	else if (e.key === ' ') dy = e.shiftKey ? -page : page;
-	else dy = keyFactor * step;
+	if (event.key === 'PageDown') dy = page;
+	else if (event.key === 'PageUp') dy = -page;
+	else if (event.key === ' ') dy = event.shiftKey ? -page : page;
+	else dy = keyFactor * settings.arrowKeyStep;
 
-	const direction = Math.sign(dy);
-	const timestamp = performance.now();
+	clearQueue();
+	resetWheelRuntimeState();
 
-	// Spacebar/PageUp/PageDown: discrete large jumps — clearQueue for a
-	// clean animation per press. Arrow keys: continuous like wheel — no
-	// clearQueue, let scrollTo handle direction changes internally.
-	const isDiscreteJump = e.key === ' ' || e.key === 'PageDown' || e.key === 'PageUp';
-	if (isDiscreteJump) {
-		clearQueue();
-		resetWheelRuntimeState();
-	}
-
-	const route = isGeneric
+	const route = isGenericFocus(active)
 		? resolveMainScrollRoute(dy)
 		: resolveScrollRoute(active, dy);
 	if (route.kind === 'blocked') {
-		e.preventDefault();
+		event.preventDefault();
 		return;
 	}
-	if (route.kind !== 'animate') {
-		return;
-	}
+	if (route.kind !== 'animate') return;
 
-	// Arrow keys: exact same acceleration logic as mouse wheel (time-delta
-	// based, not e.repeat based). This makes long-press feel identical to
-	// fast consecutive wheel ticks. Discrete jumps always use acc=1.
-	let newAcc = 1;
-	if (!isDiscreteJump) {
-		const continuingStream =
-			accelerationTarget === route.target &&
-			accelerationDirection === direction &&
-			lastScrollTime !== null &&
-			timestamp - lastScrollTime < settings.accelerationDelta;
-		newAcc = continuingStream
-			? Math.min(acceleration + 0.5, settings.accelerationMax)
-			: 1;
-	}
-
+	const timestamp = performance.now();
 	if (
-		scrollTo(route.target, 0, dy, route.admission, 'coarse', timestamp, newAcc)
+		scrollTo(route.target, 0, dy, route.admission, 'coarse', timestamp, 1)
 	) {
-		e.preventDefault();
-		updateAcceleration(newAcc, timestamp, route.target, direction);
+		event.preventDefault();
+		updateAcceleration(1, timestamp, route.target, Math.sign(dy));
 	}
+}
+
+export function resetKeyboardRuntime(): void {
+	activeMediaInteraction = null;
 }

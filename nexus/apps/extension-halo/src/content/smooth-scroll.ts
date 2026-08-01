@@ -5,7 +5,15 @@ import { configure, clearQueue } from '../tools/smooth-scroll/engine';
 import { STORAGE_KEY } from '../tools/smooth-scroll/types';
 import { settings, updateStateSettings } from './smooth-scroll-state';
 import { resetRuntimeState } from './smooth-scroll-state';
-import { onWheel, onKeydown, onMouseDown, resetInputHandlers } from './smooth-scroll-handlers';
+import {
+	onArrowKeydownCapture,
+	onKeyboardFocusIn,
+	onKeyboardPointerDown,
+	onKeydown,
+	onMouseDown,
+	onWheel,
+	resetInputHandlers,
+} from './smooth-scroll-handlers';
 
 const updateSettings = (value: unknown): void => {
 	const was = settings.enabled;
@@ -31,12 +39,17 @@ const onVisibilityChange = (): void => {
 const attachListeners = (): void => {
 	if (listenersAttached) return;
 	listenersAttached = true;
-	// Wheel + keydown: BUBBLE phase on window (the last stop in event
-	// propagation). Site listeners (YouTube on document, Bilibili on window)
-	// run before HALO and call preventDefault when they handle the key.
-	// HALO checks e.defaultPrevented: true → yield; false → smooth-scroll.
-	// No stopPropagation anywhere — see smooth-scroll-keyboard.ts for rationale.
+	// Arrow keys use capture only when HALO can admit a page scroll; discrete
+	// page keys remain bubble-phase so site handlers get first refusal. Pointer
+	// and focus capture own the media-interaction token independently of whether
+	// a site's player makes its underlying <video> focusable.
 	window.addEventListener('wheel', onWheel, { passive: false });
+	window.addEventListener('pointerdown', onKeyboardPointerDown, {
+		capture: true,
+		passive: true,
+	});
+	window.addEventListener('focusin', onKeyboardFocusIn, true);
+	window.addEventListener('keydown', onArrowKeydownCapture, true);
 	window.addEventListener('keydown', onKeydown);
 	window.addEventListener('mousedown', onMouseDown);
 	window.addEventListener('pagehide', resetDocumentRuntime);
@@ -47,6 +60,9 @@ const detachListeners = (): void => {
 	if (!listenersAttached) return;
 	listenersAttached = false;
 	window.removeEventListener('wheel', onWheel);
+	window.removeEventListener('pointerdown', onKeyboardPointerDown, true);
+	window.removeEventListener('focusin', onKeyboardFocusIn, true);
+	window.removeEventListener('keydown', onArrowKeydownCapture, true);
 	window.removeEventListener('keydown', onKeydown);
 	window.removeEventListener('mousedown', onMouseDown);
 	window.removeEventListener('pagehide', resetDocumentRuntime);

@@ -1,8 +1,8 @@
 {
 	"manifest_version": 3,
 	"name": "HALO - Ultimate Utility Toolset",
-	"version": "0.6.0",
-	"description": "Zero upload. Zero tracking. Zero cost. QR generator, color picker, and more.",
+	"version": "0.6.1",
+	"description": "Local-first SidePanel utilities with no ads or telemetry and explicit, user-invoked network tools.",
 	"permissions": [
 		"storage",
 		"activeTab",
@@ -14,14 +14,11 @@
 	],
 	"optional_permissions": [
 		"pageCapture",
-		"webNavigation",
 		"clipboardRead",
 		"clipboardWrite",
 		"downloads",
 		"history",
 		"bookmarks",
-		"topSites",
-		"notifications",
 		"tabGroups",
 		"userScripts",
 		"management"

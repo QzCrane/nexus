@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: halo-architecture
-last_reviewed: 2026-07-29
+last_reviewed: 2026-08-01
 ---
 
 # HALO architecture
@@ -56,6 +56,7 @@ tools/<id>/
 
 Input admission is owned by page content; displacement animation is owned by the shared engine:
 - **Routing**: Top-level context only; descendant handlers get first refusal. Embedded app surfaces, editable controls, fullscreen content, and `hidden`/`clip` elements remain native.
+- **Keyboard**: Arrow keys are capture-phase only after an animatable page route is admitted. Pointer/focus interaction with a media surface gives that surface arrow ownership until interaction moves outside, focus moves elsewhere, the media detaches, or the document lifecycle resets. Media presence, playback, and viewport size never imply arrow ownership. Space/PageUp/PageDown retain bubble-phase page refusal and discrete-jump semantics.
 - **Depth Bound**: `MAX_SCROLL_ROUTE_ELEMENTS` bounds structural preflight at 65 elements.
 - **Settings & Frame Envelope**: `HALO_SMOOTH_SCROLL_SETTINGS` in `storage.sync` distributes configuration. `SCROLL_LIMITS` owns frame bounds: max speed `6 CSS px/ms`, max frame displacement `100 CSS px`.
 - **Time Envelope**: `tailBudgetMs()` returns `max(280, state.time + 32)`. `maxBacklogPx()` derives max capacity (at `animationTime=400`, `tailBudget=432`, `maxBacklog=2200`). Fine-mode time constant `max(8, animationTime * 0.03)` with `MAX_FINE_FRAME_RESPONSE=0.8`.

@@ -45,6 +45,7 @@ let matchesCalls = 0;
 
 class FakeElement {
 	public parentElement: FakeElement | null = null;
+	public readonly children: FakeElement[] = [];
 	public scrollHeight = 0;
 	public clientHeight = 0;
 	public clientWidth = 0;
@@ -67,6 +68,9 @@ class FakeElement {
 	public constructor(
 		public readonly tagName: string,
 		public rectHeight = 0,
+		public rectWidth = 0,
+		public rectLeft = 0,
+		public rectTop = 0,
 	) {}
 
 	public getAttribute(name: string): string | null {
@@ -115,8 +119,33 @@ class FakeElement {
 		return false;
 	}
 
-	public getBoundingClientRect(): { height: number } {
-		return { height: this.rectHeight };
+	public querySelector(selector: string): FakeElement | null {
+		for (const child of this.children) {
+			if (child.matches(selector)) return child;
+			const nested = child.querySelector(selector);
+			if (nested) return nested;
+		}
+		return null;
+	}
+
+	public getBoundingClientRect(): {
+		bottom: number;
+		height: number;
+		left: number;
+		right: number;
+		top: number;
+		width: number;
+	} {
+		const width = this.rectWidth || this.clientWidth;
+		const height = this.rectHeight || this.clientHeight;
+		return {
+			bottom: this.rectTop + height,
+			height,
+			left: this.rectLeft,
+			right: this.rectLeft + width,
+			top: this.rectTop,
+			width,
+		};
 	}
 }
 
@@ -215,6 +244,9 @@ let body: FakeElement;
 let root: FakeElement;
 let fakeWindow: FakeWindow;
 let computedStyleReads = 0;
+let onArrowKeydownCapture: typeof import('../src/content/smooth-scroll-handlers').onArrowKeydownCapture;
+let onKeyboardFocusIn: typeof import('../src/content/smooth-scroll-handlers').onKeyboardFocusIn;
+let onKeyboardPointerDown: typeof import('../src/content/smooth-scroll-handlers').onKeyboardPointerDown;
 let onWheel: typeof import('../src/content/smooth-scroll-handlers').onWheel;
 let onKeydown: typeof import('../src/content/smooth-scroll-handlers').onKeydown;
 let onMouseDown: typeof import('../src/content/smooth-scroll-handlers').onMouseDown;
@@ -280,10 +312,20 @@ function element(
 		overscrollBehaviorY: string;
 		position: string;
 		rectHeight: number;
+		rectLeft: number;
+		rectTop: number;
+		rectWidth: number;
 	}> = {},
 ): FakeElement {
-	const result = new FakeElement(tagName, options.rectHeight ?? 0);
+	const result = new FakeElement(
+		tagName,
+		options.rectHeight ?? 0,
+		options.rectWidth ?? 0,
+		options.rectLeft ?? 0,
+		options.rectTop ?? 0,
+	);
 	result.parentElement = parent;
+	parent?.children.push(result);
 	result.scrollHeight = options.scrollHeight ?? 0;
 	result.clientHeight = options.clientHeight ?? 0;
 	result.styleState.overflowY = options.overflowY ?? 'visible';
@@ -759,8 +801,16 @@ beforeAll(async () => {
 		removeEventListener: () => {},
 	});
 
-	({ onMouseDown, onMouseMove, onWheel, onKeydown, resetInputHandlers } =
-		await import('../src/content/smooth-scroll-handlers'));
+	({
+		onArrowKeydownCapture,
+		onKeyboardFocusIn,
+		onKeyboardPointerDown,
+		onKeydown,
+		onMouseDown,
+		onMouseMove,
+		onWheel,
+		resetInputHandlers,
+	} = await import('../src/content/smooth-scroll-handlers'));
 });
 
 beforeEach(() => {
@@ -2472,8 +2522,6 @@ describe('smooth scroll input admission', () => {
 });
 
 describe('smooth scroll keyboard', () => {
-	// eff: Builds a trusted KeyboardEvent fixture for the given key. preventDefault
-	// flips defaultPrevented so the handler's admission decision is observable.
 	function keyEvent(key: string, extras: Partial<{
 		shiftKey: boolean;
 		ctrlKey: boolean;
@@ -2498,31 +2546,61 @@ describe('smooth scroll keyboard', () => {
 		return event as unknown as KeyboardEvent;
 	}
 
-	// eff: HALO keydown registers in BUBBLE phase on window (last stop).
-	// Video pages: spacebar/arrows yield to site via DOM-state video check.
-	// Non-video pages: e.defaultPrevented gates admission. No stopPropagation.
+	function pointerEvent(target: FakeElement, clientX = 0, clientY = 0): PointerEvent {
+		return {
+			clientX,
+			clientY,
+			isTrusted: true,
+			composedPath: () => {
+				const path: FakeElement[] = [];
+				let current: FakeElement | null = target;
+				while (current) {
+					path.push(current);
+					current = current.parentElement;
+				}
+				return path as unknown as EventTarget[];
+			},
+		} as unknown as PointerEvent;
+	}
 
-	function withVisibleVideo(fn: () => void, opts: { width?: number; height?: number } = {}): void {
+	function focusEvent(target: FakeElement): FocusEvent {
+		return {
+			composedPath: () => [target] as unknown as EventTarget[],
+		} as unknown as FocusEvent;
+	}
+
+	function propagationStopped(event: KeyboardEvent): boolean {
+		return (event as unknown as { propagationStopped: boolean }).propagationStopped;
+	}
+
+	function withVisibleVideo(
+		fn: (video: FakeElement) => void,
+		opts: { width?: number; height?: number; left?: number; top?: number } = {},
+	): void {
 		const doc = document as unknown as {
 			getElementsByTagName: (tag: string) => unknown[];
 		};
 		const original = doc.getElementsByTagName;
-		const videoEl = element('VIDEO');
-		// Default: main player (640x360 on 1440x900 viewport → 44% width,
-		// 40% height → below 50% threshold). For player tests use large
-		// dimensions that exceed the 50% viewport ratio.
-		videoEl.clientWidth = opts.width ?? 800;
-		videoEl.clientHeight = opts.height ?? 500;
+		const width = opts.width ?? 800;
+		const height = opts.height ?? 500;
+		const video = element('VIDEO', body, {
+			rectHeight: height,
+			rectLeft: opts.left ?? 100,
+			rectTop: opts.top ?? 100,
+			rectWidth: width,
+		});
+		video.clientWidth = width;
+		video.clientHeight = height;
 		doc.getElementsByTagName = (tag: string) =>
-			tag === 'video' ? [videoEl] : original(tag);
+			tag === 'video' ? [video] : tag === 'audio' ? [] : original(tag);
 		try {
-			fn();
+			fn(video);
 		} finally {
 			doc.getElementsByTagName = original;
 		}
 	}
 
-	test('spacebar scrolls page smoothly when site did not preventDefault', () => {
+	test('spacebar scrolls in bubble phase when the site yields', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		const event = keyEvent(' ');
@@ -2531,15 +2609,13 @@ describe('smooth scroll keyboard', () => {
 		onKeydown(event);
 
 		expect(event.defaultPrevented).toBe(true);
-		expect((event as unknown as { propagationStopped: boolean }).propagationStopped).toBe(false);
+		expect(propagationStopped(event)).toBe(false);
 		expect(frameCallbacks.size).toBe(1);
 		runUntilIdle(start + 16);
 		expect(fakeWindow.scrollY).toBeCloseTo(window.innerHeight * 0.9, 5);
 	});
 
-	test('spacebar yields when site already preventDefault', () => {
-		// Site listener (YouTube/Bilibili) preventDefault'd for play/pause.
-		// HALO respects it: no scroll, no stopPropagation.
+	test('discrete keys yield when the site already prevented the event', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		const event = keyEvent(' ');
@@ -2548,50 +2624,100 @@ describe('smooth scroll keyboard', () => {
 		onKeydown(event);
 
 		expect(frameCallbacks.size).toBe(0);
-		expect((event as unknown as { propagationStopped: boolean }).propagationStopped).toBe(false);
+		expect(propagationStopped(event)).toBe(false);
 	});
 
-	test('arrow keys yield when site already preventDefault (YouTube)', () => {
-		// YouTube preventDefaults arrows for volume control. HALO yields.
+	test('arrows yield to an upstream capture owner', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		const event = keyEvent('ArrowDown');
 		event.preventDefault();
 
-		onKeydown(event);
+		onArrowKeydownCapture(event);
 
 		expect(frameCallbacks.size).toBe(0);
-		expect((event as unknown as { propagationStopped: boolean }).propagationStopped).toBe(false);
+		expect(propagationStopped(event)).toBe(false);
 	});
 
-	test('arrow keys scroll on non-video page when site did not preventDefault', () => {
-		// Non-video page, no site preventDefault → HALO scrolls.
+	test('arrows scroll a video detail page when media has no interaction ownership', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
+
+		withVisibleVideo(() => {
+			const event = keyEvent('ArrowDown');
+			onArrowKeydownCapture(event);
+
+			expect(event.defaultPrevented).toBe(true);
+			expect(propagationStopped(event)).toBe(true);
+			expect(frameCallbacks.size).toBe(1);
+		});
+	});
+
+	test('pointer interaction inside media yields arrows to the player', () => {
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+
+		withVisibleVideo((video) => {
+			onKeyboardPointerDown(pointerEvent(video, 200, 200));
+			const event = keyEvent('ArrowDown');
+			onArrowKeydownCapture(event);
+
+			expect(event.defaultPrevented).toBe(false);
+			expect(propagationStopped(event)).toBe(false);
+			expect(frameCallbacks.size).toBe(0);
+		});
+	});
+
+	test('pointer interaction outside media releases arrow ownership', () => {
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+
+		withVisibleVideo((video) => {
+			onKeyboardPointerDown(pointerEvent(video, 200, 200));
+			const article = element('ARTICLE', body);
+			onKeyboardPointerDown(pointerEvent(article, 1_200, 700));
+			const event = keyEvent('ArrowDown');
+			onArrowKeydownCapture(event);
+
+			expect(event.defaultPrevented).toBe(true);
+			expect(propagationStopped(event)).toBe(true);
+			expect(frameCallbacks.size).toBe(1);
+		});
+	});
+
+	test('a focused player wrapper owns arrows without focusing the video element', () => {
+		root.styleState.overflowY = 'auto';
+		body.styleState.overflowY = 'hidden';
+		const player = element('DIV', body);
+		element('VIDEO', player);
+		(document as unknown as { activeElement: FakeElement }).activeElement = player;
+		onKeyboardFocusIn(focusEvent(player));
+
 		const event = keyEvent('ArrowDown');
+		onArrowKeydownCapture(event);
 
-		onKeydown(event);
-
-		expect(event.defaultPrevented).toBe(true);
-		expect((event as unknown as { propagationStopped: boolean }).propagationStopped).toBe(false);
-		expect(frameCallbacks.size).toBe(1);
+		expect(event.defaultPrevented).toBe(false);
+		expect(propagationStopped(event)).toBe(false);
+		expect(frameCallbacks.size).toBe(0);
 	});
 
-	test('arrow keys yield with preventDefault on video pages', () => {
-		// Video page → arrows belong to site. HALO preventDefaults to
-		// suppress native instant scroll, does not scroll itself.
+	test('detached media cannot retain arrow ownership', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 
-		withVisibleVideo(() => {
+		withVisibleVideo((video) => {
+			onKeyboardPointerDown(pointerEvent(video, 200, 200));
+			video.isConnected = false;
 			const event = keyEvent('ArrowDown');
-			onKeydown(event);
-			expect(frameCallbacks.size).toBe(0);
+			onArrowKeydownCapture(event);
+
 			expect(event.defaultPrevented).toBe(true);
+			expect(propagationStopped(event)).toBe(true);
+			expect(frameCallbacks.size).toBe(1);
 		});
 	});
 
-	test('spacebar yields with preventDefault on video pages', () => {
+	test('spacebar keeps the visible-player play pause policy', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 
@@ -2600,140 +2726,99 @@ describe('smooth scroll keyboard', () => {
 			onKeydown(event);
 			expect(frameCallbacks.size).toBe(0);
 			expect(event.defaultPrevented).toBe(true);
+			expect(propagationStopped(event)).toBe(false);
 		});
 	});
 
-	test('PageUp/PageDown scroll even on video pages', () => {
-		// PageUp/PageDown are never handled by video sites → HALO always scrolls.
+	test('PageUp and PageDown remain available on video pages', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 
 		withVisibleVideo(() => {
-			const pd = keyEvent('PageDown');
-			onKeydown(pd);
-			expect(pd.defaultPrevented).toBe(true);
+			const event = keyEvent('PageDown');
+			onKeydown(event);
+			expect(event.defaultPrevented).toBe(true);
 			expect(frameCallbacks.size).toBe(1);
 		});
 	});
 
-	test('small preview video does NOT yield (YouTube homepage hover preview)', () => {
-		// Preview video (320x180) on 1440x900 viewport → 22% width, 20% height
-		// → below 50% threshold → HALO scrolls normally.
+	test('small preview media does not claim space or arrows without interaction', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 
 		withVisibleVideo(() => {
-			const event = keyEvent(' ');
-			onKeydown(event);
-			expect(event.defaultPrevented).toBe(true);
+			const space = keyEvent(' ');
+			onKeydown(space);
+			expect(space.defaultPrevented).toBe(true);
+			expect(frameCallbacks.size).toBe(1);
+			clearQueue();
+
+			const arrow = keyEvent('ArrowDown');
+			onArrowKeydownCapture(arrow);
+			expect(arrow.defaultPrevented).toBe(true);
+			expect(propagationStopped(arrow)).toBe(true);
 			expect(frameCallbacks.size).toBe(1);
 		}, { width: 320, height: 180 });
 	});
 
-	test('arrow keys scroll when small preview video is present', () => {
-		root.styleState.overflowY = 'auto';
-		body.styleState.overflowY = 'hidden';
-
-		withVisibleVideo(() => {
-			const event = keyEvent('ArrowDown');
-			onKeydown(event);
-			expect(event.defaultPrevented).toBe(true);
-			expect(frameCallbacks.size).toBe(1);
-		}, { width: 320, height: 180 });
-	});
-
-	test('PageUp/PageDown scroll when site did not preventDefault', () => {
-		root.styleState.overflowY = 'auto';
-		body.styleState.overflowY = 'hidden';
-
-		const pd = keyEvent('PageDown');
-		onKeydown(pd);
-		expect(pd.defaultPrevented).toBe(true);
-		expect(frameCallbacks.size).toBe(1);
-	});
-
-	test('arrow key repeat is not throttled, accumulates like wheel', () => {
-		// No throttling: every repeat calls scrollTo, same as wheel ticks.
-		// Engine backlog limit naturally caps accumulation.
+	test('arrow repeat is unthrottled and uses wheel time-delta acceleration', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		root.scrollHeight = 20_000;
 
 		fakeNow = 1_000;
-		onKeydown(keyEvent('ArrowDown'));
-		expect(frameCallbacks.size).toBe(1);
-
-		// Repeat 33ms later (OS key-repeat interval) — not throttled
-		fakeNow = 1_033;
-		const repeat = keyEvent('ArrowDown', { repeat: true });
-		onKeydown(repeat);
-		expect(repeat.defaultPrevented).toBe(true);
-		expect(frameCallbacks.size).toBe(1);
-	});
-
-	test('arrow key acceleration uses wheel time-delta logic', () => {
-		// Same as wheel: continuingStream when interval < accelerationDelta (50ms)
-		root.styleState.overflowY = 'auto';
-		body.styleState.overflowY = 'hidden';
-		root.scrollHeight = 20_000;
-
-		fakeNow = 1_000;
-		onKeydown(keyEvent('ArrowDown'));
+		onArrowKeydownCapture(keyEvent('ArrowDown'));
 		expect(acceleration).toBe(1);
 
-		// 33ms later < 50ms accelerationDelta → continuing stream → acc builds
 		fakeNow = 1_033;
-		onKeydown(keyEvent('ArrowDown', { repeat: true }));
+		const firstRepeat = keyEvent('ArrowDown', { repeat: true });
+		onArrowKeydownCapture(firstRepeat);
+		expect(firstRepeat.defaultPrevented).toBe(true);
 		expect(acceleration).toBe(1.5);
 
 		fakeNow = 1_066;
-		onKeydown(keyEvent('ArrowDown', { repeat: true }));
-		expect(acceleration).toBe(2.0);
+		onArrowKeydownCapture(keyEvent('ArrowDown', { repeat: true }));
+		expect(acceleration).toBe(2);
+		expect(frameCallbacks.size).toBe(1);
 	});
 
-	test('arrow key acceleration resets when interval exceeds accelerationDelta', () => {
+	test('arrow acceleration resets after the continuity window', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		root.scrollHeight = 20_000;
 
 		fakeNow = 1_000;
-		onKeydown(keyEvent('ArrowDown'));
-		expect(acceleration).toBe(1);
-
-		// 60ms later > 50ms accelerationDelta → not continuing → acc resets
+		onArrowKeydownCapture(keyEvent('ArrowDown'));
 		fakeNow = 1_060;
-		onKeydown(keyEvent('ArrowDown', { repeat: true }));
+		onArrowKeydownCapture(keyEvent('ArrowDown', { repeat: true }));
+
 		expect(acceleration).toBe(1);
 	});
 
-	test('arrow key first press does not clearQueue (same as wheel)', () => {
-		// Arrow keys are continuous like wheel — no clearQueue on first press.
-		// scrollTo handles direction changes internally.
+	test('PageDown replaces the live continuous arrow stream', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		root.scrollHeight = 20_000;
 
-		onKeydown(keyEvent('ArrowDown'));
+		onArrowKeydownCapture(keyEvent('ArrowDown'));
+		onArrowKeydownCapture(keyEvent('ArrowDown', { repeat: true }));
 		expect(frameCallbacks.size).toBe(1);
 
-		onKeydown(keyEvent('ArrowDown', { repeat: true }));
-		expect(frameCallbacks.size).toBe(1);
-
-		// PageDown is discrete — clearQueue for clean jump
 		onKeydown(keyEvent('PageDown'));
 		expect(frameCallbacks.size).toBe(1);
 	});
 
-	test('does not preventDefault when no animatable target', () => {
+	test('arrows do not block the page when no animatable target exists', () => {
 		root.styleState.overflowY = 'hidden';
 		body.styleState.overflowY = 'hidden';
 		root.scrollHeight = 100;
-		const event = keyEvent(' ');
+		const event = keyEvent('ArrowDown');
 
-		onKeydown(event);
+		onArrowKeydownCapture(event);
 
 		expect(event.defaultPrevented).toBe(false);
-		expect((event as unknown as { propagationStopped: boolean }).propagationStopped).toBe(false);
+		expect(propagationStopped(event)).toBe(false);
+		expect(frameCallbacks.size).toBe(0);
 	});
 });
 

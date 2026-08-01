@@ -3,7 +3,7 @@ type: reference
 status: draft
 audience: developer
 owner: halo-product-and-engineering
-last_reviewed: 2026-07-20
+last_reviewed: 2026-08-01
 ---
 
 # HALO roadmap
@@ -20,11 +20,12 @@ This document owns sequencing and unresolved work. It does not define current ru
 
 ## P1: release readiness
 
-- complete the HALO public README, privacy policy, store listings, locale assets, screenshots, and release checks before public distribution;
+- maintain the HALO public README, privacy policy, localized store copy, reproducible screenshots, and release checks as one candidate projection;
 - verify every shipped plugin's permissions, network behavior, retention, import/export, failure isolation, and cleanup;
 - replace fixed tool/version counts with generated release evidence;
 - define production-package integrity checks and browser smoke coverage;
 - document unsupported browser surfaces and restricted-page behavior.
+- before Chrome Web Store submission, revalidate the current Dashboard declarations and image requirements against primary sources and record the authenticated submission result separately from GitHub publication.
 
 ## P2: existing product workstreams
 

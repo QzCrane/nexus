@@ -8,7 +8,6 @@ const TOOLS_DIR = path.resolve(__dirname, '../apps/extension-halo/src/tools');
 
 const updates = {
     'archive': ["pageCapture", "downloads"],
-    'userscripts': ["webNavigation", "*://*/*"],
     'clipboard': ["clipboardRead", "clipboardWrite"],
     'qrcode': ["clipboardWrite"],
     'color-picker': ["clipboardWrite"],

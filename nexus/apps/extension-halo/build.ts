@@ -38,7 +38,9 @@ function run(label, args, opts = {}) {
 const commonConfig = {
 	bundle: true,
 	minify: !isDev,
-	sourcemap: isDev ? true : 'linked',
+	// Production packages must not expose source paths or ship multi-megabyte
+	// source maps. Development and watch builds retain linked maps for debugging.
+	sourcemap: isDev,
 	define: { 'process.env.NODE_ENV': isDev ? '"development"' : '"production"' },
 	loader: { '.ts': 'ts', '.tsx': 'tsx' },
 	alias: {

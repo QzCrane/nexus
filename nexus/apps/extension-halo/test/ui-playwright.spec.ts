@@ -31,6 +31,7 @@ interface FixtureSnapshot {
 	outerTop: number;
 	samples: FrameSample[];
 	shadowTop: number;
+	siteArrowKeys: number;
 	wheels: WheelRecord[];
 }
 
@@ -122,6 +123,12 @@ const FIXTURE_HTML = `<!doctype html>
 			height: 700px;
 			background: #4c1d95;
 		}
+		#page-focus {
+			height: 80px;
+			padding: 24px;
+			outline: none;
+			background: #0f766e;
+		}
 	</style>
 </head>
 <body>
@@ -143,6 +150,7 @@ const FIXTURE_HTML = `<!doctype html>
 			></video>
 			<div id="hidden-overflow-content"></div>
 		</div>
+		<div id="page-focus" tabindex="0">Page keyboard owner</div>
 		<div class="filler"></div>
 	</div>
 	<script>
@@ -181,6 +189,7 @@ const FIXTURE_HTML = `<!doctype html>
 			let lastWheelSampleIndex = -1;
 			let sampleFrame = 0;
 			let sampling = false;
+			let siteArrowKeys = 0;
 			let stallBeforeNextWheelMs = 0;
 			const maxSamples = 240;
 			const getShadowScroller = () =>
@@ -219,6 +228,15 @@ const FIXTURE_HTML = `<!doctype html>
 				}
 			}, { capture: true, passive: true });
 
+			// Bilibili-style global shortcut: the site owns arrows in bubble phase
+			// even when focus is outside the player. HALO must stop this listener
+			// only after it successfully admits page scrolling.
+			window.addEventListener('keydown', (event) => {
+				if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+				siteArrowKeys++;
+				event.preventDefault();
+			});
+
 			window.__haloFixture = {
 				installWheelProbe() {
 					if (wheelProbeInstalled) return;
@@ -244,6 +262,7 @@ const FIXTURE_HTML = `<!doctype html>
 					window.scrollTo({ top: 0, behavior: 'instant' });
 					samples = [];
 					wheels = [];
+					siteArrowKeys = 0;
 					lastWheelSampleIndex = -1;
 				},
 				stallBeforeNextWheel(durationMs) {
@@ -265,6 +284,7 @@ const FIXTURE_HTML = `<!doctype html>
 						outerTop: readActiveTop(),
 						samples: samples.slice(),
 						shadowTop: getShadowScroller().scrollTop,
+						siteArrowKeys,
 						wheels: wheels.slice(),
 					};
 				},
@@ -305,6 +325,23 @@ async function nextFrame(page: Page): Promise<void> {
 	await page.evaluate(
 		() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
 	);
+}
+
+async function waitForSmoothScrollAdmission(page: Page): Promise<void> {
+	const deadline = Date.now() + 10_000;
+	while (Date.now() < deadline) {
+		await page.evaluate(() => window.__haloFixture.reset('fine-scroller'));
+		await nextFrame(page);
+		await wheelAt(page, '#fine-target', MICRO_WHEEL_DELTA);
+		await nextFrame(page);
+		const snapshot = await page.evaluate(() => window.__haloFixture.snapshot());
+		if (snapshot.wheels.at(-1)?.defaultPrevented) {
+			await waitForFinalPosition(page, 'fine-scroller', MICRO_WHEEL_DELTA);
+			await page.evaluate(() => window.__haloFixture.reset('fine-scroller'));
+			return;
+		}
+	}
+	throw new Error('HALO content script did not admit a trusted wheel within 10 seconds');
 }
 
 async function waitForFinalPosition(
@@ -394,7 +431,7 @@ async function closeFixtureServer(server: Server | null): Promise<void> {
 }
 
 test.describe('HALO smooth scroll in Chromium', () => {
-	test('animates fine wheel input across light, media, shadow, slot, and viewport routes', async () => {
+	test('owns wheel routes and keyboard media focus across real extension events', async () => {
 		test.setTimeout(30_000);
 		const profilePath = await mkdtemp(join(tmpdir(), 'halo-playwright-'));
 		let server: Server | null = null;
@@ -473,13 +510,9 @@ test.describe('HALO smooth scroll in Chromium', () => {
 
 			const page = context.pages()[0] ?? await context.newPage();
 			await page.emulateMedia({ reducedMotion: 'reduce' });
-			const smoothScrollReady = page.waitForEvent('console', {
-				predicate: (message) => message.text().includes('[HALO:Scroll] Init'),
-				timeout: 10_000,
-			});
 			await page.goto(fixtureUrl, { waitUntil: 'load' });
-			await smoothScrollReady;
 			await page.evaluate(() => window.__haloFixture.installWheelProbe());
+			await waitForSmoothScrollAdmission(page);
 
 			expect(
 				await page.evaluate(
@@ -623,6 +656,32 @@ test.describe('HALO smooth scroll in Chromium', () => {
 				},
 			]);
 			expectGradualMovement(mediaSnapshot);
+
+			await page.evaluate(() => window.__haloFixture.reset('media-scroller'));
+			await page.locator('#page-focus').click();
+			expect(
+				await page.evaluate(() => document.activeElement?.id),
+			).toBe('page-focus');
+			await page.keyboard.press('ArrowDown');
+			await waitForFinalPosition(
+				page,
+				'media-scroller',
+				COARSE_WHEEL_DISTANCE,
+			);
+			const pageArrowSnapshot = await page.evaluate(
+				() => window.__haloFixture.snapshot(),
+			);
+			expect(pageArrowSnapshot.siteArrowKeys).toBe(0);
+
+			await page.evaluate(() => window.__haloFixture.reset('media-scroller'));
+			await page.locator('#video-target').click();
+			await page.keyboard.press('ArrowDown');
+			await nextFrame(page);
+			const mediaArrowSnapshot = await page.evaluate(
+				() => window.__haloFixture.snapshot(),
+			);
+			expect(mediaArrowSnapshot.outerTop).toBe(0);
+			expect(mediaArrowSnapshot.siteArrowKeys).toBe(1);
 
 			await page.evaluate(() => {
 				document.documentElement.style.height = 'auto';

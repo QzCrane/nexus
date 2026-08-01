@@ -32,6 +32,8 @@ docs/
 - [`research/`](research/README.md) contains dated evidence and candidate gaps.
 - [`proposals/`](proposals/README.md) contains designs that have not passed implementation gates.
 - [`../README.md`](../README.md) is the product/developer entrypoint.
+- [`../PRIVACY.md`](../PRIVACY.md) owns the public network, storage, retention, and developer-collection disclosure.
+- [`../store-listings/README.md`](../store-listings/README.md) owns localized store copy, permission declarations, release notes, and reproducible listing assets.
 
 Executable registry data, source, tests, build output, and release gates remain implementation truth. A proposal or roadmap item becomes current behavior only after the architecture owner and executable evidence close together.
 
