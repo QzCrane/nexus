@@ -49,8 +49,13 @@ function sourceIdentity(element: HTMLMediaElement): string {
 	const sourceObject = element.srcObject;
 	let objectIdentity = 0;
 	if (sourceObject && typeof sourceObject === 'object') {
-		objectIdentity = sourceObjectIds.get(sourceObject) ?? nextSourceObjectId++;
-		sourceObjectIds.set(sourceObject, objectIdentity);
+		const existing = sourceObjectIds.get(sourceObject);
+		if (existing === undefined) {
+			objectIdentity = nextSourceObjectId++;
+			sourceObjectIds.set(sourceObject, objectIdentity);
+		} else {
+			objectIdentity = existing;
+		}
 	}
 	return `${element.currentSrc || element.src || ''}\n${objectIdentity}`;
 }
@@ -134,30 +139,19 @@ export class MediaRegistry {
 					: 0;
 			}
 		});
+		// The document-wide observer owns only topology. Attribute observation is
+		// scoped per registered media element below, so unrelated page churn such
+		// as image/input `src` changes never enters the SPECTRA runtime callback.
 		this.mutationObserver = new MutationObserver((mutations) => {
 			for (const mutation of mutations) {
 				for (const node of mutation.addedNodes) this.discover(node);
 				for (const node of mutation.removedNodes) this.queueRemovalTree(node);
-			if (mutation.type === 'attributes' && mutation.target instanceof HTMLMediaElement) {
-					if (mutation.attributeName === 'src' || mutation.attributeName === 'crossorigin') {
-						this.refreshSource(mutation.target, false);
-					}
-					if (mutation.attributeName === 'loop') {
-						const record = this.byElement.get(mutation.target);
-						if (record) this.emit(record.target, 'loopchange', mutation.target);
-					}
-				}
 			}
 		});
 		this.discover(document.documentElement);
 		this.mutationObserver.observe(document, {
 			childList: true,
 			subtree: true,
-			attributes: true,
-			// `loop` is a reflected boolean attribute with no dedicated DOM event.
-			// Reuse the existing runtime observer rather than polling or patching its
-			// property descriptor so page-side loop changes join the same snapshot.
-			attributeFilter: ['src', 'crossorigin', 'loop'],
 		});
 		document.addEventListener('fullscreenchange', this.fullscreenListener);
 	}
@@ -283,12 +277,33 @@ export class MediaRegistry {
 			this.selectRecord(record, true);
 		};
 		element.addEventListener('pointerdown', onPointer, true);
+
+		// Source and loop attributes are relevant only on registered media. A
+		// per-element observer keeps the same immediate source-revision semantics
+		// while preventing unrelated page attributes from entering this runtime.
+		const attributeObserver = new MutationObserver((mutations) => {
+			if (this.disposed || !this.byElement.has(element)) return;
+			for (const mutation of mutations) {
+				if (mutation.attributeName === 'src' || mutation.attributeName === 'crossorigin') {
+					this.refreshSource(element, false);
+				}
+				if (mutation.attributeName === 'loop') {
+					this.emit(record.target, 'loopchange', element);
+				}
+			}
+		});
+
 		record.dispose = () => {
+			attributeObserver.disconnect();
 			for (const [type, listener] of listeners) element.removeEventListener(type, listener);
 			element.removeEventListener('pointerdown', onPointer, true);
 		};
 		this.byElement.set(element, record);
 		this.byId.set(mediaId, record);
+		attributeObserver.observe(element, {
+			attributes: true,
+			attributeFilter: ['src', 'crossorigin', 'loop'],
+		});
 		this.intersectionObserver.observe(element);
 		this.emit(record.target, 'registered', element);
 	}
