@@ -37,12 +37,13 @@ const ToolEngineStatusDot: React.FC<{ toolId: string; suppressed: boolean }> = (
 	);
 };
 
-/** Indicator dots for running and engine status */
+/** Indicator dots for running, engine, and background-service status. */
 export const StatusIndicators: React.FC<{
 	toolId: string;
 	isRunning: boolean;
 	serviceState?: 'active' | 'inactive';
-}> = ({ toolId, isRunning, serviceState }) => (
+	showEngineStatus?: boolean;
+}> = ({ toolId, isRunning, serviceState, showEngineStatus = true }) => (
 	<div style={{ position: 'absolute', top: '5px', left: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
 		{isRunning && (
 			<div style={{
@@ -51,8 +52,8 @@ export const StatusIndicators: React.FC<{
 			}} />
 		)}
 
-		{/* Only the three engine-backed tool cards subscribe to EngineStatus. */}
-		{ENGINE_STATUS_TOOL_IDS.has(toolId) && (
+		{/* Only the three engine-backed Home cards subscribe to EngineStatus. */}
+		{showEngineStatus && ENGINE_STATUS_TOOL_IDS.has(toolId) && (
 			<ToolEngineStatusDot toolId={toolId} suppressed={!!serviceState} />
 		)}
 
