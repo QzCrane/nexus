@@ -2,6 +2,8 @@
 // inv: Frame-local physical input belongs to dedicated all-frame hosts.
 // NOTE: UserScripts injection is handled by chrome.userScripts API (registry.ts).
 
+export {};
+
 const LOG_TAG = '[HALO]';
 const t0 = performance.now();
 
