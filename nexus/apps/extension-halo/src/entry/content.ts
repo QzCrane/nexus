@@ -1,5 +1,5 @@
-// goal: HALO top-frame Content Script Host
-// inv: Cross-frame work belongs in purpose-built minimal hosts.
+// goal: HALO top-frame document-start Content Script Host
+// inv: Keep this entry limited to controls that must exist before document_idle.
 // NOTE: UserScripts injection is handled by chrome.userScripts API (registry.ts).
 
 import { init as initSmoothScroll } from '../content/smooth-scroll';
@@ -25,9 +25,6 @@ const CROSS_FRAME_TOOL_MESSAGES = new Set([
 // commands are intentionally left unanswered here so the minimal frame-tools
 // host can execute them in every matching frame without response competition.
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-	// rule: chrome.runtime permits primitive messages (e.g. chrome.runtime.sendMessage("ping"));
-	// without this guard, message.type on a string/number/null throws TypeError inside the
-	// listener, Chrome swallows the throw but sendResponse is never called, hanging the caller.
 	if (!message || typeof message !== 'object') {
 		sendResponse({ success: false, error: 'Invalid message format' });
 		return false;
@@ -60,8 +57,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 				activeTools.delete(deactivateId);
 				sendResponse({ success: true });
 			} else {
-				// rule: respond on every early-return path — otherwise the caller's
-				// promise hangs forever waiting for a response that never arrives.
 				sendResponse({ success: false, error: 'Missing toolId' });
 			}
 			break;
@@ -92,16 +87,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	return false;
 });
 
-// ===== INITIALIZE TOP-FRAME MODULES =====
+// Smooth Scroll owns wheel input and therefore remains available from
+// document_start. Hover Zoom is a separate top-frame document_idle entry.
 void initSmoothScroll().catch((error: unknown) => {
 	console.error(LOG_TAG, 'Smooth Scroll init failed:', error);
 });
 
-// HoverZoom remains source-lazy. The classic content-script build still owns a
-// single physical bundle; a later injection boundary can make this import
-// physically lazy without moving a user-facing capability into every frame.
-import('../content/hover-zoom').then((module) => module.init()).catch((error: unknown) => {
-	console.warn(LOG_TAG, 'HoverZoom init failed:', error);
-});
-
-console.log(LOG_TAG, 'Top-frame content host ready in', (performance.now() - t0).toFixed(2), 'ms');
+console.log(LOG_TAG, 'Top-frame document-start host ready in', (performance.now() - t0).toFixed(2), 'ms');
