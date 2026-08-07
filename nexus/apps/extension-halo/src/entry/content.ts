@@ -1,48 +1,29 @@
-// goal: HALO top-frame Content Script Host (modular)
-// inv: Cross-frame work belongs in purpose-built minimal hosts such as content-clipboard.ts.
+// goal: HALO top-frame Content Script Host
+// inv: Cross-frame work belongs in purpose-built minimal hosts.
 // NOTE: UserScripts injection is handled by chrome.userScripts API (registry.ts).
 
-import * as Ruler from '../content/ruler';
 import { init as initSmoothScroll } from '../content/smooth-scroll';
-import * as DomSelector from '../content/dom-selector';
-import * as PageAnnotate from '../content/page-annotate';
 
 const LOG_TAG = '[HALO]';
 const t0 = performance.now();
-
-function isExpectedRuntimeDisconnect(error: unknown): boolean {
-	const message = error instanceof Error ? error.message : String(error);
-	return message.includes('Extension context invalidated') ||
-		message.includes('Receiving end does not exist') ||
-		message.includes('message port closed');
-}
-
-function sendRuntimeMessageBestEffort(
-	message: unknown,
-	phase: string,
-): void {
-	try {
-		void chrome.runtime.sendMessage(message).catch((error: unknown) => {
-			if (!isExpectedRuntimeDisconnect(error)) {
-				console.warn(LOG_TAG, `${phase} notification failed`, error);
-			}
-		});
-	} catch (error: unknown) {
-		if (!isExpectedRuntimeDisconnect(error)) {
-			console.warn(LOG_TAG, `${phase} notification failed`, error);
-		}
-	}
-}
 
 console.log(LOG_TAG, 'Top-frame content host loaded at', t0.toFixed(2), 'ms');
 
 // Track active top-frame content tools.
 const activeTools = new Set<string>();
+const CROSS_FRAME_TOOL_MESSAGES = new Set([
+	'HALO_RULER_START',
+	'HALO_RULER_CANCEL',
+	'HALO_DOM_SELECTOR_START',
+	'HALO_DOM_SELECTOR_STOP',
+	'HALO_ANNOTATE_START',
+	'HALO_ANNOTATE_STOP',
+]);
 
 // ===== MESSAGE HANDLER =====
-// A single top-frame owner prevents tabs.sendMessage broadcasts from creating
-// competing generic responses in every iframe. The only all-frame host is the
-// clipboard capture surface and it intentionally registers no runtime router.
+// Generic/status ownership stays top-frame only. Explicit cross-frame tool
+// commands are intentionally left unanswered here so the minimal frame-tools
+// host can execute them in every matching frame without response competition.
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	// rule: chrome.runtime permits primitive messages (e.g. chrome.runtime.sendMessage("ping"));
 	// without this guard, message.type on a string/number/null throws TypeError inside the
@@ -51,6 +32,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 		sendResponse({ success: false, error: 'Invalid message format' });
 		return false;
 	}
+	if (CROSS_FRAME_TOOL_MESSAGES.has(message.type)) return false;
+
 	switch (message.type) {
 		case 'HALO_GET_STATUS':
 			sendResponse({
@@ -83,41 +66,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 			}
 			break;
 		}
-
-		case 'HALO_RULER_START':
-			Ruler.start();
-			sendResponse({ success: true });
-			break;
-
-		case 'HALO_RULER_CANCEL':
-			Ruler.cancel();
-			sendResponse({ success: true });
-			break;
-
-		case 'HALO_DOM_SELECTOR_START':
-			DomSelector.start((data) => {
-				sendRuntimeMessageBestEffort(
-					{ type: 'HALO_DOM_SELECTED', payload: data },
-					'DOM selection',
-				);
-			});
-			sendResponse({ success: true });
-			break;
-
-		case 'HALO_DOM_SELECTOR_STOP':
-			DomSelector.stop();
-			sendResponse({ success: true });
-			break;
-
-		case 'HALO_ANNOTATE_START':
-			PageAnnotate.start();
-			sendResponse({ success: true });
-			break;
-
-		case 'HALO_ANNOTATE_STOP':
-			PageAnnotate.stop();
-			sendResponse({ success: true });
-			break;
 
 		case 'HALO_SCROLL_TO_HEADING': {
 			const headingIndex = message.index;
