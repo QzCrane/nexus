@@ -69,6 +69,16 @@
 				"<all_urls>"
 			],
 			"js": [
+				"content-smooth-scroll.js"
+			],
+			"run_at": "document_start",
+			"all_frames": true
+		},
+		{
+			"matches": [
+				"<all_urls>"
+			],
+			"js": [
 				"content-frame-tools.js"
 			],
 			"run_at": "document_start",
