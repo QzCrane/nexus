@@ -27,8 +27,6 @@ const isDev = process.argv.includes('--dev') || isWatch;
 const isAnalyze = process.argv.includes('--analyze');
 const distDir = path.join(__dirname, 'dist');
 
-// Helper: run the pinned Bun directly with an argument array. This avoids
-// cmd.exe/PowerShell/sh parsing and keeps quoting identical on every host.
 function run(label, args, opts = {}) {
 	const { silent = false, ...processOptions } = opts;
 	try {
@@ -45,15 +43,11 @@ function run(label, args, opts = {}) {
 	}
 }
 
-// Common build policy. Production strips diagnostic chatter from extension
-// runtimes while preserving warning/error paths that carry actionable failures.
 const commonConfig = {
 	bundle: true,
 	treeShaking: true,
 	minify: !isDev,
 	legalComments: 'none',
-	// Production packages must not expose source paths or ship multi-megabyte
-	// source maps. Development and watch builds retain linked maps for debugging.
 	sourcemap: isDev,
 	define: { 'process.env.NODE_ENV': isDev ? '"development"' : '"production"' },
 	pure: isDev ? [] : ['console.debug', 'console.info', 'console.log'],
@@ -65,14 +59,10 @@ const commonConfig = {
 	},
 };
 
-// Pre-flight checks (skip in watch mode)
 if (!isWatch) {
 	const registryPath = path.resolve(__dirname, '../../scripts/generate-tool-registry.ts');
 	const verifyPath = path.resolve(__dirname, '../../scripts/verify-architecture.ts');
 
-	// rule: check return values — `silent: true` previously swallowed failures
-	// (the helper returned false but the caller ignored it), so a broken registry
-	// or failing architecture verify would not fail the build.
 	if (existsSync(registryPath)) {
 		if (!run('registry', ['../../scripts/generate-tool-registry.ts'], { silent: true })) {
 			console.error('❌ registry generation failed');
@@ -92,7 +82,6 @@ if (!isWatch) {
 	console.log('✓ Pre-flight: tsc OK');
 }
 
-// Prepare dist
 if (existsSync(distDir)) {
 	rmSync(distDir, {
 		recursive: true,
@@ -104,7 +93,6 @@ if (existsSync(distDir)) {
 mkdirSync(distDir, { recursive: true });
 cpSync(path.join(__dirname, 'public'), distDir, { recursive: true });
 
-// Copy SaaT script files
 const toolsDir = path.join(__dirname, 'src/tools');
 const scriptsDir = path.join(__dirname, 'src/scripts');
 const distToolsDir = path.join(distDir, 'tools');
@@ -163,6 +151,7 @@ const [toolScriptsCount, officialScriptsCount] = await Promise.all([
 const entries = [
 	{ entry: 'src/entry/content.ts', out: 'content.js', kind: 'classic' },
 	{ entry: 'src/entry/content-frame-tools.ts', out: 'content-frame-tools.js', kind: 'classic' },
+	{ entry: 'src/entry/content-hover-zoom.ts', out: 'content-hover-zoom.js', kind: 'classic' },
 	{ entry: 'src/entry/content-clipboard.ts', out: 'content-clipboard.js', kind: 'classic' },
 	{ entry: 'src/entry/background.ts', out: 'background.js', kind: 'classic' },
 	{ entry: 'src/entry/sidepanel.tsx', out: 'sidepanel.js', kind: 'sidepanel' },
@@ -236,9 +225,6 @@ if (isWatch) {
 		process.exit(0);
 	});
 } else {
-	// Build independent runtime surfaces in parallel. The sidepanel is the only
-	// ESM splitting domain: each React.lazy import becomes a physical chunk and
-	// heavy tool dependencies are not parsed on first panel paint.
 	const buildResults = await Promise.all(entries.map(async (entry) => {
 		try {
 			const result = await esbuild.build(buildOptions(entry, {
