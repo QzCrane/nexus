@@ -3,7 +3,6 @@ import { useState, memo } from 'react';
 import type { ToolId, ToolMeta, HaloSettings } from '../../kernel';
 import { useTranslation } from '../../i18n';
 import { commonStyles } from './layouts.styles';
-import { useToolEngineStatus } from './hooks/use-tool-engine-status';
 import { getCategoryColor, StatusIndicators, PinOverlay } from './LauncherToolItemParts';
 
 interface LauncherToolItemProps {
@@ -20,7 +19,6 @@ interface LauncherToolItemProps {
 	onDrop: (e: React.DragEvent, targetId: string) => void;
 	isRunning: boolean;
 	serviceState?: 'active' | 'inactive';
-	/** Callback when clicking a script tool to edit it */
 	onEditScript?: (scriptId: string) => void;
 }
 
@@ -37,7 +35,6 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 	const isPinned = settings?.pinnedTools?.includes(tool.id);
 	const isDragging = draggingId === tool.id;
 	const isScriptTool = tool.pluginType === 'script';
-	const engineEnabled = useToolEngineStatus(tool.id);
 	const mainThemeColor = getCategoryColor(tool.category);
 
 	const handleTogglePin = (e: React.MouseEvent) => {
@@ -60,8 +57,6 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 				transition: 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
 				zIndex: isHovered ? 10 : 1,
 				transform: isHovered && isReady ? 'translateY(-2px)' : 'translateY(0)',
-				// Permanent will-change across dozens of cards can retain unnecessary
-				// compositor resources. Hint only for the card currently animating.
 				willChange: isHovered && isReady ? 'transform' : 'auto',
 			}}
 		>
@@ -97,7 +92,7 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 				}}
 				title={isReady ? `${t(`tools.${tool.id}.name`, { defaultValue: tool.name })}\n${t('common.pinHint')}` : `${t(`tools.${tool.id}.name`, { defaultValue: tool.name })} (${t('common.comingSoon')})`}
 			>
-				<StatusIndicators isRunning={isRunning} engineEnabled={engineEnabled} serviceState={serviceState} />
+				<StatusIndicators toolId={tool.id} isRunning={isRunning} serviceState={serviceState} />
 
 				<div style={{ 
 					position: 'absolute', bottom: '6px', left: '25%', right: '25%', 
