@@ -12,6 +12,12 @@ function readJson(relativePath: string): Record<string, unknown> {
 	) as Record<string, unknown>;
 }
 
+interface ContentScriptManifestEntry {
+	js?: string[];
+	run_at?: string;
+	all_frames?: boolean;
+}
+
 describe('HALO release tooling', () => {
 	test('requires one SemVer across package, source manifest, and built manifest', () => {
 		expect(() => assertReleaseVersionParity('0.6.1', '0.6.1', '0.6.1'))
@@ -58,5 +64,49 @@ describe('HALO release tooling', () => {
 		expect(optionalPermissions).not.toContain('notifications');
 		expect(description).not.toContain('Zero upload');
 		expect(userScriptPermissions).toEqual(['userScripts', '*://*/*']);
+	});
+
+	test('locks content-script ownership to the smallest required frame and lifecycle scope', () => {
+		const manifest = readJson('../public/manifest.json');
+		const contentScripts = manifest.content_scripts as ContentScriptManifestEntry[];
+		const byEntry = new Map(
+			contentScripts.map((entry) => [entry.js?.[0], entry]),
+		);
+
+		expect([...byEntry.keys()]).toEqual([
+			'content.js',
+			'content-frame-tools.js',
+			'content-hover-zoom.js',
+			'content-clipboard.js',
+		]);
+		expect(byEntry.get('content.js')).toMatchObject({
+			run_at: 'document_start',
+			all_frames: false,
+		});
+		expect(byEntry.get('content-frame-tools.js')).toMatchObject({
+			run_at: 'document_start',
+			all_frames: true,
+		});
+		expect(byEntry.get('content-hover-zoom.js')).toMatchObject({
+			run_at: 'document_idle',
+			all_frames: false,
+		});
+		expect(byEntry.get('content-clipboard.js')).toMatchObject({
+			run_at: 'document_idle',
+			all_frames: true,
+		});
+	});
+
+	test('keeps the standard build production-grade and SidePanel lazy loading physical', () => {
+		const packageJson = readJson('../package.json');
+		const scripts = packageJson.scripts as Record<string, string>;
+		const sidepanelHtml = readFileSync(
+			new URL('../public/sidepanel.html', import.meta.url),
+			'utf8',
+		);
+
+		expect(scripts.build).toBe('bun build.ts');
+		expect(scripts['build:dev']).toBe('bun build.ts --dev');
+		expect(sidepanelHtml).toContain('<script type="module" src="sidepanel.js"></script>');
 	});
 });
