@@ -38,7 +38,9 @@ function run(label, args, opts = {}) {
 		return true;
 	} catch (e) {
 		if (silent) return false;
-		console.error(`❌ ${label}: ${e.stderr?.toString().trim() || e.message}`);
+		const stderr = e.stderr?.toString().trim();
+		const stdout = e.stdout?.toString().trim();
+		console.error(`❌ ${label}: ${stderr || stdout || e.message}`);
 		return false;
 	}
 }
@@ -150,6 +152,7 @@ const [toolScriptsCount, officialScriptsCount] = await Promise.all([
 
 const entries = [
 	{ entry: 'src/entry/content.ts', out: 'content.js', kind: 'classic' },
+	{ entry: 'src/entry/content-smooth-scroll.ts', out: 'content-smooth-scroll.js', kind: 'classic' },
 	{ entry: 'src/entry/content-frame-tools.ts', out: 'content-frame-tools.js', kind: 'classic' },
 	{ entry: 'src/entry/content-hover-zoom.ts', out: 'content-hover-zoom.js', kind: 'classic' },
 	{ entry: 'src/entry/content-clipboard.ts', out: 'content-clipboard.js', kind: 'classic' },
