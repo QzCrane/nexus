@@ -6,7 +6,8 @@
 	"type": "module",
 	"scripts": {
 		"dev": "bun build.ts --watch",
-		"build": "bun build.ts --dev",
+		"build": "bun build.ts",
+		"build:dev": "bun build.ts --dev",
 		"build:prod": "bun build.ts",
 		"lint": "bun ../../scripts/run-strict-biome.ts .",
 		"typecheck": "bun tsc --noEmit",
