@@ -1,15 +1,12 @@
-// goal: HALO top-frame document-start Content Script Host
-// inv: Keep this entry limited to controls that must exist before document_idle.
+// goal: HALO top-frame document-start control router
+// inv: Frame-local physical input belongs to dedicated all-frame hosts.
 // NOTE: UserScripts injection is handled by chrome.userScripts API (registry.ts).
-
-import { init as initSmoothScroll } from '../content/smooth-scroll';
 
 const LOG_TAG = '[HALO]';
 const t0 = performance.now();
 
 console.log(LOG_TAG, 'Top-frame content host loaded at', t0.toFixed(2), 'ms');
 
-// Track active top-frame content tools.
 const activeTools = new Set<string>();
 const CROSS_FRAME_TOOL_MESSAGES = new Set([
 	'HALO_RULER_START',
@@ -20,10 +17,6 @@ const CROSS_FRAME_TOOL_MESSAGES = new Set([
 	'HALO_ANNOTATE_STOP',
 ]);
 
-// ===== MESSAGE HANDLER =====
-// Generic/status ownership stays top-frame only. Explicit cross-frame tool
-// commands are intentionally left unanswered here so the minimal frame-tools
-// host can execute them in every matching frame without response competition.
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	if (!message || typeof message !== 'object') {
 		sendResponse({ success: false, error: 'Invalid message format' });
@@ -87,10 +80,4 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	return false;
 });
 
-// Smooth Scroll owns wheel input and therefore remains available from
-// document_start. Hover Zoom is a separate top-frame document_idle entry.
-void initSmoothScroll().catch((error: unknown) => {
-	console.error(LOG_TAG, 'Smooth Scroll init failed:', error);
-});
-
-console.log(LOG_TAG, 'Top-frame document-start host ready in', (performance.now() - t0).toFixed(2), 'ms');
+console.log(LOG_TAG, 'Top-frame document-start router ready in', (performance.now() - t0).toFixed(2), 'ms');
