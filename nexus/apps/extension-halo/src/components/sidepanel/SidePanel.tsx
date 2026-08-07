@@ -15,6 +15,10 @@ import { OverlayProvider } from '../ui/overlay';
 export const SidePanel: React.FC = () => {
 	const { t, ready: i18nReady } = useTranslation();
 	const state = useSidePanelState();
+	const visibleToolById = useMemo(
+		() => new Map(state.visibleTools.map((tool) => [tool.id, tool])),
+		[state.visibleTools],
+	);
 
 	if (state.loading || !i18nReady || state.modulesLoading) {
 		return (
@@ -29,10 +33,6 @@ export const SidePanel: React.FC = () => {
 		);
 	}
 
-	const visibleToolById = useMemo(
-		() => new Map(state.visibleTools.map((tool) => [tool.id, tool])),
-		[state.visibleTools],
-	);
 	const hasDock = state.openTools.some(
 		(id) => visibleToolById.get(id)?.pluginType !== 'system',
 	);
