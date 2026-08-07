@@ -11,49 +11,31 @@ import { isPrivateHost } from '../kernel/utils/ssrf-guard';
 
 const LOG_TAG = '[HALO]';
 
-// Initialize UserScripts injection engine (handles run count + manual injection)
 initUserScriptsEngine();
-
-// Initialize UserScripts registry (Chrome 120+ true document_start injection)
 initUserScriptsRegistry();
-
-// Initialize SaaT service to listen for tool pref changes
 initSaaTService();
 
-// Context menu IDs
 const MENU_OPEN_HALO = 'halo-open';
 const MENU_QR_SELECTION = 'halo-qr-selection';
 const MENU_COLOR_PICK = 'halo-color-pick';
 const MENU_PDF_LINK = 'halo-pdf-link';
 
-/**
- * rule: send a prefill message to the side panel with retry + linear backoff.
- * The previous implementation used a single 500ms setTimeout, which raced
- * against side panel load — if the panel took longer than 500ms to register
- * its runtime.onMessage listener, the message was silently lost and the tool
- * opened empty. Pre-fill is best-effort, so on final failure we give up
- * silently rather than surfacing an error to the user.
- */
 async function sendPrefillMessage(message: unknown, maxRetries = 5): Promise<void> {
 	for (let i = 0; i < maxRetries; i++) {
 		try {
 			await chrome.runtime.sendMessage(message);
 			return;
 		} catch {
-			// Panel not ready yet (or no listener registered). Back off and retry.
-			await new Promise((r) => setTimeout(r, 100 * (i + 1))); // 100ms, 200ms, 300ms, 400ms, 500ms
+			await new Promise((r) => setTimeout(r, 100 * (i + 1)));
 		}
 	}
 }
 
-// Initialize on install
 chrome.runtime.onInstalled.addListener(async (details) => {
 	console.log(LOG_TAG, 'Extension installed/updated:', details.reason);
 
-	// Sync registry-owned script tools to storage
 	await syncSaaTTools(TOOL_REGISTRY);
 
-	// Set defaults if not already set
 	const storage = await chrome.storage.sync.get([
 		`${STORAGE_PREFIX.CORE}active_tool`,
 		SETTINGS_STORAGE_KEY,
@@ -74,12 +56,6 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 		console.log(LOG_TAG, 'Default settings initialized');
 	}
 
-	// Create context menus
-	// rule: convert callback-style removeAll to async/await with try/catch.
-	// Previously, if removeAll invoked its callback with chrome.runtime.lastError,
-	// the create calls still ran (or didn't, depending on chrome's internal
-	// ordering) and any error was silently swallowed. Now any failure is
-	// logged and we skip the create calls.
 	try {
 		await chrome.contextMenus.removeAll();
 		chrome.contextMenus.create({
@@ -111,7 +87,6 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 	}
 });
 
-// Handle context menu clicks
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 	if (!tab?.id) return;
 
@@ -121,11 +96,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 			break;
 
 		case MENU_QR_SELECTION: {
-			// Open sidepanel with QR tool and prefill text
 			await chrome.sidePanel.open({ tabId: tab.id });
 			const text = info.selectionText || info.linkUrl || '';
 			if (text) {
-				// Send message to sidepanel to prefill QR input
 				void sendPrefillMessage({
 					type: 'HALO_PREFILL_QR',
 					text,
@@ -135,7 +108,6 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 		}
 
 		case MENU_COLOR_PICK:
-			// Activate color eyedropper (future: use EyeDropper API)
 			await chrome.sidePanel.open({ tabId: tab.id });
 			void sendPrefillMessage({
 				type: 'HALO_ACTIVATE_TOOL',
@@ -144,7 +116,6 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 			break;
 
 		case MENU_PDF_LINK: {
-			// Open sidepanel with PDF tool and store the PDF URL
 			await chrome.sidePanel.open({ tabId: tab.id });
 			const pdfUrl = info.linkUrl;
 			if (pdfUrl) {
@@ -159,7 +130,6 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 	}
 });
 
-// Handle action click - open SidePanel
 chrome.action.onClicked.addListener(async (tab) => {
 	if (tab.id) {
 		try {
@@ -171,8 +141,6 @@ chrome.action.onClicked.addListener(async (tab) => {
 	}
 });
 
-// Import history logic (Note: in worker, we might need a separate bundle or shared logic)
-// Since we are using esbuild, we can import from core.
 import { saveToClipboardHistory } from '../tools/clipboard/core';
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -186,24 +154,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			() => { sendResponse({ success: true }); },
 			(error) => { sendResponse({ success: false, error: String(error) }); },
 		);
-		return true; // async
+		return true;
 	}
 
-	// Hover Zoom CORS proxy - bypass CORB for cross-origin API calls
 	if (message.type === 'HALO_HZ_PROXY_AJAX') {
 		const { url, method = 'GET', headers = {}, body, responseType = 'text' } = message;
-		// rule: validate url before .slice — if a caller omits url or sends a non-string,
-		// the unconditional url.slice(0, 80) below would throw and the handler would return
-		// without sendResponse, hanging the caller's promise. Reject explicitly instead.
 		if (!url || typeof url !== 'string') {
 			sendResponse({ success: false, error: 'missing url' });
 			return true;
 		}
 
-		// rule: validate URL before fetch — the proxy handler can be invoked by any content
-		// script and previously allowed fetching arbitrary URLs (internal network hosts, cloud
-		// metadata endpoints, file://) bypassing page CORS (SSRF). Restrict to http(s) and
-		// reject loopback/private/link-local/cloud-metadata hosts.
 		let parsedUrl: URL;
 		try {
 			parsedUrl = new URL(url);
@@ -216,15 +176,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			return true;
 		}
 		const host = parsedUrl.hostname.toLowerCase();
-		// rule: delegate to ssrf-guard — covers IPv6 ULA/link-local, IPv4-mapped IPv6,
-		// 0.0.0.0, CGN 100.64.0.0/10, TEST-NET ranges, decimal/hex IP representations,
-		// and cloud metadata endpoints.
 		if (isPrivateHost(host)) {
 			sendResponse({ success: false, error: 'private/internal hosts blocked' });
 			return true;
 		}
 
-		// url is now guaranteed to be a non-empty string and a valid http(s) URL
 		console.log(LOG_TAG, 'HoverZoom proxy request:', url.slice(0, 80), 'type:', responseType);
 
 		fetch(url, {
@@ -236,10 +192,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			.then(async res => {
 				if (!res.ok) throw new Error(`HTTP ${res.status}`);
 				if (responseType === 'arraybuffer') {
-					// Chunked base64 encoding for better performance
 					const buf = await res.arrayBuffer();
 					const bytes = new Uint8Array(buf);
-					const CHUNK = 0x8000; // 32KB chunks
+					const CHUNK = 0x8000;
 					const chunks: string[] = [];
 					for (let i = 0; i < bytes.length; i += CHUNK) {
 						chunks.push(String.fromCharCode(...bytes.subarray(i, i + CHUNK)));
@@ -251,15 +206,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			.then(data => sendResponse({ success: true, data }))
 			.catch(err => sendResponse({ success: false, error: err.message }));
 
-		return true; // async
+		return true;
 	}
 
-	// Inject CSS dynamically (Bypass CSP)
 	if (message.type === 'HALO_INJECT_CSS') {
 		const { css } = message;
 		if (!sender.tab?.id || !css) {
-			// rule: respond on every early-return path — otherwise the caller's
-			// promise hangs forever waiting for a response that never arrives.
 			sendResponse({ success: false, error: 'missing_tab_or_css' });
 			return false;
 		}
@@ -273,16 +225,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			console.warn(LOG_TAG, 'Failed to inject CSS:', e);
 			sendResponse({ success: false, error: e.message });
 		});
-		return true; // async
+		return true;
 	}
 
 	return false;
 });
 
-// Storage change listener
-chrome.storage.onChanged.addListener((changes, area) => {
-	if (area !== 'sync') return;
-	for (const [k, { newValue }] of Object.entries(changes))
-		if (k.startsWith(STORAGE_PREFIX.CORE) || k === SETTINGS_STORAGE_KEY)
-			console.log(LOG_TAG, `Storage: ${k}`, newValue);
-});
+// Debug-only sync-storage tracing must not register an event listener in the
+// production service worker. `process.env.NODE_ENV` is compile-time defined by
+// build.ts, so minification removes this whole block and its wake-up surface.
+if (process.env.NODE_ENV !== 'production') {
+	chrome.storage.onChanged.addListener((changes, area) => {
+		if (area !== 'sync') return;
+		for (const [k, { newValue }] of Object.entries(changes)) {
+			if (k.startsWith(STORAGE_PREFIX.CORE) || k === SETTINGS_STORAGE_KEY) {
+				console.log(LOG_TAG, `Storage: ${k}`, newValue);
+			}
+		}
+	});
+}
