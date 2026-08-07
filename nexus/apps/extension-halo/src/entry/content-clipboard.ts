@@ -2,6 +2,8 @@
 // inv: This is the only HALO static content surface allowed in every frame.
 // inv: No generic tool router, DOM tooling, smooth scroll, or UI dependencies here.
 
+export {};
+
 const SETTINGS_KEY = 'halo_tool_clipboard_settings';
 const LOG_TAG = '[HALO:Clipboard]';
 
