@@ -16,11 +16,9 @@ import { createOnKeyDown, createOnKeyUp } from './hover-zoom-keys';
 
 const LOG_TAG = '[HALO:HoverZoom]';
 
-// Module state
 const state = createInitialState(DEFAULT_SETTINGS);
 const preload = createPreloadState();
 
-/** Deep merge settings with defaults to handle nested objects like resourceKeys. */
 function mergeSettings(saved: Partial<HoverZoomSettings> | undefined): HoverZoomSettings {
 	const value = saved ?? {};
 	return {
@@ -68,10 +66,6 @@ export async function init(): Promise<void> {
 		console.warn(LOG_TAG, 'Storage error:', error);
 	}
 
-	// Currently a no-op compatibility seam, but keep it in the activation path
-	// so a future rule-engine bootstrap cannot accidentally run for disabled users.
-	await initRulesForHost();
-
 	const onOver = createOnOver(state, preload);
 	const onOut = createOnOut(state);
 	const onMove = createOnMove(state, preload);
@@ -79,27 +73,43 @@ export async function init(): Promise<void> {
 	const onKeyDown = createOnKeyDown(state, preload);
 	const onKeyUp = createOnKeyUp(state);
 	let listenersAttached = false;
+	let rulesInitialized = false;
+	let activationPromise: Promise<void> | null = null;
 
-	const attachListeners = (): void => {
-		if (listenersAttached || !state.settings.enabled) return;
-		listenersAttached = true;
-		document.addEventListener('mouseover', onOver, true);
-		document.addEventListener('mouseout', onOut, true);
-		document.addEventListener('mousemove', onMove, { passive: true });
-		document.addEventListener('click', onClick, true);
-		document.addEventListener('keydown', onKeyDown, true);
-		document.addEventListener('keyup', onKeyUp, true);
+	const attachListeners = (): Promise<void> => {
+		if (listenersAttached || !state.settings.enabled) return Promise.resolve();
+		if (activationPromise) return activationPromise;
+
+		activationPromise = (async () => {
+			if (!rulesInitialized) {
+				await initRulesForHost();
+				rulesInitialized = true;
+			}
+			// Settings can change while a future async rule bootstrap is in flight.
+			if (!state.settings.enabled || listenersAttached) return;
+			listenersAttached = true;
+			document.addEventListener('mouseover', onOver, true);
+			document.addEventListener('mouseout', onOut, true);
+			document.addEventListener('mousemove', onMove, { passive: true });
+			document.addEventListener('click', onClick, true);
+			document.addEventListener('keydown', onKeyDown, true);
+			document.addEventListener('keyup', onKeyUp, true);
+		})().finally(() => {
+			activationPromise = null;
+		});
+		return activationPromise;
 	};
 
 	const detachListeners = (): void => {
-		if (!listenersAttached) return;
-		listenersAttached = false;
-		document.removeEventListener('mouseover', onOver, true);
-		document.removeEventListener('mouseout', onOut, true);
-		document.removeEventListener('mousemove', onMove);
-		document.removeEventListener('click', onClick, true);
-		document.removeEventListener('keydown', onKeyDown, true);
-		document.removeEventListener('keyup', onKeyUp, true);
+		if (listenersAttached) {
+			listenersAttached = false;
+			document.removeEventListener('mouseover', onOver, true);
+			document.removeEventListener('mouseout', onOut, true);
+			document.removeEventListener('mousemove', onMove);
+			document.removeEventListener('click', onClick, true);
+			document.removeEventListener('keydown', onKeyDown, true);
+			document.removeEventListener('keyup', onKeyUp, true);
+		}
 		clearTriggerTimer();
 		cancel(state);
 		state.modifiersActive = false;
@@ -108,9 +118,9 @@ export async function init(): Promise<void> {
 		if (preload.preloadImage) preload.preloadImage.src = '';
 	};
 
-	attachListeners();
+	await attachListeners();
 
-	// Keep only the low-frequency settings subscription alive while disabled.
+	// Disabled Hover Zoom retains only a low-frequency storage subscription.
 	chrome.storage.onChanged.addListener((changes, area) => {
 		if (area !== 'local') return;
 		const change = changes[STORAGE_KEY];
@@ -118,7 +128,7 @@ export async function init(): Promise<void> {
 
 		state.settings = mergeSettings(savedSettings(change.newValue));
 		state.viewer?.updateSettings(state.settings);
-		if (state.settings.enabled) attachListeners();
+		if (state.settings.enabled) void attachListeners();
 		else detachListeners();
 	});
 }
