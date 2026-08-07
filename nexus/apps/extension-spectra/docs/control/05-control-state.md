@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-07-24
+last_reviewed: 2026-08-08
 ---
 
 # 05. Control state (Field states, volume/mute, audio processing)
@@ -64,7 +64,7 @@ sources -> mix bus -> master gain -> [Bass] -> [non-zero EQ] -> [Compressor] -> 
 | Algorithm | Exact definition |
 | --- | --- |
 | Boost | 线性 master `boostGain` `1–8`（无 0 增益代换与隐式限幅） |
-| 10-band EQ | `32/64/125/250/500/1000/2000/4000/8000/16000Hz` peaking, `Q=1.4`, `-12..+12dB` |
+| 10-band EQ | peaking filters at `32/64/125/250/500/1000/2000/4000/8000/16000Hz`, `Q=1.4`, gain `-12..+12dB` |
 | Bass | `lowshelf`, `200Hz`, `+10dB` |
 | Compressor | threshold `-24dB`, knee `30dB`, ratio `12:1`, attack `0.003s`, release `0.25s` |
 | Mono | `M=0.5L+0.5R`, `L'=M`, `R'=M` |
