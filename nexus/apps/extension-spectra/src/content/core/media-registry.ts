@@ -139,6 +139,13 @@ export class MediaRegistry {
 					: 0;
 			}
 		});
+
+		// Register the initial media set before installing the topology observer.
+		// Construction is synchronous, so there is no observable DOM gap; keeping
+		// initial discovery first also gives the document observer a clear lifetime
+		// boundary after all per-media observers have been installed.
+		this.discover(document.documentElement);
+
 		// The document-wide observer owns only topology. Attribute observation is
 		// scoped per registered media element below, so unrelated page churn such
 		// as image/input `src` changes never enters the SPECTRA runtime callback.
@@ -148,7 +155,6 @@ export class MediaRegistry {
 				for (const node of mutation.removedNodes) this.queueRemovalTree(node);
 			}
 		});
-		this.discover(document.documentElement);
 		this.mutationObserver.observe(document, {
 			childList: true,
 			subtree: true,
