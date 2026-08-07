@@ -1,4 +1,5 @@
 import type React from 'react';
+import { useEngineStatus } from './EngineStatusProvider';
 
 /** Constant category color map for premium aesthetics */
 export const CATEGORY_COLORS: Record<string, string> = {
@@ -10,39 +11,54 @@ export const CATEGORY_COLORS: Record<string, string> = {
 	ai: '#10b981',
 	media: '#06b6d4',
 	general: '#6366f1',
-	scripts: '#f97316', // Orange for scripts
-	system: '#8b5cf6', // Purple for system tools
+	scripts: '#f97316',
+	system: '#8b5cf6',
 };
 
 export const getCategoryColor = (category: string) => CATEGORY_COLORS[category] || 'var(--halo-accent)';
 
+const ENGINE_STATUS_TOOL_IDS = new Set(['smooth-scroll', 'userscripts', 'clipboard']);
+
+const ToolEngineStatusDot: React.FC<{ toolId: string; suppressed: boolean }> = ({ toolId, suppressed }) => {
+	const status = useEngineStatus();
+	if (suppressed) return null;
+
+	let enabled = false;
+	if (toolId === 'smooth-scroll') enabled = status.smoothScroll;
+	else if (toolId === 'userscripts') enabled = status.userscripts;
+	else if (toolId === 'clipboard') enabled = status.clipboard;
+	if (!enabled) return null;
+
+	return (
+		<div style={{
+			width: '6px', height: '6px', borderRadius: '50%',
+			background: '#10b981', boxShadow: '0 0 5px #10b981'
+		}} />
+	);
+};
+
 /** Indicator dots for running and engine status */
-export const StatusIndicators: React.FC<{ isRunning: boolean; engineEnabled: boolean; serviceState?: 'active' | 'inactive' }> = ({ 
-	isRunning, 
-	engineEnabled,
-	serviceState
-}) => (
+export const StatusIndicators: React.FC<{
+	toolId: string;
+	isRunning: boolean;
+	serviceState?: 'active' | 'inactive';
+}> = ({ toolId, isRunning, serviceState }) => (
 	<div style={{ position: 'absolute', top: '5px', left: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-		{/* Open in Panel Indicator */}
 		{isRunning && (
-			<div style={{ 
-				width: '6px', height: '6px', borderRadius: '50%', 
+			<div style={{
+				width: '6px', height: '6px', borderRadius: '50%',
 				background: 'var(--halo-accent)', boxShadow: '0 0 5px var(--halo-accent)',
 			}} />
 		)}
-		
-		{/* Engine Status Indicator (Only if explicit serviceState is missing) */}
-		{engineEnabled && !serviceState && (
-			<div style={{ 
-				width: '6px', height: '6px', borderRadius: '50%', 
-				background: '#10b981', boxShadow: '0 0 5px #10b981'
-			}} />
+
+		{/* Only the three engine-backed tool cards subscribe to EngineStatus. */}
+		{ENGINE_STATUS_TOOL_IDS.has(toolId) && (
+			<ToolEngineStatusDot toolId={toolId} suppressed={!!serviceState} />
 		)}
 
-		{/* Background Service Indicator (Green/Grey) */}
 		{serviceState && (
-			<div style={{ 
-				width: '6px', height: '6px', borderRadius: '50%', 
+			<div style={{
+				width: '6px', height: '6px', borderRadius: '50%',
 				background: serviceState === 'active' ? '#4CAF50' : 'var(--halo-text-muted)',
 				boxShadow: serviceState === 'active' ? '0 0 5px #4CAF50' : 'none',
 				opacity: serviceState === 'active' ? 1 : 0.5,
@@ -54,10 +70,10 @@ export const StatusIndicators: React.FC<{ isRunning: boolean; engineEnabled: boo
 );
 
 /** The "Pinned" pin overlay */
-export const PinOverlay: React.FC<{ 
-	isPinned: boolean; 
-	isPinHovered: boolean; 
-	isCompact: boolean; 
+export const PinOverlay: React.FC<{
+	isPinned: boolean;
+	isPinHovered: boolean;
+	isCompact: boolean;
 	onToggle: (e: React.MouseEvent) => void;
 	onMouseEnter: () => void;
 	onMouseLeave: () => void;
@@ -68,9 +84,9 @@ export const PinOverlay: React.FC<{
 		onClick={onToggle}
 		onMouseEnter={onMouseEnter}
 		onMouseLeave={onMouseLeave}
-		style={{ 
-			position: 'absolute', 
-			top: isCompact ? '-6px' : '-8px', 
+		style={{
+			position: 'absolute',
+			top: isCompact ? '-6px' : '-8px',
 			right: isCompact ? '-6px' : '-8px',
 			width: isCompact ? '20px' : '24px',
 			height: isCompact ? '20px' : '24px',
@@ -84,7 +100,7 @@ export const PinOverlay: React.FC<{
 			transform: isPinHovered ? 'scale(1.1) translateY(-1px)' : 'scale(1)',
 		}}
 	>
-		<span style={{ 
+		<span style={{
 			fontSize: isCompact ? '12px' : '14px',
 			opacity: isPinned ? 1 : (isPinHovered ? 1 : 0.8),
 			transform: (isPinned || isPinHovered) ? 'rotate(0deg)' : 'rotate(-45deg)',
@@ -94,7 +110,7 @@ export const PinOverlay: React.FC<{
 	</button>
 );
 
-/** Shared animations for the tool items */
+/** Shared animations for the whole launcher grid. Render exactly once. */
 export const ToolAnimations = () => (
 	<style>{`
 		@keyframes halo-pulse {
