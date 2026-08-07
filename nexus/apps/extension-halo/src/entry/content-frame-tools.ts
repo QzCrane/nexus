@@ -1,6 +1,7 @@
 // goal: minimal all-frame host for tools whose semantics intentionally span iframes
 // inv: Keep this entry dormant until an explicit tool command; no timers/observers at module load.
 
+import { Actions } from '@nexus/contracts';
 import * as Ruler from '../content/ruler';
 import * as DomSelector from '../content/dom-selector';
 import * as PageAnnotate from '../content/page-annotate';
@@ -32,12 +33,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	if (!message || typeof message !== 'object') return false;
 
 	switch (message.type) {
-		case 'HALO_RULER_START':
+		case Actions.HALO_RULER_START:
 			Ruler.start();
 			sendResponse({ success: true });
 			return false;
 
-		case 'HALO_RULER_CANCEL':
+		case Actions.HALO_RULER_CANCEL:
 			Ruler.cancel();
 			sendResponse({ success: true });
 			return false;
