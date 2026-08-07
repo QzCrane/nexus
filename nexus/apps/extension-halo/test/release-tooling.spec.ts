@@ -75,6 +75,7 @@ describe('HALO release tooling', () => {
 
 		expect([...byEntry.keys()]).toEqual([
 			'content.js',
+			'content-smooth-scroll.js',
 			'content-frame-tools.js',
 			'content-hover-zoom.js',
 			'content-clipboard.js',
@@ -82,6 +83,10 @@ describe('HALO release tooling', () => {
 		expect(byEntry.get('content.js')).toMatchObject({
 			run_at: 'document_start',
 			all_frames: false,
+		});
+		expect(byEntry.get('content-smooth-scroll.js')).toMatchObject({
+			run_at: 'document_start',
+			all_frames: true,
 		});
 		expect(byEntry.get('content-frame-tools.js')).toMatchObject({
 			run_at: 'document_start',
