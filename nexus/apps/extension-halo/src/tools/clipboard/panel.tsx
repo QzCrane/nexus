@@ -1,25 +1,23 @@
 // goal: Clipboard tool panel UI with i18n support
 // eff: Components extracted to reduce file size
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useToolState } from '../../kernel';
-
+import { subscribeHaloStorageChanges } from '../../kernel/core/storage-change-bus';
 import { useTranslation } from '../../i18n';
-import { 
-	getClipboardHistory, 
-	togglePin, 
-	deleteItem, 
-	clearUnpinned, 
+import {
+	clearUnpinned,
 	copyToClipboard,
+	deleteItem,
+	getClipboardHistory,
 	getClipboardSettings,
-	updateClipboardSettings
+	togglePin,
+	updateClipboardSettings,
 } from './core';
 import type { ClipboardItem as ClipboardItemType } from './types';
 import { styles } from './panel.styles';
 import { ClipboardItem } from './ClipboardItem';
-
 import { ClipboardHeader } from './ClipboardHeader';
-
 import { useToast } from '../../components/ToastProvider';
 
 export const ClipboardPanel: React.FC = () => {
@@ -28,12 +26,8 @@ export const ClipboardPanel: React.FC = () => {
 	const [history, setHistory] = useState<ClipboardItemType[]>([]);
 	const [search, setSearch] = useToolState<string>('clipboard-search', '');
 	const [enabled, setEnabled] = useState(true);
-
-	// Track new items for highlighting
 	const [newIds, setNewIds] = useState<Set<string>>(new Set());
 	const prevHistoryRef = React.useRef<ClipboardItemType[]>([]);
-
-	// Initial load should not highlight anything
 	const firstLoadRef = React.useRef(true);
 	const highlightTimersRef = React.useRef<Set<number>>(new Set());
 
@@ -42,18 +36,19 @@ export const ClipboardPanel: React.FC = () => {
 		let historyAuthorityChanged = false;
 		let settingsAuthorityChanged = false;
 
-		const listener = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-			if (area !== 'local') return;
-			if (changes.halo_tool_clipboard_history) {
+		const unsubscribeStorageChanges = subscribeHaloStorageChanges((changes, area) => {
+			if (disposed || area !== 'local') return;
+			const historyChange = changes.halo_tool_clipboard_history;
+			if (historyChange) {
 				historyAuthorityChanged = true;
-				setHistory(changes.halo_tool_clipboard_history.newValue || []);
+				setHistory(historyChange.newValue || []);
 			}
-			if (changes.halo_tool_clipboard_settings) {
+			const settingsChange = changes.halo_tool_clipboard_settings;
+			if (settingsChange) {
 				settingsAuthorityChanged = true;
-				setEnabled(changes.halo_tool_clipboard_settings.newValue?.enabled ?? true);
+				setEnabled(settingsChange.newValue?.enabled ?? true);
 			}
-		};
-		chrome.storage.onChanged.addListener(listener);
+		});
 
 		void getClipboardHistory()
 			.then((loadedHistory) => {
@@ -72,15 +67,12 @@ export const ClipboardPanel: React.FC = () => {
 
 		return () => {
 			disposed = true;
-			chrome.storage.onChanged.removeListener(listener);
-			for (const timerId of highlightTimersRef.current) {
-				window.clearTimeout(timerId);
-			}
+			unsubscribeStorageChanges();
+			for (const timerId of highlightTimersRef.current) window.clearTimeout(timerId);
 			highlightTimersRef.current.clear();
 		};
 	}, []);
 
-	// Unify history change handling for highlighting
 	useEffect(() => {
 		if (firstLoadRef.current) {
 			firstLoadRef.current = false;
@@ -89,22 +81,20 @@ export const ClipboardPanel: React.FC = () => {
 		}
 
 		if (history.length > 0) {
-			const prevIds = new Set(prevHistoryRef.current.map(h => h.id));
+			const prevIds = new Set(prevHistoryRef.current.map((item) => item.id));
 			const addedIds = history
-				.filter(h => !prevIds.has(h.id))
-				.map(h => h.id);
-
+				.filter((item) => !prevIds.has(item.id))
+				.map((item) => item.id);
 			if (addedIds.length > 0) {
-				setNewIds(prev => {
-					const next = new Set(prev);
+				setNewIds((previous) => {
+					const next = new Set(previous);
 					for (const id of addedIds) next.add(id);
 					return next;
 				});
-
 				const timerId = window.setTimeout(() => {
 					highlightTimersRef.current.delete(timerId);
-					setNewIds(prev => {
-						const next = new Set(prev);
+					setNewIds((previous) => {
+						const next = new Set(previous);
 						for (const id of addedIds) next.delete(id);
 						return next;
 					});
@@ -112,7 +102,6 @@ export const ClipboardPanel: React.FC = () => {
 				highlightTimersRef.current.add(timerId);
 			}
 		}
-
 		prevHistoryRef.current = history;
 	}, [history]);
 
@@ -122,61 +111,45 @@ export const ClipboardPanel: React.FC = () => {
 	};
 
 	const handleCopy = async (text: string) => {
-		const ok = await copyToClipboard(text);
-		if (ok) showToast(t('clipboardPanel.copied'));
+		if (await copyToClipboard(text)) showToast(t('clipboardPanel.copied'));
 	};
 
-	const handlePin = async (id: string) => {
-		const updated = await togglePin(id);
-		setHistory(updated);
-	};
-
-	const handleDelete = async (id: string) => {
-		const updated = await deleteItem(id);
-		setHistory(updated);
-	};
-
+	const handlePin = async (id: string) => setHistory(await togglePin(id));
+	const handleDelete = async (id: string) => setHistory(await deleteItem(id));
 	const handleClear = async () => {
-		if (confirm(t('clipboardPanel.confirmClear'))) {
-			const updated = await clearUnpinned();
-			setHistory(updated);
-		}
+		if (confirm(t('clipboardPanel.confirmClear'))) setHistory(await clearUnpinned());
 	};
 
 	const filteredHistory = useMemo(() => {
 		if (!search) return history;
-		const s = search.toLowerCase();
-		return history.filter(item => 
-			item.text.toLowerCase().includes(s) || 
-			item.sourceTitle?.toLowerCase().includes(s)
-		);
+		const normalizedSearch = search.toLowerCase();
+		return history.filter((item) =>
+			item.text.toLowerCase().includes(normalizedSearch)
+			|| item.sourceTitle?.toLowerCase().includes(normalizedSearch));
 	}, [history, search]);
 
 	return (
 		<div style={styles.wrapper}>
-			<ClipboardHeader 
+			<ClipboardHeader
 				enabled={enabled}
 				onToggle={handleToggle}
 				search={search}
 				onSearchChange={setSearch}
 				onClear={handleClear}
 			/>
-
 			<div style={styles.list}>
 				{filteredHistory.length === 0 ? (
 					<div style={styles.empty}>{t('clipboardPanel.empty')}</div>
-				) : (
-					filteredHistory.map(item => (
-						<ClipboardItem
-							key={item.id}
-							item={item}
-							isNew={newIds.has(item.id)}
-							onCopy={handleCopy}
-							onPin={handlePin}
-							onDelete={handleDelete}
-						/>
-					))
-				)}
+				) : filteredHistory.map((item) => (
+					<ClipboardItem
+						key={item.id}
+						item={item}
+						isNew={newIds.has(item.id)}
+						onCopy={handleCopy}
+						onPin={handlePin}
+						onDelete={handleDelete}
+					/>
+				))}
 			</div>
 		</div>
 	);
