@@ -1,7 +1,7 @@
 // goal: Hover Zoom heavy content runtime
 // eff: Loaded only after the minimal bootstrap observes a relevant user interaction
 
-import type { HoverZoomSettings } from '../tools/hover-zoom/types';
+import { DEFAULT_SETTINGS, type HoverZoomSettings } from '../tools/hover-zoom/types';
 import { initRulesForHost } from '../tools/hover-zoom/content/resolvers/rule-resolver';
 import { isValidTrigger } from '../tools/hover-zoom/content/resolvers/trigger-validator';
 import {
@@ -34,7 +34,7 @@ export interface HoverZoomRuntime {
 	updateSettings(settings: HoverZoomSettings): Promise<void>;
 }
 
-const state = createInitialState({} as HoverZoomSettings);
+const state = createInitialState(DEFAULT_SETTINGS);
 const preload = createPreloadState();
 let runtime: HoverZoomRuntime | null = null;
 
