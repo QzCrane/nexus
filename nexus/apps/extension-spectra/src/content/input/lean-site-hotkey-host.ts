@@ -6,6 +6,7 @@ import {
 	isSpectraLeanSiteHotkeyConfigureMessage,
 	isSpectraRepeatableDefaultHotkeyAction,
 	resolveSpectraDefaultHotkeyAction,
+	type SpectraDefaultHotkeyAction,
 	type SpectraLeanSiteHotkeyBinding,
 } from '@nexus/contracts/bootstrap';
 import { runWithValidExtensionContext } from '../core/extension-context';
@@ -29,8 +30,11 @@ interface ActiveBinding {
 	binding: SpectraLeanSiteHotkeyBinding;
 	gesture: string;
 	repeated: boolean;
+	inFlight: boolean;
+	pendingPulses: number;
 }
 
+const MAX_PENDING_PULSES = 80;
 const hostWindow = window as LeanSiteHotkeyWindow;
 const activeByCode = new Map<string, ActiveBinding>();
 let bindingByChord = new Map<string, SpectraLeanSiteHotkeyBinding>();
@@ -78,25 +82,84 @@ function isBrowserRefreshShortcut(event: KeyboardEvent): boolean {
 		|| (event.code === 'KeyR' && !event.altKey && (event.ctrlKey || event.metaKey));
 }
 
-function sendTrigger(
-	held: ActiveBinding,
-	phase: 'press' | 'release',
-	repeated: boolean,
-): void {
-	void runWithValidExtensionContext(
-		() => chrome.runtime.sendMessage({
+function controlRequest(action: SpectraDefaultHotkeyAction, pulses: number): unknown {
+	const requestId = crypto.randomUUID();
+	if (action === 'volume_up' || action === 'volume_down') {
+		return {
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
-			requestId: crypto.randomUUID(),
-			type: 'spectra.content.site-hotkey.trigger',
+			requestId,
+			type: 'spectra.control.operation.submit',
 			payload: {
-				action: held.binding.action,
-				phase,
-				gesture: held.gesture,
-				repeated,
+				source: 'hotkey',
+				target: null,
+				operation: 'effective-volume',
+				payload: {
+					operation: 'delta',
+					value: (action === 'volume_up' ? 10 : -10) * pulses,
+				},
 			},
-		}),
+		};
+	}
+	if (action === 'volume_mute') {
+		return {
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId,
+			type: 'spectra.control.intent.submit',
+			payload: {
+				source: 'hotkey',
+				requestedCoverage: 'active-target',
+				target: null,
+				mutations: [{ field: 'mediaMuted', operation: 'toggle' }],
+			},
+		};
+	}
+	return {
+		protocolVersion: SPECTRA_PROTOCOL_VERSION,
+		requestId,
+		type: 'spectra.control.intent.submit',
+		payload: {
+			source: 'hotkey',
+			requestedCoverage: 'active-target',
+			target: null,
+			mutations: [{
+				field: 'speed',
+				operation: 'delta',
+				value: (action === 'speed_up' ? 0.1 : -0.1) * pulses,
+			}],
+		},
+	};
+}
+
+function submitPulses(held: ActiveBinding, pulses: number): void {
+	if (disposed || held.inFlight || pulses <= 0) return;
+	held.inFlight = true;
+	void runWithValidExtensionContext(
+		() => chrome.runtime.sendMessage(controlRequest(held.binding.action, pulses)),
 		dispose,
-	).catch(() => undefined);
+	).catch(() => undefined).finally(() => {
+		held.inFlight = false;
+	});
+}
+
+function pressBinding(held: ActiveBinding, repeated: boolean): void {
+	if (held.binding.action === 'volume_mute' && repeated) return;
+	if (held.inFlight) {
+		if (repeated) {
+			held.pendingPulses = Math.min(MAX_PENDING_PULSES, held.pendingPulses + 1);
+			held.repeated = true;
+		}
+		return;
+	}
+	const pulses = Math.min(MAX_PENDING_PULSES, held.pendingPulses + 1);
+	held.pendingPulses = 0;
+	if (repeated) held.repeated = true;
+	submitPulses(held, pulses);
+}
+
+function releaseHeld(held: ActiveBinding): void {
+	// The admitted physical press may finish, but queued repeats never self-drain
+	// after keyup/blur/visibility retirement.
+	held.pendingPulses = 0;
 }
 
 function releaseCode(code: string): void {
@@ -114,13 +177,13 @@ function releaseCode(code: string): void {
 			released.push(held);
 		}
 	}
-	for (const held of released) sendTrigger(held, 'release', held.repeated);
+	for (const held of released) releaseHeld(held);
 }
 
 function releaseAll(): void {
 	const released = [...activeByCode.values()];
 	activeByCode.clear();
-	for (const held of released) sendTrigger(held, 'release', held.repeated);
+	for (const held of released) releaseHeld(held);
 }
 
 function resolveCandidate(event: KeyboardEvent): SpectraLeanSiteHotkeyBinding | null {
@@ -150,15 +213,16 @@ function onSettled(
 			binding,
 			gesture: `site:${crypto.randomUUID()}`,
 			repeated: false,
+			inFlight: false,
+			pendingPulses: 0,
 		};
 		activeByCode.set(event.code, held);
-		sendTrigger(held, 'press', false);
+		pressBinding(held, false);
 		return;
 	}
 	const held = activeByCode.get(event.code);
 	if (!held) return;
-	held.repeated = true;
-	sendTrigger(held, 'press', true);
+	pressBinding(held, true);
 }
 
 function syncArbiter(): void {
@@ -250,3 +314,5 @@ if (existing?.revision !== 1) {
 	window.addEventListener('pagehide', onPageHide, { once: true });
 	document.addEventListener('visibilitychange', onVisibilityChange);
 }
+
+export const leanSiteHotkeyHostTestApi = { controlRequest, MAX_PENDING_PULSES };
