@@ -45,27 +45,33 @@ describe('smooth-scroll keyboard architecture contract', () => {
 		expect(keyboardSource).not.toMatch(/queueMicrotask\(\(\) => \{\s*if \(!finalized\) cleanup\(\);/u);
 	});
 
-	test('observes at document start but activates only after settings hydration', () => {
+	test('observes at document start and requires both settings plus module hydration before activation', () => {
 		const observationIndex = hostSource.indexOf('attachObservationListeners();');
-		const storageAwaitIndex = hostSource.indexOf(
-			'await chrome.storage.sync.get([STORAGE_KEY])',
-		);
-		const activationIndex = hostSource.indexOf(
-			'if (settings.enabled) attachActiveInputListeners();',
-		);
+		const hydrationIndex = hostSource.indexOf('await Promise.allSettled([');
+		const reconcileIndex = hostSource.lastIndexOf('reconcileInputOwnership();');
 
 		expect(observationIndex).toBeGreaterThanOrEqual(0);
-		expect(storageAwaitIndex).toBeGreaterThan(observationIndex);
-		expect(activationIndex).toBeGreaterThan(storageAwaitIndex);
+		expect(hydrationIndex).toBeGreaterThan(observationIndex);
+		expect(reconcileIndex).toBeGreaterThan(hydrationIndex);
 		expect(hostSource).toContain(
 			"window.addEventListener('keydown', onObservedKeydown, true)",
 		);
 		expect(hostSource).toContain(
-			'if (!settingsHydrated || !settings.enabled) return;',
+			'settingsHydrated && moduleHydrated && moduleEnabled && settings.enabled',
 		);
+		expect(hostSource).toContain('readOptionalPackagedModuleEnabled(MODULE_ID)');
+		expect(hostSource).toContain('settingsRevisionBeforeHydration');
+		expect(hostSource).toContain('moduleRevisionBeforeHydration');
 		expect(hostSource).toContain(
 			"window.addEventListener('blur', resetDocumentRuntime)",
 		);
 		expect(hostSource).not.toContain("addEventListener('DOMContentLoaded'");
+	});
+
+	test('keeps an uninstalled module inert without changing website-first listener order on reinstall', () => {
+		expect(hostSource).toContain('if (!runtimeEnabled()) return;');
+		expect(hostSource).toContain('if (runtimeEnabled()) attachActiveInputListeners();');
+		expect(hostSource).toContain('else detachActiveInputListeners();');
+		expect(hostSource).toContain('readOptionalPackagedModuleChangeEnabled');
 	});
 });
