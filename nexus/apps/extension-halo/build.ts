@@ -11,6 +11,7 @@ import {
 	existsSync,
 	mkdirSync,
 	readdirSync,
+	readFileSync,
 	rmSync,
 	statSync,
 	writeFileSync,
@@ -18,6 +19,7 @@ import {
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { measureContentStartupSurfaces } from './build-runtime-surfaces';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -215,9 +217,9 @@ function outputAbsolute(output) {
 }
 
 /**
- * Sum the files that execute before any dynamic import boundary.
- * This is the SidePanel cold-start parse/compile closure, not the entry file
- * alone and not the total bytes of every future lazy tool chunk.
+ * Sum the physical files that execute before any dynamic import boundary.
+ * This is a startup parse/compile closure, not the entry file alone and not
+ * the total bytes of every future lazy feature chunk.
  */
 function staticOutputClosure(metafile, entryOutput) {
 	if (!metafile?.outputs) return null;
@@ -228,6 +230,7 @@ function staticOutputClosure(metafile, entryOutput) {
 	if (!outputs.has(start)) return null;
 
 	const visited = new Set();
+	const outputBytes = new Map();
 	const stack = [start];
 	let bytes = 0;
 	while (stack.length > 0) {
@@ -236,6 +239,7 @@ function staticOutputClosure(metafile, entryOutput) {
 		const detail = outputs.get(current);
 		if (!detail) continue;
 		visited.add(current);
+		outputBytes.set(current, detail.bytes);
 		bytes += detail.bytes;
 
 		for (const imported of detail.imports ?? []) {
@@ -244,7 +248,7 @@ function staticOutputClosure(metafile, entryOutput) {
 			if (outputs.has(target) && !visited.has(target)) stack.push(target);
 		}
 	}
-	return { bytes, files: visited.size };
+	return { bytes, fileCount: visited.size, outputBytes };
 }
 
 function assertProductionSidepanelSplitting() {
@@ -300,10 +304,11 @@ if (isWatch) {
 		try {
 			const result = await esbuild.build(buildOptions(entry, {
 				write: true,
-				// SidePanel metafile is always retained in memory because startup
-				// closure is a production performance invariant. Other domains emit
-				// full analysis only on explicit --analyze builds.
-				metafile: entry.kind === 'sidepanel' || isAnalyze,
+				// Every production entry retains an in-memory metafile because startup
+				// accounting follows the complete static closure declared by manifest
+				// frame/lifecycle scope. Dev builds keep the SidePanel closure for its
+				// physical lazy-loading invariant; --analyze retains all domains.
+				metafile: !isDev || entry.kind === 'sidepanel' || isAnalyze,
 			}));
 			const bytes = statSync(path.join(distDir, entry.out)).size;
 			return { entry, result, bytes, label: `${entry.out.replace('.js', '')}:${kib(bytes)}KB` };
@@ -316,14 +321,32 @@ if (isWatch) {
 	assertProductionSidepanelSplitting();
 
 	const byOutput = new Map(buildResults.map((item) => [item.entry.out, item]));
-	const sizeOf = (output) => byOutput.get(output)?.bytes ?? 0;
-	const allFrameDocumentStart = sizeOf('content-smooth-scroll.js') + sizeOf('content-frame-tools.js');
-	const topFrameDocumentStart = allFrameDocumentStart + sizeOf('content.js');
-	const allFrameDocumentIdle = sizeOf('content-clipboard.js');
-	const topFrameDocumentIdle = allFrameDocumentIdle + sizeOf('content-hover-zoom.js');
+	const resultFor = (output) => {
+		const result = byOutput.get(output);
+		if (!result) throw new Error(`HALO manifest/build output is missing: ${output}`);
+		return result;
+	};
+	const sizeOf = (output) => resultFor(output).bytes;
+	const closureFor = (output) => {
+		const result = resultFor(output);
+		const closure = staticOutputClosure(result.result.metafile, output);
+		if (!closure) {
+			throw new Error(`HALO static startup closure could not be resolved for manifest output ${output}`);
+		}
+		return closure;
+	};
+	const sourceManifest = JSON.parse(
+		readFileSync(path.join(__dirname, 'public/manifest.json'), 'utf8'),
+	);
+	const {
+		allFrameDocumentStart,
+		topFrameDocumentStart,
+		allFrameDocumentIdle,
+		topFrameDocumentIdle,
+	} = measureContentStartupSurfaces(sourceManifest, closureFor);
 
-	const sidepanelResult = byOutput.get('sidepanel.js');
-	const sidepanelStartup = staticOutputClosure(sidepanelResult?.result.metafile, 'sidepanel.js');
+	const sidepanelResult = resultFor('sidepanel.js');
+	const sidepanelStartup = staticOutputClosure(sidepanelResult.result.metafile, 'sidepanel.js');
 	if (!sidepanelStartup) {
 		throw new Error('HALO SidePanel startup closure could not be resolved from the esbuild metafile');
 	}
@@ -347,7 +370,7 @@ if (isWatch) {
 				allFrameDocumentIdleBytes: allFrameDocumentIdle,
 				topFrameDocumentIdleBytes: topFrameDocumentIdle,
 				sidepanelStartupBytes: sidepanelStartup.bytes,
-				sidepanelStartupFiles: sidepanelStartup.files,
+				sidepanelStartupFiles: sidepanelStartup.fileCount,
 				backgroundBytes: sizeOf('background.js'),
 			},
 			entries: buildResults.map(({ entry, result }) => ({
@@ -379,7 +402,7 @@ if (isWatch) {
 		: '';
 	console.log(`✓ Build: ${buildResults.map(({ label }) => label).join(' | ')}${chunkInfo}${saatInfo}`);
 	console.log(
-		`✓ Startup closures: all-frame@start:${kib(allFrameDocumentStart)}KB | top-frame@start:${kib(topFrameDocumentStart)}KB | all-frame@idle:${kib(allFrameDocumentIdle)}KB | top-frame@idle:${kib(topFrameDocumentIdle)}KB | sidepanel:${kib(sidepanelStartup.bytes)}KB/${sidepanelStartup.files} files | background:${kib(sizeOf('background.js'))}KB`,
+		`✓ Startup closures: all-frame@start:${kib(allFrameDocumentStart)}KB | top-frame@start:${kib(topFrameDocumentStart)}KB | all-frame@idle:${kib(allFrameDocumentIdle)}KB | top-frame@idle:${kib(topFrameDocumentIdle)}KB | sidepanel:${kib(sidepanelStartup.bytes)}KB/${sidepanelStartup.fileCount} files | background:${kib(sizeOf('background.js'))}KB`,
 	);
 	console.log('✓ Production budgets:', Object.entries(PRODUCTION_BUDGET_KIB).map(([name, value]) => `${name}<=${value}KiB`).join(' | '));
 	console.log('🎉 Done → dist/');
