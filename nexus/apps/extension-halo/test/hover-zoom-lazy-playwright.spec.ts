@@ -8,6 +8,7 @@ import { chromium, expect, test, type BrowserContext, type Worker } from '@playw
 
 const DIST_PATH = fileURLToPath(new URL('../dist/', import.meta.url));
 const STORAGE_KEY = 'halo_hover_zoom_settings';
+const VISIBLE_VIEWER = '#halo-hover-zoom-container .halo-hz-viewer.visible';
 
 async function startFixtureServer(): Promise<{ server: Server; url: string }> {
 	const server = createServer((request, response) => {
@@ -62,9 +63,11 @@ async function hoverTarget(page: import('@playwright/test').Page): Promise<void>
 }
 
 async function expectViewerVisible(page: import('@playwright/test').Page): Promise<void> {
-	const container = page.locator('#halo-hover-zoom-container');
-	await expect(container).toHaveCount(1, { timeout: 10_000 });
-	await expect(container).toBeVisible({ timeout: 10_000 });
+	await expect(page.locator(VISIBLE_VIEWER)).toHaveCount(1, { timeout: 10_000 });
+}
+
+async function expectViewerHidden(page: import('@playwright/test').Page): Promise<void> {
+	await expect(page.locator(VISIBLE_VIEWER)).toHaveCount(0, { timeout: 10_000 });
 }
 
 test.describe('HALO lazy Hover Zoom runtime in Chromium', () => {
@@ -99,7 +102,7 @@ test.describe('HALO lazy Hover Zoom runtime in Chromium', () => {
 			await page.keyboard.down('Alt');
 			await expectViewerVisible(page);
 			await page.keyboard.up('Alt');
-			await expect(page.locator('#halo-hover-zoom-container')).toBeHidden();
+			await expectViewerHidden(page);
 
 			// On a new document, release while the runtime import is still eligible.
 			// The bootstrap keeps tracking modifiers, so no delayed ghost viewer may appear.
@@ -125,7 +128,7 @@ test.describe('HALO lazy Hover Zoom runtime in Chromium', () => {
 			await page.keyboard.down('Alt');
 			await expectViewerVisible(page);
 			await page.keyboard.up('Alt');
-			await expect(page.locator('#halo-hover-zoom-container')).toBeHidden();
+			await expectViewerHidden(page);
 			expect(errors).toEqual([]);
 		} finally {
 			await context?.close();
