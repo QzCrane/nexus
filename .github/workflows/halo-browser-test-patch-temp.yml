@@ -1,0 +1,54 @@
+name: TEMP HALO browser test patch
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.ref == 'agent/halo-scroll-event-ownership-v2' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/halo-scroll-event-ownership-v2
+          fetch-depth: 1
+      - name: Replace false permission implication check
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('nexus/apps/extension-halo/test/smooth-scroll-keyboard-playwright.spec.ts')
+          text = path.read_text(encoding='utf-8')
+          old = """\tconst hasFixtureAccess = await serviceWorker.evaluate(async () => {
+          \t\treturn chrome.permissions.contains({ origins: ['http://127.0.0.1/*'] });
+          \t});
+          \tif (!hasFixtureAccess) {
+          \t\tconst permissions = await serviceWorker.evaluate(async () => chrome.permissions.getAll());
+          \t\tthrow new Error(`HALO lacks fixture host access: ${JSON.stringify(permissions)}`);
+          \t}
+          """
+          new = """\tconst grantedOrigins = await serviceWorker.evaluate(async () => {
+          \t\treturn (await chrome.permissions.getAll()).origins ?? [];
+          \t});
+          \tif (!grantedOrigins.includes('<all_urls>')) {
+          \t\tthrow new Error(`HALO static content-script grant is missing <all_urls>: ${JSON.stringify(grantedOrigins)}`);
+          \t}
+          """
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'permission-check anchor count={count}')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+          git diff --check
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add nexus/apps/extension-halo/test/smooth-scroll-keyboard-playwright.spec.ts
+          git commit -m "test(halo): verify canonical static host grant"
+          git push origin HEAD:agent/halo-scroll-event-ownership-v2
