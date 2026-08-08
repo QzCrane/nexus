@@ -1,5 +1,5 @@
 // goal: SidePanel container and state manager
-// eff: Handles global state via SidePanelContext (Launcher Mode Only)
+// eff: Launcher mode runtime with only contexts that have live consumers
 
 import type React from 'react';
 import { useMemo } from 'react';
@@ -10,29 +10,15 @@ import { LauncherLayout } from './LauncherLayout';
 import { useSidePanelState } from './use-sidepanel-state';
 import { EngineStatusProvider } from './EngineStatusProvider';
 import { ActiveServicesProvider } from './ActiveServicesContext';
-import { SidePanelProvider, type SidePanelContextValue } from './SidePanelContext';
 import { OverlayProvider } from '../ui/overlay';
 
 export const SidePanel: React.FC = () => {
 	const { t, ready: i18nReady } = useTranslation();
 	const state = useSidePanelState();
-
-	// Memoize context value to prevent unnecessary re-renders
-	const contextValue: SidePanelContextValue = useMemo(() => ({
-		activeTool: state.activeTool,
-		openTools: state.openTools,
-		settings: state.settings,
-		visibleTools: state.visibleTools,
-		loading: state.loading,
-		modulesLoading: state.modulesLoading,
-		handleToolSelect: state.handleToolSelect,
-		handleCloseTool: state.handleCloseTool,
-		handleBack: state.handleBack,
-		handleSettingsChange: state.handleSettingsChange,
-		handleTogglePin: state.handleTogglePin,
-		handleReorderTools: state.handleReorderTools,
-		handleReorderCategories: state.handleReorderCategories,
-	}), [state]);
+	const visibleToolById = useMemo(
+		() => new Map(state.visibleTools.map((tool) => [tool.id, tool])),
+		[state.visibleTools],
+	);
 
 	if (state.loading || !i18nReady || state.modulesLoading) {
 		return (
@@ -47,22 +33,19 @@ export const SidePanel: React.FC = () => {
 		);
 	}
 
-	const hasDock = state.openTools.some(id => {
-		const tool = state.visibleTools.find(m => m.id === id);
-		return tool && tool.pluginType !== 'system';
-	});
+	const hasDock = state.openTools.some(
+		(id) => visibleToolById.get(id)?.pluginType !== 'system',
+	);
 
 	return (
-		<SidePanelProvider value={contextValue}>
-			<OverlayProvider>
-				<ActiveServicesProvider>
-					<EngineStatusProvider>
-						<div style={{ 
-							position: 'relative', width: '100%', height: '100%', 
-							overflow: 'hidden', background: 'var(--halo-bg, #1a1a1a)', 
-							color: 'var(--halo-text)', display: 'flex', flexDirection: 'column'
-						}}>
-						{/* GLOBAL PERSISTENT HEADER: NEVER ANIMATES, FIXED AT TOP */}
+		<OverlayProvider>
+			<ActiveServicesProvider>
+				<EngineStatusProvider>
+					<div style={{ 
+						position: 'relative', width: '100%', height: '100%', 
+						overflow: 'hidden', background: 'var(--halo-bg, #1a1a1a)', 
+						color: 'var(--halo-text)', display: 'flex', flexDirection: 'column'
+					}}>
 						<LauncherHeader
 							activeTool={state.activeTool}
 							visibleTools={state.visibleTools}
@@ -71,7 +54,6 @@ export const SidePanel: React.FC = () => {
 							hideBorder={hasDock}
 						/>
 
-						{/* DOCK TAB BAR: macOS-style tab switcher below header */}
 						<DockTabBar
 							openTools={state.openTools}
 							activeTool={state.activeTool}
@@ -80,7 +62,6 @@ export const SidePanel: React.FC = () => {
 							onCloseTool={state.handleCloseTool}
 						/>
 
-						{/* Main Content Area (Layout with slide transitions) */}
 						<main style={{ flex: 1, overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column' }}>
 							<LauncherLayout
 								activeTool={state.activeTool}
@@ -99,8 +80,6 @@ export const SidePanel: React.FC = () => {
 					</div>
 				</EngineStatusProvider>
 			</ActiveServicesProvider>
-			</OverlayProvider>
-	</SidePanelProvider>
+		</OverlayProvider>
 	);
 };
-

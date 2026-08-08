@@ -12,7 +12,7 @@
 		"level": "idle",
 		"descriptionKey": "impact.tab_events",
 		"sourceFile": "tools/tab-group/panel.tsx",
-		"sourceLine": 33,
+		"sourceLine": 44,
 		"sourceDetail": "chrome.tabGroups.onCreated/onRemoved/onUpdated"
 	}
 }

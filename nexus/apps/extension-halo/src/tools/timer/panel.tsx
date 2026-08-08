@@ -1,104 +1,181 @@
 // goal: Timer panel UI - countdown and stopwatch
+// eff: persistent time authority is anchor-based; display ticks are isolated to the clock node
 
 import type React from 'react';
-import { useEffect, useCallback, useRef } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from '../../i18n';
 import type { TimerMode, TimerState } from './types';
 import { formatTime, PRESETS } from './core';
 import { styles } from './panel.styles';
 import { playCompletionTone, useToolState } from '../../kernel';
+import { watchWallClockDeadline } from '../../kernel/utils/wall-clock-deadline';
 
+const initialState: TimerState = {
+	mode: 'stopwatch',
+	elapsed: 0,
+	startedAt: undefined,
+	target: 300000,
+	isRunning: false,
+	laps: [],
+};
 
-const initialState: TimerState = { mode: 'stopwatch', elapsed: 0, target: 300000, isRunning: false, laps: [] };
+function runningElapsed(state: TimerState, now: number): number {
+	if (!state.isRunning || typeof state.startedAt !== 'number') return state.elapsed;
+	return state.elapsed + Math.max(0, now - state.startedAt);
+}
+
+function countdownDeadline(state: TimerState): number | null {
+	if (!state.isRunning || state.mode !== 'countdown' || typeof state.startedAt !== 'number') {
+		return null;
+	}
+	return state.startedAt + Math.max(0, state.target - state.elapsed);
+}
+
+const TimerDisplay: React.FC<{ state: TimerState }> = memo(({ state }) => {
+	const [now, setNow] = useState(() => Date.now());
+
+	useEffect(() => {
+		if (!state.isRunning) {
+			setNow(Date.now());
+			return;
+		}
+		let frameId = 0;
+		let disposed = false;
+		const tick = () => {
+			if (disposed) return;
+			setNow(Date.now());
+			frameId = requestAnimationFrame(tick);
+		};
+		frameId = requestAnimationFrame(tick);
+		return () => {
+			disposed = true;
+			cancelAnimationFrame(frameId);
+		};
+	}, [state.isRunning]);
+
+	const currentElapsed = runningElapsed(state, now);
+	const displayTime = state.mode === 'countdown'
+		? formatTime(Math.max(0, state.target - currentElapsed))
+		: formatTime(currentElapsed, true);
+
+	return <div style={styles.display}>{displayTime}</div>;
+});
 
 export const TimerPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [state, setState] = useToolState<TimerState>('timer', initialState);
 	const [inputMins, setInputMins] = useToolState<number>('timer-mins', 5);
 	const [inputSecs, setInputSecs] = useToolState<number>('timer-secs', 0);
+	const stateRef = useRef(state);
+	stateRef.current = state;
 
-	const intervalRef = useRef<number | null>(null);
-	const elapsedRef = useRef(state.elapsed);
-	elapsedRef.current = state.elapsed;
-
-	// Timer tick
+	// One-time compatibility repair for pre-anchor persisted running states.
 	useEffect(() => {
-		if (!state.isRunning) return;
+		if (!state.isRunning || typeof state.startedAt === 'number') return;
+		setState((current) => {
+			if (!current.isRunning || typeof current.startedAt === 'number') return current;
+			return { ...current, startedAt: Date.now() };
+		});
+	}, [state.isRunning, state.startedAt, setState]);
 
-		const startedAt = Date.now();
-		const startingElapsed = elapsedRef.current;
-		intervalRef.current = window.setInterval(() => {
-			const newElapsed = startingElapsed + Date.now() - startedAt;
-			if (state.mode === 'countdown' && newElapsed >= state.target) {
-				if (intervalRef.current !== null) {
-					clearInterval(intervalRef.current);
-					intervalRef.current = null;
-				}
-				setState((current) => ({
+	// The countdown keeps persistent writes at lifecycle boundaries, while a
+	// bounded wall-clock watcher re-evaluates at most once per second. A clock
+	// jump backward therefore re-arms instead of losing completion; a jump
+	// forward is observed within one check interval instead of waiting for the
+	// stale original timeout. The tone is emitted only after the latest state is
+	// still running and truly due at the same observed clock sample.
+	useEffect(() => {
+		const deadline = countdownDeadline(state);
+		if (deadline === null) return;
+
+		return watchWallClockDeadline(deadline, {
+			onDue: (observedNow) => {
+				const current = stateRef.current;
+				const currentDeadline = countdownDeadline(current);
+				if (currentDeadline === null || observedNow < currentDeadline) return;
+				const next: TimerState = {
 					...current,
 					elapsed: current.target,
+					startedAt: undefined,
 					isRunning: false,
-				}));
+				};
+				stateRef.current = next;
+				setState(next);
 				void playCompletionTone().catch((error: unknown) => {
 					console.warn('[HALO:Timer] Completion tone failed', error);
 				});
-				return;
-			}
-			setState((current) => ({ ...current, elapsed: newElapsed }));
-		}, 10);
+			},
+		});
+	}, [state, setState]);
 
-		return () => {
-			if (intervalRef.current !== null) {
-				clearInterval(intervalRef.current);
-				intervalRef.current = null;
-			}
-		};
-	}, [state.isRunning, state.mode, state.target, setState]);
-
-	// Start/Stop
 	const handleToggle = useCallback(() => {
-		setState((s) => ({ ...s, isRunning: !s.isRunning }));
+		const timestamp = Date.now();
+		setState((current) => {
+			if (current.isRunning) {
+				const elapsed = runningElapsed(current, timestamp);
+				return {
+					...current,
+					elapsed: current.mode === 'countdown'
+						? Math.min(current.target, elapsed)
+						: elapsed,
+					startedAt: undefined,
+					isRunning: false,
+				};
+			}
+			return {
+				...current,
+				startedAt: timestamp,
+				isRunning: true,
+			};
+		});
 	}, [setState]);
 
-	// Reset
 	const handleReset = useCallback(() => {
-		setState((s) => ({ ...s, elapsed: 0, isRunning: false, laps: [] }));
+		setState((current) => ({
+			...current,
+			elapsed: 0,
+			startedAt: undefined,
+			isRunning: false,
+			laps: [],
+		}));
 	}, [setState]);
 
-	// Lap (stopwatch only)
 	const handleLap = useCallback(() => {
-		if (state.mode === 'stopwatch') {
-			setState((s) => ({ ...s, laps: [...s.laps, s.elapsed] }));
-		}
-	}, [state.mode, setState]);
+		if (state.mode !== 'stopwatch') return;
+		const lapElapsed = runningElapsed(state, Date.now());
+		setState((current) => ({ ...current, laps: [...current.laps, lapElapsed] }));
+	}, [state, setState]);
 
-	// Switch mode
 	const handleMode = useCallback((mode: TimerMode) => {
-		setState({ ...initialState, mode, target: (inputMins * 60 + inputSecs) * 1000 });
+		setState({
+			...initialState,
+			mode,
+			target: (inputMins * 60 + inputSecs) * 1000,
+		});
 	}, [inputMins, inputSecs, setState]);
 
-	// Set preset
 	const handlePreset = useCallback((ms: number) => {
 		setInputMins(Math.floor(ms / 60000));
 		setInputSecs(Math.floor((ms % 60000) / 1000));
-		setState((s) => ({ ...s, target: ms, elapsed: 0, isRunning: false }));
+		setState((current) => ({
+			...current,
+			target: ms,
+			elapsed: 0,
+			startedAt: undefined,
+			isRunning: false,
+		}));
 	}, [setState, setInputSecs, setInputMins]);
 
-	// Update target from input
 	useEffect(() => {
-		if (!state.isRunning) {
-			setState((s) => ({ ...s, target: (inputMins * 60 + inputSecs) * 1000 }));
-		}
+		if (state.isRunning) return;
+		const target = (inputMins * 60 + inputSecs) * 1000;
+		setState((current) => current.target === target
+			? current
+			: { ...current, target });
 	}, [inputMins, inputSecs, state.isRunning, setState]);
-
-	// Display time
-	const displayTime = state.mode === 'countdown'
-		? formatTime(Math.max(0, state.target - state.elapsed))
-		: formatTime(state.elapsed, true);
 
 	return (
 		<div style={styles.wrapper}>
-			{/* Mode Tabs */}
 			<div style={styles.tabs}>
 				<button type="button" style={{ ...styles.tab, ...(state.mode === 'stopwatch' ? styles.active : styles.inactive) }} onClick={() => handleMode('stopwatch')}>
 					⏱️ {t('timer.stopwatch')}
@@ -108,7 +185,6 @@ export const TimerPanel: React.FC = () => {
 				</button>
 			</div>
 
-			{/* Countdown Input */}
 			{state.mode === 'countdown' && !state.isRunning && state.elapsed === 0 && (
 				<>
 					<div style={styles.inputRow}>
@@ -117,15 +193,13 @@ export const TimerPanel: React.FC = () => {
 						<input type="number" style={styles.input} value={inputSecs} onChange={(e) => setInputSecs(Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)))} />
 					</div>
 					<div style={styles.presets}>
-						{PRESETS.map((p) => <button type="button" key={p.ms} style={styles.preset} onClick={() => handlePreset(p.ms)}>{p.label}</button>)}
+						{PRESETS.map((preset) => <button type="button" key={preset.ms} style={styles.preset} onClick={() => handlePreset(preset.ms)}>{preset.label}</button>)}
 					</div>
 				</>
 			)}
 
-			{/* Time Display */}
-			<div style={styles.display}>{displayTime}</div>
+			<TimerDisplay state={state} />
 
-			{/* Controls */}
 			<div style={styles.controls}>
 				<button type="button" style={styles.btn} onClick={handleToggle}>
 					{state.isRunning ? '⏸️' : '▶️'} {state.isRunning ? t('timer.pause') : t('timer.start')}
@@ -136,13 +210,12 @@ export const TimerPanel: React.FC = () => {
 				<button type="button" style={styles.btnSecondary} onClick={handleReset}>🔄</button>
 			</div>
 
-			{/* Laps */}
 			{state.laps.length > 0 && (
 				<div style={styles.laps}>
-					{state.laps.map((lap, i) => {
+					{state.laps.map((lap, index) => {
 						// biome-ignore lint/suspicious/noArrayIndexKey: Stopwatch laps are append-only and their ordinal position is the displayed identity.
-						return <div key={i} style={styles.lap}>
-							<span>Lap {i + 1}</span>
+						return <div key={index} style={styles.lap}>
+							<span>Lap {index + 1}</span>
 							<span>{formatTime(lap, true)}</span>
 						</div>;
 					})}

@@ -2,8 +2,8 @@ import { useMemo } from 'react';
 import type { PluginMeta } from '../../../kernel/core/tool-registry-types';
 import type { HaloSettings } from '../../../kernel/core/settings';
 import type { UserScript } from '../../../system/userscripts/types';
-import { BACKGROUND_PROFILES_MAP } from "../../../kernel/registry/_generated";
-import { TAXONOMY } from "../../../kernel/registry/taxonomy";
+import { BACKGROUND_ACTIVE_ONLY_MAP } from '../../../kernel/registry/_generated-background-active';
+import { TAXONOMY } from '../../../kernel/registry/taxonomy';
 
 interface UseCategorizedToolsProps {
 	visibleTools: PluginMeta[];
@@ -17,7 +17,7 @@ interface UseCategorizedToolsProps {
 }
 
 // Build dynamic category keys from TAXONOMY (SSOT)
-const CATEGORY_IDS = TAXONOMY.map(c => c.id);
+const CATEGORY_IDS = TAXONOMY.map((category) => category.id);
 
 export function useCategorizedTools({
 	visibleTools, settings, t, activeServices, backgroundToolIds, scripts, tempCats, tempCatOrder
@@ -25,57 +25,46 @@ export function useCategorizedTools({
 	const categorizedTools = useMemo(() => {
 		if (tempCats) return tempCats;
 
-		// Initialize all categories dynamically from TAXONOMY
 		const cats: Record<string, PluginMeta[]> = {};
-		CATEGORY_IDS.forEach(id => { cats[id] = []; });
+		CATEGORY_IDS.forEach((id) => { cats[id] = []; });
 
-		// 1. Process builtin/registry tools
-		visibleTools.forEach(tool => {
-			// System plugins: only show if enabled in settings
+		visibleTools.forEach((tool) => {
 			if (tool.pluginType === 'system') {
 				if (settings?.showSystemTools) cats.system?.push(tool);
 
-				// System tools that are global background services -> also in 'active'
-				if (backgroundToolIds.includes(tool.id)) {
-					const profile = BACKGROUND_PROFILES_MAP[tool.id];
-					if (profile && !profile.activeOnly) {
-						cats.active?.push(tool);
-					}
-				}
-				return;
-			}
-
-			// Script plugins: show in their functional category AND scripts aggregation
-			if (tool.pluginType === 'script') {
-				// Add to functional category
-				const category = cats[tool.category];
-				if (category) category.push(tool);
-				// Also add to scripts aggregation category
-				cats.scripts?.push(tool);
-				// Also show in Active Services if enabled
-				if (activeServices.has(tool.id)) {
+				// Startup classification only needs activeOnly; detailed resource
+				// provenance remains in the lazy Resource Monitor path.
+				if (
+					backgroundToolIds.includes(tool.id)
+					&& BACKGROUND_ACTIVE_ONLY_MAP[tool.id] === false
+				) {
 					cats.active?.push(tool);
 				}
 				return;
 			}
 
-			// Regular tool plugins
+			if (tool.pluginType === 'script') {
+				const category = cats[tool.category];
+				if (category) category.push(tool);
+				cats.scripts?.push(tool);
+				if (activeServices.has(tool.id)) cats.active?.push(tool);
+				return;
+			}
+
 			if (backgroundToolIds.includes(tool.id) || activeServices.has(tool.id)) cats.active?.push(tool);
 			const category = cats[tool.category];
 			if (category) category.push(tool);
 			else cats.general?.push(tool);
 		});
 
-		// 2. Process user scripts (non-SaaT)
-		scripts.forEach(script => {
-			// Skip SaaT wrappers (already in registry)
+		scripts.forEach((script) => {
 			if (script.saatToolId) return;
 
 			const meta: PluginMeta = {
 				id: script.id,
 				name: script.name,
 				description: script.description || 'User Script',
-				category: 'dev', // User scripts go to dev category
+				category: 'dev',
 				pluginType: 'script',
 				icon: '📜',
 				builtIn: false,
@@ -89,28 +78,28 @@ export function useCategorizedTools({
 				isUserScript: true,
 			};
 
-			// Add to functional category (dev)
 			cats.dev?.push(meta);
-			// Also add to scripts aggregation
 			cats.scripts?.push(meta);
-
-			// Check active state
-			if (script.enabled || activeServices.has(script.id)) {
-				cats.active?.push(meta);
-			}
+			if (script.enabled || activeServices.has(script.id)) cats.active?.push(meta);
 		});
 
-		// 3. Sort each category
-		Object.entries(cats).forEach(([cat, tools]) => {
-			const pinned = settings?.pinnedTools || [], order = settings?.toolOrder?.[cat] || [];
-			tools.sort((a, b) => {
-				const ap = pinned.includes(a.id), bp = pinned.includes(b.id);
-				if (ap !== bp) return ap ? -1 : 1;
-				const ai = order.indexOf(a.id), bi = order.indexOf(b.id);
-				if (ai !== -1 && bi !== -1) return ai - bi;
-				const nameA = (t(`tools.${a.id}.name`) === `tools.${a.id}.name` ? (a.name || a.id) : t(`tools.${a.id}.name`)) || a.id;
-				const nameB = (t(`tools.${b.id}.name`) === `tools.${b.id}.name` ? (b.name || b.id) : t(`tools.${b.id}.name`)) || b.id;
-				return ai !== -1 ? -1 : bi !== -1 ? 1 : nameA.localeCompare(nameB);
+		Object.entries(cats).forEach(([categoryId, tools]) => {
+			const pinned = settings?.pinnedTools || [];
+			const order = settings?.toolOrder?.[categoryId] || [];
+			tools.sort((left, right) => {
+				const leftPinned = pinned.includes(left.id);
+				const rightPinned = pinned.includes(right.id);
+				if (leftPinned !== rightPinned) return leftPinned ? -1 : 1;
+				const leftIndex = order.indexOf(left.id);
+				const rightIndex = order.indexOf(right.id);
+				if (leftIndex !== -1 && rightIndex !== -1) return leftIndex - rightIndex;
+				const leftName = (t(`tools.${left.id}.name`) === `tools.${left.id}.name`
+					? (left.name || left.id)
+					: t(`tools.${left.id}.name`)) || left.id;
+				const rightName = (t(`tools.${right.id}.name`) === `tools.${right.id}.name`
+					? (right.name || right.id)
+					: t(`tools.${right.id}.name`)) || right.id;
+				return leftIndex !== -1 ? -1 : rightIndex !== -1 ? 1 : leftName.localeCompare(rightName);
 			});
 		});
 		return cats;
@@ -119,29 +108,26 @@ export function useCategorizedTools({
 	const catOrder = useMemo(() => {
 		if (tempCatOrder) return tempCatOrder;
 
-		// Functional categories from TAXONOMY (exclude virtual/special categories)
 		const functionalCats = TAXONOMY
-			.filter(c => !['active', 'scripts', 'system'].includes(c.id))
-			.sort((a, b) => a.sortOrder - b.sortOrder)
-			.map(c => c.id);
+			.filter((category) => !['active', 'scripts', 'system'].includes(category.id))
+			.sort((left, right) => left.sortOrder - right.sortOrder)
+			.map((category) => category.id);
 
 		let order = settings?.categoryOrder || [];
 
 		if (order.length === 0) {
-			// Default order: active, scripts, system first, then functional
 			order = ['active', 'scripts'];
 			if (settings?.showSystemTools) order.push('system');
 			order = [...order, ...functionalCats];
 		} else {
-			// Ensure special categories are included
 			if (!order.includes('active')) order = ['active', ...order];
 			if (!order.includes('scripts')) {
-				const activeIdx = order.indexOf('active');
-				order.splice(activeIdx + 1, 0, 'scripts');
+				const activeIndex = order.indexOf('active');
+				order.splice(activeIndex + 1, 0, 'scripts');
 			}
 			if (!order.includes('system') && settings?.showSystemTools) {
-				const scriptsIdx = order.indexOf('scripts');
-				order.splice(scriptsIdx + 1, 0, 'system');
+				const scriptsIndex = order.indexOf('scripts');
+				order.splice(scriptsIndex + 1, 0, 'system');
 			}
 		}
 

@@ -1,5 +1,5 @@
-// goal: Resource Monitor types - full SSOT with source annotations + i18n
-// inv: Every background consumer has exact source file:line annotation
+// goal: Resource Monitor types - runtime-consumption profiles with source annotations + i18n
+// inv: Every listed profile resolves to its live source owner; no historical or inferred owner rows.
 
 export type ImpactLevel = 'high' | 'medium' | 'low' | 'idle';
 
@@ -18,22 +18,20 @@ export type ConsumptionMechanism =
 	| 'content_script'    // Injected content script
 	| 'userscript';       // User-defined script
 
-// Detailed background profile with source annotation
 export interface BackgroundProfile {
 	mechanism: ConsumptionMechanism;
-	frequency: string;           // Real frequency: "10ms", "1s", "200ms", "on-change", etc.
-	activeOnly: boolean;         // Only consumes when panel is open
+	frequency: string;
+	activeOnly: boolean;
 	level: ImpactLevel;
-	descriptionKey: string;      // i18n key for description
-	sourceFile: string;          // Source file path (relative to src/)
-	sourceLine: number;          // Line number in source file
-	sourceDetail?: string;       // Code detail (optional)
+	descriptionKey: string;
+	sourceFile: string;
+	sourceLine: number;
+	sourceDetail?: string;
 }
 
-// System-level background consumers (entry files)
 export interface SystemConsumer {
 	id: string;
-	name: string;                // Display name (i18n key)
+	name: string;
 	icon: string;
 	profiles: BackgroundProfile[];
 }
@@ -47,27 +45,25 @@ export interface MonitoredService {
 	profiles: BackgroundProfile[];
 }
 
-// Level config with i18n keys
 export const LEVEL_CONFIG: Record<ImpactLevel, { color: string; bg: string; labelKey: string }> = {
 	high: { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.12)', labelKey: 'impact.level.high' },
 	medium: { color: '#eab308', bg: 'rgba(234, 179, 8, 0.12)', labelKey: 'impact.level.medium' },
 	low: { color: '#22c55e', bg: 'rgba(34, 197, 94, 0.1)', labelKey: 'impact.level.low' },
-	idle: { color: 'var(--halo-text-muted)', bg: 'var(--halo-bg-tertiary)', labelKey: 'impact.level.idle' }
+	idle: { color: 'var(--halo-text-muted)', bg: 'var(--halo-bg-tertiary)', labelKey: 'impact.level.idle' },
 };
 
-// Mechanism icons
 export const MECHANISM_ICONS: Record<ConsumptionMechanism, string> = {
 	interval_fast: '⏱️', interval_slow: '🕐',
 	raf_active: '🎬', raf_idle: '💤',
 	event_listener: '👂', storage_listener: '💾', message_listener: '📨',
 	wheel_listener: '🖱️', copy_listener: '📋',
-	mutation_observer: '👁️', service_worker: '⚙️', content_script: '📜', userscript: '🔧'
+	mutation_observer: '👁️', service_worker: '⚙️', content_script: '📜', userscript: '🔧',
 };
 
-// =========================================================
-// SYSTEM CORE CONSUMERS (entry files - always running)
-// These are the Halo system-level background consumers
-// =========================================================
+// Infrastructure listeners that exist independently of one tool panel. Plugin
+// manifests own each plugin's primary resource-impact profile; this table owns
+// shared browser/runtime surfaces. One-shot initialization work is intentionally
+// excluded from this long-lived-listener ledger.
 export const SYSTEM_CORE_CONSUMERS: SystemConsumer[] = [
 	{
 		id: 'core:background',
@@ -81,46 +77,16 @@ export const SYSTEM_CORE_CONSUMERS: SystemConsumer[] = [
 				level: 'idle',
 				descriptionKey: 'impact.message_handler',
 				sourceFile: 'entry/background.ts',
-				sourceLine: 149,
-				sourceDetail: 'chrome.runtime.onMessage.addListener'
+				sourceLine: 202,
+				sourceDetail: 'chrome.runtime.onMessage.addListener',
 			},
-			{
-				mechanism: 'storage_listener',
-				frequency: 'on-change',
-				activeOnly: false,
-				level: 'idle',
-				descriptionKey: 'impact.storage_sync',
-				sourceFile: 'entry/background.ts',
-				sourceLine: 165,
-				sourceDetail: 'chrome.storage.onChanged.addListener'
-			}
-		]
+		],
 	},
 	{
-		id: 'core:content',
+		id: 'core:content-router',
 		name: 'system.content',
 		icon: '📄',
 		profiles: [
-			{
-				mechanism: 'copy_listener',
-				frequency: 'on-copy',
-				activeOnly: false,
-				level: 'idle',
-				descriptionKey: 'impact.copy_listener',
-				sourceFile: 'entry/content.ts',
-				sourceLine: 39,
-				sourceDetail: "document.addEventListener('copy', onCopy)"
-			},
-			{
-				mechanism: 'storage_listener',
-				frequency: 'on-change',
-				activeOnly: false,
-				level: 'idle',
-				descriptionKey: 'impact.storage_sync',
-				sourceFile: 'entry/content.ts',
-				sourceLine: 56,
-				sourceDetail: 'chrome.storage.onChanged.addListener'
-			},
 			{
 				mechanism: 'message_listener',
 				frequency: 'on-message',
@@ -128,10 +94,61 @@ export const SYSTEM_CORE_CONSUMERS: SystemConsumer[] = [
 				level: 'idle',
 				descriptionKey: 'impact.message_handler',
 				sourceFile: 'entry/content.ts',
-				sourceLine: 64,
-				sourceDetail: 'chrome.runtime.onMessage.addListener'
-			}
-		]
+				sourceLine: 22,
+				sourceDetail: 'chrome.runtime.onMessage.addListener',
+			},
+		],
+	},
+	{
+		id: 'core:frame-tools',
+		name: 'system.content',
+		icon: '📐',
+		profiles: [
+			{
+				mechanism: 'message_listener',
+				frequency: 'on-message',
+				activeOnly: false,
+				level: 'idle',
+				descriptionKey: 'impact.message_handler',
+				sourceFile: 'entry/content-frame-tools.ts',
+				sourceLine: 32,
+				sourceDetail: 'all-frame dormant chrome.runtime.onMessage host',
+			},
+		],
+	},
+	{
+		id: 'core:userscripts-engine',
+		name: 'tools.userscripts.name',
+		icon: '📜',
+		profiles: [
+			{
+				mechanism: 'message_listener',
+				frequency: 'on-message',
+				activeOnly: false,
+				level: 'idle',
+				descriptionKey: 'impact.message_handler',
+				sourceFile: 'system/userscripts/engine.ts',
+				sourceLine: 68,
+				sourceDetail: 'manual sync and run-count message router',
+			},
+		],
+	},
+	{
+		id: 'core:saat-service',
+		name: 'system.background',
+		icon: '🧩',
+		profiles: [
+			{
+				mechanism: 'storage_listener',
+				frequency: 'on-change',
+				activeOnly: false,
+				level: 'idle',
+				descriptionKey: 'impact.storage_sync',
+				sourceFile: 'kernel/services/saat-service.ts',
+				sourceLine: 319,
+				sourceDetail: 'Tool Prefs authority listener for SaaT enablement',
+			},
+		],
 	},
 	{
 		id: 'core:sidepanel',
@@ -144,9 +161,9 @@ export const SYSTEM_CORE_CONSUMERS: SystemConsumer[] = [
 				activeOnly: true,
 				level: 'low',
 				descriptionKey: 'impact.wheel_listener',
-				sourceFile: 'entry/sidepanel-init.ts',
-				sourceLine: 110,
-				sourceDetail: "window.addEventListener('wheel', onWheel)"
+				sourceFile: 'entry/sidepanel-scroll.ts',
+				sourceLine: 213,
+				sourceDetail: "window.addEventListener('wheel', onWheel)",
 			},
 			{
 				mechanism: 'storage_listener',
@@ -154,10 +171,30 @@ export const SYSTEM_CORE_CONSUMERS: SystemConsumer[] = [
 				activeOnly: true,
 				level: 'idle',
 				descriptionKey: 'impact.storage_sync',
-				sourceFile: 'entry/sidepanel-init.ts',
-				sourceLine: 121,
-				sourceDetail: 'chrome.storage.onChanged.addListener'
-			}
-		]
-	}
+				sourceFile: 'entry/sidepanel-scroll.ts',
+				sourceLine: 231,
+				sourceDetail: 'SidePanel smooth-scroll settings listener',
+			},
+			{
+				mechanism: 'storage_listener',
+				frequency: 'on-change',
+				activeOnly: true,
+				level: 'idle',
+				descriptionKey: 'impact.storage_sync',
+				sourceFile: 'components/sidepanel/ActiveServicesContext.tsx',
+				sourceLine: 228,
+				sourceDetail: 'single SidePanel runtime-status storage authority',
+			},
+			{
+				mechanism: 'message_listener',
+				frequency: 'on-message',
+				activeOnly: true,
+				level: 'idle',
+				descriptionKey: 'impact.message_handler',
+				sourceFile: 'components/sidepanel/use-sidepanel-state.ts',
+				sourceLine: 97,
+				sourceDetail: 'HALO_ACTIVATE_TOOL side-panel router',
+			},
+		],
+	},
 ];

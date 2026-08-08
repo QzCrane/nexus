@@ -23,8 +23,8 @@
 		"activeOnly": false,
 		"level": "idle",
 		"descriptionKey": "impact.copy_listener",
-		"sourceFile": "entry/content.ts",
-		"sourceLine": 39,
-		"sourceDetail": "document.addEventListener('copy', onCopy)"
+		"sourceFile": "entry/content-clipboard.ts",
+		"sourceLine": 55,
+		"sourceDetail": "document copy listener exists in the isolated all-frame idle host and detaches when Clipboard is disabled"
 	}
 }

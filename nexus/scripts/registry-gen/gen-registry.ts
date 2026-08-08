@@ -1,15 +1,18 @@
-// goal: Generate _generated.ts registry file
-// eff: Unified PLUGIN_REGISTRY with new schema
+// goal: Generate HALO registry artifacts
+// eff: Canonical full registry plus minimal runtime projections
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { OUTPUT_REGISTRY } from './config.ts';
+import {
+	OUTPUT_BACKGROUND_ACTIVE,
+	OUTPUT_REGISTRY,
+	OUTPUT_SCRIPT_RUNTIME,
+} from './config.ts';
 import { calculateFolderSize } from './utils.ts';
 
 /**
- * Generate registry TypeScript file
- * @param {Array} allModules - All discovered modules
- * @param {Map} manifestsMap - Map of id -> parsed manifest
+ * Generate the canonical full registry. Its schema remains the source for UI
+ * metadata and detailed resource-impact provenance.
  */
 export function generateRegistry(allModules, manifestsMap) {
 	const header = `// AUTO-GENERATED - DO NOT EDIT
@@ -56,53 +59,48 @@ export interface PluginMeta {
 }
 `;
 
-	const generateEntry = (m) => {
-		const manifest = manifestsMap.get(m.id);
+	const generateEntry = (module) => {
+		const manifest = manifestsMap.get(module.id);
 		const keywords = manifest.keywords ? JSON.stringify(manifest.keywords) : '[]';
-		const permissions = manifest.permissions?.length ? JSON.stringify(manifest.permissions) : 'undefined';
-		const background = manifest.background ? JSON.stringify(manifest.background) : 'undefined';
-
-		// Script config (new nested format)
+		const permissions = manifest.permissions?.length
+			? JSON.stringify(manifest.permissions)
+			: 'undefined';
+		const background = manifest.background
+			? JSON.stringify(manifest.background)
+			: 'undefined';
 		const scriptConfig = manifest.script ? JSON.stringify(manifest.script) : 'undefined';
-
-		// Calculate actual source size
-		const moduleDir = path.dirname(m.manifestPath);
+		const moduleDir = path.dirname(module.manifestPath);
 		const size = calculateFolderSize(moduleDir);
 
-		return `	{
-		id: '${manifest.id}',
-		icon: '${manifest.icon}',
-		pluginType: '${m.pluginType}',
-		category: '${manifest.category}',
-		size: ${size},
-		builtIn: ${manifest.builtIn ?? false},
-		status: ${manifest.status ? `'${manifest.status}'` : 'undefined'},
-		keywords: ${keywords},
-		permissions: ${permissions},
-		background: ${background},
-		script: ${scriptConfig},
-	}`;
+		return `\t{
+\t\tid: '${manifest.id}',
+\t\ticon: '${manifest.icon}',
+\t\tpluginType: '${module.pluginType}',
+\t\tcategory: '${manifest.category}',
+\t\tsize: ${size},
+\t\tbuiltIn: ${manifest.builtIn ?? false},
+\t\tstatus: ${manifest.status ? `'${manifest.status}'` : 'undefined'},
+\t\tkeywords: ${keywords},
+\t\tpermissions: ${permissions},
+\t\tbackground: ${background},
+\t\tscript: ${scriptConfig},
+\t}`;
 	};
 
-	// Build permission usage map
 	const permissionMap = {};
-	for (const m of allModules) {
-		const manifest = manifestsMap.get(m.id);
-		if (manifest.permissions) {
-			for (const p of manifest.permissions) {
-				if (!permissionMap[p]) permissionMap[p] = [];
-				permissionMap[p].push(m.id);
-			}
+	for (const module of allModules) {
+		const manifest = manifestsMap.get(module.id);
+		if (!manifest.permissions) continue;
+		for (const permission of manifest.permissions) {
+			if (!permissionMap[permission]) permissionMap[permission] = [];
+			permissionMap[permission].push(module.id);
 		}
 	}
 
-	// Build background profiles map
 	const backgroundMap = {};
-	for (const m of allModules) {
-		const manifest = manifestsMap.get(m.id);
-		if (manifest.background) {
-			backgroundMap[m.id] = manifest.background;
-		}
+	for (const module of allModules) {
+		const manifest = manifestsMap.get(module.id);
+		if (manifest.background) backgroundMap[module.id] = manifest.background;
 	}
 
 	const content = `${header}
@@ -110,14 +108,14 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 ${allModules.map(generateEntry).join(',\n')}
 ];
 
-export const PLUGIN_IDS = [${allModules.map(m => `'${m.id}'`).join(', ')}] as const;
+export const PLUGIN_IDS = [${allModules.map((module) => `'${module.id}'`).join(', ')}] as const;
 export type PluginId = (typeof PLUGIN_IDS)[number];
 
 // Runtime filters (SSOT)
-export const getToolPlugins = () => PLUGIN_REGISTRY.filter(p => p.pluginType === 'tool');
-export const getScriptPlugins = () => PLUGIN_REGISTRY.filter(p => p.pluginType === 'script');
-export const getSystemPlugins = () => PLUGIN_REGISTRY.filter(p => p.pluginType === 'system');
-export const getUserPlugins = () => PLUGIN_REGISTRY.filter(p => p.pluginType !== 'system');
+export const getToolPlugins = () => PLUGIN_REGISTRY.filter((plugin) => plugin.pluginType === 'tool');
+export const getScriptPlugins = () => PLUGIN_REGISTRY.filter((plugin) => plugin.pluginType === 'script');
+export const getSystemPlugins = () => PLUGIN_REGISTRY.filter((plugin) => plugin.pluginType === 'system');
+export const getUserPlugins = () => PLUGIN_REGISTRY.filter((plugin) => plugin.pluginType !== 'system');
 
 export const PERMISSION_USAGE_MAP: Record<string, string[]> = ${JSON.stringify(permissionMap, null, 4)};
 
@@ -136,4 +134,56 @@ export const TOOL_IDS = PLUGIN_IDS;
 
 	fs.writeFileSync(OUTPUT_REGISTRY, content, 'utf-8');
 	console.log(`✓ Generated registry: ${path.relative(process.cwd(), OUTPUT_REGISTRY)}`);
+}
+
+/**
+ * Generate only background membership + activeOnly for startup consumers.
+ * Source provenance remains in the canonical registry and is not duplicated
+ * into the status/classification path.
+ */
+export function generateBackgroundActiveProjection(allModules, manifestsMap) {
+	const activeOnlyMap = {};
+	for (const module of allModules) {
+		const background = manifestsMap.get(module.id)?.background;
+		if (background) activeOnlyMap[module.id] = background.activeOnly === true;
+	}
+
+	const content = `// AUTO-GENERATED - DO NOT EDIT
+// Generated by: bun run generate-registry
+// Compact startup projection; detailed provenance lives in _generated.ts.
+
+export const BACKGROUND_ACTIVE_ONLY_MAP: Readonly<Record<string, boolean>> = Object.freeze(${JSON.stringify(activeOnlyMap, null, 4)});
+export const BACKGROUND_PLUGIN_IDS = Object.freeze(Object.keys(BACKGROUND_ACTIVE_ONLY_MAP));
+`;
+	fs.writeFileSync(OUTPUT_BACKGROUND_ACTIVE, content, 'utf-8');
+	console.log(
+		`✓ Generated background startup projection: ${path.relative(process.cwd(), OUTPUT_BACKGROUND_ACTIVE)}`,
+	);
+}
+
+/**
+ * Generate the install-time data projection consumed by the MV3 worker. Chrome
+ * extension service workers cannot use dynamic import(), so install-only script
+ * metadata crosses the lazy boundary as local data instead of UI code.
+ */
+export function generateScriptRuntimeManifest(allModules, manifestsMap) {
+	const descriptors = allModules.flatMap((module) => {
+		const manifest = manifestsMap.get(module.id);
+		if (!manifest?.script) return [];
+		return [{
+			id: manifest.id,
+			pluginType: module.pluginType,
+			script: manifest.script,
+		}];
+	});
+
+	fs.mkdirSync(path.dirname(OUTPUT_SCRIPT_RUNTIME), { recursive: true });
+	fs.writeFileSync(
+		OUTPUT_SCRIPT_RUNTIME,
+		`${JSON.stringify(descriptors, null, 2)}\n`,
+		'utf-8',
+	);
+	console.log(
+		`✓ Generated script runtime: ${path.relative(process.cwd(), OUTPUT_SCRIPT_RUNTIME)} (${descriptors.length})`,
+	);
 }

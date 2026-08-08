@@ -14,13 +14,13 @@
 		"番茄钟"
 	],
 	"background": {
-		"mechanism": "interval_fast",
-		"frequency": "10ms",
+		"mechanism": "raf_active",
+		"frequency": "paint-frame while running",
 		"activeOnly": true,
-		"level": "high",
-		"descriptionKey": "impact.interval_10ms",
+		"level": "medium",
+		"descriptionKey": "impact.mechanism.raf_active",
 		"sourceFile": "tools/timer/panel.tsx",
-		"sourceLine": 26,
-		"sourceDetail": "window.setInterval(() => {...}, 10)"
+		"sourceLine": 47,
+		"sourceDetail": "requestAnimationFrame state is isolated to the TimerDisplay clock node; a bounded 1Hz deadline watcher performs no persistent write until real completion"
 	}
 }

@@ -49,8 +49,13 @@ function sourceIdentity(element: HTMLMediaElement): string {
 	const sourceObject = element.srcObject;
 	let objectIdentity = 0;
 	if (sourceObject && typeof sourceObject === 'object') {
-		objectIdentity = sourceObjectIds.get(sourceObject) ?? nextSourceObjectId++;
-		sourceObjectIds.set(sourceObject, objectIdentity);
+		const existing = sourceObjectIds.get(sourceObject);
+		if (existing === undefined) {
+			objectIdentity = nextSourceObjectId++;
+			sourceObjectIds.set(sourceObject, objectIdentity);
+		} else {
+			objectIdentity = existing;
+		}
 	}
 	return `${element.currentSrc || element.src || ''}\n${objectIdentity}`;
 }
@@ -93,6 +98,7 @@ export class MediaRegistry {
 	private readonly byElement = new Map<HTMLMediaElement, MediaRecord>();
 	private readonly byId = new Map<string, MediaRecord>();
 	private readonly mutationObserver: MutationObserver;
+	private readonly mediaAttributeObserver: MutationObserver;
 	private readonly intersectionObserver: IntersectionObserver;
 	private documentId = '';
 	private nextMediaId = 1;
@@ -134,30 +140,33 @@ export class MediaRegistry {
 					: 0;
 			}
 		});
+		this.mediaAttributeObserver = new MutationObserver((mutations) => {
+			this.handleMediaAttributeMutations(mutations);
+		});
+
+		// Register the initial media set before installing the topology observer.
+		// Construction is synchronous, so there is no observable DOM gap.
+		this.discover(document.documentElement);
+
+		// The document-wide observer owns topology only. Attributes are observed
+		// through one shared observer attached directly to registered media nodes,
+		// so image/input/source churn elsewhere in a large SPA never enters SPECTRA.
 		this.mutationObserver = new MutationObserver((mutations) => {
 			for (const mutation of mutations) {
+				// Real topology observation never receives attributes. Keeping this
+				// defensive branch makes synthetic test observers and future callers
+				// harmless without widening the browser observation options.
+				if (mutation.type === 'attributes') {
+					this.handleMediaAttributeMutations([mutation]);
+					continue;
+				}
 				for (const node of mutation.addedNodes) this.discover(node);
 				for (const node of mutation.removedNodes) this.queueRemovalTree(node);
-			if (mutation.type === 'attributes' && mutation.target instanceof HTMLMediaElement) {
-					if (mutation.attributeName === 'src' || mutation.attributeName === 'crossorigin') {
-						this.refreshSource(mutation.target, false);
-					}
-					if (mutation.attributeName === 'loop') {
-						const record = this.byElement.get(mutation.target);
-						if (record) this.emit(record.target, 'loopchange', mutation.target);
-					}
-				}
 			}
 		});
-		this.discover(document.documentElement);
 		this.mutationObserver.observe(document, {
 			childList: true,
 			subtree: true,
-			attributes: true,
-			// `loop` is a reflected boolean attribute with no dedicated DOM event.
-			// Reuse the existing runtime observer rather than polling or patching its
-			// property descriptor so page-side loop changes join the same snapshot.
-			attributeFilter: ['src', 'crossorigin', 'loop'],
 		});
 		document.addEventListener('fullscreenchange', this.fullscreenListener);
 	}
@@ -211,6 +220,40 @@ export class MediaRegistry {
 			}
 			this.pendingRemovals.clear();
 		});
+	}
+
+	private handleMediaAttributeMutations(mutations: readonly MutationRecord[]): void {
+		if (this.disposed) return;
+		for (const mutation of mutations) {
+			const element = mutation.target;
+			if (!(element instanceof HTMLMediaElement)) continue;
+			const record = this.byElement.get(element);
+			if (!record) continue;
+			if (mutation.attributeName === 'src' || mutation.attributeName === 'crossorigin') {
+				this.refreshSource(element, false);
+			}
+			if (mutation.attributeName === 'loop') {
+				this.emit(record.target, 'loopchange', element);
+			}
+		}
+	}
+
+	private observeMediaAttributes(element: HTMLMediaElement): void {
+		this.mediaAttributeObserver.observe(element, {
+			attributes: true,
+			attributeFilter: ['src', 'crossorigin', 'loop'],
+		});
+	}
+
+	private rebuildMediaAttributeObservation(): void {
+		// MutationObserver has no per-target unobserve(). Before reconnecting the
+		// remaining media set, preserve already-queued records for surviving nodes.
+		const maybeTakeRecords = (this.mediaAttributeObserver as Partial<MutationObserver>).takeRecords;
+		if (typeof maybeTakeRecords === 'function') {
+			this.handleMediaAttributeMutations(maybeTakeRecords.call(this.mediaAttributeObserver));
+		}
+		this.mediaAttributeObserver.disconnect();
+		for (const { element } of this.byElement.values()) this.observeMediaAttributes(element);
 	}
 
 	private register(element: HTMLMediaElement): void {
@@ -283,12 +326,14 @@ export class MediaRegistry {
 			this.selectRecord(record, true);
 		};
 		element.addEventListener('pointerdown', onPointer, true);
+
 		record.dispose = () => {
 			for (const [type, listener] of listeners) element.removeEventListener(type, listener);
 			element.removeEventListener('pointerdown', onPointer, true);
 		};
 		this.byElement.set(element, record);
 		this.byId.set(mediaId, record);
+		this.observeMediaAttributes(element);
 		this.intersectionObserver.observe(element);
 		this.emit(record.target, 'registered', element);
 	}
@@ -305,6 +350,7 @@ export class MediaRegistry {
 		if (this.activeVideoId === record.target.mediaId) this.activeVideoId = null;
 		if (this.fullscreenMediaId === record.target.mediaId) this.fullscreenMediaId = null;
 		if (this.selectedTargetKey === this.targetKey(record.target)) this.selectedTargetKey = null;
+		this.rebuildMediaAttributeObservation();
 	}
 
 	private refreshSource(element: HTMLMediaElement, lifecycleBoundary: boolean): void {
@@ -463,6 +509,7 @@ export class MediaRegistry {
 		if (this.disposed) return;
 		this.disposed = true;
 		this.mutationObserver.disconnect();
+		this.mediaAttributeObserver.disconnect();
 		this.intersectionObserver.disconnect();
 		document.removeEventListener('fullscreenchange', this.fullscreenListener);
 		for (const record of this.byElement.values()) record.dispose();

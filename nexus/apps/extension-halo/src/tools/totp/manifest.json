@@ -7,12 +7,12 @@
 	"keywords": [],
 	"background": {
 		"mechanism": "interval_slow",
-		"frequency": "1000ms",
+		"frequency": "1000ms display; HMAC once per TOTP counter epoch",
 		"activeOnly": true,
-		"level": "medium",
+		"level": "low",
 		"descriptionKey": "impact.interval_1s",
 		"sourceFile": "tools/totp/panel.tsx",
-		"sourceLine": 42,
-		"sourceDetail": "setInterval(updateCodes, 1000)"
+		"sourceLine": 51,
+		"sourceDetail": "1Hz visible-panel poll derives remaining seconds from the wall clock and reuses cached HMAC output until the entry counter changes"
 	}
 }

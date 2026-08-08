@@ -1,106 +1,31 @@
-// goal: HALO Content Script Host (modular)
-// Entry point that imports and initializes content modules
-// NOTE: UserScripts injection is now handled by chrome.userScripts API (registry.ts)
+// goal: HALO top-frame document-start control router
+// inv: Frame-local physical input belongs to dedicated all-frame hosts.
+// NOTE: UserScripts injection is handled by chrome.userScripts API (registry.ts).
 
-import * as Ruler from '../content/ruler';
-import { init as initSmoothScroll } from '../content/smooth-scroll';
-import * as DomSelector from '../content/dom-selector';
-import * as PageAnnotate from '../content/page-annotate';
-// HoverZoom is loaded dynamically only in top frame to avoid loading in iframes
+export {};
 
 const LOG_TAG = '[HALO]';
 const t0 = performance.now();
 
-function isExpectedRuntimeDisconnect(error: unknown): boolean {
-	const message = error instanceof Error ? error.message : String(error);
-	return message.includes('Extension context invalidated') ||
-		message.includes('Receiving end does not exist') ||
-		message.includes('message port closed');
-}
+console.log(LOG_TAG, 'Top-frame content host loaded at', t0.toFixed(2), 'ms');
 
-function sendRuntimeMessageBestEffort(
-	message: unknown,
-	phase: string,
-): void {
-	try {
-		void chrome.runtime.sendMessage(message).catch((error: unknown) => {
-			if (!isExpectedRuntimeDisconnect(error)) {
-				console.warn(LOG_TAG, `${phase} notification failed`, error);
-			}
-		});
-	} catch (error: unknown) {
-		if (!isExpectedRuntimeDisconnect(error)) {
-			console.warn(LOG_TAG, `${phase} notification failed`, error);
-		}
-	}
-}
-
-console.log(LOG_TAG, 'Content script loaded at', t0.toFixed(2), 'ms');
-
-// Track active content tools
 const activeTools = new Set<string>();
+const CROSS_FRAME_TOOL_MESSAGES = new Set([
+	'HALO_RULER_START',
+	'HALO_RULER_CANCEL',
+	'HALO_DOM_SELECTOR_START',
+	'HALO_DOM_SELECTOR_STOP',
+	'HALO_ANNOTATE_START',
+	'HALO_ANNOTATE_STOP',
+]);
 
-// ===== CLIPBOARD TRACKING =====
-// eff: True 0-CPU style - listener is only attached when enabled
-
-const onCopy = () => {
-	setTimeout(() => {
-		// rule: skip password fields — copying the masked selection from a
-		// password input would leak the actual cleartext password into history.
-		const active = document.activeElement;
-		if (active instanceof HTMLInputElement && active.type === 'password') return;
-		const selection = document.getSelection()?.toString();
-		if (selection?.trim()) {
-			sendRuntimeMessageBestEffort(
-				{
-					type: 'HALO_CLIPBOARD_ADD',
-					text: selection,
-					sourceUrl: window.location.href,
-					sourceTitle: document.title,
-				},
-				'Clipboard history',
-			);
-		}
-	}, 50);
-};
-
-let isClipboardListenerAttached = false;
-
-function updateClipboardState(enabled: boolean) {
-	if (enabled && !isClipboardListenerAttached) {
-		document.addEventListener('copy', onCopy);
-		isClipboardListenerAttached = true;
-		console.log(LOG_TAG, 'Clipboard tracking: ON');
-	} else if (!enabled && isClipboardListenerAttached) {
-		document.removeEventListener('copy', onCopy);
-		isClipboardListenerAttached = false;
-		console.log(LOG_TAG, 'Clipboard tracking: OFF');
-	}
-}
-
-// Initial check
-chrome.storage.local.get(['halo_tool_clipboard_settings'], (result) => {
-	const settings = result.halo_tool_clipboard_settings || { enabled: true };
-	updateClipboardState(settings.enabled);
-});
-
-// Dynamic toggle
-chrome.storage.onChanged.addListener((changes, area) => {
-	if (area === 'local' && changes.halo_tool_clipboard_settings) {
-		const newState = changes.halo_tool_clipboard_settings.newValue || { enabled: true };
-		updateClipboardState(newState.enabled);
-	}
-});
-
-// ===== MESSAGE HANDLER =====
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-	// rule: chrome.runtime permits primitive messages (e.g. chrome.runtime.sendMessage("ping"));
-	// without this guard, message.type on a string/number/null throws TypeError inside the
-	// listener, Chrome swallows the throw but sendResponse is never called, hanging the caller.
 	if (!message || typeof message !== 'object') {
 		sendResponse({ success: false, error: 'Invalid message format' });
 		return false;
 	}
+	if (CROSS_FRAME_TOOL_MESSAGES.has(message.type)) return false;
+
 	switch (message.type) {
 		case 'HALO_GET_STATUS':
 			sendResponse({
@@ -127,47 +52,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 				activeTools.delete(deactivateId);
 				sendResponse({ success: true });
 			} else {
-				// rule: respond on every early-return path — otherwise the caller's
-				// promise hangs forever waiting for a response that never arrives.
 				sendResponse({ success: false, error: 'Missing toolId' });
 			}
 			break;
 		}
-
-		case 'HALO_RULER_START':
-			Ruler.start();
-			sendResponse({ success: true });
-			break;
-
-		case 'HALO_RULER_CANCEL':
-			Ruler.cancel();
-			sendResponse({ success: true });
-			break;
-
-		case 'HALO_DOM_SELECTOR_START':
-			DomSelector.start((data) => {
-				sendRuntimeMessageBestEffort(
-					{ type: 'HALO_DOM_SELECTED', payload: data },
-					'DOM selection',
-				);
-			});
-			sendResponse({ success: true });
-			break;
-
-		case 'HALO_DOM_SELECTOR_STOP':
-			DomSelector.stop();
-			sendResponse({ success: true });
-			break;
-
-		case 'HALO_ANNOTATE_START':
-			PageAnnotate.start();
-			sendResponse({ success: true });
-			break;
-
-		case 'HALO_ANNOTATE_STOP':
-			PageAnnotate.stop();
-			sendResponse({ success: true });
-			break;
 
 		case 'HALO_SCROLL_TO_HEADING': {
 			const headingIndex = message.index;
@@ -194,16 +82,4 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	return false;
 });
 
-// ===== INITIALIZE MODULES =====
-void initSmoothScroll().catch((error: unknown) => {
-	console.error(LOG_TAG, 'Smooth Scroll init failed:', error);
-});
-
-// HoverZoom: Dynamic import only in top frame (avoid loading ~50KB in each iframe)
-if (window === window.top) {
-	import('../content/hover-zoom').then(m => m.init()).catch(e => {
-		console.warn(LOG_TAG, 'HoverZoom init failed:', e);
-	});
-}
-
-console.log(LOG_TAG, 'Content script ready in', (performance.now() - t0).toFixed(2), 'ms');
+console.log(LOG_TAG, 'Top-frame document-start router ready in', (performance.now() - t0).toFixed(2), 'ms');

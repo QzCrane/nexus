@@ -62,6 +62,46 @@
 				"content.js"
 			],
 			"run_at": "document_start",
+			"all_frames": false
+		},
+		{
+			"matches": [
+				"<all_urls>"
+			],
+			"js": [
+				"content-smooth-scroll.js"
+			],
+			"run_at": "document_start",
+			"all_frames": true
+		},
+		{
+			"matches": [
+				"<all_urls>"
+			],
+			"js": [
+				"content-frame-tools.js"
+			],
+			"run_at": "document_start",
+			"all_frames": true
+		},
+		{
+			"matches": [
+				"<all_urls>"
+			],
+			"js": [
+				"content-hover-zoom.js"
+			],
+			"run_at": "document_idle",
+			"all_frames": false
+		},
+		{
+			"matches": [
+				"<all_urls>"
+			],
+			"js": [
+				"content-clipboard.js"
+			],
+			"run_at": "document_idle",
 			"all_frames": true
 		}
 	],

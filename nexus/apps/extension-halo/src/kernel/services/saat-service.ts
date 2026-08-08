@@ -2,13 +2,24 @@
 // eff: Enables/disables script tools by syncing to userscripts storage
 
 import type { PluginMeta } from '../core/tool-registry-types';
-
-import type { ScriptType } from '../registry/taxonomy';
+import type { PluginType, ScriptType } from '../registry/taxonomy';
 
 const LOG_TAG = '[HALO:SaaT]';
 const SAAT_STORAGE_KEY = 'halo_saat_scripts';
 const USERSCRIPTS_STORAGE_KEY = 'halo_userscripts'; // Kept for cleanup
 const TOOL_PREFS_KEY = 'halo_tool_prefs';
+
+export interface SaaTPluginDescriptor {
+	id: string;
+	pluginType: PluginType;
+	script: {
+		type: ScriptType;
+		runAt: 'document_start' | 'document_end' | 'document_idle';
+		matches: string[];
+		excludeMatches?: string[];
+		world?: 'ISOLATED' | 'MAIN' | 'USER_SCRIPT';
+	};
+}
 
 export interface SaaTScriptState {
 	id: string;
@@ -30,16 +41,12 @@ export interface SaaTScriptState {
 	saatToolId: string;
 }
 
-// Helper: check if plugin has script capability (SaaT)
-const isScriptPlugin = (p: PluginMeta): boolean => !!p.script;
-
-// Helper: get script config with defaults
-const getScriptConfig = (p: PluginMeta) => ({
-	type: p.script?.type || 'javascript',
-	matches: p.script?.matches || ['*://*/*'],
-	excludeMatches: p.script?.excludeMatches || [],
-	runAt: p.script?.runAt || 'document_idle',
-	world: p.script?.world
+const getScriptConfig = (plugin: SaaTPluginDescriptor) => ({
+	type: plugin.script.type || 'javascript',
+	matches: plugin.script.matches || ['*://*/*'],
+	excludeMatches: plugin.script.excludeMatches || [],
+	runAt: plugin.script.runAt || 'document_idle',
+	world: plugin.script.world,
 });
 
 /**
@@ -79,23 +86,22 @@ export async function toggleScriptTool(tool: PluginMeta): Promise<boolean> {
 /**
  * Load script code from bundled script file
  */
-// Helper: Resolve script path and load code
 async function resolveScript(toolId: string, type: ScriptType): Promise<{ code: string; path: string } | null> {
 	const ext = type === 'css' ? 'css' : 'js';
 	const paths = [
 		`scripts/${toolId}/script.${ext}`,
-		`tools/${toolId}/script.${ext}`
+		`tools/${toolId}/script.${ext}`,
 	];
 
 	let lastFailure: unknown = null;
-	for (const p of paths) {
+	for (const candidatePath of paths) {
 		try {
-			const url = chrome.runtime.getURL(p);
+			const url = chrome.runtime.getURL(candidatePath);
 			const response = await fetch(url);
 			if (response.ok) {
 				return {
 					code: await response.text(),
-					path: p
+					path: candidatePath,
 				};
 			}
 		} catch (error: unknown) {
@@ -113,16 +119,20 @@ async function resolveScript(toolId: string, type: ScriptType): Promise<{ code: 
 }
 
 /**
- * Sync SaaT tools and Built-in Scripts
+ * Sync SaaT tools and Built-in Scripts from the generated install-time
+ * descriptor projection.
  * - Tools (type='tool') -> SAAT_STORAGE_KEY (Hidden, managed by Tool Prefs)
- * - Scripts (type='script') -> USERSCRIPTS_STORAGE_KEY (Visible, managed by User Scripts Panel)
+ * - Scripts/system script capabilities -> USERSCRIPTS_STORAGE_KEY
+ *
+ * This deliberately accepts the narrow SaaTPluginDescriptor instead of the
+ * full UI PluginMeta so the MV3 worker never needs to parse TOOL_REGISTRY on
+ * ordinary wakes.
  */
-export async function syncSaaTTools(tools: PluginMeta[]): Promise<void> {
-	const allScriptPlugins = tools.filter(isScriptPlugin);
-	if (allScriptPlugins.length === 0) return;
+export async function syncSaaTTools(tools: readonly SaaTPluginDescriptor[]): Promise<void> {
+	if (tools.length === 0) return;
 
-	const saatTools = allScriptPlugins.filter(p => p.pluginType === 'tool');
-	const builtInScripts = allScriptPlugins.filter(p => p.pluginType !== 'tool'); // 'script' or 'system'
+	const saatTools = tools.filter((plugin) => plugin.pluginType === 'tool');
+	const builtInScripts = tools.filter((plugin) => plugin.pluginType !== 'tool');
 
 	try {
 		// =========================================================
@@ -133,12 +143,9 @@ export async function syncSaaTTools(tools: PluginMeta[]): Promise<void> {
 		const toolPrefs = resultSaaT[TOOL_PREFS_KEY] || {};
 		let saatChanged = false;
 
-		// Clean up any Scripts that might have ended up here erroneously? Use logic if needed.
-		// For now just upsert Tools.
-
 		for (const tool of saatTools) {
 			const config = getScriptConfig(tool);
-			const existingIdx = saatState.scripts.findIndex((s: SaaTScriptState) => s.saatToolId === tool.id);
+			const existingIdx = saatState.scripts.findIndex((script: SaaTScriptState) => script.saatToolId === tool.id);
 			const isEnabled = toolPrefs[tool.id]?.enabled ?? true;
 
 			const resolved = await resolveScript(tool.id, config.type);
@@ -159,11 +166,12 @@ export async function syncSaaTTools(tools: PluginMeta[]): Promise<void> {
 					saatChanged = true;
 				}
 			} else {
+				const timestamp = Date.now();
 				const newScript: SaaTScriptState = {
-					id: `saat-${tool.id}-${Date.now()}`,
+					id: `saat-${tool.id}-${timestamp}`,
 					name: tool.id,
 					description: `SaaT: ${tool.id}`,
-					code: code,
+					code,
 					enabled: isEnabled,
 					type: config.type,
 					matches: config.matches,
@@ -173,8 +181,8 @@ export async function syncSaaTTools(tools: PluginMeta[]): Promise<void> {
 					filePath: path,
 					order: 0,
 					runCount: 0,
-					createdAt: Date.now(),
-					updatedAt: Date.now(),
+					createdAt: timestamp,
+					updatedAt: timestamp,
 					saatToolId: tool.id,
 				};
 				saatState.scripts.push(newScript);
@@ -183,11 +191,10 @@ export async function syncSaaTTools(tools: PluginMeta[]): Promise<void> {
 			}
 		}
 
-		// Cleanup: Remove any script from SaaT storage that is NOT in saatTools list (e.g. if type changed to script)
 		const preFilterCount = saatState.scripts.length;
-		saatState.scripts = saatState.scripts.filter((s: SaaTScriptState) => {
-			if (!s.saatToolId) return false; // Should not happen in SaaT storage
-			return saatTools.some(t => t.id === s.saatToolId);
+		saatState.scripts = saatState.scripts.filter((script: SaaTScriptState) => {
+			if (!script.saatToolId) return false;
+			return saatTools.some((tool) => tool.id === script.saatToolId);
 		});
 		if (saatState.scripts.length !== preFilterCount) saatChanged = true;
 
@@ -204,7 +211,7 @@ export async function syncSaaTTools(tools: PluginMeta[]): Promise<void> {
 
 		for (const scriptPlugin of builtInScripts) {
 			const config = getScriptConfig(scriptPlugin);
-			const existingIdx = userState.scripts.findIndex((s: SaaTScriptState) => s.saatToolId === scriptPlugin.id);
+			const existingIdx = userState.scripts.findIndex((script: SaaTScriptState) => script.saatToolId === scriptPlugin.id);
 
 			const resolved = await resolveScript(scriptPlugin.id, config.type);
 			if (!resolved) {
@@ -215,7 +222,6 @@ export async function syncSaaTTools(tools: PluginMeta[]): Promise<void> {
 
 			if (existingIdx >= 0) {
 				const existing = userState.scripts[existingIdx];
-				// Note: For User Scripts, we DO NOT sync 'enabled' from prefs, as they are managed by the panel directly.
 				if (existing.code !== code || existing.filePath !== path || existing.world !== config.world) {
 					existing.code = code;
 					existing.filePath = path;
@@ -224,12 +230,13 @@ export async function syncSaaTTools(tools: PluginMeta[]): Promise<void> {
 					userChanged = true;
 				}
 			} else {
+				const timestamp = Date.now();
 				const newScript: SaaTScriptState = {
-					id: `${scriptPlugin.id}`, // Use simple ID for built-ins to be friendly
-					name: scriptPlugin.id, // Or use i18n name?
+					id: scriptPlugin.id,
+					name: scriptPlugin.id,
 					description: `Built-in: ${scriptPlugin.id}`,
-					code: code,
-					enabled: true, // Default enabled for new scripts
+					code,
+					enabled: true,
 					type: config.type,
 					matches: config.matches,
 					excludeMatches: config.excludeMatches,
@@ -238,9 +245,9 @@ export async function syncSaaTTools(tools: PluginMeta[]): Promise<void> {
 					filePath: path,
 					order: 0,
 					runCount: 0,
-					createdAt: Date.now(),
-					updatedAt: Date.now(),
-					saatToolId: scriptPlugin.id, // Mark as managed
+					createdAt: timestamp,
+					updatedAt: timestamp,
+					saatToolId: scriptPlugin.id,
 				};
 				userState.scripts.push(newScript);
 				userChanged = true;
@@ -248,11 +255,10 @@ export async function syncSaaTTools(tools: PluginMeta[]): Promise<void> {
 			}
 		}
 
-		// Cleanup: remove managed entries that are no longer built-in scripts.
 		const originalUserCount = userState.scripts.length;
-		userState.scripts = userState.scripts.filter((s: SaaTScriptState) => {
-			if (!s.saatToolId) return true; // Keep user-created scripts (no saatToolId)
-			return builtInScripts.some(b => b.id === s.saatToolId); // Keep only current built-in scripts
+		userState.scripts = userState.scripts.filter((script: SaaTScriptState) => {
+			if (!script.saatToolId) return true;
+			return builtInScripts.some((builtIn) => builtIn.id === script.saatToolId);
 		});
 
 		if (userState.scripts.length !== originalUserCount) {
@@ -263,7 +269,6 @@ export async function syncSaaTTools(tools: PluginMeta[]): Promise<void> {
 		if (userChanged) {
 			await chrome.storage.local.set({ [USERSCRIPTS_STORAGE_KEY]: userState });
 		}
-
 	} catch (e) {
 		console.error(LOG_TAG, 'Failed to sync SaaT tools', e);
 	}
@@ -272,19 +277,12 @@ export async function syncSaaTTools(tools: PluginMeta[]): Promise<void> {
 /**
  * Initialize SaaT Service: Watch Tool Prefs changes to update Script states
  * rule: return a cleanup function and guard against double-registration.
- * Previously the listener was attached on every call and never removed, so
- * repeated init (e.g. SW restart, hot reload) stacked N identical listeners
- * that each wrote back to storage, amplifying one change into N writes.
  */
 let saatInitialized = false;
 export function initSaaTService(): () => void {
 	if (saatInitialized) return () => {};
 	saatInitialized = true;
 
-	// rule: wrap the async listener body in try/catch — chrome.storage.onChanged
-	// does not await the listener, so a rejection from the inner await chain would
-	// surface as an unhandled promise rejection. Catch and log so one bad write
-	// doesn't crash the SW.
 	const listener = (changes: { [key: string]: chrome.storage.StorageChange }, area: string) => {
 		const toolPrefsChange = changes[TOOL_PREFS_KEY];
 		if (area !== 'local' || !toolPrefsChange) return;
@@ -299,14 +297,13 @@ export function initSaaTService(): () => void {
 				const scripts = state.scripts as SaaTScriptState[];
 
 				for (const script of scripts) {
-					if (script.saatToolId) {
-						const isEnabled = newPrefs[script.saatToolId]?.enabled ?? true;
-						if (script.enabled !== isEnabled) {
-							script.enabled = isEnabled;
-							script.updatedAt = Date.now();
-							changed = true;
-							console.log(LOG_TAG, `Syncing enabled state for ${script.saatToolId}: ${isEnabled}`);
-						}
+					if (!script.saatToolId) continue;
+					const isEnabled = newPrefs[script.saatToolId]?.enabled ?? true;
+					if (script.enabled !== isEnabled) {
+						script.enabled = isEnabled;
+						script.updatedAt = Date.now();
+						changed = true;
+						console.log(LOG_TAG, `Syncing enabled state for ${script.saatToolId}: ${isEnabled}`);
 					}
 				}
 

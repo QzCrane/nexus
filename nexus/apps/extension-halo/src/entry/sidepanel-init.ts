@@ -1,5 +1,5 @@
 // goal: SidePanel early init (theme + smooth scroll) - CSP compliant
-// inv: Runs before React, scroll logic in sidepanel-scroll.ts
+// inv: Keep the pre-React critical path limited to paint/input initialization.
 
 // ===== Theme =====
 const DARK = {
@@ -52,14 +52,7 @@ function initTheme(): void {
 	}
 }
 
-// Execute
 initTheme();
 
 import { initScroll } from './sidepanel-scroll';
 initScroll();
-
-// Sync SaaT tools
-import { syncSaaTTools } from '../kernel/services/saat-service';
-import { TOOL_REGISTRY } from '../kernel/registry/tool-registry';
-
-syncSaaTTools(TOOL_REGISTRY).catch(e => console.error('SaaT Sync Failed:', e));

@@ -1,13 +1,13 @@
 // goal: Text-to-Speech panel UI - TTS with controls
+// eff: speech lifecycle is event-driven; no periodic status polling
 
 import type React from 'react';
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from '../../i18n';
 import type { TtsSettings } from './types';
-import { getVoices, speak, stop, pause, resume, isSpeaking, isPaused, getSelectedText, DEFAULT_SETTINGS } from './core';
+import { getVoices, speak, stop, pause, resume, getSelectedText, DEFAULT_SETTINGS } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
-
 
 export const TextToSpeechPanel: React.FC = () => {
 	const { t } = useTranslation();
@@ -17,15 +17,27 @@ export const TextToSpeechPanel: React.FC = () => {
 	const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
 	const [speaking, setSpeaking] = useState(false);
 	const [paused, setPaused] = useState(false);
+	const speechGenerationRef = useRef(0);
 
-	// Load voices
+	// The panel owns the browser SpeechSynthesis lifecycle. Switching Home/tools
+	// unmounts the current tool panel; any utterance must therefore be cancelled
+	// at the same boundary instead of continuing without a Stop control. Voice
+	// selection changes only rebind the voiceschanged listener below and do not
+	// retire the active utterance generation.
+	useEffect(() => {
+		return () => {
+			speechGenerationRef.current += 1;
+			stop();
+		};
+	}, []);
+
 	useEffect(() => {
 		const loadVoices = () => {
-			const v = getVoices();
-			setVoices(v);
-			const firstVoice = v[0];
+			const available = getVoices();
+			setVoices(available);
+			const firstVoice = available[0];
 			if (firstVoice && !settings.voiceUri) {
-				setSettings((s) => ({ ...s, voiceUri: firstVoice.voiceURI }));
+				setSettings((current) => ({ ...current, voiceUri: firstVoice.voiceURI }));
 			}
 		};
 
@@ -36,50 +48,64 @@ export const TextToSpeechPanel: React.FC = () => {
 		};
 	}, [setSettings, settings.voiceUri]);
 
-	// Load selected text
 	const handleLoadSelected = useCallback(async () => {
 		const selected = await getSelectedText();
 		if (selected) setText(selected);
 	}, [setText]);
 
-	// Speak
 	const handleSpeak = useCallback(() => {
 		if (!text.trim()) return;
-		speak(text, settings);
+		const generation = ++speechGenerationRef.current;
+		const isCurrent = () => speechGenerationRef.current === generation;
+
+		speak(text, settings, {
+			onStart: () => {
+				if (!isCurrent()) return;
+				setSpeaking(true);
+				setPaused(false);
+			},
+			onPause: () => {
+				if (isCurrent()) setPaused(true);
+			},
+			onResume: () => {
+				if (isCurrent()) setPaused(false);
+			},
+			onEnd: () => {
+				if (!isCurrent()) return;
+				setSpeaking(false);
+				setPaused(false);
+			},
+			onError: () => {
+				if (!isCurrent()) return;
+				setSpeaking(false);
+				setPaused(false);
+			},
+		});
+
+		// Queueing is synchronous even if the browser dispatches `start` later.
 		setSpeaking(true);
 		setPaused(false);
 	}, [text, settings]);
 
-	// Pause/Resume
 	const handlePauseResume = useCallback(() => {
-		if (isPaused()) {
+		if (paused) {
 			resume();
 			setPaused(false);
 		} else {
 			pause();
 			setPaused(true);
 		}
-	}, []);
+	}, [paused]);
 
-	// Stop
 	const handleStop = useCallback(() => {
+		speechGenerationRef.current += 1;
 		stop();
 		setSpeaking(false);
 		setPaused(false);
 	}, []);
 
-	// Update status periodically
-	useEffect(() => {
-		const timer = setInterval(() => {
-			setSpeaking(isSpeaking());
-			setPaused(speechSynthesis.paused);
-		}, 200);
-		return () => clearInterval(timer);
-	}, []);
-
 	return (
 		<div style={styles.wrapper}>
-			{/* Text input */}
 			<textarea
 				style={styles.textarea}
 				value={text}
@@ -87,12 +113,10 @@ export const TextToSpeechPanel: React.FC = () => {
 				placeholder={t('tts.placeholder')}
 			/>
 
-			{/* Load selected */}
 			<button type="button" style={styles.btnSecondary} onClick={handleLoadSelected}>
 				📋 {t('tts.loadSelected')}
 			</button>
 
-			{/* Controls */}
 			<div style={styles.controls}>
 				{!speaking ? (
 					<button type="button" style={styles.btn} onClick={handleSpeak}>▶️ {t('tts.play')}</button>
@@ -106,27 +130,23 @@ export const TextToSpeechPanel: React.FC = () => {
 				)}
 			</div>
 
-			{/* Settings */}
 			<div style={styles.settings}>
-				{/* Voice */}
 				<div style={styles.row}>
 					<span style={styles.label}>{t('tts.voice')}</span>
-					<select style={styles.select} value={settings.voiceUri} onChange={(e) => setSettings((s) => ({ ...s, voiceUri: e.target.value }))}>
-						{voices.map((v) => <option key={v.voiceURI} value={v.voiceURI}>{v.name} ({v.lang})</option>)}
+					<select style={styles.select} value={settings.voiceUri} onChange={(e) => setSettings((current) => ({ ...current, voiceUri: e.target.value }))}>
+						{voices.map((voice) => <option key={voice.voiceURI} value={voice.voiceURI}>{voice.name} ({voice.lang})</option>)}
 					</select>
 				</div>
 
-				{/* Rate */}
 				<div style={styles.row}>
 					<span style={styles.label}>{t('tts.rate')}</span>
-					<input type="range" style={styles.slider} min="0.5" max="2" step="0.1" value={settings.rate} onChange={(e) => setSettings((s) => ({ ...s, rate: parseFloat(e.target.value) }))} />
+					<input type="range" style={styles.slider} min="0.5" max="2" step="0.1" value={settings.rate} onChange={(e) => setSettings((current) => ({ ...current, rate: parseFloat(e.target.value) }))} />
 					<span style={styles.value}>{settings.rate.toFixed(1)}x</span>
 				</div>
 
-				{/* Pitch */}
 				<div style={styles.row}>
 					<span style={styles.label}>{t('tts.pitch')}</span>
-					<input type="range" style={styles.slider} min="0.5" max="2" step="0.1" value={settings.pitch} onChange={(e) => setSettings((s) => ({ ...s, pitch: parseFloat(e.target.value) }))} />
+					<input type="range" style={styles.slider} min="0.5" max="2" step="0.1" value={settings.pitch} onChange={(e) => setSettings((current) => ({ ...current, pitch: parseFloat(e.target.value) }))} />
 					<span style={styles.value}>{settings.pitch.toFixed(1)}</span>
 				</div>
 			</div>

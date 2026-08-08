@@ -4,6 +4,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+export function canonicalPluginDirectoryNames(names) {
+	return [...names].sort();
+}
+
 /**
  * Discover plugins with manifest.json
  * Supports Panel (manifest + panel.tsx) and Script (manifest + script.js/css)
@@ -14,9 +18,15 @@ import path from 'node:path';
 export function discoverPlugins(baseDir, type) {
 	if (!fs.existsSync(baseDir)) return [];
 
-	const dirs = fs.readdirSync(baseDir, { withFileTypes: true })
-		.filter(d => d.isDirectory())
-		.map(d => d.name);
+	// readdir order is a filesystem detail, not a product or generated-source
+	// ordering contract. Canonicalize physical directory names before discovery
+	// so Linux/Windows/filesystem changes cannot reshuffle every generated
+	// registry, loader and locale artifact after an unrelated manifest edit.
+	const dirs = canonicalPluginDirectoryNames(
+		fs.readdirSync(baseDir, { withFileTypes: true })
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => entry.name),
+	);
 
 	const modules = [];
 	for (const dir of dirs) {

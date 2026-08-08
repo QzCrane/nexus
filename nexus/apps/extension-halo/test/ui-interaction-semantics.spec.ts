@@ -6,8 +6,9 @@ import {
 } from '../src/components/legacy/command-palette-keyboard';
 import { DockItem } from '../src/components/sidepanel/DockItem';
 import {
-	mergeInitialEngineStatus,
-} from '../src/components/sidepanel/EngineStatusProvider';
+	mergeInitialActiveServiceStorageState,
+	type ActiveServiceStorageState,
+} from '../src/components/sidepanel/ActiveServicesContext';
 import type { ToolMeta } from '../src/kernel';
 import {
 	createUserScriptsStateLoader,
@@ -92,23 +93,38 @@ describe('UserScripts async lifecycle', () => {
 });
 
 describe('shared async lifecycle owners', () => {
-	test('merges an initial engine snapshot without overwriting event-owned fields', () => {
-		expect(mergeInitialEngineStatus(
-			{
-				smoothScroll: true,
-				userscripts: false,
-				clipboard: false,
-			},
-			{
-				smoothScroll: false,
-				userscripts: true,
-				clipboard: true,
-			},
-			new Set(['smoothScroll']),
+	test('merges initial runtime status without overwriting event-owned fields', () => {
+		const current: ActiveServiceStorageState = {
+			ready: false,
+			clipboardEnabled: false,
+			hoverZoomEnabled: false,
+			userscriptsEnabled: false,
+			smoothScrollEnabled: true,
+			userScripts: [{ id: 'live-script', enabled: true }],
+			saatScripts: [],
+		};
+		const initial: ActiveServiceStorageState = {
+			ready: true,
+			clipboardEnabled: true,
+			hoverZoomEnabled: true,
+			userscriptsEnabled: true,
+			smoothScrollEnabled: false,
+			userScripts: [{ id: 'stale-script', enabled: false }],
+			saatScripts: [{ id: 'saat', enabled: true, saatToolId: 'tool' }],
+		};
+
+		expect(mergeInitialActiveServiceStorageState(
+			current,
+			initial,
+			new Set(['smoothScrollEnabled', 'userScripts']),
 		)).toEqual({
-			smoothScroll: true,
-			userscripts: true,
-			clipboard: true,
+			ready: true,
+			clipboardEnabled: true,
+			hoverZoomEnabled: true,
+			userscriptsEnabled: true,
+			smoothScrollEnabled: true,
+			userScripts: [{ id: 'live-script', enabled: true }],
+			saatScripts: [{ id: 'saat', enabled: true, saatToolId: 'tool' }],
 		});
 	});
 

@@ -2,7 +2,6 @@
 
 import type { TotpEntry, TotpCode } from './types';
 
-// Convert base32 to bytes
 function base32ToBytes(base32: string): Uint8Array {
 	const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 	const clean = base32.replace(/[^A-Z2-7]/gi, '').toUpperCase();
@@ -22,14 +21,7 @@ function base32ToBytes(base32: string): Uint8Array {
 	return new Uint8Array(bytes);
 }
 
-// HMAC-SHA1 implementation using Web Crypto API
 async function hmacSha1(key: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
-	// rule: Uint8Array<ArrayBufferLike>.buffer may be a SharedArrayBuffer at the
-	// type level, which violates BufferSource's ArrayBuffer requirement. The
-	// values we pass here are always backed by a regular ArrayBuffer (allocated
-	// via `new Uint8Array(...)`), so a single `as BufferSource` cast is the
-	// narrowest escape — narrower than the prior `as any` which hid every other
-	// type relationship in this call.
 	const cryptoKey = await crypto.subtle.importKey(
 		'raw',
 		key as BufferSource,
@@ -41,13 +33,25 @@ async function hmacSha1(key: Uint8Array, data: Uint8Array): Promise<Uint8Array> 
 	return new Uint8Array(sig);
 }
 
-// Generate TOTP code
-export async function generateTotp(secret: string, digits = 6, period = 30): Promise<TotpCode> {
-	const now = Date.now();
-	const counter = Math.floor(now / 1000 / period);
-	const remaining = period - Math.floor((now / 1000) % period);
+export function totpCounter(nowMs: number, period = 30): number {
+	return Math.floor(nowMs / 1000 / period);
+}
 
-	// Convert counter to 8-byte big-endian
+export function totpRemaining(nowMs: number, period = 30): number {
+	return period - Math.floor((nowMs / 1000) % period);
+}
+
+// Generate one code for one counter epoch. Supplying nowMs lets the caller use
+// exactly the same clock sample for cache admission and remaining-time display.
+export async function generateTotp(
+	secret: string,
+	digits = 6,
+	period = 30,
+	nowMs = Date.now(),
+): Promise<TotpCode> {
+	const counter = totpCounter(nowMs, period);
+	const remaining = totpRemaining(nowMs, period);
+
 	const counterBytes = new Uint8Array(8);
 	let temp = counter;
 	for (let i = 7; i >= 0; i--) {
@@ -55,13 +59,9 @@ export async function generateTotp(secret: string, digits = 6, period = 30): Pro
 		temp = Math.floor(temp / 256);
 	}
 
-	// Get secret bytes
 	const secretBytes = base32ToBytes(secret);
-
-	// HMAC-SHA1
 	const hmac = await hmacSha1(secretBytes, counterBytes);
 
-	// Dynamic truncation
 	const finalByte = hmac.at(-1);
 	if (hmac.length < 20 || finalByte === undefined) {
 		throw new Error('Invalid HMAC-SHA1 output length');
@@ -76,20 +76,18 @@ export async function generateTotp(secret: string, digits = 6, period = 30): Pro
 	const binary = ((first & 0x7f) << 24) | ((second & 0xff) << 16)
 		| ((third & 0xff) << 8) | (fourth & 0xff);
 
-	// Generate code
 	const otp = binary % 10 ** digits;
 	const code = otp.toString().padStart(digits, '0');
 
 	return { code, remaining, period };
 }
 
-// Parse otpauth:// URI
 export function parseOtpAuthUri(uri: string): Partial<TotpEntry> | null {
 	try {
 		const url = new URL(uri);
 		if (url.protocol !== 'otpauth:') return null;
 
-		const label = decodeURIComponent(url.pathname.slice(2)); // Remove //totp/
+		const label = decodeURIComponent(url.pathname.slice(2));
 		const parts = label.split(':');
 		const issuer = parts.length > 1 ? (parts[0] ?? '') : '';
 		const name = parts.length > 1 ? (parts[1] ?? '') : label;
@@ -106,12 +104,10 @@ export function parseOtpAuthUri(uri: string): Partial<TotpEntry> | null {
 	}
 }
 
-// Generate unique ID
 export function generateId(): string {
 	return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
 
-// Format remaining time
 export function formatRemaining(seconds: number): string {
 	return `${seconds}s`;
 }

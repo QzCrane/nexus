@@ -12,6 +12,12 @@ function readJson(relativePath: string): Record<string, unknown> {
 	) as Record<string, unknown>;
 }
 
+interface ContentScriptManifestEntry {
+	js?: string[];
+	run_at?: string;
+	all_frames?: boolean;
+}
+
 describe('HALO release tooling', () => {
 	test('requires one SemVer across package, source manifest, and built manifest', () => {
 		expect(() => assertReleaseVersionParity('0.6.1', '0.6.1', '0.6.1'))
@@ -58,5 +64,118 @@ describe('HALO release tooling', () => {
 		expect(optionalPermissions).not.toContain('notifications');
 		expect(description).not.toContain('Zero upload');
 		expect(userScriptPermissions).toEqual(['userScripts', '*://*/*']);
+	});
+
+	test('locks content-script ownership to the smallest required frame and lifecycle scope', () => {
+		const manifest = readJson('../public/manifest.json');
+		const contentScripts = manifest.content_scripts as ContentScriptManifestEntry[];
+		const byEntry = new Map(
+			contentScripts.map((entry) => [entry.js?.[0], entry]),
+		);
+
+		expect([...byEntry.keys()]).toEqual([
+			'content.js',
+			'content-smooth-scroll.js',
+			'content-frame-tools.js',
+			'content-hover-zoom.js',
+			'content-clipboard.js',
+		]);
+		expect(byEntry.get('content.js')).toMatchObject({
+			run_at: 'document_start',
+			all_frames: false,
+		});
+		expect(byEntry.get('content-smooth-scroll.js')).toMatchObject({
+			run_at: 'document_start',
+			all_frames: true,
+		});
+		expect(byEntry.get('content-frame-tools.js')).toMatchObject({
+			run_at: 'document_start',
+			all_frames: true,
+		});
+		expect(byEntry.get('content-hover-zoom.js')).toMatchObject({
+			run_at: 'document_idle',
+			all_frames: false,
+		});
+		expect(byEntry.get('content-clipboard.js')).toMatchObject({
+			run_at: 'document_idle',
+			all_frames: true,
+		});
+	});
+
+	test('keeps the standard build production-grade and SidePanel lazy loading physical', () => {
+		const packageJson = readJson('../package.json');
+		const scripts = packageJson.scripts as Record<string, string>;
+		const sidepanelHtml = readFileSync(
+			new URL('../public/sidepanel.html', import.meta.url),
+			'utf8',
+		);
+
+		expect(scripts.build).toBe('bun build.ts');
+		expect(scripts['build:dev']).toBe('bun build.ts --dev');
+		expect(scripts.dev).toContain('generate-tool-registry.ts');
+		expect(sidepanelHtml).toContain('<script type="module" src="sidepanel.js"></script>');
+	});
+
+	test('keeps install-only SaaT metadata out of the ordinary service-worker code graph', () => {
+		const background = readFileSync(
+			new URL('../src/entry/background.ts', import.meta.url),
+			'utf8',
+		);
+		const generator = readFileSync(
+			new URL('../../../scripts/generate-tool-registry.ts', import.meta.url),
+			'utf8',
+		);
+
+		expect(background).not.toMatch(/import\s+\{[^}]*\bTOOL_REGISTRY\b[^}]*\}/u);
+		expect(background).not.toContain('../kernel/registry/tool-registry');
+		expect(background).not.toMatch(/from ['"]\.\.\/kernel['"]/u);
+		expect(background).toContain('script-plugin-runtime.json');
+		expect(generator).toContain('generateScriptRuntimeManifest');
+	});
+
+	test('keeps startup background classification on the compact generated projection', () => {
+		const compactProjection = readFileSync(
+			new URL('../src/kernel/registry/_generated-background-active.ts', import.meta.url),
+			'utf8',
+		);
+		const activeServices = readFileSync(
+			new URL('../src/components/sidepanel/ActiveServicesContext.tsx', import.meta.url),
+			'utf8',
+		);
+		const categorizedTools = readFileSync(
+			new URL('../src/components/sidepanel/hooks/use-categorized-tools.ts', import.meta.url),
+			'utf8',
+		);
+		const generator = readFileSync(
+			new URL('../../../scripts/registry-gen/gen-registry.ts', import.meta.url),
+			'utf8',
+		);
+
+		expect(compactProjection).toContain('BACKGROUND_ACTIVE_ONLY_MAP');
+		expect(compactProjection).not.toContain('sourceFile');
+		expect(compactProjection).not.toContain('sourceLine');
+		expect(compactProjection).not.toContain('sourceDetail');
+		expect(activeServices).toContain("from '../../kernel/registry/_generated-background-active'");
+		expect(activeServices).not.toContain('BACKGROUND_PROFILES_MAP');
+		expect(categorizedTools).toContain("from '../../../kernel/registry/_generated-background-active'");
+		expect(categorizedTools).not.toContain('BACKGROUND_PROFILES_MAP');
+		expect(generator).toContain('generateBackgroundActiveProjection');
+		expect(generator).not.toContain('generateStartupRegistry');
+	});
+
+	test('does not rebuild browser-persistent user-script registrations on every worker wake', () => {
+		const background = readFileSync(
+			new URL('../src/entry/background.ts', import.meta.url),
+			'utf8',
+		);
+		const registry = readFileSync(
+			new URL('../src/system/userscripts/registry.ts', import.meta.url),
+			'utf8',
+		);
+
+		expect(background).toMatch(/onInstalled[\s\S]*syncRegisteredScripts\(\)/u);
+		expect(registry).toContain('persistAcrossSessions: true');
+		const initBody = registry.slice(registry.indexOf('export function initUserScriptsRegistry'));
+		expect(initBody).not.toMatch(/syncRegisteredScripts\(\);/u);
 	});
 });

@@ -2,8 +2,6 @@
 // Features: Clean Mode, Playback Speed, Esc Fix, Highest Quality
 
 (() => {
-	
-
 	// rule: init guard — content scripts can be injected multiple times (e.g. after
 	// extension update/reload or programmatic re-injection), and each injection
 	// re-registered keydown listeners and re-observed mutations, multiplying input
@@ -13,14 +11,12 @@
 
 	const LOG_TAG = '[HALO:Bilibili+]';
 
-	// ====== Config ======
 	const CONFIG = {
 		speedStep: 0.25,
 		defaultQuality: true,
 		cleanHome: true
 	};
 
-	// ====== Styles: Clean Mode ======
 	const cleanStyles = `
 		/* === Ad Block === */
 		.ad-report, .bili-video-card__info--ad, .video-card-ad-small,
@@ -33,7 +29,6 @@
 		}
 
 		/* === Clean Home Mode (Optional: Simplify Layout) === */
-		/* Can be toggled via class if needed, for now applied always */
 		.feed-card:has(.bili-video-card__info--ad) { display: none !important; }
 	`;
 
@@ -42,31 +37,6 @@
 		style.textContent = css;
 		style.setAttribute('data-halo', 'bilibili-plus');
 		(document.head || document.documentElement).appendChild(style);
-	}
-
-	// ====== Feature: Playback Speed Shortcuts ======
-	function initSpeedControl() {
-		document.addEventListener('keydown', (e) => {
-			// Ignore if typing in input
-			if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName) || document.activeElement.isContentEditable) {
-				return;
-			}
-
-			const video = document.querySelector('video');
-			if (!video) return;
-
-			// [ Slower, ] Faster, \ Reset
-			if (e.key === '[' || e.key === '{') {
-				video.playbackRate = Math.max(0.25, video.playbackRate - CONFIG.speedStep);
-				showToast(`Speed: ${video.playbackRate}x`);
-			} else if (e.key === ']' || e.key === '}') {
-				video.playbackRate = Math.min(5.0, video.playbackRate + CONFIG.speedStep);
-				showToast(`Speed: ${video.playbackRate}x`);
-			} else if (e.key === '\\') {
-				video.playbackRate = 1.0;
-				showToast(`Speed: Reset (1.0x)`);
-			}
-		});
 	}
 
 	function showToast(msg) {
@@ -88,72 +58,110 @@
 		toast.timer = setTimeout(() => { toast.style.opacity = '0'; }, 1500);
 	}
 
-	// ====== Feature: Esc to Close Image Viewer ======
-	function initEscFix() {
-		document.addEventListener('keydown', (e) => {
-			if (e.key === 'Escape') {
-				// Try various close buttons for image viewers
-				const closeBtns = [
-					'.bili-album__close', // Dynamic album
-					'.preview-image-container .close-btn', // Comment images
-					'.image-viewer-close' // Generic
+	// One document keydown owner. Most page key presses exit before any DOM query;
+	// video lookup is paid only for the three speed-control key families.
+	function initKeyboardControls() {
+		document.addEventListener('keydown', (event) => {
+			if (event.key === 'Escape') {
+				const closeSelectors = [
+					'.bili-album__close',
+					'.preview-image-container .close-btn',
+					'.image-viewer-close'
 				];
-
-				for (const sel of closeBtns) {
-					const btn = document.querySelector(sel);
-					if (btn) {
-						btn.click();
-						console.log(LOG_TAG, 'Closed image viewer via Esc');
-						return;
-					}
+				for (const selector of closeSelectors) {
+					const button = document.querySelector(selector);
+					if (!button) continue;
+					button.click();
+					console.log(LOG_TAG, 'Closed image viewer via Esc');
+					return;
 				}
+				return;
+			}
+
+			const speedKey = event.key === '[' || event.key === '{'
+				|| event.key === ']' || event.key === '}'
+				|| event.key === '\\';
+			if (!speedKey) return;
+
+			const active = document.activeElement;
+			if (
+				active instanceof HTMLInputElement
+				|| active instanceof HTMLTextAreaElement
+				|| active?.isContentEditable
+			) return;
+
+			const video = document.querySelector('video');
+			if (!video) return;
+
+			if (event.key === '[' || event.key === '{') {
+				video.playbackRate = Math.max(0.25, video.playbackRate - CONFIG.speedStep);
+				showToast(`Speed: ${video.playbackRate}x`);
+			} else if (event.key === ']' || event.key === '}') {
+				video.playbackRate = Math.min(5.0, video.playbackRate + CONFIG.speedStep);
+				showToast(`Speed: ${video.playbackRate}x`);
+			} else {
+				video.playbackRate = 1.0;
+				showToast('Speed: Reset (1.0x)');
 			}
 		});
 	}
 
-	// ====== Feature: Highest Quality ======
 	function enableHighestQuality() {
-		const qualityObserver = new MutationObserver(() => {
-			const qualityBtn = document.querySelector('.bpx-player-ctrl-quality-menu-item:not(.bpx-state-disabled)');
-			if (qualityBtn && !sessionStorage.getItem('halo_bili_quality_set')) {
-				const items = document.querySelectorAll('.bpx-player-ctrl-quality-menu-item:not(.bpx-state-disabled)');
-				if (items.length > 0) {
-					// Usually the first one is the highest available (e.g. 4K/1080P+)
-					items[0].click();
-					sessionStorage.setItem('halo_bili_quality_set', '1');
-					console.log(LOG_TAG, 'Auto-selected highest quality');
-					showToast('Halo: Highest Quality Selected');
-					// rule: stop observing once quality is set — without disconnect the
-					// observer keeps firing on every DOM mutation for the page's lifetime.
-					qualityObserver.disconnect();
-				}
-			}
-		});
+		const storageKey = 'halo_bili_quality_set';
+		if (sessionStorage.getItem(storageKey)) return;
 
-		qualityObserver.observe(document.body, { childList: true, subtree: true });
-		// rule: safety net — force disconnect after 30s on pages where the quality
-		// menu never appears (e.g. embedded players, error pages).
-		setTimeout(() => qualityObserver.disconnect(), 30000);
+		let observer = null;
+		let frameId = 0;
+		let timeoutId = 0;
+
+		const cleanup = () => {
+			observer?.disconnect();
+			observer = null;
+			if (frameId) cancelAnimationFrame(frameId);
+			frameId = 0;
+			if (timeoutId) clearTimeout(timeoutId);
+			timeoutId = 0;
+		};
+
+		const trySelect = () => {
+			if (sessionStorage.getItem(storageKey)) {
+				cleanup();
+				return true;
+			}
+			const items = document.querySelectorAll('.bpx-player-ctrl-quality-menu-item:not(.bpx-state-disabled)');
+			const highest = items[0];
+			if (!highest) return false;
+			highest.click();
+			sessionStorage.setItem(storageKey, '1');
+			console.log(LOG_TAG, 'Auto-selected highest quality');
+			showToast('Halo: Highest Quality Selected');
+			cleanup();
+			return true;
+		};
+
+		if (trySelect()) return;
+
+		observer = new MutationObserver(() => {
+			if (frameId) return;
+			frameId = requestAnimationFrame(() => {
+				frameId = 0;
+				trySelect();
+			});
+		});
+		observer.observe(document.body, { childList: true, subtree: true });
+		timeoutId = setTimeout(cleanup, 30000);
 	}
 
-	// ====== Feature: Auto Expand Description ======
 	function autoExpandDesc() {
 		const expandBtn = document.querySelector('.basic-desc-info.desc-info-btn');
-		if (expandBtn) {
-			expandBtn.click();
-		}
+		if (expandBtn) expandBtn.click();
 	}
 
-	// ====== Initialization ======
 	function init() {
 		console.log(LOG_TAG, 'Initializing...');
-
 		injectStyles(cleanStyles);
-		initSpeedControl();
-		initEscFix();
+		initKeyboardControls();
 
-		// rule: clear pending toast timer on page unload — without this the
-		// setTimeout callback fires after the page is gone, logging a warning.
 		const clearToastTimer = () => {
 			const toast = document.getElementById('halo-toast');
 			if (toast?.timer) clearTimeout(toast.timer);
@@ -161,15 +169,14 @@
 		window.addEventListener('pagehide', clearToastTimer);
 		window.addEventListener('unload', clearToastTimer);
 
-		// DOM Ready
-		if (document.readyState === 'loading') {
-			document.addEventListener('DOMContentLoaded', () => {
-				enableHighestQuality();
-				setTimeout(autoExpandDesc, 2000);
-			});
-		} else {
-			enableHighestQuality();
+		const initDomFeatures = () => {
+			if (CONFIG.defaultQuality) enableHighestQuality();
 			setTimeout(autoExpandDesc, 2000);
+		};
+		if (document.readyState === 'loading') {
+			document.addEventListener('DOMContentLoaded', initDomFeatures, { once: true });
+		} else {
+			initDomFeatures();
 		}
 	}
 

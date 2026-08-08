@@ -24,12 +24,12 @@
 	},
 	"background": {
 		"mechanism": "mutation_observer",
-		"frequency": "on-mutation",
+		"frequency": "bounded <=30s on matched page until quality control is discovered",
 		"activeOnly": false,
 		"level": "low",
 		"descriptionKey": "impact.mechanism.mutation_observer",
 		"sourceFile": "scripts/bilibili-plus/script.js",
-		"sourceLine": 34,
-		"sourceDetail": "new MutationObserver(() => {...})"
+		"sourceLine": 144,
+		"sourceDetail": "quality-control discovery exits immediately when already completed; otherwise DOM checks are coalesced to at most one per animation frame and released on success/timeout"
 	}
 }

@@ -15,7 +15,8 @@ function isToolId(value: unknown): value is ToolId {
 export const useSidePanelState = () => {
 	const { isInstalled, loading: modulesLoading } = useModuleManager();
 	const [settings, setSettings] = useState<HaloSettings | null>(null);
-	const [loading, setLoading] = useState(true);
+	const [settingsLoading, setSettingsLoading] = useState(true);
+	const [openToolsLoading, setOpenToolsLoading] = useState(true);
 
 	const {
 		activeTool,
@@ -36,31 +37,37 @@ export const useSidePanelState = () => {
 			}));
 	}, [modulesLoading, isInstalled]);
 
+	// Settings/theme are independent of module-manager hydration. Load them once
+	// per SidePanel mount instead of repeating the storage read when
+	// modulesLoading flips from true to false.
 	useEffect(() => {
-		// rule: track mount state so async init() doesn't write state on an
-		// unmounted component (React warning + stale closure writes).
 		let mounted = true;
-		const init = async () => {
-			try {
-				// Always load settings immediately
-				const s = await loadSettings();
-				if (!mounted) return;
-				setSettings(s);
-				applyTheme(getThemeColors(s.theme, s.accentColor));
+		void loadSettings().then((loadedSettings) => {
+			if (!mounted) return;
+			setSettings(loadedSettings);
+			applyTheme(getThemeColors(loadedSettings.theme, loadedSettings.accentColor));
+		}).catch((error: unknown) => {
+			console.error('[HALO:SidePanel] settings init failed', error);
+		}).finally(() => {
+			if (mounted) setSettingsLoading(false);
+		});
+		return () => { mounted = false; };
+	}, []);
 
-				// Only load open tools when module manager is fully hydrated
-				// This prevents 'isInstalled' from returning false for actually installed tools during async init
-				if (!modulesLoading) {
-					await loadOpenTools(isInstalled);
-					if (!mounted) return;
-					setLoading(false);
-				}
-			} catch (e) {
-				console.error('[HALO:SidePanel] init failed', e);
-				if (mounted) setLoading(false);
-			}
-		};
-		init();
+	// Open-tool restoration is the only initialization phase that must wait for
+	// the module manager, because it validates persisted tools against the live
+	// installation set.
+	useEffect(() => {
+		if (modulesLoading) {
+			setOpenToolsLoading(true);
+			return;
+		}
+		let mounted = true;
+		void loadOpenTools(isInstalled).catch((error: unknown) => {
+			console.error('[HALO:SidePanel] open-tools init failed', error);
+		}).finally(() => {
+			if (mounted) setOpenToolsLoading(false);
+		});
 		return () => { mounted = false; };
 	}, [modulesLoading, isInstalled, loadOpenTools]);
 
@@ -121,7 +128,7 @@ export const useSidePanelState = () => {
 	}, [settings, handleSettingsChange]);
 
 	return {
-		loading,
+		loading: settingsLoading || openToolsLoading,
 		modulesLoading,
 		activeTool,
 		openTools,
@@ -136,4 +143,3 @@ export const useSidePanelState = () => {
 		handleReorderCategories
 	};
 };
-

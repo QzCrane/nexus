@@ -19,7 +19,6 @@ interface DockItemProps {
 	serviceState?: 'active' | 'inactive';
 }
 
-// Styles extracted to reduce component line count
 const getIconStyle = (isActive: boolean) => ({
 	width: '100%',
 	height: '100%',
@@ -69,7 +68,6 @@ export const DockItem: React.FC<DockItemProps> = ({
 			pointerEvents: 'auto',
 		}}
 	>
-		{/* Visual icon: transforms independently */}
 		<div style={{
 			position: 'absolute',
 			left: 0,
@@ -92,8 +90,14 @@ export const DockItem: React.FC<DockItemProps> = ({
 				}}
 			>
 				<span aria-hidden="true">{tool.icon}</span>
-				{/* Indicators overlay - positioned relative to icon */}
-				<StatusIndicators isRunning={false} engineEnabled={false} serviceState={serviceState} />
+				{/* Preserve the dock's previous policy: it shows service state only,
+				    never the launcher-grid engine status dot. */}
+				<StatusIndicators
+					toolId={tool.id}
+					isRunning={false}
+					serviceState={serviceState}
+					showEngineStatus={false}
+				/>
 			</button>
 			<button
 				type="button"

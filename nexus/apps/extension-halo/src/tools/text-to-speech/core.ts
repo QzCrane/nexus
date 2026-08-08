@@ -2,13 +2,26 @@
 
 import type { TtsSettings } from './types';
 
+export interface SpeechLifecycleCallbacks {
+	onStart?: () => void;
+	onEnd?: () => void;
+	onError?: (event: SpeechSynthesisErrorEvent) => void;
+	onPause?: () => void;
+	onResume?: () => void;
+}
+
 // Get available voices
 export function getVoices(): SpeechSynthesisVoice[] {
 	return speechSynthesis.getVoices();
 }
 
-// Speak text
-export function speak(text: string, settings: TtsSettings): void {
+// Speak text. Lifecycle callbacks are attached before queueing so the panel can
+// stay event-driven instead of polling speechSynthesis every 200ms.
+export function speak(
+	text: string,
+	settings: TtsSettings,
+	callbacks: SpeechLifecycleCallbacks = {},
+): SpeechSynthesisUtterance {
 	stop();
 
 	const utterance = new SpeechSynthesisUtterance(text);
@@ -17,10 +30,17 @@ export function speak(text: string, settings: TtsSettings): void {
 	utterance.volume = settings.volume;
 
 	const voices = getVoices();
-	const voice = voices.find((v) => v.voiceURI === settings.voiceUri);
+	const voice = voices.find((candidate) => candidate.voiceURI === settings.voiceUri);
 	if (voice) utterance.voice = voice;
 
+	if (callbacks.onStart) utterance.addEventListener('start', callbacks.onStart);
+	if (callbacks.onEnd) utterance.addEventListener('end', callbacks.onEnd);
+	if (callbacks.onError) utterance.addEventListener('error', callbacks.onError);
+	if (callbacks.onPause) utterance.addEventListener('pause', callbacks.onPause);
+	if (callbacks.onResume) utterance.addEventListener('resume', callbacks.onResume);
+
 	speechSynthesis.speak(utterance);
+	return utterance;
 }
 
 // Stop speaking
@@ -36,16 +56,6 @@ export function pause(): void {
 // Resume
 export function resume(): void {
 	speechSynthesis.resume();
-}
-
-// Check if speaking
-export function isSpeaking(): boolean {
-	return speechSynthesis.speaking;
-}
-
-// Check if paused
-export function isPaused(): boolean {
-	return speechSynthesis.paused;
 }
 
 // Get selected text from page

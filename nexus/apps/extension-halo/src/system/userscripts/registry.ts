@@ -1,52 +1,43 @@
 // goal: UserScripts dynamic registration using chrome.userScripts API (Chrome 120+)
-// eff: True document_start MAIN world injection with dynamic code support
+// eff: Persistent registrations are reconciled only when their authority changes
 // NOTE: This runs in background context, requires "userScripts" permission
 
 import type { UserScript, UserScriptState } from './types';
+import type { ScriptType } from './types';
 
 const LOG_TAG = '[HALO:UserScripts:Registry]';
 const STORAGE_KEY = 'halo_userscripts';
+const SAAT_STORAGE_KEY = 'halo_saat_scripts';
 const SCRIPT_ID_PREFIX = 'halo-userscript-';
 
-// Check if userScripts API is available
 function isUserScriptsAvailable(): boolean {
 	return typeof chrome.userScripts !== 'undefined';
 }
 
-// Convert UserScript matches to valid Chrome patterns
 function normalizePattern(pattern: string): string {
 	if (pattern === '*' || pattern === '*/*') return '*://*/*';
 	if (pattern.startsWith('*://') || pattern.startsWith('http://') || pattern.startsWith('https://')) {
 		return pattern;
 	}
-	// Add protocol wildcard if missing
 	if (pattern.includes('/')) return `*://${pattern}`;
 	return `*://${pattern}/*`;
 }
 
-// Convert user patterns to valid match patterns
 function toMatchPatterns(patterns: string[]): string[] {
 	const result: string[] = [];
-	for (const p of patterns) {
+	for (const pattern of patterns) {
 		try {
-			const normalized = normalizePattern(p.trim());
-			if (normalized?.includes('://')) {
-				result.push(normalized);
-			}
+			const normalized = normalizePattern(pattern.trim());
+			if (normalized?.includes('://')) result.push(normalized);
 		} catch {
-			console.warn(LOG_TAG, `Invalid pattern: ${p}`);
+			console.warn(LOG_TAG, `Invalid pattern: ${pattern}`);
 		}
 	}
 	return result.length > 0 ? result : ['*://*/*'];
 }
 
-import type { ScriptType } from './types';
-
-// rule: escape a string for safe interpolation into a JS string literal.
-// Backslash first (so we don't double-escape the escapes), then quote chars,
-// then newlines (which would otherwise terminate the literal mid-source).
-function escapeForJsString(s: string): string {
-	return s
+function escapeForJsString(value: string): string {
+	return value
 		.replace(/\\/g, '\\\\')
 		.replace(/'/g, "\\'")
 		.replace(/"/g, '\\"')
@@ -54,13 +45,8 @@ function escapeForJsString(s: string): string {
 		.replace(/\r/g, '\\r');
 }
 
-// Wrap user script code for MAIN world injection
-// rule: build the wrapper via string concatenation, never a template literal. The
-// previous `${code}` / `${escapedName}` interpolations allowed user-controlled
-// content containing ` or ${} to break out of the wrapping template literal and
-// inject arbitrary code into the registered userscript (runs in MAIN world via
-// chrome.userScripts.register). User JS legitimately contains template literals,
-// so escaping is not viable — concatenation is the only safe option.
+// Build wrappers by concatenation. User code may contain template literals and
+// must never be interpolated into a template literal owned by the extension.
 function wrapForMainWorld(code: string, name: string, type: ScriptType): string {
 	const safeName = escapeForJsString(name);
 
@@ -79,12 +65,10 @@ function wrapForMainWorld(code: string, name: string, type: ScriptType): string 
 		].join('\n');
 	}
 
-	// For JavaScript: Run directly in MAIN world (API handles context)
-	// We just wrap in a try-catch block for safety and logging
 	return [
 		'(function() {',
 		'    try {',
-		// biome-ignore lint/style/useTemplate: concatenation required — user code may contain backticks/`${}` — see rule at top of function
+		// biome-ignore lint/style/useTemplate: concatenation required — user code may contain backticks/`${}`
 		'        ' + code,
 		`        console.log("[HALO Script] ${safeName} executed");`,
 		`    } catch(e) { console.error("[HALO Script] ${safeName} failed:", e); }`,
@@ -92,22 +76,19 @@ function wrapForMainWorld(code: string, name: string, type: ScriptType): string 
 	].join('\n');
 }
 
-// Convert runAt to Chrome's format
 function toRunAt(runAt: string): 'document_start' | 'document_end' | 'document_idle' {
 	if (runAt === 'document_start') return 'document_start';
 	if (runAt === 'document_end') return 'document_end';
 	return 'document_idle';
 }
 
-// Unregister all HALO userscripts and content scripts
 async function unregisterAllScripts(): Promise<void> {
-	// 1. Unregister UserScripts
 	if (isUserScriptsAvailable()) {
 		try {
 			const registered = await chrome.userScripts.getScripts();
 			const haloIds = registered
-				.filter((s) => s.id.startsWith(SCRIPT_ID_PREFIX))
-				.map((s) => s.id);
+				.filter((script) => script.id.startsWith(SCRIPT_ID_PREFIX))
+				.map((script) => script.id);
 
 			if (haloIds.length > 0) {
 				await chrome.userScripts.unregister({ ids: haloIds });
@@ -118,24 +99,21 @@ async function unregisterAllScripts(): Promise<void> {
 		}
 	}
 
-	// 2. Unregister Content Scripts (ISOLATED world)
 	try {
 		const registeredContent = await chrome.scripting.getRegisteredContentScripts();
 		const haloContentIds = registeredContent
-			.filter((s) => s.id.startsWith(SCRIPT_ID_PREFIX))
-			.map((s) => s.id);
+			.filter((script) => script.id.startsWith(SCRIPT_ID_PREFIX))
+			.map((script) => script.id);
 
 		if (haloContentIds.length > 0) {
 			await chrome.scripting.unregisterContentScripts({ ids: haloContentIds });
 			console.log(LOG_TAG, `Unregistered ${haloContentIds.length} content scripts`);
 		}
 	} catch (e) {
-		// chrome.scripting might not be available or no permission
 		console.warn(LOG_TAG, 'Failed to unregister content scripts:', e);
 	}
 }
 
-// Register all enabled userscripts
 async function registerAllScripts(scripts: UserScript[], globalEnabled: boolean): Promise<void> {
 	if (!globalEnabled) {
 		console.log(LOG_TAG, 'Global disabled, skipping registration');
@@ -154,18 +132,9 @@ async function registerAllScripts(scripts: UserScript[], globalEnabled: boolean)
 				? toMatchPatterns(script.excludeMatches)
 				: undefined;
 			const fullId = `${SCRIPT_ID_PREFIX}${script.id}`;
-
-			// Determine World: Default to USER_SCRIPT (MAIN-like) if not specified
-			// Exception: CSS is always MAIN/USER_SCRIPT logic handled by wrapper usually, 
-			// but for ISOLATED world CSS should be injected via css property of scripting API if possible.
-			// For now, we keep CSS logic as is (wrapped JS) for USER_SCRIPT world, or plain CSS for ISOLATED?
-			// SaaT service treats CSS as 'javascript' wrapper for MAIN world.
-			// If world is ISOLATED and type is CSS, we should use native CSS injection of RegisterContentScript.
-
 			const world = script.world || 'USER_SCRIPT';
 
 			if (world === 'ISOLATED') {
-				// native Content Script register
 				if (!script.filePath) {
 					console.warn(LOG_TAG, `Skipping ISOLATED script ${script.id}: No file path found`);
 					continue;
@@ -177,18 +146,16 @@ async function registerAllScripts(scripts: UserScript[], globalEnabled: boolean)
 					excludeMatches,
 					runAt: toRunAt(script.runAt),
 					allFrames: false,
-					world: 'ISOLATED'
+					world: 'ISOLATED',
+					// Persist across browser/service-worker sessions; reconciliation is
+					// driven by storage changes and extension installation/update.
+					persistAcrossSessions: true,
 				};
 
-				if (script.type === 'css') {
-					contentScript.css = [script.filePath];
-				} else {
-					contentScript.js = [script.filePath];
-				}
-
+				if (script.type === 'css') contentScript.css = [script.filePath];
+				else contentScript.js = [script.filePath];
 				contentScriptsToRegister.push(contentScript);
 			} else {
-				// MAIN / USER_SCRIPT world (Default)
 				const wrappedCode = wrapForMainWorld(script.code, script.name, script.type);
 				userScriptsToRegister.push({
 					id: fullId,
@@ -205,7 +172,6 @@ async function registerAllScripts(scripts: UserScript[], globalEnabled: boolean)
 		}
 	}
 
-	// Register User Scripts
 	if (userScriptsToRegister.length > 0 && isUserScriptsAvailable()) {
 		try {
 			await chrome.userScripts.register(userScriptsToRegister);
@@ -215,10 +181,8 @@ async function registerAllScripts(scripts: UserScript[], globalEnabled: boolean)
 		}
 	}
 
-	// Register Content Scripts (ISOLATED)
 	if (contentScriptsToRegister.length > 0) {
 		try {
-			// Check permission implicitly via API availability (background usually has permission)
 			if (chrome.scripting?.registerContentScripts) {
 				await chrome.scripting.registerContentScripts(contentScriptsToRegister);
 				console.log(LOG_TAG, `Registered ${contentScriptsToRegister.length} content scripts`);
@@ -229,57 +193,57 @@ async function registerAllScripts(scripts: UserScript[], globalEnabled: boolean)
 			console.warn(LOG_TAG, 'Failed to register content scripts:', e);
 		}
 	}
-
 }
 
-const SAAT_STORAGE_KEY = 'halo_saat_scripts';
-
-// Sync registered scripts with storage state (UserScripts + SaaT)
-export async function syncRegisteredScripts(): Promise<void> {
+async function performRegisteredScriptSync(): Promise<void> {
 	const result = await chrome.storage.local.get([STORAGE_KEY, SAAT_STORAGE_KEY]);
 	const userState: UserScriptState = result[STORAGE_KEY] || { scripts: [], globalEnabled: true };
 	const saatState: UserScriptState = result[SAAT_STORAGE_KEY] || { scripts: [], globalEnabled: true };
-
-	// Merge scripts from both sources
-	// Note: We respect globalEnabled from UserScripts for user scripts, 
-	// but SaaT scripts might have their own enable logic or follow global?
-	// For now, let's assume globalEnabled affects EVERYTHING to be safe/consistent.
 	const allScripts = [...userState.scripts, ...saatState.scripts];
 
 	await unregisterAllScripts();
 	await registerAllScripts(allScripts, userState.globalEnabled);
 }
 
-// Initialize the registry system
-// rule: return a cleanup function and guard against double-registration, mirroring
-// initUserScriptsEngine. Without the guard, repeated init (e.g. SW restart, hot
-// reload) would stack N storage.onChanged listeners that each triggered a
-// syncRegisteredScripts call, amplifying one storage write into N syncs.
+// Multiple storage writes/manual requests/install reconciliation can converge in
+// one moment. Serialize registration and keep at most one trailing sync instead
+// of racing unregister/register operations against each other.
+let syncLoop: Promise<void> | null = null;
+let syncPending = false;
+
+export function syncRegisteredScripts(): Promise<void> {
+	syncPending = true;
+	if (syncLoop) return syncLoop;
+
+	syncLoop = (async () => {
+		do {
+			syncPending = false;
+			await performRegisteredScriptSync();
+		} while (syncPending);
+	})().finally(() => {
+		syncLoop = null;
+		// No external task can run between the final loop condition and this
+		// synchronous finally block, but keep the guard explicit for future edits.
+		if (syncPending) void syncRegisteredScripts().catch((error) => {
+			console.warn(LOG_TAG, 'deferred sync failed', error);
+		});
+	});
+
+	return syncLoop;
+}
+
+// Registered user/content scripts are browser-persistent. Do not unregister and
+// rebuild them on every MV3 service-worker wake. This function only establishes
+// the authority-change listener; onInstalled performs update/install recovery.
 let registryInitialized = false;
 export function initUserScriptsRegistry(): () => void {
 	if (registryInitialized) return () => {};
-	if (!isUserScriptsAvailable()) {
-		console.warn(LOG_TAG, 'userScripts API not available - requires Chrome 120+ and Developer Mode');
-		return () => {};
-	}
 	registryInitialized = true;
 
-	console.log(LOG_TAG, 'Registry initialized');
-
-	// rule: swallow sync failures so the floating promise doesn't crash the SW.
-	// Errors are logged via the .catch handler; syncRegisteredScripts already
-	// logs internally for its sub-operations.
-	// Initial sync
-	syncRegisteredScripts().catch((e) => console.warn(LOG_TAG, 'sync failed', e));
-
-	// Listen for storage changes to re-sync
 	const listener = (changes: { [key: string]: chrome.storage.StorageChange }, area: string) => {
-		if (area === 'local') {
-			if (changes[STORAGE_KEY] || changes[SAAT_STORAGE_KEY]) {
-				console.log(LOG_TAG, 'Storage changed (User or SaaT), re-syncing...');
-				syncRegisteredScripts().catch((e) => console.warn(LOG_TAG, 'sync failed', e));
-			}
-		}
+		if (area !== 'local') return;
+		if (!changes[STORAGE_KEY] && !changes[SAAT_STORAGE_KEY]) return;
+		void syncRegisteredScripts().catch((e) => console.warn(LOG_TAG, 'sync failed', e));
 	};
 	chrome.storage.onChanged.addListener(listener);
 
