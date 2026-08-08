@@ -37,16 +37,30 @@ export function createLeanSiteHotkeyInjector(
 ): LeanSiteHotkeyInjector {
 	const injected = new Set<string>();
 	const pending = new Map<string, Promise<void>>();
+	const generations = new Map<string, number>();
+	let resetGeneration = 0;
+
+	const generationOf = (key: string): number => generations.get(key) ?? 0;
+	const retireKey = (key: string): void => {
+		generations.set(key, generationOf(key) + 1);
+		injected.delete(key);
+		pending.delete(key);
+	};
 
 	const ensure = (tabId: number, documentId: string): Promise<void> => {
 		const key = documentKey(tabId, documentId);
 		if (injected.has(key)) return Promise.resolve();
 		const existing = pending.get(key);
 		if (existing) return existing;
+		const keyGeneration = generationOf(key);
+		const globalGeneration = resetGeneration;
 
 		const operation = port.execute(tabId, documentId, LEAN_SITE_HOTKEY_FILE)
 			.then(() => {
-				injected.add(key);
+				if (
+					resetGeneration === globalGeneration
+					&& generationOf(key) === keyGeneration
+				) injected.add(key);
 			})
 			.finally(() => {
 				if (pending.get(key) === operation) pending.delete(key);
@@ -57,26 +71,25 @@ export function createLeanSiteHotkeyInjector(
 
 	const forget = (tabId: number, documentId?: string): void => {
 		if (documentId !== undefined) {
-			const key = documentKey(tabId, documentId);
-			injected.delete(key);
-			pending.delete(key);
+			retireKey(documentKey(tabId, documentId));
 			return;
 		}
 		const prefix = `${tabId}:`;
-		for (const key of injected) {
-			if (key.startsWith(prefix)) injected.delete(key);
-		}
-		for (const key of pending.keys()) {
-			if (key.startsWith(prefix)) pending.delete(key);
-		}
+		const keys = new Set<string>();
+		for (const key of injected) if (key.startsWith(prefix)) keys.add(key);
+		for (const key of pending.keys()) if (key.startsWith(prefix)) keys.add(key);
+		for (const key of generations.keys()) if (key.startsWith(prefix)) keys.add(key);
+		for (const key of keys) retireKey(key);
 	};
 
 	return {
 		ensure,
 		forget,
 		reset() {
+			resetGeneration += 1;
 			injected.clear();
 			pending.clear();
+			generations.clear();
 		},
 		isInjected(tabId, documentId) {
 			return injected.has(documentKey(tabId, documentId));
