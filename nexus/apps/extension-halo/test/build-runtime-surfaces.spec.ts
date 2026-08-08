@@ -67,8 +67,10 @@ describe('HALO manifest-derived startup surfaces', () => {
 		});
 
 		expect(() => measureContentStartupSurfaces(manifest, (output) => {
-			if (output === 'all.js') return closures.get(output)!;
-			throw new Error(`missing output ${output}`);
+			if (output !== 'all.js') throw new Error(`missing output ${output}`);
+			const closure = closures.get(output);
+			if (!closure) throw new Error(`missing output ${output}`);
+			return closure;
 		})).toThrow('missing output top.js');
 	});
 });
