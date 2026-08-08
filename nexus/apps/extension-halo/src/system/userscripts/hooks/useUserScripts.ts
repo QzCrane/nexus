@@ -1,8 +1,7 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from '../../../i18n';
 import type { UserScript, UserScriptState } from '../types';
 import {
-	getUserScriptsState,
 	deleteUserScript,
 	toggleUserScript,
 	toggleGlobalEnabled,
@@ -10,49 +9,46 @@ import {
 } from '../core';
 import { injectScriptToCurrentTab } from '../engine';
 import { useToast } from '../../../components/ToastProvider';
-import {
-	createUserScriptsStateLoader,
-	type UserScriptsStateLoader,
-} from './user-scripts-state-loader';
+import { refreshUserScriptsStorage } from '../storage-authority';
+import { useUserScriptsStorageSnapshot } from './useUserScriptsSnapshot';
+
+const DEFAULT_TOOLBAR_CONFIG: NonNullable<UserScriptState['toolbarConfig']> = {
+	order: ['add', 'export', 'import'],
+	hideOnOverflow: false,
+};
+
+function materializeScript(script: Readonly<UserScript>): UserScript {
+	return {
+		...script,
+		matches: [...script.matches],
+		...(script.excludeMatches ? { excludeMatches: [...script.excludeMatches] } : {}),
+	};
+}
 
 export function useUserScripts() {
 	const { t } = useTranslation();
 	const { showToast } = useToast();
-	const [scripts, setScripts] = useState<UserScript[]>([]);
-	const [globalEnabled, setGlobalEnabled] = useState(true);
+	const snapshot = useUserScriptsStorageSnapshot();
+	const scripts = useMemo(
+		() => snapshot.scripts.map(materializeScript),
+		[snapshot.scripts],
+	);
+	const globalEnabled = snapshot.globalEnabled;
+	const toolbarConfig = useMemo<UserScriptState['toolbarConfig']>(() => (
+		snapshot.toolbarConfig
+			? {
+				order: [...snapshot.toolbarConfig.order],
+				hideOnOverflow: snapshot.toolbarConfig.hideOnOverflow,
+			}
+			: { ...DEFAULT_TOOLBAR_CONFIG, order: [...DEFAULT_TOOLBAR_CONFIG.order] }
+	), [snapshot.toolbarConfig]);
 	const [currentUrl, setCurrentUrl] = useState('');
 	const [hasPermission, setHasPermission] = useState(false);
+	const loadScripts = useCallback(async () => {
+		await refreshUserScriptsStorage();
+	}, []);
 
-	// Toolbar config
-	const [toolbarConfig, setToolbarConfig] = useState<UserScriptState['toolbarConfig']>();
-
-	const stateLoaderRef = useRef<UserScriptsStateLoader | null>(null);
-	if (stateLoaderRef.current === null) {
-		stateLoaderRef.current = createUserScriptsStateLoader(
-			getUserScriptsState,
-			(state) => {
-				setScripts(state.scripts);
-				setGlobalEnabled(state.globalEnabled);
-				setToolbarConfig(state.toolbarConfig || {
-					order: ['add', 'export', 'import'],
-					hideOnOverflow: false,
-				});
-			},
-			(error) => {
-				console.error('[HALO:UserScripts] Failed to load scripts', error);
-			},
-		);
-	}
-	const stateLoader = stateLoaderRef.current;
-	const loadScripts = useCallback(() => stateLoader.load(), [stateLoader]);
-
-	useEffect(() => {
-		stateLoader.activate();
-		void loadScripts();
-		return () => stateLoader.dispose();
-	}, [loadScripts, stateLoader]);
-
-	// Permissions and URL tracking
+	// Permissions and URL tracking are independent of script-storage authority.
 	useEffect(() => {
 		const checkStatus = async () => {
 			const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -118,7 +114,7 @@ export function useUserScripts() {
 
 	const handleGlobalToggle = async () => {
 		const newState = await toggleGlobalEnabled();
-		setGlobalEnabled(newState);
+		await loadScripts();
 		showToast(newState
 			? `✅ ${t('userscripts.scriptsEnabled')}`
 			: `⏸️ ${t('userscripts.scriptsDisabled')}`);
