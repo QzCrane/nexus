@@ -202,6 +202,13 @@ async function refresh(): Promise<void> {
 	applySettings(settings);
 }
 
+const onPhysicalRelease = (event: Pick<KeyboardEvent, 'code'>): void => releaseCode(event.code);
+const onBlur = (): void => releaseAll();
+const onVisibilityChange = (): void => {
+	if (document.hidden) releaseAll();
+};
+const onPageHide = (): void => dispose();
+
 function dispose(): void {
 	if (disposed) return;
 	disposed = true;
@@ -214,6 +221,9 @@ function dispose(): void {
 	physicalReleaseDispose = null;
 	if (runtimeMessageListener) chrome.runtime.onMessage.removeListener(runtimeMessageListener);
 	runtimeMessageListener = null;
+	window.removeEventListener('blur', onBlur);
+	window.removeEventListener('pagehide', onPageHide);
+	document.removeEventListener('visibilitychange', onVisibilityChange);
 	if (hostWindow.__SPECTRA_LEAN_SITE_HOTKEY_HOST__ === host) {
 		delete hostWindow.__SPECTRA_LEAN_SITE_HOTKEY_HOST__;
 	}
@@ -226,7 +236,7 @@ if (existing?.revision === 1) {
 } else {
 	existing?.dispose();
 	hostWindow.__SPECTRA_LEAN_SITE_HOTKEY_HOST__ = host;
-	physicalReleaseDispose = subscribeDocumentStartPhysicalHotkeyRelease((event) => releaseCode(event.code));
+	physicalReleaseDispose = subscribeDocumentStartPhysicalHotkeyRelease(onPhysicalRelease);
 	runtimeMessageListener = (message, sender) => {
 		if (sender.id && sender.id !== chrome.runtime.id) return false;
 		if (!message || typeof message !== 'object') return false;
@@ -243,10 +253,8 @@ if (existing?.revision === 1) {
 		return false;
 	};
 	chrome.runtime.onMessage.addListener(runtimeMessageListener);
-	window.addEventListener('blur', releaseAll);
-	window.addEventListener('pagehide', dispose, { once: true });
-	document.addEventListener('visibilitychange', () => {
-		if (document.hidden) releaseAll();
-	});
+	window.addEventListener('blur', onBlur);
+	window.addEventListener('pagehide', onPageHide, { once: true });
+	document.addEventListener('visibilitychange', onVisibilityChange);
 	void refresh();
 }
