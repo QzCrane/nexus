@@ -19,6 +19,15 @@ export const TextToSpeechPanel: React.FC = () => {
 	const [paused, setPaused] = useState(false);
 	const speechGenerationRef = useRef(0);
 
+	// Invalidate late utterance events only when this panel actually unmounts.
+	// Voice selection changes rebind the voiceschanged listener below but must not
+	// retire the currently speaking utterance generation.
+	useEffect(() => {
+		return () => {
+			speechGenerationRef.current += 1;
+		};
+	}, []);
+
 	useEffect(() => {
 		const loadVoices = () => {
 			const available = getVoices();
@@ -32,7 +41,6 @@ export const TextToSpeechPanel: React.FC = () => {
 		loadVoices();
 		speechSynthesis.addEventListener('voiceschanged', loadVoices);
 		return () => {
-			speechGenerationRef.current += 1;
 			speechSynthesis.removeEventListener('voiceschanged', loadVoices);
 		};
 	}, [setSettings, settings.voiceUri]);
