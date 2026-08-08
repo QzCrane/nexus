@@ -1,5 +1,5 @@
 // goal: minimal top-frame Hover Zoom bootstrap; heavy runtime loads only after relevant user input
-// inv: This file owns storage observation until the heavy runtime is loaded and never imports it statically.
+// inv: Storage is the single settings authority; disabled Hover Zoom owns no page-input listeners.
 
 import {
 	DEFAULT_SETTINGS,
@@ -64,6 +64,7 @@ if (window.location.protocol !== 'chrome-extension:') {
 	let lastSource: HoverZoomActivationSnapshot['source'] = 'mousemove';
 	let runtime: HoverZoomRuntime | null = null;
 	let runtimePromise: Promise<HoverZoomRuntime> | null = null;
+	let activationPending = false;
 	let inputListenersAttached = false;
 
 	const snapshot = (): HoverZoomActivationSnapshot => ({
@@ -91,6 +92,20 @@ if (window.location.protocol !== 'chrome-extension:') {
 		document.removeEventListener('keyup', onKeyUp, true);
 	};
 
+	const attachInputListeners = (): void => {
+		if (inputListenersAttached || runtime || !settings.enabled) return;
+		inputListenersAttached = true;
+		document.addEventListener('mouseover', onMouseOver, true);
+		document.addEventListener('mousemove', onMouseMove, { passive: true });
+		document.addEventListener('keydown', onKeyDown, true);
+		document.addEventListener('keyup', onKeyUp, true);
+	};
+
+	const reconcileInputListeners = (): void => {
+		if (settings.enabled && !runtime) attachInputListeners();
+		else detachInputListeners();
+	};
+
 	const ensureRuntime = (): Promise<HoverZoomRuntime> => {
 		if (runtime) return Promise.resolve(runtime);
 		if (runtimePromise) return runtimePromise;
@@ -115,11 +130,15 @@ if (window.location.protocol !== 'chrome-extension:') {
 	};
 
 	const activateRuntime = (): void => {
-		if (!settings.enabled) return;
+		if (!settings.enabled || activationPending) return;
+		activationPending = true;
 		void ensureRuntime()
 			.then((loaded) => loaded.activate(snapshot()))
 			.catch((error: unknown) => {
 				console.warn(LOG_TAG, 'Runtime activation failed', error);
+			})
+			.finally(() => {
+				activationPending = false;
 			});
 	};
 
@@ -158,24 +177,15 @@ if (window.location.protocol !== 'chrome-extension:') {
 		lastSource = 'keyup';
 	}
 
-	const attachInputListeners = (): void => {
-		if (inputListenersAttached || runtime) return;
-		inputListenersAttached = true;
-		document.addEventListener('mouseover', onMouseOver, true);
-		document.addEventListener('mousemove', onMouseMove, { passive: true });
-		document.addEventListener('keydown', onKeyDown, true);
-		document.addEventListener('keyup', onKeyUp, true);
-	};
-
 	void chrome.storage.local.get(STORAGE_KEY)
 		.then((result) => {
 			settings = mergeSettings(savedSettings(result[STORAGE_KEY]));
-			attachInputListeners();
+			reconcileInputListeners();
 		})
 		.catch((error: unknown) => {
 			console.warn(LOG_TAG, 'Storage error:', error);
 			settings = DEFAULT_SETTINGS;
-			attachInputListeners();
+			reconcileInputListeners();
 		});
 
 	chrome.storage.onChanged.addListener((changes, area) => {
@@ -184,6 +194,7 @@ if (window.location.protocol !== 'chrome-extension:') {
 		if (!change) return;
 
 		settings = mergeSettings(savedSettings(change.newValue));
+		reconcileInputListeners();
 		if (runtime) {
 			void runtime.updateSettings(settings).catch((error: unknown) => {
 				console.warn(LOG_TAG, 'Settings update failed', error);
