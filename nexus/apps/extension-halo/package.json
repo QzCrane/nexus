@@ -12,7 +12,7 @@
 		"lint": "bun ../../scripts/run-strict-biome.ts .",
 		"typecheck": "bun tsc --noEmit",
 		"test": "bun run test:unit",
-		"test:unit": "bun test test/exif-reader.spec.ts test/mse-player.spec.ts test/smooth-scroll.spec.ts test/smooth-scroll-keyboard-contract.spec.ts test/build-runtime-surfaces.spec.ts test/frame-tools-lazy.spec.ts test/hover-zoom-lazy.spec.ts test/module-lifecycle.spec.ts test/module-runtime-installation-gates.spec.ts test/markdown.spec.ts test/release-tooling.spec.ts test/stable-ui-identities.spec.ts test/storage-boundaries.spec.ts test/ui-interaction-semantics.spec.ts test/hot-path-lifecycle.spec.ts test/resource-provenance.spec.ts test/registry-generation.spec.ts",
+		"test:unit": "bun test test/exif-reader.spec.ts test/mse-player.spec.ts test/smooth-scroll.spec.ts test/smooth-scroll-keyboard-contract.spec.ts test/build-runtime-surfaces.spec.ts test/frame-tools-lazy.spec.ts test/hover-zoom-lazy.spec.ts test/module-lifecycle.spec.ts test/module-cross-context-authority.spec.ts test/module-runtime-installation-gates.spec.ts test/markdown.spec.ts test/release-tooling.spec.ts test/stable-ui-identities.spec.ts test/storage-boundaries.spec.ts test/ui-interaction-semantics.spec.ts test/hot-path-lifecycle.spec.ts test/resource-provenance.spec.ts test/registry-generation.spec.ts",
 		"test:watch": "bun test --watch test",
 		"test:smooth-scroll": "bun test test/smooth-scroll.spec.ts test/smooth-scroll-keyboard-contract.spec.ts",
 		"test:browser-chromium": "bunx playwright test test/smooth-scroll-keyboard-playwright.spec.ts test/frame-tools-lazy-playwright.spec.ts test/hover-zoom-lazy-playwright.spec.ts --workers=1",
