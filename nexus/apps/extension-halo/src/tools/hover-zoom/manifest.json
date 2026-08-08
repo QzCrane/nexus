@@ -30,8 +30,8 @@
 		"activeOnly": false,
 		"level": "idle",
 		"descriptionKey": "impact.hover_zoom",
-		"sourceFile": "tools/hover-zoom/content/index.ts",
-		"sourceLine": 1,
-		"sourceDetail": "mouseover/mousemove event listeners"
+		"sourceFile": "content/hover-zoom.ts",
+		"sourceLine": 88,
+		"sourceDetail": "document mouse/pointer-key listeners attach only while Hover Zoom is enabled and detach on disable"
 	}
 }
