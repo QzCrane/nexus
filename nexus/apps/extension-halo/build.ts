@@ -170,6 +170,7 @@ const entries = [
 	{ entry: 'src/entry/content-frame-tools.ts', out: 'content-frame-tools.js', kind: 'classic' },
 	{ entry: 'src/entry/content-frame-tools-runtime.ts', out: 'tools/_frame-tools/runtime.js', kind: 'module' },
 	{ entry: 'src/entry/content-hover-zoom.ts', out: 'content-hover-zoom.js', kind: 'classic' },
+	{ entry: 'src/entry/content-hover-zoom-runtime.ts', out: 'tools/_hover-zoom/runtime.js', kind: 'module' },
 	{ entry: 'src/entry/content-clipboard.ts', out: 'content-clipboard.js', kind: 'classic' },
 	{ entry: 'src/entry/background.ts', out: 'background.js', kind: 'classic' },
 	{ entry: 'src/entry/sidepanel.tsx', out: 'sidepanel.js', kind: 'sidepanel' },
