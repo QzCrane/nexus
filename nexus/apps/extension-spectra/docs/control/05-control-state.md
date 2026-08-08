@@ -61,6 +61,8 @@ effective output ~= volumeBase / 100 * boost
 sources -> mix bus -> master gain -> [Bass] -> [non-zero EQ] -> [Compressor] -> [Mono] -> [Pan] -> [Delay] -> output (+ optional analyser)
 ```
 
+Sparse-topology changes hand off old/new lanes with a `40ms` complementary linear crossfade; parameter-only changes ramp in place and do not allocate a second lane.
+
 | Algorithm | Exact definition |
 | --- | --- |
 | Boost | 线性 master `boostGain` `1–8`（无 0 增益代换与隐式限幅） |
