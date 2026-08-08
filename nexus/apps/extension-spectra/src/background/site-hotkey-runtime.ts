@@ -41,10 +41,27 @@ export function createLeanSiteHotkeyInjector(
 	let resetGeneration = 0;
 
 	const generationOf = (key: string): number => generations.get(key) ?? 0;
+	const cleanupGeneration = (key: string, generation: number): void => {
+		if (
+			generationOf(key) === generation
+			&& !pending.has(key)
+			&& !injected.has(key)
+		) generations.delete(key);
+	};
 	const retireKey = (key: string): void => {
-		generations.set(key, generationOf(key) + 1);
+		const operation = pending.get(key);
+		const generation = generationOf(key) + 1;
 		injected.delete(key);
 		pending.delete(key);
+		if (!operation) {
+			generations.delete(key);
+			return;
+		}
+		generations.set(key, generation);
+		void operation.then(
+			() => cleanupGeneration(key, generation),
+			() => cleanupGeneration(key, generation),
+		);
 	};
 
 	const ensure = (tabId: number, documentId: string): Promise<void> => {
@@ -64,6 +81,7 @@ export function createLeanSiteHotkeyInjector(
 			})
 			.finally(() => {
 				if (pending.get(key) === operation) pending.delete(key);
+				cleanupGeneration(key, keyGeneration);
 			});
 		pending.set(key, operation);
 		return operation;
