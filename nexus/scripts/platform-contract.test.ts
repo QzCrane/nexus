@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import {
 	eolProblems,
 	packageScriptProblems,
@@ -9,6 +10,11 @@ import {
 	processSourceProblems,
 	textEncodingProblems,
 } from './platform-contract.ts';
+
+const crossPlatformWorkflow = readFileSync(
+	new URL('../../.github/workflows/cross-platform.yml', import.meta.url),
+	'utf8',
+);
 
 describe('cross-platform path contract', () => {
 	test('rejects Windows-reserved, ambiguous, decomposed, and case-colliding paths', () => {
@@ -162,5 +168,10 @@ describe('portable automation contract', () => {
 			'\\nrmSync(directory, {\\n' +
 			'\\trecursive: true,\\n\\tforce: true,\\n\\tmaxRetries: 5,\\n\\tretryDelay: 100,\\n});',
 		)).toEqual([]);
+	});
+
+	test('caches the real Turborepo store outside the dependency install tree', () => {
+		expect(crossPlatformWorkflow).not.toContain('node_modules/.cache/turbo');
+		expect(crossPlatformWorkflow.match(/path: nexus\/\.turbo\/cache/gu)).toHaveLength(2);
 	});
 });
