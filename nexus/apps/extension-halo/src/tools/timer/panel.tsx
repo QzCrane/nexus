@@ -2,12 +2,13 @@
 // eff: persistent time authority is anchor-based; display ticks are isolated to the clock node
 
 import type React from 'react';
-import { memo, useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from '../../i18n';
 import type { TimerMode, TimerState } from './types';
 import { formatTime, PRESETS } from './core';
 import { styles } from './panel.styles';
 import { playCompletionTone, useToolState } from '../../kernel';
+import { watchWallClockDeadline } from '../../kernel/utils/wall-clock-deadline';
 
 const initialState: TimerState = {
 	mode: 'stopwatch',
@@ -21,6 +22,13 @@ const initialState: TimerState = {
 function runningElapsed(state: TimerState, now: number): number {
 	if (!state.isRunning || typeof state.startedAt !== 'number') return state.elapsed;
 	return state.elapsed + Math.max(0, now - state.startedAt);
+}
+
+function countdownDeadline(state: TimerState): number | null {
+	if (!state.isRunning || state.mode !== 'countdown' || typeof state.startedAt !== 'number') {
+		return null;
+	}
+	return state.startedAt + Math.max(0, state.target - state.elapsed);
 }
 
 const TimerDisplay: React.FC<{ state: TimerState }> = memo(({ state }) => {
@@ -58,6 +66,8 @@ export const TimerPanel: React.FC = () => {
 	const [state, setState] = useToolState<TimerState>('timer', initialState);
 	const [inputMins, setInputMins] = useToolState<number>('timer-mins', 5);
 	const [inputSecs, setInputSecs] = useToolState<number>('timer-secs', 0);
+	const stateRef = useRef(state);
+	stateRef.current = state;
 
 	// One-time compatibility repair for pre-anchor persisted running states.
 	useEffect(() => {
@@ -68,37 +78,34 @@ export const TimerPanel: React.FC = () => {
 		});
 	}, [state.isRunning, state.startedAt, setState]);
 
-	// Countdown owns one completion timer instead of a 10ms repeating writer.
+	// The countdown keeps persistent writes at lifecycle boundaries, while a
+	// bounded wall-clock watcher re-evaluates at most once per second. A clock
+	// jump backward therefore re-arms instead of losing completion; a jump
+	// forward is observed within one check interval instead of waiting for the
+	// stale original timeout. The tone is emitted only after the latest state is
+	// still running and truly due at the same observed clock sample.
 	useEffect(() => {
-		if (
-			!state.isRunning
-			|| state.mode !== 'countdown'
-			|| typeof state.startedAt !== 'number'
-		) return;
+		const deadline = countdownDeadline(state);
+		if (deadline === null) return;
 
-		const elapsedAtSchedule = state.elapsed + Math.max(0, Date.now() - state.startedAt);
-		const remaining = Math.max(0, state.target - elapsedAtSchedule);
-		const timeoutId = window.setTimeout(() => {
-			setState((current) => {
-				if (
-					!current.isRunning
-					|| current.mode !== 'countdown'
-					|| typeof current.startedAt !== 'number'
-				) return current;
-				if (runningElapsed(current, Date.now()) < current.target) return current;
-				return {
+		return watchWallClockDeadline(deadline, {
+			onDue: (observedNow) => {
+				const current = stateRef.current;
+				const currentDeadline = countdownDeadline(current);
+				if (currentDeadline === null || observedNow < currentDeadline) return;
+				const next: TimerState = {
 					...current,
 					elapsed: current.target,
 					startedAt: undefined,
 					isRunning: false,
 				};
-			});
-			void playCompletionTone().catch((error: unknown) => {
-				console.warn('[HALO:Timer] Completion tone failed', error);
-			});
-		}, remaining);
-
-		return () => window.clearTimeout(timeoutId);
+				stateRef.current = next;
+				setState(next);
+				void playCompletionTone().catch((error: unknown) => {
+					console.warn('[HALO:Timer] Completion tone failed', error);
+				});
+			},
+		});
 	}, [state.isRunning, state.mode, state.startedAt, state.elapsed, state.target, setState]);
 
 	const handleToggle = useCallback(() => {
