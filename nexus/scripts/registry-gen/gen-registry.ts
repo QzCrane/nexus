@@ -1,5 +1,5 @@
 // goal: Generate HALO registry artifacts
-// eff: Startup registry stays lean; detailed background provenance remains a separate generated symbol
+// eff: Preserve the canonical full registry while emitting compact runtime projections
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -11,9 +11,9 @@ import {
 import { calculateFolderSize } from './utils.ts';
 
 /**
- * Generate registry TypeScript file
- * @param {Array} allModules - All discovered modules
- * @param {Map} manifestsMap - Map of id -> parsed manifest
+ * Generate the canonical full registry. Keep its schema stable: detailed
+ * background provenance remains available here for Resource Monitor and other
+ * diagnostic consumers. Startup code uses the separate compact projection.
  */
 export function generateRegistry(allModules, manifestsMap) {
 	const header = `// AUTO-GENERATED - DO NOT EDIT
@@ -23,8 +23,7 @@ export function generateRegistry(allModules, manifestsMap) {
 import type { ToolCategory } from '../../i18n/types';
 import type { PluginType, ScriptType } from './taxonomy';
 
-// Background consumption profile. Detailed profiles are exported separately
-// from PLUGIN_REGISTRY so startup surfaces do not duplicate source provenance.
+// Background consumption profile
 export interface BackgroundProfile {
 	mechanism: 'interval_fast' | 'interval_slow' | 'raf_active' | 'raf_idle' | 'event_listener' | 'storage_listener' | 'message_listener' | 'wheel_listener' | 'copy_listener' | 'mutation_observer' | 'service_worker' | 'content_script' | 'userscript';
 	frequency: string;
@@ -45,9 +44,7 @@ export interface ScriptConfig {
 	world?: 'ISOLATED' | 'MAIN' | 'USER_SCRIPT';
 }
 
-// Unified plugin metadata used by the SidePanel/Home path. Resource-impact
-// provenance lives in BACKGROUND_PROFILES_MAP and is intentionally not copied
-// into every PluginMeta object.
+// Unified plugin metadata
 export interface PluginMeta {
 	id: string;
 	icon: string;
@@ -58,6 +55,7 @@ export interface PluginMeta {
 	status?: 'ready' | 'beta' | 'coming' | 'disabled';
 	keywords: string[];
 	permissions?: string[];
+	background?: BackgroundProfile;
 	script?: ScriptConfig; // Only for script plugins
 }
 `;
@@ -66,6 +64,7 @@ export interface PluginMeta {
 		const manifest = manifestsMap.get(module.id);
 		const keywords = manifest.keywords ? JSON.stringify(manifest.keywords) : '[]';
 		const permissions = manifest.permissions?.length ? JSON.stringify(manifest.permissions) : 'undefined';
+		const background = manifest.background ? JSON.stringify(manifest.background) : 'undefined';
 		const scriptConfig = manifest.script ? JSON.stringify(manifest.script) : 'undefined';
 
 		const moduleDir = path.dirname(module.manifestPath);
@@ -81,6 +80,7 @@ export interface PluginMeta {
 \t\tstatus: ${manifest.status ? `'${manifest.status}'` : 'undefined'},
 \t\tkeywords: ${keywords},
 \t\tpermissions: ${permissions},
+\t\tbackground: ${background},
 \t\tscript: ${scriptConfig},
 \t}`;
 	};
@@ -118,9 +118,8 @@ export const getUserPlugins = () => PLUGIN_REGISTRY.filter((plugin) => plugin.pl
 
 export const PERMISSION_USAGE_MAP: Record<string, string[]> = ${JSON.stringify(permissionMap, null, 4)};
 
-// Detailed provenance is consumed by Resource Monitor/background-helper paths.
-// Startup classification imports the separate compact generated projection.
 export const BACKGROUND_PROFILES_MAP: Record<string, BackgroundProfile> = ${JSON.stringify(backgroundMap, null, 4)};
+export const BACKGROUND_PLUGIN_IDS = Object.keys(BACKGROUND_PROFILES_MAP);
 
 // Legacy compatibility aliases
 export const ALL_APPS = PLUGIN_REGISTRY;
@@ -139,7 +138,7 @@ export const TOOL_IDS = PLUGIN_IDS;
  * Generate the compact background membership/activeOnly projection used by
  * SidePanel startup. This tracked generated artifact intentionally excludes
  * sourceFile/sourceLine/sourceDetail so detailed provenance can remain behind
- * lazy Resource Monitor paths.
+ * diagnostic/lazy paths without becoming a startup dependency.
  */
 export function generateBackgroundActiveProjection(allModules, manifestsMap) {
 	const activeOnlyMap = {};
@@ -161,11 +160,8 @@ export const BACKGROUND_PLUGIN_IDS = Object.freeze(Object.keys(BACKGROUND_ACTIVE
 
 /**
  * Generate the install-time data projection consumed by the MV3 worker.
- *
- * The service worker must not import the full UI registry just to synchronize
- * SaaT scripts on extension installation/update. Chrome extension service
- * workers do not support dynamic import(), so the correct lazy boundary here is
- * local data: only onInstalled fetches this tiny JSON descriptor set.
+ * Only onInstalled fetches this tiny local descriptor set; the ordinary worker
+ * code graph never imports full UI registry metadata for SaaT reconciliation.
  */
 export function generateScriptRuntimeManifest(allModules, manifestsMap) {
 	const descriptors = allModules.flatMap((module) => {
