@@ -5,11 +5,16 @@ import { STORAGE_PREFIX } from '../kernel';
 import { DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY } from '../kernel';
 import { initUserScriptsEngine } from '../system/userscripts/engine';
 import { initUserScriptsRegistry } from '../system/userscripts/registry';
-import { syncSaaTTools, initSaaTService } from '../kernel/services/saat-service';
-import { TOOL_REGISTRY } from '../kernel/registry/tool-registry';
+import {
+	initSaaTService,
+	syncSaaTTools,
+	type SaaTPluginDescriptor,
+} from '../kernel/services/saat-service';
 import { isPrivateHost } from '../kernel/utils/ssrf-guard';
+import { saveToClipboardHistory } from '../tools/clipboard/core';
 
 const LOG_TAG = '[HALO]';
+const SCRIPT_RUNTIME_ASSET = 'script-plugin-runtime.json';
 
 initUserScriptsEngine();
 initUserScriptsRegistry();
@@ -20,13 +25,49 @@ const MENU_QR_SELECTION = 'halo-qr-selection';
 const MENU_COLOR_PICK = 'halo-color-pick';
 const MENU_PDF_LINK = 'halo-pdf-link';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+	return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function isSaaTPluginDescriptor(value: unknown): value is SaaTPluginDescriptor {
+	if (!isRecord(value) || typeof value.id !== 'string') return false;
+	if (value.pluginType !== 'tool' && value.pluginType !== 'script' && value.pluginType !== 'system') return false;
+	const script = value.script;
+	if (!isRecord(script)) return false;
+	if (script.type !== 'javascript' && script.type !== 'typescript' && script.type !== 'css') return false;
+	if (script.runAt !== 'document_start' && script.runAt !== 'document_end' && script.runAt !== 'document_idle') return false;
+	if (!isStringArray(script.matches)) return false;
+	if (script.excludeMatches !== undefined && !isStringArray(script.excludeMatches)) return false;
+	if (
+		script.world !== undefined
+		&& script.world !== 'ISOLATED'
+		&& script.world !== 'MAIN'
+		&& script.world !== 'USER_SCRIPT'
+	) return false;
+	return true;
+}
+
+async function loadScriptRuntimeDescriptors(): Promise<SaaTPluginDescriptor[]> {
+	const response = await fetch(chrome.runtime.getURL(SCRIPT_RUNTIME_ASSET));
+	if (!response.ok) throw new Error(`script runtime asset returned HTTP ${response.status}`);
+	const value: unknown = await response.json();
+	if (!Array.isArray(value) || !value.every(isSaaTPluginDescriptor)) {
+		throw new Error('script runtime asset failed descriptor validation');
+	}
+	return value;
+}
+
 async function sendPrefillMessage(message: unknown, maxRetries = 5): Promise<void> {
 	for (let i = 0; i < maxRetries; i++) {
 		try {
 			await chrome.runtime.sendMessage(message);
 			return;
 		} catch {
-			await new Promise((r) => setTimeout(r, 100 * (i + 1)));
+			await new Promise((resolve) => setTimeout(resolve, 100 * (i + 1)));
 		}
 	}
 }
@@ -34,7 +75,14 @@ async function sendPrefillMessage(message: unknown, maxRetries = 5): Promise<voi
 chrome.runtime.onInstalled.addListener(async (details) => {
 	console.log(LOG_TAG, 'Extension installed/updated:', details.reason);
 
-	await syncSaaTTools(TOOL_REGISTRY);
+	// The full UI TOOL_REGISTRY is intentionally absent from the service-worker
+	// dependency graph. Script metadata is generated as local data and read only
+	// on install/update, the only lifecycle that needs SaaT reconciliation.
+	try {
+		await syncSaaTTools(await loadScriptRuntimeDescriptors());
+	} catch (error: unknown) {
+		console.warn(LOG_TAG, 'SaaT install synchronization skipped:', error);
+	}
 
 	const storage = await chrome.storage.sync.get([
 		`${STORAGE_PREFIX.CORE}active_tool`,
@@ -141,15 +189,13 @@ chrome.action.onClicked.addListener(async (tab) => {
 	}
 });
 
-import { saveToClipboardHistory } from '../tools/clipboard/core';
-
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	if (message.type === 'HALO_CLIPBOARD_ADD') {
 		const { text, sourceUrl, sourceTitle } = message;
 		saveToClipboardHistory(
 			text,
 			sourceUrl || sender.url,
-			sourceTitle || sender.tab?.title
+			sourceTitle || sender.tab?.title,
 		).then(
 			() => { sendResponse({ success: true }); },
 			(error) => { sendResponse({ success: false, error: String(error) }); },
@@ -187,24 +233,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			method,
 			headers: { ...headers },
 			body: method === 'POST' ? body : undefined,
-			credentials: 'omit'
+			credentials: 'omit',
 		})
-			.then(async res => {
-				if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			.then(async (response) => {
+				if (!response.ok) throw new Error(`HTTP ${response.status}`);
 				if (responseType === 'arraybuffer') {
-					const buf = await res.arrayBuffer();
-					const bytes = new Uint8Array(buf);
-					const CHUNK = 0x8000;
+					const buffer = await response.arrayBuffer();
+					const bytes = new Uint8Array(buffer);
+					const chunkSize = 0x8000;
 					const chunks: string[] = [];
-					for (let i = 0; i < bytes.length; i += CHUNK) {
-						chunks.push(String.fromCharCode(...bytes.subarray(i, i + CHUNK)));
+					for (let index = 0; index < bytes.length; index += chunkSize) {
+						chunks.push(String.fromCharCode(...bytes.subarray(index, index + chunkSize)));
 					}
 					return btoa(chunks.join(''));
 				}
-				return res.text();
+				return response.text();
 			})
-			.then(data => sendResponse({ success: true, data }))
-			.catch(err => sendResponse({ success: false, error: err.message }));
+			.then((data) => sendResponse({ success: true, data }))
+			.catch((error) => sendResponse({ success: false, error: error.message }));
 
 		return true;
 	}
@@ -217,13 +263,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		}
 		chrome.scripting.insertCSS({
 			target: { tabId: sender.tab.id },
-			css: css,
+			css,
 		}).then(() => {
 			console.log(LOG_TAG, 'Injected dynamic CSS for tab', sender.tab?.id);
 			sendResponse({ success: true });
-		}).catch(e => {
-			console.warn(LOG_TAG, 'Failed to inject CSS:', e);
-			sendResponse({ success: false, error: e.message });
+		}).catch((error) => {
+			console.warn(LOG_TAG, 'Failed to inject CSS:', error);
+			sendResponse({ success: false, error: error.message });
 		});
 		return true;
 	}
@@ -237,9 +283,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 if (process.env.NODE_ENV !== 'production') {
 	chrome.storage.onChanged.addListener((changes, area) => {
 		if (area !== 'sync') return;
-		for (const [k, { newValue }] of Object.entries(changes)) {
-			if (k.startsWith(STORAGE_PREFIX.CORE) || k === SETTINGS_STORAGE_KEY) {
-				console.log(LOG_TAG, `Storage: ${k}`, newValue);
+		for (const [key, { newValue }] of Object.entries(changes)) {
+			if (key.startsWith(STORAGE_PREFIX.CORE) || key === SETTINGS_STORAGE_KEY) {
+				console.log(LOG_TAG, `Storage: ${key}`, newValue);
 			}
 		}
 	});
