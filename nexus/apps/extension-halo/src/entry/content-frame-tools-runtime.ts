@@ -1,7 +1,15 @@
 // goal: on-demand heavy runtime for iframe-spanning HALO tools
 // inv: This module is never part of a static content-script startup closure.
 
-import { Actions } from '@nexus/contracts';
+import {
+	FRAME_TOOL_ANNOTATE_START,
+	FRAME_TOOL_ANNOTATE_STOP,
+	FRAME_TOOL_DOM_SELECTOR_START,
+	FRAME_TOOL_DOM_SELECTOR_STOP,
+	FRAME_TOOL_RULER_CANCEL,
+	FRAME_TOOL_RULER_START,
+	type FrameToolMessageType,
+} from '../content/frame-tool-messages';
 import * as Ruler from '../content/ruler';
 import * as DomSelector from '../content/dom-selector';
 import * as PageAnnotate from '../content/page-annotate';
@@ -29,35 +37,32 @@ function sendRuntimeMessageBestEffort(message: unknown): void {
 	}
 }
 
-export function handleFrameToolMessage(message: { type: string }): boolean {
+export function handleFrameToolMessage(message: { type: FrameToolMessageType }): boolean {
 	switch (message.type) {
-		case Actions.HALO_RULER_START:
+		case FRAME_TOOL_RULER_START:
 			Ruler.start();
 			return true;
 
-		case Actions.HALO_RULER_CANCEL:
+		case FRAME_TOOL_RULER_CANCEL:
 			Ruler.cancel();
 			return true;
 
-		case 'HALO_DOM_SELECTOR_START':
+		case FRAME_TOOL_DOM_SELECTOR_START:
 			DomSelector.start((data) => {
 				sendRuntimeMessageBestEffort({ type: 'HALO_DOM_SELECTED', payload: data });
 			});
 			return true;
 
-		case 'HALO_DOM_SELECTOR_STOP':
+		case FRAME_TOOL_DOM_SELECTOR_STOP:
 			DomSelector.stop();
 			return true;
 
-		case 'HALO_ANNOTATE_START':
+		case FRAME_TOOL_ANNOTATE_START:
 			PageAnnotate.start();
 			return true;
 
-		case 'HALO_ANNOTATE_STOP':
+		case FRAME_TOOL_ANNOTATE_STOP:
 			PageAnnotate.stop();
 			return true;
-
-		default:
-			return false;
 	}
 }
