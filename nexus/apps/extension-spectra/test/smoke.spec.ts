@@ -2748,11 +2748,18 @@ describe('SPECTRA built extension smoke', () => {
 				data?: ControlSnapshot;
 				error?: { message?: string };
 			}>;
-			const waitForHotkeyFeedbackWindow = () => page.waitForFunction(() => {
-				const osd = document.querySelector<HTMLElement>('#spectra-osd-host')
-					?.shadowRoot?.getElementById('o');
-				return osd !== null && osd !== undefined && !osd.classList.contains('v');
-			}, { timeout: 3_500 });
+			const waitForHotkeyFeedbackWindow = async () => {
+				await page.waitForFunction(() => {
+					const osd = document.querySelector<HTMLElement>('#spectra-osd-host')
+						?.shadowRoot?.getElementById('o');
+					return osd?.classList.contains('v') === true;
+				}, { timeout: 3_500 });
+				await page.waitForFunction(() => {
+					const osd = document.querySelector<HTMLElement>('#spectra-osd-host')
+						?.shadowRoot?.getElementById('o');
+					return osd !== null && osd !== undefined && !osd.classList.contains('v');
+				}, { timeout: 3_500 });
+			};
 			const tapSiteHotkey = async () => {
 				await page.keyboard.press('KeyK');
 			};
