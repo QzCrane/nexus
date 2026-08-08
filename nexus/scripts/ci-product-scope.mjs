@@ -3,7 +3,9 @@
 // inv: unknown paths fail closed to both products; only explicit documentation paths may skip both
 
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
 const SPECTRA_PREFIXES = Object.freeze([
 	'nexus/apps/extension-spectra/',
@@ -55,8 +57,6 @@ export function classifyChangedPaths(paths, eventName = 'pull_request') {
 			continue;
 		}
 		if (isDocumentationOnlyPath(path)) continue;
-		// Packages, scripts, workflow/toolchain/config, unknown apps, root files,
-		// and future surfaces are shared until explicitly proven otherwise.
 		return { spectra: true, halo: true, reason: `shared-or-unknown:${path}` };
 	}
 	return { spectra, halo, reason: spectra || halo ? 'product-scoped' : 'docs-only' };
@@ -92,7 +92,8 @@ export function runCli(args = process.argv.slice(2)) {
 	return result;
 }
 
-if (import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+const invokedPath = process.argv[1] ? resolve(process.argv[1]) : null;
+if (invokedPath === fileURLToPath(import.meta.url)) {
 	try {
 		runCli();
 	} catch (error) {
