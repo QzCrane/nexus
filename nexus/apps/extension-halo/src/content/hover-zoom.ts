@@ -1,8 +1,14 @@
-// goal: Hover Zoom content module entry
-// eff: attach high-frequency page listeners only while the feature is enabled
+// goal: Hover Zoom heavy content runtime
+// eff: Loaded only after the minimal bootstrap observes a relevant user interaction
 
-import { DEFAULT_SETTINGS, STORAGE_KEY, type HoverZoomSettings } from '../tools/hover-zoom/types';
+import type { HoverZoomSettings } from '../tools/hover-zoom/types';
 import { initRulesForHost } from '../tools/hover-zoom/content/resolvers/rule-resolver';
+import { isValidTrigger } from '../tools/hover-zoom/content/resolvers/trigger-validator';
+import {
+	detectResourcePreference,
+	type ModifierSnapshot,
+} from '../tools/hover-zoom/content/utils/resource-key-helper';
+import { showHighlight, hideHighlight } from '../tools/hover-zoom/content/utils/highlight';
 import { createInitialState, createPreloadState } from './hover-zoom-state';
 import {
 	cancel,
@@ -11,60 +17,42 @@ import {
 	createOnMove,
 	createOnOut,
 	createOnOver,
+	getElementAtMouse,
+	tryTrigger,
 } from './hover-zoom-events';
 import { createOnKeyDown, createOnKeyUp } from './hover-zoom-keys';
 
-const LOG_TAG = '[HALO:HoverZoom]';
+export interface HoverZoomActivationSnapshot extends ModifierSnapshot {
+	x: number;
+	y: number;
+	mouseHasMoved: boolean;
+	source: 'mouseover' | 'mousemove' | 'keydown' | 'keyup';
+}
 
-const state = createInitialState(DEFAULT_SETTINGS);
+export interface HoverZoomRuntime {
+	activate(snapshot: HoverZoomActivationSnapshot): Promise<void>;
+	updateSettings(settings: HoverZoomSettings): Promise<void>;
+}
+
+const state = createInitialState({} as HoverZoomSettings);
 const preload = createPreloadState();
+let runtime: HoverZoomRuntime | null = null;
 
-function mergeSettings(saved: Partial<HoverZoomSettings> | undefined): HoverZoomSettings {
-	const value = saved ?? {};
-	return {
-		...DEFAULT_SETTINGS,
-		...value,
-		resourceKeys: {
-			...DEFAULT_SETTINGS.resourceKeys,
-			...(value.resourceKeys || {}),
-			imageKey: {
-				...DEFAULT_SETTINGS.resourceKeys.imageKey,
-				...(value.resourceKeys?.imageKey || {}),
-			},
-			videoKey: {
-				...DEFAULT_SETTINGS.resourceKeys.videoKey,
-				...(value.resourceKeys?.videoKey || {}),
-			},
-		},
-		exemptions: {
-			...DEFAULT_SETTINGS.exemptions,
-			...(value.exemptions || {}),
-		},
-		imageInfoItems: {
-			...DEFAULT_SETTINGS.imageInfoItems,
-			...(value.imageInfoItems || {}),
-		},
-	};
+function findTriggerElement(element: HTMLElement | null): HTMLElement | null {
+	let current = element;
+	while (current && !isValidTrigger(current)) current = current.parentElement;
+	return current && isValidTrigger(current) ? current : null;
 }
 
-function savedSettings(value: unknown): Partial<HoverZoomSettings> | undefined {
-	return typeof value === 'object' && value !== null
-		? value as Partial<HoverZoomSettings>
-		: undefined;
-}
-
-/** Initialize hover zoom. This entry is loaded top-frame at document_idle. */
-export async function init(): Promise<void> {
-	if (window.location.protocol === 'chrome-extension:') return;
-	if (state.initialized) return;
-	state.initialized = true;
-
-	try {
-		const result = await chrome.storage.local.get(STORAGE_KEY);
-		state.settings = mergeSettings(savedSettings(result[STORAGE_KEY]));
-	} catch (error) {
-		console.warn(LOG_TAG, 'Storage error:', error);
+/** Initialize the heavy runtime from the bootstrap-owned settings snapshot. */
+export async function init(initialSettings: HoverZoomSettings): Promise<HoverZoomRuntime> {
+	if (runtime) {
+		await runtime.updateSettings(initialSettings);
+		return runtime;
 	}
+
+	state.initialized = true;
+	state.settings = initialSettings;
 
 	const onOver = createOnOver(state, preload);
 	const onOut = createOnOut(state);
@@ -85,7 +73,6 @@ export async function init(): Promise<void> {
 				await initRulesForHost();
 				rulesInitialized = true;
 			}
-			// Settings can change while a future async rule bootstrap is in flight.
 			if (!state.settings.enabled || listenersAttached) return;
 			listenersAttached = true;
 			document.addEventListener('mouseover', onOver, true);
@@ -118,17 +105,43 @@ export async function init(): Promise<void> {
 		if (preload.preloadImage) preload.preloadImage.src = '';
 	};
 
-	await attachListeners();
-
-	// Disabled Hover Zoom retains only a low-frequency storage subscription.
-	chrome.storage.onChanged.addListener((changes, area) => {
-		if (area !== 'local') return;
-		const change = changes[STORAGE_KEY];
-		if (!change) return;
-
-		state.settings = mergeSettings(savedSettings(change.newValue));
-		state.viewer?.updateSettings(state.settings);
-		if (state.settings.enabled) void attachListeners();
+	const updateSettings = async (settings: HoverZoomSettings): Promise<void> => {
+		state.settings = settings;
+		state.viewer?.updateSettings(settings);
+		if (settings.enabled) await attachListeners();
 		else detachListeners();
-	});
+	};
+
+	const activate = async (snapshot: HoverZoomActivationSnapshot): Promise<void> => {
+		state.lastX = snapshot.x;
+		state.lastY = snapshot.y;
+		state.mouseHasMoved = snapshot.mouseHasMoved;
+		if (!state.settings.enabled) return;
+
+		if (snapshot.source === 'mouseover' && state.settings.highlightMode === 'always') {
+			const hovered = findTriggerElement(getElementAtMouse(state));
+			hovered ? showHighlight(hovered) : hideHighlight();
+		}
+
+		const resourcePref = detectResourcePreference(state.settings.resourceKeys, snapshot);
+		if (resourcePref === null) {
+			state.modifiersActive = false;
+			state.currentResourcePref = 'auto';
+			return;
+		}
+
+		state.modifiersActive = true;
+		state.currentResourcePref = resourcePref;
+		if (!state.mouseHasMoved || snapshot.source === 'keyup') return;
+		if (state.viewer?.getIsVisible()) return;
+
+		const trigger = findTriggerElement(getElementAtMouse(state));
+		if (!trigger) return;
+		if (state.settings.highlightMode === 'hotkey') showHighlight(trigger);
+		await tryTrigger(state, preload, trigger);
+	};
+
+	runtime = { activate, updateSettings };
+	await attachListeners();
+	return runtime;
 }
