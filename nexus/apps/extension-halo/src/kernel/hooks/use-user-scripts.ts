@@ -1,8 +1,9 @@
 // goal: Launcher projection for custom user-authored scripts
 // inv: the optional UserScripts module owns only custom records, never packaged/SaaT runtimes
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { UserScript } from '../../system/userscripts/types';
+import { useModuleManager } from './use-module-manager';
 
 const USERSCRIPTS_STORAGE_KEY = 'halo_userscripts';
 
@@ -23,19 +24,24 @@ function readCustomScripts(value: unknown): UserScript[] {
 	return value.scripts.filter(isCustomScriptRecord);
 }
 
-export function useUserScripts(enabled = true) {
+export function useUserScripts() {
+	const { installedModules, loading: modulesLoading } = useModuleManager();
+	const enabled = useMemo(
+		() => !modulesLoading && installedModules.some((module) => module.id === 'userscripts'),
+		[modulesLoading, installedModules],
+	);
 	const [scripts, setScripts] = useState<UserScript[]>([]);
-	const [loading, setLoading] = useState(enabled);
+	const [storageLoading, setStorageLoading] = useState(false);
 
 	useEffect(() => {
 		if (!enabled) {
 			setScripts([]);
-			setLoading(false);
+			setStorageLoading(false);
 			return;
 		}
 		let disposed = false;
 		let eventRevision = 0;
-		setLoading(true);
+		setStorageLoading(true);
 
 		const listener = (
 			changes: Record<string, chrome.storage.StorageChange>,
@@ -46,7 +52,7 @@ export function useUserScripts(enabled = true) {
 			if (!change) return;
 			eventRevision += 1;
 			setScripts(readCustomScripts(change.newValue));
-			setLoading(false);
+			setStorageLoading(false);
 		};
 		chrome.storage.onChanged.addListener(listener);
 
@@ -54,12 +60,12 @@ export function useUserScripts(enabled = true) {
 		void chrome.storage.local.get(USERSCRIPTS_STORAGE_KEY).then((result) => {
 			if (disposed || eventRevision !== revisionBeforeRead) return;
 			setScripts(readCustomScripts(result[USERSCRIPTS_STORAGE_KEY]));
-			setLoading(false);
+			setStorageLoading(false);
 		}).catch((error: unknown) => {
 			if (disposed || eventRevision !== revisionBeforeRead) return;
 			console.error('Failed to load custom user scripts:', error);
 			setScripts([]);
-			setLoading(false);
+			setStorageLoading(false);
 		});
 
 		return () => {
@@ -68,7 +74,7 @@ export function useUserScripts(enabled = true) {
 		};
 	}, [enabled]);
 
-	return { scripts, loading };
+	return { scripts, loading: modulesLoading || storageLoading };
 }
 
 export const userScriptsLauncherProjectionTestApi = { readCustomScripts };
