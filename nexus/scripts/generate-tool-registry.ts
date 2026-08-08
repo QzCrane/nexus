@@ -4,7 +4,11 @@
 
 import { TOOLS_DIR, SCRIPTS_DIR, SYSTEM_DIR } from './registry-gen/config.ts';
 import { discoverPlugins, parseManifest } from './registry-gen/discover.ts';
-import { generateRegistry, generateScriptRuntimeManifest } from './registry-gen/gen-registry.ts';
+import {
+	generateBackgroundActiveProjection,
+	generateRegistry,
+	generateScriptRuntimeManifest,
+} from './registry-gen/gen-registry.ts';
 import { generateLoader } from './registry-gen/gen-loader.ts';
 import { generateI18n } from './registry-gen/gen-i18n.ts';
 
@@ -54,6 +58,7 @@ function main() {
 	console.log(`📦 Found: ${toolCount} Tools + ${scriptCount} Scripts + ${systemCount} System`);
 
 	generateRegistry(validModules, manifestsMap);
+	generateBackgroundActiveProjection(validModules, manifestsMap);
 	generateScriptRuntimeManifest(validModules, manifestsMap);
 	generateLoader(validModules);
 	generateI18n(validModules);
