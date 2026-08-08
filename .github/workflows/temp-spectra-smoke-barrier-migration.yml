@@ -1,0 +1,63 @@
+name: TEMP SPECTRA smoke lifecycle barrier migration
+
+on:
+  pull_request:
+    types: [synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.event.pull_request.head.ref == 'fix/spectra-smoke-lifecycle-barriers' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/spectra-smoke-lifecycle-barriers
+          fetch-depth: 1
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --cwd nexus --frozen-lockfile
+      - name: Replace fixed delays with lifecycle barriers
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('nexus/apps/extension-spectra/test/smoke.spec.ts')
+          text = path.read_text()
+          replacements = [
+              (
+                  "\t\t\tawait new Promise((resolveWait) => setTimeout(resolveWait, 25));\n\t\t\texpect(await readState()).toMatchObject({ speed: 1.1 });",
+                  "\t\t\tawait waitForHotkeyFeedbackWindow();\n\t\t\texpect(await readState()).toMatchObject({ speed: 1.1 });",
+              ),
+              (
+                  "\t\t\tawait new Promise((resolveWait) => setTimeout(resolveWait, 25));\n\t\t\texpect(await readState()).toMatchObject({ speed: 1.2 });",
+                  "\t\t\tawait waitForHotkeyFeedbackWindow();\n\t\t\texpect(await readState()).toMatchObject({ speed: 1.2 });",
+              ),
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'exact migration anchor count must be 1, got {count}: {old!r}')
+              text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+      - name: Verify lifecycle contract
+        run: bun --cwd nexus/apps/extension-spectra test test/smoke-lifecycle-contract.spec.ts
+      - name: Build production candidates
+        run: bun --cwd nexus build
+      - name: Test configured-site hotkey smoke
+        working-directory: nexus/apps/extension-spectra
+        run: bun test test/smoke.spec.ts --test-name-pattern 'arbitrates configured site hotkeys website-first and releases a truncated keyup'
+      - name: Commit verified migration
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add nexus/apps/extension-spectra/test/smoke.spec.ts
+          git diff --cached --check
+          git commit -m 'test(spectra): wait for hotkey lifecycle retirement'
+          git push origin HEAD:fix/spectra-smoke-lifecycle-barriers
