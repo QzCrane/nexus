@@ -172,7 +172,10 @@ export class ModuleManager {
 		return this.serializeMutation(id, async () => {
 			const meta = ALL_MODULES.find((module) => module.id === id);
 			if (!meta) throw new Error(`Module ${id} not found`);
-			if (meta.builtIn || this.isInstalled(id)) return;
+			if (meta.builtIn) return;
+			// Never use this context's projection as a write-elision condition. A
+			// different extension context may have changed the physical tombstone
+			// before its storage event reaches this manager.
 			await this.persistence.setEnabled(id, true);
 			this.applyEnabled(id, await this.persistence.readEnabled(id));
 		});
@@ -182,7 +185,6 @@ export class ModuleManager {
 		return this.serializeMutation(id, async () => {
 			const meta = ALL_MODULES.find((module) => module.id === id);
 			if (!meta || meta.builtIn) throw new Error(`Cannot uninstall: ${id}`);
-			if (!this.isInstalled(id)) return;
 			await this.persistence.setEnabled(id, false);
 			this.applyEnabled(id, await this.persistence.readEnabled(id));
 		});
