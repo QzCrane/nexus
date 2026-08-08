@@ -73,7 +73,8 @@ export const TimerPanel: React.FC = () => {
 			|| typeof state.startedAt !== 'number'
 		) return;
 
-		const remaining = Math.max(0, state.target - runningElapsed(state, Date.now()));
+		const elapsedAtSchedule = state.elapsed + Math.max(0, Date.now() - state.startedAt);
+		const remaining = Math.max(0, state.target - elapsedAtSchedule);
 		const timeoutId = window.setTimeout(() => {
 			setState((current) => {
 				if (
