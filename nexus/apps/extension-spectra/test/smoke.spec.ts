@@ -2773,7 +2773,7 @@ describe('SPECTRA built extension smoke', () => {
 				(state) => state.speed === 1.1,
 				'one accepted configured site hotkey',
 			);
-			await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+			await waitForHotkeyFeedbackWindow();
 			expect(await readState()).toMatchObject({ speed: 1.1 });
 
 			// Enabling a site-specific listener must not duplicate ownership of
@@ -2784,7 +2784,7 @@ describe('SPECTRA built extension smoke', () => {
 				(state) => state.speed === 1.2,
 				'one default hotkey despite a colliding site binding',
 			);
-			await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+			await waitForHotkeyFeedbackWindow();
 			expect(await readState()).toMatchObject({ speed: 1.2 });
 
 			await setMode('window-keyup-stop');
