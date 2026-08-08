@@ -25,8 +25,7 @@ function memoizePanelLoader<T>(load: () => Promise<T>): () => Promise<T> {
 \tlet pending: Promise<T> | null = null;
 \treturn () => {
 \t\tif (pending) return pending;
-\t\tlet next: Promise<T>;
-\t\tnext = load().catch((error: unknown) => {
+\t\tconst next = load().catch((error: unknown) => {
 \t\t\tif (pending === next) pending = null;
 \t\t\tthrow error;
 \t\t});
