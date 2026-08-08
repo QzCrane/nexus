@@ -1,8 +1,8 @@
 // goal: UserScripts dynamic registration using chrome.userScripts API (Chrome 120+)
-// eff: Persistent registrations are reconciled only when their authority changes
-// NOTE: This runs in background context, requires "userScripts" permission
+// eff: One persistent registry reconciled from three explicit ownership classes
 
 import {
+	MODULE_INSTALLATION_STORAGE_PREFIX,
 	isOptionalPackagedModuleStoredEnabled,
 	moduleInstallationStorageKey,
 } from '../../kernel/core/module-installation-runtime';
@@ -12,7 +12,7 @@ import type { ScriptType } from './types';
 const LOG_TAG = '[HALO:UserScripts:Registry]';
 const STORAGE_KEY = 'halo_userscripts';
 const SAAT_STORAGE_KEY = 'halo_saat_scripts';
-const MODULE_STORAGE_KEY = moduleInstallationStorageKey('userscripts');
+const USERSCRIPTS_MODULE_KEY = moduleInstallationStorageKey('userscripts');
 const RECOVERY_STORAGE_KEY = 'halo_userscripts_registry_dirty_v1';
 const SCRIPT_ID_PREFIX = 'halo-userscript-';
 const SYNC_RETRY_DELAYS_MS = [250, 1_000, 4_000] as const;
@@ -31,12 +31,8 @@ function normalizePattern(pattern: string): string {
 function toMatchPatterns(patterns: string[]): string[] {
 	const result: string[] = [];
 	for (const pattern of patterns) {
-		try {
-			const normalized = normalizePattern(pattern.trim());
-			if (normalized?.includes('://')) result.push(normalized);
-		} catch {
-			console.warn(LOG_TAG, `Invalid pattern: ${pattern}`);
-		}
+		const normalized = normalizePattern(pattern.trim());
+		if (normalized?.includes('://')) result.push(normalized);
 	}
 	return result.length > 0 ? result : ['*://*/*'];
 }
@@ -69,7 +65,7 @@ function wrapForMainWorld(code: string, name: string, type: ScriptType): string 
 	return [
 		'(function() {',
 		'    try {',
-		// biome-ignore lint/style/useTemplate: concatenation required — user code may contain backticks/`${}`
+		// biome-ignore lint/style/useTemplate: user code may contain template syntax
 		'        ' + code,
 		`        console.log("[HALO Script] ${safeName} executed");`,
 		`    } catch(e) { console.error("[HALO Script] ${safeName} failed:", e); }`,
@@ -95,10 +91,7 @@ async function unregisterAllScripts(): Promise<void> {
 			const haloIds = registered
 				.filter((script) => script.id.startsWith(SCRIPT_ID_PREFIX))
 				.map((script) => script.id);
-			if (haloIds.length > 0) {
-				await chrome.userScripts.unregister({ ids: haloIds });
-				console.log(LOG_TAG, `Unregistered ${haloIds.length} user scripts`);
-			}
+			if (haloIds.length > 0) await chrome.userScripts.unregister({ ids: haloIds });
 		} catch (error) {
 			failures.push(failureMessage('userScripts unregister failed', error));
 		}
@@ -108,18 +101,14 @@ async function unregisterAllScripts(): Promise<void> {
 		const haloContentIds = registeredContent
 			.filter((script) => script.id.startsWith(SCRIPT_ID_PREFIX))
 			.map((script) => script.id);
-		if (haloContentIds.length > 0) {
-			await chrome.scripting.unregisterContentScripts({ ids: haloContentIds });
-			console.log(LOG_TAG, `Unregistered ${haloContentIds.length} content scripts`);
-		}
+		if (haloContentIds.length > 0) await chrome.scripting.unregisterContentScripts({ ids: haloContentIds });
 	} catch (error) {
 		failures.push(failureMessage('content-script unregister failed', error));
 	}
 	if (failures.length > 0) throw new Error(failures.join('; '));
 }
 
-async function registerAllScripts(scripts: UserScript[], globalEnabled: boolean): Promise<void> {
-	if (!globalEnabled) return;
+async function registerAllScripts(scripts: readonly UserScript[]): Promise<void> {
 	const userScriptsToRegister: chrome.userScripts.RegisteredUserScript[] = [];
 	const contentScriptsToRegister: chrome.scripting.RegisteredContentScript[] = [];
 	for (const script of scripts) {
@@ -167,17 +156,88 @@ async function registerAllScripts(scripts: UserScript[], globalEnabled: boolean)
 	if (failures.length > 0) throw new Error(failures.join('; '));
 }
 
-async function performRegisteredScriptSync(): Promise<void> {
-	const result = await chrome.storage.local.get([STORAGE_KEY, SAAT_STORAGE_KEY, MODULE_STORAGE_KEY]);
-	const moduleEnabled = isOptionalPackagedModuleStoredEnabled(
-		result[MODULE_STORAGE_KEY],
-		Object.hasOwn(result, MODULE_STORAGE_KEY),
+function isCustomUserScript(script: UserScript): boolean {
+	return !script.saatToolId && script.managedBy === undefined;
+}
+
+function ownedModuleEnabled(
+	script: UserScript,
+	moduleValues: Record<string, unknown>,
+): boolean {
+	if (!script.saatToolId) return false;
+	if (script.moduleBuiltIn === true) return true;
+	const key = moduleInstallationStorageKey(script.saatToolId);
+	return isOptionalPackagedModuleStoredEnabled(
+		moduleValues[key],
+		Object.hasOwn(moduleValues, key),
 	);
+}
+
+export function resolveDesiredRegisteredScripts(
+	userState: UserScriptState,
+	saatState: UserScriptState,
+	userscriptsModuleEnabled: boolean,
+	moduleValues: Record<string, unknown>,
+): UserScript[] {
+	const desired: UserScript[] = [];
+	if (userState.globalEnabled) {
+		for (const script of userState.scripts) {
+			if (isCustomUserScript(script)) {
+				if (userscriptsModuleEnabled) desired.push(script);
+				continue;
+			}
+			if (script.managedBy === 'packaged-script' || script.saatToolId) {
+				if (ownedModuleEnabled(script, moduleValues)) desired.push(script);
+			}
+		}
+	}
+	if (saatState.globalEnabled) {
+		for (const script of saatState.scripts) {
+			// The halo_saat_scripts container is registry-managed by definition;
+			// managedBy is still persisted to make ownership explicit/migratable.
+			if (ownedModuleEnabled(script, moduleValues)) desired.push(script);
+		}
+	}
+	return desired;
+}
+
+function moduleKeysForManagedScripts(
+	userState: UserScriptState,
+	saatState: UserScriptState,
+): string[] {
+	const keys = new Set<string>();
+	for (const script of [...userState.scripts, ...saatState.scripts]) {
+		if (!script.saatToolId || script.moduleBuiltIn === true) continue;
+		keys.add(moduleInstallationStorageKey(script.saatToolId));
+	}
+	return [...keys];
+}
+
+async function performRegisteredScriptSync(): Promise<void> {
+	const stateResult = await chrome.storage.local.get([
+		STORAGE_KEY,
+		SAAT_STORAGE_KEY,
+		USERSCRIPTS_MODULE_KEY,
+	]);
+	const userState: UserScriptState = stateResult[STORAGE_KEY] || { scripts: [], globalEnabled: true };
+	const saatState: UserScriptState = stateResult[SAAT_STORAGE_KEY] || { scripts: [], globalEnabled: true };
+	const userscriptsModuleEnabled = isOptionalPackagedModuleStoredEnabled(
+		stateResult[USERSCRIPTS_MODULE_KEY],
+		Object.hasOwn(stateResult, USERSCRIPTS_MODULE_KEY),
+	);
+	const moduleKeys = moduleKeysForManagedScripts(userState, saatState);
+	const moduleValues = moduleKeys.length > 0 ? await chrome.storage.local.get(moduleKeys) : {};
+	const desired = resolveDesiredRegisteredScripts(
+		userState,
+		saatState,
+		userscriptsModuleEnabled,
+		moduleValues,
+	);
+
+	// Registration is browser-persistent. Never layer a new desired generation
+	// on top of an incompletely retired one.
 	await unregisterAllScripts();
-	if (!moduleEnabled) return;
-	const userState: UserScriptState = result[STORAGE_KEY] || { scripts: [], globalEnabled: true };
-	const saatState: UserScriptState = result[SAAT_STORAGE_KEY] || { scripts: [], globalEnabled: true };
-	await registerAllScripts([...userState.scripts, ...saatState.scripts], userState.globalEnabled);
+	await registerAllScripts(desired);
 }
 
 let syncLoop: Promise<void> | null = null;
@@ -192,9 +252,7 @@ async function runRegisteredScriptSyncLoop(): Promise<void> {
 
 export async function syncRegisteredScripts(): Promise<void> {
 	syncPending = true;
-	if (!syncLoop) {
-		syncLoop = runRegisteredScriptSyncLoop().finally(() => { syncLoop = null; });
-	}
+	if (!syncLoop) syncLoop = runRegisteredScriptSyncLoop().finally(() => { syncLoop = null; });
 	return syncLoop;
 }
 
@@ -241,13 +299,13 @@ function requestRegisteredScriptSync(reason: string): void {
 }
 
 function recoverPersistentRegistryIfNeeded(): void {
-	void chrome.storage.local.get([MODULE_STORAGE_KEY, RECOVERY_STORAGE_KEY]).then((result) => {
+	void chrome.storage.local.get([USERSCRIPTS_MODULE_KEY, RECOVERY_STORAGE_KEY]).then((result) => {
 		if (!registryInitialized) return;
-		const moduleEnabled = isOptionalPackagedModuleStoredEnabled(
-			result[MODULE_STORAGE_KEY],
-			Object.hasOwn(result, MODULE_STORAGE_KEY),
+		const userscriptsModuleEnabled = isOptionalPackagedModuleStoredEnabled(
+			result[USERSCRIPTS_MODULE_KEY],
+			Object.hasOwn(result, USERSCRIPTS_MODULE_KEY),
 		);
-		if (!moduleEnabled || result[RECOVERY_STORAGE_KEY] === true) {
+		if (!userscriptsModuleEnabled || result[RECOVERY_STORAGE_KEY] === true) {
 			requestRegisteredScriptSync('worker-startup-recovery');
 		}
 	}).catch((error) => {
@@ -257,12 +315,25 @@ function recoverPersistentRegistryIfNeeded(): void {
 	});
 }
 
+function includesModuleInstallationChange(
+	changes: Record<string, chrome.storage.StorageChange>,
+): boolean {
+	return Object.keys(changes).some((key) => key.startsWith(MODULE_INSTALLATION_STORAGE_PREFIX));
+}
+
 export function initUserScriptsRegistry(): () => void {
 	if (registryInitialized) return () => {};
 	registryInitialized = true;
-	const listener = (changes: { [key: string]: chrome.storage.StorageChange }, area: string) => {
+	const listener = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
 		if (area !== 'local') return;
-		if (!changes[STORAGE_KEY] && !changes[SAAT_STORAGE_KEY] && !changes[MODULE_STORAGE_KEY]) return;
+		if (
+			!changes[STORAGE_KEY]
+			&& !changes[SAAT_STORAGE_KEY]
+			&& !includesModuleInstallationChange(changes)
+		) return;
+		// Persist the recovery intent before asynchronous reconciliation. If the
+		// worker dies mid-sync, the next worker has a durable recovery signal.
+		persistRecoveryNeeded();
 		resetRecovery();
 		requestRegisteredScriptSync('storage-change');
 	};
