@@ -13,6 +13,7 @@ import {
 	createOnOver,
 } from './hover-zoom-events';
 import { createOnKeyDown, createOnKeyUp } from './hover-zoom-keys';
+import { cancelPendingPreviewIntent } from './hover-zoom-runtime-loader';
 
 const LOG_TAG = '[HALO:HoverZoom]';
 
@@ -101,6 +102,7 @@ export async function init(): Promise<void> {
 	};
 
 	const detachListeners = (): void => {
+		cancelPendingPreviewIntent();
 		if (listenersAttached) {
 			listenersAttached = false;
 			document.removeEventListener('mouseover', onOver, true);
@@ -126,6 +128,7 @@ export async function init(): Promise<void> {
 		const change = changes[STORAGE_KEY];
 		if (!change) return;
 
+		cancelPendingPreviewIntent();
 		state.settings = mergeSettings(savedSettings(change.newValue));
 		state.viewer?.updateSettings(state.settings);
 		if (state.settings.enabled) void attachListeners();
