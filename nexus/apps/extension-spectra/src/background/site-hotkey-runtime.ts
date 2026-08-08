@@ -167,7 +167,9 @@ export function createLeanSiteHotkeyInjector(
 		forget,
 		reset() {
 			resetGeneration += 1;
-			configurationSequence = 0;
+			// Keep configurationSequence monotonic for this Worker epoch. A page
+			// host may survive a test/reset-style bookkeeping clear and must never
+			// receive a lower generation under the same epoch.
 			injected.clear();
 			pending.clear();
 			generations.clear();
