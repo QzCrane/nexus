@@ -28,7 +28,6 @@ export const ModuleStorePanel: React.FC = () => {
 	const [isSearchFocused, setIsSearchFocused] = useState(false);
 	const searchInputRef = useRef<HTMLInputElement>(null);
 
-	// Ctrl+K keyboard shortcut
 	useEffect(() => {
 		const handleGlobalKey = (e: KeyboardEvent) => {
 			if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -45,19 +44,10 @@ export const ModuleStorePanel: React.FC = () => {
 		try { await install(id); } finally { setInstalling(null); }
 	}, [install]);
 
-	const handleUninstall = useCallback(async (m: PluginMeta) => {
-		// System components cannot be uninstalled
-		if (m.pluginType === 'system') {
-			showModal({
-				title: t('common.readOnly') || '只读',
-				message: t('moduleStorePanel.systemUninstallWarning'),
-				confirmText: t('moduleStorePanel.close') || '关闭',
-			});
-			return;
-		}
-
-		// User Scripts (custom) are managed in UserScripts panel
-		if (m.isUserScript) {
+	const handleUninstall = useCallback(async (module: PluginMeta) => {
+		// Custom user scripts are rows projected into the Module Store, not
+		// packaged modules. Their lifecycle remains owned by User Scripts.
+		if (module.isUserScript) {
 			showModal({
 				title: t('common.readOnly') || '只读',
 				message: t('moduleStorePanel.scriptUninstallWarning'),
@@ -66,51 +56,53 @@ export const ModuleStorePanel: React.FC = () => {
 			return;
 		}
 
-		// Official Scripts require confirmation
-		if (m.pluginType === 'script') {
+		// `builtIn` is the sole packaged-module uninstallability authority. Plugin
+		// type is taxonomy only: optional system modules such as UserScripts are
+		// intentionally removable and must reach ModuleManager.uninstall().
+		if (module.builtIn) {
+			showModal({
+				title: t('common.readOnly') || '只读',
+				message: t('moduleStorePanel.builtInUninstallWarning'),
+				confirmText: t('moduleStorePanel.close') || '关闭',
+			});
+			return;
+		}
+
+		if (module.pluginType === 'script') {
 			showModal({
 				type: 'confirm',
 				title: t('moduleStorePanel.uninstall'),
 				message: t('moduleStorePanel.scriptUninstallConfirm'),
 				confirmText: t('moduleStorePanel.uninstall'),
-				onConfirm: () => uninstall(m.id)
+				onConfirm: () => uninstall(module.id),
 			});
 			return;
 		}
 
-		await uninstall(m.id);
+		await uninstall(module.id);
 	}, [uninstall, t, showModal]);
 
 	const handleRefresh = useCallback(async () => { await refresh(); }, [refresh]);
-
 	const searchModules = (modules: readonly PluginMeta[]) =>
 		filterBySearch([...modules], searchQuery, MODULE_SEARCH_OPTIONS);
 
-	const filterByType = (m: PluginMeta) => {
-		if (filterType === 'system') return m.pluginType === 'system';
+	const filterByType = (module: PluginMeta) => {
+		if (filterType === 'system') return module.pluginType === 'system';
 		if (filterType === 'script') {
-			const isScript = m.pluginType === 'script' || m.isUserScript;
+			const isScript = module.pluginType === 'script' || module.isUserScript;
 			if (!isScript) return false;
-
-			const isUser = !!m.isUserScript;
-			// Check if installed (User scripts are always installed, Official checks installedModules)
-			const isInstalled = isUser || installedModules.some(im => im.id === m.id);
-
-			// Filter by Status
+			const isUser = !!module.isUserScript;
+			const isInstalled = isUser || installedModules.some(item => item.id === module.id);
 			if (scriptStatus === 'installed' && !isInstalled) return false;
 			if (scriptStatus === 'available' && isInstalled) return false;
-
-			// Filter by Source
 			if (scriptSource === 'official' && isUser) return false;
 			if (scriptSource === 'user' && !isUser) return false;
-
 			return true;
 		}
-		if (filterType === 'app') return m.pluginType === 'tool';
+		if (filterType === 'app') return module.pluginType === 'tool';
 		return true;
 	};
 
-	// Convert user scripts to modules (exclude SaaT scripts already in ALL_MODULES)
 	const scriptModules = React.useMemo(() => convertScriptsToModules(scripts), [scripts]);
 	const allInstalledModules = React.useMemo(
 		() => [...installedModules, ...scriptModules],
@@ -128,7 +120,7 @@ export const ModuleStorePanel: React.FC = () => {
 	const displayModules = getFilteredModules();
 	const statsModules = allInstalledModules.filter(filterByType);
 	const totalInstalled = statsModules.length;
-	const totalSize = statsModules.reduce((sum, m) => sum + (m.size || 0), 0);
+	const totalSize = statsModules.reduce((sum, module) => sum + (module.size || 0), 0);
 
 	if (loading) {
 		return (
