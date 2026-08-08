@@ -33,10 +33,13 @@ async function startFixtureServer(): Promise<{
 				'Content-Type': 'text/html; charset=utf-8',
 			});
 			response.end(`<!doctype html>
-<html><body>
+<html>
+<head><link rel="icon" href="data:,"></head>
+<body>
 	<p>HALO frame-tools top fixture</p>
 	<iframe id="cross-origin-frame" src="http://127.0.0.2:${port}/frame"></iframe>
-</body></html>`);
+</body>
+</html>`);
 			return;
 		}
 		if (request.url === '/frame') {
@@ -44,7 +47,9 @@ async function startFixtureServer(): Promise<{
 				'Cache-Control': 'no-store',
 				'Content-Type': 'text/html; charset=utf-8',
 			});
-			response.end('<!doctype html><html><body><p>cross-origin child fixture</p></body></html>');
+			response.end(
+				'<!doctype html><html><head><link rel="icon" href="data:,"></head><body><p>cross-origin child fixture</p></body></html>',
+			);
 			return;
 		}
 		response.writeHead(404).end('Not found');
