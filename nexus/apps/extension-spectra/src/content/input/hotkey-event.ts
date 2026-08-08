@@ -69,13 +69,12 @@ export function subscribeDocumentStartPhysicalHotkeyRelease(
 // appended after every website window listener that already exists for that
 // dispatch, so target/document/window handlers can claim the chord first with
 // preventDefault, stopPropagation, or stopImmediatePropagation. A 0ms task is
-// also retained as a fail-safe because Chromium does not guarantee that a
-// listener added while dispatching one target/phase will always participate in
-// a later phase of that same dispatch. At fallback time the event's final
-// defaultPrevented/cancelBubble flags still decide website ownership; an absent
-// tail therefore cannot silently convert an unclaimed physical key into a no-op.
-// The candidate is resolved once at capture and carried to settlement, so a
-// settings change in another listener cannot remap one physical event midway.
+// retained as a fail-safe when that same-event tail is not observed. At
+// fallback time the event's final defaultPrevented/cancelBubble flags still
+// decide website ownership, so an absent tail cannot silently convert an
+// unclaimed physical key into a no-op. The candidate is resolved once at
+// capture and carried to settlement, so a settings change in another listener
+// cannot remap one physical event midway through dispatch.
 export function createWebsiteFirstKeyboardArbiter<Candidate>(
 	options: WebsiteFirstKeyboardArbiterOptions<Candidate>,
 ): () => void {
@@ -117,11 +116,12 @@ export function createWebsiteFirstKeyboardArbiter<Candidate>(
 		const cleanupTimer = setTimeout(() => {
 			const owned = clearPending(event);
 			if (!owned) return;
-			options.onSettled(
-				event,
-				owned.candidate,
-				isWebsiteClaimedHotkeyEvent(event),
-			);
+			const websiteClaimed = isWebsiteClaimedHotkeyEvent(event);
+			if (websiteClaimed) {
+				options.onSettled(event, owned.candidate, true);
+			} else {
+				options.onSettled(event, owned.candidate, false);
+			}
 		}, 0);
 		pending.set(event, { candidate, tail, cleanupTimer });
 	};
