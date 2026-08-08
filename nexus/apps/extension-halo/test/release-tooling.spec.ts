@@ -133,25 +133,34 @@ describe('HALO release tooling', () => {
 		expect(generator).toContain('generateScriptRuntimeManifest');
 	});
 
-	test('keeps detailed background provenance out of the SidePanel startup projection', () => {
+	test('keeps startup background classification on the compact generated projection', () => {
 		const compactProjection = readFileSync(
 			new URL('../src/kernel/registry/_generated-background-active.ts', import.meta.url),
+			'utf8',
+		);
+		const activeServices = readFileSync(
+			new URL('../src/components/sidepanel/ActiveServicesContext.tsx', import.meta.url),
+			'utf8',
+		);
+		const categorizedTools = readFileSync(
+			new URL('../src/components/sidepanel/hooks/use-categorized-tools.ts', import.meta.url),
 			'utf8',
 		);
 		const generator = readFileSync(
 			new URL('../../../scripts/registry-gen/gen-registry.ts', import.meta.url),
 			'utf8',
 		);
-		const generateEntryStart = generator.indexOf('const generateEntry');
-		const permissionMapStart = generator.indexOf('const permissionMap', generateEntryStart);
-		const generatedPluginEntry = generator.slice(generateEntryStart, permissionMapStart);
 
 		expect(compactProjection).toContain('BACKGROUND_ACTIVE_ONLY_MAP');
 		expect(compactProjection).not.toContain('sourceFile');
 		expect(compactProjection).not.toContain('sourceLine');
 		expect(compactProjection).not.toContain('sourceDetail');
+		expect(activeServices).toContain("from '../../kernel/registry/_generated-background-active'");
+		expect(activeServices).not.toContain('BACKGROUND_PROFILES_MAP');
+		expect(categorizedTools).toContain("from '../../../kernel/registry/_generated-background-active'");
+		expect(categorizedTools).not.toContain('BACKGROUND_PROFILES_MAP');
 		expect(generator).toContain('generateBackgroundActiveProjection');
-		expect(generatedPluginEntry).not.toContain('background:');
+		expect(generator).not.toContain('generateStartupRegistry');
 	});
 
 	test('does not rebuild browser-persistent user-script registrations on every worker wake', () => {
