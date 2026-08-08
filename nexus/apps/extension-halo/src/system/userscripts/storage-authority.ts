@@ -158,6 +158,7 @@ export function parseUserScriptsStorageValue(value: unknown): UserScriptsStorage
 }
 
 function publish(next: UserScriptsStorageSnapshot): void {
+	if (snapshot === next) return;
 	snapshot = next;
 	for (const subscriber of subscribers) subscriber();
 }
@@ -182,7 +183,10 @@ async function readCurrent(epoch: number, request: number, beforeEvent: number):
 			|| eventRevision !== beforeEvent) return;
 		publish(parseUserScriptsStorageValue(result[STORAGE_KEY]));
 	} catch (error: unknown) {
-		if (!started || lifecycleEpoch !== epoch || readRevision !== request) return;
+		if (!started
+			|| lifecycleEpoch !== epoch
+			|| readRevision !== request
+			|| eventRevision !== beforeEvent) return;
 		console.error('[HALO:UserScriptsStorage] Hydration failed', error);
 		publish(FAILED_SNAPSHOT);
 	}
