@@ -15,6 +15,12 @@ export function isEditableHotkeyEvent(
 		&& (target.isContentEditable || EDITABLE_HOTKEY_TAGS.has(target.tagName)));
 }
 
+export function isWebsiteClaimedHotkeyEvent(
+	event: Pick<Event, 'defaultPrevented' | 'cancelBubble'>,
+): boolean {
+	return event.defaultPrevented || event.cancelBubble;
+}
+
 interface WebsiteFirstKeyboardArbiterOptions<Candidate> {
 	type: 'keydown' | 'keyup';
 	resolveCandidate: (event: KeyboardEvent) => Candidate | null;
@@ -59,14 +65,17 @@ export function subscribeDocumentStartPhysicalHotkeyRelease(
 	return () => owner?.listeners.delete(listener);
 }
 
-// Window capture only schedules a tail for the same physical event. The tail is
+// Window capture schedules a tail for the same physical event. The tail is
 // appended after every website window listener that already exists for that
 // dispatch, so target/document/window handlers can claim the chord first with
-// preventDefault, stopPropagation, or stopImmediatePropagation. A macrotask
-// removes tails that propagation never reaches; a microtask would run before
-// the event reaches window bubble and is therefore incorrect. The candidate is
-// resolved once at capture and carried to settlement, so a settings change in
-// another listener cannot remap one physical event midway through dispatch.
+// preventDefault, stopPropagation, or stopImmediatePropagation. A 0ms task is
+// also retained as a fail-safe because Chromium does not guarantee that a
+// listener added while dispatching one target/phase will always participate in
+// a later phase of that same dispatch. At fallback time the event's final
+// defaultPrevented/cancelBubble flags still decide website ownership; an absent
+// tail therefore cannot silently convert an unclaimed physical key into a no-op.
+// The candidate is resolved once at capture and carried to settlement, so a
+// settings change in another listener cannot remap one physical event midway.
 export function createWebsiteFirstKeyboardArbiter<Candidate>(
 	options: WebsiteFirstKeyboardArbiterOptions<Candidate>,
 ): () => void {
@@ -101,14 +110,18 @@ export function createWebsiteFirstKeyboardArbiter<Candidate>(
 			options.onSettled(
 				event,
 				owned.candidate,
-				event.defaultPrevented || event.cancelBubble,
+				isWebsiteClaimedHotkeyEvent(event),
 			);
 		};
 		window.addEventListener(options.type, tail);
 		const cleanupTimer = setTimeout(() => {
 			const owned = clearPending(event);
 			if (!owned) return;
-			options.onSettled(event, owned.candidate, true);
+			options.onSettled(
+				event,
+				owned.candidate,
+				isWebsiteClaimedHotkeyEvent(event),
+			);
 		}, 0);
 		pending.set(event, { candidate, tail, cleanupTimer });
 	};
