@@ -32,9 +32,9 @@ HALO content code is partitioned by **frame scope × lifecycle phase × capabili
 | `content-frame-tools.js` | all matching frames | `document_start` | dormant message host for Ruler, DOM Selector, and Annotate; no recurring work at module load |
 | `content-hover-zoom.js` | top frame | `document_idle` | Hover Zoom; high-frequency mouse/key listeners exist only while enabled |
 | `content-clipboard.js` | all matching frames | `document_idle` | minimal copy capture host; copy listener follows Clipboard enablement |
-| `background.js` | extension service worker | event-driven | lifecycle, context menus, SaaT synchronization, privileged browser operations |
+| `background.js` | extension service worker | event-driven | lifecycle, context menus, user-script reconciliation, privileged browser operations |
 | `sidepanel-init.js` | SidePanel document | pre-React | theme and scroll/input paint-critical initialization only |
-| `sidepanel.js` | SidePanel document | ESM startup | application shell; tool panels remain physical lazy chunks |
+| `sidepanel.js` | SidePanel document | ESM startup | application shell; tool-host infrastructure and tool panels remain physical lazy chunks |
 
 Rules:
 
@@ -43,7 +43,6 @@ Rules:
 - An all-frame surface may not import unrelated tool/UI code. Cross-frame capability expansion requires an explicit manifest/test/architecture change.
 - `React.lazy(import())` is only considered lazy when the production build emits physical ESM chunks. Production build failure is required if SidePanel splitting silently collapses.
 - Production measurement distinguishes entry bytes, static startup closure, and total eventual lazy bytes. These quantities are not interchangeable.
-
 - `tool`, `script`, and `system` are distinct plugin types with explicit boundaries.
 - Panel components do not act as Background authorities for background tasks.
 
@@ -53,6 +52,7 @@ Rules:
 tools/<id>/
 ├─ manifest.json | index.ts | types.ts | core.ts | panel.tsx | locales/
 ```
+
 - Plugin ID & Directory: `kebab-case`
 - Storage Keys: Owned, namespaced, versioned
 - Messages: Typed contracts; React Components: `PascalCase`; Hooks: `useCamelCase`
@@ -61,23 +61,36 @@ tools/<id>/
 ## Registry, Taxonomy & SidePanel Ownership
 
 - **Registry**: Executable source for identity, category, loading metadata, permissions, and resource-impact provenance. Taxonomy provides virtual views (active, scripts, system).
-- **SidePanel**: `src/entry/sidepanel.tsx` owns application composition, not plugin business logic. Shared error boundaries isolate tool failures.
+- **Install-time script projection**: the registry generator emits `public/script-plugin-runtime.json` containing only `{ id, pluginType, script }` for script-capable plugins. `background.js` must not import the full UI `TOOL_REGISTRY` just to perform `onInstalled` SaaT synchronization. The local JSON is fetched and runtime-validated only during install/update reconciliation.
+- **SidePanel**: `src/entry/sidepanel.tsx` owns application composition, not plugin business logic. Shared error boundaries isolate tool failures. `LauncherToolPage` itself is lazy, so tool-host infrastructure does not enter the Home cold-start closure before the first tool activation.
 - **Runtime status**: `ActiveServicesProvider` is the SidePanel storage authority for service/engine activation. It performs one initial local+sync hydration and one incremental `storage.onChanged` subscription; `EngineStatusProvider` is a pure projection and does not create a second Chrome-storage authority.
 - **Initialization phases**: settings/theme hydration is mount-scoped and independent of module-manager readiness. Open-tool restoration waits for the hydrated module installation set. Module readiness must not retrigger settings I/O.
 
-## State, Background Work & Hover Zoom
+## State, Background Work & User-script registration
 
 - **State**: Persistent background work uses SW events, alarms, and lifecycle tokens. `useToolState` coordinates storage sync with bounded write queues.
 - **Event-driven status**: a relevant `storage.onChanged` payload updates the in-memory SidePanel status projection directly; it must not trigger a second full read of the same keys. Initial async hydration cannot overwrite a newer event-owned field.
+- **Persistent browser registration**: `chrome.userScripts` and dynamically registered content scripts are browser-owned registration state, not service-worker heap state. Ordinary MV3 worker wake must not execute `storage.get -> getRegistered -> unregister -> register` as startup work.
+- **Reconciliation triggers**: `runtime.onInstalled` restores/realigns browser registration after install/update; subsequent `halo_userscripts` or `halo_saat_scripts` storage authority changes request reconciliation. Concurrent requests serialize and collapse to at most one trailing full reconcile.
+- **Dynamic content-script persistence**: HALO sets `persistAcrossSessions:true` explicitly instead of relying on the API default.
+
+## Active feature lifecycle
+
 - **Hover Zoom MSE**: Session creation returns `{ ready, dispose }` synchronously; retired sessions cannot clear newer video sources.
 - **Hover Zoom input**: when disabled, Hover Zoom removes its mouse/key listeners, pending trigger timer, viewer ownership, and pending preload. A low-frequency settings subscription may remain to detect re-enablement.
+- **Timer**: persistent authority is `elapsed + startedAt`; rAF updates only the visible time projection. Running state is not rewritten every animation/timer tick.
+- **Pomodoro**: persistent authority is a paused `remaining` value or running absolute `endsAt`; 1Hz updates only display state and one timeout owns the phase boundary.
+- **TTS**: speech state follows `SpeechSynthesisUtterance` lifecycle events; no periodic `speechSynthesis` polling.
+- **TOTP**: the UI may update remaining seconds at 1Hz, but HMAC output is cached for each entry/counter epoch and recomputed only when the counter or code-defining parameters change.
 
 ## Permissions, Localization & Performance
 
 - **Permissions**: Declared by plugin metadata and compiled into usage maps; consume one permission source.
 - **Localization**: Local plugin locale sources compile into generated runtime aggregates.
 - **Performance**: Inactive plugins allocate 0 recurring work. Disabled high-frequency features detach their hot listeners. SidePanel hidden/inactive surfaces must not poll.
-- **Build evidence**: production build reports all-frame/top-frame `document_start`, all-frame/top-frame `document_idle`, SidePanel static startup closure, and eventual lazy chunk bytes. Performance budgets are anchored to measured production artifacts rather than arbitrary source-line or bundle-count heuristics.
+- **Build evidence**: production build reports all-frame/top-frame `document_start`, all-frame/top-frame `document_idle`, SidePanel static startup closure, Background worker bundle, and eventual lazy chunk bytes.
+- **Audited 2026-08-08 production ceilings**: `background <= 14KiB`, `all-frame@document_start <= 31KiB`, `top-frame@document_start <= 32KiB`, `all-frame@document_idle <= 2KiB`, `top-frame@document_idle <= 55KiB`, `SidePanel startup <= 165KiB`. `build.ts` fails if any audited startup surface crosses its current KiB bucket. An intentional increase requires an explicit architecture and budget update.
+- Performance budgets are anchored to measured production artifacts rather than source-line counts, total extension size, or bundle-count heuristics.
 
 ### Smooth-scroll ownership
 
@@ -91,11 +104,14 @@ Input admission is owned by each matching frame's page-local content context; di
 ## Architecture invariants
 
 - One executable registry and taxonomy; one permission source and generated projection.
+- Full UI registry metadata does not enter the ordinary service-worker wake graph for install-only script synchronization.
+- Browser-persistent user/content-script registrations are never destroyed and rebuilt solely because the MV3 worker woke up.
 - One SidePanel storage authority for runtime/engine status; no duplicate status listener/read loops.
 - No panel-owned clock for background work; no manual duplicate content-script inventory.
 - No hidden network capability; 0 recurring work for inactive plugins; no generated file edited manually.
 - No widening a content surface from top-frame to all-frame or from idle to start without a semantic requirement and regression-test update.
 - No production `React.lazy` that resolves back into the SidePanel startup bundle; physical code splitting is a build invariant.
 - No performance conclusion based only on total extension bytes: startup closure and eventual feature bytes are measured separately.
+- No silent growth across the audited production startup ceilings.
 
 Roadmap sequencing lives in [`roadmap.md`](roadmap.md).
