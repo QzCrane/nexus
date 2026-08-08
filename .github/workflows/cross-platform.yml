@@ -88,21 +88,6 @@ jobs:
       - name: Install workspace dependencies
         run: bun install --cwd nexus --frozen-lockfile
 
-      - name: TEMP generate HALO registries
-        if: runner.os == 'Linux'
-        run: bun nexus/scripts/generate-tool-registry.ts
-
-      - name: TEMP upload HALO generated registries
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: halo-generated-registries-${{ github.sha }}
-          path: |
-            nexus/apps/extension-halo/src/kernel/registry/_generated.ts
-            nexus/apps/extension-halo/src/kernel/registry/_generated-startup.ts
-            nexus/apps/extension-halo/src/kernel/registry/_generated-background-active.ts
-          if-no-files-found: error
-
       - name: Build production candidates
         run: bun run build
 
