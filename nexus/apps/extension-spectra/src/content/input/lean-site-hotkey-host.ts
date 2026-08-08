@@ -37,6 +37,7 @@ let arbiterDispose: (() => void) | null = null;
 let physicalReleaseDispose: (() => void) | null = null;
 let runtimeMessageListener: ((message: unknown, sender: chrome.runtime.MessageSender) => false) | null = null;
 let disposed = false;
+let configurationEpoch: string | null = null;
 let configurationGeneration = -1;
 
 function chordKey(
@@ -178,10 +179,16 @@ function suspendConfiguration(): void {
 }
 
 function applyConfiguration(
+	epoch: string,
 	generation: number,
 	bindings: readonly SpectraLeanSiteHotkeyBinding[],
 ): void {
-	if (disposed || generation <= configurationGeneration) return;
+	if (disposed) return;
+	if (configurationEpoch === epoch && generation <= configurationGeneration) return;
+	if (configurationEpoch !== epoch) {
+		configurationEpoch = epoch;
+		configurationGeneration = -1;
+	}
 	configurationGeneration = generation;
 	releaseAll();
 	bindingByChord = new Map(bindings.map((binding) => [bindingChord(binding), binding]));
@@ -236,7 +243,11 @@ if (existing?.revision !== 1) {
 			return false;
 		}
 		if (!isSpectraLeanSiteHotkeyConfigureMessage(message)) return false;
-		applyConfiguration(message.payload.generation, message.payload.bindings);
+		applyConfiguration(
+			message.payload.epoch,
+			message.payload.generation,
+			message.payload.bindings,
+		);
 		return false;
 	};
 	chrome.runtime.onMessage.addListener(runtimeMessageListener);
