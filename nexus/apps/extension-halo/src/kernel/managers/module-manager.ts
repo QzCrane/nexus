@@ -3,6 +3,7 @@
 
 import { ALL_MODULES, OPTIONAL_MODULES, type ModuleState } from '../registry/module-registry';
 import type { ModuleMeta } from '../core/tool-registry-types';
+import { readOptionalPackagedModuleEnabled } from '../core/module-installation-runtime';
 import {
 	isPackagedModuleMetaEnabled,
 	moduleIdFromInstallationStorageKey,
@@ -12,6 +13,7 @@ import {
 
 export interface ModuleInstallationPersistence {
 	loadDisabled(): Promise<Set<string>>;
+	readEnabled(id: string): Promise<boolean>;
 	setEnabled(id: string, enabled: boolean): Promise<void>;
 	subscribe(listener: (id: string, enabled: boolean) => void): () => void;
 }
@@ -19,6 +21,7 @@ export interface ModuleInstallationPersistence {
 function createChromePersistence(): ModuleInstallationPersistence {
 	return {
 		loadDisabled: readDisabledPackagedModuleIds,
+		readEnabled: readOptionalPackagedModuleEnabled,
 		setEnabled: writePackagedModuleEnabled,
 		subscribe(listener) {
 			const onChanged = (
@@ -62,11 +65,12 @@ const EMPTY_SNAPSHOT: ModuleManagerSnapshot = Object.freeze({
 export class ModuleManager {
 	private readonly disabled = new Set<string>();
 	private readonly listeners = new Set<() => void>();
-	private readonly eventRevisionById = new Map<string, number>();
 	private readonly mutationTailById = new Map<string, Promise<void>>();
+	private readonly hydrationEventOwnedIds = new Set<string>();
 	private revision = 0;
 	private snapshot: ModuleManagerSnapshot = EMPTY_SNAPSHOT;
 	private unsubscribePersistence: (() => void) | null = null;
+	private hydrating = false;
 
 	constructor(
 		private readonly persistence: ModuleInstallationPersistence = createChromePersistence(),
@@ -74,16 +78,15 @@ export class ModuleManager {
 
 	async initialize(): Promise<void> {
 		if (this.unsubscribePersistence) return;
-		// Observe first, then hydrate. Any event that races the get() owns that
-		// module and prevents the older read snapshot from overwriting it.
+		this.hydrating = true;
 		this.unsubscribePersistence = this.persistence.subscribe((id, enabled) => {
-			this.eventRevisionById.set(id, (this.eventRevisionById.get(id) ?? 0) + 1);
+			if (this.hydrating) this.hydrationEventOwnedIds.add(id);
 			this.applyEnabled(id, enabled);
 		});
 		try {
 			const disabledFromStorage = await this.persistence.loadDisabled();
 			for (const module of OPTIONAL_MODULES) {
-				if ((this.eventRevisionById.get(module.id) ?? 0) > 0) continue;
+				if (this.hydrationEventOwnedIds.has(module.id)) continue;
 				if (disabledFromStorage.has(module.id)) this.disabled.add(module.id);
 				else this.disabled.delete(module.id);
 			}
@@ -92,6 +95,9 @@ export class ModuleManager {
 			this.unsubscribePersistence?.();
 			this.unsubscribePersistence = null;
 			throw error;
+		} finally {
+			this.hydrating = false;
+			this.hydrationEventOwnedIds.clear();
 		}
 	}
 
@@ -134,9 +140,7 @@ export class ModuleManager {
 
 	private serializeMutation(id: string, mutation: () => Promise<void>): Promise<void> {
 		const previous = this.mutationTailById.get(id) ?? Promise.resolve();
-		const operation = previous
-			.catch(() => undefined)
-			.then(mutation);
+		const operation = previous.catch(() => undefined).then(mutation);
 		const tracked = operation.finally(() => {
 			if (this.mutationTailById.get(id) === tracked) this.mutationTailById.delete(id);
 		});
@@ -169,14 +173,8 @@ export class ModuleManager {
 			const meta = ALL_MODULES.find((module) => module.id === id);
 			if (!meta) throw new Error(`Module ${id} not found`);
 			if (meta.builtIn || this.isInstalled(id)) return;
-			const eventRevision = this.eventRevisionById.get(id) ?? 0;
 			await this.persistence.setEnabled(id, true);
-			// When a same-module storage event arrived during the write, physical
-			// storage is newer authority. Otherwise commit the acknowledged write
-			// locally; a later onChanged event is idempotent.
-			if ((this.eventRevisionById.get(id) ?? 0) === eventRevision) {
-				this.applyEnabled(id, true);
-			}
+			this.applyEnabled(id, await this.persistence.readEnabled(id));
 		});
 	}
 
@@ -185,11 +183,8 @@ export class ModuleManager {
 			const meta = ALL_MODULES.find((module) => module.id === id);
 			if (!meta || meta.builtIn) throw new Error(`Cannot uninstall: ${id}`);
 			if (!this.isInstalled(id)) return;
-			const eventRevision = this.eventRevisionById.get(id) ?? 0;
 			await this.persistence.setEnabled(id, false);
-			if ((this.eventRevisionById.get(id) ?? 0) === eventRevision) {
-				this.applyEnabled(id, false);
-			}
+			this.applyEnabled(id, await this.persistence.readEnabled(id));
 		});
 	}
 }
