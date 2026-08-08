@@ -28,7 +28,7 @@ HALO content code is partitioned by **frame scope × lifecycle phase × capabili
 | Production entry | Frame scope | Phase | Ownership |
 | --- | --- | --- | --- |
 | `content.js` | top frame | `document_start` | minimal generic/status router and top-document commands |
-| `content-smooth-scroll.js` | all matching frames | `document_start` | frame-local physical scroll input; required before early user input |
+| `content-smooth-scroll.js` | all matching frames | `document_start` | top-document physical scroll input; child-frame initialization exits before taking input ownership |
 | `content-frame-tools.js` | all matching frames | `document_start` | dormant message host for Ruler, DOM Selector, and Annotate; no recurring work at module load |
 | `content-hover-zoom.js` | top frame | `document_idle` | Hover Zoom; high-frequency mouse/key listeners exist only while enabled |
 | `content-clipboard.js` | all matching frames | `document_idle` | minimal copy capture host; copy listener follows Clipboard enablement |
@@ -94,9 +94,12 @@ tools/<id>/
 
 ### Smooth-scroll ownership
 
-Input admission is owned by each matching frame's page-local content context; displacement animation is owned by the shared engine:
-- **Routing**: Within a frame, the admitted page scroll context owns HALO displacement only after descendant/native handlers receive their refusal opportunity. Embedded app surfaces, editable controls, fullscreen content, and `hidden`/`clip` elements remain native.
-- **Keyboard**: Arrow keys are capture-phase only after an animatable page route is admitted. Pointer/focus interaction with a media surface gives that surface arrow ownership until interaction moves outside, focus moves elsewhere, the media detaches, or the document lifecycle resets. Media presence, playback, and viewport size never imply arrow ownership. Space/PageUp/PageDown retain bubble-phase page refusal and discrete-jump semantics.
+The current static manifest distributes the Smooth Scroll entry to every matching frame, but runtime input admission is top-document-only: child-frame initialization exits before registering input ownership. Displacement animation is owned by the shared engine.
+- **Routing**: The admitted top-document scroll context owns HALO displacement only after native/page handlers receive their refusal opportunity. Embedded app surfaces, editable controls, fullscreen content, and `hidden`/`clip` elements remain native.
+- **Keyboard admission**: A capture observer is registered synchronously at `document_start` but remains inert until settings hydration proves the feature enabled. For each trusted candidate, HALO captures its media-state evidence once and appends same-event document/window finalizers; it does not decide ownership from media presence, geometry, prior pointer interaction, or focus history.
+- **Website-first ownership**: `defaultPrevented`, same-dispatch `cancelBubble`, or a synchronous media-state mutation are website ownership evidence. HALO yields without calling `stopPropagation()` or `stopImmediatePropagation()`. A site that stops propagation but leaves the default action untouched therefore still owns the event.
+- **Tail lifetime**: same-event finalizers remain alive through browser propagation. Normal bubble settlement executes first; a 0ms macrotask only removes an orphaned tail when propagation never reaches it. The cleanup task never converts a truncated event into delayed HALO execution. Microtask tail cleanup is forbidden because it can run before a later window-bubble finalizer.
+- **Repeat ownership**: Keyboard repeat uses its own canonical clock and never reuses wheel acceleration state. Delivery-frequency differences are coalesced after the browser's first repeat arrives; the OS-owned first-repeat delay is preserved and is never synthetically backfilled.
 - **Depth Bound**: `MAX_SCROLL_ROUTE_ELEMENTS` bounds structural preflight at 65 elements.
 - **Settings & Frame Envelope**: `HALO_SMOOTH_SCROLL_SETTINGS` in `storage.sync` distributes configuration. `SCROLL_LIMITS` owns frame bounds: max speed `6 CSS px/ms`, max frame displacement `100 CSS px`.
 - **Time Envelope**: `tailBudgetMs()` returns `max(280, state.time + 32)`. `maxBacklogPx()` derives max capacity (at `animationTime=400`, `tailBudget=432`, `maxBacklog=2200`). Fine-mode time constant `max(8, animationTime * 0.03)` with `MAX_FINE_FRAME_RESPONSE=0.8`.

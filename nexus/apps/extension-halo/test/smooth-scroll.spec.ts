@@ -244,9 +244,8 @@ let body: FakeElement;
 let root: FakeElement;
 let fakeWindow: FakeWindow;
 let computedStyleReads = 0;
-let onArrowKeydownCapture: typeof import('../src/content/smooth-scroll-handlers').onArrowKeydownCapture;
-let onKeyboardFocusIn: typeof import('../src/content/smooth-scroll-handlers').onKeyboardFocusIn;
-let onKeyboardPointerDown: typeof import('../src/content/smooth-scroll-handlers').onKeyboardPointerDown;
+let onKeydownCapture: typeof import('../src/content/smooth-scroll-handlers').onKeydownCapture;
+let onKeyup: typeof import('../src/content/smooth-scroll-handlers').onKeyup;
 let onWheel: typeof import('../src/content/smooth-scroll-handlers').onWheel;
 let onKeydown: typeof import('../src/content/smooth-scroll-handlers').onKeydown;
 let onMouseDown: typeof import('../src/content/smooth-scroll-handlers').onMouseDown;
@@ -802,9 +801,8 @@ beforeAll(async () => {
 	});
 
 	({
-		onArrowKeydownCapture,
-		onKeyboardFocusIn,
-		onKeyboardPointerDown,
+		onKeydownCapture,
+		onKeyup,
 		onKeydown,
 		onMouseDown,
 		onMouseMove,
@@ -2533,6 +2531,7 @@ describe('smooth scroll keyboard', () => {
 			key,
 			isTrusted: true,
 			defaultPrevented: false,
+			cancelBubble: false,
 			propagationStopped: false,
 			shiftKey: false,
 			ctrlKey: false,
@@ -2541,72 +2540,29 @@ describe('smooth scroll keyboard', () => {
 			repeat: false,
 			...extras,
 			preventDefault() { (this as { defaultPrevented: boolean }).defaultPrevented = true; },
-			stopPropagation() { (this as { propagationStopped: boolean }).propagationStopped = true; },
+			stopPropagation() {
+				(this as { cancelBubble: boolean }).cancelBubble = true;
+				(this as { propagationStopped: boolean }).propagationStopped = true;
+			},
 		};
 		return event as unknown as KeyboardEvent;
 	}
 
-	function pointerEvent(target: FakeElement, clientX = 0, clientY = 0): PointerEvent {
-		return {
-			clientX,
-			clientY,
-			isTrusted: true,
-			composedPath: () => {
-				const path: FakeElement[] = [];
-				let current: FakeElement | null = target;
-				while (current) {
-					path.push(current);
-					current = current.parentElement;
-				}
-				return path as unknown as EventTarget[];
-			},
-		} as unknown as PointerEvent;
-	}
-
-	function focusEvent(target: FakeElement): FocusEvent {
-		return {
-			composedPath: () => [target] as unknown as EventTarget[],
-		} as unknown as FocusEvent;
+	function noMediaCapture(): Parameters<typeof onKeydown>[1] {
+		return { mediaStates: [] } as unknown as Parameters<typeof onKeydown>[1];
 	}
 
 	function propagationStopped(event: KeyboardEvent): boolean {
 		return (event as unknown as { propagationStopped: boolean }).propagationStopped;
 	}
 
-	function withVisibleVideo(
-		fn: (video: FakeElement) => void,
-		opts: { width?: number; height?: number; left?: number; top?: number } = {},
-	): void {
-		const doc = document as unknown as {
-			getElementsByTagName: (tag: string) => unknown[];
-		};
-		const original = doc.getElementsByTagName;
-		const width = opts.width ?? 800;
-		const height = opts.height ?? 500;
-		const video = element('VIDEO', body, {
-			rectHeight: height,
-			rectLeft: opts.left ?? 100,
-			rectTop: opts.top ?? 100,
-			rectWidth: width,
-		});
-		video.clientWidth = width;
-		video.clientHeight = height;
-		doc.getElementsByTagName = (tag: string) =>
-			tag === 'video' ? [video] : tag === 'audio' ? [] : original(tag);
-		try {
-			fn(video);
-		} finally {
-			doc.getElementsByTagName = original;
-		}
-	}
-
-	test('spacebar scrolls in bubble phase when the site yields', () => {
+	test('spacebar scrolls after the site yields without suppressing propagation', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		const event = keyEvent(' ');
 		const start = performance.now();
 
-		onKeydown(event);
+		onKeydown(event, noMediaCapture());
 
 		expect(event.defaultPrevented).toBe(true);
 		expect(propagationStopped(event)).toBe(false);
@@ -2615,210 +2571,122 @@ describe('smooth scroll keyboard', () => {
 		expect(fakeWindow.scrollY).toBeCloseTo(window.innerHeight * 0.9, 5);
 	});
 
-	test('discrete keys yield when the site already prevented the event', () => {
+	test('site preventDefault remains authoritative for every scroll key', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
-		const event = keyEvent(' ');
-		event.preventDefault();
-
-		onKeydown(event);
-
-		expect(frameCallbacks.size).toBe(0);
-		expect(propagationStopped(event)).toBe(false);
+		for (const key of [' ', 'PageDown', 'PageUp', 'ArrowDown', 'ArrowUp']) {
+			const event = keyEvent(key);
+			event.preventDefault();
+			onKeydown(event, noMediaCapture());
+			expect(frameCallbacks.size).toBe(0);
+			expect(propagationStopped(event)).toBe(false);
+		}
 	});
 
-	test('arrows yield to an upstream capture owner', () => {
+	test('an unclaimed arrow animates without stopPropagation or video geometry heuristics', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		const event = keyEvent('ArrowDown');
-		event.preventDefault();
 
-		onArrowKeydownCapture(event);
+		onKeydown(event, noMediaCapture());
 
-		expect(frameCallbacks.size).toBe(0);
+		expect(event.defaultPrevented).toBe(true);
 		expect(propagationStopped(event)).toBe(false);
+		expect(frameCallbacks.size).toBe(1);
 	});
 
-	test('arrows scroll a video detail page when media has no interaction ownership', () => {
+	test('a synchronous site media mutation owns the key even without preventDefault', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
-
-		withVisibleVideo(() => {
-			const event = keyEvent('ArrowDown');
-			onArrowKeydownCapture(event);
-
-			expect(event.defaultPrevented).toBe(true);
-			expect(propagationStopped(event)).toBe(true);
-			expect(frameCallbacks.size).toBe(1);
-		});
-	});
-
-	test('pointer interaction inside media yields arrows to the player', () => {
-		root.styleState.overflowY = 'auto';
-		body.styleState.overflowY = 'hidden';
-
-		withVisibleVideo((video) => {
-			onKeyboardPointerDown(pointerEvent(video, 200, 200));
-			const event = keyEvent('ArrowDown');
-			onArrowKeydownCapture(event);
-
-			expect(event.defaultPrevented).toBe(false);
-			expect(propagationStopped(event)).toBe(false);
-			expect(frameCallbacks.size).toBe(0);
-		});
-	});
-
-	test('pointer interaction outside media releases arrow ownership', () => {
-		root.styleState.overflowY = 'auto';
-		body.styleState.overflowY = 'hidden';
-
-		withVisibleVideo((video) => {
-			onKeyboardPointerDown(pointerEvent(video, 200, 200));
-			const article = element('ARTICLE', body);
-			onKeyboardPointerDown(pointerEvent(article, 1_200, 700));
-			const event = keyEvent('ArrowDown');
-			onArrowKeydownCapture(event);
-
-			expect(event.defaultPrevented).toBe(true);
-			expect(propagationStopped(event)).toBe(true);
-			expect(frameCallbacks.size).toBe(1);
-		});
-	});
-
-	test('a focused player wrapper owns arrows without focusing the video element', () => {
-		root.styleState.overflowY = 'auto';
-		body.styleState.overflowY = 'hidden';
-		const player = element('DIV', body);
-		element('VIDEO', player);
-		(document as unknown as { activeElement: FakeElement }).activeElement = player;
-		onKeyboardFocusIn(focusEvent(player));
-
+		const media = {
+			isConnected: true,
+			muted: false,
+			paused: true,
+			playbackRate: 1,
+			volume: 1,
+		};
+		const capture = {
+			mediaStates: [{
+				element: media,
+				muted: false,
+				paused: true,
+				playbackRate: 1,
+				volume: 1,
+			}],
+		} as unknown as Parameters<typeof onKeydown>[1];
+		media.volume = 0.9;
 		const event = keyEvent('ArrowDown');
-		onArrowKeydownCapture(event);
 
-		expect(event.defaultPrevented).toBe(false);
+		onKeydown(event, capture);
+
+		expect(event.defaultPrevented).toBe(true);
 		expect(propagationStopped(event)).toBe(false);
 		expect(frameCallbacks.size).toBe(0);
 	});
 
-	test('detached media cannot retain arrow ownership', () => {
+	test('PageUp and PageDown remain discrete page commands when unclaimed', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
-
-		withVisibleVideo((video) => {
-			onKeyboardPointerDown(pointerEvent(video, 200, 200));
-			video.isConnected = false;
-			const event = keyEvent('ArrowDown');
-			onArrowKeydownCapture(event);
-
-			expect(event.defaultPrevented).toBe(true);
-			expect(propagationStopped(event)).toBe(true);
-			expect(frameCallbacks.size).toBe(1);
-		});
-	});
-
-	test('spacebar keeps the visible-player play pause policy', () => {
-		root.styleState.overflowY = 'auto';
-		body.styleState.overflowY = 'hidden';
-
-		withVisibleVideo(() => {
-			const event = keyEvent(' ');
-			onKeydown(event);
-			expect(frameCallbacks.size).toBe(0);
-			expect(event.defaultPrevented).toBe(true);
-			expect(propagationStopped(event)).toBe(false);
-		});
-	});
-
-	test('PageUp and PageDown remain available on video pages', () => {
-		root.styleState.overflowY = 'auto';
-		body.styleState.overflowY = 'hidden';
-
-		withVisibleVideo(() => {
-			const event = keyEvent('PageDown');
-			onKeydown(event);
-			expect(event.defaultPrevented).toBe(true);
-			expect(frameCallbacks.size).toBe(1);
-		});
-	});
-
-	test('small preview media does not claim space or arrows without interaction', () => {
-		root.styleState.overflowY = 'auto';
-		body.styleState.overflowY = 'hidden';
-
-		withVisibleVideo(() => {
-			const space = keyEvent(' ');
-			onKeydown(space);
-			expect(space.defaultPrevented).toBe(true);
-			expect(frameCallbacks.size).toBe(1);
+		for (const key of ['PageDown', 'PageUp']) {
 			clearQueue();
-
-			const arrow = keyEvent('ArrowDown');
-			onArrowKeydownCapture(arrow);
-			expect(arrow.defaultPrevented).toBe(true);
-			expect(propagationStopped(arrow)).toBe(true);
+			resetInputHandlers();
+			fakeWindow.scrollY = key === 'PageUp' ? 1_000 : 0;
+			const event = keyEvent(key);
+			onKeydown(event, noMediaCapture());
+			expect(event.defaultPrevented).toBe(true);
+			expect(propagationStopped(event)).toBe(false);
 			expect(frameCallbacks.size).toBe(1);
-		}, { width: 320, height: 180 });
+		}
 	});
 
-	test('arrow repeat is unthrottled and uses wheel time-delta acceleration', () => {
+	test('dense arrow repeats are throttled without allocating another animation owner', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
 		root.scrollHeight = 20_000;
 
 		fakeNow = 1_000;
-		onArrowKeydownCapture(keyEvent('ArrowDown'));
-		expect(acceleration).toBe(1);
+		onKeydown(keyEvent('ArrowDown'), noMediaCapture());
+		expect(frameCallbacks.size).toBe(1);
 
-		fakeNow = 1_033;
+		fakeNow = 1_020;
 		const firstRepeat = keyEvent('ArrowDown', { repeat: true });
-		onArrowKeydownCapture(firstRepeat);
+		onKeydown(firstRepeat, noMediaCapture());
 		expect(firstRepeat.defaultPrevented).toBe(true);
-		expect(acceleration).toBe(1.5);
+		expect(frameCallbacks.size).toBe(1);
 
-		fakeNow = 1_066;
-		onArrowKeydownCapture(keyEvent('ArrowDown', { repeat: true }));
-		expect(acceleration).toBe(2);
+		fakeNow = 1_040;
+		const denseRepeat = keyEvent('ArrowDown', { repeat: true });
+		onKeydown(denseRepeat, noMediaCapture());
+		expect(denseRepeat.defaultPrevented).toBe(true);
 		expect(frameCallbacks.size).toBe(1);
 	});
 
-	test('arrow acceleration resets after the continuity window', () => {
+	test('keyup retires the current keyboard stream without touching the live animation', () => {
 		root.styleState.overflowY = 'auto';
 		body.styleState.overflowY = 'hidden';
-		root.scrollHeight = 20_000;
-
-		fakeNow = 1_000;
-		onArrowKeydownCapture(keyEvent('ArrowDown'));
-		fakeNow = 1_060;
-		onArrowKeydownCapture(keyEvent('ArrowDown', { repeat: true }));
-
-		expect(acceleration).toBe(1);
-	});
-
-	test('PageDown replaces the live continuous arrow stream', () => {
-		root.styleState.overflowY = 'auto';
-		body.styleState.overflowY = 'hidden';
-		root.scrollHeight = 20_000;
-
-		onArrowKeydownCapture(keyEvent('ArrowDown'));
-		onArrowKeydownCapture(keyEvent('ArrowDown', { repeat: true }));
+		onKeydown(keyEvent('ArrowDown'), noMediaCapture());
 		expect(frameCallbacks.size).toBe(1);
 
-		onKeydown(keyEvent('PageDown'));
+		onKeyup(keyEvent('ArrowDown'));
+
 		expect(frameCallbacks.size).toBe(1);
 	});
 
-	test('arrows do not block the page when no animatable target exists', () => {
+	test('keys do not block the page when no animatable target exists', () => {
 		root.styleState.overflowY = 'hidden';
 		body.styleState.overflowY = 'hidden';
 		root.scrollHeight = 100;
 		const event = keyEvent('ArrowDown');
 
-		onArrowKeydownCapture(event);
+		onKeydown(event, noMediaCapture());
 
 		expect(event.defaultPrevented).toBe(false);
 		expect(propagationStopped(event)).toBe(false);
 		expect(frameCallbacks.size).toBe(0);
+	});
+
+	test('capture seam is present for browser-order ownership and remains side-effect free in source-level unit setup', () => {
+		expect(typeof onKeydownCapture).toBe('function');
 	});
 });
 

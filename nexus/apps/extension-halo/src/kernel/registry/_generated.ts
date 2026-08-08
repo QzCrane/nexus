@@ -801,12 +801,12 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '↕️',
 		pluginType: 'tool',
 		category: 'efficiency',
-		size: 64546,
+		size: 64566,
 		builtIn: false,
 		status: undefined,
 		keywords: [],
 		permissions: undefined,
-		background: {"mechanism":"wheel_listener","frequency":"on-wheel","activeOnly":true,"level":"low","descriptionKey":"impact.mechanism.wheel_listener","sourceFile":"content/smooth-scroll.ts","sourceLine":46,"sourceDetail":"window.addEventListener('wheel', onWheel)"},
+		background: {"mechanism":"wheel_listener","frequency":"on-wheel","activeOnly":true,"level":"low","descriptionKey":"impact.mechanism.wheel_listener","sourceFile":"content/smooth-scroll.ts","sourceLine":70,"sourceDetail":"window.addEventListener('wheel', onWheel, { passive: false })"},
 		script: undefined,
 	},
 	{
@@ -957,7 +957,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '⏱️',
 		pluginType: 'tool',
 		category: 'efficiency',
-		size: 12395,
+		size: 12327,
 		builtIn: true,
 		status: 'coming',
 		keywords: ["timer","pomodoro","stopwatch","jishiqi","计时器","番茄钟"],
@@ -1294,8 +1294,8 @@ export const BACKGROUND_PROFILES_MAP: Record<string, BackgroundProfile> = {
         "level": "low",
         "descriptionKey": "impact.mechanism.wheel_listener",
         "sourceFile": "content/smooth-scroll.ts",
-        "sourceLine": 46,
-        "sourceDetail": "window.addEventListener('wheel', onWheel)"
+        "sourceLine": 70,
+        "sourceDetail": "window.addEventListener('wheel', onWheel, { passive: false })"
     },
     "tab-group": {
         "mechanism": "event_listener",
