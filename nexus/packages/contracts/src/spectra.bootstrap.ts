@@ -69,6 +69,7 @@ export interface SpectraLeanSiteHotkeyBinding {
 	action: SpectraDefaultHotkeyAction;
 }
 export interface SpectraLeanSiteHotkeyConfiguration {
+	epoch: string;
 	generation: number;
 	bindings: SpectraLeanSiteHotkeyBinding[];
 }
@@ -95,7 +96,7 @@ const DIRECT_FIELDS = new Set([
 	'compressor', 'mono', 'pan', 'delay',
 ]);
 const LEAN_SITE_HOTKEY_MESSAGE_KEYS = new Set(['protocolVersion', 'type', 'payload']);
-const LEAN_SITE_HOTKEY_CONFIG_KEYS = new Set(['generation', 'bindings']);
+const LEAN_SITE_HOTKEY_CONFIG_KEYS = new Set(['epoch', 'generation', 'bindings']);
 const LEAN_SITE_HOTKEY_BINDING_KEYS = new Set(['code', 'modifiers', 'action']);
 const LEAN_SITE_HOTKEY_MODIFIER_KEYS = new Set(['ctrl', 'alt', 'shift', 'meta']);
 
@@ -156,6 +157,7 @@ export function isSpectraLeanSiteHotkeyConfiguration(
 ): value is SpectraLeanSiteHotkeyConfiguration {
 	return isRecord(value)
 		&& hasOnlyKeys(value, LEAN_SITE_HOTKEY_CONFIG_KEYS)
+		&& isBoundedString(value.epoch, 128)
 		&& isSafeNonNegativeInteger(value.generation)
 		&& Array.isArray(value.bindings)
 		&& value.bindings.length <= 128
