@@ -244,12 +244,11 @@ async function enableSmoothScroll(context: BrowserContext): Promise<string> {
 	}
 	const extensionId = new URL(serviceWorker.url()).hostname;
 	if (!extensionId) throw new Error(`HALO service worker has no extension id: ${serviceWorker.url()}`);
-	const hasFixtureAccess = await serviceWorker.evaluate(async () => {
-		return chrome.permissions.contains({ origins: ['http://127.0.0.1/*'] });
+	const grantedOrigins = await serviceWorker.evaluate(async () => {
+		return (await chrome.permissions.getAll()).origins ?? [];
 	});
-	if (!hasFixtureAccess) {
-		const permissions = await serviceWorker.evaluate(async () => chrome.permissions.getAll());
-		throw new Error(`HALO lacks fixture host access: ${JSON.stringify(permissions)}`);
+	if (!grantedOrigins.includes('<all_urls>')) {
+		throw new Error(`HALO static content-script grant is missing <all_urls>: ${JSON.stringify(grantedOrigins)}`);
 	}
 	await serviceWorker.evaluate(async (storageKey) => {
 		await chrome.storage.sync.set({
