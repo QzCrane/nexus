@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { subscribeHaloStorageChanges } from '../core/storage-change-bus';
 import { type HaloSettings, DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY } from '../core/settings';
 
 export function useSettings() {
@@ -6,28 +7,31 @@ export function useSettings() {
 	const [loading, setLoading] = useState(true);
 
 	useEffect(() => {
-		// rule: track mount state so the .catch handler doesn't call setLoading on
-		// an unmounted component (React warning + potential stale state write).
 		let mounted = true;
-		// Initial load
-		chrome.storage.sync.get([SETTINGS_STORAGE_KEY]).then((result) => {
-			if (!mounted) return;
+		let eventRevision = 0;
+		const unsubscribeStorageChanges = subscribeHaloStorageChanges((changes, area) => {
+			if (!mounted || area !== 'sync') return;
+			const change = changes[SETTINGS_STORAGE_KEY];
+			if (!change) return;
+			eventRevision += 1;
+			setSettings({ ...DEFAULT_SETTINGS, ...change.newValue });
+			setLoading(false);
+		});
+
+		const revisionBeforeRead = eventRevision;
+		void chrome.storage.sync.get([SETTINGS_STORAGE_KEY]).then((result) => {
+			if (!mounted || eventRevision !== revisionBeforeRead) return;
 			if (result[SETTINGS_STORAGE_KEY]) {
 				setSettings({ ...DEFAULT_SETTINGS, ...result[SETTINGS_STORAGE_KEY] });
 			}
 			setLoading(false);
-		}).catch(() => mounted && setLoading(false));
+		}).catch(() => {
+			if (mounted && eventRevision === revisionBeforeRead) setLoading(false);
+		});
 
-		// Listen for changes
-		const listener = (changes: { [key: string]: chrome.storage.StorageChange }, area: string) => {
-			if (area === 'sync' && changes[SETTINGS_STORAGE_KEY]) {
-				setSettings({ ...DEFAULT_SETTINGS, ...changes[SETTINGS_STORAGE_KEY].newValue });
-			}
-		};
-		chrome.storage.onChanged.addListener(listener);
 		return () => {
 			mounted = false;
-			chrome.storage.onChanged.removeListener(listener);
+			unsubscribeStorageChanges();
 		};
 	}, []);
 
