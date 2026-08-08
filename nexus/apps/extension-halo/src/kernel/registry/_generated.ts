@@ -645,12 +645,12 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '🍅',
 		pluginType: 'tool',
 		category: 'efficiency',
-		size: 11733,
+		size: 11689,
 		builtIn: false,
 		status: undefined,
 		keywords: [],
 		permissions: undefined,
-		background: {"mechanism":"interval_slow","frequency":"1000ms display-only while running","activeOnly":true,"level":"idle","descriptionKey":"impact.interval_1s","sourceFile":"tools/pomodoro/panel.tsx","sourceLine":43,"sourceDetail":"1Hz interval updates only ephemeral display time; persistent PomodoroState changes only at user/phase boundaries"},
+		background: {"mechanism":"interval_slow","frequency":"1000ms display/deadline check while running","activeOnly":true,"level":"idle","descriptionKey":"impact.interval_1s","sourceFile":"tools/pomodoro/panel.tsx","sourceLine":70,"sourceDetail":"one 1Hz interval updates ephemeral display time and verifies the live wall-clock deadline; persistent PomodoroState changes only at user/phase boundaries"},
 		script: undefined,
 	},
 	{
@@ -931,7 +931,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '🔊',
 		pluginType: 'tool',
 		category: 'efficiency',
-		size: 9773,
+		size: 9927,
 		builtIn: false,
 		status: undefined,
 		keywords: [],
@@ -957,12 +957,12 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '⏱️',
 		pluginType: 'tool',
 		category: 'efficiency',
-		size: 11837,
+		size: 12395,
 		builtIn: true,
 		status: 'coming',
 		keywords: ["timer","pomodoro","stopwatch","jishiqi","计时器","番茄钟"],
 		permissions: undefined,
-		background: {"mechanism":"raf_active","frequency":"paint-frame while running","activeOnly":true,"level":"medium","descriptionKey":"impact.mechanism.raf_active","sourceFile":"tools/timer/panel.tsx","sourceLine":39,"sourceDetail":"requestAnimationFrame state is isolated to the TimerDisplay clock node; persistent TimerState changes only at user/completion boundaries"},
+		background: {"mechanism":"raf_active","frequency":"paint-frame while running","activeOnly":true,"level":"medium","descriptionKey":"impact.mechanism.raf_active","sourceFile":"tools/timer/panel.tsx","sourceLine":47,"sourceDetail":"requestAnimationFrame state is isolated to the TimerDisplay clock node; a bounded 1Hz deadline watcher performs no persistent write until real completion"},
 		script: undefined,
 	},
 	{
@@ -1279,13 +1279,13 @@ export const BACKGROUND_PROFILES_MAP: Record<string, BackgroundProfile> = {
     },
     "pomodoro": {
         "mechanism": "interval_slow",
-        "frequency": "1000ms display-only while running",
+        "frequency": "1000ms display/deadline check while running",
         "activeOnly": true,
         "level": "idle",
         "descriptionKey": "impact.interval_1s",
         "sourceFile": "tools/pomodoro/panel.tsx",
-        "sourceLine": 43,
-        "sourceDetail": "1Hz interval updates only ephemeral display time; persistent PomodoroState changes only at user/phase boundaries"
+        "sourceLine": 70,
+        "sourceDetail": "one 1Hz interval updates ephemeral display time and verifies the live wall-clock deadline; persistent PomodoroState changes only at user/phase boundaries"
     },
     "smooth-scroll": {
         "mechanism": "wheel_listener",
@@ -1324,8 +1324,8 @@ export const BACKGROUND_PROFILES_MAP: Record<string, BackgroundProfile> = {
         "level": "medium",
         "descriptionKey": "impact.mechanism.raf_active",
         "sourceFile": "tools/timer/panel.tsx",
-        "sourceLine": 39,
-        "sourceDetail": "requestAnimationFrame state is isolated to the TimerDisplay clock node; persistent TimerState changes only at user/completion boundaries"
+        "sourceLine": 47,
+        "sourceDetail": "requestAnimationFrame state is isolated to the TimerDisplay clock node; a bounded 1Hz deadline watcher performs no persistent write until real completion"
     },
     "timestamp": {
         "mechanism": "interval_slow",
