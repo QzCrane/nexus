@@ -1,5 +1,6 @@
 import type React from 'react';
 import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { subscribeHaloStorageChanges } from '../../kernel/core/storage-change-bus';
 import {
 	BACKGROUND_ACTIVE_ONLY_MAP,
 	BACKGROUND_PLUGIN_IDS,
@@ -114,7 +115,6 @@ function initialStorageState(
 		ready: true,
 		clipboardEnabled: readEnabled(local.halo_tool_clipboard_settings),
 		hoverZoomEnabled: readEnabled(local.halo_hover_zoom_settings),
-		// UserScripts are projected from their canonical system-layer authority.
 		userscriptsEnabled: false,
 		smoothScrollEnabled: readEnabled(sync.HALO_SMOOTH_SCROLL_SETTINGS),
 		userScripts: [],
@@ -193,6 +193,7 @@ function deriveActiveServices(state: ActiveServiceStorageState): Set<string> {
 }
 
 function deriveScriptIds(state: ActiveServiceStorageState): string[] {
+	if (!state.ready) return [];
 	const ids: string[] = [];
 	for (const script of state.userScripts) {
 		ids.push(script.id);
@@ -208,7 +209,11 @@ interface ActiveServicesContextType {
 
 const ActiveServicesContext = createContext<ActiveServicesContextType | undefined>(undefined);
 
-/** Single SidePanel authority for runtime/background service status. */
+/**
+ * SidePanel status projection. Physical storage-change delivery is multiplexed
+ * with the UserScripts authority so this provider does not register a second
+ * chrome.storage.onChanged listener in the same JS context.
+ */
 export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 	const [storageState, setStorageState] = useState<ActiveServiceStorageState>(EMPTY_STORAGE_STATE);
 	const userScriptsSnapshot = useSyncExternalStore(
@@ -228,7 +233,7 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 			if (disposed || !hasRelevantStorageChange(changes, area)) return;
 			setStorageState((current) => applyStorageChanges(current, changes, area, eventOwnedFields));
 		};
-		chrome.storage.onChanged.addListener(listener);
+		const unsubscribeStorageChanges = subscribeHaloStorageChanges(listener);
 
 		void Promise.all([
 			chrome.storage.local.get([
@@ -250,7 +255,7 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 
 		return () => {
 			disposed = true;
-			chrome.storage.onChanged.removeListener(listener);
+			unsubscribeStorageChanges();
 		};
 	}, []);
 
