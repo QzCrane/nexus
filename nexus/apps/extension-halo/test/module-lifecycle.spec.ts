@@ -22,11 +22,18 @@ function createMemoryPersistence(initial: ModuleState[] = []) {
 	const stored = new Map(initial.map((state) => [state.id, { ...state }]));
 	let saveFailureId: string | null = null;
 	let removeFailureId: string | null = null;
+	let seedBatchCount = 0;
 	const persistence: ModuleStatePersistence = {
 		loadAll: async () => [...stored.values()].map((state) => ({ ...state })),
 		save: async (state) => {
 			if (state.id === saveFailureId) throw new Error(`save failed: ${state.id}`);
 			stored.set(state.id, { ...state });
+		},
+		saveMany: async (states) => {
+			seedBatchCount += 1;
+			const failed = states.find((state) => state.id === saveFailureId);
+			if (failed) throw new Error(`save failed: ${failed.id}`);
+			for (const state of states) stored.set(state.id, { ...state });
 		},
 		remove: async (id) => {
 			if (id === removeFailureId) throw new Error(`remove failed: ${id}`);
@@ -37,13 +44,14 @@ function createMemoryPersistence(initial: ModuleState[] = []) {
 	return {
 		persistence,
 		stored,
+		getSeedBatchCount: () => seedBatchCount,
 		failSaveFor: (id: string | null) => { saveFailureId = id; },
 		failRemoveFor: (id: string | null) => { removeFailureId = id; },
 	};
 }
 
 describe('HALO module lifecycle authority', () => {
-	test('seeds only core modules and leaves optional modules available on a fresh profile', async () => {
+	test('seeds only core modules in one batch and leaves optional modules available', async () => {
 		expect(CORE_MODULES.length).toBeGreaterThan(0);
 		expect(OPTIONAL_MODULES.length).toBeGreaterThan(0);
 
@@ -58,11 +66,16 @@ describe('HALO module lifecycle authority', () => {
 		const manager = new ModuleManager(memory.persistence);
 		await manager.initialize();
 
+		expect(memory.getSeedBatchCount()).toBe(1);
 		for (const module of CORE_MODULES) expect(manager.isInstalled(module.id)).toBe(true);
 		for (const module of OPTIONAL_MODULES) expect(manager.isInstalled(module.id)).toBe(false);
 		expect(new Set(manager.getAvailableModules().map((module) => module.id))).toEqual(
 			new Set(OPTIONAL_MODULES.map((module) => module.id)),
 		);
+
+		const restarted = new ModuleManager(memory.persistence);
+		await restarted.initialize();
+		expect(memory.getSeedBatchCount()).toBe(1);
 	});
 
 	test('publishes one immutable snapshot identity per durable revision', async () => {
