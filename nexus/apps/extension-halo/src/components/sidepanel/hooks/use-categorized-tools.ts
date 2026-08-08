@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import type { PluginMeta } from '../../../kernel/core/tool-registry-types';
 import type { HaloSettings } from '../../../kernel/core/settings';
 import type { UserScript } from '../../../system/userscripts/types';
-import { BACKGROUND_ACTIVE_ONLY_MAP } from '../../../kernel/registry/_generated';
+import { BACKGROUND_ACTIVE_ONLY_MAP } from '../../../kernel/registry/_generated-background-active';
 import { TAXONOMY } from '../../../kernel/registry/taxonomy';
 
 interface UseCategorizedToolsProps {
