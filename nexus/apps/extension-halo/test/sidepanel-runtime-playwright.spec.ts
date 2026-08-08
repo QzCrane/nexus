@@ -47,7 +47,11 @@ test.describe('HALO SidePanel runtime in Chromium', () => {
 			});
 
 			const browserErrors: string[] = [];
+			const lazyChunkUrls = new Set<string>();
 			context.on('weberror', (error) => browserErrors.push(String(error.error())));
+			context.on('requestfinished', (request) => {
+				if (isSidepanelLazyChunk(request.url())) lazyChunkUrls.add(request.url());
+			});
 			const worker = await extensionWorker(context);
 			const extensionId = new URL(worker.url()).hostname;
 			const page = await context.newPage();
@@ -72,18 +76,19 @@ test.describe('HALO SidePanel runtime in Chromium', () => {
 			const hashTool = page.locator('button[data-tool-id="hash"]');
 			await expect(hashTool).toBeVisible();
 
-			// Hover preload must cross a real production lazy-chunk boundary before
+			// Hover preload must cross a real production panel-chunk boundary before
 			// selection. This proves HALO no longer relies on React.lazy private fields.
-			const preloadFinished = context.waitForEvent('requestfinished', {
-				predicate: (request) => isSidepanelLazyChunk(request.url()),
-				timeout: 10_000,
-			});
 			await hashTool.hover();
-			await preloadFinished;
+			await expect.poll(() => lazyChunkUrls.size, { timeout: 10_000 }).toBeGreaterThan(0);
+			const preloadedChunkUrls = new Set(lazyChunkUrls);
 
-			// Selection still crosses LauncherToolPage lazy/Suspense while the panel
-			// module itself is already owned by the memoized generated loader.
+			// Selection must still cross a distinct LauncherToolPage lazy/Suspense
+			// boundary while the Hash panel module is already owned by the memoized loader.
 			await hashTool.click();
+			await expect.poll(
+				() => [...lazyChunkUrls].filter((url) => !preloadedChunkUrls.has(url)).length,
+				{ timeout: 10_000 },
+			).toBeGreaterThan(0);
 			const hashInput = page.locator('textarea').first();
 			await expect(hashInput).toBeVisible();
 			await hashInput.fill('preact-compat-proof');
