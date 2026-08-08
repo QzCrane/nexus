@@ -5,6 +5,13 @@ function source(relativePath: string): string {
 	return readFileSync(new URL(`../${relativePath}`, import.meta.url), 'utf8');
 }
 
+function sourceWindow(text: string, startAnchor: string, endAnchor: string): string {
+	const start = text.indexOf(startAnchor);
+	const end = text.indexOf(endAnchor, start);
+	if (start < 0 || end < 0) throw new Error(`Missing source window: ${startAnchor} -> ${endAnchor}`);
+	return text.slice(start, end);
+}
+
 const contentHost = source('src/content/hover-zoom.ts');
 const eventHost = source('src/content/hover-zoom-events.ts');
 const keyHost = source('src/content/hover-zoom-keys.ts');
@@ -40,6 +47,15 @@ describe('HALO Hover Zoom lazy preview runtime', () => {
 		expect(keyHost).toContain('cancelPendingPreviewIntent();');
 		expect(eventHost).toContain('cancelPendingPreviewIntent();');
 		expect(contentHost).toContain('cancelPendingPreviewIntent();');
+	});
+
+	test('does not retire a pending import for mouseout inside one logical trigger', () => {
+		const onOut = sourceWindow(eventHost, 'export function createOnOut', '/** Handle mousemove');
+		const sameTriggerGuard = 'if (sourceTrigger && relatedTrigger === sourceTrigger) return;';
+		const retireIntent = 'cancelPendingPreviewIntent();';
+		expect(onOut).toContain(sameTriggerGuard);
+		expect(onOut).toContain(retireIntent);
+		expect(onOut.indexOf(sameTriggerGuard)).toBeLessThan(onOut.indexOf(retireIntent));
 	});
 
 	test('keeps synchronous Alt ownership in the light key handler', () => {
