@@ -1295,20 +1295,49 @@ function checkRetiredPaths(root) {
 		|| !protocolTest.includes("type: 'spectra.content.target.changed'")) {
 		error('SCTRL-005/SCTRL-014/SCTRL-025: active media/video selection and release must update the shared snapshot without polling');
 	}
+	const backgroundControlPolicy = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'background/background-control-policy.ts'),
+		'utf8',
+	);
+	const backgroundControlPolicyTest = fs.readFileSync(
+		path.join(root, APP_PATH, 'test/background-control-policy.spec.ts'),
+		'utf8',
+	);
+	const backgroundRuntimeLoader = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'background/runtime-loader.ts'),
+		'utf8',
+	);
 	for (const required of [
 		'function projectControlTarget(',
 		'function assertUnambiguousTargetScope(',
-		'CONTROL_ALGORITHM_POLICIES[capability].scope',
-		"scope === 'active-video'",
-		"scope === 'active-media'",
-		"scope === 'media-source'",
-		"scope === 'requested-audio-scope'",
+		'backgroundControlTargetScopeFlags(capabilities)',
 		'ackTarget = response.data.target',
 		'Mixed media/video controls require one explicit video target',
 	]) {
 		if (!coordinator.includes(required)) {
 			error(`SCTRL-002/SCTRL-025/SCTRL-029: ACK target projection must remain contract-scoped (${required})`);
 		}
+	}
+	for (const required of [
+		'BACKGROUND_MEDIA_TARGET_CAPABILITIES',
+		'BACKGROUND_VIDEO_TARGET_CAPABILITIES',
+		'BACKGROUND_PROCESSOR_FIELDS',
+		'backgroundControlTargetScopeFlags(',
+		'backgroundRestoreBucket(',
+		'backgroundResolveAcknowledgedProcessorLifecycle(',
+		'backgroundResolveControlAudioVolume(',
+	]) {
+		if (!backgroundControlPolicy.includes(required)) {
+			error(`SCTRL-002/SCTRL-025/SCTRL-029/SCTRL-034: narrow Background policy projection is incomplete (${required})`);
+		}
+	}
+	if (coordinator.includes('CONTROL_ALGORITHM_POLICIES')
+		|| backgroundRuntimeLoader.includes('CONTROL_ALGORITHM_POLICIES')
+		|| !backgroundControlPolicyTest.includes('matches canonical target-scope semantics for every capability')
+		|| !backgroundControlPolicyTest.includes('matches canonical document-restore routing for every session field')
+		|| !backgroundControlPolicyTest.includes('matches the canonical processor-readback field set')
+		|| !backgroundControlPolicyTest.includes('matches canonical acknowledged audio-volume projection semantics')) {
+		error('SCTRL-002/SCTRL-016/SCTRL-025/SCTRL-029/SCTRL-034: Background projection must stay small and exhaustively release-gated against canonical control policy');
 	}
 	if (coordinator.includes('activeMedia = response.data.target')) {
 		error('SCTRL-025/SCTRL-029: an executed video target must not overwrite active media');
