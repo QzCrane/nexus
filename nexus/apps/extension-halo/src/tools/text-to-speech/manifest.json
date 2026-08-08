@@ -6,13 +6,13 @@
 	"builtIn": false,
 	"keywords": [],
 	"background": {
-		"mechanism": "interval_fast",
-		"frequency": "200ms",
+		"mechanism": "event_listener",
+		"frequency": "speech lifecycle events",
 		"activeOnly": true,
-		"level": "medium",
-		"descriptionKey": "impact.interval_200ms",
+		"level": "idle",
+		"descriptionKey": "impact.mechanism.event_listener",
 		"sourceFile": "tools/text-to-speech/panel.tsx",
-		"sourceLine": 68,
-		"sourceDetail": "setInterval(() => {...}, 200)"
+		"sourceLine": 45,
+		"sourceDetail": "SpeechSynthesisUtterance start/end/error/pause/resume events drive UI state; no periodic status poll"
 	}
 }
