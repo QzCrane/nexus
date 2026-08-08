@@ -112,6 +112,22 @@ describe('HALO release tooling', () => {
 
 		expect(scripts.build).toBe('bun build.ts');
 		expect(scripts['build:dev']).toBe('bun build.ts --dev');
+		expect(scripts.dev).toContain('generate-tool-registry.ts');
 		expect(sidepanelHtml).toContain('<script type="module" src="sidepanel.js"></script>');
+	});
+
+	test('keeps install-only SaaT metadata out of the ordinary service-worker code graph', () => {
+		const background = readFileSync(
+			new URL('../src/entry/background.ts', import.meta.url),
+			'utf8',
+		);
+		const generator = readFileSync(
+			new URL('../../../scripts/generate-tool-registry.ts', import.meta.url),
+			'utf8',
+		);
+
+		expect(background).not.toContain('TOOL_REGISTRY');
+		expect(background).toContain('script-plugin-runtime.json');
+		expect(generator).toContain('generateScriptRuntimeManifest');
 	});
 });
