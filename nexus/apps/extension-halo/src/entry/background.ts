@@ -1,8 +1,8 @@
 // goal: HALO Background Service Worker
 // Handles extension lifecycle, storage init, SidePanel control, and context menus
 
-import { STORAGE_PREFIX } from '../kernel';
-import { DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY } from '../kernel';
+import { STORAGE_PREFIX } from '../kernel/core/types';
+import { DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY } from '../kernel/core/settings';
 import { initUserScriptsEngine } from '../system/userscripts/engine';
 import { initUserScriptsRegistry } from '../system/userscripts/registry';
 import {
