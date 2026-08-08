@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import esbuild from 'esbuild';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -102,5 +103,43 @@ describe('smooth-scroll keyboard architecture contract', () => {
 		expect(scrollCall).toBeGreaterThanOrEqual(0);
 		expect(finalPreventDefault).toBeGreaterThan(scrollCall);
 		expect(sidepanelSource).toContain('scrollTo(route.target, 0, deltaY, route.admission)');
+	});
+
+	test('attributes the production-shaped static bundle to retained source modules', async () => {
+		const extensionRoot = fileURLToPath(new URL('../', import.meta.url));
+		const result = await esbuild.build({
+			absWorkingDir: extensionRoot,
+			entryPoints: ['src/entry/content-smooth-scroll.ts'],
+			outfile: 'smooth-scroll-attribution.js',
+			bundle: true,
+			treeShaking: true,
+			minify: true,
+			legalComments: 'none',
+			sourcemap: false,
+			write: false,
+			metafile: true,
+			define: { 'process.env.NODE_ENV': '"production"' },
+			pure: ['console.debug', 'console.info', 'console.log'],
+			drop: ['debugger'],
+			loader: { '.ts': 'ts', '.tsx': 'tsx' },
+		});
+
+		const contributors = new Map<string, number>();
+		let totalBytes = 0;
+		for (const output of Object.values(result.metafile.outputs)) {
+			totalBytes += output.bytes;
+			for (const [input, stats] of Object.entries(output.inputs ?? {})) {
+				contributors.set(input, (contributors.get(input) ?? 0) + (stats.bytesInOutput ?? 0));
+			}
+		}
+		const ranked = [...contributors.entries()]
+			.sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
+
+		expect(totalBytes).toBeGreaterThan(0);
+		expect(ranked.some(([input]) => input.endsWith('tools/smooth-scroll/engine.ts'))).toBe(true);
+		process.stdout.write(
+			`[smooth-scroll-attribution] total=${totalBytes} ` +
+			`${ranked.slice(0, 12).map(([input, bytes]) => `${input}:${bytes}`).join(' | ')}\n`,
+		);
 	});
 });
