@@ -1,9 +1,15 @@
 // goal: one reactive authority for the halo_userscripts storage key
 // inv: every SidePanel consumer shares one Chrome read/listener lifecycle
 
+import { subscribeHaloStorageChanges } from '../../kernel/core/storage-change-bus';
 import type { ScriptType } from '../../kernel/registry/taxonomy';
 import { STORAGE_KEY } from './storage';
-import type { UserScript, UserScriptRunAt, UserScriptState } from './types';
+import type {
+	UserScript,
+	UserScriptManagedBy,
+	UserScriptRunAt,
+	UserScriptState,
+} from './types';
 
 export interface UserScriptsStorageSnapshot {
 	ready: boolean;
@@ -20,6 +26,38 @@ const RUN_AT_VALUES: ReadonlySet<UserScriptRunAt> = new Set([
 	'document_idle',
 ]);
 const WORLD_VALUES = new Set(['ISOLATED', 'MAIN', 'USER_SCRIPT']);
+const MANAGED_BY_VALUES: ReadonlySet<UserScriptManagedBy> = new Set([
+	'packaged-script',
+	'saat-tool',
+]);
+const KNOWN_SCRIPT_FIELDS = new Set([
+	'id',
+	'name',
+	'description',
+	'code',
+	'enabled',
+	'type',
+	'matches',
+	'excludeMatches',
+	'runAt',
+	'world',
+	'filePath',
+	'order',
+	'version',
+	'author',
+	'homepage',
+	'updateUrl',
+	'category',
+	'runCount',
+	'lastRun',
+	'createdAt',
+	'updatedAt',
+	'saatToolId',
+	'managedBy',
+	'moduleBuiltIn',
+]);
+const FORBIDDEN_EXTENSION_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+const MAX_EXTENSION_METADATA_DEPTH = 8;
 const EMPTY_SCRIPTS = Object.freeze([]) as readonly Readonly<UserScript>[];
 const EMPTY_SNAPSHOT: UserScriptsStorageSnapshot = Object.freeze({
 	ready: false,
@@ -39,6 +77,7 @@ let started = false;
 let lifecycleEpoch = 0;
 let eventRevision = 0;
 let readRevision = 0;
+let unsubscribeStorageChanges: (() => void) | null = null;
 const subscribers = new Set<() => void>();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -55,6 +94,52 @@ function isStringArray(value: unknown): value is string[] {
 
 function optionalString(value: unknown): value is string | undefined {
 	return value === undefined || typeof value === 'string';
+}
+
+function cloneExtensionMetadata(
+	value: unknown,
+	depth = 0,
+	seen = new WeakSet<object>(),
+): unknown | null {
+	if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+	if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+	if (depth >= MAX_EXTENSION_METADATA_DEPTH || typeof value !== 'object') return null;
+	if (seen.has(value)) return null;
+	seen.add(value);
+
+	if (Array.isArray(value)) {
+		const result: unknown[] = [];
+		for (const entry of value) {
+			const cloned = cloneExtensionMetadata(entry, depth + 1, seen);
+			if (cloned === null && entry !== null) return null;
+			result.push(cloned);
+		}
+		seen.delete(value);
+		return Object.freeze(result);
+	}
+
+	const source = value as Record<string, unknown>;
+	const result: Record<string, unknown> = {};
+	for (const [key, entry] of Object.entries(source)) {
+		if (FORBIDDEN_EXTENSION_KEYS.has(key)) return null;
+		const cloned = cloneExtensionMetadata(entry, depth + 1, seen);
+		if (cloned === null && entry !== null) return null;
+		result[key] = cloned;
+	}
+	seen.delete(value);
+	return Object.freeze(result);
+}
+
+function extensionFields(value: Record<string, unknown>): Record<string, unknown> | null {
+	const result: Record<string, unknown> = {};
+	for (const [key, entry] of Object.entries(value)) {
+		if (KNOWN_SCRIPT_FIELDS.has(key)) continue;
+		if (FORBIDDEN_EXTENSION_KEYS.has(key)) return null;
+		const cloned = cloneExtensionMetadata(entry);
+		if (cloned === null && entry !== null) return null;
+		result[key] = cloned;
+	}
+	return result;
 }
 
 function normalizeScript(value: unknown): Readonly<UserScript> | null {
@@ -80,19 +165,25 @@ function normalizeScript(value: unknown): Readonly<UserScript> | null {
 		|| !optionalString(value.updateUrl)
 		|| !optionalString(value.category)
 		|| !optionalString(value.saatToolId)
+		|| (value.managedBy !== undefined && (
+			typeof value.managedBy !== 'string'
+			|| !MANAGED_BY_VALUES.has(value.managedBy as UserScriptManagedBy)
+		))
+		|| (value.moduleBuiltIn !== undefined && typeof value.moduleBuiltIn !== 'boolean')
 		|| (value.excludeMatches !== undefined && !isStringArray(value.excludeMatches))
 		|| (value.world !== undefined && (
 			typeof value.world !== 'string' || !WORLD_VALUES.has(value.world)
 		))
 		|| (value.lastRun !== undefined && !isFiniteNumber(value.lastRun))) return null;
 
-	const matches = [...value.matches];
-	Object.freeze(matches);
+	const extra = extensionFields(value);
+	if (extra === null) return null;
+	const matches = Object.freeze([...value.matches]);
 	const excludeMatches = value.excludeMatches === undefined
 		? undefined
-		: [...value.excludeMatches];
-	if (excludeMatches) Object.freeze(excludeMatches);
+		: Object.freeze([...value.excludeMatches]);
 	return Object.freeze({
+		...extra,
 		id: value.id,
 		name: value.name,
 		description: value.description,
@@ -115,22 +206,27 @@ function normalizeScript(value: unknown): Readonly<UserScript> | null {
 		createdAt: value.createdAt,
 		updatedAt: value.updatedAt,
 		...(value.saatToolId === undefined ? {} : { saatToolId: value.saatToolId }),
-	});
+		...(value.managedBy === undefined
+			? {}
+			: { managedBy: value.managedBy as UserScriptManagedBy }),
+		...(value.moduleBuiltIn === undefined ? {} : { moduleBuiltIn: value.moduleBuiltIn }),
+	}) as Readonly<UserScript>;
 }
 
 function normalizeToolbarConfig(
 	value: unknown,
-): Readonly<NonNullable<UserScriptState['toolbarConfig']>> | undefined {
+): Readonly<NonNullable<UserScriptState['toolbarConfig']>> | null | undefined {
+	if (value === undefined) return undefined;
 	if (!isRecord(value)
 		|| !isStringArray(value.order)
-		|| typeof value.hideOnOverflow !== 'boolean') return undefined;
-	const order = [...value.order];
-	Object.freeze(order);
-	return Object.freeze({ order, hideOnOverflow: value.hideOnOverflow });
+		|| typeof value.hideOnOverflow !== 'boolean') return null;
+	return Object.freeze({
+		order: Object.freeze([...value.order]) as string[],
+		hideOnOverflow: value.hideOnOverflow,
+	});
 }
 
 export function parseUserScriptsStorageValue(value: unknown): UserScriptsStorageSnapshot {
-	// Missing key is the only state that receives the historical default-on value.
 	if (value === undefined) {
 		return Object.freeze({
 			ready: true,
@@ -144,16 +240,21 @@ export function parseUserScriptsStorageValue(value: unknown): UserScriptsStorage
 		|| (value.globalEnabled !== undefined && typeof value.globalEnabled !== 'boolean')) {
 		return FAILED_SNAPSHOT;
 	}
-	const scripts = value.scripts
-		.map(normalizeScript)
-		.filter((entry): entry is Readonly<UserScript> => entry !== null);
+
+	const scripts: Readonly<UserScript>[] = [];
+	for (const rawScript of value.scripts) {
+		const normalized = normalizeScript(rawScript);
+		if (normalized === null) return FAILED_SNAPSHOT;
+		scripts.push(normalized);
+	}
 	const toolbarConfig = normalizeToolbarConfig(value.toolbarConfig);
+	if (toolbarConfig === null) return FAILED_SNAPSHOT;
 	return Object.freeze({
 		ready: true,
 		failed: false,
 		globalEnabled: value.globalEnabled ?? true,
 		scripts: scripts.length === 0 ? EMPTY_SCRIPTS : Object.freeze(scripts),
-		...(toolbarConfig ? { toolbarConfig } : {}),
+		...(toolbarConfig === undefined ? {} : { toolbarConfig }),
 	});
 }
 
@@ -196,7 +297,7 @@ function start(): void {
 	if (started) return;
 	started = true;
 	const epoch = ++lifecycleEpoch;
-	chrome.storage.onChanged.addListener(onStorageChanged);
+	unsubscribeStorageChanges = subscribeHaloStorageChanges(onStorageChanged);
 	const request = ++readRevision;
 	void readCurrent(epoch, request, eventRevision);
 }
@@ -206,7 +307,8 @@ function stop(): void {
 	started = false;
 	lifecycleEpoch += 1;
 	readRevision += 1;
-	chrome.storage.onChanged.removeListener(onStorageChanged);
+	unsubscribeStorageChanges?.();
+	unsubscribeStorageChanges = null;
 	snapshot = EMPTY_SNAPSHOT;
 }
 
