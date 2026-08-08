@@ -15,6 +15,68 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  sync-halo-registry:
+    name: sync reviewed HALO registry
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/spectra-halo-performance'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout source branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Set up Bun 1.3.14
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install workspace dependencies
+        run: bun install --cwd nexus --frozen-lockfile
+
+      - name: Generate and verify reviewed lifecycle changes
+        run: |
+          bun nexus/scripts/generate-tool-registry.ts
+          sha256sum \
+            nexus/apps/extension-halo/src/kernel/registry/_generated.ts \
+            nexus/apps/extension-halo/src/kernel/registry/_generated-background-active.ts \
+            nexus/apps/extension-halo/src/components/_generated-tool-loader.ts \
+            nexus/apps/extension-halo/src/i18n/locales/_generated-tools-en.ts \
+            nexus/apps/extension-halo/src/i18n/locales/_generated-tools-zh.ts \
+            nexus/apps/extension-halo/public/script-plugin-runtime.json > /tmp/registry-first.sha256
+          bun nexus/scripts/generate-tool-registry.ts
+          sha256sum \
+            nexus/apps/extension-halo/src/kernel/registry/_generated.ts \
+            nexus/apps/extension-halo/src/kernel/registry/_generated-background-active.ts \
+            nexus/apps/extension-halo/src/components/_generated-tool-loader.ts \
+            nexus/apps/extension-halo/src/i18n/locales/_generated-tools-en.ts \
+            nexus/apps/extension-halo/src/i18n/locales/_generated-tools-zh.ts \
+            nexus/apps/extension-halo/public/script-plugin-runtime.json > /tmp/registry-second.sha256
+          diff -u /tmp/registry-first.sha256 /tmp/registry-second.sha256
+          bun --cwd nexus/apps/extension-halo run typecheck
+          bun test --cwd nexus/apps/extension-halo test/hot-path-lifecycle.spec.ts test/resource-provenance.spec.ts test/registry-generation.spec.ts
+          git diff --check
+
+      - name: Commit canonical generated artifacts
+        run: |
+          git add \
+            nexus/apps/extension-halo/src/kernel/registry/_generated.ts \
+            nexus/apps/extension-halo/src/kernel/registry/_generated-background-active.ts \
+            nexus/apps/extension-halo/src/components/_generated-tool-loader.ts \
+            nexus/apps/extension-halo/src/i18n/locales/_generated-tools-en.ts \
+            nexus/apps/extension-halo/src/i18n/locales/_generated-tools-zh.ts
+          if git diff --cached --quiet; then
+            echo 'generated artifacts already canonical'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore(halo): sync reviewed performance provenance'
+          git push origin HEAD:${{ github.head_ref }}
+
   quality:
     name: quality (ubuntu)
     runs-on: ubuntu-latest
