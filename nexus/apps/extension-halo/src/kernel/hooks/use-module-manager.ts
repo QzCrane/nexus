@@ -1,13 +1,14 @@
 // goal: React hook for module manager
 // eff: Reactive module state access in components
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useSyncExternalStore } from 'react';
 import { type ModuleManager, getModuleManager } from '../managers/module-manager';
 import { ALL_MODULES, type ModuleStatus } from '../registry/module-registry';
 import type { ModuleMeta } from '../core/tool-registry-types';
 
 interface UseModuleManagerResult {
 	loading: boolean;
+	revision: number;
 	installedModules: ModuleMeta[];
 	availableModules: ModuleMeta[];
 	getStatus: (id: string) => ModuleStatus;
@@ -20,40 +21,28 @@ interface UseModuleManagerResult {
 export const useModuleManager = (): UseModuleManagerResult => {
 	const [manager, setManager] = useState<ModuleManager | null>(null);
 	const [loading, setLoading] = useState(true);
-	const [, forceUpdate] = useState(0);
 
 	useEffect(() => {
 		let cancelled = false;
-		// rule: capture the unsubscribe handle on a closure variable so the effect's
-		// cleanup function can invoke it. The previous `return unsub` was the resolved
-		// value of the promise callback, not the useEffect cleanup — so the listener
-		// was never removed and accumulated across every mount/unmount cycle, leaking
-		// memory and forcing stale-state updates on unmounted components.
-		let unsubscribe: (() => void) | null = null;
-
-		getModuleManager().then((m) => {
+		void getModuleManager().then((nextManager) => {
 			if (cancelled) return;
-			setManager(m);
+			setManager(nextManager);
 			setLoading(false);
-
-			// Subscribe to changes
-			unsubscribe = m.subscribe(() => forceUpdate((n) => n + 1));
-		}).catch((e) => {
-			// rule: swallow rejection so the floating promise doesn't throw an
-			// unhandled rejection. Preserve the cancelled guard so we don't
-			// setLoading on an unmounted component.
+		}).catch((error: unknown) => {
 			if (!cancelled) setLoading(false);
-			console.error('useModuleManager: getModuleManager failed', e);
+			console.error('useModuleManager: getModuleManager failed', error);
 		});
-
-		return () => {
-			cancelled = true;
-			if (unsubscribe) {
-				unsubscribe();
-				unsubscribe = null;
-			}
-		};
+		return () => { cancelled = true; };
 	}, []);
+
+	// ModuleManager is an external mutable authority. useSyncExternalStore gives
+	// React a monotonic snapshot instead of relying on an unrelated forceUpdate
+	// whose callback identities stayed stable and could leave downstream memos stale.
+	const subscribe = useCallback((listener: () => void) => (
+		manager ? manager.subscribe(listener) : () => {}
+	), [manager]);
+	const getSnapshot = useCallback(() => manager?.getRevision() ?? 0, [manager]);
+	const revision = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
 	const getStatus = useCallback((id: string): ModuleStatus => {
 		if (!manager) return 'available';
@@ -81,8 +70,24 @@ export const useModuleManager = (): UseModuleManagerResult => {
 		return meta?.builtIn === true;
 	}, []);
 
-	const installedModules = manager?.getInstalledModules() || [];
-	const availableModules = manager?.getAvailableModules() || [];
+	const installedModules = useMemo(
+		() => manager?.getInstalledModules() ?? [],
+		[manager, revision],
+	);
+	const availableModules = useMemo(
+		() => manager?.getAvailableModules() ?? [],
+		[manager, revision],
+	);
 
-	return { loading, installedModules, availableModules, getStatus, install, uninstall, isInstalled, isCore };
+	return {
+		loading,
+		revision,
+		installedModules,
+		availableModules,
+		getStatus,
+		install,
+		uninstall,
+		isInstalled,
+		isCore,
+	};
 };
