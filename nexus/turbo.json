@@ -13,7 +13,9 @@
 			],
 			"inputs": [
 				"$TURBO_DEFAULT$",
-				"$TURBO_ROOT$/tsconfig.base.json"
+				"$TURBO_ROOT$/tsconfig.base.json",
+				"$TURBO_ROOT$/scripts/generate-tool-registry.ts",
+				"$TURBO_ROOT$/scripts/registry-gen/**"
 			],
 			"outputs": [
 				"dist/**",
