@@ -7,7 +7,7 @@ export const STORAGE_KEY = 'halo_userscripts';
 // so the first caller to mutate its returned state (e.g., `state.scripts.push(...)`)
 // corrupted every subsequent empty-storage read across the extension — the
 // "default" silently became whatever the last mutator left behind.
-export function createDefaultUserScriptState(): UserScriptState {
+function createDefaultState(): UserScriptState {
 	return { scripts: [], globalEnabled: true };
 }
 
@@ -17,7 +17,7 @@ export async function getUserScriptsState(): Promise<UserScriptState> {
 	if (result[STORAGE_KEY]) {
 		return result[STORAGE_KEY] as UserScriptState;
 	}
-	return createDefaultUserScriptState();
+	return createDefaultState();
 }
 
 // Save state
