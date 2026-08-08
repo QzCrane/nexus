@@ -1,9 +1,13 @@
 import type React from 'react';
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
 	BACKGROUND_ACTIVE_ONLY_MAP,
 	BACKGROUND_PLUGIN_IDS,
 } from '../../kernel/registry/_generated-background-active';
+import {
+	getUserScriptsStorageSnapshot,
+	subscribeUserScriptsStorage,
+} from '../../kernel/stores/user-scripts-storage';
 
 interface ActiveServiceScript {
 	id: string;
@@ -111,14 +115,15 @@ function initialStorageState(
 	local: Record<string, unknown>,
 	sync: Record<string, unknown>,
 ): ActiveServiceStorageState {
-	const userscripts = local.halo_userscripts;
 	return {
 		ready: true,
 		clipboardEnabled: readEnabled(local.halo_tool_clipboard_settings),
 		hoverZoomEnabled: readEnabled(local.halo_hover_zoom_settings),
-		userscriptsEnabled: readUserScriptsEnabled(userscripts),
+		// These two fields are intentionally placeholders here. The provider's
+		// public projection replaces them with the shared UserScripts authority.
+		userscriptsEnabled: false,
 		smoothScrollEnabled: readEnabled(sync.HALO_SMOOTH_SCROLL_SETTINGS),
-		userScripts: readScripts(userscripts),
+		userScripts: [],
 		saatScripts: readScripts(local.halo_saat_scripts),
 	};
 }
@@ -142,14 +147,6 @@ function applyStorageChanges(
 
 		const hoverZoom = changes.halo_hover_zoom_settings;
 		if (hoverZoom) patch('hoverZoomEnabled', readEnabled(hoverZoom.newValue));
-
-		const userscripts = changes.halo_userscripts;
-		if (userscripts) {
-			patch('userscriptsEnabled', readUserScriptsEnabled(userscripts.newValue));
-			const scripts = readScripts(userscripts.newValue);
-			eventOwnedFields.add('userScripts');
-			if (!sameScripts(next.userScripts, scripts)) next = { ...next, userScripts: scripts };
-		}
 
 		const saat = changes.halo_saat_scripts;
 		if (saat) {
@@ -206,13 +203,17 @@ const ActiveServicesContext = createContext<ActiveServicesContextType | undefine
 /**
  * Single SidePanel authority for runtime/background service status.
  *
- * One local read + one sync read hydrate all relevant status, then a single
- * storage.onChanged listener applies event payloads incrementally. A change no
- * longer triggers a second full storage read, and EngineStatus projects this
- * same authority instead of maintaining another listener/read lifecycle.
+ * Clipboard/HoverZoom/SmoothScroll/SaaT keep one local+sync lifecycle here.
+ * UserScripts are projected from the shared user-script store, so Launcher and
+ * status consumers no longer create a second `halo_userscripts` read/listener.
  */
 export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 	const [storageState, setStorageState] = useState<ActiveServiceStorageState>(EMPTY_STORAGE_STATE);
+	const userScriptsSnapshot = useSyncExternalStore(
+		subscribeUserScriptsStorage,
+		getUserScriptsStorageSnapshot,
+		getUserScriptsStorageSnapshot,
+	);
 
 	useEffect(() => {
 		let disposed = false;
@@ -231,7 +232,6 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 			chrome.storage.local.get([
 				'halo_tool_clipboard_settings',
 				'halo_hover_zoom_settings',
-				'halo_userscripts',
 				'halo_saat_scripts',
 			]),
 			chrome.storage.sync.get('HALO_SMOOTH_SCROLL_SETTINGS'),
@@ -252,10 +252,21 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 		};
 	}, []);
 
-	const activeServices = useMemo(() => deriveActiveServices(storageState), [storageState]);
+	const userScripts = useMemo(
+		() => readScripts({ scripts: userScriptsSnapshot.scripts }),
+		[userScriptsSnapshot.scripts],
+	);
+	const combinedState = useMemo<ActiveServiceStorageState>(() => ({
+		...storageState,
+		ready: storageState.ready && userScriptsSnapshot.ready,
+		userscriptsEnabled: userScriptsSnapshot.globalEnabled,
+		userScripts,
+	}), [storageState, userScriptsSnapshot.ready, userScriptsSnapshot.globalEnabled, userScripts]);
+
+	const activeServices = useMemo(() => deriveActiveServices(combinedState), [combinedState]);
 	const bgToolIds = useMemo(
-		() => [...TRUE_BACKGROUND_IDS, ...deriveScriptIds(storageState)],
-		[storageState],
+		() => [...TRUE_BACKGROUND_IDS, ...deriveScriptIds(combinedState)],
+		[combinedState],
 	);
 	const value = useMemo(
 		() => ({ activeServices, bgToolIds }),
