@@ -3,7 +3,9 @@
 
 import {
 	SPECTRA_DEFAULT_HOTKEY_ACTIONS,
+	isSpectraRepeatableDefaultHotkeyAction,
 	type SpectraDefaultHotkeyAction,
+	type SpectraLeanSiteHotkeyBinding,
 } from '@nexus/contracts/bootstrap';
 import {
 	findBestHostnameMatch,
@@ -14,12 +16,6 @@ import {
 } from '@nexus/contracts';
 
 const DEFAULT_PAGE_ACTIONS: ReadonlySet<string> = new Set(SPECTRA_DEFAULT_HOTKEY_ACTIONS);
-const LEAN_REPEATABLE_ACTIONS: ReadonlySet<SpectraDefaultHotkeyAction> = new Set([
-	'speed_up',
-	'speed_down',
-	'volume_up',
-	'volume_down',
-]);
 
 export type SiteHotkeyRuntimeMode = 'none' | 'lean' | 'full';
 
@@ -37,7 +33,9 @@ export function isLiveSiteHotkeyBinding(binding: HotkeyBinding): boolean {
 // Therefore it may accept only the five canonical page-default actions and only
 // their canonical step sizes. A custom `params.step` or any other action falls
 // back to the full runtime instead of silently changing behavior.
-export function isLeanSiteHotkeyBinding(binding: HotkeyBinding): boolean {
+export function isLeanSiteHotkeyBinding(
+	binding: HotkeyBinding,
+): binding is HotkeyBinding & { action: SpectraDefaultHotkeyAction } {
 	if (!isLiveSiteHotkeyBinding(binding) || !DEFAULT_PAGE_ACTIONS.has(binding.action)) return false;
 	return binding.params === undefined || Object.keys(binding.params).length === 0;
 }
@@ -45,7 +43,7 @@ export function isLeanSiteHotkeyBinding(binding: HotkeyBinding): boolean {
 export function isLeanRepeatableSiteHotkeyAction(
 	action: string,
 ): action is SpectraDefaultHotkeyAction {
-	return LEAN_REPEATABLE_ACTIONS.has(action as SpectraDefaultHotkeyAction);
+	return isSpectraRepeatableDefaultHotkeyAction(action);
 }
 
 export function resolveSiteHotkeys(
@@ -76,6 +74,24 @@ export function resolveSiteHotkeys(
 		site,
 		mode: liveBindings.every(isLeanSiteHotkeyBinding) ? 'lean' : 'full',
 	};
+}
+
+export function leanSiteHotkeyBindings(
+	resolved: ResolvedSiteHotkeys | null,
+): SpectraLeanSiteHotkeyBinding[] | null {
+	if (resolved?.mode !== 'lean') return null;
+	return resolved.site.bindings
+		.filter(isLeanSiteHotkeyBinding)
+		.map((binding) => ({
+			code: binding.key.code,
+			modifiers: {
+				ctrl: binding.key.modifiers.ctrl,
+				alt: binding.key.modifiers.alt,
+				shift: binding.key.modifiers.shift,
+				meta: binding.key.modifiers.meta,
+			},
+			action: binding.action,
+		}));
 }
 
 export function siteHotkeyCapability(resolved: ResolvedSiteHotkeys | null): string | null {
