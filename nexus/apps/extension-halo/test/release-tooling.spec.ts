@@ -126,8 +126,26 @@ describe('HALO release tooling', () => {
 			'utf8',
 		);
 
-		expect(background).not.toContain('TOOL_REGISTRY');
+		expect(background).not.toMatch(/import\s+\{[^}]*\bTOOL_REGISTRY\b[^}]*\}/u);
+		expect(background).not.toContain('../kernel/registry/tool-registry');
+		expect(background).not.toMatch(/from ['"]\.\.\/kernel['"]/u);
 		expect(background).toContain('script-plugin-runtime.json');
 		expect(generator).toContain('generateScriptRuntimeManifest');
+	});
+
+	test('does not rebuild browser-persistent user-script registrations on every worker wake', () => {
+		const background = readFileSync(
+			new URL('../src/entry/background.ts', import.meta.url),
+			'utf8',
+		);
+		const registry = readFileSync(
+			new URL('../src/system/userscripts/registry.ts', import.meta.url),
+			'utf8',
+		);
+
+		expect(background).toMatch(/onInstalled[\s\S]*syncRegisteredScripts\(\)/u);
+		expect(registry).toContain('persistAcrossSessions: true');
+		const initBody = registry.slice(registry.indexOf('export function initUserScriptsRegistry'));
+		expect(initBody).not.toMatch(/syncRegisteredScripts\(\);/u);
 	});
 });
