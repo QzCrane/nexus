@@ -46,8 +46,15 @@ jobs:
             fi
             git cat-file -e "${BASE_SHA}^{commit}"
             git cat-file -e "${HEAD_SHA}^{commit}"
-            git merge-base "$BASE_SHA" "$HEAD_SHA" >/dev/null
-            git diff --no-renames --name-only -z "${BASE_SHA}...${HEAD_SHA}" > "$paths_file"
+
+            merge_bases_file="$RUNNER_TEMP/pr-merge-bases.txt"
+            git merge-base --all "$BASE_SHA" "$HEAD_SHA" > "$merge_bases_file"
+            mapfile -t merge_bases < "$merge_bases_file"
+            if [[ "${#merge_bases[@]}" -ne 1 ]]; then
+              echo "Expected exactly one PR merge base; found ${#merge_bases[@]}" >&2
+              exit 1
+            fi
+            git diff --no-renames --name-only -z "${merge_bases[0]}" "$HEAD_SHA" > "$paths_file"
           fi
 
           node nexus/scripts/ci-product-scope.mjs \
@@ -96,6 +103,10 @@ jobs:
 
       - name: Typecheck all workspaces
         run: bun run typecheck
+
+      - name: Bound Turbo cache snapshot
+        if: always()
+        run: node nexus/scripts/prune-turbo-cache.mjs nexus/.turbo/cache
 
   build-and-test:
     name: build-and-test (${{ matrix.os }})
@@ -149,3 +160,7 @@ jobs:
       - name: Test HALO
         if: needs.scope.outputs.halo == 'true'
         run: bun --cwd nexus test:halo
+
+      - name: Bound Turbo cache snapshot
+        if: always()
+        run: node nexus/scripts/prune-turbo-cache.mjs nexus/.turbo/cache
