@@ -1,0 +1,85 @@
+name: HALO Hover finalizer once
+
+on:
+  push:
+    branches:
+      - agent/halo-hover-zoom-on-demand-v2
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/halo-hover-zoom-on-demand-v2
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Apply exact budget and architecture replacements
+        shell: python
+        run: |
+          from pathlib import Path
+
+          build = Path('nexus/apps/extension-halo/build.ts')
+          text = build.read_text()
+          old = '\ttopFrameDocumentIdle: 55,'
+          new = '\ttopFrameDocumentIdle: 5,'
+          if text.count(old) != 1:
+              raise SystemExit(f'build budget anchor count={text.count(old)}')
+          build.write_text(text.replace(old, new, 1))
+
+          docs = Path('nexus/apps/extension-halo/docs/architecture.md')
+          text = docs.read_text()
+          replacements = [
+              (
+                  '| `content-hover-zoom.js` | top frame | `document_idle` | Hover Zoom; high-frequency mouse/key listeners exist only while enabled |',
+                  '| `content-hover-zoom.js` | top frame | `document_idle` | ~4 KiB Hover Zoom settings + pre-activation input bootstrap; default enabled does not load the heavy runtime |\n| `tools/_hover-zoom/runtime.js` | top frame | interaction-gated packaged ESM | ~54 KiB Hover Zoom viewer/resolver/rule runtime loaded only after the first eligible user interaction |',
+              ),
+              (
+                  '- **Hover Zoom input**: when disabled, Hover Zoom removes its mouse/key listeners, pending trigger timer, viewer ownership, and pending preload. A low-frequency settings subscription may remain to detect re-enablement.',
+                  '- **Hover Zoom input**: the static `document_idle` bootstrap owns the single storage subscription and pre-activation mouse/key admission. Default `enabled:true` does not import the ~54 KiB heavy runtime. Disabled state owns zero page-input listeners. In `altKeyMode=block`, the bootstrap preserves synchronous Alt `keydown` and `keyup` default prevention while a lazy import is in flight. The first eligible interaction loads the packaged ESM runtime and hands over the latest pointer/modifier snapshot; after load the runtime owns high-frequency input. Release or disable during loading is reconciled before activation, so a stale gesture cannot create a delayed ghost viewer. The low-frequency storage subscription remains to detect re-enablement and forwards later settings to the loaded runtime.',
+              ),
+              (
+                  '`top-frame@document_idle <= 55KiB`',
+                  '`top-frame@document_idle <= 5KiB`',
+              ),
+              (
+                  '- Performance budgets are anchored to measured production artifacts rather than source-line counts, total extension size, or bundle-count heuristics.',
+                  '- **Hover Zoom production split**: the measured top-frame idle bootstrap is ~4 KiB while `tools/_hover-zoom/runtime.js` is ~54 KiB activation-only. The runtime is excluded from the startup closure because production Chromium proof requires a real eligible interaction before it can load.\n- Performance budgets are anchored to measured production artifacts rather than source-line counts, total extension size, or bundle-count heuristics.',
+              ),
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'architecture anchor count={count}: {old[:80]}')
+              text = text.replace(old, new, 1)
+          docs.write_text(text)
+      - name: Remove trigger marker
+        run: rm nexus/apps/extension-halo/.hover-finalize-trigger
+      - name: Install frozen workspace
+        run: bun install --cwd nexus --frozen-lockfile
+      - name: Verify production budget and docs
+        run: |
+          bun --cwd nexus build
+          bun nexus/scripts/lint-docs.ts --strict
+          bun --cwd nexus/apps/extension-halo test test/build-runtime-surfaces.spec.ts test/hover-zoom-lazy.spec.ts test/resource-provenance.spec.ts test/registry-generation.spec.ts
+      - name: Fail closed on scope and commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          allowed='^(nexus/apps/extension-halo/build\.ts|nexus/apps/extension-halo/docs/architecture\.md|nexus/apps/extension-halo/\.hover-finalize-trigger)$'
+          unexpected="$(git diff --name-only | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'Unexpected finalizer diff:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          git add nexus/apps/extension-halo/build.ts nexus/apps/extension-halo/docs/architecture.md nexus/apps/extension-halo/.hover-finalize-trigger
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'perf(halo): lock interaction-gated Hover Zoom budget'
+          git push origin HEAD:agent/halo-hover-zoom-on-demand-v2
