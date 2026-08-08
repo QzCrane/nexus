@@ -4,6 +4,7 @@
 import type { ScriptType } from '../../kernel/registry/taxonomy';
 export type { ScriptType };
 export type UserScriptRunAt = 'document_start' | 'document_end' | 'document_idle';
+export type UserScriptManagedBy = 'packaged-script' | 'saat-tool';
 
 export interface UserScript {
 	id: string;
@@ -31,8 +32,11 @@ export interface UserScript {
 	// Timestamps
 	createdAt: number;
 	updatedAt: number;
-	// Present for registry-managed built-in scripts. User-authored scripts omit it.
+	// Registry-managed packaged scripts/SaaT runtimes carry explicit ownership.
+	// Custom user-authored scripts omit all three fields.
 	saatToolId?: string;
+	managedBy?: UserScriptManagedBy;
+	moduleBuiltIn?: boolean;
 }
 
 export interface UserScriptState {
