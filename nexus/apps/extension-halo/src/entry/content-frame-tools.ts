@@ -1,72 +1,83 @@
-// goal: minimal all-frame host for tools whose semantics intentionally span iframes
-// inv: Keep this entry dormant until an explicit tool command; no timers/observers at module load.
-
-import { Actions } from '@nexus/contracts';
-import * as Ruler from '../content/ruler';
-import * as DomSelector from '../content/dom-selector';
-import * as PageAnnotate from '../content/page-annotate';
+// goal: minimal all-frame command bootstrap for iframe-spanning HALO tools
+// inv: Heavy tool implementations load only after an explicit activation command.
 
 const LOG_TAG = '[HALO:FrameTools]';
+const RUNTIME_PATH = 'tools/_frame-tools/runtime.js';
 
-function isExpectedRuntimeDisconnect(error: unknown): boolean {
-	const message = error instanceof Error ? error.message : String(error);
-	return message.includes('Extension context invalidated') ||
-		message.includes('Receiving end does not exist') ||
-		message.includes('message port closed');
+const FRAME_TOOL_TYPES = new Set([
+	'HALO_RULER_START',
+	'HALO_RULER_CANCEL',
+	'HALO_DOM_SELECTOR_START',
+	'HALO_DOM_SELECTOR_STOP',
+	'HALO_ANNOTATE_START',
+	'HALO_ANNOTATE_STOP',
+]);
+
+const DEACTIVATION_TYPES = new Set([
+	'HALO_RULER_CANCEL',
+	'HALO_DOM_SELECTOR_STOP',
+	'HALO_ANNOTATE_STOP',
+]);
+
+interface FrameToolRuntime {
+	handleFrameToolMessage(message: { type: string }): boolean;
 }
 
-function sendRuntimeMessageBestEffort(message: unknown): void {
-	try {
-		void chrome.runtime.sendMessage(message).catch((error: unknown) => {
-			if (!isExpectedRuntimeDisconnect(error)) {
-				console.warn(LOG_TAG, 'DOM selection notification failed', error);
+let runtimePromise: Promise<FrameToolRuntime> | null = null;
+
+function loadRuntime(): Promise<FrameToolRuntime> {
+	if (runtimePromise) return runtimePromise;
+	const runtimeUrl = chrome.runtime.getURL(RUNTIME_PATH);
+	const pending = import(runtimeUrl)
+		.then((module: unknown) => {
+			if (
+				typeof module !== 'object' ||
+				module === null ||
+				typeof (module as Partial<FrameToolRuntime>).handleFrameToolMessage !== 'function'
+			) {
+				throw new Error('HALO frame-tool runtime has an invalid module contract');
 			}
+			return module as FrameToolRuntime;
+		})
+		.catch((error: unknown) => {
+			if (runtimePromise === pending) runtimePromise = null;
+			throw error;
 		});
-	} catch (error: unknown) {
-		if (!isExpectedRuntimeDisconnect(error)) {
-			console.warn(LOG_TAG, 'DOM selection notification failed', error);
-		}
-	}
+	runtimePromise = pending;
+	return pending;
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-	if (!message || typeof message !== 'object') return false;
-
-	switch (message.type) {
-		case Actions.HALO_RULER_START:
-			Ruler.start();
-			sendResponse({ success: true });
-			return false;
-
-		case Actions.HALO_RULER_CANCEL:
-			Ruler.cancel();
-			sendResponse({ success: true });
-			return false;
-
-		case 'HALO_DOM_SELECTOR_START':
-			DomSelector.start((data) => {
-				sendRuntimeMessageBestEffort({ type: 'HALO_DOM_SELECTED', payload: data });
-			});
-			sendResponse({ success: true });
-			return false;
-
-		case 'HALO_DOM_SELECTOR_STOP':
-			DomSelector.stop();
-			sendResponse({ success: true });
-			return false;
-
-		case 'HALO_ANNOTATE_START':
-			PageAnnotate.start();
-			sendResponse({ success: true });
-			return false;
-
-		case 'HALO_ANNOTATE_STOP':
-			PageAnnotate.stop();
-			sendResponse({ success: true });
-			return false;
-
-		default:
-			// Do not compete with the top-frame host for generic/status responses.
-			return false;
+	if (
+		!message ||
+		typeof message !== 'object' ||
+		typeof message.type !== 'string' ||
+		!FRAME_TOOL_TYPES.has(message.type)
+	) {
+		return false;
 	}
+
+	// A stop before the first activation owns no runtime state. Do not turn a
+	// no-op cleanup into a network/module load in every frame.
+	if (!runtimePromise && DEACTIVATION_TYPES.has(message.type)) {
+		sendResponse({ success: true, loaded: false });
+		return false;
+	}
+
+	void loadRuntime()
+		.then((runtime) => {
+			if (!runtime.handleFrameToolMessage(message as { type: string })) {
+				throw new Error(`HALO frame-tool runtime rejected ${message.type}`);
+			}
+			sendResponse({ success: true, loaded: true });
+		})
+		.catch((error: unknown) => {
+			console.warn(LOG_TAG, 'Lazy runtime command failed', error);
+			sendResponse({ success: false, loaded: false });
+		});
+
+	// Keep the message channel alive until the lazy module has loaded and the
+	// command has executed. tabs.sendMessage broadcasts to every frame host;
+	// each frame executes independently even though only one response is used.
+	return true;
 });
