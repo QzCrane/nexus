@@ -37,7 +37,7 @@ const PRODUCTION_BUDGET_KIB = Object.freeze({
 	allFrameDocumentStart: 1,
 	topFrameDocumentStart: 25,
 	allFrameDocumentIdle: 2,
-	topFrameDocumentIdle: 55,
+	topFrameDocumentIdle: 10,
 	sidepanelStartup: 165,
 });
 
