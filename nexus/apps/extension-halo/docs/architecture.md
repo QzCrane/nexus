@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: halo-architecture
-last_reviewed: 2026-08-08
+last_reviewed: 2026-08-09
 ---
 
 # HALO architecture
@@ -67,13 +67,15 @@ tools/<id>/
 - **Registry**: Executable source for identity, category, loading metadata, permissions, and resource-impact provenance. Taxonomy provides virtual views (active, scripts, system).
 - **Install-time script projection**: the registry generator emits `public/script-plugin-runtime.json` containing only `{ id, pluginType, script }` for script-capable plugins. `background.js` must not import the full UI `TOOL_REGISTRY` just to perform `onInstalled` SaaT synchronization. The local JSON is fetched and runtime-validated only during install/update reconciliation.
 - **SidePanel**: `src/entry/sidepanel.tsx` owns application composition, not plugin business logic. Shared error boundaries isolate tool failures. `LauncherToolPage` itself is lazy, so tool-host infrastructure does not enter the Home cold-start closure before the first tool activation.
-- **Runtime status**: `ActiveServicesProvider` is the SidePanel storage authority for service/engine activation. It performs one initial local+sync hydration and one incremental `storage.onChanged` subscription; `EngineStatusProvider` is a pure projection and does not create a second Chrome-storage authority.
+- **Storage-change delivery**: `kernel/core/storage-change-bus.ts` owns the single physical `chrome.storage.onChanged` listener in a SidePanel JS context and multiplexes events to domain authorities. A domain may subscribe to the bus, but may not register a parallel direct Chrome listener merely to filter a different key.
+- **Runtime status**: `ActiveServicesProvider` owns the SidePanel status projection for Clipboard, Hover Zoom, Smooth Scroll, and SaaT status inputs. `system/userscripts/storage-authority.ts` separately owns the canonical `halo_userscripts` persistence projection, including schema validation, hydration/event ordering, and snapshot identity. Both consume the shared storage-change bus, so this domain split does not create a second physical Chrome listener. `EngineStatusProvider` remains a pure projection and creates no storage authority.
+- **UserScripts persistence projection**: all SidePanel consumers of `halo_userscripts` share the system-layer external store. Missing storage uses the historical default-on state; a read failure or malformed persisted row fails the entire snapshot closed. The authority preserves validated extensible metadata so a read/export/import cycle cannot silently convert a registry-managed script into a user-owned script.
 - **Initialization phases**: settings/theme hydration is mount-scoped and independent of module-manager readiness. Open-tool restoration waits for the hydrated module installation set. Module readiness must not retrigger settings I/O.
 
 ## State, Background Work & User-script registration
 
 - **State**: Persistent background work uses SW events, alarms, and lifecycle tokens. `useToolState` coordinates storage sync with bounded write queues.
-- **Event-driven status**: a relevant `storage.onChanged` payload updates the in-memory SidePanel status projection directly; it must not trigger a second full read of the same keys. Initial async hydration cannot overwrite a newer event-owned field.
+- **Event-driven status**: a relevant storage-change payload is delivered once by the SidePanel storage-change bus and updates the owning in-memory projection directly; it must not trigger a second full read of the same keys. Initial async hydration cannot overwrite a newer event-owned field.
 - **Persistent browser registration**: `chrome.userScripts` and dynamically registered content scripts are browser-owned registration state, not service-worker heap state. Ordinary MV3 worker wake must not execute `storage.get -> getRegistered -> unregister -> register` as startup work.
 - **Reconciliation triggers**: `runtime.onInstalled` restores/realigns browser registration after install/update; subsequent `halo_userscripts` or `halo_saat_scripts` storage authority changes request reconciliation. Concurrent requests serialize and collapse to at most one trailing full reconcile.
 - **Dynamic content-script persistence**: HALO sets `persistAcrossSessions:true` explicitly instead of relying on the API default.
@@ -116,7 +118,8 @@ Smooth Scroll is physically and semantically top-document-only: its static conte
 - One executable registry and taxonomy; one permission source and generated projection.
 - Full UI registry metadata does not enter the ordinary service-worker wake graph for install-only script synchronization.
 - Browser-persistent user/content-script registrations are never destroyed and rebuilt solely because the MV3 worker woke up.
-- One SidePanel storage authority for runtime/engine status; no duplicate status listener/read loops.
+- One physical SidePanel `chrome.storage.onChanged` listener per JS context; domain authorities consume the shared event bus and may not create duplicate direct status listeners/read loops.
+- `halo_userscripts` has one canonical SidePanel persistence authority; narrower Launcher/ActiveServices/full-panel views are selectors/materializations, not independent Chrome-storage owners.
 - No panel-owned clock for background work; no manual duplicate content-script inventory.
 - Browser-owned work cannot outlive an unmounted panel unless ownership is explicitly transferred and recoverable.
 - No hidden network capability; 0 recurring work for inactive plugins; no generated file edited manually.
