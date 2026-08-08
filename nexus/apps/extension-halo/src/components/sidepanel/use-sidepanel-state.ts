@@ -13,7 +13,12 @@ function isToolId(value: unknown): value is ToolId {
 }
 
 export const useSidePanelState = () => {
-	const { isInstalled, loading: modulesLoading } = useModuleManager();
+	const {
+		isInstalled,
+		installedModules,
+		loading: modulesLoading,
+		revision: moduleRevision,
+	} = useModuleManager();
 	const [settings, setSettings] = useState<HaloSettings | null>(null);
 	const [settingsLoading, setSettingsLoading] = useState(true);
 	const [openToolsLoading, setOpenToolsLoading] = useState(true);
@@ -27,15 +32,19 @@ export const useSidePanelState = () => {
 		loadOpenTools,
 	} = useOpenTools();
 
+	const installedToolIds = useMemo(
+		() => new Set(installedModules.map((module) => module.id)),
+		[installedModules],
+	);
 	const visibleTools = useMemo(() => {
 		if (modulesLoading) return TOOL_REGISTRY;
 		return TOOL_REGISTRY
-			.filter((tool) => isInstalled(tool.id))
+			.filter((tool) => installedToolIds.has(tool.id))
 			.map(tool => ({
 				...tool,
 				status: tool.status === 'available' ? 'ready' : tool.status
 			}));
-	}, [modulesLoading, isInstalled]);
+	}, [modulesLoading, installedToolIds]);
 
 	// Settings/theme are independent of module-manager hydration. Load them once
 	// per SidePanel mount instead of repeating the storage read when
@@ -54,9 +63,9 @@ export const useSidePanelState = () => {
 		return () => { mounted = false; };
 	}, []);
 
-	// Open-tool restoration is the only initialization phase that must wait for
-	// the module manager, because it validates persisted tools against the live
-	// installation set.
+	// Open-tool restoration/reconciliation waits for the module authority and
+	// reruns when that authority changes. This retires an uninstalled active/dock
+	// tool immediately instead of leaving stale UI until the next SidePanel mount.
 	useEffect(() => {
 		if (modulesLoading) {
 			setOpenToolsLoading(true);
@@ -69,13 +78,14 @@ export const useSidePanelState = () => {
 			if (mounted) setOpenToolsLoading(false);
 		});
 		return () => { mounted = false; };
-	}, [modulesLoading, isInstalled, loadOpenTools]);
+	}, [modulesLoading, moduleRevision, isInstalled, loadOpenTools]);
 
 	const handleToolSelect = useCallback(async (toolId: ToolId) => {
 		const tool = TOOL_REGISTRY.find(t => t.id === toolId);
 		if (tool?.status === 'coming') return;
+		if (!tool?.builtIn && !installedToolIds.has(toolId)) return;
 		await baseToolSelect(toolId);
-	}, [baseToolSelect]);
+	}, [baseToolSelect, installedToolIds]);
 
 	const listener = useCallback((message: unknown) => {
 		if (
@@ -113,18 +123,18 @@ export const useSidePanelState = () => {
 		} else {
 			pinned.push(toolId);
 		}
-		handleSettingsChange({ ...settings, pinnedTools: pinned });
+		void handleSettingsChange({ ...settings, pinnedTools: pinned });
 	}, [settings, handleSettingsChange]);
 
 	const handleReorderTools = useCallback((category: string, toolIds: string[]) => {
 		if (!settings) return;
 		const newOrder = { ...(settings.toolOrder || {}), [category]: toolIds };
-		handleSettingsChange({ ...settings, toolOrder: newOrder });
+		void handleSettingsChange({ ...settings, toolOrder: newOrder });
 	}, [settings, handleSettingsChange]);
 
 	const handleReorderCategories = useCallback((categoryIds: string[]) => {
 		if (!settings) return;
-		handleSettingsChange({ ...settings, categoryOrder: categoryIds });
+		void handleSettingsChange({ ...settings, categoryOrder: categoryIds });
 	}, [settings, handleSettingsChange]);
 
 	return {
