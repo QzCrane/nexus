@@ -13,6 +13,7 @@ const LOG_TAG = '[HALO:UserScripts:Registry]';
 const STORAGE_KEY = 'halo_userscripts';
 const SAAT_STORAGE_KEY = 'halo_saat_scripts';
 const MODULE_STORAGE_KEY = moduleInstallationStorageKey('userscripts');
+const RECOVERY_STORAGE_KEY = 'halo_userscripts_registry_dirty_v1';
 const SCRIPT_ID_PREFIX = 'halo-userscript-';
 const SYNC_RETRY_DELAYS_MS = [250, 1_000, 4_000] as const;
 
@@ -123,38 +124,34 @@ async function registerAllScripts(scripts: UserScript[], globalEnabled: boolean)
 	const contentScriptsToRegister: chrome.scripting.RegisteredContentScript[] = [];
 	for (const script of scripts) {
 		if (!script.enabled) continue;
-		try {
-			const matches = toMatchPatterns(script.matches);
-			const excludeMatches = script.excludeMatches?.length ? toMatchPatterns(script.excludeMatches) : undefined;
-			const fullId = `${SCRIPT_ID_PREFIX}${script.id}`;
-			const world = script.world || 'USER_SCRIPT';
-			if (world === 'ISOLATED') {
-				if (!script.filePath) continue;
-				const contentScript: chrome.scripting.RegisteredContentScript = {
-					id: fullId,
-					matches,
-					excludeMatches,
-					runAt: toRunAt(script.runAt),
-					allFrames: false,
-					world: 'ISOLATED',
-					persistAcrossSessions: true,
-				};
-				if (script.type === 'css') contentScript.css = [script.filePath];
-				else contentScript.js = [script.filePath];
-				contentScriptsToRegister.push(contentScript);
-			} else {
-				userScriptsToRegister.push({
-					id: fullId,
-					matches,
-					excludeMatches,
-					js: [{ code: wrapForMainWorld(script.code, script.name, script.type) }],
-					runAt: toRunAt(script.runAt),
-					allFrames: false,
-					world: 'USER_SCRIPT',
-				});
-			}
-		} catch (error) {
-			throw new Error(failureMessage(`prepare ${script.name} failed`, error));
+		const matches = toMatchPatterns(script.matches);
+		const excludeMatches = script.excludeMatches?.length ? toMatchPatterns(script.excludeMatches) : undefined;
+		const fullId = `${SCRIPT_ID_PREFIX}${script.id}`;
+		const world = script.world || 'USER_SCRIPT';
+		if (world === 'ISOLATED') {
+			if (!script.filePath) continue;
+			const contentScript: chrome.scripting.RegisteredContentScript = {
+				id: fullId,
+				matches,
+				excludeMatches,
+				runAt: toRunAt(script.runAt),
+				allFrames: false,
+				world: 'ISOLATED',
+				persistAcrossSessions: true,
+			};
+			if (script.type === 'css') contentScript.css = [script.filePath];
+			else contentScript.js = [script.filePath];
+			contentScriptsToRegister.push(contentScript);
+		} else {
+			userScriptsToRegister.push({
+				id: fullId,
+				matches,
+				excludeMatches,
+				js: [{ code: wrapForMainWorld(script.code, script.name, script.type) }],
+				runAt: toRunAt(script.runAt),
+				allFrames: false,
+				world: 'USER_SCRIPT',
+			});
 		}
 	}
 
@@ -176,8 +173,6 @@ async function performRegisteredScriptSync(): Promise<void> {
 		result[MODULE_STORAGE_KEY],
 		Object.hasOwn(result, MODULE_STORAGE_KEY),
 	);
-	// Never register on top of an incompletely retired generation. A failed
-	// teardown rejects this sync and is retried/recovered on worker startup.
 	await unregisterAllScripts();
 	if (!moduleEnabled) return;
 	const userState: UserScriptState = result[STORAGE_KEY] || { scripts: [], globalEnabled: true };
@@ -188,17 +183,18 @@ async function performRegisteredScriptSync(): Promise<void> {
 let syncLoop: Promise<void> | null = null;
 let syncPending = false;
 
-export function syncRegisteredScripts(): Promise<void> {
+async function runRegisteredScriptSyncLoop(): Promise<void> {
+	do {
+		syncPending = false;
+		await performRegisteredScriptSync();
+	} while (syncPending);
+}
+
+export async function syncRegisteredScripts(): Promise<void> {
 	syncPending = true;
-	if (syncLoop) return syncLoop;
-	syncLoop = (async () => {
-		do {
-			syncPending = false;
-			await performRegisteredScriptSync();
-		} while (syncPending);
-	})().finally(() => {
-		syncLoop = null;
-	});
+	if (!syncLoop) {
+		syncLoop = runRegisteredScriptSyncLoop().finally(() => { syncLoop = null; });
+	}
 	return syncLoop;
 }
 
@@ -206,23 +202,58 @@ let registryInitialized = false;
 let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
 let recoveryAttempt = 0;
 
-function clearRecovery(): void {
+function clearRecoveryTimer(): void {
 	if (recoveryTimer) clearTimeout(recoveryTimer);
 	recoveryTimer = null;
+}
+
+function resetRecovery(): void {
+	clearRecoveryTimer();
 	recoveryAttempt = 0;
+}
+
+function persistRecoveryNeeded(): void {
+	void chrome.storage.local.set({ [RECOVERY_STORAGE_KEY]: true }).catch((error) => {
+		console.warn(LOG_TAG, 'Failed to persist registry recovery marker', error);
+	});
+}
+
+function clearPersistedRecovery(): void {
+	void chrome.storage.local.remove(RECOVERY_STORAGE_KEY).catch((error) => {
+		console.warn(LOG_TAG, 'Failed to clear registry recovery marker', error);
+	});
 }
 
 function requestRegisteredScriptSync(reason: string): void {
 	void syncRegisteredScripts().then(() => {
-		clearRecovery();
+		resetRecovery();
+		clearPersistedRecovery();
 	}, (error: unknown) => {
 		console.warn(LOG_TAG, `${reason} sync failed`, error);
+		persistRecoveryNeeded();
 		if (!registryInitialized || recoveryTimer || recoveryAttempt >= SYNC_RETRY_DELAYS_MS.length) return;
-		const delay = SYNC_RETRY_DELAYS_MS[recoveryAttempt++] ?? SYNC_RETRY_DELAYS_MS.at(-1) ?? 4_000;
+		const delay = SYNC_RETRY_DELAYS_MS[recoveryAttempt++] ?? 4_000;
 		recoveryTimer = setTimeout(() => {
 			recoveryTimer = null;
 			requestRegisteredScriptSync('recovery');
 		}, delay);
+	});
+}
+
+function recoverPersistentRegistryIfNeeded(): void {
+	void chrome.storage.local.get([MODULE_STORAGE_KEY, RECOVERY_STORAGE_KEY]).then((result) => {
+		if (!registryInitialized) return;
+		const moduleEnabled = isOptionalPackagedModuleStoredEnabled(
+			result[MODULE_STORAGE_KEY],
+			Object.hasOwn(result, MODULE_STORAGE_KEY),
+		);
+		if (!moduleEnabled || result[RECOVERY_STORAGE_KEY] === true) {
+			requestRegisteredScriptSync('worker-startup-recovery');
+		}
+	}).catch((error) => {
+		if (!registryInitialized) return;
+		console.warn(LOG_TAG, 'Failed to inspect registry recovery state', error);
+		requestRegisteredScriptSync('worker-startup-fail-closed');
 	});
 }
 
@@ -232,16 +263,14 @@ export function initUserScriptsRegistry(): () => void {
 	const listener = (changes: { [key: string]: chrome.storage.StorageChange }, area: string) => {
 		if (area !== 'local') return;
 		if (!changes[STORAGE_KEY] && !changes[SAAT_STORAGE_KEY] && !changes[MODULE_STORAGE_KEY]) return;
-		clearRecovery();
+		resetRecovery();
 		requestRegisteredScriptSync('storage-change');
 	};
 	chrome.storage.onChanged.addListener(listener);
-	// Browser registrations survive worker termination, so every fresh worker is
-	// a recovery boundary even when no storage event fires after a prior failure.
-	requestRegisteredScriptSync('worker-startup');
+	recoverPersistentRegistryIfNeeded();
 	return () => {
 		chrome.storage.onChanged.removeListener(listener);
 		registryInitialized = false;
-		clearRecovery();
+		resetRecovery();
 	};
 }
