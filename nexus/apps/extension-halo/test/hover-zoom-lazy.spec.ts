@@ -49,13 +49,24 @@ describe('HALO Hover Zoom lazy preview runtime', () => {
 		expect(contentHost).toContain('cancelPendingPreviewIntent();');
 	});
 
-	test('does not retire a pending import for mouseout inside one logical trigger', () => {
+	test('preserves pending same-target mouseout without rerunning trigger validation', () => {
 		const onOut = sourceWindow(eventHost, 'export function createOnOut', '/** Handle mousemove');
-		const sameTriggerGuard = 'if (sourceTrigger && relatedTrigger === sourceTrigger) return;';
+		const pendingGuard = 'if (isPendingPreviewTransition(related)) return;';
 		const retireIntent = 'cancelPendingPreviewIntent();';
-		expect(onOut).toContain(sameTriggerGuard);
+		expect(onOut).toContain(pendingGuard);
 		expect(onOut).toContain(retireIntent);
-		expect(onOut.indexOf(sameTriggerGuard)).toBeLessThan(onOut.indexOf(retireIntent));
+		expect(onOut.indexOf(pendingGuard)).toBeLessThan(onOut.indexOf(retireIntent));
+		expect(onOut).not.toContain('findTriggerElement(');
+		expect(runtimeLoader).toContain('let pendingPreviewTarget: HTMLElement | null = null;');
+		expect(runtimeLoader).toContain('pending.contains(related)');
+		expect(runtimeLoader).toContain('related.contains(pending)');
+	});
+
+	test('keeps pending ownership through the heavy runtime handoff', () => {
+		const request = sourceWindow(runtimeLoader, 'export async function requestPreview', '\n}\n');
+		expect(request).toContain('await runtime.tryTrigger(state, preload, target);');
+		expect(request).toContain('finally {');
+		expect(request).toContain('pendingPreviewTarget === target');
 	});
 
 	test('keeps synchronous Alt ownership in the light key handler', () => {
