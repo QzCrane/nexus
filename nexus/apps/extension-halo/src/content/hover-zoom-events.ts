@@ -91,7 +91,7 @@ export function createOnOver(state: HoverZoomState, _preload: PreloadState) {
 	};
 }
 
-/** Handle mouseout - cancel when leaving trigger */
+/** Handle mouseout - cancel only after the pointer leaves the logical trigger. */
 export function createOnOut(state: HoverZoomState) {
 	return (e: MouseEvent) => {
 		if (!state.settings.enabled || state.toggleLocked) return;
@@ -99,14 +99,23 @@ export function createOnOut(state: HoverZoomState) {
 		const related = e.relatedTarget as HTMLElement | null;
 		if (related?.closest('#halo-hover-zoom-container')) return;
 
-		// A target can be left while its lazy preview module is still loading.
-		cancelPendingPreviewIntent();
+		// Capture/bubbling mouseout can fire while moving between descendants of
+		// the same logical trigger. Do not retire a lazy import for that internal
+		// transition: the first preview intent still owns the same target.
+		const source = e.target instanceof HTMLElement ? e.target : null;
+		const sourceTrigger = source ? findTriggerElement(source) : null;
+		const relatedTrigger = related ? findTriggerElement(related) : null;
+		if (sourceTrigger && relatedTrigger === sourceTrigger) return;
+
 		if (state.currentTarget) {
 			if (related && state.currentTarget.contains(related)) return;
 			if (related?.contains(state.currentTarget)) return;
-			clearTriggerTimer();
-			cancelPreview(state);
 		}
+
+		clearTriggerTimer();
+		cancelPendingPreviewIntent();
+		if (state.currentTarget) cancelPreview(state);
+		else hideHighlight();
 	};
 }
 
