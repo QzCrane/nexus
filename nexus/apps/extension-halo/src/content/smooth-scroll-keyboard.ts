@@ -202,7 +202,7 @@ export function onKeydownCapture(e: KeyboardEvent): void {
 	function finalizeAtDocument(candidate: KeyboardEvent): void {
 		// stopPropagation still permits later listeners on the same target. If a
 		// site intentionally prevents the event from reaching window, document is
-		// the last safe point where HALO can suppress the browser default action.
+		// the last safe point where HALO can observe that same-event claim.
 		if (candidate === e && candidate.cancelBubble) finalize(candidate);
 	}
 
@@ -235,6 +235,7 @@ export function onKeydown(
 	const siteChangedMedia = mediaStateChanged(capture.mediaStates);
 	if (
 		e.defaultPrevented ||
+		e.cancelBubble ||
 		siteChangedMedia ||
 		e.ctrlKey ||
 		e.altKey ||
