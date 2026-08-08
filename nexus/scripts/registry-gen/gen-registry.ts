@@ -1,9 +1,9 @@
-// goal: Generate _generated.ts registry file
-// eff: Unified PLUGIN_REGISTRY with new schema
+// goal: Generate HALO registry artifacts
+// eff: Full UI registry plus the smallest install-time script runtime projection
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { OUTPUT_REGISTRY } from './config.ts';
+import { OUTPUT_REGISTRY, OUTPUT_SCRIPT_RUNTIME } from './config.ts';
 import { calculateFolderSize } from './utils.ts';
 
 /**
@@ -62,29 +62,26 @@ export interface PluginMeta {
 		const permissions = manifest.permissions?.length ? JSON.stringify(manifest.permissions) : 'undefined';
 		const background = manifest.background ? JSON.stringify(manifest.background) : 'undefined';
 
-		// Script config (new nested format)
 		const scriptConfig = manifest.script ? JSON.stringify(manifest.script) : 'undefined';
 
-		// Calculate actual source size
 		const moduleDir = path.dirname(m.manifestPath);
 		const size = calculateFolderSize(moduleDir);
 
-		return `	{
-		id: '${manifest.id}',
-		icon: '${manifest.icon}',
-		pluginType: '${m.pluginType}',
-		category: '${manifest.category}',
-		size: ${size},
-		builtIn: ${manifest.builtIn ?? false},
-		status: ${manifest.status ? `'${manifest.status}'` : 'undefined'},
-		keywords: ${keywords},
-		permissions: ${permissions},
-		background: ${background},
-		script: ${scriptConfig},
-	}`;
+		return `\t{
+\t\tid: '${manifest.id}',
+\t\ticon: '${manifest.icon}',
+\t\tpluginType: '${m.pluginType}',
+\t\tcategory: '${manifest.category}',
+\t\tsize: ${size},
+\t\tbuiltIn: ${manifest.builtIn ?? false},
+\t\tstatus: ${manifest.status ? `'${manifest.status}'` : 'undefined'},
+\t\tkeywords: ${keywords},
+\t\tpermissions: ${permissions},
+\t\tbackground: ${background},
+\t\tscript: ${scriptConfig},
+\t}`;
 	};
 
-	// Build permission usage map
 	const permissionMap = {};
 	for (const m of allModules) {
 		const manifest = manifestsMap.get(m.id);
@@ -96,7 +93,6 @@ export interface PluginMeta {
 		}
 	}
 
-	// Build background profiles map
 	const backgroundMap = {};
 	for (const m of allModules) {
 		const manifest = manifestsMap.get(m.id);
@@ -136,4 +132,34 @@ export const TOOL_IDS = PLUGIN_IDS;
 
 	fs.writeFileSync(OUTPUT_REGISTRY, content, 'utf-8');
 	console.log(`✓ Generated registry: ${path.relative(process.cwd(), OUTPUT_REGISTRY)}`);
+}
+
+/**
+ * Generate the install-time data projection consumed by the MV3 worker.
+ *
+ * The service worker must not import the full UI registry just to synchronize
+ * SaaT scripts on extension installation/update. Chrome extension service
+ * workers do not support dynamic import(), so the correct lazy boundary here is
+ * local data: only onInstalled fetches this tiny JSON descriptor set.
+ */
+export function generateScriptRuntimeManifest(allModules, manifestsMap) {
+	const descriptors = allModules.flatMap((module) => {
+		const manifest = manifestsMap.get(module.id);
+		if (!manifest?.script) return [];
+		return [{
+			id: manifest.id,
+			pluginType: module.pluginType,
+			script: manifest.script,
+		}];
+	});
+
+	fs.mkdirSync(path.dirname(OUTPUT_SCRIPT_RUNTIME), { recursive: true });
+	fs.writeFileSync(
+		OUTPUT_SCRIPT_RUNTIME,
+		`${JSON.stringify(descriptors, null, 2)}\n`,
+		'utf-8',
+	);
+	console.log(
+		`✓ Generated script runtime: ${path.relative(process.cwd(), OUTPUT_SCRIPT_RUNTIME)} (${descriptors.length})`,
+	);
 }
