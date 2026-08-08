@@ -1,6 +1,6 @@
 import type React from 'react';
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { BACKGROUND_PLUGIN_IDS, BACKGROUND_PROFILES_MAP } from '../../kernel/registry/_generated';
+import { BACKGROUND_ACTIVE_ONLY_MAP, BACKGROUND_PLUGIN_IDS } from '../../kernel/registry/_generated';
 
 interface ActiveServiceScript {
 	id: string;
@@ -30,10 +30,9 @@ const EMPTY_STORAGE_STATE: ActiveServiceStorageState = {
 	saatScripts: [],
 };
 
-const TRUE_BACKGROUND_IDS = BACKGROUND_PLUGIN_IDS.filter((id) => {
-	const profile = BACKGROUND_PROFILES_MAP[id];
-	return profile?.activeOnly === false;
-});
+const TRUE_BACKGROUND_IDS = BACKGROUND_PLUGIN_IDS.filter(
+	(id) => BACKGROUND_ACTIVE_ONLY_MAP[id] === false,
+);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
