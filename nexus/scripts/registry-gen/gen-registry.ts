@@ -1,5 +1,5 @@
 // goal: Generate HALO registry artifacts
-// eff: Full UI registry plus the smallest install-time script runtime projection
+// eff: Startup registry stays lean; detailed background provenance remains a separate generated symbol
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,7 +19,8 @@ export function generateRegistry(allModules, manifestsMap) {
 import type { ToolCategory } from '../../i18n/types';
 import type { PluginType, ScriptType } from './taxonomy';
 
-// Background consumption profile
+// Background consumption profile. Detailed profiles are exported separately
+// from PLUGIN_REGISTRY so startup surfaces do not duplicate source provenance.
 export interface BackgroundProfile {
 	mechanism: 'interval_fast' | 'interval_slow' | 'raf_active' | 'raf_idle' | 'event_listener' | 'storage_listener' | 'message_listener' | 'wheel_listener' | 'copy_listener' | 'mutation_observer' | 'service_worker' | 'content_script' | 'userscript';
 	frequency: string;
@@ -40,7 +41,9 @@ export interface ScriptConfig {
 	world?: 'ISOLATED' | 'MAIN' | 'USER_SCRIPT';
 }
 
-// Unified plugin metadata
+// Unified plugin metadata used by the SidePanel/Home path. Resource-impact
+// provenance lives in BACKGROUND_PROFILES_MAP and is intentionally not copied
+// into every PluginMeta object.
 export interface PluginMeta {
 	id: string;
 	icon: string;
@@ -51,7 +54,6 @@ export interface PluginMeta {
 	status?: 'ready' | 'beta' | 'coming' | 'disabled';
 	keywords: string[];
 	permissions?: string[];
-	background?: BackgroundProfile;
 	script?: ScriptConfig; // Only for script plugins
 }
 `;
@@ -60,8 +62,6 @@ export interface PluginMeta {
 		const manifest = manifestsMap.get(m.id);
 		const keywords = manifest.keywords ? JSON.stringify(manifest.keywords) : '[]';
 		const permissions = manifest.permissions?.length ? JSON.stringify(manifest.permissions) : 'undefined';
-		const background = manifest.background ? JSON.stringify(manifest.background) : 'undefined';
-
 		const scriptConfig = manifest.script ? JSON.stringify(manifest.script) : 'undefined';
 
 		const moduleDir = path.dirname(m.manifestPath);
@@ -77,7 +77,6 @@ export interface PluginMeta {
 \t\tstatus: ${manifest.status ? `'${manifest.status}'` : 'undefined'},
 \t\tkeywords: ${keywords},
 \t\tpermissions: ${permissions},
-\t\tbackground: ${background},
 \t\tscript: ${scriptConfig},
 \t}`;
 	};
@@ -94,10 +93,12 @@ export interface PluginMeta {
 	}
 
 	const backgroundMap = {};
+	const backgroundActiveOnlyMap = {};
 	for (const m of allModules) {
 		const manifest = manifestsMap.get(m.id);
 		if (manifest.background) {
 			backgroundMap[m.id] = manifest.background;
+			backgroundActiveOnlyMap[m.id] = manifest.background.activeOnly === true;
 		}
 	}
 
@@ -117,9 +118,14 @@ export const getUserPlugins = () => PLUGIN_REGISTRY.filter(p => p.pluginType !==
 
 export const PERMISSION_USAGE_MAP: Record<string, string[]> = ${JSON.stringify(permissionMap, null, 4)};
 
-export const BACKGROUND_PROFILES_MAP: Record<string, BackgroundProfile> = ${JSON.stringify(backgroundMap, null, 4)};
+// Startup consumers need only membership + activeOnly. Keep this compact so
+// sourceFile/sourceLine/sourceDetail can stay in lazy resource-impact paths.
+export const BACKGROUND_ACTIVE_ONLY_MAP: Record<string, boolean> = ${JSON.stringify(backgroundActiveOnlyMap, null, 4)};
+export const BACKGROUND_PLUGIN_IDS = Object.keys(BACKGROUND_ACTIVE_ONLY_MAP);
 
-export const BACKGROUND_PLUGIN_IDS = Object.keys(BACKGROUND_PROFILES_MAP);
+// Detailed provenance is a separate symbol. With SidePanel code splitting,
+// consumers that do not import this symbol do not need to pay its bytes.
+export const BACKGROUND_PROFILES_MAP: Record<string, BackgroundProfile> = ${JSON.stringify(backgroundMap, null, 4)};
 
 // Legacy compatibility aliases
 export const ALL_APPS = PLUGIN_REGISTRY;
