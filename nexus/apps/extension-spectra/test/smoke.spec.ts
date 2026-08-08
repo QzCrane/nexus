@@ -2748,11 +2748,18 @@ describe('SPECTRA built extension smoke', () => {
 				data?: ControlSnapshot;
 				error?: { message?: string };
 			}>;
-			const waitForHotkeyFeedbackWindow = () => page.waitForFunction(() => {
-				const osd = document.querySelector<HTMLElement>('#spectra-osd-host')
-					?.shadowRoot?.getElementById('o');
-				return osd !== null && osd !== undefined && !osd.classList.contains('v');
-			}, { timeout: 3_500 });
+			const waitForHotkeyFeedbackWindow = async () => {
+				await page.waitForFunction(() => {
+					const osd = document.querySelector<HTMLElement>('#spectra-osd-host')
+						?.shadowRoot?.getElementById('o');
+					return osd?.classList.contains('v') === true;
+				}, { timeout: 3_500 });
+				await page.waitForFunction(() => {
+					const osd = document.querySelector<HTMLElement>('#spectra-osd-host')
+						?.shadowRoot?.getElementById('o');
+					return osd !== null && osd !== undefined && !osd.classList.contains('v');
+				}, { timeout: 3_500 });
+			};
 			const tapSiteHotkey = async () => {
 				await page.keyboard.press('KeyK');
 			};
@@ -2773,7 +2780,7 @@ describe('SPECTRA built extension smoke', () => {
 				(state) => state.speed === 1.1,
 				'one accepted configured site hotkey',
 			);
-			await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+			await waitForHotkeyFeedbackWindow();
 			expect(await readState()).toMatchObject({ speed: 1.1 });
 
 			// Enabling a site-specific listener must not duplicate ownership of
@@ -2784,7 +2791,7 @@ describe('SPECTRA built extension smoke', () => {
 				(state) => state.speed === 1.2,
 				'one default hotkey despite a colliding site binding',
 			);
-			await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+			await waitForHotkeyFeedbackWindow();
 			expect(await readState()).toMatchObject({ speed: 1.2 });
 
 			await setMode('window-keyup-stop');
