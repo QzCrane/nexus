@@ -200,12 +200,14 @@ jobs:
           		root.styleState.overflowY = 'auto';
           		body.styleState.overflowY = 'hidden';
           		for (const key of ['PageDown', 'PageUp']) {
+          			clearQueue();
+          			resetInputHandlers();
+          			fakeWindow.scrollY = key === 'PageUp' ? 1_000 : 0;
           			const event = keyEvent(key);
           			onKeydown(event, noMediaCapture());
           			expect(event.defaultPrevented).toBe(true);
           			expect(propagationStopped(event)).toBe(false);
           			expect(frameCallbacks.size).toBe(1);
-          			clearQueue();
           		}
           	});
 
