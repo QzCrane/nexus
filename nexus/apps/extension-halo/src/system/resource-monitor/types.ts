@@ -111,7 +111,7 @@ export const SYSTEM_CORE_CONSUMERS: SystemConsumer[] = [
 				level: 'idle',
 				descriptionKey: 'impact.message_handler',
 				sourceFile: 'entry/content-frame-tools.ts',
-				sourceLine: 50,
+				sourceLine: 64,
 				sourceDetail: 'minimal all-frame lazy chrome.runtime.onMessage bootstrap',
 			},
 		],
