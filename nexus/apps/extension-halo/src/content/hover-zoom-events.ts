@@ -6,7 +6,11 @@ import { detectResourcePreference } from '../tools/hover-zoom/content/utils/reso
 import { showHighlight, hideHighlight } from '../tools/hover-zoom/content/utils/highlight';
 import type { HoverZoomState, PreloadState } from './hover-zoom-state';
 import { cancelPreview, getElementAtMouse } from './hover-zoom-actions-light';
-import { cancelPendingPreviewIntent, requestPreview } from './hover-zoom-runtime-loader';
+import {
+	cancelPendingPreviewIntent,
+	isPendingPreviewTransition,
+	requestPreview,
+} from './hover-zoom-runtime-loader';
 
 export {
 	cancelPreview as cancel,
@@ -99,13 +103,10 @@ export function createOnOut(state: HoverZoomState) {
 		const related = e.relatedTarget as HTMLElement | null;
 		if (related?.closest('#halo-hover-zoom-container')) return;
 
-		// Capture/bubbling mouseout can fire while moving between descendants of
-		// the same logical trigger. Do not retire a lazy import for that internal
-		// transition: the first preview intent still owns the same target.
-		const source = e.target instanceof HTMLElement ? e.target : null;
-		const sourceTrigger = source ? findTriggerElement(source) : null;
-		const relatedTrigger = related ? findTriggerElement(related) : null;
-		if (sourceTrigger && relatedTrigger === sourceTrigger) return;
+		// A lazy import can still be in flight before currentTarget is claimed.
+		// Preserve it across descendant/ancestor transitions of the same pending
+		// target without re-running trigger validation on this hot event.
+		if (isPendingPreviewTransition(related)) return;
 
 		if (state.currentTarget) {
 			if (related && state.currentTarget.contains(related)) return;
