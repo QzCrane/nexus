@@ -1,41 +1,20 @@
-// goal: Hook to access user scripts from storage
-// eff: Provides real-time list of scripts for Launcher integration
+// goal: Hook to access user scripts from the shared storage authority
+// eff: Multiple consumers reuse one Chrome read/listener lifecycle
 
-import { useState, useEffect } from 'react';
-import type { SaaTScriptState } from '../services/saat-service';
-
-const USERSCRIPTS_STORAGE_KEY = 'halo_userscripts';
+import { useMemo, useSyncExternalStore } from 'react';
+import {
+	getUserScriptsStorageSnapshot,
+	subscribeUserScriptsStorage,
+} from '../stores/user-scripts-storage';
 
 export function useUserScripts() {
-	const [scripts, setScripts] = useState<SaaTScriptState[]>([]);
-	const [loading, setLoading] = useState(true);
-
-	useEffect(() => {
-		const loadScripts = async () => {
-			try {
-				const result = await chrome.storage.local.get(USERSCRIPTS_STORAGE_KEY);
-				const state = result[USERSCRIPTS_STORAGE_KEY] || { scripts: [] };
-				setScripts(state.scripts || []);
-			} catch (e) {
-				console.error('Failed to load user scripts:', e);
-			} finally {
-				setLoading(false);
-			}
-		};
-
-		loadScripts();
-
-		// Listen for changes
-		const listener = (changes: Record<string, chrome.storage.StorageChange>) => {
-			if (changes[USERSCRIPTS_STORAGE_KEY]) {
-				const newState = changes[USERSCRIPTS_STORAGE_KEY].newValue || { scripts: [] };
-				setScripts(newState.scripts || []);
-			}
-		};
-
-		chrome.storage.onChanged.addListener(listener);
-		return () => chrome.storage.onChanged.removeListener(listener);
-	}, []);
-
-	return { scripts, loading };
+	const snapshot = useSyncExternalStore(
+		subscribeUserScriptsStorage,
+		getUserScriptsStorageSnapshot,
+		getUserScriptsStorageSnapshot,
+	);
+	// Preserve the historical mutable-array hook surface without manufacturing a
+	// new identity on unrelated renders. The shared authority itself stays readonly.
+	const scripts = useMemo(() => [...snapshot.scripts], [snapshot.scripts]);
+	return { scripts, loading: !snapshot.ready };
 }
