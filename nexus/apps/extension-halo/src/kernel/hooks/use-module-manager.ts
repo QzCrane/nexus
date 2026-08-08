@@ -10,21 +10,29 @@ import {
 import { ALL_MODULES, type ModuleStatus } from '../registry/module-registry';
 import type { ModuleMeta } from '../core/tool-registry-types';
 
-const EMPTY_MODULE_SNAPSHOT: ModuleManagerSnapshot = Object.freeze({
+const BUILTIN_MODULES = Object.freeze(ALL_MODULES.filter((module) => module.builtIn));
+const FALLBACK_MODULE_SNAPSHOT: ModuleManagerSnapshot = Object.freeze({
 	revision: 0,
-	installedModules: Object.freeze([]) as readonly ModuleMeta[],
+	degraded: true,
+	installedModules: BUILTIN_MODULES,
 	availableModules: Object.freeze([]) as readonly ModuleMeta[],
 });
 
 interface UseModuleManagerResult {
 	loading: boolean;
+	degraded: boolean;
 	installedModules: readonly ModuleMeta[];
 	availableModules: readonly ModuleMeta[];
 	getStatus: (id: string) => ModuleStatus;
 	install: (id: string) => Promise<void>;
 	uninstall: (id: string) => Promise<void>;
+	retry: () => Promise<boolean>;
 	isInstalled: (id: string) => boolean;
 	isCore: (id: string) => boolean;
+}
+
+function isBuiltIn(id: string): boolean {
+	return ALL_MODULES.find((module) => module.id === id)?.builtIn === true;
 }
 
 export const useModuleManager = (): UseModuleManagerResult => {
@@ -44,22 +52,18 @@ export const useModuleManager = (): UseModuleManagerResult => {
 		return () => { cancelled = true; };
 	}, []);
 
-	// ModuleManager publishes one immutable snapshot identity per durable
-	// authority revision. Ordinary React renders therefore reuse the exact same
-	// installed/available arrays instead of manufacturing false change signals.
 	const subscribe = useCallback((listener: () => void) => (
 		manager ? manager.subscribe(listener) : () => {}
 	), [manager]);
 	const getSnapshot = useCallback(
-		() => manager?.getSnapshot() ?? EMPTY_MODULE_SNAPSHOT,
+		() => manager?.getSnapshot() ?? FALLBACK_MODULE_SNAPSHOT,
 		[manager],
 	);
 	const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
 	const getStatus = useCallback((id: string): ModuleStatus => {
-		if (!manager) return 'available';
-		const state = manager.getState(id);
-		return state?.status || 'available';
+		if (!manager) return isBuiltIn(id) ? 'installed' : 'available';
+		return manager.getState(id)?.status ?? 'available';
 	}, [manager]);
 
 	const install = useCallback(async (id: string): Promise<void> => {
@@ -72,23 +76,25 @@ export const useModuleManager = (): UseModuleManagerResult => {
 		await manager.uninstall(id);
 	}, [manager]);
 
-	const isInstalled = useCallback((id: string): boolean => {
-		if (!manager) return false;
-		return manager.isInstalled(id);
-	}, [manager]);
+	const retry = useCallback(async (): Promise<boolean> => (
+		manager ? manager.retryInstallationState() : false
+	), [manager]);
 
-	const isCore = useCallback((id: string): boolean => {
-		const meta = ALL_MODULES.find((module) => module.id === id);
-		return meta?.builtIn === true;
-	}, []);
+	const isInstalled = useCallback((id: string): boolean => (
+		manager ? manager.isInstalled(id) : isBuiltIn(id)
+	), [manager]);
+
+	const isCore = useCallback((id: string): boolean => isBuiltIn(id), []);
 
 	return {
 		loading,
+		degraded: snapshot.degraded,
 		installedModules: snapshot.installedModules,
 		availableModules: snapshot.availableModules,
 		getStatus,
 		install,
 		uninstall,
+		retry,
 		isInstalled,
 		isCore,
 	};
