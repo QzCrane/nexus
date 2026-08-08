@@ -28,7 +28,7 @@
 		"level": "low",
 		"descriptionKey": "impact.mechanism.mutation_observer",
 		"sourceFile": "scripts/bilibili-enhancer/script.js",
-		"sourceLine": 66,
+		"sourceLine": 106,
 		"sourceDetail": "one cancellable player-discovery observer replaces repeatable 1Hz polling; mutation checks are coalesced to at most one per animation frame"
 	}
 }
