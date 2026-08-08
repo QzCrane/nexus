@@ -106,7 +106,7 @@ export const TimerPanel: React.FC = () => {
 				});
 			},
 		});
-	}, [state.isRunning, state.mode, state.startedAt, state.elapsed, state.target, setState]);
+	}, [state, setState]);
 
 	const handleToggle = useCallback(() => {
 		const timestamp = Date.now();
