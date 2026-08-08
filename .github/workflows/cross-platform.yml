@@ -91,9 +91,19 @@ jobs:
       - name: Build production candidates
         run: bun run build
 
+      - name: TEMP upload HALO generated registries
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: halo-generated-registries-${{ github.sha }}
+          path: |
+            nexus/apps/extension-halo/src/kernel/registry/_generated.ts
+            nexus/apps/extension-halo/src/kernel/registry/_generated-startup.ts
+            nexus/apps/extension-halo/src/kernel/registry/_generated-background-active.ts
+          if-no-files-found: error
+
       - name: Test SPECTRA
         run: bun --cwd nexus test:spectra
 
       - name: Test HALO
         run: bun --cwd nexus test:halo
-
