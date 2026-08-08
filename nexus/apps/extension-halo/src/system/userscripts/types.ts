@@ -4,6 +4,7 @@
 import type { ScriptType } from '../../kernel/registry/taxonomy';
 export type { ScriptType };
 export type UserScriptRunAt = 'document_start' | 'document_end' | 'document_idle';
+export type UserScriptManagedBy = 'packaged-script' | 'saat-tool';
 
 export interface UserScript {
 	id: string;
@@ -12,27 +13,26 @@ export interface UserScript {
 	code: string;
 	enabled: boolean;
 	type: ScriptType;
-	matches: string[];           // URL patterns, e.g., "*://*.example.com/*"
-	excludeMatches?: string[];   // Exclude patterns
+	matches: string[];
+	excludeMatches?: string[];
 	runAt: UserScriptRunAt;
 	world?: 'ISOLATED' | 'MAIN' | 'USER_SCRIPT';
 	filePath?: string;
-	order: number;               // Execution order (lower = earlier)
-	// Metadata
+	order: number;
 	version?: string;
 	author?: string;
 	homepage?: string;
 	updateUrl?: string;
-	// Category matching Module Store
 	category?: string;
-	// Statistics
 	runCount: number;
 	lastRun?: number;
-	// Timestamps
 	createdAt: number;
 	updatedAt: number;
-	// Present for registry-managed built-in scripts. User-authored scripts omit it.
 	saatToolId?: string;
+	// Optional registry ownership metadata. Custom user-authored scripts omit
+	// these fields; shared storage projections must preserve them when present.
+	managedBy?: UserScriptManagedBy;
+	moduleBuiltIn?: boolean;
 }
 
 export interface UserScriptState {
@@ -44,7 +44,6 @@ export interface UserScriptState {
 	};
 }
 
-// Parsed Userscript header (// ==UserScript== format)
 export interface ParsedHeader {
 	name?: string;
 	description?: string;
@@ -60,7 +59,6 @@ export interface ParsedHeader {
 	[key: string]: string | string[] | undefined;
 }
 
-// Export/Import format
 export interface ScriptExport {
 	version: '1.0';
 	exportedAt: number;
