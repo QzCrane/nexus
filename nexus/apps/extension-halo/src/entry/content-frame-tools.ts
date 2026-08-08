@@ -1,29 +1,43 @@
 // goal: minimal all-frame command bootstrap for iframe-spanning HALO tools
 // inv: Heavy tool implementations load only after an explicit activation command.
 
+import {
+	FRAME_TOOL_ANNOTATE_START,
+	FRAME_TOOL_ANNOTATE_STOP,
+	FRAME_TOOL_DOM_SELECTOR_START,
+	FRAME_TOOL_DOM_SELECTOR_STOP,
+	FRAME_TOOL_RULER_CANCEL,
+	FRAME_TOOL_RULER_START,
+	type FrameToolMessageType,
+} from '../content/frame-tool-messages';
+
 const LOG_TAG = '[HALO:FrameTools]';
 const RUNTIME_PATH = 'tools/_frame-tools/runtime.js';
 
-const FRAME_TOOL_TYPES = new Set([
-	'HALO_RULER_START',
-	'HALO_RULER_CANCEL',
-	'HALO_DOM_SELECTOR_START',
-	'HALO_DOM_SELECTOR_STOP',
-	'HALO_ANNOTATE_START',
-	'HALO_ANNOTATE_STOP',
+const FRAME_TOOL_TYPES = new Set<FrameToolMessageType>([
+	FRAME_TOOL_RULER_START,
+	FRAME_TOOL_RULER_CANCEL,
+	FRAME_TOOL_DOM_SELECTOR_START,
+	FRAME_TOOL_DOM_SELECTOR_STOP,
+	FRAME_TOOL_ANNOTATE_START,
+	FRAME_TOOL_ANNOTATE_STOP,
 ]);
 
-const DEACTIVATION_TYPES = new Set([
-	'HALO_RULER_CANCEL',
-	'HALO_DOM_SELECTOR_STOP',
-	'HALO_ANNOTATE_STOP',
+const DEACTIVATION_TYPES = new Set<FrameToolMessageType>([
+	FRAME_TOOL_RULER_CANCEL,
+	FRAME_TOOL_DOM_SELECTOR_STOP,
+	FRAME_TOOL_ANNOTATE_STOP,
 ]);
 
 interface FrameToolRuntime {
-	handleFrameToolMessage(message: { type: string }): boolean;
+	handleFrameToolMessage(message: { type: FrameToolMessageType }): boolean;
 }
 
 let runtimePromise: Promise<FrameToolRuntime> | null = null;
+
+function isFrameToolMessageType(value: string): value is FrameToolMessageType {
+	return FRAME_TOOL_TYPES.has(value as FrameToolMessageType);
+}
 
 function loadRuntime(): Promise<FrameToolRuntime> {
 	if (runtimePromise) return runtimePromise;
@@ -52,22 +66,23 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 		!message ||
 		typeof message !== 'object' ||
 		typeof message.type !== 'string' ||
-		!FRAME_TOOL_TYPES.has(message.type)
+		!isFrameToolMessageType(message.type)
 	) {
 		return false;
 	}
 
+	const type = message.type;
 	// A stop before the first activation owns no runtime state. Do not turn a
 	// no-op cleanup into a network/module load in every frame.
-	if (!runtimePromise && DEACTIVATION_TYPES.has(message.type)) {
+	if (!runtimePromise && DEACTIVATION_TYPES.has(type)) {
 		sendResponse({ success: true, loaded: false });
 		return false;
 	}
 
 	void loadRuntime()
 		.then((runtime) => {
-			if (!runtime.handleFrameToolMessage(message as { type: string })) {
-				throw new Error(`HALO frame-tool runtime rejected ${message.type}`);
+			if (!runtime.handleFrameToolMessage({ type })) {
+				throw new Error(`HALO frame-tool runtime rejected ${type}`);
 			}
 			sendResponse({ success: true, loaded: true });
 		})
