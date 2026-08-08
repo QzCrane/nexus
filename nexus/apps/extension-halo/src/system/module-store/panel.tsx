@@ -83,15 +83,15 @@ export const ModuleStorePanel: React.FC = () => {
 
 	const handleRefresh = useCallback(async () => { await refresh(); }, [refresh]);
 
-	const searchModules = (modules: typeof ALL_MODULES) => 
-		filterBySearch(modules, searchQuery, MODULE_SEARCH_OPTIONS);
+	const searchModules = (modules: readonly PluginMeta[]) =>
+		filterBySearch([...modules], searchQuery, MODULE_SEARCH_OPTIONS);
 
 	const filterByType = (m: PluginMeta) => {
 		if (filterType === 'system') return m.pluginType === 'system';
 		if (filterType === 'script') {
 			const isScript = m.pluginType === 'script' || m.isUserScript;
 			if (!isScript) return false;
-			
+
 			const isUser = !!m.isUserScript;
 			// Check if installed (User scripts are always installed, Official checks installedModules)
 			const isInstalled = isUser || installedModules.some(im => im.id === m.id);
@@ -112,10 +112,13 @@ export const ModuleStorePanel: React.FC = () => {
 
 	// Convert user scripts to modules (exclude SaaT scripts already in ALL_MODULES)
 	const scriptModules = React.useMemo(() => convertScriptsToModules(scripts), [scripts]);
-	const allInstalledModules = React.useMemo(() => [...installedModules, ...scriptModules], [installedModules, scriptModules]);
+	const allInstalledModules = React.useMemo(
+		() => [...installedModules, ...scriptModules],
+		[installedModules, scriptModules],
+	);
 
 	const getFilteredModules = () => {
-		let source: typeof ALL_MODULES = [];
+		let source: readonly PluginMeta[] = [];
 		if (view === 'installed') source = allInstalledModules;
 		else if (view === 'available') source = availableModules;
 		else source = [...ALL_MODULES, ...scriptModules];
@@ -126,8 +129,6 @@ export const ModuleStorePanel: React.FC = () => {
 	const statsModules = allInstalledModules.filter(filterByType);
 	const totalInstalled = statsModules.length;
 	const totalSize = statsModules.reduce((sum, m) => sum + (m.size || 0), 0);
-
-	// Modal Component Styles - Moved to modal.tsx
 
 	if (loading) {
 		return (
@@ -158,7 +159,6 @@ export const ModuleStorePanel: React.FC = () => {
 				view={view} filterType={filterType}
 				handleInstall={handleInstall} handleUninstall={handleUninstall}
 			/>
-			
 		</div>
 	);
 };
