@@ -82,9 +82,15 @@ describe('HALO Hover Zoom lazy preview runtime', () => {
 		expect(gesture.indexOf(clearDebounce)).toBeLessThan(gesture.indexOf(publishModifiers));
 	});
 
-	test('keeps synchronous Alt ownership in the light key handler', () => {
-		expect(keyHost).toContain("e.key === 'Alt' && state.settings.altKeyMode === 'block'");
-		expect(keyHost).toContain('e.preventDefault();');
-		expect(keyHost).toContain('void requestPreview(state, preload, trigger);');
+	test('keeps synchronous Alt ownership in both light key phases', () => {
+		const keydown = sourceWindow(keyHost, 'export function createOnKeyDown', '/** Handle keyup');
+		const keyup = sourceWindow(keyHost, 'export function createOnKeyUp', '\n}\n');
+
+		expect(keydown).toContain("e.key === 'Alt' && state.settings.altKeyMode === 'block'");
+		expect(keydown).toContain('e.preventDefault();');
+		expect(keydown).toContain('void requestPreview(state, preload, trigger);');
+		expect(keyup).toContain("e.key === 'Alt'");
+		expect(keyup).toContain("state.settings.altKeyMode === 'block'");
+		expect(keyup).toContain('e.preventDefault();');
 	});
 });
