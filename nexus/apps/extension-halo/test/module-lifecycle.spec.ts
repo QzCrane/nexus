@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import type { HaloSettings } from '../src/kernel/core/settings';
 import {
 	CORE_MODULES,
@@ -11,6 +12,11 @@ import {
 	type ModuleStatePersistence,
 } from '../src/kernel/managers/module-manager';
 import { resolveCategoryOrder } from '../src/components/sidepanel/hooks/use-categorized-tools';
+
+const openToolsSource = readFileSync(
+	new URL('../src/components/sidepanel/hooks/use-open-tools.ts', import.meta.url),
+	'utf8',
+);
 
 function createMemoryPersistence(initial: ModuleState[] = []) {
 	const stored = new Map(initial.map((state) => [state.id, { ...state }]));
@@ -57,6 +63,28 @@ describe('HALO module lifecycle authority', () => {
 		expect(new Set(manager.getAvailableModules().map((module) => module.id))).toEqual(
 			new Set(OPTIONAL_MODULES.map((module) => module.id)),
 		);
+	});
+
+	test('publishes one immutable snapshot identity per durable revision', async () => {
+		const optional = OPTIONAL_MODULES[0];
+		if (!optional) throw new Error('HALO test requires at least one optional module');
+		const memory = createMemoryPersistence();
+		const manager = new ModuleManager(memory.persistence);
+		await manager.initialize();
+
+		const initial = manager.getSnapshot();
+		expect(manager.getSnapshot()).toBe(initial);
+		expect(initial.revision).toBe(0);
+		expect(Object.isFrozen(initial)).toBe(true);
+		expect(Object.isFrozen(initial.installedModules)).toBe(true);
+		expect(Object.isFrozen(initial.availableModules)).toBe(true);
+
+		await manager.install(optional.id);
+		const installed = manager.getSnapshot();
+		expect(installed).not.toBe(initial);
+		expect(installed.revision).toBe(1);
+		expect(installed.installedModules.some((module) => module.id === optional.id)).toBe(true);
+		expect(manager.getSnapshot()).toBe(installed);
 	});
 
 	test('persists install/uninstall truth, emits monotonic revisions, and keeps uninstall across restart', async () => {
@@ -106,16 +134,36 @@ describe('HALO module lifecycle authority', () => {
 		expect(manager.isInstalled(optional.id)).toBe(true);
 		expect(manager.getRevision()).toBe(1);
 
-		memory.failSaveFor(optional.id);
-		await expect(manager.update(optional.id)).rejects.toThrow(`save failed: ${optional.id}`);
-		expect(manager.getState(optional.id)?.status).toBe('installed');
-		expect(manager.getRevision()).toBe(1);
+		const staleMemory = createMemoryPersistence([{
+			id: optional.id,
+			status: 'installed',
+			installedVersion: '0.0.0-stale',
+			installedAt: 1,
+		}]);
+		const updatingManager = new ModuleManager(staleMemory.persistence);
+		await updatingManager.initialize();
+		const beforeFailedUpdate = updatingManager.getSnapshot();
+		staleMemory.failSaveFor(optional.id);
+		await expect(updatingManager.update(optional.id)).rejects.toThrow(`save failed: ${optional.id}`);
+		expect(updatingManager.getState(optional.id)).toMatchObject({
+			status: 'installed',
+			installedVersion: '0.0.0-stale',
+		});
+		expect(updatingManager.getSnapshot()).toBe(beforeFailedUpdate);
+		expect(updatingManager.getRevision()).toBe(0);
 
-		memory.failSaveFor(null);
 		memory.failRemoveFor(optional.id);
 		await expect(manager.uninstall(optional.id)).rejects.toThrow(`remove failed: ${optional.id}`);
 		expect(manager.isInstalled(optional.id)).toBe(true);
 		expect(manager.getRevision()).toBe(1);
+	});
+
+	test('retires stale async open-tool hydration instead of replaying it over live authority', () => {
+		expect(openToolsSource).toContain('const authorityEpoch = useRef(0);');
+		expect(openToolsSource).toContain('if (epoch !== authorityEpoch.current || initialized.current) return;');
+		expect(openToolsSource).toContain('if (initialized.current) {');
+		expect(openToolsSource).toContain('reconcileInstalledTools(isInstalled);');
+		expect(openToolsSource).not.toMatch(/setTimeout\([^)]*initialized/u);
 	});
 });
 
