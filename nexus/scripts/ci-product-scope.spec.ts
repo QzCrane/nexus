@@ -52,8 +52,6 @@ describe('CI product scope classifier', () => {
 	});
 
 	test('treats cross-product rename sides as affecting both products', () => {
-		// Workflow uses --no-renames, so a rename is deliberately presented as
-		// deletion + addition. The classifier must preserve both ownership sides.
 		expect(classifyChangedPaths([
 			'nexus/apps/extension-spectra/src/old.ts',
 			'nexus/apps/extension-halo/src/new.ts',
@@ -113,6 +111,17 @@ describe('NUL-delimited Git path transport', () => {
 		expect(parseNulSeparatedPaths(Buffer.alloc(0))).toEqual([]);
 		expect(() => parseNulSeparatedPaths(Buffer.from('a\0\0b\0'))).toThrow(
 			'Changed-path stream contains an empty record',
+		);
+	});
+
+	test('rejects malformed UTF-8 instead of accidentally classifying replacement text as docs-only', () => {
+		const malformed = Buffer.concat([
+			Buffer.from('docs/'),
+			Buffer.from([0xff]),
+			Buffer.from('.md\0'),
+		]);
+		expect(() => parseNulSeparatedPaths(malformed)).toThrow(
+			'Changed-path stream is not valid UTF-8',
 		);
 	});
 });
