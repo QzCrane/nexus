@@ -34,7 +34,7 @@ const distDir = path.join(__dirname, 'dist');
 // intentional growth requires an explicit architecture + budget change.
 const PRODUCTION_BUDGET_KIB = Object.freeze({
 	background: 14,
-	allFrameDocumentStart: 31,
+	allFrameDocumentStart: 8,
 	topFrameDocumentStart: 32,
 	allFrameDocumentIdle: 2,
 	topFrameDocumentIdle: 55,
