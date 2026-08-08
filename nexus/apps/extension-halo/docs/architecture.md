@@ -78,16 +78,16 @@ tools/<id>/
 
 - **Hover Zoom MSE**: Session creation returns `{ ready, dispose }` synchronously; retired sessions cannot clear newer video sources.
 - **Hover Zoom input**: when disabled, Hover Zoom removes its mouse/key listeners, pending trigger timer, viewer ownership, and pending preload. A low-frequency settings subscription may remain to detect re-enablement.
-- **Timer**: persistent authority is `elapsed + startedAt`; rAF updates only the visible time projection. Running state is not rewritten every animation/timer tick.
-- **Pomodoro**: persistent authority is a paused `remaining` value or running absolute `endsAt`; 1Hz updates only display state and one timeout owns the phase boundary.
-- **TTS**: speech state follows `SpeechSynthesisUtterance` lifecycle events; no periodic `speechSynthesis` polling.
-- **TOTP**: the UI may update remaining seconds at 1Hz, but HMAC output is cached for each entry/counter epoch and recomputed only when the counter or code-defining parameters change.
+- **Timer**: persistent authority is `elapsed + startedAt`; rAF updates only the visible time projection. A bounded wall-clock deadline watcher rechecks at most once per second so clock jumps cannot strand or prematurely complete a countdown; persistent Timer state is not rewritten on those checks.
+- **Pomodoro**: persistent authority is a paused `remaining` value or running absolute `endsAt`; one 1Hz owner updates only ephemeral display time until the latest wall-clock sample reaches the deadline, then commits the phase boundary exactly once. There is no independent one-shot completion timeout.
+- **TTS**: speech state follows `SpeechSynthesisUtterance` lifecycle events; no periodic `speechSynthesis` polling. The tool panel owns its browser speech lifecycle and cancels any surviving utterance when the panel unmounts, so navigation cannot orphan speech without controls.
+- **TOTP**: the UI may update remaining seconds at 1Hz, but HMAC output is cached for each entry/counter epoch and recomputed only when the counter or code-defining parameters change. Epoch recomputation remains sequential so account count cannot create an unbounded WebCrypto burst.
 
 ## Permissions, Localization & Performance
 
 - **Permissions**: Declared by plugin metadata and compiled into usage maps; consume one permission source.
 - **Localization**: Local plugin locale sources compile into generated runtime aggregates.
-- **Performance**: Inactive plugins allocate 0 recurring work. Disabled high-frequency features detach their hot listeners. SidePanel hidden/inactive surfaces must not poll.
+- **Performance**: Inactive plugins allocate 0 recurring work. Disabled high-frequency features detach their hot listeners. SidePanel hidden/inactive surfaces must not poll. Browser-owned work started by a tool panel must either transfer to another explicit owner or dispose when that panel unmounts.
 - **Build evidence**: production build reports all-frame/top-frame `document_start`, all-frame/top-frame `document_idle`, SidePanel static startup closure, Background worker bundle, and eventual lazy chunk bytes.
 - **Audited 2026-08-08 production ceilings**: `background <= 14KiB`, `all-frame@document_start <= 31KiB`, `top-frame@document_start <= 32KiB`, `all-frame@document_idle <= 2KiB`, `top-frame@document_idle <= 55KiB`, `SidePanel startup <= 165KiB`. `build.ts` fails if any audited startup surface crosses its current KiB bucket. An intentional increase requires an explicit architecture and budget update.
 - Performance budgets are anchored to measured production artifacts rather than source-line counts, total extension size, or bundle-count heuristics.
@@ -108,6 +108,7 @@ Input admission is owned by each matching frame's page-local content context; di
 - Browser-persistent user/content-script registrations are never destroyed and rebuilt solely because the MV3 worker woke up.
 - One SidePanel storage authority for runtime/engine status; no duplicate status listener/read loops.
 - No panel-owned clock for background work; no manual duplicate content-script inventory.
+- Browser-owned work cannot outlive an unmounted panel unless ownership is explicitly transferred and recoverable.
 - No hidden network capability; 0 recurring work for inactive plugins; no generated file edited manually.
 - No widening a content surface from top-frame to all-frame or from idle to start without a semantic requirement and regression-test update.
 - No production `React.lazy` that resolves back into the SidePanel startup bundle; physical code splitting is a build invariant.
