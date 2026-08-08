@@ -1,16 +1,50 @@
-// goal: Module manager core logic
-// eff: Install/uninstall/update modules with persistence
+// goal: packaged-module enable/disable authority
+// eff: one chrome.storage.local tombstone per optional module; all bundled modules start installed
 
-import { ALL_MODULES, CORE_MODULES, OPTIONAL_MODULES, type ModuleState } from '../registry/module-registry';
+import { ALL_MODULES, OPTIONAL_MODULES, type ModuleState } from '../registry/module-registry';
 import type { ModuleMeta } from '../core/tool-registry-types';
-import { getAllStates, saveState, saveStates, deleteState, useMemoryMode } from './module-db';
+import {
+	isPackagedModuleMetaEnabled,
+	moduleIdFromInstallationStorageKey,
+	readDisabledPackagedModuleIds,
+	writePackagedModuleEnabled,
+} from './module-installation-store';
 
-export interface ModuleStatePersistence {
-	loadAll: () => Promise<ModuleState[]>;
-	save: (state: ModuleState) => Promise<void>;
-	saveMany: (states: readonly ModuleState[]) => Promise<void>;
-	remove: (id: string) => Promise<void>;
-	shouldPersistSeed: () => boolean;
+export interface ModuleInstallationPersistence {
+	loadDisabled(): Promise<Set<string>>;
+	setEnabled(id: string, enabled: boolean): Promise<void>;
+	subscribe(listener: (id: string, enabled: boolean) => void): () => void;
+}
+
+function createChromePersistence(): ModuleInstallationPersistence {
+	return {
+		loadDisabled: readDisabledPackagedModuleIds,
+		setEnabled: writePackagedModuleEnabled,
+		subscribe(listener) {
+			const onChanged = (
+				changes: Record<string, chrome.storage.StorageChange>,
+				areaName: string,
+			): void => {
+				if (areaName !== 'local') return;
+				for (const [key, change] of Object.entries(changes)) {
+					const id = moduleIdFromInstallationStorageKey(key);
+					if (!id) continue;
+					const meta = OPTIONAL_MODULES.find((module) => module.id === id);
+					if (!meta) continue;
+					listener(
+						id,
+						isPackagedModuleMetaEnabled(
+							meta,
+							change.newValue,
+							change.newValue !== undefined,
+						),
+					);
+				}
+			};
+			chrome.storage.onChanged.addListener(onChanged);
+			return () => chrome.storage.onChanged.removeListener(onChanged);
+		},
+	};
 }
 
 export interface ModuleManagerSnapshot {
@@ -19,60 +53,51 @@ export interface ModuleManagerSnapshot {
 	availableModules: readonly ModuleMeta[];
 }
 
-const DEFAULT_PERSISTENCE: ModuleStatePersistence = {
-	loadAll: getAllStates,
-	save: saveState,
-	saveMany: saveStates,
-	remove: deleteState,
-	shouldPersistSeed: () => !useMemoryMode,
-};
-
 const EMPTY_SNAPSHOT: ModuleManagerSnapshot = Object.freeze({
 	revision: 0,
 	installedModules: Object.freeze([]) as readonly ModuleMeta[],
 	availableModules: Object.freeze([]) as readonly ModuleMeta[],
 });
 
-export function createMissingCoreModuleStates(
-	existingIds: ReadonlySet<string>,
-	installedAt = Date.now(),
-): ModuleState[] {
-	return CORE_MODULES
-		.filter((module) => !existingIds.has(module.id))
-		.map((module) => ({
-			id: module.id,
-			status: 'installed' as const,
-			installedVersion: module.version,
-			installedAt,
-		}));
-}
-
 export class ModuleManager {
-	private states: Map<string, ModuleState> = new Map();
-	private listeners: Set<() => void> = new Set();
+	private readonly disabled = new Set<string>();
+	private readonly listeners = new Set<() => void>();
+	private readonly eventRevisionById = new Map<string, number>();
+	private readonly mutationTailById = new Map<string, Promise<void>>();
 	private revision = 0;
 	private snapshot: ModuleManagerSnapshot = EMPTY_SNAPSHOT;
+	private unsubscribePersistence: (() => void) | null = null;
 
-	constructor(private readonly persistence: ModuleStatePersistence = DEFAULT_PERSISTENCE) {}
+	constructor(
+		private readonly persistence: ModuleInstallationPersistence = createChromePersistence(),
+	) {}
 
 	async initialize(): Promise<void> {
-		const stored = await this.persistence.loadAll();
-		for (const state of stored) this.states.set(state.id, state);
-
-		// Only built-in/core modules are implicit. Optional-module absence is the
-		// durable uninstalled state. Persist all missing core seeds in one IDB
-		// transaction instead of serializing one transaction per packaged module.
-		const missingCoreStates = createMissingCoreModuleStates(new Set(this.states.keys()));
-		for (const state of missingCoreStates) this.states.set(state.id, state);
-		if (missingCoreStates.length > 0 && this.persistence.shouldPersistSeed()) {
-			try {
-				await this.persistence.saveMany(missingCoreStates);
-			} catch (error) {
-				for (const state of missingCoreStates) this.states.delete(state.id);
-				throw error;
+		if (this.unsubscribePersistence) return;
+		// Observe first, then hydrate. Any event that races the get() owns that
+		// module and prevents the older read snapshot from overwriting it.
+		this.unsubscribePersistence = this.persistence.subscribe((id, enabled) => {
+			this.eventRevisionById.set(id, (this.eventRevisionById.get(id) ?? 0) + 1);
+			this.applyEnabled(id, enabled);
+		});
+		try {
+			const disabledFromStorage = await this.persistence.loadDisabled();
+			for (const module of OPTIONAL_MODULES) {
+				if ((this.eventRevisionById.get(module.id) ?? 0) > 0) continue;
+				if (disabledFromStorage.has(module.id)) this.disabled.add(module.id);
+				else this.disabled.delete(module.id);
 			}
+			this.refreshSnapshot();
+		} catch (error) {
+			this.unsubscribePersistence?.();
+			this.unsubscribePersistence = null;
+			throw error;
 		}
-		this.refreshSnapshot();
+	}
+
+	dispose(): void {
+		this.unsubscribePersistence?.();
+		this.unsubscribePersistence = null;
 	}
 
 	subscribe(listener: () => void): () => void {
@@ -92,82 +117,80 @@ export class ModuleManager {
 	}
 
 	private notify(): void {
-		this.revision++;
+		this.revision += 1;
 		this.refreshSnapshot();
-		this.listeners.forEach((listener) => {
-			listener();
-		});
+		for (const listener of this.listeners) listener();
 	}
 
-	getState(id: string): ModuleState | undefined { return this.states.get(id); }
-	getAllStates(): ModuleState[] { return Array.from(this.states.values()); }
-	isInstalled(id: string): boolean { return this.states.get(id)?.status === 'installed'; }
+	private applyEnabled(id: string, enabled: boolean): void {
+		const meta = ALL_MODULES.find((module) => module.id === id);
+		if (!meta || meta.builtIn) return;
+		const wasEnabled = !this.disabled.has(id);
+		if (wasEnabled === enabled) return;
+		if (enabled) this.disabled.delete(id);
+		else this.disabled.add(id);
+		this.notify();
+	}
+
+	private serializeMutation(id: string, mutation: () => Promise<void>): Promise<void> {
+		const previous = this.mutationTailById.get(id) ?? Promise.resolve();
+		const operation = previous
+			.catch(() => undefined)
+			.then(mutation);
+		const tracked = operation.finally(() => {
+			if (this.mutationTailById.get(id) === tracked) this.mutationTailById.delete(id);
+		});
+		this.mutationTailById.set(id, tracked);
+		return tracked;
+	}
+
+	getState(id: string): ModuleState | undefined {
+		const meta = ALL_MODULES.find((module) => module.id === id);
+		if (!meta) return undefined;
+		return this.isInstalled(id)
+			? { id, status: 'installed', installedVersion: meta.version }
+			: { id, status: 'available' };
+	}
+
+	getAllStates(): ModuleState[] {
+		return ALL_MODULES.map((module) => this.getState(module.id) as ModuleState);
+	}
+
+	isInstalled(id: string): boolean {
+		const meta = ALL_MODULES.find((module) => module.id === id);
+		return Boolean(meta && (meta.builtIn || !this.disabled.has(id)));
+	}
+
 	getInstalledModules(): ModuleMeta[] { return [...this.snapshot.installedModules]; }
 	getAvailableModules(): ModuleMeta[] { return [...this.snapshot.availableModules]; }
 
-	async install(id: string): Promise<void> {
-		const meta = ALL_MODULES.find((module) => module.id === id);
-		if (!meta) throw new Error(`Module ${id} not found`);
-		if (this.isInstalled(id)) return;
-
-		const previous = this.states.get(id);
-		const installed: ModuleState = {
-			id,
-			status: 'installed',
-			installedVersion: meta.version,
-			installedAt: Date.now(),
-		};
-		this.states.set(id, installed);
-		try {
-			// HALO modules are already packaged with the extension. Installation is
-			// a local authority change, not a network download, so there is no fake
-			// 300ms "downloading" delay in the production lifecycle.
-			await this.persistence.save(installed);
-		} catch (error) {
-			if (previous) this.states.set(id, previous);
-			else this.states.delete(id);
-			throw error;
-		}
-		this.notify();
+	install(id: string): Promise<void> {
+		return this.serializeMutation(id, async () => {
+			const meta = ALL_MODULES.find((module) => module.id === id);
+			if (!meta) throw new Error(`Module ${id} not found`);
+			if (meta.builtIn || this.isInstalled(id)) return;
+			const eventRevision = this.eventRevisionById.get(id) ?? 0;
+			await this.persistence.setEnabled(id, true);
+			// When a same-module storage event arrived during the write, physical
+			// storage is newer authority. Otherwise commit the acknowledged write
+			// locally; a later onChanged event is idempotent.
+			if ((this.eventRevisionById.get(id) ?? 0) === eventRevision) {
+				this.applyEnabled(id, true);
+			}
+		});
 	}
 
-	async uninstall(id: string): Promise<void> {
-		const meta = ALL_MODULES.find((module) => module.id === id);
-		if (!meta || meta.builtIn) throw new Error(`Cannot uninstall: ${id}`);
-		const previous = this.states.get(id);
-		if (!previous) return;
-
-		this.states.delete(id);
-		try {
-			await this.persistence.remove(id);
-		} catch (error) {
-			this.states.set(id, previous);
-			throw error;
-		}
-		this.notify();
-	}
-
-	async update(id: string): Promise<void> {
-		const meta = ALL_MODULES.find((module) => module.id === id);
-		const previous = this.states.get(id);
-		if (!meta || previous?.status !== 'installed') throw new Error(`Not installed: ${id}`);
-		if (previous.installedVersion === meta.version) return;
-
-		// Packaged modules have no download/update phase. A version refresh is one
-		// durable local authority transition; never publish an artificial
-		// `updating` state that can be stranded by a failed persistence write.
-		const updated: ModuleState = {
-			...previous,
-			installedVersion: meta.version,
-		};
-		this.states.set(id, updated);
-		try {
-			await this.persistence.save(updated);
-		} catch (error) {
-			this.states.set(id, previous);
-			throw error;
-		}
-		this.notify();
+	uninstall(id: string): Promise<void> {
+		return this.serializeMutation(id, async () => {
+			const meta = ALL_MODULES.find((module) => module.id === id);
+			if (!meta || meta.builtIn) throw new Error(`Cannot uninstall: ${id}`);
+			if (!this.isInstalled(id)) return;
+			const eventRevision = this.eventRevisionById.get(id) ?? 0;
+			await this.persistence.setEnabled(id, false);
+			if ((this.eventRevisionById.get(id) ?? 0) === eventRevision) {
+				this.applyEnabled(id, false);
+			}
+		});
 	}
 }
 
@@ -183,10 +206,6 @@ export const getModuleManager = async (): Promise<ModuleManager> => {
 		initPromise = null;
 		return manager;
 	})();
-	// rule: on rejection, clear the cached promise so the next caller can retry.
-	// Without this, a single initialize() failure permanently pinned initPromise
-	// to a rejected Promise, and every subsequent getModuleManager() returned
-	// the same rejection — the manager could never recover without a SW restart.
 	initPromise.catch(() => { initPromise = null; });
 	return initPromise;
 };
