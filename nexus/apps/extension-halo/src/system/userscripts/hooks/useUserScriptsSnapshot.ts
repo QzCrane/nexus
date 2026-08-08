@@ -29,5 +29,3 @@ export function useLauncherUserScripts(): { scripts: UserScript[]; loading: bool
 	);
 	return { scripts, loading: !snapshot.ready };
 }
-
-export const userScriptsSnapshotHookTestApi = { materializeScript };
