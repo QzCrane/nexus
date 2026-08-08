@@ -27,8 +27,6 @@ const openDB = async (): Promise<IDBDatabase | null> => {
 		let lastError: unknown;
 
 		for (let i = 0; i < MAX_RETRIES; i++) {
-			// rule: capture the timeout timer so it can be cleared on success — previously
-			// the timer fired into a rejected-but-ignored Promise and held the SW alive.
 			let timer: ReturnType<typeof setTimeout> | undefined;
 			try {
 				const dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
@@ -42,7 +40,7 @@ const openDB = async (): Promise<IDBDatabase | null> => {
 								db.createObjectStore(STORE_NAME, { keyPath: 'id' });
 							}
 						};
-					} catch (e) { reject(e); }
+					} catch (error) { reject(error); }
 				});
 
 				const result = await Promise.race([
@@ -53,14 +51,12 @@ const openDB = async (): Promise<IDBDatabase | null> => {
 				]);
 				if (timer !== undefined) clearTimeout(timer);
 				dbInstance = result;
-				// rule: if the connection is unexpectedly closed (e.g., version change elsewhere),
-				// drop the singleton so the next op re-opens.
 				dbInstance.onclose = () => { dbInstance = null; dbOpenPromise = null; };
 				dbInstance.onversionchange = () => { dbInstance?.close(); dbInstance = null; dbOpenPromise = null; };
 				return dbInstance;
-			} catch (e) {
+			} catch (error) {
 				if (timer !== undefined) clearTimeout(timer);
-				lastError = e;
+				lastError = error;
 				if (i < MAX_RETRIES - 1) {
 					const delay = 500 * (i + 1);
 					console.warn(`[ModuleDB] IndexedDB init attempt ${i + 1} failed/timed out, retrying in ${delay}ms...`);
@@ -91,17 +87,22 @@ export const getAllStates = async (): Promise<ModuleState[]> => {
 	});
 };
 
-export const saveState = async (state: ModuleState): Promise<void> => {
-	if (useMemoryMode) return;
+export const saveStates = async (states: readonly ModuleState[]): Promise<void> => {
+	if (useMemoryMode || states.length === 0) return;
 	const db = await openDB();
 	if (!db) return;
 	return new Promise((resolve, reject) => {
 		const tx = db.transaction(STORE_NAME, 'readwrite');
 		const store = tx.objectStore(STORE_NAME);
-		const request = store.put(state);
-		request.onsuccess = () => resolve();
-		request.onerror = () => reject(request.error);
+		for (const state of states) store.put(state);
+		tx.oncomplete = () => resolve();
+		tx.onerror = () => reject(tx.error ?? new Error('Module state transaction failed'));
+		tx.onabort = () => reject(tx.error ?? new Error('Module state transaction aborted'));
 	});
+};
+
+export const saveState = async (state: ModuleState): Promise<void> => {
+	await saveStates([state]);
 };
 
 export const deleteState = async (id: string): Promise<void> => {
@@ -111,8 +112,9 @@ export const deleteState = async (id: string): Promise<void> => {
 	return new Promise((resolve, reject) => {
 		const tx = db.transaction(STORE_NAME, 'readwrite');
 		const store = tx.objectStore(STORE_NAME);
-		const request = store.delete(id);
-		request.onsuccess = () => resolve();
-		request.onerror = () => reject(request.error);
+		store.delete(id);
+		tx.oncomplete = () => resolve();
+		tx.onerror = () => reject(tx.error ?? new Error('Module deletion transaction failed'));
+		tx.onabort = () => reject(tx.error ?? new Error('Module deletion transaction aborted'));
 	});
 };
