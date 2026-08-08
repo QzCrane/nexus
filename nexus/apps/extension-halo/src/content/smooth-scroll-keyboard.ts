@@ -1,260 +1,322 @@
 import { prefersReducedMotion, resolveMainScrollRoute, resolveScrollRoute, shouldIgnoreInput } from '../tools/smooth-scroll/utils';
 import { clearQueue, scrollTo } from '../tools/smooth-scroll/engine';
 import {
-	acceleration,
-	accelerationDirection,
-	accelerationTarget,
-	lastScrollTime,
 	resetWheelRuntimeState,
 	settings,
-	updateAcceleration,
 } from './smooth-scroll-state';
 
-// Keyboard ownership is key-specific:
-// - ArrowUp/ArrowDown run in capture phase. HALO claims them only after it
-//   resolves and admits a page scroll target. A media surface that acquired
-//   interaction through pointer or focus keeps the arrows for volume/seek.
-// - Space/PageUp/PageDown run in bubble phase so page handlers get first
-//   refusal through defaultPrevented. Space keeps the existing visible-player
-//   play/pause policy; page keys remain discrete page jumps.
+// goal: Give page handlers first refusal, then animate only unclaimed
+// page-scroll intent.
 //
-// This deliberately never treats "a video exists on the page" as arrow-key
-// ownership. Presence, playback, and viewport size are page state, not focus.
-const ARROW_FACTORS: Record<string, number> = {
-	ArrowDown: 1,
-	ArrowUp: -1,
-};
-
-const BUBBLE_KEYS: Record<string, number> = {
-	PageDown: 0,
-	PageUp: 0,
+// A permanent window-bubble listener cannot remain last: an SPA can register
+// another listener after HALO. The permanent capture listener below therefore
+// appends per-event finalizers after all handlers that already exist. Ordinary
+// propagation finishes at window; a document fallback handles a site that
+// deliberately stops propagation before the event reaches window.
+const KEYS: Record<string, number> = {
+	'ArrowDown': 1, 'ArrowUp': -1,
+	'PageDown': 0, 'PageUp': 0,
 	' ': 0,
 };
 
-const VIDEO_VIEWPORT_RATIO = 0.5;
-const MEDIA_SELECTOR = 'video, audio';
-let activeMediaInteraction: Element | null = null;
+// Keyboard repeat frequency is an OS preference, not user scroll intent.
+// The first repeat preserves the operating system's initial hold delay; later
+// repeats advance on one canonical clock, compensating both dense and sparse
+// repeat delivery without manufacturing input before the OS declares a hold.
+const ARROW_REPEAT_INTERVAL_MS = 80;
+const PAGE_REPEAT_MIN_INTERVAL_MS = 180;
+const PAGE_REPEAT_MAX_INTERVAL_MS = 320;
+const KEYBOARD_ACCELERATION_STEP_MS = 160;
+const KEYBOARD_ACCELERATION_STEP = 0.5;
 
-function isMediaElement(element: Element): boolean {
-	return element.tagName === 'VIDEO' || element.tagName === 'AUDIO';
+interface MediaStateSnapshot {
+	element: HTMLMediaElement;
+	muted: boolean;
+	paused: boolean;
+	playbackRate: number;
+	volume: number;
 }
 
-function isGenericFocus(element: Element | null): boolean {
-	return !element || element === document.body || element === document.documentElement;
+export interface KeyboardCapture {
+	mediaStates: MediaStateSnapshot[];
 }
 
-function mediaOwnedByFocus(element: Element | null): Element | null {
-	if (!element || element === document.body || element === document.documentElement) {
-		return null;
-	}
-	if (isMediaElement(element)) return element;
-	return element.querySelector(MEDIA_SELECTOR);
+interface KeyboardStream {
+	direction: number;
+	key: string;
+	lastAcceptedAt: number;
+	repeatStartedAt: number | null;
+	target: Element | Window;
 }
 
-function pointedMedia(event: PointerEvent): Element | null {
-	for (const target of event.composedPath()) {
-		if (target instanceof Element && isMediaElement(target)) return target;
-	}
+let keyboardStream: KeyboardStream | null = null;
 
-	if (!Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) {
-		return null;
-	}
+function isMediaShortcutKey(key: string): boolean {
+	return key === ' ' || key === 'ArrowDown' || key === 'ArrowUp';
+}
 
-	for (const tagName of ['video', 'audio']) {
-		const media = document.getElementsByTagName(tagName);
-		for (let index = 0; index < media.length; index++) {
-			const candidate = media[index];
-			if (!candidate) continue;
-			const rect = candidate.getBoundingClientRect();
-			if (
-				rect.width > 0 &&
-				rect.height > 0 &&
-				event.clientX >= rect.left &&
-				event.clientX <= rect.right &&
-				event.clientY >= rect.top &&
-				event.clientY <= rect.bottom
-			) {
-				return candidate;
-			}
+function captureMediaStates(key: string): MediaStateSnapshot[] {
+	if (!isMediaShortcutKey(key) || typeof document === 'undefined') return [];
+	const states: MediaStateSnapshot[] = [];
+	for (const element of document.querySelectorAll<HTMLMediaElement>('video, audio')) {
+		try {
+			states.push({
+				element,
+				muted: element.muted,
+				paused: element.paused,
+				playbackRate: element.playbackRate,
+				volume: element.volume,
+			});
+		} catch {
+			// A hostile or detached media wrapper must not break page scrolling.
 		}
 	}
-
-	return null;
+	return states;
 }
 
-function acquireMediaInteraction(media: Element | null): void {
-	if (media === activeMediaInteraction) return;
-	activeMediaInteraction = media;
-	if (media) {
-		clearQueue();
-		resetWheelRuntimeState();
-	}
-}
-
-export function onKeyboardPointerDown(event: PointerEvent): void {
-	if (!event.isTrusted) return;
-	acquireMediaInteraction(pointedMedia(event));
-}
-
-export function onKeyboardFocusIn(event: FocusEvent): void {
-	const target = event.composedPath().find(
-		(candidate): candidate is Element => candidate instanceof Element,
-	) ?? null;
-	acquireMediaInteraction(mediaOwnedByFocus(target));
-}
-
-function mediaOwnsArrowKeys(): boolean {
-	if (activeMediaInteraction && !activeMediaInteraction.isConnected) {
-		activeMediaInteraction = null;
-	}
-	if (activeMediaInteraction) return true;
-
-	const focusedMedia = mediaOwnedByFocus(document.activeElement);
-	if (!focusedMedia) return false;
-	activeMediaInteraction = focusedMedia;
-	return true;
-}
-
-function hasMainVideoPlayer(): boolean {
-	if (typeof document === 'undefined') return false;
-	const videos = document.getElementsByTagName('video');
-	const viewportWidth = window.innerWidth;
-	const viewportHeight = window.innerHeight;
-	for (let index = 0; index < videos.length; index++) {
-		const video = videos[index] as HTMLElement;
-		if (
-			video.clientWidth >= viewportWidth * VIDEO_VIEWPORT_RATIO ||
-			video.clientHeight >= viewportHeight * VIDEO_VIEWPORT_RATIO
-		) {
-			return true;
+function mediaStateChanged(states: readonly MediaStateSnapshot[]): boolean {
+	for (const before of states) {
+		try {
+			const after = before.element;
+			if (
+				!after.isConnected ||
+				after.muted !== before.muted ||
+				after.paused !== before.paused ||
+				after.playbackRate !== before.playbackRate ||
+				Math.abs(after.volume - before.volume) > Number.EPSILON
+			) {
+				return true;
+			}
+		} catch {
+			// Becoming unreadable is not enough evidence to cancel page scrolling.
 		}
 	}
 	return false;
 }
 
-function shouldYieldKeyboardEvent(event: KeyboardEvent): boolean {
+export function captureKeyboardState(e: KeyboardEvent): KeyboardCapture {
+	return { mediaStates: captureMediaStates(e.key) };
+}
+
+function pageRepeatInterval(): number {
+	return Math.min(
+		PAGE_REPEAT_MAX_INTERVAL_MS,
+		Math.max(PAGE_REPEAT_MIN_INTERVAL_MS, settings.animationTime * 0.6),
+	);
+}
+
+function resetKeyboardStream(): void {
+	keyboardStream = null;
+}
+
+function yieldKeyboard(e: KeyboardEvent, siteChangedMedia = false): void {
+	// Some players mutate media state without preventDefault. The site action has
+	// already happened in bubble phase, so cancel only the browser's native page
+	// movement and leave propagation untouched.
+	if (siteChangedMedia && !e.defaultPrevented) e.preventDefault();
+	if (keyboardStream || !e.repeat) {
+		clearQueue();
+		resetKeyboardStream();
+		resetWheelRuntimeState();
+	}
+}
+
+function repeatResponse(timestamp: number): number {
+	const repeatStartedAt = keyboardStream?.repeatStartedAt;
+	if (repeatStartedAt === null || repeatStartedAt === undefined) return 1;
+	const heldFor = Math.max(0, timestamp - repeatStartedAt);
+	return Math.min(
+		settings.accelerationMax,
+		1 + Math.floor(heldFor / KEYBOARD_ACCELERATION_STEP_MS) *
+			KEYBOARD_ACCELERATION_STEP,
+	);
+}
+
+function admitRepeat(
+	e: KeyboardEvent,
+	timestamp: number,
+	interval: number,
+): number {
+	if (!e.repeat || !keyboardStream) return 1;
+	if (keyboardStream.repeatStartedAt === null) {
+		keyboardStream.repeatStartedAt = timestamp;
+		keyboardStream.lastAcceptedAt = timestamp;
+		return 1;
+	}
+
+	const elapsed = timestamp - keyboardStream.lastAcceptedAt;
+	if (elapsed < interval) {
+		e.preventDefault();
+		return 0;
+	}
+	const canonicalSteps = Math.floor(elapsed / interval);
+	keyboardStream.lastAcceptedAt += canonicalSteps * interval;
+	return canonicalSteps;
+}
+
+function shouldAlwaysYield(): boolean {
 	return (
 		!settings.enabled ||
 		!settings.keyboard ||
-		event.defaultPrevented ||
-		event.ctrlKey ||
-		event.altKey ||
-		event.metaKey ||
 		shouldIgnoreInput(document.activeElement) ||
 		document.fullscreenElement !== null ||
 		(settings.respectReducedMotion && prefersReducedMotion())
 	);
 }
 
-function resetInputStreamOnFirstPress(event: KeyboardEvent): void {
-	if (event.repeat) return;
-	clearQueue();
-	resetWheelRuntimeState();
-}
-
-// Capture-phase owner for continuous arrow scrolling. stopPropagation is
-// intentionally delayed until scrollTo accepts the target: HALO never blocks a
-// page shortcut when it cannot actually provide the requested scroll.
-export function onArrowKeydownCapture(event: KeyboardEvent): void {
-	if (!event.isTrusted) return;
-	const keyFactor = ARROW_FACTORS[event.key];
-	if (keyFactor === undefined) return;
-
-	if (shouldYieldKeyboardEvent(event) || mediaOwnsArrowKeys()) {
-		resetInputStreamOnFirstPress(event);
-		return;
-	}
-
-	const dy = keyFactor * settings.arrowKeyStep;
-	const direction = Math.sign(dy);
-	const timestamp = performance.now();
-	const active = document.activeElement;
-	const route = isGenericFocus(active)
-		? resolveMainScrollRoute(dy)
-		: resolveScrollRoute(active, dy);
-
-	if (route.kind === 'blocked') {
-		event.preventDefault();
-		return;
-	}
-	if (route.kind !== 'animate') return;
-
-	const continuingStream =
-		accelerationTarget === route.target &&
-		accelerationDirection === direction &&
-		lastScrollTime !== null &&
-		timestamp - lastScrollTime < settings.accelerationDelta;
-	const newAcceleration = continuingStream
-		? Math.min(acceleration + 0.5, settings.accelerationMax)
-		: 1;
-
+// Capture-phase entrypoint. Ownership is intentionally not decided here.
+export function onKeydownCapture(e: KeyboardEvent): void {
+	if (!e.isTrusted || KEYS[e.key] === undefined) return;
 	if (
-		!scrollTo(
-			route.target,
-			0,
-			dy,
-			route.admission,
-			'coarse',
-			timestamp,
-			newAcceleration,
-		)
+		e.ctrlKey ||
+		e.altKey ||
+		e.metaKey ||
+		shouldAlwaysYield()
 	) {
+		yieldKeyboard(e);
 		return;
 	}
 
-	event.preventDefault();
-	event.stopPropagation();
-	updateAcceleration(newAcceleration, timestamp, route.target, direction);
+	const capture = captureKeyboardState(e);
+	let finalized = false;
+
+	function cleanup(): void {
+		document.removeEventListener('keydown', finalizeAtDocument);
+		window.removeEventListener('keydown', finalizeAtWindow);
+	}
+
+	function finalize(candidate: KeyboardEvent): void {
+		if (finalized || candidate !== e) return;
+		finalized = true;
+		cleanup();
+		onKeydown(candidate, capture);
+	}
+
+	function finalizeAtDocument(candidate: KeyboardEvent): void {
+		// stopPropagation still permits later listeners on the same target. If a
+		// site intentionally prevents the event from reaching window, document is
+		// the last safe point where HALO can suppress the browser default action.
+		if (candidate === e && candidate.cancelBubble) finalize(candidate);
+	}
+
+	function finalizeAtWindow(candidate: KeyboardEvent): void {
+		finalize(candidate);
+	}
+
+	document.addEventListener('keydown', finalizeAtDocument);
+	window.addEventListener('keydown', finalizeAtWindow);
+	queueMicrotask(() => {
+		if (!finalized) cleanup();
+	});
 }
 
-// Bubble-phase owner for discrete page keys. Arrow keys are excluded here so
-// the capture decision remains the only arrow-key authority.
-export function onKeydown(event: KeyboardEvent): void {
-	if (!event.isTrusted) return;
-	const keyFactor = BUBBLE_KEYS[event.key];
+export function onKeyup(e: KeyboardEvent): void {
+	if (!e.isTrusted || KEYS[e.key] === undefined) return;
+	if (keyboardStream?.key === e.key) resetKeyboardStream();
+}
+
+// Bubble finalizer. Exported with an explicit capture seam for deterministic
+// unit tests; production always supplies the capture taken before page handlers.
+export function onKeydown(
+	e: KeyboardEvent,
+	capture: KeyboardCapture = captureKeyboardState(e),
+): void {
+	if (!e.isTrusted) return;
+	const keyFactor = KEYS[e.key];
 	if (keyFactor === undefined) return;
 
-	if (shouldYieldKeyboardEvent(event)) {
-		resetInputStreamOnFirstPress(event);
-		return;
-	}
-
-	if (event.key === ' ' && hasMainVideoPlayer()) {
-		event.preventDefault();
-		resetInputStreamOnFirstPress(event);
+	const siteChangedMedia = mediaStateChanged(capture.mediaStates);
+	if (
+		e.defaultPrevented ||
+		siteChangedMedia ||
+		e.ctrlKey ||
+		e.altKey ||
+		e.metaKey ||
+		shouldAlwaysYield()
+	) {
+		yieldKeyboard(e, siteChangedMedia);
 		return;
 	}
 
 	const active = document.activeElement;
+	const isGeneric = !active || active === document.body || active === document.documentElement;
 	const page = window.innerHeight * 0.9;
 	let dy = 0;
 
-	if (event.key === 'PageDown') dy = page;
-	else if (event.key === 'PageUp') dy = -page;
-	else if (event.key === ' ') dy = event.shiftKey ? -page : page;
+	if (e.key === 'PageDown') dy = page;
+	else if (e.key === 'PageUp') dy = -page;
+	else if (e.key === ' ') dy = e.shiftKey ? -page : page;
 	else dy = keyFactor * settings.arrowKeyStep;
 
-	clearQueue();
-	resetWheelRuntimeState();
-
-	const route = isGenericFocus(active)
+	const direction = Math.sign(dy);
+	const timestamp = performance.now();
+	const isDiscreteJump = e.key === ' ' || e.key === 'PageDown' || e.key === 'PageUp';
+	const route = isGeneric
 		? resolveMainScrollRoute(dy)
 		: resolveScrollRoute(active, dy);
 	if (route.kind === 'blocked') {
-		event.preventDefault();
+		e.preventDefault();
+		yieldKeyboard(e);
 		return;
 	}
-	if (route.kind !== 'animate') return;
-
-	const timestamp = performance.now();
-	if (
-		scrollTo(route.target, 0, dy, route.admission, 'coarse', timestamp, 1)
-	) {
-		event.preventDefault();
-		updateAcceleration(1, timestamp, route.target, Math.sign(dy));
+	if (route.kind !== 'animate') {
+		yieldKeyboard(e);
+		return;
 	}
+
+	const sameStream =
+		e.repeat &&
+		keyboardStream !== null &&
+		keyboardStream.key === e.key &&
+		keyboardStream.target === route.target &&
+		keyboardStream.direction === direction;
+	let admittedSteps = 1;
+
+	if (!sameStream) {
+		// A fresh keyboard command owns a new physical stream. Clear wheel or
+		// prior-key backlog so its first response is deterministic; repeats are
+		// the only events allowed to accumulate into this keyboard stream.
+		clearQueue();
+		keyboardStream = {
+			direction,
+			key: e.key,
+			lastAcceptedAt: timestamp,
+			repeatStartedAt: e.repeat ? timestamp : null,
+			target: route.target,
+		};
+		resetWheelRuntimeState();
+	} else {
+		const canonicalSteps = admitRepeat(
+			e,
+			timestamp,
+			isDiscreteJump ? pageRepeatInterval() : ARROW_REPEAT_INTERVAL_MS,
+		);
+		if (!canonicalSteps) return;
+		// Page-sized keys remain one discrete command per admitted browser event;
+		// arrow holds compensate sparse delivery to preserve their physical rate.
+		admittedSteps = isDiscreteJump ? 1 : canonicalSteps;
+	}
+
+	const responseMultiplier = isDiscreteJump || !e.repeat
+		? 1
+		: repeatResponse(timestamp);
+	const accepted = scrollTo(
+		route.target,
+		0,
+		dy * admittedSteps,
+		route.admission,
+		'coarse',
+		timestamp,
+		responseMultiplier,
+	);
+	if (!accepted) {
+		yieldKeyboard(e);
+		return;
+	}
+	e.preventDefault();
 }
 
+// Called by resetInputHandlers() for page lifecycle and settings transitions.
 export function resetKeyboardRuntime(): void {
-	activeMediaInteraction = null;
+	resetKeyboardStream();
 }
