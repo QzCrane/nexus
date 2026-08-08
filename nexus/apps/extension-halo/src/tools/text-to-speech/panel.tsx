@@ -19,12 +19,15 @@ export const TextToSpeechPanel: React.FC = () => {
 	const [paused, setPaused] = useState(false);
 	const speechGenerationRef = useRef(0);
 
-	// Invalidate late utterance events only when this panel actually unmounts.
-	// Voice selection changes rebind the voiceschanged listener below but must not
-	// retire the currently speaking utterance generation.
+	// The panel owns the browser SpeechSynthesis lifecycle. Switching Home/tools
+	// unmounts the current tool panel; any utterance must therefore be cancelled
+	// at the same boundary instead of continuing without a Stop control. Voice
+	// selection changes only rebind the voiceschanged listener below and do not
+	// retire the active utterance generation.
 	useEffect(() => {
 		return () => {
 			speechGenerationRef.current += 1;
+			stop();
 		};
 	}, []);
 
