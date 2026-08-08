@@ -2,11 +2,13 @@
 // eff: Handles run count tracking and manual injection from panel
 // NOTE: Primary injection is now handled by chrome.userScripts API (registry.ts)
 
+import { readOptionalPackagedModuleEnabled } from '../../kernel/core/module-installation-runtime';
 import type { UserScript } from './types';
 import { incrementRunCount } from './core';
 import { syncRegisteredScripts } from './registry';
 
 const LOG_TAG = '[HALO:UserScripts]';
+const MODULE_ID = 'userscripts';
 
 type UserScriptsMessage =
 	| { type: 'HALO_USERSCRIPT_RAN'; scriptId: string }
@@ -26,59 +28,47 @@ function isUserScriptsMessage(message: unknown): message is UserScriptsMessage {
 		&& message.scriptId.length > 0;
 }
 
-// Initialize engine - register message listeners
-// rule: return a cleanup function and guard against double-registration.
-// Previously the runtime.onMessage listener was attached on every call with
-// no way to remove it, so repeated init stacked N listeners that each
-// responded to the same message and each called sendResponse.
+async function requireInstalledModule(): Promise<void> {
+	if (!await readOptionalPackagedModuleEnabled(MODULE_ID)) {
+		throw new Error('UserScripts module is not installed');
+	}
+}
+
 let engineInitialized = false;
 export function initUserScriptsEngine(): () => void {
 	if (engineInitialized) return () => {};
 	engineInitialized = true;
-
 	console.log(LOG_TAG, 'Engine initialized');
 
-	// Listen for messages
 	const listener = (
 		message: unknown,
 		_sender: chrome.runtime.MessageSender,
 		sendResponse: (response: UserScriptsResponse) => void,
 	) => {
 		if (!isUserScriptsMessage(message)) return false;
-		// Run count updates from content script
 		if (message.type === 'HALO_USERSCRIPT_RAN') {
-			incrementRunCount(message.scriptId)
-				.then(() => sendResponse({ success: true }))
-				.catch((e) => sendResponse({ success: false, error: String(e) }));
-			return true; // Async response
-		}
-
-		// Manual sync request (after permission grant)
-		if (message.type === 'HALO_USERSCRIPTS_SYNC') {
-			console.log(LOG_TAG, 'Manual sync requested');
-			syncRegisteredScripts()
+			void requireInstalledModule()
+				.then(() => incrementRunCount(message.scriptId))
 				.then(() => sendResponse({ success: true }))
 				.catch((e) => sendResponse({ success: false, error: String(e) }));
 			return true;
 		}
-
+		if (message.type === 'HALO_USERSCRIPTS_SYNC') {
+			void syncRegisteredScripts()
+				.then(() => sendResponse({ success: true }))
+				.catch((e) => sendResponse({ success: false, error: String(e) }));
+			return true;
+		}
 		return false;
 	};
 
 	chrome.runtime.onMessage.addListener(listener);
-
 	return () => {
 		chrome.runtime.onMessage.removeListener(listener);
 		engineInitialized = false;
 	};
 }
 
-// Wrapper function injected into page via inline <script> tag
-// rule: build the script body via string concatenation, never a template literal.
-// The previous `${code}` / `${name...}` interpolations allowed user-controlled
-// content containing ` or ${} to break out of the wrapping template literal and
-// inject arbitrary code into the page's MAIN world. User JS legitimately contains
-// template literals, so escaping is not viable — concatenation is the only safe option.
 function executeUserScript(code: string, name: string): void {
 	try {
 		const safeName = name
@@ -108,12 +98,11 @@ function executeUserScript(code: string, name: string): void {
 	}
 }
 
-// Manual injection for testing from panel (uses executeScript API)
 export async function injectScriptToCurrentTab(script: UserScript): Promise<boolean> {
 	try {
+		await requireInstalledModule();
 		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 		if (!tab?.id) return false;
-
 		if (script.type === 'css') {
 			await chrome.scripting.insertCSS({
 				target: { tabId: tab.id },
@@ -127,7 +116,6 @@ export async function injectScriptToCurrentTab(script: UserScript): Promise<bool
 				world: 'MAIN',
 			} as chrome.scripting.ScriptInjection);
 		}
-
 		await incrementRunCount(script.id);
 		return true;
 	} catch (e) {
