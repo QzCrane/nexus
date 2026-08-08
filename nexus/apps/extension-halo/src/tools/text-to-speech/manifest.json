@@ -11,8 +11,8 @@
 		"activeOnly": true,
 		"level": "idle",
 		"descriptionKey": "impact.mechanism.event_listener",
-		"sourceFile": "tools/text-to-speech/panel.tsx",
-		"sourceLine": 58,
-		"sourceDetail": "SpeechSynthesisUtterance start/end/error/pause/resume events drive UI state; no periodic status poll"
+		"sourceFile": "tools/text-to-speech/core.ts",
+		"sourceLine": 36,
+		"sourceDetail": "SpeechSynthesisUtterance start/end/error/pause/resume listeners drive UI state; no periodic status poll"
 	}
 }
