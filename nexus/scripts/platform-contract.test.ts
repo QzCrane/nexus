@@ -175,21 +175,26 @@ describe('portable automation contract', () => {
 		expect(crossPlatformWorkflow.match(/path: nexus\/\.turbo\/cache/gu)).toHaveLength(2);
 	});
 
-	test('scopes only pull-request product evidence and keeps main/manual fail-closed', () => {
-		expect(crossPlatformWorkflow).toContain('fetch-depth: 2');
-		expect(crossPlatformWorkflow).toContain('if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]]');
-		expect(crossPlatformWorkflow).toContain('git diff --name-only HEAD^ HEAD');
-		expect(crossPlatformWorkflow).toContain('nexus/apps/extension-spectra/*|nexus/apps/remote-spectra/*');
-		expect(crossPlatformWorkflow).toContain('nexus/apps/extension-halo/*');
-		expect(crossPlatformWorkflow).toContain('nexus/apps/*|nexus/packages/*|nexus/scripts/*');
-		expect(crossPlatformWorkflow).toContain("if: steps.scope.outputs.spectra == 'true'");
-		expect(crossPlatformWorkflow).toContain("if: steps.scope.outputs.halo == 'true'");
+	test('uses one fail-closed scope job with immutable PR base/head diff evidence', () => {
+		expect(crossPlatformWorkflow).toContain('name: product scope (ubuntu)');
+		expect(crossPlatformWorkflow).toContain('fetch-depth: 0');
+		expect(crossPlatformWorkflow).toContain('BASE_SHA: ${{ github.event.pull_request.base.sha }}');
+		expect(crossPlatformWorkflow).toContain('HEAD_SHA: ${{ github.event.pull_request.head.sha }}');
+		expect(crossPlatformWorkflow).toContain('git merge-base "$BASE_SHA" "$HEAD_SHA"');
+		expect(crossPlatformWorkflow).toContain('git diff --no-renames --name-only -z');
+		expect(crossPlatformWorkflow).toContain('node nexus/scripts/ci-product-scope.mjs');
+		expect(crossPlatformWorkflow).not.toContain('HEAD^ HEAD');
+		expect(crossPlatformWorkflow).not.toContain('done < <(');
 	});
 
-	test('keeps shared preparation behind either-product scope instead of burning docs-only minutes', () => {
-		const eitherProduct = "if: steps.scope.outputs.spectra == 'true' || steps.scope.outputs.halo == 'true'";
-		expect(crossPlatformWorkflow.match(new RegExp(eitherProduct.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'gu'))?.length).toBeGreaterThanOrEqual(4);
-		expect(crossPlatformWorkflow).toContain('- name: Test SPECTRA');
-		expect(crossPlatformWorkflow).toContain('- name: Test HALO');
+	test('gates the whole build matrix from scope outputs and routes product-specific builds', () => {
+		expect(crossPlatformWorkflow).toContain('needs: scope');
+		expect(crossPlatformWorkflow).toContain(
+			"if: needs.scope.outputs.spectra == 'true' || needs.scope.outputs.halo == 'true'",
+		);
+		expect(crossPlatformWorkflow).toContain('run: bun --cwd nexus run build:spectra');
+		expect(crossPlatformWorkflow).toContain('run: bun --cwd nexus run build:halo');
+		expect(crossPlatformWorkflow).toContain("if: needs.scope.outputs.spectra == 'true'");
+		expect(crossPlatformWorkflow).toContain("if: needs.scope.outputs.halo == 'true'");
 	});
 });
