@@ -6,7 +6,10 @@ import {
 } from '../src/kernel/managers/module-manager';
 import { moduleInstallationStorageKey } from '../src/kernel/core/module-installation-runtime';
 import { OPTIONAL_MODULES } from '../src/kernel/registry/module-registry';
-import { resolveDesiredRegisteredScripts } from '../src/system/userscripts/registry';
+import {
+	resolveDesiredRegisteredScripts,
+	userScriptsRegistryTestApi,
+} from '../src/system/userscripts/registry';
 import type { UserScript, UserScriptState } from '../src/system/userscripts/types';
 
 function createDivergentPersistence(initialManagerDisabled: boolean) {
@@ -147,18 +150,30 @@ describe('persistent UserScripts recovery contract', () => {
 		'utf8',
 	);
 
-	test('propagates unregister/register failures instead of logging success', () => {
+	test('propagates unregister/register failures and refuses implicit all-URL fallback', () => {
 		expect(registrySource).toContain("throw new Error(failures.join('; '))");
 		expect(registrySource).toContain('await unregisterAllScripts();');
+		expect(() => userScriptsRegistryTestApi.toMatchPatterns([])).toThrow(
+			'At least one match pattern is required',
+		);
+		expect(() => userScriptsRegistryTestApi.toMatchPatterns(['   '])).toThrow('Empty match pattern');
 	});
 
-	test('owns bounded retry plus persistent cross-worker recovery without normal startup churn', () => {
-		expect(registrySource).toContain('SYNC_RETRY_DELAYS_MS = [250, 1_000, 4_000]');
+	test('persists dirty authority before reconciliation and clears it only after the complete sync succeeds', () => {
+		const markIndex = registrySource.indexOf('await markRecoveryNeeded();');
+		const syncIndex = registrySource.indexOf('await syncRegisteredScripts();', markIndex);
+		const clearIndex = registrySource.indexOf('await clearRecoveryNeeded();', syncIndex);
+		expect(markIndex).toBeGreaterThanOrEqual(0);
+		expect(syncIndex).toBeGreaterThan(markIndex);
+		expect(clearIndex).toBeGreaterThan(syncIndex);
 		expect(registrySource).toContain('RECOVERY_STORAGE_KEY');
-		expect(registrySource).toContain('persistRecoveryNeeded();');
+		expect(userScriptsRegistryTestApi.SYNC_RETRY_DELAYS_MS).toEqual([250, 1_000, 4_000]);
+	});
+
+	test('recovers on worker startup only when module/dirty state requires it', () => {
 		expect(registrySource).toContain('recoverPersistentRegistryIfNeeded();');
 		expect(registrySource).toContain("requestRegisteredScriptSync('worker-startup-recovery')");
-		expect(registrySource).toContain('if (!userscriptsModuleEnabled || result[RECOVERY_STORAGE_KEY] === true)');
+		expect(registrySource).toContain('result[RECOVERY_STORAGE_KEY] === true');
 		expect(registrySource).not.toContain("requestRegisteredScriptSync('worker-startup');");
 	});
 });
