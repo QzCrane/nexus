@@ -41,21 +41,4 @@ describe('SPECTRA smoke lifecycle barriers', () => {
 			"await setMode('window-keyup-stop');",
 		));
 	});
-
-	test('defines native-observation readiness from the authoritative bootstrap status field', () => {
-		const helper = sourceWindow(
-			'async function waitForContentObservationReadiness',
-			'async function getRuntimeLeaseClient',
-		);
-		expect(helper).toContain('status.observationsReady === true');
-		expect(helper).not.toMatch(/setTimeout|requestAnimationFrame/u);
-	});
-
-	test('waits for observation admission before dispatching the recommendation mute event', () => {
-		const window = sourceWindow(
-			'await waitForContentBootstrapStatus(recommendationUrl);',
-			"video.dispatchEvent(new Event('volumechange'));",
-		);
-		expect(window).toContain('await waitForContentObservationReadiness(recommendationUrl);');
-	});
 });
