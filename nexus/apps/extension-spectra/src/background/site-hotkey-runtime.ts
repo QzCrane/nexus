@@ -1,8 +1,13 @@
 // goal: document-scoped runtime owner for custom-site hotkeys
 // inv: lean sites never retain the heavy Content Runtime; full sites preserve the existing lease semantics
 
+import {
+	SPECTRA_PROTOCOL_VERSION,
+	type SpectraLeanSiteHotkeyBinding,
+	type SpectraLeanSiteHotkeyConfigureMessage,
+} from '@nexus/contracts/bootstrap';
 import type { ResolvedSiteHotkeys } from '../shared/site-hotkey-mode';
-import { siteHotkeyCapability } from '../shared/site-hotkey-mode';
+import { leanSiteHotkeyBindings, siteHotkeyCapability } from '../shared/site-hotkey-mode';
 
 const LEAN_SITE_HOTKEY_FILE = 'content-site-hotkeys.js';
 
@@ -12,6 +17,11 @@ function documentKey(tabId: number, documentId: string): string {
 
 export interface LeanSiteHotkeyInjectionPort {
 	execute(tabId: number, documentId: string, file: string): Promise<void>;
+	configure(
+		tabId: number,
+		documentId: string,
+		message: SpectraLeanSiteHotkeyConfigureMessage,
+	): Promise<void>;
 }
 
 const chromeInjectionPort: LeanSiteHotkeyInjectionPort = {
@@ -23,10 +33,18 @@ const chromeInjectionPort: LeanSiteHotkeyInjectionPort = {
 			injectImmediately: true,
 		});
 	},
+	async configure(tabId, documentId, message) {
+		await chrome.tabs.sendMessage(tabId, message, { documentId });
+	},
 };
 
 export interface LeanSiteHotkeyInjector {
-	ensure(tabId: number, documentId: string): Promise<void>;
+	configure(
+		tabId: number,
+		documentId: string,
+		bindings: readonly SpectraLeanSiteHotkeyBinding[],
+	): Promise<void>;
+	disable(tabId: number, documentId: string): Promise<void>;
 	forget(tabId: number, documentId?: string): void;
 	reset(): void;
 	isInjected(tabId: number, documentId: string): boolean;
@@ -34,11 +52,13 @@ export interface LeanSiteHotkeyInjector {
 
 export function createLeanSiteHotkeyInjector(
 	port: LeanSiteHotkeyInjectionPort = chromeInjectionPort,
+	epoch = crypto.randomUUID(),
 ): LeanSiteHotkeyInjector {
 	const injected = new Set<string>();
 	const pending = new Map<string, Promise<void>>();
 	const generations = new Map<string, number>();
 	let resetGeneration = 0;
+	let configurationSequence = 0;
 
 	const generationOf = (key: string): number => generations.get(key) ?? 0;
 	const cleanupGeneration = (key: string, generation: number): void => {
@@ -64,7 +84,7 @@ export function createLeanSiteHotkeyInjector(
 		);
 	};
 
-	const ensure = (tabId: number, documentId: string): Promise<void> => {
+	const ensureInjected = (tabId: number, documentId: string): Promise<void> => {
 		const key = documentKey(tabId, documentId);
 		if (injected.has(key)) return Promise.resolve();
 		const existing = pending.get(key);
@@ -87,6 +107,47 @@ export function createLeanSiteHotkeyInjector(
 		return operation;
 	};
 
+	const configureMessage = (
+		generation: number,
+		bindings: readonly SpectraLeanSiteHotkeyBinding[],
+	): SpectraLeanSiteHotkeyConfigureMessage => ({
+		protocolVersion: SPECTRA_PROTOCOL_VERSION,
+		type: 'spectra.content.site-hotkeys.configure',
+		payload: {
+			epoch,
+			generation,
+			bindings: [...bindings],
+		},
+	});
+
+	const configure = async (
+		tabId: number,
+		documentId: string,
+		bindings: readonly SpectraLeanSiteHotkeyBinding[],
+	): Promise<void> => {
+		const key = documentKey(tabId, documentId);
+		const generation = ++configurationSequence;
+		await ensureInjected(tabId, documentId);
+		if (!injected.has(key)) return;
+		await port.configure(tabId, documentId, configureMessage(generation, bindings));
+	};
+
+	const disable = async (tabId: number, documentId: string): Promise<void> => {
+		const key = documentKey(tabId, documentId);
+		const generation = ++configurationSequence;
+		const pendingInjection = pending.get(key);
+		if (!injected.has(key) && !pendingInjection) return;
+		if (pendingInjection) {
+			try {
+				await pendingInjection;
+			} catch {
+				return;
+			}
+		}
+		if (!injected.has(key)) return;
+		await port.configure(tabId, documentId, configureMessage(generation, []));
+	};
+
 	const forget = (tabId: number, documentId?: string): void => {
 		if (documentId !== undefined) {
 			retireKey(documentKey(tabId, documentId));
@@ -101,10 +162,12 @@ export function createLeanSiteHotkeyInjector(
 	};
 
 	return {
-		ensure,
+		configure,
+		disable,
 		forget,
 		reset() {
 			resetGeneration += 1;
+			configurationSequence = 0;
 			injected.clear();
 			pending.clear();
 			generations.clear();
@@ -120,7 +183,8 @@ export const leanSiteHotkeyInjector = createLeanSiteHotkeyInjector();
 export interface SiteHotkeyRuntimePort {
 	ensureFull(capability: string): Promise<void>;
 	releaseFull(capability: string): void;
-	ensureLean(): Promise<void>;
+	configureLean(bindings: readonly SpectraLeanSiteHotkeyBinding[]): Promise<void>;
+	disableLean(): Promise<void>;
 }
 
 // post: return value is the only full-runtime hotkey capability that should
@@ -135,16 +199,25 @@ export async function reconcileSiteHotkeyRuntime(
 		&& previousFullCapability !== undefined
 		&& previousFullCapability === nextCapability;
 
+	if (resolved?.mode !== 'lean') {
+		// If a lean host is present or still injecting, neutralize it before a full
+		// listener can become authoritative. Failure is fail-closed: do not create
+		// a competing heavy listener while a lean binding might still be active.
+		await port.disableLean();
+	}
+
 	if (previousFullCapability && !keepPrevious) {
 		port.releaseFull(previousFullCapability);
 	}
 
 	if (!resolved) return null;
 	if (resolved.mode === 'lean') {
+		const bindings = leanSiteHotkeyBindings(resolved);
+		if (!bindings) throw new Error('Lean site-hotkey mode has no lean binding projection');
 		// Never hide a lean-injection regression by falling back to a permanent
-		// heavy Runtime lease. The caller may retry at HELLO/navigation/settings
-		// reconciliation because failed injector promises are not cached.
-		await port.ensureLean();
+		// heavy Runtime lease. A later HELLO/navigation/settings reconciliation
+		// retries because injection/configuration failures are not cached as truth.
+		await port.configureLean(bindings);
 		return null;
 	}
 
