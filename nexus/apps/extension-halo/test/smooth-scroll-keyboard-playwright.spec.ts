@@ -70,19 +70,15 @@ const FIXTURE_HTML = `<!doctype html>
 			let stopArrowClaims = 0;
 			let spaceClaims = 0;
 			let trustedArrowEvents = 0;
-			let lastAnyArrowCancelBubble = null;
-			let lastAnyArrowDefaultPrevented = null;
-			let lastArrowDefaultPrevented = null;
-			let lastStopArrowDefaultPrevented = null;
-			let lastSpaceDefaultPrevented = null;
+			let lastAnyArrowEvent = null;
+			let lastArrowEvent = null;
+			let lastStopArrowEvent = null;
+			let lastSpaceEvent = null;
 
 			document.addEventListener('keydown', (event) => {
 				if (event.key !== 'ArrowDown') return;
 				if (event.isTrusted) trustedArrowEvents++;
-				queueMicrotask(() => {
-					lastAnyArrowCancelBubble = event.cancelBubble;
-					lastAnyArrowDefaultPrevented = event.defaultPrevented;
-				});
+				lastAnyArrowEvent = event;
 			});
 
 			window.__haloKeyboardProbe = {
@@ -95,26 +91,20 @@ const FIXTURE_HTML = `<!doctype html>
 						if (event.key !== 'ArrowDown' || !arrowOwnerEnabled) return;
 						arrowClaims++;
 						player.volume = Math.max(0, player.volume - 0.1);
-						queueMicrotask(() => {
-							lastArrowDefaultPrevented = event.defaultPrevented;
-						});
+						lastArrowEvent = event;
 					});
 					document.addEventListener('keydown', (event) => {
 						if (event.key === 'ArrowDown' && stopArrowOwnerEnabled) {
 							stopArrowClaims++;
 							event.stopPropagation();
-							queueMicrotask(() => {
-								lastStopArrowDefaultPrevented = event.defaultPrevented;
-							});
+							lastStopArrowEvent = event;
 							return;
 						}
 						if (event.key !== ' ') return;
 						spaceClaims++;
 						event.preventDefault();
 						event.stopPropagation();
-						queueMicrotask(() => {
-							lastSpaceDefaultPrevented = event.defaultPrevented;
-						});
+						lastSpaceEvent = event;
 					});
 				},
 				reset() {
@@ -122,11 +112,10 @@ const FIXTURE_HTML = `<!doctype html>
 					stopArrowClaims = 0;
 					spaceClaims = 0;
 					trustedArrowEvents = 0;
-					lastAnyArrowCancelBubble = null;
-					lastAnyArrowDefaultPrevented = null;
-					lastArrowDefaultPrevented = null;
-					lastStopArrowDefaultPrevented = null;
-					lastSpaceDefaultPrevented = null;
+					lastAnyArrowEvent = null;
+					lastArrowEvent = null;
+					lastStopArrowEvent = null;
+					lastSpaceEvent = null;
 					player.volume = 1;
 					window.scrollTo({ top: 0, behavior: 'instant' });
 					document.body.focus();
@@ -140,11 +129,11 @@ const FIXTURE_HTML = `<!doctype html>
 				snapshot() {
 					return {
 						arrowClaims,
-						lastAnyArrowCancelBubble,
-						lastAnyArrowDefaultPrevented,
-						lastArrowDefaultPrevented,
-						lastSpaceDefaultPrevented,
-						lastStopArrowDefaultPrevented,
+						lastAnyArrowCancelBubble: lastAnyArrowEvent?.cancelBubble ?? null,
+						lastAnyArrowDefaultPrevented: lastAnyArrowEvent?.defaultPrevented ?? null,
+						lastArrowDefaultPrevented: lastArrowEvent?.defaultPrevented ?? null,
+						lastSpaceDefaultPrevented: lastSpaceEvent?.defaultPrevented ?? null,
+						lastStopArrowDefaultPrevented: lastStopArrowEvent?.defaultPrevented ?? null,
 						spaceClaims,
 						stopArrowClaims,
 						trustedArrowEvents,
