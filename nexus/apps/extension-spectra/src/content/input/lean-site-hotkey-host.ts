@@ -8,6 +8,7 @@ import {
 	resolveSpectraDefaultHotkeyAction,
 	type SpectraLeanSiteHotkeyBinding,
 } from '@nexus/contracts/bootstrap';
+import { runWithValidExtensionContext } from '../core/extension-context';
 import {
 	createWebsiteFirstKeyboardArbiter,
 	isEditableHotkeyEvent,
@@ -35,7 +36,7 @@ const activeByCode = new Map<string, ActiveBinding>();
 let bindingByChord = new Map<string, SpectraLeanSiteHotkeyBinding>();
 let arbiterDispose: (() => void) | null = null;
 let physicalReleaseDispose: (() => void) | null = null;
-let runtimeMessageListener: ((message: unknown, sender: chrome.runtime.MessageSender) => false) | null = null;
+let runtimeMessageListener: Parameters<typeof chrome.runtime.onMessage.addListener>[0] | null = null;
 let disposed = false;
 let configurationEpoch: string | null = null;
 let configurationGeneration = -1;
@@ -82,17 +83,20 @@ function sendTrigger(
 	phase: 'press' | 'release',
 	repeated: boolean,
 ): void {
-	void chrome.runtime.sendMessage({
-		protocolVersion: SPECTRA_PROTOCOL_VERSION,
-		requestId: crypto.randomUUID(),
-		type: 'spectra.content.default-hotkey.trigger',
-		payload: {
-			action: held.binding.action,
-			phase,
-			gesture: held.gesture,
-			repeated,
-		},
-	}).catch(() => undefined);
+	void runWithValidExtensionContext(
+		() => chrome.runtime.sendMessage({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: crypto.randomUUID(),
+			type: 'spectra.content.site-hotkey.trigger',
+			payload: {
+				action: held.binding.action,
+				phase,
+				gesture: held.gesture,
+				repeated,
+			},
+		}),
+		dispose,
+	).catch(() => undefined);
 }
 
 function releaseCode(code: string): void {
@@ -226,7 +230,7 @@ if (existing?.revision !== 1) {
 	existing?.dispose();
 	hostWindow.__SPECTRA_LEAN_SITE_HOTKEY_HOST__ = host;
 	physicalReleaseDispose = subscribeDocumentStartPhysicalHotkeyRelease(onPhysicalRelease);
-	runtimeMessageListener = (message, sender) => {
+	runtimeMessageListener = (message, sender, sendResponse) => {
 		if (sender.id && sender.id !== chrome.runtime.id) return false;
 		if (!isSpectraLeanSiteHotkeyConfigureMessage(message)) return false;
 		applyConfiguration(
@@ -234,6 +238,11 @@ if (existing?.revision !== 1) {
 			message.payload.generation,
 			message.payload.bindings,
 		);
+		sendResponse({
+			accepted: true,
+			epoch: message.payload.epoch,
+			generation: message.payload.generation,
+		});
 		return false;
 	};
 	chrome.runtime.onMessage.addListener(runtimeMessageListener);
