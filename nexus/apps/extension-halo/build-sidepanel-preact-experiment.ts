@@ -2,7 +2,7 @@
 // inv: content scripts/background stay on the canonical build; this experiment replaces only SidePanel-owned outputs.
 
 import esbuild from 'esbuild';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -74,9 +74,19 @@ function closureContributors(metafile: esbuild.Metafile, outputs: Set<string>, l
 		.slice(0, limit);
 }
 
-// Canonical HALO has exactly one split build domain: SidePanel. Remove its
-// canonical React chunks before writing the Preact graph so the experiment
-// artifact cannot retain unreachable chunks from both renderers.
+// Canonical HALO currently has exactly one esbuild splitting owner: SidePanel.
+// The experiment may delete dist/chunks only while that remains physically true.
+const canonicalBuildSource = readFileSync(path.join(__dirname, 'build.ts'), 'utf8');
+const splittingOwners = canonicalBuildSource.match(/\bsplitting:\s*true\b/gu) ?? [];
+if (splittingOwners.length !== 1 || !canonicalBuildSource.includes("if (kind === 'sidepanel')")) {
+	throw new Error(
+		'Preact experiment cannot prove dist/chunks is SidePanel-owned; ' +
+		`canonical splitting owners=${splittingOwners.length}`,
+	);
+}
+
+// Remove the canonical React SidePanel chunks before writing the Preact graph
+// so the candidate artifact cannot retain unreachable chunks from both renderers.
 if (existsSync(sidepanelChunksDir)) {
 	rmSync(sidepanelChunksDir, {
 		recursive: true,
