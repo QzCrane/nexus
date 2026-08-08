@@ -29,12 +29,15 @@ const PAGE_REPEAT_MAX_INTERVAL_MS = 320;
 const KEYBOARD_ACCELERATION_STEP_MS = 160;
 const KEYBOARD_ACCELERATION_STEP = 0.5;
 
-interface MediaStateSnapshot {
-	element: HTMLMediaElement;
+interface MediaState {
 	muted: boolean;
 	paused: boolean;
 	playbackRate: number;
 	volume: number;
+}
+
+interface MediaStateSnapshot extends MediaState {
+	element: HTMLMediaElement;
 }
 
 export interface KeyboardCapture {
@@ -55,40 +58,44 @@ function isMediaShortcutKey(key: string): boolean {
 	return key === ' ' || key === 'ArrowDown' || key === 'ArrowUp';
 }
 
+function readMediaState(element: HTMLMediaElement): MediaState | null {
+	try {
+		return {
+			muted: element.muted,
+			paused: element.paused,
+			playbackRate: element.playbackRate,
+			volume: element.volume,
+		};
+	} catch {
+		// Unreadable wrappers are handled as absent evidence rather than turning a
+		// keyboard event into either extension or website ownership by exception.
+		return null;
+	}
+}
+
 function captureMediaStates(key: string): MediaStateSnapshot[] {
 	if (!isMediaShortcutKey(key) || typeof document === 'undefined') return [];
 	const states: MediaStateSnapshot[] = [];
 	for (const element of document.querySelectorAll<HTMLMediaElement>('video, audio')) {
-		try {
-			states.push({
-				element,
-				muted: element.muted,
-				paused: element.paused,
-				playbackRate: element.playbackRate,
-				volume: element.volume,
-			});
-		} catch {
-			// A hostile or detached media wrapper must not break page scrolling.
-		}
+		const state = readMediaState(element);
+		if (state) states.push({ element, ...state });
 	}
 	return states;
 }
 
 function mediaStateChanged(states: readonly MediaStateSnapshot[]): boolean {
 	for (const before of states) {
-		try {
-			const after = before.element;
-			if (
-				!after.isConnected ||
-				after.muted !== before.muted ||
-				after.paused !== before.paused ||
-				after.playbackRate !== before.playbackRate ||
-				Math.abs(after.volume - before.volume) > Number.EPSILON
-			) {
-				return true;
-			}
-		} catch {
-			// Becoming unreadable is not enough evidence to cancel page scrolling.
+		const element = before.element;
+		if (!element.isConnected) return true;
+		const after = readMediaState(element);
+		if (!after) continue;
+		if (
+			after.muted !== before.muted ||
+			after.paused !== before.paused ||
+			after.playbackRate !== before.playbackRate ||
+			Math.abs(after.volume - before.volume) > Number.EPSILON
+		) {
+			return true;
 		}
 	}
 	return false;
