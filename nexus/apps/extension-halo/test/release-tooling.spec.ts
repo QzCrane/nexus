@@ -133,6 +133,27 @@ describe('HALO release tooling', () => {
 		expect(generator).toContain('generateScriptRuntimeManifest');
 	});
 
+	test('keeps detailed background provenance out of the SidePanel startup projection', () => {
+		const compactProjection = readFileSync(
+			new URL('../src/kernel/registry/_generated-background-active.ts', import.meta.url),
+			'utf8',
+		);
+		const generator = readFileSync(
+			new URL('../../../scripts/registry-gen/gen-registry.ts', import.meta.url),
+			'utf8',
+		);
+		const generateEntryStart = generator.indexOf('const generateEntry');
+		const permissionMapStart = generator.indexOf('const permissionMap', generateEntryStart);
+		const generatedPluginEntry = generator.slice(generateEntryStart, permissionMapStart);
+
+		expect(compactProjection).toContain('BACKGROUND_ACTIVE_ONLY_MAP');
+		expect(compactProjection).not.toContain('sourceFile');
+		expect(compactProjection).not.toContain('sourceLine');
+		expect(compactProjection).not.toContain('sourceDetail');
+		expect(generator).toContain('generateBackgroundActiveProjection');
+		expect(generatedPluginEntry).not.toContain('background:');
+	});
+
 	test('does not rebuild browser-persistent user-script registrations on every worker wake', () => {
 		const background = readFileSync(
 			new URL('../src/entry/background.ts', import.meta.url),
