@@ -262,6 +262,33 @@ function staticOutputClosure(metafile, entryOutput) {
 	return { bytes, fileCount: visited.size, outputBytes };
 }
 
+/** Attribute the complete static closure to the source modules esbuild retained. */
+function largestStaticClosureInputs(metafile, closure, limit = 12) {
+	if (!metafile?.outputs || !closure?.outputBytes) return [];
+	const outputs = new Map(
+		Object.entries(metafile.outputs).map(([output, detail]) => [outputAbsolute(output), detail]),
+	);
+	const aggregated = new Map();
+
+	for (const output of closure.outputBytes.keys()) {
+		const detail = outputs.get(output);
+		if (!detail) continue;
+		for (const [input, stats] of Object.entries(detail.inputs ?? {})) {
+			const normalizedInput = path
+				.relative(__dirname, path.resolve(__dirname, input))
+				.replaceAll('\\', '/');
+			const bytes = stats.bytesInOutput ?? 0;
+			if (bytes <= 0) continue;
+			aggregated.set(normalizedInput, (aggregated.get(normalizedInput) ?? 0) + bytes);
+		}
+	}
+
+	return [...aggregated.entries()]
+		.map(([input, bytes]) => ({ input, bytes }))
+		.sort((left, right) => right.bytes - left.bytes || left.input.localeCompare(right.input))
+		.slice(0, limit);
+}
+
 function assertProductionSidepanelSplitting() {
 	if (isDev) return;
 	const chunksDir = path.join(distDir, 'chunks');
@@ -361,6 +388,10 @@ if (isWatch) {
 	if (!sidepanelStartup) {
 		throw new Error('HALO SidePanel startup closure could not be resolved from the esbuild metafile');
 	}
+	const sidepanelTopInputs = largestStaticClosureInputs(
+		sidepanelResult.result.metafile,
+		sidepanelStartup,
+	);
 
 	const budgetMeasurements = {
 		background: sizeOf('background.js'),
@@ -384,6 +415,7 @@ if (isWatch) {
 				sidepanelStartupFiles: sidepanelStartup.fileCount,
 				backgroundBytes: sizeOf('background.js'),
 			},
+			sidepanelTopInputs,
 			entries: buildResults.map(({ entry, result }) => ({
 				entry: entry.out,
 				kind: entry.kind,
@@ -415,6 +447,9 @@ if (isWatch) {
 	console.log(
 		`✓ Startup closures: all-frame@start:${kib(allFrameDocumentStart)}KB | top-frame@start:${kib(topFrameDocumentStart)}KB | all-frame@idle:${kib(allFrameDocumentIdle)}KB | top-frame@idle:${kib(topFrameDocumentIdle)}KB | sidepanel:${kib(sidepanelStartup.bytes)}KB/${sidepanelStartup.fileCount} files | background:${kib(sizeOf('background.js'))}KB`,
 	);
+	if (!isDev) {
+		console.log(`✓ SidePanel contributors: ${sidepanelTopInputs.map(({ input, bytes }) => `${input}:${(bytes / 1024).toFixed(1)}KiB`).join(' | ')}`);
+	}
 	console.log('✓ Production budgets:', Object.entries(PRODUCTION_BUDGET_KIB).map(([name, value]) => `${name}<=${value}KiB`).join(' | '));
 	console.log('🎉 Done → dist/');
 }
