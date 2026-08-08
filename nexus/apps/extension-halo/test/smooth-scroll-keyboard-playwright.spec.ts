@@ -216,6 +216,21 @@ async function repeatArrowStream(
 	return waitForScrollSettled(page);
 }
 
+async function enableSmoothScroll(context: BrowserContext): Promise<string> {
+	let [serviceWorker] = context.serviceWorkers();
+	if (!serviceWorker) {
+		serviceWorker = await context.waitForEvent('serviceworker', { timeout: 10_000 });
+	}
+	const extensionId = new URL(serviceWorker.url()).hostname;
+	if (!extensionId) throw new Error(`HALO service worker has no extension id: ${serviceWorker.url()}`);
+	await serviceWorker.evaluate(async (storageKey) => {
+		await chrome.storage.sync.set({
+			[storageKey]: { enabled: true, keyboard: true },
+		});
+	}, 'HALO_SMOOTH_SCROLL_SETTINGS');
+	return extensionId;
+}
+
 async function waitForSmoothScrollReady(page: Page): Promise<void> {
 	const deadline = Date.now() + 10_000;
 	while (Date.now() < deadline) {
@@ -253,6 +268,8 @@ test.describe('HALO keyboard ownership in Chromium', () => {
 					`--load-extension=${DIST_PATH}`,
 				],
 			});
+			const extensionId = await enableSmoothScroll(context);
+			expect(extensionId.length).toBeGreaterThan(0);
 			const page = context.pages()[0] ?? await context.newPage();
 			await page.goto(fixture.url, { waitUntil: 'load' });
 			await waitForSmoothScrollReady(page);
