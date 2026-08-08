@@ -16,6 +16,7 @@ interface HoverZoomPreviewRuntime {
 
 let runtimePromise: Promise<HoverZoomPreviewRuntime> | null = null;
 let previewIntentRevision = 0;
+let pendingPreviewTarget: HTMLElement | null = null;
 
 function loadRuntime(): Promise<HoverZoomPreviewRuntime> {
 	if (runtimePromise) return runtimePromise;
@@ -44,6 +45,18 @@ function loadRuntime(): Promise<HoverZoomPreviewRuntime> {
 /** Invalidate any trigger waiting on the lazy runtime. */
 export function cancelPendingPreviewIntent(): void {
 	previewIntentRevision += 1;
+	pendingPreviewTarget = null;
+}
+
+/**
+ * Return whether a mouseout destination remains inside the currently pending
+ * logical target. This is intentionally a cheap containment check: mouseout is
+ * a hot event and must not rerun trigger validation merely to protect an import.
+ */
+export function isPendingPreviewTransition(related: HTMLElement | null): boolean {
+	const pending = pendingPreviewTarget;
+	if (!pending || !related) return false;
+	return pending === related || pending.contains(related) || related.contains(pending);
 }
 
 /**
@@ -56,6 +69,7 @@ export async function requestPreview(
 	target: HTMLElement,
 ): Promise<void> {
 	const revision = ++previewIntentRevision;
+	pendingPreviewTarget = target;
 	try {
 		const runtime = await loadRuntime();
 		if (
@@ -66,10 +80,18 @@ export async function requestPreview(
 		) {
 			return;
 		}
+
+		// From this point the loaded runtime synchronously claims currentTarget
+		// before any delayed resolver/viewer work. Pending-import ownership ends.
+		if (pendingPreviewTarget === target) pendingPreviewTarget = null;
 		await runtime.tryTrigger(state, preload, target);
 	} catch (error: unknown) {
 		if (revision === previewIntentRevision) {
 			console.warn(LOG_TAG, 'Lazy preview runtime failed', error);
+		}
+	} finally {
+		if (revision === previewIntentRevision && pendingPreviewTarget === target) {
+			pendingPreviewTarget = null;
 		}
 	}
 }
