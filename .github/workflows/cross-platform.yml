@@ -15,6 +15,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  revert-negative-spectra-projection:
+    name: revert negative SPECTRA projection
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/spectra-halo-performance'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout source branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Restore pre-experiment SPECTRA owners
+        run: |
+          git fetch origin main
+          git checkout origin/main -- \
+            nexus/apps/extension-spectra/src/background/control-coordinator.ts \
+            nexus/apps/extension-spectra/src/background/runtime-loader.ts \
+            nexus/scripts/verify/check-spectra-control.ts
+          git rm -f \
+            nexus/apps/extension-spectra/src/background/background-control-policy.ts \
+            nexus/apps/extension-spectra/test/background-control-policy.spec.ts
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "revert(spectra): drop negative background policy projection"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
+
   quality:
     name: quality (ubuntu)
     runs-on: ubuntu-latest
