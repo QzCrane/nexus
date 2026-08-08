@@ -52,13 +52,16 @@ function createChromePersistence(): ModuleInstallationPersistence {
 
 export interface ModuleManagerSnapshot {
 	revision: number;
+	degraded: boolean;
 	installedModules: readonly ModuleMeta[];
 	availableModules: readonly ModuleMeta[];
 }
 
-const EMPTY_SNAPSHOT: ModuleManagerSnapshot = Object.freeze({
+const BUILTIN_MODULES = Object.freeze(ALL_MODULES.filter((module) => module.builtIn));
+const INITIAL_SNAPSHOT: ModuleManagerSnapshot = Object.freeze({
 	revision: 0,
-	installedModules: Object.freeze([]) as readonly ModuleMeta[],
+	degraded: true,
+	installedModules: BUILTIN_MODULES,
 	availableModules: Object.freeze([]) as readonly ModuleMeta[],
 });
 
@@ -68,13 +71,41 @@ export class ModuleManager {
 	private readonly mutationTailById = new Map<string, Promise<void>>();
 	private readonly hydrationEventOwnedIds = new Set<string>();
 	private revision = 0;
-	private snapshot: ModuleManagerSnapshot = EMPTY_SNAPSHOT;
+	private degraded = true;
+	private snapshot: ModuleManagerSnapshot = INITIAL_SNAPSHOT;
 	private unsubscribePersistence: (() => void) | null = null;
 	private hydrating = false;
 
 	constructor(
 		private readonly persistence: ModuleInstallationPersistence = createChromePersistence(),
-	) {}
+	) {
+		for (const module of OPTIONAL_MODULES) this.disabled.add(module.id);
+	}
+
+	private async loadDisabledWithRetry(): Promise<Set<string>> {
+		try {
+			return await this.persistence.loadDisabled();
+		} catch (firstError) {
+			try {
+				return await this.persistence.loadDisabled();
+			} catch {
+				throw firstError;
+			}
+		}
+	}
+
+	private applyHydratedDisabled(disabledFromStorage: ReadonlySet<string>): void {
+		for (const module of OPTIONAL_MODULES) {
+			if (this.hydrationEventOwnedIds.has(module.id)) continue;
+			if (disabledFromStorage.has(module.id)) this.disabled.add(module.id);
+			else this.disabled.delete(module.id);
+		}
+	}
+
+	private publishHydration(degraded: boolean): void {
+		this.degraded = degraded;
+		this.refreshSnapshot();
+	}
 
 	async initialize(): Promise<void> {
 		if (this.unsubscribePersistence) return;
@@ -84,17 +115,32 @@ export class ModuleManager {
 			this.applyEnabled(id, enabled);
 		});
 		try {
-			const disabledFromStorage = await this.persistence.loadDisabled();
-			for (const module of OPTIONAL_MODULES) {
-				if (this.hydrationEventOwnedIds.has(module.id)) continue;
-				if (disabledFromStorage.has(module.id)) this.disabled.add(module.id);
-				else this.disabled.delete(module.id);
-			}
-			this.refreshSnapshot();
+			const disabledFromStorage = await this.loadDisabledWithRetry();
+			this.applyHydratedDisabled(disabledFromStorage);
+			this.publishHydration(false);
 		} catch (error) {
-			this.unsubscribePersistence?.();
-			this.unsubscribePersistence = null;
-			throw error;
+			for (const module of OPTIONAL_MODULES) {
+				if (!this.hydrationEventOwnedIds.has(module.id)) this.disabled.add(module.id);
+			}
+			this.publishHydration(true);
+			console.error('[HALO:ModuleManager] Installation hydration failed', error);
+		} finally {
+			this.hydrating = false;
+			this.hydrationEventOwnedIds.clear();
+		}
+	}
+
+	async retryInstallationState(): Promise<boolean> {
+		this.hydrating = true;
+		try {
+			const disabledFromStorage = await this.persistence.loadDisabled();
+			this.applyHydratedDisabled(disabledFromStorage);
+			this.publishHydration(false);
+			return true;
+		} catch (error) {
+			this.publishHydration(true);
+			console.error('[HALO:ModuleManager] Installation retry failed', error);
+			return false;
 		} finally {
 			this.hydrating = false;
 			this.hydrationEventOwnedIds.clear();
@@ -117,6 +163,7 @@ export class ModuleManager {
 	private refreshSnapshot(): void {
 		this.snapshot = Object.freeze({
 			revision: this.revision,
+			degraded: this.degraded,
 			installedModules: Object.freeze(ALL_MODULES.filter((module) => this.isInstalled(module.id))),
 			availableModules: Object.freeze(OPTIONAL_MODULES.filter((module) => !this.isInstalled(module.id))),
 		});
@@ -173,9 +220,6 @@ export class ModuleManager {
 			const meta = ALL_MODULES.find((module) => module.id === id);
 			if (!meta) throw new Error(`Module ${id} not found`);
 			if (meta.builtIn) return;
-			// Never use this context's projection as a write-elision condition. A
-			// different extension context may have changed the physical tombstone
-			// before its storage event reaches this manager.
 			await this.persistence.setEnabled(id, true);
 			this.applyEnabled(id, await this.persistence.readEnabled(id));
 		});
