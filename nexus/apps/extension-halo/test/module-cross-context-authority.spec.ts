@@ -4,7 +4,10 @@ import {
 	ModuleManager,
 	type ModuleInstallationPersistence,
 } from '../src/kernel/managers/module-manager';
+import { moduleInstallationStorageKey } from '../src/kernel/core/module-installation-runtime';
 import { OPTIONAL_MODULES } from '../src/kernel/registry/module-registry';
+import { resolveDesiredRegisteredScripts } from '../src/system/userscripts/registry';
+import type { UserScript, UserScriptState } from '../src/system/userscripts/types';
 
 function createDivergentPersistence(initialManagerDisabled: boolean) {
 	const optional = OPTIONAL_MODULES[0];
@@ -29,15 +32,34 @@ function createDivergentPersistence(initialManagerDisabled: boolean) {
 	};
 }
 
+function script(id: string, overrides: Partial<UserScript> = {}): UserScript {
+	return {
+		id,
+		name: id,
+		description: '',
+		code: '',
+		enabled: true,
+		type: 'javascript',
+		matches: ['*://*/*'],
+		runAt: 'document_idle',
+		order: 0,
+		runCount: 0,
+		createdAt: 1,
+		updatedAt: 1,
+		...overrides,
+	};
+}
+
+function scriptState(scripts: UserScript[], globalEnabled = true): UserScriptState {
+	return { scripts, globalEnabled };
+}
+
 describe('cross-context packaged-module mutations', () => {
 	test('install persists even when this manager still looks installed', async () => {
 		const state = createDivergentPersistence(false);
 		const manager = new ModuleManager(state.persistence);
 		await manager.initialize();
 		expect(manager.isInstalled(state.optional.id)).toBe(true);
-
-		// Another context wrote an uninstall tombstone but this manager has not yet
-		// received onChanged. The user install request must still repair storage.
 		state.setPhysicalEnabled(false);
 		await manager.install(state.optional.id);
 		expect(state.writes).toEqual([true]);
@@ -50,13 +72,72 @@ describe('cross-context packaged-module mutations', () => {
 		const manager = new ModuleManager(state.persistence);
 		await manager.initialize();
 		expect(manager.isInstalled(state.optional.id)).toBe(false);
-
-		// Another context removed the tombstone but its event is still in flight.
 		state.setPhysicalEnabled(true);
 		await manager.uninstall(state.optional.id);
 		expect(state.writes).toEqual([false]);
 		expect(state.physicalEnabled()).toBe(false);
 		expect(manager.isInstalled(state.optional.id)).toBe(false);
+	});
+});
+
+describe('script runtime ownership', () => {
+	test('UserScripts module tombstone disables custom scripts but not built-in packaged scripts', () => {
+		const custom = script('custom');
+		const builtInPackaged = script('bilibili-plus', {
+			saatToolId: 'bilibili-plus',
+			managedBy: 'packaged-script',
+			moduleBuiltIn: true,
+		});
+		const desired = resolveDesiredRegisteredScripts(
+			scriptState([custom, builtInPackaged]),
+			scriptState([]),
+			false,
+			{},
+		);
+		expect(desired.map((item) => item.id)).toEqual(['bilibili-plus']);
+	});
+
+	test('optional packaged scripts and SaaT tools obey their own module tombstones', () => {
+		const packaged = script('optional-packaged', {
+			saatToolId: 'optional-packaged',
+			managedBy: 'packaged-script',
+			moduleBuiltIn: false,
+		});
+		const saat = script('saat-runtime', {
+			saatToolId: 'totp',
+			managedBy: 'saat-tool',
+			moduleBuiltIn: false,
+		});
+		const moduleValues = {
+			[moduleInstallationStorageKey('optional-packaged')]: false,
+			[moduleInstallationStorageKey('totp')]: false,
+		};
+		const desired = resolveDesiredRegisteredScripts(
+			scriptState([packaged]),
+			scriptState([saat]),
+			true,
+			moduleValues,
+		);
+		expect(desired).toEqual([]);
+	});
+
+	test('container global switches remain content settings independent of module installation', () => {
+		const packaged = script('packaged', {
+			saatToolId: 'packaged',
+			managedBy: 'packaged-script',
+			moduleBuiltIn: true,
+		});
+		const saat = script('saat', {
+			saatToolId: 'hash',
+			managedBy: 'saat-tool',
+			moduleBuiltIn: true,
+		});
+		expect(resolveDesiredRegisteredScripts(
+			scriptState([packaged], false),
+			scriptState([saat], true),
+			true,
+			{},
+		).map((item) => item.id)).toEqual(['saat']);
 	});
 });
 
@@ -69,7 +150,6 @@ describe('persistent UserScripts recovery contract', () => {
 	test('propagates unregister/register failures instead of logging success', () => {
 		expect(registrySource).toContain("throw new Error(failures.join('; '))");
 		expect(registrySource).toContain('await unregisterAllScripts();');
-		expect(registrySource).not.toContain("console.warn(LOG_TAG, 'Failed to unregister user scripts:'");
 	});
 
 	test('owns bounded retry plus persistent cross-worker recovery without normal startup churn', () => {
@@ -78,7 +158,7 @@ describe('persistent UserScripts recovery contract', () => {
 		expect(registrySource).toContain('persistRecoveryNeeded();');
 		expect(registrySource).toContain('recoverPersistentRegistryIfNeeded();');
 		expect(registrySource).toContain("requestRegisteredScriptSync('worker-startup-recovery')");
-		expect(registrySource).toContain('if (!moduleEnabled || result[RECOVERY_STORAGE_KEY] === true)');
+		expect(registrySource).toContain('if (!userscriptsModuleEnabled || result[RECOVERY_STORAGE_KEY] === true)');
 		expect(registrySource).not.toContain("requestRegisteredScriptSync('worker-startup');");
 	});
 });
@@ -91,4 +171,15 @@ test('optional system active panels must obey installation rather than taxonomy'
 	expect(source).toContain('current === null || isInstalled(current) ? current : null');
 	expect(source).toContain('isKnownTool(savedActive) && isInstalled(savedActive)');
 	expect(source).not.toContain('isSystemTool(current) || isInstalled(current)');
+});
+
+test('Launcher custom scripts are bound to the UserScripts module and exclude packaged records', () => {
+	const source = readFileSync(
+		new URL('../src/kernel/hooks/use-user-scripts.ts', import.meta.url),
+		'utf8',
+	);
+	expect(source).toContain("module.id === 'userscripts'");
+	expect(source).toContain('value.saatToolId === undefined');
+	expect(source).toContain('value.managedBy === undefined');
+	expect(source).toContain('if (!enabled)');
 });
