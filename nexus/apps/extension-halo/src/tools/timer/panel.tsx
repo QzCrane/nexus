@@ -1,8 +1,8 @@
 // goal: Timer panel UI - countdown and stopwatch
-// eff: persistent time authority is anchor-based; display ticks remain local/ephemeral
+// eff: persistent time authority is anchor-based; display ticks are isolated to the clock node
 
 import type React from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from '../../i18n';
 import type { TimerMode, TimerState } from './types';
 import { formatTime, PRESETS } from './core';
@@ -23,24 +23,9 @@ function runningElapsed(state: TimerState, now: number): number {
 	return state.elapsed + Math.max(0, now - state.startedAt);
 }
 
-export const TimerPanel: React.FC = () => {
-	const { t } = useTranslation();
-	const [state, setState] = useToolState<TimerState>('timer', initialState);
-	const [inputMins, setInputMins] = useToolState<number>('timer-mins', 5);
-	const [inputSecs, setInputSecs] = useToolState<number>('timer-secs', 0);
+const TimerDisplay: React.FC<{ state: TimerState }> = memo(({ state }) => {
 	const [now, setNow] = useState(() => Date.now());
 
-	// One-time compatibility repair for pre-anchor persisted running states.
-	useEffect(() => {
-		if (!state.isRunning || typeof state.startedAt === 'number') return;
-		setState((current) => {
-			if (!current.isRunning || typeof current.startedAt === 'number') return current;
-			return { ...current, startedAt: Date.now() };
-		});
-	}, [state.isRunning, state.startedAt, setState]);
-
-	// Display projection only. rAF aligns updates to paint and naturally pauses
-	// when the SidePanel is not rendered; persistent TimerState is untouched.
 	useEffect(() => {
 		if (!state.isRunning) {
 			setNow(Date.now());
@@ -60,10 +45,28 @@ export const TimerPanel: React.FC = () => {
 		};
 	}, [state.isRunning]);
 
-	const currentElapsed = useMemo(
-		() => runningElapsed(state, now),
-		[state, now],
-	);
+	const currentElapsed = runningElapsed(state, now);
+	const displayTime = state.mode === 'countdown'
+		? formatTime(Math.max(0, state.target - currentElapsed))
+		: formatTime(currentElapsed, true);
+
+	return <div style={styles.display}>{displayTime}</div>;
+});
+
+export const TimerPanel: React.FC = () => {
+	const { t } = useTranslation();
+	const [state, setState] = useToolState<TimerState>('timer', initialState);
+	const [inputMins, setInputMins] = useToolState<number>('timer-mins', 5);
+	const [inputSecs, setInputSecs] = useToolState<number>('timer-secs', 0);
+
+	// One-time compatibility repair for pre-anchor persisted running states.
+	useEffect(() => {
+		if (!state.isRunning || typeof state.startedAt === 'number') return;
+		setState((current) => {
+			if (!current.isRunning || typeof current.startedAt === 'number') return current;
+			return { ...current, startedAt: Date.now() };
+		});
+	}, [state.isRunning, state.startedAt, setState]);
 
 	// Countdown owns one completion timer instead of a 10ms repeating writer.
 	useEffect(() => {
@@ -164,10 +167,6 @@ export const TimerPanel: React.FC = () => {
 			: { ...current, target });
 	}, [inputMins, inputSecs, state.isRunning, setState]);
 
-	const displayTime = state.mode === 'countdown'
-		? formatTime(Math.max(0, state.target - currentElapsed))
-		: formatTime(currentElapsed, true);
-
 	return (
 		<div style={styles.wrapper}>
 			<div style={styles.tabs}>
@@ -192,7 +191,7 @@ export const TimerPanel: React.FC = () => {
 				</>
 			)}
 
-			<div style={styles.display}>{displayTime}</div>
+			<TimerDisplay state={state} />
 
 			<div style={styles.controls}>
 				<button type="button" style={styles.btn} onClick={handleToggle}>
