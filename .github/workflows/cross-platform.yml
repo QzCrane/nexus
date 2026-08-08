@@ -71,13 +71,54 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # PR refs are synthetic merge commits. Depth 2 gives the merge base
+          # parent plus candidate so path scoping needs no API or third-party action.
+          fetch-depth: 2
+
+      - name: Determine product scope
+        id: scope
+        shell: bash
+        run: |
+          spectra=false
+          halo=false
+
+          # Main pushes and manual verification remain fail-closed: run both
+          # products regardless of path. Only pull requests receive cost scoping.
+          if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]]; then
+            spectra=true
+            halo=true
+          else
+            while IFS= read -r path; do
+              case "$path" in
+                nexus/apps/extension-spectra/*|nexus/apps/remote-spectra/*)
+                  spectra=true
+                  ;;
+                nexus/apps/extension-halo/*)
+                  halo=true
+                  ;;
+                nexus/apps/*|nexus/packages/*|nexus/scripts/*|nexus/*.json|nexus/*.ts|nexus/*.mjs|nexus/*.cjs|nexus/bun.lock|.github/workflows/*|package.json)
+                  # Unknown app/shared/toolchain/workflow changes can affect either
+                  # runtime, so never optimize their evidence away.
+                  spectra=true
+                  halo=true
+                  ;;
+              esac
+            done < <(git diff --name-only HEAD^ HEAD)
+          fi
+
+          echo "spectra=$spectra" >> "$GITHUB_OUTPUT"
+          echo "halo=$halo" >> "$GITHUB_OUTPUT"
+          echo "SPECTRA=$spectra HALO=$halo"
 
       - name: Set up Bun 1.3.14
+        if: steps.scope.outputs.spectra == 'true' || steps.scope.outputs.halo == 'true'
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
 
       - name: Cache Turbo
+        if: steps.scope.outputs.spectra == 'true' || steps.scope.outputs.halo == 'true'
         uses: actions/cache@v4
         with:
           path: nexus/.turbo/cache
@@ -86,14 +127,18 @@ jobs:
             turbo-build-${{ runner.os }}-
 
       - name: Install workspace dependencies
+        if: steps.scope.outputs.spectra == 'true' || steps.scope.outputs.halo == 'true'
         run: bun install --cwd nexus --frozen-lockfile
 
       - name: Build production candidates
+        if: steps.scope.outputs.spectra == 'true' || steps.scope.outputs.halo == 'true'
         run: bun run build
 
       - name: Test SPECTRA
+        if: steps.scope.outputs.spectra == 'true'
         run: bun --cwd nexus test:spectra
 
       - name: Test HALO
+        if: steps.scope.outputs.halo == 'true'
         run: bun --cwd nexus test:halo
 
