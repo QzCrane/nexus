@@ -12,15 +12,5 @@
 		"service",
 		"后台",
 		"资源"
-	],
-	"background": {
-		"mechanism": "storage_listener",
-		"frequency": "on-view",
-		"activeOnly": true,
-		"level": "idle",
-		"descriptionKey": "impact.self_monitoring",
-		"sourceFile": "system/resource-monitor/panel.tsx",
-		"sourceLine": 0,
-		"sourceDetail": "Consumes ActiveServicesContext"
-	}
+	]
 }
