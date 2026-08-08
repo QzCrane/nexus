@@ -3,19 +3,18 @@
 // Compact startup projection; detailed provenance lives in _generated.ts.
 
 export const BACKGROUND_ACTIVE_ONLY_MAP: Readonly<Record<string, boolean>> = Object.freeze({
-	clipboard: false,
-	'hover-zoom': false,
-	pomodoro: true,
-	'smooth-scroll': true,
-	'tab-group': true,
-	'text-to-speech': true,
-	timer: true,
-	timestamp: true,
-	totp: true,
-	'bilibili-enhancer': false,
-	'bilibili-plus': false,
-	'resource-monitor': true,
-	userscripts: false,
+    "clipboard": false,
+    "hover-zoom": false,
+    "pomodoro": true,
+    "smooth-scroll": true,
+    "tab-group": true,
+    "text-to-speech": true,
+    "timer": true,
+    "timestamp": true,
+    "totp": true,
+    "bilibili-enhancer": false,
+    "bilibili-plus": false,
+    "resource-monitor": true,
+    "userscripts": false
 });
-
 export const BACKGROUND_PLUGIN_IDS = Object.freeze(Object.keys(BACKGROUND_ACTIVE_ONLY_MAP));
