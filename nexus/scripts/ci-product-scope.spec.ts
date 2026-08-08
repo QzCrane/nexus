@@ -8,11 +8,7 @@ import {
 describe('CI product scope classifier', () => {
 	test('always runs both products outside pull requests', () => {
 		for (const eventName of ['push', 'workflow_dispatch']) {
-			expect(classifyChangedPaths([], eventName)).toEqual({
-				spectra: true,
-				halo: true,
-				reason: 'non-pr',
-			});
+			expect(classifyChangedPaths([], eventName)).toEqual({ spectra: true, halo: true, reason: 'non-pr' });
 		}
 	});
 
@@ -59,12 +55,9 @@ describe('CI product scope classifier', () => {
 	});
 
 	test('allows only explicit documentation paths to skip both product matrices', () => {
-		for (const path of [
-			'docs/architecture.md',
-			'nexus/docs/工程.md',
-			'README.md',
-			'AGENTS.md',
-		]) expect(isDocumentationOnlyPath(path)).toBe(true);
+		for (const path of ['docs/architecture.md', 'nexus/docs/工程.md', 'README.md', 'AGENTS.md']) {
+			expect(isDocumentationOnlyPath(path)).toBe(true);
+		}
 		expect(classifyChangedPaths([
 			'docs/architecture.md',
 			'nexus/docs/工程.md',
@@ -105,6 +98,16 @@ describe('NUL-delimited Git path transport', () => {
 			'remote-site/assets/peer js.js',
 		];
 		expect(parseNulSeparatedPaths(Buffer.from(`${paths.join('\0')}\0`))).toEqual(paths);
+	});
+
+	test('preserves a leading U+FEFF filename character so it cannot masquerade as docs-only', () => {
+		const path = '\uFEFFdocs/only.md';
+		const parsed = parseNulSeparatedPaths(Buffer.from(`${path}\0`, 'utf8'));
+		expect(parsed).toEqual([path]);
+		expect(classifyChangedPaths(parsed, 'pull_request')).toMatchObject({
+			spectra: true,
+			halo: true,
+		});
 	});
 
 	test('accepts an empty byte stream as an empty candidate and rejects interior empty records', () => {
