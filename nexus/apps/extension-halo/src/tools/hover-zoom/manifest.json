@@ -31,7 +31,7 @@
 		"level": "idle",
 		"descriptionKey": "impact.hover_zoom",
 		"sourceFile": "content/hover-zoom.ts",
-		"sourceLine": 88,
+		"sourceLine": 91,
 		"sourceDetail": "document mouse/pointer-key listeners attach only while Hover Zoom is enabled and detach on disable"
 	}
 }
