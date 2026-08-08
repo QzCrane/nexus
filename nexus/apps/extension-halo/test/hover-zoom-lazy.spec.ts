@@ -69,6 +69,19 @@ describe('HALO Hover Zoom lazy preview runtime', () => {
 		expect(request).toContain('pendingPreviewTarget === target');
 	});
 
+	test('retires stale mousemove debounce before publishing a new keyboard gesture', () => {
+		const gesture = sourceWindow(
+			keyHost,
+			'// Check if this keydown creates a valid hotkey combo',
+			'// If mouse position unknown',
+		);
+		const clearDebounce = 'clearTriggerTimer();';
+		const publishModifiers = 'state.modifiersActive = true;';
+		expect(gesture).toContain(clearDebounce);
+		expect(gesture).toContain(publishModifiers);
+		expect(gesture.indexOf(clearDebounce)).toBeLessThan(gesture.indexOf(publishModifiers));
+	});
+
 	test('keeps synchronous Alt ownership in the light key handler', () => {
 		expect(keyHost).toContain("e.key === 'Alt' && state.settings.altKeyMode === 'block'");
 		expect(keyHost).toContain('e.preventDefault();');
