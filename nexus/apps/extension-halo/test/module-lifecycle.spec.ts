@@ -17,6 +17,10 @@ const openToolsSource = readFileSync(
 	new URL('../src/components/sidepanel/hooks/use-open-tools.ts', import.meta.url),
 	'utf8',
 );
+const moduleListSource = readFileSync(
+	new URL('../src/system/module-store/module-list.tsx', import.meta.url),
+	'utf8',
+);
 
 function createMemoryPersistence(initial: ModuleState[] = []) {
 	const stored = new Map(initial.map((state) => [state.id, { ...state }]));
@@ -76,6 +80,20 @@ describe('HALO module lifecycle authority', () => {
 		const restarted = new ModuleManager(memory.persistence);
 		await restarted.initialize();
 		expect(memory.getSeedBatchCount()).toBe(1);
+	});
+
+	test('rolls back every implicit core state when the one seed batch fails', async () => {
+		const core = CORE_MODULES[0];
+		if (!core) throw new Error('HALO test requires at least one core module');
+		const memory = createMemoryPersistence();
+		memory.failSaveFor(core.id);
+		const manager = new ModuleManager(memory.persistence);
+
+		await expect(manager.initialize()).rejects.toThrow(`save failed: ${core.id}`);
+		expect(manager.getAllStates()).toEqual([]);
+		expect(manager.getRevision()).toBe(0);
+		expect(manager.getSnapshot().installedModules).toEqual([]);
+		expect(memory.stored.size).toBe(0);
 	});
 
 	test('publishes one immutable snapshot identity per durable revision', async () => {
@@ -177,6 +195,11 @@ describe('HALO module lifecycle authority', () => {
 		expect(openToolsSource).toContain('if (initialized.current) {');
 		expect(openToolsSource).toContain('reconcileInstalledTools(isInstalled);');
 		expect(openToolsSource).not.toMatch(/setTimeout\([^)]*initialized/u);
+	});
+
+	test('uses builtIn itself as the Module Store uninstallability authority', () => {
+		expect(moduleListSource).toContain('isCore={mod.builtIn === true}');
+		expect(moduleListSource).not.toContain("mod.builtIn && mod.pluginType === 'tool'");
 	});
 });
 
