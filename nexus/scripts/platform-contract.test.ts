@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import './ci-product-scope.spec';
 import {
 	eolProblems,
 	packageScriptProblems,
@@ -170,9 +171,21 @@ describe('portable automation contract', () => {
 		)).toEqual([]);
 	});
 
-	test('caches the real Turborepo store outside the dependency install tree', () => {
+	test('caches the real Turborepo store and advances immutable cache snapshots per revision', () => {
 		expect(crossPlatformWorkflow).not.toContain('node_modules/.cache/turbo');
 		expect(crossPlatformWorkflow.match(/path: nexus\/\.turbo\/cache/gu)).toHaveLength(2);
+		expect(crossPlatformWorkflow).toContain(
+			"key: turbo-quality-${{ runner.os }}-${{ hashFiles('nexus/bun.lock') }}-${{ github.sha }}",
+		);
+		expect(crossPlatformWorkflow).toContain(
+			"key: turbo-build-${{ runner.os }}-${{ hashFiles('nexus/bun.lock') }}-${{ github.sha }}",
+		);
+		expect(crossPlatformWorkflow).toContain(
+			"turbo-quality-${{ runner.os }}-${{ hashFiles('nexus/bun.lock') }}-",
+		);
+		expect(crossPlatformWorkflow).toContain(
+			"turbo-build-${{ runner.os }}-${{ hashFiles('nexus/bun.lock') }}-",
+		);
 	});
 
 	test('uses one fail-closed scope job with immutable PR base/head diff evidence', () => {
@@ -192,6 +205,7 @@ describe('portable automation contract', () => {
 		expect(crossPlatformWorkflow).toContain(
 			"if: needs.scope.outputs.spectra == 'true' || needs.scope.outputs.halo == 'true'",
 		);
+		expect(crossPlatformWorkflow).toContain('run: bun run build');
 		expect(crossPlatformWorkflow).toContain('run: bun --cwd nexus run build:spectra');
 		expect(crossPlatformWorkflow).toContain('run: bun --cwd nexus run build:halo');
 		expect(crossPlatformWorkflow).toContain("if: needs.scope.outputs.spectra == 'true'");
