@@ -47,9 +47,12 @@ jobs:
           path.write_text(text)
           PY
       - name: Verify lifecycle contract
-        run: bun --cwd nexus/apps/extension-spectra test test/smoke-lifecycle-contract.spec.ts
-      - name: Build production candidates
+        working-directory: nexus/apps/extension-spectra
+        run: bun test test/smoke-lifecycle-contract.spec.ts
+      - name: Build workspace production candidates
         run: bun --cwd nexus build
+      - name: Build SPECTRA development smoke candidate
+        run: bun --cwd nexus/apps/extension-spectra build:dev
       - name: Test configured-site hotkey smoke
         working-directory: nexus/apps/extension-spectra
         run: bun test test/smoke.spec.ts --test-name-pattern 'arbitrates configured site hotkeys website-first and releases a truncated keyup'
