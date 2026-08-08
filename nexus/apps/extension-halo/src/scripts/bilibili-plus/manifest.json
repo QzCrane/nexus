@@ -29,7 +29,7 @@
 		"level": "low",
 		"descriptionKey": "impact.mechanism.mutation_observer",
 		"sourceFile": "scripts/bilibili-plus/script.js",
-		"sourceLine": 82,
+		"sourceLine": 144,
 		"sourceDetail": "quality-control discovery exits immediately when already completed; otherwise DOM checks are coalesced to at most one per animation frame and released on success/timeout"
 	}
 }
