@@ -3,7 +3,11 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { OUTPUT_REGISTRY, OUTPUT_SCRIPT_RUNTIME } from './config.ts';
+import {
+	OUTPUT_BACKGROUND_ACTIVE,
+	OUTPUT_REGISTRY,
+	OUTPUT_SCRIPT_RUNTIME,
+} from './config.ts';
 import { calculateFolderSize } from './utils.ts';
 
 /**
@@ -58,19 +62,19 @@ export interface PluginMeta {
 }
 `;
 
-	const generateEntry = (m) => {
-		const manifest = manifestsMap.get(m.id);
+	const generateEntry = (module) => {
+		const manifest = manifestsMap.get(module.id);
 		const keywords = manifest.keywords ? JSON.stringify(manifest.keywords) : '[]';
 		const permissions = manifest.permissions?.length ? JSON.stringify(manifest.permissions) : 'undefined';
 		const scriptConfig = manifest.script ? JSON.stringify(manifest.script) : 'undefined';
 
-		const moduleDir = path.dirname(m.manifestPath);
+		const moduleDir = path.dirname(module.manifestPath);
 		const size = calculateFolderSize(moduleDir);
 
 		return `\t{
 \t\tid: '${manifest.id}',
 \t\ticon: '${manifest.icon}',
-\t\tpluginType: '${m.pluginType}',
+\t\tpluginType: '${module.pluginType}',
 \t\tcategory: '${manifest.category}',
 \t\tsize: ${size},
 \t\tbuiltIn: ${manifest.builtIn ?? false},
@@ -82,24 +86,20 @@ export interface PluginMeta {
 	};
 
 	const permissionMap = {};
-	for (const m of allModules) {
-		const manifest = manifestsMap.get(m.id);
+	for (const module of allModules) {
+		const manifest = manifestsMap.get(module.id);
 		if (manifest.permissions) {
-			for (const p of manifest.permissions) {
-				if (!permissionMap[p]) permissionMap[p] = [];
-				permissionMap[p].push(m.id);
+			for (const permission of manifest.permissions) {
+				if (!permissionMap[permission]) permissionMap[permission] = [];
+				permissionMap[permission].push(module.id);
 			}
 		}
 	}
 
 	const backgroundMap = {};
-	const backgroundActiveOnlyMap = {};
-	for (const m of allModules) {
-		const manifest = manifestsMap.get(m.id);
-		if (manifest.background) {
-			backgroundMap[m.id] = manifest.background;
-			backgroundActiveOnlyMap[m.id] = manifest.background.activeOnly === true;
-		}
+	for (const module of allModules) {
+		const manifest = manifestsMap.get(module.id);
+		if (manifest.background) backgroundMap[module.id] = manifest.background;
 	}
 
 	const content = `${header}
@@ -107,24 +107,19 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 ${allModules.map(generateEntry).join(',\n')}
 ];
 
-export const PLUGIN_IDS = [${allModules.map(m => `'${m.id}'`).join(', ')}] as const;
+export const PLUGIN_IDS = [${allModules.map((module) => `'${module.id}'`).join(', ')}] as const;
 export type PluginId = (typeof PLUGIN_IDS)[number];
 
 // Runtime filters (SSOT)
-export const getToolPlugins = () => PLUGIN_REGISTRY.filter(p => p.pluginType === 'tool');
-export const getScriptPlugins = () => PLUGIN_REGISTRY.filter(p => p.pluginType === 'script');
-export const getSystemPlugins = () => PLUGIN_REGISTRY.filter(p => p.pluginType === 'system');
-export const getUserPlugins = () => PLUGIN_REGISTRY.filter(p => p.pluginType !== 'system');
+export const getToolPlugins = () => PLUGIN_REGISTRY.filter((plugin) => plugin.pluginType === 'tool');
+export const getScriptPlugins = () => PLUGIN_REGISTRY.filter((plugin) => plugin.pluginType === 'script');
+export const getSystemPlugins = () => PLUGIN_REGISTRY.filter((plugin) => plugin.pluginType === 'system');
+export const getUserPlugins = () => PLUGIN_REGISTRY.filter((plugin) => plugin.pluginType !== 'system');
 
 export const PERMISSION_USAGE_MAP: Record<string, string[]> = ${JSON.stringify(permissionMap, null, 4)};
 
-// Startup consumers need only membership + activeOnly. Keep this compact so
-// sourceFile/sourceLine/sourceDetail can stay in lazy resource-impact paths.
-export const BACKGROUND_ACTIVE_ONLY_MAP: Record<string, boolean> = ${JSON.stringify(backgroundActiveOnlyMap, null, 4)};
-export const BACKGROUND_PLUGIN_IDS = Object.keys(BACKGROUND_ACTIVE_ONLY_MAP);
-
-// Detailed provenance is a separate symbol. With SidePanel code splitting,
-// consumers that do not import this symbol do not need to pay its bytes.
+// Detailed provenance is consumed by Resource Monitor/background-helper paths.
+// Startup classification imports the separate compact generated projection.
 export const BACKGROUND_PROFILES_MAP: Record<string, BackgroundProfile> = ${JSON.stringify(backgroundMap, null, 4)};
 
 // Legacy compatibility aliases
@@ -138,6 +133,30 @@ export const TOOL_IDS = PLUGIN_IDS;
 
 	fs.writeFileSync(OUTPUT_REGISTRY, content, 'utf-8');
 	console.log(`✓ Generated registry: ${path.relative(process.cwd(), OUTPUT_REGISTRY)}`);
+}
+
+/**
+ * Generate the compact background membership/activeOnly projection used by
+ * SidePanel startup. This tracked generated artifact intentionally excludes
+ * sourceFile/sourceLine/sourceDetail so detailed provenance can remain behind
+ * lazy Resource Monitor paths.
+ */
+export function generateBackgroundActiveProjection(allModules, manifestsMap) {
+	const activeOnlyMap = {};
+	for (const module of allModules) {
+		const background = manifestsMap.get(module.id)?.background;
+		if (background) activeOnlyMap[module.id] = background.activeOnly === true;
+	}
+
+	const content = `// AUTO-GENERATED - DO NOT EDIT
+// Generated by: bun run generate-registry
+// Compact startup projection; detailed provenance lives in _generated.ts.
+
+export const BACKGROUND_ACTIVE_ONLY_MAP: Readonly<Record<string, boolean>> = Object.freeze(${JSON.stringify(activeOnlyMap, null, 4)});
+export const BACKGROUND_PLUGIN_IDS = Object.freeze(Object.keys(BACKGROUND_ACTIVE_ONLY_MAP));
+`;
+	fs.writeFileSync(OUTPUT_BACKGROUND_ACTIVE, content, 'utf-8');
+	console.log(`✓ Generated background startup projection: ${path.relative(process.cwd(), OUTPUT_BACKGROUND_ACTIVE)}`);
 }
 
 /**
