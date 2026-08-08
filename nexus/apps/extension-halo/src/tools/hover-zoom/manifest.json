@@ -32,6 +32,6 @@
 		"descriptionKey": "impact.hover_zoom",
 		"sourceFile": "content/hover-zoom-bootstrap.ts",
 		"sourceLine": 71,
-		"sourceDetail": "pre-activation mouse/key admission listeners attach only while Hover Zoom is enabled; after first eligible interaction the lazy runtime takes input ownership"
+		"sourceDetail": "pre-activation mouse/key admission listeners attach only while enabled; the packaged lazy runtime takes input ownership after the first eligible interaction"
 	}
 }
