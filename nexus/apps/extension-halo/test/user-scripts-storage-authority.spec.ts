@@ -13,22 +13,13 @@ import {
 } from '../src/system/userscripts/storage-authority';
 import type { UserScript } from '../src/system/userscripts/types';
 
-const kernelHookSource = readFileSync(
-	new URL('../src/kernel/hooks/use-user-scripts.ts', import.meta.url),
-	'utf8',
-);
-const activeServicesSource = readFileSync(
-	new URL('../src/components/sidepanel/ActiveServicesContext.tsx', import.meta.url),
-	'utf8',
-);
-const authoritySource = readFileSync(
-	new URL('../src/system/userscripts/storage-authority.ts', import.meta.url),
-	'utf8',
-);
-const fullHookSource = readFileSync(
-	new URL('../src/system/userscripts/hooks/useUserScripts.ts', import.meta.url),
-	'utf8',
-);
+const kernelHookSource = readFileSync(new URL('../src/kernel/hooks/use-user-scripts.ts', import.meta.url), 'utf8');
+const settingsHookSource = readFileSync(new URL('../src/kernel/hooks/use-settings.ts', import.meta.url), 'utf8');
+const activeServicesSource = readFileSync(new URL('../src/components/sidepanel/ActiveServicesContext.tsx', import.meta.url), 'utf8');
+const authoritySource = readFileSync(new URL('../src/system/userscripts/storage-authority.ts', import.meta.url), 'utf8');
+const fullHookSource = readFileSync(new URL('../src/system/userscripts/hooks/useUserScripts.ts', import.meta.url), 'utf8');
+const i18nCoreSource = readFileSync(new URL('../src/i18n/i18n-core.ts', import.meta.url), 'utf8');
+const sidepanelScrollSource = readFileSync(new URL('../src/entry/sidepanel-scroll.ts', import.meta.url), 'utf8');
 
 type StorageListener = (
 	changes: Record<string, chrome.storage.StorageChange>,
@@ -63,10 +54,7 @@ function script(overrides: Partial<UserScript> = {}): UserScript {
 	};
 }
 
-function state(
-	scripts: unknown[],
-	globalEnabled = true,
-): Record<string, unknown> {
+function state(scripts: unknown[], globalEnabled = true): Record<string, unknown> {
 	return { scripts, globalEnabled };
 }
 
@@ -80,9 +68,7 @@ interface StorageMock {
 
 let originalChrome: unknown;
 
-function installStorageMock(
-	read: () => Promise<Record<string, unknown>>,
-): StorageMock {
+function installStorageMock(read: () => Promise<Record<string, unknown>>): StorageMock {
 	const listeners = new Set<StorageListener>();
 	const stats = { getCalls: 0, addCalls: 0, removeCalls: 0 };
 	const mock = {
@@ -115,7 +101,7 @@ function installStorageMock(
 			const changes = {
 				[STORAGE_KEY]: { newValue: value },
 			} as unknown as Record<string, chrome.storage.StorageChange>;
-			for (const listener of listeners) listener(changes, areaName);
+			for (const listener of [...listeners]) listener(changes, areaName);
 		},
 	};
 }
@@ -132,11 +118,8 @@ beforeEach(() => {
 afterEach(() => {
 	userScriptsStorageAuthorityTestApi.reset();
 	haloStorageChangeBusTestApi.reset();
-	if (originalChrome === undefined) {
-		delete (globalThis as unknown as { chrome?: unknown }).chrome;
-	} else {
-		(globalThis as unknown as { chrome: unknown }).chrome = originalChrome;
-	}
+	if (originalChrome === undefined) delete (globalThis as unknown as { chrome?: unknown }).chrome;
+	else (globalThis as unknown as { chrome: unknown }).chrome = originalChrome;
 });
 
 describe('UserScripts persistence boundary', () => {
@@ -145,12 +128,13 @@ describe('UserScripts persistence boundary', () => {
 		expect(missing.ready).toBe(true);
 		expect(missing.failed).toBe(false);
 		expect(missing.globalEnabled).toBe(true);
-
 		for (const corrupt of [
 			null,
 			{ scripts: 'not-an-array' },
 			{ scripts: [], globalEnabled: 'yes' },
 			{ scripts: [], toolbarConfig: { order: 'bad', hideOnOverflow: true } },
+			{ scripts: [], toolbarConfig: { order: ['bogus'], hideOnOverflow: true } },
+			{ scripts: [], toolbarConfig: { order: ['add', 'add', 'import'], hideOnOverflow: true } },
 		]) {
 			const parsed = parseUserScriptsStorageValue(corrupt);
 			expect(parsed.ready).toBe(true);
@@ -165,6 +149,8 @@ describe('UserScripts persistence boundary', () => {
 			{ id: 'partial', enabled: true },
 			script({ id: 'bad-type', type: 'binary' as UserScript['type'] }),
 			script({ id: 'bad-owner', managedBy: 'other' as UserScript['managedBy'] }),
+			script({ id: 'empty-matches', matches: [] }),
+			script({ id: 'blank-match', matches: ['  '] }),
 		]) {
 			const parsed = parseUserScriptsStorageValue(state([script(), malformed]));
 			expect(parsed.failed).toBe(true);
@@ -173,7 +159,7 @@ describe('UserScripts persistence boundary', () => {
 		}
 	});
 
-	test('preserves canonical ownership plus future structured metadata losslessly and frozen', () => {
+	test('preserves canonical ownership plus future structured metadata losslessly and deeply frozen', () => {
 		const raw = {
 			...script({
 				id: 'packaged',
@@ -190,10 +176,10 @@ describe('UserScripts persistence boundary', () => {
 		const parsed = parseUserScriptsStorageValue({
 			globalEnabled: true,
 			scripts: [raw],
-			toolbarConfig: { order: ['add', 'import'], hideOnOverflow: true },
+			toolbarConfig: { order: ['add', 'export', 'import'], hideOnOverflow: true },
 		});
 		expect(parsed.failed).toBe(false);
-		const accepted = parsed.scripts[0] as Readonly<UserScript> & {
+		const accepted = parsed.scripts[0] as typeof parsed.scripts[number] & {
 			readonly registryOwnership?: {
 				readonly version: number;
 				readonly provenance: readonly string[];
@@ -214,7 +200,10 @@ describe('UserScripts persistence boundary', () => {
 		expect(Object.isFrozen(accepted.registryOwnership)).toBe(true);
 		expect(Object.isFrozen(accepted.registryOwnership?.provenance)).toBe(true);
 		expect(Object.isFrozen(accepted.registryOwnership?.flags)).toBe(true);
-		expect(parsed.toolbarConfig).toEqual({ order: ['add', 'import'], hideOnOverflow: true });
+		expect(parsed.toolbarConfig).toEqual({
+			order: ['add', 'export', 'import'],
+			hideOnOverflow: true,
+		});
 		expect(Object.isFrozen(parsed.toolbarConfig?.order)).toBe(true);
 	});
 
@@ -230,29 +219,47 @@ describe('UserScripts persistence boundary', () => {
 });
 
 describe('UserScripts external-store lifecycle', () => {
-	test('shares one physical read and one bus-backed Chrome listener across consumers', async () => {
+	test('shares one physical read and one global bus-backed Chrome listener across consumers', async () => {
 		const gate = deferred<Record<string, unknown>>();
 		const storage = installStorageMock(() => gate.promise);
 		const unsubscribeA = subscribeUserScriptsStorage(() => undefined);
 		const unsubscribeB = subscribeUserScriptsStorage(() => undefined);
 		const unsubscribeOtherDomain = subscribeHaloStorageChanges(() => undefined);
-
 		expect(storage.getCalls).toBe(1);
 		expect(storage.addCalls).toBe(1);
 		expect(storage.listenerCount()).toBe(1);
 		expect(haloStorageChangeBusTestApi.subscriberCount).toBe(2);
-
 		gate.resolve({ [STORAGE_KEY]: state([script()]) });
 		await flushMicrotasks();
 		expect(getUserScriptsStorageSnapshot().scripts).toHaveLength(1);
-
 		unsubscribeA();
 		unsubscribeB();
 		expect(storage.listenerCount()).toBe(1);
-		expect(storage.removeCalls).toBe(0);
 		unsubscribeOtherDomain();
 		expect(storage.listenerCount()).toBe(0);
 		expect(storage.removeCalls).toBe(1);
+	});
+
+	test('publishes over a subscriber snapshot so reentrant resubscribe is deferred to the next event', async () => {
+		const storage = installStorageMock(async () => ({ [STORAGE_KEY]: state([script()]) }));
+		let firstCalls = 0;
+		let secondCalls = 0;
+		let unsubscribeFirst = () => undefined;
+		let unsubscribeSecond = () => undefined;
+		unsubscribeFirst = subscribeUserScriptsStorage(() => {
+			firstCalls += 1;
+			unsubscribeFirst();
+			unsubscribeSecond = subscribeUserScriptsStorage(() => { secondCalls += 1; });
+		});
+		await flushMicrotasks();
+		firstCalls = 0;
+		secondCalls = 0;
+		storage.emit(state([script({ id: 'event-one' })]));
+		expect(firstCalls).toBe(1);
+		expect(secondCalls).toBe(0);
+		storage.emit(state([script({ id: 'event-two' })]));
+		expect(secondCalls).toBe(1);
+		unsubscribeSecond();
 	});
 
 	test('lets a live storage event outrank an older hydration resolve', async () => {
@@ -302,18 +309,35 @@ describe('UserScripts external-store lifecycle', () => {
 	});
 });
 
-describe('UserScripts authority ownership', () => {
-	test('keeps all SidePanel projections free of direct duplicate Chrome observers', () => {
+describe('UserScripts and default SidePanel storage ownership', () => {
+	test('routes default SidePanel storage observers through the shared realm bus', () => {
+		for (const source of [
+			authoritySource,
+			activeServicesSource,
+			settingsHookSource,
+			i18nCoreSource,
+			sidepanelScrollSource,
+		]) {
+			expect(source).toContain('subscribeHaloStorageChanges');
+			expect(source).not.toContain('chrome.storage.onChanged.addListener');
+		}
 		expect(kernelHookSource).not.toContain('chrome.storage');
-		expect(kernelHookSource).toContain('system/userscripts/hooks/useUserScriptsSnapshot');
 		expect(fullHookSource).not.toContain('getUserScriptsState');
 		expect(fullHookSource).not.toContain('createUserScriptsStateLoader');
-		expect(fullHookSource).toContain('refreshUserScriptsStorage');
-		expect(authoritySource).toContain('subscribeHaloStorageChanges');
-		expect(authoritySource).not.toContain('chrome.storage.onChanged.addListener');
-		expect(activeServicesSource).toContain('subscribeHaloStorageChanges');
-		expect(activeServicesSource).not.toContain('chrome.storage.onChanged.addListener');
 		expect(activeServicesSource).not.toContain('halo_userscripts');
+	});
+
+	test('does not force an immediate refresh after an owned UserScripts mutation', () => {
+		const toggleBlock = fullHookSource.slice(
+			fullHookSource.indexOf('const handleGlobalToggle'),
+			fullHookSource.indexOf('const handleTest'),
+		);
+		expect(toggleBlock).not.toContain('loadScripts()');
+		const moveBlock = fullHookSource.slice(
+			fullHookSource.indexOf('const handleMove'),
+			fullHookSource.indexOf('return {'),
+		);
+		expect(moveBlock).not.toContain('loadScripts()');
 	});
 
 	test('does not publish script background IDs before the combined status projection is ready', () => {
