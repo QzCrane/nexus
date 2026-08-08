@@ -5,13 +5,19 @@ import { isValidTrigger } from '../tools/hover-zoom/content/resolvers/trigger-va
 import { detectResourcePreference } from '../tools/hover-zoom/content/utils/resource-key-helper';
 import { showHighlight, hideHighlight } from '../tools/hover-zoom/content/utils/highlight';
 import type { HoverZoomState, PreloadState } from './hover-zoom-state';
-
-import { cancel, tryTrigger, getElementAtMouse } from './hover-zoom-actions';
+import { cancelPreview, getElementAtMouse } from './hover-zoom-actions-light';
+import {
+	cancelPendingPreviewIntent,
+	isPendingPreviewTransition,
+	requestPreview,
+} from './hover-zoom-runtime-loader';
 
 export {
-	getElementAtMouse, isOverViewer, ensureViewer, cancel, tryTrigger, startTimer,
-	clearTimer, preloadUrl
-} from './hover-zoom-actions';
+	cancelPreview as cancel,
+	clearHoverTimer as clearTimer,
+	getElementAtMouse,
+	isOverViewer,
+} from './hover-zoom-actions-light';
 
 // Debounce timer for trigger (prevents flicker)
 let triggerTimer: ReturnType<typeof setTimeout> | null = null;
@@ -38,11 +44,11 @@ function evaluateAndTrigger(
 	state: HoverZoomState, preload: PreloadState,
 	target: HTMLElement | null, hotkeysActive: boolean
 ) {
-	// Double check - if modifiers were released via keyup, don't show
-	// This handles edge case where debounce timer fires after keyup
+	// Double check - if modifiers were released via keyup, don't show.
 	if (!state.modifiersActive && !hotkeysActive) {
+		cancelPendingPreviewIntent();
 		const isVisible = state.viewer?.getIsVisible() ?? false;
-		if (isVisible && !state.toggleLocked) cancel(state);
+		if (isVisible && !state.toggleLocked) cancelPreview(state);
 		hideHighlight();
 		return;
 	}
@@ -55,18 +61,18 @@ function evaluateAndTrigger(
 		state.modifiersActive = true;
 		if (state.settings.highlightMode === 'hotkey') showHighlight(validTarget);
 
-		// Skip if already working on this target (loading or visible)
+		// Skip if the loaded runtime already owns this target.
 		if (state.currentTarget === validTarget) {
 			return;
 		}
 
-		// Target changed - cancel previous and trigger new
 		if (isVisible) {
-			cancel(state);
+			cancelPreview(state);
 		}
-		tryTrigger(state, preload, validTarget);
+		void requestPreview(state, preload, validTarget);
 	} else {
-		if (isVisible && !state.toggleLocked) cancel(state);
+		cancelPendingPreviewIntent();
+		if (isVisible && !state.toggleLocked) cancelPreview(state);
 		state.modifiersActive = false;
 		hideHighlight();
 	}
@@ -89,7 +95,7 @@ export function createOnOver(state: HoverZoomState, _preload: PreloadState) {
 	};
 }
 
-/** Handle mouseout - cancel when leaving trigger */
+/** Handle mouseout - cancel only after the pointer leaves the logical trigger. */
 export function createOnOut(state: HoverZoomState) {
 	return (e: MouseEvent) => {
 		if (!state.settings.enabled || state.toggleLocked) return;
@@ -97,12 +103,20 @@ export function createOnOut(state: HoverZoomState) {
 		const related = e.relatedTarget as HTMLElement | null;
 		if (related?.closest('#halo-hover-zoom-container')) return;
 
+		// A lazy import can still be in flight before currentTarget is claimed.
+		// Preserve it across descendant/ancestor transitions of the same pending
+		// target without re-running trigger validation on this hot event.
+		if (isPendingPreviewTransition(related)) return;
+
 		if (state.currentTarget) {
 			if (related && state.currentTarget.contains(related)) return;
 			if (related?.contains(state.currentTarget)) return;
-			clearTriggerTimer();
-			cancel(state);
 		}
+
+		clearTriggerTimer();
+		cancelPendingPreviewIntent();
+		if (state.currentTarget) cancelPreview(state);
+		else hideHighlight();
 	};
 }
 
@@ -122,7 +136,8 @@ export function createOnMove(state: HoverZoomState, preload: PreloadState) {
 		state.mouseHasMoved = true;
 
 		if (!state.settings.enabled) {
-			if (state.viewer?.getIsVisible()) cancel(state);
+			cancelPendingPreviewIntent();
+			if (state.viewer?.getIsVisible()) cancelPreview(state);
 			return;
 		}
 
@@ -132,12 +147,13 @@ export function createOnMove(state: HoverZoomState, preload: PreloadState) {
 		const hotkeysActive = resourcePref !== null;
 
 		if (resourcePref !== null) state.currentResourcePref = resourcePref;
+		else cancelPendingPreviewIntent();
 
 		clearTriggerTimer();
 
 		// If viewer visible but hotkeys not active -> cancel immediately
 		if (state.viewer?.getIsVisible() && !hotkeysActive && !state.toggleLocked) {
-			cancel(state);
+			cancelPreview(state);
 			state.modifiersActive = false;
 			hideHighlight();
 			return;
@@ -154,8 +170,9 @@ export function createOnClick(state: HoverZoomState) {
 	return () => {
 		if (!state.settings.enabled || state.toggleLocked) return;
 		if (state.viewer?.getIsVisible()) {
+			cancelPendingPreviewIntent();
 			clearTriggerTimer();
-			cancel(state);
+			cancelPreview(state);
 		}
 	};
 }

@@ -2,7 +2,6 @@
 // eff: attach high-frequency page listeners only while the feature is enabled
 
 import { DEFAULT_SETTINGS, STORAGE_KEY, type HoverZoomSettings } from '../tools/hover-zoom/types';
-import { initRulesForHost } from '../tools/hover-zoom/content/resolvers/rule-resolver';
 import { createInitialState, createPreloadState } from './hover-zoom-state';
 import {
 	cancel,
@@ -13,6 +12,7 @@ import {
 	createOnOver,
 } from './hover-zoom-events';
 import { createOnKeyDown, createOnKeyUp } from './hover-zoom-keys';
+import { cancelPendingPreviewIntent } from './hover-zoom-runtime-loader';
 
 const LOG_TAG = '[HALO:HoverZoom]';
 
@@ -53,7 +53,7 @@ function savedSettings(value: unknown): Partial<HoverZoomSettings> | undefined {
 		: undefined;
 }
 
-/** Initialize hover zoom. This entry is loaded top-frame at document_idle. */
+/** Initialize the light Hover Zoom input host at document_idle. */
 export async function init(): Promise<void> {
 	if (window.location.protocol === 'chrome-extension:') return;
 	if (state.initialized) return;
@@ -73,34 +73,20 @@ export async function init(): Promise<void> {
 	const onKeyDown = createOnKeyDown(state, preload);
 	const onKeyUp = createOnKeyUp(state);
 	let listenersAttached = false;
-	let rulesInitialized = false;
-	let activationPromise: Promise<void> | null = null;
 
-	const attachListeners = (): Promise<void> => {
-		if (listenersAttached || !state.settings.enabled) return Promise.resolve();
-		if (activationPromise) return activationPromise;
-
-		activationPromise = (async () => {
-			if (!rulesInitialized) {
-				await initRulesForHost();
-				rulesInitialized = true;
-			}
-			// Settings can change while a future async rule bootstrap is in flight.
-			if (!state.settings.enabled || listenersAttached) return;
-			listenersAttached = true;
-			document.addEventListener('mouseover', onOver, true);
-			document.addEventListener('mouseout', onOut, true);
-			document.addEventListener('mousemove', onMove, { passive: true });
-			document.addEventListener('click', onClick, true);
-			document.addEventListener('keydown', onKeyDown, true);
-			document.addEventListener('keyup', onKeyUp, true);
-		})().finally(() => {
-			activationPromise = null;
-		});
-		return activationPromise;
+	const attachListeners = (): void => {
+		if (listenersAttached || !state.settings.enabled) return;
+		listenersAttached = true;
+		document.addEventListener('mouseover', onOver, true);
+		document.addEventListener('mouseout', onOut, true);
+		document.addEventListener('mousemove', onMove, { passive: true });
+		document.addEventListener('click', onClick, true);
+		document.addEventListener('keydown', onKeyDown, true);
+		document.addEventListener('keyup', onKeyUp, true);
 	};
 
 	const detachListeners = (): void => {
+		cancelPendingPreviewIntent();
 		if (listenersAttached) {
 			listenersAttached = false;
 			document.removeEventListener('mouseover', onOver, true);
@@ -118,7 +104,7 @@ export async function init(): Promise<void> {
 		if (preload.preloadImage) preload.preloadImage.src = '';
 	};
 
-	await attachListeners();
+	attachListeners();
 
 	// Disabled Hover Zoom retains only a low-frequency storage subscription.
 	chrome.storage.onChanged.addListener((changes, area) => {
@@ -126,9 +112,10 @@ export async function init(): Promise<void> {
 		const change = changes[STORAGE_KEY];
 		if (!change) return;
 
+		cancelPendingPreviewIntent();
 		state.settings = mergeSettings(savedSettings(change.newValue));
 		state.viewer?.updateSettings(state.settings);
-		if (state.settings.enabled) void attachListeners();
+		if (state.settings.enabled) attachListeners();
 		else detachListeners();
 	});
 }

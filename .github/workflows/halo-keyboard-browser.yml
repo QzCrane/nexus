@@ -1,4 +1,4 @@
-name: HALO keyboard browser
+name: HALO browser contracts
 
 on:
   pull_request:
@@ -11,11 +11,15 @@ on:
       - 'nexus/apps/extension-halo/src/content/ruler.ts'
       - 'nexus/apps/extension-halo/src/content/dom-selector.ts'
       - 'nexus/apps/extension-halo/src/content/page-annotate.ts'
+      - 'nexus/apps/extension-halo/src/content/hover-zoom*.ts'
       - 'nexus/apps/extension-halo/src/entry/content-smooth-scroll.ts'
       - 'nexus/apps/extension-halo/src/entry/content-frame-tools*.ts'
+      - 'nexus/apps/extension-halo/src/entry/content-hover-zoom*.ts'
       - 'nexus/apps/extension-halo/src/tools/smooth-scroll/**'
+      - 'nexus/apps/extension-halo/src/tools/hover-zoom/**'
       - 'nexus/apps/extension-halo/test/smooth-scroll*.spec.ts'
       - 'nexus/apps/extension-halo/test/frame-tools-lazy*.spec.ts'
+      - 'nexus/apps/extension-halo/test/hover-zoom-lazy*.spec.ts'
       - 'nexus/bun.lock'
   push:
     branches:
@@ -29,11 +33,15 @@ on:
       - 'nexus/apps/extension-halo/src/content/ruler.ts'
       - 'nexus/apps/extension-halo/src/content/dom-selector.ts'
       - 'nexus/apps/extension-halo/src/content/page-annotate.ts'
+      - 'nexus/apps/extension-halo/src/content/hover-zoom*.ts'
       - 'nexus/apps/extension-halo/src/entry/content-smooth-scroll.ts'
       - 'nexus/apps/extension-halo/src/entry/content-frame-tools*.ts'
+      - 'nexus/apps/extension-halo/src/entry/content-hover-zoom*.ts'
       - 'nexus/apps/extension-halo/src/tools/smooth-scroll/**'
+      - 'nexus/apps/extension-halo/src/tools/hover-zoom/**'
       - 'nexus/apps/extension-halo/test/smooth-scroll*.spec.ts'
       - 'nexus/apps/extension-halo/test/frame-tools-lazy*.spec.ts'
+      - 'nexus/apps/extension-halo/test/hover-zoom-lazy*.spec.ts'
       - 'nexus/bun.lock'
   workflow_dispatch:
 
@@ -41,12 +49,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: halo-keyboard-browser-${{ github.ref }}
+  group: halo-browser-contracts-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   chromium:
-    name: Chromium keyboard ownership
+    name: Chromium browser contracts
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
