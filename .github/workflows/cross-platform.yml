@@ -26,9 +26,6 @@ jobs:
       - name: Checkout history for candidate scope
         uses: actions/checkout@v4
         with:
-          # PR scoping compares GitHub's immutable event base/head SHAs. Full
-          # history guarantees their merge-base is available; discovery failure
-          # fails this job rather than silently skipping product evidence.
           fetch-depth: 0
 
       - name: Classify product scope
@@ -50,9 +47,6 @@ jobs:
             git cat-file -e "${BASE_SHA}^{commit}"
             git cat-file -e "${HEAD_SHA}^{commit}"
             git merge-base "$BASE_SHA" "$HEAD_SHA" >/dev/null
-            # --no-renames makes a cross-product rename visible as one deletion
-            # and one addition. -z preserves Unicode, spaces, and every legal
-            # repository path byte without Git C-style quoting.
             git diff --no-renames --name-only -z "${BASE_SHA}...${HEAD_SHA}" > "$paths_file"
           fi
 
@@ -77,8 +71,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: nexus/.turbo/cache
-          key: turbo-quality-${{ runner.os }}-${{ hashFiles('nexus/bun.lock') }}
+          key: turbo-quality-${{ runner.os }}-${{ hashFiles('nexus/bun.lock') }}-${{ github.sha }}
           restore-keys: |
+            turbo-quality-${{ runner.os }}-${{ hashFiles('nexus/bun.lock') }}-
             turbo-quality-${{ runner.os }}-
 
       - name: Install workspace dependencies
@@ -127,8 +122,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: nexus/.turbo/cache
-          key: turbo-build-${{ runner.os }}-${{ hashFiles('nexus/bun.lock') }}
+          key: turbo-build-${{ runner.os }}-${{ hashFiles('nexus/bun.lock') }}-${{ github.sha }}
           restore-keys: |
+            turbo-build-${{ runner.os }}-${{ hashFiles('nexus/bun.lock') }}-
             turbo-build-${{ runner.os }}-
 
       - name: Install workspace dependencies
@@ -153,4 +149,3 @@ jobs:
       - name: Test HALO
         if: needs.scope.outputs.halo == 'true'
         run: bun --cwd nexus test:halo
-
