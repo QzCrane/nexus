@@ -2,8 +2,8 @@
 // eff: Materializes install-time script descriptors with explicit runtime ownership
 
 import type { PluginMeta } from '../core/tool-registry-types';
+import type { ScriptRuntimeOwner } from '../core/script-runtime-ownership';
 import type { PluginType, ScriptType } from '../registry/taxonomy';
-import type { UserScriptManagedBy } from '../../system/userscripts/types';
 
 const LOG_TAG = '[HALO:SaaT]';
 const SAAT_STORAGE_KEY = 'halo_saat_scripts';
@@ -40,8 +40,21 @@ export interface SaaTScriptState {
 	createdAt: number;
 	updatedAt: number;
 	saatToolId: string;
-	managedBy: UserScriptManagedBy;
+	managedBy: ScriptRuntimeOwner;
 	moduleBuiltIn: boolean;
+}
+
+function assertRuntimeDescriptors(
+	tools: readonly SaaTPluginDescriptor[],
+): asserts tools is readonly SaaTPluginDescriptor[] {
+	for (const tool of tools) {
+		if (typeof tool.id !== 'string' || tool.id.length === 0) {
+			throw new Error('Script runtime descriptor is missing a valid id');
+		}
+		if (typeof tool.builtIn !== 'boolean') {
+			throw new Error(`Script runtime descriptor ${tool.id} is missing builtIn:boolean`);
+		}
+	}
 }
 
 const getScriptConfig = (plugin: SaaTPluginDescriptor) => ({
@@ -78,7 +91,10 @@ export async function toggleScriptTool(tool: PluginMeta): Promise<boolean> {
 	}
 }
 
-async function resolveScript(toolId: string, type: ScriptType): Promise<{ code: string; path: string } | null> {
+async function resolveScript(
+	toolId: string,
+	type: ScriptType,
+): Promise<{ code: string; path: string } | null> {
 	const ext = type === 'css' ? 'css' : 'js';
 	const paths = [
 		`scripts/${toolId}/script.${ext}`,
@@ -95,14 +111,18 @@ async function resolveScript(toolId: string, type: ScriptType): Promise<{ code: 
 		}
 	}
 	if (lastFailure !== null) {
-		console.warn(LOG_TAG, `Failed to resolve bundled script ${toolId} from ${paths.join(', ')}`, lastFailure);
+		console.warn(
+			LOG_TAG,
+			`Failed to resolve bundled script ${toolId} from ${paths.join(', ')}`,
+			lastFailure,
+		);
 	}
 	return null;
 }
 
 function ownershipChanged(
 	existing: Partial<SaaTScriptState>,
-	managedBy: UserScriptManagedBy,
+	managedBy: ScriptRuntimeOwner,
 	moduleBuiltIn: boolean,
 ): boolean {
 	return existing.managedBy !== managedBy || existing.moduleBuiltIn !== moduleBuiltIn;
@@ -110,7 +130,7 @@ function ownershipChanged(
 
 function applyPackagedOwnership(
 	existing: SaaTScriptState,
-	managedBy: UserScriptManagedBy,
+	managedBy: ScriptRuntimeOwner,
 	moduleBuiltIn: boolean,
 ): void {
 	existing.managedBy = managedBy;
@@ -127,12 +147,10 @@ function applyPackagedOwnership(
  */
 export async function syncSaaTTools(tools: readonly SaaTPluginDescriptor[]): Promise<void> {
 	if (tools.length === 0) return;
+	assertRuntimeDescriptors(tools);
 	const saatTools = tools.filter((plugin) => plugin.pluginType === 'tool');
 	const packagedScripts = tools.filter((plugin) => plugin.pluginType !== 'tool');
 
-	// =========================================================
-	// 1. Sync SaaT Tools (Hidden) -> halo_saat_scripts
-	// =========================================================
 	const resultSaaT = await chrome.storage.local.get([SAAT_STORAGE_KEY, TOOL_PREFS_KEY]);
 	const saatState = resultSaaT[SAAT_STORAGE_KEY] || { scripts: [], globalEnabled: true };
 	const toolPrefs = resultSaaT[TOOL_PREFS_KEY] || {};
@@ -140,7 +158,9 @@ export async function syncSaaTTools(tools: readonly SaaTPluginDescriptor[]): Pro
 
 	for (const tool of saatTools) {
 		const config = getScriptConfig(tool);
-		const existingIdx = saatState.scripts.findIndex((script: SaaTScriptState) => script.saatToolId === tool.id);
+		const existingIdx = saatState.scripts.findIndex(
+			(script: SaaTScriptState) => script.saatToolId === tool.id,
+		);
 		const isEnabled = toolPrefs[tool.id]?.enabled ?? true;
 		const resolved = await resolveScript(tool.id, config.type);
 		if (!resolved) throw new Error(`SaaT script not found: ${tool.id}`);
@@ -193,21 +213,21 @@ export async function syncSaaTTools(tools: readonly SaaTPluginDescriptor[]): Pro
 
 	const preFilterCount = saatState.scripts.length;
 	saatState.scripts = saatState.scripts.filter((script: SaaTScriptState) => (
-		Boolean(script.saatToolId) && saatTools.some((tool) => tool.id === script.saatToolId)
+		Boolean(script.saatToolId)
+		&& saatTools.some((tool) => tool.id === script.saatToolId)
 	));
 	if (saatState.scripts.length !== preFilterCount) saatChanged = true;
 	if (saatChanged) await chrome.storage.local.set({ [SAAT_STORAGE_KEY]: saatState });
 
-	// =========================================================
-	// 2. Sync Packaged Scripts (Visible) -> halo_userscripts
-	// =========================================================
 	const resultUser = await chrome.storage.local.get(USERSCRIPTS_STORAGE_KEY);
 	const userState = resultUser[USERSCRIPTS_STORAGE_KEY] || { scripts: [], globalEnabled: true };
 	let userChanged = false;
 
 	for (const scriptPlugin of packagedScripts) {
 		const config = getScriptConfig(scriptPlugin);
-		const existingIdx = userState.scripts.findIndex((script: SaaTScriptState) => script.saatToolId === scriptPlugin.id);
+		const existingIdx = userState.scripts.findIndex(
+			(script: SaaTScriptState) => script.saatToolId === scriptPlugin.id,
+		);
 		const resolved = await resolveScript(scriptPlugin.id, config.type);
 		if (!resolved) throw new Error(`Packaged script not found: ${scriptPlugin.id}`);
 		const { code, path } = resolved;
@@ -262,7 +282,10 @@ export async function syncSaaTTools(tools: readonly SaaTPluginDescriptor[]): Pro
 		return packagedScripts.some((packaged) => packaged.id === script.saatToolId);
 	});
 	if (userState.scripts.length !== originalUserCount) {
-		console.log(LOG_TAG, `Cleaned up ${originalUserCount - userState.scripts.length} migrated registry-managed scripts`);
+		console.log(
+			LOG_TAG,
+			`Cleaned up ${originalUserCount - userState.scripts.length} migrated registry-managed scripts`,
+		);
 		userChanged = true;
 	}
 	if (userChanged) await chrome.storage.local.set({ [USERSCRIPTS_STORAGE_KEY]: userState });
@@ -304,3 +327,5 @@ export function initSaaTService(): () => void {
 		saatInitialized = false;
 	};
 }
+
+export const saatServiceTestApi = { assertRuntimeDescriptors };
