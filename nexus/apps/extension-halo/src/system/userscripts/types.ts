@@ -1,10 +1,12 @@
 // goal: UserScripts type definitions - full feature parity with Tampermonkey
 // eff: Unified types for script management
 
+import type { ScriptRuntimeOwner } from '../../kernel/core/script-runtime-ownership';
 import type { ScriptType } from '../../kernel/registry/taxonomy';
+export type { ScriptRuntimeOwner } from '../../kernel/core/script-runtime-ownership';
 export type { ScriptType };
 export type UserScriptRunAt = 'document_start' | 'document_end' | 'document_idle';
-export type UserScriptManagedBy = 'packaged-script' | 'saat-tool';
+export type UserScriptManagedBy = ScriptRuntimeOwner;
 
 export interface UserScript {
 	id: string;
