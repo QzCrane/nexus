@@ -1,0 +1,65 @@
+name: HALO keyboard browser
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/halo-keyboard-browser.yml'
+      - 'nexus/apps/extension-halo/build.ts'
+      - 'nexus/apps/extension-halo/package.json'
+      - 'nexus/apps/extension-halo/public/manifest.json'
+      - 'nexus/apps/extension-halo/src/content/smooth-scroll*.ts'
+      - 'nexus/apps/extension-halo/src/entry/content-smooth-scroll.ts'
+      - 'nexus/apps/extension-halo/src/tools/smooth-scroll/**'
+      - 'nexus/apps/extension-halo/test/smooth-scroll*.spec.ts'
+      - 'nexus/bun.lock'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/halo-keyboard-browser.yml'
+      - 'nexus/apps/extension-halo/build.ts'
+      - 'nexus/apps/extension-halo/package.json'
+      - 'nexus/apps/extension-halo/public/manifest.json'
+      - 'nexus/apps/extension-halo/src/content/smooth-scroll*.ts'
+      - 'nexus/apps/extension-halo/src/entry/content-smooth-scroll.ts'
+      - 'nexus/apps/extension-halo/src/tools/smooth-scroll/**'
+      - 'nexus/apps/extension-halo/test/smooth-scroll*.spec.ts'
+      - 'nexus/bun.lock'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: halo-keyboard-browser-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  chromium:
+    name: Chromium keyboard ownership
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bun 1.3.14
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install workspace dependencies
+        run: bun install --cwd nexus --frozen-lockfile
+
+      - name: Build HALO workspace dependencies
+        run: bun --cwd nexus build:halo-deps
+
+      - name: Build HALO production candidate
+        run: bun --cwd nexus/apps/extension-halo build:prod
+
+      - name: Install Chromium runtime
+        working-directory: nexus/apps/extension-halo
+        run: bunx playwright install --with-deps --no-shell chromium
+
+      - name: Test keyboard ownership in Chromium
+        run: bun --cwd nexus/apps/extension-halo test:keyboard-chromium
