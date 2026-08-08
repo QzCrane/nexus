@@ -15,6 +15,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  scope:
+    name: product scope (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      spectra: ${{ steps.classify.outputs.spectra }}
+      halo: ${{ steps.classify.outputs.halo }}
+    steps:
+      - name: Checkout history for candidate scope
+        uses: actions/checkout@v4
+        with:
+          # PR scoping compares GitHub's immutable event base/head SHAs. Full
+          # history guarantees their merge-base is available; discovery failure
+          # fails this job rather than silently skipping product evidence.
+          fetch-depth: 0
+
+      - name: Classify product scope
+        id: classify
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          paths_file="$RUNNER_TEMP/pr-changed-paths.z"
+          : > "$paths_file"
+
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            if [[ -z "$BASE_SHA" || -z "$HEAD_SHA" ]]; then
+              echo "Missing pull-request base/head SHA" >&2
+              exit 1
+            fi
+            git cat-file -e "${BASE_SHA}^{commit}"
+            git cat-file -e "${HEAD_SHA}^{commit}"
+            git merge-base "$BASE_SHA" "$HEAD_SHA" >/dev/null
+            # --no-renames makes a cross-product rename visible as one deletion
+            # and one addition. -z preserves Unicode, spaces, and every legal
+            # repository path byte without Git C-style quoting.
+            git diff --no-renames --name-only -z "${BASE_SHA}...${HEAD_SHA}" > "$paths_file"
+          fi
+
+          node nexus/scripts/ci-product-scope.mjs \
+            --event "$GITHUB_EVENT_NAME" \
+            --paths-z-file "$paths_file" >> "$GITHUB_OUTPUT"
+
   quality:
     name: quality (ubuntu)
     runs-on: ubuntu-latest
@@ -52,14 +97,15 @@ jobs:
         run: bun run hooks:test
 
       - name: Lint
-        run: |
-          bun run lint
+        run: bun run lint
 
       - name: Typecheck all workspaces
         run: bun run typecheck
 
   build-and-test:
     name: build-and-test (${{ matrix.os }})
+    needs: scope
+    if: needs.scope.outputs.spectra == 'true' || needs.scope.outputs.halo == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -71,54 +117,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          # PR refs are synthetic merge commits. Depth 2 gives the merge base
-          # parent plus candidate so path scoping needs no API or third-party action.
-          fetch-depth: 2
-
-      - name: Determine product scope
-        id: scope
-        shell: bash
-        run: |
-          spectra=false
-          halo=false
-
-          # Main pushes and manual verification remain fail-closed: run both
-          # products regardless of path. Only pull requests receive cost scoping.
-          if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]]; then
-            spectra=true
-            halo=true
-          else
-            while IFS= read -r path; do
-              case "$path" in
-                nexus/apps/extension-spectra/*|nexus/apps/remote-spectra/*)
-                  spectra=true
-                  ;;
-                nexus/apps/extension-halo/*)
-                  halo=true
-                  ;;
-                nexus/apps/*|nexus/packages/*|nexus/scripts/*|nexus/*.json|nexus/*.ts|nexus/*.mjs|nexus/*.cjs|nexus/bun.lock|.github/workflows/*|package.json)
-                  # Unknown app/shared/toolchain/workflow changes can affect either
-                  # runtime, so never optimize their evidence away.
-                  spectra=true
-                  halo=true
-                  ;;
-              esac
-            done < <(git diff --name-only HEAD^ HEAD)
-          fi
-
-          echo "spectra=$spectra" >> "$GITHUB_OUTPUT"
-          echo "halo=$halo" >> "$GITHUB_OUTPUT"
-          echo "SPECTRA=$spectra HALO=$halo"
 
       - name: Set up Bun 1.3.14
-        if: steps.scope.outputs.spectra == 'true' || steps.scope.outputs.halo == 'true'
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
 
       - name: Cache Turbo
-        if: steps.scope.outputs.spectra == 'true' || steps.scope.outputs.halo == 'true'
         uses: actions/cache@v4
         with:
           path: nexus/.turbo/cache
@@ -127,18 +132,25 @@ jobs:
             turbo-build-${{ runner.os }}-
 
       - name: Install workspace dependencies
-        if: steps.scope.outputs.spectra == 'true' || steps.scope.outputs.halo == 'true'
         run: bun install --cwd nexus --frozen-lockfile
 
-      - name: Build production candidates
-        if: steps.scope.outputs.spectra == 'true' || steps.scope.outputs.halo == 'true'
-        run: bun run build
+      - name: Build all production candidates
+        if: needs.scope.outputs.spectra == 'true' && needs.scope.outputs.halo == 'true'
+        run: bun --cwd nexus run build
+
+      - name: Build SPECTRA production candidate
+        if: needs.scope.outputs.spectra == 'true' && needs.scope.outputs.halo != 'true'
+        run: bun --cwd nexus run build:spectra
+
+      - name: Build HALO production candidate
+        if: needs.scope.outputs.halo == 'true' && needs.scope.outputs.spectra != 'true'
+        run: bun --cwd nexus run build:halo
 
       - name: Test SPECTRA
-        if: steps.scope.outputs.spectra == 'true'
+        if: needs.scope.outputs.spectra == 'true'
         run: bun --cwd nexus test:spectra
 
       - name: Test HALO
-        if: steps.scope.outputs.halo == 'true'
+        if: needs.scope.outputs.halo == 'true'
         run: bun --cwd nexus test:halo
 
