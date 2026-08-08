@@ -28,8 +28,6 @@ interface LeanSiteHotkeyWindow extends Window {
 
 interface ActiveBinding {
 	binding: SpectraLeanSiteHotkeyBinding;
-	gesture: string;
-	repeated: boolean;
 	inFlight: boolean;
 	pendingPulses: number;
 }
@@ -146,13 +144,11 @@ function pressBinding(held: ActiveBinding, repeated: boolean): void {
 	if (held.inFlight) {
 		if (repeated) {
 			held.pendingPulses = Math.min(MAX_PENDING_PULSES, held.pendingPulses + 1);
-			held.repeated = true;
 		}
 		return;
 	}
 	const pulses = Math.min(MAX_PENDING_PULSES, held.pendingPulses + 1);
 	held.pendingPulses = 0;
-	if (repeated) held.repeated = true;
 	submitPulses(held, pulses);
 }
 
@@ -211,8 +207,6 @@ function onSettled(
 		releaseCode(event.code);
 		const held: ActiveBinding = {
 			binding,
-			gesture: `site:${crypto.randomUUID()}`,
-			repeated: false,
 			inFlight: false,
 			pendingPulses: 0,
 		};
