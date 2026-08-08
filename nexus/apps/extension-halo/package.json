@@ -6,7 +6,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "bun ../../scripts/generate-tool-registry.ts && bun build.ts --watch",
-		"build": "bun build.ts",
+		"build": "bun build.ts && bun build-sidepanel-preact-experiment.ts",
 		"build:dev": "bun build.ts --dev",
 		"build:prod": "bun build.ts && bun build-sidepanel-preact-experiment.ts",
 		"build:preact-experiment": "bun build-sidepanel-preact-experiment.ts",
