@@ -173,6 +173,7 @@ export function generateScriptRuntimeManifest(allModules, manifestsMap) {
 		return [{
 			id: manifest.id,
 			pluginType: module.pluginType,
+			builtIn: manifest.builtIn ?? false,
 			script: manifest.script,
 		}];
 	});
