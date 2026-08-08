@@ -212,9 +212,9 @@ export function onKeydownCapture(e: KeyboardEvent): void {
 
 	document.addEventListener('keydown', finalizeAtDocument);
 	window.addEventListener('keydown', finalizeAtWindow);
-	queueMicrotask(() => {
+	setTimeout(() => {
 		if (!finalized) cleanup();
-	});
+	}, 0);
 }
 
 export function onKeyup(e: KeyboardEvent): void {

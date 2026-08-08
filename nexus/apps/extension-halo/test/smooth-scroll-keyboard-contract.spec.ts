@@ -41,6 +41,8 @@ describe('smooth-scroll keyboard architecture contract', () => {
 		);
 		expect(keyboardSource).toContain('candidate.cancelBubble');
 		expect(keyboardSource).toMatch(/e\.defaultPrevented \|\|\s*e\.cancelBubble \|\|/u);
+		expect(keyboardSource).toMatch(/setTimeout\(\(\) => \{\s*if \(!finalized\) cleanup\(\);\s*\}, 0\);/u);
+		expect(keyboardSource).not.toMatch(/queueMicrotask\(\(\) => \{\s*if \(!finalized\) cleanup\(\);/u);
 	});
 
 	test('observes at document start but activates only after settings hydration', () => {
