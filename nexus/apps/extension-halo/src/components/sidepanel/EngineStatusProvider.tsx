@@ -20,11 +20,14 @@ const EngineStatusContext = createContext<EngineStatus>({
  */
 export const EngineStatusProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 	const { activeServices } = useActiveServices();
+	const smoothScroll = activeServices.has('smooth-scroll');
+	const userscripts = activeServices.has('userscripts');
+	const clipboard = activeServices.has('clipboard');
 	const status = useMemo<EngineStatus>(() => ({
-		smoothScroll: activeServices.has('smooth-scroll'),
-		userscripts: activeServices.has('userscripts'),
-		clipboard: activeServices.has('clipboard'),
-	}), [activeServices]);
+		smoothScroll,
+		userscripts,
+		clipboard,
+	}), [smoothScroll, userscripts, clipboard]);
 
 	return (
 		<EngineStatusContext.Provider value={status}>
