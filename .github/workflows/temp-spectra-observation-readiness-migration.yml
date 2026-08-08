@@ -59,8 +59,8 @@ jobs:
               "async function getRuntimeLeaseClient(): Promise<Page> {",
               "async function waitForContentObservationReadiness(\n\turl = fixturePage.url(),\n\ttimeoutMs = 15_000,\n): Promise<ContentBootstrapStatus> {\n\treturn eventually(\n\t\t() => readContentBootstrapStatus(url),\n\t\t(status) => status.observationsReady === true,\n\t\t`content observation readiness for ${url}`,\n\t\ttimeoutMs,\n\t);\n}\n\nasync function getRuntimeLeaseClient(): Promise<Page> {")
           replace_exact(smoke,
-              "\t\tawait waitForContentBootstrapStatus(recommendationUrl);\n\t\tawait recommendation.evaluate(() => {",
-              "\t\tawait waitForContentBootstrapStatus(recommendationUrl);\n\t\tawait waitForContentObservationReadiness(recommendationUrl);\n\t\tawait recommendation.evaluate(() => {")
+              "\t\t\tawait waitForContentBootstrapStatus(recommendationUrl);\n\t\t\tconst tabId = await getTabId(recommendationUrl);\n\t\t\tawait page.evaluate(() => {",
+              "\t\t\tawait waitForContentBootstrapStatus(recommendationUrl);\n\t\t\tawait waitForContentObservationReadiness(recommendationUrl);\n\t\t\tconst tabId = await getTabId(recommendationUrl);\n\t\t\tawait page.evaluate(() => {")
           PY
       - name: Verify repository build
         run: bun --cwd nexus build
