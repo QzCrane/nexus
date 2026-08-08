@@ -15,6 +15,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  apply-performance-projection:
+    name: apply performance projection
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/spectra-halo-performance'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout source branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Set up Bun 1.3.14
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Apply exact projection and generated artifacts
+        run: |
+          if [ ! -f nexus/scripts/tmp-apply-spectra-background-policy.ts ]; then
+            echo "Projection patch already applied"
+            exit 0
+          fi
+          bun nexus/scripts/tmp-apply-spectra-background-policy.ts
+          bun nexus/scripts/generate-tool-registry.ts
+          git rm nexus/scripts/tmp-apply-spectra-background-policy.ts
+          git add \
+            nexus/apps/extension-spectra/src/background/control-coordinator.ts \
+            nexus/apps/extension-spectra/src/background/runtime-loader.ts \
+            nexus/apps/extension-halo/src/kernel/registry/_generated.ts \
+            nexus/apps/extension-halo/src/kernel/registry/_generated-background-active.ts \
+            nexus/apps/extension-halo/src/components/_generated-tool-loader.ts \
+            nexus/apps/extension-halo/src/i18n/locales/_generated-tools-en.ts \
+            nexus/apps/extension-halo/src/i18n/locales/_generated-tools-zh.ts
+          if git diff --cached --quiet; then
+            echo "No generated or projection changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "perf(spectra): narrow background policy closure"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
+
   quality:
     name: quality (ubuntu)
     runs-on: ubuntu-latest
