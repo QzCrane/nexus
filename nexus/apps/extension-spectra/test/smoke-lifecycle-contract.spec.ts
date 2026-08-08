@@ -18,6 +18,16 @@ function expectLifecycleBarrier(window: string): void {
 }
 
 describe('SPECTRA smoke lifecycle barriers', () => {
+	test('defines feedback retirement as one complete visible-to-hidden OSD window', () => {
+		const helper = sourceWindow(
+			'const waitForHotkeyFeedbackWindow',
+			'const tapSiteHotkey',
+		);
+		expect(helper.match(/page\.waitForFunction/g)).toHaveLength(2);
+		expect(helper).toContain("osd?.classList.contains('v') === true");
+		expect(helper).toContain("!osd.classList.contains('v')");
+	});
+
 	test('retires the first configured hotkey gesture before the next independent shortcut', () => {
 		expectLifecycleBarrier(sourceWindow(
 			"'one accepted configured site hotkey'",
