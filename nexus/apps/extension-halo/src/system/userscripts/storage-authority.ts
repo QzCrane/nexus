@@ -1,5 +1,5 @@
 // goal: one reactive authority for the halo_userscripts storage key
-// inv: every SidePanel consumer shares one Chrome read/listener lifecycle
+// inv: every SidePanel consumer shares one lossless, fail-closed persistence snapshot
 
 import { subscribeHaloStorageChanges } from '../../kernel/core/storage-change-bus';
 import type { ScriptType } from '../../kernel/registry/taxonomy';
@@ -8,15 +8,23 @@ import type {
 	UserScript,
 	UserScriptManagedBy,
 	UserScriptRunAt,
-	UserScriptState,
 } from './types';
 
+export type UserScriptsSnapshotScript = Omit<Readonly<UserScript>, 'matches' | 'excludeMatches'> & {
+	readonly matches: readonly string[];
+	readonly excludeMatches?: readonly string[];
+};
+export type UserScriptsToolbarAction = 'add' | 'export' | 'import';
+export interface UserScriptsToolbarSnapshot {
+	readonly order: readonly UserScriptsToolbarAction[];
+	readonly hideOnOverflow: boolean;
+}
 export interface UserScriptsStorageSnapshot {
-	ready: boolean;
-	failed: boolean;
-	globalEnabled: boolean;
-	readonly scripts: readonly Readonly<UserScript>[];
-	readonly toolbarConfig?: Readonly<NonNullable<UserScriptState['toolbarConfig']>>;
+	readonly ready: boolean;
+	readonly failed: boolean;
+	readonly globalEnabled: boolean;
+	readonly scripts: readonly UserScriptsSnapshotScript[];
+	readonly toolbarConfig?: UserScriptsToolbarSnapshot;
 }
 
 const SCRIPT_TYPES: ReadonlySet<ScriptType> = new Set(['javascript', 'typescript', 'css']);
@@ -26,10 +34,9 @@ const RUN_AT_VALUES: ReadonlySet<UserScriptRunAt> = new Set([
 	'document_idle',
 ]);
 const WORLD_VALUES = new Set(['ISOLATED', 'MAIN', 'USER_SCRIPT']);
-const MANAGED_BY_VALUES: ReadonlySet<UserScriptManagedBy> = new Set([
-	'packaged-script',
-	'saat-tool',
-]);
+const MANAGED_BY_VALUES: ReadonlySet<UserScriptManagedBy> = new Set(['packaged-script', 'saat-tool']);
+const TOOLBAR_ACTIONS: readonly UserScriptsToolbarAction[] = ['add', 'export', 'import'];
+const TOOLBAR_ACTION_SET = new Set<string>(TOOLBAR_ACTIONS);
 const KNOWN_SCRIPT_FIELDS = new Set([
 	'id', 'name', 'description', 'code', 'enabled', 'type', 'matches', 'excludeMatches',
 	'runAt', 'world', 'filePath', 'order', 'version', 'author', 'homepage', 'updateUrl',
@@ -38,7 +45,7 @@ const KNOWN_SCRIPT_FIELDS = new Set([
 ]);
 const FORBIDDEN_EXTENSION_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 const MAX_EXTENSION_METADATA_DEPTH = 8;
-const EMPTY_SCRIPTS = Object.freeze([]) as readonly Readonly<UserScript>[];
+const EMPTY_SCRIPTS = Object.freeze([]) as readonly UserScriptsSnapshotScript[];
 const EMPTY_SNAPSHOT: UserScriptsStorageSnapshot = Object.freeze({
 	ready: false,
 	failed: false,
@@ -70,6 +77,12 @@ function isFiniteNumber(value: unknown): value is number {
 
 function isStringArray(value: unknown): value is string[] {
 	return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
+function isNonEmptyStringArray(value: unknown): value is string[] {
+	return isStringArray(value)
+		&& value.length > 0
+		&& value.every((entry) => entry.trim().length > 0);
 }
 
 function optionalString(value: unknown): value is string | undefined {
@@ -122,7 +135,7 @@ function extensionFields(value: Record<string, unknown>): Record<string, unknown
 	return result;
 }
 
-function normalizeScript(value: unknown): Readonly<UserScript> | null {
+function normalizeScript(value: unknown): UserScriptsSnapshotScript | null {
 	if (!isRecord(value)
 		|| typeof value.id !== 'string'
 		|| typeof value.name !== 'string'
@@ -131,7 +144,7 @@ function normalizeScript(value: unknown): Readonly<UserScript> | null {
 		|| typeof value.enabled !== 'boolean'
 		|| typeof value.type !== 'string'
 		|| !SCRIPT_TYPES.has(value.type as ScriptType)
-		|| !isStringArray(value.matches)
+		|| !isNonEmptyStringArray(value.matches)
 		|| typeof value.runAt !== 'string'
 		|| !RUN_AT_VALUES.has(value.runAt as UserScriptRunAt)
 		|| !isFiniteNumber(value.order)
@@ -150,7 +163,10 @@ function normalizeScript(value: unknown): Readonly<UserScript> | null {
 			|| !MANAGED_BY_VALUES.has(value.managedBy as UserScriptManagedBy)
 		))
 		|| (value.moduleBuiltIn !== undefined && typeof value.moduleBuiltIn !== 'boolean')
-		|| (value.excludeMatches !== undefined && !isStringArray(value.excludeMatches))
+		|| (value.excludeMatches !== undefined && (
+			!isStringArray(value.excludeMatches)
+			|| value.excludeMatches.some((entry) => entry.trim().length === 0)
+		))
 		|| (value.world !== undefined && (
 			typeof value.world !== 'string' || !WORLD_VALUES.has(value.world)
 		))
@@ -158,10 +174,10 @@ function normalizeScript(value: unknown): Readonly<UserScript> | null {
 
 	const extra = extensionFields(value);
 	if (extra === null) return null;
-	const matches = [...value.matches];
-	Object.freeze(matches);
-	const excludeMatches = value.excludeMatches === undefined ? undefined : [...value.excludeMatches];
-	if (excludeMatches) Object.freeze(excludeMatches);
+	const matches = Object.freeze([...value.matches]);
+	const excludeMatches = value.excludeMatches === undefined
+		? undefined
+		: Object.freeze([...value.excludeMatches]);
 	return Object.freeze({
 		...extra,
 		id: value.id,
@@ -190,19 +206,21 @@ function normalizeScript(value: unknown): Readonly<UserScript> | null {
 			? {}
 			: { managedBy: value.managedBy as UserScriptManagedBy }),
 		...(value.moduleBuiltIn === undefined ? {} : { moduleBuiltIn: value.moduleBuiltIn }),
-	}) as Readonly<UserScript>;
+	}) as UserScriptsSnapshotScript;
 }
 
-function normalizeToolbarConfig(
-	value: unknown,
-): Readonly<NonNullable<UserScriptState['toolbarConfig']>> | null | undefined {
+function normalizeToolbarConfig(value: unknown): UserScriptsToolbarSnapshot | null | undefined {
 	if (value === undefined) return undefined;
 	if (!isRecord(value)
 		|| !isStringArray(value.order)
 		|| typeof value.hideOnOverflow !== 'boolean') return null;
-	const order = [...value.order];
-	Object.freeze(order);
-	return Object.freeze({ order, hideOnOverflow: value.hideOnOverflow });
+	if (value.order.length !== TOOLBAR_ACTIONS.length
+		|| new Set(value.order).size !== TOOLBAR_ACTIONS.length
+		|| value.order.some((action) => !TOOLBAR_ACTION_SET.has(action))) return null;
+	return Object.freeze({
+		order: Object.freeze([...value.order]) as readonly UserScriptsToolbarAction[],
+		hideOnOverflow: value.hideOnOverflow,
+	});
 }
 
 export function parseUserScriptsStorageValue(value: unknown): UserScriptsStorageSnapshot {
@@ -220,7 +238,7 @@ export function parseUserScriptsStorageValue(value: unknown): UserScriptsStorage
 		return FAILED_SNAPSHOT;
 	}
 
-	const scripts: Readonly<UserScript>[] = [];
+	const scripts: UserScriptsSnapshotScript[] = [];
 	for (const rawScript of value.scripts) {
 		const normalized = normalizeScript(rawScript);
 		if (normalized === null) return FAILED_SNAPSHOT;
@@ -240,7 +258,7 @@ export function parseUserScriptsStorageValue(value: unknown): UserScriptsStorage
 function publish(next: UserScriptsStorageSnapshot): void {
 	if (snapshot === next) return;
 	snapshot = next;
-	for (const subscriber of subscribers) subscriber();
+	for (const subscriber of [...subscribers]) subscriber();
 }
 
 const onStorageChanged = (
