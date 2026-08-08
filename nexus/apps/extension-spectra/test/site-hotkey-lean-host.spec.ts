@@ -85,12 +85,13 @@ describe('SPECTRA lean custom-site hotkey boundary', () => {
 
 	test('uses the existing domain matcher and ignores disabled/empty sites', () => {
 		const nested = settings([binding('speed_up')]);
-		nested.sites['video.example.com'] = {
+		const nestedSite = {
 			enabled: true,
 			bindings: [binding('volume_up', { id: 'nested-volume' })],
 		};
+		nested.sites['video.example.com'] = nestedSite;
 		expect(resolveSiteHotkeys('https://video.example.com/a', nested)?.domain).toBe('video.example.com');
-		nested.sites['video.example.com'].enabled = false;
+		nestedSite.enabled = false;
 		expect(resolveSiteHotkeys('https://video.example.com/a', nested)?.domain).toBe('example.com');
 		expect(resolveSiteHotkeys('https://unmatched.test/a', nested)).toBeNull();
 	});
