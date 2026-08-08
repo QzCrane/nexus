@@ -4,7 +4,7 @@
 import { STORAGE_PREFIX } from '../kernel/core/types';
 import { DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY } from '../kernel/core/settings';
 import { initUserScriptsEngine } from '../system/userscripts/engine';
-import { initUserScriptsRegistry } from '../system/userscripts/registry';
+import { initUserScriptsRegistry, syncRegisteredScripts } from '../system/userscripts/registry';
 import {
 	initSaaTService,
 	syncSaaTTools,
@@ -82,6 +82,16 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 		await syncSaaTTools(await loadScriptRuntimeDescriptors());
 	} catch (error: unknown) {
 		console.warn(LOG_TAG, 'SaaT install synchronization skipped:', error);
+	}
+
+	// userScripts registrations are cleared by extension updates while dynamic
+	// scripting registrations persist across ordinary worker/browser sessions.
+	// Reconcile once on install/update; the registry's storage listener owns
+	// subsequent changes without rebuilding registrations on every worker wake.
+	try {
+		await syncRegisteredScripts();
+	} catch (error: unknown) {
+		console.warn(LOG_TAG, 'UserScripts install synchronization failed:', error);
 	}
 
 	const storage = await chrome.storage.sync.get([
