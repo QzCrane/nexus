@@ -31,7 +31,7 @@ jobs:
       - name: Cache Turbo
         uses: actions/cache@v4
         with:
-          path: nexus/node_modules/.cache/turbo
+          path: nexus/.turbo/cache
           key: turbo-quality-${{ runner.os }}-${{ hashFiles('nexus/bun.lock') }}
           restore-keys: |
             turbo-quality-${{ runner.os }}-
@@ -80,7 +80,7 @@ jobs:
       - name: Cache Turbo
         uses: actions/cache@v4
         with:
-          path: nexus/node_modules/.cache/turbo
+          path: nexus/.turbo/cache
           key: turbo-build-${{ runner.os }}-${{ hashFiles('nexus/bun.lock') }}
           restore-keys: |
             turbo-build-${{ runner.os }}-
