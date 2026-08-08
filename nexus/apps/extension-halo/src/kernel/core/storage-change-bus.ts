@@ -1,45 +1,73 @@
-// goal: one physical chrome.storage.onChanged listener per HALO JS context
-// inv: feature authorities subscribe to this bus instead of registering parallel Chrome listeners
+// goal: one physical chrome.storage.onChanged listener per HALO JS realm
+// inv: separately bundled SidePanel scripts converge through one global bus state
 
 export type HaloStorageChangeListener = (
 	changes: Record<string, chrome.storage.StorageChange>,
 	areaName: string,
 ) => void;
 
-const subscribers = new Set<HaloStorageChangeListener>();
-let attached = false;
-
-const onStorageChanged: HaloStorageChangeListener = (changes, areaName) => {
-	for (const subscriber of [...subscribers]) subscriber(changes, areaName);
-};
-
-function attach(): void {
-	if (attached) return;
-	attached = true;
-	chrome.storage.onChanged.addListener(onStorageChanged);
+interface HaloStorageChangeBusState {
+	subscribers: Set<HaloStorageChangeListener>;
+	attached: boolean;
+	onStorageChanged: HaloStorageChangeListener;
 }
 
-function detachIfIdle(): void {
-	if (!attached || subscribers.size > 0) return;
-	chrome.storage.onChanged.removeListener(onStorageChanged);
-	attached = false;
+const GLOBAL_KEY = '__HALO_STORAGE_CHANGE_BUS_V1__';
+type BusGlobal = typeof globalThis & {
+	[GLOBAL_KEY]?: HaloStorageChangeBusState;
+};
+
+function createState(): HaloStorageChangeBusState {
+	const state = {
+		subscribers: new Set<HaloStorageChangeListener>(),
+		attached: false,
+		onStorageChanged: (() => undefined) as HaloStorageChangeListener,
+	};
+	state.onStorageChanged = (changes, areaName) => {
+		// Snapshot before delivery. Re-entrant unsubscribe/resubscribe affects only
+		// the next storage event instead of recursively extending this iteration.
+		for (const subscriber of [...state.subscribers]) subscriber(changes, areaName);
+	};
+	return state;
+}
+
+function busState(): HaloStorageChangeBusState {
+	const shared = globalThis as BusGlobal;
+	shared[GLOBAL_KEY] ??= createState();
+	return shared[GLOBAL_KEY];
+}
+
+function attach(state: HaloStorageChangeBusState): void {
+	if (state.attached) return;
+	chrome.storage.onChanged.addListener(state.onStorageChanged);
+	state.attached = true;
+}
+
+function detachIfIdle(state: HaloStorageChangeBusState): void {
+	if (!state.attached || state.subscribers.size > 0) return;
+	chrome.storage.onChanged.removeListener(state.onStorageChanged);
+	state.attached = false;
 }
 
 export function subscribeHaloStorageChanges(listener: HaloStorageChangeListener): () => void {
-	subscribers.add(listener);
-	attach();
+	const state = busState();
+	state.subscribers.add(listener);
+	attach(state);
 	return () => {
-		subscribers.delete(listener);
-		detachIfIdle();
+		state.subscribers.delete(listener);
+		detachIfIdle(state);
 	};
 }
 
 export const haloStorageChangeBusTestApi = {
 	reset(): void {
-		subscribers.clear();
-		if (attached) chrome.storage.onChanged.removeListener(onStorageChanged);
-		attached = false;
+		const shared = globalThis as BusGlobal;
+		const state = shared[GLOBAL_KEY];
+		if (!state) return;
+		state.subscribers.clear();
+		if (state.attached) chrome.storage.onChanged.removeListener(state.onStorageChanged);
+		delete shared[GLOBAL_KEY];
 	},
-	get subscriberCount(): number { return subscribers.size; },
-	get isAttached(): boolean { return attached; },
+	get subscriberCount(): number { return busState().subscribers.size; },
+	get isAttached(): boolean { return busState().attached; },
 };
