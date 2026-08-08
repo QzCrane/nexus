@@ -12,7 +12,7 @@ const distDir = path.join(__dirname, 'dist');
 const PREACT_ALIAS = Object.freeze({
 	'react/jsx-dev-runtime': 'preact/jsx-dev-runtime',
 	'react/jsx-runtime': 'preact/jsx-runtime',
-	'react-dom/client': 'preact/compat/client',
+	'react-dom/client': 'preact/compat',
 	'react-dom': 'preact/compat',
 	react: 'preact/compat',
 });
