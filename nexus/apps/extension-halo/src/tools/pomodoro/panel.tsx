@@ -2,7 +2,7 @@
 // eff: persistent state changes only at user/phase boundaries; display time is projected from a deadline
 
 import type React from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { PomodoroConfig, PomodoroState } from './types';
@@ -21,6 +21,8 @@ export const PomodoroPanel: React.FC = () => {
 	const [config, setConfig] = useToolState<PomodoroConfig>('pomodoro-config', DEFAULT_CONFIG);
 	const [state, setState] = useToolState<PomodoroState>('pomodoro-state', () => createInitialState(config));
 	const [now, setNow] = useState(() => Date.now());
+	const stateRef = useRef(state);
+	stateRef.current = state;
 
 	// Compatibility repair for old persisted running states that predate endsAt.
 	useEffect(() => {
@@ -31,48 +33,45 @@ export const PomodoroPanel: React.FC = () => {
 		});
 	}, [state.isRunning, state.endsAt, setState]);
 
-	// One local 1Hz projection is sufficient because the UI displays whole
-	// seconds. It never writes PomodoroState and any delayed tick catches up from
-	// the wall-clock deadline instead of replaying missed decrements.
-	useEffect(() => {
-		if (!state.isRunning) {
-			setNow(Date.now());
-			return;
-		}
-		setNow(Date.now());
-		const intervalId = window.setInterval(() => setNow(Date.now()), 1000);
-		return () => window.clearInterval(intervalId);
-	}, [state.isRunning]);
-
-	const remaining = useMemo(() => projectedRemaining(state, now), [state, now]);
-
-	// Phase completion owns one timeout. Persistent state changes exactly once at
-	// the phase boundary, not once per displayed second.
+	// One 1Hz owner handles both the whole-second display projection and phase
+	// completion. Every tick compares the latest persisted deadline against a
+	// fresh wall-clock sample, so forward/backward system-clock changes cannot
+	// strand an expired phase or fire an early tone. Persistent PomodoroState
+	// still changes only once at the real phase boundary.
 	useEffect(() => {
 		if (!state.isRunning || typeof state.endsAt !== 'number') return;
-		const delay = Math.max(0, state.endsAt - Date.now());
-		const timeoutId = window.setTimeout(() => {
-			setState((current) => {
-				if (!current.isRunning || typeof current.endsAt !== 'number') return current;
-				if (current.endsAt > Date.now()) return current;
-				const nextPhase = getNextPhase(current, config);
-				const sessionsCompleted = current.phase === 'work'
-					? current.sessionsCompleted + 1
-					: current.sessionsCompleted;
-				return {
-					phase: nextPhase,
-					remaining: getPhaseDuration(nextPhase, config),
-					endsAt: undefined,
-					isRunning: false,
-					sessionsCompleted,
-				};
-			});
+
+		const tick = () => {
+			const observedNow = Date.now();
+			setNow(observedNow);
+			const current = stateRef.current;
+			if (!current.isRunning || typeof current.endsAt !== 'number') return;
+			if (current.endsAt > observedNow) return;
+
+			const nextPhase = getNextPhase(current, config);
+			const sessionsCompleted = current.phase === 'work'
+				? current.sessionsCompleted + 1
+				: current.sessionsCompleted;
+			const next: PomodoroState = {
+				phase: nextPhase,
+				remaining: getPhaseDuration(nextPhase, config),
+				endsAt: undefined,
+				isRunning: false,
+				sessionsCompleted,
+			};
+			stateRef.current = next;
+			setState(next);
 			void playCompletionTone().catch((error: unknown) => {
 				console.warn('[HALO:Pomodoro] Completion tone failed', error);
 			});
-		}, delay);
-		return () => window.clearTimeout(timeoutId);
+		};
+
+		tick();
+		const intervalId = window.setInterval(tick, 1000);
+		return () => window.clearInterval(intervalId);
 	}, [state.isRunning, state.endsAt, config, setState]);
+
+	const remaining = useMemo(() => projectedRemaining(state, now), [state, now]);
 
 	const handleToggle = useCallback(() => {
 		const timestamp = Date.now();
