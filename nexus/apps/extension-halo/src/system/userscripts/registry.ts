@@ -1,13 +1,12 @@
-// goal: UserScripts dynamic registration using chrome.userScripts API (Chrome 120+)
-// eff: One persistent registry reconciled from three explicit ownership classes
+// goal: browser-persistent UserScripts registry with explicit runtime ownership
+// inv: custom, packaged-script, and SaaT runtimes reconcile from their own authorities and recover durably
 
 import {
 	MODULE_INSTALLATION_STORAGE_PREFIX,
 	isOptionalPackagedModuleStoredEnabled,
 	moduleInstallationStorageKey,
 } from '../../kernel/core/module-installation-runtime';
-import type { UserScript, UserScriptState } from './types';
-import type { ScriptType } from './types';
+import type { ScriptType, UserScript, UserScriptState } from './types';
 
 const LOG_TAG = '[HALO:UserScripts:Registry]';
 const STORAGE_KEY = 'halo_userscripts';
@@ -22,19 +21,21 @@ function isUserScriptsAvailable(): boolean {
 }
 
 function normalizePattern(pattern: string): string {
-	if (pattern === '*' || pattern === '*/*') return '*://*/*';
-	if (pattern.startsWith('*://') || pattern.startsWith('http://') || pattern.startsWith('https://')) return pattern;
-	if (pattern.includes('/')) return `*://${pattern}`;
-	return `*://${pattern}/*`;
+	const trimmed = pattern.trim();
+	if (!trimmed) throw new Error('Empty match pattern');
+	if (trimmed === '*' || trimmed === '*/*') return '*://*/*';
+	if (trimmed.startsWith('*://') || trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+		return trimmed;
+	}
+	if (trimmed.includes('/')) return `*://${trimmed}`;
+	return `*://${trimmed}/*`;
 }
 
-function toMatchPatterns(patterns: string[]): string[] {
-	const result: string[] = [];
-	for (const pattern of patterns) {
-		const normalized = normalizePattern(pattern.trim());
-		if (normalized?.includes('://')) result.push(normalized);
-	}
-	return result.length > 0 ? result : ['*://*/*'];
+function toMatchPatterns(patterns: readonly string[]): string[] {
+	if (patterns.length === 0) throw new Error('At least one match pattern is required');
+	const result = patterns.map(normalizePattern);
+	if (result.length === 0) throw new Error('At least one valid match pattern is required');
+	return result;
 }
 
 function escapeForJsString(value: string): string {
@@ -88,20 +89,20 @@ async function unregisterAllScripts(): Promise<void> {
 	if (isUserScriptsAvailable()) {
 		try {
 			const registered = await chrome.userScripts.getScripts();
-			const haloIds = registered
+			const ids = registered
 				.filter((script) => script.id.startsWith(SCRIPT_ID_PREFIX))
 				.map((script) => script.id);
-			if (haloIds.length > 0) await chrome.userScripts.unregister({ ids: haloIds });
+			if (ids.length > 0) await chrome.userScripts.unregister({ ids });
 		} catch (error) {
 			failures.push(failureMessage('userScripts unregister failed', error));
 		}
 	}
 	try {
-		const registeredContent = await chrome.scripting.getRegisteredContentScripts();
-		const haloContentIds = registeredContent
+		const registered = await chrome.scripting.getRegisteredContentScripts();
+		const ids = registered
 			.filter((script) => script.id.startsWith(SCRIPT_ID_PREFIX))
 			.map((script) => script.id);
-		if (haloContentIds.length > 0) await chrome.scripting.unregisterContentScripts({ ids: haloContentIds });
+		if (ids.length > 0) await chrome.scripting.unregisterContentScripts({ ids });
 	} catch (error) {
 		failures.push(failureMessage('content-script unregister failed', error));
 	}
@@ -109,18 +110,20 @@ async function unregisterAllScripts(): Promise<void> {
 }
 
 async function registerAllScripts(scripts: readonly UserScript[]): Promise<void> {
-	const userScriptsToRegister: chrome.userScripts.RegisteredUserScript[] = [];
-	const contentScriptsToRegister: chrome.scripting.RegisteredContentScript[] = [];
+	const userScripts: chrome.userScripts.RegisteredUserScript[] = [];
+	const contentScripts: chrome.scripting.RegisteredContentScript[] = [];
 	for (const script of scripts) {
 		if (!script.enabled) continue;
 		const matches = toMatchPatterns(script.matches);
-		const excludeMatches = script.excludeMatches?.length ? toMatchPatterns(script.excludeMatches) : undefined;
-		const fullId = `${SCRIPT_ID_PREFIX}${script.id}`;
+		const excludeMatches = script.excludeMatches?.length
+			? script.excludeMatches.map(normalizePattern)
+			: undefined;
+		const id = `${SCRIPT_ID_PREFIX}${script.id}`;
 		const world = script.world || 'USER_SCRIPT';
 		if (world === 'ISOLATED') {
-			if (!script.filePath) continue;
+			if (!script.filePath) throw new Error(`ISOLATED script ${script.id} is missing filePath`);
 			const contentScript: chrome.scripting.RegisteredContentScript = {
-				id: fullId,
+				id,
 				matches,
 				excludeMatches,
 				runAt: toRunAt(script.runAt),
@@ -130,10 +133,10 @@ async function registerAllScripts(scripts: readonly UserScript[]): Promise<void>
 			};
 			if (script.type === 'css') contentScript.css = [script.filePath];
 			else contentScript.js = [script.filePath];
-			contentScriptsToRegister.push(contentScript);
+			contentScripts.push(contentScript);
 		} else {
-			userScriptsToRegister.push({
-				id: fullId,
+			userScripts.push({
+				id,
 				matches,
 				excludeMatches,
 				js: [{ code: wrapForMainWorld(script.code, script.name, script.type) }],
@@ -145,12 +148,12 @@ async function registerAllScripts(scripts: readonly UserScript[]): Promise<void>
 	}
 
 	const failures: string[] = [];
-	if (userScriptsToRegister.length > 0 && isUserScriptsAvailable()) {
-		try { await chrome.userScripts.register(userScriptsToRegister); }
+	if (userScripts.length > 0 && isUserScriptsAvailable()) {
+		try { await chrome.userScripts.register(userScripts); }
 		catch (error) { failures.push(failureMessage('userScripts register failed', error)); }
 	}
-	if (contentScriptsToRegister.length > 0 && chrome.scripting?.registerContentScripts) {
-		try { await chrome.scripting.registerContentScripts(contentScriptsToRegister); }
+	if (contentScripts.length > 0 && chrome.scripting?.registerContentScripts) {
+		try { await chrome.scripting.registerContentScripts(contentScripts); }
 		catch (error) { failures.push(failureMessage('content-script register failed', error)); }
 	}
 	if (failures.length > 0) throw new Error(failures.join('; '));
@@ -186,15 +189,14 @@ export function resolveDesiredRegisteredScripts(
 				if (userscriptsModuleEnabled) desired.push(script);
 				continue;
 			}
-			if (script.managedBy === 'packaged-script' || script.saatToolId) {
-				if (ownedModuleEnabled(script, moduleValues)) desired.push(script);
+			if ((script.managedBy === 'packaged-script' || script.saatToolId)
+				&& ownedModuleEnabled(script, moduleValues)) {
+				desired.push(script);
 			}
 		}
 	}
 	if (saatState.globalEnabled) {
 		for (const script of saatState.scripts) {
-			// The halo_saat_scripts container is registry-managed by definition;
-			// managedBy is still persisted to make ownership explicit/migratable.
 			if (ownedModuleEnabled(script, moduleValues)) desired.push(script);
 		}
 	}
@@ -213,14 +215,24 @@ function moduleKeysForManagedScripts(
 	return [...keys];
 }
 
+function readState(value: unknown): UserScriptState {
+	if (value === undefined) return { scripts: [], globalEnabled: true };
+	if (!value || typeof value !== 'object') return { scripts: [], globalEnabled: false };
+	const candidate = value as Partial<UserScriptState>;
+	if (!Array.isArray(candidate.scripts) || typeof candidate.globalEnabled !== 'boolean') {
+		return { scripts: [], globalEnabled: false };
+	}
+	return candidate as UserScriptState;
+}
+
 async function performRegisteredScriptSync(): Promise<void> {
 	const stateResult = await chrome.storage.local.get([
 		STORAGE_KEY,
 		SAAT_STORAGE_KEY,
 		USERSCRIPTS_MODULE_KEY,
 	]);
-	const userState: UserScriptState = stateResult[STORAGE_KEY] || { scripts: [], globalEnabled: true };
-	const saatState: UserScriptState = stateResult[SAAT_STORAGE_KEY] || { scripts: [], globalEnabled: true };
+	const userState = readState(stateResult[STORAGE_KEY]);
+	const saatState = readState(stateResult[SAAT_STORAGE_KEY]);
 	const userscriptsModuleEnabled = isOptionalPackagedModuleStoredEnabled(
 		stateResult[USERSCRIPTS_MODULE_KEY],
 		Object.hasOwn(stateResult, USERSCRIPTS_MODULE_KEY),
@@ -233,9 +245,6 @@ async function performRegisteredScriptSync(): Promise<void> {
 		userscriptsModuleEnabled,
 		moduleValues,
 	);
-
-	// Registration is browser-persistent. Never layer a new desired generation
-	// on top of an incompletely retired one.
 	await unregisterAllScripts();
 	await registerAllScripts(desired);
 }
@@ -259,42 +268,52 @@ export async function syncRegisteredScripts(): Promise<void> {
 let registryInitialized = false;
 let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
 let recoveryAttempt = 0;
+let recoveryRequest: Promise<void> | null = null;
 
-function clearRecoveryTimer(): void {
+function resetRecoveryTimer(): void {
 	if (recoveryTimer) clearTimeout(recoveryTimer);
 	recoveryTimer = null;
-}
-
-function resetRecovery(): void {
-	clearRecoveryTimer();
 	recoveryAttempt = 0;
 }
 
-function persistRecoveryNeeded(): void {
-	void chrome.storage.local.set({ [RECOVERY_STORAGE_KEY]: true }).catch((error) => {
-		console.warn(LOG_TAG, 'Failed to persist registry recovery marker', error);
-	});
+async function markRecoveryNeeded(): Promise<void> {
+	await chrome.storage.local.set({ [RECOVERY_STORAGE_KEY]: true });
 }
 
-function clearPersistedRecovery(): void {
-	void chrome.storage.local.remove(RECOVERY_STORAGE_KEY).catch((error) => {
-		console.warn(LOG_TAG, 'Failed to clear registry recovery marker', error);
-	});
+async function clearRecoveryNeeded(): Promise<void> {
+	await chrome.storage.local.remove(RECOVERY_STORAGE_KEY);
+}
+
+function scheduleRecovery(): void {
+	if (!registryInitialized || recoveryTimer || recoveryAttempt >= SYNC_RETRY_DELAYS_MS.length) return;
+	const delay = SYNC_RETRY_DELAYS_MS[recoveryAttempt++] ?? 4_000;
+	recoveryTimer = setTimeout(() => {
+		recoveryTimer = null;
+		requestRegisteredScriptSync('recovery');
+	}, delay);
 }
 
 function requestRegisteredScriptSync(reason: string): void {
-	void syncRegisteredScripts().then(() => {
-		resetRecovery();
-		clearPersistedRecovery();
-	}, (error: unknown) => {
+	if (recoveryRequest) {
+		syncPending = true;
+		return;
+	}
+	recoveryRequest = (async () => {
+		// Dirty must become durable before reconciliation starts. The marker is
+		// removed only after the complete serialized sync loop succeeds, so a
+		// worker termination or a late storage write cannot leave false-clean state.
+		await markRecoveryNeeded();
+		await syncRegisteredScripts();
+		await clearRecoveryNeeded();
+		resetRecoveryTimer();
+	})().catch(async (error: unknown) => {
 		console.warn(LOG_TAG, `${reason} sync failed`, error);
-		persistRecoveryNeeded();
-		if (!registryInitialized || recoveryTimer || recoveryAttempt >= SYNC_RETRY_DELAYS_MS.length) return;
-		const delay = SYNC_RETRY_DELAYS_MS[recoveryAttempt++] ?? 4_000;
-		recoveryTimer = setTimeout(() => {
-			recoveryTimer = null;
-			requestRegisteredScriptSync('recovery');
-		}, delay);
+		try { await markRecoveryNeeded(); }
+		catch (markerError) { console.warn(LOG_TAG, 'Failed to persist registry recovery marker', markerError); }
+		scheduleRecovery();
+	}).finally(() => {
+		recoveryRequest = null;
+		if (syncPending && registryInitialized) requestRegisteredScriptSync('trailing');
 	});
 }
 
@@ -326,15 +345,9 @@ export function initUserScriptsRegistry(): () => void {
 	registryInitialized = true;
 	const listener = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
 		if (area !== 'local') return;
-		if (
-			!changes[STORAGE_KEY]
+		if (!changes[STORAGE_KEY]
 			&& !changes[SAAT_STORAGE_KEY]
-			&& !includesModuleInstallationChange(changes)
-		) return;
-		// Persist the recovery intent before asynchronous reconciliation. If the
-		// worker dies mid-sync, the next worker has a durable recovery signal.
-		persistRecoveryNeeded();
-		resetRecovery();
+			&& !includesModuleInstallationChange(changes)) return;
 		requestRegisteredScriptSync('storage-change');
 	};
 	chrome.storage.onChanged.addListener(listener);
@@ -342,6 +355,12 @@ export function initUserScriptsRegistry(): () => void {
 	return () => {
 		chrome.storage.onChanged.removeListener(listener);
 		registryInitialized = false;
-		resetRecovery();
+		resetRecoveryTimer();
 	};
 }
+
+export const userScriptsRegistryTestApi = {
+	RECOVERY_STORAGE_KEY,
+	SYNC_RETRY_DELAYS_MS,
+	toMatchPatterns,
+};
