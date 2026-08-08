@@ -12,7 +12,7 @@
 		"level": "low",
 		"descriptionKey": "impact.interval_1s",
 		"sourceFile": "tools/timestamp/panel.tsx",
-		"sourceLine": 31,
+		"sourceLine": 32,
 		"sourceDetail": "setInterval(() => setNow(Date.now()), 1000)"
 	},
 	"pluginType": "tool"
