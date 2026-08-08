@@ -59,6 +59,10 @@ export function createOnKeyDown(state: HoverZoomState, preload: PreloadState) {
 			e.preventDefault();
 		}
 
+		// A mousemove immediately before keydown may have queued a no-hotkey
+		// debounce. Once this keyboard gesture is authoritative that stale timer
+		// must not arrive later and retire the new lazy preview transaction.
+		clearTriggerTimer();
 		state.modifiersActive = true;
 		state.currentResourcePref = resourcePref;
 
