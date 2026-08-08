@@ -86,7 +86,10 @@ export function initHoverZoomBootstrap(): void {
 				const module = value as RuntimeModule;
 				if (typeof module.init !== 'function') throw new Error('Hover Zoom runtime is missing init()');
 				const loaded = await module.init(settings);
+				// Publish the owner before the second reconciliation so a concurrent
+				// storage event can forward its newer snapshot instead of being lost.
 				runtime = loaded;
+				await loaded.updateSettings(settings);
 				detachInput();
 				return loaded;
 			})
