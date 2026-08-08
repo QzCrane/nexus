@@ -1,6 +1,9 @@
 import type React from 'react';
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { BACKGROUND_ACTIVE_ONLY_MAP, BACKGROUND_PLUGIN_IDS } from '../../kernel/registry/_generated';
+import {
+	BACKGROUND_ACTIVE_ONLY_MAP,
+	BACKGROUND_PLUGIN_IDS,
+} from '../../kernel/registry/_generated-background-active';
 
 interface ActiveServiceScript {
 	id: string;
