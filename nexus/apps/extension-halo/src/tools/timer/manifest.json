@@ -20,7 +20,7 @@
 		"level": "medium",
 		"descriptionKey": "impact.mechanism.raf_active",
 		"sourceFile": "tools/timer/panel.tsx",
-		"sourceLine": 38,
+		"sourceLine": 39,
 		"sourceDetail": "requestAnimationFrame state is isolated to the TimerDisplay clock node; persistent TimerState changes only at user/completion boundaries"
 	}
 }
