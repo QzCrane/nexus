@@ -21,16 +21,14 @@ test('every persistent optional runtime has an explicit installation gate owner'
 });
 
 test('gated runtime owners import the tiny installation contract, not ModuleManager/registry', () => {
-	const smoothScroll = readFileSync(new URL('../src/content/smooth-scroll.ts', import.meta.url), 'utf8');
-	const registry = readFileSync(new URL('../src/system/userscripts/registry.ts', import.meta.url), 'utf8');
-	const engine = readFileSync(new URL('../src/system/userscripts/engine.ts', import.meta.url), 'utf8');
-	for (const [name, source] of [
-		['smooth-scroll', smoothScroll],
-		['userscripts-registry', registry],
-		['userscripts-engine', engine],
-	] as const) {
-		expect(source, name).toContain('module-installation-runtime');
-		expect(source, name).not.toContain('module-manager');
-		expect(source, name).not.toContain('module-registry');
+	const sources = [
+		readFileSync(new URL('../src/content/smooth-scroll.ts', import.meta.url), 'utf8'),
+		readFileSync(new URL('../src/system/userscripts/registry.ts', import.meta.url), 'utf8'),
+		readFileSync(new URL('../src/system/userscripts/engine.ts', import.meta.url), 'utf8'),
+	];
+	for (const source of sources) {
+		expect(source).toContain('module-installation-runtime');
+		expect(source).not.toContain('module-manager');
+		expect(source).not.toContain('module-registry');
 	}
 });
