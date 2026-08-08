@@ -14,10 +14,8 @@ function isToolId(value: unknown): value is ToolId {
 
 export const useSidePanelState = () => {
 	const {
-		isInstalled,
 		installedModules,
 		loading: modulesLoading,
-		revision: moduleRevision,
 	} = useModuleManager();
 	const [settings, setSettings] = useState<HaloSettings | null>(null);
 	const [settingsLoading, setSettingsLoading] = useState(true);
@@ -35,6 +33,10 @@ export const useSidePanelState = () => {
 	const installedToolIds = useMemo(
 		() => new Set(installedModules.map((module) => module.id)),
 		[installedModules],
+	);
+	const isInstalledSnapshot = useCallback(
+		(id: string) => installedToolIds.has(id),
+		[installedToolIds],
 	);
 	const visibleTools = useMemo(() => {
 		if (modulesLoading) return TOOL_REGISTRY;
@@ -64,21 +66,21 @@ export const useSidePanelState = () => {
 	}, []);
 
 	// Open-tool restoration/reconciliation waits for the module authority and
-	// reruns when that authority changes. This retires an uninstalled active/dock
-	// tool immediately instead of leaving stale UI until the next SidePanel mount.
+	// reruns when its installed snapshot changes. This retires an uninstalled
+	// active/dock tool immediately instead of leaving stale UI until remount.
 	useEffect(() => {
 		if (modulesLoading) {
 			setOpenToolsLoading(true);
 			return;
 		}
 		let mounted = true;
-		void loadOpenTools(isInstalled).catch((error: unknown) => {
+		void loadOpenTools(isInstalledSnapshot).catch((error: unknown) => {
 			console.error('[HALO:SidePanel] open-tools init failed', error);
 		}).finally(() => {
 			if (mounted) setOpenToolsLoading(false);
 		});
 		return () => { mounted = false; };
-	}, [modulesLoading, moduleRevision, isInstalled, loadOpenTools]);
+	}, [modulesLoading, isInstalledSnapshot, loadOpenTools]);
 
 	const handleToolSelect = useCallback(async (toolId: ToolId) => {
 		const tool = TOOL_REGISTRY.find(t => t.id === toolId);
