@@ -12,6 +12,8 @@ import {
 	type Page,
 } from '@playwright/test';
 
+const KEYBOARD_STEP_PX = 300;
+
 interface KeyboardProbeSnapshot {
 	arrowClaims: number;
 	lastAnyArrowCancelBubble: boolean | null;
@@ -213,13 +215,16 @@ async function waitForScrollSettled(page: Page): Promise<number> {
 
 async function repeatArrowStream(
 	page: Page,
-	intervalMs: number,
+	firstRepeatDelayMs: number,
+	repeatIntervalMs: number,
 	repeatCount: number,
 ): Promise<number> {
 	await resetFixture(page);
 	await page.keyboard.down('ArrowDown');
-	for (let index = 0; index < repeatCount; index++) {
-		await new Promise((resolve) => setTimeout(resolve, intervalMs));
+	await new Promise((resolve) => setTimeout(resolve, firstRepeatDelayMs));
+	await page.keyboard.down('ArrowDown');
+	for (let index = 1; index < repeatCount; index++) {
+		await new Promise((resolve) => setTimeout(resolve, repeatIntervalMs));
 		await page.keyboard.down('ArrowDown');
 	}
 	await page.keyboard.up('ArrowDown');
@@ -241,7 +246,7 @@ async function enableSmoothScroll(context: BrowserContext): Promise<string> {
 	}
 	await serviceWorker.evaluate(async (storageKey) => {
 		await chrome.storage.sync.set({
-			[storageKey]: { enabled: true, keyboard: true },
+			[storageKey]: { enabled: true, keyboard: true, arrowKeyStep: 300 },
 		});
 	}, 'HALO_SMOOTH_SCROLL_SETTINGS');
 	return extensionId;
@@ -260,9 +265,9 @@ async function waitForSmoothScrollReady(
 		lastPosition = await waitForScrollSettled(page);
 		lastProbe = await page.evaluate(() => window.__haloKeyboardProbe.snapshot());
 		// Native ArrowDown scrolling is much smaller than HALO's configured
-		// 300px coarse keyboard command. Require the extension-owned trajectory
-		// instead of waiting on a production console.log that is tree-shaken.
-		if (lastPosition >= 250) {
+		// coarse keyboard command. Require the extension-owned trajectory instead
+		// of waiting on a production console.log that is tree-shaken.
+		if (lastPosition >= KEYBOARD_STEP_PX - 50) {
 			await resetFixture(page);
 			return;
 		}
@@ -309,7 +314,7 @@ test.describe('HALO keyboard ownership in Chromium', () => {
 			// A large, connected but offscreen video is not ownership evidence.
 			await page.keyboard.press('ArrowDown');
 			const unclaimedPosition = await waitForScrollSettled(page);
-			expect(unclaimedPosition).toBeCloseTo(300, 0);
+			expect(unclaimedPosition).toBeCloseTo(KEYBOARD_STEP_PX, 0);
 
 			await resetFixture(page);
 			await page.evaluate(() => {
@@ -351,22 +356,21 @@ test.describe('HALO keyboard ownership in Chromium', () => {
 			expect(prevented.probe.lastSpaceDefaultPrevented).toBe(true);
 			expect(prevented.scrollY).toBe(0);
 
-			const fastRepeat = await repeatArrowStream(page, 20, 16);
-			const mediumRepeat = await repeatArrowStream(page, 50, 6);
-			const sparseRepeat = await repeatArrowStream(page, 200, 2);
-			const delayedFirstRepeat = await repeatArrowStream(page, 500, 1);
+			// Hold the same wall-clock window with the same first-repeat delay and
+			// vary only repeat delivery frequency. The resulting trajectories may
+			// differ by at most one configured Arrow step; first-repeat delay itself
+			// is tested separately below and is intentionally never backfilled.
+			const fastRepeat = await repeatArrowStream(page, 200, 20, 11);
+			const mediumRepeat = await repeatArrowStream(page, 200, 50, 5);
+			const sparseRepeat = await repeatArrowStream(page, 200, 200, 2);
+			const normalizedSpan = Math.max(fastRepeat, mediumRepeat, sparseRepeat) -
+				Math.min(fastRepeat, mediumRepeat, sparseRepeat);
+			expect(normalizedSpan).toBeLessThanOrEqual(KEYBOARD_STEP_PX);
 
-			expect(fastRepeat).toBeGreaterThanOrEqual(1_200);
-			expect(mediumRepeat).toBeGreaterThanOrEqual(900);
-			expect(sparseRepeat).toBeGreaterThanOrEqual(900);
-			expect(fastRepeat).toBeLessThanOrEqual(1_900);
-			expect(mediumRepeat).toBeLessThanOrEqual(1_900);
-			expect(sparseRepeat).toBeLessThanOrEqual(1_900);
-			expect(Math.abs(fastRepeat - mediumRepeat)).toBeLessThanOrEqual(400);
-			expect(Math.abs(fastRepeat - sparseRepeat)).toBeLessThanOrEqual(500);
-		// The operating system's first-repeat delay is preserved, not backfilled.
-			expect(delayedFirstRepeat).toBeGreaterThanOrEqual(500);
-			expect(delayedFirstRepeat).toBeLessThanOrEqual(800);
+			const delayedFirstRepeat = await repeatArrowStream(page, 500, 80, 1);
+			// One initial press plus the first repeat: no synthetic catch-up is
+			// allowed for the OS-owned 500ms initial repeat delay.
+			expect(delayedFirstRepeat).toBeCloseTo(KEYBOARD_STEP_PX * 2, 0);
 		} finally {
 			await context?.close();
 			await closeFixtureServer(server);
