@@ -1,10 +1,10 @@
 // goal: sole Background owner of exact-document custom-site hotkey runtime state
-// inv: document reconciliations are serialized; lean and full ownership never transition through an unversioned broadcast
+// inv: document reconciliations serialize; forgotten generations cannot publish later side effects
 
 import {
 	SPECTRA_PROTOCOL_VERSION,
-	type SpectraLeanSiteHotkeyBinding,
 	isSpectraDefaultHotkeyKeyCombo,
+	type SpectraLeanSiteHotkeyBinding,
 } from '@nexus/contracts';
 import {
 	isLeanSiteHotkeyBinding,
@@ -14,6 +14,7 @@ import {
 import { reconcileSiteHotkeyTransition } from './site-hotkey-transition';
 
 const LEAN_HOST_FILE = 'content-site-hotkeys.js';
+const NO_RECEIVER_FRAGMENT = 'Receiving end does not exist';
 
 function documentKey(tabId: number, documentId: string): string {
 	return `${tabId}:${documentId}`;
@@ -22,6 +23,14 @@ function documentKey(tabId: number, documentId: string): string {
 export interface FullSiteHotkeyRuntimePort {
 	ensure(capability: string): Promise<void>;
 	release(capability: string): void;
+}
+
+export type LeanHostDelivery = 'delivered' | 'absent';
+
+interface LeanConfigureAck {
+	accepted: true;
+	epoch: string;
+	generation: number;
 }
 
 export interface SiteHotkeyHostPort {
@@ -38,7 +47,24 @@ export interface SiteHotkeyHostPort {
 				bindings: SpectraLeanSiteHotkeyBinding[];
 			};
 		},
-	): Promise<void>;
+	): Promise<LeanHostDelivery>;
+}
+
+function isMissingLeanReceiver(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	return message.includes(NO_RECEIVER_FRAGMENT);
+}
+
+function isConfigureAck(
+	value: unknown,
+	epoch: string,
+	generation: number,
+): value is LeanConfigureAck {
+	if (!value || typeof value !== 'object') return false;
+	const candidate = value as Partial<LeanConfigureAck>;
+	return candidate.accepted === true
+		&& candidate.epoch === epoch
+		&& candidate.generation === generation;
 }
 
 const chromeHostPort: SiteHotkeyHostPort = {
@@ -51,7 +77,16 @@ const chromeHostPort: SiteHotkeyHostPort = {
 		});
 	},
 	async configure(tabId, documentId, message) {
-		await chrome.tabs.sendMessage(tabId, message, { documentId });
+		try {
+			const response: unknown = await chrome.tabs.sendMessage(tabId, message, { documentId });
+			if (!isConfigureAck(response, message.payload.epoch, message.payload.generation)) {
+				throw new Error('Lean site-hotkey host returned an invalid configuration acknowledgement');
+			}
+			return 'delivered';
+		} catch (error) {
+			if (isMissingLeanReceiver(error)) return 'absent';
+			throw error;
+		}
 	},
 };
 
@@ -65,6 +100,13 @@ function projectLeanBindings(resolved: ResolvedSiteHotkeys | null): SpectraLeanS
 			modifiers: { ...binding.key.modifiers },
 			action: binding.action as SpectraLeanSiteHotkeyBinding['action'],
 		}));
+}
+
+class RetiredSiteHotkeyDocumentError extends Error {
+	constructor() {
+		super('Site-hotkey document lifecycle retired');
+		this.name = 'RetiredSiteHotkeyDocumentError';
+	}
 }
 
 export class SiteHotkeyDocumentOwner {
@@ -82,6 +124,18 @@ export class SiteHotkeyDocumentOwner {
 		return this.lifecycleGeneration.get(key) ?? 0;
 	}
 
+	private assertLifecycle(key: string, expected: number): void {
+		if (this.documentGeneration(key) !== expected) throw new RetiredSiteHotkeyDocumentError();
+	}
+
+	private cleanupLifecycleKey(key: string): void {
+		if (this.injectionPromises.has(key)
+			|| this.transitionTails.has(key)
+			|| this.injectedDocuments.has(key)
+			|| this.fullCapabilities.has(key)) return;
+		this.lifecycleGeneration.delete(key);
+	}
+
 	private nextConfiguration(bindings: SpectraLeanSiteHotkeyBinding[]) {
 		this.generation += 1;
 		return {
@@ -95,28 +149,38 @@ export class SiteHotkeyDocumentOwner {
 		};
 	}
 
-	private async injectLeanHost(tabId: number, documentId: string): Promise<void> {
+	private async injectLeanHost(
+		tabId: number,
+		documentId: string,
+		lifecycle: number,
+	): Promise<void> {
 		const key = documentKey(tabId, documentId);
+		this.assertLifecycle(key, lifecycle);
 		if (this.injectedDocuments.has(key)) return;
 		const pending = this.injectionPromises.get(key);
-		if (pending) return pending;
-		const lifecycle = this.documentGeneration(key);
+		if (pending) {
+			await pending;
+			this.assertLifecycle(key, lifecycle);
+			return;
+		}
 		const operation = this.hostPort.inject(tabId, documentId)
 			.then(() => {
-				if (this.documentGeneration(key) === lifecycle) this.injectedDocuments.add(key);
+				this.assertLifecycle(key, lifecycle);
+				this.injectedDocuments.add(key);
 			})
 			.finally(() => {
 				if (this.injectionPromises.get(key) === operation) this.injectionPromises.delete(key);
+				this.cleanupLifecycleKey(key);
 			});
 		this.injectionPromises.set(key, operation);
-		return operation;
+		await operation;
 	}
 
 	private configure(
 		tabId: number,
 		documentId: string,
 		bindings: SpectraLeanSiteHotkeyBinding[],
-	): Promise<void> {
+	): Promise<LeanHostDelivery> {
 		return this.hostPort.configure(tabId, documentId, this.nextConfiguration(bindings));
 	}
 
@@ -125,6 +189,7 @@ export class SiteHotkeyDocumentOwner {
 		const next = previous.catch(() => undefined).then(operation);
 		const tracked = next.finally(() => {
 			if (this.transitionTails.get(key) === tracked) this.transitionTails.delete(key);
+			this.cleanupLifecycleKey(key);
 		});
 		this.transitionTails.set(key, tracked);
 		return tracked;
@@ -137,33 +202,54 @@ export class SiteHotkeyDocumentOwner {
 		fullRuntime: FullSiteHotkeyRuntimePort,
 	): Promise<void> {
 		const key = documentKey(tabId, documentId);
+		if (!this.lifecycleGeneration.has(key)) this.lifecycleGeneration.set(key, 0);
 		return this.serialize(key, async () => {
+			const lifecycle = this.documentGeneration(key);
 			const fullCapability = resolved?.mode === 'full'
 				? siteHotkeyCapability(resolved) ?? undefined
 				: undefined;
 			const leanBindings = projectLeanBindings(resolved);
-			await reconcileSiteHotkeyTransition({
-				mode: resolved?.mode ?? 'none',
-				previousFullCapability: this.fullCapabilities.get(key),
-				fullCapability,
-			}, {
-				// Always send an exact empty generation. A restarted worker may not
-				// know whether the surviving document already contains an older host.
-				barrier: () => this.configure(tabId, documentId, []),
-				configureLean: async () => {
-					await this.injectLeanHost(tabId, documentId);
-					await this.configure(tabId, documentId, leanBindings);
-				},
-				ensureFull: async (capability) => {
-					await fullRuntime.ensure(capability);
-					this.fullCapabilities.set(key, capability);
-				},
-				releaseFull: (capability) => {
-					fullRuntime.release(capability);
-					if (this.fullCapabilities.get(key) === capability) this.fullCapabilities.delete(key);
-				},
-			});
-			if (resolved?.mode !== 'full') this.fullCapabilities.delete(key);
+			try {
+				await reconcileSiteHotkeyTransition({
+					mode: resolved?.mode ?? 'none',
+					previousFullCapability: this.fullCapabilities.get(key),
+					fullCapability,
+				}, {
+					barrier: async () => {
+						// No receiver is already empty. Any other transport/protocol error
+						// remains fail-closed. A surviving old-worker host returns an ACK.
+						await this.configure(tabId, documentId, []);
+						this.assertLifecycle(key, lifecycle);
+					},
+					configureLean: async () => {
+						await this.injectLeanHost(tabId, documentId, lifecycle);
+						this.assertLifecycle(key, lifecycle);
+						const delivery = await this.configure(tabId, documentId, leanBindings);
+						this.assertLifecycle(key, lifecycle);
+						if (delivery !== 'delivered') {
+							throw new Error('Injected lean site-hotkey host did not accept configuration');
+						}
+					},
+					ensureFull: async (capability) => {
+						this.assertLifecycle(key, lifecycle);
+						await fullRuntime.ensure(capability);
+						if (this.documentGeneration(key) !== lifecycle) {
+							fullRuntime.release(capability);
+							throw new RetiredSiteHotkeyDocumentError();
+						}
+						this.fullCapabilities.set(key, capability);
+					},
+					releaseFull: (capability) => {
+						fullRuntime.release(capability);
+						if (this.fullCapabilities.get(key) === capability) this.fullCapabilities.delete(key);
+					},
+				});
+				this.assertLifecycle(key, lifecycle);
+				if (resolved?.mode !== 'full') this.fullCapabilities.delete(key);
+			} catch (error) {
+				if (error instanceof RetiredSiteHotkeyDocumentError) return;
+				throw error;
+			}
 		});
 	}
 
@@ -176,24 +262,38 @@ export class SiteHotkeyDocumentOwner {
 		for (const key of this.fullCapabilities.keys()) if (key.startsWith(prefix)) keys.add(key);
 		for (const key of this.lifecycleGeneration.keys()) if (key.startsWith(prefix)) keys.add(key);
 		if (documentId !== undefined) keys.add(documentKey(tabId, documentId));
+
 		for (const key of keys) {
 			if (documentId !== undefined && key !== documentKey(tabId, documentId)) continue;
 			this.lifecycleGeneration.set(key, this.documentGeneration(key) + 1);
 			this.injectedDocuments.delete(key);
-			this.injectionPromises.delete(key);
-			this.transitionTails.delete(key);
 			this.fullCapabilities.delete(key);
+			// Never delete an in-flight promise/tail here. The retired operation must
+			// observe the new lifecycle token before it can publish another side effect.
+			this.cleanupLifecycleKey(key);
 		}
 	}
 
 	reset(): void {
-		this.injectedDocuments.clear();
-		this.injectionPromises.clear();
-		this.transitionTails.clear();
-		this.fullCapabilities.clear();
-		this.lifecycleGeneration.clear();
+		const keys = new Set<string>([
+			...this.injectedDocuments,
+			...this.injectionPromises.keys(),
+			...this.transitionTails.keys(),
+			...this.fullCapabilities.keys(),
+			...this.lifecycleGeneration.keys(),
+		]);
+		for (const key of keys) {
+			this.lifecycleGeneration.set(key, this.documentGeneration(key) + 1);
+			this.injectedDocuments.delete(key);
+			this.fullCapabilities.delete(key);
+			this.cleanupLifecycleKey(key);
+		}
 	}
 }
 
 export const siteHotkeyDocumentOwner = new SiteHotkeyDocumentOwner();
-export const siteHotkeyOwnerTestApi = { LEAN_HOST_FILE, projectLeanBindings };
+export const siteHotkeyOwnerTestApi = {
+	LEAN_HOST_FILE,
+	NO_RECEIVER_FRAGMENT,
+	projectLeanBindings,
+};
