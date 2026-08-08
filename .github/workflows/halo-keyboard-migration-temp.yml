@@ -1,0 +1,281 @@
+name: TEMP HALO keyboard migration
+
+on:
+  push:
+    branches:
+      - agent/halo-scroll-event-ownership-v2
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/halo-scroll-event-ownership-v2
+          fetch-depth: 1
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Patch current-main keyboard tests
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('nexus/apps/extension-halo')
+          playwright = root / 'test/smooth-scroll-keyboard-playwright.spec.ts'
+          text = playwright.read_text(encoding='utf-8')
+          old = "await rm(profilePath, { force: true, recursive: true });"
+          new = "await rm(profilePath, { force: true, recursive: true, maxRetries: 3, retryDelay: 100 });"
+          if text.count(old) != 1:
+              raise SystemExit(f'playwright cleanup anchor count={text.count(old)}')
+          playwright.write_text(text.replace(old, new), encoding='utf-8')
+
+          spec = root / 'test/smooth-scroll.spec.ts'
+          text = spec.read_text(encoding='utf-8')
+
+          old_decl = """let onArrowKeydownCapture: typeof import('../src/content/smooth-scroll-handlers').onArrowKeydownCapture;
+          let onKeyboardFocusIn: typeof import('../src/content/smooth-scroll-handlers').onKeyboardFocusIn;
+          let onKeyboardPointerDown: typeof import('../src/content/smooth-scroll-handlers').onKeyboardPointerDown;
+          let onWheel: typeof import('../src/content/smooth-scroll-handlers').onWheel;
+          let onKeydown: typeof import('../src/content/smooth-scroll-handlers').onKeydown;
+          let onMouseDown: typeof import('../src/content/smooth-scroll-handlers').onMouseDown;
+          let onMouseMove: typeof import('../src/content/smooth-scroll-handlers').onMouseMove;
+          let resetInputHandlers: typeof import('../src/content/smooth-scroll-handlers').resetInputHandlers;
+          """
+          new_decl = """let onKeydownCapture: typeof import('../src/content/smooth-scroll-handlers').onKeydownCapture;
+          let onKeyup: typeof import('../src/content/smooth-scroll-handlers').onKeyup;
+          let onWheel: typeof import('../src/content/smooth-scroll-handlers').onWheel;
+          let onKeydown: typeof import('../src/content/smooth-scroll-handlers').onKeydown;
+          let onMouseDown: typeof import('../src/content/smooth-scroll-handlers').onMouseDown;
+          let onMouseMove: typeof import('../src/content/smooth-scroll-handlers').onMouseMove;
+          let resetInputHandlers: typeof import('../src/content/smooth-scroll-handlers').resetInputHandlers;
+          """
+          if text.count(old_decl) != 1:
+              raise SystemExit(f'declaration anchor count={text.count(old_decl)}')
+          text = text.replace(old_decl, new_decl)
+
+          old_import = """\t({
+          \t\tonArrowKeydownCapture,
+          \t\tonKeyboardFocusIn,
+          \t\tonKeyboardPointerDown,
+          \t\tonKeydown,
+          \t\tonMouseDown,
+          \t\tonMouseMove,
+          \t\tonWheel,
+          \t\tresetInputHandlers,
+          \t} = await import('../src/content/smooth-scroll-handlers'));
+          """
+          new_import = """\t({
+          \t\tonKeydownCapture,
+          \t\tonKeyup,
+          \t\tonKeydown,
+          \t\tonMouseDown,
+          \t\tonMouseMove,
+          \t\tonWheel,
+          \t\tresetInputHandlers,
+          \t} = await import('../src/content/smooth-scroll-handlers'));
+          """
+          if text.count(old_import) != 1:
+              raise SystemExit(f'beforeAll import anchor count={text.count(old_import)}')
+          text = text.replace(old_import, new_import)
+
+          start_marker = "describe('smooth scroll keyboard', () => {"
+          end_marker = "\ndescribe('sidepanel smooth scroll', () => {"
+          if text.count(start_marker) != 1 or text.count(end_marker) != 1:
+              raise SystemExit(
+                  f'keyboard block anchors start={text.count(start_marker)} end={text.count(end_marker)}'
+              )
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
+          keyboard_block = r'''describe('smooth scroll keyboard', () => {
+          	function keyEvent(key: string, extras: Partial<{
+          		shiftKey: boolean;
+          		ctrlKey: boolean;
+          		altKey: boolean;
+          		metaKey: boolean;
+          		repeat: boolean;
+          	}> = {}): KeyboardEvent {
+          		const event = {
+          			key,
+          			isTrusted: true,
+          			defaultPrevented: false,
+          			cancelBubble: false,
+          			propagationStopped: false,
+          			shiftKey: false,
+          			ctrlKey: false,
+          			altKey: false,
+          			metaKey: false,
+          			repeat: false,
+          			...extras,
+          			preventDefault() { (this as { defaultPrevented: boolean }).defaultPrevented = true; },
+          			stopPropagation() {
+          				(this as { cancelBubble: boolean }).cancelBubble = true;
+          				(this as { propagationStopped: boolean }).propagationStopped = true;
+          			},
+          		};
+          		return event as unknown as KeyboardEvent;
+          	}
+
+          	function noMediaCapture(): Parameters<typeof onKeydown>[1] {
+          		return { mediaStates: [] } as unknown as Parameters<typeof onKeydown>[1];
+          	}
+
+          	function propagationStopped(event: KeyboardEvent): boolean {
+          		return (event as unknown as { propagationStopped: boolean }).propagationStopped;
+          	}
+
+          	test('spacebar scrolls after the site yields without suppressing propagation', () => {
+          		root.styleState.overflowY = 'auto';
+          		body.styleState.overflowY = 'hidden';
+          		const event = keyEvent(' ');
+          		const start = performance.now();
+
+          		onKeydown(event, noMediaCapture());
+
+          		expect(event.defaultPrevented).toBe(true);
+          		expect(propagationStopped(event)).toBe(false);
+          		expect(frameCallbacks.size).toBe(1);
+          		runUntilIdle(start + 16);
+          		expect(fakeWindow.scrollY).toBeCloseTo(window.innerHeight * 0.9, 5);
+          	});
+
+          	test('site preventDefault remains authoritative for every scroll key', () => {
+          		root.styleState.overflowY = 'auto';
+          		body.styleState.overflowY = 'hidden';
+          		for (const key of [' ', 'PageDown', 'PageUp', 'ArrowDown', 'ArrowUp']) {
+          			const event = keyEvent(key);
+          			event.preventDefault();
+          			onKeydown(event, noMediaCapture());
+          			expect(frameCallbacks.size).toBe(0);
+          			expect(propagationStopped(event)).toBe(false);
+          		}
+          	});
+
+          	test('an unclaimed arrow animates without stopPropagation or video geometry heuristics', () => {
+          		root.styleState.overflowY = 'auto';
+          		body.styleState.overflowY = 'hidden';
+          		const event = keyEvent('ArrowDown');
+
+          		onKeydown(event, noMediaCapture());
+
+          		expect(event.defaultPrevented).toBe(true);
+          		expect(propagationStopped(event)).toBe(false);
+          		expect(frameCallbacks.size).toBe(1);
+          	});
+
+          	test('a synchronous site media mutation owns the key even without preventDefault', () => {
+          		root.styleState.overflowY = 'auto';
+          		body.styleState.overflowY = 'hidden';
+          		const media = {
+          			isConnected: true,
+          			muted: false,
+          			paused: true,
+          			playbackRate: 1,
+          			volume: 1,
+          		};
+          		const capture = {
+          			mediaStates: [{
+          				element: media,
+          				muted: false,
+          				paused: true,
+          				playbackRate: 1,
+          				volume: 1,
+          			}],
+          		} as unknown as Parameters<typeof onKeydown>[1];
+          		media.volume = 0.9;
+          		const event = keyEvent('ArrowDown');
+
+          		onKeydown(event, capture);
+
+          		expect(event.defaultPrevented).toBe(true);
+          		expect(propagationStopped(event)).toBe(false);
+          		expect(frameCallbacks.size).toBe(0);
+          	});
+
+          	test('PageUp and PageDown remain discrete page commands when unclaimed', () => {
+          		root.styleState.overflowY = 'auto';
+          		body.styleState.overflowY = 'hidden';
+          		for (const key of ['PageDown', 'PageUp']) {
+          			const event = keyEvent(key);
+          			onKeydown(event, noMediaCapture());
+          			expect(event.defaultPrevented).toBe(true);
+          			expect(propagationStopped(event)).toBe(false);
+          			expect(frameCallbacks.size).toBe(1);
+          			clearQueue();
+          		}
+          	});
+
+          	test('dense arrow repeats are throttled without allocating another animation owner', () => {
+          		root.styleState.overflowY = 'auto';
+          		body.styleState.overflowY = 'hidden';
+          		root.scrollHeight = 20_000;
+
+          		fakeNow = 1_000;
+          		onKeydown(keyEvent('ArrowDown'), noMediaCapture());
+          		expect(frameCallbacks.size).toBe(1);
+
+          		fakeNow = 1_020;
+          		const firstRepeat = keyEvent('ArrowDown', { repeat: true });
+          		onKeydown(firstRepeat, noMediaCapture());
+          		expect(firstRepeat.defaultPrevented).toBe(true);
+          		expect(frameCallbacks.size).toBe(1);
+
+          		fakeNow = 1_040;
+          		const denseRepeat = keyEvent('ArrowDown', { repeat: true });
+          		onKeydown(denseRepeat, noMediaCapture());
+          		expect(denseRepeat.defaultPrevented).toBe(true);
+          		expect(frameCallbacks.size).toBe(1);
+          	});
+
+          	test('keyup retires the current keyboard stream without touching the live animation', () => {
+          		root.styleState.overflowY = 'auto';
+          		body.styleState.overflowY = 'hidden';
+          		onKeydown(keyEvent('ArrowDown'), noMediaCapture());
+          		expect(frameCallbacks.size).toBe(1);
+
+          		onKeyup(keyEvent('ArrowDown'));
+
+          		expect(frameCallbacks.size).toBe(1);
+          	});
+
+          	test('keys do not block the page when no animatable target exists', () => {
+          		root.styleState.overflowY = 'hidden';
+          		body.styleState.overflowY = 'hidden';
+          		root.scrollHeight = 100;
+          		const event = keyEvent('ArrowDown');
+
+          		onKeydown(event, noMediaCapture());
+
+          		expect(event.defaultPrevented).toBe(false);
+          		expect(propagationStopped(event)).toBe(false);
+          		expect(frameCallbacks.size).toBe(0);
+          	});
+
+          	test('capture seam is present for browser-order ownership and remains side-effect free in source-level unit setup', () => {
+          		expect(typeof onKeydownCapture).toBe('function');
+          	});
+          });
+          '''
+          text = text[:start] + keyboard_block + text[end:]
+          spec.write_text(text, encoding='utf-8')
+          PY
+      - name: Install workspace dependencies
+        run: bun install --cwd nexus --frozen-lockfile
+      - name: Typecheck HALO
+        run: bun --cwd nexus typecheck:halo
+      - name: Focused smooth-scroll tests
+        run: bun --cwd nexus/apps/extension-halo test:smooth-scroll
+      - name: Commit migration
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add nexus/apps/extension-halo/test/smooth-scroll.spec.ts nexus/apps/extension-halo/test/smooth-scroll-keyboard-playwright.spec.ts
+          git diff --cached --check
+          git commit -m "test(halo): reconcile keyboard ownership with current main"
+          git push origin HEAD:agent/halo-scroll-event-ownership-v2
