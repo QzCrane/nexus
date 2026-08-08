@@ -65,7 +65,12 @@ export class ModuleManager {
 		const missingCoreStates = createMissingCoreModuleStates(new Set(this.states.keys()));
 		for (const state of missingCoreStates) this.states.set(state.id, state);
 		if (missingCoreStates.length > 0 && this.persistence.shouldPersistSeed()) {
-			await this.persistence.saveMany(missingCoreStates);
+			try {
+				await this.persistence.saveMany(missingCoreStates);
+			} catch (error) {
+				for (const state of missingCoreStates) this.states.delete(state.id);
+				throw error;
+			}
 		}
 		this.refreshSnapshot();
 	}
