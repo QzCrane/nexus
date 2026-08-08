@@ -15,47 +15,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  apply-verifier-migration:
-    name: apply verifier migration
-    if: github.event_name == 'pull_request' && github.head_ref == 'agent/spectra-halo-performance'
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout source branch
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
-
-      - name: Set up Bun 1.3.14
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
-
-      - name: Apply and verify exact migration
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if [ ! -f nexus/scripts/tmp-upgrade-spectra-background-policy-verifier.ts ]; then
-            echo 'temporary migration already consumed'
-            exit 0
-          fi
-          bun nexus/scripts/tmp-upgrade-spectra-background-policy-verifier.ts
-          rm nexus/scripts/tmp-upgrade-spectra-background-policy-verifier.ts
-          bun install --cwd nexus --frozen-lockfile
-          bun run verify:q
-          bun --cwd nexus/apps/extension-spectra run typecheck
-          bun test --cwd nexus/apps/extension-spectra test/background-control-policy.spec.ts
-          bun --cwd nexus/apps/extension-spectra run build:prod
-          git diff --check
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add nexus/scripts/verify/check-spectra-control.ts nexus/scripts/tmp-upgrade-spectra-background-policy-verifier.ts
-          git commit -m 'perf(spectra): release-gate narrow background policy'
-          git push origin HEAD:${{ github.head_ref }}
-
   quality:
     name: quality (ubuntu)
     runs-on: ubuntu-latest
