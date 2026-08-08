@@ -62,9 +62,13 @@ function patchRuntimeLoader(): void {
 		"import { ensureCaptureStatesReconciled } from './handlers/capture';\nimport { backgroundRestoreBucket } from './background-control-policy';",
 		'runtime-loader background projection import',
 	);
-	const oldRouting = `\tfor (const [rawField, value] of Object.entries(patch)) {\n\t\tconst field = rawField as ControlField;\n\t\tconst policy = CONTROL_ALGORITHM_POLICIES[field];\n\t\tconst target = policy.scope === 'active-video'\n\t\t\t? video\n\t\t\t: policy.scope === 'document'\n\t\t\t\t|| policy.orderedStrategies.some((strategy) => (\n\t\t\t\t\tstrategy === 'media-webaudio' || strategy === 'capture'\n\t\t\t\t))\n\t\t\t\t\t? full\n\t\t\t\t\t: media;\n\t\t(target as Record<string, unknown>)[field] = structuredClone(value);\n\t}`;
+	const routingStart = source.indexOf(
+		'\tfor (const [rawField, value] of Object.entries(patch)) {\n\t\tconst field = rawField as ControlField;',
+	);
+	const routingEnd = source.indexOf('\n\t}\n\treturn [', routingStart);
+	if (routingStart < 0 || routingEnd < 0) throw new Error('Missing runtime-loader restore routing');
 	const newRouting = `\tfor (const [rawField, value] of Object.entries(patch)) {\n\t\tconst field = rawField as ControlSessionField;\n\t\tconst bucket = backgroundRestoreBucket(field);\n\t\tconst target = bucket === 'video' ? video : bucket === 'full' ? full : media;\n\t\t(target as Record<string, unknown>)[field] = structuredClone(value);\n\t}`;
-	source = replaceOnce(source, oldRouting, newRouting, 'runtime-loader restore routing');
+	source = source.slice(0, routingStart) + newRouting + source.slice(routingEnd + '\n\t}'.length);
 	writeFileSync(path, source);
 }
 
