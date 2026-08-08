@@ -31,29 +31,9 @@ const MANAGED_BY_VALUES: ReadonlySet<UserScriptManagedBy> = new Set([
 	'saat-tool',
 ]);
 const KNOWN_SCRIPT_FIELDS = new Set([
-	'id',
-	'name',
-	'description',
-	'code',
-	'enabled',
-	'type',
-	'matches',
-	'excludeMatches',
-	'runAt',
-	'world',
-	'filePath',
-	'order',
-	'version',
-	'author',
-	'homepage',
-	'updateUrl',
-	'category',
-	'runCount',
-	'lastRun',
-	'createdAt',
-	'updatedAt',
-	'saatToolId',
-	'managedBy',
+	'id', 'name', 'description', 'code', 'enabled', 'type', 'matches', 'excludeMatches',
+	'runAt', 'world', 'filePath', 'order', 'version', 'author', 'homepage', 'updateUrl',
+	'category', 'runCount', 'lastRun', 'createdAt', 'updatedAt', 'saatToolId', 'managedBy',
 	'moduleBuiltIn',
 ]);
 const FORBIDDEN_EXTENSION_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
@@ -178,10 +158,10 @@ function normalizeScript(value: unknown): Readonly<UserScript> | null {
 
 	const extra = extensionFields(value);
 	if (extra === null) return null;
-	const matches = Object.freeze([...value.matches]);
-	const excludeMatches = value.excludeMatches === undefined
-		? undefined
-		: Object.freeze([...value.excludeMatches]);
+	const matches = [...value.matches];
+	Object.freeze(matches);
+	const excludeMatches = value.excludeMatches === undefined ? undefined : [...value.excludeMatches];
+	if (excludeMatches) Object.freeze(excludeMatches);
 	return Object.freeze({
 		...extra,
 		id: value.id,
@@ -220,10 +200,9 @@ function normalizeToolbarConfig(
 	if (!isRecord(value)
 		|| !isStringArray(value.order)
 		|| typeof value.hideOnOverflow !== 'boolean') return null;
-	return Object.freeze({
-		order: Object.freeze([...value.order]) as string[],
-		hideOnOverflow: value.hideOnOverflow,
-	});
+	const order = [...value.order];
+	Object.freeze(order);
+	return Object.freeze({ order, hideOnOverflow: value.hideOnOverflow });
 }
 
 export function parseUserScriptsStorageValue(value: unknown): UserScriptsStorageSnapshot {
