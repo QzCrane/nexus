@@ -86,6 +86,12 @@ function normalizeScript(value: unknown): Readonly<UserScript> | null {
 		))
 		|| (value.lastRun !== undefined && !isFiniteNumber(value.lastRun))) return null;
 
+	const matches = [...value.matches];
+	Object.freeze(matches);
+	const excludeMatches = value.excludeMatches === undefined
+		? undefined
+		: [...value.excludeMatches];
+	if (excludeMatches) Object.freeze(excludeMatches);
 	return Object.freeze({
 		id: value.id,
 		name: value.name,
@@ -93,10 +99,8 @@ function normalizeScript(value: unknown): Readonly<UserScript> | null {
 		code: value.code,
 		enabled: value.enabled,
 		type: value.type as ScriptType,
-		matches: Object.freeze([...value.matches]) as unknown as string[],
-		...(value.excludeMatches === undefined
-			? {}
-			: { excludeMatches: Object.freeze([...value.excludeMatches]) as unknown as string[] }),
+		matches,
+		...(excludeMatches === undefined ? {} : { excludeMatches }),
 		runAt: value.runAt as UserScriptRunAt,
 		...(value.world === undefined ? {} : { world: value.world as UserScript['world'] }),
 		...(value.filePath === undefined ? {} : { filePath: value.filePath }),
@@ -120,13 +124,13 @@ function normalizeToolbarConfig(
 	if (!isRecord(value)
 		|| !isStringArray(value.order)
 		|| typeof value.hideOnOverflow !== 'boolean') return undefined;
-	return Object.freeze({
-		order: Object.freeze([...value.order]) as unknown as string[],
-		hideOnOverflow: value.hideOnOverflow,
-	});
+	const order = [...value.order];
+	Object.freeze(order);
+	return Object.freeze({ order, hideOnOverflow: value.hideOnOverflow });
 }
 
 export function parseUserScriptsStorageValue(value: unknown): UserScriptsStorageSnapshot {
+	// Missing key is the only state that receives the historical default-on value.
 	if (value === undefined) {
 		return Object.freeze({
 			ready: true,
@@ -135,15 +139,19 @@ export function parseUserScriptsStorageValue(value: unknown): UserScriptsStorage
 			scripts: EMPTY_SCRIPTS,
 		});
 	}
-	if (!isRecord(value)) return FAILED_SNAPSHOT;
-	const scripts = Array.isArray(value.scripts)
-		? value.scripts.map(normalizeScript).filter((entry): entry is Readonly<UserScript> => entry !== null)
-		: [];
+	if (!isRecord(value)
+		|| !Array.isArray(value.scripts)
+		|| (value.globalEnabled !== undefined && typeof value.globalEnabled !== 'boolean')) {
+		return FAILED_SNAPSHOT;
+	}
+	const scripts = value.scripts
+		.map(normalizeScript)
+		.filter((entry): entry is Readonly<UserScript> => entry !== null);
 	const toolbarConfig = normalizeToolbarConfig(value.toolbarConfig);
 	return Object.freeze({
 		ready: true,
 		failed: false,
-		globalEnabled: typeof value.globalEnabled === 'boolean' ? value.globalEnabled : true,
+		globalEnabled: value.globalEnabled ?? true,
 		scripts: scripts.length === 0 ? EMPTY_SCRIPTS : Object.freeze(scripts),
 		...(toolbarConfig ? { toolbarConfig } : {}),
 	});
