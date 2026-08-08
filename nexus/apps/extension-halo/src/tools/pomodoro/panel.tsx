@@ -1,7 +1,8 @@
 // goal: Pomodoro panel UI - timer with phases
+// eff: persistent state changes only at user/phase boundaries; display time is projected from a deadline
 
 import type React from 'react';
-import { useEffect, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { PomodoroConfig, PomodoroState } from './types';
@@ -10,89 +11,112 @@ import { formatTime, getPhaseDuration, getNextPhase, createInitialState, PHASE_C
 import { styles } from './panel.styles';
 import { playCompletionTone, useToolState } from '../../kernel';
 
+function projectedRemaining(state: PomodoroState, now: number): number {
+	if (!state.isRunning || typeof state.endsAt !== 'number') return state.remaining;
+	return Math.max(0, Math.ceil((state.endsAt - now) / 1000));
+}
 
 export const PomodoroPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [config, setConfig] = useToolState<PomodoroConfig>('pomodoro-config', DEFAULT_CONFIG);
 	const [state, setState] = useToolState<PomodoroState>('pomodoro-state', () => createInitialState(config));
+	const [now, setNow] = useState(() => Date.now());
 
-	const intervalRef = useRef<number | null>(null);
-	// rule: hold latest remaining in a ref so the timer effect doesn't re-run every
-	// second. Previously `state.remaining` was in the effect deps, so every tick
-	// triggered setState → re-render → effect cleanup → new setInterval, recreating
-	// the interval 60 times per minute (and never letting it fire more than once).
-	const remainingRef = useRef(state.remaining);
-	useEffect(() => { remainingRef.current = state.remaining; }, [state.remaining]);
-
-	// Timer tick
+	// Compatibility repair for old persisted running states that predate endsAt.
 	useEffect(() => {
-		if (!state.isRunning) return;
+		if (!state.isRunning || typeof state.endsAt === 'number') return;
+		setState((current) => {
+			if (!current.isRunning || typeof current.endsAt === 'number') return current;
+			return { ...current, endsAt: Date.now() + current.remaining * 1000 };
+		});
+	}, [state.isRunning, state.endsAt, setState]);
 
-		intervalRef.current = window.setInterval(() => {
-			const currentRemaining = remainingRef.current;
-			if (currentRemaining <= 1) {
-				// Phase complete — clear interval immediately to prevent double-firing
-				// before React re-renders and the effect cleanup runs.
-				if (intervalRef.current) {
-					clearInterval(intervalRef.current);
-					intervalRef.current = null;
-					// rule: play sound outside the setState updater to avoid side
-					// effects in the reducer (StrictMode double-invokes updaters).
-					void playCompletionTone().catch((error: unknown) => {
-						console.warn('[HALO:Pomodoro] Completion tone failed', error);
-					});
-				}
-				// rule: use functional setState so phase/sessionsCompleted are read
-				// from the latest state — this lets us keep them OUT of the effect
-				// deps (otherwise the effect re-runs every tick, defeating the ref).
-				setState((s) => {
-					const nextPhase = getNextPhase(s, config);
-					const newSessions = s.phase === 'work' ? s.sessionsCompleted + 1 : s.sessionsCompleted;
-					return {
-						phase: nextPhase,
-						remaining: getPhaseDuration(nextPhase, config),
-						isRunning: false,
-						sessionsCompleted: newSessions,
-					};
-				});
-			} else {
-				setState((s) => ({ ...s, remaining: s.remaining - 1 }));
-			}
-		}, 1000);
+	// One local 1Hz projection is sufficient because the UI displays whole
+	// seconds. It never writes PomodoroState and any delayed tick catches up from
+	// the wall-clock deadline instead of replaying missed decrements.
+	useEffect(() => {
+		if (!state.isRunning) {
+			setNow(Date.now());
+			return;
+		}
+		setNow(Date.now());
+		const intervalId = window.setInterval(() => setNow(Date.now()), 1000);
+		return () => window.clearInterval(intervalId);
+	}, [state.isRunning]);
 
-		return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-	}, [state.isRunning, config, setState]);
+	const remaining = useMemo(() => projectedRemaining(state, now), [state, now]);
 
-	// Toggle timer
+	// Phase completion owns one timeout. Persistent state changes exactly once at
+	// the phase boundary, not once per displayed second.
+	useEffect(() => {
+		if (!state.isRunning || typeof state.endsAt !== 'number') return;
+		const delay = Math.max(0, state.endsAt - Date.now());
+		const timeoutId = window.setTimeout(() => {
+			setState((current) => {
+				if (!current.isRunning || typeof current.endsAt !== 'number') return current;
+				if (current.endsAt > Date.now()) return current;
+				const nextPhase = getNextPhase(current, config);
+				const sessionsCompleted = current.phase === 'work'
+					? current.sessionsCompleted + 1
+					: current.sessionsCompleted;
+				return {
+					phase: nextPhase,
+					remaining: getPhaseDuration(nextPhase, config),
+					endsAt: undefined,
+					isRunning: false,
+					sessionsCompleted,
+				};
+			});
+			void playCompletionTone().catch((error: unknown) => {
+				console.warn('[HALO:Pomodoro] Completion tone failed', error);
+			});
+		}, delay);
+		return () => window.clearTimeout(timeoutId);
+	}, [state.isRunning, state.endsAt, config, setState]);
+
 	const handleToggle = useCallback(() => {
-		setState((s) => ({ ...s, isRunning: !s.isRunning }));
+		const timestamp = Date.now();
+		setState((current) => {
+			if (current.isRunning) {
+				return {
+					...current,
+					remaining: projectedRemaining(current, timestamp),
+					endsAt: undefined,
+					isRunning: false,
+				};
+			}
+			return {
+				...current,
+				endsAt: timestamp + current.remaining * 1000,
+				isRunning: true,
+			};
+		});
 	}, [setState]);
 
-	// Reset timer
 	const handleReset = useCallback(() => {
 		setState(createInitialState(config));
 	}, [config, setState]);
 
-	// Skip to next phase
 	const handleSkip = useCallback(() => {
 		const nextPhase = getNextPhase(state, config);
-		const newSessions = state.phase === 'work' ? state.sessionsCompleted + 1 : state.sessionsCompleted;
+		const sessionsCompleted = state.phase === 'work'
+			? state.sessionsCompleted + 1
+			: state.sessionsCompleted;
 		setState({
 			phase: nextPhase,
 			remaining: getPhaseDuration(nextPhase, config),
+			endsAt: undefined,
 			isRunning: false,
-			sessionsCompleted: newSessions,
+			sessionsCompleted,
 		});
 	}, [state, config, setState]);
 
-	// Progress calculation
 	const total = getPhaseDuration(state.phase, config);
-	const progress = (total - state.remaining) / total;
+	const progress = total > 0 ? (total - remaining) / total : 0;
 	const color = PHASE_COLORS[state.phase];
 
 	return (
 		<div style={styles.wrapper}>
-			{/* Timer Circle */}
 			<div style={styles.timer}>
 				<svg width="200" height="200" style={styles.circle} role="img" aria-label={t('pomodoro.timerAria', { defaultValue: 'Pomodoro timer progress' })}>
 					<circle cx="100" cy="100" r="90" fill="none" stroke="var(--halo-bg-tertiary)" strokeWidth="8" />
@@ -102,14 +126,12 @@ export const PomodoroPanel: React.FC = () => {
 						strokeLinecap="round"
 					/>
 				</svg>
-				<div style={styles.time}>{formatTime(state.remaining)}</div>
+				<div style={styles.time}>{formatTime(remaining)}</div>
 			</div>
 
-			{/* Phase & Sessions */}
 			<div style={{ ...styles.phase, color }}>{t(`pomodoro.phases.${state.phase}`, { defaultValue: state.phase })}</div>
 			<div style={styles.sessions}>{t('pomodoro.sessions')}: {state.sessionsCompleted}</div>
 
-			{/* Controls */}
 			<div style={styles.controls}>
 				<button type="button" style={styles.btn} onClick={handleToggle}>
 					{state.isRunning ? '⏸️' : '▶️'} {state.isRunning ? t('pomodoro.pause') : t('pomodoro.start')}
@@ -118,22 +140,21 @@ export const PomodoroPanel: React.FC = () => {
 				<button type="button" style={styles.btnSecondary} onClick={handleReset}>🔄</button>
 			</div>
 
-			{/* Config */}
 			<Card variant="default" padding="sm">
 				<div style={styles.config}>
 					<div style={styles.configItem}>
 						<input type="number" style={styles.input} value={config.workMinutes}
-							onChange={(e) => setConfig((c) => ({ ...c, workMinutes: Math.max(1, parseInt(e.target.value, 10) || 25) }))} />
+							onChange={(e) => setConfig((current) => ({ ...current, workMinutes: Math.max(1, parseInt(e.target.value, 10) || 25) }))} />
 						<span style={styles.label}>{t('pomodoro.work')}</span>
 					</div>
 					<div style={styles.configItem}>
 						<input type="number" style={styles.input} value={config.shortBreakMinutes}
-							onChange={(e) => setConfig((c) => ({ ...c, shortBreakMinutes: Math.max(1, parseInt(e.target.value, 10) || 5) }))} />
+							onChange={(e) => setConfig((current) => ({ ...current, shortBreakMinutes: Math.max(1, parseInt(e.target.value, 10) || 5) }))} />
 						<span style={styles.label}>{t('pomodoro.shortBreak')}</span>
 					</div>
 					<div style={styles.configItem}>
 						<input type="number" style={styles.input} value={config.longBreakMinutes}
-							onChange={(e) => setConfig((c) => ({ ...c, longBreakMinutes: Math.max(1, parseInt(e.target.value, 10) || 15) }))} />
+							onChange={(e) => setConfig((current) => ({ ...current, longBreakMinutes: Math.max(1, parseInt(e.target.value, 10) || 15) }))} />
 						<span style={styles.label}>{t('pomodoro.longBreak')}</span>
 					</div>
 				</div>
