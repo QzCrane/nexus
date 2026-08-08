@@ -4,6 +4,7 @@
 import { readdir, stat, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
 const DEFAULT_MAX_BYTES = 256 * 1024 * 1024;
 const DEFAULT_MAX_FILES = 12_000;
@@ -50,9 +51,6 @@ export async function pruneTurboCache(
 		return { deletedFiles: 0, remainingFiles: totalFiles, remainingBytes: totalBytes };
 	}
 
-	// Restored entries retain older mtimes while task results written by the
-	// current revision are new. Retire oldest cache material first so the next
-	// immutable snapshot learns this revision without unbounded accumulation.
 	files.sort((left, right) => left.mtimeMs - right.mtimeMs || left.path.localeCompare(right.path));
 	let deletedFiles = 0;
 	for (const file of files) {
@@ -74,7 +72,7 @@ function argument(args, name) {
 	return index >= 0 && index + 1 < args.length ? args[index + 1] : undefined;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) {
+if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
 	const directory = process.argv[2];
 	if (!directory) throw new Error('Usage: node prune-turbo-cache.mjs <directory> [--max-bytes N] [--max-files N]');
 	const maxBytes = argument(process.argv, '--max-bytes');
