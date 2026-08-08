@@ -43,15 +43,10 @@ export function useOpenTools(): UseOpenToolsResult {
 	}, []);
 
 	const claimLocalAuthority = useCallback((): void => {
-		// Any user action after an async hydration begins outranks that older read.
-		// Mark the hook initialized as well so the active-tool effect persists the
-		// user's action instead of waiting for a storage snapshot that is now stale.
 		authorityEpoch.current += 1;
 		initialized.current = true;
 	}, []);
 
-	// Real-time persistence for activeTool. Initial null is not written before
-	// storage hydration or a user action establishes an authority.
 	useEffect(() => {
 		if (!initialized.current) return;
 		const value = activeTool === null ? 'HALO_LAUNCHER' : activeTool;
@@ -72,16 +67,12 @@ export function useOpenTools(): UseOpenToolsResult {
 			persistOpenTools(next);
 			return next;
 		});
-		setActiveToolState((current) => {
-			if (current === null || isSystemTool(current) || isInstalled(current)) return current;
-			return null;
-		});
+		setActiveToolState((current) => (
+			current === null || isInstalled(current) ? current : null
+		));
 	}, [persistOpenTools]);
 
 	const loadOpenTools = useCallback(async (isInstalled: (id: string) => boolean) => {
-		// Once hydrated (or once a user action has established newer local truth),
-		// module changes only need a synchronous projection filter. Re-reading
-		// storage would add I/O and could replay an older snapshot over live UI.
 		if (initialized.current) {
 			reconcileInstalledTools(isInstalled);
 			return;
@@ -98,8 +89,7 @@ export function useOpenTools(): UseOpenToolsResult {
 		const savedActive = storage[ACTIVE_TOOL_KEY];
 		const restoredActive = savedActive === 'HALO_LAUNCHER'
 			? null
-			: isKnownTool(savedActive)
-				&& (isSystemTool(savedActive) || isInstalled(savedActive))
+			: isKnownTool(savedActive) && isInstalled(savedActive)
 				? savedActive
 				: null;
 
@@ -112,8 +102,6 @@ export function useOpenTools(): UseOpenToolsResult {
 	const handleToolSelect = useCallback(async (toolId: ToolId) => {
 		claimLocalAuthority();
 		setActiveToolState(toolId);
-
-		// System tools don't go into dock.
 		if (!isSystemTool(toolId)) {
 			setOpenTools((previous) => {
 				if (previous.includes(toolId)) return previous;
