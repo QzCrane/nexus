@@ -5,13 +5,13 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import type { ToolId } from '../../../kernel';
 import { STORAGE_PREFIX, TOOL_REGISTRY } from '../../../kernel';
 
-const SYSTEM_TOOL_IDS = new Set(
+const SYSTEM_TOOL_IDS = new Set<string>(
 	TOOL_REGISTRY.filter((tool) => tool.pluginType === 'system').map((tool) => tool.id),
 );
-const KNOWN_TOOL_IDS = new Set(TOOL_REGISTRY.map((tool) => tool.id));
+const KNOWN_TOOL_IDS = new Set<string>(TOOL_REGISTRY.map((tool) => tool.id));
 
 const isSystemTool = (id: string): boolean => SYSTEM_TOOL_IDS.has(id);
-const isKnownTool = (id: unknown): id is ToolId => typeof id === 'string' && KNOWN_TOOL_IDS.has(id as ToolId);
+const isKnownTool = (id: unknown): id is ToolId => typeof id === 'string' && KNOWN_TOOL_IDS.has(id);
 
 const OPEN_TOOLS_KEY = `${STORAGE_PREFIX.CORE}open_tools`;
 const ACTIVE_TOOL_KEY = `${STORAGE_PREFIX.CORE}active_tool`;
