@@ -8,9 +8,14 @@ on:
       - 'nexus/apps/extension-halo/package.json'
       - 'nexus/apps/extension-halo/public/manifest.json'
       - 'nexus/apps/extension-halo/src/content/smooth-scroll*.ts'
+      - 'nexus/apps/extension-halo/src/content/ruler.ts'
+      - 'nexus/apps/extension-halo/src/content/dom-selector.ts'
+      - 'nexus/apps/extension-halo/src/content/page-annotate.ts'
       - 'nexus/apps/extension-halo/src/entry/content-smooth-scroll.ts'
+      - 'nexus/apps/extension-halo/src/entry/content-frame-tools*.ts'
       - 'nexus/apps/extension-halo/src/tools/smooth-scroll/**'
       - 'nexus/apps/extension-halo/test/smooth-scroll*.spec.ts'
+      - 'nexus/apps/extension-halo/test/frame-tools-lazy*.spec.ts'
       - 'nexus/bun.lock'
   push:
     branches:
@@ -21,9 +26,14 @@ on:
       - 'nexus/apps/extension-halo/package.json'
       - 'nexus/apps/extension-halo/public/manifest.json'
       - 'nexus/apps/extension-halo/src/content/smooth-scroll*.ts'
+      - 'nexus/apps/extension-halo/src/content/ruler.ts'
+      - 'nexus/apps/extension-halo/src/content/dom-selector.ts'
+      - 'nexus/apps/extension-halo/src/content/page-annotate.ts'
       - 'nexus/apps/extension-halo/src/entry/content-smooth-scroll.ts'
+      - 'nexus/apps/extension-halo/src/entry/content-frame-tools*.ts'
       - 'nexus/apps/extension-halo/src/tools/smooth-scroll/**'
       - 'nexus/apps/extension-halo/test/smooth-scroll*.spec.ts'
+      - 'nexus/apps/extension-halo/test/frame-tools-lazy*.spec.ts'
       - 'nexus/bun.lock'
   workflow_dispatch:
 
@@ -61,5 +71,5 @@ jobs:
         working-directory: nexus/apps/extension-halo
         run: bunx playwright install --with-deps --no-shell chromium
 
-      - name: Test keyboard ownership in Chromium
-        run: bun --cwd nexus/apps/extension-halo test:keyboard-chromium
+      - name: Test HALO browser contracts in Chromium
+        run: bun --cwd nexus/apps/extension-halo test:browser-chromium
