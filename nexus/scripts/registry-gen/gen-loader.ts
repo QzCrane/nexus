@@ -50,9 +50,12 @@ function memoizePanelLoader<T>(load: () => Promise<T>): () => Promise<T> {
 		return `\t'${m.id}': memoizePanelLoader(() => import('../${folder}/${relativePart}').then(m => ({ default: m.${exportName} })))`;
 	});
 
-	const panelEntries = panelModules.map(m =>
-		`\t'${m.id}': lazy(generatedToolLoaders['${m.id}'])`
-	);
+	const panelEntries = panelModules.map(m => {
+		const access = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(m.id)
+			? `.${m.id}`
+			: `['${m.id}']`;
+		return `\t'${m.id}': lazy(generatedToolLoaders${access})`;
+	});
 
 	const content = `${header}export const generatedToolLoaders = {
 ${loaderEntries.join(',\n')}
