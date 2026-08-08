@@ -119,11 +119,16 @@ export class ModuleManager {
 	}
 
 	async update(id: string): Promise<void> {
-		const state = this.states.get(id);
-		if (state?.status !== 'installed') throw new Error(`Not installed: ${id}`);
-		state.status = 'updating';
-		this.states.set(id, { ...state });
-		await this.persistence.save(state);
+		const previous = this.states.get(id);
+		if (previous?.status !== 'installed') throw new Error(`Not installed: ${id}`);
+		const updating: ModuleState = { ...previous, status: 'updating' };
+		this.states.set(id, updating);
+		try {
+			await this.persistence.save(updating);
+		} catch (error) {
+			this.states.set(id, previous);
+			throw error;
+		}
 		this.notify();
 		await this.install(id);
 	}
