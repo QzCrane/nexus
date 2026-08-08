@@ -136,6 +136,9 @@ export function initHoverZoomBootstrap(): void {
 	function onKeyUp(event: KeyboardEvent): void {
 		rememberModifiers(event);
 		source = 'keyup';
+		if (settings.enabled && event.key === 'Alt' && settings.altKeyMode === 'block') {
+			event.preventDefault();
+		}
 	}
 
 	void chrome.storage.local.get(STORAGE_KEY)
