@@ -27,6 +27,18 @@ const isDev = process.argv.includes('--dev') || isWatch;
 const isAnalyze = process.argv.includes('--analyze');
 const distDir = path.join(__dirname, 'dist');
 
+// Production ceilings are the audited KiB buckets from the 2026-08-08
+// cross-platform production build. They are regression gates, not aspirations:
+// intentional growth requires an explicit architecture + budget change.
+const PRODUCTION_BUDGET_KIB = Object.freeze({
+	background: 14,
+	allFrameDocumentStart: 31,
+	topFrameDocumentStart: 32,
+	allFrameDocumentIdle: 2,
+	topFrameDocumentIdle: 55,
+	sidepanelStartup: 165,
+});
+
 function run(label, args, opts = {}) {
 	const { silent = false, ...processOptions } = opts;
 	try {
@@ -246,6 +258,21 @@ function assertProductionSidepanelSplitting() {
 	}
 }
 
+function assertProductionBudgets(measurements) {
+	if (isDev) return;
+	for (const [name, bytes] of Object.entries(measurements)) {
+		const budget = PRODUCTION_BUDGET_KIB[name];
+		if (budget === undefined) throw new Error(`HALO production budget is missing for ${name}`);
+		const actual = kib(bytes);
+		if (actual > budget) {
+			throw new Error(
+				`HALO production budget exceeded: ${name}=${actual}KiB > ${budget}KiB. `
+				+ 'Intentional growth requires an explicit architecture and budget update.',
+			);
+		}
+	}
+}
+
 if (isWatch) {
 	console.log('👀 Watch mode...');
 	const contexts = await Promise.all(entries.map(async (entry) => {
@@ -301,8 +328,19 @@ if (isWatch) {
 		throw new Error('HALO SidePanel startup closure could not be resolved from the esbuild metafile');
 	}
 
+	const budgetMeasurements = {
+		background: sizeOf('background.js'),
+		allFrameDocumentStart,
+		topFrameDocumentStart,
+		allFrameDocumentIdle,
+		topFrameDocumentIdle,
+		sidepanelStartup: sidepanelStartup.bytes,
+	};
+	assertProductionBudgets(budgetMeasurements);
+
 	if (isAnalyze) {
 		const report = {
+			budgetsKiB: PRODUCTION_BUDGET_KIB,
 			runtimeSurfaces: {
 				allFrameDocumentStartBytes: allFrameDocumentStart,
 				topFrameDocumentStartBytes: topFrameDocumentStart,
@@ -310,6 +348,7 @@ if (isWatch) {
 				topFrameDocumentIdleBytes: topFrameDocumentIdle,
 				sidepanelStartupBytes: sidepanelStartup.bytes,
 				sidepanelStartupFiles: sidepanelStartup.files,
+				backgroundBytes: sizeOf('background.js'),
 			},
 			entries: buildResults.map(({ entry, result }) => ({
 				entry: entry.out,
@@ -340,7 +379,8 @@ if (isWatch) {
 		: '';
 	console.log(`✓ Build: ${buildResults.map(({ label }) => label).join(' | ')}${chunkInfo}${saatInfo}`);
 	console.log(
-		`✓ Startup closures: all-frame@start:${kib(allFrameDocumentStart)}KB | top-frame@start:${kib(topFrameDocumentStart)}KB | all-frame@idle:${kib(allFrameDocumentIdle)}KB | top-frame@idle:${kib(topFrameDocumentIdle)}KB | sidepanel:${kib(sidepanelStartup.bytes)}KB/${sidepanelStartup.files} files`,
+		`✓ Startup closures: all-frame@start:${kib(allFrameDocumentStart)}KB | top-frame@start:${kib(topFrameDocumentStart)}KB | all-frame@idle:${kib(allFrameDocumentIdle)}KB | top-frame@idle:${kib(topFrameDocumentIdle)}KB | sidepanel:${kib(sidepanelStartup.bytes)}KB/${sidepanelStartup.files} files | background:${kib(sizeOf('background.js'))}KB`,
 	);
+	console.log('✓ Production budgets:', Object.entries(PRODUCTION_BUDGET_KIB).map(([name, value]) => `${name}<=${value}KiB`).join(' | '));
 	console.log('🎉 Done → dist/');
 }
