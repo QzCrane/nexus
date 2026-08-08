@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // goal: Auto-generate HALO registry artifacts from manifest files
-// eff: Unified UI registry plus minimal runtime projections
+// eff: Canonical UI registry plus minimal background/install projections
 
 import { TOOLS_DIR, SCRIPTS_DIR, SYSTEM_DIR } from './registry-gen/config.ts';
 import { discoverPlugins, parseManifest } from './registry-gen/discover.ts';
@@ -8,7 +8,6 @@ import {
 	generateBackgroundActiveProjection,
 	generateRegistry,
 	generateScriptRuntimeManifest,
-	generateStartupRegistry,
 } from './registry-gen/gen-registry.ts';
 import { generateLoader } from './registry-gen/gen-loader.ts';
 import { generateI18n } from './registry-gen/gen-i18n.ts';
@@ -59,7 +58,6 @@ function main() {
 	console.log(`📦 Found: ${toolCount} Tools + ${scriptCount} Scripts + ${systemCount} System`);
 
 	generateRegistry(validModules, manifestsMap);
-	generateStartupRegistry(validModules, manifestsMap);
 	generateBackgroundActiveProjection(validModules, manifestsMap);
 	generateScriptRuntimeManifest(validModules, manifestsMap);
 	generateLoader(validModules);
