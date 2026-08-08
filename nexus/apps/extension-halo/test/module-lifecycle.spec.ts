@@ -2,15 +2,18 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import type { HaloSettings } from '../src/kernel/core/settings';
 import {
+	ALL_MODULES,
 	CORE_MODULES,
 	OPTIONAL_MODULES,
-	type ModuleState,
 } from '../src/kernel/registry/module-registry';
 import {
-	createMissingCoreModuleStates,
 	ModuleManager,
-	type ModuleStatePersistence,
+	type ModuleInstallationPersistence,
 } from '../src/kernel/managers/module-manager';
+import {
+	isOptionalPackagedModuleStoredEnabled,
+	moduleInstallationStorageKey,
+} from '../src/kernel/core/module-installation-runtime';
 import { resolveCategoryOrder } from '../src/components/sidepanel/hooks/use-categorized-tools';
 
 const openToolsSource = readFileSync(
@@ -21,185 +24,256 @@ const moduleListSource = readFileSync(
 	new URL('../src/system/module-store/module-list.tsx', import.meta.url),
 	'utf8',
 );
+const modulePanelSource = readFileSync(
+	new URL('../src/system/module-store/panel.tsx', import.meta.url),
+	'utf8',
+);
+const smoothScrollSource = readFileSync(
+	new URL('../src/content/smooth-scroll.ts', import.meta.url),
+	'utf8',
+);
+const userscriptsRegistrySource = readFileSync(
+	new URL('../src/system/userscripts/registry.ts', import.meta.url),
+	'utf8',
+);
+const userscriptsEngineSource = readFileSync(
+	new URL('../src/system/userscripts/engine.ts', import.meta.url),
+	'utf8',
+);
 
-function createMemoryPersistence(initial: ModuleState[] = []) {
-	const stored = new Map(initial.map((state) => [state.id, { ...state }]));
-	let saveFailureId: string | null = null;
-	let removeFailureId: string | null = null;
-	let seedBatchCount = 0;
-	const persistence: ModuleStatePersistence = {
-		loadAll: async () => [...stored.values()].map((state) => ({ ...state })),
-		save: async (state) => {
-			if (state.id === saveFailureId) throw new Error(`save failed: ${state.id}`);
-			stored.set(state.id, { ...state });
+function deferred() {
+	let resolve!: () => void;
+	let reject!: (reason?: unknown) => void;
+	const promise = new Promise<void>((resolvePromise, rejectPromise) => {
+		resolve = resolvePromise;
+		reject = rejectPromise;
+	});
+	return { promise, resolve, reject };
+}
+
+function createMemoryPersistence(initialDisabled: readonly string[] = []) {
+	const disabled = new Set(initialDisabled);
+	const listeners = new Set<(id: string, enabled: boolean) => void>();
+	const writes: Array<{ id: string; enabled: boolean }> = [];
+	let failureId: string | null = null;
+	let gateFactory: ((id: string, enabled: boolean) => Promise<void>) | null = null;
+	const persistence: ModuleInstallationPersistence = {
+		loadDisabled: async () => new Set(disabled),
+		async setEnabled(id, enabled) {
+			writes.push({ id, enabled });
+			if (gateFactory) await gateFactory(id, enabled);
+			if (failureId === id) throw new Error(`write failed: ${id}`);
+			if (enabled) disabled.delete(id);
+			else disabled.add(id);
 		},
-		saveMany: async (states) => {
-			seedBatchCount += 1;
-			const failed = states.find((state) => state.id === saveFailureId);
-			if (failed) throw new Error(`save failed: ${failed.id}`);
-			for (const state of states) stored.set(state.id, { ...state });
+		subscribe(listener) {
+			listeners.add(listener);
+			return () => listeners.delete(listener);
 		},
-		remove: async (id) => {
-			if (id === removeFailureId) throw new Error(`remove failed: ${id}`);
-			stored.delete(id);
-		},
-		shouldPersistSeed: () => true,
 	};
 	return {
 		persistence,
-		stored,
-		getSeedBatchCount: () => seedBatchCount,
-		failSaveFor: (id: string | null) => { saveFailureId = id; },
-		failRemoveFor: (id: string | null) => { removeFailureId = id; },
+		disabled,
+		writes,
+		failFor(id: string | null) { failureId = id; },
+		setGate(factory: ((id: string, enabled: boolean) => Promise<void>) | null) {
+			gateFactory = factory;
+		},
+		emit(id: string, enabled: boolean) {
+			if (enabled) disabled.delete(id);
+			else disabled.add(id);
+			for (const listener of listeners) listener(id, enabled);
+		},
 	};
 }
 
-describe('HALO module lifecycle authority', () => {
-	test('seeds only core modules in one batch and leaves optional modules available', async () => {
+describe('HALO packaged-module lifecycle authority', () => {
+	test('treats every packaged module as installed on a fresh profile without seed writes', async () => {
 		expect(CORE_MODULES.length).toBeGreaterThan(0);
 		expect(OPTIONAL_MODULES.length).toBeGreaterThan(0);
+		const memory = createMemoryPersistence();
+		const manager = new ModuleManager(memory.persistence);
+		await manager.initialize();
 
-		const missing = createMissingCoreModuleStates(new Set(), 123);
-		expect(new Set(missing.map((state) => state.id))).toEqual(
-			new Set(CORE_MODULES.map((module) => module.id)),
+		expect(memory.writes).toEqual([]);
+		expect(manager.getAvailableModules()).toEqual([]);
+		expect(new Set(manager.getInstalledModules().map((module) => module.id))).toEqual(
+			new Set(ALL_MODULES.map((module) => module.id)),
 		);
-		expect(missing.every((state) => state.installedAt === 123)).toBe(true);
-		expect(missing.some((state) => OPTIONAL_MODULES.some((module) => module.id === state.id))).toBe(false);
-
-		const memory = createMemoryPersistence();
-		const manager = new ModuleManager(memory.persistence);
-		await manager.initialize();
-
-		expect(memory.getSeedBatchCount()).toBe(1);
-		for (const module of CORE_MODULES) expect(manager.isInstalled(module.id)).toBe(true);
-		for (const module of OPTIONAL_MODULES) expect(manager.isInstalled(module.id)).toBe(false);
-		expect(new Set(manager.getAvailableModules().map((module) => module.id))).toEqual(
-			new Set(OPTIONAL_MODULES.map((module) => module.id)),
-		);
-
-		const restarted = new ModuleManager(memory.persistence);
-		await restarted.initialize();
-		expect(memory.getSeedBatchCount()).toBe(1);
+		for (const module of ALL_MODULES) expect(manager.isInstalled(module.id)).toBe(true);
 	});
 
-	test('rolls back every implicit core state when the one seed batch fails', async () => {
-		const core = CORE_MODULES[0];
-		if (!core) throw new Error('HALO test requires at least one core module');
-		const memory = createMemoryPersistence();
-		memory.failSaveFor(core.id);
-		const manager = new ModuleManager(memory.persistence);
-
-		await expect(manager.initialize()).rejects.toThrow(`save failed: ${core.id}`);
-		expect(manager.getAllStates()).toEqual([]);
-		expect(manager.getRevision()).toBe(0);
-		expect(manager.getSnapshot().installedModules).toEqual([]);
-		expect(memory.stored.size).toBe(0);
-	});
-
-	test('publishes one immutable snapshot identity per durable revision', async () => {
+	test('uses one explicit false tombstone for durable uninstall and missing state for reinstall', async () => {
 		const optional = OPTIONAL_MODULES[0];
-		if (!optional) throw new Error('HALO test requires at least one optional module');
+		if (!optional) throw new Error('HALO test requires an optional module');
 		const memory = createMemoryPersistence();
 		const manager = new ModuleManager(memory.persistence);
 		await manager.initialize();
-
-		const initial = manager.getSnapshot();
-		expect(manager.getSnapshot()).toBe(initial);
-		expect(initial.revision).toBe(0);
-		expect(Object.isFrozen(initial)).toBe(true);
-		expect(Object.isFrozen(initial.installedModules)).toBe(true);
-		expect(Object.isFrozen(initial.availableModules)).toBe(true);
-
-		await manager.install(optional.id);
-		const installed = manager.getSnapshot();
-		expect(installed).not.toBe(initial);
-		expect(installed.revision).toBe(1);
-		expect(installed.installedModules.some((module) => module.id === optional.id)).toBe(true);
-		expect(manager.getSnapshot()).toBe(installed);
-	});
-
-	test('persists install/uninstall truth, emits monotonic revisions, and keeps uninstall across restart', async () => {
-		const optional = OPTIONAL_MODULES[0];
-		if (!optional) throw new Error('HALO test requires at least one optional module');
-		const memory = createMemoryPersistence();
-		const manager = new ModuleManager(memory.persistence);
-		await manager.initialize();
-		const revisions: number[] = [];
-		const unsubscribe = manager.subscribe(() => revisions.push(manager.getRevision()));
-
-		expect(manager.getRevision()).toBe(0);
-		await manager.install(optional.id);
-		expect(manager.isInstalled(optional.id)).toBe(true);
-		expect(memory.stored.get(optional.id)?.status).toBe('installed');
-		expect(revisions).toEqual([1]);
-
-		await manager.install(optional.id);
-		expect(revisions).toEqual([1]);
 
 		await manager.uninstall(optional.id);
+		expect(memory.disabled.has(optional.id)).toBe(true);
 		expect(manager.isInstalled(optional.id)).toBe(false);
-		expect(memory.stored.has(optional.id)).toBe(false);
-		expect(revisions).toEqual([1, 2]);
-		unsubscribe();
+		expect(manager.getState(optional.id)?.status).toBe('available');
 
 		const restarted = new ModuleManager(memory.persistence);
 		await restarted.initialize();
 		expect(restarted.isInstalled(optional.id)).toBe(false);
 		expect(restarted.getAvailableModules().some((module) => module.id === optional.id)).toBe(true);
+
+		await restarted.install(optional.id);
+		expect(memory.disabled.has(optional.id)).toBe(false);
+		expect(restarted.isInstalled(optional.id)).toBe(true);
 	});
 
-	test('rolls back in-memory authority when install, update, or uninstall persistence fails', async () => {
+	test('built-in modules remain installed and cannot be disabled', async () => {
+		const core = CORE_MODULES[0];
+		if (!core) throw new Error('HALO test requires a built-in module');
+		const memory = createMemoryPersistence([core.id]);
+		const manager = new ModuleManager(memory.persistence);
+		await manager.initialize();
+		expect(manager.isInstalled(core.id)).toBe(true);
+		await expect(manager.uninstall(core.id)).rejects.toThrow(`Cannot uninstall: ${core.id}`);
+		expect(memory.writes).toEqual([]);
+	});
+
+	test('publishes one immutable snapshot identity per effective durable change', async () => {
 		const optional = OPTIONAL_MODULES[0];
-		if (!optional) throw new Error('HALO test requires at least one optional module');
+		if (!optional) throw new Error('HALO test requires an optional module');
 		const memory = createMemoryPersistence();
 		const manager = new ModuleManager(memory.persistence);
 		await manager.initialize();
+		const initial = manager.getSnapshot();
+		expect(Object.isFrozen(initial)).toBe(true);
+		expect(Object.isFrozen(initial.installedModules)).toBe(true);
+		expect(Object.isFrozen(initial.availableModules)).toBe(true);
 
-		memory.failSaveFor(optional.id);
-		await expect(manager.install(optional.id)).rejects.toThrow(`save failed: ${optional.id}`);
-		expect(manager.isInstalled(optional.id)).toBe(false);
-		expect(manager.getRevision()).toBe(0);
-
-		memory.failSaveFor(null);
 		await manager.install(optional.id);
-		expect(manager.isInstalled(optional.id)).toBe(true);
-		expect(manager.getRevision()).toBe(1);
+		expect(manager.getSnapshot()).toBe(initial);
+		await manager.uninstall(optional.id);
+		const disabled = manager.getSnapshot();
+		expect(disabled).not.toBe(initial);
+		expect(disabled.revision).toBe(1);
+		await manager.uninstall(optional.id);
+		expect(manager.getSnapshot()).toBe(disabled);
+	});
 
-		const staleMemory = createMemoryPersistence([{
-			id: optional.id,
-			status: 'installed',
-			installedVersion: '0.0.0-stale',
-			installedAt: 1,
-		}]);
-		const updatingManager = new ModuleManager(staleMemory.persistence);
-		await updatingManager.initialize();
-		const beforeFailedUpdate = updatingManager.getSnapshot();
-		staleMemory.failSaveFor(optional.id);
-		await expect(updatingManager.update(optional.id)).rejects.toThrow(`save failed: ${optional.id}`);
-		expect(updatingManager.getState(optional.id)).toMatchObject({
-			status: 'installed',
-			installedVersion: '0.0.0-stale',
+	test('does not publish a failed storage mutation', async () => {
+		const optional = OPTIONAL_MODULES[0];
+		if (!optional) throw new Error('HALO test requires an optional module');
+		const memory = createMemoryPersistence();
+		const manager = new ModuleManager(memory.persistence);
+		await manager.initialize();
+		const initial = manager.getSnapshot();
+		memory.failFor(optional.id);
+
+		await expect(manager.uninstall(optional.id)).rejects.toThrow(`write failed: ${optional.id}`);
+		expect(manager.isInstalled(optional.id)).toBe(true);
+		expect(manager.getSnapshot()).toBe(initial);
+		expect(manager.getRevision()).toBe(0);
+	});
+
+	test('serializes uninstall then install for one module in invocation order', async () => {
+		const optional = OPTIONAL_MODULES[0];
+		if (!optional) throw new Error('HALO test requires an optional module');
+		const firstGate = deferred();
+		let writeCount = 0;
+		const memory = createMemoryPersistence();
+		memory.setGate(async () => {
+			writeCount += 1;
+			if (writeCount === 1) await firstGate.promise;
 		});
-		expect(updatingManager.getSnapshot()).toBe(beforeFailedUpdate);
-		expect(updatingManager.getRevision()).toBe(0);
+		const manager = new ModuleManager(memory.persistence);
+		await manager.initialize();
 
-		memory.failRemoveFor(optional.id);
-		await expect(manager.uninstall(optional.id)).rejects.toThrow(`remove failed: ${optional.id}`);
+		const uninstall = manager.uninstall(optional.id);
+		const install = manager.install(optional.id);
+		expect(memory.writes).toEqual([{ id: optional.id, enabled: false }]);
+		firstGate.resolve();
+		await uninstall;
+		await install;
+		expect(memory.writes).toEqual([
+			{ id: optional.id, enabled: false },
+			{ id: optional.id, enabled: true },
+		]);
 		expect(manager.isInstalled(optional.id)).toBe(true);
-		expect(manager.getRevision()).toBe(1);
+		expect(memory.disabled.has(optional.id)).toBe(false);
+	});
+
+	test('serializes install then uninstall from a persisted tombstone', async () => {
+		const optional = OPTIONAL_MODULES[0];
+		if (!optional) throw new Error('HALO test requires an optional module');
+		const firstGate = deferred();
+		let writeCount = 0;
+		const memory = createMemoryPersistence([optional.id]);
+		memory.setGate(async () => {
+			writeCount += 1;
+			if (writeCount === 1) await firstGate.promise;
+		});
+		const manager = new ModuleManager(memory.persistence);
+		await manager.initialize();
+
+		const install = manager.install(optional.id);
+		const uninstall = manager.uninstall(optional.id);
+		expect(memory.writes).toEqual([{ id: optional.id, enabled: true }]);
+		firstGate.resolve();
+		await install;
+		await uninstall;
+		expect(memory.writes).toEqual([
+			{ id: optional.id, enabled: true },
+			{ id: optional.id, enabled: false },
+		]);
+		expect(manager.isInstalled(optional.id)).toBe(false);
+		expect(memory.disabled.has(optional.id)).toBe(true);
+	});
+
+	test('lets a newer same-module storage event outrank an older write completion', async () => {
+		const optional = OPTIONAL_MODULES[0];
+		if (!optional) throw new Error('HALO test requires an optional module');
+		const gate = deferred();
+		const memory = createMemoryPersistence();
+		memory.setGate(async () => gate.promise);
+		const manager = new ModuleManager(memory.persistence);
+		await manager.initialize();
+
+		const pending = manager.uninstall(optional.id);
+		memory.emit(optional.id, true);
+		gate.resolve();
+		await pending;
+		// The external event is the newer in-context authority; the old completion
+		// must not flip the snapshot to disabled after it returns.
+		expect(manager.isInstalled(optional.id)).toBe(true);
 	});
 
 	test('retires stale async open-tool hydration instead of replaying it over live authority', () => {
 		expect(openToolsSource).toContain('const authorityEpoch = useRef(0);');
 		expect(openToolsSource).toContain('if (epoch !== authorityEpoch.current || initialized.current) return;');
-		expect(openToolsSource).toContain('if (initialized.current) {');
 		expect(openToolsSource).toContain('reconcileInstalledTools(isInstalled);');
 		expect(openToolsSource).not.toMatch(/setTimeout\([^)]*initialized/u);
 	});
+});
 
-	test('uses builtIn itself as the Module Store uninstallability authority', () => {
-		expect(moduleListSource).toContain('isCore={mod.builtIn === true}');
-		expect(moduleListSource).not.toContain("mod.builtIn && mod.pluginType === 'tool'");
+describe('HALO packaged-module storage contract', () => {
+	test('defaults missing optional state to enabled and fails closed on corrupt explicit state', () => {
+		expect(isOptionalPackagedModuleStoredEnabled(undefined, false)).toBe(true);
+		expect(isOptionalPackagedModuleStoredEnabled(false, true)).toBe(false);
+		expect(isOptionalPackagedModuleStoredEnabled(true, true)).toBe(true);
+		expect(isOptionalPackagedModuleStoredEnabled('corrupt', true)).toBe(false);
+		expect(moduleInstallationStorageKey('smooth-scroll')).toContain('smooth-scroll');
+	});
+
+	test('gates persistent optional runtimes with the same installation authority', () => {
+		expect(smoothScrollSource).toContain("readOptionalPackagedModuleEnabled(MODULE_ID)");
+		expect(smoothScrollSource).toContain('MODULE_STORAGE_KEY');
+		expect(smoothScrollSource).toContain('runtimeEnabled()');
+		expect(userscriptsRegistrySource).toContain("moduleInstallationStorageKey('userscripts')");
+		expect(userscriptsRegistrySource).toContain('if (!moduleEnabled) return;');
+		expect(userscriptsEngineSource).toContain('requireInstalledModule()');
+	});
+
+	test('uses builtIn rather than plugin type as uninstallability authority', () => {
+		expect(moduleListSource).toContain('isCore={!!mod.builtIn}');
+		expect(modulePanelSource).toContain('if (module.builtIn)');
+		expect(modulePanelSource).not.toContain("if (m.pluginType === 'system')");
 	});
 });
 
@@ -211,7 +285,6 @@ describe('HALO category projection', () => {
 			showSystemTools: true,
 		} as HaloSettings;
 		const before = [...persistedOrder];
-
 		const result = resolveCategoryOrder(settings, null);
 		expect(persistedOrder).toEqual(before);
 		expect(result).not.toBe(persistedOrder);
@@ -228,7 +301,6 @@ describe('HALO category projection', () => {
 		const projectedTemporary = resolveCategoryOrder(null, temporary);
 		expect(projectedTemporary).toEqual(temporary);
 		expect(projectedTemporary).not.toBe(temporary);
-
 		const settings = {
 			categoryOrder: ['active', 'scripts', 'system', 'dev'],
 			showSystemTools: false,
