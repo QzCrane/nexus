@@ -45,6 +45,8 @@ export const TotpPanel: React.FC = () => {
 	// Remaining time changes every second, but HMAC output changes only when the
 	// TOTP counter changes. Cache one code per entry/counter and derive remaining
 	// seconds from the wall clock without re-importing an HMAC key every tick.
+	// New-epoch HMAC work stays sequential so account count cannot turn one 30s
+	// boundary into an unbounded WebCrypto burst.
 	useEffect(() => {
 		const poller = createSerializedAsyncPoller(
 			async () => {
@@ -54,7 +56,9 @@ export const TotpPanel: React.FC = () => {
 					if (!liveIds.has(id)) codeCacheRef.current.delete(id);
 				}
 
-				const results = await Promise.all(entries.map(async (entry) => {
+				const newCodes: Record<string, TotpCode> = {};
+				const newErrors: Record<string, string> = {};
+				for (const entry of entries) {
 					const signature = cacheSignature(entry);
 					const counter = totpCounter(now, entry.period);
 					const cached = codeCacheRef.current.get(entry.id);
@@ -65,32 +69,17 @@ export const TotpPanel: React.FC = () => {
 							code = generated.code;
 							codeCacheRef.current.set(entry.id, { counter, signature, code });
 						}
-						return {
-							id: entry.id,
-							code: {
-								code: code ?? '',
-								remaining: totpRemaining(now, entry.period),
-								period: entry.period,
-							} satisfies TotpCode,
-							error: null,
+						newCodes[entry.id] = {
+							code: code ?? '',
+							remaining: totpRemaining(now, entry.period),
+							period: entry.period,
 						};
 					} catch {
 						codeCacheRef.current.delete(entry.id);
-						return {
-							id: entry.id,
-							code: null,
-							error: t('totp.generationFailed', {
-								defaultValue: 'Invalid secret or TOTP parameters',
-							}),
-						};
+						newErrors[entry.id] = t('totp.generationFailed', {
+							defaultValue: 'Invalid secret or TOTP parameters',
+						});
 					}
-				}));
-
-				const newCodes: Record<string, TotpCode> = {};
-				const newErrors: Record<string, string> = {};
-				for (const result of results) {
-					if (result.code) newCodes[result.id] = result.code;
-					if (result.error) newErrors[result.id] = result.error;
 				}
 				return { codes: newCodes, errors: newErrors };
 			},
