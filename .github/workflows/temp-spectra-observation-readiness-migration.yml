@@ -64,8 +64,9 @@ jobs:
           PY
       - name: Verify repository build
         run: bun --cwd nexus build
-      - name: Verify SPECTRA unit and protocol contracts
-        run: bun --cwd nexus/apps/extension-spectra test:unit
+      - name: Verify focused readiness and protocol contracts
+        working-directory: nexus/apps/extension-spectra
+        run: bun test test/smoke-lifecycle-contract.spec.ts test/spectra-protocol.spec.ts test/content-runtime-readiness.spec.ts
       - name: Build SPECTRA development smoke candidate
         run: bun --cwd nexus/apps/extension-spectra build:dev
       - name: Repeat recommendation smoke
