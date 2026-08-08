@@ -1,30 +1,24 @@
 // goal: Smooth Scroll content script
 // inv: Logic split into handlers and state
 
-import { configure, clearQueue } from '../tools/smooth-scroll/engine';
+import { clearQueue, configure } from '../tools/smooth-scroll/engine';
 import { STORAGE_KEY } from '../tools/smooth-scroll/types';
-import { settings, updateStateSettings } from './smooth-scroll-state';
-import { resetRuntimeState } from './smooth-scroll-state';
 import {
-	onArrowKeydownCapture,
-	onKeyboardFocusIn,
-	onKeyboardPointerDown,
-	onKeydown,
+	resetRuntimeState,
+	settings,
+	updateStateSettings,
+} from './smooth-scroll-state';
+import {
+	onKeydownCapture,
+	onKeyup,
 	onMouseDown,
 	onWheel,
 	resetInputHandlers,
 } from './smooth-scroll-handlers';
 
-const updateSettings = (value: unknown): void => {
-	const was = settings.enabled;
-	const next = updateStateSettings(value);
-	configure(next.animationTime, next.easing, next.pulseScale);
-
-	if (next.enabled && !was) attachListeners();
-	else if (!next.enabled && was) detachListeners();
-}
-
-let listenersAttached = false;
+let settingsHydrated = false;
+let observationListenersAttached = false;
+let activeInputListenersAttached = false;
 
 const resetDocumentRuntime = (): void => {
 	clearQueue();
@@ -36,39 +30,64 @@ const onVisibilityChange = (): void => {
 	if (document.hidden) resetDocumentRuntime();
 };
 
-const attachListeners = (): void => {
-	if (listenersAttached) return;
-	listenersAttached = true;
-	// Arrow keys use capture only when HALO can admit a page scroll; discrete
-	// page keys remain bubble-phase so site handlers get first refusal. Pointer
-	// and focus capture own the media-interaction token independently of whether
-	// a site's player makes its underlying <video> focusable.
-	window.addEventListener('wheel', onWheel, { passive: false });
-	window.addEventListener('pointerdown', onKeyboardPointerDown, {
-		capture: true,
-		passive: true,
-	});
-	window.addEventListener('focusin', onKeyboardFocusIn, true);
-	window.addEventListener('keydown', onArrowKeydownCapture, true);
-	window.addEventListener('keydown', onKeydown);
-	window.addEventListener('mousedown', onMouseDown);
+const onObservedKeydown = (event: KeyboardEvent): void => {
+	// The capture observer is registered at document_start, but it remains
+	// inert until storage hydration proves that the tool is enabled. This keeps
+	// pre-site event order without transiently overriding a stored disabled state.
+	if (!settingsHydrated || !settings.enabled) return;
+	onKeydownCapture(event);
+};
+
+const onObservedKeyup = (event: KeyboardEvent): void => {
+	if (!settingsHydrated) return;
+	onKeyup(event);
+};
+
+const attachObservationListeners = (): void => {
+	if (observationListenersAttached) return;
+	observationListenersAttached = true;
+	window.addEventListener('keydown', onObservedKeydown, true);
+	window.addEventListener('keyup', onObservedKeyup, true);
+	window.addEventListener('blur', resetDocumentRuntime);
 	window.addEventListener('pagehide', resetDocumentRuntime);
 	document.addEventListener('visibilitychange', onVisibilityChange);
-}
+};
 
-const detachListeners = (): void => {
-	if (!listenersAttached) return;
-	listenersAttached = false;
-	window.removeEventListener('wheel', onWheel);
-	window.removeEventListener('pointerdown', onKeyboardPointerDown, true);
-	window.removeEventListener('focusin', onKeyboardFocusIn, true);
-	window.removeEventListener('keydown', onArrowKeydownCapture, true);
-	window.removeEventListener('keydown', onKeydown);
-	window.removeEventListener('mousedown', onMouseDown);
+const detachObservationListeners = (): void => {
+	if (!observationListenersAttached) return;
+	observationListenersAttached = false;
+	window.removeEventListener('keydown', onObservedKeydown, true);
+	window.removeEventListener('keyup', onObservedKeyup, true);
+	window.removeEventListener('blur', resetDocumentRuntime);
 	window.removeEventListener('pagehide', resetDocumentRuntime);
 	document.removeEventListener('visibilitychange', onVisibilityChange);
 	resetDocumentRuntime();
-}
+};
+
+const attachActiveInputListeners = (): void => {
+	if (activeInputListenersAttached) return;
+	activeInputListenersAttached = true;
+	window.addEventListener('wheel', onWheel, { passive: false });
+	window.addEventListener('mousedown', onMouseDown);
+};
+
+const detachActiveInputListeners = (): void => {
+	if (!activeInputListenersAttached) return;
+	activeInputListenersAttached = false;
+	window.removeEventListener('wheel', onWheel);
+	window.removeEventListener('mousedown', onMouseDown);
+	resetDocumentRuntime();
+};
+
+const updateSettings = (value: unknown): void => {
+	const wasEnabled = settings.enabled;
+	const next = updateStateSettings(value);
+	configure(next.animationTime, next.easing, next.pulseScale);
+
+	if (!settingsHydrated) return;
+	if (next.enabled && !wasEnabled) attachActiveInputListeners();
+	else if (!next.enabled && wasEnabled) detachActiveInputListeners();
+};
 
 // rule: guard against double-init and return a cleanup function so callers (e.g.
 // tests, hot reload) can detach the storage listener. Without the guard, repeated
@@ -84,41 +103,43 @@ export async function init(): Promise<() => void> {
 		return () => {};
 	}
 
+	configure(settings.animationTime, settings.easing, settings.pulseScale);
+	// Register the observation seam before the first await. The observer does
+	// not act until settingsHydrated becomes true, so registration order and
+	// persisted enablement are both preserved.
+	attachObservationListeners();
+
+	let hydrationRevision = 0;
+	const listener = (
+		changes: { [key: string]: chrome.storage.StorageChange },
+		areaName: string,
+	): void => {
+		if (areaName !== 'sync' || !changes[STORAGE_KEY]) return;
+		hydrationRevision++;
+		updateSettings(changes[STORAGE_KEY].newValue);
+	};
+	chrome.storage.onChanged.addListener(listener);
+
+	const revisionBeforeRestore = hydrationRevision;
 	try {
-		const res = await chrome.storage.sync.get([STORAGE_KEY]);
-		updateStateSettings(res[STORAGE_KEY]);
+		const result = await chrome.storage.sync.get([STORAGE_KEY]);
+		// A live storage event that arrives during hydration is newer than the
+		// get() snapshot and must win instead of being overwritten by stale data.
+		if (hydrationRevision === revisionBeforeRestore) {
+			updateSettings(result[STORAGE_KEY]);
+		}
 	} catch (error: unknown) {
 		console.warn('[HALO:Scroll] Failed to restore settings; using defaults', error);
 	}
 
-	configure(settings.animationTime, settings.easing, settings.pulseScale);
-
-	let bootTimer = 0;
-	let bootPending = false;
-	let disposed = false;
-	const boot = () => {
-		bootPending = false;
-		if (disposed) return;
-		if (settings.enabled) attachListeners();
-	};
-
-	if (document.readyState === 'loading') {
-		bootPending = true;
-		document.addEventListener('DOMContentLoaded', boot, { once: true });
-	} else {
-		bootTimer = window.setTimeout(boot, 100);
-	}
-
-	const listener = (c: { [key: string]: chrome.storage.StorageChange }, a: string) => {
-		if (a === 'sync' && c[STORAGE_KEY]) updateSettings(c[STORAGE_KEY].newValue);
-	};
-	chrome.storage.onChanged.addListener(listener);
+	settingsHydrated = true;
+	if (settings.enabled) attachActiveInputListeners();
+	console.log('[HALO:Scroll] Ready');
 
 	return () => {
-		disposed = true;
-		if (bootPending) document.removeEventListener('DOMContentLoaded', boot);
-		if (bootTimer) window.clearTimeout(bootTimer);
-		detachListeners();
+		settingsHydrated = false;
+		detachActiveInputListeners();
+		detachObservationListeners();
 		chrome.storage.onChanged.removeListener(listener);
 		initStarted = false;
 	};
