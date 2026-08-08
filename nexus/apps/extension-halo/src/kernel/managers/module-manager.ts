@@ -94,17 +94,24 @@ export class ModuleManager {
 		}
 	}
 
-	private applyHydratedDisabled(disabledFromStorage: ReadonlySet<string>): void {
+	private applyHydratedDisabled(disabledFromStorage: ReadonlySet<string>): boolean {
+		let changed = false;
 		for (const module of OPTIONAL_MODULES) {
 			if (this.hydrationEventOwnedIds.has(module.id)) continue;
-			if (disabledFromStorage.has(module.id)) this.disabled.add(module.id);
+			const shouldDisable = disabledFromStorage.has(module.id);
+			const wasDisabled = this.disabled.has(module.id);
+			if (shouldDisable) this.disabled.add(module.id);
 			else this.disabled.delete(module.id);
+			if (wasDisabled !== shouldDisable) changed = true;
 		}
+		return changed;
 	}
 
-	private publishHydration(degraded: boolean): void {
+	private commitHydration(degraded: boolean, changed: boolean, publish: boolean): void {
+		const degradedChanged = this.degraded !== degraded;
 		this.degraded = degraded;
-		this.refreshSnapshot();
+		if (publish && (changed || degradedChanged)) this.notify();
+		else this.refreshSnapshot();
 	}
 
 	async initialize(): Promise<void> {
@@ -116,13 +123,16 @@ export class ModuleManager {
 		});
 		try {
 			const disabledFromStorage = await this.loadDisabledWithRetry();
-			this.applyHydratedDisabled(disabledFromStorage);
-			this.publishHydration(false);
+			const changed = this.applyHydratedDisabled(disabledFromStorage);
+			this.commitHydration(false, changed, false);
 		} catch (error) {
+			let changed = false;
 			for (const module of OPTIONAL_MODULES) {
-				if (!this.hydrationEventOwnedIds.has(module.id)) this.disabled.add(module.id);
+				if (this.hydrationEventOwnedIds.has(module.id)) continue;
+				if (!this.disabled.has(module.id)) changed = true;
+				this.disabled.add(module.id);
 			}
-			this.publishHydration(true);
+			this.commitHydration(true, changed, false);
 			console.error('[HALO:ModuleManager] Installation hydration failed', error);
 		} finally {
 			this.hydrating = false;
@@ -134,11 +144,11 @@ export class ModuleManager {
 		this.hydrating = true;
 		try {
 			const disabledFromStorage = await this.persistence.loadDisabled();
-			this.applyHydratedDisabled(disabledFromStorage);
-			this.publishHydration(false);
+			const changed = this.applyHydratedDisabled(disabledFromStorage);
+			this.commitHydration(false, changed, true);
 			return true;
 		} catch (error) {
-			this.publishHydration(true);
+			this.commitHydration(true, false, true);
 			console.error('[HALO:ModuleManager] Installation retry failed', error);
 			return false;
 		} finally {
