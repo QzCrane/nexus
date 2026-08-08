@@ -1,10 +1,10 @@
-#!/usr/bin/env node
 // goal: one executable, unit-testable PR product-scope classifier for GitHub Actions
 // inv: unknown paths fail closed to both products; only explicit documentation paths may skip both
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import process from 'node:process';
+import { TextDecoder } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 const SPECTRA_PREFIXES = Object.freeze([
@@ -65,7 +65,15 @@ export function classifyChangedPaths(paths, eventName = 'pull_request') {
 export function parseNulSeparatedPaths(buffer) {
 	const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
 	if (bytes.length === 0) return [];
-	const records = bytes.toString('utf8').split('\0');
+
+	let decoded;
+	try {
+		decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+	} catch {
+		throw new Error('Changed-path stream is not valid UTF-8');
+	}
+
+	const records = decoded.split('\0');
 	if (records.at(-1) === '') records.pop();
 	if (records.some((record) => record.length === 0)) {
 		throw new Error('Changed-path stream contains an empty record');
