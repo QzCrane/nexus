@@ -194,6 +194,47 @@ function relativeDist(file) {
 	return path.relative(distDir, file).replaceAll('\\', '/');
 }
 
+function kib(bytes) {
+	return Math.ceil(bytes / 1024);
+}
+
+function outputAbsolute(output) {
+	return path.normalize(path.resolve(__dirname, output));
+}
+
+/**
+ * Sum the files that execute before any dynamic import boundary.
+ * This is the SidePanel cold-start parse/compile closure, not the entry file
+ * alone and not the total bytes of every future lazy tool chunk.
+ */
+function staticOutputClosure(metafile, entryOutput) {
+	if (!metafile?.outputs) return null;
+	const outputs = new Map(
+		Object.entries(metafile.outputs).map(([output, detail]) => [outputAbsolute(output), detail]),
+	);
+	const start = path.normalize(path.join(distDir, entryOutput));
+	if (!outputs.has(start)) return null;
+
+	const visited = new Set();
+	const stack = [start];
+	let bytes = 0;
+	while (stack.length > 0) {
+		const current = stack.pop();
+		if (!current || visited.has(current)) continue;
+		const detail = outputs.get(current);
+		if (!detail) continue;
+		visited.add(current);
+		bytes += detail.bytes;
+
+		for (const imported of detail.imports ?? []) {
+			if (imported.external || imported.kind === 'dynamic-import') continue;
+			const target = path.normalize(path.resolve(path.dirname(current), imported.path));
+			if (outputs.has(target) && !visited.has(target)) stack.push(target);
+		}
+	}
+	return { bytes, files: visited.size };
+}
+
 function assertProductionSidepanelSplitting() {
 	if (isDev) return;
 	const chunksDir = path.join(distDir, 'chunks');
@@ -232,10 +273,13 @@ if (isWatch) {
 		try {
 			const result = await esbuild.build(buildOptions(entry, {
 				write: true,
-				metafile: isAnalyze,
+				// SidePanel metafile is always retained in memory because startup
+				// closure is a production performance invariant. Other domains emit
+				// full analysis only on explicit --analyze builds.
+				metafile: entry.kind === 'sidepanel' || isAnalyze,
 			}));
-			const kb = Math.ceil(statSync(path.join(distDir, entry.out)).size / 1024);
-			return { entry, result, label: `${entry.out.replace('.js', '')}:${kb}KB` };
+			const bytes = statSync(path.join(distDir, entry.out)).size;
+			return { entry, result, bytes, label: `${entry.out.replace('.js', '')}:${kib(bytes)}KB` };
 		} catch (e) {
 			console.error(`❌ ${entry.out}: ${e.message}`);
 			process.exit(1);
@@ -244,19 +288,42 @@ if (isWatch) {
 
 	assertProductionSidepanelSplitting();
 
+	const byOutput = new Map(buildResults.map((item) => [item.entry.out, item]));
+	const sizeOf = (output) => byOutput.get(output)?.bytes ?? 0;
+	const allFrameDocumentStart = sizeOf('content-smooth-scroll.js') + sizeOf('content-frame-tools.js');
+	const topFrameDocumentStart = allFrameDocumentStart + sizeOf('content.js');
+	const allFrameDocumentIdle = sizeOf('content-clipboard.js');
+	const topFrameDocumentIdle = allFrameDocumentIdle + sizeOf('content-hover-zoom.js');
+
+	const sidepanelResult = byOutput.get('sidepanel.js');
+	const sidepanelStartup = staticOutputClosure(sidepanelResult?.result.metafile, 'sidepanel.js');
+	if (!sidepanelStartup) {
+		throw new Error('HALO SidePanel startup closure could not be resolved from the esbuild metafile');
+	}
+
 	if (isAnalyze) {
-		const report = buildResults.map(({ entry, result }) => ({
-			entry: entry.out,
-			kind: entry.kind,
-			outputs: Object.fromEntries(
-				Object.entries(result.metafile?.outputs ?? {})
-					.map(([output, detail]) => [
-						relativeDist(path.resolve(__dirname, output)),
-						{ bytes: detail.bytes, entryPoint: detail.entryPoint, imports: detail.imports },
-					])
-					.sort(([left], [right]) => left.localeCompare(right)),
-			),
-		}));
+		const report = {
+			runtimeSurfaces: {
+				allFrameDocumentStartBytes: allFrameDocumentStart,
+				topFrameDocumentStartBytes: topFrameDocumentStart,
+				allFrameDocumentIdleBytes: allFrameDocumentIdle,
+				topFrameDocumentIdleBytes: topFrameDocumentIdle,
+				sidepanelStartupBytes: sidepanelStartup.bytes,
+				sidepanelStartupFiles: sidepanelStartup.files,
+			},
+			entries: buildResults.map(({ entry, result }) => ({
+				entry: entry.out,
+				kind: entry.kind,
+				outputs: Object.fromEntries(
+					Object.entries(result.metafile?.outputs ?? {})
+						.map(([output, detail]) => [
+							relativeDist(path.resolve(__dirname, output)),
+							{ bytes: detail.bytes, entryPoint: detail.entryPoint, imports: detail.imports },
+						])
+						.sort(([left], [right]) => left.localeCompare(right)),
+				),
+			})),
+		};
 		writeFileSync(
 			path.join(distDir, 'build-analysis.json'),
 			`${JSON.stringify(report, null, 2)}\n`,
@@ -266,11 +333,14 @@ if (isWatch) {
 	const chunkFiles = walkFiles(path.join(distDir, 'chunks')).filter((file) => file.endsWith('.js'));
 	const chunkBytes = chunkFiles.reduce((total, file) => total + statSync(file).size, 0);
 	const chunkInfo = chunkFiles.length > 0
-		? ` | chunks:${chunkFiles.length}/${Math.ceil(chunkBytes / 1024)}KB`
+		? ` | chunks:${chunkFiles.length}/${kib(chunkBytes)}KB`
 		: '';
 	const saatInfo = toolScriptsCount + officialScriptsCount > 0
 		? ` | SaaT:${toolScriptsCount + officialScriptsCount}`
 		: '';
 	console.log(`✓ Build: ${buildResults.map(({ label }) => label).join(' | ')}${chunkInfo}${saatInfo}`);
+	console.log(
+		`✓ Startup closures: all-frame@start:${kib(allFrameDocumentStart)}KB | top-frame@start:${kib(topFrameDocumentStart)}KB | all-frame@idle:${kib(allFrameDocumentIdle)}KB | top-frame@idle:${kib(topFrameDocumentIdle)}KB | sidepanel:${kib(sidepanelStartup.bytes)}KB/${sidepanelStartup.files} files`,
+	);
 	console.log('🎉 Done → dist/');
 }
