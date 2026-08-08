@@ -14,11 +14,16 @@ function isExpectedRuntimeDisconnect(error: unknown): boolean {
 		message.includes('message port closed');
 }
 
+let listenerAttached = false;
+let settingsEventObserved = false;
+
 function captureSelection(): void {
 	// Copy dispatch precedes some pages' selection bookkeeping. Preserve the
 	// bounded post-copy delay used by the previous host without keeping a timer
-	// alive between copy events.
+	// alive between copy events. If the feature is disabled during that bounded
+	// delay, the pending capture loses ownership and exits without writing.
 	setTimeout(() => {
+		if (!listenerAttached) return;
 		const active = document.activeElement;
 		if (active instanceof HTMLInputElement && active.type === 'password') return;
 
@@ -44,8 +49,6 @@ function captureSelection(): void {
 	}, 50);
 }
 
-let listenerAttached = false;
-
 function updateClipboardState(enabled: boolean): void {
 	if (enabled === listenerAttached) return;
 	listenerAttached = enabled;
@@ -59,27 +62,33 @@ function readEnabled(value: unknown): boolean {
 	return typeof enabled === 'boolean' ? enabled : true;
 }
 
+// Subscribe before the asynchronous initial read. A storage change that wins
+// the race becomes authoritative; the delayed initial snapshot may not clobber
+// that newer event-owned state.
+chrome.storage.onChanged.addListener((changes, area) => {
+	if (area !== 'local') return;
+	const change = changes[SETTINGS_KEY];
+	if (!change) return;
+	settingsEventObserved = true;
+	updateClipboardState(readEnabled(change.newValue));
+});
+
 // Clipboard history retains the existing default-on contract for this pass;
 // structural isolation makes that contract cheap without silently changing
 // existing users' behavior. A future product decision can change the default
 // in one shared settings owner instead of coupling it to content-host loading.
 try {
 	void chrome.storage.local.get([SETTINGS_KEY]).then((result) => {
+		if (settingsEventObserved) return;
 		updateClipboardState(readEnabled(result[SETTINGS_KEY]));
 	}).catch((error: unknown) => {
-		if (!isExpectedRuntimeDisconnect(error)) {
-			console.warn(LOG_TAG, 'Initial settings read failed', error);
-		}
+		if (settingsEventObserved || isExpectedRuntimeDisconnect(error)) return;
+		console.warn(LOG_TAG, 'Initial settings read failed', error);
+		updateClipboardState(true);
 	});
 } catch (error: unknown) {
 	if (!isExpectedRuntimeDisconnect(error)) {
 		console.warn(LOG_TAG, 'Storage context unavailable', error);
+		if (!settingsEventObserved) updateClipboardState(true);
 	}
 }
-
-chrome.storage.onChanged.addListener((changes, area) => {
-	if (area !== 'local') return;
-	const change = changes[SETTINGS_KEY];
-	if (!change) return;
-	updateClipboardState(readEnabled(change.newValue));
-});
