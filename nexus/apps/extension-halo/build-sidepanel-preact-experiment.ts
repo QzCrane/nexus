@@ -1,13 +1,15 @@
 // goal: measure a SidePanel-only Preact/compat candidate without changing canonical HALO build ownership
-// inv: content scripts/background stay on the canonical build; this experiment overwrites only dist/sidepanel outputs.
+// inv: content scripts/background stay on the canonical build; this experiment replaces only SidePanel-owned outputs.
 
 import esbuild from 'esbuild';
+import { existsSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const distDir = path.join(__dirname, 'dist');
+const sidepanelChunksDir = path.join(distDir, 'chunks');
 
 const PREACT_ALIAS = Object.freeze({
 	'react/jsx-dev-runtime': 'preact/jsx-dev-runtime',
@@ -70,6 +72,18 @@ function closureContributors(metafile: esbuild.Metafile, outputs: Set<string>, l
 		.map(([input, bytes]) => ({ input, bytes }))
 		.sort((left, right) => right.bytes - left.bytes || left.input.localeCompare(right.input))
 		.slice(0, limit);
+}
+
+// Canonical HALO has exactly one split build domain: SidePanel. Remove its
+// canonical React chunks before writing the Preact graph so the experiment
+// artifact cannot retain unreachable chunks from both renderers.
+if (existsSync(sidepanelChunksDir)) {
+	rmSync(sidepanelChunksDir, {
+		recursive: true,
+		force: true,
+		maxRetries: 5,
+		retryDelay: 100,
+	});
 }
 
 const result = await esbuild.build({
