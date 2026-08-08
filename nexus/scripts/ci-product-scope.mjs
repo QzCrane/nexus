@@ -68,7 +68,10 @@ export function parseNulSeparatedPaths(buffer) {
 
 	let decoded;
 	try {
-		decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+		// `ignoreBOM:true` means U+FEFF is data, not a decoder control marker.
+		// Git permits a filename whose first character is U+FEFF; stripping it
+		// could turn an unknown root path into a false docs-only path.
+		decoded = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
 	} catch {
 		throw new Error('Changed-path stream is not valid UTF-8');
 	}
