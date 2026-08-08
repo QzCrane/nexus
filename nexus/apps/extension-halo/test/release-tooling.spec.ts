@@ -86,7 +86,7 @@ describe('HALO release tooling', () => {
 		});
 		expect(byEntry.get('content-smooth-scroll.js')).toMatchObject({
 			run_at: 'document_start',
-			all_frames: true,
+			all_frames: false,
 		});
 		expect(byEntry.get('content-frame-tools.js')).toMatchObject({
 			run_at: 'document_start',
