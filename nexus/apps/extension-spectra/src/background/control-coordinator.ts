@@ -2,7 +2,6 @@
 
 import {
 	audioSessionMatchesControlDocument,
-	CONTROL_ALGORITHM_POLICIES,
 	CONTROL_BOOTSTRAP_OBSERVATION_GROUPS,
 	CONTROL_SESSION_FIELDS,
 	SPECTRA_PROTOCOL_VERSION,
@@ -13,8 +12,6 @@ import {
 	compileEffectiveVolume,
 	isActiveCaptureLifecycle,
 	resolveAudioVolume,
-	resolveAcknowledgedAudioVolumeState,
-	resolveControlAudioVolume,
 	rpcFailure,
 	rpcSuccess,
 	splitEffectiveVolume,
@@ -61,6 +58,11 @@ import {
 	releaseSourceRuntimeLease,
 	retainSourceRuntimeLease,
 } from './runtime-loader';
+import {
+	backgroundControlTargetScopeFlags,
+	backgroundResolveAcknowledgedAudioVolumeState,
+	backgroundResolveControlAudioVolume,
+} from './background-control-policy';
 import { swLog } from '../shared/logger';
 
 const STORAGE_PREFIX = 'spectra.control.tab.';
@@ -133,25 +135,12 @@ interface ControlTargetProjection {
 	activeVideo: ControlSnapshot['activeVideo'];
 }
 
-function controlTargetScopeFlags(capabilities: readonly ControlCapability[]): {
-	updatesMedia: boolean;
-	updatesVideo: boolean;
-} {
-	const scopes = capabilities.map((capability) => CONTROL_ALGORITHM_POLICIES[capability].scope);
-	return {
-		updatesMedia: scopes.some((scope) => scope === 'active-media'
-			|| scope === 'media-source'
-			|| scope === 'requested-audio-scope'),
-		updatesVideo: scopes.some((scope) => scope === 'active-video'),
-	};
-}
-
 function assertUnambiguousTargetScope(request: RoutedControlSubmitRequest): void {
 	const capabilities = [
 		...Object.keys(request.patch ?? {}),
 		...(request.mutations ?? []).map(({ field }) => field),
 	] as ControlCapability[];
-	const { updatesMedia, updatesVideo } = controlTargetScopeFlags(capabilities);
+	const { updatesMedia, updatesVideo } = backgroundControlTargetScopeFlags(capabilities);
 	if (updatesVideo && request.target?.kind === 'audio') {
 		throw new Error('A video-scoped control cannot target an audio element');
 	}
@@ -174,7 +163,7 @@ function projectControlTarget(
 	let activeVideo = baseline.activeVideo;
 	if (!target) return { activeMedia, activeVideo };
 
-	const { updatesMedia, updatesVideo } = controlTargetScopeFlags(capabilities);
+	const { updatesMedia, updatesVideo } = backgroundControlTargetScopeFlags(capabilities);
 	if (updatesMedia) {
 		activeMedia = target;
 		if (target.kind === 'video') activeVideo = target;
@@ -996,7 +985,7 @@ async function executeIntent(request: RoutedControlSubmitRequest): Promise<Contr
 			sessionScope: controlSessionScopeForSource(intent.source),
 		},
 	);
-	const audioVolume = resolveControlAudioVolume(committed.fields);
+	const audioVolume = backgroundResolveControlAudioVolume(committed.fields);
 	return {
 		intentId: intent.intentId,
 		tabId: intent.tabId,
@@ -1568,7 +1557,7 @@ async function executeFieldOperation(
 				...(currentMuted === null ? {} : {
 					audioVolume: {
 						effectiveVolume: currentEffective,
-						volumeState: resolveAcknowledgedAudioVolumeState(
+						volumeState: backgroundResolveAcknowledgedAudioVolumeState(
 							baseline.fields,
 							currentEffective,
 							currentMuted,
@@ -1639,7 +1628,7 @@ async function executeFieldOperation(
 			);
 			const audioVolume = currentMuted === null ? null : {
 				effectiveVolume,
-				volumeState: resolveAcknowledgedAudioVolumeState(
+				volumeState: backgroundResolveAcknowledgedAudioVolumeState(
 					committed.fields,
 					effectiveVolume,
 					currentMuted,
@@ -1804,7 +1793,7 @@ async function executeFieldOperation(
 				target,
 				{ sessionScope: controlSessionScopeForSource(request.source) },
 			);
-			const audioVolume = resolveControlAudioVolume(committed.fields);
+			const audioVolume = backgroundResolveControlAudioVolume(committed.fields);
 			return {
 				operationId,
 				tabId: request.tabId,

@@ -3,7 +3,6 @@
 import {
 	SPECTRA_CONTENT_RUNTIME_REVISION,
 	SPECTRA_PROTOCOL_VERSION,
-	CONTROL_ALGORITHM_POLICIES,
 	HOTKEY_ACTION_DESCRIPTORS,
 	findBestHostnameMatch,
 	hasExtensionOnlyContribution,
@@ -16,7 +15,7 @@ import {
 	type ContentRuntimeLeaseReason,
 	type ContentRuntimeReadyResult,
 	type ContentRuntimeSourceOwnership,
-	type ControlField,
+	type ControlSessionField,
 	type ControlPatch,
 	type ControlSessionPatch,
 	type MediaTarget,
@@ -30,6 +29,7 @@ import { settingsRepository } from './settings-repository';
 import { storage } from './state';
 import { markBadgeUsedForTab } from './handlers/badge';
 import { ensureCaptureStatesReconciled } from './handlers/capture';
+import { backgroundRestoreBucket } from './background-control-policy';
 
 // Heavy SPA startup can legitimately spend several seconds restoring settings
 // and discovering media before the runtime publishes READY. Keep the handshake
@@ -721,16 +721,9 @@ function splitDocumentRestorePatch(patch: ControlSessionPatch): Array<{
 	const video: ControlPatch = {};
 	const full: ControlPatch = {};
 	for (const [rawField, value] of Object.entries(patch)) {
-		const field = rawField as ControlField;
-		const policy = CONTROL_ALGORITHM_POLICIES[field];
-		const target = policy.scope === 'active-video'
-			? video
-			: policy.scope === 'document'
-				|| policy.orderedStrategies.some((strategy) => (
-					strategy === 'media-webaudio' || strategy === 'capture'
-				))
-				? full
-				: media;
+		const field = rawField as ControlSessionField;
+		const bucket = backgroundRestoreBucket(field);
+		const target = bucket === 'video' ? video : bucket === 'full' ? full : media;
 		(target as Record<string, unknown>)[field] = structuredClone(value);
 	}
 	return [
