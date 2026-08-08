@@ -7,12 +7,12 @@
 	"keywords": [],
 	"background": {
 		"mechanism": "interval_slow",
-		"frequency": "1000ms display-only while running",
+		"frequency": "1000ms display/deadline check while running",
 		"activeOnly": true,
 		"level": "idle",
 		"descriptionKey": "impact.interval_1s",
 		"sourceFile": "tools/pomodoro/panel.tsx",
-		"sourceLine": 43,
-		"sourceDetail": "1Hz interval updates only ephemeral display time; persistent PomodoroState changes only at user/phase boundaries"
+		"sourceLine": 70,
+		"sourceDetail": "one 1Hz interval updates ephemeral display time and verifies the live wall-clock deadline; persistent PomodoroState changes only at user/phase boundaries"
 	}
 }
