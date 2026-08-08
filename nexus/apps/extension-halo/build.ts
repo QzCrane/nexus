@@ -262,22 +262,31 @@ function staticOutputClosure(metafile, entryOutput) {
 	return { bytes, fileCount: visited.size, outputBytes };
 }
 
-/** Attribute one physical output to the source modules esbuild actually retained. */
-function largestOutputInputs(metafile, entryOutput, limit = 12) {
-	if (!metafile?.outputs) return [];
-	const target = path.normalize(path.join(distDir, entryOutput));
-	for (const [output, detail] of Object.entries(metafile.outputs)) {
-		if (outputAbsolute(output) !== target) continue;
-		return Object.entries(detail.inputs ?? {})
-			.map(([input, stats]) => ({
-				input: path.relative(__dirname, path.resolve(__dirname, input)).replaceAll('\\', '/'),
-				bytes: stats.bytesInOutput ?? 0,
-			}))
-			.filter(({ bytes }) => bytes > 0)
-			.sort((left, right) => right.bytes - left.bytes || left.input.localeCompare(right.input))
-			.slice(0, limit);
+/** Attribute the complete static closure to the source modules esbuild retained. */
+function largestStaticClosureInputs(metafile, closure, limit = 12) {
+	if (!metafile?.outputs || !closure?.outputBytes) return [];
+	const outputs = new Map(
+		Object.entries(metafile.outputs).map(([output, detail]) => [outputAbsolute(output), detail]),
+	);
+	const aggregated = new Map();
+
+	for (const output of closure.outputBytes.keys()) {
+		const detail = outputs.get(output);
+		if (!detail) continue;
+		for (const [input, stats] of Object.entries(detail.inputs ?? {})) {
+			const normalizedInput = path
+				.relative(__dirname, path.resolve(__dirname, input))
+				.replaceAll('\\', '/');
+			const bytes = stats.bytesInOutput ?? 0;
+			if (bytes <= 0) continue;
+			aggregated.set(normalizedInput, (aggregated.get(normalizedInput) ?? 0) + bytes);
+		}
 	}
-	return [];
+
+	return [...aggregated.entries()]
+		.map(([input, bytes]) => ({ input, bytes }))
+		.sort((left, right) => right.bytes - left.bytes || left.input.localeCompare(right.input))
+		.slice(0, limit);
 }
 
 function assertProductionSidepanelSplitting() {
@@ -379,7 +388,10 @@ if (isWatch) {
 	if (!sidepanelStartup) {
 		throw new Error('HALO SidePanel startup closure could not be resolved from the esbuild metafile');
 	}
-	const sidepanelTopInputs = largestOutputInputs(sidepanelResult.result.metafile, 'sidepanel.js');
+	const sidepanelTopInputs = largestStaticClosureInputs(
+		sidepanelResult.result.metafile,
+		sidepanelStartup,
+	);
 
 	const budgetMeasurements = {
 		background: sizeOf('background.js'),
