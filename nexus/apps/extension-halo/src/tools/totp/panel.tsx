@@ -1,11 +1,18 @@
 // goal: TOTP panel UI - 2FA code generator
+// eff: 1Hz display updates reuse each code for its whole counter epoch
 
 import type React from 'react';
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { TotpEntry, TotpCode } from './types';
-import { generateTotp, parseOtpAuthUri, generateId } from './core';
+import {
+	generateId,
+	generateTotp,
+	parseOtpAuthUri,
+	totpCounter,
+	totpRemaining,
+} from './core';
 import { styles } from './panel.styles';
 import {
 	createSerializedAsyncPoller,
@@ -13,6 +20,15 @@ import {
 	useToolState,
 } from '../../kernel';
 
+interface CachedTotpCode {
+	counter: number;
+	signature: string;
+	code: string;
+}
+
+function cacheSignature(entry: TotpEntry): string {
+	return `${entry.secret}\u0000${entry.digits}\u0000${entry.period}`;
+}
 
 export const TotpPanel: React.FC = () => {
 	const { t } = useTranslation();
@@ -24,22 +40,58 @@ export const TotpPanel: React.FC = () => {
 	const [secretInput, setSecretInput] = useToolState<string>('totp-secret', '');
 	const [nameInput, setNameInput] = useToolState<string>('totp-name', '');
 	const { copy, copyFailed } = useOwnedClipboardCopy<string>();
+	const codeCacheRef = useRef(new Map<string, CachedTotpCode>());
 
-	// Update codes every second (with visibility pause optimization)
+	// Remaining time changes every second, but HMAC output changes only when the
+	// TOTP counter changes. Cache one code per entry/counter and derive remaining
+	// seconds from the wall clock without re-importing an HMAC key every tick.
 	useEffect(() => {
 		const poller = createSerializedAsyncPoller(
 			async () => {
-			const newCodes: Record<string, TotpCode> = {};
-			const newErrors: Record<string, string> = {};
-			for (const entry of entries) {
-				try {
-					newCodes[entry.id] = await generateTotp(entry.secret, entry.digits, entry.period);
-				} catch {
-					newErrors[entry.id] = t('totp.generationFailed', {
-						defaultValue: 'Invalid secret or TOTP parameters',
-					});
+				const now = Date.now();
+				const liveIds = new Set(entries.map((entry) => entry.id));
+				for (const id of codeCacheRef.current.keys()) {
+					if (!liveIds.has(id)) codeCacheRef.current.delete(id);
 				}
-			}
+
+				const results = await Promise.all(entries.map(async (entry) => {
+					const signature = cacheSignature(entry);
+					const counter = totpCounter(now, entry.period);
+					const cached = codeCacheRef.current.get(entry.id);
+					try {
+						let code = cached?.code;
+						if (!cached || cached.counter !== counter || cached.signature !== signature) {
+							const generated = await generateTotp(entry.secret, entry.digits, entry.period, now);
+							code = generated.code;
+							codeCacheRef.current.set(entry.id, { counter, signature, code });
+						}
+						return {
+							id: entry.id,
+							code: {
+								code: code ?? '',
+								remaining: totpRemaining(now, entry.period),
+								period: entry.period,
+							} satisfies TotpCode,
+							error: null,
+						};
+					} catch {
+						codeCacheRef.current.delete(entry.id);
+						return {
+							id: entry.id,
+							code: null,
+							error: t('totp.generationFailed', {
+								defaultValue: 'Invalid secret or TOTP parameters',
+							}),
+						};
+					}
+				}));
+
+				const newCodes: Record<string, TotpCode> = {};
+				const newErrors: Record<string, string> = {};
+				for (const result of results) {
+					if (result.code) newCodes[result.id] = result.code;
+					if (result.error) newErrors[result.id] = result.error;
+				}
 				return { codes: newCodes, errors: newErrors };
 			},
 			(result) => {
@@ -51,7 +103,6 @@ export const TotpPanel: React.FC = () => {
 			1000,
 		);
 
-		// Visibility-based optimization: pause when tab not visible
 		const onVisibility = () => {
 			if (document.visibilityState === 'visible') poller.start();
 			else poller.stop();
@@ -66,9 +117,7 @@ export const TotpPanel: React.FC = () => {
 		};
 	}, [entries, t]);
 
-	// Add entry
 	const handleAdd = useCallback(() => {
-		// Try parsing as otpauth URI
 		const parsed = parseOtpAuthUri(secretInput);
 		const newEntry: TotpEntry = {
 			id: generateId(),
@@ -78,30 +127,27 @@ export const TotpPanel: React.FC = () => {
 			digits: parsed?.digits || 6,
 			period: parsed?.period || 30,
 		};
-		setEntries((e) => [...e, newEntry]);
+		setEntries((current) => [...current, newEntry]);
 		setSecretInput('');
 		setNameInput('');
 		setShowAdd(false);
 	}, [secretInput, nameInput, setEntries, setSecretInput, setNameInput]);
 
-	// Delete entry
 	const handleDelete = useCallback((id: string) => {
-		setEntries((e) => e.filter((x) => x.id !== id));
+		codeCacheRef.current.delete(id);
+		setEntries((current) => current.filter((entry) => entry.id !== id));
 	}, [setEntries]);
 
-	// Copy code
 	const handleCopy = useCallback((entryId: string, code: string) => {
 		void copy(entryId, code);
 	}, [copy]);
 
 	return (
 		<div style={styles.wrapper}>
-			{/* Add Button */}
 			<button type="button" style={styles.btn} onClick={() => setShowAdd(!showAdd)}>
 				{showAdd ? '✕' : '＋'} {showAdd ? t('totp.cancel') : t('totp.addAccount')}
 			</button>
 
-			{/* Add Form */}
 			{showAdd && (
 				<Card variant="default" padding="sm">
 					<div style={styles.addForm}>
@@ -112,7 +158,6 @@ export const TotpPanel: React.FC = () => {
 				</Card>
 			)}
 
-			{/* Entries */}
 			<div style={styles.list}>
 				{(pollFailed || copyFailed) && (
 					<div style={styles.error} role="status">
