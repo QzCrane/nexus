@@ -3,11 +3,12 @@
 
 import { ALL_MODULES, CORE_MODULES, OPTIONAL_MODULES, type ModuleState } from '../registry/module-registry';
 import type { ModuleMeta } from '../core/tool-registry-types';
-import { getAllStates, saveState, deleteState, useMemoryMode } from './module-db';
+import { getAllStates, saveState, saveStates, deleteState, useMemoryMode } from './module-db';
 
 export interface ModuleStatePersistence {
 	loadAll: () => Promise<ModuleState[]>;
 	save: (state: ModuleState) => Promise<void>;
+	saveMany: (states: readonly ModuleState[]) => Promise<void>;
 	remove: (id: string) => Promise<void>;
 	shouldPersistSeed: () => boolean;
 }
@@ -21,6 +22,7 @@ export interface ModuleManagerSnapshot {
 const DEFAULT_PERSISTENCE: ModuleStatePersistence = {
 	loadAll: getAllStates,
 	save: saveState,
+	saveMany: saveStates,
 	remove: deleteState,
 	shouldPersistSeed: () => !useMemoryMode,
 };
@@ -55,17 +57,15 @@ export class ModuleManager {
 
 	async initialize(): Promise<void> {
 		const stored = await this.persistence.loadAll();
-		for (const state of stored) {
-			this.states.set(state.id, state);
-		}
+		for (const state of stored) this.states.set(state.id, state);
 
-		// Only built-in/core modules are implicit. Optional modules must remain
-		// absent until the user installs them; deleting an optional state is the
-		// durable representation of uninstall and must survive the next startup.
+		// Only built-in/core modules are implicit. Optional-module absence is the
+		// durable uninstalled state. Persist all missing core seeds in one IDB
+		// transaction instead of serializing one transaction per packaged module.
 		const missingCoreStates = createMissingCoreModuleStates(new Set(this.states.keys()));
-		for (const state of missingCoreStates) {
-			this.states.set(state.id, state);
-			if (this.persistence.shouldPersistSeed()) await this.persistence.save(state);
+		for (const state of missingCoreStates) this.states.set(state.id, state);
+		if (missingCoreStates.length > 0 && this.persistence.shouldPersistSeed()) {
+			await this.persistence.saveMany(missingCoreStates);
 		}
 		this.refreshSnapshot();
 	}
