@@ -15,12 +15,6 @@ export function isEditableHotkeyEvent(
 		&& (target.isContentEditable || EDITABLE_HOTKEY_TAGS.has(target.tagName)));
 }
 
-export function isWebsiteClaimedHotkeyEvent(
-	event: Pick<Event, 'defaultPrevented' | 'cancelBubble'>,
-): boolean {
-	return event.defaultPrevented || event.cancelBubble;
-}
-
 interface WebsiteFirstKeyboardArbiterOptions<Candidate> {
 	type: 'keydown' | 'keyup';
 	resolveCandidate: (event: KeyboardEvent) => Candidate | null;
@@ -65,16 +59,14 @@ export function subscribeDocumentStartPhysicalHotkeyRelease(
 	return () => owner?.listeners.delete(listener);
 }
 
-// Window capture schedules a tail for the same physical event. The tail is
+// Window capture only schedules a tail for the same physical event. The tail is
 // appended after every website window listener that already exists for that
 // dispatch, so target/document/window handlers can claim the chord first with
-// preventDefault, stopPropagation, or stopImmediatePropagation. A 0ms task is
-// retained as a fail-safe when that same-event tail is not observed. At
-// fallback time the event's final defaultPrevented/cancelBubble flags still
-// decide website ownership, so an absent tail cannot silently convert an
-// unclaimed physical key into a no-op. The candidate is resolved once at
-// capture and carried to settlement, so a settings change in another listener
-// cannot remap one physical event midway through dispatch.
+// preventDefault, stopPropagation, or stopImmediatePropagation. A macrotask
+// removes tails that propagation never reaches; a microtask would run before
+// the event reaches window bubble and is therefore incorrect. The candidate is
+// resolved once at capture and carried to settlement, so a settings change in
+// another listener cannot remap one physical event midway through dispatch.
 export function createWebsiteFirstKeyboardArbiter<Candidate>(
 	options: WebsiteFirstKeyboardArbiterOptions<Candidate>,
 ): () => void {
@@ -109,19 +101,14 @@ export function createWebsiteFirstKeyboardArbiter<Candidate>(
 			options.onSettled(
 				event,
 				owned.candidate,
-				isWebsiteClaimedHotkeyEvent(event),
+				event.defaultPrevented || event.cancelBubble,
 			);
 		};
 		window.addEventListener(options.type, tail);
 		const cleanupTimer = setTimeout(() => {
 			const owned = clearPending(event);
 			if (!owned) return;
-			const websiteClaimed = isWebsiteClaimedHotkeyEvent(event);
-			if (websiteClaimed) {
-				options.onSettled(event, owned.candidate, true);
-			} else {
-				options.onSettled(event, owned.candidate, false);
-			}
+			options.onSettled(event, owned.candidate, true);
 		}, 0);
 		pending.set(event, { candidate, tail, cleanupTimer });
 	};
