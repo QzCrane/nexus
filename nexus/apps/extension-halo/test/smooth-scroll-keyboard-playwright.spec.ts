@@ -16,7 +16,9 @@ interface KeyboardProbeSnapshot {
 	arrowClaims: number;
 	lastArrowDefaultPrevented: boolean | null;
 	lastSpaceDefaultPrevented: boolean | null;
+	lastStopArrowDefaultPrevented: boolean | null;
 	spaceClaims: number;
+	stopArrowClaims: number;
 	volume: number;
 }
 
@@ -26,6 +28,7 @@ declare global {
 			installLateSiteHandlers(): void;
 			reset(): void;
 			setArrowOwner(enabled: boolean): void;
+			setStopArrowOwner(enabled: boolean): void;
 			snapshot(): KeyboardProbeSnapshot;
 		};
 	}
@@ -59,9 +62,12 @@ const FIXTURE_HTML = `<!doctype html>
 			const player = document.getElementById('offscreen-player');
 			let installed = false;
 			let arrowOwnerEnabled = false;
+			let stopArrowOwnerEnabled = false;
 			let arrowClaims = 0;
+			let stopArrowClaims = 0;
 			let spaceClaims = 0;
 			let lastArrowDefaultPrevented = null;
+			let lastStopArrowDefaultPrevented = null;
 			let lastSpaceDefaultPrevented = null;
 
 			window.__haloKeyboardProbe = {
@@ -79,6 +85,14 @@ const FIXTURE_HTML = `<!doctype html>
 						});
 					});
 					document.addEventListener('keydown', (event) => {
+						if (event.key === 'ArrowDown' && stopArrowOwnerEnabled) {
+							stopArrowClaims++;
+							event.stopPropagation();
+							queueMicrotask(() => {
+								lastStopArrowDefaultPrevented = event.defaultPrevented;
+							});
+							return;
+						}
 						if (event.key !== ' ') return;
 						spaceClaims++;
 						event.preventDefault();
@@ -90,8 +104,10 @@ const FIXTURE_HTML = `<!doctype html>
 				},
 				reset() {
 					arrowClaims = 0;
+					stopArrowClaims = 0;
 					spaceClaims = 0;
 					lastArrowDefaultPrevented = null;
+					lastStopArrowDefaultPrevented = null;
 					lastSpaceDefaultPrevented = null;
 					player.volume = 1;
 					window.scrollTo({ top: 0, behavior: 'instant' });
@@ -100,12 +116,17 @@ const FIXTURE_HTML = `<!doctype html>
 				setArrowOwner(enabled) {
 					arrowOwnerEnabled = enabled;
 				},
+				setStopArrowOwner(enabled) {
+					stopArrowOwnerEnabled = enabled;
+				},
 				snapshot() {
 					return {
 						arrowClaims,
 						lastArrowDefaultPrevented,
 						lastSpaceDefaultPrevented,
+						lastStopArrowDefaultPrevented,
 						spaceClaims,
+						stopArrowClaims,
 						volume: player.volume,
 					};
 				},
@@ -258,6 +279,19 @@ test.describe('HALO keyboard ownership in Chromium', () => {
 			expect(mediaOwned.scrollY).toBe(0);
 
 			await resetFixture(page);
+			await page.evaluate(() => {
+				window.__haloKeyboardProbe.setArrowOwner(false);
+				window.__haloKeyboardProbe.setStopArrowOwner(true);
+			});
+			await page.keyboard.press('ArrowDown');
+			const propagationOwnedPosition = await waitForScrollSettled(page);
+			const propagationOwned = await page.evaluate(() => window.__haloKeyboardProbe.snapshot());
+			expect(propagationOwned.stopArrowClaims).toBe(1);
+			expect(propagationOwned.lastStopArrowDefaultPrevented).toBe(false);
+			expect(propagationOwnedPosition).toBeLessThan(200);
+
+			await resetFixture(page);
+			await page.evaluate(() => window.__haloKeyboardProbe.setStopArrowOwner(false));
 			await page.keyboard.press('Space');
 			await nextFrame(page);
 			const prevented = await page.evaluate(() => ({
@@ -268,7 +302,6 @@ test.describe('HALO keyboard ownership in Chromium', () => {
 			expect(prevented.probe.lastSpaceDefaultPrevented).toBe(true);
 			expect(prevented.scrollY).toBe(0);
 
-			await page.evaluate(() => window.__haloKeyboardProbe.setArrowOwner(false));
 			const fastRepeat = await repeatArrowStream(page, 20, 16);
 			const mediumRepeat = await repeatArrowStream(page, 50, 6);
 			const sparseRepeat = await repeatArrowStream(page, 200, 2);
