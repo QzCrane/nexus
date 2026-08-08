@@ -8,6 +8,7 @@ import {
 	generateBackgroundActiveProjection,
 	generateRegistry,
 	generateScriptRuntimeManifest,
+	generateStartupRegistry,
 } from './registry-gen/gen-registry.ts';
 import { generateLoader } from './registry-gen/gen-loader.ts';
 import { generateI18n } from './registry-gen/gen-i18n.ts';
@@ -58,6 +59,7 @@ function main() {
 	console.log(`📦 Found: ${toolCount} Tools + ${scriptCount} Scripts + ${systemCount} System`);
 
 	generateRegistry(validModules, manifestsMap);
+	generateStartupRegistry(validModules, manifestsMap);
 	generateBackgroundActiveProjection(validModules, manifestsMap);
 	generateScriptRuntimeManifest(validModules, manifestsMap);
 	generateLoader(validModules);
