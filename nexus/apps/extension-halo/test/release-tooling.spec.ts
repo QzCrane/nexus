@@ -110,7 +110,8 @@ describe('HALO release tooling', () => {
 			'utf8',
 		);
 
-		expect(scripts.build).toBe('bun build.ts');
+		expect(scripts.build).toBe('bun build.ts && bun build-sidepanel-preact-experiment.ts');
+		expect(scripts['build:prod']).toBe('bun build.ts && bun build-sidepanel-preact-experiment.ts');
 		expect(scripts['build:dev']).toBe('bun build.ts --dev');
 		expect(scripts.dev).toContain('generate-tool-registry.ts');
 		expect(sidepanelHtml).toContain('<script type="module" src="sidepanel.js"></script>');
