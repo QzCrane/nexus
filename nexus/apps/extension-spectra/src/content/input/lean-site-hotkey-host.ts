@@ -1,20 +1,13 @@
 // goal: website-first custom hotkeys without a document-lifetime heavy Content Runtime
-// inv: only default-equivalent actions with canonical steps enter this host; every other site config stays on the full runtime
+// inv: content receives only a Background-adjudicated lean binding projection
 
 import {
 	SPECTRA_PROTOCOL_VERSION,
+	isSpectraLeanSiteHotkeyConfigureMessage,
+	isSpectraRepeatableDefaultHotkeyAction,
 	resolveSpectraDefaultHotkeyAction,
-	type SpectraDefaultHotkeyAction,
+	type SpectraLeanSiteHotkeyBinding,
 } from '@nexus/contracts/bootstrap';
-import {
-	isHotkeySettings,
-	type HotkeyBinding,
-	type HotkeySettings,
-} from '@nexus/contracts';
-import {
-	isLeanRepeatableSiteHotkeyAction,
-	resolveSiteHotkeys,
-} from '../../shared/site-hotkey-mode';
 import {
 	createWebsiteFirstKeyboardArbiter,
 	isEditableHotkeyEvent,
@@ -24,7 +17,6 @@ import {
 
 interface LeanSiteHotkeyHost {
 	revision: 1;
-	refresh(): Promise<void>;
 	dispose(): void;
 }
 
@@ -33,19 +25,19 @@ interface LeanSiteHotkeyWindow extends Window {
 }
 
 interface ActiveBinding {
-	binding: HotkeyBinding;
+	binding: SpectraLeanSiteHotkeyBinding;
 	gesture: string;
 	repeated: boolean;
 }
 
 const hostWindow = window as LeanSiteHotkeyWindow;
 const activeByCode = new Map<string, ActiveBinding>();
-let bindingByChord = new Map<string, HotkeyBinding>();
+let bindingByChord = new Map<string, SpectraLeanSiteHotkeyBinding>();
 let arbiterDispose: (() => void) | null = null;
 let physicalReleaseDispose: (() => void) | null = null;
 let runtimeMessageListener: ((message: unknown, sender: chrome.runtime.MessageSender) => false) | null = null;
 let disposed = false;
-let settingsEpoch = 0;
+let configurationGeneration = -1;
 
 function chordKey(
 	code: string,
@@ -57,13 +49,13 @@ function chordKey(
 	return `${code}:${ctrl ? 1 : 0}${alt ? 1 : 0}${shift ? 1 : 0}${meta ? 1 : 0}`;
 }
 
-function bindingChord(binding: HotkeyBinding): string {
+function bindingChord(binding: SpectraLeanSiteHotkeyBinding): string {
 	return chordKey(
-		binding.key.code,
-		binding.key.modifiers.ctrl,
-		binding.key.modifiers.alt,
-		binding.key.modifiers.shift,
-		binding.key.modifiers.meta,
+		binding.code,
+		binding.modifiers.ctrl,
+		binding.modifiers.alt,
+		binding.modifiers.shift,
+		binding.modifiers.meta,
 	);
 }
 
@@ -71,7 +63,7 @@ function eventChord(event: KeyboardEvent): string {
 	return chordKey(event.code, event.ctrlKey, event.altKey, event.shiftKey, event.metaKey);
 }
 
-function modifierForCode(code: string): keyof HotkeyBinding['key']['modifiers'] | null {
+function modifierForCode(code: string): keyof SpectraLeanSiteHotkeyBinding['modifiers'] | null {
 	return code.startsWith('Control') ? 'ctrl'
 		: code.startsWith('Alt') ? 'alt'
 			: code.startsWith('Shift') ? 'shift'
@@ -94,7 +86,7 @@ function sendTrigger(
 		requestId: crypto.randomUUID(),
 		type: 'spectra.content.default-hotkey.trigger',
 		payload: {
-			action: held.binding.action as SpectraDefaultHotkeyAction,
+			action: held.binding.action,
 			phase,
 			gesture: held.gesture,
 			repeated,
@@ -112,7 +104,7 @@ function releaseCode(code: string): void {
 	const modifier = modifierForCode(code);
 	if (modifier) {
 		for (const [heldCode, held] of activeByCode) {
-			if (!held.binding.key.modifiers[modifier]) continue;
+			if (!held.binding.modifiers[modifier]) continue;
 			activeByCode.delete(heldCode);
 			released.push(held);
 		}
@@ -126,7 +118,7 @@ function releaseAll(): void {
 	for (const held of released) sendTrigger(held, 'release', held.repeated);
 }
 
-function resolveCandidate(event: KeyboardEvent): HotkeyBinding | null {
+function resolveCandidate(event: KeyboardEvent): SpectraLeanSiteHotkeyBinding | null {
 	if (!isTrustedHotkeyEvent(event)
 		|| isBrowserRefreshShortcut(event)
 		|| resolveSpectraDefaultHotkeyAction(event) !== null
@@ -134,13 +126,17 @@ function resolveCandidate(event: KeyboardEvent): HotkeyBinding | null {
 
 	if (event.repeat) {
 		const active = activeByCode.get(event.code);
-		if (!active || !isLeanRepeatableSiteHotkeyAction(active.binding.action)) return null;
+		if (!active || !isSpectraRepeatableDefaultHotkeyAction(active.binding.action)) return null;
 		return bindingChord(active.binding) === eventChord(event) ? active.binding : null;
 	}
 	return bindingByChord.get(eventChord(event)) ?? null;
 }
 
-function onSettled(event: KeyboardEvent, binding: HotkeyBinding, websiteClaimed: boolean): void {
+function onSettled(
+	event: KeyboardEvent,
+	binding: SpectraLeanSiteHotkeyBinding,
+	websiteClaimed: boolean,
+): void {
 	if (websiteClaimed || disposed) return;
 	event.preventDefault();
 	if (!event.repeat) {
@@ -175,31 +171,28 @@ function syncArbiter(): void {
 	}
 }
 
-function applySettings(settings: HotkeySettings): void {
+function suspendConfiguration(): void {
 	releaseAll();
-	const resolved = resolveSiteHotkeys(location.href, settings);
-	const bindings = resolved?.mode === 'lean'
-		? resolved.site.bindings.filter((binding) => binding.enabled && !binding.disabledReason)
-		: [];
+	bindingByChord.clear();
+	syncArbiter();
+}
+
+function applyConfiguration(
+	generation: number,
+	bindings: readonly SpectraLeanSiteHotkeyBinding[],
+): void {
+	if (disposed || generation <= configurationGeneration) return;
+	configurationGeneration = generation;
+	releaseAll();
 	bindingByChord = new Map(bindings.map((binding) => [bindingChord(binding), binding]));
 	syncArbiter();
 }
 
-async function readSettings(): Promise<HotkeySettings | null> {
-	const response = await chrome.runtime.sendMessage({
-		protocolVersion: SPECTRA_PROTOCOL_VERSION,
-		requestId: crypto.randomUUID(),
-		type: 'spectra.hotkeys.get',
-		payload: {},
-	}).catch(() => null) as { ok?: unknown; data?: unknown } | null;
-	return response?.ok === true && isHotkeySettings(response.data) ? response.data : null;
-}
-
-async function refresh(): Promise<void> {
-	const epoch = ++settingsEpoch;
-	const settings = await readSettings();
-	if (disposed || epoch !== settingsEpoch || !settings) return;
-	applySettings(settings);
+function isHotkeysChangedSignal(message: unknown): boolean {
+	if (!message || typeof message !== 'object') return false;
+	const candidate = message as { protocolVersion?: unknown; type?: unknown };
+	return candidate.protocolVersion === SPECTRA_PROTOCOL_VERSION
+		&& candidate.type === 'spectra.hotkeys.changed';
 }
 
 const onPhysicalRelease = (event: Pick<KeyboardEvent, 'code'>): void => releaseCode(event.code);
@@ -212,9 +205,7 @@ const onPageHide = (): void => dispose();
 function dispose(): void {
 	if (disposed) return;
 	disposed = true;
-	settingsEpoch += 1;
-	releaseAll();
-	bindingByChord.clear();
+	suspendConfiguration();
 	arbiterDispose?.();
 	arbiterDispose = null;
 	physicalReleaseDispose?.();
@@ -229,32 +220,27 @@ function dispose(): void {
 	}
 }
 
-const host: LeanSiteHotkeyHost = { revision: 1, refresh, dispose };
+const host: LeanSiteHotkeyHost = { revision: 1, dispose };
 const existing = hostWindow.__SPECTRA_LEAN_SITE_HOTKEY_HOST__;
-if (existing?.revision === 1) {
-	void existing.refresh();
-} else {
+if (existing?.revision !== 1) {
 	existing?.dispose();
 	hostWindow.__SPECTRA_LEAN_SITE_HOTKEY_HOST__ = host;
 	physicalReleaseDispose = subscribeDocumentStartPhysicalHotkeyRelease(onPhysicalRelease);
 	runtimeMessageListener = (message, sender) => {
 		if (sender.id && sender.id !== chrome.runtime.id) return false;
-		if (!message || typeof message !== 'object') return false;
-		const candidate = message as {
-			protocolVersion?: unknown;
-			type?: unknown;
-			payload?: unknown;
-		};
-		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION
-			|| candidate.type !== 'spectra.hotkeys.changed'
-			|| !isHotkeySettings(candidate.payload)) return false;
-		settingsEpoch += 1;
-		applySettings(candidate.payload);
+		// The broad settings event is only a fail-closed invalidation seam. The
+		// host never parses the full settings payload; Background must follow with
+		// a validated exact-document lean projection before input is re-enabled.
+		if (isHotkeysChangedSignal(message)) {
+			suspendConfiguration();
+			return false;
+		}
+		if (!isSpectraLeanSiteHotkeyConfigureMessage(message)) return false;
+		applyConfiguration(message.payload.generation, message.payload.bindings);
 		return false;
 	};
 	chrome.runtime.onMessage.addListener(runtimeMessageListener);
 	window.addEventListener('blur', onBlur);
 	window.addEventListener('pagehide', onPageHide, { once: true });
 	document.addEventListener('visibilitychange', onVisibilityChange);
-	void refresh();
 }
