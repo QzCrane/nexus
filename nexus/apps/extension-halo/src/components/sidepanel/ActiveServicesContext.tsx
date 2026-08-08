@@ -1,5 +1,5 @@
 import type React from 'react';
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { BACKGROUND_PLUGIN_IDS, BACKGROUND_PROFILES_MAP } from '../../kernel/registry/_generated';
 
 interface ActiveServiceScript {
@@ -7,6 +7,33 @@ interface ActiveServiceScript {
 	enabled: boolean;
 	saatToolId?: string;
 }
+
+export interface ActiveServiceStorageState {
+	ready: boolean;
+	clipboardEnabled: boolean;
+	hoverZoomEnabled: boolean;
+	userscriptsEnabled: boolean;
+	smoothScrollEnabled: boolean;
+	userScripts: ActiveServiceScript[];
+	saatScripts: ActiveServiceScript[];
+}
+
+type RuntimeStorageField = Exclude<keyof ActiveServiceStorageState, 'ready'>;
+
+const EMPTY_STORAGE_STATE: ActiveServiceStorageState = {
+	ready: false,
+	clipboardEnabled: false,
+	hoverZoomEnabled: false,
+	userscriptsEnabled: false,
+	smoothScrollEnabled: false,
+	userScripts: [],
+	saatScripts: [],
+};
+
+const TRUE_BACKGROUND_IDS = BACKGROUND_PLUGIN_IDS.filter((id) => {
+	const profile = BACKGROUND_PROFILES_MAP[id];
+	return profile?.activeOnly === false;
+});
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -24,138 +51,217 @@ function readScripts(value: unknown): ActiveServiceScript[] {
 	return value.scripts.filter(isActiveServiceScript);
 }
 
-function readEnabled(value: unknown): boolean {
-	return isRecord(value) && value.enabled === true;
+function readEnabled(value: unknown, fallback = true): boolean {
+	if (!isRecord(value) || typeof value.enabled !== 'boolean') return fallback;
+	return value.enabled;
+}
+
+function readUserScriptsEnabled(value: unknown): boolean {
+	if (!isRecord(value) || typeof value.globalEnabled !== 'boolean') return true;
+	return value.globalEnabled;
+}
+
+function sameScripts(left: readonly ActiveServiceScript[], right: readonly ActiveServiceScript[]): boolean {
+	return left.length === right.length && left.every((item, index) => {
+		const candidate = right[index];
+		return candidate?.id === item.id
+			&& candidate.enabled === item.enabled
+			&& candidate.saatToolId === item.saatToolId;
+	});
+}
+
+function sameStorageState(left: ActiveServiceStorageState, right: ActiveServiceStorageState): boolean {
+	return left.ready === right.ready
+		&& left.clipboardEnabled === right.clipboardEnabled
+		&& left.hoverZoomEnabled === right.hoverZoomEnabled
+		&& left.userscriptsEnabled === right.userscriptsEnabled
+		&& left.smoothScrollEnabled === right.smoothScrollEnabled
+		&& sameScripts(left.userScripts, right.userScripts)
+		&& sameScripts(left.saatScripts, right.saatScripts);
+}
+
+export function mergeInitialActiveServiceStorageState(
+	current: ActiveServiceStorageState,
+	initial: ActiveServiceStorageState,
+	eventOwnedFields: ReadonlySet<RuntimeStorageField>,
+): ActiveServiceStorageState {
+	const merged: ActiveServiceStorageState = {
+		ready: true,
+		clipboardEnabled: eventOwnedFields.has('clipboardEnabled')
+			? current.clipboardEnabled
+			: initial.clipboardEnabled,
+		hoverZoomEnabled: eventOwnedFields.has('hoverZoomEnabled')
+			? current.hoverZoomEnabled
+			: initial.hoverZoomEnabled,
+		userscriptsEnabled: eventOwnedFields.has('userscriptsEnabled')
+			? current.userscriptsEnabled
+			: initial.userscriptsEnabled,
+		smoothScrollEnabled: eventOwnedFields.has('smoothScrollEnabled')
+			? current.smoothScrollEnabled
+			: initial.smoothScrollEnabled,
+		userScripts: eventOwnedFields.has('userScripts') ? current.userScripts : initial.userScripts,
+		saatScripts: eventOwnedFields.has('saatScripts') ? current.saatScripts : initial.saatScripts,
+	};
+	return sameStorageState(current, merged) ? current : merged;
+}
+
+function initialStorageState(
+	local: Record<string, unknown>,
+	sync: Record<string, unknown>,
+): ActiveServiceStorageState {
+	const userscripts = local.halo_userscripts;
+	return {
+		ready: true,
+		clipboardEnabled: readEnabled(local.halo_tool_clipboard_settings),
+		hoverZoomEnabled: readEnabled(local.halo_hover_zoom_settings),
+		userscriptsEnabled: readUserScriptsEnabled(userscripts),
+		smoothScrollEnabled: readEnabled(sync.HALO_SMOOTH_SCROLL_SETTINGS),
+		userScripts: readScripts(userscripts),
+		saatScripts: readScripts(local.halo_saat_scripts),
+	};
+}
+
+function applyStorageChanges(
+	current: ActiveServiceStorageState,
+	changes: Record<string, chrome.storage.StorageChange>,
+	area: string,
+	eventOwnedFields: Set<RuntimeStorageField>,
+): ActiveServiceStorageState {
+	let next = current;
+	const patch = (field: RuntimeStorageField, value: ActiveServiceStorageState[RuntimeStorageField]) => {
+		eventOwnedFields.add(field);
+		if (next[field] === value) return;
+		next = { ...next, [field]: value };
+	};
+
+	if (area === 'local') {
+		const clipboard = changes.halo_tool_clipboard_settings;
+		if (clipboard) patch('clipboardEnabled', readEnabled(clipboard.newValue));
+
+		const hoverZoom = changes.halo_hover_zoom_settings;
+		if (hoverZoom) patch('hoverZoomEnabled', readEnabled(hoverZoom.newValue));
+
+		const userscripts = changes.halo_userscripts;
+		if (userscripts) {
+			patch('userscriptsEnabled', readUserScriptsEnabled(userscripts.newValue));
+			const scripts = readScripts(userscripts.newValue);
+			eventOwnedFields.add('userScripts');
+			if (!sameScripts(next.userScripts, scripts)) next = { ...next, userScripts: scripts };
+		}
+
+		const saat = changes.halo_saat_scripts;
+		if (saat) {
+			const scripts = readScripts(saat.newValue);
+			eventOwnedFields.add('saatScripts');
+			if (!sameScripts(next.saatScripts, scripts)) next = { ...next, saatScripts: scripts };
+		}
+	}
+
+	if (area === 'sync') {
+		const smoothScroll = changes.HALO_SMOOTH_SCROLL_SETTINGS;
+		if (smoothScroll) patch('smoothScrollEnabled', readEnabled(smoothScroll.newValue));
+	}
+
+	return next;
+}
+
+function deriveActiveServices(state: ActiveServiceStorageState): Set<string> {
+	const active = new Set<string>();
+	if (!state.ready) return active;
+
+	if (state.clipboardEnabled) active.add('clipboard');
+	if (state.hoverZoomEnabled) active.add('hover-zoom');
+	if (state.userscriptsEnabled) active.add('userscripts');
+	if (state.smoothScrollEnabled) active.add('smooth-scroll');
+
+	for (const script of state.userScripts) {
+		if (!state.userscriptsEnabled || !script.enabled) continue;
+		active.add(script.id);
+		if (script.saatToolId) active.add(script.saatToolId);
+	}
+	for (const script of state.saatScripts) {
+		if (script.enabled && script.saatToolId) active.add(script.saatToolId);
+	}
+	return active;
+}
+
+function deriveScriptIds(state: ActiveServiceStorageState): string[] {
+	const ids: string[] = [];
+	for (const script of state.userScripts) {
+		ids.push(script.id);
+		if (script.saatToolId) ids.push(script.saatToolId);
+	}
+	return ids;
 }
 
 interface ActiveServicesContextType {
 	activeServices: Set<string>;
 	bgToolIds: string[];
-	setServiceState: (id: string, isActive: boolean) => void;
 }
 
 const ActiveServicesContext = createContext<ActiveServicesContextType | undefined>(undefined);
 
+/**
+ * Single SidePanel authority for runtime/background service status.
+ *
+ * One local read + one sync read hydrate all relevant status, then a single
+ * storage.onChanged listener applies event payloads incrementally. A change no
+ * longer triggers a second full storage read, and EngineStatus projects this
+ * same authority instead of maintaining another listener/read lifecycle.
+ */
 export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-	const [activeServices, setActiveServices] = useState<Set<string>>(new Set());
-	// Dynamic scripts list to include in background tool IDs
-	const [scriptIds, setScriptIds] = useState<string[]>([]);
+	const [storageState, setStorageState] = useState<ActiveServiceStorageState>(EMPTY_STORAGE_STATE);
 
-	// Initial Check & Storage Sync
 	useEffect(() => {
-		const checkState = async () => {
-			const active = new Set<string>();
-			const currentScriptIds: string[] = [];
+		let disposed = false;
+		const eventOwnedFields = new Set<RuntimeStorageField>();
 
-			try {
-				// Use storage defaults: default to TRUE if key missing
-				const localData = await chrome.storage.local.get({
-					halo_tool_clipboard_settings: { enabled: true },
-					halo_hover_zoom_settings: { enabled: true },
-					halo_userscripts: { globalEnabled: true, scripts: [] },
-					halo_saat_scripts: { scripts: [] }
-				});
-
-				const syncData = await chrome.storage.sync.get({
-					HALO_SMOOTH_SCROLL_SETTINGS: { enabled: true }
-				});
-
-				const userScriptsState: unknown = localData.halo_userscripts;
-				const userScriptsEnabled = isRecord(userScriptsState)
-					&& userScriptsState.globalEnabled === true;
-
-				if (readEnabled(localData.halo_tool_clipboard_settings)) active.add('clipboard');
-				if (readEnabled(localData.halo_hover_zoom_settings)) active.add('hover-zoom');
-				if (userScriptsEnabled) active.add('userscripts');
-				if (readEnabled(syncData.HALO_SMOOTH_SCROLL_SETTINGS)) active.add('smooth-scroll');
-
-				// Process User Scripts
-				const scripts = readScripts(userScriptsState);
-				if (userScriptsEnabled) {
-					scripts.forEach((script) => {
-						currentScriptIds.push(script.id);
-						if (script.saatToolId) currentScriptIds.push(script.saatToolId);
-						
-						if (script.enabled) {
-							active.add(script.id);
-							if (script.saatToolId) active.add(script.saatToolId);
-						}
-					});
-				} else {
-					// Even if global disabled, we track IDs, but none are active
-					scripts.forEach((script) => {
-						currentScriptIds.push(script.id);
-						if (script.saatToolId) currentScriptIds.push(script.saatToolId);
-					});
-				}
-
-				// Process SaaT Tools (Hidden Scripts)
-				const saatScripts = readScripts(localData.halo_saat_scripts);
-				saatScripts.forEach((script) => {
-					if (script.saatToolId) {
-						// For SaaT, we track the tool ID as an "active service" if the script is enabled
-						if (script.enabled) {
-							active.add(script.saatToolId);
-						}
-					}
-				});
-
-				setScriptIds(prev => JSON.stringify(prev) !== JSON.stringify(currentScriptIds) ? currentScriptIds : prev);
-
-				setActiveServices(prev => {
-					if (prev.size === active.size && [...prev].every(x => active.has(x))) return prev;
-					return active;
-				});
-			} catch (e) {
-				console.error('Failed to sync active services:', e);
-			}
+		const listener = (
+			changes: Record<string, chrome.storage.StorageChange>,
+			area: string,
+		) => {
+			if (disposed) return;
+			setStorageState((current) => applyStorageChanges(current, changes, area, eventOwnedFields));
 		};
+		chrome.storage.onChanged.addListener(listener);
 
-		checkState();
-	
-	// Event-driven only - no polling needed, storage.onChanged is sufficient
-	const listener = (
-		changes: Record<string, chrome.storage.StorageChange>,
-		area: string,
-	) => {
-		let changed = false;
-		if (area === 'local' && (changes.halo_tool_clipboard_settings || changes.halo_hover_zoom_settings || changes.halo_userscripts || changes.halo_saat_scripts)) changed = true;
-		if (area === 'sync' && changes.HALO_SMOOTH_SCROLL_SETTINGS) changed = true;
-		if (changed) checkState();
-	};
-	chrome.storage.onChanged.addListener(listener);
-
-	// Visibility-based re-check when panel becomes visible again
-	const onVisibilityChange = () => {
-		if (document.visibilityState === 'visible') checkState();
-	};
-	document.addEventListener('visibilitychange', onVisibilityChange);
-
-	return () => {
-		chrome.storage.onChanged.removeListener(listener);
-		document.removeEventListener('visibilitychange', onVisibilityChange);
-	};
-	}, []);
-
-	// Fast update function for UI switches
-	const setServiceState = useCallback((id: string, isActive: boolean) => {
-		setActiveServices(prev => {
-			const next = new Set(prev);
-			if (isActive) next.add(id);
-			else next.delete(id);
-			return next;
+		void Promise.all([
+			chrome.storage.local.get([
+				'halo_tool_clipboard_settings',
+				'halo_hover_zoom_settings',
+				'halo_userscripts',
+				'halo_saat_scripts',
+			]),
+			chrome.storage.sync.get('HALO_SMOOTH_SCROLL_SETTINGS'),
+		]).then(([local, sync]) => {
+			if (disposed) return;
+			const initial = initialStorageState(local, sync);
+			setStorageState((current) =>
+				mergeInitialActiveServiceStorageState(current, initial, eventOwnedFields));
+		}).catch((error: unknown) => {
+			if (disposed) return;
+			console.error('[HALO:RuntimeStatus] Initial storage hydration failed', error);
+			setStorageState((current) => current.ready ? current : { ...current, ready: true });
 		});
+
+		return () => {
+			disposed = true;
+			chrome.storage.onChanged.removeListener(listener);
+		};
 	}, []);
 
-	// Combine registry background plugins (only true background: activeOnly=false) with dynamic script IDs
-	const trueBackgroundIds = BACKGROUND_PLUGIN_IDS.filter(id => {
-		const profile = BACKGROUND_PROFILES_MAP[id];
-		return profile && profile.activeOnly === false;
-	});
-	const allBgToolIds = [...trueBackgroundIds, ...scriptIds];
+	const activeServices = useMemo(() => deriveActiveServices(storageState), [storageState]);
+	const bgToolIds = useMemo(
+		() => [...TRUE_BACKGROUND_IDS, ...deriveScriptIds(storageState)],
+		[storageState],
+	);
+	const value = useMemo(
+		() => ({ activeServices, bgToolIds }),
+		[activeServices, bgToolIds],
+	);
 
 	return (
-		<ActiveServicesContext.Provider value={{ activeServices, bgToolIds: allBgToolIds, setServiceState }}>
+		<ActiveServicesContext.Provider value={value}>
 			{children}
 		</ActiveServicesContext.Provider>
 	);
