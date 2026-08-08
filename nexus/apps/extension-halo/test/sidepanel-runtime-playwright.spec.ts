@@ -76,6 +76,10 @@ test.describe('HALO SidePanel runtime in Chromium', () => {
 			const hashTool = page.locator('button[data-tool-id="hash"]');
 			await expect(hashTool).toBeVisible();
 
+			// Ignore any startup chunk traffic. Every URL below this point must be
+			// caused by the explicit hover/click interactions under test.
+			lazyChunkUrls.clear();
+
 			// Hover preload must cross a real production panel-chunk boundary before
 			// selection. This proves HALO no longer relies on React.lazy private fields.
 			await hashTool.hover();
