@@ -195,6 +195,24 @@ async function repeatArrowStream(
 	return waitForScrollSettled(page);
 }
 
+async function waitForSmoothScrollReady(page: Page): Promise<void> {
+	const deadline = Date.now() + 10_000;
+	while (Date.now() < deadline) {
+		await resetFixture(page);
+		await page.keyboard.press('ArrowDown');
+		const position = await waitForScrollSettled(page);
+		// Native ArrowDown scrolling is much smaller than HALO's configured
+		// 300px coarse keyboard command. Require the extension-owned trajectory
+		// instead of waiting on a production console.log that is tree-shaken.
+		if (position >= 250) {
+			await resetFixture(page);
+			return;
+		}
+		await new Promise((resolve) => setTimeout(resolve, 50));
+	}
+	throw new Error('HALO Smooth Scroll did not acquire keyboard ownership within 10s');
+}
+
 test.describe('HALO keyboard ownership in Chromium', () => {
 	test('resolves site ownership after bubble handlers and normalizes repeat rate', async () => {
 		test.setTimeout(30_000);
@@ -215,13 +233,8 @@ test.describe('HALO keyboard ownership in Chromium', () => {
 				],
 			});
 			const page = context.pages()[0] ?? await context.newPage();
-			const scrollReady = page.waitForEvent('console', {
-				predicate: (message) => message.text().includes('[HALO:Scroll] Ready'),
-				timeout: 10_000,
-			});
 			await page.goto(fixture.url, { waitUntil: 'load' });
-			await scrollReady;
-			await resetFixture(page);
+			await waitForSmoothScrollReady(page);
 
 			// A large, connected but offscreen video is not ownership evidence.
 			await page.keyboard.press('ArrowDown');
