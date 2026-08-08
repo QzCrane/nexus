@@ -385,12 +385,12 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '🔍',
 		pluginType: 'tool',
 		category: 'media',
-		size: 156752,
+		size: 155955,
 		builtIn: true,
 		status: 'ready',
 		keywords: ["hover","zoom","image","preview","photoshow","浮图秀","浮图","悬浮","图片","预览","放大","高清"],
 		permissions: ["declarativeNetRequest","downloads","clipboardWrite"],
-		background: {"mechanism":"event_listener","frequency":"on-event","activeOnly":false,"level":"idle","descriptionKey":"impact.hover_zoom","sourceFile":"content/hover-zoom.ts","sourceLine":91,"sourceDetail":"document mouse/pointer-key listeners attach only while Hover Zoom is enabled and detach on disable"},
+		background: {"mechanism":"event_listener","frequency":"on-event","activeOnly":false,"level":"idle","descriptionKey":"impact.hover_zoom","sourceFile":"content/hover-zoom-bootstrap.ts","sourceLine":71,"sourceDetail":"pre-activation mouse/key admission listeners attach only while enabled; the packaged lazy runtime takes input ownership after the first eligible interaction"},
 		script: undefined,
 	},
 	{
@@ -1178,7 +1178,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '⚡',
 		pluginType: 'system',
 		category: 'dev',
-		size: 17961,
+		size: 17971,
 		builtIn: true,
 		status: undefined,
 		keywords: ["task","manager","cpu","background","service","后台","资源"],
@@ -1273,9 +1273,9 @@ export const BACKGROUND_PROFILES_MAP: Record<string, BackgroundProfile> = {
         "activeOnly": false,
         "level": "idle",
         "descriptionKey": "impact.hover_zoom",
-        "sourceFile": "content/hover-zoom.ts",
-        "sourceLine": 91,
-        "sourceDetail": "document mouse/pointer-key listeners attach only while Hover Zoom is enabled and detach on disable"
+        "sourceFile": "content/hover-zoom-bootstrap.ts",
+        "sourceLine": 71,
+        "sourceDetail": "pre-activation mouse/key admission listeners attach only while enabled; the packaged lazy runtime takes input ownership after the first eligible interaction"
     },
     "pomodoro": {
         "mechanism": "interval_slow",
