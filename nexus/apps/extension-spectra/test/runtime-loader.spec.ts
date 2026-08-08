@@ -31,6 +31,8 @@ class ChromeEvent {
 
 interface RuntimeHarness {
 	executeCount: number;
+	leanExecuteCount: number;
+	leanConfigureCount: number;
 	statusCount: number;
 	releaseCount: number;
 	navigationCommitted: ChromeEvent;
@@ -38,10 +40,6 @@ interface RuntimeHarness {
 	runtimeMessages: ChromeEvent;
 }
 
-// Wait until harness.releaseCount reaches the expected value, polling every 5ms
-// (max 500ms total). Returns as soon as the condition is met.
-// Pass `settleWindowMs > 0` to first let any pending teardown macrotask run before
-// checking — this preserves the "no release should happen" semantics for expected=0.
 async function expectRelease(harness: RuntimeHarness, expected: number, settleWindowMs = 0): Promise<void> {
 	if (settleWindowMs > 0) await Bun.sleep(settleWindowMs);
 	for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -68,6 +66,8 @@ function installChromeHarness(
 	const navigationDOMContentLoaded = new ChromeEvent();
 	const harness = {
 		executeCount: 0,
+		leanExecuteCount: 0,
+		leanConfigureCount: 0,
 		statusCount: 0,
 		releaseCount: 0,
 		navigationCommitted,
@@ -78,6 +78,7 @@ function installChromeHarness(
 	const fragmentUpdated = new ChromeEvent();
 	const storageChanged = new ChromeEvent();
 	const documentId = 'document-7';
+	let leanReceiverPresent = false;
 	settingsRepository.getSnapshot = async () => ({
 		hotkeySettings: hotkeySettings ?? DEFAULT_HOTKEY_SETTINGS,
 	} as never);
@@ -115,7 +116,21 @@ function installChromeHarness(
 		tabs: {
 			onRemoved: tabRemoved,
 			query: async () => [],
-			sendMessage: async (_tabId: number, message: { type: string }) => {
+			sendMessage: async (_tabId: number, message: {
+				type: string;
+				payload?: { epoch?: string; generation?: number; bindings?: unknown[] };
+			}) => {
+				if (message.type === 'spectra.content.site-hotkeys.configure') {
+					if (!leanReceiverPresent) {
+						throw new Error('Could not establish connection. Receiving end does not exist.');
+					}
+					harness.leanConfigureCount += 1;
+					return {
+						accepted: true,
+						epoch: message.payload?.epoch,
+						generation: message.payload?.generation,
+					};
+				}
 				if (message.type === 'spectra.content.runtime.release') {
 					harness.releaseCount += 1;
 					if (releaseFails) throw new Error('release response lost');
@@ -140,7 +155,12 @@ function installChromeHarness(
 		},
 		},
 		scripting: {
-			executeScript: async () => {
+			executeScript: async (details: { files?: string[] }) => {
+				if (details.files?.includes('content-site-hotkeys.js')) {
+					harness.leanExecuteCount += 1;
+					leanReceiverPresent = true;
+					return;
+				}
 				harness.executeCount += 1;
 				queueMicrotask(() => {
 					const message = {
@@ -487,7 +507,7 @@ describe('document-scoped content runtime loader', () => {
 		expect(harness.executeCount).toBe(0);
 	});
 
-	test('holds the heavy runtime only while the current site has an enabled custom hotkey', async () => {
+	test('keeps complex configured sites on the heavy runtime and releases when site ownership disappears', async () => {
 		const harness = installChromeHarness(true);
 		const enabled: HotkeySettings = {
 			slots: {},
@@ -504,24 +524,40 @@ describe('document-scoped content runtime loader', () => {
 			},
 			disabledLegacyBindings: [],
 		};
-		await reconcileHotkeyRuntimeLease(
-			7,
-			'document-7',
-			'https://media.example/watch',
-			enabled,
-		);
+		await reconcileHotkeyRuntimeLease(7, 'document-7', 'https://media.example/watch', enabled);
+		expect(harness.leanExecuteCount).toBe(0);
 		await expectRelease(harness, 0, 50);
 
-		await reconcileHotkeyRuntimeLease(
-			7,
-			'document-7',
-			'https://other.example/watch',
-			enabled,
-		);
+		await reconcileHotkeyRuntimeLease(7, 'document-7', 'https://other.example/watch', enabled);
 		await expectRelease(harness, 1);
 	});
 
-	test('acquires a configured hotkey runtime from a new document HELLO without opening Popup', async () => {
+	test('keeps scalar configured sites lean without acquiring the heavy runtime', async () => {
+		const harness = installChromeHarness(false);
+		const enabled: HotkeySettings = {
+			slots: {},
+			sites: {
+				'media.example': {
+					enabled: true,
+					bindings: [{
+						id: 'lean-volume',
+						enabled: true,
+						key: { code: 'KeyU', modifiers: { ctrl: true, alt: false, shift: false, meta: false } },
+						action: 'volume_up',
+					}],
+				},
+			},
+			disabledLegacyBindings: [],
+		};
+		await reconcileHotkeyRuntimeLease(7, 'document-7', 'https://media.example/watch', enabled);
+		expect(harness.leanExecuteCount).toBe(1);
+		expect(harness.leanConfigureCount).toBe(1);
+		expect(harness.executeCount).toBe(0);
+		expect(harness.statusCount).toBe(0);
+		await expectRelease(harness, 0, 50);
+	});
+
+	test('acquires a complex configured hotkey runtime from a new document HELLO without opening Popup', async () => {
 		const enabled: HotkeySettings = {
 			slots: {},
 			sites: {
@@ -552,17 +588,16 @@ describe('document-scoped content runtime loader', () => {
 				id: 'spectra-test',
 				tab: { id: 7, url: 'https://media.example/watch' } as chrome.tabs.Tab,
 				documentId: 'document-7',
-				// Deliberately omit sender.url: the tab URL is the reliable fallback
-				// that makes a fresh document independent from the Popup lifecycle.
 			}, () => undefined);
 		}
 		for (let attempt = 0; attempt < 20 && harness.executeCount === 0; attempt += 1) {
 			await Bun.sleep(5);
 		}
 		expect(harness.executeCount).toBe(1);
+		expect(harness.leanExecuteCount).toBe(0);
 	});
 
-	test('retries a configured hotkey lease at DOMContentLoaded when bootstrap HELLO was missed', async () => {
+	test('retries a lean configured hotkey host at DOMContentLoaded when bootstrap HELLO was missed', async () => {
 		const enabled: HotkeySettings = {
 			slots: {},
 			sites: {
@@ -571,7 +606,7 @@ describe('document-scoped content runtime loader', () => {
 					bindings: [{
 						id: 'cold-volume',
 						enabled: true,
-						key: { code: 'ArrowUp', modifiers: { ctrl: false, alt: true, shift: false, meta: false } },
+						key: { code: 'KeyU', modifiers: { ctrl: true, alt: false, shift: false, meta: false } },
 						action: 'volume_up',
 					}],
 				},
@@ -592,9 +627,10 @@ describe('document-scoped content runtime loader', () => {
 				url: 'https://media.example/watch',
 			});
 		}
-		for (let attempt = 0; attempt < 20 && harness.executeCount === 0; attempt += 1) {
+		for (let attempt = 0; attempt < 20 && harness.leanExecuteCount === 0; attempt += 1) {
 			await Bun.sleep(5);
 		}
-		expect(harness.executeCount).toBe(1);
+		expect(harness.leanExecuteCount).toBe(1);
+		expect(harness.executeCount).toBe(0);
 	});
 });
