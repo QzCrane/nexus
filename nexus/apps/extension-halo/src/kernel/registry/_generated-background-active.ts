@@ -3,15 +3,15 @@
 // Compact startup projection; detailed provenance lives in _generated.ts.
 
 export const BACKGROUND_ACTIVE_ONLY_MAP: Readonly<Record<string, boolean>> = Object.freeze({
-    "totp": true,
+    "clipboard": false,
+    "hover-zoom": false,
+    "pomodoro": true,
+    "smooth-scroll": true,
+    "tab-group": true,
     "text-to-speech": true,
     "timer": true,
-    "smooth-scroll": true,
-    "hover-zoom": false,
-    "tab-group": true,
-    "clipboard": false,
-    "pomodoro": true,
     "timestamp": true,
+    "totp": true,
     "bilibili-enhancer": false,
     "bilibili-plus": false,
     "userscripts": false
