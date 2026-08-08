@@ -123,6 +123,9 @@ test.describe('HALO lazy Hover Zoom runtime in Chromium', () => {
 			expect(await page.locator('#halo-hover-zoom-container').count()).toBe(0);
 			await page.keyboard.up('Alt');
 
+			// Move away while disabled. After re-enable, the move back to the target
+			// is a real pointer event owned by the newly reattached bootstrap listener.
+			await page.mouse.move(10, 10);
 			await setHoverZoom(worker, true);
 			await hoverTarget(page);
 			await page.keyboard.down('Alt');
