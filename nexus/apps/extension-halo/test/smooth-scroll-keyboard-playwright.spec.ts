@@ -275,7 +275,7 @@ test.describe('HALO keyboard ownership in Chromium', () => {
 		} finally {
 			await context?.close();
 			await closeFixtureServer(server);
-			await rm(profilePath, { force: true, recursive: true });
+			await rm(profilePath, { force: true, recursive: true, maxRetries: 3, retryDelay: 100 });
 		}
 	});
 });
