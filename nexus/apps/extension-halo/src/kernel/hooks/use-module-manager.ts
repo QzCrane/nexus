@@ -2,15 +2,25 @@
 // eff: Reactive module state access in components
 
 import { useState, useEffect, useCallback, useSyncExternalStore } from 'react';
-import { type ModuleManager, getModuleManager } from '../managers/module-manager';
+import {
+	type ModuleManager,
+	type ModuleManagerSnapshot,
+	getModuleManager,
+} from '../managers/module-manager';
 import { ALL_MODULES, type ModuleStatus } from '../registry/module-registry';
 import type { ModuleMeta } from '../core/tool-registry-types';
+
+const EMPTY_MODULE_SNAPSHOT: ModuleManagerSnapshot = Object.freeze({
+	revision: 0,
+	installedModules: Object.freeze([]) as readonly ModuleMeta[],
+	availableModules: Object.freeze([]) as readonly ModuleMeta[],
+});
 
 interface UseModuleManagerResult {
 	loading: boolean;
 	revision: number;
-	installedModules: ModuleMeta[];
-	availableModules: ModuleMeta[];
+	installedModules: readonly ModuleMeta[];
+	availableModules: readonly ModuleMeta[];
 	getStatus: (id: string) => ModuleStatus;
 	install: (id: string) => Promise<void>;
 	uninstall: (id: string) => Promise<void>;
@@ -35,14 +45,17 @@ export const useModuleManager = (): UseModuleManagerResult => {
 		return () => { cancelled = true; };
 	}, []);
 
-	// ModuleManager is an external mutable authority. useSyncExternalStore gives
-	// React a monotonic snapshot instead of relying on an unrelated forceUpdate
-	// whose callback identities stayed stable and could leave downstream memos stale.
+	// ModuleManager publishes one immutable snapshot identity per durable
+	// authority revision. Ordinary React renders therefore reuse the exact same
+	// installed/available arrays instead of manufacturing false change signals.
 	const subscribe = useCallback((listener: () => void) => (
 		manager ? manager.subscribe(listener) : () => {}
 	), [manager]);
-	const getSnapshot = useCallback(() => manager?.getRevision() ?? 0, [manager]);
-	const revision = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+	const getSnapshot = useCallback(
+		() => manager?.getSnapshot() ?? EMPTY_MODULE_SNAPSHOT,
+		[manager],
+	);
+	const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
 	const getStatus = useCallback((id: string): ModuleStatus => {
 		if (!manager) return 'available';
@@ -66,21 +79,15 @@ export const useModuleManager = (): UseModuleManagerResult => {
 	}, [manager]);
 
 	const isCore = useCallback((id: string): boolean => {
-		const meta = ALL_MODULES.find((m) => m.id === id);
+		const meta = ALL_MODULES.find((module) => module.id === id);
 		return meta?.builtIn === true;
 	}, []);
 
-	// Reading the external-store snapshot above is what schedules this render.
-	// Derive the small registry projections directly in that render so there is
-	// no artificial memo dependency whose only purpose is invalidation.
-	const installedModules = manager?.getInstalledModules() ?? [];
-	const availableModules = manager?.getAvailableModules() ?? [];
-
 	return {
 		loading,
-		revision,
-		installedModules,
-		availableModules,
+		revision: snapshot.revision,
+		installedModules: snapshot.installedModules,
+		availableModules: snapshot.availableModules,
 		getStatus,
 		install,
 		uninstall,
