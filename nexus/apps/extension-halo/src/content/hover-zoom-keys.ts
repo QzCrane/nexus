@@ -3,9 +3,11 @@
 
 import type { HoverZoomState, PreloadState } from './hover-zoom-state';
 import { detectResourcePreference } from '../tools/hover-zoom/content/utils/resource-key-helper';
-import { cancel, getElementAtMouse, tryTrigger, clearTriggerTimer } from './hover-zoom-events';
 import { isValidTrigger } from '../tools/hover-zoom/content/resolvers/trigger-validator';
 import { showHighlight, hideHighlight } from '../tools/hover-zoom/content/utils/highlight';
+import { cancelPreview, getElementAtMouse } from './hover-zoom-actions-light';
+import { clearTriggerTimer } from './hover-zoom-events';
+import { cancelPendingPreviewIntent, requestPreview } from './hover-zoom-runtime-loader';
 
 /** Find valid trigger element at or above given element */
 function findTriggerElement(el: HTMLElement | null): HTMLElement | null {
@@ -23,9 +25,10 @@ export function createOnKeyDown(state: HoverZoomState, preload: PreloadState) {
 
 		// ESCAPE: Close and unlock
 		if (e.key === 'Escape') {
+			cancelPendingPreviewIntent();
 			if (state.viewer?.getIsVisible()) {
 				clearTriggerTimer();
-				cancel(state);
+				cancelPreview(state);
 			}
 			return;
 		}
@@ -51,7 +54,7 @@ export function createOnKeyDown(state: HoverZoomState, preload: PreloadState) {
 		const resourcePref = detectResourcePreference(state.settings.resourceKeys, e);
 		if (resourcePref === null) return;
 
-		// Block mode: always prevent Alt from opening browser menu
+		// Block mode must remain synchronous even though preview code is lazy.
 		if (e.key === 'Alt' && state.settings.altKeyMode === 'block') {
 			e.preventDefault();
 		}
@@ -72,11 +75,11 @@ export function createOnKeyDown(state: HoverZoomState, preload: PreloadState) {
 		const trigger = findTriggerElement(el);
 		if (!trigger) return;
 
-		// Show highlight and trigger
+		// Show highlight synchronously; resolver/viewer work loads on demand.
 		if (state.settings.highlightMode === 'hotkey') {
 			showHighlight(trigger);
 		}
-		tryTrigger(state, preload, trigger);
+		void requestPreview(state, preload, trigger);
 	};
 }
 
@@ -103,12 +106,13 @@ export function createOnKeyUp(state: HoverZoomState) {
 		const resourcePref = detectResourcePreference(state.settings.resourceKeys, e);
 
 		if (resourcePref === null) {
-			// No valid combo - clear timer and close immediately
+			// No valid combo - retire both pending lazy work and an active viewer.
+			cancelPendingPreviewIntent();
 			clearTriggerTimer();
 			state.modifiersActive = false;
 			state.currentResourcePref = 'auto';
 			hideHighlight();
-			cancel(state);
+			cancelPreview(state);
 		} else {
 			// Still valid combo - just update preference
 			state.currentResourcePref = resourcePref;
