@@ -14,11 +14,14 @@ import {
 
 interface KeyboardProbeSnapshot {
 	arrowClaims: number;
+	lastAnyArrowCancelBubble: boolean | null;
+	lastAnyArrowDefaultPrevented: boolean | null;
 	lastArrowDefaultPrevented: boolean | null;
 	lastSpaceDefaultPrevented: boolean | null;
 	lastStopArrowDefaultPrevented: boolean | null;
 	spaceClaims: number;
 	stopArrowClaims: number;
+	trustedArrowEvents: number;
 	volume: number;
 }
 
@@ -66,9 +69,21 @@ const FIXTURE_HTML = `<!doctype html>
 			let arrowClaims = 0;
 			let stopArrowClaims = 0;
 			let spaceClaims = 0;
+			let trustedArrowEvents = 0;
+			let lastAnyArrowCancelBubble = null;
+			let lastAnyArrowDefaultPrevented = null;
 			let lastArrowDefaultPrevented = null;
 			let lastStopArrowDefaultPrevented = null;
 			let lastSpaceDefaultPrevented = null;
+
+			document.addEventListener('keydown', (event) => {
+				if (event.key !== 'ArrowDown') return;
+				if (event.isTrusted) trustedArrowEvents++;
+				queueMicrotask(() => {
+					lastAnyArrowCancelBubble = event.cancelBubble;
+					lastAnyArrowDefaultPrevented = event.defaultPrevented;
+				});
+			});
 
 			window.__haloKeyboardProbe = {
 				installLateSiteHandlers() {
@@ -106,6 +121,9 @@ const FIXTURE_HTML = `<!doctype html>
 					arrowClaims = 0;
 					stopArrowClaims = 0;
 					spaceClaims = 0;
+					trustedArrowEvents = 0;
+					lastAnyArrowCancelBubble = null;
+					lastAnyArrowDefaultPrevented = null;
 					lastArrowDefaultPrevented = null;
 					lastStopArrowDefaultPrevented = null;
 					lastSpaceDefaultPrevented = null;
@@ -122,11 +140,14 @@ const FIXTURE_HTML = `<!doctype html>
 				snapshot() {
 					return {
 						arrowClaims,
+						lastAnyArrowCancelBubble,
+						lastAnyArrowDefaultPrevented,
 						lastArrowDefaultPrevented,
 						lastSpaceDefaultPrevented,
 						lastStopArrowDefaultPrevented,
 						spaceClaims,
 						stopArrowClaims,
+						trustedArrowEvents,
 						volume: player.volume,
 					};
 				},
@@ -223,6 +244,13 @@ async function enableSmoothScroll(context: BrowserContext): Promise<string> {
 	}
 	const extensionId = new URL(serviceWorker.url()).hostname;
 	if (!extensionId) throw new Error(`HALO service worker has no extension id: ${serviceWorker.url()}`);
+	const hasFixtureAccess = await serviceWorker.evaluate(async () => {
+		return chrome.permissions.contains({ origins: ['http://127.0.0.1/*'] });
+	});
+	if (!hasFixtureAccess) {
+		const permissions = await serviceWorker.evaluate(async () => chrome.permissions.getAll());
+		throw new Error(`HALO lacks fixture host access: ${JSON.stringify(permissions)}`);
+	}
 	await serviceWorker.evaluate(async (storageKey) => {
 		await chrome.storage.sync.set({
 			[storageKey]: { enabled: true, keyboard: true },
@@ -231,22 +259,32 @@ async function enableSmoothScroll(context: BrowserContext): Promise<string> {
 	return extensionId;
 }
 
-async function waitForSmoothScrollReady(page: Page): Promise<void> {
+async function waitForSmoothScrollReady(
+	page: Page,
+	browserErrors: readonly string[],
+): Promise<void> {
 	const deadline = Date.now() + 10_000;
+	let lastPosition = -1;
+	let lastProbe: KeyboardProbeSnapshot | null = null;
 	while (Date.now() < deadline) {
 		await resetFixture(page);
 		await page.keyboard.press('ArrowDown');
-		const position = await waitForScrollSettled(page);
+		lastPosition = await waitForScrollSettled(page);
+		lastProbe = await page.evaluate(() => window.__haloKeyboardProbe.snapshot());
 		// Native ArrowDown scrolling is much smaller than HALO's configured
 		// 300px coarse keyboard command. Require the extension-owned trajectory
 		// instead of waiting on a production console.log that is tree-shaken.
-		if (position >= 250) {
+		if (lastPosition >= 250) {
 			await resetFixture(page);
 			return;
 		}
 		await new Promise((resolve) => setTimeout(resolve, 50));
 	}
-	throw new Error('HALO Smooth Scroll did not acquire keyboard ownership within 10s');
+	throw new Error(
+		`HALO Smooth Scroll did not acquire keyboard ownership within 10s; ` +
+		`scrollY=${lastPosition}; probe=${JSON.stringify(lastProbe)}; ` +
+		`browserErrors=${JSON.stringify(browserErrors)}`,
+	);
 }
 
 test.describe('HALO keyboard ownership in Chromium', () => {
@@ -268,11 +306,17 @@ test.describe('HALO keyboard ownership in Chromium', () => {
 					`--load-extension=${DIST_PATH}`,
 				],
 			});
+			const browserErrors: string[] = [];
+			context.on('weberror', (error) => browserErrors.push(String(error.error())));
 			const extensionId = await enableSmoothScroll(context);
 			expect(extensionId.length).toBeGreaterThan(0);
 			const page = context.pages()[0] ?? await context.newPage();
+			page.on('pageerror', (error) => browserErrors.push(error.stack ?? error.message));
+			page.on('console', (message) => {
+				if (message.type() === 'error') browserErrors.push(message.text());
+			});
 			await page.goto(fixture.url, { waitUntil: 'load' });
-			await waitForSmoothScrollReady(page);
+			await waitForSmoothScrollReady(page, browserErrors);
 
 			// A large, connected but offscreen video is not ownership evidence.
 			await page.keyboard.press('ArrowDown');
