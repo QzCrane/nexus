@@ -1,7 +1,5 @@
-// goal: top-frame Hover Zoom host, deferred outside the document_start critical path
+// goal: top-frame Hover Zoom document_idle physical entry
 
-import { init } from '../content/hover-zoom';
+import { initHoverZoomBootstrap } from '../content/hover-zoom-bootstrap';
 
-void init().catch((error: unknown) => {
-	console.warn('[HALO:HoverZoom]', 'Initialization failed', error);
-});
+initHoverZoomBootstrap();
