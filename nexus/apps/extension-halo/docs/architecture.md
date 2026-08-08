@@ -28,7 +28,7 @@ HALO content code is partitioned by **frame scope × lifecycle phase × capabili
 | Production entry | Frame scope | Phase | Ownership |
 | --- | --- | --- | --- |
 | `content.js` | top frame | `document_start` | minimal generic/status router and top-document commands |
-| `content-smooth-scroll.js` | all matching frames | `document_start` | top-document physical scroll input; child-frame initialization exits before taking input ownership |
+| `content-smooth-scroll.js` | top frame | `document_start` | top-document physical scroll input; child-frame scrolling remains native |
 | `content-frame-tools.js` | all matching frames | `document_start` | dormant message host for Ruler, DOM Selector, and Annotate; no recurring work at module load |
 | `content-hover-zoom.js` | top frame | `document_idle` | Hover Zoom; high-frequency mouse/key listeners exist only while enabled |
 | `content-clipboard.js` | all matching frames | `document_idle` | minimal copy capture host; copy listener follows Clipboard enablement |
@@ -88,13 +88,13 @@ tools/<id>/
 - **Permissions**: Declared by plugin metadata and compiled into usage maps; consume one permission source.
 - **Localization**: Local plugin locale sources compile into generated runtime aggregates.
 - **Performance**: Inactive plugins allocate 0 recurring work. Disabled high-frequency features detach their hot listeners. SidePanel hidden/inactive surfaces must not poll. Browser-owned work started by a tool panel must either transfer to another explicit owner or dispose when that panel unmounts.
-- **Build evidence**: production build reports all-frame/top-frame `document_start`, all-frame/top-frame `document_idle`, SidePanel static startup closure, Background worker bundle, and eventual lazy chunk bytes.
+- **Build evidence**: production build derives all-frame/top-frame `document_start` and `document_idle` membership from the source manifest, then charges each declared JS entry by its complete static esbuild closure. SidePanel static startup closure, Background worker bundle, and eventual lazy chunk bytes remain separately measured.
 - **Audited 2026-08-08 production ceilings**: `background <= 14KiB`, `all-frame@document_start <= 31KiB`, `top-frame@document_start <= 32KiB`, `all-frame@document_idle <= 2KiB`, `top-frame@document_idle <= 55KiB`, `SidePanel startup <= 165KiB`. `build.ts` fails if any audited startup surface crosses its current KiB bucket. An intentional increase requires an explicit architecture and budget update.
 - Performance budgets are anchored to measured production artifacts rather than source-line counts, total extension size, or bundle-count heuristics.
 
 ### Smooth-scroll ownership
 
-The current static manifest distributes the Smooth Scroll entry to every matching frame, but runtime input admission is top-document-only: child-frame initialization exits before registering input ownership. Displacement animation is owned by the shared engine.
+Smooth Scroll is physically and semantically top-document-only: its static content entry is not injected into child frames, and child-frame scrolling remains browser/page-native. Displacement animation is owned by the shared engine.
 - **Routing**: The admitted top-document scroll context owns HALO displacement only after native/page handlers receive their refusal opportunity. Embedded app surfaces, editable controls, fullscreen content, and `hidden`/`clip` elements remain native.
 - **Keyboard admission**: A capture observer is registered synchronously at `document_start` but remains inert until settings hydration proves the feature enabled. For each trusted candidate, HALO captures its media-state evidence once and appends same-event document/window finalizers; it does not decide ownership from media presence, geometry, prior pointer interaction, or focus history.
 - **Website-first ownership**: `defaultPrevented`, same-dispatch `cancelBubble`, or a synchronous media-state mutation are website ownership evidence. HALO yields without calling `stopPropagation()` or `stopImmediatePropagation()`. A site that stops propagation but leaves the default action untouched therefore still owns the event.
