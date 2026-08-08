@@ -7,7 +7,7 @@ import {
 import {
 	getUserScriptsStorageSnapshot,
 	subscribeUserScriptsStorage,
-} from '../../kernel/stores/user-scripts-storage';
+} from '../../system/userscripts/storage-authority';
 
 interface ActiveServiceScript {
 	id: string;
@@ -62,11 +62,6 @@ function readEnabled(value: unknown, fallback = true): boolean {
 	return value.enabled;
 }
 
-function readUserScriptsEnabled(value: unknown): boolean {
-	if (!isRecord(value) || typeof value.globalEnabled !== 'boolean') return true;
-	return value.globalEnabled;
-}
-
 function sameScripts(left: readonly ActiveServiceScript[], right: readonly ActiveServiceScript[]): boolean {
 	return left.length === right.length && left.every((item, index) => {
 		const candidate = right[index];
@@ -119,8 +114,7 @@ function initialStorageState(
 		ready: true,
 		clipboardEnabled: readEnabled(local.halo_tool_clipboard_settings),
 		hoverZoomEnabled: readEnabled(local.halo_hover_zoom_settings),
-		// These two fields are intentionally placeholders here. The provider's
-		// public projection replaces them with the shared UserScripts authority.
+		// UserScripts are projected from their canonical system-layer authority.
 		userscriptsEnabled: false,
 		smoothScrollEnabled: readEnabled(sync.HALO_SMOOTH_SCROLL_SETTINGS),
 		userScripts: [],
@@ -164,6 +158,20 @@ function applyStorageChanges(
 	return next;
 }
 
+function hasRelevantStorageChange(
+	changes: Record<string, chrome.storage.StorageChange>,
+	area: string,
+): boolean {
+	if (area === 'local') {
+		return Boolean(
+			changes.halo_tool_clipboard_settings
+			|| changes.halo_hover_zoom_settings
+			|| changes.halo_saat_scripts,
+		);
+	}
+	return area === 'sync' && Boolean(changes.HALO_SMOOTH_SCROLL_SETTINGS);
+}
+
 function deriveActiveServices(state: ActiveServiceStorageState): Set<string> {
 	const active = new Set<string>();
 	if (!state.ready) return active;
@@ -200,13 +208,7 @@ interface ActiveServicesContextType {
 
 const ActiveServicesContext = createContext<ActiveServicesContextType | undefined>(undefined);
 
-/**
- * Single SidePanel authority for runtime/background service status.
- *
- * Clipboard/HoverZoom/SmoothScroll/SaaT keep one local+sync lifecycle here.
- * UserScripts are projected from the shared user-script store, so Launcher and
- * status consumers no longer create a second `halo_userscripts` read/listener.
- */
+/** Single SidePanel authority for runtime/background service status. */
 export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 	const [storageState, setStorageState] = useState<ActiveServiceStorageState>(EMPTY_STORAGE_STATE);
 	const userScriptsSnapshot = useSyncExternalStore(
@@ -223,7 +225,7 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 			changes: Record<string, chrome.storage.StorageChange>,
 			area: string,
 		) => {
-			if (disposed) return;
+			if (disposed || !hasRelevantStorageChange(changes, area)) return;
 			setStorageState((current) => applyStorageChanges(current, changes, area, eventOwnedFields));
 		};
 		chrome.storage.onChanged.addListener(listener);
@@ -252,8 +254,12 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 		};
 	}, []);
 
-	const userScripts = useMemo(
-		() => readScripts({ scripts: userScriptsSnapshot.scripts }),
+	const userScripts = useMemo<ActiveServiceScript[]>(
+		() => userScriptsSnapshot.scripts.map((script) => ({
+			id: script.id,
+			enabled: script.enabled,
+			...(script.saatToolId ? { saatToolId: script.saatToolId } : {}),
+		})),
 		[userScriptsSnapshot.scripts],
 	);
 	const combinedState = useMemo<ActiveServiceStorageState>(() => ({
