@@ -1,5 +1,5 @@
 // goal: minimal all-frame clipboard capture host
-// inv: This is the only HALO static content surface allowed in every frame.
+// inv: This all-frame surface owns clipboard capture only; other all-frame capabilities keep separate physical entries.
 // inv: No generic tool router, DOM tooling, smooth scroll, or UI dependencies here.
 
 export {};
