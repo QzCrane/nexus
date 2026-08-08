@@ -45,14 +45,19 @@ describe('Hover Zoom interaction-gated runtime', () => {
 		expect(detectResourcePreference(keys, { shiftKey: false, ctrlKey: true, altKey: false })).toBeNull();
 	});
 
-	test('keeps synchronous Alt block ownership in the bootstrap before async activation', () => {
+	test('keeps synchronous Alt block ownership in the bootstrap across lazy handoff', () => {
 		const bootstrap = source('../src/content/hover-zoom-bootstrap.ts');
 		const keydownStart = bootstrap.indexOf('function onKeyDown');
-		const keydownEnd = bootstrap.indexOf('function onKeyUp', keydownStart);
-		const keydown = bootstrap.slice(keydownStart, keydownEnd);
+		const keyupStart = bootstrap.indexOf('function onKeyUp', keydownStart);
+		const hydrationStart = bootstrap.indexOf('chrome.storage.local.get(STORAGE_KEY)', keyupStart);
+		const keydown = bootstrap.slice(keydownStart, keyupStart);
+		const keyup = bootstrap.slice(keyupStart, hydrationStart);
 
 		expect(keydown).toContain("settings.altKeyMode === 'block'");
 		expect(keydown).toContain('event.preventDefault()');
 		expect(keydown.indexOf('event.preventDefault()')).toBeLessThan(keydown.indexOf('requestActivation()'));
+		expect(keyup).toContain("event.key === 'Alt'");
+		expect(keyup).toContain("settings.altKeyMode === 'block'");
+		expect(keyup).toContain('event.preventDefault()');
 	});
 });
