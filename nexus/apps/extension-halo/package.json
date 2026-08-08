@@ -5,7 +5,7 @@
 	"description": "HALO - Local-first SidePanel utilities and explicit network tools",
 	"type": "module",
 	"scripts": {
-		"dev": "bun build.ts --watch",
+		"dev": "bun ../../scripts/generate-tool-registry.ts && bun build.ts --watch",
 		"build": "bun build.ts",
 		"build:dev": "bun build.ts --dev",
 		"build:prod": "bun build.ts",
