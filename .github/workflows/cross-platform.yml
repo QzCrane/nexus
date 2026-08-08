@@ -91,6 +91,9 @@ jobs:
       - name: Build production candidates
         run: bun run build
 
+      - name: Measure Preact SidePanel experiment
+        run: bun --cwd nexus/apps/extension-halo build:preact-experiment
+
       - name: Test SPECTRA
         run: bun --cwd nexus test:spectra
 
