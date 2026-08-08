@@ -1,7 +1,7 @@
 // goal: React hook for module manager
 // eff: Reactive module state access in components
 
-import { useState, useEffect, useCallback, useMemo, useSyncExternalStore } from 'react';
+import { useState, useEffect, useCallback, useSyncExternalStore } from 'react';
 import { type ModuleManager, getModuleManager } from '../managers/module-manager';
 import { ALL_MODULES, type ModuleStatus } from '../registry/module-registry';
 import type { ModuleMeta } from '../core/tool-registry-types';
@@ -70,14 +70,11 @@ export const useModuleManager = (): UseModuleManagerResult => {
 		return meta?.builtIn === true;
 	}, []);
 
-	const installedModules = useMemo(
-		() => manager?.getInstalledModules() ?? [],
-		[manager, revision],
-	);
-	const availableModules = useMemo(
-		() => manager?.getAvailableModules() ?? [],
-		[manager, revision],
-	);
+	// Reading the external-store snapshot above is what schedules this render.
+	// Derive the small registry projections directly in that render so there is
+	// no artificial memo dependency whose only purpose is invalidation.
+	const installedModules = manager?.getInstalledModules() ?? [];
+	const availableModules = manager?.getAvailableModules() ?? [];
 
 	return {
 		loading,
