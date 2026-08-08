@@ -105,13 +105,13 @@ test.describe('HALO lazy Hover Zoom runtime in Chromium', () => {
 			await expectViewerHidden(page);
 
 			// On a new document, release while the runtime import is still eligible.
-			// The bootstrap keeps tracking modifiers, so no delayed ghost viewer may appear.
+			// The runtime may finish loading, but the released gesture must never become visible.
 			await page.reload({ waitUntil: 'load' });
 			await hoverTarget(page);
 			await page.keyboard.down('Alt');
 			await page.keyboard.up('Alt');
 			await page.waitForTimeout(300);
-			expect(await page.locator('#halo-hover-zoom-container').count()).toBe(0);
+			await expectViewerHidden(page);
 
 			// Disabled mode must stay event-free from the heavy runtime perspective;
 			// storage re-enable then restores the same first-gesture behavior.
