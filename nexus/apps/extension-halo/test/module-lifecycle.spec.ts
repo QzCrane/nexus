@@ -89,7 +89,7 @@ describe('HALO module lifecycle authority', () => {
 		expect(restarted.getAvailableModules().some((module) => module.id === optional.id)).toBe(true);
 	});
 
-	test('rolls back in-memory authority when install or uninstall persistence fails', async () => {
+	test('rolls back in-memory authority when install, update, or uninstall persistence fails', async () => {
 		const optional = OPTIONAL_MODULES[0];
 		if (!optional) throw new Error('HALO test requires at least one optional module');
 		const memory = createMemoryPersistence();
@@ -106,6 +106,12 @@ describe('HALO module lifecycle authority', () => {
 		expect(manager.isInstalled(optional.id)).toBe(true);
 		expect(manager.getRevision()).toBe(1);
 
+		memory.failSaveFor(optional.id);
+		await expect(manager.update(optional.id)).rejects.toThrow(`save failed: ${optional.id}`);
+		expect(manager.getState(optional.id)?.status).toBe('installed');
+		expect(manager.getRevision()).toBe(1);
+
+		memory.failSaveFor(null);
 		memory.failRemoveFor(optional.id);
 		await expect(manager.uninstall(optional.id)).rejects.toThrow(`remove failed: ${optional.id}`);
 		expect(manager.isInstalled(optional.id)).toBe(true);
