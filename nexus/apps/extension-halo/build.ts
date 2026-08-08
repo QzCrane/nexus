@@ -34,8 +34,8 @@ const distDir = path.join(__dirname, 'dist');
 // intentional growth requires an explicit architecture + budget change.
 const PRODUCTION_BUDGET_KIB = Object.freeze({
 	background: 14,
-	allFrameDocumentStart: 8,
-	topFrameDocumentStart: 32,
+	allFrameDocumentStart: 1,
+	topFrameDocumentStart: 25,
 	allFrameDocumentIdle: 2,
 	topFrameDocumentIdle: 55,
 	sidepanelStartup: 165,
@@ -168,6 +168,7 @@ const entries = [
 	{ entry: 'src/entry/content.ts', out: 'content.js', kind: 'classic' },
 	{ entry: 'src/entry/content-smooth-scroll.ts', out: 'content-smooth-scroll.js', kind: 'classic' },
 	{ entry: 'src/entry/content-frame-tools.ts', out: 'content-frame-tools.js', kind: 'classic' },
+	{ entry: 'src/entry/content-frame-tools-runtime.ts', out: 'tools/_frame-tools/runtime.js', kind: 'module' },
 	{ entry: 'src/entry/content-hover-zoom.ts', out: 'content-hover-zoom.js', kind: 'classic' },
 	{ entry: 'src/entry/content-clipboard.ts', out: 'content-clipboard.js', kind: 'classic' },
 	{ entry: 'src/entry/background.ts', out: 'background.js', kind: 'classic' },
@@ -185,6 +186,15 @@ function buildOptions({ entry, out, kind }, extra = {}) {
 			chunkNames: 'chunks/[name]-[hash]',
 			format: 'esm',
 			splitting: true,
+			...extra,
+		};
+	}
+	if (kind === 'module') {
+		return {
+			...commonConfig,
+			entryPoints: [entry],
+			outfile: path.join(distDir, out),
+			format: 'esm',
 			...extra,
 		};
 	}

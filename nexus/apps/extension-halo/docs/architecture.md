@@ -29,7 +29,8 @@ HALO content code is partitioned by **frame scope × lifecycle phase × capabili
 | --- | --- | --- | --- |
 | `content.js` | top frame | `document_start` | minimal generic/status router and top-document commands |
 | `content-smooth-scroll.js` | top frame | `document_start` | top-document physical scroll input; child-frame scrolling remains native |
-| `content-frame-tools.js` | all matching frames | `document_start` | dormant message host for Ruler, DOM Selector, and Annotate; no recurring work at module load |
+| `content-frame-tools.js` | all matching frames | `document_start` | minimal command bootstrap for Ruler, DOM Selector, and Annotate; heavy implementations are absent from the static startup graph |
+| `tools/_frame-tools/runtime.js` | each frame only after explicit tool activation | on-demand ESM | packaged Ruler, DOM Selector, and Annotate implementation; loaded through the existing `tools/*` web-accessible resource boundary |
 | `content-hover-zoom.js` | top frame | `document_idle` | Hover Zoom; high-frequency mouse/key listeners exist only while enabled |
 | `content-clipboard.js` | all matching frames | `document_idle` | minimal copy capture host; copy listener follows Clipboard enablement |
 | `background.js` | extension service worker | event-driven | lifecycle, context menus, user-script reconciliation, privileged browser operations |
@@ -41,6 +42,7 @@ Rules:
 - `all_frames:true` is a semantic capability declaration, not a convenience flag. Only behavior that must work inside iframe documents may pay that cost.
 - `document_start` is reserved for behavior that can lose correctness if it starts after early page/user input. Everything else moves to `document_idle` or explicit activation.
 - An all-frame surface may not import unrelated tool/UI code. Cross-frame capability expansion requires an explicit manifest/test/architecture change.
+- A static all-frame bootstrap may delegate to extension-owned packaged code only through a tested lazy boundary. A cold cleanup command must not instantiate or load a runtime that has never been activated.
 - `React.lazy(import())` is only considered lazy when the production build emits physical ESM chunks. Production build failure is required if SidePanel splitting silently collapses.
 - Production measurement distinguishes entry bytes, static startup closure, and total eventual lazy bytes. These quantities are not interchangeable.
 - `tool`, `script`, and `system` are distinct plugin types with explicit boundaries.
@@ -78,6 +80,7 @@ tools/<id>/
 
 - **Hover Zoom MSE**: Session creation returns `{ ready, dispose }` synchronously; retired sessions cannot clear newer video sources.
 - **Hover Zoom input**: when disabled, Hover Zoom removes its mouse/key listeners, pending trigger timer, viewer ownership, and pending preload. A low-frequency settings subscription may remain to detect re-enablement.
+- **Frame tools**: every matching frame retains only the minimal `content-frame-tools.js` command bootstrap. The first Ruler, DOM Selector, or Annotate activation imports `tools/_frame-tools/runtime.js` through `chrome.runtime.getURL()` and caches that document-local module promise. A failed import clears the promise so a later explicit activation can retry. STOP/CANCEL before first activation is a zero-work no-op and must not load the runtime. The static bootstrap preserves existing cross-origin iframe coverage without widening host permissions.
 - **Timer**: persistent authority is `elapsed + startedAt`; rAF updates only the visible time projection. A bounded wall-clock deadline watcher rechecks at most once per second so clock jumps cannot strand or prematurely complete a countdown; persistent Timer state is not rewritten on those checks.
 - **Pomodoro**: persistent authority is a paused `remaining` value or running absolute `endsAt`; one 1Hz owner updates only ephemeral display time until the latest wall-clock sample reaches the deadline, then commits the phase boundary exactly once. There is no independent one-shot completion timeout.
 - **TTS**: speech state follows `SpeechSynthesisUtterance` lifecycle events; no periodic `speechSynthesis` polling. The tool panel owns its browser speech lifecycle and cancels any surviving utterance when the panel unmounts, so navigation cannot orphan speech without controls.
@@ -88,9 +91,10 @@ tools/<id>/
 - **Permissions**: Declared by plugin metadata and compiled into usage maps; consume one permission source.
 - **Localization**: Local plugin locale sources compile into generated runtime aggregates.
 - **Performance**: Inactive plugins allocate 0 recurring work. Disabled high-frequency features detach their hot listeners. SidePanel hidden/inactive surfaces must not poll. Browser-owned work started by a tool panel must either transfer to another explicit owner or dispose when that panel unmounts.
-- **Build evidence**: production build derives all-frame/top-frame `document_start` and `document_idle` membership from the source manifest, then charges each declared JS entry by its complete static esbuild closure. SidePanel static startup closure, Background worker bundle, and eventual lazy chunk bytes remain separately measured.
-- **Audited 2026-08-08 production ceilings**: `background <= 14KiB`, `all-frame@document_start <= 8KiB`, `top-frame@document_start <= 32KiB`, `all-frame@document_idle <= 2KiB`, `top-frame@document_idle <= 55KiB`, `SidePanel startup <= 165KiB`. `build.ts` fails if any audited startup surface crosses its current KiB bucket. An intentional increase requires an explicit architecture and budget update.
-- **Measured cross-platform startup surfaces (2026-08-08)**: Ubuntu and Windows production builds both report `all-frame@document_start = 8KiB`, `top-frame@document_start = 32KiB`, `all-frame@document_idle = 2KiB`, `top-frame@document_idle = 55KiB`, `SidePanel startup = 165KiB`, and `background = 14KiB`. Moving Smooth Scroll to top-frame scope removes its 23KiB bundle from every child-frame startup path; the bundle still exists for top documents, so this is a frame-scope startup reduction rather than a total-extension byte reduction.
+- **Build evidence**: production build derives all-frame/top-frame `document_start` and `document_idle` membership from the source manifest, then charges each declared JS entry by its complete static esbuild closure. SidePanel static startup closure, Background worker bundle, and eventual lazy bytes remain separately measured. Packaged on-demand modules that are not declared in `content_scripts` are not startup bytes.
+- **Audited 2026-08-08 production ceilings**: `background <= 14KiB`, `all-frame@document_start <= 1KiB`, `top-frame@document_start <= 25KiB`, `all-frame@document_idle <= 2KiB`, `top-frame@document_idle <= 55KiB`, `SidePanel startup <= 165KiB`. `build.ts` fails if any audited startup surface crosses its current KiB bucket. An intentional increase requires an explicit architecture and budget update.
+- **Measured cross-platform startup surfaces (2026-08-08)**: Ubuntu and Windows production builds both report `all-frame@document_start = 1KiB`, `top-frame@document_start = 25KiB`, `all-frame@document_idle = 2KiB`, `top-frame@document_idle = 55KiB`, `SidePanel startup = 165KiB`, and `background = 14KiB`. The static Frame Tools host shrinks from 8KiB to 1KiB while the 7KiB implementation moves to `tools/_frame-tools/runtime.js` and is paid only after explicit activation. This is a startup transfer, not deletion of eventual feature bytes.
+- **Cross-origin browser evidence**: the production Chromium gate loads HALO on a top document at `127.0.0.1` with a child frame at `127.0.0.2`, proves a cold Ruler CANCEL leaves the heavy runtime unloaded, then proves one tab-wide START lazy-loads the packaged runtime and creates the Ruler overlay in both origins before CANCEL removes both. The gate also keeps the Smooth Scroll keyboard ownership proof in the same Chromium installation.
 - Performance budgets are anchored to measured production artifacts rather than source-line counts, total extension size, or bundle-count heuristics.
 
 ### Smooth-scroll ownership
@@ -115,6 +119,8 @@ Smooth Scroll is physically and semantically top-document-only: its static conte
 - Browser-owned work cannot outlive an unmounted panel unless ownership is explicitly transferred and recoverable.
 - No hidden network capability; 0 recurring work for inactive plugins; no generated file edited manually.
 - No widening a content surface from top-frame to all-frame or from idle to start without a semantic requirement and regression-test update.
+- No heavy Ruler, DOM Selector, or Annotate implementation in the static all-frame startup closure; the Frame Tools bootstrap may load that implementation only after an explicit activation command.
+- No cold frame-tool cleanup command may load an uninitialized heavy runtime.
 - No production `React.lazy` that resolves back into the SidePanel startup bundle; physical code splitting is a build invariant.
 - No performance conclusion based only on total extension bytes: startup closure and eventual feature bytes are measured separately.
 - No silent growth across the audited production startup ceilings.
