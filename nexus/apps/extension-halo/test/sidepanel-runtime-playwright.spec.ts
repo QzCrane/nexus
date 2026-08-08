@@ -30,7 +30,7 @@ async function portalTextExistsOutsideRoot(page: Page, text: string): Promise<bo
 }
 
 test.describe('HALO SidePanel runtime in Chromium', () => {
-	test('preserves home, controlled input, lazy tools and portals', async () => {
+	test('preserves home, hover preload, controlled state, lazy tools and portals', async () => {
 		test.setTimeout(40_000);
 		const profilePath = await mkdtemp(join(tmpdir(), 'halo-sidepanel-runtime-'));
 		let context: BrowserContext | null = null;
@@ -69,17 +69,21 @@ test.describe('HALO SidePanel runtime in Chromium', () => {
 			await page.keyboard.press('Escape');
 			await expect(search).toHaveValue('');
 
-			// The first tool selection must cross both LauncherToolPage React.lazy and
-			// the individual panel lazy boundary in the production ESM build.
 			const hashTool = page.locator('button[data-tool-id="hash"]');
 			await expect(hashTool).toBeVisible();
-			const lazyChunkFinished = context.waitForEvent('requestfinished', {
+
+			// Hover preload must cross a real production lazy-chunk boundary before
+			// selection. This proves HALO no longer relies on React.lazy private fields.
+			const preloadFinished = context.waitForEvent('requestfinished', {
 				predicate: (request) => isSidepanelLazyChunk(request.url()),
 				timeout: 10_000,
 			});
-			await hashTool.click();
-			await lazyChunkFinished;
+			await hashTool.hover();
+			await preloadFinished;
 
+			// Selection still crosses LauncherToolPage lazy/Suspense while the panel
+			// module itself is already owned by the memoized generated loader.
+			await hashTool.click();
 			const hashInput = page.locator('textarea').first();
 			await expect(hashInput).toBeVisible();
 			await hashInput.fill('preact-compat-proof');
