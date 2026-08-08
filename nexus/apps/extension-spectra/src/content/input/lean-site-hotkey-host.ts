@@ -1,5 +1,5 @@
 // goal: website-first custom hotkeys without a document-lifetime heavy Content Runtime
-// inv: content receives only a Background-adjudicated lean binding projection
+// inv: content receives only a Background-adjudicated exact-document lean binding projection
 
 import {
 	SPECTRA_PROTOCOL_VERSION,
@@ -195,13 +195,6 @@ function applyConfiguration(
 	syncArbiter();
 }
 
-function isHotkeysChangedSignal(message: unknown): boolean {
-	if (!message || typeof message !== 'object') return false;
-	const candidate = message as { protocolVersion?: unknown; type?: unknown };
-	return candidate.protocolVersion === SPECTRA_PROTOCOL_VERSION
-		&& candidate.type === 'spectra.hotkeys.changed';
-}
-
 const onPhysicalRelease = (event: Pick<KeyboardEvent, 'code'>): void => releaseCode(event.code);
 const onBlur = (): void => releaseAll();
 const onVisibilityChange = (): void => {
@@ -235,13 +228,6 @@ if (existing?.revision !== 1) {
 	physicalReleaseDispose = subscribeDocumentStartPhysicalHotkeyRelease(onPhysicalRelease);
 	runtimeMessageListener = (message, sender) => {
 		if (sender.id && sender.id !== chrome.runtime.id) return false;
-		// The broad settings event is only a fail-closed invalidation seam. The
-		// host never parses the full settings payload; Background must follow with
-		// a validated exact-document lean projection before input is re-enabled.
-		if (isHotkeysChangedSignal(message)) {
-			suspendConfiguration();
-			return false;
-		}
 		if (!isSpectraLeanSiteHotkeyConfigureMessage(message)) return false;
 		applyConfiguration(
 			message.payload.epoch,
