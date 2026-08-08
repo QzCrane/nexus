@@ -106,20 +106,38 @@ describe('SPECTRA lean custom-site hotkey boundary', () => {
 });
 
 describe('lean site-hotkey host source contract', () => {
-	test('reuses the canonical default trigger and website-first arbiter without heavy runtime imports', () => {
-		expect(hostSource).toContain("type: 'spectra.content.default-hotkey.trigger'");
+	test('routes through sender-bound canonical control RPC instead of global hotkey-target resolution', () => {
+		expect(hostSource).toContain("type: 'spectra.control.intent.submit'");
+		expect(hostSource).toContain("type: 'spectra.control.operation.submit'");
+		expect(hostSource).toContain("source: 'hotkey'");
+		expect(hostSource).toContain("requestedCoverage: 'active-target'");
+		expect(hostSource).toContain("operation: 'effective-volume'");
+		expect(hostSource).not.toContain("type: 'spectra.content.default-hotkey.trigger'");
+		expect(hostSource).not.toContain('hotkeyTargetRepository');
+		expect(hostSource).not.toContain('native-media-executor');
+	});
+
+	test('bounds async repeat backlog and drops unconsumed pulses on physical release', () => {
+		expect(hostSource).toContain('const MAX_PENDING_PULSES = 80;');
+		expect(hostSource).toContain('if (held.inFlight)');
+		expect(hostSource).toContain('held.pendingPulses = Math.min(MAX_PENDING_PULSES');
+		expect(hostSource).toContain('held.pendingPulses = 0;');
+		expect(hostSource).not.toContain('setInterval');
+	});
+
+	test('uses the website-first arbiter, excludes shipped default chords, and retires invalid contexts', () => {
 		expect(hostSource).toContain('createWebsiteFirstKeyboardArbiter');
 		expect(hostSource).toContain('resolveSpectraDefaultHotkeyAction(event) !== null');
+		expect(hostSource).toContain('runWithValidExtensionContext');
+		expect(hostSource).toContain(',\n\t\tdispose,\n\t).catch');
 		expect(hostSource).not.toContain("from '../core/index'");
-		expect(hostSource).not.toContain('native-media-executor');
 		expect(hostSource).not.toContain('hotkey-actions');
-		expect(hostSource).not.toContain('setInterval');
 	});
 
 	test('owns a physical gesture through keyup and fully detaches browser listeners', () => {
 		expect(hostSource).toContain('activeByCode.set(event.code, held)');
 		expect(hostSource).toContain('subscribeDocumentStartPhysicalHotkeyRelease(onPhysicalRelease)');
-		expect(hostSource).toContain("sendTrigger(held, 'release', held.repeated)");
+		expect(hostSource).toContain('for (const held of released) releaseHeld(held);');
 		expect(hostSource).toContain("window.removeEventListener('blur', onBlur)");
 		expect(hostSource).toContain("window.removeEventListener('pagehide', onPageHide)");
 		expect(hostSource).toContain("document.removeEventListener('visibilitychange', onVisibilityChange)");
