@@ -23,11 +23,15 @@ import { measureContentStartupSurfaces } from './build-runtime-surfaces';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
 const isWatch = process.argv.includes('--watch');
 const isDev = process.argv.includes('--dev') || isWatch;
 const isAnalyze = process.argv.includes('--analyze');
 const distDir = path.join(__dirname, 'dist');
 
+// Production ceilings are the audited KiB buckets from the 2026-08-08
+// cross-platform production build. They are regression gates, not aspirations:
+// intentional growth requires an explicit architecture + budget change.
 const PRODUCTION_BUDGET_KIB = Object.freeze({
 	background: 14,
 	allFrameDocumentStart: 1,
@@ -40,7 +44,11 @@ const PRODUCTION_BUDGET_KIB = Object.freeze({
 function run(label, args, opts = {}) {
 	const { silent = false, ...processOptions } = opts;
 	try {
-		execFileSync(process.execPath, args, { stdio: 'pipe', cwd: __dirname, ...processOptions });
+		execFileSync(process.execPath, args, {
+			stdio: 'pipe',
+			cwd: __dirname,
+			...processOptions,
+		});
 		return true;
 	} catch (e) {
 		if (silent) return false;
@@ -70,19 +78,34 @@ const commonConfig = {
 if (!isWatch) {
 	const registryPath = path.resolve(__dirname, '../../scripts/generate-tool-registry.ts');
 	const verifyPath = path.resolve(__dirname, '../../scripts/verify-architecture.ts');
-	if (existsSync(registryPath) && !run('registry', ['../../scripts/generate-tool-registry.ts'], { silent: true })) {
-		console.error('❌ registry generation failed');
+
+	if (existsSync(registryPath)) {
+		if (!run('registry', ['../../scripts/generate-tool-registry.ts'], { silent: true })) {
+			console.error('❌ registry generation failed');
+			process.exit(1);
+		}
+	}
+	if (existsSync(verifyPath)) {
+		if (!run('verify', ['../../scripts/verify-architecture.ts'], { silent: true })) {
+			console.error('❌ verify failed');
+			process.exit(1);
+		}
+	}
+
+	if (!run('tsc', ['tsc', '--noEmit', '--skipLibCheck'])) {
 		process.exit(1);
 	}
-	if (existsSync(verifyPath) && !run('verify', ['../../scripts/verify-architecture.ts'], { silent: true })) {
-		console.error('❌ verify failed');
-		process.exit(1);
-	}
-	if (!run('tsc', ['tsc', '--noEmit', '--skipLibCheck'])) process.exit(1);
 	console.log('✓ Pre-flight: tsc OK');
 }
 
-if (existsSync(distDir)) rmSync(distDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+if (existsSync(distDir)) {
+	rmSync(distDir, {
+		recursive: true,
+		force: true,
+		maxRetries: 5,
+		retryDelay: 100,
+	});
+}
 mkdirSync(distDir, { recursive: true });
 cpSync(path.join(__dirname, 'public'), distDir, { recursive: true });
 
@@ -90,18 +113,21 @@ const toolsDir = path.join(__dirname, 'src/tools');
 const scriptsDir = path.join(__dirname, 'src/scripts');
 const distToolsDir = path.join(distDir, 'tools');
 const distScriptsDir = path.join(distDir, 'scripts');
+
 mkdirSync(distToolsDir, { recursive: true });
 mkdirSync(distScriptsDir, { recursive: true });
 
 async function buildScriptFiles(sourceDir, destBaseDir) {
 	if (!existsSync(sourceDir)) return 0;
 	const dirs = readdirSync(sourceDir, { withFileTypes: true }).filter((entry) => entry.isDirectory());
-	const results = await Promise.all(dirs.map(async (dir) => {
+
+	const promises = dirs.map(async (dir) => {
 		const scriptJs = path.join(sourceDir, dir.name, 'script.js');
 		const scriptCss = path.join(sourceDir, dir.name, 'script.css');
 		const scriptTs = path.join(sourceDir, dir.name, 'script.ts');
 		const destDir = path.join(destBaseDir, dir.name);
 		let built = false;
+
 		if (existsSync(scriptJs) || existsSync(scriptTs)) {
 			mkdirSync(destDir, { recursive: true });
 			try {
@@ -127,7 +153,9 @@ async function buildScriptFiles(sourceDir, destBaseDir) {
 			built = true;
 		}
 		return built ? 1 : 0;
-	}));
+	});
+
+	const results = await Promise.all(promises);
 	return results.reduce((total, value) => total + value, 0);
 }
 
@@ -150,9 +178,33 @@ const entries = [
 ];
 
 function buildOptions({ entry, out, kind }, extra = {}) {
-	if (kind === 'sidepanel') return { ...commonConfig, entryPoints: { sidepanel: entry }, outdir: distDir, entryNames: '[name]', chunkNames: 'chunks/[name]-[hash]', format: 'esm', splitting: true, ...extra };
-	if (kind === 'module') return { ...commonConfig, entryPoints: [entry], outfile: path.join(distDir, out), format: 'esm', ...extra };
-	return { ...commonConfig, entryPoints: [entry], outfile: path.join(distDir, out), ...extra };
+	if (kind === 'sidepanel') {
+		return {
+			...commonConfig,
+			entryPoints: { sidepanel: entry },
+			outdir: distDir,
+			entryNames: '[name]',
+			chunkNames: 'chunks/[name]-[hash]',
+			format: 'esm',
+			splitting: true,
+			...extra,
+		};
+	}
+	if (kind === 'module') {
+		return {
+			...commonConfig,
+			entryPoints: [entry],
+			outfile: path.join(distDir, out),
+			format: 'esm',
+			...extra,
+		};
+	}
+	return {
+		...commonConfig,
+		entryPoints: [entry],
+		outfile: path.join(distDir, out),
+		...extra,
+	};
 }
 
 function walkFiles(directory) {
@@ -162,15 +214,32 @@ function walkFiles(directory) {
 		return entry.isDirectory() ? walkFiles(candidate) : [candidate];
 	});
 }
-function relativeDist(file) { return path.relative(distDir, file).replaceAll('\\', '/'); }
-function kib(bytes) { return Math.ceil(bytes / 1024); }
-function outputAbsolute(output) { return path.normalize(path.resolve(__dirname, output)); }
 
+function relativeDist(file) {
+	return path.relative(distDir, file).replaceAll('\\', '/');
+}
+
+function kib(bytes) {
+	return Math.ceil(bytes / 1024);
+}
+
+function outputAbsolute(output) {
+	return path.normalize(path.resolve(__dirname, output));
+}
+
+/**
+ * Sum the physical files that execute before any dynamic import boundary.
+ * This is a startup parse/compile closure, not the entry file alone and not
+ * the total bytes of every future lazy feature chunk.
+ */
 function staticOutputClosure(metafile, entryOutput) {
 	if (!metafile?.outputs) return null;
-	const outputs = new Map(Object.entries(metafile.outputs).map(([output, detail]) => [outputAbsolute(output), detail]));
+	const outputs = new Map(
+		Object.entries(metafile.outputs).map(([output, detail]) => [outputAbsolute(output), detail]),
+	);
 	const start = path.normalize(path.join(distDir, entryOutput));
 	if (!outputs.has(start)) return null;
+
 	const visited = new Set();
 	const outputBytes = new Map();
 	const stack = [start];
@@ -183,6 +252,7 @@ function staticOutputClosure(metafile, entryOutput) {
 		visited.add(current);
 		outputBytes.set(current, detail.bytes);
 		bytes += detail.bytes;
+
 		for (const imported of detail.imports ?? []) {
 			if (imported.external || imported.kind === 'dynamic-import') continue;
 			const target = path.normalize(path.resolve(path.dirname(current), imported.path));
@@ -194,16 +264,27 @@ function staticOutputClosure(metafile, entryOutput) {
 
 function assertProductionSidepanelSplitting() {
 	if (isDev) return;
-	const chunks = walkFiles(path.join(distDir, 'chunks')).filter((file) => file.endsWith('.js'));
-	if (chunks.length === 0) throw new Error('HALO production sidepanel emitted no lazy chunks; React.lazy imports must remain physically split');
+	const chunksDir = path.join(distDir, 'chunks');
+	const chunks = walkFiles(chunksDir).filter((file) => file.endsWith('.js'));
+	if (chunks.length === 0) {
+		throw new Error(
+			'HALO production sidepanel emitted no lazy chunks; React.lazy imports must remain physically split',
+		);
+	}
 }
+
 function assertProductionBudgets(measurements) {
 	if (isDev) return;
 	for (const [name, bytes] of Object.entries(measurements)) {
 		const budget = PRODUCTION_BUDGET_KIB[name];
 		if (budget === undefined) throw new Error(`HALO production budget is missing for ${name}`);
 		const actual = kib(bytes);
-		if (actual > budget) throw new Error(`HALO production budget exceeded: ${name}=${actual}KiB > ${budget}KiB. Intentional growth requires an explicit architecture and budget update.`);
+		if (actual > budget) {
+			throw new Error(
+				`HALO production budget exceeded: ${name}=${actual}KiB > ${budget}KiB. `
+				+ 'Intentional growth requires an explicit architecture and budget update.',
+			);
+		}
 	}
 }
 
@@ -212,16 +293,34 @@ if (isWatch) {
 	const contexts = await Promise.all(entries.map(async (entry) => {
 		const ctx = await esbuild.context(buildOptions(entry, {
 			logLevel: 'warning',
-			plugins: [{ name: 'rebuild-notify', setup(build) { build.onEnd((result) => { if (result.errors.length === 0) console.log(`✓ ${entry.out}`); }); } }],
+			plugins: [{
+				name: 'rebuild-notify',
+				setup(build) {
+					build.onEnd((result) => {
+						if (result.errors.length === 0) console.log(`✓ ${entry.out}`);
+					});
+				},
+			}],
 		}));
 		await ctx.watch();
 		return ctx;
 	}));
-	process.on('SIGINT', async () => { await Promise.all(contexts.map((ctx) => ctx.dispose())); process.exit(0); });
+
+	process.on('SIGINT', async () => {
+		await Promise.all(contexts.map((ctx) => ctx.dispose()));
+		process.exit(0);
+	});
 } else {
 	const buildResults = await Promise.all(entries.map(async (entry) => {
 		try {
-			const result = await esbuild.build(buildOptions(entry, { write: true, metafile: !isDev || entry.kind === 'sidepanel' || isAnalyze }));
+			const result = await esbuild.build(buildOptions(entry, {
+				write: true,
+				// Every production entry retains an in-memory metafile because startup
+				// accounting follows the complete static closure declared by manifest
+				// frame/lifecycle scope. Dev builds keep the SidePanel closure for its
+				// physical lazy-loading invariant; --analyze retains all domains.
+				metafile: !isDev || entry.kind === 'sidepanel' || isAnalyze,
+			}));
 			const bytes = statSync(path.join(distDir, entry.out)).size;
 			return { entry, result, bytes, label: `${entry.out.replace('.js', '')}:${kib(bytes)}KB` };
 		} catch (e) {
@@ -229,37 +328,93 @@ if (isWatch) {
 			process.exit(1);
 		}
 	}));
+
 	assertProductionSidepanelSplitting();
+
 	const byOutput = new Map(buildResults.map((item) => [item.entry.out, item]));
-	const resultFor = (output) => { const result = byOutput.get(output); if (!result) throw new Error(`HALO manifest/build output is missing: ${output}`); return result; };
+	const resultFor = (output) => {
+		const result = byOutput.get(output);
+		if (!result) throw new Error(`HALO manifest/build output is missing: ${output}`);
+		return result;
+	};
 	const sizeOf = (output) => resultFor(output).bytes;
 	const closureFor = (output) => {
 		const result = resultFor(output);
 		const closure = staticOutputClosure(result.result.metafile, output);
-		if (!closure) throw new Error(`HALO static startup closure could not be resolved for manifest output ${output}`);
+		if (!closure) {
+			throw new Error(`HALO static startup closure could not be resolved for manifest output ${output}`);
+		}
 		return closure;
 	};
-	const sourceManifest = JSON.parse(readFileSync(path.join(__dirname, 'public/manifest.json'), 'utf8'));
-	const { allFrameDocumentStart, topFrameDocumentStart, allFrameDocumentIdle, topFrameDocumentIdle } = measureContentStartupSurfaces(sourceManifest, closureFor);
-	const sidepanelStartup = staticOutputClosure(resultFor('sidepanel.js').result.metafile, 'sidepanel.js');
-	if (!sidepanelStartup) throw new Error('HALO SidePanel startup closure could not be resolved from the esbuild metafile');
-	assertProductionBudgets({ background: sizeOf('background.js'), allFrameDocumentStart, topFrameDocumentStart, allFrameDocumentIdle, topFrameDocumentIdle, sidepanelStartup: sidepanelStartup.bytes });
+	const sourceManifest = JSON.parse(
+		readFileSync(path.join(__dirname, 'public/manifest.json'), 'utf8'),
+	);
+	const {
+		allFrameDocumentStart,
+		topFrameDocumentStart,
+		allFrameDocumentIdle,
+		topFrameDocumentIdle,
+	} = measureContentStartupSurfaces(sourceManifest, closureFor);
+
+	const sidepanelResult = resultFor('sidepanel.js');
+	const sidepanelStartup = staticOutputClosure(sidepanelResult.result.metafile, 'sidepanel.js');
+	if (!sidepanelStartup) {
+		throw new Error('HALO SidePanel startup closure could not be resolved from the esbuild metafile');
+	}
+
+	const budgetMeasurements = {
+		background: sizeOf('background.js'),
+		allFrameDocumentStart,
+		topFrameDocumentStart,
+		allFrameDocumentIdle,
+		topFrameDocumentIdle,
+		sidepanelStartup: sidepanelStartup.bytes,
+	};
+	assertProductionBudgets(budgetMeasurements);
 
 	if (isAnalyze) {
 		const report = {
 			budgetsKiB: PRODUCTION_BUDGET_KIB,
-			runtimeSurfaces: { allFrameDocumentStartBytes: allFrameDocumentStart, topFrameDocumentStartBytes: topFrameDocumentStart, allFrameDocumentIdleBytes: allFrameDocumentIdle, topFrameDocumentIdleBytes: topFrameDocumentIdle, sidepanelStartupBytes: sidepanelStartup.bytes, sidepanelStartupFiles: sidepanelStartup.fileCount, backgroundBytes: sizeOf('background.js') },
-			entries: buildResults.map(({ entry, result }) => ({ entry: entry.out, kind: entry.kind, outputs: Object.fromEntries(Object.entries(result.metafile?.outputs ?? {}).map(([output, detail]) => [relativeDist(path.resolve(__dirname, output)), { bytes: detail.bytes, entryPoint: detail.entryPoint, imports: detail.imports }]).sort(([left], [right]) => left.localeCompare(right))) })),
+			runtimeSurfaces: {
+				allFrameDocumentStartBytes: allFrameDocumentStart,
+				topFrameDocumentStartBytes: topFrameDocumentStart,
+				allFrameDocumentIdleBytes: allFrameDocumentIdle,
+				topFrameDocumentIdleBytes: topFrameDocumentIdle,
+				sidepanelStartupBytes: sidepanelStartup.bytes,
+				sidepanelStartupFiles: sidepanelStartup.fileCount,
+				backgroundBytes: sizeOf('background.js'),
+			},
+			entries: buildResults.map(({ entry, result }) => ({
+				entry: entry.out,
+				kind: entry.kind,
+				outputs: Object.fromEntries(
+					Object.entries(result.metafile?.outputs ?? {})
+						.map(([output, detail]) => [
+							relativeDist(path.resolve(__dirname, output)),
+							{ bytes: detail.bytes, entryPoint: detail.entryPoint, imports: detail.imports },
+						])
+						.sort(([left], [right]) => left.localeCompare(right)),
+				),
+			})),
 		};
-		writeFileSync(path.join(distDir, 'build-analysis.json'), `${JSON.stringify(report, null, 2)}\n`);
+		writeFileSync(
+			path.join(distDir, 'build-analysis.json'),
+			`${JSON.stringify(report, null, 2)}\n`,
+		);
 	}
 
 	const chunkFiles = walkFiles(path.join(distDir, 'chunks')).filter((file) => file.endsWith('.js'));
 	const chunkBytes = chunkFiles.reduce((total, file) => total + statSync(file).size, 0);
-	const chunkInfo = chunkFiles.length > 0 ? ` | chunks:${chunkFiles.length}/${kib(chunkBytes)}KB` : '';
-	const saatInfo = toolScriptsCount + officialScriptsCount > 0 ? ` | SaaT:${toolScriptsCount + officialScriptsCount}` : '';
+	const chunkInfo = chunkFiles.length > 0
+		? ` | chunks:${chunkFiles.length}/${kib(chunkBytes)}KB`
+		: '';
+	const saatInfo = toolScriptsCount + officialScriptsCount > 0
+		? ` | SaaT:${toolScriptsCount + officialScriptsCount}`
+		: '';
 	console.log(`✓ Build: ${buildResults.map(({ label }) => label).join(' | ')}${chunkInfo}${saatInfo}`);
-	console.log(`✓ Startup closures: all-frame@start:${kib(allFrameDocumentStart)}KB | top-frame@start:${kib(topFrameDocumentStart)}KB | all-frame@idle:${kib(allFrameDocumentIdle)}KB | top-frame@idle:${kib(topFrameDocumentIdle)}KB | sidepanel:${kib(sidepanelStartup.bytes)}KB/${sidepanelStartup.fileCount} files | background:${kib(sizeOf('background.js'))}KB`);
+	console.log(
+		`✓ Startup closures: all-frame@start:${kib(allFrameDocumentStart)}KB | top-frame@start:${kib(topFrameDocumentStart)}KB | all-frame@idle:${kib(allFrameDocumentIdle)}KB | top-frame@idle:${kib(topFrameDocumentIdle)}KB | sidepanel:${kib(sidepanelStartup.bytes)}KB/${sidepanelStartup.fileCount} files | background:${kib(sizeOf('background.js'))}KB`,
+	);
 	console.log('✓ Production budgets:', Object.entries(PRODUCTION_BUDGET_KIB).map(([name, value]) => `${name}<=${value}KiB`).join(' | '));
 	console.log('🎉 Done → dist/');
 }
