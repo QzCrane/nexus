@@ -1,5 +1,5 @@
 // goal: Generate _generated-tool-loader.ts
-// eff: One memoized import authority shared by hover preload and lazy rendering
+// eff: Lazy loader for panel plugins only
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -21,51 +21,29 @@ export function generateLoader(allModules) {
 
 import { lazy } from 'react';
 
-function memoizePanelLoader<T>(load: () => Promise<T>): () => Promise<T> {
-\tlet pending: Promise<T> | null = null;
-\treturn () => {
-\t\tif (pending) return pending;
-\t\tconst next = load().catch((error: unknown) => {
-\t\t\tif (pending === next) pending = null;
-\t\t\tthrow error;
-\t\t});
-\t\tpending = next;
-\t\treturn next;
-\t};
-}
-
 `;
 
-	// Build tool-to-import map once. Both explicit preload and renderer lazy()
-	// consume the same memoized promise so no renderer-private fields are needed.
-	const loaderEntries = panelModules.map(m => {
+	// Build tool-to-export map
+	const entries = panelModules.map(m => {
 		const exportName = detectPanelExport(m.panelPath) || `${toPascalCase(m.id)}Panel`;
+		// Handle nested panel paths (e.g., tools/hover-zoom/components/ui/panel.tsx)
+		// Extract relative path from panelPath for import statement
 		const folder = m.dirType === 'system' ? 'system' : (m.dirType === 'scripts' ? 'scripts' : 'tools');
+		// Normalize to forward slashes for cross-platform compatibility
 		const normalizedPanelDir = path.dirname(m.panelPath).replace(/\\/g, '/');
 		const searchPattern = `src/${folder}/${m.dirName}`;
 		const baseIndex = normalizedPanelDir.indexOf(searchPattern);
 		const relativePart = baseIndex >= 0
 			? `${normalizedPanelDir.substring(baseIndex + `src/${folder}/`.length)}/panel`
 			: `${m.dirName}/panel`;
-		return `\t'${m.id}': memoizePanelLoader(() => import('../${folder}/${relativePart}').then(m => ({ default: m.${exportName} })))`;
+		return `\t'${m.id}': lazy(() => import('../${folder}/${relativePart}').then(m => ({ default: m.${exportName} })))`;
 	});
 
-	const panelEntries = panelModules.map(m => {
-		const access = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(m.id)
-			? `.${m.id}`
-			: `['${m.id}']`;
-		return `\t'${m.id}': lazy(generatedToolLoaders${access})`;
-	});
-
-	const content = `${header}export const generatedToolLoaders = {
-${loaderEntries.join(',\n')}
+	const content = `${header}export const generatedToolPanels = {
+${entries.join(',\n')}
 } as const;
 
-export const generatedToolPanels = {
-${panelEntries.join(',\n')}
-} as const;
-
-export type LoadableToolId = keyof typeof generatedToolLoaders;
+export type LoadableToolId = keyof typeof generatedToolPanels;
 
 // Script plugin IDs (no React panel, uses userScripts engine)
 export const SCRIPT_PLUGIN_IDS: readonly string[] = [${scriptModules.map(m => `'${m.id}'`).join(', ')}];
