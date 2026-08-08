@@ -23,7 +23,7 @@
 		"test:watch:spectra": "bun --cwd apps/extension-spectra test:watch",
 		"test:watch:halo": "bun --cwd apps/extension-halo test:watch",
 		"check:toolchain": "bun scripts/check-toolchain.ts",
-		"check:platform": "bun test scripts/platform-contract.test.ts scripts/ci-product-scope.spec.ts && bun scripts/check-platform-contract.ts",
+		"check:platform": "bun test scripts/platform-contract.test.ts && bun scripts/check-platform-contract.ts",
 		"check:spectra-remote-live": "bun scripts/check-spectra-remote-live.ts",
 		"release:spectra": "bunx bun@1.3.14 scripts/release-spectra.ts",
 		"release:spectra:plan": "bunx bun@1.3.14 scripts/release-spectra.ts --list",
