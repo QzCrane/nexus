@@ -12,7 +12,7 @@
 		"level": "low",
 		"descriptionKey": "impact.interval_1s",
 		"sourceFile": "tools/totp/panel.tsx",
-		"sourceLine": 50,
+		"sourceLine": 51,
 		"sourceDetail": "1Hz visible-panel poll derives remaining seconds from the wall clock and reuses cached HMAC output until the entry counter changes"
 	}
 }
