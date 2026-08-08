@@ -32,7 +32,7 @@ describe('smooth-scroll keyboard architecture contract', () => {
 		expect(keyboardSource).toContain('KEYBOARD_ACCELERATION_STEP_MS');
 	});
 
-	test('finalizes after page handlers, including document propagation stops', () => {
+	test('finalizes after page handlers and honors same-event propagation claims', () => {
 		expect(keyboardSource).toContain(
 			"document.addEventListener('keydown', finalizeAtDocument)",
 		);
@@ -40,6 +40,7 @@ describe('smooth-scroll keyboard architecture contract', () => {
 			"window.addEventListener('keydown', finalizeAtWindow)",
 		);
 		expect(keyboardSource).toContain('candidate.cancelBubble');
+		expect(keyboardSource).toMatch(/e\.defaultPrevented \|\|\s*e\.cancelBubble \|\|/u);
 	});
 
 	test('observes at document start but activates only after settings hydration', () => {
