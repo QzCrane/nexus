@@ -1,23 +1,25 @@
 // goal: Open tools state management hook
-// eff: Simple state persistence - save on close, restore on open
-// 
-// Design: 
-// 1. Save activeTool when sidepanel closes (visibilitychange/beforeunload)
-// 2. Restore activeTool when sidepanel opens
-// 3. System tools don't go into dock, but activeTool is tracked
+// eff: Persist one current SidePanel navigation authority without stale async replay
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { ToolId } from '../../../kernel';
 import { STORAGE_PREFIX, TOOL_REGISTRY } from '../../../kernel';
 
-// System tools list (SSOT from registry)
-const SYSTEM_TOOL_IDS = TOOL_REGISTRY.filter(t => t.pluginType === 'system').map(t => t.id);
+const SYSTEM_TOOL_IDS = new Set(
+	TOOL_REGISTRY.filter((tool) => tool.pluginType === 'system').map((tool) => tool.id),
+);
+const KNOWN_TOOL_IDS = new Set(TOOL_REGISTRY.map((tool) => tool.id));
 
-const isSystemTool = (id: string): boolean => SYSTEM_TOOL_IDS.includes(id);
+const isSystemTool = (id: string): boolean => SYSTEM_TOOL_IDS.has(id);
+const isKnownTool = (id: unknown): id is ToolId => typeof id === 'string' && KNOWN_TOOL_IDS.has(id as ToolId);
 
 const OPEN_TOOLS_KEY = `${STORAGE_PREFIX.CORE}open_tools`;
 const ACTIVE_TOOL_KEY = `${STORAGE_PREFIX.CORE}active_tool`;
 const MAX_OPEN_TOOLS = 10;
+
+function sameTools(left: readonly ToolId[], right: readonly ToolId[]): boolean {
+	return left.length === right.length && left.every((id, index) => right[index] === id);
+}
 
 export interface UseOpenToolsResult {
 	activeTool: ToolId | null;
@@ -32,87 +34,115 @@ export interface UseOpenToolsResult {
 export function useOpenTools(): UseOpenToolsResult {
 	const [activeTool, setActiveToolState] = useState<ToolId | null>(null);
 	const [openTools, setOpenTools] = useState<ToolId[]>([]);
-
-	// Ref for unload save (avoids stale closure)
-	const _activeToolRef = useRef<ToolId | null>(null);
 	const initialized = useRef(false);
+	const authorityEpoch = useRef(0);
 
-	// Real-time persistence for activeTool
+	const persistOpenTools = useCallback((nextOpen: readonly ToolId[]): void => {
+		void chrome.storage.local.set({ [OPEN_TOOLS_KEY]: [...nextOpen] })
+			.catch((error) => console.warn('openTools persist failed', error));
+	}, []);
+
+	const claimLocalAuthority = useCallback((): void => {
+		// Any user action after an async hydration begins outranks that older read.
+		// Mark the hook initialized as well so the active-tool effect persists the
+		// user's action instead of waiting for a storage snapshot that is now stale.
+		authorityEpoch.current += 1;
+		initialized.current = true;
+	}, []);
+
+	// Real-time persistence for activeTool. Initial null is not written before
+	// storage hydration or a user action establishes an authority.
 	useEffect(() => {
-		// Prevent saving initial null state before storage load
 		if (!initialized.current) return;
-
-		// Explicitly save state, using sentinel for Home to avoid ambiguity
-		const valToSave = activeTool === null ? 'HALO_LAUNCHER' : activeTool;
-		chrome.storage.local.set({ [ACTIVE_TOOL_KEY]: valToSave }).catch((e) => console.warn('openTools persist failed', e));
+		const value = activeTool === null ? 'HALO_LAUNCHER' : activeTool;
+		void chrome.storage.local.set({ [ACTIVE_TOOL_KEY]: value })
+			.catch((error) => console.warn('openTools persist failed', error));
 	}, [activeTool]);
 
 	const setActiveTool = useCallback((toolId: ToolId | null) => {
+		claimLocalAuthority();
 		setActiveToolState(toolId);
-	}, []);
+	}, [claimLocalAuthority]);
+
+	const reconcileInstalledTools = useCallback((isInstalled: (id: string) => boolean): void => {
+		if (!initialized.current) return;
+		setOpenTools((current) => {
+			const next = current.filter((id) => isInstalled(id));
+			if (sameTools(current, next)) return current;
+			persistOpenTools(next);
+			return next;
+		});
+		setActiveToolState((current) => {
+			if (current === null || isSystemTool(current) || isInstalled(current)) return current;
+			return null;
+		});
+	}, [persistOpenTools]);
 
 	const loadOpenTools = useCallback(async (isInstalled: (id: string) => boolean) => {
-		const storage = await chrome.storage.local.get([ACTIVE_TOOL_KEY, OPEN_TOOLS_KEY]);
-		const savedOpen = (storage[OPEN_TOOLS_KEY] as ToolId[] || []).filter(id => isInstalled(id));
-		setOpenTools(savedOpen);
-
-		// Restore activeTool
-		const savedActive = storage[ACTIVE_TOOL_KEY] as string | null;
-
-		if (savedActive === 'HALO_LAUNCHER') {
-			setActiveToolState(null);
-		} else if (savedActive) {
-			// Validate tool exists
-			const toolId = savedActive as ToolId;
-			const isValid = isSystemTool(toolId) || isInstalled(toolId);
-			if (isValid) {
-				setActiveToolState(toolId);
-			} else {
-				setActiveToolState(null);
-			}
-		} else {
-			// First run or legacy data
-			setActiveToolState(null);
+		// Once hydrated (or once a user action has established newer local truth),
+		// module changes only need a synchronous projection filter. Re-reading
+		// storage would add I/O and could replay an older snapshot over live UI.
+		if (initialized.current) {
+			reconcileInstalledTools(isInstalled);
+			return;
 		}
 
-		// Mark as initialized to enable auto-save
-		setTimeout(() => { initialized.current = true; }, 0);
-	}, []);
+		const epoch = ++authorityEpoch.current;
+		const storage = await chrome.storage.local.get([ACTIVE_TOOL_KEY, OPEN_TOOLS_KEY]);
+		if (epoch !== authorityEpoch.current || initialized.current) return;
+
+		const rawOpen = Array.isArray(storage[OPEN_TOOLS_KEY])
+			? storage[OPEN_TOOLS_KEY].filter(isKnownTool)
+			: [];
+		const savedOpen = rawOpen.filter((id) => !isSystemTool(id) && isInstalled(id));
+		const savedActive = storage[ACTIVE_TOOL_KEY];
+		const restoredActive = savedActive === 'HALO_LAUNCHER'
+			? null
+			: isKnownTool(savedActive)
+				&& (isSystemTool(savedActive) || isInstalled(savedActive))
+				? savedActive
+				: null;
+
+		initialized.current = true;
+		setOpenTools(savedOpen);
+		setActiveToolState(restoredActive);
+		if (!sameTools(rawOpen, savedOpen)) persistOpenTools(savedOpen);
+	}, [persistOpenTools, reconcileInstalledTools]);
 
 	const handleToolSelect = useCallback(async (toolId: ToolId) => {
+		claimLocalAuthority();
 		setActiveToolState(toolId);
 
-		// System tools don't go into dock
+		// System tools don't go into dock.
 		if (!isSystemTool(toolId)) {
-			setOpenTools(prev => {
-				if (prev.includes(toolId)) return prev;
-				const newOpen = prev.length >= MAX_OPEN_TOOLS ? [...prev.slice(1), toolId] : [...prev, toolId];
-				chrome.storage.local.set({ [OPEN_TOOLS_KEY]: newOpen }).catch((e) => console.warn('openTools persist failed', e));
-				return newOpen;
+			setOpenTools((previous) => {
+				if (previous.includes(toolId)) return previous;
+				const next = previous.length >= MAX_OPEN_TOOLS
+					? [...previous.slice(1), toolId]
+					: [...previous, toolId];
+				persistOpenTools(next);
+				return next;
 			});
 		}
-	}, []);
+	}, [claimLocalAuthority, persistOpenTools]);
 
 	const handleCloseTool = useCallback((toolId: ToolId) => {
-		setOpenTools(prev => {
-			const newOpen = prev.filter(id => id !== toolId);
-			setActiveToolState(current => {
-				if (current === toolId) {
-					// When closing active tool, find next non-system tool to activate
-					// If no non-system tools remain, go back to home (null)
-					const nextUserTool = [...newOpen].reverse().find(id => !isSystemTool(id));
-					return nextUserTool ?? null;
-				}
-				return current;
+		claimLocalAuthority();
+		setOpenTools((previous) => {
+			const next = previous.filter((id) => id !== toolId);
+			setActiveToolState((current) => {
+				if (current !== toolId) return current;
+				return [...next].reverse().find((id) => !isSystemTool(id)) ?? null;
 			});
-			chrome.storage.local.set({ [OPEN_TOOLS_KEY]: newOpen }).catch((e) => console.warn('openTools persist failed', e));
-			return newOpen;
+			persistOpenTools(next);
+			return next;
 		});
-	}, []);
+	}, [claimLocalAuthority, persistOpenTools]);
 
 	const handleBack = useCallback(async () => {
+		claimLocalAuthority();
 		setActiveToolState(null);
-	}, []);
+	}, [claimLocalAuthority]);
 
 	return {
 		activeTool,
