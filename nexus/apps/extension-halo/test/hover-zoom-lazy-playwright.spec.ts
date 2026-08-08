@@ -9,10 +9,13 @@ import {
 	expect,
 	test,
 	type BrowserContext,
+	type Page,
 	type Worker,
 } from '@playwright/test';
 
 const DIST_PATH = fileURLToPath(new URL('../dist/', import.meta.url));
+const STORAGE_KEY = 'halo_hover_zoom_settings';
+const VISIBLE_VIEWER = '#halo-hover-zoom-container .halo-hz-viewer.visible';
 
 async function startFixtureServer(): Promise<{ server: Server; url: string }> {
 	const server = createServer((request, response) => {
@@ -25,6 +28,7 @@ async function startFixtureServer(): Promise<{ server: Server; url: string }> {
 <html>
 <head><link rel="icon" href="data:,"></head>
 <body>
+	<div id="plain-target" style="width:160px;height:100px;margin:20px">plain target</div>
 	<img id="preview-target" src="/fixture.svg" width="160" height="100" alt="HALO lazy preview fixture">
 </body>
 </html>`);
@@ -65,9 +69,39 @@ async function extensionWorker(context: BrowserContext): Promise<Worker> {
 	return context.waitForEvent('serviceworker', { timeout: 10_000 });
 }
 
+async function setHoverZoom(worker: Worker, enabled: boolean): Promise<void> {
+	await worker.evaluate(async ({ key, value }) => {
+		await chrome.storage.local.set({
+			[key]: {
+				enabled: value,
+				triggerDelay: 0,
+				altKeyMode: 'block',
+				highlightMode: 'hotkey',
+				showLoadingIndicator: false,
+				resourceKeys: {
+					imageKey: { shift: false, ctrl: false, alt: true },
+					videoKey: { shift: false, ctrl: true, alt: true },
+				},
+			},
+		});
+	}, { key: STORAGE_KEY, value: enabled });
+}
+
+async function expectViewerVisible(page: Page): Promise<void> {
+	await expect(page.locator(VISIBLE_VIEWER)).toHaveCount(1, { timeout: 10_000 });
+	await expect(page.locator('#halo-hover-zoom-container .halo-hz-image')).toHaveAttribute(
+		'src',
+		/fixture\.svg/,
+	);
+}
+
+async function expectViewerHidden(page: Page): Promise<void> {
+	await expect(page.locator(VISIBLE_VIEWER)).toHaveCount(0, { timeout: 10_000 });
+}
+
 test.describe('HALO lazy Hover Zoom runtime in Chromium', () => {
-	test('keeps the viewer cold and preserves the first valid Alt gesture', async () => {
-		test.setTimeout(30_000);
+	test('keeps invalid and disabled pages cold while preserving every first valid gesture', async () => {
+		test.setTimeout(45_000);
 		const profilePath = await mkdtemp(join(tmpdir(), 'halo-hover-zoom-playwright-'));
 		let server: Server | null = null;
 		let context: BrowserContext | null = null;
@@ -88,21 +122,7 @@ test.describe('HALO lazy Hover Zoom runtime in Chromium', () => {
 			const browserErrors: string[] = [];
 			context.on('weberror', (error) => browserErrors.push(String(error.error())));
 			const worker = await extensionWorker(context);
-			await worker.evaluate(async () => {
-				await chrome.storage.local.set({
-					halo_hover_zoom_settings: {
-						enabled: true,
-						triggerDelay: 0,
-						altKeyMode: 'block',
-						highlightMode: 'hotkey',
-						showLoadingIndicator: false,
-						resourceKeys: {
-							imageKey: { shift: false, ctrl: false, alt: true },
-							videoKey: { shift: false, ctrl: true, alt: true },
-						},
-					},
-				});
-			});
+			await setHoverZoom(worker, true);
 
 			const page = context.pages()[0] ?? await context.newPage();
 			page.on('pageerror', (error) => browserErrors.push(error.stack ?? error.message));
@@ -110,25 +130,50 @@ test.describe('HALO lazy Hover Zoom runtime in Chromium', () => {
 				if (message.type() === 'error') browserErrors.push(message.text());
 			});
 			await page.goto(fixture.url, { waitUntil: 'load' });
-			await expect(page.locator('#preview-target')).toBeVisible();
 
-			// The static document_idle input host must not construct the heavy viewer.
-			await expect(page.locator('#halo-hover-zoom-container')).toHaveCount(0);
+			// The static host must reject an irrelevant Alt gesture without paying
+			// the packaged ~48 KiB preview runtime cost.
+			await page.locator('#plain-target').hover();
+			await page.keyboard.down('Alt');
+			await page.keyboard.up('Alt');
+			await page.waitForTimeout(200);
+			expect(await page.locator('#halo-hover-zoom-container').count()).toBe(0);
 
-			// Existing semantics allow the pointer to arrive before the modifier.
-			// The very first Alt gesture must therefore survive the lazy import.
+			// Pointer-before-modifier is canonical. The first valid Alt gesture must
+			// survive the lazy import without asking the user for a second gesture.
 			await page.locator('#preview-target').hover();
 			await page.keyboard.down('Alt');
-			await expect(page.locator('#halo-hover-zoom-container')).toHaveCount(1);
-			await expect(page.locator('#halo-hover-zoom-container .halo-hz-image')).toHaveAttribute(
-				'src',
-				/fixture\.svg/,
-			);
-
+			await expectViewerVisible(page);
 			await page.keyboard.up('Alt');
-			await expect.poll(async () => page.locator('#halo-hover-zoom-container').evaluate((element) => (
-				(element as HTMLElement).style.display
-			))).toBe('none');
+			await expectViewerHidden(page);
+
+			// A fresh document may finish loading the runtime after a rapid release,
+			// but the retired preview generation must never become visible later.
+			await page.reload({ waitUntil: 'load' });
+			await page.locator('#preview-target').hover();
+			await page.keyboard.down('Alt');
+			await page.keyboard.up('Alt');
+			await page.waitForTimeout(300);
+			await expectViewerHidden(page);
+
+			// Disabled state owns no page-input runtime. Re-enable must restore
+			// first-gesture behavior after a real post-enable pointer movement.
+			await setHoverZoom(worker, false);
+			await page.reload({ waitUntil: 'load' });
+			await page.locator('#preview-target').hover();
+			await page.keyboard.down('Alt');
+			await page.waitForTimeout(200);
+			expect(await page.locator('#halo-hover-zoom-container').count()).toBe(0);
+			await page.keyboard.up('Alt');
+
+			await page.mouse.move(10, 10);
+			await setHoverZoom(worker, true);
+			await page.locator('#preview-target').hover();
+			await page.keyboard.down('Alt');
+			await expectViewerVisible(page);
+			await page.keyboard.up('Alt');
+			await expectViewerHidden(page);
+
 			expect(browserErrors).toEqual([]);
 		} finally {
 			await context?.close();
