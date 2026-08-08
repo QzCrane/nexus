@@ -1,15 +1,18 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from '../../../i18n';
 import type { UserScript, UserScriptState } from '../types';
 import {
 	deleteUserScript,
-	toggleUserScript,
-	toggleGlobalEnabled,
 	reorderScript,
+	toggleGlobalEnabled,
+	toggleUserScript,
 } from '../core';
 import { injectScriptToCurrentTab } from '../engine';
 import { useToast } from '../../../components/ToastProvider';
-import { refreshUserScriptsStorage } from '../storage-authority';
+import {
+	refreshUserScriptsStorage,
+	type UserScriptsSnapshotScript,
+} from '../storage-authority';
 import { useUserScriptsStorageSnapshot } from './useUserScriptsSnapshot';
 
 const DEFAULT_TOOLBAR_CONFIG: NonNullable<UserScriptState['toolbarConfig']> = {
@@ -17,12 +20,12 @@ const DEFAULT_TOOLBAR_CONFIG: NonNullable<UserScriptState['toolbarConfig']> = {
 	hideOnOverflow: false,
 };
 
-function materializeScript(script: Readonly<UserScript>): UserScript {
+function materializeScript(script: UserScriptsSnapshotScript): UserScript {
 	return {
 		...script,
 		matches: [...script.matches],
 		...(script.excludeMatches ? { excludeMatches: [...script.excludeMatches] } : {}),
-	};
+	} as UserScript;
 }
 
 export function useUserScripts() {
@@ -44,16 +47,18 @@ export function useUserScripts() {
 	), [snapshot.toolbarConfig]);
 	const [currentUrl, setCurrentUrl] = useState('');
 	const [hasPermission, setHasPermission] = useState(false);
+
+	// Retained only for explicit external refresh flows that do not own a storage
+	// write. Mutations below rely on the canonical storage-change publication and
+	// never pay a second local.get immediately after their own write.
 	const loadScripts = useCallback(async () => {
 		await refreshUserScriptsStorage();
 	}, []);
 
-	// Permissions and URL tracking are independent of script-storage authority.
 	useEffect(() => {
 		const checkStatus = async () => {
 			const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 			if (tab?.url) setCurrentUrl(tab.url);
-
 			const hasHosts = await chrome.permissions.contains({ origins: ['*://*/*'] });
 			const hasUserScripts = await chrome.permissions.contains({ permissions: ['userScripts'] });
 			setHasPermission(hasUserScripts && hasHosts);
@@ -114,7 +119,6 @@ export function useUserScripts() {
 
 	const handleGlobalToggle = async () => {
 		const newState = await toggleGlobalEnabled();
-		await loadScripts();
 		showToast(newState
 			? `✅ ${t('userscripts.scriptsEnabled')}`
 			: `⏸️ ${t('userscripts.scriptsDisabled')}`);
@@ -122,13 +126,11 @@ export function useUserScripts() {
 
 	const handleToggle = async (id: string) => {
 		await toggleUserScript(id);
-		await loadScripts();
 	};
 
 	const handleDelete = async (id: string) => {
 		if (!confirm(t('userscripts.deleteConfirm'))) return;
 		await deleteUserScript(id);
-		await loadScripts();
 		showToast(`🗑️ ${t('userscripts.scriptDeleted')}`);
 	};
 
@@ -141,12 +143,10 @@ export function useUserScripts() {
 
 	const handleMove = async (id: string, dir: 'up' | 'down') => {
 		await reorderScript(id, dir);
-		await loadScripts();
 	};
 
 	const handleToolbarConfig = async (config: UserScriptState['toolbarConfig']) => {
-		await import('../operations').then(ops => ops.saveToolbarConfig(config));
-		await loadScripts();
+		await import('../operations').then((operations) => operations.saveToolbarConfig(config));
 	};
 
 	return {
@@ -162,6 +162,6 @@ export function useUserScripts() {
 		handleDelete,
 		handleTest,
 		handleMove,
-		handleToolbarConfig
+		handleToolbarConfig,
 	};
 }
