@@ -3,7 +3,7 @@ type: explanation
 status: stable
 audience: developer
 owner: spectra-runtime-architecture
-last_reviewed: 2026-07-26
+last_reviewed: 2026-08-09
 ---
 
 # SPECTRA runtime architecture
@@ -15,9 +15,9 @@ SPECTRA is a Chrome MV3 extension with explicit ownership across runtime context
 | Context | Owns | Does not own |
 | --- | --- | --- |
 | Popup / Options | intent, local render, interaction | actual audio mode, direct storage, executor choice |
-| Content, isolated | document identity, media registry, DOM/CSS writers, admitted WebAudio | Capture-active claims before host ACK |
+| Content, isolated | document identity, media registry, DOM/CSS writers, admitted WebAudio, exact configured-site lean host when injected | Capture-active claims before host ACK, cross-tab hotkey target selection |
 | MAIN bridges | fullscreen audio handoff, exact-element page-media getter/setter readback | generic dispatch, domain tables, cross-tab state |
-| Background worker | routing, settings, snapshots, badge projection, runtime leases | WebAudio nodes, optimistic UI |
+| Background worker | routing, settings, snapshots, badge projection, runtime leases, per-document lean/full hotkey ownership | WebAudio nodes, optimistic UI |
 | Unified offscreen host | actual Capture processors, authenticated remote sessions | direct document creation/closure |
 
 `ControlSnapshot` owns actual media/video/DSP fields. `AudioSessionSnapshot` (keyed by document) owns processor mode/phase/config/error. Projections preserve this separation.
@@ -77,13 +77,42 @@ Passive bootstrap may do bounded top-level getter. Background captures `volumech
 
 ## Runtime loading and shortcuts
 
-Manifest loads minimal isolated bootstrap + closed MAIN bridges. Heavy Content runtime acquired via consumer tokens. Final consumer releases listeners.
-Cold-document hotkeys use READY ensure path (invalidated by nav/disposal).
+Manifest loads minimal isolated bootstrap + closed MAIN bridges. Heavy Content runtime is acquired via consumer tokens. Final consumer releases listeners. Cold-document built-in hotkeys use READY ensure path and release their transient capability after the admitted operation.
 Offscreen events keep Chrome message channel open until Background settles, preventing suspension mid-event.
 
-Built-in chords (`Alt+Arrow*/Alt+M`) are reserved, claimed at `document_start` before page handlers. Configured site bindings yield to website claims.
-Isolated-world gesture channel owns one monotonic sequence, replaying first key event once on cold-start if needed.
-Keyups clear unconsumed repeat pulses but cannot revoke admitted press. `chrome.commands` admits only non-coalescing actions.
+Built-in chords (`Alt+Arrow*/Alt+M`) are reserved, claimed at `document_start` before page handlers. Configured site bindings yield to website claims. Keyups clear unconsumed repeat pulses but cannot revoke an admitted press. `chrome.commands` admits only non-coalescing actions.
+
+### Configured-site lean hotkeys
+
+A configured site may avoid a document-lifetime heavy Content Runtime lease only when every live binding is page-default-equivalent: `speed_up`, `speed_down`, `volume_up`, `volume_down`, or `volume_mute`, with no custom parameters. One live non-equivalent binding makes the entire site `full`.
+
+Ownership is split into three layers:
+
+1. `site-hotkey-loader-adapter.ts` resolves URL + hotkey settings into `none | lean | full`.
+2. `site-hotkey-owner.ts` is the sole Background owner for one `tabId+documentId`. It serializes reconciliations, owns Worker epoch/configuration generation, injection single-flight, and full capability bookkeeping.
+3. `content-site-hotkeys.js` is an injected minimal isolated-world host. It has no settings authority and accepts only exact document configuration.
+
+The exact lean configuration message is:
+
+```text
+spectra.content.site-hotkeys.configure
+{ epoch, generation, bindings }
+```
+
+Rules:
+
+- `spectra.hotkeys.changed` is not an authority for the lean host. Broad settings events may cause Background reconciliation, but cannot directly clear or enable content ownership.
+- Every ownership transition starts with an exact empty configuration barrier. A confirmed missing receiver means the document is already lean-empty. Any other transport or protocol failure is fail-closed.
+- A surviving host from a previous MV3 worker ACKs the new worker's empty barrier. A new Worker epoch supersedes the old epoch even when its numeric generation restarts lower.
+- After injection, a nonempty projection must receive the exact `{epoch,generation}` ACK. Missing receiver after successful injection is an error, not a safe no-op.
+- Per-document transitions serialize across HELLO, settings, History/navigation and lifecycle races. `forget()` increments a document lifecycle token but never deletes an in-flight transition tail. Every async continuation checks that token before publishing another side effect.
+- If a full-runtime ensure completes after its document was forgotten, the newly acquired capability is released immediately.
+- Lifecycle tombstones are retained only while an injected host, full capability, injection promise or transition is still observable; retired idle document keys are removed.
+- Lean key actions submit canonical `spectra.control.intent.submit` / `spectra.control.operation.submit` requests with `source:'hotkey'`. The control coordinator binds such content-originated hotkeys to `origin:'site-page'` with foreground and target equal to the sending top-level document. Lean site bindings never consult the global hotkey-target repository.
+- Lean repeat work is single-flight per held binding. Pending physical repeats are bounded; completion does not self-drain queued pulses; keyup/blur/visibility retirement discards the unconsumed tail.
+- Extension-context invalidation disposes the lean host and its arbiter. A stale extension context may not keep calling `preventDefault()` after it can no longer execute the admitted action.
+
+This model removes a document-lifetime heavy hotkey lease; it does not promise that the heavy runtime can never be loaded transiently when an admitted control operation requires existing control writers.
 
 ## Remote control
 
@@ -105,7 +134,8 @@ Favicon/QR are UI/security boundaries, not media capabilities. Exact-element, Pi
 | Route resolution | Content policy executor | Cache is not activation |
 | Processor lifecycle | offscreen coordinator/delegate | Actual host ACK drives status |
 | Cold native refresh | bootstrap/coordinator | Targetless 4-field obs; no badge-use fact |
-| Shortcut readiness | shared keyboard arbiter | Exclusive ownership of 5 defaults; yields site bindings |
+| Built-in shortcut readiness | shared keyboard arbiter + transient READY lease | Exclusive ownership of 5 defaults; no document-lifetime default-hotkey lease |
+| Configured-site lean ownership | `site-hotkey-owner.ts` + exact lean host | Exact empty barrier before transition; sender-document control; no broad-event authority |
 | Toast/OSD | Content feedback modules | One feedback owner on Popover; no bootstrap toast |
 | Page media semantics | page-media bridge/native executor | Exact-element readback, DOM fallback, no polling |
 | PiP/fullscreen | fullscreen bridge/native executor | Actual native lifecycle preservation |
