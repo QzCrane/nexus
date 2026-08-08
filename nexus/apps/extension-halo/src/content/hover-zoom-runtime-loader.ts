@@ -81,9 +81,9 @@ export async function requestPreview(
 			return;
 		}
 
-		// From this point the loaded runtime synchronously claims currentTarget
-		// before any delayed resolver/viewer work. Pending-import ownership ends.
-		if (pendingPreviewTarget === target) pendingPreviewTarget = null;
+		// Keep pending ownership through the runtime handoff. If tryTrigger ever
+		// gains an await before claiming currentTarget, mouseout can still protect
+		// same-target transitions without reviving stale work.
 		await runtime.tryTrigger(state, preload, target);
 	} catch (error: unknown) {
 		if (revision === previewIntentRevision) {
