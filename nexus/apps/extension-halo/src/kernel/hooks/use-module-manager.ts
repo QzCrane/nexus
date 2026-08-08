@@ -18,7 +18,6 @@ const EMPTY_MODULE_SNAPSHOT: ModuleManagerSnapshot = Object.freeze({
 
 interface UseModuleManagerResult {
 	loading: boolean;
-	revision: number;
 	installedModules: readonly ModuleMeta[];
 	availableModules: readonly ModuleMeta[];
 	getStatus: (id: string) => ModuleStatus;
@@ -85,7 +84,6 @@ export const useModuleManager = (): UseModuleManagerResult => {
 
 	return {
 		loading,
-		revision: snapshot.revision,
 		installedModules: snapshot.installedModules,
 		availableModules: snapshot.availableModules,
 		getStatus,
