@@ -7,6 +7,8 @@
 	"scripts": {
 		"dev": "turbo run dev",
 		"build": "turbo run build --output-logs=new-only",
+		"build:spectra": "turbo run build --filter=@nexus/extension-spectra... --output-logs=new-only",
+		"build:halo": "turbo run build --filter=@nexus/extension-halo... --output-logs=new-only",
 		"lint": "bun scripts/run-lint-parallel.ts",
 		"lint:workspace-coverage": "bun test scripts/check-workspace-lint.spec.ts scripts/run-strict-biome.spec.ts && bun scripts/check-workspace-lint.ts",
 		"lint:repository-surfaces": "bun scripts/run-strict-biome.ts scripts package.json biome.json tsconfig.base.json turbo.json ../package.json ../commitlint.config.cjs ../.codex/hooks.json ../remote-site",
