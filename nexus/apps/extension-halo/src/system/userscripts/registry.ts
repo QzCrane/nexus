@@ -238,11 +238,14 @@ async function readRegistryAuthority(): Promise<RegistryAuthority> {
 function prepareRegistration(scripts: readonly UserScriptsSnapshotScript[]): PreparedRegistration {
 	const userScripts: chrome.userScripts.RegisteredUserScript[] = [];
 	const contentScripts: chrome.scripting.RegisteredContentScript[] = [];
+	const registrationIds = new Set<string>();
 	for (const script of scripts) {
 		if (!script.enabled) continue;
 		const matches = toMatchPatterns(script.matches);
 		const excludeMatches = script.excludeMatches?.length ? script.excludeMatches.map(normalizePattern) : undefined;
 		const id = `${SCRIPT_ID_PREFIX}${script.id}`;
+		if (registrationIds.has(id)) throw new Error(`Duplicate runtime script id: ${script.id}`);
+		registrationIds.add(id);
 		const world = script.world || 'USER_SCRIPT';
 		if (world === 'ISOLATED') {
 			if (!script.filePath) throw new Error(`ISOLATED script ${script.id} is missing filePath`);
