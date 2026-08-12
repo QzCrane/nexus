@@ -56,6 +56,8 @@ export interface SpectraDefaultHotkeyTriggerPayload {
 	phase: SpectraDefaultHotkeyPhase;
 	gesture: string;
 	repeated: boolean;
+	/** Absent = shipped default/global-target semantics; site-page = sender-document semantics. */
+	disposition?: 'site-page';
 }
 
 export interface SpectraLeanSiteHotkeyBinding {
@@ -99,6 +101,7 @@ const LEAN_SITE_HOTKEY_MESSAGE_KEYS = new Set(['protocolVersion', 'type', 'paylo
 const LEAN_SITE_HOTKEY_CONFIG_KEYS = new Set(['epoch', 'generation', 'bindings']);
 const LEAN_SITE_HOTKEY_BINDING_KEYS = new Set(['code', 'modifiers', 'action']);
 const LEAN_SITE_HOTKEY_MODIFIER_KEYS = new Set(['ctrl', 'alt', 'shift', 'meta']);
+const DEFAULT_HOTKEY_TRIGGER_KEYS = new Set(['action', 'phase', 'gesture', 'repeated', 'disposition']);
 
 type BootstrapRequestType =
 	| 'spectra.content.runtime.status'
@@ -178,11 +181,12 @@ export function isSpectraDefaultHotkeyTriggerPayload(
 	value: unknown,
 ): value is SpectraDefaultHotkeyTriggerPayload {
 	return isRecord(value)
-		&& hasOnlyKeys(value, new Set(['action', 'phase', 'gesture', 'repeated']))
+		&& hasOnlyKeys(value, DEFAULT_HOTKEY_TRIGGER_KEYS)
 		&& SPECTRA_DEFAULT_HOTKEY_ACTIONS.some((action) => action === value.action)
 		&& (value.phase === 'press' || value.phase === 'release')
 		&& isBoundedString(value.gesture, 128)
-		&& typeof value.repeated === 'boolean';
+		&& typeof value.repeated === 'boolean'
+		&& (value.disposition === undefined || value.disposition === 'site-page');
 }
 
 function hasValidEnvelope(value: Record<string, unknown>): boolean {
