@@ -21,6 +21,9 @@ function documentKey(tabId: number, documentId: string): string {
 }
 
 export interface FullSiteHotkeyRuntimePort {
+	/** Disable configured-site ownership inside an already-resident heavy runtime. Missing runtime is a safe no-op. */
+	suspend(): Promise<void>;
+	/** Acquire the full hotkey lease and make the heavy configured-site listener authoritative. */
 	ensure(capability: string): Promise<void>;
 	release(capability: string): void;
 }
@@ -149,11 +152,7 @@ export class SiteHotkeyDocumentOwner {
 		};
 	}
 
-	private async injectLeanHost(
-		tabId: number,
-		documentId: string,
-		lifecycle: number,
-	): Promise<void> {
+	private async injectLeanHost(tabId: number, documentId: string, lifecycle: number): Promise<void> {
 		const key = documentKey(tabId, documentId);
 		this.assertLifecycle(key, lifecycle);
 		if (this.injectedDocuments.has(key)) return;
@@ -176,11 +175,7 @@ export class SiteHotkeyDocumentOwner {
 		await operation;
 	}
 
-	private configure(
-		tabId: number,
-		documentId: string,
-		bindings: SpectraLeanSiteHotkeyBinding[],
-	): Promise<LeanHostDelivery> {
+	private configure(tabId: number, documentId: string, bindings: SpectraLeanSiteHotkeyBinding[]): Promise<LeanHostDelivery> {
 		return this.hostPort.configure(tabId, documentId, this.nextConfiguration(bindings));
 	}
 
@@ -216,9 +211,12 @@ export class SiteHotkeyDocumentOwner {
 					fullCapability,
 				}, {
 					barrier: async () => {
-						// No receiver is already empty. Any other transport/protocol error
-						// remains fail-closed. A surviving old-worker host returns an ACK.
 						await this.configure(tabId, documentId, []);
+						this.assertLifecycle(key, lifecycle);
+					},
+					suspendFull: async () => {
+						this.assertLifecycle(key, lifecycle);
+						await fullRuntime.suspend();
 						this.assertLifecycle(key, lifecycle);
 					},
 					configureLean: async () => {
@@ -268,8 +266,6 @@ export class SiteHotkeyDocumentOwner {
 			this.lifecycleGeneration.set(key, this.documentGeneration(key) + 1);
 			this.injectedDocuments.delete(key);
 			this.fullCapabilities.delete(key);
-			// Never delete an in-flight promise/tail here. The retired operation must
-			// observe the new lifecycle token before it can publish another side effect.
 			this.cleanupLifecycleKey(key);
 		}
 	}
