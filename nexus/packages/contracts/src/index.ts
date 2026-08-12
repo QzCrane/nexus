@@ -229,7 +229,11 @@ export {
 	SPECTRA_CONTENT_RUNTIME_REVISION,
 	SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE,
 	SPECTRA_DEFAULT_HOTKEY_ACTIONS,
+	SPECTRA_REPEATABLE_DEFAULT_HOTKEY_ACTIONS,
 	isSpectraDefaultHotkeyTriggerPayload,
+	isSpectraRepeatableDefaultHotkeyAction,
+	isSpectraLeanSiteHotkeyConfiguration,
+	isSpectraLeanSiteHotkeyConfigureMessage,
 	resolveSpectraDefaultHotkeyAction,
 } from './spectra.bootstrap.js';
 export type {
@@ -237,6 +241,9 @@ export type {
 	SpectraDefaultHotkeyChord,
 	SpectraDefaultHotkeyPhase,
 	SpectraDefaultHotkeyTriggerPayload,
+	SpectraLeanSiteHotkeyBinding,
+	SpectraLeanSiteHotkeyConfiguration,
+	SpectraLeanSiteHotkeyConfigureMessage,
 } from './spectra.bootstrap.js';
 
 // Canonical domain utilities
@@ -311,6 +318,8 @@ export type {
 	OffscreenHostEvent,
 	OffscreenAudioEvent,
 	RemoteHostEventType,
+	OffscreenHostEvent,
+	OffscreenAudioEvent,
 	RemoteHostEvent,
 } from './offscreen.contracts.js';
 export {
