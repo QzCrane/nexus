@@ -34,7 +34,7 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 function isSaaTPluginDescriptor(value: unknown): value is SaaTPluginDescriptor {
-	if (!isRecord(value) || typeof value.id !== 'string') return false;
+	if (!isRecord(value) || typeof value.id !== 'string' || typeof value.builtIn !== 'boolean') return false;
 	if (value.pluginType !== 'tool' && value.pluginType !== 'script' && value.pluginType !== 'system') return false;
 	const script = value.script;
 	if (!isRecord(script)) return false;
@@ -297,6 +297,5 @@ if (process.env.NODE_ENV !== 'production') {
 			if (key.startsWith(STORAGE_PREFIX.CORE) || key === SETTINGS_STORAGE_KEY) {
 				console.log(LOG_TAG, `Storage: ${key}`, newValue);
 			}
-		}
 	});
 }
