@@ -8,74 +8,54 @@ last_reviewed: 2026-08-12
 
 # HALO packaged-module lifecycle
 
-HALO modules are extension-packaged capabilities. Module Store does not download, unpack, replace, or dynamically install executable code. The lifecycle authority therefore models **whether packaged optional capability is enabled/owned**, not a simulated package manager.
+HALO modules are extension-packaged capabilities. Module Store controls whether optional packaged capability is enabled/owned; it does not simulate downloading or replacing code.
 
-## Canonical installation semantics
+## Installation authority
 
 | Module state | Physical authority | Effective state |
 | --- | --- | --- |
 | `builtIn:true` | manifest/registry | always installed; cannot be removed |
 | optional, no installation key | packaged default | installed |
 | optional, `halo_module_enabled_v2:<id> = false` | local tombstone | uninstalled |
-| optional, explicit malformed value | local tombstone boundary | fail closed |
+| optional, malformed explicit value | local tombstone boundary | fail closed |
 
-Reinstall removes the false tombstone. Fresh profiles require no seed writes. Each optional module has an independent `chrome.storage.local` key, avoiding read/modify/write conflicts between unrelated modules and giving SidePanel, content scripts, and service worker one physical cross-context truth.
+Each optional module owns one independent `chrome.storage.local` key. Reinstall removes the false tombstone. Fresh profiles require no seed writes.
 
-## ModuleManager authority
+## ModuleManager
 
-`kernel/managers/module-manager.ts` owns the SidePanel projection.
+`kernel/managers/module-manager.ts` owns the SidePanel packaged-module projection.
 
-Hydration is event-first: storage subscription attaches before the initial read, and a live storage event owns that module over an older hydration result. Initial hydration retries once immediately.
+- storage subscription precedes hydration;
+- live events outrank older hydration reads;
+- built-ins remain installed during storage failure;
+- complete degraded authority projects every optional module unavailable;
+- initial hydration gets one immediate retry;
+- successful retry publishes only real authority/degraded changes;
+- healthy no-op retry preserves the exact external-store snapshot object;
+- a stale local projection never elides a requested install/uninstall write;
+- mutation completion rereads the physical key before publishing;
+- same-module write+reread transactions serialize through a realm queue plus a named Web Lock;
+- a real extension context fails closed if Web Locks is unavailable instead of silently reverting to realm-only serialization.
 
-`degraded` is not a warning layered over last-known optional state. It is a public authority boundary:
-
-```text
-built-ins => installed
-all optional modules => unavailable / not installed
-```
-
-The manager may continue absorbing physical optional-module events into its private cache while degraded, but it does not publish those optional modules as installed until a complete hydration succeeds. This keeps SidePanel, Module Store, open-tool restoration and any other snapshot-only consumer fail-closed without requiring a second per-consumer degraded check.
-
-`retryInstallationState()` publishes only when effective installation/degraded authority changes. A healthy no-op retry preserves the exact `useSyncExternalStore` snapshot object and emits no subscriber notification.
-
-## Cross-context mutation serialization
-
-A local snapshot is never used to elide install/uninstall intent. Every optional mutation:
-
-```text
-persist requested state
-  -> physically reread the module key
-  -> publish the observed physical value
-```
-
-The complete write+reread transaction is serialized by two layers:
-
-1. a realm-shared per-module promise tail;
-2. a named Web Lock `halo-module-installation-v2:<id>` across extension contexts.
-
-The extension never silently falls back to realm-only mutation serialization in production. If a real extension context lacks Web Locks, the mutation fails closed. Test/non-browser custom persistence may use the realm-local fallback.
+After SidePanel storage-authority integration, ModuleManager's storage-event input is multiplexed through the SidePanel realm bus; its persistence, degraded-state and locking semantics remain ModuleManager-owned.
 
 ## Runtime gating
 
-An uninstalled module may not keep executing merely because its code exists in the extension package.
+An uninstalled optional module may not keep executing merely because its code exists in the extension package.
 
 ### Smooth Scroll
 
-Document input ownership requires:
+Input ownership requires:
 
 ```text
-feature settings enabled
-AND
-smooth-scroll module installed
-AND
-both authorities hydrated
+settings enabled
+AND module installed
+AND both authorities hydrated
 ```
 
-Settings and module storage hydrate independently with event-first ordering. Either read failure disables input ownership. Wheel/mousedown listeners retire on ownership loss. The document-start keydown/keyup observation seam remains physically registered for stable website-first ordering but both observers are inert unless `runtimeEnabled()` is true.
+Either read failure fails closed. Wheel/mousedown listeners retire on ownership loss. Document-start keyboard observers remain physically stable for website-first ordering but keydown/keyup handling is inert unless `runtimeEnabled()` is true.
 
-### Script runtime ownership
-
-Registry-managed script execution has three owners:
+### Script runtimes
 
 | Runtime class | Installation owner | Content setting |
 | --- | --- | --- |
@@ -83,101 +63,79 @@ Registry-managed script execution has three owners:
 | packaged script module | its own module id | `halo_userscripts.globalEnabled` |
 | SaaT tool runtime | its own tool/module id | `halo_saat_scripts.globalEnabled` |
 
-The UserScripts module tombstone must never disable an unrelated packaged script. Ownership vocabulary is canonical in `kernel/core/script-runtime-ownership.ts`:
+Built-in packaged scripts therefore survive the unrelated UserScripts module tombstone.
+
+Ownership vocabulary is canonical in `kernel/core/script-runtime-ownership.ts`:
 
 ```text
 packaged-script | saat-tool
 ```
 
-Generated install-time descriptors carry explicit `builtIn:boolean`. The kernel SaaT descriptor consumer rejects missing `builtIn` before registry storage is mutated.
+Generated install-time descriptors carry explicit `builtIn:boolean`, and the SaaT descriptor consumer rejects malformed ownership before mutating registry storage.
 
-## Registry generation preparation
+## Persistent browser-registration authority
 
-Browser registrations are destructive to replace, so all static generation errors must be detected before unregistering the working generation.
+Browser registrations survive ordinary MV3 worker suspension, so logical persistence and Chrome registration state must converge durably.
 
-The registry first parses the canonical persistence schema and validates ownership containers. It then prepares the entire next generation before teardown. Preparation rejects:
+The complete desired generation is validated before the live generation is retired:
 
-- empty/blank match sets;
-- malformed ownership metadata;
-- an `ISOLATED` script without packaged `filePath`;
-- duplicate enabled runtime IDs.
+- empty/blank matches fail closed;
+- container ownership must be valid;
+- ISOLATED scripts require `filePath`;
+- explicit MAIN world is preserved;
+- duplicate enabled runtime IDs fail before unregister;
+- unregister/register failures propagate.
 
-Explicit `MAIN` world is preserved. Unspecified non-ISOLATED world retains the historical `USER_SCRIPT` default.
+### Receipt v2
 
-Only after successful preparation does the registry unregister previous HALO registrations and register the prepared generation. Unregister/register errors propagate into durable recovery.
+Recovery is represented by three persistent states:
 
-## Chrome User Scripts capability authority
+- `dirty`: reconciliation is running or failed;
+- `blocked {digest}`: persisted authority is known but Chrome User Scripts capability is unavailable, so the browser's persistent userScripts generation cannot be proven current;
+- `clean {digest}`: the complete browser registration authority is proven converged.
 
-HALO declares `userScripts` and broad host access as optional permissions. Chrome 138+ also exposes a separate per-extension **Allow User Scripts** platform toggle.
+The authority digest covers raw user/SaaT persistence, UserScripts and managed-module tombstones, actual Chrome User Scripts capability, and `chrome.runtime.getManifest().version`.
 
-`system/userscripts/capability.ts` owns one runtime capability probe. Namespace presence alone is not authority: HALO calls `chrome.userScripts.getScripts()` and treats namespace absence or method rejection as unavailable.
+Including the extension version is required because an extension update may clear dynamic User Scripts registrations while storage remains byte-identical. A previous-version clean receipt therefore cannot satisfy the new worker's authority.
 
-The same capability owner is consumed by Background registry reconciliation and the SidePanel UserScripts readiness projection. SidePanel readiness requires all three facts:
-
-```text
-host permission
-AND
-userScripts optional permission
-AND
-actual userScripts API capability
-```
-
-Granting optional permissions therefore does not blindly mark UserScripts ready. If Chrome's platform toggle remains off, the UI tells the user to enable **Allow User Scripts**. A false -> true runtime capability transition requests one Background `HALO_USERSCRIPTS_SYNC`.
-
-## Persistent registry receipt v2
-
-Browser registrations survive MV3 worker suspension, while Chrome's User Scripts platform gate can temporarily make its persistent generation unavailable for reconciliation. The old dirty-boolean-clear model therefore does not express enough state.
-
-The registry persists one receipt under its recovery key:
+Capability-sensitive satisfaction rules are strict:
 
 ```text
-dirty
-blocked { digest }
-clean   { digest }
+User Scripts available   -> matching clean only
+User Scripts unavailable -> matching blocked only
 ```
 
-Meaning:
+Dirty, wrong digest or wrong state triggers reconciliation. Current-worker failure retries are bounded at 250 ms, 1 s and 4 s.
 
-- `dirty`: synchronization is in progress or failed; bounded retry owns recovery;
-- `blocked`: storage/module authority is known, but the User Scripts platform capability is unavailable, so the browser's persistent `userScripts` generation cannot be proven current;
-- `clean`: the complete browser registration generation is proven converged.
+`ensureRegisteredScriptsSynchronized()` is an idempotent receipt barrier: a satisfied authority returns without destructive unregister/register I/O. `ensureUserScriptsRuntimeReady()` is stronger and succeeds only after final `userScriptsAvailable=true` plus a matching clean receipt.
 
-The SHA-256 authority digest covers the raw user-script container, raw SaaT container, UserScripts module tombstone, owned module tombstones, and actual User Scripts platform availability. Canonical encoding sorts object keys, represents `undefined` distinctly, and rejects unsupported primitives instead of silently collapsing them.
+## Panel readiness
 
-Startup recomputes physical authority and applies this satisfaction rule:
+Chrome's optional `userScripts` permission is not sufficient by itself; modern Chrome also exposes a per-extension Allow User Scripts platform gate. HALO uses an actual `chrome.userScripts.getScripts()` method probe rather than namespace presence alone.
 
-```text
-capability available   => matching clean receipt only
-capability unavailable => matching blocked receipt only
-anything else          => reconcile
-```
+The UserScripts panel reports runtime-ready only after:
 
-A matching blocked receipt prevents pointless full reconciliation on every worker wake while Chrome's platform gate remains off. When capability returns, the blocked receipt cannot satisfy the new authority and reconciliation must complete before `clean` is written.
+1. broad host permission is present;
+2. `userScripts` optional permission is present;
+3. the real User Scripts capability probe succeeds;
+4. Background `HALO_USERSCRIPTS_SYNC` returns success after `ensureUserScriptsRuntimeReady()` proves a clean available receipt.
 
-Failures keep/reassert `dirty` and use bounded current-worker retries at 250 ms, 1 s, and 4 s. A satisfied clean/blocked worker wake does not rebuild the registry.
+Permission/status refreshes return explicit `ready | unavailable | stale`. Retired async refreshes cannot be mistaken for final unavailable state. Every platform-available refresh crosses the idempotent Background receipt barrier, so a panel that was previously ready cannot keep advertising readiness after script authority changes. Committed script-authority changes trigger revalidation.
 
-### Platform re-enable boundary
+Chrome may internally reactivate its own persisted dynamic-script source before extension reconciliation when Allow User Scripts is re-enabled. This architecture does not claim a zero-stale-generation execution window until installed-Chromium evidence proves that transition.
 
-Chrome retains dynamically registered User Scripts while its platform source is disabled and may re-enable the persisted browser generation when **Allow User Scripts** is turned back on before HALO finishes its own post-enable reconciliation.
+## SidePanel projection
 
-The `blocked` receipt models this honestly but cannot reorder Chrome's internal enable transition. Installed-Chromium evidence must determine whether an old persisted generation can execute in that interval. If it can, this requires additional runtime hardening; it must not be waived or described as a clean zero-window transition.
-
-## SidePanel lifecycle
-
-`builtIn` is the sole packaged-module uninstallability property. `pluginType` is taxonomy only.
+`builtIn` is the sole packaged-module uninstallability property; `pluginType` is taxonomy only.
 
 - optional system modules are removable;
-- active/restored optional system panels obey installation state;
-- Launcher custom-script cards require healthy, non-degraded UserScripts module authority;
-- packaged/SaaT records are not re-projected as custom script cards;
-- open-tool hydration is epoch-fenced against stale async replay.
+- active/restored optional panels obey installation authority;
+- Launcher custom-script cards require healthy non-degraded UserScripts module authority;
+- packaged/SaaT records are excluded from custom Launcher projection;
+- open-tool hydration is epoch-fenced against stale replay.
 
-## Integration with SidePanel storage authority
+The final #20 × #25 integration keeps persistence transport separate from runtime ownership: one SidePanel storage bus, one lossless UserScripts persistence authority, ModuleManager installation authority, and Background browser-registration receipt authority.
 
-Module lifecycle and SidePanel storage transport are separate concerns. #20 owns installation/runtime/capability/recovery semantics; #25 owns the SidePanel realm storage bus and canonical lossless `halo_userscripts` snapshot.
+## Verification boundary
 
-The integrated candidate must preserve both: module installation remains runtime enablement authority; the SidePanel bus multiplexes physical `storage.onChanged`; UserScripts persistence preserves registry ownership metadata; Launcher/ActiveServices derive narrow projections; background/content listeners remain separate browser realms.
-
-## Non-goals
-
-This architecture does not claim remote module downloads, extension-code hot replacement, package signature verification, dependency resolution, or an update installer. A real package installation mechanism requires a separate explicit architecture rather than reviving removed simulated states.
+Static source contracts are not merge evidence. The final integrated candidate still requires HALO typecheck, full registered unit suite, production build/integrity, installed Chromium lifecycle tests, and Windows/Ubuntu execution. The tracked generated registry must also be regenerated from canonical manifests after provenance changes; generated output is not an independent hand-maintained authority.
