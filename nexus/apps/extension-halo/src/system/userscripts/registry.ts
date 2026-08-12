@@ -107,7 +107,12 @@ function failureMessage(label: string, error: unknown): string {
 }
 
 function canonicalize(value: unknown): string {
-	if (value === null || typeof value !== 'object') return JSON.stringify(value);
+	if (value === undefined) return 'undefined';
+	if (value === null || typeof value !== 'object') {
+		const encoded = JSON.stringify(value);
+		if (encoded === undefined) throw new TypeError(`Unsupported registry authority value: ${typeof value}`);
+		return encoded;
+	}
 	if (Array.isArray(value)) return `[${value.map(canonicalize).join(',')}]`;
 	const record = value as Record<string, unknown>;
 	return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonicalize(record[key])}`).join(',')}}`;
@@ -426,4 +431,5 @@ export const userScriptsRegistryTestApi = {
 	validateOwnershipContainers,
 	prepareRegistration,
 	isMatchingReceipt,
+	canonicalize,
 };
