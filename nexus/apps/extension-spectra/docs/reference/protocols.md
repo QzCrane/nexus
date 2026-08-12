@@ -3,21 +3,21 @@ type: reference
 status: stable
 audience: developer
 owner: spectra-runtime-protocol
-last_reviewed: 2026-08-09
+last_reviewed: 2026-08-12
 ---
 
 # SPECTRA runtime protocols
 
-This document owns cross-context envelopes, request/response validation, state flow, READY, leases, and configured-site hotkey authority. Per-capability writer selection belongs to [the control architecture](../control/README.md); remote authentication belongs to [remote security](../security/remote-control.md).
+This document owns cross-context envelopes, request/response validation, state flow, READY, leases, configured-site hotkey authority, and MV3 restart recovery. Per-capability writer selection belongs to [the control architecture](../control/README.md); remote authentication belongs to [remote security](../security/remote-control.md).
 
 ## State ownership
 
 | Context | Owns | Must not do |
 | --- | --- | --- |
 | Popup / Options | intent, local rendering, accessible interaction | predict actual state, write badge/storage, or select executor |
-| Content, isolated | document/media identity, DOM/CSS writers, source-keyed state, admitted WebAudio, exact lean-host binding projection | acknowledge stale work, claim Capture before actual ACK, choose a cross-tab hotkey target |
+| Content, isolated | document/media identity, DOM/CSS writers, source-keyed state, admitted WebAudio, exact lean-host physical binding projection | acknowledge stale work, claim Capture before actual ACK, choose a cross-tab hotkey target |
 | MAIN bridges | fullscreen audio handoff, exact-element page-media read/write | generic dispatch, domain tables, periodic sync, cross-tab state |
-| Background | serialization, settings, `ControlSnapshot`, `AudioSessionSnapshot`, badge, runtime leases, per-document lean/full hotkey transition authority | treat reads as activation, close offscreen outside coordinator |
+| Background | serialization, settings, `ControlSnapshot`, `AudioSessionSnapshot`, badge, runtime leases, per-document lean/full transition and worker-restart recovery | treat reads as activation, close offscreen outside coordinator |
 | Unified offscreen | actual Capture processors, authenticated remote sessions | create/close its own document, infer Background lease |
 
 `ControlSnapshot` is the sole actual source for 51 control capabilities and active identities. `AudioSessionSnapshot` owns processor lifecycle only.
@@ -47,9 +47,9 @@ Verified page observations bypass the writer stage, commit `controlled:false`, a
 Heavy-runtime observation carries exact `MediaTarget`. Bootstrap may send `target:null` only for `volumeBase+mediaMuted` or `speed+preservePitch` groups, which Background accepts only after initialization barrier.
 Reads do not acquire WebAudio/Capture/MAIN/offscreen. Page-media reads may synchronously use exact-element page bridge before DOM fallback.
 
-`ControlSubmitRequest` never carries Capture authority. Background adds `captureAdmission: 'extension-invocation'` to internal `ControlIntent` only after confirming valid current-tab Popup/shortcut. Value is consumed by policy, not saved in snapshot.
+`ControlSubmitRequest` never carries Capture authority. Background adds `captureAdmission: 'extension-invocation'` to internal `ControlIntent` only after confirming a valid current-tab extension invocation. Value is consumed by policy, not saved in snapshot.
 
-A top-level content sender may submit `source:'hotkey'` through the canonical control intent/operation requests. Background validates the extension sender and binds `origin:'site-page'`, `foreground`, and `target` to the sender's current `tabId+documentId`. This is the required disposition for configured-site lean hotkeys; they never inherit `hotkeyTargetRepository` cross-tab routing.
+Configured-site lean hotkeys do **not** self-assert control routing. They send the existing default-hotkey trigger with `disposition:'site-page'`; Background validates the content sender, binds foreground/target to that exact top-level `tabId+documentId`, then executes through the same shortcut/control coordinator used by other trusted hotkeys.
 
 ## Registry v2
 
@@ -76,15 +76,33 @@ Background serializes `offscreen.html` creation, reconstructs via HELLO, owns `a
 
 ## READY and built-in cold-document shortcuts
 
-Wire request is `spectra.content.runtime.ensure`. Content ACKs with `runtimeRevision`. READY means full initialization barrier passed.
-`spectra.content.default-hotkey.trigger` request carries action (`speed_down`, etc.), press/release, gesture identity, repeat fact. Bootstrap is sole producer for reserved `Alt+*` defaults. Recognized via `window` capture, excluded by configured-site listeners. Background validates before executing action.
+Wire request is `spectra.content.runtime.ensure`. Content ACKs with `runtimeRevision`. READY means the full initialization barrier passed.
 
-Built-in/default shortcuts and configured-site lean shortcuts are intentionally different dispositions:
+`spectra.content.default-hotkey.trigger` carries:
 
-- built-in defaults may use the Background hotkey-target resolver;
-- configured-site lean bindings are site-page invocations and are locked to the sender document.
+```text
+{
+  action: speed_down | speed_up | volume_down | volume_up | volume_mute,
+  phase: press | release,
+  gesture: string,
+  repeated: boolean,
+  disposition?: 'site-page'
+}
+```
+
+Bootstrap is the sole producer for reserved `Alt+*` defaults and leaves `disposition` absent. Absent disposition preserves the Background hotkey-target resolver. The lean configured-site host sends only the exact `site-page` disposition; no other disposition is valid.
+
+For `site-page`, Background validates the current top-level HTTP sender, validates that the document is still current, and constructs `origin:'site-page'` with `foreground === target === sender document`. This path never reads `hotkeyTargetRepository`.
+
+Both dispositions share the Background `runPageGestureBurst` owner. A press admitted while another writer is active contributes a bounded pending pulse; completion never self-drains. Physical release drops unconsumed pulses and waits only for the already-admitted operation. `volume_mute` does not execute repeat presses but preserves the repeated fact through release.
 
 ## Exact configured-site lean protocol
+
+### Eligibility
+
+A site is lean only when every **live** binding is one of the five canonical scalar/default actions and has no custom parameters. Disabled, explicit no-op, and otherwise unavailable bindings are inactive for runtime ownership. One live non-equivalent binding makes the whole site full. The most-specific configured domain is authoritative; a disabled child suppresses an enabled parent.
+
+### Lean configuration authority
 
 The lean host has exactly one configuration authority:
 
@@ -100,39 +118,69 @@ spectra.content.site-hotkeys.configure
 }
 ```
 
-The content host synchronously responds with:
+The content host synchronously responds:
 
 ```text
 { accepted: true, epoch, generation }
 ```
 
-The ACK must echo the exact accepted authority. A Background delivery is classified as:
+The ACK must echo the exact accepted authority. A delivery is classified as:
 
 - **delivered**: exact ACK matched;
 - **absent**: Chrome explicitly reports no receiving end;
 - **failure**: every other transport/protocol outcome.
 
-`absent` is safe only for the **empty barrier**, because no lean owner exists to clear. After Background successfully injects `content-site-hotkeys.js`, a missing receiver for the nonempty configuration is a failure.
+`absent` is safe only for the **empty barrier**. After Background successfully injects `content-site-hotkeys.js`, a missing receiver for a nonempty configuration is failure.
 
-Authority ordering:
+### Ownership transition ordering
 
-1. every `none | lean | full` transition sends an empty exact configuration first;
-2. only after that barrier may Background release/ensure a full lease or send a nonempty lean projection;
-3. same Worker epoch accepts only increasing generation;
-4. different Worker epoch supersedes the old epoch even if generation restarts lower;
-5. broad `spectra.hotkeys.changed` events are reconciliation triggers only and are never content-side authority.
+For every `none | lean | full` transition:
 
-Per-document reconciliation is serialized. `forget(tabId, documentId)` retires a lifecycle generation but does not delete an in-flight transition. Async injection/configuration/full-ensure continuations must prove the same lifecycle before publishing. A full capability acquired after retirement is released immediately. Retired lifecycle generation records are removed once no in-flight transition/injection or owned runtime remains.
+1. send exact empty lean configuration;
+2. if next mode is `lean` or `none`, exact-project heavy `spectra.hotkeys.changed` with `sites:{}` so a resident heavy runtime loses configured-site keyboard ownership;
+3. release obsolete remembered full hotkey capability, if any;
+4. for `lean`, inject/configure the lean host;
+5. for `full`, acquire/retain the full runtime capability and exact-project the real hotkey settings to restore heavy configured-site ownership.
 
-Lean actions reuse canonical control RPC rather than inventing a second action protocol:
+A heavy-suspension failure is fail-closed: the old full lease is retained and lean is not enabled. Broad real settings publication happens before reconciliation; it updates heavy settings but does not configure the lean host. The exact per-document projection after that publication decides heavy configured-site ownership.
 
-- `speed_up/down` → `spectra.control.intent.submit`, sender-bound hotkey mutation of `speed`;
-- `volume_mute` → sender-bound `mediaMuted` toggle intent;
-- `volume_up/down` → `spectra.control.operation.submit`, `effective-volume` delta.
+Same Worker epoch accepts only increasing generation. A different Worker epoch supersedes the old one even when its numeric generation restarts lower.
 
-Lean repeat coalescing is bounded in content. One admitted operation may finish after key release, but pending repeat pulses never self-drain; keyup/blur/visibility retirement drops them. An invalidated extension context disposes the arbiter so it cannot keep consuming page keys after messaging becomes impossible.
+Per-document reconciliation is serialized. `forget(tabId, documentId)` advances lifecycle generation without deleting in-flight transition/injection state. Async injection/configuration/full-ensure continuations must prove the same lifecycle before publishing. A full capability acquired after retirement is released immediately. Retired lifecycle records disappear when no owned/in-flight state remains.
 
-Configured-site bindings still use physical `code`, never queue/mutate KeyboardEvents, and yield to same-event website claims before `preventDefault()`.
+### Same-realm physical dual-owner fence
+
+`content-site-hotkeys.js` exposes a revision-2 read-only isolated-world marker:
+
+```text
+window.__SPECTRA_LEAN_SITE_HOTKEY_HOST__.active
+```
+
+The heavy Content settings projection checks that marker. While lean is active, `getActiveHotkeySettings()` exposes no configured sites to the heavy listener. This is a physical same-realm fence for the transient READY window: even if heavy Content loads to execute a lean action or show feedback before Background's exact suspension message arrives, the heavy configured-site listener cannot claim the same key stream.
+
+### Physical gesture and feedback
+
+The lean host owns website-first admission, physical `code`, gesture identity, release, BFCache lifecycle, and extension-context retirement. It never queues/mutates `KeyboardEvent` objects and yields to a same-event website claim before `preventDefault()`.
+
+The host publishes the existing default-scalar gesture channel using `nextScalarGestureId('site')`. If the transient heavy runtime loads after the first press, the pending gesture is replayed so the existing actual-OSD owner can claim it. Background executes the action through the normal transient shortcut runtime and sends the normal hotkey feedback event; ordinary RPC failures are rendered by the existing Content toast.
+
+The host survives BFCache `pagehide` when `event.persisted` is true: held gestures are released, but its exact host/listeners remain in the retained realm. A real page retirement or invalid extension context disposes it.
+
+## MV3 worker-restart runtime recovery
+
+A worker restart loses Background's in-memory lease maps while a previous heavy Content Runtime may survive in a document. Background startup runs recovery for current HTTP top documents:
+
+1. exact status probe;
+2. require current `runtimeRevision` before adopting the survivor;
+3. acquire a fixed temporary `worker-restart-recovery` lease through the normal runtime loader;
+4. reconstruct source leases from `ownedSources`;
+5. reconstruct the persistent restore capability from the exact tab-session `resourceUrl` hostname;
+6. reconcile current configured-site hotkey mode;
+7. release only the temporary recovery lease.
+
+Actual runtime disposal remains owned by the normal loader. Releasing the temporary recovery lease rechecks every concurrent source/restore/control/hotkey lease before RELEASE. A failed restore/hotkey reconstruction leaves the safety lease held rather than guessing that the survivor is orphaned.
+
+If status proves no heavy runtime survived, recovery does not create one solely because a persistent restore plan exists. Both per-document recovery failures and startup discovery failures use the same bounded retries: `250 ms`, `1 s`, `4 s`.
 
 ## Exact-element page media, native PiP, and fullscreen
 
@@ -153,7 +201,7 @@ Configured-site bindings still use physical `code`, never queue/mutate KeyboardE
 
 Default pages have no extension AudioContext, offscreen document, analyser, or periodic work. Continuous UI values coalesce; visualizers use generation-aware leases and bounded sampling from active processors.
 
-A lean configured site may inject the small exact host, but it must not retain the heavy Content Runtime merely because the site has bindings. A later admitted control operation may transiently load existing control writers; that is distinct from a document-lifetime hotkey lease.
+A lean configured site may inject the small exact host, but it must not retain the heavy Content Runtime merely because the site has bindings. An admitted action or another independent consumer may transiently load the heavy runtime; this is distinct from document-lifetime hotkey ownership. Production build enforces the lean host's physical artifact ceiling independently.
 
 ## Boundary payloads
 
