@@ -21,6 +21,7 @@ import {
 	retireLegacyOffscreenDocument,
 } from './offscreen-coordinator';
 import { initializeContentRuntimeLoader } from './runtime-loader';
+import { initializeRuntimeRestartRecovery } from './runtime-restart-startup';
 import { initializeMainRuntimeManager } from './main-runtime-manager';
 import { initializeControlCoordinator } from './control-coordinator';
 
@@ -41,6 +42,7 @@ initRemoteService();
 
 setupShortcutListeners();
 setupLifecycleListeners();
+initializeRuntimeRestartRecovery();
 
 router.listen();
 
