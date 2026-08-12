@@ -1361,8 +1361,9 @@ function checkRetiredPaths(root) {
 		'utf8',
 	);
 	for (const required of [
-		'const hotkeyLeases = new Map<string, string>()',
-		"ensureContentRuntime(tabId, documentId, 'hotkey', capability)",
+		'export async function reconcileHotkeyRuntimeLease(',
+		'await reconcileDocumentSiteHotkeys(tabId, documentId, url, hotkeys, {',
+		'forgetDocumentSiteHotkeys(tabId, documentId)',
 		'export function retainSourceRuntimeLease(',
 		'export function releaseSourceRuntimeLease(',
 		'owned.markerCount > 0',
@@ -1423,6 +1424,14 @@ function checkRetiredPaths(root) {
 		path.join(root, SOURCE_PATH, 'content/input/hotkey-event.ts'),
 		'utf8',
 	);
+	const leanSiteHotkeyHost = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'content/input/lean-site-hotkey-host.ts'),
+		'utf8',
+	);
+	const siteHotkeyOwner = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'background/site-hotkey-owner.ts'),
+		'utf8',
+	);
 	const defaultScalarGesture = fs.readFileSync(
 		path.join(root, SOURCE_PATH, 'content/input/default-scalar-gesture.ts'),
 		'utf8',
@@ -1479,8 +1488,7 @@ function checkRetiredPaths(root) {
 		'state.expiry = setTimeout(() => {',
 		'export function releasePageGestureBurst(',
 		'export function waitForPageGestureBurst(',
-		'const execution = runChromeCommandSingleFlight(command, execute)',
-		'void execution.catch((error: unknown) => {',
+		'void runChromeCommandSingleFlight(command, execute).catch((error: unknown) => {',
 	]) {
 		if (!shortcuts.includes(required)) {
 			error(`SCTRL-022: shortcut repeat/release gate is missing (${required})`);
@@ -1576,6 +1584,13 @@ function checkRetiredPaths(root) {
 		)
 		|| arbiterUsageCount(bootstrap) !== 0
 		|| arbiterUsageCount(pageHotkeyListener) !== 1
+		|| arbiterUsageCount(leanSiteHotkeyHost) !== 1
+		|| !leanSiteHotkeyHost.includes("nextScalarGestureId('site')")
+		|| !leanSiteHotkeyHost.includes("disposition: 'site-page'")
+		|| !leanSiteHotkeyHost.includes('__SPECTRA_LEAN_SITE_HOTKEY_HOST__')
+		|| !siteHotkeyOwner.includes("files: [LEAN_HOST_FILE]")
+		|| !siteHotkeyOwner.includes("world: 'ISOLATED'")
+		|| !siteHotkeyOwner.includes("if (response === undefined) return 'absent'")
 		|| !hotkeyEvent.includes('const pending = new Map<KeyboardEvent')
 		|| !hotkeyEvent.includes('const candidate = options.resolveCandidate(event)')
 		|| !hotkeyEvent.includes('pending.set(event, { candidate, tail, cleanupTimer })')
@@ -1607,6 +1622,7 @@ function checkRetiredPaths(root) {
 		|| !bootstrap.includes("window.addEventListener('keyup', onDefaultHotkeyKeyup, true)")
 		|| !pageHotkeyListener.includes('resolveCandidate: resolveSiteHotkeyBinding')
 		|| !pageHotkeyListener.includes('if (!websiteClaimed) handleKeydown(event, binding)')
+		|| !pageHotkeyListener.includes('if (leanSiteHotkeyOwnsConfiguredBindings()) return null')
 		|| siteHotkeyHandler.includes('resolveSiteHotkeyBinding(')
 		|| !bootstrap.includes('if (isEditableHotkeyEvent(event)) return null')
 		|| !pageHotkeyListener.includes('if (isEditableHotkeyEvent(e)) return null')
@@ -1653,7 +1669,10 @@ function checkRetiredPaths(root) {
 		|| !shortcuts.includes("candidate.type !== 'spectra.content.default-hotkey.trigger'")
 		|| !shortcuts.includes('sender.frameId !== 0')
 		|| !shortcuts.includes('const identity = defaultHotkeySenderIdentity(sender)')
-		|| !shortcuts.includes('if (before?.documentId !== identity.documentId)')
+		|| !shortcuts.includes('if (!frame?.documentId || frame.documentId !== identity.documentId)')
+		|| !shortcuts.includes("await validateHotkeyDocument(identity, 'Default hotkey')")
+		|| !shortcuts.includes("await validateHotkeyDocument(identity, 'Site hotkey')")
+		|| !shortcuts.includes("message.payload.disposition === 'site-page'")
 		|| shortcuts.includes('before.url !== identity.url')
 		|| !shortcuts.includes('{ ...identity.tab, url: before.url }')
 		|| !shortcuts.includes("'builtin-page'")
