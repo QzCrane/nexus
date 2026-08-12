@@ -2,8 +2,11 @@
 // eff: Persistent registrations are reconciled only when their authority changes
 // NOTE: This runs in background context, requires "userScripts" permission
 
-import type { UserScript, UserScriptState } from './types';
 import type { ScriptType } from './types';
+import {
+	parseUserScriptsStorageValue,
+	type UserScriptsSnapshotScript,
+} from './storage-authority';
 
 const LOG_TAG = '[HALO:UserScripts:Registry]';
 const STORAGE_KEY = 'halo_userscripts';
@@ -23,17 +26,18 @@ function normalizePattern(pattern: string): string {
 	return `*://${pattern}/*`;
 }
 
-function toMatchPatterns(patterns: string[]): string[] {
+function toMatchPatterns(patterns: readonly string[]): string[] {
 	const result: string[] = [];
 	for (const pattern of patterns) {
 		try {
 			const normalized = normalizePattern(pattern.trim());
-			if (normalized?.includes('://')) result.push(normalized);
+			if (normalized.includes('://')) result.push(normalized);
 		} catch {
 			console.warn(LOG_TAG, `Invalid pattern: ${pattern}`);
 		}
 	}
-	return result.length > 0 ? result : ['*://*/*'];
+	if (result.length === 0) throw new Error('No valid match patterns');
+	return result;
 }
 
 function escapeForJsString(value: string): string {
@@ -84,37 +88,32 @@ function toRunAt(runAt: string): 'document_start' | 'document_end' | 'document_i
 
 async function unregisterAllScripts(): Promise<void> {
 	if (isUserScriptsAvailable()) {
-		try {
-			const registered = await chrome.userScripts.getScripts();
-			const haloIds = registered
-				.filter((script) => script.id.startsWith(SCRIPT_ID_PREFIX))
-				.map((script) => script.id);
-
-			if (haloIds.length > 0) {
-				await chrome.userScripts.unregister({ ids: haloIds });
-				console.log(LOG_TAG, `Unregistered ${haloIds.length} user scripts`);
-			}
-		} catch (e) {
-			console.warn(LOG_TAG, 'Failed to unregister user scripts:', e);
-		}
-	}
-
-	try {
-		const registeredContent = await chrome.scripting.getRegisteredContentScripts();
-		const haloContentIds = registeredContent
+		const registered = await chrome.userScripts.getScripts();
+		const haloIds = registered
 			.filter((script) => script.id.startsWith(SCRIPT_ID_PREFIX))
 			.map((script) => script.id);
 
-		if (haloContentIds.length > 0) {
-			await chrome.scripting.unregisterContentScripts({ ids: haloContentIds });
-			console.log(LOG_TAG, `Unregistered ${haloContentIds.length} content scripts`);
+		if (haloIds.length > 0) {
+			await chrome.userScripts.unregister({ ids: haloIds });
+			console.log(LOG_TAG, `Unregistered ${haloIds.length} user scripts`);
 		}
-	} catch (e) {
-		console.warn(LOG_TAG, 'Failed to unregister content scripts:', e);
+	}
+
+	const registeredContent = await chrome.scripting.getRegisteredContentScripts();
+	const haloContentIds = registeredContent
+		.filter((script) => script.id.startsWith(SCRIPT_ID_PREFIX))
+		.map((script) => script.id);
+
+	if (haloContentIds.length > 0) {
+		await chrome.scripting.unregisterContentScripts({ ids: haloContentIds });
+		console.log(LOG_TAG, `Unregistered ${haloContentIds.length} content scripts`);
 	}
 }
 
-async function registerAllScripts(scripts: UserScript[], globalEnabled: boolean): Promise<void> {
+async function registerAllScripts(
+	scripts: readonly UserScriptsSnapshotScript[],
+	globalEnabled: boolean,
+): Promise<void> {
 	if (!globalEnabled) {
 		console.log(LOG_TAG, 'Global disabled, skipping registration');
 		return;
@@ -126,81 +125,73 @@ async function registerAllScripts(scripts: UserScript[], globalEnabled: boolean)
 	for (const script of scripts) {
 		if (!script.enabled) continue;
 
-		try {
-			const matches = toMatchPatterns(script.matches);
-			const excludeMatches = script.excludeMatches?.length
-				? toMatchPatterns(script.excludeMatches)
-				: undefined;
-			const fullId = `${SCRIPT_ID_PREFIX}${script.id}`;
-			const world = script.world || 'USER_SCRIPT';
+		const matches = toMatchPatterns(script.matches);
+		const excludeMatches = script.excludeMatches?.length
+			? toMatchPatterns(script.excludeMatches)
+			: undefined;
+		const fullId = `${SCRIPT_ID_PREFIX}${script.id}`;
+		const world = script.world || 'USER_SCRIPT';
 
-			if (world === 'ISOLATED') {
-				if (!script.filePath) {
-					console.warn(LOG_TAG, `Skipping ISOLATED script ${script.id}: No file path found`);
-					continue;
-				}
-
-				const contentScript: chrome.scripting.RegisteredContentScript = {
-					id: fullId,
-					matches,
-					excludeMatches,
-					runAt: toRunAt(script.runAt),
-					allFrames: false,
-					world: 'ISOLATED',
-					// Persist across browser/service-worker sessions; reconciliation is
-					// driven by storage changes and extension installation/update.
-					persistAcrossSessions: true,
-				};
-
-				if (script.type === 'css') contentScript.css = [script.filePath];
-				else contentScript.js = [script.filePath];
-				contentScriptsToRegister.push(contentScript);
-			} else {
-				const wrappedCode = wrapForMainWorld(script.code, script.name, script.type);
-				userScriptsToRegister.push({
-					id: fullId,
-					matches,
-					excludeMatches,
-					js: [{ code: wrappedCode }],
-					runAt: toRunAt(script.runAt),
-					allFrames: false,
-					world: 'USER_SCRIPT',
-				});
+		if (world === 'ISOLATED') {
+			if (!script.filePath) {
+				throw new Error(`ISOLATED script ${script.id} has no packaged file path`);
 			}
-		} catch (e) {
-			console.warn(LOG_TAG, `Failed to prepare ${script.name}:`, e);
+
+			const contentScript: chrome.scripting.RegisteredContentScript = {
+				id: fullId,
+				matches,
+				excludeMatches,
+				runAt: toRunAt(script.runAt),
+				allFrames: false,
+				world: 'ISOLATED',
+				persistAcrossSessions: true,
+			};
+
+			if (script.type === 'css') contentScript.css = [script.filePath];
+			else contentScript.js = [script.filePath];
+			contentScriptsToRegister.push(contentScript);
+		} else {
+			const wrappedCode = wrapForMainWorld(script.code, script.name, script.type);
+			userScriptsToRegister.push({
+				id: fullId,
+				matches,
+				excludeMatches,
+				js: [{ code: wrappedCode }],
+				runAt: toRunAt(script.runAt),
+				allFrames: false,
+				world: 'USER_SCRIPT',
+			});
 		}
 	}
 
 	if (userScriptsToRegister.length > 0 && isUserScriptsAvailable()) {
-		try {
-			await chrome.userScripts.register(userScriptsToRegister);
-			console.log(LOG_TAG, `Registered ${userScriptsToRegister.length} user scripts`);
-		} catch (e) {
-			console.warn(LOG_TAG, 'Failed to register user scripts:', e);
-		}
+		await chrome.userScripts.register(userScriptsToRegister);
+		console.log(LOG_TAG, `Registered ${userScriptsToRegister.length} user scripts`);
 	}
 
 	if (contentScriptsToRegister.length > 0) {
-		try {
-			if (chrome.scripting?.registerContentScripts) {
-				await chrome.scripting.registerContentScripts(contentScriptsToRegister);
-				console.log(LOG_TAG, `Registered ${contentScriptsToRegister.length} content scripts`);
-			} else {
-				console.warn(LOG_TAG, 'chrome.scripting API not available');
-			}
-		} catch (e) {
-			console.warn(LOG_TAG, 'Failed to register content scripts:', e);
+		if (!chrome.scripting?.registerContentScripts) {
+			throw new Error('chrome.scripting.registerContentScripts is unavailable');
 		}
+		await chrome.scripting.registerContentScripts(contentScriptsToRegister);
+		console.log(LOG_TAG, `Registered ${contentScriptsToRegister.length} content scripts`);
 	}
 }
 
 async function performRegisteredScriptSync(): Promise<void> {
 	const result = await chrome.storage.local.get([STORAGE_KEY, SAAT_STORAGE_KEY]);
-	const userState: UserScriptState = result[STORAGE_KEY] || { scripts: [], globalEnabled: true };
-	const saatState: UserScriptState = result[SAAT_STORAGE_KEY] || { scripts: [], globalEnabled: true };
+	const userState = parseUserScriptsStorageValue(result[STORAGE_KEY]);
+	const saatState = parseUserScriptsStorageValue(result[SAAT_STORAGE_KEY]);
+
+	// Background and SidePanel share the same persistence contract. Corrupt raw
+	// storage can never be registered while the UI reports the authority failed.
+	if (userState.failed || saatState.failed) {
+		await unregisterAllScripts();
+		return;
+	}
 	const allScripts = [...userState.scripts, ...saatState.scripts];
 
+	// Both generations are fully parsed before destructive teardown.
 	await unregisterAllScripts();
 	await registerAllScripts(allScripts, userState.globalEnabled);
 }
@@ -222,8 +213,6 @@ export function syncRegisteredScripts(): Promise<void> {
 		} while (syncPending);
 	})().finally(() => {
 		syncLoop = null;
-		// No external task can run between the final loop condition and this
-		// synchronous finally block, but keep the guard explicit for future edits.
 		if (syncPending) void syncRegisteredScripts().catch((error) => {
 			console.warn(LOG_TAG, 'deferred sync failed', error);
 		});
@@ -243,7 +232,7 @@ export function initUserScriptsRegistry(): () => void {
 	const listener = (changes: { [key: string]: chrome.storage.StorageChange }, area: string) => {
 		if (area !== 'local') return;
 		if (!changes[STORAGE_KEY] && !changes[SAAT_STORAGE_KEY]) return;
-		void syncRegisteredScripts().catch((e) => console.warn(LOG_TAG, 'sync failed', e));
+		void syncRegisteredScripts().catch((error) => console.warn(LOG_TAG, 'sync failed', error));
 	};
 	chrome.storage.onChanged.addListener(listener);
 
