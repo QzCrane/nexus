@@ -8,6 +8,7 @@ import {
 	type SpectraLeanSiteHotkeyBinding,
 } from '@nexus/contracts/bootstrap';
 import {
+	HOTKEY_ACTION_DESCRIPTORS,
 	findBestHostnameMatch,
 	normalizeHostname,
 	type HotkeyBinding,
@@ -26,13 +27,11 @@ export interface ResolvedSiteHotkeys {
 }
 
 export function isLiveSiteHotkeyBinding(binding: HotkeyBinding): boolean {
-	return binding.enabled && !binding.disabledReason;
+	return binding.enabled
+		&& !binding.disabledReason
+		&& HOTKEY_ACTION_DESCRIPTORS[binding.action]?.availability === 'enabled';
 }
 
-// The lean host intentionally reuses `spectra.content.default-hotkey.trigger`.
-// Therefore it may accept only the five canonical page-default actions and only
-// their canonical step sizes. A custom `params.step` or any other action falls
-// back to the full runtime instead of silently changing behavior.
 export function isLeanSiteHotkeyBinding(
 	binding: HotkeyBinding,
 ): binding is HotkeyBinding & { action: SpectraDefaultHotkeyAction } {
@@ -66,6 +65,8 @@ export function resolveSiteHotkeys(
 	);
 	if (!match) return null;
 	const [domain, site] = match;
+	// The most-specific configured domain is authoritative. An explicit disabled
+	// child domain suppresses an enabled parent instead of falling through.
 	if (!site.enabled) return null;
 	const liveBindings = site.bindings.filter(isLiveSiteHotkeyBinding);
 	if (liveBindings.length === 0) return null;
