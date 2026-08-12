@@ -342,6 +342,7 @@ let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
 let recoveryAttempt = 0;
 let requestedGeneration = 0;
 let reconciliation: Promise<void> | null = null;
+let ensureSynchronized: Promise<void> | null = null;
 
 function resetRecoveryTimer(): void {
 	if (recoveryTimer) clearTimeout(recoveryTimer);
@@ -361,14 +362,6 @@ async function writeRecoveryReceipt(
 	await chrome.storage.local.set({ [RECOVERY_STORAGE_KEY]: receipt });
 }
 
-function isMatchingReceipt(value: unknown, digest: string): boolean {
-	if (!value || typeof value !== 'object') return false;
-	const receipt = value as Partial<RegistryReceipt> & { digest?: unknown };
-	return receipt.version === RECEIPT_VERSION
-		&& receipt.state === 'clean'
-		&& receipt.digest === digest;
-}
-
 function isSatisfiedReceipt(
 	value: unknown,
 	digest: string,
@@ -378,6 +371,18 @@ function isSatisfiedReceipt(
 	const receipt = value as Partial<RegistryReceipt> & { digest?: unknown };
 	if (receipt.version !== RECEIPT_VERSION || receipt.digest !== digest) return false;
 	return userScriptsAvailable ? receipt.state === 'clean' : receipt.state === 'blocked';
+}
+
+async function hasSatisfiedPersistentRegistryReceipt(): Promise<boolean> {
+	const [authority, receiptResult] = await Promise.all([
+		readRegistryAuthority(),
+		chrome.storage.local.get(RECOVERY_STORAGE_KEY),
+	]);
+	return isSatisfiedReceipt(
+		receiptResult[RECOVERY_STORAGE_KEY],
+		authority.digest,
+		authority.userScriptsAvailable,
+	);
 }
 
 function scheduleRecovery(): void {
@@ -421,25 +426,25 @@ export function syncRegisteredScripts(): Promise<void> {
 	return reconciliation;
 }
 
+export function ensureRegisteredScriptsSynchronized(): Promise<void> {
+	if (ensureSynchronized) return ensureSynchronized;
+	ensureSynchronized = (async () => {
+		if (reconciliation) await reconciliation;
+		if (await hasSatisfiedPersistentRegistryReceipt()) return;
+		await syncRegisteredScripts();
+	})().finally(() => { ensureSynchronized = null; });
+	return ensureSynchronized;
+}
+
 function requestRegisteredScriptSync(reason: string): void {
 	void syncRegisteredScripts().catch((error) => console.warn(LOG_TAG, `${reason} sync failed`, error));
 }
 
 function recoverPersistentRegistryIfNeeded(): void {
-	void (async () => {
-		const [authority, receiptResult] = await Promise.all([
-			readRegistryAuthority(),
-			chrome.storage.local.get(RECOVERY_STORAGE_KEY),
-		]);
-		if (!registryInitialized) return;
-		if (!isSatisfiedReceipt(
-			receiptResult[RECOVERY_STORAGE_KEY],
-			authority.digest,
-			authority.userScriptsAvailable,
-		)) {
-			requestRegisteredScriptSync('worker-startup-recovery');
-		}
-	})().catch((error) => {
+	void hasSatisfiedPersistentRegistryReceipt().then((satisfied) => {
+		if (!registryInitialized || satisfied) return;
+		requestRegisteredScriptSync('worker-startup-recovery');
+	}).catch((error) => {
 		if (!registryInitialized) return;
 		console.warn(LOG_TAG, 'Failed to inspect registry recovery receipt', error);
 		requestRegisteredScriptSync('worker-startup-fail-closed');
@@ -474,7 +479,6 @@ export const userScriptsRegistryTestApi = {
 	toMatchPatterns,
 	validateOwnershipContainers,
 	prepareRegistration,
-	isMatchingReceipt,
 	isSatisfiedReceipt,
 	canonicalize,
 };
