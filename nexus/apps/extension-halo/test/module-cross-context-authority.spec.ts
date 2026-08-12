@@ -124,11 +124,13 @@ describe('cross-context packaged-module mutations', () => {
 		expect(physicalEnabled).toBe(true);
 	});
 
-	test('source also uses a named Web Lock for cross-extension-context serialization', () => {
+	test('source uses Web Locks across extension contexts and fails closed if production loses that primitive', () => {
 		const source = readFileSync(new URL('../src/kernel/managers/module-manager.ts', import.meta.url), 'utf8');
 		expect(source).toContain('navigator.locks');
 		expect(source).toContain('MODULE_MUTATION_LOCK_PREFIX');
 		expect(source).toContain('runCrossContextMutation(id, mutation)');
+		expect(source).toContain("Boolean(chrome.runtime?.id)");
+		expect(source).toContain("throw new Error('Web Locks unavailable for packaged-module mutation authority')");
 	});
 });
 
