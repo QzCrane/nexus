@@ -12,6 +12,7 @@ import {
 	type UserScriptsSnapshotScript,
 	type UserScriptsStorageSnapshot,
 } from './storage-schema';
+import { isUserScriptsCapabilityAvailable } from './capability';
 
 const LOG_TAG = '[HALO:UserScripts:Registry]';
 const STORAGE_KEY = 'halo_userscripts';
@@ -39,19 +40,6 @@ interface RegistryAuthority {
 interface PreparedRegistration {
 	userScripts: chrome.userScripts.RegisteredUserScript[];
 	contentScripts: chrome.scripting.RegisteredContentScript[];
-}
-
-async function isUserScriptsCapabilityAvailable(): Promise<boolean> {
-	try {
-		if (typeof chrome.userScripts === 'undefined') return false;
-		// Chrome recommends exercising a method rather than checking only the
-		// namespace: permission/toggle revocation can leave the namespace present
-		// in a live context while method calls reject.
-		await chrome.userScripts.getScripts();
-		return true;
-	} catch {
-		return false;
-	}
 }
 
 function normalizePattern(pattern: string): string {
@@ -459,5 +447,4 @@ export const userScriptsRegistryTestApi = {
 	prepareRegistration,
 	isMatchingReceipt,
 	canonicalize,
-	isUserScriptsCapabilityAvailable,
 };
