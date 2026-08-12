@@ -5,7 +5,7 @@
 import { readOptionalPackagedModuleEnabled } from '../../kernel/core/module-installation-runtime';
 import type { UserScript } from './types';
 import { incrementRunCount } from './core';
-import { syncRegisteredScripts } from './registry';
+import { ensureRegisteredScriptsSynchronized } from './registry';
 
 const LOG_TAG = '[HALO:UserScripts]';
 const MODULE_ID = 'userscripts';
@@ -54,7 +54,7 @@ export function initUserScriptsEngine(): () => void {
 			return true;
 		}
 		if (message.type === 'HALO_USERSCRIPTS_SYNC') {
-			void syncRegisteredScripts()
+			void ensureRegisteredScriptsSynchronized()
 				.then(() => sendResponse({ success: true }))
 				.catch((e) => sendResponse({ success: false, error: String(e) }));
 			return true;
