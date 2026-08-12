@@ -7,7 +7,7 @@ import {
 } from '../core';
 import { useToast } from '../../../components/ToastProvider';
 
-export function useImportExport() {
+export function useImportExport(_loadScripts?: () => Promise<void>) {
 	const { t } = useTranslation();
 	const { showToast } = useToast();
 	const [modalMode, setModalMode] = useState<'import' | 'export' | null>(null);
