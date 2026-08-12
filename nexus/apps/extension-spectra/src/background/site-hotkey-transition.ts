@@ -1,10 +1,11 @@
 // goal: deterministic ownership transition between lean exact-document host and full Content Runtime
-// inv: every transition first empties the lean host; failures never broaden into an implicit full-runtime fallback
+// inv: every transition first empties lean; lean/none also suspends any surviving heavy site-hotkey listener before ownership changes
 
 export type SiteHotkeyTransitionMode = 'none' | 'lean' | 'full';
 
 export interface SiteHotkeyTransitionPort {
 	barrier(): Promise<void>;
+	suspendFull(): Promise<void>;
 	configureLean(): Promise<void>;
 	ensureFull(capability: string): Promise<void>;
 	releaseFull(capability: string): void;
@@ -16,13 +17,12 @@ export interface SiteHotkeyTransitionRequest {
 	fullCapability?: string;
 }
 
-// post: returns the only full-runtime capability that may remain owned by the document.
 export async function reconcileSiteHotkeyTransition(
 	request: SiteHotkeyTransitionRequest,
 	port: SiteHotkeyTransitionPort,
 ): Promise<string | null> {
-	// One exact empty generation is the sole invalidation seam. If it cannot be
-	// delivered, do not alter the old full lease or enable a second owner.
+	// One exact empty generation retires any lean owner first. If this barrier
+	// fails, do not alter the old full owner or enable a second path.
 	await port.barrier();
 
 	const nextFull = request.mode === 'full' ? request.fullCapability : undefined;
@@ -35,14 +35,19 @@ export async function reconcileSiteHotkeyTransition(
 		&& request.previousFullCapability === nextFull,
 	);
 
+	if (request.mode !== 'full') {
+		// Releasing only the hotkey lease is insufficient when another heavy
+		// consumer keeps content-runtime.js resident. Suspend the heavy runtime's
+		// configured-site listener before the lease or lean owner changes.
+		await port.suspendFull();
+	}
+
 	if (request.previousFullCapability && !keepPrevious) {
 		port.releaseFull(request.previousFullCapability);
 	}
 
 	if (request.mode === 'none') return null;
 	if (request.mode === 'lean') {
-		// A failed lean configure leaves the document with no site-hotkey owner;
-		// never hide that regression by silently retaining/acquiring the heavy host.
 		await port.configureLean();
 		return null;
 	}
