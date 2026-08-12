@@ -224,6 +224,7 @@ async function readRegistryAuthority(): Promise<RegistryAuthority> {
 	const moduleKeys = moduleKeysForManagedScripts(userState, saatState);
 	const moduleValues = moduleKeys.length > 0 ? await chrome.storage.local.get(moduleKeys) : {};
 	const digest = await digestAuthority({
+		extensionVersion: chrome.runtime.getManifest().version,
 		user: stateResult[STORAGE_KEY] ?? null,
 		saat: stateResult[SAAT_STORAGE_KEY] ?? null,
 		userscriptsModule: Object.hasOwn(stateResult, USERSCRIPTS_MODULE_KEY)
