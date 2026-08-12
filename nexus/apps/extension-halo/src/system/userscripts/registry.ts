@@ -24,11 +24,10 @@ const SYNC_RETRY_DELAYS_MS = [250, 1_000, 4_000] as const;
 const RECEIPT_VERSION = 2;
 const DIRTY_RECEIPT = Object.freeze({ version: RECEIPT_VERSION, state: 'dirty' as const });
 
-interface RegistryReceipt {
-	version: typeof RECEIPT_VERSION;
-	state: 'clean';
-	digest: string;
-}
+type RegistryReceipt =
+	| { version: typeof RECEIPT_VERSION; state: 'dirty' }
+	| { version: typeof RECEIPT_VERSION; state: 'blocked' | 'clean'; digest: string };
+
 interface RegistryAuthority {
 	userState: UserScriptsStorageSnapshot;
 	saatState: UserScriptsStorageSnapshot;
@@ -40,6 +39,10 @@ interface RegistryAuthority {
 interface PreparedRegistration {
 	userScripts: chrome.userScripts.RegisteredUserScript[];
 	contentScripts: chrome.scripting.RegisteredContentScript[];
+}
+interface ReconciliationResult {
+	digest: string;
+	receiptState: 'blocked' | 'clean';
 }
 
 function normalizePattern(pattern: string): string {
@@ -312,7 +315,7 @@ async function registerPrepared(
 	if (failures.length > 0) throw new Error(failures.join('; '));
 }
 
-async function performRegisteredScriptSync(): Promise<string> {
+async function performRegisteredScriptSync(): Promise<ReconciliationResult> {
 	const authority = await readRegistryAuthority();
 	const desired = resolveDesiredRegisteredScripts(
 		authority.userState,
@@ -321,14 +324,17 @@ async function performRegisteredScriptSync(): Promise<string> {
 		authority.moduleValues,
 	);
 	// Validate and construct the complete next generation before retiring the
-	// currently working browser-owned generation. The userScripts platform gate
-	// is itself part of the receipt digest: unavailable means those registrations
-	// are externally disabled, not silently "successful" under an availability-
-	// agnostic receipt.
+	// currently working browser-owned generation. When Chrome's User Scripts
+	// platform gate is unavailable, scripting registrations can still converge
+	// but the persistent userScripts generation cannot be proven current. Record
+	// that as `blocked`, never as a clean browser-registration receipt.
 	const prepared = prepareRegistration(desired);
 	await unregisterAllScripts(authority.userScriptsAvailable);
 	await registerPrepared(prepared, authority.userScriptsAvailable);
-	return authority.digest;
+	return {
+		digest: authority.digest,
+		receiptState: authority.userScriptsAvailable ? 'clean' : 'blocked',
+	};
 }
 
 let registryInitialized = false;
@@ -347,15 +353,31 @@ async function markRecoveryNeeded(): Promise<void> {
 	await chrome.storage.local.set({ [RECOVERY_STORAGE_KEY]: DIRTY_RECEIPT });
 }
 
-async function writeRecoveryReceipt(digest: string): Promise<void> {
-	const receipt: RegistryReceipt = { version: RECEIPT_VERSION, state: 'clean', digest };
+async function writeRecoveryReceipt(
+	digest: string,
+	state: 'blocked' | 'clean',
+): Promise<void> {
+	const receipt: RegistryReceipt = { version: RECEIPT_VERSION, state, digest };
 	await chrome.storage.local.set({ [RECOVERY_STORAGE_KEY]: receipt });
 }
 
 function isMatchingReceipt(value: unknown, digest: string): boolean {
 	if (!value || typeof value !== 'object') return false;
-	const receipt = value as Partial<RegistryReceipt>;
-	return receipt.version === RECEIPT_VERSION && receipt.state === 'clean' && receipt.digest === digest;
+	const receipt = value as Partial<RegistryReceipt> & { digest?: unknown };
+	return receipt.version === RECEIPT_VERSION
+		&& receipt.state === 'clean'
+		&& receipt.digest === digest;
+}
+
+function isSatisfiedReceipt(
+	value: unknown,
+	digest: string,
+	userScriptsAvailable: boolean,
+): boolean {
+	if (!value || typeof value !== 'object') return false;
+	const receipt = value as Partial<RegistryReceipt> & { digest?: unknown };
+	if (receipt.version !== RECEIPT_VERSION || receipt.digest !== digest) return false;
+	return userScriptsAvailable ? receipt.state === 'clean' : receipt.state === 'blocked';
 }
 
 function scheduleRecovery(): void {
@@ -371,9 +393,9 @@ async function runRequestedReconciliation(): Promise<void> {
 	await markRecoveryNeeded();
 	while (true) {
 		const targetGeneration = requestedGeneration;
-		const digest = await performRegisteredScriptSync();
+		const result = await performRegisteredScriptSync();
 		if (requestedGeneration !== targetGeneration) continue;
-		await writeRecoveryReceipt(digest);
+		await writeRecoveryReceipt(result.digest, result.receiptState);
 		// A storage event may arrive while the receipt write is pending. If so, the
 		// in-memory generation forces another loop; if the worker dies first, the
 		// persisted old digest will differ from current authority on next startup.
@@ -410,7 +432,11 @@ function recoverPersistentRegistryIfNeeded(): void {
 			chrome.storage.local.get(RECOVERY_STORAGE_KEY),
 		]);
 		if (!registryInitialized) return;
-		if (!isMatchingReceipt(receiptResult[RECOVERY_STORAGE_KEY], authority.digest)) {
+		if (!isSatisfiedReceipt(
+			receiptResult[RECOVERY_STORAGE_KEY],
+			authority.digest,
+			authority.userScriptsAvailable,
+		)) {
 			requestRegisteredScriptSync('worker-startup-recovery');
 		}
 	})().catch((error) => {
@@ -449,5 +475,6 @@ export const userScriptsRegistryTestApi = {
 	validateOwnershipContainers,
 	prepareRegistration,
 	isMatchingReceipt,
+	isSatisfiedReceipt,
 	canonicalize,
 };
