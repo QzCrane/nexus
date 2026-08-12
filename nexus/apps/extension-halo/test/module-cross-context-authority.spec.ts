@@ -281,11 +281,20 @@ describe('persistent UserScripts recovery contract', () => {
 	test('startup recovery includes platform capability and blocked state in physical receipt authority', () => {
 		expect(registrySource).toContain('isUserScriptsCapabilityAvailable()');
 		expect(registrySource).toContain('userScriptsAvailable,');
-		expect(registrySource).toContain('readRegistryAuthority()');
-		expect(registrySource).toContain('!isSatisfiedReceipt(');
-		expect(registrySource).toContain('authority.userScriptsAvailable');
+		expect(registrySource).toContain('hasSatisfiedPersistentRegistryReceipt');
 		expect(registrySource).toContain("requestRegisteredScriptSync('worker-startup-recovery')");
 		expect(registrySource).not.toContain('!userscriptsModuleEnabled ||');
+	});
+
+	test('explicit readiness checks are idempotent and preserve a satisfied browser registry', () => {
+		const ensureIndex = registrySource.indexOf('export function ensureRegisteredScriptsSynchronized');
+		const satisfiedIndex = registrySource.indexOf('if (await hasSatisfiedPersistentRegistryReceipt()) return;', ensureIndex);
+		const syncIndex = registrySource.indexOf('await syncRegisteredScripts();', ensureIndex);
+		expect(ensureIndex).toBeGreaterThanOrEqual(0);
+		expect(satisfiedIndex).toBeGreaterThan(ensureIndex);
+		expect(syncIndex).toBeGreaterThan(satisfiedIndex);
+		expect(registrySource).toContain('if (reconciliation) await reconciliation;');
+		expect(registrySource).toContain('if (ensureSynchronized) return ensureSynchronized;');
 	});
 });
 
@@ -305,11 +314,28 @@ test('Launcher custom scripts require healthy UserScripts module authority and e
 	expect(source).toContain('if (!enabled)');
 });
 
-test('UserScripts panel readiness uses the same runtime capability probe and resyncs on recovery', () => {
+test('UserScripts panel readiness waits for Background registry ACK and fences stale refreshes', () => {
 	const source = readFileSync(new URL('../src/system/userscripts/hooks/useUserScripts.ts', import.meta.url), 'utf8');
+	const syncIndex = source.indexOf('await ensureBackgroundRegistryReady();');
+	const readyIndex = source.indexOf('setHasPermission(true);', syncIndex);
 	expect(source).toContain('isUserScriptsCapabilityAvailable');
 	expect(source).toContain('hasHosts && hasUserScripts');
-	expect(source).toContain('becameAvailable');
+	expect(source).toContain('isSuccessfulRegistrySyncResponse');
+	expect(source).toContain('readinessSyncRef');
+	expect(source).toContain('statusRevisionRef');
 	expect(source).toContain("type: 'HALO_USERSCRIPTS_SYNC'");
+	expect(source).toContain('registrySyncFailed');
 	expect(source).toContain('allowUserScriptsRequired');
+	expect(syncIndex).toBeGreaterThanOrEqual(0);
+	expect(readyIndex).toBeGreaterThan(syncIndex);
+	expect(source).not.toContain('becameAvailable');
+	expect(source).not.toContain("void chrome.runtime.sendMessage({ type: 'HALO_USERSCRIPTS_SYNC' }");
+});
+
+test('Background UserScripts sync message ACKs only after idempotent registry readiness', () => {
+	const source = readFileSync(new URL('../src/system/userscripts/engine.ts', import.meta.url), 'utf8');
+	expect(source).toContain('ensureRegisteredScriptsSynchronized');
+	expect(source).toContain("message.type === 'HALO_USERSCRIPTS_SYNC'");
+	expect(source).toContain('then(() => sendResponse({ success: true }))');
+	expect(source).not.toContain('void syncRegisteredScripts()');
 });
