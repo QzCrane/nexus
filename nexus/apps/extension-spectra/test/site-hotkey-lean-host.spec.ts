@@ -69,6 +69,14 @@ describe('SPECTRA lean custom-site hotkey boundary', () => {
 		}
 	});
 
+	test('treats explicit no-op and unavailable bindings as inactive runtime ownership', () => {
+		expect(resolveSiteHotkeys('https://example.com', settings([binding('none')]))).toBeNull();
+		expect(resolveSiteHotkeys(
+			'https://example.com',
+			settings([binding('speed_up'), binding('none')]),
+		)?.mode).toBe('lean');
+	});
+
 	test('one complex live binding forces the whole site to full, while disabled ones do not', () => {
 		expect(resolveSiteHotkeys(
 			'https://example.com',
@@ -83,7 +91,7 @@ describe('SPECTRA lean custom-site hotkey boundary', () => {
 		)?.mode).toBe('lean');
 	});
 
-	test('uses the existing domain matcher and ignores disabled/empty sites', () => {
+	test('uses the most-specific domain as an explicit enabled/disabled override', () => {
 		const nested = settings([binding('speed_up')]);
 		const nestedSite = {
 			enabled: true,
@@ -92,7 +100,7 @@ describe('SPECTRA lean custom-site hotkey boundary', () => {
 		nested.sites['video.example.com'] = nestedSite;
 		expect(resolveSiteHotkeys('https://video.example.com/a', nested)?.domain).toBe('video.example.com');
 		nestedSite.enabled = false;
-		expect(resolveSiteHotkeys('https://video.example.com/a', nested)?.domain).toBe('example.com');
+		expect(resolveSiteHotkeys('https://video.example.com/a', nested)).toBeNull();
 		expect(resolveSiteHotkeys('https://unmatched.test/a', nested)).toBeNull();
 	});
 
