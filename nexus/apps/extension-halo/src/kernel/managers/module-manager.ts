@@ -219,7 +219,10 @@ export class ModuleManager {
 		if (wasEnabled === enabled) return;
 		if (enabled) this.disabled.delete(id);
 		else this.disabled.add(id);
-		this.notify();
+		// Degraded means the complete optional-module authority is unknown. Keep
+		// absorbing physical events into the private cache, but do not publish an
+		// optional module as installed until a complete hydration succeeds.
+		if (!this.degraded) this.notify();
 	}
 
 	private serializeMutation(id: string, mutation: () => Promise<void>): Promise<void> {
@@ -243,7 +246,7 @@ export class ModuleManager {
 
 	isInstalled(id: string): boolean {
 		const meta = ALL_MODULES.find((module) => module.id === id);
-		return Boolean(meta && (meta.builtIn || !this.disabled.has(id)));
+		return Boolean(meta && (meta.builtIn || !this.degraded && !this.disabled.has(id)));
 	}
 
 	getInstalledModules(): ModuleMeta[] { return [...this.snapshot.installedModules]; }
