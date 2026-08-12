@@ -77,7 +77,7 @@ export const SYSTEM_CORE_CONSUMERS: SystemConsumer[] = [
 				level: 'idle',
 				descriptionKey: 'impact.message_handler',
 				sourceFile: 'entry/background.ts',
-				sourceLine: 202,
+				sourceLine: 215,
 				sourceDetail: 'chrome.runtime.onMessage.addListener',
 			},
 		],
