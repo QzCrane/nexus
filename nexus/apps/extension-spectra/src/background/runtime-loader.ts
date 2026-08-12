@@ -4,11 +4,8 @@ import {
 	SPECTRA_CONTENT_RUNTIME_REVISION,
 	SPECTRA_PROTOCOL_VERSION,
 	CONTROL_ALGORITHM_POLICIES,
-	HOTKEY_ACTION_DESCRIPTORS,
-	findBestHostnameMatch,
 	hasExtensionOnlyContribution,
 	isDefaultAudioConfig,
-	normalizeHostname,
 	resolveAudioVolume,
 	isSpectraRequestEnvelope,
 	rpcFailure,
@@ -30,6 +27,11 @@ import { settingsRepository } from './settings-repository';
 import { storage } from './state';
 import { markBadgeUsedForTab } from './handlers/badge';
 import { ensureCaptureStatesReconciled } from './handlers/capture';
+import {
+	forgetDocumentSiteHotkeys,
+	reconcileDocumentSiteHotkeys,
+	resetDocumentSiteHotkeysForTests,
+} from './site-hotkey-loader-adapter';
 
 // Heavy SPA startup can legitimately spend several seconds restoring settings
 // and discovering media before the runtime publishes READY. Keep the handshake
@@ -48,7 +50,6 @@ const disposingDocuments = new Map<string, Promise<void>>();
 const waiters = new Map<string, RuntimeWaiter>();
 const leases = new Map<string, Set<string>>();
 const disposeTimers = new Map<string, ReturnType<typeof setTimeout>>();
-const hotkeyLeases = new Map<string, string>();
 const documentInitializations = new Map<string, Promise<void>>();
 let initialized = false;
 
@@ -69,56 +70,43 @@ function canReleaseRuntimeConsumer(sender: chrome.runtime.MessageSender): boolea
 		&& sender.url.startsWith(chrome.runtime.getURL(''));
 }
 
-function enabledSiteHotkeyCapability(
-	url: string | undefined,
-	settings: HotkeySettings,
-): string | null {
-	if (!url) return null;
-	let hostname: string | null = null;
-	try { hostname = normalizeHostname(new URL(url).hostname); } catch { return null; }
-	if (!hostname) return null;
-	const match = findBestHostnameMatch(
-		hostname,
-		Object.entries(settings.sites),
-		([domain]) => domain,
-	);
-	if (!match) return null;
-	const [domain, site] = match;
-	const enabled = site.enabled && site.bindings.some((binding) => (
-		binding.enabled
-		&& !binding.disabledReason
-		&& HOTKEY_ACTION_DESCRIPTORS[binding.action].availability === 'enabled'
-	));
-	return enabled ? `site:${domain}` : null;
-}
-
 export async function reconcileHotkeyRuntimeLease(
 	tabId: number,
 	documentId: string,
 	url: string | undefined,
 	settings?: HotkeySettings,
 ): Promise<void> {
-	const key = runtimeKey(tabId, documentId);
 	const hotkeys = settings ?? (await settingsRepository.getSnapshot()).hotkeySettings;
-	const capability = enabledSiteHotkeyCapability(url, hotkeys);
-	const previous = hotkeyLeases.get(key);
-	if (previous === capability) return;
-	if (previous) {
-		hotkeyLeases.delete(key);
-		releaseContentRuntimeLease(tabId, documentId, 'hotkey', previous);
-	}
-	if (!capability) return;
-	await ensureContentRuntime(tabId, documentId, 'hotkey', capability);
-	hotkeyLeases.set(key, capability);
+	await reconcileDocumentSiteHotkeys(tabId, documentId, url, hotkeys, {
+		ensure: async (capability) => {
+			const ready = await ensureContentRuntime(tabId, documentId, 'hotkey', capability);
+			if (ready.documentId !== documentId) {
+				releaseContentRuntimeLease(tabId, ready.documentId, 'hotkey', capability);
+				throw new Error('Site-hotkey full runtime resolved to a stale document');
+			}
+		},
+		release: (capability) => {
+			releaseContentRuntimeLease(tabId, documentId, 'hotkey', capability);
+		},
+	});
 }
 
 export async function reconcileAllHotkeyRuntimeLeases(settings: HotkeySettings): Promise<void> {
 	const tabs = await chrome.tabs.query({});
-	await Promise.allSettled(tabs.map(async (tab) => {
-		if (!tab.id || !tab.url) return;
+	await Promise.all(tabs.map(async (tab) => {
+		if (!tab.id || !tab.url || !isContentDocumentUrl(tab.url)) return;
 		const documentId = await currentTopDocumentId(tab.id);
 		await reconcileHotkeyRuntimeLease(tab.id, documentId, tab.url, settings);
 	}));
+}
+
+function isContentDocumentUrl(url: string): boolean {
+	try {
+		const protocol = new URL(url).protocol;
+		return protocol === 'http:' || protocol === 'https:' || protocol === 'file:';
+	} catch {
+		return false;
+	}
 }
 
 function sourceLeaseCapability(kind: 'marker' | 'ab', target: MediaTarget): string {
@@ -342,6 +330,7 @@ function commitReady(tabId: number, documentId: string, runtimeRevision: string)
 }
 
 function forgetDocument(tabId: number, documentId?: string): void {
+	forgetDocumentSiteHotkeys(tabId, documentId);
 	const prefix = `${tabId}:`;
 	for (const key of [...readyDocuments.keys()]) {
 		if (key.startsWith(prefix) && (!documentId || key === runtimeKey(tabId, documentId))) {
@@ -373,11 +362,6 @@ function forgetDocument(tabId: number, documentId?: string): void {
 		if (!key.startsWith(prefix) || documentId && key !== runtimeKey(tabId, documentId)) continue;
 		clearTimeout(timer);
 		disposeTimers.delete(key);
-	}
-	for (const key of [...hotkeyLeases.keys()]) {
-		if (key.startsWith(prefix) && (!documentId || key === runtimeKey(tabId, documentId))) {
-			hotkeyLeases.delete(key);
-		}
 	}
 	for (const key of [...documentInitializations.keys()]) {
 		if (key.startsWith(prefix) && (!documentId || key === runtimeKey(tabId, documentId))) {
@@ -686,7 +670,7 @@ export function resetContentRuntimeLoaderForTests(): void {
 	leases.clear();
 	for (const timer of disposeTimers.values()) clearTimeout(timer);
 	disposeTimers.clear();
-	hotkeyLeases.clear();
+	resetDocumentSiteHotkeysForTests();
 	documentInitializations.clear();
 	restoreDocumentForInitialization = (...args) => restoreIfConfigured(...args);
 	initialized = false;
@@ -768,4 +752,5 @@ export const runtimeLoaderTestApi = {
 	},
 	resolveDocumentRestorePlan,
 	splitDocumentRestorePatch,
+	isContentDocumentUrl,
 };

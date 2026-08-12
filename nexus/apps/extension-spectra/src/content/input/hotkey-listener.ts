@@ -77,6 +77,20 @@ type FeedbackState = Pick<
 >;
 let feedbackState: FeedbackState | undefined;
 
+interface LeanSiteHotkeyMarker {
+	revision?: unknown;
+	active?: unknown;
+}
+
+interface LeanSiteHotkeyWindow extends Window {
+	__SPECTRA_LEAN_SITE_HOTKEY_HOST__?: LeanSiteHotkeyMarker;
+}
+
+function leanSiteHotkeyOwnsConfiguredBindings(): boolean {
+	const marker = (window as LeanSiteHotkeyWindow).__SPECTRA_LEAN_SITE_HOTKEY_HOST__;
+	return marker?.revision === 2 && marker.active === true;
+}
+
 function cancelActiveBindings(): void {
 	for (const held of activeBindingsByCode.values()) {
 		if (inFlightGestures.has(held.feedbackGesture)) {
@@ -187,6 +201,10 @@ async function loadSettings(): Promise<void> {
 }
 
 function getSiteConfig(): SiteHotkeyConfig | null {
+	// The lean exact host is the physical configured-site owner. A transient
+	// heavy runtime may still exist for unrelated capabilities, but it must not
+	// attach a second listener even if it retained an older cached site match.
+	if (leanSiteHotkeyOwnsConfiguredBindings()) return null;
 	if (location.hostname === lastHostname && cachedSite !== undefined) return cachedSite;
 	lastHostname = location.hostname;
 	const hostname = normalizeHostname(lastHostname);

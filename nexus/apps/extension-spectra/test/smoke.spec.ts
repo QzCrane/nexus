@@ -2706,10 +2706,28 @@ describe('SPECTRA built extension smoke', () => {
 			});
 			await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 			await eventually(
-				() => readContentBootstrapStatus(targetUrl),
-				(status) => status.ready
-					&& status.runtimeRevision === SPECTRA_CONTENT_RUNTIME_REVISION,
-				'configured site hotkey runtime',
+				() => evaluateServiceWorker(async (configuredUrl) => {
+					const tab = (await chrome.tabs.query({})).find(
+						(candidate) => candidate.url === configuredUrl,
+					);
+					if (tab?.id === undefined) return null;
+					const [inspection] = await chrome.scripting.executeScript({
+						target: { tabId: tab.id },
+						world: 'ISOLATED',
+						func: () => {
+							const marker = (window as Window & {
+								__SPECTRA_LEAN_SITE_HOTKEY_HOST__?: {
+									revision?: unknown;
+									active?: unknown;
+								};
+							}).__SPECTRA_LEAN_SITE_HOTKEY_HOST__;
+							return { revision: marker?.revision, active: marker?.active };
+						},
+						});
+						return inspection?.result ?? null;
+					}, targetUrl),
+				(marker) => marker?.revision === 2 && marker.active === true,
+				'configured site lean hotkey host',
 				15_000,
 			);
 			const tabId = await getTabId(targetUrl);
