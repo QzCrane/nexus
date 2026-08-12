@@ -22,7 +22,8 @@ import {
 import { showToast } from '../ui/toast';
 
 interface LeanSiteHotkeyHost {
-	revision: 1;
+	revision: 2;
+	readonly active: boolean;
 	dispose(): void;
 }
 
@@ -249,17 +250,12 @@ const onVisibilityChange = (): void => {
 };
 const onPageHide = (event: PageTransitionEvent): void => {
 	releaseAll();
-	// BFCache keeps this document and its isolated-world JS realm alive. Keep the
-	// exact host/listeners installed so the restored page does not rely on stale
-	// Background injection bookkeeping. A real navigation still retires it.
 	if (!event.persisted) dispose();
 };
 
 function dispose(): void {
 	if (disposed) return;
 	disposed = true;
-	// An invalid extension context cannot deliver a reliable release; clear local
-	// ownership without recursively trying the already-invalid messaging path.
 	activeByCode.clear();
 	bindingByChord.clear();
 	arbiterDispose?.();
@@ -276,9 +272,13 @@ function dispose(): void {
 	}
 }
 
-const host: LeanSiteHotkeyHost = { revision: 1, dispose };
+const host: LeanSiteHotkeyHost = {
+	revision: 2,
+	get active() { return !disposed && bindingByChord.size > 0; },
+	dispose,
+};
 const existing = hostWindow.__SPECTRA_LEAN_SITE_HOTKEY_HOST__;
-if (existing?.revision !== 1) {
+if (existing?.revision !== 2) {
 	existing?.dispose();
 	hostWindow.__SPECTRA_LEAN_SITE_HOTKEY_HOST__ = host;
 	physicalReleaseDispose = subscribeDocumentStartPhysicalHotkeyRelease(onPhysicalRelease);
