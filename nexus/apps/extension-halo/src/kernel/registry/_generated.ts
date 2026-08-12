@@ -385,12 +385,12 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '🔍',
 		pluginType: 'tool',
 		category: 'media',
-		size: 156752,
+		size: 156790,
 		builtIn: true,
 		status: 'ready',
 		keywords: ["hover","zoom","image","preview","photoshow","浮图秀","浮图","悬浮","图片","预览","放大","高清"],
 		permissions: ["declarativeNetRequest","downloads","clipboardWrite"],
-		background: {"mechanism":"event_listener","frequency":"on-event","activeOnly":false,"level":"idle","descriptionKey":"impact.hover_zoom","sourceFile":"content/hover-zoom.ts","sourceLine":91,"sourceDetail":"document mouse/pointer-key listeners attach only while Hover Zoom is enabled and detach on disable"},
+		background: {"mechanism":"event_listener","frequency":"on-event","activeOnly":false,"level":"idle","descriptionKey":"impact.hover_zoom","sourceFile":"content/hover-zoom.ts","sourceLine":84,"sourceDetail":"light document mouse/key listeners attach only while Hover Zoom is enabled; resolver/viewer code loads only after a valid preview intent"},
 		script: undefined,
 	},
 	{
@@ -806,7 +806,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		status: undefined,
 		keywords: [],
 		permissions: undefined,
-		background: {"mechanism":"wheel_listener","frequency":"on-wheel","activeOnly":true,"level":"low","descriptionKey":"impact.mechanism.wheel_listener","sourceFile":"content/smooth-scroll.ts","sourceLine":70,"sourceDetail":"window.addEventListener('wheel', onWheel, { passive: false })"},
+		background: {"mechanism":"wheel_listener","frequency":"on-wheel","activeOnly":true,"level":"low","descriptionKey":"impact.mechanism.wheel_listener","sourceFile":"content/smooth-scroll.ts","sourceLine":84,"sourceDetail":"window.addEventListener('wheel', onWheel, { passive: false })"},
 		script: undefined,
 	},
 	{
@@ -1152,7 +1152,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '📦',
 		pluginType: 'system',
 		category: 'general',
-		size: 29040,
+		size: 29184,
 		builtIn: true,
 		status: undefined,
 		keywords: ["store","download","模块","商店"],
@@ -1178,7 +1178,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '⚡',
 		pluginType: 'system',
 		category: 'dev',
-		size: 17961,
+		size: 17972,
 		builtIn: true,
 		status: undefined,
 		keywords: ["task","manager","cpu","background","service","后台","资源"],
@@ -1204,12 +1204,12 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '📜',
 		pluginType: 'system',
 		category: 'dev',
-		size: 94879,
+		size: 116164,
 		builtIn: false,
 		status: undefined,
 		keywords: ["script","inject","脚本","注入"],
 		permissions: ["userScripts","*://*/*"],
-		background: {"mechanism":"storage_listener","frequency":"on-change","activeOnly":false,"level":"low","descriptionKey":"impact.userscripts_registry","sourceFile":"system/userscripts/registry.ts","sourceLine":248,"sourceDetail":"chrome.storage.onChanged.addListener"},
+		background: {"mechanism":"storage_listener","frequency":"on-change","activeOnly":false,"level":"low","descriptionKey":"impact.userscripts_registry","sourceFile":"system/userscripts/registry.ts","sourceLine":528,"sourceDetail":"chrome.storage.onChanged.addListener"},
 		script: undefined,
 	}
 ];
@@ -1274,8 +1274,8 @@ export const BACKGROUND_PROFILES_MAP: Record<string, BackgroundProfile> = {
         "level": "idle",
         "descriptionKey": "impact.hover_zoom",
         "sourceFile": "content/hover-zoom.ts",
-        "sourceLine": 91,
-        "sourceDetail": "document mouse/pointer-key listeners attach only while Hover Zoom is enabled and detach on disable"
+        "sourceLine": 84,
+        "sourceDetail": "light document mouse/key listeners attach only while Hover Zoom is enabled; resolver/viewer code loads only after a valid preview intent"
     },
     "pomodoro": {
         "mechanism": "interval_slow",
@@ -1294,7 +1294,7 @@ export const BACKGROUND_PROFILES_MAP: Record<string, BackgroundProfile> = {
         "level": "low",
         "descriptionKey": "impact.mechanism.wheel_listener",
         "sourceFile": "content/smooth-scroll.ts",
-        "sourceLine": 70,
+        "sourceLine": 84,
         "sourceDetail": "window.addEventListener('wheel', onWheel, { passive: false })"
     },
     "tab-group": {
@@ -1374,7 +1374,7 @@ export const BACKGROUND_PROFILES_MAP: Record<string, BackgroundProfile> = {
         "level": "low",
         "descriptionKey": "impact.userscripts_registry",
         "sourceFile": "system/userscripts/registry.ts",
-        "sourceLine": 248,
+        "sourceLine": 528,
         "sourceDetail": "chrome.storage.onChanged.addListener"
     }
 };
