@@ -296,6 +296,18 @@ describe('persistent UserScripts recovery contract', () => {
 		expect(registrySource).toContain('if (reconciliation) await reconciliation;');
 		expect(registrySource).toContain('if (ensureSynchronized) return ensureSynchronized;');
 	});
+
+	test('runtime readiness ACK requires available capability plus a matching clean receipt', () => {
+		const runtimeReadyIndex = registrySource.indexOf('export function ensureUserScriptsRuntimeReady');
+		const availabilityIndex = registrySource.indexOf('if (!status.userScriptsAvailable)', runtimeReadyIndex);
+		const satisfiedIndex = registrySource.indexOf('if (status.satisfied) return;', runtimeReadyIndex);
+		expect(runtimeReadyIndex).toBeGreaterThanOrEqual(0);
+		expect(availabilityIndex).toBeGreaterThan(runtimeReadyIndex);
+		expect(satisfiedIndex).toBeGreaterThan(availabilityIndex);
+		expect(registrySource).toContain('for (let attempt = 0; attempt < 2; attempt += 1)');
+		expect(registrySource).toContain('readPersistentRegistryReceiptStatus');
+		expect(registrySource).toContain('Chrome User Scripts runtime capability is unavailable');
+	});
 });
 
 test('optional system active panels must obey installation rather than taxonomy', () => {
@@ -332,10 +344,11 @@ test('UserScripts panel readiness waits for Background registry ACK and fences s
 	expect(source).not.toContain("void chrome.runtime.sendMessage({ type: 'HALO_USERSCRIPTS_SYNC' }");
 });
 
-test('Background UserScripts sync message ACKs only after idempotent registry readiness', () => {
+test('Background UserScripts sync message ACKs only after clean available runtime readiness', () => {
 	const source = readFileSync(new URL('../src/system/userscripts/engine.ts', import.meta.url), 'utf8');
-	expect(source).toContain('ensureRegisteredScriptsSynchronized');
+	expect(source).toContain('ensureUserScriptsRuntimeReady');
 	expect(source).toContain("message.type === 'HALO_USERSCRIPTS_SYNC'");
 	expect(source).toContain('then(() => sendResponse({ success: true }))');
 	expect(source).not.toContain('void syncRegisteredScripts()');
+	expect(source).not.toContain('void ensureRegisteredScriptsSynchronized()');
 });
