@@ -219,15 +219,28 @@ describe('persistent UserScripts recovery contract', () => {
 		expect(() => userScriptsRegistryTestApi.toMatchPatterns(['   '])).toThrow('Empty match pattern');
 	});
 
-	test('uses a durable dirty/clean digest receipt instead of a race-prone boolean clear', () => {
+	test('uses durable dirty/blocked/clean digest receipts instead of a race-prone boolean clear', () => {
 		expect(userScriptsRegistryTestApi.RECEIPT_VERSION).toBe(2);
 		expect(registrySource).toContain("state: 'dirty'");
-		expect(registrySource).toContain("state: 'clean'");
+		expect(registrySource).toContain("state: 'blocked' | 'clean'");
 		expect(registrySource).toContain('digestAuthority');
-		expect(registrySource).toContain('writeRecoveryReceipt(digest)');
-		expect(registrySource).toContain('isMatchingReceipt');
+		expect(registrySource).toContain('writeRecoveryReceipt(result.digest, result.receiptState)');
+		expect(registrySource).toContain('isSatisfiedReceipt');
 		expect(registrySource).not.toContain('clearRecoveryNeeded');
 		expect(userScriptsRegistryTestApi.SYNC_RETRY_DELAYS_MS).toEqual([250, 1_000, 4_000]);
+	});
+
+	test('receipt satisfaction distinguishes platform-blocked from fully clean authority', () => {
+		const { isSatisfiedReceipt } = userScriptsRegistryTestApi;
+		const clean = { version: 2, state: 'clean', digest: 'abc' };
+		const blocked = { version: 2, state: 'blocked', digest: 'abc' };
+		const dirty = { version: 2, state: 'dirty' };
+		expect(isSatisfiedReceipt(clean, 'abc', true)).toBe(true);
+		expect(isSatisfiedReceipt(blocked, 'abc', true)).toBe(false);
+		expect(isSatisfiedReceipt(blocked, 'abc', false)).toBe(true);
+		expect(isSatisfiedReceipt(clean, 'abc', false)).toBe(false);
+		expect(isSatisfiedReceipt(dirty, 'abc', false)).toBe(false);
+		expect(isSatisfiedReceipt(blocked, 'different', false)).toBe(false);
 	});
 
 	test('canonical receipt encoding preserves key order and distinguishes undefined from strings', () => {
@@ -265,11 +278,12 @@ describe('persistent UserScripts recovery contract', () => {
 		}
 	});
 
-	test('startup recovery includes platform capability in the physical receipt authority', () => {
+	test('startup recovery includes platform capability and blocked state in physical receipt authority', () => {
 		expect(registrySource).toContain('isUserScriptsCapabilityAvailable()');
 		expect(registrySource).toContain('userScriptsAvailable,');
 		expect(registrySource).toContain('readRegistryAuthority()');
-		expect(registrySource).toContain('!isMatchingReceipt(receiptResult[RECOVERY_STORAGE_KEY], authority.digest)');
+		expect(registrySource).toContain('!isSatisfiedReceipt(');
+		expect(registrySource).toContain('authority.userScriptsAvailable');
 		expect(registrySource).toContain("requestRegisteredScriptSync('worker-startup-recovery')");
 		expect(registrySource).not.toContain('!userscriptsModuleEnabled ||');
 	});
