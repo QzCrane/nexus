@@ -20,6 +20,7 @@ export const listeners = new Set<() => void>();
 export let currentSetting: LocaleSetting = 'system';
 export let resolvedLocale: Locale = 'en';
 export let i18nReady = false;
+let storageRevision = 0;
 
 export function detectLocale(): Locale {
 	const lang = navigator.language.toLowerCase();
@@ -88,23 +89,46 @@ export const i18nPromise = new Promise<void>((resolvePromise) => {
 	resolveInit = resolvePromise;
 });
 
+function applyStorageLocale(value: unknown): void {
+	if (!isLocaleSetting(value)) return;
+	storageRevision += 1;
+	currentSetting = value;
+	resolvedLocale = resolve(value);
+	i18nReady = true;
+	notify();
+}
+
+// Subscribe before the initial read. A storage event increments storageRevision,
+// so an older read resolution/rejection can never overwrite newer authority.
+if (typeof chrome !== 'undefined' && chrome.storage) {
+	subscribeHaloStorageChanges((changes, area) => {
+		if (area !== 'sync') return;
+		const change = changes[STORAGE_KEY];
+		if (!change) return;
+		applyStorageLocale(change.newValue);
+	});
+}
+
 export const initI18n = async () => {
+	const readRevision = storageRevision;
 	if (typeof chrome !== 'undefined' && chrome.storage) {
 		try {
 			const result = await safeStorageGet(
 				[STORAGE_KEY],
 				{ [STORAGE_KEY]: 'system' },
 			);
-			const saved: unknown = result[STORAGE_KEY];
-			currentSetting = isLocaleSetting(saved) ? saved : 'system';
+			if (storageRevision === readRevision) {
+				const saved: unknown = result[STORAGE_KEY];
+				currentSetting = isLocaleSetting(saved) ? saved : 'system';
+			}
 		} catch {
-			currentSetting = 'system';
+			if (storageRevision === readRevision) currentSetting = 'system';
 		}
-	} else {
+	} else if (storageRevision === readRevision) {
 		currentSetting = 'system';
 	}
 
-	resolvedLocale = resolve(currentSetting);
+	if (storageRevision === readRevision) resolvedLocale = resolve(currentSetting);
 	i18nReady = true;
 	resolveInit?.();
 	notify();
@@ -113,19 +137,3 @@ export const initI18n = async () => {
 export const waitForI18n = () => i18nPromise;
 
 initI18n().catch((error) => console.error('i18n init failed', error));
-
-// Cross-instance locale changes share the SidePanel realm bus instead of
-// registering another physical chrome.storage.onChanged callback.
-if (typeof chrome !== 'undefined' && chrome.storage) {
-	subscribeHaloStorageChanges((changes, area) => {
-		if (area !== 'sync') return;
-		const change = changes[STORAGE_KEY];
-		if (!change) return;
-		const newSetting: unknown = change.newValue;
-		if (!isLocaleSetting(newSetting)) return;
-		currentSetting = newSetting;
-		resolvedLocale = resolve(newSetting);
-		i18nReady = true;
-		notify();
-	});
-}
