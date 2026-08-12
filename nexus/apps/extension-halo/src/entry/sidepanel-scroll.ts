@@ -177,6 +177,8 @@ let scrollInitStarted = false;
 export function initScroll(): () => void {
 	if (scrollInitStarted) return () => {};
 	scrollInitStarted = true;
+	let active = true;
+	let storageRevision = 0;
 
 	configure(cfg.animationTime, cfg.easing, cfg.pulseScale);
 	window.addEventListener('wheel', onWheel, { passive: false });
@@ -184,21 +186,29 @@ export function initScroll(): () => void {
 	window.addEventListener('pagehide', resetScrollRuntime);
 	document.addEventListener('visibilitychange', onVisibilityChange);
 
-	chrome.storage.sync.get([STORAGE_KEY], (result) => {
-		if (!result[STORAGE_KEY]) return;
-		cfg = { ...cfg, ...normalizeScrollSettings(result[STORAGE_KEY]) };
+	const applyStoredSettings = (value: unknown): void => {
+		cfg = { ...cfg, ...normalizeScrollSettings(value) };
 		configure(cfg.animationTime, cfg.easing, cfg.pulseScale);
-	});
+	};
 
+	// Event-first authority: subscribe before the initial read, then fence the
+	// older read with a revision so it cannot overwrite a newer storage event.
 	const unsubscribeStorageChanges = subscribeHaloStorageChanges((changes, area) => {
-		if (area !== 'sync') return;
+		if (!active || area !== 'sync') return;
 		const change = changes[STORAGE_KEY];
 		if (!change) return;
-		cfg = { ...cfg, ...normalizeScrollSettings(change.newValue) };
-		configure(cfg.animationTime, cfg.easing, cfg.pulseScale);
+		storageRevision += 1;
+		applyStoredSettings(change.newValue);
+	});
+
+	const readRevision = storageRevision;
+	chrome.storage.sync.get([STORAGE_KEY], (result) => {
+		if (!active || storageRevision !== readRevision || !result[STORAGE_KEY]) return;
+		applyStoredSettings(result[STORAGE_KEY]);
 	});
 
 	return () => {
+		active = false;
 		window.removeEventListener('wheel', onWheel);
 		window.removeEventListener('keydown', onKeydown);
 		window.removeEventListener('pagehide', resetScrollRuntime);
