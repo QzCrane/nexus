@@ -18,6 +18,7 @@ const LOG_TAG = '[HALO:UserScripts:Registry]';
 const STORAGE_KEY = 'halo_userscripts';
 const SAAT_STORAGE_KEY = 'halo_saat_scripts';
 const USERSCRIPTS_MODULE_KEY = moduleInstallationStorageKey('userscripts');
+const SAAT_DESCRIPTOR_VERSION_KEY = 'halo_userscripts_saat_descriptor_version_v1';
 const RECOVERY_STORAGE_KEY = 'halo_userscripts_registry_dirty_v1';
 const SCRIPT_ID_PREFIX = 'halo-userscript-';
 const SYNC_RETRY_DELAYS_MS = [250, 1_000, 4_000] as const;
@@ -210,9 +211,15 @@ async function readRegistryAuthority(): Promise<RegistryAuthority> {
 			STORAGE_KEY,
 			SAAT_STORAGE_KEY,
 			USERSCRIPTS_MODULE_KEY,
+			SAAT_DESCRIPTOR_VERSION_KEY,
 		]),
 		isUserScriptsCapabilityAvailable(),
 	]);
+	const extensionVersion = chrome.runtime.getManifest().version;
+	const descriptorVersion = stateResult[SAAT_DESCRIPTOR_VERSION_KEY];
+	if (descriptorVersion !== extensionVersion) {
+		throw new Error(`SaaT descriptor projection is not synchronized for extension ${extensionVersion}`);
+	}
 	const userState = parseUserScriptsStorageValue(stateResult[STORAGE_KEY]);
 	const saatState = parseUserScriptsStorageValue(stateResult[SAAT_STORAGE_KEY]);
 	if (userState.failed || saatState.failed) throw new Error('Script registry persistence schema validation failed');
@@ -224,7 +231,8 @@ async function readRegistryAuthority(): Promise<RegistryAuthority> {
 	const moduleKeys = moduleKeysForManagedScripts(userState, saatState);
 	const moduleValues = moduleKeys.length > 0 ? await chrome.storage.local.get(moduleKeys) : {};
 	const digest = await digestAuthority({
-		extensionVersion: chrome.runtime.getManifest().version,
+		extensionVersion,
+		saatDescriptorVersion: descriptorVersion,
 		user: stateResult[STORAGE_KEY] ?? null,
 		saat: stateResult[SAAT_STORAGE_KEY] ?? null,
 		userscriptsModule: Object.hasOwn(stateResult, USERSCRIPTS_MODULE_KEY)
@@ -347,6 +355,7 @@ let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
 let recoveryAttempt = 0;
 let requestedGeneration = 0;
 let reconciliation: Promise<void> | null = null;
+let ensureRequestedGeneration = 0;
 let ensureSynchronized: Promise<void> | null = null;
 let ensureRuntimeReady: Promise<void> | null = null;
 
@@ -358,6 +367,12 @@ function resetRecoveryTimer(): void {
 
 async function markRecoveryNeeded(): Promise<void> {
 	await chrome.storage.local.set({ [RECOVERY_STORAGE_KEY]: DIRTY_RECEIPT });
+}
+
+export async function markSaaTDescriptorProjectionCurrent(): Promise<void> {
+	await chrome.storage.local.set({
+		[SAAT_DESCRIPTOR_VERSION_KEY]: chrome.runtime.getManifest().version,
+	});
 }
 
 async function writeRecoveryReceipt(
@@ -440,11 +455,20 @@ export function syncRegisteredScripts(): Promise<void> {
 }
 
 export function ensureRegisteredScriptsSynchronized(): Promise<void> {
+	ensureRequestedGeneration += 1;
 	if (ensureSynchronized) return ensureSynchronized;
 	ensureSynchronized = (async () => {
-		if (reconciliation) await reconciliation;
-		if (await hasSatisfiedPersistentRegistryReceipt()) return;
-		await syncRegisteredScripts();
+		for (let attempt = 0; attempt < 3; attempt += 1) {
+			const targetGeneration = ensureRequestedGeneration;
+			if (reconciliation) await reconciliation;
+			let satisfied = await hasSatisfiedPersistentRegistryReceipt();
+			if (!satisfied) {
+				await syncRegisteredScripts();
+				satisfied = await hasSatisfiedPersistentRegistryReceipt();
+			}
+			if (satisfied && ensureRequestedGeneration === targetGeneration) return;
+		}
+		throw new Error('UserScripts registry authority changed faster than the receipt barrier could converge');
 	})().finally(() => { ensureSynchronized = null; });
 	return ensureSynchronized;
 }
@@ -469,6 +493,10 @@ function requestRegisteredScriptSync(reason: string): void {
 	void syncRegisteredScripts().catch((error) => console.warn(LOG_TAG, `${reason} sync failed`, error));
 }
 
+function requestRegisteredScriptEnsure(reason: string): void {
+	void ensureRegisteredScriptsSynchronized().catch((error) => console.warn(LOG_TAG, `${reason} receipt check failed`, error));
+}
+
 function recoverPersistentRegistryIfNeeded(): void {
 	void hasSatisfiedPersistentRegistryReceipt().then((satisfied) => {
 		if (!registryInitialized || satisfied) return;
@@ -489,8 +517,13 @@ export function initUserScriptsRegistry(): () => void {
 	registryInitialized = true;
 	const listener = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
 		if (area !== 'local') return;
-		if (!changes[STORAGE_KEY] && !changes[SAAT_STORAGE_KEY] && !includesModuleInstallationChange(changes)) return;
-		requestRegisteredScriptSync('storage-change');
+		if (
+			!changes[STORAGE_KEY]
+			&& !changes[SAAT_STORAGE_KEY]
+			&& !changes[SAAT_DESCRIPTOR_VERSION_KEY]
+			&& !includesModuleInstallationChange(changes)
+		) return;
+		requestRegisteredScriptEnsure('storage-change');
 	};
 	chrome.storage.onChanged.addListener(listener);
 	recoverPersistentRegistryIfNeeded();
@@ -502,6 +535,7 @@ export function initUserScriptsRegistry(): () => void {
 }
 
 export const userScriptsRegistryTestApi = {
+	SAAT_DESCRIPTOR_VERSION_KEY,
 	RECOVERY_STORAGE_KEY,
 	SYNC_RETRY_DELAYS_MS,
 	RECEIPT_VERSION,
