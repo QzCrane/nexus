@@ -318,8 +318,6 @@ export type {
 	OffscreenHostEvent,
 	OffscreenAudioEvent,
 	RemoteHostEventType,
-	OffscreenHostEvent,
-	OffscreenAudioEvent,
 	RemoteHostEvent,
 } from './offscreen.contracts.js';
 export {
