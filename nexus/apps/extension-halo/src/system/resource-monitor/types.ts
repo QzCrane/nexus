@@ -128,7 +128,7 @@ export const SYSTEM_CORE_CONSUMERS: SystemConsumer[] = [
 				level: 'idle',
 				descriptionKey: 'impact.message_handler',
 				sourceFile: 'system/userscripts/engine.ts',
-				sourceLine: 68,
+				sourceLine: 65,
 				sourceDetail: 'manual sync and run-count message router',
 			},
 		],
