@@ -44,6 +44,10 @@ interface ReconciliationResult {
 	digest: string;
 	receiptState: 'blocked' | 'clean';
 }
+interface PersistentRegistryReceiptStatus {
+	satisfied: boolean;
+	userScriptsAvailable: boolean;
+}
 
 function normalizePattern(pattern: string): string {
 	const trimmed = pattern.trim();
@@ -343,6 +347,7 @@ let recoveryAttempt = 0;
 let requestedGeneration = 0;
 let reconciliation: Promise<void> | null = null;
 let ensureSynchronized: Promise<void> | null = null;
+let ensureRuntimeReady: Promise<void> | null = null;
 
 function resetRecoveryTimer(): void {
 	if (recoveryTimer) clearTimeout(recoveryTimer);
@@ -373,16 +378,23 @@ function isSatisfiedReceipt(
 	return userScriptsAvailable ? receipt.state === 'clean' : receipt.state === 'blocked';
 }
 
-async function hasSatisfiedPersistentRegistryReceipt(): Promise<boolean> {
+async function readPersistentRegistryReceiptStatus(): Promise<PersistentRegistryReceiptStatus> {
 	const [authority, receiptResult] = await Promise.all([
 		readRegistryAuthority(),
 		chrome.storage.local.get(RECOVERY_STORAGE_KEY),
 	]);
-	return isSatisfiedReceipt(
-		receiptResult[RECOVERY_STORAGE_KEY],
-		authority.digest,
-		authority.userScriptsAvailable,
-	);
+	return {
+		satisfied: isSatisfiedReceipt(
+			receiptResult[RECOVERY_STORAGE_KEY],
+			authority.digest,
+			authority.userScriptsAvailable,
+		),
+		userScriptsAvailable: authority.userScriptsAvailable,
+	};
+}
+
+async function hasSatisfiedPersistentRegistryReceipt(): Promise<boolean> {
+	return (await readPersistentRegistryReceiptStatus()).satisfied;
 }
 
 function scheduleRecovery(): void {
@@ -434,6 +446,22 @@ export function ensureRegisteredScriptsSynchronized(): Promise<void> {
 		await syncRegisteredScripts();
 	})().finally(() => { ensureSynchronized = null; });
 	return ensureSynchronized;
+}
+
+export function ensureUserScriptsRuntimeReady(): Promise<void> {
+	if (ensureRuntimeReady) return ensureRuntimeReady;
+	ensureRuntimeReady = (async () => {
+		for (let attempt = 0; attempt < 2; attempt += 1) {
+			await ensureRegisteredScriptsSynchronized();
+			const status = await readPersistentRegistryReceiptStatus();
+			if (!status.userScriptsAvailable) {
+				throw new Error('Chrome User Scripts runtime capability is unavailable');
+			}
+			if (status.satisfied) return;
+		}
+		throw new Error('UserScripts browser registry did not converge to a clean available receipt');
+	})().finally(() => { ensureRuntimeReady = null; });
+	return ensureRuntimeReady;
 }
 
 function requestRegisteredScriptSync(reason: string): void {
