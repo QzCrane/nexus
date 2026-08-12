@@ -6,6 +6,7 @@ import {
 } from '../src/kernel/managers/module-manager';
 import { moduleInstallationStorageKey } from '../src/kernel/core/module-installation-runtime';
 import { OPTIONAL_MODULES } from '../src/kernel/registry/module-registry';
+import { isUserScriptsCapabilityAvailable } from '../src/system/userscripts/capability';
 import {
 	resolveDesiredRegisteredScripts,
 	userScriptsRegistryTestApi,
@@ -189,6 +190,14 @@ describe('script runtime ownership', () => {
 			})],
 		)).toThrow('Invalid SaaT ownership metadata');
 	});
+
+	test('preserves an explicit MAIN execution world instead of silently downgrading it', () => {
+		const prepared = userScriptsRegistryTestApi.prepareRegistration([
+			script('main-world', { world: 'MAIN' }),
+		]);
+		expect(prepared.userScripts).toHaveLength(1);
+		expect(prepared.userScripts[0]?.world).toBe('MAIN');
+	});
 });
 
 describe('persistent UserScripts recovery contract', () => {
@@ -196,7 +205,7 @@ describe('persistent UserScripts recovery contract', () => {
 
 	test('prepares the complete next registration generation before destructive teardown', () => {
 		const prepareIndex = registrySource.indexOf('const prepared = prepareRegistration(desired);');
-		const unregisterIndex = registrySource.indexOf('await unregisterAllScripts();', prepareIndex);
+		const unregisterIndex = registrySource.indexOf('await unregisterAllScripts(', prepareIndex);
 		expect(prepareIndex).toBeGreaterThanOrEqual(0);
 		expect(unregisterIndex).toBeGreaterThan(prepareIndex);
 		expect(() => userScriptsRegistryTestApi.toMatchPatterns([])).toThrow('At least one match pattern is required');
@@ -223,7 +232,35 @@ describe('persistent UserScripts recovery contract', () => {
 		expect(() => canonicalize(Symbol('unsupported'))).toThrow('Unsupported registry authority value');
 	});
 
-	test('startup recovery compares the persisted receipt to current physical authority', () => {
+	test('runtime capability probe treats namespace absence and method rejection as unavailable', async () => {
+		const previous = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		try {
+			Object.defineProperty(globalThis, 'chrome', {
+				configurable: true,
+				value: { userScripts: undefined },
+			});
+			expect(await isUserScriptsCapabilityAvailable()).toBe(false);
+
+			Object.defineProperty(globalThis, 'chrome', {
+				configurable: true,
+				value: { userScripts: { getScripts: async () => { throw new Error('toggle disabled'); } } },
+			});
+			expect(await isUserScriptsCapabilityAvailable()).toBe(false);
+
+			Object.defineProperty(globalThis, 'chrome', {
+				configurable: true,
+				value: { userScripts: { getScripts: async () => [] } },
+			});
+			expect(await isUserScriptsCapabilityAvailable()).toBe(true);
+		} finally {
+			if (previous) Object.defineProperty(globalThis, 'chrome', previous);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
+	});
+
+	test('startup recovery includes platform capability in the physical receipt authority', () => {
+		expect(registrySource).toContain('isUserScriptsCapabilityAvailable()');
+		expect(registrySource).toContain('userScriptsAvailable,');
 		expect(registrySource).toContain('readRegistryAuthority()');
 		expect(registrySource).toContain('!isMatchingReceipt(receiptResult[RECOVERY_STORAGE_KEY], authority.digest)');
 		expect(registrySource).toContain("requestRegisteredScriptSync('worker-startup-recovery')");
@@ -245,4 +282,13 @@ test('Launcher custom scripts require healthy UserScripts module authority and e
 	expect(source).toContain('value.saatToolId === undefined');
 	expect(source).toContain('value.managedBy === undefined');
 	expect(source).toContain('if (!enabled)');
+});
+
+test('UserScripts panel readiness uses the same runtime capability probe and resyncs on recovery', () => {
+	const source = readFileSync(new URL('../src/system/userscripts/hooks/useUserScripts.ts', import.meta.url), 'utf8');
+	expect(source).toContain('isUserScriptsCapabilityAvailable');
+	expect(source).toContain('hasHosts && hasUserScripts');
+	expect(source).toContain('becameAvailable');
+	expect(source).toContain("type: 'HALO_USERSCRIPTS_SYNC'");
+	expect(source).toContain('allowUserScriptsRequired');
 });
