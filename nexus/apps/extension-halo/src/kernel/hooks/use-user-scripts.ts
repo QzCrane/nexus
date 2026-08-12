@@ -25,10 +25,16 @@ function readCustomScripts(value: unknown): UserScript[] {
 }
 
 export function useUserScripts() {
-	const { installedModules, loading: modulesLoading } = useModuleManager();
+	const {
+		installedModules,
+		loading: modulesLoading,
+		degraded,
+	} = useModuleManager();
 	const enabled = useMemo(
-		() => !modulesLoading && installedModules.some((module) => module.id === 'userscripts'),
-		[modulesLoading, installedModules],
+		() => !modulesLoading
+			&& !degraded
+			&& installedModules.some((module) => module.id === 'userscripts'),
+		[modulesLoading, degraded, installedModules],
 	);
 	const [scripts, setScripts] = useState<UserScript[]>([]);
 	const [storageLoading, setStorageLoading] = useState(false);
