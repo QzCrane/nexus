@@ -145,7 +145,7 @@ export const SYSTEM_CORE_CONSUMERS: SystemConsumer[] = [
 				level: 'idle',
 				descriptionKey: 'impact.storage_sync',
 				sourceFile: 'kernel/services/saat-service.ts',
-				sourceLine: 319,
+				sourceLine: 324,
 				sourceDetail: 'Tool Prefs authority listener for SaaT enablement',
 			},
 		],
