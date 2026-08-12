@@ -47,6 +47,10 @@ function hasOwnedSource(status: RuntimeRestartStatus): boolean {
 	return status.ownedSources.some((owned) => owned.markerCount > 0 || owned.abActive);
 }
 
+function retryDelayForAttempt(attempt: number): number | null {
+	return RETRY_DELAYS_MS[attempt] ?? null;
+}
+
 async function persistentRestoreCapability(target: RuntimeRestartTarget): Promise<string | null> {
 	let identity: ReturnType<typeof storage.tabSession.identity>;
 	try {
@@ -183,26 +187,48 @@ async function currentHttpTargets(): Promise<RuntimeRestartTarget[]> {
 
 export function initializeRuntimeRestartRecovery(): void {
 	let attempt = 0;
-	const run = async (): Promise<void> => {
-		const snapshot = await settingsRepository.getSnapshot();
-		const targets = await currentHttpTargets();
-		const results = await Promise.allSettled(targets.map((target) => (
-			recoverDocumentRuntimeOnWorkerStartup(target, snapshot.hotkeySettings)
-		)));
-		const failures = results.filter((result) => result.status === 'rejected');
-		if (failures.length === 0) return;
-		for (const failure of failures) {
-			if (failure.status === 'rejected') swLog.warn(`[Runtime] restart recovery failed: ${String(failure.reason)}`);
-		}
-		if (attempt >= RETRY_DELAYS_MS.length) return;
-		const delay = RETRY_DELAYS_MS[attempt++] ?? 4_000;
-		setTimeout(() => { void run(); }, delay);
+	let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+	const scheduleRetry = (reason: unknown, phase: 'document' | 'discovery'): void => {
+		const delay = retryDelayForAttempt(attempt);
+		if (delay === null || retryTimer) return;
+		attempt += 1;
+		swLog.warn(`[Runtime] restart recovery ${phase} failure; retrying: ${String(reason)}`);
+		retryTimer = setTimeout(() => {
+			retryTimer = null;
+			void run();
+		}, delay);
 	};
-	void run().catch((error) => swLog.warn(`[Runtime] restart recovery discovery failed: ${String(error)}`));
+
+	const run = async (): Promise<void> => {
+		try {
+			const snapshot = await settingsRepository.getSnapshot();
+			const targets = await currentHttpTargets();
+			const results = await Promise.allSettled(targets.map((target) => (
+				recoverDocumentRuntimeOnWorkerStartup(target, snapshot.hotkeySettings)
+			)));
+			const failures = results.filter((result) => result.status === 'rejected');
+			if (failures.length === 0) {
+				attempt = 0;
+				return;
+			}
+			for (const failure of failures) {
+				if (failure.status === 'rejected') {
+					swLog.warn(`[Runtime] restart recovery failed: ${String(failure.reason)}`);
+				}
+			}
+			scheduleRetry(`${failures.length} document recovery operation(s) failed`, 'document');
+		} catch (error) {
+			scheduleRetry(error, 'discovery');
+		}
+	};
+
+	void run();
 }
 
 export const runtimeRestartStartupTestApi = {
 	RECOVERY_CAPABILITY,
 	RETRY_DELAYS_MS,
 	hasOwnedSource,
+	retryDelayForAttempt,
 };
