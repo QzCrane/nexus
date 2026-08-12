@@ -210,6 +210,7 @@ export function useUserScripts() {
 	const handleGlobalToggle = async () => {
 		const newState = await toggleGlobalEnabled();
 		setGlobalEnabled(newState);
+		setScriptAuthorityRevision((revision) => revision + 1);
 		showToast(newState
 			? `✅ ${t('userscripts.scriptsEnabled')}`
 			: `⏸️ ${t('userscripts.scriptsDisabled')}`);
