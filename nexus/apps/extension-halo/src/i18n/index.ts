@@ -62,6 +62,10 @@ export function useTranslation() {
 			setTranslations(REGISTRY[resolvedLocale]);
 		};
 		listeners.add(onUpdate);
+		// Initialization may resolve between render and effect registration. Re-read
+		// the current module authority after subscribing so that notification cannot
+		// be lost under a different renderer/effect schedule.
+		onUpdate();
 		return () => {
 			listeners.delete(onUpdate);
 		};
@@ -108,4 +112,3 @@ export type {
 	TranslationParams,
 } from './types';
 export { REGISTRY as LOCALES };
-

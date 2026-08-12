@@ -56,6 +56,11 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, visibleTools, pl
   }, []);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      setQuery('');
+      inputRef.current?.blur();
+      return;
+    }
     if (!results.length) return;
     
     if (e.key === 'ArrowDown') {
@@ -73,9 +78,6 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, visibleTools, pl
         setQuery('');
         inputRef.current?.blur();
       }
-    } else if (e.key === 'Escape') {
-      setQuery('');
-      inputRef.current?.blur();
     }
   }, [results, activeIndex, onSelect]);
 

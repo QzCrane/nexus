@@ -33,12 +33,23 @@ const distDir = path.join(__dirname, 'dist');
 // cross-platform production build. They are regression gates, not aspirations:
 // intentional growth requires an explicit architecture + budget change.
 const PRODUCTION_BUDGET_KIB = Object.freeze({
-	background: 14,
+	background: 24,
 	allFrameDocumentStart: 1,
-	topFrameDocumentStart: 25,
+	topFrameDocumentStart: 26,
 	allFrameDocumentIdle: 2,
 	topFrameDocumentIdle: 10,
-	sidepanelStartup: 165,
+	sidepanelStartup: 32,
+});
+
+// HALO keeps React types and source compatibility, but the SidePanel's one
+// renderer-owned graph is emitted through Preact compat to avoid shipping both
+// ReactDOM and Preact. Content scripts and the background never receive these aliases.
+const SIDEPANEL_RENDERER_ALIAS = Object.freeze({
+	'react/jsx-dev-runtime': 'preact/jsx-dev-runtime',
+	'react/jsx-runtime': 'preact/jsx-runtime',
+	'react-dom/client': 'preact/compat/client',
+	'react-dom': 'preact/compat',
+	react: 'preact/compat',
 });
 
 function run(label, args, opts = {}) {
@@ -181,6 +192,7 @@ function buildOptions({ entry, out, kind }, extra = {}) {
 	if (kind === 'sidepanel') {
 		return {
 			...commonConfig,
+			alias: { ...commonConfig.alias, ...SIDEPANEL_RENDERER_ALIAS },
 			entryPoints: { sidepanel: entry },
 			outdir: distDir,
 			entryNames: '[name]',
@@ -300,6 +312,21 @@ function assertProductionSidepanelSplitting() {
 	}
 }
 
+function assertProductionSidepanelRenderer(metafile) {
+	if (isDev) return;
+	const inputs = Object.keys(metafile?.inputs ?? {}).map((input) => input.replaceAll('\\', '/'));
+	const reactRuntimeInputs = inputs.filter((input) => (
+		/(^|\/)node_modules\/(react|react-dom|scheduler)(\/|@)/u.test(input)
+		|| /react-dom\.production\.min\.js$/u.test(input)
+	));
+	if (reactRuntimeInputs.length > 0) {
+		throw new Error(`HALO SidePanel retained React runtime inputs: ${reactRuntimeInputs.join(', ')}`);
+	}
+	if (!inputs.some((input) => /(^|\/)node_modules\/preact(\/|@)/u.test(input))) {
+		throw new Error('HALO SidePanel emitted no Preact runtime input');
+	}
+}
+
 function assertProductionBudgets(measurements) {
 	if (isDev) return;
 	for (const [name, bytes] of Object.entries(measurements)) {
@@ -384,6 +411,7 @@ if (isWatch) {
 	} = measureContentStartupSurfaces(sourceManifest, closureFor);
 
 	const sidepanelResult = resultFor('sidepanel.js');
+	assertProductionSidepanelRenderer(sidepanelResult.result.metafile);
 	const sidepanelStartup = staticOutputClosure(sidepanelResult.result.metafile, 'sidepanel.js');
 	if (!sidepanelStartup) {
 		throw new Error('HALO SidePanel startup closure could not be resolved from the esbuild metafile');

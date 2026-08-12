@@ -15,7 +15,7 @@
 		"test:unit": "bun test test/exif-reader.spec.ts test/mse-player.spec.ts test/smooth-scroll.spec.ts test/smooth-scroll-keyboard-contract.spec.ts test/build-runtime-surfaces.spec.ts test/frame-tools-lazy.spec.ts test/hover-zoom-lazy.spec.ts test/module-lifecycle.spec.ts test/module-cross-context-authority.spec.ts test/module-hydration-retry.spec.ts test/module-runtime-installation-gates.spec.ts test/user-scripts-readiness-races.spec.ts test/storage-change-bus-surfaces.spec.ts test/user-scripts-storage-authority.spec.ts test/user-scripts-storage-rejection-race.spec.ts test/markdown.spec.ts test/release-tooling.spec.ts test/stable-ui-identities.spec.ts test/storage-boundaries.spec.ts test/ui-interaction-semantics.spec.ts test/hot-path-lifecycle.spec.ts test/resource-provenance.spec.ts test/registry-generation.spec.ts",
 		"test:watch": "bun test --watch test",
 		"test:smooth-scroll": "bun test test/smooth-scroll.spec.ts test/smooth-scroll-keyboard-contract.spec.ts",
-		"test:browser-chromium": "bunx playwright test test/smooth-scroll-keyboard-playwright.spec.ts test/frame-tools-lazy-playwright.spec.ts test/hover-zoom-lazy-playwright.spec.ts --workers=1",
+		"test:browser-chromium": "bunx playwright test test/smooth-scroll-keyboard-playwright.spec.ts test/frame-tools-lazy-playwright.spec.ts test/hover-zoom-lazy-playwright.spec.ts test/sidepanel-runtime-playwright.spec.ts --workers=1",
 		"test:keyboard-chromium": "bun run test:browser-chromium",
 		"test:ui": "bun run test:playwright",
 		"test:playwright": "bun run build:prod && bunx playwright test test/*-playwright.spec.ts --workers=1",
@@ -32,6 +32,7 @@
 		"jszip": "^3.10.1",
 		"pdf-lib": "^1.17.1",
 		"pinyin-pro": "^3.27.0",
+		"preact": "10.29.7",
 		"qrcode": "^1.5.4",
 		"react": "^18.3.1",
 		"react-dom": "^18.3.1"

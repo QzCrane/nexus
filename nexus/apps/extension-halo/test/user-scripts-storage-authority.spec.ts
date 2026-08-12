@@ -23,6 +23,7 @@ const editorSource = readFileSync(new URL('../src/system/userscripts/hooks/useSc
 const importHookSource = readFileSync(new URL('../src/system/userscripts/hooks/useImportExport.ts', import.meta.url), 'utf8');
 const importExportSource = readFileSync(new URL('../src/system/userscripts/import-export.ts', import.meta.url), 'utf8');
 const i18nCoreSource = readFileSync(new URL('../src/i18n/i18n-core.ts', import.meta.url), 'utf8');
+const i18nHookSource = readFileSync(new URL('../src/i18n/index.ts', import.meta.url), 'utf8');
 const sidepanelScrollSource = readFileSync(new URL('../src/entry/sidepanel-scroll.ts', import.meta.url), 'utf8');
 
 type StorageListener = (
@@ -312,6 +313,9 @@ describe('SidePanel realm storage transport', () => {
 			i18nCoreSource.indexOf('export const initI18n'),
 		);
 		expect(i18nCoreSource).toContain('storageRevision === readRevision');
+		expect(i18nHookSource.indexOf('listeners.add(onUpdate)')).toBeLessThan(
+			i18nHookSource.indexOf('onUpdate();'),
+		);
 		expect(sidepanelScrollSource.indexOf('const unsubscribeStorageChanges = subscribeHaloStorageChanges')).toBeLessThan(
 			sidepanelScrollSource.indexOf('chrome.storage.sync.get'),
 		);

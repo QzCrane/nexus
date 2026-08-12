@@ -198,7 +198,7 @@ export class UseToolStatePendingAuthority<T> {
 	constructor(
 		initialValue: T,
 		areEqual?: (left: T, right: T) => boolean,
-		cancelTimer: (timer: ReturnType<typeof setTimeout>) => void = clearTimeout,
+		cancelTimer: (timer: ReturnType<typeof setTimeout>) => void = (timer) => clearTimeout(timer),
 	) {
 		this.authorityValue = initialValue;
 		this.areEqual = areEqual ??
