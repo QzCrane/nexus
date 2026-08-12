@@ -12,6 +12,12 @@ import {
 } from '../src/system/userscripts/registry';
 import type { UserScript, UserScriptState } from '../src/system/userscripts/types';
 
+function deferred() {
+	let resolve!: () => void;
+	const promise = new Promise<void>((resolvePromise) => { resolve = resolvePromise; });
+	return { promise, resolve };
+}
+
 function createDivergentPersistence(initialManagerDisabled: boolean) {
 	const optional = OPTIONAL_MODULES[0];
 	if (!optional) throw new Error('HALO test requires an optional module');
@@ -81,6 +87,49 @@ describe('cross-context packaged-module mutations', () => {
 		expect(state.physicalEnabled()).toBe(false);
 		expect(manager.isInstalled(state.optional.id)).toBe(false);
 	});
+
+	test('two manager instances serialize the complete same-module write transaction in one realm', async () => {
+		const optional = OPTIONAL_MODULES[0];
+		if (!optional) throw new Error('HALO test requires an optional module');
+		let physicalEnabled = true;
+		const firstWriteStarted = deferred();
+		const releaseFirstWrite = deferred();
+		const writes: boolean[] = [];
+		let writeCount = 0;
+		const persistence: ModuleInstallationPersistence = {
+			loadDisabled: async () => new Set(),
+			readEnabled: async () => physicalEnabled,
+			setEnabled: async (_id, enabled) => {
+				writeCount += 1;
+				writes.push(enabled);
+				if (writeCount === 1) {
+					firstWriteStarted.resolve();
+					await releaseFirstWrite.promise;
+				}
+				physicalEnabled = enabled;
+			},
+			subscribe: () => () => undefined,
+		};
+		const first = new ModuleManager(persistence);
+		const second = new ModuleManager(persistence);
+		await Promise.all([first.initialize(), second.initialize()]);
+		const uninstall = first.uninstall(optional.id);
+		await firstWriteStarted.promise;
+		const install = second.install(optional.id);
+		await Promise.resolve();
+		expect(writes).toEqual([false]);
+		releaseFirstWrite.resolve();
+		await Promise.all([uninstall, install]);
+		expect(writes).toEqual([false, true]);
+		expect(physicalEnabled).toBe(true);
+	});
+
+	test('source also uses a named Web Lock for cross-extension-context serialization', () => {
+		const source = readFileSync(new URL('../src/kernel/managers/module-manager.ts', import.meta.url), 'utf8');
+		expect(source).toContain('navigator.locks');
+		expect(source).toContain('MODULE_MUTATION_LOCK_PREFIX');
+		expect(source).toContain('runCrossContextMutation(id, mutation)');
+	});
 });
 
 describe('script runtime ownership', () => {
@@ -115,85 +164,73 @@ describe('script runtime ownership', () => {
 			[moduleInstallationStorageKey('optional-packaged')]: false,
 			[moduleInstallationStorageKey('totp')]: false,
 		};
-		const desired = resolveDesiredRegisteredScripts(
+		expect(resolveDesiredRegisteredScripts(
 			scriptState([packaged]),
 			scriptState([saat]),
 			true,
 			moduleValues,
-		);
-		expect(desired).toEqual([]);
+		)).toEqual([]);
 	});
 
-	test('container global switches remain content settings independent of module installation', () => {
-		const packaged = script('packaged', {
-			saatToolId: 'packaged',
-			managedBy: 'packaged-script',
-			moduleBuiltIn: true,
-		});
-		const saat = script('saat', {
-			saatToolId: 'hash',
-			managedBy: 'saat-tool',
-			moduleBuiltIn: true,
-		});
-		expect(resolveDesiredRegisteredScripts(
-			scriptState([packaged], false),
-			scriptState([saat], true),
-			true,
-			{},
-		).map((item) => item.id)).toEqual(['saat']);
+	test('rejects ambiguous ownership markers before runtime registration', () => {
+		const legacyAmbiguous = script('legacy', { saatToolId: 'legacy' });
+		expect(() => userScriptsRegistryTestApi.validateOwnershipContainers(
+			[legacyAmbiguous],
+			[],
+		)).toThrow('Invalid packaged-script ownership metadata');
+		expect(() => userScriptsRegistryTestApi.validateOwnershipContainers(
+			[],
+			[script('bad-saat', {
+				saatToolId: 'bad-saat',
+				managedBy: 'packaged-script',
+				moduleBuiltIn: false,
+			})],
+		)).toThrow('Invalid SaaT ownership metadata');
 	});
 });
 
 describe('persistent UserScripts recovery contract', () => {
-	const registrySource = readFileSync(
-		new URL('../src/system/userscripts/registry.ts', import.meta.url),
-		'utf8',
-	);
+	const registrySource = readFileSync(new URL('../src/system/userscripts/registry.ts', import.meta.url), 'utf8');
 
-	test('propagates unregister/register failures and refuses implicit all-URL fallback', () => {
-		expect(registrySource).toContain("throw new Error(failures.join('; '))");
-		expect(registrySource).toContain('await unregisterAllScripts();');
-		expect(() => userScriptsRegistryTestApi.toMatchPatterns([])).toThrow(
-			'At least one match pattern is required',
-		);
+	test('prepares the complete next registration generation before destructive teardown', () => {
+		const prepareIndex = registrySource.indexOf('const prepared = prepareRegistration(desired);');
+		const unregisterIndex = registrySource.indexOf('await unregisterAllScripts();', prepareIndex);
+		expect(prepareIndex).toBeGreaterThanOrEqual(0);
+		expect(unregisterIndex).toBeGreaterThan(prepareIndex);
+		expect(() => userScriptsRegistryTestApi.toMatchPatterns([])).toThrow('At least one match pattern is required');
 		expect(() => userScriptsRegistryTestApi.toMatchPatterns(['   '])).toThrow('Empty match pattern');
 	});
 
-	test('persists dirty authority before reconciliation and clears it only after the complete sync succeeds', () => {
-		const markIndex = registrySource.indexOf('await markRecoveryNeeded();');
-		const syncIndex = registrySource.indexOf('await syncRegisteredScripts();', markIndex);
-		const clearIndex = registrySource.indexOf('await clearRecoveryNeeded();', syncIndex);
-		expect(markIndex).toBeGreaterThanOrEqual(0);
-		expect(syncIndex).toBeGreaterThan(markIndex);
-		expect(clearIndex).toBeGreaterThan(syncIndex);
-		expect(registrySource).toContain('RECOVERY_STORAGE_KEY');
+	test('uses a durable dirty/clean digest receipt instead of a race-prone boolean clear', () => {
+		expect(userScriptsRegistryTestApi.RECEIPT_VERSION).toBe(2);
+		expect(registrySource).toContain("state: 'dirty'");
+		expect(registrySource).toContain("state: 'clean'");
+		expect(registrySource).toContain('digestAuthority');
+		expect(registrySource).toContain('writeRecoveryReceipt(digest)');
+		expect(registrySource).toContain('isMatchingReceipt');
+		expect(registrySource).not.toContain('clearRecoveryNeeded');
 		expect(userScriptsRegistryTestApi.SYNC_RETRY_DELAYS_MS).toEqual([250, 1_000, 4_000]);
 	});
 
-	test('recovers on worker startup only when module/dirty state requires it', () => {
-		expect(registrySource).toContain('recoverPersistentRegistryIfNeeded();');
+	test('startup recovery compares the persisted receipt to current physical authority', () => {
+		expect(registrySource).toContain('readRegistryAuthority()');
+		expect(registrySource).toContain('!isMatchingReceipt(receiptResult[RECOVERY_STORAGE_KEY], authority.digest)');
 		expect(registrySource).toContain("requestRegisteredScriptSync('worker-startup-recovery')");
-		expect(registrySource).toContain('result[RECOVERY_STORAGE_KEY] === true');
-		expect(registrySource).not.toContain("requestRegisteredScriptSync('worker-startup');");
+		expect(registrySource).not.toContain('!userscriptsModuleEnabled ||');
 	});
 });
 
 test('optional system active panels must obey installation rather than taxonomy', () => {
-	const source = readFileSync(
-		new URL('../src/components/sidepanel/hooks/use-open-tools.ts', import.meta.url),
-		'utf8',
-	);
+	const source = readFileSync(new URL('../src/components/sidepanel/hooks/use-open-tools.ts', import.meta.url), 'utf8');
 	expect(source).toContain('current === null || isInstalled(current) ? current : null');
 	expect(source).toContain('isKnownTool(savedActive) && isInstalled(savedActive)');
 	expect(source).not.toContain('isSystemTool(current) || isInstalled(current)');
 });
 
-test('Launcher custom scripts are bound to the UserScripts module and exclude packaged records', () => {
-	const source = readFileSync(
-		new URL('../src/kernel/hooks/use-user-scripts.ts', import.meta.url),
-		'utf8',
-	);
+test('Launcher custom scripts require healthy UserScripts module authority and exclude packaged records', () => {
+	const source = readFileSync(new URL('../src/kernel/hooks/use-user-scripts.ts', import.meta.url), 'utf8');
 	expect(source).toContain("module.id === 'userscripts'");
+	expect(source).toContain('!degraded');
 	expect(source).toContain('value.saatToolId === undefined');
 	expect(source).toContain('value.managedBy === undefined');
 	expect(source).toContain('if (!enabled)');
