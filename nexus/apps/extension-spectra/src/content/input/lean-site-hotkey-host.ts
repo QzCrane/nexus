@@ -6,16 +6,20 @@ import {
 	isSpectraLeanSiteHotkeyConfigureMessage,
 	isSpectraRepeatableDefaultHotkeyAction,
 	resolveSpectraDefaultHotkeyAction,
-	type SpectraDefaultHotkeyAction,
 	type SpectraLeanSiteHotkeyBinding,
 } from '@nexus/contracts/bootstrap';
 import { runWithValidExtensionContext } from '../core/extension-context';
+import {
+	nextScalarGestureId,
+	publishDefaultScalarGesture,
+} from './default-scalar-gesture';
 import {
 	createWebsiteFirstKeyboardArbiter,
 	isEditableHotkeyEvent,
 	isTrustedHotkeyEvent,
 	subscribeDocumentStartPhysicalHotkeyRelease,
 } from './hotkey-event';
+import { showToast } from '../ui/toast';
 
 interface LeanSiteHotkeyHost {
 	revision: 1;
@@ -28,11 +32,10 @@ interface LeanSiteHotkeyWindow extends Window {
 
 interface ActiveBinding {
 	binding: SpectraLeanSiteHotkeyBinding;
-	inFlight: boolean;
-	pendingPulses: number;
+	gesture: string;
+	repeated: boolean;
 }
 
-const MAX_PENDING_PULSES = 80;
 const hostWindow = window as LeanSiteHotkeyWindow;
 const activeByCode = new Map<string, ActiveBinding>();
 let bindingByChord = new Map<string, SpectraLeanSiteHotkeyBinding>();
@@ -80,82 +83,65 @@ function isBrowserRefreshShortcut(event: KeyboardEvent): boolean {
 		|| (event.code === 'KeyR' && !event.altKey && (event.ctrlKey || event.metaKey));
 }
 
-function controlRequest(action: SpectraDefaultHotkeyAction, pulses: number): unknown {
-	const requestId = crypto.randomUUID();
-	if (action === 'volume_up' || action === 'volume_down') {
-		return {
-			protocolVersion: SPECTRA_PROTOCOL_VERSION,
-			requestId,
-			type: 'spectra.control.operation.submit',
-			payload: {
-				source: 'hotkey',
-				target: null,
-				operation: 'effective-volume',
-				payload: {
-					operation: 'delta',
-					value: (action === 'volume_up' ? 10 : -10) * pulses,
-				},
-			},
-		};
-	}
-	if (action === 'volume_mute') {
-		return {
-			protocolVersion: SPECTRA_PROTOCOL_VERSION,
-			requestId,
-			type: 'spectra.control.intent.submit',
-			payload: {
-				source: 'hotkey',
-				requestedCoverage: 'active-target',
-				target: null,
-				mutations: [{ field: 'mediaMuted', operation: 'toggle' }],
-			},
-		};
-	}
+function triggerRequest(active: ActiveBinding, phase: 'press' | 'release', repeated: boolean): unknown {
 	return {
 		protocolVersion: SPECTRA_PROTOCOL_VERSION,
-		requestId,
-		type: 'spectra.control.intent.submit',
+		requestId: crypto.randomUUID(),
+		type: 'spectra.content.default-hotkey.trigger',
 		payload: {
-			source: 'hotkey',
-			requestedCoverage: 'active-target',
-			target: null,
-			mutations: [{
-				field: 'speed',
-				operation: 'delta',
-				value: (action === 'speed_up' ? 0.1 : -0.1) * pulses,
-			}],
+			action: active.binding.action,
+			phase,
+			gesture: active.gesture,
+			repeated,
+			disposition: 'site-page',
 		},
 	};
 }
 
-function submitPulses(held: ActiveBinding, pulses: number): void {
-	if (disposed || held.inFlight || pulses <= 0) return;
-	held.inFlight = true;
-	void runWithValidExtensionContext(
-		() => chrome.runtime.sendMessage(controlRequest(held.binding.action, pulses)),
+function responseError(value: unknown): string | null {
+	if (!value || typeof value !== 'object') return null;
+	const candidate = value as { ok?: unknown; error?: unknown };
+	if (candidate.ok !== false || !candidate.error || typeof candidate.error !== 'object') return null;
+	const message = (candidate.error as { message?: unknown }).message;
+	return typeof message === 'string' && message ? message : 'Site hotkey failed';
+}
+
+function sendPhase(active: ActiveBinding, phase: 'press' | 'release', repeated: boolean): Promise<void> {
+	return runWithValidExtensionContext(
+		() => chrome.runtime.sendMessage(triggerRequest(active, phase, repeated)),
 		dispose,
-	).catch(() => undefined).finally(() => {
-		held.inFlight = false;
+	).then((response) => {
+		if (phase !== 'press') return;
+		const error = responseError(response);
+		if (error) showToast(error, { shortcutGesture: active.gesture });
 	});
 }
 
-function pressBinding(held: ActiveBinding, repeated: boolean): void {
-	if (held.binding.action === 'volume_mute' && repeated) return;
-	if (held.inFlight) {
-		if (repeated) {
-			held.pendingPulses = Math.min(MAX_PENDING_PULSES, held.pendingPulses + 1);
-		}
-		return;
-	}
-	const pulses = Math.min(MAX_PENDING_PULSES, held.pendingPulses + 1);
-	held.pendingPulses = 0;
-	submitPulses(held, pulses);
+function publishPhase(active: ActiveBinding, phase: 'press' | 'release' | 'settled'): void {
+	publishDefaultScalarGesture({
+		action: active.binding.action,
+		gesture: active.gesture,
+		phase,
+		repeated: active.repeated,
+	});
 }
 
-function releaseHeld(held: ActiveBinding): void {
-	// The admitted physical press may finish, but queued repeats never self-drain
-	// after keyup/blur/visibility retirement.
-	held.pendingPulses = 0;
+function pressBinding(active: ActiveBinding, repeated: boolean): void {
+	if (active.binding.action === 'volume_mute' && repeated) return;
+	if (repeated) active.repeated = true;
+	publishPhase(active, 'press');
+	void sendPhase(active, 'press', repeated).catch((error) => {
+		if (!disposed) showToast(error instanceof Error ? error.message : String(error), {
+			shortcutGesture: active.gesture,
+		});
+	});
+}
+
+function releaseHeld(active: ActiveBinding): void {
+	publishPhase(active, 'release');
+	void sendPhase(active, 'release', active.repeated)
+		.catch(() => undefined)
+		.finally(() => publishPhase(active, 'settled'));
 }
 
 function releaseCode(code: string): void {
@@ -205,18 +191,17 @@ function onSettled(
 	event.preventDefault();
 	if (!event.repeat) {
 		releaseCode(event.code);
-		const held: ActiveBinding = {
+		const active: ActiveBinding = {
 			binding,
-			inFlight: false,
-			pendingPulses: 0,
+			gesture: nextScalarGestureId('site'),
+			repeated: false,
 		};
-		activeByCode.set(event.code, held);
-		pressBinding(held, false);
+		activeByCode.set(event.code, active);
+		pressBinding(active, false);
 		return;
 	}
-	const held = activeByCode.get(event.code);
-	if (!held) return;
-	pressBinding(held, true);
+	const active = activeByCode.get(event.code);
+	if (active) pressBinding(active, true);
 }
 
 function syncArbiter(): void {
@@ -262,12 +247,21 @@ const onBlur = (): void => releaseAll();
 const onVisibilityChange = (): void => {
 	if (document.hidden) releaseAll();
 };
-const onPageHide = (): void => dispose();
+const onPageHide = (event: PageTransitionEvent): void => {
+	releaseAll();
+	// BFCache keeps this document and its isolated-world JS realm alive. Keep the
+	// exact host/listeners installed so the restored page does not rely on stale
+	// Background injection bookkeeping. A real navigation still retires it.
+	if (!event.persisted) dispose();
+};
 
 function dispose(): void {
 	if (disposed) return;
 	disposed = true;
-	suspendConfiguration();
+	// An invalid extension context cannot deliver a reliable release; clear local
+	// ownership without recursively trying the already-invalid messaging path.
+	activeByCode.clear();
+	bindingByChord.clear();
 	arbiterDispose?.();
 	arbiterDispose = null;
 	physicalReleaseDispose?.();
@@ -305,8 +299,8 @@ if (existing?.revision !== 1) {
 	};
 	chrome.runtime.onMessage.addListener(runtimeMessageListener);
 	window.addEventListener('blur', onBlur);
-	window.addEventListener('pagehide', onPageHide, { once: true });
+	window.addEventListener('pagehide', onPageHide);
 	document.addEventListener('visibilitychange', onVisibilityChange);
 }
 
-export const leanSiteHotkeyHostTestApi = { controlRequest, MAX_PENDING_PULSES };
+export const leanSiteHotkeyHostTestApi = { triggerRequest, responseError };
