@@ -192,7 +192,7 @@ export const SYSTEM_CORE_CONSUMERS: SystemConsumer[] = [
 				level: 'idle',
 				descriptionKey: 'impact.message_handler',
 				sourceFile: 'components/sidepanel/use-sidepanel-state.ts',
-				sourceLine: 97,
+				sourceLine: 109,
 				sourceDetail: 'HALO_ACTIVATE_TOOL side-panel router',
 			},
 		],
