@@ -19,7 +19,7 @@ const DEFAULT_FORM: EditForm = {
 	runAt: 'document_end',
 };
 
-export function useScriptEditor() {
+export function useScriptEditor(_loadScripts?: () => Promise<void>) {
 	const { t } = useTranslation();
 	const { showToast } = useToast();
 	const [showEditor, setShowEditor] = useState(false);
