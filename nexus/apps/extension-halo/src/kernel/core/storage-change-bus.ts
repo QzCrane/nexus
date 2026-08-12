@@ -26,7 +26,14 @@ function createState(): HaloStorageChangeBusState {
 	state.onStorageChanged = (changes, areaName) => {
 		// Snapshot before delivery. Re-entrant unsubscribe/resubscribe affects only
 		// the next storage event instead of recursively extending this iteration.
-		for (const subscriber of [...state.subscribers]) subscriber(changes, areaName);
+		// A broken domain subscriber must never starve later independent domains.
+		for (const subscriber of [...state.subscribers]) {
+			try {
+				subscriber(changes, areaName);
+			} catch (error: unknown) {
+				console.error('[HALO:StorageChangeBus] Subscriber failed', error);
+			}
+		}
 	};
 	return state;
 }
