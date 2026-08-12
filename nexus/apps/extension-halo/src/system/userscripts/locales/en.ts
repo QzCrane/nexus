@@ -45,6 +45,7 @@ export const en = {
 		executed: '{{name}} executed!',
 		injectionFailed: 'Injection failed',
 		allowUserScriptsRequired: 'Enable “Allow User Scripts” in this extension’s details, then return to HALO.',
+		registrySyncFailed: 'User Scripts access is enabled, but Background registry synchronization failed. Try again.',
 		scripts: 'scripts',
 		active: 'active',
 		never: 'Never',
