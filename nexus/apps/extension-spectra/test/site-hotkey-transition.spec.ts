@@ -10,6 +10,10 @@ function port(events: string[], failures: Set<string> = new Set()): SiteHotkeyTr
 			events.push('barrier');
 			if (failures.has('barrier')) throw new Error('barrier failed');
 		},
+		async suspendFull() {
+			events.push('suspend-full');
+			if (failures.has('suspend')) throw new Error('suspend failed');
+		},
 		async configureLean() {
 			events.push('configure-lean');
 			if (failures.has('lean')) throw new Error('lean failed');
@@ -25,16 +29,20 @@ function port(events: string[], failures: Set<string> = new Set()): SiteHotkeyTr
 }
 
 describe('exact site-hotkey ownership transition', () => {
-	test('none empties lean first and then releases the obsolete full owner', async () => {
+	test('none empties lean, suspends any resident heavy listener, then releases obsolete full ownership', async () => {
 		const events: string[] = [];
 		expect(await reconcileSiteHotkeyTransition({
 			mode: 'none',
 			previousFullCapability: 'site:example.com',
 		}, port(events))).toBeNull();
-		expect(events).toEqual(['barrier', 'release-full:site:example.com']);
+		expect(events).toEqual([
+			'barrier',
+			'suspend-full',
+			'release-full:site:example.com',
+		]);
 	});
 
-	test('full to lean empties lean state, releases heavy owner, then installs the new lean projection', async () => {
+	test('full to lean suspends the heavy listener before releasing its lease and enabling lean', async () => {
 		const events: string[] = [];
 		expect(await reconcileSiteHotkeyTransition({
 			mode: 'lean',
@@ -42,12 +50,19 @@ describe('exact site-hotkey ownership transition', () => {
 		}, port(events))).toBeNull();
 		expect(events).toEqual([
 			'barrier',
+			'suspend-full',
 			'release-full:site:example.com',
 			'configure-lean',
 		]);
 	});
 
-	test('lean to full keeps the host empty until the heavy runtime is ready', async () => {
+	test('fresh lean still suspends a surviving heavy listener not remembered by the new worker', async () => {
+		const events: string[] = [];
+		expect(await reconcileSiteHotkeyTransition({ mode: 'lean' }, port(events))).toBeNull();
+		expect(events).toEqual(['barrier', 'suspend-full', 'configure-lean']);
+	});
+
+	test('lean to full keeps the lean host empty until the heavy runtime is ready', async () => {
 		const events: string[] = [];
 		expect(await reconcileSiteHotkeyTransition({
 			mode: 'full',
@@ -56,7 +71,7 @@ describe('exact site-hotkey ownership transition', () => {
 		expect(events).toEqual(['barrier', 'ensure-full:site:example.com']);
 	});
 
-	test('same full capability still barriers stale lean state without churning the heavy lease', async () => {
+	test('same full capability barriers stale lean state without churning the heavy lease', async () => {
 		const events: string[] = [];
 		expect(await reconcileSiteHotkeyTransition({
 			mode: 'full',
@@ -89,13 +104,22 @@ describe('exact site-hotkey ownership transition', () => {
 		expect(events).toEqual(['barrier']);
 	});
 
+	test('heavy suspension failure retains the old full lease and never enables lean', async () => {
+		const events: string[] = [];
+		await expect(reconcileSiteHotkeyTransition({
+			mode: 'lean',
+			previousFullCapability: 'site:example.com',
+		}, port(events, new Set(['suspend'])))).rejects.toThrow('suspend failed');
+		expect(events).toEqual(['barrier', 'suspend-full']);
+	});
+
 	test('lean failure is visible and never falls back to full', async () => {
 		const events: string[] = [];
 		await expect(reconcileSiteHotkeyTransition(
 			{ mode: 'lean' },
 			port(events, new Set(['lean'])),
 		)).rejects.toThrow('lean failed');
-		expect(events).toEqual(['barrier', 'configure-lean']);
+		expect(events).toEqual(['barrier', 'suspend-full', 'configure-lean']);
 		expect(events.some((event) => event.startsWith('ensure-full:'))).toBe(false);
 	});
 
