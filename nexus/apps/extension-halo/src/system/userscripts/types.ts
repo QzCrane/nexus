@@ -1,9 +1,12 @@
 // goal: UserScripts type definitions - full feature parity with Tampermonkey
 // eff: Unified types for script management
 
+import type { ScriptRuntimeOwner } from '../../kernel/core/script-runtime-ownership';
 import type { ScriptType } from '../../kernel/registry/taxonomy';
+export type { ScriptRuntimeOwner } from '../../kernel/core/script-runtime-ownership';
 export type { ScriptType };
 export type UserScriptRunAt = 'document_start' | 'document_end' | 'document_idle';
+export type UserScriptManagedBy = ScriptRuntimeOwner;
 
 export interface UserScript {
 	id: string;
@@ -31,8 +34,11 @@ export interface UserScript {
 	// Timestamps
 	createdAt: number;
 	updatedAt: number;
-	// Present for registry-managed built-in scripts. User-authored scripts omit it.
+	// Registry-managed packaged scripts/SaaT runtimes carry explicit ownership.
+	// Custom user-authored scripts omit all three fields.
 	saatToolId?: string;
+	managedBy?: UserScriptManagedBy;
+	moduleBuiltIn?: boolean;
 }
 
 export interface UserScriptState {

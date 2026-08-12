@@ -1,64 +1,69 @@
 // goal: React hook for module manager
 // eff: Reactive module state access in components
 
-import { useState, useEffect, useCallback } from 'react';
-import { type ModuleManager, getModuleManager } from '../managers/module-manager';
+import { useState, useEffect, useCallback, useSyncExternalStore } from 'react';
+import {
+	type ModuleManager,
+	type ModuleManagerSnapshot,
+	getModuleManager,
+} from '../managers/module-manager';
 import { ALL_MODULES, type ModuleStatus } from '../registry/module-registry';
 import type { ModuleMeta } from '../core/tool-registry-types';
 
+const BUILTIN_MODULES = Object.freeze(ALL_MODULES.filter((module) => module.builtIn));
+const FALLBACK_MODULE_SNAPSHOT: ModuleManagerSnapshot = Object.freeze({
+	revision: 0,
+	degraded: true,
+	installedModules: BUILTIN_MODULES,
+	availableModules: Object.freeze([]) as readonly ModuleMeta[],
+});
+
 interface UseModuleManagerResult {
 	loading: boolean;
-	installedModules: ModuleMeta[];
-	availableModules: ModuleMeta[];
+	degraded: boolean;
+	installedModules: readonly ModuleMeta[];
+	availableModules: readonly ModuleMeta[];
 	getStatus: (id: string) => ModuleStatus;
 	install: (id: string) => Promise<void>;
 	uninstall: (id: string) => Promise<void>;
+	retry: () => Promise<boolean>;
 	isInstalled: (id: string) => boolean;
 	isCore: (id: string) => boolean;
+}
+
+function isBuiltIn(id: string): boolean {
+	return ALL_MODULES.find((module) => module.id === id)?.builtIn === true;
 }
 
 export const useModuleManager = (): UseModuleManagerResult => {
 	const [manager, setManager] = useState<ModuleManager | null>(null);
 	const [loading, setLoading] = useState(true);
-	const [, forceUpdate] = useState(0);
 
 	useEffect(() => {
 		let cancelled = false;
-		// rule: capture the unsubscribe handle on a closure variable so the effect's
-		// cleanup function can invoke it. The previous `return unsub` was the resolved
-		// value of the promise callback, not the useEffect cleanup — so the listener
-		// was never removed and accumulated across every mount/unmount cycle, leaking
-		// memory and forcing stale-state updates on unmounted components.
-		let unsubscribe: (() => void) | null = null;
-
-		getModuleManager().then((m) => {
+		void getModuleManager().then((nextManager) => {
 			if (cancelled) return;
-			setManager(m);
+			setManager(nextManager);
 			setLoading(false);
-
-			// Subscribe to changes
-			unsubscribe = m.subscribe(() => forceUpdate((n) => n + 1));
-		}).catch((e) => {
-			// rule: swallow rejection so the floating promise doesn't throw an
-			// unhandled rejection. Preserve the cancelled guard so we don't
-			// setLoading on an unmounted component.
+		}).catch((error: unknown) => {
 			if (!cancelled) setLoading(false);
-			console.error('useModuleManager: getModuleManager failed', e);
+			console.error('useModuleManager: getModuleManager failed', error);
 		});
-
-		return () => {
-			cancelled = true;
-			if (unsubscribe) {
-				unsubscribe();
-				unsubscribe = null;
-			}
-		};
+		return () => { cancelled = true; };
 	}, []);
 
+	const subscribe = useCallback((listener: () => void) => (
+		manager ? manager.subscribe(listener) : () => {}
+	), [manager]);
+	const getSnapshot = useCallback(
+		() => manager?.getSnapshot() ?? FALLBACK_MODULE_SNAPSHOT,
+		[manager],
+	);
+	const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+
 	const getStatus = useCallback((id: string): ModuleStatus => {
-		if (!manager) return 'available';
-		const state = manager.getState(id);
-		return state?.status || 'available';
+		if (!manager) return isBuiltIn(id) ? 'installed' : 'available';
+		return manager.getState(id)?.status ?? 'available';
 	}, [manager]);
 
 	const install = useCallback(async (id: string): Promise<void> => {
@@ -71,18 +76,26 @@ export const useModuleManager = (): UseModuleManagerResult => {
 		await manager.uninstall(id);
 	}, [manager]);
 
-	const isInstalled = useCallback((id: string): boolean => {
-		if (!manager) return false;
-		return manager.isInstalled(id);
-	}, [manager]);
+	const retry = useCallback(async (): Promise<boolean> => (
+		manager ? manager.retryInstallationState() : false
+	), [manager]);
 
-	const isCore = useCallback((id: string): boolean => {
-		const meta = ALL_MODULES.find((m) => m.id === id);
-		return meta?.builtIn === true;
-	}, []);
+	const isInstalled = useCallback((id: string): boolean => (
+		manager ? manager.isInstalled(id) : isBuiltIn(id)
+	), [manager]);
 
-	const installedModules = manager?.getInstalledModules() || [];
-	const availableModules = manager?.getAvailableModules() || [];
+	const isCore = useCallback((id: string): boolean => isBuiltIn(id), []);
 
-	return { loading, installedModules, availableModules, getStatus, install, uninstall, isInstalled, isCore };
+	return {
+		loading,
+		degraded: snapshot.degraded,
+		installedModules: snapshot.installedModules,
+		availableModules: snapshot.availableModules,
+		getStatus,
+		install,
+		uninstall,
+		retry,
+		isInstalled,
+		isCore,
+	};
 };

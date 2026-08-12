@@ -4,6 +4,7 @@ import type { ToolId, ToolMeta, HaloSettings } from '../../kernel';
 import { useTranslation } from '../../i18n';
 import { commonStyles } from './layouts.styles';
 import { getCategoryColor, StatusIndicators, PinOverlay } from './LauncherToolItemParts';
+import { useToolPreload } from '../core/lazy-tool-loader';
 
 interface LauncherToolItemProps {
 	tool: ToolMeta;
@@ -30,6 +31,7 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 	const { t } = useTranslation();
 	const [isHovered, setIsHovered] = useState(false);
 	const [isPinHovered, setIsPinHovered] = useState(false);
+	const { preload, cancelPreload } = useToolPreload();
 	
 	const isReady = tool.status === 'ready' || tool.status === 'beta';
 	const isPinned = settings?.pinnedTools?.includes(tool.id);
@@ -49,8 +51,15 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 	return (
 		<fieldset
 			aria-label={t(`tools.${tool.id}.name`, { defaultValue: tool.name })}
-			onMouseEnter={() => setIsHovered(true)}
-			onMouseLeave={() => { setIsHovered(false); setIsPinHovered(false); }}
+			onMouseEnter={() => {
+				setIsHovered(true);
+				if (!isScriptTool && isReady) preload(tool.id as ToolId);
+			}}
+			onMouseLeave={() => {
+				cancelPreload();
+				setIsHovered(false);
+				setIsPinHovered(false);
+			}}
 			style={{ 
 				position: 'relative', opacity: isDragging ? 0.4 : 1, width: '100%',
 				border: 0, margin: 0, padding: 0, minInlineSize: 0,

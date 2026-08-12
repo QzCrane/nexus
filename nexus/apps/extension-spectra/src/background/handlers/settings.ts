@@ -20,8 +20,6 @@ import { withContentOSDMessages } from '../../shared/i18n/content-osd';
 import { updateShortcutSettings } from '../shortcuts';
 import { reconcileAllHotkeyRuntimeLeases } from '../runtime-loader';
 
-// note: one-release compatibility adapter for content contexts that were loaded
-// before protocol v2. New callers and current content contexts never emit v1.
 async function broadcastLegacyGlobalSettingsForOneRelease(
 	tabId: number,
 	settings: ReturnType<typeof withContentOSDMessages>,
@@ -32,6 +30,10 @@ async function broadcastLegacyGlobalSettingsForOneRelease(
 	}).catch(() => undefined);
 }
 
+function isHotkeyScope(scope: SettingsPatch['scope']): boolean {
+	return scope === 'hotkey-slots' || scope === 'hotkey-site' || scope === 'hotkey-site-mutation';
+}
+
 async function broadcastSettings(snapshot: SettingsSnapshot, scope: SettingsPatch['scope']): Promise<void> {
 	const event: SpectraEventEnvelope<'spectra.settings.changed'> = {
 		protocolVersion: SPECTRA_PROTOCOL_VERSION,
@@ -39,28 +41,36 @@ async function broadcastSettings(snapshot: SettingsSnapshot, scope: SettingsPatc
 		payload: snapshot,
 	};
 	const extensionBroadcast = chrome.runtime.sendMessage(event).catch(() => undefined);
-	const broadcasts: Array<Promise<unknown>> = [extensionBroadcast];
-	if (scope === 'hotkey-slots' || scope === 'hotkey-site' || scope === 'hotkey-site-mutation') {
+
+	if (isHotkeyScope(scope)) {
 		updateShortcutSettings(snapshot.hotkeySettings);
-		broadcasts.push(reconcileAllHotkeyRuntimeLeases(snapshot.hotkeySettings));
 		const hotkeyEvent: SpectraEventEnvelope<'spectra.hotkeys.changed'> = {
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			type: 'spectra.hotkeys.changed',
 			payload: snapshot.hotkeySettings,
 		};
 		const tabs = await chrome.tabs.query({});
-		broadcasts.push(...tabs.map((tab) => (
+		// The heavy content listener must observe the new physical settings before
+		// ownership reconciliation. Reconciliation may then send an exact-document
+		// `sites:{}` suspension for lean/none. Running these as siblings would let
+		// a late broad settings event re-enable a heavy listener after lean won.
+		await Promise.all(tabs.map((tab) => (
 			tab.id
 				? chrome.tabs.sendMessage(tab.id, hotkeyEvent).catch(() => undefined)
 				: Promise.resolve()
 		)));
+		await reconcileAllHotkeyRuntimeLeases(snapshot.hotkeySettings);
+		await extensionBroadcast;
+		return;
 	}
+
 	if (scope !== 'global') {
-		await Promise.all(broadcasts);
+		await extensionBroadcast;
 		return;
 	}
 	const tabs = await chrome.tabs.query({});
-	broadcasts.push(
+	await Promise.all([
+		extensionBroadcast,
 		...tabs.map(async (tab) => {
 			if (!tab.id) return;
 			const settings = withContentOSDMessages(snapshot.globalSettings);
@@ -74,8 +84,7 @@ async function broadcastSettings(snapshot: SettingsSnapshot, scope: SettingsPatc
 				broadcastLegacyGlobalSettingsForOneRelease(tab.id, settings),
 			]);
 		}),
-	);
-	await Promise.all(broadcasts);
+	]);
 }
 
 function isAttemptedSettingsV2Message(message: unknown): boolean {
@@ -116,18 +125,18 @@ function registerV2SettingsListener(): void {
 				}
 				if (message.type === 'spectra.settings.patch') {
 					const payload = message.payload;
-					const snapshot = await settingsRepository.applyPatch(
+					const next = await settingsRepository.applyPatch(
 						payload.patch,
 						payload.expectedRevision,
 					);
 					if (payload.patch.scope === 'legacy-theme') {
-						if (snapshot.revision !== payload.expectedRevision) {
-							await broadcastSettings(snapshot, 'global');
+						if (next.revision !== payload.expectedRevision) {
+							await broadcastSettings(next, 'global');
 						}
 					} else {
-						await broadcastSettings(snapshot, payload.patch.scope);
+						await broadcastSettings(next, payload.patch.scope);
 					}
-					return rpcSuccess(snapshot);
+					return rpcSuccess(next);
 				}
 				if (message.type === 'spectra.settings.flush') {
 					await settingsRepository.flush();
@@ -153,7 +162,6 @@ function registerV2SettingsListener(): void {
 	});
 }
 
-// eff: registers listeners for SETTINGS_GET and SETTINGS_UPDATE actions
 export function registerSettingsHandlers(): void {
 	void settingsRepository.initialize();
 	registerV2SettingsListener();
@@ -168,4 +176,3 @@ export function registerSettingsHandlers(): void {
 		return { success: true };
 	});
 }
-

@@ -12,7 +12,7 @@
 		"level": "low",
 		"descriptionKey": "impact.mechanism.wheel_listener",
 		"sourceFile": "content/smooth-scroll.ts",
-		"sourceLine": 70,
+		"sourceLine": 84,
 		"sourceDetail": "window.addEventListener('wheel', onWheel, { passive: false })"
 	}
 }

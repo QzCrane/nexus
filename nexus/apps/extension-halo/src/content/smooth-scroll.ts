@@ -1,8 +1,13 @@
 // goal: Smooth Scroll content script
-// inv: Logic split into handlers and state
+// inv: packaged-module install authority and feature settings must both allow input ownership
 
 import { clearQueue, configure } from '../tools/smooth-scroll/engine';
 import { STORAGE_KEY } from '../tools/smooth-scroll/types';
+import {
+	moduleInstallationStorageKey,
+	readOptionalPackagedModuleChangeEnabled,
+	readOptionalPackagedModuleEnabled,
+} from '../kernel/core/module-installation-runtime';
 import {
 	resetRuntimeState,
 	settings,
@@ -16,9 +21,18 @@ import {
 	resetInputHandlers,
 } from './smooth-scroll-handlers';
 
+const MODULE_ID = 'smooth-scroll';
+const MODULE_STORAGE_KEY = moduleInstallationStorageKey(MODULE_ID);
+
 let settingsHydrated = false;
+let moduleHydrated = false;
+let moduleEnabled = false;
 let observationListenersAttached = false;
 let activeInputListenersAttached = false;
+
+const runtimeEnabled = (): boolean => (
+	settingsHydrated && moduleHydrated && moduleEnabled && settings.enabled
+);
 
 const resetDocumentRuntime = (): void => {
 	clearQueue();
@@ -31,15 +45,15 @@ const onVisibilityChange = (): void => {
 };
 
 const onObservedKeydown = (event: KeyboardEvent): void => {
-	// The capture observer is registered at document_start, but it remains
-	// inert until storage hydration proves that the tool is enabled. This keeps
-	// pre-site event order without transiently overriding a stored disabled state.
-	if (!settingsHydrated || !settings.enabled) return;
+	// The capture observer is registered at document_start so reinstalling the
+	// packaged module does not create a late listener-order variant. It remains
+	// inert until both persistent authorities prove input ownership is enabled.
+	if (!runtimeEnabled()) return;
 	onKeydownCapture(event);
 };
 
 const onObservedKeyup = (event: KeyboardEvent): void => {
-	if (!settingsHydrated) return;
+	if (!runtimeEnabled()) return;
 	onKeyup(event);
 };
 
@@ -79,20 +93,24 @@ const detachActiveInputListeners = (): void => {
 	resetDocumentRuntime();
 };
 
-const updateSettings = (value: unknown): void => {
-	const wasEnabled = settings.enabled;
-	const next = updateStateSettings(value);
-	configure(next.animationTime, next.easing, next.pulseScale);
-
-	if (!settingsHydrated) return;
-	if (next.enabled && !wasEnabled) attachActiveInputListeners();
-	else if (!next.enabled && wasEnabled) detachActiveInputListeners();
+const reconcileInputOwnership = (): void => {
+	if (runtimeEnabled()) attachActiveInputListeners();
+	else detachActiveInputListeners();
 };
 
-// rule: guard against double-init and return a cleanup function so callers (e.g.
-// tests, hot reload) can detach the storage listener. Without the guard, repeated
-// init() calls would stack N storage.onChanged listeners that each called
-// updateSettings, amplifying one storage write into N updates.
+const updateSettings = (value: unknown): void => {
+	const next = updateStateSettings(value);
+	configure(next.animationTime, next.easing, next.pulseScale);
+	reconcileInputOwnership();
+};
+
+const updateModuleEnabled = (enabled: boolean): void => {
+	if (moduleEnabled === enabled && moduleHydrated) return;
+	moduleEnabled = enabled;
+	moduleHydrated = true;
+	reconcileInputOwnership();
+};
+
 let initStarted = false;
 export async function init(): Promise<() => void> {
 	if (initStarted) return () => {};
@@ -104,40 +122,59 @@ export async function init(): Promise<() => void> {
 	}
 
 	configure(settings.animationTime, settings.easing, settings.pulseScale);
-	// Register the observation seam before the first await. The observer does
-	// not act until settingsHydrated becomes true, so registration order and
-	// persisted enablement are both preserved.
 	attachObservationListeners();
 
-	let hydrationRevision = 0;
+	let settingsRevision = 0;
+	let moduleRevision = 0;
 	const listener = (
 		changes: { [key: string]: chrome.storage.StorageChange },
 		areaName: string,
 	): void => {
-		if (areaName !== 'sync' || !changes[STORAGE_KEY]) return;
-		hydrationRevision++;
-		updateSettings(changes[STORAGE_KEY].newValue);
+		if (areaName === 'sync' && changes[STORAGE_KEY]) {
+			settingsRevision += 1;
+			settingsHydrated = true;
+			updateSettings(changes[STORAGE_KEY].newValue);
+			return;
+		}
+		if (areaName === 'local' && changes[MODULE_STORAGE_KEY]) {
+			moduleRevision += 1;
+			updateModuleEnabled(
+				readOptionalPackagedModuleChangeEnabled(changes[MODULE_STORAGE_KEY]),
+			);
+		}
 	};
 	chrome.storage.onChanged.addListener(listener);
 
-	const revisionBeforeRestore = hydrationRevision;
-	try {
-		const result = await chrome.storage.sync.get([STORAGE_KEY]);
-		// A live storage event that arrives during hydration is newer than the
-		// get() snapshot and must win instead of being overwritten by stale data.
-		if (hydrationRevision === revisionBeforeRestore) {
-			updateSettings(result[STORAGE_KEY]);
+	const settingsRevisionBeforeHydration = settingsRevision;
+	const moduleRevisionBeforeHydration = moduleRevision;
+	const [settingsResult, moduleResult] = await Promise.allSettled([
+		chrome.storage.sync.get([STORAGE_KEY]),
+		readOptionalPackagedModuleEnabled(MODULE_ID),
+	]);
+
+	if (settingsRevision === settingsRevisionBeforeHydration) {
+		settingsHydrated = true;
+		if (settingsResult.status === 'fulfilled') updateSettings(settingsResult.value[STORAGE_KEY]);
+		else {
+			console.warn('[HALO:Scroll] Failed to restore settings; disabling input ownership', settingsResult.reason);
+			updateSettings({ ...settings, enabled: false });
 		}
-	} catch (error: unknown) {
-		console.warn('[HALO:Scroll] Failed to restore settings; using defaults', error);
+	}
+	if (moduleRevision === moduleRevisionBeforeHydration) {
+		if (moduleResult.status === 'fulfilled') updateModuleEnabled(moduleResult.value);
+		else {
+			console.warn('[HALO:Scroll] Failed to restore module installation; disabling input ownership', moduleResult.reason);
+			updateModuleEnabled(false);
+		}
 	}
 
-	settingsHydrated = true;
-	if (settings.enabled) attachActiveInputListeners();
+	reconcileInputOwnership();
 	console.log('[HALO:Scroll] Ready');
 
 	return () => {
 		settingsHydrated = false;
+		moduleHydrated = false;
+		moduleEnabled = false;
 		detachActiveInputListeners();
 		detachObservationListeners();
 		chrome.storage.onChanged.removeListener(listener);

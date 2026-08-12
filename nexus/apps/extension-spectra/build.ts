@@ -60,6 +60,11 @@ const entries = [
 		sharingDomain: 'isolated-bootstrap',
 	},
 	{
+		entry: 'src/content/input/lean-site-hotkey-host.ts',
+		out: 'content-site-hotkeys.js',
+		sharingDomain: 'isolated-site-hotkey-host',
+	},
+	{
 		entry: 'src/content/injector/fullscreen-bridge.ts',
 		out: 'content-fullscreen-bridge.js',
 		sharingDomain: 'main-fullscreen-bridge',

@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: halo-architecture
-last_reviewed: 2026-08-08
+last_reviewed: 2026-08-09
 ---
 
 # HALO architecture
@@ -35,7 +35,7 @@ HALO content code is partitioned by **frame scope × lifecycle phase × capabili
 | `tools/_hover-zoom/runtime.js` | top document only after a valid preview intent | on-demand ESM | packaged Hover Zoom resolver/viewer/MSE/hotkey preview implementation; loaded through the existing `tools/*` web-accessible resource boundary |
 | `content-clipboard.js` | all matching frames | `document_idle` | minimal copy capture host; copy listener follows Clipboard enablement |
 | `background.js` | extension service worker | event-driven | lifecycle, context menus, user-script reconciliation, privileged browser operations |
-| `sidepanel-init.js` | SidePanel document | pre-React | theme and scroll/input paint-critical initialization only |
+| `sidepanel-init.js` | SidePanel document | pre-renderer | theme and scroll/input paint-critical initialization only |
 | `sidepanel.js` | SidePanel document | ESM startup | application shell; tool-host infrastructure and tool panels remain physical lazy chunks |
 
 Rules:
@@ -45,7 +45,7 @@ Rules:
 - An all-frame surface may not import unrelated tool/UI code. Cross-frame capability expansion requires an explicit manifest/test/architecture change.
 - A static all-frame bootstrap may delegate to extension-owned packaged code only through a tested lazy boundary. A cold cleanup command must not instantiate or load a runtime that has never been activated.
 - The static Hover Zoom host may own only lightweight settings, pointer/key state, resource-key matching, trigger validation, highlight behavior, and synchronous page-input ownership. Resolver/viewer/MSE/hotkey preview implementation must remain behind the packaged on-demand runtime boundary.
-- `React.lazy(import())` is only considered lazy when the production build emits physical ESM chunks. Production build failure is required if SidePanel splitting silently collapses.
+- A renderer `lazy(import())` boundary is only considered lazy when the production build emits physical ESM chunks. The generated loader owns one memoized import promise shared by hover preload and lazy rendering; application code must not inspect renderer-private fields. Production build failure is required if SidePanel splitting silently collapses.
 - Production measurement distinguishes entry bytes, static startup closure, and total eventual lazy bytes. These quantities are not interchangeable.
 - `tool`, `script`, and `system` are distinct plugin types with explicit boundaries.
 - Panel components do not act as Background authorities for background tasks.
@@ -66,14 +66,16 @@ tools/<id>/
 
 - **Registry**: Executable source for identity, category, loading metadata, permissions, and resource-impact provenance. Taxonomy provides virtual views (active, scripts, system).
 - **Install-time script projection**: the registry generator emits `public/script-plugin-runtime.json` containing only `{ id, pluginType, script }` for script-capable plugins. `background.js` must not import the full UI `TOOL_REGISTRY` just to perform `onInstalled` SaaT synchronization. The local JSON is fetched and runtime-validated only during install/update reconciliation.
-- **SidePanel**: `src/entry/sidepanel.tsx` owns application composition, not plugin business logic. Shared error boundaries isolate tool failures. `LauncherToolPage` itself is lazy, so tool-host infrastructure does not enter the Home cold-start closure before the first tool activation.
-- **Runtime status**: `ActiveServicesProvider` is the SidePanel storage authority for service/engine activation. It performs one initial local+sync hydration and one incremental `storage.onChanged` subscription; `EngineStatusProvider` is a pure projection and does not create a second Chrome-storage authority.
+- **SidePanel**: `src/entry/sidepanel.tsx` owns application composition, not plugin business logic. Source and type contracts remain React-compatible, while the SidePanel-owned production graph resolves the React/ReactDOM entrypoints to pinned `preact@10.29.7` compat exports inside `build.ts`; no background or content-script graph receives those aliases. The package is MIT licensed, has no runtime dependencies or network behavior, and is owned only by `@nexus/extension-halo`. Shared error boundaries isolate tool failures. `LauncherToolPage` itself is lazy, so tool-host infrastructure does not enter the Home cold-start closure before the first tool activation.
+- **Storage-change delivery**: `kernel/core/storage-change-bus.ts` owns the single physical `chrome.storage.onChanged` listener in a SidePanel JS context and multiplexes events to domain authorities. A domain may subscribe to the bus, but may not register a parallel direct Chrome listener merely to filter a different key.
+- **Runtime status**: `ActiveServicesProvider` owns the SidePanel status projection for Clipboard, Hover Zoom, Smooth Scroll, and SaaT status inputs. `system/userscripts/storage-authority.ts` separately owns the canonical `halo_userscripts` persistence projection, including schema validation, hydration/event ordering, and snapshot identity. Both consume the shared storage-change bus, so this domain split does not create a second physical Chrome listener. `EngineStatusProvider` remains a pure projection and creates no storage authority.
+- **UserScripts persistence projection**: all SidePanel consumers of `halo_userscripts` share the system-layer external store. Missing storage uses the historical default-on state; a read failure or malformed persisted row fails the entire snapshot closed. The authority preserves validated extensible metadata so a read/export/import cycle cannot silently convert a registry-managed script into a user-owned script.
 - **Initialization phases**: settings/theme hydration is mount-scoped and independent of module-manager readiness. Open-tool restoration waits for the hydrated module installation set. Module readiness must not retrigger settings I/O.
 
 ## State, Background Work & User-script registration
 
 - **State**: Persistent background work uses SW events, alarms, and lifecycle tokens. `useToolState` coordinates storage sync with bounded write queues.
-- **Event-driven status**: a relevant `storage.onChanged` payload updates the in-memory SidePanel status projection directly; it must not trigger a second full read of the same keys. Initial async hydration cannot overwrite a newer event-owned field.
+- **Event-driven status**: a relevant storage-change payload is delivered once by the SidePanel storage-change bus and updates the owning in-memory projection directly; it must not trigger a second full read of the same keys. Initial async hydration cannot overwrite a newer event-owned field.
 - **Persistent browser registration**: `chrome.userScripts` and dynamically registered content scripts are browser-owned registration state, not service-worker heap state. Ordinary MV3 worker wake must not execute `storage.get -> getRegistered -> unregister -> register` as startup work.
 - **Reconciliation triggers**: `runtime.onInstalled` restores/realigns browser registration after install/update; subsequent `halo_userscripts` or `halo_saat_scripts` storage authority changes request reconciliation. Concurrent requests serialize and collapse to at most one trailing full reconcile.
 - **Dynamic content-script persistence**: HALO sets `persistAcrossSessions:true` explicitly instead of relying on the API default.
@@ -94,8 +96,8 @@ tools/<id>/
 - **Localization**: Local plugin locale sources compile into generated runtime aggregates.
 - **Performance**: Inactive plugins allocate 0 recurring work. Disabled high-frequency features detach their hot listeners. SidePanel hidden/inactive surfaces must not poll. Browser-owned work started by a tool panel must either transfer to another explicit owner or dispose when that panel unmounts.
 - **Build evidence**: production build derives all-frame/top-frame `document_start` and `document_idle` membership from the source manifest, then charges each declared JS entry by its complete static esbuild closure. SidePanel static startup closure, Background worker bundle, and eventual lazy bytes remain separately measured. Packaged on-demand modules that are not declared in `content_scripts` are not startup bytes.
-- **Audited 2026-08-08 production ceilings**: `background <= 14KiB`, `all-frame@document_start <= 1KiB`, `top-frame@document_start <= 25KiB`, `all-frame@document_idle <= 2KiB`, `top-frame@document_idle <= 10KiB`, `SidePanel startup <= 165KiB`. `build.ts` fails if any audited startup surface crosses its current KiB bucket. An intentional increase requires an explicit architecture and budget update.
-- **Measured cross-platform startup surfaces (2026-08-08)**: Ubuntu and Windows production builds both report `all-frame@document_start = 1KiB`, `top-frame@document_start = 25KiB`, `all-frame@document_idle = 2KiB`, `top-frame@document_idle = 10KiB`, `SidePanel startup = 165KiB`, and `background = 14KiB`. The static Frame Tools host remains 1KiB with its 7KiB implementation paid only after explicit activation. The static Hover Zoom host shrinks from the previous 54–55KiB class to 9KiB while 48KiB of resolver/viewer implementation moves to `tools/_hover-zoom/runtime.js` and is paid only after a valid preview intent. This removes about 45KiB (roughly 82%) from the default Hover Zoom startup surface without deleting eventual feature bytes.
+- **Audited 2026-08-13 production ceilings**: `background <= 24KiB`, `all-frame@document_start <= 1KiB`, `top-frame@document_start <= 26KiB`, `all-frame@document_idle <= 2KiB`, `top-frame@document_idle <= 10KiB`, `SidePanel startup <= 32KiB`. `build.ts` fails if any audited startup surface crosses its current KiB bucket, if the SidePanel lacks Preact inputs, or if React, ReactDOM, or Scheduler runtime inputs survive. An intentional increase requires an explicit architecture and budget update.
+- **Measured Windows startup surfaces (2026-08-13)**: the integrated module-lifecycle and storage-authority candidate reports `all-frame@document_start = 1KiB`, `top-frame@document_start = 26KiB`, `all-frame@document_idle = 2KiB`, `top-frame@document_idle = 10KiB`, `SidePanel startup = 32KiB`, and `background = 24KiB`. SidePanel renderer substitution reduces its static startup closure from 165KiB to 32KiB (about 80.6%) while preserving the existing lazy feature chunks. The Background increase is the explicit cost of one registry-derived module lifecycle authority and one shared User Scripts storage-change authority; it is not charged to content startup. The static Frame Tools host remains 1KiB with its 7KiB implementation paid only after explicit activation, and the static Hover Zoom host remains 9KiB with its 48KiB runtime paid only after a valid preview intent. Cross-platform parity remains a required gate for future budget changes.
 - **Cross-origin and lazy-runtime browser evidence**: the production Chromium gate loads HALO on a top document at `127.0.0.1` with a child frame at `127.0.0.2`, proves a cold Ruler CANCEL leaves the heavy Frame Tools runtime unloaded, then proves one tab-wide START lazy-loads the packaged runtime and creates the Ruler overlay in both origins before CANCEL removes both. The same browser gate proves a cold Hover Zoom page has no Viewer DOM, then preserves pointer-before-Alt semantics: the first valid Alt gesture loads the packaged preview runtime, resolves and displays the image, and key release retires the viewer. Smooth Scroll keyboard ownership remains covered in the same Chromium installation.
 - Performance budgets are anchored to measured production artifacts rather than source-line counts, total extension size, or bundle-count heuristics.
 
@@ -116,7 +118,8 @@ Smooth Scroll is physically and semantically top-document-only: its static conte
 - One executable registry and taxonomy; one permission source and generated projection.
 - Full UI registry metadata does not enter the ordinary service-worker wake graph for install-only script synchronization.
 - Browser-persistent user/content-script registrations are never destroyed and rebuilt solely because the MV3 worker woke up.
-- One SidePanel storage authority for runtime/engine status; no duplicate status listener/read loops.
+- One physical SidePanel `chrome.storage.onChanged` listener per JS context; domain authorities consume the shared event bus and may not create duplicate direct status listeners/read loops.
+- `halo_userscripts` has one canonical SidePanel persistence authority; narrower Launcher/ActiveServices/full-panel views are selectors/materializations, not independent Chrome-storage owners.
 - No panel-owned clock for background work; no manual duplicate content-script inventory.
 - Browser-owned work cannot outlive an unmounted panel unless ownership is explicitly transferred and recoverable.
 - No hidden network capability; 0 recurring work for inactive plugins; no generated file edited manually.
@@ -125,7 +128,7 @@ Smooth Scroll is physically and semantically top-document-only: its static conte
 - No cold frame-tool cleanup command may load an uninitialized heavy runtime.
 - No heavy Hover Zoom resolver, viewer, MSE, or preview hotkey implementation in the static top-frame `document_idle` closure; it may load only after a valid preview intent.
 - No stale Hover Zoom input/settings generation may resurrect UI after its lazy runtime finishes loading.
-- No production `React.lazy` that resolves back into the SidePanel startup bundle; physical code splitting is a build invariant.
+- No production lazy panel boundary may resolve back into the SidePanel startup bundle; physical code splitting is a build invariant.
 - No performance conclusion based only on total extension bytes: startup closure and eventual feature bytes are measured separately.
 - No silent growth across the audited production startup ceilings.
 

@@ -152,6 +152,8 @@ A green typecheck, unit suite, docs check, or workflow registration alone does n
 - One commit forms a coherent and reversible closure. Do not mix unrelated cleanup into a behavioral fix.
 - Review final diff for accidental generated output, secrets, debug code, stale links, toolchain drift, and deleted evidence.
 - Do not force-push a shared or release branch by default. Do not merge with failing required checks or unresolved review findings.
+- Every non-default branch reaches exactly one terminal disposition: merge, superseded close, evidence-only close, or experiment discard. Record that disposition on its pull request (or equivalent durable review record), then delete the remote ref after confirming the required semantic delta is either on the default branch or intentionally rejected.
+- Keep provider branch state coupled to the pull-request lifecycle: enable automatic head deletion after merge, close superseded/integration-only candidates promptly, and verify live remote refs rather than treating local tracking refs as authority. A blocked candidate gate never authorizes bypassing the gate and never blocks cleanup of unrelated refs already contained by the default branch.
 - Generated public-repository sync is inspected and validated as a release artifact before push.
 
 ## 14. Current external facts

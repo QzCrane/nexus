@@ -6,7 +6,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "bun build.ts --watch --dev",
-		"build": "bun build.ts",
+		"build": "bun build.ts && bun scripts/check-lean-hotkey-artifact.ts",
 		"build:prod": "bun run build",
 		"build:dev": "bun build.ts --dev",
 		"build:sourcemap": "bun build.ts --sourcemap",

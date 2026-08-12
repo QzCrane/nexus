@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ToolId } from '../core/types';
 import { safeStorageGet, safeStorageSet } from '../core/safe-storage';
+import { subscribeHaloStorageChanges } from '../core/storage-change-bus';
 
 export interface UseToolStateOptions<T = unknown> {
 	/** Storage area: 'local' (default) or 'sync' */
@@ -197,7 +198,7 @@ export class UseToolStatePendingAuthority<T> {
 	constructor(
 		initialValue: T,
 		areEqual?: (left: T, right: T) => boolean,
-		cancelTimer: (timer: ReturnType<typeof setTimeout>) => void = clearTimeout,
+		cancelTimer: (timer: ReturnType<typeof setTimeout>) => void = (timer) => clearTimeout(timer),
 	) {
 		this.authorityValue = initialValue;
 		this.areEqual = areEqual ??
@@ -263,9 +264,6 @@ export class UseToolStatePendingAuthority<T> {
 			return { kind: 'own-echo' };
 		}
 
-		// A real external transition establishes a new event horizon. Delayed
-		// values from older no-op writes can no longer be identified as echoes;
-		// an active write remains independently recognizable above.
 		this.recentOwnWriteEchoes.length = 0;
 		this.cancelPendingTimer();
 		this.pending = null;
@@ -405,17 +403,11 @@ export function useToolState<T>(
 	const authorityEpoch = pendingAuthorityRef.current;
 	const pendingAuthority = authorityEpoch.controller;
 
-	// rule: hold the latest initial value in a ref so the load effect doesn't re-run when
-	// callers pass a new object literal each render — the previous version put getInitialValue
-	// in the load effect's deps, causing the effect to fire every render, async-load the
-	// stale storage value, and clobber in-flight user edits via setState before the debounced
-	// save fired.
 	const initialValueRef = useRef(getInitialValue);
 	useEffect(() => { initialValueRef.current = getInitialValue; }, [getInitialValue]);
 	const normalizeValueRef = useRef(normalizeValue);
 	useEffect(() => { normalizeValueRef.current = normalizeValue; }, [normalizeValue]);
 
-	// Load initial state — rule: deps are only key/area, not getInitialValue
 	useEffect(() => {
 		let isMounted = true;
 		const requestedRevision = pendingAuthority.authorityRevision;
@@ -426,8 +418,6 @@ export function useToolState<T>(
 			.then((res) => {
 				if (!isMounted) return;
 				setIsReady(true);
-				// An owned edit or newer storage event supersedes this snapshot,
-				// even when its write already completed before the get resolved.
 				const storedValue = res[storageKey];
 				const loaded = normalizeValueRef.current(
 					storedValue !== undefined ? storedValue : baseValue,
@@ -455,9 +445,7 @@ export function useToolState<T>(
 					{ [storageKey]: request.value },
 					{ area },
 				);
-				if (!saved) {
-					throw new Error(`Storage rejected state for ${storageKey}`);
-				}
+				if (!saved) throw new Error(`Storage rejected state for ${storageKey}`);
 			} catch (error: unknown) {
 				console.error(
 					`[HALO:useToolState] Failed to persist ${storageKey}`,
@@ -470,13 +458,9 @@ export function useToolState<T>(
 	}, [storageKey, area, pendingAuthority]);
 
 	const flushPendingState = useCallback((expectedToken?: number) => {
-		if (pendingAuthority.flushPending(expectedToken)) {
-			persistNextState();
-		}
+		if (pendingAuthority.flushPending(expectedToken)) persistNextState();
 	}, [pendingAuthority, persistNextState]);
 
-	// Save state with debounce. Runtime control settings can opt into zero-delay
-	// persistence without losing ordering or their final write during unmount.
 	const saveState = useCallback((newState: T) => {
 		authorityEpoch.lifecycle.runIfAccepting(() => {
 			const request = pendingAuthority.stageLocal(newState);
@@ -492,7 +476,6 @@ export function useToolState<T>(
 		});
 	}, [authorityEpoch, debounceMs, flushPendingState, pendingAuthority]);
 
-	// Update helper
 	const updateState = useCallback((action: React.SetStateAction<T>) => {
 		authorityEpoch.lifecycle.runIfAccepting(() => {
 			const previous = stateRef.current;
@@ -506,37 +489,30 @@ export function useToolState<T>(
 		});
 	}, [authorityEpoch, saveState]);
 
-
-	// Storage events are either an echo of the active owned write or a new
-	// authority. A real external authority cancels debounced work immediately;
-	// queued requests also re-check their revision before starting.
 	useEffect(() => {
 		authorityEpoch.lifecycle.open();
-		const handler = (changes: Record<string, chrome.storage.StorageChange>, changedArea: string) => {
+		const unsubscribeStorageChanges = subscribeHaloStorageChanges((
+			changes: Record<string, chrome.storage.StorageChange>,
+			changedArea: string,
+		) => {
 			const change = changes[storageKey];
-			if (changedArea === area && change) {
-				const next = normalizeValueRef.current(
-					change.newValue,
-					stateRef.current,
-				);
-				const decision = pendingAuthority.observeStorage(next);
-				if (decision.kind === 'external') {
-					stateRef.current = decision.value;
-					setState(decision.value);
-				}
+			if (changedArea !== area || !change) return;
+			const next = normalizeValueRef.current(
+				change.newValue,
+				stateRef.current,
+			);
+			const decision = pendingAuthority.observeStorage(next);
+			if (decision.kind === 'external') {
+				stateRef.current = decision.value;
+				setState(decision.value);
 			}
-		};
-		chrome.storage.onChanged.addListener(handler);
+		});
 		return () => {
 			authorityEpoch.lifecycle.seal();
-			chrome.storage.onChanged.removeListener(handler);
-			// Flush in the same epoch cleanup as the listener. The old controller
-			// and its bounded active/latest-desired pump remain isolated from a
-			// subsequent key or area epoch.
+			unsubscribeStorageChanges();
 			flushPendingState();
 		};
 	}, [storageKey, area, authorityEpoch, pendingAuthority, flushPendingState]);
 
 	return [state, updateState, isReady] as const;
 }
-

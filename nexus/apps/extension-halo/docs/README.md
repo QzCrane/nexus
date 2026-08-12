@@ -14,7 +14,9 @@ HALO documentation is divided by responsibility so architecture, sequencing, res
 docs/
 ├── README.md
 ├── architecture.md
+├── module-lifecycle.md
 ├── roadmap.md
+├── sidepanel-storage-authority.md
 ├── research/
 │   ├── README.md
 │   ├── market-landscape-2025.md
@@ -28,6 +30,8 @@ docs/
 ## Authority
 
 - [`architecture.md`](architecture.md) owns durable module, registry, lifecycle, permission, i18n, state, and performance boundaries.
+- [`module-lifecycle.md`](module-lifecycle.md) owns packaged-module installation, degradation, retry, and live storage projection.
+- [`sidepanel-storage-authority.md`](sidepanel-storage-authority.md) owns the SidePanel realm's physical storage transport and per-domain storage authorities.
 - [`roadmap.md`](roadmap.md) owns current sequencing and unresolved engineering work.
 - [`research/`](research/README.md) contains dated evidence and candidate gaps.
 - [`proposals/`](proposals/README.md) contains designs that have not passed implementation gates.

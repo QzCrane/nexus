@@ -98,11 +98,12 @@ describe('strict Biome report contract', () => {
 		mkdirSync(outside);
 		writeFileSync(resolve(sourceRoot, 'valid.mts'), 'export const valid = true;\n');
 		writeFileSync(resolve(sourceRoot, 'valid.cts'), 'exports.valid = true;\n');
+		writeFileSync(resolve(sourceRoot, 'valid.mjs'), 'export const validMjs = true;\n');
 		writeFileSync(resolve(skippedRoot, 'omitted.ts'), 'export const omitted = true;\n');
 		try {
 			expect(
 				collectBiomeFiles(['src'], repositoryRoot, repositoryRoot),
-			).toHaveLength(2);
+			).toHaveLength(3);
 			expect(() =>
 				collectBiomeFiles(
 					['src', '.turbo'],

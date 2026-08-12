@@ -8,6 +8,9 @@ function source(relativeUrl: string): string {
 
 const keyboardSource = source('../src/content/smooth-scroll-keyboard.ts');
 const hostSource = source('../src/content/smooth-scroll.ts');
+const handlersSource = source('../src/content/smooth-scroll-handlers.ts');
+const engineSource = source('../src/tools/smooth-scroll/engine.ts');
+const sidepanelSource = source('../src/entry/sidepanel-scroll.ts');
 
 describe('smooth-scroll keyboard architecture contract', () => {
 	test('never infers shortcut ownership from video layout or page identity', () => {
@@ -45,27 +48,65 @@ describe('smooth-scroll keyboard architecture contract', () => {
 		expect(keyboardSource).not.toMatch(/queueMicrotask\(\(\) => \{\s*if \(!finalized\) cleanup\(\);/u);
 	});
 
-	test('observes at document start but activates only after settings hydration', () => {
+	test('observes at document start and requires both settings plus module hydration before activation', () => {
 		const observationIndex = hostSource.indexOf('attachObservationListeners();');
-		const storageAwaitIndex = hostSource.indexOf(
-			'await chrome.storage.sync.get([STORAGE_KEY])',
-		);
-		const activationIndex = hostSource.indexOf(
-			'if (settings.enabled) attachActiveInputListeners();',
-		);
+		const hydrationIndex = hostSource.indexOf('await Promise.allSettled([');
+		const reconcileIndex = hostSource.lastIndexOf('reconcileInputOwnership();');
 
 		expect(observationIndex).toBeGreaterThanOrEqual(0);
-		expect(storageAwaitIndex).toBeGreaterThan(observationIndex);
-		expect(activationIndex).toBeGreaterThan(storageAwaitIndex);
+		expect(hydrationIndex).toBeGreaterThan(observationIndex);
+		expect(reconcileIndex).toBeGreaterThan(hydrationIndex);
 		expect(hostSource).toContain(
 			"window.addEventListener('keydown', onObservedKeydown, true)",
 		);
 		expect(hostSource).toContain(
-			'if (!settingsHydrated || !settings.enabled) return;',
+			'settingsHydrated && moduleHydrated && moduleEnabled && settings.enabled',
 		);
+		expect(hostSource).toContain('readOptionalPackagedModuleEnabled(MODULE_ID)');
+		expect(hostSource).toContain('settingsRevisionBeforeHydration');
+		expect(hostSource).toContain('moduleRevisionBeforeHydration');
 		expect(hostSource).toContain(
 			"window.addEventListener('blur', resetDocumentRuntime)",
 		);
 		expect(hostSource).not.toContain("addEventListener('DOMContentLoaded'");
+	});
+
+	test('keeps an uninstalled module inert without changing website-first listener order on reinstall', () => {
+		expect(hostSource).toContain('if (!runtimeEnabled()) return;');
+		expect(hostSource).toContain('if (runtimeEnabled()) attachActiveInputListeners();');
+		expect(hostSource).toContain('else detachActiveInputListeners();');
+		expect(hostSource).toContain('readOptionalPackagedModuleChangeEnabled');
+	});
+
+	test('keeps wheel ownership synchronous through the engine admission boolean', () => {
+		const wheelStart = handlersSource.indexOf('export function onWheel');
+		const mouseDownStart = handlersSource.indexOf('export function onMouseDown', wheelStart);
+		const wheel = handlersSource.slice(wheelStart, mouseDownStart);
+		const scrollCall = wheel.indexOf('!scrollTo(');
+		const finalPreventDefault = wheel.lastIndexOf('e.preventDefault();');
+
+		expect(wheelStart).toBeGreaterThanOrEqual(0);
+		expect(mouseDownStart).toBeGreaterThan(wheelStart);
+		expect(scrollCall).toBeGreaterThanOrEqual(0);
+		expect(finalPreventDefault).toBeGreaterThan(scrollCall);
+		expect(wheel).toContain('yieldWheelToNative();');
+		expect(engineSource).toContain('export function scrollTo(');
+		expect(engineSource).not.toContain('export async function scrollTo(');
+		expect(engineSource).toContain('matchesScrollAdmission(admission, target, y)');
+		expect(engineSource).toContain('return true;');
+	});
+
+	test('keeps SidePanel wheel ownership on the same synchronous admission contract', () => {
+		const wheelStart = sidepanelSource.indexOf('function onWheel');
+		const keydownStart = sidepanelSource.indexOf('function onKeydown', wheelStart);
+		const wheel = sidepanelSource.slice(wheelStart, keydownStart);
+		const scrollCall = wheel.indexOf('!scrollTo(');
+		const finalPreventDefault = wheel.lastIndexOf('e.preventDefault();');
+
+		expect(wheelStart).toBeGreaterThanOrEqual(0);
+		expect(keydownStart).toBeGreaterThan(wheelStart);
+		expect(scrollCall).toBeGreaterThanOrEqual(0);
+		expect(finalPreventDefault).toBeGreaterThan(scrollCall);
+		expect(sidepanelSource).toContain('scrollTo(route.target, 0, deltaY, route.admission)');
 	});
 });

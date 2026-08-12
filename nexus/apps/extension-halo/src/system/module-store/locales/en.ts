@@ -14,6 +14,7 @@ export const en = {
 		allInstalled: 'All modules are installed!',
 		scriptUninstallWarning: 'Please manage/uninstall scripts in the User Scripts tool.',
 		scriptUninstallConfirm: 'Are you sure you want to remove this official script? You can re-enable it later.',
+		builtInUninstallWarning: 'This module is built into HALO and cannot be removed.',
 		systemUninstallWarning: 'System components are core parts of HALO and cannot be uninstalled.',
 		core: 'Core',
 		new: 'New',

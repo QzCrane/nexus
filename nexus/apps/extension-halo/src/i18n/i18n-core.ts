@@ -10,19 +10,18 @@ import type {
 import { en } from './locales/en';
 import { zh } from './locales/zh';
 import { safeStorageGet } from '../kernel/core/safe-storage';
+import { subscribeHaloStorageChanges } from '../kernel/core/storage-change-bus';
 
 export const STORAGE_KEY = 'halo_locale';
 
-// Mutable registry for dynamic updates
 export const REGISTRY: Record<Locale, TranslationKeys> = { en, zh };
 export const listeners = new Set<() => void>();
 
-// Internal global state
 export let currentSetting: LocaleSetting = 'system';
 export let resolvedLocale: Locale = 'en';
 export let i18nReady = false;
+let storageRevision = 0;
 
-// Detect browser language
 export function detectLocale(): Locale {
 	const lang = navigator.language.toLowerCase();
 	if (lang.startsWith('zh')) return 'zh';
@@ -48,18 +47,15 @@ export function setI18nReady(ready: boolean) {
 	i18nReady = ready;
 }
 
-// Notify all listeners
-export const notify = () => listeners.forEach((listener) => {
-	listener();
-});
+export const notify = () => {
+	for (const listener of [...listeners]) listener();
+};
 
-// Register new translations (e.g. from downloaded modules)
 export function registerTranslations(locale: Locale, data: Partial<TranslationKeys>) {
 	REGISTRY[locale] = { ...REGISTRY[locale], ...data };
 	notify();
 }
 
-// Get nested value by dot-path and interpolate
 export function getByPath(obj: unknown, path: string, params?: TranslationParams): string {
 	const parts = path.split('.');
 	let current: unknown = obj;
@@ -80,68 +76,64 @@ export function getByPath(obj: unknown, path: string, params?: TranslationParams
 		return path;
 	}
 
-	// Interpolate specific params if provided
 	if (params) {
 		Object.entries(params).forEach(([key, value]) => {
 			result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), String(value));
 		});
 	}
-
 	return result;
 }
 
-// Promise for async initialization (Suspense-compatible)
 let resolveInit: (() => void) | null = null;
-export const i18nPromise = new Promise<void>((resolve) => {
-	resolveInit = resolve;
+export const i18nPromise = new Promise<void>((resolvePromise) => {
+	resolveInit = resolvePromise;
 });
 
-// Initialize i18n
+function applyStorageLocale(value: unknown): void {
+	if (!isLocaleSetting(value)) return;
+	storageRevision += 1;
+	currentSetting = value;
+	resolvedLocale = resolve(value);
+	i18nReady = true;
+	notify();
+}
+
+// Subscribe before the initial read. A storage event increments storageRevision,
+// so an older read resolution/rejection can never overwrite newer authority.
+if (typeof chrome !== 'undefined' && chrome.storage) {
+	subscribeHaloStorageChanges((changes, area) => {
+		if (area !== 'sync') return;
+		const change = changes[STORAGE_KEY];
+		if (!change) return;
+		applyStorageLocale(change.newValue);
+	});
+}
+
 export const initI18n = async () => {
+	const readRevision = storageRevision;
 	if (typeof chrome !== 'undefined' && chrome.storage) {
 		try {
 			const result = await safeStorageGet(
 				[STORAGE_KEY],
 				{ [STORAGE_KEY]: 'system' },
 			);
-			const saved: unknown = result[STORAGE_KEY];
-			currentSetting = isLocaleSetting(saved) ? saved : 'system';
+			if (storageRevision === readRevision) {
+				const saved: unknown = result[STORAGE_KEY];
+				currentSetting = isLocaleSetting(saved) ? saved : 'system';
+			}
 		} catch {
-			currentSetting = 'system';
+			if (storageRevision === readRevision) currentSetting = 'system';
 		}
-	} else {
+	} else if (storageRevision === readRevision) {
 		currentSetting = 'system';
 	}
 
-	resolvedLocale = resolve(currentSetting);
-
+	if (storageRevision === readRevision) resolvedLocale = resolve(currentSetting);
 	i18nReady = true;
 	resolveInit?.();
 	notify();
 };
 
-/**
- * Wait for i18n to be ready
- * Usage: await waitForI18n();
- */
 export const waitForI18n = () => i18nPromise;
 
-// Start initialization
-// rule: swallow rejection so the floating promise doesn't throw an unhandled
-// rejection. initI18n already catches its own internal errors, but defensive
-// .catch guards against future regressions.
-initI18n().catch((e) => console.error('i18n init failed', e));
-
-// Listen for external changes (syncs across multiple instances)
-if (typeof chrome !== 'undefined' && chrome.storage) {
-	chrome.storage.onChanged.addListener((changes, area) => {
-		if (area === 'sync' && changes[STORAGE_KEY]) {
-			const newSetting: unknown = changes[STORAGE_KEY].newValue;
-			if (!isLocaleSetting(newSetting)) return;
-			currentSetting = newSetting;
-			resolvedLocale = resolve(newSetting);
-			i18nReady = true;
-			notify();
-		}
-	});
-}
+initI18n().catch((error) => console.error('i18n init failed', error));

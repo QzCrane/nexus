@@ -22,7 +22,7 @@ export const ModuleList: React.FC<ModuleListProps> = ({
 	const renderModuleItem = (mod: PluginMeta, index: number) => {
 		const isInstalled = installedModules.some(m => m.id === mod.id);
 		const loadingId = installingId;
-		// Determine if this is a user script (read-only)
+		// User scripts are managed by the dedicated User Scripts surface.
 		const isUserScript = mod.isUserScript === true;
 
 		return (
@@ -31,7 +31,7 @@ export const ModuleList: React.FC<ModuleListProps> = ({
 				index={index + 1}
 				module={mod}
 				status={isInstalled ? (loadingId === mod.id ? 'updating' : 'installed') : (loadingId === mod.id ? 'downloading' : 'available')}
-				isCore={!!(mod.builtIn && mod.pluginType === 'tool')}
+				isCore={mod.builtIn === true}
 				showTypeLabel={filterType === 'all'}
 				isUserScript={isUserScript}
 				onInstall={() => handleInstall(mod.id)}

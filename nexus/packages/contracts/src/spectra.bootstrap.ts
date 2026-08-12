@@ -19,6 +19,8 @@ export type SpectraDefaultHotkeyAction =
 	];
 export const SPECTRA_DEFAULT_HOTKEY_ACTIONS: readonly SpectraDefaultHotkeyAction[] =
 	Object.freeze(Object.values(SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE));
+export const SPECTRA_REPEATABLE_DEFAULT_HOTKEY_ACTIONS: readonly SpectraDefaultHotkeyAction[] =
+	Object.freeze(['speed_down', 'speed_up', 'volume_down', 'volume_up']);
 export interface SpectraDefaultHotkeyChord {
 	code: string;
 	altKey: boolean;
@@ -41,12 +43,42 @@ export function resolveSpectraDefaultHotkeyAction(
 		: null;
 }
 
+export function isSpectraRepeatableDefaultHotkeyAction(
+	value: unknown,
+): value is SpectraDefaultHotkeyAction {
+	return typeof value === 'string'
+		&& SPECTRA_REPEATABLE_DEFAULT_HOTKEY_ACTIONS.some((action) => action === value);
+}
+
 export type SpectraDefaultHotkeyPhase = 'press' | 'release';
 export interface SpectraDefaultHotkeyTriggerPayload {
 	action: SpectraDefaultHotkeyAction;
 	phase: SpectraDefaultHotkeyPhase;
 	gesture: string;
 	repeated: boolean;
+	/** Absent = shipped default/global-target semantics; site-page = sender-document semantics. */
+	disposition?: 'site-page';
+}
+
+export interface SpectraLeanSiteHotkeyBinding {
+	code: string;
+	modifiers: {
+		ctrl: boolean;
+		alt: boolean;
+		shift: boolean;
+		meta: boolean;
+	};
+	action: SpectraDefaultHotkeyAction;
+}
+export interface SpectraLeanSiteHotkeyConfiguration {
+	epoch: string;
+	generation: number;
+	bindings: SpectraLeanSiteHotkeyBinding[];
+}
+export interface SpectraLeanSiteHotkeyConfigureMessage {
+	protocolVersion: typeof SPECTRA_PROTOCOL_VERSION;
+	type: 'spectra.content.site-hotkeys.configure';
+	payload: SpectraLeanSiteHotkeyConfiguration;
 }
 
 const REQUEST_KEYS = new Set([
@@ -65,6 +97,11 @@ const DIRECT_FIELDS = new Set([
 	'filterEnabled', 'filter', 'dimEnabled', 'dimOpacity', 'tabPinned', 'eqValues', 'bass',
 	'compressor', 'mono', 'pan', 'delay',
 ]);
+const LEAN_SITE_HOTKEY_MESSAGE_KEYS = new Set(['protocolVersion', 'type', 'payload']);
+const LEAN_SITE_HOTKEY_CONFIG_KEYS = new Set(['epoch', 'generation', 'bindings']);
+const LEAN_SITE_HOTKEY_BINDING_KEYS = new Set(['code', 'modifiers', 'action']);
+const LEAN_SITE_HOTKEY_MODIFIER_KEYS = new Set(['ctrl', 'alt', 'shift', 'meta']);
+const DEFAULT_HOTKEY_TRIGGER_KEYS = new Set(['action', 'phase', 'gesture', 'repeated', 'disposition']);
 
 type BootstrapRequestType =
 	| 'spectra.content.runtime.status'
@@ -105,15 +142,51 @@ function isBoundedString(value: unknown, max: number): value is string {
 	return typeof value === 'string' && value.length > 0 && value.length <= max;
 }
 
+function isSpectraLeanSiteHotkeyBinding(value: unknown): value is SpectraLeanSiteHotkeyBinding {
+	if (!isRecord(value)
+		|| !hasOnlyKeys(value, LEAN_SITE_HOTKEY_BINDING_KEYS)
+		|| !isBoundedString(value.code, 64)
+		|| !SPECTRA_DEFAULT_HOTKEY_ACTIONS.some((action) => action === value.action)
+		|| !isRecord(value.modifiers)
+		|| !hasOnlyKeys(value.modifiers, LEAN_SITE_HOTKEY_MODIFIER_KEYS)) return false;
+	return typeof value.modifiers.ctrl === 'boolean'
+		&& typeof value.modifiers.alt === 'boolean'
+		&& typeof value.modifiers.shift === 'boolean'
+		&& typeof value.modifiers.meta === 'boolean';
+}
+
+export function isSpectraLeanSiteHotkeyConfiguration(
+	value: unknown,
+): value is SpectraLeanSiteHotkeyConfiguration {
+	return isRecord(value)
+		&& hasOnlyKeys(value, LEAN_SITE_HOTKEY_CONFIG_KEYS)
+		&& isBoundedString(value.epoch, 128)
+		&& isSafeNonNegativeInteger(value.generation)
+		&& Array.isArray(value.bindings)
+		&& value.bindings.length <= 128
+		&& value.bindings.every(isSpectraLeanSiteHotkeyBinding);
+}
+
+export function isSpectraLeanSiteHotkeyConfigureMessage(
+	value: unknown,
+): value is SpectraLeanSiteHotkeyConfigureMessage {
+	return isRecord(value)
+		&& hasOnlyKeys(value, LEAN_SITE_HOTKEY_MESSAGE_KEYS)
+		&& value.protocolVersion === SPECTRA_PROTOCOL_VERSION
+		&& value.type === 'spectra.content.site-hotkeys.configure'
+		&& isSpectraLeanSiteHotkeyConfiguration(value.payload);
+}
+
 export function isSpectraDefaultHotkeyTriggerPayload(
 	value: unknown,
 ): value is SpectraDefaultHotkeyTriggerPayload {
 	return isRecord(value)
-		&& hasOnlyKeys(value, new Set(['action', 'phase', 'gesture', 'repeated']))
+		&& hasOnlyKeys(value, DEFAULT_HOTKEY_TRIGGER_KEYS)
 		&& SPECTRA_DEFAULT_HOTKEY_ACTIONS.some((action) => action === value.action)
 		&& (value.phase === 'press' || value.phase === 'release')
 		&& isBoundedString(value.gesture, 128)
-		&& typeof value.repeated === 'boolean';
+		&& typeof value.repeated === 'boolean'
+		&& (value.disposition === undefined || value.disposition === 'site-page');
 }
 
 function hasValidEnvelope(value: Record<string, unknown>): boolean {

@@ -1,41 +1,41 @@
-// goal: Hook to access user scripts from storage
-// eff: Provides real-time list of scripts for Launcher integration
+// goal: Launcher projection for custom user-authored scripts
+// inv: persistence belongs to the shared UserScripts store while module health gates visibility
 
-import { useState, useEffect } from 'react';
-import type { SaaTScriptState } from '../services/saat-service';
+import { useMemo } from 'react';
+import { useUserScriptsStorageSnapshot } from '../../system/userscripts/hooks/useUserScriptsSnapshot';
+import type { UserScriptsSnapshotScript } from '../../system/userscripts/storage-authority';
+import type { UserScript } from '../../system/userscripts/types';
+import { useModuleManager } from './use-module-manager';
 
-const USERSCRIPTS_STORAGE_KEY = 'halo_userscripts';
-
-export function useUserScripts() {
-	const [scripts, setScripts] = useState<SaaTScriptState[]>([]);
-	const [loading, setLoading] = useState(true);
-
-	useEffect(() => {
-		const loadScripts = async () => {
-			try {
-				const result = await chrome.storage.local.get(USERSCRIPTS_STORAGE_KEY);
-				const state = result[USERSCRIPTS_STORAGE_KEY] || { scripts: [] };
-				setScripts(state.scripts || []);
-			} catch (e) {
-				console.error('Failed to load user scripts:', e);
-			} finally {
-				setLoading(false);
-			}
-		};
-
-		loadScripts();
-
-		// Listen for changes
-		const listener = (changes: Record<string, chrome.storage.StorageChange>) => {
-			if (changes[USERSCRIPTS_STORAGE_KEY]) {
-				const newState = changes[USERSCRIPTS_STORAGE_KEY].newValue || { scripts: [] };
-				setScripts(newState.scripts || []);
-			}
-		};
-
-		chrome.storage.onChanged.addListener(listener);
-		return () => chrome.storage.onChanged.removeListener(listener);
-	}, []);
-
-	return { scripts, loading };
+function materializeCustomScript(script: UserScriptsSnapshotScript): UserScript | null {
+	if (script.saatToolId !== undefined || script.managedBy !== undefined) return null;
+	const { matches, excludeMatches, ...fields } = script;
+	return {
+		...fields,
+		matches: [...matches],
+		...(excludeMatches ? { excludeMatches: [...excludeMatches] } : {}),
+	};
 }
+
+export function useUserScripts(): { scripts: UserScript[]; loading: boolean } {
+	const snapshot = useUserScriptsStorageSnapshot();
+	const {
+		installedModules,
+		loading: modulesLoading,
+		degraded,
+	} = useModuleManager();
+	const enabled = !modulesLoading
+		&& !degraded
+		&& installedModules.some((module) => module.id === 'userscripts');
+	const scripts = useMemo(() => {
+		if (!enabled || snapshot.failed) return [];
+		return snapshot.scripts.flatMap((script) => {
+			const materialized = materializeCustomScript(script);
+			return materialized ? [materialized] : [];
+		});
+	}, [enabled, snapshot]);
+
+	return { scripts, loading: modulesLoading || !snapshot.ready };
+}
+
+export const userScriptsLauncherProjectionTestApi = { materializeCustomScript };

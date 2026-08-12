@@ -44,6 +44,8 @@ export const zh = {
 		importFailed: '导入失败: 无效 JSON',
 		executed: '{{name}} 已执行！',
 		injectionFailed: '注入失败',
+		allowUserScriptsRequired: '请在此扩展的详情页启用“允许用户脚本（Allow User Scripts）”，然后返回 HALO。',
+		registrySyncFailed: '用户脚本权限已启用，但后台注册表同步失败，请重试。',
 		scripts: '脚本',
 		active: '个活跃',
 		never: '从未',
