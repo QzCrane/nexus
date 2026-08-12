@@ -198,6 +198,13 @@ describe('script runtime ownership', () => {
 		expect(prepared.userScripts).toHaveLength(1);
 		expect(prepared.userScripts[0]?.world).toBe('MAIN');
 	});
+
+	test('rejects duplicate enabled runtime ids before any browser registration teardown', () => {
+		expect(() => userScriptsRegistryTestApi.prepareRegistration([
+			script('duplicate'),
+			script('duplicate', { managedBy: 'saat-tool', saatToolId: 'totp', moduleBuiltIn: false }),
+		])).toThrow('Duplicate runtime script id: duplicate');
+	});
 });
 
 describe('persistent UserScripts recovery contract', () => {
