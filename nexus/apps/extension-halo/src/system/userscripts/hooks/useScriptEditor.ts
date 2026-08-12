@@ -19,7 +19,7 @@ const DEFAULT_FORM: EditForm = {
 	runAt: 'document_end',
 };
 
-export function useScriptEditor(loadScripts: () => Promise<void>) {
+export function useScriptEditor() {
 	const { t } = useTranslation();
 	const { showToast } = useToast();
 	const [showEditor, setShowEditor] = useState(false);
@@ -46,13 +46,20 @@ export function useScriptEditor(loadScripts: () => Promise<void>) {
 			showToast('❌ Name and code required');
 			return;
 		}
+		const matches = editForm.matches.split(/[,\n]+/).map((match) => match.trim()).filter(Boolean);
+		if (matches.length === 0) {
+			showToast('❌ At least one match pattern is required');
+			return;
+		}
 		const scriptData = {
 			name: editForm.name.trim(),
 			description: editForm.description.trim(),
 			category: editForm.category,
 			code: editForm.code,
-			matches: editForm.matches.split(/[,\n]+/).map(m => m.trim()).filter(Boolean),
-			excludeMatches: editForm.excludeMatches ? editForm.excludeMatches.split(/[,\n]+/).map(m => m.trim()).filter(Boolean) : undefined,
+			matches,
+			excludeMatches: editForm.excludeMatches
+				? editForm.excludeMatches.split(/[,\n]+/).map((match) => match.trim()).filter(Boolean)
+				: undefined,
 			type: editForm.type,
 			runAt: editForm.runAt,
 			enabled: true,
@@ -73,8 +80,7 @@ export function useScriptEditor(loadScripts: () => Promise<void>) {
 		setEditForm(DEFAULT_FORM);
 		setEditingId(null);
 		setShowEditor(false);
-		await loadScripts();
-	}, [editForm, editingId, loadScripts, showToast, t]);
+	}, [editForm, editingId, showToast, t]);
 
 	const handleCancel = useCallback(() => {
 		setEditForm(DEFAULT_FORM);
@@ -108,6 +114,6 @@ export function useScriptEditor(loadScripts: () => Promise<void>) {
 		handleEdit,
 		handleSave,
 		handleCancel,
-		loadTemplate
+		loadTemplate,
 	};
 }
