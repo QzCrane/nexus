@@ -38,8 +38,8 @@ export interface RuntimeRestartStartupPort {
 	readStatus(target: RuntimeRestartTarget): Promise<RuntimeRestartStatus>;
 	retainRecoveryRuntime(target: RuntimeRestartTarget): Promise<void>;
 	releaseRecoveryRuntime(target: RuntimeRestartTarget): void;
-	hasPersistentRestoreOwner(target: RuntimeRestartTarget): Promise<boolean>;
-	retainRestoreRuntime(target: RuntimeRestartTarget): Promise<void>;
+	resolvePersistentRestoreCapability(target: RuntimeRestartTarget): Promise<string | null>;
+	retainRestoreRuntime(target: RuntimeRestartTarget, capability: string): Promise<void>;
 	reconcileHotkeys(target: RuntimeRestartTarget, settings: HotkeySettings): Promise<SiteHotkeyRuntimeMode>;
 }
 
@@ -47,17 +47,19 @@ function hasOwnedSource(status: RuntimeRestartStatus): boolean {
 	return status.ownedSources.some((owned) => owned.markerCount > 0 || owned.abActive);
 }
 
-async function persistentRestoreOwner(target: RuntimeRestartTarget): Promise<boolean> {
+async function persistentRestoreCapability(target: RuntimeRestartTarget): Promise<string | null> {
 	let identity: ReturnType<typeof storage.tabSession.identity>;
 	try {
 		identity = storage.tabSession.identity(target.tabId, target.documentId, target.url);
 	} catch {
-		return false;
+		return null;
 	}
+	const hostname = new URL(identity.resourceUrl).hostname;
+	const capability = `settings:${hostname}`;
 	const sessionPatch = await storage.tabSession.rebind(target.tabId, identity);
-	if (sessionPatch && Object.keys(sessionPatch).length > 0) return true;
-	const config = await settingsRepository.resolveAudioConfig(new URL(identity.resourceUrl).hostname);
-	return !isDefaultAudioConfig(config);
+	if (sessionPatch && Object.keys(sessionPatch).length > 0) return capability;
+	const config = await settingsRepository.resolveAudioConfig(hostname);
+	return isDefaultAudioConfig(config) ? null : capability;
 }
 
 const chromePort: RuntimeRestartStartupPort = {
@@ -86,17 +88,16 @@ const chromePort: RuntimeRestartStartupPort = {
 	releaseRecoveryRuntime(target) {
 		releaseContentRuntimeLease(target.tabId, target.documentId, 'observation', RECOVERY_CAPABILITY);
 	},
-	hasPersistentRestoreOwner: persistentRestoreOwner,
-	async retainRestoreRuntime(target) {
-		const hostname = new URL(target.url).hostname;
+	resolvePersistentRestoreCapability: persistentRestoreCapability,
+	async retainRestoreRuntime(target, capability) {
 		const ready = await ensureContentRuntime(
 			target.tabId,
 			target.documentId,
 			'restore',
-			`settings:${hostname}`,
+			capability,
 		);
 		if (ready.documentId !== target.documentId) {
-			releaseContentRuntimeLease(target.tabId, ready.documentId, 'restore', `settings:${hostname}`);
+			releaseContentRuntimeLease(target.tabId, ready.documentId, 'restore', capability);
 			throw new Error('Worker-restart restore owner resolved to a stale document');
 		}
 	},
@@ -140,14 +141,13 @@ export async function recoverDocumentRuntimeOnWorkerStartup(
 			return true;
 		},
 		async restoreDocumentOwnership() {
-			const hasRestoreOwner = await port.hasPersistentRestoreOwner(target);
-			if (!hasRestoreOwner) return;
+			const restoreCapability = await port.resolvePersistentRestoreCapability(target);
+			if (!restoreCapability) return;
 			durableOwner = true;
 			// Do not create a new heavy runtime solely for restart recovery. If one
-			// survived, retain it under the same restore capability that normal
-			// document initialization owns; otherwise bootstrap initialization remains
-			// the load boundary.
-			if (runtimeWasPresent) await port.retainRestoreRuntime(target);
+			// survived, retain it with exactly the capability normal restore owns;
+			// otherwise bootstrap initialization remains the load boundary.
+			if (runtimeWasPresent) await port.retainRestoreRuntime(target, restoreCapability);
 		},
 		async reconcileHotkeyOwnership() {
 			const mode = await port.reconcileHotkeys(target, settings);
