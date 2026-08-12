@@ -59,11 +59,11 @@ describe('acknowledged audio session store', () => {
 			expect(secondSnapshot.generation).toBe(2);
 			expect(secondSnapshot.actualMode).toBe('capture');
 			expect(secondSnapshot.actualConfig.volume).toBe(180);
-			expect(storage.setCalls).toHaveLength(0);
+			expect(storage.setCalls).toHaveLength(2);
 			expect(broadcasts).toHaveLength(2);
 			expect(await getAudioSession(identity.tabId)).toEqual(secondSnapshot);
 			await flushAudioSessions(identity.tabId);
-			expect(storage.setCalls).toHaveLength(1);
+			expect(storage.setCalls).toHaveLength(2);
 			expect(storage.values.spectra_audio_session_8101).toEqual(secondSnapshot);
 		} finally {
 			await removeAudioSession(identity.tabId);

@@ -684,7 +684,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '🔲',
 		pluginType: 'tool',
 		category: 'general',
-		size: 20506,
+		size: 20823,
 		builtIn: true,
 		status: 'ready',
 		keywords: ["qr","code","scan","erweima","二维码","扫码"],
@@ -1178,7 +1178,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '⚡',
 		pluginType: 'system',
 		category: 'dev',
-		size: 17972,
+		size: 18053,
 		builtIn: true,
 		status: undefined,
 		keywords: ["task","manager","cpu","background","service","后台","资源"],
@@ -1204,12 +1204,12 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '📜',
 		pluginType: 'system',
 		category: 'dev',
-		size: 124818,
+		size: 125999,
 		builtIn: false,
 		status: undefined,
 		keywords: ["script","inject","脚本","注入"],
 		permissions: ["userScripts","*://*/*"],
-		background: {"mechanism":"storage_listener","frequency":"on-change","activeOnly":false,"level":"low","descriptionKey":"impact.userscripts_registry","sourceFile":"system/userscripts/registry.ts","sourceLine":518,"sourceDetail":"chrome.storage.onChanged.addListener"},
+		background: {"mechanism":"storage_listener","frequency":"on-change","activeOnly":false,"level":"low","descriptionKey":"impact.userscripts_registry","sourceFile":"system/userscripts/registry.ts","sourceLine":517,"sourceDetail":"chrome.storage.onChanged.addListener"},
 		script: undefined,
 	}
 ];
@@ -1374,7 +1374,7 @@ export const BACKGROUND_PROFILES_MAP: Record<string, BackgroundProfile> = {
         "level": "low",
         "descriptionKey": "impact.userscripts_registry",
         "sourceFile": "system/userscripts/registry.ts",
-        "sourceLine": 518,
+        "sourceLine": 517,
         "sourceDetail": "chrome.storage.onChanged.addListener"
     }
 };

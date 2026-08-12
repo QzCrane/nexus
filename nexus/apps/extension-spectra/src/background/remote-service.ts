@@ -275,12 +275,17 @@ async function closeSession(tabId: number, sessionId: string): Promise<{ success
 function sendStateToOffscreen(tabId: number, state: RemoteState): void {
 	const authorization = authorizations.get(tabId);
 	if (!authorization) return;
-	authorization.generation = state.generation;
 	void sendOffscreenMessage({
 		type: 'REMOTE_HOST_SEND_STATE',
 		tabId,
 		sessionId: authorization.session.sessionId,
 		state,
+	}).then((response) => {
+		if (response.success) {
+			// This field is delivered-generation authority, not optimistic local
+			// state. Out-of-order acknowledgements may advance but never regress it.
+			authorization.generation = Math.max(authorization.generation, state.generation);
+		}
 	}).catch(() => undefined);
 }
 

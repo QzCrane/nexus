@@ -195,6 +195,9 @@ function createStagingZip() {
 export const RELEASE_STEPS = Object.freeze([
 	{ label: 'version parity', fn: assertSourceVersionParity },
 	{ label: 'architecture verify', args: ['run', 'verify:v'] },
+	{ label: 'documentation architecture', args: ['run', 'docs:check'] },
+	{ label: 'platform contract', args: ['run', 'check:platform'] },
+	{ label: 'public projection contract', args: ['run', 'check:public-projections'] },
 	{ label: 'frozen dependency install', args: ['install', '--frozen-lockfile'] },
 	{ label: 'toolchain verify', args: ['run', 'check:toolchain'] },
 	{ label: 'Biome lint', args: ['run', 'lint'] },
@@ -202,6 +205,7 @@ export const RELEASE_STEPS = Object.freeze([
 	{ label: 'TypeScript check', args: ['run', 'typecheck:halo'] },
 	{ label: 'unit tests', args: ['run', 'test:halo'] },
 	{ label: 'production build', args: ['run', '--cwd', 'apps/extension-halo', 'build:prod'] },
+	{ label: 'production Chromium contracts', args: ['run', '--cwd', 'apps/extension-halo', 'test:browser-chromium'] },
 	{ label: 'dependency audit', args: ['audit'] },
 	{ label: 'staging ZIP', fn: createStagingZip },
 ]);
@@ -261,7 +265,7 @@ export function runRelease({
 			}
 		}
 	}
-	console.log('\n✓ HALO release candidate passed every gate and was staged');
+	console.log('\n✓ HALO local release evidence completed and the candidate was staged');
 }
 
 function printPlan() {

@@ -291,49 +291,48 @@ async function readRegistryAuthority(): Promise<RegistryAuthority> {
 	};
 }
 
-async function unregisterAllScripts(userScriptsAvailable: boolean): Promise<void> {
-	const failures: string[] = [];
-	if (userScriptsAvailable) {
-		try {
-			const registered = await chrome.userScripts.getScripts();
-			const ids = registered.filter((script) => script.id.startsWith(SCRIPT_ID_PREFIX)).map((script) => script.id);
-			if (ids.length > 0) await chrome.userScripts.unregister({ ids });
-		} catch (error) { failures.push(failureMessage('userScripts unregister failed', error)); }
-	}
-	try {
-		const registered = await chrome.scripting.getRegisteredContentScripts();
-		const ids = registered.filter((script) => script.id.startsWith(SCRIPT_ID_PREFIX)).map((script) => script.id);
-		if (ids.length > 0) await chrome.scripting.unregisterContentScripts({ ids });
-	} catch (error) { failures.push(failureMessage('content-script unregister failed', error)); }
-	if (failures.length > 0) throw new Error(failures.join('; '));
-}
-
-async function registerPrepared(
+async function reconcilePrepared(
 	prepared: PreparedRegistration,
 	userScriptsAvailable: boolean,
 ): Promise<void> {
 	const failures: string[] = [];
-	if (prepared.userScripts.length > 0 && userScriptsAvailable) {
-		try { await chrome.userScripts.register(prepared.userScripts); }
-		catch (error) { failures.push(failureMessage('userScripts register failed', error)); }
+	if (userScriptsAvailable) {
+		try {
+			const current = (await chrome.userScripts.getScripts())
+				.filter((script) => script.id.startsWith(SCRIPT_ID_PREFIX));
+			const currentIds = new Set(current.map((script) => script.id));
+			const desiredIds = new Set(prepared.userScripts.map((script) => script.id));
+			const additions = prepared.userScripts.filter((script) => !currentIds.has(script.id));
+			const updates = prepared.userScripts.filter((script) => currentIds.has(script.id));
+			if (additions.length > 0) await chrome.userScripts.register(additions);
+			if (updates.length > 0) await chrome.userScripts.update(updates);
+			const obsolete = current.filter((script) => !desiredIds.has(script.id)).map((script) => script.id);
+			if (obsolete.length > 0) await chrome.userScripts.unregister({ ids: obsolete });
+		} catch (error) { failures.push(failureMessage('userScripts reconcile failed', error)); }
 	}
-	if (prepared.contentScripts.length > 0) {
-		if (!chrome.scripting?.registerContentScripts) failures.push('content-script register unavailable');
-		else {
-			try { await chrome.scripting.registerContentScripts(prepared.contentScripts); }
-			catch (error) { failures.push(failureMessage('content-script register failed', error)); }
-		}
+	try {
+		const current = (await chrome.scripting.getRegisteredContentScripts())
+			.filter((script) => script.id.startsWith(SCRIPT_ID_PREFIX));
+		const currentIds = new Set(current.map((script) => script.id));
+		const desiredIds = new Set(prepared.contentScripts.map((script) => script.id));
+		const additions = prepared.contentScripts.filter((script) => !currentIds.has(script.id));
+		const updates = prepared.contentScripts.filter((script) => currentIds.has(script.id));
+		if (additions.length > 0) await chrome.scripting.registerContentScripts(additions);
+		if (updates.length > 0) await chrome.scripting.updateContentScripts(updates);
+		const obsolete = current.filter((script) => !desiredIds.has(script.id)).map((script) => script.id);
+		if (obsolete.length > 0) await chrome.scripting.unregisterContentScripts({ ids: obsolete });
+	} catch (error) {
+		failures.push(failureMessage('content-script reconcile failed', error));
 	}
 	if (failures.length > 0) throw new Error(failures.join('; '));
 }
 
 async function performRegisteredScriptSync(): Promise<ReconciliationResult> {
 	const authority = await readRegistryAuthority();
-	// `readRegistryAuthority` already validates and materializes the complete
-	// generation before this destructive boundary, and the same materialization
-	// is what the durable receipt fingerprints.
-	await unregisterAllScripts(authority.userScriptsAvailable);
-	await registerPrepared(authority.prepared, authority.userScriptsAvailable);
+	// Preflight materializes the whole generation. Reconciliation adds/updates
+	// desired registrations before deleting obsolete ones, so a transient API
+	// failure cannot erase the previous working generation.
+	await reconcilePrepared(authority.prepared, authority.userScriptsAvailable);
 	return {
 		digest: authority.digest,
 		receiptState: authority.userScriptsAvailable ? 'clean' : 'blocked',

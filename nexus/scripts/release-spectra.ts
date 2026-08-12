@@ -41,6 +41,9 @@ const SOURCE_DIGEST_IGNORED_FILE_SUFFIXES = Object.freeze([
 
 export const RELEASE_STEPS = Object.freeze([
 	{ label: 'architecture verify', args: ['run', 'verify:v'] },
+	{ label: 'documentation architecture', args: ['run', 'docs:check'] },
+	{ label: 'platform contract', args: ['run', 'check:platform'] },
+	{ label: 'public projection contract', args: ['run', 'check:public-projections'] },
 	{ label: 'frozen dependency install', args: ['install', '--frozen-lockfile'] },
 	{ label: 'toolchain verify', args: ['run', 'check:toolchain'] },
 	{ label: 'Biome lint', args: ['run', 'lint'] },

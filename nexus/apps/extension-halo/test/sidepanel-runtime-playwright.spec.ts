@@ -29,6 +29,19 @@ async function portalTextExistsOutsideRoot(page: Page, text: string): Promise<bo
 	)), text);
 }
 
+async function dispatchGlobalSearchShortcut(page: Page): Promise<void> {
+	// A standalone extension tab lets Chromium reserve Ctrl+K for the omnibox,
+	// while the real SidePanel surface delivers the event to its document. Drive
+	// the document listener directly here; native key ownership has its own
+	// installed-extension contract and must not make this renderer gate flaky.
+	await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', {
+		key: 'k',
+		ctrlKey: true,
+		bubbles: true,
+		cancelable: true,
+	})));
+}
+
 test.describe('HALO SidePanel runtime in Chromium', () => {
 	test('preserves home, hover preload, controlled state, lazy tools and portals', async () => {
 		test.setTimeout(40_000);
@@ -65,7 +78,7 @@ test.describe('HALO SidePanel runtime in Chromium', () => {
 			// Controlled input + global keyboard effect/event ownership.
 			const search = page.locator('input[type="text"]').first();
 			await expect(search).toBeVisible();
-			await page.keyboard.press('Control+k');
+			await dispatchGlobalSearchShortcut(page);
 			await expect(search).toBeFocused();
 			await search.fill('zzzz-no-match');
 			await expect(search).toHaveValue('zzzz-no-match');
@@ -112,7 +125,7 @@ test.describe('HALO SidePanel runtime in Chromium', () => {
 			// Closing the only dock item must retire the tool page and restore Home.
 			await dockItem.locator('button').nth(1).click();
 			await expect(page.locator('[data-dock-item]')).toHaveCount(0);
-			await page.keyboard.press('Control+k');
+			await dispatchGlobalSearchShortcut(page);
 			await expect(search).toBeFocused();
 
 			expect(browserErrors).toEqual([]);

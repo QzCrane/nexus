@@ -3,6 +3,32 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, extname, posix, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+export const SPECTRA_PRODUCTION_BUDGETS = Object.freeze({
+	serviceWorkerWake: 256 * 1024,
+	documentStart: 24 * 1024,
+	contentBootstrap: 14 * 1024,
+	contentSiteHotkeys: 11 * 1024,
+	offscreenCapture: 28 * 1024,
+	offscreenRemote: 72 * 1024,
+	popupStatic: 144 * 1024,
+});
+
+export function productionBudgetFailures(report) {
+	const failures = [];
+	const check = (label, actual, ceiling) => {
+		if (actual > ceiling) failures.push(`${label}: ${actual} bytes exceeds production budget ${ceiling}`);
+	};
+	const entries = new Map(report.entrypoints.map((entry) => [entry.name, entry]));
+	check('service-worker wake', report.serviceWorkerWake.scriptBytes, SPECTRA_PRODUCTION_BUDGETS.serviceWorkerWake);
+	check('document_start', report.documentStart.scriptBytes, SPECTRA_PRODUCTION_BUDGETS.documentStart);
+	check('content-bootstrap.js static closure', entries.get('content-bootstrap.js')?.staticBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.contentBootstrap);
+	check('content-site-hotkeys.js static closure', entries.get('content-site-hotkeys.js')?.staticBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.contentSiteHotkeys);
+	check('offscreen Capture-only closure', report.offscreenAudioOnly?.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.offscreenCapture);
+	check('offscreen Remote eventual closure', report.offscreenRemote?.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.offscreenRemote);
+	check('popup.js static closure', entries.get('popup.js')?.staticBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.popupStatic);
+	return failures;
+}
+
 const KiB = 1024;
 const REMOTE_RUNTIME_ASSET = 'peerjs-vendor.js';
 const IMPORT_PATTERN = /(?:\bimport\s*(?:[^"'()]*?from\s*)?|\bimport\s*\()\s*["']([^"']+)["']/gu;
@@ -435,7 +461,7 @@ export function analyzeProductionArtifacts({ distDir, metafiles = [] }) {
 		})
 		.sort((left, right) => left.name.localeCompare(right.name));
 
-	return {
+	const report = {
 		boundaryReplications: evidence.boundaryReplications,
 		documentStart,
 		duplicates,
@@ -450,6 +476,9 @@ export function analyzeProductionArtifacts({ distDir, metafiles = [] }) {
 		topContributors: evidence.topContributors,
 		total,
 	};
+	report.failures.push(...productionBudgetFailures(report));
+	report.failures = [...new Set(report.failures)].sort();
+	return report;
 }
 
 export function checkProductionArtifacts(options) {

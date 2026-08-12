@@ -179,4 +179,30 @@ describe('HALO release tooling', () => {
 		const initBody = registry.slice(registry.indexOf('export function initUserScriptsRegistry'));
 		expect(initBody).not.toMatch(/syncRegisteredScripts\(\);/u);
 	});
+
+	test('publishes context-menu entries only for implemented ready-tool activation protocols', () => {
+		const background = readFileSync(
+			new URL('../src/entry/background.ts', import.meta.url),
+			'utf8',
+		);
+		const sidepanel = readFileSync(
+			new URL('../src/components/sidepanel/use-sidepanel-state.ts', import.meta.url),
+			'utf8',
+		);
+		expect(background).not.toContain('halo-pdf-link');
+		expect(background).not.toContain('HALO_PREFILL_QR');
+		expect(background).toContain("toolId: 'qrcode'");
+		expect(sidepanel).toContain('parseSidepanelActivation(message)');
+	});
+
+	test('bounds global toast ownership and disposes every timer on provider retirement', () => {
+		const overlay = readFileSync(
+			new URL('../src/components/ui/overlay/OverlayProvider.tsx', import.meta.url),
+			'utf8',
+		);
+		expect(overlay).toContain('const MAX_TOASTS = 4');
+		expect(overlay).toContain('next.slice(-MAX_TOASTS)');
+		expect(overlay).toContain('toastTimersRef.current.clear()');
+		expect(overlay).toContain('config.duration ?? 3000');
+	});
 });

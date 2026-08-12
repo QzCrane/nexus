@@ -12,6 +12,7 @@ import type { ScanResult, QRCodeOptions } from './types';
 import { DEFAULT_OPTIONS } from './types';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { SIDEPANEL_QR_PREFILL_KEY } from '../../kernel/core/sidepanel-activation';
 
 
 import { useToast } from '../../components/ToastProvider';
@@ -37,6 +38,13 @@ export const QRCodePanel: React.FC = () => {
 	const logoInputRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => { loadHistory().then(setHistory); }, []);
+	useEffect(() => {
+		const prefill = sessionStorage.getItem(SIDEPANEL_QR_PREFILL_KEY);
+		if (!prefill) return;
+		sessionStorage.removeItem(SIDEPANEL_QR_PREFILL_KEY);
+		setMode('generate');
+		setText(prefill);
+	}, [setMode, setText]);
 	// const showToast = ... // Removed local implementation
 
 	const handleGenerate = useCallback(async () => {

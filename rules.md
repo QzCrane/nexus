@@ -23,7 +23,7 @@ This file owns repository-wide workflow, security, dependency, architecture, qua
 - Automation uses Bun or Node filesystem/path APIs and argument-array child processes. OS shell executables, `exec`/`execSync`, `shell: true`, and host-specific scripts are prohibited.
 - Temporary files derive from `os.tmpdir()`. Recursive cleanup has bounded retries for transient Windows locks. Archive and deployment paths use `/` at external boundaries and `node:path` on disk.
 - Tracked paths must be Unicode NFC, case-fold unique, legal on Windows, and free of symlinks. A script with a shebang is executable in the Git index; other files are not.
-- [`nexus/scripts/check-platform-contract.ts`](nexus/scripts/check-platform-contract.ts) is the executable drift gate (runs locally before push, and in Windows + Ubuntu CI).
+- [`nexus/scripts/check-platform-contract.ts`](nexus/scripts/check-platform-contract.ts) is the executable portability drift gate. It runs locally before push and is replayed in Windows + Ubuntu CI when hosted runners are available. Browser-product behavior is proved in an installed supported Chromium environment; a second operating system is required only when the change touches filesystem/path/archive/process/toolchain behavior or another platform-sensitive boundary. Runner availability is corroboration, not product authority or permission to skip the applicable local gate.
 
 ## 2. Change preparation
 

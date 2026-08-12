@@ -1,6 +1,6 @@
 export const zh = {
-	"tools.resource-monitor.name": "资源监控",
-	"tools.resource-monitor.desc": "全面监控所有后台服务和系统消耗",
+	"tools.resource-monitor.name": "运行影响清单",
+	"tools.resource-monitor.desc": "展示声明机制和观测到的运行状态，不代表 CPU 或内存实测",
 	"tools.resource-monitor.sections.active": "运行中",
 	"tools.resource-monitor.sections.inactive": "已停止",
 	"tools.resource-monitor.sections.system": "系统核心",

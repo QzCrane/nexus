@@ -1,5 +1,5 @@
-// goal: Resource Monitor panel UI - FULL monitoring with source annotations
-// inv: Display tools, scripts, AND system core consumers with source file:line
+// goal: Runtime impact inventory - declared mechanisms plus observed active status
+// inv: Never present static provenance metadata as measured CPU or memory usage
 
 import type React from 'react';
 import { useMemo, useState } from 'react';
@@ -40,7 +40,7 @@ export const ResourceMonitorPanel: React.FC = () => {
 	const { activeServices } = useActiveServices();
 	const [expanded, setExpanded] = useState<string | null>(null);
 
-	// Build tool service list from BACKGROUND_PROFILES_MAP
+	// Build the declared tool impact list from BACKGROUND_PROFILES_MAP.
 	const toolServices = useMemo<MonitoredService[]>(() => {
 		return BACKGROUND_PLUGIN_IDS.map(id => {
 			const profile = BACKGROUND_PROFILES_MAP[id] as BackgroundProfile;

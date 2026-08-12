@@ -476,17 +476,6 @@ function sanitizeAudioPatch(value: Partial<AudioConfig>): Partial<AudioConfig> {
 		}
 		patch.boost = value.boost;
 	}
-	if (patch.volumeBase !== undefined || patch.boost !== undefined) {
-		patch.volume = resolveAudioVolume({
-			volume: patch.volume ?? 100,
-			volumeBase: patch.volumeBase,
-			boost: patch.boost,
-		}).effectiveVolume;
-	} else if (patch.volume !== undefined) {
-		const migrated = resolveAudioVolume({ volume: patch.volume });
-		patch.volumeBase = migrated.volumeBase;
-		patch.boost = migrated.boost;
-	}
 	if (value.pan !== undefined) {
 		if (!Number.isFinite(value.pan) || value.pan < -1 || value.pan > 1) {
 			throw new InvalidSettingsPatchError('pan must be between -1 and 1');
@@ -518,6 +507,39 @@ function sanitizeAudioPatch(value: Partial<AudioConfig>): Partial<AudioConfig> {
 		patch.eqValues = [...value.eqValues];
 	}
 	return patch;
+}
+
+function mergeCanonicalAudioConfig(
+	existing: Record<string, unknown>,
+	changes: Partial<AudioConfig>,
+	mode: 'merge' | 'replace',
+): Record<string, unknown> {
+	const base = mode === 'replace'
+		? { ...DEFAULT_AUDIO_CONFIG }
+		: { ...existing };
+	const combined = { ...base, ...changes };
+	if (changes.volume === undefined && changes.volumeBase === undefined && changes.boost === undefined) {
+		return combined;
+	}
+	const resolved = changes.volumeBase !== undefined || changes.boost !== undefined
+		? resolveAudioVolume({
+			volume: Number(combined.volume ?? DEFAULT_AUDIO_CONFIG.volume),
+			volumeBase: Number(combined.volumeBase ?? DEFAULT_AUDIO_CONFIG.volumeBase),
+			boost: Number(combined.boost ?? DEFAULT_AUDIO_CONFIG.boost),
+		})
+		: changes.volume !== undefined
+			? resolveAudioVolume({ volume: changes.volume })
+			: resolveAudioVolume({
+				volume: Number(combined.volume ?? DEFAULT_AUDIO_CONFIG.volume),
+				volumeBase: Number(combined.volumeBase ?? DEFAULT_AUDIO_CONFIG.volumeBase),
+				boost: Number(combined.boost ?? DEFAULT_AUDIO_CONFIG.boost),
+			});
+	return {
+		...combined,
+		volume: resolved.effectiveVolume,
+		volumeBase: resolved.volumeBase,
+		boost: resolved.boost,
+	};
 }
 
 function snapshotAudioPatch(value: unknown): Partial<AudioConfig> {
@@ -766,9 +788,9 @@ export class SettingsRepository {
 						const unknown = Object.fromEntries(
 							Object.entries(existing).filter(([key]) => !AUDIO_CONFIG_KEYS.has(key as keyof AudioConfig)),
 						);
-						siteSettings[domain] = { ...unknown, ...DEFAULT_AUDIO_CONFIG, ...changes };
+						siteSettings[domain] = { ...unknown, ...mergeCanonicalAudioConfig({}, changes, 'replace') };
 					} else {
-						siteSettings[domain] = { ...existing, ...changes };
+						siteSettings[domain] = mergeCanonicalAudioConfig(existing, changes, 'merge');
 					}
 					break;
 				}
@@ -782,10 +804,11 @@ export class SettingsRepository {
 					const existing: Record<string, unknown> = isRecord(rawExisting) ? rawExisting : {};
 					const existingConfig = isRecord(existing.config) ? existing.config : {};
 					const existingMeta = isRecord(existing.meta) ? existing.meta : {};
+					const configChanges = sanitizeAudioPatch(patch.value.config);
 					globalPresets[patch.name] = {
 						...existing,
 						...patch.value,
-						config: { ...existingConfig, ...sanitizeAudioPatch(patch.value.config) },
+						config: mergeCanonicalAudioConfig(existingConfig, configChanges, 'merge'),
 						meta: { ...existingMeta, ...patch.value.meta, isDefault: defaultPresetId === patch.name },
 					};
 					break;

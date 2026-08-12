@@ -2,15 +2,15 @@
 // eff: Delegates open tools logic to useOpenTools hook
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import type { ToolId, HaloSettings } from '../../kernel';
+import type { HaloSettings, ToolId } from '../../kernel';
 import { loadSettings, getThemeColors, applyTheme, TOOL_REGISTRY, saveSettings } from '../../kernel';
 import { useModuleManager } from '../../kernel';
 import { useOpenTools } from './hooks/use-open-tools';
-
-function isToolId(value: unknown): value is ToolId {
-	return typeof value === 'string'
-		&& TOOL_REGISTRY.some(tool => tool.id === value);
-}
+import {
+	activationToolId,
+	parseSidepanelActivation,
+	SIDEPANEL_QR_PREFILL_KEY,
+} from '../../kernel/core/sidepanel-activation';
 
 export const useSidePanelState = () => {
 	const {
@@ -90,15 +90,12 @@ export const useSidePanelState = () => {
 	}, [baseToolSelect, installedToolIds]);
 
 	const listener = useCallback((message: unknown) => {
-		if (
-			typeof message === 'object'
-			&& message !== null
-			&& 'type' in message
-			&& message.type === 'HALO_ACTIVATE_TOOL'
-			&& 'toolId' in message
-			&& isToolId(message.toolId)
-		) {
-			void handleToolSelect(message.toolId).catch((error: unknown) => {
+		const activation = parseSidepanelActivation(message);
+		if (activation) {
+			if (activation.toolId === 'qrcode') {
+				sessionStorage.setItem(SIDEPANEL_QR_PREFILL_KEY, activation.payload.text);
+			}
+			void handleToolSelect(activationToolId(activation)).catch((error: unknown) => {
 				console.error('[HALO:SidePanel] Failed to activate tool', error);
 			});
 		}
