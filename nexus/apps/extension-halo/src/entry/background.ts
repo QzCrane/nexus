@@ -4,7 +4,11 @@
 import { STORAGE_PREFIX } from '../kernel/core/types';
 import { DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY } from '../kernel/core/settings';
 import { initUserScriptsEngine } from '../system/userscripts/engine';
-import { initUserScriptsRegistry, syncRegisteredScripts } from '../system/userscripts/registry';
+import {
+	initUserScriptsRegistry,
+	markSaaTDescriptorProjectionCurrent,
+	syncRegisteredScripts,
+} from '../system/userscripts/registry';
 import {
 	initSaaTService,
 	syncSaaTTools,
@@ -78,20 +82,29 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 	// The full UI TOOL_REGISTRY is intentionally absent from the service-worker
 	// dependency graph. Script metadata is generated as local data and read only
 	// on install/update, the only lifecycle that needs SaaT reconciliation.
+	// The durable descriptor-version marker is written only after this projection
+	// succeeds, so readiness cannot bless old descriptors under a new extension.
+	let descriptorProjectionCurrent = false;
 	try {
 		await syncSaaTTools(await loadScriptRuntimeDescriptors());
+		await markSaaTDescriptorProjectionCurrent();
+		descriptorProjectionCurrent = true;
 	} catch (error: unknown) {
 		console.warn(LOG_TAG, 'SaaT install synchronization skipped:', error);
 	}
 
 	// userScripts registrations are cleared by extension updates while dynamic
 	// scripting registrations persist across ordinary worker/browser sessions.
-	// Reconcile once on install/update; the registry's storage listener owns
-	// subsequent changes without rebuilding registrations on every worker wake.
-	try {
-		await syncRegisteredScripts();
-	} catch (error: unknown) {
-		console.warn(LOG_TAG, 'UserScripts install synchronization failed:', error);
+	// Reconcile once on install/update only after the generated descriptor
+	// projection is current. If descriptor synchronization failed, the stale or
+	// missing marker keeps every readiness path fail-closed instead of blessing
+	// the previous descriptor generation.
+	if (descriptorProjectionCurrent) {
+		try {
+			await syncRegisteredScripts();
+		} catch (error: unknown) {
+			console.warn(LOG_TAG, 'UserScripts install synchronization failed:', error);
+		}
 	}
 
 	const storage = await chrome.storage.sync.get([
