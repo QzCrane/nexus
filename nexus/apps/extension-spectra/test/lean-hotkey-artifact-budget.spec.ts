@@ -18,7 +18,7 @@ async function temporaryDist(): Promise<string> {
 
 afterEach(async () => {
 	await Promise.all(directories.splice(0).map((directory) => (
-		rm(directory, { recursive: true, force: true })
+		rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 })
 	)));
 });
 
