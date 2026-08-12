@@ -80,6 +80,12 @@ function serializeRealmMutation(id: string, mutation: () => Promise<void>): Prom
 async function runCrossContextMutation(id: string, mutation: () => Promise<void>): Promise<void> {
 	const lockManager = typeof navigator === 'undefined' ? undefined : navigator.locks;
 	if (!lockManager) {
+		// Tests and non-browser consumers may not expose the Web platform lock
+		// surface. A real extension context must never silently downgrade to
+		// realm-only serialization because that would reintroduce lost intent
+		// across SidePanel/worker/other extension contexts.
+		const extensionRuntime = typeof chrome !== 'undefined' && Boolean(chrome.runtime?.id);
+		if (extensionRuntime) throw new Error('Web Locks unavailable for packaged-module mutation authority');
 		await mutation();
 		return;
 	}
