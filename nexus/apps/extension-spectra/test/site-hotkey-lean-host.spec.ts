@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import {
 	DEFAULT_HOTKEY_SETTINGS,
+	isSpectraDefaultHotkeyTriggerPayload,
 	type HotkeyAction,
 	type HotkeyBinding,
 	type HotkeySettings,
@@ -13,6 +14,10 @@ import {
 
 const hostSource = readFileSync(
 	new URL('../src/content/input/lean-site-hotkey-host.ts', import.meta.url),
+	'utf8',
+);
+const shortcutSource = readFileSync(
+	new URL('../src/background/shortcuts.ts', import.meta.url),
 	'utf8',
 );
 
@@ -113,41 +118,86 @@ describe('SPECTRA lean custom-site hotkey boundary', () => {
 	});
 });
 
-describe('lean site-hotkey host source contract', () => {
-	test('routes through sender-bound canonical control RPC instead of global hotkey-target resolution', () => {
-		expect(hostSource).toContain("type: 'spectra.control.intent.submit'");
-		expect(hostSource).toContain("type: 'spectra.control.operation.submit'");
-		expect(hostSource).toContain("source: 'hotkey'");
-		expect(hostSource).toContain("requestedCoverage: 'active-target'");
-		expect(hostSource).toContain("operation: 'effective-volume'");
-		expect(hostSource).not.toContain("type: 'spectra.content.default-hotkey.trigger'");
-		expect(hostSource).not.toContain('hotkeyTargetRepository');
-		expect(hostSource).not.toContain('native-media-executor');
+describe('lean site-page trigger contract', () => {
+	test('extends the existing default-hotkey trigger with one exact sender-document disposition', () => {
+		expect(isSpectraDefaultHotkeyTriggerPayload({
+			action: 'speed_up',
+			phase: 'press',
+			gesture: 'site:1',
+			repeated: false,
+			disposition: 'site-page',
+		})).toBe(true);
+		expect(isSpectraDefaultHotkeyTriggerPayload({
+			action: 'speed_up',
+			phase: 'press',
+			gesture: 'site:1',
+			repeated: false,
+		})).toBe(true);
+		expect(isSpectraDefaultHotkeyTriggerPayload({
+			action: 'speed_up',
+			phase: 'press',
+			gesture: 'site:1',
+			repeated: false,
+			disposition: 'global',
+		})).toBe(false);
 	});
 
-	test('bounds async repeat backlog and drops unconsumed pulses on physical release', () => {
-		expect(hostSource).toContain('const MAX_PENDING_PULSES = 80;');
-		expect(hostSource).toContain('if (held.inFlight)');
-		expect(hostSource).toContain('held.pendingPulses = Math.min(MAX_PENDING_PULSES');
-		expect(hostSource).toContain('held.pendingPulses = 0;');
+	test('lean host reuses the existing physical gesture/feedback channel instead of direct control RPC', () => {
+		expect(hostSource).toContain("type: 'spectra.content.default-hotkey.trigger'");
+		expect(hostSource).toContain("disposition: 'site-page'");
+		expect(hostSource).toContain("nextScalarGestureId('site')");
+		expect(hostSource).toContain('publishDefaultScalarGesture');
+		expect(hostSource).toContain('showToast');
+		expect(hostSource).not.toContain("type: 'spectra.control.intent.submit'");
+		expect(hostSource).not.toContain("type: 'spectra.control.operation.submit'");
+		expect(hostSource).not.toContain('pendingPulses');
+		expect(hostSource).not.toContain('hotkeyTargetRepository');
+	});
+
+	test('Background keeps shipped defaults global-targeted while site-page bypasses the target repository', () => {
+		const siteStart = shortcutSource.indexOf('async function runSitePageHotkey');
+		const routeStart = shortcutSource.indexOf('interface ShortcutRoute', siteStart);
+		const siteBlock = shortcutSource.slice(siteStart, routeStart);
+		expect(siteStart).toBeGreaterThanOrEqual(0);
+		expect(siteBlock).toContain("origin: 'site-page'");
+		expect(siteBlock).toContain('foreground: document');
+		expect(siteBlock).toContain('target: document');
+		expect(siteBlock).toContain('executeShortcutRoute');
+		expect(siteBlock).not.toContain('hotkeyTargetRepository');
+
+		const defaultStart = shortcutSource.indexOf('async function runDefaultPageHotkey');
+		const siteFunctionStart = shortcutSource.indexOf('async function runSitePageHotkey', defaultStart);
+		const defaultBlock = shortcutSource.slice(defaultStart, siteFunctionStart);
+		expect(defaultBlock).toContain('resolveShortcutTargetFromActive');
+		expect(shortcutSource).toContain('const { tabId: targetId } = await hotkeyTargetRepository.get();');
+	});
+});
+
+describe('lean site-hotkey host lifecycle', () => {
+	test('uses website-first arbitration and Background-owned bounded repeat bursts', () => {
+		expect(hostSource).toContain('createWebsiteFirstKeyboardArbiter');
+		expect(hostSource).toContain('resolveSpectraDefaultHotkeyAction(event) !== null');
+		expect(hostSource).toContain('isSpectraRepeatableDefaultHotkeyAction');
+		expect(hostSource).toContain("phase: 'press' | 'release'");
+		expect(shortcutSource).toContain('MAX_REPEAT_BURST_PULSES = 160');
+		expect(shortcutSource).toContain('releasePageGestureBurst');
 		expect(hostSource).not.toContain('setInterval');
 	});
 
-	test('uses the website-first arbiter, excludes shipped default chords, and retires invalid contexts', () => {
-		expect(hostSource).toContain('createWebsiteFirstKeyboardArbiter');
-		expect(hostSource).toContain('resolveSpectraDefaultHotkeyAction(event) !== null');
+	test('releases the admitted physical gesture and retires invalid extension contexts', () => {
+		expect(hostSource).toContain('activeByCode.set(event.code, active)');
+		expect(hostSource).toContain('subscribeDocumentStartPhysicalHotkeyRelease(onPhysicalRelease)');
+		expect(hostSource).toContain("publishPhase(active, 'release')");
+		expect(hostSource).toContain("publishPhase(active, 'settled')");
 		expect(hostSource).toContain('runWithValidExtensionContext');
-		expect(hostSource).toContain(',\n\t\tdispose,\n\t).catch');
-		expect(hostSource).not.toContain("from '../core/index'");
-		expect(hostSource).not.toContain('hotkey-actions');
+		expect(hostSource).toContain('dispose');
 	});
 
-	test('owns a physical gesture through keyup and fully detaches browser listeners', () => {
-		expect(hostSource).toContain('activeByCode.set(event.code, held)');
-		expect(hostSource).toContain('subscribeDocumentStartPhysicalHotkeyRelease(onPhysicalRelease)');
-		expect(hostSource).toContain('for (const held of released) releaseHeld(held);');
-		expect(hostSource).toContain("window.removeEventListener('blur', onBlur)");
+	test('keeps the lean host alive across BFCache and disposes only a real page retirement', () => {
+		expect(hostSource).toContain('const onPageHide = (event: PageTransitionEvent)');
+		expect(hostSource).toContain('if (!event.persisted) dispose();');
+		expect(hostSource).toContain("window.addEventListener('pagehide', onPageHide);");
+		expect(hostSource).not.toContain("window.addEventListener('pagehide', onPageHide, { once: true })");
 		expect(hostSource).toContain("window.removeEventListener('pagehide', onPageHide)");
-		expect(hostSource).toContain("document.removeEventListener('visibilitychange', onVisibilityChange)");
 	});
 });
