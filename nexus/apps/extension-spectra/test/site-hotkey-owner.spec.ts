@@ -26,11 +26,7 @@ function binding(action: 'speed_up' | 'volume_mute' = 'speed_up'): HotkeyBinding
 }
 
 function lean(domain = 'example.com'): ResolvedSiteHotkeys {
-	return {
-		domain,
-		mode: 'lean',
-		site: { enabled: true, bindings: [binding()] },
-	};
+	return { domain, mode: 'lean', site: { enabled: true, bindings: [binding()] } };
 }
 
 function full(domain = 'example.com'): ResolvedSiteHotkeys {
@@ -67,6 +63,7 @@ function harness(options: { receiverPresent?: boolean } = {}) {
 		},
 	};
 	const fullRuntime: FullSiteHotkeyRuntimePort = {
+		async suspend() { events.push('suspend-full'); },
 		async ensure(capability) {
 			events.push(`ensure-full:${capability}`);
 			onEnsureStarted?.();
@@ -87,11 +84,12 @@ function harness(options: { receiverPresent?: boolean } = {}) {
 }
 
 describe('site hotkey document owner', () => {
-	test('first lean reconcile treats an absent receiver as empty, injects, then configures exactly once', async () => {
+	test('first lean reconcile empties lean, suspends any heavy listener, injects, then configures once', async () => {
 		const h = harness();
 		await h.owner.reconcile(7, 'doc-a', lean(), h.fullRuntime);
 		expect(h.events).toEqual([
 			'configure:7:doc-a:0:absent',
+			'suspend-full',
 			'inject:7:doc-a',
 			'configure:7:doc-a:1:delivered',
 		]);
@@ -110,18 +108,19 @@ describe('site hotkey document owner', () => {
 		]);
 	});
 
-	test('later lean projection reuses the injected host', async () => {
+	test('later lean projection reuses the injected host while suspending heavy ownership again', async () => {
 		const h = harness();
 		await h.owner.reconcile(7, 'doc-a', lean(), h.fullRuntime);
 		h.events.length = 0;
 		await h.owner.reconcile(7, 'doc-a', lean(), h.fullRuntime);
 		expect(h.events).toEqual([
 			'configure:7:doc-a:0:delivered',
+			'suspend-full',
 			'configure:7:doc-a:1:delivered',
 		]);
 	});
 
-	test('a new worker epoch can clear a surviving old-worker host', async () => {
+	test('a new worker epoch clears a surviving lean host and suspends any forgotten heavy listener', async () => {
 		const h1 = harness();
 		await h1.owner.reconcile(7, 'doc-a', lean(), h1.fullRuntime);
 		const oldEpoch = h1.messages.at(-1)?.epoch;
@@ -132,7 +131,10 @@ describe('site hotkey document owner', () => {
 		expect(newEpoch).toBeTruthy();
 		expect(newEpoch).not.toBe(oldEpoch);
 		expect(h2.messages[0]?.bindings).toEqual([]);
-		expect(h2.events).toEqual(['configure:7:doc-a:0:delivered']);
+		expect(h2.events).toEqual([
+			'configure:7:doc-a:0:delivered',
+			'suspend-full',
+		]);
 	});
 
 	test('forget during injection fences the stale nonempty projection', async () => {
@@ -150,6 +152,7 @@ describe('site hotkey document owner', () => {
 
 		expect(h.events).toEqual([
 			'configure:7:doc-a:0:absent',
+			'suspend-full',
 			'inject:7:doc-a',
 		]);
 		expect(h.events.some((event) => event.includes(':1:delivered'))).toBe(false);
