@@ -64,11 +64,33 @@ const INITIAL_SNAPSHOT: ModuleManagerSnapshot = Object.freeze({
 	installedModules: BUILTIN_MODULES,
 	availableModules: Object.freeze([]) as readonly ModuleMeta[],
 });
+const REALM_MUTATION_TAIL_BY_ID = new Map<string, Promise<void>>();
+const MODULE_MUTATION_LOCK_PREFIX = 'halo-module-installation-v2:';
+
+function serializeRealmMutation(id: string, mutation: () => Promise<void>): Promise<void> {
+	const previous = REALM_MUTATION_TAIL_BY_ID.get(id) ?? Promise.resolve();
+	const operation = previous.catch(() => undefined).then(mutation);
+	const tracked = operation.finally(() => {
+		if (REALM_MUTATION_TAIL_BY_ID.get(id) === tracked) REALM_MUTATION_TAIL_BY_ID.delete(id);
+	});
+	REALM_MUTATION_TAIL_BY_ID.set(id, tracked);
+	return tracked;
+}
+
+async function runCrossContextMutation(id: string, mutation: () => Promise<void>): Promise<void> {
+	const lockManager = typeof navigator === 'undefined' ? undefined : navigator.locks;
+	if (!lockManager) {
+		await mutation();
+		return;
+	}
+	await lockManager.request(`${MODULE_MUTATION_LOCK_PREFIX}${id}`, async () => {
+		await mutation();
+	});
+}
 
 export class ModuleManager {
 	private readonly disabled = new Set<string>();
 	private readonly listeners = new Set<() => void>();
-	private readonly mutationTailById = new Map<string, Promise<void>>();
 	private readonly hydrationEventOwnedIds = new Set<string>();
 	private revision = 0;
 	private degraded = true;
@@ -110,8 +132,13 @@ export class ModuleManager {
 	private commitHydration(degraded: boolean, changed: boolean, publish: boolean): void {
 		const degradedChanged = this.degraded !== degraded;
 		this.degraded = degraded;
-		if (publish && (changed || degradedChanged)) this.notify();
-		else this.refreshSnapshot();
+		if (publish) {
+			if (changed || degradedChanged) this.notify();
+			return;
+		}
+		// Initialization must always materialize the first complete snapshot. A
+		// healthy no-op retry, by contrast, must preserve snapshot identity.
+		this.refreshSnapshot();
 	}
 
 	async initialize(): Promise<void> {
@@ -182,7 +209,7 @@ export class ModuleManager {
 	private notify(): void {
 		this.revision += 1;
 		this.refreshSnapshot();
-		for (const listener of this.listeners) listener();
+		for (const listener of [...this.listeners]) listener();
 	}
 
 	private applyEnabled(id: string, enabled: boolean): void {
@@ -196,13 +223,10 @@ export class ModuleManager {
 	}
 
 	private serializeMutation(id: string, mutation: () => Promise<void>): Promise<void> {
-		const previous = this.mutationTailById.get(id) ?? Promise.resolve();
-		const operation = previous.catch(() => undefined).then(mutation);
-		const tracked = operation.finally(() => {
-			if (this.mutationTailById.get(id) === tracked) this.mutationTailById.delete(id);
-		});
-		this.mutationTailById.set(id, tracked);
-		return tracked;
+		// One realm-local tail avoids duplicate lock requests inside a context; Web
+		// Locks serializes the complete write+reread transaction across extension
+		// pages/workers that share the extension origin.
+		return serializeRealmMutation(id, () => runCrossContextMutation(id, mutation));
 	}
 
 	getState(id: string): ModuleState | undefined {
