@@ -71,6 +71,52 @@ describe('module hydration retry publication', () => {
 		expect(notifications).toBe(0);
 		unsubscribe();
 	});
+
+	test('fails every optional projection closed when a previously healthy authority degrades', async () => {
+		let failing = false;
+		const persistence: ModuleInstallationPersistence = {
+			loadDisabled: async () => {
+				if (failing) throw new Error('storage unavailable');
+				return new Set();
+			},
+			readEnabled: async () => true,
+			setEnabled: async () => undefined,
+			subscribe: () => () => undefined,
+		};
+		const manager = new ModuleManager(persistence);
+		await manager.initialize();
+		expect(manager.getSnapshot().installedModules).toHaveLength(ALL_MODULES.length);
+		const optional = OPTIONAL_MODULES[0];
+		if (!optional) throw new Error('HALO test requires an optional module');
+
+		let notifications = 0;
+		const unsubscribe = manager.subscribe(() => { notifications += 1; });
+		const originalError = console.error;
+		console.error = () => undefined;
+		try {
+			failing = true;
+			expect(await manager.retryInstallationState()).toBe(false);
+			const degraded = manager.getSnapshot();
+			expect(degraded.degraded).toBe(true);
+			expect(degraded.installedModules.map((module) => module.id)).toEqual(
+				CORE_MODULES.map((module) => module.id),
+			);
+			expect(degraded.availableModules).toHaveLength(OPTIONAL_MODULES.length);
+			expect(manager.isInstalled(optional.id)).toBe(false);
+			expect(manager.getState(optional.id)?.status).toBe('available');
+			expect(notifications).toBe(1);
+
+			failing = false;
+			expect(await manager.retryInstallationState()).toBe(true);
+			expect(manager.getSnapshot().degraded).toBe(false);
+			expect(manager.getSnapshot().installedModules).toHaveLength(ALL_MODULES.length);
+			expect(manager.isInstalled(optional.id)).toBe(true);
+			expect(notifications).toBe(2);
+		} finally {
+			console.error = originalError;
+			unsubscribe();
+		}
+	});
 });
 
 test('kernel script-runtime ownership vocabulary has no system-layer dependency', () => {
