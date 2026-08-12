@@ -32,6 +32,7 @@ interface RegistryAuthority {
 	userState: UserScriptsStorageSnapshot;
 	saatState: UserScriptsStorageSnapshot;
 	userscriptsModuleEnabled: boolean;
+	userScriptsAvailable: boolean;
 	moduleValues: Record<string, unknown>;
 	digest: string;
 }
@@ -40,8 +41,17 @@ interface PreparedRegistration {
 	contentScripts: chrome.scripting.RegisteredContentScript[];
 }
 
-function isUserScriptsAvailable(): boolean {
-	return typeof chrome.userScripts !== 'undefined';
+async function isUserScriptsCapabilityAvailable(): Promise<boolean> {
+	try {
+		if (typeof chrome.userScripts === 'undefined') return false;
+		// Chrome recommends exercising a method rather than checking only the
+		// namespace: permission/toggle revocation can leave the namespace present
+		// in a live context while method calls reject.
+		await chrome.userScripts.getScripts();
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 function normalizePattern(pattern: string): string {
@@ -200,10 +210,13 @@ function moduleKeysForManagedScripts(
 }
 
 async function readRegistryAuthority(): Promise<RegistryAuthority> {
-	const stateResult = await chrome.storage.local.get([
-		STORAGE_KEY,
-		SAAT_STORAGE_KEY,
-		USERSCRIPTS_MODULE_KEY,
+	const [stateResult, userScriptsAvailable] = await Promise.all([
+		chrome.storage.local.get([
+			STORAGE_KEY,
+			SAAT_STORAGE_KEY,
+			USERSCRIPTS_MODULE_KEY,
+		]),
+		isUserScriptsCapabilityAvailable(),
 	]);
 	const userState = parseUserScriptsStorageValue(stateResult[STORAGE_KEY]);
 	const saatState = parseUserScriptsStorageValue(stateResult[SAAT_STORAGE_KEY]);
@@ -222,8 +235,16 @@ async function readRegistryAuthority(): Promise<RegistryAuthority> {
 			? stateResult[USERSCRIPTS_MODULE_KEY]
 			: null,
 		moduleValues,
+		userScriptsAvailable,
 	});
-	return { userState, saatState, userscriptsModuleEnabled, moduleValues, digest };
+	return {
+		userState,
+		saatState,
+		userscriptsModuleEnabled,
+		userScriptsAvailable,
+		moduleValues,
+		digest,
+	};
 }
 
 function prepareRegistration(scripts: readonly UserScriptsSnapshotScript[]): PreparedRegistration {
@@ -257,16 +278,16 @@ function prepareRegistration(scripts: readonly UserScriptsSnapshotScript[]): Pre
 				js: [{ code: wrapForMainWorld(script.code, script.name, script.type) }],
 				runAt: toRunAt(script.runAt),
 				allFrames: false,
-				world: 'USER_SCRIPT',
+				world,
 			});
 		}
 	}
 	return { userScripts, contentScripts };
 }
 
-async function unregisterAllScripts(): Promise<void> {
+async function unregisterAllScripts(userScriptsAvailable: boolean): Promise<void> {
 	const failures: string[] = [];
-	if (isUserScriptsAvailable()) {
+	if (userScriptsAvailable) {
 		try {
 			const registered = await chrome.userScripts.getScripts();
 			const ids = registered.filter((script) => script.id.startsWith(SCRIPT_ID_PREFIX)).map((script) => script.id);
@@ -281,9 +302,12 @@ async function unregisterAllScripts(): Promise<void> {
 	if (failures.length > 0) throw new Error(failures.join('; '));
 }
 
-async function registerPrepared(prepared: PreparedRegistration): Promise<void> {
+async function registerPrepared(
+	prepared: PreparedRegistration,
+	userScriptsAvailable: boolean,
+): Promise<void> {
 	const failures: string[] = [];
-	if (prepared.userScripts.length > 0 && isUserScriptsAvailable()) {
+	if (prepared.userScripts.length > 0 && userScriptsAvailable) {
 		try { await chrome.userScripts.register(prepared.userScripts); }
 		catch (error) { failures.push(failureMessage('userScripts register failed', error)); }
 	}
@@ -306,10 +330,13 @@ async function performRegisteredScriptSync(): Promise<string> {
 		authority.moduleValues,
 	);
 	// Validate and construct the complete next generation before retiring the
-	// currently working browser-owned generation.
+	// currently working browser-owned generation. The userScripts platform gate
+	// is itself part of the receipt digest: unavailable means those registrations
+	// are externally disabled, not silently "successful" under an availability-
+	// agnostic receipt.
 	const prepared = prepareRegistration(desired);
-	await unregisterAllScripts();
-	await registerPrepared(prepared);
+	await unregisterAllScripts(authority.userScriptsAvailable);
+	await registerPrepared(prepared, authority.userScriptsAvailable);
 	return authority.digest;
 }
 
@@ -432,4 +459,5 @@ export const userScriptsRegistryTestApi = {
 	prepareRegistration,
 	isMatchingReceipt,
 	canonicalize,
+	isUserScriptsCapabilityAvailable,
 };
