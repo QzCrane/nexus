@@ -21,7 +21,7 @@
 		"level": "low",
 		"descriptionKey": "impact.userscripts_registry",
 		"sourceFile": "system/userscripts/registry.ts",
-		"sourceLine": 495,
+		"sourceLine": 528,
 		"sourceDetail": "chrome.storage.onChanged.addListener"
 	}
 }
