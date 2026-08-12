@@ -6,6 +6,7 @@ import {
 } from '@nexus/contracts';
 import {
 	recoverDocumentRuntimeOnWorkerStartup,
+	runtimeRestartStartupTestApi,
 	type RuntimeRestartStartupPort,
 	type RuntimeRestartStatus,
 	type RuntimeRestartTarget,
@@ -168,5 +169,13 @@ describe('MV3 startup runtime recovery adapter', () => {
 			h.port,
 		)).rejects.toThrow('Unexpected surviving runtime revision');
 		expect(h.events).toEqual(['status']);
+	});
+
+	test('uses one bounded retry schedule for both document and discovery failures', () => {
+		expect(runtimeRestartStartupTestApi.RETRY_DELAYS_MS).toEqual([250, 1_000, 4_000]);
+		expect(runtimeRestartStartupTestApi.retryDelayForAttempt(0)).toBe(250);
+		expect(runtimeRestartStartupTestApi.retryDelayForAttempt(1)).toBe(1_000);
+		expect(runtimeRestartStartupTestApi.retryDelayForAttempt(2)).toBe(4_000);
+		expect(runtimeRestartStartupTestApi.retryDelayForAttempt(3)).toBeNull();
 	});
 });
