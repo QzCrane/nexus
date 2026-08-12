@@ -53,7 +53,7 @@ const onObservedKeydown = (event: KeyboardEvent): void => {
 };
 
 const onObservedKeyup = (event: KeyboardEvent): void => {
-	if (!settingsHydrated || !moduleHydrated) return;
+	if (!runtimeEnabled()) return;
 	onKeyup(event);
 };
 
