@@ -16,6 +16,8 @@ import {
 	type UserScriptsStateLoader,
 } from './user-scripts-state-loader';
 
+type PermissionStatusResult = 'ready' | 'unavailable' | 'stale';
+
 function isSuccessfulRegistrySyncResponse(value: unknown): value is { success: true } {
 	return typeof value === 'object'
 		&& value !== null
@@ -39,6 +41,7 @@ export function useUserScripts() {
 	const [globalEnabled, setGlobalEnabled] = useState(true);
 	const [currentUrl, setCurrentUrl] = useState('');
 	const [hasPermission, setHasPermission] = useState(false);
+	const [scriptAuthorityRevision, setScriptAuthorityRevision] = useState(0);
 	const runtimeAccessRef = useRef(false);
 	const statusRevisionRef = useRef(0);
 	const readinessSyncRef = useRef<Promise<void> | null>(null);
@@ -57,6 +60,7 @@ export function useUserScripts() {
 					order: ['add', 'export', 'import'],
 					hideOnOverflow: false,
 				});
+				setScriptAuthorityRevision((revision) => revision + 1);
 			},
 			(error) => {
 				console.error('[HALO:UserScripts] Failed to load scripts', error);
@@ -84,41 +88,41 @@ export function useUserScripts() {
 		await readinessSyncRef.current;
 	}, []);
 
-	const refreshPermissionStatus = useCallback(async (): Promise<boolean> => {
+	const refreshPermissionStatus = useCallback(async (): Promise<PermissionStatusResult> => {
 		const revision = ++statusRevisionRef.current;
 		const [tab, hasHosts, hasUserScripts] = await Promise.all([
 			chrome.tabs.query({ active: true, currentWindow: true }).then((tabs) => tabs[0]),
 			chrome.permissions.contains({ origins: ['*://*/*'] }),
 			chrome.permissions.contains({ permissions: ['userScripts'] }),
 		]);
-		if (revision !== statusRevisionRef.current) return runtimeAccessRef.current;
+		if (revision !== statusRevisionRef.current) return 'stale';
 		if (tab?.url) setCurrentUrl(tab.url);
 
 		const platformAvailable = hasHosts && hasUserScripts
 			? await isUserScriptsCapabilityAvailable()
 			: false;
-		if (revision !== statusRevisionRef.current) return runtimeAccessRef.current;
+		if (revision !== statusRevisionRef.current) return 'stale';
 		if (!platformAvailable) {
 			runtimeAccessRef.current = false;
 			setHasPermission(false);
-			return false;
+			return 'unavailable';
 		}
 
-		if (!runtimeAccessRef.current) {
-			try {
-				await ensureBackgroundRegistryReady();
-			} catch (error) {
-				if (revision === statusRevisionRef.current) {
-					runtimeAccessRef.current = false;
-					setHasPermission(false);
-				}
-				throw error;
-			}
+		try {
+			// Always cross the idempotent Background receipt barrier. A previously
+			// ready panel must not keep advertising readiness after script authority
+			// changes have dirtied or blocked browser registration state.
+			await ensureBackgroundRegistryReady();
+		} catch (error) {
+			if (revision !== statusRevisionRef.current) return 'stale';
+			runtimeAccessRef.current = false;
+			setHasPermission(false);
+			throw error;
 		}
-		if (revision !== statusRevisionRef.current) return runtimeAccessRef.current;
+		if (revision !== statusRevisionRef.current) return 'stale';
 		runtimeAccessRef.current = true;
 		setHasPermission(true);
-		return true;
+		return 'ready';
 	}, [ensureBackgroundRegistryReady]);
 
 	// Permissions, Chrome's per-extension Allow User Scripts toggle, Background
@@ -152,6 +156,16 @@ export function useUserScripts() {
 		};
 	}, [refreshPermissionStatus]);
 
+	// A committed script-authority read represents a potentially new registry
+	// generation. Revalidate even if the previous panel state was already ready;
+	// the Background barrier is a no-op when the receipt is still satisfied.
+	useEffect(() => {
+		if (scriptAuthorityRevision === 0) return;
+		void refreshPermissionStatus().catch((error: unknown) => {
+			console.error('[HALO:UserScripts] Failed to revalidate registry authority', error);
+		});
+	}, [scriptAuthorityRevision, refreshPermissionStatus]);
+
 	const handleRequestPermission = async () => {
 		let granted = false;
 		try {
@@ -168,9 +182,14 @@ export function useUserScripts() {
 		}
 
 		if (!granted) return;
-		let available = false;
+		let status: PermissionStatusResult = 'stale';
 		try {
-			available = await refreshPermissionStatus();
+			// Permission events can start a newer refresh while this imperative call
+			// is in flight. Retry retired reads instead of presenting their previous
+			// readiness value as the final permission result.
+			for (let attempt = 0; attempt < 3 && status === 'stale'; attempt += 1) {
+				status = await refreshPermissionStatus();
+			}
 		} catch (error: unknown) {
 			console.error('[HALO:UserScripts] Registry readiness failed', error);
 			showToast(`❌ ${t('userscripts.registrySyncFailed', {
@@ -178,7 +197,8 @@ export function useUserScripts() {
 			})}`);
 			return;
 		}
-		if (available) {
+		if (status === 'stale') return;
+		if (status === 'ready') {
 			showToast(`✅ ${t('userscripts.permsGranted', { defaultValue: 'Permissions granted' })}`);
 			return;
 		}
