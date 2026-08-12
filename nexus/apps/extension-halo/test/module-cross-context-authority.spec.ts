@@ -212,6 +212,15 @@ describe('persistent UserScripts recovery contract', () => {
 		expect(userScriptsRegistryTestApi.SYNC_RETRY_DELAYS_MS).toEqual([250, 1_000, 4_000]);
 	});
 
+	test('canonical receipt encoding preserves key order and distinguishes undefined from strings', () => {
+		const { canonicalize } = userScriptsRegistryTestApi;
+		expect(canonicalize(undefined)).toBe('undefined');
+		expect(canonicalize('undefined')).toBe('"undefined"');
+		expect(canonicalize({ b: 1, a: undefined })).toBe('{"a":undefined,"b":1}');
+		expect(canonicalize({ b: 1, a: undefined })).toBe(canonicalize({ a: undefined, b: 1 }));
+		expect(() => canonicalize(Symbol('unsupported'))).toThrow('Unsupported registry authority value');
+	});
+
 	test('startup recovery compares the persisted receipt to current physical authority', () => {
 		expect(registrySource).toContain('readRegistryAuthority()');
 		expect(registrySource).toContain('!isMatchingReceipt(receiptResult[RECOVERY_STORAGE_KEY], authority.digest)');
