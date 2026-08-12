@@ -1,8 +1,7 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '../../../i18n';
 import type { UserScript, UserScriptState } from '../types';
 import {
-	getUserScriptsState,
 	deleteUserScript,
 	toggleUserScript,
 	toggleGlobalEnabled,
@@ -12,9 +11,10 @@ import { injectScriptToCurrentTab } from '../engine';
 import { useToast } from '../../../components/ToastProvider';
 import { isUserScriptsCapabilityAvailable } from '../capability';
 import {
-	createUserScriptsStateLoader,
-	type UserScriptsStateLoader,
-} from './user-scripts-state-loader';
+	refreshUserScriptsStorage,
+	type UserScriptsSnapshotScript,
+} from '../storage-authority';
+import { useUserScriptsStorageSnapshot } from './useUserScriptsSnapshot';
 
 type PermissionStatusResult = 'ready' | 'unavailable' | 'stale';
 
@@ -34,47 +34,47 @@ function registrySyncFailureMessage(value: unknown): string {
 	return 'Background UserScripts registry synchronization failed';
 }
 
+const DEFAULT_TOOLBAR_CONFIG: NonNullable<UserScriptState['toolbarConfig']> = {
+	order: ['add', 'export', 'import'],
+	hideOnOverflow: false,
+};
+
+function materializeScript(script: UserScriptsSnapshotScript): UserScript {
+	return {
+		...script,
+		matches: [...script.matches],
+		...(script.excludeMatches ? { excludeMatches: [...script.excludeMatches] } : {}),
+	} as UserScript;
+}
+
 export function useUserScripts() {
 	const { t } = useTranslation();
 	const { showToast } = useToast();
-	const [scripts, setScripts] = useState<UserScript[]>([]);
-	const [globalEnabled, setGlobalEnabled] = useState(true);
+	const snapshot = useUserScriptsStorageSnapshot();
+	const scripts = useMemo(
+		() => snapshot.scripts.map(materializeScript),
+		[snapshot.scripts],
+	);
+	const globalEnabled = snapshot.globalEnabled;
+	const toolbarConfig = useMemo<UserScriptState['toolbarConfig']>(() => (
+		snapshot.toolbarConfig
+			? {
+				order: [...snapshot.toolbarConfig.order],
+				hideOnOverflow: snapshot.toolbarConfig.hideOnOverflow,
+			}
+			: { ...DEFAULT_TOOLBAR_CONFIG, order: [...DEFAULT_TOOLBAR_CONFIG.order] }
+	), [snapshot.toolbarConfig]);
 	const [currentUrl, setCurrentUrl] = useState('');
 	const [hasPermission, setHasPermission] = useState(false);
-	const [scriptAuthorityRevision, setScriptAuthorityRevision] = useState(0);
 	const runtimeAccessRef = useRef(false);
 	const statusRevisionRef = useRef(0);
 	const readinessSyncRef = useRef<Promise<void> | null>(null);
 
-	// Toolbar config
-	const [toolbarConfig, setToolbarConfig] = useState<UserScriptState['toolbarConfig']>();
-
-	const stateLoaderRef = useRef<UserScriptsStateLoader | null>(null);
-	if (stateLoaderRef.current === null) {
-		stateLoaderRef.current = createUserScriptsStateLoader(
-			getUserScriptsState,
-			(state) => {
-				setScripts(state.scripts);
-				setGlobalEnabled(state.globalEnabled);
-				setToolbarConfig(state.toolbarConfig || {
-					order: ['add', 'export', 'import'],
-					hideOnOverflow: false,
-				});
-				setScriptAuthorityRevision((revision) => revision + 1);
-			},
-			(error) => {
-				console.error('[HALO:UserScripts] Failed to load scripts', error);
-			},
-		);
-	}
-	const stateLoader = stateLoaderRef.current;
-	const loadScripts = useCallback(() => stateLoader.load(), [stateLoader]);
-
-	useEffect(() => {
-		stateLoader.activate();
-		void loadScripts();
-		return () => stateLoader.dispose();
-	}, [loadScripts, stateLoader]);
+	// Explicit external refreshes remain available, but owned writes publish via
+	// the shared storage event and never issue a duplicate immediate read.
+	const loadScripts = useCallback(async () => {
+		await refreshUserScriptsStorage();
+	}, []);
 
 	const ensureBackgroundRegistryReady = useCallback(async (): Promise<void> => {
 		if (!readinessSyncRef.current) {
@@ -156,15 +156,15 @@ export function useUserScripts() {
 		};
 	}, [refreshPermissionStatus]);
 
-	// A committed script-authority read represents a potentially new registry
+	// A committed canonical snapshot represents a potentially new registry
 	// generation. Revalidate even if the previous panel state was already ready;
 	// the Background barrier is a no-op when the receipt is still satisfied.
 	useEffect(() => {
-		if (scriptAuthorityRevision === 0) return;
+		if (!snapshot.ready) return;
 		void refreshPermissionStatus().catch((error: unknown) => {
 			console.error('[HALO:UserScripts] Failed to revalidate registry authority', error);
 		});
-	}, [scriptAuthorityRevision, refreshPermissionStatus]);
+	}, [snapshot, refreshPermissionStatus]);
 
 	const handleRequestPermission = async () => {
 		let granted = false;
@@ -209,8 +209,6 @@ export function useUserScripts() {
 
 	const handleGlobalToggle = async () => {
 		const newState = await toggleGlobalEnabled();
-		setGlobalEnabled(newState);
-		setScriptAuthorityRevision((revision) => revision + 1);
 		showToast(newState
 			? `✅ ${t('userscripts.scriptsEnabled')}`
 			: `⏸️ ${t('userscripts.scriptsDisabled')}`);
@@ -218,13 +216,11 @@ export function useUserScripts() {
 
 	const handleToggle = async (id: string) => {
 		await toggleUserScript(id);
-		await loadScripts();
 	};
 
 	const handleDelete = async (id: string) => {
 		if (!confirm(t('userscripts.deleteConfirm'))) return;
 		await deleteUserScript(id);
-		await loadScripts();
 		showToast(`🗑️ ${t('userscripts.scriptDeleted')}`);
 	};
 
@@ -237,12 +233,10 @@ export function useUserScripts() {
 
 	const handleMove = async (id: string, dir: 'up' | 'down') => {
 		await reorderScript(id, dir);
-		await loadScripts();
 	};
 
 	const handleToolbarConfig = async (config: UserScriptState['toolbarConfig']) => {
-		await import('../operations').then(ops => ops.saveToolbarConfig(config));
-		await loadScripts();
+		await import('../operations').then((operations) => operations.saveToolbarConfig(config));
 	};
 
 	return {
@@ -258,6 +252,6 @@ export function useUserScripts() {
 		handleDelete,
 		handleTest,
 		handleMove,
-		handleToolbarConfig
+		handleToolbarConfig,
 	};
 }

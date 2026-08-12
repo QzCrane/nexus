@@ -1,6 +1,7 @@
 // goal: SidePanel smooth scroll logic - separated for line limit compliance
 // inv: Always active in sidepanel, ignores the 'enabled' setting (only for web pages)
 
+import { subscribeHaloStorageChanges } from '../kernel/core/storage-change-bus';
 import { clearQueue, scrollTo, configure } from '../tools/smooth-scroll/engine';
 import { normalizeScrollSettings, STORAGE_KEY } from '../tools/smooth-scroll/types';
 import type { EasingType } from '../tools/smooth-scroll/types';
@@ -75,9 +76,7 @@ function onWheel(e: WheelEvent): void {
 	}
 	let eventTarget = wheelEventTarget(e);
 	let composedPath: readonly EventTarget[] | undefined;
-	if (!eventTarget || wheelNeedsComposedPath(eventTarget)) {
-		composedPath = e.composedPath();
-	}
+	if (!eventTarget || wheelNeedsComposedPath(eventTarget)) composedPath = e.composedPath();
 	if (!eventTarget && composedPath) {
 		for (const target of composedPath) {
 			if (target instanceof Element) {
@@ -124,25 +123,11 @@ function onWheel(e: WheelEvent): void {
 			accelDirection === direction &&
 			lastTime !== null &&
 			now - lastTime < cfg.accelerationDelta;
-		nextAccel = continuingStream
-			? Math.min(accel + 0.5, cfg.accelerationMax)
-			: 1;
-		if (Math.abs(deltaY) > 1.2) {
-			deltaY = direction * cfg.stepSize;
-		}
+		nextAccel = continuingStream ? Math.min(accel + 0.5, cfg.accelerationMax) : 1;
+		if (Math.abs(deltaY) > 1.2) deltaY = direction * cfg.stepSize;
 	}
 
-	if (
-		!scrollTo(
-			target,
-			0,
-			deltaY,
-			route.admission,
-			inputMode,
-			performance.now(),
-			nextAccel,
-		)
-	) {
+	if (!scrollTo(target, 0, deltaY, route.admission, inputMode, performance.now(), nextAccel)) {
 		resetScrollRuntime();
 		return;
 	}
@@ -157,8 +142,7 @@ function onWheel(e: WheelEvent): void {
 }
 
 function onKeydown(e: KeyboardEvent): void {
-	if (!e.isTrusted) return;
-	if (!SCROLL_KEYS.has(e.key)) return;
+	if (!e.isTrusted || !SCROLL_KEYS.has(e.key)) return;
 	if (e.ctrlKey || e.altKey || e.metaKey || shouldIgnoreInput(document.activeElement)) {
 		resetScrollRuntime();
 		return;
@@ -170,7 +154,6 @@ function onKeydown(e: KeyboardEvent): void {
 
 	const pageH = window.innerHeight * 0.9;
 	let deltaY = 0;
-
 	switch (e.key) {
 		case 'ArrowDown': deltaY = cfg.stepSize * 0.5; break;
 		case 'ArrowUp': deltaY = -cfg.stepSize * 0.5; break;
@@ -180,34 +163,22 @@ function onKeydown(e: KeyboardEvent): void {
 	}
 
 	const active = document.activeElement;
-	const isGeneric =
-		!active ||
-		active === document.body ||
-		active === document.documentElement;
+	const isGeneric = !active || active === document.body || active === document.documentElement;
 	resetScrollRuntime();
 	const route = isGeneric
 		? resolveMainScrollRoute(deltaY)
 		: resolveScrollRoute(active, deltaY, e.composedPath());
-	if (route.kind === 'blocked') {
-		e.preventDefault();
-	} else if (
-		route.kind === 'animate' &&
-		scrollTo(route.target, 0, deltaY, route.admission)
-	) {
-		e.preventDefault();
-	} else {
-		resetScrollRuntime();
-	}
+	if (route.kind === 'blocked') e.preventDefault();
+	else if (route.kind === 'animate' && scrollTo(route.target, 0, deltaY, route.admission)) e.preventDefault();
+	else resetScrollRuntime();
 }
 
-// rule: guard against double-init and return a cleanup function so callers (e.g.
-// tests, hot reload) can detach the listeners. Without the guard, repeated
-// initScroll() calls would stack N wheel/keydown/storage listeners that each
-// handled the same event, causing N scroll actions per wheel tick.
 let scrollInitStarted = false;
 export function initScroll(): () => void {
 	if (scrollInitStarted) return () => {};
 	scrollInitStarted = true;
+	let active = true;
+	let storageRevision = 0;
 
 	configure(cfg.animationTime, cfg.easing, cfg.pulseScale);
 	window.addEventListener('wheel', onWheel, { passive: false });
@@ -215,27 +186,34 @@ export function initScroll(): () => void {
 	window.addEventListener('pagehide', resetScrollRuntime);
 	document.addEventListener('visibilitychange', onVisibilityChange);
 
-	chrome.storage.sync.get([STORAGE_KEY], (r) => {
-		if (r[STORAGE_KEY]) {
-			cfg = { ...cfg, ...normalizeScrollSettings(r[STORAGE_KEY]) };
-			configure(cfg.animationTime, cfg.easing, cfg.pulseScale);
-		}
+	const applyStoredSettings = (value: unknown): void => {
+		cfg = { ...cfg, ...normalizeScrollSettings(value) };
+		configure(cfg.animationTime, cfg.easing, cfg.pulseScale);
+	};
+
+	// Event-first authority: subscribe before the initial read, then fence the
+	// older read with a revision so it cannot overwrite a newer storage event.
+	const unsubscribeStorageChanges = subscribeHaloStorageChanges((changes, area) => {
+		if (!active || area !== 'sync') return;
+		const change = changes[STORAGE_KEY];
+		if (!change) return;
+		storageRevision += 1;
+		applyStoredSettings(change.newValue);
 	});
 
-	const listener = (changes: { [key: string]: chrome.storage.StorageChange }, area: string) => {
-		if (area === 'sync' && changes[STORAGE_KEY]) {
-			cfg = { ...cfg, ...normalizeScrollSettings(changes[STORAGE_KEY].newValue) };
-			configure(cfg.animationTime, cfg.easing, cfg.pulseScale);
-		}
-	};
-	chrome.storage.onChanged.addListener(listener);
+	const readRevision = storageRevision;
+	chrome.storage.sync.get([STORAGE_KEY], (result) => {
+		if (!active || storageRevision !== readRevision || !result[STORAGE_KEY]) return;
+		applyStoredSettings(result[STORAGE_KEY]);
+	});
 
 	return () => {
+		active = false;
 		window.removeEventListener('wheel', onWheel);
 		window.removeEventListener('keydown', onKeydown);
 		window.removeEventListener('pagehide', resetScrollRuntime);
 		document.removeEventListener('visibilitychange', onVisibilityChange);
-		chrome.storage.onChanged.removeListener(listener);
+		unsubscribeStorageChanges();
 		resetScrollRuntime();
 		scrollInitStarted = false;
 	};

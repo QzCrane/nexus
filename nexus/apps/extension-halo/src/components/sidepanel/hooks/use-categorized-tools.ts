@@ -18,7 +18,7 @@ interface UseCategorizedToolsProps {
 
 // Build dynamic category keys from TAXONOMY (SSOT)
 const CATEGORY_IDS = TAXONOMY.map((category) => category.id);
-const CATEGORY_ID_SET = new Set(CATEGORY_IDS);
+const CATEGORY_ID_SET = new Set<string>(CATEGORY_IDS);
 const SPECIAL_CATEGORY_IDS = new Set(['active', 'scripts', 'system']);
 
 export function resolveCategoryOrder(

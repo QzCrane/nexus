@@ -103,12 +103,14 @@ describe('UserScripts readiness race contracts', () => {
 
 	test('committed and owned global script authority changes trigger readiness revalidation', () => {
 		const hook = source('system/userscripts/hooks/useUserScripts.ts');
-		expect(hook).toContain('scriptAuthorityRevision');
-		expect(hook).toContain('[scriptAuthorityRevision, refreshPermissionStatus]');
+		expect(hook).toContain('const snapshot = useUserScriptsStorageSnapshot();');
+		expect(hook).toContain('if (!snapshot.ready) return;');
+		expect(hook).toContain('[snapshot, refreshPermissionStatus]');
 		expect(hook).toContain('Failed to revalidate registry authority');
 		const globalToggleIndex = hook.indexOf('const newState = await toggleGlobalEnabled();');
-		const revisionIndex = hook.indexOf('setScriptAuthorityRevision((revision) => revision + 1);', globalToggleIndex);
+		const nextHandlerIndex = hook.indexOf('const handleToggle', globalToggleIndex);
+		const globalToggleSection = hook.slice(globalToggleIndex, nextHandlerIndex);
 		expect(globalToggleIndex).toBeGreaterThanOrEqual(0);
-		expect(revisionIndex).toBeGreaterThan(globalToggleIndex);
+		expect(globalToggleSection).not.toContain('loadScripts');
 	});
 });

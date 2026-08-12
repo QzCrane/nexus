@@ -288,11 +288,15 @@ describe('persistent UserScripts recovery contract', () => {
 
 	test('explicit readiness checks are idempotent and preserve a satisfied browser registry', () => {
 		const ensureIndex = registrySource.indexOf('export function ensureRegisteredScriptsSynchronized');
-		const satisfiedIndex = registrySource.indexOf('if (await hasSatisfiedPersistentRegistryReceipt()) return;', ensureIndex);
+		const satisfiedIndex = registrySource.indexOf('let satisfied = await hasSatisfiedPersistentRegistryReceipt();', ensureIndex);
+		const guardIndex = registrySource.indexOf('if (!satisfied) {', satisfiedIndex);
 		const syncIndex = registrySource.indexOf('await syncRegisteredScripts();', ensureIndex);
+		const verifyIndex = registrySource.indexOf('satisfied = await hasSatisfiedPersistentRegistryReceipt();', syncIndex);
 		expect(ensureIndex).toBeGreaterThanOrEqual(0);
 		expect(satisfiedIndex).toBeGreaterThan(ensureIndex);
-		expect(syncIndex).toBeGreaterThan(satisfiedIndex);
+		expect(guardIndex).toBeGreaterThan(satisfiedIndex);
+		expect(syncIndex).toBeGreaterThan(guardIndex);
+		expect(verifyIndex).toBeGreaterThan(syncIndex);
 		expect(registrySource).toContain('if (reconciliation) await reconciliation;');
 		expect(registrySource).toContain('if (ensureSynchronized) return ensureSynchronized;');
 	});
@@ -321,9 +325,10 @@ test('Launcher custom scripts require healthy UserScripts module authority and e
 	const source = readFileSync(new URL('../src/kernel/hooks/use-user-scripts.ts', import.meta.url), 'utf8');
 	expect(source).toContain("module.id === 'userscripts'");
 	expect(source).toContain('!degraded');
-	expect(source).toContain('value.saatToolId === undefined');
-	expect(source).toContain('value.managedBy === undefined');
-	expect(source).toContain('if (!enabled)');
+	expect(source).toContain('useUserScriptsStorageSnapshot');
+	expect(source).toContain('script.saatToolId !== undefined');
+	expect(source).toContain('script.managedBy !== undefined');
+	expect(source).toContain('snapshot.failed');
 });
 
 test('UserScripts panel readiness waits for Background registry ACK and fences stale refreshes', () => {
