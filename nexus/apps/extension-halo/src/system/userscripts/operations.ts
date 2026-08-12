@@ -8,6 +8,13 @@ function serialized<T>(fn: () => Promise<T>): Promise<T> {
 	return result;
 }
 
+function assertUserOwned(script: UserScript | undefined, action: string): asserts script is UserScript {
+	if (!script) throw new Error(`User script not found for ${action}`);
+	if (script.managedBy !== undefined) {
+		throw new Error(`Managed script ${script.id} cannot be ${action}; use its module owner`);
+	}
+}
+
 // Add new script
 export async function addUserScript(
 	script: Omit<UserScript, 'id' | 'createdAt' | 'updatedAt' | 'order' | 'runCount'>,
@@ -36,10 +43,9 @@ export async function updateUserScript(id: string, updates: Partial<UserScript>)
 		const state = await getUserScriptsState();
 		const index = state.scripts.findIndex((s) => s.id === id);
 		const current = state.scripts[index];
-		if (current) {
-			state.scripts[index] = { ...current, ...updates, updatedAt: Date.now() };
-			await saveState(state);
-		}
+		assertUserOwned(current, 'edited');
+		state.scripts[index] = { ...current, ...updates, updatedAt: Date.now() };
+		await saveState(state);
 	});
 }
 
@@ -47,6 +53,7 @@ export async function updateUserScript(id: string, updates: Partial<UserScript>)
 export async function deleteUserScript(id: string): Promise<void> {
 	return serialized(async () => {
 		const state = await getUserScriptsState();
+		assertUserOwned(state.scripts.find((script) => script.id === id), 'deleted');
 		state.scripts = state.scripts.filter((s) => s.id !== id);
 		await saveState(state);
 	});
@@ -57,11 +64,10 @@ export async function toggleUserScript(id: string): Promise<void> {
 	return serialized(async () => {
 		const state = await getUserScriptsState();
 		const script = state.scripts.find((s) => s.id === id);
-		if (script) {
-			script.enabled = !script.enabled;
-			script.updatedAt = Date.now();
-			await saveState(state);
-		}
+		assertUserOwned(script, 'toggled');
+		script.enabled = !script.enabled;
+		script.updatedAt = Date.now();
+		await saveState(state);
 	});
 }
 
@@ -81,6 +87,7 @@ export async function reorderScript(id: string, direction: 'up' | 'down'): Promi
 		const state = await getUserScriptsState();
 		const index = state.scripts.findIndex((s) => s.id === id);
 		if (index === -1) return;
+		assertUserOwned(state.scripts[index], 'reordered');
 
 		const newIndex = direction === 'up' ? index - 1 : index + 1;
 		if (newIndex < 0 || newIndex >= state.scripts.length) return;

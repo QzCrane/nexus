@@ -211,8 +211,14 @@ export async function updateAudioSession(
 					? { code: 'runtime_error', message: update.error, retryable: true }
 					: null,
 		};
+		// The public ACK is also restart-recovery authority. Persist the exact
+		// identity and stable state before publishing it; a service-worker
+		// replacement after the ACK must not observe an older session.
+		clearWriteTimer(identity.tabId);
+		pendingWrites.delete(identity.tabId);
+		retryCounts.delete(identity.tabId);
+		await chrome.storage.session.set({ [key(identity.tabId)]: snapshot });
 		snapshots.set(identity.tabId, snapshot);
-		scheduleWrite(identity.tabId, snapshot);
 		await broadcast(snapshot);
 		return snapshot;
 	});

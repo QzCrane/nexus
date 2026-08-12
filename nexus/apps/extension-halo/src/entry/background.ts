@@ -27,7 +27,6 @@ initSaaTService();
 const MENU_OPEN_HALO = 'halo-open';
 const MENU_QR_SELECTION = 'halo-qr-selection';
 const MENU_COLOR_PICK = 'halo-color-pick';
-const MENU_PDF_LINK = 'halo-pdf-link';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -147,12 +146,6 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 			contexts: ['page'],
 		});
 
-		chrome.contextMenus.create({
-			id: MENU_PDF_LINK,
-			title: '📕 Open PDF in HALO',
-			contexts: ['link'],
-			targetUrlPatterns: ['*://*/*.pdf', '*://*/*.pdf?*'],
-		});
 	} catch (err) {
 		console.warn(LOG_TAG, 'Context menu setup failed', err);
 	}
@@ -171,8 +164,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 			const text = info.selectionText || info.linkUrl || '';
 			if (text) {
 				void sendPrefillMessage({
-					type: 'HALO_PREFILL_QR',
-					text,
+					type: 'HALO_ACTIVATE_TOOL',
+					toolId: 'qrcode',
+					payload: { text },
 				});
 			}
 			break;
@@ -185,19 +179,6 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 				toolId: 'color-picker',
 			});
 			break;
-
-		case MENU_PDF_LINK: {
-			await chrome.sidePanel.open({ tabId: tab.id });
-			const pdfUrl = info.linkUrl;
-			if (pdfUrl) {
-				void sendPrefillMessage({
-					type: 'HALO_ACTIVATE_TOOL',
-					toolId: 'pdf',
-					pdfUrl,
-				});
-			}
-			break;
-		}
 	}
 });
 

@@ -1,6 +1,6 @@
 export const en = {
-	"tools.resource-monitor.name": "Resource Monitor",
-	"tools.resource-monitor.desc": "Full monitoring of all background services and system consumers",
+	"tools.resource-monitor.name": "Runtime Impact Inventory",
+	"tools.resource-monitor.desc": "Declared mechanisms and observed active status; not CPU or memory measurement",
 	"tools.resource-monitor.sections.active": "Active",
 	"tools.resource-monitor.sections.inactive": "Inactive",
 	"tools.resource-monitor.sections.system": "System Core",

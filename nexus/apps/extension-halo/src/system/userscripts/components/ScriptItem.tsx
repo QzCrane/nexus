@@ -28,6 +28,7 @@ export const ScriptItem: React.FC<ScriptItemProps> = ({
 	};
 
 	const isJS = script.type === 'javascript';
+	const isManaged = script.managedBy !== undefined;
 	const accentColor = isJS ? '#FFD700' : '#2196F3';
 
 	return (
@@ -60,10 +61,10 @@ export const ScriptItem: React.FC<ScriptItemProps> = ({
 				</div>
 				{/* Controls */}
 				<div style={itemStyles.controls as React.CSSProperties}>
-					<button type="button" style={{ ...itemStyles.reorderBtn, opacity: isFirst ? 0.3 : 1, cursor: isFirst ? 'not-allowed' : 'pointer' }}
-						onClick={(e) => { e.stopPropagation(); if (!isFirst) onMove('up'); }} disabled={isFirst} title={t('userscripts.moveUp', { defaultValue: 'Move up' })}>↑</button>
-					<button type="button" style={{ ...itemStyles.reorderBtn, opacity: isLast ? 0.3 : 1, cursor: isLast ? 'not-allowed' : 'pointer' }}
-						onClick={(e) => { e.stopPropagation(); if (!isLast) onMove('down'); }} disabled={isLast} title={t('userscripts.moveDown', { defaultValue: 'Move down' })}>↓</button>
+					<button type="button" style={{ ...itemStyles.reorderBtn, opacity: isFirst || isManaged ? 0.3 : 1, cursor: isFirst || isManaged ? 'not-allowed' : 'pointer' }}
+						onClick={(e) => { e.stopPropagation(); if (!isFirst && !isManaged) onMove('up'); }} disabled={isFirst || isManaged} title={t('userscripts.moveUp', { defaultValue: 'Move up' })}>↑</button>
+					<button type="button" style={{ ...itemStyles.reorderBtn, opacity: isLast || isManaged ? 0.3 : 1, cursor: isLast || isManaged ? 'not-allowed' : 'pointer' }}
+						onClick={(e) => { e.stopPropagation(); if (!isLast && !isManaged) onMove('down'); }} disabled={isLast || isManaged} title={t('userscripts.moveDown', { defaultValue: 'Move down' })}>↓</button>
 					<button
 						type="button"
 						aria-label={script.enabled
@@ -77,6 +78,7 @@ export const ScriptItem: React.FC<ScriptItemProps> = ({
 							border: 'none',
 						}}
 						onClick={onToggle}
+						disabled={isManaged}
 					>
 						<div style={{ ...itemStyles.toggleKnob, left: script.enabled ? '19px' : '3px' } as React.CSSProperties} />
 					</button>
@@ -84,11 +86,17 @@ export const ScriptItem: React.FC<ScriptItemProps> = ({
 			</div>
 
 			{/* Actions */}
-			<div style={itemStyles.actions as React.CSSProperties}>
-				<button type="button" style={itemStyles.btn} onClick={onEdit}>✏️ {t('userscripts.edit', { defaultValue: 'Edit' })}</button>
-				<button type="button" style={{ ...itemStyles.btn, ...itemStyles.btnPrimary }} onClick={onTest}>▶️ {t('userscripts.test', { defaultValue: 'Test' })}</button>
-				<button type="button" style={{ ...itemStyles.iconBtn, ...itemStyles.deleteBtn }} onClick={onDelete} title={t('userscripts.delete', { defaultValue: 'Delete' })}>🗑️</button>
-			</div>
+			{isManaged ? (
+				<div style={itemStyles.actions as React.CSSProperties}>
+					<span>{t('userscripts.managedByModule', { defaultValue: 'Managed by its packaged module' })}</span>
+				</div>
+			) : (
+				<div style={itemStyles.actions as React.CSSProperties}>
+					<button type="button" style={itemStyles.btn} onClick={onEdit}>✏️ {t('userscripts.edit', { defaultValue: 'Edit' })}</button>
+					<button type="button" style={{ ...itemStyles.btn, ...itemStyles.btnPrimary }} onClick={onTest}>▶️ {t('userscripts.test', { defaultValue: 'Test' })}</button>
+					<button type="button" style={{ ...itemStyles.iconBtn, ...itemStyles.deleteBtn }} onClick={onDelete} title={t('userscripts.delete', { defaultValue: 'Delete' })}>🗑️</button>
+				</div>
+			)}
 		</div>
 	);
 };

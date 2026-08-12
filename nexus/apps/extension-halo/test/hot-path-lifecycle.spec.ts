@@ -87,6 +87,9 @@ describe('HALO hot-path lifecycle ownership', () => {
 		expect(initialReadIndex).toBeGreaterThan(listenerIndex);
 		expect(entry).toContain('settingsEventObserved = true');
 		expect(entry).toContain('if (settingsEventObserved) return;');
+		expect(entry).toMatch(/typeof value !== 'object' \|\| value === null\) return false/u);
+		expect(entry).toContain('updateClipboardState(false)');
+		expect(entry).not.toContain('updateClipboardState(true);\n\t});');
 		expect(entry).toMatch(/setTimeout\(\(\) => \{\s*if \(!listenerAttached\) return;/u);
 	});
 });

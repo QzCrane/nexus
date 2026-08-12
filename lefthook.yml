@@ -31,6 +31,8 @@ pre-push:
       run: bun --cwd nexus check:toolchain
     documentation-architecture:
       run: bun run docs:check
+    public-projections:
+      run: bun run check:public-projections
     hooks-smoke:
       run: bun --cwd nexus scripts/hooks/test.ts
     verify-architecture:

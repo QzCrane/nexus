@@ -2304,6 +2304,26 @@ export function initializeControlCoordinator(): void {
 			sendResponse(rpcFailure('invalid_request', 'Control intent requires a target tab'));
 			return false;
 		}
+		if (message.payload.source === 'remote') {
+			sendResponse(rpcFailure(
+				'forbidden',
+				'Background-only control sources cannot be asserted by runtime RPC',
+			));
+			return false;
+		}
+		if (message.payload.source === 'restore' && (
+			sender.tab?.id !== tabId
+			|| sender.frameId !== 0
+			|| !sender.documentId
+			|| message.payload.target === null
+			|| message.payload.target.documentId !== sender.documentId
+		)) {
+			sendResponse(rpcFailure(
+				'forbidden',
+				'Restore control must match its exact top-level document sender',
+			));
+			return false;
+		}
 		const pageObservation = message.type === 'spectra.control.intent.submit'
 			&& message.payload.source === 'page';
 		if (pageObservation && (

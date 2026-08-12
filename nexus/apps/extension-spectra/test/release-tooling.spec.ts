@@ -48,6 +48,8 @@ import {
 	artifactClosure,
 	bundleFootprint,
 	checkProductionArtifacts,
+	productionBudgetFailures,
+	SPECTRA_PRODUCTION_BUDGETS,
 } from '../scripts/check-production-artifacts.ts';
 import { productionMangleOptions } from '../scripts/minification-policy.ts';
 
@@ -65,6 +67,43 @@ afterEach(() => {
 });
 
 describe('release ZIP tooling', () => {
+	test('keeps runtime control roles bound to browser sender identity', () => {
+		const coordinator = readFileSync(
+			new URL('../src/background/control-coordinator.ts', import.meta.url),
+			'utf8',
+		);
+		expect(coordinator).toContain("message.payload.source === 'remote'");
+		expect(coordinator).toContain('Background-only control sources cannot be asserted by runtime RPC');
+		expect(coordinator).toMatch(/message\.payload\.source === 'restore'[\s\S]{0,320}sender\.frameId !== 0[\s\S]{0,320}message\.payload\.target\.documentId !== sender\.documentId/u);
+	});
+
+	test('advances remote delivered generation only inside a successful delivery acknowledgement', () => {
+		const remote = readFileSync(
+			new URL('../src/background/remote-service.ts', import.meta.url),
+			'utf8',
+		);
+		const sendState = remote.slice(
+			remote.indexOf('function sendStateToOffscreen'),
+			remote.indexOf('type AuthorizedRemoteHostEvent'),
+		);
+		expect(sendState).toMatch(/\.then\(\(response\) => \{[\s\S]*if \(response\.success\) \{[\s\S]*authorization\.generation = Math\.max/u);
+		expect(sendState.indexOf('authorization.generation =')).toBeGreaterThan(sendState.indexOf('response.success'));
+	});
+
+	test('production budgets reject one-byte startup closure regressions', () => {
+		const report = {
+			serviceWorkerWake: { scriptBytes: SPECTRA_PRODUCTION_BUDGETS.serviceWorkerWake + 1 },
+			documentStart: { scriptBytes: 0 },
+			offscreenAudioOnly: { scriptBytes: 0 },
+			offscreenRemote: { scriptBytes: 0 },
+			entrypoints: [],
+		};
+		expect(productionBudgetFailures(report)).toEqual([
+			`service-worker wake: ${SPECTRA_PRODUCTION_BUDGETS.serviceWorkerWake + 1} bytes exceeds production budget ${SPECTRA_PRODUCTION_BUDGETS.serviceWorkerWake}`,
+		]);
+		report.serviceWorkerWake.scriptBytes -= 1;
+		expect(productionBudgetFailures(report)).toEqual([]);
+	});
 	test('forbids publishing an unvalidated ZIP directly', () => {
 		expect(() => createRelease({ stage: false })).toThrow('Direct final release writes are disabled');
 	});
@@ -460,6 +499,9 @@ describe('release gate orchestration', () => {
 		expect(() => assertReleaseRuntime('1.3.6')).toThrow('requires Bun 1.3.14');
 		expect(RELEASE_STEPS.map((step) => step.label)).toEqual([
 			'architecture verify',
+			'documentation architecture',
+			'platform contract',
+			'public projection contract',
 			'frozen dependency install',
 			'toolchain verify',
 			'Biome lint',

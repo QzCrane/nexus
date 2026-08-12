@@ -338,6 +338,38 @@ describe('background settings repository', () => {
 		expect(requireRecord(voice.meta).isDefault).toBe(true);
 	});
 
+	test('canonicalizes coupled audio fields after partial merge against existing state', async () => {
+		const storage = new FakeStorageArea({
+			siteSettings: {
+				'example.com': { volume: 200, volumeBase: 100, boost: 2 },
+			},
+		});
+		const repository = new SettingsRepository(storage);
+		const initial = await repository.initialize();
+		const baseChanged = await repository.applyPatch({
+			scope: 'audio-site',
+			domain: 'example.com',
+			mode: 'merge',
+			value: { volumeBase: 80 },
+		}, initial.revision);
+		expect(baseChanged.audioSites['example.com']).toMatchObject({
+			volume: 160,
+			volumeBase: 80,
+			boost: 2,
+		});
+		const boostChanged = await repository.applyPatch({
+			scope: 'audio-site',
+			domain: 'example.com',
+			mode: 'merge',
+			value: { boost: 1.5 },
+		}, baseChanged.revision);
+		expect(boostChanged.audioSites['example.com']).toMatchObject({
+			volume: 120,
+			volumeBase: 80,
+			boost: 1.5,
+		});
+	});
+
 	test('preserves unknown audio fields and deterministically falls back when deleting the default preset', async () => {
 		const storage = new FakeStorageArea({
 			globalSettings: { futureGlobalField: 'keep-global' },

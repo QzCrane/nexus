@@ -57,9 +57,9 @@ function updateClipboardState(enabled: boolean): void {
 }
 
 function readEnabled(value: unknown): boolean {
-	if (typeof value !== 'object' || value === null) return true;
+	if (typeof value !== 'object' || value === null) return false;
 	const enabled = (value as { enabled?: unknown }).enabled;
-	return typeof enabled === 'boolean' ? enabled : true;
+	return typeof enabled === 'boolean' ? enabled : false;
 }
 
 // Subscribe before the asynchronous initial read. A storage change that wins
@@ -73,10 +73,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
 	updateClipboardState(readEnabled(change.newValue));
 });
 
-// Clipboard history retains the existing default-on contract for this pass;
-// structural isolation makes that contract cheap without silently changing
-// existing users' behavior. A future product decision can change the default
-// in one shared settings owner instead of coupling it to content-host loading.
+// Clipboard is not a ready product surface. Missing, malformed, or unreadable
+// settings therefore fail closed; only an explicit persisted enablement may
+// attach the all-frame copy listener.
 try {
 	void chrome.storage.local.get([SETTINGS_KEY]).then((result) => {
 		if (settingsEventObserved) return;
@@ -84,11 +83,11 @@ try {
 	}).catch((error: unknown) => {
 		if (settingsEventObserved || isExpectedRuntimeDisconnect(error)) return;
 		console.warn(LOG_TAG, 'Initial settings read failed', error);
-		updateClipboardState(true);
+		updateClipboardState(false);
 	});
 } catch (error: unknown) {
 	if (!isExpectedRuntimeDisconnect(error)) {
 		console.warn(LOG_TAG, 'Storage context unavailable', error);
-		if (!settingsEventObserved) updateClipboardState(true);
+		if (!settingsEventObserved) updateClipboardState(false);
 	}
 }

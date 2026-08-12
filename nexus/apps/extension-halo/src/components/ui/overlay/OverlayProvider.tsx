@@ -1,16 +1,23 @@
 import type React from 'react';
-import { createContext, useContext, useState, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import type { ModalConfig, ToastConfig, OverlayContextType } from './types';
 import { useTranslation } from '../../../i18n';
 import { styles } from './OverlayProvider.styles';
 
 const OverlayContext = createContext<OverlayContextType | undefined>(undefined);
+const MAX_TOASTS = 4;
 
 export const OverlayProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 	const { t } = useTranslation();
 	const [modal, setModal] = useState<ModalConfig | null>(null);
 	const [toasts, setToasts] = useState<(ToastConfig & { id: number })[]>([]);
 	const toastIdRef = useRef(0);
+	const toastTimersRef = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+
+	useEffect(() => () => {
+		for (const timer of toastTimersRef.current.values()) clearTimeout(timer);
+		toastTimersRef.current.clear();
+	}, []);
 
 	const showModal = useCallback((config: ModalConfig) => {
 		setModal(config);
@@ -22,10 +29,20 @@ export const OverlayProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
 	const showToast = useCallback((config: ToastConfig) => {
 		const id = ++toastIdRef.current;
-		setToasts(prev => [...prev, { ...config, id }]);
-		setTimeout(() => {
+		const timer = setTimeout(() => {
+			toastTimersRef.current.delete(id);
 			setToasts(prev => prev.filter(t => t.id !== id));
-		}, config.duration || 3000);
+		}, config.duration ?? 3000);
+		toastTimersRef.current.set(id, timer);
+		setToasts(prev => {
+			const next = [...prev, { ...config, id }];
+			for (const evicted of next.slice(0, -MAX_TOASTS)) {
+				const evictedTimer = toastTimersRef.current.get(evicted.id);
+				if (evictedTimer) clearTimeout(evictedTimer);
+				toastTimersRef.current.delete(evicted.id);
+			}
+			return next.slice(-MAX_TOASTS);
+		});
 	}, []);
 
 	const handleConfirm = async () => {

@@ -12,6 +12,11 @@ import {
 	userScriptsRegistryTestApi,
 } from '../src/system/userscripts/registry';
 import type { UserScript, UserScriptState } from '../src/system/userscripts/types';
+import {
+	deleteUserScript,
+	toggleUserScript,
+	updateUserScript,
+} from '../src/system/userscripts/operations';
 
 function deferred() {
 	let resolve!: () => void;
@@ -136,6 +141,33 @@ describe('cross-context packaged-module mutations', () => {
 });
 
 describe('script runtime ownership', () => {
+	test('managed scripts reject direct user mutation at the storage owner', async () => {
+		const previous = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const managed = script('packaged', {
+			managedBy: 'packaged-script',
+			saatToolId: 'packaged',
+			moduleBuiltIn: true,
+		});
+		let stored = scriptState([managed]);
+		try {
+			Object.defineProperty(globalThis, 'chrome', {
+				configurable: true,
+				value: { storage: { local: {
+					get: async () => ({ halo_userscripts: structuredClone(stored) }),
+					set: async (value: Record<string, UserScriptState>) => { stored = structuredClone(value.halo_userscripts); },
+				} } },
+			});
+			await expect(updateUserScript(managed.id, { name: 'tampered' })).rejects.toThrow('Managed script');
+			await expect(toggleUserScript(managed.id)).rejects.toThrow('Managed script');
+			await expect(deleteUserScript(managed.id)).rejects.toThrow('Managed script');
+			expect(stored.scripts[0]?.name).toBe('packaged');
+			expect(stored.scripts).toHaveLength(1);
+		} finally {
+			if (previous) Object.defineProperty(globalThis, 'chrome', previous);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
+	});
+
 	test('UserScripts module tombstone disables custom scripts but not built-in packaged scripts', () => {
 		const custom = script('custom');
 		const builtInPackaged = script('bilibili-plus', {
@@ -210,11 +242,16 @@ describe('script runtime ownership', () => {
 describe('persistent UserScripts recovery contract', () => {
 	const registrySource = readFileSync(new URL('../src/system/userscripts/registry.ts', import.meta.url), 'utf8');
 
-	test('prepares the complete next registration generation before destructive teardown', () => {
+	test('prepares the complete next registration generation before non-destructive reconciliation', () => {
 		const prepareIndex = registrySource.indexOf('const prepared = prepareRegistration(desired);');
-		const unregisterIndex = registrySource.indexOf('await unregisterAllScripts(', prepareIndex);
+		const reconcileIndex = registrySource.indexOf('await reconcilePrepared(', prepareIndex);
 		expect(prepareIndex).toBeGreaterThanOrEqual(0);
-		expect(unregisterIndex).toBeGreaterThan(prepareIndex);
+		expect(reconcileIndex).toBeGreaterThan(prepareIndex);
+		expect(registrySource).toContain('await chrome.userScripts.register(additions)');
+		expect(registrySource).toContain('await chrome.userScripts.update(updates)');
+		expect(registrySource.indexOf('await chrome.userScripts.unregister')).toBeGreaterThan(
+			registrySource.indexOf('await chrome.userScripts.update'),
+		);
 		expect(() => userScriptsRegistryTestApi.toMatchPatterns([])).toThrow('At least one match pattern is required');
 		expect(() => userScriptsRegistryTestApi.toMatchPatterns(['   '])).toThrow('Empty match pattern');
 	});

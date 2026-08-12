@@ -45,7 +45,7 @@ function mechanismPattern(mechanism: ConsumptionMechanism): RegExp | null {
 		case 'event_listener':
 			return /(?:addEventListener|addListener)\s*\(/u;
 		case 'storage_listener':
-			return /storage\.onChanged\.addListener\s*\(/u;
+			return /(?:storage\.onChanged\.addListener|subscribeHaloStorageChanges)\s*\(/u;
 		case 'message_listener':
 			return /runtime\.onMessage\.addListener\s*\(/u;
 		case 'wheel_listener':
@@ -101,5 +101,13 @@ describe('HALO resource-impact provenance', () => {
 			readFileSync(resolve(srcRoot, 'system/resource-monitor/manifest.json'), 'utf8'),
 		) as { background?: unknown };
 		expect(manifest.background).toBeUndefined();
+	});
+
+	test('presents provenance as an impact inventory rather than measured resource usage', () => {
+		const locale = readFileSync(resolve(srcRoot, 'system/resource-monitor/locales/en.ts'), 'utf8');
+		const panel = readFileSync(resolve(srcRoot, 'system/resource-monitor/panel.tsx'), 'utf8');
+		expect(locale).toContain('Runtime Impact Inventory');
+		expect(locale).toContain('not CPU or memory measurement');
+		expect(panel).not.toContain('FULL monitoring');
 	});
 });

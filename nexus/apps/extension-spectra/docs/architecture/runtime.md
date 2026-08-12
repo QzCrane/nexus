@@ -153,6 +153,10 @@ v2 envelopes validated at runtime. Compatibility adapters are temporary translat
 
 Favicon/QR are UI/security boundaries, not media capabilities. Exact-element, PiP, fullscreen bridge semantics handled separately.
 
+## Production performance budgets
+
+`scripts/check-production-artifacts.ts` owns hard byte ceilings for the service-worker wake closure, manifest `document_start` closure, lean/bootstrap hosts, Capture-only and Remote-eventual offscreen closures, and Popup static closure. The gate measures production artifacts and fails on growth beyond the audited KiB buckets; an intentional increase must update this owner and the executable budget together. Source lines, total extension size, and local build time do not substitute for closure measurement.
+
 ## Current implementation ownership
 
 | Concern | Owner | Invariant |

@@ -4,7 +4,7 @@
 		"description": "Extension name"
 	},
 	"extDescription": {
-		"message": "800% volume boost, EQ, video controls, mobile remote. 🔵🟣 High-performance dual-mode switching for all websites.",
+		"message": "800% volume boost, EQ, video controls, and an optional mobile remote. Availability depends on the page and Chrome support.",
 		"description": "Extension description"
 	}
 }
