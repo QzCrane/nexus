@@ -6,7 +6,12 @@ import {
 	isOptionalPackagedModuleStoredEnabled,
 	moduleInstallationStorageKey,
 } from '../../kernel/core/module-installation-runtime';
-import type { ScriptType, UserScript, UserScriptState } from './types';
+import type { ScriptType } from './types';
+import {
+	parseUserScriptsStorageValue,
+	type UserScriptsSnapshotScript,
+	type UserScriptsStorageSnapshot,
+} from './storage-schema';
 
 const LOG_TAG = '[HALO:UserScripts:Registry]';
 const STORAGE_KEY = 'halo_userscripts';
@@ -15,6 +20,25 @@ const USERSCRIPTS_MODULE_KEY = moduleInstallationStorageKey('userscripts');
 const RECOVERY_STORAGE_KEY = 'halo_userscripts_registry_dirty_v1';
 const SCRIPT_ID_PREFIX = 'halo-userscript-';
 const SYNC_RETRY_DELAYS_MS = [250, 1_000, 4_000] as const;
+const RECEIPT_VERSION = 2;
+const DIRTY_RECEIPT = Object.freeze({ version: RECEIPT_VERSION, state: 'dirty' as const });
+
+interface RegistryReceipt {
+	version: typeof RECEIPT_VERSION;
+	state: 'clean';
+	digest: string;
+}
+interface RegistryAuthority {
+	userState: UserScriptsStorageSnapshot;
+	saatState: UserScriptsStorageSnapshot;
+	userscriptsModuleEnabled: boolean;
+	moduleValues: Record<string, unknown>;
+	digest: string;
+}
+interface PreparedRegistration {
+	userScripts: chrome.userScripts.RegisteredUserScript[];
+	contentScripts: chrome.scripting.RegisteredContentScript[];
+}
 
 function isUserScriptsAvailable(): boolean {
 	return typeof chrome.userScripts !== 'undefined';
@@ -24,9 +48,7 @@ function normalizePattern(pattern: string): string {
 	const trimmed = pattern.trim();
 	if (!trimmed) throw new Error('Empty match pattern');
 	if (trimmed === '*' || trimmed === '*/*') return '*://*/*';
-	if (trimmed.startsWith('*://') || trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-		return trimmed;
-	}
+	if (trimmed.startsWith('*://') || trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
 	if (trimmed.includes('/')) return `*://${trimmed}`;
 	return `*://${trimmed}/*`;
 }
@@ -84,40 +106,128 @@ function failureMessage(label: string, error: unknown): string {
 	return `${label}: ${error instanceof Error ? error.message : String(error)}`;
 }
 
-async function unregisterAllScripts(): Promise<void> {
-	const failures: string[] = [];
-	if (isUserScriptsAvailable()) {
-		try {
-			const registered = await chrome.userScripts.getScripts();
-			const ids = registered
-				.filter((script) => script.id.startsWith(SCRIPT_ID_PREFIX))
-				.map((script) => script.id);
-			if (ids.length > 0) await chrome.userScripts.unregister({ ids });
-		} catch (error) {
-			failures.push(failureMessage('userScripts unregister failed', error));
-		}
-	}
-	try {
-		const registered = await chrome.scripting.getRegisteredContentScripts();
-		const ids = registered
-			.filter((script) => script.id.startsWith(SCRIPT_ID_PREFIX))
-			.map((script) => script.id);
-		if (ids.length > 0) await chrome.scripting.unregisterContentScripts({ ids });
-	} catch (error) {
-		failures.push(failureMessage('content-script unregister failed', error));
-	}
-	if (failures.length > 0) throw new Error(failures.join('; '));
+function canonicalize(value: unknown): string {
+	if (value === null || typeof value !== 'object') return JSON.stringify(value);
+	if (Array.isArray(value)) return `[${value.map(canonicalize).join(',')}]`;
+	const record = value as Record<string, unknown>;
+	return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonicalize(record[key])}`).join(',')}}`;
 }
 
-async function registerAllScripts(scripts: readonly UserScript[]): Promise<void> {
+async function digestAuthority(value: unknown): Promise<string> {
+	const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalize(value)));
+	return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function isCustomUserScript(script: UserScriptsSnapshotScript): boolean {
+	return script.saatToolId === undefined
+		&& script.managedBy === undefined
+		&& script.moduleBuiltIn === undefined;
+}
+
+function validateOwnershipContainers(
+	userScripts: readonly UserScriptsSnapshotScript[],
+	saatScripts: readonly UserScriptsSnapshotScript[],
+): void {
+	for (const script of userScripts) {
+		if (isCustomUserScript(script)) continue;
+		if (script.managedBy !== 'packaged-script'
+			|| !script.saatToolId
+			|| typeof script.moduleBuiltIn !== 'boolean') {
+			throw new Error(`Invalid packaged-script ownership metadata: ${script.id}`);
+		}
+	}
+	for (const script of saatScripts) {
+		if (script.managedBy !== 'saat-tool'
+			|| !script.saatToolId
+			|| typeof script.moduleBuiltIn !== 'boolean') {
+			throw new Error(`Invalid SaaT ownership metadata: ${script.id}`);
+		}
+	}
+}
+
+function ownedModuleEnabled(
+	script: UserScriptsSnapshotScript,
+	moduleValues: Record<string, unknown>,
+): boolean {
+	if (!script.saatToolId) return false;
+	if (script.moduleBuiltIn === true) return true;
+	const key = moduleInstallationStorageKey(script.saatToolId);
+	return isOptionalPackagedModuleStoredEnabled(
+		moduleValues[key],
+		Object.hasOwn(moduleValues, key),
+	);
+}
+
+export function resolveDesiredRegisteredScripts(
+	userState: Pick<UserScriptsStorageSnapshot, 'globalEnabled' | 'scripts'>,
+	saatState: Pick<UserScriptsStorageSnapshot, 'globalEnabled' | 'scripts'>,
+	userscriptsModuleEnabled: boolean,
+	moduleValues: Record<string, unknown>,
+): UserScriptsSnapshotScript[] {
+	const desired: UserScriptsSnapshotScript[] = [];
+	if (userState.globalEnabled) {
+		for (const script of userState.scripts) {
+			if (isCustomUserScript(script)) {
+				if (userscriptsModuleEnabled) desired.push(script);
+				continue;
+			}
+			if (script.managedBy === 'packaged-script' && ownedModuleEnabled(script, moduleValues)) desired.push(script);
+		}
+	}
+	if (saatState.globalEnabled) {
+		for (const script of saatState.scripts) {
+			if (script.managedBy === 'saat-tool' && ownedModuleEnabled(script, moduleValues)) desired.push(script);
+		}
+	}
+	return desired;
+}
+
+function moduleKeysForManagedScripts(
+	userState: Pick<UserScriptsStorageSnapshot, 'scripts'>,
+	saatState: Pick<UserScriptsStorageSnapshot, 'scripts'>,
+): string[] {
+	const keys = new Set<string>();
+	for (const script of [...userState.scripts, ...saatState.scripts]) {
+		if (!script.saatToolId || script.moduleBuiltIn === true) continue;
+		keys.add(moduleInstallationStorageKey(script.saatToolId));
+	}
+	return [...keys];
+}
+
+async function readRegistryAuthority(): Promise<RegistryAuthority> {
+	const stateResult = await chrome.storage.local.get([
+		STORAGE_KEY,
+		SAAT_STORAGE_KEY,
+		USERSCRIPTS_MODULE_KEY,
+	]);
+	const userState = parseUserScriptsStorageValue(stateResult[STORAGE_KEY]);
+	const saatState = parseUserScriptsStorageValue(stateResult[SAAT_STORAGE_KEY]);
+	if (userState.failed || saatState.failed) throw new Error('Script registry persistence schema validation failed');
+	validateOwnershipContainers(userState.scripts, saatState.scripts);
+	const userscriptsModuleEnabled = isOptionalPackagedModuleStoredEnabled(
+		stateResult[USERSCRIPTS_MODULE_KEY],
+		Object.hasOwn(stateResult, USERSCRIPTS_MODULE_KEY),
+	);
+	const moduleKeys = moduleKeysForManagedScripts(userState, saatState);
+	const moduleValues = moduleKeys.length > 0 ? await chrome.storage.local.get(moduleKeys) : {};
+	const digest = await digestAuthority({
+		user: stateResult[STORAGE_KEY] ?? null,
+		saat: stateResult[SAAT_STORAGE_KEY] ?? null,
+		userscriptsModule: Object.hasOwn(stateResult, USERSCRIPTS_MODULE_KEY)
+			? stateResult[USERSCRIPTS_MODULE_KEY]
+			: null,
+		moduleValues,
+	});
+	return { userState, saatState, userscriptsModuleEnabled, moduleValues, digest };
+}
+
+function prepareRegistration(scripts: readonly UserScriptsSnapshotScript[]): PreparedRegistration {
 	const userScripts: chrome.userScripts.RegisteredUserScript[] = [];
 	const contentScripts: chrome.scripting.RegisteredContentScript[] = [];
 	for (const script of scripts) {
 		if (!script.enabled) continue;
 		const matches = toMatchPatterns(script.matches);
-		const excludeMatches = script.excludeMatches?.length
-			? script.excludeMatches.map(normalizePattern)
-			: undefined;
+		const excludeMatches = script.excludeMatches?.length ? script.excludeMatches.map(normalizePattern) : undefined;
 		const id = `${SCRIPT_ID_PREFIX}${script.id}`;
 		const world = script.world || 'USER_SCRIPT';
 		if (world === 'ISOLATED') {
@@ -146,129 +256,63 @@ async function registerAllScripts(scripts: readonly UserScript[]): Promise<void>
 			});
 		}
 	}
+	return { userScripts, contentScripts };
+}
 
+async function unregisterAllScripts(): Promise<void> {
 	const failures: string[] = [];
-	if (userScripts.length > 0 && isUserScriptsAvailable()) {
-		try { await chrome.userScripts.register(userScripts); }
+	if (isUserScriptsAvailable()) {
+		try {
+			const registered = await chrome.userScripts.getScripts();
+			const ids = registered.filter((script) => script.id.startsWith(SCRIPT_ID_PREFIX)).map((script) => script.id);
+			if (ids.length > 0) await chrome.userScripts.unregister({ ids });
+		} catch (error) { failures.push(failureMessage('userScripts unregister failed', error)); }
+	}
+	try {
+		const registered = await chrome.scripting.getRegisteredContentScripts();
+		const ids = registered.filter((script) => script.id.startsWith(SCRIPT_ID_PREFIX)).map((script) => script.id);
+		if (ids.length > 0) await chrome.scripting.unregisterContentScripts({ ids });
+	} catch (error) { failures.push(failureMessage('content-script unregister failed', error)); }
+	if (failures.length > 0) throw new Error(failures.join('; '));
+}
+
+async function registerPrepared(prepared: PreparedRegistration): Promise<void> {
+	const failures: string[] = [];
+	if (prepared.userScripts.length > 0 && isUserScriptsAvailable()) {
+		try { await chrome.userScripts.register(prepared.userScripts); }
 		catch (error) { failures.push(failureMessage('userScripts register failed', error)); }
 	}
-	if (contentScripts.length > 0 && chrome.scripting?.registerContentScripts) {
-		try { await chrome.scripting.registerContentScripts(contentScripts); }
-		catch (error) { failures.push(failureMessage('content-script register failed', error)); }
+	if (prepared.contentScripts.length > 0) {
+		if (!chrome.scripting?.registerContentScripts) failures.push('content-script register unavailable');
+		else {
+			try { await chrome.scripting.registerContentScripts(prepared.contentScripts); }
+			catch (error) { failures.push(failureMessage('content-script register failed', error)); }
+		}
 	}
 	if (failures.length > 0) throw new Error(failures.join('; '));
 }
 
-function isCustomUserScript(script: UserScript): boolean {
-	return !script.saatToolId && script.managedBy === undefined;
-}
-
-function ownedModuleEnabled(
-	script: UserScript,
-	moduleValues: Record<string, unknown>,
-): boolean {
-	if (!script.saatToolId) return false;
-	if (script.moduleBuiltIn === true) return true;
-	const key = moduleInstallationStorageKey(script.saatToolId);
-	return isOptionalPackagedModuleStoredEnabled(
-		moduleValues[key],
-		Object.hasOwn(moduleValues, key),
-	);
-}
-
-export function resolveDesiredRegisteredScripts(
-	userState: UserScriptState,
-	saatState: UserScriptState,
-	userscriptsModuleEnabled: boolean,
-	moduleValues: Record<string, unknown>,
-): UserScript[] {
-	const desired: UserScript[] = [];
-	if (userState.globalEnabled) {
-		for (const script of userState.scripts) {
-			if (isCustomUserScript(script)) {
-				if (userscriptsModuleEnabled) desired.push(script);
-				continue;
-			}
-			if ((script.managedBy === 'packaged-script' || script.saatToolId)
-				&& ownedModuleEnabled(script, moduleValues)) {
-				desired.push(script);
-			}
-		}
-	}
-	if (saatState.globalEnabled) {
-		for (const script of saatState.scripts) {
-			if (ownedModuleEnabled(script, moduleValues)) desired.push(script);
-		}
-	}
-	return desired;
-}
-
-function moduleKeysForManagedScripts(
-	userState: UserScriptState,
-	saatState: UserScriptState,
-): string[] {
-	const keys = new Set<string>();
-	for (const script of [...userState.scripts, ...saatState.scripts]) {
-		if (!script.saatToolId || script.moduleBuiltIn === true) continue;
-		keys.add(moduleInstallationStorageKey(script.saatToolId));
-	}
-	return [...keys];
-}
-
-function readState(value: unknown): UserScriptState {
-	if (value === undefined) return { scripts: [], globalEnabled: true };
-	if (!value || typeof value !== 'object') return { scripts: [], globalEnabled: false };
-	const candidate = value as Partial<UserScriptState>;
-	if (!Array.isArray(candidate.scripts) || typeof candidate.globalEnabled !== 'boolean') {
-		return { scripts: [], globalEnabled: false };
-	}
-	return candidate as UserScriptState;
-}
-
-async function performRegisteredScriptSync(): Promise<void> {
-	const stateResult = await chrome.storage.local.get([
-		STORAGE_KEY,
-		SAAT_STORAGE_KEY,
-		USERSCRIPTS_MODULE_KEY,
-	]);
-	const userState = readState(stateResult[STORAGE_KEY]);
-	const saatState = readState(stateResult[SAAT_STORAGE_KEY]);
-	const userscriptsModuleEnabled = isOptionalPackagedModuleStoredEnabled(
-		stateResult[USERSCRIPTS_MODULE_KEY],
-		Object.hasOwn(stateResult, USERSCRIPTS_MODULE_KEY),
-	);
-	const moduleKeys = moduleKeysForManagedScripts(userState, saatState);
-	const moduleValues = moduleKeys.length > 0 ? await chrome.storage.local.get(moduleKeys) : {};
+async function performRegisteredScriptSync(): Promise<string> {
+	const authority = await readRegistryAuthority();
 	const desired = resolveDesiredRegisteredScripts(
-		userState,
-		saatState,
-		userscriptsModuleEnabled,
-		moduleValues,
+		authority.userState,
+		authority.saatState,
+		authority.userscriptsModuleEnabled,
+		authority.moduleValues,
 	);
+	// Validate and construct the complete next generation before retiring the
+	// currently working browser-owned generation.
+	const prepared = prepareRegistration(desired);
 	await unregisterAllScripts();
-	await registerAllScripts(desired);
-}
-
-let syncLoop: Promise<void> | null = null;
-let syncPending = false;
-
-async function runRegisteredScriptSyncLoop(): Promise<void> {
-	do {
-		syncPending = false;
-		await performRegisteredScriptSync();
-	} while (syncPending);
-}
-
-export async function syncRegisteredScripts(): Promise<void> {
-	syncPending = true;
-	if (!syncLoop) syncLoop = runRegisteredScriptSyncLoop().finally(() => { syncLoop = null; });
-	return syncLoop;
+	await registerPrepared(prepared);
+	return authority.digest;
 }
 
 let registryInitialized = false;
 let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
 let recoveryAttempt = 0;
-let recoveryRequest: Promise<void> | null = null;
+let requestedGeneration = 0;
+let reconciliation: Promise<void> | null = null;
 
 function resetRecoveryTimer(): void {
 	if (recoveryTimer) clearTimeout(recoveryTimer);
@@ -277,11 +321,18 @@ function resetRecoveryTimer(): void {
 }
 
 async function markRecoveryNeeded(): Promise<void> {
-	await chrome.storage.local.set({ [RECOVERY_STORAGE_KEY]: true });
+	await chrome.storage.local.set({ [RECOVERY_STORAGE_KEY]: DIRTY_RECEIPT });
 }
 
-async function clearRecoveryNeeded(): Promise<void> {
-	await chrome.storage.local.remove(RECOVERY_STORAGE_KEY);
+async function writeRecoveryReceipt(digest: string): Promise<void> {
+	const receipt: RegistryReceipt = { version: RECEIPT_VERSION, state: 'clean', digest };
+	await chrome.storage.local.set({ [RECOVERY_STORAGE_KEY]: receipt });
+}
+
+function isMatchingReceipt(value: unknown, digest: string): boolean {
+	if (!value || typeof value !== 'object') return false;
+	const receipt = value as Partial<RegistryReceipt>;
+	return receipt.version === RECEIPT_VERSION && receipt.state === 'clean' && receipt.digest === digest;
 }
 
 function scheduleRecovery(): void {
@@ -289,54 +340,64 @@ function scheduleRecovery(): void {
 	const delay = SYNC_RETRY_DELAYS_MS[recoveryAttempt++] ?? 4_000;
 	recoveryTimer = setTimeout(() => {
 		recoveryTimer = null;
-		requestRegisteredScriptSync('recovery');
+		void syncRegisteredScripts().catch((error) => console.warn(LOG_TAG, 'recovery sync failed', error));
 	}, delay);
 }
 
-function requestRegisteredScriptSync(reason: string): void {
-	if (recoveryRequest) {
-		syncPending = true;
-		return;
-	}
-	recoveryRequest = (async () => {
-		// Dirty must become durable before reconciliation starts. The marker is
-		// removed only after the complete serialized sync loop succeeds, so a
-		// worker termination or a late storage write cannot leave false-clean state.
+async function runRequestedReconciliation(): Promise<void> {
+	await markRecoveryNeeded();
+	while (true) {
+		const targetGeneration = requestedGeneration;
+		const digest = await performRegisteredScriptSync();
+		if (requestedGeneration !== targetGeneration) continue;
+		await writeRecoveryReceipt(digest);
+		// A storage event may arrive while the receipt write is pending. If so, the
+		// in-memory generation forces another loop; if the worker dies first, the
+		// persisted old digest will differ from current authority on next startup.
+		if (requestedGeneration === targetGeneration) {
+			resetRecoveryTimer();
+			return;
+		}
 		await markRecoveryNeeded();
-		await syncRegisteredScripts();
-		await clearRecoveryNeeded();
-		resetRecoveryTimer();
-	})().catch(async (error: unknown) => {
-		console.warn(LOG_TAG, `${reason} sync failed`, error);
-		try { await markRecoveryNeeded(); }
-		catch (markerError) { console.warn(LOG_TAG, 'Failed to persist registry recovery marker', markerError); }
-		scheduleRecovery();
-	}).finally(() => {
-		recoveryRequest = null;
-		if (syncPending && registryInitialized) requestRegisteredScriptSync('trailing');
-	});
+	}
+}
+
+export function syncRegisteredScripts(): Promise<void> {
+	requestedGeneration += 1;
+	if (reconciliation) return reconciliation;
+	reconciliation = runRequestedReconciliation()
+		.catch(async (error: unknown) => {
+			try { await markRecoveryNeeded(); }
+			catch (markerError) { console.warn(LOG_TAG, 'Failed to persist registry recovery marker', markerError); }
+			scheduleRecovery();
+			throw error;
+		})
+		.finally(() => { reconciliation = null; });
+	return reconciliation;
+}
+
+function requestRegisteredScriptSync(reason: string): void {
+	void syncRegisteredScripts().catch((error) => console.warn(LOG_TAG, `${reason} sync failed`, error));
 }
 
 function recoverPersistentRegistryIfNeeded(): void {
-	void chrome.storage.local.get([USERSCRIPTS_MODULE_KEY, RECOVERY_STORAGE_KEY]).then((result) => {
+	void (async () => {
+		const [authority, receiptResult] = await Promise.all([
+			readRegistryAuthority(),
+			chrome.storage.local.get(RECOVERY_STORAGE_KEY),
+		]);
 		if (!registryInitialized) return;
-		const userscriptsModuleEnabled = isOptionalPackagedModuleStoredEnabled(
-			result[USERSCRIPTS_MODULE_KEY],
-			Object.hasOwn(result, USERSCRIPTS_MODULE_KEY),
-		);
-		if (!userscriptsModuleEnabled || result[RECOVERY_STORAGE_KEY] === true) {
+		if (!isMatchingReceipt(receiptResult[RECOVERY_STORAGE_KEY], authority.digest)) {
 			requestRegisteredScriptSync('worker-startup-recovery');
 		}
-	}).catch((error) => {
+	})().catch((error) => {
 		if (!registryInitialized) return;
-		console.warn(LOG_TAG, 'Failed to inspect registry recovery state', error);
+		console.warn(LOG_TAG, 'Failed to inspect registry recovery receipt', error);
 		requestRegisteredScriptSync('worker-startup-fail-closed');
 	});
 }
 
-function includesModuleInstallationChange(
-	changes: Record<string, chrome.storage.StorageChange>,
-): boolean {
+function includesModuleInstallationChange(changes: Record<string, chrome.storage.StorageChange>): boolean {
 	return Object.keys(changes).some((key) => key.startsWith(MODULE_INSTALLATION_STORAGE_PREFIX));
 }
 
@@ -345,9 +406,7 @@ export function initUserScriptsRegistry(): () => void {
 	registryInitialized = true;
 	const listener = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
 		if (area !== 'local') return;
-		if (!changes[STORAGE_KEY]
-			&& !changes[SAAT_STORAGE_KEY]
-			&& !includesModuleInstallationChange(changes)) return;
+		if (!changes[STORAGE_KEY] && !changes[SAAT_STORAGE_KEY] && !includesModuleInstallationChange(changes)) return;
 		requestRegisteredScriptSync('storage-change');
 	};
 	chrome.storage.onChanged.addListener(listener);
@@ -362,5 +421,9 @@ export function initUserScriptsRegistry(): () => void {
 export const userScriptsRegistryTestApi = {
 	RECOVERY_STORAGE_KEY,
 	SYNC_RETRY_DELAYS_MS,
+	RECEIPT_VERSION,
 	toMatchPatterns,
+	validateOwnershipContainers,
+	prepareRegistration,
+	isMatchingReceipt,
 };
