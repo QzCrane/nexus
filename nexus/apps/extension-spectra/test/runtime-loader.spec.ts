@@ -33,6 +33,7 @@ interface RuntimeHarness {
 	executeCount: number;
 	leanExecuteCount: number;
 	leanConfigureCount: number;
+	heavySettingsConfigureCount: number;
 	statusCount: number;
 	releaseCount: number;
 	navigationCommitted: ChromeEvent;
@@ -68,6 +69,7 @@ function installChromeHarness(
 		executeCount: 0,
 		leanExecuteCount: 0,
 		leanConfigureCount: 0,
+		heavySettingsConfigureCount: 0,
 		statusCount: 0,
 		releaseCount: 0,
 		navigationCommitted,
@@ -79,6 +81,7 @@ function installChromeHarness(
 	const storageChanged = new ChromeEvent();
 	const documentId = 'document-7';
 	let leanReceiverPresent = false;
+	let heavyReceiverPresent = runtimeAlreadyReady;
 	settingsRepository.getSnapshot = async () => ({
 		hotkeySettings: hotkeySettings ?? DEFAULT_HOTKEY_SETTINGS,
 	} as never);
@@ -131,9 +134,17 @@ function installChromeHarness(
 						generation: message.payload?.generation,
 					};
 				}
+				if (message.type === 'spectra.hotkeys.changed') {
+					if (!heavyReceiverPresent) {
+						throw new Error('Could not establish connection. Receiving end does not exist.');
+					}
+					harness.heavySettingsConfigureCount += 1;
+					return undefined;
+				}
 				if (message.type === 'spectra.content.runtime.release') {
 					harness.releaseCount += 1;
 					if (releaseFails) throw new Error('release response lost');
+					heavyReceiverPresent = false;
 					return { ok: true, data: { accepted: true } };
 				}
 				if (message.type !== 'spectra.content.runtime.status') throw new Error('Unexpected tab request');
@@ -162,6 +173,7 @@ function installChromeHarness(
 					return;
 				}
 				harness.executeCount += 1;
+				heavyReceiverPresent = true;
 				queueMicrotask(() => {
 					const message = {
 						protocolVersion: SPECTRA_PROTOCOL_VERSION,
@@ -526,9 +538,11 @@ describe('document-scoped content runtime loader', () => {
 		};
 		await reconcileHotkeyRuntimeLease(7, 'document-7', 'https://media.example/watch', enabled);
 		expect(harness.leanExecuteCount).toBe(0);
+		expect(harness.heavySettingsConfigureCount).toBe(1);
 		await expectRelease(harness, 0, 50);
 
 		await reconcileHotkeyRuntimeLease(7, 'document-7', 'https://other.example/watch', enabled);
+		expect(harness.heavySettingsConfigureCount).toBe(2);
 		await expectRelease(harness, 1);
 	});
 
@@ -552,6 +566,7 @@ describe('document-scoped content runtime loader', () => {
 		await reconcileHotkeyRuntimeLease(7, 'document-7', 'https://media.example/watch', enabled);
 		expect(harness.leanExecuteCount).toBe(1);
 		expect(harness.leanConfigureCount).toBe(1);
+		expect(harness.heavySettingsConfigureCount).toBe(0);
 		expect(harness.executeCount).toBe(0);
 		expect(harness.statusCount).toBe(0);
 		await expectRelease(harness, 0, 50);
