@@ -16,6 +16,22 @@ import {
 	type UserScriptsStateLoader,
 } from './user-scripts-state-loader';
 
+function isSuccessfulRegistrySyncResponse(value: unknown): value is { success: true } {
+	return typeof value === 'object'
+		&& value !== null
+		&& 'success' in value
+		&& value.success === true;
+}
+
+function registrySyncFailureMessage(value: unknown): string {
+	if (typeof value === 'object'
+		&& value !== null
+		&& 'error' in value
+		&& typeof value.error === 'string'
+		&& value.error.length > 0) return value.error;
+	return 'Background UserScripts registry synchronization failed';
+}
+
 export function useUserScripts() {
 	const { t } = useTranslation();
 	const { showToast } = useToast();
@@ -24,6 +40,8 @@ export function useUserScripts() {
 	const [currentUrl, setCurrentUrl] = useState('');
 	const [hasPermission, setHasPermission] = useState(false);
 	const runtimeAccessRef = useRef(false);
+	const statusRevisionRef = useRef(0);
+	const readinessSyncRef = useRef<Promise<void> | null>(null);
 
 	// Toolbar config
 	const [toolbarConfig, setToolbarConfig] = useState<UserScriptState['toolbarConfig']>();
@@ -54,29 +72,57 @@ export function useUserScripts() {
 		return () => stateLoader.dispose();
 	}, [loadScripts, stateLoader]);
 
+	const ensureBackgroundRegistryReady = useCallback(async (): Promise<void> => {
+		if (!readinessSyncRef.current) {
+			readinessSyncRef.current = (async () => {
+				const response: unknown = await chrome.runtime.sendMessage({ type: 'HALO_USERSCRIPTS_SYNC' });
+				if (!isSuccessfulRegistrySyncResponse(response)) {
+					throw new Error(registrySyncFailureMessage(response));
+				}
+			})().finally(() => { readinessSyncRef.current = null; });
+		}
+		await readinessSyncRef.current;
+	}, []);
+
 	const refreshPermissionStatus = useCallback(async (): Promise<boolean> => {
+		const revision = ++statusRevisionRef.current;
 		const [tab, hasHosts, hasUserScripts] = await Promise.all([
 			chrome.tabs.query({ active: true, currentWindow: true }).then((tabs) => tabs[0]),
 			chrome.permissions.contains({ origins: ['*://*/*'] }),
 			chrome.permissions.contains({ permissions: ['userScripts'] }),
 		]);
+		if (revision !== statusRevisionRef.current) return runtimeAccessRef.current;
 		if (tab?.url) setCurrentUrl(tab.url);
-		const available = hasHosts && hasUserScripts
+
+		const platformAvailable = hasHosts && hasUserScripts
 			? await isUserScriptsCapabilityAvailable()
 			: false;
-		const becameAvailable = available && !runtimeAccessRef.current;
-		runtimeAccessRef.current = available;
-		setHasPermission(available);
-		if (becameAvailable) {
-			void chrome.runtime.sendMessage({ type: 'HALO_USERSCRIPTS_SYNC' }).catch((error: unknown) => {
-				console.warn('[HALO:UserScripts] Background sync notification failed', error);
-			});
+		if (revision !== statusRevisionRef.current) return runtimeAccessRef.current;
+		if (!platformAvailable) {
+			runtimeAccessRef.current = false;
+			setHasPermission(false);
+			return false;
 		}
-		return available;
-	}, []);
 
-	// Permissions, Chrome's per-extension Allow User Scripts toggle, and URL
-	// tracking all participate in the same runtime readiness projection.
+		if (!runtimeAccessRef.current) {
+			try {
+				await ensureBackgroundRegistryReady();
+			} catch (error) {
+				if (revision === statusRevisionRef.current) {
+					runtimeAccessRef.current = false;
+					setHasPermission(false);
+				}
+				throw error;
+			}
+		}
+		if (revision !== statusRevisionRef.current) return runtimeAccessRef.current;
+		runtimeAccessRef.current = true;
+		setHasPermission(true);
+		return true;
+	}, [ensureBackgroundRegistryReady]);
+
+	// Permissions, Chrome's per-extension Allow User Scripts toggle, Background
+	// registry convergence, and URL tracking form one readiness projection.
 	useEffect(() => {
 		const refreshStatus = () => {
 			void refreshPermissionStatus().catch((error: unknown) => {
@@ -122,7 +168,16 @@ export function useUserScripts() {
 		}
 
 		if (!granted) return;
-		const available = await refreshPermissionStatus();
+		let available = false;
+		try {
+			available = await refreshPermissionStatus();
+		} catch (error: unknown) {
+			console.error('[HALO:UserScripts] Registry readiness failed', error);
+			showToast(`❌ ${t('userscripts.registrySyncFailed', {
+				defaultValue: 'User Scripts access is enabled, but Background registry synchronization failed. Try again.',
+			})}`);
+			return;
+		}
 		if (available) {
 			showToast(`✅ ${t('userscripts.permsGranted', { defaultValue: 'Permissions granted' })}`);
 			return;
