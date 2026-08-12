@@ -297,5 +297,6 @@ if (process.env.NODE_ENV !== 'production') {
 			if (key.startsWith(STORAGE_PREFIX.CORE) || key === SETTINGS_STORAGE_KEY) {
 				console.log(LOG_TAG, `Storage: ${key}`, newValue);
 			}
+		}
 	});
 }
