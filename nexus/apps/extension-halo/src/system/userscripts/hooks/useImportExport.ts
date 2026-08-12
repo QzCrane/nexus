@@ -3,11 +3,11 @@ import { useTranslation } from '../../../i18n';
 import type { UserScript } from '../types';
 import {
 	exportScripts,
-	importScripts
+	importScripts,
 } from '../core';
 import { useToast } from '../../../components/ToastProvider';
 
-export function useImportExport(loadScripts: () => Promise<void>) {
+export function useImportExport() {
 	const { t } = useTranslation();
 	const { showToast } = useToast();
 	const [modalMode, setModalMode] = useState<'import' | 'export' | null>(null);
@@ -22,18 +22,17 @@ export function useImportExport(loadScripts: () => Promise<void>) {
 		try {
 			const result = await importScripts(json);
 			showToast(`✅ ${t('userscripts.importSuccess', { defaultValue: `Imported ${result.imported} scripts` })}`);
-			await loadScripts();
 			setModalMode(null);
 		} catch (_e) {
 			showToast(`❌ ${t('userscripts.importFailed')}`);
 		}
-	}, [loadScripts, showToast, t]);
+	}, [showToast, t]);
 
 	return {
 		modalMode,
 		setModalMode,
 		exportData,
 		handleExport,
-		handleImport
+		handleImport,
 	};
 }
