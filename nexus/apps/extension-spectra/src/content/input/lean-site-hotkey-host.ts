@@ -127,8 +127,8 @@ function publishPhase(active: ActiveBinding, phase: 'press' | 'release' | 'settl
 }
 
 function pressBinding(active: ActiveBinding, repeated: boolean): void {
-	if (active.binding.action === 'volume_mute' && repeated) return;
 	if (repeated) active.repeated = true;
+	if (active.binding.action === 'volume_mute' && repeated) return;
 	publishPhase(active, 'press');
 	void sendPhase(active, 'press', repeated).catch((error) => {
 		if (!disposed) showToast(error instanceof Error ? error.message : String(error), {
