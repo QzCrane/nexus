@@ -1,8 +1,28 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import { userScriptsRegistryTestApi } from '../src/system/userscripts/registry';
+import type { UserScript } from '../src/system/userscripts/types';
 
 function source(path: string): string {
 	return readFileSync(new URL(`../src/${path}`, import.meta.url), 'utf8');
+}
+
+function script(overrides: Partial<UserScript> = {}): UserScript {
+	return {
+		id: 'stable-runtime',
+		name: 'Stable Runtime',
+		description: 'display metadata',
+		code: 'console.log(1);',
+		enabled: true,
+		type: 'javascript',
+		matches: ['*://*/*'],
+		runAt: 'document_idle',
+		order: 0,
+		runCount: 1,
+		createdAt: 1,
+		updatedAt: 1,
+		...overrides,
+	};
 }
 
 describe('UserScripts readiness race contracts', () => {
@@ -15,6 +35,28 @@ describe('UserScripts readiness race contracts', () => {
 		expect(registry).toContain('saatDescriptorVersion: descriptorVersion');
 		expect(registry).toContain('digestAuthority({');
 		expect(registry).toContain('ensureUserScriptsRuntimeReady');
+	});
+
+	test('receipt fingerprints the physical registration generation, not UI telemetry', () => {
+		const baseline = userScriptsRegistryTestApi.prepareRegistration([script()]);
+		const telemetryOnly = userScriptsRegistryTestApi.prepareRegistration([script({
+			description: 'different display metadata',
+			runCount: 999,
+			lastRun: 999_999,
+			updatedAt: 999_999,
+			category: 'different-category',
+		})]);
+		expect(telemetryOnly).toEqual(baseline);
+
+		const registry = source('system/userscripts/registry.ts');
+		const digestIndex = registry.indexOf('const digest = await digestAuthority({');
+		const digestEnd = registry.indexOf('\n\t});', digestIndex);
+		const digestBlock = registry.slice(digestIndex, digestEnd);
+		expect(digestIndex).toBeGreaterThanOrEqual(0);
+		expect(digestBlock).toContain('prepared,');
+		expect(digestBlock).not.toContain('user: stateResult');
+		expect(digestBlock).not.toContain('saat: stateResult');
+		expect(digestBlock).not.toContain('moduleValues,');
 	});
 
 	test('install-time readiness cannot become current before generated SaaT descriptors are synchronized', () => {

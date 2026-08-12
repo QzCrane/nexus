@@ -1204,12 +1204,12 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		icon: '📜',
 		pluginType: 'system',
 		category: 'dev',
-		size: 116164,
+		size: 115787,
 		builtIn: false,
 		status: undefined,
 		keywords: ["script","inject","脚本","注入"],
 		permissions: ["userScripts","*://*/*"],
-		background: {"mechanism":"storage_listener","frequency":"on-change","activeOnly":false,"level":"low","descriptionKey":"impact.userscripts_registry","sourceFile":"system/userscripts/registry.ts","sourceLine":528,"sourceDetail":"chrome.storage.onChanged.addListener"},
+		background: {"mechanism":"storage_listener","frequency":"on-change","activeOnly":false,"level":"low","descriptionKey":"impact.userscripts_registry","sourceFile":"system/userscripts/registry.ts","sourceLine":518,"sourceDetail":"chrome.storage.onChanged.addListener"},
 		script: undefined,
 	}
 ];
@@ -1374,7 +1374,7 @@ export const BACKGROUND_PROFILES_MAP: Record<string, BackgroundProfile> = {
         "level": "low",
         "descriptionKey": "impact.userscripts_registry",
         "sourceFile": "system/userscripts/registry.ts",
-        "sourceLine": 528,
+        "sourceLine": 518,
         "sourceDetail": "chrome.storage.onChanged.addListener"
     }
 };

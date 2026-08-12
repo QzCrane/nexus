@@ -29,17 +29,14 @@ type RegistryReceipt =
 	| { version: typeof RECEIPT_VERSION; state: 'dirty' }
 	| { version: typeof RECEIPT_VERSION; state: 'blocked' | 'clean'; digest: string };
 
-interface RegistryAuthority {
-	userState: UserScriptsStorageSnapshot;
-	saatState: UserScriptsStorageSnapshot;
-	userscriptsModuleEnabled: boolean;
-	userScriptsAvailable: boolean;
-	moduleValues: Record<string, unknown>;
-	digest: string;
-}
 interface PreparedRegistration {
 	userScripts: chrome.userScripts.RegisteredUserScript[];
 	contentScripts: chrome.scripting.RegisteredContentScript[];
+}
+interface RegistryAuthority {
+	userScriptsAvailable: boolean;
+	prepared: PreparedRegistration;
+	digest: string;
 }
 interface ReconciliationResult {
 	digest: string;
@@ -205,52 +202,6 @@ function moduleKeysForManagedScripts(
 	return [...keys];
 }
 
-async function readRegistryAuthority(): Promise<RegistryAuthority> {
-	const [stateResult, userScriptsAvailable] = await Promise.all([
-		chrome.storage.local.get([
-			STORAGE_KEY,
-			SAAT_STORAGE_KEY,
-			USERSCRIPTS_MODULE_KEY,
-			SAAT_DESCRIPTOR_VERSION_KEY,
-		]),
-		isUserScriptsCapabilityAvailable(),
-	]);
-	const extensionVersion = chrome.runtime.getManifest().version;
-	const descriptorVersion = stateResult[SAAT_DESCRIPTOR_VERSION_KEY];
-	if (descriptorVersion !== extensionVersion) {
-		throw new Error(`SaaT descriptor projection is not synchronized for extension ${extensionVersion}`);
-	}
-	const userState = parseUserScriptsStorageValue(stateResult[STORAGE_KEY]);
-	const saatState = parseUserScriptsStorageValue(stateResult[SAAT_STORAGE_KEY]);
-	if (userState.failed || saatState.failed) throw new Error('Script registry persistence schema validation failed');
-	validateOwnershipContainers(userState.scripts, saatState.scripts);
-	const userscriptsModuleEnabled = isOptionalPackagedModuleStoredEnabled(
-		stateResult[USERSCRIPTS_MODULE_KEY],
-		Object.hasOwn(stateResult, USERSCRIPTS_MODULE_KEY),
-	);
-	const moduleKeys = moduleKeysForManagedScripts(userState, saatState);
-	const moduleValues = moduleKeys.length > 0 ? await chrome.storage.local.get(moduleKeys) : {};
-	const digest = await digestAuthority({
-		extensionVersion,
-		saatDescriptorVersion: descriptorVersion,
-		user: stateResult[STORAGE_KEY] ?? null,
-		saat: stateResult[SAAT_STORAGE_KEY] ?? null,
-		userscriptsModule: Object.hasOwn(stateResult, USERSCRIPTS_MODULE_KEY)
-			? stateResult[USERSCRIPTS_MODULE_KEY]
-			: null,
-		moduleValues,
-		userScriptsAvailable,
-	});
-	return {
-		userState,
-		saatState,
-		userscriptsModuleEnabled,
-		userScriptsAvailable,
-		moduleValues,
-		digest,
-	};
-}
-
 function prepareRegistration(scripts: readonly UserScriptsSnapshotScript[]): PreparedRegistration {
 	const userScripts: chrome.userScripts.RegisteredUserScript[] = [];
 	const contentScripts: chrome.scripting.RegisteredContentScript[] = [];
@@ -292,6 +243,54 @@ function prepareRegistration(scripts: readonly UserScriptsSnapshotScript[]): Pre
 	return { userScripts, contentScripts };
 }
 
+async function readRegistryAuthority(): Promise<RegistryAuthority> {
+	const [stateResult, userScriptsAvailable] = await Promise.all([
+		chrome.storage.local.get([
+			STORAGE_KEY,
+			SAAT_STORAGE_KEY,
+			USERSCRIPTS_MODULE_KEY,
+			SAAT_DESCRIPTOR_VERSION_KEY,
+		]),
+		isUserScriptsCapabilityAvailable(),
+	]);
+	const extensionVersion = chrome.runtime.getManifest().version;
+	const descriptorVersion = stateResult[SAAT_DESCRIPTOR_VERSION_KEY];
+	if (descriptorVersion !== extensionVersion) {
+		throw new Error(`SaaT descriptor projection is not synchronized for extension ${extensionVersion}`);
+	}
+	const userState = parseUserScriptsStorageValue(stateResult[STORAGE_KEY]);
+	const saatState = parseUserScriptsStorageValue(stateResult[SAAT_STORAGE_KEY]);
+	if (userState.failed || saatState.failed) throw new Error('Script registry persistence schema validation failed');
+	validateOwnershipContainers(userState.scripts, saatState.scripts);
+	const userscriptsModuleEnabled = isOptionalPackagedModuleStoredEnabled(
+		stateResult[USERSCRIPTS_MODULE_KEY],
+		Object.hasOwn(stateResult, USERSCRIPTS_MODULE_KEY),
+	);
+	const moduleKeys = moduleKeysForManagedScripts(userState, saatState);
+	const moduleValues = moduleKeys.length > 0 ? await chrome.storage.local.get(moduleKeys) : {};
+	const desired = resolveDesiredRegisteredScripts(
+		userState,
+		saatState,
+		userscriptsModuleEnabled,
+		moduleValues,
+	);
+	// The receipt fingerprints the exact browser generation, not the whole UI
+	// persistence envelope. Telemetry, timestamps, toolbar configuration and
+	// metadata changes must never tear down a physically unchanged generation.
+	const prepared = prepareRegistration(desired);
+	const digest = await digestAuthority({
+		extensionVersion,
+		saatDescriptorVersion: descriptorVersion,
+		userScriptsAvailable,
+		prepared,
+	});
+	return {
+		userScriptsAvailable,
+		prepared,
+		digest,
+	};
+}
+
 async function unregisterAllScripts(userScriptsAvailable: boolean): Promise<void> {
 	const failures: string[] = [];
 	if (userScriptsAvailable) {
@@ -330,20 +329,11 @@ async function registerPrepared(
 
 async function performRegisteredScriptSync(): Promise<ReconciliationResult> {
 	const authority = await readRegistryAuthority();
-	const desired = resolveDesiredRegisteredScripts(
-		authority.userState,
-		authority.saatState,
-		authority.userscriptsModuleEnabled,
-		authority.moduleValues,
-	);
-	// Validate and construct the complete next generation before retiring the
-	// currently working browser-owned generation. When Chrome's User Scripts
-	// platform gate is unavailable, scripting registrations can still converge
-	// but the persistent userScripts generation cannot be proven current. Record
-	// that as `blocked`, never as a clean browser-registration receipt.
-	const prepared = prepareRegistration(desired);
+	// `readRegistryAuthority` already validates and materializes the complete
+	// generation before this destructive boundary, and the same materialization
+	// is what the durable receipt fingerprints.
 	await unregisterAllScripts(authority.userScriptsAvailable);
-	await registerPrepared(prepared, authority.userScriptsAvailable);
+	await registerPrepared(authority.prepared, authority.userScriptsAvailable);
 	return {
 		digest: authority.digest,
 		receiptState: authority.userScriptsAvailable ? 'clean' : 'blocked',
