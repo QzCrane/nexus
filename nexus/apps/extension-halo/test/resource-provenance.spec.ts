@@ -65,18 +65,19 @@ function assertProfileSource(owner: string, profile: BackgroundProfile): void {
 	const sourcePath = resolve(srcRoot, profile.sourceFile);
 	expect(existsSync(sourcePath), `${owner}: missing ${profile.sourceFile}`).toBe(true);
 	const lines = readFileSync(sourcePath, 'utf8').split(/\r?\n/u);
-	expect(Number.isInteger(profile.sourceLine), `${owner}: sourceLine must be an integer`).toBe(true);
-	expect(profile.sourceLine, `${owner}: sourceLine must be 1-based`).toBeGreaterThan(0);
-	expect(profile.sourceLine, `${owner}: sourceLine outside ${profile.sourceFile}`).toBeLessThanOrEqual(lines.length);
-
-	const sourceLine = lines[profile.sourceLine - 1]?.trim() ?? '';
-	expect(sourceLine.length, `${owner}: sourceLine points at a blank line`).toBeGreaterThan(0);
-	expect(sourceLine.startsWith('//'), `${owner}: sourceLine points at a comment`).toBe(false);
+	expect(profile.sourceAnchor.trim().length, `${owner}: sourceAnchor must be non-empty`).toBeGreaterThan(0);
+	const anchoredLines = lines
+		.map((line, index) => ({ line: line.trim(), lineNumber: index + 1 }))
+		.filter(({ line }) => line.includes(profile.sourceAnchor));
+	expect(
+		anchoredLines.length,
+		`${owner}: sourceAnchor not found in ${profile.sourceFile}: ${profile.sourceAnchor}`,
+	).toBeGreaterThan(0);
 	const pattern = mechanismPattern(profile.mechanism);
 	if (pattern) {
 		expect(
-			pattern.test(sourceLine),
-			`${owner}: ${profile.mechanism} source does not match ${profile.sourceFile}:${profile.sourceLine}: ${sourceLine}`,
+			anchoredLines.some(({ line }) => pattern.test(line)),
+			`${owner}: ${profile.mechanism} anchor does not identify its mechanism in ${profile.sourceFile}: ${profile.sourceAnchor}`,
 		).toBe(true);
 	}
 }

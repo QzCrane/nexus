@@ -11,19 +11,19 @@ import type { FilterType } from './type-filter';
 import { filterBySearch, MODULE_SEARCH_OPTIONS } from '../../kernel/utils/unified-search';
 import { convertScriptsToModules } from './utils';
 
-type ViewMode = 'installed' | 'available' | 'all' | 'updates';
+type ViewMode = 'enabled' | 'disabled' | 'all' | 'updates';
 
 export const ModuleStorePanel: React.FC = () => {
 	const { t } = useTranslation();
 	const { showModal } = useOverlay();
-	const { loading, installedModules, availableModules, install, uninstall } = useModuleManager();
+	const { loading, enabledModules, disabledModules, enable, disable } = useModuleManager();
 	const { loading: remoteLoading, hasUpdates, updates, refresh } = useRemoteRegistry();
 	const { scripts } = useUserScripts();
 	const [view, setView] = useState<ViewMode>('all');
-	const [scriptStatus, setScriptStatus] = useState<'all' | 'installed' | 'available'>('all');
+	const [scriptStatus, setScriptStatus] = useState<'all' | 'enabled' | 'disabled'>('all');
 	const [scriptSource, setScriptSource] = useState<'all' | 'official' | 'user'>('all');
 	const [filterType, setFilterType] = useState<FilterType>('all');
-	const [installing, setInstalling] = useState<string | null>(null);
+	const [changing, setChanging] = useState<string | null>(null);
 	const [searchQuery, setSearchQuery] = useState('');
 	const [isSearchFocused, setIsSearchFocused] = useState(false);
 	const searchInputRef = useRef<HTMLInputElement>(null);
@@ -39,30 +39,30 @@ export const ModuleStorePanel: React.FC = () => {
 		return () => window.removeEventListener('keydown', handleGlobalKey);
 	}, []);
 
-	const handleInstall = useCallback(async (id: string) => {
-		setInstalling(id);
-		try { await install(id); } finally { setInstalling(null); }
-	}, [install]);
+	const handleEnable = useCallback(async (id: string) => {
+		setChanging(id);
+		try { await enable(id); } finally { setChanging(null); }
+	}, [enable]);
 
-	const handleUninstall = useCallback(async (module: PluginMeta) => {
+	const handleDisable = useCallback(async (module: PluginMeta) => {
 		// Custom user scripts are rows projected into the Module Store, not
 		// packaged modules. Their lifecycle remains owned by User Scripts.
 		if (module.isUserScript) {
 			showModal({
 				title: t('common.readOnly') || '只读',
-				message: t('moduleStorePanel.scriptUninstallWarning'),
+				message: t('moduleStorePanel.scriptDisableWarning'),
 				confirmText: t('moduleStorePanel.close') || '关闭',
 			});
 			return;
 		}
 
-		// `builtIn` is the sole packaged-module uninstallability authority. Plugin
+		// `builtIn` is the sole packaged-module disable authority. Plugin
 		// type is taxonomy only: optional system modules such as UserScripts are
-		// intentionally removable and must reach ModuleManager.uninstall().
+		// intentionally optional and must reach ModuleManager.disable().
 		if (module.builtIn) {
 			showModal({
 				title: t('common.readOnly') || '只读',
-				message: t('moduleStorePanel.builtInUninstallWarning'),
+				message: t('moduleStorePanel.builtInDisableWarning'),
 				confirmText: t('moduleStorePanel.close') || '关闭',
 			});
 			return;
@@ -71,16 +71,16 @@ export const ModuleStorePanel: React.FC = () => {
 		if (module.pluginType === 'script') {
 			showModal({
 				type: 'confirm',
-				title: t('moduleStorePanel.uninstall'),
-				message: t('moduleStorePanel.scriptUninstallConfirm'),
-				confirmText: t('moduleStorePanel.uninstall'),
-				onConfirm: () => uninstall(module.id),
+				title: t('moduleStorePanel.disable'),
+				message: t('moduleStorePanel.scriptDisableConfirm'),
+				confirmText: t('moduleStorePanel.disable'),
+				onConfirm: () => disable(module.id),
 			});
 			return;
 		}
 
-		await uninstall(module.id);
-	}, [uninstall, t, showModal]);
+		await disable(module.id);
+	}, [disable, t, showModal]);
 
 	const handleRefresh = useCallback(async () => { await refresh(); }, [refresh]);
 	const searchModules = (modules: readonly PluginMeta[]) =>
@@ -92,9 +92,9 @@ export const ModuleStorePanel: React.FC = () => {
 			const isScript = module.pluginType === 'script' || module.isUserScript;
 			if (!isScript) return false;
 			const isUser = !!module.isUserScript;
-			const isInstalled = isUser || installedModules.some(item => item.id === module.id);
-			if (scriptStatus === 'installed' && !isInstalled) return false;
-			if (scriptStatus === 'available' && isInstalled) return false;
+			const isEnabled = isUser || enabledModules.some(item => item.id === module.id);
+			if (scriptStatus === 'enabled' && !isEnabled) return false;
+			if (scriptStatus === 'disabled' && isEnabled) return false;
 			if (scriptSource === 'official' && isUser) return false;
 			if (scriptSource === 'user' && !isUser) return false;
 			return true;
@@ -104,23 +104,22 @@ export const ModuleStorePanel: React.FC = () => {
 	};
 
 	const scriptModules = React.useMemo(() => convertScriptsToModules(scripts), [scripts]);
-	const allInstalledModules = React.useMemo(
-		() => [...installedModules, ...scriptModules],
-		[installedModules, scriptModules],
+	const allEnabledModules = React.useMemo(
+		() => [...enabledModules, ...scriptModules],
+		[enabledModules, scriptModules],
 	);
 
 	const getFilteredModules = () => {
 		let source: readonly PluginMeta[] = [];
-		if (view === 'installed') source = allInstalledModules;
-		else if (view === 'available') source = availableModules;
+		if (view === 'enabled') source = allEnabledModules;
+		else if (view === 'disabled') source = disabledModules;
 		else source = [...ALL_MODULES, ...scriptModules];
 		return searchModules(source.filter(filterByType));
 	};
 
 	const displayModules = getFilteredModules();
-	const statsModules = allInstalledModules.filter(filterByType);
-	const totalInstalled = statsModules.length;
-	const totalSize = statsModules.reduce((sum, module) => sum + (module.size || 0), 0);
+	const statsModules = allEnabledModules.filter(filterByType);
+	const totalEnabled = statsModules.length;
 
 	if (loading) {
 		return (
@@ -143,13 +142,13 @@ export const ModuleStorePanel: React.FC = () => {
 				view={view} setView={setView} hasUpdates={hasUpdates}
 				scriptStatus={scriptStatus} setScriptStatus={setScriptStatus}
 				scriptSource={scriptSource} setScriptSource={setScriptSource}
-				updatesCount={updates.length} totalInstalled={totalInstalled} totalSize={totalSize}
+				updatesCount={updates.length} totalEnabled={totalEnabled}
 			/>
 			<ModuleList
 				displayModules={displayModules}
-				installedModules={allInstalledModules} installingId={installing}
+				enabledModules={allEnabledModules} changingId={changing}
 				view={view} filterType={filterType}
-				handleInstall={handleInstall} handleUninstall={handleUninstall}
+				handleEnable={handleEnable} handleDisable={handleDisable}
 			/>
 		</div>
 	);

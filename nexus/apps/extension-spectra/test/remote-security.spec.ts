@@ -228,6 +228,7 @@ describe('authenticated remote host', () => {
 		const session = await sessionPromise;
 		const initialState = {
 			generation: 4,
+			revision: 1,
 			volume: 110,
 			volumeBase: 100,
 			boost: 1.1,
@@ -240,7 +241,12 @@ describe('authenticated remote host', () => {
 			tabTitle: 'Initial actual state',
 			tabDomain: 'media.example',
 		};
-		expect(harness.controller.sendState(19, session.sessionId, initialState)).toBe(false);
+		expect(harness.controller.sendState(19, session.sessionId, initialState)).toBe(true);
+		expect(harness.controller.sendState(19, session.sessionId, {
+			...initialState,
+			revision: 0,
+			volume: 10,
+		})).toBe(false);
 
 		const connection = new FakeConnection();
 		harness.peer.emit('connection', connection);
@@ -292,6 +298,7 @@ describe('authenticated remote host', () => {
 
 		harness.controller.sendState(23, session.sessionId, {
 			generation: 7,
+			revision: 2,
 			volume: 125,
 			actualMode: 'capture',
 			phase: 'active',

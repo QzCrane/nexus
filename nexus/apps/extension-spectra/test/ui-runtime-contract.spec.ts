@@ -245,6 +245,7 @@ function createUiEvents(): Record<SpectraUiEventType, SpectraEventEnvelope> {
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			type: 'spectra.audio.capture.changed',
 			tabId,
+			documentId,
 			generation,
 			payload: {
 				tabId,

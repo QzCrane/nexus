@@ -24,7 +24,7 @@ import {
 } from './control-coordinator';
 import { getAudioSession } from './audio-session-store';
 
-type StateCallback = (tabId: number, state: RemoteState) => void;
+type StateCallback = (tabId: number, state: RemoteState) => void | Promise<void>;
 
 let stateCallback: StateCallback | null = null;
 let snapshotListenerInstalled = false;
@@ -39,6 +39,23 @@ interface StableRemoteProjection {
 }
 
 const stableRemoteStates = new Map<number, StableRemoteProjection>();
+const remotePublishTails = new Map<number, Promise<void>>();
+const remotePublicationTokens = new Map<number, object>();
+
+function remotePublicationToken(tabId: number): object {
+	const current = remotePublicationTokens.get(tabId);
+	if (current) return current;
+	const created = {};
+	remotePublicationTokens.set(tabId, created);
+	return created;
+}
+
+export function invalidateRemoteTab(tabId: number): void {
+	stableRemoteStates.delete(tabId);
+	// Deleting the exact token invalidates publishers captured before removal.
+	// A reused Chrome tab id receives a fresh token without retaining tombstones.
+	remotePublicationTokens.delete(tabId);
+}
 
 type RoutedControlSubmitRequest = Omit<ControlSubmitRequest, 'tabId'> & { tabId: number };
 type RoutedControlOperationRequest = ControlOperationRequest & { tabId: number };
@@ -59,7 +76,11 @@ export type { RemoteCommand, RemoteState } from '../remote/protocol';
 
 export function setStateCallback(callback: StateCallback | null): void {
 	stateCallback = callback;
-	if (!callback) stableRemoteStates.clear();
+	if (!callback) {
+		stableRemoteStates.clear();
+		remotePublishTails.clear();
+		remotePublicationTokens.clear();
+	}
 	// Tests and MV3 teardown may clear the callback after the Chrome global has
 	// already gone away. Installing the listener is only meaningful while a
 	// remote consumer is active.
@@ -68,18 +89,18 @@ export function setStateCallback(callback: StateCallback | null): void {
 	chrome.runtime.onMessage.addListener((message: unknown) => {
 		if (!isSpectraEventEnvelope(message)) return false;
 		if (message.type === 'spectra.control.snapshot.changed') {
-			void publishRemoteState(message.payload);
+			void publishRemoteState(message.payload).catch(() => undefined);
 		} else if (message.type === 'spectra.audio.session.changed') {
 			const stable = stableRemoteStates.get(message.payload.tabId);
 			if (stable?.documentId === message.payload.documentId
 				&& stable.origin === message.payload.origin
 				&& stable.generation === message.payload.generation) {
-				void publishRemoteState(stable.snapshot, message.payload);
+				void publishRemoteState(stable.snapshot, message.payload).catch(() => undefined);
 			}
 		}
 		return false;
 	});
-	chrome.tabs.onRemoved?.addListener((tabId) => stableRemoteStates.delete(tabId));
+	chrome.tabs.onRemoved?.addListener(invalidateRemoteTab);
 }
 
 export async function executeCommand(
@@ -136,31 +157,60 @@ export async function syncState(
 	gateway: RemoteControlGateway = coordinatorGateway,
 ): Promise<void> {
 	if (!stateCallback || !Number.isInteger(tabId) || tabId <= 0) return;
+	const publicationToken = remotePublicationToken(tabId);
 	try {
 		const [snapshot, session] = await Promise.all([
 			gateway.getSnapshot(tabId),
 			getAudioSession(tabId).catch(() => null),
 		]);
-		if (snapshot) await publishRemoteState(snapshot, session);
+		if (snapshot && remotePublicationTokens.get(tabId) === publicationToken) {
+			await publishRemoteState(snapshot, session, publicationToken);
+		}
 	} catch {
 		// The tab may have navigated or closed between authentication and sync.
 		stableRemoteStates.delete(tabId);
 	}
 }
 
-async function publishRemoteState(
+function isOlderRemoteProjection(
+	previous: StableRemoteProjection | undefined,
 	snapshot: ControlSnapshot,
-	knownSession?: AudioSessionSnapshot | null,
-): Promise<void> {
-	if (!stateCallback) return;
-	const previous = stableRemoteStates.get(snapshot.tabId);
-	if (previous && (
+): boolean {
+	return Boolean(previous && (
 		previous.generation > snapshot.generation
 		|| (previous.generation === snapshot.generation
 			&& previous.documentId === snapshot.documentId
 			&& previous.origin === snapshot.origin
 			&& previous.revision > snapshot.revision)
-	)) return;
+	));
+}
+
+function publishRemoteState(
+	snapshot: ControlSnapshot,
+	knownSession?: AudioSessionSnapshot | null,
+	publicationToken = remotePublicationToken(snapshot.tabId),
+): Promise<void> {
+	const previousTail = remotePublishTails.get(snapshot.tabId) ?? Promise.resolve();
+	const operation = previousTail
+		.catch(() => undefined)
+		.then(() => publishRemoteStateNow(snapshot, knownSession, publicationToken));
+	remotePublishTails.set(snapshot.tabId, operation);
+	return operation.finally(() => {
+		if (remotePublishTails.get(snapshot.tabId) === operation) {
+			remotePublishTails.delete(snapshot.tabId);
+		}
+	});
+}
+
+async function publishRemoteStateNow(
+	snapshot: ControlSnapshot,
+	knownSession?: AudioSessionSnapshot | null,
+	publicationToken = remotePublicationToken(snapshot.tabId),
+): Promise<void> {
+	const callback = stateCallback;
+	if (!callback || remotePublicationTokens.get(snapshot.tabId) !== publicationToken) return;
+	const previous = stableRemoteStates.get(snapshot.tabId);
+	if (isOlderRemoteProjection(previous, snapshot)) return;
 	const sameDocument = previous?.documentId === snapshot.documentId
 		&& previous.origin === snapshot.origin
 		&& previous.generation === snapshot.generation;
@@ -203,9 +253,15 @@ async function publishRemoteState(
 	const session = knownSession === undefined
 		? await getAudioSession(snapshot.tabId).catch(() => null)
 		: knownSession;
+	// Every potentially suspended read is inside the per-tab publication tail.
+	// Recheck callback and projection authority before the external delivery ACK.
+	if (stateCallback !== callback
+		|| remotePublicationTokens.get(snapshot.tabId) !== publicationToken
+		|| isOlderRemoteProjection(stableRemoteStates.get(snapshot.tabId), snapshot)) return;
 	const sessionMatches = audioSessionMatchesControlDocument(session, snapshot);
 	const state: RemoteState = {
 		generation: snapshot.generation,
+		revision: snapshot.revision,
 		volume: volume.effectiveVolume,
 		volumeBase: volume.volumeBase,
 		boost: volume.boost,
@@ -218,13 +274,17 @@ async function publishRemoteState(
 		tabDomain: tab ? tabDomain : baseline.tabDomain ?? '',
 	};
 	state.volumeState = resolveAudioVolumeState(state);
-	stableRemoteStates.set(snapshot.tabId, {
+	const projection: StableRemoteProjection = {
 		documentId: snapshot.documentId,
 		origin: snapshot.origin,
 		generation: snapshot.generation,
 		revision: snapshot.revision,
 		snapshot,
 		state,
-	});
-	stateCallback(snapshot.tabId, state);
+	};
+	await callback(snapshot.tabId, state);
+	if (stateCallback !== callback
+		|| remotePublicationTokens.get(snapshot.tabId) !== publicationToken
+		|| isOlderRemoteProjection(stableRemoteStates.get(snapshot.tabId), snapshot)) return;
+	stableRemoteStates.set(snapshot.tabId, projection);
 }

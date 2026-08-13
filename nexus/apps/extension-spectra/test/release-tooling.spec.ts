@@ -72,9 +72,16 @@ describe('release ZIP tooling', () => {
 			new URL('../src/background/control-coordinator.ts', import.meta.url),
 			'utf8',
 		);
-		expect(coordinator).toContain("message.payload.source === 'remote'");
+		expect(coordinator).toContain("runtimeClaimedSource === 'remote' || runtimeClaimedSource === 'system'");
 		expect(coordinator).toContain('Background-only control sources cannot be asserted by runtime RPC');
 		expect(coordinator).toMatch(/message\.payload\.source === 'restore'[\s\S]{0,320}sender\.frameId !== 0[\s\S]{0,320}message\.payload\.target\.documentId !== sender\.documentId/u);
+		expect(coordinator).toMatch(/pageSource[\s\S]{0,240}sender\.frameId !== 0[\s\S]{0,240}sender\.documentId/u);
+		const legacyHandler = readFileSync(
+			new URL('../src/content/logic/spectra-command-handler.ts', import.meta.url),
+			'utf8',
+		);
+		expect(legacyHandler).not.toContain("source: 'popup'");
+		expect(legacyHandler).toContain('legacy_command_retired');
 	});
 
 	test('advances remote delivered generation only inside a successful delivery acknowledgement', () => {
@@ -86,23 +93,53 @@ describe('release ZIP tooling', () => {
 			remote.indexOf('function sendStateToOffscreen'),
 			remote.indexOf('type AuthorizedRemoteHostEvent'),
 		);
-		expect(sendState).toMatch(/\.then\(\(response\) => \{[\s\S]*if \(response\.success\) \{[\s\S]*authorization\.generation = Math\.max/u);
-		expect(sendState.indexOf('authorization.generation =')).toBeGreaterThan(sendState.indexOf('response.success'));
+		expect(sendState).toMatch(/const response = await sendOffscreenMessage\([\s\S]*if \(!response\.success\)[\s\S]*throw new Error/u);
+		expect(sendState).toContain('current.session.sessionId !== authorization.session.sessionId');
+		expect(sendState.indexOf('current.generation = Math.max')).toBeGreaterThan(sendState.indexOf('response.success'));
+		expect(sendState).not.toContain('authorization.generation =');
 	});
 
-	test('production budgets reject one-byte startup closure regressions', () => {
-		const report = {
-			serviceWorkerWake: { scriptBytes: SPECTRA_PRODUCTION_BUDGETS.serviceWorkerWake + 1 },
-			documentStart: { scriptBytes: 0 },
-			offscreenAudioOnly: { scriptBytes: 0 },
-			offscreenRemote: { scriptBytes: 0 },
-			entrypoints: [],
-		};
-		expect(productionBudgetFailures(report)).toEqual([
-			`service-worker wake: ${SPECTRA_PRODUCTION_BUDGETS.serviceWorkerWake + 1} bytes exceeds production budget ${SPECTRA_PRODUCTION_BUDGETS.serviceWorkerWake}`,
-		]);
-		report.serviceWorkerWake.scriptBytes -= 1;
-		expect(productionBudgetFailures(report)).toEqual([]);
+	test('production budgets reject one-byte startup and eventual-closure regressions', () => {
+		const cases = [
+			['serviceWorkerWake', 'service-worker wake', (report, value) => { report.serviceWorkerWake.scriptBytes = value; }],
+			['documentStart', 'document_start', (report, value) => { report.documentStart.scriptBytes = value; }],
+			['contentBootstrap', 'content-bootstrap.js static closure', (report, value) => { report.entrypoints[0].staticBytes = value; }],
+			['contentSiteHotkeys', 'content-site-hotkeys.js static closure', (report, value) => { report.entrypoints[1].staticBytes = value; }],
+			['offscreenCapture', 'offscreen Capture-only closure', (report, value) => { report.offscreenAudioOnly.scriptBytes = value; }],
+			['offscreenRemote', 'offscreen Remote eventual closure', (report, value) => { report.offscreenRemote.scriptBytes = value; }],
+			['popupStatic', 'popup.js static closure', (report, value) => { report.entrypoints[2].staticBytes = value; }],
+			['popupEventual', 'popup.js eventual closure', (report, value) => { report.entrypoints[2].eventualBytes = value; }],
+			['contentRuntimeEventual', 'content-runtime.js eventual closure', (report, value) => { report.entrypoints[3].eventualBytes = value; }],
+			['contentVideoEffectsEventual', 'content-video-effects.js eventual closure', (report, value) => { report.entrypoints[4].eventualBytes = value; }],
+			['optionsEventual', 'options.js eventual closure', (report, value) => { report.entrypoints[5].eventualBytes = value; }],
+			['javascriptTotal', 'total production JavaScript', (report, value) => { report.javascript = value; }],
+			['distTotal', 'total production artifact', (report, value) => { report.total = value; }],
+		] as const;
+		for (const [key, label, setValue] of cases) {
+			const report = {
+				serviceWorkerWake: { scriptBytes: 0 },
+				documentStart: { scriptBytes: 0 },
+				offscreenAudioOnly: { scriptBytes: 0 },
+				offscreenRemote: { scriptBytes: 0 },
+				javascript: 0,
+				total: 0,
+				entrypoints: [
+					{ name: 'content-bootstrap.js', staticBytes: 0, eventualBytes: 0 },
+					{ name: 'content-site-hotkeys.js', staticBytes: 0, eventualBytes: 0 },
+					{ name: 'popup.js', staticBytes: 0, eventualBytes: 0 },
+					{ name: 'content-runtime.js', staticBytes: 0, eventualBytes: 0 },
+					{ name: 'content-video-effects.js', staticBytes: 0, eventualBytes: 0 },
+					{ name: 'options.js', staticBytes: 0, eventualBytes: 0 },
+				],
+			};
+			const ceiling = SPECTRA_PRODUCTION_BUDGETS[key];
+			setValue(report, ceiling + 1);
+			expect(productionBudgetFailures(report)).toEqual([
+				`${label}: ${ceiling + 1} bytes exceeds production budget ${ceiling}`,
+			]);
+			setValue(report, ceiling);
+			expect(productionBudgetFailures(report)).toEqual([]);
+		}
 	});
 	test('forbids publishing an unvalidated ZIP directly', () => {
 		expect(() => createRelease({ stage: false })).toThrow('Direct final release writes are disabled');
@@ -501,6 +538,7 @@ describe('release gate orchestration', () => {
 			'architecture verify',
 			'documentation architecture',
 			'platform contract',
+			'repository governance contracts',
 			'public projection contract',
 			'frozen dependency install',
 			'toolchain verify',
@@ -508,9 +546,8 @@ describe('release gate orchestration', () => {
 			'workspace dependency build',
 			'TypeScript check',
 			'unit and contract tests',
-			'Chrome integration',
 			'production build',
-			'production artifact integrity',
+			'production Chrome integration',
 			'dependency audit',
 			'remote-site live deployment',
 			'deterministic staging ZIP',
@@ -531,17 +568,23 @@ describe('release gate orchestration', () => {
 
 		const packageJson = JSON.parse(readFileSync(resolve(import.meta.dir, '../package.json'), 'utf8'));
 		expect(packageJson.scripts.test).toBe('bun run test:unit && bun run test:chrome');
+		expect(packageJson.scripts['test:chrome']).toBe('bun run build:dev && bun run test:chrome:dist');
+		expect(packageJson.scripts['test:chrome:dist']).toBe('bun run test:smoke');
 		expect(RELEASE_STEPS.find((step) => step.label === 'unit and contract tests')?.args).toEqual([
 			'run',
 			'--cwd',
 			'apps/extension-spectra',
 			'test:unit',
 		]);
-		expect(RELEASE_STEPS.find((step) => step.label === 'Chrome integration')?.args).toEqual([
+		expect(RELEASE_STEPS.find((step) => step.label === 'production Chrome integration')?.args).toEqual([
 			'run',
 			'--cwd',
 			'apps/extension-spectra',
-			'test:chrome',
+			'test:chrome:dist',
+		]);
+		expect(RELEASE_STEPS.find((step) => step.label === 'dependency audit')?.args).toEqual([
+			'run',
+			'audit:dependencies',
 		]);
 		expect(Object.keys(packageJson.scripts).filter((name) => name.endsWith(':stage'))).toEqual(['package:stage']);
 		const previousPath = process.env[RELEASE_RECEIPT_PATH_ENV];

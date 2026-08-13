@@ -23,7 +23,7 @@ Roadmaps, proposals, screenshots, and older listing text are not behavior author
 
 - English: [`en-US.md`](en-US.md)
 - Simplified Chinese: [`zh-CN.md`](zh-CN.md)
-- Candidate notes: [`release-notes-0.6.1.md`](release-notes-0.6.1.md)
+- Candidate notes: [`release-notes-0.6.2.md`](release-notes-0.6.2.md)
 - Required screenshot: `assets/halo-sidepanel-1280x800.png`
 - Extension icons: `../public/icon16.png`, `../public/icon48.png`, and `../public/icon128.png`
 
@@ -36,6 +36,8 @@ bun run --cwd apps/extension-halo capture:store-assets
 The capture script builds production output, loads that exact unpacked extension in Chromium, waits for the tool registry UI, captures 1280×800 PNG, verifies the PNG dimensions, and cleans its temporary profile. Review the image visually before publication.
 
 ## Publication gate
+
+Policy readback on 2026-08-13 used Chrome's current [program policies](https://developer.chrome.com/docs/webstore/program-policies/policies), [Dashboard privacy-field guidance](https://developer.chrome.com/docs/webstore/cws-dashboard-privacy), and [Manifest V3 requirements](https://developer.chrome.com/docs/webstore/program-policies/mv3-requirements). The candidate must continue to request the narrowest required/optional permissions, disclose local as well as transmitted user data, justify every Dashboard permission, and keep extension logic self-contained except for the documented `userScripts` API boundary.
 
 Before each Chrome Web Store submission:
 

@@ -2,7 +2,6 @@
 	"id": "qrcode",
 	"icon": "🔲",
 	"category": "general",
-	"size": 45000,
 	"builtIn": true,
 	"status": "ready",
 	"keywords": [

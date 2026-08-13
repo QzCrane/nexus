@@ -2,7 +2,6 @@
 	"id": "http-status",
 	"icon": "🌐",
 	"category": "network",
-	"size": 25000,
 	"builtIn": false,
 	"keywords": [],
 	"pluginType": "tool"

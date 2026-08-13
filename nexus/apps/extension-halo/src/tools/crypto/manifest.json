@@ -2,7 +2,6 @@
 	"id": "crypto",
 	"icon": "🔐",
 	"category": "dev",
-	"size": 85000,
 	"builtIn": false,
 	"keywords": []
 }

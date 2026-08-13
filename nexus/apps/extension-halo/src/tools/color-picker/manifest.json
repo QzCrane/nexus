@@ -2,7 +2,6 @@
 	"id": "color-picker",
 	"icon": "🎨",
 	"category": "general",
-	"size": 30000,
 	"builtIn": true,
 	"status": "ready",
 	"keywords": [

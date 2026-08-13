@@ -5,6 +5,7 @@ import { HOTKEY_ACTIONS, DEFAULT_HOTKEY_SETTINGS } from '@nexus/contracts';
 import { t, tf, getActionName, getCurrentLang, onLangChange } from './i18n';
 import { getSettingsSnapshot, patchSettings } from '../shared/settings-client';
 import { isSlotHotkeyAction } from './supported-hotkey-actions';
+import { clearOptionsError, showOptionsError } from './status';
 
 function cloneHotkeySettings(source: HotkeySettings): HotkeySettings {
 	return {
@@ -37,12 +38,9 @@ function loadCommandRegistry(): void {
 }
 
 async function loadSettings(): Promise<void> {
-	try {
-		const snapshot = await getSettingsSnapshot();
-		settings = cloneHotkeySettings(snapshot.hotkeySettings);
-	} catch {
-		settings = cloneHotkeySettings(DEFAULT_HOTKEY_SETTINGS);
-	}
+	const snapshot = await getSettingsSnapshot();
+	settings = cloneHotkeySettings(snapshot.hotkeySettings);
+	clearOptionsError();
 }
 
 // eff: generates the UI list for both preset and generic command slots, populating them with localized action names
@@ -114,9 +112,10 @@ function createSlotRow(command: string, action: HotkeyAction, readonly: boolean)
 		try {
 			const snapshot = await patchSettings({ scope: 'hotkey-slots', changes: { [command]: action } });
 			settings = cloneHotkeySettings(snapshot.hotkeySettings);
-		} catch {
+		} catch (error) {
 			settings.slots[command] = previous;
 			select.value = previous;
+			showOptionsError(error);
 		}
 	});
 

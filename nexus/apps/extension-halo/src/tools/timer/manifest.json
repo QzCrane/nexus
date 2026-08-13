@@ -2,7 +2,6 @@
 	"id": "timer",
 	"icon": "⏱️",
 	"category": "efficiency",
-	"size": 20000,
 	"builtIn": true,
 	"status": "coming",
 	"keywords": [
@@ -20,7 +19,7 @@
 		"level": "medium",
 		"descriptionKey": "impact.mechanism.raf_active",
 		"sourceFile": "tools/timer/panel.tsx",
-		"sourceLine": 47,
+		"sourceAnchor": "frameId = requestAnimationFrame(tick)",
 		"sourceDetail": "requestAnimationFrame state is isolated to the TimerDisplay clock node; a bounded 1Hz deadline watcher performs no persistent write until real completion"
 	}
 }

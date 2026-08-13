@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-07-26
+last_reviewed: 2026-08-13
 ---
 
 # 03. UI & Boundaries (Visualizer, favicon, remote, UX)
@@ -55,3 +55,5 @@ last_reviewed: 2026-07-26
 - 颜色与实际状态一比一对应: `blue` 表示 Native / WebAudio ACK，`purple` 表示明确的 Capture active ACK，`gray` 表示静音/0。
 - Badge 在 `chrome.storage.session` 中记录 per-tab 插件使用事实；完全无控制的空白标签页保持 Badge 为空。
 - Toast 与 OSD 在全屏模式下自动挂载到 Popover top-layer 避免被全屏覆盖。
+- Popup 离散控制与合并后的 Filter 写入都必须把结构化失败投影为可访问错误 Toast；失败清除待发送值、先回滚到最后一次 ACK，再强制读取 authoritative snapshot，不得被吞掉或继续呈现为成功状态。
+- Options 只有在权威 settings snapshot 成功读取后才渲染持久化事实。启动或 mutation 失败使用统一页面错误面和明确的 Retry reload；不允许把 `DEFAULT_*` 伪装成已保存状态，失败 mutation 必须回滚或强制重读。

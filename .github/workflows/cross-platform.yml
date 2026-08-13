@@ -156,7 +156,7 @@ jobs:
 
       - name: Test SPECTRA
         if: needs.scope.outputs.spectra == 'true'
-        run: bun --cwd nexus test:spectra
+        run: bun --cwd nexus test:spectra:dist
 
       - name: Test HALO
         if: needs.scope.outputs.halo == 'true'

@@ -2,7 +2,6 @@
 	"id": "network",
 	"icon": "🌐",
 	"category": "network",
-	"size": 45000,
 	"builtIn": false,
 	"keywords": [],
 	"pluginType": "tool"

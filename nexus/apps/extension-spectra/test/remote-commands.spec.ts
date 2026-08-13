@@ -8,6 +8,7 @@ import {
 } from '@nexus/contracts';
 import {
 	executeCommand,
+	invalidateRemoteTab,
 	setStateCallback,
 	syncState,
 	type RemoteControlGateway,
@@ -15,11 +16,59 @@ import {
 
 const TAB_ID = 9_301;
 
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((done) => { resolve = done; });
+	return { promise, resolve };
+}
+
 afterEach(async () => {
 	setStateCallback(null);
 });
 
 describe('remote acknowledged audio state', () => {
+	test('does not settle synchronization before the transport commits its delivered generation', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		let releaseDelivery: (() => void) | undefined;
+		const delivery = new Promise<void>((resolve) => { releaseDelivery = resolve; });
+		let markDeliveryStarted: (() => void) | undefined;
+		const deliveryStarted = new Promise<void>((resolve) => { markDeliveryStarted = resolve; });
+		let settled = false;
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				runtime: { id: 'spectra-test', onMessage: { addListener: () => undefined } },
+				tabs: { get: async () => ({ id: TAB_ID, title: 'Remote', url: 'https://media.example' }) },
+			},
+		});
+		try {
+			setStateCallback(async () => {
+				markDeliveryStarted?.();
+				await delivery;
+			});
+			const operation = syncState(TAB_ID, gateway({
+				getSnapshot: async () => ({
+					tabId: TAB_ID,
+					documentId: 'document-delivery-barrier',
+					origin: 'https://media.example',
+					generation: 9,
+					revision: 1,
+					activeMedia: null,
+					activeVideo: null,
+					fields: { volumeBase: field(100), boost: field(1) },
+				}),
+			})).then(() => { settled = true; });
+			await deliveryStarted;
+			expect(settled).toBe(false);
+			releaseDelivery?.();
+			await operation;
+			expect(settled).toBe(true);
+		} finally {
+			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
+	});
+
 	test('maps every remote button to one canonical control algorithm and transform', () => {
 		expect(Object.keys(REMOTE_COMMAND_DESCRIPTORS).sort()).toEqual([...REMOTE_COMMANDS].sort());
 		expect(REMOTE_COMMAND_DESCRIPTORS.volume_up).toEqual({
@@ -76,6 +125,7 @@ describe('remote acknowledged audio state', () => {
 
 			expect(published).toEqual({
 				generation: 17,
+				revision: 4,
 				volume: 100,
 				volumeBase: 100,
 				boost: 1,
@@ -89,6 +139,93 @@ describe('remote acknowledged audio state', () => {
 				tabDomain: 'media.example',
 			});
 			expect(getSnapshot).toHaveBeenCalledTimes(1);
+		} finally {
+			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
+	});
+
+	test('never publishes an older revision after a newer snapshot wins an async race', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const first = deferred<ControlSnapshot | null>();
+		const second = deferred<ControlSnapshot | null>();
+		const pendingSnapshots = [first, second];
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				runtime: { id: 'spectra-test', onMessage: { addListener: () => undefined } },
+				tabs: { get: async () => ({ id: TAB_ID, title: 'Remote', url: 'https://media.example' }) },
+			},
+		});
+		try {
+			const published: Array<import('../src/remote/protocol').RemoteState> = [];
+			setStateCallback(async (_tabId, state) => { published.push(state); });
+			const control = gateway({
+				getSnapshot: async () => (pendingSnapshots.shift()?.promise ?? Promise.resolve(null)),
+			});
+			const revisionOne = syncState(TAB_ID, control);
+			const revisionTwo = syncState(TAB_ID, control);
+			second.resolve({
+				tabId: TAB_ID, documentId: 'document-race', origin: 'https://media.example',
+				generation: 30, revision: 2, activeMedia: null, activeVideo: null,
+				fields: { volumeBase: field(90), boost: field(1) },
+			});
+			await revisionTwo;
+			first.resolve({
+				tabId: TAB_ID, documentId: 'document-race', origin: 'https://media.example',
+				generation: 30, revision: 1, activeMedia: null, activeVideo: null,
+				fields: { volumeBase: field(70), boost: field(1) },
+			});
+			await revisionOne;
+			expect(published).toHaveLength(1);
+			expect(published[0]).toMatchObject({ generation: 30, revision: 2, volume: 90 });
+		} finally {
+			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
+	});
+
+	test('does not resurrect a removed tab projection after an in-flight delivery settles', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const delivery = deferred<void>();
+		const deliveryStarted = deferred<void>();
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				runtime: { id: 'spectra-test', onMessage: { addListener: () => undefined } },
+				tabs: { get: async () => ({ id: TAB_ID, title: 'Remote', url: 'https://media.example' }) },
+			},
+		});
+		try {
+			const published: number[] = [];
+			let first = true;
+			setStateCallback(async (_tabId, state) => {
+				published.push(state.revision);
+				if (!first) return;
+				first = false;
+				deliveryStarted.resolve();
+				await delivery.promise;
+			});
+			const revisionTwo = syncState(TAB_ID, gateway({
+				getSnapshot: async () => ({
+					tabId: TAB_ID, documentId: 'removed-document', origin: 'https://media.example',
+					generation: 40, revision: 2, activeMedia: null, activeVideo: null,
+					fields: { volumeBase: field(90), boost: field(1) },
+				}),
+			}));
+			await deliveryStarted.promise;
+			invalidateRemoteTab(TAB_ID);
+			delivery.resolve();
+			await revisionTwo;
+
+			await syncState(TAB_ID, gateway({
+				getSnapshot: async () => ({
+					tabId: TAB_ID, documentId: 'reused-document', origin: 'https://media.example',
+					generation: 1, revision: 1, activeMedia: null, activeVideo: null,
+					fields: { volumeBase: field(70), boost: field(1) },
+				}),
+			}));
+			expect(published).toEqual([2, 1]);
 		} finally {
 			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
 			else Reflect.deleteProperty(globalThis, 'chrome');

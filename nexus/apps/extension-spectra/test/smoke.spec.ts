@@ -22,6 +22,7 @@ import {
 	SPECTRA_PAGE_MEDIA_REQUEST_ATTRIBUTE,
 	SPECTRA_PAGE_MEDIA_RESULT_ATTRIBUTE,
 } from '../src/shared/page-media-bridge';
+import { createRemoteProof } from '../src/remote/protocol';
 import { requireValue } from './helpers/require-value';
 
 const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
@@ -1322,31 +1323,6 @@ async function sendCaptureRequest(
 	}, { tabId, enabled, generation, config }) as Promise<CaptureResponse>;
 }
 
-async function sendCaptureConfig(
-	_client: Page,
-	tabId: number,
-	generation: number,
-	config: AudioConfig,
-): Promise<CaptureResponse> {
-	return evaluateServiceWorker(async (request) => {
-		const [injection] = await chrome.scripting.executeScript({
-			target: { tabId: request.tabId },
-			world: 'ISOLATED',
-			func: async (value: typeof request) => chrome.runtime.sendMessage({
-				protocolVersion: 2,
-				requestId: crypto.randomUUID(),
-				tabId: value.tabId,
-				generation: value.generation,
-				type: 'spectra.audio.capture.config',
-				payload: { config: value.config },
-			}),
-			args: [request],
-		});
-		if (injection?.result === undefined) throw new Error('Capture config caller returned no result');
-		return injection.result;
-	}, { tabId, generation, config }) as Promise<CaptureResponse>;
-}
-
 async function configureRuntime(
 	url: string,
 	config: AudioConfig,
@@ -1458,22 +1434,57 @@ async function readOffscreenPeerRuntimeProbe(): Promise<PeerRuntimeProbe> {
 	})()`);
 }
 
-async function installOffscreenPeerRuntimeProbe(): Promise<void> {
+async function installOffscreenPeerRuntimeProbe(forceReady = false): Promise<void> {
 	const installed = await evaluateOffscreen<boolean>(`(() => {
 		const scope = globalThis;
-		if (scope.__spectraSmokePeerRuntimeProbe || typeof scope.Peer !== 'undefined') return false;
+		const forceReady = ${JSON.stringify(forceReady)};
+		if (scope.__spectraSmokePeerRuntimeProbe || (!forceReady && typeof scope.Peer !== 'undefined')) return false;
 		const probe = {
 			vendorAssignments: 0,
 			peerConstructions: 0,
 			peerDestructions: 0,
-			realPeer: null,
+			realPeer: typeof scope.Peer === 'function' ? scope.Peer : null,
+			peers: new Map(),
+			connections: new Map(),
+			nextConnectionId: 1,
 		};
 		let exposedPeer;
+		class FakeConnection {
+			constructor(id, peer, metadata) {
+				this.connectionId = id;
+				this.peer = peer;
+				this.metadata = metadata;
+				this.open = false;
+				this.listeners = new Map();
+				this.sent = [];
+			}
+			on(type, listener) {
+				const listeners = this.listeners.get(type) ?? [];
+				listeners.push(listener);
+				this.listeners.set(type, listeners);
+				return this;
+			}
+			emit(type, value) {
+				for (const listener of this.listeners.get(type) ?? []) listener(value);
+			}
+			send(value) {
+				this.sent.push(structuredClone(value));
+			}
+			deliver(value) {
+				this.emit('data', structuredClone(value));
+			}
+			close() {
+				if (!this.open) return;
+				this.open = false;
+				this.emit('close');
+			}
+		}
 		class FakePeer {
 			constructor(id) {
 				this.id = id;
 				this.listeners = new Map();
 				probe.peerConstructions += 1;
+				probe.peers.set(id, this);
 				queueMicrotask(() => {
 					for (const listener of this.listeners.get('open') ?? []) listener(this.id);
 				});
@@ -1484,10 +1495,34 @@ async function installOffscreenPeerRuntimeProbe(): Promise<void> {
 				this.listeners.set(type, listeners);
 				return this;
 			}
+			emit(type, value) {
+				for (const listener of this.listeners.get(type) ?? []) listener(value);
+			}
 			destroy() {
 				probe.peerDestructions += 1;
+				probe.peers.delete(this.id);
 			}
 		}
+		if (forceReady) exposedPeer = FakePeer;
+		probe.openConnection = (peerId, metadata) => {
+			const peer = probe.peers.get(peerId);
+			if (!peer) throw new Error('Fake Peer host is unavailable');
+			const connectionId = 'connection-' + probe.nextConnectionId++;
+			const connection = new FakeConnection(connectionId, 'spectra-smoke-remote', metadata);
+			probe.connections.set(connectionId, connection);
+			peer.emit('connection', connection);
+			connection.open = true;
+			connection.emit('open');
+			return connectionId;
+		};
+		probe.readMessages = (connectionId) => (
+			probe.connections.get(connectionId)?.sent.map((value) => structuredClone(value)) ?? []
+		);
+		probe.deliver = (connectionId, value) => {
+			const connection = probe.connections.get(connectionId);
+			if (!connection?.open) throw new Error('Fake Peer connection is unavailable');
+			connection.deliver(value);
+		};
 		Object.defineProperty(scope, 'Peer', {
 			configurable: true,
 			get() {
@@ -1500,9 +1535,43 @@ async function installOffscreenPeerRuntimeProbe(): Promise<void> {
 			},
 		});
 		scope.__spectraSmokePeerRuntimeProbe = probe;
-		return typeof scope.Peer === 'undefined';
+		return forceReady ? scope.Peer === FakePeer : typeof scope.Peer === 'undefined';
 	})()`);
 	if (!installed) throw new Error('Unable to install the offscreen Peer runtime probe');
+}
+
+async function openOffscreenTestRemote(session: RemotePublicSession): Promise<string> {
+	const input = JSON.stringify({
+		peerId: session.peerId,
+		metadata: { protocolVersion: 2, sessionId: session.sessionId },
+	});
+	return evaluateOffscreen<string>(`(() => {
+		const probe = globalThis.__spectraSmokePeerRuntimeProbe;
+		if (!probe?.openConnection) throw new Error('Offscreen Peer harness is unavailable');
+		const input = ${input};
+		return probe.openConnection(input.peerId, input.metadata);
+	})()`);
+}
+
+async function readOffscreenTestRemoteMessages(
+	connectionId: string,
+): Promise<Array<Record<string, unknown>>> {
+	return evaluateOffscreen<Array<Record<string, unknown>>>(`(() => {
+		const probe = globalThis.__spectraSmokePeerRuntimeProbe;
+		if (!probe?.readMessages) throw new Error('Offscreen Peer harness is unavailable');
+		return probe.readMessages(${JSON.stringify(connectionId)});
+	})()`);
+}
+
+async function deliverOffscreenTestRemote(
+	connectionId: string,
+	message: Record<string, unknown>,
+): Promise<void> {
+	await evaluateOffscreen<void>(`(() => {
+		const probe = globalThis.__spectraSmokePeerRuntimeProbe;
+		if (!probe?.deliver) throw new Error('Offscreen Peer harness is unavailable');
+		probe.deliver(${JSON.stringify(connectionId)}, ${JSON.stringify(message)});
+	})()`);
 }
 
 async function restoreOffscreenPeerRuntimeProbe(): Promise<void> {
@@ -1551,31 +1620,23 @@ async function installTabCaptureStreamIdStub(worker?: WebWorker): Promise<void> 
 
 async function ensureOffscreenHostForSyntheticHarness(): Promise<void> {
 	if (await getOffscreenContextCount() > 0) return;
-	const tabId = await getTabId(fixturePage.url());
-	const created = await sendFromActionPopup<{
-		ok: boolean;
-		data?: RemotePublicSession;
-		error?: { message?: string };
-	}>({
-		protocolVersion: 2,
-		tabId,
-		type: 'spectra.remote.session.create',
-		payload: { tabId },
+	// The synthetic getUserMedia harness must exist before production Capture
+	// acquires its lease. Create only the shared document here; product Capture
+	// remains the owner of the first real lease and every subsequent message.
+	// This fixture must not acquire a Remote lease through public PeerJS merely
+	// to prepare an unrelated audio test.
+	await evaluateServiceWorker(async () => {
+		await chrome.offscreen.createDocument({
+			url: 'offscreen.html',
+			reasons: ['USER_MEDIA', 'WEB_RTC'] as chrome.offscreen.Reason[],
+			justification: 'SPECTRA installed-Chromium synthetic capture harness',
+		});
 	});
-	if (!created.ok || !created.data) {
-		throw new Error(created.error?.message ?? 'Unable to create the offscreen smoke host');
-	}
 	await eventually(
 		getOffscreenContextCount,
 		(count) => count === 1,
 		'offscreen host for the synthetic capture harness',
 	);
-	await sendFromActionPopup({
-		protocolVersion: 2,
-		tabId,
-		type: 'spectra.remote.session.close',
-		payload: { tabId, sessionId: created.data.sessionId },
-	});
 }
 
 async function installSyntheticCaptureHarness(): Promise<void> {
@@ -2026,6 +2087,164 @@ function remotePairingUrl(session: RemotePublicSession, secret = session.secret)
 	return `${new URL(fixtureUrl).origin}/remote/#${fragment.toString()}`;
 }
 
+async function installRemotePagePeerHarness(
+	page: Page,
+	session: RemotePublicSession,
+): Promise<void> {
+	await page.evaluateOnNewDocument((expected) => {
+		type Listener = (value?: unknown) => void;
+		interface HarnessProbe {
+			commands: Array<Record<string, unknown>>;
+			vendorAssignments: number;
+		}
+		const scope = window as typeof window & {
+			Peer?: unknown;
+			__spectraRemotePeerHarness?: HarnessProbe;
+		};
+		const nonce = 'B'.repeat(43);
+		const probe: HarnessProbe = { commands: [], vendorAssignments: 0 };
+
+		const decodeBase64Url = (value: string): Uint8Array => {
+			const normalized = value.replaceAll('-', '+').replaceAll('_', '/');
+			const binary = atob(normalized + '='.repeat((4 - normalized.length % 4) % 4));
+			return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+		};
+		const encodeBase64Url = (bytes: Uint8Array): string => {
+			let binary = '';
+			for (const byte of bytes) binary += String.fromCharCode(byte);
+			return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '');
+		};
+		const expectedProof = async (): Promise<string> => {
+			const key = await crypto.subtle.importKey(
+				'raw',
+				decodeBase64Url(expected.secret),
+				{ name: 'HMAC', hash: 'SHA-256' },
+				false,
+				['sign'],
+			);
+			const payload = new TextEncoder().encode(
+				`spectra-remote-v2\n${expected.sessionId}\n${nonce}\n2`,
+			);
+			const signature = await crypto.subtle.sign('HMAC', key, payload);
+			return encodeBase64Url(new Uint8Array(signature));
+		};
+
+		class FakeConnection {
+			open = false;
+			readonly listeners = new Map<string, Listener[]>();
+
+			on(type: string, listener: Listener): this {
+				const listeners = this.listeners.get(type) ?? [];
+				listeners.push(listener);
+				this.listeners.set(type, listeners);
+				return this;
+			}
+
+			emit(type: string, value?: unknown): void {
+				for (const listener of this.listeners.get(type) ?? []) listener(value);
+			}
+
+			send(value: unknown): void {
+				if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+				const message = value as Record<string, unknown>;
+				if (message.type === 'spectra.remote.authenticate') {
+					void expectedProof().then((proof) => {
+						const ok = message.proof === proof;
+						this.emit('data', {
+							type: 'spectra.remote.auth-result',
+							protocolVersion: 2,
+							sessionId: expected.sessionId,
+							ok,
+							...(ok ? {} : { error: 'AUTH_FAILED' }),
+						});
+						if (!ok) return;
+						this.emit('data', {
+							type: 'spectra.remote.state',
+							protocolVersion: 2,
+							sessionId: expected.sessionId,
+							generation: 17,
+							revision: 3,
+							volume: 140,
+							volumeBase: 100,
+							boost: 1.4,
+							actualMode: 'capture',
+							phase: 'active',
+							volumeState: 'capture',
+							muted: false,
+							playing: true,
+							speed: 1.25,
+							tabTitle: 'SPECTRA extension smoke fixture',
+							tabDomain: '127.0.0.1',
+						});
+					});
+					return;
+				}
+				if (message.type === 'spectra.remote.command') {
+					probe.commands.push(structuredClone(message));
+				}
+			}
+
+			close(): void {
+				if (!this.open) return;
+				this.open = false;
+				this.emit('close');
+			}
+		}
+
+		class FakePeer {
+			readonly listeners = new Map<string, Listener[]>();
+
+			constructor() {
+				queueMicrotask(() => this.emit('open', 'spectra-smoke-client'));
+			}
+
+			on(type: string, listener: Listener): this {
+				const listeners = this.listeners.get(type) ?? [];
+				listeners.push(listener);
+				this.listeners.set(type, listeners);
+				return this;
+			}
+
+			emit(type: string, value?: unknown): void {
+				for (const listener of this.listeners.get(type) ?? []) listener(value);
+			}
+
+			connect(peerId: string, _options: { metadata?: unknown }): FakeConnection {
+				if (peerId !== expected.peerId) throw new Error('Remote client selected the wrong Peer host');
+				const connection = new FakeConnection();
+				queueMicrotask(() => {
+					connection.open = true;
+					connection.emit('open');
+					connection.emit('data', {
+						type: 'spectra.remote.challenge',
+						protocolVersion: 2,
+						sessionId: expected.sessionId,
+						nonce,
+						pairingExpiresAt: expected.pairingExpiresAt,
+					});
+				});
+				return connection;
+			}
+
+			destroy(): void {}
+		}
+
+		Object.defineProperty(scope, 'Peer', {
+			configurable: true,
+			get: () => FakePeer,
+			set: () => {
+				probe.vendorAssignments += 1;
+			},
+		});
+		scope.__spectraRemotePeerHarness = probe;
+	}, {
+		peerId: session.peerId,
+		sessionId: session.sessionId,
+		secret: session.secret,
+		pairingExpiresAt: session.pairingExpiresAt,
+	});
+}
+
 beforeAll(async () => {
 	server = Bun.serve({
 		port: 0,
@@ -2138,6 +2357,79 @@ afterAll(async () => {
 });
 
 describe('SPECTRA built extension smoke', () => {
+	test('renders the authenticated Remote page and emits the exact command envelope without public signaling', async () => {
+		const session: RemotePublicSession = {
+			protocolVersion: 2,
+			sessionId: 'C'.repeat(22),
+			peerId: `spectra-${'d'.repeat(32)}`,
+			secret: 'E'.repeat(22),
+			createdAt: Date.now(),
+			pairingExpiresAt: Date.now() + 60_000,
+			tabId: 1,
+			connected: false,
+		};
+		const rejectedPage = await browser.newPage();
+		const authenticatedPage = await browser.newPage();
+		try {
+			await installRemotePagePeerHarness(rejectedPage, session);
+			await rejectedPage.goto(remotePairingUrl(session, 'A'.repeat(22)), {
+				waitUntil: 'domcontentloaded',
+			});
+			await rejectedPage.waitForFunction(
+				() => document.querySelector('#status-text')?.textContent === 'Authentication failed',
+				{ timeout: 5_000, polling: 50 },
+			);
+			expect(await rejectedPage.evaluate(() => location.hash)).toBe('');
+			expect(await rejectedPage.$eval('#tab-title', (element) => element.textContent)).toBe(
+				'Waiting for authenticated sync…',
+			);
+			expect(await rejectedPage.$eval('[data-command="volume_up"]', (element) => (
+				(element as HTMLButtonElement).disabled
+			))).toBe(true);
+
+			await installRemotePagePeerHarness(authenticatedPage, session);
+			await authenticatedPage.goto(remotePairingUrl(session), { waitUntil: 'domcontentloaded' });
+			await authenticatedPage.waitForFunction(
+				() => document.querySelector('#status-text')?.textContent === 'Authenticated and connected'
+					&& document.querySelector('#tab-title')?.textContent === 'SPECTRA extension smoke fixture',
+				{ timeout: 5_000, polling: 50 },
+			);
+			expect(await authenticatedPage.evaluate(() => location.hash)).toBe('');
+			expect(await authenticatedPage.$eval('[data-command="volume_up"]', (element) => (
+				(element as HTMLButtonElement).disabled
+			))).toBe(false);
+			expect(await authenticatedPage.$eval('#volume-display', (element) => (
+				element.classList.contains('capture-active')
+			))).toBe(true);
+			expect(await authenticatedPage.$eval('#vol-display', (element) => element.textContent)).toBe('140%');
+
+			await authenticatedPage.$eval(
+				'[data-command="volume_up"]',
+				(element) => (element as HTMLButtonElement).click(),
+			);
+			const commands = await eventually(
+				() => authenticatedPage.evaluate(() => (
+					(window as Window & {
+						__spectraRemotePeerHarness?: { commands: Array<Record<string, unknown>> };
+					}).__spectraRemotePeerHarness?.commands ?? []
+				)),
+				(values) => values.length > 0 ? values : undefined,
+				'remote page command envelope',
+				5_000,
+			);
+			expect(commands.at(-1)).toEqual({
+				type: 'spectra.remote.command',
+				protocolVersion: 2,
+				sessionId: session.sessionId,
+				sequence: 1,
+				generation: 17,
+				command: 'volume_up',
+			});
+		} finally {
+			await Promise.all([rejectedPage.close(), authenticatedPage.close()]);
+		}
+	}, 20_000);
+
 	test('loads the MV3 worker and isolated zero-work bootstrap without MAIN', async () => {
 		expect(serviceWorkerTarget.url()).toBe(`chrome-extension://${extensionId}/background.js`);
 		const commandShortcuts = await evaluateServiceWorker(async () => Object.fromEntries(
@@ -2560,7 +2852,10 @@ describe('SPECTRA built extension smoke', () => {
 			await tapDefaultShortcut(arbiterPage, 'ArrowLeft');
 			await eventually(
 				readMedia,
-				(state) => state.speed === 1.2 && state.osd === '1.2×' && state.osdVisible,
+				// The dedicated top-layer test owns presentation duration. Here the
+				// acknowledged speed and retained label prove command acceptance while
+				// the URL/popstate assertions below prove browser-history exclusion.
+				(state) => state.speed === 1.2 && state.osd === '1.2×',
 				'accepted Alt+Left speed without history traversal',
 			);
 			await waitForOsdToSettle();
@@ -6095,15 +6390,6 @@ describe('SPECTRA built extension smoke', () => {
 		await installTabCaptureStreamIdStub();
 		const extensionClient = await openExtensionClient();
 		const secondary = await browser.newPage();
-		const wrongRemote = await browser.newPage();
-		const authenticatedRemote = await browser.newPage();
-		const wrongRemoteErrors: string[] = [];
-		collectPageErrors(wrongRemote, wrongRemoteErrors);
-		wrongRemote.on('console', (message) => {
-			if (message.type() === 'error' || message.type() === 'warning') {
-				wrongRemoteErrors.push(`console.${message.type()}: ${message.text()}`);
-			}
-		});
 		const tabId = await getTabId(fixturePage.url());
 		const secondaryUrl = `${fixtureUrl}?remote-secondary=1`;
 		let session: RemotePublicSession | null = null;
@@ -6113,33 +6399,55 @@ describe('SPECTRA built extension smoke', () => {
 			await secondary.goto(secondaryUrl, { waitUntil: 'domcontentloaded' });
 			await waitForContentBootstrapStatus(secondaryUrl);
 
-			const started = await sendCaptureRequest(extensionClient, tabId, true, 500);
-			expect(started).toMatchObject({ ok: true, data: { generation: 500, phase: 'active', active: true } });
-			expect(await sendFromActionPopup({
+			await markRegistryDomain(extensionClient, '127.0.0.1', true);
+			await fixturePage.reload({ waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(fixturePage.url());
+			await fixturePage.bringToFront();
+			await submitEffectiveVolume(tabId, 130);
+			const started = await waitForContentStatus(
+				(status) => status.config?.volume === 130
+					&& status.config?.boost === 1.3
+					&& status.mode === 'capture'
+					&& status.phase === 'active',
+				15_000,
+			);
+			const initialCaptureSession = await sendFromActionPopup<{
+				ok: boolean;
+				data?: { generation?: number; actualMode?: string; phase?: string };
+			}>({
 				protocolVersion: 2,
 				tabId,
 				type: 'spectra.audio.session.get',
 				payload: { tabId },
-			})).toMatchObject({
-				ok: true,
-				data: { generation: 500, actualMode: 'capture', phase: 'active' },
 			});
+			expect(initialCaptureSession).toMatchObject({
+				ok: true,
+				data: { actualMode: 'capture', phase: 'active' },
+			});
+			const captureGeneration = initialCaptureSession.data?.generation;
+			if (typeof captureGeneration !== 'number') throw new Error('Initial Capture generation is missing');
+			expect(started.generation).toBe(captureGeneration);
 			await restartServiceWorker();
 
-			const recovered = await sendCaptureConfig(
-				extensionClient,
+			const recovered = await sendFromActionPopup({
+				protocolVersion: 2,
 				tabId,
-				501,
-				DEFAULT_AUDIO_CONFIG,
-			);
+				type: 'spectra.audio.session.get',
+				payload: { tabId },
+			});
 			expect(recovered).toMatchObject({
 				ok: true,
-				data: { generation: 501, phase: 'active', active: true, actualMode: 'capture' },
+				data: { generation: captureGeneration, phase: 'active', actualMode: 'capture' },
 			});
 			expect(await getOffscreenContextCount()).toBe(1);
 			expect((await readOffscreenSnapshot()).audioTabs).toEqual(expect.arrayContaining([
-				expect.objectContaining({ tabId, generation: 501 }),
+				expect.objectContaining({ tabId, generation: captureGeneration }),
 			]));
+			// The Chrome integration owns extension-side offscreen/background/content
+			// recovery, authentication and command routing. PeerJS signaling availability
+			// is an external transport fact and must not make this product proof depend
+			// on the public 0.peerjs.com service.
+			await installOffscreenPeerRuntimeProbe(true);
 
 			const creation = await sendFromActionPopup<{
 				ok: boolean;
@@ -6158,120 +6466,81 @@ describe('SPECTRA built extension smoke', () => {
 			const sharedHost = await readOffscreenSnapshot();
 			expect(await getOffscreenContextCount()).toBe(1);
 			expect(sharedHost.audioTabs).toEqual(expect.arrayContaining([
-				expect.objectContaining({ tabId, generation: 501 }),
+				expect.objectContaining({ tabId, generation: captureGeneration }),
 			]));
 			expect(sharedHost.remoteTabs).toContainEqual({ tabId, sessionId: session.sessionId });
 
-			await wrongRemote.goto(remotePairingUrl(session, 'AAAAAAAAAAAAAAAAAAAAAA'), {
-				waitUntil: 'domcontentloaded',
-			});
-			try {
-				await eventually(
-					() => wrongRemote.$eval('#status-text', (element) => element.textContent ?? ''),
-					(status) => /Authentication failed|Host rejected authentication/u.test(status),
-					'wrong-secret remote authentication rejection',
-					25_000,
-				);
-			} catch (error) {
-				const [status, host, remoteDebug] = await Promise.all([
-					wrongRemote.$eval('#status-text', (element) => element.textContent ?? '').catch(() => null),
-					readOffscreenSnapshot().catch(() => null),
-					wrongRemote.evaluate(() => ({
-						href: location.href,
-						resources: performance.getEntriesByType('resource').map((entry) => entry.name),
-						online: navigator.onLine,
-					})).catch(() => null),
-				]);
-				throw new Error(
-					`Wrong-secret remote did not receive an authentication result: ${JSON.stringify({ status, host, remoteDebug, wrongRemoteErrors })}`,
-					{ cause: error },
-				);
-			}
-			expect(await wrongRemote.$eval('#tab-title', (element) => element.textContent)).toBe(
-				'Waiting for authenticated sync…',
+			const wrongConnection = await openOffscreenTestRemote(session);
+			const wrongMessages = await eventually(
+				() => readOffscreenTestRemoteMessages(wrongConnection),
+				(messages) => messages.some((message) => message.type === 'spectra.remote.challenge'),
+				'wrong-secret challenge',
 			);
-			expect(await wrongRemote.$eval('[data-command="volume_up"]', (element) => (
-				(element as HTMLButtonElement).disabled
-			))).toBe(true);
-			expect((await readContentStatus()).config?.volume).toBe(100);
+			const wrongChallenge = wrongMessages.find(
+				(message) => message.type === 'spectra.remote.challenge',
+			);
+			await deliverOffscreenTestRemote(wrongConnection, {
+				type: 'spectra.remote.authenticate',
+				protocolVersion: 2,
+				sessionId: session.sessionId,
+				proof: 'A'.repeat(43),
+			});
+			expect(wrongChallenge).toMatchObject({
+				type: 'spectra.remote.challenge',
+				sessionId: session.sessionId,
+			});
+			const rejectedMessages = await eventually(
+				() => readOffscreenTestRemoteMessages(wrongConnection),
+				(messages) => messages.some((message) => (
+					message.type === 'spectra.remote.auth-result' && message.ok === false
+				)),
+				'wrong-secret remote authentication rejection',
+			);
+			const rejected = rejectedMessages.find((message) => (
+				message.type === 'spectra.remote.auth-result' && message.ok === false
+			));
+			expect(rejected).toMatchObject({ error: 'AUTH_FAILED' });
+			expect((await readContentStatus()).config?.volume).toBe(130);
 
-			await authenticatedRemote.goto(remotePairingUrl(session), { waitUntil: 'domcontentloaded' });
-			try {
-				await authenticatedRemote.waitForFunction(
-					() => document.querySelector('#status-text')?.textContent === 'Authenticated and connected',
-					{ timeout: 25_000, polling: 100 },
-				);
-			} catch (error) {
-				const [remoteStatus, remoteTitle, hostSnapshot] = await Promise.all([
-					authenticatedRemote.$eval('#status-text', (element) => element.textContent ?? ''),
-					authenticatedRemote.$eval('#tab-title', (element) => element.textContent ?? ''),
-					readOffscreenSnapshot(),
-				]);
-				throw new Error(
-					`Authenticated remote did not connect: status=${JSON.stringify(remoteStatus)} title=${JSON.stringify(remoteTitle)} host=${JSON.stringify(hostSnapshot)}`,
-					{ cause: error },
-				);
-			}
-			try {
-				await authenticatedRemote.waitForFunction(
-					() => document.querySelector('#tab-title')?.textContent === 'SPECTRA extension smoke fixture',
-					{ timeout: 10_000, polling: 100 },
-				);
-			} catch (error) {
-				const [remoteStatus, remoteTitle, snapshotResponse] = await Promise.all([
-					authenticatedRemote.$eval('#status-text', (element) => element.textContent ?? ''),
-					authenticatedRemote.$eval('#tab-title', (element) => element.textContent ?? ''),
-					extensionClient.evaluate(async (targetTabId) => chrome.runtime.sendMessage({
-						protocolVersion: 2,
-						requestId: crypto.randomUUID(),
-						tabId: targetTabId,
-						type: 'spectra.control.snapshot.get',
-						payload: { tabId: targetTabId },
-					}), tabId),
-				]);
-				throw new Error(
-					`Authenticated remote did not receive state: status=${JSON.stringify(remoteStatus)} title=${JSON.stringify(remoteTitle)} snapshot=${JSON.stringify(snapshotResponse)}`,
-					{ cause: error },
-				);
-			}
-			expect(await authenticatedRemote.$eval('[data-command="volume_up"]', (element) => (
-				(element as HTMLButtonElement).disabled
-			))).toBe(false);
-			try {
-				await authenticatedRemote.waitForSelector('.volume-display.capture-active');
-			} catch (error) {
-				const [remotePresentation, audioSession, controlSnapshot, hostSnapshot, contentStatus] = await Promise.all([
-					authenticatedRemote.evaluate(() => {
-						const display = document.querySelector<HTMLElement>('#volume-display');
-						return {
-							className: display?.className ?? null,
-							value: document.querySelector('#vol-display')?.textContent ?? null,
-						};
-					}).catch(() => null),
-					extensionClient.evaluate(async (targetTabId) => chrome.runtime.sendMessage({
-						protocolVersion: 2,
-						requestId: crypto.randomUUID(),
-						type: 'spectra.audio.session.get',
-						payload: { tabId: targetTabId },
-					}), tabId).catch(() => null),
-					extensionClient.evaluate(async (targetTabId) => chrome.runtime.sendMessage({
-						protocolVersion: 2,
-						requestId: crypto.randomUUID(),
-						tabId: targetTabId,
-						type: 'spectra.control.snapshot.get',
-						payload: { tabId: targetTabId },
-					}), tabId).catch(() => null),
-					readOffscreenSnapshot().catch(() => null),
-					readContentStatus().catch(() => null),
-				]);
-				throw new Error(
-					`Authenticated remote did not render Capture state: ${JSON.stringify({ remotePresentation, audioSession, controlSnapshot, hostSnapshot, contentStatus })}`,
-					{ cause: error },
-				);
-			}
-			expect(await authenticatedRemote.$eval('#vol-display', (element) => (
-				getComputedStyle(element).color
-			))).toBe('rgb(124, 58, 237)');
+			const authenticatedConnection = await openOffscreenTestRemote(session);
+			const challengeMessages = await eventually(
+				() => readOffscreenTestRemoteMessages(authenticatedConnection),
+				(messages) => messages.some((message) => message.type === 'spectra.remote.challenge'),
+				'authenticated remote challenge',
+			);
+			const challenge = challengeMessages.find(
+				(message) => message.type === 'spectra.remote.challenge',
+			);
+			if (typeof challenge.nonce !== 'string') throw new Error('Remote challenge nonce is missing');
+			const proof = await createRemoteProof(session.secret, session.sessionId, challenge.nonce);
+			await deliverOffscreenTestRemote(authenticatedConnection, {
+				type: 'spectra.remote.authenticate',
+				protocolVersion: 2,
+				sessionId: session.sessionId,
+				proof,
+			});
+			const authenticatedMessages = await eventually(
+				() => readOffscreenTestRemoteMessages(authenticatedConnection),
+				(messages) => (
+					messages.some((message) => message.type === 'spectra.remote.auth-result' && message.ok === true)
+					&& messages.some((message) => message.type === 'spectra.remote.state')
+						? messages
+						: undefined
+				),
+				'authenticated remote state',
+			);
+			const initialRemoteState = authenticatedMessages.findLast(
+				(message) => message.type === 'spectra.remote.state',
+			);
+			expect(initialRemoteState).toMatchObject({
+				volume: 130,
+				volumeBase: 100,
+				boost: 1.3,
+				actualMode: 'capture',
+				phase: 'active',
+				tabTitle: 'SPECTRA extension smoke fixture',
+			});
+			const messageCountBeforeRestart = authenticatedMessages.length;
 			expect((await readOffscreenSnapshot()).remoteTabs).toContainEqual({ tabId, sessionId: session.sessionId });
 
 			// The offscreen host survives the worker. Its recovered generation must
@@ -6282,27 +6551,70 @@ describe('SPECTRA built extension smoke', () => {
 				45_000,
 			);
 			await withDiagnosticTimeout(
-				'send the first authenticated remote command after worker restart',
-				() => authenticatedRemote.$eval(
-					'[data-command="volume_up"]',
-					(element) => (element as HTMLButtonElement).click(),
-				),
+				'read recovered remote generation after worker restart',
+				async () => {
+					await eventually(
+						() => readOffscreenTestRemoteMessages(authenticatedConnection),
+						(messages) => messages.slice(messageCountBeforeRestart).findLast((message) => (
+							message.type === 'spectra.remote.state'
+							&& typeof message.generation === 'number'
+							&& message.actualMode === 'capture'
+							&& message.phase === 'active'
+						)),
+						'recovered remote state',
+					);
+				},
 				5_000,
 			);
+			const recoveredMessages = await readOffscreenTestRemoteMessages(authenticatedConnection);
+			const recoveredRemoteState = recoveredMessages.slice(messageCountBeforeRestart).findLast(
+				(message) => message.type === 'spectra.remote.state'
+					&& typeof message.generation === 'number'
+					&& message.actualMode === 'capture'
+					&& message.phase === 'active',
+			);
+			if (typeof recoveredRemoteState?.generation !== 'number') {
+				throw new Error('Recovered remote state generation is missing');
+			}
+			expect(recoveredRemoteState).toMatchObject({
+				volume: 130,
+				volumeBase: 100,
+				boost: 1.3,
+			});
+			expect(await readContentStatus()).toMatchObject({
+				mode: 'capture',
+				phase: 'active',
+				config: { volume: 130, volumeBase: 100, boost: 1.3 },
+			});
+			await deliverOffscreenTestRemote(authenticatedConnection, {
+				type: 'spectra.remote.command',
+				protocolVersion: 2,
+				sessionId: session.sessionId,
+				sequence: 1,
+				generation: recoveredRemoteState.generation,
+				command: 'volume_up',
+			});
 			try {
 				await eventually(
 					() => readContentStatus(),
-					(status) => status.config?.volume === 110 && status.config?.boost === 1.1,
+					(status) => status.config?.volume === 140 && status.config?.boost === 1.4,
 					'first remote command after service-worker recovery',
 					10_000,
 				);
 			} catch (error) {
-				const [hostStatus, controlSnapshot, remotePresentation] = await Promise.all([
+				const [hostStatus, hostSnapshot, audioSession, controlSnapshot, remoteMessages] = await Promise.all([
 					evaluateServiceWorker(async (targetTabId) => chrome.runtime.sendMessage({
 						target: 'offscreen',
 						type: 'REMOTE_HOST_GET_STATUS',
 						tabId: targetTabId,
 					}), tabId).catch(() => null),
+					readOffscreenSnapshot().catch(() => null),
+					sendFromActionPopup({
+						protocolVersion: 2,
+						tabId,
+						type: 'spectra.audio.session.get',
+						payload: { tabId },
+					}).catch(() => null),
 					extensionClient.evaluate(async (targetTabId) => chrome.runtime.sendMessage({
 						protocolVersion: 2,
 						requestId: crypto.randomUUID(),
@@ -6310,17 +6622,15 @@ describe('SPECTRA built extension smoke', () => {
 						type: 'spectra.control.snapshot.get',
 						payload: { tabId: targetTabId },
 					}), tabId).catch(() => null),
-					authenticatedRemote.evaluate(() => ({
-						status: document.querySelector('#status-text')?.textContent ?? null,
-						volume: document.querySelector('#vol-display')?.textContent ?? null,
-						speed: document.querySelector('#speed-display')?.textContent ?? null,
-					})).catch(() => null),
+					readOffscreenTestRemoteMessages(authenticatedConnection).catch(() => null),
 				]);
 				throw new Error(
 					`First remote command was not applied after worker recovery: ${JSON.stringify({
 						hostStatus,
+						hostSnapshot,
+						audioSession,
 						controlSnapshot,
-						remotePresentation,
+						remoteMessages,
 					})}`,
 					{ cause: error },
 				);
@@ -6392,13 +6702,10 @@ describe('SPECTRA built extension smoke', () => {
 				}).catch(() => undefined);
 			}
 			await sendCaptureRequest(extensionClient, tabId, false, 599).catch(() => undefined);
+			await markRegistryDomain(extensionClient, '127.0.0.1', false).catch(() => undefined);
 			await configureRuntime(fixturePage.url(), DEFAULT_AUDIO_CONFIG).catch(() => undefined);
-			await Promise.all([
-				extensionClient.close(),
-				secondary.close(),
-				wrongRemote.close(),
-				authenticatedRemote.close(),
-			]);
+			await restoreOffscreenPeerRuntimeProbe().catch(() => undefined);
+			await Promise.all([extensionClient.close(), secondary.close()]);
 		}
 	}, 120_000);
 

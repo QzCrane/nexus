@@ -2,6 +2,7 @@
 
 import type { ThemeMode } from '@nexus/contracts';
 import { getSettingsSnapshot, patchSettings } from '../shared/settings-client';
+import { clearOptionsError, showOptionsError } from './status';
 
 const LEGACY_THEME_KEY = 'theme';
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
@@ -39,10 +40,16 @@ export async function initTheme(): Promise<void> {
 	if (btn) {
 		btn.addEventListener('click', async () => {
 			const current = document.documentElement.dataset.theme ?? 'light';
-			currentMode = current === 'dark' ? 'light' : 'dark';
-			await patchSettings({ scope: 'global', changes: { themeMode: currentMode } });
-			applyTheme(currentMode);
-			updateIcon(currentMode);
+			const candidate = current === 'dark' ? 'light' : 'dark';
+			try {
+				const snapshot = await patchSettings({ scope: 'global', changes: { themeMode: candidate } });
+				currentMode = snapshot.globalSettings.themeMode;
+				applyTheme(currentMode);
+				updateIcon(currentMode);
+				clearOptionsError();
+			} catch (error) {
+				showOptionsError(error);
+			}
 		});
 		updateIcon(document.documentElement.dataset.theme ?? 'light');
 	}

@@ -17,6 +17,7 @@ export const en = {
 			pageCapture: { name: 'Page Capture', desc: 'Save complete web pages as MHTML files' },
 			clipboardRead: { name: 'Clipboard Read', desc: 'Read text from your clipboard' },
 			clipboardWrite: { name: 'Clipboard Write', desc: 'Copy text to your clipboard' },
+			cookies: { name: 'Cookies', desc: 'View and edit cookies for the selected site' },
 			downloads: { name: 'Downloads', desc: 'Manage and save file downloads' },
 			history: { name: 'History', desc: 'Access your browsing history' },
 			bookmarks: { name: 'Bookmarks', desc: 'Access and manage browser bookmarks' },

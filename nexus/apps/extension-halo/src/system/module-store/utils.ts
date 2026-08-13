@@ -31,7 +31,7 @@ export function convertScriptsToModules(scripts: UserScript[]): PluginMeta[] {
 			category: 'dev' as const, // User scripts go to dev category
 			pluginType: 'script' as const,
 			builtIn: false,
-			size: s.code.length,
+			distribution: 'user-authored' as const,
 			status: 'ready' as const,
 			keywords: ['script', 'user', s.type],
 			script: {

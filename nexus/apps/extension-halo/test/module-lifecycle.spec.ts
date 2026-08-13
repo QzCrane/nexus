@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import type { HaloSettings } from '../src/kernel/core/settings';
 import { ALL_MODULES, CORE_MODULES, OPTIONAL_MODULES } from '../src/kernel/registry/module-registry';
-import { ModuleManager, type ModuleInstallationPersistence } from '../src/kernel/managers/module-manager';
+import { ModuleManager, type ModuleEnablementPersistence } from '../src/kernel/managers/module-manager';
 import {
 	isOptionalPackagedModuleStoredEnabled,
 	moduleInstallationStorageKey,
@@ -29,7 +29,7 @@ function createMemoryPersistence(initialDisabled: readonly string[] = []) {
 	let failureId: string | null = null;
 	let gateFactory: ((id: string, enabled: boolean) => Promise<void>) | null = null;
 	let readOverride: ((id: string, current: boolean) => boolean) | null = null;
-	const persistence: ModuleInstallationPersistence = {
+	const persistence: ModuleEnablementPersistence = {
 		loadDisabled: async () => new Set(disabled),
 		readEnabled: async (id) => {
 			const current = !disabled.has(id);
@@ -71,27 +71,27 @@ describe('HALO packaged-module lifecycle authority', () => {
 		await manager.initialize();
 		expect(manager.getSnapshot().degraded).toBe(false);
 		expect(memory.writes).toEqual([]);
-		expect(manager.getAvailableModules()).toEqual([]);
-		expect(new Set(manager.getInstalledModules().map((module) => module.id))).toEqual(
+		expect(manager.getDisabledModules()).toEqual([]);
+		expect(new Set(manager.getEnabledModules().map((module) => module.id))).toEqual(
 			new Set(ALL_MODULES.map((module) => module.id)),
 		);
 	});
 
-	test('false tombstone persists uninstall across restart and install removes it', async () => {
+	test('false tombstone persists disable across restart and enable removes it', async () => {
 		const optional = OPTIONAL_MODULES[0];
 		if (!optional) throw new Error('HALO test requires an optional module');
 		const memory = createMemoryPersistence();
 		const manager = new ModuleManager(memory.persistence);
 		await manager.initialize();
-		await manager.uninstall(optional.id);
+		await manager.disable(optional.id);
 		expect(memory.disabled.has(optional.id)).toBe(true);
-		expect(manager.getState(optional.id)?.status).toBe('available');
+		expect(manager.getState(optional.id)?.status).toBe('disabled');
 		const restarted = new ModuleManager(memory.persistence);
 		await restarted.initialize();
-		expect(restarted.isInstalled(optional.id)).toBe(false);
-		await restarted.install(optional.id);
+		expect(restarted.isEnabled(optional.id)).toBe(false);
+		await restarted.enable(optional.id);
 		expect(memory.disabled.has(optional.id)).toBe(false);
-		expect(restarted.isInstalled(optional.id)).toBe(true);
+		expect(restarted.isEnabled(optional.id)).toBe(true);
 	});
 
 	test('built-in modules remain installed and cannot be disabled', async () => {
@@ -100,15 +100,15 @@ describe('HALO packaged-module lifecycle authority', () => {
 		const memory = createMemoryPersistence([core.id]);
 		const manager = new ModuleManager(memory.persistence);
 		await manager.initialize();
-		expect(manager.isInstalled(core.id)).toBe(true);
-		await expect(manager.uninstall(core.id)).rejects.toThrow(`Cannot uninstall: ${core.id}`);
+		expect(manager.isEnabled(core.id)).toBe(true);
+		await expect(manager.disable(core.id)).rejects.toThrow(`Cannot disable: ${core.id}`);
 		expect(memory.writes).toEqual([]);
 	});
 
 	test('storage hydration failure keeps built-ins visible, fails optional modules closed, and can retry', async () => {
 		let failing = true;
 		const disabled = new Set<string>();
-		const persistence: ModuleInstallationPersistence = {
+		const persistence: ModuleEnablementPersistence = {
 			loadDisabled: async () => {
 				if (failing) throw new Error('storage unavailable');
 				return new Set(disabled);
@@ -123,14 +123,14 @@ describe('HALO packaged-module lifecycle authority', () => {
 			const manager = new ModuleManager(persistence);
 			await manager.initialize();
 			expect(manager.getSnapshot().degraded).toBe(true);
-			expect(new Set(manager.getInstalledModules().map((module) => module.id))).toEqual(
+			expect(new Set(manager.getEnabledModules().map((module) => module.id))).toEqual(
 				new Set(CORE_MODULES.map((module) => module.id)),
 			);
-			expect(manager.getAvailableModules()).toHaveLength(OPTIONAL_MODULES.length);
+			expect(manager.getDisabledModules()).toHaveLength(OPTIONAL_MODULES.length);
 			failing = false;
-			expect(await manager.retryInstallationState()).toBe(true);
+			expect(await manager.retryEnablementState()).toBe(true);
 			expect(manager.getSnapshot().degraded).toBe(false);
-			expect(manager.getInstalledModules()).toHaveLength(ALL_MODULES.length);
+			expect(manager.getEnabledModules()).toHaveLength(ALL_MODULES.length);
 		} finally {
 			console.error = originalError;
 		}
@@ -143,9 +143,9 @@ describe('HALO packaged-module lifecycle authority', () => {
 		const manager = new ModuleManager(memory.persistence);
 		await manager.initialize();
 		const initial = manager.getSnapshot();
-		await manager.install(optional.id);
+		await manager.enable(optional.id);
 		expect(manager.getSnapshot()).toBe(initial);
-		await manager.uninstall(optional.id);
+		await manager.disable(optional.id);
 		const disabled = manager.getSnapshot();
 		expect(disabled).not.toBe(initial);
 		expect(disabled.revision).toBe(1);
@@ -159,11 +159,11 @@ describe('HALO packaged-module lifecycle authority', () => {
 		await manager.initialize();
 		const initial = manager.getSnapshot();
 		memory.failFor(optional.id);
-		await expect(manager.uninstall(optional.id)).rejects.toThrow(`write failed: ${optional.id}`);
+		await expect(manager.disable(optional.id)).rejects.toThrow(`write failed: ${optional.id}`);
 		expect(manager.getSnapshot()).toBe(initial);
 	});
 
-	test('serializes uninstall then install only after the first physical write has started', async () => {
+	test('serializes disable then enable only after the first physical write has started', async () => {
 		const optional = OPTIONAL_MODULES[0];
 		if (!optional) throw new Error('HALO test requires an optional module');
 		const firstWriteStarted = deferred();
@@ -179,9 +179,9 @@ describe('HALO packaged-module lifecycle authority', () => {
 		});
 		const manager = new ModuleManager(memory.persistence);
 		await manager.initialize();
-		const first = manager.uninstall(optional.id);
+		const first = manager.disable(optional.id);
 		await firstWriteStarted.promise;
-		const second = manager.install(optional.id);
+		const second = manager.enable(optional.id);
 		expect(memory.writes).toEqual([{ id: optional.id, enabled: false }]);
 		releaseFirstWrite.resolve();
 		await Promise.all([first, second]);
@@ -191,7 +191,7 @@ describe('HALO packaged-module lifecycle authority', () => {
 		]);
 	});
 
-	test('serializes install then uninstall from a tombstone after the first write starts', async () => {
+	test('serializes enable then disable from a tombstone after the first write starts', async () => {
 		const optional = OPTIONAL_MODULES[0];
 		if (!optional) throw new Error('HALO test requires an optional module');
 		const firstWriteStarted = deferred();
@@ -207,9 +207,9 @@ describe('HALO packaged-module lifecycle authority', () => {
 		});
 		const manager = new ModuleManager(memory.persistence);
 		await manager.initialize();
-		const first = manager.install(optional.id);
+		const first = manager.enable(optional.id);
 		await firstWriteStarted.promise;
-		const second = manager.uninstall(optional.id);
+		const second = manager.disable(optional.id);
 		expect(memory.writes).toEqual([{ id: optional.id, enabled: true }]);
 		releaseFirstWrite.resolve();
 		await Promise.all([first, second]);
@@ -226,8 +226,8 @@ describe('HALO packaged-module lifecycle authority', () => {
 		memory.setReadOverride((_id, current) => current ? current : true);
 		const manager = new ModuleManager(memory.persistence);
 		await manager.initialize();
-		await manager.uninstall(optional.id);
-		expect(manager.isInstalled(optional.id)).toBe(true);
+		await manager.disable(optional.id);
+		expect(manager.isEnabled(optional.id)).toBe(true);
 	});
 
 	test('live storage events converge an initialized manager', async () => {
@@ -237,15 +237,15 @@ describe('HALO packaged-module lifecycle authority', () => {
 		const manager = new ModuleManager(memory.persistence);
 		await manager.initialize();
 		memory.emit(optional.id, false);
-		expect(manager.isInstalled(optional.id)).toBe(false);
+		expect(manager.isEnabled(optional.id)).toBe(false);
 		memory.emit(optional.id, true);
-		expect(manager.isInstalled(optional.id)).toBe(true);
+		expect(manager.isEnabled(optional.id)).toBe(true);
 	});
 
 	test('retires stale async open-tool hydration instead of replaying it over live authority', () => {
 		expect(openToolsSource).toContain('const authorityEpoch = useRef(0);');
 		expect(openToolsSource).toContain('if (epoch !== authorityEpoch.current || initialized.current) return;');
-		expect(openToolsSource).toContain('reconcileInstalledTools(isInstalled);');
+		expect(openToolsSource).toContain('reconcileEnabledTools(isEnabled);');
 	});
 });
 

@@ -28,7 +28,7 @@ export interface UseOpenToolsResult {
 	handleToolSelect: (toolId: ToolId) => Promise<void>;
 	handleCloseTool: (toolId: ToolId) => void;
 	handleBack: () => Promise<void>;
-	loadOpenTools: (isInstalled: (id: string) => boolean) => Promise<void>;
+	loadOpenTools: (isEnabled: (id: string) => boolean) => Promise<void>;
 }
 
 export function useOpenTools(): UseOpenToolsResult {
@@ -59,22 +59,22 @@ export function useOpenTools(): UseOpenToolsResult {
 		setActiveToolState(toolId);
 	}, [claimLocalAuthority]);
 
-	const reconcileInstalledTools = useCallback((isInstalled: (id: string) => boolean): void => {
+	const reconcileEnabledTools = useCallback((isEnabled: (id: string) => boolean): void => {
 		if (!initialized.current) return;
 		setOpenTools((current) => {
-			const next = current.filter((id) => isInstalled(id));
+			const next = current.filter((id) => isEnabled(id));
 			if (sameTools(current, next)) return current;
 			persistOpenTools(next);
 			return next;
 		});
 		setActiveToolState((current) => (
-			current === null || isInstalled(current) ? current : null
+			current === null || isEnabled(current) ? current : null
 		));
 	}, [persistOpenTools]);
 
-	const loadOpenTools = useCallback(async (isInstalled: (id: string) => boolean) => {
+	const loadOpenTools = useCallback(async (isEnabled: (id: string) => boolean) => {
 		if (initialized.current) {
-			reconcileInstalledTools(isInstalled);
+			reconcileEnabledTools(isEnabled);
 			return;
 		}
 
@@ -85,11 +85,11 @@ export function useOpenTools(): UseOpenToolsResult {
 		const rawOpen = Array.isArray(storage[OPEN_TOOLS_KEY])
 			? storage[OPEN_TOOLS_KEY].filter(isKnownTool)
 			: [];
-		const savedOpen = rawOpen.filter((id) => !isSystemTool(id) && isInstalled(id));
+		const savedOpen = rawOpen.filter((id) => !isSystemTool(id) && isEnabled(id));
 		const savedActive = storage[ACTIVE_TOOL_KEY];
 		const restoredActive = savedActive === 'HALO_LAUNCHER'
 			? null
-			: isKnownTool(savedActive) && isInstalled(savedActive)
+			: isKnownTool(savedActive) && isEnabled(savedActive)
 				? savedActive
 				: null;
 
@@ -97,7 +97,7 @@ export function useOpenTools(): UseOpenToolsResult {
 		setOpenTools(savedOpen);
 		setActiveToolState(restoredActive);
 		if (!sameTools(rawOpen, savedOpen)) persistOpenTools(savedOpen);
-	}, [persistOpenTools, reconcileInstalledTools]);
+	}, [persistOpenTools, reconcileEnabledTools]);
 
 	const handleToolSelect = useCallback(async (toolId: ToolId) => {
 		claimLocalAuthority();

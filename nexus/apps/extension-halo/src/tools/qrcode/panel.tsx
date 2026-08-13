@@ -1,7 +1,7 @@
 // goal: QR Code tool panel UI with generate + scan
 
 import type React from 'react';
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { createLogger } from '@nexus/kernel';
 import { useTranslation } from '../../i18n';
@@ -12,7 +12,12 @@ import type { ScanResult, QRCodeOptions } from './types';
 import { DEFAULT_OPTIONS } from './types';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
-import { SIDEPANEL_QR_PREFILL_KEY } from '../../kernel/core/sidepanel-activation';
+import {
+	acknowledgeSidepanelActivation,
+	getSidepanelActivationSnapshot,
+	persistQrcodeActivation,
+	subscribeSidepanelActivation,
+} from '../../kernel/core/sidepanel-activation-store';
 
 
 import { useToast } from '../../components/ToastProvider';
@@ -29,6 +34,11 @@ export const QRCodePanel: React.FC = () => {
 	const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
 	const [options, setOptions] = useToolState<Omit<QRCodeOptions, 'text'>>('qrcode-opts', DEFAULT_OPTIONS);
 	const [loading, setLoading] = useState(false);
+	const activation = useSyncExternalStore(
+		subscribeSidepanelActivation,
+		getSidepanelActivationSnapshot,
+		getSidepanelActivationSnapshot,
+	);
 
 	const [history, setHistory] = useState<string[]>([]);
 	const [scanResult, setScanResult] = useState<ScanResult | null>(null);
@@ -39,12 +49,19 @@ export const QRCodePanel: React.FC = () => {
 
 	useEffect(() => { loadHistory().then(setHistory); }, []);
 	useEffect(() => {
-		const prefill = sessionStorage.getItem(SIDEPANEL_QR_PREFILL_KEY);
-		if (!prefill) return;
-		sessionStorage.removeItem(SIDEPANEL_QR_PREFILL_KEY);
-		setMode('generate');
-		setText(prefill);
-	}, [setMode, setText]);
+		const activationPayload = activation?.activation;
+		if (activationPayload?.toolId !== 'qrcode' || !activation) return;
+		const qrcodeActivation = activation;
+		const activationText = activationPayload.payload.text;
+		let active = true;
+		void persistQrcodeActivation(qrcodeActivation).then(async (persisted) => {
+			if (!persisted || !active) return;
+			setMode('generate');
+			setText(activationText);
+			await acknowledgeSidepanelActivation(qrcodeActivation.id);
+		});
+		return () => { active = false; };
+	}, [activation, setMode, setText]);
 	// const showToast = ... // Removed local implementation
 
 	const handleGenerate = useCallback(async () => {

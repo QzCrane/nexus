@@ -2,7 +2,6 @@
 	"id": "font-inspector",
 	"icon": "🔤",
 	"category": "dev",
-	"size": 25000,
 	"builtIn": false,
 	"keywords": []
 }

@@ -17,8 +17,8 @@
 		"hooks:test": "bun --cwd nexus scripts/hooks/test.ts",
 		"test:watch:spectra": "bun --cwd nexus test:watch:spectra",
 		"test:watch:halo": "bun --cwd nexus test:watch:halo",
-		"postinstall": "bun run sync:skills && bunx lefthook install",
-		"prepare": "bunx lefthook install"
+		"postinstall": "bun run sync:skills && bun nexus/scripts/install-repository-hooks.ts",
+		"prepare": "bun nexus/scripts/install-repository-hooks.ts"
 	},
 	"devDependencies": {
 		"@commitlint/cli": "^21.2.1",

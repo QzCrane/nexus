@@ -3,6 +3,7 @@ import { crossesAudioVolumeProcessorBoundary } from '@nexus/contracts';
 import {
 	resolveHotkeyVolumeBaseline,
 	resolveHotkeyVolumeTarget,
+	scalarHotkeyGestureSequence,
 } from '../src/content/ui/osd';
 import {
 	scalarFeedbackAnimationDuration,
@@ -91,6 +92,14 @@ describe('scalar feedback bars', () => {
 		const baseline = volume(100, 'native');
 		expect(resolveHotkeyVolumeBaseline(visible, baseline, 'settled')).toEqual(baseline);
 		expect(resolveHotkeyVolumeBaseline(visible, baseline, 'active')).toEqual(visible);
+	});
+
+	test('orders bootstrap and full-runtime gesture identities through one monotonic sequence', () => {
+		expect(scalarHotkeyGestureSequence('default:7')).toBe(7);
+		expect(scalarHotkeyGestureSequence('site:8')).toBe(8);
+		expect(scalarHotkeyGestureSequence('default:0')).toBeNull();
+		expect(scalarHotkeyGestureSequence('forged:9')).toBeNull();
+		expect(scalarHotkeyGestureSequence('default:9007199254740992')).toBeNull();
 	});
 
 });

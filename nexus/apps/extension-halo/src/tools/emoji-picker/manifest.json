@@ -2,7 +2,6 @@
 	"id": "emoji-picker",
 	"icon": "😀",
 	"category": "efficiency",
-	"size": 20000,
 	"builtIn": false,
 	"keywords": []
 }

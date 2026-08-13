@@ -2,7 +2,6 @@
 	"id": "clipboard",
 	"icon": "📎",
 	"category": "efficiency",
-	"size": 32000,
 	"builtIn": true,
 	"status": "coming",
 	"keywords": [
@@ -24,7 +23,7 @@
 		"level": "idle",
 		"descriptionKey": "impact.copy_listener",
 		"sourceFile": "entry/content-clipboard.ts",
-		"sourceLine": 55,
+		"sourceAnchor": "document.addEventListener('copy', captureSelection)",
 		"sourceDetail": "document copy listener exists in the isolated all-frame idle host and detaches when Clipboard is disabled"
 	}
 }

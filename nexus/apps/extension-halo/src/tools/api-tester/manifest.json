@@ -2,7 +2,6 @@
 	"id": "api-tester",
 	"icon": "🚀",
 	"category": "network",
-	"size": 30000,
 	"builtIn": false,
 	"keywords": [
 		"api",

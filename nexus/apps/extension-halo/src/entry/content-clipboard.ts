@@ -2,9 +2,8 @@
 // inv: This all-frame surface owns clipboard capture only; other all-frame capabilities keep separate physical entries.
 // inv: No generic tool router, DOM tooling, smooth scroll, or UI dependencies here.
 
-export {};
+import { parseClipboardSettings, SETTINGS_STORAGE_KEY } from '../tools/clipboard/types';
 
-const SETTINGS_KEY = 'halo_tool_clipboard_settings';
 const LOG_TAG = '[HALO:Clipboard]';
 
 function isExpectedRuntimeDisconnect(error: unknown): boolean {
@@ -56,30 +55,24 @@ function updateClipboardState(enabled: boolean): void {
 	else document.removeEventListener('copy', captureSelection);
 }
 
-function readEnabled(value: unknown): boolean {
-	if (typeof value !== 'object' || value === null) return false;
-	const enabled = (value as { enabled?: unknown }).enabled;
-	return typeof enabled === 'boolean' ? enabled : false;
-}
-
 // Subscribe before the asynchronous initial read. A storage change that wins
 // the race becomes authoritative; the delayed initial snapshot may not clobber
 // that newer event-owned state.
 chrome.storage.onChanged.addListener((changes, area) => {
 	if (area !== 'local') return;
-	const change = changes[SETTINGS_KEY];
+	const change = changes[SETTINGS_STORAGE_KEY];
 	if (!change) return;
 	settingsEventObserved = true;
-	updateClipboardState(readEnabled(change.newValue));
+	updateClipboardState(parseClipboardSettings(change.newValue).enabled);
 });
 
 // Clipboard is not a ready product surface. Missing, malformed, or unreadable
 // settings therefore fail closed; only an explicit persisted enablement may
 // attach the all-frame copy listener.
 try {
-	void chrome.storage.local.get([SETTINGS_KEY]).then((result) => {
+	void chrome.storage.local.get([SETTINGS_STORAGE_KEY]).then((result) => {
 		if (settingsEventObserved) return;
-		updateClipboardState(readEnabled(result[SETTINGS_KEY]));
+		updateClipboardState(parseClipboardSettings(result[SETTINGS_STORAGE_KEY]).enabled);
 	}).catch((error: unknown) => {
 		if (settingsEventObserved || isExpectedRuntimeDisconnect(error)) return;
 		console.warn(LOG_TAG, 'Initial settings read failed', error);

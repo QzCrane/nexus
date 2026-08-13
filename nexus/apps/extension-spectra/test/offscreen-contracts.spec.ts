@@ -26,6 +26,7 @@ const remoteSession = {
 };
 const remoteState = {
 	generation: 4,
+	revision: 2,
 	volume: 125,
 	actualMode: 'bypass' as const,
 	phase: 'idle' as const,

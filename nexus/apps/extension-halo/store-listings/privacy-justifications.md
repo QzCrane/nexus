@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: contributor
 owner: halo-store-copy
-last_reviewed: 2026-08-01
+last_reviewed: 2026-08-13
 ---
 
 # HALO Chrome Web Store privacy declarations
@@ -48,7 +48,7 @@ Lets Hover Zoom install a bounded set of dynamic anti-hotlink rules for image an
 
 ### content-script host access
 
-The submitted manifest installs the bundled content script on ordinary HTTP(S) pages and frames so enabled page tools, smooth scrolling, local clipboard capture, annotation, ruler, and Hover Zoom can receive page events. Content remains local unless a disclosed user-invoked network feature requests a page resource or endpoint. Chrome internal and other restricted pages are not bypassed.
+The submitted manifest installs bundled content scripts on ordinary HTTP(S) pages and frames so enabled page tools, smooth scrolling, local clipboard capture, annotation, ruler, and Hover Zoom can receive page events. Its web-accessible-resource declaration exposes only packaged tool/script/assets paths behind dynamic URLs so those same page runtimes can load their bundled lazy code; it does not grant a site access to extension storage or APIs. Content remains local unless a disclosed user-invoked network feature requests a page resource or endpoint. Chrome internal and other restricted pages are not bypassed.
 
 ## Optional permission justifications
 
@@ -59,6 +59,10 @@ Captures the current user-selected page as an MHTML archive only when the user r
 ### `clipboardRead` and `clipboardWrite`
 
 Read access supports the explicit clipboard-history feature; write access supports copy actions across tools. Clipboard history is local, can be disabled or cleared, and is capped at 100 entries.
+
+### `cookies`
+
+Lets Cookie Manager read, edit, and delete cookies for the currently selected site after the user grants access. Cookie values stay inside the extension UI or a user-requested local export; HALO does not upload them.
 
 ### `downloads`
 
@@ -78,7 +82,7 @@ Lists, creates, renames, colors, collapses, and moves Chrome tab groups through 
 
 ### `userScripts` and optional host access
 
-Registers scripts the user writes or imports through Chrome's isolated `userScripts` API and runs them only on the match patterns the user configures. Broad host access is requested together with this feature and can be revoked. It is not a fallback for extension-owned remote code.
+Registers JavaScript the user writes or imports through Chrome's `userScripts` API. Automatic runs follow the match patterns the user configures; the explicit Test action targets only the active tab. A saved script can use Chrome's isolated `USER_SCRIPT` world or the page-visible `MAIN` world. User-authored CSS uses `scripting.insertCSS`. Both paths require the same explicit `userScripts` permission and broad host-access gate, which can be revoked. They are not a fallback for extension-owned remote code.
 
 ### `management`
 

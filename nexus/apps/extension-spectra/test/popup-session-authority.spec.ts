@@ -65,6 +65,7 @@ describe('Popup audio-session authority', () => {
 				protocolVersion: 2,
 				type: 'spectra.audio.capture.changed',
 				tabId: 17,
+				documentId: 'document-popup-capture',
 				generation: 6,
 				payload: {
 					tabId: 17,

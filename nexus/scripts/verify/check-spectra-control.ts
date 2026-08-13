@@ -1636,16 +1636,18 @@ function checkRetiredPaths(root) {
 		)
 		|| !bootstrap.includes("sendDefaultScalarPhase(active, 'release')")
 		|| !bootstrap.includes("publishDefaultScalarGesture({ ...active, phase: 'release' })")
-		|| !defaultScalarGesture.includes('listeners: Set<DefaultScalarGestureListener>')
-		|| !defaultScalarGesture.includes('pending: DefaultScalarGestureSignal[]')
+		|| !defaultScalarGesture.includes('replayListeners: Set<HotkeyReplayListener>')
+		|| !defaultScalarGesture.includes('pendingReplay: HotkeyReplaySignal[]')
+		|| !defaultScalarGesture.includes("releasedSequences: Record<'default' | 'site', number>")
 		|| !defaultScalarGesture.includes('releaseListeners: Set<PhysicalHotkeyReleaseListener>')
-		|| !defaultScalarGesture.includes("const CHANNEL_KEY = '__spectraHotkeyGestureV3'")
+		|| !defaultScalarGesture.includes("const CHANNEL_KEY = '__spectraHotkeyGestureV4'")
 		|| !defaultScalarGesture.includes("export function nextScalarGestureId(namespace: 'default' | 'site')")
-		|| !defaultScalarGesture.includes('const pending = owner.pending.splice(0)')
-		|| !defaultScalarGesture.includes('return () => owner.listeners.delete(listener)')
+		|| !defaultScalarGesture.includes('const pending = owner.pendingReplay.splice(0)')
+		|| !defaultScalarGesture.includes('return () => owner.replayListeners.delete(listener)')
+		|| !pageHotkeyListener.includes('!isHotkeyGestureReleased(message.payload.gesture)')
 		|| !physicalReleasePublisher.includes('channel().releaseListeners')
 		|| physicalReleasePublisher.includes('pending')
-		|| !pageHotkeyListener.includes('subscribeDefaultScalarGesture(handleDefaultScalarGesture)')
+		|| !pageHotkeyListener.includes('subscribeHotkeyReplay((signal) =>')
 		|| !pageHotkeyListener.includes('subscribePhysicalHotkeyRelease(releaseSiteHotkeys)')
 		|| siteHotkeyInitialization.indexOf(
 			'subscribePhysicalHotkeyRelease(releaseSiteHotkeys)',
@@ -1662,8 +1664,12 @@ function checkRetiredPaths(root) {
 		|| pageHotkeyListener.includes('cancelCoalesced')
 		|| !pageHotkeyListener.includes('advanceHotkeyTargetOSD(')
 		|| !pageHotkeyListener.includes(
-			'!ownsHotkeyActualOSDGesture(message.payload.gesture)',
+			'if (!admitsHotkeyActualOSDGesture(',
 		)
+		|| !pageHotkeyListener.includes(
+			'claimHotkeyActualOSDGesture(message.payload.gesture)',
+		)
+		|| !bootstrap.includes('publishHotkeyActualFeedback(message)')
 		|| pageHotkeyListener.includes('defaultScalarFeedbackTargets')
 		|| pageHotkeyListener.includes('feedbackTarget')
 		|| !shortcuts.includes("candidate.type !== 'spectra.content.default-hotkey.trigger'")

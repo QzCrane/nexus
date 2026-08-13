@@ -25,6 +25,7 @@ import {
 	ensureContentRuntime,
 	releaseContentRuntimeLease,
 } from './runtime-loader';
+import { forEachBounded } from './bounded-fanout';
 import {
 	isSessionId,
 	type RemotePublicSession,
@@ -146,7 +147,7 @@ function toPublicSession(session: HostSession): RemotePublicSession {
 
 async function restoreSessions(): Promise<void> {
 	const snapshot = await reconcileOffscreenHost();
-	await Promise.all(snapshot.remoteTabs.map(async ({ tabId, sessionId }) => {
+	await forEachBounded(snapshot.remoteTabs, 4, async ({ tabId, sessionId }) => {
 		// reconcileOffscreenHost already installed the recovered remote lease. A
 		// transient status failure must reject the restore without deleting that
 		// lease, otherwise an unrelated audio release could close the live host.
@@ -167,7 +168,7 @@ async function restoreSessions(): Promise<void> {
 		// event racing the remote page's initial render.
 		await syncState(tabId);
 		if (response.session.connected) await acquireRemoteObservation(response.session);
-	}));
+	});
 }
 
 // A failed restore is never converted into an empty-session success. The next
@@ -272,21 +273,24 @@ async function closeSession(tabId: number, sessionId: string): Promise<{ success
 	}
 }
 
-function sendStateToOffscreen(tabId: number, state: RemoteState): void {
+async function sendStateToOffscreen(tabId: number, state: RemoteState): Promise<void> {
 	const authorization = authorizations.get(tabId);
 	if (!authorization) return;
-	void sendOffscreenMessage({
+	const response = await sendOffscreenMessage({
 		type: 'REMOTE_HOST_SEND_STATE',
 		tabId,
 		sessionId: authorization.session.sessionId,
 		state,
-	}).then((response) => {
-		if (response.success) {
-			// This field is delivered-generation authority, not optimistic local
-			// state. Out-of-order acknowledgements may advance but never regress it.
-			authorization.generation = Math.max(authorization.generation, state.generation);
-		}
-	}).catch(() => undefined);
+	});
+	if (!response.success) throw new Error('Offscreen Remote host rejected the state delivery');
+	const current = authorizations.get(tabId);
+	if (!current || current.session.sessionId !== authorization.session.sessionId) return;
+	// This field is offscreen-accepted generation authority, not optimistic
+	// local state. The host either sends it immediately or caches it for the
+	// authenticated handshake. Awaiting this ACK also prevents a newly delivered
+	// state from authorizing a client command before Background commits the same
+	// generation after a worker restart.
+	current.generation = Math.max(current.generation, state.generation);
 }
 
 type AuthorizedRemoteHostEvent = Extract<RemoteHostEvent, { capability: string }>;

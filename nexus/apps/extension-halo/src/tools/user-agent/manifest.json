@@ -2,7 +2,6 @@
 	"id": "user-agent",
 	"icon": "🌐",
 	"category": "dev",
-	"size": 15000,
 	"builtIn": false,
 	"keywords": []
 }

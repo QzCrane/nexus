@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import {
 	ModuleManager,
-	type ModuleInstallationPersistence,
+	type ModuleEnablementPersistence,
 } from '../src/kernel/managers/module-manager';
 import { moduleInstallationStorageKey } from '../src/kernel/core/module-installation-runtime';
 import { OPTIONAL_MODULES } from '../src/kernel/registry/module-registry';
@@ -29,7 +29,7 @@ function createDivergentPersistence(initialManagerDisabled: boolean) {
 	if (!optional) throw new Error('HALO test requires an optional module');
 	let physicalEnabled = !initialManagerDisabled;
 	const writes: boolean[] = [];
-	const persistence: ModuleInstallationPersistence = {
+	const persistence: ModuleEnablementPersistence = {
 		loadDisabled: async () => initialManagerDisabled ? new Set([optional.id]) : new Set(),
 		readEnabled: async () => physicalEnabled,
 		setEnabled: async (_id, enabled) => {
@@ -70,28 +70,28 @@ function scriptState(scripts: UserScript[], globalEnabled = true): UserScriptSta
 }
 
 describe('cross-context packaged-module mutations', () => {
-	test('install persists even when this manager still looks installed', async () => {
+	test('enable persists even when this manager already looks enabled', async () => {
 		const state = createDivergentPersistence(false);
 		const manager = new ModuleManager(state.persistence);
 		await manager.initialize();
-		expect(manager.isInstalled(state.optional.id)).toBe(true);
+		expect(manager.isEnabled(state.optional.id)).toBe(true);
 		state.setPhysicalEnabled(false);
-		await manager.install(state.optional.id);
+		await manager.enable(state.optional.id);
 		expect(state.writes).toEqual([true]);
 		expect(state.physicalEnabled()).toBe(true);
-		expect(manager.isInstalled(state.optional.id)).toBe(true);
+		expect(manager.isEnabled(state.optional.id)).toBe(true);
 	});
 
-	test('uninstall persists even when this manager still looks uninstalled', async () => {
+	test('disable persists even when this manager already looks disabled', async () => {
 		const state = createDivergentPersistence(true);
 		const manager = new ModuleManager(state.persistence);
 		await manager.initialize();
-		expect(manager.isInstalled(state.optional.id)).toBe(false);
+		expect(manager.isEnabled(state.optional.id)).toBe(false);
 		state.setPhysicalEnabled(true);
-		await manager.uninstall(state.optional.id);
+		await manager.disable(state.optional.id);
 		expect(state.writes).toEqual([false]);
 		expect(state.physicalEnabled()).toBe(false);
-		expect(manager.isInstalled(state.optional.id)).toBe(false);
+		expect(manager.isEnabled(state.optional.id)).toBe(false);
 	});
 
 	test('two manager instances serialize the complete same-module write transaction in one realm', async () => {
@@ -102,7 +102,7 @@ describe('cross-context packaged-module mutations', () => {
 		const releaseFirstWrite = deferred();
 		const writes: boolean[] = [];
 		let writeCount = 0;
-		const persistence: ModuleInstallationPersistence = {
+		const persistence: ModuleEnablementPersistence = {
 			loadDisabled: async () => new Set(),
 			readEnabled: async () => physicalEnabled,
 			setEnabled: async (_id, enabled) => {
@@ -119,13 +119,13 @@ describe('cross-context packaged-module mutations', () => {
 		const first = new ModuleManager(persistence);
 		const second = new ModuleManager(persistence);
 		await Promise.all([first.initialize(), second.initialize()]);
-		const uninstall = first.uninstall(optional.id);
+		const disable = first.disable(optional.id);
 		await firstWriteStarted.promise;
-		const install = second.install(optional.id);
+		const enable = second.enable(optional.id);
 		await Promise.resolve();
 		expect(writes).toEqual([false]);
 		releaseFirstWrite.resolve();
-		await Promise.all([uninstall, install]);
+		await Promise.all([disable, enable]);
 		expect(writes).toEqual([false, true]);
 		expect(physicalEnabled).toBe(true);
 	});
@@ -353,9 +353,9 @@ describe('persistent UserScripts recovery contract', () => {
 
 test('optional system active panels must obey installation rather than taxonomy', () => {
 	const source = readFileSync(new URL('../src/components/sidepanel/hooks/use-open-tools.ts', import.meta.url), 'utf8');
-	expect(source).toContain('current === null || isInstalled(current) ? current : null');
-	expect(source).toContain('isKnownTool(savedActive) && isInstalled(savedActive)');
-	expect(source).not.toContain('isSystemTool(current) || isInstalled(current)');
+	expect(source).toContain('current === null || isEnabled(current) ? current : null');
+	expect(source).toContain('isKnownTool(savedActive) && isEnabled(savedActive)');
+	expect(source).not.toContain('isSystemTool(current) || isEnabled(current)');
 });
 
 test('Launcher custom scripts require healthy UserScripts module authority and exclude packaged records', () => {

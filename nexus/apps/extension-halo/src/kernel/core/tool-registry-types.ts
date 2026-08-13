@@ -18,7 +18,7 @@ export interface PluginMeta {
 	builtIn: boolean;
 	keywords: string[];
 	permissions?: string[];
-	size?: number;
+	distribution?: 'bundled' | 'user-authored' | 'remote';
 	background?: {
 		mechanism: string;
 		frequency: string;
@@ -26,7 +26,7 @@ export interface PluginMeta {
 		level: 'high' | 'medium' | 'low' | 'idle';
 		descriptionKey: string;
 		sourceFile: string;
-		sourceLine: number;
+		sourceAnchor: string;
 		sourceDetail?: string;
 	};
 	// Script plugin config (only for pluginType='script')

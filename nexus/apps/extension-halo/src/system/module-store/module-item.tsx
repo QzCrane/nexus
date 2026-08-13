@@ -3,7 +3,7 @@
 
 import type React from 'react';
 import { useTranslation } from '../../i18n';
-import { formatModuleSize, type ModuleMeta } from '../../kernel';
+import type { ModuleMeta } from '../../kernel';
 
 // Enhanced styles with script-specific colors
 const styles = {
@@ -50,9 +50,9 @@ const styles = {
 		padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
 		cursor: 'pointer', border: 'none', transition: 'all 0.15s', minWidth: '80px',
 	},
-	btnInstall: { background: 'var(--halo-accent)', color: '#fff' },
-	btnUninstall: { background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text-muted)', border: '1px solid var(--halo-border)' },
-	btnDownloading: { background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text-muted)', cursor: 'wait' },
+	btnEnable: { background: 'var(--halo-accent)', color: '#fff' },
+	btnDisable: { background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text-muted)', border: '1px solid var(--halo-border)' },
+	btnChanging: { background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text-muted)', cursor: 'wait' },
 	btnCore: { background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text-muted)', fontSize: '10px', cursor: 'default', padding: '4px 8px', borderRadius: '4px' },
 	
 	badge: { fontSize: '10px', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 },
@@ -67,18 +67,18 @@ const styles = {
 interface ModuleItemProps {
 	module: ModuleMeta;
 	index: number;
-	status: 'installed' | 'available' | 'downloading' | 'updating' | 'error';
+	status: 'enabled' | 'disabled' | 'enabling' | 'updating' | 'error';
 	isCore: boolean;
 	showTypeLabel?: boolean;
 	isUserScript?: boolean;
-	onInstall: () => void;
-	onUninstall: () => void;
+	onEnable: () => void;
+	onDisable: () => void;
 }
 
-export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, isCore, showTypeLabel = true, isUserScript = false, onInstall, onUninstall }) => {
+export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, isCore, showTypeLabel = true, isUserScript = false, onEnable, onDisable }) => {
 	const { t } = useTranslation();
-	const isInstalled = status === 'installed';
-	const isDownloading = status === 'downloading' || status === 'updating';
+	const isEnabled = status === 'enabled';
+	const isChanging = status === 'enabling' || status === 'updating';
 
 	const nameKey = `tools.${module.id}.name`;
 	const descKey = `tools.${module.id}.desc`;
@@ -153,7 +153,7 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, i
 							{typeLabel}
 						</span>
 					)}
-					{!isCore && !isInstalled && <span style={{ ...styles.badge, ...styles.badgeNew }}>{t('moduleStorePanel.new')}</span>}
+					{!isCore && !isEnabled && <span style={{ ...styles.badge, ...styles.badgeNew }}>{t('moduleStorePanel.new')}</span>}
 				</div>
 				<div style={styles.desc} title={displayDesc}>{displayDesc}</div>
 			</div>
@@ -165,23 +165,27 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, i
 					</span>
 				) : isCore ? (
 					<span style={styles.btnCore}>{t('moduleStorePanel.builtIn')}</span>
-				) : isDownloading ? (
-					<button type="button" style={{ ...styles.btn, ...styles.btnDownloading }} disabled>
-						⏳ {status === 'updating' ? t('moduleStorePanel.updating') : t('moduleStorePanel.installing')}
+				) : isChanging ? (
+					<button type="button" style={{ ...styles.btn, ...styles.btnChanging }} disabled>
+						⏳ {status === 'updating' ? t('moduleStorePanel.updating') : t('moduleStorePanel.enabling')}
 					</button>
-				) : isInstalled ? (
-					<button type="button" style={{ ...styles.btn, ...styles.btnUninstall }} onClick={onUninstall}>
-						{t('moduleStorePanel.uninstall')}
+				) : isEnabled ? (
+					<button type="button" style={{ ...styles.btn, ...styles.btnDisable }} onClick={onDisable}>
+						{t('moduleStorePanel.disable')}
 					</button>
 				) : (
-					<button type="button" style={{ ...styles.btn, ...styles.btnInstall }} onClick={onInstall}>
-						{t('moduleStorePanel.install')}
+					<button type="button" style={{ ...styles.btn, ...styles.btnEnable }} onClick={onEnable}>
+						{t('moduleStorePanel.enable')}
 					</button>
 				)}
 				<div style={styles.meta}>
-					<span>v{module.version || '0.0.0'}</span>
+					<span>{module.distribution === 'user-authored'
+						? t('moduleStorePanel.userAuthored')
+						: `v${module.version || chrome.runtime.getManifest().version}`}</span>
 					<span>•</span>
-					<span>{formatModuleSize(module.size || 0)}</span>
+					<span>{module.distribution === 'remote'
+						? t('moduleStorePanel.remote')
+						: t('moduleStorePanel.bundled')}</span>
 				</div>
 			</div>
 		</div>

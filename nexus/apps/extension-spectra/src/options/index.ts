@@ -7,9 +7,11 @@ import { initSiteEditor } from './site-editor';
 import { initModal } from './modal';
 import { initUserScriptsSection } from './userscripts';
 import { enableSmoothScroll } from '../shared/smooth-scroll';
+import { bindOptionsRetry, clearOptionsError, showOptionsError } from './status';
 
 // eff: initializes global page behaviors and sub-modules in sequence
 async function init(): Promise<void> {
+	clearOptionsError();
 	enableSmoothScroll();
 	await initTheme();
 
@@ -30,4 +32,7 @@ async function init(): Promise<void> {
 	}
 }
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+	bindOptionsRetry();
+	void init().catch(showOptionsError);
+});

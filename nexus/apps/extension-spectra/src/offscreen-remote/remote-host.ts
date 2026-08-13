@@ -444,15 +444,25 @@ export function createRemoteHostController(
 		const session = sessions.get(tabId);
 		if (!session || session.pairing.sessionId !== sessionId || !isRemoteState(state)) return false;
 		const safeState = sanitizeRemoteState(state);
+		if (session.lastState && (
+			safeState.generation < session.lastState.generation
+			|| safeState.generation === session.lastState.generation
+			&& safeState.revision < session.lastState.revision
+		)) return false;
 		session.lastState = safeState;
 		session.lastGeneration = safeState.generation;
-		if (!session.authenticated || !session.connection?.open) return false;
-		session.connection.send({
-			type: 'spectra.remote.state',
-			protocolVersion: REMOTE_PROTOCOL_VERSION,
-			sessionId,
-			...safeState,
-		});
+		if (session.authenticated && session.connection?.open) {
+			session.connection.send({
+				type: 'spectra.remote.state',
+				protocolVersion: REMOTE_PROTOCOL_VERSION,
+				sessionId,
+				...safeState,
+			});
+		}
+		// Success means the authoritative offscreen host accepted the state and
+		// generation. An unauthenticated/disconnected controller receives this
+		// exact cached state in its authenticated handshake; connection presence is
+		// not the acceptance boundary.
 		return true;
 	}
 
@@ -523,6 +533,7 @@ function sanitizeRemoteState(state: RemoteState): RemoteState {
 		: state.volume > 100 ? Math.max(1, Math.min(8, state.volume / 100)) : 1;
 	return {
 		generation: state.generation,
+		revision: state.revision,
 		volume: Math.round(Math.max(0, Math.min(800, state.volume)) * 10) / 10,
 		volumeBase,
 		boost,

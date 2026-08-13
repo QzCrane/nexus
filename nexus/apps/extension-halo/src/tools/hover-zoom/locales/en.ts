@@ -6,7 +6,7 @@ export const en = {
 	// Panel i18n
 	hoverZoom: {
 		enable: "Enable Hover Zoom",
-		enableDesc: "PhotoShow compatible, works on all websites",
+		enableDesc: "PhotoShow-style previews where page and browser access allow",
 
 		resourceKeys: {
 			title: "Resource Keys",

@@ -79,7 +79,7 @@ export const ResourceMonitorPanel: React.FC = () => {
 	const inactiveTools = useMemo(() => toolServices.filter(s => !s.active), [toolServices]);
 
 	const getProfileKey = (profile: BackgroundProfile) =>
-		`${profile.mechanism}:${profile.frequency}:${profile.sourceFile}:${profile.sourceLine}:${profile.sourceDetail ?? ''}`;
+		`${profile.mechanism}:${profile.frequency}:${profile.sourceFile}:${profile.sourceAnchor}:${profile.sourceDetail ?? ''}`;
 
 	const renderProfile = (p: BackgroundProfile) => {
 		const mechIcon = MECHANISM_ICONS[p.mechanism as ConsumptionMechanism] || '❓';
@@ -152,7 +152,7 @@ export const ResourceMonitorPanel: React.FC = () => {
 							<div key={getProfileKey(p)} style={{ marginBottom: i < item.profiles.length - 1 ? 8 : 0 }}>
 								{renderProfile(p)}
 								<div style={{ opacity: 0.6, marginTop: 2 }}>
-									📄 {p.sourceFile}:{p.sourceLine}
+									📄 {p.sourceFile}
 									{p.sourceDetail && <><br/>💡 {p.sourceDetail}</>}
 								</div>
 							</div>

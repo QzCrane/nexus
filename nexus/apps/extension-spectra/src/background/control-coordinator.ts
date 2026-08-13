@@ -2304,7 +2304,8 @@ export function initializeControlCoordinator(): void {
 			sendResponse(rpcFailure('invalid_request', 'Control intent requires a target tab'));
 			return false;
 		}
-		if (message.payload.source === 'remote') {
+		const runtimeClaimedSource: string = message.payload.source;
+		if (runtimeClaimedSource === 'remote' || runtimeClaimedSource === 'system') {
 			sendResponse(rpcFailure(
 				'forbidden',
 				'Background-only control sources cannot be asserted by runtime RPC',
@@ -2324,9 +2325,8 @@ export function initializeControlCoordinator(): void {
 			));
 			return false;
 		}
-		const pageObservation = message.type === 'spectra.control.intent.submit'
-			&& message.payload.source === 'page';
-		if (pageObservation && (
+		const pageSource = message.payload.source === 'page';
+		if (pageSource && (
 			sender.tab?.id !== tabId
 			|| sender.frameId !== 0
 			|| !sender.documentId
@@ -2339,6 +2339,7 @@ export function initializeControlCoordinator(): void {
 			));
 			return false;
 		}
+		const pageObservation = message.type === 'spectra.control.intent.submit' && pageSource;
 		const siteHotkeyInvocation = message.payload.source === 'hotkey'
 			? trustedContentHotkeyInvocation(sender, tabId)
 			: undefined;

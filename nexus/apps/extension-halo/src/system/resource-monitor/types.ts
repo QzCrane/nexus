@@ -25,7 +25,7 @@ export interface BackgroundProfile {
 	level: ImpactLevel;
 	descriptionKey: string;
 	sourceFile: string;
-	sourceLine: number;
+	sourceAnchor: string;
 	sourceDetail?: string;
 }
 
@@ -77,7 +77,7 @@ export const SYSTEM_CORE_CONSUMERS: SystemConsumer[] = [
 				level: 'idle',
 				descriptionKey: 'impact.message_handler',
 				sourceFile: 'entry/background.ts',
-				sourceLine: 196,
+				sourceAnchor: 'chrome.runtime.onMessage.addListener(',
 				sourceDetail: 'chrome.runtime.onMessage.addListener',
 			},
 		],
@@ -94,7 +94,7 @@ export const SYSTEM_CORE_CONSUMERS: SystemConsumer[] = [
 				level: 'idle',
 				descriptionKey: 'impact.message_handler',
 				sourceFile: 'entry/content.ts',
-				sourceLine: 22,
+				sourceAnchor: 'chrome.runtime.onMessage.addListener(',
 				sourceDetail: 'chrome.runtime.onMessage.addListener',
 			},
 		],
@@ -111,7 +111,7 @@ export const SYSTEM_CORE_CONSUMERS: SystemConsumer[] = [
 				level: 'idle',
 				descriptionKey: 'impact.message_handler',
 				sourceFile: 'entry/content-frame-tools.ts',
-				sourceLine: 64,
+				sourceAnchor: 'chrome.runtime.onMessage.addListener(',
 				sourceDetail: 'minimal all-frame lazy chrome.runtime.onMessage bootstrap',
 			},
 		],
@@ -128,7 +128,7 @@ export const SYSTEM_CORE_CONSUMERS: SystemConsumer[] = [
 				level: 'idle',
 				descriptionKey: 'impact.message_handler',
 				sourceFile: 'system/userscripts/engine.ts',
-				sourceLine: 65,
+				sourceAnchor: 'chrome.runtime.onMessage.addListener(listener)',
 				sourceDetail: 'manual sync and run-count message router',
 			},
 		],
@@ -145,7 +145,7 @@ export const SYSTEM_CORE_CONSUMERS: SystemConsumer[] = [
 				level: 'idle',
 				descriptionKey: 'impact.storage_sync',
 				sourceFile: 'kernel/services/saat-service.ts',
-				sourceLine: 324,
+				sourceAnchor: 'chrome.storage.onChanged.addListener(listener)',
 				sourceDetail: 'Tool Prefs authority listener for SaaT enablement',
 			},
 		],
@@ -162,7 +162,7 @@ export const SYSTEM_CORE_CONSUMERS: SystemConsumer[] = [
 				level: 'low',
 				descriptionKey: 'impact.wheel_listener',
 				sourceFile: 'entry/sidepanel-scroll.ts',
-				sourceLine: 184,
+				sourceAnchor: "window.addEventListener('wheel', onWheel, { passive: false })",
 				sourceDetail: "window.addEventListener('wheel', onWheel)",
 			},
 			{
@@ -172,7 +172,7 @@ export const SYSTEM_CORE_CONSUMERS: SystemConsumer[] = [
 				level: 'idle',
 				descriptionKey: 'impact.storage_sync',
 				sourceFile: 'entry/sidepanel-scroll.ts',
-				sourceLine: 196,
+				sourceAnchor: 'subscribeHaloStorageChanges((changes, area)',
 				sourceDetail: 'SidePanel smooth-scroll settings listener',
 			},
 			{
@@ -182,7 +182,7 @@ export const SYSTEM_CORE_CONSUMERS: SystemConsumer[] = [
 				level: 'idle',
 				descriptionKey: 'impact.storage_sync',
 				sourceFile: 'components/sidepanel/ActiveServicesContext.tsx',
-				sourceLine: 236,
+				sourceAnchor: 'subscribeHaloStorageChanges(listener)',
 				sourceDetail: 'single SidePanel runtime-status storage authority',
 			},
 			{
@@ -192,7 +192,7 @@ export const SYSTEM_CORE_CONSUMERS: SystemConsumer[] = [
 				level: 'idle',
 				descriptionKey: 'impact.message_handler',
 				sourceFile: 'components/sidepanel/use-sidepanel-state.ts',
-				sourceLine: 106,
+				sourceAnchor: 'chrome.runtime.onMessage.addListener(runtimeListener)',
 				sourceDetail: 'HALO_ACTIVATE_TOOL side-panel router',
 			},
 		],

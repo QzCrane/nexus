@@ -32,6 +32,7 @@ import {
 	reconcileDocumentSiteHotkeys,
 	resetDocumentSiteHotkeysForTests,
 } from './site-hotkey-loader-adapter';
+import { forEachBounded } from './bounded-fanout';
 
 // Heavy SPA startup can legitimately spend several seconds restoring settings
 // and discovering media before the runtime publishes READY. Keep the handshake
@@ -91,13 +92,16 @@ export async function reconcileHotkeyRuntimeLease(
 	});
 }
 
-export async function reconcileAllHotkeyRuntimeLeases(settings: HotkeySettings): Promise<void> {
-	const tabs = await chrome.tabs.query({});
-	await Promise.all(tabs.map(async (tab) => {
+export async function reconcileAllHotkeyRuntimeLeases(
+	settings: HotkeySettings,
+	knownTabs?: readonly chrome.tabs.Tab[],
+): Promise<void> {
+	const tabs = knownTabs ?? await chrome.tabs.query({});
+	await forEachBounded(tabs, 8, async (tab) => {
 		if (!tab.id || !tab.url || !isContentDocumentUrl(tab.url)) return;
 		const documentId = await currentTopDocumentId(tab.id);
 		await reconcileHotkeyRuntimeLease(tab.id, documentId, tab.url, settings);
-	}));
+	});
 }
 
 function isContentDocumentUrl(url: string): boolean {

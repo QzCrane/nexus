@@ -7,7 +7,7 @@ const SMOKE_PATH = join(import.meta.dir, 'smoke.spec.ts');
 const LEGACY_OUTBOUND_ADAPTERS = new Map([
 	['background/handlers/audio.ts', 'broadcastLegacyUiSyncForOneRelease'],
 	['background/handlers/capture.ts', 'broadcastLegacyCaptureStateForOneRelease'],
-	['background/handlers/settings.ts', 'broadcastLegacyGlobalSettingsForOneRelease'],
+	['background/settings-projection.ts', 'broadcastLegacyGlobalSettingsForOneRelease'],
 ]);
 
 function listTypeScriptFiles(root: string): string[] {

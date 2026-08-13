@@ -2,7 +2,6 @@
 	"id": "url",
 	"icon": "🔗",
 	"category": "encode",
-	"size": 10000,
 	"builtIn": true,
 	"keywords": [],
 	"pluginType": "tool"

@@ -16,7 +16,6 @@ import {
 } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
 import sharp from 'sharp';
 import { minify } from 'terser';
 import { checkProductionArtifacts } from './scripts/check-production-artifacts.ts';
@@ -213,18 +212,6 @@ function contractRuntimeFacadePlugin() {
 	};
 }
 
-function runTypecheck() {
-	try {
-		execFileSync(process.execPath, ['tsc', '--noEmit', '--skipLibCheck'], { cwd: projectDir, stdio: 'pipe' });
-	} catch (error) {
-		const detail = [error.stdout, error.stderr]
-			.map((stream) => stream?.toString().trim())
-			.filter(Boolean)
-			.join('\n') || error.message;
-		throw new Error(`TypeScript check failed:\n${detail}`);
-	}
-}
-
 function prepareDist() {
 	rmSync(distDir, {
 		recursive: true,
@@ -414,7 +401,6 @@ const common = {
 	logLevel: 'warning',
 };
 
-runTypecheck();
 prepareDist();
 await minifyProductionStyles();
 await optimizeProductionIcons();

@@ -28,7 +28,8 @@ import {
 } from './hotkey-event';
 import {
 	nextScalarGestureId,
-	subscribeDefaultScalarGesture,
+	isHotkeyGestureReleased,
+	subscribeHotkeyReplay,
 	subscribePhysicalHotkeyRelease,
 	type DefaultScalarGestureSignal,
 	type PhysicalHotkeyReleaseSignal,
@@ -44,7 +45,7 @@ import {
 	claimHotkeyActualOSDGesture,
 	freezeHotkeyTargetOSD,
 	hideOSD,
-	ownsHotkeyActualOSDGesture,
+	admitsHotkeyActualOSDGesture,
 	releaseHotkeyTargetOSD,
 	showHotkeyActualOSD,
 } from '../ui/osd';
@@ -135,7 +136,10 @@ export async function initHotkeyListener(
 
 	cleanup.add(subscribePhysicalHotkeyRelease(releaseSiteHotkeys));
 	synchronizeKeydownListener();
-	cleanup.add(subscribeDefaultScalarGesture(handleDefaultScalarGesture));
+	cleanup.add(subscribeHotkeyReplay((signal) => {
+		if (signal.type === 'gesture') handleDefaultScalarGesture(signal.signal);
+		else handleHotkeyActualFeedback(signal.message);
+	}));
 	cleanup.add(createEventListener(window, 'blur', cancelActiveBindings));
 	cleanup.add(createEventListener(window, 'pagehide', cancelActiveBindings));
 	cleanup.add(createEventListener(document, 'visibilitychange', () => {
@@ -156,10 +160,17 @@ export async function initHotkeyListener(
 	return cleanup.dispose;
 }
 
-function handleSettingsEvent(message: unknown): false {
+function handleHotkeyActualFeedback(message: unknown): void {
 	if (isSpectraEventEnvelope(message) && message.type === 'spectra.hotkey.target.feedback') {
-		if (message.payload.gesture
-			&& !ownsHotkeyActualOSDGesture(message.payload.gesture)) return false;
+		if (message.payload.gesture) {
+			if (!admitsHotkeyActualOSDGesture(
+				message.payload.gesture,
+				!isHotkeyGestureReleased(message.payload.gesture),
+			)) {
+				return;
+			}
+			claimHotkeyActualOSDGesture(message.payload.gesture);
+		}
 		const options = message.payload.targetTabId === message.tabId
 			? {}
 			: {
@@ -177,8 +188,10 @@ function handleSettingsEvent(message: unknown): false {
 		} else {
 			showToast(formatLabel(message.payload.action), options);
 		}
-		return false;
 	}
+}
+
+function handleSettingsEvent(message: unknown): false {
 	if (isSpectraEventEnvelope(message) && message.type === 'spectra.hotkeys.changed') {
 		cancelActiveBindings();
 		settings = message.payload;

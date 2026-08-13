@@ -2,7 +2,6 @@
 	"id": "checksum",
 	"icon": "🔐",
 	"category": "security",
-	"size": 8000,
 	"builtIn": true,
 	"keywords": [
 		"md5",

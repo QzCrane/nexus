@@ -376,6 +376,7 @@ export function isSpectraEventEnvelope(value: unknown): value is SpectraEventEnv
 	if (value.type === 'spectra.audio.capture.changed') return isAudioCaptureState(value.payload)
 		&& isRecord(value.payload)
 		&& value.tabId === value.payload.tabId
+		&& isBoundedString(value.documentId, 256)
 		&& value.generation === value.payload.generation;
 	if (value.type === 'spectra.content.settings.changed') return isContentSettings(value.payload);
 	if (value.type === 'spectra.hotkeys.changed') return isHotkeySettings(value.payload);

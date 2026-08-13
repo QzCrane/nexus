@@ -15,7 +15,7 @@
     },
     "apps/extension-halo": {
       "name": "@nexus/extension-halo",
-      "version": "0.6.1",
+      "version": "0.6.2",
       "dependencies": {
         "@nexus/kernel": "workspace:*",
         "@nexus/ui-kit": "workspace:*",
@@ -47,7 +47,7 @@
     },
     "apps/extension-spectra": {
       "name": "@nexus/extension-spectra",
-      "version": "1.4.1",
+      "version": "1.4.2",
       "dependencies": {
         "@nexus/audio-engine": "workspace:*",
         "@nexus/kernel": "workspace:*",

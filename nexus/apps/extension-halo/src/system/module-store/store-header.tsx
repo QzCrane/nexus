@@ -2,11 +2,10 @@
 import type React from 'react';
 import { styles } from './panel.styles';
 import { styles as searchStyles } from '../../components/search/SearchBar.styles';
-import { formatModuleSize, } from '../../kernel';
 import { TypeFilter, type FilterType } from './type-filter';
 import { useTranslation } from '../../i18n';
 
-type ViewMode = 'installed' | 'available' | 'all' | 'updates';
+type ViewMode = 'enabled' | 'disabled' | 'all' | 'updates';
 
 interface StoreHeaderProps {
 	searchQuery: string;
@@ -20,21 +19,20 @@ interface StoreHeaderProps {
 	setFilterType: (f: FilterType) => void;
 	view: ViewMode;
 	setView: (v: ViewMode) => void;
-	scriptStatus: 'all' | 'installed' | 'available';
-	setScriptStatus: (v: 'all' | 'installed' | 'available') => void;
+	scriptStatus: 'all' | 'enabled' | 'disabled';
+	setScriptStatus: (v: 'all' | 'enabled' | 'disabled') => void;
 	scriptSource: 'all' | 'official' | 'user';
 	setScriptSource: (v: 'all' | 'official' | 'user') => void;
 	hasUpdates: boolean;
 	updatesCount: number;
-	totalInstalled: number;
-	totalSize: number;
+	totalEnabled: number;
 }
 
 export const StoreHeader: React.FC<StoreHeaderProps> = ({
 	searchQuery, setSearchQuery, isSearchFocused, setIsSearchFocused, searchInputRef,
 	handleRefresh, remoteLoading, filterType, setFilterType, view, setView,
 	scriptStatus, setScriptStatus, scriptSource, setScriptSource,
-	hasUpdates, updatesCount, totalInstalled, totalSize
+	hasUpdates, updatesCount, totalEnabled
 }) => {
 	const { t } = useTranslation();
 	const showScriptTabs = filterType === 'script';
@@ -83,13 +81,13 @@ export const StoreHeader: React.FC<StoreHeaderProps> = ({
 					<div style={{ display: 'flex', gap: '16px' }}>
 						{/* Status Group */}
 						<div style={styles.tabs}>
-							{(['all', 'installed', 'available'] as const).map((v) => (
+							{(['all', 'enabled', 'disabled'] as const).map((v) => (
 								<button type="button"
 									key={v}
 									style={{ ...styles.tab, ...(scriptStatus === v ? styles.tabActive : {}) }}
 									onClick={() => setScriptStatus(v)}
 								>
-									{v === 'all' ? t('moduleStorePanel.all') : v === 'installed' ? t('moduleStorePanel.installed') : t('moduleStorePanel.available')}
+									{v === 'all' ? t('moduleStorePanel.all') : v === 'enabled' ? t('moduleStorePanel.enabled') : t('moduleStorePanel.disabled')}
 								</button>
 							))}
 						</div>
@@ -108,13 +106,13 @@ export const StoreHeader: React.FC<StoreHeaderProps> = ({
 					</div>
 				) : (
 					<div style={styles.tabs}>
-						{(['all', 'installed', 'available'] as ViewMode[]).map((v) => (
+						{(['all', 'enabled', 'disabled'] as ViewMode[]).map((v) => (
 							<button type="button"
 								key={v}
 								style={{ ...styles.tab, ...(view === v ? styles.tabActive : {}) }}
 								onClick={() => setView(v)}
 							>
-								{v === 'all' ? t('moduleStorePanel.all') : v === 'installed' ? t('moduleStorePanel.installed') : t('moduleStorePanel.available')}
+								{v === 'all' ? t('moduleStorePanel.all') : v === 'enabled' ? t('moduleStorePanel.enabled') : t('moduleStorePanel.disabled')}
 							</button>
 						))}
 						{hasUpdates && (
@@ -127,7 +125,7 @@ export const StoreHeader: React.FC<StoreHeaderProps> = ({
 						)}
 					</div>
 				)}
-				<span style={styles.stats}>{t('moduleStorePanel.statsResult', { count: totalInstalled, size: formatModuleSize(totalSize) })}</span>
+				<span style={styles.stats}>{t('moduleStorePanel.statsResult', { count: totalEnabled })}</span>
 			</div>
 		</div>
 	);

@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+repository="$(git rev-parse --show-toplevel)"
+cd "$repository"
+if ! command -v bun >/dev/null 2>&1 || ! command -v bunx >/dev/null 2>&1; then
+  echo "NEXUS pre-push blocked: Bun/bunx is unavailable, so repository gates cannot run." >&2
+  exit 1
+fi
+exec bunx lefthook run "pre-push" "$@"

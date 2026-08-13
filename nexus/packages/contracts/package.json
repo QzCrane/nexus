@@ -31,7 +31,7 @@
 	},
 	"scripts": {
 		"clean": "bun ../../scripts/clean-build-artifacts.ts packages/contracts",
-		"build": "bun tsc -b",
+		"build": "bun tsc -b --force",
 		"dev": "bun tsc -b --watch",
 		"lint": "bun ../../scripts/run-strict-biome.ts .",
 		"typecheck": "bun tsc --noEmit --tsBuildInfoFile typecheck.tsbuildinfo"

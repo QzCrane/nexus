@@ -2,7 +2,6 @@
 	"id": "regex",
 	"icon": ".*",
 	"category": "dev",
-	"size": 22000,
 	"builtIn": true,
 	"status": "coming",
 	"keywords": [

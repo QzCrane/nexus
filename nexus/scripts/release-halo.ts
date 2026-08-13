@@ -197,6 +197,7 @@ export const RELEASE_STEPS = Object.freeze([
 	{ label: 'architecture verify', args: ['run', 'verify:v'] },
 	{ label: 'documentation architecture', args: ['run', 'docs:check'] },
 	{ label: 'platform contract', args: ['run', 'check:platform'] },
+	{ label: 'repository governance contracts', args: ['run', 'check:governance'] },
 	{ label: 'public projection contract', args: ['run', 'check:public-projections'] },
 	{ label: 'frozen dependency install', args: ['install', '--frozen-lockfile'] },
 	{ label: 'toolchain verify', args: ['run', 'check:toolchain'] },
@@ -206,7 +207,7 @@ export const RELEASE_STEPS = Object.freeze([
 	{ label: 'unit tests', args: ['run', 'test:halo'] },
 	{ label: 'production build', args: ['run', '--cwd', 'apps/extension-halo', 'build:prod'] },
 	{ label: 'production Chromium contracts', args: ['run', '--cwd', 'apps/extension-halo', 'test:browser-chromium'] },
-	{ label: 'dependency audit', args: ['audit'] },
+	{ label: 'dependency audit', args: ['run', 'audit:dependencies'] },
 	{ label: 'staging ZIP', fn: createStagingZip },
 ]);
 

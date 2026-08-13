@@ -564,7 +564,7 @@ type SpectraEventEnvelopeFor<T extends SpectraEventType> = SpectraEventBase & {
 } & (T extends 'spectra.audio.session.changed'
 	? Required<Pick<SpectraContextFields, 'tabId' | 'documentId' | 'generation'>>
 	: T extends 'spectra.audio.capture.changed'
-		? Required<Pick<SpectraContextFields, 'tabId' | 'generation'>>
+		? Required<Pick<SpectraContextFields, 'tabId' | 'documentId' | 'generation'>>
 	: T extends 'spectra.navigation.changed'
 		? Required<Pick<SpectraContextFields, 'tabId' | 'documentId'>>
 	: T extends 'spectra.hotkey.target.feedback'
@@ -1875,7 +1875,9 @@ export function isSpectraEventEnvelope(value: unknown): value is SpectraEventEnv
 	}
 	if (value.type === 'spectra.audio.capture.changed') {
 		const payload = value.payload as AudioCaptureState;
-		return value.tabId === payload.tabId && value.generation === payload.generation;
+		return value.tabId === payload.tabId
+			&& isDocumentId(value.documentId)
+			&& value.generation === payload.generation;
 	}
 	if (value.type === 'spectra.navigation.changed') {
 		return isPositiveInteger(value.tabId)

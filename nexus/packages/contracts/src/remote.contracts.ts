@@ -101,6 +101,8 @@ export const REMOTE_COMMAND_DESCRIPTORS = {
 
 export interface RemoteState {
 	generation: number;
+	/** Monotonic control snapshot revision within the current generation. */
+	revision: number;
 	/** @deprecated one-release effective-volume projection */
 	volume: number;
 	volumeBase?: number;
@@ -169,6 +171,7 @@ export function isRemoteState(value: unknown): value is RemoteState {
 	const keys = Object.keys(value);
 	if (!keys.every((key) => [
 		'generation',
+		'revision',
 		'volume',
 		'volumeBase',
 		'boost',
@@ -183,6 +186,8 @@ export function isRemoteState(value: unknown): value is RemoteState {
 	].includes(key))) return false;
 	return Number.isSafeInteger(value.generation)
 		&& (value.generation as number) >= 0
+		&& Number.isSafeInteger(value.revision)
+		&& (value.revision as number) >= 0
 		&& isFiniteInRange(value.volume, 0, 800)
 		&& (value.volumeBase === undefined || isFiniteInRange(value.volumeBase, 0, 100))
 		&& (value.boost === undefined || isFiniteInRange(value.boost, 1, 8))

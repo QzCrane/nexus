@@ -6,7 +6,7 @@ export const zh = {
 	// Panel i18n
 	hoverZoom: {
 		enable: "启用浮图秀",
-		enableDesc: "兼容 PhotoShow，全站生效",
+		enableDesc: "PhotoShow 风格预览，可用性取决于页面与浏览器权限",
 
 		resourceKeys: {
 			title: "资源快捷键",

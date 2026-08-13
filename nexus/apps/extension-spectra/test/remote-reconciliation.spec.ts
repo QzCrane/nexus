@@ -29,6 +29,13 @@ describe('remote service-worker reconciliation', () => {
 		const tabMessages: Array<Record<string, unknown>> = [];
 		const closeTabMessages: Array<Record<string, unknown>> = [];
 		const sessionId = 'A'.repeat(22);
+		const mediaTarget = {
+			frameId: 0,
+			documentId: 'document-71',
+			mediaId: 'media-71',
+			sourceRevision: 1,
+			kind: 'video' as const,
+		};
 		const hostSession = {
 			protocolVersion: 2 as const,
 			sessionId,
@@ -45,6 +52,7 @@ describe('remote service-worker reconciliation', () => {
 		let hasDocument = true;
 		let helloCalls = 0;
 		let createDocumentCalls = 0;
+		let stateSendCalls = 0;
 
 		Object.defineProperty(globalThis, 'chrome', {
 			configurable: true,
@@ -69,7 +77,10 @@ describe('remote service-worker reconciliation', () => {
 							closeTabMessages.push(structuredClone(message));
 							return { success: false };
 						}
-						if (message.type === 'REMOTE_HOST_SEND_STATE') return { success: true };
+						if (message.type === 'REMOTE_HOST_SEND_STATE') {
+							stateSendCalls += 1;
+							return { success: stateSendCalls > 1 };
+						}
 						return undefined;
 					},
 				},
@@ -86,6 +97,100 @@ describe('remote service-worker reconciliation', () => {
 									runtimeRevision: SPECTRA_CONTENT_RUNTIME_REVISION,
 									ready: true,
 									ownedSources: [],
+								},
+							};
+						}
+						if (message.type === 'spectra.control.actual.read') {
+							const fields = (message.payload as { fields?: string[] } | undefined)?.fields ?? [];
+							const values: Record<string, unknown> = {
+								volumeBase: 100,
+								mediaMuted: false,
+								speed: 1,
+								preservePitch: true,
+								playing: false,
+								currentTime: 0,
+								loop: false,
+								pip: false,
+								fullscreen: false,
+							};
+							return {
+								ok: true,
+								data: {
+									target: mediaTarget,
+									patch: Object.fromEntries(fields.map((field) => [field, values[field]])),
+									observedStrategies: Object.fromEntries(fields.map((field) => [field, 'dom-native'])),
+								},
+							};
+						}
+						if (message.type === 'spectra.control.operation.execute') {
+							const payload = message.payload as {
+								operationId: string;
+								tabId: number;
+								documentId: string;
+								generation: number;
+								baseRevision: number;
+							};
+							const revision = payload.baseRevision + 1;
+							return {
+								ok: true,
+								data: {
+									operationId: payload.operationId,
+									tabId: payload.tabId,
+									documentId: payload.documentId,
+									generation: payload.generation,
+									revision,
+									target: mediaTarget,
+									operation: 'playback-toggle',
+									strategy: 'dom-native',
+									coverage: 'active-target',
+									fields: {
+										playing: {
+											desired: true,
+											actual: true,
+											revision,
+											phase: 'applied',
+											strategy: 'dom-native',
+											coverage: 'active-target',
+											controlled: true,
+											intentId: payload.operationId,
+											lastError: null,
+										},
+									},
+									result: { playing: true },
+								},
+							};
+						}
+						if (message.type === 'spectra.control.intent.execute') {
+							const payload = message.payload as {
+								intentId: string;
+								tabId: number;
+								documentId: string;
+								generation: number;
+								baseRevision: number;
+							};
+							const revision = payload.baseRevision + 1;
+							return {
+								ok: true,
+								data: {
+									intentId: payload.intentId,
+									tabId: payload.tabId,
+									documentId: payload.documentId,
+									generation: payload.generation,
+									revision,
+									target: mediaTarget,
+									fields: {
+										playing: {
+											desired: true,
+											actual: true,
+											revision,
+											phase: 'applied',
+											strategy: 'dom-native',
+											coverage: 'active-target',
+											controlled: true,
+											intentId: payload.intentId,
+											lastError: null,
+										},
+									},
 								},
 							};
 						}
@@ -177,6 +282,11 @@ describe('remote service-worker reconciliation', () => {
 			});
 			expect(command.handled).toBe(true);
 			expect(await command.response).toEqual({ settled: true });
+			expect(
+				tabMessages.some((message) => message.type === 'spectra.control.intent.execute'),
+				`a failed state send must not consume the last delivered generation or drop the next legal command: ${JSON.stringify(tabMessages)}`,
+			).toBe(true);
+			expect(stateSendCalls).toBe(1);
 
 			hasDocument = false;
 			await reconcileOffscreenHost();

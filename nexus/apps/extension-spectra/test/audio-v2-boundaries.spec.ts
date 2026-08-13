@@ -100,6 +100,7 @@ describe('content audio v2 boundary', () => {
 			protocolVersion: 2,
 			type: 'spectra.audio.capture.changed',
 			tabId: 42,
+			documentId: 'document-42',
 			generation,
 			payload: {
 				tabId: 42,
@@ -163,6 +164,7 @@ describe('content audio v2 boundary', () => {
 			protocolVersion: 2,
 			type: 'spectra.audio.capture.changed',
 			tabId: 42,
+			documentId: 'document-42',
 			generation: 5,
 			payload: {
 				tabId: 42,
@@ -177,6 +179,40 @@ describe('content audio v2 boundary', () => {
 
 		expect(state.actualMode).toBe('bypass');
 		expect(applyState).toHaveBeenCalledWith({ modeIntent: true });
+	});
+
+	test('applies presentation settings without re-running audio policy', () => {
+		const applyState = mock(async () => undefined);
+		const handleMessage = mock(() => true);
+		const handler = createMessageHandler({
+			state: { config: CONFIG } as MessageHandlerDeps['state'],
+			policyExecutor: { applyState } as unknown as MessageHandlerDeps['policyExecutor'],
+			captureManager: { handleMessage: () => false } as unknown as MessageHandlerDeps['captureManager'],
+			settingsManager: { handleMessage } as unknown as MessageHandlerDeps['settingsManager'],
+			getVisualizerData: () => null,
+			setVisualizerSubscribed: () => false,
+		});
+
+		handler({
+			protocolVersion: 2,
+			type: 'spectra.content.settings.changed',
+			payload: {
+				osdEnabled: true,
+				visualizerEnabled: false,
+				lang: 'en-US',
+				themeMode: 'system',
+				pauseRetentionSeconds: 60,
+				osdMessages: {
+					muted: 'MUTE',
+					corsAutoAdded: 'Added {domain}',
+					corsAddedSafe: 'Safe {domain}',
+					corsCorrectedSafe: 'Corrected {domain}',
+				},
+			},
+		}, {}, () => undefined);
+
+		expect(handleMessage).toHaveBeenCalledTimes(1);
+		expect(applyState).not.toHaveBeenCalled();
 	});
 
 	test('rejects malformed config before policy code and keeps status reads side-effect free', () => {

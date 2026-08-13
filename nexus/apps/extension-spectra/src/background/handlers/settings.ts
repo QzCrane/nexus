@@ -2,14 +2,10 @@
 
 import { router } from '../state';
 import {
-	Actions,
 	SPECTRA_PROTOCOL_VERSION,
 	isSpectraRequestEnvelope,
 	rpcFailure,
 	rpcSuccess,
-	type SettingsSnapshot,
-	type SettingsPatch,
-	type SpectraEventEnvelope,
 } from '@nexus/contracts';
 import {
 	InvalidSettingsPatchError,
@@ -17,75 +13,10 @@ import {
 	settingsRepository,
 } from '../settings-repository';
 import { withContentOSDMessages } from '../../shared/i18n/content-osd';
-import { updateShortcutSettings } from '../shortcuts';
-import { reconcileAllHotkeyRuntimeLeases } from '../runtime-loader';
-
-async function broadcastLegacyGlobalSettingsForOneRelease(
-	tabId: number,
-	settings: ReturnType<typeof withContentOSDMessages>,
-): Promise<void> {
-	await chrome.tabs.sendMessage(tabId, {
-		action: Actions.GLOBAL_SETTINGS_UPDATE,
-		settings,
-	}).catch(() => undefined);
-}
-
-function isHotkeyScope(scope: SettingsPatch['scope']): boolean {
-	return scope === 'hotkey-slots' || scope === 'hotkey-site' || scope === 'hotkey-site-mutation';
-}
-
-async function broadcastSettings(snapshot: SettingsSnapshot, scope: SettingsPatch['scope']): Promise<void> {
-	const event: SpectraEventEnvelope<'spectra.settings.changed'> = {
-		protocolVersion: SPECTRA_PROTOCOL_VERSION,
-		type: 'spectra.settings.changed',
-		payload: snapshot,
-	};
-	const extensionBroadcast = chrome.runtime.sendMessage(event).catch(() => undefined);
-
-	if (isHotkeyScope(scope)) {
-		updateShortcutSettings(snapshot.hotkeySettings);
-		const hotkeyEvent: SpectraEventEnvelope<'spectra.hotkeys.changed'> = {
-			protocolVersion: SPECTRA_PROTOCOL_VERSION,
-			type: 'spectra.hotkeys.changed',
-			payload: snapshot.hotkeySettings,
-		};
-		const tabs = await chrome.tabs.query({});
-		// The heavy content listener must observe the new physical settings before
-		// ownership reconciliation. Reconciliation may then send an exact-document
-		// `sites:{}` suspension for lean/none. Running these as siblings would let
-		// a late broad settings event re-enable a heavy listener after lean won.
-		await Promise.all(tabs.map((tab) => (
-			tab.id
-				? chrome.tabs.sendMessage(tab.id, hotkeyEvent).catch(() => undefined)
-				: Promise.resolve()
-		)));
-		await reconcileAllHotkeyRuntimeLeases(snapshot.hotkeySettings);
-		await extensionBroadcast;
-		return;
-	}
-
-	if (scope !== 'global') {
-		await extensionBroadcast;
-		return;
-	}
-	const tabs = await chrome.tabs.query({});
-	await Promise.all([
-		extensionBroadcast,
-		...tabs.map(async (tab) => {
-			if (!tab.id) return;
-			const settings = withContentOSDMessages(snapshot.globalSettings);
-			const contentEvent: SpectraEventEnvelope<'spectra.content.settings.changed'> = {
-				protocolVersion: SPECTRA_PROTOCOL_VERSION,
-				type: 'spectra.content.settings.changed',
-				payload: settings,
-			};
-			await Promise.all([
-				chrome.tabs.sendMessage(tab.id, contentEvent).catch(() => undefined),
-				broadcastLegacyGlobalSettingsForOneRelease(tab.id, settings),
-			]);
-		}),
-	]);
-}
+import {
+	initializeSettingsProjection,
+	scheduleSettingsProjection,
+} from '../settings-projection';
 
 function isAttemptedSettingsV2Message(message: unknown): boolean {
 	if (!message || typeof message !== 'object') return false;
@@ -131,10 +62,10 @@ function registerV2SettingsListener(): void {
 					);
 					if (payload.patch.scope === 'legacy-theme') {
 						if (next.revision !== payload.expectedRevision) {
-							await broadcastSettings(next, 'global');
+							scheduleSettingsProjection(next, 'global');
 						}
 					} else {
-						await broadcastSettings(next, payload.patch.scope);
+						scheduleSettingsProjection(next, payload.patch.scope);
 					}
 					return rpcSuccess(next);
 				}
@@ -164,6 +95,7 @@ function registerV2SettingsListener(): void {
 
 export function registerSettingsHandlers(): void {
 	void settingsRepository.initialize();
+	initializeSettingsProjection(() => settingsRepository.getSnapshot());
 	registerV2SettingsListener();
 
 	router.on('SETTINGS_GET', async () => {
@@ -172,7 +104,7 @@ export function registerSettingsHandlers(): void {
 
 	router.on('SETTINGS_UPDATE', async (req) => {
 		const snapshot = await settingsRepository.applyPatch({ scope: 'global', changes: req.settings });
-		await broadcastSettings(snapshot, 'global');
+		scheduleSettingsProjection(snapshot, 'global');
 		return { success: true };
 	});
 }

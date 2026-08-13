@@ -21,7 +21,7 @@ HALO brings everyday browser, developer, text, data, and page utilities into one
 ### Page and browser tools
 
 - Inspect the active page, headers, fonts, technologies, media, storage, and document structure when the page and browser allow it.
-- Use optional permissions for page archives, clipboard history, downloads, history, bookmarks, tab groups, user scripts, and extension management.
+- Use optional permissions for page archives, clipboard history, site-cookie management, downloads, history, bookmarks, tab groups, user scripts, and extension management.
 - Enable smooth page scrolling while preserving keyboard ownership for video and other media controls after direct player interaction.
 
 ### Explicit network tools
@@ -34,4 +34,4 @@ The destination services receive ordinary network metadata and the fields needed
 
 Availability depends on the page, Chrome support, user activation, permissions, CORS, authentication, and site behavior. Chrome internal pages, protected content, and restricted frames may not be accessible. HALO does not bypass browser security or promise identical behavior on every website.
 
-HALO's own executable code is bundled in the submitted package. User-authored or imported scripts are a separate opt-in capability executed through Chrome's `userScripts` permission and user-selected match rules.
+HALO's own executable code is bundled in the submitted package. User-authored or imported JavaScript is a separate opt-in capability executed through Chrome's `userScripts` API after permission and host access are granted. Automatic runs follow user-selected match rules; an explicit Test action targets only the active tab. Scripts can use Chrome's isolated `USER_SCRIPT` world or the page-visible `MAIN` world according to their saved configuration.

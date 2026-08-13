@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: spectra-remote-security
-last_reviewed: 2026-07-26
+last_reviewed: 2026-08-13
 ---
 
 # SPECTRA authenticated remote protocol v2
@@ -46,6 +46,12 @@ The unified runtime calls the lazy Remote disposer during `pagehide`, aborting a
 | `REMOTE_HOST_DESCRIBE` | none | sessions for service-worker recovery |
 
 The host emits capability-bound execute, sync, status, and closed events so Background can validate command ownership and clean leases. Execute, sync, and status events retain an internal Chrome response channel until restoration, authorization, Content READY, and handling settle; this channel is a worker-lifetime barrier, not a remote command success ACK.
+
+## Release evidence boundary
+
+The installed-Chromium gate loads the production extension and the checked-in Remote page, then replaces only the external PeerJS signaling transport with a deterministic, in-process Peer-compatible transport. It still executes the production HMAC challenge, authenticated command envelope, unified offscreen host, Background authorization, exact-state delivery, Content control, two service-worker restarts, and lease cleanup. A passing gate therefore proves product code and lifecycle behavior without turning availability of the public `0.peerjs.com` service into a source-code verdict.
+
+The release gate separately verifies the deployed Remote site's files, CSP, local PeerJS vendor asset, disclosure, and build identity. Public PeerJS/STUN/TURN reachability remains an external service-availability fact: an outage is reported as transport infrastructure, not converted into a product failure or a fabricated product pass.
 
 ## Network disclosure
 

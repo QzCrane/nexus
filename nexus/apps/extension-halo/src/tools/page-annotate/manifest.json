@@ -2,7 +2,6 @@
 	"id": "page-annotate",
 	"icon": "🖊️",
 	"category": "browser",
-	"size": 30000,
 	"builtIn": false,
 	"keywords": []
 }

@@ -2,7 +2,6 @@
 	"id": "pomodoro",
 	"icon": "🍅",
 	"category": "efficiency",
-	"size": 25000,
 	"builtIn": false,
 	"keywords": [],
 	"background": {
@@ -12,7 +11,7 @@
 		"level": "idle",
 		"descriptionKey": "impact.interval_1s",
 		"sourceFile": "tools/pomodoro/panel.tsx",
-		"sourceLine": 70,
+		"sourceAnchor": "window.setInterval(tick, 1000)",
 		"sourceDetail": "one 1Hz interval updates ephemeral display time and verifies the live wall-clock deadline; persistent PomodoroState changes only at user/phase boundaries"
 	}
 }

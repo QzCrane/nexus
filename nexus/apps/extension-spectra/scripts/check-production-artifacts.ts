@@ -11,6 +11,12 @@ export const SPECTRA_PRODUCTION_BUDGETS = Object.freeze({
 	offscreenCapture: 28 * 1024,
 	offscreenRemote: 72 * 1024,
 	popupStatic: 144 * 1024,
+	popupEventual: 152 * 1024,
+	contentRuntimeEventual: 176 * 1024,
+	contentVideoEffectsEventual: 12 * 1024,
+	optionsEventual: 40 * 1024,
+	javascriptTotal: 680 * 1024,
+	distTotal: 780 * 1024,
 });
 
 export function productionBudgetFailures(report) {
@@ -26,6 +32,12 @@ export function productionBudgetFailures(report) {
 	check('offscreen Capture-only closure', report.offscreenAudioOnly?.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.offscreenCapture);
 	check('offscreen Remote eventual closure', report.offscreenRemote?.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.offscreenRemote);
 	check('popup.js static closure', entries.get('popup.js')?.staticBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.popupStatic);
+	check('popup.js eventual closure', entries.get('popup.js')?.eventualBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.popupEventual);
+	check('content-runtime.js eventual closure', entries.get('content-runtime.js')?.eventualBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.contentRuntimeEventual);
+	check('content-video-effects.js eventual closure', entries.get('content-video-effects.js')?.eventualBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.contentVideoEffectsEventual);
+	check('options.js eventual closure', entries.get('options.js')?.eventualBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.optionsEventual);
+	check('total production JavaScript', report.javascript ?? 0, SPECTRA_PRODUCTION_BUDGETS.javascriptTotal);
+	check('total production artifact', report.total ?? 0, SPECTRA_PRODUCTION_BUDGETS.distTotal);
 	return failures;
 }
 

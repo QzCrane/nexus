@@ -2,7 +2,6 @@
 	"id": "text-to-speech",
 	"icon": "🔊",
 	"category": "efficiency",
-	"size": 15000,
 	"builtIn": false,
 	"keywords": [],
 	"background": {
@@ -12,7 +11,7 @@
 		"level": "idle",
 		"descriptionKey": "impact.mechanism.event_listener",
 		"sourceFile": "tools/text-to-speech/core.ts",
-		"sourceLine": 36,
+		"sourceAnchor": "utterance.addEventListener('start', callbacks.onStart)",
 		"sourceDetail": "SpeechSynthesisUtterance start/end/error/pause/resume listeners drive UI state; no periodic status poll"
 	}
 }

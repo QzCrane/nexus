@@ -1,13 +1,20 @@
 // goal: Clipboard tool core logic
 
-import { type ClipboardItem, STORAGE_KEY, SETTINGS_STORAGE_KEY, MAX_HISTORY } from './types';
+import {
+	type ClipboardItem,
+	type ClipboardSettings,
+	MAX_HISTORY,
+	parseClipboardSettings,
+	SETTINGS_STORAGE_KEY,
+	STORAGE_KEY,
+} from './types';
 
 /**
  * Get clipboard settings
  */
-export async function getClipboardSettings(): Promise<{ enabled: boolean }> {
+export async function getClipboardSettings(): Promise<ClipboardSettings> {
 	const result = await chrome.storage.local.get([SETTINGS_STORAGE_KEY]);
-	return result[SETTINGS_STORAGE_KEY] || { enabled: true };
+	return parseClipboardSettings(result[SETTINGS_STORAGE_KEY]);
 }
 
 /**

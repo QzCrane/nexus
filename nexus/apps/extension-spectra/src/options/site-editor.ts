@@ -5,6 +5,7 @@ import { DEFAULT_HOTKEY_SETTINGS, type DEFAULT_MODIFIERS, normalizeHostname } fr
 import { openModal } from './modal';
 import { getSettingsSnapshot, patchSettings } from '../shared/settings-client';
 import { getActionName, getCurrentLang, onLangChange, t, tf } from './i18n';
+import { clearOptionsError, showOptionsError } from './status';
 
 let settings: HotkeySettings = { ...DEFAULT_HOTKEY_SETTINGS };
 let selectedSite: string | null = null;
@@ -32,16 +33,13 @@ function renderLegacyWarning(): void {
 }
 
 async function loadSettings(forceRefresh = false): Promise<void> {
-	try {
-		const snapshot = await getSettingsSnapshot(forceRefresh);
-		settings = {
-			...snapshot.hotkeySettings,
-			slots: { ...snapshot.hotkeySettings.slots },
-			sites: { ...snapshot.hotkeySettings.sites },
-		};
-	} catch {
-		settings = { ...DEFAULT_HOTKEY_SETTINGS };
-	}
+	const snapshot = await getSettingsSnapshot(forceRefresh);
+	settings = {
+		...snapshot.hotkeySettings,
+		slots: { ...snapshot.hotkeySettings.slots },
+		sites: { ...snapshot.hotkeySettings.sites },
+	};
+	clearOptionsError();
 }
 
 async function mutateSite(domain: string, mutation: HotkeySiteMutation): Promise<void> {
@@ -54,7 +52,7 @@ async function mutateSite(domain: string, mutation: HotkeySiteMutation): Promise
 }
 
 async function recoverEditorState(): Promise<void> {
-	await loadSettings(true);
+	await loadSettings(true).catch(showOptionsError);
 	renderLegacyWarning();
 	renderSiteSelector();
 	if (selectedSite && settings.sites[selectedSite]) selectSite(selectedSite);
@@ -68,7 +66,8 @@ async function applyBindingMutation(domain: string, mutation: HotkeySiteMutation
 			selectSite(domain);
 			renderLegacyWarning();
 		}
-	} catch {
+	} catch (error) {
+		showOptionsError(error);
 		await recoverEditorState();
 	}
 }
@@ -107,7 +106,8 @@ function bindEvents(): void {
 		try {
 			await mutateSite(domain, { type: 'set-enabled', enabled: enabledCb.checked });
 			if (selectedSite === domain) selectSite(domain);
-		} catch {
+		} catch (error) {
+			showOptionsError(error);
 			await recoverEditorState();
 		}
 	});
@@ -134,15 +134,15 @@ async function addSiteFromInput(rawDomain: string | undefined): Promise<void> {
 		return;
 	}
 
-	await loadSettings(true);
-	if (settings.sites[domain]) {
-		alert(t('site_exists'));
-		return;
-	}
-
 	try {
+		await loadSettings(true);
+		if (settings.sites[domain]) {
+			alert(t('site_exists'));
+			return;
+		}
 		await mutateSite(domain, { type: 'ensure-site', enabled: false });
-	} catch {
+	} catch (error) {
+		showOptionsError(error);
 		await recoverEditorState();
 		return;
 	}
@@ -193,7 +193,8 @@ async function deleteSite(): Promise<void> {
 	const deletedDomain = selectedSite;
 	try {
 		await mutateSite(deletedDomain, { type: 'delete-site' });
-	} catch {
+	} catch (error) {
+		showOptionsError(error);
 		await recoverEditorState();
 		return;
 	}

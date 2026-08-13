@@ -2,7 +2,6 @@
 	"id": "markdown",
 	"icon": "📝",
 	"category": "format",
-	"size": 30000,
 	"builtIn": false,
 	"keywords": [],
 	"pluginType": "tool"

@@ -1,5 +1,5 @@
 // goal: packaged-module enable/disable authority
-// eff: one chrome.storage.local tombstone per optional module; all bundled modules start installed
+// eff: one chrome.storage.local tombstone per optional module; bundled code never leaves the package
 
 import { ALL_MODULES, OPTIONAL_MODULES, type ModuleState } from '../registry/module-registry';
 import type { ModuleMeta } from '../core/tool-registry-types';
@@ -11,14 +11,14 @@ import {
 	writePackagedModuleEnabled,
 } from './module-installation-store';
 
-export interface ModuleInstallationPersistence {
+export interface ModuleEnablementPersistence {
 	loadDisabled(): Promise<Set<string>>;
 	readEnabled(id: string): Promise<boolean>;
 	setEnabled(id: string, enabled: boolean): Promise<void>;
 	subscribe(listener: (id: string, enabled: boolean) => void): () => void;
 }
 
-function createChromePersistence(): ModuleInstallationPersistence {
+function createChromePersistence(): ModuleEnablementPersistence {
 	return {
 		loadDisabled: readDisabledPackagedModuleIds,
 		readEnabled: readOptionalPackagedModuleEnabled,
@@ -53,16 +53,16 @@ function createChromePersistence(): ModuleInstallationPersistence {
 export interface ModuleManagerSnapshot {
 	revision: number;
 	degraded: boolean;
-	installedModules: readonly ModuleMeta[];
-	availableModules: readonly ModuleMeta[];
+	enabledModules: readonly ModuleMeta[];
+	disabledModules: readonly ModuleMeta[];
 }
 
 const BUILTIN_MODULES = Object.freeze(ALL_MODULES.filter((module) => module.builtIn));
 const INITIAL_SNAPSHOT: ModuleManagerSnapshot = Object.freeze({
 	revision: 0,
 	degraded: true,
-	installedModules: BUILTIN_MODULES,
-	availableModules: Object.freeze([]) as readonly ModuleMeta[],
+	enabledModules: BUILTIN_MODULES,
+	disabledModules: Object.freeze([]) as readonly ModuleMeta[],
 });
 const REALM_MUTATION_TAIL_BY_ID = new Map<string, Promise<void>>();
 const MODULE_MUTATION_LOCK_PREFIX = 'halo-module-installation-v2:';
@@ -105,7 +105,7 @@ export class ModuleManager {
 	private hydrating = false;
 
 	constructor(
-		private readonly persistence: ModuleInstallationPersistence = createChromePersistence(),
+		private readonly persistence: ModuleEnablementPersistence = createChromePersistence(),
 	) {
 		for (const module of OPTIONAL_MODULES) this.disabled.add(module.id);
 	}
@@ -166,14 +166,14 @@ export class ModuleManager {
 				this.disabled.add(module.id);
 			}
 			this.commitHydration(true, changed, false);
-			console.error('[HALO:ModuleManager] Installation hydration failed', error);
+			console.error('[HALO:ModuleManager] Enablement hydration failed', error);
 		} finally {
 			this.hydrating = false;
 			this.hydrationEventOwnedIds.clear();
 		}
 	}
 
-	async retryInstallationState(): Promise<boolean> {
+	async retryEnablementState(): Promise<boolean> {
 		this.hydrating = true;
 		try {
 			const disabledFromStorage = await this.persistence.loadDisabled();
@@ -182,7 +182,7 @@ export class ModuleManager {
 			return true;
 		} catch (error) {
 			this.commitHydration(true, false, true);
-			console.error('[HALO:ModuleManager] Installation retry failed', error);
+			console.error('[HALO:ModuleManager] Enablement retry failed', error);
 			return false;
 		} finally {
 			this.hydrating = false;
@@ -207,8 +207,8 @@ export class ModuleManager {
 		this.snapshot = Object.freeze({
 			revision: this.revision,
 			degraded: this.degraded,
-			installedModules: Object.freeze(ALL_MODULES.filter((module) => this.isInstalled(module.id))),
-			availableModules: Object.freeze(OPTIONAL_MODULES.filter((module) => !this.isInstalled(module.id))),
+			enabledModules: Object.freeze(ALL_MODULES.filter((module) => this.isEnabled(module.id))),
+			disabledModules: Object.freeze(OPTIONAL_MODULES.filter((module) => !this.isEnabled(module.id))),
 		});
 	}
 
@@ -227,7 +227,7 @@ export class ModuleManager {
 		else this.disabled.add(id);
 		// Degraded means the complete optional-module authority is unknown. Keep
 		// absorbing physical events into the private cache, but do not publish an
-		// optional module as installed until a complete hydration succeeds.
+		// optional module as enabled until a complete hydration succeeds.
 		if (!this.degraded) this.notify();
 	}
 
@@ -241,24 +241,24 @@ export class ModuleManager {
 	getState(id: string): ModuleState | undefined {
 		const meta = ALL_MODULES.find((module) => module.id === id);
 		if (!meta) return undefined;
-		return this.isInstalled(id)
-			? { id, status: 'installed', installedVersion: meta.version }
-			: { id, status: 'available' };
+		return this.isEnabled(id)
+			? { id, status: 'enabled', enabledVersion: meta.version }
+			: { id, status: 'disabled' };
 	}
 
 	getAllStates(): ModuleState[] {
 		return ALL_MODULES.map((module) => this.getState(module.id) as ModuleState);
 	}
 
-	isInstalled(id: string): boolean {
+	isEnabled(id: string): boolean {
 		const meta = ALL_MODULES.find((module) => module.id === id);
 		return Boolean(meta && (meta.builtIn || !this.degraded && !this.disabled.has(id)));
 	}
 
-	getInstalledModules(): ModuleMeta[] { return [...this.snapshot.installedModules]; }
-	getAvailableModules(): ModuleMeta[] { return [...this.snapshot.availableModules]; }
+	getEnabledModules(): ModuleMeta[] { return [...this.snapshot.enabledModules]; }
+	getDisabledModules(): ModuleMeta[] { return [...this.snapshot.disabledModules]; }
 
-	install(id: string): Promise<void> {
+	enable(id: string): Promise<void> {
 		return this.serializeMutation(id, async () => {
 			const meta = ALL_MODULES.find((module) => module.id === id);
 			if (!meta) throw new Error(`Module ${id} not found`);
@@ -268,10 +268,10 @@ export class ModuleManager {
 		});
 	}
 
-	uninstall(id: string): Promise<void> {
+	disable(id: string): Promise<void> {
 		return this.serializeMutation(id, async () => {
 			const meta = ALL_MODULES.find((module) => module.id === id);
-			if (!meta || meta.builtIn) throw new Error(`Cannot uninstall: ${id}`);
+			if (!meta || meta.builtIn) throw new Error(`Cannot disable: ${id}`);
 			await this.persistence.setEnabled(id, false);
 			this.applyEnabled(id, await this.persistence.readEnabled(id));
 		});

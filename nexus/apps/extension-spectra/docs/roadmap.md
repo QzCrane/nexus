@@ -3,7 +3,7 @@ type: reference
 status: draft
 audience: contributor
 owner: spectra-product-and-engineering
-last_reviewed: 2026-07-20
+last_reviewed: 2026-08-13
 ---
 
 # SPECTRA roadmap
@@ -26,6 +26,8 @@ The current architecture defines:
 - authenticated optional remote control with disclosed third-party network dependencies.
 
 Implementation status and release evidence are read from source, tests, static gates, production artifacts, and dated reports—not inferred from this summary.
+
+The v1.4.2 baseline additionally closes durable-before-ACK AudioSession and settings commits, restart-recoverable settings projection, exact runtime-source and Capture-document authorization, canonical partial audio merges, bounded tab fan-out, authoritative Popup rollback, retryable Options failures, presentation-only global settings, and hard production-artifact budgets. GitHub runner allocation remains independent hosted replay evidence, not product-runtime authority.
 
 ## P0: release truth and regression resistance
 

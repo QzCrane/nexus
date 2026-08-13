@@ -3,7 +3,7 @@ type: explanation
 status: stable
 audience: developer
 owner: spectra-runtime-architecture
-last_reviewed: 2026-08-12
+last_reviewed: 2026-08-13
 ---
 
 # SPECTRA runtime architecture
@@ -30,7 +30,7 @@ phase: idle | starting | active | stopping | error
 ```
 
 Navigation/transition advances generation; late ACKs cannot update newer documents. Default is transparent bypass.
-Capture activates only after offscreen host creates processor and returns readback. Transitions neutralize old route, verify candidate, switch ownership, and release old route.
+Capture activates only after offscreen host creates processor and returns readback. Transitions neutralize old route, verify candidate, switch ownership, and release old route. Capture processor responses remain tab-owned, while Content lifecycle events require the authoritative `documentId` and are delivered through Chrome's exact-document target; a late event for an old document therefore cannot mutate its replacement.
 
 ## Unified offscreen host
 
@@ -56,6 +56,10 @@ Media WebAudio is isolated-world. Media element receives at most one `MediaEleme
 
 Background owns revisioned settings in `chrome.storage.local`. Revisions are written to physical storage before broadcast.
 Per-tab control session is stored in `chrome.storage.session` (`tabId+documentId+origin+resourceUrl`), containing 20 refresh-restorable fields.
+
+Settings commit and settings projection are separate authorities. A mutation ACK means the exact revision is durable and readable by a replacement worker; it does not claim every open tab has already observed the projection. `settings-projection.ts` owns one revision-coalescing queue for extension, Content, hotkey, shortcut, and restore projections. It preserves global/hotkey lanes while selecting the newest snapshot, retries real delivery failures on `50/200/800 ms`, records the last projected revision only after those lanes settle, and wakes from a Chrome alarm after a deferred failure. A destroyed or non-resident Content receiver is terminal for that document because its successor pulls the durable snapshot during bootstrap. Tab work is bounded to eight concurrent deliveries, and hotkey reconciliation reuses the already-enumerated tab snapshot. Global OSD, visualizer, language, and theme projection is presentation-only and never re-enters audio policy.
+
+The `volume`, `volumeBase`, and `boost` fields form one canonical value object. Partial site/preset merges combine the validated patch with existing state before one canonicalization pass, so changing only base or boost cannot persist a contradictory effective volume.
 
 | Patch source | Updates current-resource | Updates origin-portable |
 | --- | --- | --- |
@@ -145,6 +149,10 @@ This model removes document-lifetime heavy **hotkey ownership** for eligible sit
 
 Optional, capability-bound, authenticated. Requires HMAC-SHA-256 nonce challenge. Allowlisted commands bound to session/tab/generation/sequence.
 
+Remote generation advances in Background only after the authoritative offscreen host accepts the exact state. The host caches accepted state while unauthenticated or disconnected and sends it in the authenticated handshake; a hard send rejection leaves the last accepted generation unchanged, so the next command for that generation is not silently consumed. Out-of-order acknowledgements may advance but never regress accepted generation.
+
+Runtime RPC `source` is a claim, never authority by itself. Popup and page sources must match their physical sender; page mutations require the exact current top document; `remote` and `system` are internal-only and are rejected from runtime messages. The retired Content legacy mutation adapter no longer relabels itself as Popup.
+
 ## Protocol compatibility
 
 v2 envelopes validated at runtime. Compatibility adapters are temporary translation boundaries, not alternate protocols. Listeners own exact request-type sets.
@@ -155,7 +163,11 @@ Favicon/QR are UI/security boundaries, not media capabilities. Exact-element, Pi
 
 ## Production performance budgets
 
-`scripts/check-production-artifacts.ts` owns hard byte ceilings for the service-worker wake closure, manifest `document_start` closure, lean/bootstrap hosts, Capture-only and Remote-eventual offscreen closures, and Popup static closure. The gate measures production artifacts and fails on growth beyond the audited KiB buckets; an intentional increase must update this owner and the executable budget together. Source lines, total extension size, and local build time do not substitute for closure measurement.
+`scripts/check-production-artifacts.ts` owns hard byte ceilings for service-worker wake (256KiB), manifest `document_start` (24KiB), Content bootstrap (14KiB), lean hotkeys (11KiB), Capture-only offscreen (28KiB), Remote-eventual offscreen (72KiB), Popup static/eventual (144/152KiB), Content runtime eventual (176KiB), video effects (12KiB), Options eventual (40KiB), total JavaScript (680KiB), and total production artifact (780KiB). The v1.4.2 Windows candidate measures 248.8KiB, 18.3KiB, 12.0KiB, 9.1KiB, 24.1KiB, 68.2KiB, 141.7/147.2KiB, 167.0KiB, 10.9KiB, 37.2KiB, 658.2KiB, and 753.3KiB respectively. An intentional increase must update this owner and the executable budget together; source lines and local build time do not substitute for closure measurement.
+
+All tab-set operations use bounded concurrency. Settings and visualizer projection use eight workers, remote restoration uses four, and Capture/runtime-restart flows use their declared bounded fan-out owners. On failure, the fan-out owner stops admitting new items but waits for every live worker to retire before rejecting, so an immediate retry cannot overlap the previous generation and exceed the bound. A new tab-wide `Promise.all` is a release regression unless the owner proves a smaller physical bound.
+
+Release and cross-platform lanes build the production SPECTRA candidate exactly once before Chrome integration. `test:chrome:dist` consumes that existing `dist`; the developer convenience command `test:chrome` alone may prepend a development build. Production artifact integrity remains owned by the production build and is not repeated immediately afterward.
 
 ## Current implementation ownership
 

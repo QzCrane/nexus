@@ -2,7 +2,13 @@
 // goal: Auto-generate HALO registry artifacts from manifest files
 // eff: Canonical UI registry plus minimal background/install projections
 
-import { TOOLS_DIR, SCRIPTS_DIR, SYSTEM_DIR } from './registry-gen/config.ts';
+import { readFileSync } from 'node:fs';
+import {
+	HALO_MANIFEST,
+	TOOLS_DIR,
+	SCRIPTS_DIR,
+	SYSTEM_DIR,
+} from './registry-gen/config.ts';
 import { discoverPlugins, parseManifest } from './registry-gen/discover.ts';
 import {
 	generateBackgroundActiveProjection,
@@ -13,6 +19,12 @@ import { generateLoader } from './registry-gen/gen-loader.ts';
 import { generateI18n } from './registry-gen/gen-i18n.ts';
 
 function main() {
+	const args = process.argv.slice(2);
+	if (args.some((arg) => arg !== '--check' && arg !== '--write')
+		|| args.includes('--check') && args.includes('--write')) {
+		throw new Error('usage: generate-tool-registry.ts [--check|--write]');
+	}
+	const mode = args.includes('--check') ? 'check' : 'write';
 	console.log('🔍 Scanning plugins...');
 
 	const toolModules = discoverPlugins(TOOLS_DIR, 'tools');
@@ -32,10 +44,28 @@ function main() {
 	});
 
 	const validModules = allModules.filter((module) => manifestsMap.has(module.id));
+	const releaseVersion = JSON.parse(readFileSync(HALO_MANIFEST, 'utf8')).version;
+	if (typeof releaseVersion !== 'string' || !/^\d+\.\d+\.\d+$/u.test(releaseVersion)) {
+		throw new Error(`HALO manifest version is invalid: ${String(releaseVersion)}`);
+	}
 
 	for (const module of validModules) {
 		const manifest = manifestsMap.get(module.id);
 		const declaredType = manifest.pluginType;
+		if ('size' in manifest) {
+			throw new Error(
+				`${module.id}: source-directory size is not release artifact evidence; remove manifest.size`,
+			);
+		}
+		if (manifest.background) {
+			if ('sourceLine' in manifest.background) {
+				throw new Error(`${module.id}: background.sourceLine is unstable; use sourceAnchor`);
+			}
+			if (typeof manifest.background.sourceAnchor !== 'string'
+				|| manifest.background.sourceAnchor.trim().length === 0) {
+				throw new Error(`${module.id}: background.sourceAnchor must identify the live mechanism owner`);
+			}
+		}
 
 		if (module.dirType === 'tools' && declaredType && declaredType !== 'tool') {
 			console.error(`❌ Policy: '${module.id}' in src/tools/ must have pluginType:'tool' or omit it`);
@@ -57,13 +87,13 @@ function main() {
 
 	console.log(`📦 Found: ${toolCount} Tools + ${scriptCount} Scripts + ${systemCount} System`);
 
-	generateRegistry(validModules, manifestsMap);
-	generateBackgroundActiveProjection(validModules, manifestsMap);
-	generateScriptRuntimeManifest(validModules, manifestsMap);
-	generateLoader(validModules);
-	generateI18n(validModules);
+	generateRegistry(validModules, manifestsMap, releaseVersion, mode);
+	generateBackgroundActiveProjection(validModules, manifestsMap, mode);
+	generateScriptRuntimeManifest(validModules, manifestsMap, mode);
+	generateLoader(validModules, mode);
+	generateI18n(validModules, mode);
 
-	console.log('\n✨ Registry generation complete!');
+	console.log(`\n✨ Registry ${mode === 'check' ? 'check' : 'generation'} complete!`);
 }
 
 main();

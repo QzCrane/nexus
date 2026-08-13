@@ -20,13 +20,13 @@ function materializeCustomScript(script: UserScriptsSnapshotScript): UserScript 
 export function useUserScripts(): { scripts: UserScript[]; loading: boolean } {
 	const snapshot = useUserScriptsStorageSnapshot();
 	const {
-		installedModules,
+		enabledModules,
 		loading: modulesLoading,
 		degraded,
 	} = useModuleManager();
 	const enabled = !modulesLoading
 		&& !degraded
-		&& installedModules.some((module) => module.id === 'userscripts');
+		&& enabledModules.some((module) => module.id === 'userscripts');
 	const scripts = useMemo(() => {
 		if (!enabled || snapshot.failed) return [];
 		return snapshot.scripts.flatMap((script) => {

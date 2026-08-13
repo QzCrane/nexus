@@ -2,7 +2,6 @@
 	"id": "rot13",
 	"icon": "🔄",
 	"category": "encode",
-	"size": 10000,
 	"builtIn": false,
 	"keywords": [],
 	"pluginType": "tool"

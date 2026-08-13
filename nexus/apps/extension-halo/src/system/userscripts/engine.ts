@@ -69,38 +69,15 @@ export function initUserScriptsEngine(): () => void {
 	};
 }
 
-function executeUserScript(code: string, name: string): void {
-	try {
-		const safeName = name
-			.replace(/\\/g, '\\\\')
-			.replace(/'/g, "\\'")
-			.replace(/"/g, '\\"')
-			.replace(/\n/g, '\\n')
-			.replace(/\r/g, '\\r');
-		const scriptText = [
-			'try {',
-			// biome-ignore lint/style/useTemplate: concatenation required — see rule above (user code/safeName may contain backticks/`${}`)
-			'    ' + code,
-			// biome-ignore lint/style/useTemplate: concatenation required — see rule above (user code/safeName may contain backticks/`${}`)
-			'    console.log("[HALO Script] ' + safeName + ' executed");',
-			'} catch (e) {',
-			// biome-ignore lint/style/useTemplate: concatenation required — see rule above (user code/safeName may contain backticks/`${}`)
-			'    console.error("[HALO Script] ' + safeName + ' failed:", e);',
-			'}',
-		].join('\n');
-		const scriptEl = document.createElement('script');
-		scriptEl.textContent = scriptText;
-		const target = document.head || document.documentElement;
-		target.insertBefore(scriptEl, target.firstChild);
-		scriptEl.remove();
-	} catch (e) {
-		console.error(`[HALO Script] ${name} injection failed:`, e);
-	}
-}
-
 export async function injectScriptToCurrentTab(script: UserScript): Promise<boolean> {
 	try {
 		await requireInstalledModule();
+		const hasAccess = await chrome.permissions.contains({
+			permissions: ['userScripts'],
+			origins: ['*://*/*'],
+		});
+		if (!hasAccess) throw new Error('User Scripts permission and host access are required');
+		await ensureUserScriptsRuntimeReady();
 		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 		if (!tab?.id) return false;
 		if (script.type === 'css') {
@@ -109,12 +86,14 @@ export async function injectScriptToCurrentTab(script: UserScript): Promise<bool
 				css: script.code,
 			});
 		} else {
-			await chrome.scripting.executeScript({
+			const results = await chrome.userScripts.execute({
 				target: { tabId: tab.id },
-				func: executeUserScript as () => void,
-				args: [script.code, script.name],
-				world: 'MAIN',
-			} as chrome.scripting.ScriptInjection);
+				js: [{ code: script.code }],
+				world: script.world === 'MAIN' ? 'MAIN' : 'USER_SCRIPT',
+				injectImmediately: true,
+			});
+			const failure = results.find((result) => result.error);
+			if (failure?.error) throw new Error(failure.error);
 		}
 		await incrementRunCount(script.id);
 		return true;

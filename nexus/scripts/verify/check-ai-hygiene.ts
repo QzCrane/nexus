@@ -4,30 +4,27 @@
  * 捕获 AI 在重构过程中倾向于重新引入的架构违规：
  *  1. 通过 @nexus/<pkg>/src/... 深路径导入包内部
  *  2. 残留已删除的 branded type (TabId / VolumeLevel / DomainName)
- *  3. 相对 TS 导入缺少 .js 扩展名 (ESM 运行时要求)
- *  4. 引用已删除的 messages.contracts.ts 文件
+ *  3. 引用已删除的 messages.contracts.ts 文件
+ *  4. 仓库保持 bundler 模块解析；应用和包源码由构建器解析无扩展名相对导入
  *
  * Workspace lint 覆盖由 scripts/check-workspace-lint.ts 唯一拥有，
  * 此架构检查不维护第二份 package 或 baseline 清单。
  *
  * 扫描策略：
- *  - apps/+packages/ 一次遍历，对每个源文件读一次，按行应用 rule 1/2/3/4 全部检查
- *  - ROOT 一次补充遍历（仅 .js/.ts，跳过 apps/+packages 子树），仅应用 rule 4
+ *  - apps/+packages/ 一次遍历，对每个源文件读一次，按行应用 rule 1/2/3
+ *  - ROOT 一次补充遍历（仅 .js/.ts，跳过 apps/+packages 子树），仅应用 rule 3
  *  这把原 4 次重复扫描合并为 2 次（apps+packages ×1，ROOT ×1），同时保留原覆盖范围。
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { error, ok, warn, section } from './utils.ts';
+import { error, ok, section } from './utils.ts';
 
 /** 扫描时跳过的目录名（避免递归进入 node_modules / dist / 构建产物） */
 const SKIP_DIR_NAMES = new Set(['node_modules', 'dist', '.turbo', '.cache']);
 
 /** ROOT 补充扫描时额外跳过的目录（apps/+packages 已在主扫描覆盖） */
 const ROOT_SCAN_EXTRA_SKIP = new Set(['apps', 'packages']);
-
-/** 允许不带 .js 扩展名的静态资源后缀 */
-const ALLOWED_ASSET_EXTENSIONS = ['.js', '.json', '.css', '.svg'];
 
 /**
  * 检查 AI 卫生规则入口。
@@ -38,21 +35,18 @@ export function checkAiHygiene(ROOT) {
 
 	const deepImportRe = /from\s+['"]@nexus\/[^'"]+\/src\//;
 	const brandedTypeRe = /\b(TabId|VolumeLevel|DomainName)\b/;
-	const relativeImportRe = /from\s+['"](\.\.?\/[^'"]+)['"]/;
 	const deletedRefRe = /[/\\]messages\.contracts/;
 
 	const deepImportViolations = [];
 	const brandedTypeViolations = [];
 	const deletedContractsViolations = [];
-	let relativeImportWarnings = 0;
 
-	// 主扫描：apps/+packages 一次遍历，应用 rule 1/2/3/4
+	// 主扫描：apps/+packages 一次遍历，应用 rule 1/2/3
 	const sourceScanRoots = [path.join(ROOT, 'apps'), path.join(ROOT, 'packages')];
 	for (const scanRoot of sourceScanRoots) {
 		scanSourceTree(scanRoot, (fullPath, entry) => {
 			if (!isScannableSourceFile(entry.name)) return;
 			const isTest = isTestFile(entry.name);
-			const isTsx = entry.name.endsWith('.tsx');
 			const relPath = relPathOf(fullPath, ROOT);
 
 			const lines = readLines(fullPath);
@@ -70,15 +64,7 @@ export function checkAiHygiene(ROOT) {
 					brandedTypeViolations.push({ relPath, line: i + 1, name: brandedMatch[1] });
 				}
 
-				// Rule 3: 相对导入缺 .js 扩展名（跳过测试文件 + biome-ignore 行）
-				if (!isTest && !line.includes('// biome-ignore')) {
-					const relMatch = line.match(relativeImportRe);
-					if (relMatch && !hasAllowedRelativeExtension(relMatch[1], isTsx, false)) {
-						relativeImportWarnings++;
-					}
-				}
-
-				// Rule 4: 引用已删除的 messages.contracts（所有源文件均属于脚本文件范畴）
+				// Rule 3: 引用已删除的 messages.contracts（所有源文件均属于脚本文件范畴）
 				if (line.match(deletedRefRe)) {
 					deletedContractsViolations.push({ relPath, line: i + 1 });
 				}
@@ -103,8 +89,8 @@ export function checkAiHygiene(ROOT) {
 
 	reportDeepImports(deepImportViolations);
 	reportBrandedTypes(brandedTypeViolations);
-	reportRelativeImports(relativeImportWarnings);
 	reportDeletedContracts(deletedContractsViolations);
+	reportBundlerResolution(ROOT);
 }
 
 function reportDeepImports(violations) {
@@ -127,12 +113,6 @@ function reportBrandedTypes(violations) {
 	ok('无 branded type 残留');
 }
 
-function reportRelativeImports(count) {
-	if (count > 0) {
-		warn(`${count} relative imports missing .js extension (use .js for runtime ESM)`);
-	}
-}
-
 function reportDeletedContracts(violations) {
 	if (violations.length > 0) {
 		for (const v of violations) {
@@ -141,6 +121,16 @@ function reportDeletedContracts(violations) {
 		return;
 	}
 	ok('无 messages.contracts 引用');
+}
+
+function reportBundlerResolution(ROOT) {
+	const configPath = path.join(ROOT, 'tsconfig.base.json');
+	const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+	if (config.compilerOptions?.moduleResolution !== 'bundler') {
+		error('tsconfig.base.json must keep moduleResolution=bundler before extensionless imports are valid');
+		return;
+	}
+	ok('无扩展名相对导入由 moduleResolution=bundler 与生产构建共同拥有');
 }
 
 /** 判定文件是否为可扫描的 .ts/.tsx 源文件（排除 .d.ts） */
@@ -169,20 +159,6 @@ function readLines(fullPath) {
 /** 计算相对仓库根的 Unix 风格路径 */
 function relPathOf(fullPath, ROOT) {
 	return fullPath.replace(ROOT + path.sep, '').replace(/\\/g, '/');
-}
-
-/**
- * 判定相对导入路径是否使用了允许的扩展名。
- * - `.js`/`.json`/`.css`/`.svg` 始终允许
- * - `.tsx` 仅在导入方为 .tsx 文件时允许
- * - `.ts` 仅在测试文件（bun:test）中允许
- */
-function hasAllowedRelativeExtension(importPath, isTsxImporter, isTestImporter) {
-	const ext = path.extname(importPath);
-	if (ALLOWED_ASSET_EXTENSIONS.includes(ext)) return true;
-	if (ext === '.tsx' && isTsxImporter) return true;
-	if (ext === '.ts' && isTestImporter) return true;
-	return false;
 }
 
 /**

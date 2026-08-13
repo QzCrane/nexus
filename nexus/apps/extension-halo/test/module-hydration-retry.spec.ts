@@ -2,16 +2,16 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import {
 	ModuleManager,
-	type ModuleInstallationPersistence,
+	type ModuleEnablementPersistence,
 } from '../src/kernel/managers/module-manager';
 import { ALL_MODULES, CORE_MODULES, OPTIONAL_MODULES } from '../src/kernel/registry/module-registry';
 
 function failingThenHealthyPersistence(): {
-	persistence: ModuleInstallationPersistence;
+	persistence: ModuleEnablementPersistence;
 	recover(): void;
 } {
 	let failing = true;
-	const persistence: ModuleInstallationPersistence = {
+	const persistence: ModuleEnablementPersistence = {
 		loadDisabled: async () => {
 			if (failing) throw new Error('storage unavailable');
 			return new Set();
@@ -33,20 +33,20 @@ describe('module hydration retry publication', () => {
 			await manager.initialize();
 			const degraded = manager.getSnapshot();
 			expect(degraded.degraded).toBe(true);
-			expect(degraded.installedModules.map((module) => module.id)).toEqual(
+			expect(degraded.enabledModules.map((module) => module.id)).toEqual(
 				CORE_MODULES.map((module) => module.id),
 			);
-			expect(degraded.availableModules).toHaveLength(OPTIONAL_MODULES.length);
+			expect(degraded.disabledModules).toHaveLength(OPTIONAL_MODULES.length);
 
 			let notifications = 0;
 			const unsubscribe = manager.subscribe(() => { notifications += 1; });
 			state.recover();
-			expect(await manager.retryInstallationState()).toBe(true);
+			expect(await manager.retryEnablementState()).toBe(true);
 			const recovered = manager.getSnapshot();
 			expect(recovered).not.toBe(degraded);
 			expect(recovered.degraded).toBe(false);
 			expect(recovered.revision).toBe(degraded.revision + 1);
-			expect(recovered.installedModules).toHaveLength(ALL_MODULES.length);
+			expect(recovered.enabledModules).toHaveLength(ALL_MODULES.length);
 			expect(notifications).toBe(1);
 			unsubscribe();
 		} finally {
@@ -55,7 +55,7 @@ describe('module hydration retry publication', () => {
 	});
 
 	test('does not publish a false revision when a healthy retry changes no authority', async () => {
-		const persistence: ModuleInstallationPersistence = {
+		const persistence: ModuleEnablementPersistence = {
 			loadDisabled: async () => new Set(),
 			readEnabled: async () => true,
 			setEnabled: async () => undefined,
@@ -66,7 +66,7 @@ describe('module hydration retry publication', () => {
 		const initial = manager.getSnapshot();
 		let notifications = 0;
 		const unsubscribe = manager.subscribe(() => { notifications += 1; });
-		expect(await manager.retryInstallationState()).toBe(true);
+		expect(await manager.retryEnablementState()).toBe(true);
 		expect(manager.getSnapshot()).toBe(initial);
 		expect(notifications).toBe(0);
 		unsubscribe();
@@ -74,7 +74,7 @@ describe('module hydration retry publication', () => {
 
 	test('fails every optional projection closed when a previously healthy authority degrades', async () => {
 		let failing = false;
-		const persistence: ModuleInstallationPersistence = {
+		const persistence: ModuleEnablementPersistence = {
 			loadDisabled: async () => {
 				if (failing) throw new Error('storage unavailable');
 				return new Set();
@@ -85,7 +85,7 @@ describe('module hydration retry publication', () => {
 		};
 		const manager = new ModuleManager(persistence);
 		await manager.initialize();
-		expect(manager.getSnapshot().installedModules).toHaveLength(ALL_MODULES.length);
+		expect(manager.getSnapshot().enabledModules).toHaveLength(ALL_MODULES.length);
 		const optional = OPTIONAL_MODULES[0];
 		if (!optional) throw new Error('HALO test requires an optional module');
 
@@ -95,22 +95,22 @@ describe('module hydration retry publication', () => {
 		console.error = () => undefined;
 		try {
 			failing = true;
-			expect(await manager.retryInstallationState()).toBe(false);
+			expect(await manager.retryEnablementState()).toBe(false);
 			const degraded = manager.getSnapshot();
 			expect(degraded.degraded).toBe(true);
-			expect(degraded.installedModules.map((module) => module.id)).toEqual(
+			expect(degraded.enabledModules.map((module) => module.id)).toEqual(
 				CORE_MODULES.map((module) => module.id),
 			);
-			expect(degraded.availableModules).toHaveLength(OPTIONAL_MODULES.length);
-			expect(manager.isInstalled(optional.id)).toBe(false);
-			expect(manager.getState(optional.id)?.status).toBe('available');
+			expect(degraded.disabledModules).toHaveLength(OPTIONAL_MODULES.length);
+			expect(manager.isEnabled(optional.id)).toBe(false);
+			expect(manager.getState(optional.id)?.status).toBe('disabled');
 			expect(notifications).toBe(1);
 
 			failing = false;
-			expect(await manager.retryInstallationState()).toBe(true);
+			expect(await manager.retryEnablementState()).toBe(true);
 			expect(manager.getSnapshot().degraded).toBe(false);
-			expect(manager.getSnapshot().installedModules).toHaveLength(ALL_MODULES.length);
-			expect(manager.isInstalled(optional.id)).toBe(true);
+			expect(manager.getSnapshot().enabledModules).toHaveLength(ALL_MODULES.length);
+			expect(manager.isEnabled(optional.id)).toBe(true);
 			expect(notifications).toBe(2);
 		} finally {
 			console.error = originalError;

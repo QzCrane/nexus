@@ -43,6 +43,7 @@ export const RELEASE_STEPS = Object.freeze([
 	{ label: 'architecture verify', args: ['run', 'verify:v'] },
 	{ label: 'documentation architecture', args: ['run', 'docs:check'] },
 	{ label: 'platform contract', args: ['run', 'check:platform'] },
+	{ label: 'repository governance contracts', args: ['run', 'check:governance'] },
 	{ label: 'public projection contract', args: ['run', 'check:public-projections'] },
 	{ label: 'frozen dependency install', args: ['install', '--frozen-lockfile'] },
 	{ label: 'toolchain verify', args: ['run', 'check:toolchain'] },
@@ -50,10 +51,9 @@ export const RELEASE_STEPS = Object.freeze([
 	{ label: 'workspace dependency build', args: ['run', 'build:spectra-deps'] },
 	{ label: 'TypeScript check', args: ['run', 'typecheck:spectra'] },
 	{ label: 'unit and contract tests', args: ['run', '--cwd', 'apps/extension-spectra', 'test:unit'] },
-	{ label: 'Chrome integration', args: ['run', '--cwd', 'apps/extension-spectra', 'test:chrome'] },
 	{ label: 'production build', args: ['run', '--cwd', 'apps/extension-spectra', 'build:prod'] },
-	{ label: 'production artifact integrity', args: ['run', '--cwd', 'apps/extension-spectra', 'integrity'] },
-	{ label: 'dependency audit', args: ['audit'] },
+	{ label: 'production Chrome integration', args: ['run', '--cwd', 'apps/extension-spectra', 'test:chrome:dist'] },
+	{ label: 'dependency audit', args: ['run', 'audit:dependencies'] },
 	{
 		label: 'remote-site live deployment',
 		args: [

@@ -17,6 +17,7 @@ export const zh = {
 			pageCapture: { name: '页面捕获', desc: '将网页保存为完整的 MHTML 文件' },
 			clipboardRead: { name: '剪贴板读取', desc: '从您的剪贴板读取文本内容' },
 			clipboardWrite: { name: '剪贴板写入', desc: '将文本内容复制到您的剪贴板' },
+			cookies: { name: 'Cookie', desc: '查看与编辑当前所选网站的 Cookie' },
 			downloads: { name: '下载管理', desc: '管理和保存文件下载' },
 			history: { name: '历史记录', desc: '访问您的浏览器浏览历史' },
 			bookmarks: { name: '书签管理', desc: '访问并管理您的浏览器书签' },

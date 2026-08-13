@@ -4,15 +4,14 @@
 import type { PluginMeta } from '../core/tool-registry-types';
 import { PLUGIN_REGISTRY, type PluginMeta as GeneratedPluginMeta } from './_generated';
 
-// Module installation status
-export type ModuleStatus = 'available' | 'installed' | 'downloading' | 'updating' | 'error';
+// Bundled-module enablement status. No packaged bytes are installed or removed.
+export type ModuleStatus = 'disabled' | 'enabled' | 'enabling' | 'updating' | 'error';
 
 // Module state (local installation status)
 export interface ModuleState {
 	id: string;
 	status: ModuleStatus;
-	installedVersion?: string;
-	installedAt?: number;
+	enabledVersion?: string;
 	lastUsed?: number;
 	error?: string;
 }
@@ -29,7 +28,6 @@ function enrichWithStatus(plugin: GeneratedPluginMeta): PluginMeta {
 	return {
 		...plugin,
 		status: plugin.builtIn ? 'ready' : 'available',
-		version: '1.0.0',
 	};
 }
 
@@ -45,13 +43,6 @@ export const OPTIONAL_MODULES: PluginMeta[] = ALL_MODULES.filter(m => !m.builtIn
 // Get module by ID
 export const getModuleMeta = (id: string): PluginMeta | undefined =>
 	ALL_MODULES.find(m => m.id === id);
-
-// Format size for display
-export const formatModuleSize = (bytes: number): string => {
-	if (bytes < 1024) return `${bytes} B`;
-	if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
-	return `${(bytes / 1048576).toFixed(1)} MB`;
-};
 
 // Re-exports for backward compatibility
 export { PLUGIN_REGISTRY, type PluginMeta as GeneratedPluginMeta } from './_generated';

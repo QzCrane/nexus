@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { Card, Toggle } from '@nexus/ui-kit';
 import { useTranslation } from '../../../../i18n';
 import { type HoverZoomSettings, DEFAULT_SETTINGS, STORAGE_KEY, type KeyCombo, type AltKeyMode } from '../../types';
-import { enableAntiHotlink, disableAntiHotlink, isAntiHotlinkEnabled } from '../../logic/engine';
+import { parseHoverZoomSettings } from '../../settings';
+import type { AntiHotlinkReceipt } from '../../logic/engine';
 import { styles } from './panel.styles';
 import { KeyComboEditor } from './KeyComboEditor';
 import { ViewSettings } from './ViewSettings';
@@ -15,23 +16,67 @@ export const HoverZoomPanel: React.FC = () => {
     const [settings, setSettings] = useState<HoverZoomSettings>(DEFAULT_SETTINGS);
     const [antiHotlinkActive, setAntiHotlinkActive] = useState(false);
 
-    useEffect(() => {
-        (async () => {
-            const res = await chrome.storage.local.get(STORAGE_KEY);
-            if (res[STORAGE_KEY]) setSettings({ ...DEFAULT_SETTINGS, ...res[STORAGE_KEY] });
-            setAntiHotlinkActive(await isAntiHotlinkEnabled());
-        })();
+    const reconcileAntiHotlink = useCallback(async (): Promise<AntiHotlinkReceipt> => {
+        try {
+            const response: unknown = await chrome.runtime.sendMessage({ type: 'HALO_HZ_RECONCILE' });
+            if (typeof response !== 'object' || response === null) {
+                throw new Error('missing anti-hotlink receipt');
+            }
+            const receipt = response as Partial<AntiHotlinkReceipt>;
+            if (typeof receipt.desired !== 'boolean' || typeof receipt.active !== 'boolean' || typeof receipt.changed !== 'boolean') {
+                throw new Error('invalid anti-hotlink receipt');
+            }
+            setAntiHotlinkActive(receipt.active);
+            return receipt as AntiHotlinkReceipt;
+        } catch (error: unknown) {
+            setAntiHotlinkActive(false);
+            return {
+                desired: false,
+                active: false,
+                changed: false,
+                error: error instanceof Error ? error.message : String(error),
+            };
+        }
     }, []);
+
+    useEffect(() => {
+        let disposed = false;
+        let revision = 0;
+        const apply = (value: unknown) => {
+            if (disposed) return;
+            revision += 1;
+            setSettings(parseHoverZoomSettings(value));
+            void reconcileAntiHotlink();
+        };
+        const listener = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+            if (area !== 'local' || !changes[STORAGE_KEY]) return;
+            apply(changes[STORAGE_KEY].newValue);
+        };
+        chrome.storage.onChanged.addListener(listener);
+        const initialRevision = revision;
+        void chrome.storage.local.get(STORAGE_KEY).then((result) => {
+            if (!disposed && revision === initialRevision) apply(result[STORAGE_KEY]);
+        }).catch(() => {
+            if (!disposed && revision === initialRevision) apply(undefined);
+        });
+        return () => {
+            disposed = true;
+            chrome.storage.onChanged.removeListener(listener);
+        };
+    }, [reconcileAntiHotlink]);
 
     const update = useCallback(async (patch: Partial<HoverZoomSettings>) => {
         const next = { ...settings, ...patch };
         setSettings(next);
-        await chrome.storage.local.set({ [STORAGE_KEY]: next });
-        if (patch.antiHotlink !== undefined) {
-            patch.antiHotlink ? await enableAntiHotlink() : await disableAntiHotlink();
-            setAntiHotlinkActive(patch.antiHotlink);
+        try {
+            await chrome.storage.local.set({ [STORAGE_KEY]: next });
+            if (patch.antiHotlink !== undefined) await reconcileAntiHotlink();
+        } catch (error: unknown) {
+            setSettings(settings);
+            if (patch.antiHotlink !== undefined) setAntiHotlinkActive(false);
+            console.error('[HALO:HoverZoom] Settings update failed', error);
         }
-    }, [settings]);
+    }, [settings, reconcileAntiHotlink]);
 
     const updateResourceKeys = (key: 'imageKey' | 'videoKey', combo: KeyCombo) => {
         update({ resourceKeys: { ...settings.resourceKeys, [key]: combo } });

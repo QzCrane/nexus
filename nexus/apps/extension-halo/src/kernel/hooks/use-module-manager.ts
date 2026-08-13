@@ -14,20 +14,20 @@ const BUILTIN_MODULES = Object.freeze(ALL_MODULES.filter((module) => module.buil
 const FALLBACK_MODULE_SNAPSHOT: ModuleManagerSnapshot = Object.freeze({
 	revision: 0,
 	degraded: true,
-	installedModules: BUILTIN_MODULES,
-	availableModules: Object.freeze([]) as readonly ModuleMeta[],
+	enabledModules: BUILTIN_MODULES,
+	disabledModules: Object.freeze([]) as readonly ModuleMeta[],
 });
 
 interface UseModuleManagerResult {
 	loading: boolean;
 	degraded: boolean;
-	installedModules: readonly ModuleMeta[];
-	availableModules: readonly ModuleMeta[];
+	enabledModules: readonly ModuleMeta[];
+	disabledModules: readonly ModuleMeta[];
 	getStatus: (id: string) => ModuleStatus;
-	install: (id: string) => Promise<void>;
-	uninstall: (id: string) => Promise<void>;
+	enable: (id: string) => Promise<void>;
+	disable: (id: string) => Promise<void>;
 	retry: () => Promise<boolean>;
-	isInstalled: (id: string) => boolean;
+	isEnabled: (id: string) => boolean;
 	isCore: (id: string) => boolean;
 }
 
@@ -62,26 +62,26 @@ export const useModuleManager = (): UseModuleManagerResult => {
 	const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
 	const getStatus = useCallback((id: string): ModuleStatus => {
-		if (!manager) return isBuiltIn(id) ? 'installed' : 'available';
-		return manager.getState(id)?.status ?? 'available';
+		if (!manager) return isBuiltIn(id) ? 'enabled' : 'disabled';
+		return manager.getState(id)?.status ?? 'disabled';
 	}, [manager]);
 
-	const install = useCallback(async (id: string): Promise<void> => {
+	const enable = useCallback(async (id: string): Promise<void> => {
 		if (!manager) return;
-		await manager.install(id);
+		await manager.enable(id);
 	}, [manager]);
 
-	const uninstall = useCallback(async (id: string): Promise<void> => {
+	const disable = useCallback(async (id: string): Promise<void> => {
 		if (!manager) return;
-		await manager.uninstall(id);
+		await manager.disable(id);
 	}, [manager]);
 
 	const retry = useCallback(async (): Promise<boolean> => (
-		manager ? manager.retryInstallationState() : false
+		manager ? manager.retryEnablementState() : false
 	), [manager]);
 
-	const isInstalled = useCallback((id: string): boolean => (
-		manager ? manager.isInstalled(id) : isBuiltIn(id)
+	const isEnabled = useCallback((id: string): boolean => (
+		manager ? manager.isEnabled(id) : isBuiltIn(id)
 	), [manager]);
 
 	const isCore = useCallback((id: string): boolean => isBuiltIn(id), []);
@@ -89,13 +89,13 @@ export const useModuleManager = (): UseModuleManagerResult => {
 	return {
 		loading,
 		degraded: snapshot.degraded,
-		installedModules: snapshot.installedModules,
-		availableModules: snapshot.availableModules,
+		enabledModules: snapshot.enabledModules,
+		disabledModules: snapshot.disabledModules,
 		getStatus,
-		install,
-		uninstall,
+		enable,
+		disable,
 		retry,
-		isInstalled,
+		isEnabled,
 		isCore,
 	};
 };

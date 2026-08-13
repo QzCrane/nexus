@@ -38,6 +38,7 @@ import {
 	visualizerSubscriberUnion,
 	type VisualizerSubscriberLeases,
 } from '../visualizer-subscriber-registry';
+import { forEachBounded } from '../bounded-fanout';
 
 const sessionIdentityFromSender = identityFromSender;
 
@@ -129,32 +130,36 @@ async function updateVisualizerSubscriptions(
 	}
 	const removedPageTabs = [...subscribedPageTabs].filter((tabId) => !nextContentTabs.has(tabId));
 	const addedPageTabs = [...nextContentTabs].filter((tabId) => !subscribedPageTabs.has(tabId));
-	const pageResults = await Promise.all([
-		...removedPageTabs.map(async (tabId) => {
+	const pageResults: Array<{ tabId: number; action: 'add' | 'remove'; accepted: boolean }> = [];
+	const pageChanges = [
+		...removedPageTabs.map((tabId) => ({ tabId, action: 'remove' as const })),
+		...addedPageTabs.map((tabId) => ({ tabId, action: 'add' as const })),
+	];
+	await forEachBounded(pageChanges, 8, async ({ tabId, action }) => {
+		if (action === 'remove') {
 			const response = await sendSpectraTabRequest(
-			tabId,
-			'spectra.audio.visualizer.subscription.set',
-			{ subscribed: false },
-			).catch(() => null);
-			return {
 				tabId,
-				action: 'remove' as const,
+				'spectra.audio.visualizer.subscription.set',
+				{ subscribed: false },
+			).catch(() => null);
+			pageResults.push({
+				tabId,
+				action,
 				accepted: response === null || (response.ok === true && response.data.subscribed === false),
-			};
-		}),
-		...addedPageTabs.map(async (tabId) => {
-			const response = await sendSpectraTabRequest(
+			});
+			return;
+		}
+		const response = await sendSpectraTabRequest(
 			tabId,
 			'spectra.audio.visualizer.subscription.set',
 			{ subscribed: true },
-			).catch(() => null);
-			return {
-				tabId,
-				action: 'add' as const,
-				accepted: response?.ok === true && response.data.subscribed === true,
-			};
-		}),
-	]);
+		).catch(() => null);
+		pageResults.push({
+			tabId,
+			action,
+			accepted: response?.ok === true && response.data.subscribed === true,
+		});
+	});
 	// Page subscriptions are independent observation targets. One restricted,
 	// navigating, or not-yet-ready tab must not suppress frames from every other
 	// card in the same Popup batch. Track only acknowledgements so failed adds or
@@ -296,7 +301,7 @@ async function getVisualizerBatchNow(payload: VisualizerBatchPayload): Promise<{
 		}
 	}
 
-	await Promise.all(pageTabIds.map(async (tabId) => {
+	await forEachBounded(pageTabIds, 8, async (tabId) => {
 		const response = await sendSpectraTabRequest(
 			tabId,
 			'spectra.audio.visualizer.get',
@@ -304,7 +309,7 @@ async function getVisualizerBatchNow(payload: VisualizerBatchPayload): Promise<{
 		).catch(() => null);
 		const buffer = response?.ok ? response.data.buffer : null;
 		frames[String(tabId)] = normalizeVisualizerFrame(buffer);
-	}));
+	});
 
 	return { subscriberId: payload.subscriberId, generation: payload.generation, frames };
 }

@@ -2,7 +2,6 @@
 	"id": "reader-mode",
 	"icon": "📖",
 	"category": "browser",
-	"size": 25000,
 	"builtIn": false,
 	"keywords": []
 }

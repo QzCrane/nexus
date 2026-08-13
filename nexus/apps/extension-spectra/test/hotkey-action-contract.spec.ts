@@ -115,6 +115,7 @@ describe('editable hotkey action contract', () => {
 		);
 		expect(bootstrap).toContain('releaseDefaultScalarKeys');
 		expect(bootstrap).toContain('publishDefaultScalarGesture');
+		expect(bootstrap).toContain('publishHotkeyActualFeedback(message)');
 		const eventArbiter = readFileSync(
 			resolve(import.meta.dir, '../src/content/input/hotkey-event.ts'),
 			'utf8',
@@ -146,7 +147,7 @@ describe('editable hotkey action contract', () => {
 		expect(bootstrap).toMatch(directKeyboardRegistration);
 		expect(listener).not.toMatch(directKeyboardRegistration);
 		expect(listener).not.toMatch(/\.stop(?:Immediate)?Propagation\(/u);
-		expect(listener).toContain('subscribeDefaultScalarGesture(handleDefaultScalarGesture)');
+		expect(listener).toContain('subscribeHotkeyReplay((signal) =>');
 		expect(listener).toContain('subscribePhysicalHotkeyRelease(releaseSiteHotkeys)');
 		expect(listener).toContain('resolveSpectraDefaultHotkeyAction(e) !== null');
 		expect(listener).toContain('isEditableHotkeyEvent(e)');

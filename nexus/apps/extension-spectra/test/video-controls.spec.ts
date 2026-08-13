@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { requireValue } from './helpers/require-value';
-import type { ControlSnapshot, MediaTarget, VideoFilterState } from '@nexus/contracts';
+import type { ControlFieldState, ControlSnapshot, MediaTarget, VideoFilterState } from '@nexus/contracts';
 import {
 	bindVideoControls,
 	setVideoControlTabId,
@@ -46,6 +46,22 @@ class FakePanel {
 
 	querySelectorAll<T>(_selector: string): T[] {
 		return [];
+	}
+}
+
+class FakeToast {
+	className = '';
+	textContent = '';
+	removed = false;
+	readonly attributes = new Map<string, string>();
+	readonly classList = { add: (_name: string) => undefined };
+
+	setAttribute(name: string, value: string): void {
+		this.attributes.set(name, value);
+	}
+
+	remove(): void {
+		this.removed = true;
 	}
 }
 
@@ -137,11 +153,60 @@ describe('Popup video control transport', () => {
 		harness.resolveRequest(1, target, 6);
 		await waitFor(() => harness.timers.size === 0);
 	});
+
+	test('surfaces a rejected filter mutation instead of reporting silent success', async () => {
+		const panel = new FakePanel();
+		const harness = installHarness(panel);
+		const target: MediaTarget = {
+			frameId: 0,
+			documentId: 'document:video-controls-rejection',
+			mediaId: 'media:video-controls-rejection',
+			sourceRevision: 1,
+			kind: 'video',
+		};
+		const authoritativeFilter: VideoFilterState = {
+			brightness: 100,
+			contrast: 100,
+			saturate: 100,
+			grayscale: false,
+			invert: false,
+		};
+		const snapshot: ControlSnapshot = {
+			tabId: 7,
+			documentId: target.documentId,
+			origin: 'https://media.example',
+			generation: 1,
+			revision: 2,
+			activeMedia: target,
+			activeVideo: target,
+			fields: {
+				filter: fieldState(authoritativeFilter, 2, 'authoritative-filter'),
+			},
+		};
+		setVideoControlTabId(7);
+		bindVideoControls();
+		syncVideoControlSnapshot(snapshot);
+		panel.brightness.value = '150';
+		panel.brightness.oninput?.();
+		harness.fireOnlyTimer();
+		await waitFor(() => harness.requests.length === 1);
+		harness.rejectRequest(0, 'The active video no longer exists');
+		await waitFor(() => harness.toasts.length === 1);
+		expect(harness.toasts[0]?.textContent).toBe('The active video no longer exists');
+		expect(harness.toasts[0]?.attributes.get('role')).toBe('alert');
+		await waitFor(() => harness.requests.length === 2);
+		const refresh = requireValue(harness.requests[1], 'Expected authoritative snapshot refresh');
+		expect((refresh.message as { type?: unknown }).type).toBe('spectra.control.snapshot.get');
+		expect(panel.brightness.value).toBe('100');
+		harness.resolveSnapshotRequest(1, snapshot);
+		await Promise.resolve();
+	});
 });
 
 function installHarness(panel: FakePanel) {
 	const timers = new Map<number, () => void>();
 	const requests: Array<{ message: unknown; resolve: (response: unknown) => void }> = [];
+	const toasts: FakeToast[] = [];
 	let nextTimerId = 0;
 	let now = 0;
 	const fakeWindow = new EventTarget();
@@ -149,6 +214,8 @@ function installHarness(panel: FakePanel) {
 		configurable: true,
 		value: {
 			activeElement: null,
+			body: { appendChild: (toast: FakeToast) => toasts.push(toast) },
+			createElement: () => new FakeToast(),
 			getElementById: (id: string) => id === 'side-panel' ? panel : null,
 		},
 	});
@@ -182,6 +249,7 @@ function installHarness(panel: FakePanel) {
 	return {
 		timers,
 		requests,
+		toasts,
 		fireOnlyTimer() {
 			expect(timers.size).toBe(1);
 			const [id, callback] = requireValue(
@@ -213,10 +281,23 @@ function installHarness(panel: FakePanel) {
 				},
 			});
 		},
+		rejectRequest(index: number, message: string) {
+			const request = requests[index];
+			if (!request) throw new Error(`Missing request ${index}`);
+			request.resolve({
+				ok: false,
+				error: { code: 'stale_target', message, retryable: true },
+			});
+		},
+		resolveSnapshotRequest(index: number, snapshot: ControlSnapshot) {
+			const request = requests[index];
+			if (!request) throw new Error(`Missing request ${index}`);
+			request.resolve({ ok: true, data: snapshot });
+		},
 	};
 }
 
-function fieldState(actual: unknown, revision: number, intentId: string) {
+function fieldState<T>(actual: T, revision: number, intentId: string): ControlFieldState<T> {
 	return {
 		desired: actual,
 		actual,

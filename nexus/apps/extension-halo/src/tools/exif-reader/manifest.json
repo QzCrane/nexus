@@ -2,7 +2,6 @@
 	"id": "exif-reader",
 	"icon": "📷",
 	"category": "media",
-	"size": 25000,
 	"builtIn": false,
 	"keywords": []
 }

@@ -2,7 +2,6 @@
 	"id": "hover-zoom",
 	"icon": "🔍",
 	"category": "media",
-	"size": 35000,
 	"status": "ready",
 	"builtIn": true,
 	"keywords": [
@@ -31,7 +30,7 @@
 		"level": "idle",
 		"descriptionKey": "impact.hover_zoom",
 		"sourceFile": "content/hover-zoom.ts",
-		"sourceLine": 84,
+		"sourceAnchor": "document.addEventListener('mouseover', onOver, true)",
 		"sourceDetail": "light document mouse/key listeners attach only while Hover Zoom is enabled; resolver/viewer code loads only after a valid preview intent"
 	}
 }

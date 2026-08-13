@@ -98,7 +98,6 @@ function applyCaptureEvent(deps: MessageHandlerDeps, message: unknown): boolean 
 function applyContentSettingsEvent(deps: MessageHandlerDeps, message: unknown): boolean {
 	if (!isSpectraEventEnvelope(message) || message.type !== 'spectra.content.settings.changed') return false;
 	deps.settingsManager.handleMessage(message);
-	deps.policyExecutor?.applyState();
 	return true;
 }
 

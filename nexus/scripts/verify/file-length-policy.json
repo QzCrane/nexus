@@ -1,0 +1,36 @@
+{
+	"schemaVersion": 1,
+	"defaultMaxLines": 1000,
+	"exceptions": {
+		"apps/extension-spectra/src/background/control-coordinator.ts": {
+			"maxLines": 2600,
+			"owner": "spectra-control-coordinator",
+			"rationale": "One transaction owner currently preserves target identity, strategy escalation, readback, rollback, revision and sender authorization without cross-module partial commits.",
+			"decompositionTrigger": "Split only when a typed transaction sub-owner can retain one revision writer and the full source-by-sender authorization matrix across dynamic and Chrome tests."
+		},
+		"apps/extension-spectra/src/background/settings-repository.ts": {
+			"maxLines": 1120,
+			"owner": "spectra-settings-repository",
+			"rationale": "Migration, schema normalization, revision compare-and-swap and the physical write transaction remain one durable repository authority.",
+			"decompositionTrigger": "Extract only pure value objects whose property tests prove no storage, revision, migration or unknown-field ownership crosses the boundary."
+		},
+		"apps/extension-spectra/src/content/logic/native-media-executor.ts": {
+			"maxLines": 1950,
+			"owner": "spectra-native-media-executor",
+			"rationale": "Native target selection, browser operation and exact readback share one media identity and rollback boundary.",
+			"decompositionTrigger": "Split a capability family only after its target/readback/rollback contract is executable independently and cannot create a second media selector."
+		},
+		"packages/contracts/src/control.contracts.ts": {
+			"maxLines": 1850,
+			"owner": "spectra-control-contracts",
+			"rationale": "The exhaustive field, operation, strategy and runtime validation graph is one public contract surface with compile-time totality checks.",
+			"decompositionTrigger": "Split only along exported contract domains while retaining one index that enforces exhaustive capability and validator coverage."
+		},
+		"packages/contracts/src/spectra.protocol.ts": {
+			"maxLines": 2050,
+			"owner": "spectra-wire-protocol",
+			"rationale": "Request/event envelope definitions and validators remain co-located so a new wire type cannot ship without its runtime validator.",
+			"decompositionTrigger": "Split only when a generated or type-checked registry proves every wire envelope has exactly one exported validator and no circular runtime dependency."
+		}
+	}
+}

@@ -565,9 +565,10 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(hotkeys).toContain("variant: 'alternate-target'");
 		expect(hotkeys).toContain('feedbackState.appliedConfig');
 		expect(hotkeys).toContain('commitHotkeyActualFeedback(');
-		expect(hotkeys).toContain(
-			'!ownsHotkeyActualOSDGesture(message.payload.gesture)',
+		expect(hotkeys).toMatch(
+			/!admitsHotkeyActualOSDGesture\([\s\S]{0,180}!isHotkeyGestureReleased\(message\.payload\.gesture\)/u,
 		);
+		expect(hotkeys).toContain('claimHotkeyActualOSDGesture(message.payload.gesture)');
 		expect(hotkeys).toContain(
 			'resolveSpectraHotkeyActualFeedback(binding.action, result)',
 		);

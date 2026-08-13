@@ -24,6 +24,7 @@ import { readPageMediaField } from '../logic/page-media-bridge';
 import {
 	nextScalarGestureId,
 	publishDefaultScalarGesture,
+	publishHotkeyActualFeedback,
 	publishPhysicalHotkeyRelease,
 } from '../input/default-scalar-gesture';
 import {
@@ -329,6 +330,10 @@ if (!getContentBootstrapState()) {
 		if (!message || typeof message !== 'object') return false;
 		const candidate = message as { protocolVersion?: unknown; type?: unknown };
 		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION || typeof candidate.type !== 'string') {
+			return false;
+		}
+		if (candidate.type === 'spectra.hotkey.target.feedback') {
+			publishHotkeyActualFeedback(message);
 			return false;
 		}
 		if (candidate.type === 'spectra.content.runtime.status') {

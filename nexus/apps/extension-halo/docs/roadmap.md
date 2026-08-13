@@ -3,20 +3,28 @@ type: reference
 status: draft
 audience: developer
 owner: halo-product-and-engineering
-last_reviewed: 2026-08-01
+last_reviewed: 2026-08-13
 ---
 
 # HALO roadmap
 
 This document owns sequencing and unresolved work. It does not define current runtime behavior; see [`architecture.md`](architecture.md) and executable registry/source/tests.
 
-## P0: ownership closure
+## v0.6.2 closed baseline
 
-- finish taxonomy and registry as the sole plugin inventory;
-- generate and verify the permission-usage map from plugin metadata;
-- remove remaining manual Content-entry and active-service registration lists;
-- make background-capable tools recover after service-worker suspension;
-- verify generated outputs cannot drift from their sources.
+- the generated registry is the release identity and module inventory; source-folder size metadata is forbidden;
+- required/optional/host permissions are checked against executable syntax, plugin ownership, and privacy headings;
+- Clipboard defaults fail closed across runtime and UI projections;
+- Hover Zoom settings and physical DNR rules reconcile through one Background owner;
+- QR context-menu activation has monotonic dual-channel admission and is acknowledged only after exact payload persistence across SidePanel startup/remount boundaries;
+- startup, lazy runtime, eventual SidePanel, largest-chunk, and per-tool activation-closure production budgets are executable release gates;
+- public projection checks cover HALO as well as SPECTRA.
+
+## P0: remaining ownership migrations
+
+- remove remaining manual Content-entry and active-service registration lists through the generated owners below;
+- make any feature intentionally expected to survive an unmounted SidePanel transfer to a Background/alarm owner;
+- keep generated outputs read-only and fail release on source/projection drift.
 
 ## P1: release readiness
 

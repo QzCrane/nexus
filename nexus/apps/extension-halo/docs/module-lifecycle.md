@@ -32,7 +32,7 @@ Each optional module owns one independent `chrome.storage.local` key. Reinstall 
 - initial hydration gets one immediate retry;
 - successful retry publishes only real authority/degraded changes;
 - healthy no-op retry preserves the exact external-store snapshot object;
-- a stale local projection never elides a requested install/uninstall write;
+- a stale local projection never elides a requested enable/disable write;
 - mutation completion rereads the physical key before publishing;
 - same-module write+reread transactions serialize through a realm queue plus a named Web Lock;
 - a real extension context fails closed if Web Locks is unavailable instead of silently reverting to realm-only serialization.

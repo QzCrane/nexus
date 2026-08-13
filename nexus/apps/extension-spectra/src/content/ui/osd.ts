@@ -30,6 +30,7 @@ interface HotkeyOSDTransaction {
 	alternate: boolean;
 	target: OSDPayload;
 	volumeState: AudioVolumeState;
+	pendingBoundary: boolean;
 }
 
 interface OSDState {
@@ -135,6 +136,7 @@ export function advanceHotkeyTargetOSD(
 			volumeState: previous !== null && previous.value > 0
 				? previous.volumeState
 				: predictedState,
+			pendingBoundary: false,
 		};
 	state.hotkey = hotkey;
 	if (hotkey.phase !== 'active' || hotkey.alternate) return;
@@ -149,6 +151,8 @@ export function advanceHotkeyTargetOSD(
 		volumeState: value <= 0 ? 'silent' : hotkey.volumeState,
 	};
 	hotkey.target = target;
+	hotkey.pendingBoundary = previous !== null
+		&& crossesAudioVolumeProcessorBoundary(previous.value, target.value);
 	const projection = resolveHotkeyVolumeTarget(previous ?? target, target);
 	renderOSD(
 		projection,
@@ -166,9 +170,34 @@ export function claimHotkeyActualOSDGesture(gesture: string): void {
 	state.claimedGesture = gesture;
 }
 
-export function ownsHotkeyActualOSDGesture(gesture: string): boolean {
-	return !state.disposed
-		&& (state.claimedGesture === gesture || state.hotkey?.gesture === gesture);
+export function scalarHotkeyGestureSequence(gesture: string): number | null {
+	const match = /^(?:default|site):([1-9]\d*)$/u.exec(gesture);
+	if (!match) return null;
+	const sequence = Number(match[1]);
+	return Number.isSafeInteger(sequence) ? sequence : null;
+}
+
+export function admitsHotkeyActualOSDGesture(
+	gesture: string,
+	allowOwnerless = true,
+): boolean {
+	if (state.disposed) return false;
+	// The lightweight bootstrap can accept a gesture immediately before the
+	// full runtime is replaced or first loaded. An exact-document background
+	// ACK may therefore be the new runtime's first observation of that gesture.
+	// Admit that ownerless state, but never let an older ACK overwrite a
+	// different locally claimed gesture.
+	const owners = [state.claimedGesture, state.hotkey?.gesture]
+		.filter((value): value is string => typeof value === 'string');
+	if (owners.length === 0) return allowOwnerless;
+	if (owners.includes(gesture)) return true;
+	const candidateSequence = scalarHotkeyGestureSequence(gesture);
+	const ownerSequences = owners
+		.map(scalarHotkeyGestureSequence)
+		.filter((value): value is number => value !== null);
+	return candidateSequence !== null
+		&& ownerSequences.length === owners.length
+		&& candidateSequence > Math.max(...ownerSequences);
 }
 
 function feedbackPayload(feedback: SpectraHotkeyActualFeedback): OSDPayload {
@@ -235,6 +264,7 @@ export function showHotkeyActualOSD(
 			alternate,
 			target: actual,
 			volumeState: actual.type === 'volume' ? actual.volumeState : 'native',
+			pendingBoundary: false,
 		};
 		state.hotkey = hotkey;
 		state.claimedGesture = gesture;
@@ -242,9 +272,24 @@ export function showHotkeyActualOSD(
 		return;
 	}
 	if (hotkey.gesture !== gesture
-		|| hotkey.phase === 'settled'
-		|| state.presentation?.type !== feedback.kind
 		|| hotkey.alternate && !alternate) return;
+	if (hotkey.phase === 'settled') {
+		const targetMatches = hotkey.target.type === actual.type
+			&& hotkey.target.value === actual.value
+			&& (hotkey.target.type !== 'volume'
+				|| actual.type === 'volume' && hotkey.target.volumeState === actual.volumeState);
+		if (targetMatches && !hotkey.pendingBoundary) return;
+		// A tap can release before the processor transition ACK returns. The
+		// boundary prediction intentionally keeps the old value/tone together.
+		// Runtime replacement can also replay the press after hydration already
+		// contains the ACK, making that prediction one step too far. Correct either
+		// case to the authoritative pair without executing another action.
+		if (actual.type === 'volume') updateAcknowledgedVolumeState(hotkey, actual);
+		hotkey.target = actual;
+		hotkey.pendingBoundary = false;
+		renderOSD(actual, s, options, false, true);
+		return;
+	}
 	if (alternate) {
 		hotkey.alternate = alternate;
 		hotkey.target = actual;
@@ -265,6 +310,22 @@ export function showHotkeyActualOSD(
 		// restart its interpolation window.
 		return;
 	}
+	if (state.presentation?.type !== feedback.kind) {
+		if (feedback.kind !== 'volume'
+			|| hotkey.target.type !== 'volume'
+			|| !hotkey.pendingBoundary) return;
+		// Processor settlement may legitimately outlive the first display window.
+		// The exact ACK still owns one final complete value/tone presentation.
+		updateAcknowledgedVolumeState(hotkey, actual as VolumeOSDPayload);
+		const target = {
+			...hotkey.target,
+			volumeState: hotkey.target.value <= 0 ? 'silent' : hotkey.volumeState,
+		} satisfies VolumeOSDPayload;
+		hotkey.target = target;
+		hotkey.pendingBoundary = false;
+		renderOSD(target, s, options, false, true);
+		return;
+	}
 	if (feedback.kind !== 'volume' || hotkey.target.type !== 'volume') return;
 	if ((feedback.value > 100) !== (hotkey.target.value > 100)) return;
 	updateAcknowledgedVolumeState(hotkey, actual as VolumeOSDPayload);
@@ -274,6 +335,7 @@ export function showHotkeyActualOSD(
 	} satisfies VolumeOSDPayload;
 	hotkey.target = target;
 	if (pendingVolumeBoundary(hotkey, state.presentation)) {
+		hotkey.pendingBoundary = false;
 		renderOSD(
 			hotkey.phase === 'active' ? target : actual,
 			s,

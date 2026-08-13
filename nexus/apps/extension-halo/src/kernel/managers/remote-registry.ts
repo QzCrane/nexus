@@ -2,6 +2,7 @@
 // eff: Fetch module list from remote server + version check
 
 import { type ModuleMeta, ALL_MODULES } from '../../kernel';
+import { HALO_RELEASE_VERSION } from '../registry/_generated';
 
 // Remote registry config
 const REGISTRY_CONFIG = {
@@ -38,7 +39,7 @@ export const fetchRemoteRegistry = async (forceRefresh = false): Promise<RemoteR
 		// Dev mode: If using placeholder URL, return local registry immediately to avoid 404s
 		if (REGISTRY_CONFIG.baseUrl.includes('user/halo-modules')) {
 			return {
-				version: '1.0.0',
+				version: HALO_RELEASE_VERSION,
 				lastUpdated: new Date().toISOString(),
 				modules: ALL_MODULES as RemoteModuleMeta[], // Cast is safe as local modules match structure
 			};
@@ -160,7 +161,7 @@ export const getMergedModules = async (): Promise<ModuleMeta[]> => {
 
 // Create a fallback local registry (used when remote unavailable)
 export const getLocalRegistry = (): RemoteRegistry => ({
-	version: '1.0.0',
+	version: HALO_RELEASE_VERSION,
 	lastUpdated: new Date().toISOString(),
 	modules: ALL_MODULES as RemoteModuleMeta[],
 });

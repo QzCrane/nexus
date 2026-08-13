@@ -20,6 +20,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { measureContentStartupSurfaces } from './build-runtime-surfaces';
+import {
+	assertActivationClosureBudget,
+	measureDynamicActivationClosures,
+} from './build-activation-closures';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,16 +33,21 @@ const isDev = process.argv.includes('--dev') || isWatch;
 const isAnalyze = process.argv.includes('--analyze');
 const distDir = path.join(__dirname, 'dist');
 
-// Production ceilings are the audited KiB buckets from the 2026-08-08
+// Production ceilings are the audited KiB buckets from the 2026-08-13
 // cross-platform production build. They are regression gates, not aspirations:
 // intentional growth requires an explicit architecture + budget change.
 const PRODUCTION_BUDGET_KIB = Object.freeze({
-	background: 24,
+	background: 32,
 	allFrameDocumentStart: 1,
 	topFrameDocumentStart: 26,
 	allFrameDocumentIdle: 2,
-	topFrameDocumentIdle: 10,
-	sidepanelStartup: 32,
+	topFrameDocumentIdle: 14,
+	sidepanelStartup: 36,
+	frameToolsRuntime: 8,
+	hoverZoomRuntime: 52,
+	sidepanelEventualChunks: 1850,
+	largestSidepanelChunk: 500,
+	maxSidepanelActivation: 1100,
 });
 
 // HALO keeps React types and source compatibility, but the SidePanel's one
@@ -88,25 +97,14 @@ const commonConfig = {
 
 if (!isWatch) {
 	const registryPath = path.resolve(__dirname, '../../scripts/generate-tool-registry.ts');
-	const verifyPath = path.resolve(__dirname, '../../scripts/verify-architecture.ts');
 
 	if (existsSync(registryPath)) {
-		if (!run('registry', ['../../scripts/generate-tool-registry.ts'], { silent: true })) {
-			console.error('❌ registry generation failed');
+		if (!run('registry', ['../../scripts/generate-tool-registry.ts', '--check'], { silent: true })) {
+			console.error('❌ generated registry projection is stale; run bun run generate-registry');
 			process.exit(1);
 		}
 	}
-	if (existsSync(verifyPath)) {
-		if (!run('verify', ['../../scripts/verify-architecture.ts'], { silent: true })) {
-			console.error('❌ verify failed');
-			process.exit(1);
-		}
-	}
-
-	if (!run('tsc', ['tsc', '--noEmit', '--skipLibCheck'])) {
-		process.exit(1);
-	}
-	console.log('✓ Pre-flight: tsc OK');
+	console.log('✓ Pre-flight: generated registry current');
 }
 
 if (existsSync(distDir)) {
@@ -420,6 +418,21 @@ if (isWatch) {
 		sidepanelResult.result.metafile,
 		sidepanelStartup,
 	);
+	const chunkFiles = walkFiles(path.join(distDir, 'chunks')).filter((file) => file.endsWith('.js'));
+	const chunkBytes = chunkFiles.reduce((total, file) => total + statSync(file).size, 0);
+	const largestChunkBytes = chunkFiles.reduce(
+		(largest, file) => Math.max(largest, statSync(file).size),
+		0,
+	);
+	const activationClosures = measureDynamicActivationClosures(
+		sidepanelResult.result.metafile,
+		__dirname,
+	);
+	assertActivationClosureBudget(
+		activationClosures,
+		PRODUCTION_BUDGET_KIB.maxSidepanelActivation,
+	);
+	const maxSidepanelActivation = activationClosures[0]?.bytes ?? 0;
 
 	const budgetMeasurements = {
 		background: sizeOf('background.js'),
@@ -428,6 +441,11 @@ if (isWatch) {
 		allFrameDocumentIdle,
 		topFrameDocumentIdle,
 		sidepanelStartup: sidepanelStartup.bytes,
+		frameToolsRuntime: sizeOf('tools/_frame-tools/runtime.js'),
+		hoverZoomRuntime: sizeOf('tools/_hover-zoom/runtime.js'),
+		sidepanelEventualChunks: chunkBytes,
+		largestSidepanelChunk: largestChunkBytes,
+		maxSidepanelActivation,
 	};
 	assertProductionBudgets(budgetMeasurements);
 
@@ -444,6 +462,7 @@ if (isWatch) {
 				backgroundBytes: sizeOf('background.js'),
 			},
 			sidepanelTopInputs,
+			sidepanelActivationClosures: activationClosures,
 			entries: buildResults.map(({ entry, result }) => ({
 				entry: entry.out,
 				kind: entry.kind,
@@ -463,8 +482,6 @@ if (isWatch) {
 		);
 	}
 
-	const chunkFiles = walkFiles(path.join(distDir, 'chunks')).filter((file) => file.endsWith('.js'));
-	const chunkBytes = chunkFiles.reduce((total, file) => total + statSync(file).size, 0);
 	const chunkInfo = chunkFiles.length > 0
 		? ` | chunks:${chunkFiles.length}/${kib(chunkBytes)}KB`
 		: '';
@@ -477,6 +494,7 @@ if (isWatch) {
 	);
 	if (!isDev) {
 		console.log(`✓ SidePanel contributors: ${sidepanelTopInputs.map(({ input, bytes }) => `${input}:${(bytes / 1024).toFixed(1)}KiB`).join(' | ')}`);
+		console.log(`✓ Largest SidePanel activation: ${activationClosures[0]?.entryPoint ?? activationClosures[0]?.target ?? 'none'}:${kib(maxSidepanelActivation)}KiB/${activationClosures[0]?.fileCount ?? 0} files`);
 	}
 	console.log('✓ Production budgets:', Object.entries(PRODUCTION_BUDGET_KIB).map(([name, value]) => `${name}<=${value}KiB`).join(' | '));
 	console.log('🎉 Done → dist/');

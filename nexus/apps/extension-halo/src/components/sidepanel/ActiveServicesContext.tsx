@@ -9,6 +9,7 @@ import {
 	getUserScriptsStorageSnapshot,
 	subscribeUserScriptsStorage,
 } from '../../system/userscripts/storage-authority';
+import { parseClipboardSettings } from '../../tools/clipboard/types';
 
 interface ActiveServiceScript {
 	id: string;
@@ -113,7 +114,7 @@ function initialStorageState(
 ): ActiveServiceStorageState {
 	return {
 		ready: true,
-		clipboardEnabled: readEnabled(local.halo_tool_clipboard_settings),
+		clipboardEnabled: parseClipboardSettings(local.halo_tool_clipboard_settings).enabled,
 		hoverZoomEnabled: readEnabled(local.halo_hover_zoom_settings),
 		userscriptsEnabled: false,
 		smoothScrollEnabled: readEnabled(sync.HALO_SMOOTH_SCROLL_SETTINGS),
@@ -137,7 +138,7 @@ function applyStorageChanges(
 
 	if (area === 'local') {
 		const clipboard = changes.halo_tool_clipboard_settings;
-		if (clipboard) patch('clipboardEnabled', readEnabled(clipboard.newValue));
+		if (clipboard) patch('clipboardEnabled', parseClipboardSettings(clipboard.newValue).enabled);
 
 		const hoverZoom = changes.halo_hover_zoom_settings;
 		if (hoverZoom) patch('hoverZoomEnabled', readEnabled(hoverZoom.newValue));

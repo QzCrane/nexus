@@ -8,13 +8,20 @@ import { useModuleManager } from '../../kernel';
 import { useOpenTools } from './hooks/use-open-tools';
 import {
 	activationToolId,
-	parseSidepanelActivation,
-	SIDEPANEL_QR_PREFILL_KEY,
+	isFreshSidepanelActivation,
+	parseSidepanelActivationDelivery,
+	parseSidepanelActivationEnvelope,
+	SIDEPANEL_ACTIVATION_STORAGE_KEY,
+	type SidepanelActivationEnvelope,
 } from '../../kernel/core/sidepanel-activation';
+import {
+	acknowledgeSidepanelActivation,
+	publishSidepanelActivation,
+} from '../../kernel/core/sidepanel-activation-store';
 
 export const useSidePanelState = () => {
 	const {
-		installedModules,
+		enabledModules,
 		loading: modulesLoading,
 	} = useModuleManager();
 	const [settings, setSettings] = useState<HaloSettings | null>(null);
@@ -30,23 +37,23 @@ export const useSidePanelState = () => {
 		loadOpenTools,
 	} = useOpenTools();
 
-	const installedToolIds = useMemo(
-		() => new Set(installedModules.map((module) => module.id)),
-		[installedModules],
+	const enabledToolIds = useMemo(
+		() => new Set(enabledModules.map((module) => module.id)),
+		[enabledModules],
 	);
-	const isInstalledSnapshot = useCallback(
-		(id: string) => installedToolIds.has(id),
-		[installedToolIds],
+	const isEnabledSnapshot = useCallback(
+		(id: string) => enabledToolIds.has(id),
+		[enabledToolIds],
 	);
 	const visibleTools = useMemo(() => {
 		if (modulesLoading) return TOOL_REGISTRY;
 		return TOOL_REGISTRY
-			.filter((tool) => installedToolIds.has(tool.id))
+			.filter((tool) => enabledToolIds.has(tool.id))
 			.map(tool => ({
 				...tool,
 				status: tool.status === 'available' ? 'ready' : tool.status
 			}));
-	}, [modulesLoading, installedToolIds]);
+	}, [modulesLoading, enabledToolIds]);
 
 	// Settings/theme are independent of module-manager hydration. Load them once
 	// per SidePanel mount instead of repeating the storage read when
@@ -66,7 +73,7 @@ export const useSidePanelState = () => {
 	}, []);
 
 	// Open-tool restoration/reconciliation waits for the module authority and
-	// reruns when its installed snapshot changes. This retires an uninstalled
+	// reruns when its enabled snapshot changes. This retires a disabled
 	// active/dock tool immediately instead of leaving stale UI until remount.
 	useEffect(() => {
 		if (modulesLoading) {
@@ -74,38 +81,77 @@ export const useSidePanelState = () => {
 			return;
 		}
 		let mounted = true;
-		void loadOpenTools(isInstalledSnapshot).catch((error: unknown) => {
+		void loadOpenTools(isEnabledSnapshot).catch((error: unknown) => {
 			console.error('[HALO:SidePanel] open-tools init failed', error);
 		}).finally(() => {
 			if (mounted) setOpenToolsLoading(false);
 		});
 		return () => { mounted = false; };
-	}, [modulesLoading, isInstalledSnapshot, loadOpenTools]);
+	}, [modulesLoading, isEnabledSnapshot, loadOpenTools]);
 
 	const handleToolSelect = useCallback(async (toolId: ToolId) => {
 		const tool = TOOL_REGISTRY.find(t => t.id === toolId);
 		if (tool?.status === 'coming') return;
-		if (!tool?.builtIn && !installedToolIds.has(toolId)) return;
+		if (!tool?.builtIn && !enabledToolIds.has(toolId)) return;
 		await baseToolSelect(toolId);
-	}, [baseToolSelect, installedToolIds]);
+	}, [baseToolSelect, enabledToolIds]);
 
-	const listener = useCallback((message: unknown) => {
-		const activation = parseSidepanelActivation(message);
-		if (activation) {
-			if (activation.toolId === 'qrcode') {
-				sessionStorage.setItem(SIDEPANEL_QR_PREFILL_KEY, activation.payload.text);
-			}
-			void handleToolSelect(activationToolId(activation)).catch((error: unknown) => {
-				console.error('[HALO:SidePanel] Failed to activate tool', error);
-			});
+	const consumeActivation = useCallback(async (envelope: SidepanelActivationEnvelope) => {
+		if (!isFreshSidepanelActivation(envelope)) {
+			await acknowledgeSidepanelActivation(envelope.id);
+			return;
 		}
-		return false;
+		if (!publishSidepanelActivation(envelope)) return;
+		await handleToolSelect(activationToolId(envelope.activation));
+		if (envelope.activation.toolId === 'color-picker') {
+			await acknowledgeSidepanelActivation(envelope.id);
+		}
 	}, [handleToolSelect]);
 
 	useEffect(() => {
-		chrome.runtime.onMessage.addListener(listener);
-		return () => chrome.runtime.onMessage.removeListener(listener);
-	}, [listener]);
+		let disposed = false;
+		let storageEventObserved = false;
+		const deliver = (envelope: SidepanelActivationEnvelope) => {
+			if (disposed) return;
+			void consumeActivation(envelope).catch((error: unknown) => {
+				console.error('[HALO:SidePanel] Failed to activate tool', error);
+			});
+		};
+		const runtimeListener = (message: unknown) => {
+			const envelope = parseSidepanelActivationDelivery(message);
+			if (envelope) deliver(envelope);
+			return false;
+		};
+		const storageListener = (
+			changes: Record<string, chrome.storage.StorageChange>,
+			area: string,
+		) => {
+			if (area !== 'session' || !changes[SIDEPANEL_ACTIVATION_STORAGE_KEY]) return;
+			storageEventObserved = true;
+			const envelope = parseSidepanelActivationEnvelope(
+				changes[SIDEPANEL_ACTIVATION_STORAGE_KEY].newValue,
+			);
+			if (envelope) deliver(envelope);
+		};
+
+		chrome.runtime.onMessage.addListener(runtimeListener);
+		chrome.storage.onChanged.addListener(storageListener);
+		void chrome.storage.session.get(SIDEPANEL_ACTIVATION_STORAGE_KEY).then((stored) => {
+			if (disposed || storageEventObserved) return;
+			const envelope = parseSidepanelActivationEnvelope(
+				stored[SIDEPANEL_ACTIVATION_STORAGE_KEY],
+			);
+			if (envelope) deliver(envelope);
+		}).catch((error: unknown) => {
+			if (!disposed) console.error('[HALO:SidePanel] activation hydration failed', error);
+		});
+
+		return () => {
+			disposed = true;
+			chrome.runtime.onMessage.removeListener(runtimeListener);
+			chrome.storage.onChanged.removeListener(storageListener);
+		};
+	}, [consumeActivation]);
 
 	const handleSettingsChange = useCallback(async (updated: HaloSettings) => {
 		setSettings(updated);

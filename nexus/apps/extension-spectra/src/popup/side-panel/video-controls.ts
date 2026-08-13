@@ -11,6 +11,7 @@ import type {
 	VideoFilterState,
 } from '@nexus/contracts';
 import { sendSpectraRequest } from '../../shared/ui-spectra-client';
+import { showPopupToast } from '../toast';
 
 let currentTabId: number | null = null;
 let currentSnapshot: ControlSnapshot | null = null;
@@ -19,6 +20,45 @@ let filterTimer: ReturnType<typeof setTimeout> | null = null;
 let filterInFlight = false;
 let lastFilterSentAt = 0;
 const FILTER_SEND_INTERVAL_MS = 50;
+
+async function restoreAuthoritativeSnapshot(): Promise<void> {
+	if (filterTimer) clearTimeout(filterTimer);
+	filterTimer = null;
+	pendingFilter = null;
+	const tabId = currentTabId;
+	if (currentSnapshot) renderVideoControlSnapshot(currentSnapshot, true);
+	if (!tabId) return;
+	try {
+		const response = await sendSpectraRequest(
+			'spectra.control.snapshot.get',
+			{ tabId },
+			{ tabId },
+		);
+		if (!response.ok) throw new Error(response.error.message);
+		if (response.data && currentTabId === tabId) {
+			syncVideoControlSnapshot(response.data);
+			if (currentSnapshot) renderVideoControlSnapshot(currentSnapshot, true);
+		}
+	} catch (error) {
+		console.warn('[SPECTRA] Unable to refresh video controls after a rejected action', error);
+	}
+}
+
+async function presentControlFailure(error: unknown): Promise<void> {
+	showPopupToast(
+		error instanceof Error ? error.message : 'The video control could not be applied',
+		'error',
+	);
+	await restoreAuthoritativeSnapshot();
+}
+
+async function runControlAction(action: () => Promise<void>): Promise<void> {
+	try {
+		await action();
+	} catch (error) {
+		await presentControlFailure(error);
+	}
+}
 
 type ControlAckLike = Pick<
 	ControlSnapshot,
@@ -132,7 +172,9 @@ export function bindVideoControls(): void {
 	bindFilterSwitches(panel);
 	bindSeekButtons(panel);
 	window.addEventListener('pagehide', () => {
-		void flushFilter().catch(() => undefined);
+		void flushFilter().catch((error) => {
+			console.warn('[SPECTRA] Final video filter commit failed while Popup closed', error);
+		});
 	}, { once: true });
 }
 
@@ -147,7 +189,7 @@ function bindButtons(panel: HTMLElement): void {
 			btn.setAttribute('aria-pressed', String(btn.classList.contains('active')));
 		}
 
-		btn.onclick = async () => {
+		btn.onclick = () => runControlAction(async () => {
 			if (!currentTabId) return;
 
 			switch (action) {
@@ -203,7 +245,7 @@ function bindButtons(panel: HTMLElement): void {
 					break;
 				}
 			}
-		};
+		});
 	});
 }
 
@@ -213,6 +255,10 @@ export function syncVideoControlSnapshot(snapshot: ControlSnapshot): void {
 		|| snapshot.generation === currentSnapshot.generation
 			&& snapshot.revision < currentSnapshot.revision)) return;
 	currentSnapshot = snapshot;
+	renderVideoControlSnapshot(snapshot);
+}
+
+function renderVideoControlSnapshot(snapshot: ControlSnapshot, force = false): void {
 	const panel = document.getElementById('side-panel');
 	if (!panel) return;
 	const actual = <T>(field: keyof ControlSnapshot['fields']): T | undefined => {
@@ -239,7 +285,7 @@ export function syncVideoControlSnapshot(snapshot: ControlSnapshot): void {
 			['.sp-saturate', filter.saturate],
 		] as const) {
 			const input = panel.querySelector<HTMLInputElement>(selector);
-			if (input && document.activeElement !== input) input.value = String(value);
+			if (input && (force || document.activeElement !== input)) input.value = String(value);
 		}
 		const grayscale = panel.querySelector<HTMLInputElement>('.sp-sw-grayscale');
 		const invert = panel.querySelector<HTMLInputElement>('.sp-sw-invert');
@@ -301,7 +347,7 @@ function queueFilter(panel: HTMLElement, flushNow = false): void {
 	if (filterTimer) clearTimeout(filterTimer);
 	if (flushNow) {
 		filterTimer = null;
-		void flushFilter().catch(() => undefined);
+		void flushFilter().catch((error) => presentControlFailure(error));
 		return;
 	}
 	const delay = flushNow
@@ -309,7 +355,7 @@ function queueFilter(panel: HTMLElement, flushNow = false): void {
 		: Math.max(0, FILTER_SEND_INTERVAL_MS - (performance.now() - lastFilterSentAt));
 	filterTimer = setTimeout(() => {
 		filterTimer = null;
-		void flushFilter().catch(() => undefined);
+		void flushFilter().catch((error) => presentControlFailure(error));
 	}, delay);
 }
 
@@ -335,11 +381,10 @@ function bindSeekButtons(panel: HTMLElement): void {
 	const seekBtns = panel.querySelectorAll<HTMLButtonElement>('.sp-btn-small[data-action="seek"]');
 
 	seekBtns.forEach(btn => {
-		btn.onclick = async () => {
+		btn.onclick = () => runControlAction(async () => {
 			if (!currentTabId) return;
 			const delta = parseFloat(btn.dataset.delta ?? '0');
 			if (delta !== 0) await submitOperation('seek-relative', { delta });
-		};
+		});
 	});
 }
-

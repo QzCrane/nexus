@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { watchWallClockDeadline } from '../src/kernel/utils/wall-clock-deadline';
+import { parseClipboardSettings } from '../src/tools/clipboard/types';
 
 function readSource(relativePath: string): string {
 	return readFileSync(new URL(relativePath, import.meta.url), 'utf8');
@@ -87,9 +88,12 @@ describe('HALO hot-path lifecycle ownership', () => {
 		expect(initialReadIndex).toBeGreaterThan(listenerIndex);
 		expect(entry).toContain('settingsEventObserved = true');
 		expect(entry).toContain('if (settingsEventObserved) return;');
-		expect(entry).toMatch(/typeof value !== 'object' \|\| value === null\) return false/u);
+		expect(entry).toContain('parseClipboardSettings');
 		expect(entry).toContain('updateClipboardState(false)');
 		expect(entry).not.toContain('updateClipboardState(true);\n\t});');
 		expect(entry).toMatch(/setTimeout\(\(\) => \{\s*if \(!listenerAttached\) return;/u);
+		expect(parseClipboardSettings(undefined)).toEqual({ enabled: false });
+		expect(parseClipboardSettings({ enabled: 'yes' })).toEqual({ enabled: false });
+		expect(parseClipboardSettings({ enabled: true })).toEqual({ enabled: true });
 	});
 });

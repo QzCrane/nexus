@@ -38,6 +38,7 @@
       this.authenticated = false;
       this.everAuthenticated = pairing.authenticatedOnce === true;
       this.generation = 0;
+      this.revision = 0;
       this.sequence = 0;
       this.attempt = 0;
       this.retryCount = 0;
@@ -152,7 +153,10 @@
       }
 
       if (data.type === 'spectra.remote.state' && this.authenticated && isRemoteState(data)) {
+		if (data.generation < this.generation
+			|| (data.generation === this.generation && data.revision < this.revision)) return;
         this.generation = data.generation;
+		this.revision = data.revision;
         this.state = {
           volume: Math.round(Math.max(0, Math.min(800, data.volume)) * 10) / 10,
           actualMode: data.actualMode || 'bypass',
@@ -480,6 +484,7 @@
 
   function isRemoteState(data) {
     return Number.isSafeInteger(data.generation) && data.generation >= 0
+		&& Number.isSafeInteger(data.revision) && data.revision >= 0
       && Number.isFinite(data.volume)
       && (data.volumeBase === undefined || Number.isFinite(data.volumeBase))
       && (data.boost === undefined || Number.isFinite(data.boost))

@@ -2,9 +2,11 @@
 	"id": "tab-group",
 	"icon": "📑",
 	"category": "browser",
-	"size": 20000,
 	"builtIn": false,
 	"keywords": [],
+	"permissions": [
+		"tabGroups"
+	],
 	"background": {
 		"mechanism": "event_listener",
 		"frequency": "on-event",
@@ -12,7 +14,7 @@
 		"level": "idle",
 		"descriptionKey": "impact.tab_events",
 		"sourceFile": "tools/tab-group/panel.tsx",
-		"sourceLine": 44,
+		"sourceAnchor": "chrome.tabGroups?.onCreated?.addListener(onCreated)",
 		"sourceDetail": "chrome.tabGroups.onCreated/onRemoved/onUpdated"
 	}
 }

@@ -1,6 +1,6 @@
 {
 	"name": "@nexus/extension-spectra",
-	"version": "1.4.1",
+	"version": "1.4.2",
 	"private": true,
 	"description": "SPECTRA - The Audio & Video Enhancement Extension",
 	"type": "module",
@@ -20,7 +20,8 @@
 		"test:watch": "bun test --watch test",
 		"test": "bun run test:unit && bun run test:chrome",
 		"test:smoke": "bun test test/smoke.spec.ts",
-		"test:chrome": "bun run build:dev && bun run test:smoke",
+		"test:chrome:dist": "bun run test:smoke",
+		"test:chrome": "bun run build:dev && bun run test:chrome:dist",
 		"test:e2e": "bun run test:chrome",
 		"test:zip-smoke": "bun scripts/smoke-release.ts",
 		"typecheck": "bun tsc --noEmit"

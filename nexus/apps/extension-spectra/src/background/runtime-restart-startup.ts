@@ -18,6 +18,7 @@ import {
 	releaseContentRuntimeLease,
 } from './runtime-loader';
 import { recoverDocumentRuntimeAfterWorkerRestart } from './runtime-restart-recovery';
+import { forEachBounded } from './bounded-fanout';
 
 const RECOVERY_CAPABILITY = 'worker-restart-recovery';
 const RETRY_DELAYS_MS = [250, 1_000, 4_000] as const;
@@ -176,13 +177,14 @@ export async function recoverDocumentRuntimeOnWorkerStartup(
 
 async function currentHttpTargets(): Promise<RuntimeRestartTarget[]> {
 	const tabs = await chrome.tabs.query({});
-	const targets = await Promise.all(tabs.map(async (tab): Promise<RuntimeRestartTarget | null> => {
-		if (!tab.id) return null;
+	const targets: RuntimeRestartTarget[] = [];
+	await forEachBounded(tabs, 8, async (tab) => {
+		if (!tab.id) return;
 		const frame = await chrome.webNavigation.getFrame({ tabId: tab.id, frameId: 0 }).catch(() => null);
-		if (!frame?.documentId || !frame.url || !/^https?:/u.test(frame.url)) return null;
-		return { tabId: tab.id, documentId: frame.documentId, url: frame.url };
-	}));
-	return targets.filter((target): target is RuntimeRestartTarget => target !== null);
+		if (!frame?.documentId || !frame.url || !/^https?:/u.test(frame.url)) return;
+		targets.push({ tabId: tab.id, documentId: frame.documentId, url: frame.url });
+	});
+	return targets;
 }
 
 export function initializeRuntimeRestartRecovery(): void {
@@ -204,19 +206,16 @@ export function initializeRuntimeRestartRecovery(): void {
 		try {
 			const snapshot = await settingsRepository.getSnapshot();
 			const targets = await currentHttpTargets();
-			const results = await Promise.allSettled(targets.map((target) => (
-				recoverDocumentRuntimeOnWorkerStartup(target, snapshot.hotkeySettings)
-			)));
-			const failures = results.filter((result) => result.status === 'rejected');
+			const failures: unknown[] = [];
+			await forEachBounded(targets, 4, async (target) => {
+				await recoverDocumentRuntimeOnWorkerStartup(target, snapshot.hotkeySettings)
+					.catch((error) => { failures.push(error); });
+			});
 			if (failures.length === 0) {
 				attempt = 0;
 				return;
 			}
-			for (const failure of failures) {
-				if (failure.status === 'rejected') {
-					swLog.warn(`[Runtime] restart recovery failed: ${String(failure.reason)}`);
-				}
-			}
+			for (const failure of failures) swLog.warn(`[Runtime] restart recovery failed: ${String(failure)}`);
 			scheduleRetry(`${failures.length} document recovery operation(s) failed`, 'document');
 		} catch (error) {
 			scheduleRetry(error, 'discovery');

@@ -1,16 +1,20 @@
 // goal: Generate _generated-tool-loader.ts
 // eff: One memoized import authority shared by hover preload and lazy rendering
 
-import fs from 'node:fs';
 import path from 'node:path';
 import { OUTPUT_LOADER } from './config.ts';
-import { toPascalCase, detectPanelExport } from './utils.ts';
+import {
+	detectPanelExport,
+	emitGeneratedFile,
+	toPascalCase,
+	type GenerationMode,
+} from './utils.ts';
 
 /**
  * Generate lazy loader TypeScript file
  * @param {Array} allModules - All discovered modules
  */
-export function generateLoader(allModules) {
+export function generateLoader(allModules, mode: GenerationMode = 'write') {
 	// Only panel plugins (tool + system with panel.tsx)
 	const panelModules = allModules.filter(m => m.pluginType !== 'script' && m.panelPath);
 	const scriptModules = allModules.filter(m => m.pluginType === 'script');
@@ -71,6 +75,5 @@ export type LoadableToolId = keyof typeof generatedToolLoaders;
 export const SCRIPT_PLUGIN_IDS: readonly string[] = [${scriptModules.map(m => `'${m.id}'`).join(', ')}];
 `;
 
-	fs.writeFileSync(OUTPUT_LOADER, content, 'utf-8');
-	console.log(`✓ Generated loader: ${path.relative(process.cwd(), OUTPUT_LOADER)}`);
+	emitGeneratedFile(OUTPUT_LOADER, content, mode, 'loader');
 }

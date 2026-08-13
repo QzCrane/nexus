@@ -35,6 +35,7 @@ import {
 	updateAudioSession,
 } from '../audio-session-store';
 import { updateBadgeFromSession } from './badge';
+import { forEachBounded } from '../bounded-fanout';
 
 interface CaptureRuntimeState {
 	generation: number;
@@ -165,10 +166,17 @@ function reportBroadcastFailure(scope: string, tabId: number, error: unknown): v
 function broadcastLegacyCaptureStateForOneRelease(
 	tabId: number,
 	payload: Record<string, unknown>,
+	documentId?: string,
 ): void {
-	chrome.tabs.sendMessage(tabId, { action: Actions.CAPTURE_STATE_CHANGE, payload }).catch((error: unknown) => {
-		reportBroadcastFailure('legacy tab', tabId, error);
-	});
+	if (documentId) {
+		chrome.tabs.sendMessage(
+			tabId,
+			{ action: Actions.CAPTURE_STATE_CHANGE, payload },
+			{ documentId },
+		).catch((error: unknown) => {
+			reportBroadcastFailure('legacy tab', tabId, error);
+		});
+	}
 	chrome.runtime.sendMessage({ action: Actions.CAPTURE_STATE_CHANGE, payload }).catch((error: unknown) => {
 		reportBroadcastFailure('legacy extension', tabId, error);
 	});
@@ -184,15 +192,18 @@ function publishCaptureState(tabId: number, state: CaptureRuntimeState): void {
 		generation: state.generation,
 		error: state.lastError,
 	};
-	broadcastLegacyCaptureStateForOneRelease(tabId, payload);
+	const documentId = state.identity?.documentId;
+	broadcastLegacyCaptureStateForOneRelease(tabId, payload, documentId);
+	if (!documentId) return;
 	const event: SpectraEventEnvelope<'spectra.audio.capture.changed'> = {
 		protocolVersion: SPECTRA_PROTOCOL_VERSION,
 		type: 'spectra.audio.capture.changed',
 		tabId,
+		documentId,
 		generation: state.generation,
 		payload: toCaptureState(tabId, state),
 	};
-	chrome.tabs.sendMessage(tabId, event).catch((error: unknown) => {
+	chrome.tabs.sendMessage(tabId, event, { documentId }).catch((error: unknown) => {
 		reportBroadcastFailure('tab state', tabId, error);
 	});
 	chrome.runtime.sendMessage(event).catch((error: unknown) => {
@@ -226,6 +237,7 @@ async function commitCaptureSnapshot(
 		// caller in registerOffscreenAudioLifecycleListener.
 		return null;
 	}
+	state.identity = identity;
 	return updateAudioSession(identity, {
 		config: update.config,
 		desiredMode: current?.desiredMode
@@ -815,7 +827,7 @@ export async function reconcileCaptureStates(): Promise<void> {
 	}
 
 	if (openTabs) {
-		await Promise.all([...openTabs].map(async (tabId) => {
+		await forEachBounded([...openTabs], 8, async (tabId) => {
 			if (recoveredTabs.has(tabId)) return;
 			const snapshot = await getAudioSession(tabId).catch(() => null);
 			if (snapshot?.actualMode !== 'capture') return;
@@ -832,7 +844,7 @@ export async function reconcileCaptureStates(): Promise<void> {
 				config: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
 				error: state.lastError,
 			});
-		}));
+		});
 	}
 }
 

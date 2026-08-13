@@ -35,6 +35,13 @@ export const OPTIONAL_PERMISSIONS: PermissionDef[] = [
 		category: 'basic',
 	},
 	{
+		id: 'cookies',
+		name: 'Cookies',
+		description: 'View and edit cookies for the selected site',
+		icon: '🍪',
+		category: 'privacy',
+	},
+	{
 		id: 'downloads',
 		name: 'Downloads',
 		description: 'Manage file downloads',

@@ -744,6 +744,7 @@ describe('SPECTRA mapped v2 envelopes', () => {
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			type: 'spectra.audio.capture.changed',
 			tabId: 42,
+			documentId: 'document-42',
 			generation: 8,
 			payload: {
 				tabId: 42,
@@ -758,6 +759,21 @@ describe('SPECTRA mapped v2 envelopes', () => {
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			type: 'spectra.audio.capture.changed',
 			tabId: 42,
+			generation: 8,
+			payload: {
+				tabId: 42,
+				generation: 8,
+				phase: 'active',
+				active: true,
+				actualMode: 'capture',
+				lastError: null,
+			},
+		})).toBe(false);
+		expect(isSpectraEventEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			type: 'spectra.audio.capture.changed',
+			tabId: 42,
+			documentId: 'document-42',
 			generation: 7,
 			payload: {
 				tabId: 42,

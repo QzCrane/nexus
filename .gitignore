@@ -18,10 +18,7 @@ test-results/
 .vscode/
 .idea/
 release/
-
-# Build-derived HALO install-time registry projection. Generated before public/
-# is copied to dist; never edit or commit the derived JSON.
-nexus/apps/extension-halo/public/script-plugin-runtime.json
+artifacts/
 
 # NEXUS skills: only `<repo>/.agents/skills/<name>/SKILL.md` is tracked.
 # This is the Anthropic cross-tool standard path (per https://agentskills.io/),

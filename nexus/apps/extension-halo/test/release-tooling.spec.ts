@@ -5,6 +5,10 @@ import {
 	assertReleaseVersionParity,
 	RELEASE_STEPS,
 } from '../../../scripts/release-halo';
+import {
+	assertActivationClosureBudget,
+	measureDynamicActivationClosures,
+} from '../build-activation-closures';
 
 function readJson(relativePath: string): Record<string, unknown> {
 	return JSON.parse(
@@ -19,6 +23,32 @@ interface ContentScriptManifestEntry {
 }
 
 describe('HALO release tooling', () => {
+	test('gates a complete multi-chunk lazy activation closure', () => {
+		const root = process.cwd();
+		const closures = measureDynamicActivationClosures({
+			outputs: {
+				'dist/sidepanel.js': {
+					bytes: 10,
+					imports: [{ path: 'chunks/tool.js', kind: 'dynamic-import' }],
+				},
+				'dist/chunks/tool.js': {
+					bytes: 300 * 1024,
+					entryPoint: 'src/tools/heavy/panel.tsx',
+					imports: [{ path: 'shared.js', kind: 'import-statement' }],
+				},
+				'dist/chunks/shared.js': { bytes: 300 * 1024 },
+			},
+		}, root);
+		expect(closures).toHaveLength(1);
+		const closure = closures[0];
+		if (!closure) throw new Error('fixture activation closure is missing');
+		expect(closure.bytes).toBe(600 * 1024);
+		expect(() => assertActivationClosureBudget(closures, 600)).not.toThrow();
+		expect(() => assertActivationClosureBudget([
+			{ ...closure, bytes: 600 * 1024 + 1 },
+		], 600)).toThrow('activation budget exceeded');
+	});
+
 	test('requires one SemVer across package, source manifest, and built manifest', () => {
 		expect(() => assertReleaseVersionParity('0.6.1', '0.6.1', '0.6.1'))
 			.not.toThrow();
@@ -50,6 +80,10 @@ describe('HALO release tooling', () => {
 	test('checks version parity before expensive release gates', () => {
 		expect(RELEASE_STEPS[0]?.label).toBe('version parity');
 		expect(RELEASE_STEPS.at(-1)?.label).toBe('staging ZIP');
+		expect(RELEASE_STEPS.find((step) => step.label === 'dependency audit')?.args).toEqual([
+			'run',
+			'audit:dependencies',
+		]);
 	});
 
 	test('keeps submitted permissions and public claims tied to implemented behavior', () => {
@@ -64,6 +98,11 @@ describe('HALO release tooling', () => {
 		expect(optionalPermissions).not.toContain('notifications');
 		expect(description).not.toContain('Zero upload');
 		expect(userScriptPermissions).toEqual(['userScripts', '*://*/*']);
+		expect(manifest.name).toBe('HALO - Local Utility SidePanel');
+		expect(manifest.minimum_chrome_version).toBe('135');
+		const engine = readFileSync(new URL('../src/system/userscripts/engine.ts', import.meta.url), 'utf8');
+		expect(engine).toContain('chrome.userScripts.execute({');
+		expect(engine).not.toContain('chrome.scripting.executeScript({');
 	});
 
 	test('locks content-script ownership to the smallest required frame and lifecycle scope', () => {
@@ -154,7 +193,7 @@ describe('HALO release tooling', () => {
 
 		expect(compactProjection).toContain('BACKGROUND_ACTIVE_ONLY_MAP');
 		expect(compactProjection).not.toContain('sourceFile');
-		expect(compactProjection).not.toContain('sourceLine');
+		expect(compactProjection).not.toContain('sourceAnchor');
 		expect(compactProjection).not.toContain('sourceDetail');
 		expect(activeServices).toContain("from '../../kernel/registry/_generated-background-active'");
 		expect(activeServices).not.toContain('BACKGROUND_PROFILES_MAP');
@@ -192,7 +231,9 @@ describe('HALO release tooling', () => {
 		expect(background).not.toContain('halo-pdf-link');
 		expect(background).not.toContain('HALO_PREFILL_QR');
 		expect(background).toContain("toolId: 'qrcode'");
-		expect(sidepanel).toContain('parseSidepanelActivation(message)');
+		expect(background).toContain('chrome.storage.session.set');
+		expect(sidepanel).toContain('parseSidepanelActivationDelivery(message)');
+		expect(sidepanel).toContain('publishSidepanelActivation');
 	});
 
 	test('bounds global toast ownership and disposes every timer on provider retirement', () => {

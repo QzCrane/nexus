@@ -3,12 +3,12 @@ type: reference
 status: stable
 audience: user
 owner: halo-privacy
-last_reviewed: 2026-08-01
+last_reviewed: 2026-08-13
 ---
 
 # Privacy Policy for HALO
 
-**Last updated: August 1, 2026**
+**Last updated: August 13, 2026**
 
 ## Overview
 
@@ -29,7 +29,7 @@ User-requested exports and downloads are written to locations selected or manage
 HALO does not run analytics or hidden background uploads. The following operations make outbound requests only when the related feature is invoked or enabled:
 
 - **API Tester** sends the URL, method, enabled headers, and request body entered by the user to the user-selected public HTTP(S) endpoint. Private, loopback, and cloud-metadata hosts are blocked.
-- **Header Viewer, subresource-integrity fetch, resource download, and user-script installation** request the public HTTP(S) URL selected by the user. The destination receives ordinary connection metadata and the request URL; returned content is processed or stored locally. User-installed scripts are saved locally and execute only through Chrome's `userScripts` permission and the user's chosen match rules.
+- **Header Viewer, subresource-integrity fetch, resource download, and user-script installation** request the public HTTP(S) URL selected by the user. The destination receives ordinary connection metadata and the request URL; returned content is processed or stored locally. User-installed JavaScript is saved locally and executes only through Chrome's `userScripts` API after permission and host access are granted; saved match rules own automatic execution, and the explicit Test action targets only the active tab. A script may use Chrome's isolated `USER_SCRIPT` world or the page's `MAIN` world according to the user's saved script configuration. User-authored CSS uses Chrome's `scripting.insertCSS` only after the same explicit permission/host-access gate.
 - **IP Lookup** contacts `ipinfo.io`; if the current-IP lookup fails, it can fall back to `api.ipify.org`. Those providers necessarily receive the requester's IP address. A specific-IP lookup sends the entered IP address to `ipinfo.io`.
 - **Bookmark and history favicons** request Google's favicon service at `www.google.com/s2/favicons` with the relevant hostname.
 - **Translation and font links** open Google Translate, DeepL, Bing/Microsoft translation, or Google Fonts with the text, page URL, target language, or font family selected by the user.
@@ -42,7 +42,7 @@ Third-party destinations process requests under their own privacy and retention 
 
 ## Browser data and permissions
 
-HALO's page tools can read or modify the current page after installation or user action. Optional permissions separately gate page capture, clipboard access, downloads, browsing history, bookmarks, tab groups, user scripts, extension management, and broad user-script host access. HALO processes permission-backed data locally unless a user-invoked network operation above explicitly sends it to its chosen destination.
+HALO's page tools can read or modify the current page after installation or user action. Optional permissions separately gate page capture, clipboard access, cookies for the currently selected site, downloads, browsing history, bookmarks, tab groups, user scripts, extension management, and broad user-script host access. Cookie Manager keeps values inside the extension UI or a user-requested local export. HALO processes permission-backed data locally unless a user-invoked network operation above explicitly sends it to its chosen destination.
 
 HALO does not bypass protected pages, browser permission prompts, content-security restrictions, authentication, or user-activation requirements.
 
@@ -54,7 +54,7 @@ This statement does not mean that every feature is offline: optional network ope
 
 ## Extension code
 
-HALO's own JavaScript, WebAssembly, libraries, and assets are bundled in the submitted package. HALO does not download updates to its own executable code. User-authored or user-imported scripts are a distinct, explicit capability executed through Chrome's `userScripts` sandbox after the corresponding permission and host access are granted.
+HALO's own JavaScript, WebAssembly, libraries, and assets are bundled in the submitted package. HALO does not download updates to its own executable code. User-authored or user-imported JavaScript is a distinct, explicit capability executed through Chrome's `userScripts` API after the corresponding permission and host access are granted. Its saved execution world is either Chrome's isolated `USER_SCRIPT` world or the page-visible `MAIN` world; HALO does not describe the latter as sandboxed. User-authored CSS uses Chrome's explicit CSS injection API under the same access gate.
 
 ## Policy changes and contact
 

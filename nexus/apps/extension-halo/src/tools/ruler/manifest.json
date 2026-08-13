@@ -2,7 +2,6 @@
 	"id": "ruler",
 	"icon": "📐",
 	"category": "general",
-	"size": 35000,
 	"builtIn": true,
 	"status": "ready",
 	"keywords": [

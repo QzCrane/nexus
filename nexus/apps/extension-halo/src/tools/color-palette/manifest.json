@@ -2,7 +2,6 @@
 	"id": "color-palette",
 	"icon": "🎨",
 	"category": "visual",
-	"size": 20000,
 	"builtIn": false,
 	"keywords": []
 }

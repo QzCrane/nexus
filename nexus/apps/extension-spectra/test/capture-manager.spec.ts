@@ -122,6 +122,24 @@ describe('capture manager acknowledged state', () => {
 			expect(manager.getPhase()).toBe('active');
 			expect(manager.isActive()).toBe(true);
 			expect(manager.getGeneration()).toBe(10);
+			const eventActual = { ...CONFIG, volume: 120, volumeBase: 100, boost: 1.2 };
+			expect(manager.handleMessage({
+				protocolVersion: 2,
+				type: 'spectra.audio.capture.changed',
+				tabId: 9,
+				documentId: 'document-9',
+				generation: 10,
+				payload: {
+					tabId: 9,
+					phase: 'active',
+					active: true,
+					actualMode: 'capture',
+					generation: 10,
+					lastError: null,
+					actualConfig: eventActual,
+				},
+			})).toBe(true);
+			expect(manager.getActualConfig()).toEqual(eventActual);
 
 			expect(manager.handleMessage({
 				action: Actions.CAPTURE_STATE_CHANGE,
@@ -148,6 +166,32 @@ describe('capture manager acknowledged state', () => {
 			}));
 			expect(await sync).toEqual(CONFIG);
 			expect(manager.getGeneration()).toBe(11);
+			const staleActual = { ...CONFIG, volume: 70, volumeBase: 70, boost: 1 };
+			expect(manager.handleMessage({
+				protocolVersion: 2,
+				type: 'spectra.audio.capture.changed',
+				tabId: 9,
+				documentId: 'document-9',
+				generation: 10,
+				payload: {
+					tabId: 9,
+					phase: 'active',
+					active: true,
+					actualMode: 'capture',
+					generation: 10,
+					lastError: null,
+					actualConfig: staleActual,
+				},
+			})).toBe(true);
+			expect(manager.getActualConfig()).toEqual(CONFIG);
+			manager.restoreState({
+				active: true,
+				phase: 'starting',
+				generation: 11,
+				actualConfig: staleActual,
+			});
+			expect(manager.getPhase()).toBe('active');
+			expect(manager.getActualConfig()).toEqual(CONFIG);
 
 			expect(manager.handleMessage({
 				action: Actions.CAPTURE_STATE_CHANGE,

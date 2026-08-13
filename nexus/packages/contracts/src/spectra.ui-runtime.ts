@@ -225,6 +225,9 @@ export function isSpectraUiEventEnvelope(
 	if (value.type === 'spectra.audio.capture.changed') {
 		return isAudioCaptureState(value.payload)
 			&& value.tabId === value.payload.tabId
+			&& typeof value.documentId === 'string'
+			&& value.documentId.length > 0
+			&& value.documentId.length <= 256
 			&& value.generation === value.payload.generation;
 	}
 	return false;

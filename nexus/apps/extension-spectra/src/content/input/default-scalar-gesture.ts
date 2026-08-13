@@ -10,7 +10,11 @@ export interface DefaultScalarGestureSignal {
 	repeated: boolean;
 }
 
-type DefaultScalarGestureListener = (signal: DefaultScalarGestureSignal) => void;
+export type HotkeyReplaySignal =
+	| { type: 'gesture'; signal: DefaultScalarGestureSignal }
+	| { type: 'feedback'; message: unknown };
+
+type HotkeyReplayListener = (signal: HotkeyReplaySignal) => void;
 
 export interface PhysicalHotkeyReleaseSignal {
 	code: string;
@@ -19,29 +23,48 @@ export interface PhysicalHotkeyReleaseSignal {
 type PhysicalHotkeyReleaseListener = (signal: PhysicalHotkeyReleaseSignal) => void;
 
 interface HotkeyGestureChannel {
-	version: 3;
+	version: 4;
 	sequence: number;
-	listeners: Set<DefaultScalarGestureListener>;
-	pending: DefaultScalarGestureSignal[];
+	releasedSequences: Record<'default' | 'site', number>;
+	replayListeners: Set<HotkeyReplayListener>;
+	pendingReplay: HotkeyReplaySignal[];
 	releaseListeners: Set<PhysicalHotkeyReleaseListener>;
 }
 
-const CHANNEL_KEY = '__spectraHotkeyGestureV3';
+// V4 intentionally uses a new global identity: V3 used separate gesture and
+// feedback queues, so accepting its shape as the ordered replay owner would
+// make mixed-version reinjection crash or reorder an in-flight gesture.
+const CHANNEL_KEY = '__spectraHotkeyGestureV4';
 const MAX_PENDING_SIGNALS = 160;
 
 type GestureGlobal = typeof globalThis & {
 	[CHANNEL_KEY]?: HotkeyGestureChannel;
+	__spectraHotkeyGestureV3?: { sequence?: unknown };
 };
+
+function gestureIdentity(gesture: string): { namespace: 'default' | 'site'; sequence: number } | null {
+	const match = /^(default|site):([1-9]\d*)$/u.exec(gesture);
+	if (!match) return null;
+	const sequence = Number(match[2]);
+	if (!Number.isSafeInteger(sequence)) return null;
+	return { namespace: match[1] as 'default' | 'site', sequence };
+}
 
 function channel(): HotkeyGestureChannel {
 	const owner = globalThis as GestureGlobal;
 	const current = owner[CHANNEL_KEY];
-	if (current?.version === 3) return current;
+	if (current?.version === 4) return current;
+	const legacySequence = owner.__spectraHotkeyGestureV3?.sequence;
 	const created: HotkeyGestureChannel = {
-		version: 3,
-		sequence: 0,
-		listeners: new Set(),
-		pending: [],
+		version: 4,
+		// Preserve only the monotonic identity watermark across V3 -> V4. Its
+		// incompatible listeners and split pending queues are deliberately retired.
+		sequence: Number.isSafeInteger(legacySequence) && Number(legacySequence) >= 0
+			? Number(legacySequence)
+			: 0,
+		releasedSequences: { default: 0, site: 0 },
+		replayListeners: new Set(),
+		pendingReplay: [],
 		releaseListeners: new Set(),
 	};
 	owner[CHANNEL_KEY] = created;
@@ -57,23 +80,51 @@ export function nextScalarGestureId(namespace: 'default' | 'site'): string {
 }
 
 export function publishDefaultScalarGesture(signal: DefaultScalarGestureSignal): void {
-	const owner = channel();
-	if (owner.listeners.size === 0) {
-		if (owner.pending.length >= MAX_PENDING_SIGNALS) owner.pending.shift();
-		owner.pending.push(signal);
-		return;
+	if (signal.phase === 'release' || signal.phase === 'settled') {
+		const identity = gestureIdentity(signal.gesture);
+		if (identity) {
+			const owner = channel();
+			owner.releasedSequences[identity.namespace] = Math.max(
+				owner.releasedSequences[identity.namespace],
+				identity.sequence,
+			);
+		}
 	}
-	for (const listener of owner.listeners) listener(signal);
+	publishReplaySignal({ type: 'gesture', signal });
 }
 
-export function subscribeDefaultScalarGesture(
-	listener: DefaultScalarGestureListener,
+export function isHotkeyGestureReleased(gesture: string): boolean {
+	const identity = gestureIdentity(gesture);
+	return identity !== null
+		&& identity.sequence <= channel().releasedSequences[identity.namespace];
+}
+
+export function subscribeHotkeyReplay(
+	listener: HotkeyReplayListener,
 ): () => void {
 	const owner = channel();
-	owner.listeners.add(listener);
-	const pending = owner.pending.splice(0);
+	owner.replayListeners.add(listener);
+	const pending = owner.pendingReplay.splice(0);
 	for (const signal of pending) listener(signal);
-	return () => owner.listeners.delete(listener);
+	return () => owner.replayListeners.delete(listener);
+}
+
+// The document-start bootstrap is the durable delivery owner for exact-document
+// background ACKs. A full runtime can be replaced between physical acceptance
+// and processor settlement, so feedback uses the same bounded replay channel as
+// the gesture phases instead of depending on one transient runtime listener.
+export function publishHotkeyActualFeedback(message: unknown): void {
+	publishReplaySignal({ type: 'feedback', message });
+}
+
+function publishReplaySignal(signal: HotkeyReplaySignal): void {
+	const owner = channel();
+	if (owner.replayListeners.size === 0) {
+		if (owner.pendingReplay.length >= MAX_PENDING_SIGNALS) owner.pendingReplay.shift();
+		owner.pendingReplay.push(signal);
+		return;
+	}
+	for (const listener of owner.replayListeners) listener(signal);
 }
 
 // Site bindings can only become active after the full runtime subscribes, so

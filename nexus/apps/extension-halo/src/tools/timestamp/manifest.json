@@ -2,7 +2,6 @@
 	"id": "timestamp",
 	"icon": "⏱️",
 	"category": "data",
-	"size": 10000,
 	"builtIn": true,
 	"keywords": [],
 	"background": {
@@ -12,7 +11,7 @@
 		"level": "low",
 		"descriptionKey": "impact.interval_1s",
 		"sourceFile": "tools/timestamp/panel.tsx",
-		"sourceLine": 32,
+		"sourceAnchor": "timer = setInterval(() => setNow(Date.now()), 1000)",
 		"sourceDetail": "setInterval(() => setNow(Date.now()), 1000)"
 	},
 	"pluginType": "tool"

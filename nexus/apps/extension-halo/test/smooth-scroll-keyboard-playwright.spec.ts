@@ -13,6 +13,7 @@ import {
 } from '@playwright/test';
 
 const KEYBOARD_STEP_PX = 300;
+const REPEAT_NORMALIZATION_INTERVAL_MS = 80;
 
 interface KeyboardProbeSnapshot {
 	arrowClaims: number;
@@ -213,22 +214,38 @@ async function waitForScrollSettled(page: Page): Promise<number> {
 	}));
 }
 
+interface RepeatArrowResult {
+	position: number;
+	deliveryDurationMs: number;
+}
+
+async function waitUntil(deadline: number): Promise<void> {
+	while (true) {
+		const remaining = deadline - performance.now();
+		if (remaining <= 0) return;
+		await new Promise((resolve) => setTimeout(resolve, remaining));
+	}
+}
+
 async function repeatArrowStream(
 	page: Page,
 	firstRepeatDelayMs: number,
 	repeatIntervalMs: number,
 	repeatCount: number,
-): Promise<number> {
+): Promise<RepeatArrowResult> {
 	await resetFixture(page);
 	await page.keyboard.down('ArrowDown');
-	await new Promise((resolve) => setTimeout(resolve, firstRepeatDelayMs));
-	await page.keyboard.down('ArrowDown');
-	for (let index = 1; index < repeatCount; index++) {
-		await new Promise((resolve) => setTimeout(resolve, repeatIntervalMs));
+	const initialDeliveredAt = performance.now();
+	for (let index = 0; index < repeatCount; index++) {
+		await waitUntil(initialDeliveredAt + firstRepeatDelayMs + index * repeatIntervalMs);
 		await page.keyboard.down('ArrowDown');
 	}
+	const deliveryDurationMs = performance.now() - initialDeliveredAt;
 	await page.keyboard.up('ArrowDown');
-	return waitForScrollSettled(page);
+	return {
+		position: await waitForScrollSettled(page),
+		deliveryDurationMs,
+	};
 }
 
 async function enableSmoothScroll(context: BrowserContext): Promise<string> {
@@ -363,14 +380,20 @@ test.describe('HALO keyboard ownership in Chromium', () => {
 			const fastRepeat = await repeatArrowStream(page, 200, 20, 11);
 			const mediumRepeat = await repeatArrowStream(page, 200, 50, 5);
 			const sparseRepeat = await repeatArrowStream(page, 200, 200, 2);
-			const normalizedSpan = Math.max(fastRepeat, mediumRepeat, sparseRepeat) -
-				Math.min(fastRepeat, mediumRepeat, sparseRepeat);
-			expect(normalizedSpan).toBeLessThanOrEqual(KEYBOARD_STEP_PX);
+			const streams = [fastRepeat, mediumRepeat, sparseRepeat];
+			const deliverySpan = Math.max(...streams.map((item) => item.deliveryDurationMs)) -
+				Math.min(...streams.map((item) => item.deliveryDurationMs));
+			expect(deliverySpan, JSON.stringify(streams)).toBeLessThanOrEqual(
+				REPEAT_NORMALIZATION_INTERVAL_MS,
+			);
+			const normalizedSpan = Math.max(...streams.map((item) => item.position)) -
+				Math.min(...streams.map((item) => item.position));
+			expect(normalizedSpan, JSON.stringify(streams)).toBeLessThanOrEqual(KEYBOARD_STEP_PX);
 
 			const delayedFirstRepeat = await repeatArrowStream(page, 500, 80, 1);
 			// One initial press plus the first repeat: no synthetic catch-up is
 			// allowed for the OS-owned 500ms initial repeat delay.
-			expect(delayedFirstRepeat).toBeCloseTo(KEYBOARD_STEP_PX * 2, 0);
+			expect(delayedFirstRepeat.position).toBeCloseTo(KEYBOARD_STEP_PX * 2, 0);
 		} finally {
 			await context?.close();
 			await closeFixtureServer(server);

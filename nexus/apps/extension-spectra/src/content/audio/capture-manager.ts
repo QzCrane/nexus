@@ -24,6 +24,7 @@ interface CaptureStateEvent {
 	phase?: CaptureReply['phase'];
 	generation?: number;
 	error?: string;
+	actualConfig?: AudioConfig;
 }
 
 export interface CaptureContinuation {
@@ -38,10 +39,10 @@ let lastError: string | undefined;
 let actualConfig: AudioConfig | null = null;
 let pending: Promise<CaptureReply> | null = null;
 
-function applyConfirmedState(event: CaptureStateEvent): void {
+function applyConfirmedState(event: CaptureStateEvent): boolean {
 	const nextGeneration = event.generation ?? generation;
 	const nextPhase = event.phase ?? (event.enabled ? 'active' : 'idle');
-	if (!shouldAcceptAudioSessionPhase(generation, phase ?? 'idle', nextGeneration, nextPhase)) return;
+	if (!shouldAcceptAudioSessionPhase(generation, phase ?? 'idle', nextGeneration, nextPhase)) return false;
 	generation = nextGeneration;
 	phase = nextPhase;
 	lastError = event.error;
@@ -51,6 +52,8 @@ function applyConfirmedState(event: CaptureStateEvent): void {
 	const nextActive = event.enabled ?? nextPhase === 'active';
 	active = nextActive;
 	if (!nextActive) actualConfig = null;
+	else if (event.actualConfig) actualConfig = cloneConfig(event.actualConfig);
+	return true;
 }
 
 function cloneConfig(config: AudioConfig): AudioConfig {
@@ -82,12 +85,12 @@ export function createCaptureManager() {
 			error?: string;
 			actualConfig?: AudioConfig;
 		}) => {
-			actualConfig = snapshot.actualConfig ? cloneConfig(snapshot.actualConfig) : null;
 			applyConfirmedState({
 				enabled: snapshot.active,
 				phase: snapshot.phase,
 				generation: snapshot.generation,
 				error: snapshot.error,
+				actualConfig: snapshot.actualConfig,
 			});
 		},
 		handleMessage,
@@ -202,13 +205,14 @@ async function request(enabled: boolean, config: AudioConfig, requestedGeneratio
 			log.error('Capture transition failed:', response.error ?? 'Unknown capture error');
 			return response;
 		}
-		applyConfirmedState({
+		const accepted = applyConfirmedState({
 			enabled: response.active ?? response.phase === 'active',
 			phase: response.phase,
 			generation: responseGeneration,
+			actualConfig: response.actualConfig,
 		});
 		if (response.active && response.phase === 'active') {
-			const confirmedActual = response.actualConfig ?? actualConfig;
+			const confirmedActual = accepted ? actualConfig : null;
 			if (!confirmedActual) {
 				const error = 'Capture processor did not return an actual configuration';
 				applyConfirmedState({
@@ -224,8 +228,7 @@ async function request(enabled: boolean, config: AudioConfig, requestedGeneratio
 					error,
 				};
 			}
-			actualConfig = cloneConfig(confirmedActual);
-			return { ...response, actualConfig: confirmedActual };
+			return { ...response, actualConfig: cloneConfig(confirmedActual) };
 		}
 		return response;
 	} catch (error) {
@@ -250,6 +253,7 @@ function handleMessage(message: unknown): boolean {
 			phase: message.payload.phase,
 			generation: message.payload.generation,
 			error: message.payload.lastError?.message,
+			actualConfig: message.payload.actualConfig,
 		});
 		return true;
 	}
@@ -274,12 +278,16 @@ async function syncConfig(config: AudioConfig, requestedGeneration = generation)
 		if (response.data.lastError || response.data.generation !== nextGeneration) {
 			throw new Error(response.data.lastError?.message || 'Capture configuration was not acknowledged');
 		}
-		generation = response.data.generation;
-		lastError = undefined;
 		if (!response.data.actualConfig) {
 			throw new Error('Capture processor did not return an actual configuration');
 		}
-		actualConfig = cloneConfig(response.data.actualConfig);
+		const accepted = applyConfirmedState({
+			enabled: true,
+			phase: 'active',
+			generation: response.data.generation,
+			actualConfig: response.data.actualConfig,
+		});
+		if (!accepted || !actualConfig) throw new Error('Capture configuration acknowledgement became stale');
 		return cloneConfig(actualConfig);
 	} catch (error) {
 		lastError = error instanceof Error ? error.message : String(error);

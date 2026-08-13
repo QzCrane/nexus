@@ -2,7 +2,6 @@
 	"id": "morse",
 	"icon": "📡",
 	"category": "encode",
-	"size": 15000,
 	"builtIn": false,
 	"keywords": [],
 	"pluginType": "tool"

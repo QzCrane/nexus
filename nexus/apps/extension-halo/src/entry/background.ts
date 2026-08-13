@@ -3,6 +3,14 @@
 
 import { STORAGE_PREFIX } from '../kernel/core/types';
 import { DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY } from '../kernel/core/settings';
+import {
+	createSidepanelActivationEnvelope,
+	isFreshSidepanelActivation,
+	parseSidepanelActivationAck,
+	parseSidepanelActivationEnvelope,
+	SIDEPANEL_ACTIVATION_STORAGE_KEY,
+	type SidepanelActivation,
+} from '../kernel/core/sidepanel-activation';
 import { initUserScriptsEngine } from '../system/userscripts/engine';
 import {
 	initUserScriptsRegistry,
@@ -16,6 +24,9 @@ import {
 } from '../kernel/services/saat-service';
 import { isPrivateHost } from '../kernel/utils/ssrf-guard';
 import { saveToClipboardHistory } from '../tools/clipboard/core';
+import { reconcileAntiHotlinkRules, type AntiHotlinkReceipt } from '../tools/hover-zoom/logic/engine';
+import { parseHoverZoomSettings } from '../tools/hover-zoom/settings';
+import { STORAGE_KEY as HOVER_ZOOM_STORAGE_KEY } from '../tools/hover-zoom/types';
 
 const LOG_TAG = '[HALO]';
 const SCRIPT_RUNTIME_ASSET = 'script-plugin-runtime.json';
@@ -27,6 +38,56 @@ initSaaTService();
 const MENU_OPEN_HALO = 'halo-open';
 const MENU_QR_SELECTION = 'halo-qr-selection';
 const MENU_COLOR_PICK = 'halo-color-pick';
+let sidepanelActivationGeneration = 0;
+let sidepanelActivationTail: Promise<void> = Promise.resolve();
+
+let hoverZoomReconciliation: Promise<AntiHotlinkReceipt> = Promise.resolve({
+	desired: false,
+	active: false,
+	changed: false,
+});
+
+function reconcileStoredHoverZoomIntent(): Promise<AntiHotlinkReceipt> {
+	const operation = hoverZoomReconciliation.catch(() => ({
+		desired: false,
+		active: false,
+		changed: false,
+	})).then(async () => {
+		const stored = await chrome.storage.local.get(HOVER_ZOOM_STORAGE_KEY);
+		const settings = parseHoverZoomSettings(stored[HOVER_ZOOM_STORAGE_KEY]);
+		return reconcileAntiHotlinkRules(settings.enabled && settings.antiHotlink);
+	}).catch((error: unknown) => ({
+		desired: false,
+		active: false,
+		changed: false,
+		error: error instanceof Error ? error.message : String(error),
+	}));
+	hoverZoomReconciliation = operation;
+	return operation;
+}
+
+function isTrustedSidepanelSender(sender: chrome.runtime.MessageSender): boolean {
+	const extensionOrigin = `chrome-extension://${chrome.runtime.id}/`;
+	return sender.id === chrome.runtime.id
+		&& typeof sender.url === 'string'
+		&& sender.url.startsWith(extensionOrigin)
+		&& !sender.tab;
+}
+
+// The MV3 worker is the sole DNR writer. Every worker birth rechecks durable
+// intent against the complete physical rule set; install/startup/storage events
+// use the same serialized authority below.
+void reconcileStoredHoverZoomIntent();
+
+chrome.runtime.onStartup.addListener(() => {
+	void reconcileStoredHoverZoomIntent();
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+	if (area === 'local' && changes[HOVER_ZOOM_STORAGE_KEY]) {
+		void reconcileStoredHoverZoomIntent();
+	}
+});
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -64,16 +125,55 @@ async function loadScriptRuntimeDescriptors(): Promise<SaaTPluginDescriptor[]> {
 	return value;
 }
 
-async function sendPrefillMessage(message: unknown, maxRetries = 5): Promise<void> {
-	for (let i = 0; i < maxRetries; i++) {
-		try {
-			await chrome.runtime.sendMessage(message);
-			return;
-		} catch {
-			await new Promise((resolve) => setTimeout(resolve, 100 * (i + 1)));
-		}
-	}
+async function queueSidepanelActivation(
+	tabId: number,
+	activation: SidepanelActivation,
+): Promise<void> {
+	// Capture the browser user gesture before any storage await. Durable writes
+	// are serialized so two rapid context-menu actions cannot overwrite a newer
+	// activation with an older completion.
+	const opened = chrome.sidePanel.open({ tabId });
+	let envelope: ReturnType<typeof createSidepanelActivationEnvelope> | undefined;
+	const persist = sidepanelActivationTail.catch(() => undefined).then(async () => {
+		const stored = await chrome.storage.session.get(SIDEPANEL_ACTIVATION_STORAGE_KEY);
+		const previous = parseSidepanelActivationEnvelope(stored[SIDEPANEL_ACTIVATION_STORAGE_KEY]);
+		const createdAt = Date.now();
+		sidepanelActivationGeneration = Math.max(
+			createdAt,
+			sidepanelActivationGeneration + 1,
+			(previous?.generation ?? 0) + 1,
+		);
+		envelope = createSidepanelActivationEnvelope(
+			crypto.randomUUID(),
+			activation,
+			createdAt,
+			sidepanelActivationGeneration,
+		);
+		await chrome.storage.session.set({ [SIDEPANEL_ACTIVATION_STORAGE_KEY]: envelope });
+	});
+	sidepanelActivationTail = persist;
+	await persist;
+	await opened;
+	if (!envelope) throw new Error('sidepanel activation persistence completed without an envelope');
+	await chrome.runtime
+		.sendMessage({
+			type: 'HALO_SIDEPANEL_ACTIVATION_DELIVER',
+			envelope,
+		})
+		.catch((error: unknown) => {
+			// A listener may not exist yet. Durable pending state is authoritative,
+			// but keep the low-latency delivery failure observable for diagnostics.
+			console.debug('[HALO] sidepanel activation awaits durable delivery', error);
+		});
 }
+
+void chrome.storage.session.get(SIDEPANEL_ACTIVATION_STORAGE_KEY).then(async (stored) => {
+	const envelope = parseSidepanelActivationEnvelope(stored[SIDEPANEL_ACTIVATION_STORAGE_KEY]);
+	if (envelope && isFreshSidepanelActivation(envelope)) return;
+	if (stored[SIDEPANEL_ACTIVATION_STORAGE_KEY] !== undefined) {
+		await chrome.storage.session.remove(SIDEPANEL_ACTIVATION_STORAGE_KEY);
+	}
+}).catch(() => undefined);
 
 chrome.runtime.onInstalled.addListener(async (details) => {
 	console.log(LOG_TAG, 'Extension installed/updated:', details.reason);
@@ -149,6 +249,8 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 	} catch (err) {
 		console.warn(LOG_TAG, 'Context menu setup failed', err);
 	}
+
+	await reconcileStoredHoverZoomIntent();
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -160,21 +262,19 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 			break;
 
 		case MENU_QR_SELECTION: {
-			await chrome.sidePanel.open({ tabId: tab.id });
 			const text = info.selectionText || info.linkUrl || '';
 			if (text) {
-				void sendPrefillMessage({
+				await queueSidepanelActivation(tab.id, {
 					type: 'HALO_ACTIVATE_TOOL',
 					toolId: 'qrcode',
 					payload: { text },
 				});
-			}
+			} else await chrome.sidePanel.open({ tabId: tab.id });
 			break;
 		}
 
 		case MENU_COLOR_PICK:
-			await chrome.sidePanel.open({ tabId: tab.id });
-			void sendPrefillMessage({
+			await queueSidepanelActivation(tab.id, {
 				type: 'HALO_ACTIVATE_TOOL',
 				toolId: 'color-picker',
 			});
@@ -194,6 +294,40 @@ chrome.action.onClicked.addListener(async (tab) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+	const activationAck = parseSidepanelActivationAck(message);
+	if (activationAck) {
+		if (!isTrustedSidepanelSender(sender)) {
+			sendResponse({ ok: false, error: 'untrusted_sender' });
+			return false;
+		}
+		void chrome.storage.session.get(SIDEPANEL_ACTIVATION_STORAGE_KEY).then(async (stored) => {
+			const pending = parseSidepanelActivationEnvelope(stored[SIDEPANEL_ACTIVATION_STORAGE_KEY]);
+			if (pending?.id === activationAck.id) {
+				await chrome.storage.session.remove(SIDEPANEL_ACTIVATION_STORAGE_KEY);
+			}
+			sendResponse({ ok: true, cleared: pending?.id === activationAck.id });
+		}).catch((error: unknown) => {
+			sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) });
+		});
+		return true;
+	}
+
+	if (message?.type === 'HALO_HZ_RECONCILE') {
+		if (!isTrustedSidepanelSender(sender)) {
+			sendResponse({ desired: false, active: false, changed: false, error: 'untrusted_sender' });
+			return false;
+		}
+		reconcileStoredHoverZoomIntent().then(sendResponse, (error: unknown) => {
+			sendResponse({
+				desired: false,
+				active: false,
+				changed: false,
+				error: error instanceof Error ? error.message : String(error),
+			});
+		});
+		return true;
+	}
+
 	if (message.type === 'HALO_CLIPBOARD_ADD') {
 		const { text, sourceUrl, sourceTitle } = message;
 		saveToClipboardHistory(

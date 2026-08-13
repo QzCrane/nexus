@@ -282,6 +282,11 @@ describe('capture restart reconciliation barrier', () => {
 		const timerHarness = installFastTimerHarness();
 		const listeners: RuntimeMessageListener[] = [];
 		const runtimeMessages: Array<Record<string, unknown>> = [];
+		const tabMessages: Array<{
+			tabId: number;
+			message: Record<string, unknown>;
+			options?: { documentId?: string };
+		}> = [];
 		const config = {
 			...DEFAULT_AUDIO_CONFIG,
 			volume: 137,
@@ -301,6 +306,7 @@ describe('capture restart reconciliation barrier', () => {
 				queryTabs: [{ id: 73 }],
 				listeners,
 				runtimeMessages,
+				tabMessages,
 				getStreamId: (callback) => callback('stream-73'),
 				sendOffscreen: async (message) => {
 					if (message.type === 'OFFSCREEN_HOST_HELLO') return { audioTabs: [], remoteTabs: [] };
@@ -346,6 +352,21 @@ describe('capture restart reconciliation barrier', () => {
 				'spectra.audio.session.changed',
 				'spectra.audio.capture.changed',
 			]);
+			const exactDocumentEvents = tabMessages.filter(({ message }) => (
+				message.type === 'spectra.audio.capture.changed'
+				|| message.action === 'CAPTURE_STATE_CHANGE'
+			));
+			expect(exactDocumentEvents.length).toBeGreaterThan(0);
+			expect(exactDocumentEvents.every(({ tabId, options }) => (
+				tabId === 73 && options?.documentId === identity.documentId
+			))).toBe(true);
+			expect(exactDocumentEvents.find(({ message }) => (
+				message.type === 'spectra.audio.capture.changed'
+			))?.message).toMatchObject({
+				documentId: identity.documentId,
+				generation: 20,
+				payload: { tabId: 73, generation: 20, phase: 'active' },
+			});
 
 			runtimeMessages.length = 0;
 			emitRuntimeEvent(listeners, {
@@ -568,6 +589,11 @@ function createChromeHarness(options: {
 	sendOffscreen(message: Record<string, unknown>): Promise<unknown>;
 	listeners?: RuntimeMessageListener[];
 	runtimeMessages?: Array<Record<string, unknown>>;
+	tabMessages?: Array<{
+		tabId: number;
+		message: Record<string, unknown>;
+		options?: { documentId?: string };
+	}>;
 	getStreamId?: (callback: (streamId?: string) => void) => void;
 }): unknown {
 	return {
@@ -590,7 +616,17 @@ function createChromeHarness(options: {
 		},
 		tabs: {
 			query: async () => options.queryTabs,
-			sendMessage: async () => undefined,
+			sendMessage: async (
+				tabId: number,
+				message: Record<string, unknown>,
+				messageOptions?: { documentId?: string },
+			) => {
+				options.tabMessages?.push({
+					tabId,
+					message: structuredClone(message),
+					...(messageOptions ? { options: structuredClone(messageOptions) } : {}),
+				});
+			},
 		},
 		tabCapture: {
 			getMediaStreamId: (

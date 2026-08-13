@@ -2,7 +2,6 @@
 	"id": "html-entity",
 	"icon": "🔤",
 	"category": "encode",
-	"size": 20000,
 	"builtIn": false,
 	"keywords": [],
 	"pluginType": "tool"

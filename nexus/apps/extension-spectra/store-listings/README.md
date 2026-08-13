@@ -54,6 +54,8 @@ Public copy must also state that individual operations depend on the page, media
 5. Compare privacy wording with `PRIVACY.md` and the Dashboard declarations.
 6. Review translations for meaning, not word-for-word similarity.
 
+Policy readback on 2026-08-13 used Chrome's current [program policies](https://developer.chrome.com/docs/webstore/program-policies/policies), [Dashboard privacy-field guidance](https://developer.chrome.com/docs/webstore/cws-dashboard-privacy), and [Manifest V3 requirements](https://developer.chrome.com/docs/webstore/program-policies/mv3-requirements). The release must continue to justify the narrowest permissions, disclose local and transmitted user data consistently, and ship all extension logic in the package; optional remote state is data, not remotely hosted executable code.
+
 ## Current locales
 
 - `en-US.md`
@@ -65,3 +67,7 @@ Public copy must also state that individual operations depend on the page, media
 - `ja-JP.md`
 - `ko-KR.md`
 - `ru-RU.md`
+
+## Current release projection
+
+- Candidate notes: [`release-notes-1.4.2.md`](release-notes-1.4.2.md)
