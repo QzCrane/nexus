@@ -600,6 +600,17 @@ export function classifyMainPosition(
 		: 'remote main moved after evidence recording');
 }
 
+export function isExactPromotionProjection(
+	pull: { state: string; merged_at?: string | null; merge_commit_sha?: string | null },
+	head: string,
+): boolean {
+	if (pull.state !== 'closed') return false;
+	if (pull.merged_at || pull.merge_commit_sha) {
+		return Boolean(pull.merged_at) && pull.merge_commit_sha === head;
+	}
+	return true;
+}
+
 export function assertSameRepositoryPull(headRepository: string, baseRepository: string): void {
 	if (!headRepository || !baseRepository || headRepository !== baseRepository) {
 		throw new Error('exact ref promotion requires a same-repository pull request');
@@ -964,13 +975,13 @@ async function merge(): Promise<void> {
 		if (merged.head?.sha !== verified.head || merged.base?.ref !== policy.targetBranch) {
 			throw new Error('remote PR identity changed after exact ref promotion');
 		}
-		if (merged.state === 'closed' && merged.merged_at && merged.merge_commit_sha === verified.head) break;
-		if (attempt < 10) await sleep(Math.min(500 * 2 ** (attempt - 1), 4_000));
+		if (isExactPromotionProjection(merged, verified.head)) break;
+		if (attempt < 10) await Bun.sleep(Math.min(500 * 2 ** (attempt - 1), 4_000));
 	}
-	const mergeSha = merged?.merge_commit_sha ?? '';
-	if (merged?.state !== 'closed' || !merged.merged_at || mergeSha !== verified.head) {
-		throw new Error('remote PR did not project the exact leased main promotion as merged');
+	if (!merged || !isExactPromotionProjection(merged, verified.head)) {
+		throw new Error('remote PR did not close after the exact leased main promotion');
 	}
+	const mergeSha = verified.head;
 	const mainRef = await githubReadJson<{ object?: { sha?: string } }>(
 		`/repos/${repository}/git/ref/heads/${policy.targetBranch}`,
 	);

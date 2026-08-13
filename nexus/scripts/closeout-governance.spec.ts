@@ -8,6 +8,7 @@ import {
 	assertDockerImageIdentity,
 	classifyMainPosition,
 	githubReadJson,
+	isExactPromotionProjection,
 	mainPromotionArgs,
 	parseGitHubRepository,
 	parseRemoteRef,
@@ -138,6 +139,26 @@ describe('exact-head closeout governance', () => {
 		expect(classifyMainPosition(identity.head, identity, true)).toBe('head');
 		expect(() => classifyMainPosition(identity.head, identity, false)).toThrow('remote main moved');
 		expect(() => classifyMainPosition('c'.repeat(40), identity, true)).toThrow('neither');
+	});
+
+	test('accepts both provider-merged and atomically promoted closed PR projections', () => {
+		const head = 'a'.repeat(40);
+		expect(isExactPromotionProjection({ state: 'closed' }, head)).toBe(true);
+		expect(isExactPromotionProjection({
+			state: 'closed',
+			merged_at: '2026-08-13T00:00:00Z',
+			merge_commit_sha: head,
+		}, head)).toBe(true);
+		expect(isExactPromotionProjection({ state: 'open' }, head)).toBe(false);
+		expect(isExactPromotionProjection({
+			state: 'closed',
+			merged_at: '2026-08-13T00:00:00Z',
+			merge_commit_sha: 'b'.repeat(40),
+		}, head)).toBe(false);
+		expect(isExactPromotionProjection({
+			state: 'closed',
+			merged_at: '2026-08-13T00:00:00Z',
+		}, head)).toBe(false);
 	});
 
 	test('binds the current platform snapshot and forbids cross-repository promotion', () => {
