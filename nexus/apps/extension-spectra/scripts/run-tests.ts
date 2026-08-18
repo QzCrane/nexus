@@ -13,6 +13,7 @@ const chromeIntegrationTests = new Set([
 	'service-worker-wake-performance.spec.ts',
 	'smoke.spec.ts',
 	'tab-visibility-chrome.spec.ts',
+	'visual-baseline.spec.ts',
 ]);
 
 function walk(directory) {
