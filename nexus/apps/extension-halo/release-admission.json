@@ -18,12 +18,16 @@
       "stage": "ready",
       "surfaces": ["panel", "content-runtime", "background-runtime"],
       "contentScript": {
+        "entry": "src/entry/content-hover-zoom.ts",
         "js": "content-hover-zoom.js",
         "runAt": "document_idle",
         "allFrames": false
       },
-      "webAccessibleResources": [
-        "tools/_hover-zoom/runtime.js"
+      "webAccessibleRuntimes": [
+        {
+          "entry": "src/entry/content-hover-zoom-runtime.ts",
+          "output": "tools/_hover-zoom/runtime.js"
+        }
       ],
       "reason": "Ready panel plus the shipped lightweight content host and Background DNR reconciliation owner."
     },
@@ -50,12 +54,16 @@
       "stage": "ready",
       "surfaces": ["panel", "content-runtime"],
       "contentScript": {
+        "entry": "src/entry/content-frame-tools.ts",
         "js": "content-frame-tools.js",
         "runAt": "document_start",
         "allFrames": true
       },
-      "webAccessibleResources": [
-        "tools/_frame-tools/runtime.js"
+      "webAccessibleRuntimes": [
+        {
+          "entry": "src/entry/content-frame-tools-runtime.ts",
+          "output": "tools/_frame-tools/runtime.js"
+        }
       ],
       "reason": "Ready panel and the admitted Ruler-only Frame Tools content-runtime capability."
     },
@@ -70,6 +78,7 @@
       "stage": "support",
       "surfaces": ["content-runtime"],
       "contentScript": {
+        "entry": "src/entry/content-smooth-scroll.ts",
         "js": "content-smooth-scroll.js",
         "runAt": "document_start",
         "allFrames": false
