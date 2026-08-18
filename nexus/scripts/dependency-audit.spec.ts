@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
+	DEPENDENCY_AUDIT_DOMAINS,
 	classifyAuditResult,
+	runAllDependencyAudits,
 	runDependencyAudit,
 	runDependencyAuditWithEvidence,
 } from './dependency-audit';
@@ -15,6 +17,37 @@ describe('dependency audit authority', () => {
 		expect(classifyAuditResult({ status: 0, stdout: '[]', stderr: '' }).kind).toBe(
 			'TRANSIENT_FAILURE',
 		);
+	});
+
+	test('owns repository and product lock domains exactly once', () => {
+		expect(DEPENDENCY_AUDIT_DOMAINS.map(({ id }) => id)).toEqual(['repository', 'product']);
+		expect(new Set(DEPENDENCY_AUDIT_DOMAINS.map(({ cwd }) => cwd)).size).toBe(2);
+	});
+
+	test('audits both domains before release evidence can exist', async () => {
+		const calls: string[] = [];
+		await runAllDependencyAudits({
+			executeDomain: (domain) => {
+				calls.push(domain);
+				return { status: 0, stdout: '{}', stderr: '' };
+			},
+			wait: async () => undefined,
+		});
+		expect(calls).toEqual(['repository', 'product']);
+	});
+
+	test('stops before the second domain when the first domain is vulnerable', async () => {
+		const calls: string[] = [];
+		await expect(runAllDependencyAudits({
+			executeDomain: (domain) => {
+				calls.push(domain);
+				return domain === 'repository'
+					? { status: 1, stdout: JSON.stringify({ lefthook: [{ severity: 'high' }] }), stderr: '' }
+					: { status: 0, stdout: '{}', stderr: '' };
+			},
+			wait: async () => undefined,
+		})).rejects.toThrow('[repository] Bun audit found advisories for: lefthook');
+		expect(calls).toEqual(['repository']);
 	});
 
 	test('never retries or downgrades a structured vulnerability report', async () => {
@@ -61,7 +94,7 @@ describe('dependency audit authority', () => {
 		expect(results).toHaveLength(0);
 	});
 
-	test('emits supply-chain evidence only after a clean advisory result', async () => {
+	test('emits supply-chain evidence only after a clean focused advisory result', async () => {
 		let evidenceCalls = 0;
 		const digest = await runDependencyAuditWithEvidence({
 			execute: () => ({ status: 0, stdout: '{}', stderr: '' }),
