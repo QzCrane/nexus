@@ -27,11 +27,16 @@
       "narrowing": "Persistent product state is required before any optional feature-specific admission occurs."
     },
     "downloads": {
-      "decision": "optionalization-candidate",
+      "decision": "optional",
       "capability": "Save an explicitly requested screenshot through Chrome's download manager.",
-      "evidence": [{ "path": "apps/extension-spectra/src/background/handlers/screenshot.ts", "marker": "chrome.downloads" }],
-      "narrowing": "Screenshot may also be invoked through shortcut/control paths, so moving the grant requires a durable capability-admission UX rather than a manifest-only change.",
-      "migrationTask": "LEAST-PRIVILEGE-PROOF"
+      "evidence": [
+        { "path": "apps/extension-spectra/src/popup/optional-permission-ui.ts", "marker": "permission: 'downloads'" },
+        { "path": "apps/extension-spectra/src/options/optional-permission-ui.ts", "marker": "permission: 'downloads'" },
+        { "path": "apps/extension-spectra/src/shared/optional-permission-admission.ts", "marker": "chrome.permissions.request" },
+        { "path": "apps/extension-spectra/src/background/handlers/screenshot.ts", "marker": "chrome.permissions.contains({ permissions: ['downloads'] })" },
+        { "path": "apps/extension-spectra/src/background/handlers/screenshot.ts", "marker": "chrome.downloads" }
+      ],
+      "narrowing": "Downloads is requested only from the Popup Screenshot click or the Options Save gesture for a Screenshot hotkey; Background never requests it and refuses screenshot persistence when the grant is absent."
     },
     "tabCapture": {
       "decision": "optionalization-candidate",
@@ -50,7 +55,8 @@
       "decision": "optional",
       "capability": "Execute user-authored scripts only after the user explicitly enables the User Scripts feature.",
       "evidence": [
-        { "path": "apps/extension-spectra/src/options/userscripts.ts", "marker": "chrome.permissions.request" },
+        { "path": "apps/extension-spectra/src/options/userscripts.ts", "marker": "requestOptionalPermission('userScripts')" },
+        { "path": "apps/extension-spectra/src/shared/optional-permission-admission.ts", "marker": "chrome.permissions.request" },
         { "path": "apps/extension-spectra/src/background/handlers/user-scripts.ts", "marker": "chrome.userScripts" }
       ],
       "narrowing": "The optional permission is requested from the Options feature-enable click before Chrome's separate Developer Mode or Allow User Scripts platform gate is checked."
