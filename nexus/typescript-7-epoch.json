@@ -40,6 +40,13 @@
       "publicProjection": false
     },
     {
+      "path": "scripts/check-direct-dependencies.ts",
+      "packagePath": "package.json",
+      "marker": "ts.createSourceFile",
+      "role": "direct dependency source-import classification",
+      "publicProjection": false
+    },
+    {
       "path": "apps/extension-halo/check-release-source-graph.ts",
       "packagePath": "apps/extension-halo/package.json",
       "marker": "ts.createSourceFile",
