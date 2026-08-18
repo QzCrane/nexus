@@ -141,27 +141,25 @@ jobs:
 
       - name: Measure base artifacts with candidate workload
         shell: bash
-        env:
-          NEXUS_PERFORMANCE_TARGET_HEAD: ${{ env.BASE_SHA }}
-          NEXUS_PERFORMANCE_TARGET_TREE: ${{ env.BASE_TREE }}
-          NEXUS_PERFORMANCE_OUTPUT_DIR: ${{ env.EVIDENCE_ROOT }}/base/performance
-          HALO_EXTENSION_DIR: ${{ env.BASE_ROOT }}/nexus/apps/extension-halo/dist
-          SPECTRA_EXTENSION_DIR: ${{ env.BASE_ROOT }}/nexus/apps/extension-spectra/dist
         run: |
           set -euo pipefail
+          export NEXUS_PERFORMANCE_TARGET_HEAD="$BASE_SHA"
+          export NEXUS_PERFORMANCE_TARGET_TREE="$BASE_TREE"
+          export NEXUS_PERFORMANCE_OUTPUT_DIR="$EVIDENCE_ROOT/base/performance"
+          export HALO_EXTENSION_DIR="$BASE_ROOT/nexus/apps/extension-halo/dist"
+          export SPECTRA_EXTENSION_DIR="$BASE_ROOT/nexus/apps/extension-spectra/dist"
           bun --cwd nexus/apps/extension-halo run test:performance
           bun --cwd nexus/apps/extension-spectra run test:performance
 
       - name: Measure candidate artifacts with the same workload
         shell: bash
-        env:
-          NEXUS_PERFORMANCE_TARGET_HEAD: ${{ env.CANDIDATE_SHA }}
-          NEXUS_PERFORMANCE_TARGET_TREE: ${{ env.CANDIDATE_TREE }}
-          NEXUS_PERFORMANCE_OUTPUT_DIR: ${{ env.EVIDENCE_ROOT }}/candidate/performance
-          HALO_EXTENSION_DIR: ${{ github.workspace }}/nexus/apps/extension-halo/dist
-          SPECTRA_EXTENSION_DIR: ${{ github.workspace }}/nexus/apps/extension-spectra/dist
         run: |
           set -euo pipefail
+          export NEXUS_PERFORMANCE_TARGET_HEAD="$CANDIDATE_SHA"
+          export NEXUS_PERFORMANCE_TARGET_TREE="$CANDIDATE_TREE"
+          export NEXUS_PERFORMANCE_OUTPUT_DIR="$EVIDENCE_ROOT/candidate/performance"
+          export HALO_EXTENSION_DIR="$GITHUB_WORKSPACE/nexus/apps/extension-halo/dist"
+          export SPECTRA_EXTENSION_DIR="$GITHUB_WORKSPACE/nexus/apps/extension-spectra/dist"
           bun --cwd nexus/apps/extension-halo run test:performance
           bun --cwd nexus/apps/extension-spectra run test:performance
 
