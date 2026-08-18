@@ -4,4 +4,4 @@
 export * from './messages/index.js';
 export * from './storage/index.js';
 export * from './logger.js';
-
+export * from './diagnostics.js';
