@@ -82,7 +82,12 @@ export function buildLicenseInventory(sbom: CycloneDxDocument) {
 	}).sort((left, right) => (
 		left.name.localeCompare(right.name) || left.version.localeCompare(right.version)
 	));
-	return { schemaVersion: 1, packages };
+	return {
+		schemaVersion: 2,
+		scope: 'workspace-installed-graph' as const,
+		artifactScoped: false as const,
+		packages,
+	};
 }
 
 function writeCanonicalJson(path: string, value: unknown): string {
@@ -100,6 +105,47 @@ export function finalArtifactPath(product: 'halo' | 'spectra'): string {
 	return product === 'halo'
 		? resolve(extensionDir, `release/.staging/halo-v${pkg.version}.zip`)
 		: resolve(extensionDir, `release/spectra-v${pkg.version}.zip`);
+}
+
+function hashedInput(path: string): { path: string; sha256: string } {
+	if (!existsSync(path)) throw new Error(`supply-chain input is missing: ${path}`);
+	return {
+		path: relative(repositoryRoot, path).replaceAll('\\', '/'),
+		sha256: sha256File(path),
+	};
+}
+
+function productInputs(product: 'halo' | 'spectra') {
+	const extensionDir = resolve(workspaceDir, `apps/extension-${product}`);
+	const productPaths = product === 'halo'
+		? [
+			'package.json',
+			'build.ts',
+			'public/manifest.json',
+			'release-admission.json',
+			'release-test-owners.json',
+		]
+		: [
+			'package.json',
+			'build.ts',
+			'public/manifest.json',
+			'permission-policy.json',
+		];
+	return productPaths.map((path) => hashedInput(resolve(extensionDir, path)));
+}
+
+function governanceInputs() {
+	return [
+		'browser-floor.json',
+		'closeout-policy.json',
+		'dependency-domains.json',
+		'dependency-revalidation.json',
+		'direct-dependency-policy.json',
+		'feature-promotion.json',
+		'runtime-performance-policy.json',
+		'typescript-7-epoch.json',
+		'visual-regression-policy.json',
+	].map((path) => hashedInput(resolve(workspaceDir, path)));
 }
 
 export function generateReleaseSupplyChainEvidence({
@@ -129,7 +175,7 @@ export function generateReleaseSupplyChainEvidence({
 		tree: git(['rev-parse', 'HEAD^{tree}']),
 	};
 	const provenance = {
-		schemaVersion: 1,
+		schemaVersion: 2,
 		recordedAt,
 		product,
 		head: gitIdentity.head,
@@ -147,18 +193,22 @@ export function generateReleaseSupplyChainEvidence({
 		sbom: {
 			path: relative(repositoryRoot, sbomPath).replaceAll('\\', '/'),
 			sha256: sha256File(sbomPath),
+			scope: inventory.scope,
+			artifactScoped: inventory.artifactScoped,
 		},
 		licenses: {
 			path: relative(repositoryRoot, licensePath).replaceAll('\\', '/'),
 			sha256: licensesSha256,
+			scope: inventory.scope,
+			artifactScoped: inventory.artifactScoped,
 			packages: inventory.packages.length,
 			unknown: inventory.packages.filter((entry) => entry.license === 'UNKNOWN').length,
 		},
 		inputs: {
-			workspaceLockSha256: sha256File(resolve(workspaceDir, 'bun.lock')),
-			repositoryLockSha256: sha256File(resolve(repositoryRoot, 'bun.lock')),
-			browserFloorSha256: sha256File(resolve(workspaceDir, 'browser-floor.json')),
-			closeoutPolicySha256: sha256File(resolve(workspaceDir, 'closeout-policy.json')),
+			workspaceLock: hashedInput(resolve(workspaceDir, 'bun.lock')),
+			repositoryLock: hashedInput(resolve(repositoryRoot, 'bun.lock')),
+			product: productInputs(product),
+			governance: governanceInputs(),
 		},
 	};
 	const provenanceSha256 = writeCanonicalJson(provenancePath, provenance);
