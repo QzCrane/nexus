@@ -19,7 +19,7 @@
 		"build:spectra-deps": "turbo run build --filter=@nexus/contracts --filter=@nexus/kernel --filter=@nexus/audio-engine",
 		"build:halo-deps": "turbo run build --filter=@nexus/contracts --filter=@nexus/kernel --filter=@nexus/ui-kit",
 		"test:spectra": "bun run --cwd apps/extension-spectra test",
-		"test:spectra:dist": "bun run --cwd apps/extension-spectra test:unit && bun run --cwd apps/extension-spectra test:chrome:dist",
+		"test:spectra:dist": "bun run --cwd apps/extension-spectra test:unit && bun run --cwd apps/extension-spectra test:chrome:dist:fast",
 		"test:halo": "bun run --cwd apps/extension-halo test:unit",
 		"test:watch:spectra": "bun --cwd apps/extension-spectra test:watch",
 		"test:watch:halo": "bun --cwd apps/extension-halo test:watch",
