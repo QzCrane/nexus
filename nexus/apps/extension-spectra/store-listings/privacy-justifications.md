@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: contributor
 owner: spectra-store-copy
-last_reviewed: 2026-07-20
+last_reviewed: 2026-08-18
 ---
 
 # SPECTRA Chrome Web Store privacy declarations
@@ -45,13 +45,13 @@ Required for bounded lifecycle work that must survive Manifest V3 service-worker
 ### `downloads`
 
 ```text
-Required only to save user-initiated screenshot captures of the current visible tab as PNG files in the user's Downloads directory under a spectra/ subfolder. SPECTRA listens for the download completion event solely to acknowledge the screenshot operation; it does not read, upload, or modify any other downloaded file, history, or path.
+Currently required only to save user-initiated screenshot captures of the current visible tab as PNG files in the user's Downloads directory under a spectra/ subfolder. SPECTRA listens for the download completion event solely to acknowledge the screenshot operation; it does not read, upload, or modify any other downloaded file, history, or path. The release permission policy tracks migration to an optional capability grant because screenshot can also be invoked through shortcut/control paths that must remain deterministic.
 ```
 
 ### `tabCapture`
 
 ```text
-Required only when an admitted full-output audio feature needs to process the current active tab locally. A new Capture can start only from a Popup or browser command invocation for that same active tab; page activity, restore, remote control, warm update, and alternate background-tab shortcuts cannot start it. SPECTRA does not record or upload captured audio.
+Currently required only when an admitted full-output audio feature needs to process the current active tab locally. A new Capture can start only from a Popup or browser command invocation for that same active tab; page activity, restore, remote control, warm update, and alternate background-tab shortcuts cannot start it. SPECTRA does not record or upload captured audio. The release permission policy tracks an optional-permission migration only if the user-activation and recovery contracts can be preserved.
 ```
 
 ### `offscreen`
@@ -69,7 +69,7 @@ Required to detect and control media elements on pages where the user invokes SP
 ### `userScripts`
 
 ```text
-Required only for user-authored custom hotkey scripts that the user explicitly configures and triggers through Chrome's userScripts sandbox.
+Optional. SPECTRA requests this permission only when the user explicitly enables the User Scripts feature in Options. After the permission is granted, Chrome still requires its separate Developer Mode prerequisite on supported Chrome versions before 138 or the per-extension Allow User Scripts toggle on Chrome 138 and newer. SPECTRA uses the permission only for user-authored scripts executed through Chrome's userScripts sandbox.
 ```
 
 ### `scripting`
@@ -113,7 +113,7 @@ The optional remote is served by Cloudflare Pages and uses PeerJS signaling at 0
 
 Before each release, compare this file with:
 
-1. the exact submitted manifest permissions;
+1. the exact submitted manifest required and optional permissions;
 2. production network destinations and CSP;
 3. remote protocol fields and retention;
 4. the public privacy-policy URL;
