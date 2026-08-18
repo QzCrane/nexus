@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "minimumChromeMajor": 135,
+  "chromeForTestingVersion": "135.0.7049.114",
+  "linux64": {
+    "url": "https://storage.googleapis.com/chrome-for-testing-public/135.0.7049.114/linux64/chrome-linux64.zip",
+    "sha256": "dd86dbace037a9b6c4bc993fc4e20ee768a804923850511e53255743760d8b82",
+    "executable": "chrome-linux64/chrome"
+  },
+  "evidence": {
+    "channel": "stable",
+    "platform": "linux64",
+    "purpose": "Declared minimum Chrome product-compatibility replay for HALO and SPECTRA."
+  }
+}
